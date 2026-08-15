@@ -5,14 +5,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"eventplane/outbox"
 	"net/http"
 	"net/http/httptest"
+	"prompts/internal/ids"
 	"strings"
 	"testing"
-
-	"eventplane/outbox"
-
-	"prompts/internal/ids"
 )
 
 // newProducerStore stands up a migrated prompts DB (which now includes the outbox

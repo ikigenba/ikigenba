@@ -1,23 +1,23 @@
 package mcp
 
 import (
+	"appkit/server"
 	"context"
 	"encoding/json"
 	"fmt"
 	"math"
 	"path/filepath"
+	"prompts/internal/calls"
+	"prompts/internal/prompt"
+	"prompts/internal/sandbox"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	appkitdb "appkit/db"
-	"appkit/server"
 
-	"prompts/internal/calls"
 	promptsdb "prompts/internal/db"
-	"prompts/internal/prompt"
-	"prompts/internal/sandbox"
 )
 
 func TestCallsFiltersWindowAndOmitsBodiesFromList(t *testing.T) {

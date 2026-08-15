@@ -2,10 +2,9 @@ package prompt
 
 import (
 	"encoding/json"
+	"eventplane/outbox"
 	"fmt"
 	"strings"
-
-	"eventplane/outbox"
 )
 
 // Outcome event types (event-triggering decisions §3). prompts emits exactly two

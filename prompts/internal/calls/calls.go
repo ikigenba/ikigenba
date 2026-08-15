@@ -7,11 +7,10 @@ import (
 	"errors"
 	"eventplane/correlation"
 	"fmt"
+	"prompts/internal/ids"
 	"regexp"
 	"strings"
 	"time"
-
-	"prompts/internal/ids"
 )
 
 type Class string

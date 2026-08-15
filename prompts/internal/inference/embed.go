@@ -7,14 +7,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"prompts/internal/admit"
+	"prompts/internal/calls"
+	"prompts/internal/ids"
 	"strings"
 
 	"github.com/ikigenba/agentkit"
 	"github.com/ikigenba/agentkit/catalog"
-
-	"prompts/internal/admit"
-	"prompts/internal/calls"
-	"prompts/internal/ids"
 )
 
 const maxCompleteBody = 10 << 20

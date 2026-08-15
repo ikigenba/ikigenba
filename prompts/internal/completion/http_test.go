@@ -7,15 +7,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"prompts/internal/admit"
+	"prompts/internal/calls"
+	"prompts/internal/prompt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ikigenba/agentkit"
-
-	"prompts/internal/admit"
-	"prompts/internal/calls"
-	"prompts/internal/prompt"
 )
 
 // R-J7QG-FRDY
@@ -469,9 +468,11 @@ func completionMux(handler *HTTP) http.Handler {
 }
 
 func validEnsureRequest(consumer, key string) ensureRequest {
-	return ensureRequest{Consumer: consumer, Origin: "trigger:dropbox", Key: key, Context: json.RawMessage(`{"document":"abc"}`),
+	return ensureRequest{
+		Consumer: consumer, Origin: "trigger:dropbox", Key: key, Context: json.RawMessage(`{"document":"abc"}`),
 		Name: "wiki.extract", GroupID: "batch-1", Attempt: 2, Model: completionTestModel,
-		System: "extract facts", Messages: []Message{{Role: "user", Text: "extract this"}}}
+		System: "extract facts", Messages: []Message{{Role: "user", Text: "extract this"}},
+	}
 }
 
 func assertRawContext(t *testing.T, recorder *httptest.ResponseRecorder, want json.RawMessage) {

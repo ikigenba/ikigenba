@@ -1,6 +1,7 @@
 package prompt
 
 import (
+	"appkit/server"
 	"bytes"
 	"net/http"
 	"net/http/httptest"
@@ -9,8 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"appkit/server"
 )
 
 func TestRunContentHandlerServesSandboxFile(t *testing.T) {

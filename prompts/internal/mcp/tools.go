@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"appkit/server"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -8,13 +9,11 @@ import (
 	"fmt"
 	"net/url"
 	"path"
+	"prompts/internal/calls"
+	"prompts/internal/prompt"
 	"time"
 
 	appkitmcp "appkit/mcp"
-	"appkit/server"
-
-	"prompts/internal/calls"
-	"prompts/internal/prompt"
 )
 
 // toolPrefix brands every MCP tool name. Prompts currently exposes bare names.

@@ -151,7 +151,7 @@ func (c *HTTPClient) Read(ctx context.Context, nameKey, ref string) (Definition,
 	query.Set("kind", repositoryKind)
 	query.Set("name", nameKey)
 	query.Set("ref", ref)
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/archive?"+query.Encode(), nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/archive?"+query.Encode(), http.NoBody)
 	if err != nil {
 		return Definition{}, unavailable(fmt.Errorf("build request: %w", err))
 	}
@@ -178,7 +178,7 @@ func (c *HTTPClient) Read(ctx context.Context, nameKey, ref string) (Definition,
 		if err != nil {
 			return Definition{}, unavailable(fmt.Errorf("decode archive: %w", err))
 		}
-		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
+		if header.Typeflag != tar.TypeReg {
 			continue
 		}
 		name := strings.TrimPrefix(header.Name, "./")

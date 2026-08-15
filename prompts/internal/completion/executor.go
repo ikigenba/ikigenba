@@ -8,17 +8,16 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"prompts/internal/admit"
+	"prompts/internal/calls"
+	"prompts/internal/ids"
+	"prompts/internal/prompt"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/ikigenba/agentkit"
 	"github.com/ikigenba/agentkit/catalog"
-
-	"prompts/internal/admit"
-	"prompts/internal/calls"
-	"prompts/internal/ids"
-	"prompts/internal/prompt"
 )
 
 const (
@@ -28,8 +27,10 @@ const (
 	maxTerminalAttempts    = 3
 )
 
-const envelopeInstruction = `Reply with only this JSON envelope: {"status":"ok"|"error","result":<any JSON value>,"message":"<why, when error>"}. For status ok, result is required. For status error, a non-empty message is required.`
-const correctiveInstruction = `Your previous reply did not satisfy the required JSON envelope. Reply again with only the required envelope, with status ok and a result JSON value, or status error and a non-empty message.`
+const (
+	envelopeInstruction   = `Reply with only this JSON envelope: {"status":"ok"|"error","result":<any JSON value>,"message":"<why, when error>"}. For status ok, result is required. For status error, a non-empty message is required.`
+	correctiveInstruction = `Your previous reply did not satisfy the required JSON envelope. Reply again with only the required envelope, with status ok and a result JSON value, or status error and a non-empty message.`
+)
 
 type Message struct {
 	Role string `json:"role"`
@@ -62,8 +63,10 @@ type Ticker interface {
 	Stop()
 }
 
-type systemClock struct{}
-type systemTicker struct{ ticker *time.Ticker }
+type (
+	systemClock  struct{}
+	systemTicker struct{ ticker *time.Ticker }
+)
 
 func NewSystemClock() Clock                                { return systemClock{} }
 func (systemClock) NewTicker(d time.Duration) Ticker       { return systemTicker{ticker: time.NewTicker(d)} }
@@ -101,9 +104,11 @@ func NewExecutor(queue *Store, callStore CallStore, gate *admit.Gate, build Prov
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Executor{queue: queue, calls: callStore, gate: gate, buildProvider: build, getenv: getenv,
+	return &Executor{
+		queue: queue, calls: callStore, gate: gate, buildProvider: build, getenv: getenv,
 		subAuthAvailable: subAuthAvailable, runtimeBound: runtimeBound, leaseDuration: leaseDuration,
-		renewalInterval: renewalInterval, clock: clock, logger: logger}
+		renewalInterval: renewalInterval, clock: clock, logger: logger,
+	}
 }
 
 // Run executes items with a fixed-size pool until ctx is cancelled.
@@ -355,8 +360,10 @@ func (e *Executor) roundTrip(ctx context.Context, provider agentkit.Provider, re
 		return "", agentkit.Usage{}, 0, err
 	}
 	defer release()
-	conv := &agentkit.Conversation{Provider: provider, Model: resolution.WireModel, Pricing: resolution.Offering.Pricing,
-		System: strings.TrimSpace(system + "\n\n" + envelopeInstruction), Gen: genSettings(cfg), Retry: retryPolicy(cfg), History: history}
+	conv := &agentkit.Conversation{
+		Provider: provider, Model: resolution.WireModel, Pricing: resolution.Offering.Pricing,
+		System: strings.TrimSpace(system + "\n\n" + envelopeInstruction), Gen: genSettings(cfg), Retry: retryPolicy(cfg), History: history,
+	}
 	stream := conv.Send(ctx, userText)
 	var text string
 	for event := range stream.Events() {
@@ -372,12 +379,14 @@ func (e *Executor) roundTrip(ctx context.Context, provider agentkit.Provider, re
 
 func (e *Executor) recordCall(ctx context.Context, item Item, req Request, resolution catalog.Resolution, response string, usage agentkit.Usage, cost float64, callErr error) error {
 	requestBody := item.Request
-	row := calls.Row{ID: ids.NewULID(), Class: calls.ClassCompletion, Origin: item.Origin, Name: item.Name,
+	row := calls.Row{
+		ID: ids.NewULID(), Class: calls.ClassCompletion, Origin: item.Origin, Name: item.Name,
 		GroupID: item.GroupID, CorrelationID: item.CorrelationID, Attempt: item.Attempt,
 		Provider: string(resolution.Provider), Model: req.Model,
 		InputTokens:  usage.InputUncached + usage.CacheReadInput + usage.CacheWriteInput,
 		OutputTokens: usage.Output + usage.ReasoningOutput, TotalTokens: usage.Total,
-		UsageJSON: marshalUsage(usage), CostUSD: cost, RequestBody: &requestBody, ResponseBody: &response}
+		UsageJSON: marshalUsage(usage), CostUSD: cost, RequestBody: &requestBody, ResponseBody: &response,
+	}
 	if callErr != nil {
 		row.Error = callErr.Error()
 	}

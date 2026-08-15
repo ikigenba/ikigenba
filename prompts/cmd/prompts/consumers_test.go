@@ -1,26 +1,24 @@
 package main
 
 import (
+	"appkit"
+	"appkit/server"
 	"context"
 	"encoding/json"
+	"eventplane/consumer"
 	"io"
 	"log/slog"
 	"path/filepath"
+	"prompts/internal/consume"
+	"prompts/internal/db"
+	"prompts/internal/prompt"
+	"prompts/internal/sandbox"
 	"reflect"
 	"sync"
 	"testing"
 	"time"
 
-	"appkit"
 	appkitdb "appkit/db"
-	"appkit/server"
-
-	"eventplane/consumer"
-
-	"prompts/internal/consume"
-	"prompts/internal/db"
-	"prompts/internal/prompt"
-	"prompts/internal/sandbox"
 )
 
 func TestPromptsSpecDeclaresPerSourceConsumers(t *testing.T) {

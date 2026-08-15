@@ -6,24 +6,24 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"eventplane/correlation"
 	"fmt"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
+	"prompts/internal/calls"
+	"prompts/internal/ids"
+	"prompts/internal/sandbox"
+	"prompts/internal/version"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
 
-	"eventplane/correlation"
 	"github.com/ikigenba/agentkit"
 	"github.com/ikigenba/agentkit/catalog"
-	"prompts/internal/calls"
-	"prompts/internal/ids"
-	"prompts/internal/sandbox"
-	"prompts/internal/version"
 )
 
 // ValidationError wraps a config-validation failure (bad model, wrong
@@ -980,8 +980,8 @@ func eventPayload(v any) []byte {
 // readLines reads up to limit lines of the file at path starting at 1-based
 // offset, mirroring sandbox.Read's line-slice semantics (offset<=0 → from
 // start, limit<=0 → no limit).
-func readLines(path string, offset, limit int) (string, error) {
-	f, err := os.Open(path)
+func readLines(filePath string, offset, limit int) (string, error) {
+	f, err := os.Open(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", fmt.Errorf("prompt: run log not found")
@@ -1123,12 +1123,12 @@ func (s *Service) RunDelete(ctx context.Context, ownerID, runID string) error {
 
 // RunFsList lists the entries under path in a run's durable sandbox. Owner-
 // scoped via the run's owner_email; survives a deleted prompt.
-func (s *Service) RunFsList(ctx context.Context, ownerID, runID, path string) ([]sandbox.Entry, error) {
+func (s *Service) RunFsList(ctx context.Context, ownerID, runID, relativePath string) ([]sandbox.Entry, error) {
 	r, err := s.runForOwner(ctx, ownerID, runID)
 	if err != nil {
 		return nil, err
 	}
-	entries, err := s.sandbox.List(r.ID, path)
+	entries, err := s.sandbox.List(r.ID, relativePath)
 	if err != nil {
 		return nil, translateSandboxError(err)
 	}
@@ -1138,12 +1138,12 @@ func (s *Service) RunFsList(ctx context.Context, ownerID, runID, path string) ([
 // RunFsRead returns up to limit lines of the file at path in a run's sandbox,
 // starting at 1-based offset. Owner-scoped via the run's owner_email; survives a
 // deleted prompt.
-func (s *Service) RunFsRead(ctx context.Context, ownerID, runID, path string, offset, limit int) (string, error) {
+func (s *Service) RunFsRead(ctx context.Context, ownerID, runID, relativePath string, offset, limit int) (string, error) {
 	r, err := s.runForOwner(ctx, ownerID, runID)
 	if err != nil {
 		return "", err
 	}
-	contents, err := s.sandbox.Read(r.ID, path, offset, limit)
+	contents, err := s.sandbox.Read(r.ID, relativePath, offset, limit)
 	if err != nil {
 		return "", translateSandboxError(err)
 	}

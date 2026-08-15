@@ -1,10 +1,12 @@
 package mcp
 
 import (
+	"appkit/server"
 	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"eventplane/consumer"
 	"fmt"
 	"io"
 	"log/slog"
@@ -13,7 +15,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"prompts/internal/consume"
+	"prompts/internal/db"
+	"prompts/internal/prompt"
+	"prompts/internal/sandbox"
 	"reflect"
+	"registry"
 	"sort"
 	"strings"
 	"sync"
@@ -21,16 +28,6 @@ import (
 
 	appkitdb "appkit/db"
 	appkitmcp "appkit/mcp"
-	"appkit/server"
-
-	"eventplane/consumer"
-
-	"prompts/internal/consume"
-	"prompts/internal/db"
-	"prompts/internal/prompt"
-	"prompts/internal/sandbox"
-
-	"registry"
 )
 
 // fakeRunner records Spawn/Cancel and leaves the run running (does not

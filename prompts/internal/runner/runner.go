@@ -14,14 +14,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"eventplane/correlation"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
-	"sync"
-	"time"
-
 	"prompts/internal/admit"
 	"prompts/internal/gateway"
 	"prompts/internal/mcpclient"
@@ -29,9 +26,12 @@ import (
 	"prompts/internal/provider"
 	"prompts/internal/sandbox"
 	"prompts/internal/suite"
+	"strings"
+	"sync"
+	"time"
+
 	runtools "prompts/internal/tools"
 
-	"eventplane/correlation"
 	"github.com/ikigenba/agentkit"
 	"github.com/ikigenba/agentkit/catalog"
 )

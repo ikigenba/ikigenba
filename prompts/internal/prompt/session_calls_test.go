@@ -3,10 +3,9 @@ package prompt
 import (
 	"context"
 	"database/sql"
+	"prompts/internal/calls"
 	"strings"
 	"testing"
-
-	"prompts/internal/calls"
 )
 
 type sessionCallRow struct {

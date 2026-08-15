@@ -8,13 +8,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"prompts/internal/sandbox"
+	"prompts/internal/version"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"prompts/internal/sandbox"
-	"prompts/internal/version"
 )
 
 const (

@@ -4,12 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"prompts/internal/mcpclient"
+	"prompts/internal/suite"
 	"reflect"
 	"strings"
 	"testing"
-
-	"prompts/internal/mcpclient"
-	"prompts/internal/suite"
 )
 
 type fakeClient struct {

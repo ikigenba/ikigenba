@@ -4,16 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"eventplane/correlation"
 	"os"
 	"path/filepath"
+	"prompts/internal/calls"
+	"prompts/internal/sandbox"
 	"strings"
 	"sync"
 	"testing"
-
-	"eventplane/correlation"
-
-	"prompts/internal/calls"
-	"prompts/internal/sandbox"
 )
 
 // fakeRunner records Spawn/Cancel calls and does NOT auto-complete runs, so a
@@ -286,8 +284,10 @@ func validConfig() Config {
 	return Config{Provider: "anthropic", Model: testAnthropicModel}
 }
 
-const ownerA = "a@example.com"
-const ownerB = "b@example.com"
+const (
+	ownerA = "a@example.com"
+	ownerB = "b@example.com"
+)
 
 const (
 	testAnthropicModel  = "claude-haiku-4-5"

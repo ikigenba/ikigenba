@@ -8,11 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"registry"
 	"strconv"
 	"strings"
 	"testing"
-
-	"registry"
 )
 
 func TestRegistryProvidesPromptsPortAndSpecUsesIt(t *testing.T) {

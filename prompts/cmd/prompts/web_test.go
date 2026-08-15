@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"prompts/internal/calls"
+	"prompts/internal/prompt"
 	"strings"
 	"testing"
 
@@ -17,9 +19,7 @@ import (
 	appserver "appkit/server"
 	appweb "appkit/web"
 
-	"prompts/internal/calls"
 	promptsdb "prompts/internal/db"
-	"prompts/internal/prompt"
 )
 
 func TestPromptsSpecEnablesChassisWWWFromShareTree(t *testing.T) {

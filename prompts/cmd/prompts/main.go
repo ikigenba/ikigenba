@@ -26,27 +26,21 @@
 package main
 
 import (
+	"appkit"
+	"appkit/config"
 	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"eventplane/consumer"
+	"eventplane/correlation"
+	"eventplane/outbox"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
-	"time"
-
-	"appkit"
-	"appkit/config"
-
-	"eventplane/consumer"
-	"eventplane/correlation"
-	"eventplane/outbox"
-
 	"prompts/internal/admit"
 	"prompts/internal/calls"
 	"prompts/internal/completion"
@@ -60,13 +54,11 @@ import (
 	"prompts/internal/runner"
 	"prompts/internal/sandbox"
 	"prompts/internal/version"
-
 	"registry"
+	"strconv"
+	"strings"
+	"time"
 )
-
-// consumerID is the stable id prompts presents on every consumer connect
-// (event-protocol.md §7.1) — the literal "prompts" across all its upstream loops.
-const consumerID = "prompts"
 
 // sources is the resolved upstream producers prompts consumes (A11).
 // CONSUMES=cron,crm,ledger,dropbox,scripts,prompts,repos in etc/manifest.env mirrors
@@ -233,9 +225,7 @@ func promptsSpec() appkit.Spec {
 		// handle, runs the boot-time crash-recovery sweep (after migrate, before
 		// serving), captures the service for the consumer handlers, and mounts the
 		// prompts_* MCP surface gated behind nginx-injected identity.
-		Handlers: func(r *appkit.Router) error {
-			return registerRoutes(r)
-		},
+		Handlers: registerRoutes,
 	}
 }
 
@@ -503,7 +493,7 @@ func promptDetailHandler(rt *appkit.Router, store promptDetailBrowser, reader pr
 				return
 			}
 		}
-		config, err := json.MarshalIndent(definition.Config, "", "  ")
+		configJSON, err := json.MarshalIndent(definition.Config, "", "  ")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -512,7 +502,7 @@ func promptDetailHandler(rt *appkit.Router, store promptDetailBrowser, reader pr
 			uiChrome:   uiChrome{Service: rt.Service(), Version: rt.Version()},
 			Prompt:     row,
 			Definition: definition,
-			ConfigJSON: string(config),
+			ConfigJSON: string(configJSON),
 			Triggers:   triggers,
 		}
 		if err := rt.WWW().Render(w, "ui-prompt.html", data); err != nil {

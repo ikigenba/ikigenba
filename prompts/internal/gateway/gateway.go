@@ -8,12 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"prompts/internal/mcpclient"
+	"prompts/internal/suite"
 	"strings"
 
 	"github.com/ikigenba/agentkit"
-
-	"prompts/internal/mcpclient"
-	"prompts/internal/suite"
 )
 
 const (

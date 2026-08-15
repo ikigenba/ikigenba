@@ -4,21 +4,21 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"eventplane/consumer"
+	"eventplane/correlation"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"prompts/internal/prompt"
+	"prompts/internal/sandbox"
 	"sync"
 	"testing"
 	"time"
 
 	appkitdb "appkit/db"
-	"eventplane/consumer"
-	"eventplane/correlation"
 
 	promptdb "prompts/internal/db"
-	"prompts/internal/prompt"
-	"prompts/internal/sandbox"
 )
 
 func discardLogger() *slog.Logger {

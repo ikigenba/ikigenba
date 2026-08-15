@@ -9,6 +9,9 @@ import (
 	"log/slog"
 	"math"
 	"path/filepath"
+	"prompts/internal/admit"
+	"prompts/internal/calls"
+	"prompts/internal/prompt"
 	"runtime"
 	"strings"
 	"sync"
@@ -19,10 +22,7 @@ import (
 	"github.com/ikigenba/agentkit"
 	"github.com/ikigenba/agentkit/catalog"
 
-	"prompts/internal/admit"
-	"prompts/internal/calls"
 	promptsdb "prompts/internal/db"
-	"prompts/internal/prompt"
 )
 
 const completionTestModel = "claude-sonnet-4-6"
@@ -361,6 +361,7 @@ func (c *mutableTime) Now() time.Time {
 	defer c.mu.Unlock()
 	return c.now
 }
+
 func (c *mutableTime) Advance(d time.Duration) {
 	c.mu.Lock()
 	c.now = c.now.Add(d)
@@ -383,6 +384,7 @@ func (c *manualClock) NewTicker(time.Duration) Ticker {
 	c.mu.Unlock()
 	return ticker
 }
+
 func (c *manualClock) After(time.Duration) <-chan time.Time {
 	wait := make(chan time.Time, 1)
 	c.mu.Lock()
@@ -390,6 +392,7 @@ func (c *manualClock) After(time.Duration) <-chan time.Time {
 	c.mu.Unlock()
 	return wait
 }
+
 func (c *manualClock) Tick() {
 	c.mu.Lock()
 	tickers := append([]*manualTicker(nil), c.tickers...)
@@ -398,6 +401,7 @@ func (c *manualClock) Tick() {
 		ticker.ch <- time.Time{}
 	}
 }
+
 func (c *manualClock) AdvanceWaits() {
 	c.mu.Lock()
 	waits := append([]chan time.Time(nil), c.waits...)
@@ -470,8 +474,10 @@ func (f *executorFixture) enqueue(t *testing.T) Item {
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, created, err := f.queue.Ensure(t.Context(), Item{Consumer: "service:wiki", Origin: "trigger:dropbox",
-		Key: "job-1", Name: "wiki.extract", GroupID: "batch-9", CorrelationID: "corr-7", Attempt: 3, Request: string(encoded)})
+	item, created, err := f.queue.Ensure(t.Context(), Item{
+		Consumer: "service:wiki", Origin: "trigger:dropbox",
+		Key: "job-1", Name: "wiki.extract", GroupID: "batch-9", CorrelationID: "corr-7", Attempt: 3, Request: string(encoded),
+	})
 	if err != nil || !created {
 		t.Fatalf("Ensure = %#v, %v, created=%v", item, err, created)
 	}

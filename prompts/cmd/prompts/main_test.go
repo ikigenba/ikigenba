@@ -1,6 +1,7 @@
 package main
 
 import (
+	"appkit/manifest"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -15,17 +16,15 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"registry"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	appkitdb "appkit/db"
-	"appkit/manifest"
 
 	promptdb "prompts/internal/db"
-
-	"registry"
 )
 
 func TestResolveStorageRootsUsesRootedStateAndCacheDefaults(t *testing.T) {

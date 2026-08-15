@@ -5,10 +5,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"prompts/internal/prompt"
 	"strings"
 	"testing"
-
-	"prompts/internal/prompt"
 )
 
 func TestBrandIconAssetsMatchSuiteReference(t *testing.T) {

@@ -7,9 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"time"
-
 	"prompts/internal/ids"
+	"time"
 )
 
 const (

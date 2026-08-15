@@ -1,9 +1,8 @@
 package runner
 
 import (
-	"testing"
-
 	"prompts/internal/prompt"
+	"testing"
 )
 
 func TestGenSettings_MaxTokensOmittedByDefault(t *testing.T) {

@@ -5,14 +5,13 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"prompts/internal/calls"
+	"prompts/internal/db"
+	"prompts/internal/ids"
 	"reflect"
 	"testing"
 
 	appkitdb "appkit/db"
-
-	"prompts/internal/calls"
-	"prompts/internal/db"
-	"prompts/internal/ids"
 )
 
 func openMigratedTestDB(t *testing.T, ctx context.Context) *sql.DB {

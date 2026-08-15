@@ -5,12 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"prompts/internal/version"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
-
-	"prompts/internal/version"
 )
 
 type versionCall struct {

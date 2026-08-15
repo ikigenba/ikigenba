@@ -5,12 +5,11 @@
 package mcp
 
 import (
-	"net/http"
-
 	"appkit"
-	appkitmcp "appkit/mcp"
-
+	"net/http"
 	"prompts/internal/prompt"
+
+	appkitmcp "appkit/mcp"
 )
 
 // Instructions is the short initialize-time guidance returned by the shared

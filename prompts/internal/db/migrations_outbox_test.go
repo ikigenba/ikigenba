@@ -2,12 +2,11 @@ package db
 
 import (
 	"context"
+	"eventplane/outbox"
 	"strings"
 	"testing"
 
 	appkitdb "appkit/db"
-
-	"eventplane/outbox"
 )
 
 // TestOutboxRoutingMigrationMatchesLibraryDDL guards the newest outbox

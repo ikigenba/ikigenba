@@ -1,10 +1,9 @@
 package db
 
 import (
+	"eventplane/consumer"
 	"strings"
 	"testing"
-
-	"eventplane/consumer"
 )
 
 // TestFeedOffsetMigrationMatchesLibraryDDL guards that prompts' 004_feed_offset.sql

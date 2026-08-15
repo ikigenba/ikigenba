@@ -325,7 +325,7 @@ func fetchFile(ctx context.Context, root string, sourcePortAllowed func(int) boo
 			ResponseHeaderTimeout: 10 * time.Second,
 		},
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), http.NoBody)
 	if err != nil {
 		return "", fmt.Errorf("validation: invalid content URL: %w", err)
 	}

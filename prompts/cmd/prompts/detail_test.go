@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"prompts/internal/calls"
+	"prompts/internal/prompt"
 	"strings"
 	"testing"
 	"time"
@@ -14,9 +16,7 @@ import (
 	appkitdb "appkit/db"
 	appserver "appkit/server"
 
-	"prompts/internal/calls"
 	promptsdb "prompts/internal/db"
-	"prompts/internal/prompt"
 )
 
 type detailFixture struct {

@@ -3,18 +3,16 @@ package consume
 import (
 	"context"
 	"encoding/json"
+	"eventplane/consumer"
 	"path/filepath"
+	"prompts/internal/db"
+	"prompts/internal/prompt"
+	"prompts/internal/sandbox"
 	"sync"
 	"testing"
 	"time"
 
 	appkitdb "appkit/db"
-
-	"eventplane/consumer"
-
-	"prompts/internal/db"
-	"prompts/internal/prompt"
-	"prompts/internal/sandbox"
 )
 
 // countingRunner is a prompt.Runner stub that records Spawn calls and never

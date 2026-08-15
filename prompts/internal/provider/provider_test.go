@@ -5,11 +5,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"prompts/internal/prompt"
 	"strings"
 	"testing"
 	"time"
-
-	"prompts/internal/prompt"
 )
 
 func TestBuildConstructsEveryConfiguredProvider(t *testing.T) {

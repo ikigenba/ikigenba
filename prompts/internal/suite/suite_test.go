@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"eventplane/correlation"
 	"fmt"
 	"maps"
 	"net"
@@ -11,13 +12,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"prompts/internal/mcpclient"
 	"reflect"
+	"registry"
 	"sync"
 	"testing"
-
-	"eventplane/correlation"
-	"prompts/internal/mcpclient"
-	"registry"
 )
 
 func TestDiscoverMapsInventoryToBarePeers(t *testing.T) {

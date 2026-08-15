@@ -88,7 +88,8 @@ func TestNameKeyMigrationPreservesRowsAndAddsColumns(t *testing.T) {
 
 func queryMigrationRows(t *testing.T, conn interface {
 	Query(string, ...any) (*sql.Rows, error)
-}, query string, columns int) [][]string {
+}, query string, columns int,
+) [][]string {
 	t.Helper()
 	rows, err := conn.Query(query)
 	if err != nil {

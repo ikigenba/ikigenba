@@ -18,12 +18,11 @@ package consume
 
 import (
 	"context"
-	"fmt"
-	"log/slog"
-
 	"eventplane/consumer"
 	"eventplane/correlation"
 	"eventplane/routing"
+	"fmt"
+	"log/slog"
 )
 
 // FireFunc starts a run for one prompt in reaction to an event (the consumer

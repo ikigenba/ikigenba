@@ -1,6 +1,7 @@
 package main
 
 import (
+	"appkit/telemetry"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"prompts/internal/completion"
 	"reflect"
 	"sort"
 	"strings"
@@ -19,9 +21,7 @@ import (
 
 	appkitdb "appkit/db"
 	appkitserver "appkit/server"
-	"appkit/telemetry"
 
-	"prompts/internal/completion"
 	promptsdb "prompts/internal/db"
 )
 

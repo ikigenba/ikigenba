@@ -4,15 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
-	"strings"
-	"time"
-
 	"eventplane/correlation"
 	"eventplane/outbox"
-
+	"fmt"
 	"prompts/internal/calls"
 	"prompts/internal/ids"
+	"strings"
+	"time"
 )
 
 // Store is the SQLite persistence for prompts and runs. All reads that take
@@ -680,13 +678,6 @@ func nullStr(s string) any {
 		return nil
 	}
 	return s
-}
-
-func firstNonEmpty(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
 }
 
 func requireOne(res sql.Result, op string) error {

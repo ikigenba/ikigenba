@@ -4,18 +4,17 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"eventplane/correlation"
 	"fmt"
 	"io"
 	"net/http"
+	"prompts/internal/calls"
+	"prompts/internal/prompt"
 	"regexp"
 	"strings"
 
-	"eventplane/correlation"
 	"github.com/ikigenba/agentkit"
 	"github.com/ikigenba/agentkit/catalog"
-
-	"prompts/internal/calls"
-	"prompts/internal/prompt"
 )
 
 const (
@@ -128,7 +127,7 @@ func (h *HTTP) validate(in ensureRequest) (Request, string, error) {
 	if err := calls.ValidateName(in.Name); err != nil {
 		return Request{}, "bad_name", err
 	}
-	if len(in.Key) == 0 {
+	if in.Key == "" {
 		return Request{}, "bad_key", errors.New("key must be non-empty")
 	}
 	if len(in.Key) > maxKeyBytes {

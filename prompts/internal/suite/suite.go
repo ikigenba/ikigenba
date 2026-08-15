@@ -2,14 +2,13 @@
 package suite
 
 import (
+	"appkit/inventory"
 	"context"
+	"eventplane/correlation"
 	"fmt"
+	"registry"
 	"strings"
 	"sync"
-
-	"appkit/inventory"
-	"eventplane/correlation"
-	"registry"
 )
 
 const (

@@ -7,13 +7,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"prompts/internal/sandbox"
+	"prompts/internal/version"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
-
-	"prompts/internal/sandbox"
-	"prompts/internal/version"
 )
 
 type gitVersionPlane struct {
@@ -107,10 +106,12 @@ func (p *gitVersionPlane) Read(_ context.Context, key, ref string) (version.Defi
 func (p *gitVersionPlane) Rename(context.Context, string, string, version.Owner, string) error {
 	return nil
 }
+
 func (p *gitVersionPlane) Archive(context.Context, string, version.Owner, string) error {
 	p.archived = true
 	return nil
 }
+
 func (p *gitVersionPlane) RunToken(_ context.Context, key, _ string, _ time.Duration) (version.Credential, error) {
 	if p.archived {
 		return version.Credential{}, version.ErrUnavailable
@@ -254,21 +255,27 @@ type unavailableVersion struct{}
 func (unavailableVersion) Create(context.Context, string, version.Owner, string) error {
 	return version.ErrUnavailable
 }
+
 func (unavailableVersion) Commit(context.Context, string, []version.File, string, string) (string, error) {
 	return "", version.ErrUnavailable
 }
+
 func (unavailableVersion) Head(context.Context, string) (string, error) {
 	return "", version.ErrUnavailable
 }
+
 func (unavailableVersion) Read(context.Context, string, string) (version.Definition, error) {
 	return version.Definition{}, version.ErrUnavailable
 }
+
 func (unavailableVersion) Rename(context.Context, string, string, version.Owner, string) error {
 	return version.ErrUnavailable
 }
+
 func (unavailableVersion) Archive(context.Context, string, version.Owner, string) error {
 	return version.ErrUnavailable
 }
+
 func (unavailableVersion) RunToken(context.Context, string, string, time.Duration) (version.Credential, error) {
 	return version.Credential{}, version.ErrUnavailable
 }

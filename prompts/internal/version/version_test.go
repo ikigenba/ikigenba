@@ -239,7 +239,7 @@ func tarBytes(t *testing.T, files map[string][]byte) []byte {
 func TestReadUsesArchiveSnapshotAndEnforcesDefinitionFiles(t *testing.T) {
 	allFiles := map[string][]byte{
 		"prompt.md": []byte("user\x00bytes"), "system.md": []byte("system"),
-		"config.json": []byte{0xff, 0, 1}, "notes.txt": []byte("ignored"),
+		"config.json": {0xff, 0, 1}, "notes.txt": []byte("ignored"),
 	}
 	for _, test := range []struct {
 		name       string

@@ -2,12 +2,11 @@ package prompt
 
 import (
 	"context"
+	"eventplane/outbox"
+	"eventplane/routing"
 	"fmt"
 	"sort"
 	"strings"
-
-	"eventplane/outbox"
-	"eventplane/routing"
 )
 
 // SetTrigger upserts a canonical-key filter. Source is derived by Service after

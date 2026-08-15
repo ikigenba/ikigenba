@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"prompts/internal/admit"
+	"prompts/internal/calls"
 	"reflect"
 	"strings"
 	"testing"
@@ -17,13 +19,13 @@ import (
 	"github.com/ikigenba/agentkit"
 	"github.com/ikigenba/agentkit/catalog"
 
-	"prompts/internal/admit"
-	"prompts/internal/calls"
 	promptsdb "prompts/internal/db"
 )
 
-const testEmbedModel = "text-embedding-3-small"
-const testModel = "claude-sonnet-4-6"
+const (
+	testEmbedModel = "text-embedding-3-small"
+	testModel      = "claude-sonnet-4-6"
+)
 
 func TestEmbedReturnsVectorsUsageCostAndRecordsOneEmbeddingCall(t *testing.T) {
 	// R-604H-L3QC

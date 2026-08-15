@@ -4,13 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"prompts/internal/prompt"
 	"sync"
 
 	"github.com/ikigenba/agentkit"
 	"github.com/ikigenba/agentkit/openai"
 	"github.com/ikigenba/agentkit/openai/subscription"
-
-	"prompts/internal/prompt"
 )
 
 // ResolveAuthPath returns the explicit subscription credential path or the
