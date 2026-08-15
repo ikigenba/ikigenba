@@ -23,7 +23,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D17 → `project/design/D17.md` — Correlation adoption: the nginx fragment carries the chain id across the trust boundary, the domain seam carries the context to `outbox.Append`, and the `correlation_id` column arrives by one additive migration — owns R-VOH6-HG8R, R-VPP2-V7ZG, R-Y3Z7-H9BG, R-B98U-XGC9, R-BAGR-B82Y
 - D18 → `project/design/D18.md` — Testing-language conformance: the suite's four layers, ledger's declared testing facts (hermetic + composed, no live, no manual; no preconditions beyond the Go toolchain; workspace GOWORK plus the isolated `GOWORK=off` build check), proven in `cmd/ledger/docs_test.go` — adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`); mints none of its own
 - D19 → `project/design/D19.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
-- D20 → `project/design/D20.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `cheap` — none (structural; the contract carries no per-service ids)
+- D20 → `project/design/D20.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `strict` — none (structural; the contract carries no per-service ids)
 
 ## Verification ids → Decision
 
