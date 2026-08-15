@@ -58,8 +58,11 @@ func (s *Service) readHealthDB(info *HealthInfo) {
 		return
 	}
 	oldest, err := time.Parse(time.RFC3339Nano, backlog.OldestPendingAt.String)
-	if err == nil && s.nowTime().After(oldest) {
-		info.OldestPendingAgeSeconds = int64(s.nowTime().Sub(oldest).Seconds())
+	if err == nil {
+		age := s.nowTime().Sub(oldest)
+		if age > 0 {
+			info.OldestPendingAgeSeconds = int64(age.Seconds())
+		}
 	}
 }
 
