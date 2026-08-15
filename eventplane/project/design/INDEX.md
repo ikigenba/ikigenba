@@ -37,7 +37,7 @@ Decision is added or its Verification ids change.
 - D11 → `D11.md` — Generation epochs: a restore mints a fresh epoch and stale
   cursors resync — R-4BT8-D54J, R-4D14-QWV8
 - D12 → `D12.md` — Adopt the suite lint contract (`root project/design/D30.md`)
-  at tier `cheap` — none (structural; the contract carries no per-service ids)
+  at tier `strict` — none (structural; the contract carries no per-service ids)
 
 ## Verification ids → Decision
 
