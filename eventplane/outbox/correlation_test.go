@@ -4,11 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"eventplane/correlation"
 	"net/http"
 	"reflect"
 	"testing"
-
-	"eventplane/correlation"
 )
 
 type tableColumn struct {

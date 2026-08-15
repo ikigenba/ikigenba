@@ -4,15 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"eventplane/correlation"
+	"eventplane/observe"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
-
-	"eventplane/correlation"
-	"eventplane/observe"
 
 	_ "modernc.org/sqlite"
 )

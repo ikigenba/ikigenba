@@ -21,16 +21,15 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"eventplane/correlation"
+	"eventplane/observe"
+	"eventplane/routing"
 	"fmt"
 	"log/slog"
 	"os"
 	"strings"
 	"sync"
 	"time"
-
-	"eventplane/correlation"
-	"eventplane/observe"
-	"eventplane/routing"
 )
 
 // defaults for retention (§11.3) and the feed fetch batch (§6.1).
@@ -324,13 +323,13 @@ func (o *Outbox) checkCursor(ctx context.Context, cursor string) (reason string,
 		// backup. Position is invalid; no controlled-leg event was lost.
 		return reasonDiverged, 0, nil
 	}
-	min, err := o.minSeq(ctx)
+	minimum, err := o.minSeq(ctx)
 	if err != nil {
 		return "", 0, err
 	}
 	// The consumer's next expected event is s+1. If that has been trimmed below
 	// the retention horizon, events it never received are gone — real loss.
-	if min > 0 && s+1 < min {
+	if minimum > 0 && s+1 < minimum {
 		return reasonPastHorizon, 0, nil
 	}
 	return "", s, nil

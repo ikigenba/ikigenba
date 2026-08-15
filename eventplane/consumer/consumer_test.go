@@ -6,6 +6,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"eventplane/correlation"
+	"eventplane/observe"
+	"eventplane/outbox"
+	"eventplane/routing"
 	"fmt"
 	"io"
 	"log/slog"
@@ -18,11 +22,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"eventplane/correlation"
-	"eventplane/observe"
-	"eventplane/outbox"
-	"eventplane/routing"
 
 	_ "modernc.org/sqlite"
 )

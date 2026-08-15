@@ -40,16 +40,15 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"eventplane/correlation"
+	"eventplane/observe"
+	"eventplane/routing"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"time"
-
-	"eventplane/correlation"
-	"eventplane/observe"
-	"eventplane/routing"
 )
 
 // First-subscription positions (§7.1). `tail` streams only new events from the
@@ -347,7 +346,7 @@ func (e *engine) run(ctx context.Context) error {
 // bootstrap); otherwise a valid cursor is presented as Last-Event-ID, and a
 // missing cursor means "from the beginning" (§7.1).
 func (e *engine) connectAndStream(ctx context.Context, state offsetState, useTail bool) attemptResult {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, e.cfg.FeedURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, e.cfg.FeedURL, http.NoBody)
 	if err != nil {
 		e.log.Warn("consumer: build request failed", "err", err, "source", e.cfg.Source)
 		return attemptResult{}

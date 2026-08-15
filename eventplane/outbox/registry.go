@@ -2,11 +2,10 @@ package outbox
 
 import (
 	"encoding/json"
+	"eventplane/routing"
 	"fmt"
 	"reflect"
 	"strings"
-
-	"eventplane/routing"
 )
 
 // Family declares one published event family. Sample is the single source for
@@ -133,7 +132,7 @@ func schema(sample any) map[string]any {
 
 func schemaOf(t reflect.Type) map[string]any {
 	switch t.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		return schemaOf(t.Elem())
 	case reflect.String:
 		return map[string]any{"type": "string"}
@@ -192,7 +191,7 @@ func fieldJSON(f reflect.StructField) (name string, optional, skip bool) {
 			}
 		}
 	}
-	if f.Type.Kind() == reflect.Ptr {
+	if f.Type.Kind() == reflect.Pointer {
 		optional = true
 	}
 	return name, optional, false

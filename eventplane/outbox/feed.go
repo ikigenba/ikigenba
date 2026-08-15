@@ -3,11 +3,10 @@ package outbox
 import (
 	"context"
 	"encoding/json"
+	"eventplane/routing"
 	"io"
 	"net/http"
 	"time"
-
-	"eventplane/routing"
 )
 
 // keepaliveInterval is the idle-connection keepalive cadence (§10.2 SHOULD ~15s).

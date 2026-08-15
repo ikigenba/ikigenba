@@ -5,13 +5,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"eventplane/correlation"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
-
-	"eventplane/correlation"
 )
 
 // sseConn is a minimal test client for the SSE feed: it reads complete frames
@@ -105,13 +104,15 @@ func feedServer(t *testing.T, o *Outbox) string {
 
 func appendAddress(t *testing.T, o *Outbox, db interface {
 	Begin() (*sql.Tx, error)
-}, kind, subject string) {
+}, kind, subject string,
+) {
 	appendAddressContext(t, context.Background(), o, db, kind, subject)
 }
 
 func appendAddressContext(t *testing.T, ctx context.Context, o *Outbox, db interface {
 	Begin() (*sql.Tx, error)
-}, kind, subject string) {
+}, kind, subject string,
+) {
 	t.Helper()
 	tx, err := db.Begin()
 	if err != nil {

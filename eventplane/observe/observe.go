@@ -3,9 +3,8 @@ package observe
 
 import (
 	"context"
-	"time"
-
 	"eventplane/routing"
+	"time"
 )
 
 // Hop names the event-plane hop being observed.
