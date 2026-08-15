@@ -11,6 +11,7 @@ Verification ids change.
 - D2 → `project/design/D02.md` — The service table: slice of structs with typed blocks and frozen seeds — owns `R-B00K-9JYR`, `R-B18G-NBPG`, `R-B2GD-13G5`, `R-B3O9-EV6U`, `R-ZNFW-ORR6`
 - D3 → `project/design/D03.md` — The resolution API: name → port, name → base URL, loud on unknown — owns `R-B642-6EO8`, `R-B7BY-K6EX`, `R-B8JU-XY5M`, `R-B9RR-BPWB`
 - D4 → `project/design/D04.md` — Adopt the suite testing-language contract (`root project/design/D23.md`): hermetic-only layers, `GOWORK=off` mode, no preconditions — owns none locally; **cites** `R-O1AD-MRKW`, `R-O2IA-0JBL`
+- D5 → `project/design/D05.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `cheap` — none (structural; the contract carries no per-service ids)
 
 ## Verification ids → Decision
 
