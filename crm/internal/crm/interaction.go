@@ -19,7 +19,7 @@ type interactionStore struct{}
 
 // Insert appends one interaction. The dispatcher resolves the subject_id to
 // exactly one of contactID/orgID/dealID (by probe-by-id) before calling.
-func (interactionStore) Insert(tx *sql.Tx, kind, body string, occurredAt time.Time, contactID, orgID, dealID *string, now time.Time) (Summary, error) {
+func (interactionStore) Insert(tx *sql.Tx, kind, body string, occurredAt time.Time, contactID, orgID, dealID *string, now time.Time) (summary Summary, resultErr error) {
 	id := logging.NewULID()
 	ts := fmtTime(now)
 	occurred := fmtTime(occurredAt)
@@ -65,7 +65,7 @@ func interactionLabel(kind, body string) string {
 // reference, when one is set and still live (orphan tolerated — a soft-deleted/
 // absent subject is simply omitted, PLAN.md §8). A soft-deleted interaction is
 // ErrNotFound, matching the other entities.
-func (interactionStore) Get(tx *sql.Tx, id string) (Card, error) {
+func (interactionStore) Get(tx *sql.Tx, id string) (resultCard Card, resultErr error) {
 	var kind, body, occurred, created, updated string
 	var contactID, orgID, dealID sql.NullString
 	err := tx.QueryRow(`
@@ -106,7 +106,7 @@ func (interactionStore) Get(tx *sql.Tx, id string) (Card, error) {
 // (matching ANY of the three FK columns) and kind filters. Ordered by the
 // timeline key occurred_at DESC, id DESC (differs from the recency ordering the
 // other entities use).
-func (interactionStore) Search(tx *sql.Tx, p SearchParams) ([]Summary, error) {
+func (interactionStore) Search(tx *sql.Tx, p SearchParams) (summaries []Summary, resultErr error) {
 	where := []string{"deleted_at IS NULL"}
 	var args []any
 	if q := strings.TrimSpace(p.Query); q != "" {
@@ -153,7 +153,7 @@ func (interactionStore) Search(tx *sql.Tx, p SearchParams) ([]Summary, error) {
 // interactionKeysetAfter is the timeline analog of store.go's keysetAfter, keyed
 // on the occurred_at column (the interaction Search orders occurred_at DESC, id
 // DESC, not updated_at). afterID is empty/unknown → an always-true predicate.
-func interactionKeysetAfter(tx *sql.Tx, afterID string) (string, []any, error) {
+func interactionKeysetAfter(tx *sql.Tx, afterID string) (predicate string, args []any, resultErr error) {
 	if afterID == "" {
 		return "1=1", nil, nil
 	}
@@ -171,7 +171,7 @@ func interactionKeysetAfter(tx *sql.Tx, afterID string) (string, []any, error) {
 
 // Delete soft-deletes the interaction. Shallow (PLAN.md §8): interactions own no
 // children. Corrections are delete-and-relog.
-func (interactionStore) Delete(tx *sql.Tx, id string, at time.Time) error {
+func (interactionStore) Delete(tx *sql.Tx, id string, at time.Time) (err error) {
 	ts := fmtTime(at)
 	res, err := tx.Exec(`UPDATE interactions SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`, ts, ts, id)
 	if err != nil {

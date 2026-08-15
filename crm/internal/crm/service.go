@@ -469,38 +469,16 @@ func decodeContact(fields []byte, onCreate bool) (ContactInput, string, error) {
 		in.Lifecycle = &lc
 	}
 
-	var primaryEmail string
-	if f.Emails != nil {
-		emails := make([]EmailInput, 0, len(*f.Emails))
-		for i, e := range *f.Emails {
-			norm, err := normalizeEmail(e.Email)
-			if err != nil {
-				return ContactInput{}, "", invalid("emails", err.Error())
-			}
-			if err := validateLabel(e.Label); err != nil {
-				return ContactInput{}, "", invalid("emails", err.Error())
-			}
-			if i == 0 {
-				primaryEmail = norm
-			}
-			emails = append(emails, EmailInput{Email: norm, Label: trimPtr(e.Label)})
-		}
-		in.Emails = &emails
+	emails, primaryEmail, err := normalizeContactEmails(f.Emails)
+	if err != nil {
+		return ContactInput{}, "", err
 	}
-	if f.Phones != nil {
-		phones := make([]PhoneInput, 0, len(*f.Phones))
-		for _, p := range *f.Phones {
-			norm, err := normalizePhone(p.Phone)
-			if err != nil {
-				return ContactInput{}, "", invalid("phones", err.Error())
-			}
-			if err := validateLabel(p.Label); err != nil {
-				return ContactInput{}, "", invalid("phones", err.Error())
-			}
-			phones = append(phones, PhoneInput{Phone: norm, Label: trimPtr(p.Label)})
-		}
-		in.Phones = &phones
+	in.Emails = emails
+	phones, err := normalizeContactPhones(f.Phones)
+	if err != nil {
+		return ContactInput{}, "", err
 	}
+	in.Phones = phones
 
 	// display_name derivation (PLAN.md §3): supplied → "given family" → primary
 	// email. Derived only on create; on update an absent display_name is left
@@ -516,6 +494,45 @@ func decodeContact(fields []byte, onCreate bool) (ContactInput, string, error) {
 		in.DisplayName = &dn
 	}
 	return in, primaryEmail, nil
+}
+
+func normalizeContactEmails(fields *[]emailFields) (emails *[]EmailInput, primary string, err error) {
+	if fields == nil {
+		return nil, "", nil
+	}
+	normalized := make([]EmailInput, 0, len(*fields))
+	for i, field := range *fields {
+		email, err := normalizeEmail(field.Email)
+		if err != nil {
+			return nil, "", invalid("emails", err.Error())
+		}
+		if err := validateLabel(field.Label); err != nil {
+			return nil, "", invalid("emails", err.Error())
+		}
+		if i == 0 {
+			primary = email
+		}
+		normalized = append(normalized, EmailInput{Email: email, Label: trimPtr(field.Label)})
+	}
+	return &normalized, primary, nil
+}
+
+func normalizeContactPhones(fields *[]phoneFields) (phones *[]PhoneInput, err error) {
+	if fields == nil {
+		return nil, nil
+	}
+	normalized := make([]PhoneInput, 0, len(*fields))
+	for _, field := range *fields {
+		phone, err := normalizePhone(field.Phone)
+		if err != nil {
+			return nil, invalid("phones", err.Error())
+		}
+		if err := validateLabel(field.Label); err != nil {
+			return nil, invalid("phones", err.Error())
+		}
+		normalized = append(normalized, PhoneInput{Phone: phone, Label: trimPtr(field.Label)})
+	}
+	return &normalized, nil
 }
 
 // probeContactByEmail is the exact contact dedup probe (PLAN.md §4): by

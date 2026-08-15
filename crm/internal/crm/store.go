@@ -92,7 +92,7 @@ var subjectCols = map[string]bool{"contact_id": true, "org_id": true, "deal_id":
 // orgRefCard returns a compact {id,name,domain} reference for the contact/deal
 // "works at" relation, or nil when the org id is empty or the org row is
 // soft-deleted/absent (orphan tolerated, PLAN.md §8).
-func orgRefCard(tx *sql.Tx, orgID *string) (map[string]any, error) {
+func orgRefCard(tx *sql.Tx, orgID *string) (card map[string]any, resultErr error) {
 	if orgID == nil || *orgID == "" {
 		return nil, nil
 	}
@@ -114,7 +114,7 @@ func orgRefCard(tx *sql.Tx, orgID *string) (map[string]any, error) {
 }
 
 // contactCardsByOrg lists an organization's live contacts (newest-updated first).
-func contactCardsByOrg(tx *sql.Tx, orgID string) ([]map[string]any, error) {
+func contactCardsByOrg(tx *sql.Tx, orgID string) (cards []map[string]any, resultErr error) {
 	rows, err := tx.Query(`
 		SELECT id, display_name, lifecycle, title
 		FROM contacts WHERE org_id = ? AND deleted_at IS NULL
@@ -142,7 +142,7 @@ func contactCardsByOrg(tx *sql.Tx, orgID string) ([]map[string]any, error) {
 
 // openDealCardsByOrg lists an organization's live, open deals (status open =
 // stage not in won/lost).
-func openDealCardsByOrg(tx *sql.Tx, orgID string) ([]map[string]any, error) {
+func openDealCardsByOrg(tx *sql.Tx, orgID string) (cards []map[string]any, resultErr error) {
 	rows, err := tx.Query(`
 		SELECT id, name, stage, amount_cents, currency
 		FROM deals WHERE org_id = ? AND deleted_at IS NULL AND stage NOT IN ('won','lost')
@@ -154,7 +154,7 @@ func openDealCardsByOrg(tx *sql.Tx, orgID string) ([]map[string]any, error) {
 	return scanDealCards(rows)
 }
 
-func scanDealCards(rows *sql.Rows) ([]map[string]any, error) {
+func scanDealCards(rows *sql.Rows) (cards []map[string]any, resultErr error) {
 	out := []map[string]any{}
 	for rows.Next() {
 		var id, name, stage, currency string
@@ -173,7 +173,7 @@ func scanDealCards(rows *sql.Rows) ([]map[string]any, error) {
 
 // openDealCardsByContact lists the live, open deals a contact participates in
 // (via deal_contacts).
-func openDealCardsByContact(tx *sql.Tx, contactID string) ([]map[string]any, error) {
+func openDealCardsByContact(tx *sql.Tx, contactID string) (cards []map[string]any, resultErr error) {
 	rows, err := tx.Query(`
 		SELECT d.id, d.name, d.stage, d.amount_cents, d.currency
 		FROM deals d
@@ -188,7 +188,7 @@ func openDealCardsByContact(tx *sql.Tx, contactID string) ([]map[string]any, err
 }
 
 // recentInteractionCards lists the newest N interactions for a subject column.
-func recentInteractionCards(tx *sql.Tx, col, id string, limit int) ([]map[string]any, error) {
+func recentInteractionCards(tx *sql.Tx, col, id string, limit int) (cards []map[string]any, resultErr error) {
 	if !subjectCols[col] {
 		return nil, fmt.Errorf("invalid subject column %q", col)
 	}
@@ -212,7 +212,7 @@ func recentInteractionCards(tx *sql.Tx, col, id string, limit int) ([]map[string
 }
 
 // openTaskCards lists a subject's live, open tasks (due soonest first).
-func openTaskCards(tx *sql.Tx, col, id string) ([]map[string]any, error) {
+func openTaskCards(tx *sql.Tx, col, id string) (cards []map[string]any, resultErr error) {
 	if !subjectCols[col] {
 		return nil, fmt.Errorf("invalid subject column %q", col)
 	}
@@ -241,7 +241,7 @@ func openTaskCards(tx *sql.Tx, col, id string) ([]map[string]any, error) {
 }
 
 // dealParticipantCards lists a deal's live participant contacts with their roles.
-func dealParticipantCards(tx *sql.Tx, dealID string) ([]map[string]any, error) {
+func dealParticipantCards(tx *sql.Tx, dealID string) (cards []map[string]any, resultErr error) {
 	rows, err := tx.Query(`
 		SELECT c.id, c.display_name, dc.role
 		FROM deal_contacts dc
@@ -282,7 +282,7 @@ func dealStatus(stage string) string {
 
 // filterString extracts a non-empty string filter from a SearchParams.Filters
 // map, returning ok=false when absent, non-string, or empty.
-func filterString(f map[string]any, key string) (string, bool) {
+func filterString(f map[string]any, key string) (value string, ok bool) {
 	if f == nil {
 		return "", false
 	}
@@ -301,7 +301,7 @@ func filterString(f map[string]any, key string) (string, bool) {
 // after the row identified by afterID in `table` (every entity Search orders
 // updated_at DESC, id DESC). When afterID is empty or unknown it yields an
 // always-true predicate. table is a trusted internal constant, never user input.
-func keysetAfter(tx *sql.Tx, table, afterID string) (string, []any, error) {
+func keysetAfter(tx *sql.Tx, table, afterID string) (predicate string, args []any, resultErr error) {
 	if afterID == "" {
 		return "1=1", nil, nil
 	}
@@ -321,7 +321,7 @@ func keysetAfter(tx *sql.Tx, table, afterID string) (string, []any, error) {
 // named table. Used by the dispatcher to validate cross-entity FK targets and to
 // resolve subject ids. The table name is a trusted internal constant, never user
 // input.
-func liveExists(tx *sql.Tx, table, id string) (bool, error) {
+func liveExists(tx *sql.Tx, table, id string) (exists bool, resultErr error) {
 	if id == "" {
 		return false, nil
 	}

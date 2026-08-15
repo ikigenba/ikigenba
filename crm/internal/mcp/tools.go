@@ -23,11 +23,15 @@ type toolHandlers struct {
 
 // Tools returns crm's service-owned MCP tool declarations. The shared appkit
 // MCP transport appends the chassis health and reflection tools.
-func Tools(svc *crm.Service) []appkitmcp.Tool {
+func Tools(svc *crm.Service) (tools []appkitmcp.Tool) {
 	if svc == nil {
 		panic("mcp: crm service is required")
 	}
 	h := &toolHandlers{svc: svc}
+	return serviceTools(h)
+}
+
+func serviceTools(h *toolHandlers) (tools []appkitmcp.Tool) {
 	return []appkitmcp.Tool{
 		{
 			Name:        tool("search"),
@@ -242,7 +246,7 @@ func (h *toolHandlers) toolLog(ctx context.Context, raw json.RawMessage) (map[st
 }
 
 // errorCode maps crm domain errors onto the appkit MCP closed vocabulary.
-func errorCode(err error) (appkitmcp.ErrorCode, string) {
+func errorCode(err error) (code appkitmcp.ErrorCode, message string) {
 	var dup *crm.DuplicateError
 	var val *crm.ValidationError
 	switch {

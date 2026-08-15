@@ -71,34 +71,9 @@ func contactInsert(tx *sql.Tx, in ContactInput, now time.Time) (Summary, error) 
 }
 
 func contactUpdate(tx *sql.Tx, id string, in ContactInput, now time.Time) (Summary, error) {
-	sets := []string{"updated_at = ?"}
-	args := []any{fmtTime(now)}
-	if in.GivenName != nil {
-		sets = append(sets, "given_name = ?")
-		args = append(args, nullStrOrNil(*in.GivenName))
-	}
-	if in.FamilyName != nil {
-		sets = append(sets, "family_name = ?")
-		args = append(args, nullStrOrNil(*in.FamilyName))
-	}
-	if in.DisplayName != nil {
-		if strings.TrimSpace(*in.DisplayName) == "" {
-			return Summary{}, invalid("display_name", "display_name must not be empty")
-		}
-		sets = append(sets, "display_name = ?")
-		args = append(args, *in.DisplayName)
-	}
-	if in.OrgID != nil {
-		sets = append(sets, "org_id = ?")
-		args = append(args, nullStrOrNil(*in.OrgID))
-	}
-	if in.Title != nil {
-		sets = append(sets, "title = ?")
-		args = append(args, nullStrOrNil(*in.Title))
-	}
-	if in.Lifecycle != nil {
-		sets = append(sets, "lifecycle = ?")
-		args = append(args, *in.Lifecycle)
+	sets, args, err := contactUpdateFields(in, now)
+	if err != nil {
+		return Summary{}, err
 	}
 	args = append(args, id)
 	res, err := tx.Exec(`UPDATE contacts SET `+strings.Join(sets, ", ")+` WHERE id = ? AND deleted_at IS NULL`, args...)
@@ -133,6 +108,39 @@ func contactUpdate(tx *sql.Tx, id string, in ContactInput, now time.Time) (Summa
 	return s, nil
 }
 
+func contactUpdateFields(in ContactInput, now time.Time) (sets []string, args []any, err error) {
+	sets = []string{"updated_at = ?"}
+	args = []any{fmtTime(now)}
+	if in.GivenName != nil {
+		sets = append(sets, "given_name = ?")
+		args = append(args, nullStrOrNil(*in.GivenName))
+	}
+	if in.FamilyName != nil {
+		sets = append(sets, "family_name = ?")
+		args = append(args, nullStrOrNil(*in.FamilyName))
+	}
+	if in.DisplayName != nil {
+		if strings.TrimSpace(*in.DisplayName) == "" {
+			return nil, nil, invalid("display_name", "display_name must not be empty")
+		}
+		sets = append(sets, "display_name = ?")
+		args = append(args, *in.DisplayName)
+	}
+	if in.OrgID != nil {
+		sets = append(sets, "org_id = ?")
+		args = append(args, nullStrOrNil(*in.OrgID))
+	}
+	if in.Title != nil {
+		sets = append(sets, "title = ?")
+		args = append(args, nullStrOrNil(*in.Title))
+	}
+	if in.Lifecycle != nil {
+		sets = append(sets, "lifecycle = ?")
+		args = append(args, *in.Lifecycle)
+	}
+	return sets, args, nil
+}
+
 // orgIDVal binds org_id on insert: nil or "" is NULL.
 func orgIDVal(o *string) any {
 	if o == nil || *o == "" {
@@ -144,71 +152,60 @@ func orgIDVal(o *string) any {
 // ── declarative set reconcile (PLAN.md §4) ───────────────────────────────────
 
 func reconcileEmails(tx *sql.Tx, contactID string, desired []EmailInput, now time.Time) error {
-	live, err := liveChildValues(tx, "contact_emails", "email", contactID)
-	if err != nil {
-		return err
+	children := make([]contactChild, len(desired))
+	for i, email := range desired {
+		children[i] = contactChild{value: email.Email, label: email.Label}
 	}
-	want := map[string]bool{}
-	for _, e := range desired {
-		want[e.Email] = true
-	}
-	for email := range live {
-		if !want[email] {
-			if _, err := tx.Exec(`UPDATE contact_emails SET deleted_at = ? WHERE id = ?`, fmtTime(now), live[email]); err != nil {
-				return fmt.Errorf("soft-delete email: %w", err)
-			}
-		}
-	}
-	for _, e := range desired {
-		if _, ok := live[e.Email]; ok {
-			if _, err := tx.Exec(`UPDATE contact_emails SET label = ? WHERE contact_id = ? AND email = ? AND deleted_at IS NULL`,
-				nullStr(e.Label), contactID, e.Email); err != nil {
-				return fmt.Errorf("update email label: %w", err)
-			}
-			continue
-		}
-		if _, err := tx.Exec(`
-			INSERT INTO contact_emails (id, contact_id, email, label, is_primary, created_at, deleted_at)
-			VALUES (?, ?, ?, ?, 0, ?, NULL)`,
-			logging.NewULID(), contactID, e.Email, nullStr(e.Label), fmtTime(now)); err != nil {
-			return mapUniqueErr(err, "email")
-		}
-	}
-	return setPrimaryChild(tx, "contact_emails", "email", contactID, firstEmail(desired))
+	return reconcileContactChildren(tx, "contact_emails", "email", contactID, children, now)
 }
 
 func reconcilePhones(tx *sql.Tx, contactID string, desired []PhoneInput, now time.Time) error {
-	live, err := liveChildValues(tx, "contact_phones", "phone", contactID)
+	children := make([]contactChild, len(desired))
+	for i, phone := range desired {
+		children[i] = contactChild{value: phone.Phone, label: phone.Label}
+	}
+	return reconcileContactChildren(tx, "contact_phones", "phone", contactID, children, now)
+}
+
+type contactChild struct {
+	value string
+	label *string
+}
+
+func reconcileContactChildren(tx *sql.Tx, table, column, contactID string, desired []contactChild, now time.Time) error {
+	live, err := liveChildValues(tx, table, column, contactID)
 	if err != nil {
 		return err
 	}
 	want := map[string]bool{}
-	for _, p := range desired {
-		want[p.Phone] = true
+	for _, child := range desired {
+		want[child.value] = true
 	}
-	for phone := range live {
-		if !want[phone] {
-			if _, err := tx.Exec(`UPDATE contact_phones SET deleted_at = ? WHERE id = ?`, fmtTime(now), live[phone]); err != nil {
-				return fmt.Errorf("soft-delete phone: %w", err)
+	for value := range live {
+		if !want[value] {
+			if _, err := tx.Exec(`UPDATE `+table+` SET deleted_at = ? WHERE id = ?`, fmtTime(now), live[value]); err != nil {
+				return fmt.Errorf("soft-delete %s: %w", column, err)
 			}
 		}
 	}
-	for _, p := range desired {
-		if _, ok := live[p.Phone]; ok {
-			if _, err := tx.Exec(`UPDATE contact_phones SET label = ? WHERE contact_id = ? AND phone = ? AND deleted_at IS NULL`,
-				nullStr(p.Label), contactID, p.Phone); err != nil {
-				return fmt.Errorf("update phone label: %w", err)
+	for _, child := range desired {
+		if _, ok := live[child.value]; ok {
+			if _, err := tx.Exec(`UPDATE `+table+` SET label = ? WHERE contact_id = ? AND `+column+` = ? AND deleted_at IS NULL`,
+				nullStr(child.label), contactID, child.value); err != nil {
+				return fmt.Errorf("update %s label: %w", column, err)
 			}
 			continue
 		}
-		if _, err := tx.Exec(`
-			INSERT INTO contact_phones (id, contact_id, phone, label, is_primary, created_at, deleted_at)
-			VALUES (?, ?, ?, ?, 0, ?, NULL)`,
-			logging.NewULID(), contactID, p.Phone, nullStr(p.Label), fmtTime(now)); err != nil {
-			return mapUniqueErr(err, "phone")
+		if _, err := tx.Exec(`INSERT INTO `+table+` (id, contact_id, `+column+`, label, is_primary, created_at, deleted_at)
+			VALUES (?, ?, ?, ?, 0, ?, NULL)`, logging.NewULID(), contactID, child.value, nullStr(child.label), fmtTime(now)); err != nil {
+			return mapUniqueErr(err, column)
 		}
 	}
-	return setPrimaryChild(tx, "contact_phones", "phone", contactID, firstPhone(desired))
+	primary := ""
+	if len(desired) > 0 {
+		primary = desired[0].value
+	}
+	return setPrimaryChild(tx, table, column, contactID, primary)
 }
 
 // reconcileTags diffs the live tag set against the desired set, returning the
@@ -276,20 +273,6 @@ func setPrimaryChild(tx *sql.Tx, table, col, contactID, primary string) error {
 		return fmt.Errorf("promote %s: %w", table, err)
 	}
 	return nil
-}
-
-func firstEmail(es []EmailInput) string {
-	if len(es) == 0 {
-		return ""
-	}
-	return es[0].Email
-}
-
-func firstPhone(ps []PhoneInput) string {
-	if len(ps) == 0 {
-		return ""
-	}
-	return ps[0].Phone
 }
 
 // ── reads ────────────────────────────────────────────────────────────────────
@@ -395,43 +378,28 @@ func (contactStore) Get(tx *sql.Tx, id string) (Card, error) {
 }
 
 func emailCards(tx *sql.Tx, contactID string) ([]map[string]any, error) {
-	rows, err := tx.Query(`SELECT id, email, label, is_primary FROM contact_emails WHERE contact_id = ? AND deleted_at IS NULL ORDER BY is_primary DESC, created_at ASC, id ASC`, contactID)
-	if err != nil {
-		return nil, fmt.Errorf("emails: %w", err)
-	}
-	defer rows.Close()
-	out := []map[string]any{}
-	for rows.Next() {
-		var eid, email string
-		var label sql.NullString
-		var primary int
-		if err := rows.Scan(&eid, &email, &label, &primary); err != nil {
-			return nil, err
-		}
-		m := map[string]any{"id": eid, "email": email, "primary": primary != 0}
-		if label.Valid {
-			m["label"] = label.String
-		}
-		out = append(out, m)
-	}
-	return out, rows.Err()
+	return contactValueCards(tx, "contact_emails", "email", contactID)
 }
 
 func phoneCards(tx *sql.Tx, contactID string) ([]map[string]any, error) {
-	rows, err := tx.Query(`SELECT id, phone, label, is_primary FROM contact_phones WHERE contact_id = ? AND deleted_at IS NULL ORDER BY is_primary DESC, created_at ASC, id ASC`, contactID)
+	return contactValueCards(tx, "contact_phones", "phone", contactID)
+}
+
+func contactValueCards(tx *sql.Tx, table, column, contactID string) ([]map[string]any, error) {
+	rows, err := tx.Query(`SELECT id, `+column+`, label, is_primary FROM `+table+` WHERE contact_id = ? AND deleted_at IS NULL ORDER BY is_primary DESC, created_at ASC, id ASC`, contactID)
 	if err != nil {
-		return nil, fmt.Errorf("phones: %w", err)
+		return nil, fmt.Errorf("%s: %w", column, err)
 	}
 	defer rows.Close()
 	out := []map[string]any{}
 	for rows.Next() {
-		var pid, phone string
+		var id, value string
 		var label sql.NullString
 		var primary int
-		if err := rows.Scan(&pid, &phone, &label, &primary); err != nil {
+		if err := rows.Scan(&id, &value, &label, &primary); err != nil {
 			return nil, err
 		}
-		m := map[string]any{"id": pid, "phone": phone, "primary": primary != 0}
+		m := map[string]any{"id": id, column: value, "primary": primary != 0}
 		if label.Valid {
 			m["label"] = label.String
 		}
