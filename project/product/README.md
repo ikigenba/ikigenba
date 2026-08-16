@@ -110,6 +110,12 @@ This project owns the agreements that bind more than one tree:
   its tier, which shared tooling enforces the gate, and where in the build and
   release flow it binds — so style holds by system across sixteen trees rather
   than by review discipline in each.
+- **The LLM-lint gate** — the semantic, prompt-defined lint pass every tree's
+  verify gate additionally runs: that it binds suite-wide and automatically,
+  runs the whole rule catalog by default, how a tree tunes its own rules and
+  where the suite-wide baseline lives, and that it is a pass/fail gate the suite
+  pins nothing about — so a new anti-pattern rule holds across every tree the
+  moment it exists, without a per-tree adoption move.
 
 Out of scope — nothing else is promised here:
 
