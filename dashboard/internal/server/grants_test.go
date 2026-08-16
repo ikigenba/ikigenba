@@ -12,8 +12,24 @@ import (
 // streamResult carries a backgrounded SSE request's recorder and a done channel
 // closed when the handler returns (after the request context is cancelled).
 type streamResult struct {
-	rec  *httptest.ResponseRecorder
-	done chan struct{}
+	rec     *httptest.ResponseRecorder
+	flushed chan struct{}
+	done    chan struct{}
+}
+
+// flushSignalRecorder reports each SSE flush so tests can synchronize with
+// events actually written by the handler instead of guessing with sleeps.
+type flushSignalRecorder struct {
+	*httptest.ResponseRecorder
+	flushed chan struct{}
+}
+
+func (r *flushSignalRecorder) Flush() {
+	r.ResponseRecorder.Flush()
+	select {
+	case r.flushed <- struct{}{}:
+	default:
+	}
 }
 
 // doCtx runs a request on a background goroutine with the given (cancellable)
@@ -26,8 +42,12 @@ func doCtx(t *testing.T, srv *http.Server, ctx context.Context, method, target s
 	for k, v := range hdr {
 		req.Header.Set(k, v)
 	}
-	rec := httptest.NewRecorder()
-	sr := &streamResult{rec: rec, done: make(chan struct{})}
+	flushed := make(chan struct{}, 1)
+	rec := &flushSignalRecorder{
+		ResponseRecorder: httptest.NewRecorder(),
+		flushed:          flushed,
+	}
+	sr := &streamResult{rec: rec.ResponseRecorder, flushed: flushed, done: make(chan struct{})}
 	go func() {
 		srv.Handler.ServeHTTP(rec, req)
 		close(sr.done)
@@ -208,11 +228,29 @@ func TestGrantsStreamEmitsChainsEvent(t *testing.T) {
 	rec := doCtx(t, srv, ctx, "GET", "https://int.ikigenba.com/grants/stream",
 		map[string]string{"Cookie": cookie.Name + "=" + cookie.Value})
 
-	// Give the handler time to write the initial event and subscribe, then
-	// publish a change, then end the stream.
-	time.Sleep(50 * time.Millisecond)
-	deps.grants.Publish(owner)
-	time.Sleep(50 * time.Millisecond)
+	// Wait until the initial event is observable, then publish until the
+	// subscribed stream flushes the resulting event.
+	select {
+	case <-rec.flushed:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for initial chains event")
+	}
+	publishTicker := time.NewTicker(time.Millisecond)
+	publishDeadline := time.NewTimer(time.Second)
+	defer publishTicker.Stop()
+	defer publishDeadline.Stop()
+	for {
+		deps.grants.Publish(owner)
+		select {
+		case <-rec.flushed:
+			goto published
+		case <-publishTicker.C:
+		case <-publishDeadline.C:
+			t.Fatal("timed out waiting for published chains event")
+		}
+	}
+
+published:
 	cancel()
 	<-rec.done
 
