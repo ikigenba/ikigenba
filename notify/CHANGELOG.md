@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.25.0 — 2026-08-15
+
+- Adopted the suite-wide LLM-lint semantic test gate (D31). The test suite now
+  passes the semantic lint tier, with fixed-duration sleeps replaced by
+  deterministic synchronization. No user-facing behavior, API, schema, or data
+  changes; the shipped binary is functionally unchanged.
+
 ## v0.24.0 — 2026-08-15
 
 - Internal code-quality hardening: the service now conforms to the suite's strict mechanical lint tier (formatting, complexity, and style rules enforced by the shared lint gate). No user-facing behavior, API, or data changes.
