@@ -110,8 +110,12 @@ func TestInstalledLayoutBootsBuiltService(t *testing.T) {
 	client := &http.Client{Timeout: 500 * time.Millisecond}
 	var health map[string]any
 	healthy := false
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
+	deadline := time.NewTimer(10 * time.Second)
+	defer deadline.Stop()
+	poll := time.NewTicker(25 * time.Millisecond)
+	defer poll.Stop()
+healthCheck:
+	for {
 		response, requestErr := client.Get(baseURL + "/health")
 		if requestErr == nil {
 			decodeErr := json.NewDecoder(response.Body).Decode(&health)
@@ -121,7 +125,11 @@ func TestInstalledLayoutBootsBuiltService(t *testing.T) {
 				break
 			}
 		}
-		time.Sleep(25 * time.Millisecond)
+		select {
+		case <-poll.C:
+		case <-deadline.C:
+			break healthCheck
+		}
 	}
 	if !healthy {
 		stop()
