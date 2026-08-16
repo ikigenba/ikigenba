@@ -11,5 +11,3 @@ file — there is no done marker; done is gone. This file deliberately carries
 matches only phase lines.
 
 Next phase: 60
-
-- Phase 59 ⬜ realizes — — adopt the LLM-lint semantic gate (root project/design/D31.md)
