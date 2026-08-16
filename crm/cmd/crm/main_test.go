@@ -922,7 +922,11 @@ func waitForHealth(t *testing.T, port int, done <-chan error, stdout, stderr *by
 		} else {
 			last = err.Error()
 		}
-		time.Sleep(100 * time.Millisecond)
+		select {
+		case err := <-done:
+			t.Fatalf("crm exited while waiting to retry health: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
 	t.Fatalf("crm never served health at %s: %s\nstdout:\n%s\nstderr:\n%s", url, last, stdout.String(), stderr.String())
 	return nil
