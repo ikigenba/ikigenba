@@ -39,7 +39,8 @@ spec contracts and `$ralph` for the unattended build workflow.
   composed layer is the boot smokes in `cmd/cron/main_test.go`; everything else
   is hermetic, and there is no tree-local manual layer.
 - Environmental preconditions beyond the Go toolchain: `llm-lint` on `PATH`
-  and the provider API key required by its configured default model.
+  and the provider API key required by its configured default model; if either
+  is absent, the green gate fails rather than passing vacuously.
 - GOWORK mode: workspace for local development; `GOWORK=off` for the production
   build.
 
