@@ -11,5 +11,3 @@ anchored grep matches only phase lines.
 
 Next phase: 14
 
-- Phase 13 ⬜ realizes — — adopt the LLM-lint semantic gate (root project/design/D31.md)
-
