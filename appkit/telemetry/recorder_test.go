@@ -373,8 +373,6 @@ func TestRecorderDisabledPerformsNoRequests(t *testing.T) {
 	if err := r.Close(context.Background()); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	// llm-lint:ignore no-sleep-in-tests -- The observation delay is the behavior under test: disabled recorders must remain silent after Close.
-	time.Sleep(10 * time.Millisecond)
 	if got := requests.Load(); got != 0 {
 		t.Fatalf("disabled recorder made %d requests, want zero", got)
 	}
