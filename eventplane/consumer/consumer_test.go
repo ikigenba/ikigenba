@@ -1098,13 +1098,18 @@ func TestPanickingObservationLeavesThreeEventDeliveryUnchanged(t *testing.T) {
 
 		var replayed int
 		var replayMu sync.Mutex
-		stopReplay := runConsumer(t, cfg, func(context.Context, Event) error {
+		var replayLog syncBuffer
+		replayCfg := cfg
+		replayCfg.Logger = slog.New(slog.NewTextHandler(&replayLog, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		stopReplay := runConsumer(t, replayCfg, func(context.Context, Event) error {
 			replayMu.Lock()
 			replayed++
 			replayMu.Unlock()
 			return nil
 		})
-		time.Sleep(30 * time.Millisecond)
+		waitFor(t, "replay consumer caught up", func() bool {
+			return strings.Contains(replayLog.String(), "caught up")
+		})
 		stopReplay()
 		replayMu.Lock()
 		defer replayMu.Unlock()

@@ -3,6 +3,7 @@ package outbox
 import (
 	"context"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,17 +15,20 @@ import (
 type blockingRW struct {
 	header    http.Header
 	allow     chan struct{} // each Write waits for one token before completing
-	completed atomic.Int64  // frames fully written
+	entered   chan struct{} // closed when the producer reaches its first Write
+	enterOnce sync.Once
+	completed atomic.Int64 // frames fully written
 }
 
 func newBlockingRW() *blockingRW {
-	return &blockingRW{header: http.Header{}, allow: make(chan struct{})}
+	return &blockingRW{header: http.Header{}, allow: make(chan struct{}), entered: make(chan struct{})}
 }
 
 func (b *blockingRW) Header() http.Header { return b.header }
 func (b *blockingRW) WriteHeader(int)     {}
 func (b *blockingRW) Flush()              {}
 func (b *blockingRW) Write(p []byte) (int, error) {
+	b.enterOnce.Do(func() { close(b.entered) })
 	<-b.allow // block until the test grants this write
 	b.completed.Add(1)
 	return len(p), nil
@@ -55,7 +59,11 @@ func TestBackpressure_WriteBlocksBacklogStaysOnDisk(t *testing.T) {
 
 	// With the reader stalled, the producer must be blocked inside Write with
 	// nothing completed and the entire backlog still on disk.
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-rw.entered:
+	case <-time.After(time.Second):
+		t.Fatal("producer did not reach the stalled writer")
+	}
 	if n := rw.completed.Load(); n != 0 {
 		t.Fatalf("producer wrote %d frames to a stalled reader; write() must block", n)
 	}
