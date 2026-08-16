@@ -1036,9 +1036,12 @@ func waitForHealth(t *testing.T, port int, done <-chan error, stdout, stderr *by
 	t.Helper()
 	url := fmt.Sprintf("http://127.0.0.1:%d/health", port)
 	client := http.Client{Timeout: 250 * time.Millisecond}
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	retry := time.NewTicker(100 * time.Millisecond)
+	defer retry.Stop()
 	var last string
-	for time.Now().Before(deadline) {
+	for {
 		select {
 		case err := <-done:
 			t.Fatalf("cron exited before health: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
@@ -1060,10 +1063,15 @@ func waitForHealth(t *testing.T, port int, done <-chan error, stdout, stderr *by
 		} else {
 			last = err.Error()
 		}
-		time.Sleep(100 * time.Millisecond) // llm-lint:ignore
+
+		select {
+		case err := <-done:
+			t.Fatalf("cron exited before health: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+		case <-retry.C:
+		case <-deadline.C:
+			t.Fatalf("cron never served health at %s: %s\nstdout:\n%s\nstderr:\n%s", url, last, stdout.String(), stderr.String())
+		}
 	}
-	t.Fatalf("cron never served health at %s: %s\nstdout:\n%s\nstderr:\n%s", url, last, stdout.String(), stderr.String())
-	return nil
 }
 
 func stopProcess(cancel context.CancelFunc, done <-chan error) {
