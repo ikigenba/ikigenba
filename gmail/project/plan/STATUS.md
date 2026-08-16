@@ -9,5 +9,7 @@ loop deletes the phase's line and body file — there is no done marker; done is
 gone. This file deliberately carries **no bare status glyph** anywhere but on a
 phase line, so the anchored grep matches only phase lines.
 
-Next phase: 31
+Next phase: 32
+
+- Phase 31 ⬜ realizes — — adopt the LLM-lint semantic gate (root project/design/D31.md)
 

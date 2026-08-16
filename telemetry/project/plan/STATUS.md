@@ -13,4 +13,6 @@ gone. A phase body file carries no marker of its own. This document
 deliberately carries **no** bare status glyph outside the phase lines, so the
 anchored grep matches only phase lines.
 
-Next phase: 18
+Next phase: 19
+
+- Phase 18 ⬜ realizes — — adopt the LLM-lint semantic gate (root project/design/D31.md)

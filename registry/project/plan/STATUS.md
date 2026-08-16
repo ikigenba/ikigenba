@@ -11,4 +11,6 @@ line and its `phase-NN.md` body file in the completion commit — there is no
 `✅` marker; done is gone. This file deliberately carries **no bare status
 glyph** outside phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 08
+Next phase: 09
+
+- Phase 08 ⬜ realizes — — adopt the LLM-lint semantic gate (root project/design/D31.md)

@@ -9,5 +9,7 @@ that phase's line here and its `project/plan/phase-NN.md` body file — there is
 done marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
-Next phase: 23
+Next phase: 24
+
+- Phase 23 ⬜ realizes — — adopt the LLM-lint semantic gate (root project/design/D31.md)
 

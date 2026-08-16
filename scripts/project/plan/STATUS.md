@@ -9,5 +9,7 @@ reads only that phase's `project/plan/phase-NN.md`, builds it, and on completion
 marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
-Next phase: 49
+Next phase: 50
+
+- Phase 49 ⬜ realizes — — adopt the LLM-lint semantic gate (root project/design/D31.md)
 

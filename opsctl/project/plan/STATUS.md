@@ -10,4 +10,6 @@ is no done marker; done is gone. This file deliberately carries **no bare
 status glyph** outside phase lines, so the anchored grep matches only phase
 lines.
 
-Next phase: 26
+Next phase: 27
+
+- Phase 26 ⬜ realizes — — adopt the LLM-lint semantic gate (root project/design/D31.md)

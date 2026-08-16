@@ -12,7 +12,9 @@ gone. A phase body file carries no marker of its own. This document deliberately
 carries **no** bare status glyph outside the phase lines, so the anchored grep
 matches only phase lines.
 
-Next phase: 06
+Next phase: 07
+
+- Phase 06 ⬜ realizes — — adopt the LLM-lint semantic gate (root project/design/D31.md)
 
 
 The artifacts of D1, D2, and D3 already exist in the tree — this spec was written

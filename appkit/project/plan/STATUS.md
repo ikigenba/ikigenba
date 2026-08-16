@@ -9,7 +9,9 @@ phase's `project/plan/phase-NN.md`, builds it, and on completion **deletes**
 that phase's line here and its `phase-NN.md` file. This file deliberately
 carries **no bare status glyph** anywhere but on a phase line.
 
-Next phase: 35
+Next phase: 36
+
+- Phase 35 ⬜ realizes — — adopt the LLM-lint semantic gate (root project/design/D31.md)
 
 
 
