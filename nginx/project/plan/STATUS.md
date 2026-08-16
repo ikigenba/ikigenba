@@ -14,8 +14,6 @@ matches only phase lines.
 
 Next phase: 07
 
-- Phase 06 ⬜ realizes — — adopt the LLM-lint semantic gate (root project/design/D31.md)
-
 
 The artifacts of D1, D2, and D3 already exist in the tree — this spec was written
 over working code, not ahead of it — so those Decisions queued no initial work.
