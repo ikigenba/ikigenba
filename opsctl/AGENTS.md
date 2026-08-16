@@ -32,7 +32,8 @@ spec contracts and `$ralph` for the unattended build workflow.
 
 The default gate is `GOWORK=off go test ./...`, run from `opsctl/`. The production
 build and the test gate both use `GOWORK=off`; build separately with
-`GOWORK=off go build ./...`.
+`GOWORK=off go build ./...`. The semantic gate is `llm-lint "$PWD"`, also run
+from `opsctl/`; it must exit successfully with no findings.
 
 This tree has exactly two testing layers:
 
