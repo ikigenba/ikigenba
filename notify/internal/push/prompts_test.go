@@ -142,7 +142,6 @@ func TestPromptsHandlerMalformedPayloadSkips(t *testing.T) {
 	if !errors.Is(err, consumer.ErrSkip) {
 		t.Fatalf("malformed payload error does not satisfy errors.Is(err, ErrSkip): %v", err)
 	}
-	time.Sleep(20 * time.Millisecond)
 	if got := ntfy.snapshot(); len(got) != 0 {
 		t.Fatalf("malformed payload fired %d pushes, want 0", len(got))
 	}
@@ -160,7 +159,6 @@ func TestPromptsHandlerNonMatchingTypeAdvances(t *testing.T) {
 	if err := h(context.Background(), ev); err != nil {
 		t.Fatalf("non-matching type returned %v, want nil", err)
 	}
-	time.Sleep(20 * time.Millisecond)
 	if got := ntfy.snapshot(); len(got) != 0 {
 		t.Fatalf("non-matching type fired %d pushes, want 0", len(got))
 	}
@@ -173,8 +171,10 @@ func TestPromptsHandlerNonMatchingTypeAdvances(t *testing.T) {
 func TestPromptsHandlerPushFailureReturnsNil(t *testing.T) {
 	discard := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	// A sink that always 500s — the push attempt is made and fails.
+	attempted := make(chan struct{}, 1)
 	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
+		attempted <- struct{}{}
 	}))
 	t.Cleanup(failing.Close)
 	client := push.NewClient(failing.URL, "topic", "tok", &http.Client{}, discard)
@@ -190,9 +190,11 @@ func TestPromptsHandlerPushFailureReturnsNil(t *testing.T) {
 	if err := h(context.Background(), ev); err != nil {
 		t.Fatalf("push failure must not stall: handler returned %v, want nil", err)
 	}
-	// Give the detached push goroutine a moment to fail; the handler already
-	// returned nil, which is the whole point.
-	time.Sleep(20 * time.Millisecond)
+	select {
+	case <-attempted:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for the failed push attempt")
+	}
 }
 
 // R-ZEWN-6ZQZ

@@ -49,8 +49,6 @@ func TestHandlerMalformedPayloadSkips(t *testing.T) {
 	if !errors.Is(err, consumer.ErrSkip) {
 		t.Fatalf("malformed payload error does not satisfy errors.Is(err, ErrSkip): %v", err)
 	}
-	// Give any (incorrect) async push a moment; there must be none.
-	time.Sleep(20 * time.Millisecond)
 	if got := ntfy.snapshot(); len(got) != 0 {
 		t.Fatalf("malformed payload fired %d pushes, want 0", len(got))
 	}
@@ -68,7 +66,6 @@ func TestHandlerNonMatchingTypeAdvances(t *testing.T) {
 	if err := h(context.Background(), ev); err != nil {
 		t.Fatalf("non-matching type returned %v, want nil", err)
 	}
-	time.Sleep(20 * time.Millisecond)
 	if got := ntfy.snapshot(); len(got) != 0 {
 		t.Fatalf("non-matching type fired %d pushes, want 0", len(got))
 	}
@@ -94,7 +91,6 @@ func TestSubscriptionMatchesCanonicalContactKey(t *testing.T) {
 	if err := h(context.Background(), consumer.Event{Source: "crm", Kind: "contact.updated", Subject: "/01JCONTACT", Payload: json.RawMessage(`{"display_name":"Ada"}`)}); err != nil {
 		t.Fatalf("contact.updated returned %v", err)
 	}
-	time.Sleep(20 * time.Millisecond)
 	if got := ntfy.snapshot(); len(got) != 1 {
 		t.Fatalf("contact.updated made %d pushes, want 1", len(got))
 	}
