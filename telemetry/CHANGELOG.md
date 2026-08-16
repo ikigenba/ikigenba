@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.11.0 — 2026-08-15
+
+- Adopted the suite-wide LLM-lint semantic gate (D31); the existing test suite
+  already satisfied it, so no code or test changes were required. Bumped as part
+  of the suite-wide gate-adoption release. No user-facing behavior, API, schema,
+  or data changes; the shipped binary is functionally unchanged.
+
 ## v0.10.0 — 2026-08-15
 
 - Internal code-quality hardening: the service now conforms to the suite's strict mechanical lint tier (formatting, complexity, and style rules enforced by the shared lint gate). No user-facing behavior, API, or data changes.
