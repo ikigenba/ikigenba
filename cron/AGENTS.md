@@ -41,6 +41,9 @@ spec contracts and `$ralph` for the unattended build workflow.
 - Environmental preconditions beyond the Go toolchain: `llm-lint` on `PATH`
   and the provider API key required by its configured default model; if either
   is absent, the green gate fails rather than passing vacuously.
+- Invoke `llm-lint "$PWD"` directly: the absolute path scopes the gate to cron,
+  and cron inherits the repo-root `.llm-lint.json` unless a deliberate
+  tree-local replacement is committed.
 - GOWORK mode: workspace for local development; `GOWORK=off` for the production
   build.
 

@@ -124,6 +124,7 @@ func TestAgentsDeclaresCronTestingFacts(t *testing.T) {
 		{"green gate commands", "Green also means clean `go build ./...`, `go vet ./...`, `gofmt -l .`, and `llm-lint \"$PWD\"` from `cron/`."},
 		{"layers present", "Layers present: **hermetic** and **composed**; there is no **live** layer."},
 		{"environmental preconditions", "Environmental preconditions beyond the Go toolchain: `llm-lint` on `PATH` and the provider API key required by its configured default model; if either is absent, the green gate fails rather than passing vacuously."},
+		{"lint invocation and config", "Invoke `llm-lint \"$PWD\"` directly: the absolute path scopes the gate to cron, and cron inherits the repo-root `.llm-lint.json` unless a deliberate tree-local replacement is committed."},
 		{"GOWORK mode", "GOWORK mode: workspace for local development; `GOWORK=off` for the production build."},
 	}
 	for _, declaration := range declarations {
