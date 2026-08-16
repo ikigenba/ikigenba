@@ -72,11 +72,16 @@ func seedScript(t *testing.T, s *Store, owner string) Script {
 
 func seedRun(t *testing.T, s *Store, scriptID, status string) Run {
 	t.Helper()
+	return seedRunAt(t, s, scriptID, status, nowStr())
+}
+
+func seedRunAt(t *testing.T, s *Store, scriptID, status, startedAt string) Run {
+	t.Helper()
 	r := Run{
 		ID:         ids.NewULID(),
 		ScriptID:   scriptID,
 		Status:     status,
-		StartedAt:  nowStr(),
+		StartedAt:  startedAt,
 		StdoutPath: "runs/x/stdout.log",
 		StderrPath: "runs/x/stderr.log",
 	}
@@ -282,10 +287,9 @@ func TestRunningCountAndLastRun(t *testing.T) {
 		t.Fatalf("LastRun none: want nil, got %+v err=%v", last, err)
 	}
 
-	seedRun(t, s, sc.ID, RunRunning)
-	time.Sleep(2 * time.Millisecond)
-	r2 := seedRun(t, s, sc.ID, RunRunning)
-	seedRun(t, s, sc.ID, RunSucceeded)
+	seedRunAt(t, s, sc.ID, RunRunning, "2025-01-01T00:00:00Z")
+	seedRunAt(t, s, sc.ID, RunRunning, "2025-01-01T00:00:01Z")
+	newest := seedRunAt(t, s, sc.ID, RunSucceeded, "2025-01-01T00:00:02Z")
 
 	n, err := s.RunningCount(ctx, sc.ID)
 	if err != nil || n != 2 {
@@ -295,7 +299,9 @@ func TestRunningCountAndLastRun(t *testing.T) {
 	if err != nil || last == nil {
 		t.Fatalf("LastRun: %+v err=%v", last, err)
 	}
-	_ = r2 // ordering by started_at; the succeeded one was inserted last
+	if last.ID != newest.ID {
+		t.Fatalf("LastRun ID = %q, want newest run %q", last.ID, newest.ID)
+	}
 }
 
 func TestSweepRunning(t *testing.T) {
