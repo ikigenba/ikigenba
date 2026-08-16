@@ -11,5 +11,3 @@ glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
 Next phase: 180
-
-- Phase 179 ⬜ realizes — — adopt the LLM-lint semantic gate (root project/design/D31.md)
