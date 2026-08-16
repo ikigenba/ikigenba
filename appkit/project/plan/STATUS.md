@@ -11,7 +11,6 @@ carries **no bare status glyph** anywhere but on a phase line.
 
 Next phase: 36
 
-- Phase 35 ⬜ realizes — — adopt the LLM-lint semantic gate (root project/design/D31.md)
 
 
 
