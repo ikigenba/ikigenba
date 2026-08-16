@@ -21,13 +21,17 @@ func TestAgentsDeclaresTestingFacts(t *testing.T) {
 	if end := strings.Index(testsSection, "\n## "); end >= 0 {
 		testsSection = testsSection[:end]
 	}
+	testsSection = strings.Join(strings.Fields(testsSection), " ")
 
 	required := []string{
 		"cd ledger && go test ./...",
 		"hermetic and composed",
 		"no live layer",
 		"no manual layer",
-		"Environmental preconditions beyond the Go toolchain: none",
+		"llm-lint \"$PWD\"",
+		"absolute path keeps the lint scoped to this tree",
+		"`llm-lint` binary on `PATH`",
+		"provider API key required by its configured default model",
 		"workspace GOWORK mode",
 		"cd ledger && GOWORK=off go build ./...",
 	}

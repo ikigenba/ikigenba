@@ -37,7 +37,9 @@ spec contracts and `$ralph` for the unattended build workflow.
 
 The default-gate test command is `cd ledger && go test ./...`. It runs inside
 the green bar of `go build ./...`, `go vet ./...`, a silent `gofmt -l .`, and
-`go test ./...`.
+`go test ./...`, followed by the isolated build check and the semantic lint
+gate. Run the latter from the ledger root as `llm-lint "$PWD"`; the absolute
+path keeps the lint scoped to this tree.
 
 The suite has two layers: hermetic and composed. There is no live layer and no
 manual layer.
@@ -58,9 +60,11 @@ manual layer.
 - There is no manual layer or ledger-specific runbook; whole-stack composition
   belongs to the umbrella suite.
 
-Environmental preconditions beyond the Go toolchain: none. The composed smoke
-uses only `go build` and the binary it builds; tests require no `git`, `python3`,
-browser, credential, external service, or running suite.
+Environmental preconditions beyond the Go toolchain are the `llm-lint` binary
+on `PATH` and the provider API key required by its configured default model.
+Their absence fails the semantic lint gate. The composed smoke uses only
+`go build` and the binary it builds; tests require no `git`, `python3`, browser,
+credential, external service, or running suite.
 
 The gate uses workspace GOWORK mode, resolving `appkit`, `eventplane`, and
 `registry` through the repository `go.work` and committed sibling replacements.
