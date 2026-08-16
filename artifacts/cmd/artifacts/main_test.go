@@ -450,6 +450,7 @@ func waitForHealth(t *testing.T, port int, done <-chan error, stdout, stderr *by
 			}
 			return doc
 		}
+		// llm-lint:ignore no-sleep-in-tests -- bounded polling of the real health endpoint waits for process readiness.
 		time.Sleep(25 * time.Millisecond)
 	}
 	t.Fatalf("health did not become ready\nstdout:\n%s\nstderr:\n%s", stdout, stderr)
