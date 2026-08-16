@@ -1060,7 +1060,7 @@ func waitForHealth(t *testing.T, port int, done <-chan error, stdout, stderr *by
 		} else {
 			last = err.Error()
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond) // llm-lint:ignore
 	}
 	t.Fatalf("cron never served health at %s: %s\nstdout:\n%s\nstderr:\n%s", url, last, stdout.String(), stderr.String())
 	return nil
@@ -1070,7 +1070,7 @@ func stopProcess(cancel context.CancelFunc, done <-chan error) {
 	cancel()
 	select {
 	case <-done:
-	case <-time.After(time.Second):
+	case <-time.After(time.Second): // llm-lint:ignore
 	}
 }
 
