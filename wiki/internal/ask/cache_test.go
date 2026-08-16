@@ -17,6 +17,17 @@ func (f providerFunc) Ask(ctx context.Context, scope, owner, question string) (A
 	return f(ctx, scope, owner, question)
 }
 
+type doneObservedContext struct {
+	context.Context
+	once     sync.Once
+	observed chan struct{}
+}
+
+func (c *doneObservedContext) Done() <-chan struct{} {
+	c.once.Do(func() { close(c.observed) })
+	return c.Context.Done()
+}
+
 func TestCacheHitServesStoredAnswer(t *testing.T) {
 	// R-02RF-HMOW
 	var calls atomic.Int32
@@ -122,17 +133,22 @@ func TestCacheCoalescesConcurrentIdenticalAsks(t *testing.T) {
 	results := make(chan Answer, n)
 	errs := make(chan error, n)
 	start := make(chan struct{})
-	for range n {
+	entered := make([]chan struct{}, n)
+	for i := range n {
+		entered[i] = make(chan struct{})
+		ctx := &doneObservedContext{Context: context.Background(), observed: entered[i]}
 		go func() {
 			<-start
-			answer, err := cache.Ask(context.Background(), "s", "owner", "question")
+			answer, err := cache.Ask(ctx, "s", "owner", "question")
 			results <- answer
 			errs <- err
 		}()
 	}
 	close(start)
 	awaitSignal(t, started, "provider start")
-	time.Sleep(20 * time.Millisecond)
+	for _, waiter := range entered {
+		awaitSignal(t, waiter, "cache waiter entry")
+	}
 	close(release)
 	for range n {
 		if err := <-errs; err != nil {
@@ -229,16 +245,21 @@ func TestCacheSharesErrorsAndRecomputesAfterFailure(t *testing.T) {
 	const n = 8
 	errs := make(chan error, n)
 	start := make(chan struct{})
-	for range n {
+	entered := make([]chan struct{}, n)
+	for i := range n {
+		entered[i] = make(chan struct{})
+		ctx := &doneObservedContext{Context: context.Background(), observed: entered[i]}
 		go func() {
 			<-start
-			_, err := cache.Ask(context.Background(), "s", "", "question")
+			_, err := cache.Ask(ctx, "s", "", "question")
 			errs <- err
 		}()
 	}
 	close(start)
 	awaitSignal(t, started, "provider start")
-	time.Sleep(20 * time.Millisecond)
+	for _, waiter := range entered {
+		awaitSignal(t, waiter, "cache waiter entry")
+	}
 	close(release)
 	for range n {
 		if err := <-errs; err != wantErr {

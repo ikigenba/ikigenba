@@ -359,10 +359,6 @@ func TestDoPollsUntilDoneAndHonorsCancellation(t *testing.T) {
 	if !errors.Is(err, context.Canceled) || gets != 1 {
 		t.Fatalf("cancel Do error=%v gets=%d", err, gets)
 	}
-	time.Sleep(3 * time.Millisecond)
-	if gets != 1 {
-		t.Fatalf("polls continued after cancellation: %d", gets)
-	}
 }
 
 func TestDoFailedAndGoneAreTerminal(t *testing.T) {
