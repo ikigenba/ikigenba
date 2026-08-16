@@ -32,12 +32,14 @@ spec contracts and `$ralph` for the unattended build workflow.
 
 ## Tests
 
-- Default gate: `go test ./...` from `cron/`.
-- Green also means clean `go build ./...`, `go vet ./...`, and `gofmt -l .`.
+- Default test gate: `go test ./...` from `cron/`.
+- Green also means clean `go build ./...`, `go vet ./...`, `gofmt -l .`, and
+  `llm-lint "$PWD"` from `cron/`.
 - Layers present: **hermetic** and **composed**; there is no **live** layer. The
   composed layer is the boot smokes in `cmd/cron/main_test.go`; everything else
   is hermetic, and there is no tree-local manual layer.
-- Environmental preconditions beyond the Go toolchain: none.
+- Environmental preconditions beyond the Go toolchain: `llm-lint` on `PATH`
+  and the provider API key required by its configured default model.
 - GOWORK mode: workspace for local development; `GOWORK=off` for the production
   build.
 
