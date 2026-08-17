@@ -8,7 +8,7 @@ ids change.
 ## Decisions
 
 - **D1** → `bin/project/design/D01.md` — Version production: `bin/bump` and `bin/ship` — ids: none (bash orchestration in the deliberately-untested tier; consumer-side proof on the box)
-- **D2** → `bin/project/design/D02.md` — `bin/push-secrets`: seeding a service's deployed secrets from its `etc/env.list` — ids: none (bash orchestration around a live cloud API; verified once outside the loop)
+- **D2** → `bin/project/design/D02.md` — `bin/push-secrets`: seeding a service's deployed secrets from its `etc/env.list` — ids: none minted here; realizes the umbrella's R-EJ1W-1G19 (owned by `root project/design/D32.md`, `[proof: bin]`) — the channel-5 exclusion, hermetically tested via `--dry-run`; the live-push half stays untested-tier
 - **D3** → `bin/project/design/D03.md` — The local dev stack: `bin/start` / `bin/stop`, and how a service joins it — ids: none (untested orchestration; its staging half's ids belong to D5)
 - **D4** → `bin/project/design/D04.md` — `bin/create-migration`: the single mint for a migration version — ids: none (bash in the untested tier; verified once outside the loop)
 - **D5** → `bin/project/design/D05.md` — The manifest readers are proven under the green gate (`bin/bintest`) — ids: R-V3XG-PB8R, R-V6D9-GUQ5, R-V7L5-UMGU
@@ -27,6 +27,7 @@ ids change.
 - R-CLTU-B00M → D8 (`bin/project/design/D08.md`; owned by `root project/design/D28.md`)
 - R-CN1Q-ORRB → D8 (`bin/project/design/D08.md`; owned by `root project/design/D28.md`)
 - R-CO9N-2JI0 → D8 (`bin/project/design/D08.md`; owned by `root project/design/D28.md`)
+- R-EJ1W-1G19 → D2 (`bin/project/design/D02.md`; owned by `root project/design/D32.md`)
 - R-O1AD-MRKW → D7 (`bin/project/design/D07.md`; owned by `root project/design/D23.md`)
 - R-O2IA-0JBL → D7 (`bin/project/design/D07.md`; owned by `root project/design/D23.md`)
 - R-V3XG-PB8R → D5 (`bin/project/design/D05.md`)

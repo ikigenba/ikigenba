@@ -11,4 +11,6 @@ line here and its body file** in the completion commit — there is no done
 marker; done is deleted, and history lives in git. This file carries no bare
 status glyph outside phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 13
+Next phase: 14
+
+- Phase 13 ⬜ realizes R-EJ1W-1G19 — push-secrets recognizes `rotating` lines and never pushes them (channel-5 exclusion)
