@@ -41,8 +41,9 @@ spec contracts and `$ralph` for the unattended build workflow.
 - GOWORK mode: workspace, using the repo-root `go.work`; the production build
   forces `GOWORK=off` through `bin/ship dropbox`.
 - Live invocation: `go test -tags live ./...`. It requires `DROPBOX_APP_KEY`,
-  `DROPBOX_APP_SECRET`, and `DROPBOX_REFRESH_TOKEN` from the suite `.envrc`;
-  optional `DROPBOX_APP_FOLDER_ROOT` scopes the smoke below the app-folder root.
+  `DROPBOX_APP_SECRET`, and `IKIGENBA_ROOT` from the environment, with the
+  refresh token seeded at `dropbox/state/DROPBOX_REFRESH_TOKEN`; optional
+  `DROPBOX_APP_FOLDER_ROOT` scopes the smoke below the app-folder root.
 - Run the live invocation during deploy verification and whenever a change
   touches `internal/dropbox/client.go` or the uploader.
 

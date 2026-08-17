@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -69,6 +71,41 @@ func TestClientUsesInjectedInstrumentedSeamWithoutLeakingCorrelationHeader(t *te
 		if !strings.HasSuffix(request, ":") {
 			t.Fatalf("request leaked %s: %q", correlation.Header, request)
 		}
+	}
+}
+
+func TestTokenRefreshPersistsRotatedRefreshToken(t *testing.T) {
+	stateDir := t.TempDir()
+	path := filepath.Join(stateDir, "DROPBOX_REFRESH_TOKEN")
+	if err := os.WriteFile(path, []byte("seed-token"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"access_token": "access-token", "expires_in": 3600, "refresh_token": "rotated-token",
+		})
+	}))
+	defer srv.Close()
+	base, _ := url.Parse(srv.URL)
+	httpClient := &http.Client{Transport: &rewriteTransport{target: base, inner: http.DefaultTransport}}
+	source := &tokenSource{
+		appKey: "key", appSecret: "secret", refreshToken: "seed-token",
+		refreshTokenPath: path, httpClient: httpClient,
+	}
+	if err := source.refreshLocked(context.Background()); err != nil {
+		t.Fatalf("refreshLocked: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	// R-EP5D-YAQQ
+	if err != nil || string(got) != "rotated-token" {
+		t.Fatalf("rotated refresh token = %q, %v; want rotated-token, nil", got, err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat rotated refresh token: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("rotated refresh token mode = %v; want 0600", info.Mode().Perm())
 	}
 }
 

@@ -55,6 +55,36 @@ func TestRegistrySourcePortsIncludesEveryRegisteredServiceAndNoExtras(t *testing
 	}
 }
 
+func TestReadRefreshTokenUsesServiceStateAndNamesMissingCredential(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "dropbox", "state", "DROPBOX_REFRESH_TOKEN")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("seed-token"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	getenv := func(key string) string {
+		if key == "IKIGENBA_ROOT" {
+			return root
+		}
+		return ""
+	}
+	got, gotPath, err := readRefreshToken(getenv)
+	// R-ENXH-KJ01
+	if err != nil || got != "seed-token" || gotPath != path {
+		t.Fatalf("readRefreshToken = %q, %q, %v; want seed-token, %q, nil", got, gotPath, err, path)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	_, _, err = readRefreshToken(getenv)
+	// R-ENXH-KJ01
+	if err == nil || !strings.Contains(err.Error(), "DROPBOX_REFRESH_TOKEN") {
+		t.Fatalf("readRefreshToken missing error = %v; want credential-naming failure", err)
+	}
+}
+
 type recordingHTTPClientFactory struct {
 	timeouts []time.Duration
 }
@@ -572,6 +602,9 @@ func TestDropboxBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
 	}
+	if err := os.WriteFile(filepath.Join(stateDir, "DROPBOX_REFRESH_TOKEN"), []byte("composed-test-token"), 0o600); err != nil {
+		t.Fatalf("seed DROPBOX_REFRESH_TOKEN: %v", err)
+	}
 
 	versionBytes, err := os.ReadFile(filepath.Join("..", "..", "VERSION"))
 	if err != nil {
@@ -643,7 +676,7 @@ func TestDropboxBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 	cmd := exec.CommandContext(ctx, run, "serve")
 	cmd.Env = testEnv(map[string]string{
 		"IKIGENBA_DOMAIN":         "",
-		"IKIGENBA_ROOT":           "",
+		"IKIGENBA_ROOT":           root,
 		"DROPBOX_IP":              "127.0.0.1",
 		"DROPBOX_PORT":            fmt.Sprintf("%d", port),
 		"DROPBOX_DB_PATH":         dbPath,

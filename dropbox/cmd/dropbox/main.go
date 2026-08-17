@@ -19,9 +19,9 @@
 // for the whole serve lifecycle, so it is wired through appkit's Workers seam —
 // appkit launches it on the serve context, a SIGTERM cancels it alongside the
 // server, and a structural fault returning from it brings the server down too
-// (event-protocol.md decision 11). The three Dropbox secrets are read here at
-// dropbox's own composition root via getenv and never logged (§2.8); appkit never
-// touches them.
+// (event-protocol.md decision 11). The static Dropbox OAuth credentials are
+// read here from the environment, while the rotating refresh token is read from
+// state/. None are logged (§2.8), and appkit never touches them.
 package main
 
 import (
@@ -38,6 +38,7 @@ import (
 	"path/filepath"
 	"registry"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -110,11 +111,16 @@ func (d *dropboxRuntime) handlers(r *appkit.Router) error {
 	if err != nil {
 		return fmt.Errorf("mirror: %w", err)
 	}
+	refreshToken, refreshTokenPath, err := readRefreshToken(os.Getenv)
+	if err != nil {
+		return err
+	}
 	cfg := dropbox.Config{
-		AppKey:        os.Getenv("DROPBOX_APP_KEY"),
-		AppSecret:     os.Getenv("DROPBOX_APP_SECRET"),
-		RefreshToken:  os.Getenv("DROPBOX_REFRESH_TOKEN"),
-		AppFolderRoot: os.Getenv("DROPBOX_APP_FOLDER_ROOT"),
+		AppKey:           os.Getenv("DROPBOX_APP_KEY"),
+		AppSecret:        os.Getenv("DROPBOX_APP_SECRET"),
+		RefreshToken:     refreshToken,
+		RefreshTokenPath: refreshTokenPath,
+		AppFolderRoot:    os.Getenv("DROPBOX_APP_FOLDER_ROOT"),
 	}
 	cfg.LongpollTimeoutSeconds, err = config.EnvOrInt(os.Getenv, "DROPBOX_LONGPOLL_TIMEOUT", 480)
 	if err != nil {
@@ -230,6 +236,19 @@ func resolveMirrorPath(getenv func(string) string) (string, error) {
 		return "", fmt.Errorf("resolve dropbox config: %w", err)
 	}
 	return defaultMirrorPath(getenv, cfg.DBPath), nil
+}
+
+func readRefreshToken(getenv func(string) string) (token, path string, err error) {
+	root := strings.TrimSpace(getenv("IKIGENBA_ROOT"))
+	if root == "" {
+		return "", "", fmt.Errorf("dropbox: cannot read DROPBOX_REFRESH_TOKEN: IKIGENBA_ROOT is empty")
+	}
+	path = filepath.Join(root, "dropbox", "state", "DROPBOX_REFRESH_TOKEN")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", path, fmt.Errorf("dropbox: read DROPBOX_REFRESH_TOKEN from %s: %w", path, err)
+	}
+	return string(b), path, nil
 }
 
 func defaultMirrorPath(getenv func(string) string, dbPath string) string {

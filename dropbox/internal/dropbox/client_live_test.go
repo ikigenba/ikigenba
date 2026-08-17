@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -15,12 +16,25 @@ import (
 
 func newLiveClient(t *testing.T) *Client {
 	t.Helper()
+	refreshToken, refreshTokenPath := requiredLiveRefreshToken(t)
 	return NewClient(Config{
-		AppKey:        requiredLiveCredential(t, "DROPBOX_APP_KEY"),
-		AppSecret:     requiredLiveCredential(t, "DROPBOX_APP_SECRET"),
-		RefreshToken:  requiredLiveCredential(t, "DROPBOX_REFRESH_TOKEN"),
-		AppFolderRoot: os.Getenv("DROPBOX_APP_FOLDER_ROOT"),
+		AppKey:           requiredLiveCredential(t, "DROPBOX_APP_KEY"),
+		AppSecret:        requiredLiveCredential(t, "DROPBOX_APP_SECRET"),
+		RefreshToken:     refreshToken,
+		RefreshTokenPath: refreshTokenPath,
+		AppFolderRoot:    os.Getenv("DROPBOX_APP_FOLDER_ROOT"),
 	}, &http.Client{Timeout: 100 * time.Second}, &http.Client{Timeout: longpollClientTimeout})
+}
+
+func requiredLiveRefreshToken(t *testing.T) (string, string) {
+	t.Helper()
+	root := requiredLiveCredential(t, "IKIGENBA_ROOT")
+	path := filepath.Join(root, "dropbox", "state", "DROPBOX_REFRESH_TOKEN")
+	value, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("live test requires DROPBOX_REFRESH_TOKEN at %s: %v", path, err)
+	}
+	return string(value), path
 }
 
 func requiredLiveCredential(t *testing.T, name string) string {

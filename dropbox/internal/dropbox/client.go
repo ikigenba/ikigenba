@@ -18,8 +18,8 @@ package dropbox
 //   - content: https://content.dropboxapi.com/2/...    (bearer)
 //   - longpoll:https://notify.dropboxapi.com/2/...      (NO bearer)
 //
-// No disk, no db, no HTTP server. Pure API client + hashing. Token values are
-// never logged.
+// The only disk write is atomic persistence of a provider-rotated refresh token
+// to its configured state/ path. Token values are never logged.
 import (
 	"bytes"
 	"context"
@@ -30,6 +30,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -79,14 +81,15 @@ const (
 	longpollClientTimeout = 630 * time.Second
 )
 
-// Config carries the credentials and tuning the Client needs. The three secrets
-// are read from the environment at the main.go boundary (they arrive via
-// .envrc/direnv in dev, the launcher on the box) and passed in here — the Client
-// never reads the environment itself and never logs these values.
+// Config carries the credentials and tuning the Client needs. The static OAuth
+// credentials arrive from the environment and the rotating refresh token from
+// state/ at the main.go boundary. The Client never reads the environment and
+// never logs these values.
 type Config struct {
-	AppKey       string // DROPBOX_APP_KEY
-	AppSecret    string // DROPBOX_APP_SECRET
-	RefreshToken string // DROPBOX_REFRESH_TOKEN
+	AppKey           string // DROPBOX_APP_KEY
+	AppSecret        string // DROPBOX_APP_SECRET
+	RefreshToken     string // DROPBOX_REFRESH_TOKEN contents
+	RefreshTokenPath string // rotating state/DROPBOX_REFRESH_TOKEN file
 	// AppFolderRoot is the path the engine roots list_folder at (DROPBOX_APP_
 	// FOLDER_ROOT); "" means the app-folder root, which is what Dropbox expects
 	// for an enumeration of the whole App-folder-scoped folder.
@@ -125,10 +128,11 @@ func NewClient(cfg Config, rpc, longpoll *http.Client) *Client {
 		longpoll: longpoll,
 	}
 	c.token = &tokenSource{
-		appKey:       cfg.AppKey,
-		appSecret:    cfg.AppSecret,
-		refreshToken: cfg.RefreshToken,
-		httpClient:   rpc,
+		appKey:           cfg.AppKey,
+		appSecret:        cfg.AppSecret,
+		refreshToken:     cfg.RefreshToken,
+		refreshTokenPath: cfg.RefreshTokenPath,
+		httpClient:       rpc,
 	}
 	return c
 }
@@ -139,10 +143,11 @@ func NewClient(cfg Config, rpc, longpoll *http.Client) *Client {
 // ---------------------------------------------------------------------------
 
 type tokenSource struct {
-	appKey       string
-	appSecret    string
-	refreshToken string
-	httpClient   *http.Client
+	appKey           string
+	appSecret        string
+	refreshToken     string
+	refreshTokenPath string
+	httpClient       *http.Client
 
 	mu        sync.Mutex
 	accessTok string
@@ -203,15 +208,25 @@ func (t *tokenSource) refreshLocked(ctx context.Context) error {
 		return fmt.Errorf("dropbox token refresh: status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	var tr struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int    `json:"expires_in"`
-		TokenType   string `json:"token_type"`
+		AccessToken  string `json:"access_token"`
+		ExpiresIn    int    `json:"expires_in"`
+		TokenType    string `json:"token_type"`
+		RefreshToken string `json:"refresh_token"`
 	}
 	if err := json.Unmarshal(body, &tr); err != nil {
 		return fmt.Errorf("dropbox token refresh: decode: %w", err)
 	}
 	if tr.AccessToken == "" {
 		return fmt.Errorf("dropbox token refresh: empty access_token")
+	}
+	if tr.RefreshToken != "" && tr.RefreshToken != t.refreshToken {
+		if t.refreshTokenPath == "" {
+			return fmt.Errorf("dropbox token refresh: rotated DROPBOX_REFRESH_TOKEN has no state path")
+		}
+		if err := writeFileAtomic(t.refreshTokenPath, []byte(tr.RefreshToken), 0o600); err != nil {
+			return fmt.Errorf("dropbox token refresh: persist rotated DROPBOX_REFRESH_TOKEN: %w", err)
+		}
+		t.refreshToken = tr.RefreshToken
 	}
 	t.accessTok = tr.AccessToken
 	exp := tr.ExpiresIn
@@ -220,6 +235,33 @@ func (t *tokenSource) refreshLocked(ctx context.Context) error {
 	}
 	t.expiry = time.Now().Add(time.Duration(exp) * time.Second)
 	return nil
+}
+
+func writeFileAtomic(path string, data []byte, mode os.FileMode) (err error) {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".DROPBOX_REFRESH_TOKEN-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer func() {
+		if err != nil {
+			tmp.Close()
+			os.Remove(tmpPath)
+		}
+	}()
+	if err = tmp.Chmod(mode); err != nil {
+		return err
+	}
+	if _, err = tmp.Write(data); err != nil {
+		return err
+	}
+	if err = tmp.Sync(); err != nil {
+		return err
+	}
+	if err = tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 
 // ---------------------------------------------------------------------------
