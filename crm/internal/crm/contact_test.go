@@ -14,7 +14,7 @@ func TestContact_RoundTrip(t *testing.T) {
 			DisplayName: sp("Bob Jones"),
 			GivenName:   sp("Bob"),
 			FamilyName:  sp("Jones"),
-			Lifecycle:   sp("subscriber"),
+			Lifecycle:   sp("prospect"),
 			Emails:      &[]EmailInput{{Email: "bob@acme.com"}, {Email: "b@home.net", Label: sp("home")}},
 			Phones:      &[]PhoneInput{{Phone: "+14155550123"}},
 			Tags:        &[]string{"newsletter", "vip"},
@@ -36,7 +36,7 @@ func TestContact_RoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("get: %v", err)
 		}
-		if card["lifecycle"] != "subscriber" {
+		if card["lifecycle"] != "prospect" {
 			t.Errorf("lifecycle: %v", card["lifecycle"])
 		}
 		emails := card["emails"].([]map[string]any)

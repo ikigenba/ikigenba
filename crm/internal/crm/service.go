@@ -444,7 +444,7 @@ type contactFields struct {
 	Tags        *[]string      `json:"tags"`
 }
 
-var lifecycles = map[string]bool{"subscriber": true, "lead": true, "opportunity": true, "customer": true}
+var lifecycles = map[string]bool{"prospect": true, "customer": true}
 
 // decodeContact normalizes a contact and returns the typed input plus the
 // normalized primary email (the first email, "" when none) for the dedup probe.
@@ -464,7 +464,7 @@ func decodeContact(fields []byte, onCreate bool) (ContactInput, string, error) {
 	if f.Lifecycle != nil {
 		lc := strings.TrimSpace(*f.Lifecycle)
 		if !lifecycles[lc] {
-			return ContactInput{}, "", invalid("lifecycle", "lifecycle must be one of subscriber, lead, opportunity, customer; got "+*f.Lifecycle)
+			return ContactInput{}, "", invalid("lifecycle", "lifecycle must be one of prospect, customer; got "+*f.Lifecycle)
 		}
 		in.Lifecycle = &lc
 	}
@@ -572,7 +572,7 @@ type dealFields struct {
 	Contacts    *[]dealContactFields `json:"contacts"`
 }
 
-var dealStages = map[string]bool{"lead": true, "qualified": true, "proposal": true, "negotiation": true, "won": true, "lost": true}
+var dealStages = map[string]bool{"contacted": true, "interested": true, "proposal": true, "won": true, "lost": true}
 
 func decodeDeal(fields []byte) (DealInput, error) {
 	var f dealFields
@@ -592,7 +592,7 @@ func decodeDeal(fields []byte) (DealInput, error) {
 	if f.Stage != nil {
 		st := strings.TrimSpace(*f.Stage)
 		if !dealStages[st] {
-			return DealInput{}, invalid("stage", "stage must be one of lead, qualified, proposal, negotiation, won, lost; got "+*f.Stage)
+			return DealInput{}, invalid("stage", "stage must be one of contacted, interested, proposal, won, lost; got "+*f.Stage)
 		}
 		in.Stage = &st
 	}

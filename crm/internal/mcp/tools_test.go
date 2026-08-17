@@ -434,6 +434,19 @@ func TestGuideToolReturnsEmbeddedUsageGuide(t *testing.T) {
 	}
 }
 
+func TestGuideDocumentsSalesFunnelVocabularies(t *testing.T) {
+	text := call(t, newTestHandler(t), "guide", map[string]any{}).Content[0].Text
+	for _, want := range []string{
+		"`prospect`, `customer`; default `prospect`",
+		"`contacted`, `interested`, `proposal`, `won`, `lost`; default `contacted`",
+	} {
+		// R-9LST-2NUQ R-9N0P-GFLF
+		if !strings.Contains(text, want) {
+			t.Fatalf("guide missing sales-funnel vocabulary %q", want)
+		}
+	}
+}
+
 func TestGuideInputSchemaHasNoRequiredFields(t *testing.T) {
 	h := newTestHandler(t)
 	guide := requireTool(t, toolsList(t, h), "guide")

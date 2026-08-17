@@ -32,7 +32,7 @@ func dealInsert(tx *sql.Tx, in DealInput, now time.Time) (Summary, error) {
 	}
 	id := logging.NewULID()
 	ts := fmtTime(now)
-	stage := "lead"
+	stage := "contacted"
 	if in.Stage != nil {
 		stage = *in.Stage
 	}

@@ -11,8 +11,8 @@
 ## Field catalog
 
 - organization: `name` (required on create), `domain` (website/email domain; drives dedup).
-- contact: `given_name`, `family_name`, `display_name` (derived if absent), `org_id`, `title`, `lifecycle` (`subscriber`, `lead`, `opportunity`, `customer`; default `lead`), `emails` (`[{ "email": "...", "label": "..." }]`, first is primary), `phones` (`[{ "phone": "...", "label": "..." }]`, E.164, first is primary), `tags` (`["newsletter"]`).
-- deal: `name` (required on create), `org_id`, `stage` (`lead`, `qualified`, `proposal`, `negotiation`, `won`, `lost`; default `lead`), `amount_cents` (integer), `currency` (default `USD`), `close_date` (RFC3339 date), `contacts` (`[{ "id": "...", "role": "..." }]` participants).
+- contact: `given_name`, `family_name`, `display_name` (derived if absent), `org_id`, `title`, `lifecycle` (`prospect`, `customer`; default `prospect`), `emails` (`[{ "email": "...", "label": "..." }]`, first is primary), `phones` (`[{ "phone": "...", "label": "..." }]`, E.164, first is primary), `tags` (`["newsletter"]`).
+- deal: `name` (required on create), `org_id`, `stage` (`contacted`, `interested`, `proposal`, `won`, `lost`; default `contacted`), `amount_cents` (integer), `currency` (default `USD`), `close_date` (RFC3339 date), `contacts` (`[{ "id": "...", "role": "..." }]` participants).
 - task: `title` (required on create), `status` (`open`, `done`; default `open`), `due_at`, `done_at`, `contact_id`, `org_id`, `deal_id` (optional subject). Complete a task with `fields: { "status": "done" }`.
 
 Interactions are not saved with `save`; use `log`.

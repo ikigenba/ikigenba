@@ -94,7 +94,7 @@ type ContactInput struct {
 	DisplayName *string // derived if absent on create
 	OrgID       *string // FK; "" clears
 	Title       *string
-	Lifecycle   *string // subscriber|lead|opportunity|customer; default lead on create
+	Lifecycle   *string // prospect|customer; default prospect on create
 	Emails      *[]EmailInput
 	Phones      *[]PhoneInput
 	Tags        *[]string // declarative set; the diff emits contact.tagged/untagged
@@ -112,7 +112,7 @@ type DealContactInput struct {
 type DealInput struct {
 	Name        *string // required on create
 	OrgID       *string
-	Stage       *string // lead|qualified|proposal|negotiation|won|lost; default lead
+	Stage       *string // contacted|interested|proposal|won|lost; default contacted
 	AmountCents *int64
 	Currency    *string // default USD on create
 	CloseDate   *string // RFC3339 date; "" clears

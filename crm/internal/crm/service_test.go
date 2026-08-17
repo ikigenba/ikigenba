@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -207,6 +208,68 @@ func TestServiceDealRoundTripAndStage(t *testing.T) {
 		"contacts": []map[string]any{{"id": "01NOTREAL"}},
 	}), false); !errors.Is(err, ErrValidation) {
 		t.Fatalf("expected validation for dead participant, got %v", err)
+	}
+}
+
+func TestServiceContactLifecycleVocabularyAndDefault(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	for _, lifecycle := range []string{"prospect", "customer"} {
+		got := mustSave(t, s, "contact", "", map[string]any{
+			"display_name": "Contact " + lifecycle,
+			"lifecycle":    lifecycle,
+		}, false)
+		// R-9LST-2NUQ
+		if got.Fields["lifecycle"] != lifecycle {
+			t.Fatalf("accepted lifecycle stored as %v, want %q", got.Fields["lifecycle"], lifecycle)
+		}
+	}
+
+	got := mustSave(t, s, "contact", "", map[string]any{"display_name": "Default Contact"}, false)
+	// R-9LST-2NUQ
+	if got.Fields["lifecycle"] != "prospect" {
+		t.Fatalf("default lifecycle = %v, want prospect", got.Fields["lifecycle"])
+	}
+
+	for _, lifecycle := range []string{"subscriber", "lead", "opportunity", "other"} {
+		_, err := s.Save(ctx, "contact", "", jsonFields(t, map[string]any{
+			"display_name": "Rejected " + lifecycle,
+			"lifecycle":    lifecycle,
+		}), false)
+		var validation *ValidationError
+		// R-9LST-2NUQ
+		if !errors.As(err, &validation) || validation.Field != "lifecycle" || !strings.Contains(validation.Message, lifecycle) {
+			t.Fatalf("lifecycle %q error = %#v, want field-specific closed-vocabulary validation", lifecycle, err)
+		}
+	}
+}
+
+func TestServiceDealStageVocabularyAndDefault(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	for _, stage := range []string{"contacted", "interested", "proposal", "won", "lost"} {
+		got := mustSave(t, s, "deal", "", map[string]any{"name": "Deal " + stage, "stage": stage}, false)
+		// R-9N0P-GFLF
+		if got.Fields["stage"] != stage {
+			t.Fatalf("accepted stage stored as %v, want %q", got.Fields["stage"], stage)
+		}
+	}
+
+	got := mustSave(t, s, "deal", "", map[string]any{"name": "Default Deal"}, false)
+	// R-9N0P-GFLF
+	if got.Fields["stage"] != "contacted" {
+		t.Fatalf("default stage = %v, want contacted", got.Fields["stage"])
+	}
+
+	for _, stage := range []string{"lead", "qualified", "negotiation", "other"} {
+		_, err := s.Save(ctx, "deal", "", jsonFields(t, map[string]any{"name": "Rejected " + stage, "stage": stage}), false)
+		var validation *ValidationError
+		// R-9N0P-GFLF
+		if !errors.As(err, &validation) || validation.Field != "stage" || !strings.Contains(validation.Message, stage) {
+			t.Fatalf("stage %q error = %#v, want field-specific closed-vocabulary validation", stage, err)
+		}
 	}
 }
 

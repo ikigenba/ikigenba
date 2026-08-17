@@ -32,7 +32,7 @@ func contactInsert(tx *sql.Tx, in ContactInput, now time.Time) (Summary, error) 
 	}
 	id := logging.NewULID()
 	ts := fmtTime(now)
-	lifecycle := "lead"
+	lifecycle := "prospect"
 	if in.Lifecycle != nil {
 		lifecycle = *in.Lifecycle
 	}

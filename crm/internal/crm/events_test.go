@@ -106,7 +106,7 @@ func TestEventContactCreatedWithTags(t *testing.T) {
 	sum, err := s.Save(ctx, "contact", "", []byte(`{
 		"given_name": "Bob",
 		"family_name": "Jones",
-		"lifecycle": "subscriber",
+		"lifecycle": "prospect",
 		"emails": [{"email": "bob@example.com"}],
 		"tags": ["newsletter", "vip"]
 	}`), false)
@@ -147,8 +147,8 @@ func TestEventContactCreatedWithTags(t *testing.T) {
 	if snap.ID != sum.ID {
 		t.Fatalf("created id = %q, want %q", snap.ID, sum.ID)
 	}
-	if snap.Lifecycle != "subscriber" {
-		t.Fatalf("created lifecycle = %q, want subscriber", snap.Lifecycle)
+	if snap.Lifecycle != "prospect" {
+		t.Fatalf("created lifecycle = %q, want prospect", snap.Lifecycle)
 	}
 	if len(snap.Emails) != 1 || snap.Emails[0].Email != "bob@example.com" || !snap.Emails[0].Primary {
 		t.Fatalf("created emails = %+v, want one primary bob@example.com", snap.Emails)

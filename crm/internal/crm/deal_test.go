@@ -47,7 +47,7 @@ func TestDeal_RoundTrip(t *testing.T) {
 			t.Fatalf("bad summary: %+v", sum)
 		}
 		// Defaults + derived status in the summary.
-		if sum.Fields["stage"] != "lead" || sum.Fields["status"] != "open" || sum.Fields["currency"] != "USD" {
+		if sum.Fields["stage"] != "contacted" || sum.Fields["status"] != "open" || sum.Fields["currency"] != "USD" {
 			t.Fatalf("bad summary fields: %+v", sum.Fields)
 		}
 		if sum.Fields["amount_cents"] != int64(500000) {
@@ -65,7 +65,7 @@ func TestDeal_RoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("get: %v", err)
 		}
-		if card["name"] != "Big Deal" || card["stage"] != "lead" || card["status"] != "open" {
+		if card["name"] != "Big Deal" || card["stage"] != "contacted" || card["status"] != "open" {
 			t.Fatalf("bad card: %+v", card)
 		}
 		if card["currency"] != "USD" || card["amount_cents"] != int64(500000) || card["org_id"] != orgID {
@@ -184,7 +184,7 @@ func TestDeal_SearchOpenFilter(t *testing.T) {
 	s := newTestStore(t)
 	var openID string
 	withTx(t, s, func(tx *txAlias) {
-		o, err := s.deals.Save(tx, "", DealInput{Name: sp("Open One"), Stage: sp("qualified")}, s.Now())
+		o, err := s.deals.Save(tx, "", DealInput{Name: sp("Open One"), Stage: sp("interested")}, s.Now())
 		if err != nil {
 			t.Fatalf("create open: %v", err)
 		}
@@ -200,6 +200,51 @@ func TestDeal_SearchOpenFilter(t *testing.T) {
 		}
 		if len(got) != 1 || got[0].ID != openID {
 			t.Fatalf("status:open want only the open deal, got %+v", got)
+		}
+	})
+}
+
+func TestDealStatusAndOpenSearchCoverNewStages(t *testing.T) {
+	for stage, want := range map[string]string{
+		"contacted":  "open",
+		"interested": "open",
+		"proposal":   "open",
+		"won":        "won",
+		"lost":       "lost",
+	} {
+		// R-9O8L-U7C4
+		if got := dealStatus(stage); got != want {
+			t.Fatalf("dealStatus(%q) = %q, want %q", stage, got, want)
+		}
+	}
+
+	s := newTestStore(t)
+	wantOpen := map[string]bool{}
+	withTx(t, s, func(tx *txAlias) {
+		for _, stage := range []string{"contacted", "interested", "proposal", "won", "lost"} {
+			sum, err := s.deals.Save(tx, "", DealInput{Name: sp("Deal " + stage), Stage: sp(stage)}, s.Now())
+			if err != nil {
+				t.Fatalf("create %s deal: %v", stage, err)
+			}
+			if dealStatus(stage) == "open" {
+				wantOpen[sum.ID] = true
+			}
+		}
+	})
+	withTx(t, s, func(tx *txAlias) {
+		got, err := s.deals.Search(tx, SearchParams{Filters: map[string]any{"status": "open"}})
+		if err != nil {
+			t.Fatalf("search open deals: %v", err)
+		}
+		// R-9O8L-U7C4
+		if len(got) != len(wantOpen) {
+			t.Fatalf("open search returned %d deals, want %d: %+v", len(got), len(wantOpen), got)
+		}
+		for _, sum := range got {
+			// R-9O8L-U7C4
+			if !wantOpen[sum.ID] || sum.Fields["status"] != "open" {
+				t.Fatalf("open search included non-open deal: %+v", sum)
+			}
 		}
 	})
 }
