@@ -35,6 +35,7 @@ retired** (their code-owning content moved to `bin/project/`, `nginx/project/`, 
 - **D29** → `project/design/D29.md` — The brand icon contract: the shipped set, its static location, and the link markup — ids: R-8MFA-HUNC, R-RYDN-YNR5, R-RZLK-CFHU (all [proof: per-service])
 - **D30** → `project/design/D30.md` — The lint contract: tiered mechanical style gate, per-tree ratchet, enforced by `bin/lint` — ids: R-WW5B-L155, R-WXD7-YSVU, R-WYL4-CKMJ, R-WZT0-QCD8, R-X10X-443X, R-X28T-HVUM, R-X3GP-VNLB, R-X4OM-9FC0, R-X5WI-N72P (all [proof: bin])
 - **D31** → `project/design/D31.md` — The LLM-lint gate contract: a prompt-defined semantic lint pass on every tree's verify gate — ids: none (a prose contract; the gate behavior is proven in each tree's own verify loop, the tool's behavior in llm-lint's own repo)
+- **D32** → `project/design/D32.md` — The rotating-credential channel: per-environment single-holder secrets in `state/` (channel 5) — ids: R-EJ1W-1G19 [proof: bin], R-EK9S-F7RY [proof: opsctl], R-ELHO-SZIN [proof: opsctl], R-ENXH-KJ01 [proof: per-service], R-EP5D-YAQQ [proof: per-service]
 
 ## Verification ids → Decision
 
@@ -73,6 +74,11 @@ retired** (their code-owning content moved to `bin/project/`, `nginx/project/`, 
 - R-CLTU-B00M → D28 (`project/design/D28.md`) [proof: bin]
 - R-CN1Q-ORRB → D28 (`project/design/D28.md`) [proof: bin]
 - R-CO9N-2JI0 → D28 (`project/design/D28.md`) [proof: bin]
+- R-EJ1W-1G19 → D32 (`project/design/D32.md`) [proof: bin]
+- R-EK9S-F7RY → D32 (`project/design/D32.md`) [proof: opsctl]
+- R-ELHO-SZIN → D32 (`project/design/D32.md`) [proof: opsctl]
+- R-ENXH-KJ01 → D32 (`project/design/D32.md`) [proof: per-service]
+- R-EP5D-YAQQ → D32 (`project/design/D32.md`) [proof: per-service]
 - R-LHY1-6IS8 → D1 (`project/design/D01.md`) [proof: opsctl]
 - R-NFQ1-NA7N → D25 (`project/design/D25.md`) [proof: per-service]
 - R-O1AD-MRKW → D23 (`project/design/D23.md`) [proof: per-service]
