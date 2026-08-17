@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.39.0 — 2026-08-17
+
+- Restore strict-tier lint cleanliness (Decision 99): name previously-unnamed multiple return results and tighten the justifications on the intentional complexity suppressions, so `bin/lint wiki` passes at the strict tier and the service ships again. Internal only — no exported signature, API, schema, or behavior change. This release also carries the v0.38.0 env-manifest adoption, which never shipped.
+
 ## v0.38.0 — 2026-08-17
 
 - Adopt the per-service customer-data and dev-config env manifests: `env.list` now authors the shipped `manifest.env`. Redeployed to verify manifest and secret handling end to end. No API, schema, or data changes.
