@@ -1,3 +1,6 @@
+> [!WARNING]
+> **This is unsupported AI slop!**
+
 # ikigenba
 
 ikigenba is a deployable application suite for a single customer on a single
