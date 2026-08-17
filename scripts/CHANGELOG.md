@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.25.0 — 2026-08-17
+
+- Adopt the per-service customer-data and dev-config env manifests: `env.list` now authors the shipped `manifest.env`. Redeployed to verify manifest and secret handling end to end. No API, schema, or data changes.
+- Remove the retired per-project `.envrc` file; dev-config now flows through the authored manifest.
+
 ## v0.24.0 — 2026-08-15
 
 - Adopted the suite-wide LLM-lint semantic test gate (D31). The test suite now
