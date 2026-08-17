@@ -27,6 +27,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D21 → `project/design/D21.md` — Testing-language conformance: the suite's four layers, crm's declared testing facts (hermetic + composed, no live, no manual; no preconditions beyond the Go toolchain; workspace GOWORK), proven in `cmd/crm/docs_test.go` — adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`); mints none of its own
 - D22 → `project/design/D22.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
 - D23 → `project/design/D23.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `strict` — none (structural; the contract carries no per-service ids)
+- D24 → `project/design/D24.md` — Sales-funnel vocabularies: contact lifecycle (`prospect|customer`) and deal stage (`contacted|interested|proposal|won|lost`), via row-preserving rebuild migrations — owns R-9LST-2NUQ, R-9N0P-GFLF, R-9O8L-U7C4, R-9PGI-7Z2T
+- D25 → `project/design/D25.md` — Tracking tokens: the `contact_tokens` table, the `mint` verb, and `search` token lookup — owns R-9QOE-LQTI, R-9RWA-ZIK7, R-9T47-DAAW, R-9UC3-R21L, R-9VK0-4TSA, R-9XZS-WD9O
 
 ## Verification ids → Decision
 
@@ -46,6 +48,16 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-8IP7-FWJ5 → D18 → `project/design/D18.md`
 - R-8JX3-TO9U → D18 → `project/design/D18.md`
 - R-8L50-7G0J → D18 → `project/design/D18.md`
+- R-9LST-2NUQ → D24 → `project/design/D24.md`
+- R-9N0P-GFLF → D24 → `project/design/D24.md`
+- R-9O8L-U7C4 → D24 → `project/design/D24.md`
+- R-9PGI-7Z2T → D24 → `project/design/D24.md`
+- R-9QOE-LQTI → D25 → `project/design/D25.md`
+- R-9RWA-ZIK7 → D25 → `project/design/D25.md`
+- R-9T47-DAAW → D25 → `project/design/D25.md`
+- R-9UC3-R21L → D25 → `project/design/D25.md`
+- R-9VK0-4TSA → D25 → `project/design/D25.md`
+- R-9XZS-WD9O → D25 → `project/design/D25.md`
 - R-ASST-2B8C → D3 → `project/design/D03.md`
 - R-ASST-4D1E → D3 → `project/design/D03.md`
 - R-ASST-6F3G → D3 → `project/design/D03.md`
@@ -118,7 +130,21 @@ the rest of the index.
 8. Every existing crm tool call still produces the same result — discovery
    altered no behavior →
    R-MW1X-S9EV, R-5ZDW-RUQZ
-9. An MCP client still discovers the AS via the PRM well-known and calls the
-   bearer-gated `/mcp` as before; `/srv/crm/feed` still `404`s and `/health` still
-   responds →
-   R-NGNX-8P1Q
+9. Saving a contact with no lifecycle stores `prospect`, `customer` works, and
+   any other lifecycle value is rejected →
+   R-9LST-2NUQ
+10. A deal's stage is one of `contacted`/`interested`/`proposal`/`won`/`lost`
+    (default `contacted`), its status derives from the stage, and any other stage
+    value is rejected →
+    R-9N0P-GFLF, R-9O8L-U7C4
+11. After the funnel-vocabulary change every contact and deal survives with a
+    legal value and no child record is lost →
+    R-9PGI-7Z2T
+12. Minting a token returns a short unique code, another campaign returns a
+    different code, resolving a token returns its contact, and an unknown or
+    removed token resolves to nothing →
+    R-9QOE-LQTI, R-9RWA-ZIK7, R-9T47-DAAW, R-9UC3-R21L, R-9VK0-4TSA, R-9XZS-WD9O
+13. An MCP client still discovers the AS via the PRM well-known and calls the
+    bearer-gated `/mcp` as before; `/srv/crm/feed` still `404`s and `/health` still
+    responds →
+    R-NGNX-8P1Q
