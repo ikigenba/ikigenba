@@ -10,4 +10,6 @@ no done marker; done is gone. This file deliberately carries **no bare status
 glyph** anywhere but on a phase line, so the anchored grep matches only phase
 lines.
 
-Next phase: 180
+Next phase: 181
+
+- Phase 180 ⬜ realizes — — restore strict-tier lint cleanliness so `bin/lint wiki` exits 0 and wiki can ship
