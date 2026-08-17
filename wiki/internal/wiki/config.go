@@ -168,8 +168,7 @@ func resolveCallSite(getenv func(string) string, prefix string, base llm.CallSit
 	return site, nil
 }
 
-//nolint:gocritic // Explicit returns make the mutually exclusive effort and disable flag states clear.
-func parseReasoning(raw string) (string, *bool, error) {
+func parseReasoning(raw string) (levelResult string, disabledResult *bool, errResult error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "disabled", "off":
 		value := false

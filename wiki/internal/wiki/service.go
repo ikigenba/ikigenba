@@ -880,8 +880,7 @@ func finishDoneInTx(ctx context.Context, tx *sql.Tx, jobID string, finishedAt ti
 	return true, tx.Commit()
 }
 
-//nolint:gocritic // Explicit returns keep subject resolution, creation status, and errors distinct.
-func (s *Service) plannedSubject(ctx context.Context, scope string, known map[string]Subject, item extract.ExtractedSubject) (Subject, bool, error) {
+func (s *Service) plannedSubject(ctx context.Context, scope string, known map[string]Subject, item extract.ExtractedSubject) (subjectResult Subject, createdResult bool, errResult error) {
 	normName := Normalize(item.Name)
 	if subject, ok := known[normName]; ok {
 		return subject, false, nil

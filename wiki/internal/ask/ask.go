@@ -103,7 +103,7 @@ func DefaultSynthesisCallSite() llm.CallSite {
 // Ask answers a question by analyzing it, retrieving relevant pages, reading
 // only those page bodies, and synthesizing an answer grounded in that set.
 //
-//nolint:gocyclo // The branches are a linear sequence of validation and honest-empty gates.
+//nolint:gocyclo // Distinct early exits preserve validation, retrieval, and honest-empty outcomes.
 func (a *Asker) Ask(ctx context.Context, scope, owner, question string) (Answer, error) {
 	if a == nil || a.search == nil || a.subjects == nil || a.pages == nil {
 		return Answer{}, fmt.Errorf("ask: nil stores")

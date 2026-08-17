@@ -1019,8 +1019,7 @@ func renderCompile(subject Subject, claims []Claim) string {
 	return b.String()
 }
 
-//nolint:gocritic // Explicit returns keep the title, body, and decode error cases local.
-func parseCompile(raw json.RawMessage) (string, string, error) {
+func parseCompile(raw json.RawMessage) (titleResult, bodyResult string, errResult error) {
 	var out struct {
 		Title string `json:"title"`
 		Body  string `json:"body"`

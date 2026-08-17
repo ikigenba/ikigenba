@@ -662,8 +662,7 @@ func (s *JobStore) CountJobs(ctx context.Context, raw ...any) (int, error) {
 	return n, nil
 }
 
-//nolint:gocritic // Explicit returns avoid mutable named query-builder results.
-func appendJobFilter(query string, args []any, f JobFilter) (string, []any) {
+func appendJobFilter(query string, args []any, f JobFilter) (filteredQuery string, filteredArgs []any) {
 	statuses := normalizedStatuses(f.Statuses)
 	if len(statuses) > 0 {
 		query += `
@@ -993,8 +992,7 @@ func requireScope(ctx context.Context, db sqlStore, scope string) error {
 	return nil
 }
 
-//nolint:gocritic // Explicit returns keep the arity cases self-contained.
-func scopedStringArgs(args []string) (string, string, error) {
+func scopedStringArgs(args []string) (scopeResult, valueResult string, errResult error) {
 	switch len(args) {
 	case 1:
 		return "default", args[0], nil
@@ -1005,8 +1003,7 @@ func scopedStringArgs(args []string) (string, string, error) {
 	}
 }
 
-//nolint:gocritic // Explicit returns keep dynamic argument validation self-contained.
-func subjectSaveArgs(args []any) (string, Subject, error) {
+func subjectSaveArgs(args []any) (scopeResult string, subjectResult Subject, errResult error) {
 	if len(args) == 1 {
 		subject, ok := args[0].(Subject)
 		if ok {

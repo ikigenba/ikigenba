@@ -166,8 +166,8 @@ func ServeProvider(provider Provider) (*llm.Client, func()) {
 	return serve(provider, nil)
 }
 
-//nolint:gocritic,gocyclo // This test protocol adapter intentionally mirrors the small prompts HTTP surface in one handler.
-func serve(provider Provider, embeds *EmbedCapture) (*llm.Client, func()) {
+//nolint:gocyclo // This test protocol adapter intentionally mirrors the small prompts HTTP surface in one handler.
+func serve(provider Provider, embeds *EmbedCapture) (clientResult *llm.Client, closeResult func()) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/embed" {
 			if embeds == nil {

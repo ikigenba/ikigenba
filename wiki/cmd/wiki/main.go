@@ -33,7 +33,7 @@ func main() {
 
 type configLoader func(func(string) string) (wiki.Config, error)
 
-//nolint:funlen // The application specification keeps all wiring visible in one declarative value.
+//nolint:funlen // Keeping lifecycle hooks in one specification makes the shipped wiring auditable as a unit.
 func newSpec(loadConfig configLoader) appkit.Spec {
 	var svc *wiki.Service
 

@@ -788,8 +788,7 @@ func handleGuideCall(context.Context, json.RawMessage, server.Identity) (map[str
 	return appkitmcp.TextResult(guideDoc), nil
 }
 
-//nolint:gocritic // Explicit returns keep transport errors adjacent to their validation branches.
-func (h *Handler) requireScope(ctx context.Context, raw json.RawMessage) (string, map[string]any) {
+func (h *Handler) requireScope(ctx context.Context, raw json.RawMessage) (scopeResult string, errorResult map[string]any) {
 	var args struct {
 		Scope string `json:"scope"`
 	}
@@ -922,8 +921,7 @@ func (h *Handler) handleInstructionsCall(ctx context.Context, raw json.RawMessag
 	return appkitmcp.StructuredResult(map[string]string{"scope": args.Scope, "instructions": *args.Text})
 }
 
-//nolint:gocritic // Explicit returns keep decoded values and structured errors visually distinct.
-func decodeScopeName(raw json.RawMessage) (string, map[string]any) {
+func decodeScopeName(raw json.RawMessage) (nameResult string, errorResult map[string]any) {
 	var args struct {
 		Name string `json:"name"`
 	}
@@ -1084,8 +1082,7 @@ func askToolResult(answer any, pageBase string) map[string]any {
 	}
 }
 
-//nolint:gocritic // The heterogeneous reflection result is clearer without mutable named returns.
-func answerFields(answer any) (bool, string, reflect.Value) {
+func answerFields(answer any) (foundResult bool, textResult string, citationsResult reflect.Value) {
 	v := indirect(reflect.ValueOf(answer))
 	if !v.IsValid() || v.Kind() != reflect.Struct {
 		return false, "", reflect.ValueOf([]any{})
@@ -1374,8 +1371,7 @@ func jobKindArraySchema() map[string]any {
 	}
 }
 
-//nolint:gocritic // Explicit returns keep the filter, limit, cursor, and validation error construction local.
-func decodeJobsArgs(raw json.RawMessage, withPaging bool) (JobFilter, int, string, error) {
+func decodeJobsArgs(raw json.RawMessage, withPaging bool) (filterResult JobFilter, limitResult int, cursorResult string, errResult error) {
 	var args struct {
 		Status jobStatusArgs `json:"status"`
 		Kind   jobKindArgs   `json:"kind"`
