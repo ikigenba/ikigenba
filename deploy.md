@@ -59,9 +59,18 @@ ssh int "sudo certbot certonly --webroot -w /var/lib/letsencrypt --cert-name par
   -d ikigenba.com -d ikigenba.dev -d logic-refinery.com \
   -d logic-refinery.io -d logic-refinery.net -d logic-refinery.tv \
   -d metaspot.net -d metaspot.org -d michaelgreenly.com \
-  -d michaelgreenly.dev \
   --non-interactive --agree-tos -m \"$CERTBOT_EMAIL\" \
   --deploy-hook \"systemctl reload nginx\""
+```
+
+`michaelgreenly.dev` is deliberately **not** in the parked list: it is a live
+site domain with its own lineage (see "The michaelgreenly.dev Vhost" below,
+and `nginx/project/design/D05.md`). If the box still carries a parked
+certificate that includes it (issued before the vhost existed), rerun the
+command above at the next convenient reissue so the parked lineage names
+exactly the parked domains.
+
+```sh
 
 scp nginx/parked/index.html nginx/parked/nginx.conf int:/tmp/
 ssh int 'sudo install -d -m 0755 -o root -g root /var/www/parked && \
@@ -83,7 +92,7 @@ diff -u nginx/parked/index.html /tmp/parked.index.live
 Then run the verification checklist (D13). **Never pass `curl -k` here**: these
 checks exist to prove the certificate is valid, and `-k` would report success
 while the wrong certificate is served — the exact failure this work fixes. All
-ten certificate names resolve to the box in public DNS, so no `--resolve` is
+certificate names resolve to the box in public DNS, so no `--resolve` is
 needed either.
 
 ```sh
@@ -113,7 +122,75 @@ curl -sS -o /dev/null -w 'apex     %{http_code} %{ssl_verify_result}\n' \
 curl -sS -o /dev/null -w 'srv/crm  %{http_code} %{ssl_verify_result}\n' \
   https://int.ikigenba.com/srv/crm/    # 401/403 is fine — it must not be 200 droids
 
-# 5. Exactly two lineages, and the parked one names exactly the ten domains.
+# 5. The parked lineage names exactly the nine parked domains. Expected
+#    lineages on the box: the apex, parked, and michaelgreenly.dev (once the
+#    vhost below is installed).
+ssh int 'sudo certbot certificates'
+```
+
+## The michaelgreenly.dev Vhost
+
+`michaelgreenly.dev` is the operator's own site domain: a named vhost serves it
+the `sites` public site `michaelgreenly-dev` instead of the parked page
+(`nginx/project/design/D05.md`). Like the parked front door, this is a one-time
+operator install of one committed file — no `opsctl` verb, no app deploy step.
+
+Order is **cert-then-config**: before the vhost file exists, the domain's `:80`
+traffic lands on the parked `default_server`, whose ACME location on the shared
+webroot answers the HTTP-01 challenge, so issue the domain's own lineage first;
+installing the config first would fail `nginx -t` on a missing certificate
+path.
+
+```sh
+CERTBOT_EMAIL=<operator-email>
+
+# 1. Issue the domain's own certificate lineage.
+ssh int "sudo certbot certonly --webroot -w /var/lib/letsencrypt \
+  --cert-name michaelgreenly.dev -d michaelgreenly.dev \
+  --non-interactive --agree-tos -m \"$CERTBOT_EMAIL\" \
+  --deploy-hook \"systemctl reload nginx\""
+
+# 2. Install the committed vhost file, validate, reload.
+scp nginx/michaelgreenly.dev/nginx.conf int:/tmp/michaelgreenly.dev.conf
+ssh int 'sudo install -m 0644 -o root -g root \
+    /tmp/michaelgreenly.dev.conf /etc/nginx/conf.d/michaelgreenly.dev.conf && \
+  sudo nginx -t && \
+  sudo systemctl reload nginx'
+```
+
+After reload, confirm the installed bytes match source:
+
+```sh
+scp int:/etc/nginx/conf.d/michaelgreenly.dev.conf /tmp/mgdev.conf.live
+diff -u nginx/michaelgreenly.dev/nginx.conf /tmp/mgdev.conf.live
+```
+
+Then run the verification checklist (D05). **Never pass `curl -k` here**: these
+checks prove the certificate is valid.
+
+```sh
+# 1. The domain answers with the site over VALIDATED TLS from its own lineage,
+#    and the content matches what the site serves at its sites-service address.
+curl -sS -o /dev/null -w 'mgdev %{http_code} %{ssl_verify_result}\n' \
+  https://michaelgreenly.dev/          # expect: 200 0
+curl -sSvo /dev/null https://michaelgreenly.dev/ 2>&1 | grep 'subject: CN'
+                                       # expect: CN=michaelgreenly.dev
+diff <(curl -sS https://michaelgreenly.dev/) \
+     <(curl -sS https://int.ikigenba.com/srv/sites/public/michaelgreenly-dev/)
+                                       # expect: no difference
+
+# 2. The named block stole only its own domain: another parked name still parks.
+curl -sS https://metaspot.org/ | grep -c droids   # expect 1
+
+# 3. Non-interference: the apex still serves the dashboard and a /srv/ route,
+#    both over validated TLS.
+curl -sS -o /dev/null -w 'apex     %{http_code} %{ssl_verify_result}\n' \
+  https://int.ikigenba.com/
+curl -sS -o /dev/null -w 'srv/crm  %{http_code} %{ssl_verify_result}\n' \
+  https://int.ikigenba.com/srv/crm/    # 401/403 is fine — it must not be the site
+
+# 4. Lineages: the apex, parked, and michaelgreenly.dev. After the next parked
+#    reissue, the parked lineage no longer names michaelgreenly.dev.
 ssh int 'sudo certbot certificates'
 ```
 
