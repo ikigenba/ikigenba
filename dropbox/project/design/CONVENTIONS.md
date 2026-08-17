@@ -21,9 +21,10 @@ Shared facts every Decision leans on:
   layers only. dropbox's adoption of that contract, and its declared testing
   facts, are **D30**.
 - **Live invocation:** `cd dropbox && go test -tags live ./...`. It requires
-  `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, and `DROPBOX_REFRESH_TOKEN` (from the
-  suite `.envrc`; optional `DROPBOX_APP_FOLDER_ROOT` scopes the smoke below the
-  app-folder root) and **fails loudly** when any is absent. The operator runs it
+  `DROPBOX_APP_KEY` and `DROPBOX_APP_SECRET` from the environment (channel 2) and
+  `DROPBOX_REFRESH_TOKEN` from the local `state/` file the client reads
+  (channel 5, D33); optional `DROPBOX_APP_FOLDER_ROOT` scopes the smoke below the
+  app-folder root. It **fails loudly** when any is absent. The operator runs it
   at **deploy verification**, and whenever a change touches the Dropbox write
   client or the uploader. It is never part of the default gate.
 - **GOWORK mode:** workspace — the default gate resolves the replace-siblings

@@ -9,4 +9,6 @@ phase's `project/plan/phase-NN.md`, and builds it. On completion the build loop
 done marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
-Next phase: 43
+Next phase: 44
+
+- Phase 43 ⬜ realizes R-ENXH-KJ01, R-EP5D-YAQQ — `DROPBOX_REFRESH_TOKEN` moves to channel 5 (`state/`): client read/rotate, `rotating` declaration

@@ -36,6 +36,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D30 → `project/design/D30.md` — Testing-language conformance: adopt the suite contract and normalize the live layer — none minted; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
 - D31 → `project/design/D31.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
 - D32 → `project/design/D32.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `strict` — none (structural; the contract carries no per-service ids)
+- D33 → `project/design/D33.md` — `DROPBOX_REFRESH_TOKEN` adopts the rotating-credential channel (channel 5, `state/`) — none minted; adopts R-ENXH-KJ01, R-EP5D-YAQQ (root `project/design/D32.md`, `[proof: per-service]`)
 
 ## Verification ids → Decision
 
@@ -63,6 +64,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ASST-7M1N → D3 → `project/design/D03.md`
 - R-BZLK-E9VW → D16 → `project/design/D16.md`
 - R-C0TG-S1ML → D16 → `project/design/D16.md`
+- R-ENXH-KJ01 → D33 → `project/design/D33.md` (adopted from root `project/design/D32.md`)
+- R-EP5D-YAQQ → D33 → `project/design/D33.md` (adopted from root `project/design/D32.md`)
 - R-HOME-6P8T → D7 → `project/design/D07.md`
 - R-JV0A-6XDB → D14 → `project/design/D14.md`
 - R-JW86-KP40 → D14 → `project/design/D14.md`
