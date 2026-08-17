@@ -11,5 +11,3 @@ anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 51
 
-- Phase 50 ⬜ realizes R-IM5H-6CKN, R-INDD-K4BC — add `webhooks` as the seventh script trigger source
-
