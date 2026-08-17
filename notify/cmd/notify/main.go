@@ -103,7 +103,8 @@ func landingHandler(site *web.Site, service, version string) http.Handler {
 
 // ntfyCfg is notify's push configuration, read once at the composition root. The
 // ntfy base carries a dev fallback; topic and token are deployment SECRETS
-// injected via the environment (.envrc locally; app-config in prod).
+// injected via the environment (resolved from the keyring through etc/env.list
+// by the local launcher in dev; app-config in prod).
 type ntfyCfg struct {
 	ntfyBase  string // NOTIFY_NTFY_BASE_URL — plain config (tests/dev point at a mock)
 	ntfyTopic string // NTFY_TOPIC — SECRET
@@ -120,10 +121,10 @@ func mustNtfyCfg(getenv func(string) string) (ntfyCfg, error) {
 		ntfyToken: getenv("NTFY_API_KEY"),
 	}
 	if cfg.ntfyTopic == "" {
-		return ntfyCfg{}, errors.New("NTFY_TOPIC is required (inject via .envrc from ~/.secrets/NTFY_TOPIC)")
+		return ntfyCfg{}, errors.New("NTFY_TOPIC is required (local dev resolves it from the keyring through etc/env.list and the launcher injects it; prod uses app-config)")
 	}
 	if cfg.ntfyToken == "" {
-		return ntfyCfg{}, errors.New("NTFY_API_KEY is required (inject via .envrc from ~/.secrets/NTFY_API_KEY)")
+		return ntfyCfg{}, errors.New("NTFY_API_KEY is required (local dev resolves it from the keyring through etc/env.list and the launcher injects it; prod uses app-config)")
 	}
 	return cfg, nil
 }
