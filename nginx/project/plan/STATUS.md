@@ -18,5 +18,3 @@ The artifacts of D1, D2, and D3 already exist in the tree — this spec was writ
 over working code, not ahead of it — so those Decisions queued no initial work.
 New work appends a `phase-NN.md` and its line here, taking its number from the
 counter above.
-
-- Phase 08 ⬜ realizes — (structural) — add the `/t` tracking-beacon proxy to the `michaelgreenly.dev` vhost
