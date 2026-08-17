@@ -10,4 +10,6 @@ is no done marker; done is gone. This file deliberately carries **no bare
 status glyph** outside phase lines, so the anchored grep matches only phase
 lines.
 
-Next phase: 28
+Next phase: 29
+
+- Phase 28 ⬜ realizes R-E639-DSH5 — delete opsctl's eight service-boot tests (real sibling binaries) and add the source-scan guard that no test builds a sibling service

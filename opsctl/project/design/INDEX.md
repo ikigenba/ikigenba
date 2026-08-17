@@ -22,7 +22,7 @@ Verification ids change.
 - D14 → `project/design/D14.md` — Scheduled nightly backup (systemd timer + box sweep) — owns `R-RNKC-HAW8`, `R-ROS8-V2MX`
 - D15 → `project/design/D15.md` — stage / deploy / rollback / prune orchestration — owns `R-84VR-7U2K`, `R-863N-LLT9`, `R-87BJ-ZDJY`, `R-88JG-D5AN`, `R-89RC-QX1C`, `R-8AZ9-4OS1`, `R-8C75-IGIQ`, `R-I80H-SAQ3`
 - D16 → `project/design/D16.md` — Stage preflight without the retired manifest verb; one version channel — owns `R-TA75-P0NF`, `R-TBF2-2SE4`
-- D17 → `project/design/D17.md` — The testing-language contract: opsctl is hermetic + manual, and its out-of-loop ids are the manual layer — owns `R-2B4O-Z98N`; cites `R-O1AD-MRKW`, `R-O2IA-0JBL` (owned by `root project/design/D23.md`, `[proof: per-service]`)
+- D17 → `project/design/D17.md` — The testing-language contract: opsctl is hermetic + manual, and its out-of-loop ids are the manual layer — owns `R-2B4O-Z98N`, `R-E639-DSH5`; cites `R-O1AD-MRKW`, `R-O2IA-0JBL` (owned by `root project/design/D23.md`, `[proof: per-service]`)
 - D18 → `project/design/D18.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `strict` — none (structural; the contract carries no per-service ids)
 - D19 → `project/design/D19.md` — `opsctl seed-state`: bootstrap a rotating credential into a service's `state/` — none minted here; realizes the umbrella's R-EK9S-F7RY, R-ELHO-SZIN (owned by `root project/design/D32.md`, `[proof: opsctl]`)
 
@@ -61,6 +61,7 @@ Verification ids change.
 - R-CLA5-CFNK → D5 — `project/design/D05.md`
 - R-CMI1-Q7E9 → D5 — `project/design/D05.md`
 - R-CNPY-3Z4Y → D4 — `project/design/D04.md`
+- R-E639-DSH5 → D17 — `project/design/D17.md`
 - R-I80H-SAQ3 → D15 — `project/design/D15.md`
 - R-JQGB-RYA2 → D10 — `project/design/D10.md`
 - R-JRO8-5Q0R → D10 — `project/design/D10.md`
