@@ -24,6 +24,7 @@ Verification ids change.
 - D16 → `project/design/D16.md` — Stage preflight without the retired manifest verb; one version channel — owns `R-TA75-P0NF`, `R-TBF2-2SE4`
 - D17 → `project/design/D17.md` — The testing-language contract: opsctl is hermetic + manual, and its out-of-loop ids are the manual layer — owns `R-2B4O-Z98N`; cites `R-O1AD-MRKW`, `R-O2IA-0JBL` (owned by `root project/design/D23.md`, `[proof: per-service]`)
 - D18 → `project/design/D18.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `strict` — none (structural; the contract carries no per-service ids)
+- D19 → `project/design/D19.md` — `opsctl seed-state`: bootstrap a rotating credential into a service's `state/` — none minted here; realizes the umbrella's R-EK9S-F7RY, R-ELHO-SZIN (owned by `root project/design/D32.md`, `[proof: opsctl]`)
 
 ## Verification ids → Decision
 
