@@ -381,7 +381,7 @@ func TestGoModRequiresRegistrySiblingModule(t *testing.T) {
 func TestScriptsSpecDeclaresConsumersWithoutLegacyFields(t *testing.T) {
 	// R-8WN1-0VQI
 	spec := scriptsSpec()
-	wantSources := []string{"cron", "crm", "ledger", "dropbox", "prompts", "repos"}
+	wantSources := []string{"cron", "crm", "ledger", "dropbox", "prompts", "repos", "webhooks"}
 	if got := consumesFromConsumers(spec.Consumers); !reflect.DeepEqual(got, wantSources) {
 		t.Fatalf("consumer sources = %v, want %v", got, wantSources)
 	}
@@ -404,7 +404,7 @@ func TestScriptsSpecDeclaresConsumersWithoutLegacyFields(t *testing.T) {
 
 func TestReposConsumerAndSubjectRouting(t *testing.T) {
 	// R-2V03-9602
-	wantSources := []string{"cron", "crm", "ledger", "dropbox", "prompts", "repos"}
+	wantSources := []string{"cron", "crm", "ledger", "dropbox", "prompts", "repos", "webhooks"}
 	spec := scriptsSpec()
 	if got := consumesFromConsumers(spec.Consumers); !reflect.DeepEqual(got, wantSources) {
 		t.Fatalf("consumer sources = %v, want exactly %v", got, wantSources)
@@ -442,6 +442,45 @@ func TestReposConsumerAndSubjectRouting(t *testing.T) {
 	}
 	if len(got) != 1 || got[0] != sites.ID {
 		t.Fatalf("ScriptsForEvent repos push = %v, want only [%s] and not %s", got, sites.ID, scripts.ID)
+	}
+}
+
+func TestWebhooksConsumerAndSubjectRouting(t *testing.T) {
+	// R-INDD-K4BC
+	wantSources := []string{"cron", "crm", "ledger", "dropbox", "prompts", "repos", "webhooks"}
+	spec := scriptsSpec()
+	if got := consumesFromConsumers(spec.Consumers); !reflect.DeepEqual(got, wantSources) {
+		t.Fatalf("consumer sources = %v, want exactly %v", got, wantSources)
+	}
+	for _, entry := range spec.Consumers {
+		if len(entry.Subscriptions) != 1 || entry.Subscriptions[0].Filter != "**" {
+			t.Fatalf("%s subscriptions = %#v, want one catch-all filter", entry.Source, entry.Subscriptions)
+		}
+	}
+
+	ctx := context.Background()
+	svc, _ := newConsumerTestService(t)
+	webhookScript, err := svc.Create(ctx, "owner@example.com", script.CreateInput{Name: "webhook check", Body: "print(1)"})
+	if err != nil {
+		t.Fatalf("create webhook script: %v", err)
+	}
+	otherScript, err := svc.Create(ctx, "owner@example.com", script.CreateInput{Name: "cron check", Body: "print(2)"})
+	if err != nil {
+		t.Fatalf("create other-source script: %v", err)
+	}
+	if _, err := svc.SetTrigger(ctx, "owner@example.com", webhookScript.ID, "webhooks:received/**"); err != nil {
+		t.Fatalf("set webhook trigger: %v", err)
+	}
+	if _, err := svc.SetTrigger(ctx, "owner@example.com", otherScript.ID, "cron:tick/**"); err != nil {
+		t.Fatalf("set other-source trigger: %v", err)
+	}
+
+	got, err := svc.ScriptsForEvent(ctx, "webhooks", "webhooks:received/mg-dev-track")
+	if err != nil {
+		t.Fatalf("ScriptsForEvent webhook: %v", err)
+	}
+	if len(got) != 1 || got[0] != webhookScript.ID {
+		t.Fatalf("ScriptsForEvent webhook = %v, want only [%s] and not %s", got, webhookScript.ID, otherScript.ID)
 	}
 }
 

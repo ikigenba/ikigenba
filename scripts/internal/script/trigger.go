@@ -10,12 +10,13 @@ import (
 // knownFamilies is the static catalogue of event kinds scripts consumes. Event
 // subjects deliberately remain open: producers own their subject vocabulary.
 var knownFamilies = map[string][]string{
-	"cron":    {"tick"},
-	"crm":     {"contact.created", "contact.updated", "contact.tagged", "contact.untagged"},
-	"ledger":  {"recorded"},
-	"dropbox": {"create", "modify", "delete"},
-	"prompts": {"run.succeeded", "run.failed"},
-	"repos":   {"push"},
+	"cron":     {"tick"},
+	"crm":      {"contact.created", "contact.updated", "contact.tagged", "contact.untagged"},
+	"ledger":   {"recorded"},
+	"dropbox":  {"create", "modify", "delete"},
+	"prompts":  {"run.succeeded", "run.failed"},
+	"repos":    {"push"},
+	"webhooks": {"received"},
 }
 
 func triggerSources() []string {

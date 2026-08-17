@@ -53,6 +53,31 @@ func TestValidateReposTrigger(t *testing.T) {
 	}
 }
 
+func TestValidateWebhooksTrigger(t *testing.T) {
+	// R-IM5H-6CKN
+	for _, filter := range []string{"webhooks:received/mg-dev-track", "webhooks:received/**"} {
+		if source, err := validateTrigger(filter); err != nil || source != "webhooks" {
+			t.Fatalf("validateTrigger(%q) = %q, %v; want webhooks, nil", filter, source, err)
+		}
+	}
+	if _, err := validateTrigger("webhooks:nosuchkind/**"); !errors.Is(err, ErrValidation) {
+		t.Fatalf("unknown webhooks kind error = %v, want ErrValidation", err)
+	}
+
+	_, err := validateTrigger("github:push/**")
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("unknown source error = %v, want ErrValidation", err)
+	}
+	for _, source := range []string{"cron", "crm", "dropbox", "ledger", "prompts", "repos", "webhooks"} {
+		if !strings.Contains(err.Error(), source) {
+			t.Errorf("unknown source error does not name %q: %v", source, err)
+		}
+	}
+	if strings.Contains(err.Error(), "scripts") {
+		t.Fatalf("unknown source error names excluded self-chaining source scripts: %v", err)
+	}
+}
+
 func TestValidateTriggerFamilies(t *testing.T) {
 	// R-7W6Y-ICFI
 	for _, filter := range []string{"dropbox:create/bills/**/*.pdf", "dropbox:*", "cron:tick/some-schedule-nobody-declared"} {
