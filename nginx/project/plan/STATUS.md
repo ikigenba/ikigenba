@@ -12,9 +12,11 @@ gone. A phase body file carries no marker of its own. This document deliberately
 carries **no** bare status glyph outside the phase lines, so the anchored grep
 matches only phase lines.
 
-Next phase: 08
+Next phase: 09
 
 The artifacts of D1, D2, and D3 already exist in the tree — this spec was written
 over working code, not ahead of it — so those Decisions queued no initial work.
 New work appends a `phase-NN.md` and its line here, taking its number from the
 counter above.
+
+- Phase 08 ⬜ realizes — (structural) — add the `/t` tracking-beacon proxy to the `michaelgreenly.dev` vhost

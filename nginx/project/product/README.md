@@ -55,11 +55,14 @@ sees it.
 In scope: the local front door's configuration and the script that starts it; the
 per-service route fragments it serves locally, kept in step with what each
 service ships; the committed parked configuration and page for non-apex hosts;
-and the committed vhost configuration for the operator's site domain. Nothing
-else — this tree runs no application logic, holds no state, owns no service's
-route definition (each service ships its own), does not author the site the
-domain serves (that is content living in the `sites` service), and does not
-install anything on a box. Installing the parked and vhost artifacts on the
+and the committed vhost configuration for the operator's site domain, including
+one reserved same-origin path on that domain that forwards a tracking beacon to
+the suite's inbound-webhook ingress. Nothing else — this tree runs no
+application logic, holds no state, owns no service's route definition (each
+service ships its own), does not author the site the domain serves (that is
+content living in the `sites` service), does not originate the tracking (the
+beacon it forwards is acted on by the `webhooks` and `scripts` services, not
+here), and does not install anything on a box. Installing the parked and vhost artifacts on the
 live box is an operator runbook step described in the repo-root `deploy.md`,
 not something this tree performs. The site domain is served at the bare domain
 only: `www` has no address today, and giving it one is DNS and certificate work
@@ -106,6 +109,11 @@ default-host behavior; a developer who needs those tests them on a real box.
   certificate of its own — never the parking page, never the dashboard. The
   site's content is edited where site content lives, in the `sites` service,
   and appears at the domain with no change to this tree.
+- **The operator's domain can receive a tracking beacon.** A page on the site
+  can fire a fire-and-forget beacon to a reserved path on the domain, and the
+  front door delivers it to the suite's inbound-webhook ingress as an
+  authenticated trigger — without the page, the served site, or the committed
+  configuration ever holding the secret that authenticates it.
 - **The account's apex is untouched by all of it.** Adding the parked answer
   and the site-domain vhost changes nothing about how the account's own domain
   serves the dashboard and its services.
@@ -143,3 +151,8 @@ default-host behavior; a developer who needs those tests them on a real box.
   its service paths, over validated TLS.
 - The site-domain vhost file installed on the box is byte-identical to the one
   committed in this tree, so a rebuild reproduces it exactly.
+- On the live box, a fire-and-forget `POST` to `michaelgreenly.dev`'s reserved
+  beacon path is accepted and delivered to the suite's inbound-webhook ingress
+  as an authenticated trigger, while a non-`POST` to that path is refused at the
+  front door; the bearer that authenticates it appears nowhere in the committed
+  configuration.

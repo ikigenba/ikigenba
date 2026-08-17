@@ -11,7 +11,7 @@ ids change.
 - **D2** → `project/design/D02.md` — `run`: fragment regeneration and foreground launch — ids: none (untested-by-decision repo-root shell tooling; structural `bash -n` + byte-identical fragment check)
 - **D3** → `project/design/D03.md` — The parked `default_server` front door for non-apex hosts — ids: none (two static committed files + an operator runbook; the real-CA/real-nginx claim is verified once, on the live box, outside any gate)
 - **D4** → `project/design/D04.md` — The testing-language contract: `nginx/` is manual-only, and its conformance is a committed `AGENTS.md` — ids: none (structural adoption of `root project/design/D23.md`; no module and no test file could carry an id tag, so the contract's per-service ids are deliberately not cited)
-- **D5** → `project/design/D05.md` — The `michaelgreenly.dev` vhost: the operator's site domain served from `sites` — ids: none (one static committed file + an operator runbook; the real-CA/real-DNS/real-nginx claim is verified once, on the live box, outside any gate)
+- **D5** → `project/design/D05.md` — The `michaelgreenly.dev` vhost: the operator's site domain served from `sites`, with a same-origin `/t` tracking-beacon proxy to `webhooks` — ids: none (one static committed file + an untracked box-local secret include + an operator runbook; the real-CA/real-DNS/real-nginx/real-ingress claims are verified once, on the live box, outside any gate)
 
 ## Verification ids → Decision
 
@@ -67,3 +67,10 @@ proofs themselves live in the Decisions.
     `/srv/<svc>/` path).
 12. The vhost file installed on the box is byte-identical to the committed one →
     D5 byte-identical check of the installed file against its committed source.
+13. Live-box `POST` to `michaelgreenly.dev`'s reserved beacon path is accepted
+    and delivered to the webhooks ingress authenticated, a non-`POST` is refused,
+    and the bearer is absent from committed config → D5 live-box manual check (a
+    `POST /t` returns the ingress `202` and advances the `mg-dev-track` hook; a
+    non-`POST /t` is refused by nginx; the committed vhost carries only the
+    `include` directive, not the secret) plus the D5 structural check that the
+    committed file contains the `/t` beacon proxy.
