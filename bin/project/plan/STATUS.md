@@ -13,5 +13,4 @@ status glyph outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 12
 
-- Phase 10 ⬜ realizes — — push-secrets sources its key set from etc/env.list and the keyring
 - Phase 11 ⬜ realizes — — bin/start reads each service's etc/env.list from the keyring
