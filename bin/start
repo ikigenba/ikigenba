@@ -8,7 +8,7 @@
 #
 # Counterpart: bin/stop tears the whole stack back down.
 #
-# Per-service env/secrets come from each service's own .envrc (sourced in a
+# Per-service env/secrets come from each service's own etc/env.list (loaded in a
 # scoped subshell so secrets reach the process env and nothing else). Binaries,
 # logs, pidfiles, and SQLite state all live under tmp/ (gitignored).
 set -euo pipefail
@@ -138,22 +138,30 @@ build_svc() {
 	go build -C "$repo/$1" -buildvcs=false -o "$RUN_DIR/bin/$1" ./cmd/"$1"
 }
 
-# --- per-service launchers (each sources its .envrc, then execs its binary) ---
+# load_service_env <name> — export config values verbatim and resolve secret
+# values from the operator's login keyring. Missing manifests are valid.
+load_service_env() {
+	local env_list="$repo/$1/etc/env.list" line name value
+
+	[ -f "$env_list" ] || return 0
+	while IFS= read -r line || [ -n "$line" ]; do
+		if [[ "$line" =~ ^secret\ ([A-Z_][A-Z0-9_]*)$ ]]; then
+			name="${BASH_REMATCH[1]}"
+			value="$(secret-tool lookup name "$name")"
+			export "$name=$value"
+		elif [[ "$line" =~ ^config\ ([A-Z_][A-Z0-9_]*)\ (.*)$ ]]; then
+			export "${BASH_REMATCH[1]}=${BASH_REMATCH[2]}"
+		fi
+	done <"$env_list"
+}
+
+# --- per-service launchers (each loads its env, then execs its binary) ---
 # DB paths are pinned under tmp/ so dev state is isolated and wiped with bin/stop
 # --clean. Resource-id / auth-server defaults already point at the :8080 front
 # door, so only the port and db path need setting here.
 
-# source_up — the per-service .envrc files start with direnv's `source_up` to
-# inherit the repo-root .envrc (GOFLAGS). We source those files in plain bash, not
-# direnv, so provide a shim that does the same inherit. Defined in the parent
-# shell; the run_bg `(...)` subshells inherit it.
-source_up() { source "$repo/.envrc"; }
-
 launch_dashboard() {
-	# dashboard/.envrc supplies GOOGLE_* secrets, DASHBOARD_PUBLIC_BASE_URL
-	# (http://localhost:8080), then bin/start points manifest readers at the
-	# staged runtime root under tmp/opt.
-	source "$repo/dashboard/.envrc"
+	load_service_env dashboard
 	export DASHBOARD_DB_PATH="$RUN_DIR/dashboard.db"
 	export DASHBOARD_PUBLIC_BASE_URL="http://localhost:$(port 8080)"
 	export DASHBOARD_MANIFEST_ROOT="$MANIFEST_ROOT"
@@ -162,21 +170,21 @@ launch_dashboard() {
 }
 
 launch_crm() {
+	load_service_env crm
 	export CRM_DB_PATH="$RUN_DIR/crm.db"
 	export CRM_WWW_PATH="$repo/crm/share/www"
 	exec "$RUN_DIR/bin/crm" serve --port "$(port 3100)"
 }
 
 launch_ledger() {
+	load_service_env ledger
 	export LEDGER_DB_PATH="$RUN_DIR/ledger.db"
 	export LEDGER_WWW_PATH="$repo/ledger/share/www"
 	exec "$RUN_DIR/bin/ledger" serve --port "$(port 3101)"
 }
 
 launch_notify() {
-	# notify/.envrc supplies NTFY_* secrets. Resolve feed URLs through the staged
-	# runtime root so dev matches the box's etc/current manifest layout.
-	source "$repo/notify/.envrc"
+	load_service_env notify
 	export NOTIFY_DB_PATH="$RUN_DIR/notify.db"
 	export NOTIFY_WWW_PATH="$repo/notify/share/www"
 	export REGISTRY_ROOT="$MANIFEST_ROOT"
@@ -185,7 +193,7 @@ launch_notify() {
 }
 
 launch_prompts() {
-	source "$repo/prompts/.envrc"
+	load_service_env prompts
 	export PROMPTS_DB_PATH="$RUN_DIR/prompts.db"
 	export PROMPTS_WWW_PATH="$repo/prompts/share/www"
 	export PROMPTS_MANIFEST_ROOT="$MANIFEST_ROOT"
@@ -194,17 +202,14 @@ launch_prompts() {
 }
 
 launch_wiki() {
-	# wiki/.envrc supplies ANTHROPIC_API_KEY (from ~/.secrets) for ingest + ask.
-	source "$repo/wiki/.envrc"
+	load_service_env wiki
 	export WIKI_DB_PATH="$RUN_DIR/wiki.db"
 	export WIKI_WWW_PATH="$repo/wiki/share/www"
 	exec "$RUN_DIR/bin/wiki" serve --port "$(port 3001)"
 }
 
 launch_dropbox() {
-	# dropbox/.envrc supplies DROPBOX_APP_KEY/SECRET/REFRESH_TOKEN (from ~/.secrets).
-	# The local mirror lives under tmp/ so it's wiped with bin/stop --clean.
-	source "$repo/dropbox/.envrc"
+	load_service_env dropbox
 	export DROPBOX_DB_PATH="$RUN_DIR/dropbox.db"
 	export DROPBOX_MIRROR_PATH="$RUN_DIR/dropbox-mirror"
 	export DROPBOX_WWW_PATH="$repo/dropbox/share/www"
@@ -212,7 +217,7 @@ launch_dropbox() {
 }
 
 launch_cron() {
-	# cron holds no secret and needs no extra config.
+	load_service_env cron
 	export CRON_DB_PATH="$RUN_DIR/cron.db"
 	export CRON_GENERATION_PATH="$RUN_DIR/cron.db.generation"
 	export CRON_WWW_PATH="$repo/cron/share/www"
@@ -220,27 +225,21 @@ launch_cron() {
 }
 
 launch_gmail() {
-	# gmail/.envrc supplies GMAIL_CLIENT_ID/SECRET/REFRESH_TOKEN (from ~/.secrets).
-	source "$repo/gmail/.envrc"
+	load_service_env gmail
 	export GMAIL_DB_PATH="$RUN_DIR/gmail.db"
 	export GMAIL_WWW_PATH="$repo/gmail/share/www"
 	exec "$RUN_DIR/bin/gmail" serve --port "$(port 3202)"
 }
 
 launch_github() {
-	# github/.envrc supplies IKIGENBA_APP_ID/PRIVATE_KEY/GITHUB_ORG (from
-	# ~/.secrets) for the GitHub App installation-token flow. Stateless connector:
-	# chassis DB only, no event plane.
-	source "$repo/github/.envrc"
+	load_service_env github
 	export GITHUB_DB_PATH="$RUN_DIR/github.db"
 	export GITHUB_WWW_PATH="$repo/github/share/www"
 	exec "$RUN_DIR/bin/github" serve --port "$(port 3203)"
 }
 
 launch_scripts() {
-	# scripts holds no secret; it's a multi-upstream event-plane consumer whose
-	# SCRIPTS_<SRC>_FEED_URL values default to the loopback /feed of each peer.
-	source "$repo/scripts/.envrc"
+	load_service_env scripts
 	export SCRIPTS_DB_PATH="$RUN_DIR/scripts.db"
 	export SCRIPTS_WWW_PATH="$repo/scripts/share/www"
 	export_feed_urls SCRIPTS cron crm ledger dropbox prompts
@@ -248,6 +247,7 @@ launch_scripts() {
 }
 
 launch_sites() {
+	load_service_env sites
 	# sites is a pure MCP service; SITES_ROOT is the sandbox root for served sites.
 	export SITES_DB_PATH="$RUN_DIR/sites.db"
 	export SITES_WWW_PATH="$repo/sites/share/www"
@@ -257,12 +257,14 @@ launch_sites() {
 }
 
 launch_telemetry() {
+	load_service_env telemetry
 	export TELEMETRY_DB_PATH="$RUN_DIR/telemetry.db"
 	export TELEMETRY_WWW_PATH="$repo/telemetry/share/www"
 	exec "$RUN_DIR/bin/telemetry" serve --port "$(port "$(registry_port telemetry)")"
 }
 
 launch_webhooks() {
+	load_service_env webhooks
 	# webhooks holds no secret; the public /in/ ingress self-guards on per-webhook
 	# secrets. DB under tmp/ so it's wiped with bin/stop --clean.
 	export WEBHOOKS_DB_PATH="$RUN_DIR/webhooks.db"
@@ -271,11 +273,7 @@ launch_webhooks() {
 }
 
 launch_repos() {
-	# repos/.envrc supplies ANTHROPIC_API_KEY (from ~/.secrets) for the session
-	# engine. State (bare repos + worktrees) is pinned under tmp/ so it's wiped
-	# with bin/stop --clean; the webhooks feed URL resolves through the staged
-	# runtime root like the other consumers.
-	source "$repo/repos/.envrc"
+	load_service_env repos
 	export REPOS_DB_PATH="$RUN_DIR/repos.db"
 	export REPOS_WWW_PATH="$repo/repos/share/www"
 	export REPOS_STATE_DIR="$RUN_DIR/repos-state"
@@ -285,6 +283,7 @@ launch_repos() {
 }
 
 launch_artifacts() {
+	load_service_env artifacts
 	export ARTIFACTS_DB_PATH="$RUN_DIR/artifacts.db"
 	export ARTIFACTS_WWW_PATH="$repo/artifacts/share/www"
 	exec "$RUN_DIR/bin/artifacts" serve --port "$(port 3009)"
