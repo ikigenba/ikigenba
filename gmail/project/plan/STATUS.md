@@ -11,5 +11,3 @@ phase line, so the anchored grep matches only phase lines.
 
 Next phase: 33
 
-- Phase 32 ⬜ realizes R-ENXH-KJ01, R-EP5D-YAQQ, R-S3ZK-NBWM — `GMAIL_REFRESH_TOKEN` moves to channel 5 (`state/`): client read/rotate, consent writes `state/`, `rotating` declaration
-
