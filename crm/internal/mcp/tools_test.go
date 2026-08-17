@@ -239,7 +239,7 @@ func id(t *testing.T, m map[string]any) string {
 	return v
 }
 
-// TestToolsList asserts tools/list returns EXACTLY the eight
+// TestToolsList asserts tools/list returns EXACTLY the nine
 // verbs (count and names), each with the required descriptor keys.
 func TestToolsList(t *testing.T) {
 	h := newTestHandler(t)
@@ -257,7 +257,7 @@ func TestToolsList(t *testing.T) {
 	}
 
 	want := []string{
-		"search", "get", "save",
+		"search", "mint", "get", "save",
 		"delete", "log", "health",
 		"reflection", "guide",
 	}
@@ -281,7 +281,7 @@ func TestToolsList(t *testing.T) {
 			t.Errorf("missing expected tool %q", name)
 		}
 	}
-	for _, name := range []string{"search", "get", "save", "delete", "log", "guide"} {
+	for _, name := range []string{"search", "mint", "get", "save", "delete", "log", "guide"} {
 		if !got[name] {
 			t.Errorf("missing crm-declared tool %q", name)
 		}
@@ -298,7 +298,7 @@ func TestToolsListDomainOutputSchemas(t *testing.T) {
 	tools := toolsList(t, h)
 
 	// R-5Y60-E30A
-	for _, name := range []string{"search", "get", "save", "delete", "log", "guide"} {
+	for _, name := range []string{"search", "mint", "get", "save", "delete", "log", "guide"} {
 		desc := requireTool(t, tools, name)
 		if name == "guide" {
 			if len(desc.OutputSchema) != 0 {
@@ -321,6 +321,22 @@ func TestToolsListDomainOutputSchemas(t *testing.T) {
 	}
 }
 
+func TestMintToolDeclaresSchemaAndMapsValidation(t *testing.T) {
+	h := newTestHandler(t)
+	mint := requireTool(t, toolsList(t, h), "mint")
+	required, ok := mint.InputSchema["required"].([]any)
+	if !ok || len(required) != 1 || required[0] != "contact_id" {
+		t.Fatalf("mint required fields = %#v, want contact_id", mint.InputSchema["required"])
+	}
+	if len(mint.OutputSchema) == 0 {
+		t.Fatal("mint is missing outputSchema")
+	}
+	errResult := callErr(t, h, "mint", map[string]any{})
+	if errResult["code"] != "validation" {
+		t.Fatalf("mint missing contact_id error = %+v", errResult)
+	}
+}
+
 func TestDomainToolSuccessResultsAreStructured(t *testing.T) {
 	h := newTestHandler(t)
 	org := callOK(t, h, "save", map[string]any{
@@ -331,6 +347,10 @@ func TestDomainToolSuccessResultsAreStructured(t *testing.T) {
 	deletable := callOK(t, h, "save", map[string]any{
 		"type":   "task",
 		"fields": map[string]any{"title": "Delete me"},
+	})
+	contact := callOK(t, h, "save", map[string]any{
+		"type":   "contact",
+		"fields": map[string]any{"display_name": "Token recipient"},
 	})
 
 	// R-5ZDW-RUQZ
@@ -347,6 +367,11 @@ func TestDomainToolSuccessResultsAreStructured(t *testing.T) {
 		{"get", map[string]any{"id": orgID}, func(t *testing.T, got map[string]any) {
 			if got["id"] != orgID || got["type"] != "organization" {
 				t.Fatalf("get result has wrong card shape: %+v", got)
+			}
+		}},
+		{"mint", map[string]any{"contact_id": id(t, contact), "campaign": "structured"}, func(t *testing.T, got map[string]any) {
+			if got["token"] == "" || got["contact_id"] != id(t, contact) || got["campaign"] != "structured" {
+				t.Fatalf("mint result has wrong shape: %+v", got)
 			}
 		}},
 		{"save", map[string]any{"type": "task", "fields": map[string]any{"title": "Structured save"}}, requireSummaryShape},

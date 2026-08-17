@@ -1,5 +1,5 @@
 // Package crm is the sales-CRM domain: five entities (organization, contact,
-// deal, interaction, task) behind a fixed six-verb polymorphic surface
+// deal, interaction, task) behind a fixed seven-verb polymorphic surface
 // (PLAN.md §2). The dispatcher in service.go owns the transaction and is the one
 // place that decodes the loose `fields` map into a typed <Type>Input, normalizes
 // and validates it (PLAN.md §4 "the dispatcher seam"). Entity stores never see
@@ -137,6 +137,20 @@ type LogInput struct {
 	Kind       string
 	Body       string
 	OccurredAt *string
+}
+
+// MintInput drives crm_mint for a live contact. Campaign is optional metadata
+// for distinguishing outreach attempts.
+type MintInput struct {
+	ContactID string  `json:"contact_id"`
+	Campaign  *string `json:"campaign,omitempty"`
+}
+
+// MintResult is the machine-readable result returned by crm_mint.
+type MintResult struct {
+	Token     string  `json:"token"`
+	ContactID string  `json:"contact_id"`
+	Campaign  *string `json:"campaign,omitempty"`
 }
 
 // ── shared result shapes ─────────────────────────────────────────────────────

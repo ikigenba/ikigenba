@@ -35,7 +35,7 @@ func serviceTools(h *toolHandlers) (tools []appkitmcp.Tool) {
 	return []appkitmcp.Tool{
 		{
 			Name:        tool("search"),
-			Description: "Filtered, recency-ordered (updated_at DESC) summaries across all entities, or scoped to one 'type'; the list/paginate verb. 'query' substring-matches the entity's key text (LIKE). 'type' is one of organization|contact|deal|task|interaction. 'filters' is an object of entity-specific predicates, e.g. {\"subject_id\":\"<id>\"} for interactions, {\"tag\":\"newsletter\"} or {\"lifecycle\":\"customer\"} for contacts, {\"stage\":\"proposal\"} or {\"status\":\"open\"} for deals, {\"status\":\"open\"} for tasks. Use 'after_id' (the returned next_cursor) to paginate.",
+			Description: "Filtered, recency-ordered (updated_at DESC) summaries across all entities, or scoped to one 'type'; the list/paginate verb. 'query' substring-matches the entity's key text (LIKE). 'type' is one of organization|contact|deal|task|interaction. 'filters' is an object of entity-specific predicates, e.g. {\"subject_id\":\"<id>\"} for interactions, {\"tag\":\"newsletter\"}, {\"lifecycle\":\"customer\"}, or {\"token\":\"abc123\"} for contacts, {\"stage\":\"proposal\"} or {\"status\":\"open\"} for deals, {\"status\":\"open\"} for tasks. Use 'after_id' (the returned next_cursor) to paginate.",
 			InputSchema: obj(map[string]any{
 				"query":    typ("string"),
 				"type":     typ("string"),
@@ -49,6 +49,22 @@ func serviceTools(h *toolHandlers) (tools []appkitmcp.Tool) {
 			}, "items"),
 			Handler: func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 				return h.toolSearch(ctx, args)
+			},
+		},
+		{
+			Name:        tool("mint"),
+			Description: "Mint a new six-character tracking token for a live contact. Each call adds a distinct token; campaign is optional outreach metadata.",
+			InputSchema: obj(map[string]any{
+				"contact_id": typ("string"),
+				"campaign":   typ("string"),
+			}, "contact_id"),
+			OutputSchema: obj(map[string]any{
+				"token":      typ("string"),
+				"contact_id": typ("string"),
+				"campaign":   typ("string"),
+			}, "token", "contact_id"),
+			Handler: func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
+				return h.toolMint(ctx, args)
 			},
 		},
 		{
@@ -193,6 +209,18 @@ func (h *toolHandlers) toolGet(ctx context.Context, raw json.RawMessage) (map[st
 		return toolErr(err), nil
 	}
 	return appkitmcp.StructuredResult(card)
+}
+
+func (h *toolHandlers) toolMint(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
+	var a crm.MintInput
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return nil, err
+	}
+	result, err := h.svc.Mint(ctx, a)
+	if err != nil {
+		return toolErr(err), nil
+	}
+	return appkitmcp.StructuredResult(result)
 }
 
 func (h *toolHandlers) toolSave(ctx context.Context, raw json.RawMessage) (map[string]any, error) {

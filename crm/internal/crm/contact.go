@@ -426,7 +426,7 @@ func contactTags(tx *sql.Tx, contactID string) ([]string, error) {
 }
 
 // Search matches live contacts by name/email/phone substring, with optional
-// lifecycle / org_id / tag filters, recency-ordered.
+// lifecycle / org_id / tag / token filters, recency-ordered.
 func (contactStore) Search(tx *sql.Tx, p SearchParams) ([]Summary, error) {
 	where := []string{"c.deleted_at IS NULL"}
 	var args []any
@@ -452,6 +452,10 @@ func (contactStore) Search(tx *sql.Tx, p SearchParams) ([]Summary, error) {
 	if tag, ok := filterString(p.Filters, "tag"); ok {
 		where = append(where, "EXISTS (SELECT 1 FROM contact_tags t WHERE t.contact_id = c.id AND t.deleted_at IS NULL AND t.tag = ?)")
 		args = append(args, tag)
+	}
+	if token, ok := filterString(p.Filters, "token"); ok {
+		where = append(where, "EXISTS (SELECT 1 FROM contact_tokens ct WHERE ct.contact_id = c.id AND ct.deleted_at IS NULL AND ct.token = ?)")
+		args = append(args, token)
 	}
 	pred, pArgs, err := keysetAfter(tx, "contacts", p.AfterID)
 	if err != nil {
@@ -493,7 +497,8 @@ func (contactStore) Search(tx *sql.Tx, p SearchParams) ([]Summary, error) {
 	return out, nil
 }
 
-// Delete soft-deletes the contact and its owned children (emails/phones/tags).
+// Delete soft-deletes the contact and its owned children
+// (emails/phones/tags/tokens).
 // Shallow (PLAN.md §8): deal_contacts rows referencing this contact are left
 // intact and simply hidden from reads (the participant join filters on the
 // contact's deleted_at).
@@ -506,7 +511,7 @@ func (contactStore) Delete(tx *sql.Tx, id string, at time.Time) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
-	for _, table := range []string{"contact_emails", "contact_phones", "contact_tags"} {
+	for _, table := range []string{"contact_emails", "contact_phones", "contact_tags", "contact_tokens"} {
 		if _, err := tx.Exec(`UPDATE `+table+` SET deleted_at = ? WHERE contact_id = ? AND deleted_at IS NULL`, ts, id); err != nil {
 			return fmt.Errorf("delete %s: %w", table, err)
 		}
