@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.26.0 — 2026-08-17
+
+- Purged stale references to the retired `.envrc` / `~/.secrets` secret-injection
+  mechanism from the service's startup configuration comment and its two
+  fail-loud error messages, so operator-facing text names the current secret
+  sources. No user-facing behavior, API, schema, or data changes; the shipped
+  binary is functionally unchanged apart from the wording of a startup error.
+
 ## v0.25.0 — 2026-08-15
 
 - Adopted the suite-wide LLM-lint semantic test gate (D31). The test suite now
