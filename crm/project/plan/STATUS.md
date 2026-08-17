@@ -13,5 +13,3 @@ the anchored grep matches only phase lines.
 
 Next phase: 26
 
-- Phase 25 ⬜ realizes R-9QOE-LQTI, R-9RWA-ZIK7, R-9T47-DAAW, R-9UC3-R21L, R-9VK0-4TSA, R-9XZS-WD9O — add the contact_tokens table, the mint verb, and the search token lookup
-
