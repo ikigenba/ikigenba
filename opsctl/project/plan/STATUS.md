@@ -11,5 +11,3 @@ status glyph** outside phase lines, so the anchored grep matches only phase
 lines.
 
 Next phase: 28
-
-- Phase 27 ⬜ realizes R-EK9S-F7RY, R-ELHO-SZIN — `opsctl seed-state`: bootstrap a rotating credential into a service's `state/`
