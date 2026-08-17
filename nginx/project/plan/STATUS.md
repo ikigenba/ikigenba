@@ -14,8 +14,6 @@ matches only phase lines.
 
 Next phase: 08
 
-- Phase 07 ⬜ realizes — — The committed `michaelgreenly.dev` vhost server file
-
 The artifacts of D1, D2, and D3 already exist in the tree — this spec was written
 over working code, not ahead of it — so those Decisions queued no initial work.
 New work appends a `phase-NN.md` and its line here, taking its number from the
