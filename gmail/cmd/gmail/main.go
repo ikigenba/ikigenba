@@ -15,9 +15,9 @@
 // connector with an MCP surface, an internal poll daemon, and an event-plane
 // producer half. The History-API producer + poll daemon is wired through
 // Producer/Workers (P3); the full normal-mailbox MCP tool set over the P2 client
-// is wired through Handlers (P4) in gmailSpec(). The three GMAIL_* secrets +
-// GMAIL_POLL_INTERVAL are read there at gmail's own composition root via getenv
-// and never logged; appkit never touches them.
+// is wired through Handlers (P4) in gmailSpec(). The static OAuth credentials
+// and poll interval come from the environment; the rotating refresh token comes
+// from gmail's state directory. They are never logged; appkit never touches them.
 package main
 
 import (
@@ -31,8 +31,10 @@ import (
 	"gmail/internal/mcp"
 	"net/http"
 	"os"
+	"path/filepath"
 	"registry"
 	"strconv"
+	"strings"
 	"time"
 
 	gm "gmail/internal/gmail"
@@ -70,19 +72,23 @@ func gmailSpec() appkit.Spec {
 		},
 		// Handlers builds the Gmail client + producer Engine over appkit's shared DB
 		// handle, then mounts the normal-mailbox MCP surface behind the
-		// nginx-injected identity gate. The three GMAIL_* secrets +
-		// GMAIL_POLL_INTERVAL are read here at the boundary and passed into the
-		// client/engine -- never logged.
+		// nginx-injected identity gate. Static OAuth credentials and the poll
+		// interval come from the environment; the refresh token comes from state/.
 		Handlers: func(rt *appkit.Router) error {
 			conn := rt.DB()
 			if conn == nil {
 				return fmt.Errorf("gmail: no DB handle on router")
 			}
 
+			refreshToken, refreshTokenPath, err := readRefreshToken(os.Getenv)
+			if err != nil {
+				return err
+			}
 			cfg := gm.Config{
-				ClientID:     os.Getenv("GMAIL_CLIENT_ID"),
-				ClientSecret: os.Getenv("GMAIL_CLIENT_SECRET"),
-				RefreshToken: os.Getenv("GMAIL_REFRESH_TOKEN"),
+				ClientID:         os.Getenv("GMAIL_CLIENT_ID"),
+				ClientSecret:     os.Getenv("GMAIL_CLIENT_SECRET"),
+				RefreshToken:     refreshToken,
+				RefreshTokenPath: refreshTokenPath,
 			}
 			client := gm.NewClient(cfg, rt.HTTPClient(100*time.Second))
 			port, err := config.EnvOrInt(os.Getenv, "GMAIL_PORT", registry.MustPort("gmail"))
@@ -137,6 +143,19 @@ func gmailSpec() appkit.Spec {
 			},
 		},
 	}
+}
+
+func readRefreshToken(getenv func(string) string) (token, path string, err error) {
+	root := strings.TrimSpace(getenv("IKIGENBA_ROOT"))
+	if root == "" {
+		return "", "", fmt.Errorf("gmail: cannot read GMAIL_REFRESH_TOKEN: IKIGENBA_ROOT is empty")
+	}
+	path = filepath.Join(root, "gmail", "state", "GMAIL_REFRESH_TOKEN")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", path, fmt.Errorf("gmail: read GMAIL_REFRESH_TOKEN from %s: %w", path, err)
+	}
+	return string(b), path, nil
 }
 
 func pollInterval(getenv func(string) string) (time.Duration, error) {

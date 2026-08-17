@@ -13,8 +13,8 @@ package gmail
 //   - OAuth: https://oauth2.googleapis.com/token              (form-encoded)
 //   - REST:  https://gmail.googleapis.com/gmail/v1/users/me   (bearer)
 //
-// No disk, no db, no HTTP server. Pure API client. Token values are never
-// logged. A dead/revoked refresh token surfaces as `invalid_grant` on the
+// The only disk write is atomic persistence when Google rotates the refresh
+// token. Token values are never logged. A dead/revoked refresh token surfaces as `invalid_grant` on the
 // refresh call itself: the client FAILS LOUDLY (ErrInvalidGrant) — it does NOT
 // spin/retry, because the token needs human re-consent (decisions §2).
 import (
@@ -28,6 +28,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -40,14 +42,14 @@ var (
 	hostREST  = "https://gmail.googleapis.com/gmail/v1/users/me"
 )
 
-// Config carries the three dedicated OAuth credentials the Client needs. They
-// are read from the environment at the main.go boundary (via .envrc/direnv in
-// dev, the launcher on the box) and passed in here — the Client never reads the
-// environment itself and never logs these values (decisions §2).
+// Config carries the OAuth credentials the Client needs. The static client
+// credentials come from the environment; the refresh token and its state path
+// are supplied by the composition root. The Client never logs these values.
 type Config struct {
-	ClientID     string // GMAIL_CLIENT_ID
-	ClientSecret string // GMAIL_CLIENT_SECRET
-	RefreshToken string // GMAIL_REFRESH_TOKEN
+	ClientID         string // GMAIL_CLIENT_ID
+	ClientSecret     string // GMAIL_CLIENT_SECRET
+	RefreshToken     string // GMAIL_REFRESH_TOKEN contents
+	RefreshTokenPath string // rotating state/GMAIL_REFRESH_TOKEN file
 }
 
 // Client is the Gmail REST v1 client. It is safe for concurrent use; the
@@ -68,10 +70,11 @@ func NewClient(cfg Config, httpClient *http.Client) *Client {
 	}
 	c := &Client{cfg: cfg, http: hc}
 	c.token = &tokenSource{
-		clientID:     cfg.ClientID,
-		clientSecret: cfg.ClientSecret,
-		refreshToken: cfg.RefreshToken,
-		httpClient:   hc,
+		clientID:         cfg.ClientID,
+		clientSecret:     cfg.ClientSecret,
+		refreshToken:     cfg.RefreshToken,
+		refreshTokenPath: cfg.RefreshTokenPath,
+		httpClient:       hc,
 	}
 	return c
 }
@@ -82,10 +85,11 @@ func NewClient(cfg Config, httpClient *http.Client) *Client {
 // ---------------------------------------------------------------------------
 
 type tokenSource struct {
-	clientID     string
-	clientSecret string
-	refreshToken string
-	httpClient   *http.Client
+	clientID         string
+	clientSecret     string
+	refreshToken     string
+	refreshTokenPath string
+	httpClient       *http.Client
 
 	mu        sync.Mutex
 	accessTok string
@@ -162,15 +166,25 @@ func (t *tokenSource) refreshLocked(ctx context.Context) error {
 	}
 
 	var tr struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int    `json:"expires_in"`
-		TokenType   string `json:"token_type"`
+		AccessToken  string `json:"access_token"`
+		ExpiresIn    int    `json:"expires_in"`
+		TokenType    string `json:"token_type"`
+		RefreshToken string `json:"refresh_token"`
 	}
 	if err := json.Unmarshal(body, &tr); err != nil {
 		return fmt.Errorf("gmail token refresh: decode: %w", err)
 	}
 	if tr.AccessToken == "" {
 		return fmt.Errorf("gmail token refresh: empty access_token")
+	}
+	if tr.RefreshToken != "" && tr.RefreshToken != t.refreshToken {
+		if t.refreshTokenPath == "" {
+			return fmt.Errorf("gmail token refresh: rotated GMAIL_REFRESH_TOKEN has no state path")
+		}
+		if err := writeFileAtomic(t.refreshTokenPath, []byte(tr.RefreshToken), 0o600); err != nil {
+			return fmt.Errorf("gmail token refresh: persist rotated GMAIL_REFRESH_TOKEN: %w", err)
+		}
+		t.refreshToken = tr.RefreshToken
 	}
 	t.accessTok = tr.AccessToken
 	exp := tr.ExpiresIn
@@ -179,6 +193,33 @@ func (t *tokenSource) refreshLocked(ctx context.Context) error {
 	}
 	t.expiry = time.Now().Add(time.Duration(exp) * time.Second)
 	return nil
+}
+
+func writeFileAtomic(path string, data []byte, mode os.FileMode) (err error) {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".GMAIL_REFRESH_TOKEN-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer func() {
+		_ = tmp.Close()
+		if err != nil {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if err = tmp.Chmod(mode); err != nil {
+		return err
+	}
+	if _, err = tmp.Write(data); err != nil {
+		return err
+	}
+	if err = tmp.Sync(); err != nil {
+		return err
+	}
+	if err = tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 
 // ---------------------------------------------------------------------------

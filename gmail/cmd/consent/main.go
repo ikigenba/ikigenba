@@ -9,8 +9,8 @@
 // get implicit loopback-redirect support — no redirect URI to register), build
 // the auth URL with the full mail scope + offline access + forced consent, open
 // the browser via xdg-open, capture the returned authorization code, exchange it
-// at Google's token endpoint, and write the refresh token DIRECTLY to
-// ~/.secrets/GMAIL_REFRESH_TOKEN with mode 0600.
+// at Google's token endpoint, and write the refresh token directly to
+// ${IKIGENBA_ROOT}/gmail/state/GMAIL_REFRESH_TOKEN with mode 0600.
 //
 // CRITICAL secrets discipline: this tool NEVER prints, logs, or otherwise emits
 // the access token or the refresh token value. It prints only a masked
@@ -231,19 +231,18 @@ func exchangeCode(clientID, clientSecret, code, redirectURI string) (string, err
 	return body.RefreshToken, nil
 }
 
-// writeRefreshToken writes the refresh token to ~/.secrets/GMAIL_REFRESH_TOKEN
-// with mode 0600, creating ~/.secrets (0700) if needed. The file is written
-// atomically-enough for a one-time manual step (truncate + write).
+// writeRefreshToken writes the refresh token to gmail's state directory with
+// mode 0600, creating that directory if needed.
 func writeRefreshToken(token string) error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("resolve home dir: %w", err)
+	root := strings.TrimSpace(os.Getenv("IKIGENBA_ROOT"))
+	if root == "" {
+		return fmt.Errorf("IKIGENBA_ROOT must be set to write GMAIL_REFRESH_TOKEN")
 	}
-	secretsDir := filepath.Join(home, ".secrets")
-	if err := os.MkdirAll(secretsDir, 0o700); err != nil {
-		return fmt.Errorf("create %s: %w", secretsDir, err)
+	stateDir := filepath.Join(root, "gmail", "state")
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		return fmt.Errorf("create %s: %w", stateDir, err)
 	}
-	path := filepath.Join(secretsDir, "GMAIL_REFRESH_TOKEN")
+	path := filepath.Join(stateDir, "GMAIL_REFRESH_TOKEN")
 	// O_CREATE|O_TRUNC|O_WRONLY with 0600; if the file already exists with looser
 	// perms, tighten it explicitly.
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)

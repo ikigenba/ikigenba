@@ -42,7 +42,7 @@ spec contracts and `$ralph` for the unattended build workflow.
   `GOWORK=off` via `bin/ship gmail`.
 - Live invocation: `cd gmail && go test -tags live ./...`. It requires all three
   credentials: `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, and
-  `GMAIL_REFRESH_TOKEN`, supplied from the suite `.envrc`.
+  `GMAIL_REFRESH_TOKEN`, supplied from the service's rotating `state/` file.
 - Run the live invocation at deploy verification for gmail, and whenever a
   change touches the Gmail client (`internal/gmail/client.go`), the
   attachment/multipart path, or the OAuth token exchange.

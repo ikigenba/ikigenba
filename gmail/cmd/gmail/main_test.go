@@ -141,6 +141,9 @@ func TestGmailBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
 	}
+	if err := os.WriteFile(filepath.Join(stateDir, "GMAIL_REFRESH_TOKEN"), []byte("test-refresh-token"), 0o600); err != nil {
+		t.Fatalf("seed refresh token: %v", err)
+	}
 
 	versionBytes, err := os.ReadFile(filepath.Join("..", "..", "VERSION"))
 	if err != nil {
@@ -188,7 +191,7 @@ func TestGmailBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 	}
 
 	binary := filepath.Join(libexecDir, "gmail-"+version)
-	build := exec.Command("go", "build", "-o", binary, ".")
+	build := exec.Command("go", "build", "-buildvcs=false", "-o", binary, ".")
 	build.Env = os.Environ()
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("go build gmail: %v\n%s", err, out)
@@ -217,7 +220,6 @@ func TestGmailBootsFromOpsctlLayoutAndServesHealth(t *testing.T) {
 		"GMAIL_PORT":                fmt.Sprintf("%d", port),
 		"GMAIL_CLIENT_ID":           "",
 		"GMAIL_CLIENT_SECRET":       "",
-		"GMAIL_REFRESH_TOKEN":       "",
 		"GMAIL_POLL_INTERVAL":       "24h",
 		"GMAIL_WWW_PATH":            filepath.Join(shareDir, "current", "www"),
 		"OUTBOX_RETENTION_DAYS":     "7",
