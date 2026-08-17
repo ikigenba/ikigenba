@@ -133,7 +133,10 @@ Out of scope — nothing else is promised here:
   the same runtime layout, the same path routing, and the same front-door auth
   chain the box has — so a change tested locally has been tested against the
   real shape. Every service's log is where the operator expects it, and tearing
-  the stack down leaves nothing running.
+  the stack down leaves nothing running. When a service cannot start because a
+  secret it declares is missing, the operator is told which service and which
+  secret rather than being left to read an empty log, and the rest of the stack
+  still comes up.
 - **A new migration cannot collide.** Creating a migration for a service yields
   a file whose ordering is unique by construction, so two branches authored the
   same day still merge and apply in a defined order.
