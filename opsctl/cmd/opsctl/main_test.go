@@ -101,7 +101,7 @@ func TestUsageHasAllGroupTitles(t *testing.T) {
 			t.Errorf("usage() missing group heading %q", want)
 		}
 	}
-	for _, want := range []string{"OPSCTL_ROOT", "OPSCTL_SYSROOT"} {
+	for _, want := range []string{"OPSCTL_ROOT", "OPSCTL_SYSROOT", "IKIGENBA_ROOT"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("usage() missing env var %q", want)
 		}

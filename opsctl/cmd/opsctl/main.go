@@ -93,6 +93,7 @@ var groups = []group{
 		{"tail", "opsctl tail <app> [journalctl args…]"},
 	}},
 	{"Provisioning", []verb{
+		{"seed-state", "opsctl seed-state <svc> <NAME> [--force]"},
 		{"setup", "opsctl setup <app> [--default]\n" +
 			"                [--fragment <path>] [--defer-nginx] [--packages <p1,p2>]"},
 		{"teardown", "opsctl teardown <app> --force [--keep-user]"},
@@ -115,24 +116,25 @@ type runner func(ctx context.Context, root, name string, args []string) error
 // help-coverage test asserts these two maps share an identical key set, so a verb
 // can't be dispatchable but undocumented (or vice versa).
 var runners = map[string]runner{
-	"stage":    runStage,
-	"deploy":   runDeploy,
-	"rollback": runRollback,
-	"prune":    runPrune,
-	"backup":   runBackup,
-	"restore":  runRestore,
-	"status":   runStatus,
-	"releases": runReleases,
-	"start":    runServiceControl,
-	"stop":     runServiceControl,
-	"restart":  runServiceControl,
-	"enable":   runServiceControl,
-	"disable":  runServiceControl,
-	"tail":     runTail,
-	"setup":    runSetup,
-	"teardown": runTeardown,
-	"convert":  runConvert,
-	"init-box": runInitBox,
+	"stage":      runStage,
+	"deploy":     runDeploy,
+	"rollback":   runRollback,
+	"prune":      runPrune,
+	"backup":     runBackup,
+	"restore":    runRestore,
+	"status":     runStatus,
+	"releases":   runReleases,
+	"start":      runServiceControl,
+	"stop":       runServiceControl,
+	"restart":    runServiceControl,
+	"enable":     runServiceControl,
+	"disable":    runServiceControl,
+	"tail":       runTail,
+	"seed-state": runSeedState,
+	"setup":      runSetup,
+	"teardown":   runTeardown,
+	"convert":    runConvert,
+	"init-box":   runInitBox,
 }
 
 const boxEnvFile = "/etc/ikigenba/env"
@@ -178,6 +180,7 @@ func usage() string {
 env:
   OPSCTL_ROOT     install base (default /opt) — the /opt/<app> tree
   OPSCTL_SYSROOT  system-config base (default /) — the /etc + /var tree
+  IKIGENBA_ROOT   service checkout base used by seed-state
 
 Run 'opsctl <verb> --help' for a verb's flags.
 `)
@@ -321,6 +324,19 @@ func runRestore(ctx context.Context, root, name string, args []string) error {
 		key = pos[1]
 	}
 	return opsctl.New(root).Restore(ctx, pos[0], key, os.Stdin)
+}
+
+func runSeedState(ctx context.Context, root, name string, args []string) error {
+	fs := newFlagSet(name)
+	force := fs.Bool("force", false, "replace an existing credential")
+	if err := fs.Parse(reorderArgs(args, nil)); err != nil {
+		return helpErr(err)
+	}
+	pos := fs.Args()
+	if len(pos) != 2 {
+		return fmt.Errorf("usage: opsctl seed-state <svc> <NAME> [--force]")
+	}
+	return opsctl.New(os.Getenv("IKIGENBA_ROOT")).SeedState(ctx, pos[0], pos[1], os.Stdin, *force)
 }
 
 func runPrune(ctx context.Context, root, name string, args []string) error {
