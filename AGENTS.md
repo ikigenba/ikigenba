@@ -19,7 +19,7 @@ separately in `~/projects/metaspot`.
 **Each subproject has its own `AGENTS.md`** (what it is, layout, tests,
 versioning); this file is only the suite-level map and whole-suite workflows. You
 almost always work in exactly one subfolder: read its `AGENTS.md` first and keep
-everything for the unit of work (code, schema, `.envrc`, its `project/` spec) under
+everything for the unit of work (code, schema, its `project/` spec) under
 it. If unsure which subfolder a task belongs to, ask; do not default to the root.
 
 ## Top-level layout

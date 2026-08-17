@@ -21,10 +21,12 @@ so every app must be seeded **before** first deploy.
 - A live SSO session: the **operator** runs `aws sso login --profile int`
   interactively. You cannot do this; if the fetch fails with an auth error,
   stop and ask.
-- Secret values live in `~/.secrets/<NAME>` (one file per secret, contents =
-  value). **Never** read, print, echo, or log a value — scripts may `cat` a
-  secret into a variable that goes straight to AWS, but only masked forms
-  (`sk-a…BgAA`) may ever appear in output you see.
+- Secret values live in the operator's login keyring (libsecret), one entry per
+  secret keyed by attribute `name <NAME>`, read via `secret-tool lookup name
+  <NAME>` (a same-named environment variable overrides it). **Never** read,
+  print, echo, or log a value — the script resolves a secret into a variable
+  that goes straight to AWS, but only masked forms (`sk-a…BgAA`) may ever appear
+  in output you see.
 
 ## Procedure
 
@@ -34,11 +36,12 @@ so every app must be seeded **before** first deploy.
    bin/push-secrets <app>
    ```
 
-   The tool parses `<app>/.envrc` for lines that exactly match
-   `export NAME="$(cat ~/.secrets/NAME)"`, resolves each value from the
-   same-named environment variable or `~/.secrets/<NAME>`, and overwrites only
-   `/ikigenba/<ACCOUNT>/app-config/<app>`. Apps with no matching lines are
-   pushed as `{}`.
+   The tool parses `<app>/etc/env.list` for lines that exactly match
+   `secret NAME`, resolves each value from the same-named environment variable
+   else the operator's login keyring (`secret-tool lookup name <NAME>`, else it
+   aborts), and overwrites only `/ikigenba/<ACCOUNT>/app-config/<app>`. The
+   file's `config NAME value` lines are dev-only and never pushed; an app with
+   no `secret` lines (or no `env.list`) is pushed as `{}`.
 
 2. **Seed the whole suite.** Run:
 
