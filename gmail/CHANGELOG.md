@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.20.0 — 2026-08-17
+
+- The Gmail refresh token now lives in the service's own `state/` directory (a
+  backed-up, per-service `state/GMAIL_REFRESH_TOKEN` file) instead of the shared
+  app-config secret. gmail reads it at startup and persists any provider-rotated
+  token back to the same file, so a rotated credential survives restarts and is
+  no longer shared across environments. The static OAuth client id and secret
+  are unchanged. Operators seed the token once per box before this version runs;
+  a missing file fails startup loudly rather than starting unconfigured.
+
 ## v0.19.0 — 2026-08-15
 
 - Adopted the suite-wide LLM-lint semantic gate (D31); the existing test suite
