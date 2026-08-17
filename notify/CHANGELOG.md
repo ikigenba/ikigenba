@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.27.0 — 2026-08-17
+
+- Operational minor release: suite-wide redeploy to verify env-manifest and secret handling across all services. No code, API, schema, or data changes since the previous version.
+
 ## v0.26.0 — 2026-08-17
 
 - Purged stale references to the retired `.envrc` / `~/.secrets` secret-injection
