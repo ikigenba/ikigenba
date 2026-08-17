@@ -48,6 +48,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D41 → `project/design/D41.md` — Outbox schema convergence: the `outbox_correlation` rebuild migration, the restored frozen body, and the migration-immutability guard — owns R-NGXY-11YC, R-NJDQ-SLFQ; adopts R-NFQ1-NA7N (root `project/design/D25.md`)
 - D42 → `project/design/D42.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
 - D43 → `project/design/D43.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `strict` — none (structural; the contract carries no per-service ids)
+- D44 → `project/design/D44.md` — `webhooks` becomes a trigger source: scripts reacts to inbound webhooks — owns R-IM5H-6CKN, R-INDD-K4BC
 
 ## Verification ids → Decision
 
@@ -151,7 +152,9 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-IJYP-35L9 → D25 → `project/design/D25.md`
 - R-IKGJ-ND9W → D36 → `project/design/D36.md`
 - R-ILOG-150L → D36 → `project/design/D36.md`
+- R-IM5H-6CKN → D44 → `project/design/D44.md`
 - R-IMEH-UP2N → D25 → `project/design/D25.md`
+- R-INDD-K4BC → D44 → `project/design/D44.md`
 - R-INME-8GTC → D25 → `project/design/D25.md`
 - R-IO48-SOHZ → D36 → `project/design/D36.md`
 - R-IOUA-M8K1 → D26 → `project/design/D26.md`
@@ -263,3 +266,6 @@ rest of the index.
     it publishes carry the causing action's chain id, and asking scripts for that
     id returns exactly those runs →
     R-4RBY-HL4R, R-4SJU-VCVG, R-4XFG-EFU8
+17. A script set to trigger on an inbound webhook runs when that hook is fired and
+    can act on the delivered payload →
+    R-IM5H-6CKN, R-INDD-K4BC

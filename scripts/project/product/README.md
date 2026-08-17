@@ -257,6 +257,10 @@ Promised values the design must honor verbatim and never re-declare:
 - **A script can react to code changes and act on them** — a script can be
   triggered by a push, work in a checkout, report a result, and merge when its
   author wrote that step; nothing merges by itself.
+- **A script can react to an inbound webhook** — a script can be triggered by an
+  authenticated inbound webhook and act on its delivered payload, the same way it
+  reacts to any other suite event; the hook's own authentication happens at the
+  ingress and is never the script's concern.
 
 ## Success criteria (outcomes)
 
@@ -304,3 +308,6 @@ Each is a result the viewer or operator can confirm against the running service:
   event, and the completion the run itself publishes, carry the same chain
   identifier as the action that set the whole thing off, and asking scripts for
   the runs on that identifier returns exactly them.
+- I set a script to trigger on an inbound webhook (`webhooks:received/<hook>`),
+  the hook is fired, and the script runs with the delivered payload available to
+  it — no scripts-side webhook handling of my own.
