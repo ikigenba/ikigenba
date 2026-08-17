@@ -9,5 +9,6 @@ reads only that phase's `project/plan/phase-NN.md`, builds it, and on completion
 marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
-Next phase: 26
+Next phase: 27
 
+- Phase 26 ⬜ realizes — — purge the retired `.envrc` / `~/.secrets` references from notify's Go source (the `ntfyCfg` secret comment + the two `mustNtfyCfg` fail-loud error strings)
