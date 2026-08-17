@@ -65,5 +65,5 @@ Shared facts every Decision leans on:
 - **Uniform, name-parameterized.** Every command takes the service name as its
   only per-service input and derives everything else — the port from the
   registry, the version from `<svc>/VERSION`, the environment from
-  `<svc>/etc/manifest.env` and `<svc>/.envrc`. **No port literal, version
+  `<svc>/etc/manifest.env` and `<svc>/etc/env.list`. **No port literal, version
   literal, or per-service branch appears in any script.**

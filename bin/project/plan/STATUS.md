@@ -11,4 +11,7 @@ line here and its body file** in the completion commit — there is no done
 marker; done is deleted, and history lives in git. This file carries no bare
 status glyph outside phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 10
+Next phase: 12
+
+- Phase 10 ⬜ realizes — — push-secrets sources its key set from etc/env.list and the keyring
+- Phase 11 ⬜ realizes — — bin/start reads each service's etc/env.list from the keyring
