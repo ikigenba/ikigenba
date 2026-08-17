@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.23.0 — 2026-08-17
+
+- Replace the sales-funnel vocabularies (D24). A contact's lifecycle is now `prospect` or `customer` (default `prospect`), and a deal's stage is one of `contacted → interested → proposal → won → lost` (default `contacted`), with status derived (won/lost, else open). The deploy migration remaps existing contacts and deals to the new values row-by-row; no rows are dropped.
+- Add contact tracking tokens (D25). A new `mint` verb issues a short, globally-unique Crockford base32 token bound to a contact (many per contact, one per campaign); `search` resolves a token back to its contact, so an outreach link can be tied to the person who followed it.
+
 ## v0.22.0 — 2026-08-17
 
 - Adopt the per-service customer-data and dev-config env manifests: `env.list` now authors the shipped `manifest.env`. Redeployed to verify manifest and secret handling end to end. No API, schema, or data changes.
