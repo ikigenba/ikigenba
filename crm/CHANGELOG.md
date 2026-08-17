@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.22.0 — 2026-08-17
+
+- Adopt the per-service customer-data and dev-config env manifests: `env.list` now authors the shipped `manifest.env`. Redeployed to verify manifest and secret handling end to end. No API, schema, or data changes.
+
 ## v0.21.0 — 2026-08-15
 
 - Adopted the suite-wide LLM-lint semantic test gate (D31). The test suite now
