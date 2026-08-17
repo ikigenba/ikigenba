@@ -221,7 +221,6 @@ func TestHandlerNoMatch(t *testing.T) {
 	if err := h(context.Background(), ev); err != nil {
 		t.Fatalf("Handler returned %v, want nil", err)
 	}
-	time.Sleep(20 * time.Millisecond)
 	if got := fire.snapshot(); len(got) != 0 {
 		t.Fatalf("no-match fired %d runs, want 0", len(got))
 	}
@@ -253,7 +252,6 @@ func TestHandlerMalformedSkips(t *testing.T) {
 			if !errors.Is(err, consumer.ErrSkip) {
 				t.Fatalf("error does not satisfy errors.Is(err, ErrSkip): %v", err)
 			}
-			time.Sleep(20 * time.Millisecond)
 			if got := fire.snapshot(); len(got) != 0 {
 				t.Fatalf("malformed envelope fired %d runs, want 0", len(got))
 			}
@@ -271,7 +269,6 @@ func TestHandlerLookupErrorAdvances(t *testing.T) {
 	if err := h(context.Background(), ev); err != nil {
 		t.Fatalf("lookup error returned %v, want nil (never stall)", err)
 	}
-	time.Sleep(20 * time.Millisecond)
 	if got := fire.snapshot(); len(got) != 0 {
 		t.Fatalf("lookup error fired %d runs, want 0", len(got))
 	}
