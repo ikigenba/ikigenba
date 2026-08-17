@@ -25,13 +25,21 @@ block nginx picked first. Domains that have nothing to do with the product end
 up showing the product, and the answer a stranger gets depends on config
 ordering rather than on a decision anyone made.
 
+One of those domains is not merely parked. `michaelgreenly.dev` is the
+operator's own public web address: the destination printed on outreach material
+and handed to prospects. A visitor who types it must get the operator's site,
+over valid HTTPS, at the bare domain — not a parking page, not the suite's
+dashboard, and not a long `/srv/…` path on the account's apex.
+
 ## Purpose
 
 `nginx/` is the suite's front-door tree. It holds a **local development front
 door** that fronts the suite on the developer's machine the way the account's
-apex block fronts it in production, and the **committed parked answer** served
-to every host the apex block does not claim. One tree, one subject: what the
-front door does with a request before any service sees it.
+apex block fronts it in production, the **committed parked answer** served to
+every host the apex block does not claim, and the **committed vhost** that
+gives the operator's own domain its site instead of the parked answer. One
+tree, one subject: what the front door does with a request before any service
+sees it.
 
 ## Users
 
@@ -46,12 +54,16 @@ front door does with a request before any service sees it.
 
 In scope: the local front door's configuration and the script that starts it; the
 per-service route fragments it serves locally, kept in step with what each
-service ships; and the committed parked configuration and page for non-apex
-hosts. Nothing else — this tree runs no application logic, holds no state, owns
-no service's route definition (each service ships its own), and does not install
-anything on a box. Installing the parked artifacts on the live box is an operator
-runbook step described in the repo-root `deploy.md`, not something this tree
-performs.
+service ships; the committed parked configuration and page for non-apex hosts;
+and the committed vhost configuration for the operator's site domain. Nothing
+else — this tree runs no application logic, holds no state, owns no service's
+route definition (each service ships its own), does not author the site the
+domain serves (that is content living in the `sites` service), and does not
+install anything on a box. Installing the parked and vhost artifacts on the
+live box is an operator runbook step described in the repo-root `deploy.md`,
+not something this tree performs. The site domain is served at the bare domain
+only: `www` has no address today, and giving it one is DNS and certificate work
+outside this tree.
 
 The local front door is a development tool. It deliberately does not reproduce
 production's TLS, its certificates, its privileged ports, or its parked
@@ -65,6 +77,9 @@ default-host behavior; a developer who needs those tests them on a real box.
 - The parked page's message is exactly **`These aren't the droids you're looking
   for!`** — both its title and its body text.
 - The parked answer is served with a **success** status, not an error status.
+- The operator's site domain is exactly **`michaelgreenly.dev`**, bare domain
+  only, and what it serves is the operator's public site hosted by the suite's
+  `sites` service.
 
 ## What we promise (user-facing behavior)
 
@@ -86,9 +101,14 @@ default-host behavior; a developer who needs those tests them on a real box.
   certificate for the domains worth securing — and never a service, never the
   dashboard, never a page that depends on which server block nginx happened to
   read first.
+- **The operator's own domain serves the operator's own site.** A visitor to
+  `michaelgreenly.dev` gets the operator's public site over valid HTTPS with a
+  certificate of its own — never the parking page, never the dashboard. The
+  site's content is edited where site content lives, in the `sites` service,
+  and appears at the domain with no change to this tree.
 - **The account's apex is untouched by all of it.** Adding the parked answer
-  changes nothing about how the account's own domain serves the dashboard and its
-  services.
+  and the site-domain vhost changes nothing about how the account's own domain
+  serves the dashboard and its services.
 
 ## Success criteria (outcomes)
 
@@ -114,3 +134,12 @@ default-host behavior; a developer who needs those tests them on a real box.
   still routes its service paths, over validated TLS.
 - The parked files installed on the box are byte-identical to the ones committed
   in this tree, so a rebuild reproduces them exactly.
+- On the live box, a request over HTTPS to `michaelgreenly.dev`, with normal
+  certificate validation, returns the operator's public site — the same content
+  the site serves at its `sites`-service address — and the domain no longer
+  shows the parked page.
+- With the site domain live, the other kept non-apex domains still return the
+  parked page, and the account's apex still returns the dashboard and routes
+  its service paths, over validated TLS.
+- The site-domain vhost file installed on the box is byte-identical to the one
+  committed in this tree, so a rebuild reproduces it exactly.

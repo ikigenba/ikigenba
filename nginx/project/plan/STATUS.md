@@ -12,8 +12,9 @@ gone. A phase body file carries no marker of its own. This document deliberately
 carries **no** bare status glyph outside the phase lines, so the anchored grep
 matches only phase lines.
 
-Next phase: 07
+Next phase: 08
 
+- Phase 07 ⬜ realizes — — The committed `michaelgreenly.dev` vhost server file
 
 The artifacts of D1, D2, and D3 already exist in the tree — this spec was written
 over working code, not ahead of it — so those Decisions queued no initial work.

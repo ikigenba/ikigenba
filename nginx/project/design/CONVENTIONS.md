@@ -3,9 +3,10 @@
 Shared facts every Decision leans on:
 
 - **What this tree is.** nginx configuration (`nginx.conf`, the generated
-  `locations/*.conf`), two static committed files (`parked/nginx.conf`,
-  `parked/index.html`), and one Bash script (`run`). No Go, no module, no
-  `go.mod`; the repo-root `go.work` does not and must not name it.
+  `locations/*.conf`), three static committed files (`parked/nginx.conf`,
+  `parked/index.html`, `michaelgreenly.dev/nginx.conf`), and one Bash script
+  (`run`). No Go, no module, no `go.mod`; the repo-root `go.work` does not and
+  must not name it.
 - **There is no test-file glob and no id tags.** Nothing here runs under
   `go test ./...`. The repo-root green gate is unaffected by changes in this
   tree, and a passing gate is never evidence about it.
@@ -17,9 +18,10 @@ Shared facts every Decision leans on:
   `mkdir -p tmp` is part of the command, not an aside: the config declares
   its scratch paths under `tmp/` and nginx refuses to create that parent itself.
   It exits 0 and prints `configuration file … test is successful` when the config
-  is valid. The parked config is a fragment of a server context and is
-  syntax-checked the same way only when installed on the box, where `nginx -t`
-  covers it as part of the runbook (`deploy.md`).
+  is valid. The parked config and the `michaelgreenly.dev` vhost config are
+  fragments of a server context and are syntax-checked the same way only when
+  installed on the box, where `nginx -t` covers them as part of the runbook
+  (`deploy.md`).
 - **The shell check** is `bash -n run`, exiting 0.
 - **"The tree is green"** concretely means, from the service root: `bash -n
   run` exits 0; `mkdir -p tmp && nginx -p . -c nginx.conf -t`
@@ -40,7 +42,11 @@ Shared facts every Decision leans on:
   against the running stack (`bin/start`, then the local front door) or against
   the live box via the runbook's verification checklist. They are never asserted
   by a stub, because a stub would accept anything and prove nothing.
-- **Ports and routes are never restated here.** Each service's loopback port
-  lives in `registry/` and reaches this tree only through the fragment that
-  service ships; the suite's path-routing and identity-header contract is the
-  umbrella's, cited by path, never copied.
+- **Ports and routes are never restated here**, with one recorded exception.
+  Each service's loopback port lives in `registry/` and reaches this tree
+  through the fragment that service ships; the suite's path-routing and
+  identity-header contract is the umbrella's, cited by path, never copied. The
+  exception is a committed vhost that pins one service's fixed registry port as
+  a literal (D5 pins sites' port the way the dashboard's apex block pins its
+  own `3000`); the pinning Decision names the port and the registry row it
+  mirrors.
