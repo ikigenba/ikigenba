@@ -1,13 +1,12 @@
 package crm
 
 import (
+	"appkit/logging"
 	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
 	"math/big"
-
-	"appkit/logging"
 )
 
 const (

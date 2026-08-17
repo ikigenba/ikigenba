@@ -51,22 +51,7 @@ func serviceTools(h *toolHandlers) (tools []appkitmcp.Tool) {
 				return h.toolSearch(ctx, args)
 			},
 		},
-		{
-			Name:        tool("mint"),
-			Description: "Mint a new six-character tracking token for a live contact. Each call adds a distinct token; campaign is optional outreach metadata.",
-			InputSchema: obj(map[string]any{
-				"contact_id": typ("string"),
-				"campaign":   typ("string"),
-			}, "contact_id"),
-			OutputSchema: obj(map[string]any{
-				"token":      typ("string"),
-				"contact_id": typ("string"),
-				"campaign":   typ("string"),
-			}, "token", "contact_id"),
-			Handler: func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
-				return h.toolMint(ctx, args)
-			},
-		},
+		mintTool(h),
 		{
 			Name:         tool("get"),
 			Description:  "Fetch one entity as a rich card by ULID: a contact comes back with its organization, open deals, recent interactions, and open tasks already attached. The type is resolved from the id automatically.",
@@ -123,6 +108,25 @@ func serviceTools(h *toolHandlers) (tools []appkitmcp.Tool) {
 			Handler: func(context.Context, json.RawMessage, server.Identity) (map[string]any, error) {
 				return h.toolGuide()
 			},
+		},
+	}
+}
+
+func mintTool(h *toolHandlers) appkitmcp.Tool {
+	return appkitmcp.Tool{
+		Name:        tool("mint"),
+		Description: "Mint a new six-character tracking token for a live contact. Each call adds a distinct token; campaign is optional outreach metadata.",
+		InputSchema: obj(map[string]any{
+			"contact_id": typ("string"),
+			"campaign":   typ("string"),
+		}, "contact_id"),
+		OutputSchema: obj(map[string]any{
+			"token":      typ("string"),
+			"contact_id": typ("string"),
+			"campaign":   typ("string"),
+		}, "token", "contact_id"),
+		Handler: func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
+			return h.toolMint(ctx, args)
 		},
 	}
 }
