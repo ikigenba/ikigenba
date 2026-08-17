@@ -9,5 +9,7 @@ loop deletes the phase's line and body file — there is no done marker; done is
 gone. This file deliberately carries **no bare status glyph** anywhere but on a
 phase line, so the anchored grep matches only phase lines.
 
-Next phase: 32
+Next phase: 33
+
+- Phase 32 ⬜ realizes R-ENXH-KJ01, R-EP5D-YAQQ, R-S3ZK-NBWM — `GMAIL_REFRESH_TOKEN` moves to channel 5 (`state/`): client read/rotate, consent writes `state/`, `rotating` declaration
 

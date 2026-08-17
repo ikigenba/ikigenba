@@ -31,6 +31,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D25 → `project/design/D25.md` — Testing-language conformance: adopt the suite contract and make the live layer reachable — none minted; adopts R-O1AD-MRKW, R-O2IA-0JBL (root `project/design/D23.md`)
 - D26 → `project/design/D26.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
 - D27 → `project/design/D27.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `strict` — none (structural; the contract carries no per-service ids)
+- D28 → `project/design/D28.md` — `GMAIL_REFRESH_TOKEN` adopts the rotating-credential channel (channel 5, `state/`) — owns R-S3ZK-NBWM; adopts R-ENXH-KJ01, R-EP5D-YAQQ (root `project/design/D32.md`, `[proof: per-service]`)
 
 ## Verification ids → Decision
 
@@ -71,6 +72,8 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ASST-3T5V → D3 → `project/design/D03.md`
 - R-ASST-5W7X → D3 → `project/design/D03.md`
 - R-ASST-7Y9Z → D3 → `project/design/D03.md`
+- R-ENXH-KJ01 → D28 → `project/design/D28.md` (adopted from root `project/design/D32.md`)
+- R-EP5D-YAQQ → D28 → `project/design/D28.md` (adopted from root `project/design/D32.md`)
 - R-HOME-7Q9U → D7 → `project/design/D07.md`
 - R-JWR1-BQ0J → D24 → `project/design/D24.md`
 - R-LAND-3F7K → D1 → `project/design/D01.md`
@@ -93,6 +96,7 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-ROUT-8P1S → D2 → `project/design/D02.md`
 - R-RYDN-YNR5 → D26 → `project/design/D26.md` (adopted from root `project/design/D29.md`)
 - R-RZLK-CFHU → D26 → `project/design/D26.md` (adopted from root `project/design/D29.md`)
+- R-S3ZK-NBWM → D28 → `project/design/D28.md`
 - R-VKB6-SHHV → D24 → `project/design/D24.md` (adopted from root `project/design/D11.md`)
 - R-WVZH-M0IY → D16 → `project/design/D16.md`
 - R-X22Z-IV8F → D16 → `project/design/D16.md`

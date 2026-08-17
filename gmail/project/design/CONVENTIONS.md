@@ -22,9 +22,10 @@ Shared facts every Decision leans on:
   layers only. gmail's adoption of that contract, and its declared testing
   facts, are **D25**.
 - **Live invocation:** `cd gmail && go test -tags live ./...`. It requires
-  `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, and `GMAIL_REFRESH_TOKEN` (from the
-  suite `.envrc` — the same OAuth triple the deployed service reads) and **fails
-  loudly** when any is absent. It compiles only under that tag: today it is
+  `GMAIL_CLIENT_ID` and `GMAIL_CLIENT_SECRET` from the environment (channel 2)
+  and `GMAIL_REFRESH_TOKEN` from the local `state/` file the client reads
+  (channel 5, D28) — the same credentials, from the same places, the deployed
+  service reads — and **fails loudly** when any is absent. It compiles only under that tag: today it is
   `internal/gmail/live_test.go`, the attachment round-trip against the real
   Gmail API that D19's R-3NGL-AMPW owns. The operator runs it at **deploy
   verification**, and whenever a change touches the Gmail client, the
