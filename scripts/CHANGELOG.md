@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.26.0 — 2026-08-17
+
+- Add `webhooks` / `received` as a script trigger source (D44). A script can now be triggered by an inbound webhook fact, with the webhook's delivered body available to the run — making the webhooks service the seventh upstream a script can consume.
+
 ## v0.25.0 — 2026-08-17
 
 - Adopt the per-service customer-data and dev-config env manifests: `env.list` now authors the shipped `manifest.env`. Redeployed to verify manifest and secret handling end to end. No API, schema, or data changes.
