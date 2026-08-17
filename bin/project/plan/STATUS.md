@@ -13,4 +13,3 @@ status glyph outside phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 14
 
-- Phase 13 ⬜ realizes R-EJ1W-1G19 — push-secrets recognizes `rotating` lines and never pushes them (channel-5 exclusion)
