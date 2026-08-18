@@ -55,14 +55,14 @@ expiry drive which of them may sit inside a shared certificate:
 | `ikigai-group.io` | 2026-09-02 | **no** | adopted via import block |
 | `ikigenba.com` | 2027-06-06 | yes | `int.ikigenba.com` delegation is live |
 | `ikigenba.dev` | 2027-06-06 | yes | |
-| `logic-refinery.com` | 2027-01-31 | yes | Google Workspace MX |
+| `logic-refinery.com` | 2027-01-31 | yes | former Google Workspace domain; auth migrated to `michaelgreenly.dev`, domain kept parked |
 | `logic-refinery.io` | 2026-11-19 | yes | |
 | `logic-refinery.net` | 2026-11-19 | yes | |
 | `logic-refinery.tv` | 2026-12-17 | yes | |
 | `metaspot.net` | 2027-03-16 | yes | |
 | `metaspot.org` | 2026-09-22 | yes | Workspace MX + site-verification TXT; kept indefinitely |
 | `michaelgreenly.com` | 2027-08-05 | yes | previously the live static site; already dark |
-| `michaelgreenly.dev` | 2027-08-10 | yes | registered 2026-08-10, parked from day one; `.dev` is HSTS-preloaded, so it is unusable without a valid certificate |
+| `michaelgreenly.dev` | 2027-08-10 | yes | registered 2026-08-10, parked from day one; `.dev` is HSTS-preloaded, so it is unusable without a valid certificate; now the Google Workspace domain and the dashboard's Google-auth (`hd`) domain |
 
 - **`ikigai-group.io` is the one domain not on auto-renew**, and it expires
   within weeks. Inside a shared SAN certificate a lapsed domain stops resolving
@@ -77,7 +77,7 @@ expiry drive which of them may sit inside a shared certificate:
   certificate counts once against each registered domain it names. One combined
   certificate over ten registrations spends one of fifty for each.
 - **MX and TXT records are unaffected** by A-record targeting or by what nginx
-  serves, so the Workspace mail on `logic-refinery.com` / `metaspot.org` and
+  serves, so the Workspace mail on `michaelgreenly.dev` / `metaspot.org` and
   `metaspot.org`'s site-verification TXT are out of this decision's path.
 - **`certbot renew` walks lineages independently.** The existing
   `ikigenba-certbot-renew.timer` therefore renews a parked lineage with no new
