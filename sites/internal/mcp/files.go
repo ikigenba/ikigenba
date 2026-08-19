@@ -288,19 +288,9 @@ func (h *toolHandlers) toolRmdir(ctx context.Context, raw json.RawMessage, id se
 		}
 		return errResultMsg(appkitmcp.ErrInternal, "rmdir: "+err.Error()), nil
 	}
-	info, err := os.Stat(confined)
-	if errors.Is(err, os.ErrNotExist) {
-		return errResultMsg(appkitmcp.ErrNotFound, "rmdir: path not found"), nil
-	}
-	if err != nil {
-		return errResultMsg(appkitmcp.ErrInternal, "rmdir: "+err.Error()), nil
-	}
-	if !info.IsDir() {
-		return errResultMsg(appkitmcp.ErrValidation, "rmdir: path is not a directory; use file_delete for files"), nil
-	}
-	files, err := regularFilesUnder(confined)
-	if err != nil {
-		return errResultMsg(appkitmcp.ErrInternal, "rmdir: "+err.Error()), nil
+	files, env := rmdirFiles(confined)
+	if env != nil {
+		return env, nil
 	}
 	if len(files) > 0 {
 		changes := make([]sites.FileChange, 0, len(files))
@@ -320,6 +310,24 @@ func (h *toolHandlers) toolRmdir(ctx context.Context, raw json.RawMessage, id se
 		return errResultMsg(appkitmcp.ErrInternal, "rmdir: "+err.Error()), nil
 	}
 	return appkitmcp.StructuredResult(map[string]any{"removed": a.Path, "site": a.Site, "files": len(files)})
+}
+
+func rmdirFiles(path string) (files []string, result map[string]any) {
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, errResultMsg(appkitmcp.ErrNotFound, "rmdir: path not found")
+	}
+	if err != nil {
+		return nil, errResultMsg(appkitmcp.ErrInternal, "rmdir: "+err.Error())
+	}
+	if !info.IsDir() {
+		return nil, errResultMsg(appkitmcp.ErrValidation, "rmdir: path is not a directory; use file_delete for files")
+	}
+	files, err = regularFilesUnder(path)
+	if err != nil {
+		return nil, errResultMsg(appkitmcp.ErrInternal, "rmdir: "+err.Error())
+	}
+	return files, nil
 }
 
 var errWrongTypedWritePath = errors.New("wrong-typed write path")
