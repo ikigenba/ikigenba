@@ -5,6 +5,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"sites/internal/files"
 	"strings"
@@ -42,7 +43,8 @@ func Handler(root, urlPrefix string) http.Handler {
 
 		if info.IsDir() {
 			if !strings.HasSuffix(r.URL.Path, "/") {
-				http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
+				w.Header().Set("Location", path.Base(r.URL.Path)+"/")
+				w.WriteHeader(http.StatusMovedPermanently)
 				return
 			}
 			target = filepath.Join(target, "index.html")

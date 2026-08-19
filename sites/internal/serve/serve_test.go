@@ -114,7 +114,27 @@ func TestHandlerRedirectsExistingDirectoryToTrailingSlash(t *testing.T) {
 	if rec.Code != http.StatusMovedPermanently {
 		t.Fatalf("status = %d, want %d; body=%q", rec.Code, http.StatusMovedPermanently, rec.Body.String())
 	}
-	if got, want := rec.Header().Get("Location"), "/public/blog/"; got != want {
+	if got, want := rec.Header().Get("Location"), "blog/"; got != want {
 		t.Fatalf("Location = %q, want %q", got, want)
+	}
+}
+
+func TestHandlerRedirectsExistingDirectoryWithRelativeFinalSegment(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "blog", "index.html"), "blog")
+	writeFile(t, filepath.Join(root, "example", "blog", "index.html"), "proxied blog")
+
+	for _, target := range []string{
+		"/public/blog",
+		"/public/example/blog",
+	} {
+		rec := serveRequest(root, target)
+		if rec.Code != http.StatusMovedPermanently {
+			t.Errorf("%s status = %d, want %d; body=%q", target, rec.Code, http.StatusMovedPermanently, rec.Body.String())
+		}
+		// R-FIQQ-Q2B5
+		if got, want := rec.Header().Get("Location"), "blog/"; got != want {
+			t.Errorf("%s Location = %q, want relative final segment %q", target, got, want)
+		}
 	}
 }
