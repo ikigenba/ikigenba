@@ -93,18 +93,17 @@ func TestHandlerReturnsNotFoundForEscapingPaths(t *testing.T) {
 	}
 }
 
-// R-R4SO-LZXO
 func TestHandlerReturnsNotFoundForMissingPath(t *testing.T) {
 	root := t.TempDir()
 
 	rec := serveRequest(root, "/public/missing.html")
 
+	// R-R60K-ZROD
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d; body=%q", rec.Code, http.StatusNotFound, rec.Body.String())
 	}
 }
 
-// R-R60K-ZROD
 func TestHandlerRedirectsExistingDirectoryToTrailingSlash(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "blog", "index.html"), "blog")
