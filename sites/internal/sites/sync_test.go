@@ -132,6 +132,35 @@ func TestReconcile_AbsolutePathRejected(t *testing.T) {
 	}
 }
 
+func TestReconcile_FileBecomesDirectory(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, root, "qr", "former file")
+	desired := map[string][]byte{"qr/index.html": []byte("nested page")}
+
+	written, deleted, err := Reconcile(root, desired, readWorking(t, root))
+	got, readErr := os.ReadFile(filepath.Join(root, "qr", "index.html"))
+	info, statErr := os.Stat(filepath.Join(root, "qr"))
+	// R-FL6J-HLSJ
+	if err != nil || written != 1 || deleted != 1 || readErr != nil || string(got) != "nested page" || statErr != nil || !info.IsDir() {
+		t.Fatalf("file-to-directory reconcile: written=%d deleted=%d err=%v content=%q readErr=%v qr=%v statErr=%v", written, deleted, err, got, readErr, info, statErr)
+	}
+}
+
+func TestReconcile_DeletesAndPrunesBeforeWritingFormerDirectoryPath(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, root, "d/a.txt", "a")
+	mustWrite(t, root, "d/b.txt", "b")
+	desired := map[string][]byte{"d": []byte("replacement")}
+
+	written, deleted, err := Reconcile(root, desired, readWorking(t, root))
+	got, readErr := os.ReadFile(filepath.Join(root, "d"))
+	info, statErr := os.Stat(filepath.Join(root, "d"))
+	// R-FMEF-VDJ8
+	if err != nil || written != 1 || deleted != 2 || readErr != nil || string(got) != "replacement" || statErr != nil || !info.Mode().IsRegular() || len(readWorking(t, root)) != 1 {
+		t.Fatalf("delete-prune-write reconcile: written=%d deleted=%d err=%v content=%q readErr=%v d=%v statErr=%v tree=%v", written, deleted, err, got, readErr, info, statErr, readWorking(t, root))
+	}
+}
+
 func TestHTTPMirrorClient_ListPagination(t *testing.T) {
 	// Fake /list returning two pages stitched by the cursor loop. Page 1 carries
 	// next_cursor; page 2 omits it (terminates).

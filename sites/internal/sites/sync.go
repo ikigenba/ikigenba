@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	sitefiles "sites/internal/files"
@@ -147,37 +148,34 @@ func (c *httpMirrorClient) Fetch(ctx context.Context, path string) ([]byte, erro
 
 // Reconcile mutates workingDir in place to match `desired` (the subtree files,
 // keyed by their path RELATIVE to source_path, with already-fetched bytes as the
-// value): it (over)writes every desired file and deletes every working file
-// present in existingRel but absent from desired. This is the overwrite-all +
-// delete-absent reconcile (ADR Decision 6): because every present file is
-// rewritten, only the path *set* matters — no content hash / md5 comparison is
-// needed (the two services have no shared hash to diff against anyway).
+// value): it deletes every working file absent from desired, pruning emptied
+// parent directories, before it (over)writes every desired file. This is the
+// overwrite-all + delete-absent reconcile (ADR Decision 6): because every
+// present file is rewritten, only the path *set* matters — no content hash /
+// md5 comparison is needed (the two services have no shared hash to diff
+// against anyway).
 //
 // existingRel is the working tree's current relative file set (slash-separated),
 // obtained by the caller walking workingDir. Every path — desired keys and
 // existingRel entries alike — is confined under workingDir before any write or
 // delete, so a malicious upstream key cannot escape the site's sandbox.
 //
-// sync is binary-safe: no UTF-8 or size validation (site assets — images, fonts).
-// Files are written 0o644 under MkdirAll'd parents; deletes use os.Remove. Empty
-// parent dirs left behind by a delete are NOT pruned in v1 (an empty dir is inert
-// for nginx serving; pruning is a deferred nicety per the plan).
+// sync is binary-safe: no UTF-8 or size validation (site assets — images,
+// fonts). Files are written 0o644 under MkdirAll'd parents. Deleting and pruning
+// before writing, plus clearing a wrong-typed node at a write path or one of its
+// ancestors, makes directory/file type changes safe while keeping the reconcile
+// in place.
 func Reconcile(workingDir string, desired map[string][]byte, existingRel []string) (written, deleted int, err error) {
-	// Confine and write every desired file. Confinement happens first for the
-	// whole step so an escape attempt fails loudly before any bytes hit disk.
+	// Confine every desired file before mutating the tree, so an escape attempt
+	// fails loudly before any bytes are deleted or written.
 	for rel := range desired {
 		if _, cerr := sitefiles.ConfinePath(workingDir, rel); cerr != nil {
 			return written, deleted, cerr
 		}
 	}
-	for rel, data := range desired {
-		if werr := sitefiles.Write(workingDir, rel, string(data), false); werr != nil {
-			return written, deleted, fmt.Errorf("reconcile write %q: %w", rel, werr)
-		}
-		written++
-	}
 
-	// Delete every working file absent from desired (the subtree owns the tree).
+	// Delete every working file absent from desired before any write. Pruning an
+	// emptied parent is what clears a former directory for a dir-to-file change.
 	for _, rel := range existingRel {
 		if _, keep := desired[rel]; keep {
 			continue
@@ -190,7 +188,86 @@ func Reconcile(workingDir string, desired map[string][]byte, existingRel []strin
 			return written, deleted, fmt.Errorf("reconcile delete %q: %w", rel, rmerr)
 		}
 		deleted++
+		if perr := pruneEmptyParents(workingDir, filepath.Dir(abs)); perr != nil {
+			return written, deleted, fmt.Errorf("reconcile prune %q: %w", rel, perr)
+		}
+	}
+
+	for rel, data := range desired {
+		abs, _ := sitefiles.ConfinePath(workingDir, rel)
+		if cerr := clearWrongTypes(workingDir, abs); cerr != nil {
+			return written, deleted, fmt.Errorf("reconcile prepare %q: %w", rel, cerr)
+		}
+		if werr := sitefiles.Write(workingDir, rel, string(data), false); werr != nil {
+			return written, deleted, fmt.Errorf("reconcile write %q: %w", rel, werr)
+		}
+		written++
 	}
 
 	return written, deleted, nil
+}
+
+func pruneEmptyParents(workingDir, dir string) error {
+	root, err := filepath.Abs(workingDir)
+	if err != nil {
+		return err
+	}
+	dir, err = filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	for dir != root {
+		err := os.Remove(dir)
+		if err == nil || os.IsNotExist(err) {
+			dir = filepath.Dir(dir)
+			continue
+		}
+		entries, readErr := os.ReadDir(dir)
+		if readErr == nil && len(entries) > 0 {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+func clearWrongTypes(workingDir, target string) error {
+	root, err := filepath.Abs(workingDir)
+	if err != nil {
+		return err
+	}
+	target, err = filepath.Abs(target)
+	if err != nil {
+		return err
+	}
+	var ancestors []string
+	for dir := filepath.Dir(target); dir != root; dir = filepath.Dir(dir) {
+		ancestors = append(ancestors, dir)
+	}
+	for i := len(ancestors) - 1; i >= 0; i-- {
+		info, statErr := os.Lstat(ancestors[i])
+		if os.IsNotExist(statErr) {
+			continue
+		}
+		if statErr != nil {
+			return statErr
+		}
+		if !info.IsDir() {
+			if err := os.Remove(ancestors[i]); err != nil {
+				return err
+			}
+		}
+	}
+
+	info, err := os.Lstat(target)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return os.RemoveAll(target)
+	}
+	return nil
 }

@@ -151,6 +151,34 @@ func TestSetPathExportsThenReconcilesStrippedSubtree(t *testing.T) {
 	}
 }
 
+func TestSetPathReconcileReplacesDirectoryWithFile(t *testing.T) {
+	repos := newPublishRootRepos(t)
+	repos.setExport([]sites.TreeEntry{
+		{Path: "public/index.html", Data: []byte("same home")},
+		{Path: "public/qr", Data: []byte("qr file")},
+	}, "type-change-sha")
+	h, _ := newPublishRootHandler(t, repos)
+	createTestSite(t, h, "demo")
+	dir := h.layout.SiteDir(sites.Public, "demo")
+	if err := os.MkdirAll(filepath.Join(dir, "qr"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "qr", "index.html"), []byte("old qr page"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("same home"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := call(t, h, "set_path", map[string]any{"slug": "demo", "path": "public"})
+	got := readTreeFiles(t, dir)
+	info, statErr := os.Stat(filepath.Join(dir, "qr"))
+	// R-FJYN-3U1U
+	if result.IsError || !reflect.DeepEqual(got, map[string]string{"index.html": "same home", "qr": "qr file"}) || statErr != nil || !info.Mode().IsRegular() {
+		t.Fatalf("set_path directory-to-file result=%+v tree=%#v qr=%v statErr=%v", result, got, info, statErr)
+	}
+}
+
 func TestSetPathExportFailuresLeaveRowShaAndFilesUntouched(t *testing.T) {
 	// R-3XKA-ZPPD
 	tests := []struct {
