@@ -10,5 +10,3 @@ marker; done is gone. This file deliberately carries **no bare status glyph**
 anywhere but on a phase line, so the anchored grep matches only phase lines.
 
 Next phase: 67
-
-- Phase 66 ⬜ realizes R-G118-GMFK — `sync` enumeration skips non-file mirror entries (D34)
