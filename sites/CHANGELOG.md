@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.34.0 — 2026-08-19
+
+- New `file_delete` and `rmdir` tools remove a single file or a whole directory subtree from a site in one operation.
+- A directory URL requested without a trailing slash now redirects to a relative location (`blog/` rather than an absolute `/public/<slug>/blog/`), so the redirect survives serving behind a custom domain or path prefix.
+- Writing or editing a file onto a path that is already a directory is now refused with a clear validation error instead of failing confusingly; use `rmdir` to remove the directory first.
+- Publishing through the authoritative doors (`set_path`, repos push, Dropbox `sync`) now safely handles a path changing between a file and a directory, instead of erroring mid-reconcile and leaving partial state.
+- Dropbox `sync` now skips directory entries in the mirror listing, so importing a folder with subfolders no longer produces spurious fetch failures.
+
 ## v0.33.0 — 2026-08-17
 
 - Adopt the per-service customer-data and dev-config env manifests: `env.list` now authors the shipped `manifest.env`. Redeployed to verify manifest and secret handling end to end. No API, schema, or data changes.
