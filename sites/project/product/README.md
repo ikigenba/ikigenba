@@ -93,9 +93,12 @@ sites does this and only this:
   the site files off disk itself.
 - **Manage sites over MCP.** Create a site at an explicitly stated visibility —
   the caller always says which of the three it wants; there is no silent
-  default — edit its files with the file tools, change its visibility, and
-  delete it, through the `ikigenba_sites_*` tools. Content edits are
-  **immediately live** (there is no working-copy/publish indirection).
+  default — edit its files with the file tools, remove an individual file or a
+  whole folder, change its visibility, and
+  delete the site, through the `ikigenba_sites_*` tools. Content edits are
+  **immediately live** (there is no working-copy/publish indirection). Writing a
+  file where a folder already sits is refused rather than silently wiping the
+  folder — the owner removes the folder first.
 - **Generate and rotate unlisted links.** Creating an unlisted site returns its
   long unguessable URL, ready to hand out. Setting an already-unlisted site to
   unlisted again **rotates** the link: a fresh unguessable URL replaces the old
@@ -251,10 +254,22 @@ Promised values the design must honor verbatim and never re-declare:
   site was, and every change it went through, is retained rather than destroyed —
   so a deletion made in haste is not the end of the work.
 - **Every edit is recorded, and the owner does nothing to make that happen.**
-  Writing a file, editing one, or running an import records that change in the
+  Writing a file, editing one, removing a file or a folder, or running an import
+  records that change in the
   site's history, attributed to whoever made it, in the same call that makes the
   edit live. There is no commit step, no publish step, and no setting to turn on.
-  An import is recorded as the one change it was, not as a change per file.
+  An import — and the removal of a whole folder — is recorded as the one change
+  it was, not as a change per file.
+- **A file or a folder can be removed, and a folder goes in one change.** The
+  owner can delete a single file or a whole folder (and everything under it)
+  from a site; it stops being served and the removal is recorded in the same
+  call, a folder as one recorded change rather than one per file. A write that
+  targets a path where a folder already exists is refused with a clear error, so
+  a mistaken write never silently destroys a folder — the owner removes it first.
+- **A subfolder URL works with or without a trailing slash.** A visitor who
+  opens a site directory without the trailing slash is redirected to its index
+  page rather than getting an error, and the redirect resolves correctly even
+  when the site is reached through a custom domain that adds a path prefix.
 - **A site can serve one folder of its repository instead of all of it.** The
   owner points a site at a folder — say the `public/` a generator builds into —
   and the site immediately serves exactly that folder's contents at its
@@ -362,6 +377,16 @@ service:
   fails with a clear "try again" style refusal and the site's files are exactly
   what they were before — nothing half-applied, nothing silently unrecorded —
   while reading the site, listing sites, and the landing page all still work.
+- As the owner I remove a single file from a site through the tools and it stops
+  being served, with the removal recorded in the site's history in the same call;
+  I remove a whole folder and it and everything under it stop being served,
+  recorded as **one** change rather than one per file. A write I aim at a path
+  where a folder already exists is refused with a clear error and the folder is
+  left exactly as it was.
+- As a visitor I open a site's subfolder URL **without** a trailing slash and I
+  still reach that folder's page — the service redirects me to the trailing-slash
+  URL, and the redirect resolves correctly even when I reached the site through a
+  custom domain that prefixes the path.
 - As the owner I point an existing site at a subfolder of its repository (like
   a generator's `public/`), and its URL immediately serves that folder's
   contents — files elsewhere in the repository are no longer served and no

@@ -16,11 +16,11 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D10 → `project/design/D10.md` — `internal/files`: confined filesystem operations as native Go (ports the confined Read/Edit/Glob/Grep/Write/List/Mkdir + symlink-resolving ConfinePath; no agentkit, no JSON, no agent framing) — owns R-027Y-BQ1I, R-03FU-PHS7, R-04NR-39IW, R-05VN-H19L, R-073J-UT0A, R-08BG-8KQZ, R-3ZP8-T0GP, R-40X5-6S7E, R-09JC-MCHO, R-0AR9-048D, R-0D71-RNPR, R-0EEY-5FGG
 - D11 → `project/design/D11.md` — Rewire the MCP file tools onto `internal/files` and drop `agentkit` (delete the bridge, hand-write the four schemas, cleaner structured results, typed confinement envelope, remove the `go.mod` require+replace; surface-preserving) — owns R-0FMU-J775, R-0GUQ-WYXU, R-0I2N-AQOJ, R-0JAJ-OIF8
 - D12 → `project/design/D12.md` — Web surface from `share/www` through the chassis (de-embed via `Spec.WWW`): move `landing.html` + `static/` to `sites/share/www`, render at `GET /{$}` via `rt.WWW()`, delete `internal/web` and the service-side `/static/` mount (chassis auto-mounts it); rewrites the mechanism of D1/D2/D3/D6/D7/D8 — owns R-0SF5-VPQF, R-0TN2-9HH4
-- D13 → `project/design/D13.md` — MCP surface over `appkit/mcp`: `internal/mcp` becomes the domain-tool table; delete the local JSON-RPC transport + local `health`; chassis supplies `health`/`reflection`; sites is not a producer but is a consumer (the repos subscription, D35), so reflection reports empty `publishes` and that one subscription; mirror client becomes a constructor param; the 15-domain/17-total tool partition — owns R-Z8DD-BL71, R-DB3A-15YZ, R-FJAZ-2KOO
+- D13 → `project/design/D13.md` — MCP surface over `appkit/mcp`: `internal/mcp` becomes the domain-tool table; delete the local JSON-RPC transport + local `health`; chassis supplies `health`/`reflection`; sites is not a producer but is a consumer (the repos subscription, D35), so reflection reports empty `publishes` and that one subscription; mirror client becomes a constructor param; the 17-domain/19-total tool partition (after `file_delete`/`rmdir`, D41) — owns R-Z8DD-BL71, R-DB3A-15YZ, R-FJAZ-2KOO
 - D14 → `project/design/D14.md` — Delete the `internal/db` `Open`/`Migrate` shim (keep only the embedded `FS` + load guard; test harnesses call `appkit/db` directly), normalize the composition root (relocate the `Handlers` closure inside `sitesSpec()`; no post-construction `.Handlers` mutation; keep the builder), and true up `AGENTS.md` if present — mints none (structural; shim deletion + composition-root normalization + doc truth); adopts R-4LKF-FB23 (root `project/design/D08.md`), R-8DF1-W89F, R-8IAN-FB87 (root `project/design/D11.md`)
 - D15 → `project/design/D15.md` — Data model: `slug` PK + free-form `name` display label, the three-value `visibility` TEXT enum (CHECK-enforced), owner id/email, the version-plane columns `repo_sha` + `repo_seeded`, and the publish-root `path` column (D38) — each added by an **additive** migration that carries every existing row forward; `ValidateName`; `Store.Create(slug, name, ..., path)`, `SetVisibility(slug, v, newSlug)` (one UPDATE, optional re-slug, name untouched), `Rename(slug, name)`, `SetPath(slug, path)`, `SetRepoSha`, `MarkSeeded`, `ListUnseeded` — owns R-Z9L9-PCXQ, R-ZAT6-34OF, R-ZC12-GWF4, R-ZD8Y-UO5T, R-ZEGV-8FWI, R-OG3H-7TUS, R-ZFOR-M7N7, R-3SOP-GMQL
 - D16 → `project/design/D16.md` — Filesystem layout: the served path is the **materialized copy** of the site's repository at `main` (plain files, never a checkout, so no `.git` deny rule anywhere); files live at the served path under two parents; `Seg(v)` maps unlisted → the public segment (no third tree, no nginx change); `SiteDir(v, slug)`; `Move(slug, from, newSlug, to)` relocates and renames in one call — owns R-H5H4-GTWA, R-H6P0-ULMZ, R-QYP6-P587
-- D17 → `project/design/D17.md` — In-process static serving of hosted sites (`internal/serve`): index-mapping, no-listing, confined, trailing-slash redirect; mounted ungated at `GET /public/` and `GET /private/` — owns R-QZX3-2WYW, R-R14Z-GOPL, R-R2CV-UGGA, R-R3KS-886Z, R-R4SO-LZXO, R-R60K-ZROD
+- D17 → `project/design/D17.md` — In-process static serving of hosted sites (`internal/serve`): index-mapping, no-listing, confined, trailing-slash redirect; mounted ungated at `GET /public/` and `GET /private/`; trailing-slash redirect is a relative reference (D17) — owns R-QZX3-2WYW, R-R14Z-GOPL, R-R2CV-UGGA, R-R3KS-886Z, R-FIQQ-Q2B5, R-R60K-ZROD
 - D18 → `project/design/D18.md` — nginx fragment proxies the public/private tiers to the process (no `alias`; private keeps `/_session-authn` and forwards all four owner identity headers; nginx reads no state off disk) — owns R-R78H-DJF2, R-R8GD-RB5R, R-R9OA-52WG, R-7NPD-3MFE
 - D19 → `project/design/D19.md` — The landing page lists the sites that exist, by name (live-rendered from `store.List`; name-as-link / verbatim visibility label / creator / created-at; no visible slug column; empty-state safe; JSON data island carries `slug` + `name` + `visibility` + `createdAtSort`; unlisted anchors carry the public segment) — owns R-ZI4K-DR4L, R-RC42-WMDU, R-ZJCG-RIVA, R-ZKKD-5ALZ, R-ZLS9-J2CO, R-IEWI-3MXP
 - D20 → `project/design/D20.md` — MCP surface: name + slug split end to end — `create(name, slug?, visibility)` with visibility and name required and the slug invariant (slug required for public/private, forbidden for unlisted with the generated token + one collision retry), `set_visibility(slug, visibility, new_slug?)` realizing the full transition matrix with the name untouched (regenerate-on-entry to unlisted = rotation; `new_slug` required when leaving unlisted), `rename(slug, name)`, owner threaded from Identity, live-folder file tools, `sync` never creates; `create` takes an optional publish-root `path` and the table carries `set_path`, both owned by D38; the plane half of every tool is D33/D34/D36 — owns R-RDBZ-AE4J, R-ZN05-WU3D, R-ZO82-ALU2, R-ZQNV-25BG, R-ZRVR-FX25, R-ZT3N-TOSU, R-ZUBK-7GJJ, R-ZVJG-L8A8, R-ZWRC-Z00X, R-ZXZ9-CRRM, R-ZZ75-QJIB, R-00F2-4B90, R-56CN-HE21, R-RI7K-TH3B
@@ -44,8 +44,10 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - D38 → `project/design/D38.md` — The publish root: a per-site `path` (row fact only, never in a URL or on-disk path) selecting the repository subfolder that is served; `ValidatePath` + `Subtree` mapping; `create(path?)` and the `set_path` mutator (export-first re-materialization, `source_unavailable` on repos failure); the commit-boundary prefix on the write path and `sync`; the materializer filter; an absent subtree serves empty — owns R-3TWL-UEHA, R-3V4I-867Z, R-3WCE-LXYO, R-3XKA-ZPPD, R-3YS7-DHG2, R-4003-R96R, R-4180-50XG, R-42FW-ISO5, R-43NS-WKEU
 - D39 → `project/design/D39.md` — Adopt the suite brand icon contract: the shipped icon set and its link markup — mints none; adopts R-RYDN-YNR5, R-RZLK-CFHU (root `project/design/D29.md`)
 - D40 → `project/design/D40.md` — Adopt the suite lint contract (`root project/design/D30.md`) at tier `strict` — none (structural; the contract carries no per-service ids)
+- D41 → `project/design/D41.md` — Per-file and per-directory deletion: `file_delete` (one file) and `rmdir` (a directory and its files), both version-planed via D33's commit-then-apply with wrong-type refusals — owns R-FOU8-MX0M, R-FQ25-0ORB, R-FRA1-EGI0, R-FSHX-S88P, R-FTPU-5ZZE, R-FUXQ-JRQ3, R-FW5M-XJGS, R-FXDJ-BB7H
+- D42 → `project/design/D42.md` — The shared in-place reconcile (`sites.Reconcile`, used by D34/D35/D38) is file/directory type-change-safe and deletes before it writes — owns R-FJYN-3U1U, R-FL6J-HLSJ, R-FMEF-VDJ8
 
-**Retired numbers.** No Decision number has been retired; `D01`–`D38` are all live. Retired **ids** are never reused either: `R-P21E-0285` (D13's former empty-event-graph reflection pin) was deleted when sites became an event-plane consumer and is replaced by `R-FJAZ-2KOO`.
+**Retired numbers.** No Decision number has been retired; `D01`–`D42` are all live. Retired **ids** are never reused either: `R-P21E-0285` (D13's former empty-event-graph reflection pin) was deleted when sites became an event-plane consumer and is replaced by `R-FJAZ-2KOO`; `R-R4SO-LZXO` (D17's former **absolute** trailing-slash redirect pin) was deleted when the redirect became a **relative** reference (immune to a front-door path prefix) and is replaced by `R-FIQQ-Q2B5`.
 
 ## Verification ids → Decision
 
@@ -153,7 +155,22 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-FFN9-X9GL → D37 → `project/design/D37.md`
 - R-FGV6-B17A → D37 → `project/design/D37.md`
 - R-FI32-OSXZ → D37 → `project/design/D37.md`
+- R-FIQQ-Q2B5 → D17 → `project/design/D17.md`
 - R-FJAZ-2KOO → D13 → `project/design/D13.md`
+- R-FJYN-3U1U → D42 → `project/design/D42.md`
+- R-FL6J-HLSJ → D42 → `project/design/D42.md`
+- R-FMEF-VDJ8 → D42 → `project/design/D42.md`
+- R-FNMC-959X → D33 → `project/design/D33.md`
+- R-FOU8-MX0M → D41 → `project/design/D41.md`
+- R-FQ25-0ORB → D41 → `project/design/D41.md`
+- R-FRA1-EGI0 → D41 → `project/design/D41.md`
+- R-FSHX-S88P → D41 → `project/design/D41.md`
+- R-FTPU-5ZZE → D41 → `project/design/D41.md`
+- R-FUXQ-JRQ3 → D41 → `project/design/D41.md`
+- R-FW5M-XJGS → D41 → `project/design/D41.md`
+- R-FXDJ-BB7H → D41 → `project/design/D41.md`
+- R-FYLF-P2Y6 → D38 → `project/design/D38.md`
+- R-G118-GMFK → D34 → `project/design/D34.md`
 - R-H5H4-GTWA → D16 → `project/design/D16.md`
 - R-H6P0-ULMZ → D16 → `project/design/D16.md`
 - R-H7WX-8DDO → D27 → `project/design/D27.md`
@@ -193,7 +210,6 @@ Each Decision maps to its `project/design/DNN.md`; every `R-XXXX-XXXX` id maps t
 - R-R14Z-GOPL → D17 → `project/design/D17.md`
 - R-R2CV-UGGA → D17 → `project/design/D17.md`
 - R-R3KS-886Z → D17 → `project/design/D17.md`
-- R-R4SO-LZXO → D17 → `project/design/D17.md`
 - R-R60K-ZROD → D17 → `project/design/D17.md`
 - R-R78H-DJF2 → D18 → `project/design/D18.md`
 - R-R8GD-RB5R → D18 → `project/design/D18.md`
@@ -290,46 +306,53 @@ rest of the index.
 15. When the history service is down a `file_write` fails and leaves files
     unchanged, while reading/listing/landing still work →
     R-EW4V-SXLH, R-EXCS-6PC6
-16. Point a site at a subfolder and its URL serves that folder; files elsewhere
+16. Remove a single file, or a whole folder (recorded as one change, not one per
+    file), and it stops serving; a write aimed at a path where a folder exists is
+    refused rather than wiping it →
+    R-FOU8-MX0M, R-FUXQ-JRQ3, R-FNMC-959X
+17. A subfolder URL without a trailing slash still reaches the page — the redirect
+    is a relative reference that resolves even behind a custom-domain path prefix →
+    R-FIQQ-Q2B5
+18. Point a site at a subfolder and its URL serves that folder; files elsewhere
     stop serving and leave the file tools; pointing back is one call →
     R-3WCE-LXYO, R-42FW-ISO5
-17. Point a site at a folder the repo lacks yet: the call succeeds and it serves
+19. Point a site at a folder the repo lacks yet: the call succeeds and it serves
     nothing until content lands there →
     R-43NS-WKEU
-18. Pre-existing sites are unchanged and now version-controlled with no action →
+20. Pre-existing sites are unchanged and now version-controlled with no action →
     R-FFN9-X9GL, R-FI32-OSXZ
-19. The landing page shows the version and a row per site (name, visibility,
+21. The landing page shows the version and a row per site (name, visibility,
     creator, created-at); the name links to the site; an unlisted row shows its
     name →
     R-WKGI-FVFJ, R-ZI4K-DR4L, R-ZKKD-5ALZ
-20. A session-less browser navigation to the landing (or a private site) is sent
+22. A session-less browser navigation to the landing (or a private site) is sent
     to sign-in and returned; a non-navigation session-less request still gets
     `401` →
     R-XVIT-1NXD, R-NGNX-5R8V
-21. Typing part of a name or address (non-adjacent letters) narrows the list live
+23. Typing part of a name or address (non-adjacent letters) narrows the list live
     with no reload →
     R-02UU-VUQE, R-06IK-15YH
-22. Clicking a Name/Created/Creator header reorders the list, clicking again
+24. Clicking a Name/Created/Creator header reorders the list, clicking again
     reverses; default is newest-first →
     R-05AN-NE7S, R-I55B-1H05, R-08YC-SPFV
-23. With more than ten sites a Prev/Next pager with "Page X of Y" appears and
+25. With more than ten sites a Prev/Next pager with "Page X of Y" appears and
     pages ten at a time; with ten or fewer, none →
     R-I7L3-T0HJ, R-I8T0-6S88, R-8DER-G0TL
-24. Clear empties the search, returns ordering to newest-first, and returns to the
+26. Clear empties the search, returns ordering to newest-first, and returns to the
     first page →
     R-IB8S-YBPM, R-8AYY-OHC7
-25. A row's copy control places that site's full URL on the clipboard with a brief
+27. A row's copy control places that site's full URL on the clipboard with a brief
     "Copied" confirmation →
     R-NN9H-UKP3, R-NM1L-GSYE
-26. With JavaScript disabled the complete list still shows (controls absent) and
+28. With JavaScript disabled the complete list still shows (controls absent) and
     the name links still open each site →
     R-84VG-RMMQ, R-ZI4K-DR4L
-27. Every path under `/srv/sites/…` is served by the sites process — nginx holds
+29. Every path under `/srv/sites/…` is served by the sites process — nginx holds
     no `alias` →
     R-R9OA-52WG, R-NGNX-7T1X
-28. An MCP client still discovers the AS via the PRM well-known and calls the
+30. An MCP client still discovers the AS via the PRM well-known and calls the
     bearer-gated `/mcp`; `/health` still responds →
     R-NGNX-9W4Z, R-7L9K-C2Y0
-29. sites's loopback addresses cannot silently drift — its own port and the
+31. sites's loopback addresses cannot silently drift — its own port and the
     dropbox address resolve by name through the shared registry →
     R-7K2P-QN4D, R-7L9F-XW3H, R-7M4C-BV8J
