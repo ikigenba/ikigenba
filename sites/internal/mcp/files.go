@@ -95,11 +95,8 @@ func (h *toolHandlers) toolFileWrite(ctx context.Context, raw json.RawMessage, i
 		}
 		return errResultMsg(appkitmcp.ErrInternal, "write: "+err.Error()), nil
 	}
-	if err := validateInteractiveWritePath(root, confined); err != nil {
-		if errors.Is(err, errWrongTypedWritePath) {
-			return errResultMsg(appkitmcp.ErrValidation, "write: "+err.Error()), nil
-		}
-		return errResultMsg(appkitmcp.ErrInternal, "write: "+err.Error()), nil
+	if env := interactiveWritePathError("write", root, confined); env != nil {
+		return env, nil
 	}
 	data := []byte(a.Content)
 	if a.Append {
@@ -180,11 +177,8 @@ func (h *toolHandlers) toolFileEdit(ctx context.Context, raw json.RawMessage, id
 		}
 		return errResultMsg(appkitmcp.ErrInternal, "edit: "+err.Error()), nil
 	}
-	if err := validateInteractiveWritePath(root, confined); err != nil {
-		if errors.Is(err, errWrongTypedWritePath) {
-			return errResultMsg(appkitmcp.ErrValidation, "edit: "+err.Error()), nil
-		}
-		return errResultMsg(appkitmcp.ErrInternal, "edit: "+err.Error()), nil
+	if env := interactiveWritePathError("edit", root, confined); env != nil {
+		return env, nil
 	}
 	if a.OldString == "" {
 		return errResultMsg(appkitmcp.ErrInternal, "edit: old string is required"), nil
@@ -219,6 +213,17 @@ func (h *toolHandlers) toolFileEdit(ctx context.Context, raw json.RawMessage, id
 }
 
 var errWrongTypedWritePath = errors.New("wrong-typed write path")
+
+func interactiveWritePathError(operation, root, target string) map[string]any {
+	err := validateInteractiveWritePath(root, target)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, errWrongTypedWritePath) {
+		return errResultMsg(appkitmcp.ErrValidation, operation+": "+err.Error())
+	}
+	return errResultMsg(appkitmcp.ErrInternal, operation+": "+err.Error())
+}
 
 func validateInteractiveWritePath(root, target string) error {
 	root = filepath.Clean(root)
