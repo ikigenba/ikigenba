@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sites/internal/sites"
 	"strings"
+	"syscall"
 
 	appkitmcp "appkit/mcp"
 
@@ -93,6 +95,12 @@ func (h *toolHandlers) toolFileWrite(ctx context.Context, raw json.RawMessage, i
 		}
 		return errResultMsg(appkitmcp.ErrInternal, "write: "+err.Error()), nil
 	}
+	if err := validateInteractiveWritePath(root, confined); err != nil {
+		if errors.Is(err, errWrongTypedWritePath) {
+			return errResultMsg(appkitmcp.ErrValidation, "write: "+err.Error()), nil
+		}
+		return errResultMsg(appkitmcp.ErrInternal, "write: "+err.Error()), nil
+	}
 	data := []byte(a.Content)
 	if a.Append {
 		existing, err := os.ReadFile(confined)
@@ -172,6 +180,12 @@ func (h *toolHandlers) toolFileEdit(ctx context.Context, raw json.RawMessage, id
 		}
 		return errResultMsg(appkitmcp.ErrInternal, "edit: "+err.Error()), nil
 	}
+	if err := validateInteractiveWritePath(root, confined); err != nil {
+		if errors.Is(err, errWrongTypedWritePath) {
+			return errResultMsg(appkitmcp.ErrValidation, "edit: "+err.Error()), nil
+		}
+		return errResultMsg(appkitmcp.ErrInternal, "edit: "+err.Error()), nil
+	}
 	if a.OldString == "" {
 		return errResultMsg(appkitmcp.ErrInternal, "edit: old string is required"), nil
 	}
@@ -202,6 +216,27 @@ func (h *toolHandlers) toolFileEdit(ctx context.Context, raw json.RawMessage, id
 		return errResultMsg(appkitmcp.ErrInternal, "edit: "+err.Error()), nil
 	}
 	return appkitmcp.StructuredResult(map[string]any{"edited": a.FilePath, "site": a.Site, "replaced": replaced})
+}
+
+var errWrongTypedWritePath = errors.New("wrong-typed write path")
+
+func validateInteractiveWritePath(root, target string) error {
+	root = filepath.Clean(root)
+	target = filepath.Clean(target)
+	for path := target; ; path = filepath.Dir(path) {
+		info, err := os.Lstat(path)
+		switch {
+		case err == nil && path == target && info.IsDir():
+			return fmt.Errorf("%w: target is a directory", errWrongTypedWritePath)
+		case err == nil && path != target && !info.IsDir():
+			return fmt.Errorf("%w: %s is not a directory", errWrongTypedWritePath, path)
+		case err != nil && !errors.Is(err, os.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR):
+			return err
+		}
+		if path == root {
+			return nil
+		}
+	}
 }
 
 func confinedSitePath(root, raw string) (confined, relative string, resultErr error) {

@@ -253,6 +253,67 @@ func TestFileEditCommitsPostEditBytes(t *testing.T) {
 	}
 }
 
+func TestInteractiveWriteRefusesWrongTypedPathsBeforeCommit(t *testing.T) {
+	transport := &commitRecordingTransport{}
+	h, root, _ := newWritePathHandler(t, transport)
+	siteDir := filepath.Join(root, "public", "demo")
+	qrDir := filepath.Join(siteDir, "qr")
+	qrFile := filepath.Join(qrDir, "index.html")
+	if err := os.Mkdir(qrDir, 0o751); err != nil {
+		t.Fatal(err)
+	}
+	wantQR := []byte("<h1>QR</h1>")
+	if err := os.WriteFile(qrFile, wantQR, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	aFile := filepath.Join(siteDir, "a")
+	wantA := []byte("regular file")
+	if err := os.WriteFile(aFile, wantA, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	assertRefused := func(t *testing.T, tool string, args map[string]any) {
+		t.Helper()
+		transport.reset()
+		result := call(t, h, tool, args)
+		// R-FNMC-959X
+		if !result.IsError || result.StructuredContent["code"] != "validation" {
+			t.Fatalf("%s result = %#v, want validation error", tool, result)
+		}
+		if calls := transport.snapshot(); len(calls) != 0 {
+			t.Fatalf("%s repos requests = %d, want 0", tool, len(calls))
+		}
+		gotQR, err := os.ReadFile(qrFile)
+		if err != nil || !bytes.Equal(gotQR, wantQR) {
+			t.Fatalf("qr/index.html = %q, %v; want %q", gotQR, err, wantQR)
+		}
+		info, err := os.Stat(qrDir)
+		if err != nil || !info.IsDir() || info.Mode().Perm() != 0o751 {
+			t.Fatalf("qr directory = %#v, %v; want unchanged directory", info, err)
+		}
+		gotA, err := os.ReadFile(aFile)
+		if err != nil || !bytes.Equal(gotA, wantA) {
+			t.Fatalf("a = %q, %v; want %q", gotA, err, wantA)
+		}
+	}
+
+	t.Run("file_write onto directory", func(t *testing.T) {
+		assertRefused(t, "file_write", map[string]any{
+			"site": "demo", "file_path": "qr", "content": "replacement",
+		})
+	})
+	t.Run("file_edit onto directory", func(t *testing.T) {
+		assertRefused(t, "file_edit", map[string]any{
+			"site": "demo", "file_path": "qr", "old_string": "QR", "new_string": "replacement",
+		})
+	})
+	t.Run("file_write through regular file", func(t *testing.T) {
+		assertRefused(t, "file_write", map[string]any{
+			"site": "demo", "file_path": "a/b.css", "content": "body{}",
+		})
+	})
+}
+
 func TestMkdirStaysLocalAndNestedWriteCommitsFullPath(t *testing.T) {
 	// R-EUWZ-F5US
 	transport := &commitRecordingTransport{}
