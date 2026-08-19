@@ -332,6 +332,8 @@ func TestToolsList(t *testing.T) {
 		"file_glob",
 		"file_grep",
 		"file_list",
+		"file_delete",
+		"rmdir",
 	}
 	wantSet := map[string]bool{}
 	for _, name := range want {
@@ -346,6 +348,7 @@ func TestToolsList(t *testing.T) {
 			t.Errorf("unexpected tool %q: %+v", name, result.Tools)
 		}
 	}
+	// R-Z8DD-BL71
 	if len(result.Tools) != len(want) {
 		t.Errorf("tools/list returned %d tools, want %d: %+v", len(result.Tools), len(want), result.Tools)
 	}
@@ -1050,13 +1053,17 @@ func TestStructuredToolsDeclareSchemasMatchingResults(t *testing.T) {
 	for _, descriptor := range listed.Tools {
 		schemas[descriptor.Name] = descriptor.OutputSchema
 	}
-	structured := []string{"create", "list", "delete", "mkdir", "set_visibility", "rename", "set_path", "sync", "file_write", "file_edit", "file_glob", "file_grep", "file_list"}
+	structured := []string{"create", "list", "delete", "mkdir", "set_visibility", "rename", "set_path", "sync", "file_write", "file_edit", "file_delete", "rmdir", "file_glob", "file_grep", "file_list"}
 
 	// R-CXDB-6TRC
 	for _, name := range structured {
 		if schemas[name] == nil || schemas[name]["type"] != "object" {
 			t.Errorf("%s outputSchema is not an object: %+v", name, schemas[name])
 		}
+	}
+	// R-CXDB-6TRC
+	if schemas["file_delete"] == nil || schemas["rmdir"] == nil {
+		t.Fatalf("deletion schemas missing: file_delete=%+v rmdir=%+v", schemas["file_delete"], schemas["rmdir"])
 	}
 	for _, name := range []string{"guide", "file_read"} {
 		if schemas[name] != nil {
@@ -1078,6 +1085,9 @@ func TestStructuredToolsDeclareSchemasMatchingResults(t *testing.T) {
 		{"sync", map[string]any{"source_path": "/source", "slug": "syncsite"}},
 		{"file_write", map[string]any{"site": "demo", "file_path": "page.txt", "content": "needle"}},
 		{"file_edit", map[string]any{"site": "demo", "file_path": "page.txt", "old_string": "needle", "new_string": "pin"}},
+		{"file_delete", map[string]any{"site": "demo", "path": "page.txt"}},
+		{"mkdir", map[string]any{"slug": "demo", "path": "remove-me"}},
+		{"rmdir", map[string]any{"site": "demo", "path": "remove-me"}},
 		{"file_glob", map[string]any{"site": "demo", "pattern": "*.txt"}},
 		{"file_grep", map[string]any{"site": "demo", "pattern": "pin"}},
 		{"file_list", map[string]any{"site": "demo"}},
@@ -1087,6 +1097,7 @@ func TestStructuredToolsDeclareSchemasMatchingResults(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			result := call(t, h, tc.name, tc.args)
+			// R-CYL7-KLI1
 			if result.IsError || result.StructuredContent == nil {
 				t.Fatalf("%s did not return structured success: %+v", tc.name, result)
 			}

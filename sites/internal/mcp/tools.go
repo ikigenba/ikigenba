@@ -165,6 +165,18 @@ func fileTools(h *toolHandlers) []appkitmcp.Tool {
 		}, "site"), obj(map[string]any{"site": map[string]any{"type": "string"}, "files": map[string]any{"type": "array", "items": obj(map[string]any{"path": map[string]any{"type": "string"}, "size": map[string]any{"type": "integer"}, "md5": map[string]any{"type": "string"}}, "path", "size", "md5")}}, "site", "files"), func(ctx context.Context, args json.RawMessage, _ server.Identity) (map[string]any, error) {
 			return h.toolFileList(ctx, args)
 		}),
+		descOut(tool("file_delete"), "Delete one existing regular file from a site after committing the deletion to its repository.", obj(map[string]any{
+			"site": descTyp("string", "site slug whose current directory is the sandbox root"),
+			"path": descTyp("string", "regular-file path relative to the site's current root"),
+		}, "site", "path"), obj(map[string]any{"deleted": map[string]any{"type": "string"}, "site": map[string]any{"type": "string"}}, "deleted", "site"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
+			return h.toolFileDelete(ctx, args, id)
+		}),
+		descOut(tool("rmdir"), "Delete an existing directory and every regular file beneath it in one repository commit.", obj(map[string]any{
+			"site": descTyp("string", "site slug whose current directory is the sandbox root"),
+			"path": descTyp("string", "directory path relative to the site's current root"),
+		}, "site", "path"), obj(map[string]any{"removed": map[string]any{"type": "string"}, "site": map[string]any{"type": "string"}, "files": map[string]any{"type": "integer"}}, "removed", "site", "files"), func(ctx context.Context, args json.RawMessage, id server.Identity) (map[string]any, error) {
+			return h.toolRmdir(ctx, args, id)
+		}),
 	}
 }
 

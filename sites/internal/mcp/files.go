@@ -212,6 +212,116 @@ func (h *toolHandlers) toolFileEdit(ctx context.Context, raw json.RawMessage, id
 	return appkitmcp.StructuredResult(map[string]any{"edited": a.FilePath, "site": a.Site, "replaced": replaced})
 }
 
+func (h *toolHandlers) toolFileDelete(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
+	var a struct {
+		Site string `json:"site"`
+		Path string `json:"path"`
+	}
+	if err := unmarshalArgs(raw, &a); err != nil {
+		return nil, err
+	}
+	if a.Site == "" || a.Path == "" {
+		return errResultMsg(appkitmcp.ErrValidation, "site and path are required"), nil
+	}
+	root, env := h.siteRoot(ctx, a.Site)
+	if env != nil {
+		return env, nil
+	}
+	site, err := h.store.Get(ctx, a.Site)
+	if err != nil {
+		return errResult(err), nil
+	}
+	confined, path, err := confinedSitePath(root, a.Path)
+	if err != nil {
+		if errors.Is(err, sitefiles.ErrEscapes) {
+			return errResultMsg(appkitmcp.ErrValidation, "path_escapes_working_dir: "+err.Error()), nil
+		}
+		return errResultMsg(appkitmcp.ErrInternal, "file_delete: "+err.Error()), nil
+	}
+	info, err := os.Stat(confined)
+	if errors.Is(err, os.ErrNotExist) {
+		return errResultMsg(appkitmcp.ErrNotFound, "file_delete: path not found"), nil
+	}
+	if err != nil {
+		return errResultMsg(appkitmcp.ErrInternal, "file_delete: "+err.Error()), nil
+	}
+	if !info.Mode().IsRegular() {
+		return errResultMsg(appkitmcp.ErrValidation, "file_delete: path is not a regular file; use rmdir for directories"), nil
+	}
+	ctx = sites.WithVersionActor(ctx, id.ClientID)
+	commit, err := h.version.Commit(ctx, a.Site, "delete "+path, []sites.FileChange{{Path: repositoryPath(site.Path, path), Delete: true}})
+	if err != nil {
+		return versionErrorResult(err), nil
+	}
+	if err := h.store.SetRepoSha(ctx, a.Site, commit.Sha); err != nil {
+		return errResultMsg(appkitmcp.ErrInternal, "record repo sha: "+err.Error()), nil
+	}
+	if err := os.Remove(confined); err != nil {
+		return errResultMsg(appkitmcp.ErrInternal, "file_delete: "+err.Error()), nil
+	}
+	return appkitmcp.StructuredResult(map[string]any{"deleted": a.Path, "site": a.Site})
+}
+
+func (h *toolHandlers) toolRmdir(ctx context.Context, raw json.RawMessage, id server.Identity) (map[string]any, error) {
+	var a struct {
+		Site string `json:"site"`
+		Path string `json:"path"`
+	}
+	if err := unmarshalArgs(raw, &a); err != nil {
+		return nil, err
+	}
+	if a.Site == "" || a.Path == "" {
+		return errResultMsg(appkitmcp.ErrValidation, "site and path are required"), nil
+	}
+	root, env := h.siteRoot(ctx, a.Site)
+	if env != nil {
+		return env, nil
+	}
+	site, err := h.store.Get(ctx, a.Site)
+	if err != nil {
+		return errResult(err), nil
+	}
+	confined, path, err := confinedSitePath(root, a.Path)
+	if err != nil {
+		if errors.Is(err, sitefiles.ErrEscapes) {
+			return errResultMsg(appkitmcp.ErrValidation, "path_escapes_working_dir: "+err.Error()), nil
+		}
+		return errResultMsg(appkitmcp.ErrInternal, "rmdir: "+err.Error()), nil
+	}
+	info, err := os.Stat(confined)
+	if errors.Is(err, os.ErrNotExist) {
+		return errResultMsg(appkitmcp.ErrNotFound, "rmdir: path not found"), nil
+	}
+	if err != nil {
+		return errResultMsg(appkitmcp.ErrInternal, "rmdir: "+err.Error()), nil
+	}
+	if !info.IsDir() {
+		return errResultMsg(appkitmcp.ErrValidation, "rmdir: path is not a directory; use file_delete for files"), nil
+	}
+	files, err := regularFilesUnder(confined)
+	if err != nil {
+		return errResultMsg(appkitmcp.ErrInternal, "rmdir: "+err.Error()), nil
+	}
+	if len(files) > 0 {
+		changes := make([]sites.FileChange, 0, len(files))
+		for _, file := range files {
+			changes = append(changes, sites.FileChange{Path: repositoryPath(site.Path, path+"/"+file), Delete: true})
+		}
+		ctx = sites.WithVersionActor(ctx, id.ClientID)
+		commit, err := h.version.Commit(ctx, a.Site, "rmdir "+path, changes)
+		if err != nil {
+			return versionErrorResult(err), nil
+		}
+		if err := h.store.SetRepoSha(ctx, a.Site, commit.Sha); err != nil {
+			return errResultMsg(appkitmcp.ErrInternal, "record repo sha: "+err.Error()), nil
+		}
+	}
+	if err := os.RemoveAll(confined); err != nil {
+		return errResultMsg(appkitmcp.ErrInternal, "rmdir: "+err.Error()), nil
+	}
+	return appkitmcp.StructuredResult(map[string]any{"removed": a.Path, "site": a.Site, "files": len(files)})
+}
+
 var errWrongTypedWritePath = errors.New("wrong-typed write path")
 
 func interactiveWritePathError(operation, root, target string) map[string]any {
