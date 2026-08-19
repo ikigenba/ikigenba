@@ -122,6 +122,9 @@ func (h *toolHandlers) syncDesired(ctx context.Context, sourcePath string) (file
 	}
 	desired := make(map[string][]byte, len(files))
 	for _, file := range files {
+		if file.Kind != "file" {
+			continue
+		}
 		data, err := h.mirror.Fetch(ctx, file.Path)
 		if err != nil {
 			return nil, errResultMsg(appkitmcp.ErrSourceUnavailable, "fetch_upstream: "+err.Error())

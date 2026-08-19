@@ -30,6 +30,7 @@ import (
 // is carried for the deferred per-file sync manifest.
 type MirrorFile struct {
 	Path      string
+	Kind      string
 	Size      int64
 	Hash      string
 	Rev       string
@@ -68,6 +69,7 @@ func NewMirrorClient(base string, hc *http.Client) MirrorClient {
 type listPage struct {
 	Files []struct {
 		Path      string `json:"path"`
+		Kind      string `json:"kind"`
 		Size      int64  `json:"size"`
 		Hash      string `json:"hash"`
 		Rev       string `json:"rev"`
@@ -109,6 +111,7 @@ func (c *httpMirrorClient) List(ctx context.Context, prefix string) ([]MirrorFil
 		for _, f := range page.Files {
 			out = append(out, MirrorFile{
 				Path:      f.Path,
+				Kind:      f.Kind,
 				Size:      f.Size,
 				Hash:      f.Hash,
 				Rev:       f.Rev,

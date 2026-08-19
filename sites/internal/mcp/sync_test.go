@@ -33,6 +33,7 @@ func (r *correlationRecordingTransport) RoundTrip(req *http.Request) (*http.Resp
 // the sites package, Phase 6).
 type fakeMirror struct {
 	files      map[string][]byte // full mirror path → bytes
+	entries    []sites.MirrorFile
 	listErr    error
 	fetchErr   error
 	listCalls  []string
@@ -46,14 +47,47 @@ func (f *fakeMirror) List(_ context.Context, prefix string) ([]sites.MirrorFile,
 	}
 	p := strings.TrimRight(prefix, "/")
 	var out []sites.MirrorFile
+	if f.entries != nil {
+		for _, entry := range f.entries {
+			if p == "" || entry.Path == p || strings.HasPrefix(entry.Path, p+"/") {
+				out = append(out, entry)
+			}
+		}
+		sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+		return out, nil
+	}
 	for path, data := range f.files {
 		if p == "" || path == p || strings.HasPrefix(path, p+"/") {
-			out = append(out, sites.MirrorFile{Path: path, Size: int64(len(data))})
+			out = append(out, sites.MirrorFile{Path: path, Kind: "file", Size: int64(len(data))})
 		}
 	}
 	// Deterministic order so assertions are stable.
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
 	return out, nil
+}
+
+func TestSyncImportsOnlyFileEntries(t *testing.T) {
+	mirror := &fakeMirror{
+		files: map[string][]byte{
+			"/source/index.html":    []byte("home"),
+			"/source/assets/app.js": []byte("app"),
+		},
+		entries: []sites.MirrorFile{
+			{Path: "/source", Kind: "dir"},
+			{Path: "/source/index.html", Kind: "file"},
+			{Path: "/source/assets/app.js", Kind: "file"},
+		},
+	}
+	h, root := newTestHandler(t, mirror)
+	callOK(t, h, "create", map[string]any{"name": "demo", "slug": "demo", "visibility": "private"})
+
+	out := callOK(t, h, "sync", map[string]any{"source_path": "/source", "slug": "demo"})
+	gotTree := readTreeFiles(t, filepath.Join(root, "private", "demo"))
+	sort.Strings(mirror.fetchCalls)
+	// R-G118-GMFK
+	if out["written"] != float64(2) || out["deleted"] != float64(0) || !reflect.DeepEqual(mirror.fetchCalls, []string{"/source/assets/app.js", "/source/index.html"}) || !reflect.DeepEqual(gotTree, map[string]string{"assets/app.js": "app", "index.html": "home"}) {
+		t.Fatalf("sync result=%#v fetches=%v tree=%v, want two files and no directory fetch", out, mirror.fetchCalls, gotTree)
+	}
 }
 
 func (f *fakeMirror) Fetch(_ context.Context, path string) ([]byte, error) {
@@ -370,7 +404,7 @@ func TestSyncPreservesRequestContextThroughMirrorCalls(t *testing.T) {
 				_, _ = w.Write([]byte(`{"files":[],"next_cursor":"page-2"}`))
 				return
 			}
-			_, _ = w.Write([]byte(`{"files":[{"path":"/source/index.html","size":5}]}`))
+			_, _ = w.Write([]byte(`{"files":[{"path":"/source/index.html","kind":"file","size":5}]}`))
 		case "/content":
 			_, _ = w.Write([]byte("hello"))
 		default:

@@ -181,14 +181,14 @@ func TestHTTPMirrorClient_ListPagination(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		if cursor == "" {
 			_, _ = w.Write([]byte(`{"files":[
-				{"path":"/site/a.html","size":3,"hash":"HASH_A","rev":"r1","updated_at":"t1"},
-				{"path":"/site/b.css","size":4,"hash":"HASH_B","rev":"r2","updated_at":"t2"}
+				{"path":"/site/a.html","kind":"file","size":3,"hash":"HASH_A","rev":"r1","updated_at":"t1"},
+				{"path":"/site/b.css","kind":"file","size":4,"hash":"HASH_B","rev":"r2","updated_at":"t2"}
 			],"next_cursor":"/site/b.css"}`))
 			return
 		}
 		// Second page: no next_cursor ⇒ terminate.
 		_, _ = w.Write([]byte(`{"files":[
-			{"path":"/site/c.js","size":5,"hash":"HASH_C","rev":"r3","updated_at":"t3"}
+			{"path":"/site/c.js","kind":"file","size":5,"hash":"HASH_C","rev":"r3","updated_at":"t3"}
 		]}`))
 	}))
 	defer srv.Close()
@@ -211,6 +211,9 @@ func TestHTTPMirrorClient_ListPagination(t *testing.T) {
 	// Full hash carried through.
 	if files[0].Hash != "HASH_A" {
 		t.Errorf("files[0].Hash = %q, want HASH_A", files[0].Hash)
+	}
+	if files[0].Kind != "file" {
+		t.Errorf("files[0].Kind = %q, want file", files[0].Kind)
 	}
 	// Cursor loop: first request empty cursor, second the page-1 next_cursor.
 	if len(seenCursors) != 2 || seenCursors[0] != "" || seenCursors[1] != "/site/b.css" {
