@@ -9,5 +9,7 @@ build loop **deletes** the phase's line and its body file — there is no done
 marker; done is gone. This file deliberately carries **no bare status glyph**
 outside the phase lines, so the anchored grep matches only phase lines.
 
-Next phase: 48
+Next phase: 49
+
+- Phase 48 ⬜ realizes R-27UP-QL4F — composition-root live-`/feed` proof for the git-door push event
 

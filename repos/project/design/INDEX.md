@@ -23,7 +23,7 @@ v2 rewrite and their ids were deleted with them.
 - D16 → `project/design/D16.md` — Adopt the suite testing-language contract — R-O1AD-MRKW (adopted), R-O2IA-0JBL (adopted)
 - D17 → `project/design/D17.md` — Custody: the bare-repo store, the `Git` seam, and the ref choke point — R-J4Y9-H96C, R-J665-V0X1, R-J7E2-8SNQ, R-J8LY-MKEF, R-J9TV-0C54, R-JB1R-E3VT, R-JC9N-RVMI
 - D18 → `project/design/D18.md` — The loopback filesystem + commit API — R-JJL2-2I2O, R-JKSY-G9TD, R-JM0U-U1K2, R-JN8R-7TAR, R-JOGN-LL1G, R-JPOJ-ZCS5, R-JQWG-D4IU, R-JS4C-QW9J, R-JTC9-4O08, R-JUK5-IFQX, R-JVS1-W7HM, R-JY7U-NQZ0
-- D19 → `project/design/D19.md` — The git smart-HTTP door — R-JZFR-1IPP, R-K0NN-FAGE, R-K1VJ-T273, R-K33G-6TXS, R-K4BC-KLOH, R-K5J8-YDF6, R-K6R5-C55V, R-K7Z1-PWWK
+- D19 → `project/design/D19.md` — The git smart-HTTP door — R-JZFR-1IPP, R-K0NN-FAGE, R-K1VJ-T273, R-K33G-6TXS, R-K4BC-KLOH, R-K5J8-YDF6, R-K6R5-C55V, R-K7Z1-PWWK, R-27UP-QL4F
 - D20 → `project/design/D20.md` — Run tokens: short-lived, repository-scoped push credentials — R-36US-ASST, R-382O-OKJI, R-KAEU-HGDY, R-KBMQ-V84N, R-KCUN-8ZVC, R-KE2J-MRM1
 - D21 → `project/design/D21.md` — Statuses and the `merge` verb — R-KFAG-0JCQ, R-KHQ8-S2U4, R-KIY5-5UKT, R-KK61-JMBI, R-KLDX-XE27, R-KMLU-B5SW, R-KNTQ-OXJL, R-KP1N-2PAA, R-KQ9J-GH0Z, R-KRHF-U8RO
 - D22 → `project/design/D22.md` — The MCP tool surface — R-KSPC-80ID, R-KTX8-LS92, R-KV54-ZJZR, R-KWD1-DBQG, R-KXKX-R3H5, R-KYSU-4V7U, R-JFAI-W00R, R-JGIF-9RRG, R-L00Q-IMYJ, R-L2GJ-A6FX
@@ -36,6 +36,7 @@ v2 rewrite and their ids were deleted with them.
 
 ## Verification ids → Decision
 
+- R-27UP-QL4F → D19 — `project/design/D19.md`
 - R-36US-ASST → D20 — `project/design/D20.md`
 - R-382O-OKJI → D20 — `project/design/D20.md`
 - R-39AL-2CA7 → D15 — `project/design/D15.md`
@@ -192,7 +193,7 @@ rest of the index.
    R-KXKX-R3H5
 10. Every branch movement, from any door, is observable as one suite event naming
     the repository, branch, commit, and actor →
-    R-K4BC-KLOH, R-JID5-OQBZ
+    R-K4BC-KLOH, R-JID5-OQBZ, R-27UP-QL4F
 11. Nothing repos does causes a request to github.com →
     R-SZF6-NY1F
 12. A logged-in user opening `/srv/repos/` sees the name, version, and live-repo
