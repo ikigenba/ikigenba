@@ -3,6 +3,7 @@ package main
 import (
 	"appkit"
 	"appkit/manifest"
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -284,6 +285,180 @@ func TestAssembledSpecRoutesApplyTheirChassisGates(t *testing.T) {
 	if guarded.Code != http.StatusNotFound {
 		t.Fatalf("proxied GET /content status=%d body=%s", guarded.Code, guarded.Body.String())
 	}
+}
+
+func TestComposedRootWirePushEventOntoRealFeed(t *testing.T) {
+	// R-27UP-QL4F
+	const (
+		repositoryName = "wire-push"
+		ownerID        = "owner-wire"
+		ownerEmail     = "owner-wire@example.test"
+		branch         = "feature/wire-proof"
+	)
+	t.Setenv("REPOS_STATE_DIR", t.TempDir())
+	t.Setenv("REPOS_GIT_BIN", "git")
+	t.Setenv("REPOS_MAX_COMMIT_BYTES", "")
+
+	conn, err := appdb.Open(filepath.Join(t.TempDir(), "repos.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	migrations, err := reposdb.Migrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := appdb.Migrate(context.Background(), conn, migrations); err != nil {
+		t.Fatal(err)
+	}
+
+	spec := reposSpec()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	producer, err := outbox.New(conn, outbox.Options{
+		Source: spec.App, Registry: spec.Events, Logger: logger,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := appkitserver.New(appkitserver.Options{
+		Addr:       "127.0.0.1:0",
+		Logger:     logger,
+		ResourceID: "http://localhost/srv/repos/mcp",
+		AuthServer: "http://localhost",
+		Version:    "test",
+		Service:    spec.App,
+		Feed:       producer.FeedHandler(),
+		FeedPath:   spec.Feed,
+		Register:   spec.Handlers,
+		Health:     spec.Health,
+		Events:     spec.Events,
+		WWW:        loadReposWWW(t),
+		DB:         conn,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := spec.Producer(producer); err != nil {
+		t.Fatal(err)
+	}
+
+	assembled := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != spec.Feed {
+			request.Header.Set("X-Forwarded-Proto", "https")
+			request.Header.Set("X-Owner-Id", ownerID)
+			request.Header.Set("X-Owner-Email", ownerEmail)
+		}
+		server.Handler.ServeHTTP(w, request)
+	}))
+	t.Cleanup(assembled.Close)
+
+	createBody := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create","arguments":{"kind":"sites","name":%q}}}`, repositoryName)
+	createResponse, err := assembled.Client().Post(assembled.URL+"/mcp", "application/json", strings.NewReader(createBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	createResponseBody, readErr := io.ReadAll(createResponse.Body)
+	_ = createResponse.Body.Close()
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if createResponse.StatusCode != http.StatusOK || !bytes.Contains(createResponseBody, []byte(`"kind":"sites"`)) || !bytes.Contains(createResponseBody, []byte(`"name":"`+repositoryName+`"`)) || bytes.Contains(createResponseBody, []byte(`"isError":true`)) {
+		t.Fatalf("create repository status=%d body=%s", createResponse.StatusCode, createResponseBody)
+	}
+
+	feedContext, cancelFeed := context.WithTimeout(context.Background(), 25*time.Second)
+	t.Cleanup(cancelFeed)
+	feedRequest, err := http.NewRequestWithContext(feedContext, http.MethodGet, assembled.URL+spec.Feed+"?from=tail", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	feedResponse, err := assembled.Client().Do(feedRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = feedResponse.Body.Close() })
+	if feedResponse.StatusCode != http.StatusOK || feedResponse.Header.Get("Content-Type") != "text/event-stream" {
+		t.Fatalf("feed status=%d content-type=%q", feedResponse.StatusCode, feedResponse.Header.Get("Content-Type"))
+	}
+	feedScanner := bufio.NewScanner(feedResponse.Body)
+	waitForComposedFeedCaughtUp(t, feedScanner)
+
+	workingCopy := filepath.Join(t.TempDir(), "clone")
+	composedGit(t, "", "clone", assembled.URL+"/git/sites/"+repositoryName+".git", workingCopy)
+	composedGit(t, workingCopy, "config", "user.name", "Wire Proof")
+	composedGit(t, workingCopy, "config", "user.email", ownerEmail)
+	if err := os.WriteFile(filepath.Join(workingCopy, "wire.txt"), []byte("composition root wire proof\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	composedGit(t, workingCopy, "add", "wire.txt")
+	composedGit(t, workingCopy, "commit", "-m", "prove composed push event")
+	head := strings.TrimSpace(composedGit(t, workingCopy, "rev-parse", "HEAD"))
+	composedGit(t, workingCopy, "push", "origin", "HEAD:refs/heads/"+branch)
+
+	eventName, envelope := readComposedPushFrame(t, feedScanner)
+	wantEvent := "repos:push/sites/" + repositoryName
+	if eventName != wantEvent || envelope.Source != "repos" || envelope.Kind != "push" || envelope.Subject != "/sites/"+repositoryName || envelope.CorrelationID == "" {
+		t.Fatalf("wire event=%q envelope=%#v, want event=%q with repos push identity and correlation", eventName, envelope, wantEvent)
+	}
+	var payload struct {
+		SHA   string `json:"sha"`
+		Actor string `json:"actor"`
+	}
+	if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.SHA != head || payload.Actor != ownerEmail {
+		t.Fatalf("push payload=%#v, want sha=%q actor=%q", payload, head, ownerEmail)
+	}
+}
+
+type composedWireEnvelope struct {
+	Source        string          `json:"source"`
+	Kind          string          `json:"kind"`
+	Subject       string          `json:"subject"`
+	CorrelationID string          `json:"correlation_id"`
+	Payload       json.RawMessage `json:"payload"`
+}
+
+func waitForComposedFeedCaughtUp(t *testing.T, scanner *bufio.Scanner) {
+	t.Helper()
+	for scanner.Scan() {
+		if scanner.Text() == "event: caught-up" {
+			return
+		}
+	}
+	t.Fatalf("feed ended before caught-up: %v", scanner.Err())
+}
+
+func readComposedPushFrame(t *testing.T, scanner *bufio.Scanner) (string, composedWireEnvelope) {
+	t.Helper()
+	for scanner.Scan() {
+		if !strings.HasPrefix(scanner.Text(), "event: repos:push/") {
+			continue
+		}
+		eventName := strings.TrimPrefix(scanner.Text(), "event: ")
+		if !scanner.Scan() || !strings.HasPrefix(scanner.Text(), "data: ") {
+			t.Fatal("push frame missing data line")
+		}
+		var envelope composedWireEnvelope
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(scanner.Text(), "data: ")), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		return eventName, envelope
+	}
+	t.Fatalf("feed ended before push: %v", scanner.Err())
+	return "", composedWireEnvelope{}
+}
+
+func composedGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	command := exec.Command("git", args...)
+	command.Dir = dir
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)
+	}
+	return string(output)
 }
 
 func TestAuthoredManifestContainsOnlyPortableInputs(t *testing.T) {
