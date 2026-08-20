@@ -11,5 +11,3 @@ outside the phase lines, so the anchored grep matches only phase lines.
 
 Next phase: 49
 
-- Phase 48 ⬜ realizes R-27UP-QL4F — composition-root live-`/feed` proof for the git-door push event
-
