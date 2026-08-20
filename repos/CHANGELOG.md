@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.17.0 — 2026-08-19
+
+- Verification hardening for the git smart-HTTP door (D19): added a
+  composition-root proof (R-27UP-QL4F, Phase 48) that a real `git` push through
+  the assembled service emits its `push` event on the live `/feed`, closing a
+  blind spot where the prior tests only asserted the outbox table for the git
+  door and only proved the live feed for the loopback-commit door. No
+  user-facing behavior, API, schema, or data changes; the shipped binary is
+  functionally unchanged.
+
 ## v0.16.0 — 2026-08-17
 
 - Adopt the per-service customer-data and dev-config env manifests: `env.list` now authors the shipped `manifest.env`. Redeployed to verify manifest and secret handling end to end. No API, schema, or data changes.
