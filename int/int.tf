@@ -125,6 +125,27 @@ resource "aws_iam_role_policy" "int_app_config" {
   })
 }
 
+# DNS-01 cert issuance for metaspot.org (served as a sites custom domain). The
+# metaspot.org zone lives in the mgmt account, so the box reaches it by assuming
+# the mgmt-owned metaspot-org-dns01 role (defined in mgmt/metaspot-org-dns01.tf),
+# which carries the actual Route 53 write. ARN is a hardcoded literal — this repo
+# never wires a terraform_remote_state cross-account read (same discipline as
+# mgmt/parked.tf). certbot-dns-route53 on the box assumes it.
+resource "aws_iam_role_policy" "int_dns01_assume" {
+  name = "dns01-assume"
+  role = aws_iam_role.int.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "sts:AssumeRole"
+        Resource = "arn:aws:iam::132801647717:role/metaspot-org-dns01"
+      },
+    ]
+  })
+}
+
 resource "aws_instance" "int" {
   ami           = "ami-078f95be0757084a3" # AL2023 x86_64, us-east-2, resolved 2026-06-06
   instance_type = "t3.micro"
