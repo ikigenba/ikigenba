@@ -7,7 +7,7 @@
 #
 # Contract (see AGENTS.md "Service layer"):
 #   1. Source /etc/ikigenba/env for identity/region.
-#   2. Source /opt/<app>/etc/manifest.env (non-secret defaults: PORT, etc.).
+#   2. Source /opt/<app>/etc/current/manifest.env (non-secret defaults: PORT, etc.).
 #   3. Fetch /ikigenba/${IKIGENBA_ENV}/app-config/<app> from SSM — one
 #      parameter per app, a flat {KEY: value} JSON object. Hard-fail on any
 #      error (missing grant, missing parameter, network) — every app is
@@ -26,7 +26,7 @@ app="${1:?usage: ikigenba-launch <app>}"
 source /etc/ikigenba/env
 
 # 2. Manifest defaults — sourced first so SSM can override on collision.
-manifest="/opt/${app}/etc/manifest.env"
+manifest="/opt/${app}/etc/current/manifest.env"
 if [[ -f "$manifest" ]]; then
   set -a
   # shellcheck disable=SC1090
