@@ -148,7 +148,7 @@ resource "aws_iam_role_policy" "int_dns01_assume" {
 
 resource "aws_instance" "int" {
   ami           = "ami-078f95be0757084a3" # AL2023 x86_64, us-east-2, resolved 2026-06-06
-  instance_type = "t3.micro"
+  instance_type = "t3.small"
   subnet_id     = data.aws_subnets.default.ids[0]
 
   vpc_security_group_ids = [aws_security_group.int.id]
