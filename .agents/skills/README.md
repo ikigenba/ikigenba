@@ -10,8 +10,8 @@ There are no skills here yet. Add one skill per subdirectory.
 
 ## Who loads this path
 
-Agents that look for `$PROJ_ROOT/.agents/skills/` (including when you are
-working in a package subdirectory of the same checkout):
+Agents that look for `$PROJ_ROOT/.agents/skills/`, including when you are
+working in a package subdirectory of the same checkout:
 
 - Codex (walks CWD up to the git root)
 - Cursor
@@ -30,7 +30,7 @@ will not see skills from this checkout.
 
 Claude Code does not scan `.agents/skills/`. It only loads `.claude/skills/`.
 
-This repo bridges that with a symlink at the checkout root:
+This repo bridges the gap with a symlink at the checkout root:
 
 ```
 .claude/skills  →  ../.agents/skills
