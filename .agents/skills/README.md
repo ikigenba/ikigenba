@@ -3,6 +3,9 @@
 This directory is the canonical, repo-scoped home for Agent Skills
 (`<name>/SKILL.md` plus optional `scripts/`, `references/`, and `assets/`).
 
+Skills follow the [Agent Skills](https://agentskills.io) open standard.
+The format is specified at https://agentskills.io/specification.
+
 There are no skills here yet. Add one skill per subdirectory.
 
 ## Who loads this path
