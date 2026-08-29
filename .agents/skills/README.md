@@ -20,9 +20,6 @@ working in a package subdirectory of the same checkout:
 - OpenCode (walks CWD up to the git worktree)
 - Grok (walks CWD up to the repo root)
 
-Personal copies of the same layout live at `~/.agents/skills/` for some of
-these tools. This folder is the project copy, shared by every worktree.
-
 Discovery stops at the nearest git root. A nested repository or submodule
 will not see skills from this checkout.
 
@@ -35,6 +32,3 @@ This repo bridges the gap with a symlink at the checkout root:
 ```
 .claude/skills  →  ../.agents/skills
 ```
-
-Keep skills only in this directory. Do not add a second tree under
-`.claude/skills/`.
