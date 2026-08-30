@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"strconv"
 	"time"
@@ -181,7 +182,7 @@ func runDecode(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	decode := func(token string) (bool, error) {
 		instant, err := idgen.TimeOf(token)
 		if err != nil {
-			_, _ = io.WriteString(stderr, "idgen: invalid id "+token+": "+err.Error()+"\n")
+			_, _ = fmt.Fprintf(stderr, "idgen: %q: %v\n", token, err)
 			return false, nil
 		}
 		if _, err := io.WriteString(out, instant.UTC().Format("2006-01-02T15:04:05.000Z")+"\n"); err != nil {

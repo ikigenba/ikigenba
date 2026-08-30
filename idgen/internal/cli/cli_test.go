@@ -802,6 +802,22 @@ func TestRunDecodeReturnsFailureWhenOutputCannotBeWritten(t *testing.T) {
 	}
 }
 
+func TestRunDecodeInvalidDiagnosticAddsOnlyTokenContext(t *testing.T) {
+	const token = "broken"
+
+	stdout, stderr, exitCode := runCLI([]string{"--decode", token}, "", &fakeClock{})
+
+	if exitCode != exitFailure {
+		t.Errorf("Run() exit code = %d, want %d", exitCode, exitFailure)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
+	}
+	if got, want := stderr, "idgen: \"broken\": invalid id: non-canonical format\n"; got != want {
+		t.Errorf("stderr = %q, want %q", got, want)
+	}
+}
+
 // R-TDP6-UUWI: mixed-whitespace stdin decoding matches positional decoding.
 func TestRunDecodesMixedWhitespaceStdinLikePositionals(t *testing.T) {
 	instants := []time.Time{
