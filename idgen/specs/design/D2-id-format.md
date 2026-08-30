@@ -32,9 +32,16 @@ var Epoch = time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 // ErrInvalidID wraps the error TimeOf returns for a malformed id.
 var ErrInvalidID = errors.New("invalid id")
 
+// ValidPrefix reports whether prefix is a well-formed id prefix: a non-empty
+// run of letters and digits, matching the prefix portion of the decode
+// grammar. It is the single authority on the prefix grammar; callers that
+// validate a prefix ask it rather than re-deriving the character class.
+func ValidPrefix(prefix string) bool
+
 // MintAt returns "<prefix>-XXXX-XXXX" for the given instant. Instants before
-// Epoch are clamped to Epoch. The caller guarantees prefix is a non-empty run
-// of letters/digits (cli validates; D5); MintAt does not re-validate.
+// Epoch are clamped to Epoch. The caller guarantees prefix satisfies
+// ValidPrefix (cli validates at the flag boundary; D5); MintAt does not
+// re-validate.
 func MintAt(prefix string, t time.Time) string
 
 // TimeOf inverts the body of any "<prefix>-XXXX-XXXX" id to the instant it
@@ -43,9 +50,15 @@ func MintAt(prefix string, t time.Time) string
 func TimeOf(id string) (time.Time, error)
 ```
 
-The prefix is a parameter, not baked in: `idgen` knows the grammar (body,
-base-36, dash split); the prefix string is supplied by the caller, and prefix
-validation lives at the flag boundary in `cli` (D5).
+The prefix is a parameter, not baked in: the prefix string is supplied by the
+caller, and the decision to reject a bad one lives at the flag boundary in
+`cli` (D5). But `idgen` owns the id format grammar in both directions, and the
+prefix is part of that grammar, so `idgen` owns what a well-formed prefix *is*
+and exports it as `ValidPrefix`. `cli` chooses when to validate and what to
+report; it does not carry its own copy of the character class. One encoding of
+the rule, in the package that owns the format — widening it (say, to allow
+`_`) is then a single edit that `MintAt`, `TimeOf`, and the flag boundary all
+follow together.
 
 **Spec-system note.** idgen's output shares the exact shape of this
 repository's requirement ids, and the spec system's gap greps design and test
@@ -71,4 +84,6 @@ against the shipping binary):
 - R-SPB7-7G2M: `TimeOf` MUST decode ids with differing prefixes (e.g. `R`, `S`, `SPEC`) but the same body to the same instant.
 - R-SQJ3-L7TB: `TimeOf` MUST return an error wrapping `ErrInvalidID` for every input that does not match the decode grammar `^[A-Za-z0-9]+-([0-9A-Z]{4})-([0-9A-Z]{4})$`.
 - R-SRQZ-YZK0: `TimeOf` MUST never panic, verified by an ordinary deterministic test (not a Go fuzz target) sweeping a large PRNG-seeded sample of arbitrary and adversarial strings, each of which yields either an `ErrInvalidID`-wrapping error or a valid time.
+- R-5ZQU-BTSZ: Package `idgen` MUST export `ValidPrefix(prefix string) bool`, returning true for exactly those strings that are non-empty and composed only of characters in `[A-Za-z0-9]`.
+- R-60YQ-PLJO: `TimeOf`'s acceptance of the prefix portion of an id MUST agree with `ValidPrefix` — for a PRNG-seeded sample of candidate prefixes spanning valid runs, empty strings, and strings bearing separator, punctuation, and non-ASCII characters, an otherwise-canonical id built from a candidate MUST decode if and only if `ValidPrefix` accepts that candidate.
 - R-SSYW-CRAP: Package `idgen` MUST panic at init if the affine multiplier and 36⁸ are not coprime (fail-loud: a non-invertible map would make every existing id irrecoverable).

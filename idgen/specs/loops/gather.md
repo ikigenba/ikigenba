@@ -4,10 +4,11 @@ You are the **gather** stage of the build loop, run by ralph in a fresh context 
 
 ## Procedure
 
-1. **Issue gate.** If `specs/issues/` contains any `*.md`, stop the run: report `DONE` with a message naming the open issue files. Existence of any issue is a hard halt.
-2. Read `specs/build/PLAN.md` and `specs/build/brief.md` (if it exists).
-3. **Advance.** If the brief's status is `complete`, mark the current phase done in `PLAN.md` (check it off or remove it).
-4. **Finish — but only with green gates.** If no phases remain in `PLAN.md`, run the project gates (read `./AGENTS.md` beside `specs/` for the ordered gate commands). If every gate exits 0, report `DONE` with a completion message. If a gate fails, author a **gate-fix brief** instead of stopping: overwrite `specs/build/brief.md` with
+1. Read `specs/build/PLAN.md` and `specs/build/brief.md` (if it exists).
+2. **Issue gate.** If `specs/issues/` contains any `*.md`, stop the run: report `DONE` with a message naming the open issue files. Existence of any issue is a hard halt — a blocker verify judged real is the one thing that outranks open feedback.
+3. **Outstanding work comes first.** If the brief exists and its status line is not `complete`, the phase is still open: verify left it `building` because its checks did not pass, and whatever its `## Feedback` region names is unclosed work. Green gates do not settle it — feedback is the loop's highest-priority work and is addressed before any advance, any new phase, and any finish. Leave the brief exactly as it stands (contract and `## Feedback` both untouched) and report `NEXT` so build gets another turn. Never report `DONE`, never advance the phase cursor, and never overwrite the brief while it is not `complete`.
+4. **Advance.** The brief's status is `complete`: mark the current phase done in `PLAN.md` (check it off or remove it).
+5. **Finish — but only with green gates.** If no phases remain in `PLAN.md`, run the project gates (read `./AGENTS.md` beside `specs/` for the ordered gate commands). If every gate exits 0, report `DONE` with a completion message. If a gate fails, author a **gate-fix brief** instead of stopping: overwrite `specs/build/brief.md` with
    - the failing gate command and its exact failing output, trimmed to **only the findings that make the gate exit nonzero** — for llm-lint that is error-severity findings alone; warning-severity findings do not fail the gate, are out of scope for the phase, and must not appear in the brief,
    - for an llm-lint finding, the full text of each firing rule copied from `lint-rules/<rule>.md` — the rule, not the finding message, is the authority on the preferred fix,
    - the scope rule: fix the findings **below the contract seam** — no changes to exported names, types, signatures, interfaces, or observable behavior; a finding that cannot be fixed below the seam is a blocker for build to file as an issue,
@@ -19,7 +20,7 @@ You are the **gather** stage of the build loop, run by ralph in a fresh context 
    - a status line: `status: building`.
 
    Report `NEXT`.
-5. **Author the brief.** Otherwise take the first unfinished phase and overwrite `specs/build/brief.md` with everything build needs for that phase alone:
+6. **Author the brief.** Otherwise take the first unfinished phase and overwrite `specs/build/brief.md` with everything build needs for that phase alone:
    - the exact design prose for the elements in scope,
    - the phase's requirement ids with their exact text (from `specs/design/`),
    - exact paths to the code and test files to touch and where new tests go,

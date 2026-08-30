@@ -19,9 +19,11 @@ empty stdin) is vacuous success: no output, exit `0`.
 **Mint validation.** Checked before minting begins; each failure reports
 `idgen: <problem>` to stderr and exits `2` — never a silent non-zero exit:
 
-- `--prefix` must match `^[A-Za-z0-9]+$` (non-empty, letters and digits only —
-  a separator character would corrupt the decode grammar; this check is what
-  guards it, since `MintAt` trusts its precondition, D2). Message contains
+- `--prefix` must satisfy `idgen.ValidPrefix` (non-empty, letters and digits
+  only — a separator character would corrupt the decode grammar; this check is
+  what guards it, since `MintAt` trusts its precondition, D2). `cli` owns the
+  decision to check here and the message it reports; `idgen` owns the grammar
+  itself (D2), so `cli` does not restate the character class. Message contains
   `invalid prefix`.
 - `--number` must be greater than 0. Message contains `--number must be > 0`.
 
@@ -34,5 +36,6 @@ empty stdin) is vacuous success: no output, exit `0`.
 - R-TIKS-DXVA: Decode with no positionals and empty stdin MUST produce no output and exit 0.
 - R-TJSO-RPLZ: Round-trip through `Run`: `--decode` of a freshly minted id MUST return the minting instant at millisecond precision.
 - R-TL0L-5HCO: A `--prefix` value that is empty, whitespace, or contains any character outside `[A-Za-z0-9]` MUST exit 2 with stderr containing `invalid prefix`.
+- R-626N-3DAD: The `--prefix` accept/reject decision MUST agree with `idgen.ValidPrefix` — for a PRNG-seeded sample of candidate prefixes spanning valid runs, empty strings, and strings bearing separator, punctuation, and non-ASCII characters, a mint invocation MUST exit 2 with `invalid prefix` exactly when `ValidPrefix` rejects the candidate and mint successfully exactly when it accepts.
 - R-TM8H-J93D: A `--number` value of 0 or below MUST exit 2 with stderr containing `--number must be > 0`.
 - R-TNGD-X0U2: Decode output MUST be UTC regardless of the `TZ` environment variable (verified with a non-UTC `TZ` set).
