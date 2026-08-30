@@ -89,13 +89,16 @@ func (c *scheduledClock) Sleep(d time.Duration) {
 	c.now = c.now.Add(d)
 }
 
-func runMint(t *testing.T, args []string, clock Clock) ([]string, string, int) {
-	t.Helper()
+func runMint(args []string, clock Clock) (string, string, int) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
 	exitCode := Run(args, bytes.NewReader(nil), &stdout, &stderr, clock)
-	output := stdout.String()
+	return stdout.String(), stderr.String(), exitCode
+}
+
+func assertMintLines(t *testing.T, output string) []string {
+	t.Helper()
 	if output == "" || !strings.HasSuffix(output, "\n") {
 		t.Fatalf("stdout = %q, want one or more newline-terminated id lines", output)
 	}
@@ -105,7 +108,7 @@ func runMint(t *testing.T, args []string, clock Clock) ([]string, string, int) {
 			t.Fatalf("stdout line %d is empty in %q", i, output)
 		}
 	}
-	return lines, stderr.String(), exitCode
+	return lines
 }
 
 func decodedTimes(t *testing.T, ids []string) []time.Time {
@@ -410,7 +413,8 @@ func TestRunMintReturnsFailureWhenOutputCannotBeWritten(t *testing.T) {
 // R-SU6S-QJ1E: an advancing fake clock mints the requested distinct ids without wall time.
 func TestRunNumberMintsRequestedDistinctIDsWithVirtualClock(t *testing.T) {
 	clock := &advancingClock{now: time.Date(2026, time.August, 29, 12, 0, 0, 0, time.UTC)}
-	ids, stderr, exitCode := runMint(t, []string{"-n", "4"}, clock)
+	stdout, stderr, exitCode := runMint([]string{"-n", "4"}, clock)
+	ids := assertMintLines(t, stdout)
 
 	if exitCode != exitSuccess {
 		t.Errorf("Run() exit code = %d, want %d", exitCode, exitSuccess)
@@ -434,7 +438,8 @@ func TestRunNumberMintsRequestedDistinctIDsWithVirtualClock(t *testing.T) {
 func TestRunNumberAdvancesVirtualTimeForEachAdditionalID(t *testing.T) {
 	start := time.Date(2026, time.August, 29, 12, 0, 0, 0, time.UTC)
 	clock := &advancingClock{now: start}
-	ids, _, exitCode := runMint(t, []string{"--number", "5"}, clock)
+	stdout, _, exitCode := runMint([]string{"--number", "5"}, clock)
+	ids := assertMintLines(t, stdout)
 
 	if exitCode != exitSuccess {
 		t.Fatalf("Run() exit code = %d, want %d", exitCode, exitSuccess)
@@ -453,7 +458,8 @@ func TestRunNumberAdvancesVirtualTimeForEachAdditionalID(t *testing.T) {
 // R-SWML-I2IS: a clock stalled until Sleep still yields a sufficiently separated sequence.
 func TestRunNumberTerminatesWhenClockAdvancesOnlyDuringSleep(t *testing.T) {
 	clock := &advancingClock{now: time.Date(2026, time.August, 29, 12, 0, 0, 0, time.UTC)}
-	ids, _, exitCode := runMint(t, []string{"-n", "6"}, clock)
+	stdout, _, exitCode := runMint([]string{"-n", "6"}, clock)
+	ids := assertMintLines(t, stdout)
 
 	if exitCode != exitSuccess {
 		t.Fatalf("Run() exit code = %d, want %d", exitCode, exitSuccess)
@@ -478,7 +484,8 @@ func TestRunNumberTerminatesWhenClockAdvancesOnlyDuringSleep(t *testing.T) {
 // R-SZ2E-9M06: the default single mint never sleeps.
 func TestRunDefaultSingleMintDoesNotSleep(t *testing.T) {
 	clock := &fakeClock{now: time.Date(2026, time.August, 29, 12, 0, 0, 0, time.UTC)}
-	ids, _, exitCode := runMint(t, nil, clock)
+	stdout, _, exitCode := runMint(nil, clock)
+	ids := assertMintLines(t, stdout)
 
 	if exitCode != exitSuccess {
 		t.Fatalf("Run() exit code = %d, want %d", exitCode, exitSuccess)
@@ -494,7 +501,8 @@ func TestRunDefaultSingleMintDoesNotSleep(t *testing.T) {
 // R-T0AA-NDQV: every minted millisecond was previously reported by the injected clock.
 func TestRunMintsOnlyAtClockReportedInstants(t *testing.T) {
 	clock := &advancingClock{now: time.Date(2026, time.August, 29, 12, 0, 0, 731000, time.UTC)}
-	ids, _, exitCode := runMint(t, []string{"--number", "4"}, clock)
+	stdout, _, exitCode := runMint([]string{"--number", "4"}, clock)
+	ids := assertMintLines(t, stdout)
 
 	if exitCode != exitSuccess {
 		t.Fatalf("Run() exit code = %d, want %d", exitCode, exitSuccess)
@@ -514,7 +522,8 @@ func TestRunMintsOnlyAtClockReportedInstants(t *testing.T) {
 func TestRunNumberWaitsOutBackwardClockStep(t *testing.T) {
 	start := time.Date(2026, time.August, 29, 12, 0, 0, 0, time.UTC)
 	clock := &scheduledClock{scheduled: []time.Time{start, start.Add(-3 * time.Millisecond)}}
-	ids, _, exitCode := runMint(t, []string{"-n", "3"}, clock)
+	stdout, _, exitCode := runMint([]string{"-n", "3"}, clock)
+	ids := assertMintLines(t, stdout)
 
 	if exitCode != exitSuccess {
 		t.Fatalf("Run() exit code = %d, want %d", exitCode, exitSuccess)
