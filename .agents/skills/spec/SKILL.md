@@ -19,6 +19,7 @@ Spec-driven development: designs define the contract, a mechanical gap drives a 
 
 - Mint every id with `idgen`; ids have the form `R-XXXX-XXXX`. `idgen` guarantees global uniqueness.
 - Never hand-author, edit, or reuse an id. An id is permanent once minted.
+- An id's **requirement text is equally permanent**. Changing it at all — including a pure rewording — means deleting that requirement and minting a new id. The gap is computed from id presence alone, so an edited requirement is invisible to the loop and never gets applied. See `references/design.md`.
 
 ## Tagging and the gap (canonical)
 

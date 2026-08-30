@@ -59,10 +59,12 @@ One bullet per requirement:
 
 ## Changing a design
 
-Design documents are never sealed; they may change at any time.
+Design documents are never sealed; they may change at any time. Their prose may be rewritten freely. **Requirement text may not.**
 
-- Non-material wording fixes keep the same id.
-- A material change (one that must be addressed in the build phase) is made by deleting the old requirement and adding a new one with a new id. Never edit an existing id.
+- **A requirement's text is frozen the moment its id is minted.** To change it — by any amount, for any reason — delete the requirement and add a new one with a freshly minted id. There is no exception: not a typo, not a renamed symbol, not a clarification, not a rewording that means exactly the same thing. Never edit the text beside an existing id, and never reuse an id.
+- Why the rule is absolute: the gap is computed from **id presence alone** (see `../SKILL.md`), so an edited requirement produces no gap entry. The loop never sees it, the tagged test is never revisited, and the design and the suite silently disagree — the id now points at text no test was ever checked against. A new id makes the change visible as `[add]`, and deleting the old one makes the stale test visible as `[remove]`.
+- Do not reason about whether a change is "material" or "just wording." That judgement is what fails: a reworded requirement still means the same thing, which is precisely why it feels safe to edit and why the omission goes unnoticed. Text changed → new id. The only edits that keep an id are ones that leave its text byte-identical.
+- After editing any design document, recompute the gap and confirm every change you made appears in it. A change you intended that produces no gap entry is a change the loop cannot apply.
 - The `REQUIREMENTS` list holds only the current contract. Superseded requirements are deleted; git holds the history.
 
 ## Example
