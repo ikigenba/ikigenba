@@ -43,6 +43,12 @@ skipped tests, no disabled linters laundering a failure.
 4. `golangci-lint run`
 5. `llm-lint cmd internal`
 
+llm-lint also loads this project's own rules from `lint-rules/` (wired via
+`.llm-lint.json`, found by ancestor walk). They are `severity: warning` —
+surfaced in gate output but not failing it — and are promoted to `error`
+individually as the smells they describe are fixed. See
+`../docs/llm-lint-rule-candidates.md` for their provenance.
+
 ## Commit conventions
 
 ```
