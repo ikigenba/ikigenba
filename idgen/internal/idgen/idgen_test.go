@@ -179,18 +179,25 @@ func TestMintAtClampsBeforeEpoch(t *testing.T) {
 
 func TestMintAtTimeOfRoundTrip(t *testing.T) {
 	// R-SJ7P-ALD5
-	const seed = uint64(1729)
+	const (
+		seed                         = uint64(1729)
+		maxRepresentableOffsetMillis = int64(2_821_109_907_455) // 36^8 - 1, the largest eight-digit base36 value.
+		representableOffsetCount     = uint64(2_821_109_907_456)
+	)
 	state := seed
 	nextOffset := func() int64 {
 		// xorshift64 is a deterministic PRNG suitable for reproducible sampling.
 		state ^= state << 13
 		state ^= state >> 7
 		state ^= state << 17
-		return int64(state % uint64(modulus))
+		return int64(state % representableOffsetCount)
+	}
+	offsets := []int64{0, 1, maxRepresentableOffsetMillis - 1, maxRepresentableOffsetMillis}
+	for range 1000 {
+		offsets = append(offsets, nextOffset())
 	}
 	prefixes := []string{"R", "abc123", "Z9", "Requirement"}
-	for i := 0; i < 1000; i++ {
-		ms := nextOffset()
+	for _, ms := range offsets {
 		instant := Epoch().Add(time.Duration(ms) * time.Millisecond)
 		for _, prefix := range prefixes {
 			id := MintAt(prefix, instant)
@@ -203,6 +210,50 @@ func TestMintAtTimeOfRoundTrip(t *testing.T) {
 				t.Fatalf("TimeOf(MintAt(%q, offset %dms)) = %s, want %s", prefix, ms, got, want)
 			}
 		}
+	}
+}
+
+func TestMintAtEncodingBoundaryBehavior(t *testing.T) {
+	const (
+		maxRepresentableOffsetMillis = int64(2_821_109_907_455) // 36^8 - 1, the largest eight-digit base36 value.
+		encodingPeriodMillis         = maxRepresentableOffsetMillis + 1
+		saturatedDurationMillis      = int64(9_223_372_036_854) // floor(MaxInt64 nanoseconds / one millisecond).
+	)
+
+	tests := []struct {
+		name             string
+		instant          time.Time
+		wantOffsetMillis int64
+	}{
+		{
+			name:             "last representable offset",
+			instant:          Epoch().Add(time.Duration(maxRepresentableOffsetMillis) * time.Millisecond),
+			wantOffsetMillis: maxRepresentableOffsetMillis,
+		},
+		{
+			name:             "one past representable offset wraps to epoch",
+			instant:          Epoch().Add(time.Duration(encodingPeriodMillis) * time.Millisecond),
+			wantOffsetMillis: 0,
+		},
+		{
+			name:             "far future time saturates time.Duration",
+			instant:          Epoch().AddDate(1000, 0, 0),
+			wantOffsetMillis: saturatedDurationMillis % encodingPeriodMillis,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			id := MintAt("R", test.instant)
+			got, err := TimeOf(id)
+			if err != nil {
+				t.Fatalf("TimeOf(MintAt(R, %s)) returned error: %v", test.instant, err)
+			}
+			want := Epoch().Add(time.Duration(test.wantOffsetMillis) * time.Millisecond)
+			if !got.Equal(want) {
+				t.Fatalf("TimeOf(MintAt(R, %s)) = %s, want %s", test.instant, got, want)
+			}
+		})
 	}
 }
 
