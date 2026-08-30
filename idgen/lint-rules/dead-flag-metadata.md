@@ -1,6 +1,6 @@
 ---
 description: help text or defaults passed to a parser whose usage output is fully overridden, so the strings can never be displayed
-severity: warning
+severity: error
 ---
 Flag descriptions, usage strings, or placeholder metadata handed to a flag or argument parser when the program replaces the parser's own help rendering with hand-written text, so the supplied strings are never reachable on any code path. Check both routes to help output — the explicit help request and the parse-error path — since overriding the usage hook usually kills both. Object because the dead strings sit exactly where a reader expects the documentation to live: a maintainer updates them, the change has no effect, and the real help text drifts away from them unnoticed. Recommend either dropping the metadata to make the override explicit, or generating the hand-written block from the registrations so there is one source.
 
