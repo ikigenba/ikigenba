@@ -1,6 +1,6 @@
 ---
 description: error state accumulated by mutating a variable captured in a closure instead of being returned by the helper that detects it
-severity: warning
+severity: error
 ---
 Flag a local closure that reports failure by assigning to a captured boolean or error variable rather than returning it, especially when the closure is invoked from more than one place in the enclosing function. The failure signal then travels by side effect: a reader who reaches the final check on the flag has to find every call site to learn when it can be set, and the closure cannot be moved, reused, or tested on its own because its result is not in its signature. Recommend giving the helper a result the caller inspects, or unifying the call sites so a single loop can handle the outcome directly.
 
