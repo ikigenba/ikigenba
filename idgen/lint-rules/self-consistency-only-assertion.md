@@ -10,38 +10,38 @@ The signal is a stashed first result used as the expectation for later iteration
 Do not flag consistency checks where the correct value is genuinely unavailable to the test — output containing a real timestamp, a random identifier, or a host-dependent path — provided the invariant itself is the contract. Do not flag differential tests that compare two *different* implementations (a fast path against a reference, an optimized encoder against a naive one), which are falsifiable by construction. Do not flag a test that anchors one case against a literal and compares the remaining cases to it; that is the recommended fix.
 
 ```go
-// Flagged: all three prefixes could decode to the wrong instant and this passes.
+// Flagged: all three variants could hash to the wrong digest and this passes.
 // The `i == 0` branch also makes the first iteration a different test.
-func TestDecodeIgnoresPrefix(t *testing.T) {
-	var first time.Time
-	for i, prefix := range []string{"R", "S", "SPEC"} {
-		got, err := Decode(prefix + "-" + body)
+func TestChecksumIgnoresLineEndings(t *testing.T) {
+	var first string
+	for i, ending := range []string{"\n", "\r\n", "\r"} {
+		got, err := Checksum(strings.Join(lines, ending))
 		if err != nil {
-			t.Fatalf("Decode with prefix %q: %v", prefix, err)
+			t.Fatalf("Checksum with ending %q: %v", ending, err)
 		}
 		if i == 0 {
 			first = got
 			continue
 		}
-		if !got.Equal(first) {
-			t.Fatalf("prefix %q = %s, want %s", prefix, got, first)
+		if got != first {
+			t.Fatalf("ending %q = %s, want %s", ending, got, first)
 		}
 	}
 }
 ```
 
 ```go
-// Spared: anchored on a known instant, so every prefix is checked for
+// Spared: anchored on a known digest, so every variant is checked for
 // correctness and consistency falls out.
-func TestDecodeIgnoresPrefix(t *testing.T) {
-	want := time.Date(2026, time.March, 15, 12, 0, 0, 0, time.UTC)
-	for _, prefix := range []string{"R", "S", "SPEC"} {
-		got, err := Decode(prefix + "-" + body)
+func TestChecksumIgnoresLineEndings(t *testing.T) {
+	const want = "9f2c41aa07d356b8"
+	for _, ending := range []string{"\n", "\r\n", "\r"} {
+		got, err := Checksum(strings.Join(lines, ending))
 		if err != nil {
-			t.Fatalf("Decode with prefix %q: %v", prefix, err)
+			t.Fatalf("Checksum with ending %q: %v", ending, err)
 		}
-		if !got.Equal(want) {
-			t.Errorf("prefix %q = %s, want %s", prefix, got, want)
+		if got != want {
+			t.Errorf("ending %q = %s, want %s", ending, got, want)
 		}
 	}
 }

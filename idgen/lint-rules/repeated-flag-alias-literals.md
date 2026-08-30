@@ -9,15 +9,15 @@ Do not flag a parser that natively accepts several names in a single registratio
 Flagged:
 
 ```go
-count := flags.Int("n", 1, "number of items to emit")
-flags.IntVar(count, "number", 1, "number of items to emit")
-prefix := flags.String("p", "R", "identifier prefix")
-flags.StringVar(prefix, "prefix", "R", "identifier prefix")
+jobs := flags.Int("j", 1, "number of parallel jobs")
+flags.IntVar(jobs, "jobs", 1, "number of parallel jobs")
+format := flags.String("f", "table", "output format")
+flags.StringVar(format, "format", "table", "output format")
 ```
 
 Spared:
 
 ```go
-count := intFlag(flags, "n", "number", 1, "number of items to emit")
-prefix := stringFlag(flags, "p", "prefix", "R", "identifier prefix")
+jobs := intFlag(flags, "j", "jobs", 1, "number of parallel jobs")
+format := stringFlag(flags, "f", "format", "table", "output format")
 ```

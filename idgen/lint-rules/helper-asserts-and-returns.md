@@ -11,14 +11,14 @@ Do not flag helpers whose *purpose* is assertion and whose name says so (`assert
 
 ```go
 // Flagged: every caller silently also asserts output formatting, so a test
-// named for sleep behavior fails when line termination changes.
-func runMint(t *testing.T, args []string, clock Clock) ([]string, string, int) {
+// named for retry behavior fails when line termination changes.
+func runFilter(t *testing.T, args []string, input string) ([]string, string, int) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := Run(args, bytes.NewReader(nil), &stdout, &stderr, clock)
+	code := Run(args, strings.NewReader(input), &stdout, &stderr)
 	out := stdout.String()
 	if out == "" || !strings.HasSuffix(out, "\n") {
-		t.Fatalf("stdout = %q, want newline-terminated id lines", out)
+		t.Fatalf("stdout = %q, want newline-terminated result lines", out)
 	}
 	return strings.Split(strings.TrimSuffix(out, "\n"), "\n"), stderr.String(), code
 }
@@ -26,13 +26,13 @@ func runMint(t *testing.T, args []string, clock Clock) ([]string, string, int) {
 
 ```go
 // Spared: invocation returns everything; assertion is opt-in and named.
-func runMint(args []string, clock Clock) (stdout, stderr string, code int) {
+func runFilter(args []string, input string) (stdout, stderr string, code int) {
 	var out, errBuf bytes.Buffer
-	code = Run(args, bytes.NewReader(nil), &out, &errBuf, clock)
+	code = Run(args, strings.NewReader(input), &out, &errBuf)
 	return out.String(), errBuf.String(), code
 }
 
-func assertIDLines(t *testing.T, stdout string, want int) []string {
+func assertResultLines(t *testing.T, stdout string, want int) []string {
 	t.Helper()
 	// ...
 }

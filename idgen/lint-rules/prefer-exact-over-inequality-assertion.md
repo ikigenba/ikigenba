@@ -16,9 +16,9 @@ Do not flag bounds on quantities that genuinely vary: wall-clock durations, allo
 if got := clock.totalSleep(); got < 4*time.Millisecond {
 	t.Errorf("virtual advance = %s, want at least %s", got, 4*time.Millisecond)
 }
-for i, at := range decodedTimes(t, ids) {
-	if _, ok := reported[at.UnixMilli()]; !ok {
-		t.Errorf("output[%d] millisecond %d was never reported", i, at.UnixMilli())
+for i, b := range collectedBatches(t, out) {
+	if _, ok := allowedSizes[len(b)]; !ok {
+		t.Errorf("batch[%d] size %d was never requested", i, len(b))
 	}
 }
 ```
@@ -29,13 +29,13 @@ for i, at := range decodedTimes(t, ids) {
 if got, want := clock.totalSleep(), 4*time.Millisecond; got != want {
 	t.Errorf("virtual advance = %s, want %s", got, want)
 }
-times := decodedTimes(t, ids)
-if len(times) != 5 {
-	t.Fatalf("output count = %d, want 5", len(times))
+batches := collectedBatches(t, out)
+if len(batches) != 5 {
+	t.Fatalf("batch count = %d, want 5", len(batches))
 }
-for i := 1; i < len(times); i++ {
-	if got, want := times[i].Sub(times[i-1]), time.Millisecond; got != want {
-		t.Errorf("gap %d = %s, want %s", i, got, want)
+for i, b := range batches {
+	if got, want := len(b), batchSize; got != want {
+		t.Errorf("batch[%d] size = %d, want %d", i, got, want)
 	}
 }
 ```

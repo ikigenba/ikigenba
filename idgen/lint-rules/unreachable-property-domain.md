@@ -10,16 +10,16 @@ The evidence is structural — compare what the generator can emit against what 
 Do not flag sweeps that deliberately target the rejection path and say so in the test name; hammering a validator with garbage is legitimate when that is the stated contract. Do not flag coverage-guided fuzz targets, whose engine evolves inputs past the guards over time. Do not flag a generator that mixes strategies — some proportion of well-formed values, some near-misses, some garbage — even if the garbage share is large. The fix is to generate near-valid inputs: mutate a known-good value one byte or one field at a time, or build values from the format's own grammar with a slightly widened alphabet or length.
 
 ```go
-// Flagged: random bytes essentially never contain two separators around two
-// four-character groups, so every iteration stops at the shape check and
-// the decoder body is never entered.
-func TestDecodeNeverPanics(t *testing.T) {
+// Flagged: random bytes essentially never contain five separators between
+// two-digit hex groups, so every iteration stops at the shape check and
+// the parser body is never entered.
+func TestParseMACNeverPanics(t *testing.T) {
 	for i := 0; i < 20000; i++ {
 		buf := make([]byte, rnd()%257)
 		for j := range buf {
 			buf[j] = byte(rnd() & 0xff)
 		}
-		if _, err := Decode(string(buf)); err != nil && !errors.Is(err, ErrInvalid) {
+		if _, err := ParseMAC(string(buf)); err != nil && !errors.Is(err, ErrInvalid) {
 			t.Fatalf("iteration %d: unclassified error: %v", i, err)
 		}
 	}
@@ -27,16 +27,16 @@ func TestDecodeNeverPanics(t *testing.T) {
 ```
 
 ```go
-// Spared: mutations of a well-formed value reach the decoder body, so the
+// Spared: mutations of a well-formed value reach the parser body, so the
 // sweep covers the domain its name claims.
-func TestDecodeNeverPanics(t *testing.T) {
-	const seed = "X-0000-0000"
+func TestParseMACNeverPanics(t *testing.T) {
+	const seed = "12:34:56:78:9A:BC"
 	for i := 0; i < 20000; i++ {
 		buf := []byte(seed)
 		buf[rnd()%uint64(len(buf))] = byte(rnd() & 0xff)
-		id := string(buf)
-		if _, err := Decode(id); err != nil && !errors.Is(err, ErrInvalid) {
-			t.Fatalf("Decode(%q): unclassified error: %v", id, err)
+		addr := string(buf)
+		if _, err := ParseMAC(addr); err != nil && !errors.Is(err, ErrInvalid) {
+			t.Fatalf("ParseMAC(%q): unclassified error: %v", addr, err)
 		}
 	}
 }

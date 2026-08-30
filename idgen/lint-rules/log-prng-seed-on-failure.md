@@ -12,11 +12,11 @@ Do not flag tests whose inputs are a fixed literal table — there is nothing to
 ```go
 // Flagged: the failing input exists only inside the generator's state, and
 // neither it nor the seed appears in the message.
-func TestDecodeNeverPanics(t *testing.T) {
+func TestParseNeverPanics(t *testing.T) {
 	state := uint64(0x5eed)
 	for i := 0; i < 20000; i++ {
-		id := randomString(&state)
-		if _, err := Decode(id); err != nil && !errors.Is(err, ErrInvalid) {
+		input := randomString(&state)
+		if _, err := Parse(input); err != nil && !errors.Is(err, ErrSyntax) {
 			t.Fatalf("input %d returned unclassified error: %v", i, err)
 		}
 	}
@@ -26,13 +26,13 @@ func TestDecodeNeverPanics(t *testing.T) {
 ```go
 // Spared: the failure names the seed and the exact input, so the reader can
 // re-run it directly.
-func TestDecodeNeverPanics(t *testing.T) {
+func TestParseNeverPanics(t *testing.T) {
 	const seed = uint64(0x5eed)
 	state := seed
 	for i := 0; i < 20000; i++ {
-		id := randomString(&state)
-		if _, err := Decode(id); err != nil && !errors.Is(err, ErrInvalid) {
-			t.Fatalf("seed %#x, iteration %d: Decode(%q) returned unclassified error: %v", seed, i, id, err)
+		input := randomString(&state)
+		if _, err := Parse(input); err != nil && !errors.Is(err, ErrSyntax) {
+			t.Fatalf("seed %#x, iteration %d: Parse(%q) returned unclassified error: %v", seed, i, input, err)
 		}
 	}
 }

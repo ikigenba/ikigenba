@@ -8,27 +8,25 @@ Flag variables initialized to their zero value to mean "nothing yet" when that z
 Do not flag a zero value that is genuinely outside the domain — a zero id where ids start at 1, a nil slice, a zero-length buffer — nor accumulators where zero is the correct identity element. Do not flag a documented sentinel constant with a name (`const noDeadline = 0`). Do not flag `time.Time`'s zero used with `IsZero()`, which is the idiomatic absence test for that type. Do not flag when the guard and the sentinel are the same expression rather than two independent conditions.
 
 ```go
-// Flagged: 0 is a real millisecond timestamp; only the separate minted > 0 guard makes the
+// Flagged: 0 is a real byte offset; only the separate i > 0 guard makes the
 // first comparison safe, and either half looks removable on its own.
-var previousMillisecond int64
-for minted := 0; minted < count; minted++ {
-	instant := clock.Now()
-	for minted > 0 && instant.UnixMilli() <= previousMillisecond {
-		...
+var previousOffset int64
+for i, rec := range records {
+	if i > 0 && rec.Offset <= previousOffset {
+		return fmt.Errorf("record %d out of order", i)
 	}
-	previousMillisecond = instant.UnixMilli()
+	previousOffset = rec.Offset
 }
 ```
 
 ```go
 // Spared: absence is represented distinctly, so one condition carries the whole meaning.
 var previous *int64
-for minted := 0; minted < count; minted++ {
-	instant := clock.Now()
-	for previous != nil && instant.UnixMilli() <= *previous {
-		...
+for i, rec := range records {
+	if previous != nil && rec.Offset <= *previous {
+		return fmt.Errorf("record %d out of order", i)
 	}
-	current := instant.UnixMilli()
+	current := rec.Offset
 	previous = &current
 }
 ```

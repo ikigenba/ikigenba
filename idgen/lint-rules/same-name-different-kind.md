@@ -10,10 +10,10 @@ Flagged:
 
 ```go
 // package cli
-var validPrefix = regexp.MustCompile(`^[A-Za-z0-9]+$`) // a var
+var validSlug = regexp.MustCompile(`^[a-z0-9-]+$`) // a var
 
-// package format
-func validPrefix(s string) bool { ... } // a func — same name, same concept
+// package store
+func validSlug(s string) bool { ... } // a func — same name, same concept
 ```
 
 Spared:

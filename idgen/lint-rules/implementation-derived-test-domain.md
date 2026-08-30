@@ -11,14 +11,13 @@ Do not flag a test that *asserts* against an implementation constant while gener
 
 ```go
 // Flagged: the sweep can never leave the range where round-tripping holds,
-// so wrap-around past the implementation's modulus is untestable here.
+// so wrap-around past the implementation's own limit is untestable here.
 func TestRoundTrip(t *testing.T) {
 	for i := 0; i < 1000; i++ {
-		ms := int64(next() % uint64(modulus))
-		at := Epoch.Add(time.Duration(ms) * time.Millisecond)
-		got, err := Decode(Encode("R", at))
-		if err != nil || !got.Equal(at) {
-			t.Fatalf("offset %dms: %v, %v", ms, got, err)
+		seq := next() % maxSeq
+		got, err := Unpack(Pack(seq))
+		if err != nil || got != seq {
+			t.Fatalf("seq %d: %d, %v", seq, got, err)
 		}
 	}
 }
@@ -28,16 +27,15 @@ func TestRoundTrip(t *testing.T) {
 // Spared: the domain comes from the specification, and the limits are named
 // explicitly so a change in the implementation constant fails the test.
 func TestRoundTrip(t *testing.T) {
-	const maxRepresentableMS = 2821109907455 // spec: 36^8 - 1
-	cases := []int64{0, 1, maxRepresentableMS - 1, maxRepresentableMS}
+	const maxRepresentable = 281474976710655 // spec: 2^48 - 1
+	cases := []uint64{0, 1, maxRepresentable - 1, maxRepresentable}
 	for i := 0; i < 1000; i++ {
-		cases = append(cases, int64(next()%uint64(maxRepresentableMS+1)))
+		cases = append(cases, next()%(maxRepresentable+1))
 	}
-	for _, ms := range cases {
-		at := Epoch.Add(time.Duration(ms) * time.Millisecond)
-		got, err := Decode(Encode("R", at))
-		if err != nil || !got.Equal(at) {
-			t.Errorf("offset %dms: %v, %v", ms, got, err)
+	for _, seq := range cases {
+		got, err := Unpack(Pack(seq))
+		if err != nil || got != seq {
+			t.Errorf("seq %d: %d, %v", seq, got, err)
 		}
 	}
 }

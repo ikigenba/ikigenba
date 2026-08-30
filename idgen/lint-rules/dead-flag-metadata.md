@@ -10,8 +10,8 @@ Flagged:
 
 ```go
 flags.Usage = func() { io.WriteString(out, handWrittenUsage) } // parser help never renders
-count := flags.Int("n", 1, "number of items to emit")         // string is unreachable
-prefix := flags.String("p", "R", "identifier prefix")         // so is this one
+jobs := flags.Int("j", 1, "number of parallel jobs")          // string is unreachable
+format := flags.String("f", "table", "output format")         // so is this one
 ```
 
 Spared:
@@ -21,5 +21,5 @@ flags.Usage = func() {
 	io.WriteString(out, header)
 	flags.PrintDefaults() // the descriptions below are still rendered
 }
-count := flags.Int("n", 1, "number of items to emit")
+jobs := flags.Int("j", 1, "number of parallel jobs")
 ```

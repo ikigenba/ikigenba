@@ -28,8 +28,8 @@ tests := []struct {
 	args    []string
 	wantErr bool
 }{
-	{name: "zero count", args: []string{"-n", "0"}, wantErr: true},
-	{name: "negative count", args: []string{"-n", "-3"}, wantErr: true},
+	{name: "zero workers", args: []string{"--jobs", "0"}, wantErr: true},
+	{name: "negative workers", args: []string{"--jobs", "-3"}, wantErr: true},
 }
 ```
 
@@ -40,12 +40,12 @@ type recordingClock struct {
 	reported []time.Time
 }
 
-func TestMintsOnlyAtObservedInstants(t *testing.T) {
+func TestStampsTasksOnlyAtObservedInstants(t *testing.T) {
 	clock := &recordingClock{now: start}
-	ids := mint(t, clock, 4)
-	for i, at := range decodedTimes(t, ids) {
+	tasks := schedule(t, clock, 4)
+	for i, at := range stampedTimes(tasks) {
 		if !slices.ContainsFunc(clock.reported, at.Equal) {
-			t.Errorf("output[%d] at %s was never reported by Now", i, at)
+			t.Errorf("task[%d] stamped %s was never reported by Now", i, at)
 		}
 	}
 }

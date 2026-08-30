@@ -28,7 +28,7 @@ difference := (n + modulus - offset) % modulus
 ```go
 // Spared: the bound is named, so the workaround cannot be "simplified" by accident.
 // multiplyMod multiplies mod modulus by doubling: a direct value*factor would
-// reach ~2.4e21 and overflow int64, while each doubling peaks at 2*(modulus-1).
+// reach ~3e21 and overflow int64, while each doubling peaks at 2*(modulus-1).
 func multiplyMod(value, factor int64) int64 {
 	...
 }

@@ -7,21 +7,24 @@ Flag conversions and encodings that quietly produce a wrong-but-plausible value 
 Do not flag a wraparound that the doc comment, the type, or an adjacent named constant already states — a documented modulus, a function named for its ring, an explicitly bounded counter. Do not flag hash functions, checksums, PRNGs, or any code whose whole purpose is modular arithmetic. Do not flag a narrowing conversion the code has just range-checked, nor arithmetic whose operands are provably bounded by a check a few lines above; if the bound exists but is unstated, prefer the "unchecked" rules for that instead. Do not flag deliberate saturation in a metrics or display path where an approximate large value is the point.
 
 ```go
-// Flagged: the comment covers only the floor; above ~modulus the id decodes to a different instant.
-// Encode returns a code for t. Instants before Epoch are represented as Epoch.
-func Encode(t time.Time) string {
-	ms := int64(t.Sub(Epoch) / time.Millisecond) // saturates for far-future t
-	return format(ms % modulus)                  // wraps, silently, into a valid-looking code
+// Flagged: the comment covers only the floor; past 2106 the stamp aliases to a different instant.
+// Stamp returns a record timestamp for t. Instants before 1970 are represented as 0.
+func Stamp(t time.Time) uint32 {
+	s := t.Unix()
+	if s < 0 {
+		s = 0
+	}
+	return uint32(s) // wraps, silently, into a valid-looking stamp
 }
 ```
 
 ```go
 // Spared: the range is stated and enforced, so out-of-range input is reported rather than aliased.
-// Encode returns a code for t, which must lie in [Epoch, Epoch+MaxSpan).
-// Instants before Epoch are represented as Epoch; later instants return ErrOutOfRange.
-func Encode(t time.Time) (string, error) {
-	if t.Sub(Epoch) >= MaxSpan {
-		return "", fmt.Errorf("%w: %s is past %s", ErrOutOfRange, t, Epoch.Add(MaxSpan))
+// Stamp returns a record timestamp for t, which must lie in [1970, MaxStamp].
+// Instants before 1970 are represented as 0; later instants return ErrOutOfRange.
+func Stamp(t time.Time) (uint32, error) {
+	if t.Unix() > MaxStamp {
+		return 0, fmt.Errorf("%w: %s is past %s", ErrOutOfRange, t, time.Unix(MaxStamp, 0))
 	}
 	...
 }

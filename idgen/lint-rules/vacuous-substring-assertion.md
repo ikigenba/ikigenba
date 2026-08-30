@@ -8,12 +8,12 @@ Flag substring or containment assertions that cannot fail because the needle als
 To judge this, read the needle against the rest of the expected output, not against the API being called. Do not flag `Contains` in general: containment is the correct assertion when the output has genuinely variable parts (a timestamp, a path, a stack trace) and only a fragment is stable. Do not flag a needle that appears exactly once in the expected content — that assertion is falsifiable. Do not flag containment used deliberately as a loose check on a diagnostic message whose exact wording is not part of the contract. When the needle is subsumed but the surrounding test also asserts exact equality on the same buffer, prefer reporting the redundancy: the containment loop should be deleted, not repaired. When no exact-equality assertion exists, the fix is a delimiter-aware check (match the whole token, or a line-anchored pattern) rather than a bare substring.
 
 ```go
-// Flagged: "-n" is a substring of "--number", "-p" of "--prefix", "-h" of
+// Flagged: "-j" is a substring of "--jobs", "-f" of "--format", "-h" of
 // "--help". Only "-V" is a real check, because "--version" holds "-v" lowercase.
 // Removing every short flag from the usage text keeps this test green.
 func TestUsageMentionsEveryOption(t *testing.T) {
 	out, _, _ := run([]string{"--help"})
-	for _, opt := range []string{"-n", "--number", "-p", "--prefix", "-h", "--help", "-V", "--version"} {
+	for _, opt := range []string{"-j", "--jobs", "-f", "--format", "-h", "--help", "-V", "--version"} {
 		if !strings.Contains(out, opt) {
 			t.Errorf("usage does not mention %q: %q", opt, out)
 		}
@@ -26,7 +26,7 @@ func TestUsageMentionsEveryOption(t *testing.T) {
 // missing short spelling actually fails.
 func TestUsageMentionsEveryOption(t *testing.T) {
 	out, _, _ := run([]string{"--help"})
-	for _, opt := range []string{"-n", "-p", "-h", "-V"} {
+	for _, opt := range []string{"-j", "-f", "-h", "-V"} {
 		re := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(opt) + `[,\s]`)
 		if !re.MatchString(out) {
 			t.Errorf("usage does not document short option %q: %q", opt, out)
@@ -36,8 +36,8 @@ func TestUsageMentionsEveryOption(t *testing.T) {
 
 // Spared: the stable fragment is checked because the rest of the line varies.
 func TestErrorNamesTheOffendingToken(t *testing.T) {
-	_, stderr, _ := run([]string{"--decode", "not_an_id"})
-	if !strings.Contains(stderr, "not_an_id") {
+	_, stderr, _ := run([]string{"--config", "no_such_file"})
+	if !strings.Contains(stderr, "no_such_file") {
 		t.Errorf("stderr = %q, want the rejected token named", stderr)
 	}
 }

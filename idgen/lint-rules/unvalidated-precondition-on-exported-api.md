@@ -8,20 +8,20 @@ Flag exported functions that depend on a constraint on their arguments — an al
 Do not flag unexported helpers whose callers are all in the same file or package and visibly guarded. Do not flag a documented precondition, even an unchecked one — "s must be valid UTF-8" in the doc comment discharges this rule. Do not flag hot-path functions where the check is deliberately hoisted to a boundary and the doc comment says so. Do not flag arguments whose type already encodes the constraint (a validated named type, an enum, a `*regexp.Regexp`), and do not demand defensive checks on internal invariants that no external caller can violate.
 
 ```go
-// Flagged: prefix must be alphanumeric for Parse to accept the result, but Mint neither says so nor
-// checks, and the only enforcement lives in a regexp inside the cli package.
-func Mint(prefix string, t time.Time) string {
-	return prefix + "-" + encode(t)
+// Flagged: name must be token characters for ParseEntry to accept the result, but WriteEntry
+// neither says so nor checks, and the only enforcement lives in a regexp inside the caller's package.
+func WriteEntry(name, value string) string {
+	return name + "=" + escape(value)
 }
 ```
 
 ```go
 // Spared: the obligation is stated, and the validator both sides use is exported.
-// Mint returns an identifier for t. prefix must satisfy ValidPrefix; otherwise the
-// result is not accepted by Parse.
-func Mint(prefix string, t time.Time) string {
-	return prefix + "-" + encode(t)
+// WriteEntry renders one entry. name must satisfy ValidName; otherwise the
+// result is not accepted by ParseEntry.
+func WriteEntry(name, value string) string {
+	return name + "=" + escape(value)
 }
 
-func ValidPrefix(prefix string) bool { ... }
+func ValidName(name string) bool { ... }
 ```

@@ -7,30 +7,30 @@ Flag a guard whose condition cannot be true given what the code has already esta
 Do not flag defense in depth at a trust boundary — validating what arrived over a network, from a file, from another process, from user input, or across a public API — even when a caller inside the codebase already validated it; the guard is there for the callers you cannot see. Do not flag a check that is unreachable only under current call sites but guards an exported function against future ones. Do not flag checks documented as guarding a future refactor, an invariant a reviewer is asked to preserve, or a panic-avoidance backstop stated as such in a comment. Do not flag assertions in tests, `default` branches over an enum or type switch, or the impossible-error arms of interfaces whose contract permits failure even if this implementation never does. Only flag when you can state the specific earlier line that makes the condition impossible.
 
 ```go
-// Flagged: validBodyPart has already restricted every byte to the same alphabet
-// decode accepts, so ok is always true; and eight base-36 digits cannot reach
-// modulus, so the range test is dead too — while the message describes only one of them.
-if !validBodyPart(parts[1]) || !validBodyPart(parts[2]) {
-	return time.Time{}, fmt.Errorf("%w: non-canonical format", ErrInvalidID)
+// Flagged: validHexDigits has already restricted every byte to the alphabet
+// parseHex accepts, so ok is always true; and six hex digits cannot reach
+// 1<<24, so the range test is dead too — while the message describes only one of them.
+if !validHexDigits(body) {
+	return Color{}, fmt.Errorf("%w: non-canonical format", ErrInvalidColor)
 }
-n, ok := decodeBase36(parts[1] + parts[2])
-if !ok || n >= modulus {
-	return time.Time{}, fmt.Errorf("%w: body out of range", ErrInvalidID)
+n, ok := parseHex(body)
+if !ok || n >= 1<<24 {
+	return Color{}, fmt.Errorf("%w: value out of range", ErrInvalidColor)
 }
 ```
 
 ```go
 // Spared: the invariant is stated rather than re-checked, and the reader is told why.
-// validBodyPart above restricts the alphabet, so decoding cannot fail here, and
-// bodyDigits base-36 digits max out one below modulus.
-n := decodeBase36(parts[1] + parts[2])
+// validHexDigits above restricts the alphabet, so parsing cannot fail here, and
+// six hex digits max out one below 1<<24.
+n := parseHex(body)
 ```
 
 ```go
 // Spared: defense in depth on an exported entry point, whose callers are unknown.
-func Decode(id string) (time.Time, error) {
-	if len(id) > maxIDLen {
-		return time.Time{}, ErrInvalidID
+func ParseColor(s string) (Color, error) {
+	if len(s) > maxColorLen {
+		return Color{}, ErrInvalidColor
 	}
 	...
 }

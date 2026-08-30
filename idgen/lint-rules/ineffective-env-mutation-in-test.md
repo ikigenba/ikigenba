@@ -13,7 +13,7 @@ Judge this by asking whether the code under test reads the variable *on every ca
 // still be UTC on a UTC host and this test would still pass.
 func TestOutputIgnoresTZ(t *testing.T) {
 	t.Setenv("TZ", "America/Chicago")
-	out, _, _ := run([]string{"--decode", id})
+	out, _, _ := run([]string{"--timestamps", logFile})
 	if !strings.HasSuffix(out, "Z\n") {
 		t.Errorf("stdout = %q, want UTC output", out)
 	}
@@ -24,7 +24,7 @@ func TestOutputIgnoresTZ(t *testing.T) {
 // Spared: the environment is applied to a child process, where it takes effect
 // at that process's own initialization.
 func TestOutputIgnoresTZ(t *testing.T) {
-	cmd := exec.Command(binary, "--decode", id)
+	cmd := exec.Command(binary, "--timestamps", logFile)
 	cmd.Env = append(os.Environ(), "TZ=America/Chicago")
 	out, err := cmd.Output()
 	if err != nil {

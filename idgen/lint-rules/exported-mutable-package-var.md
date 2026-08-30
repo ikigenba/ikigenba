@@ -10,7 +10,7 @@ Do not flag sentinel errors declared as `var ErrX = errors.New(...)`: the idiom 
 Flagged:
 
 ```go
-// Any importer can move the epoch and invalidate every previously encoded value.
+// Any importer can move the epoch and shift every timestamp computed from it.
 var Epoch = time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 ```
 

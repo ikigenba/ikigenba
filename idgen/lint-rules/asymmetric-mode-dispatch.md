@@ -9,16 +9,16 @@ Do not flag branches that are genuinely not peers: a guard clause, an early retu
 Flagged:
 
 ```go
-if *decode {
-	return runDecode(args, stdin, stdout, stderr) // one mode: named
+if *list {
+	return runList(archive, stdout, stderr) // one mode: named
 }
-// the sibling mode: twelve lines inline
-var previous int64
-for i := 0; i < *count; i++ {
-	instant := clock.Now()
-	for i > 0 && instant.UnixMilli() <= previous {
-		clock.Sleep(time.Millisecond)
-		instant = clock.Now()
+// the sibling mode: a dozen lines inline
+var written int64
+for _, name := range members {
+	f, err := os.Open(name)
+	if err != nil {
+		fmt.Fprintf(stderr, "open %s: %v\n", name, err)
+		return exitFailure
 	}
 	...
 }
@@ -28,8 +28,8 @@ return exitSuccess
 Spared:
 
 ```go
-if *decode {
-	return runDecode(args, stdin, stdout, stderr)
+if *list {
+	return runList(archive, stdout, stderr)
 }
-return runMint(*count, *prefix, stdout, clock)
+return runPack(archive, members, stdout, stderr)
 ```

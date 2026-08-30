@@ -10,12 +10,12 @@ Flagged:
 
 ```go
 // Called once in production, always with these two package constants.
-func validateAffineMap(mapMultiplier, mapModulus int64) { ... }
+func validateRingShape(ringSlots, ringReplicas int) { ... }
 
-func init() { validateAffineMap(multiplier, modulus) }
+func init() { validateRingShape(slots, replicas) }
 
 // The only caller that varies the arguments:
-func TestValidateAffineMap(t *testing.T) { validateAffineMap(6, 9) }
+func TestValidateRingShape(t *testing.T) { validateRingShape(6, 9) }
 ```
 
 Spared:
@@ -27,5 +27,5 @@ type Clock interface {
 	Sleep(d time.Duration)
 }
 
-func Run(args []string, clock Clock) int { ... }
+func Poll(interval time.Duration, clock Clock) error { ... }
 ```

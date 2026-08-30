@@ -13,12 +13,12 @@ Do not flag a test whose name describes a category rather than a quantifier ("re
 // Flagged: named "every boundary", but the target also returns a distinct
 // out-of-range error that no case here produces. (Investigation may show that
 // branch is unreachable — then the branch, not the table, is the bug.)
-func TestDecodeRejectsEveryNonCanonicalGrammarBoundary(t *testing.T) {
-	invalid := []struct{ name, id string }{
+func TestParseRejectsEveryMalformedVersion(t *testing.T) {
+	invalid := []struct{ name, input string }{
 		{"empty", ""},
-		{"missing prefix", "-0000-0000"},
-		{"lowercase body", "X-00a0-0000"},
-		// ... no case yields ErrInvalid with "body out of range"
+		{"missing minor", "1."},
+		{"letters", "1.a.0"},
+		// ... no case yields ErrInvalid with "component out of range"
 	}
 	// ...
 }
@@ -26,17 +26,17 @@ func TestDecodeRejectsEveryNonCanonicalGrammarBoundary(t *testing.T) {
 
 ```go
 // Spared: the name claims exactly what the table covers.
-func TestDecodeRejectsNonCanonicalSeparatorsAndBodyAlphabet(t *testing.T) {
+func TestParseRejectsMissingAndNonNumericComponents(t *testing.T) {
 	// ...
 }
 
 // Spared: the completeness claim is backed by a case per documented error.
-func TestDecodeReturnsEveryDocumentedErrorReason(t *testing.T) {
+func TestParseReturnsEveryDocumentedErrorReason(t *testing.T) {
 	for _, tc := range []struct {
-		name, id, reason string
+		name, input, reason string
 	}{
-		{"bad shape", "X0000-0000", "non-canonical format"},
-		{"out of range", oversizedBody, "body out of range"},
+		{"bad shape", "1..0", "malformed version"},
+		{"out of range", oversizedComponent, "component out of range"},
 	} {
 		// ...
 	}
