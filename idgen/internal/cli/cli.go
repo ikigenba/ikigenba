@@ -97,6 +97,7 @@ func runMintMode(
 	}
 
 	var previousMillisecond int64
+	out := bufio.NewWriter(stdout)
 	for minted := 0; minted < number; minted++ {
 		instant := clock.Now()
 		for minted > 0 && instant.UnixMilli() <= previousMillisecond {
@@ -104,27 +105,39 @@ func runMintMode(
 			instant = clock.Now()
 		}
 
-		_, _ = io.WriteString(stdout, idgen.MintAt(prefix, instant)+"\n")
+		if _, err := io.WriteString(out, idgen.MintAt(prefix, instant)+"\n"); err != nil {
+			return exitFailure
+		}
 		previousMillisecond = instant.UnixMilli()
+	}
+	if err := out.Flush(); err != nil {
+		return exitFailure
 	}
 	return exitSuccess
 }
 
 func runDecode(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	failed := false
-	decode := func(token string) bool {
+	out := bufio.NewWriter(stdout)
+	decode := func(token string) (bool, error) {
 		instant, err := idgen.TimeOf(token)
 		if err != nil {
 			_, _ = io.WriteString(stderr, "idgen: invalid id "+token+": "+err.Error()+"\n")
-			return false
+			return false, nil
 		}
-		_, _ = io.WriteString(stdout, instant.UTC().Format("2006-01-02T15:04:05.000Z")+"\n")
-		return true
+		if _, err := io.WriteString(out, instant.UTC().Format("2006-01-02T15:04:05.000Z")+"\n"); err != nil {
+			return false, err
+		}
+		return true, nil
 	}
 
 	if len(args) > 0 {
 		for _, token := range args {
-			if !decode(token) {
+			valid, err := decode(token)
+			if err != nil {
+				return exitFailure
+			}
+			if !valid {
 				failed = true
 			}
 		}
@@ -132,7 +145,11 @@ func runDecode(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		scanner := bufio.NewScanner(stdin)
 		scanner.Split(bufio.ScanWords)
 		for scanner.Scan() {
-			if !decode(scanner.Text()) {
+			valid, err := decode(scanner.Text())
+			if err != nil {
+				return exitFailure
+			}
+			if !valid {
 				failed = true
 			}
 		}
@@ -140,6 +157,9 @@ func runDecode(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			_, _ = io.WriteString(stderr, "idgen: "+err.Error()+"\n")
 			failed = true
 		}
+	}
+	if err := out.Flush(); err != nil {
+		return exitFailure
 	}
 
 	if failed {

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -19,6 +20,15 @@ type fakeClock struct {
 
 type forbiddenReader struct {
 	t *testing.T
+}
+
+type failingWriter struct {
+	writes int
+}
+
+func (w *failingWriter) Write([]byte) (int, error) {
+	w.writes++
+	return 0, io.ErrClosedPipe
 }
 
 func (r forbiddenReader) Read([]byte) (int, error) {
@@ -315,6 +325,23 @@ func TestRunBareInvocationMintsOneDefaultID(t *testing.T) {
 	}
 	if clock.sleepCalls != 0 {
 		t.Errorf("Clock.Sleep calls = %d, want 0", clock.sleepCalls)
+	}
+}
+
+func TestRunMintReturnsFailureWhenOutputCannotBeWritten(t *testing.T) {
+	stdout := &failingWriter{}
+	var stderr bytes.Buffer
+
+	exitCode := Run(nil, strings.NewReader(""), stdout, &stderr, &fakeClock{now: time.Unix(0, 0)})
+
+	if exitCode != exitFailure {
+		t.Errorf("Run() exit code = %d, want %d", exitCode, exitFailure)
+	}
+	if stdout.writes != 1 {
+		t.Errorf("stdout writes = %d, want 1", stdout.writes)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("stderr = %q, want empty", stderr.String())
 	}
 }
 
@@ -641,6 +668,25 @@ func TestRunDecodesPositionalsInOrder(t *testing.T) {
 	}
 	if stderr != "" {
 		t.Errorf("stderr = %q, want empty", stderr)
+	}
+}
+
+func TestRunDecodeReturnsFailureWhenOutputCannotBeWritten(t *testing.T) {
+	instant := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	token := idgen.MintAt("R", instant)
+	stdout := &failingWriter{}
+	var stderr bytes.Buffer
+
+	exitCode := Run([]string{"--decode", token}, strings.NewReader(""), stdout, &stderr, &fakeClock{})
+
+	if exitCode != exitFailure {
+		t.Errorf("Run() exit code = %d, want %d", exitCode, exitFailure)
+	}
+	if stdout.writes != 1 {
+		t.Errorf("stdout writes = %d, want 1", stdout.writes)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("stderr = %q, want empty", stderr.String())
 	}
 }
 
