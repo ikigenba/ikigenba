@@ -13,6 +13,20 @@ So this sub-project is two things at once:
    up front, then generated from that spec. See
    [how the spec system works](../docs/spec-system.md).
 
+## Installing it
+
+Grab a released binary (linux/darwin, amd64/arm64) into `~/.local/bin`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ikigenba/ikigenba/main/idgen/install.sh | sh
+```
+
+Pin a version or change the destination with env vars:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ikigenba/ikigenba/main/idgen/install.sh | IDGEN_VERSION=v0.1.0 BINDIR=/usr/local/bin sh
+```
+
 ## What idgen is (the end product)
 
 Some projects, including the ikigenba projects, embed stable, traceable IDs in
@@ -53,20 +67,6 @@ elapsed.
 These are the very same ids that this monorepo's spec system uses to track its
 own requirements. The designs mint one per checkable behavior, so **`idgen` is
 built using `idgen`**.
-
-## Installing it
-
-Grab a released binary (linux/darwin, amd64/arm64) into `~/.local/bin`:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/ikigenba/ikigenba/main/idgen/install.sh | sh
-```
-
-Pin a version or change the destination with env vars:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/ikigenba/ikigenba/main/idgen/install.sh | IDGEN_VERSION=v0.1.0 BINDIR=/usr/local/bin sh
-```
 
 ## Building it
 
