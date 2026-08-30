@@ -69,31 +69,42 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, clock Clock) 
 	if *decode {
 		return runDecode(flags.Args(), stdin, stdout, stderr)
 	}
-	if flags.NArg() > 0 {
-		_, _ = io.WriteString(stderr, "idgen: unexpected argument "+strconv.Quote(flags.Arg(0))+"\n")
-		flags.Usage()
+	return runMintMode(flags.Args(), *number, *prefix, stdout, stderr, flags.Usage, clock)
+}
+
+func runMintMode(
+	args []string,
+	number int,
+	prefix string,
+	stdout, stderr io.Writer,
+	usage func(),
+	clock Clock,
+) int {
+	if len(args) > 0 {
+		_, _ = io.WriteString(stderr, "idgen: unexpected argument "+strconv.Quote(args[0])+"\n")
+		usage()
 		return exitUsage
 	}
-	if !validPrefix.MatchString(*prefix) {
+	if !validPrefix.MatchString(prefix) {
 		_, _ = io.WriteString(stderr, "idgen: invalid prefix\n")
-		flags.Usage()
+		usage()
 		return exitUsage
 	}
-	if *number <= 0 {
+	if number <= 0 {
 		_, _ = io.WriteString(stderr, "idgen: --number must be > 0\n")
-		flags.Usage()
+		usage()
 		return exitUsage
 	}
 
 	var previousMillisecond int64
-	for minted := 0; minted < *number; minted++ {
+	for minted := 0; minted < number; minted++ {
 		instant := clock.Now()
 		for minted > 0 && instant.UnixMilli() <= previousMillisecond {
 			clock.Sleep(time.Millisecond)
 			instant = clock.Now()
 		}
 
-		_, _ = io.WriteString(stdout, idgen.MintAt(*prefix, instant)+"\n")
+		_, _ = io.WriteString(stdout, idgen.MintAt(prefix, instant)+"\n")
 		previousMillisecond = instant.UnixMilli()
 	}
 	return exitSuccess
