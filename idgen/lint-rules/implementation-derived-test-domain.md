@@ -1,6 +1,6 @@
 ---
 description: sweeps bounding their input range with the same constant the implementation uses, guaranteeing the boundary is never crossed
-severity: warning
+severity: error
 include: ["**/*_test.go", "**/*_test.py", "**/*.test.ts", "**/*.test.js", "**/*_test.rb"]
 ---
 Flag tests that derive the range of inputs they explore from a constant belonging to the implementation — a modulus, a capacity, a buffer size, a maximum length, a page size. Such a sweep is pinned to whatever the implementation currently believes its own limits are, so it can never reach the boundary where behavior changes, and it silently follows the constant if someone edits it. If the constant is wrong, the test explores the wrong domain and still passes. The most damaging version wraps a value modulo the implementation's own modulus before feeding it in, which makes overflow or wrap-around structurally untestable by that sweep: the test proves the function is correct exactly where it was already going to be correct.

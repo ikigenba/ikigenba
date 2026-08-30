@@ -16,6 +16,7 @@
     "expected-value-from-code-under-test",
     "exported-mutable-package-var",
     "god-entrypoint",
-    "helper-asserts-and-returns"
+    "helper-asserts-and-returns",
+    "implementation-derived-test-domain"
   ]
 }
