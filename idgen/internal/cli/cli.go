@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"bufio"
 	"flag"
 	"io"
 	"regexp"
@@ -26,16 +27,18 @@ type Clock interface {
 
 // Run executes the CLI and returns its process exit code.
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, clock Clock) int {
-	_ = stdin
-
 	flags := flag.NewFlagSet("idgen", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	number := flags.Int("n", 1, "number of identifiers to mint")
 	flags.IntVar(number, "number", 1, "number of identifiers to mint")
 	prefix := flags.String("p", "R", "identifier prefix")
 	flags.StringVar(prefix, "prefix", "R", "identifier prefix")
+	decode := flags.Bool("decode", false, "decode identifiers")
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
+	}
+	if *decode {
+		return runDecode(flags.Args(), stdin, stdout, stderr)
 	}
 	if !validPrefix.MatchString(*prefix) {
 		_, _ = io.WriteString(stderr, "idgen: invalid prefix\n")
@@ -56,6 +59,40 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, clock Clock) 
 
 		_, _ = io.WriteString(stdout, idgen.MintAt(*prefix, instant)+"\n")
 		previousMillisecond = instant.UnixMilli()
+	}
+	return exitSuccess
+}
+
+func runDecode(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	failed := false
+	decode := func(token string) {
+		instant, err := idgen.TimeOf(token)
+		if err != nil {
+			_, _ = io.WriteString(stderr, "idgen: invalid id "+token+": "+err.Error()+"\n")
+			failed = true
+			return
+		}
+		_, _ = io.WriteString(stdout, instant.UTC().Format("2006-01-02T15:04:05.000Z")+"\n")
+	}
+
+	if len(args) > 0 {
+		for _, token := range args {
+			decode(token)
+		}
+	} else {
+		scanner := bufio.NewScanner(stdin)
+		scanner.Split(bufio.ScanWords)
+		for scanner.Scan() {
+			decode(scanner.Text())
+		}
+		if err := scanner.Err(); err != nil {
+			_, _ = io.WriteString(stderr, "idgen: "+err.Error()+"\n")
+			failed = true
+		}
+	}
+
+	if failed {
+		return exitFailure
 	}
 	return exitSuccess
 }

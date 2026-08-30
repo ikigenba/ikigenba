@@ -17,6 +17,16 @@ type fakeClock struct {
 	sleepCalls int
 }
 
+type forbiddenReader struct {
+	t *testing.T
+}
+
+func (r forbiddenReader) Read([]byte) (int, error) {
+	r.t.Helper()
+	r.t.Fatal("stdin was read during positional decode")
+	return 0, nil
+}
+
 func (c *fakeClock) Now() time.Time {
 	c.nowCalls++
 	return c.now
@@ -101,6 +111,17 @@ func decodedTimes(t *testing.T, ids []string) []time.Time {
 		times[i] = instant
 	}
 	return times
+}
+
+func runCLI(args []string, stdin string, clock Clock) (string, string, int) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	exitCode := Run(args, strings.NewReader(stdin), &stdout, &stderr, clock)
+	return stdout.String(), stderr.String(), exitCode
+}
+
+func decodedLine(instant time.Time) string {
+	return instant.UTC().Truncate(time.Millisecond).Format("2006-01-02T15:04:05.000Z") + "\n"
 }
 
 // R-SGRW-J1VR: Run returns its exit code directly to the caller.
@@ -389,5 +410,187 @@ func TestRunRejectsNonPositiveNumbersBeforeMinting(t *testing.T) {
 				t.Errorf("clock calls = Now %d, Sleep %d; want zero", clock.nowCalls, clock.sleepCalls)
 			}
 		})
+	}
+}
+
+// R-T7LO-Y071: --decode routes to decoding without consulting the mint clock.
+func TestRunDecodeRoutesAwayFromMinting(t *testing.T) {
+	instant := time.Date(2026, time.August, 29, 12, 34, 56, 789123000, time.FixedZone("test", -5*60*60))
+	id := idgen.MintAt("Route", instant)
+	clock := &fakeClock{now: instant.Add(time.Hour)}
+
+	stdout, stderr, exitCode := runCLI([]string{"--decode", id}, "", clock)
+
+	if exitCode != exitSuccess {
+		t.Errorf("Run() exit code = %d, want %d", exitCode, exitSuccess)
+	}
+	if got, want := stdout, decodedLine(instant); got != want {
+		t.Errorf("stdout = %q, want decoded timestamp %q", got, want)
+	}
+	if stderr != "" {
+		t.Errorf("stderr = %q, want empty", stderr)
+	}
+	if clock.nowCalls != 0 || clock.sleepCalls != 0 {
+		t.Errorf("clock calls = Now %d, Sleep %d; want zero", clock.nowCalls, clock.sleepCalls)
+	}
+}
+
+// R-T8TL-BRXQ: number and prefix flags are accepted but inert in decode mode.
+func TestRunMintFlagsDoNotChangeDecodeOutput(t *testing.T) {
+	instant := time.Date(2026, time.September, 1, 2, 3, 4, 567890000, time.UTC)
+	id := idgen.MintAt("Inert", instant)
+	baselineClock := &fakeClock{now: instant.Add(time.Hour)}
+	wantStdout, wantStderr, wantExit := runCLI([]string{"--decode", id}, "", baselineClock)
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "short aliases", args: []string{"-n", "0", "-p", "bad-prefix", "--decode", id}},
+		{name: "long aliases", args: []string{"--number", "-2", "--prefix", "bad_prefix", "--decode", id}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			clock := &fakeClock{now: instant.Add(2 * time.Hour)}
+			stdout, stderr, exitCode := runCLI(test.args, "", clock)
+
+			if stdout != wantStdout || stderr != wantStderr || exitCode != wantExit {
+				t.Errorf("Run() = (stdout %q, stderr %q, exit %d), want baseline (%q, %q, %d)", stdout, stderr, exitCode, wantStdout, wantStderr, wantExit)
+			}
+			if clock.nowCalls != 0 || clock.sleepCalls != 0 {
+				t.Errorf("clock calls = Now %d, Sleep %d; want zero", clock.nowCalls, clock.sleepCalls)
+			}
+		})
+	}
+}
+
+// R-TCHA-H35T: positional ids decode to exact ordered UTC timestamp lines.
+func TestRunDecodesPositionalsInOrder(t *testing.T) {
+	instants := []time.Time{
+		time.Date(2026, time.September, 2, 3, 4, 5, 123456000, time.FixedZone("west", -7*60*60)),
+		time.Date(2027, time.November, 30, 22, 21, 20, 987654000, time.FixedZone("east", 9*60*60)),
+	}
+	ids := []string{idgen.MintAt("First", instants[0]), idgen.MintAt("Second", instants[1])}
+
+	stdout, stderr, exitCode := runCLI(append([]string{"--decode"}, ids...), "", &fakeClock{})
+
+	if exitCode != exitSuccess {
+		t.Errorf("Run() exit code = %d, want %d", exitCode, exitSuccess)
+	}
+	if got, want := stdout, decodedLine(instants[0])+decodedLine(instants[1]); got != want {
+		t.Errorf("stdout = %q, want exact ordered lines %q", got, want)
+	}
+	if stderr != "" {
+		t.Errorf("stderr = %q, want empty", stderr)
+	}
+}
+
+// R-TDP6-UUWI: mixed-whitespace stdin decoding matches positional decoding.
+func TestRunDecodesMixedWhitespaceStdinLikePositionals(t *testing.T) {
+	instants := []time.Time{
+		time.Date(2026, time.March, 4, 5, 6, 7, 111222000, time.UTC),
+		time.Date(2027, time.July, 8, 9, 10, 11, 333444000, time.UTC),
+		time.Date(2028, time.December, 13, 14, 15, 16, 555666000, time.UTC),
+	}
+	ids := []string{idgen.MintAt("A", instants[0]), idgen.MintAt("B", instants[1]), idgen.MintAt("C", instants[2])}
+	wantStdout, wantStderr, wantExit := runCLI(append([]string{"--decode"}, ids...), "", &fakeClock{})
+	stdin := " \t" + ids[0] + "\n\n" + ids[1] + " \t\r\n" + ids[2] + "  "
+
+	stdout, stderr, exitCode := runCLI([]string{"--decode"}, stdin, &fakeClock{})
+
+	if stdout != wantStdout || stderr != wantStderr || exitCode != wantExit {
+		t.Errorf("stdin decode = (stdout %q, stderr %q, exit %d), want positional decode (%q, %q, %d)", stdout, stderr, exitCode, wantStdout, wantStderr, wantExit)
+	}
+}
+
+// R-TEX3-8MN7: positional decode does not read stdin.
+func TestRunPositionalDecodeNeverReadsStdin(t *testing.T) {
+	instant := time.Date(2026, time.October, 2, 3, 4, 5, 678901000, time.UTC)
+	id := idgen.MintAt("Position", instant)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Run([]string{"--decode", id}, forbiddenReader{t: t}, &stdout, &stderr, &fakeClock{})
+
+	if exitCode != exitSuccess || stdout.String() != decodedLine(instant) || stderr.Len() != 0 {
+		t.Errorf("Run() = (stdout %q, stderr %q, exit %d), want (%q, empty, %d)", stdout.String(), stderr.String(), exitCode, decodedLine(instant), exitSuccess)
+	}
+}
+
+// R-THCW-064L: malformed tokens are reported while valid tokens keep decoding in order.
+func TestRunDecodeContinuesPastMalformedTokens(t *testing.T) {
+	instants := []time.Time{
+		time.Date(2026, time.April, 5, 6, 7, 8, 234567000, time.UTC),
+		time.Date(2026, time.April, 5, 6, 7, 9, 876543000, time.UTC),
+	}
+	ids := []string{idgen.MintAt("Good", instants[0]), idgen.MintAt("AlsoGood", instants[1])}
+	bad := []string{"broken", "not_an_id"}
+	args := []string{"--decode", bad[0], ids[0], bad[1], ids[1]}
+
+	stdout, stderr, exitCode := runCLI(args, "", &fakeClock{})
+
+	if exitCode != exitFailure {
+		t.Errorf("Run() exit code = %d, want decode failure %d", exitCode, exitFailure)
+	}
+	if got, want := stdout, decodedLine(instants[0])+decodedLine(instants[1]); got != want {
+		t.Errorf("stdout = %q, want ordered valid output %q", got, want)
+	}
+	for _, token := range bad {
+		if !strings.Contains(stderr, token) {
+			t.Errorf("stderr = %q, want malformed token %q named", stderr, token)
+		}
+	}
+	if got := strings.Count(stderr, "\n"); got != len(bad) {
+		t.Errorf("stderr line count = %d, want %d: %q", got, len(bad), stderr)
+	}
+}
+
+// R-TIKS-DXVA: empty decode input is silent success and never consults the clock.
+func TestRunDecodeEmptyInputIsSilentSuccess(t *testing.T) {
+	clock := &fakeClock{now: time.Date(2026, time.August, 29, 1, 2, 3, 0, time.UTC)}
+
+	stdout, stderr, exitCode := runCLI([]string{"--decode"}, "", clock)
+
+	if exitCode != exitSuccess || stdout != "" || stderr != "" {
+		t.Errorf("Run() = (stdout %q, stderr %q, exit %d), want empty streams and exit %d", stdout, stderr, exitCode, exitSuccess)
+	}
+	if clock.nowCalls != 0 || clock.sleepCalls != 0 {
+		t.Errorf("clock calls = Now %d, Sleep %d; want zero", clock.nowCalls, clock.sleepCalls)
+	}
+}
+
+// R-TJSO-RPLZ: an id minted through Run decodes to its millisecond minting instant.
+func TestRunMintThenDecodeRoundTrip(t *testing.T) {
+	instant := time.Date(2026, time.May, 6, 7, 8, 9, 456789000, time.FixedZone("source", 5*60*60+30*60))
+	mintClock := &fakeClock{now: instant}
+	minted, mintStderr, mintExit := runCLI(nil, "", mintClock)
+	if mintExit != exitSuccess || mintStderr != "" {
+		t.Fatalf("mint Run() = (stdout %q, stderr %q, exit %d), want successful mint", minted, mintStderr, mintExit)
+	}
+	id := strings.TrimSuffix(minted, "\n")
+
+	stdout, stderr, exitCode := runCLI([]string{"--decode", id}, "", &fakeClock{})
+
+	if exitCode != exitSuccess || stderr != "" {
+		t.Errorf("decode Run() = (stderr %q, exit %d), want empty and %d", stderr, exitCode, exitSuccess)
+	}
+	if got, want := stdout, decodedLine(instant); got != want {
+		t.Errorf("decoded stdout = %q, want millisecond minting instant %q", got, want)
+	}
+}
+
+// R-TNGD-X0U2: decode output remains UTC when TZ names a non-UTC zone.
+func TestRunDecodeOutputIgnoresTZEnvironment(t *testing.T) {
+	t.Setenv("TZ", "America/Chicago")
+	instant := time.Date(2026, time.June, 7, 8, 9, 10, 765432000, time.FixedZone("origin", 10*60*60))
+	id := idgen.MintAt("Zone", instant)
+
+	stdout, stderr, exitCode := runCLI([]string{"--decode", id}, "", &fakeClock{})
+
+	want := decodedLine(instant)
+	if exitCode != exitSuccess || stderr != "" || stdout != want {
+		t.Errorf("Run() = (stdout %q, stderr %q, exit %d), want (%q, empty, %d)", stdout, stderr, exitCode, want, exitSuccess)
+	}
+	if !strings.HasSuffix(stdout, "Z\n") {
+		t.Errorf("stdout = %q, want literal UTC Z suffix", stdout)
 	}
 }
