@@ -8,6 +8,7 @@
     "call-count-scripted-fake",
     "closure-captured-error-flag",
     "dead-flag-metadata",
-    "derived-constant-without-provenance"
+    "derived-constant-without-provenance",
+    "discarded-output-write-error"
   ]
 }

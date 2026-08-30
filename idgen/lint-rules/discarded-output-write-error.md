@@ -1,6 +1,6 @@
 ---
 description: writes carrying the program's real output discard their error, so an i/o failure still reports success
-severity: warning
+severity: error
 include: ["**/*.go"]
 ---
 Flag writes that carry a program's primary result — the data a caller or user invoked it to obtain — whose error is explicitly thrown away, most often via `_, _ = w.Write(...)`, `_, _ = io.WriteString(...)`, `_, _ = fmt.Fprintf(...)`, or an unchecked `Flush`/`Close` on a buffered writer. The tell is that the surrounding function goes on to return success (nil, a zero exit code, an "ok" status) on a path where nothing was actually delivered. This is not an errcheck finding: assigning to blank identifiers silences mechanical linters, which is precisely why a human has to catch it. The realistic failure is not exotic — a full disk, or `prog | head -5` closing the pipe so every later write returns EPIPE — and the result is a truncated answer reported as a complete one. Flag the loop or function as a whole rather than every write inside it, and prefer flagging the site that decides the return value.
