@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/ikigenba/ikigenba/idgen/internal/idgen"
@@ -817,6 +818,26 @@ func TestRunDecodeInvalidDiagnosticAddsOnlyTokenContext(t *testing.T) {
 	}
 	if got, want := stderr, "idgen: \"broken\": invalid id: non-canonical format\n"; got != want {
 		t.Errorf("stderr = %q, want %q", got, want)
+	}
+}
+
+func TestRunDecodeReportsWhenInputStopsEarly(t *testing.T) {
+	instant := time.Date(2026, time.January, 2, 3, 4, 5, 678000000, time.UTC)
+	token := idgen.MintAt("Read", instant)
+	stdin := io.MultiReader(strings.NewReader(token+" "), iotest.ErrReader(io.ErrUnexpectedEOF))
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Run([]string{"--decode"}, stdin, &stdout, &stderr, &fakeClock{})
+
+	if exitCode != exitFailure {
+		t.Errorf("Run() exit code = %d, want %d", exitCode, exitFailure)
+	}
+	if got, want := stdout.String(), decodedLine(instant); got != want {
+		t.Errorf("stdout = %q, want partial decoded output %q", got, want)
+	}
+	if got, want := stderr.String(), "idgen: reading stdin stopped early: unexpected EOF\n"; got != want {
+		t.Errorf("stderr = %q, want explicit truncated-input diagnostic %q", got, want)
 	}
 }
 

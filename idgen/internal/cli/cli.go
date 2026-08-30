@@ -178,6 +178,7 @@ func runMintMode(
 
 func runDecode(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	failed := false
+	var inputErr error
 	out := bufio.NewWriter(stdout)
 	decode := func(token string) (bool, error) {
 		instant, err := idgen.TimeOf(token)
@@ -214,14 +215,17 @@ func runDecode(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 		}
 		if err := scanner.Err(); err != nil {
-			_, _ = io.WriteString(stderr, "idgen: "+err.Error()+"\n")
-			failed = true
+			_, _ = fmt.Fprintf(stderr, "idgen: reading stdin stopped early: %v\n", err)
+			inputErr = err
 		}
 	}
 	if err := out.Flush(); err != nil {
 		return exitFailure
 	}
 
+	if inputErr != nil {
+		return exitFailure
+	}
 	if failed {
 		return exitFailure
 	}
