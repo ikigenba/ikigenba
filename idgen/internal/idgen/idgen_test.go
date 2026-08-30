@@ -144,6 +144,7 @@ func TestEpoch(t *testing.T) {
 }
 
 func TestMintAtEpochGoldenVector(t *testing.T) {
+	// R-WHEV-1AN5
 	// R-SKFL-OD3U
 	want := "R-" + "0007-J3LA"
 	if got := MintAt("R", Epoch()); got != want {
@@ -170,6 +171,7 @@ func TestMintAtZeroPadsBody(t *testing.T) {
 }
 
 func TestMintAtClampsBeforeEpoch(t *testing.T) {
+	// R-WIMR-F2DU
 	// R-SO3A-TOBX
 	beforeEpoch := Epoch().Add(-time.Nanosecond)
 	if got, want := MintAt("R", beforeEpoch), "R-"+"0007-J3LA"; got != want {
