@@ -176,6 +176,10 @@ func runMintMode(
 	return exitSuccess
 }
 
+func formatUTC(instant time.Time) string {
+	return instant.UTC().Format("2006-01-02T15:04:05.000Z")
+}
+
 func runDecode(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	failed := false
 	var inputErr error
@@ -186,7 +190,7 @@ func runDecode(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			_, _ = fmt.Fprintf(stderr, "idgen: %q: %v\n", token, err)
 			return false, nil
 		}
-		if _, err := io.WriteString(out, instant.UTC().Format("2006-01-02T15:04:05.000Z")+"\n"); err != nil {
+		if _, err := io.WriteString(out, formatUTC(instant)+"\n"); err != nil {
 			return false, err
 		}
 		return true, nil
