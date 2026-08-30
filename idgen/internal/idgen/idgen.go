@@ -9,10 +9,12 @@ import (
 )
 
 const (
-	base              = int64(36)
-	bodyDigits        = 8
-	modulus           = int64(2821109907456) // 36^8
-	multiplier        = int64(0x9E3779B1)
+	base       = int64(36)
+	bodyDigits = 8
+	modulus    = base * base * base * base * base * base * base * base
+	multiplier = int64(0x9E3779B1)
+	// multiplierInverse was computed with the extended Euclidean algorithm as
+	// multiplier^-1 modulo modulus. validateDerivedConstants enforces the result.
 	multiplierInverse = int64(2032036425553)
 	offset            = int64(0xC0FFEE)
 )
@@ -24,7 +26,21 @@ var Epoch = time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 var ErrInvalidID = errors.New("invalid id")
 
 func init() {
+	validateDerivedConstants()
 	validateAffineMap(multiplier, modulus)
+}
+
+func validateDerivedConstants() {
+	derivedModulus := int64(1)
+	for range bodyDigits {
+		derivedModulus *= base
+	}
+	if modulus != derivedModulus {
+		panic("idgen: modulus does not match base^bodyDigits")
+	}
+	if multiplyMod(multiplier, multiplierInverse) != 1 {
+		panic("idgen: multiplierInverse is not the modular inverse of multiplier")
+	}
 }
 
 // MintAt returns an identifier for t using prefix. Instants before Epoch are
