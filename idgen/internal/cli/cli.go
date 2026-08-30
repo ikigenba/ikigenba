@@ -3,6 +3,7 @@ package cli
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"io"
 	"regexp"
@@ -55,7 +56,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, clock Clock) 
 	showVersion := flags.Bool("V", false, "")
 	flags.BoolVar(showVersion, "version", false, "")
 	if err := flags.Parse(args); err != nil {
-		flags.Usage()
+		if errors.Is(err, flag.ErrHelp) {
+			return exitSuccess
+		}
 		return exitUsage
 	}
 	if *help {

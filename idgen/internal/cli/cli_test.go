@@ -240,8 +240,8 @@ func TestRunVersionAliasesAreIdentical(t *testing.T) {
 	}
 }
 
-// R-T55W-6GPN: an unknown option returns usage failure with the complete usage block.
-func TestRunUnknownOptionPrintsUsageToStderr(t *testing.T) {
+// R-T55W-6GPN: an unknown option returns usage failure with one diagnostic and one complete usage block.
+func TestRunUnknownOptionPrintsDiagnosticAndUsageExactlyOnce(t *testing.T) {
 	clock := &fakeClock{}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -254,8 +254,9 @@ func TestRunUnknownOptionPrintsUsageToStderr(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Errorf("stdout = %q, want empty", stdout.String())
 	}
-	if stderr.Len() == 0 || !strings.Contains(stderr.String(), expectedUsage) {
-		t.Errorf("stderr = %q, want non-empty diagnostic containing exact usage %q", stderr.String(), expectedUsage)
+	const diagnostic = "flag provided but not defined: -not-an-option\n"
+	if got, want := stderr.String(), diagnostic+expectedUsage; got != want {
+		t.Errorf("stderr = %q, want exactly one diagnostic and usage block %q", got, want)
 	}
 	if clock.nowCalls != 0 || clock.sleepCalls != 0 {
 		t.Errorf("clock calls = Now %d, Sleep %d; want zero", clock.nowCalls, clock.sleepCalls)
