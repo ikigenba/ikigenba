@@ -36,10 +36,12 @@ spec-system note in `specs/design/D2-id-format.md`).
 Run from this directory (`idgen/`), in order; every command must exit 0. No
 skipped tests, no disabled linters laundering a failure.
 
-1. `go build ./...`
-2. `go test -race ./...`
-3. `golangci-lint run`
-4. `llm-lint cmd internal`
+1. `test -z "$(gofmt -l .)"` — fails if any file is unformatted (`go fmt`
+   itself always exits 0, so the check form is the gate; fix with `make fmt`)
+2. `go build ./...`
+3. `go test -race ./...`
+4. `golangci-lint run`
+5. `llm-lint cmd internal`
 
 ## Commit conventions
 
