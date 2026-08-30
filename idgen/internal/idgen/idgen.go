@@ -12,6 +12,7 @@ const (
 	base           = int64(36)
 	base36Alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	bodyDigits     = 8
+	groupWidth     = bodyDigits / 2
 	modulus        = base * base * base * base * base * base * base * base
 	multiplier     = int64(0x9E3779B1)
 	// multiplierInverse was computed with the extended Euclidean algorithm as
@@ -60,7 +61,7 @@ func MintAt(prefix string, t time.Time) string {
 	n := (multiplyMod(ms, multiplier) + offset) % modulus
 	body := encodeBase36(n)
 
-	return prefix + "-" + body[:4] + "-" + body[4:]
+	return prefix + "-" + body[:groupWidth] + "-" + body[groupWidth:]
 }
 
 // TimeOf recovers the UTC, millisecond-precision instant encoded in id.
@@ -140,7 +141,7 @@ func ValidPrefix(prefix string) bool {
 }
 
 func validBodyPart(part string) bool {
-	if len(part) != 4 {
+	if len(part) != groupWidth {
 		return false
 	}
 	for i := 0; i < len(part); i++ {

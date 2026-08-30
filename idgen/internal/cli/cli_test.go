@@ -15,6 +15,8 @@ import (
 	"github.com/ikigenba/ikigenba/idgen/internal/idgen"
 )
 
+const expectedVersionOutput = "v0.1.0\n"
+
 type fakeClock struct {
 	now        time.Time
 	nowCalls   int
@@ -245,12 +247,11 @@ func TestRunLongVersionPrintsVersion(t *testing.T) {
 	clock := &fakeClock{}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	const wantStdout = "v0.1.0\n"
 
 	exitCode := Run([]string{"--version"}, forbiddenReader{t: t}, &stdout, &stderr, clock)
 
-	if exitCode != exitSuccess || stdout.String() != wantStdout || stderr.Len() != 0 {
-		t.Errorf("Run() = (stdout %q, stderr %q, exit %d), want (%q, empty, %d)", stdout.String(), stderr.String(), exitCode, wantStdout, exitSuccess)
+	if exitCode != exitSuccess || stdout.String() != expectedVersionOutput || stderr.Len() != 0 {
+		t.Errorf("Run() = (stdout %q, stderr %q, exit %d), want (%q, empty, %d)", stdout.String(), stderr.String(), exitCode, expectedVersionOutput, exitSuccess)
 	}
 	if clock.nowCalls != 0 || clock.sleepCalls != 0 {
 		t.Errorf("clock calls = Now %d, Sleep %d; want zero", clock.nowCalls, clock.sleepCalls)
@@ -266,8 +267,8 @@ func TestRunLongVersionOutputIsExact(t *testing.T) {
 	for _, args := range tests {
 		stdout, stderr, exitCode := runCLI(args, "", &fakeClock{})
 
-		if stdout != "v0.1.0\n" {
-			t.Errorf("Run(%q) stdout = %q, want %q", args, stdout, "v0.1.0\n")
+		if stdout != expectedVersionOutput {
+			t.Errorf("Run(%q) stdout = %q, want %q", args, stdout, expectedVersionOutput)
 		}
 		if stderr != "" || exitCode != exitSuccess {
 			t.Errorf("Run(%q) = (stderr %q, exit %d), want (empty, %d)", args, stderr, exitCode, exitSuccess)
@@ -283,8 +284,8 @@ func TestRunVersionAliasesAreIdentical(t *testing.T) {
 	if shortOut != longOut || shortErr != longErr || shortExit != longExit {
 		t.Errorf("-V = (%q, %q, %d), want --version result (%q, %q, %d)", shortOut, shortErr, shortExit, longOut, longErr, longExit)
 	}
-	if shortOut != "v0.1.0\n" || shortErr != "" || shortExit != exitSuccess {
-		t.Errorf("shared version result = (%q, %q, %d), want (%q, empty, %d)", shortOut, shortErr, shortExit, "v0.1.0\n", exitSuccess)
+	if shortOut != expectedVersionOutput || shortErr != "" || shortExit != exitSuccess {
+		t.Errorf("shared version result = (%q, %q, %d), want (%q, empty, %d)", shortOut, shortErr, shortExit, expectedVersionOutput, exitSuccess)
 	}
 }
 
