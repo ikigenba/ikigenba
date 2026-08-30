@@ -112,25 +112,29 @@ func runMintMode(
 
 func runDecode(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	failed := false
-	decode := func(token string) {
+	decode := func(token string) bool {
 		instant, err := idgen.TimeOf(token)
 		if err != nil {
 			_, _ = io.WriteString(stderr, "idgen: invalid id "+token+": "+err.Error()+"\n")
-			failed = true
-			return
+			return false
 		}
 		_, _ = io.WriteString(stdout, instant.UTC().Format("2006-01-02T15:04:05.000Z")+"\n")
+		return true
 	}
 
 	if len(args) > 0 {
 		for _, token := range args {
-			decode(token)
+			if !decode(token) {
+				failed = true
+			}
 		}
 	} else {
 		scanner := bufio.NewScanner(stdin)
 		scanner.Split(bufio.ScanWords)
 		for scanner.Scan() {
-			decode(scanner.Text())
+			if !decode(scanner.Text()) {
+				failed = true
+			}
 		}
 		if err := scanner.Err(); err != nil {
 			_, _ = io.WriteString(stderr, "idgen: "+err.Error()+"\n")
