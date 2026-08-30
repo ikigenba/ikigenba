@@ -12,6 +12,7 @@
     "discarded-output-write-error",
     "double-reported-error-diagnostic",
     "duplicated-validation-across-layers",
+    "error-context-restated-by-caller",
     "expected-value-from-code-under-test",
     "exported-mutable-package-var",
     "god-entrypoint",
