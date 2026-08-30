@@ -1,6 +1,6 @@
 ---
 description: expected values computed by invoking the same function or constant the assertion is meant to verify
-severity: warning
+severity: error
 include: ["**/*_test.go", "**/*_test.py", "**/*.test.ts", "**/*.test.js", "**/*_test.rb"]
 ---
 Flag assertions whose expected value is produced by calling the very function, method, or constant under test, so the comparison reduces to `f(x) == f(x)` and holds for any implementation of `f`. This is most common when a test exercises a caller (a CLI entry point, a handler, a wrapper) and builds its expectation by calling the same collaborator the caller calls with the same arguments — the test then pins the argument plumbing but cannot detect any change in the collaborator's behavior, while its name promises otherwise. It also appears when output is asserted against the production constant that produced it, or when a loop constructs the whole expected payload by re-running the production encoder.

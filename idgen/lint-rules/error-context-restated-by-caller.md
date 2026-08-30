@@ -2,6 +2,14 @@
 description: caller-side message text repeats a phrase the wrapped error already carries, producing doubled context like "invalid id x: invalid id: ..."
 severity: error
 ---
+**Parked.** This rule is promoted to error severity but deliberately left out
+of the `enable` allowlist in `.llm-lint.json`. Two runs against deepseek-v4-flash
+returned no findings on `internal/cli/cli.go`, which renders
+`idgen: invalid id <token>: invalid id: non-canonical format` — this rule's own
+Flagged shape. Rewriting the rule for per-file judging did not move it. Re-enable
+once llm-lint supports a per-rule model override, and judge this one with a
+stronger model.
+
 Flag places where a caller builds a message around an error whose own text already contains the same words. Each layer is supposed to add the context only it knows — the file name, the token, the request id — and let the inner error supply the rest; when the caller also restates the inner error's category, the rendered message stutters. Read the sentinel or the constructor that produced the error and compare it to the literal the caller prepends: if a sentinel is `errors.New("invalid id")` and the caller writes `"prog: invalid id " + token + ": " + err.Error()`, the user sees `prog: invalid id x: invalid id: non-canonical format`. The same smell appears in wrapping: `fmt.Errorf("failed to open config: %w", err)` where `err` is already `open /etc/app.conf: no such file or directory` yields a doubled "open". Prefer the caller contributing the identifier alone and letting `%w`/`%v` render the reason.
 
 To find these, do not skim for repeated words. Enumerate every message the file renders to a user — each `Fprintf`, `WriteString`, or `Errorf` that embeds an error — and for each one write out the **full rendered line**, substituting what the inner error contributes. Then read that line aloud as a user would see it and ask whether it names the same fault twice. The stutter is obvious in the rendered string and nearly invisible in the source, because the two halves are written by different code.
