@@ -13,6 +13,7 @@
     "double-reported-error-diagnostic",
     "duplicated-validation-across-layers",
     "expected-value-from-code-under-test",
-    "exported-mutable-package-var"
+    "exported-mutable-package-var",
+    "god-entrypoint"
   ]
 }

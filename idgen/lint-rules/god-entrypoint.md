@@ -1,6 +1,6 @@
 ---
 description: one function performing argument parsing, validation, execution, and output formatting with natural extraction seams
-severity: warning
+severity: error
 ---
 Flag a single function that carries several distinct phases end to end — constructing and registering its inputs, dispatching among modes, validating, doing the work, and formatting the output — where the phases have visible seams. The seams are concrete: local variables that are live across exactly one stretch and dead afterward, blocks separated by blank lines or comment headers, and nested loops or conditionals whose bodies would read as early returns inside a helper. Say which phases the function is carrying and where the boundaries fall, and recommend extracting them so the entrypoint is left as wiring that a reader can take in at once.
 
