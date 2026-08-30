@@ -1,6 +1,6 @@
 ---
 description: package-level state exported as a var when the value is a frozen constant no importer should mutate
-severity: warning
+severity: error
 include: ["**/*.go"]
 ---
 Flag exported package-level `var` declarations whose values are effectively constants: epochs and other fixed reference points, lookup and translation tables, frozen format parameters, default instances. Any importer can assign to them, changing behavior for the entire process from an unrelated package, and nothing in the owning package can detect or guard it. Watch particularly for values that cannot be `const` in Go — `time.Time`, slices, maps, structs, compiled regular expressions — which land in a `var` by default rather than by decision. Recommend an unexported var behind an exported accessor, and for slices and maps an accessor that returns a copy, so the contract is enforced rather than merely documented.
