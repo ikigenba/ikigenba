@@ -60,23 +60,21 @@ func (c *advancingClock) totalSleep() time.Duration {
 	return total
 }
 
-type backwardClock struct {
-	now      time.Time
-	nowCalls int
-	reported []time.Time
-	sleeps   []time.Duration
+type scheduledClock struct {
+	now       time.Time
+	scheduled []time.Time
+	sleeps    []time.Duration
 }
 
-func (c *backwardClock) Now() time.Time {
-	c.nowCalls++
-	if c.nowCalls == 2 {
-		c.now = c.now.Add(-3 * time.Millisecond)
+func (c *scheduledClock) Now() time.Time {
+	if len(c.scheduled) > 0 {
+		c.now = c.scheduled[0]
+		c.scheduled = c.scheduled[1:]
 	}
-	c.reported = append(c.reported, c.now)
 	return c.now
 }
 
-func (c *backwardClock) Sleep(d time.Duration) {
+func (c *scheduledClock) Sleep(d time.Duration) {
 	c.sleeps = append(c.sleeps, d)
 	c.now = c.now.Add(d)
 }
@@ -426,7 +424,7 @@ func TestRunMintsOnlyAtClockReportedInstants(t *testing.T) {
 // R-T1I7-15HK: the loop sleeps through a backward step and resumes above its prior value.
 func TestRunNumberWaitsOutBackwardClockStep(t *testing.T) {
 	start := time.Date(2026, time.August, 29, 12, 0, 0, 0, time.UTC)
-	clock := &backwardClock{now: start}
+	clock := &scheduledClock{scheduled: []time.Time{start, start.Add(-3 * time.Millisecond)}}
 	ids, _, exitCode := runMint(t, []string{"-n", "3"}, clock)
 
 	if exitCode != exitSuccess {
