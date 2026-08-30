@@ -20,6 +20,7 @@
     "implementation-derived-test-domain",
     "ineffective-env-mutation-in-test",
     "io-error-mapped-to-data-error",
-    "literal-zone-suffix-without-conversion-guarantee"
+    "literal-zone-suffix-without-conversion-guarantee",
+    "log-prng-seed-on-failure"
   ]
 }

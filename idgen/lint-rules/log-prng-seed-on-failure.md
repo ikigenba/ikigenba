@@ -1,6 +1,6 @@
 ---
 description: seeded randomized tests that fail without reporting the seed or the generated input needed to reproduce the failure
-severity: warning
+severity: error
 include: ["**/*_test.go", "**/*_test.py", "**/*.test.ts", "**/*.test.js", "**/*_test.rb"]
 ---
 Flag randomized or seeded sweeps whose failure output does not carry enough information to reproduce the failure: no seed, and no printout of the generated value that failed. A message like `iteration 4713 failed` sends the reader back to the source to find the seed, then to re-derive four thousand PRNG steps by hand before they can even see the input. Deterministic seeding makes the run reproducible in principle; only reporting makes it reproducible in practice, and the two are routinely confused. The problem is worse for a randomly seeded test, where the failing input is gone the moment the process exits.
