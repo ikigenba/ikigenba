@@ -1,6 +1,6 @@
 ---
 description: a bare literal repeated for a quantity the codebase has already named as a constant
-severity: warning
+severity: error
 ---
 Flag a literal that restates a value the project has already given a name to, especially when the literal appears in several files while the named constant is barely used. This is worse than a plain magic number: the name exists, so a maintainer changing the constant reasonably believes they have changed the quantity everywhere, and the surviving literals fail silently rather than at compile time. Look for a structural quantity — a field width, a chunk size, a split point, a version, a limit — appearing as a slice bound in one place, a length comparison in another, and a repetition count inside a regular expression or format string in a third. Literals embedded in strings and patterns are the highest-value catch, since no compiler or type checker will ever connect them to the constant. Report the sites collectively and name the constant they should be using.
 

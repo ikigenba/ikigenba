@@ -21,6 +21,7 @@
     "ineffective-env-mutation-in-test",
     "io-error-mapped-to-data-error",
     "literal-zone-suffix-without-conversion-guarantee",
-    "log-prng-seed-on-failure"
+    "log-prng-seed-on-failure",
+    "magic-literal-beside-existing-constant"
   ]
 }
