@@ -19,6 +19,7 @@
     "helper-asserts-and-returns",
     "implementation-derived-test-domain",
     "ineffective-env-mutation-in-test",
-    "io-error-mapped-to-data-error"
+    "io-error-mapped-to-data-error",
+    "literal-zone-suffix-without-conversion-guarantee"
   ]
 }

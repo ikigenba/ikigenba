@@ -1,6 +1,6 @@
 ---
 description: a format or template hard-coding a timezone, unit, or currency suffix that nothing structurally guarantees the value carries
-severity: warning
+severity: error
 ---
 Flag output that asserts a value's frame of reference in literal text — a trailing `Z` or `UTC` in a timestamp layout, a `+00:00`, a `ms`/`s`/`KB` unit suffix, a currency symbol or code — where the correctness of that label depends on a conversion the format string cannot see. The common shape is a single expression that happens to convert and format together, so the label is true today by adjacency rather than by construction: move the formatting into a helper, format a value that arrived from elsewhere, or drop the conversion during a refactor, and the code emits a confidently mislabeled value that no test on the current call path will catch. Timestamps are the worst case because the output stays well-formed and plausible while silently shifting by hours. Prefer a layout that renders the actual offset (so a non-UTC value shows itself), a formatting helper that performs the conversion it advertises, or a type that can only hold values in the declared frame.
 
