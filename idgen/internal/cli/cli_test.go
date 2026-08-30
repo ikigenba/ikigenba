@@ -3,6 +3,8 @@ package cli
 import (
 	"bytes"
 	"io"
+	"os"
+	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -914,17 +916,39 @@ func TestRunMintThenDecodeRoundTrip(t *testing.T) {
 
 // R-TNGD-X0U2: decode output remains UTC when TZ names a non-UTC zone.
 func TestRunDecodeOutputIgnoresTZEnvironment(t *testing.T) {
-	t.Setenv("TZ", "America/Chicago")
+	if os.Getenv("IDGEN_TEST_DECODE_IN_CHILD") == "1" {
+		exitCode := Run(
+			[]string{"--decode", os.Getenv("IDGEN_TEST_DECODE_ID")},
+			strings.NewReader(""),
+			os.Stdout,
+			os.Stderr,
+			&fakeClock{},
+		)
+		os.Exit(exitCode)
+	}
+
 	instant := time.Date(2026, time.June, 7, 8, 9, 10, 765432000, time.FixedZone("origin", 10*60*60))
 	id := idgen.MintAt("Zone", instant)
-
-	stdout, stderr, exitCode := runCLI([]string{"--decode", id}, "", &fakeClock{})
-
-	want := decodedLine(instant)
-	if exitCode != exitSuccess || stderr != "" || stdout != want {
-		t.Errorf("Run() = (stdout %q, stderr %q, exit %d), want (%q, empty, %d)", stdout, stderr, exitCode, want, exitSuccess)
+	testBinary, err := os.Executable()
+	if err != nil {
+		t.Fatalf("resolve test executable: %v", err)
 	}
-	if !strings.HasSuffix(stdout, "Z\n") {
-		t.Errorf("stdout = %q, want literal UTC Z suffix", stdout)
+	cmd := exec.Command(testBinary, "-test.run=^TestRunDecodeOutputIgnoresTZEnvironment$") // #nosec G204 -- the child is this fixed test binary
+	cmd.Env = append(os.Environ(),
+		"TZ=America/Chicago",
+		"IDGEN_TEST_DECODE_IN_CHILD=1",
+		"IDGEN_TEST_DECODE_ID="+id,
+	)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	want := "2026-06-06T22:09:10.765Z\n"
+	if err := cmd.Run(); err != nil || stderr.Len() != 0 || stdout.String() != want {
+		t.Errorf("child Run() = (stdout %q, stderr %q, error %v), want (%q, empty, nil)", stdout.String(), stderr.String(), err, want)
+	}
+	if !strings.HasSuffix(stdout.String(), "Z\n") {
+		t.Errorf("stdout = %q, want literal UTC Z suffix", stdout.String())
 	}
 }
