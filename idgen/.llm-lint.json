@@ -1,5 +1,5 @@
 {
-  "model": { "provider": "openrouter", "model": "deepseek-v4-flash" },
+  "model": { "provider": "openrouter", "model": "gpt-5.6-luna" },
   "rules": ["lint-rules"],
   "enable": [
     "boolean-state-machine",
