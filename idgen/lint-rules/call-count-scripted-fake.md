@@ -1,6 +1,6 @@
 ---
 description: fakes whose behavior branches on an internal invocation counter, silently changing meaning when the caller's call pattern shifts
-severity: warning
+severity: error
 include: ["**/*_test.go", "**/*_test.py", "**/*.test.ts", "**/*.test.js", "**/*_test.rb"]
 ---
 Flag test doubles that decide what to return by counting how many times they have been called — "fail on the third call", "step the clock backward on the second `Now`", "return the short page on call four". The counter encodes an assumption about the caller's internal call pattern that nothing states and nothing checks. When someone refactors the code under test to consult the collaborator one extra time, the scripted event lands in a different iteration, the test keeps passing, and it now exercises a scenario nobody chose. That is the worst failure mode a double can have: green, and testing something other than its name.
