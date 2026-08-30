@@ -1,6 +1,6 @@
 ---
 description: tests named every, all, or exhaustive whose table leaves a reachable branch or documented case of the target unexercised
-severity: warning
+severity: error
 include: ["**/*_test.go", "**/*_test.py", "**/*.test.ts", "**/*.test.js", "**/*_test.rb"]
 ---
 Flag tests whose name or doc comment asserts completeness — "every", "all", "each", "exhaustive", "the full grammar", "all error cases" — when the table does not in fact cover every case the target defines. Reviewers and future maintainers read such a name as a coverage guarantee and stop looking; a missing enum member, error kind, flag spelling, or rejection reason then goes untested indefinitely, and nobody adds a case when a new one is introduced, because the test's name implies it is already handled.
