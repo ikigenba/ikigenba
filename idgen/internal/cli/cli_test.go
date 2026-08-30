@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -268,5 +269,125 @@ func TestRunNumberWaitsOutBackwardClockStep(t *testing.T) {
 	}
 	if len(clock.sleeps) == 0 {
 		t.Error("Clock.Sleep was not called while waiting out backward step")
+	}
+}
+
+// R-TB9E-3BF4: both prefix aliases fully replace the default prefix for every mint.
+func TestRunPrefixAliasesReplaceDefaultPrefix(t *testing.T) {
+	instant := time.Date(2026, time.August, 29, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name   string
+		args   []string
+		prefix string
+		count  int
+	}{
+		{name: "short alias and one character", args: []string{"-p", "X", "-n", "2"}, prefix: "X", count: 2},
+		{name: "long alias and multiple characters", args: []string{"--prefix", "Team42"}, prefix: "Team42", count: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			clock := &advancingClock{now: instant}
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			exitCode := Run(test.args, bytes.NewReader(nil), &stdout, &stderr, clock)
+
+			if exitCode != exitSuccess {
+				t.Errorf("Run() exit code = %d, want %d", exitCode, exitSuccess)
+			}
+			if stderr.Len() != 0 {
+				t.Errorf("stderr = %q, want empty", stderr.String())
+			}
+			var want strings.Builder
+			for offset := range test.count {
+				want.WriteString(idgen.MintAt(test.prefix, instant.Add(time.Duration(offset)*time.Millisecond)))
+				want.WriteByte('\n')
+			}
+			if got := stdout.String(); got != want.String() {
+				t.Errorf("stdout = %q, want exact newline-terminated output %q", got, want.String())
+			}
+			pattern := regexp.MustCompile(`^(?:` + regexp.QuoteMeta(test.prefix) + `-[0-9A-Z]{4}-[0-9A-Z]{4}\n){` + strconv.Itoa(test.count) + `}$`)
+			if !pattern.MatchString(stdout.String()) {
+				t.Errorf("stdout = %q, want every id to begin with complete prefix %q", stdout.String(), test.prefix)
+			}
+			for _, line := range strings.Split(strings.TrimSuffix(stdout.String(), "\n"), "\n") {
+				gotPrefix, _, found := strings.Cut(line, "-")
+				if !found || gotPrefix != test.prefix {
+					t.Errorf("id %q prefix = %q, want complete replacement %q", line, gotPrefix, test.prefix)
+				}
+				if strings.HasPrefix(line, "R"+test.prefix+"-") {
+					t.Errorf("id %q retains and concatenates default prefix R", line)
+				}
+			}
+		})
+	}
+}
+
+// R-TL0L-5HCO: invalid prefixes fail before consulting the clock or writing stdout.
+func TestRunRejectsInvalidPrefixesBeforeMinting(t *testing.T) {
+	tests := []struct {
+		name   string
+		prefix string
+	}{
+		{name: "empty", prefix: ""},
+		{name: "whitespace only", prefix: " \t"},
+		{name: "separator", prefix: "bad-prefix"},
+		{name: "underscore", prefix: "bad_prefix"},
+		{name: "punctuation", prefix: "bad!"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			clock := &fakeClock{now: time.Date(2026, time.August, 29, 12, 0, 0, 0, time.UTC)}
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			exitCode := Run([]string{"--prefix", test.prefix}, bytes.NewReader(nil), &stdout, &stderr, clock)
+
+			if exitCode != exitUsage {
+				t.Errorf("Run() exit code = %d, want %d", exitCode, exitUsage)
+			}
+			if !strings.Contains(stderr.String(), "invalid prefix") {
+				t.Errorf("stderr = %q, want invalid prefix diagnostic", stderr.String())
+			}
+			if stdout.Len() != 0 {
+				t.Errorf("stdout = %q, want empty", stdout.String())
+			}
+			if clock.nowCalls != 0 || clock.sleepCalls != 0 {
+				t.Errorf("clock calls = Now %d, Sleep %d; want zero", clock.nowCalls, clock.sleepCalls)
+			}
+		})
+	}
+}
+
+// R-TM8H-J93D: non-positive numbers fail before consulting the clock or writing stdout.
+func TestRunRejectsNonPositiveNumbersBeforeMinting(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "zero through short alias", args: []string{"-n", "0"}},
+		{name: "negative through long alias", args: []string{"--number", "-3"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			clock := &fakeClock{now: time.Date(2026, time.August, 29, 12, 0, 0, 0, time.UTC)}
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			exitCode := Run(test.args, bytes.NewReader(nil), &stdout, &stderr, clock)
+
+			if exitCode != exitUsage {
+				t.Errorf("Run() exit code = %d, want %d", exitCode, exitUsage)
+			}
+			if !strings.Contains(stderr.String(), "--number must be > 0") {
+				t.Errorf("stderr = %q, want non-positive number diagnostic", stderr.String())
+			}
+			if stdout.Len() != 0 {
+				t.Errorf("stdout = %q, want empty", stdout.String())
+			}
+			if clock.nowCalls != 0 || clock.sleepCalls != 0 {
+				t.Errorf("clock calls = Now %d, Sleep %d; want zero", clock.nowCalls, clock.sleepCalls)
+			}
+		})
 	}
 }

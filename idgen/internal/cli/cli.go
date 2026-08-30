@@ -4,6 +4,7 @@ package cli
 import (
 	"flag"
 	"io"
+	"regexp"
 	"time"
 
 	"github.com/ikigenba/ikigenba/idgen/internal/idgen"
@@ -14,6 +15,8 @@ const (
 	exitFailure = 1
 	exitUsage   = 2
 )
+
+var validPrefix = regexp.MustCompile(`^[A-Za-z0-9]+$`)
 
 // Clock supplies time to the CLI.
 type Clock interface {
@@ -29,7 +32,17 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, clock Clock) 
 	flags.SetOutput(stderr)
 	number := flags.Int("n", 1, "number of identifiers to mint")
 	flags.IntVar(number, "number", 1, "number of identifiers to mint")
+	prefix := flags.String("p", "R", "identifier prefix")
+	flags.StringVar(prefix, "prefix", "R", "identifier prefix")
 	if err := flags.Parse(args); err != nil {
+		return exitUsage
+	}
+	if !validPrefix.MatchString(*prefix) {
+		_, _ = io.WriteString(stderr, "idgen: invalid prefix\n")
+		return exitUsage
+	}
+	if *number <= 0 {
+		_, _ = io.WriteString(stderr, "idgen: --number must be > 0\n")
 		return exitUsage
 	}
 
@@ -41,7 +54,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, clock Clock) 
 			instant = clock.Now()
 		}
 
-		_, _ = io.WriteString(stdout, idgen.MintAt("R", instant)+"\n")
+		_, _ = io.WriteString(stdout, idgen.MintAt(*prefix, instant)+"\n")
 		previousMillisecond = instant.UnixMilli()
 	}
 	return exitSuccess
