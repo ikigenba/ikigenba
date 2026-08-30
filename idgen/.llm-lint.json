@@ -1,4 +1,12 @@
 {
   "model": { "provider": "openrouter", "model": "deepseek-v4-flash" },
-  "rules": ["lint-rules"]
+  "rules": ["lint-rules"],
+  "enable": [
+    "boolean-state-machine",
+    "no-sleep-in-tests",
+    "asymmetric-mode-dispatch",
+    "call-count-scripted-fake",
+    "closure-captured-error-flag",
+    "dead-flag-metadata"
+  ]
 }

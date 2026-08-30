@@ -44,10 +44,12 @@ skipped tests, no disabled linters laundering a failure.
 5. `llm-lint cmd internal`
 
 llm-lint also loads this project's own rules from `lint-rules/` (wired via
-`.llm-lint.json`, found by ancestor walk). They are `severity: warning` —
-surfaced in gate output but not failing it — and are promoted to `error`
-individually as the smells they describe are fixed. See
-`../docs/llm-lint-rule-candidates.md` for their provenance.
+`.llm-lint.json`, found by ancestor walk). Rules are promoted individually:
+a promotion flips the rule file to `severity: error` and adds its id to the
+`enable` allowlist in `.llm-lint.json`. Un-promoted rules stay disabled — they
+make no LLM calls and print nothing — so every finding the gate reports fails
+it. The un-promoted backlog is the `severity: warning` files in `lint-rules/`;
+see `../docs/llm-lint-rule-candidates.md` for their provenance.
 
 ## Commit conventions
 
