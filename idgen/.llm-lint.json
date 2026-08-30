@@ -14,6 +14,7 @@
     "duplicated-validation-across-layers",
     "expected-value-from-code-under-test",
     "exported-mutable-package-var",
-    "god-entrypoint"
+    "god-entrypoint",
+    "helper-asserts-and-returns"
   ]
 }

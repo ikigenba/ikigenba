@@ -1,6 +1,6 @@
 ---
 description: setup or invocation helpers that assert beyond their stated job, making a test's real claims invisible at the call site
-severity: warning
+severity: error
 include: ["**/*_test.go", "**/*_test.py", "**/*.test.ts", "**/*.test.js", "**/*_test.rb"]
 ---
 Flag helpers that both drive the code under test and quietly assert on its behavior, so that every caller makes claims its body never states. A helper named for running a command that also requires the output to be non-empty, newline-terminated, and free of blank lines turns an unrelated test — one about whether a collaborator was consulted, say — into an output-format test as well. The consequences are that a reader can no longer tell from a test body what that test guarantees, that a formatting change fails a dozen tests with no obvious connection to formatting, and that removing the hidden assertion silently weakens every caller at once.
