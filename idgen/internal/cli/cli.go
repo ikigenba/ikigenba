@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"flag"
 	"io"
 	"time"
 
@@ -23,12 +24,25 @@ type Clock interface {
 // Run executes the CLI and returns its process exit code.
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, clock Clock) int {
 	_ = stdin
-	_ = stderr
 
-	if len(args) != 0 {
-		return exitSuccess
+	flags := flag.NewFlagSet("idgen", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	number := flags.Int("n", 1, "number of identifiers to mint")
+	flags.IntVar(number, "number", 1, "number of identifiers to mint")
+	if err := flags.Parse(args); err != nil {
+		return exitUsage
 	}
 
-	_, _ = io.WriteString(stdout, idgen.MintAt("R", clock.Now())+"\n")
+	var previousMillisecond int64
+	for minted := 0; minted < *number; minted++ {
+		instant := clock.Now()
+		for minted > 0 && instant.UnixMilli() <= previousMillisecond {
+			clock.Sleep(time.Millisecond)
+			instant = clock.Now()
+		}
+
+		_, _ = io.WriteString(stdout, idgen.MintAt("R", instant)+"\n")
+		previousMillisecond = instant.UnixMilli()
+	}
 	return exitSuccess
 }
