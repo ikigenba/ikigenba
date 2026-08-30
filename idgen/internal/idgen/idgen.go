@@ -23,6 +23,10 @@ var Epoch = time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 // ErrInvalidID identifies malformed identifiers passed to TimeOf.
 var ErrInvalidID = errors.New("invalid id")
 
+func init() {
+	validateAffineMap(multiplier, modulus)
+}
+
 // MintAt returns an identifier for t using prefix. Instants before Epoch are
 // represented as Epoch.
 func MintAt(prefix string, t time.Time) string {
@@ -122,4 +126,21 @@ func validBodyPart(part string) bool {
 		}
 	}
 	return true
+}
+
+func validateAffineMap(mapMultiplier, mapModulus int64) {
+	if mapModulus <= 0 {
+		panic("idgen: affine modulus must be positive")
+	}
+
+	a, b := mapMultiplier, mapModulus
+	if a < 0 {
+		a = -a
+	}
+	for b != 0 {
+		a, b = b, a%b
+	}
+	if a != 1 {
+		panic("idgen: affine multiplier is not invertible")
+	}
 }
