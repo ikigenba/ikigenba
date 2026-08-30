@@ -10,6 +10,7 @@
     "dead-flag-metadata",
     "derived-constant-without-provenance",
     "discarded-output-write-error",
-    "double-reported-error-diagnostic"
+    "double-reported-error-diagnostic",
+    "duplicated-validation-across-layers"
   ]
 }

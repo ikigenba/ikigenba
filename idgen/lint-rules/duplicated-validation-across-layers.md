@@ -1,6 +1,6 @@
 ---
 description: the same input rule implemented independently in two layers or packages, with no shared predicate
-severity: warning
+severity: error
 ---
 Flag a validation rule — a character class, a lexical grammar, a range check, a required-field check — implemented more than once for the same concept in different layers or packages, with no shared constant or exported predicate linking the copies. The copies are often written by different mechanisms (a regular expression in one place, a hand-rolled character loop in another), which hides the duplication from a plain text search. Object because the two can drift silently and asymmetrically: widening the rule at the outer boundary produces values the inner layer then rejects, and the failure surfaces far from the edit that caused it. Recommend that the layer which owns the format own the rule, exporting one predicate the other layer calls, so there is a single place to widen or narrow it.
 
