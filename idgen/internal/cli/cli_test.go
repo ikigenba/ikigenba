@@ -239,11 +239,12 @@ func TestRunLongVersionPrintsVersion(t *testing.T) {
 	clock := &fakeClock{}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
+	const wantStdout = "v0.1.0\n"
 
 	exitCode := Run([]string{"--version"}, forbiddenReader{t: t}, &stdout, &stderr, clock)
 
-	if exitCode != exitSuccess || stdout.String() != version+"\n" || stderr.Len() != 0 {
-		t.Errorf("Run() = (stdout %q, stderr %q, exit %d), want (%q, empty, %d)", stdout.String(), stderr.String(), exitCode, version+"\n", exitSuccess)
+	if exitCode != exitSuccess || stdout.String() != wantStdout || stderr.Len() != 0 {
+		t.Errorf("Run() = (stdout %q, stderr %q, exit %d), want (%q, empty, %d)", stdout.String(), stderr.String(), exitCode, wantStdout, exitSuccess)
 	}
 	if clock.nowCalls != 0 || clock.sleepCalls != 0 {
 		t.Errorf("clock calls = Now %d, Sleep %d; want zero", clock.nowCalls, clock.sleepCalls)
@@ -372,7 +373,7 @@ func TestRunBareInvocationMintsOneDefaultID(t *testing.T) {
 	if gotExit != exitSuccess {
 		t.Errorf("Run() exit code = %d, want %d", gotExit, exitSuccess)
 	}
-	if got, want := stdout.String(), idgen.MintAt("R", instant)+"\n"; got != want {
+	if got, want := stdout.String(), "R-"+"YQT6-50XA"+"\n"; got != want {
 		t.Errorf("stdout = %q, want %q", got, want)
 	}
 	if !regexp.MustCompile(`^R-[0-9A-Z]{4}-[0-9A-Z]{4}\n$`).MatchString(stdout.String()) {
@@ -539,13 +540,13 @@ func TestRunNumberWaitsOutBackwardClockStep(t *testing.T) {
 func TestRunPrefixAliasesReplaceDefaultPrefix(t *testing.T) {
 	instant := time.Date(2026, time.August, 29, 12, 0, 0, 0, time.UTC)
 	tests := []struct {
-		name   string
-		args   []string
-		prefix string
-		count  int
+		name       string
+		args       []string
+		prefix     string
+		wantBodies []string
 	}{
-		{name: "short alias and one character", args: []string{"-p", "X", "-n", "2"}, prefix: "X", count: 2},
-		{name: "long alias and multiple characters", args: []string{"--prefix", "Team42"}, prefix: "Team42", count: 1},
+		{name: "short alias and one character", args: []string{"-p", "X", "-n", "2"}, prefix: "X", wantBodies: []string{"YQT6-50XA", "YS12-ISNZ"}},
+		{name: "long alias and multiple characters", args: []string{"--prefix", "Team42"}, prefix: "Team42", wantBodies: []string{"YQT6-50XA"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -562,14 +563,14 @@ func TestRunPrefixAliasesReplaceDefaultPrefix(t *testing.T) {
 				t.Errorf("stderr = %q, want empty", stderr.String())
 			}
 			var want strings.Builder
-			for offset := range test.count {
-				want.WriteString(idgen.MintAt(test.prefix, instant.Add(time.Duration(offset)*time.Millisecond)))
+			for _, body := range test.wantBodies {
+				want.WriteString(test.prefix + "-" + body)
 				want.WriteByte('\n')
 			}
 			if got := stdout.String(); got != want.String() {
 				t.Errorf("stdout = %q, want exact newline-terminated output %q", got, want.String())
 			}
-			pattern := regexp.MustCompile(`^(?:` + regexp.QuoteMeta(test.prefix) + `-[0-9A-Z]{4}-[0-9A-Z]{4}\n){` + strconv.Itoa(test.count) + `}$`)
+			pattern := regexp.MustCompile(`^(?:` + regexp.QuoteMeta(test.prefix) + `-[0-9A-Z]{4}-[0-9A-Z]{4}\n){` + strconv.Itoa(len(test.wantBodies)) + `}$`)
 			if !pattern.MatchString(stdout.String()) {
 				t.Errorf("stdout = %q, want every id to begin with complete prefix %q", stdout.String(), test.prefix)
 			}
@@ -628,6 +629,7 @@ func TestRunRejectsInvalidPrefixesBeforeMinting(t *testing.T) {
 func TestRunPrefixAcceptanceAgreesWithValidPrefix(t *testing.T) {
 	// R-626N-3DAD
 	instant := time.Date(2026, time.August, 30, 12, 0, 0, 0, time.UTC)
+	const wantBody = "D190-ANLA"
 	accepted, rejected := 0, 0
 	for _, prefix := range prefixAgreementSample(0x626_3dad) {
 		clock := &fakeClock{now: instant}
@@ -637,7 +639,7 @@ func TestRunPrefixAcceptanceAgreesWithValidPrefix(t *testing.T) {
 			if exitCode != exitSuccess {
 				t.Errorf("valid prefix %q exit code = %d, want %d", prefix, exitCode, exitSuccess)
 			}
-			if got, want := stdout, idgen.MintAt(prefix, instant)+"\n"; got != want {
+			if got, want := stdout, prefix+"-"+wantBody+"\n"; got != want {
 				t.Errorf("valid prefix %q stdout = %q, want minted id %q", prefix, got, want)
 			}
 			if strings.Contains(stderr, "invalid prefix") || stderr != "" {

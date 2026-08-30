@@ -125,7 +125,7 @@ func TestMintAtZeroPadsBody(t *testing.T) {
 func TestMintAtClampsBeforeEpoch(t *testing.T) {
 	// R-SO3A-TOBX
 	beforeEpoch := Epoch.Add(-time.Nanosecond)
-	if got, want := MintAt("R", beforeEpoch), MintAt("R", Epoch); got != want {
+	if got, want := MintAt("R", beforeEpoch), "R-"+"0007-J3LA"; got != want {
 		t.Fatalf("MintAt before Epoch = %q, want epoch encoding %q", got, want)
 	}
 }
@@ -163,18 +163,14 @@ func TestTimeOfIgnoresPrefix(t *testing.T) {
 	// R-SPB7-7G2M
 	body := "OBCA-0VLA"
 	prefixes := []string{"R", "S", "SPEC"}
-	var decoded time.Time
-	for i, prefix := range prefixes {
+	want := time.Date(2026, time.March, 15, 12, 0, 0, 0, time.UTC)
+	for _, prefix := range prefixes {
 		got, err := TimeOf(prefix + "-" + body)
 		if err != nil {
 			t.Fatalf("TimeOf with prefix %q returned error: %v", prefix, err)
 		}
-		if i == 0 {
-			decoded = got
-			continue
-		}
-		if !got.Equal(decoded) {
-			t.Fatalf("TimeOf with prefix %q = %s, want %s", prefix, got, decoded)
+		if !got.Equal(want) {
+			t.Fatalf("TimeOf with prefix %q = %s, want %s", prefix, got, want)
 		}
 	}
 }
