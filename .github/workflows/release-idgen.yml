@@ -1,0 +1,61 @@
+name: Release idgen
+
+# Monorepo release: tag idgen/vX.Y.Z. GoReleaser OSS wants a plain semver tag,
+# so we lay a local vX.Y.Z tag on the commit, build/archive with publishing
+# skipped, and publish the GitHub release ourselves on the real monorepo tag.
+
+on:
+  push:
+    tags: ["idgen/v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+
+      - name: Derive version from tag
+        id: v
+        run: echo "version=${GITHUB_REF_NAME#idgen/}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag matches the source version
+        run: |
+          src=$(sed -nE 's/.*version = "(v[^"]+)".*/\1/p' idgen/internal/cli/version.go)
+          if [ "$src" != "${{ steps.v.outputs.version }}" ]; then
+            echo "tag $GITHUB_REF_NAME (=> ${{ steps.v.outputs.version }}) != source version $src" >&2
+            exit 1
+          fi
+
+      - name: Lay a local semver tag for GoReleaser
+        run: git tag -f "${{ steps.v.outputs.version }}"
+
+      - name: Build and archive with GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: latest
+          workdir: idgen
+          args: release --clean --skip=publish,announce,validate
+        env:
+          GORELEASER_CURRENT_TAG: ${{ steps.v.outputs.version }}
+
+      - name: Publish GitHub release on the monorepo tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --generate-notes \
+            idgen/dist/*.tar.gz idgen/dist/checksums.txt

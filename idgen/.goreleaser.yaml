@@ -1,0 +1,27 @@
+version: 2
+
+project_name: idgen
+
+builds:
+  - id: idgen
+    main: ./cmd/idgen
+    binary: idgen
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+
+archives:
+  - id: idgen
+    formats: [tar.gz]
+    name_template: "{{ .Binary }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+# The workflow publishes the release itself (gh release create --generate-notes)
+# on the real monorepo tag; goreleaser only builds and archives.
+changelog:
+  disable: true
