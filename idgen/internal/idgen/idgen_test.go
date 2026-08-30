@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -101,6 +102,13 @@ func TestTimeOfPrefixAcceptanceAgreesWithValidPrefix(t *testing.T) {
 
 func TestEpoch(t *testing.T) {
 	// R-HF29-98B6
+	assertEpochValue(t)
+	assertEpochDeclaration(t)
+}
+
+func assertEpochValue(t *testing.T) {
+	t.Helper()
+
 	got := Epoch()
 	want := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	if got != want {
@@ -109,6 +117,10 @@ func TestEpoch(t *testing.T) {
 	if got.Location() != time.UTC {
 		t.Fatalf("Epoch() location = %v, want time.UTC", got.Location())
 	}
+}
+
+func assertEpochDeclaration(t *testing.T) {
+	t.Helper()
 
 	file, err := parser.ParseFile(token.NewFileSet(), "idgen.go", nil, 0)
 	if err != nil {
@@ -181,16 +193,19 @@ func TestMintAtTimeOfRoundTrip(t *testing.T) {
 	// R-SJ7P-ALD5
 	const (
 		seed                         = uint64(1729)
-		maxRepresentableOffsetMillis = int64(2_821_109_907_455) // 36^8 - 1, the largest eight-digit base36 value.
-		representableOffsetCount     = uint64(2_821_109_907_456)
+		maxRepresentableOffsetMillis = int64(36*36*36*36*36*36*36*36 - 1)
 	)
 	state := seed
 	nextOffset := func() int64 {
 		// xorshift64 is a deterministic PRNG suitable for reproducible sampling.
-		state ^= state << 13
-		state ^= state >> 7
-		state ^= state << 17
-		return int64(state % representableOffsetCount)
+		var offset int64
+		for range 8 {
+			state ^= state << 13
+			state ^= state >> 7
+			state ^= state << 17
+			offset = offset*36 + int64(state%36)
+		}
+		return offset
 	}
 	offsets := []int64{0, 1, maxRepresentableOffsetMillis - 1, maxRepresentableOffsetMillis}
 	for range 1000 {
@@ -215,9 +230,9 @@ func TestMintAtTimeOfRoundTrip(t *testing.T) {
 
 func TestMintAtEncodingBoundaryBehavior(t *testing.T) {
 	const (
-		maxRepresentableOffsetMillis = int64(2_821_109_907_455) // 36^8 - 1, the largest eight-digit base36 value.
+		maxRepresentableOffsetMillis = int64(36*36*36*36*36*36*36*36 - 1)
 		encodingPeriodMillis         = maxRepresentableOffsetMillis + 1
-		saturatedDurationMillis      = int64(9_223_372_036_854) // floor(MaxInt64 nanoseconds / one millisecond).
+		saturatedDurationMillis      = math.MaxInt64 / int64(time.Millisecond)
 	)
 
 	tests := []struct {
@@ -312,7 +327,8 @@ func TestTimeOfRejectsEveryNonCanonicalGrammarBoundary(t *testing.T) {
 
 func TestTimeOfNeverPanicsForArbitraryInput(t *testing.T) {
 	// R-SRQZ-YZK0
-	state := uint64(0x5eed)
+	const seed = uint64(0x5eed)
+	state := seed
 	nextRandom := func() uint64 {
 		state ^= state << 13
 		state ^= state >> 7
@@ -342,12 +358,12 @@ func TestTimeOfNeverPanicsForArbitraryInput(t *testing.T) {
 		switch {
 		case err == nil:
 			if got.Location() != time.UTC || got.Nanosecond()%int(time.Millisecond) != 0 {
-				t.Fatalf("input %d returned invalid successful time %s", i, got)
+				t.Fatalf("seed %#x, input %d: TimeOf(%q) returned invalid successful time %s", seed, i, id, got)
 			}
 		case errors.Is(err, ErrInvalidID):
 			// Every rejected input must use the package's documented sentinel.
 		default:
-			t.Fatalf("input %d returned unclassified error: %v", i, err)
+			t.Fatalf("seed %#x, input %d: TimeOf(%q) returned unclassified error: %v", seed, i, id, err)
 		}
 	}
 }
