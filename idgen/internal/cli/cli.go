@@ -6,7 +6,6 @@ import (
 	"errors"
 	"flag"
 	"io"
-	"regexp"
 	"strconv"
 	"time"
 
@@ -68,8 +67,6 @@ func (commandModeFlag) IsBoolFlag() bool {
 func registerModeFlag(flags *flag.FlagSet, name string, modes *commandModes, mode commandMode) {
 	flags.Var(commandModeFlag{modes: modes, mode: mode}, name, "")
 }
-
-var validPrefix = regexp.MustCompile(`^[A-Za-z0-9]+$`)
 
 const usageText = `Usage: idgen [options] [ID ...]
 
@@ -147,7 +144,7 @@ func runMintMode(
 		usage()
 		return exitUsage
 	}
-	if !validPrefix.MatchString(prefix) {
+	if !idgen.ValidPrefix(prefix) {
 		_, _ = io.WriteString(stderr, "idgen: invalid prefix\n")
 		usage()
 		return exitUsage

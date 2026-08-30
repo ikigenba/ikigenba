@@ -128,6 +128,41 @@ func runCLI(args []string, stdin string, clock Clock) (string, string, int) {
 	return stdout.String(), stderr.String(), exitCode
 }
 
+func prefixAgreementSample(seed uint64) []string {
+	state := seed
+	nextRandom := func() uint64 {
+		state ^= state << 13
+		state ^= state >> 7
+		state ^= state << 17
+		return state
+	}
+	const validCharacters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+	punctuation := []string{"_", "!", ".", "@", "#"}
+	nonASCII := []string{"é", "１", "界", "🙂"}
+
+	randomValidRun := func() string {
+		length := 1 + int(nextRandom()%16)
+		var prefix strings.Builder
+		prefix.Grow(length)
+		for range length {
+			prefix.WriteByte(validCharacters[nextRandom()%62])
+		}
+		return prefix.String()
+	}
+
+	candidates := []string{""}
+	for range 32 {
+		valid := randomValidRun()
+		candidates = append(candidates,
+			valid,
+			valid+"-",
+			valid+punctuation[nextRandom()%5],
+			valid+nonASCII[nextRandom()%4],
+		)
+	}
+	return candidates
+}
+
 func decodedLine(instant time.Time) string {
 	return instant.UTC().Truncate(time.Millisecond).Format("2006-01-02T15:04:05.000Z") + "\n"
 }
@@ -587,6 +622,46 @@ func TestRunRejectsInvalidPrefixesBeforeMinting(t *testing.T) {
 				t.Errorf("clock calls = Now %d, Sleep %d; want zero", clock.nowCalls, clock.sleepCalls)
 			}
 		})
+	}
+}
+
+func TestRunPrefixAcceptanceAgreesWithValidPrefix(t *testing.T) {
+	// R-626N-3DAD
+	instant := time.Date(2026, time.August, 30, 12, 0, 0, 0, time.UTC)
+	accepted, rejected := 0, 0
+	for _, prefix := range prefixAgreementSample(0x626_3dad) {
+		clock := &fakeClock{now: instant}
+		stdout, stderr, exitCode := runCLI([]string{"--prefix", prefix}, "", clock)
+		if idgen.ValidPrefix(prefix) {
+			accepted++
+			if exitCode != exitSuccess {
+				t.Errorf("valid prefix %q exit code = %d, want %d", prefix, exitCode, exitSuccess)
+			}
+			if got, want := stdout, idgen.MintAt(prefix, instant)+"\n"; got != want {
+				t.Errorf("valid prefix %q stdout = %q, want minted id %q", prefix, got, want)
+			}
+			if strings.Contains(stderr, "invalid prefix") || stderr != "" {
+				t.Errorf("valid prefix %q stderr = %q, want empty and no invalid-prefix diagnostic", prefix, stderr)
+			}
+			continue
+		}
+
+		rejected++
+		if exitCode != exitUsage {
+			t.Errorf("invalid prefix %q exit code = %d, want %d", prefix, exitCode, exitUsage)
+		}
+		if got, want := stderr, "idgen: invalid prefix\n"+expectedUsage; got != want {
+			t.Errorf("invalid prefix %q stderr = %q, want exact diagnostic and usage %q", prefix, got, want)
+		}
+		if stdout != "" {
+			t.Errorf("invalid prefix %q stdout = %q, want no minted id", prefix, stdout)
+		}
+		if clock.nowCalls != 0 || clock.sleepCalls != 0 {
+			t.Errorf("invalid prefix %q clock calls = Now %d, Sleep %d; want zero", prefix, clock.nowCalls, clock.sleepCalls)
+		}
+	}
+	if accepted == 0 || rejected == 0 {
+		t.Fatalf("agreement sample exercised %d accepted and %d rejected prefixes, want both branches", accepted, rejected)
 	}
 }
 

@@ -2,9 +2,45 @@ package idgen
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
+
+func prefixAgreementSample(seed uint64) []string {
+	state := seed
+	nextRandom := func() uint64 {
+		state ^= state << 13
+		state ^= state >> 7
+		state ^= state << 17
+		return state
+	}
+	const validCharacters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+	punctuation := []string{"_", "!", ".", "@", "#"}
+	nonASCII := []string{"é", "１", "界", "🙂"}
+
+	randomValidRun := func() string {
+		length := 1 + int(nextRandom()%16)
+		var prefix strings.Builder
+		prefix.Grow(length)
+		for range length {
+			prefix.WriteByte(validCharacters[nextRandom()%62])
+		}
+		return prefix.String()
+	}
+
+	candidates := []string{""}
+	for range 32 {
+		valid := randomValidRun()
+		candidates = append(candidates,
+			valid,
+			valid+"-",
+			valid+punctuation[nextRandom()%5],
+			valid+nonASCII[nextRandom()%4],
+		)
+	}
+	return candidates
+}
 
 func TestValidPrefix(t *testing.T) {
 	// R-5ZQU-BTSZ
@@ -32,6 +68,31 @@ func TestValidPrefix(t *testing.T) {
 				t.Fatalf("ValidPrefix(%q) = %t, want %t", test.prefix, got, test.want)
 			}
 		})
+	}
+}
+
+func TestTimeOfPrefixAcceptanceAgreesWithValidPrefix(t *testing.T) {
+	// R-60YQ-PLJO
+	const canonicalBody = "0007-J3LA"
+	accepted, rejected := 0, 0
+	for _, prefix := range prefixAgreementSample(0x60_626) {
+		_, err := TimeOf(prefix + "-" + canonicalBody)
+		wantAccepted := ValidPrefix(prefix)
+		gotAccepted := err == nil
+		if gotAccepted != wantAccepted {
+			t.Errorf("TimeOf prefix %q accepted = %t, ValidPrefix = %t (error %v)", prefix, gotAccepted, wantAccepted, err)
+		}
+		if wantAccepted {
+			accepted++
+			continue
+		}
+		rejected++
+		if !errors.Is(err, ErrInvalidID) {
+			t.Errorf("TimeOf prefix %q error = %v, want an error wrapping ErrInvalidID", prefix, err)
+		}
+	}
+	if accepted == 0 || rejected == 0 {
+		t.Fatalf("agreement sample exercised %d accepted and %d rejected prefixes, want both branches", accepted, rejected)
 	}
 }
 
