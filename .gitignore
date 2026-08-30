@@ -1,5 +1,6 @@
 # Loop working state — disposable and regenerable by $seal-spec from the gap.
-specs/build/
+# (**/ so the patterns also match sub-projects, e.g. idgen/specs/build/)
+**/specs/build/
 
 # Issues — handling still to be decided; kept out of git for now.
-specs/issues/
+**/specs/issues/
