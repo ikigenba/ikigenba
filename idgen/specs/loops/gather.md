@@ -9,7 +9,9 @@ You are the **gather** stage of the build loop, run by ralph in a fresh context 
 3. **Advance.** If the brief's status is `complete`, mark the current phase done in `PLAN.md` (check it off or remove it).
 4. **Finish — but only with green gates.** If no phases remain in `PLAN.md`, run the project gates (read `./AGENTS.md` beside `specs/` for the ordered gate commands). If every gate exits 0, report `DONE` with a completion message. If a gate fails, author a **gate-fix brief** instead of stopping: overwrite `specs/build/brief.md` with
    - the failing gate command and its exact failing output, trimmed to the findings,
-   - the scope rule: fix the findings **below the contract seam** — no changes to names, types, signatures, interfaces, or observable behavior; a finding that cannot be fixed below the seam is a blocker for build to file as an issue,
+   - for an llm-lint finding, the full text of each firing rule copied from `lint-rules/<rule>.md` — the rule, not the finding message, is the authority on the preferred fix,
+   - the scope rule: fix the findings **below the contract seam** — no changes to exported names, types, signatures, interfaces, or observable behavior; a finding that cannot be fixed below the seam is a blocker for build to file as an issue,
+   - the quality bar: apply the rule's recommended restructuring in its best form, not the smallest change that silences the finding — where the rule offers alternatives, pick the one that best improves the code, restructuring freely below the seam,
    - conventions: the toolchain and gate commands from `./AGENTS.md`, plus the id-tag rule (existing requirement-id tests must stay tagged, present, and green),
    - definition of done: every gate exits 0 and the whole id-suite is still covered,
    - a note that this phase has no requirement ids: verify's per-id completeness check is vacuous, and the phase commit omits the `Requirements:` trailer,
