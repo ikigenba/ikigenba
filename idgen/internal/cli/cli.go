@@ -19,6 +19,56 @@ const (
 	exitUsage   = 2
 )
 
+type commandMode uint8
+
+const (
+	modeMint commandMode = iota
+	modeDecode
+	modeVersion
+	modeHelp
+)
+
+type commandModes uint8
+
+func (modes commandModes) selected() commandMode {
+	for mode := modeHelp; mode > modeMint; mode-- {
+		if modes&(1<<mode) != 0 {
+			return mode
+		}
+	}
+	return modeMint
+}
+
+type commandModeFlag struct {
+	modes *commandModes
+	mode  commandMode
+}
+
+func (f commandModeFlag) String() string {
+	return strconv.FormatBool(*f.modes&(1<<f.mode) != 0)
+}
+
+func (f commandModeFlag) Set(value string) error {
+	enabled, err := strconv.ParseBool(value)
+	if err != nil {
+		return err
+	}
+	if enabled {
+		*f.modes |= 1 << f.mode
+	} else {
+		*f.modes &^= 1 << f.mode
+	}
+	return nil
+}
+
+func (commandModeFlag) IsBoolFlag() bool {
+	return true
+}
+
+func registerModeFlag(flags *flag.FlagSet, name string, modes *commandModes, mode commandMode) {
+	flags.Var(commandModeFlag{modes: modes, mode: mode}, name, "")
+}
+
 var validPrefix = regexp.MustCompile(`^[A-Za-z0-9]+$`)
 
 const usageText = `Usage: idgen [options] [ID ...]
@@ -50,29 +100,38 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, clock Clock) 
 	flags.IntVar(number, "number", 1, "")
 	prefix := flags.String("p", "R", "")
 	flags.StringVar(prefix, "prefix", "R", "")
-	decode := flags.Bool("decode", false, "")
-	help := flags.Bool("h", false, "")
-	flags.BoolVar(help, "help", false, "")
-	showVersion := flags.Bool("V", false, "")
-	flags.BoolVar(showVersion, "version", false, "")
+	var modes commandModes
+	registerModeFlag(flags, "decode", &modes, modeDecode)
+	registerModeFlag(flags, "h", &modes, modeHelp)
+	registerModeFlag(flags, "help", &modes, modeHelp)
+	registerModeFlag(flags, "V", &modes, modeVersion)
+	registerModeFlag(flags, "version", &modes, modeVersion)
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return exitSuccess
 		}
 		return exitUsage
 	}
-	if *help {
-		_, _ = io.WriteString(stdout, usageText)
+	switch modes.selected() {
+	case modeHelp:
+		writeInformationalOutput(stdout, usageText)
 		return exitSuccess
-	}
-	if *showVersion {
-		_, _ = io.WriteString(stdout, version+"\n")
+	case modeVersion:
+		writeInformationalOutput(stdout, version+"\n")
 		return exitSuccess
-	}
-	if *decode {
+	case modeDecode:
 		return runDecode(flags.Args(), stdin, stdout, stderr)
+	default:
+		return runMintMode(flags.Args(), *number, *prefix, stdout, stderr, flags.Usage, clock)
 	}
-	return runMintMode(flags.Args(), *number, *prefix, stdout, stderr, flags.Usage, clock)
+}
+
+func writeInformationalOutput(output io.Writer, text string) {
+	if _, err := io.WriteString(output, text); err != nil {
+		// Help and version output is best effort: their established exit status
+		// reports that the requested mode was handled, independent of stream health.
+		return
+	}
 }
 
 func runMintMode(

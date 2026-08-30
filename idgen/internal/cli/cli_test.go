@@ -217,13 +217,19 @@ func TestRunLongVersionPrintsVersion(t *testing.T) {
 
 // R-TR43-2C25: --version output is exactly the v0.1.0 product version line.
 func TestRunLongVersionOutputIsExact(t *testing.T) {
-	stdout, stderr, exitCode := runCLI([]string{"--version"}, "", &fakeClock{})
-
-	if stdout != "v0.1.0\n" {
-		t.Errorf("stdout = %q, want %q", stdout, "v0.1.0\n")
+	tests := [][]string{
+		{"--version"},
+		{"--version", "--help", "--help=false"},
 	}
-	if stderr != "" || exitCode != exitSuccess {
-		t.Errorf("Run() = (stderr %q, exit %d), want (empty, %d)", stderr, exitCode, exitSuccess)
+	for _, args := range tests {
+		stdout, stderr, exitCode := runCLI(args, "", &fakeClock{})
+
+		if stdout != "v0.1.0\n" {
+			t.Errorf("Run(%q) stdout = %q, want %q", args, stdout, "v0.1.0\n")
+		}
+		if stderr != "" || exitCode != exitSuccess {
+			t.Errorf("Run(%q) = (stderr %q, exit %d), want (empty, %d)", args, stderr, exitCode, exitSuccess)
+		}
 	}
 }
 
@@ -237,6 +243,25 @@ func TestRunVersionAliasesAreIdentical(t *testing.T) {
 	}
 	if shortOut != "v0.1.0\n" || shortErr != "" || shortExit != exitSuccess {
 		t.Errorf("shared version result = (%q, %q, %d), want (%q, empty, %d)", shortOut, shortErr, shortExit, "v0.1.0\n", exitSuccess)
+	}
+}
+
+func TestRunInformationalModesIgnoreOutputWriteErrors(t *testing.T) {
+	for _, args := range [][]string{{"--help"}, {"--version"}} {
+		stdout := &failingWriter{}
+		var stderr bytes.Buffer
+
+		exitCode := Run(args, strings.NewReader(""), stdout, &stderr, &fakeClock{})
+
+		if exitCode != exitSuccess {
+			t.Errorf("Run(%q) exit code = %d, want %d", args, exitCode, exitSuccess)
+		}
+		if stdout.writes != 1 {
+			t.Errorf("Run(%q) stdout writes = %d, want 1", args, stdout.writes)
+		}
+		if stderr.Len() != 0 {
+			t.Errorf("Run(%q) stderr = %q, want empty", args, stderr.String())
+		}
 	}
 }
 
@@ -607,7 +632,7 @@ func TestRunDecodeRoutesAwayFromMinting(t *testing.T) {
 	id := idgen.MintAt("Route", instant)
 	clock := &fakeClock{now: instant.Add(time.Hour)}
 
-	stdout, stderr, exitCode := runCLI([]string{"--decode", id}, "", clock)
+	stdout, stderr, exitCode := runCLI([]string{"--decode", "--version", "--version=false", id}, "", clock)
 
 	if exitCode != exitSuccess {
 		t.Errorf("Run() exit code = %d, want %d", exitCode, exitSuccess)

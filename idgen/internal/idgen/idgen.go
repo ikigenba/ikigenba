@@ -9,10 +9,11 @@ import (
 )
 
 const (
-	base       = int64(36)
-	bodyDigits = 8
-	modulus    = base * base * base * base * base * base * base * base
-	multiplier = int64(0x9E3779B1)
+	base           = int64(36)
+	base36Alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	bodyDigits     = 8
+	modulus        = base * base * base * base * base * base * base * base
+	multiplier     = int64(0x9E3779B1)
 	// multiplierInverse was computed with the extended Euclidean algorithm as
 	// multiplier^-1 modulo modulus. validateDerivedConstants enforces the result.
 	multiplierInverse = int64(2032036425553)
@@ -91,11 +92,7 @@ func encodeBase36(value int64) string {
 	encoded := [bodyDigits]byte{}
 	for i := len(encoded) - 1; i >= 0; i-- {
 		digit := value % base
-		if digit < 10 {
-			encoded[i] = byte('0' + digit)
-		} else {
-			encoded[i] = byte('A' + digit - 10)
-		}
+		encoded[i] = base36Alphabet[digit]
 		value /= base
 	}
 	return string(encoded[:])
@@ -104,18 +101,21 @@ func encodeBase36(value int64) string {
 func decodeBase36(body string) (int64, bool) {
 	var value int64
 	for i := 0; i < len(body); i++ {
-		var digit int64
-		switch {
-		case body[i] >= '0' && body[i] <= '9':
-			digit = int64(body[i] - '0')
-		case body[i] >= 'A' && body[i] <= 'Z':
-			digit = int64(body[i]-'A') + 10
-		default:
+		digit, ok := base36Digit(body[i])
+		if !ok {
 			return 0, false
 		}
 		value = value*base + digit
 	}
 	return value, true
+}
+
+func base36Digit(character byte) (int64, bool) {
+	digit := strings.IndexByte(base36Alphabet, character)
+	if digit < 0 {
+		return 0, false
+	}
+	return int64(digit), true
 }
 
 func validPrefix(prefix string) bool {
@@ -137,7 +137,7 @@ func validBodyPart(part string) bool {
 		return false
 	}
 	for i := 0; i < len(part); i++ {
-		if (part[i] < '0' || part[i] > '9') && (part[i] < 'A' || part[i] > 'Z') {
+		if _, ok := base36Digit(part[i]); !ok {
 			return false
 		}
 	}
