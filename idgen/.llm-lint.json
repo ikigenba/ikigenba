@@ -17,6 +17,7 @@
     "exported-mutable-package-var",
     "god-entrypoint",
     "helper-asserts-and-returns",
-    "implementation-derived-test-domain"
+    "implementation-derived-test-domain",
+    "ineffective-env-mutation-in-test"
   ]
 }

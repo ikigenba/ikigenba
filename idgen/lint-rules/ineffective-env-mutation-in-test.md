@@ -1,6 +1,6 @@
 ---
 description: tests mutating process environment that the code under test reads only through a once-initialized global, making the assertion vacuous
-severity: warning
+severity: error
 include: ["**/*_test.go", "**/*_test.py", "**/*.test.ts", "**/*.test.js", "**/*_test.rb"]
 ---
 Flag tests that set an environment variable in-process and then assert on behavior that the environment variable cannot actually influence, because the runtime resolved it once at first use and cached the result for the life of the process. The canonical case is setting `TZ` inside a Go test and asserting on timezone-dependent output: `time.Local` is initialized lazily behind a `sync.Once`, so any earlier use of local time anywhere in the test binary — including in another test file — freezes the zone, and the mutation is a no-op. The test then passes whether or not the code respects the setting, and specifically still passes under the regression it was written to catch, because the host's ambient value usually matches the expected one. Equivalents exist in other runtimes: locale and encoding globals, cached process-wide config singletons, and connection pools built at import time.
