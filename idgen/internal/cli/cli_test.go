@@ -124,6 +124,162 @@ func decodedLine(instant time.Time) string {
 	return instant.UTC().Truncate(time.Millisecond).Format("2006-01-02T15:04:05.000Z") + "\n"
 }
 
+const expectedUsage = `Usage: idgen [options] [ID ...]
+
+Mint an identifier using the current time by default.
+
+Options:
+  -n, --number N       mint N identifiers (default 1)
+  -p, --prefix PREFIX  use PREFIX (default "R")
+      --decode         decode ID arguments, or whitespace-delimited IDs from stdin
+  -h, --help           print this help
+  -V, --version        print version
+`
+
+// R-T2Q3-EX89: both explicit help aliases print the usage block once and do no other work.
+func TestRunHelpAliasesPrintUsageExactlyOnce(t *testing.T) {
+	for _, alias := range []string{"--help", "-h"} {
+		t.Run(alias, func(t *testing.T) {
+			clock := &fakeClock{}
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			exitCode := Run([]string{alias}, forbiddenReader{t: t}, &stdout, &stderr, clock)
+
+			if exitCode != exitSuccess {
+				t.Errorf("Run(%q) exit code = %d, want %d", alias, exitCode, exitSuccess)
+			}
+			if got := stdout.String(); got != expectedUsage {
+				t.Errorf("stdout = %q, want exact usage %q", got, expectedUsage)
+			}
+			if got := strings.Count(stdout.String(), expectedUsage); got != 1 {
+				t.Errorf("usage block count = %d, want 1", got)
+			}
+			if stderr.Len() != 0 {
+				t.Errorf("stderr = %q, want empty", stderr.String())
+			}
+			if clock.nowCalls != 0 || clock.sleepCalls != 0 {
+				t.Errorf("clock calls = Now %d, Sleep %d; want zero", clock.nowCalls, clock.sleepCalls)
+			}
+		})
+	}
+}
+
+// R-TOOA-ASKR: help output is byte-for-byte the specified usage block.
+func TestRunUsageTextIsExact(t *testing.T) {
+	stdout, stderr, exitCode := runCLI([]string{"--help"}, "", &fakeClock{})
+
+	if stdout != expectedUsage {
+		t.Errorf("stdout = %q, want exact independently declared usage block %q", stdout, expectedUsage)
+	}
+	if stderr != "" || exitCode != exitSuccess {
+		t.Errorf("Run() = (stderr %q, exit %d), want (empty, %d)", stderr, exitCode, exitSuccess)
+	}
+}
+
+// R-TPW6-OKBG: the returned usage block names every supported option spelling.
+func TestRunUsageTextMentionsEveryOption(t *testing.T) {
+	stdout, stderr, exitCode := runCLI([]string{"-h"}, "", &fakeClock{})
+	if stderr != "" || exitCode != exitSuccess {
+		t.Fatalf("Run() = (stderr %q, exit %d), want (empty, %d)", stderr, exitCode, exitSuccess)
+	}
+
+	for _, option := range []string{"-n", "--number", "-p", "--prefix", "--decode", "-h", "--help", "-V", "--version"} {
+		if !strings.Contains(stdout, option) {
+			t.Errorf("usage output does not mention %q: %q", option, stdout)
+		}
+	}
+}
+
+// R-T3XZ-SOYY: --version prints the source-carried version and exits successfully.
+func TestRunLongVersionPrintsVersion(t *testing.T) {
+	clock := &fakeClock{}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Run([]string{"--version"}, forbiddenReader{t: t}, &stdout, &stderr, clock)
+
+	if exitCode != exitSuccess || stdout.String() != version+"\n" || stderr.Len() != 0 {
+		t.Errorf("Run() = (stdout %q, stderr %q, exit %d), want (%q, empty, %d)", stdout.String(), stderr.String(), exitCode, version+"\n", exitSuccess)
+	}
+	if clock.nowCalls != 0 || clock.sleepCalls != 0 {
+		t.Errorf("clock calls = Now %d, Sleep %d; want zero", clock.nowCalls, clock.sleepCalls)
+	}
+}
+
+// R-TR43-2C25: --version output is exactly the v0.1.0 product version line.
+func TestRunLongVersionOutputIsExact(t *testing.T) {
+	stdout, stderr, exitCode := runCLI([]string{"--version"}, "", &fakeClock{})
+
+	if stdout != "v0.1.0\n" {
+		t.Errorf("stdout = %q, want %q", stdout, "v0.1.0\n")
+	}
+	if stderr != "" || exitCode != exitSuccess {
+		t.Errorf("Run() = (stderr %q, exit %d), want (empty, %d)", stderr, exitCode, exitSuccess)
+	}
+}
+
+// R-TSBZ-G3SU: -V and --version have identical exact output, errors, and exit codes.
+func TestRunVersionAliasesAreIdentical(t *testing.T) {
+	longOut, longErr, longExit := runCLI([]string{"--version"}, "", &fakeClock{})
+	shortOut, shortErr, shortExit := runCLI([]string{"-V"}, "", &fakeClock{})
+
+	if shortOut != longOut || shortErr != longErr || shortExit != longExit {
+		t.Errorf("-V = (%q, %q, %d), want --version result (%q, %q, %d)", shortOut, shortErr, shortExit, longOut, longErr, longExit)
+	}
+	if shortOut != "v0.1.0\n" || shortErr != "" || shortExit != exitSuccess {
+		t.Errorf("shared version result = (%q, %q, %d), want (%q, empty, %d)", shortOut, shortErr, shortExit, "v0.1.0\n", exitSuccess)
+	}
+}
+
+// R-T55W-6GPN: an unknown option returns usage failure with the complete usage block.
+func TestRunUnknownOptionPrintsUsageToStderr(t *testing.T) {
+	clock := &fakeClock{}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Run([]string{"--not-an-option"}, forbiddenReader{t: t}, &stdout, &stderr, clock)
+
+	if exitCode != exitUsage {
+		t.Errorf("Run() exit code = %d, want %d", exitCode, exitUsage)
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout = %q, want empty", stdout.String())
+	}
+	if stderr.Len() == 0 || !strings.Contains(stderr.String(), expectedUsage) {
+		t.Errorf("stderr = %q, want non-empty diagnostic containing exact usage %q", stderr.String(), expectedUsage)
+	}
+	if clock.nowCalls != 0 || clock.sleepCalls != 0 {
+		t.Errorf("clock calls = Now %d, Sleep %d; want zero", clock.nowCalls, clock.sleepCalls)
+	}
+}
+
+// R-T6DS-K8GC: mint mode rejects and names its first unexpected positional argument.
+func TestRunMintRejectsPositionalArgument(t *testing.T) {
+	const unexpected = "definitely-not-an-id"
+	clock := &fakeClock{}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Run([]string{unexpected}, forbiddenReader{t: t}, &stdout, &stderr, clock)
+
+	if exitCode != exitUsage {
+		t.Errorf("Run() exit code = %d, want %d", exitCode, exitUsage)
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout = %q, want empty", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), unexpected) {
+		t.Errorf("stderr = %q, want unexpected argument %q named", stderr.String(), unexpected)
+	}
+	if !strings.Contains(stderr.String(), expectedUsage) {
+		t.Errorf("stderr = %q, want exact usage block %q", stderr.String(), expectedUsage)
+	}
+	if clock.nowCalls != 0 || clock.sleepCalls != 0 {
+		t.Errorf("clock calls = Now %d, Sleep %d; want zero", clock.nowCalls, clock.sleepCalls)
+	}
+}
+
 // R-SGRW-J1VR: Run returns its exit code directly to the caller.
 func TestRunReturnsExitCodeInProcess(t *testing.T) {
 	clock := &fakeClock{now: time.Date(2026, time.August, 29, 12, 0, 0, 0, time.UTC)}
@@ -370,6 +526,9 @@ func TestRunRejectsInvalidPrefixesBeforeMinting(t *testing.T) {
 			if !strings.Contains(stderr.String(), "invalid prefix") {
 				t.Errorf("stderr = %q, want invalid prefix diagnostic", stderr.String())
 			}
+			if !strings.Contains(stderr.String(), expectedUsage) {
+				t.Errorf("stderr = %q, want exact usage block %q", stderr.String(), expectedUsage)
+			}
 			if stdout.Len() != 0 {
 				t.Errorf("stdout = %q, want empty", stdout.String())
 			}
@@ -402,6 +561,9 @@ func TestRunRejectsNonPositiveNumbersBeforeMinting(t *testing.T) {
 			}
 			if !strings.Contains(stderr.String(), "--number must be > 0") {
 				t.Errorf("stderr = %q, want non-positive number diagnostic", stderr.String())
+			}
+			if !strings.Contains(stderr.String(), expectedUsage) {
+				t.Errorf("stderr = %q, want exact usage block %q", stderr.String(), expectedUsage)
 			}
 			if stdout.Len() != 0 {
 				t.Errorf("stdout = %q, want empty", stdout.String())

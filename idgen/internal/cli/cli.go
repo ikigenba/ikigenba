@@ -6,6 +6,7 @@ import (
 	"flag"
 	"io"
 	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/ikigenba/ikigenba/idgen/internal/idgen"
@@ -19,6 +20,18 @@ const (
 
 var validPrefix = regexp.MustCompile(`^[A-Za-z0-9]+$`)
 
+const usageText = `Usage: idgen [options] [ID ...]
+
+Mint an identifier using the current time by default.
+
+Options:
+  -n, --number N       mint N identifiers (default 1)
+  -p, --prefix PREFIX  use PREFIX (default "R")
+      --decode         decode ID arguments, or whitespace-delimited IDs from stdin
+  -h, --help           print this help
+  -V, --version        print version
+`
+
 // Clock supplies time to the CLI.
 type Clock interface {
 	Now() time.Time
@@ -29,23 +42,46 @@ type Clock interface {
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, clock Clock) int {
 	flags := flag.NewFlagSet("idgen", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	flags.Usage = func() {
+		_, _ = io.WriteString(flags.Output(), usageText)
+	}
 	number := flags.Int("n", 1, "number of identifiers to mint")
 	flags.IntVar(number, "number", 1, "number of identifiers to mint")
 	prefix := flags.String("p", "R", "identifier prefix")
 	flags.StringVar(prefix, "prefix", "R", "identifier prefix")
 	decode := flags.Bool("decode", false, "decode identifiers")
+	help := flags.Bool("h", false, "print help")
+	flags.BoolVar(help, "help", false, "print help")
+	showVersion := flags.Bool("V", false, "print version")
+	flags.BoolVar(showVersion, "version", false, "print version")
 	if err := flags.Parse(args); err != nil {
+		flags.Usage()
 		return exitUsage
+	}
+	if *help {
+		_, _ = io.WriteString(stdout, usageText)
+		return exitSuccess
+	}
+	if *showVersion {
+		_, _ = io.WriteString(stdout, version+"\n")
+		return exitSuccess
 	}
 	if *decode {
 		return runDecode(flags.Args(), stdin, stdout, stderr)
 	}
+	if flags.NArg() > 0 {
+		_, _ = io.WriteString(stderr, "idgen: unexpected argument "+strconv.Quote(flags.Arg(0))+"\n")
+		flags.Usage()
+		return exitUsage
+	}
 	if !validPrefix.MatchString(*prefix) {
 		_, _ = io.WriteString(stderr, "idgen: invalid prefix\n")
+		flags.Usage()
 		return exitUsage
 	}
 	if *number <= 0 {
 		_, _ = io.WriteString(stderr, "idgen: --number must be > 0\n")
+		flags.Usage()
 		return exitUsage
 	}
 
