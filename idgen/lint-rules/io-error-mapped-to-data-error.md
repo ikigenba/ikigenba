@@ -1,6 +1,6 @@
 ---
 description: an infrastructure failure and a bad-input failure collapse into one status and one undifferentiated message, hiding that the work was truncated
-severity: warning
+severity: error
 ---
 Flag handlers that give an I/O or transport failure — a read that died mid-stream, a broken connection, a scanner error, a timeout — the same outcome and the same wording as a malformed-input failure, so neither the user nor a calling script can tell them apart. The two mean opposite things: bad input means the tool did its whole job and rejected some items, while a read error means an unknown remainder of the input was never seen at all, and any partial output already emitted is silently incomplete. Watch for the shape where both paths set one shared `failed` flag or return the same exit code, and where the I/O branch prints only the bare error with no statement that processing stopped early. Related: a `bufio.Scanner` whose error is reported verbatim surfaces as `bufio.Scanner: token too long` for an over-long line, naming neither the input nor a remedy. Distinguish the two outcomes, and say explicitly that the stream ended early.
 

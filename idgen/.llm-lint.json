@@ -18,6 +18,7 @@
     "god-entrypoint",
     "helper-asserts-and-returns",
     "implementation-derived-test-domain",
-    "ineffective-env-mutation-in-test"
+    "ineffective-env-mutation-in-test",
+    "io-error-mapped-to-data-error"
   ]
 }
