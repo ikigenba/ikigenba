@@ -1,6 +1,6 @@
 ---
 description: a constant computed from other constants or an external derivation, recorded as a literal whose origin only a comment (or nothing) explains
-severity: warning
+severity: error
 ---
 Flag a literal constant that is not a free choice but the *result* of something — an exponentiation or product of sibling constants, a conversion between units already named nearby, a value read off a specification or table, or the output of an offline computation — where the code stores only the answer. The tell is a comment doing the work the code should do (`modulus = 56800235584 // 62^6`), or a value that is impossible to check by reading (`inverse = 25576638575`), or two constants that must move together with nothing forcing them to. The comment is not a safeguard: change the base or the digit count and the derived literal keeps compiling, keeps passing the tests that use it consistently, and starts producing wrong results. Prefer expressing the derivation in the language — a computed constant expression, an initializer, or a compile-time/startup assertion tying the literal to its inputs. Where the value genuinely cannot be computed in-language, require provenance a reader can act on: the formula, the source document and section, or the script that produced it.
 
