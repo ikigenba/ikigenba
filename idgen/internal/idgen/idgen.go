@@ -61,7 +61,7 @@ func MintAt(prefix string, t time.Time) string {
 // TimeOf recovers the UTC, millisecond-precision instant encoded in id.
 func TimeOf(id string) (time.Time, error) {
 	parts := strings.Split(id, "-")
-	if len(parts) != 3 || !validPrefix(parts[0]) || !validBodyPart(parts[1]) || !validBodyPart(parts[2]) {
+	if len(parts) != 3 || !ValidPrefix(parts[0]) || !validBodyPart(parts[1]) || !validBodyPart(parts[2]) {
 		return time.Time{}, fmt.Errorf("%w: non-canonical format", ErrInvalidID)
 	}
 
@@ -118,7 +118,9 @@ func base36Digit(character byte) (int64, bool) {
 	return int64(digit), true
 }
 
-func validPrefix(prefix string) bool {
+// ValidPrefix reports whether prefix is a well-formed id prefix: a non-empty
+// run of ASCII letters and digits.
+func ValidPrefix(prefix string) bool {
 	if prefix == "" {
 		return false
 	}

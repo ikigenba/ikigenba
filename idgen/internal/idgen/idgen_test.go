@@ -6,6 +6,35 @@ import (
 	"time"
 )
 
+func TestValidPrefix(t *testing.T) {
+	// R-5ZQU-BTSZ
+	tests := []struct {
+		name   string
+		prefix string
+		want   bool
+	}{
+		{name: "uppercase letter", prefix: "R", want: true},
+		{name: "lowercase letters", prefix: "requirement", want: true},
+		{name: "digits", prefix: "0123456789", want: true},
+		{name: "mixed alphanumeric", prefix: "AbC123z", want: true},
+		{name: "empty", prefix: "", want: false},
+		{name: "space", prefix: "A B", want: false},
+		{name: "tab", prefix: "A\tB", want: false},
+		{name: "separator", prefix: "A-B", want: false},
+		{name: "punctuation", prefix: "A_B", want: false},
+		{name: "non-ASCII letter", prefix: "Spéc", want: false},
+		{name: "non-ASCII digit", prefix: "A１", want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := ValidPrefix(test.prefix); got != test.want {
+				t.Fatalf("ValidPrefix(%q) = %t, want %t", test.prefix, got, test.want)
+			}
+		})
+	}
+}
+
 func TestMintAtEpochGoldenVector(t *testing.T) {
 	// R-SKFL-OD3U
 	want := "R-" + "0007-J3LA"
