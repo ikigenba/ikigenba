@@ -15,6 +15,8 @@ See `../SKILL.md` for the layout, id rules, and the canonical tag/grep.
 
 The plan only orders the current gap. Executing the steps and verifying adequacy belong to the loop.
 
+5. **Commit the seal.** Stage and commit everything the sealed state depends on — the design documents, `AGENTS.md`, and `specs/loops/` (`specs/build/` and `specs/issues/` are gitignored working state), plus any other uncommitted project files the loop will build against. Use the project's commit conventions (no `Requirements:` trailer — that belongs to phase commits). This pins the exact contract the loop starts from, so every later phase commit diffs against a known seal point.
+
 Then run the loop:
 
 ```
