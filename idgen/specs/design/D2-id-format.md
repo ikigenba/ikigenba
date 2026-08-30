@@ -83,10 +83,10 @@ against the shipping binary):
 
 - R-SJ7P-ALD5: `TimeOf(MintAt(p, t))` MUST return `t` truncated to the millisecond, verified by an ordinary deterministic test (not a Go fuzz target) sweeping a large (hundreds+) PRNG-seeded sample of `ms ∈ [0, 36⁸)` across several valid prefixes.
 - R-HF29-98B6: Package `idgen` MUST expose the epoch as the exported function `Epoch() time.Time` returning 2026-01-01T00:00:00 UTC, and MUST NOT export it as an assignable package-level variable.
-- R-SKFL-OD3U: `MintAt("R", Epoch())` MUST return the id with prefix `R` and the independently derived golden body `0007-J3LA`, pinning the affine offset constant.
+- R-WHEV-1AN5: `MintAt("R", Epoch())` MUST return the id with prefix `R` and the independently derived golden body `0007-J3LA`, pinning the affine offset constant.
 - R-SLNI-24UJ: `MintAt("R", ...)` of the literal absolute instant 2026-03-15T12:00:00.000Z (written as a civil time, not as an offset from the `Epoch` symbol) MUST return the id with prefix `R` and the independently derived golden body `OBCA-0VLA`, pinning the affine multiplier, the 4-4 split, and the 2026 epoch together.
 - R-SMVE-FWL8: `MintAt` MUST zero-pad the body to exactly 8 characters for small millisecond values.
-- R-SO3A-TOBX: `MintAt` MUST clamp instants before `Epoch()` to `Epoch()` (they encode as ms 0).
+- R-WIMR-F2DU: `MintAt` MUST clamp instants before `Epoch()` to `Epoch()` (they encode as ms 0).
 - R-SPB7-7G2M: `TimeOf` MUST decode ids with differing prefixes (e.g. `R`, `S`, `SPEC`) but the same body to the same instant.
 - R-SQJ3-L7TB: `TimeOf` MUST return an error wrapping `ErrInvalidID` for every input that does not match the decode grammar `^[A-Za-z0-9]+-([0-9A-Z]{4})-([0-9A-Z]{4})$`.
 - R-SRQZ-YZK0: `TimeOf` MUST never panic, verified by an ordinary deterministic test (not a Go fuzz target) sweeping a large PRNG-seeded sample of arbitrary and adversarial strings, each of which yields either an `ErrInvalidID`-wrapping error or a valid time.
