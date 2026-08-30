@@ -11,6 +11,7 @@
     "derived-constant-without-provenance",
     "discarded-output-write-error",
     "double-reported-error-diagnostic",
-    "duplicated-validation-across-layers"
+    "duplicated-validation-across-layers",
+    "error-context-restated-by-caller"
   ]
 }

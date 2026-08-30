@@ -1,6 +1,6 @@
 ---
 description: caller-side message text repeats a phrase the wrapped error already carries, producing doubled context like "invalid id x: invalid id: ..."
-severity: warning
+severity: error
 ---
 Flag places where a caller builds a message around an error whose own text already contains the same words. Each layer is supposed to add the context only it knows — the file name, the token, the request id — and let the inner error supply the rest; when the caller also restates the inner error's category, the rendered message stutters. Read the sentinel or the constructor that produced the error and compare it to the literal the caller prepends: if a sentinel is `errors.New("invalid id")` and the caller writes `"prog: invalid id " + token + ": " + err.Error()`, the user sees `prog: invalid id x: invalid id: non-canonical format`. The same smell appears in wrapping: `fmt.Errorf("failed to open config: %w", err)` where `err` is already `open /etc/app.conf: no such file or directory` yields a doubled "open". Prefer the caller contributing the identifier alone and letting `%w`/`%v` render the reason.
 
