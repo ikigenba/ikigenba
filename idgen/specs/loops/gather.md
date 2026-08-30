@@ -7,7 +7,16 @@ You are the **gather** stage of the build loop, run by ralph in a fresh context 
 1. **Issue gate.** If `specs/issues/` contains any `*.md`, stop the run: report `DONE` with a message naming the open issue files. Existence of any issue is a hard halt.
 2. Read `specs/build/PLAN.md` and `specs/build/brief.md` (if it exists).
 3. **Advance.** If the brief's status is `complete`, mark the current phase done in `PLAN.md` (check it off or remove it).
-4. **Finish.** If no phases remain in `PLAN.md`, report `DONE` with a completion message.
+4. **Finish — but only with green gates.** If no phases remain in `PLAN.md`, run the project gates (read `./AGENTS.md` beside `specs/` for the ordered gate commands). If every gate exits 0, report `DONE` with a completion message. If a gate fails, author a **gate-fix brief** instead of stopping: overwrite `specs/build/brief.md` with
+   - the failing gate command and its exact failing output, trimmed to the findings,
+   - the scope rule: fix the findings **below the contract seam** — no changes to names, types, signatures, interfaces, or observable behavior; a finding that cannot be fixed below the seam is a blocker for build to file as an issue,
+   - conventions: the toolchain and gate commands from `./AGENTS.md`, plus the id-tag rule (existing requirement-id tests must stay tagged, present, and green),
+   - definition of done: every gate exits 0 and the whole id-suite is still covered,
+   - a note that this phase has no requirement ids: verify's per-id completeness check is vacuous, and the phase commit omits the `Requirements:` trailer,
+   - a `## Feedback` region — leave any existing verify feedback in place for build to consume,
+   - a status line: `status: building`.
+
+   Report `NEXT`.
 5. **Author the brief.** Otherwise take the first unfinished phase and overwrite `specs/build/brief.md` with everything build needs for that phase alone:
    - the exact design prose for the elements in scope,
    - the phase's requirement ids with their exact text (from `specs/design/`),

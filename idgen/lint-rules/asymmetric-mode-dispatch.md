@@ -1,6 +1,6 @@
 ---
 description: a dispatcher delegating one branch to a named function while inlining its sibling branch
-severity: warning
+severity: error
 ---
 Flag a function that chooses among peer modes or operations and handles one of them by delegating to a named helper while writing a sibling branch's body inline. Equally important alternatives then read at different altitudes: one is a single word, the other is a dozen lines of loop and condition, and nothing in the code says they are the same kind of thing. Object because the asymmetry hides the structure a reader needs, the inline branch accretes further logic precisely because it is already there, and changes to the two modes produce diffs that cannot be compared. Recommend extracting the inline branch to a sibling of the existing helper so the dispatcher reads as dispatch.
 
