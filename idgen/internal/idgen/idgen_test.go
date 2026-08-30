@@ -2,6 +2,9 @@ package idgen
 
 import (
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"strings"
 	"testing"
 	"time"
@@ -96,10 +99,54 @@ func TestTimeOfPrefixAcceptanceAgreesWithValidPrefix(t *testing.T) {
 	}
 }
 
+func TestEpoch(t *testing.T) {
+	// R-HF29-98B6
+	got := Epoch()
+	want := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	if got != want {
+		t.Fatalf("Epoch() = %s, want %s", got, want)
+	}
+	if got.Location() != time.UTC {
+		t.Fatalf("Epoch() location = %v, want time.UTC", got.Location())
+	}
+
+	file, err := parser.ParseFile(token.NewFileSet(), "idgen.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse idgen.go: %v", err)
+	}
+	foundFunction := false
+	for _, declaration := range file.Decls {
+		switch declaration := declaration.(type) {
+		case *ast.FuncDecl:
+			if declaration.Recv == nil && declaration.Name.Name == "Epoch" {
+				foundFunction = true
+			}
+		case *ast.GenDecl:
+			if declaration.Tok != token.VAR {
+				continue
+			}
+			for _, spec := range declaration.Specs {
+				valueSpec, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for _, name := range valueSpec.Names {
+					if name.Name == "Epoch" {
+						t.Fatal("Epoch is declared as an assignable package variable")
+					}
+				}
+			}
+		}
+	}
+	if !foundFunction {
+		t.Fatal("Epoch is not declared as a package function")
+	}
+}
+
 func TestMintAtEpochGoldenVector(t *testing.T) {
 	// R-SKFL-OD3U
 	want := "R-" + "0007-J3LA"
-	if got := MintAt("R", Epoch); got != want {
+	if got := MintAt("R", Epoch()); got != want {
 		t.Fatalf("MintAt(R, Epoch) = %q, want %q", got, want)
 	}
 }
@@ -115,7 +162,7 @@ func TestMintAtAbsoluteInstantGoldenVector(t *testing.T) {
 
 func TestMintAtZeroPadsBody(t *testing.T) {
 	// R-SMVE-FWL8
-	instant := Epoch.Add(1143449080754 * time.Millisecond)
+	instant := Epoch().Add(1143449080754 * time.Millisecond)
 	want := "P-" + "0000-0000"
 	if got := MintAt("P", instant); got != want {
 		t.Fatalf("MintAt(P, instant) = %q, want %q", got, want)
@@ -124,7 +171,7 @@ func TestMintAtZeroPadsBody(t *testing.T) {
 
 func TestMintAtClampsBeforeEpoch(t *testing.T) {
 	// R-SO3A-TOBX
-	beforeEpoch := Epoch.Add(-time.Nanosecond)
+	beforeEpoch := Epoch().Add(-time.Nanosecond)
 	if got, want := MintAt("R", beforeEpoch), "R-"+"0007-J3LA"; got != want {
 		t.Fatalf("MintAt before Epoch = %q, want epoch encoding %q", got, want)
 	}
@@ -144,7 +191,7 @@ func TestMintAtTimeOfRoundTrip(t *testing.T) {
 	prefixes := []string{"R", "abc123", "Z9", "Requirement"}
 	for i := 0; i < 1000; i++ {
 		ms := nextOffset()
-		instant := Epoch.Add(time.Duration(ms) * time.Millisecond)
+		instant := Epoch().Add(time.Duration(ms) * time.Millisecond)
 		for _, prefix := range prefixes {
 			id := MintAt(prefix, instant)
 			got, err := TimeOf(id)

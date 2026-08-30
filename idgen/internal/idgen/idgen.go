@@ -20,8 +20,12 @@ const (
 	offset            = int64(0xC0FFEE)
 )
 
-// Epoch is the zero point for encoded timestamps.
-var Epoch = time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+// Epoch returns the zero point for encoded timestamps: 2026-01-01 00:00:00 UTC.
+// It is an accessor so importers cannot reassign the epoch and change the id
+// encoding for the process.
+func Epoch() time.Time {
+	return time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+}
 
 // ErrInvalidID identifies malformed identifiers passed to TimeOf.
 var ErrInvalidID = errors.New("invalid id")
@@ -47,11 +51,12 @@ func validateDerivedConstants() {
 // MintAt returns an identifier for t using prefix. Instants before Epoch are
 // represented as Epoch.
 func MintAt(prefix string, t time.Time) string {
-	if t.Before(Epoch) {
-		t = Epoch
+	epoch := Epoch()
+	if t.Before(epoch) {
+		t = epoch
 	}
 
-	ms := int64(t.Sub(Epoch) / time.Millisecond)
+	ms := int64(t.Sub(epoch) / time.Millisecond)
 	n := (multiplyMod(ms, multiplier) + offset) % modulus
 	body := encodeBase36(n)
 
@@ -72,7 +77,7 @@ func TimeOf(id string) (time.Time, error) {
 
 	difference := (n + modulus - offset) % modulus
 	ms := multiplyMod(difference, multiplierInverse)
-	return Epoch.Add(time.Duration(ms) * time.Millisecond).UTC(), nil
+	return Epoch().Add(time.Duration(ms) * time.Millisecond).UTC(), nil
 }
 
 func multiplyMod(value, factor int64) int64 {
