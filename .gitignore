@@ -1,0 +1,5 @@
+# Loop working state — disposable and regenerable by $seal-spec from the gap.
+specs/build/
+
+# Issues — handling still to be decided; kept out of git for now.
+specs/issues/
