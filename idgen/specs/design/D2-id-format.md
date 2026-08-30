@@ -1,7 +1,10 @@
 # D2-id-format
 
 Package `internal/idgen` owns the id format grammar in both directions and is a
-pure function of its inputs — no I/O, no clock. These constants are **frozen**:
+pure function of its inputs — no I/O, no clock. Nothing an importer can reach
+may change how ids encode, so the frozen values reach callers through accessors
+rather than exported variables; `ErrInvalidID` stays a var because `errors.Is`
+compares identity. These constants are **frozen**:
 ids minted by earlier idgen builds are already embedded throughout this
 repository's specs and tests, and every one of them must remain decodable
 forever.
@@ -25,9 +28,11 @@ Public API:
 ```go
 package idgen
 
-// Epoch is the zero point: 2026-01-01 00:00:00 UTC, constructed with
-// time.Date(..., time.UTC).
-var Epoch = time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+// Epoch returns the zero point: 2026-01-01 00:00:00 UTC, constructed with
+// time.Date(..., time.UTC). It is an accessor, not an exported variable: the
+// epoch is frozen, and a package var would let any importer reassign it and
+// silently shift every id this process mints or decodes.
+func Epoch() time.Time
 
 // ErrInvalidID wraps the error TimeOf returns for a malformed id.
 var ErrInvalidID = errors.New("invalid id")
@@ -39,7 +44,7 @@ var ErrInvalidID = errors.New("invalid id")
 func ValidPrefix(prefix string) bool
 
 // MintAt returns "<prefix>-XXXX-XXXX" for the given instant. Instants before
-// Epoch are clamped to Epoch. The caller guarantees prefix satisfies
+// Epoch() are clamped to Epoch(). The caller guarantees prefix satisfies
 // ValidPrefix (cli validates at the flag boundary; D5); MintAt does not
 // re-validate.
 func MintAt(prefix string, t time.Time) string
@@ -77,10 +82,11 @@ against the shipping binary):
 ## REQUIREMENTS
 
 - R-SJ7P-ALD5: `TimeOf(MintAt(p, t))` MUST return `t` truncated to the millisecond, verified by an ordinary deterministic test (not a Go fuzz target) sweeping a large (hundreds+) PRNG-seeded sample of `ms ∈ [0, 36⁸)` across several valid prefixes.
-- R-SKFL-OD3U: `MintAt("R", Epoch)` MUST return the id with prefix `R` and the independently derived golden body `0007-J3LA`, pinning the affine offset constant.
+- R-HF29-98B6: Package `idgen` MUST expose the epoch as the exported function `Epoch() time.Time` returning 2026-01-01T00:00:00 UTC, and MUST NOT export it as an assignable package-level variable.
+- R-SKFL-OD3U: `MintAt("R", Epoch())` MUST return the id with prefix `R` and the independently derived golden body `0007-J3LA`, pinning the affine offset constant.
 - R-SLNI-24UJ: `MintAt("R", ...)` of the literal absolute instant 2026-03-15T12:00:00.000Z (written as a civil time, not as an offset from the `Epoch` symbol) MUST return the id with prefix `R` and the independently derived golden body `OBCA-0VLA`, pinning the affine multiplier, the 4-4 split, and the 2026 epoch together.
 - R-SMVE-FWL8: `MintAt` MUST zero-pad the body to exactly 8 characters for small millisecond values.
-- R-SO3A-TOBX: `MintAt` MUST clamp instants before `Epoch` to `Epoch` (they encode as ms 0).
+- R-SO3A-TOBX: `MintAt` MUST clamp instants before `Epoch()` to `Epoch()` (they encode as ms 0).
 - R-SPB7-7G2M: `TimeOf` MUST decode ids with differing prefixes (e.g. `R`, `S`, `SPEC`) but the same body to the same instant.
 - R-SQJ3-L7TB: `TimeOf` MUST return an error wrapping `ErrInvalidID` for every input that does not match the decode grammar `^[A-Za-z0-9]+-([0-9A-Z]{4})-([0-9A-Z]{4})$`.
 - R-SRQZ-YZK0: `TimeOf` MUST never panic, verified by an ordinary deterministic test (not a Go fuzz target) sweeping a large PRNG-seeded sample of arbitrary and adversarial strings, each of which yields either an `ErrInvalidID`-wrapping error or a valid time.
