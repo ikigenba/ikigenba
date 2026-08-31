@@ -29,6 +29,7 @@
     "same-name-different-kind",
     "self-consistency-only-assertion",
     "test-only-parameterization",
-    "unbounded-retry-on-injected-dependency"
+    "unbounded-retry-on-injected-dependency",
+    "undocumented-silent-wraparound-at-range-ceiling"
   ]
 }

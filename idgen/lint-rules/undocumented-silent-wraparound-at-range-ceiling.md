@@ -1,6 +1,6 @@
 ---
 description: a conversion silently wraps, truncates, or saturates outside its representable range while the doc comment describes only the other boundary
-severity: warning
+severity: error
 ---
 Flag conversions and encodings that quietly produce a wrong-but-plausible value once the input leaves the representable range, when the surrounding documentation describes only one end of that range or none of it. The pattern to look for is an exported function whose comment carefully states what happens below a floor ("values before the epoch are represented as the epoch") while the ceiling is enforced only by an implicit `% modulus`, a narrowing cast, or a library call that saturates. Duration and timestamp arithmetic is the common host: `b.Sub(a)` saturates at the maximum representable duration rather than reporting overflow, so two inputs centuries apart can produce the identical result. What makes a reviewer object is not the clamping itself — which may be a deliberate design choice — but that the output is indistinguishable from a correct one: a value that round-trips to a *different* input is a lie, where an honest clamp is merely lossy. Either document the representable range on the exported symbol or return an error outside it.
 
