@@ -35,6 +35,7 @@
     "unreachable-defensive-guard",
     "unreachable-property-domain",
     "unquoted-untrusted-token-in-diagnostic",
-    "untyped-code-enum"
+    "untyped-code-enum",
+    "unused-fake-or-table-field"
   ]
 }

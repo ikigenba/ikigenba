@@ -1,6 +1,6 @@
 ---
 description: fields on test doubles or table cases that are populated but never asserted on or consumed
-severity: warning
+severity: error
 include: ["**/*_test.go", "**/*_test.py", "**/*.test.ts", "**/*.test.js", "**/*_test.rb"]
 ---
 Flag struct fields on test doubles and table-test case structs that are written but never read. A fake that records a call log nobody inspects, a case struct with a `wantErr` or `skip` column no branch consults, a recorded-arguments slice that only ever grows — each one advertises a guarantee the suite does not provide. A reader scanning the fake sees `reported []time.Time` and reasonably assumes some test checks what the collaborator was asked; none does. Compilers and standard analyzers do not catch this, because the field is assigned, and assignment is a use.
