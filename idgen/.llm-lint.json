@@ -33,6 +33,7 @@
     "undocumented-silent-wraparound-at-range-ceiling",
     "unexplained-modular-arithmetic",
     "unreachable-defensive-guard",
+    "unreachable-property-domain",
     "unquoted-untrusted-token-in-diagnostic"
   ]
 }

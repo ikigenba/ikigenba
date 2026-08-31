@@ -1,6 +1,6 @@
 ---
 description: property or sweep tests whose generator overwhelmingly produces inputs rejected at the first guard, leaving the claimed domain unexercised
-severity: warning
+severity: error
 include: ["**/*_test.go", "**/*_test.py", "**/*.test.ts", "**/*.test.js", "**/*_test.rb"]
 ---
 Flag randomized sweeps and property tests whose generator almost never produces an input that survives the parser's or validator's first guard, so the thousands of iterations all exercise one early rejection path and the interesting code is never reached. Uniformly random byte strings fed to a structured-format parser are the archetype: the probability of accidentally producing a well-formed token is effectively zero, so a sweep advertised as covering the whole input space actually covers "input is not shaped like a token" ten thousand times. The same defect appears with random integers aimed at a narrow valid range, random maps aimed at a schema, and random strings aimed at anything with a required prefix, length, or separator.
