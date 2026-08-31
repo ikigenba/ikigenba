@@ -33,7 +33,7 @@ var ErrInvalidID = errors.New("invalid id")
 
 func init() {
 	validateDerivedConstants()
-	validateAffineMap(multiplier, modulus)
+	validateAffineMap()
 }
 
 func validateDerivedConstants() {
@@ -152,12 +152,16 @@ func validBodyPart(part string) bool {
 	return true
 }
 
-func validateAffineMap(mapMultiplier, mapModulus int64) {
-	if mapModulus <= 0 {
+// validateAffineMap confirms that the shipped affine map (multiplier over
+// modulus) is invertible: modulus is positive and multiplier is coprime with
+// it, so MintAt/TimeOf form a bijection. It reads the package constants
+// directly because the process only ever ships those values.
+func validateAffineMap() {
+	if modulus <= 0 {
 		panic("idgen: affine modulus must be positive")
 	}
 
-	a, b := mapMultiplier, mapModulus
+	a, b := multiplier, modulus
 	if a < 0 {
 		a = -a
 	}

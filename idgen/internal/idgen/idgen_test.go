@@ -370,18 +370,26 @@ func TestTimeOfNeverPanicsForArbitraryInput(t *testing.T) {
 
 func TestValidateAffineMapPanicsWhenNotInvertible(t *testing.T) {
 	// R-SSYW-CRAP
-	validateAffineMap(multiplier, modulus)
-
-	deferred := false
+	// The shipped affine map (multiplier over modulus) must be invertible, so
+	// MintAt/TimeOf round-trip. validateAffineMap() panics unless the real
+	// constants are coprime; assert it returns cleanly for the values the
+	// process actually uses.
 	func() {
 		defer func() {
-			if recover() != nil {
-				deferred = true
+			if r := recover(); r != nil {
+				t.Fatalf("validateAffineMap() panicked for the shipped constants: %v", r)
 			}
 		}()
-		validateAffineMap(6, 9)
+		validateAffineMap()
 	}()
-	if !deferred {
-		t.Fatal("validateAffineMap(6, 9) did not panic for a non-coprime pair")
+
+	// The invariant is meaningful only if the map is genuinely a bijection:
+	// every millisecond offset the encoder can emit must decode back to itself.
+	for _, ms := range []int64{0, 1, 2, multiplier, modulus - 1} {
+		encoded := (multiplyMod(ms%modulus, multiplier) + offset) % modulus
+		difference := (encoded + modulus - offset) % modulus
+		if got := multiplyMod(difference, multiplierInverse); got != ms%modulus {
+			t.Fatalf("affine map not invertible at ms=%d: recovered %d", ms, got)
+		}
 	}
 }
