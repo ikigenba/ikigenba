@@ -1,6 +1,6 @@
 ---
 description: short and long option aliases registered by repeating the default value and help text at each call
-severity: warning
+severity: error
 ---
 Flag option registration in which a short form and a long form of the same option are registered by two separate calls that each restate the same default value and the same description. Each option's default then exists in two places with nothing tying them together, so changing one and missing the other gives an option whose behavior depends on which spelling the user typed — a defect the type checker cannot see and a test that exercises only one spelling will not catch. Count the repetition: five options registered this way means ten call sites and ten duplicated literals. Recommend one small helper that takes the name, the alias, the default, and the usage string and performs both registrations, so each literal appears once.
 

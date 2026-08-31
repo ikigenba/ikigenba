@@ -24,6 +24,7 @@
     "log-prng-seed-on-failure",
     "magic-literal-beside-existing-constant",
     "overclaiming-exhaustive-test-name",
-    "prefer-exact-over-inequality-assertion"
+    "prefer-exact-over-inequality-assertion",
+    "repeated-flag-alias-literals"
   ]
 }
