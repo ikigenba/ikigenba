@@ -183,12 +183,16 @@ func runMintMode(
 		return exitUsage
 	}
 
-	var previousMillisecond int64
+	// previousMillisecond is nil until the first id is minted, so "no id yet" is
+	// a state distinct from any real millisecond value (including 0, a valid
+	// Unix millisecond). The nil check is the single mechanism gating the
+	// distinct-millisecond wait.
+	var previousMillisecond *int64
 	out := bufio.NewWriter(stdout)
 	for minted := 0; minted < number; minted++ {
 		instant := clock.Now()
-		if minted > 0 {
-			advanced, err := waitForNextMillisecond(clock, instant, previousMillisecond, stderr)
+		if previousMillisecond != nil {
+			advanced, err := waitForNextMillisecond(clock, instant, *previousMillisecond, stderr)
 			if err != nil {
 				return exitFailure
 			}
@@ -198,7 +202,8 @@ func runMintMode(
 		if _, err := io.WriteString(out, idgen.MintAt(prefix, instant)+"\n"); err != nil {
 			return exitFailure
 		}
-		previousMillisecond = instant.UnixMilli()
+		millisecond := instant.UnixMilli()
+		previousMillisecond = &millisecond
 	}
 	if err := out.Flush(); err != nil {
 		return exitFailure
