@@ -1,6 +1,6 @@
 ---
 description: a validity check made impossible by validation earlier in the same path, often with an error message that misdescribes it
-severity: warning
+severity: error
 ---
 Flag a guard whose condition cannot be true given what the code has already established a few lines above: a range check on a value whose type or prior parse bounds it more tightly, an `ok`/`err` branch on a helper that cannot fail for the inputs this call site can produce, a re-validation of characters an earlier validator already restricted. Two things make this worth a human's attention. It misinforms: the next reader takes the guard as evidence that the condition occurs, and reasons about the rest of the function under a false assumption. And it usually drags along a message or error path that was never exercised, so its wording drifts free of the truth — the classic case is one message covering two disjuncts of an `||` where each disjunct means something different and neither can fire. Prefer deleting the guard and stating the established invariant in a comment, or moving the check to the boundary where the value is actually untrusted. When several impossible conditions are combined, say which ones and why each cannot hold.
 

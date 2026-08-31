@@ -32,6 +32,7 @@
     "unbounded-retry-on-injected-dependency",
     "undocumented-silent-wraparound-at-range-ceiling",
     "unexplained-modular-arithmetic",
+    "unreachable-defensive-guard",
     "unquoted-untrusted-token-in-diagnostic"
   ]
 }
