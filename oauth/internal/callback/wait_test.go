@@ -2,6 +2,7 @@ package callback_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -75,6 +76,126 @@ func TestWaitIgnoresStrayPathBeforeValidCallback(t *testing.T) {
 	}
 	if outcome.result.Code != "code-after-stray-request" {
 		t.Errorf("Wait() result code = %q, want exact subsequent callback code", outcome.result.Code)
+	}
+}
+
+// R-GIPW-P83Y
+func TestWaitRejectsInvalidState(t *testing.T) {
+	tests := []struct {
+		name  string
+		query url.Values
+	}{
+		{name: "absent", query: url.Values{"code": {"code-without-state"}}},
+		{name: "empty", query: url.Values{"state": {""}, "code": {"code-with-empty-state"}}},
+		{name: "unequal", query: url.Values{"state": {"other-state"}, "code": {"code-with-other-state"}}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := listenForWait(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			outcomes := startWait(ctx, server, "/callback", "expected-state")
+
+			response := getCallback(ctx, t, server.Port(), "/callback", test.query)
+			if response.StatusCode != http.StatusBadRequest {
+				t.Errorf("invalid-state callback status = %d, want %d", response.StatusCode, http.StatusBadRequest)
+			}
+			closeResponse(t, response)
+
+			outcome := requireWaitOutcome(ctx, t, outcomes)
+			if !errors.Is(outcome.err, callback.ErrStateMismatch) {
+				t.Errorf("Wait() error = %v, want errors.Is(..., ErrStateMismatch)", outcome.err)
+			}
+		})
+	}
+}
+
+// R-GJXT-2ZUN
+func TestWaitReturnsProviderAuthorizeError(t *testing.T) {
+	server := listenForWait(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	outcomes := startWait(ctx, server, "/authorize-return", "expected-state")
+
+	response := getCallback(ctx, t, server.Port(), "/authorize-return", url.Values{
+		"state":             {"expected-state"},
+		"error":             {"access_denied_distinguishing_code"},
+		"error_description": {"provider description with distinguishing text"},
+	})
+	if response.StatusCode != http.StatusBadRequest {
+		t.Errorf("provider-error callback status = %d, want %d", response.StatusCode, http.StatusBadRequest)
+	}
+	closeResponse(t, response)
+
+	outcome := requireWaitOutcome(ctx, t, outcomes)
+	var authorizeErr *callback.AuthorizeError
+	if !errors.As(outcome.err, &authorizeErr) {
+		t.Fatalf("Wait() error = %v, want *callback.AuthorizeError", outcome.err)
+	}
+	if authorizeErr.Code != "access_denied_distinguishing_code" {
+		t.Errorf("AuthorizeError.Code = %q, want exact provider error", authorizeErr.Code)
+	}
+	if authorizeErr.Description != "provider description with distinguishing text" {
+		t.Errorf("AuthorizeError.Description = %q, want exact provider description", authorizeErr.Description)
+	}
+}
+
+// R-GL5P-GRLC
+func TestWaitRejectsCallbackWithoutCodeOrError(t *testing.T) {
+	tests := []struct {
+		name  string
+		query url.Values
+	}{
+		{name: "absent", query: url.Values{"state": {"expected-state"}}},
+		{name: "empty", query: url.Values{"state": {"expected-state"}, "code": {""}, "error": {""}}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := listenForWait(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			outcomes := startWait(ctx, server, "/callback", "expected-state")
+
+			response := getCallback(ctx, t, server.Port(), "/callback", test.query)
+			if response.StatusCode != http.StatusBadRequest {
+				t.Errorf("code-less callback status = %d, want %d", response.StatusCode, http.StatusBadRequest)
+			}
+			closeResponse(t, response)
+
+			outcome := requireWaitOutcome(ctx, t, outcomes)
+			if !errors.Is(outcome.err, callback.ErrNoCode) {
+				t.Errorf("Wait() error = %v, want errors.Is(..., ErrNoCode)", outcome.err)
+			}
+		})
+	}
+}
+
+// R-GMDL-UJC1
+func TestWaitChecksStateBeforeProviderError(t *testing.T) {
+	server := listenForWait(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	outcomes := startWait(ctx, server, "/callback", "expected-state")
+
+	response := getCallback(ctx, t, server.Port(), "/callback", url.Values{
+		"state":             {"attacker-state"},
+		"error":             {"attacker-chosen-error"},
+		"error_description": {"attacker-chosen-description"},
+	})
+	if response.StatusCode != http.StatusBadRequest {
+		t.Errorf("mismatched-state provider-error callback status = %d, want %d", response.StatusCode, http.StatusBadRequest)
+	}
+	closeResponse(t, response)
+
+	outcome := requireWaitOutcome(ctx, t, outcomes)
+	if !errors.Is(outcome.err, callback.ErrStateMismatch) {
+		t.Errorf("Wait() error = %v, want errors.Is(..., ErrStateMismatch)", outcome.err)
+	}
+	var authorizeErr *callback.AuthorizeError
+	if errors.As(outcome.err, &authorizeErr) {
+		t.Errorf("Wait() error = %v, unexpectedly unwraps to *callback.AuthorizeError %+v", outcome.err, authorizeErr)
 	}
 }
 
