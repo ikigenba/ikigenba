@@ -451,11 +451,11 @@ func TestRunNumberAdvancesVirtualTimeForEachAdditionalID(t *testing.T) {
 	if len(ids) != 5 {
 		t.Fatalf("output count = %d, want 5", len(ids))
 	}
-	if got, want := clock.totalSleep(), 4*time.Millisecond; got < want {
-		t.Errorf("virtual advance = %s, want at least %s", got, want)
+	if got, want := clock.totalSleep(), 4*time.Millisecond; got != want {
+		t.Errorf("virtual advance = %s, want %s", got, want)
 	}
-	if got, want := clock.now.Sub(start), 4*time.Millisecond; got < want {
-		t.Errorf("clock advance = %s, want at least %s", got, want)
+	if got, want := clock.now.Sub(start), 4*time.Millisecond; got != want {
+		t.Errorf("clock advance = %s, want %s", got, want)
 	}
 }
 
@@ -480,8 +480,8 @@ func TestRunNumberTerminatesWhenClockAdvancesOnlyDuringSleep(t *testing.T) {
 		}
 		seen[millisecond] = struct{}{}
 	}
-	if got, want := times[len(times)-1].Sub(times[0]), 5*time.Millisecond; got < want {
-		t.Errorf("decoded last-first = %s, want at least %s", got, want)
+	if got, want := times[len(times)-1].Sub(times[0]), 5*time.Millisecond; got != want {
+		t.Errorf("decoded last-first = %s, want %s", got, want)
 	}
 }
 
