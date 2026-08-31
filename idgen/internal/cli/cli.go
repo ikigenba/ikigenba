@@ -13,10 +13,16 @@ import (
 	"github.com/ikigenba/ikigenba/idgen/internal/idgen"
 )
 
+// exitCode is the closed set of process exit statuses the CLI can produce. It
+// is threaded through every internal signature that carries a status, and is
+// converted to a bare int only at the exported Run boundary that os.Exit
+// requires.
+type exitCode int
+
 const (
-	exitSuccess = 0
-	exitFailure = 1
-	exitUsage   = 2
+	exitSuccess exitCode = 0
+	exitFailure exitCode = 1
+	exitUsage   exitCode = 2
 )
 
 type commandMode uint8
@@ -127,21 +133,21 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, clock Clock) 
 	registerModeFlagPair(flags, "V", "version", &modes, modeVersion)
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			return exitSuccess
+			return int(exitSuccess)
 		}
-		return exitUsage
+		return int(exitUsage)
 	}
 	switch modes.selected() {
 	case modeHelp:
 		writeInformationalOutput(stdout, usageText)
-		return exitSuccess
+		return int(exitSuccess)
 	case modeVersion:
 		writeInformationalOutput(stdout, version+"\n")
-		return exitSuccess
+		return int(exitSuccess)
 	case modeDecode:
-		return runDecode(flags.Args(), stdin, stdout, stderr)
+		return int(runDecode(flags.Args(), stdin, stdout, stderr))
 	default:
-		return runMintMode(flags.Args(), *number, *prefix, stdout, stderr, flags.Usage, clock)
+		return int(runMintMode(flags.Args(), *number, *prefix, stdout, stderr, flags.Usage, clock))
 	}
 }
 
@@ -160,7 +166,7 @@ func runMintMode(
 	stdout, stderr io.Writer,
 	usage func(),
 	clock Clock,
-) int {
+) exitCode {
 	if len(args) > 0 {
 		_, _ = io.WriteString(stderr, "idgen: unexpected argument "+strconv.Quote(args[0])+"\n")
 		usage()
@@ -236,7 +242,7 @@ func formatUTC(instant time.Time) string {
 	return instant.UTC().Format("2006-01-02T15:04:05.000Z")
 }
 
-func runDecode(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+func runDecode(args []string, stdin io.Reader, stdout, stderr io.Writer) exitCode {
 	failed := false
 	var inputErr error
 	out := bufio.NewWriter(stdout)
