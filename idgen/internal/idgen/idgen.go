@@ -89,11 +89,24 @@ func TimeOf(id string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("%w: body out of range", ErrInvalidID)
 	}
 
+	// Add modulus before subtracting offset to keep the dividend non-negative:
+	// Go's % takes the dividend's sign, so a plain (n-offset)%modulus would yield
+	// a negative remainder whenever n < offset and break the round-trip. Since
+	// 0 <= n < modulus and 0 <= offset < modulus, (n+modulus-offset) stays in
+	// [1, 2*modulus) and the final % maps it back into [0, modulus).
 	difference := (n + modulus - offset) % modulus
 	ms := multiplyMod(difference, multiplierInverse)
 	return Epoch().Add(time.Duration(ms) * time.Millisecond).UTC(), nil
 }
 
+// multiplyMod returns (value*factor) mod modulus using multiply-by-doubling
+// specifically to avoid int64 overflow. A direct value*factor overflows: the
+// largest operands here are ms≈modulus-1 (≈2.82e12) times multiplier
+// (0x9E3779B1 ≈ 2.65e9), whose product reaches ≈7.5e21 and blows past int64's
+// max (≈9.22e18). The doubling loop keeps every intermediate inside int64: each
+// step reduces mod modulus, so value peaks at 2*(modulus-1) ≈ 5.64e12 and
+// product stays below modulus. Do not "simplify" this to value*factor%modulus —
+// that reintroduces the overflow the doubling exists to prevent.
 func multiplyMod(value, factor int64) int64 {
 	value %= modulus
 	var product int64
