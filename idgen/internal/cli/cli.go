@@ -181,9 +181,12 @@ func runMintMode(
 	out := bufio.NewWriter(stdout)
 	for minted := 0; minted < number; minted++ {
 		instant := clock.Now()
-		for minted > 0 && instant.UnixMilli() <= previousMillisecond {
-			clock.Sleep(time.Millisecond)
-			instant = clock.Now()
+		if minted > 0 {
+			advanced, err := waitForNextMillisecond(clock, instant, previousMillisecond, stderr)
+			if err != nil {
+				return exitFailure
+			}
+			instant = advanced
 		}
 
 		if _, err := io.WriteString(out, idgen.MintAt(prefix, instant)+"\n"); err != nil {
@@ -196,6 +199,38 @@ func runMintMode(
 	}
 	return exitSuccess
 }
+
+// maxStalledPolls bounds how many times the mint loop will poll the injected
+// clock waiting for the millisecond to advance past the previous id. A
+// normally-advancing clock crosses a millisecond boundary in a single sleep, so
+// this bound is never approached in practice; it exists so that a clock which
+// refuses to advance (a frozen clock, or a Sleep that does not move Now) fails
+// with a diagnostic instead of spinning forever.
+const maxStalledPolls = 1000
+
+// waitForNextMillisecond blocks until the clock reports an instant in a
+// millisecond strictly after previousMillisecond, so successive minted ids fall
+// in distinct milliseconds. Termination is a property of this function rather
+// than an unwritten contract on the Clock: after maxStalledPolls sleeps that do
+// not advance the clock past previousMillisecond, it gives up, reports the
+// stall on stderr, and returns an error.
+func waitForNextMillisecond(clock Clock, instant time.Time, previousMillisecond int64, stderr io.Writer) (time.Time, error) {
+	for polls := 0; instant.UnixMilli() <= previousMillisecond; polls++ {
+		if polls >= maxStalledPolls {
+			_, _ = fmt.Fprintf(
+				stderr,
+				"idgen: clock did not advance past millisecond %d after %d polls\n",
+				previousMillisecond, polls,
+			)
+			return time.Time{}, errClockStalled
+		}
+		clock.Sleep(time.Millisecond)
+		instant = clock.Now()
+	}
+	return instant, nil
+}
+
+var errClockStalled = errors.New("clock did not advance")
 
 func formatUTC(instant time.Time) string {
 	return instant.UTC().Format("2006-01-02T15:04:05.000Z")

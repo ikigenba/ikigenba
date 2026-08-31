@@ -502,6 +502,31 @@ func TestRunDefaultSingleMintDoesNotSleep(t *testing.T) {
 	}
 }
 
+func TestRunNumberFailsWhenClockRefusesToAdvance(t *testing.T) {
+	// A frozen clock (fakeClock's Sleep is a no-op and Now never moves) must
+	// terminate with a diagnostic and a nonzero exit rather than hanging.
+	clock := &fakeClock{now: time.Date(2026, time.August, 29, 12, 0, 0, 0, time.UTC)}
+	stdout, stderr, exitCode := runMint([]string{"-n", "2"}, clock)
+
+	if exitCode != exitFailure {
+		t.Fatalf("Run() exit code = %d, want %d", exitCode, exitFailure)
+	}
+	if stderr == "" {
+		t.Error("stderr is empty; want a diagnostic naming the stalled clock")
+	}
+	if !strings.Contains(stderr, "clock did not advance") {
+		t.Errorf("stderr = %q, want it to report the clock stall", stderr)
+	}
+	// The first id may be buffered but never flushed on the failure path; the
+	// second id must not appear.
+	if lines := strings.Count(stdout, "\n"); lines > 1 {
+		t.Errorf("stdout has %d lines, want at most 1 before the stall", lines)
+	}
+	if clock.sleepCalls == 0 {
+		t.Error("Clock.Sleep was never called; the loop did not attempt to wait")
+	}
+}
+
 // R-T0AA-NDQV: every minted millisecond was previously reported by the injected clock.
 func TestRunMintsOnlyAtClockReportedInstants(t *testing.T) {
 	clock := &advancingClock{now: time.Date(2026, time.August, 29, 12, 0, 0, 731000, time.UTC)}
