@@ -49,8 +49,21 @@ func validateDerivedConstants() {
 	}
 }
 
-// MintAt returns an identifier for t using prefix. Instants before Epoch are
-// represented as Epoch.
+// MintAt returns an identifier for t using prefix.
+//
+// The representable range is the half-open window [Epoch, Epoch+modulus ms),
+// where modulus is 36^8 milliseconds (≈89 years). The encoded body is the
+// affine map (multiplier*ms+offset) taken modulo modulus, so t is carried into
+// that ring before encoding.
+//
+// Outside the window the result is silently aliased rather than reported:
+//   - Instants before Epoch are represented as Epoch (the floor).
+//   - Instants at or beyond Epoch+modulus ms wrap through the modulus and
+//     collide with an earlier instant inside the window; the id no longer
+//     round-trips through TimeOf, which recovers that earlier aliased instant.
+//
+// Callers that must distinguish instants past the ceiling should range-check t
+// against Epoch+modulus ms before minting.
 func MintAt(prefix string, t time.Time) string {
 	epoch := Epoch()
 	if t.Before(epoch) {
