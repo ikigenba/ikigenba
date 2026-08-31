@@ -2,11 +2,87 @@ package oauth_test
 
 import (
 	"math/rand"
+	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/oauth/internal/oauth"
 )
+
+// R-J54Q-DJJP
+func TestAuthorizeURLIncludesRequiredParameters(t *testing.T) {
+	authURL, err := url.Parse("https://accounts.example.com/oauth/authorize")
+	if err != nil {
+		t.Fatalf("url.Parse() error = %v", err)
+	}
+	client := oauth.Client{
+		AuthURL:     authURL,
+		ClientID:    "client-123",
+		RedirectURI: "https://app.example.com/oauth/callback",
+	}
+	session := oauth.Session{
+		State:        "state-456",
+		CodeVerifier: "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+	}
+	expectedChallenge := oauth.Challenge(session.CodeVerifier)
+	if expectedChallenge != "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM" {
+		t.Fatalf("Challenge(%q) = %q, want RFC 7636 test vector", session.CodeVerifier, expectedChallenge)
+	}
+
+	gotURL, err := url.Parse(client.AuthorizeURL(session, nil))
+	if err != nil {
+		t.Fatalf("url.Parse(AuthorizeURL()) error = %v", err)
+	}
+	query := gotURL.Query()
+	want := map[string]string{
+		"response_type":         "code",
+		"client_id":             client.ClientID,
+		"redirect_uri":          client.RedirectURI,
+		"state":                 session.State,
+		"code_challenge":        expectedChallenge,
+		"code_challenge_method": "S256",
+	}
+	for key, wantValue := range want {
+		if gotValue := query.Get(key); gotValue != wantValue {
+			t.Errorf("query.Get(%q) = %q, want %q", key, gotValue, wantValue)
+		}
+	}
+}
+
+// R-J8SF-IURS
+func TestAuthorizeURLIncludesScopeOnlyWhenNonEmpty(t *testing.T) {
+	authURL, err := url.Parse("https://accounts.example.com/oauth/authorize")
+	if err != nil {
+		t.Fatalf("url.Parse() error = %v", err)
+	}
+	client := oauth.Client{
+		AuthURL:     authURL,
+		ClientID:    "client-123",
+		RedirectURI: "https://app.example.com/oauth/callback",
+		Scope:       "openid profile email",
+	}
+	session := oauth.Session{
+		State:        "state-456",
+		CodeVerifier: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~abc",
+	}
+
+	withScope, err := url.Parse(client.AuthorizeURL(session, nil))
+	if err != nil {
+		t.Fatalf("url.Parse(AuthorizeURL() with scope) error = %v", err)
+	}
+	if got := withScope.Query().Get("scope"); got != client.Scope {
+		t.Errorf("scope = %q, want %q", got, client.Scope)
+	}
+
+	client.Scope = ""
+	withoutScope, err := url.Parse(client.AuthorizeURL(session, nil))
+	if err != nil {
+		t.Fatalf("url.Parse(AuthorizeURL() without scope) error = %v", err)
+	}
+	if withoutScope.Query().Has("scope") {
+		t.Errorf("scope is present for empty Client.Scope: %q", withoutScope.Query()["scope"])
+	}
+}
 
 // R-J6CM-RBAE
 func TestChallengeMatchesRFC7636AppendixB(t *testing.T) {
