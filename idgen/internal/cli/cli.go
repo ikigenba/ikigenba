@@ -69,6 +69,31 @@ func registerModeFlag(flags *flag.FlagSet, name string, modes *commandModes, mod
 	flags.Var(commandModeFlag{modes: modes, mode: mode}, name, "")
 }
 
+// intFlag registers an int option under both its short and long spellings,
+// binding both to a single pointer so the default and usage appear once.
+func intFlag(flags *flag.FlagSet, short, long string, def int, usage string) *int {
+	value := flags.Int(short, def, usage)
+	flags.IntVar(value, long, def, usage)
+	return value
+}
+
+// stringFlag registers a string option under both its short and long
+// spellings, binding both to a single pointer so the default and usage appear
+// once.
+func stringFlag(flags *flag.FlagSet, short, long string, def, usage string) *string {
+	value := flags.String(short, def, usage)
+	flags.StringVar(value, long, def, usage)
+	return value
+}
+
+// registerModeFlagPair registers a mode option under both its short and long
+// spellings in one call, so the pair's shared default and description appear
+// once.
+func registerModeFlagPair(flags *flag.FlagSet, short, long string, modes *commandModes, mode commandMode) {
+	registerModeFlag(flags, short, modes, mode)
+	registerModeFlag(flags, long, modes, mode)
+}
+
 const usageText = `Usage: idgen [options] [ID ...]
 
 Mint an identifier using the current time by default.
@@ -94,16 +119,12 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, clock Clock) 
 	flags.Usage = func() {
 		_, _ = io.WriteString(flags.Output(), usageText)
 	}
-	number := flags.Int("n", 1, "")
-	flags.IntVar(number, "number", 1, "")
-	prefix := flags.String("p", "R", "")
-	flags.StringVar(prefix, "prefix", "R", "")
+	number := intFlag(flags, "n", "number", 1, "")
+	prefix := stringFlag(flags, "p", "prefix", "R", "")
 	var modes commandModes
 	registerModeFlag(flags, "decode", &modes, modeDecode)
-	registerModeFlag(flags, "h", &modes, modeHelp)
-	registerModeFlag(flags, "help", &modes, modeHelp)
-	registerModeFlag(flags, "V", &modes, modeVersion)
-	registerModeFlag(flags, "version", &modes, modeVersion)
+	registerModeFlagPair(flags, "h", "help", &modes, modeHelp)
+	registerModeFlagPair(flags, "V", "version", &modes, modeVersion)
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return exitSuccess
