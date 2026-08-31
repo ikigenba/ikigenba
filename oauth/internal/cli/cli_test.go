@@ -13,6 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/oauth/internal/browser"
 	"github.com/ikigenba/ikigenba/oauth/internal/callback"
 	"github.com/ikigenba/ikigenba/oauth/internal/cli"
+	"github.com/ikigenba/ikigenba/oauth/internal/oauth"
 )
 
 type failLauncher struct {
@@ -158,6 +159,125 @@ func TestRunRejectsMalformedRepeatedParameters(t *testing.T) {
 			}
 			if !strings.Contains(stderr.String(), test.raw) {
 				t.Errorf("stderr = %q, want offending value %q", stderr.String(), test.raw)
+			}
+		})
+	}
+}
+
+// R-QXF6-AJ4T
+func TestRunAuthParamDecisionAgreesWithOAuthReservedPredicate(t *testing.T) {
+	tests := []struct {
+		key      string
+		reserved bool
+	}{
+		{key: "response_type", reserved: true},
+		{key: "client_id", reserved: true},
+		{key: "redirect_uri", reserved: true},
+		{key: "state", reserved: true},
+		{key: "code_challenge", reserved: true},
+		{key: "code_challenge_method", reserved: true},
+		{key: "scope", reserved: true},
+		{key: "prompt", reserved: false},
+		{key: "audience", reserved: false},
+		{key: "Response_type", reserved: false},
+		{key: "client-id", reserved: false},
+	}
+	for _, test := range tests {
+		t.Run(test.key, func(t *testing.T) {
+			if got := oauth.ReservedAuthorizeParam(test.key); got != test.reserved {
+				t.Fatalf("ReservedAuthorizeParam(%q) = %t, want %t", test.key, got, test.reserved)
+			}
+
+			args := append(validArgs(), "--auth-param", test.key+"=value")
+			var stdout, stderr bytes.Buffer
+			code := cli.Run(context.Background(), args, &stdout, &stderr, failDeps(t))
+
+			if test.reserved {
+				if code != 2 {
+					t.Errorf("Run() exit code = %d, want 2 for reserved key %q", code, test.key)
+				}
+				if !strings.Contains(stderr.String(), "--auth-param") {
+					t.Errorf("stderr = %q, want flag --auth-param", stderr.String())
+				}
+				if !strings.Contains(stderr.String(), test.key) {
+					t.Errorf("stderr = %q, want key %q", stderr.String(), test.key)
+				}
+
+				return
+			}
+
+			if code != 0 {
+				t.Errorf("Run() exit code = %d, want 0 for non-reserved key %q; stderr = %q", code, test.key, stderr.String())
+			}
+			if stderr.String() != "" {
+				t.Errorf("stderr = %q, want empty for non-reserved key %q", stderr.String(), test.key)
+			}
+		})
+	}
+}
+
+// R-LCAT-LU5C
+func TestRunRedirectURIAuthParamNamesConfigurationFlags(t *testing.T) {
+	args := append(validArgs(), "--auth-param", "redirect_uri=https://client.example/callback")
+	var stdout, stderr bytes.Buffer
+	code := cli.Run(context.Background(), args, &stdout, &stderr, failDeps(t))
+
+	if code != 2 {
+		t.Errorf("Run() exit code = %d, want 2", code)
+	}
+	for _, flag := range []string{"--callback-host", "--port", "--callback-path"} {
+		if !strings.Contains(stderr.String(), flag) {
+			t.Errorf("stderr = %q, want configuration flag %q", stderr.String(), flag)
+		}
+	}
+}
+
+// R-QYN2-OAVI
+func TestRunTokenParamDecisionAgreesWithOAuthReservedPredicate(t *testing.T) {
+	tests := []struct {
+		key      string
+		reserved bool
+	}{
+		{key: "grant_type", reserved: true},
+		{key: "code", reserved: true},
+		{key: "code_verifier", reserved: true},
+		{key: "redirect_uri", reserved: true},
+		{key: "client_id", reserved: true},
+		{key: "client_secret", reserved: true},
+		{key: "resource", reserved: false},
+		{key: "audience", reserved: false},
+		{key: "Grant_type", reserved: false},
+		{key: "client-id", reserved: false},
+	}
+	for _, test := range tests {
+		t.Run(test.key, func(t *testing.T) {
+			if got := oauth.ReservedTokenParam(test.key); got != test.reserved {
+				t.Fatalf("ReservedTokenParam(%q) = %t, want %t", test.key, got, test.reserved)
+			}
+
+			args := append(validArgs(), "--token-param", test.key+"=value")
+			var stdout, stderr bytes.Buffer
+			code := cli.Run(context.Background(), args, &stdout, &stderr, failDeps(t))
+
+			if test.reserved {
+				if code != 2 {
+					t.Errorf("Run() exit code = %d, want 2 for reserved key %q", code, test.key)
+				}
+				if !strings.Contains(stderr.String(), "--token-param") {
+					t.Errorf("stderr = %q, want flag --token-param", stderr.String())
+				}
+				if !strings.Contains(stderr.String(), test.key) {
+					t.Errorf("stderr = %q, want key %q", stderr.String(), test.key)
+				}
+
+				return
+			}
+
+			if code != 0 {
+				t.Errorf("Run() exit code = %d, want 0 for non-reserved key %q; stderr = %q", code, test.key, stderr.String())
+			}
+			if stderr.String() != "" {
+				t.Errorf("stderr = %q, want empty for non-reserved key %q", stderr.String(), test.key)
 			}
 		})
 	}

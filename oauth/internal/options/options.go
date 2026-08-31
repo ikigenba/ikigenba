@@ -115,8 +115,34 @@ func Parse(args []string) (Options, error) {
 	if err != nil {
 		return Options{}, err
 	}
+	if err := validateExtraParams(parsed.options.AuthParams, parsed.options.TokenParams); err != nil {
+		return Options{}, err
+	}
 
 	return parsed.options, nil
+}
+
+func validateExtraParams(authParams, tokenParams []oauth.Param) error {
+	for _, param := range authParams {
+		if !oauth.ReservedAuthorizeParam(param.Key) {
+			continue
+		}
+		if param.Key == "redirect_uri" {
+			return fmt.Errorf(
+				"--auth-param key %q is reserved; configure the redirect URI with --callback-host, --port, and --callback-path",
+				param.Key,
+			)
+		}
+
+		return fmt.Errorf("--auth-param key %q is reserved", param.Key)
+	}
+	for _, param := range tokenParams {
+		if oauth.ReservedTokenParam(param.Key) {
+			return fmt.Errorf("--token-param key %q is reserved", param.Key)
+		}
+	}
+
+	return nil
 }
 
 func parseURL(flagName, raw string) (*url.URL, error) {
