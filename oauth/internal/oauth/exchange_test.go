@@ -1,14 +1,18 @@
 package oauth_test
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ikigenba/ikigenba/oauth/internal/oauth"
 )
@@ -63,6 +67,27 @@ func requireSuccessfulExchange(
 	}
 
 	return <-requests
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+func responseClient(statusCode int, body []byte) *http.Client {
+	return &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: statusCode,
+			Status:     strconv.Itoa(statusCode) + " " + http.StatusText(statusCode),
+			Body:       io.NopCloser(bytes.NewReader(body)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+}
+
+func exchangeClient() oauth.Client {
+	return oauth.Client{TokenURL: &url.URL{Scheme: "https", Host: "provider.example", Path: "/token"}}
 }
 
 // R-JIJM-L0PC
@@ -222,5 +247,107 @@ func TestReservedTokenParamDefinedKeysAndRepresentativeOthers(t *testing.T) {
 				t.Errorf("ReservedTokenParam(%q) = %t, want %t", test.key, got, test.reserved)
 			}
 		})
+	}
+}
+
+// R-JPV0-VN5I
+func TestExchangeReturnsSuccessfulResponseBodyVerbatim(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       []byte
+	}{
+		{name: "invalid JSON", statusCode: http.StatusOK, body: []byte("not-json\x00\xff\n")},
+		{name: "JSON formatting and key order", statusCode: http.StatusNoContent, body: []byte("{\n  \"z\": 1, \"a\": [3, 2, 1]\n}\n")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := exchangeClient().Exchange(context.Background(), responseClient(test.statusCode, test.body), oauth.Session{}, "code", nil, nil)
+			if err != nil {
+				t.Fatalf("Exchange() error = %v", err)
+			}
+			if !bytes.Equal(got, test.body) {
+				t.Errorf("Exchange() body = %q, want byte-for-byte %q", got, test.body)
+			}
+		})
+	}
+}
+
+// R-JR2X-9EW7
+func TestExchangeReturnsStatusAndQuotedBodyForNon2xx(t *testing.T) {
+	const body = "{\"error_description\":\"bad code\\ntry again\"}"
+	got, err := exchangeClient().Exchange(context.Background(), responseClient(http.StatusBadRequest, []byte(body)), oauth.Session{}, "code", nil, nil)
+	if got != nil {
+		t.Errorf("Exchange() body = %q, want nil", got)
+	}
+	if err == nil {
+		t.Fatal("Exchange() error = nil, want non-nil")
+	}
+	if !strings.Contains(err.Error(), "400 Bad Request") {
+		t.Errorf("Exchange() error = %q, want exact HTTP status %q", err, "400 Bad Request")
+	}
+	if quoted := strconv.Quote(body); !strings.Contains(err.Error(), quoted) {
+		t.Errorf("Exchange() error = %q, want quoted provider body %q", err, quoted)
+	}
+}
+
+// R-JSAT-N6MW
+func TestExchangeBoundsNon2xxResponseBody(t *testing.T) {
+	prefix := strings.Repeat("a", oauth.MaxErrorBody-1) + "B"
+	body := prefix + "C-after-boundary"
+	got, err := exchangeClient().Exchange(context.Background(), responseClient(http.StatusBadGateway, []byte(body)), oauth.Session{}, "code", nil, nil)
+	if got != nil {
+		t.Errorf("Exchange() body = %q, want nil", got)
+	}
+	if err == nil {
+		t.Fatal("Exchange() error = nil, want non-nil")
+	}
+	wantQuoted := strconv.Quote(body[:oauth.MaxErrorBody])
+	if !strings.Contains(err.Error(), wantQuoted) {
+		t.Errorf("Exchange() error does not contain quoted first MaxErrorBody bytes %q", wantQuoted)
+	}
+	if strings.Contains(err.Error(), body[oauth.MaxErrorBody:]) {
+		t.Errorf("Exchange() error contains bytes after MaxErrorBody boundary: %q", body[oauth.MaxErrorBody:])
+	}
+}
+
+// R-AHPF-BMQU
+func TestExchangeHonorsCancellationWhileRequestIsInFlight(t *testing.T) {
+	started := make(chan struct{})
+	hc := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		close(started)
+		<-request.Context().Done()
+		return nil, request.Context().Err()
+	})}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	type result struct {
+		body []byte
+		err  error
+	}
+	results := make(chan result, 1)
+	go func() {
+		body, err := exchangeClient().Exchange(ctx, hc, oauth.Session{}, "code", nil, nil)
+		results <- result{body: body, err: err}
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("token request did not reach transport")
+	}
+	cancel()
+
+	select {
+	case got := <-results:
+		if got.body != nil {
+			t.Errorf("Exchange() body = %q, want nil", got.body)
+		}
+		if !errors.Is(got.err, context.Canceled) {
+			t.Errorf("Exchange() error = %v, want error matching context.Canceled", got.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Exchange() did not return promptly after cancellation")
 	}
 }

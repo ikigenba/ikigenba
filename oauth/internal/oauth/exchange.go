@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -31,6 +32,25 @@ func (c Client) Exchange(
 	code string,
 	extra, headers []Param,
 ) ([]byte, error) {
+	req, err := c.tokenRequest(ctx, s, code, extra, headers)
+	if err != nil {
+		return nil, err
+	}
+
+	response, err := hc.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("send token request: %w", err)
+	}
+
+	return readTokenResponse(response)
+}
+
+func (c Client) tokenRequest(
+	ctx context.Context,
+	s Session,
+	code string,
+	extra, headers []Param,
+) (*http.Request, error) {
 	var body strings.Builder
 	appendFormParam := func(key, value string) {
 		if body.Len() != 0 {
@@ -62,17 +82,25 @@ func (c Client) Exchange(
 		req.Header.Add(header.Key, header.Value)
 	}
 
-	response, err := hc.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("send token request: %w", err)
+	return req, nil
+}
+
+func readTokenResponse(response *http.Response) ([]byte, error) {
+	success := response.StatusCode >= http.StatusOK && response.StatusCode < http.StatusMultipleChoices
+	reader := io.Reader(response.Body)
+	if !success {
+		reader = io.LimitReader(response.Body, MaxErrorBody)
 	}
-	responseBody, readErr := io.ReadAll(response.Body)
+	responseBody, readErr := io.ReadAll(reader)
 	closeErr := response.Body.Close()
 	if readErr != nil {
 		return nil, fmt.Errorf("read token response: %w", readErr)
 	}
 	if closeErr != nil {
 		return nil, fmt.Errorf("close token response: %w", closeErr)
+	}
+	if !success {
+		return nil, fmt.Errorf("token endpoint returned status %q with body %s", response.Status, strconv.Quote(string(responseBody)))
 	}
 
 	return responseBody, nil
