@@ -5,3 +5,17 @@ package browser
 type Launcher interface {
 	Open(url string) error
 }
+
+type command interface {
+	Start() error
+}
+
+type commandFactory func(name string, args ...string) command
+
+type platformLauncher struct {
+	commandName string
+}
+
+func (l platformLauncher) Open(url string) error {
+	return newCommand(l.commandName, url).Start()
+}
