@@ -41,10 +41,125 @@ func failDeps(t *testing.T) cli.Deps {
 // R-E5L7-OSOC
 func TestRunReturnsInProcess(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := cli.Run(context.Background(), nil, &stdout, &stderr, cli.Deps{})
+	code := cli.Run(context.Background(), validArgs(), &stdout, &stderr, cli.Deps{})
 
 	if code != 0 {
 		t.Fatalf("Run returned exit code %d, want 0 for the phase scaffold", code)
+	}
+}
+
+func validArgs() []string {
+	return []string{
+		"--auth-url", "https://identity.example/authorize",
+		"--token-url", "https://identity.example/token",
+		"--client-id", "client-123",
+	}
+}
+
+// R-QTRH-57WQ
+func TestRunRejectsMissingRequiredFlags(t *testing.T) {
+	tests := []struct {
+		name    string
+		missing string
+		args    []string
+	}{
+		{
+			name:    "auth URL",
+			missing: "--auth-url",
+			args:    []string{"--token-url", "https://identity.example/token", "--client-id", "client-123"},
+		},
+		{
+			name:    "token URL",
+			missing: "--token-url",
+			args:    []string{"--auth-url", "https://identity.example/authorize", "--client-id", "client-123"},
+		},
+		{
+			name:    "client ID",
+			missing: "--client-id",
+			args:    []string{"--auth-url", "https://identity.example/authorize", "--token-url", "https://identity.example/token"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := cli.Run(context.Background(), test.args, &stdout, &stderr, failDeps(t))
+
+			if code != 2 {
+				t.Errorf("Run() exit code = %d, want 2", code)
+			}
+			if stdout.String() != "" {
+				t.Errorf("stdout = %q, want empty", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), test.missing) {
+				t.Errorf("stderr = %q, want missing flag %q", stderr.String(), test.missing)
+			}
+		})
+	}
+}
+
+// R-QUZD-IZNF
+func TestRunRejectsUnparsableEndpointURLs(t *testing.T) {
+	tests := []struct {
+		name string
+		flag string
+		args []string
+	}{
+		{
+			name: "auth URL",
+			flag: "--auth-url",
+			args: []string{"--auth-url", ":", "--token-url", "https://identity.example/token", "--client-id", "client-123"},
+		},
+		{
+			name: "token URL",
+			flag: "--token-url",
+			args: []string{"--auth-url", "https://identity.example/authorize", "--token-url", ":", "--client-id", "client-123"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := cli.Run(context.Background(), test.args, &stdout, &stderr, failDeps(t))
+
+			if code != 2 {
+				t.Errorf("Run() exit code = %d, want 2", code)
+			}
+			if !strings.Contains(stderr.String(), test.flag) {
+				t.Errorf("stderr = %q, want offending flag %q", stderr.String(), test.flag)
+			}
+		})
+	}
+}
+
+// R-QW79-WRE4
+func TestRunRejectsMalformedRepeatedParameters(t *testing.T) {
+	tests := []struct {
+		name string
+		flag string
+		raw  string
+	}{
+		{name: "auth param without equals", flag: "--auth-param", raw: "auth-missing-equals"},
+		{name: "auth param empty key", flag: "--auth-param", raw: "=auth-empty-key"},
+		{name: "token param without equals", flag: "--token-param", raw: "token-missing-equals"},
+		{name: "token param empty key", flag: "--token-param", raw: "=token-empty-key"},
+		{name: "token header without equals", flag: "--token-header", raw: "header-missing-equals"},
+		{name: "token header empty key", flag: "--token-header", raw: "=header-empty-key"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			args := append(validArgs(), test.flag, test.raw)
+			var stdout, stderr bytes.Buffer
+			code := cli.Run(context.Background(), args, &stdout, &stderr, failDeps(t))
+
+			if code != 2 {
+				t.Errorf("Run() exit code = %d, want 2", code)
+			}
+			if !strings.Contains(stderr.String(), test.flag) {
+				t.Errorf("stderr = %q, want offending flag %q", stderr.String(), test.flag)
+			}
+			if !strings.Contains(stderr.String(), test.raw) {
+				t.Errorf("stderr = %q, want offending value %q", stderr.String(), test.raw)
+			}
+		})
 	}
 }
 

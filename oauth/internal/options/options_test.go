@@ -86,17 +86,32 @@ func TestParseAcceptsEveryFlagAndPopulatesOptions(t *testing.T) {
 func TestParseSuppliesDocumentedDefaults(t *testing.T) {
 	t.Parallel()
 
-	got, err := options.Parse(nil)
+	got, err := options.Parse([]string{
+		"--auth-url", "https://identity.example/authorize",
+		"--token-url", "https://identity.example/token",
+		"--client-id", "client-123",
+	})
 	if err != nil {
-		t.Fatalf("Parse(nil) error = %v", err)
+		t.Fatalf("Parse() error = %v", err)
+	}
+	wantAuthURL, err := url.Parse("https://identity.example/authorize")
+	if err != nil {
+		t.Fatalf("url.Parse(auth URL) error = %v", err)
+	}
+	wantTokenURL, err := url.Parse("https://identity.example/token")
+	if err != nil {
+		t.Fatalf("url.Parse(token URL) error = %v", err)
 	}
 	want := options.Options{
+		AuthURL:      wantAuthURL,
+		TokenURL:     wantTokenURL,
+		ClientID:     "client-123",
 		CallbackHost: "localhost",
 		CallbackPath: "/callback",
 		Timeout:      5 * time.Minute,
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("Parse(nil) = %#v, want %#v", got, want)
+		t.Errorf("Parse() = %#v, want %#v", got, want)
 	}
 }
 
@@ -105,6 +120,9 @@ func TestParsePreservesEveryRepeatedParameterInOrder(t *testing.T) {
 	t.Parallel()
 
 	got, err := options.Parse([]string{
+		"--auth-url", "https://identity.example/authorize",
+		"--token-url", "https://identity.example/token",
+		"--client-id", "client-123",
 		"--auth-param", "first=one",
 		"--token-param", "token-first=alpha",
 		"--token-header", "X-First=1",

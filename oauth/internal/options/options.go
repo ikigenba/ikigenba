@@ -4,6 +4,7 @@ package options
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"net/url"
 	"strings"
@@ -57,9 +58,9 @@ func Parse(args []string) (Options, error) {
 	flags.StringVar(&parsed.options.CallbackHost, "callback-host", "localhost", "")
 	flags.IntVar(&parsed.options.Port, "port", 0, "")
 	flags.StringVar(&parsed.options.CallbackPath, "callback-path", "/callback", "")
-	flags.Var((*paramsValue)(&parsed.options.AuthParams), "auth-param", "")
-	flags.Var((*paramsValue)(&parsed.options.TokenParams), "token-param", "")
-	flags.Var((*paramsValue)(&parsed.options.TokenHeaders), "token-header", "")
+	flags.Var(newParamsValue("--auth-param", &parsed.options.AuthParams), "auth-param", "")
+	flags.Var(newParamsValue("--token-param", &parsed.options.TokenParams), "token-param", "")
+	flags.Var(newParamsValue("--token-header", &parsed.options.TokenHeaders), "token-header", "")
 	flags.BoolVar(&parsed.options.NoBrowser, "no-browser", false, "")
 	flags.DurationVar(&parsed.options.Timeout, "timeout", 5*time.Minute, "")
 	for _, name := range []string{"V", "version"} {
@@ -74,33 +75,78 @@ func Parse(args []string) (Options, error) {
 
 		return Options{}, err
 	}
+	if parsed.options.Version {
+		var err error
+		if parsed.authURL != "" {
+			parsed.options.AuthURL, err = parseURL("--auth-url", parsed.authURL)
+			if err != nil {
+				return Options{}, err
+			}
+		}
+		if parsed.tokenURL != "" {
+			parsed.options.TokenURL, err = parseURL("--token-url", parsed.tokenURL)
+			if err != nil {
+				return Options{}, err
+			}
+		}
 
-	var err error
-	if parsed.authURL != "" {
-		parsed.options.AuthURL, err = url.Parse(parsed.authURL)
-		if err != nil {
-			return Options{}, err
+		return parsed.options, nil
+	}
+
+	for _, required := range []struct {
+		name  string
+		value string
+	}{
+		{"--auth-url", parsed.authURL},
+		{"--token-url", parsed.tokenURL},
+		{"--client-id", parsed.options.ClientID},
+	} {
+		if required.value == "" {
+			return Options{}, fmt.Errorf("missing required flag %s", required.name)
 		}
 	}
-	if parsed.tokenURL != "" {
-		parsed.options.TokenURL, err = url.Parse(parsed.tokenURL)
-		if err != nil {
-			return Options{}, err
-		}
+
+	var err error
+	parsed.options.AuthURL, err = parseURL("--auth-url", parsed.authURL)
+	if err != nil {
+		return Options{}, err
+	}
+	parsed.options.TokenURL, err = parseURL("--token-url", parsed.tokenURL)
+	if err != nil {
+		return Options{}, err
 	}
 
 	return parsed.options, nil
 }
 
-type paramsValue []oauth.Param
+func parseURL(flagName, raw string) (*url.URL, error) {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("invalid %s value %q: %w", flagName, raw, err)
+	}
+
+	return parsed, nil
+}
+
+type paramsValue struct {
+	flagName string
+	params   *[]oauth.Param
+}
+
+func newParamsValue(flagName string, params *[]oauth.Param) *paramsValue {
+	return &paramsValue{flagName: flagName, params: params}
+}
 
 func (value *paramsValue) String() string {
 	return ""
 }
 
 func (value *paramsValue) Set(raw string) error {
-	key, parameterValue, _ := strings.Cut(raw, "=")
-	*value = append(*value, oauth.Param{Key: key, Value: parameterValue})
+	key, parameterValue, found := strings.Cut(raw, "=")
+	if !found || key == "" {
+		return fmt.Errorf("%s value %q must be key=value with a non-empty key", value.flagName, raw)
+	}
+	*value.params = append(*value.params, oauth.Param{Key: key, Value: parameterValue})
 
 	return nil
 }
