@@ -84,10 +84,11 @@ func TimeOf(id string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("%w: non-canonical format", ErrInvalidID)
 	}
 
-	n, ok := decodeBase36(parts[1] + parts[2])
-	if !ok || n >= modulus {
-		return time.Time{}, fmt.Errorf("%w: body out of range", ErrInvalidID)
-	}
+	// parts[1] and parts[2] each passed validBodyPart above, so both are exactly
+	// groupWidth valid base36 digits: decodeBase36 cannot fail on their
+	// concatenation, and bodyDigits (=8) base36 digits max out at 36^8 - 1, one
+	// below modulus (36^8). Neither a decode failure nor n >= modulus is reachable.
+	n, _ := decodeBase36(parts[1] + parts[2])
 
 	// Add modulus before subtracting offset to keep the dividend non-negative:
 	// Go's % takes the dividend's sign, so a plain (n-offset)%modulus would yield
