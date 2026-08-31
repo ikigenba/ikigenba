@@ -217,6 +217,8 @@ func TestRunHelpAliasesPrintUsageExactlyOnce(t *testing.T) {
 }
 
 // R-TOOA-ASKR: help output is byte-for-byte the specified usage block.
+// R-TPW6-OKBG: a byte-for-byte match of the whole usage block subsumes and
+// genuinely asserts that it names every supported option spelling.
 func TestRunUsageTextIsExact(t *testing.T) {
 	stdout, stderr, exitCode := runCLI([]string{"--help"}, "", &fakeClock{})
 
@@ -225,20 +227,6 @@ func TestRunUsageTextIsExact(t *testing.T) {
 	}
 	if stderr != "" || exitCode != int(exitSuccess) {
 		t.Errorf("Run() = (stderr %q, exit %d), want (empty, %d)", stderr, exitCode, int(exitSuccess))
-	}
-}
-
-// R-TPW6-OKBG: the returned usage block names every supported option spelling.
-func TestRunUsageTextMentionsEveryOption(t *testing.T) {
-	stdout, stderr, exitCode := runCLI([]string{"-h"}, "", &fakeClock{})
-	if stderr != "" || exitCode != int(exitSuccess) {
-		t.Fatalf("Run() = (stderr %q, exit %d), want (empty, %d)", stderr, exitCode, int(exitSuccess))
-	}
-
-	for _, option := range []string{"-n", "--number", "-p", "--prefix", "--decode", "-h", "--help", "-V", "--version"} {
-		if !strings.Contains(stdout, option) {
-			t.Errorf("usage output does not mention %q: %q", option, stdout)
-		}
 	}
 }
 
@@ -536,14 +524,29 @@ func TestRunMintsOnlyAtClockReportedInstants(t *testing.T) {
 	if exitCode != int(exitSuccess) {
 		t.Fatalf("Run() exit code = %d, want %d", exitCode, int(exitSuccess))
 	}
+	if len(ids) != 4 {
+		t.Fatalf("minted %d ids, want 4", len(ids))
+	}
+
 	reportedMilliseconds := make(map[int64]struct{}, len(clock.reported))
 	for _, instant := range clock.reported {
 		reportedMilliseconds[instant.UnixMilli()] = struct{}{}
 	}
+
+	// With an advancing clock the exact outcome is knowable: the four ids land on
+	// four distinct milliseconds, each an instant the clock actually reported.
+	// Assert the count and distinctness alongside membership so the check cannot
+	// pass on four identical ids that merely share one reported millisecond.
+	seen := make(map[int64]struct{}, len(ids))
 	for i, instant := range decodedTimes(t, ids) {
-		if _, reported := reportedMilliseconds[instant.UnixMilli()]; !reported {
-			t.Errorf("output[%d] decoded millisecond %d was never reported by Clock.Now", i, instant.UnixMilli())
+		millisecond := instant.UnixMilli()
+		if _, reported := reportedMilliseconds[millisecond]; !reported {
+			t.Errorf("output[%d] decoded millisecond %d was never reported by Clock.Now", i, millisecond)
 		}
+		if _, duplicate := seen[millisecond]; duplicate {
+			t.Errorf("output[%d] decoded millisecond %d is duplicated", i, millisecond)
+		}
+		seen[millisecond] = struct{}{}
 	}
 }
 
