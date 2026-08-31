@@ -1,0 +1,117 @@
+# D4-errors
+
+Every failure a consumer can see — a transport error, a rejected request, a
+mid-stream fault, a bad config — arrives as one Go error type, `*Error`, whose
+**category lives on a struct field**, not in the Go type. There is no error type
+hierarchy to switch on: a caller reads `err.Category`, and cross-cutting checks
+like retryability read the same field through one helper. A type tree would force
+every new endpoint envelope to grow a new leaf type and every consumer `switch`
+to grow a new case; a category enum on a shared struct absorbs a new endpoint by
+mapping its envelope to an existing category.
+
+**Classification is a seam that sees the whole response.** Each endpoint owns a
+classifier that receives the HTTP status, the response headers, and the body
+bytes, and returns a populated `*Error`. Headers are not optional input: a
+retry-after or rate-limit-reset value lives only in the headers, and the
+classifier lifts it into a typed `RetryAfter` on the error so the retry layer
+(D14) never re-parses a header. Body is required because some endpoints do not
+separate distinct failures at the envelope level — a bad credential and an
+unknown model can both arrive as the same status and the same envelope code,
+distinguishable only by the human-readable message text. The classifier is thus
+allowed to inspect message text as a last resort, and the category it assigns is
+authoritative regardless of how it decided.
+
+```go
+// Category is a closed enumeration of failure kinds, carried on Error. It is a
+// field, not a type: adding an endpoint maps its envelope onto these values
+// rather than introducing a new Go error type.
+type Category int
+
+const (
+    CategoryUnknown        Category = iota // unclassifiable; default, never retried
+    CategoryAuth                           // rejected credential / permission
+    CategoryInvalidRequest                 // malformed request, unknown model, bad params
+    CategoryRateLimit                      // throttled; RetryAfter is typically set
+    CategoryOverloaded                     // transient upstream/server fault (5xx-ish)
+    CategoryInsufficientQuota              // out of credits/balance; not retryable
+    CategoryTimeout                        // deadline exceeded / connection reset
+    CategoryTransport                      // network-level failure before a usable response
+)
+
+// Error is the single error type agentkit returns for a provider interaction.
+// Category is the discriminator; the remaining fields are context. RetryAfter is
+// the classifier's typed reading of a retry-after / rate-limit-reset header, zero
+// when none was present. Status is the HTTP status (0 for transport failures).
+type Error struct {
+    Category   Category
+    Status     int           // HTTP status, 0 if no response was received
+    Code       string        // vendor envelope code, verbatim, when present
+    Message    string        // vendor message text, verbatim
+    RetryAfter time.Duration // classifier's reading of a retry hint, 0 if none
+    Endpoint   Identity      // which endpoint/model produced this (D-identity)
+    err        error         // wrapped cause, exposed via Unwrap
+}
+
+func (e *Error) Error() string { /* "<category>: <message> (status N)" */ }
+func (e *Error) Unwrap() error { return e.err }
+```
+
+**Retryability is derived from the category, in one place.** Consumers and the
+retry layer both call `Retryable`, never re-deciding per call site:
+
+```go
+// Retryable reports whether err (or anything it wraps) is an agentkit *Error
+// whose category is transient. Rate-limit, overloaded, timeout, and transport
+// are retryable; auth, invalid-request, insufficient-quota, and unknown are
+// not. It is the single authority — the retry layer (D14) and consumer code ask
+// it rather than switching on Category themselves.
+func Retryable(err error) bool
+```
+
+**A mid-stream error can arrive after a 200.** Some wires open with HTTP 200 and
+then emit an error *event* partway through the byte stream, after usable content
+has already been decoded. The classifier must therefore be reachable from inside
+the stream decode (D5/D13), not only at the moment the response headers land: the
+adapter, on seeing an error frame, runs the same classification path (status is
+the already-seen 200, but the body is the error frame and any trailing headers
+are absent) and surfaces the resulting `*Error` as the stream's terminal error.
+There is one classification path, invoked from two points.
+
+**Config failures and lifecycle failures are fail-loud sentinels.** Two
+conditions are the consumer's mistake, not the provider's, and are reported as
+sentinel errors comparable with `errors.Is`:
+
+```go
+// ErrInvalidConfig is returned (wrapped in *Error with CategoryInvalidRequest)
+// when a Conversation is constructed or a Send is issued with a configuration
+// that cannot be honored: a reserved-key collision in ProviderOptions, a
+// base-URL set against a transport-baking credential, or a generation setting a
+// wire cannot express (e.g. a reasoning form with no representation). Such a
+// Send makes no provider call and leaves History unchanged.
+var ErrInvalidConfig = errors.New("agentkit: invalid configuration")
+
+// ErrClosed is returned when Send is called on a Conversation whose event log
+// has been Closed, or on an otherwise finalized Conversation.
+var ErrClosed = errors.New("agentkit: conversation closed")
+```
+
+Fail-loud is a deliberate stance that removed a whole type. There is **no
+`Warning` channel**: the two things the old design warned about are gone as
+warnings. A cost that could not be resolved is reported through `Cost.Known`
+(D3), not a warning. A forced tool-choice on a wire that cannot express it does
+not degrade silently — it fails at `Send` with `ErrInvalidConfig`, the same way
+an unrepresentable reasoning form or an out-of-subset tool schema fails. Every
+condition that would have been a warning is now either a typed field or a hard
+`Send`-time error; nothing is whispered.
+
+## REQUIREMENTS
+
+- R-2K5Z-AIWY: agentkit MUST return provider failures as a single `*Error` type whose failure kind is a `Category` field, and MUST NOT distinguish failure kinds by distinct Go error types.
+- R-2LDV-OANN: An endpoint classifier MUST receive the HTTP status, the response headers, and the body bytes, and MUST return a populated `*Error`.
+- R-2MLS-22EC: The classifier MUST lift a retry hint from response headers into `Error.RetryAfter` as a typed duration; downstream retry logic MUST read that field rather than re-parsing headers.
+- R-2NTO-FU51: When two distinct failures share an endpoint's status and envelope code, the classifier MUST be permitted to disambiguate them from message text and MUST still assign an authoritative `Category`.
+- R-2P1K-TLVQ: The same classification path MUST be reachable from inside the stream decode so that an error frame arriving after an HTTP 200 is surfaced as the stream's terminal `*Error`.
+- R-2RHD-L5D4: `Retryable(err)` MUST be the single authority on retryability, returning true for rate-limit, overloaded, timeout, and transport categories and false for auth, invalid-request, insufficient-quota, and unknown, unwrapping to find an agentkit `*Error`.
+- R-2SP9-YX3T: `ErrInvalidConfig` and `ErrClosed` MUST be sentinel errors comparable via `errors.Is`, including when wrapped in `*Error`.
+- R-2TX6-COUI: A `Send` that fails configuration validation MUST make no provider call and MUST leave History unchanged.
+- R-2V52-QGL7: A forced tool-choice a wire cannot express MUST fail at `Send` with `ErrInvalidConfig` rather than degrade silently; agentkit MUST expose no `Warning` type or warning channel.

@@ -1,0 +1,6 @@
+#!/bin/bash
+
+exec ralph \
+  specs/loops/gather.md \
+  specs/loops/build.md \
+  specs/loops/verify.md
