@@ -90,3 +90,74 @@ func TestDependencyDirection(t *testing.T) {
 		}
 	}
 }
+
+func TestWireArchitectureStaysBelowTransportSeam(t *testing.T) {
+	// R-2WCZ-48BW
+	// R-2XKV-I02L
+	// R-32GH-131D
+	fileSet := token.NewFileSet()
+	for _, name := range []string{"wire_anthropic.go", "wire_openai_responses.go", "wire_openai_chat.go", "wire_gemini.go"} {
+		// #nosec G304 -- names are fixed test fixtures, not external input.
+		source, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, forbidden := range []string{"http://", "https://", "Authorization", "http.Client", "http.Request"} {
+			if strings.Contains(string(source), forbidden) {
+				t.Fatalf("%s owns endpoint transport concern %q", name, forbidden)
+			}
+		}
+		parsed, err := parser.ParseFile(fileSet, name, source, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, declaration := range parsed.Decls {
+			switch declaration := declaration.(type) {
+			case *ast.GenDecl:
+				for _, specification := range declaration.Specs {
+					typeSpecification, ok := specification.(*ast.TypeSpec)
+					if ok && (strings.Contains(typeSpecification.Name.Name, "Wire") || strings.Contains(typeSpecification.Name.Name, "wire")) && ast.IsExported(typeSpecification.Name.Name) {
+						t.Fatalf("concrete codec %q is exported", typeSpecification.Name.Name)
+					}
+				}
+			case *ast.FuncDecl:
+				if declaration.Recv == nil && strings.HasPrefix(declaration.Name.Name, "New") && strings.Contains(declaration.Name.Name, "Wire") {
+					t.Fatalf("wire selection helper %q is exported", declaration.Name.Name)
+				}
+			}
+		}
+	}
+
+	wireSource, err := os.ReadFile("wire.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := parser.ParseFile(fileSet, "wire.go", wireSource, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, declaration := range parsed.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, specification := range general.Specs {
+			typeSpecification, ok := specification.(*ast.TypeSpec)
+			if !ok || typeSpecification.Name.Name != "WireFormat" {
+				continue
+			}
+			wireInterface := typeSpecification.Type.(*ast.InterfaceType)
+			if len(wireInterface.Methods.List) != 5 {
+				t.Fatalf("WireFormat has %d methods, want exact five-method seam", len(wireInterface.Methods.List))
+			}
+		}
+	}
+
+	conversationSource, err := os.ReadFile("conversation.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(conversationSource), "WireFormat") || strings.Contains(string(conversationSource), "SetWire") {
+		t.Fatal("Conversation exposes assignable wire selection")
+	}
+}
