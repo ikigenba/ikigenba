@@ -79,5 +79,7 @@ hand-maintained infrastructure, not spec-governed code:
   GoReleaser from this directory using `.goreleaser.yaml` — linux/darwin ×
   amd64/arm64, tar.gz archives, checksums, a GitHub release on the tag.
 - The version string is source-carried (see `specs/design/D6-help-and-version.md`),
-  never ldflags-injected: to release, bump `internal/cli/version.go` through
-  the spec loop (it is a design fact), merge, then tag to match.
+  never ldflags-injected. Its *value* is release data, not spec-governed: edit
+  `internal/cli/version.go` directly to the new `vMAJOR.MINOR.PATCH` (the spec
+  fixes only its shape), keep it valid against the gates, merge, then tag to
+  match. No spec-loop cycle is needed to bump it.
