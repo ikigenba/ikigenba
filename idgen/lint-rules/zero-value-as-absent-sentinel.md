@@ -1,6 +1,6 @@
 ---
 description: a zero value that is also a legal input is used to mean "not set", with correctness propped up by a second redundant guard
-severity: warning
+severity: error
 include: ["**/*.go"]
 ---
 Flag variables initialized to their zero value to mean "nothing yet" when that zero is itself a value the domain can legitimately produce — `0` for a Unix timestamp, an epoch offset, a price, an index, a count that may legally be zero; `""` for a name that may be empty; a zero `time.Time` where the clock may be arbitrary. The reliable tell is a second condition doing the real work nearby: a separate `first`/`i > 0` test, or a length check, that keeps the sentinel from being compared on the first pass. Two mechanisms then encode one state, and deleting either — an easy thing to do while refactoring, since each looks redundant in isolation — silently changes behavior for the inputs where the zero is real. Prefer a pointer, an `ok` companion boolean, an option type, or restructuring so the first iteration does not take the comparison at all.

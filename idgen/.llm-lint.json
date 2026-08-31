@@ -38,6 +38,7 @@
     "untyped-code-enum",
     "unvalidated-precondition-on-exported-api",
     "unused-fake-or-table-field",
-    "vacuous-substring-assertion"
+    "vacuous-substring-assertion",
+    "zero-value-as-absent-sentinel"
   ]
 }
