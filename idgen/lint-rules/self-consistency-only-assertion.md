@@ -1,6 +1,6 @@
 ---
 description: tests comparing several outputs of the same function against each other with no independently known expected value
-severity: warning
+severity: error
 include: ["**/*_test.go", "**/*_test.py", "**/*.test.ts", "**/*.test.js", "**/*_test.rb"]
 ---
 Flag tests that call the code under test two or more times and assert only that the results agree, when the correct result is knowable and cheap to state. Such a test proves consistency, not correctness: a regression that makes every call wrong in the same way leaves it green. It usually shows up as "this input is ignored" or "these aliases behave alike" tests, which loop over variants, stash the first result, and compare the rest to it. The name promises a behavioral guarantee; the body only rules out disagreement.

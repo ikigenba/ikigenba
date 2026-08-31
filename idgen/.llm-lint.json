@@ -26,6 +26,7 @@
     "overclaiming-exhaustive-test-name",
     "prefer-exact-over-inequality-assertion",
     "repeated-flag-alias-literals",
-    "same-name-different-kind"
+    "same-name-different-kind",
+    "self-consistency-only-assertion"
   ]
 }
