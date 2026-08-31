@@ -193,7 +193,7 @@ func TestMintAtTimeOfRoundTrip(t *testing.T) {
 	// R-SJ7P-ALD5
 	const (
 		seed                         = uint64(1729)
-		maxRepresentableOffsetMillis = int64(36*36*36*36*36*36*36*36 - 1)
+		maxRepresentableOffsetMillis = modulus - 1
 	)
 	state := seed
 	nextOffset := func() int64 {
@@ -230,7 +230,7 @@ func TestMintAtTimeOfRoundTrip(t *testing.T) {
 
 func TestMintAtEncodingBoundaryBehavior(t *testing.T) {
 	const (
-		maxRepresentableOffsetMillis = int64(36*36*36*36*36*36*36*36 - 1)
+		maxRepresentableOffsetMillis = modulus - 1
 		encodingPeriodMillis         = maxRepresentableOffsetMillis + 1
 		saturatedDurationMillis      = math.MaxInt64 / int64(time.Millisecond)
 	)
@@ -292,6 +292,9 @@ func TestTimeOfRejectsEveryNonCanonicalGrammarBoundary(t *testing.T) {
 	// R-SQJ3-L7TB
 	invalid := map[string]string{
 		"empty":                   "",
+		"bare separator":          "-",
+		"double separator":        "--",
+		"trailing null byte":      "X-0000-0000\x00",
 		"missing prefix":          "-0000-0000",
 		"missing prefix and dash": "0000-0000",
 		"prefix punctuation":      "A_B-0000-0000",
@@ -335,7 +338,72 @@ func TestTimeOfNeverPanicsForArbitraryInput(t *testing.T) {
 		state ^= state << 17
 		return state
 	}
-	inputs := []string{
+
+	// A uniformly-random byte string is rejected at TimeOf's first shape guard
+	// with probability ~1, so a sweep built only from garbage exercises the shape
+	// check 20 000 times and never enters the base-36 decode / timestamp
+	// reconstruction path. To back the "arbitrary input" claim with real coverage
+	// we build well-formed ids from the format's own minter, mutate known-good
+	// values one byte at a time, and mix in pure garbage so the shape-rejection
+	// path stays covered too.
+
+	// wellFormedID builds a canonical id straight from the format's own minter,
+	// so it always survives the shape guard and drives the decode + timestamp
+	// path. The millisecond offset is a wide non-negative value (top bits shifted
+	// off so the multiply into a time.Duration cannot overflow and the offset
+	// never lands before Epoch); sweeping it spreads the encoded body across the
+	// base-36 space, since MintAt folds any offset through its encoding ring.
+	prefixes := []string{"R", "S", "SPEC", "abc123", "Z9", "Requirement"}
+	wellFormedID := func() string {
+		prefix := prefixes[nextRandom()%uint64(len(prefixes))]
+		ms := int64(nextRandom() >> 22)
+		return MintAt(prefix, Epoch().Add(time.Duration(ms)*time.Millisecond))
+	}
+
+	// nearMissID mutates one byte of a well-formed id to an arbitrary value.
+	// Many mutations land on the body and remain shaped like a token, so the
+	// parser body is still reached; others break the shape and exercise the
+	// rejection path — both from a value that started life inside the grammar.
+	nearMissID := func() string {
+		buf := []byte(wellFormedID())
+		buf[nextRandom()%uint64(len(buf))] = byte(nextRandom() & 0xff)
+		return string(buf)
+	}
+
+	// garbage is a uniformly-random byte string of arbitrary length, kept to
+	// hold coverage of the shape-rejection path.
+	garbage := func() string {
+		length := int(nextRandom() % 257)
+		value := make([]byte, length)
+		for j := range value {
+			value[j] = byte(nextRandom() & 0xff)
+		}
+		return string(value)
+	}
+
+	// decodedOK reports whether TimeOf accepted id. Whatever the input, TimeOf
+	// must never panic and must land in exactly one of two classified outcomes:
+	// a UTC, millisecond-aligned time, or an error wrapping ErrInvalidID.
+	decodedOK := func(context string, id string) bool {
+		got, err := TimeOf(id)
+		switch {
+		case err == nil:
+			if got.Location() != time.UTC || got.Nanosecond()%int(time.Millisecond) != 0 {
+				t.Fatalf("seed %#x, %s %q: TimeOf returned invalid successful time %s", seed, context, id, got)
+			}
+			return true
+		case errors.Is(err, ErrInvalidID):
+			return false
+		default:
+			t.Fatalf("seed %#x, %s %q: TimeOf returned unclassified error: %v", seed, context, id, err)
+			return false
+		}
+	}
+
+	// Hand-picked shape-rejection edges: never panic, always classified. The
+	// structured rejection cases here are also enumerated by
+	// TestTimeOfRejectsEveryNonCanonicalGrammarBoundary.
+	for _, id := range []string{
 		"",
 		"-",
 		"--",
@@ -343,28 +411,26 @@ func TestTimeOfNeverPanicsForArbitraryInput(t *testing.T) {
 		"X-ZZZZ-ZZZZ",
 		"X-0000-0000\x00",
 		string([]byte{0xff, 0xfe, 0xfd}),
-	}
-	for i := 0; i < 20000; i++ {
-		length := int(nextRandom() % 257)
-		value := make([]byte, length)
-		for j := range value {
-			value[j] = byte(nextRandom() & 0xff)
-		}
-		inputs = append(inputs, string(value))
+	} {
+		decodedOK("edge", id)
 	}
 
-	for i, id := range inputs {
-		got, err := TimeOf(id)
-		switch {
-		case err == nil:
-			if got.Location() != time.UTC || got.Nanosecond()%int(time.Millisecond) != 0 {
-				t.Fatalf("seed %#x, input %d: TimeOf(%q) returned invalid successful time %s", seed, i, id, got)
-			}
-		case errors.Is(err, ErrInvalidID):
-			// Every rejected input must use the package's documented sentinel.
-		default:
-			t.Fatalf("seed %#x, input %d: TimeOf(%q) returned unclassified error: %v", seed, i, id, err)
+	// Every canonical id from the minter must survive the shape guard and
+	// round-trip through the decode + timestamp path. Asserting this per input
+	// makes the deep-path coverage exact — the sweep cannot silently collapse
+	// into re-testing shape rejection.
+	for i := 0; i < 20000; i++ {
+		id := wellFormedID()
+		if !decodedOK("well-formed", id) {
+			t.Fatalf("seed %#x, well-formed input %d: TimeOf rejected canonical minted id %q", seed, i, id)
 		}
+	}
+
+	// Near-miss mutations and pure garbage: never panic, always classified,
+	// whether or not the mutated value still parses.
+	for i := 0; i < 20000; i++ {
+		decodedOK("near-miss", nearMissID())
+		decodedOK("garbage", garbage())
 	}
 }
 
