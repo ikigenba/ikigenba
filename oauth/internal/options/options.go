@@ -12,8 +12,15 @@ import (
 	"github.com/ikigenba/ikigenba/oauth/internal/oauth"
 )
 
+const usage = "Usage: oauth [flags]\n"
+
 // ErrHelp reports that either supported help flag was supplied.
 var ErrHelp = flag.ErrHelp
+
+// Usage returns the command's usage text for placement by the CLI.
+func Usage() string {
+	return usage
+}
 
 // Options describes an OAuth login and its command-line controls.
 type Options struct {
@@ -42,21 +49,21 @@ func Parse(args []string) (Options, error) {
 	}
 
 	flags := flag.NewFlagSet("oauth", flag.ContinueOnError)
-	flags.StringVar(&parsed.authURL, "auth-url", "", "authorization endpoint")
-	flags.StringVar(&parsed.tokenURL, "token-url", "", "token endpoint")
-	flags.StringVar(&parsed.options.ClientID, "client-id", "", "OAuth client id")
-	flags.StringVar(&parsed.options.Scope, "scope", "", "space-separated OAuth scopes")
-	flags.StringVar(&parsed.options.ClientSecret, "client-secret", "", "OAuth client secret")
-	flags.StringVar(&parsed.options.CallbackHost, "callback-host", "localhost", "callback host")
-	flags.IntVar(&parsed.options.Port, "port", 0, "loopback callback port")
-	flags.StringVar(&parsed.options.CallbackPath, "callback-path", "/callback", "callback path")
-	flags.Var((*paramsValue)(&parsed.options.AuthParams), "auth-param", "extra authorization parameter")
-	flags.Var((*paramsValue)(&parsed.options.TokenParams), "token-param", "extra token parameter")
-	flags.Var((*paramsValue)(&parsed.options.TokenHeaders), "token-header", "extra token request header")
-	flags.BoolVar(&parsed.options.NoBrowser, "no-browser", false, "do not open a browser")
-	flags.DurationVar(&parsed.options.Timeout, "timeout", 5*time.Minute, "callback timeout")
+	flags.StringVar(&parsed.authURL, "auth-url", "", "")
+	flags.StringVar(&parsed.tokenURL, "token-url", "", "")
+	flags.StringVar(&parsed.options.ClientID, "client-id", "", "")
+	flags.StringVar(&parsed.options.Scope, "scope", "", "")
+	flags.StringVar(&parsed.options.ClientSecret, "client-secret", "", "")
+	flags.StringVar(&parsed.options.CallbackHost, "callback-host", "localhost", "")
+	flags.IntVar(&parsed.options.Port, "port", 0, "")
+	flags.StringVar(&parsed.options.CallbackPath, "callback-path", "/callback", "")
+	flags.Var((*paramsValue)(&parsed.options.AuthParams), "auth-param", "")
+	flags.Var((*paramsValue)(&parsed.options.TokenParams), "token-param", "")
+	flags.Var((*paramsValue)(&parsed.options.TokenHeaders), "token-header", "")
+	flags.BoolVar(&parsed.options.NoBrowser, "no-browser", false, "")
+	flags.DurationVar(&parsed.options.Timeout, "timeout", 5*time.Minute, "")
 	for _, name := range []string{"V", "version"} {
-		flags.BoolVar(&parsed.options.Version, name, false, "print version")
+		flags.BoolVar(&parsed.options.Version, name, false, "")
 	}
 	flags.SetOutput(io.Discard)
 

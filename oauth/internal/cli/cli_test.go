@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/oauth/internal/browser"
@@ -13,13 +15,124 @@ import (
 	"github.com/ikigenba/ikigenba/oauth/internal/cli"
 )
 
+type failLauncher struct {
+	t *testing.T
+}
+
+func (launcher failLauncher) Open(url string) error {
+	launcher.t.Fatalf("Launcher.Open(%q) called during control handling", url)
+
+	return nil
+}
+
+func failDeps(t *testing.T) cli.Deps {
+	t.Helper()
+
+	return cli.Deps{
+		Launcher: failLauncher{t: t},
+		Listen: func(network, address string) (net.Listener, error) {
+			t.Fatalf("Listen(%q, %q) called during control handling", network, address)
+
+			return nil, nil
+		},
+	}
+}
+
 // R-E5L7-OSOC
 func TestRunReturnsInProcess(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := cli.Run(context.Background(), []string{"--example"}, &stdout, &stderr, cli.Deps{})
+	code := cli.Run(context.Background(), nil, &stdout, &stderr, cli.Deps{})
 
 	if code != 0 {
 		t.Fatalf("Run returned exit code %d, want 0 for the phase scaffold", code)
+	}
+}
+
+// R-QOVV-M4XY
+func TestRunRoutesUnknownFlagToStderr(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := cli.Run(
+		context.Background(),
+		[]string{"--distinctively-unknown"},
+		&stdout,
+		&stderr,
+		failDeps(t),
+	)
+
+	if code != 2 {
+		t.Errorf("Run() exit code = %d, want 2", code)
+	}
+	if stdout.String() != "" {
+		t.Errorf("stdout = %q, want empty", stdout.String())
+	}
+	const usage = "Usage: oauth [flags]\n"
+	if !strings.Contains(stderr.String(), usage) {
+		t.Errorf("stderr = %q, want it to contain usage %q", stderr.String(), usage)
+	}
+}
+
+func TestRunQuotesControlCharactersInParseErrors(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	const rawFlag = "--unknown\ninjected"
+	_ = cli.Run(
+		context.Background(),
+		[]string{rawFlag},
+		&stdout,
+		&stderr,
+		failDeps(t),
+	)
+
+	if strings.Contains(stderr.String(), "unknown\ninjected") {
+		t.Errorf("stderr contains raw newline from argv: %q", stderr.String())
+	}
+}
+
+// R-QQ3R-ZWON
+func TestRunReportsUnknownFlagCauseExactlyOnce(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	const cause = "flag provided but not defined: -one-off-unknown"
+	_ = cli.Run(
+		context.Background(),
+		[]string{"--one-off-unknown"},
+		&stdout,
+		&stderr,
+		failDeps(t),
+	)
+
+	combined := stdout.String() + stderr.String()
+	if got := strings.Count(combined, cause); got != 1 {
+		t.Errorf("cause occurs %d times across output, want exactly 1; output = %q", got, combined)
+	}
+	if strings.Contains(stdout.String(), cause) {
+		t.Errorf("stdout = %q, want no usage-error cause", stdout.String())
+	}
+}
+
+// R-QRBO-DOFC
+func TestRunHelpShortCircuitsBeforeLoginSideEffects(t *testing.T) {
+	for _, flag := range []string{"-h", "--help"} {
+		t.Run(flag, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := cli.Run(context.Background(), []string{flag}, &stdout, &stderr, failDeps(t))
+
+			if code != 0 {
+				t.Errorf("Run(%q) exit code = %d, want 0", flag, code)
+			}
+		})
+	}
+}
+
+// R-QSJK-RG61
+func TestRunVersionShortCircuitsBeforeLoginSideEffects(t *testing.T) {
+	for _, flag := range []string{"-V", "--version"} {
+		t.Run(flag, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := cli.Run(context.Background(), []string{flag}, &stdout, &stderr, failDeps(t))
+
+			if code != 0 {
+				t.Errorf("Run(%q) exit code = %d, want 0", flag, code)
+			}
+		})
 	}
 }
 
