@@ -2,10 +2,53 @@ package agentkit
 
 import (
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestNoWarningOrCategorySpecificErrorTypesAreExported(t *testing.T) {
+	// R-2K5Z-AIWY
+	// R-2V52-QGL7
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	exportedErrorTypes := make([]string, 0)
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		file, parseErr := parser.ParseFile(token.NewFileSet(), entry.Name(), nil, 0)
+		if parseErr != nil {
+			t.Fatal(parseErr)
+		}
+		for _, declaration := range file.Decls {
+			general, ok := declaration.(*ast.GenDecl)
+			if !ok || general.Tok != token.TYPE {
+				continue
+			}
+			for _, specification := range general.Specs {
+				typeSpecification := specification.(*ast.TypeSpec)
+				name := typeSpecification.Name.Name
+				if name == "Warning" {
+					t.Fatal("exported Warning type exists; invalid configuration must fail loudly")
+				}
+				if ast.IsExported(name) && strings.HasSuffix(name, "Error") {
+					exportedErrorTypes = append(exportedErrorTypes, name)
+				}
+			}
+		}
+	}
+	if len(exportedErrorTypes) != 1 || exportedErrorTypes[0] != "Error" {
+		t.Fatalf("exported error types = %v, want only Error", exportedErrorTypes)
+	}
+}
 
 type listedPackage struct {
 	ImportPath string

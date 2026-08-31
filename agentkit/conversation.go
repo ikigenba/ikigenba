@@ -3,6 +3,7 @@ package agentkit
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 )
@@ -14,6 +15,7 @@ type Conversation struct {
 	client   *http.Client
 	identity Identity
 	history  History
+	validate func() error
 }
 
 // NewConversation constructs a conversation driven by provider. The provider,
@@ -32,6 +34,12 @@ func NewConversation(provider Provider, client *http.Client) *Conversation {
 // life; only the transcript grows. Send is the one verb — multimodal input
 // arrives as additional Block variants, never as a second method.
 func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream {
+	if c.validate != nil {
+		if err := c.validate(); err != nil {
+			return &Stream{err: invalidConfigError(c.identity, err)}
+		}
+	}
+
 	userMessage := Message{Role: RoleUser, Blocks: cloneBlocks(blocks)}
 	candidate := cloneHistory(c.history)
 	candidate = append(candidate, userMessage)
@@ -46,12 +54,12 @@ func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream {
 func (c *Conversation) roundTrip(ctx context.Context, candidate History) *Stream {
 	request, err := c.buildRequest(ctx, candidate)
 	if err != nil {
-		return &Stream{err: err}
+		return &Stream{err: wrapProviderError(err, CategoryUnknown, 0, c.identity)}
 	}
 
 	response, err := c.execute(request)
 	if err != nil {
-		return &Stream{err: err}
+		return &Stream{err: wrapProviderError(err, CategoryTransport, 0, c.identity)}
 	}
 
 	return c.consumeResponse(ctx, response)
@@ -112,16 +120,19 @@ func (c *Conversation) consumeResponse(ctx context.Context, response *http.Respo
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		body, readErr := io.ReadAll(response.Body)
 		if readErr != nil {
-			return &Stream{err: readErr}
+			contextual := fmt.Errorf("provider error response body ended before it could be read completely: %w", readErr)
+			return &Stream{err: wrapProviderError(contextual, CategoryUnknown, response.StatusCode, c.identity)}
 		}
 
-		return &Stream{err: c.provider.Classify(response.StatusCode, response.Header, body)}
+		classified := c.provider.Classify(response.StatusCode, response.Header, body)
+		return &Stream{err: wrapProviderError(classified, CategoryUnknown, response.StatusCode, c.identity)}
 	}
 
 	stream := &Stream{}
 	for event, decodeErr := range c.provider.Decode(ctx, response) {
 		if decodeErr != nil {
-			stream.err = decodeErr
+			contextual := fmt.Errorf("provider response decoding ended before completion: %w", decodeErr)
+			stream.err = wrapProviderError(contextual, CategoryUnknown, response.StatusCode, c.identity)
 
 			break
 		}
