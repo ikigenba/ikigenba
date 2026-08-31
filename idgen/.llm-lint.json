@@ -37,6 +37,7 @@
     "unquoted-untrusted-token-in-diagnostic",
     "untyped-code-enum",
     "unvalidated-precondition-on-exported-api",
-    "unused-fake-or-table-field"
+    "unused-fake-or-table-field",
+    "vacuous-substring-assertion"
   ]
 }

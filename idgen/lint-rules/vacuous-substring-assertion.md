@@ -1,6 +1,6 @@
 ---
 description: containment assertions whose needle is already a substring of other expected content, so they pass regardless of the behavior under test
-severity: warning
+severity: error
 include: ["**/*_test.go", "**/*_test.py", "**/*.test.ts", "**/*.test.js", "**/*_test.rb"]
 ---
 Flag substring or containment assertions that cannot fail because the needle also occurs inside neighboring content the output is independently required to have. The classic case is a loop asserting that help text documents every short option spelling, where each short spelling is a prefix of its own long spelling — deleting every short flag from the output leaves the assertions green. The same shape appears when checking for a field name that is a substring of another field name, an error code embedded in a longer code, or a key that also appears in an unrelated part of a serialized payload. A reviewer objects because the test's name states a coverage claim the assertion does not make, and because it is usually redundant beside an exact-equality assertion elsewhere in the same file.
