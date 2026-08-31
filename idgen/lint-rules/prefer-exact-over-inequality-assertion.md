@@ -1,6 +1,6 @@
 ---
 description: inequality or set-membership assertions on values a deterministic fake makes exactly predictable
-severity: warning
+severity: error
 include: ["**/*_test.go", "**/*_test.py", "**/*.test.ts", "**/*.test.js", "**/*_test.rb"]
 ---
 Flag assertions that settle for a bound or a membership check when the test's own setup makes the exact answer knowable. With an injected fake clock, a fixed seed, and a fixed input, the number of sleeps, the elapsed virtual time, the number of output lines, and the retry count are all determined — so `>= 4ms` is a strictly weaker claim than `== 4ms`, and it stays green if a bug makes the code wait four seconds. The same weakness shows up as asserting that each produced value belongs to some expected set without also asserting how many values were produced or that they are distinct, which passes when the code emits the same value repeatedly.

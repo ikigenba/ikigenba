@@ -23,6 +23,7 @@
     "literal-zone-suffix-without-conversion-guarantee",
     "log-prng-seed-on-failure",
     "magic-literal-beside-existing-constant",
-    "overclaiming-exhaustive-test-name"
+    "overclaiming-exhaustive-test-name",
+    "prefer-exact-over-inequality-assertion"
   ]
 }
