@@ -1,0 +1,23 @@
+version: "2"
+
+linters:
+  # The v2 standard set (errcheck, govet, ineffassign, staticcheck, unused)
+  # plus a curated strict layer. bodyclose and noctx are oauth-specific: this
+  # is an HTTP client, and they catch exactly its failure family (a leaked
+  # response body, a request built without a context).
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gocritic
+    - gosec
+    - misspell
+    - noctx
+    - revive
+    - unconvert
+    - unparam
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

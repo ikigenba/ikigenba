@@ -1,0 +1,8 @@
+# Build output
+bin/
+dist/
+
+# Credential guard. The documented usage redirects a real token response to a
+# file (`oauth ... > auth.json`, `> x-ai-auth.json` in the help examples); run
+# in-tree that lands live credentials here. Never commit one.
+/*auth.json

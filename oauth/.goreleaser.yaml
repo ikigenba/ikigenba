@@ -1,0 +1,29 @@
+version: 2
+
+project_name: oauth
+
+builds:
+  - id: oauth
+    main: ./cmd/oauth
+    binary: oauth
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    # No -X version stamp: the version string is source-carried in
+    # internal/cli, so a released binary and a dev build report the same value.
+    ldflags:
+      - -s -w
+
+archives:
+  - id: oauth
+    formats: [tar.gz]
+    name_template: "{{ .Binary }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+# The workflow publishes the release itself (gh release create --generate-notes)
+# on the real monorepo tag; goreleaser only builds and archives.
+changelog:
+  disable: true
