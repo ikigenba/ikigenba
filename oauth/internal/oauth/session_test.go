@@ -2,7 +2,7 @@ package oauth_test
 
 import (
 	"bytes"
-	"encoding/base64"
+	"errors"
 	"math/rand"
 	"strings"
 	"testing"
@@ -16,7 +16,7 @@ const sampleSize = 64
 func TestNewSessionRendersUnpaddedBase64URLSecrets(t *testing.T) {
 	rng := rand.New(rand.NewSource(108_942)) // #nosec G404 -- fixed test entropy must be reproducible.
 	for range sampleSize {
-		session := newSession(t, rng)
+		session := mustNewSession(t, rng)
 		for field, value := range map[string]string{
 			"State": session.State, "CodeVerifier": session.CodeVerifier,
 		} {
@@ -37,7 +37,10 @@ func TestNewSessionCodeVerifierSatisfiesRFC7636Grammar(t *testing.T) {
 	const seed = 7636
 	rng := rand.New(rand.NewSource(seed)) // #nosec G404 -- fixed test entropy must be reproducible.
 	for range sampleSize {
-		verifier := newSession(t, rng).CodeVerifier
+		verifier := mustNewSession(t, rng).CodeVerifier
+		if len(verifier) != 86 {
+			t.Errorf("CodeVerifier %q has length %d, want 86", verifier, len(verifier))
+		}
 		if len(verifier) < 43 || len(verifier) > 128 {
 			t.Errorf("seed %d produced CodeVerifier %q with length %d, want between 43 and 128", seed, verifier, len(verifier))
 		}
@@ -55,9 +58,9 @@ func TestNewSessionDrawsVerifierBeforeStateAtExactSizes(t *testing.T) {
 	stateBytes := bytes.Repeat([]byte{0xe2}, 32)
 	entropy := append(append([]byte(nil), verifierBytes...), stateBytes...)
 
-	session := newSession(t, bytes.NewReader(entropy))
-	wantVerifier := base64.RawURLEncoding.EncodeToString(verifierBytes)
-	wantState := base64.RawURLEncoding.EncodeToString(stateBytes)
+	session := mustNewSession(t, bytes.NewReader(entropy))
+	wantVerifier := "Hx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHw"
+	wantState := "4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uI"
 	if session.CodeVerifier != wantVerifier {
 		t.Errorf("CodeVerifier = %q, want %q", session.CodeVerifier, wantVerifier)
 	}
@@ -75,15 +78,21 @@ func TestNewSessionDrawsVerifierBeforeStateAtExactSizes(t *testing.T) {
 // R-IWLF-P5CU
 func TestNewSessionIsReproducibleFromSuppliedEntropy(t *testing.T) {
 	entropy := make([]byte, 96)
-	// #nosec G404 -- fixed test entropy must be reproducible.
-	if _, err := rand.New(rand.NewSource(51_061)).Read(entropy); err != nil {
-		t.Fatalf("generate fixed entropy: %v", err)
+	for index := range entropy {
+		entropy[index] = byte(index)
+	}
+	want := oauth.Session{
+		CodeVerifier: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-Pw",
+		State:        "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8",
 	}
 
-	first := newSession(t, bytes.NewReader(entropy))
-	second := newSession(t, bytes.NewReader(entropy))
-	if first != second {
-		t.Errorf("sessions from identical entropy differ: first = %#v, second = %#v", first, second)
+	first := mustNewSession(t, bytes.NewReader(entropy))
+	second := mustNewSession(t, bytes.NewReader(entropy))
+	if first != want {
+		t.Errorf("first session = %#v, want %#v", first, want)
+	}
+	if second != want {
+		t.Errorf("second session = %#v, want %#v", second, want)
 	}
 }
 
@@ -93,7 +102,7 @@ func TestNewSessionSecretsAreIndependentAndChangeWithEntropy(t *testing.T) {
 	rng := rand.New(rand.NewSource(seed)) // #nosec G404 -- fixed test entropy must be reproducible.
 	var previous oauth.Session
 	for sample := range sampleSize {
-		session := newSession(t, rng)
+		session := mustNewSession(t, rng)
 		if session.State == session.CodeVerifier {
 			t.Errorf("sample %d has equal State and CodeVerifier %q", sample, session.State)
 		}
@@ -109,7 +118,73 @@ func TestNewSessionSecretsAreIndependentAndChangeWithEntropy(t *testing.T) {
 	}
 }
 
-func newSession(t *testing.T, entropy interface{ Read([]byte) (int, error) }) oauth.Session {
+// R-IXTC-2X3J
+func TestNewSessionReportsCodeVerifierEntropyFailure(t *testing.T) {
+	sentinel := errors.New("verifier entropy failed")
+	entropy := &failingReader{
+		data: bytes.Repeat([]byte{0x37}, 63),
+		err:  sentinel,
+	}
+
+	_, gotErr := oauth.NewSession(entropy)
+	if gotErr == nil {
+		t.Fatal("NewSession() error = nil, want code verifier entropy failure")
+	}
+	if !strings.Contains(gotErr.Error(), "code verifier") {
+		t.Errorf("NewSession() error = %q, want diagnostic naming code verifier", gotErr)
+	}
+	if !errors.Is(gotErr, sentinel) {
+		t.Errorf("errors.Is(NewSession() error, sentinel) = false, error = %v", gotErr)
+	}
+	if entropy.offset != 63 {
+		t.Errorf("entropy bytes consumed = %d, want 63", entropy.offset)
+	}
+}
+
+// R-IZ18-GOU8
+func TestNewSessionReportsStateEntropyFailureAfterVerifierDraw(t *testing.T) {
+	sentinel := errors.New("state entropy failed")
+	const statePrefixLength = 31
+	entropy := &failingReader{
+		data: bytes.Repeat([]byte{0x84}, 64+statePrefixLength),
+		err:  sentinel,
+	}
+
+	_, gotErr := oauth.NewSession(entropy)
+	if gotErr == nil {
+		t.Fatal("NewSession() error = nil, want state entropy failure")
+	}
+	if !strings.Contains(gotErr.Error(), "state") {
+		t.Errorf("NewSession() error = %q, want diagnostic naming state", gotErr)
+	}
+	if !errors.Is(gotErr, sentinel) {
+		t.Errorf("errors.Is(NewSession() error, sentinel) = false, error = %v", gotErr)
+	}
+	if entropy.offset != 64+statePrefixLength {
+		t.Errorf("entropy bytes consumed = %d, want %d after complete verifier draw", entropy.offset, 64+statePrefixLength)
+	}
+}
+
+type failingReader struct {
+	data   []byte
+	err    error
+	offset int
+}
+
+func (r *failingReader) Read(p []byte) (int, error) {
+	if r.offset == len(r.data) {
+		return 0, r.err
+	}
+
+	n := copy(p, r.data[r.offset:])
+	r.offset += n
+	if r.offset == len(r.data) {
+		return n, r.err
+	}
+	return n, nil
+}
+
+func mustNewSession(t *testing.T, entropy interface{ Read([]byte) (int, error) }) oauth.Session {
 	t.Helper()
 	session, err := oauth.NewSession(entropy)
 	if err != nil {

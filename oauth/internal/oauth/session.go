@@ -3,6 +3,7 @@ package oauth
 
 import (
 	"encoding/base64"
+	"fmt"
 	"io"
 )
 
@@ -13,12 +14,12 @@ type Session struct{ State, CodeVerifier string }
 func NewSession(entropy io.Reader) (Session, error) {
 	verifierBytes := make([]byte, 64)
 	if _, err := io.ReadFull(entropy, verifierBytes); err != nil {
-		return Session{}, err
+		return Session{}, fmt.Errorf("generate code verifier: %w", err)
 	}
 
 	stateBytes := make([]byte, 32)
 	if _, err := io.ReadFull(entropy, stateBytes); err != nil {
-		return Session{}, err
+		return Session{}, fmt.Errorf("generate state: %w", err)
 	}
 
 	return Session{
