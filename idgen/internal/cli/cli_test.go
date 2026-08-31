@@ -153,7 +153,7 @@ func prefixAgreementSample(seed uint64) []string {
 		var prefix strings.Builder
 		prefix.Grow(length)
 		for range length {
-			prefix.WriteByte(validCharacters[nextRandom()%62])
+			prefix.WriteByte(validCharacters[nextRandom()%uint64(len(validCharacters))])
 		}
 		return prefix.String()
 	}
@@ -164,8 +164,8 @@ func prefixAgreementSample(seed uint64) []string {
 		candidates = append(candidates,
 			valid,
 			valid+"-",
-			valid+punctuation[nextRandom()%5],
-			valid+nonASCII[nextRandom()%4],
+			valid+punctuation[nextRandom()%uint64(len(punctuation))],
+			valid+nonASCII[nextRandom()%uint64(len(nonASCII))],
 		)
 	}
 	return candidates
@@ -202,9 +202,6 @@ func TestRunHelpAliasesPrintUsageExactlyOnce(t *testing.T) {
 			}
 			if got := stdout.String(); got != expectedUsage {
 				t.Errorf("stdout = %q, want exact usage %q", got, expectedUsage)
-			}
-			if got := strings.Count(stdout.String(), expectedUsage); got != 1 {
-				t.Errorf("usage block count = %d, want 1", got)
 			}
 			if stderr.Len() != 0 {
 				t.Errorf("stderr = %q, want empty", stderr.String())
@@ -260,6 +257,47 @@ func TestRunLongVersionOutputIsExact(t *testing.T) {
 		}
 		if stderr != "" || exitCode != int(exitSuccess) {
 			t.Errorf("Run(%q) = (stderr %q, exit %d), want (empty, %d)", args, stderr, exitCode, int(exitSuccess))
+		}
+	}
+}
+
+func TestRunLongVersionPrintsSourceCarriedVersionExactly(t *testing.T) {
+	originalVersion := version
+	t.Cleanup(func() { version = originalVersion })
+
+	for _, components := range [][3]string{{"98", "76", "54"}, {"12", "34", "56"}} {
+		version = "v" + strings.Join(components[:], ".")
+		sourceVersion := version
+		stdout, stderr, exitCode := runCLI([]string{"--version"}, "", &fakeClock{})
+
+		if exitCode != int(exitSuccess) {
+			t.Errorf("Run(--version) exit code = %d, want %d", exitCode, int(exitSuccess))
+		}
+		// R-4251-2274: two runtime-mutated source data prove Run consults version;
+		// checking the sole trailing byte proves each output is exactly one line.
+		if len(stdout) != len(sourceVersion)+1 {
+			t.Fatalf("Run(--version) stdout length = %d, want version length %d plus one newline", len(stdout), len(sourceVersion))
+		}
+		if stdout[:len(sourceVersion)] != sourceVersion || stdout[len(sourceVersion)] != '\n' {
+			t.Errorf("Run(--version) stdout = %q, want source-carried version followed by exactly one newline", stdout)
+		}
+		if stderr != "" {
+			t.Errorf("Run(--version) stderr = %q, want empty", stderr)
+		}
+	}
+}
+
+func TestVersionHasExactSemanticVersionShape(t *testing.T) {
+	semanticVersion := regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+
+	// R-43CX-FTXT: the source-carried release datum has the exact required shape.
+	if !semanticVersion.MatchString(version) {
+		t.Errorf("version = %q, want v-prefixed MAJOR.MINOR.PATCH without leading zeros", version)
+	}
+
+	for _, invalid := range []string{"v00.1.2", "v0.01.2", "v0.1.02"} {
+		if semanticVersion.MatchString(invalid) {
+			t.Errorf("semantic-version pattern unexpectedly accepts leading-zero version %q", invalid)
 		}
 	}
 }
@@ -334,11 +372,8 @@ func TestRunMintRejectsPositionalArgument(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Errorf("stdout = %q, want empty", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), unexpected) {
-		t.Errorf("stderr = %q, want unexpected argument %q named", stderr.String(), unexpected)
-	}
-	if !strings.Contains(stderr.String(), expectedUsage) {
-		t.Errorf("stderr = %q, want exact usage block %q", stderr.String(), expectedUsage)
+	if got, want := stderr.String(), "idgen: unexpected argument "+strconv.Quote(unexpected)+"\n"+expectedUsage; got != want {
+		t.Errorf("stderr = %q, want exact diagnostic and usage %q", got, want)
 	}
 	if clock.nowCalls != 0 || clock.sleepCalls != 0 {
 		t.Errorf("clock calls = Now %d, Sleep %d; want zero", clock.nowCalls, clock.sleepCalls)
@@ -651,11 +686,8 @@ func TestRunRejectsInvalidPrefixesBeforeMinting(t *testing.T) {
 			if exitCode != int(exitUsage) {
 				t.Errorf("Run() exit code = %d, want %d", exitCode, int(exitUsage))
 			}
-			if !strings.Contains(stderr.String(), "invalid prefix") {
-				t.Errorf("stderr = %q, want invalid prefix diagnostic", stderr.String())
-			}
-			if !strings.Contains(stderr.String(), expectedUsage) {
-				t.Errorf("stderr = %q, want exact usage block %q", stderr.String(), expectedUsage)
+			if got, want := stderr.String(), "idgen: invalid prefix\n"+expectedUsage; got != want {
+				t.Errorf("stderr = %q, want exact diagnostic and usage %q", got, want)
 			}
 			if stdout.Len() != 0 {
 				t.Errorf("stdout = %q, want empty", stdout.String())
@@ -728,11 +760,8 @@ func TestRunRejectsNonPositiveNumbersBeforeMinting(t *testing.T) {
 			if exitCode != int(exitUsage) {
 				t.Errorf("Run() exit code = %d, want %d", exitCode, int(exitUsage))
 			}
-			if !strings.Contains(stderr.String(), "--number must be > 0") {
-				t.Errorf("stderr = %q, want non-positive number diagnostic", stderr.String())
-			}
-			if !strings.Contains(stderr.String(), expectedUsage) {
-				t.Errorf("stderr = %q, want exact usage block %q", stderr.String(), expectedUsage)
+			if got, want := stderr.String(), "idgen: --number must be > 0\n"+expectedUsage; got != want {
+				t.Errorf("stderr = %q, want exact diagnostic and usage %q", got, want)
 			}
 			if stdout.Len() != 0 {
 				t.Errorf("stdout = %q, want empty", stdout.String())
@@ -919,13 +948,10 @@ func TestRunDecodeContinuesPastMalformedTokens(t *testing.T) {
 	if got, want := stdout, decodedLine(instants[0])+decodedLine(instants[1]); got != want {
 		t.Errorf("stdout = %q, want ordered valid output %q", got, want)
 	}
-	for _, token := range bad {
-		if !strings.Contains(stderr, token) {
-			t.Errorf("stderr = %q, want malformed token %q named", stderr, token)
-		}
-	}
-	if got := strings.Count(stderr, "\n"); got != len(bad) {
-		t.Errorf("stderr line count = %d, want %d: %q", got, len(bad), stderr)
+	wantStderr := "idgen: \"broken\": invalid id: non-canonical format\n" +
+		"idgen: \"not_an_id\": invalid id: non-canonical format\n"
+	if stderr != wantStderr {
+		t.Errorf("stderr = %q, want exact malformed-token diagnostics %q", stderr, wantStderr)
 	}
 }
 
@@ -996,8 +1022,5 @@ func TestRunDecodeOutputIgnoresTZEnvironment(t *testing.T) {
 	want := "2026-06-06T22:09:10.765Z\n"
 	if err := cmd.Run(); err != nil || stderr.Len() != 0 || stdout.String() != want {
 		t.Errorf("child Run() = (stdout %q, stderr %q, error %v), want (%q, empty, nil)", stdout.String(), stderr.String(), err, want)
-	}
-	if !strings.HasSuffix(stdout.String(), "Z\n") {
-		t.Errorf("stdout = %q, want literal UTC Z suffix", stdout.String())
 	}
 }
