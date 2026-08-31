@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html/template"
 	"net"
 	"net/http"
 	"sync"
@@ -35,11 +36,14 @@ type waitResult struct {
 // Wait serves the bound listeners until one callback completes the flow or ctx
 // expires. Precondition: called at most once.
 func (s *Server) Wait(ctx context.Context, path, state string) (Result, error) {
-	_ = ctx
-
 	completed := make(chan waitResult, 1)
 	httpServers, serving := s.startHTTPServers(callbackHandler(path, state, completed))
-	outcome := <-completed
+	var outcome waitResult
+	select {
+	case outcome = <-completed:
+	case <-ctx.Done():
+		outcome.err = ctx.Err()
+	}
 	shutdownHTTPServers(httpServers)
 	serving.Wait()
 
@@ -56,36 +60,46 @@ func callbackHandler(path, state string, completed chan<- waitResult) http.Handl
 
 		query := request.URL.Query()
 		if query.Get("state") != state || query.Get("state") == "" {
-			completeCallback(w, http.StatusBadRequest, &completeOnce, completed, waitResult{err: ErrStateMismatch})
+			completeCallback(w, http.StatusBadRequest, failurePage, "The login could not be completed.", &completeOnce, completed, waitResult{err: ErrStateMismatch})
 			return
 		}
 
 		if errorCode := query.Get("error"); errorCode != "" {
-			completeCallback(w, http.StatusBadRequest, &completeOnce, completed, waitResult{err: &AuthorizeError{
+			description := query.Get("error_description")
+			completeCallback(w, http.StatusBadRequest, failurePage, description, &completeOnce, completed, waitResult{err: &AuthorizeError{
 				Code:        errorCode,
-				Description: query.Get("error_description"),
+				Description: description,
 			}})
 			return
 		}
 
 		code := query.Get("code")
 		if code == "" {
-			completeCallback(w, http.StatusBadRequest, &completeOnce, completed, waitResult{err: ErrNoCode})
+			completeCallback(w, http.StatusBadRequest, failurePage, "The login could not be completed.", &completeOnce, completed, waitResult{err: ErrNoCode})
 			return
 		}
 
-		completeCallback(w, http.StatusOK, &completeOnce, completed, waitResult{result: Result{Code: code}})
+		completeCallback(w, http.StatusOK, successPage, nil, &completeOnce, completed, waitResult{result: Result{Code: code}})
 	})
 }
+
+var (
+	successPage = template.Must(template.New("success").Parse(`<!doctype html><html><head><meta charset="utf-8"><title>Login complete</title></head><body><p>Login complete. Go back to your terminal.</p></body></html>`))
+	failurePage = template.Must(template.New("failure").Parse(`<!doctype html><html><head><meta charset="utf-8"><title>Login failed</title></head><body><p>Login failed. Go back to your terminal.</p><p>{{.}}</p></body></html>`))
+)
 
 func completeCallback(
 	w http.ResponseWriter,
 	status int,
+	page *template.Template,
+	pageData any,
 	completeOnce *sync.Once,
 	completed chan<- waitResult,
 	outcome waitResult,
 ) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
+	_ = page.Execute(w, pageData)
 	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
 	}

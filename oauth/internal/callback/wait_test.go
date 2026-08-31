@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -199,6 +202,144 @@ func TestWaitChecksStateBeforeProviderError(t *testing.T) {
 	}
 }
 
+// R-GNLI-8B2Q
+func TestWaitServesTypedHTMLPagesWithEscapedProviderDescription(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		server := listenForWait(t)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		outcomes := startWait(ctx, server, "/callback", "expected-state")
+
+		page := getCallbackPage(ctx, t, server.Port(), "/callback", url.Values{
+			"state": {"expected-state"},
+			"code":  {"successful-code"},
+		})
+		if page.statusCode != http.StatusOK {
+			t.Errorf("success status = %d, want %d", page.statusCode, http.StatusOK)
+		}
+		if page.contentType != "text/html; charset=utf-8" {
+			t.Errorf("success Content-Type = %q, want exact HTML content type", page.contentType)
+		}
+		if !strings.Contains(page.body, "Login complete") {
+			t.Errorf("success body = %q, want Login complete", page.body)
+		}
+
+		outcome := requireWaitOutcome(ctx, t, outcomes)
+		if outcome.err != nil || outcome.result.Code != "successful-code" {
+			t.Errorf("Wait() = (%+v, %v), want successful-code and nil error", outcome.result, outcome.err)
+		}
+	})
+
+	t.Run("provider failure", func(t *testing.T) {
+		server := listenForWait(t)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		outcomes := startWait(ctx, server, "/callback", "expected-state")
+		providerDescription := `denied <img src=x onerror="alert('unsafe')"> & "quoted"`
+		escapedDescription := `denied &lt;img src=x onerror=&#34;alert(&#39;unsafe&#39;)&#34;&gt; &amp; &#34;quoted&#34;`
+
+		page := getCallbackPage(ctx, t, server.Port(), "/callback", url.Values{
+			"state":             {"expected-state"},
+			"error":             {"access_denied"},
+			"error_description": {providerDescription},
+		})
+		if page.statusCode != http.StatusBadRequest {
+			t.Errorf("failure status = %d, want %d", page.statusCode, http.StatusBadRequest)
+		}
+		if page.contentType != "text/html; charset=utf-8" {
+			t.Errorf("failure Content-Type = %q, want exact HTML content type", page.contentType)
+		}
+		if !strings.Contains(page.body, escapedDescription) {
+			t.Errorf("failure body = %q, want escaped provider description %q", page.body, escapedDescription)
+		}
+		if strings.Contains(page.body, providerDescription) || strings.Contains(strings.ToLower(page.body), "<img") {
+			t.Errorf("failure body contains raw provider markup: %q", page.body)
+		}
+
+		outcome := requireWaitOutcome(ctx, t, outcomes)
+		var authorizeErr *callback.AuthorizeError
+		if !errors.As(outcome.err, &authorizeErr) {
+			t.Fatalf("Wait() error = %v, want *callback.AuthorizeError", outcome.err)
+		}
+		if authorizeErr.Code != "access_denied" || authorizeErr.Description != providerDescription {
+			t.Errorf("AuthorizeError = %+v, want exact provider fields", authorizeErr)
+		}
+	})
+}
+
+// R-GOTE-M2TF
+func TestWaitPagesContainNoExternalResourceReferences(t *testing.T) {
+	tests := []struct {
+		name  string
+		query url.Values
+	}{
+		{name: "success", query: url.Values{"state": {"expected-state"}, "code": {"successful-code"}}},
+		{name: "failure", query: url.Values{"state": {"expected-state"}, "error": {"access_denied"}, "error_description": {"provider refused login"}}},
+	}
+	resourceReference := regexp.MustCompile(`(?i)(src\s*=|href\s*=|srcset\s*=|url\s*\(|@import|<\s*(link|script|img|iframe|object|embed|audio|video|source)(\s|>))`)
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := listenForWait(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			outcomes := startWait(ctx, server, "/callback", "expected-state")
+
+			page := getCallbackPage(ctx, t, server.Port(), "/callback", test.query)
+			if match := resourceReference.FindString(page.body); match != "" {
+				t.Errorf("callback page contains resource-bearing construct %q: %q", match, page.body)
+			}
+			requireWaitOutcome(ctx, t, outcomes)
+		})
+	}
+}
+
+// R-GR97-DMAT
+func TestWaitReturnsContextErrorAndShutsDownListener(t *testing.T) {
+	t.Run("deadline", func(t *testing.T) {
+		server := listenForWait(t)
+		waitCtx, cancelWait := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancelWait()
+		outcomes := startWait(waitCtx, server, "/callback", "expected-state")
+		outerCtx, cancelOuter := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelOuter()
+
+		outcome := requireWaitOutcome(outerCtx, t, outcomes)
+		if !errors.Is(outcome.err, context.DeadlineExceeded) {
+			t.Errorf("Wait() error = %v, want context.DeadlineExceeded", outcome.err)
+		}
+		if outcome.result != (callback.Result{}) {
+			t.Errorf("Wait() result = %+v, want zero result", outcome.result)
+		}
+		requireListenerClosed(t, server.Port())
+	})
+
+	t.Run("canceled", func(t *testing.T) {
+		server := listenForWait(t)
+		waitCtx, cancelWait := context.WithCancel(context.Background())
+		outcomes := startWait(waitCtx, server, "/callback", "expected-state")
+		outerCtx, cancelOuter := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelOuter()
+
+		strayPage := getCallbackPage(outerCtx, t, server.Port(), "/wait-started", nil)
+		if strayPage.statusCode != http.StatusNotFound {
+			t.Fatalf("startup probe status = %d, want %d", strayPage.statusCode, http.StatusNotFound)
+		}
+		cancelWait()
+		outcome := requireWaitOutcome(outerCtx, t, outcomes)
+		if !errors.Is(outcome.err, context.Canceled) {
+			t.Errorf("Wait() error = %v, want context.Canceled", outcome.err)
+		}
+		if errors.Is(outcome.err, context.DeadlineExceeded) {
+			t.Errorf("Wait() error = %v, unexpectedly satisfies context.DeadlineExceeded", outcome.err)
+		}
+		if outcome.result != (callback.Result{}) {
+			t.Errorf("Wait() result = %+v, want zero result", outcome.result)
+		}
+		requireListenerClosed(t, server.Port())
+	})
+}
+
 func listenForWait(t *testing.T) *callback.Server {
 	t.Helper()
 	server, err := callback.Listen(net.Listen, 0)
@@ -243,6 +384,38 @@ func closeResponse(t *testing.T, response *http.Response) {
 	t.Helper()
 	if err := response.Body.Close(); err != nil {
 		t.Errorf("response body Close() error = %v", err)
+	}
+}
+
+type callbackPage struct {
+	statusCode  int
+	contentType string
+	body        string
+}
+
+func getCallbackPage(ctx context.Context, t *testing.T, port int, path string, query url.Values) callbackPage {
+	t.Helper()
+	response := getCallback(ctx, t, port, path, query)
+	defer closeResponse(t, response)
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Errorf("response body ReadAll() error = %v", err)
+	}
+	return callbackPage{
+		statusCode:  response.StatusCode,
+		contentType: response.Header.Get("Content-Type"),
+		body:        string(body),
+	}
+}
+
+func requireListenerClosed(t *testing.T, port int) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	connection, err := (&net.Dialer{}).DialContext(ctx, "tcp4", fmt.Sprintf("127.0.0.1:%d", port))
+	if err == nil {
+		_ = connection.Close()
+		t.Errorf("listener on port %d still accepts connections after Wait() returned", port)
 	}
 }
 
