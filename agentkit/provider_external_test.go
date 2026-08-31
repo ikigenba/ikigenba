@@ -54,7 +54,7 @@ func TestExternalProviderDrivesSend(t *testing.T) {
 	provider := &externalProvider{url: server.URL, model: unknownModel}
 	conversation := agentkit.NewConversation(provider, server.Client())
 
-	conversation.Send(context.Background(), "hello")
+	conversation.Send(context.Background(), agentkit.Text{Text: "hello"})
 	if provider.buildCalls != 1 || provider.decodeCalls != 1 || provider.classifyCalls != 0 {
 		t.Fatalf("provider calls: build=%d decode=%d classify=%d", provider.buildCalls, provider.decodeCalls, provider.classifyCalls)
 	}

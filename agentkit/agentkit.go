@@ -2,10 +2,6 @@
 // adapters.
 package agentkit
 
-// Block is one item of input to a conversation. Concrete block variants are
-// defined alongside the message vocabulary in later phases.
-type Block any
-
 // Event is one message-granular item decoded from a provider response. Concrete
 // event variants are defined with the streaming vocabulary in a later phase.
 type Event any
@@ -13,8 +9,8 @@ type Event any
 // RequestState is the immutable snapshot supplied to a Provider for one
 // round-trip.
 type RequestState struct {
-	Model  string
-	Blocks []Block
+	Model   string
+	History History
 }
 
 // Stream is the result of advancing a conversation. Its event-facing API is
