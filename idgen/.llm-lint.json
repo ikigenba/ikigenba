@@ -28,6 +28,7 @@
     "repeated-flag-alias-literals",
     "same-name-different-kind",
     "self-consistency-only-assertion",
-    "test-only-parameterization"
+    "test-only-parameterization",
+    "unbounded-retry-on-injected-dependency"
   ]
 }

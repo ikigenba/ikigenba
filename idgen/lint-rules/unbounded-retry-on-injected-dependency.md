@@ -1,6 +1,6 @@
 ---
 description: a wait or retry loop with no cap, deadline, or failure path, whose termination depends on undocumented behavior of an injected dependency
-severity: warning
+severity: error
 ---
 Flag loops that spin until an injected collaborator — a clock, a poller, a queue reader, a lock or token source — changes what it returns, with no iteration cap, no deadline, and no path that gives up and reports failure. The distinguishing property is that termination is not a property of this code at all: it is an unwritten contract on the interface, and nothing in the interface's documentation or type promises it. Substituting a plausible implementation (a frozen clock, a no-op sleep, a source that keeps returning the same value) hangs the program silently, with no output and no diagnostic. A hang is worse than an error here because it is undiagnosable from outside the process and cannot be scripted around. Flag the loop even when every implementation shipped today happens to behave, and flag it especially when the codebase's own test doubles include one that would hang.
 
