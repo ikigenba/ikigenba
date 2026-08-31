@@ -24,7 +24,7 @@ curl -fsSL https://raw.githubusercontent.com/ikigenba/ikigenba/main/idgen/instal
 Pin a version or change the destination with env vars:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ikigenba/ikigenba/main/idgen/install.sh | IDGEN_VERSION=v0.1.0 BINDIR=/usr/local/bin sh
+curl -fsSL https://raw.githubusercontent.com/ikigenba/ikigenba/main/idgen/install.sh | IDGEN_VERSION=v0.2.0 BINDIR=/usr/local/bin sh
 ```
 
 ## What idgen is (the end product)
