@@ -742,8 +742,7 @@ func TestRunDecodeRoutesAwayFromMinting(t *testing.T) {
 func TestRunMintFlagsDoNotChangeDecodeOutput(t *testing.T) {
 	instant := time.Date(2026, time.September, 1, 2, 3, 4, 567890000, time.UTC)
 	id := idgen.MintAt("Inert", instant)
-	baselineClock := &fakeClock{now: instant.Add(time.Hour)}
-	wantStdout, wantStderr, wantExit := runCLI([]string{"--decode", id}, "", baselineClock)
+	wantStdout := decodedLine(instant)
 	tests := []struct {
 		name string
 		args []string
@@ -756,8 +755,8 @@ func TestRunMintFlagsDoNotChangeDecodeOutput(t *testing.T) {
 			clock := &fakeClock{now: instant.Add(2 * time.Hour)}
 			stdout, stderr, exitCode := runCLI(test.args, "", clock)
 
-			if stdout != wantStdout || stderr != wantStderr || exitCode != wantExit {
-				t.Errorf("Run() = (stdout %q, stderr %q, exit %d), want baseline (%q, %q, %d)", stdout, stderr, exitCode, wantStdout, wantStderr, wantExit)
+			if stdout != wantStdout || stderr != "" || exitCode != exitSuccess {
+				t.Errorf("Run() = (stdout %q, stderr %q, exit %d), want (%q, empty, %d)", stdout, stderr, exitCode, wantStdout, exitSuccess)
 			}
 			if clock.nowCalls != 0 || clock.sleepCalls != 0 {
 				t.Errorf("clock calls = Now %d, Sleep %d; want zero", clock.nowCalls, clock.sleepCalls)
@@ -850,13 +849,13 @@ func TestRunDecodesMixedWhitespaceStdinLikePositionals(t *testing.T) {
 		time.Date(2028, time.December, 13, 14, 15, 16, 555666000, time.UTC),
 	}
 	ids := []string{idgen.MintAt("A", instants[0]), idgen.MintAt("B", instants[1]), idgen.MintAt("C", instants[2])}
-	wantStdout, wantStderr, wantExit := runCLI(append([]string{"--decode"}, ids...), "", &fakeClock{})
+	wantStdout := decodedLine(instants[0]) + decodedLine(instants[1]) + decodedLine(instants[2])
 	stdin := " \t" + ids[0] + "\n\n" + ids[1] + " \t\r\n" + ids[2] + "  "
 
 	stdout, stderr, exitCode := runCLI([]string{"--decode"}, stdin, &fakeClock{})
 
-	if stdout != wantStdout || stderr != wantStderr || exitCode != wantExit {
-		t.Errorf("stdin decode = (stdout %q, stderr %q, exit %d), want positional decode (%q, %q, %d)", stdout, stderr, exitCode, wantStdout, wantStderr, wantExit)
+	if stdout != wantStdout || stderr != "" || exitCode != exitSuccess {
+		t.Errorf("stdin decode = (stdout %q, stderr %q, exit %d), want (%q, empty, %d)", stdout, stderr, exitCode, wantStdout, exitSuccess)
 	}
 }
 
