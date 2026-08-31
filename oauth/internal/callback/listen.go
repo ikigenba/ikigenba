@@ -63,8 +63,15 @@ func (s *Server) BindWarning() error {
 func (s *Server) Close() error {
 	var ipv6Err error
 	if s.ipv6 != nil {
-		ipv6Err = s.ipv6.Close()
+		ipv6Err = ignoreClosed(s.ipv6.Close())
 	}
 
-	return errors.Join(s.ipv4.Close(), ipv6Err)
+	return errors.Join(ignoreClosed(s.ipv4.Close()), ipv6Err)
+}
+
+func ignoreClosed(err error) error {
+	if errors.Is(err, net.ErrClosed) {
+		return nil
+	}
+	return err
 }
