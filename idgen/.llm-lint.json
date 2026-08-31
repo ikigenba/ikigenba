@@ -25,6 +25,7 @@
     "magic-literal-beside-existing-constant",
     "overclaiming-exhaustive-test-name",
     "prefer-exact-over-inequality-assertion",
-    "repeated-flag-alias-literals"
+    "repeated-flag-alias-literals",
+    "same-name-different-kind"
   ]
 }
