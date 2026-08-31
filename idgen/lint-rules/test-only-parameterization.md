@@ -1,6 +1,6 @@
 ---
 description: parameters or indirection on a helper whose only non-constant caller is a test, adding generality production never exercises
-severity: warning
+severity: error
 ---
 Flag a function whose production call sites all pass the same fixed values — package constants, a single literal, one global — where the only varying arguments come from tests. The parameters exist so the test can drive the helper in isolation, but what they buy is a test of the helper's generality rather than of the behavior that ships: the case the test constructs can never occur, and the case that can occur is exercised only incidentally. Awkward parameter names invented to avoid shadowing the constants that are always passed are a reliable tell. Recommend either reading the fixed values directly and testing through the real entry point, or keeping the parameter because a second production caller genuinely needs it.
 

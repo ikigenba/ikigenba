@@ -27,6 +27,7 @@
     "prefer-exact-over-inequality-assertion",
     "repeated-flag-alias-literals",
     "same-name-different-kind",
-    "self-consistency-only-assertion"
+    "self-consistency-only-assertion",
+    "test-only-parameterization"
   ]
 }
