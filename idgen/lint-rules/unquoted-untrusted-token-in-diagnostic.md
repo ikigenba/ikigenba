@@ -1,6 +1,6 @@
 ---
 description: user-supplied input interpolated raw into a diagnostic, letting whitespace or control characters corrupt the output stream
-severity: warning
+severity: error
 ---
 Flag diagnostics that splice attacker- or user-controlled text — argv entries, stdin tokens, request fields, file names, environment values — into a message without quoting or escaping: string concatenation, or `%s`/`%v` where `%q` belongs. A value containing a newline splits one diagnostic into two lines, which breaks anything downstream that counts or parses lines and lets a crafted argument forge what looks like an additional program message. Empty and whitespace-only values become invisible, so `prog: invalid name ` gives the user nothing to look at. Terminal escape sequences in the value are rendered by the console. Treat inconsistency within a file as strong evidence: when one message quotes its input with `strconv.Quote` or `%q` and a structurally identical message next to it concatenates raw, flag the raw one.
 

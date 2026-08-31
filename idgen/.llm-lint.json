@@ -31,6 +31,7 @@
     "test-only-parameterization",
     "unbounded-retry-on-injected-dependency",
     "undocumented-silent-wraparound-at-range-ceiling",
-    "unexplained-modular-arithmetic"
+    "unexplained-modular-arithmetic",
+    "unquoted-untrusted-token-in-diagnostic"
   ]
 }
