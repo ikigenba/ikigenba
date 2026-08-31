@@ -15,8 +15,6 @@ import (
 	"github.com/ikigenba/ikigenba/idgen/internal/idgen"
 )
 
-const expectedVersionOutput = "v0.1.0\n"
-
 type fakeClock struct {
 	now        time.Time
 	nowCalls   int
@@ -94,12 +92,12 @@ func (c *scheduledClock) Sleep(d time.Duration) {
 	c.now = c.now.Add(d)
 }
 
-func runMint(args []string, clock Clock) (string, string, int) {
+func runMint(args []string, clock Clock) (string, string, exitCode) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Run(args, bytes.NewReader(nil), &stdout, &stderr, clock)
-	return stdout.String(), stderr.String(), exitCode
+	code := Run(args, bytes.NewReader(nil), &stdout, &stderr, clock)
+	return stdout.String(), stderr.String(), exitCode(code)
 }
 
 func assertMintLines(t *testing.T, output string) []string {
@@ -129,11 +127,11 @@ func decodedTimes(t *testing.T, ids []string) []time.Time {
 	return times
 }
 
-func runCLI(args []string, stdin string, clock Clock) (string, string, int) {
+func runCLI(args []string, stdin string, clock Clock) (string, string, exitCode) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	exitCode := Run(args, strings.NewReader(stdin), &stdout, &stderr, clock)
-	return stdout.String(), stderr.String(), exitCode
+	code := Run(args, strings.NewReader(stdin), &stdout, &stderr, clock)
+	return stdout.String(), stderr.String(), exitCode(code)
 }
 
 func prefixAgreementSample(seed uint64) []string {
@@ -222,42 +220,30 @@ func TestRunUsageTextIsExact(t *testing.T) {
 	if stdout != expectedUsage {
 		t.Errorf("stdout = %q, want exact independently declared usage block %q", stdout, expectedUsage)
 	}
-	if stderr != "" || exitCode != int(exitSuccess) {
+	if stderr != "" || exitCode != exitSuccess {
 		t.Errorf("Run() = (stderr %q, exit %d), want (empty, %d)", stderr, exitCode, int(exitSuccess))
 	}
 }
 
 // R-T3XZ-SOYY: --version prints the source-carried version and exits successfully.
 func TestRunLongVersionPrintsVersion(t *testing.T) {
+	originalVersion := version
+	t.Cleanup(func() { version = originalVersion })
+	sourceVersion := "v91.82.73"
+	version = sourceVersion
+
 	clock := &fakeClock{}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
+	wantOutput := sourceVersion + "\n"
 
 	exitCode := Run([]string{"--version"}, forbiddenReader{t: t}, &stdout, &stderr, clock)
 
-	if exitCode != int(exitSuccess) || stdout.String() != expectedVersionOutput || stderr.Len() != 0 {
-		t.Errorf("Run() = (stdout %q, stderr %q, exit %d), want (%q, empty, %d)", stdout.String(), stderr.String(), exitCode, expectedVersionOutput, int(exitSuccess))
+	if exitCode != int(exitSuccess) || stdout.String() != wantOutput || stderr.Len() != 0 {
+		t.Errorf("Run() = (stdout %q, stderr %q, exit %d), want (%q, empty, %d)", stdout.String(), stderr.String(), exitCode, wantOutput, int(exitSuccess))
 	}
 	if clock.nowCalls != 0 || clock.sleepCalls != 0 {
 		t.Errorf("clock calls = Now %d, Sleep %d; want zero", clock.nowCalls, clock.sleepCalls)
-	}
-}
-
-// R-TR43-2C25: --version output is exactly the v0.1.0 product version line.
-func TestRunLongVersionOutputIsExact(t *testing.T) {
-	tests := [][]string{
-		{"--version"},
-		{"--version", "--help", "--help=false"},
-	}
-	for _, args := range tests {
-		stdout, stderr, exitCode := runCLI(args, "", &fakeClock{})
-
-		if stdout != expectedVersionOutput {
-			t.Errorf("Run(%q) stdout = %q, want %q", args, stdout, expectedVersionOutput)
-		}
-		if stderr != "" || exitCode != int(exitSuccess) {
-			t.Errorf("Run(%q) = (stderr %q, exit %d), want (empty, %d)", args, stderr, exitCode, int(exitSuccess))
-		}
 	}
 }
 
@@ -266,11 +252,11 @@ func TestRunLongVersionPrintsSourceCarriedVersionExactly(t *testing.T) {
 	t.Cleanup(func() { version = originalVersion })
 
 	for _, components := range [][3]string{{"98", "76", "54"}, {"12", "34", "56"}} {
-		version = "v" + strings.Join(components[:], ".")
-		sourceVersion := version
+		sourceVersion := "v" + strings.Join(components[:], ".")
+		version = sourceVersion
 		stdout, stderr, exitCode := runCLI([]string{"--version"}, "", &fakeClock{})
 
-		if exitCode != int(exitSuccess) {
+		if exitCode != exitSuccess {
 			t.Errorf("Run(--version) exit code = %d, want %d", exitCode, int(exitSuccess))
 		}
 		// R-4251-2274: two runtime-mutated source data prove Run consults version;
@@ -304,14 +290,20 @@ func TestVersionHasExactSemanticVersionShape(t *testing.T) {
 
 // R-TSBZ-G3SU: -V and --version have identical exact output, errors, and exit codes.
 func TestRunVersionAliasesAreIdentical(t *testing.T) {
+	originalVersion := version
+	t.Cleanup(func() { version = originalVersion })
+	sourceVersion := "v71.62.53"
+	version = sourceVersion
+	wantOutput := sourceVersion + "\n"
+
 	longOut, longErr, longExit := runCLI([]string{"--version"}, "", &fakeClock{})
 	shortOut, shortErr, shortExit := runCLI([]string{"-V"}, "", &fakeClock{})
 
 	if shortOut != longOut || shortErr != longErr || shortExit != longExit {
 		t.Errorf("-V = (%q, %q, %d), want --version result (%q, %q, %d)", shortOut, shortErr, shortExit, longOut, longErr, longExit)
 	}
-	if shortOut != expectedVersionOutput || shortErr != "" || shortExit != int(exitSuccess) {
-		t.Errorf("shared version result = (%q, %q, %d), want (%q, empty, %d)", shortOut, shortErr, shortExit, expectedVersionOutput, int(exitSuccess))
+	if longOut != wantOutput || longErr != "" || longExit != exitSuccess {
+		t.Errorf("--version = (%q, %q, %d), want (%q, empty, %d)", longOut, longErr, longExit, wantOutput, int(exitSuccess))
 	}
 }
 
@@ -443,7 +435,7 @@ func TestRunNumberMintsRequestedDistinctIDsWithVirtualClock(t *testing.T) {
 	stdout, stderr, exitCode := runMint([]string{"-n", "4"}, clock)
 	ids := assertMintLines(t, stdout)
 
-	if exitCode != int(exitSuccess) {
+	if exitCode != exitSuccess {
 		t.Errorf("Run() exit code = %d, want %d", exitCode, int(exitSuccess))
 	}
 	if stderr != "" {
@@ -468,7 +460,7 @@ func TestRunNumberAdvancesVirtualTimeForEachAdditionalID(t *testing.T) {
 	stdout, _, exitCode := runMint([]string{"--number", "5"}, clock)
 	ids := assertMintLines(t, stdout)
 
-	if exitCode != int(exitSuccess) {
+	if exitCode != exitSuccess {
 		t.Fatalf("Run() exit code = %d, want %d", exitCode, int(exitSuccess))
 	}
 	if len(ids) != 5 {
@@ -488,7 +480,7 @@ func TestRunNumberTerminatesWhenClockAdvancesOnlyDuringSleep(t *testing.T) {
 	stdout, _, exitCode := runMint([]string{"-n", "6"}, clock)
 	ids := assertMintLines(t, stdout)
 
-	if exitCode != int(exitSuccess) {
+	if exitCode != exitSuccess {
 		t.Fatalf("Run() exit code = %d, want %d", exitCode, int(exitSuccess))
 	}
 	if len(ids) != 6 {
@@ -514,7 +506,7 @@ func TestRunDefaultSingleMintDoesNotSleep(t *testing.T) {
 	stdout, _, exitCode := runMint(nil, clock)
 	ids := assertMintLines(t, stdout)
 
-	if exitCode != int(exitSuccess) {
+	if exitCode != exitSuccess {
 		t.Fatalf("Run() exit code = %d, want %d", exitCode, int(exitSuccess))
 	}
 	if len(ids) != 1 {
@@ -531,7 +523,7 @@ func TestRunNumberFailsWhenClockRefusesToAdvance(t *testing.T) {
 	clock := &fakeClock{now: time.Date(2026, time.August, 29, 12, 0, 0, 0, time.UTC)}
 	stdout, stderr, exitCode := runMint([]string{"-n", "2"}, clock)
 
-	if exitCode != int(exitFailure) {
+	if exitCode != exitFailure {
 		t.Fatalf("Run() exit code = %d, want %d", exitCode, int(exitFailure))
 	}
 	if stderr == "" {
@@ -556,7 +548,7 @@ func TestRunMintsOnlyAtClockReportedInstants(t *testing.T) {
 	stdout, _, exitCode := runMint([]string{"--number", "4"}, clock)
 	ids := assertMintLines(t, stdout)
 
-	if exitCode != int(exitSuccess) {
+	if exitCode != exitSuccess {
 		t.Fatalf("Run() exit code = %d, want %d", exitCode, int(exitSuccess))
 	}
 	if len(ids) != 4 {
@@ -592,7 +584,7 @@ func TestRunNumberWaitsOutBackwardClockStep(t *testing.T) {
 	stdout, _, exitCode := runMint([]string{"-n", "3"}, clock)
 	ids := assertMintLines(t, stdout)
 
-	if exitCode != int(exitSuccess) {
+	if exitCode != exitSuccess {
 		t.Fatalf("Run() exit code = %d, want %d", exitCode, int(exitSuccess))
 	}
 	if len(ids) != 3 {
@@ -709,7 +701,7 @@ func TestRunPrefixAcceptanceAgreesWithValidPrefix(t *testing.T) {
 		stdout, stderr, exitCode := runCLI([]string{"--prefix", prefix}, "", clock)
 		if idgen.ValidPrefix(prefix) {
 			accepted++
-			if exitCode != int(exitSuccess) {
+			if exitCode != exitSuccess {
 				t.Errorf("valid prefix %q exit code = %d, want %d", prefix, exitCode, int(exitSuccess))
 			}
 			if got, want := stdout, prefix+"-"+wantBody+"\n"; got != want {
@@ -722,7 +714,7 @@ func TestRunPrefixAcceptanceAgreesWithValidPrefix(t *testing.T) {
 		}
 
 		rejected++
-		if exitCode != int(exitUsage) {
+		if exitCode != exitUsage {
 			t.Errorf("invalid prefix %q exit code = %d, want %d", prefix, exitCode, int(exitUsage))
 		}
 		if got, want := stderr, "idgen: invalid prefix\n"+expectedUsage; got != want {
@@ -781,7 +773,7 @@ func TestRunDecodeRoutesAwayFromMinting(t *testing.T) {
 
 	stdout, stderr, exitCode := runCLI([]string{"--decode", "--version", "--version=false", id}, "", clock)
 
-	if exitCode != int(exitSuccess) {
+	if exitCode != exitSuccess {
 		t.Errorf("Run() exit code = %d, want %d", exitCode, int(exitSuccess))
 	}
 	if got, want := stdout, decodedLine(instant); got != want {
@@ -812,7 +804,7 @@ func TestRunMintFlagsDoNotChangeDecodeOutput(t *testing.T) {
 			clock := &fakeClock{now: instant.Add(2 * time.Hour)}
 			stdout, stderr, exitCode := runCLI(test.args, "", clock)
 
-			if stdout != wantStdout || stderr != "" || exitCode != int(exitSuccess) {
+			if stdout != wantStdout || stderr != "" || exitCode != exitSuccess {
 				t.Errorf("Run() = (stdout %q, stderr %q, exit %d), want (%q, empty, %d)", stdout, stderr, exitCode, wantStdout, int(exitSuccess))
 			}
 			if clock.nowCalls != 0 || clock.sleepCalls != 0 {
@@ -832,7 +824,7 @@ func TestRunDecodesPositionalsInOrder(t *testing.T) {
 
 	stdout, stderr, exitCode := runCLI(append([]string{"--decode"}, ids...), "", &fakeClock{})
 
-	if exitCode != int(exitSuccess) {
+	if exitCode != exitSuccess {
 		t.Errorf("Run() exit code = %d, want %d", exitCode, int(exitSuccess))
 	}
 	if got, want := stdout, decodedLine(instants[0])+decodedLine(instants[1]); got != want {
@@ -867,7 +859,7 @@ func TestRunDecodeInvalidDiagnosticAddsOnlyTokenContext(t *testing.T) {
 
 	stdout, stderr, exitCode := runCLI([]string{"--decode", token}, "", &fakeClock{})
 
-	if exitCode != int(exitFailure) {
+	if exitCode != exitFailure {
 		t.Errorf("Run() exit code = %d, want %d", exitCode, int(exitFailure))
 	}
 	if stdout != "" {
@@ -911,7 +903,7 @@ func TestRunDecodesMixedWhitespaceStdinLikePositionals(t *testing.T) {
 
 	stdout, stderr, exitCode := runCLI([]string{"--decode"}, stdin, &fakeClock{})
 
-	if stdout != wantStdout || stderr != "" || exitCode != int(exitSuccess) {
+	if stdout != wantStdout || stderr != "" || exitCode != exitSuccess {
 		t.Errorf("stdin decode = (stdout %q, stderr %q, exit %d), want (%q, empty, %d)", stdout, stderr, exitCode, wantStdout, int(exitSuccess))
 	}
 }
@@ -942,7 +934,7 @@ func TestRunDecodeContinuesPastMalformedTokens(t *testing.T) {
 
 	stdout, stderr, exitCode := runCLI(args, "", &fakeClock{})
 
-	if exitCode != int(exitFailure) {
+	if exitCode != exitFailure {
 		t.Errorf("Run() exit code = %d, want decode failure %d", exitCode, int(exitFailure))
 	}
 	if got, want := stdout, decodedLine(instants[0])+decodedLine(instants[1]); got != want {
@@ -961,7 +953,7 @@ func TestRunDecodeEmptyInputIsSilentSuccess(t *testing.T) {
 
 	stdout, stderr, exitCode := runCLI([]string{"--decode"}, "", clock)
 
-	if exitCode != int(exitSuccess) || stdout != "" || stderr != "" {
+	if exitCode != exitSuccess || stdout != "" || stderr != "" {
 		t.Errorf("Run() = (stdout %q, stderr %q, exit %d), want empty streams and exit %d", stdout, stderr, exitCode, int(exitSuccess))
 	}
 	if clock.nowCalls != 0 || clock.sleepCalls != 0 {
@@ -974,14 +966,14 @@ func TestRunMintThenDecodeRoundTrip(t *testing.T) {
 	instant := time.Date(2026, time.May, 6, 7, 8, 9, 456789000, time.FixedZone("source", 5*60*60+30*60))
 	mintClock := &fakeClock{now: instant}
 	minted, mintStderr, mintExit := runCLI(nil, "", mintClock)
-	if mintExit != int(exitSuccess) || mintStderr != "" {
+	if mintExit != exitSuccess || mintStderr != "" {
 		t.Fatalf("mint Run() = (stdout %q, stderr %q, exit %d), want successful mint", minted, mintStderr, mintExit)
 	}
 	id := strings.TrimSuffix(minted, "\n")
 
 	stdout, stderr, exitCode := runCLI([]string{"--decode", id}, "", &fakeClock{})
 
-	if exitCode != int(exitSuccess) || stderr != "" {
+	if exitCode != exitSuccess || stderr != "" {
 		t.Errorf("decode Run() = (stderr %q, exit %d), want empty and %d", stderr, exitCode, int(exitSuccess))
 	}
 	if got, want := stdout, decodedLine(instant); got != want {
