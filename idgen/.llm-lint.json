@@ -34,6 +34,7 @@
     "unexplained-modular-arithmetic",
     "unreachable-defensive-guard",
     "unreachable-property-domain",
-    "unquoted-untrusted-token-in-diagnostic"
+    "unquoted-untrusted-token-in-diagnostic",
+    "untyped-code-enum"
   ]
 }

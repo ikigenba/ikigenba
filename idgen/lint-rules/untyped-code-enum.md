@@ -1,6 +1,6 @@
 ---
 description: a closed set of related integer or string constants left untyped, so functions carrying them expose an unconstrained type
-severity: warning
+severity: error
 include: ["**/*.go"]
 ---
 Flag a group of related constants that form a closed set — exit codes, status or result codes, kinds, states, categories — declared without a named type, together with the functions that return or accept them as a bare `int` or `string`. The signature then says nothing: any integer is assignable, so a count, a length, or an index can be returned where a code was meant and the compiler will accept it, and no tool can check that a switch covers the set. Recommend declaring a named type, giving the constants that type, and using it in every signature that carries one, converting only at the boundary that demands the underlying type.
