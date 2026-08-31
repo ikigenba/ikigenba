@@ -1,6 +1,6 @@
 ---
 description: hand-rolled modular or overflow-avoiding arithmetic with no comment stating the bound it protects
-severity: warning
+severity: error
 ---
 Flag arithmetic that is written the long way specifically to stay inside a numeric range, where nothing in the code says which range or why. The recognizable shapes are a hand-rolled multiply-by-doubling or add-in-a-loop where a single `*` would read naturally; a redundant-looking `x % m` applied to a value the reader can already see is smaller than `m`; adding the modulus before taking a remainder (`(a + m - b) % m`) to dodge a language's signed-remainder rule; splitting a value into high and low halves before combining; and casts to a wider type mid-expression. Each of these is correct and each is *invitingly* simplifiable — the next reader sees ceremony around an operation they know, deletes it, and the test suite may only catch the regression stochastically because small inputs still round-trip. The comment that earns its keep names the concrete bound: which product would overflow, at what magnitude, and therefore what the workaround preserves. Flag the function or expression once, not every operation inside it.
 

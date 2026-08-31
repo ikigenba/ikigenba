@@ -30,6 +30,7 @@
     "self-consistency-only-assertion",
     "test-only-parameterization",
     "unbounded-retry-on-injected-dependency",
-    "undocumented-silent-wraparound-at-range-ceiling"
+    "undocumented-silent-wraparound-at-range-ceiling",
+    "unexplained-modular-arithmetic"
   ]
 }
