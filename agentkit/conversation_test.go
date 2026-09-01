@@ -367,16 +367,16 @@ func TestSendSnapshotPreservesPayloadAndCommitsCompleteUserTurn(t *testing.T) {
 	if stream.err != nil {
 		t.Fatal(stream.err)
 	}
-	want := History{{Role: RoleUser, Blocks: []Block{Text{Text: "hello", Provider: payload}}}}
-	if !reflect.DeepEqual(provider.states[0].History, want) {
-		t.Fatalf("provider snapshot = %#v, want %#v", provider.states[0].History, want)
+	want := Message{Role: RoleUser, Blocks: []Block{Text{Text: "hello", Provider: payload}}}
+	if !reflect.DeepEqual(provider.states[0].History, []Message{want}) {
+		t.Fatalf("provider snapshot = %#v, want %#v", provider.states[0].History, []Message{want})
 	}
 	gotPayload := provider.states[0].History[0].Blocks[0].(Text).Provider
 	if !bytes.Equal(gotPayload, payload) {
 		t.Fatalf("provider payload = %q, want byte-identical %q", gotPayload, payload)
 	}
-	if !reflect.DeepEqual(conversation.history, want) {
-		t.Fatalf("committed history = %#v, want one complete user turn %#v", conversation.history, want)
+	if !reflect.DeepEqual(conversation.history, History{want}) {
+		t.Fatalf("committed history = %#v, want one complete user turn %#v", conversation.history, History{want})
 	}
 }
 

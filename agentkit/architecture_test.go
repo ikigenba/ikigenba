@@ -123,6 +123,71 @@ func TestProviderDeclarationIsExact(t *testing.T) {
 	}
 }
 
+func TestProviderOptionsDeclarationIsExact(t *testing.T) {
+	// R-08RG-8FCP
+	optionsType := reflect.TypeFor[ProviderOptions]()
+	if optionsType.Name() != "ProviderOptions" || !token.IsExported(optionsType.Name()) || optionsType.Kind() != reflect.Map {
+		t.Fatalf("ProviderOptions name/kind = %q/%s, want exported defined map", optionsType.Name(), optionsType.Kind())
+	}
+	if optionsType.Key() != reflect.TypeFor[string]() || optionsType.Elem() != reflect.TypeFor[json.RawMessage]() {
+		t.Fatalf("ProviderOptions = map[%s]%s, want exactly map[string]json.RawMessage", optionsType.Key(), optionsType.Elem())
+	}
+	specification := declaredType(t, "agentkit.go", "ProviderOptions")
+	if specification.Assign.IsValid() {
+		t.Fatal("ProviderOptions is an alias, want a defined map type")
+	}
+	mapType, ok := specification.Type.(*ast.MapType)
+	if !ok {
+		t.Fatalf("ProviderOptions declaration is %T, want map type", specification.Type)
+	}
+	if got := renderedNode(t, mapType); got != "map[string]json.RawMessage" {
+		t.Fatalf("ProviderOptions declaration = %q, want exactly %q", got, "map[string]json.RawMessage")
+	}
+}
+
+func TestRequestStateDeclarationIsExact(t *testing.T) {
+	// R-09ZC-M73E
+	stateType := reflect.TypeFor[RequestState]()
+	if stateType.Name() != "RequestState" || !token.IsExported(stateType.Name()) || stateType.Kind() != reflect.Struct {
+		t.Fatalf("RequestState name/kind = %q/%s, want exported defined struct", stateType.Name(), stateType.Kind())
+	}
+	wantFields := []struct {
+		name   string
+		typeOf reflect.Type
+	}{
+		{name: "Model", typeOf: reflect.TypeFor[string]()},
+		{name: "History", typeOf: reflect.TypeFor[[]Message]()},
+		{name: "Settings", typeOf: reflect.TypeFor[Settings]()},
+		{name: "Options", typeOf: reflect.TypeFor[ProviderOptions]()},
+		{name: "Tools", typeOf: reflect.TypeFor[[]Tool]()},
+	}
+	if stateType.NumField() != len(wantFields) {
+		t.Fatalf("RequestState field count = %d, want exactly %d", stateType.NumField(), len(wantFields))
+	}
+	for index, want := range wantFields {
+		field := stateType.Field(index)
+		if field.Name != want.name || field.Type != want.typeOf || !field.IsExported() {
+			t.Fatalf("RequestState field %d = %s %s (exported=%t), want %s %s exported", index, field.Name, field.Type, field.IsExported(), want.name, want.typeOf)
+		}
+	}
+	historyType := stateType.Field(1).Type
+	if historyType.Name() != "" || historyType == reflect.TypeFor[History]() {
+		t.Fatalf("RequestState.History = %s (name %q), want unnamed []Message and not defined History", historyType, historyType.Name())
+	}
+
+	specification := declaredType(t, "agentkit.go", "RequestState")
+	if specification.Assign.IsValid() {
+		t.Fatal("RequestState is an alias, want a defined struct")
+	}
+	structType, ok := specification.Type.(*ast.StructType)
+	if !ok {
+		t.Fatalf("RequestState declaration is %T, want struct", specification.Type)
+	}
+	if got := renderedNode(t, structType); got != "struct {\n\tModel    string\n\tHistory  []Message\n\tSettings Settings\n\tOptions  ProviderOptions\n\tTools    []Tool\n}" {
+		t.Fatalf("RequestState declaration = %q, want exact five-field declaration", got)
+	}
+}
+
 func TestConversationConstructorDeclarationsAreExact(t *testing.T) {
 	// R-Y8LS-TNWE
 	// R-Y9TP-7FN3
@@ -491,6 +556,15 @@ func assertExactToolFunctionDeclaration(t *testing.T, name, want string) {
 	if got := rendered.String(); got != want {
 		t.Fatalf("%s declaration = %q, want exactly %q", name, got, want)
 	}
+}
+
+func renderedNode(t *testing.T, node ast.Node) string {
+	t.Helper()
+	var rendered bytes.Buffer
+	if err := format.Node(&rendered, token.NewFileSet(), node); err != nil {
+		t.Fatal(err)
+	}
+	return rendered.String()
 }
 
 func TestFramerAndSSEFramesDeclarationsAreExact(t *testing.T) {
