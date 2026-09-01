@@ -5,12 +5,95 @@ import (
 	"flag"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ikigenba/ikigenba/oauth/internal/oauth"
 	"github.com/ikigenba/ikigenba/oauth/internal/options"
 )
+
+const expectedFlagsBlock = `Usage: oauth [flags]
+
+Flags:
+  --auth-url string
+        authorization endpoint (required)
+  --token-url string
+        token endpoint (required)
+  --client-id string
+        OAuth client id (required)
+  --scope string
+        space-separated OAuth scopes
+  --client-secret string
+        client secret sent in the token request body
+  --callback-host string
+        host used in the redirect URI (default "localhost")
+  --port int
+        loopback callback port; 0 chooses an available port (default 0)
+  --callback-path string
+        callback route and redirect URI path (default "/callback")
+  --auth-param key=value
+        extra authorize parameter (repeatable)
+  --token-param key=value
+        extra token parameter (repeatable)
+  --token-header key=value
+        extra token request header (repeatable)
+  --no-browser
+        print the authorize URL without opening a browser
+  --timeout duration
+        maximum time to wait for the callback (default 5m)
+  -h, --help
+        print help and exit
+  -V, --version
+        print version and exit
+`
+
+// R-R5YG-YXBO
+func TestUsageBeginsWithExactFlagsBlock(t *testing.T) {
+	t.Parallel()
+
+	got := options.Usage()
+	if len(got) < len(expectedFlagsBlock) {
+		t.Fatalf("len(Usage()) = %d, want at least %d", len(got), len(expectedFlagsBlock))
+	}
+	if got[:len(expectedFlagsBlock)] != expectedFlagsBlock {
+		t.Errorf("Usage() prefix = %q, want %q", got[:len(expectedFlagsBlock)], expectedFlagsBlock)
+	}
+}
+
+// R-R8E9-QGT2
+func TestUsageNamesEveryFlagSpelling(t *testing.T) {
+	t.Parallel()
+
+	lines := strings.Split(options.Usage(), "\n")
+	flagRows := []string{
+		"  --auth-url string",
+		"  --token-url string",
+		"  --client-id string",
+		"  --scope string",
+		"  --client-secret string",
+		"  --callback-host string",
+		"  --port int",
+		"  --callback-path string",
+		"  --auth-param key=value",
+		"  --token-param key=value",
+		"  --token-header key=value",
+		"  --no-browser",
+		"  --timeout duration",
+		"  -h, --help",
+		"  -V, --version",
+	}
+	lastFlagLine := 3 + 2*(len(flagRows)-1)
+	if len(lines) <= lastFlagLine {
+		t.Fatalf("Usage() has %d lines, need flag row through line %d", len(lines), lastFlagLine+1)
+	}
+	for index, want := range flagRows {
+		line := 3 + 2*index
+		if lines[line] != want {
+			t.Errorf("Usage() line %d = %q, want flag row %q", line+1, lines[line], want)
+		}
+	}
+}
 
 // R-QK0A-31Z6
 func TestParseAcceptsEveryFlagAndPopulatesOptions(t *testing.T) {

@@ -13,7 +13,40 @@ import (
 	"github.com/ikigenba/ikigenba/oauth/internal/oauth"
 )
 
-const usage = "Usage: oauth [flags]\n"
+const usage = `Usage: oauth [flags]
+
+Flags:
+  --auth-url string
+        authorization endpoint (required)
+  --token-url string
+        token endpoint (required)
+  --client-id string
+        OAuth client id (required)
+  --scope string
+        space-separated OAuth scopes
+  --client-secret string
+        client secret sent in the token request body
+  --callback-host string
+        host used in the redirect URI (default "localhost")
+  --port int
+        loopback callback port; 0 chooses an available port (default 0)
+  --callback-path string
+        callback route and redirect URI path (default "/callback")
+  --auth-param key=value
+        extra authorize parameter (repeatable)
+  --token-param key=value
+        extra token parameter (repeatable)
+  --token-header key=value
+        extra token request header (repeatable)
+  --no-browser
+        print the authorize URL without opening a browser
+  --timeout duration
+        maximum time to wait for the callback (default 5m)
+  -h, --help
+        print help and exit
+  -V, --version
+        print version and exit
+`
 
 // ErrHelp reports that either supported help flag was supplied.
 var ErrHelp = flag.ErrHelp
