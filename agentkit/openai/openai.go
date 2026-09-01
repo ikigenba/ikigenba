@@ -49,18 +49,38 @@ func New(credential Credential, model string, options ...Option) (*agentkit.Conv
 	if credential == nil {
 		return nil, fmt.Errorf("%w: nil OpenAI credential", agentkit.ErrInvalidConfig)
 	}
+	configuration, err := buildConfig(credential, options)
+	if err != nil {
+		return nil, err
+	}
+	wire, err := selectWire(&configuration)
+	if err != nil {
+		return nil, err
+	}
+	endpoint, err := agentkit.NewEndpoint(configuration.baseURL, authAdapter{credential})
+	if err != nil {
+		return nil, err
+	}
+	return agentkit.NewForWire(wire, endpoint, model)
+}
+
+func buildConfig(credential Credential, options []Option) (config, error) {
 	configuration := config{baseURL: defaultBaseURL}
 	for _, option := range options {
 		if option == nil {
-			return nil, fmt.Errorf("%w: nil OpenAI option", agentkit.ErrInvalidConfig)
+			return config{}, fmt.Errorf("%w: nil OpenAI option", agentkit.ErrInvalidConfig)
 		}
 		if err := option(&configuration); err != nil {
-			return nil, err
+			return config{}, err
 		}
 	}
 	if _, baking := credential.(interface{ bakesTransport() }); baking && configuration.hasBaseOverride {
-		return nil, fmt.Errorf("%w: OpenAI OAuth and WithBaseURL are mutually exclusive", agentkit.ErrInvalidConfig)
+		return config{}, fmt.Errorf("%w: OpenAI OAuth and WithBaseURL are mutually exclusive", agentkit.ErrInvalidConfig)
 	}
+	return configuration, nil
+}
+
+func selectWire(configuration *config) (agentkit.KnownWire, error) {
 	wire := agentkit.KnownWireOpenAIResponses
 	switch configuration.api {
 	case Responses:
@@ -70,7 +90,7 @@ func New(credential Credential, model string, options ...Option) (*agentkit.Conv
 			configuration.baseURL = "https://api.openai.com/v1/chat/completions"
 		}
 	default:
-		return nil, fmt.Errorf("%w: unsupported OpenAI API %d", agentkit.ErrInvalidConfig, configuration.api)
+		return 0, fmt.Errorf("%w: unsupported OpenAI API %d", agentkit.ErrInvalidConfig, configuration.api)
 	}
-	return agentkit.NewKnownWireModelConversation(wire, configuration.baseURL, model, authAdapter{credential})
+	return wire, nil
 }

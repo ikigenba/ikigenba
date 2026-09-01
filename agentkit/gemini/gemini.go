@@ -36,5 +36,9 @@ func New(credential Credential, model string, options ...Option) (*agentkit.Conv
 			return nil, err
 		}
 	}
-	return agentkit.NewKnownWireModelConversation(agentkit.KnownWireGemini, configuration.baseURL, model, authAdapter{credential})
+	endpoint, err := agentkit.NewEndpoint(configuration.baseURL, authAdapter{credential})
+	if err != nil {
+		return nil, err
+	}
+	return agentkit.NewForWire(agentkit.KnownWireGemini, endpoint, model)
 }

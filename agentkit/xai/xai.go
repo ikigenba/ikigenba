@@ -60,7 +60,11 @@ func New(credential Credential, model string, options ...Option) (*agentkit.Conv
 	if err != nil {
 		return nil, err
 	}
-	return agentkit.NewKnownWireModelConversation(wire, baseURL, model, authAdapter{credential})
+	endpoint, err := agentkit.NewEndpoint(baseURL, authAdapter{credential})
+	if err != nil {
+		return nil, err
+	}
+	return agentkit.NewForWire(wire, endpoint, model)
 }
 
 func buildConfig(options []Option) (config, error) {

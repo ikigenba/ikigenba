@@ -82,7 +82,7 @@ func TestComposedProviderMutatesBeforeAuthWithFinalBodyState(t *testing.T) {
 				t.Fatal("auth did not receive the original request context")
 			}
 			if string(body) != "mutated-final-body" || request.URL.String() != "http://redirected.test/models/moved-model" || request.Header.Get("X-Redirected") != "yes" {
-				t.Fatalf("auth saw request %s and body %q before mutation", request.URL, body)
+				t.Fatalf("auth saw request %q and body %q before mutation", request.URL, body)
 			}
 			request.Header.Set("Authorization", "signed-final-body")
 			return nil
@@ -110,7 +110,7 @@ func TestComposedProviderMutatesBeforeAuthWithFinalBodyState(t *testing.T) {
 		t.Fatalf("hook order = %v", order)
 	}
 	if request.Header.Get("X-Static") != "present" || request.Header.Get("Authorization") != "signed-final-body" {
-		t.Fatalf("assembled headers = %v", request.Header)
+		t.Fatalf("assembled headers = %q", request.Header)
 	}
 	body, err := io.ReadAll(request.Body)
 	if err != nil {
@@ -128,12 +128,90 @@ func TestComposedProviderMutatesBeforeAuthWithFinalBodyState(t *testing.T) {
 
 func TestKnownWireModelCompositionRetainsModelVerbatim(t *testing.T) {
 	// R-YPOE-6GA4
-	conversation, err := NewKnownWireModelConversation(KnownWireGemini, "https://example.test", "vendor/model:latest", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
+	endpoint, err := NewEndpoint("https://example.test", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := NewForWire(KnownWireGemini, endpoint, "vendor/model:latest")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if conversation.identity.Model != "vendor/model:latest" || conversation.provider.Identity().Model != "vendor/model:latest" {
 		t.Fatalf("model identity = %#v / %#v", conversation.identity, conversation.provider.Identity())
+	}
+}
+
+func TestNewForWireUsesEveryKnownCodecAndSuppliedEndpoint(t *testing.T) {
+	// R-Y8LS-TNWE
+	const model = "released/today:model-latest"
+	tests := []struct {
+		name           string
+		wire           KnownWire
+		codecSignature string
+	}{
+		{name: "anthropic messages", wire: KnownWireAnthropicMessages, codecSignature: `"content":[{"type":"text"`},
+		{name: "openai responses", wire: KnownWireOpenAIResponses, codecSignature: `"input":[{"role":"user"`},
+		{name: "openai chat", wire: KnownWireOpenAIChat, codecSignature: `"content":"exercise codec"`},
+		{name: "gemini", wire: KnownWireGemini, codecSignature: `"parts":[{"text":"exercise codec"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			calls := 0
+			client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				calls++
+				if request.URL.String() != "https://wire.example.test/custom/path" {
+					t.Errorf("request URL = %q, want supplied endpoint", request.URL)
+				}
+				body, err := io.ReadAll(request.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var payload map[string]json.RawMessage
+				if err := json.Unmarshal(body, &payload); err != nil {
+					t.Fatalf("request body = %q: %v", body, err)
+				}
+				if !bytes.Contains(body, []byte(test.codecSignature)) {
+					t.Errorf("request body = %q, want selected %s codec signature %q", body, test.name, test.codecSignature)
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader("")),
+					Request:    request,
+				}, nil
+			})}
+			endpoint, err := NewEndpoint(
+				"https://wire.example.test/custom/path",
+				authFunc(func(context.Context, *http.Request, []byte) error { return nil }),
+				WithHTTPClient(client),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			conversation, err := NewForWire(test.wire, endpoint, model)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if conversation.client != client {
+				t.Fatal("conversation did not retain the endpoint HTTP client")
+			}
+			if conversation.identity.Model != model || conversation.provider.Identity().Model != model {
+				t.Fatalf("model identity = %#v / %#v, want verbatim %q", conversation.identity, conversation.provider.Identity(), model)
+			}
+			conversation.Send(context.Background(), Text{Text: "exercise codec"})
+			if calls != 1 {
+				t.Fatalf("endpoint HTTP client calls = %d, want 1", calls)
+			}
+		})
+	}
+
+	endpoint, err := NewEndpoint("https://wire.example.test/custom/path", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := NewForWire(KnownWire(99), endpoint, model)
+	if conversation != nil || !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("unknown wire result = (%v, %v), want (nil, ErrInvalidConfig)", conversation, err)
 	}
 }
 
@@ -229,7 +307,7 @@ func TestComposedProviderClassificationIsExactAndTyped(t *testing.T) {
 		t.Fatalf("Classify returned %p, want authoritative %p", classified, typed)
 	}
 	if gotStatus != http.StatusTooManyRequests || gotHeaders.Get("Retry-After") != "7" || !bytes.Equal(gotBody, body) {
-		t.Fatalf("classifier inputs = %d %v %q", gotStatus, gotHeaders, gotBody)
+		t.Fatalf("classifier inputs = %d %q %q", gotStatus, gotHeaders, gotBody)
 	}
 
 	response := &http.Response{Body: io.NopCloser(strings.NewReader("data: error-frame\n\n"))}

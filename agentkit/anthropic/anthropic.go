@@ -65,5 +65,9 @@ func New(credential Credential, model string, options ...Option) (*agentkit.Conv
 	if configuration.api != Messages {
 		return nil, fmt.Errorf("%w: unsupported Anthropic API %d", agentkit.ErrInvalidConfig, configuration.api)
 	}
-	return agentkit.NewKnownWireModelConversation(agentkit.KnownWireAnthropicMessages, configuration.baseURL, model, authAdapter{credential})
+	endpoint, err := agentkit.NewEndpoint(configuration.baseURL, authAdapter{credential})
+	if err != nil {
+		return nil, err
+	}
+	return agentkit.NewForWire(agentkit.KnownWireAnthropicMessages, endpoint, model)
 }

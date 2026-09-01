@@ -47,13 +47,20 @@ func (p *externalProvider) Identity() agentkit.Identity {
 func TestExternalProviderDrivesSend(t *testing.T) {
 	// R-1VRZ-N432
 	// R-3H39-MBXP
+	// R-Y9TP-7FN3
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 	unknownModel := "external-model-not-known-to-agentkit"
 	provider := &externalProvider{url: server.URL, model: unknownModel}
-	conversation := agentkit.NewConversation(provider, server.Client())
+	clientCalls := 0
+	serverClient := server.Client()
+	client := &http.Client{Transport: externalRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		clientCalls++
+		return serverClient.Transport.RoundTrip(request)
+	})}
+	conversation := agentkit.NewConversation(provider, client)
 
 	conversation.Send(context.Background(), agentkit.Text{Text: "hello"})
 	if provider.buildCalls != 1 || provider.decodeCalls != 1 || provider.classifyCalls != 0 {
@@ -62,6 +69,15 @@ func TestExternalProviderDrivesSend(t *testing.T) {
 	if provider.received.Model != unknownModel {
 		t.Fatalf("provider received model %q, want verbatim %q", provider.received.Model, unknownModel)
 	}
+	if clientCalls != 1 {
+		t.Fatalf("supplied HTTP client calls = %d, want 1", clientCalls)
+	}
+}
+
+type externalRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (roundTrip externalRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return roundTrip(request)
 }
 
 func TestEndpointHookSignaturesArePublic(t *testing.T) {

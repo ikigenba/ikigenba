@@ -12,7 +12,7 @@ import (
 // KnownWire identifies a built-in wire format available to the generic route.
 type KnownWire int
 
-// Known wire names accepted by NewKnownWireConversation.
+// Known wire names accepted by NewForWire.
 const (
 	KnownWireAnthropicMessages KnownWire = iota
 	KnownWireOpenAIResponses
@@ -20,20 +20,9 @@ const (
 	KnownWireGemini
 )
 
-// NewKnownWireConversation constructs the generic custom-endpoint route. Its
-// authentication input is deliberately the runtime AuthApplier seam rather
-// than either vendor package's sealed credential type.
-func NewKnownWireConversation(wireName KnownWire, baseURL string, auth AuthApplier) (*Conversation, error) {
-	return newKnownWireConversation(wireName, baseURL, "", auth)
-}
-
-// NewKnownWireModelConversation constructs a conversation from an established
-// wire while retaining the vendor constructor's required model.
-func NewKnownWireModelConversation(wireName KnownWire, baseURL, model string, auth AuthApplier) (*Conversation, error) {
-	return newKnownWireConversation(wireName, baseURL, model, auth)
-}
-
-func newKnownWireConversation(wireName KnownWire, baseURL, model string, auth AuthApplier) (*Conversation, error) {
+// NewForWire constructs a conversation from a known wire, caller-built
+// endpoint, and verbatim model name.
+func NewForWire(wireName KnownWire, endpoint Endpoint, model string) (*Conversation, error) {
 	var wire WireFormat
 	switch wireName {
 	case KnownWireAnthropicMessages:
@@ -48,11 +37,7 @@ func newKnownWireConversation(wireName KnownWire, baseURL, model string, auth Au
 		return nil, fmt.Errorf("%w: unknown wire format %d", ErrInvalidConfig, wireName)
 	}
 
-	endpoint, err := NewEndpoint(baseURL, auth)
-	if err != nil {
-		return nil, err
-	}
-	identity := Identity{Endpoint: baseURL, AuthMode: "custom", Model: model}
+	identity := Identity{Endpoint: endpoint.config.baseURL.String(), AuthMode: "custom", Model: model}
 	return newEndpointConversation(wire, endpoint, identity), nil
 }
 

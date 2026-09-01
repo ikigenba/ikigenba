@@ -121,6 +121,60 @@ func TestProviderDeclarationIsExact(t *testing.T) {
 	}
 }
 
+func TestConversationConstructorDeclarationsAreExact(t *testing.T) {
+	// R-Y8LS-TNWE
+	// R-Y9TP-7FN3
+	newForWire := reflect.TypeOf(NewForWire)
+	wantNewForWire := reflect.TypeOf(func(KnownWire, Endpoint, string) (*Conversation, error) { return nil, nil })
+	if newForWire != wantNewForWire || newForWire.IsVariadic() {
+		t.Fatalf("NewForWire = %s variadic=%t, want exactly %s non-variadic", newForWire, newForWire.IsVariadic(), wantNewForWire)
+	}
+	newConversation := reflect.TypeOf(NewConversation)
+	wantNewConversation := reflect.TypeOf(func(Provider, *http.Client) *Conversation { return nil })
+	if newConversation != wantNewConversation || newConversation.IsVariadic() {
+		t.Fatalf("NewConversation = %s variadic=%t, want exactly %s non-variadic", newConversation, newConversation.IsVariadic(), wantNewConversation)
+	}
+	for _, declaration := range []struct {
+		filename string
+		name     string
+		params   int
+		results  int
+	}{
+		{filename: "provider.go", name: "NewForWire", params: 3, results: 2},
+		{filename: "conversation.go", name: "NewConversation", params: 2, results: 1},
+	} {
+		function := declaredFunction(t, declaration.filename, declaration.name)
+		if function.Recv != nil || function.Type.Params.NumFields() != declaration.params || function.Type.Results.NumFields() != declaration.results {
+			t.Fatalf("%s AST has receiver=%v params=%d results=%d, want package function with %d params and %d results", declaration.name, function.Recv != nil, function.Type.Params.NumFields(), function.Type.Results.NumFields(), declaration.params, declaration.results)
+		}
+		for _, parameter := range function.Type.Params.List {
+			if _, variadic := parameter.Type.(*ast.Ellipsis); variadic {
+				t.Fatalf("%s AST contains a variadic parameter", declaration.name)
+			}
+		}
+	}
+
+	parsed, err := parser.ParseFile(token.NewFileSet(), "provider.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exportedFunctions := make(map[string]bool)
+	for _, declaration := range parsed.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && function.Recv == nil && function.Name.IsExported() {
+			exportedFunctions[function.Name.Name] = true
+		}
+	}
+	if !exportedFunctions["NewForWire"] {
+		t.Fatal("NewForWire is not an exported package function")
+	}
+	for _, obsolete := range []string{"NewKnownWireConversation", "NewKnownWireModelConversation"} {
+		if exportedFunctions[obsolete] {
+			t.Fatalf("obsolete exported constructor %s remains declared", obsolete)
+		}
+	}
+}
+
 func assertDefinedEndpointType(t *testing.T, name string, typeOf reflect.Type, kind reflect.Kind) {
 	t.Helper()
 	if typeOf.Name() != name || typeOf.Kind() != kind || !token.IsExported(typeOf.Name()) {
