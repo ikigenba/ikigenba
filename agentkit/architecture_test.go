@@ -766,6 +766,136 @@ func TestToolResultDeclaration(t *testing.T) {
 	})
 }
 
+func TestSettingsDeclarationHasExactGenerationControlFields(t *testing.T) {
+	// R-ZU4N-N6GD
+	assertExactStructFields(t, reflect.TypeFor[Settings](), []exactStructField{
+		{name: "Temperature", typeOf: reflect.TypeFor[*float64]()},
+		{name: "TopP", typeOf: reflect.TypeFor[*float64]()},
+		{name: "MaxOutputTokens", typeOf: reflect.TypeFor[*int]()},
+		{name: "StopSequences", typeOf: reflect.TypeFor[[]string]()},
+		{name: "ToolChoice", typeOf: reflect.TypeFor[ToolChoice]()},
+		{name: "Reasoning", typeOf: reflect.TypeFor[ReasoningConfig]()},
+	})
+}
+
+func TestReasoningModeDeclarationIsDefinedIntWithExactTypedIotaSequence(t *testing.T) {
+	// R-ZWKG-EPXR
+	want := []ReasoningMode{0, 1, 2, 3, 4}
+	got := []ReasoningMode{ReasoningDefault, ReasoningOff, ReasoningOn, ReasoningEffort, ReasoningBudget}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ReasoningMode values = %v, want %v", got, want)
+	}
+	assertDefinedIntTypedIota(t, "settings.go", "ReasoningMode", []string{
+		"ReasoningDefault", "ReasoningOff", "ReasoningOn", "ReasoningEffort", "ReasoningBudget",
+	})
+}
+
+func TestReasoningConfigDeclarationHasExactNeutralReasoningFields(t *testing.T) {
+	// R-ZXSC-SHOG
+	assertExactStructFields(t, reflect.TypeFor[ReasoningConfig](), []exactStructField{
+		{name: "Mode", typeOf: reflect.TypeFor[ReasoningMode]()},
+		{name: "Effort", typeOf: reflect.TypeFor[Effort]()},
+		{name: "Budget", typeOf: reflect.TypeFor[int]()},
+	})
+}
+
+func TestEffortDeclarationIsDefinedIntWithExactTypedIotaSequence(t *testing.T) {
+	// R-ZZ09-69F5
+	want := []Effort{0, 1, 2, 3}
+	got := []Effort{EffortNone, EffortLow, EffortMedium, EffortHigh}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Effort values = %v, want %v", got, want)
+	}
+	assertDefinedIntTypedIota(t, "settings.go", "Effort", []string{
+		"EffortNone", "EffortLow", "EffortMedium", "EffortHigh",
+	})
+}
+
+func TestToolChoiceDeclarationHasExactNeutralSelectionFields(t *testing.T) {
+	// R-0085-K15U
+	assertExactStructFields(t, reflect.TypeFor[ToolChoice](), []exactStructField{
+		{name: "Mode", typeOf: reflect.TypeFor[ToolChoiceMode]()},
+		{name: "Name", typeOf: reflect.TypeFor[string]()},
+	})
+}
+
+func TestToolChoiceModeDeclarationIsDefinedIntWithExactTypedIotaSequence(t *testing.T) {
+	// R-01G1-XSWJ
+	want := []ToolChoiceMode{0, 1, 2, 3}
+	got := []ToolChoiceMode{ToolChoiceAuto, ToolChoiceNone, ToolChoiceRequired, ToolChoiceTool}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ToolChoiceMode values = %v, want %v", got, want)
+	}
+	assertDefinedIntTypedIota(t, "settings.go", "ToolChoiceMode", []string{
+		"ToolChoiceAuto", "ToolChoiceNone", "ToolChoiceRequired", "ToolChoiceTool",
+	})
+}
+
+func assertDefinedIntTypedIota(t *testing.T, filename, typeName string, wantNames []string) {
+	t.Helper()
+	parsed, err := parser.ParseFile(token.NewFileSet(), filename, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	foundDefinedInt := false
+	typedGroups := make([][]string, 0)
+	typedSpecifications := 0
+	typedSpecificationUsesIota := false
+	targetSpecificationsAreImplicitAfterFirst := true
+	for _, declaration := range parsed.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		if general.Tok == token.TYPE {
+			for _, specification := range general.Specs {
+				typeSpecification := specification.(*ast.TypeSpec)
+				underlying, isIdentifier := typeSpecification.Type.(*ast.Ident)
+				if typeSpecification.Name.Name == typeName && typeSpecification.Assign == token.NoPos && isIdentifier && underlying.Name == "int" {
+					foundDefinedInt = true
+				}
+			}
+			continue
+		}
+		if general.Tok != token.CONST {
+			continue
+		}
+
+		groupType := ""
+		groupNames := make([]string, 0)
+		for _, specification := range general.Specs {
+			valueSpecification := specification.(*ast.ValueSpec)
+			if explicitType, ok := valueSpecification.Type.(*ast.Ident); ok {
+				groupType = explicitType.Name
+				if groupType == typeName {
+					typedSpecifications++
+					typedSpecificationUsesIota = len(valueSpecification.Values) == 1 && expressionName(valueSpecification.Values[0]) == "iota"
+				}
+			}
+			if groupType != typeName {
+				continue
+			}
+			if len(groupNames) > 0 && (valueSpecification.Type != nil || len(valueSpecification.Values) != 0) {
+				targetSpecificationsAreImplicitAfterFirst = false
+			}
+			for _, name := range valueSpecification.Names {
+				groupNames = append(groupNames, name.Name)
+			}
+		}
+		if len(groupNames) > 0 {
+			typedGroups = append(typedGroups, groupNames)
+		}
+	}
+
+	if !foundDefinedInt {
+		t.Fatalf("%s is not declared as the defined type %s int", typeName, typeName)
+	}
+	if len(typedGroups) != 1 || typedSpecifications != 1 || !typedSpecificationUsesIota || !targetSpecificationsAreImplicitAfterFirst || !reflect.DeepEqual(typedGroups[0], wantNames) {
+		t.Fatalf("%s typed iota declaration = groups %v, typed specs %d, starts with iota %t, implicit continuation %t; want exactly one typed iota group %v", typeName, typedGroups, typedSpecifications, typedSpecificationUsesIota, targetSpecificationsAreImplicitAfterFirst, wantNames)
+	}
+}
+
 type exactStructField struct {
 	name   string
 	typeOf reflect.Type
