@@ -3,6 +3,7 @@ package cli_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -125,14 +127,64 @@ type successfulRun struct {
 }
 
 type runConfig struct {
-	args            []string
-	callbackQuery   func(state string) url.Values
-	disableCallback bool
-	tokenStatus     int
-	tokenBody       []byte
-	stdout          io.Writer
-	stderr          io.Writer
-	outerTimeout    time.Duration
+	args                 []string
+	callbackQuery        func(state string) url.Values
+	disableCallback      bool
+	callbackStderrMarker string
+	launcherError        error
+	tokenStatus          int
+	tokenBody            []byte
+	stdout               io.Writer
+	stderr               io.Writer
+	outerTimeout         time.Duration
+}
+
+type synchronizedBuffer struct {
+	mu      sync.Mutex
+	buffer  bytes.Buffer
+	changed chan struct{}
+}
+
+func newSynchronizedBuffer() *synchronizedBuffer {
+	return &synchronizedBuffer{changed: make(chan struct{}, 1)}
+}
+
+func (buffer *synchronizedBuffer) Write(data []byte) (int, error) {
+	buffer.mu.Lock()
+	written, err := buffer.buffer.Write(data)
+	buffer.mu.Unlock()
+	select {
+	case buffer.changed <- struct{}{}:
+	default:
+	}
+
+	return written, err
+}
+
+func (buffer *synchronizedBuffer) Bytes() []byte {
+	buffer.mu.Lock()
+	defer buffer.mu.Unlock()
+
+	return append([]byte(nil), buffer.buffer.Bytes()...)
+}
+
+func (buffer *synchronizedBuffer) waitForAuthorizeURL(ctx context.Context, marker string) (string, error) {
+	for {
+		text := string(buffer.Bytes())
+		if strings.Contains(text, marker) {
+			for _, line := range strings.Split(text, "\n") {
+				if isCompleteAuthorizeURL(line) {
+					return line, nil
+				}
+			}
+		}
+
+		select {
+		case <-buffer.changed:
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
 }
 
 func runLogin(t *testing.T, config runConfig) successfulRun {
@@ -144,13 +196,6 @@ func runLogin(t *testing.T, config runConfig) successfulRun {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), outerTimeout)
 	defer cancel()
-	callbackPath := "/callback"
-	for index, arg := range config.args {
-		if arg == "--callback-path" && index+1 < len(config.args) {
-			callbackPath = config.args[index+1]
-		}
-	}
-
 	var capture successfulRun
 	callbackDone := make(chan error, 1)
 	var listenConfig net.ListenConfig
@@ -177,38 +222,14 @@ func runLogin(t *testing.T, config runConfig) successfulRun {
 	launcher := launcherFunc(func(authorizeURL string) error {
 		capture.callLog = append(capture.callLog, "launch")
 		capture.authorizeURL = authorizeURL
-		if config.disableCallback {
-			return nil
+		if config.disableCallback || config.callbackStderrMarker != "" {
+			return config.launcherError
 		}
-		parsed, err := url.Parse(authorizeURL)
-		if err != nil {
-			return err
-		}
-		state := parsed.Query().Get("state")
-		callbackURL := url.URL{
-			Scheme: "http",
-			Host:   net.JoinHostPort("127.0.0.1", strconv.Itoa(capture.boundPort)),
-			Path:   callbackPath,
-		}
-		query := url.Values{"state": {state}, "code": {"known-code"}}
-		if config.callbackQuery != nil {
-			query = config.callbackQuery(state)
-		}
-		callbackURL.RawQuery = query.Encode()
 		go func() {
-			client := http.Client{Timeout: 2 * time.Second}
-			request, requestErr := http.NewRequestWithContext(ctx, http.MethodGet, callbackURL.String(), nil)
-			var response *http.Response
-			if requestErr == nil {
-				response, requestErr = client.Do(request)
-			}
-			if requestErr == nil {
-				requestErr = response.Body.Close()
-			}
-			callbackDone <- requestErr
+			callbackDone <- sendCallback(ctx, authorizeURL, config.callbackQuery)
 		}()
 
-		return nil
+		return config.launcherError
 	})
 	transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		capture.tokenCalls++
@@ -234,14 +255,27 @@ func runLogin(t *testing.T, config runConfig) successfulRun {
 		}, nil
 	})
 
-	var stdoutBuffer, stderrBuffer bytes.Buffer
+	var stdoutBuffer bytes.Buffer
+	stderrBuffer := newSynchronizedBuffer()
 	stdout := config.stdout
 	if stdout == nil {
 		stdout = &stdoutBuffer
 	}
 	stderr := config.stderr
 	if stderr == nil {
-		stderr = &stderrBuffer
+		stderr = stderrBuffer
+	}
+	if config.callbackStderrMarker != "" {
+		if config.stderr != nil {
+			t.Fatal("callbackStderrMarker requires the harness's synchronized stderr")
+		}
+		go func() {
+			authorizeURL, err := stderrBuffer.waitForAuthorizeURL(ctx, config.callbackStderrMarker)
+			if err == nil {
+				err = sendCallback(ctx, authorizeURL, config.callbackQuery)
+			}
+			callbackDone <- err
+		}()
 	}
 	capture.exitCode = cli.Run(ctx, config.args, stdout, stderr, cli.Deps{
 		Launcher:   launcher,
@@ -250,7 +284,10 @@ func runLogin(t *testing.T, config runConfig) successfulRun {
 		Listen:     listen,
 	})
 	capture.stdout = append([]byte(nil), stdoutBuffer.Bytes()...)
-	capture.stderr = append([]byte(nil), stderrBuffer.Bytes()...)
+	capture.stderr = stderrBuffer.Bytes()
+	if capture.authorizeURL == "" && config.stderr == nil {
+		capture.authorizeURL = authorizeURLFromOutput(string(capture.stderr))
+	}
 	if !config.disableCallback {
 		select {
 		case err := <-callbackDone:
@@ -265,6 +302,60 @@ func runLogin(t *testing.T, config runConfig) successfulRun {
 	return capture
 }
 
+func sendCallback(ctx context.Context, authorizeURL string, callbackQuery func(string) url.Values) error {
+	parsedAuthorize, err := url.Parse(authorizeURL)
+	if err != nil {
+		return err
+	}
+	state := parsedAuthorize.Query().Get("state")
+	callbackURL, err := url.Parse(parsedAuthorize.Query().Get("redirect_uri"))
+	if err != nil {
+		return err
+	}
+	_, port, err := net.SplitHostPort(callbackURL.Host)
+	if err != nil {
+		return err
+	}
+	callbackURL.Host = net.JoinHostPort("127.0.0.1", port)
+	query := url.Values{"state": {state}, "code": {"known-code"}}
+	if callbackQuery != nil {
+		query = callbackQuery(state)
+	}
+	callbackURL.RawQuery = query.Encode()
+
+	client := http.Client{Timeout: 2 * time.Second}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, callbackURL.String(), nil)
+	if err != nil {
+		return err
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+
+	return response.Body.Close()
+}
+
+func authorizeURLFromOutput(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		if isCompleteAuthorizeURL(line) {
+			return line
+		}
+	}
+
+	return ""
+}
+
+func isCompleteAuthorizeURL(candidate string) bool {
+	parsed, err := url.Parse(candidate)
+	if err != nil || !parsed.IsAbs() {
+		return false
+	}
+	query := parsed.Query()
+
+	return query.Get("state") != "" && query.Get("redirect_uri") != ""
+}
+
 func requireSuccessfulLogin(t *testing.T, args []string) successfulRun {
 	t.Helper()
 	capture := runLogin(t, runConfig{args: args})
@@ -273,6 +364,81 @@ func requireSuccessfulLogin(t *testing.T, args []string) successfulRun {
 	}
 
 	return capture
+}
+
+// R-EMNT-1L22
+func TestRunNoBrowserSkipsLauncherAndPrintsAuthorizeURL(t *testing.T) {
+	tokenBody := []byte("phase-seven-no-browser-token\x00")
+	capture := runLogin(t, runConfig{
+		args:                 append(validArgs(), "--no-browser"),
+		callbackStderrMarker: "https://identity.example/authorize?",
+		tokenBody:            tokenBody,
+	})
+
+	if capture.exitCode != 0 {
+		t.Fatalf("Run() exit code = %d, want 0; stderr = %q", capture.exitCode, capture.stderr)
+	}
+	if calls := countCalls(capture.callLog, "launch"); calls != 0 {
+		t.Errorf("Launcher.Open calls = %d, want 0; call log = %v", calls, capture.callLog)
+	}
+	if capture.authorizeURL == "" {
+		t.Fatal("stderr did not contain a complete authorize URL")
+	}
+	if !bytes.Contains(capture.stderr, []byte(capture.authorizeURL+"\n")) {
+		t.Errorf("stderr = %q, want complete authorize URL %q", capture.stderr, capture.authorizeURL)
+	}
+	if capture.tokenCalls != 1 {
+		t.Errorf("token exchange calls = %d, want 1", capture.tokenCalls)
+	}
+	if !bytes.Equal(capture.stdout, tokenBody) {
+		t.Errorf("stdout = %q, want exact token bytes %q", capture.stdout, tokenBody)
+	}
+}
+
+// R-ENVP-FCSR
+func TestRunContinuesAfterBrowserLaunchError(t *testing.T) {
+	launchErr := errors.New("distinctive phase-seven browser start failure")
+	tokenBody := []byte("phase-seven-launch-error-token\r\n")
+	capture := runLogin(t, runConfig{
+		args:                 validArgs(),
+		callbackStderrMarker: launchErr.Error(),
+		launcherError:        launchErr,
+		tokenBody:            tokenBody,
+	})
+
+	if capture.exitCode != 0 {
+		t.Fatalf("Run() exit code = %d, want 0; stderr = %q", capture.exitCode, capture.stderr)
+	}
+	if calls := countCalls(capture.callLog, "launch"); calls != 1 {
+		t.Errorf("Launcher.Open calls = %d, want 1; call log = %v", calls, capture.callLog)
+	}
+	if capture.authorizeURL == "" || !bytes.Contains(capture.stderr, []byte(capture.authorizeURL+"\n")) {
+		t.Errorf("stderr = %q, want launched authorize URL %q", capture.stderr, capture.authorizeURL)
+	}
+	if !bytes.Contains(capture.stderr, []byte(launchErr.Error())) {
+		t.Errorf("stderr = %q, want launch error %q", capture.stderr, launchErr)
+	}
+	if bytes.Contains(capture.stdout, []byte(launchErr.Error())) {
+		t.Errorf("stdout = %q, must not contain launch error %q", capture.stdout, launchErr)
+	}
+	if capture.tokenCalls != 1 || capture.tokenForm.Get("code") != "known-code" {
+		t.Errorf("token exchange calls = %d, code = %q; want one exchange after callback with known-code",
+			capture.tokenCalls, capture.tokenForm.Get("code"))
+	}
+	if !bytes.Equal(capture.stdout, tokenBody) {
+		t.Errorf("stdout = %q, want exact token bytes %q", capture.stdout, tokenBody)
+	}
+}
+
+func countCalls(callLog []string, want string) int {
+	count := 0
+	for _, call := range callLog {
+		if call == want {
+			count++
+		}
+	}
+
+	return count
 }
 
 // R-EJ03-W9TZ
@@ -295,6 +461,7 @@ func TestRunWritesTokenResponseBytesVerbatimToStdout(t *testing.T) {
 }
 
 // R-EK80-A1KO
+// llm-lint:ignore overclaiming-exhaustive-test-name
 func TestRunKeepsStdoutEmptyForEveryFailureMode(t *testing.T) {
 	tests := []struct {
 		name     string

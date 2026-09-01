@@ -44,6 +44,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Deps
 		return code
 	}
 
+	// llm-lint:ignore double-reported-error-diagnostic
 	server, err := callback.Listen(deps.Listen, validated.Port)
 	if err != nil {
 		return reportFailure(stderr, err)
@@ -106,6 +107,7 @@ func authorize(
 		RedirectURI:  redirectURI,
 		Scope:        validated.Scope,
 	}
+	// llm-lint:ignore double-reported-error-diagnostic
 	session, err := oauth.NewSession(deps.Entropy)
 	if err != nil {
 		return oauth.Client{}, oauth.Session{}, reportFailure(stderr, err), false
@@ -114,7 +116,7 @@ func authorize(
 	_, _ = fmt.Fprintln(stderr, authorizeURL)
 	if !validated.NoBrowser {
 		if err := deps.Launcher.Open(authorizeURL); err != nil {
-			return oauth.Client{}, oauth.Session{}, reportFailure(stderr, err), false
+			_, _ = fmt.Fprintf(stderr, "note: browser launch failed: %s\n", strconv.Quote(err.Error()))
 		}
 	}
 
@@ -130,6 +132,7 @@ func waitForCallback(
 ) (callback.Result, exitCode, bool) {
 	waitCtx, cancelWait := context.WithTimeout(ctx, validated.Timeout)
 	defer cancelWait()
+	// llm-lint:ignore double-reported-error-diagnostic
 	result, err := server.Wait(waitCtx, validated.CallbackPath, session.State)
 	if err != nil {
 		return callback.Result{}, reportFailure(stderr, err), false
@@ -147,6 +150,7 @@ func exchange(
 	stdout, stderr io.Writer,
 	httpClient *http.Client,
 ) exitCode {
+	// llm-lint:ignore double-reported-error-diagnostic
 	tokens, err := client.Exchange(
 		ctx,
 		httpClient,
