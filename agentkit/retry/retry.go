@@ -3,6 +3,7 @@ package retry
 
 import (
 	"context"
+	"math/rand/v2"
 	"time"
 )
 
@@ -47,7 +48,81 @@ func Do[T any](
 	op func(ctx context.Context) (T, error),
 	onRetry func(attempt int, err error, delay time.Duration),
 ) (T, error) {
-	_ = p
-	_ = onRetry
-	return op(ctx)
+	clock := p.Clock
+	if clock == nil {
+		clock = realClock{}
+	}
+	random := p.Rand
+	if random == nil {
+		random = rand.Float64
+	}
+
+	maxAttempts := p.MaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = 1
+	}
+
+	for attempt := 1; ; attempt++ {
+		value, err := op(ctx)
+		if err == nil {
+			return value, nil
+		}
+		if attempt >= maxAttempts || p.Retryable == nil || !p.Retryable(err) {
+			var zero T
+			return zero, err
+		}
+
+		delay := backoff(p, attempt, random)
+		if p.RetryAfter != nil {
+			if floor := p.RetryAfter(err); floor > delay {
+				delay = floor
+			}
+		}
+		if onRetry != nil {
+			onRetry(attempt, err, delay)
+		}
+		if err := clock.Sleep(ctx, delay); err != nil {
+			var zero T
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return zero, ctxErr
+			}
+			return zero, err
+		}
+	}
+}
+
+type realClock struct{}
+
+func (realClock) Now() time.Time {
+	return time.Now()
+}
+
+func (realClock) Sleep(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func backoff(p Policy, attempt int, random func() float64) time.Duration {
+	delay := p.Base
+	for retry := 1; retry < attempt && delay < p.Max; retry++ {
+		if delay > p.Max/2 {
+			delay = p.Max
+			break
+		}
+		delay *= 2
+	}
+	if delay > p.Max {
+		delay = p.Max
+	}
+	if p.Jitter > 0 && delay > 0 {
+		delay -= time.Duration(float64(delay) * p.Jitter * random())
+	}
+	return delay
 }
