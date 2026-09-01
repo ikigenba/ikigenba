@@ -10,9 +10,8 @@ type openAIResponsesWire struct{ wireCodec }
 func newOpenAIResponsesWire(classifier wireClassifier) WireFormat {
 	wire := &openAIResponsesWire{}
 	wire.wireCodec = wireCodec{
-		encode:     encodeOpenAIResponsesRequest,
+		encode:     wire.encodeRequest,
 		decoder:    newOpenAIResponsesDecoder,
-		render:     renderOpenAIResponsesTools,
 		reserved:   []string{"openai"},
 		classifier: classifier,
 		capabilities: wireCapabilities{
@@ -47,14 +46,21 @@ type openAIResponsesRequest struct {
 	Input      []json.RawMessage   `json:"input"`
 	Reasoning  *responsesReasoning `json:"reasoning,omitempty"`
 	ToolChoice any                 `json:"tool_choice,omitempty"`
+	Tools      json.RawMessage     `json:"tools,omitempty"`
 }
 
-func encodeOpenAIResponsesRequest(state RequestState) ([]byte, error) {
+func (w *openAIResponsesWire) encodeRequest(state RequestState) ([]byte, error) {
 	input, err := buildOpenAIResponsesInput(state.History)
 	if err != nil {
 		return nil, err
 	}
 	request := buildOpenAIResponsesRequest(input, state.Settings)
+	if len(state.Tools) > 0 {
+		request.Tools, err = w.RenderTools(state.Tools)
+		if err != nil {
+			return nil, err
+		}
+	}
 	encoded, err := json.Marshal(request)
 	return append(encoded, '\n'), err
 }
@@ -201,4 +207,17 @@ func renderOpenAIResponsesTools(tools []Tool) (json.RawMessage, error) {
 		declarations[index] = declaration{"function", tool.Name(), tool.Description(), tool.Schema()}
 	}
 	return json.Marshal(declarations)
+}
+
+func (w *openAIResponsesWire) RenderTools(tools []Tool) (json.RawMessage, error) {
+	if err := validateCanonicalTools(tools); err != nil {
+		return nil, err
+	}
+	return renderOpenAIResponsesTools(tools)
+}
+
+func (w *openAIResponsesWire) withClassifier(classifier wireClassifier) WireFormat {
+	clone := &openAIResponsesWire{wireCodec: w.cloneWithClassifier(classifier)}
+	clone.encode = clone.encodeRequest
+	return clone
 }

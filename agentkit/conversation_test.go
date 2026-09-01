@@ -617,7 +617,7 @@ func TestUnknownModelReachesVendorAndClassifier(t *testing.T) {
 }
 
 func boundaryWire(capabilities wireCapabilities, encoded func(RequestState), decoded func()) WireFormat {
-	return &wireCodec{
+	return &boundaryTestWire{wireCodec: wireCodec{
 		capabilities: capabilities,
 		encode: func(state RequestState) ([]byte, error) {
 			encoded(state)
@@ -629,9 +629,12 @@ func boundaryWire(capabilities wireCapabilities, encoded func(RequestState), dec
 				return nil, usageFragment{}, false, nil
 			}
 		},
-		render: func([]Tool) (json.RawMessage, error) { return nil, nil },
-	}
+	}}
 }
+
+type boundaryTestWire struct{ wireCodec }
+
+func (*boundaryTestWire) RenderTools([]Tool) (json.RawMessage, error) { return nil, nil }
 
 type phase15Provider struct {
 	model         string

@@ -10,9 +10,8 @@ type openAIChatWire struct{ wireCodec }
 func newOpenAIChatWire(classifier wireClassifier) WireFormat {
 	wire := &openAIChatWire{}
 	wire.wireCodec = wireCodec{
-		encode:     encodeOpenAIChatRequest,
+		encode:     wire.encodeRequest,
 		decoder:    newOpenAIChatDecoder,
-		render:     renderOpenAIChatTools,
 		reserved:   []string{"openai"},
 		classifier: classifier,
 		capabilities: wireCapabilities{
@@ -43,7 +42,7 @@ type chatToolFunction struct {
 	Arguments string `json:"arguments"`
 }
 
-func encodeOpenAIChatRequest(state RequestState) ([]byte, error) {
+func (w *openAIChatWire) encodeRequest(state RequestState) ([]byte, error) {
 	messages := make([]chatMessage, 0, len(state.History))
 	for _, message := range state.History {
 		encoded := chatMessage{Role: openAIRole(message.Role)}
@@ -84,9 +83,10 @@ func encodeOpenAIChatRequest(state RequestState) ([]byte, error) {
 		Function namedFunction `json:"function"`
 	}
 	request := struct {
-		Messages        []chatMessage `json:"messages"`
-		ReasoningEffort string        `json:"reasoning_effort,omitempty"`
-		ToolChoice      any           `json:"tool_choice,omitempty"`
+		Messages        []chatMessage   `json:"messages"`
+		ReasoningEffort string          `json:"reasoning_effort,omitempty"`
+		ToolChoice      any             `json:"tool_choice,omitempty"`
+		Tools           json.RawMessage `json:"tools,omitempty"`
 	}{Messages: messages}
 	switch state.Settings.Reasoning.Mode {
 	case ReasoningOff:
@@ -101,6 +101,13 @@ func encodeOpenAIChatRequest(state RequestState) ([]byte, error) {
 		request.ToolChoice = "required"
 	case ToolChoiceTool:
 		request.ToolChoice = namedTool{Type: "function", Function: namedFunction{Name: state.Settings.ToolChoice.Name}}
+	}
+	if len(state.Tools) > 0 {
+		var err error
+		request.Tools, err = w.RenderTools(state.Tools)
+		if err != nil {
+			return nil, err
+		}
 	}
 	encoded, err := json.Marshal(request)
 	return append(encoded, '\n'), err
@@ -161,4 +168,17 @@ func renderOpenAIChatTools(tools []Tool) (json.RawMessage, error) {
 		declarations[index] = declaration{"function", function{tool.Name(), tool.Description(), tool.Schema()}}
 	}
 	return json.Marshal(declarations)
+}
+
+func (w *openAIChatWire) RenderTools(tools []Tool) (json.RawMessage, error) {
+	if err := validateCanonicalTools(tools); err != nil {
+		return nil, err
+	}
+	return renderOpenAIChatTools(tools)
+}
+
+func (w *openAIChatWire) withClassifier(classifier wireClassifier) WireFormat {
+	clone := &openAIChatWire{wireCodec: w.cloneWithClassifier(classifier)}
+	clone.encode = clone.encodeRequest
+	return clone
 }

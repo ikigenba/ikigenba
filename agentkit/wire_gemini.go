@@ -10,9 +10,8 @@ type geminiWire struct{ wireCodec }
 func newGeminiWire(classifier wireClassifier) WireFormat {
 	wire := &geminiWire{}
 	wire.wireCodec = wireCodec{
-		encode:     encodeGeminiRequest,
+		encode:     wire.encodeRequest,
 		decoder:    newGeminiDecoder,
-		render:     renderGeminiTools,
 		reserved:   []string{"gemini"},
 		classifier: classifier,
 		capabilities: wireCapabilities{
@@ -72,9 +71,10 @@ type geminiRequest struct {
 	Contents         []geminiContent         `json:"contents"`
 	GenerationConfig *geminiGenerationConfig `json:"generationConfig,omitempty"`
 	ToolConfig       *geminiToolConfig       `json:"toolConfig,omitempty"`
+	Tools            json.RawMessage         `json:"tools,omitempty"`
 }
 
-func encodeGeminiRequest(state RequestState) ([]byte, error) {
+func (w *geminiWire) encodeRequest(state RequestState) ([]byte, error) {
 	contents, err := buildGeminiContents(state.History)
 	if err != nil {
 		return nil, err
@@ -83,6 +83,19 @@ func encodeGeminiRequest(state RequestState) ([]byte, error) {
 		Contents:         contents,
 		GenerationConfig: buildGeminiThinkingConfig(state.Settings.Reasoning),
 		ToolConfig:       buildGeminiToolConfig(state.Settings.ToolChoice),
+	}
+	if len(state.Tools) > 0 {
+		rendered, renderErr := w.RenderTools(state.Tools)
+		if renderErr != nil {
+			return nil, renderErr
+		}
+		var declaration struct {
+			Tools json.RawMessage `json:"tools"`
+		}
+		if err := json.Unmarshal(rendered, &declaration); err != nil {
+			return nil, err
+		}
+		request.Tools = declaration.Tools
 	}
 	encoded, err := json.Marshal(request)
 	return append(encoded, '\n'), err
@@ -209,9 +222,81 @@ func renderGeminiTools(tools []Tool) (json.RawMessage, error) {
 	}
 	declarations := make([]declaration, len(tools))
 	for index, tool := range tools {
-		declarations[index] = declaration{tool.Name(), tool.Description(), tool.Schema()}
+		schema, err := narrowGeminiSchema(tool.Schema())
+		if err != nil {
+			return nil, err
+		}
+		declarations[index] = declaration{tool.Name(), tool.Description(), schema}
 	}
 	return json.Marshal(struct {
+		Tools []struct {
+			FunctionDeclarations []declaration `json:"functionDeclarations"`
+		} `json:"tools"`
+	}{Tools: []struct {
 		FunctionDeclarations []declaration `json:"functionDeclarations"`
-	}{FunctionDeclarations: declarations})
+	}{{FunctionDeclarations: declarations}}})
+}
+
+func (w *geminiWire) RenderTools(tools []Tool) (json.RawMessage, error) {
+	if err := validateCanonicalTools(tools); err != nil {
+		return nil, err
+	}
+	return renderGeminiTools(tools)
+}
+
+func (w *geminiWire) withClassifier(classifier wireClassifier) WireFormat {
+	clone := &geminiWire{wireCodec: w.cloneWithClassifier(classifier)}
+	clone.encode = clone.encodeRequest
+	return clone
+}
+
+func narrowGeminiSchema(schema json.RawMessage) (json.RawMessage, error) {
+	var root any
+	if err := json.Unmarshal(schema, &root); err != nil {
+		return nil, err
+	}
+	narrowGeminiSchemaNode(root)
+	return json.Marshal(root)
+}
+
+func narrowGeminiSchemaNode(node any) {
+	object, ok := node.(map[string]any)
+	if !ok {
+		return
+	}
+	if branches, ok := object["oneOf"].([]any); ok {
+		for _, branch := range branches {
+			candidate, branchOK := branch.(map[string]any)
+			if !branchOK || candidate["type"] == "null" {
+				continue
+			}
+			for key := range object {
+				delete(object, key)
+			}
+			for key, value := range candidate {
+				object[key] = value
+			}
+			break
+		}
+	}
+	for _, keyword := range []string{"exclusiveMinimum", "exclusiveMaximum", "multipleOf", "uniqueItems"} {
+		delete(object, keyword)
+	}
+	if properties, ok := object["properties"].(map[string]any); ok {
+		for _, property := range properties {
+			narrowGeminiSchemaNode(property)
+		}
+	}
+	if items, present := object["items"]; present {
+		narrowGeminiSchemaNode(items)
+	}
+	for _, keyword := range []string{"anyOf"} {
+		branches, ok := object[keyword].([]any)
+		if !ok {
+			continue
+		}
+		for _, branch := range branches {
+			narrowGeminiSchemaNode(branch)
+		}
+	}
 }

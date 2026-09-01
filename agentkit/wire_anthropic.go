@@ -10,9 +10,8 @@ type anthropicWire struct{ wireCodec }
 func newAnthropicWire(classifier wireClassifier) WireFormat {
 	wire := &anthropicWire{}
 	wire.wireCodec = wireCodec{
-		encode:     encodeAnthropicRequest,
+		encode:     wire.encodeRequest,
 		decoder:    newAnthropicDecoder,
-		render:     renderAnthropicTools,
 		reserved:   []string{"anthropic"},
 		classifier: classifier,
 		capabilities: wireCapabilities{
@@ -42,9 +41,26 @@ type anthropicMessage struct {
 	Content []anthropicContent `json:"content"`
 }
 
-func encodeAnthropicRequest(state RequestState) ([]byte, error) {
-	messages := make([]anthropicMessage, 0, len(state.History))
-	for _, message := range state.History {
+type anthropicThinking struct {
+	Type         string `json:"type"`
+	BudgetTokens int    `json:"budget_tokens,omitempty"`
+}
+
+type anthropicToolChoice struct {
+	Type string `json:"type"`
+	Name string `json:"name,omitempty"`
+}
+
+type anthropicRequest struct {
+	Messages   []anthropicMessage   `json:"messages"`
+	Thinking   *anthropicThinking   `json:"thinking,omitempty"`
+	ToolChoice *anthropicToolChoice `json:"tool_choice,omitempty"`
+	Tools      json.RawMessage      `json:"tools,omitempty"`
+}
+
+func buildAnthropicMessages(history []Message) ([]anthropicMessage, error) {
+	messages := make([]anthropicMessage, 0, len(history))
+	for _, message := range history {
 		encoded := anthropicMessage{Role: anthropicRole(message.Role)}
 		for _, block := range message.Blocks {
 			switch block := block.(type) {
@@ -68,30 +84,36 @@ func encodeAnthropicRequest(state RequestState) ([]byte, error) {
 		}
 		messages = append(messages, encoded)
 	}
-	type thinking struct {
-		Type         string `json:"type"`
-		BudgetTokens int    `json:"budget_tokens,omitempty"`
-	}
-	type toolChoice struct {
-		Type string `json:"type"`
-		Name string `json:"name,omitempty"`
-	}
-	request := struct {
-		Messages   []anthropicMessage `json:"messages"`
-		Thinking   *thinking          `json:"thinking,omitempty"`
-		ToolChoice *toolChoice        `json:"tool_choice,omitempty"`
-	}{Messages: messages}
-	switch state.Settings.Reasoning.Mode {
+	return messages, nil
+}
+
+func configureAnthropicRequest(request *anthropicRequest, settings Settings) {
+	switch settings.Reasoning.Mode {
 	case ReasoningOff:
-		request.Thinking = &thinking{Type: "disabled"}
+		request.Thinking = &anthropicThinking{Type: "disabled"}
 	case ReasoningBudget:
-		request.Thinking = &thinking{Type: "enabled", BudgetTokens: state.Settings.Reasoning.Budget}
+		request.Thinking = &anthropicThinking{Type: "enabled", BudgetTokens: settings.Reasoning.Budget}
 	}
-	switch state.Settings.ToolChoice.Mode {
+	switch settings.ToolChoice.Mode {
 	case ToolChoiceRequired:
-		request.ToolChoice = &toolChoice{Type: "any"}
+		request.ToolChoice = &anthropicToolChoice{Type: "any"}
 	case ToolChoiceTool:
-		request.ToolChoice = &toolChoice{Type: "tool", Name: state.Settings.ToolChoice.Name}
+		request.ToolChoice = &anthropicToolChoice{Type: "tool", Name: settings.ToolChoice.Name}
+	}
+}
+
+func (w *anthropicWire) encodeRequest(state RequestState) ([]byte, error) {
+	messages, err := buildAnthropicMessages(state.History)
+	if err != nil {
+		return nil, err
+	}
+	request := anthropicRequest{Messages: messages}
+	configureAnthropicRequest(&request, state.Settings)
+	if len(state.Tools) > 0 {
+		request.Tools, err = w.RenderTools(state.Tools)
+		if err != nil {
+			return nil, err
+		}
 	}
 	encoded, err := json.Marshal(request)
 	return append(encoded, '\n'), err
@@ -153,4 +175,17 @@ func renderAnthropicTools(tools []Tool) (json.RawMessage, error) {
 		declarations[index] = declaration{tool.Name(), tool.Description(), tool.Schema()}
 	}
 	return json.Marshal(declarations)
+}
+
+func (w *anthropicWire) RenderTools(tools []Tool) (json.RawMessage, error) {
+	if err := validateCanonicalTools(tools); err != nil {
+		return nil, err
+	}
+	return renderAnthropicTools(tools)
+}
+
+func (w *anthropicWire) withClassifier(classifier wireClassifier) WireFormat {
+	clone := &anthropicWire{wireCodec: w.cloneWithClassifier(classifier)}
+	clone.encode = clone.encodeRequest
+	return clone
 }

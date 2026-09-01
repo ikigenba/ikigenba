@@ -396,7 +396,14 @@ func TestCanonicalToolSchemaRendersPortablyAcrossEveryWire(t *testing.T) {
 			t.Errorf("%T rendered invalid JSON: %v", wire, err)
 			continue
 		}
-		if !containsJSONValue(envelope, semanticSchema) {
+		if _, trimming := wire.(*geminiWire); trimming {
+			schemas := renderedToolSchemas(t, wire, rendered)
+			if len(schemas) != 1 {
+				t.Errorf("%T rendered %d schemas, want one", wire, len(schemas))
+			} else {
+				assertJSONNarrowing(t, schemas[0], semanticSchema, "$")
+			}
+		} else if !containsJSONValue(envelope, semanticSchema) {
 			t.Errorf("%T rendering widened or discarded schema semantics: %s", wire, rendered)
 		}
 	}
@@ -418,6 +425,266 @@ func TestCanonicalToolSchemaRendersPortablyAcrossEveryWire(t *testing.T) {
 			t.Errorf("%T failed differently: %q, want %q", wire, renderErr, commonDiagnostic)
 		}
 	}
+}
+
+func phase16Tools() []Tool {
+	return []Tool{
+		fixtureTool{
+			name:        "search",
+			description: "search ranked records",
+			schema:      json.RawMessage(`{"type":"object","description":"search input","properties":{"query":{"type":"string","description":"search phrase","enum":["alpha","beta"],"minLength":2,"maxLength":20,"pattern":"^[a-z]+$","format":"hostname"},"filter":{"type":"object","description":"ranking filter","properties":{"scores":{"type":"array","description":"accepted scores","items":{"type":"number","description":"normalized score","minimum":0,"maximum":1,"exclusiveMinimum":0,"exclusiveMaximum":1,"multipleOf":0.1},"minItems":1,"maxItems":3,"uniqueItems":true}},"required":["scores"]}},"required":["query","filter"]}`),
+		},
+		fixtureTool{
+			name:        "fetch",
+			description: "fetch records by id",
+			schema:      json.RawMessage(`{"type":"object","description":"fetch input","properties":{"ids":{"type":"array","description":"record ids","items":{"type":"string","description":"record id","enum":["one","two"],"minLength":3,"maxLength":3,"pattern":"^[a-z]+$"},"minItems":1,"maxItems":2}},"required":["ids"]}`),
+		},
+	}
+}
+
+func TestPerWireToolDeclarationGoldenAndSchemaOwnership(t *testing.T) {
+	// R-47X2-1A8Z
+	// R-494Y-F1ZO
+	// R-4E0J-Y4YG
+	tests := []struct {
+		name    string
+		wire    WireFormat
+		fixture string
+	}{
+		{"openai_responses", newOpenAIResponsesWire(nil), "testdata/openai_responses.tools.json"},
+		{"openai_chat_completions", newOpenAIChatWire(nil), "testdata/openai_chat_completions.tools.json"},
+		{"anthropic_messages", newAnthropicWire(nil), "testdata/anthropic_messages.tools.json"},
+		{"gemini_generate_content", newGeminiWire(nil), "testdata/gemini_generate_content.tools.json"},
+	}
+	tools := phase16Tools()
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := test.wire.RenderTools(tools)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := os.ReadFile(test.fixture)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Fatalf("RenderTools bytes = %s\nwant fixture = %s", got, want)
+			}
+		})
+	}
+}
+
+func TestRenderToolsNeverWidensCanonicalSchemas(t *testing.T) {
+	// R-4BKR-6LH2
+	tools := phase16Tools()
+	for _, wire := range allTestWires() {
+		rendered, err := wire.RenderTools(tools)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gotSchemas := renderedToolSchemas(t, wire, rendered)
+		for index, tool := range tools {
+			var canonical any
+			if err := json.Unmarshal(tool.Schema(), &canonical); err != nil {
+				t.Fatal(err)
+			}
+			if _, trimming := wire.(*geminiWire); trimming {
+				assertJSONNarrowing(t, gotSchemas[index], canonical, "$")
+			} else if !reflect.DeepEqual(gotSchemas[index], canonical) {
+				t.Errorf("%T schema %d changed: %#v, want %#v", wire, index, gotSchemas[index], canonical)
+			}
+		}
+	}
+}
+
+func TestGeminiOwnsRecursiveSchemaNarrowing(t *testing.T) {
+	// R-4ACU-STQD
+	tools := phase16Tools()
+	originals := make([][]byte, len(tools))
+	for index, tool := range tools {
+		originals[index] = append([]byte(nil), tool.Schema()...)
+	}
+	gemini := newGeminiWire(nil)
+	rendered, err := gemini.RenderTools(tools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	geminiSchemas := renderedToolSchemas(t, gemini, rendered)
+	for index, schema := range geminiSchemas {
+		for _, rejected := range []string{"exclusiveMinimum", "exclusiveMaximum", "multipleOf", "uniqueItems", "oneOf"} {
+			if containsJSONKey(schema, rejected) {
+				t.Errorf("Gemini schema %d retains rejected keyword %q: %#v", index, rejected, schema)
+			}
+		}
+		if !containsJSONKey(schema, "description") || !containsJSONKey(schema, "enum") || !containsJSONKey(schema, "minItems") {
+			t.Errorf("Gemini schema %d was replaced instead of recursively narrowed: %#v", index, schema)
+		}
+	}
+	if !containsJSONKey(geminiSchemas[0], "minimum") {
+		t.Errorf("Gemini recursive narrowing discarded accepted nested numeric constraints: %#v", geminiSchemas[0])
+	}
+	for index, tool := range tools {
+		if !bytes.Equal(tool.Schema(), originals[index]) {
+			t.Errorf("Gemini rendering mutated source schema %d: %s, want %s", index, tool.Schema(), originals[index])
+		}
+	}
+	for _, wire := range []WireFormat{newOpenAIResponsesWire(nil), newOpenAIChatWire(nil), newAnthropicWire(nil)} {
+		other, err := wire.RenderTools(tools)
+		if err != nil {
+			t.Fatal(err)
+		}
+		schemas := renderedToolSchemas(t, wire, other)
+		if !containsJSONKey(schemas[0], "pattern") || !containsJSONKey(schemas[0], "uniqueItems") || !containsJSONKey(schemas[0], "multipleOf") {
+			t.Errorf("%T leaked Gemini narrowing into schema: %#v", wire, schemas[0])
+		}
+	}
+}
+
+func TestRequestBodiesEmbedRenderedToolsOnceAndInOrder(t *testing.T) {
+	// R-47X2-1A8Z
+	tools := phase16Tools()
+	tests := []struct {
+		wire    WireFormat
+		fixture string
+	}{
+		{newAnthropicWire(nil), "testdata/anthropic_messages.tools.json"},
+		{newOpenAIResponsesWire(nil), "testdata/openai_responses.tools.json"},
+		{newOpenAIChatWire(nil), "testdata/openai_chat_completions.tools.json"},
+		{newGeminiWire(nil), "testdata/gemini_generate_content.tools.json"},
+	}
+	for _, test := range tests {
+		wire := test.wire
+		body, err := wire.EncodeRequest(RequestState{Tools: tools})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var request map[string]json.RawMessage
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Fatal(err)
+		}
+		bodyTools, present := request["tools"]
+		if !present {
+			t.Fatalf("%T request omitted tools: %s", wire, body)
+		}
+		rendered, err := os.ReadFile(test.fixture)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var declaration map[string]json.RawMessage
+		if _, gemini := wire.(*geminiWire); gemini {
+			if err := json.Unmarshal(rendered, &declaration); err != nil {
+				t.Fatal(err)
+			}
+			rendered = declaration["tools"]
+		}
+		if !bytes.Equal(bodyTools, rendered) {
+			t.Errorf("%T request tools = %s, want its RenderTools shape %s", wire, bodyTools, rendered)
+		}
+		schemas := renderedToolSchemas(t, wire, func() json.RawMessage {
+			if _, gemini := wire.(*geminiWire); gemini {
+				wrapped, _ := json.Marshal(map[string]json.RawMessage{"tools": bodyTools})
+				return wrapped
+			}
+			return bodyTools
+		}())
+		if len(schemas) != 2 {
+			t.Fatalf("%T request declaration count = %d, want 2", wire, len(schemas))
+		}
+		if !bytes.Contains(bodyTools, []byte(`"name":"search"`)) || bytes.Index(bodyTools, []byte(`"name":"search"`)) >= bytes.Index(bodyTools, []byte(`"name":"fetch"`)) {
+			t.Errorf("%T reordered tools in request: %s", wire, bodyTools)
+		}
+	}
+}
+
+func renderedToolSchemas(t *testing.T, wire WireFormat, rendered json.RawMessage) []any {
+	t.Helper()
+	var declarations []map[string]any
+	switch wire.(type) {
+	case *geminiWire:
+		var root struct {
+			Tools []struct {
+				Declarations []map[string]any `json:"functionDeclarations"`
+			} `json:"tools"`
+		}
+		if err := json.Unmarshal(rendered, &root); err != nil {
+			t.Fatal(err)
+		}
+		if len(root.Tools) != 1 {
+			t.Fatalf("Gemini tools groups = %d, want exactly one", len(root.Tools))
+		}
+		declarations = root.Tools[0].Declarations
+	default:
+		if err := json.Unmarshal(rendered, &declarations); err != nil {
+			t.Fatal(err)
+		}
+	}
+	schemas := make([]any, len(declarations))
+	for index, declaration := range declarations {
+		switch wire.(type) {
+		case *openAIResponsesWire:
+			schemas[index] = declaration["parameters"]
+		case *openAIChatWire:
+			schemas[index] = declaration["function"].(map[string]any)["parameters"]
+		case *anthropicWire:
+			schemas[index] = declaration["input_schema"]
+		case *geminiWire:
+			schemas[index] = declaration["parameters"]
+		}
+	}
+	return schemas
+}
+
+func assertJSONNarrowing(t *testing.T, got, canonical any, path string) {
+	t.Helper()
+	switch got := got.(type) {
+	case map[string]any:
+		want, ok := canonical.(map[string]any)
+		if !ok {
+			t.Fatalf("%s widened object over %#v", path, canonical)
+		}
+		for key, value := range got {
+			canonicalValue, present := want[key]
+			if !present {
+				t.Errorf("%s introduced keyword %q", path, key)
+				continue
+			}
+			assertJSONNarrowing(t, value, canonicalValue, path+"."+key)
+		}
+	case []any:
+		want, ok := canonical.([]any)
+		if !ok || len(got) != len(want) {
+			t.Errorf("%s changed array shape from %#v to %#v", path, canonical, got)
+			return
+		}
+		for index := range got {
+			assertJSONNarrowing(t, got[index], want[index], path)
+		}
+	default:
+		if !reflect.DeepEqual(got, canonical) {
+			t.Errorf("%s changed value from %#v to %#v", path, canonical, got)
+		}
+	}
+}
+
+func containsJSONKey(value any, key string) bool {
+	switch value := value.(type) {
+	case map[string]any:
+		if _, present := value[key]; present {
+			return true
+		}
+		for _, child := range value {
+			if containsJSONKey(child, key) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range value {
+			if containsJSONKey(child, key) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func containsJSONValue(value, want any) bool {

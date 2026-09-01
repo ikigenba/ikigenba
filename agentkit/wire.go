@@ -27,7 +27,6 @@ type frameDecoder func(frame []byte) (message *Message, usage usageFragment, has
 type wireCodec struct {
 	encode       func(RequestState) ([]byte, error)
 	decoder      func() frameDecoder
-	render       func([]Tool) (json.RawMessage, error)
 	reserved     []string
 	classifier   wireClassifier
 	lastUsage    Usage
@@ -71,24 +70,24 @@ func (w *wireCodec) DecodeStream(frames iter.Seq2[[]byte, error]) iter.Seq2[Even
 	}
 }
 
-func (w *wireCodec) RenderTools(tools []Tool) (json.RawMessage, error) {
+func validateCanonicalTools(tools []Tool) error {
 	for _, tool := range tools {
 		if err := ValidateToolSchema(tool.Schema()); err != nil {
-			return nil, fmt.Errorf("agentkit: tool %q: %w", tool.Name(), err)
+			return fmt.Errorf("agentkit: tool %q: %w", tool.Name(), err)
 		}
 	}
-	return w.render(tools)
+	return nil
 }
 
 func (w *wireCodec) ReservedKeys() []string {
 	return append([]string(nil), w.reserved...)
 }
 
-func (w *wireCodec) withClassifier(classifier wireClassifier) WireFormat {
+func (w *wireCodec) cloneWithClassifier(classifier wireClassifier) wireCodec {
 	clone := *w
 	clone.classifier = classifier
 	clone.lastUsage = Usage{}
-	return &clone
+	return clone
 }
 
 func (w *wireCodec) validateSettings(settings Settings) error {

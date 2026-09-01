@@ -455,9 +455,24 @@ func TestEveryToolConstructionAndWireRenderingUsesExportedSchemaChecker(t *testi
 			t.Errorf("%s does not route through %s", functionName, calledName)
 		}
 	}
-	wireRender := declaredMethod(t, "wire.go", "RenderTools")
-	if !functionCallsIdentifier(wireRender, "ValidateToolSchema") {
-		t.Fatal("wireCodec.RenderTools does not defensively call exported ValidateToolSchema")
+	canonicalValidation := declaredFunction(t, "wire.go", "validateCanonicalTools")
+	if !functionCallsIdentifier(canonicalValidation, "ValidateToolSchema") {
+		t.Fatal("common canonical tool validation does not defensively call exported ValidateToolSchema")
+	}
+	for _, filename := range []string{"wire_openai_responses.go", "wire_openai_chat.go", "wire_anthropic.go", "wire_gemini.go"} {
+		wireRender := declaredMethod(t, filename, "RenderTools")
+		if !functionCallsIdentifier(wireRender, "validateCanonicalTools") {
+			t.Errorf("%s RenderTools does not call the one common canonical validator", filename)
+		}
+	}
+	wireCodecType := declaredType(t, "wire.go", "wireCodec").Type.(*ast.StructType)
+	for _, field := range wireCodecType.Fields.List {
+		for _, name := range field.Names {
+			lower := strings.ToLower(name.Name)
+			if strings.Contains(lower, "render") || strings.Contains(lower, "dialect") || strings.Contains(lower, "mode") {
+				t.Errorf("wireCodec retains shared declaration-shaping field %q", name.Name)
+			}
+		}
 	}
 	parsed, err := parser.ParseFile(token.NewFileSet(), "tool.go", nil, 0)
 	if err != nil {
@@ -469,6 +484,115 @@ func TestEveryToolConstructionAndWireRenderingUsesExportedSchemaChecker(t *testi
 			t.Fatalf("competing exported schema checker %s exists", function.Name.Name)
 		}
 	}
+}
+
+func TestConcreteWiresOwnToolDeclarationShaping(t *testing.T) {
+	// R-47X2-1A8Z
+	// R-494Y-F1ZO
+	wires := []struct {
+		filename       string
+		receiver       string
+		renderer       string
+		wrapperMarkers []string
+		forbidden      []string
+	}{
+		{
+			filename:       "wire_openai_responses.go",
+			receiver:       "openAIResponsesWire",
+			renderer:       "renderOpenAIResponsesTools",
+			wrapperMarkers: []string{"json:\"type\"", "json:\"name\"", "json:\"description\"", "json:\"parameters\""},
+			forbidden:      []string{"json:\"function\"", "json:\"input_schema\"", "json:\"functionDeclarations\""},
+		},
+		{
+			filename:       "wire_openai_chat.go",
+			receiver:       "openAIChatWire",
+			renderer:       "renderOpenAIChatTools",
+			wrapperMarkers: []string{"json:\"type\"", "json:\"function\"", "json:\"name\"", "json:\"description\"", "json:\"parameters\""},
+			forbidden:      []string{"json:\"input_schema\"", "json:\"functionDeclarations\""},
+		},
+		{
+			filename:       "wire_anthropic.go",
+			receiver:       "anthropicWire",
+			renderer:       "renderAnthropicTools",
+			wrapperMarkers: []string{"json:\"name\"", "json:\"description\"", "json:\"input_schema\""},
+			forbidden:      []string{"json:\"type\"", "json:\"parameters\"", "json:\"functionDeclarations\""},
+		},
+		{
+			filename:       "wire_gemini.go",
+			receiver:       "geminiWire",
+			renderer:       "renderGeminiTools",
+			wrapperMarkers: []string{"json:\"tools\"", "json:\"functionDeclarations\"", "json:\"name\"", "json:\"description\"", "json:\"parameters\""},
+			forbidden:      []string{"json:\"type\"", "json:\"input_schema\""},
+		},
+	}
+
+	for _, wire := range wires {
+		t.Run(wire.receiver, func(t *testing.T) {
+			method := declaredMethod(t, wire.filename, "RenderTools")
+			if got := methodReceiverName(method); got != wire.receiver {
+				t.Fatalf("%s RenderTools receiver = %q, want %q", wire.filename, got, wire.receiver)
+			}
+			if !functionCallsIdentifier(method, "validateCanonicalTools") {
+				t.Errorf("%s RenderTools bypasses canonical validation", wire.filename)
+			}
+			if !functionCallsIdentifier(method, wire.renderer) {
+				t.Errorf("%s RenderTools does not delegate declaration shaping to its local %s", wire.filename, wire.renderer)
+			}
+
+			renderer := declaredFunction(t, wire.filename, wire.renderer)
+			shape := renderedNode(t, renderer)
+			for _, marker := range wire.wrapperMarkers {
+				if !strings.Contains(shape, marker) {
+					t.Errorf("%s lacks wire-owned declaration marker %q", wire.renderer, marker)
+				}
+			}
+			for _, marker := range wire.forbidden {
+				if strings.Contains(shape, marker) {
+					t.Errorf("%s contains another wire's declaration marker %q", wire.renderer, marker)
+				}
+			}
+		})
+	}
+
+	parsed, err := parser.ParseFile(token.NewFileSet(), "wire.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, declaration := range parsed.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		signature := renderedNode(t, function.Type)
+		if strings.Contains(signature, "[]Tool") && strings.Contains(signature, "json.RawMessage") {
+			t.Errorf("shared wire layer declares tool-shaping function %s with signature %s", function.Name, signature)
+		}
+		if function.Name.Name != "validateCanonicalTools" {
+			continue
+		}
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			switch node.(type) {
+			case *ast.SwitchStmt, *ast.TypeSwitchStmt:
+				t.Error("shared canonical validation contains wire-mode/dialect dispatch")
+			}
+			return true
+		})
+	}
+}
+
+func methodReceiverName(function *ast.FuncDecl) string {
+	if function.Recv == nil || len(function.Recv.List) != 1 {
+		return ""
+	}
+	receiver := function.Recv.List[0].Type
+	if pointer, ok := receiver.(*ast.StarExpr); ok {
+		receiver = pointer.X
+	}
+	identifier, _ := receiver.(*ast.Ident)
+	if identifier == nil {
+		return ""
+	}
+	return identifier.Name
 }
 
 func functionCallsIdentifier(function *ast.FuncDecl, name string) bool {
