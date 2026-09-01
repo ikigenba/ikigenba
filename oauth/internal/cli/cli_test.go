@@ -16,6 +16,64 @@ import (
 	"github.com/ikigenba/ikigenba/oauth/internal/oauth"
 )
 
+const completeUsage = `Usage: oauth [flags]
+
+Flags:
+  --auth-url string
+        authorization endpoint (required)
+  --token-url string
+        token endpoint (required)
+  --client-id string
+        OAuth client id (required)
+  --scope string
+        space-separated OAuth scopes
+  --client-secret string
+        client secret sent in the token request body
+  --callback-host string
+        host used in the redirect URI (default "localhost")
+  --port int
+        loopback callback port; 0 chooses an available port (default 0)
+  --callback-path string
+        callback route and redirect URI path (default "/callback")
+  --auth-param key=value
+        extra authorize parameter (repeatable)
+  --token-param key=value
+        extra token parameter (repeatable)
+  --token-header key=value
+        extra token request header (repeatable)
+  --no-browser
+        print the authorize URL without opening a browser
+  --timeout duration
+        maximum time to wait for the callback (default 5m)
+  -h, --help
+        print help and exit
+  -V, --version
+        print version and exit
+
+OpenAI example:
+  oauth \
+    --auth-url  https://auth.openai.com/oauth/authorize \
+    --token-url https://auth.openai.com/oauth/token \
+    --client-id app_EMoamEEZ73f0CkXaXp7hrann \
+    --scope "openid profile email offline_access" \
+    --port 1455 --callback-path /auth/callback \
+    > auth.json
+
+xAI example:
+  oauth \
+    --auth-url  https://auth.x.ai/oauth2/authorize \
+    --token-url https://auth.x.ai/oauth2/token \
+    --client-id b1a00492-073a-47ea-816f-4c329264a828 \
+    --scope "openid profile email offline_access grok-cli:access api:access" \
+    --callback-host 127.0.0.1 \
+    --port 56121 \
+    --callback-path /callback \
+    > x-ai-auth.json
+
+Basic authentication:
+  --token-header "Authorization=Basic $(printf '%s:%s' "$ID" "$SECRET" | base64 -w0)"
+`
+
 type failLauncher struct {
 	t *testing.T
 }
@@ -458,6 +516,28 @@ func TestRunRoutesUnknownFlagToStderr(t *testing.T) {
 	}
 }
 
+// R-REHR-NBIJ
+func TestRunUsageErrorWritesCompleteUsageToStderr(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := cli.Run(
+		context.Background(),
+		[]string{"--phase-three-unknown"},
+		&stdout,
+		&stderr,
+		failDeps(t),
+	)
+
+	if code != 2 {
+		t.Errorf("Run() exit code = %d, want 2", code)
+	}
+	if stdout.String() != "" {
+		t.Errorf("stdout = %q, want empty", stdout.String())
+	}
+	if !strings.HasSuffix(stderr.String(), completeUsage) {
+		t.Errorf("stderr = %q, want it to end with complete usage %q", stderr.String(), completeUsage)
+	}
+}
+
 func TestRunQuotesControlCharactersInParseErrors(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	const rawFlag = "--unknown\ninjected"
@@ -492,6 +572,26 @@ func TestRunReportsUnknownFlagCauseExactlyOnce(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), cause) {
 		t.Errorf("stdout = %q, want no usage-error cause", stdout.String())
+	}
+}
+
+// R-RD9V-9JRU
+func TestRunHelpWritesExactUsageToStdout(t *testing.T) {
+	for _, flag := range []string{"-h", "--help"} {
+		t.Run(flag, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := cli.Run(context.Background(), []string{flag}, &stdout, &stderr, failDeps(t))
+
+			if code != 0 {
+				t.Errorf("Run(%q) exit code = %d, want 0", flag, code)
+			}
+			if stdout.String() != completeUsage {
+				t.Errorf("stdout = %q, want exact usage %q", stdout.String(), completeUsage)
+			}
+			if stderr.String() != "" {
+				t.Errorf("stderr = %q, want empty", stderr.String())
+			}
+		})
 	}
 }
 
