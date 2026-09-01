@@ -47,7 +47,7 @@ skipped tests, no disabled linters laundering a failure.
 2. `go build ./...`
 3. `go test -race ./...`
 4. `golangci-lint run`
-5. `llm-lint --concurrency 16 .` (doubles the default in-flight calls of 8)
+5. `llm-lint --concurrency 16 --verbose .` (doubles the default in-flight calls of 8; `--verbose` prints per-pair progress)
 
 llm-lint also loads this project's own rules from `lint-rules/` (wired via
 `.llm-lint.json`, found by ancestor walk) and recurses the module from the root.
