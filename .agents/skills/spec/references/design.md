@@ -6,9 +6,13 @@ First establish what is already known by reading `specs/design/` and the codebas
 
 A design document defines a feature or subsystem. It defines the public contract between modules and nothing about how modules are implemented internally.
 
+**The requirements are the design.** The `## REQUIREMENTS` list is the design document's entire normative content: something is part of the contract if and only if a requirement states it. The prose above the list — code blocks included — is a friendly overview for the reader, never the contract; a name, field, signature, or constant that appears only in prose is not designed, because the machinery that makes design real (the id freeze, the gap, the loop, audit) sees only requirements. If an in-scope item matters enough to write down, it matters enough to state as a requirement.
+
 ## Scope
 
 Litmus test: if something could change without any other module noticing or breaking, it is an implementation detail and is out of scope. If changing it would break or surprise a consumer, it is part of the contract and is in scope.
+
+Everything in scope must be captured **as requirements**, not merely described in prose — see "The requirements are the design" above.
 
 In scope (the public surface):
 
@@ -42,8 +46,8 @@ Create the file in `specs/design/` as `D<int>-<slug>.md`.
 
 ## Contents
 
-1. Prose describing the design element.
-2. A `## REQUIREMENTS` heading, followed by a list of requirements.
+1. Prose giving a friendly overview of the design element. Non-normative: it orients the reader and motivates the requirements, but it binds nothing. Illustrative code blocks are welcome here, on the same terms — illustration, not contract.
+2. A `## REQUIREMENTS` heading, followed by a list of requirements. This list is the design (see above).
 
 ## Requirements
 
@@ -57,9 +61,16 @@ One bullet per requirement:
 - `<requirement text>` uses a modal verb (MUST/SHOULD/MAY) and states one testable assertion.
 - A requirement must be testable: there must be a finite, deterministic procedure that decides whether it holds, and running that procedure must be efficient. Do not write requirements whose only test would be to exhaustively check an infinite or intractable set of cases.
 
+Requirements come in two forms, and a design needs both:
+
+- **Structural** — declares a public name and its shape: a module and what it exports, a type and its exact fields, an operation's signature, an enumeration's members, a contract constant's name and value. Structural requirements are testable by construction: code referencing the declared shape compiles (or a reflection/introspection check passes). Write one requirement per declaration — the type with its field list in one requirement, not one per field — so a rename or reshape re-mints exactly one id.
+- **Behavioral** — declares an observable behavior or invariant at the boundary, referring to public things by the names the structural requirements declare. A behavioral requirement mentions names; it never re-declares shapes. This keeps the blast radius of a structural change small: the reshaped declaration's id is deleted and re-minted, while behavioral requirements that merely mention the name are re-minted only if their own text must change.
+
+If every structural requirement were deleted, the design should no longer name anything; if that is not true, some of the contract is squatting in prose.
+
 ## Changing a design
 
-Design documents are never sealed; they may change at any time. Their prose may be rewritten freely. **Requirement text may not.**
+Design documents are never sealed; they may change at any time. Their prose may be rewritten freely — it is non-normative, so rewriting it changes nothing; a rewrite that *would* change the contract is really a requirement change and must be made in the `REQUIREMENTS` list. **Requirement text may not be rewritten.**
 
 - **A requirement's text is frozen the moment its id is minted.** To change it — by any amount, for any reason — delete the requirement and add a new one with a freshly minted id. There is no exception: not a typo, not a renamed symbol, not a clarification, not a rewording that means exactly the same thing. Never edit the text beside an existing id, and never reuse an id.
 - Why the rule is absolute: the gap is computed from **id presence alone** (see `../SKILL.md`), so an edited requirement produces no gap entry. The loop never sees it, the tagged test is never revisited, and the design and the suite silently disagree — the id now points at text no test was ever checked against. A new id makes the change visible as `[add]`, and deleting the old one makes the stale test visible as `[remove]`.
@@ -72,10 +83,15 @@ Design documents are never sealed; they may change at any time. Their prose may 
 ```
 # D01-upload-limits
 
-Uploads are size-capped to protect storage.
+Uploads are size-capped to protect storage. The `uploads` module owns the cap
+and rejects oversized files at the door, before any bytes hit disk.
 
 ## REQUIREMENTS
 
-- R-NEDL-QRWM: The system MUST reject uploads larger than 10 MB.
-- R-QRWM-NEDL: The system SHOULD return a clear error message on rejection.
+- R-NEDL-QRWM: The `uploads` module MUST export `MaxUploadBytes = 10_485_760` and `Put(name string, r io.Reader) (URL, error)`.
+- R-QRWM-NEDL: `Put` MUST reject uploads larger than `MaxUploadBytes` without persisting any bytes.
+- R-XKCD-PLTE: `Put` SHOULD return a clear error message on rejection.
 ```
+
+The first requirement is structural — it declares the names and shapes; the
+others are behavioral and refer to those names without re-declaring them.

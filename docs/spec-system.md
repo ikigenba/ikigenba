@@ -33,10 +33,11 @@ A design document defines a feature or subsystem. It defines the **public contra
 
 The litmus test: if something could change without any other module noticing, it is an implementation detail and does not belong in the design. If changing it would break or surprise a consumer, it is part of the contract and does.
 
-Each document is prose followed by a `## REQUIREMENTS` list, one id-tagged bullet per requirement:
+Each document is prose followed by a `## REQUIREMENTS` list, one id-tagged bullet per requirement. **The requirements are the design**: the list is the document's entire normative content, and the prose is a friendly overview that binds nothing. Anything in scope — a name, a type's fields, a signature, a constant — is contract only if a requirement states it, because the freeze, the gap, and the loop see only requirements. Structural requirements declare the public names and shapes; behavioral requirements state observable behavior, referring to those names without re-declaring them:
 
 ```
-- R-NEDL-QRWM: The system MUST reject uploads larger than 10 MB.
+- R-NEDL-QRWM: The `uploads` module MUST export `MaxUploadBytes = 10_485_760` and `Put(name string, r io.Reader) (URL, error)`.
+- R-QRWM-NEDL: `Put` MUST reject uploads larger than `MaxUploadBytes` without persisting any bytes.
 ```
 
 Designs are never sealed. They change at any time; a material change is made by deleting the old requirement and minting a new id for the replacement.
