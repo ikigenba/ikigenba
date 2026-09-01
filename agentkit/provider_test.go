@@ -36,6 +36,10 @@ func (wire *testWire) DecodeStream(frames iter.Seq2[[]byte, error]) iter.Seq2[Ev
 	if wire.decode != nil {
 		return wire.decode(frames)
 	}
+	return wire.defaultDecodeStream(frames)
+}
+
+func (wire *testWire) defaultDecodeStream(frames iter.Seq2[[]byte, error]) iter.Seq2[Event, error] {
 	return func(yield func(Event, error) bool) {
 		for frame, err := range frames {
 			if err != nil {
@@ -119,6 +123,17 @@ func TestComposedProviderMutatesBeforeAuthWithFinalBodyState(t *testing.T) {
 	replayBody, _ := io.ReadAll(replay)
 	if string(body) != "mutated-final-body" || !bytes.Equal(body, replayBody) || request.ContentLength != int64(len(body)) {
 		t.Fatalf("body=%q replay=%q length=%d", body, replayBody, request.ContentLength)
+	}
+}
+
+func TestKnownWireModelCompositionRetainsModelVerbatim(t *testing.T) {
+	// R-YPOE-6GA4
+	conversation, err := NewKnownWireModelConversation(KnownWireGemini, "https://example.test", "vendor/model:latest", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conversation.identity.Model != "vendor/model:latest" || conversation.provider.Identity().Model != "vendor/model:latest" {
+		t.Fatalf("model identity = %#v / %#v", conversation.identity, conversation.provider.Identity())
 	}
 }
 

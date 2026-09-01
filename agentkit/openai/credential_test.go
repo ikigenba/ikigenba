@@ -28,19 +28,19 @@ func TestCredentialsApplyOpenAIHeadersAndPropagateTokenErrors(t *testing.T) {
 	}
 
 	want := errors.New("subscription unavailable")
-	credential := Subscription(tokenSourceFunc(func(context.Context) (string, string, error) { return "", "", want }))
+	credential := OAuth(tokenSourceFunc(func(context.Context) (string, string, error) { return "", "", want }))
 	if err := credential.apply(context.Background(), request, nil); !errors.Is(err, want) {
 		t.Fatalf("subscription error = %v, want %v", err, want)
 	}
 }
 
-func TestSubscriptionUsesBearerAndAccountTokenSource(t *testing.T) {
+func TestOAuthUsesBearerAndAccountTokenSource(t *testing.T) {
 	// R-3OEN-WYDV
 	request, err := http.NewRequest(http.MethodPost, "https://example.test", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	credential := Subscription(tokenSourceFunc(func(context.Context) (string, string, error) {
+	credential := OAuth(tokenSourceFunc(func(context.Context) (string, string, error) {
 		return "subscription-token", "account-42", nil
 	}))
 	if err := credential.apply(context.Background(), request, nil); err != nil {
@@ -71,7 +71,7 @@ func TestCredentialsUseSharedAuthApplierRuntimeSeam(t *testing.T) {
 	}
 
 	tokenSourceCalled := false
-	subscription := Subscription(tokenSourceFunc(func(got context.Context) (string, string, error) {
+	subscription := OAuth(tokenSourceFunc(func(got context.Context) (string, string, error) {
 		tokenSourceCalled = true
 		if got != ctx {
 			t.Errorf("token source context differs from AuthApplier context")

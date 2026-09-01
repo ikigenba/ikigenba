@@ -9,9 +9,28 @@ import (
 
 const defaultBaseURL = "https://api.anthropic.com/v1/messages"
 
+// API selects an Anthropic API surface.
+type API int
+
+const (
+	// Messages selects the Anthropic Messages API and is the default.
+	Messages API = iota
+	// TextCompletions names the legacy API for which no built-in wire ships.
+	TextCompletions
+)
+
 type config struct {
 	baseURL         string
 	hasBaseOverride bool
+	api             API
+}
+
+// WithAPI selects the Anthropic API surface.
+func WithAPI(api API) Option {
+	return func(configuration *config) error {
+		configuration.api = api
+		return nil
+	}
 }
 
 // Option configures an Anthropic conversation.
@@ -27,7 +46,7 @@ func WithBaseURL(raw string) Option {
 }
 
 // New constructs an Anthropic conversation from an Anthropic credential.
-func New(credential Credential, options ...Option) (*agentkit.Conversation, error) {
+func New(credential Credential, model string, options ...Option) (*agentkit.Conversation, error) {
 	if credential == nil {
 		return nil, fmt.Errorf("%w: nil Anthropic credential", agentkit.ErrInvalidConfig)
 	}
@@ -43,5 +62,8 @@ func New(credential Credential, options ...Option) (*agentkit.Conversation, erro
 	if _, baking := credential.(interface{ bakesTransport() }); baking && configuration.hasBaseOverride {
 		return nil, fmt.Errorf("%w: Anthropic OAuth and WithBaseURL are mutually exclusive", agentkit.ErrInvalidConfig)
 	}
-	return agentkit.NewKnownWireConversation(agentkit.KnownWireAnthropicMessages, configuration.baseURL, authAdapter{credential})
+	if configuration.api != Messages {
+		return nil, fmt.Errorf("%w: unsupported Anthropic API %d", agentkit.ErrInvalidConfig, configuration.api)
+	}
+	return agentkit.NewKnownWireModelConversation(agentkit.KnownWireAnthropicMessages, configuration.baseURL, model, authAdapter{credential})
 }

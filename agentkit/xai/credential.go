@@ -1,5 +1,5 @@
-// Package openai constructs conversations using OpenAI credentials.
-package openai
+// Package xai constructs conversations using xAI credentials.
+package xai
 
 import (
 	"context"
@@ -9,15 +9,15 @@ import (
 	"github.com/ikigenba/ikigenba/agentkit"
 )
 
-// Credential is the sealed set of OpenAI credentials.
+// Credential is the sealed set of xAI credentials.
 type Credential interface {
 	apply(ctx context.Context, req *http.Request, body []byte) error
-	isOpenAICredential()
+	isXAICredential()
 }
 
-// TokenSource obtains OpenAI subscription authentication and account data.
+// TokenSource obtains an xAI OAuth bearer token.
 type TokenSource interface {
-	Token(ctx context.Context) (bearer, accountID string, err error)
+	Token(ctx context.Context) (string, error)
 }
 
 type apiKeyCredential struct{ key string }
@@ -30,7 +30,7 @@ func (credential apiKeyCredential) apply(_ context.Context, request *http.Reques
 	return nil
 }
 
-func (apiKeyCredential) isOpenAICredential() {}
+func (apiKeyCredential) isXAICredential() {}
 
 type oauthCredential struct{ source TokenSource }
 
@@ -39,19 +39,18 @@ func OAuth(source TokenSource) Credential { return oauthCredential{source: sourc
 
 func (credential oauthCredential) apply(ctx context.Context, request *http.Request, _ []byte) error {
 	if credential.source == nil {
-		return fmt.Errorf("%w: nil OpenAI token source", agentkit.ErrInvalidConfig)
+		return fmt.Errorf("%w: nil xAI token source", agentkit.ErrInvalidConfig)
 	}
-	token, accountID, err := credential.source.Token(ctx)
+	token, err := credential.source.Token(ctx)
 	if err != nil {
 		return err
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
-	request.Header.Set("ChatGPT-Account-Id", accountID)
 	return nil
 }
 
-func (oauthCredential) isOpenAICredential() {}
-func (oauthCredential) bakesTransport()     {}
+func (oauthCredential) isXAICredential() {}
+func (oauthCredential) bakesTransport()  {}
 
 type authAdapter struct{ credential Credential }
 

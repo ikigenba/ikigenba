@@ -8,9 +8,28 @@ import (
 
 const defaultBaseURL = "https://api.openai.com/v1/responses"
 
+// API selects an OpenAI API surface.
+type API int
+
+const (
+	// Responses selects the OpenAI Responses API and is the default.
+	Responses API = iota
+	// ChatCompletions selects the OpenAI Chat Completions API.
+	ChatCompletions
+)
+
 type config struct {
 	baseURL         string
 	hasBaseOverride bool
+	api             API
+}
+
+// WithAPI selects the OpenAI API surface.
+func WithAPI(api API) Option {
+	return func(configuration *config) error {
+		configuration.api = api
+		return nil
+	}
 }
 
 // Option configures an OpenAI conversation.
@@ -26,7 +45,7 @@ func WithBaseURL(raw string) Option {
 }
 
 // New constructs an OpenAI conversation from an OpenAI credential.
-func New(credential Credential, options ...Option) (*agentkit.Conversation, error) {
+func New(credential Credential, model string, options ...Option) (*agentkit.Conversation, error) {
 	if credential == nil {
 		return nil, fmt.Errorf("%w: nil OpenAI credential", agentkit.ErrInvalidConfig)
 	}
@@ -40,7 +59,18 @@ func New(credential Credential, options ...Option) (*agentkit.Conversation, erro
 		}
 	}
 	if _, baking := credential.(interface{ bakesTransport() }); baking && configuration.hasBaseOverride {
-		return nil, fmt.Errorf("%w: OpenAI subscription and WithBaseURL are mutually exclusive", agentkit.ErrInvalidConfig)
+		return nil, fmt.Errorf("%w: OpenAI OAuth and WithBaseURL are mutually exclusive", agentkit.ErrInvalidConfig)
 	}
-	return agentkit.NewKnownWireConversation(agentkit.KnownWireOpenAIResponses, configuration.baseURL, authAdapter{credential})
+	wire := agentkit.KnownWireOpenAIResponses
+	switch configuration.api {
+	case Responses:
+	case ChatCompletions:
+		wire = agentkit.KnownWireOpenAIChat
+		if !configuration.hasBaseOverride {
+			configuration.baseURL = "https://api.openai.com/v1/chat/completions"
+		}
+	default:
+		return nil, fmt.Errorf("%w: unsupported OpenAI API %d", agentkit.ErrInvalidConfig, configuration.api)
+	}
+	return agentkit.NewKnownWireModelConversation(wire, configuration.baseURL, model, authAdapter{credential})
 }

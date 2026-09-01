@@ -24,12 +24,26 @@ const (
 // authentication input is deliberately the runtime AuthApplier seam rather
 // than either vendor package's sealed credential type.
 func NewKnownWireConversation(wireName KnownWire, baseURL string, auth AuthApplier) (*Conversation, error) {
+	return newKnownWireConversation(wireName, baseURL, "", auth)
+}
+
+// NewKnownWireModelConversation constructs a conversation from an established
+// wire while retaining the vendor constructor's required model.
+func NewKnownWireModelConversation(wireName KnownWire, baseURL, model string, auth AuthApplier) (*Conversation, error) {
+	return newKnownWireConversation(wireName, baseURL, model, auth)
+}
+
+func newKnownWireConversation(wireName KnownWire, baseURL, model string, auth AuthApplier) (*Conversation, error) {
 	var wire WireFormat
 	switch wireName {
 	case KnownWireAnthropicMessages:
 		wire = newAnthropicWire(nil)
 	case KnownWireOpenAIResponses:
 		wire = newOpenAIResponsesWire(nil)
+	case KnownWireOpenAIChat:
+		wire = newOpenAIChatWire(nil)
+	case KnownWireGemini:
+		wire = newGeminiWire(nil)
 	default:
 		return nil, fmt.Errorf("%w: unknown wire format %d", ErrInvalidConfig, wireName)
 	}
@@ -38,7 +52,7 @@ func NewKnownWireConversation(wireName KnownWire, baseURL string, auth AuthAppli
 	if err != nil {
 		return nil, err
 	}
-	identity := Identity{Endpoint: baseURL, AuthMode: "custom"}
+	identity := Identity{Endpoint: baseURL, AuthMode: "custom", Model: model}
 	return newEndpointConversation(wire, endpoint, identity), nil
 }
 

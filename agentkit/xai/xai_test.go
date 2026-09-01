@@ -1,0 +1,49 @@
+package xai
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/ikigenba/ikigenba/agentkit"
+)
+
+func TestAPISelectsResponsesByDefaultAndChatAsAlternate(t *testing.T) {
+	// R-YWZS-H2QA
+	if Responses != 0 || ChatCompletions != 1 {
+		t.Fatalf("API values = %d, %d", Responses, ChatCompletions)
+	}
+	for _, check := range []struct {
+		api API
+		key string
+	}{{Responses, "input"}, {ChatCompletions, "messages"}} {
+		seen := make(chan map[string]json.RawMessage, 1)
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			body, _ := io.ReadAll(request.Body)
+			var object map[string]json.RawMessage
+			_ = json.Unmarshal(body, &object)
+			seen <- object
+			writer.Header().Set("Content-Type", "text/event-stream")
+		}))
+		conversation, err := New(APIKey("key"), "model", WithBaseURL(server.URL), WithAPI(check.api))
+		if err != nil {
+			t.Fatal(err)
+		}
+		conversation.Send(context.Background(), agentkit.Text{Text: "hello"})
+		if _, exists := (<-seen)[check.key]; !exists {
+			t.Fatalf("selected wire body lacks %q", check.key)
+		}
+		server.Close()
+	}
+}
+
+func TestOAuthAndBaseURLConflictAtConstruction(t *testing.T) {
+	conversation, err := New(OAuth(tokenSourceFunc(func(context.Context) (string, error) { return "token", nil })), "model", WithBaseURL("https://example.test"))
+	if conversation != nil || !errors.Is(err, agentkit.ErrInvalidConfig) {
+		t.Fatalf("New = (%v, %v), want nil ErrInvalidConfig", conversation, err)
+	}
+}

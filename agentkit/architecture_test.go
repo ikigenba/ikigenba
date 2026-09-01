@@ -809,7 +809,7 @@ func TestDependencyDirection(t *testing.T) {
 		if !strings.HasPrefix(pkg.ImportPath, module+"/") {
 			continue
 		}
-		vendorConstructorPackage := pkg.ImportPath == module+"/anthropic" || pkg.ImportPath == module+"/openai"
+		vendorConstructorPackage := pkg.ImportPath == module+"/anthropic" || pkg.ImportPath == module+"/openai" || pkg.ImportPath == module+"/xai" || pkg.ImportPath == module+"/openrouter" || pkg.ImportPath == module+"/gemini"
 		for _, imported := range pkg.Imports {
 			if imported == module && !vendorConstructorPackage {
 				t.Fatalf("lower package %q imports back up to Conversation", pkg.ImportPath)
@@ -854,8 +854,11 @@ func TestCredentialWorldsRemainVendorLocal(t *testing.T) {
 
 	// #nosec G101 -- these are Go method identifiers, not credential values.
 	wantMarkers := map[string]string{
-		"anthropic/credential.go": "isAnthropicCredential",
-		"openai/credential.go":    "isOpenAICredential",
+		"anthropic/credential.go":  "isAnthropicCredential",
+		"openai/credential.go":     "isOpenAICredential",
+		"xai/credential.go":        "isXAICredential",
+		"openrouter/credential.go": "isOpenRouterCredential",
+		"gemini/credential.go":     "isGeminiCredential",
 	}
 	tokenResults := make(map[string]int)
 	for name, marker := range wantMarkers {
@@ -900,6 +903,232 @@ func TestCredentialWorldsRemainVendorLocal(t *testing.T) {
 	}
 	if tokenResults["anthropic/credential.go"] == tokenResults["openai/credential.go"] {
 		t.Fatalf("vendor TokenSource result shapes were unified: %v", tokenResults)
+	}
+}
+
+func TestPhaseEightVendorDeclarationsAreExact(t *testing.T) {
+	// R-YM0P-1521
+	// R-YN8L-EWSQ
+	// R-YPOE-6GA4
+	// R-YQWA-K80T
+	// R-YS46-XZRI
+	// R-YTC3-BRI7
+	// R-YUJZ-PJ8W
+	// R-YVRW-3AZL
+	// R-YWZS-H2QA
+	// R-YY7O-UUGZ
+	// R-YZFL-8M7O
+	// R-Z0NH-MDYD
+	// R-Z1VE-05P2
+	type vendorSpec struct {
+		directory    string
+		marker       string
+		tokenResults []string
+		apiNames     []string
+		hasOAuth     bool
+	}
+	specifications := []vendorSpec{
+		{"anthropic", "isAnthropicCredential", []string{"string", "error"}, []string{"Messages", "TextCompletions"}, true},
+		{"openai", "isOpenAICredential", []string{"string", "string", "error"}, []string{"Responses", "ChatCompletions"}, true},
+		{"xai", "isXAICredential", []string{"string", "error"}, []string{"Responses", "ChatCompletions"}, true},
+		{"openrouter", "isOpenRouterCredential", nil, []string{"ChatCompletions", "Responses"}, false},
+		{"gemini", "isGeminiCredential", nil, nil, false},
+	}
+	for _, specification := range specifications {
+		t.Run(specification.directory, func(t *testing.T) {
+			declarations := parsePackageDeclarations(t, specification.directory)
+			credential := requireInterfaceDeclaration(t, declarations, "Credential")
+			if got := interfaceMethodNames(credential); !reflect.DeepEqual(got, []string{"apply", specification.marker}) {
+				t.Fatalf("Credential methods = %v, want apply and %s", got, specification.marker)
+			}
+			assertASTMethod(t, credential, "apply", []string{"context.Context", "*http.Request", "[]byte"}, []string{"error"})
+			assertASTMethod(t, credential, specification.marker, nil, nil)
+			assertASTFunction(t, declarations, "APIKey", []string{"string"}, []string{"Credential"}, false)
+			assertASTFunction(t, declarations, "New", []string{"Credential", "string", "...Option"}, []string{"*agentkit.Conversation", "error"}, true)
+
+			_, oauthExists := declarations.functions["OAuth"]
+			if oauthExists != specification.hasOAuth {
+				t.Fatalf("OAuth presence = %v, want %v", oauthExists, specification.hasOAuth)
+			}
+			if specification.hasOAuth {
+				assertASTFunction(t, declarations, "OAuth", []string{"TokenSource"}, []string{"Credential"}, false)
+			}
+
+			tokenSource, tokenExists := declarations.types["TokenSource"]
+			if tokenExists != (specification.tokenResults != nil) {
+				t.Fatalf("TokenSource presence = %v, want %v", tokenExists, specification.tokenResults != nil)
+			}
+			if tokenExists {
+				interfaceType, ok := tokenSource.Type.(*ast.InterfaceType)
+				if !ok {
+					t.Fatalf("TokenSource is %T, want defined interface", tokenSource.Type)
+				}
+				assertASTMethod(t, interfaceType, "Token", []string{"context.Context"}, specification.tokenResults)
+			}
+
+			api, apiExists := declarations.types["API"]
+			if apiExists != (specification.apiNames != nil) {
+				t.Fatalf("API presence = %v, want %v", apiExists, specification.apiNames != nil)
+			}
+			if apiExists {
+				identifier, ok := api.Type.(*ast.Ident)
+				if !ok || identifier.Name != "int" || api.Assign.IsValid() {
+					t.Fatal("API is not a defined type with underlying int")
+				}
+				if !reflect.DeepEqual(declarations.apiConstants, specification.apiNames) || !declarations.apiUsesIota {
+					t.Fatalf("API constants/iota = %v/%v, want %v/true", declarations.apiConstants, declarations.apiUsesIota, specification.apiNames)
+				}
+				assertASTFunction(t, declarations, "WithAPI", []string{"API"}, []string{"Option"}, false)
+			} else if _, exists := declarations.functions["WithAPI"]; exists {
+				t.Fatal("WithAPI exists without the contracted API enum")
+			}
+		})
+	}
+}
+
+type packageDeclarations struct {
+	types        map[string]*ast.TypeSpec
+	functions    map[string]*ast.FuncDecl
+	apiConstants []string
+	apiUsesIota  bool
+}
+
+func parsePackageDeclarations(t *testing.T, directory string) packageDeclarations {
+	t.Helper()
+	declarations := packageDeclarations{types: make(map[string]*ast.TypeSpec), functions: make(map[string]*ast.FuncDecl)}
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		parsed, parseErr := parser.ParseFile(token.NewFileSet(), filepath.Join(directory, entry.Name()), nil, 0)
+		if parseErr != nil {
+			t.Fatal(parseErr)
+		}
+		for _, declaration := range parsed.Decls {
+			switch declaration := declaration.(type) {
+			case *ast.FuncDecl:
+				if declaration.Recv == nil {
+					declarations.functions[declaration.Name.Name] = declaration
+				}
+			case *ast.GenDecl:
+				apiConstantDeclaration := false
+				for _, raw := range declaration.Specs {
+					switch specification := raw.(type) {
+					case *ast.TypeSpec:
+						declarations.types[specification.Name.Name] = specification
+					case *ast.ValueSpec:
+						if declaration.Tok != token.CONST {
+							continue
+						}
+						apiConstantDeclaration = apiConstantDeclaration || expressionName(specification.Type) == "API"
+						for _, name := range specification.Names {
+							if apiConstantDeclaration {
+								declarations.apiConstants = append(declarations.apiConstants, name.Name)
+							}
+						}
+						for _, value := range specification.Values {
+							declarations.apiUsesIota = declarations.apiUsesIota || expressionName(value) == "iota"
+						}
+					}
+				}
+			}
+		}
+	}
+	return declarations
+}
+
+func requireInterfaceDeclaration(t *testing.T, declarations packageDeclarations, name string) *ast.InterfaceType {
+	t.Helper()
+	specification, exists := declarations.types[name]
+	if !exists || specification.Assign.IsValid() {
+		t.Fatalf("%s is missing or is an alias", name)
+	}
+	interfaceType, ok := specification.Type.(*ast.InterfaceType)
+	if !ok {
+		t.Fatalf("%s is %T, want interface", name, specification.Type)
+	}
+	return interfaceType
+}
+
+func interfaceMethodNames(interfaceType *ast.InterfaceType) []string {
+	names := make([]string, 0, len(interfaceType.Methods.List))
+	for _, field := range interfaceType.Methods.List {
+		for _, name := range field.Names {
+			names = append(names, name.Name)
+		}
+	}
+	return names
+}
+
+func assertASTMethod(t *testing.T, interfaceType *ast.InterfaceType, name string, inputs, outputs []string) {
+	t.Helper()
+	for _, field := range interfaceType.Methods.List {
+		if len(field.Names) == 1 && field.Names[0].Name == name {
+			function, ok := field.Type.(*ast.FuncType)
+			if !ok {
+				t.Fatalf("%s is not a method", name)
+			}
+			assertASTSignature(t, name, function, inputs, outputs, false)
+			return
+		}
+	}
+	t.Fatalf("method %s is missing", name)
+}
+
+func assertASTFunction(t *testing.T, declarations packageDeclarations, name string, inputs, outputs []string, variadic bool) {
+	t.Helper()
+	function, exists := declarations.functions[name]
+	if !exists {
+		t.Fatalf("function %s is missing", name)
+	}
+	assertASTSignature(t, name, function.Type, inputs, outputs, variadic)
+}
+
+func assertASTSignature(t *testing.T, name string, function *ast.FuncType, inputs, outputs []string, variadic bool) {
+	t.Helper()
+	gotInputs := fieldTypeNames(function.Params)
+	gotOutputs := fieldTypeNames(function.Results)
+	gotVariadic := len(function.Params.List) > 0 && strings.HasPrefix(expressionName(function.Params.List[len(function.Params.List)-1].Type), "...")
+	if !reflect.DeepEqual(gotInputs, inputs) || !reflect.DeepEqual(gotOutputs, outputs) || gotVariadic != variadic {
+		t.Fatalf("%s signature = (%v) (%v), variadic=%v; want (%v) (%v), variadic=%v", name, gotInputs, gotOutputs, gotVariadic, inputs, outputs, variadic)
+	}
+}
+
+func fieldTypeNames(fields *ast.FieldList) []string {
+	if fields == nil || len(fields.List) == 0 {
+		return nil
+	}
+	result := make([]string, 0)
+	for _, field := range fields.List {
+		count := len(field.Names)
+		if count == 0 {
+			count = 1
+		}
+		for range count {
+			result = append(result, expressionName(field.Type))
+		}
+	}
+	return result
+}
+
+func expressionName(expression ast.Expr) string {
+	switch expression := expression.(type) {
+	case *ast.Ident:
+		return expression.Name
+	case *ast.SelectorExpr:
+		return expressionName(expression.X) + "." + expression.Sel.Name
+	case *ast.StarExpr:
+		return "*" + expressionName(expression.X)
+	case *ast.ArrayType:
+		return "[]" + expressionName(expression.Elt)
+	case *ast.Ellipsis:
+		return "..." + expressionName(expression.Elt)
+	default:
+		return ""
 	}
 }
 
