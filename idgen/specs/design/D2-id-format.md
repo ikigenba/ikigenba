@@ -81,6 +81,9 @@ against the shipping binary):
 
 ## REQUIREMENTS
 
+- R-TZLV-4Y8X: Package `idgen` MUST export `MintAt(prefix string, t time.Time) string`.
+- R-U0TR-IPZM: Package `idgen` MUST export `TimeOf(id string) (time.Time, error)`.
+- R-U21N-WHQB: Package `idgen` MUST export `ErrInvalidID` as a package-level variable of type `error`, constructed with `errors.New`, so that `errors.Is(err, ErrInvalidID)` compares by identity.
 - R-SJ7P-ALD5: `TimeOf(MintAt(p, t))` MUST return `t` truncated to the millisecond, verified by an ordinary deterministic test (not a Go fuzz target) sweeping a large (hundreds+) PRNG-seeded sample of `ms ∈ [0, 36⁸)` across several valid prefixes.
 - R-HF29-98B6: Package `idgen` MUST expose the epoch as the exported function `Epoch() time.Time` returning 2026-01-01T00:00:00 UTC, and MUST NOT export it as an assignable package-level variable.
 - R-WHEV-1AN5: `MintAt("R", Epoch())` MUST return the id with prefix `R` and the independently derived golden body `0007-J3LA`, pinning the affine offset constant.

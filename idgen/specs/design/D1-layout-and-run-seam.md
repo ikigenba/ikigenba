@@ -36,5 +36,7 @@ Standard library only; no third-party modules.
 
 ## REQUIREMENTS
 
+- R-UAKY-KVX6: The `idgen` module's import graph MUST flow one way only — `cmd/idgen` imports `internal/cli` and `internal/cli` imports `internal/idgen`, with no reverse edge: `internal/idgen` MUST NOT import `internal/cli`, and `internal/cli` MUST NOT import `cmd/idgen`.
+- R-UBSU-YNNV: The `idgen` module MUST depend on the Go standard library only; its `go.mod` MUST require no third-party (non-stdlib) modules.
 - R-SGRW-J1VR: Package `internal/cli` MUST export `Run(args []string, stdin io.Reader, stdout, stderr io.Writer, clock Clock) int`, and calling it MUST return an exit code in-process without terminating the calling program.
 - R-SHZS-WTMG: The binary built from `./cmd/idgen` MUST, when executed with no arguments, print exactly one line matching `^R-[0-9A-Z]{4}-[0-9A-Z]{4}$` to stdout and exit 0.

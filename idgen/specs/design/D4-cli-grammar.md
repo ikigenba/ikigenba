@@ -37,6 +37,11 @@ Exit-code taxonomy, as package constants `exitSuccess = 0`, `exitFailure = 1`,
 
 ## REQUIREMENTS
 
+- R-U4HG-O17P: Package `internal/cli` MUST define a typed exit-code enumeration with exactly three named values: `exitSuccess` = 0, `exitFailure` = 1, and `exitUsage` = 2.
+- R-U5PD-1SYE: The command MUST accept exactly this option set, with short and long forms equivalent where both exist: `-n`/`--number`, `-p`/`--prefix`, `--decode`, `-h`/`--help`, `-V`/`--version`; and no other options.
+- R-U6X9-FKP3: The `--number` option MUST default to 1 when not supplied.
+- R-U855-TCFS: The `--prefix` option MUST default to `R` when not supplied.
+- R-U9D2-746H: idgen MUST be a single command (no subcommands) with grammar `idgen [options] [ID ...]`, where options precede positional arguments and positional `ID` arguments are accepted only under `--decode`.
 - R-T2Q3-EX89: `--help` and `-h` MUST print the usage text exactly once to stdout, write nothing to stderr, and exit 0 (guarding against the stdlib `flag` double-print of usage).
 - R-T3XZ-SOYY: `--version` MUST print the version string to stdout and exit 0.
 - R-T55W-6GPN: An unknown option MUST exit 2 with a non-empty stderr that includes the usage text.

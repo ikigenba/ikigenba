@@ -35,6 +35,7 @@ Each minted id is written to stdout on its own line, in mint order.
 
 ## REQUIREMENTS
 
+- R-U39K-A9H0: Package `internal/cli` MUST export an interface `Clock` whose method set is exactly `Now() time.Time` and `Sleep(d time.Duration)`.
 - R-SU6S-QJ1E: With a fake `Clock` whose `Sleep(d)` advances a virtual now by `d`, `-n N` MUST print `N` pairwise-distinct ids and terminate without consuming real wall time.
 - R-SVEP-4AS3: Under that same fake clock, minting `N` ids MUST advance virtual time by at least `N−1` milliseconds.
 - R-SWML-I2IS: With a stalled fake clock whose `Now` advances only when `Sleep` is called, `-n N` MUST terminate with `N` pairwise-distinct ids whose last id decodes to a millisecond at least `N−1` beyond the first.
