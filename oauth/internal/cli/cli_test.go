@@ -115,15 +115,29 @@ func (roundTrip roundTripFunc) RoundTrip(request *http.Request) (*http.Response,
 	return roundTrip(request)
 }
 
+type recordingReader struct {
+	reader io.Reader
+	reads  int
+}
+
+func (reader *recordingReader) Read(buffer []byte) (int, error) {
+	reader.reads++
+
+	return reader.reader.Read(buffer)
+}
+
 type successfulRun struct {
-	authorizeURL string
-	boundPort    int
-	callLog      []string
-	tokenForm    url.Values
-	tokenCalls   int
-	exitCode     int
-	stdout       []byte
-	stderr       []byte
+	authorizeURL  string
+	boundPort     int
+	callLog       []string
+	entropyReads  int
+	launcherCalls int
+	listenCalls   int
+	tokenForm     url.Values
+	tokenCalls    int
+	exitCode      int
+	stdout        []byte
+	stderr        []byte
 }
 
 type runConfig struct {
@@ -199,8 +213,10 @@ func runLogin(t *testing.T, config runConfig) successfulRun {
 	defer cancel()
 	var capture successfulRun
 	callbackDone := make(chan error, 1)
+	entropy := &recordingReader{reader: bytes.NewReader(make([]byte, 96))}
 	var listenConfig net.ListenConfig
 	listen := func(network, address string) (net.Listener, error) {
+		capture.listenCalls++
 		capture.callLog = append(capture.callLog, "listen:"+network)
 		if network == "tcp6" && config.ipv6BindError != nil {
 			return nil, config.ipv6BindError
@@ -224,6 +240,7 @@ func runLogin(t *testing.T, config runConfig) successfulRun {
 		return listener, err
 	}
 	launcher := launcherFunc(func(authorizeURL string) error {
+		capture.launcherCalls++
 		capture.callLog = append(capture.callLog, "launch")
 		capture.authorizeURL = authorizeURL
 		if config.disableCallback || config.callbackStderrMarker != "" {
@@ -283,10 +300,11 @@ func runLogin(t *testing.T, config runConfig) successfulRun {
 	}
 	capture.exitCode = cli.Run(ctx, config.args, stdout, stderr, cli.Deps{
 		Launcher:   launcher,
-		Entropy:    bytes.NewReader(make([]byte, 96)),
+		Entropy:    entropy,
 		HTTPClient: &http.Client{Transport: transport},
 		Listen:     listen,
 	})
+	capture.entropyReads = entropy.reads
 	capture.stdout = append([]byte(nil), stdoutBuffer.Bytes()...)
 	capture.stderr = stderrBuffer.Bytes()
 	if capture.authorizeURL == "" && config.stderr == nil {
@@ -368,6 +386,27 @@ func requireSuccessfulLogin(t *testing.T, args []string) successfulRun {
 	}
 
 	return capture
+}
+
+// R-E810-GC5Q
+func TestRunUsesEveryInjectedDependency(t *testing.T) {
+	capture := runLogin(t, runConfig{args: validArgs()})
+
+	if capture.exitCode != 0 {
+		t.Fatalf("Run() exit code = %d, want 0; stderr = %q", capture.exitCode, capture.stderr)
+	}
+	if capture.launcherCalls == 0 {
+		t.Error("injected launcher Open calls = 0, want at least 1")
+	}
+	if capture.entropyReads == 0 {
+		t.Error("injected entropy Read calls = 0, want at least 1")
+	}
+	if capture.tokenCalls == 0 {
+		t.Error("injected HTTP transport RoundTrip calls = 0, want at least 1")
+	}
+	if capture.listenCalls == 0 {
+		t.Error("injected listen function calls = 0, want at least 1")
+	}
 }
 
 // R-EMNT-1L22
@@ -509,8 +548,9 @@ func TestRunWarnsAndContinuesAfterIPv6BindFailure(t *testing.T) {
 	if capture.exitCode != 0 {
 		t.Fatalf("Run() exit code = %d, want 0; stderr = %q", capture.exitCode, capture.stderr)
 	}
-	if len(capture.callLog) < 2 || !reflect.DeepEqual(capture.callLog[:2], []string{"listen:tcp4", "listen:tcp6"}) {
-		t.Errorf("first calls = %v, want ordered IPv4 then IPv6 bind attempts", capture.callLog)
+	wantCalls := []string{"listen:tcp4", "listen:tcp6", "launch"}
+	if !reflect.DeepEqual(capture.callLog, wantCalls) {
+		t.Errorf("calls = %v, want %v", capture.callLog, wantCalls)
 	}
 	if !bytes.Contains(capture.stderr, []byte("IPv6 loopback bind failed")) {
 		t.Errorf("stderr = %q, want warning naming IPv6 bind failure", capture.stderr)
