@@ -9,6 +9,37 @@ import (
 	"net/http"
 )
 
+// KnownWire identifies a built-in wire format available to the generic route.
+type KnownWire string
+
+// Known wire names accepted by NewKnownWireConversation.
+const (
+	KnownWireAnthropic       KnownWire = "anthropic"
+	KnownWireOpenAIResponses KnownWire = "openai-responses"
+)
+
+// NewKnownWireConversation constructs the generic custom-endpoint route. Its
+// authentication input is deliberately the runtime AuthApplier seam rather
+// than either vendor package's sealed credential type.
+func NewKnownWireConversation(wireName KnownWire, baseURL string, auth AuthApplier) (*Conversation, error) {
+	var wire WireFormat
+	switch wireName {
+	case KnownWireAnthropic:
+		wire = newAnthropicWire(nil)
+	case KnownWireOpenAIResponses:
+		wire = newOpenAIResponsesWire(nil)
+	default:
+		return nil, fmt.Errorf("%w: unknown wire format %q", ErrInvalidConfig, wireName)
+	}
+
+	endpoint, err := newEndpoint(WithBaseURL(baseURL), withAuth(auth))
+	if err != nil {
+		return nil, err
+	}
+	identity := Identity{Endpoint: baseURL, AuthMode: "custom"}
+	return NewConversation(newComposedProvider(wire, endpoint, identity), http.DefaultClient), nil
+}
+
 // Provider is the composed wire-format and endpoint adapter driven for one
 // round-trip.
 type Provider interface {

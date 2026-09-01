@@ -80,14 +80,133 @@ func TestDependencyDirection(t *testing.T) {
 		if !strings.HasPrefix(pkg.ImportPath, module+"/") {
 			continue
 		}
+		vendorConstructorPackage := pkg.ImportPath == module+"/anthropic" || pkg.ImportPath == module+"/openai"
 		for _, imported := range pkg.Imports {
-			if imported == module {
+			if imported == module && !vendorConstructorPackage {
 				t.Fatalf("lower package %q imports back up to Conversation", pkg.ImportPath)
 			}
-			if strings.Contains(imported, "/anthropic") || strings.Contains(imported, "/openai") || strings.Contains(imported, "/gemini") {
+			if imported != pkg.ImportPath && (strings.Contains(imported, "/anthropic") || strings.Contains(imported, "/openai") || strings.Contains(imported, "/gemini")) {
 				t.Fatalf("lower package %q imports vendor package %q", pkg.ImportPath, imported)
 			}
 		}
+	}
+}
+
+func TestCredentialWorldsRemainVendorLocal(t *testing.T) {
+	// R-3IB6-03OE
+	// R-3JJ2-DVF3
+	// R-3OEN-WYDV
+	fileSet := token.NewFileSet()
+	rootEntries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range rootEntries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		parsed, parseErr := parser.ParseFile(fileSet, entry.Name(), nil, 0)
+		if parseErr != nil {
+			t.Fatal(parseErr)
+		}
+		for _, declaration := range parsed.Decls {
+			general, ok := declaration.(*ast.GenDecl)
+			if !ok || general.Tok != token.TYPE {
+				continue
+			}
+			for _, specification := range general.Specs {
+				name := specification.(*ast.TypeSpec).Name.Name
+				if name == "Credential" || name == "TokenSource" {
+					t.Fatalf("root package declares forbidden shared %s", name)
+				}
+			}
+		}
+	}
+
+	// #nosec G101 -- these are Go method identifiers, not credential values.
+	wantMarkers := map[string]string{
+		"anthropic/credential.go": "isAnthropicCredential",
+		"openai/credential.go":    "isOpenAICredential",
+	}
+	tokenResults := make(map[string]int)
+	for name, marker := range wantMarkers {
+		parsed, parseErr := parser.ParseFile(fileSet, name, nil, 0)
+		if parseErr != nil {
+			t.Fatal(parseErr)
+		}
+		foundMarker := false
+		for _, declaration := range parsed.Decls {
+			general, ok := declaration.(*ast.GenDecl)
+			if !ok || general.Tok != token.TYPE {
+				continue
+			}
+			for _, specification := range general.Specs {
+				typeSpecification := specification.(*ast.TypeSpec)
+				interfaceType, ok := typeSpecification.Type.(*ast.InterfaceType)
+				if !ok {
+					continue
+				}
+				if typeSpecification.Name.Name == "Credential" {
+					for _, method := range interfaceType.Methods.List {
+						if len(method.Names) == 1 && method.Names[0].Name == marker && !ast.IsExported(marker) {
+							foundMarker = true
+						}
+					}
+				}
+				if typeSpecification.Name.Name == "TokenSource" {
+					method := interfaceType.Methods.List[0].Type.(*ast.FuncType)
+					for _, result := range method.Results.List {
+						arity := len(result.Names)
+						if arity == 0 {
+							arity = 1
+						}
+						tokenResults[name] += arity
+					}
+				}
+			}
+		}
+		if !foundMarker {
+			t.Fatalf("%s Credential lacks exact private marker %s", name, marker)
+		}
+	}
+	if tokenResults["anthropic/credential.go"] == tokenResults["openai/credential.go"] {
+		t.Fatalf("vendor TokenSource result shapes were unified: %v", tokenResults)
+	}
+}
+
+func TestAuthenticationHasOneRuntimeInterface(t *testing.T) {
+	// R-3KQY-RN5S
+	fileSet := token.NewFileSet()
+	authInterfaces := make(map[string][]string)
+	productionFiles := []string{"endpoint.go", "anthropic/credential.go", "openai/credential.go"}
+	for _, name := range productionFiles {
+		parsed, err := parser.ParseFile(fileSet, name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, declaration := range parsed.Decls {
+			general, ok := declaration.(*ast.GenDecl)
+			if !ok || general.Tok != token.TYPE {
+				continue
+			}
+			for _, specification := range general.Specs {
+				typeSpecification := specification.(*ast.TypeSpec)
+				interfaceType, ok := typeSpecification.Type.(*ast.InterfaceType)
+				if !ok || !strings.Contains(typeSpecification.Name.Name, "Auth") {
+					continue
+				}
+				methods := make([]string, 0, len(interfaceType.Methods.List))
+				for _, method := range interfaceType.Methods.List {
+					if len(method.Names) == 1 {
+						methods = append(methods, method.Names[0].Name)
+					}
+				}
+				authInterfaces[typeSpecification.Name.Name] = methods
+			}
+		}
+	}
+	if len(authInterfaces) != 1 || len(authInterfaces["AuthApplier"]) != 1 || authInterfaces["AuthApplier"][0] != "Apply" {
+		t.Fatalf("authentication runtime interfaces = %v, want only AuthApplier.Apply", authInterfaces)
 	}
 }
 
