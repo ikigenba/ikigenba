@@ -200,6 +200,44 @@ func TestMessageDoneDeclarationIsExactAndImplementsEvent(t *testing.T) {
 	assertEventSeam(t)
 }
 
+func TestEventIsSealedToExactlyThreeVariants(t *testing.T) {
+	// R-4YQU-G8K9
+	assertEventSeam(t)
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var implementations []string
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		parsed, parseErr := parser.ParseFile(token.NewFileSet(), entry.Name(), nil, 0)
+		if parseErr != nil {
+			t.Fatal(parseErr)
+		}
+		for _, declaration := range parsed.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Recv == nil || function.Name.Name != "isEvent" {
+				continue
+			}
+			receiver := function.Recv.List[0].Type
+			if pointer, ok := receiver.(*ast.StarExpr); ok {
+				receiver = pointer.X
+			}
+			identifier, ok := receiver.(*ast.Ident)
+			if !ok {
+				t.Fatalf("isEvent receiver = %T, want named Event variant", receiver)
+			}
+			implementations = append(implementations, identifier.Name)
+		}
+	}
+	want := []string{"MessageDone", "ToolCall", "ToolReturn"}
+	if !reflect.DeepEqual(implementations, want) {
+		t.Fatalf("in-package Event implementations = %v, want exactly %v", implementations, want)
+	}
+}
+
 func TestToolCallDeclarationIsExactAndImplementsEvent(t *testing.T) {
 	// R-0CF5-DQKS
 	assertEventWrapper(t, "ToolCall", reflect.TypeFor[ToolCall](), "Use", reflect.TypeFor[ToolUse]())

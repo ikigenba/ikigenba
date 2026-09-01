@@ -75,7 +75,9 @@ func TestNewSelectsAnthropicMessagesWireAndEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conversation.Send(context.Background(), agentkit.Text{Text: "hello"})
+	for event := range conversation.Send(context.Background(), agentkit.Text{Text: "hello"}).Events() {
+		_ = event
+	}
 
 	request := <-seen
 	if request.path != "/v1/messages" || request.apiKey != "secret" {

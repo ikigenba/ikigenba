@@ -57,7 +57,9 @@ func TestGenericKnownWireAcceptsBareAuthApplier(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conversation.Send(ctx, agentkit.Text{Text: "hello"})
+	for event := range conversation.Send(ctx, agentkit.Text{Text: "hello"}).Events() {
+		_ = event
+	}
 	if auth.applyCallCount != 1 || requestCount != 1 {
 		t.Fatalf("calls: auth=%d request=%d", auth.applyCallCount, requestCount)
 	}

@@ -12,15 +12,16 @@ import (
 // Conversation binds a provider and its stable identity to a growing
 // transcript.
 type Conversation struct {
-	provider Provider
-	client   *http.Client
-	identity Identity
-	history  History
-	settings Settings
-	options  ProviderOptions
-	tools    []Tool
-	deferred []deferredGroup
-	validate func() error
+	provider  Provider
+	client    *http.Client
+	identity  Identity
+	history   History
+	settings  Settings
+	options   ProviderOptions
+	tools     []Tool
+	deferred  []deferredGroup
+	validate  func() error
+	eventSink eventSink
 }
 
 // NewConversation constructs a conversation driven by provider. The provider,
@@ -39,12 +40,14 @@ func NewConversation(provider Provider, client *http.Client) *Conversation {
 // life; only the transcript grows. Send is the one verb — multimodal input
 // arrives as additional Block variants, never as a second method.
 func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream {
-	orchestrator, err := c.prepareOrchestrator()
-	if err != nil {
-		return &Stream{err: invalidConfigError(c.identity, err)}
-	}
 	turn := c.snapshotTurn(blocks)
-	return c.driveTurn(ctx, orchestrator, turn)
+	return &Stream{drive: func(yield func(Event) bool) error {
+		orchestrator, err := c.prepareOrchestrator()
+		if err != nil {
+			return invalidConfigError(c.identity, err)
+		}
+		return c.driveTurn(ctx, orchestrator, turn, yield)
+	}}
 }
 
 func (c *Conversation) prepareOrchestrator() (*orchestrator, error) {
@@ -74,36 +77,37 @@ func (c *Conversation) snapshotTurn(blocks []Block) turnSnapshot {
 	}
 }
 
-func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator, snapshot turnSnapshot) *Stream {
-	stream := &Stream{}
-
+func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator, snapshot turnSnapshot, yield func(Event) bool) error {
 	for {
 		candidate := append(cloneHistory(snapshot.baseHistory), cloneHistory(snapshot.turn)...)
-		round := c.roundTrip(ctx, RequestState{
+		roundEvents, completed, err := c.roundTrip(ctx, RequestState{
 			Model:    c.identity.Model,
 			History:  candidate,
 			Settings: cloneSettings(snapshot.settings),
 			Options:  cloneProviderOptions(snapshot.options),
 			Tools:    orchestrator.advertisedSnapshot(),
-		})
-		stream.events = append(stream.events, round.events...)
-		if round.err != nil {
-			stream.err = round.err
-			return stream
+		}, yield)
+		if !completed {
+			return err
+		}
+		if err != nil {
+			return err
 		}
 
-		assistant, calls := completedAssistantMessages(round.events)
+		assistant, calls := completedAssistantMessages(roundEvents)
 		snapshot.turn = append(snapshot.turn, assistant...)
 		if len(calls) == 0 {
 			c.history = append(c.history, cloneHistory(snapshot.turn)...)
-			return stream
+			return nil
 		}
 
 		results := make([]Block, 0, len(calls))
 		for _, call := range calls {
 			result := orchestrator.dispatch(ctx, call)
 			results = append(results, result)
-			stream.events = append(stream.events, ToolReturn{Result: result})
+			if !publishEvent(c.eventSink, yield, ToolReturn{Result: result}) {
+				return nil
+			}
 		}
 		toolMessage := Message{Role: RoleTool, Blocks: results}
 		snapshot.turn = append(snapshot.turn, toolMessage)
@@ -128,18 +132,18 @@ func (c *Conversation) validateConfig() error {
 	return nil
 }
 
-func (c *Conversation) roundTrip(ctx context.Context, state RequestState) *Stream {
+func (c *Conversation) roundTrip(ctx context.Context, state RequestState, yield func(Event) bool) ([]Event, bool, error) {
 	request, err := c.buildRequest(ctx, state)
 	if err != nil {
-		return &Stream{err: wrapProviderError(err, CategoryUnknown, 0, c.identity)}
+		return nil, true, wrapProviderError(err, CategoryUnknown, 0, c.identity)
 	}
 
 	response, err := c.execute(request)
 	if err != nil {
-		return &Stream{err: wrapProviderError(err, CategoryTransport, 0, c.identity)}
+		return nil, true, wrapProviderError(err, CategoryTransport, 0, c.identity)
 	}
 
-	return c.consumeResponse(ctx, response)
+	return c.consumeResponse(ctx, response, yield)
 }
 
 func (c *Conversation) buildRequest(ctx context.Context, state RequestState) (*http.Request, error) {
@@ -219,7 +223,7 @@ func (c *Conversation) execute(request *http.Request) (*http.Response, error) {
 	return c.client.Do(request)
 }
 
-func (c *Conversation) consumeResponse(ctx context.Context, response *http.Response) *Stream {
+func (c *Conversation) consumeResponse(ctx context.Context, response *http.Response, yield func(Event) bool) ([]Event, bool, error) {
 	defer func() {
 		_ = response.Body.Close()
 	}()
@@ -228,26 +232,35 @@ func (c *Conversation) consumeResponse(ctx context.Context, response *http.Respo
 		body, readErr := io.ReadAll(response.Body)
 		if readErr != nil {
 			contextual := fmt.Errorf("provider error response body ended before it could be read completely: %w", readErr)
-			return &Stream{err: wrapProviderError(contextual, CategoryUnknown, response.StatusCode, c.identity)}
+			return nil, true, wrapProviderError(contextual, CategoryUnknown, response.StatusCode, c.identity)
 		}
 
 		classified := c.provider.Classify(response.StatusCode, response.Header, body)
-		return &Stream{err: wrapProviderError(classified, CategoryUnknown, response.StatusCode, c.identity)}
+		return nil, true, wrapProviderError(classified, CategoryUnknown, response.StatusCode, c.identity)
 	}
 
-	stream := &Stream{}
+	var events []Event
 	for event, decodeErr := range c.provider.Decode(ctx, response) {
 		if decodeErr != nil {
 			// Provider.Decode exposes one undifferentiated terminal error channel.
 			// Preserve that seam as CategoryUnknown rather than inferring an error
 			// category from provider-private error values.
 			contextual := fmt.Errorf("provider response decoding ended before completion: %w", decodeErr)
-			stream.err = wrapProviderError(contextual, CategoryUnknown, response.StatusCode, c.identity)
-
-			break
+			return events, true, wrapProviderError(contextual, CategoryUnknown, response.StatusCode, c.identity)
 		}
-		stream.events = append(stream.events, event)
+		events = append(events, event)
+		if !publishEvent(c.eventSink, yield, event) {
+			return events, false, nil
+		}
+		if completed, ok := event.(MessageDone); ok {
+			for _, block := range completed.Message.Blocks {
+				use, ok := block.(ToolUse)
+				if ok && !publishEvent(c.eventSink, yield, ToolCall{Use: use}) {
+					return events, false, nil
+				}
+			}
+		}
 	}
 
-	return stream
+	return events, true, nil
 }

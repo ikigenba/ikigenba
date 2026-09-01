@@ -259,6 +259,7 @@ func decodedWireUsage(wire WireFormat) Usage {
 
 func TestDecodeStreamYieldsOnlyCompletedMessages(t *testing.T) {
 	// R-2YSR-VRTA
+	// R-4ZYQ-U0AY
 	for _, test := range wireFixtures() {
 		wire := test.make(nil)
 		response, err := os.Open(test.response)

@@ -199,7 +199,9 @@ func TestNewForWireUsesEveryKnownCodecAndSuppliedEndpoint(t *testing.T) {
 			if conversation.identity.Model != model || conversation.provider.Identity().Model != model {
 				t.Fatalf("model identity = %#v / %#v, want verbatim %q", conversation.identity, conversation.provider.Identity(), model)
 			}
-			conversation.Send(context.Background(), Text{Text: "exercise codec"})
+			for event := range conversation.Send(context.Background(), Text{Text: "exercise codec"}).Events() {
+				_ = event
+			}
 			if calls != 1 {
 				t.Fatalf("endpoint HTTP client calls = %d, want 1", calls)
 			}

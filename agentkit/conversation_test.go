@@ -16,6 +16,14 @@ import (
 	"time"
 )
 
+func drainStream(stream *Stream) []Event {
+	var events []Event
+	for event := range stream.Events() {
+		events = append(events, event)
+	}
+	return events
+}
+
 type fixtureWire struct {
 	name string
 }
@@ -120,7 +128,7 @@ func TestEndpointConversationExecutesWithDefaultHTTPClient(t *testing.T) {
 		t.Fatal("endpoint did not retain http.DefaultClient as its default")
 	}
 	defaultConversation := newEndpointConversation(&testWire{}, defaultEndpoint, Identity{Model: "default-model"})
-	defaultConversation.Send(context.Background(), Text{Text: "hello"})
+	drainStream(defaultConversation.Send(context.Background(), Text{Text: "hello"}))
 	if defaultCalls != 1 {
 		t.Fatalf("default client calls = %d, want 1", defaultCalls)
 	}
@@ -142,7 +150,7 @@ func TestEndpointConversationExecutesWithOverrideHTTPClient(t *testing.T) {
 		t.Fatal("WithHTTPClient did not retain the selected client")
 	}
 	overrideConversation := newEndpointConversation(&testWire{}, overrideEndpoint, Identity{Model: "override-model"})
-	overrideConversation.Send(context.Background(), Text{Text: "hello"})
+	drainStream(overrideConversation.Send(context.Background(), Text{Text: "hello"}))
 	if overrideCalls != 1 {
 		t.Fatalf("override client calls = %d, want 1", overrideCalls)
 	}
@@ -187,6 +195,7 @@ func TestConversationSendsModelVerbatim(t *testing.T) {
 	// R-1S4A-HSUZ
 	conversation, provider, unknownModel, capture := newConversationAxesFixture(t)
 	stream := conversation.Send(context.Background(), Text{Text: "text"})
+	drainStream(stream)
 	if capture.err != nil {
 		t.Fatal(capture.err)
 	}
@@ -235,6 +244,7 @@ func TestSendValidationFailsBeforeConfiguredProviderBoundaries(t *testing.T) {
 			conversation.validate = func() error { return test.cause }
 
 			stream := conversation.Send(context.Background(), Text{Text: "must not be appended"})
+			drainStream(stream)
 			var providerError *Error
 			if !errors.As(stream.err, &providerError) || providerError.Category != CategoryInvalidRequest {
 				t.Fatalf("Send error = %#v, want CategoryInvalidRequest *Error", stream.err)
@@ -278,6 +288,7 @@ func TestNonSuccessResponseUsesClassifierInputsAndResult(t *testing.T) {
 	provider.classify = func(int, http.Header, []byte) error { return classified }
 
 	stream := conversation.Send(context.Background(), Text{Text: "hello"})
+	drainStream(stream)
 	if reflect.ValueOf(stream.err).Pointer() != reflect.ValueOf(classified).Pointer() {
 		t.Fatalf("terminal error = %#v, want classifier result %#v unchanged", stream.err, classified)
 	}
@@ -297,6 +308,7 @@ func TestTransportFailureIsWrappedWithStableIdentity(t *testing.T) {
 	provider.model = "changed-after-construction"
 
 	stream := conversation.Send(context.Background(), Text{Text: "hello"})
+	drainStream(stream)
 	var providerError *Error
 	if reflect.TypeOf(stream.err) != reflect.TypeOf(providerError) || !errors.As(stream.err, &providerError) {
 		t.Fatalf("transport error type = %T, want *Error", stream.err)
@@ -330,9 +342,10 @@ func TestDecodeCanUseClassifierForInBandErrorAfterHTTP200(t *testing.T) {
 	provider.classify = func(int, http.Header, []byte) error { return classified }
 
 	stream := conversation.Send(context.Background(), Text{Text: "hello"})
+	events := drainStream(stream)
 	wantEvent := ToolCall{Use: ToolUse{Name: "messages:vendor"}}
-	if len(stream.events) != 1 || !reflect.DeepEqual(stream.events[0], wantEvent) {
-		t.Fatalf("events before terminal error = %#v", stream.events)
+	if len(events) != 1 || !reflect.DeepEqual(events[0], wantEvent) {
+		t.Fatalf("events before terminal error = %#v", events)
 	}
 	if reflect.ValueOf(stream.err).Pointer() != reflect.ValueOf(classified).Pointer() {
 		t.Fatalf("terminal error = %#v, want in-band classifier result %#v", stream.err, classified)
@@ -348,7 +361,7 @@ func TestSendIsSoleVerbAndAcceptsDifferentBlockVariants(t *testing.T) {
 	defer server.Close()
 	conversation, provider := vendorFixture(server.URL, "model", server.Client())
 
-	conversation.Send(context.Background(), Text{Text: "text"}, ToolUse{ID: "call", Name: "image"})
+	drainStream(conversation.Send(context.Background(), Text{Text: "text"}, ToolUse{ID: "call", Name: "image"}))
 	if len(provider.states) != 1 || len(provider.states[0].History) != 1 || len(provider.states[0].History[0].Blocks) != 2 {
 		t.Fatalf("Send did not carry both block variants: %#v", provider.states)
 	}
@@ -372,11 +385,13 @@ func TestVendorAndGenericRoutesAreEquivalent(t *testing.T) {
 
 	vendorStream := vendorConversation.Send(context.Background(), Text{Text: "hello"})
 	genericStream := genericConversation.Send(context.Background(), Text{Text: "hello"})
+	vendorEvents := drainStream(vendorStream)
+	genericEvents := drainStream(genericStream)
 	if !reflect.DeepEqual(vendorProvider.states, genericProvider.states) {
 		t.Fatalf("construction routes produced different states: vendor=%#v generic=%#v", vendorProvider.states, genericProvider.states)
 	}
-	if !reflect.DeepEqual(vendorStream, genericStream) {
-		t.Fatalf("construction routes produced different streams: vendor=%#v generic=%#v", vendorStream, genericStream)
+	if !reflect.DeepEqual(vendorEvents, genericEvents) || !reflect.DeepEqual(vendorStream.Err(), genericStream.Err()) {
+		t.Fatalf("construction routes produced different streams: vendor=%#v generic=%#v", vendorEvents, genericEvents)
 	}
 }
 
@@ -389,6 +404,7 @@ func TestSendSnapshotPreservesPayloadAndCommitsCompleteUserTurn(t *testing.T) {
 	payload := json.RawMessage(` {"signature":"bytes stay opaque"} `)
 
 	stream := conversation.Send(context.Background(), Text{Text: "hello", Provider: payload})
+	drainStream(stream)
 	if stream.err != nil {
 		t.Fatal(stream.err)
 	}
@@ -442,6 +458,7 @@ func TestSendFailuresLeaveHistoryUnchanged(t *testing.T) {
 			test.setup(provider, client)
 
 			stream := conversation.Send(context.Background(), Text{Text: "do not commit"})
+			drainStream(stream)
 			if stream.err == nil {
 				t.Fatal("Send error = nil, want terminal failure")
 			}
@@ -521,6 +538,7 @@ func TestUnsupportedSettingsFailAtStartOfSendWithoutMutation(t *testing.T) {
 			beforeSettings := cloneSettings(conversation.settings)
 
 			stream := conversation.Send(context.Background(), Text{Text: "not appended"})
+			drainStream(stream)
 			if !errors.Is(stream.err, ErrInvalidConfig) {
 				t.Fatalf("Send error = %v, want ErrInvalidConfig", stream.err)
 			}
@@ -560,7 +578,9 @@ func TestWireCapabilityDecisionIgnoresOpaqueModel(t *testing.T) {
 		}
 		conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "controlled", Model: model})
 		conversation.settings = settings
-		if stream := conversation.Send(context.Background(), Text{Text: "hello"}); !errors.Is(stream.err, ErrInvalidConfig) {
+		stream := conversation.Send(context.Background(), Text{Text: "hello"})
+		drainStream(stream)
+		if !errors.Is(stream.err, ErrInvalidConfig) {
 			t.Errorf("model %q capability result = %v, want identical ErrInvalidConfig", model, stream.err)
 		}
 	}
@@ -607,6 +627,7 @@ func TestUnknownModelReachesVendorAndClassifier(t *testing.T) {
 	conversation.settings = settings
 
 	stream := conversation.Send(context.Background(), Text{Text: "hello"})
+	drainStream(stream)
 	if encodedState.Model != unknownModel || !reflect.DeepEqual(encodedState.Settings, settings) {
 		t.Fatalf("wire received state %#v, want opaque model and unchanged settings %#v", encodedState, settings)
 	}
@@ -729,6 +750,119 @@ func successfulPhase15Client(transportCalls *int) *http.Client {
 	})}
 }
 
+type captureEventSink struct {
+	records []eventRecord
+}
+
+func (sink *captureEventSink) record(record eventRecord) {
+	sink.records = append(sink.records, record)
+}
+
+func TestStreamConsumptionDrivesLiveEventsInRoundTripOrder(t *testing.T) {
+	// R-4ZYQ-U0AY
+	// R-516N-7S1N
+	// R-53MF-ZBJ1
+	call := ToolUse{ID: "live-call", Name: "weather", Input: json.RawMessage(`{"city":"Oslo"}`)}
+	first := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "checking"}, call}}
+	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "sunny"}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
+	transportCalls := 0
+	toolCalls := 0
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	tool := &phase17CountingTool{
+		name:   "weather",
+		schema: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}`),
+		call: func(context.Context, json.RawMessage) (string, error) {
+			toolCalls++
+			return "sunny", nil
+		},
+	}
+	conversation.tools = []Tool{tool}
+
+	stream := conversation.Send(context.Background(), Text{Text: "forecast"})
+	if transportCalls != 0 || provider.decodeCalls != 0 || toolCalls != 0 || tool.schemaCalls != 0 {
+		t.Fatalf("work happened before consumption: transport=%d decode=%d tool=%d schema=%d", transportCalls, provider.decodeCalls, toolCalls, tool.schemaCalls)
+	}
+	var events []Event
+	for event := range stream.Events() {
+		events = append(events, event)
+		if len(events) == 1 && (transportCalls != 1 || provider.decodeCalls != 1 || toolCalls != 0) {
+			t.Fatalf("first round was not delivered live: transport=%d decode=%d tool=%d", transportCalls, provider.decodeCalls, toolCalls)
+		}
+	}
+	wantResult := ToolResult{ToolUseID: call.ID, Content: "sunny"}
+	want := []Event{
+		MessageDone{Message: first},
+		ToolCall{Use: call},
+		ToolReturn{Result: wantResult},
+		MessageDone{Message: final},
+	}
+	if !reflect.DeepEqual(events, want) {
+		t.Fatalf("events = %#v, want exact assistant/call/return/assistant order %#v", events, want)
+	}
+	if stream.Err() != nil {
+		t.Fatalf("clean Stream.Err() = %v", stream.Err())
+	}
+}
+
+func TestStreamEarlyStopHaltsTurnAndCannotReplay(t *testing.T) {
+	first := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "stop-call", Name: "weather", Input: json.RawMessage(`{"city":"Oslo"}`)}}}
+	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "must not arrive"}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
+	transportCalls := 0
+	toolCalls := 0
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) {
+		toolCalls++
+		return "unused", nil
+	})}
+
+	stream := conversation.Send(context.Background(), Text{Text: "stop"})
+	seen := 0
+	for range stream.Events() {
+		seen++
+		break
+	}
+	if replay := drainStream(stream); len(replay) != 0 {
+		t.Fatalf("single-use stream replayed %#v", replay)
+	}
+	if seen != 1 || transportCalls != 1 || provider.decodeCalls != 1 || toolCalls != 0 {
+		t.Fatalf("early stop work: seen=%d transport=%d decode=%d tool=%d", seen, transportCalls, provider.decodeCalls, toolCalls)
+	}
+	if len(conversation.history) != 0 {
+		t.Fatalf("abandoned turn committed history %#v", conversation.history)
+	}
+}
+
+func TestStreamEventsAndPrivateLogBridgeHaveExactParity(t *testing.T) {
+	// R-54UC-D39Q
+	call := ToolUse{ID: "parity-call", Name: "weather", Input: json.RawMessage(`{"city":"Oslo"}`)}
+	first := Message{Role: RoleAssistant, Blocks: []Block{call}}
+	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
+	transportCalls := 0
+	sink := &captureEventSink{}
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation.eventSink = sink
+	conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) { return "sunny", nil })}
+
+	events := drainStream(conversation.Send(context.Background(), Text{Text: "forecast"}))
+	result := ToolResult{ToolUseID: call.ID, Content: "sunny"}
+	wantEvents := []Event{MessageDone{Message: first}, ToolCall{Use: call}, ToolReturn{Result: result}, MessageDone{Message: final}}
+	wantRecords := []eventRecord{
+		{kind: eventRecordMessage, value: first},
+		{kind: eventRecordToolUse, value: call},
+		{kind: eventRecordToolResult, value: result},
+		{kind: eventRecordMessage, value: final},
+	}
+	if !reflect.DeepEqual(events, wantEvents) {
+		t.Fatalf("live events = %#v, want %#v", events, wantEvents)
+	}
+	if !reflect.DeepEqual(sink.records, wantRecords) {
+		t.Fatalf("bridge records = %#v, want independent protocol records %#v", sink.records, wantRecords)
+	}
+}
+
 type phase15Input struct {
 	City string `json:"city" jsonschema:"required,minLength=2"`
 }
@@ -762,6 +896,7 @@ func TestSendCompletesToolRoundTripsWithFixedClonedConfigAndOneCommit(t *testing
 	result := Message{Role: RoleTool, Blocks: []Block{ToolResult{ToolUseID: callID, Content: "weather for Oslo"}}}
 
 	stream := conversation.Send(context.Background(), user.Blocks...)
+	events := drainStream(stream)
 	if stream.Err() != nil {
 		t.Fatal(stream.Err())
 	}
@@ -781,10 +916,11 @@ func TestSendCompletesToolRoundTripsWithFixedClonedConfigAndOneCommit(t *testing
 	}
 	wantEvents := []Event{
 		MessageDone{Message: first},
+		ToolCall{Use: first.Blocks[1].(ToolUse)},
 		ToolReturn{Result: result.Blocks[0].(ToolResult)},
 		MessageDone{Message: final},
 	}
-	if got := stream.events; !reflect.DeepEqual(got, wantEvents) {
+	if got := events; !reflect.DeepEqual(got, wantEvents) {
 		t.Fatalf("stream events = %#v, want assistant/tool/assistant order", got)
 	}
 	if got := conversation.history; !reflect.DeepEqual(got, History{prior, user, first, result, final}) {
@@ -806,6 +942,7 @@ func TestSendCompletesToolRoundTripsWithFixedClonedConfigAndOneCommit(t *testing
 
 func TestToolDispatchFailuresAreInBandAndRecoverable(t *testing.T) {
 	// R-4RFG-5M43
+	// R-52EJ-LJSC
 	tests := []struct {
 		name              string
 		toolName          string
@@ -839,19 +976,24 @@ func TestToolDispatchFailuresAreInBandAndRecoverable(t *testing.T) {
 			conversation.tools = test.tools(&callbackCalls)
 
 			stream := conversation.Send(context.Background(), Text{Text: "go"})
+			events := drainStream(stream)
 			if stream.Err() != nil || provider.decodeCalls != 2 || transportCalls != 2 {
 				t.Fatalf("turn = err %v, decode %d, transport %d; want clean two-round recovery", stream.Err(), provider.decodeCalls, transportCalls)
 			}
 			if callbackCalls != test.wantCallbackCalls {
 				t.Fatalf("callback calls = %d, want %d", callbackCalls, test.wantCallbackCalls)
 			}
+			returned, ok := events[2].(ToolReturn)
+			if !ok || !returned.Result.IsError || returned.Result.ToolUseID != callID {
+				t.Fatalf("stream tool failure = %#v, want correlated in-band ToolReturn", events)
+			}
 			toolMessage := provider.states[1].History[len(provider.states[1].History)-1]
 			result, ok := toolMessage.Blocks[0].(ToolResult)
 			if !ok || !result.IsError || result.ToolUseID != callID || result.Content == "" {
 				t.Fatalf("in-band result = %#v, want IsError with exact id and content", toolMessage.Blocks[0])
 			}
-			if !reflect.DeepEqual(stream.events[len(stream.events)-1], MessageDone{Message: final}) {
-				t.Fatalf("final recovery event = %#v, want %#v", stream.events, final)
+			if !reflect.DeepEqual(events[len(events)-1], MessageDone{Message: final}) {
+				t.Fatalf("final recovery event = %#v, want %#v", events, final)
 			}
 		})
 	}
@@ -910,6 +1052,7 @@ func TestSendGatesTheCompleteLiveToolSetOnceBeforeAllBoundaries(t *testing.T) {
 			}
 
 			stream := conversation.Send(context.Background(), Text{Text: "never sent"})
+			drainStream(stream)
 			after, err := json.Marshal(conversation.history)
 			if err != nil {
 				t.Fatal(err)
@@ -937,7 +1080,9 @@ func TestSendGatesTheCompleteLiveToolSetOnceBeforeAllBoundaries(t *testing.T) {
 	transportCalls := 0
 	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
 	conversation.tools = []Tool{counting}
-	if stream := conversation.Send(context.Background(), Text{Text: "go"}); stream.Err() != nil {
+	stream := conversation.Send(context.Background(), Text{Text: "go"})
+	drainStream(stream)
+	if stream.Err() != nil {
 		t.Fatal(stream.Err())
 	}
 	if counting.schemaCalls != 2 {
@@ -981,6 +1126,7 @@ func TestOrchestratorValidatesEveryCallBeforeInvokingTool(t *testing.T) {
 			conversation.tools = []Tool{tool}
 
 			stream := conversation.Send(context.Background(), Text{Text: "go"})
+			drainStream(stream)
 			if stream.Err() != nil || transportCalls != 2 || provider.decodeCalls != 2 {
 				t.Fatalf("recovering turn: err=%v transport=%d decode=%d", stream.Err(), transportCalls, provider.decodeCalls)
 			}
@@ -1026,6 +1172,7 @@ func TestUnknownAndDeferredDirectCallsRecoverWithoutGuessedExecution(t *testing.
 			}
 
 			stream := conversation.Send(context.Background(), Text{Text: "go"})
+			drainStream(stream)
 			if stream.Err() != nil || callbackCalls != 0 || len(provider.states) != 2 {
 				t.Fatalf("turn err=%v callback=%d states=%d", stream.Err(), callbackCalls, len(provider.states))
 			}
@@ -1057,6 +1204,7 @@ func TestToolCallbackErrorIsCorrelatedDeliveredAndRecoverable(t *testing.T) {
 	}}}
 
 	stream := conversation.Send(context.Background(), Text{Text: "go"})
+	events := drainStream(stream)
 	if stream.Err() != nil || transportCalls != 2 || provider.decodeCalls != 2 {
 		t.Fatalf("turn err=%v transport=%d decode=%d", stream.Err(), transportCalls, provider.decodeCalls)
 	}
@@ -1064,14 +1212,15 @@ func TestToolCallbackErrorIsCorrelatedDeliveredAndRecoverable(t *testing.T) {
 	if !result.IsError || result.ToolUseID != "callback-id" || result.Content != distinctive {
 		t.Fatalf("callback result = %#v", result)
 	}
-	if !reflect.DeepEqual(stream.events[len(stream.events)-1], MessageDone{Message: final}) {
-		t.Fatalf("turn did not complete after callback error: %#v", stream.events)
+	if !reflect.DeepEqual(events[len(events)-1], MessageDone{Message: final}) {
+		t.Fatalf("turn did not complete after callback error: %#v", events)
 	}
 }
 
 func TestTerminalFailuresAfterCompletedRoundTripPreserveEventsAndAtomicHistory(t *testing.T) {
 	// R-4Q7J-RUDE
 	// R-4SNC-JDUS
+	// R-53MF-ZBJ1
 	tests := []struct {
 		name      string
 		decodeErr error
@@ -1119,6 +1268,7 @@ func TestTerminalFailuresAfterCompletedRoundTripPreserveEventsAndAtomicHistory(t
 			}
 
 			stream := conversation.Send(context.Background(), Text{Text: "do not commit"})
+			events := drainStream(stream)
 			expected := test.wantErr
 			if test.name == "decode" {
 				expected = test.decodeErr
@@ -1140,15 +1290,15 @@ func TestTerminalFailuresAfterCompletedRoundTripPreserveEventsAndAtomicHistory(t
 			if toolCalls != 1 || transport.calls != 2 || len(provider.states) != 2 || provider.classifyCalls != wantClassifyCalls {
 				t.Fatalf("calls after terminal error: tool=%d transport=%d build=%d classify=%d", toolCalls, transport.calls, len(provider.states), provider.classifyCalls)
 			}
-			wantEvents := 2
+			wantEvents := 3
 			if test.name == "decode" {
-				wantEvents = 3
+				wantEvents = 4
 			}
-			if len(stream.events) != wantEvents || !reflect.DeepEqual(stream.events[0], MessageDone{Message: first}) {
-				t.Fatalf("completed first-round events were lost: %#v", stream.events)
+			if len(events) != wantEvents || !reflect.DeepEqual(events[0], MessageDone{Message: first}) {
+				t.Fatalf("completed first-round events were lost: %#v", events)
 			}
-			if test.name == "decode" && !reflect.DeepEqual(stream.events[len(stream.events)-1], MessageDone{Message: partial}) {
-				t.Fatalf("message before decode failure was lost: %#v", stream.events)
+			if test.name == "decode" && !reflect.DeepEqual(events[len(events)-1], MessageDone{Message: partial}) {
+				t.Fatalf("message before decode failure was lost: %#v", events)
 			}
 		})
 	}
@@ -1201,6 +1351,7 @@ func TestProviderOptionsReservedCollisionFailsBeforeProviderBoundaries(t *testin
 	before, _ := json.Marshal(conversation.history)
 
 	stream := conversation.Send(context.Background(), Text{Text: "blocked"})
+	drainStream(stream)
 	if !errors.Is(stream.Err(), ErrInvalidConfig) {
 		t.Fatalf("Stream.Err() = %v, want ErrInvalidConfig", stream.Err())
 	}
@@ -1229,7 +1380,9 @@ func TestProviderOptionsNoncollidingSnapshotIsCloned(t *testing.T) {
 	wire := &phase15Wire{reserved: []string{"model"}}
 	conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "phase15", Model: "model"})
 	conversation.options = ProviderOptions{"safe": json.RawMessage(`{"verbatim":true}`)}
-	if stream := conversation.Send(context.Background(), Text{Text: "allowed"}); stream.Err() != nil {
+	stream := conversation.Send(context.Background(), Text{Text: "allowed"})
+	drainStream(stream)
+	if stream.Err() != nil {
 		t.Fatal(stream.Err())
 	}
 	if wire.encodeCalls != 1 || !bytes.Equal(wire.state.Options["safe"], []byte(`{"verbatim":true}`)) {

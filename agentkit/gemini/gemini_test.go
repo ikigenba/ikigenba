@@ -26,7 +26,9 @@ func TestNewSelectsGeminiWire(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conversation.Send(context.Background(), agentkit.Text{Text: "hello"})
+	for event := range conversation.Send(context.Background(), agentkit.Text{Text: "hello"}).Events() {
+		_ = event
+	}
 	if _, exists := (<-seen)["contents"]; !exists {
 		t.Fatal("Gemini constructor did not select the Gemini codec")
 	}

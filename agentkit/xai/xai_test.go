@@ -33,7 +33,9 @@ func TestAPISelectsResponsesByDefaultAndChatAsAlternate(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		conversation.Send(context.Background(), agentkit.Text{Text: "hello"})
+		for event := range conversation.Send(context.Background(), agentkit.Text{Text: "hello"}).Events() {
+			_ = event
+		}
 		if _, exists := (<-seen)[check.key]; !exists {
 			t.Fatalf("selected wire body lacks %q", check.key)
 		}

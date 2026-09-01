@@ -52,7 +52,7 @@ type RequestState struct {
 
 // Stream is the live view of one turn's events.
 type Stream struct {
-	events   []Event
+	drive    func(func(Event) bool) error
 	err      error
 	consumed bool
 }
@@ -64,10 +64,9 @@ func (s *Stream) Events() iter.Seq[Event] {
 			return
 		}
 		s.consumed = true
-		for _, event := range s.events {
-			if !yield(event) {
-				return
-			}
+		if s.drive != nil {
+			s.err = s.drive(yield)
+			s.drive = nil
 		}
 	}
 }
