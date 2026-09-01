@@ -19,6 +19,7 @@ type Conversation struct {
 	settings Settings
 	options  ProviderOptions
 	tools    []Tool
+	deferred []deferredGroup
 	validate func() error
 }
 
@@ -38,26 +39,52 @@ func NewConversation(provider Provider, client *http.Client) *Conversation {
 // life; only the transcript grows. Send is the one verb — multimodal input
 // arrives as additional Block variants, never as a second method.
 func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream {
-	if err := c.validateConfig(); err != nil {
+	orchestrator, err := c.prepareOrchestrator()
+	if err != nil {
 		return &Stream{err: invalidConfigError(c.identity, err)}
 	}
+	turn := c.snapshotTurn(blocks)
+	return c.driveTurn(ctx, orchestrator, turn)
+}
 
-	userMessage := Message{Role: RoleUser, Blocks: cloneBlocks(blocks)}
-	turn := History{userMessage}
-	baseHistory := cloneHistory(c.history)
-	settings := cloneSettings(c.settings)
-	options := cloneProviderOptions(c.options)
-	tools := cloneTools(c.tools)
+func (c *Conversation) prepareOrchestrator() (*orchestrator, error) {
+	orchestrator := newOrchestrator(c.tools, c.deferred)
+	if err := validateToolSet(orchestrator.inventory); err != nil {
+		return nil, err
+	}
+	if err := c.validateConfig(); err != nil {
+		return nil, err
+	}
+	return orchestrator, nil
+}
+
+type turnSnapshot struct {
+	baseHistory History
+	turn        History
+	settings    Settings
+	options     ProviderOptions
+}
+
+func (c *Conversation) snapshotTurn(blocks []Block) turnSnapshot {
+	return turnSnapshot{
+		baseHistory: cloneHistory(c.history),
+		turn:        History{{Role: RoleUser, Blocks: cloneBlocks(blocks)}},
+		settings:    cloneSettings(c.settings),
+		options:     cloneProviderOptions(c.options),
+	}
+}
+
+func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator, snapshot turnSnapshot) *Stream {
 	stream := &Stream{}
 
 	for {
-		candidate := append(cloneHistory(baseHistory), cloneHistory(turn)...)
+		candidate := append(cloneHistory(snapshot.baseHistory), cloneHistory(snapshot.turn)...)
 		round := c.roundTrip(ctx, RequestState{
 			Model:    c.identity.Model,
 			History:  candidate,
-			Settings: cloneSettings(settings),
-			Options:  cloneProviderOptions(options),
-			Tools:    cloneTools(tools),
+			Settings: cloneSettings(snapshot.settings),
+			Options:  cloneProviderOptions(snapshot.options),
+			Tools:    orchestrator.advertisedSnapshot(),
 		})
 		stream.events = append(stream.events, round.events...)
 		if round.err != nil {
@@ -66,14 +93,18 @@ func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream {
 		}
 
 		assistant, calls := completedAssistantMessages(round.events)
-		turn = append(turn, assistant...)
+		snapshot.turn = append(snapshot.turn, assistant...)
 		if len(calls) == 0 {
-			c.history = append(c.history, cloneHistory(turn)...)
+			c.history = append(c.history, cloneHistory(snapshot.turn)...)
 			return stream
 		}
 
-		toolMessage := Message{Role: RoleTool, Blocks: c.dispatchTools(ctx, tools, calls)}
-		turn = append(turn, toolMessage)
+		results := make([]Block, 0, len(calls))
+		for _, call := range calls {
+			results = append(results, orchestrator.dispatch(ctx, call))
+		}
+		toolMessage := Message{Role: RoleTool, Blocks: results}
+		snapshot.turn = append(snapshot.turn, toolMessage)
 		stream.events = append(stream.events, Message{Role: toolMessage.Role, Blocks: cloneBlocks(toolMessage.Blocks)})
 	}
 }
@@ -131,34 +162,6 @@ func completedAssistantMessages(events []Event) (History, []ToolUse) {
 		}
 	}
 	return messages, calls
-}
-
-func (c *Conversation) dispatchTools(ctx context.Context, tools []Tool, calls []ToolUse) []Block {
-	byName := make(map[string]Tool, len(tools))
-	for _, tool := range tools {
-		byName[tool.Name()] = tool
-	}
-	results := make([]Block, 0, len(calls))
-	for _, call := range calls {
-		result := ToolResult{ToolUseID: call.ID}
-		tool, exists := byName[call.Name]
-		if !exists {
-			result.Content = fmt.Sprintf("agentkit: unknown tool %q", call.Name)
-			result.IsError = true
-		} else if err := validateToolArguments(tool.Schema(), call.Input); err != nil {
-			result.Content = fmt.Sprintf("agentkit: invalid arguments for tool %q: %v", call.Name, err)
-			result.IsError = true
-		} else {
-			content, err := tool.Call(ctx, append(json.RawMessage(nil), call.Input...))
-			result.Content = content
-			if err != nil {
-				result.Content = err.Error()
-				result.IsError = true
-			}
-		}
-		results = append(results, result)
-	}
-	return results
 }
 
 func cloneHistory(history History) History {

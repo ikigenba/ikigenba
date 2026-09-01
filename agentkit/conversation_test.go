@@ -850,6 +850,218 @@ func TestToolDispatchFailuresAreInBandAndRecoverable(t *testing.T) {
 	}
 }
 
+type phase17CountingTool struct {
+	name        string
+	schema      json.RawMessage
+	schemaCalls int
+	call        func(context.Context, json.RawMessage) (string, error)
+}
+
+func (t *phase17CountingTool) Name() string            { return t.name }
+func (t *phase17CountingTool) Description() string     { return "phase 17 fixture" }
+func (t *phase17CountingTool) Schema() json.RawMessage { t.schemaCalls++; return t.schema }
+func (t *phase17CountingTool) isTool()                 {}
+func (t *phase17CountingTool) Call(ctx context.Context, input json.RawMessage) (string, error) {
+	return t.call(ctx, input)
+}
+
+func phase17Tool(name string) Tool {
+	return concreteTool{
+		name:   name,
+		schema: json.RawMessage(`{"type":"object","properties":{}}`),
+		call:   func(context.Context, json.RawMessage) (string, error) { return "ok", nil },
+	}
+}
+
+func TestSendGatesTheCompleteLiveToolSetOnceBeforeAllBoundaries(t *testing.T) {
+	// R-4F8G-BWP5
+	// R-4GGC-POFU
+	tests := []struct {
+		name     string
+		eager    []Tool
+		deferred []deferredGroup
+	}{
+		{name: "invalid eager schema", eager: []Tool{concreteTool{name: "bad", schema: json.RawMessage(`{"type":"array"}`)}}},
+		{name: "duplicate eager eager", eager: []Tool{phase17Tool("same"), phase17Tool("same")}},
+		{name: "duplicate eager deferred", eager: []Tool{phase17Tool("same")}, deferred: []deferredGroup{{tools: []Tool{phase17Tool("same")}}}},
+		{name: "duplicate deferred deferred", deferred: []deferredGroup{{tools: []Tool{phase17Tool("same")}}, {tools: []Tool{phase17Tool("same")}}}},
+		{name: "consumer collides with load tools", eager: []Tool{phase17Tool(loadToolsName)}, deferred: []deferredGroup{{tools: []Tool{phase17Tool("later")}}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			provider := &phase15Provider{model: "model"}
+			transportCalls := 0
+			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+			conversation.tools = test.eager
+			conversation.deferred = test.deferred
+			callbackCalls := 0
+			conversation.validate = func() error { callbackCalls++; return nil }
+			conversation.history = History{{Role: RoleSystem, Blocks: []Block{Text{Text: "unchanged"}}}}
+			before, err := json.Marshal(conversation.history)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			stream := conversation.Send(context.Background(), Text{Text: "never sent"})
+			after, err := json.Marshal(conversation.history)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !errors.Is(stream.Err(), ErrInvalidConfig) {
+				t.Fatalf("Stream.Err() = %v, want ErrInvalidConfig", stream.Err())
+			}
+			if transportCalls != 0 || len(provider.states) != 0 || provider.decodeCalls != 0 || provider.classifyCalls != 0 || callbackCalls != 0 {
+				t.Fatalf("boundary calls: transport=%d build=%d decode=%d classify=%d callback=%d", transportCalls, len(provider.states), provider.decodeCalls, provider.classifyCalls, callbackCalls)
+			}
+			if !bytes.Equal(before, after) {
+				t.Fatalf("history changed: before=%s after=%s", before, after)
+			}
+		})
+	}
+
+	counting := &phase17CountingTool{
+		name:   "counted",
+		schema: json.RawMessage(`{"type":"object","properties":{}}`),
+		call:   func(context.Context, json.RawMessage) (string, error) { return "ok", nil },
+	}
+	first := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "count-call", Name: "counted", Input: json.RawMessage(`{}`)}}}
+	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{first}, {final}}}
+	transportCalls := 0
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation.tools = []Tool{counting}
+	if stream := conversation.Send(context.Background(), Text{Text: "go"}); stream.Err() != nil {
+		t.Fatal(stream.Err())
+	}
+	if counting.schemaCalls != 2 {
+		t.Fatalf("Schema calls = %d, want one gate plus one dispatch validation (not a second-round gate)", counting.schemaCalls)
+	}
+}
+
+func TestOrchestratorValidatesEveryCallBeforeInvokingTool(t *testing.T) {
+	// R-4HO9-3G6J
+	// R-4K41-UZNX
+	schema := json.RawMessage(`{"type":"object","properties":{"place":{"type":"object","properties":{"city":{"type":"string","minLength":2,"pattern":"^[A-Z]"}},"required":["city"]}},"required":["place"]}`)
+	tests := []struct {
+		name  string
+		input json.RawMessage
+		valid bool
+	}{
+		{name: "malformed JSON", input: json.RawMessage(`{"place":`)},
+		{name: "trailing JSON", input: json.RawMessage(`{"place":{"city":"Oslo"}} {}`)},
+		{name: "wrong type", input: json.RawMessage(`{"place":{"city":7}}`)},
+		{name: "missing required", input: json.RawMessage(`{"place":{}}`)},
+		{name: "nested constraint", input: json.RawMessage(`{"place":{"city":"oslo"}}`)},
+		{name: "valid exact bytes", input: json.RawMessage(" {\n\t\"place\": {\"city\":\"Oslo\"}} "), valid: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			callbackCalls := 0
+			var callbackInput json.RawMessage
+			tool, err := NewToolFromSchema("lookup", "", schema, func(_ context.Context, input json.RawMessage) (string, error) {
+				callbackCalls++
+				callbackInput = append(json.RawMessage(nil), input...)
+				return "accepted", nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			first := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "validation-id", Name: "lookup", Input: test.input}}}
+			final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "recovered"}}}
+			provider := &phase15Provider{model: "model", responses: [][]Event{{first}, {final}}}
+			transportCalls := 0
+			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+			conversation.tools = []Tool{tool}
+
+			stream := conversation.Send(context.Background(), Text{Text: "go"})
+			if stream.Err() != nil || transportCalls != 2 || provider.decodeCalls != 2 {
+				t.Fatalf("recovering turn: err=%v transport=%d decode=%d", stream.Err(), transportCalls, provider.decodeCalls)
+			}
+			result := provider.states[1].History[len(provider.states[1].History)-1].Blocks[0].(ToolResult)
+			if test.valid {
+				if callbackCalls != 1 || !bytes.Equal(callbackInput, test.input) || result.IsError || result.Content != "accepted" {
+					t.Fatalf("valid dispatch: calls=%d input=%q result=%#v", callbackCalls, callbackInput, result)
+				}
+			} else if callbackCalls != 0 || !result.IsError || !strings.Contains(result.Content, "invalid arguments") {
+				t.Fatalf("invalid dispatch: calls=%d result=%#v", callbackCalls, result)
+			}
+		})
+	}
+}
+
+func TestUnknownAndDeferredDirectCallsRecoverWithoutGuessedExecution(t *testing.T) {
+	// R-4IW5-H7X8
+	for _, test := range []struct {
+		name          string
+		deferred      bool
+		wantNextTools []string
+	}{
+		{name: "wholly unknown", wantNextTools: nil},
+		{name: "known deferred unloaded", deferred: true, wantNextTools: []string{loadToolsName, "secret"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			callName := "missing"
+			callbackCalls := 0
+			first := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "unknown-id", Name: callName, Input: json.RawMessage(`{"guessed":true}`)}}}
+			final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "recovered"}}}
+			provider := &phase15Provider{model: "model", responses: [][]Event{{first}, {final}}}
+			transportCalls := 0
+			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+			if test.deferred {
+				callName = "secret"
+				first.Blocks[0] = ToolUse{ID: "unknown-id", Name: callName, Input: json.RawMessage(`{"guessed":true}`)}
+				provider.responses[0] = []Event{first}
+				secret := concreteTool{name: callName, schema: json.RawMessage(`{"type":"object","properties":{}}`), call: func(context.Context, json.RawMessage) (string, error) {
+					callbackCalls++
+					return "must not execute", nil
+				}}
+				conversation.deferred = []deferredGroup{{tools: []Tool{secret}}}
+			}
+
+			stream := conversation.Send(context.Background(), Text{Text: "go"})
+			if stream.Err() != nil || callbackCalls != 0 || len(provider.states) != 2 {
+				t.Fatalf("turn err=%v callback=%d states=%d", stream.Err(), callbackCalls, len(provider.states))
+			}
+			result := provider.states[1].History[len(provider.states[1].History)-1].Blocks[0].(ToolResult)
+			if !result.IsError || result.ToolUseID != "unknown-id" || !strings.Contains(result.Content, "unknown tool") {
+				t.Fatalf("unknown result = %#v", result)
+			}
+			var names []string
+			for _, tool := range provider.states[1].Tools {
+				names = append(names, tool.Name())
+			}
+			if !reflect.DeepEqual(names, test.wantNextTools) {
+				t.Fatalf("next tools = %v, want %v", names, test.wantNextTools)
+			}
+		})
+	}
+}
+
+func TestToolCallbackErrorIsCorrelatedDeliveredAndRecoverable(t *testing.T) {
+	// R-4LBY-8REM
+	distinctive := "phase17 backend exploded β"
+	first := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "callback-id", Name: "boom", Input: json.RawMessage(`{}`)}}}
+	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "recovered"}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{first}, {final}}}
+	transportCalls := 0
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation.tools = []Tool{concreteTool{name: "boom", schema: json.RawMessage(`{"type":"object","properties":{}}`), call: func(context.Context, json.RawMessage) (string, error) {
+		return "discarded", errors.New(distinctive)
+	}}}
+
+	stream := conversation.Send(context.Background(), Text{Text: "go"})
+	if stream.Err() != nil || transportCalls != 2 || provider.decodeCalls != 2 {
+		t.Fatalf("turn err=%v transport=%d decode=%d", stream.Err(), transportCalls, provider.decodeCalls)
+	}
+	result := provider.states[1].History[len(provider.states[1].History)-1].Blocks[0].(ToolResult)
+	if !result.IsError || result.ToolUseID != "callback-id" || result.Content != distinctive {
+		t.Fatalf("callback result = %#v", result)
+	}
+	if !reflect.DeepEqual(stream.events[len(stream.events)-1], final) {
+		t.Fatalf("turn did not complete after callback error: %#v", stream.events)
+	}
+}
+
 func TestTerminalFailuresAfterCompletedRoundTripPreserveEventsAndAtomicHistory(t *testing.T) {
 	// R-4Q7J-RUDE
 	// R-4SNC-JDUS

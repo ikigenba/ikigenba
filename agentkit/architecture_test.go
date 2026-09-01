@@ -1202,6 +1202,93 @@ func TestToolUseDeclaration(t *testing.T) {
 	})
 }
 
+func TestRuntimeToolValidationIsOwnedOnlyByTheUnexportedOrchestrator(t *testing.T) {
+	// R-4MJU-MJ5B
+	// R-4F8G-BWP5
+	gate := declaredFunction(t, "orchestrator.go", "validateToolSet")
+	if gate.Name.IsExported() || gate.Recv != nil || renderedNode(t, gate.Type) != "func(tools []Tool) error" {
+		t.Fatalf("validateToolSet declaration = %s receiver=%v exported=%t", renderedNode(t, gate.Type), gate.Recv != nil, gate.Name.IsExported())
+	}
+	gateCallsSchemaValidator := false
+	ast.Inspect(gate.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		identifier, direct := func() (*ast.Ident, bool) {
+			if !ok {
+				return nil, false
+			}
+			identifier, direct := call.Fun.(*ast.Ident)
+			return identifier, direct
+		}()
+		if direct && identifier.Name == "ValidateToolSchema" {
+			gateCallsSchemaValidator = true
+		}
+		return true
+	})
+	if !gateCallsSchemaValidator {
+		t.Fatal("validateToolSet does not call ValidateToolSchema")
+	}
+
+	dispatch := declaredFunction(t, "orchestrator.go", "dispatch")
+	if dispatch.Name.IsExported() || dispatch.Recv == nil || renderedNode(t, dispatch.Type) != "func(ctx context.Context, call ToolUse) ToolResult" || renderedNode(t, dispatch.Recv.List[0].Type) != "*orchestrator" {
+		t.Fatalf("dispatch declaration = receiver %s type %s", renderedNode(t, dispatch.Recv.List[0].Type), renderedNode(t, dispatch.Type))
+	}
+
+	validatorCalls := 0
+	toolCalls := 0
+	validatorDeclarations := 0
+	err := filepath.WalkDir(".", func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		parsed, parseErr := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+		if parseErr != nil {
+			return parseErr
+		}
+		for _, declaration := range parsed.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if ok && function.Name.Name == "validateToolArguments" {
+				validatorDeclarations++
+				if function.Name.IsExported() {
+					t.Errorf("argument validator %s is exported", function.Name.Name)
+				}
+			}
+		}
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			switch called := call.Fun.(type) {
+			case *ast.Ident:
+				if called.Name == "validateToolArguments" {
+					validatorCalls++
+					if filepath.Base(path) != "orchestrator.go" {
+						t.Errorf("argument validator called outside orchestrator.go: %s", path)
+					}
+				}
+			case *ast.SelectorExpr:
+				if called.Sel.Name == "Call" {
+					toolCalls++
+					if filepath.Base(path) != "orchestrator.go" {
+						t.Errorf("runtime Tool.Call outside orchestrator.go: %s", path)
+					}
+				}
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if validatorDeclarations != 1 || validatorCalls != 1 || toolCalls != 1 {
+		t.Fatalf("runtime seam counts: validator declarations=%d calls=%d Tool.Call=%d, want 1/1/1", validatorDeclarations, validatorCalls, toolCalls)
+	}
+}
+
 func TestToolResultDeclaration(t *testing.T) {
 	// R-Z4IR-LZVS
 	assertExactBlockStruct(t, reflect.TypeFor[ToolResult](), []exactStructField{

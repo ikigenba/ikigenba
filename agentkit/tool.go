@@ -233,26 +233,28 @@ func applyToolSchemaTag(schema map[string]any, tag string) (bool, error) {
 }
 
 func parseToolEnumValue(typeName any, raw string) (any, error) {
-	var (
-		value any
-		err   error
-	)
 	switch typeName {
 	case "string":
-		value = raw
+		return raw, nil
 	case "integer":
-		value, err = strconv.ParseInt(raw, 10, 64)
+		value, err := strconv.ParseInt(raw, 10, 64)
+		if err == nil {
+			return value, nil
+		}
 	case "number":
-		value, err = strconv.ParseFloat(raw, 64)
+		value, err := strconv.ParseFloat(raw, 64)
+		if _, finite := finiteToolNumber(value); err == nil && finite {
+			return value, nil
+		}
 	case "boolean":
-		value, err = strconv.ParseBool(raw)
+		value, err := strconv.ParseBool(raw)
+		if err == nil {
+			return value, nil
+		}
 	default:
 		return nil, fmt.Errorf("is not supported for schema type %q", typeName)
 	}
-	if err != nil || !toolEnumMatchesType(value, typeName.(string)) {
-		return nil, fmt.Errorf("must match schema type %q", typeName)
-	}
-	return value, nil
+	return nil, fmt.Errorf("must match schema type %q", typeName)
 }
 
 func parseToolNumber(key, raw string, hasValue bool) (float64, error) {
@@ -263,7 +265,7 @@ func parseToolNumber(key, raw string, hasValue bool) (float64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("%s requires a number", key)
 	}
-	if math.IsInf(value, 0) || math.IsNaN(value) {
+	if _, finite := finiteToolNumber(value); !finite {
 		return 0, fmt.Errorf("%s requires a finite number", key)
 	}
 	return value, nil
@@ -637,25 +639,6 @@ func validateNonNegativeSchemaInteger(schema map[string]any, path, keyword strin
 	return nil
 }
 
-func validateToolArguments(schema, arguments json.RawMessage) error {
-	var schemaNode map[string]any
-	schemaDecoder := json.NewDecoder(bytes.NewReader(schema))
-	schemaDecoder.UseNumber()
-	if err := schemaDecoder.Decode(&schemaNode); err != nil {
-		return fmt.Errorf("decode schema: %w", err)
-	}
-	var value any
-	argumentDecoder := json.NewDecoder(bytes.NewReader(arguments))
-	argumentDecoder.UseNumber()
-	if err := argumentDecoder.Decode(&value); err != nil {
-		return fmt.Errorf("decode JSON: %w", err)
-	}
-	if err := ensureToolSchemaEOF(argumentDecoder); err != nil {
-		return err
-	}
-	return validateToolArgumentNode(schemaNode, value, "$")
-}
-
 func validateToolArgumentNode(schema map[string]any, value any, path string) error {
 	for _, nullable := range []string{"anyOf", "oneOf"} {
 		if raw, ok := schema[nullable]; ok {
@@ -781,12 +764,7 @@ func toolArgumentMatchesType(value any, typeName string) bool {
 		_, ok := value.(json.Number)
 		return ok
 	case "integer":
-		number, ok := value.(json.Number)
-		if !ok {
-			return false
-		}
-		_, err := strconv.ParseInt(number.String(), 10, 64)
-		return err == nil
+		return isToolInteger(value)
 	default:
 		return false
 	}
