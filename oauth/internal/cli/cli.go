@@ -49,6 +49,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Deps
 	if err != nil {
 		return reportFailure(stderr, err)
 	}
+	if warning := server.BindWarning(); warning != nil {
+		_, _ = fmt.Fprintf(stderr, "warning: IPv6 loopback bind failed: %s\n", strconv.Quote(warning.Error()))
+	}
 	defer func() { _ = server.Close() }()
 
 	client, session, code, proceed := authorize(validated, server, stderr, deps)
@@ -162,9 +165,9 @@ func exchange(
 	if err != nil {
 		return reportFailure(stderr, err)
 	}
-	// Phase 8 owns observable stdout-write failure handling.
-	// llm-lint:ignore discarded-output-write-error
-	_, _ = stdout.Write(tokens)
+	if _, err := stdout.Write(tokens); err != nil {
+		return reportFailure(stderr, err)
+	}
 
 	return exitSuccess
 }

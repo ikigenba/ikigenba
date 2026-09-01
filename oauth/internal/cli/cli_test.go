@@ -132,6 +132,7 @@ type runConfig struct {
 	disableCallback      bool
 	callbackStderrMarker string
 	launcherError        error
+	ipv6BindError        error
 	tokenStatus          int
 	tokenBody            []byte
 	stdout               io.Writer
@@ -201,6 +202,9 @@ func runLogin(t *testing.T, config runConfig) successfulRun {
 	var listenConfig net.ListenConfig
 	listen := func(network, address string) (net.Listener, error) {
 		capture.callLog = append(capture.callLog, "listen:"+network)
+		if network == "tcp6" && config.ipv6BindError != nil {
+			return nil, config.ipv6BindError
+		}
 		listener, err := listenConfig.Listen(ctx, network, address)
 		if err == nil && network == "tcp4" {
 			_, portText, splitErr := net.SplitHostPort(listener.Addr().String())
@@ -439,6 +443,91 @@ func countCalls(callLog []string, want string) int {
 	}
 
 	return count
+}
+
+type recordingErrorWriter struct {
+	mu      sync.Mutex
+	written bytes.Buffer
+	err     error
+}
+
+func (writer *recordingErrorWriter) Write(data []byte) (int, error) {
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+
+	_, _ = writer.written.Write(data)
+
+	return 0, writer.err
+}
+
+func (writer *recordingErrorWriter) Bytes() []byte {
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+
+	return append([]byte(nil), writer.written.Bytes()...)
+}
+
+// R-EP3L-T4JG
+func TestRunReportsStdoutWriteError(t *testing.T) {
+	writeErr := errors.New("distinctive phase-eight stdout delivery failure")
+	tokenBody := []byte("phase-eight-token-response\x00\xff")
+	stdout := &recordingErrorWriter{err: writeErr}
+	capture := runLogin(t, runConfig{
+		args:      validArgs(),
+		tokenBody: tokenBody,
+		stdout:    stdout,
+	})
+
+	if capture.exitCode != 1 {
+		t.Errorf("Run() exit code = %d, want 1; stderr = %q", capture.exitCode, capture.stderr)
+	}
+	if got := stdout.Bytes(); !bytes.Equal(got, tokenBody) {
+		t.Errorf("stdout writer received %q, want exact token bytes %q", got, tokenBody)
+	}
+	if !bytes.Contains(capture.stderr, []byte(writeErr.Error())) {
+		t.Errorf("stderr = %q, want stdout write error %q", capture.stderr, writeErr)
+	}
+	if bytes.Contains(stdout.Bytes(), []byte(writeErr.Error())) {
+		t.Errorf("stdout writer received diagnostic %q", writeErr)
+	}
+	if capture.tokenCalls != 1 || capture.tokenForm.Get("code") != "known-code" {
+		t.Errorf("token exchange calls = %d, code = %q; want completed exchange with known-code",
+			capture.tokenCalls, capture.tokenForm.Get("code"))
+	}
+}
+
+// R-EQBI-6WA5
+func TestRunWarnsAndContinuesAfterIPv6BindFailure(t *testing.T) {
+	bindErr := errors.New("distinctive phase-eight IPv6 bind failure")
+	tokenBody := []byte("phase-eight-ipv4-token\r\n")
+	capture := runLogin(t, runConfig{
+		args:          validArgs(),
+		ipv6BindError: bindErr,
+		tokenBody:     tokenBody,
+	})
+
+	if capture.exitCode != 0 {
+		t.Fatalf("Run() exit code = %d, want 0; stderr = %q", capture.exitCode, capture.stderr)
+	}
+	if len(capture.callLog) < 2 || !reflect.DeepEqual(capture.callLog[:2], []string{"listen:tcp4", "listen:tcp6"}) {
+		t.Errorf("first calls = %v, want ordered IPv4 then IPv6 bind attempts", capture.callLog)
+	}
+	if !bytes.Contains(capture.stderr, []byte("IPv6 loopback bind failed")) {
+		t.Errorf("stderr = %q, want warning naming IPv6 bind failure", capture.stderr)
+	}
+	if !bytes.Contains(capture.stderr, []byte(bindErr.Error())) {
+		t.Errorf("stderr = %q, want bind error %q", capture.stderr, bindErr)
+	}
+	if bytes.Contains(capture.stdout, []byte(bindErr.Error())) || bytes.Contains(capture.stdout, []byte("IPv6")) {
+		t.Errorf("stdout = %q, must not contain bind warning", capture.stdout)
+	}
+	if !bytes.Equal(capture.stdout, tokenBody) {
+		t.Errorf("stdout = %q, want exact token bytes %q", capture.stdout, tokenBody)
+	}
+	if capture.tokenCalls != 1 || capture.tokenForm.Get("code") != "known-code" {
+		t.Errorf("token exchange calls = %d, code = %q; want continuation through exchange over IPv4",
+			capture.tokenCalls, capture.tokenForm.Get("code"))
+	}
 }
 
 // R-EJ03-W9TZ
