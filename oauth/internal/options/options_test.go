@@ -48,6 +48,64 @@ Flags:
         print version and exit
 `
 
+// R-M68L-ADTD
+func TestOptionsHasExactExportedStructShape(t *testing.T) {
+	t.Parallel()
+
+	got := reflect.TypeOf(options.Options{})
+	if got.Kind() != reflect.Struct {
+		t.Fatalf("options.Options kind = %v, want %v", got.Kind(), reflect.Struct)
+	}
+	if got.Name() != "Options" {
+		t.Errorf("options.Options type name = %q, want %q", got.Name(), "Options")
+	}
+	const wantPackagePath = "github.com/ikigenba/ikigenba/oauth/internal/options"
+	if got.PkgPath() != wantPackagePath {
+		t.Errorf("options.Options package path = %q, want %q", got.PkgPath(), wantPackagePath)
+	}
+
+	wantFields := []struct {
+		name string
+		typ  reflect.Type
+	}{
+		{"AuthURL", reflect.TypeOf((*url.URL)(nil))},
+		{"TokenURL", reflect.TypeOf((*url.URL)(nil))},
+		{"ClientID", reflect.TypeOf(string(""))},
+		{"Scope", reflect.TypeOf(string(""))},
+		{"ClientSecret", reflect.TypeOf(string(""))},
+		{"CallbackHost", reflect.TypeOf(string(""))},
+		{"Port", reflect.TypeOf(int(0))},
+		{"CallbackPath", reflect.TypeOf(string(""))},
+		{"AuthParams", reflect.TypeOf([]oauth.Param(nil))},
+		{"TokenParams", reflect.TypeOf([]oauth.Param(nil))},
+		{"TokenHeaders", reflect.TypeOf([]oauth.Param(nil))},
+		{"NoBrowser", reflect.TypeOf(bool(false))},
+		{"Timeout", reflect.TypeOf(time.Duration(0))},
+		{"Version", reflect.TypeOf(bool(false))},
+	}
+	if got.NumField() != len(wantFields) {
+		t.Fatalf("options.Options field count = %d, want exactly %d", got.NumField(), len(wantFields))
+	}
+	for index, want := range wantFields {
+		field := got.Field(index)
+		if field.Name != want.name {
+			t.Errorf("options.Options field %d name = %q, want %q", index, field.Name, want.name)
+		}
+		if field.Type != want.typ {
+			t.Errorf("options.Options field %d (%s) type = %v, want %v", index, field.Name, field.Type, want.typ)
+		}
+		if !field.IsExported() {
+			t.Errorf("options.Options field %d (%s) is unexported (package path %q), want exported", index, field.Name, field.PkgPath)
+		}
+		if field.Anonymous {
+			t.Errorf("options.Options field %d (%s) is anonymous, want named", index, field.Name)
+		}
+		if field.Tag != "" {
+			t.Errorf("options.Options field %d (%s) tag = %q, want empty", index, field.Name, field.Tag)
+		}
+	}
+}
+
 // R-R5YG-YXBO
 func TestUsageBeginsWithExactFlagsBlock(t *testing.T) {
 	t.Parallel()
