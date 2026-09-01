@@ -80,6 +80,7 @@ func TestNewEndpointAcceptsIndependentlyImplementedBareAuthApplier(t *testing.T)
 func TestVendorCredentialsAndOptionsAreCompileTimeIsolated(t *testing.T) {
 	// R-3IB6-03OE
 	// R-YPOE-6GA4
+	// R-65FB-U7IK
 	temporary := t.TempDir()
 	writeCompileFixture(t, temporary)
 	output, err := runCompileFixture(temporary)
@@ -101,6 +102,9 @@ replace github.com/ikigenba/ikigenba/agentkit => ` + moduleRoot(t) + "\n"
 	source := `package compilefixture
 
 import (
+	"net/http"
+
+	"github.com/ikigenba/ikigenba/agentkit"
 	"github.com/ikigenba/ikigenba/agentkit/anthropic"
 	"github.com/ikigenba/ikigenba/agentkit/gemini"
 	"github.com/ikigenba/ikigenba/agentkit/openai"
@@ -115,6 +119,8 @@ func invalid() {
 	_, _ = openrouter.New(gemini.APIKey("wrong"), "model")
 	_, _ = gemini.New(xai.APIKey("wrong"), "model")
 	_, _ = anthropic.New(anthropic.APIKey("key"), "model", openai.WithBaseURL("https://example.test"))
+	_, _ = anthropic.New(anthropic.APIKey("key"), "model", agentkit.WithHTTPClient(http.DefaultClient))
+	_, _ = agentkit.NewEndpoint("https://example.test", nil, openai.WithBaseURL("https://example.test"))
 }
 `
 	if err := os.WriteFile(filepath.Join(directory, "go.mod"), []byte(module), 0o600); err != nil {
@@ -134,7 +140,7 @@ func runCompileFixture(directory string) ([]byte, error) {
 
 func assertCompileIsolation(t *testing.T, output []byte) {
 	t.Helper()
-	for _, want := range []string{"missing method apply", "openai.Option"} {
+	for _, want := range []string{"missing method apply", "openai.Option", "agentkit.EndpointOption"} {
 		if !strings.Contains(string(output), want) {
 			t.Fatalf("compile failure missing %q:\n%s", want, output)
 		}

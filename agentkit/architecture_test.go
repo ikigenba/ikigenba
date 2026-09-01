@@ -513,6 +513,43 @@ func TestToolDeclarationIsExactAndSealed(t *testing.T) {
 	}
 }
 
+func TestSiblingToolConstructionSurfaceIsExactAndSealed(t *testing.T) {
+	// R-5ZBT-XCT3
+	toolType := reflect.TypeFor[Tool]()
+	if toolType.Kind() != reflect.Interface || toolType.NumMethod() != 5 {
+		t.Fatalf("Tool = %s with %d methods, want sealed five-method interface", toolType, toolType.NumMethod())
+	}
+	marker, ok := toolType.MethodByName("isTool")
+	if !ok || marker.PkgPath == "" {
+		t.Fatal("Tool lacks its unexported package-sealing marker")
+	}
+
+	parsed, err := parser.ParseFile(token.NewFileSet(), "tool.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var constructors []string
+	for _, declaration := range parsed.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Recv != nil || !function.Name.IsExported() || function.Type.Results == nil {
+			continue
+		}
+		results := function.Type.Results.List
+		returnsTool := len(results) == 1 && renderedNode(t, results[0].Type) == "Tool"
+		returnsToolAndError := len(results) == 2 && renderedNode(t, results[0].Type) == "Tool" && renderedNode(t, results[1].Type) == "error"
+		if returnsTool || returnsToolAndError {
+			constructors = append(constructors, function.Name.Name)
+		}
+	}
+	want := []string{"NewTool", "MustTool", "NewToolFromSchema"}
+	if !reflect.DeepEqual(constructors, want) {
+		t.Fatalf("exported Tool constructors = %v, want exactly %v", constructors, want)
+	}
+	assertExactToolFunctionDeclaration(t, "NewTool", "func[In any](name, description string, fn func(ctx context.Context, in In) (string, error)) (Tool, error)")
+	assertExactToolFunctionDeclaration(t, "MustTool", "func[In any](name, description string, fn func(ctx context.Context, in In) (string, error)) Tool")
+	assertExactToolFunctionDeclaration(t, "NewToolFromSchema", "func(name, description string, schema json.RawMessage, fn func(ctx context.Context, args json.RawMessage) (string, error)) (Tool, error)")
+}
+
 func TestExternalPackageCannotImplementSealedTool(t *testing.T) {
 	// R-3Y5U-Z4BF
 	workingDirectory, err := os.Getwd()
@@ -559,6 +596,7 @@ var _ agentkit.Tool = outsider{}
 
 func TestJSONSchemaVocabularyIsDocumentedStringGrammarNotExportedConstants(t *testing.T) {
 	// R-431G-I7A7
+	// R-61RM-OWAH
 	parsed, err := parser.ParseFile(token.NewFileSet(), "tool.go", nil, parser.ParseComments)
 	if err != nil {
 		t.Fatal(err)
@@ -585,7 +623,8 @@ func TestJSONSchemaVocabularyIsDocumentedStringGrammarNotExportedConstants(t *te
 	}
 	for _, fragment := range []string{
 		"jsonschema string tag", "required", "enum=a|b", "description=text", "minimum=n", "maximum=n",
-		"minLength=n", "maxLength=n", "pattern=expr", "format=name", "minItems=n", "maxItems=n",
+		"exclusiveMinimum=n", "exclusiveMaximum=n", "multipleOf=n", "minLength=n", "maxLength=n",
+		"pattern=expr", "format=name", "minItems=n", "maxItems=n", "uniqueItems=true|false",
 	} {
 		if !strings.Contains(newToolDocumentation, fragment) {
 			t.Errorf("NewTool documentation does not describe string grammar fragment %q:\n%s", fragment, newToolDocumentation)
@@ -1692,6 +1731,60 @@ func TestNoWarningOrCategorySpecificErrorTypesAreExported(t *testing.T) {
 	}
 	if len(exportedErrorTypes) != 1 || exportedErrorTypes[0] != "Error" {
 		t.Fatalf("exported error types = %v, want only Error", exportedErrorTypes)
+	}
+}
+
+func TestSiblingContractWithholdsRootOwnedMechanismsAndKeepsOptionsLocal(t *testing.T) {
+	// R-65FB-U7IK
+	for _, filename := range []string{"tool.go", "orchestrator.go", "sse.go", "errors.go", "cost.go", "usage.go", "identity.go", "endpoint.go"} {
+		parsed, err := parser.ParseFile(token.NewFileSet(), filename, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, declaration := range parsed.Decls {
+			switch declaration := declaration.(type) {
+			case *ast.FuncDecl:
+				if declaration.Name.IsExported() && (declaration.Name.Name == "ValidateToolArguments" || declaration.Name.Name == "WithBaseURL") {
+					t.Fatalf("root exports prohibited function %s", declaration.Name.Name)
+				}
+			case *ast.GenDecl:
+				for _, specification := range declaration.Specs {
+					var names []*ast.Ident
+					switch specification := specification.(type) {
+					case *ast.TypeSpec:
+						names = []*ast.Ident{specification.Name}
+					case *ast.ValueSpec:
+						names = specification.Names
+					}
+					for _, name := range names {
+						if !name.IsExported() {
+							continue
+						}
+						lower := strings.ToLower(name.Name)
+						if name.Name == "Warning" || strings.Contains(lower, "outputcap") || strings.Contains(lower, "tooloutputlimit") {
+							t.Fatalf("root exports prohibited policy symbol %s", name.Name)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	rootOption := declaredType(t, "endpoint.go", "EndpointOption")
+	if rootOption.Assign.IsValid() || renderedNode(t, rootOption.Type) != "func(*endpointConfig) error" {
+		t.Fatalf("EndpointOption = %s alias=%t", renderedNode(t, rootOption.Type), rootOption.Assign.IsValid())
+	}
+	if got := renderedNode(t, declaredFunction(t, "endpoint.go", "WithHTTPClient").Type); got != "func(client *http.Client) EndpointOption" {
+		t.Fatalf("root WithHTTPClient declaration = %s", got)
+	}
+	for _, filename := range []string{"anthropic/anthropic.go", "openai/openai.go", "openrouter/openrouter.go", "gemini/gemini.go", "xai/xai.go"} {
+		option := declaredType(t, filename, "Option")
+		if option.Assign.IsValid() || renderedNode(t, option.Type) != "func(*config) error" {
+			t.Fatalf("%s Option = %s alias=%t", filename, renderedNode(t, option.Type), option.Assign.IsValid())
+		}
+		if got := renderedNode(t, declaredFunction(t, filename, "WithBaseURL").Type); got != "func(raw string) Option" {
+			t.Fatalf("%s WithBaseURL declaration = %s", filename, got)
+		}
 	}
 }
 

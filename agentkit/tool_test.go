@@ -101,6 +101,10 @@ type phase13UnknownTag struct {
 	Value string `json:"value" jsonschema:"madeUp=yes"`
 }
 
+type phase26UnsupportedInput struct {
+	Updates chan string `json:"updates"`
+}
+
 type phase13MapInput struct {
 	Values map[string]string `json:"values"`
 }
@@ -241,6 +245,48 @@ func TestNewToolFromSchemaValidatesAndPreservesRawBoundary(t *testing.T) {
 	}); invalidErr == nil || invalid != nil || !strings.Contains(invalidErr.Error(), "additionalProperties") {
 		t.Fatalf("invalid raw construction = %#v, %v", invalid, invalidErr)
 	}
+}
+
+func TestOnlyMustToolPanicsForInvalidSchemas(t *testing.T) {
+	// R-60JQ-B4JS
+	tests := []struct {
+		name string
+		call func() (Tool, error)
+	}{
+		{name: "malformed typed tag", call: func() (Tool, error) {
+			return NewTool("bad-tag", "", func(context.Context, phase13BadLengthTag) (string, error) { return "", nil })
+		}},
+		{name: "unsupported typed input", call: func() (Tool, error) {
+			return NewTool("bad-type", "", func(context.Context, phase26UnsupportedInput) (string, error) { return "", nil })
+		}},
+		{name: "malformed raw JSON", call: func() (Tool, error) {
+			return NewToolFromSchema("bad-json", "", json.RawMessage(`{"type":"object"`), func(context.Context, json.RawMessage) (string, error) { return "", nil })
+		}},
+		{name: "noncanonical raw schema", call: func() (Tool, error) {
+			return NewToolFromSchema("bad-subset", "", json.RawMessage(`{"type":"object","additionalProperties":true}`), func(context.Context, json.RawMessage) (string, error) { return "", nil })
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			panicked := false
+			var tool Tool
+			var err error
+			func() {
+				defer func() { panicked = recover() != nil }()
+				tool, err = test.call()
+			}()
+			if panicked || err == nil || tool != nil {
+				t.Fatalf("constructor result = tool %#v, error %v, panicked %t; want nil/useful error/no panic", tool, err, panicked)
+			}
+		})
+	}
+
+	defer func() {
+		if recovered := recover(); recovered == nil {
+			t.Fatal("MustTool accepted invalid schema without panicking")
+		}
+	}()
+	_ = MustTool("must-fail", "", func(context.Context, phase26UnsupportedInput) (string, error) { return "", nil })
 }
 
 func TestValidateToolSchemaRecursivelyDefinesCanonicalSubset(t *testing.T) {

@@ -1717,15 +1717,20 @@ func TestUnknownAndDeferredDirectCallsRecoverWithoutGuessedExecution(t *testing.
 
 func TestToolCallbackErrorIsCorrelatedDeliveredAndRecoverable(t *testing.T) {
 	// R-4LBY-8REM
-	distinctive := "phase17 backend exploded β"
+	// R-67V4-LQZY
+	distinctive := "dead MCP server mid-turn"
 	first := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "callback-id", Name: "boom", Input: json.RawMessage(`{}`)}}}
 	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "recovered"}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
 	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
-	conversation.tools = []Tool{concreteTool{name: "boom", schema: json.RawMessage(`{"type":"object","properties":{}}`), call: func(context.Context, json.RawMessage) (string, error) {
+	runtimeTool, err := NewToolFromSchema("boom", "remote tool", json.RawMessage(`{"type":"object","properties":{}}`), func(context.Context, json.RawMessage) (string, error) {
 		return "discarded", errors.New(distinctive)
-	}}}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation.tools = []Tool{runtimeTool}
 
 	stream := conversation.Send(context.Background(), Text{Text: "go"})
 	events := drainStream(stream)
@@ -1738,6 +1743,45 @@ func TestToolCallbackErrorIsCorrelatedDeliveredAndRecoverable(t *testing.T) {
 	}
 	if !reflect.DeepEqual(events[len(events)-1], MessageDone{Message: final}) {
 		t.Fatalf("turn did not complete after callback error: %#v", events)
+	}
+}
+
+func TestSiblingRuntimeSchemaAndRootEagerToolsShareTheSendTimeGate(t *testing.T) {
+	// R-66N8-7Z99
+	invalidSchema := json.RawMessage(`{"type":"object","additionalProperties":true}`)
+	for _, test := range []struct {
+		name string
+		tool func(*int) Tool
+	}{
+		{name: "sibling runtime schema fixture", tool: func(callbackCalls *int) Tool {
+			return &phase17CountingTool{name: "remote", schema: invalidSchema, call: func(context.Context, json.RawMessage) (string, error) {
+				*callbackCalls++
+				return "must not run", nil
+			}}
+		}},
+		{name: "root eager fixture", tool: func(callbackCalls *int) Tool {
+			return concreteTool{name: "eager", schema: invalidSchema, call: func(context.Context, json.RawMessage) (string, error) {
+				*callbackCalls++
+				return "must not run", nil
+			}}
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			provider := &phase15Provider{model: "model"}
+			transportCalls := 0
+			callbackCalls := 0
+			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+			conversation.tools = []Tool{test.tool(&callbackCalls)}
+
+			stream := conversation.Send(context.Background(), Text{Text: "blocked"})
+			events := drainStream(stream)
+			if !errors.Is(stream.Err(), ErrInvalidConfig) {
+				t.Fatalf("Send error = %v, want ErrInvalidConfig", stream.Err())
+			}
+			if len(events) != 0 || transportCalls != 0 || len(provider.states) != 0 || provider.decodeCalls != 0 || provider.classifyCalls != 0 || callbackCalls != 0 {
+				t.Fatalf("invalid tool crossed boundary: events=%d transport=%d build=%d decode=%d classify=%d callback=%d", len(events), transportCalls, len(provider.states), provider.decodeCalls, provider.classifyCalls, callbackCalls)
+			}
+		})
 	}
 }
 
