@@ -6,9 +6,12 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ikigenba/ikigenba/oauth/internal/browser"
 	"github.com/ikigenba/ikigenba/oauth/internal/callback"
@@ -97,14 +100,228 @@ func failDeps(t *testing.T) cli.Deps {
 	}
 }
 
+type launcherFunc func(string) error
+
+func (open launcherFunc) Open(authorizeURL string) error {
+	return open(authorizeURL)
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (roundTrip roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return roundTrip(request)
+}
+
+type successfulRun struct {
+	authorizeURL string
+	boundPort    int
+	callLog      []string
+	tokenForm    url.Values
+	tokenCalls   int
+}
+
+func requireSuccessfulLogin(t *testing.T, args []string) successfulRun {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	callbackPath := "/callback"
+	for index, arg := range args {
+		if arg == "--callback-path" && index+1 < len(args) {
+			callbackPath = args[index+1]
+		}
+	}
+
+	var capture successfulRun
+	callbackDone := make(chan error, 1)
+	var listenConfig net.ListenConfig
+	listen := func(network, address string) (net.Listener, error) {
+		capture.callLog = append(capture.callLog, "listen:"+network)
+		listener, err := listenConfig.Listen(ctx, network, address)
+		if err == nil && network == "tcp4" {
+			_, portText, splitErr := net.SplitHostPort(listener.Addr().String())
+			if splitErr != nil {
+				_ = listener.Close()
+
+				return nil, splitErr
+			}
+			capture.boundPort, err = strconv.Atoi(portText)
+			if err != nil {
+				_ = listener.Close()
+
+				return nil, err
+			}
+		}
+
+		return listener, err
+	}
+	launcher := launcherFunc(func(authorizeURL string) error {
+		capture.callLog = append(capture.callLog, "launch")
+		capture.authorizeURL = authorizeURL
+		parsed, err := url.Parse(authorizeURL)
+		if err != nil {
+			return err
+		}
+		state := parsed.Query().Get("state")
+		callbackURL := url.URL{
+			Scheme: "http",
+			Host:   net.JoinHostPort("127.0.0.1", strconv.Itoa(capture.boundPort)),
+			Path:   callbackPath,
+		}
+		query := callbackURL.Query()
+		query.Set("state", state)
+		query.Set("code", "known-code")
+		callbackURL.RawQuery = query.Encode()
+		go func() {
+			client := http.Client{Timeout: 2 * time.Second}
+			request, requestErr := http.NewRequestWithContext(ctx, http.MethodGet, callbackURL.String(), nil)
+			var response *http.Response
+			if requestErr == nil {
+				response, requestErr = client.Do(request)
+			}
+			if requestErr == nil {
+				requestErr = response.Body.Close()
+			}
+			callbackDone <- requestErr
+		}()
+
+		return nil
+	})
+	transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		capture.tokenCalls++
+		if err := request.ParseForm(); err != nil {
+			return nil, err
+		}
+		capture.tokenForm = request.PostForm
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"access_token":"synthetic"}`)),
+		}, nil
+	})
+
+	var stdout, stderr bytes.Buffer
+	code := cli.Run(ctx, args, &stdout, &stderr, cli.Deps{
+		Launcher:   launcher,
+		Entropy:    bytes.NewReader(make([]byte, 96)),
+		HTTPClient: &http.Client{Transport: transport},
+		Listen:     listen,
+	})
+	if code != 0 {
+		t.Fatalf("Run() exit code = %d, want 0; stderr = %q", code, stderr.String())
+	}
+	select {
+	case err := <-callbackDone:
+		if err != nil {
+			t.Fatalf("callback request error = %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatalf("callback request did not finish: %v", ctx.Err())
+	}
+	return capture
+}
+
 // R-E5L7-OSOC
 func TestRunReturnsInProcess(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := cli.Run(context.Background(), validArgs(), &stdout, &stderr, cli.Deps{})
+	requireSuccessfulLogin(t, validArgs())
+}
 
-	if code != 0 {
-		t.Fatalf("Run returned exit code %d, want 0 for the phase scaffold", code)
+// R-ECWL-ZF4I
+func TestRunBindsBeforeLaunchingBrowser(t *testing.T) {
+	capture := requireSuccessfulLogin(t, validArgs())
+	launchIndex := -1
+	for index, call := range capture.callLog {
+		if call == "launch" {
+			launchIndex = index
+		}
 	}
+	if launchIndex < 0 {
+		t.Fatalf("call log = %v, want launch entry", capture.callLog)
+	}
+	for index, call := range capture.callLog {
+		if strings.HasPrefix(call, "listen:") && index >= launchIndex {
+			t.Errorf("call log = %v, bind %q at index %d is not before launch at index %d", capture.callLog, call, index, launchIndex)
+		}
+	}
+}
+
+// R-EFCE-QYLW
+func TestRunAuthorizeURLUsesActuallyBoundPort(t *testing.T) {
+	capture := requireSuccessfulLogin(t, append(validArgs(), "--port", "0"))
+	redirectURI := authorizeRedirectURI(t, capture.authorizeURL)
+	parsedRedirect, err := url.Parse(redirectURI)
+	if err != nil {
+		t.Fatalf("url.Parse(redirect_uri) error = %v", err)
+	}
+	_, portText, err := net.SplitHostPort(parsedRedirect.Host)
+	if err != nil {
+		t.Fatalf("SplitHostPort(%q) error = %v", parsedRedirect.Host, err)
+	}
+	if capture.boundPort == 0 {
+		t.Fatal("independently observed bound port = 0, want nonzero OS-assigned port")
+	}
+	if portText != strconv.Itoa(capture.boundPort) {
+		t.Errorf("redirect_uri port = %q, want independently observed port %d; URI = %q", portText, capture.boundPort, redirectURI)
+	}
+	if portText == "0" {
+		t.Errorf("redirect_uri = %q, must never carry requested port 0", redirectURI)
+	}
+}
+
+// R-EGKB-4QCL
+func TestRunBracketsIPv6CallbackHostInRedirectURI(t *testing.T) {
+	const callbackPath = "/oauth/return"
+	capture := requireSuccessfulLogin(t, append(validArgs(), "--callback-host", "::1", "--callback-path", callbackPath))
+	want := "http://[::1]:" + strconv.Itoa(capture.boundPort) + callbackPath
+	if got := authorizeRedirectURI(t, capture.authorizeURL); got != want {
+		t.Errorf("redirect_uri = %q, want %q", got, want)
+	}
+}
+
+// R-EHS7-II3A
+func TestRunReusesRedirectURIForTokenExchange(t *testing.T) {
+	capture := requireSuccessfulLogin(t, append(validArgs(), "--port", "0"))
+	parsedAuthorize, err := url.Parse(capture.authorizeURL)
+	if err != nil {
+		t.Fatalf("url.Parse(authorize URL) error = %v", err)
+	}
+	authorizeValues := parsedAuthorize.Query()["redirect_uri"]
+	tokenValues := capture.tokenForm["redirect_uri"]
+	if len(authorizeValues) != 1 {
+		t.Fatalf("authorize redirect_uri values = %q, want exactly one", authorizeValues)
+	}
+	if len(tokenValues) != 1 {
+		t.Fatalf("token redirect_uri values = %q, want exactly one", tokenValues)
+	}
+	want := "http://localhost:" + strconv.Itoa(capture.boundPort) + "/callback"
+	if authorizeValues[0] != want {
+		t.Errorf("authorize redirect_uri = %q, want independently composed %q", authorizeValues[0], want)
+	}
+	if tokenValues[0] != want {
+		t.Errorf("token redirect_uri = %q, want independently composed %q", tokenValues[0], want)
+	}
+	if authorizeValues[0] != tokenValues[0] {
+		t.Errorf("redirect_uri differs byte-for-byte: authorize = %q, token = %q", authorizeValues[0], tokenValues[0])
+	}
+	if capture.tokenCalls != 1 {
+		t.Errorf("token request calls = %d, want exactly one", capture.tokenCalls)
+	}
+}
+
+func authorizeRedirectURI(t *testing.T, authorizeURL string) string {
+	t.Helper()
+	parsed, err := url.Parse(authorizeURL)
+	if err != nil {
+		t.Fatalf("url.Parse(authorize URL) error = %v", err)
+	}
+	values := parsed.Query()["redirect_uri"]
+	if len(values) != 1 {
+		t.Fatalf("authorize redirect_uri values = %q, want exactly one", values)
+	}
+
+	return values[0]
 }
 
 func validArgs() []string {
@@ -192,8 +409,9 @@ func TestRunRejectsMultipleClientAuthenticationMethods(t *testing.T) {
 			if code != 2 {
 				t.Errorf("Run() exit code = %d, want 2", code)
 			}
+			diagnostic := firstLine(stderr.String())
 			for _, flag := range []string{"--client-secret", "--token-header"} {
-				if !strings.Contains(stderr.String(), flag) {
+				if !strings.Contains(diagnostic, flag) {
 					t.Errorf("stderr = %q, want offending flag %q", stderr.String(), flag)
 				}
 			}
@@ -214,15 +432,7 @@ func TestRunAcceptsOneClientAuthenticationMethod(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			args := append(validArgs(), test.args...)
-			var stdout, stderr bytes.Buffer
-			code := cli.Run(context.Background(), args, &stdout, &stderr, failDeps(t))
-
-			if code != 0 {
-				t.Errorf("Run() exit code = %d, want 0; stderr = %q", code, stderr.String())
-			}
-			if stderr.String() != "" {
-				t.Errorf("stderr = %q, want empty", stderr.String())
-			}
+			requireSuccessfulLogin(t, args)
 		})
 	}
 }
@@ -238,7 +448,7 @@ func TestRunRejectsNonPositiveTimeout(t *testing.T) {
 			if code != 2 {
 				t.Errorf("Run() exit code = %d, want 2", code)
 			}
-			if !strings.Contains(stderr.String(), "--timeout") {
+			if !strings.Contains(firstLine(stderr.String()), "--timeout") {
 				t.Errorf("stderr = %q, want offending flag --timeout", stderr.String())
 			}
 		})
@@ -260,7 +470,7 @@ func TestRunRejectsCallbackPathWithoutLeadingSlash(t *testing.T) {
 			if code != 2 {
 				t.Errorf("Run() exit code = %d, want 2", code)
 			}
-			if !strings.Contains(stderr.String(), "--callback-path") {
+			if !strings.Contains(firstLine(stderr.String()), "--callback-path") {
 				t.Errorf("stderr = %q, want offending flag --callback-path", stderr.String())
 			}
 		})
@@ -301,7 +511,7 @@ func TestRunRejectsMissingRequiredFlags(t *testing.T) {
 			if stdout.String() != "" {
 				t.Errorf("stdout = %q, want empty", stdout.String())
 			}
-			if !strings.Contains(stderr.String(), test.missing) {
+			if !strings.Contains(firstLine(stderr.String()), test.missing) {
 				t.Errorf("stderr = %q, want missing flag %q", stderr.String(), test.missing)
 			}
 		})
@@ -334,7 +544,7 @@ func TestRunRejectsUnparsableEndpointURLs(t *testing.T) {
 			if code != 2 {
 				t.Errorf("Run() exit code = %d, want 2", code)
 			}
-			if !strings.Contains(stderr.String(), test.flag) {
+			if !strings.Contains(firstLine(stderr.String()), test.flag) {
 				t.Errorf("stderr = %q, want offending flag %q", stderr.String(), test.flag)
 			}
 		})
@@ -364,10 +574,11 @@ func TestRunRejectsMalformedRepeatedParameters(t *testing.T) {
 			if code != 2 {
 				t.Errorf("Run() exit code = %d, want 2", code)
 			}
-			if !strings.Contains(stderr.String(), test.flag) {
+			diagnostic := firstLine(stderr.String())
+			if !strings.Contains(diagnostic, test.flag) {
 				t.Errorf("stderr = %q, want offending flag %q", stderr.String(), test.flag)
 			}
-			if !strings.Contains(stderr.String(), test.raw) {
+			if !strings.Contains(diagnostic, test.raw) {
 				t.Errorf("stderr = %q, want offending value %q", stderr.String(), test.raw)
 			}
 		})
@@ -399,28 +610,30 @@ func TestRunAuthParamDecisionAgreesWithOAuthReservedPredicate(t *testing.T) {
 			}
 
 			args := append(validArgs(), "--auth-param", test.key+"=value")
-			var stdout, stderr bytes.Buffer
-			code := cli.Run(context.Background(), args, &stdout, &stderr, failDeps(t))
-
-			if test.reserved {
-				if code != 2 {
-					t.Errorf("Run() exit code = %d, want 2 for reserved key %q", code, test.key)
+			if !test.reserved {
+				capture := requireSuccessfulLogin(t, args)
+				parsed, err := url.Parse(capture.authorizeURL)
+				if err != nil {
+					t.Fatalf("url.Parse(authorize URL) error = %v", err)
 				}
-				if !strings.Contains(stderr.String(), "--auth-param") {
-					t.Errorf("stderr = %q, want flag --auth-param", stderr.String())
-				}
-				if !strings.Contains(stderr.String(), test.key) {
-					t.Errorf("stderr = %q, want key %q", stderr.String(), test.key)
+				if got := parsed.Query().Get(test.key); got != "value" {
+					t.Errorf("authorize parameter %q = %q, want %q", test.key, got, "value")
 				}
 
 				return
 			}
 
-			if code != 0 {
-				t.Errorf("Run() exit code = %d, want 0 for non-reserved key %q; stderr = %q", code, test.key, stderr.String())
+			var stdout, stderr bytes.Buffer
+			code := cli.Run(context.Background(), args, &stdout, &stderr, failDeps(t))
+			if code != 2 {
+				t.Errorf("Run() exit code = %d, want 2 for reserved key %q", code, test.key)
 			}
-			if stderr.String() != "" {
-				t.Errorf("stderr = %q, want empty for non-reserved key %q", stderr.String(), test.key)
+			diagnostic := firstLine(stderr.String())
+			if !strings.Contains(diagnostic, "--auth-param") {
+				t.Errorf("stderr = %q, want flag --auth-param", stderr.String())
+			}
+			if !strings.Contains(diagnostic, test.key) {
+				t.Errorf("stderr = %q, want key %q", stderr.String(), test.key)
 			}
 		})
 	}
@@ -435,8 +648,9 @@ func TestRunRedirectURIAuthParamNamesConfigurationFlags(t *testing.T) {
 	if code != 2 {
 		t.Errorf("Run() exit code = %d, want 2", code)
 	}
+	diagnostic := firstLine(stderr.String())
 	for _, flag := range []string{"--callback-host", "--port", "--callback-path"} {
-		if !strings.Contains(stderr.String(), flag) {
+		if !strings.Contains(diagnostic, flag) {
 			t.Errorf("stderr = %q, want configuration flag %q", stderr.String(), flag)
 		}
 	}
@@ -466,28 +680,26 @@ func TestRunTokenParamDecisionAgreesWithOAuthReservedPredicate(t *testing.T) {
 			}
 
 			args := append(validArgs(), "--token-param", test.key+"=value")
-			var stdout, stderr bytes.Buffer
-			code := cli.Run(context.Background(), args, &stdout, &stderr, failDeps(t))
-
-			if test.reserved {
-				if code != 2 {
-					t.Errorf("Run() exit code = %d, want 2 for reserved key %q", code, test.key)
-				}
-				if !strings.Contains(stderr.String(), "--token-param") {
-					t.Errorf("stderr = %q, want flag --token-param", stderr.String())
-				}
-				if !strings.Contains(stderr.String(), test.key) {
-					t.Errorf("stderr = %q, want key %q", stderr.String(), test.key)
+			if !test.reserved {
+				capture := requireSuccessfulLogin(t, args)
+				if got := capture.tokenForm.Get(test.key); got != "value" {
+					t.Errorf("token parameter %q = %q, want %q", test.key, got, "value")
 				}
 
 				return
 			}
 
-			if code != 0 {
-				t.Errorf("Run() exit code = %d, want 0 for non-reserved key %q; stderr = %q", code, test.key, stderr.String())
+			var stdout, stderr bytes.Buffer
+			code := cli.Run(context.Background(), args, &stdout, &stderr, failDeps(t))
+			if code != 2 {
+				t.Errorf("Run() exit code = %d, want 2 for reserved key %q", code, test.key)
 			}
-			if stderr.String() != "" {
-				t.Errorf("stderr = %q, want empty for non-reserved key %q", stderr.String(), test.key)
+			diagnostic := firstLine(stderr.String())
+			if !strings.Contains(diagnostic, "--token-param") {
+				t.Errorf("stderr = %q, want flag --token-param", stderr.String())
+			}
+			if !strings.Contains(diagnostic, test.key) {
+				t.Errorf("stderr = %q, want key %q", stderr.String(), test.key)
 			}
 		})
 	}
@@ -514,6 +726,12 @@ func TestRunRoutesUnknownFlagToStderr(t *testing.T) {
 	if !strings.Contains(stderr.String(), usage) {
 		t.Errorf("stderr = %q, want it to contain usage %q", stderr.String(), usage)
 	}
+}
+
+func firstLine(text string) string {
+	line, _, _ := strings.Cut(text, "\n")
+
+	return line
 }
 
 // R-REHR-NBIJ
