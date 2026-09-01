@@ -8,22 +8,21 @@ import (
 	"strings"
 )
 
-// Endpoint is an opaque description of the transport surrounding a wire
-// format. Endpoints are assembled from EndpointOption values by provider
-// constructors.
+// Endpoint is a public, opaque, option-built transport description. Construct
+// it with NewEndpoint; its fields are unexported.
 type Endpoint struct {
 	config endpointConfig
 }
 
-// EndpointOption configures an Endpoint.
+// EndpointOption configures an Endpoint at construction. Options may fail.
 type EndpointOption func(*endpointConfig) error
 
-// AuthApplier applies authentication to a fully assembled request.
+// AuthApplier carries a credential onto a fully assembled request.
 type AuthApplier interface {
 	Apply(ctx context.Context, req *http.Request, body []byte) error
 }
 
-// RequestMutator reshapes a request and, when necessary, its encoded body.
+// RequestMutator rewrites the assembled request and its body before auth.
 type RequestMutator func(req *http.Request, body *[]byte) error
 
 // ErrorClassifier classifies a provider response from its complete transport
@@ -45,22 +44,7 @@ type endpointConfig struct {
 	mutator        RequestMutator
 	auth           AuthApplier
 	modelPlacement modelPlacement
-}
-
-type noAuth struct{}
-
-func (noAuth) Apply(context.Context, *http.Request, []byte) error { return nil }
-
-// WithBaseURL sets the endpoint base URL, including any fixed path.
-func WithBaseURL(raw string) EndpointOption {
-	return func(config *endpointConfig) error {
-		parsed, err := url.ParseRequestURI(raw)
-		if err != nil || parsed.Scheme == "" || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-			return fmt.Errorf("%w: invalid endpoint base URL %q", ErrInvalidConfig, raw)
-		}
-		config.baseURL = parsed
-		return nil
-	}
+	client         *http.Client
 }
 
 // WithHeader adds a static request header.
@@ -107,13 +91,34 @@ func WithMutator(mutator RequestMutator) EndpointOption {
 	}
 }
 
-func newEndpoint(options ...EndpointOption) (Endpoint, error) {
+// WithHTTPClient selects the client used to execute requests for this endpoint.
+func WithHTTPClient(client *http.Client) EndpointOption {
+	return func(config *endpointConfig) error {
+		if client == nil {
+			return fmt.Errorf("%w: nil endpoint HTTP client", ErrInvalidConfig)
+		}
+		config.client = client
+		return nil
+	}
+}
+
+// NewEndpoint builds an Endpoint from its required base URL and auth applier.
+func NewEndpoint(baseURL string, auth AuthApplier, options ...EndpointOption) (Endpoint, error) {
+	parsed, err := url.ParseRequestURI(baseURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return Endpoint{}, fmt.Errorf("%w: invalid endpoint base URL %q", ErrInvalidConfig, baseURL)
+	}
+	if auth == nil {
+		return Endpoint{}, fmt.Errorf("%w: nil auth applier", ErrInvalidConfig)
+	}
 	config := endpointConfig{
+		baseURL:    parsed,
 		headers:    make(http.Header),
 		framer:     SSEFrames,
 		classifier: func(int, http.Header, []byte) error { return nil },
 		mutator:    func(*http.Request, *[]byte) error { return nil },
-		auth:       noAuth{},
+		auth:       auth,
+		client:     http.DefaultClient,
 	}
 	for _, option := range options {
 		if option == nil {
@@ -123,20 +128,7 @@ func newEndpoint(options ...EndpointOption) (Endpoint, error) {
 			return Endpoint{}, err
 		}
 	}
-	if config.baseURL == nil {
-		return Endpoint{}, fmt.Errorf("%w: endpoint base URL is required", ErrInvalidConfig)
-	}
 	return Endpoint{config: config}, nil
-}
-
-func withAuth(auth AuthApplier) EndpointOption {
-	return func(config *endpointConfig) error {
-		if auth == nil {
-			return fmt.Errorf("%w: nil auth applier", ErrInvalidConfig)
-		}
-		config.auth = auth
-		return nil
-	}
 }
 
 func withModelPlacement(placement modelPlacement) EndpointOption {

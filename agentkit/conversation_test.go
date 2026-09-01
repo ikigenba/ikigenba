@@ -99,6 +99,50 @@ func vendorFixture(endpointURL, model string, client *http.Client) (*Conversatio
 	)
 }
 
+func TestEndpointConversationExecutesWithSelectedHTTPClient(t *testing.T) {
+	// R-YKSS-NDBC
+	originalDefault := http.DefaultClient
+	t.Cleanup(func() { http.DefaultClient = originalDefault })
+
+	defaultCalls := 0
+	defaultClient := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		defaultCalls++
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}, nil
+	})}
+	http.DefaultClient = defaultClient
+	auth := authFunc(func(context.Context, *http.Request, []byte) error { return nil })
+	defaultEndpoint, err := NewEndpoint("https://default.test/messages", auth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaultEndpoint.config.client != http.DefaultClient {
+		t.Fatal("endpoint did not retain http.DefaultClient as its default")
+	}
+	defaultConversation := newEndpointConversation(&testWire{}, defaultEndpoint, Identity{Model: "default-model"})
+	defaultConversation.Send(context.Background(), Text{Text: "hello"})
+	if defaultCalls != 1 {
+		t.Fatalf("default client calls = %d, want 1", defaultCalls)
+	}
+
+	overrideCalls := 0
+	overrideClient := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		overrideCalls++
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}, nil
+	})}
+	overrideEndpoint, err := NewEndpoint("https://override.test/messages", auth, WithHTTPClient(overrideClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overrideEndpoint.config.client != overrideClient {
+		t.Fatal("WithHTTPClient did not retain the selected client")
+	}
+	overrideConversation := newEndpointConversation(&testWire{}, overrideEndpoint, Identity{Model: "override-model"})
+	overrideConversation.Send(context.Background(), Text{Text: "hello"})
+	if overrideCalls != 1 || defaultCalls != 1 {
+		t.Fatalf("override calls=%d default calls=%d, want 1 each", overrideCalls, defaultCalls)
+	}
+}
+
 func TestConversationAxesAreStableAndModelIsVerbatim(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		body, err := io.ReadAll(request.Body)

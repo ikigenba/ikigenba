@@ -69,13 +69,15 @@ func TestEndpointHookSignaturesArePublic(t *testing.T) {
 	var mutator agentkit.RequestMutator = func(*http.Request, *[]byte) error { return nil }
 	var classifier agentkit.ErrorClassifier = func(int, http.Header, []byte) error { return nil }
 	options := []agentkit.EndpointOption{
-		agentkit.WithBaseURL("https://example.test/v1"),
 		agentkit.WithHeader("X-External", "yes"),
 		agentkit.WithFramer(agentkit.SSEFrames),
 		agentkit.WithClassifier(classifier),
 		agentkit.WithMutator(mutator),
+		agentkit.WithHTTPClient(http.DefaultClient),
 	}
-	_ = auth
+	if _, err := agentkit.NewEndpoint("https://example.test/v1", auth, options...); err != nil {
+		t.Fatal(err)
+	}
 	if len(options) != 5 {
 		t.Fatal("exported endpoint hook vocabulary is unavailable")
 	}

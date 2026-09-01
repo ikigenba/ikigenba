@@ -66,11 +66,23 @@ func (wire *testWire) withClassifier(classifier wireClassifier) WireFormat {
 func TestComposedProviderMutatesBeforeAuthWithFinalBodyState(t *testing.T) {
 	// R-3DFK-H0PM
 	// R-3ENG-USGB
+	// R-0VXJ-I2FW
 	type contextKey struct{}
 	ctx := context.WithValue(context.Background(), contextKey{}, "original-context")
 	order := make([]string, 0, 2)
-	endpoint, err := newEndpoint(
-		WithBaseURL("https://original.test/v1"),
+	endpoint, err := NewEndpoint(
+		"https://original.test/v1",
+		authFunc(func(authCtx context.Context, request *http.Request, body []byte) error {
+			order = append(order, "auth")
+			if authCtx.Value(contextKey{}) != "original-context" || request.Context() != ctx {
+				t.Fatal("auth did not receive the original request context")
+			}
+			if string(body) != "mutated-final-body" || request.URL.String() != "http://redirected.test/models/moved-model" || request.Header.Get("X-Redirected") != "yes" {
+				t.Fatalf("auth saw request %s and body %q before mutation", request.URL, body)
+			}
+			request.Header.Set("Authorization", "signed-final-body")
+			return nil
+		}),
 		WithHeader("X-Static", "present"),
 		WithMutator(func(request *http.Request, body *[]byte) error {
 			order = append(order, "mutate")
@@ -81,17 +93,6 @@ func TestComposedProviderMutatesBeforeAuthWithFinalBodyState(t *testing.T) {
 			*body = []byte("mutated-final-body")
 			return nil
 		}),
-		withAuth(authFunc(func(authCtx context.Context, request *http.Request, body []byte) error {
-			order = append(order, "auth")
-			if authCtx.Value(contextKey{}) != "original-context" || request.Context() != ctx {
-				t.Fatal("auth did not receive the original request context")
-			}
-			if string(body) != "mutated-final-body" || request.URL.String() != "http://redirected.test/models/moved-model" || request.Header.Get("X-Redirected") != "yes" {
-				t.Fatalf("auth saw request %s and body %q before mutation", request.URL, body)
-			}
-			request.Header.Set("Authorization", "signed-final-body")
-			return nil
-		})),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -127,16 +128,20 @@ func TestComposedProviderPropagatesAssemblyFailures(t *testing.T) {
 	authFailure := errors.New("auth failed")
 	checks := []struct {
 		wire    *testWire
+		auth    AuthApplier
 		options []EndpointOption
 		want    error
 	}{
 		{wire: &testWire{encode: func(RequestState) ([]byte, error) { return nil, encodeFailure }}, want: encodeFailure},
 		{wire: &testWire{}, options: []EndpointOption{WithMutator(func(*http.Request, *[]byte) error { return mutateFailure })}, want: mutateFailure},
-		{wire: &testWire{}, options: []EndpointOption{withAuth(authFunc(func(context.Context, *http.Request, []byte) error { return authFailure }))}, want: authFailure},
+		{wire: &testWire{}, auth: authFunc(func(context.Context, *http.Request, []byte) error { return authFailure }), want: authFailure},
 	}
 	for _, check := range checks {
-		options := append([]EndpointOption{WithBaseURL("https://example.test")}, check.options...)
-		endpoint, err := newEndpoint(options...)
+		auth := check.auth
+		if auth == nil {
+			auth = authFunc(func(context.Context, *http.Request, []byte) error { return nil })
+		}
+		endpoint, err := NewEndpoint("https://example.test", auth, check.options...)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -149,8 +154,9 @@ func TestComposedProviderPropagatesAssemblyFailures(t *testing.T) {
 
 func TestComposedProviderUsesEndpointFramingAndMessageDecode(t *testing.T) {
 	framerCalled := false
-	endpoint, err := newEndpoint(
-		WithBaseURL("https://example.test"),
+	endpoint, err := NewEndpoint(
+		"https://example.test",
+		authFunc(func(context.Context, *http.Request, []byte) error { return nil }),
 		WithFramer(func(reader io.Reader) iter.Seq2[[]byte, error] {
 			framerCalled = true
 			payload, readErr := io.ReadAll(reader)
@@ -192,8 +198,9 @@ func TestComposedProviderClassificationIsExactAndTyped(t *testing.T) {
 	var gotStatus int
 	var gotHeaders http.Header
 	var gotBody []byte
-	endpoint, err := newEndpoint(
-		WithBaseURL("https://example.test"),
+	endpoint, err := NewEndpoint(
+		"https://example.test",
+		authFunc(func(context.Context, *http.Request, []byte) error { return nil }),
 		WithClassifier(func(status int, header http.Header, classifiedBody []byte) error {
 			gotStatus, gotHeaders, gotBody = status, header, classifiedBody
 			return typed

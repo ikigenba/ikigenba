@@ -34,12 +34,12 @@ func NewKnownWireConversation(wireName KnownWire, baseURL string, auth AuthAppli
 		return nil, fmt.Errorf("%w: unknown wire format %d", ErrInvalidConfig, wireName)
 	}
 
-	endpoint, err := newEndpoint(WithBaseURL(baseURL), withAuth(auth))
+	endpoint, err := NewEndpoint(baseURL, auth)
 	if err != nil {
 		return nil, err
 	}
 	identity := Identity{Endpoint: baseURL, AuthMode: "custom"}
-	return NewConversation(newComposedProvider(wire, endpoint, identity), http.DefaultClient), nil
+	return newEndpointConversation(wire, endpoint, identity), nil
 }
 
 // Provider is the composed wire-format and endpoint adapter driven for one
@@ -64,6 +64,10 @@ func newComposedProvider(wire WireFormat, endpoint Endpoint, identity Identity) 
 		wire = classifiable.withClassifier(endpoint.config.classifier)
 	}
 	return &composedProvider{wire: wire, endpoint: endpoint, identity: identity}
+}
+
+func newEndpointConversation(wire WireFormat, endpoint Endpoint, identity Identity) *Conversation {
+	return NewConversation(newComposedProvider(wire, endpoint, identity), endpoint.config.client)
 }
 
 func (provider *composedProvider) BuildRequest(ctx context.Context, state RequestState) (*http.Request, error) {

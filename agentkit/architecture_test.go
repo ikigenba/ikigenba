@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"io"
 	"iter"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,136 @@ import (
 	"testing"
 	"time"
 )
+
+func TestEndpointDeclarationsAreExact(t *testing.T) {
+	// R-YEPA-QILV
+	// R-ZKDG-L0IT
+	// R-YFX7-4ACK
+	// R-ZMT9-CK07
+	// R-ZO15-QBQW
+	// R-ZP92-43HL
+	// R-YICZ-VTTY
+	endpointType := reflect.TypeFor[Endpoint]()
+	if endpointType.Name() != "Endpoint" || endpointType.Kind() != reflect.Struct || !token.IsExported(endpointType.Name()) {
+		t.Fatalf("Endpoint name/kind = %q/%s, want exported named struct", endpointType.Name(), endpointType.Kind())
+	}
+	for index := range endpointType.NumField() {
+		if endpointType.Field(index).IsExported() {
+			t.Fatalf("Endpoint field %q is exported", endpointType.Field(index).Name)
+		}
+	}
+	endpointSpecification := declaredType(t, "endpoint.go", "Endpoint")
+	if endpointSpecification.Assign.IsValid() {
+		t.Fatal("Endpoint is an alias, want a defined struct")
+	}
+	if _, ok := endpointSpecification.Type.(*ast.StructType); !ok {
+		t.Fatalf("Endpoint declaration is %T, want struct", endpointSpecification.Type)
+	}
+
+	optionType := reflect.TypeFor[EndpointOption]()
+	configPointer := reflect.TypeFor[*endpointConfig]()
+	errorType := reflect.TypeFor[error]()
+	if optionType.Name() != "EndpointOption" || optionType.Kind() != reflect.Func || optionType.NumIn() != 1 || optionType.In(0) != configPointer || optionType.NumOut() != 1 || optionType.Out(0) != errorType {
+		t.Fatalf("EndpointOption = %s, want defined func(*endpointConfig) error", optionType)
+	}
+	if specification := declaredType(t, "endpoint.go", "EndpointOption"); specification.Assign.IsValid() {
+		t.Fatal("EndpointOption is an alias")
+	}
+
+	assertDefinedEndpointType(t, "AuthApplier", reflect.TypeFor[AuthApplier](), reflect.Interface)
+	authType := reflect.TypeFor[AuthApplier]()
+	wantApply := reflect.TypeOf(func(context.Context, *http.Request, []byte) error { return nil })
+	if authType.NumMethod() != 1 {
+		t.Fatalf("AuthApplier method count = %d, want 1", authType.NumMethod())
+	}
+	apply, ok := authType.MethodByName("Apply")
+	if !ok || apply.Type != wantApply {
+		t.Fatalf("AuthApplier.Apply = %v (present=%t), want %s", apply.Type, ok, wantApply)
+	}
+
+	assertDefinedEndpointType(t, "RequestMutator", reflect.TypeFor[RequestMutator](), reflect.Func)
+	assertFunctionSignature(t, reflect.TypeFor[RequestMutator](), reflect.TypeOf(func(*http.Request, *[]byte) error { return nil }))
+	assertDefinedEndpointType(t, "ErrorClassifier", reflect.TypeFor[ErrorClassifier](), reflect.Func)
+	assertFunctionSignature(t, reflect.TypeFor[ErrorClassifier](), reflect.TypeOf(func(int, http.Header, []byte) error { return nil }))
+
+	constructor := reflect.TypeOf(NewEndpoint)
+	wantConstructor := reflect.TypeOf(func(string, AuthApplier, ...EndpointOption) (Endpoint, error) { return Endpoint{}, nil })
+	if constructor != wantConstructor || !constructor.IsVariadic() {
+		t.Fatalf("NewEndpoint = %s variadic=%t, want %s variadic", constructor, constructor.IsVariadic(), wantConstructor)
+	}
+	optionFunctions := map[string]reflect.Type{
+		"WithHeader":     reflect.TypeOf(func(string, string) EndpointOption { return nil }),
+		"WithFramer":     reflect.TypeOf(func(Framer) EndpointOption { return nil }),
+		"WithClassifier": reflect.TypeOf(func(ErrorClassifier) EndpointOption { return nil }),
+		"WithMutator":    reflect.TypeOf(func(RequestMutator) EndpointOption { return nil }),
+		"WithHTTPClient": reflect.TypeOf(func(*http.Client) EndpointOption { return nil }),
+	}
+	actualFunctions := map[string]reflect.Type{
+		"WithHeader": reflect.TypeOf(WithHeader), "WithFramer": reflect.TypeOf(WithFramer),
+		"WithClassifier": reflect.TypeOf(WithClassifier), "WithMutator": reflect.TypeOf(WithMutator),
+		"WithHTTPClient": reflect.TypeOf(WithHTTPClient),
+	}
+	for name, want := range optionFunctions {
+		if actualFunctions[name] != want {
+			t.Fatalf("%s = %s, want %s", name, actualFunctions[name], want)
+		}
+	}
+}
+
+func TestProviderDeclarationIsExact(t *testing.T) {
+	// R-ZQGY-HV8A
+	providerType := reflect.TypeFor[Provider]()
+	if providerType.Name() != "Provider" || providerType.Kind() != reflect.Interface || providerType.NumMethod() != 4 {
+		t.Fatalf("Provider = %q/%s with %d methods", providerType.Name(), providerType.Kind(), providerType.NumMethod())
+	}
+	want := map[string]reflect.Type{
+		"BuildRequest": reflect.TypeOf(func(context.Context, RequestState) (*http.Request, error) { return nil, nil }),
+		"Decode":       reflect.TypeOf(func(context.Context, *http.Response) iter.Seq2[Event, error] { return nil }),
+		"Classify":     reflect.TypeOf(func(int, http.Header, []byte) error { return nil }),
+		"Identity":     reflect.TypeOf(func() Identity { return Identity{} }),
+	}
+	for name, signature := range want {
+		method, ok := providerType.MethodByName(name)
+		if !ok || method.Type != signature {
+			t.Fatalf("Provider.%s = %v (present=%t), want %s", name, method.Type, ok, signature)
+		}
+	}
+	specification := declaredType(t, "provider.go", "Provider")
+	if specification.Assign.IsValid() {
+		t.Fatal("Provider is an alias")
+	}
+	interfaceType, ok := specification.Type.(*ast.InterfaceType)
+	if !ok || len(interfaceType.Methods.List) != 4 {
+		t.Fatalf("Provider declaration = %T with %d fields", specification.Type, interfaceFieldCount(interfaceType))
+	}
+}
+
+func assertDefinedEndpointType(t *testing.T, name string, typeOf reflect.Type, kind reflect.Kind) {
+	t.Helper()
+	if typeOf.Name() != name || typeOf.Kind() != kind || !token.IsExported(typeOf.Name()) {
+		t.Fatalf("%s = %q/%s, want exported defined %s", name, typeOf.Name(), typeOf.Kind(), kind)
+	}
+	if specification := declaredType(t, "endpoint.go", name); specification.Assign.IsValid() {
+		t.Fatalf("%s is an alias", name)
+	}
+}
+
+func assertFunctionSignature(t *testing.T, got, want reflect.Type) {
+	t.Helper()
+	if got.NumIn() != want.NumIn() || got.NumOut() != want.NumOut() {
+		t.Fatalf("signature %s does not match %s", got, want)
+	}
+	for index := range got.NumIn() {
+		if got.In(index) != want.In(index) {
+			t.Fatalf("parameter %d = %s, want %s", index, got.In(index), want.In(index))
+		}
+	}
+	for index := range got.NumOut() {
+		if got.Out(index) != want.Out(index) {
+			t.Fatalf("result %d = %s, want %s", index, got.Out(index), want.Out(index))
+		}
+	}
+}
 
 func TestWireFormatDeclarationIsExact(t *testing.T) {
 	// R-YC9H-YZ4H
@@ -896,7 +1027,7 @@ func TestEndpointAndProviderArchitecture(t *testing.T) {
 			publicFunctions[function.Name.Name] = true
 		}
 	}
-	wantFunctions := []string{"WithBaseURL", "WithHeader", "WithFramer", "WithClassifier", "WithMutator"}
+	wantFunctions := []string{"NewEndpoint", "WithHeader", "WithFramer", "WithClassifier", "WithMutator", "WithHTTPClient"}
 	if len(publicFunctions) != len(wantFunctions) {
 		t.Fatalf("endpoint public functions = %v, want exact option vocabulary", publicFunctions)
 	}
