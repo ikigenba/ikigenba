@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -118,17 +119,35 @@ type successfulRun struct {
 	callLog      []string
 	tokenForm    url.Values
 	tokenCalls   int
+	exitCode     int
+	stdout       []byte
+	stderr       []byte
 }
 
-func requireSuccessfulLogin(t *testing.T, args []string) successfulRun {
+type runConfig struct {
+	args            []string
+	callbackQuery   func(state string) url.Values
+	disableCallback bool
+	tokenStatus     int
+	tokenBody       []byte
+	stdout          io.Writer
+	stderr          io.Writer
+	outerTimeout    time.Duration
+}
+
+func runLogin(t *testing.T, config runConfig) successfulRun {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	outerTimeout := config.outerTimeout
+	if outerTimeout == 0 {
+		outerTimeout = 3 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), outerTimeout)
 	defer cancel()
 	callbackPath := "/callback"
-	for index, arg := range args {
-		if arg == "--callback-path" && index+1 < len(args) {
-			callbackPath = args[index+1]
+	for index, arg := range config.args {
+		if arg == "--callback-path" && index+1 < len(config.args) {
+			callbackPath = config.args[index+1]
 		}
 	}
 
@@ -158,6 +177,9 @@ func requireSuccessfulLogin(t *testing.T, args []string) successfulRun {
 	launcher := launcherFunc(func(authorizeURL string) error {
 		capture.callLog = append(capture.callLog, "launch")
 		capture.authorizeURL = authorizeURL
+		if config.disableCallback {
+			return nil
+		}
 		parsed, err := url.Parse(authorizeURL)
 		if err != nil {
 			return err
@@ -168,9 +190,10 @@ func requireSuccessfulLogin(t *testing.T, args []string) successfulRun {
 			Host:   net.JoinHostPort("127.0.0.1", strconv.Itoa(capture.boundPort)),
 			Path:   callbackPath,
 		}
-		query := callbackURL.Query()
-		query.Set("state", state)
-		query.Set("code", "known-code")
+		query := url.Values{"state": {state}, "code": {"known-code"}}
+		if config.callbackQuery != nil {
+			query = config.callbackQuery(state)
+		}
 		callbackURL.RawQuery = query.Encode()
 		go func() {
 			client := http.Client{Timeout: 2 * time.Second}
@@ -194,33 +217,217 @@ func requireSuccessfulLogin(t *testing.T, args []string) successfulRun {
 		}
 		capture.tokenForm = request.PostForm
 
+		status := config.tokenStatus
+		if status == 0 {
+			status = http.StatusOK
+		}
+		body := config.tokenBody
+		if body == nil {
+			body = []byte(`{"access_token":"synthetic"}`)
+		}
+
 		return &http.Response{
-			StatusCode: http.StatusOK,
-			Status:     "200 OK",
+			StatusCode: status,
+			Status:     strconv.Itoa(status) + " " + http.StatusText(status),
 			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(`{"access_token":"synthetic"}`)),
+			Body:       io.NopCloser(bytes.NewReader(body)),
 		}, nil
 	})
 
-	var stdout, stderr bytes.Buffer
-	code := cli.Run(ctx, args, &stdout, &stderr, cli.Deps{
+	var stdoutBuffer, stderrBuffer bytes.Buffer
+	stdout := config.stdout
+	if stdout == nil {
+		stdout = &stdoutBuffer
+	}
+	stderr := config.stderr
+	if stderr == nil {
+		stderr = &stderrBuffer
+	}
+	capture.exitCode = cli.Run(ctx, config.args, stdout, stderr, cli.Deps{
 		Launcher:   launcher,
 		Entropy:    bytes.NewReader(make([]byte, 96)),
 		HTTPClient: &http.Client{Transport: transport},
 		Listen:     listen,
 	})
-	if code != 0 {
-		t.Fatalf("Run() exit code = %d, want 0; stderr = %q", code, stderr.String())
-	}
-	select {
-	case err := <-callbackDone:
-		if err != nil {
-			t.Fatalf("callback request error = %v", err)
+	capture.stdout = append([]byte(nil), stdoutBuffer.Bytes()...)
+	capture.stderr = append([]byte(nil), stderrBuffer.Bytes()...)
+	if !config.disableCallback {
+		select {
+		case err := <-callbackDone:
+			if err != nil {
+				t.Fatalf("callback request error = %v", err)
+			}
+		case <-ctx.Done():
+			t.Fatalf("callback request did not finish: %v", ctx.Err())
 		}
-	case <-ctx.Done():
-		t.Fatalf("callback request did not finish: %v", ctx.Err())
 	}
+
 	return capture
+}
+
+func requireSuccessfulLogin(t *testing.T, args []string) successfulRun {
+	t.Helper()
+	capture := runLogin(t, runConfig{args: args})
+	if capture.exitCode != 0 {
+		t.Fatalf("Run() exit code = %d, want 0; stderr = %q", capture.exitCode, capture.stderr)
+	}
+
+	return capture
+}
+
+// R-EJ03-W9TZ
+func TestRunWritesTokenResponseBytesVerbatimToStdout(t *testing.T) {
+	responseBody := []byte(" \tplain-text token response\r\n{not-json}\x00\xff ")
+	capture := runLogin(t, runConfig{
+		args:      validArgs(),
+		tokenBody: responseBody,
+	})
+
+	if capture.exitCode != 0 {
+		t.Fatalf("Run() exit code = %d, want 0; stderr = %q", capture.exitCode, capture.stderr)
+	}
+	if len(capture.stdout) != len(responseBody) {
+		t.Errorf("stdout length = %d, want exactly %d; stdout = %q", len(capture.stdout), len(responseBody), capture.stdout)
+	}
+	if !bytes.Equal(capture.stdout, responseBody) {
+		t.Errorf("stdout bytes = %q, want exact token response bytes %q", capture.stdout, responseBody)
+	}
+}
+
+// R-EK80-A1KO
+func TestRunKeepsStdoutEmptyForEveryFailureMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		wantCode int
+		run      func(t *testing.T) (int, []byte)
+	}{
+		{
+			name:     "usage error",
+			wantCode: 2,
+			run: func(t *testing.T) (int, []byte) {
+				var stdout, stderr bytes.Buffer
+				code := cli.Run(context.Background(), []string{"--phase-six-unknown"}, &stdout, &stderr, failDeps(t))
+
+				return code, stdout.Bytes()
+			},
+		},
+		{
+			name:     "callback state mismatch",
+			wantCode: 1,
+			run: func(t *testing.T) (int, []byte) {
+				capture := runLogin(t, runConfig{
+					args: validArgs(),
+					callbackQuery: func(string) url.Values {
+						return url.Values{"state": {"wrong-state"}, "code": {"plausible-code"}}
+					},
+				})
+
+				return capture.exitCode, capture.stdout
+			},
+		},
+		{
+			name:     "provider error redirect",
+			wantCode: 1,
+			run: func(t *testing.T) (int, []byte) {
+				capture := runLogin(t, runConfig{
+					args: validArgs(),
+					callbackQuery: func(state string) url.Values {
+						return url.Values{
+							"state":             {state},
+							"error":             {"access_denied_phase_six"},
+							"error_description": {"provider declined phase six request"},
+						}
+					},
+				})
+
+				return capture.exitCode, capture.stdout
+			},
+		},
+		{
+			name:     "non-2xx token response",
+			wantCode: 1,
+			run: func(t *testing.T) (int, []byte) {
+				capture := runLogin(t, runConfig{
+					args:        validArgs(),
+					tokenStatus: http.StatusBadGateway,
+					tokenBody:   []byte("distinctive phase six upstream failure"),
+				})
+
+				return capture.exitCode, capture.stdout
+			},
+		},
+		{
+			name:     "expired callback deadline",
+			wantCode: 1,
+			run: func(t *testing.T) (int, []byte) {
+				capture := runLogin(t, runConfig{
+					args:            append(validArgs(), "--timeout", "20ms"),
+					disableCallback: true,
+					outerTimeout:    2 * time.Second,
+				})
+
+				return capture.exitCode, capture.stdout
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			code, stdout := test.run(t)
+			if code != test.wantCode {
+				t.Errorf("Run() exit code = %d, want %d", code, test.wantCode)
+			}
+			if len(stdout) != 0 {
+				t.Errorf("stdout length = %d, want exactly 0; stdout = %q", len(stdout), stdout)
+			}
+		})
+	}
+}
+
+// R-ELFW-NTBD
+func TestRunRoutesHumanOutputOnlyToInjectedStderr(t *testing.T) {
+	stdoutFile, err := os.CreateTemp(t.TempDir(), "redirected-stdout-*.txt")
+	if err != nil {
+		t.Fatalf("CreateTemp() error = %v", err)
+	}
+	var stderr bytes.Buffer
+	const distinctiveError = "provider token failure intended for injected stderr"
+	capture := runLogin(t, runConfig{
+		args: []string{
+			"--auth-url", "https://human-output.example/authorize",
+			"--token-url", "https://human-output.example/token",
+			"--client-id", "human-output-client",
+		},
+		tokenStatus: http.StatusUnauthorized,
+		tokenBody:   []byte(distinctiveError),
+		stdout:      stdoutFile,
+		stderr:      &stderr,
+	})
+	if capture.exitCode != 1 {
+		t.Errorf("Run() exit code = %d, want 1; stderr = %q", capture.exitCode, stderr.String())
+	}
+	if err := stdoutFile.Close(); err != nil {
+		t.Fatalf("closing redirected stdout: %v", err)
+	}
+	redirected, err := os.ReadFile(stdoutFile.Name())
+	if err != nil {
+		t.Fatalf("reading redirected stdout: %v", err)
+	}
+
+	for label, text := range map[string]string{
+		"complete authorize URL": capture.authorizeURL,
+		"runtime error":          distinctiveError,
+	} {
+		if !strings.Contains(stderr.String(), text) {
+			t.Errorf("injected stderr = %q, want %s %q", stderr.String(), label, text)
+		}
+		if bytes.Contains(redirected, []byte(text)) {
+			t.Errorf("redirected stdout = %q, must not contain %s %q", redirected, label, text)
+		}
+	}
+	if len(redirected) != 0 {
+		t.Errorf("redirected stdout length = %d, want exactly 0; contents = %q", len(redirected), redirected)
+	}
 }
 
 // R-E5L7-OSOC
