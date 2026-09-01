@@ -57,6 +57,105 @@ func validArgs() []string {
 	}
 }
 
+// R-QZUZ-22M7
+func TestRunRejectsMultipleClientAuthenticationMethods(t *testing.T) {
+	tests := []struct {
+		name    string
+		headers []string
+	}{
+		{name: "canonical", headers: []string{"Authorization=Basic abc"}},
+		{name: "lowercase", headers: []string{"authorization=Basic abc"}},
+		{name: "uppercase", headers: []string{"AUTHORIZATION=Basic abc"}},
+		{name: "mixed case", headers: []string{"aUtHoRiZaTiOn=Basic abc"}},
+		{name: "later repeated header", headers: []string{"X-Trace-ID=trace-123", "Authorization=Basic abc"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			args := append(validArgs(), "--client-secret", "secret")
+			for _, header := range test.headers {
+				args = append(args, "--token-header", header)
+			}
+			var stdout, stderr bytes.Buffer
+			code := cli.Run(context.Background(), args, &stdout, &stderr, failDeps(t))
+
+			if code != 2 {
+				t.Errorf("Run() exit code = %d, want 2", code)
+			}
+			for _, flag := range []string{"--client-secret", "--token-header"} {
+				if !strings.Contains(stderr.String(), flag) {
+					t.Errorf("stderr = %q, want offending flag %q", stderr.String(), flag)
+				}
+			}
+		})
+	}
+}
+
+// R-R12V-FUCW
+func TestRunAcceptsOneClientAuthenticationMethod(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "client secret alone", args: []string{"--client-secret", "secret"}},
+		{name: "Authorization header alone", args: []string{"--token-header", "Authorization=Basic abc"}},
+		{name: "client secret with unrelated header", args: []string{"--client-secret", "secret", "--token-header", "X-Trace-ID=trace-123"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			args := append(validArgs(), test.args...)
+			var stdout, stderr bytes.Buffer
+			code := cli.Run(context.Background(), args, &stdout, &stderr, failDeps(t))
+
+			if code != 0 {
+				t.Errorf("Run() exit code = %d, want 0; stderr = %q", code, stderr.String())
+			}
+			if stderr.String() != "" {
+				t.Errorf("stderr = %q, want empty", stderr.String())
+			}
+		})
+	}
+}
+
+// R-R2AR-TM3L
+func TestRunRejectsNonPositiveTimeout(t *testing.T) {
+	for _, timeout := range []string{"0s", "-1s"} {
+		t.Run(timeout, func(t *testing.T) {
+			args := append(validArgs(), "--timeout", timeout)
+			var stdout, stderr bytes.Buffer
+			code := cli.Run(context.Background(), args, &stdout, &stderr, failDeps(t))
+
+			if code != 2 {
+				t.Errorf("Run() exit code = %d, want 2", code)
+			}
+			if !strings.Contains(stderr.String(), "--timeout") {
+				t.Errorf("stderr = %q, want offending flag --timeout", stderr.String())
+			}
+		})
+	}
+}
+
+// R-R3IO-7DUA
+func TestRunRejectsCallbackPathWithoutLeadingSlash(t *testing.T) {
+	for _, path := range []string{"callback", ""} {
+		name := path
+		if name == "" {
+			name = "empty"
+		}
+		t.Run(name, func(t *testing.T) {
+			args := append(validArgs(), "--callback-path", path)
+			var stdout, stderr bytes.Buffer
+			code := cli.Run(context.Background(), args, &stdout, &stderr, failDeps(t))
+
+			if code != 2 {
+				t.Errorf("Run() exit code = %d, want 2", code)
+			}
+			if !strings.Contains(stderr.String(), "--callback-path") {
+				t.Errorf("stderr = %q, want offending flag --callback-path", stderr.String())
+			}
+		})
+	}
+}
+
 // R-QTRH-57WQ
 func TestRunRejectsMissingRequiredFlags(t *testing.T) {
 	tests := []struct {

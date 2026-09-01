@@ -118,8 +118,29 @@ func Parse(args []string) (Options, error) {
 	if err := validateExtraParams(parsed.options.AuthParams, parsed.options.TokenParams); err != nil {
 		return Options{}, err
 	}
+	if err := validateOptions(parsed.options); err != nil {
+		return Options{}, err
+	}
 
 	return parsed.options, nil
+}
+
+func validateOptions(parsed Options) error {
+	if parsed.ClientSecret != "" {
+		for _, header := range parsed.TokenHeaders {
+			if strings.EqualFold(header.Key, "Authorization") {
+				return errors.New("--client-secret cannot be used with an Authorization --token-header")
+			}
+		}
+	}
+	if parsed.Timeout <= 0 {
+		return errors.New("--timeout must be positive")
+	}
+	if !strings.HasPrefix(parsed.CallbackPath, "/") {
+		return errors.New("--callback-path must begin with /")
+	}
+
+	return nil
 }
 
 func validateExtraParams(authParams, tokenParams []oauth.Param) error {
