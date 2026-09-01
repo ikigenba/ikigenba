@@ -2,6 +2,9 @@ package cli
 
 import (
 	"bytes"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"os/exec"
@@ -14,6 +17,92 @@ import (
 
 	"github.com/ikigenba/ikigenba/idgen/internal/idgen"
 )
+
+// R-U39K-A9H0: Clock is exported as an interface with exactly the specified
+// method names, parameter name and types, return type, and no embedded methods.
+func TestClockExportedExactMethodSet(t *testing.T) {
+	t.Parallel()
+
+	file, err := parser.ParseFile(token.NewFileSet(), "cli.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse cli.go: %v", err)
+	}
+
+	var clockDeclarations []*ast.TypeSpec
+	for _, declaration := range file.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok != token.TYPE {
+			continue
+		}
+		for _, specification := range general.Specs {
+			typeSpec, ok := specification.(*ast.TypeSpec)
+			if ok && typeSpec.Name.Name == "Clock" {
+				clockDeclarations = append(clockDeclarations, typeSpec)
+			}
+		}
+	}
+	if len(clockDeclarations) != 1 {
+		t.Fatalf("found %d Clock declarations, want exactly 1", len(clockDeclarations))
+	}
+
+	clockDeclaration := clockDeclarations[0]
+	if !ast.IsExported(clockDeclaration.Name.Name) {
+		t.Errorf("Clock identifier %q is not exported", clockDeclaration.Name.Name)
+	}
+	clock, ok := clockDeclaration.Type.(*ast.InterfaceType)
+	if !ok {
+		t.Fatalf("Clock declaration type = %T, want *ast.InterfaceType", clockDeclaration.Type)
+	}
+	if got := len(clock.Methods.List); got != 2 {
+		t.Fatalf("Clock has %d method or embedded-interface fields, want exactly 2", got)
+	}
+
+	methods := make(map[string]*ast.FuncType, len(clock.Methods.List))
+	for _, field := range clock.Methods.List {
+		if len(field.Names) != 1 {
+			t.Fatalf("Clock contains an embedded or multiply-named method field: %#v", field)
+		}
+		method, ok := field.Type.(*ast.FuncType)
+		if !ok {
+			t.Fatalf("Clock.%s type = %T, want *ast.FuncType", field.Names[0].Name, field.Type)
+		}
+		methods[field.Names[0].Name] = method
+	}
+
+	assertSelector := func(expression ast.Expr, packageName, typeName string) bool {
+		selector, ok := expression.(*ast.SelectorExpr)
+		if !ok || selector.Sel.Name != typeName {
+			return false
+		}
+		identifier, ok := selector.X.(*ast.Ident)
+		return ok && identifier.Name == packageName
+	}
+
+	now, ok := methods["Now"]
+	if !ok {
+		t.Fatal("Clock.Now is missing")
+	}
+	if now.Params.NumFields() != 0 {
+		t.Errorf("Clock.Now has %d parameters, want 0", now.Params.NumFields())
+	}
+	if now.Results == nil || len(now.Results.List) != 1 || len(now.Results.List[0].Names) != 0 ||
+		!assertSelector(now.Results.List[0].Type, "time", "Time") {
+		t.Errorf("Clock.Now result = %#v, want unnamed time.Time", now.Results)
+	}
+
+	sleep, ok := methods["Sleep"]
+	if !ok {
+		t.Fatal("Clock.Sleep is missing")
+	}
+	if sleep.Params == nil || len(sleep.Params.List) != 1 || len(sleep.Params.List[0].Names) != 1 ||
+		sleep.Params.List[0].Names[0].Name != "d" ||
+		!assertSelector(sleep.Params.List[0].Type, "time", "Duration") {
+		t.Errorf("Clock.Sleep parameters = %#v, want exactly d time.Duration", sleep.Params)
+	}
+	if sleep.Results != nil && sleep.Results.NumFields() != 0 {
+		t.Errorf("Clock.Sleep has %d results, want 0", sleep.Results.NumFields())
+	}
+}
 
 type fakeClock struct {
 	now        time.Time
