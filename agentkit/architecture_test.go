@@ -135,6 +135,185 @@ func TestKnownWireDeclaration(t *testing.T) {
 	}
 }
 
+func TestRoleDeclaration(t *testing.T) {
+	// R-YX7D-BDFM
+	roleType := reflect.TypeFor[Role]()
+	if roleType.Name() != "Role" || roleType.Kind() != reflect.Int {
+		t.Fatalf("Role name/kind = %q/%s, want defined Role with underlying int", roleType.Name(), roleType.Kind())
+	}
+	wantNames := []string{"RoleSystem", "RoleUser", "RoleAssistant", "RoleTool"}
+	wantValues := []Role{0, 1, 2, 3}
+	gotValues := []Role{RoleSystem, RoleUser, RoleAssistant, RoleTool}
+	if !reflect.DeepEqual(gotValues, wantValues) {
+		t.Fatalf("Role values = %v, want %v", gotValues, wantValues)
+	}
+
+	parsed, err := parser.ParseFile(token.NewFileSet(), "message.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundDefinedIntType := false
+	var roleConstantNames []string
+	var iotaSequenceNames []string
+	iotaDeclarations := 0
+	for _, declaration := range parsed.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		if general.Tok == token.TYPE {
+			for _, specification := range general.Specs {
+				typeSpecification := specification.(*ast.TypeSpec)
+				underlying, isIdentifier := typeSpecification.Type.(*ast.Ident)
+				if typeSpecification.Name.Name == "Role" && typeSpecification.Assign == token.NoPos && isIdentifier && underlying.Name == "int" {
+					foundDefinedIntType = true
+				}
+			}
+			continue
+		}
+		if general.Tok != token.CONST {
+			continue
+		}
+		declarationNames := make([]string, 0)
+		hasIota := false
+		for _, specification := range general.Specs {
+			valueSpecification := specification.(*ast.ValueSpec)
+			for _, name := range valueSpecification.Names {
+				if strings.HasPrefix(name.Name, "Role") {
+					roleConstantNames = append(roleConstantNames, name.Name)
+					declarationNames = append(declarationNames, name.Name)
+				}
+			}
+			for _, value := range valueSpecification.Values {
+				identifier, isIdentifier := value.(*ast.Ident)
+				if isIdentifier && identifier.Name == "iota" {
+					hasIota = true
+				}
+			}
+		}
+		if len(declarationNames) > 0 && hasIota {
+			iotaDeclarations++
+			iotaSequenceNames = declarationNames
+		}
+	}
+	if !foundDefinedIntType {
+		t.Fatal("Role is not declared as the defined type Role int")
+	}
+	if iotaDeclarations != 1 || !reflect.DeepEqual(iotaSequenceNames, wantNames) {
+		t.Fatalf("Role iota declarations/names = %d/%v, want one declaration containing %v", iotaDeclarations, iotaSequenceNames, wantNames)
+	}
+	if !reflect.DeepEqual(roleConstantNames, wantNames) {
+		t.Fatalf("Role constants = %v, want exactly %v", roleConstantNames, wantNames)
+	}
+}
+
+func TestMessageDeclaration(t *testing.T) {
+	// R-YYF9-P56B
+	assertExactStructFields(t, reflect.TypeFor[Message](), []exactStructField{
+		{name: "Role", typeOf: reflect.TypeFor[Role]()},
+		{name: "Blocks", typeOf: reflect.TypeFor[[]Block]()},
+	})
+}
+
+func TestHistoryDeclaration(t *testing.T) {
+	// R-YZN6-2WX0
+	historyType := reflect.TypeFor[History]()
+	if historyType.Name() != "History" || historyType.Kind() != reflect.Slice || historyType.Elem() != reflect.TypeFor[Message]() {
+		t.Fatalf("History name/kind/element = %q/%s/%s, want defined History slice of Message", historyType.Name(), historyType.Kind(), historyType.Elem())
+	}
+	parsed, err := parser.ParseFile(token.NewFileSet(), "history.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundDefinedSlice := false
+	for _, declaration := range parsed.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok != token.TYPE {
+			continue
+		}
+		for _, specification := range general.Specs {
+			typeSpecification := specification.(*ast.TypeSpec)
+			arrayType, isArray := typeSpecification.Type.(*ast.ArrayType)
+			element, isIdentifier := func() (*ast.Ident, bool) {
+				if !isArray {
+					return nil, false
+				}
+				identifier, ok := arrayType.Elt.(*ast.Ident)
+				return identifier, ok
+			}()
+			if typeSpecification.Name.Name == "History" && typeSpecification.Assign == token.NoPos && isArray && arrayType.Len == nil && isIdentifier && element.Name == "Message" {
+				foundDefinedSlice = true
+			}
+		}
+	}
+	if !foundDefinedSlice {
+		t.Fatal("History is not declared as the defined slice type History []Message")
+	}
+}
+
+func TestTextDeclaration(t *testing.T) {
+	// R-Z0V2-GONP
+	assertExactBlockStruct(t, reflect.TypeFor[Text](), []exactStructField{
+		{name: "Text", typeOf: reflect.TypeFor[string]()},
+		{name: "Provider", typeOf: reflect.TypeFor[json.RawMessage]()},
+	})
+}
+
+func TestReasoningDeclaration(t *testing.T) {
+	// R-Z22Y-UGEE
+	assertExactBlockStruct(t, reflect.TypeFor[Reasoning](), []exactStructField{
+		{name: "Text", typeOf: reflect.TypeFor[string]()},
+		{name: "Redacted", typeOf: reflect.TypeFor[bool]()},
+		{name: "Provider", typeOf: reflect.TypeFor[json.RawMessage]()},
+	})
+}
+
+func TestToolUseDeclaration(t *testing.T) {
+	// R-Z3AV-8853
+	assertExactBlockStruct(t, reflect.TypeFor[ToolUse](), []exactStructField{
+		{name: "ID", typeOf: reflect.TypeFor[string]()},
+		{name: "Name", typeOf: reflect.TypeFor[string]()},
+		{name: "Input", typeOf: reflect.TypeFor[json.RawMessage]()},
+		{name: "Provider", typeOf: reflect.TypeFor[json.RawMessage]()},
+	})
+}
+
+func TestToolResultDeclaration(t *testing.T) {
+	// R-Z4IR-LZVS
+	assertExactBlockStruct(t, reflect.TypeFor[ToolResult](), []exactStructField{
+		{name: "ToolUseID", typeOf: reflect.TypeFor[string]()},
+		{name: "Content", typeOf: reflect.TypeFor[string]()},
+		{name: "IsError", typeOf: reflect.TypeFor[bool]()},
+		{name: "Provider", typeOf: reflect.TypeFor[json.RawMessage]()},
+	})
+}
+
+type exactStructField struct {
+	name   string
+	typeOf reflect.Type
+}
+
+func assertExactBlockStruct(t *testing.T, got reflect.Type, want []exactStructField) {
+	t.Helper()
+	assertExactStructFields(t, got, want)
+	if !got.Implements(reflect.TypeFor[Block]()) {
+		t.Fatalf("%s does not implement Block as a value", got)
+	}
+}
+
+func assertExactStructFields(t *testing.T, got reflect.Type, want []exactStructField) {
+	t.Helper()
+	if got.Kind() != reflect.Struct || got.NumField() != len(want) {
+		t.Fatalf("%s kind/field count = %s/%d, want struct/%d", got, got.Kind(), got.NumField(), len(want))
+	}
+	for index, wantField := range want {
+		field := got.Field(index)
+		if field.Name != wantField.name || field.Type != wantField.typeOf || !field.IsExported() || field.Anonymous {
+			t.Fatalf("%s field %d = %s %s (exported=%t, anonymous=%t), want %s %s (exported=true, anonymous=false)", got, index, field.Name, field.Type, field.IsExported(), field.Anonymous, wantField.name, wantField.typeOf)
+		}
+	}
+}
+
 func TestNoWarningOrCategorySpecificErrorTypesAreExported(t *testing.T) {
 	// R-2K5Z-AIWY
 	// R-2V52-QGL7
