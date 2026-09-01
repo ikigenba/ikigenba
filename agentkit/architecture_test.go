@@ -6,6 +6,8 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
+	"iter"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +16,130 @@ import (
 	"testing"
 	"time"
 )
+
+func TestWireFormatDeclarationIsExact(t *testing.T) {
+	// R-YC9H-YZ4H
+	wireType := reflect.TypeFor[WireFormat]()
+	if wireType.Name() != "WireFormat" || !token.IsExported(wireType.Name()) || wireType.Kind() != reflect.Interface {
+		t.Fatalf("WireFormat name/kind = %q/%s, want exported named interface", wireType.Name(), wireType.Kind())
+	}
+	wantMethods := []struct {
+		name   string
+		typeOf reflect.Type
+	}{
+		{"EncodeRequest", reflect.TypeOf(func(RequestState) ([]byte, error) { return nil, nil })},
+		{"DecodeStream", reflect.TypeOf(func(iter.Seq2[[]byte, error]) iter.Seq2[Event, error] { return nil })},
+		{"RenderTools", reflect.TypeOf(func([]Tool) (json.RawMessage, error) { return nil, nil })},
+		{"ReservedKeys", reflect.TypeOf(func() []string { return nil })},
+	}
+	if wireType.NumMethod() != len(wantMethods) {
+		t.Fatalf("WireFormat method count = %d, want exactly %d", wireType.NumMethod(), len(wantMethods))
+	}
+	for _, want := range wantMethods {
+		method, ok := wireType.MethodByName(want.name)
+		if !ok || method.Type != want.typeOf {
+			t.Fatalf("WireFormat.%s type = %v (present=%t), want exactly %s", want.name, method.Type, ok, want.typeOf)
+		}
+	}
+
+	typeSpecification := declaredType(t, "wire.go", "WireFormat")
+	if typeSpecification.Assign.IsValid() {
+		t.Fatal("WireFormat is an alias, want a defined interface type")
+	}
+	interfaceType, ok := typeSpecification.Type.(*ast.InterfaceType)
+	if !ok || len(interfaceType.Methods.List) != len(wantMethods) {
+		t.Fatalf("WireFormat declaration = %T with %d fields, want interface with four explicit methods", typeSpecification.Type, interfaceFieldCount(interfaceType))
+	}
+	for index, field := range interfaceType.Methods.List {
+		if len(field.Names) != 1 || field.Names[0].Name != wantMethods[index].name {
+			t.Fatalf("WireFormat declaration field %d names = %v, want explicit method %s in order", index, field.Names, wantMethods[index].name)
+		}
+		if _, ok := field.Type.(*ast.FuncType); !ok {
+			t.Fatalf("WireFormat.%s declaration is %T, want method function", wantMethods[index].name, field.Type)
+		}
+	}
+}
+
+func TestFramerAndSSEFramesDeclarationsAreExact(t *testing.T) {
+	// R-ZGPR-FPAQ
+	// R-ZHXN-TH1F
+	wantSignature := reflect.TypeOf(func(io.Reader) iter.Seq2[[]byte, error] { return nil })
+	framerType := reflect.TypeFor[Framer]()
+	if framerType.Name() != "Framer" || !token.IsExported(framerType.Name()) || framerType.Kind() != reflect.Func {
+		t.Fatalf("Framer name/kind = %q/%s, want exported defined function type", framerType.Name(), framerType.Kind())
+	}
+	if framerType.NumIn() != 1 || framerType.In(0) != wantSignature.In(0) || framerType.NumOut() != 1 || framerType.Out(0) != wantSignature.Out(0) {
+		t.Fatalf("Framer signature = %s, want func%s", framerType, strings.TrimPrefix(wantSignature.String(), "func"))
+	}
+	framerSpecification := declaredType(t, "wire.go", "Framer")
+	if framerSpecification.Assign.IsValid() {
+		t.Fatal("Framer is an alias, want a defined function type")
+	}
+	if _, ok := framerSpecification.Type.(*ast.FuncType); !ok {
+		t.Fatalf("Framer declaration is %T, want function type", framerSpecification.Type)
+	}
+
+	sseType := reflect.TypeOf(SSEFrames)
+	if sseType != wantSignature {
+		t.Fatalf("SSEFrames signature = %s, want exactly %s", sseType, wantSignature)
+	}
+	if !sseType.AssignableTo(framerType) {
+		t.Fatalf("SSEFrames type %s is not assignable to Framer %s", sseType, framerType)
+	}
+	var assigned Framer = SSEFrames
+	if assigned == nil {
+		t.Fatal("SSEFrames assignment unexpectedly produced a nil Framer")
+	}
+	sseDeclaration := declaredFunction(t, "sse.go", "SSEFrames")
+	if sseDeclaration.Recv != nil || !sseDeclaration.Name.IsExported() {
+		t.Fatal("SSEFrames is not an exported package function")
+	}
+}
+
+func declaredType(t *testing.T, filename, name string) *ast.TypeSpec {
+	t.Helper()
+	parsed, err := parser.ParseFile(token.NewFileSet(), filename, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, declaration := range parsed.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok != token.TYPE {
+			continue
+		}
+		for _, specification := range general.Specs {
+			typeSpecification := specification.(*ast.TypeSpec)
+			if typeSpecification.Name.Name == name {
+				return typeSpecification
+			}
+		}
+	}
+	t.Fatalf("type %s is not declared in %s", name, filename)
+	return nil
+}
+
+func declaredFunction(t *testing.T, filename, name string) *ast.FuncDecl {
+	t.Helper()
+	parsed, err := parser.ParseFile(token.NewFileSet(), filename, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, declaration := range parsed.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && function.Name.Name == name {
+			return function
+		}
+	}
+	t.Fatalf("function %s is not declared in %s", name, filename)
+	return nil
+}
+
+func interfaceFieldCount(interfaceType *ast.InterfaceType) int {
+	if interfaceType == nil {
+		return 0
+	}
+	return len(interfaceType.Methods.List)
+}
 
 func TestConversationPublicShape(t *testing.T) {
 	// R-YURK-JTY8

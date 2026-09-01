@@ -63,6 +63,8 @@ func TestWireSelectionIsConstructorOnly(t *testing.T) {
 }
 
 func TestWireOwnsOnlyBodyGrammar(t *testing.T) {
+	// R-YB1L-L7DS
+	assertEndpointConcernsAreOutsideWireInterface(t)
 	state := RequestState{Model: "endpoint-owned-model", History: History{
 		{Role: RoleAssistant, Blocks: []Block{
 			Text{Text: "Hello"},
@@ -76,13 +78,15 @@ func TestWireOwnsOnlyBodyGrammar(t *testing.T) {
 		name      string
 		wire      WireFormat
 		replay    json.RawMessage
+		rootKey   string
 		want      []string
+		wantTools []string
 		wantUsage Usage
 	}{
-		{"anthropic", newAnthropicWire(nil), json.RawMessage(`{"type":"thinking","thinking":"replayed","signature":"sig"}`), []string{`"thinking":"replayed"`, `"signature":"sig"`, `"type":"tool_use"`, `"type":"tool_result"`, `"is_error":true`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4}},
-		{"responses", newOpenAIResponsesWire(nil), json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"replayed"}]}`), []string{`"type":"reasoning"`, `"id":"rs_1"`, `"text":"replayed"`, `"arguments":"{\"q\":\"value\"}"`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}},
-		{"chat", newOpenAIChatWire(nil), json.RawMessage(`{"reasoning_content":"replayed"}`), []string{`"reasoning_content":"replayed"`, `"tool_calls"`, `"arguments":"{\"q\":\"value\"}"`, `"tool_call_id":"call_1"`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}},
-		{"gemini", newGeminiWire(nil), json.RawMessage(`{"text":"replayed","thought":true,"thoughtSignature":"sig"}`), []string{`"text":"replayed"`, `"thought":true`, `"thoughtSignature":"sig"`, `"functionCall"`, `"args":{"q":"value"}`, `"functionResponse"`, `"isError":true`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}},
+		{"anthropic", newAnthropicWire(nil), json.RawMessage(`{"type":"thinking","thinking":"replayed","signature":"sig"}`), "messages", []string{`"thinking":"replayed"`, `"signature":"sig"`, `"type":"tool_use"`, `"type":"tool_result"`, `"is_error":true`}, []string{`"name":"lookup"`, `"input_schema":`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4}},
+		{"responses", newOpenAIResponsesWire(nil), json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"replayed"}]}`), "input", []string{`"type":"reasoning"`, `"id":"rs_1"`, `"text":"replayed"`, `"arguments":"{\"q\":\"value\"}"`}, []string{`"type":"function"`, `"name":"lookup"`, `"parameters":`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}},
+		{"chat", newOpenAIChatWire(nil), json.RawMessage(`{"reasoning_content":"replayed"}`), "messages", []string{`"reasoning_content":"replayed"`, `"tool_calls"`, `"arguments":"{\"q\":\"value\"}"`, `"tool_call_id":"call_1"`}, []string{`"type":"function"`, `"function":{"name":"lookup"`, `"parameters":`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}},
+		{"gemini", newGeminiWire(nil), json.RawMessage(`{"text":"replayed","thought":true,"thoughtSignature":"sig"}`), "contents", []string{`"text":"replayed"`, `"thought":true`, `"thoughtSignature":"sig"`, `"functionCall"`, `"args":{"q":"value"}`, `"functionResponse"`, `"isError":true`}, []string{`"functionDeclarations":`, `"name":"lookup"`, `"parameters":`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}},
 	}
 	for _, test := range tests {
 		wire := test.wire
@@ -96,9 +100,7 @@ func TestWireOwnsOnlyBodyGrammar(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", test.name, err)
 		}
-		if bytes.Contains(body, []byte(state.Model)) || bytes.Contains(body, []byte("http")) {
-			t.Fatalf("%T encoded endpoint-owned data in body %s", wire, body)
-		}
+		assertExactRequestRoot(t, test.name, body, test.rootKey)
 		for _, fragment := range test.want {
 			if !bytes.Contains(body, []byte(fragment)) {
 				t.Errorf("%s body %s does not own required grammar fragment %s", test.name, body, fragment)
@@ -107,9 +109,17 @@ func TestWireOwnsOnlyBodyGrammar(t *testing.T) {
 		if test.name == "responses" {
 			assertResponsesCallItemTypes(t, body)
 		}
+		if test.name == "anthropic" {
+			assertAnthropicToolInputIsObject(t, body)
+		}
 		declarations, err := wire.RenderTools([]Tool{tool})
-		if err != nil || !json.Valid(declarations) || !bytes.Contains(declarations, []byte("lookup")) {
+		if err != nil || !json.Valid(declarations) {
 			t.Fatalf("%T tool grammar = %s, %v", wire, declarations, err)
+		}
+		for _, fragment := range test.wantTools {
+			if !bytes.Contains(declarations, []byte(fragment)) {
+				t.Errorf("%s tool declarations %s lack wire-owned fragment %s", test.name, declarations, fragment)
+			}
 		}
 		if len(wire.ReservedKeys()) == 0 {
 			t.Fatalf("%T did not identify its provider option grammar", wire)
@@ -134,6 +144,80 @@ func TestWireOwnsOnlyBodyGrammar(t *testing.T) {
 			t.Errorf("%s normalized vendor usage topology to %+v", test.name, got)
 		}
 	}
+}
+
+func assertEndpointConcernsAreOutsideWireInterface(t *testing.T) {
+	t.Helper()
+	wireType := reflect.TypeFor[WireFormat]()
+	endpointType := reflect.TypeFor[endpointConfig]()
+	concerns := []struct {
+		name  string
+		field string
+	}{
+		{"base URL", "baseURL"},
+		{"auth", "auth"},
+		{"headers", "headers"},
+		{"error envelope", "classifier"},
+	}
+	for _, concern := range concerns {
+		field, ok := endpointType.FieldByName(concern.field)
+		if !ok {
+			t.Fatalf("endpointConfig lacks independently expected %s field %q", concern.name, concern.field)
+		}
+		for index := range wireType.NumMethod() {
+			method := wireType.Method(index)
+			if strings.Contains(strings.ToLower(method.Name), strings.ToLower(concern.field)) {
+				t.Errorf("WireFormat method %q owns endpoint %s", method.Name, concern.name)
+			}
+			for parameter := range method.Type.NumIn() {
+				if method.Type.In(parameter) == field.Type {
+					t.Errorf("WireFormat.%s accepts endpoint-owned %s type %s", method.Name, concern.name, field.Type)
+				}
+			}
+			for result := range method.Type.NumOut() {
+				if method.Type.Out(result) == field.Type {
+					t.Errorf("WireFormat.%s returns endpoint-owned %s type %s", method.Name, concern.name, field.Type)
+				}
+			}
+		}
+	}
+}
+
+func assertExactRequestRoot(t *testing.T, wireName string, body []byte, wantKey string) {
+	t.Helper()
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(body, &root); err != nil {
+		t.Fatalf("%s request body is invalid JSON: %v", wireName, err)
+	}
+	if len(root) != 1 || root[wantKey] == nil {
+		t.Fatalf("%s request root keys = %v, want only body-grammar key %q (no base URL, auth, headers, or error envelope)", wireName, reflect.ValueOf(root).MapKeys(), wantKey)
+	}
+}
+
+func assertAnthropicToolInputIsObject(t *testing.T, body []byte) {
+	t.Helper()
+	var request struct {
+		Messages []struct {
+			Content []struct {
+				Type  string         `json:"type"`
+				Input map[string]any `json:"input"`
+			} `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(body, &request); err != nil {
+		t.Fatal(err)
+	}
+	for _, message := range request.Messages {
+		for _, content := range message.Content {
+			if content.Type == "tool_use" {
+				if !reflect.DeepEqual(content.Input, map[string]any{"q": "value"}) {
+					t.Fatalf("Anthropic tool_use input = %#v, want object-valued input containing q=value", content.Input)
+				}
+				return
+			}
+		}
+	}
+	t.Fatal("Anthropic request lacks tool_use content with object-valued input")
 }
 
 func assertResponsesCallItemTypes(t *testing.T, body []byte) {
@@ -244,6 +328,7 @@ func TestDecodeStreamUsesClassifierForInBandError(t *testing.T) {
 }
 
 func TestFramingIsSeparableAndErrorsPropagate(t *testing.T) {
+	// R-0UPN-4AP7
 	want := errors.New("binary framing failed")
 	alternate := Framer(func(io.Reader) iter.Seq2[[]byte, error] {
 		return func(yield func([]byte, error) bool) {
