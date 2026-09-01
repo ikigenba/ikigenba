@@ -37,7 +37,7 @@ func Run(_ context.Context, args []string, stdout, stderr io.Writer, _ Deps) int
 }
 
 func run(args []string, stdout, stderr io.Writer) exitCode {
-	parsed, err := options.Parse(args)
+	flags, err := options.ParseFlags(args)
 	if errors.Is(err, options.ErrHelp) {
 		_, _ = io.WriteString(stdout, options.Usage())
 
@@ -48,8 +48,14 @@ func run(args []string, stdout, stderr io.Writer) exitCode {
 
 		return exitUsage
 	}
-	if parsed.Version {
+	if flags.Version {
 		return exitSuccess
+	}
+	_, err = flags.Validate()
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "error: %s\n%s", strconv.Quote(err.Error()), options.Usage())
+
+		return exitUsage
 	}
 
 	return exitSuccess

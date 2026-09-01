@@ -74,88 +74,125 @@ type Options struct {
 	Version      bool
 }
 
-// Parse parses args without writing diagnostics or usage text to a stream.
-func Parse(args []string) (Options, error) {
-	var parsed struct {
-		authURL  string
-		tokenURL string
-		options  Options
-	}
+// Flags holds the raw values parsed from the command line.
+type Flags struct {
+	AuthURL      string
+	TokenURL     string
+	ClientID     string
+	Scope        string
+	ClientSecret string
+	CallbackHost string
+	Port         int
+	CallbackPath string
+	AuthParams   []oauth.Param
+	TokenParams  []oauth.Param
+	TokenHeaders []oauth.Param
+	NoBrowser    bool
+	Timeout      time.Duration
+	Version      bool
+}
+
+// ParseFlags parses flag syntax without applying login validation.
+func ParseFlags(args []string) (Flags, error) {
+	var parsed Flags
 
 	flags := flag.NewFlagSet("oauth", flag.ContinueOnError)
-	flags.StringVar(&parsed.authURL, "auth-url", "", "")
-	flags.StringVar(&parsed.tokenURL, "token-url", "", "")
-	flags.StringVar(&parsed.options.ClientID, "client-id", "", "")
-	flags.StringVar(&parsed.options.Scope, "scope", "", "")
-	flags.StringVar(&parsed.options.ClientSecret, "client-secret", "", "")
-	flags.StringVar(&parsed.options.CallbackHost, "callback-host", "localhost", "")
-	flags.IntVar(&parsed.options.Port, "port", 0, "")
-	flags.StringVar(&parsed.options.CallbackPath, "callback-path", "/callback", "")
-	flags.Var(newParamsValue("--auth-param", &parsed.options.AuthParams), "auth-param", "")
-	flags.Var(newParamsValue("--token-param", &parsed.options.TokenParams), "token-param", "")
-	flags.Var(newParamsValue("--token-header", &parsed.options.TokenHeaders), "token-header", "")
-	flags.BoolVar(&parsed.options.NoBrowser, "no-browser", false, "")
-	flags.DurationVar(&parsed.options.Timeout, "timeout", 5*time.Minute, "")
+	flags.StringVar(&parsed.AuthURL, "auth-url", "", "")
+	flags.StringVar(&parsed.TokenURL, "token-url", "", "")
+	flags.StringVar(&parsed.ClientID, "client-id", "", "")
+	flags.StringVar(&parsed.Scope, "scope", "", "")
+	flags.StringVar(&parsed.ClientSecret, "client-secret", "", "")
+	flags.StringVar(&parsed.CallbackHost, "callback-host", "localhost", "")
+	flags.IntVar(&parsed.Port, "port", 0, "")
+	flags.StringVar(&parsed.CallbackPath, "callback-path", "/callback", "")
+	flags.Var(newParamsValue(&parsed.AuthParams), "auth-param", "")
+	flags.Var(newParamsValue(&parsed.TokenParams), "token-param", "")
+	flags.Var(newParamsValue(&parsed.TokenHeaders), "token-header", "")
+	flags.BoolVar(&parsed.NoBrowser, "no-browser", false, "")
+	flags.DurationVar(&parsed.Timeout, "timeout", 5*time.Minute, "")
 	for _, name := range []string{"V", "version"} {
-		flags.BoolVar(&parsed.options.Version, name, false, "")
+		flags.BoolVar(&parsed.Version, name, false, "")
 	}
 	flags.SetOutput(io.Discard)
 
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			return Options{}, ErrHelp
+			return Flags{}, ErrHelp
 		}
 
-		return Options{}, err
+		return Flags{}, err
 	}
-	if parsed.options.Version {
-		var err error
-		if parsed.authURL != "" {
-			parsed.options.AuthURL, err = parseURL("--auth-url", parsed.authURL)
-			if err != nil {
-				return Options{}, err
-			}
-		}
-		if parsed.tokenURL != "" {
-			parsed.options.TokenURL, err = parseURL("--token-url", parsed.tokenURL)
-			if err != nil {
-				return Options{}, err
-			}
-		}
 
-		return parsed.options, nil
-	}
+	return parsed, nil
+}
+
+// Validate applies semantic login validation and returns parsed endpoint URLs.
+func (parsed Flags) Validate() (Options, error) {
 
 	for _, required := range []struct {
 		name  string
 		value string
 	}{
-		{"--auth-url", parsed.authURL},
-		{"--token-url", parsed.tokenURL},
-		{"--client-id", parsed.options.ClientID},
+		{"--auth-url", parsed.AuthURL},
+		{"--token-url", parsed.TokenURL},
+		{"--client-id", parsed.ClientID},
 	} {
 		if required.value == "" {
 			return Options{}, fmt.Errorf("missing required flag %s", required.name)
 		}
 	}
 
+	validated := Options{
+		ClientID:     parsed.ClientID,
+		Scope:        parsed.Scope,
+		ClientSecret: parsed.ClientSecret,
+		CallbackHost: parsed.CallbackHost,
+		Port:         parsed.Port,
+		CallbackPath: parsed.CallbackPath,
+		AuthParams:   parsed.AuthParams,
+		TokenParams:  parsed.TokenParams,
+		TokenHeaders: parsed.TokenHeaders,
+		NoBrowser:    parsed.NoBrowser,
+		Timeout:      parsed.Timeout,
+		Version:      parsed.Version,
+	}
+
 	var err error
-	parsed.options.AuthURL, err = parseURL("--auth-url", parsed.authURL)
+	validated.AuthURL, err = parseURL("--auth-url", parsed.AuthURL)
 	if err != nil {
 		return Options{}, err
 	}
-	parsed.options.TokenURL, err = parseURL("--token-url", parsed.tokenURL)
+	validated.TokenURL, err = parseURL("--token-url", parsed.TokenURL)
 	if err != nil {
 		return Options{}, err
 	}
-	if err := validateExtraParams(parsed.options.AuthParams, parsed.options.TokenParams); err != nil {
+	if err := validateParamForms("--auth-param", parsed.AuthParams); err != nil {
 		return Options{}, err
 	}
-	if err := validateOptions(parsed.options); err != nil {
+	if err := validateParamForms("--token-param", parsed.TokenParams); err != nil {
+		return Options{}, err
+	}
+	if err := validateParamForms("--token-header", parsed.TokenHeaders); err != nil {
+		return Options{}, err
+	}
+	if err := validateExtraParams(parsed.AuthParams, parsed.TokenParams); err != nil {
+		return Options{}, err
+	}
+	if err := validateOptions(validated); err != nil {
 		return Options{}, err
 	}
 
-	return parsed.options, nil
+	return validated, nil
+}
+
+func validateParamForms(flagName string, params []oauth.Param) error {
+	for _, param := range params {
+		if param.Key == "" {
+			return fmt.Errorf("%s value %q must be key=value with a non-empty key", flagName, param.Value)
+		}
+	}
+
+	return nil
 }
 
 func validateOptions(parsed Options) error {
@@ -209,12 +246,11 @@ func parseURL(flagName, raw string) (*url.URL, error) {
 }
 
 type paramsValue struct {
-	flagName string
-	params   *[]oauth.Param
+	params *[]oauth.Param
 }
 
-func newParamsValue(flagName string, params *[]oauth.Param) *paramsValue {
-	return &paramsValue{flagName: flagName, params: params}
+func newParamsValue(params *[]oauth.Param) *paramsValue {
+	return &paramsValue{params: params}
 }
 
 func (value *paramsValue) String() string {
@@ -224,7 +260,7 @@ func (value *paramsValue) String() string {
 func (value *paramsValue) Set(raw string) error {
 	key, parameterValue, found := strings.Cut(raw, "=")
 	if !found || key == "" {
-		return fmt.Errorf("%s value %q must be key=value with a non-empty key", value.flagName, raw)
+		key, parameterValue = "", raw
 	}
 	*value.params = append(*value.params, oauth.Param{Key: key, Value: parameterValue})
 

@@ -164,11 +164,83 @@ func TestUsageNamesEveryFlagSpelling(t *testing.T) {
 	}
 }
 
-// R-QK0A-31Z6
-func TestParseAcceptsEveryFlagAndPopulatesOptions(t *testing.T) {
+// R-M50O-WM2O
+func TestParseFlagsReturnsExportedHelpSentinel(t *testing.T) {
 	t.Parallel()
 
-	got, err := options.Parse([]string{
+	for _, args := range [][]string{{"-h"}, {"--help"}} {
+		_, err := options.ParseFlags(args)
+		if !errors.Is(err, options.ErrHelp) || !errors.Is(err, flag.ErrHelp) {
+			t.Errorf("ParseFlags(%q) error = %v, want options.ErrHelp", args, err)
+		}
+	}
+}
+
+// R-M1CZ-RAUL
+func TestFlagsHasExactExportedStructShape(t *testing.T) {
+	t.Parallel()
+
+	got := reflect.TypeOf(options.Flags{})
+	wantFields := []struct {
+		name string
+		typ  reflect.Type
+	}{
+		{"AuthURL", reflect.TypeOf(string(""))},
+		{"TokenURL", reflect.TypeOf(string(""))},
+		{"ClientID", reflect.TypeOf(string(""))},
+		{"Scope", reflect.TypeOf(string(""))},
+		{"ClientSecret", reflect.TypeOf(string(""))},
+		{"CallbackHost", reflect.TypeOf(string(""))},
+		{"Port", reflect.TypeOf(int(0))},
+		{"CallbackPath", reflect.TypeOf(string(""))},
+		{"AuthParams", reflect.TypeOf([]oauth.Param(nil))},
+		{"TokenParams", reflect.TypeOf([]oauth.Param(nil))},
+		{"TokenHeaders", reflect.TypeOf([]oauth.Param(nil))},
+		{"NoBrowser", reflect.TypeOf(bool(false))},
+		{"Timeout", reflect.TypeOf(time.Duration(0))},
+		{"Version", reflect.TypeOf(bool(false))},
+	}
+	if got.NumField() != len(wantFields) {
+		t.Fatalf("options.Flags field count = %d, want exactly %d", got.NumField(), len(wantFields))
+	}
+	for index, want := range wantFields {
+		field := got.Field(index)
+		if field.Name != want.name || field.Type != want.typ || !field.IsExported() || field.Anonymous || field.Tag != "" {
+			t.Errorf("options.Flags field %d = %#v, want exported named field %s %v without tag", index, field, want.name, want.typ)
+		}
+	}
+}
+
+// R-M2KW-52LA
+func TestParseFlagsExportedFunctionSignature(t *testing.T) {
+	t.Parallel()
+
+	requireSignature := func(parse func([]string) (options.Flags, error)) func([]string) (options.Flags, error) {
+		return parse
+	}
+	if _, err := requireSignature(options.ParseFlags)(nil); err != nil {
+		t.Fatalf("ParseFlags(nil) error = %v", err)
+	}
+}
+
+// R-M3SS-IUBZ
+func TestFlagsValidateExportedMethodSignature(t *testing.T) {
+	t.Parallel()
+
+	requireSignature := func(validate func(options.Flags) (options.Options, error)) func(options.Flags) (options.Options, error) {
+		return validate
+	}
+	_, err := requireSignature(options.Flags.Validate)(options.Flags{})
+	if err == nil {
+		t.Fatal("Flags{}.Validate() error = nil, want semantic validation error")
+	}
+}
+
+// R-JL3B-GSOS
+func TestParseFlagsPopulatesSuppliedFlagValues(t *testing.T) {
+	t.Parallel()
+
+	got, err := options.ParseFlags([]string{
 		"--auth-url", "https://identity.example/authorize?audience=api",
 		"--token-url", "https://identity.example/oauth/token",
 		"--client-id", "client-123",
@@ -185,20 +257,11 @@ func TestParseAcceptsEveryFlagAndPopulatesOptions(t *testing.T) {
 		"--version",
 	})
 	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
+		t.Fatalf("ParseFlags() error = %v", err)
 	}
-
-	wantAuthURL, err := url.Parse("https://identity.example/authorize?audience=api")
-	if err != nil {
-		t.Fatalf("url.Parse(auth URL) error = %v", err)
-	}
-	wantTokenURL, err := url.Parse("https://identity.example/oauth/token")
-	if err != nil {
-		t.Fatalf("url.Parse(token URL) error = %v", err)
-	}
-	want := options.Options{
-		AuthURL:      wantAuthURL,
-		TokenURL:     wantTokenURL,
+	want := options.Flags{ //nolint:gosec // These are inert parser test values, not credentials.
+		AuthURL:      "https://identity.example/authorize?audience=api",
+		TokenURL:     "https://identity.example/oauth/token",
 		ClientID:     "client-123",
 		Scope:        "openid profile",
 		ClientSecret: "secret-456",
@@ -213,68 +276,49 @@ func TestParseAcceptsEveryFlagAndPopulatesOptions(t *testing.T) {
 		Version:      true,
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("Parse() = %#v, want %#v", got, want)
+		t.Errorf("ParseFlags() = %#v, want %#v", got, want)
 	}
 
 	for _, args := range [][]string{{"-V"}, {"--version"}} {
-		got, err := options.Parse(args)
+		got, err := options.ParseFlags(args)
 		if err != nil {
-			t.Errorf("Parse(%q) error = %v", args, err)
+			t.Errorf("ParseFlags(%q) error = %v", args, err)
 			continue
 		}
 		if !got.Version {
-			t.Errorf("Parse(%q).Version = false, want true", args)
+			t.Errorf("ParseFlags(%q).Version = false, want true", args)
 		}
 	}
 	for _, args := range [][]string{{"-h"}, {"--help"}} {
-		_, err := options.Parse(args)
-		if !errors.Is(err, options.ErrHelp) || !errors.Is(err, flag.ErrHelp) {
-			t.Errorf("Parse(%q) error = %v, want ErrHelp", args, err)
+		if _, err := options.ParseFlags(args); !errors.Is(err, options.ErrHelp) {
+			t.Errorf("ParseFlags(%q) error = %v, want ErrHelp", args, err)
 		}
 	}
 }
 
-// R-QL86-GTPV
-func TestParseSuppliesDocumentedDefaults(t *testing.T) {
+// R-JMB7-UKFH
+func TestParseFlagsSuppliesDocumentedDefaults(t *testing.T) {
 	t.Parallel()
 
-	got, err := options.Parse([]string{
-		"--auth-url", "https://identity.example/authorize",
-		"--token-url", "https://identity.example/token",
-		"--client-id", "client-123",
-	})
+	got, err := options.ParseFlags(nil)
 	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
+		t.Fatalf("ParseFlags() error = %v", err)
 	}
-	wantAuthURL, err := url.Parse("https://identity.example/authorize")
-	if err != nil {
-		t.Fatalf("url.Parse(auth URL) error = %v", err)
-	}
-	wantTokenURL, err := url.Parse("https://identity.example/token")
-	if err != nil {
-		t.Fatalf("url.Parse(token URL) error = %v", err)
-	}
-	want := options.Options{
-		AuthURL:      wantAuthURL,
-		TokenURL:     wantTokenURL,
-		ClientID:     "client-123",
+	want := options.Flags{
 		CallbackHost: "localhost",
 		CallbackPath: "/callback",
 		Timeout:      5 * time.Minute,
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("Parse() = %#v, want %#v", got, want)
+		t.Errorf("ParseFlags() = %#v, want %#v", got, want)
 	}
 }
 
-// R-QMG2-ULGK
-func TestParsePreservesEveryRepeatedParameterInOrder(t *testing.T) {
+// R-JNJ4-8C66
+func TestParseFlagsPreservesEveryRepeatedParameterInOrder(t *testing.T) {
 	t.Parallel()
 
-	got, err := options.Parse([]string{
-		"--auth-url", "https://identity.example/authorize",
-		"--token-url", "https://identity.example/token",
-		"--client-id", "client-123",
+	got, err := options.ParseFlags([]string{
 		"--auth-param", "first=one",
 		"--token-param", "token-first=alpha",
 		"--token-header", "X-First=1",
@@ -286,7 +330,7 @@ func TestParsePreservesEveryRepeatedParameterInOrder(t *testing.T) {
 		"--token-header", "X-Last=3",
 	})
 	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
+		t.Fatalf("ParseFlags() error = %v", err)
 	}
 
 	wantAuthParams := []oauth.Param{
@@ -312,5 +356,78 @@ func TestParsePreservesEveryRepeatedParameterInOrder(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got.TokenHeaders, wantTokenHeaders) {
 		t.Errorf("TokenHeaders = %#v, want %#v", got.TokenHeaders, wantTokenHeaders)
+	}
+}
+
+// R-JOR0-M3WV
+func TestParseFlagsDefersSemanticValidation(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name string
+		args []string
+	}{
+		{name: "missing required flags"},
+		{
+			name: "reserved authorize parameter",
+			args: []string{
+				"--auth-url", "https://identity.example/authorize",
+				"--token-url", "https://identity.example/token",
+				"--client-id", "client-123",
+				"--auth-param", "client_id=override",
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			flags, err := options.ParseFlags(test.args)
+			if err != nil {
+				t.Fatalf("ParseFlags() error = %v, want nil", err)
+			}
+			if _, err := flags.Validate(); err == nil {
+				t.Fatal("Validate() error = nil, want semantic validation error")
+			}
+		})
+	}
+}
+
+// R-JPYW-ZVNK
+func TestFlagsValidateReturnsParsedURLsWithoutIOParameters(t *testing.T) {
+	t.Parallel()
+
+	flags := options.Flags{ //nolint:gosec // These are inert validation test values, not credentials.
+		AuthURL:      "https://identity.example/authorize?audience=api",
+		TokenURL:     "https://identity.example/oauth/token",
+		ClientID:     "client-123",
+		Scope:        "openid profile",
+		CallbackHost: "localhost",
+		CallbackPath: "/callback",
+		Timeout:      5 * time.Minute,
+	}
+	got, err := flags.Validate()
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	wantAuthURL := &url.URL{
+		Scheme:   "https",
+		Host:     "identity.example",
+		Path:     "/authorize",
+		RawQuery: "audience=api",
+	}
+	wantTokenURL := &url.URL{
+		Scheme: "https",
+		Host:   "identity.example",
+		Path:   "/oauth/token",
+	}
+	if !reflect.DeepEqual(got.AuthURL, wantAuthURL) {
+		t.Errorf("Options.AuthURL = %#v, want %#v", got.AuthURL, wantAuthURL)
+	}
+	if !reflect.DeepEqual(got.TokenURL, wantTokenURL) {
+		t.Errorf("Options.TokenURL = %#v, want %#v", got.TokenURL, wantTokenURL)
+	}
+
+	validateType := reflect.TypeOf(options.Flags.Validate)
+	if validateType.NumIn() != 1 || validateType.NumOut() != 2 {
+		t.Errorf("Flags.Validate signature = %v, want func(Flags) (Options, error) with no I/O parameter", validateType)
 	}
 }
