@@ -180,13 +180,17 @@ func newConversationAxesFixture(t *testing.T) (*Conversation, *fixtureProvider, 
 	return conversation, provider, unknownModel, capture
 }
 
-func TestConversationExposesOnlySendAsExportedMethod(t *testing.T) {
+func TestConversationExposesOnlyDeferredAndSendAsExportedMethods(t *testing.T) {
 	// R-1POH-Q9DL
 	conversation, _, _, _ := newConversationAxesFixture(t)
 	conversationType := reflect.TypeOf(conversation)
-	for index := range conversationType.NumMethod() {
-		if conversationType.Method(index).Name != "Send" {
-			t.Fatalf("unexpected exported reassignment/API method %q", conversationType.Method(index).Name)
+	want := []string{"Deferred", "Send"}
+	if conversationType.NumMethod() != len(want) {
+		t.Fatalf("Conversation has %d exported methods, want exactly %d", conversationType.NumMethod(), len(want))
+	}
+	for index, name := range want {
+		if got := conversationType.Method(index).Name; got != name {
+			t.Fatalf("exported Conversation method %d = %q, want %q", index, got, name)
 		}
 	}
 }
@@ -365,8 +369,9 @@ func TestSendIsSoleVerbAndAcceptsDifferentBlockVariants(t *testing.T) {
 	if len(provider.states) != 1 || len(provider.states[0].History) != 1 || len(provider.states[0].History[0].Blocks) != 2 {
 		t.Fatalf("Send did not carry both block variants: %#v", provider.states)
 	}
-	if got := reflect.TypeOf(conversation).NumMethod(); got != 1 {
-		t.Fatalf("Conversation has %d exported methods, want only Send", got)
+	conversationType := reflect.TypeOf(conversation)
+	if got := conversationType.NumMethod(); got != 2 || conversationType.Method(0).Name != "Deferred" || conversationType.Method(1).Name != "Send" {
+		t.Fatalf("Conversation exported methods changed: %v", conversationType)
 	}
 }
 
@@ -1154,8 +1159,9 @@ func TestSendCompletesToolRoundTripsWithFixedClonedConfigAndOneCommit(t *testing
 	if result.Blocks[0].(ToolResult).ToolUseID != callID || provider.states[1].History[3].Blocks[0].(ToolResult).ToolUseID != callID {
 		t.Fatal("tool result did not preserve the vendor call id byte-for-byte")
 	}
-	if got := reflect.TypeOf(conversation).NumMethod(); got != 1 || reflect.TypeOf(conversation).Method(0).Name != "Send" {
-		t.Fatalf("Conversation exported methods changed: %v", reflect.TypeOf(conversation))
+	conversationType := reflect.TypeOf(conversation)
+	if got := conversationType.NumMethod(); got != 2 || conversationType.Method(0).Name != "Deferred" || conversationType.Method(1).Name != "Send" {
+		t.Fatalf("Conversation exported methods changed: %v", conversationType)
 	}
 	if _, mutated := conversation.options["mutated"]; mutated || !bytes.Equal(conversation.options["vendor_flag"], []byte(`{"mode":"exact"}`)) {
 		t.Fatalf("provider snapshot mutated fixed options: %#v", conversation.options)
@@ -1247,19 +1253,65 @@ func phase17Tool(name string) Tool {
 	}
 }
 
+func TestDeferredRegistrationSynthesizesExactLoadToolsSchema(t *testing.T) {
+	// R-0S9U-CR7T
+	conversation := NewConversation(&phase15Provider{model: "model"}, http.DefaultClient)
+	conversation.Deferred(DeferredGroup{
+		Name:  "search",
+		Blurb: "Search stored records",
+		Tools: []Tool{phase17Tool("search_records")},
+	})
+	orchestrator, err := conversation.prepareOrchestrator()
+	if err != nil {
+		t.Fatal(err)
+	}
+	advertised := orchestrator.advertisedSnapshot()
+	if len(advertised) != 1 || advertised[0].Name() != "load_tools" {
+		t.Fatalf("advertised tools = %#v, want exactly load_tools", advertised)
+	}
+
+	var schema struct {
+		Type       string                     `json:"type"`
+		Properties map[string]json.RawMessage `json:"properties"`
+		Required   []string                   `json:"required"`
+	}
+	if err := json.Unmarshal(advertised[0].Schema(), &schema); err != nil {
+		t.Fatal(err)
+	}
+	if schema.Type != "object" || len(schema.Properties) != 1 || !reflect.DeepEqual(schema.Required, []string{"names"}) {
+		t.Fatalf("load_tools root schema = %#v, want object with sole required property names", schema)
+	}
+	namesSchema, exists := schema.Properties["names"]
+	if !exists {
+		t.Fatal("load_tools schema has no names property")
+	}
+	var names struct {
+		Type  string `json:"type"`
+		Items struct {
+			Type string `json:"type"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(namesSchema, &names); err != nil {
+		t.Fatal(err)
+	}
+	if names.Type != "array" || names.Items.Type != "string" {
+		t.Fatalf("load_tools names schema = %#v, want array of strings", names)
+	}
+}
+
 func TestSendGatesTheCompleteLiveToolSetOnceBeforeAllBoundaries(t *testing.T) {
 	// R-4F8G-BWP5
 	// R-4GGC-POFU
 	tests := []struct {
 		name     string
 		eager    []Tool
-		deferred []deferredGroup
+		deferred []DeferredGroup
 	}{
 		{name: "invalid eager schema", eager: []Tool{concreteTool{name: "bad", schema: json.RawMessage(`{"type":"array"}`)}}},
 		{name: "duplicate eager eager", eager: []Tool{phase17Tool("same"), phase17Tool("same")}},
-		{name: "duplicate eager deferred", eager: []Tool{phase17Tool("same")}, deferred: []deferredGroup{{tools: []Tool{phase17Tool("same")}}}},
-		{name: "duplicate deferred deferred", deferred: []deferredGroup{{tools: []Tool{phase17Tool("same")}}, {tools: []Tool{phase17Tool("same")}}}},
-		{name: "consumer collides with load tools", eager: []Tool{phase17Tool(loadToolsName)}, deferred: []deferredGroup{{tools: []Tool{phase17Tool("later")}}}},
+		{name: "duplicate eager deferred", eager: []Tool{phase17Tool("same")}, deferred: []DeferredGroup{{Tools: []Tool{phase17Tool("same")}}}},
+		{name: "duplicate deferred deferred", deferred: []DeferredGroup{{Tools: []Tool{phase17Tool("same")}}, {Tools: []Tool{phase17Tool("same")}}}},
+		{name: "consumer collides with load tools", eager: []Tool{phase17Tool(loadToolsName)}, deferred: []DeferredGroup{{Tools: []Tool{phase17Tool("later")}}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1393,7 +1445,7 @@ func TestUnknownAndDeferredDirectCallsRecoverWithoutGuessedExecution(t *testing.
 					callbackCalls++
 					return "must not execute", nil
 				}}
-				conversation.deferred = []deferredGroup{{tools: []Tool{secret}}}
+				conversation.deferred = []DeferredGroup{{Tools: []Tool{secret}}}
 			}
 
 			stream := conversation.Send(context.Background(), Text{Text: "go"})

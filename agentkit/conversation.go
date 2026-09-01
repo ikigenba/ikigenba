@@ -19,9 +19,17 @@ type Conversation struct {
 	settings  Settings
 	options   ProviderOptions
 	tools     []Tool
-	deferred  []deferredGroup
+	deferred  []DeferredGroup
 	validate  func() error
 	eventSink eventSink
+}
+
+// DeferredGroup is a named, on-demand bundle of tools. Its Blurb is the
+// one-line description shown in the deferred-tool catalog.
+type DeferredGroup struct {
+	Name  string
+	Blurb string
+	Tools []Tool
 }
 
 // NewConversation constructs a conversation driven by provider. The provider,
@@ -32,6 +40,16 @@ func NewConversation(provider Provider, client *http.Client) *Conversation {
 		client:   client,
 		identity: provider.Identity(),
 	}
+}
+
+// Deferred registers on-demand tool groups on the conversation.
+func (c *Conversation) Deferred(groups ...DeferredGroup) {
+	owned := make([]DeferredGroup, len(groups))
+	for index, group := range groups {
+		owned[index] = group
+		owned[index].Tools = cloneTools(group.Tools)
+	}
+	c.deferred = append(c.deferred, owned...)
 }
 
 // Send drives one turn: it appends the user blocks, calls the model, runs any

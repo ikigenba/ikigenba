@@ -945,6 +945,53 @@ func TestConversationPublicShape(t *testing.T) {
 	if send.Type != wantSend || !send.Type.IsVariadic() {
 		t.Fatalf("Send type = %s (variadic=%t), want %s (variadic=true)", send.Type, send.Type.IsVariadic(), wantSend)
 	}
+	wantMethods := []string{"Deferred", "Send"}
+	pointerType := reflect.TypeOf((*Conversation)(nil))
+	if pointerType.NumMethod() != len(wantMethods) {
+		t.Fatalf("*Conversation exported method count = %d, want exactly %d", pointerType.NumMethod(), len(wantMethods))
+	}
+	for index, wantName := range wantMethods {
+		if got := pointerType.Method(index).Name; got != wantName {
+			t.Fatalf("*Conversation method %d = %q, want %q", index, got, wantName)
+		}
+	}
+}
+
+func TestDeferredGroupDeclarationIsExact(t *testing.T) {
+	// R-0PU1-L7QF
+	groupType := reflect.TypeFor[DeferredGroup]()
+	if groupType.Name() != "DeferredGroup" || !token.IsExported(groupType.Name()) || groupType.Kind() != reflect.Struct {
+		t.Fatalf("DeferredGroup name/kind = %q/%s, want exported DeferredGroup struct", groupType.Name(), groupType.Kind())
+	}
+	wantFields := []struct {
+		name   string
+		typeOf reflect.Type
+	}{
+		{name: "Name", typeOf: reflect.TypeFor[string]()},
+		{name: "Blurb", typeOf: reflect.TypeFor[string]()},
+		{name: "Tools", typeOf: reflect.TypeFor[[]Tool]()},
+	}
+	if groupType.NumField() != len(wantFields) {
+		t.Fatalf("DeferredGroup field count = %d, want exactly %d", groupType.NumField(), len(wantFields))
+	}
+	for index, want := range wantFields {
+		field := groupType.Field(index)
+		if field.Name != want.name || field.Type != want.typeOf || !field.IsExported() {
+			t.Fatalf("DeferredGroup field %d = %s %s (exported=%t), want %s %s (exported=true)", index, field.Name, field.Type, field.IsExported(), want.name, want.typeOf)
+		}
+	}
+}
+
+func TestConversationDeferredMethodSignatureIsExact(t *testing.T) {
+	// R-0R1X-YZH4
+	deferred, ok := reflect.TypeOf((*Conversation)(nil)).MethodByName("Deferred")
+	if !ok {
+		t.Fatal("*Conversation has no exported Deferred method")
+	}
+	want := reflect.TypeOf(func(*Conversation, ...DeferredGroup) {})
+	if deferred.Type != want || !deferred.Type.IsVariadic() {
+		t.Fatalf("Deferred type = %s (variadic=%t), want %s (variadic=true)", deferred.Type, deferred.Type.IsVariadic(), want)
+	}
 }
 
 func TestIdentityPublicShape(t *testing.T) {

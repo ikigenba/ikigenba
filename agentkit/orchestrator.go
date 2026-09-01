@@ -9,11 +9,7 @@ import (
 
 const loadToolsName = "load_tools"
 
-var loadToolsSchema = json.RawMessage(`{"type":"object","properties":{"names":{"type":"array","items":{"type":"string"},"minItems":1,"uniqueItems":true}},"required":["names"]}`)
-
-type deferredGroup struct {
-	tools []Tool
-}
+var loadToolsSchema = json.RawMessage(`{"type":"object","properties":{"names":{"type":"array","items":{"type":"string"}}},"required":["names"]}`)
 
 type orchestrator struct {
 	inventory  []Tool
@@ -23,7 +19,7 @@ type orchestrator struct {
 	pending    []Tool
 }
 
-func newOrchestrator(eager []Tool, groups []deferredGroup) *orchestrator {
+func newOrchestrator(eager []Tool, groups []DeferredGroup) *orchestrator {
 	o := &orchestrator{
 		advertised: cloneTools(eager),
 		byName:     make(map[string]Tool, len(eager)),
@@ -36,7 +32,7 @@ func newOrchestrator(eager []Tool, groups []deferredGroup) *orchestrator {
 	}
 	o.inventory = append(o.inventory, eager...)
 	for _, group := range groups {
-		for _, tool := range group.tools {
+		for _, tool := range group.Tools {
 			o.inventory = append(o.inventory, tool)
 			if tool != nil {
 				o.deferred[tool.Name()] = tool
