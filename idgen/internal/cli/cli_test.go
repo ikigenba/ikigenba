@@ -551,6 +551,141 @@ func TestRunUnknownOptionPrintsDiagnosticAndUsageExactlyOnce(t *testing.T) {
 	}
 }
 
+// R-U5PD-1SYE: the accepted option spellings are exactly the documented set,
+// and every short/long pair has the same observable effect.
+func TestRunOptionSetExact(t *testing.T) {
+	wantSpellings := map[string]struct{}{
+		"-n":        {},
+		"--number":  {},
+		"-p":        {},
+		"--prefix":  {},
+		"--decode":  {},
+		"-h":        {},
+		"--help":    {},
+		"-V":        {},
+		"--version": {},
+	}
+	if len(optionSpellings) != len(wantSpellings) {
+		t.Fatalf("option spelling count = %d, want exactly %d", len(optionSpellings), len(wantSpellings))
+	}
+	for spelling := range wantSpellings {
+		if _, ok := optionSpellings[spelling]; !ok {
+			t.Errorf("option spelling %q is missing", spelling)
+		}
+	}
+
+	instant := time.Date(2026, time.August, 31, 10, 20, 30, 400000000, time.UTC)
+	decodeID := idgen.MintAt("Exact", instant)
+	originalVersion := version
+	t.Cleanup(func() { version = originalVersion })
+	version = "v82.73.64"
+
+	pairs := []struct {
+		name      string
+		shortArgs []string
+		longArgs  []string
+		clock     func() Clock
+	}{
+		{name: "number", shortArgs: []string{"-n", "2"}, longArgs: []string{"--number", "2"}, clock: func() Clock { return &advancingClock{now: instant} }},
+		{name: "prefix", shortArgs: []string{"-p", "Exact"}, longArgs: []string{"--prefix", "Exact"}, clock: func() Clock { return &fakeClock{now: instant} }},
+		{name: "help", shortArgs: []string{"-h"}, longArgs: []string{"--help"}, clock: func() Clock { return &fakeClock{} }},
+		{name: "version", shortArgs: []string{"-V"}, longArgs: []string{"--version"}, clock: func() Clock { return &fakeClock{} }},
+	}
+	for _, pair := range pairs {
+		t.Run(pair.name+" aliases", func(t *testing.T) {
+			shortOut, shortErr, shortCode := runCLI(pair.shortArgs, "", pair.clock())
+			longOut, longErr, longCode := runCLI(pair.longArgs, "", pair.clock())
+			if shortOut != longOut || shortErr != longErr || shortCode != longCode {
+				t.Errorf("short alias = (%q, %q, %d), long alias = (%q, %q, %d)", shortOut, shortErr, shortCode, longOut, longErr, longCode)
+			}
+			if shortCode != exitSuccess || shortErr != "" || shortOut == "" {
+				t.Errorf("accepted aliases produced (%q, %q, %d), want nonempty stdout, empty stderr, success", shortOut, shortErr, shortCode)
+			}
+		})
+	}
+
+	decodeOut, decodeErr, decodeCode := runCLI([]string{"--decode", decodeID}, "", &fakeClock{})
+	if decodeOut != decodedLine(instant) || decodeErr != "" || decodeCode != exitSuccess {
+		t.Errorf("--decode = (%q, %q, %d), want (%q, empty, %d)", decodeOut, decodeErr, decodeCode, decodedLine(instant), int(exitSuccess))
+	}
+
+	for _, spelling := range []string{"--n", "-number", "--p", "-prefix", "-decode", "--h", "-help", "--V", "-version", "--unknown"} {
+		t.Run("reject "+spelling, func(t *testing.T) {
+			clock := &fakeClock{now: instant}
+			stdout, stderr, code := runCLI([]string{spelling}, "", clock)
+			if code != exitUsage || stdout != "" || !strings.Contains(stderr, "flag provided but not defined") {
+				t.Errorf("Run(%q) = (%q, %q, %d), want unknown-option usage failure", spelling, stdout, stderr, code)
+			}
+			if clock.nowCalls != 0 || clock.sleepCalls != 0 {
+				t.Errorf("clock calls = Now %d, Sleep %d; want zero", clock.nowCalls, clock.sleepCalls)
+			}
+		})
+	}
+}
+
+// R-U6X9-FKP3: omitting both number spellings mints exactly one id even when
+// another mint option is explicit.
+func TestRunNumberDefaultsToOne(t *testing.T) {
+	stdout, stderr, code := runCLI(
+		[]string{"--prefix", "NumberDefault"},
+		"",
+		&advancingClock{now: time.Date(2026, time.August, 31, 11, 0, 0, 0, time.UTC)},
+	)
+	lines := assertMintLines(t, stdout)
+	if len(lines) != 1 || !strings.HasPrefix(lines[0], "NumberDefault-") {
+		t.Errorf("minted lines = %q, want exactly one explicit-prefix id", lines)
+	}
+	if stderr != "" || code != exitSuccess {
+		t.Errorf("Run() = (stderr %q, exit %d), want (empty, %d)", stderr, code, int(exitSuccess))
+	}
+}
+
+// R-U855-TCFS: omitting both prefix spellings uses R for every id even when
+// the number option is explicit.
+func TestRunPrefixDefaultsToR(t *testing.T) {
+	stdout, stderr, code := runCLI(
+		[]string{"--number", "2"},
+		"",
+		&advancingClock{now: time.Date(2026, time.August, 31, 12, 0, 0, 0, time.UTC)},
+	)
+	lines := assertMintLines(t, stdout)
+	if len(lines) != 2 {
+		t.Fatalf("minted %d lines, want 2", len(lines))
+	}
+	for _, line := range lines {
+		if !strings.HasPrefix(line, "R-") {
+			t.Errorf("minted id %q, want default prefix R", line)
+		}
+	}
+	if stderr != "" || code != exitSuccess {
+		t.Errorf("Run() = (stderr %q, exit %d), want (empty, %d)", stderr, code, int(exitSuccess))
+	}
+}
+
+// R-U9D2-746H: idgen has no subcommands, options stop at the first positional,
+// mint rejects positionals, and decode alone accepts positional ids.
+func TestRunSingleCommandGrammar(t *testing.T) {
+	instant := time.Date(2026, time.August, 31, 13, 14, 15, 160000000, time.UTC)
+	id := idgen.MintAt("Grammar", instant)
+
+	for _, args := range [][]string{{"mint"}, {"decode"}, {id}, {id, "--decode"}} {
+		stdout, stderr, code := runCLI(args, "", &fakeClock{now: instant})
+		if code != exitUsage || stdout != "" || !strings.Contains(stderr, "unexpected argument "+strconv.Quote(args[0])) {
+			t.Errorf("mint Run(%q) = (%q, %q, %d), want first-positional usage failure", args, stdout, stderr, code)
+		}
+	}
+
+	stdout, stderr, code := runCLI([]string{"--decode", id}, "", &fakeClock{})
+	if stdout != decodedLine(instant) || stderr != "" || code != exitSuccess {
+		t.Errorf("decode positional = (%q, %q, %d), want (%q, empty, %d)", stdout, stderr, code, decodedLine(instant), int(exitSuccess))
+	}
+
+	stdout, stderr, code = runCLI([]string{"--decode", id, "--version"}, "", &fakeClock{})
+	if code != exitFailure || stdout != decodedLine(instant) || !strings.Contains(stderr, strconv.Quote("--version")) {
+		t.Errorf("post-positional option = (%q, %q, %d), want second decode token failure without option parsing", stdout, stderr, code)
+	}
+}
+
 // R-T6DS-K8GC: mint mode rejects and names its first unexpected positional argument.
 func TestRunMintRejectsPositionalArgument(t *testing.T) {
 	const unexpected = "definitely-not-an-id"
@@ -734,10 +869,9 @@ func TestRunNumberFailsWhenClockRefusesToAdvance(t *testing.T) {
 	if !strings.Contains(stderr, "clock did not advance") {
 		t.Errorf("stderr = %q, want it to report the clock stall", stderr)
 	}
-	// The first id may be buffered but never flushed on the failure path; the
-	// second id must not appear.
-	if lines := strings.Count(stdout, "\n"); lines > 1 {
-		t.Errorf("stdout has %d lines, want at most 1 before the stall", lines)
+	// The first id remains buffered and is never flushed on the failure path.
+	if lines := strings.Count(stdout, "\n"); lines != 0 {
+		t.Errorf("stdout has %d lines, want 0 after the stall", lines)
 	}
 	if clock.sleepCalls == 0 {
 		t.Error("Clock.Sleep was never called; the loop did not attempt to wait")

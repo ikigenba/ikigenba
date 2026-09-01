@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ikigenba/ikigenba/idgen/internal/idgen"
@@ -112,6 +113,72 @@ Options:
   -V, --version        print version
 `
 
+const (
+	optionNumberShort  = "-n"
+	optionNumberLong   = "--number"
+	optionPrefixShort  = "-p"
+	optionPrefixLong   = "--prefix"
+	optionDecode       = "--decode"
+	optionHelpShort    = "-h"
+	optionHelpLong     = "--help"
+	optionVersionShort = "-V"
+	optionVersionLong  = "--version"
+)
+
+var optionSpellings = map[string]struct{}{
+	optionNumberShort:  {},
+	optionNumberLong:   {},
+	optionPrefixShort:  {},
+	optionPrefixLong:   {},
+	optionDecode:       {},
+	optionHelpShort:    {},
+	optionHelpLong:     {},
+	optionVersionShort: {},
+	optionVersionLong:  {},
+}
+
+// invalidOptionSpelling enforces the command's exact one-dash and two-dash
+// spellings before flag.Parse removes that distinction. Whether an option
+// consumes a value is derived from the registered flag.Value, keeping lexical
+// validation and flag parsing on the same definition. As with flag.Parse,
+// option scanning stops at the first positional argument.
+func invalidOptionSpelling(flags *flag.FlagSet, args []string) string {
+	for index := 0; index < len(args); index++ {
+		argument := args[index]
+		if argument == "--" || argument == "-" || !strings.HasPrefix(argument, "-") {
+			return ""
+		}
+
+		spelling, _, hasInlineValue := strings.Cut(argument, "=")
+		_, accepted := optionSpellings[spelling]
+		if !accepted {
+			return spelling
+		}
+		registered := flags.Lookup(strings.TrimLeft(spelling, "-"))
+		if registered == nil {
+			return spelling
+		}
+		boolValue, isBool := registered.Value.(interface{ IsBoolFlag() bool })
+		if !hasInlineValue && (!isBool || !boolValue.IsBoolFlag()) {
+			index++
+		}
+	}
+	return ""
+}
+
+func optionDiagnosticName(spelling string) string {
+	name := "-" + strings.TrimLeft(spelling, "-")
+	for _, character := range name {
+		if character != '-' &&
+			(character < '0' || character > '9') &&
+			(character < 'A' || character > 'Z') &&
+			(character < 'a' || character > 'z') {
+			return strconv.Quote(name)
+		}
+	}
+	return name
+}
+
 // Clock supplies time to the CLI.
 type Clock interface {
 	Now() time.Time
@@ -125,12 +192,17 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, clock Clock) 
 	flags.Usage = func() {
 		_, _ = io.WriteString(flags.Output(), usageText)
 	}
-	number := intFlag(flags, "n", "number", 1, "")
-	prefix := stringFlag(flags, "p", "prefix", "R", "")
+	number := intFlag(flags, strings.TrimLeft(optionNumberShort, "-"), strings.TrimLeft(optionNumberLong, "-"), 1, "")
+	prefix := stringFlag(flags, strings.TrimLeft(optionPrefixShort, "-"), strings.TrimLeft(optionPrefixLong, "-"), "R", "")
 	var modes commandModes
-	registerModeFlag(flags, "decode", &modes, modeDecode)
-	registerModeFlagPair(flags, "h", "help", &modes, modeHelp)
-	registerModeFlagPair(flags, "V", "version", &modes, modeVersion)
+	registerModeFlag(flags, strings.TrimLeft(optionDecode, "-"), &modes, modeDecode)
+	registerModeFlagPair(flags, strings.TrimLeft(optionHelpShort, "-"), strings.TrimLeft(optionHelpLong, "-"), &modes, modeHelp)
+	registerModeFlagPair(flags, strings.TrimLeft(optionVersionShort, "-"), strings.TrimLeft(optionVersionLong, "-"), &modes, modeVersion)
+	if spelling := invalidOptionSpelling(flags, args); spelling != "" {
+		_, _ = io.WriteString(stderr, "flag provided but not defined: "+optionDiagnosticName(spelling)+"\n")
+		flags.Usage()
+		return int(exitUsage)
+	}
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return int(exitSuccess)
@@ -182,7 +254,10 @@ func runMintMode(
 		usage()
 		return exitUsage
 	}
+	return mintIdentifiers(number, prefix, stdout, stderr, clock)
+}
 
+func mintIdentifiers(number int, prefix string, stdout, stderr io.Writer, clock Clock) exitCode {
 	// previousMillisecond is nil until the first id is minted, so "no id yet" is
 	// a state distinct from any real millisecond value (including 0, a valid
 	// Unix millisecond). The nil check is the single mechanism gating the
