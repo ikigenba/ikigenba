@@ -10,12 +10,14 @@ import (
 )
 
 // KnownWire identifies a built-in wire format available to the generic route.
-type KnownWire string
+type KnownWire int
 
 // Known wire names accepted by NewKnownWireConversation.
 const (
-	KnownWireAnthropic       KnownWire = "anthropic"
-	KnownWireOpenAIResponses KnownWire = "openai-responses"
+	KnownWireAnthropicMessages KnownWire = iota
+	KnownWireOpenAIResponses
+	KnownWireOpenAIChat
+	KnownWireGemini
 )
 
 // NewKnownWireConversation constructs the generic custom-endpoint route. Its
@@ -24,12 +26,12 @@ const (
 func NewKnownWireConversation(wireName KnownWire, baseURL string, auth AuthApplier) (*Conversation, error) {
 	var wire WireFormat
 	switch wireName {
-	case KnownWireAnthropic:
+	case KnownWireAnthropicMessages:
 		wire = newAnthropicWire(nil)
 	case KnownWireOpenAIResponses:
 		wire = newOpenAIResponsesWire(nil)
 	default:
-		return nil, fmt.Errorf("%w: unknown wire format %q", ErrInvalidConfig, wireName)
+		return nil, fmt.Errorf("%w: unknown wire format %d", ErrInvalidConfig, wireName)
 	}
 
 	endpoint, err := newEndpoint(WithBaseURL(baseURL), withAuth(auth))

@@ -43,5 +43,5 @@ func New(credential Credential, options ...Option) (*agentkit.Conversation, erro
 	if _, baking := credential.(interface{ bakesTransport() }); baking && configuration.hasBaseOverride {
 		return nil, fmt.Errorf("%w: Anthropic OAuth and WithBaseURL are mutually exclusive", agentkit.ErrInvalidConfig)
 	}
-	return agentkit.NewKnownWireConversation(agentkit.KnownWireAnthropic, configuration.baseURL, authAdapter{credential})
+	return agentkit.NewKnownWireConversation(agentkit.KnownWireAnthropicMessages, configuration.baseURL, authAdapter{credential})
 }

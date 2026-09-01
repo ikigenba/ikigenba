@@ -48,7 +48,7 @@ func TestGenericKnownWireAcceptsBareAuthApplier(t *testing.T) {
 
 	ctx := context.WithValue(context.Background(), authContextKey{}, "final")
 	auth := &signingAuth{t: t, wantContext: ctx}
-	conversation, err := agentkit.NewKnownWireConversation(agentkit.KnownWireAnthropic, server.URL, auth)
+	conversation, err := agentkit.NewKnownWireConversation(agentkit.KnownWireAnthropicMessages, server.URL, auth)
 	if err != nil {
 		t.Fatal(err)
 	}

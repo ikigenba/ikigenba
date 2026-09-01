@@ -1,6 +1,7 @@
 package agentkit
 
 import (
+	"context"
 	"encoding/json"
 	"go/ast"
 	"go/parser"
@@ -8,9 +9,131 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestConversationPublicShape(t *testing.T) {
+	// R-YURK-JTY8
+	conversationType := reflect.TypeOf(Conversation{})
+	if conversationType.Name() != "Conversation" || !token.IsExported(conversationType.Name()) || conversationType.Kind() != reflect.Struct {
+		t.Fatalf("Conversation name/kind = %q/%s, want exported Conversation struct", conversationType.Name(), conversationType.Kind())
+	}
+	for index := range conversationType.NumField() {
+		field := conversationType.Field(index)
+		if field.IsExported() {
+			t.Fatalf("Conversation field %q is exported", field.Name)
+		}
+	}
+
+	send, ok := reflect.TypeOf((*Conversation)(nil)).MethodByName("Send")
+	if !ok {
+		t.Fatal("*Conversation has no exported Send method")
+	}
+	wantSend := reflect.TypeOf(func(*Conversation, context.Context, ...Block) *Stream { return nil })
+	if send.Type != wantSend || !send.Type.IsVariadic() {
+		t.Fatalf("Send type = %s (variadic=%t), want %s (variadic=true)", send.Type, send.Type.IsVariadic(), wantSend)
+	}
+}
+
+func TestIdentityPublicShape(t *testing.T) {
+	// R-YVZG-XLOX
+	identityType := reflect.TypeOf(Identity{})
+	wantNames := []string{"Endpoint", "AuthMode", "Model"}
+	if identityType.Kind() != reflect.Struct || identityType.NumField() != len(wantNames) {
+		t.Fatalf("Identity kind/field count = %s/%d, want struct/%d", identityType.Kind(), identityType.NumField(), len(wantNames))
+	}
+	for index, wantName := range wantNames {
+		field := identityType.Field(index)
+		if field.Name != wantName || field.Type != reflect.TypeOf("") || !field.IsExported() {
+			t.Fatalf("Identity field %d = %s %s (exported=%t), want %s string (exported=true)", index, field.Name, field.Type, field.IsExported(), wantName)
+		}
+	}
+}
+
+func TestKnownWireDeclaration(t *testing.T) {
+	// R-Y7DW-FW5P
+	wireType := reflect.TypeOf(KnownWire(0))
+	if wireType.Kind() != reflect.Int {
+		t.Fatalf("KnownWire underlying kind = %s, want int", wireType.Kind())
+	}
+	wantNames := []string{
+		"KnownWireAnthropicMessages",
+		"KnownWireOpenAIResponses",
+		"KnownWireOpenAIChat",
+		"KnownWireGemini",
+	}
+	wantValues := []KnownWire{0, 1, 2, 3}
+	gotValues := []KnownWire{
+		KnownWireAnthropicMessages,
+		KnownWireOpenAIResponses,
+		KnownWireOpenAIChat,
+		KnownWireGemini,
+	}
+	if !reflect.DeepEqual(gotValues, wantValues) {
+		t.Fatalf("KnownWire values = %v, want %v", gotValues, wantValues)
+	}
+
+	parsed, err := parser.ParseFile(token.NewFileSet(), "provider.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var knownWireConstants []string
+	var sequenceDeclarations int
+	foundDefinedIntType := false
+	for _, declaration := range parsed.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		if general.Tok == token.TYPE {
+			for _, specification := range general.Specs {
+				typeSpecification := specification.(*ast.TypeSpec)
+				underlying, isIdentifier := typeSpecification.Type.(*ast.Ident)
+				if typeSpecification.Name.Name == "KnownWire" && typeSpecification.Assign == token.NoPos && isIdentifier && underlying.Name == "int" {
+					foundDefinedIntType = true
+				}
+			}
+			continue
+		}
+		if general.Tok != token.CONST {
+			continue
+		}
+		declarationNames := make([]string, 0)
+		hasIota := false
+		for _, specification := range general.Specs {
+			valueSpecification := specification.(*ast.ValueSpec)
+			for _, name := range valueSpecification.Names {
+				if strings.HasPrefix(name.Name, "KnownWire") {
+					knownWireConstants = append(knownWireConstants, name.Name)
+					declarationNames = append(declarationNames, name.Name)
+				}
+			}
+			for _, value := range valueSpecification.Values {
+				identifier, ok := value.(*ast.Ident)
+				if ok && identifier.Name == "iota" {
+					hasIota = true
+				}
+			}
+		}
+		if len(declarationNames) > 0 && hasIota {
+			sequenceDeclarations++
+			if !reflect.DeepEqual(declarationNames, wantNames) {
+				t.Fatalf("KnownWire iota declaration names = %v, want %v", declarationNames, wantNames)
+			}
+		}
+	}
+	if sequenceDeclarations != 1 {
+		t.Fatalf("KnownWire iota declarations = %d, want 1", sequenceDeclarations)
+	}
+	if !foundDefinedIntType {
+		t.Fatal("KnownWire is not defined as type KnownWire int")
+	}
+	if !reflect.DeepEqual(knownWireConstants, wantNames) {
+		t.Fatalf("KnownWire constants = %v, want exactly %v", knownWireConstants, wantNames)
+	}
+}
 
 func TestNoWarningOrCategorySpecificErrorTypesAreExported(t *testing.T) {
 	// R-2K5Z-AIWY
