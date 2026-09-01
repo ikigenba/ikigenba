@@ -108,8 +108,8 @@ mismatch until a much later debugging session. Representability is checked again
 the wire's declared capability, not against the model: agentkit does **not** gate
 on model identity. A model that rejects a shape the wire *can* express returns the
 vendor's own 400, surfaced through the classifier (D4). Reasoning that the vendor
-returns is carried back as `Reasoning` blocks (D2) and replayed under the
-endpoint-owned replay encoding (D6, D-K).
+returns is carried back as `Reasoning` blocks (D2) and replayed by the wire in its
+own grammar (D5).
 
 **Model gating is cut entirely.** There is no capability table, no per-model
 allow-list, and no pre-flight "does this model support reasoning?" check. The wire

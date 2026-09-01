@@ -61,7 +61,7 @@ type RetryInfo struct {
 **`turn_start` carries the full `Identity` split (D1).** Because `Identity` keeps
 endpoint, auth mode, and model as separate fields rather than one fused id, a
 consumer post-processing a log file can filter "every OpenAI turn" and "every
-subscription-paid turn" independently — the log never collapses that distinction
+OAuth-paid turn" independently — the log never collapses that distinction
 into a single provider string.
 
 **The log is best-effort and never load-bearing.** A `nil` log is valid and

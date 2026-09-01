@@ -35,7 +35,7 @@ pieces, and the whole rest of the design hangs off keeping them separate:
   generateContent). Detailed in D5.
 - **`Endpoint`** — the public, opaque, option-built transport: base URL and path,
   auth applier, extra headers, framing, error classifier, request-mutation hook,
-  reasoning-replay encoding. Detailed in D6.
+  and the HTTP client. Detailed in D6.
 - **`Model`** — a free-flow string, never gated, passed verbatim. A model released
   today runs with no agentkit release; an unknown model is the vendor's 400, not
   ours.
@@ -70,7 +70,7 @@ new API" is credible rather than hopeful. Each rung is more work than the last a
 none is a dead end: (1) a **vendor constructor** for a supported vendor; (2) the
 **generic wire constructor** for a new vendor speaking one of the four known
 wires; (3) **dialect hooks** on `Endpoint` — base URL, auth applier, extra
-headers, framing, error classifier, request-mutation hook, replay encoding — for a
+headers, framing, error classifier, request-mutation hook — for a
 vendor that bends a known wire; (4) a custom `http.RoundTripper` injected through
 the endpoint for transport-level needs; (5) implement the public `Provider` SPI
 yourself for a genuinely new wire. The last rung is only credible if the SPI is
@@ -112,7 +112,7 @@ provenance, defined here because it is the Provider seam's own return type and i
 consumed by the error (D4), cost (D3), and log (D15) paths. It carries endpoint
 identity, auth mode, and model as separate fields — there is no single fused
 provider id — so a log consumer can filter "every OpenAI turn" and "every
-subscription-paid turn" independently.
+OAuth-paid turn" independently.
 
 ```go
 package agentkit
@@ -122,8 +122,8 @@ package agentkit
 // fused string, so consumers filter on each independently (D15). It is immutable
 // for the conversation's life.
 type Identity struct {
-	Endpoint string // endpoint name, e.g. "openai", "openai.subscription", "xai"
-	AuthMode string // "api_key", "oauth", "subscription", "sigv4"
+	Endpoint string // endpoint name, e.g. "openai", "openai.oauth", "xai"
+	AuthMode string // "api_key", "oauth", "sigv4"
 	Model    string // the verbatim model string
 }
 ```
@@ -139,3 +139,6 @@ type Identity struct {
 - R-1WZW-0VTR: Dependencies MUST point one way — vendor package → `Conversation` → `WireFormat`/`Endpoint` → codec/transport — verified by the absence of any import from a lower layer back to `Conversation` or a vendor package.
 - R-YURK-JTY8: `agentkit` MUST export `Conversation` as an opaque struct type with no exported fields, exposing the method `func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream`.
 - R-YVZG-XLOX: `agentkit` MUST export `type Identity struct { Endpoint string; AuthMode string; Model string }` with exactly those three string fields.
+- R-Y7DW-FW5P: `agentkit` MUST export `type KnownWire int` with the constants `KnownWireAnthropicMessages`, `KnownWireOpenAIResponses`, `KnownWireOpenAIChat`, `KnownWireGemini` declared in that `iota` order starting at 0, enumerating the built-in wires selectable on the generic construction path.
+- R-Y8LS-TNWE: `agentkit` MUST export `func NewForWire(wire KnownWire, endpoint Endpoint, model string) (*Conversation, error)` as the generic wire constructor, taking the wire, endpoint, and model as required positional parameters with no functional options.
+- R-Y9TP-7FN3: `agentkit` MUST export `func NewConversation(provider Provider, client *http.Client) *Conversation` as the rung-5 constructor that injects a caller-implemented `Provider` and HTTP client directly.

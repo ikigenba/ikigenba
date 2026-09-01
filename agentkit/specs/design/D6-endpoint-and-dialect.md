@@ -11,10 +11,9 @@ an `Endpoint` for a custom deployment of a known grammar.
 **What the endpoint owns:** the base URL and path; whether the model id goes in
 the path or the body; the auth applier; extra headers; the `Framer` (D5) handed to
 the wire's `DecodeStream`; the error classifier; a request-mutation hook; and the
-*encoding* of reasoning replay (D-K) — the wire supplies a default replay
-encoding, the endpoint may override it. This last point is load-bearing and is the
-reason replay encoding is not a wire constant: two endpoints on the *same* wire can
-demand opposite replay encodings, so the wire cannot own the value. The endpoint is
+HTTP client used to execute the request (defaulting to `http.DefaultClient`).
+Reasoning replay — mechanics and encoding alike — belongs wholly to the wire (D5),
+not here. The endpoint is
 also where "does changing the credential move the transport?" is answered: at one
 day-one endpoint a credential swap moves host, path, and headers; at another the
 host, path, and headers are byte-identical and only the bearer source differs. That
@@ -23,20 +22,23 @@ wire.
 
 ```go
 // Endpoint is a public, opaque, option-built transport description. Construct it
-// with EndpointOptions; its fields are unexported. A vendor constructor bakes
-// one; the generic wire constructor accepts one.
+// with NewEndpoint; its fields are unexported. A vendor constructor bakes one;
+// the generic wire constructor accepts one.
 type Endpoint struct { /* unexported */ }
 
-// EndpointOption configures an Endpoint at construction. Options may fail
-// (e.g. an invalid base URL), so each returns an error.
+// NewEndpoint builds an Endpoint. Base URL and auth applier are required
+// positional parameters; remaining transport configuration arrives as options.
+func NewEndpoint(baseURL string, auth AuthApplier, opts ...EndpointOption) (Endpoint, error)
+
+// EndpointOption configures an Endpoint at construction. Options may fail, so
+// each returns an error.
 type EndpointOption func(*endpointConfig) error
 
-func WithBaseURL(raw string) EndpointOption          // custom deployment of a known wire (L2: excludes a transport-baking credential)
 func WithHeader(name, value string) EndpointOption   // extra static headers (attribution, beta flags)
 func WithFramer(f Framer) EndpointOption             // override the default SSE Framer (D5)
 func WithClassifier(c ErrorClassifier) EndpointOption
 func WithMutator(m RequestMutator) EndpointOption
-func WithReplayEncoding(e ReplayEncoding) EndpointOption // override the wire default (D-K)
+func WithHTTPClient(c *http.Client) EndpointOption   // transport injection (rung 4); defaults to http.DefaultClient
 ```
 
 The auth applier sees the *fully assembled* request, including the final body,
@@ -93,16 +95,17 @@ type Provider interface {
 
 ## REQUIREMENTS
 
-- R-37C2-K605: An `Endpoint` MUST be constructed only from `EndpointOption` values and MUST expose no assignable fields to consumers.
-- R-38JY-XXQU: An `Endpoint` MUST own the base URL and path, model-in-path-vs-body placement, the auth applier, extra headers, the `Framer`, the error classifier, the request-mutation hook, and the reasoning-replay encoding.
-- R-3AZR-PH88: The reasoning-replay *encoding* MUST be endpoint-owned with a wire-supplied default, so two endpoints on one `WireFormat` can carry opposite replay encodings (D-K); the wire MUST NOT hardcode the value.
+- R-YDHE-CQV6: An `Endpoint` MUST expose no assignable fields to consumers and MUST be configurable only through its constructor's positional base URL and auth applier plus `EndpointOption` values.
+- R-YH53-I239: An `Endpoint` MUST own the base URL and path, model-in-path-vs-body placement, the auth applier, extra headers, the `Framer`, the error classifier, the request-mutation hook, and the HTTP client used to execute the request.
+- R-YICZ-VTTY: `agentkit` MUST export `func NewEndpoint(baseURL string, auth AuthApplier, opts ...EndpointOption) (Endpoint, error)`, taking the base URL and auth applier as required positional parameters.
+- R-YKSS-NDBC: When constructed without `WithHTTPClient`, an `Endpoint` MUST default its HTTP client to `http.DefaultClient`, and a `Conversation` built from that endpoint MUST execute requests with the endpoint's client.
 - R-3DFK-H0PM: Request assembly MUST run the endpoint's `RequestMutator` before the `AuthApplier`, so that a body-signing applier signs the mutated body.
 - R-3ENG-USGB: The request-mutation hook MUST be able to rewrite both the request and its body before send (subsuming model-in-path rewriting and per-credential host/path/header redirection); path templating MUST NOT be a separate concept.
 - R-3FVD-8K70: The error classifier MUST receive status, headers, and body and return a typed error (D4), so that header-carried retry timing and body-text-only disambiguation are both reachable.
 - R-3H39-MBXP: The composed `Provider` SPI MUST be public and implementable by a consumer as the final escape-hatch rung, with the same standing as a vendor constructor.
-- R-ZJ5K-78S4: `agentkit` MUST export `Endpoint` as an opaque struct type with no exported fields, constructed only from `EndpointOption` values.
+- R-YEPA-QILV: `agentkit` MUST export `Endpoint` as an opaque struct type with no exported fields, constructed only through `NewEndpoint`.
 - R-ZKDG-L0IT: `agentkit` MUST export `EndpointOption` as a functional-option type that configures an `Endpoint` at construction and returns an `error`.
-- R-ZLLC-YS9I: `agentkit` MUST export the endpoint options `WithBaseURL(raw string) EndpointOption`, `WithHeader(name, value string) EndpointOption`, `WithFramer(f Framer) EndpointOption`, `WithClassifier(c ErrorClassifier) EndpointOption`, `WithMutator(m RequestMutator) EndpointOption`, and `WithReplayEncoding(e ReplayEncoding) EndpointOption`.
+- R-YFX7-4ACK: `agentkit` MUST export the endpoint options `WithHeader(name, value string) EndpointOption`, `WithFramer(f Framer) EndpointOption`, `WithClassifier(c ErrorClassifier) EndpointOption`, `WithMutator(m RequestMutator) EndpointOption`, and `WithHTTPClient(c *http.Client) EndpointOption`.
 - R-ZMT9-CK07: `agentkit` MUST export the `AuthApplier` interface whose method set is exactly `Apply(ctx context.Context, req *http.Request, body []byte) error`.
 - R-ZO15-QBQW: `agentkit` MUST export `type RequestMutator func(req *http.Request, body *[]byte) error`.
 - R-ZP92-43HL: `agentkit` MUST export `type ErrorClassifier func(status int, header http.Header, body []byte) error`.

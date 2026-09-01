@@ -63,7 +63,7 @@ vendor. **ProviderOptions** (D-E): before the first round-trip, `Send` intersect
 the consumer's option keys with the wire+endpoint reserved-key set; any
 intersection returns `ErrInvalidConfig` (D4) with no provider call and `History`
 unchanged. **Base URL versus transport-baking credential** (L2): a credential that
-bakes its own transport (an OpenAI/xAI subscription) and `WithBaseURL` are mutually
+bakes its own transport (an OpenAI/xAI OAuth credential) and `WithBaseURL` are mutually
 exclusive, and supplying both is `ErrInvalidConfig` at construction, before any
 turn. Both are of a piece with the library's fail-loud stance (D4, D8, D9): a
 request the seam cannot faithfully express is refused, not silently reshaped.
