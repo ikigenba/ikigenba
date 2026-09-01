@@ -15,6 +15,7 @@ type Conversation struct {
 	client   *http.Client
 	identity Identity
 	history  History
+	settings Settings
 	validate func() error
 }
 
@@ -67,8 +68,9 @@ func (c *Conversation) roundTrip(ctx context.Context, candidate History) *Stream
 
 func (c *Conversation) buildRequest(ctx context.Context, candidate History) (*http.Request, error) {
 	state := RequestState{
-		Model:   c.identity.Model,
-		History: cloneHistory(candidate),
+		Model:    c.identity.Model,
+		History:  cloneHistory(candidate),
+		Settings: cloneSettings(c.settings),
 	}
 
 	return c.provider.BuildRequest(ctx, state)

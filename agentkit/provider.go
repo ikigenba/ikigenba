@@ -66,7 +66,14 @@ func newComposedProvider(wire WireFormat, endpoint Endpoint, identity Identity) 
 }
 
 func newEndpointConversation(wire WireFormat, endpoint Endpoint, identity Identity) *Conversation {
-	return NewConversation(newComposedProvider(wire, endpoint, identity), endpoint.config.client)
+	provider := newComposedProvider(wire, endpoint, identity)
+	conversation := NewConversation(provider, endpoint.config.client)
+	if validator, ok := provider.(interface{ validateSettings(Settings) error }); ok {
+		conversation.validate = func() error {
+			return validator.validateSettings(conversation.settings)
+		}
+	}
+	return conversation
 }
 
 func (provider *composedProvider) BuildRequest(ctx context.Context, state RequestState) (*http.Request, error) {
@@ -108,6 +115,17 @@ func (provider *composedProvider) Classify(status int, header http.Header, body 
 }
 
 func (provider *composedProvider) Identity() Identity { return provider.identity }
+
+func (provider *composedProvider) validateSettings(settings Settings) error {
+	validator, ok := provider.wire.(interface{ validateSettings(Settings) error })
+	if !ok {
+		if settingsAreZero(settings) {
+			return nil
+		}
+		return fmt.Errorf("%w: selected wire does not declare settings capabilities", ErrInvalidConfig)
+	}
+	return validator.validateSettings(settings)
+}
 
 func synchronizeRequestBody(request *http.Request, body []byte) {
 	request.Body = io.NopCloser(bytes.NewReader(body))

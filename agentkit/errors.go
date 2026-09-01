@@ -106,8 +106,12 @@ func categoryName(category Category) string {
 func invalidConfigError(identity Identity, cause error) *Error {
 	wrapped := ErrInvalidConfig
 	message := ErrInvalidConfig.Error()
-	if cause != nil && !errors.Is(cause, ErrInvalidConfig) {
-		wrapped = fmt.Errorf("%w: %w", ErrInvalidConfig, cause)
+	if cause != nil {
+		if errors.Is(cause, ErrInvalidConfig) {
+			wrapped = cause
+		} else {
+			wrapped = fmt.Errorf("%w: %w", ErrInvalidConfig, cause)
+		}
 		message = cause.Error()
 	}
 

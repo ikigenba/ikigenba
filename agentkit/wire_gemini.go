@@ -15,6 +15,11 @@ func newGeminiWire(classifier wireClassifier) WireFormat {
 		render:     renderGeminiTools,
 		reserved:   []string{"gemini"},
 		classifier: classifier,
+		capabilities: wireCapabilities{
+			name:       "Gemini GenerateContent",
+			reasoning:  reasoningShapeOff | reasoningShapeOn | reasoningShapeEffort | reasoningShapeBudget,
+			toolChoice: toolChoiceShapeNone | toolChoiceShapeRequired | toolChoiceShapeTool,
+		},
 	}
 	return wire
 }
@@ -45,9 +50,47 @@ type geminiContent struct {
 	Parts []geminiPart `json:"parts"`
 }
 
+type geminiThinkingConfig struct {
+	ThinkingBudget *int   `json:"thinkingBudget,omitempty"`
+	ThinkingLevel  string `json:"thinkingLevel,omitempty"`
+}
+
+type geminiGenerationConfig struct {
+	ThinkingConfig *geminiThinkingConfig `json:"thinkingConfig,omitempty"`
+}
+
+type geminiFunctionCallingConfig struct {
+	Mode                 string   `json:"mode"`
+	AllowedFunctionNames []string `json:"allowedFunctionNames,omitempty"`
+}
+
+type geminiToolConfig struct {
+	FunctionCallingConfig *geminiFunctionCallingConfig `json:"functionCallingConfig"`
+}
+
+type geminiRequest struct {
+	Contents         []geminiContent         `json:"contents"`
+	GenerationConfig *geminiGenerationConfig `json:"generationConfig,omitempty"`
+	ToolConfig       *geminiToolConfig       `json:"toolConfig,omitempty"`
+}
+
 func encodeGeminiRequest(state RequestState) ([]byte, error) {
-	contents := make([]geminiContent, 0, len(state.History))
-	for _, message := range state.History {
+	contents, err := buildGeminiContents(state.History)
+	if err != nil {
+		return nil, err
+	}
+	request := geminiRequest{
+		Contents:         contents,
+		GenerationConfig: buildGeminiThinkingConfig(state.Settings.Reasoning),
+		ToolConfig:       buildGeminiToolConfig(state.Settings.ToolChoice),
+	}
+	encoded, err := json.Marshal(request)
+	return append(encoded, '\n'), err
+}
+
+func buildGeminiContents(history []Message) ([]geminiContent, error) {
+	contents := make([]geminiContent, 0, len(history))
+	for _, message := range history {
 		role := "user"
 		if message.Role == RoleAssistant {
 			role = "model"
@@ -76,10 +119,44 @@ func encodeGeminiRequest(state RequestState) ([]byte, error) {
 		}
 		contents = append(contents, content)
 	}
-	encoded, err := json.Marshal(struct {
-		Contents []geminiContent `json:"contents"`
-	}{Contents: contents})
-	return append(encoded, '\n'), err
+	return contents, nil
+}
+
+func buildGeminiThinkingConfig(reasoning ReasoningConfig) *geminiGenerationConfig {
+	var thinking *geminiThinkingConfig
+	switch reasoning.Mode {
+	case ReasoningOff:
+		budget := 0
+		thinking = &geminiThinkingConfig{ThinkingBudget: &budget}
+	case ReasoningOn:
+		budget := -1
+		thinking = &geminiThinkingConfig{ThinkingBudget: &budget}
+	case ReasoningEffort:
+		thinking = &geminiThinkingConfig{ThinkingLevel: effortName(reasoning.Effort)}
+	case ReasoningBudget:
+		budget := reasoning.Budget
+		thinking = &geminiThinkingConfig{ThinkingBudget: &budget}
+	}
+	if thinking == nil {
+		return nil
+	}
+	return &geminiGenerationConfig{ThinkingConfig: thinking}
+}
+
+func buildGeminiToolConfig(choice ToolChoice) *geminiToolConfig {
+	var calling *geminiFunctionCallingConfig
+	switch choice.Mode {
+	case ToolChoiceNone:
+		calling = &geminiFunctionCallingConfig{Mode: "NONE"}
+	case ToolChoiceRequired:
+		calling = &geminiFunctionCallingConfig{Mode: "ANY"}
+	case ToolChoiceTool:
+		calling = &geminiFunctionCallingConfig{Mode: "ANY", AllowedFunctionNames: []string{choice.Name}}
+	}
+	if calling == nil {
+		return nil
+	}
+	return &geminiToolConfig{FunctionCallingConfig: calling}
 }
 
 func newGeminiDecoder() frameDecoder {

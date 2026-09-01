@@ -15,6 +15,11 @@ func newAnthropicWire(classifier wireClassifier) WireFormat {
 		render:     renderAnthropicTools,
 		reserved:   []string{"anthropic"},
 		classifier: classifier,
+		capabilities: wireCapabilities{
+			name:       "Anthropic Messages",
+			reasoning:  reasoningShapeOff | reasoningShapeBudget,
+			toolChoice: toolChoiceShapeRequired | toolChoiceShapeTool,
+		},
 	}
 	return wire
 }
@@ -63,9 +68,32 @@ func encodeAnthropicRequest(state RequestState) ([]byte, error) {
 		}
 		messages = append(messages, encoded)
 	}
-	encoded, err := json.Marshal(struct {
-		Messages []anthropicMessage `json:"messages"`
-	}{Messages: messages})
+	type thinking struct {
+		Type         string `json:"type"`
+		BudgetTokens int    `json:"budget_tokens,omitempty"`
+	}
+	type toolChoice struct {
+		Type string `json:"type"`
+		Name string `json:"name,omitempty"`
+	}
+	request := struct {
+		Messages   []anthropicMessage `json:"messages"`
+		Thinking   *thinking          `json:"thinking,omitempty"`
+		ToolChoice *toolChoice        `json:"tool_choice,omitempty"`
+	}{Messages: messages}
+	switch state.Settings.Reasoning.Mode {
+	case ReasoningOff:
+		request.Thinking = &thinking{Type: "disabled"}
+	case ReasoningBudget:
+		request.Thinking = &thinking{Type: "enabled", BudgetTokens: state.Settings.Reasoning.Budget}
+	}
+	switch state.Settings.ToolChoice.Mode {
+	case ToolChoiceRequired:
+		request.ToolChoice = &toolChoice{Type: "any"}
+	case ToolChoiceTool:
+		request.ToolChoice = &toolChoice{Type: "tool", Name: state.Settings.ToolChoice.Name}
+	}
+	encoded, err := json.Marshal(request)
 	return append(encoded, '\n'), err
 }
 

@@ -36,12 +36,13 @@ type wireClassifier = ErrorClassifier
 type frameDecoder func(frame []byte) (message *Message, usage usageFragment, hasUsage bool, err error)
 
 type wireCodec struct {
-	encode     func(RequestState) ([]byte, error)
-	decoder    func() frameDecoder
-	render     func([]Tool) (json.RawMessage, error)
-	reserved   []string
-	classifier wireClassifier
-	lastUsage  Usage
+	encode       func(RequestState) ([]byte, error)
+	decoder      func() frameDecoder
+	render       func([]Tool) (json.RawMessage, error)
+	reserved     []string
+	classifier   wireClassifier
+	lastUsage    Usage
+	capabilities wireCapabilities
 }
 
 func (w *wireCodec) EncodeRequest(state RequestState) ([]byte, error) {
@@ -99,6 +100,10 @@ func (w *wireCodec) withClassifier(classifier wireClassifier) WireFormat {
 	clone.classifier = classifier
 	clone.lastUsage = Usage{}
 	return &clone
+}
+
+func (w *wireCodec) validateSettings(settings Settings) error {
+	return w.capabilities.validate(settings)
 }
 
 func validateCanonicalToolSchema(schema json.RawMessage) error {

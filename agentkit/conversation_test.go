@@ -436,3 +436,176 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (roundTrip roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
 	return roundTrip(request)
 }
+
+func TestUnsupportedSettingsFailAtStartOfSendWithoutMutation(t *testing.T) {
+	// R-3S2D-29LY
+	// R-3UI5-TT3C
+	tests := []struct {
+		name         string
+		context      string
+		capabilities wireCapabilities
+		settings     Settings
+	}{
+		{
+			name:         "reasoning budget",
+			context:      "reasoning mode budget",
+			capabilities: wireCapabilities{name: "controlled grammar", reasoning: reasoningShapeEffort, toolChoice: toolChoiceShapeTool},
+			settings:     Settings{Reasoning: ReasoningConfig{Mode: ReasoningBudget, Budget: 4096}},
+		},
+		{
+			name:         "named tool",
+			context:      "tool choice tool",
+			capabilities: wireCapabilities{name: "controlled grammar", reasoning: reasoningShapeBudget, toolChoice: toolChoiceShapeRequired},
+			settings:     Settings{ToolChoice: ToolChoice{Mode: ToolChoiceTool, Name: "lookup"}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			encodeCalls := 0
+			decodeCalls := 0
+			classifyCalls := 0
+			transportCalls := 0
+			wire := boundaryWire(test.capabilities, func(RequestState) {
+				encodeCalls++
+			}, func() {
+				decodeCalls++
+			})
+			client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				transportCalls++
+				return nil, errors.New("transport must not run")
+			})}
+			endpoint, err := NewEndpoint(
+				"https://provider.invalid/generate",
+				authFunc(func(context.Context, *http.Request, []byte) error { return nil }),
+				WithHTTPClient(client),
+				WithClassifier(func(int, http.Header, []byte) error {
+					classifyCalls++
+					return errors.New("classifier must not run")
+				}),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "controlled", Model: "opaque-model"})
+			conversation.settings = cloneSettings(test.settings)
+			conversation.history = History{{Role: RoleSystem, Blocks: []Block{Text{Text: "stable"}}}}
+			beforeHistory, err := json.Marshal(conversation.history)
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeSettings := cloneSettings(conversation.settings)
+
+			stream := conversation.Send(context.Background(), Text{Text: "not appended"})
+			if !errors.Is(stream.err, ErrInvalidConfig) {
+				t.Fatalf("Send error = %v, want ErrInvalidConfig", stream.err)
+			}
+			if !strings.Contains(stream.err.Error(), "controlled grammar") || !strings.Contains(stream.err.Error(), test.context) {
+				t.Fatalf("Send error lacks setting/wire context: %v", stream.err)
+			}
+			if encodeCalls != 0 || decodeCalls != 0 || classifyCalls != 0 || transportCalls != 0 {
+				t.Fatalf("boundary calls after invalid setting: encode/build=%d decode=%d classify=%d transport=%d", encodeCalls, decodeCalls, classifyCalls, transportCalls)
+			}
+			afterHistory, err := json.Marshal(conversation.history)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(afterHistory, beforeHistory) {
+				t.Fatalf("History changed: before=%s after=%s", beforeHistory, afterHistory)
+			}
+			if !reflect.DeepEqual(conversation.settings, beforeSettings) {
+				t.Fatalf("directive was substituted or dropped: before=%#v after=%#v", beforeSettings, conversation.settings)
+			}
+		})
+	}
+}
+
+func TestWireCapabilityDecisionIgnoresOpaqueModel(t *testing.T) {
+	// R-3VQ2-7KU1
+	settings := Settings{Reasoning: ReasoningConfig{Mode: ReasoningOn}}
+	models := []string{"old-looking-model", "released-today/unknown:model-beta"}
+	for _, model := range models {
+		wire := boundaryWire(
+			wireCapabilities{name: "effort-only grammar", reasoning: reasoningShapeEffort},
+			func(RequestState) { t.Fatalf("model %q reached EncodeRequest after wire rejection", model) },
+			func() { t.Fatalf("model %q reached Decode after wire rejection", model) },
+		)
+		endpoint, err := NewEndpoint("https://provider.invalid", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
+		if err != nil {
+			t.Fatal(err)
+		}
+		conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "controlled", Model: model})
+		conversation.settings = settings
+		if stream := conversation.Send(context.Background(), Text{Text: "hello"}); !errors.Is(stream.err, ErrInvalidConfig) {
+			t.Errorf("model %q capability result = %v, want identical ErrInvalidConfig", model, stream.err)
+		}
+	}
+}
+
+func TestUnknownModelReachesVendorAndClassifier(t *testing.T) {
+	// R-3WXY-LCKQ
+	unknownModel := "released-after-agentkit/opaque:model-beta"
+	settings := Settings{Reasoning: ReasoningConfig{Mode: ReasoningBudget, Budget: 2048}}
+	var encodedState RequestState
+	transportCalls := 0
+	responseBody := []byte(`{"error":"unsupported model"}`)
+	classified := &Error{Category: CategoryInvalidRequest, Status: http.StatusBadRequest, Code: "model_not_found", Message: "unsupported model"}
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		transportCalls++
+		return &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Header:     http.Header{"X-Vendor": []string{"exact"}},
+			Body:       io.NopCloser(bytes.NewReader(responseBody)),
+		}, nil
+	})}
+	classifierCalls := 0
+	endpoint, err := NewEndpoint(
+		"https://provider.invalid/generate",
+		authFunc(func(context.Context, *http.Request, []byte) error { return nil }),
+		WithHTTPClient(client),
+		WithClassifier(func(status int, header http.Header, body []byte) error {
+			classifierCalls++
+			if status != http.StatusBadRequest || header.Get("X-Vendor") != "exact" || !bytes.Equal(body, responseBody) {
+				t.Fatalf("classifier inputs = (%d, %#v, %q)", status, header, body)
+			}
+			return classified
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire := boundaryWire(
+		wireCapabilities{name: "budget grammar", reasoning: reasoningShapeBudget},
+		func(state RequestState) { encodedState = state },
+		func() { t.Fatal("non-2xx response must not be decoded") },
+	)
+	conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "controlled", Model: unknownModel})
+	conversation.settings = settings
+
+	stream := conversation.Send(context.Background(), Text{Text: "hello"})
+	if encodedState.Model != unknownModel || !reflect.DeepEqual(encodedState.Settings, settings) {
+		t.Fatalf("wire received state %#v, want opaque model and unchanged settings %#v", encodedState, settings)
+	}
+	if transportCalls != 1 || classifierCalls != 1 {
+		t.Fatalf("vendor boundary calls: transport=%d classifier=%d, want one each", transportCalls, classifierCalls)
+	}
+	if reflect.ValueOf(stream.err).Pointer() != reflect.ValueOf(classified).Pointer() {
+		t.Fatalf("Send error = %#v, want classifier result unchanged %#v", stream.err, classified)
+	}
+}
+
+func boundaryWire(capabilities wireCapabilities, encoded func(RequestState), decoded func()) WireFormat {
+	return &wireCodec{
+		capabilities: capabilities,
+		encode: func(state RequestState) ([]byte, error) {
+			encoded(state)
+			return []byte(`{}`), nil
+		},
+		decoder: func() frameDecoder {
+			decoded()
+			return func([]byte) (*Message, usageFragment, bool, error) {
+				return nil, usageFragment{}, false, nil
+			}
+		},
+		render: func([]Tool) (json.RawMessage, error) { return nil, nil },
+	}
+}

@@ -15,6 +15,11 @@ func newOpenAIChatWire(classifier wireClassifier) WireFormat {
 		render:     renderOpenAIChatTools,
 		reserved:   []string{"openai"},
 		classifier: classifier,
+		capabilities: wireCapabilities{
+			name:       "OpenAI Chat Completions",
+			reasoning:  reasoningShapeOff | reasoningShapeEffort,
+			toolChoice: toolChoiceShapeNone | toolChoiceShapeRequired | toolChoiceShapeTool,
+		},
 	}
 	return wire
 }
@@ -71,9 +76,33 @@ func encodeOpenAIChatRequest(state RequestState) ([]byte, error) {
 		}
 		messages = append(messages, encoded)
 	}
-	encoded, err := json.Marshal(struct {
-		Messages []chatMessage `json:"messages"`
-	}{Messages: messages})
+	type namedFunction struct {
+		Name string `json:"name"`
+	}
+	type namedTool struct {
+		Type     string        `json:"type"`
+		Function namedFunction `json:"function"`
+	}
+	request := struct {
+		Messages        []chatMessage `json:"messages"`
+		ReasoningEffort string        `json:"reasoning_effort,omitempty"`
+		ToolChoice      any           `json:"tool_choice,omitempty"`
+	}{Messages: messages}
+	switch state.Settings.Reasoning.Mode {
+	case ReasoningOff:
+		request.ReasoningEffort = "none"
+	case ReasoningEffort:
+		request.ReasoningEffort = effortName(state.Settings.Reasoning.Effort)
+	}
+	switch state.Settings.ToolChoice.Mode {
+	case ToolChoiceNone:
+		request.ToolChoice = "none"
+	case ToolChoiceRequired:
+		request.ToolChoice = "required"
+	case ToolChoiceTool:
+		request.ToolChoice = namedTool{Type: "function", Function: namedFunction{Name: state.Settings.ToolChoice.Name}}
+	}
+	encoded, err := json.Marshal(request)
 	return append(encoded, '\n'), err
 }
 

@@ -369,6 +369,59 @@ func TestRenderToolsRejectsOutsideCanonicalSubset(t *testing.T) {
 	}
 }
 
+func TestSupportedSettingsAreEncodedByOwningWireGrammar(t *testing.T) {
+	// R-3VQ2-7KU1
+	tests := []struct {
+		name     string
+		wire     WireFormat
+		settings Settings
+		want     string
+	}{
+		{
+			name:     "anthropic budget and named tool",
+			wire:     newAnthropicWire(nil),
+			settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningBudget, Budget: 4096}, ToolChoice: ToolChoice{Mode: ToolChoiceTool, Name: "lookup"}},
+			want:     `{"messages":[],"thinking":{"type":"enabled","budget_tokens":4096},"tool_choice":{"type":"tool","name":"lookup"}}` + "\n",
+		},
+		{
+			name:     "responses effort and no tools",
+			wire:     newOpenAIResponsesWire(nil),
+			settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningEffort, Effort: EffortHigh}, ToolChoice: ToolChoice{Mode: ToolChoiceNone}},
+			want:     `{"input":[],"reasoning":{"effort":"high"},"tool_choice":"none"}` + "\n",
+		},
+		{
+			name:     "chat off and named tool",
+			wire:     newOpenAIChatWire(nil),
+			settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningOff}, ToolChoice: ToolChoice{Mode: ToolChoiceTool, Name: "lookup"}},
+			want:     `{"messages":[],"reasoning_effort":"none","tool_choice":{"type":"function","function":{"name":"lookup"}}}` + "\n",
+		},
+		{
+			name:     "gemini bare on and required tool",
+			wire:     newGeminiWire(nil),
+			settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningOn}, ToolChoice: ToolChoice{Mode: ToolChoiceRequired}},
+			want:     `{"contents":[],"generationConfig":{"thinkingConfig":{"thinkingBudget":-1}},"toolConfig":{"functionCallingConfig":{"mode":"ANY"}}}` + "\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			validator, ok := test.wire.(interface{ validateSettings(Settings) error })
+			if !ok {
+				t.Fatalf("%T has no body-grammar capability declaration", test.wire)
+			}
+			if err := validator.validateSettings(test.settings); err != nil {
+				t.Fatalf("supported settings rejected: %v", err)
+			}
+			body, err := test.wire.EncodeRequest(RequestState{Model: "opaque-model-has-no-capability-role", Settings: test.settings})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(body) != test.want {
+				t.Fatalf("encoded body = %s, want exact owning-wire grammar %s", body, test.want)
+			}
+		})
+	}
+}
+
 type wireFixture struct {
 	name     string
 	response string

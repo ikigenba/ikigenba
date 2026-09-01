@@ -15,6 +15,11 @@ func newOpenAIResponsesWire(classifier wireClassifier) WireFormat {
 		render:     renderOpenAIResponsesTools,
 		reserved:   []string{"openai"},
 		classifier: classifier,
+		capabilities: wireCapabilities{
+			name:       "OpenAI Responses",
+			reasoning:  reasoningShapeOff | reasoningShapeEffort,
+			toolChoice: toolChoiceShapeNone | toolChoiceShapeRequired | toolChoiceShapeTool,
+		},
 	}
 	return wire
 }
@@ -29,9 +34,34 @@ type responsesInput struct {
 	Content []responsesContent `json:"content"`
 }
 
+type responsesReasoning struct {
+	Effort string `json:"effort"`
+}
+
+type responsesNamedTool struct {
+	Type string `json:"type"`
+	Name string `json:"name"`
+}
+
+type openAIResponsesRequest struct {
+	Input      []json.RawMessage   `json:"input"`
+	Reasoning  *responsesReasoning `json:"reasoning,omitempty"`
+	ToolChoice any                 `json:"tool_choice,omitempty"`
+}
+
 func encodeOpenAIResponsesRequest(state RequestState) ([]byte, error) {
-	input := make([]json.RawMessage, 0, len(state.History))
-	for _, message := range state.History {
+	input, err := buildOpenAIResponsesInput(state.History)
+	if err != nil {
+		return nil, err
+	}
+	request := buildOpenAIResponsesRequest(input, state.Settings)
+	encoded, err := json.Marshal(request)
+	return append(encoded, '\n'), err
+}
+
+func buildOpenAIResponsesInput(history []Message) ([]json.RawMessage, error) {
+	input := make([]json.RawMessage, 0, len(history))
+	for _, message := range history {
 		item := responsesInput{Role: openAIRole(message.Role)}
 		for _, block := range message.Blocks {
 			switch block := block.(type) {
@@ -88,10 +118,26 @@ func encodeOpenAIResponsesRequest(state RequestState) ([]byte, error) {
 			input = append(input, encoded)
 		}
 	}
-	encoded, err := json.Marshal(struct {
-		Input []json.RawMessage `json:"input"`
-	}{Input: input})
-	return append(encoded, '\n'), err
+	return input, nil
+}
+
+func buildOpenAIResponsesRequest(input []json.RawMessage, settings Settings) openAIResponsesRequest {
+	request := openAIResponsesRequest{Input: input}
+	switch settings.Reasoning.Mode {
+	case ReasoningOff:
+		request.Reasoning = &responsesReasoning{Effort: "none"}
+	case ReasoningEffort:
+		request.Reasoning = &responsesReasoning{Effort: effortName(settings.Reasoning.Effort)}
+	}
+	switch settings.ToolChoice.Mode {
+	case ToolChoiceNone:
+		request.ToolChoice = "none"
+	case ToolChoiceRequired:
+		request.ToolChoice = "required"
+	case ToolChoiceTool:
+		request.ToolChoice = responsesNamedTool{Type: "function", Name: settings.ToolChoice.Name}
+	}
+	return request
 }
 
 func openAIRole(role Role) string {

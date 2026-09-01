@@ -9,8 +9,9 @@ type Event any
 // RequestState is the immutable snapshot supplied to a Provider for one
 // round-trip.
 type RequestState struct {
-	Model   string
-	History History
+	Model    string
+	History  History
+	Settings Settings
 }
 
 // Stream is the result of advancing a conversation. Its event-facing API is
