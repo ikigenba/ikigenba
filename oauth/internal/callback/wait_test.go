@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -19,6 +20,92 @@ import (
 type waitOutcome struct {
 	result callback.Result
 	err    error
+}
+
+var (
+	_ error = callback.ErrStateMismatch
+	_ error = callback.ErrNoCode
+)
+
+// R-LQDW-BD6C
+func TestResultHasExactExportedShape(t *testing.T) {
+	resultType := reflect.TypeOf(callback.Result{})
+	if resultType.Kind() != reflect.Struct || resultType.Name() != "Result" || resultType.PkgPath() != "github.com/ikigenba/ikigenba/oauth/internal/callback" {
+		t.Fatalf("callback.Result type = %v (kind %v, name %q, package %q), want exported named struct Result from internal/callback", resultType, resultType.Kind(), resultType.Name(), resultType.PkgPath())
+	}
+	if resultType.NumField() != 1 {
+		t.Fatalf("callback.Result has %d fields, want exactly 1", resultType.NumField())
+	}
+	field := resultType.Field(0)
+	if field.Name != "Code" || field.Type != reflect.TypeFor[string]() || field.PkgPath != "" || field.Anonymous {
+		t.Errorf("callback.Result field = {Name:%q Type:%v PkgPath:%q Anonymous:%t}, want exported non-anonymous Code string", field.Name, field.Type, field.PkgPath, field.Anonymous)
+	}
+}
+
+// R-LRLS-P4X1
+func TestCallbackSentinelErrorsAreDistinctWrappingTargets(t *testing.T) {
+	if callback.ErrStateMismatch == nil {
+		t.Error("callback.ErrStateMismatch is nil, want a non-nil sentinel error")
+	}
+	if callback.ErrNoCode == nil {
+		t.Error("callback.ErrNoCode is nil, want a non-nil sentinel error")
+	}
+	if errors.Is(callback.ErrStateMismatch, callback.ErrNoCode) || errors.Is(callback.ErrNoCode, callback.ErrStateMismatch) {
+		t.Error("callback.ErrStateMismatch and callback.ErrNoCode match each other through errors.Is, want distinct sentinels")
+	}
+	if wrapped := fmt.Errorf("callback rejected: %w", callback.ErrStateMismatch); !errors.Is(wrapped, callback.ErrStateMismatch) {
+		t.Errorf("errors.Is(%v, callback.ErrStateMismatch) = false, want true", wrapped)
+	}
+	if wrapped := fmt.Errorf("callback incomplete: %w", callback.ErrNoCode); !errors.Is(wrapped, callback.ErrNoCode) {
+		t.Errorf("errors.Is(%v, callback.ErrNoCode) = false, want true", wrapped)
+	}
+}
+
+// R-LSTP-2WNQ
+func TestAuthorizeErrorHasExactExportedShapeAndErrorMethod(t *testing.T) {
+	authorizeErrorType := reflect.TypeOf(callback.AuthorizeError{})
+	if authorizeErrorType.Kind() != reflect.Struct || authorizeErrorType.Name() != "AuthorizeError" || authorizeErrorType.PkgPath() != "github.com/ikigenba/ikigenba/oauth/internal/callback" {
+		t.Fatalf("callback.AuthorizeError type = %v (kind %v, name %q, package %q), want exported named struct AuthorizeError from internal/callback", authorizeErrorType, authorizeErrorType.Kind(), authorizeErrorType.Name(), authorizeErrorType.PkgPath())
+	}
+	if authorizeErrorType.NumField() != 2 {
+		t.Fatalf("callback.AuthorizeError has %d fields, want exactly 2", authorizeErrorType.NumField())
+	}
+	wantFields := []string{"Code", "Description"}
+	for index, wantName := range wantFields {
+		field := authorizeErrorType.Field(index)
+		if field.Name != wantName || field.Type != reflect.TypeFor[string]() || field.PkgPath != "" || field.Anonymous {
+			t.Errorf("callback.AuthorizeError field %d = {Name:%q Type:%v PkgPath:%q Anonymous:%t}, want exported non-anonymous %s string", index, field.Name, field.Type, field.PkgPath, field.Anonymous, wantName)
+		}
+	}
+
+	pointerType := reflect.TypeOf((*callback.AuthorizeError)(nil))
+	errorMethod, ok := pointerType.MethodByName("Error")
+	if !ok {
+		t.Fatal("(*callback.AuthorizeError).Error method is missing")
+	}
+	wantMethodType := reflect.TypeOf((func(*callback.AuthorizeError) string)(nil))
+	if errorMethod.Type != wantMethodType {
+		t.Errorf("(*callback.AuthorizeError).Error type = %v, want %v", errorMethod.Type, wantMethodType)
+	}
+	if valueMethod, ok := authorizeErrorType.MethodByName("Error"); ok {
+		t.Errorf("callback.AuthorizeError unexpectedly has Error method with type %v; want Error declared only on *callback.AuthorizeError", valueMethod.Type)
+	}
+}
+
+// R-LV9H-UG54
+func TestWaitHasExactExportedMethodSignature(t *testing.T) {
+	serverType := reflect.TypeOf((*callback.Server)(nil))
+	waitMethod, ok := serverType.MethodByName("Wait")
+	if !ok {
+		t.Fatal("(*callback.Server).Wait method is missing")
+	}
+	wantMethodType := reflect.TypeOf((func(*callback.Server, context.Context, string, string) (callback.Result, error))(nil))
+	if waitMethod.Type != wantMethodType {
+		t.Errorf("(*callback.Server).Wait type = %v, want %v", waitMethod.Type, wantMethodType)
+	}
+	if valueMethod, ok := serverType.Elem().MethodByName("Wait"); ok {
+		t.Errorf("callback.Server unexpectedly has Wait method with type %v; want Wait declared only on *callback.Server", valueMethod.Type)
+	}
 }
 
 // R-GGA3-XOMK
