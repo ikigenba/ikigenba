@@ -2,6 +2,7 @@ package idgen
 
 import (
 	"errors"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -10,6 +11,88 @@ import (
 	"testing"
 	"time"
 )
+
+func callMintAt(function func(string, time.Time) string, prefix string, instant time.Time) string {
+	return function(prefix, instant)
+}
+
+func TestMintAtExportedSignature(t *testing.T) {
+	// R-TZLV-4Y8X
+	want := "R-" + "0007-J3LA"
+	if got := callMintAt(MintAt, "R", Epoch()); got != want {
+		t.Fatalf("MintAt through exported signature = %q, want %q", got, want)
+	}
+}
+
+func callTimeOf(function func(string) (time.Time, error), id string) (time.Time, error) {
+	return function(id)
+}
+
+func TestTimeOfExportedSignature(t *testing.T) {
+	// R-U0TR-IPZM
+	want := Epoch()
+	got, err := callTimeOf(TimeOf, "R-"+"0007-J3LA")
+	if err != nil {
+		t.Fatalf("TimeOf through exported signature returned error: %v", err)
+	}
+	if !got.Equal(want) {
+		t.Fatalf("TimeOf through exported signature = %s, want %s", got, want)
+	}
+}
+
+func TestErrInvalidIDDeclarationAndIdentity(t *testing.T) {
+	// R-U21N-WHQB
+	file, err := parser.ParseFile(token.NewFileSet(), "idgen.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse idgen.go: %v", err)
+	}
+
+	found := false
+	for _, declaration := range file.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok != token.VAR {
+			continue
+		}
+		for _, rawSpec := range general.Specs {
+			spec, ok := rawSpec.(*ast.ValueSpec)
+			if !ok || len(spec.Names) != 1 || spec.Names[0].Name != "ErrInvalidID" {
+				continue
+			}
+			found = true
+			typeName, ok := spec.Type.(*ast.Ident)
+			if !ok || typeName.Name != "error" {
+				t.Fatal("ErrInvalidID is not declared with static type error")
+			}
+			if len(spec.Values) != 1 {
+				t.Fatal("ErrInvalidID does not have exactly one initializer")
+			}
+			call, ok := spec.Values[0].(*ast.CallExpr)
+			if !ok {
+				t.Fatal("ErrInvalidID initializer is not a call")
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				t.Fatal("ErrInvalidID is not constructed with errors.New")
+			}
+			packageName, ok := selector.X.(*ast.Ident)
+			if !ok || packageName.Name != "errors" || selector.Sel.Name != "New" {
+				t.Fatal("ErrInvalidID is not constructed with errors.New")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("ErrInvalidID package variable declaration not found")
+	}
+
+	first := fmt.Errorf("first: %w", ErrInvalidID)
+	second := fmt.Errorf("second: %w", ErrInvalidID)
+	if !errors.Is(first, ErrInvalidID) || !errors.Is(second, ErrInvalidID) {
+		t.Fatal("errors.Is does not recognize the stable ErrInvalidID identity")
+	}
+	if errors.Is(errors.New("invalid id"), ErrInvalidID) {
+		t.Fatal("ErrInvalidID matches a distinct error with the same text")
+	}
+}
 
 func prefixAgreementSample(seed uint64) []string {
 	state := seed
@@ -28,7 +111,7 @@ func prefixAgreementSample(seed uint64) []string {
 		var prefix strings.Builder
 		prefix.Grow(length)
 		for range length {
-			prefix.WriteByte(validCharacters[nextRandom()%62])
+			prefix.WriteByte(validCharacters[nextRandom()%uint64(len(validCharacters))])
 		}
 		return prefix.String()
 	}
@@ -192,8 +275,10 @@ func TestMintAtClampsBeforeEpoch(t *testing.T) {
 func TestMintAtTimeOfRoundTrip(t *testing.T) {
 	// R-SJ7P-ALD5
 	const (
-		seed                         = uint64(1729)
-		maxRepresentableOffsetMillis = modulus - 1
+		seed = uint64(1729)
+		// The format has eight base-36 digits, so its independently stated
+		// representable offset range is [0, 36^8-1] milliseconds.
+		maxRepresentableOffsetMillis = int64(2_821_109_907_455)
 	)
 	state := seed
 	nextOffset := func() int64 {
@@ -453,6 +538,8 @@ func TestValidateAffineMapPanicsWhenNotInvertible(t *testing.T) {
 	// every millisecond offset the encoder can emit must decode back to itself.
 	for _, ms := range []int64{0, 1, 2, multiplier, modulus - 1} {
 		encoded := (multiplyMod(ms%modulus, multiplier) + offset) % modulus
+		// Adding modulus before subtracting offset keeps the dividend
+		// non-negative under Go's signed-remainder semantics.
 		difference := (encoded + modulus - offset) % modulus
 		if got := multiplyMod(difference, multiplierInverse); got != ms%modulus {
 			t.Fatalf("affine map not invertible at ms=%d: recovered %d", ms, got)

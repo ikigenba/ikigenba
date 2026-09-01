@@ -28,8 +28,10 @@ func Epoch() time.Time {
 	return time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 }
 
-// ErrInvalidID identifies malformed identifiers passed to TimeOf.
-var ErrInvalidID = errors.New("invalid id")
+// ErrInvalidID wraps the error TimeOf returns for a malformed id.
+//
+//nolint:revive // The exported variable's static error type is part of the API contract.
+var ErrInvalidID error = errors.New("invalid id")
 
 func init() {
 	validateDerivedConstants()
@@ -49,21 +51,16 @@ func validateDerivedConstants() {
 	}
 }
 
-// MintAt returns an identifier for t using prefix.
+// MintAt returns "<prefix>-XXXX-XXXX" for the given instant. Instants before
+// Epoch() are clamped to Epoch(). The caller guarantees prefix satisfies
+// ValidPrefix (cli validates at the flag boundary; D5); MintAt does not
+// re-validate.
 //
-// The representable range is the half-open window [Epoch, Epoch+modulus ms),
-// where modulus is 36^8 milliseconds (≈89 years). The encoded body is the
-// affine map (multiplier*ms+offset) taken modulo modulus, so t is carried into
-// that ring before encoding.
-//
-// Outside the window the result is silently aliased rather than reported:
-//   - Instants before Epoch are represented as Epoch (the floor).
-//   - Instants at or beyond Epoch+modulus ms wrap through the modulus and
-//     collide with an earlier instant inside the window; the id no longer
-//     round-trips through TimeOf, which recovers that earlier aliased instant.
-//
-// Callers that must distinguish instants past the ceiling should range-check t
-// against Epoch+modulus ms before minting.
+// The representable range is the half-open window [Epoch, Epoch+36^8 ms),
+// approximately 89 years. Instants at or beyond the ceiling wrap modulo 36^8
+// and collide with an earlier instant in the window; offsets beyond
+// time.Duration's range first saturate according to time.Sub. Callers that
+// need to distinguish later instants must range-check before calling MintAt.
 func MintAt(prefix string, t time.Time) string {
 	epoch := Epoch()
 	if t.Before(epoch) {
@@ -77,7 +74,9 @@ func MintAt(prefix string, t time.Time) string {
 	return prefix + "-" + body[:groupWidth] + "-" + body[groupWidth:]
 }
 
-// TimeOf recovers the UTC, millisecond-precision instant encoded in id.
+// TimeOf inverts the body of any "<prefix>-XXXX-XXXX" id to the instant it
+// was minted from, at millisecond precision, in UTC. Ids of any prefix
+// decode. Returns an error wrapping ErrInvalidID when id is not canonical.
 func TimeOf(id string) (time.Time, error) {
 	parts := strings.Split(id, "-")
 	if len(parts) != 3 || !ValidPrefix(parts[0]) || !validBodyPart(parts[1]) || !validBodyPart(parts[2]) {
