@@ -660,13 +660,15 @@ type boundaryTestWire struct{ wireCodec }
 func (*boundaryTestWire) RenderTools([]Tool) (json.RawMessage, error) { return nil, nil }
 
 type phase15Provider struct {
-	model         string
-	states        []RequestState
-	responses     [][]Event
-	decodeErrors  []error
-	decodeCalls   int
-	classifyCalls int
-	classified    error
+	model           string
+	states          []RequestState
+	responses       [][]Event
+	decodeErrors    []error
+	decodeCalls     int
+	classifyCalls   int
+	classified      error
+	accounting      []providerAccounting
+	accountingCalls int
 }
 
 type phase15TransportStep struct {
@@ -733,6 +735,15 @@ func (p *phase15Provider) Identity() Identity {
 	return Identity{Endpoint: "phase15", AuthMode: "fixture", Model: p.model}
 }
 
+func (p *phase15Provider) turnAccounting() providerAccounting {
+	p.accountingCalls++
+	index := p.decodeCalls - 1
+	if index >= 0 && index < len(p.accounting) {
+		return p.accounting[index]
+	}
+	return providerAccounting{}
+}
+
 func cloneRequestState(state RequestState) RequestState {
 	return RequestState{
 		Model:    state.Model,
@@ -752,6 +763,220 @@ func successfulPhase15Client(transportCalls *int) *http.Client {
 
 type captureEventSink struct {
 	records []eventRecord
+}
+
+func TestDurableLogMirrorsMultiRoundStreamAtMessageGranularity(t *testing.T) {
+	// R-5ELJ-F97A
+	call := ToolUse{ID: "logged-call", Name: "weather", Input: json.RawMessage(`{"city":"Oslo"}`)}
+	first := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "checking"}, call}}
+	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "sunny"}}}
+	provider := &phase15Provider{model: "gpt-4.1-mini", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
+	transportCalls := 0
+	var output bytes.Buffer
+	log := NewLog(&output, func() time.Time { return time.Date(2033, 1, 1, 0, 0, 0, 0, time.UTC) })
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation.eventSink = log
+	conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) { return "sunny", nil })}
+
+	events := drainStream(conversation.Send(context.Background(), Text{Text: "forecast"}))
+	if len(events) != 4 {
+		t.Fatalf("live event count = %d, want 4", len(events))
+	}
+	records := decodeLogRecords(t, output.Bytes())
+	assertSelectedLogPayloads(t, records)
+	var projected []Event
+	for _, record := range records {
+		switch record.Type {
+		case RecordMessage:
+			projected = append(projected, MessageDone{Message: *record.Message})
+		case RecordToolUse:
+			projected = append(projected, ToolCall{Use: *record.ToolUse})
+		case RecordToolResult:
+			projected = append(projected, ToolReturn{Result: *record.ToolResult})
+		}
+	}
+	if !reflect.DeepEqual(projected, events) {
+		t.Fatalf("log projection = %#v, want exact live event order %#v", projected, events)
+	}
+	if bytes.Contains(output.Bytes(), []byte("delta")) || len(records) != len(events)+3 || records[0].Type != RecordTurnStart || records[len(records)-2].Type != RecordUsage || records[len(records)-1].Type != RecordTurnEnd {
+		t.Fatalf("log is not one message-granular line per protocol/lifecycle event: %s", output.Bytes())
+	}
+}
+
+func TestLogFailureDoesNotAlterSuccessOrTerminalStreamSemantics(t *testing.T) {
+	// R-5LWX-PVNG
+	message := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "kept"}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: message}}}}
+	transportCalls := 0
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation.eventSink = NewLog(failingLogWriter{}, func() time.Time { return time.Time{} })
+	stream := conversation.Send(context.Background(), Text{Text: "hello"})
+	if events := drainStream(stream); !reflect.DeepEqual(events, []Event{MessageDone{Message: message}}) || stream.Err() != nil {
+		t.Fatalf("failing log changed successful stream: events=%#v err=%v", events, stream.Err())
+	}
+	if len(conversation.history) != 2 {
+		t.Fatalf("failing log changed committed history: %#v", conversation.history)
+	}
+
+	terminal := errors.New("decode failed")
+	provider = &phase15Provider{model: "model", decodeErrors: []error{terminal}}
+	transportCalls = 0
+	var output bytes.Buffer
+	conversation = NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation.eventSink = NewLog(&output, func() time.Time { return time.Time{} })
+	stream = conversation.Send(context.Background(), Text{Text: "fail"})
+	drainStream(stream)
+	if !errors.Is(stream.Err(), terminal) || stream.Err().Error() != "unknown: provider response decoding ended before completion: decode failed (status 200)" || len(conversation.history) != 0 {
+		t.Fatalf("terminal semantics changed: err=%v history=%#v", stream.Err(), conversation.history)
+	}
+	records := decodeLogRecords(t, output.Bytes())
+	assertSelectedLogPayloads(t, records)
+	foundError := false
+	for _, record := range records {
+		if record.Type == RecordError && record.Err != nil && record.Err.Message == "provider response decoding ended before completion: decode failed" {
+			foundError = true
+		}
+	}
+	if !foundError {
+		t.Fatalf("terminal error record missing from %#v", records)
+	}
+
+	provider = &phase15Provider{model: "model"}
+	transportCalls = 0
+	output.Reset()
+	cancelClient := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		transportCalls++
+		return nil, context.Canceled
+	})}
+	conversation = NewConversation(provider, cancelClient)
+	conversation.eventSink = NewLog(&output, func() time.Time { return time.Time{} })
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	stream = conversation.Send(canceled, Text{Text: "cancelled"})
+	drainStream(stream)
+	var providerError *Error
+	if !errors.Is(stream.Err(), context.Canceled) || !errors.As(stream.Err(), &providerError) || providerError.Category != CategoryTransport {
+		t.Fatalf("already-cancelled stream err = %v, want transport error wrapping context.Canceled", stream.Err())
+	}
+	if len(provider.states) != 1 || transportCalls != 1 || len(conversation.history) != 0 {
+		t.Fatalf("already-cancelled BuildRequest/transport/history = %d/%d/%#v, want prior behavior 1/1/empty", len(provider.states), transportCalls, conversation.history)
+	}
+	assertSelectedLogPayloads(t, decodeLogRecords(t, output.Bytes()))
+}
+
+func TestConversationCloseSummarizesResolvedCostsAndRejectsLaterSend(t *testing.T) {
+	// R-5N4U-3NE5
+	// R-5OCQ-HF4U
+	knownPricing := map[string]Pricing{"priced": {InputPerToken: 10, OutputPerToken: 20}}
+	provider := &phase15Provider{
+		model: "priced",
+		responses: [][]Event{
+			{MessageDone{Message: Message{Role: RoleAssistant}}},
+			{MessageDone{Message: Message{Role: RoleAssistant}}},
+		},
+		accounting: []providerAccounting{
+			{usage: Usage{InputTokens: 2, OutputTokens: 3}, pricing: knownPricing},
+			{usage: Usage{CachedTokens: 5}},
+		},
+	}
+	transportCalls := 0
+	var output bytes.Buffer
+	log := NewLog(&output, func() time.Time { return time.Time{} })
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation.eventSink = log
+	for range 2 {
+		stream := conversation.Send(context.Background(), Text{Text: "turn"})
+		drainStream(stream)
+		if stream.Err() != nil {
+			t.Fatal(stream.Err())
+		}
+	}
+	if err := log.Close(); err != nil {
+		t.Fatal(err)
+	}
+	closedOutput := output.String()
+	if err := log.Close(); err != nil || output.String() != closedOutput {
+		t.Fatalf("idempotent Close = %v, output changed=%t", err, output.String() != closedOutput)
+	}
+	stream := conversation.Send(context.Background(), Text{Text: "after close"})
+	drainStream(stream)
+	if !errors.Is(stream.Err(), ErrClosed) || transportCalls != 2 {
+		t.Fatalf("Send after Close err/calls = %v/%d, want ErrClosed/2", stream.Err(), transportCalls)
+	}
+	records := decodeLogRecords(t, output.Bytes())
+	var usageRecords []LogRecord
+	for _, record := range records {
+		if record.Type == RecordUsage {
+			usageRecords = append(usageRecords, record)
+		}
+	}
+	if len(usageRecords) != 2 || usageRecords[0].Cost == nil || *usageRecords[0].Cost != (Cost{Amount: 80, Known: true}) || usageRecords[1].Cost == nil || usageRecords[1].Cost.Known {
+		t.Fatalf("resolved per-turn usage costs = %#v", usageRecords)
+	}
+	if provider.accountingCalls != 2 {
+		t.Fatalf("provider accounting calls = %d, want exactly 2", provider.accountingCalls)
+	}
+	summary := records[len(records)-1]
+	wantUsage := Usage{InputTokens: 2, CachedTokens: 5, OutputTokens: 3}
+	if summary.Type != RecordSummary || summary.Usage == nil || *summary.Usage != wantUsage || summary.Cost == nil || *summary.Cost != (Cost{Amount: 80, Known: false}) {
+		t.Fatalf("cumulative summary = %#v, want usage %+v unknown cost amount 80", summary, wantUsage)
+	}
+}
+
+type failingLogWriter struct{}
+
+func (failingLogWriter) Write([]byte) (int, error) { return 0, errors.New("log disk full") }
+
+func assertSelectedLogPayloads(t *testing.T, records []LogRecord) {
+	t.Helper()
+	for index, record := range records {
+		present := map[string]bool{
+			"identity":    record.Identity != nil,
+			"message":     record.Message != nil,
+			"tool_use":    record.ToolUse != nil,
+			"tool_result": record.ToolResult != nil,
+			"usage":       record.Usage != nil,
+			"cost":        record.Cost != nil,
+			"error":       record.Err != nil,
+			"retry":       record.Retry != nil,
+		}
+		var want map[string]bool
+		switch record.Type {
+		case RecordTurnStart:
+			want = map[string]bool{"identity": true}
+		case RecordMessage:
+			want = map[string]bool{"message": true}
+		case RecordToolUse:
+			want = map[string]bool{"tool_use": true}
+		case RecordToolResult:
+			want = map[string]bool{"tool_result": true}
+		case RecordUsage, RecordSummary:
+			want = map[string]bool{"usage": true, "cost": true}
+		case RecordError:
+			want = map[string]bool{"error": true}
+		case RecordRetry:
+			want = map[string]bool{"retry": true}
+		case RecordTurnEnd:
+			want = map[string]bool{}
+		default:
+			t.Fatalf("record %d has unknown type %q", index, record.Type)
+		}
+		if !reflect.DeepEqual(present, payloadPresence(want)) {
+			t.Fatalf("record %d type %q payload presence = %v, want only %v", index, record.Type, present, want)
+		}
+	}
+}
+
+func payloadPresence(selected map[string]bool) map[string]bool {
+	all := map[string]bool{
+		"identity": false, "message": false, "tool_use": false,
+		"tool_result": false, "usage": false, "cost": false,
+		"error": false, "retry": false,
+	}
+	for name := range selected {
+		all[name] = true
+	}
+	return all
 }
 
 func (sink *captureEventSink) record(record eventRecord) {

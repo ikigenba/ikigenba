@@ -42,3 +42,12 @@ func mergeUsage(fragments ...usageFragment) Usage {
 	}
 	return usage
 }
+
+func addUsage(left, right Usage) Usage {
+	return Usage{
+		InputTokens:     left.InputTokens + right.InputTokens,
+		CachedTokens:    left.CachedTokens + right.CachedTokens,
+		OutputTokens:    left.OutputTokens + right.OutputTokens,
+		ReasoningTokens: left.ReasoningTokens + right.ReasoningTokens,
+	}
+}

@@ -116,6 +116,32 @@ func (provider *composedProvider) Classify(status int, header http.Header, body 
 
 func (provider *composedProvider) Identity() Identity { return provider.identity }
 
+func (provider *composedProvider) turnAccounting() providerAccounting {
+	return providerAccounting{usage: takeBuiltInWireUsage(provider.wire)}
+}
+
+// takeBuiltInWireUsage adapts the package's concrete codecs to conversation
+// accounting without widening WireFormat or adding an accounting method to the
+// codec seam.
+func takeBuiltInWireUsage(wire WireFormat) Usage {
+	var codec *wireCodec
+	switch wire := wire.(type) {
+	case *anthropicWire:
+		codec = &wire.wireCodec
+	case *openAIResponsesWire:
+		codec = &wire.wireCodec
+	case *openAIChatWire:
+		codec = &wire.wireCodec
+	case *geminiWire:
+		codec = &wire.wireCodec
+	default:
+		return Usage{}
+	}
+	usage := codec.lastUsage
+	codec.lastUsage = Usage{}
+	return usage
+}
+
 func (provider *composedProvider) reservedKeys() []string {
 	return provider.wire.ReservedKeys()
 }

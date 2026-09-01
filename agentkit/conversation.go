@@ -42,12 +42,65 @@ func NewConversation(provider Provider, client *http.Client) *Conversation {
 func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream {
 	turn := c.snapshotTurn(blocks)
 	return &Stream{drive: func(yield func(Event) bool) error {
+		log, _ := c.eventSink.(*Log)
+		if log.isClosed() {
+			return ErrClosed
+		}
+		log.start(c.identity)
+		accounting := turnAccounting{allWireCosts: true}
+		var terminal error
+		defer func() {
+			log.recordError(terminal)
+			log.finish(accounting.usage, resolveCost(c.identity.Model, accounting.usage, accounting.wireCost(), accounting.pricing))
+		}()
 		orchestrator, err := c.prepareOrchestrator()
 		if err != nil {
-			return invalidConfigError(c.identity, err)
+			terminal = invalidConfigError(c.identity, err)
+			return terminal
 		}
-		return c.driveTurn(ctx, orchestrator, turn, yield)
+		terminal = c.driveTurn(ctx, orchestrator, turn, yield, &accounting)
+		return terminal
 	}}
+}
+
+type turnAccounting struct {
+	usage        Usage
+	wireAmount   int64
+	wireRounds   int
+	rounds       int
+	allWireCosts bool
+	pricing      map[string]Pricing
+}
+
+func (a *turnAccounting) add(round providerAccounting) {
+	a.rounds++
+	a.usage = addUsage(a.usage, round.usage)
+	if round.wireAmount == nil {
+		a.allWireCosts = false
+	} else {
+		a.wireAmount += *round.wireAmount
+		a.wireRounds++
+	}
+	if round.pricing != nil {
+		a.pricing = round.pricing
+	}
+}
+
+func (a *turnAccounting) wireCost() *int64 {
+	if a.rounds == 0 || !a.allWireCosts || a.wireRounds != a.rounds {
+		return nil
+	}
+	return &a.wireAmount
+}
+
+type providerAccounting struct {
+	usage      Usage
+	wireAmount *int64
+	pricing    map[string]Pricing
+}
+
+type accountingProvider interface {
+	turnAccounting() providerAccounting
 }
 
 func (c *Conversation) prepareOrchestrator() (*orchestrator, error) {
@@ -77,7 +130,7 @@ func (c *Conversation) snapshotTurn(blocks []Block) turnSnapshot {
 	}
 }
 
-func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator, snapshot turnSnapshot, yield func(Event) bool) error {
+func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator, snapshot turnSnapshot, yield func(Event) bool, accounting *turnAccounting) error {
 	for {
 		candidate := append(cloneHistory(snapshot.baseHistory), cloneHistory(snapshot.turn)...)
 		roundEvents, completed, err := c.roundTrip(ctx, RequestState{
@@ -87,6 +140,11 @@ func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator
 			Options:  cloneProviderOptions(snapshot.options),
 			Tools:    orchestrator.advertisedSnapshot(),
 		}, yield)
+		if provider, ok := c.provider.(accountingProvider); ok {
+			accounting.add(provider.turnAccounting())
+		} else {
+			accounting.add(providerAccounting{})
+		}
 		if !completed {
 			return err
 		}
@@ -242,9 +300,8 @@ func (c *Conversation) consumeResponse(ctx context.Context, response *http.Respo
 	var events []Event
 	for event, decodeErr := range c.provider.Decode(ctx, response) {
 		if decodeErr != nil {
-			// Provider.Decode exposes one undifferentiated terminal error channel.
-			// Preserve that seam as CategoryUnknown rather than inferring an error
-			// category from provider-private error values.
+			// Provider.Decode exposes one canonical terminal error channel. Preserve
+			// that seam as CategoryUnknown without inferring provider-private detail.
 			contextual := fmt.Errorf("provider response decoding ended before completion: %w", decodeErr)
 			return events, true, wrapProviderError(contextual, CategoryUnknown, response.StatusCode, c.identity)
 		}
