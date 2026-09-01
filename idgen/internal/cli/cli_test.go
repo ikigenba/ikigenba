@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"io"
 	"os"
 	"os/exec"
@@ -101,6 +102,118 @@ func TestClockExportedExactMethodSet(t *testing.T) {
 	}
 	if sleep.Results != nil && sleep.Results.NumFields() != 0 {
 		t.Errorf("Clock.Sleep has %d results, want 0", sleep.Results.NumFields())
+	}
+}
+
+// R-U4HG-O17P: exitCode is a distinct type whose enumeration contains exactly
+// exitSuccess = 0, exitFailure = 1, and exitUsage = 2.
+func TestExitCodeEnumerationExact(t *testing.T) {
+	t.Parallel()
+
+	fset := token.NewFileSet()
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read package directory: %v", err)
+	}
+
+	var exitCodeDeclarations []*ast.TypeSpec
+	var declarationFiles []*ast.File
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+
+		file, parseErr := parser.ParseFile(fset, entry.Name(), nil, 0)
+		if parseErr != nil {
+			t.Fatalf("parse %s: %v", entry.Name(), parseErr)
+		}
+		declarations := &ast.File{Name: file.Name}
+		for _, declaration := range file.Decls {
+			general, ok := declaration.(*ast.GenDecl)
+			if !ok {
+				continue
+			}
+			if general.Tok == token.CONST {
+				declarations.Decls = append(declarations.Decls, general)
+				continue
+			}
+			if general.Tok == token.TYPE {
+				for _, specification := range general.Specs {
+					typeSpec, ok := specification.(*ast.TypeSpec)
+					if ok && typeSpec.Name.Name == "exitCode" {
+						exitCodeDeclarations = append(exitCodeDeclarations, typeSpec)
+						declarations.Decls = append(declarations.Decls, &ast.GenDecl{
+							TokPos: general.TokPos,
+							Tok:    token.TYPE,
+							Specs:  []ast.Spec{typeSpec},
+						})
+					}
+				}
+			}
+		}
+		if len(declarations.Decls) > 0 {
+			declarationFiles = append(declarationFiles, declarations)
+		}
+	}
+
+	if len(exitCodeDeclarations) != 1 {
+		t.Fatalf("found %d exitCode declarations, want exactly 1", len(exitCodeDeclarations))
+	}
+	exitCodeDeclaration := exitCodeDeclarations[0]
+	underlying, ok := exitCodeDeclaration.Type.(*ast.Ident)
+	if exitCodeDeclaration.Assign.IsValid() || !ok || underlying.Name != "int" {
+		t.Errorf("exitCode declaration = %#v, want distinct defined type with underlying int", exitCodeDeclaration)
+	}
+
+	info := &types.Info{Defs: make(map[*ast.Ident]types.Object)}
+	config := types.Config{
+		// The declaration-only package intentionally omits function bodies and
+		// unrelated type declarations. Undefined names in unrelated constants do
+		// not prevent go/types from recording every package-level constant whose
+		// actual type is exitCode.
+		Error: func(error) {},
+	}
+	_, _ = config.Check("cli", fset, declarationFiles, info)
+	exitCodeObject, ok := info.Defs[exitCodeDeclaration.Name].(*types.TypeName)
+	if !ok {
+		t.Fatal("exitCode declaration did not define a type")
+	}
+	typedConstants := make(map[string]struct{})
+	for identifier, object := range info.Defs {
+		constant, ok := object.(*types.Const)
+		if ok && types.Identical(constant.Type(), exitCodeObject.Type()) {
+			typedConstants[identifier.Name] = struct{}{}
+		}
+	}
+
+	wantNames := map[string]struct{}{
+		"exitSuccess": {},
+		"exitFailure": {},
+		"exitUsage":   {},
+	}
+	if len(typedConstants) != len(wantNames) {
+		t.Fatalf("exitCode constant names = %v, want exactly %v", typedConstants, wantNames)
+	}
+	for name := range wantNames {
+		if _, ok := typedConstants[name]; !ok {
+			t.Errorf("exitCode constant %s is missing", name)
+		}
+	}
+
+	values := map[string]exitCode{
+		"exitSuccess": exitSuccess,
+		"exitFailure": exitFailure,
+		"exitUsage":   exitUsage,
+	}
+	wantValues := map[string]exitCode{
+		"exitSuccess": 0,
+		"exitFailure": 1,
+		"exitUsage":   2,
+	}
+	for name, want := range wantValues {
+		if got := values[name]; got != want {
+			t.Errorf("%s = %d, want %d", name, got, want)
+		}
 	}
 }
 
