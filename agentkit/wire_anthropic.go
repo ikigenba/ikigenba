@@ -13,7 +13,6 @@ func newAnthropicWire(classifier wireClassifier) WireFormat {
 		encode:     encodeAnthropicRequest,
 		decoder:    newAnthropicDecoder,
 		render:     renderAnthropicTools,
-		replay:     replayEncodingProviderBlock,
 		reserved:   []string{"anthropic"},
 		classifier: classifier,
 	}

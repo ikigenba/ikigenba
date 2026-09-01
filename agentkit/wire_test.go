@@ -63,7 +63,6 @@ func TestWireSelectionIsConstructorOnly(t *testing.T) {
 }
 
 func TestWireOwnsOnlyBodyGrammar(t *testing.T) {
-	// R-2XKV-I02L
 	state := RequestState{Model: "endpoint-owned-model", History: History{
 		{Role: RoleAssistant, Blocks: []Block{
 			Text{Text: "Hello"},
@@ -77,14 +76,13 @@ func TestWireOwnsOnlyBodyGrammar(t *testing.T) {
 		name      string
 		wire      WireFormat
 		replay    json.RawMessage
-		encoding  ReplayEncoding
 		want      []string
 		wantUsage Usage
 	}{
-		{"anthropic", newAnthropicWire(nil), json.RawMessage(`{"type":"thinking","thinking":"replayed","signature":"sig"}`), replayEncodingProviderBlock, []string{`"thinking":"replayed"`, `"signature":"sig"`, `"type":"tool_use"`, `"type":"tool_result"`, `"is_error":true`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4}},
-		{"responses", newOpenAIResponsesWire(nil), json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"replayed"}]}`), replayEncodingMessageItem, []string{`"type":"reasoning"`, `"id":"rs_1"`, `"text":"replayed"`, `"arguments":"{\"q\":\"value\"}"`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}},
-		{"chat", newOpenAIChatWire(nil), json.RawMessage(`{"reasoning_content":"replayed"}`), replayEncodingMessageItem, []string{`"reasoning_content":"replayed"`, `"tool_calls"`, `"arguments":"{\"q\":\"value\"}"`, `"tool_call_id":"call_1"`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}},
-		{"gemini", newGeminiWire(nil), json.RawMessage(`{"text":"replayed","thought":true,"thoughtSignature":"sig"}`), replayEncodingProviderBlock, []string{`"text":"replayed"`, `"thought":true`, `"thoughtSignature":"sig"`, `"functionCall"`, `"args":{"q":"value"}`, `"functionResponse"`, `"isError":true`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}},
+		{"anthropic", newAnthropicWire(nil), json.RawMessage(`{"type":"thinking","thinking":"replayed","signature":"sig"}`), []string{`"thinking":"replayed"`, `"signature":"sig"`, `"type":"tool_use"`, `"type":"tool_result"`, `"is_error":true`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4}},
+		{"responses", newOpenAIResponsesWire(nil), json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"replayed"}]}`), []string{`"type":"reasoning"`, `"id":"rs_1"`, `"text":"replayed"`, `"arguments":"{\"q\":\"value\"}"`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}},
+		{"chat", newOpenAIChatWire(nil), json.RawMessage(`{"reasoning_content":"replayed"}`), []string{`"reasoning_content":"replayed"`, `"tool_calls"`, `"arguments":"{\"q\":\"value\"}"`, `"tool_call_id":"call_1"`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}},
+		{"gemini", newGeminiWire(nil), json.RawMessage(`{"text":"replayed","thought":true,"thoughtSignature":"sig"}`), []string{`"text":"replayed"`, `"thought":true`, `"thoughtSignature":"sig"`, `"functionCall"`, `"args":{"q":"value"}`, `"functionResponse"`, `"isError":true`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}},
 	}
 	for _, test := range tests {
 		wire := test.wire
@@ -116,10 +114,6 @@ func TestWireOwnsOnlyBodyGrammar(t *testing.T) {
 		if len(wire.ReservedKeys()) == 0 {
 			t.Fatalf("%T did not identify its provider option grammar", wire)
 		}
-		if wire.DefaultReplayEncoding() != test.encoding {
-			t.Fatalf("%T replay encoding = %v, want %v", wire, wire.DefaultReplayEncoding(), test.encoding)
-		}
-
 		fixture := wireFixturesByName()[test.name]
 		response, err := os.Open(fixture.response)
 		if err != nil {
@@ -250,7 +244,6 @@ func TestDecodeStreamUsesClassifierForInBandError(t *testing.T) {
 }
 
 func TestFramingIsSeparableAndErrorsPropagate(t *testing.T) {
-	// R-32GH-131D
 	want := errors.New("binary framing failed")
 	alternate := Framer(func(io.Reader) iter.Seq2[[]byte, error] {
 		return func(yield func([]byte, error) bool) {

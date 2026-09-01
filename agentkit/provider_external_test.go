@@ -65,7 +65,6 @@ func TestExternalProviderDrivesSend(t *testing.T) {
 }
 
 func TestEndpointHookSignaturesArePublic(t *testing.T) {
-	// R-3C7O-38YX
 	var auth agentkit.AuthApplier = externalAuth{}
 	var mutator agentkit.RequestMutator = func(*http.Request, *[]byte) error { return nil }
 	var classifier agentkit.ErrorClassifier = func(int, http.Header, []byte) error { return nil }

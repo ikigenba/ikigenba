@@ -11,7 +11,6 @@ import (
 )
 
 func TestEndpointIsOpaqueOptionBuiltAndValidatesOptions(t *testing.T) {
-	// R-37C2-K605
 	typeOfEndpoint := reflect.TypeFor[Endpoint]()
 	for index := range typeOfEndpoint.NumField() {
 		if typeOfEndpoint.Field(index).IsExported() {
@@ -33,7 +32,6 @@ func TestEndpointIsOpaqueOptionBuiltAndValidatesOptions(t *testing.T) {
 		WithFramer(nil),
 		WithClassifier(nil),
 		WithMutator(nil),
-		WithReplayEncoding(ReplayEncoding(255)),
 		withAuth(nil),
 	}
 	for _, option := range invalid {
@@ -47,7 +45,6 @@ func TestEndpointIsOpaqueOptionBuiltAndValidatesOptions(t *testing.T) {
 }
 
 func TestEndpointOwnsCompleteTransportConfiguration(t *testing.T) {
-	// R-38JY-XXQU
 	framer := func(io.Reader) iter.Seq2[[]byte, error] { return func(func([]byte, error) bool) {} }
 	classifier := func(int, http.Header, []byte) error { return nil }
 	mutator := func(*http.Request, *[]byte) error { return nil }
@@ -58,7 +55,6 @@ func TestEndpointOwnsCompleteTransportConfiguration(t *testing.T) {
 		WithFramer(framer),
 		WithClassifier(classifier),
 		WithMutator(mutator),
-		WithReplayEncoding(replayEncodingMessageItem),
 		withAuth(auth),
 		withModelPlacement(modelInPath),
 	)
@@ -66,35 +62,12 @@ func TestEndpointOwnsCompleteTransportConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	config := endpoint.config
-	if config.baseURL.String() != "https://example.test/fixed/path" || config.headers.Get("X-Extra") != "one" || config.framer == nil || config.classifier == nil || config.mutator == nil || config.auth == nil || config.modelPlacement != modelInPath || config.replayOverride == nil {
+	if config.baseURL.String() != "https://example.test/fixed/path" || config.headers.Get("X-Extra") != "one" || config.framer == nil || config.classifier == nil || config.mutator == nil || config.auth == nil || config.modelPlacement != modelInPath {
 		t.Fatalf("endpoint did not retain complete transport configuration: %+v", config)
 	}
 }
 
-func TestEndpointReplayEncodingDefaultsAndOverridesPerEndpoint(t *testing.T) {
-	// R-3AZR-PH88
-	wire := &testWire{replay: replayEncodingProviderBlock}
-	defaultEndpoint, err := newEndpoint(WithBaseURL("https://one.test"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	overriddenEndpoint, err := newEndpoint(WithBaseURL("https://two.test"), WithReplayEncoding(replayEncodingMessageItem))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := defaultEndpoint.replayEncoding(wire); got != replayEncodingProviderBlock {
-		t.Fatalf("default encoding = %v, want wire default", got)
-	}
-	if got := overriddenEndpoint.replayEncoding(wire); got != replayEncodingMessageItem {
-		t.Fatalf("override encoding = %v, want endpoint override", got)
-	}
-	if wire.DefaultReplayEncoding() != replayEncodingProviderBlock {
-		t.Fatal("sharing endpoints changed the wire default")
-	}
-}
-
 func TestEndpointModelPlacementUsesTheSingleMutator(t *testing.T) {
-	// R-38JY-XXQU
 	// R-3ENG-USGB
 	wire := &testWire{}
 	bodyEndpoint, err := newEndpoint(

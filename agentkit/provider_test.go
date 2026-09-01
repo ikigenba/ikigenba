@@ -22,7 +22,6 @@ func (function authFunc) Apply(ctx context.Context, request *http.Request, body 
 type testWire struct {
 	encode     func(RequestState) ([]byte, error)
 	decode     func(iter.Seq2[[]byte, error]) iter.Seq2[Event, error]
-	replay     ReplayEncoding
 	classifier wireClassifier
 }
 
@@ -57,7 +56,6 @@ func (wire *testWire) DecodeStream(frames iter.Seq2[[]byte, error]) iter.Seq2[Ev
 }
 
 func (*testWire) RenderTools([]Tool) (json.RawMessage, error) { return nil, nil }
-func (wire *testWire) DefaultReplayEncoding() ReplayEncoding  { return wire.replay }
 func (*testWire) ReservedKeys() []string                      { return nil }
 func (wire *testWire) withClassifier(classifier wireClassifier) WireFormat {
 	clone := *wire
@@ -66,7 +64,6 @@ func (wire *testWire) withClassifier(classifier wireClassifier) WireFormat {
 }
 
 func TestComposedProviderMutatesBeforeAuthWithFinalBodyState(t *testing.T) {
-	// R-3C7O-38YX
 	// R-3DFK-H0PM
 	// R-3ENG-USGB
 	type contextKey struct{}

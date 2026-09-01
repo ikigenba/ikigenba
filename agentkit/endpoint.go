@@ -45,7 +45,6 @@ type endpointConfig struct {
 	mutator        RequestMutator
 	auth           AuthApplier
 	modelPlacement modelPlacement
-	replayOverride *ReplayEncoding
 }
 
 type noAuth struct{}
@@ -108,17 +107,6 @@ func WithMutator(mutator RequestMutator) EndpointOption {
 	}
 }
 
-// WithReplayEncoding overrides the wire's default reasoning replay encoding.
-func WithReplayEncoding(encoding ReplayEncoding) EndpointOption {
-	return func(config *endpointConfig) error {
-		if encoding != replayEncodingProviderBlock && encoding != replayEncodingMessageItem {
-			return fmt.Errorf("%w: invalid replay encoding", ErrInvalidConfig)
-		}
-		config.replayOverride = &encoding
-		return nil
-	}
-}
-
 func newEndpoint(options ...EndpointOption) (Endpoint, error) {
 	config := endpointConfig{
 		headers:    make(http.Header),
@@ -159,13 +147,6 @@ func withModelPlacement(placement modelPlacement) EndpointOption {
 		config.modelPlacement = placement
 		return nil
 	}
-}
-
-func (endpoint Endpoint) replayEncoding(wire WireFormat) ReplayEncoding {
-	if endpoint.config.replayOverride != nil {
-		return *endpoint.config.replayOverride
-	}
-	return wire.DefaultReplayEncoding()
 }
 
 func validHeaderName(name string) bool {

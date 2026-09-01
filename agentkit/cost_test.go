@@ -6,7 +6,6 @@ import (
 )
 
 func TestCostAndPricingFieldShapesAndArithmetic(t *testing.T) {
-	// R-2CUK-ZWGS
 	assertStructFields(t, reflect.TypeFor[Cost](), []structField{
 		{name: "Amount", kind: reflect.Int64},
 		{name: "Known", kind: reflect.Bool},

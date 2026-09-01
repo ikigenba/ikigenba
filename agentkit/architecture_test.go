@@ -212,8 +212,6 @@ func TestAuthenticationHasOneRuntimeInterface(t *testing.T) {
 
 func TestWireArchitectureStaysBelowTransportSeam(t *testing.T) {
 	// R-2WCZ-48BW
-	// R-2XKV-I02L
-	// R-32GH-131D
 	fileSet := token.NewFileSet()
 	for _, name := range []string{"wire_anthropic.go", "wire_openai_responses.go", "wire_openai_chat.go", "wire_gemini.go"} {
 		// #nosec G304 -- names are fixed test fixtures, not external input.
@@ -266,8 +264,8 @@ func TestWireArchitectureStaysBelowTransportSeam(t *testing.T) {
 				continue
 			}
 			wireInterface := typeSpecification.Type.(*ast.InterfaceType)
-			if len(wireInterface.Methods.List) != 5 {
-				t.Fatalf("WireFormat has %d methods, want exact five-method seam", len(wireInterface.Methods.List))
+			if len(wireInterface.Methods.List) != 4 {
+				t.Fatalf("WireFormat has %d methods, want exact four-method seam", len(wireInterface.Methods.List))
 			}
 		}
 	}
@@ -282,8 +280,6 @@ func TestWireArchitectureStaysBelowTransportSeam(t *testing.T) {
 }
 
 func TestEndpointAndProviderArchitecture(t *testing.T) {
-	// R-37C2-K605
-	// R-38JY-XXQU
 	// R-3ENG-USGB
 	// R-3H39-MBXP
 	fileSet := token.NewFileSet()
@@ -302,7 +298,7 @@ func TestEndpointAndProviderArchitecture(t *testing.T) {
 			publicFunctions[function.Name.Name] = true
 		}
 	}
-	wantFunctions := []string{"WithBaseURL", "WithHeader", "WithFramer", "WithClassifier", "WithMutator", "WithReplayEncoding"}
+	wantFunctions := []string{"WithBaseURL", "WithHeader", "WithFramer", "WithClassifier", "WithMutator"}
 	if len(publicFunctions) != len(wantFunctions) {
 		t.Fatalf("endpoint public functions = %v, want exact option vocabulary", publicFunctions)
 	}

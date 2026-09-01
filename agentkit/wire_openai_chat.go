@@ -13,7 +13,6 @@ func newOpenAIChatWire(classifier wireClassifier) WireFormat {
 		encode:     encodeOpenAIChatRequest,
 		decoder:    newOpenAIChatDecoder,
 		render:     renderOpenAIChatTools,
-		replay:     replayEncodingMessageItem,
 		reserved:   []string{"openai"},
 		classifier: classifier,
 	}

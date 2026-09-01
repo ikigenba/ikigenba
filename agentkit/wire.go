@@ -10,15 +10,6 @@ import (
 	"net/http"
 )
 
-// ReplayEncoding identifies the opaque body encoding a wire uses when it
-// replays provider reasoning. Endpoint-specific overrides arrive in D6.
-type ReplayEncoding uint8
-
-const (
-	replayEncodingProviderBlock ReplayEncoding = iota
-	replayEncodingMessageItem
-)
-
 // Tool is the sealed canonical tool shape consumed by wire renderers.
 type Tool interface {
 	Name() string
@@ -37,7 +28,6 @@ type WireFormat interface {
 	EncodeRequest(state RequestState) ([]byte, error)
 	DecodeStream(frames iter.Seq2[[]byte, error]) iter.Seq2[Event, error]
 	RenderTools(tools []Tool) (json.RawMessage, error)
-	DefaultReplayEncoding() ReplayEncoding
 	ReservedKeys() []string
 }
 
@@ -49,7 +39,6 @@ type wireCodec struct {
 	encode     func(RequestState) ([]byte, error)
 	decoder    func() frameDecoder
 	render     func([]Tool) (json.RawMessage, error)
-	replay     ReplayEncoding
 	reserved   []string
 	classifier wireClassifier
 	lastUsage  Usage
@@ -100,8 +89,6 @@ func (w *wireCodec) RenderTools(tools []Tool) (json.RawMessage, error) {
 	}
 	return w.render(tools)
 }
-
-func (w *wireCodec) DefaultReplayEncoding() ReplayEncoding { return w.replay }
 
 func (w *wireCodec) ReservedKeys() []string {
 	return append([]string(nil), w.reserved...)

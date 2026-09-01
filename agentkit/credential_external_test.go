@@ -36,7 +36,6 @@ func (auth *signingAuth) Apply(ctx context.Context, request *http.Request, body 
 
 func TestGenericKnownWireAcceptsBareAuthApplier(t *testing.T) {
 	// R-3KQY-RN5S
-	// R-3LYV-5EWH
 	requestCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		requestCount++

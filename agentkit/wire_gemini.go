@@ -13,7 +13,6 @@ func newGeminiWire(classifier wireClassifier) WireFormat {
 		encode:     encodeGeminiRequest,
 		decoder:    newGeminiDecoder,
 		render:     renderGeminiTools,
-		replay:     replayEncodingProviderBlock,
 		reserved:   []string{"gemini"},
 		classifier: classifier,
 	}
