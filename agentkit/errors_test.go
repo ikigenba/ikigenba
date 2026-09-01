@@ -4,12 +4,98 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestSentinelDeclarations(t *testing.T) {
+	// R-ZE9Y-O5TC
+	wantMessages := map[string]string{
+		"ErrInvalidConfig": "agentkit: invalid configuration",
+		"ErrClosed":        "agentkit: conversation closed",
+	}
+	sentinels := map[string]error{
+		"ErrInvalidConfig": ErrInvalidConfig,
+		"ErrClosed":        ErrClosed,
+	}
+	for name, sentinel := range sentinels {
+		if sentinel == nil {
+			t.Fatalf("%s is nil", name)
+		}
+		if got := sentinel.Error(); got != wantMessages[name] {
+			t.Fatalf("%s.Error() = %q, want %q", name, got, wantMessages[name])
+		}
+	}
+	if errors.Is(ErrInvalidConfig, ErrClosed) || errors.Is(ErrClosed, ErrInvalidConfig) {
+		t.Fatal("ErrInvalidConfig and ErrClosed are the same sentinel")
+	}
+
+	parsed, err := parser.ParseFile(token.NewFileSet(), "errors.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := make(map[string]bool, len(wantMessages))
+	for _, declaration := range parsed.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok != token.VAR {
+			continue
+		}
+		for _, specification := range general.Specs {
+			valueSpecification := specification.(*ast.ValueSpec)
+			if len(valueSpecification.Names) != 1 {
+				continue
+			}
+			name := valueSpecification.Names[0].Name
+			wantMessage, wanted := wantMessages[name]
+			if !wanted {
+				continue
+			}
+			if !ast.IsExported(name) || found[name] {
+				t.Fatalf("%s is not one uniquely declared exported package variable", name)
+			}
+			if valueSpecification.Type != nil {
+				identifier, isError := valueSpecification.Type.(*ast.Ident)
+				if !isError || identifier.Name != "error" {
+					t.Fatalf("%s explicit static type is %T, want error", name, valueSpecification.Type)
+				}
+			}
+			if len(valueSpecification.Values) != 1 {
+				t.Fatalf("%s initializer count = %d, want one direct errors.New call", name, len(valueSpecification.Values))
+			}
+			call, isCall := valueSpecification.Values[0].(*ast.CallExpr)
+			if !isCall {
+				t.Fatalf("%s initializer = %T, want direct errors.New call", name, valueSpecification.Values[0])
+			}
+			selector, isSelector := call.Fun.(*ast.SelectorExpr)
+			packageName, hasPackageName := func() (*ast.Ident, bool) {
+				if !isSelector {
+					return nil, false
+				}
+				identifier, ok := selector.X.(*ast.Ident)
+				return identifier, ok
+			}()
+			if !isSelector || !hasPackageName || packageName.Name != "errors" || selector.Sel.Name != "New" || len(call.Args) != 1 {
+				t.Fatalf("%s is not initialized directly by errors.New with one argument", name)
+			}
+			message, isLiteral := call.Args[0].(*ast.BasicLit)
+			if !isLiteral || message.Kind != token.STRING || message.Value != fmt.Sprintf("%q", wantMessage) {
+				t.Fatalf("%s errors.New argument = %v, want exact message %q", name, call.Args[0], wantMessage)
+			}
+			found[name] = true
+		}
+	}
+	for name := range wantMessages {
+		if !found[name] {
+			t.Fatalf("%s direct errors.New package variable declaration not found", name)
+		}
+	}
+}
 
 func TestErrorHasOnePublicShapeAndWrapsCause(t *testing.T) {
 	// R-2K5Z-AIWY

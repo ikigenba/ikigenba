@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestConversationPublicShape(t *testing.T) {
@@ -49,6 +50,144 @@ func TestIdentityPublicShape(t *testing.T) {
 		if field.Name != wantName || field.Type != reflect.TypeOf("") || !field.IsExported() {
 			t.Fatalf("Identity field %d = %s %s (exported=%t), want %s string (exported=true)", index, field.Name, field.Type, field.IsExported(), wantName)
 		}
+	}
+}
+
+func TestCategoryDeclaration(t *testing.T) {
+	// R-ZAM9-IUL9
+	categoryType := reflect.TypeFor[Category]()
+	if categoryType.Name() != "Category" || !token.IsExported(categoryType.Name()) || categoryType.Kind() != reflect.Int {
+		t.Fatalf("Category name/kind = %q/%s, want exported defined Category with underlying int", categoryType.Name(), categoryType.Kind())
+	}
+
+	wantNames := []string{
+		"CategoryUnknown",
+		"CategoryAuth",
+		"CategoryInvalidRequest",
+		"CategoryRateLimit",
+		"CategoryOverloaded",
+		"CategoryInsufficientQuota",
+		"CategoryTimeout",
+		"CategoryTransport",
+	}
+	wantValues := []Category{0, 1, 2, 3, 4, 5, 6, 7}
+	gotValues := []Category{
+		CategoryUnknown,
+		CategoryAuth,
+		CategoryInvalidRequest,
+		CategoryRateLimit,
+		CategoryOverloaded,
+		CategoryInsufficientQuota,
+		CategoryTimeout,
+		CategoryTransport,
+	}
+	if !reflect.DeepEqual(gotValues, wantValues) {
+		t.Fatalf("Category values = %v, want %v", gotValues, wantValues)
+	}
+
+	parsed, err := parser.ParseFile(token.NewFileSet(), "errors.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundDefinedIntType := false
+	var categoryConstantNames []string
+	var iotaSequenceNames []string
+	iotaDeclarations := 0
+	for _, declaration := range parsed.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		if general.Tok == token.TYPE {
+			for _, specification := range general.Specs {
+				typeSpecification := specification.(*ast.TypeSpec)
+				underlying, isIdentifier := typeSpecification.Type.(*ast.Ident)
+				if typeSpecification.Name.Name == "Category" && typeSpecification.Assign == token.NoPos && isIdentifier && underlying.Name == "int" {
+					foundDefinedIntType = true
+				}
+			}
+			continue
+		}
+		if general.Tok != token.CONST {
+			continue
+		}
+		declarationNames := make([]string, 0)
+		hasIota := false
+		for _, specification := range general.Specs {
+			valueSpecification := specification.(*ast.ValueSpec)
+			for _, name := range valueSpecification.Names {
+				if strings.HasPrefix(name.Name, "Category") {
+					categoryConstantNames = append(categoryConstantNames, name.Name)
+					declarationNames = append(declarationNames, name.Name)
+				}
+			}
+			for _, value := range valueSpecification.Values {
+				identifier, isIdentifier := value.(*ast.Ident)
+				if isIdentifier && identifier.Name == "iota" {
+					hasIota = true
+				}
+			}
+		}
+		if len(declarationNames) > 0 && hasIota {
+			iotaDeclarations++
+			iotaSequenceNames = declarationNames
+		}
+	}
+	if !foundDefinedIntType {
+		t.Fatal("Category is not declared as the defined type Category int")
+	}
+	if iotaDeclarations != 1 || !reflect.DeepEqual(iotaSequenceNames, wantNames) {
+		t.Fatalf("Category iota declarations/names = %d/%v, want one declaration containing %v", iotaDeclarations, iotaSequenceNames, wantNames)
+	}
+	if !reflect.DeepEqual(categoryConstantNames, wantNames) {
+		t.Fatalf("Category constants = %v, want exactly %v", categoryConstantNames, wantNames)
+	}
+}
+
+func TestErrorDeclaration(t *testing.T) {
+	// R-ZBU5-WMBY
+	errorType := reflect.TypeFor[Error]()
+	if errorType.Name() != "Error" || !token.IsExported(errorType.Name()) || errorType.Kind() != reflect.Struct {
+		t.Fatalf("Error name/kind = %q/%s, want exported named Error struct", errorType.Name(), errorType.Kind())
+	}
+	wantFields := []struct {
+		name     string
+		typeOf   reflect.Type
+		exported bool
+	}{
+		{name: "Category", typeOf: reflect.TypeFor[Category](), exported: true},
+		{name: "Status", typeOf: reflect.TypeFor[int](), exported: true},
+		{name: "Code", typeOf: reflect.TypeFor[string](), exported: true},
+		{name: "Message", typeOf: reflect.TypeFor[string](), exported: true},
+		{name: "RetryAfter", typeOf: reflect.TypeFor[time.Duration](), exported: true},
+		{name: "Endpoint", typeOf: reflect.TypeFor[Identity](), exported: true},
+		{name: "err", typeOf: reflect.TypeFor[error](), exported: false},
+	}
+	if errorType.NumField() != len(wantFields) {
+		t.Fatalf("Error field count = %d, want exactly %d", errorType.NumField(), len(wantFields))
+	}
+	for index, want := range wantFields {
+		field := errorType.Field(index)
+		if field.Name != want.name || field.Type != want.typeOf || field.IsExported() != want.exported || field.Anonymous {
+			t.Fatalf("Error field %d = %s %s (exported=%t, anonymous=%t), want %s %s (exported=%t, anonymous=false)", index, field.Name, field.Type, field.IsExported(), field.Anonymous, want.name, want.typeOf, want.exported)
+		}
+	}
+
+	pointerType := reflect.TypeFor[*Error]()
+	if !pointerType.Implements(reflect.TypeFor[error]()) {
+		t.Fatal("*Error does not implement error")
+	}
+	if !pointerType.Implements(reflect.TypeFor[interface{ Unwrap() error }]()) {
+		t.Fatal("*Error does not implement interface { Unwrap() error }")
+	}
+}
+
+func TestRetryableDeclaration(t *testing.T) {
+	// R-ZD22-AE2N
+	got := reflect.TypeOf(Retryable)
+	want := reflect.TypeOf(func(error) bool { return false })
+	if got != want {
+		t.Fatalf("Retryable type = %s, want exactly %s", got, want)
 	}
 }
 
