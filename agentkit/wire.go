@@ -43,6 +43,8 @@ func (w *wireCodec) DecodeStream(frames iter.Seq2[[]byte, error]) iter.Seq2[Even
 		var fragments []usageFragment
 		for frame, frameErr := range frames {
 			if frameErr != nil {
+				// WireFormat preserves the Framer's error verbatim; the provider
+				// boundary does not declare a second, transport-specific error seam.
 				yield(nil, frameErr)
 				return
 			}
@@ -56,6 +58,8 @@ func (w *wireCodec) DecodeStream(frames iter.Seq2[[]byte, error]) iter.Seq2[Even
 
 			message, fragment, hasUsage, err := decode(frame)
 			if err != nil {
+				// Decoder errors use the same declared error channel and likewise
+				// propagate unchanged so callers retain the original cause.
 				yield(nil, err)
 				return
 			}
@@ -63,7 +67,7 @@ func (w *wireCodec) DecodeStream(frames iter.Seq2[[]byte, error]) iter.Seq2[Even
 				fragments = append(fragments, fragment)
 				w.lastUsage = mergeUsage(fragments...)
 			}
-			if message != nil && !yield(*message, nil) {
+			if message != nil && !yield(MessageDone{Message: *message}, nil) {
 				return
 			}
 		}

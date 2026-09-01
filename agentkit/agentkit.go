@@ -2,11 +2,36 @@
 // adapters.
 package agentkit
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"iter"
+)
 
-// Event is one message-granular item decoded from a provider response. Concrete
-// event variants are defined with the streaming vocabulary in a later phase.
-type Event any
+// Event is one thing that happened during a turn, at message granularity. It is
+// a sealed union of MessageDone, ToolCall, and ToolReturn.
+type Event interface {
+	isEvent()
+}
+
+// MessageDone reports that the model finished one assistant message.
+type MessageDone struct {
+	Message Message
+}
+
+// ToolCall reports that the model requested a tool.
+type ToolCall struct {
+	Use ToolUse
+}
+
+// ToolReturn reports that the orchestrator ran a tool and is feeding the result
+// back to the model.
+type ToolReturn struct {
+	Result ToolResult
+}
+
+func (MessageDone) isEvent() {}
+func (ToolCall) isEvent()    {}
+func (ToolReturn) isEvent()  {}
 
 // ProviderOptions is an untyped, wire-specific escape hatch merged shallowly at
 // the top level of the request body. agentkit enumerates no keys; each wire and
@@ -25,11 +50,26 @@ type RequestState struct {
 	Tools    []Tool
 }
 
-// Stream is the result of advancing a conversation. Its event-facing API is
-// completed with the streaming state machine in a later phase.
+// Stream is the live view of one turn's events.
 type Stream struct {
-	events []Event
-	err    error
+	events   []Event
+	err      error
+	consumed bool
+}
+
+// Events returns the turn's events in order. A Stream is single-use.
+func (s *Stream) Events() iter.Seq[Event] {
+	return func(yield func(Event) bool) {
+		if s == nil || s.consumed {
+			return
+		}
+		s.consumed = true
+		for _, event := range s.events {
+			if !yield(event) {
+				return
+			}
+		}
+	}
 }
 
 // Err reports the terminal error that ended the turn, if any.

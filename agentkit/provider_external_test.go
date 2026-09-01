@@ -31,7 +31,7 @@ func (p *externalProvider) BuildRequest(ctx context.Context, state agentkit.Requ
 func (p *externalProvider) Decode(context.Context, *http.Response) iter.Seq2[agentkit.Event, error] {
 	p.decodeCalls++
 	return func(yield func(agentkit.Event, error) bool) {
-		yield("complete", nil)
+		yield(agentkit.ToolCall{Use: agentkit.ToolUse{Name: "complete"}}, nil)
 	}
 }
 

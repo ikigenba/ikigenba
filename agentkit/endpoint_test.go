@@ -127,7 +127,8 @@ func TestEndpointOwnsCompleteTransportConfiguration(t *testing.T) {
 		}
 		events = append(events, event)
 	}
-	if framerCalls != 1 || !reflect.DeepEqual(events, []Event{"framed"}) {
+	want := []Event{MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "framed"}}}}}
+	if framerCalls != 1 || !reflect.DeepEqual(events, want) {
 		t.Fatalf("framer calls=%d events=%v", framerCalls, events)
 	}
 	if err := provider.Classify(http.StatusTeapot, http.Header{"Retry-After": {"3"}}, []byte("failure")); !errors.Is(err, classified) {

@@ -52,7 +52,8 @@ func (wire *testWire) defaultDecodeStream(frames iter.Seq2[[]byte, error]) iter.
 					return
 				}
 			}
-			if !yield(string(frame), nil) {
+			event := MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: string(frame)}}}}
+			if !yield(event, nil) {
 				return
 			}
 		}
@@ -278,7 +279,11 @@ func TestComposedProviderUsesEndpointFramingAndMessageDecode(t *testing.T) {
 		}
 		events = append(events, event)
 	}
-	if !framerCalled || !reflect.DeepEqual(events, []Event{"first", "second"}) {
+	want := []Event{
+		MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "first"}}}},
+		MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "second"}}}},
+	}
+	if !framerCalled || !reflect.DeepEqual(events, want) {
 		t.Fatalf("framerCalled=%v events=%v", framerCalled, events)
 	}
 }

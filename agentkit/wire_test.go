@@ -134,7 +134,7 @@ func TestWireOwnsOnlyBodyGrammar(t *testing.T) {
 			if decodeErr != nil {
 				t.Fatal(decodeErr)
 			}
-			decoded = append(decoded, event.(Message))
+			decoded = append(decoded, event.(MessageDone).Message)
 		}
 		_ = response.Close()
 		if len(decoded) != 1 || decoded[0].Blocks[0].(Text).Text != "Hello" {
@@ -276,9 +276,9 @@ func TestDecodeStreamYieldsOnlyCompletedMessages(t *testing.T) {
 		if len(events) != 1 {
 			t.Fatalf("%s yielded %d events, want one completed message", test.name, len(events))
 		}
-		message, ok := events[0].(Message)
-		if !ok || len(message.Blocks) != 1 || message.Blocks[0].(Text).Text != "Hello" {
-			t.Fatalf("%s event = %#v, want completed Message", test.name, events[0])
+		completed, ok := events[0].(MessageDone)
+		if !ok || len(completed.Message.Blocks) != 1 || completed.Message.Blocks[0].(Text).Text != "Hello" {
+			t.Fatalf("%s event = %#v, want MessageDone", test.name, events[0])
 		}
 	}
 }
@@ -349,7 +349,7 @@ func TestFramingIsSeparableAndErrorsPropagate(t *testing.T) {
 			got = err
 			continue
 		}
-		messages = append(messages, event.(Message))
+		messages = append(messages, event.(MessageDone).Message)
 	}
 	if len(messages) != 1 || messages[0].Blocks[0].(Text).Text != "Hello" {
 		t.Fatalf("alternate framer messages = %#v, want one completed unchanged-wire message", messages)
@@ -802,7 +802,7 @@ func TestEveryWireRoundTripsCapturedMessageBytes(t *testing.T) {
 				if decodeErr != nil {
 					t.Fatal(decodeErr)
 				}
-				parsed = event.(Message)
+				parsed = event.(MessageDone).Message
 			}
 			got, err := wire.EncodeRequest(RequestState{History: History{parsed}})
 			if err != nil {

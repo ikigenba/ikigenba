@@ -20,6 +20,12 @@ import (
 	"time"
 )
 
+var (
+	_ Event = MessageDone{}
+	_ Event = ToolCall{}
+	_ Event = ToolReturn{}
+)
+
 func TestEndpointDeclarationsAreExact(t *testing.T) {
 	// R-YEPA-QILV
 	// R-ZKDG-L0IT
@@ -185,6 +191,114 @@ func TestRequestStateDeclarationIsExact(t *testing.T) {
 	}
 	if got := renderedNode(t, structType); got != "struct {\n\tModel    string\n\tHistory  []Message\n\tSettings Settings\n\tOptions  ProviderOptions\n\tTools    []Tool\n}" {
 		t.Fatalf("RequestState declaration = %q, want exact five-field declaration", got)
+	}
+}
+
+func TestMessageDoneDeclarationIsExactAndImplementsEvent(t *testing.T) {
+	// R-0B78-ZYU3
+	assertEventWrapper(t, "MessageDone", reflect.TypeFor[MessageDone](), "Message", reflect.TypeFor[Message]())
+	assertEventSeam(t)
+}
+
+func TestToolCallDeclarationIsExactAndImplementsEvent(t *testing.T) {
+	// R-0CF5-DQKS
+	assertEventWrapper(t, "ToolCall", reflect.TypeFor[ToolCall](), "Use", reflect.TypeFor[ToolUse]())
+}
+
+func TestToolReturnDeclarationIsExactAndImplementsEvent(t *testing.T) {
+	// R-0DN1-RIBH
+	assertEventWrapper(t, "ToolReturn", reflect.TypeFor[ToolReturn](), "Result", reflect.TypeFor[ToolResult]())
+}
+
+func TestStreamDeclarationIsOpaqueWithExactMethods(t *testing.T) {
+	// R-0G2U-J1SV
+	streamType := reflect.TypeFor[Stream]()
+	if streamType.Name() != "Stream" || streamType.Kind() != reflect.Struct || !token.IsExported(streamType.Name()) {
+		t.Fatalf("Stream name/kind = %q/%s, want exported defined struct", streamType.Name(), streamType.Kind())
+	}
+	for index := range streamType.NumField() {
+		if streamType.Field(index).IsExported() {
+			t.Fatalf("Stream field %q is exported", streamType.Field(index).Name)
+		}
+	}
+	streamSpecification := declaredType(t, "agentkit.go", "Stream")
+	if streamSpecification.Assign.IsValid() {
+		t.Fatal("Stream is an alias, want a defined struct")
+	}
+	if _, ok := streamSpecification.Type.(*ast.StructType); !ok {
+		t.Fatalf("Stream declaration is %T, want struct", streamSpecification.Type)
+	}
+
+	pointerType := reflect.TypeFor[*Stream]()
+	wantMethods := map[string]reflect.Type{
+		"Events": reflect.TypeOf((*Stream).Events),
+		"Err":    reflect.TypeOf((*Stream).Err),
+	}
+	if pointerType.NumMethod() != len(wantMethods) {
+		t.Fatalf("*Stream exported method count = %d, want exactly %d", pointerType.NumMethod(), len(wantMethods))
+	}
+	wantEvents := reflect.TypeOf(func(*Stream) iter.Seq[Event] { return nil })
+	wantErr := reflect.TypeOf(func(*Stream) error { return nil })
+	if wantMethods["Events"] != wantEvents || wantMethods["Err"] != wantErr {
+		t.Fatalf("Stream methods = Events %s, Err %s; want %s and %s", wantMethods["Events"], wantMethods["Err"], wantEvents, wantErr)
+	}
+	for name, signature := range wantMethods {
+		method, ok := pointerType.MethodByName(name)
+		if !ok || method.Type != signature {
+			t.Fatalf("Stream.%s = %v (present=%t), want %s", name, method.Type, ok, signature)
+		}
+	}
+}
+
+func assertEventWrapper(t *testing.T, name string, wrapper reflect.Type, fieldName string, fieldType reflect.Type) {
+	t.Helper()
+	if wrapper.Name() != name || wrapper.Kind() != reflect.Struct || !token.IsExported(wrapper.Name()) {
+		t.Fatalf("%s name/kind = %q/%s, want exported defined struct", name, wrapper.Name(), wrapper.Kind())
+	}
+	if wrapper.NumField() != 1 {
+		t.Fatalf("%s field count = %d, want exactly one", name, wrapper.NumField())
+	}
+	field := wrapper.Field(0)
+	if field.Name != fieldName || field.Type != fieldType || !field.IsExported() || field.Anonymous {
+		t.Fatalf("%s.%s = %s (exported=%t, anonymous=%t), want %s exported", name, field.Name, field.Type, field.IsExported(), field.Anonymous, fieldType)
+	}
+	if !wrapper.Implements(reflect.TypeFor[Event]()) {
+		t.Fatalf("%s does not implement Event", name)
+	}
+	specification := declaredType(t, "agentkit.go", name)
+	if specification.Assign.IsValid() {
+		t.Fatalf("%s is an alias", name)
+	}
+	structType, ok := specification.Type.(*ast.StructType)
+	if !ok || len(structType.Fields.List) != 1 {
+		fieldCount := 0
+		if ok {
+			fieldCount = len(structType.Fields.List)
+		}
+		t.Fatalf("%s declaration = %T with %d fields, want one-field struct", name, specification.Type, fieldCount)
+	}
+}
+
+func assertEventSeam(t *testing.T) {
+	t.Helper()
+	eventType := reflect.TypeFor[Event]()
+	if eventType.Name() != "Event" || eventType.Kind() != reflect.Interface || eventType.NumMethod() != 1 {
+		t.Fatalf("Event = %q/%s with %d methods, want defined one-method interface", eventType.Name(), eventType.Kind(), eventType.NumMethod())
+	}
+	marker, ok := eventType.MethodByName("isEvent")
+	if !ok || marker.Type != reflect.TypeOf(func() {}) || marker.PkgPath == "" || marker.Name != "isEvent" {
+		t.Fatalf("Event marker = %#v (present=%t), want unexported isEvent()", marker, ok)
+	}
+	specification := declaredType(t, "agentkit.go", "Event")
+	if specification.Assign.IsValid() {
+		t.Fatal("Event is an alias")
+	}
+	interfaceType, ok := specification.Type.(*ast.InterfaceType)
+	if !ok || !reflect.DeepEqual(interfaceMethodNames(interfaceType), []string{"isEvent"}) {
+		t.Fatalf("Event declaration = %T with methods %v, want only isEvent", specification.Type, interfaceMethodNames(interfaceType))
+	}
+	if interfaceType.Methods.List[0].Names[0].IsExported() {
+		t.Fatal("Event marker is exported")
 	}
 }
 

@@ -101,11 +101,12 @@ func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator
 
 		results := make([]Block, 0, len(calls))
 		for _, call := range calls {
-			results = append(results, orchestrator.dispatch(ctx, call))
+			result := orchestrator.dispatch(ctx, call)
+			results = append(results, result)
+			stream.events = append(stream.events, ToolReturn{Result: result})
 		}
 		toolMessage := Message{Role: RoleTool, Blocks: results}
 		snapshot.turn = append(snapshot.turn, toolMessage)
-		stream.events = append(stream.events, Message{Role: toolMessage.Role, Blocks: cloneBlocks(toolMessage.Blocks)})
 	}
 }
 
@@ -149,10 +150,11 @@ func completedAssistantMessages(events []Event) (History, []ToolUse) {
 	var messages History
 	var calls []ToolUse
 	for _, event := range events {
-		message, ok := event.(Message)
-		if !ok || message.Role != RoleAssistant {
+		completed, ok := event.(MessageDone)
+		if !ok || completed.Message.Role != RoleAssistant {
 			continue
 		}
+		message := completed.Message
 		cloned := Message{Role: message.Role, Blocks: cloneBlocks(message.Blocks)}
 		messages = append(messages, cloned)
 		for _, block := range cloned.Blocks {
@@ -236,6 +238,9 @@ func (c *Conversation) consumeResponse(ctx context.Context, response *http.Respo
 	stream := &Stream{}
 	for event, decodeErr := range c.provider.Decode(ctx, response) {
 		if decodeErr != nil {
+			// Provider.Decode exposes one undifferentiated terminal error channel.
+			// Preserve that seam as CategoryUnknown rather than inferring an error
+			// category from provider-private error values.
 			contextual := fmt.Errorf("provider response decoding ended before completion: %w", decodeErr)
 			stream.err = wrapProviderError(contextual, CategoryUnknown, response.StatusCode, c.identity)
 

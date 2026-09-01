@@ -53,7 +53,8 @@ func (p *fixtureProvider) BuildRequest(ctx context.Context, state RequestState) 
 func (p *fixtureProvider) Decode(_ context.Context, response *http.Response) iter.Seq2[Event, error] {
 	p.decodeCalls++
 	return func(yield func(Event, error) bool) {
-		if !yield(p.wire.name+":"+p.endpoint.name, nil) {
+		event := ToolCall{Use: ToolUse{Name: p.wire.name + ":" + p.endpoint.name}}
+		if !yield(event, nil) {
 			return
 		}
 		if p.decodeClassifyBody != nil {
@@ -329,7 +330,8 @@ func TestDecodeCanUseClassifierForInBandErrorAfterHTTP200(t *testing.T) {
 	provider.classify = func(int, http.Header, []byte) error { return classified }
 
 	stream := conversation.Send(context.Background(), Text{Text: "hello"})
-	if len(stream.events) != 1 || stream.events[0] != "messages:vendor" {
+	wantEvent := ToolCall{Use: ToolUse{Name: "messages:vendor"}}
+	if len(stream.events) != 1 || !reflect.DeepEqual(stream.events[0], wantEvent) {
 		t.Fatalf("events before terminal error = %#v", stream.events)
 	}
 	if reflect.ValueOf(stream.err).Pointer() != reflect.ValueOf(classified).Pointer() {
@@ -742,7 +744,7 @@ func TestSendCompletesToolRoundTripsWithFixedClonedConfigAndOneCommit(t *testing
 		ToolUse{ID: callID, Name: "weather", Input: json.RawMessage(`{"city":"Oslo"}`)},
 	}}
 	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "clear skies"}}}
-	provider := &phase15Provider{model: "fixed/model β", responses: [][]Event{{first}, {final}}}
+	provider := &phase15Provider{model: "fixed/model β", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
 	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
 	temperature := 0.25
@@ -777,7 +779,12 @@ func TestSendCompletesToolRoundTripsWithFixedClonedConfigAndOneCommit(t *testing
 			t.Fatalf("round-trip state %d = %#v, want fixed cloned config and history %#v", index, state, wantHistories[index])
 		}
 	}
-	if got := stream.events; !reflect.DeepEqual(got, []Event{first, result, final}) {
+	wantEvents := []Event{
+		MessageDone{Message: first},
+		ToolReturn{Result: result.Blocks[0].(ToolResult)},
+		MessageDone{Message: final},
+	}
+	if got := stream.events; !reflect.DeepEqual(got, wantEvents) {
 		t.Fatalf("stream events = %#v, want assistant/tool/assistant order", got)
 	}
 	if got := conversation.history; !reflect.DeepEqual(got, History{prior, user, first, result, final}) {
@@ -826,7 +833,7 @@ func TestToolDispatchFailuresAreInBandAndRecoverable(t *testing.T) {
 			callID := "vendor-id-for-" + test.name
 			first := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: callID, Name: test.toolName, Input: test.input}}}
 			final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "recovered"}}}
-			provider := &phase15Provider{model: "model", responses: [][]Event{{first}, {final}}}
+			provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 			transportCalls := 0
 			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
 			conversation.tools = test.tools(&callbackCalls)
@@ -843,7 +850,7 @@ func TestToolDispatchFailuresAreInBandAndRecoverable(t *testing.T) {
 			if !ok || !result.IsError || result.ToolUseID != callID || result.Content == "" {
 				t.Fatalf("in-band result = %#v, want IsError with exact id and content", toolMessage.Blocks[0])
 			}
-			if !reflect.DeepEqual(stream.events[len(stream.events)-1], final) {
+			if !reflect.DeepEqual(stream.events[len(stream.events)-1], MessageDone{Message: final}) {
 				t.Fatalf("final recovery event = %#v, want %#v", stream.events, final)
 			}
 		})
@@ -926,7 +933,7 @@ func TestSendGatesTheCompleteLiveToolSetOnceBeforeAllBoundaries(t *testing.T) {
 	}
 	first := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "count-call", Name: "counted", Input: json.RawMessage(`{}`)}}}
 	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
-	provider := &phase15Provider{model: "model", responses: [][]Event{{first}, {final}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
 	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
 	conversation.tools = []Tool{counting}
@@ -968,7 +975,7 @@ func TestOrchestratorValidatesEveryCallBeforeInvokingTool(t *testing.T) {
 			}
 			first := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "validation-id", Name: "lookup", Input: test.input}}}
 			final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "recovered"}}}
-			provider := &phase15Provider{model: "model", responses: [][]Event{{first}, {final}}}
+			provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 			transportCalls := 0
 			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
 			conversation.tools = []Tool{tool}
@@ -1004,13 +1011,13 @@ func TestUnknownAndDeferredDirectCallsRecoverWithoutGuessedExecution(t *testing.
 			callbackCalls := 0
 			first := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "unknown-id", Name: callName, Input: json.RawMessage(`{"guessed":true}`)}}}
 			final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "recovered"}}}
-			provider := &phase15Provider{model: "model", responses: [][]Event{{first}, {final}}}
+			provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 			transportCalls := 0
 			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
 			if test.deferred {
 				callName = "secret"
 				first.Blocks[0] = ToolUse{ID: "unknown-id", Name: callName, Input: json.RawMessage(`{"guessed":true}`)}
-				provider.responses[0] = []Event{first}
+				provider.responses[0] = []Event{MessageDone{Message: first}}
 				secret := concreteTool{name: callName, schema: json.RawMessage(`{"type":"object","properties":{}}`), call: func(context.Context, json.RawMessage) (string, error) {
 					callbackCalls++
 					return "must not execute", nil
@@ -1042,7 +1049,7 @@ func TestToolCallbackErrorIsCorrelatedDeliveredAndRecoverable(t *testing.T) {
 	distinctive := "phase17 backend exploded β"
 	first := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "callback-id", Name: "boom", Input: json.RawMessage(`{}`)}}}
 	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "recovered"}}}
-	provider := &phase15Provider{model: "model", responses: [][]Event{{first}, {final}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
 	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
 	conversation.tools = []Tool{concreteTool{name: "boom", schema: json.RawMessage(`{"type":"object","properties":{}}`), call: func(context.Context, json.RawMessage) (string, error) {
@@ -1057,7 +1064,7 @@ func TestToolCallbackErrorIsCorrelatedDeliveredAndRecoverable(t *testing.T) {
 	if !result.IsError || result.ToolUseID != "callback-id" || result.Content != distinctive {
 		t.Fatalf("callback result = %#v", result)
 	}
-	if !reflect.DeepEqual(stream.events[len(stream.events)-1], final) {
+	if !reflect.DeepEqual(stream.events[len(stream.events)-1], MessageDone{Message: final}) {
 		t.Fatalf("turn did not complete after callback error: %#v", stream.events)
 	}
 }
@@ -1079,9 +1086,9 @@ func TestTerminalFailuresAfterCompletedRoundTripPreserveEventsAndAtomicHistory(t
 			callID := "vendor-terminal-id"
 			first := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: callID, Name: "weather", Input: json.RawMessage(`{"city":"Oslo"}`)}}}
 			partial := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "observable before decode failure"}}}
-			provider := &phase15Provider{model: "model", responses: [][]Event{{first}, nil}}
+			provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, nil}}
 			if test.name == "decode" {
-				provider.responses[1] = []Event{partial}
+				provider.responses[1] = []Event{MessageDone{Message: partial}}
 				provider.decodeErrors = []error{nil, test.decodeErr}
 			}
 			if test.name == "classified vendor" {
@@ -1137,10 +1144,10 @@ func TestTerminalFailuresAfterCompletedRoundTripPreserveEventsAndAtomicHistory(t
 			if test.name == "decode" {
 				wantEvents = 3
 			}
-			if len(stream.events) != wantEvents || !reflect.DeepEqual(stream.events[0], first) {
+			if len(stream.events) != wantEvents || !reflect.DeepEqual(stream.events[0], MessageDone{Message: first}) {
 				t.Fatalf("completed first-round events were lost: %#v", stream.events)
 			}
-			if test.name == "decode" && !reflect.DeepEqual(stream.events[len(stream.events)-1], partial) {
+			if test.name == "decode" && !reflect.DeepEqual(stream.events[len(stream.events)-1], MessageDone{Message: partial}) {
 				t.Fatalf("message before decode failure was lost: %#v", stream.events)
 			}
 		})
