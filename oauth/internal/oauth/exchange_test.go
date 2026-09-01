@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -88,6 +89,40 @@ func responseClient(statusCode int, body []byte) *http.Client {
 
 func exchangeClient() oauth.Client {
 	return oauth.Client{TokenURL: &url.URL{Scheme: "https", Host: "provider.example", Path: "/token"}}
+}
+
+// R-LGMP-978S
+func TestExchangeMaxErrorBodyConstant(t *testing.T) {
+	const got = oauth.MaxErrorBody
+	if got != 4096 {
+		t.Errorf("oauth.MaxErrorBody = %d, want 4096", got)
+	}
+}
+
+// R-LHUL-MYZH
+func TestExchangeMethodSignature(t *testing.T) {
+	got := reflect.TypeOf(oauth.Client.Exchange)
+	want := reflect.TypeOf((func(
+		oauth.Client,
+		context.Context,
+		*http.Client,
+		oauth.Session,
+		string,
+		[]oauth.Param,
+		[]oauth.Param,
+	) ([]byte, error))(nil))
+	if got != want {
+		t.Errorf("oauth.Client.Exchange type = %v, want %v", got, want)
+	}
+}
+
+// R-LJ2I-0QQ6
+func TestReservedTokenParamSignature(t *testing.T) {
+	got := reflect.TypeOf(oauth.ReservedTokenParam)
+	want := reflect.TypeOf((func(string) bool)(nil))
+	if got != want {
+		t.Errorf("oauth.ReservedTokenParam type = %v, want %v", got, want)
+	}
 }
 
 // R-JIJM-L0PC
