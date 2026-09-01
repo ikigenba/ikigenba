@@ -161,3 +161,63 @@ func TestWireArchitectureStaysBelowTransportSeam(t *testing.T) {
 		t.Fatal("Conversation exposes assignable wire selection")
 	}
 }
+
+func TestEndpointAndProviderArchitecture(t *testing.T) {
+	// R-37C2-K605
+	// R-38JY-XXQU
+	// R-3ENG-USGB
+	// R-3H39-MBXP
+	fileSet := token.NewFileSet()
+	source, err := os.ReadFile("endpoint.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := parser.ParseFile(fileSet, "endpoint.go", source, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicFunctions := map[string]bool{}
+	for _, declaration := range parsed.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && function.Recv == nil && ast.IsExported(function.Name.Name) {
+			publicFunctions[function.Name.Name] = true
+		}
+	}
+	wantFunctions := []string{"WithBaseURL", "WithHeader", "WithFramer", "WithClassifier", "WithMutator", "WithReplayEncoding"}
+	if len(publicFunctions) != len(wantFunctions) {
+		t.Fatalf("endpoint public functions = %v, want exact option vocabulary", publicFunctions)
+	}
+	for _, name := range wantFunctions {
+		if !publicFunctions[name] {
+			t.Fatalf("missing endpoint option %s", name)
+		}
+	}
+	if strings.Contains(string(source), "PathTemplate") || strings.Contains(string(source), "WithPath") {
+		t.Fatal("endpoint introduced a separate path-template concept")
+	}
+
+	providerSource, err := os.ReadFile("provider.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerFile, err := parser.ParseFile(fileSet, "provider.go", providerSource, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, declaration := range providerFile.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, specification := range general.Specs {
+			typeSpecification, ok := specification.(*ast.TypeSpec)
+			if !ok || typeSpecification.Name.Name != "Provider" {
+				continue
+			}
+			providerInterface := typeSpecification.Type.(*ast.InterfaceType)
+			if len(providerInterface.Methods.List) != 4 {
+				t.Fatalf("Provider has %d methods, want four", len(providerInterface.Methods.List))
+			}
+		}
+	}
+}

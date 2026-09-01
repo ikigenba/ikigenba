@@ -1,7 +1,10 @@
 package agentkit
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"io"
 	"iter"
 	"net/http"
 )
@@ -13,4 +16,68 @@ type Provider interface {
 	Decode(ctx context.Context, resp *http.Response) iter.Seq2[Event, error]
 	Classify(status int, header http.Header, body []byte) error
 	Identity() Identity
+}
+
+type composedProvider struct {
+	wire     WireFormat
+	endpoint Endpoint
+	identity Identity
+}
+
+func newComposedProvider(wire WireFormat, endpoint Endpoint, identity Identity) Provider {
+	if classifiable, ok := wire.(interface {
+		withClassifier(wireClassifier) WireFormat
+	}); ok {
+		wire = classifiable.withClassifier(endpoint.config.classifier)
+	}
+	return &composedProvider{wire: wire, endpoint: endpoint, identity: identity}
+}
+
+func (provider *composedProvider) BuildRequest(ctx context.Context, state RequestState) (*http.Request, error) {
+	body, err := provider.wire.EncodeRequest(state)
+	if err != nil {
+		return nil, err
+	}
+	body = append([]byte(nil), body...)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, provider.endpoint.config.baseURL.String(), bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	request.Header = provider.endpoint.config.headers.Clone()
+	if err := provider.endpoint.config.mutator(request, &body); err != nil {
+		return nil, err
+	}
+	if body == nil {
+		body = []byte{}
+	}
+	synchronizeRequestBody(request, body)
+	if err := provider.endpoint.config.auth.Apply(ctx, request, body); err != nil {
+		return nil, err
+	}
+	return request, nil
+}
+
+func (provider *composedProvider) Decode(_ context.Context, response *http.Response) iter.Seq2[Event, error] {
+	if response == nil || response.Body == nil {
+		return func(yield func(Event, error) bool) {
+			yield(nil, fmt.Errorf("agentkit: response body is required"))
+		}
+	}
+	frames := provider.endpoint.config.framer(response.Body)
+	return provider.wire.DecodeStream(frames)
+}
+
+func (provider *composedProvider) Classify(status int, header http.Header, body []byte) error {
+	return provider.endpoint.config.classifier(status, header, body)
+}
+
+func (provider *composedProvider) Identity() Identity { return provider.identity }
+
+func synchronizeRequestBody(request *http.Request, body []byte) {
+	request.Body = io.NopCloser(bytes.NewReader(body))
+	request.ContentLength = int64(len(body))
+	bodyCopy := append([]byte(nil), body...)
+	request.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(bodyCopy)), nil
+	}
 }

@@ -41,7 +41,7 @@ type WireFormat interface {
 	ReservedKeys() []string
 }
 
-type wireClassifier func(status int, header http.Header, body []byte) error
+type wireClassifier = ErrorClassifier
 
 type frameDecoder func(frame []byte) (message *Message, usage usageFragment, hasUsage bool, err error)
 
@@ -105,6 +105,13 @@ func (w *wireCodec) DefaultReplayEncoding() ReplayEncoding { return w.replay }
 
 func (w *wireCodec) ReservedKeys() []string {
 	return append([]string(nil), w.reserved...)
+}
+
+func (w *wireCodec) withClassifier(classifier wireClassifier) WireFormat {
+	clone := *w
+	clone.classifier = classifier
+	clone.lastUsage = Usage{}
+	return &clone
 }
 
 func validateCanonicalToolSchema(schema json.RawMessage) error {

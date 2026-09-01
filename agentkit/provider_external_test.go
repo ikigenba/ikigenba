@@ -46,6 +46,7 @@ func (p *externalProvider) Identity() agentkit.Identity {
 
 func TestExternalProviderDrivesSend(t *testing.T) {
 	// R-1VRZ-N432
+	// R-3H39-MBXP
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusOK)
 	}))
@@ -62,3 +63,25 @@ func TestExternalProviderDrivesSend(t *testing.T) {
 		t.Fatalf("provider received model %q, want verbatim %q", provider.received.Model, unknownModel)
 	}
 }
+
+func TestEndpointHookSignaturesArePublic(t *testing.T) {
+	// R-3C7O-38YX
+	var auth agentkit.AuthApplier = externalAuth{}
+	var mutator agentkit.RequestMutator = func(*http.Request, *[]byte) error { return nil }
+	var classifier agentkit.ErrorClassifier = func(int, http.Header, []byte) error { return nil }
+	options := []agentkit.EndpointOption{
+		agentkit.WithBaseURL("https://example.test/v1"),
+		agentkit.WithHeader("X-External", "yes"),
+		agentkit.WithFramer(agentkit.SSEFrames),
+		agentkit.WithClassifier(classifier),
+		agentkit.WithMutator(mutator),
+	}
+	_ = auth
+	if len(options) != 5 {
+		t.Fatal("exported endpoint hook vocabulary is unavailable")
+	}
+}
+
+type externalAuth struct{}
+
+func (externalAuth) Apply(context.Context, *http.Request, []byte) error { return nil }
