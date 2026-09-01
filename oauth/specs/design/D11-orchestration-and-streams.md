@@ -11,7 +11,9 @@ failure has been ruled out, and so the user is never sent to authenticate
 against a listener that does not exist:
 
 ```
-parse and validate (D08, D09)
+parse flags (D08)
+  → help / version short-circuits (D10), before any validation
+  → validate flags into Options (D09)
   → bind the loopback listeners (D05)
   → compose the redirect URI from the port actually bound
   → build the authorize URL (D03)
@@ -25,6 +27,11 @@ parse and validate (D08, D09)
 Binding precedes URL construction because with `--port 0` the port is not
 known until the listener exists. Printing precedes launching so that a user
 whose browser fails to open still has the URL in front of them.
+
+`Run` owns the parse seam's composition: it calls `options.ParseFlags`, takes
+the `-h`/`--help` and `--version` exits before any validation runs, and only
+then calls `Flags.Validate`, so a fully-validated `Options` — never a raw
+`Flags` — reaches the login sequence below (D08, D09).
 
 **The redirect URI** is `http://<callback-host>:<port><callback-path>`, built
 with `net.JoinHostPort` so an IPv6 literal host is bracketed

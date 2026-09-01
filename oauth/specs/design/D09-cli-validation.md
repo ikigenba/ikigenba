@@ -1,7 +1,9 @@
 # D09-cli-validation
 
-Everything `options.Parse` checks, all of it before anything observable
-happens. No listener is bound, no authorize URL is composed, no browser is
+Validation is the operation `Flags.Validate() (Options, error)` (D08): it
+turns the syntactically-parsed `Flags` into fully-validated `Options` or an
+error naming the offending flag. Everything `Flags.Validate` checks runs before
+anything observable happens. No listener is bound, no authorize URL is composed, no browser is
 opened, and no packet leaves the machine until every check below has passed.
 The ordering matters to the user: a flag mistake should cost a diagnostic, not
 a browser window pointed at a listener that was never created.
@@ -85,3 +87,4 @@ redirect: `--callback-host`, `--port`, and `--callback-path`.
 - R-R2AR-TM3L: A `--timeout` value of zero or less MUST exit 2 with an stderr message naming `--timeout`.
 - R-R3IO-7DUA: A `--callback-path` value that does not begin with `/` MUST exit 2 with an stderr message naming `--callback-path`.
 - R-R4QK-L5KZ: Every validation failure in this document MUST occur before any listener is bound and before the browser launcher is invoked, verified with a `callback.ListenFunc` and a `browser.Launcher` that fail the test if called.
+- R-JPYW-ZVNK: `Flags.Validate` MUST return `Options` whose `AuthURL` and `TokenURL` are the `*url.URL` parse of the supplied `--auth-url` and `--token-url` strings for an invocation that passes every check in this document, and MUST perform no I/O.
