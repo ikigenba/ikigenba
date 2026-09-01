@@ -251,6 +251,34 @@ func TestHistoryDeclaration(t *testing.T) {
 	}
 }
 
+func TestUsageDeclaration(t *testing.T) {
+	// R-Z5QN-ZRMH
+	assertExactStructFields(t, reflect.TypeFor[Usage](), []exactStructField{
+		{name: "InputTokens", typeOf: reflect.TypeFor[int64]()},
+		{name: "CachedTokens", typeOf: reflect.TypeFor[int64]()},
+		{name: "OutputTokens", typeOf: reflect.TypeFor[int64]()},
+		{name: "ReasoningTokens", typeOf: reflect.TypeFor[int64]()},
+	})
+}
+
+func TestCostDeclaration(t *testing.T) {
+	// R-Z6YK-DJD6
+	assertExactStructFields(t, reflect.TypeFor[Cost](), []exactStructField{
+		{name: "Amount", typeOf: reflect.TypeFor[int64]()},
+		{name: "Known", typeOf: reflect.TypeFor[bool]()},
+	})
+}
+
+func TestPricingDeclaration(t *testing.T) {
+	// R-Z86G-RB3V
+	assertExactStructFields(t, reflect.TypeFor[Pricing](), []exactStructField{
+		{name: "InputPerToken", typeOf: reflect.TypeFor[int64]()},
+		{name: "CachedPerToken", typeOf: reflect.TypeFor[int64]()},
+		{name: "OutputPerToken", typeOf: reflect.TypeFor[int64]()},
+		{name: "ReasoningPerToken", typeOf: reflect.TypeFor[int64]()},
+	})
+}
+
 func TestTextDeclaration(t *testing.T) {
 	// R-Z0V2-GONP
 	assertExactBlockStruct(t, reflect.TypeFor[Text](), []exactStructField{
@@ -303,6 +331,9 @@ func assertExactBlockStruct(t *testing.T, got reflect.Type, want []exactStructFi
 
 func assertExactStructFields(t *testing.T, got reflect.Type, want []exactStructField) {
 	t.Helper()
+	if got.Name() == "" || !token.IsExported(got.Name()) {
+		t.Fatalf("%s name = %q, want exported named type", got, got.Name())
+	}
 	if got.Kind() != reflect.Struct || got.NumField() != len(want) {
 		t.Fatalf("%s kind/field count = %s/%d, want struct/%d", got, got.Kind(), got.NumField(), len(want))
 	}

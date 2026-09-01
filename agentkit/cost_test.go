@@ -1,22 +1,10 @@
 package agentkit
 
 import (
-	"reflect"
 	"testing"
 )
 
-func TestCostAndPricingFieldShapesAndArithmetic(t *testing.T) {
-	assertStructFields(t, reflect.TypeFor[Cost](), []structField{
-		{name: "Amount", kind: reflect.Int64},
-		{name: "Known", kind: reflect.Bool},
-	})
-	assertStructFields(t, reflect.TypeFor[Pricing](), []structField{
-		{name: "InputPerToken", kind: reflect.Int64},
-		{name: "CachedPerToken", kind: reflect.Int64},
-		{name: "OutputPerToken", kind: reflect.Int64},
-		{name: "ReasoningPerToken", kind: reflect.Int64},
-	})
-
+func TestPriceUsageArithmetic(t *testing.T) {
 	got := priceUsage(
 		Usage{InputTokens: 2, CachedTokens: 3, OutputTokens: 5, ReasoningTokens: 7},
 		Pricing{InputPerToken: 11, CachedPerToken: 13, OutputPerToken: 17, ReasoningPerToken: 19},
@@ -24,24 +12,6 @@ func TestCostAndPricingFieldShapesAndArithmetic(t *testing.T) {
 	const wantAmount = int64(2*11 + 3*13 + 5*17 + 7*19)
 	if got != (Cost{Amount: wantAmount, Known: true}) {
 		t.Fatalf("priceUsage() = %+v, want known amount %d", got, wantAmount)
-	}
-}
-
-type structField struct {
-	name string
-	kind reflect.Kind
-}
-
-func assertStructFields(t *testing.T, typ reflect.Type, want []structField) {
-	t.Helper()
-	if typ.NumField() != len(want) {
-		t.Fatalf("%s has %d fields, want %d", typ.Name(), typ.NumField(), len(want))
-	}
-	for index, expected := range want {
-		field := typ.Field(index)
-		if field.Name != expected.name || field.Type.Kind() != expected.kind {
-			t.Fatalf("%s field %d = %s %s, want %s %s", typ.Name(), index, field.Name, field.Type.Kind(), expected.name, expected.kind)
-		}
 	}
 }
 
@@ -61,6 +31,51 @@ func TestResolveCostUsesFirstAvailableRung(t *testing.T) {
 	}
 	if got := resolveCost("gpt-4.1-mini", usage, nil, nil); got != (Cost{Amount: 800, Known: true}) {
 		t.Fatalf("built-in fallback cost = %+v, want amount 800", got)
+	}
+}
+
+func TestResolvedAndUnresolvedCostKnownSemantics(t *testing.T) {
+	// R-0THQ-QIYI
+	usage := Usage{InputTokens: 2}
+	wireAmount := int64(37)
+	consumerPricing := map[string]Pricing{
+		"consumer-model":      {InputPerToken: 23},
+		"consumer-free-model": {},
+	}
+
+	resolved := map[string]Cost{
+		"wire":     resolveCost("unpriced-model", usage, &wireAmount, nil),
+		"consumer": resolveCost("consumer-model", usage, nil, consumerPricing),
+		"built-in": resolveCost("gpt-4.1-mini", usage, nil, nil),
+	}
+	wantAmounts := map[string]int64{
+		"wire":     37,
+		"consumer": 46,
+		"built-in": 800,
+	}
+	for path, cost := range resolved {
+		if !cost.Known || cost.Amount != wantAmounts[path] {
+			t.Errorf("%s resolved cost = %+v, want known amount %d", path, cost, wantAmounts[path])
+		}
+	}
+
+	resolvedZero := resolveCost("consumer-free-model", usage, nil, consumerPricing)
+	if resolvedZero != (Cost{Amount: 0, Known: true}) {
+		t.Fatalf("resolved zero cost = %+v, want a genuine known zero", resolvedZero)
+	}
+	unresolved := resolveCost("absent-from-all-pricing", usage, nil, consumerPricing)
+	if unresolved != (Cost{Amount: 0, Known: false}) {
+		t.Fatalf("unresolved cost = %+v, want exactly zero amount with Known false", unresolved)
+	}
+
+	isFreeTurn := func(cost Cost) bool {
+		return cost.Known && cost.Amount == 0
+	}
+	if !isFreeTurn(resolvedZero) {
+		t.Fatal("known resolved zero was not interpreted as a real free turn")
+	}
+	if isFreeTurn(unresolved) {
+		t.Fatal("unknown zero was incorrectly interpreted as a real free turn")
 	}
 }
 
