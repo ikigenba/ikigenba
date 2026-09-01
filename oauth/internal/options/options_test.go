@@ -48,6 +48,37 @@ Flags:
         print version and exit
 `
 
+const expectedOpenAIExample = `
+OpenAI example:
+  oauth \
+    --auth-url  https://auth.openai.com/oauth/authorize \
+    --token-url https://auth.openai.com/oauth/token \
+    --client-id app_EMoamEEZ73f0CkXaXp7hrann \
+    --scope "openid profile email offline_access" \
+    --port 1455 --callback-path /auth/callback \
+    > auth.json
+`
+
+const expectedXAIExample = `
+xAI example:
+  oauth \
+    --auth-url  https://auth.x.ai/oauth2/authorize \
+    --token-url https://auth.x.ai/oauth2/token \
+    --client-id b1a00492-073a-47ea-816f-4c329264a828 \
+    --scope "openid profile email offline_access grok-cli:access api:access" \
+    --callback-host 127.0.0.1 \
+    --port 56121 \
+    --callback-path /callback \
+    > x-ai-auth.json
+`
+
+const expectedBasicAuthentication = `
+Basic authentication:
+  --token-header "Authorization=Basic $(printf '%s:%s' "$ID" "$SECRET" | base64 -w0)"
+`
+
+const expectedUsage = expectedFlagsBlock + expectedOpenAIExample + expectedXAIExample + expectedBasicAuthentication
+
 // R-M68L-ADTD
 func TestOptionsHasExactExportedStructShape(t *testing.T) {
 	t.Parallel()
@@ -122,11 +153,8 @@ func TestUsageBeginsWithExactFlagsBlock(t *testing.T) {
 	t.Parallel()
 
 	got := options.Usage()
-	if len(got) < len(expectedFlagsBlock) {
-		t.Fatalf("len(Usage()) = %d, want at least %d", len(got), len(expectedFlagsBlock))
-	}
-	if got[:len(expectedFlagsBlock)] != expectedFlagsBlock {
-		t.Errorf("Usage() prefix = %q, want %q", got[:len(expectedFlagsBlock)], expectedFlagsBlock)
+	if _, found := strings.CutPrefix(got, expectedFlagsBlock); !found {
+		t.Errorf("Usage() = %q, want exact prefix %q", got, expectedFlagsBlock)
 	}
 }
 
@@ -152,15 +180,44 @@ func TestUsageNamesEveryFlagSpelling(t *testing.T) {
 		"  -h, --help",
 		"  -V, --version",
 	}
-	lastFlagLine := 3 + 2*(len(flagRows)-1)
-	if len(lines) <= lastFlagLine {
-		t.Fatalf("Usage() has %d lines, need flag row through line %d", len(lines), lastFlagLine+1)
+	wantLineCount := len(strings.Split(expectedUsage, "\n"))
+	if len(lines) != wantLineCount {
+		t.Fatalf("Usage() has %d lines, want exactly %d", len(lines), wantLineCount)
 	}
 	for index, want := range flagRows {
 		line := 3 + 2*index
 		if lines[line] != want {
 			t.Errorf("Usage() line %d = %q, want flag row %q", line+1, lines[line], want)
 		}
+	}
+}
+
+// R-R9M6-48JR
+func TestUsageContainsOpenAIWorkedExample(t *testing.T) {
+	t.Parallel()
+
+	wantPrefix := expectedFlagsBlock + expectedOpenAIExample
+	if _, found := strings.CutPrefix(options.Usage(), wantPrefix); !found {
+		t.Errorf("Usage() does not begin with exact OpenAI example block %q", expectedOpenAIExample)
+	}
+}
+
+// R-RAU2-I0AG
+func TestUsageContainsXAIWorkedExample(t *testing.T) {
+	t.Parallel()
+
+	wantPrefix := expectedFlagsBlock + expectedOpenAIExample + expectedXAIExample
+	if _, found := strings.CutPrefix(options.Usage(), wantPrefix); !found {
+		t.Errorf("Usage() does not place exact xAI example block %q after the OpenAI example", expectedXAIExample)
+	}
+}
+
+// R-RC1Y-VS15
+func TestUsageContainsBasicAuthenticationForm(t *testing.T) {
+	t.Parallel()
+
+	if got := options.Usage(); got != expectedUsage {
+		t.Errorf("Usage() = %q, want exact usage ending with Basic authentication form %q", got, expectedBasicAuthentication)
 	}
 }
 

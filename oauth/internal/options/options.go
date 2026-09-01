@@ -46,6 +46,29 @@ Flags:
         print help and exit
   -V, --version
         print version and exit
+
+OpenAI example:
+  oauth \
+    --auth-url  https://auth.openai.com/oauth/authorize \
+    --token-url https://auth.openai.com/oauth/token \
+    --client-id app_EMoamEEZ73f0CkXaXp7hrann \
+    --scope "openid profile email offline_access" \
+    --port 1455 --callback-path /auth/callback \
+    > auth.json
+
+xAI example:
+  oauth \
+    --auth-url  https://auth.x.ai/oauth2/authorize \
+    --token-url https://auth.x.ai/oauth2/token \
+    --client-id b1a00492-073a-47ea-816f-4c329264a828 \
+    --scope "openid profile email offline_access grok-cli:access api:access" \
+    --callback-host 127.0.0.1 \
+    --port 56121 \
+    --callback-path /callback \
+    > x-ai-auth.json
+
+Basic authentication:
+  --token-header "Authorization=Basic $(printf '%s:%s' "$ID" "$SECRET" | base64 -w0)"
 `
 
 // ErrHelp reports that either supported help flag was supplied.
