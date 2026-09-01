@@ -57,6 +57,59 @@ func validArgs() []string {
 	}
 }
 
+// R-R4QK-L5KZ
+func TestRunValidatesBeforeObservableSideEffects(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "missing auth URL",
+			args: []string{"--token-url", "https://identity.example/token", "--client-id", "client-123"},
+		},
+		{
+			name: "missing token URL",
+			args: []string{"--auth-url", "https://identity.example/authorize", "--client-id", "client-123"},
+		},
+		{
+			name: "missing client ID",
+			args: []string{"--auth-url", "https://identity.example/authorize", "--token-url", "https://identity.example/token"},
+		},
+		{
+			name: "unparsable auth URL",
+			args: []string{"--auth-url", ":", "--token-url", "https://identity.example/token", "--client-id", "client-123"},
+		},
+		{
+			name: "unparsable token URL",
+			args: []string{"--auth-url", "https://identity.example/authorize", "--token-url", ":", "--client-id", "client-123"},
+		},
+		{name: "auth param without equals", args: append(validArgs(), "--auth-param", "prompt")},
+		{name: "auth param with empty key", args: append(validArgs(), "--auth-param", "=login")},
+		{name: "token param without equals", args: append(validArgs(), "--token-param", "resource")},
+		{name: "token param with empty key", args: append(validArgs(), "--token-param", "=api")},
+		{name: "token header without equals", args: append(validArgs(), "--token-header", "X-Trace-ID")},
+		{name: "token header with empty key", args: append(validArgs(), "--token-header", "=trace-123")},
+		{name: "reserved authorize param", args: append(validArgs(), "--auth-param", "state=caller-state")},
+		{name: "reserved redirect URI authorize param", args: append(validArgs(), "--auth-param", "redirect_uri=https://client.example/callback")},
+		{name: "reserved token param", args: append(validArgs(), "--token-param", "code=caller-code")},
+		{name: "multiple client authentication methods", args: append(validArgs(), "--client-secret", "secret", "--token-header", "aUtHoRiZaTiOn=Basic abc")},
+		{name: "zero timeout", args: append(validArgs(), "--timeout", "0s")},
+		{name: "negative timeout", args: append(validArgs(), "--timeout", "-1s")},
+		{name: "callback path without leading slash", args: append(validArgs(), "--callback-path", "callback")},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := cli.Run(context.Background(), test.args, &stdout, &stderr, failDeps(t))
+
+			if code != 2 {
+				t.Errorf("Run() exit code = %d, want 2; stderr = %q", code, stderr.String())
+			}
+		})
+	}
+}
+
 // R-QZUZ-22M7
 func TestRunRejectsMultipleClientAuthenticationMethods(t *testing.T) {
 	tests := []struct {
