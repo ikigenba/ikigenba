@@ -49,6 +49,8 @@ func run(args []string, stdout, stderr io.Writer) exitCode {
 		return exitUsage
 	}
 	if flags.Version {
+		_, _ = io.WriteString(stdout, version+"\n")
+
 		return exitSuccess
 	}
 	_, err = flags.Validate()
