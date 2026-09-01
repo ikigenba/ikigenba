@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"reflect"
 	"strconv"
 	"testing"
 
@@ -19,6 +20,74 @@ type fakeListener struct {
 	address    net.Addr
 	closeCalls int
 	closeErr   error
+}
+
+// R-LLIA-SA7K
+func TestListenFuncHasNetworkDependencySignature(t *testing.T) {
+	var standardListen callback.ListenFunc = net.Listen
+	_ = standardListen
+
+	listenType := reflect.TypeOf((*callback.ListenFunc)(nil)).Elem()
+	if listenType.Name() != "ListenFunc" {
+		t.Errorf("ListenFunc type name = %q, want %q", listenType.Name(), "ListenFunc")
+	}
+	if listenType.PkgPath() != "github.com/ikigenba/ikigenba/oauth/internal/callback" {
+		t.Errorf("ListenFunc package path = %q, want internal/callback package", listenType.PkgPath())
+	}
+	if listenType.Kind() != reflect.Func {
+		t.Fatalf("ListenFunc kind = %v, want func", listenType.Kind())
+	}
+
+	stringType := reflect.TypeOf("")
+	if listenType.NumIn() != 2 {
+		t.Fatalf("ListenFunc input count = %d, want 2", listenType.NumIn())
+	}
+	for index := range 2 {
+		if inputType := listenType.In(index); inputType != stringType {
+			t.Errorf("ListenFunc input %d = %v, want string", index, inputType)
+		}
+	}
+
+	listenerType := reflect.TypeOf((*net.Listener)(nil)).Elem()
+	errorType := reflect.TypeOf((*error)(nil)).Elem()
+	if listenType.NumOut() != 2 {
+		t.Fatalf("ListenFunc result count = %d, want 2", listenType.NumOut())
+	}
+	if resultType := listenType.Out(0); resultType != listenerType {
+		t.Errorf("ListenFunc result 0 = %v, want %v", resultType, listenerType)
+	}
+	if resultType := listenType.Out(1); resultType != errorType {
+		t.Errorf("ListenFunc result 1 = %v, want %v", resultType, errorType)
+	}
+}
+
+// R-LMQ7-61Y9
+func TestListenHasCallbackListenerSignature(t *testing.T) {
+	wantType := reflect.TypeOf((func(callback.ListenFunc, int) (*callback.Server, error))(nil))
+	if gotType := reflect.TypeOf(callback.Listen); gotType != wantType {
+		t.Errorf("Listen type = %v, want %v", gotType, wantType)
+	}
+}
+
+// R-LNY3-JTOY
+func TestListenServerProvidesListenerMethods(t *testing.T) {
+	serverType := reflect.TypeOf((*callback.Server)(nil))
+	wantMethods := map[string]reflect.Type{
+		"Port":        reflect.TypeOf((func(*callback.Server) int)(nil)),
+		"BindWarning": reflect.TypeOf((func(*callback.Server) error)(nil)),
+		"Close":       reflect.TypeOf((func(*callback.Server) error)(nil)),
+	}
+
+	for name, wantType := range wantMethods {
+		method, found := serverType.MethodByName(name)
+		if !found {
+			t.Errorf("*callback.Server is missing exported method %s with type %v", name, wantType)
+			continue
+		}
+		if method.Type != wantType {
+			t.Errorf("(*callback.Server).%s type = %v, want %v", name, method.Type, wantType)
+		}
+	}
 }
 
 func (l *fakeListener) Accept() (net.Conn, error) {
