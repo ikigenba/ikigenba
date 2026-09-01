@@ -1,9 +1,11 @@
 package agentkit
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"go/ast"
+	"go/format"
 	"go/parser"
 	"go/token"
 	"io"
@@ -242,6 +244,110 @@ func TestWireFormatDeclarationIsExact(t *testing.T) {
 		if _, ok := field.Type.(*ast.FuncType); !ok {
 			t.Fatalf("WireFormat.%s declaration is %T, want method function", wantMethods[index].name, field.Type)
 		}
+	}
+}
+
+func TestToolDeclarationIsExactAndSealed(t *testing.T) {
+	// R-02NY-BKN8
+	toolType := reflect.TypeFor[Tool]()
+	if toolType.Name() != "Tool" || !token.IsExported(toolType.Name()) || toolType.Kind() != reflect.Interface {
+		t.Fatalf("Tool name/kind = %q/%s, want exported named interface", toolType.Name(), toolType.Kind())
+	}
+	wantExported := map[string]reflect.Type{
+		"Name":        reflect.TypeOf(func() string { return "" }),
+		"Description": reflect.TypeOf(func() string { return "" }),
+		"Schema":      reflect.TypeOf(func() json.RawMessage { return nil }),
+		"Call":        reflect.TypeOf(func(context.Context, json.RawMessage) (string, error) { return "", nil }),
+		"isTool":      reflect.TypeOf(func() {}),
+	}
+	if toolType.NumMethod() != len(wantExported) {
+		t.Fatalf("Tool exported method count = %d, want %d", toolType.NumMethod(), len(wantExported))
+	}
+	for name, signature := range wantExported {
+		method, ok := toolType.MethodByName(name)
+		if !ok || method.Type != signature {
+			t.Fatalf("Tool.%s = %v (present=%t), want %s", name, method.Type, ok, signature)
+		}
+	}
+	marker, _ := toolType.MethodByName("isTool")
+	if marker.PkgPath == "" {
+		t.Fatal("Tool marker has no package path, want unexported sealing method")
+	}
+
+	specification := declaredType(t, "tool.go", "Tool")
+	if specification.Assign.IsValid() {
+		t.Fatal("Tool is an alias, want a defined interface")
+	}
+	interfaceType, ok := specification.Type.(*ast.InterfaceType)
+	if !ok {
+		t.Fatalf("Tool declaration = %T, want interface", specification.Type)
+	}
+	wantMethods := []string{"Name", "Description", "Schema", "Call", "isTool"}
+	if got := interfaceMethodNames(interfaceType); !reflect.DeepEqual(got, wantMethods) {
+		t.Fatalf("Tool methods = %v, want exactly %v in order", got, wantMethods)
+	}
+	assertASTMethod(t, interfaceType, "Name", nil, []string{"string"})
+	assertASTMethod(t, interfaceType, "Description", nil, []string{"string"})
+	assertASTMethod(t, interfaceType, "Schema", nil, []string{"json.RawMessage"})
+	assertASTMethod(t, interfaceType, "Call", []string{"context.Context", "json.RawMessage"}, []string{"string", "error"})
+	assertASTMethod(t, interfaceType, "isTool", nil, nil)
+	if interfaceType.Methods.List[4].Names[0].IsExported() {
+		t.Fatal("Tool marker is exported, want package-sealing lowercase marker")
+	}
+}
+
+type architectureToolInput struct {
+	Query string `json:"query" jsonschema:"required"`
+}
+
+func TestNewToolDeclarationIsExact(t *testing.T) {
+	// R-03VU-PCDX
+	got := reflect.TypeOf(NewTool[architectureToolInput])
+	want := reflect.TypeOf(func(string, string, func(context.Context, architectureToolInput) (string, error)) (Tool, error) {
+		return nil, nil
+	})
+	assertFunctionSignature(t, got, want)
+	assertExactToolFunctionDeclaration(t, "NewTool", "func[In any](name, description string, fn func(ctx context.Context, in In) (string, error)) (Tool, error)")
+}
+
+func TestMustToolDeclarationIsExact(t *testing.T) {
+	// R-053R-344M
+	got := reflect.TypeOf(MustTool[architectureToolInput])
+	want := reflect.TypeOf(func(string, string, func(context.Context, architectureToolInput) (string, error)) Tool { return nil })
+	assertFunctionSignature(t, got, want)
+	assertExactToolFunctionDeclaration(t, "MustTool", "func[In any](name, description string, fn func(ctx context.Context, in In) (string, error)) Tool")
+}
+
+func TestNewToolFromSchemaDeclarationIsExact(t *testing.T) {
+	// R-06BN-GVVB
+	got := reflect.TypeOf(NewToolFromSchema)
+	want := reflect.TypeOf(func(string, string, json.RawMessage, func(context.Context, json.RawMessage) (string, error)) (Tool, error) {
+		return nil, nil
+	})
+	assertFunctionSignature(t, got, want)
+	assertExactToolFunctionDeclaration(t, "NewToolFromSchema", "func(name, description string, schema json.RawMessage, fn func(ctx context.Context, args json.RawMessage) (string, error)) (Tool, error)")
+}
+
+func TestValidateToolSchemaDeclarationIsExact(t *testing.T) {
+	// R-07JJ-UNM0
+	got := reflect.TypeOf(ValidateToolSchema)
+	want := reflect.TypeOf(func(json.RawMessage) error { return nil })
+	assertFunctionSignature(t, got, want)
+	assertExactToolFunctionDeclaration(t, "ValidateToolSchema", "func(schema json.RawMessage) error")
+}
+
+func assertExactToolFunctionDeclaration(t *testing.T, name, want string) {
+	t.Helper()
+	declaration := declaredFunction(t, "tool.go", name)
+	if declaration.Recv != nil || !declaration.Name.IsExported() {
+		t.Fatalf("%s is not an exported package function", name)
+	}
+	var rendered bytes.Buffer
+	if err := format.Node(&rendered, token.NewFileSet(), declaration.Type); err != nil {
+		t.Fatal(err)
+	}
+	if got := rendered.String(); got != want {
+		t.Fatalf("%s declaration = %q, want exactly %q", name, got, want)
 	}
 }
 

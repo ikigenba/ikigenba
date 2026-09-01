@@ -1,23 +1,12 @@
 package agentkit
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"iter"
 	"net/http"
 )
-
-// Tool is the sealed canonical tool shape consumed by wire renderers.
-type Tool interface {
-	Name() string
-	Description() string
-	Schema() json.RawMessage
-	Call(ctx context.Context, args json.RawMessage) (string, error)
-	isTool()
-}
 
 // Framer splits a response body into payload frames without interpreting the
 // vendor grammar carried by those frames.
@@ -84,7 +73,7 @@ func (w *wireCodec) DecodeStream(frames iter.Seq2[[]byte, error]) iter.Seq2[Even
 
 func (w *wireCodec) RenderTools(tools []Tool) (json.RawMessage, error) {
 	for _, tool := range tools {
-		if err := validateCanonicalToolSchema(tool.Schema()); err != nil {
+		if err := ValidateToolSchema(tool.Schema()); err != nil {
 			return nil, fmt.Errorf("agentkit: tool %q: %w", tool.Name(), err)
 		}
 	}
@@ -104,40 +93,6 @@ func (w *wireCodec) withClassifier(classifier wireClassifier) WireFormat {
 
 func (w *wireCodec) validateSettings(settings Settings) error {
 	return w.capabilities.validate(settings)
-}
-
-func validateCanonicalToolSchema(schema json.RawMessage) error {
-	var root any
-	if err := json.Unmarshal(schema, &root); err != nil {
-		return fmt.Errorf("invalid JSON schema: %w", err)
-	}
-	object, ok := root.(map[string]any)
-	if !ok || object["type"] != "object" {
-		return errors.New("schema root must have type object")
-	}
-	return rejectUnsupportedSchemaKeywords(object)
-}
-
-func rejectUnsupportedSchemaKeywords(value any) error {
-	switch value := value.(type) {
-	case map[string]any:
-		for key, child := range value {
-			switch key {
-			case "$ref", "$defs", "definitions", "allOf", "anyOf", "oneOf", "not", "if", "then", "else":
-				return fmt.Errorf("unsupported schema keyword %q", key)
-			}
-			if err := rejectUnsupportedSchemaKeywords(child); err != nil {
-				return err
-			}
-		}
-	case []any:
-		for _, child := range value {
-			if err := rejectUnsupportedSchemaKeywords(child); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }
 
 type usageNormalizer struct {
