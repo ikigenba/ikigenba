@@ -14,7 +14,7 @@ package agentkit
 // zero Settings requests the vendor's own defaults for everything. Pointer
 // fields distinguish "unset" (leave to the vendor) from a deliberate zero (e.g.
 // Temperature 0). Settings carries no vendor vocabulary — each wire renders the
-// subset it can express (D5) and fails loud on what it cannot (see Reasoning).
+// subset it can express (D5) and fails loud on what it cannot (see ReasoningConfig).
 type Settings struct {
 	// Temperature and TopP are the sampling knobs, passed through when set.
 	Temperature *float64
@@ -26,8 +26,9 @@ type Settings struct {
 	StopSequences []string
 	// ToolChoice directs tool selection for the turn (see ToolChoice).
 	ToolChoice ToolChoice
-	// Reasoning requests model reasoning in a wire-neutral shape (see Reasoning).
-	Reasoning Reasoning
+	// Reasoning requests model reasoning in a wire-neutral shape (see
+	// ReasoningConfig).
+	Reasoning ReasoningConfig
 }
 ```
 
@@ -55,16 +56,18 @@ const (
 	ReasoningBudget                       // an explicit token budget
 )
 
-// Reasoning is a neutral reasoning request. Mode selects the shape; Effort is
-// read only when Mode is ReasoningEffort and Budget only when Mode is
-// ReasoningBudget. A Mode a wire cannot express fails at Send.
-type Reasoning struct {
+// ReasoningConfig is a neutral reasoning request. Mode selects the shape; Effort
+// is read only when Mode is ReasoningEffort and Budget only when Mode is
+// ReasoningBudget. A Mode a wire cannot express fails at Send. It is named
+// ReasoningConfig, not Reasoning, because the D2 block variant owns the exported
+// name Reasoning in package agentkit; the Settings field keeps the name Reasoning.
+type ReasoningConfig struct {
 	Mode   ReasoningMode
 	Effort Effort // low | medium | high
 	Budget int    // token budget, when Mode is ReasoningBudget
 }
 
-// Effort is the neutral reasoning effort level, read only when a Reasoning's Mode
+// Effort is the neutral reasoning effort level, read only when a ReasoningConfig's Mode
 // is ReasoningEffort. The zero value EffortNone means "not an effort request".
 type Effort int
 
@@ -76,7 +79,7 @@ const (
 )
 
 // ToolChoice steers whether, and which, tool the model may call this turn. Like
-// Reasoning it is neutral and fail-loud: a wire that cannot express the chosen
+// ReasoningConfig it is neutral and fail-loud: a wire that cannot express the chosen
 // mode rejects it at Send (ErrInvalidConfig), never silently downgrades. The zero
 // value ToolChoiceAuto leaves the decision to the model.
 type ToolChoice struct {
