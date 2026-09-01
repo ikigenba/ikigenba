@@ -106,6 +106,17 @@ func TestOptionsHasExactExportedStructShape(t *testing.T) {
 	}
 }
 
+// R-M7GH-O5K2
+func TestUsageExportedFunctionSignature(t *testing.T) {
+	t.Parallel()
+
+	requireSignature := func(usage func() string) func() string { return usage }
+	usage := requireSignature(options.Usage)
+	if got := usage(); got == "" {
+		t.Error("options.Usage() returned an empty string, want non-empty usage text")
+	}
+}
+
 // R-R5YG-YXBO
 func TestUsageBeginsWithExactFlagsBlock(t *testing.T) {
 	t.Parallel()
