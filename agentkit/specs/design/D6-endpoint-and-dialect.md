@@ -96,8 +96,15 @@ type Provider interface {
 - R-37C2-K605: An `Endpoint` MUST be constructed only from `EndpointOption` values and MUST expose no assignable fields to consumers.
 - R-38JY-XXQU: An `Endpoint` MUST own the base URL and path, model-in-path-vs-body placement, the auth applier, extra headers, the `Framer`, the error classifier, the request-mutation hook, and the reasoning-replay encoding.
 - R-3AZR-PH88: The reasoning-replay *encoding* MUST be endpoint-owned with a wire-supplied default, so two endpoints on one `WireFormat` can carry opposite replay encodings (D-K); the wire MUST NOT hardcode the value.
-- R-3C7O-38YX: The auth applier MUST receive the fully assembled request together with the final request body via `Apply(ctx context.Context, req *http.Request, body []byte) error`.
 - R-3DFK-H0PM: Request assembly MUST run the endpoint's `RequestMutator` before the `AuthApplier`, so that a body-signing applier signs the mutated body.
 - R-3ENG-USGB: The request-mutation hook MUST be able to rewrite both the request and its body before send (subsuming model-in-path rewriting and per-credential host/path/header redirection); path templating MUST NOT be a separate concept.
 - R-3FVD-8K70: The error classifier MUST receive status, headers, and body and return a typed error (D4), so that header-carried retry timing and body-text-only disambiguation are both reachable.
 - R-3H39-MBXP: The composed `Provider` SPI MUST be public and implementable by a consumer as the final escape-hatch rung, with the same standing as a vendor constructor.
+- R-ZJ5K-78S4: `agentkit` MUST export `Endpoint` as an opaque struct type with no exported fields, constructed only from `EndpointOption` values.
+- R-ZKDG-L0IT: `agentkit` MUST export `EndpointOption` as a functional-option type that configures an `Endpoint` at construction and returns an `error`.
+- R-ZLLC-YS9I: `agentkit` MUST export the endpoint options `WithBaseURL(raw string) EndpointOption`, `WithHeader(name, value string) EndpointOption`, `WithFramer(f Framer) EndpointOption`, `WithClassifier(c ErrorClassifier) EndpointOption`, `WithMutator(m RequestMutator) EndpointOption`, and `WithReplayEncoding(e ReplayEncoding) EndpointOption`.
+- R-ZMT9-CK07: `agentkit` MUST export the `AuthApplier` interface whose method set is exactly `Apply(ctx context.Context, req *http.Request, body []byte) error`.
+- R-ZO15-QBQW: `agentkit` MUST export `type RequestMutator func(req *http.Request, body *[]byte) error`.
+- R-ZP92-43HL: `agentkit` MUST export `type ErrorClassifier func(status int, header http.Header, body []byte) error`.
+- R-ZQGY-HV8A: `agentkit` MUST export the `Provider` interface whose method set is exactly `BuildRequest(ctx context.Context, state RequestState) (*http.Request, error)`, `Decode(ctx context.Context, resp *http.Response) iter.Seq2[Event, error]`, `Classify(status int, header http.Header, body []byte) error`, and `Identity() Identity`.
+- R-0VXJ-I2FW: The `AuthApplier` MUST receive the fully assembled request together with the final request body, so a body-signing scheme signs the exact bytes that are sent.

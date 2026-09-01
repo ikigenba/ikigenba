@@ -115,3 +115,7 @@ condition that would have been a warning is now either a typed field or a hard
 - R-2SP9-YX3T: `ErrInvalidConfig` and `ErrClosed` MUST be sentinel errors comparable via `errors.Is`, including when wrapped in `*Error`.
 - R-2TX6-COUI: A `Send` that fails configuration validation MUST make no provider call and MUST leave History unchanged.
 - R-2V52-QGL7: A forced tool-choice a wire cannot express MUST fail at `Send` with `ErrInvalidConfig` rather than degrade silently; agentkit MUST expose no `Warning` type or warning channel.
+- R-ZAM9-IUL9: `agentkit` MUST export `type Category int` with the constants `CategoryUnknown`, `CategoryAuth`, `CategoryInvalidRequest`, `CategoryRateLimit`, `CategoryOverloaded`, `CategoryInsufficientQuota`, `CategoryTimeout`, `CategoryTransport` declared in that `iota` order starting at 0.
+- R-ZBU5-WMBY: `agentkit` MUST export `type Error struct { Category Category; Status int; Code string; Message string; RetryAfter time.Duration; Endpoint Identity }` with those exported fields plus an unexported wrapped cause, and `*Error` MUST implement `Error() string` and `Unwrap() error`.
+- R-ZD22-AE2N: `agentkit` MUST export `func Retryable(err error) bool`.
+- R-ZE9Y-O5TC: `agentkit` MUST export the sentinel errors `ErrInvalidConfig` and `ErrClosed`, each an `error` created with `errors.New`.

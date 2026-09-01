@@ -136,3 +136,10 @@ persisting a partial turn.
 - R-233D-XQJ8: Whether a block is `Reasoning` MUST be determined by the wire's parse step, not by the presence or absence of provider payload bytes.
 - R-24BA-BI9X: A `ToolResult` MUST correlate to its `ToolUse` by the vendor's verbatim call id, and agentkit MUST NOT substitute a library-minted identifier.
 - R-25J6-PA0M: A `History` MUST always end at a turn boundary — the blocks of a turn that fails mid-loop MUST NOT be appended, so no serialized History contains a partial turn.
+- R-YX7D-BDFM: `agentkit` MUST export `type Role int` with the constants `RoleSystem`, `RoleUser`, `RoleAssistant`, `RoleTool` declared in that `iota` order starting at 0.
+- R-YYF9-P56B: `agentkit` MUST export `type Message struct { Role Role; Blocks []Block }` with exactly those two fields.
+- R-YZN6-2WX0: `agentkit` MUST export `type History []Message` as a named slice type.
+- R-Z0V2-GONP: `agentkit` MUST export `type Text struct { Text string; Provider json.RawMessage }`, and `Text` MUST implement `Block`.
+- R-Z22Y-UGEE: `agentkit` MUST export `type Reasoning struct { Text string; Redacted bool; Provider json.RawMessage }`, and `Reasoning` MUST implement `Block`.
+- R-Z3AV-8853: `agentkit` MUST export `type ToolUse struct { ID string; Name string; Input json.RawMessage; Provider json.RawMessage }`, and `ToolUse` MUST implement `Block`.
+- R-Z4IR-LZVS: `agentkit` MUST export `type ToolResult struct { ToolUseID string; Content string; IsError bool; Provider json.RawMessage }`, and `ToolResult` MUST implement `Block`.

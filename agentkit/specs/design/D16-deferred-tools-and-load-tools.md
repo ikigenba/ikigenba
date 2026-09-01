@@ -93,3 +93,6 @@ defect before the turn starts, and a load can never fail for a schema reason.
 - R-5VO4-S1L0: A direct call to a deferred-but-unloaded tool MUST NOT execute the model-supplied arguments; the orchestrator MUST return an `IsError` `ToolResult` naming `load_tools` and MUST load the tool as a side effect so recovery completes in one iteration.
 - R-5WW1-5TBP: The advertised tool array MUST be a name-sorted base (eager `Tools` ∪ `load_tools`) followed by loaded tools in load order, a load MUST only append to the tail, and the Anthropic adapter MUST transmit that order without re-sorting so the cache prefix is stable across round-trips.
 - R-5Y3X-JL2E: `Send` MUST run one validation gate over the union of eager tools, all deferred groups, and `load_tools` (name uniqueness and canonical-subset schema, D11) before any provider call, failing with `ErrInvalidConfig` rather than deferring a schema failure to load time.
+- R-0PU1-L7QF: `agentkit` MUST export `type DeferredGroup struct { Name string; Blurb string; Tools []Tool }` with exactly those three fields.
+- R-0R1X-YZH4: `agentkit` MUST export the method `func (c *Conversation) Deferred(groups ...DeferredGroup)`.
+- R-0S9U-CR7T: The synthesized deferred-tools meta-tool MUST be named exactly `load_tools` and MUST accept exactly one argument: an array of strings under the key `names`.

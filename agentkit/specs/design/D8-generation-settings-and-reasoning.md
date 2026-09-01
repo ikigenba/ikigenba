@@ -126,3 +126,9 @@ release: only a genuinely new *wire shape* (not a new model) requires library wo
 - R-3UI5-TT3C: A `ToolChoice` directive a target wire cannot express MUST fail at `Send` with `ErrInvalidConfig`, consistent with reasoning representability and out-of-subset schemas.
 - R-3VQ2-7KU1: Reasoning representability MUST be validated against the wire's declared capability, not against the model string; agentkit MUST NOT maintain a per-model capability gate or allow-list.
 - R-3WXY-LCKQ: An unrecognized or unsupported model MUST reach the vendor and surface as a vendor error via the classifier (D4), never as a pre-flight rejection.
+- R-ZU4N-N6GD: `agentkit` MUST export `type Settings struct { Temperature *float64; TopP *float64; MaxOutputTokens *int; StopSequences []string; ToolChoice ToolChoice; Reasoning ReasoningConfig }` with exactly those fields.
+- R-ZWKG-EPXR: `agentkit` MUST export `type ReasoningMode int` with the constants `ReasoningDefault`, `ReasoningOff`, `ReasoningOn`, `ReasoningEffort`, `ReasoningBudget` declared in that `iota` order starting at 0.
+- R-ZXSC-SHOG: `agentkit` MUST export `type ReasoningConfig struct { Mode ReasoningMode; Effort Effort; Budget int }` with exactly those three fields.
+- R-ZZ09-69F5: `agentkit` MUST export `type Effort int` with the constants `EffortNone`, `EffortLow`, `EffortMedium`, `EffortHigh` declared in that `iota` order starting at 0.
+- R-0085-K15U: `agentkit` MUST export `type ToolChoice struct { Mode ToolChoiceMode; Name string }` with exactly those two fields.
+- R-01G1-XSWJ: `agentkit` MUST export `type ToolChoiceMode int` with the constants `ToolChoiceAuto`, `ToolChoiceNone`, `ToolChoiceRequired`, `ToolChoiceTool` declared in that `iota` order starting at 0.

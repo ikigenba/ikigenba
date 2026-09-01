@@ -106,3 +106,8 @@ purpose.
 - R-449C-VZ0W: agentkit MUST define one canonical schema subset — the intersection all four wires can render — and MUST reject `$ref`/`$defs`, `additionalProperties`, and tool-unfriendly `anyOf`/`oneOf`/`allOf` forms within it.
 - R-45H9-9QRL: `ValidateToolSchema` MUST be exported and MUST be the single checker used by every constructor, by the `Send`-time gate (D11), and by siblings validating a discovered schema.
 - R-46P5-NIIA: A tool schema accepted as canonical MUST be renderable by every shipped wire, so a tool set moves between vendors unchanged or fails identically on all of them.
+- R-02NY-BKN8: `agentkit` MUST export the sealed `Tool` interface whose method set is exactly `Name() string`, `Description() string`, `Schema() json.RawMessage`, `Call(ctx context.Context, args json.RawMessage) (string, error)`, and the unexported marker `isTool()`.
+- R-03VU-PCDX: `agentkit` MUST export `func NewTool[In any](name, description string, fn func(ctx context.Context, in In) (string, error)) (Tool, error)`.
+- R-053R-344M: `agentkit` MUST export `func MustTool[In any](name, description string, fn func(ctx context.Context, in In) (string, error)) Tool`.
+- R-06BN-GVVB: `agentkit` MUST export `func NewToolFromSchema(name, description string, schema json.RawMessage, fn func(ctx context.Context, args json.RawMessage) (string, error)) (Tool, error)`.
+- R-07JJ-UNM0: `agentkit` MUST export `func ValidateToolSchema(schema json.RawMessage) error`.

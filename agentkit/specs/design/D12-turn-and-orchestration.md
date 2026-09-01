@@ -78,3 +78,5 @@ request the seam cannot faithfully express is refused, not silently reshaped.
 - R-4TV8-X5LH: The orchestrator MUST correlate each `ToolResult` to its `ToolUse` by the vendor's verbatim call id and MUST NOT substitute a library-minted identifier.
 - R-4V35-AXC6: `Send` MUST reject a `ProviderOptions` map whose keys intersect the wire+endpoint reserved-key set with `ErrInvalidConfig`, making no provider call and leaving `History` unchanged.
 - R-4XIY-2GTK: Constructing a `Conversation` with both a transport-baking credential and `WithBaseURL` MUST fail with `ErrInvalidConfig` at construction (L2).
+- R-08RG-8FCP: `agentkit` MUST export `type ProviderOptions map[string]json.RawMessage`.
+- R-09ZC-M73E: `agentkit` MUST export `type RequestState struct { Model string; History []Message; Settings Settings; Options ProviderOptions; Tools []Tool }` with exactly those fields.

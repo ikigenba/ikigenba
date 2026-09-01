@@ -93,3 +93,7 @@ is spliced once on success — the `Stream` is the *live* view, `History` the
 - R-52EJ-LJSC: A tool returning an error MUST surface as a `ToolReturn` with `IsError` set and MUST NOT be reported by `Stream.Err()`.
 - R-53MF-ZBJ1: `Stream.Err()` MUST report the turn's terminal error (transport, classified vendor error, or unrecoverable decode) once iteration has stopped, and `nil` for a turn that completed cleanly.
 - R-54UC-D39Q: The events a `Stream` yields MUST match, one for one and in order, the message-granular records written to the event log (D15) for the same turn.
+- R-0B78-ZYU3: `agentkit` MUST export `type MessageDone struct { Message Message }`, and `MessageDone` MUST implement `Event`.
+- R-0CF5-DQKS: `agentkit` MUST export `type ToolCall struct { Use ToolUse }`, and `ToolCall` MUST implement `Event`.
+- R-0DN1-RIBH: `agentkit` MUST export `type ToolReturn struct { Result ToolResult }`, and `ToolReturn` MUST implement `Event`.
+- R-0G2U-J1SV: `agentkit` MUST export `Stream` as an opaque struct type with no exported fields, exposing the methods `Events() iter.Seq[Event]` and `Err() error`.

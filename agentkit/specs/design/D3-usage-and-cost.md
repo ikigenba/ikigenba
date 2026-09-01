@@ -115,9 +115,12 @@ resolves is core to agentkit's contract, so the chat rate table ships here. The
 - R-296V-UL8P: A merge sequence in which one fragment reports only the input-side fields and a later fragment reports only the output-side fields MUST yield a `Usage` retaining both sides (the later fragment MUST NOT zero the input side).
 - R-2AES-8CZE: A merge sequence of repeated cumulative snapshots MUST yield a `Usage` equal to the last snapshot, not the sum of the snapshots.
 - R-2BMO-M4Q3: The four `Usage` buckets MUST be disjoint as they leave the wire adapter — `InputTokens` excludes `CachedTokens` and `OutputTokens` excludes `ReasoningTokens` — so their sum is a correct grand total.
-- R-2CUK-ZWGS: `Cost` MUST carry an `int64` nano-USD amount and a `Known bool`; a resolved cost MUST set `Known=true` and an unresolved cost MUST report `Known=false` with a zero amount.
 - R-2E2H-DO7H: Cost resolution MUST try wire-reported, then consumer `Pricing`, then the built-in chat rate table, in that order, and MUST stop at the first rung that yields a value.
 - R-2FAD-RFY6: A turn whose model resolves at no rung MUST complete normally and yield `Cost{Known: false}` — never an error and never a `Known=true` zero.
 - R-2GIA-57OV: Aggregating any collection of `Cost` values MUST propagate `Known` such that the aggregate's `Known` is false whenever any contributing `Cost` has `Known=false`.
 - R-2HQ6-IZFK: agentkit MUST ship a built-in chat-only rate table and MUST resolve cost from it for a model present there when no wire cost and no consumer `Pricing` apply.
 - R-2IY2-WR69: A wire that reports its own billed cost MUST decode it to nano-USD with that wire's fixed unit; an absent wire cost MUST fall through to the next rung rather than resolve to zero.
+- R-Z5QN-ZRMH: `agentkit` MUST export `type Usage struct { InputTokens int64; CachedTokens int64; OutputTokens int64; ReasoningTokens int64 }` with exactly those four fields.
+- R-Z6YK-DJD6: `agentkit` MUST export `type Cost struct { Amount int64; Known bool }` with exactly those two fields.
+- R-Z86G-RB3V: `agentkit` MUST export `type Pricing struct { InputPerToken int64; CachedPerToken int64; OutputPerToken int64; ReasoningPerToken int64 }` with exactly those four fields.
+- R-0THQ-QIYI: A resolved `Cost` MUST set `Known` true; an unresolved `Cost` MUST set `Known` false with a zero `Amount`, and a `Known`-false `Cost` MUST NOT be read as a real zero-cost turn.

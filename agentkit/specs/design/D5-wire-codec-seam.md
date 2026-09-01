@@ -92,7 +92,10 @@ in requirement text; the requirements below fix the seam's shape.
 - R-2YSR-VRTA: `DecodeStream` MUST terminate framing decode within the wire and yield only message-granular events; no framing artifact may reach the orchestrator.
 - R-300O-9JJZ: `DecodeStream` MUST merge `Usage` field-wise with each field treated as absolute and last-non-absent winning, and MUST NOT replace usage as a whole object.
 - R-318K-NBAO: An in-band vendor error arriving after a 2xx status MUST be surfaced through `DecodeStream`'s error channel (the classifier MUST be reachable from inside the decode).
-- R-32GH-131D: Framing MUST be a `func(io.Reader) iter.Seq2[[]byte, error]` seam separable from the body grammar, so a wire grammar can run under a different framing without modifying the codec.
 - R-33OD-EUS2: The SSE frame reader MUST be exported as a public leaf usable independently of any `WireFormat` (for sibling `mcp`).
 - R-34W9-SMIR: `RenderTools` MUST reject a tool schema outside the canonical subset (D9) before a request is sent.
 - R-3646-6E9G: Every shipped wire MUST satisfy a round-trip property test: parsing a fixture into a `Message` and re-assembling the request body MUST reproduce the fixture's input bytes exactly.
+- R-ZFHV-1XK1: `agentkit` MUST export the `WireFormat` interface whose method set is exactly `EncodeRequest(state RequestState) ([]byte, error)`, `DecodeStream(frames iter.Seq2[[]byte, error]) iter.Seq2[Event, error]`, `RenderTools(tools []Tool) (json.RawMessage, error)`, `DefaultReplayEncoding() ReplayEncoding`, and `ReservedKeys() []string`.
+- R-ZGPR-FPAQ: `agentkit` MUST export `type Framer func(io.Reader) iter.Seq2[[]byte, error]`.
+- R-ZHXN-TH1F: `agentkit` MUST export `func SSEFrames(r io.Reader) iter.Seq2[[]byte, error]`, assignable to `Framer`.
+- R-0UPN-4AP7: Framing MUST be separable from body grammar: a `WireFormat` codec MUST run under any `Framer` without modification.

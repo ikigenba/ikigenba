@@ -93,3 +93,6 @@ record and folding a retried request's usage into the turn (D12, D15).
 - R-5AXU-9XZ7: A context cancellation during a wait MUST end `Do` promptly and return the context's error, not a provider error.
 - R-5C5Q-NPPW: `Do` MUST return op's final error unwrapped (never re-wrapped), so `errors.Is`/`errors.As` at the call site still match the original `*Error`.
 - R-5DDN-1HGL: When `onRetry` is non-nil it MUST be called exactly once before each wait, with the failed attempt's 1-based number, its error, and the delay to be waited.
+- R-0HAQ-WTJK: The `agentkit/retry` package MUST export the `Clock` interface whose method set is exactly `Now() time.Time` and `Sleep(ctx context.Context, d time.Duration) error`.
+- R-0IIN-ALA9: The `retry` package MUST export `type Policy struct { MaxAttempts int; Base time.Duration; Max time.Duration; Jitter float64; Clock Clock; Rand func() float64; Retryable func(err error) bool; RetryAfter func(err error) time.Duration }` with exactly those fields.
+- R-0JQJ-OD0Y: The `retry` package MUST export `func Do[T any](ctx context.Context, p Policy, op func(ctx context.Context) (T, error), onRetry func(attempt int, err error, delay time.Duration)) (T, error)`.

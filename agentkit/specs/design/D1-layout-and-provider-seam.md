@@ -137,3 +137,5 @@ type Identity struct {
 - R-1UK3-9CCD: A vendor constructor and the generic wire constructor MUST both yield a `Conversation` that is behaviorally identical apart from credential typing, so the generic `(WireFormat, Endpoint, Model)` path is a fully public first-class construction route.
 - R-1VRZ-N432: The `Provider` SPI MUST be exported and implementable outside the module, and a conforming external implementation injected at construction MUST drive a `Conversation` through `Send` with no agentkit source change.
 - R-1WZW-0VTR: Dependencies MUST point one way — vendor package → `Conversation` → `WireFormat`/`Endpoint` → codec/transport — verified by the absence of any import from a lower layer back to `Conversation` or a vendor package.
+- R-YURK-JTY8: `agentkit` MUST export `Conversation` as an opaque struct type with no exported fields, exposing the method `func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream`.
+- R-YVZG-XLOX: `agentkit` MUST export `type Identity struct { Endpoint string; AuthMode string; Model string }` with exactly those three string fields.
