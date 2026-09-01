@@ -116,6 +116,10 @@ func (provider *composedProvider) Classify(status int, header http.Header, body 
 
 func (provider *composedProvider) Identity() Identity { return provider.identity }
 
+func (provider *composedProvider) reservedKeys() []string {
+	return provider.wire.ReservedKeys()
+}
+
 func (provider *composedProvider) validateSettings(settings Settings) error {
 	validator, ok := provider.wire.(interface{ validateSettings(Settings) error })
 	if !ok {

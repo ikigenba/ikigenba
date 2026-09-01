@@ -42,8 +42,16 @@ func TestAPISelectsResponsesByDefaultAndChatAsAlternate(t *testing.T) {
 }
 
 func TestOAuthAndBaseURLConflictAtConstruction(t *testing.T) {
-	conversation, err := New(OAuth(tokenSourceFunc(func(context.Context) (string, error) { return "token", nil })), "model", WithBaseURL("https://example.test"))
+	// R-4XIY-2GTK
+	calls := 0
+	conversation, err := New(OAuth(tokenSourceFunc(func(context.Context) (string, error) {
+		calls++
+		return "token", nil
+	})), "model", WithBaseURL("https://example.test"))
 	if conversation != nil || !errors.Is(err, agentkit.ErrInvalidConfig) {
 		t.Fatalf("New = (%v, %v), want nil ErrInvalidConfig", conversation, err)
+	}
+	if calls != 0 {
+		t.Fatalf("token source called %d times during rejected construction", calls)
 	}
 }

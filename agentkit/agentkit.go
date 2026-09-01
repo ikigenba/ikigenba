@@ -31,3 +31,11 @@ type Stream struct {
 	events []Event
 	err    error
 }
+
+// Err reports the terminal error that ended the turn, if any.
+func (s *Stream) Err() error {
+	if s == nil {
+		return nil
+	}
+	return s.err
+}

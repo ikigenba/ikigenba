@@ -260,7 +260,10 @@ func parseToolNumber(key, raw string, hasValue bool) (float64, error) {
 		return 0, fmt.Errorf("%s requires a number", key)
 	}
 	value, err := strconv.ParseFloat(raw, 64)
-	if _, valid := finiteToolNumber(value); err != nil || !valid {
+	if err != nil {
+		return 0, fmt.Errorf("%s requires a number", key)
+	}
+	if math.IsInf(value, 0) || math.IsNaN(value) {
 		return 0, fmt.Errorf("%s requires a finite number", key)
 	}
 	return value, nil
@@ -632,4 +635,189 @@ func validateNonNegativeSchemaInteger(schema map[string]any, path, keyword strin
 		return fmt.Errorf("%s: %s must be a non-negative integer", path, keyword)
 	}
 	return nil
+}
+
+func validateToolArguments(schema, arguments json.RawMessage) error {
+	var schemaNode map[string]any
+	schemaDecoder := json.NewDecoder(bytes.NewReader(schema))
+	schemaDecoder.UseNumber()
+	if err := schemaDecoder.Decode(&schemaNode); err != nil {
+		return fmt.Errorf("decode schema: %w", err)
+	}
+	var value any
+	argumentDecoder := json.NewDecoder(bytes.NewReader(arguments))
+	argumentDecoder.UseNumber()
+	if err := argumentDecoder.Decode(&value); err != nil {
+		return fmt.Errorf("decode JSON: %w", err)
+	}
+	if err := ensureToolSchemaEOF(argumentDecoder); err != nil {
+		return err
+	}
+	return validateToolArgumentNode(schemaNode, value, "$")
+}
+
+func validateToolArgumentNode(schema map[string]any, value any, path string) error {
+	for _, nullable := range []string{"anyOf", "oneOf"} {
+		if raw, ok := schema[nullable]; ok {
+			branches := raw.([]any)
+			if value == nil {
+				return nil
+			}
+			for _, branch := range branches {
+				node := branch.(map[string]any)
+				if node["type"] != "null" {
+					return validateToolArgumentNode(node, value, path)
+				}
+			}
+		}
+	}
+
+	typeName := schema["type"].(string)
+	if !toolArgumentMatchesType(value, typeName) {
+		return fmt.Errorf("%s: value must have type %s", path, typeName)
+	}
+	if enum, ok := schema["enum"].([]any); ok {
+		matched := false
+		for _, allowed := range enum {
+			matched = matched || reflect.DeepEqual(normalizeJSONNumber(value), normalizeJSONNumber(allowed))
+		}
+		if !matched {
+			return fmt.Errorf("%s: value is not in enum", path)
+		}
+	}
+
+	switch typed := value.(type) {
+	case map[string]any:
+		properties, _ := schema["properties"].(map[string]any)
+		if required, ok := schema["required"].([]any); ok {
+			for _, raw := range required {
+				name := raw.(string)
+				if _, present := typed[name]; !present {
+					return fmt.Errorf("%s: required property %q is missing", path, name)
+				}
+			}
+		}
+		for name, child := range typed {
+			if property, ok := properties[name].(map[string]any); ok {
+				if err := validateToolArgumentNode(property, child, path+"."+name); err != nil {
+					return err
+				}
+			}
+		}
+	case []any:
+		if minimum, ok := schemaInteger(schema["minItems"]); ok && int64(len(typed)) < minimum {
+			return fmt.Errorf("%s: array has fewer than %d items", path, minimum)
+		}
+		if maximum, ok := schemaInteger(schema["maxItems"]); ok && int64(len(typed)) > maximum {
+			return fmt.Errorf("%s: array has more than %d items", path, maximum)
+		}
+		if unique, _ := schema["uniqueItems"].(bool); unique {
+			for left := range typed {
+				for right := left + 1; right < len(typed); right++ {
+					if reflect.DeepEqual(typed[left], typed[right]) {
+						return fmt.Errorf("%s: array items must be unique", path)
+					}
+				}
+			}
+		}
+		items := schema["items"].(map[string]any)
+		for index, child := range typed {
+			if err := validateToolArgumentNode(items, child, fmt.Sprintf("%s[%d]", path, index)); err != nil {
+				return err
+			}
+		}
+	case string:
+		length := int64(len([]rune(typed)))
+		if minimum, ok := schemaInteger(schema["minLength"]); ok && length < minimum {
+			return fmt.Errorf("%s: string is shorter than %d characters", path, minimum)
+		}
+		if maximum, ok := schemaInteger(schema["maxLength"]); ok && length > maximum {
+			return fmt.Errorf("%s: string is longer than %d characters", path, maximum)
+		}
+		if pattern, ok := schema["pattern"].(string); ok {
+			matched, _ := regexp.MatchString(pattern, typed)
+			if !matched {
+				return fmt.Errorf("%s: string does not match pattern", path)
+			}
+		}
+	case json.Number:
+		value, _ := typed.Float64()
+		for _, bound := range []struct {
+			name      string
+			exclusive bool
+			minimum   bool
+		}{{"minimum", false, true}, {"maximum", false, false}, {"exclusiveMinimum", true, true}, {"exclusiveMaximum", true, false}} {
+			limit, ok := schemaNumber(schema[bound.name])
+			if ok && ((bound.minimum && (value < limit || bound.exclusive && value == limit)) ||
+				(!bound.minimum && (value > limit || bound.exclusive && value == limit))) {
+				return fmt.Errorf("%s: number violates %s", path, bound.name)
+			}
+		}
+		if multiple, ok := schemaNumber(schema["multipleOf"]); ok {
+			quotient := value / multiple
+			if math.Abs(quotient-math.Round(quotient)) > 1e-9 {
+				return fmt.Errorf("%s: number is not a multiple of %v", path, multiple)
+			}
+		}
+	}
+	return nil
+}
+
+func toolArgumentMatchesType(value any, typeName string) bool {
+	switch typeName {
+	case "object":
+		_, ok := value.(map[string]any)
+		return ok
+	case "array":
+		_, ok := value.([]any)
+		return ok
+	case "string":
+		_, ok := value.(string)
+		return ok
+	case "boolean":
+		_, ok := value.(bool)
+		return ok
+	case "number":
+		_, ok := value.(json.Number)
+		return ok
+	case "integer":
+		number, ok := value.(json.Number)
+		if !ok {
+			return false
+		}
+		_, err := strconv.ParseInt(number.String(), 10, 64)
+		return err == nil
+	default:
+		return false
+	}
+}
+
+func schemaInteger(value any) (int64, bool) {
+	if value == nil {
+		return 0, false
+	}
+	switch value := value.(type) {
+	case int64:
+		return value, true
+	case json.Number:
+		parsed, err := strconv.ParseInt(value.String(), 10, 64)
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func schemaNumber(value any) (float64, bool) {
+	if value == nil {
+		return 0, false
+	}
+	return finiteToolNumber(value)
+}
+
+func normalizeJSONNumber(value any) any {
+	if number, ok := value.(json.Number); ok {
+		parsed, _ := number.Float64()
+		return parsed
+	}
+	return value
 }

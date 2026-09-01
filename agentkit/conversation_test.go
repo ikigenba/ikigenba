@@ -99,7 +99,7 @@ func vendorFixture(endpointURL, model string, client *http.Client) (*Conversatio
 	)
 }
 
-func TestEndpointConversationExecutesWithSelectedHTTPClient(t *testing.T) {
+func TestEndpointConversationExecutesWithDefaultHTTPClient(t *testing.T) {
 	// R-YKSS-NDBC
 	originalDefault := http.DefaultClient
 	t.Cleanup(func() { http.DefaultClient = originalDefault })
@@ -123,12 +123,16 @@ func TestEndpointConversationExecutesWithSelectedHTTPClient(t *testing.T) {
 	if defaultCalls != 1 {
 		t.Fatalf("default client calls = %d, want 1", defaultCalls)
 	}
+}
 
+func TestEndpointConversationExecutesWithOverrideHTTPClient(t *testing.T) {
+	// R-YKSS-NDBC
 	overrideCalls := 0
 	overrideClient := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		overrideCalls++
 		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}, nil
 	})}
+	auth := authFunc(func(context.Context, *http.Request, []byte) error { return nil })
 	overrideEndpoint, err := NewEndpoint("https://override.test/messages", auth, WithHTTPClient(overrideClient))
 	if err != nil {
 		t.Fatal(err)
@@ -138,23 +142,24 @@ func TestEndpointConversationExecutesWithSelectedHTTPClient(t *testing.T) {
 	}
 	overrideConversation := newEndpointConversation(&testWire{}, overrideEndpoint, Identity{Model: "override-model"})
 	overrideConversation.Send(context.Background(), Text{Text: "hello"})
-	if overrideCalls != 1 || defaultCalls != 1 {
-		t.Fatalf("override calls=%d default calls=%d, want 1 each", overrideCalls, defaultCalls)
+	if overrideCalls != 1 {
+		t.Fatalf("override client calls = %d, want 1", overrideCalls)
 	}
 }
 
-func TestConversationAxesAreStableAndModelIsVerbatim(t *testing.T) {
+type conversationAxesCapture struct {
+	body []byte
+	err  error
+}
+
+func newConversationAxesFixture(t *testing.T) (*Conversation, *fixtureProvider, string, *conversationAxesCapture) {
+	t.Helper()
+	capture := &conversationAxesCapture{}
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		body, err := io.ReadAll(request.Body)
-		if err != nil {
-			t.Error(err)
-		}
-		if string(body) != "messages" {
-			t.Errorf("wire body = %q, want messages", body)
-		}
+		capture.body, capture.err = io.ReadAll(request.Body)
 		writer.WriteHeader(http.StatusBadRequest)
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
 
 	unknownModel := "released-today/unknown model β"
 	conversation, provider := genericFixture(
@@ -163,29 +168,47 @@ func TestConversationAxesAreStableAndModelIsVerbatim(t *testing.T) {
 		unknownModel,
 		server.Client(),
 	)
+	return conversation, provider, unknownModel, capture
+}
 
+func TestConversationExposesOnlySendAsExportedMethod(t *testing.T) {
 	// R-1POH-Q9DL
+	conversation, _, _, _ := newConversationAxesFixture(t)
 	conversationType := reflect.TypeOf(conversation)
 	for index := range conversationType.NumMethod() {
 		if conversationType.Method(index).Name != "Send" {
 			t.Fatalf("unexpected exported reassignment/API method %q", conversationType.Method(index).Name)
 		}
 	}
+}
 
+func TestConversationSendsModelVerbatim(t *testing.T) {
 	// R-1S4A-HSUZ
+	conversation, provider, unknownModel, capture := newConversationAxesFixture(t)
 	stream := conversation.Send(context.Background(), Text{Text: "text"})
+	if capture.err != nil {
+		t.Fatal(capture.err)
+	}
+	if string(capture.body) != "messages" {
+		t.Fatalf("wire body = %q, want messages", capture.body)
+	}
 	if len(provider.states) != 1 || provider.states[0].Model != unknownModel {
 		t.Fatalf("provider states = %#v; model was not transmitted verbatim", provider.states)
 	}
 	if stream.err == nil || stream.err.Error() != "unknown: status 400 (status 400)" {
 		t.Fatalf("stream error = %v, want classified vendor error status 400", stream.err)
 	}
+}
+
+func TestConversationIdentityRemainsStable(t *testing.T) {
+	// R-1S4A-HSUZ
+	_, provider, unknownModel, _ := newConversationAxesFixture(t)
 	if got := provider.Identity(); got != (Identity{Endpoint: "vendor", AuthMode: "fixture", Model: unknownModel}) {
 		t.Fatalf("identity changed or fused: %#v", got)
 	}
 }
 
-func TestSendValidationFailsBeforeEveryProviderBoundary(t *testing.T) {
+func TestSendValidationFailsBeforeConfiguredProviderBoundaries(t *testing.T) {
 	// R-2TX6-COUI
 	// R-2V52-QGL7
 	tests := []struct {
@@ -607,5 +630,390 @@ func boundaryWire(capabilities wireCapabilities, encoded func(RequestState), dec
 			}
 		},
 		render: func([]Tool) (json.RawMessage, error) { return nil, nil },
+	}
+}
+
+type phase15Provider struct {
+	model         string
+	states        []RequestState
+	responses     [][]Event
+	decodeErrors  []error
+	decodeCalls   int
+	classifyCalls int
+	classified    error
+}
+
+type phase15TransportStep struct {
+	response *http.Response
+	err      error
+}
+
+type phase15Transport struct {
+	steps []phase15TransportStep
+	calls int
+}
+
+func (t *phase15Transport) RoundTrip(*http.Request) (*http.Response, error) {
+	t.calls++
+	if len(t.steps) == 0 {
+		return nil, errors.New("unexpected transport call")
+	}
+	step := t.steps[0]
+	t.steps = t.steps[1:]
+	return step.response, step.err
+}
+
+func (p *phase15Provider) BuildRequest(ctx context.Context, state RequestState) (*http.Request, error) {
+	p.states = append(p.states, cloneRequestState(state))
+	if state.Options != nil {
+		state.Options["mutated"] = json.RawMessage(`true`)
+		for key := range state.Options {
+			state.Options[key] = json.RawMessage(`null`)
+			break
+		}
+	}
+	if len(state.History) > 0 {
+		state.History[0].Blocks = nil
+	}
+	if len(state.Tools) > 0 {
+		state.Tools[0] = nil
+	}
+	return http.NewRequestWithContext(ctx, http.MethodPost, "https://phase15.invalid", nil)
+}
+
+func (p *phase15Provider) Decode(_ context.Context, _ *http.Response) iter.Seq2[Event, error] {
+	index := p.decodeCalls
+	p.decodeCalls++
+	return func(yield func(Event, error) bool) {
+		if index < len(p.responses) {
+			for _, event := range p.responses[index] {
+				if !yield(event, nil) {
+					return
+				}
+			}
+		}
+		if index < len(p.decodeErrors) && p.decodeErrors[index] != nil {
+			yield(nil, p.decodeErrors[index])
+		}
+	}
+}
+
+func (p *phase15Provider) Classify(int, http.Header, []byte) error {
+	p.classifyCalls++
+	return p.classified
+}
+
+func (p *phase15Provider) Identity() Identity {
+	return Identity{Endpoint: "phase15", AuthMode: "fixture", Model: p.model}
+}
+
+func cloneRequestState(state RequestState) RequestState {
+	return RequestState{
+		Model:    state.Model,
+		History:  cloneHistory(state.History),
+		Settings: cloneSettings(state.Settings),
+		Options:  cloneProviderOptions(state.Options),
+		Tools:    cloneTools(state.Tools),
+	}
+}
+
+func successfulPhase15Client(transportCalls *int) *http.Client {
+	return &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		*transportCalls++
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}, nil
+	})}
+}
+
+type phase15Input struct {
+	City string `json:"city" jsonschema:"required,minLength=2"`
+}
+
+func TestSendCompletesToolRoundTripsWithFixedClonedConfigAndOneCommit(t *testing.T) {
+	// R-4NRR-0AW0
+	// R-4OZN-E2MP
+	// R-4Q7J-RUDE
+	// R-4TV8-X5LH
+	callID := "vendor::call/β-0099-not-a-local-id"
+	first := Message{Role: RoleAssistant, Blocks: []Block{
+		Text{Text: "checking"},
+		ToolUse{ID: callID, Name: "weather", Input: json.RawMessage(`{"city":"Oslo"}`)},
+	}}
+	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "clear skies"}}}
+	provider := &phase15Provider{model: "fixed/model β", responses: [][]Event{{first}, {final}}}
+	transportCalls := 0
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	temperature := 0.25
+	conversation.settings = Settings{Temperature: &temperature, StopSequences: []string{"END"}}
+	conversation.options = ProviderOptions{"vendor_flag": json.RawMessage(`{"mode":"exact"}`)}
+	toolCalls := 0
+	weather := MustTool("weather", "look up weather", func(_ context.Context, input phase15Input) (string, error) {
+		toolCalls++
+		return "weather for " + input.City, nil
+	})
+	conversation.tools = []Tool{weather}
+	prior := Message{Role: RoleSystem, Blocks: []Block{Text{Text: "stable"}}}
+	conversation.history = History{prior}
+	user := Message{Role: RoleUser, Blocks: []Block{Text{Text: "forecast"}}}
+	result := Message{Role: RoleTool, Blocks: []Block{ToolResult{ToolUseID: callID, Content: "weather for Oslo"}}}
+
+	stream := conversation.Send(context.Background(), user.Blocks...)
+	if stream.Err() != nil {
+		t.Fatal(stream.Err())
+	}
+	if transportCalls != 2 || provider.decodeCalls != 2 || toolCalls != 1 {
+		t.Fatalf("calls: transport=%d decode=%d tool=%d, want 2, 2, 1", transportCalls, provider.decodeCalls, toolCalls)
+	}
+	wantHistories := []History{{prior, user}, {prior, user, first, result}}
+	if len(provider.states) != 2 {
+		t.Fatalf("round-trip state count = %d, want 2", len(provider.states))
+	}
+	for index, state := range provider.states {
+		if state.Model != provider.model || !reflect.DeepEqual(state.History, []Message(wantHistories[index])) ||
+			!reflect.DeepEqual(state.Settings, conversation.settings) || !reflect.DeepEqual(state.Options, conversation.options) ||
+			len(state.Tools) != 1 || state.Tools[0].Name() != weather.Name() || !bytes.Equal(state.Tools[0].Schema(), weather.Schema()) {
+			t.Fatalf("round-trip state %d = %#v, want fixed cloned config and history %#v", index, state, wantHistories[index])
+		}
+	}
+	if got := stream.events; !reflect.DeepEqual(got, []Event{first, result, final}) {
+		t.Fatalf("stream events = %#v, want assistant/tool/assistant order", got)
+	}
+	if got := conversation.history; !reflect.DeepEqual(got, History{prior, user, first, result, final}) {
+		t.Fatalf("history = %#v, want one complete turn splice", got)
+	}
+	if result.Blocks[0].(ToolResult).ToolUseID != callID || provider.states[1].History[3].Blocks[0].(ToolResult).ToolUseID != callID {
+		t.Fatal("tool result did not preserve the vendor call id byte-for-byte")
+	}
+	if got := reflect.TypeOf(conversation).NumMethod(); got != 1 || reflect.TypeOf(conversation).Method(0).Name != "Send" {
+		t.Fatalf("Conversation exported methods changed: %v", reflect.TypeOf(conversation))
+	}
+	if _, mutated := conversation.options["mutated"]; mutated || !bytes.Equal(conversation.options["vendor_flag"], []byte(`{"mode":"exact"}`)) {
+		t.Fatalf("provider snapshot mutated fixed options: %#v", conversation.options)
+	}
+	if conversation.tools[0] == nil || conversation.settings.StopSequences[0] != "END" || conversation.history[0].Blocks == nil {
+		t.Fatal("provider snapshot mutated fixed config or prior history")
+	}
+}
+
+func TestToolDispatchFailuresAreInBandAndRecoverable(t *testing.T) {
+	// R-4RFG-5M43
+	tests := []struct {
+		name              string
+		toolName          string
+		input             json.RawMessage
+		tools             func(*int) []Tool
+		wantCallbackCalls int
+	}{
+		{name: "unknown tool", toolName: "missing", input: json.RawMessage(`{}`), tools: func(*int) []Tool { return nil }},
+		{name: "invalid arguments", toolName: "weather", input: json.RawMessage(`{"city":"x"}`), tools: func(calls *int) []Tool {
+			return []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) {
+				*calls++
+				return "must not run", nil
+			})}
+		}},
+		{name: "callback error", toolName: "weather", input: json.RawMessage(`{"city":"Oslo"}`), wantCallbackCalls: 1, tools: func(calls *int) []Tool {
+			return []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) {
+				*calls++
+				return "", errors.New("tool backend unavailable")
+			})}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			callbackCalls := 0
+			callID := "vendor-id-for-" + test.name
+			first := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: callID, Name: test.toolName, Input: test.input}}}
+			final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "recovered"}}}
+			provider := &phase15Provider{model: "model", responses: [][]Event{{first}, {final}}}
+			transportCalls := 0
+			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+			conversation.tools = test.tools(&callbackCalls)
+
+			stream := conversation.Send(context.Background(), Text{Text: "go"})
+			if stream.Err() != nil || provider.decodeCalls != 2 || transportCalls != 2 {
+				t.Fatalf("turn = err %v, decode %d, transport %d; want clean two-round recovery", stream.Err(), provider.decodeCalls, transportCalls)
+			}
+			if callbackCalls != test.wantCallbackCalls {
+				t.Fatalf("callback calls = %d, want %d", callbackCalls, test.wantCallbackCalls)
+			}
+			toolMessage := provider.states[1].History[len(provider.states[1].History)-1]
+			result, ok := toolMessage.Blocks[0].(ToolResult)
+			if !ok || !result.IsError || result.ToolUseID != callID || result.Content == "" {
+				t.Fatalf("in-band result = %#v, want IsError with exact id and content", toolMessage.Blocks[0])
+			}
+			if !reflect.DeepEqual(stream.events[len(stream.events)-1], final) {
+				t.Fatalf("final recovery event = %#v, want %#v", stream.events, final)
+			}
+		})
+	}
+}
+
+func TestTerminalFailuresAfterCompletedRoundTripPreserveEventsAndAtomicHistory(t *testing.T) {
+	// R-4Q7J-RUDE
+	// R-4SNC-JDUS
+	tests := []struct {
+		name      string
+		decodeErr error
+		wantErr   error
+	}{
+		{name: "transport", wantErr: errors.New("second transport failed")},
+		{name: "classified vendor", wantErr: &Error{Category: CategoryRateLimit, Status: http.StatusTooManyRequests, Message: "slow down"}},
+		{name: "decode", decodeErr: errors.New("broken terminal frame"), wantErr: errors.New("broken terminal frame")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			callID := "vendor-terminal-id"
+			first := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: callID, Name: "weather", Input: json.RawMessage(`{"city":"Oslo"}`)}}}
+			partial := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "observable before decode failure"}}}
+			provider := &phase15Provider{model: "model", responses: [][]Event{{first}, nil}}
+			if test.name == "decode" {
+				provider.responses[1] = []Event{partial}
+				provider.decodeErrors = []error{nil, test.decodeErr}
+			}
+			if test.name == "classified vendor" {
+				provider.classified = test.wantErr
+			}
+			success := func() *http.Response {
+				return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}
+			}
+			second := phase15TransportStep{response: success()}
+			switch test.name {
+			case "transport":
+				second = phase15TransportStep{err: test.wantErr}
+			case "classified vendor":
+				second = phase15TransportStep{response: &http.Response{StatusCode: http.StatusTooManyRequests, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("rate limited"))}}
+			}
+			transport := &phase15Transport{steps: []phase15TransportStep{{response: success()}, second}}
+			client := &http.Client{Transport: transport}
+			toolCalls := 0
+			conversation := NewConversation(provider, client)
+			conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) {
+				toolCalls++
+				return "sunny", nil
+			})}
+			conversation.history = History{{Role: RoleSystem, Blocks: []Block{Text{Text: "stable"}}}}
+			before, err := json.Marshal(conversation.history)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			stream := conversation.Send(context.Background(), Text{Text: "do not commit"})
+			expected := test.wantErr
+			if test.name == "decode" {
+				expected = test.decodeErr
+			}
+			if stream.Err() == nil || !errors.Is(stream.Err(), expected) {
+				t.Fatalf("Stream.Err() = %v, want terminal error wrapping %v", stream.Err(), expected)
+			}
+			after, err := json.Marshal(conversation.history)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(before, after) {
+				t.Fatalf("history changed: before=%s after=%s", before, after)
+			}
+			wantClassifyCalls := 0
+			if test.name == "classified vendor" {
+				wantClassifyCalls = 1
+			}
+			if toolCalls != 1 || transport.calls != 2 || len(provider.states) != 2 || provider.classifyCalls != wantClassifyCalls {
+				t.Fatalf("calls after terminal error: tool=%d transport=%d build=%d classify=%d", toolCalls, transport.calls, len(provider.states), provider.classifyCalls)
+			}
+			wantEvents := 2
+			if test.name == "decode" {
+				wantEvents = 3
+			}
+			if len(stream.events) != wantEvents || !reflect.DeepEqual(stream.events[0], first) {
+				t.Fatalf("completed first-round events were lost: %#v", stream.events)
+			}
+			if test.name == "decode" && !reflect.DeepEqual(stream.events[len(stream.events)-1], partial) {
+				t.Fatalf("message before decode failure was lost: %#v", stream.events)
+			}
+		})
+	}
+}
+
+type phase15Wire struct {
+	reserved    []string
+	encodeCalls int
+	decodeCalls int
+	state       RequestState
+}
+
+func (w *phase15Wire) EncodeRequest(state RequestState) ([]byte, error) {
+	w.encodeCalls++
+	w.state = cloneRequestState(state)
+	state.Options["safe"] = json.RawMessage(`null`)
+	return []byte(`{}`), nil
+}
+
+func (w *phase15Wire) DecodeStream(iter.Seq2[[]byte, error]) iter.Seq2[Event, error] {
+	w.decodeCalls++
+	return func(func(Event, error) bool) {}
+}
+
+func (*phase15Wire) RenderTools([]Tool) (json.RawMessage, error) { return nil, nil }
+func (w *phase15Wire) ReservedKeys() []string                    { return append([]string(nil), w.reserved...) }
+
+func TestProviderOptionsReservedCollisionFailsBeforeProviderBoundaries(t *testing.T) {
+	// R-4V35-AXC6
+	authCalls := 0
+	transportCalls := 0
+	classifyCalls := 0
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		transportCalls++
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}, nil
+	})}
+	endpoint, err := NewEndpoint(
+		"https://phase15.invalid",
+		authFunc(func(context.Context, *http.Request, []byte) error { authCalls++; return nil }),
+		WithHTTPClient(client),
+		WithClassifier(func(int, http.Header, []byte) error { classifyCalls++; return errors.New("unused") }),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire := &phase15Wire{reserved: []string{"model"}}
+	conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "phase15", Model: "model"})
+	conversation.history = History{{Role: RoleSystem, Blocks: []Block{Text{Text: "stable"}}}}
+	conversation.options = ProviderOptions{"model": json.RawMessage(`"override"`)}
+	before, _ := json.Marshal(conversation.history)
+
+	stream := conversation.Send(context.Background(), Text{Text: "blocked"})
+	if !errors.Is(stream.Err(), ErrInvalidConfig) {
+		t.Fatalf("Stream.Err() = %v, want ErrInvalidConfig", stream.Err())
+	}
+	after, _ := json.Marshal(conversation.history)
+	if wire.encodeCalls != 0 || wire.decodeCalls != 0 || authCalls != 0 || transportCalls != 0 || classifyCalls != 0 {
+		t.Fatalf("calls after collision: encode=%d decode=%d auth=%d transport=%d classify=%d", wire.encodeCalls, wire.decodeCalls, authCalls, transportCalls, classifyCalls)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatalf("history changed: before=%s after=%s", before, after)
+	}
+}
+
+func TestProviderOptionsNoncollidingSnapshotIsCloned(t *testing.T) {
+	// R-4V35-AXC6
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}, nil
+	})}
+	endpoint, err := NewEndpoint(
+		"https://phase15.invalid",
+		authFunc(func(context.Context, *http.Request, []byte) error { return nil }),
+		WithHTTPClient(client),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire := &phase15Wire{reserved: []string{"model"}}
+	conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "phase15", Model: "model"})
+	conversation.options = ProviderOptions{"safe": json.RawMessage(`{"verbatim":true}`)}
+	if stream := conversation.Send(context.Background(), Text{Text: "allowed"}); stream.Err() != nil {
+		t.Fatal(stream.Err())
+	}
+	if wire.encodeCalls != 1 || !bytes.Equal(wire.state.Options["safe"], []byte(`{"verbatim":true}`)) {
+		t.Fatalf("noncolliding options snapshot = %#v, encode calls %d", wire.state.Options, wire.encodeCalls)
+	}
+	if !bytes.Equal(conversation.options["safe"], []byte(`{"verbatim":true}`)) {
+		t.Fatalf("provider mutated conversation options: %#v", conversation.options)
 	}
 }
