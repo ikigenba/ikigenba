@@ -296,6 +296,148 @@ func TestToolDeclarationIsExactAndSealed(t *testing.T) {
 	}
 }
 
+func TestExternalPackageCannotImplementSealedTool(t *testing.T) {
+	// R-3Y5U-Z4BF
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	temporary := t.TempDir()
+	module := "module externaltooltest\n\ngo 1.26\n\nrequire github.com/ikigenba/ikigenba/agentkit v0.0.0\n\nreplace github.com/ikigenba/ikigenba/agentkit => " + workingDirectory + "\n"
+	source := `package externaltooltest
+
+import (
+	"context"
+	"encoding/json"
+
+	"github.com/ikigenba/ikigenba/agentkit"
+)
+
+type outsider struct{}
+
+func (outsider) Name() string { return "outside" }
+func (outsider) Description() string { return "outside" }
+func (outsider) Schema() json.RawMessage { return json.RawMessage(` + "`{\"type\":\"object\"}`" + `) }
+func (outsider) Call(context.Context, json.RawMessage) (string, error) { return "", nil }
+func (outsider) isTool() {}
+
+var _ agentkit.Tool = outsider{}
+`
+	if err := os.WriteFile(filepath.Join(temporary, "go.mod"), []byte(module), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(temporary, "outside_test.go"), []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("go", "test", ".")
+	command.Dir = temporary
+	output, err := command.CombinedOutput()
+	if err == nil {
+		t.Fatalf("external Tool implementation compiled successfully:\n%s", output)
+	}
+	if !bytes.Contains(output, []byte("unexported method isTool")) {
+		t.Fatalf("external implementation failed for the wrong reason: %v\n%s", err, output)
+	}
+}
+
+func TestJSONSchemaVocabularyIsDocumentedStringGrammarNotExportedConstants(t *testing.T) {
+	// R-431G-I7A7
+	parsed, err := parser.ParseFile(token.NewFileSet(), "tool.go", nil, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var newToolDocumentation string
+	for _, declaration := range parsed.Decls {
+		switch declaration := declaration.(type) {
+		case *ast.FuncDecl:
+			if declaration.Name.Name == "NewTool" && declaration.Doc != nil {
+				newToolDocumentation = declaration.Doc.Text()
+			}
+		case *ast.GenDecl:
+			if declaration.Tok != token.CONST {
+				continue
+			}
+			for _, specification := range declaration.Specs {
+				for _, name := range specification.(*ast.ValueSpec).Names {
+					if name.IsExported() {
+						t.Fatalf("tool.go exports tag-vocabulary constant %s", name.Name)
+					}
+				}
+			}
+		}
+	}
+	for _, fragment := range []string{
+		"jsonschema string tag", "required", "enum=a|b", "description=text", "minimum=n", "maximum=n",
+		"minLength=n", "maxLength=n", "pattern=expr", "format=name", "minItems=n", "maxItems=n",
+	} {
+		if !strings.Contains(newToolDocumentation, fragment) {
+			t.Errorf("NewTool documentation does not describe string grammar fragment %q:\n%s", fragment, newToolDocumentation)
+		}
+	}
+}
+
+func TestEveryToolConstructionAndWireRenderingUsesExportedSchemaChecker(t *testing.T) {
+	// R-45H9-9QRL
+	wantCalls := map[string]string{
+		"NewTool":           "newTool",
+		"MustTool":          "NewTool",
+		"NewToolFromSchema": "newTool",
+		"newTool":           "ValidateToolSchema",
+	}
+	for functionName, calledName := range wantCalls {
+		function := declaredFunction(t, "tool.go", functionName)
+		if !functionCallsIdentifier(function, calledName) {
+			t.Errorf("%s does not route through %s", functionName, calledName)
+		}
+	}
+	wireRender := declaredMethod(t, "wire.go", "RenderTools")
+	if !functionCallsIdentifier(wireRender, "ValidateToolSchema") {
+		t.Fatal("wireCodec.RenderTools does not defensively call exported ValidateToolSchema")
+	}
+	parsed, err := parser.ParseFile(token.NewFileSet(), "tool.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, declaration := range parsed.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && function.Name.IsExported() && strings.Contains(function.Name.Name, "Schema") && strings.Contains(function.Name.Name, "Valid") && function.Name.Name != "ValidateToolSchema" {
+			t.Fatalf("competing exported schema checker %s exists", function.Name.Name)
+		}
+	}
+}
+
+func functionCallsIdentifier(function *ast.FuncDecl, name string) bool {
+	found := false
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		identifier, ok := call.Fun.(*ast.Ident)
+		if ok && identifier.Name == name {
+			found = true
+		}
+		return true
+	})
+	return found
+}
+
+func declaredMethod(t *testing.T, filename, name string) *ast.FuncDecl {
+	t.Helper()
+	parsed, err := parser.ParseFile(token.NewFileSet(), filename, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, declaration := range parsed.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && function.Recv != nil && function.Name.Name == name {
+			return function
+		}
+	}
+	t.Fatalf("method %s is not declared in %s", name, filename)
+	return nil
+}
+
 type architectureToolInput struct {
 	Query string `json:"query" jsonschema:"required"`
 }

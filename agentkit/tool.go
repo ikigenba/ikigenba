@@ -1,11 +1,17 @@
 package agentkit
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"math"
 	"reflect"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -35,6 +41,14 @@ func (t concreteTool) Call(ctx context.Context, args json.RawMessage) (string, e
 }
 
 // NewTool builds a Tool from a Go input type and a typed callback.
+//
+// Exported struct fields may use a comma-separated jsonschema string tag. The
+// flag "required" and the key=value forms "enum=a|b", "description=text",
+// "minimum=n", "maximum=n", "exclusiveMinimum=n", "exclusiveMaximum=n",
+// "multipleOf=n", "minLength=n", "maxLength=n", "pattern=expr",
+// "format=name", "minItems=n", "maxItems=n", and "uniqueItems=true|false"
+// are recognized. Unknown keys and malformed values make NewTool return an
+// error. JSON field names continue to come from the field's json tag.
 func NewTool[In any](name, description string, fn func(ctx context.Context, in In) (string, error)) (Tool, error) {
 	schemaValue, err := deriveToolSchema(reflect.TypeFor[In](), make(map[reflect.Type]bool))
 	if err != nil {
@@ -72,7 +86,7 @@ func deriveToolSchema(typeOf reflect.Type, visiting map[reflect.Type]bool) (map[
 			if !field.IsExported() {
 				continue
 			}
-			jsonName, omitEmpty, skip := toolJSONField(field)
+			jsonName, _, skip := toolJSONField(field)
 			if skip {
 				continue
 			}
@@ -80,11 +94,17 @@ func deriveToolSchema(typeOf reflect.Type, visiting map[reflect.Type]bool) (map[
 			if err != nil {
 				return nil, fmt.Errorf("field %s: %w", field.Name, err)
 			}
+			isRequired, err := applyToolSchemaTag(property, field.Tag.Get("jsonschema"))
+			if err != nil {
+				return nil, fmt.Errorf("field %s jsonschema tag: %w", field.Name, err)
+			}
+			// Retain the precursor spelling while the documented jsonschema tag is
+			// the preferred string contract.
 			if description := field.Tag.Get("jsonschema_description"); description != "" {
 				property["description"] = description
 			}
 			properties[jsonName] = property
-			if !omitEmpty && toolSchemaRequired(field.Tag.Get("jsonschema")) {
+			if isRequired {
 				required = append(required, jsonName)
 			}
 		}
@@ -141,13 +161,120 @@ func toolJSONField(field reflect.StructField) (name string, omitEmpty, skip bool
 	return name, omitEmpty, false
 }
 
-func toolSchemaRequired(tag string) bool {
-	for _, option := range strings.Split(tag, ",") {
-		if option == "required" {
-			return true
+func applyToolSchemaTag(schema map[string]any, tag string) (bool, error) {
+	if tag == "" {
+		return false, nil
+	}
+	required := false
+	seen := make(map[string]bool)
+	for _, entry := range strings.Split(tag, ",") {
+		key, raw, hasValue := strings.Cut(entry, "=")
+		if key == "" {
+			return false, errors.New("empty option")
+		}
+		if seen[key] {
+			return false, fmt.Errorf("duplicate option %q", key)
+		}
+		seen[key] = true
+		switch key {
+		case "required":
+			if hasValue {
+				return false, errors.New("required does not take a value")
+			}
+			required = true
+		case "enum":
+			if !hasValue || raw == "" {
+				return false, errors.New("enum requires a non-empty value")
+			}
+			values := strings.Split(raw, "|")
+			converted := make([]any, len(values))
+			for index, value := range values {
+				if value == "" {
+					return false, errors.New("enum contains an empty value")
+				}
+				parsed, err := parseToolEnumValue(schema["type"], value)
+				if err != nil {
+					return false, fmt.Errorf("enum value %q: %w", value, err)
+				}
+				converted[index] = parsed
+			}
+			schema[key] = converted
+		case "description", "pattern", "format":
+			if !hasValue || raw == "" {
+				return false, fmt.Errorf("%s requires a non-empty value", key)
+			}
+			schema[key] = raw
+		case "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf":
+			value, err := parseToolNumber(key, raw, hasValue)
+			if err != nil {
+				return false, err
+			}
+			schema[key] = value
+		case "minLength", "maxLength", "minItems", "maxItems":
+			value, err := parseToolNonNegativeInteger(key, raw, hasValue)
+			if err != nil {
+				return false, err
+			}
+			schema[key] = value
+		case "uniqueItems":
+			if !hasValue {
+				return false, errors.New("uniqueItems requires true or false")
+			}
+			value, err := strconv.ParseBool(raw)
+			if err != nil {
+				return false, fmt.Errorf("uniqueItems requires true or false: %w", err)
+			}
+			schema[key] = value
+		default:
+			return false, fmt.Errorf("unknown option %q", key)
 		}
 	}
-	return false
+	return required, nil
+}
+
+func parseToolEnumValue(typeName any, raw string) (any, error) {
+	var (
+		value any
+		err   error
+	)
+	switch typeName {
+	case "string":
+		value = raw
+	case "integer":
+		value, err = strconv.ParseInt(raw, 10, 64)
+	case "number":
+		value, err = strconv.ParseFloat(raw, 64)
+	case "boolean":
+		value, err = strconv.ParseBool(raw)
+	default:
+		return nil, fmt.Errorf("is not supported for schema type %q", typeName)
+	}
+	if err != nil || !toolEnumMatchesType(value, typeName.(string)) {
+		return nil, fmt.Errorf("must match schema type %q", typeName)
+	}
+	return value, nil
+}
+
+func parseToolNumber(key, raw string, hasValue bool) (float64, error) {
+	if !hasValue || raw == "" {
+		return 0, fmt.Errorf("%s requires a number", key)
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if _, valid := finiteToolNumber(value); err != nil || !valid {
+		return 0, fmt.Errorf("%s requires a finite number", key)
+	}
+	return value, nil
+}
+
+func parseToolNonNegativeInteger(key, raw string, hasValue bool) (int64, error) {
+	if !hasValue || raw == "" {
+		return 0, fmt.Errorf("%s requires a non-negative integer", key)
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if valid := nonNegativeToolInteger(value); err != nil || !valid {
+		return 0, fmt.Errorf("%s requires a non-negative integer", key)
+	}
+	return value, nil
 }
 
 // MustTool is the panicking sibling of NewTool.
@@ -174,35 +301,335 @@ func newTool(name, description string, schema json.RawMessage, fn func(context.C
 // ValidateToolSchema reports whether a raw schema lies within the canonical
 // subset every wire can render.
 func ValidateToolSchema(schema json.RawMessage) error {
+	decoder := json.NewDecoder(bytes.NewReader(schema))
+	decoder.UseNumber()
 	var root any
-	if err := json.Unmarshal(schema, &root); err != nil {
+	if err := decoder.Decode(&root); err != nil {
 		return fmt.Errorf("invalid JSON schema: %w", err)
 	}
+	if err := ensureToolSchemaEOF(decoder); err != nil {
+		return err
+	}
 	object, ok := root.(map[string]any)
-	if !ok || object["type"] != "object" {
+	if !ok {
+		return errors.New("schema root must be an object")
+	}
+	if object["type"] != "object" {
 		return errors.New("schema root must have type object")
 	}
-	return rejectUnsupportedSchemaKeywords(object)
+	return validateToolSchemaNode(object, "$")
 }
 
-func rejectUnsupportedSchemaKeywords(value any) error {
+func ensureToolSchemaEOF(decoder *json.Decoder) error {
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("invalid JSON schema: multiple JSON values")
+		}
+		return fmt.Errorf("invalid JSON schema: %w", err)
+	}
+	return nil
+}
+
+func validateToolSchemaNode(schema map[string]any, path string) error {
+	for _, keyword := range []string{"$ref", "$defs", "definitions", "additionalProperties", "allOf", "not", "if", "then", "else"} {
+		if _, present := schema[keyword]; present {
+			return fmt.Errorf("%s: %s not permitted", path, keyword)
+		}
+	}
+	if _, anyOf := schema["anyOf"]; anyOf {
+		return validateNullableToolSchema(schema, path, "anyOf")
+	}
+	if _, oneOf := schema["oneOf"]; oneOf {
+		return validateNullableToolSchema(schema, path, "oneOf")
+	}
+
+	typeName, ok := schema["type"].(string)
+	if !ok {
+		return fmt.Errorf("%s: type must be one supported string", path)
+	}
+	if typeName == "null" {
+		return fmt.Errorf("%s: type %q not permitted", path, typeName)
+	}
+	allowed := map[string]bool{"type": true, "description": true, "enum": true}
+	switch typeName {
+	case "object":
+		allowed["properties"] = true
+		allowed["required"] = true
+	case "array":
+		allowed["items"] = true
+		allowed["minItems"] = true
+		allowed["maxItems"] = true
+		allowed["uniqueItems"] = true
+	case "string":
+		allowed["minLength"] = true
+		allowed["maxLength"] = true
+		allowed["pattern"] = true
+		allowed["format"] = true
+	case "number", "integer":
+		allowed["minimum"] = true
+		allowed["maximum"] = true
+		allowed["exclusiveMinimum"] = true
+		allowed["exclusiveMaximum"] = true
+		allowed["multipleOf"] = true
+	case "boolean":
+	default:
+		return fmt.Errorf("%s: type %q not permitted", path, typeName)
+	}
+	if err := validateToolSchemaKeywords(schema, allowed, path, typeName); err != nil {
+		return err
+	}
+	switch typeName {
+	case "object":
+		return validateToolObjectSchema(schema, path)
+	case "array":
+		return validateToolArraySchema(schema, path)
+	case "string":
+		return validateToolStringSchema(schema, path)
+	case "number", "integer":
+		return validateToolNumericSchema(schema, path)
+	default:
+		return nil
+	}
+}
+
+func validateNullableToolSchema(schema map[string]any, path, keyword string) error {
+	if len(schema) != 1 {
+		return fmt.Errorf("%s: %s nullable form may not have sibling keywords", path, keyword)
+	}
+	branches, ok := schema[keyword].([]any)
+	if !ok || len(branches) != 2 {
+		return fmt.Errorf("%s: %s only permits one schema plus null", path, keyword)
+	}
+	regular := -1
+	null := -1
+	for index, branch := range branches {
+		object, branchOK := branch.(map[string]any)
+		if !branchOK {
+			return fmt.Errorf("%s.%s[%d]: schema must be an object", path, keyword, index)
+		}
+		if object["type"] == "null" && len(object) == 1 {
+			null = index
+		} else {
+			regular = index
+		}
+	}
+	if regular < 0 || null < 0 {
+		return fmt.Errorf("%s: %s only permits one schema plus null", path, keyword)
+	}
+	return validateToolSchemaNode(branches[regular].(map[string]any), fmt.Sprintf("%s.%s[%d]", path, keyword, regular))
+}
+
+func validateToolSchemaKeywords(schema map[string]any, allowed map[string]bool, path, typeName string) error {
+	keys := make([]string, 0, len(schema))
+	for key := range schema {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if !allowed[key] {
+			return fmt.Errorf("%s: keyword %q not permitted for type %s", path, key, typeName)
+		}
+	}
+	if description, present := schema["description"]; present {
+		if _, ok := description.(string); !ok {
+			return fmt.Errorf("%s: description must be a string", path)
+		}
+	}
+	if enum, present := schema["enum"]; present {
+		values, ok := enum.([]any)
+		if !ok || len(values) == 0 {
+			return fmt.Errorf("%s: enum must be a non-empty array", path)
+		}
+		for index, value := range values {
+			if !toolEnumMatchesType(value, typeName) {
+				return fmt.Errorf("%s.enum[%d]: value does not match type %s", path, index, typeName)
+			}
+		}
+	}
+	return nil
+}
+
+func toolEnumMatchesType(value any, typeName string) bool {
+	switch typeName {
+	case "string":
+		_, ok := value.(string)
+		return ok
+	case "boolean":
+		_, ok := value.(bool)
+		return ok
+	case "number":
+		_, ok := finiteToolNumber(value)
+		return ok
+	case "integer":
+		return isToolInteger(value)
+	default:
+		return false
+	}
+}
+
+func isToolInteger(value any) bool {
 	switch value := value.(type) {
-	case map[string]any:
-		for key, child := range value {
-			switch key {
-			case "$ref", "$defs", "definitions", "allOf", "anyOf", "oneOf", "not", "if", "then", "else":
-				return fmt.Errorf("unsupported schema keyword %q", key)
+	case int64:
+		return true
+	case json.Number:
+		_, err := strconv.ParseInt(value.String(), 10, 64)
+		return err == nil
+	default:
+		return false
+	}
+}
+
+func finiteToolNumber(value any) (float64, bool) {
+	var (
+		parsed float64
+		err    error
+	)
+	switch value := value.(type) {
+	case float64:
+		parsed = value
+	case json.Number:
+		parsed, err = value.Float64()
+	default:
+		return 0, false
+	}
+	return parsed, err == nil && !math.IsInf(parsed, 0) && !math.IsNaN(parsed)
+}
+
+func nonNegativeToolInteger(value any) bool {
+	var (
+		parsed int64
+		err    error
+	)
+	switch value := value.(type) {
+	case int64:
+		parsed = value
+	case json.Number:
+		parsed, err = strconv.ParseInt(value.String(), 10, 64)
+	default:
+		return false
+	}
+	return err == nil && parsed >= 0
+}
+
+func validateToolObjectSchema(schema map[string]any, path string) error {
+	properties := make(map[string]any)
+	if raw, present := schema["properties"]; present {
+		var ok bool
+		properties, ok = raw.(map[string]any)
+		if !ok {
+			return fmt.Errorf("%s: properties must be an object", path)
+		}
+		propertyNames := make([]string, 0, len(properties))
+		for name := range properties {
+			propertyNames = append(propertyNames, name)
+		}
+		sort.Strings(propertyNames)
+		for _, name := range propertyNames {
+			property, ok := properties[name].(map[string]any)
+			if !ok {
+				return fmt.Errorf("%s.properties.%s: property schema must be an object", path, name)
 			}
-			if err := rejectUnsupportedSchemaKeywords(child); err != nil {
+			if err := validateToolSchemaNode(property, path+".properties."+name); err != nil {
 				return err
 			}
 		}
-	case []any:
-		for _, child := range value {
-			if err := rejectUnsupportedSchemaKeywords(child); err != nil {
-				return err
+	}
+	if raw, present := schema["required"]; present {
+		required, ok := raw.([]any)
+		if !ok {
+			return fmt.Errorf("%s: required must be an array of property names", path)
+		}
+		seen := make(map[string]bool)
+		for index, value := range required {
+			name, ok := value.(string)
+			if !ok || name == "" {
+				return fmt.Errorf("%s.required[%d]: required name must be a non-empty string", path, index)
+			}
+			if seen[name] {
+				return fmt.Errorf("%s: required name %q is duplicated", path, name)
+			}
+			if _, exists := properties[name]; !exists {
+				return fmt.Errorf("%s: required name %q has no property", path, name)
+			}
+			seen[name] = true
+		}
+	}
+	return nil
+}
+
+func validateToolArraySchema(schema map[string]any, path string) error {
+	raw, present := schema["items"]
+	if !present {
+		return fmt.Errorf("%s: array items schema is required", path)
+	}
+	items, ok := raw.(map[string]any)
+	if !ok {
+		return fmt.Errorf("%s: array items must be one schema; tuple or unconstrained items not permitted", path)
+	}
+	if err := validateToolSchemaNode(items, path+".items"); err != nil {
+		return err
+	}
+	if err := validateNonNegativeSchemaInteger(schema, path, "minItems"); err != nil {
+		return err
+	}
+	if err := validateNonNegativeSchemaInteger(schema, path, "maxItems"); err != nil {
+		return err
+	}
+	if unique, present := schema["uniqueItems"]; present {
+		if _, ok := unique.(bool); !ok {
+			return fmt.Errorf("%s: uniqueItems must be a boolean", path)
+		}
+	}
+	return nil
+}
+
+func validateToolStringSchema(schema map[string]any, path string) error {
+	if err := validateNonNegativeSchemaInteger(schema, path, "minLength"); err != nil {
+		return err
+	}
+	if err := validateNonNegativeSchemaInteger(schema, path, "maxLength"); err != nil {
+		return err
+	}
+	if pattern, present := schema["pattern"]; present {
+		value, ok := pattern.(string)
+		if !ok {
+			return fmt.Errorf("%s: pattern must be a string", path)
+		}
+		if _, err := regexp.Compile(value); err != nil {
+			return fmt.Errorf("%s: pattern is invalid: %w", path, err)
+		}
+	}
+	if format, present := schema["format"]; present {
+		if _, ok := format.(string); !ok {
+			return fmt.Errorf("%s: format must be a string", path)
+		}
+	}
+	return nil
+}
+
+func validateToolNumericSchema(schema map[string]any, path string) error {
+	for _, keyword := range []string{"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"} {
+		if value, present := schema[keyword]; present {
+			parsed, ok := finiteToolNumber(value)
+			if !ok {
+				return fmt.Errorf("%s: %s must be a finite number", path, keyword)
+			}
+			if keyword == "multipleOf" && parsed <= 0 {
+				return fmt.Errorf("%s: multipleOf must be greater than zero", path)
 			}
 		}
+	}
+	return nil
+}
+
+func validateNonNegativeSchemaInteger(schema map[string]any, path, keyword string) error {
+	value, present := schema[keyword]
+	if !present {
+		return nil
+	}
+	if ok := nonNegativeToolInteger(value); !ok {
+		return fmt.Errorf("%s: %s must be a non-negative integer", path, keyword)
 	}
 	return nil
 }

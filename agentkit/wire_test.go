@@ -369,6 +369,78 @@ func TestRenderToolsRejectsOutsideCanonicalSubset(t *testing.T) {
 	}
 }
 
+func TestCanonicalToolSchemaRendersPortablyAcrossEveryWire(t *testing.T) {
+	// R-46P5-NIIA
+	schema := json.RawMessage(`{"type":"object","description":"portable input","properties":{"filter":{"type":"object","properties":{"name":{"type":"string","enum":["red","green"],"minLength":3,"maxLength":5,"pattern":"^[a-z]+$"}},"required":["name"]},"scores":{"type":"array","items":{"type":"number","minimum":0,"maximum":1},"minItems":1,"maxItems":3}},"required":["filter","scores"]}`)
+	if err := ValidateToolSchema(schema); err != nil {
+		t.Fatalf("representative canonical schema rejected: %v", err)
+	}
+	tool, err := NewToolFromSchema("portable", "all wires", schema, func(context.Context, json.RawMessage) (string, error) {
+		return "", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var semanticSchema any
+	if err := json.Unmarshal(schema, &semanticSchema); err != nil {
+		t.Fatal(err)
+	}
+	for _, wire := range allTestWires() {
+		rendered, renderErr := wire.RenderTools([]Tool{tool})
+		if renderErr != nil || !json.Valid(rendered) {
+			t.Errorf("%T rejected canonical schema: %s, %v", wire, rendered, renderErr)
+			continue
+		}
+		var envelope any
+		if err := json.Unmarshal(rendered, &envelope); err != nil {
+			t.Errorf("%T rendered invalid JSON: %v", wire, err)
+			continue
+		}
+		if !containsJSONValue(envelope, semanticSchema) {
+			t.Errorf("%T rendering widened or discarded schema semantics: %s", wire, rendered)
+		}
+	}
+
+	invalid := fixtureTool{name: "invalid", schema: json.RawMessage(`{"type":"object","properties":{"nested":{"type":"object","additionalProperties":false}}}`)}
+	var commonDiagnostic string
+	for _, wire := range allTestWires() {
+		rendered, renderErr := wire.RenderTools([]Tool{invalid})
+		if renderErr == nil || rendered != nil {
+			t.Errorf("%T rendered invalid schema as %s with error %v", wire, rendered, renderErr)
+			continue
+		}
+		if !strings.Contains(renderErr.Error(), "additionalProperties") {
+			t.Errorf("%T diagnostic %q does not name rejected construct", wire, renderErr)
+		}
+		if commonDiagnostic == "" {
+			commonDiagnostic = renderErr.Error()
+		} else if renderErr.Error() != commonDiagnostic {
+			t.Errorf("%T failed differently: %q, want %q", wire, renderErr, commonDiagnostic)
+		}
+	}
+}
+
+func containsJSONValue(value, want any) bool {
+	if reflect.DeepEqual(value, want) {
+		return true
+	}
+	switch value := value.(type) {
+	case map[string]any:
+		for _, child := range value {
+			if containsJSONValue(child, want) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range value {
+			if containsJSONValue(child, want) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func TestSupportedSettingsAreEncodedByOwningWireGrammar(t *testing.T) {
 	// R-3VQ2-7KU1
 	tests := []struct {
