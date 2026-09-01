@@ -3,7 +3,9 @@ package oauth_test
 import (
 	"bytes"
 	"errors"
+	"io"
 	"math/rand"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -11,6 +13,43 @@ import (
 )
 
 const sampleSize = 64
+
+// R-L4FP-FHTU
+func TestNewSessionExposesExactSessionFields(t *testing.T) {
+	sessionType := reflect.TypeOf(oauth.Session{})
+	wantFields := []struct {
+		name   string
+		typeOf reflect.Type
+	}{
+		{name: "State", typeOf: reflect.TypeOf("")},
+		{name: "CodeVerifier", typeOf: reflect.TypeOf("")},
+	}
+
+	if sessionType.NumField() != len(wantFields) {
+		t.Fatalf("oauth.Session has %d fields, want exactly %d", sessionType.NumField(), len(wantFields))
+	}
+	for index, want := range wantFields {
+		got := sessionType.Field(index)
+		if got.Name != want.name {
+			t.Errorf("oauth.Session field %d name = %q, want %q", index, got.Name, want.name)
+		}
+		if got.Type != want.typeOf {
+			t.Errorf("oauth.Session field %d (%s) type = %v, want %v", index, got.Name, got.Type, want.typeOf)
+		}
+		if !got.IsExported() {
+			t.Errorf("oauth.Session field %d (%s) is not exported", index, got.Name)
+		}
+	}
+}
+
+// R-L5NL-T9KJ
+func TestNewSessionHasExactFunctionSignature(t *testing.T) {
+	got := reflect.TypeOf(oauth.NewSession)
+	want := reflect.TypeOf(func(io.Reader) (oauth.Session, error) { return oauth.Session{}, nil })
+	if got != want {
+		t.Errorf("oauth.NewSession type = %v, want %v", got, want)
+	}
+}
 
 // R-ISXQ-JU4R
 func TestNewSessionRendersUnpaddedBase64URLSecrets(t *testing.T) {
