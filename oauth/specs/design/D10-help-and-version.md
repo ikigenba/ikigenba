@@ -145,3 +145,4 @@ listener binds (D08).
 - R-REHR-NBIJ: A usage error MUST write the usage text to stderr, write nothing to stdout, and exit 2.
 - R-IG9T-7Q01: `-V` and `--version` MUST each write the `internal/cli` version string alone on a line — exactly that string followed by a single newline, with nothing else on stdout — and exit 0, with both spellings producing identical stdout and exit code.
 - R-VBTO-NEYR: The version string MUST be a `v`-prefixed semantic version of the form `vMAJOR.MINOR.PATCH`, where each of MAJOR, MINOR, and PATCH is a non-negative integer with no leading zeros (matching `^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`).
+- R-M7GH-O5K2: Package `internal/options` MUST export `Usage() string`.

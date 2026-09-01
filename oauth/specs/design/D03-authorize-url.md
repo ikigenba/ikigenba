@@ -108,3 +108,8 @@ is then a single edit that the flag boundary follows automatically.
 - R-JB88-AE96: `AuthorizeURL` MUST retain every parameter already present in `Client.AuthURL`'s query component and append its own parameters alongside them, per RFC 6749 §3.1.
 - R-JCG4-O5ZV: `AuthorizeURL` MUST append the supplied extra parameters after the required set in caller order, and MUST emit a key supplied twice by the caller as two separate query parameters rather than collapsing it to one.
 - R-JDO1-1XQK: `ReservedAuthorizeParam` MUST return true for exactly `response_type`, `client_id`, `redirect_uri`, `state`, `code_challenge`, `code_challenge_method`, and `scope`, and false for every other key.
+- R-L83E-KT1X: Package `internal/oauth` MUST export a `Client` struct whose fields are exactly `AuthURL *url.URL`, `TokenURL *url.URL`, `ClientID string`, `ClientSecret string`, `RedirectURI string`, and `Scope string`.
+- R-L9BA-YKSM: Package `internal/oauth` MUST export a `Param` struct whose fields are exactly `Key string` and `Value string`.
+- R-LBR3-Q4A0: Package `internal/oauth` MUST export `Challenge(verifier string) string`.
+- R-LCZ0-3W0P: Package `internal/oauth` MUST export the method `AuthorizeURL(s Session, extra []Param) string` on `Client`.
+- R-LE6W-HNRE: Package `internal/oauth` MUST export `ReservedAuthorizeParam(key string) bool`.

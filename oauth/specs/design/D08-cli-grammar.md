@@ -105,3 +105,7 @@ the compatible direction; narrowing it is not.
 - R-QQ3R-ZWON: A usage error MUST report its cause exactly once — the text naming the offending flag MUST occur exactly one time across stdout and stderr combined.
 - R-QRBO-DOFC: `-h` and `--help` MUST exit 0 without binding a listener and without invoking the browser launcher, verified with a `callback.ListenFunc` and a `browser.Launcher` that fail the test if called.
 - R-QSJK-RG61: `-V` and `--version` MUST exit 0 without binding a listener and without invoking the browser launcher, verified with a `callback.ListenFunc` and a `browser.Launcher` that fail the test if called.
+- R-M1CZ-RAUL: Package `internal/options` MUST export a `Flags` struct whose fields are exactly `AuthURL string`, `TokenURL string`, `ClientID string`, `Scope string`, `ClientSecret string`, `CallbackHost string`, `Port int`, `CallbackPath string`, `AuthParams []oauth.Param`, `TokenParams []oauth.Param`, `TokenHeaders []oauth.Param`, `NoBrowser bool`, `Timeout time.Duration`, and `Version bool`.
+- R-M2KW-52LA: Package `internal/options` MUST export `ParseFlags(args []string) (Flags, error)`.
+- R-M3SS-IUBZ: Package `internal/options` MUST export the method `Validate() (Options, error)` on `Flags`.
+- R-M50O-WM2O: Package `internal/options` MUST export a sentinel error `ErrHelp` that `ParseFlags` returns when `-h` or `--help` is supplied.

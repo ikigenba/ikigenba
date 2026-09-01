@@ -77,3 +77,5 @@ compilation rot.
 - R-GW4S-WP9L: On a platform that is neither linux nor darwin, `Open` MUST return a non-nil error and MUST NOT attempt to start any command.
 - R-GYKL-O8QZ: `Open` MUST return the failure reported by starting the command, so that a command which cannot be started yields a non-nil error from `Open`.
 - R-GZSI-20HO: `Open` MUST return once the child process has been started and MUST NOT block on the child's completion, verified with a fake command that starts successfully and whose child never exits.
+- R-LXPA-LZMI: Package `internal/browser` MUST export a `Launcher` interface with the method `Open(url string) error`.
+- R-LYX6-ZRD7: Package `internal/browser` MUST export `New() Launcher`.

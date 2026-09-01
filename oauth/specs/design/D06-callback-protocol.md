@@ -98,3 +98,7 @@ finishes.
 - R-GNLI-8B2Q: Both the success and the failure page MUST be served with the `Content-Type` header exactly `text/html; charset=utf-8`, and a provider-supplied `error_description` containing HTML metacharacters MUST appear in the failure page only in escaped form, never as raw markup.
 - R-GOTE-M2TF: Both the success and the failure page MUST be self-contained, containing no reference that would cause the browser to fetch a further resource.
 - R-GR97-DMAT: `Wait` MUST end with an error satisfying `errors.Is(err, context.DeadlineExceeded)` when its context's deadline expires before any callback arrives, and with an error satisfying `errors.Is(err, context.Canceled)` but not `errors.Is(err, context.DeadlineExceeded)` when its context is canceled instead.
+- R-LQDW-BD6C: Package `internal/callback` MUST export a `Result` struct whose fields are exactly `Code string`.
+- R-LRLS-P4X1: Package `internal/callback` MUST export the sentinel errors `ErrStateMismatch` and `ErrNoCode`.
+- R-LSTP-2WNQ: Package `internal/callback` MUST export an `AuthorizeError` struct whose fields are exactly `Code string` and `Description string`, with a method `Error() string`.
+- R-LV9H-UG54: Package `internal/callback` MUST export the method `Wait(ctx context.Context, path, state string) (Result, error)` on `*Server`.

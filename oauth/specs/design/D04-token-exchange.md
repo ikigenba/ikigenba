@@ -97,3 +97,6 @@ so `errors.Is` reaches `context.Canceled` and `context.DeadlineExceeded`.
 - R-JR2X-9EW7: On a non-2xx response, `Exchange` MUST return an error naming the HTTP status and quoting the response body, and MUST NOT return the body as a success value.
 - R-JSAT-N6MW: On a non-2xx response whose body exceeds `MaxErrorBody`, `Exchange` MUST include exactly the first `MaxErrorBody` bytes of that body in the returned error.
 - R-AHPF-BMQU: `Exchange` MUST honor the supplied context: when the context is cancelled while the token request is in flight, it MUST return an error for which `errors.Is` reports the context's own error, and MUST NOT return a success value.
+- R-LGMP-978S: Package `internal/oauth` MUST export the constant `MaxErrorBody = 4096`.
+- R-LHUL-MYZH: Package `internal/oauth` MUST export the method `Exchange(ctx context.Context, hc *http.Client, s Session, code string, extra, headers []Param) ([]byte, error)` on `Client`.
+- R-LJ2I-0QQ6: Package `internal/oauth` MUST export `ReservedTokenParam(key string) bool`.

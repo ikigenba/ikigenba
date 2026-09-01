@@ -72,3 +72,5 @@ They are drawn separately and are never the same value.
 - R-IXTC-2X3J: When entropy supplies fewer than 64 bytes, `NewSession` MUST return an error that names the code verifier as the value it failed to generate and that wraps the underlying read error.
 - R-IZ18-GOU8: When entropy supplies at least 64 but fewer than 96 bytes, `NewSession` MUST return an error that names the state as the value it failed to generate and that wraps the underlying read error.
 - R-J1H1-88BM: For a PRNG-seeded sample of entropy inputs, `NewSession` MUST return a `State` and a `CodeVerifier` that are never equal to each other, and two sessions drawn from differing entropy MUST differ in both fields.
+- R-L4FP-FHTU: Package `internal/oauth` MUST export a `Session` struct whose fields are exactly `State string` and `CodeVerifier string`.
+- R-L5NL-T9KJ: Package `internal/oauth` MUST export `NewSession(entropy io.Reader) (Session, error)`.

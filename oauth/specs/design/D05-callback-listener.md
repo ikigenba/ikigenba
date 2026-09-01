@@ -103,3 +103,6 @@ port binds again immediately afterward.
 - R-G8YP-N26E: When both loopback families bind successfully, `BindWarning()` MUST return nil.
 - R-GA6M-0TX3: When the IPv4 loopback bind fails, `Listen` MUST return a non-nil error and no usable `Server`, regardless of whether an IPv6 bind would have succeeded.
 - R-GBEI-ELNS: After `Close` returns, the port the `Server` had bound MUST be immediately bindable again by a fresh `Listen` at that same fixed port.
+- R-LLIA-SA7K: Package `internal/callback` MUST export `type ListenFunc func(network, address string) (net.Listener, error)`.
+- R-LMQ7-61Y9: Package `internal/callback` MUST export `Listen(listen ListenFunc, port int) (*Server, error)`.
+- R-LNY3-JTOY: Package `internal/callback` MUST export a `Server` type providing the methods `Port() int`, `BindWarning() error`, and `Close() error`.
