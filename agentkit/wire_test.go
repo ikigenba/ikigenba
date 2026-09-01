@@ -597,6 +597,53 @@ func TestRequestBodiesEmbedRenderedToolsOnceAndInOrder(t *testing.T) {
 	}
 }
 
+func TestAnthropicPreservesSuppliedToolOrderInRenderingAndRequest(t *testing.T) {
+	// R-5WW1-5TBP
+	tools := []Tool{
+		fixtureTool{name: "z_last_alphabetically", description: "z", schema: json.RawMessage(`{"type":"object","properties":{}}`)},
+		fixtureTool{name: "a_first_alphabetically", description: "a", schema: json.RawMessage(`{"type":"object","properties":{}}`)},
+		fixtureTool{name: "m_middle_alphabetically", description: "m", schema: json.RawMessage(`{"type":"object","properties":{}}`)},
+	}
+	wire := newAnthropicWire(nil)
+	rendered, err := wire.RenderTools(tools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var declarations []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(rendered, &declarations); err != nil {
+		t.Fatal(err)
+	}
+	var renderedNames []string
+	for _, declaration := range declarations {
+		renderedNames = append(renderedNames, declaration.Name)
+	}
+	want := []string{"z_last_alphabetically", "a_first_alphabetically", "m_middle_alphabetically"}
+	if !reflect.DeepEqual(renderedNames, want) {
+		t.Fatalf("RenderTools order = %v, want %v", renderedNames, want)
+	}
+	body, err := wire.EncodeRequest(RequestState{Tools: tools})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var request struct {
+		Tools []struct {
+			Name string `json:"name"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(body, &request); err != nil {
+		t.Fatal(err)
+	}
+	var requestNames []string
+	for _, declaration := range request.Tools {
+		requestNames = append(requestNames, declaration.Name)
+	}
+	if !reflect.DeepEqual(requestNames, want) {
+		t.Fatalf("EncodeRequest order = %v, want %v", requestNames, want)
+	}
+}
+
 func renderedToolSchemas(t *testing.T, wire WireFormat, rendered json.RawMessage) []any {
 	t.Helper()
 	var declarations []map[string]any

@@ -1253,6 +1253,211 @@ func phase17Tool(name string) Tool {
 	}
 }
 
+func toolNames(tools []Tool) []string {
+	names := make([]string, len(tools))
+	for index, tool := range tools {
+		names[index] = tool.Name()
+	}
+	return names
+}
+
+func TestDeferredToolsAreOwnedValidatedAndWithheldUntilLoaded(t *testing.T) {
+	// R-5PKM-V6VJ
+	deferred := Tool(&concreteTool{
+		name:   "records_lookup",
+		schema: json.RawMessage(`{"type":"object","properties":{}}`),
+		call:   func(context.Context, json.RawMessage) (string, error) { return "ok", nil },
+	})
+	registered := []Tool{deferred}
+	load := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "load", Name: loadToolsName, Input: json.RawMessage(`{"names":["records"]}`)}}}
+	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: load}}, {MessageDone{Message: final}}}}
+	transportCalls := 0
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation.Deferred(DeferredGroup{Name: "records", Blurb: "Record operations", Tools: registered})
+	registered[0] = phase17Tool("caller_mutation")
+
+	stream := conversation.Send(context.Background(), Text{Text: "go"})
+	drainStream(stream)
+	if stream.Err() != nil || transportCalls != 2 {
+		t.Fatalf("Send = %v, calls %d", stream.Err(), transportCalls)
+	}
+	if got := toolNames(provider.states[0].Tools); !reflect.DeepEqual(got, []string{loadToolsName}) {
+		t.Fatalf("initial tools = %v, want only loader", got)
+	}
+	if got := toolNames(provider.states[1].Tools); !reflect.DeepEqual(got, []string{loadToolsName, "records_lookup"}) {
+		t.Fatalf("loaded tools = %v", got)
+	}
+	if provider.states[1].Tools[1] != deferred {
+		t.Fatal("loaded deferred member is not the registered ordinary Tool value")
+	}
+	for _, placement := range []string{"eager", "deferred"} {
+		t.Run("invalid "+placement, func(t *testing.T) {
+			provider := &phase15Provider{model: "model"}
+			calls := 0
+			conversation := NewConversation(provider, successfulPhase15Client(&calls))
+			invalid := concreteTool{name: "bad", schema: json.RawMessage(`{"type":"array"}`)}
+			if placement == "eager" {
+				conversation.tools = []Tool{invalid}
+			} else {
+				conversation.Deferred(DeferredGroup{Name: "bad_group", Tools: []Tool{invalid}})
+			}
+			failed := conversation.Send(context.Background(), Text{Text: "blocked"})
+			drainStream(failed)
+			if !errors.Is(failed.Err(), ErrInvalidConfig) || calls != 0 || len(provider.states) != 0 {
+				t.Fatalf("%s validation = %v, transport=%d provider=%d", placement, failed.Err(), calls, len(provider.states))
+			}
+		})
+	}
+}
+
+func TestDeferredGroupsConditionallySynthesizeExactlyOneLoader(t *testing.T) {
+	// R-5QSJ-8YM8
+	for _, test := range []struct {
+		name   string
+		groups []DeferredGroup
+		want   []string
+	}{
+		{name: "zero", want: []string{}},
+		{name: "one", groups: []DeferredGroup{{Name: "one", Tools: []Tool{phase17Tool("a")}}}, want: []string{loadToolsName}},
+		{name: "several", groups: []DeferredGroup{{Name: "one", Tools: []Tool{phase17Tool("a")}}, {Name: "two", Tools: []Tool{phase17Tool("b")}}}, want: []string{loadToolsName}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			conversation := NewConversation(&phase15Provider{model: "model"}, http.DefaultClient)
+			conversation.Deferred(test.groups...)
+			o, err := conversation.prepareOrchestrator()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := toolNames(o.advertisedSnapshot()); !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("advertised = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestLoadToolsCatalogContainsOnlyGroupBlurbsAndBareNames(t *testing.T) {
+	// R-5S0F-MQCX
+	secretDescription := "DISTINCTIVE TOOL DESCRIPTION MUST STAY HIDDEN"
+	distinctiveSchemaMarker := "schema_only_secret"
+	tool := concreteTool{
+		name:        "tool_token_93",
+		description: secretDescription,
+		schema:      json.RawMessage(`{"type":"object","properties":{"schema_only_secret":{"type":"string"}}}`),
+	}
+	conversation := NewConversation(&phase15Provider{model: "model"}, http.DefaultClient)
+	conversation.Deferred(
+		DeferredGroup{Name: "group_token_71", Blurb: "blurb token 82", Tools: []Tool{tool}},
+		DeferredGroup{Name: "group_token_64", Blurb: "blurb token 55", Tools: []Tool{phase17Tool("tool_token_46")}},
+	)
+	o, err := conversation.prepareOrchestrator()
+	if err != nil {
+		t.Fatal(err)
+	}
+	description := o.advertisedSnapshot()[0].Description()
+	for _, want := range []string{"group_token_71", "blurb token 82", "tool_token_93", "group_token_64", "blurb token 55", "tool_token_46"} {
+		if !strings.Contains(description, want) {
+			t.Errorf("catalog %q omits %q", description, want)
+		}
+	}
+	for _, forbidden := range []string{secretDescription, distinctiveSchemaMarker, `"properties"`} {
+		if strings.Contains(description, forbidden) {
+			t.Errorf("catalog leaked %q: %q", forbidden, description)
+		}
+	}
+}
+
+func TestLoadToolsBatchesGroupsAndToolsWithInBandUnknownRecovery(t *testing.T) {
+	// R-5T8C-0I3M
+	a1 := concreteTool{name: "a1", schema: json.RawMessage(`{"type":"object","properties":{"alpha_marker":{"type":"string"}}}`)}
+	a2 := phase17Tool("a2")
+	solo := phase17Tool("solo")
+	b2 := phase17Tool("b2")
+	firstLoad := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "load-1", Name: loadToolsName, Input: json.RawMessage(`{"names":["group_a","solo","missing"]}`)}}}
+	secondLoad := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "load-2", Name: loadToolsName, Input: json.RawMessage(`{"names":["a1","group_b"]}`)}}}
+	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: firstLoad}}, {MessageDone{Message: secondLoad}}, {MessageDone{Message: final}}}}
+	transportCalls := 0
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation.Deferred(
+		DeferredGroup{Name: "group_a", Blurb: "A", Tools: []Tool{a1, a2}},
+		DeferredGroup{Name: "group_b", Blurb: "B", Tools: []Tool{solo, b2}},
+	)
+	stream := conversation.Send(context.Background(), Text{Text: "go"})
+	drainStream(stream)
+	if stream.Err() != nil || transportCalls != 3 {
+		t.Fatalf("turn = %v, calls %d", stream.Err(), transportCalls)
+	}
+	if got := toolNames(provider.states[1].Tools); !reflect.DeepEqual(got, []string{loadToolsName, "a1", "a2", "solo"}) {
+		t.Fatalf("first loaded snapshot = %v", got)
+	}
+	if !bytes.Equal(provider.states[1].Tools[1].Schema(), a1.Schema()) {
+		t.Fatal("loaded tool did not expose its full schema on the immediate next round-trip")
+	}
+	firstResult := provider.states[1].History[len(provider.states[1].History)-1].Blocks[0].(ToolResult)
+	if firstResult.IsError || !strings.Contains(firstResult.Content, "missing") {
+		t.Fatalf("unknown-name result = %#v", firstResult)
+	}
+	if got := toolNames(provider.states[2].Tools); !reflect.DeepEqual(got, []string{loadToolsName, "a1", "a2", "solo", "b2"}) {
+		t.Fatalf("second loaded snapshot = %v; repeated names must not duplicate", got)
+	}
+	secondResult := provider.states[2].History[len(provider.states[2].History)-1].Blocks[0].(ToolResult)
+	if secondResult.IsError {
+		t.Fatalf("already-loaded name became terminal: %#v", secondResult)
+	}
+}
+
+func TestDeferredLoadingIsMonotonicAcrossConversationSends(t *testing.T) {
+	// R-5UG8-E9UB
+	loadSecond := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "second", Name: loadToolsName, Input: json.RawMessage(`{"names":["second"]}`)}}}
+	loadFirst := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "first", Name: loadToolsName, Input: json.RawMessage(`{"names":["first"]}`)}}}
+	done := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: loadSecond}}, {MessageDone{Message: done}}, {MessageDone{Message: loadFirst}}, {MessageDone{Message: done}}}}
+	transportCalls := 0
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation.Deferred(DeferredGroup{Name: "all", Blurb: "All", Tools: []Tool{phase17Tool("first"), phase17Tool("second")}})
+	firstStream := conversation.Send(context.Background(), Text{Text: "turn one"})
+	drainStream(firstStream)
+	secondStream := conversation.Send(context.Background(), Text{Text: "turn two"})
+	drainStream(secondStream)
+	if firstStream.Err() != nil || secondStream.Err() != nil || len(provider.states) != 4 {
+		t.Fatalf("sends = %v / %v, states %d", firstStream.Err(), secondStream.Err(), len(provider.states))
+	}
+	if got := toolNames(provider.states[1].Tools); !reflect.DeepEqual(got, []string{loadToolsName, "second"}) {
+		t.Fatalf("first turn loaded tools = %v", got)
+	}
+	if got := toolNames(provider.states[2].Tools); !reflect.DeepEqual(got, []string{loadToolsName, "second"}) {
+		t.Fatalf("second turn forgot loaded tail: %v", got)
+	}
+	if got := toolNames(provider.states[3].Tools); !reflect.DeepEqual(got, []string{loadToolsName, "second", "first"}) {
+		t.Fatalf("monotonic conversation order = %v", got)
+	}
+	conversationType := reflect.TypeFor[*Conversation]()
+	if _, exists := conversationType.MethodByName("Unload"); exists {
+		t.Fatal("Conversation unexpectedly exposes an unload operation")
+	}
+}
+
+func TestAdvertisedToolsUseSortedBaseAndTailOnlyLoadOrder(t *testing.T) {
+	// R-5WW1-5TBP
+	load := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "order", Name: loadToolsName, Input: json.RawMessage(`{"names":["tail_z","tail_a"]}`)}}}
+	done := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: load}}, {MessageDone{Message: done}}}}
+	transportCalls := 0
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation.tools = []Tool{phase17Tool("z_eager"), phase17Tool("a_eager")}
+	conversation.Deferred(DeferredGroup{Name: "tails", Blurb: "Tails", Tools: []Tool{phase17Tool("tail_a"), phase17Tool("tail_z")}})
+	drainStream(conversation.Send(context.Background(), Text{Text: "go"}))
+	wantBase := []string{"a_eager", loadToolsName, "z_eager"}
+	if got := toolNames(provider.states[0].Tools); !reflect.DeepEqual(got, wantBase) {
+		t.Fatalf("base = %v, want %v", got, wantBase)
+	}
+	wantExtended := append(append([]string(nil), wantBase...), "tail_z", "tail_a")
+	if got := toolNames(provider.states[1].Tools); !reflect.DeepEqual(got, wantExtended) {
+		t.Fatalf("extended = %v, want %v", got, wantExtended)
+	}
+}
+
 func TestDeferredRegistrationSynthesizesExactLoadToolsSchema(t *testing.T) {
 	// R-0S9U-CR7T
 	conversation := NewConversation(&phase15Provider{model: "model"}, http.DefaultClient)
@@ -1302,16 +1507,51 @@ func TestDeferredRegistrationSynthesizesExactLoadToolsSchema(t *testing.T) {
 func TestSendGatesTheCompleteLiveToolSetOnceBeforeAllBoundaries(t *testing.T) {
 	// R-4F8G-BWP5
 	// R-4GGC-POFU
+	// R-5Y3X-JL2E
 	tests := []struct {
 		name     string
 		eager    []Tool
 		deferred []DeferredGroup
 	}{
 		{name: "invalid eager schema", eager: []Tool{concreteTool{name: "bad", schema: json.RawMessage(`{"type":"array"}`)}}},
+		{name: "invalid deferred schema", deferred: []DeferredGroup{{Tools: []Tool{concreteTool{name: "bad", schema: json.RawMessage(`{"type":"array"}`)}}}}},
 		{name: "duplicate eager eager", eager: []Tool{phase17Tool("same"), phase17Tool("same")}},
 		{name: "duplicate eager deferred", eager: []Tool{phase17Tool("same")}, deferred: []DeferredGroup{{Tools: []Tool{phase17Tool("same")}}}},
 		{name: "duplicate deferred deferred", deferred: []DeferredGroup{{Tools: []Tool{phase17Tool("same")}}, {Tools: []Tool{phase17Tool("same")}}}},
 		{name: "consumer collides with load tools", eager: []Tool{phase17Tool(loadToolsName)}, deferred: []DeferredGroup{{Tools: []Tool{phase17Tool("later")}}}},
+		{name: "deferred collides with load tools", deferred: []DeferredGroup{{Tools: []Tool{phase17Tool(loadToolsName)}}}},
+	}
+
+	ordinaryLoadToolsCall := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "ordinary-loader-name", Name: loadToolsName, Input: json.RawMessage(`{}`)}}}
+	providerWithoutGroups := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: ordinaryLoadToolsCall}}, {MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "ok"}}}}}}}
+	transportWithoutGroups := 0
+	ordinaryCalls := 0
+	conversationWithoutGroups := NewConversation(providerWithoutGroups, successfulPhase15Client(&transportWithoutGroups))
+	conversationWithoutGroups.tools = []Tool{concreteTool{
+		name:   loadToolsName,
+		schema: json.RawMessage(`{"type":"object","properties":{}}`),
+		call: func(context.Context, json.RawMessage) (string, error) {
+			ordinaryCalls++
+			return "ordinary consumer tool", nil
+		},
+	}}
+	streamWithoutGroups := conversationWithoutGroups.Send(context.Background(), Text{Text: "allowed"})
+	drainStream(streamWithoutGroups)
+	if streamWithoutGroups.Err() != nil || transportWithoutGroups != 2 || ordinaryCalls != 1 {
+		t.Fatalf("absent synthetic loader created false collision: err=%v transport=%d ordinary=%d", streamWithoutGroups.Err(), transportWithoutGroups, ordinaryCalls)
+	}
+
+	eagerCount := &phase17CountingTool{name: "eager_count", schema: json.RawMessage(`{"type":"object","properties":{}}`), call: func(context.Context, json.RawMessage) (string, error) { return "", nil }}
+	deferredCount := &phase17CountingTool{name: "deferred_count", schema: json.RawMessage(`{"type":"object","properties":{}}`), call: func(context.Context, json.RawMessage) (string, error) { return "", nil }}
+	gateProvider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "ok"}}}}}}}
+	gateCalls := 0
+	gateConversation := NewConversation(gateProvider, successfulPhase15Client(&gateCalls))
+	gateConversation.tools = []Tool{eagerCount}
+	gateConversation.Deferred(DeferredGroup{Name: "counted", Tools: []Tool{deferredCount}})
+	gateStream := gateConversation.Send(context.Background(), Text{Text: "validate union"})
+	drainStream(gateStream)
+	if gateStream.Err() != nil || eagerCount.schemaCalls != 1 || deferredCount.schemaCalls != 1 {
+		t.Fatalf("union gate: err=%v eager schemas=%d deferred schemas=%d", gateStream.Err(), eagerCount.schemaCalls, deferredCount.schemaCalls)
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1421,6 +1661,7 @@ func TestOrchestratorValidatesEveryCallBeforeInvokingTool(t *testing.T) {
 
 func TestUnknownAndDeferredDirectCallsRecoverWithoutGuessedExecution(t *testing.T) {
 	// R-4IW5-H7X8
+	// R-5VO4-S1L0
 	for _, test := range []struct {
 		name          string
 		deferred      bool
@@ -1457,12 +1698,18 @@ func TestUnknownAndDeferredDirectCallsRecoverWithoutGuessedExecution(t *testing.
 			if !result.IsError || result.ToolUseID != "unknown-id" || !strings.Contains(result.Content, "unknown tool") {
 				t.Fatalf("unknown result = %#v", result)
 			}
+			if test.deferred && (!strings.Contains(result.Content, callName) || !strings.Contains(result.Content, loadToolsName)) {
+				t.Fatalf("deferred recovery result does not name tool and loader: %#v", result)
+			}
 			var names []string
 			for _, tool := range provider.states[1].Tools {
 				names = append(names, tool.Name())
 			}
 			if !reflect.DeepEqual(names, test.wantNextTools) {
 				t.Fatalf("next tools = %v, want %v", names, test.wantNextTools)
+			}
+			if test.deferred && !bytes.Equal(provider.states[1].Tools[1].Schema(), json.RawMessage(`{"type":"object","properties":{}}`)) {
+				t.Fatalf("next round did not advertise full deferred schema: %s", provider.states[1].Tools[1].Schema())
 			}
 		})
 	}

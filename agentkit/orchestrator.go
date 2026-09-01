@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 )
 
 const loadToolsName = "load_tools"
@@ -12,18 +14,24 @@ const loadToolsName = "load_tools"
 var loadToolsSchema = json.RawMessage(`{"type":"object","properties":{"names":{"type":"array","items":{"type":"string"}}},"required":["names"]}`)
 
 type orchestrator struct {
-	inventory  []Tool
-	advertised []Tool
-	byName     map[string]Tool
-	deferred   map[string]Tool
-	pending    []Tool
+	inventory   []Tool
+	base        []Tool
+	byName      map[string]Tool
+	deferred    map[string]Tool
+	groups      map[string][]Tool
+	loaded      map[string]struct{}
+	loadedOrder *[]string
+	hasLoader   bool
 }
 
-func newOrchestrator(eager []Tool, groups []DeferredGroup) *orchestrator {
+func newOrchestrator(eager []Tool, groups []DeferredGroup, loadedOrder *[]string) *orchestrator {
 	o := &orchestrator{
-		advertised: cloneTools(eager),
-		byName:     make(map[string]Tool, len(eager)),
-		deferred:   make(map[string]Tool),
+		base:        cloneTools(eager),
+		byName:      make(map[string]Tool, len(eager)),
+		deferred:    make(map[string]Tool),
+		groups:      make(map[string][]Tool, len(groups)),
+		loaded:      make(map[string]struct{}),
+		loadedOrder: loadedOrder,
 	}
 	for _, tool := range eager {
 		if tool != nil {
@@ -32,6 +40,7 @@ func newOrchestrator(eager []Tool, groups []DeferredGroup) *orchestrator {
 	}
 	o.inventory = append(o.inventory, eager...)
 	for _, group := range groups {
+		o.groups[group.Name] = cloneTools(group.Tools)
 		for _, tool := range group.Tools {
 			o.inventory = append(o.inventory, tool)
 			if tool != nil {
@@ -39,20 +48,58 @@ func newOrchestrator(eager []Tool, groups []DeferredGroup) *orchestrator {
 			}
 		}
 	}
-	loader := concreteTool{
-		name:        loadToolsName,
-		description: "Load deferred tools by name",
-		schema:      append(json.RawMessage(nil), loadToolsSchema...),
-		call: func(context.Context, json.RawMessage) (string, error) {
-			return "", fmt.Errorf("agentkit: %s is unavailable", loadToolsName)
-		},
-	}
-	o.inventory = append(o.inventory, loader)
 	if len(groups) > 0 {
-		o.advertised = append(o.advertised, loader)
+		loader := concreteTool{
+			name:        loadToolsName,
+			description: deferredCatalog(groups),
+			schema:      append(json.RawMessage(nil), loadToolsSchema...),
+			call: func(context.Context, json.RawMessage) (string, error) {
+				return "", fmt.Errorf("agentkit: %s is orchestrator-managed", loadToolsName)
+			},
+		}
+		o.inventory = append(o.inventory, loader)
+		o.base = append(o.base, loader)
 		o.byName[loader.Name()] = loader
+		o.hasLoader = true
+	}
+	sort.SliceStable(o.base, func(i, j int) bool {
+		if o.base[i] == nil {
+			return o.base[j] != nil
+		}
+		if o.base[j] == nil {
+			return false
+		}
+		return o.base[i].Name() < o.base[j].Name()
+	})
+	if loadedOrder != nil {
+		for _, name := range *loadedOrder {
+			if tool, exists := o.deferred[name]; exists {
+				o.loaded[name] = struct{}{}
+				o.byName[name] = tool
+			}
+		}
 	}
 	return o
+}
+
+func deferredCatalog(groups []DeferredGroup) string {
+	var catalog strings.Builder
+	catalog.WriteString("Load deferred tools by group or tool name. Catalog:\n")
+	for _, group := range groups {
+		fmt.Fprintf(&catalog, "%s: %s [", group.Name, group.Blurb)
+		for index, tool := range group.Tools {
+			if index > 0 {
+				catalog.WriteString(", ")
+			}
+			if tool == nil {
+				catalog.WriteString("<invalid nil tool>")
+			} else {
+				catalog.WriteString(tool.Name())
+			}
+		}
+		catalog.WriteString("]\n")
+	}
+	return strings.TrimSuffix(catalog.String(), "\n")
 }
 
 // validateToolSet is the Send-time gate over the complete live inventory.
@@ -75,12 +122,64 @@ func validateToolSet(tools []Tool) error {
 }
 
 func (o *orchestrator) advertisedSnapshot() []Tool {
-	snapshot := cloneTools(o.advertised)
-	for _, tool := range o.pending {
-		o.byName[tool.Name()] = tool
+	snapshot := cloneTools(o.base)
+	if o.loadedOrder == nil {
+		return snapshot
 	}
-	o.pending = nil
+	for _, name := range *o.loadedOrder {
+		tool, exists := o.deferred[name]
+		if !exists {
+			continue
+		}
+		snapshot = append(snapshot, tool)
+		o.byName[name] = tool
+	}
 	return snapshot
+}
+
+func (o *orchestrator) load(tool Tool) {
+	if tool == nil {
+		return
+	}
+	name := tool.Name()
+	if _, exists := o.loaded[name]; exists {
+		return
+	}
+	o.loaded[name] = struct{}{}
+	if o.loadedOrder != nil {
+		*o.loadedOrder = append(*o.loadedOrder, name)
+	}
+}
+
+func (o *orchestrator) dispatchLoader(call ToolUse) ToolResult {
+	result := ToolResult{ToolUseID: call.ID}
+	var input struct {
+		Names []string `json:"names"`
+	}
+	if err := json.Unmarshal(call.Input, &input); err != nil {
+		result.Content = fmt.Sprintf("agentkit: invalid arguments for tool %q: %v", loadToolsName, err)
+		result.IsError = true
+		return result
+	}
+	var unknown []string
+	for _, name := range input.Names {
+		if tools, exists := o.groups[name]; exists {
+			for _, tool := range tools {
+				o.load(tool)
+			}
+			continue
+		}
+		if tool, exists := o.deferred[name]; exists {
+			o.load(tool)
+			continue
+		}
+		unknown = append(unknown, name)
+	}
+	result.Content = "Deferred tools loaded."
+	if len(unknown) > 0 {
+		result.Content += fmt.Sprintf(" Unknown names: %s.", strings.Join(unknown, ", "))
+	}
+	return result
 }
 
 func validateToolArguments(schema, arguments json.RawMessage) error {
@@ -111,9 +210,8 @@ func (o *orchestrator) dispatch(ctx context.Context, call ToolUse) ToolResult {
 		result.Content = fmt.Sprintf("agentkit: unknown tool %q", call.Name)
 		result.IsError = true
 		if deferred, known := o.deferred[call.Name]; known {
-			o.advertised = append(o.advertised, deferred)
-			o.pending = append(o.pending, deferred)
-			delete(o.deferred, call.Name)
+			o.load(deferred)
+			result.Content = fmt.Sprintf("agentkit: unknown tool %q because the deferred tool is not loaded; call %q first, then retry with its advertised schema", call.Name, loadToolsName)
 		}
 		return result
 	}
@@ -121,6 +219,9 @@ func (o *orchestrator) dispatch(ctx context.Context, call ToolUse) ToolResult {
 		result.Content = fmt.Sprintf("agentkit: invalid arguments for tool %q: %v", call.Name, err)
 		result.IsError = true
 		return result
+	}
+	if call.Name == loadToolsName && o.hasLoader {
+		return o.dispatchLoader(call)
 	}
 	content, err := tool.Call(ctx, append(json.RawMessage(nil), call.Input...))
 	result.Content = content

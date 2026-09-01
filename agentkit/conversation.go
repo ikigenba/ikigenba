@@ -20,6 +20,7 @@ type Conversation struct {
 	options   ProviderOptions
 	tools     []Tool
 	deferred  []DeferredGroup
+	loaded    []string
 	validate  func() error
 	eventSink eventSink
 }
@@ -122,7 +123,7 @@ type accountingProvider interface {
 }
 
 func (c *Conversation) prepareOrchestrator() (*orchestrator, error) {
-	orchestrator := newOrchestrator(c.tools, c.deferred)
+	orchestrator := newOrchestrator(c.tools, c.deferred, &c.loaded)
 	if err := validateToolSet(orchestrator.inventory); err != nil {
 		return nil, err
 	}
