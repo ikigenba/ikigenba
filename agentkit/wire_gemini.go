@@ -32,6 +32,7 @@ type geminiPart struct {
 }
 
 type geminiFunctionCall struct {
+	ID   string          `json:"id,omitempty"`
 	Name string          `json:"name"`
 	Args json.RawMessage `json:"args"`
 }
@@ -92,6 +93,8 @@ func (w *geminiWire) encodeRequest(state RequestState) ([]byte, error) {
 		var declaration struct {
 			Tools json.RawMessage `json:"tools"`
 		}
+		// RenderTools currently returns marshaled JSON; keep the boundary check so
+		// encodeRequest remains defensive if that private implementation changes.
 		if err := json.Unmarshal(rendered, &declaration); err != nil {
 			return nil, err
 		}
@@ -174,6 +177,7 @@ func buildGeminiToolConfig(choice ToolChoice) *geminiToolConfig {
 
 func newGeminiDecoder() frameDecoder {
 	var text string
+	var functionCalls []geminiFunctionCall
 	var normalizer usageNormalizer
 	return func(frame []byte) (*Message, usageFragment, bool, error) {
 		var response struct {
@@ -197,6 +201,9 @@ func newGeminiDecoder() frameDecoder {
 		for _, candidate := range response.Candidates {
 			for _, part := range candidate.Content.Parts {
 				text += part.Text
+				if part.FunctionCall != nil {
+					functionCalls = append(functionCalls, *part.FunctionCall)
+				}
 			}
 			finished = finished || candidate.FinishReason != ""
 		}
@@ -207,7 +214,14 @@ func newGeminiDecoder() frameDecoder {
 			fragment = normalizer.update(usage.PromptTokens, usage.CachedTokens, usage.CandidateTokens, usage.ThoughtsTokens)
 		}
 		if finished {
-			message := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: text}}}
+			blocks := make([]Block, 0, 1+len(functionCalls))
+			if text != "" {
+				blocks = append(blocks, Text{Text: text})
+			}
+			for _, call := range functionCalls {
+				blocks = append(blocks, ToolUse{ID: call.ID, Name: call.Name, Input: call.Args})
+			}
+			message := Message{Role: RoleAssistant, Blocks: blocks}
 			return &message, fragment, hasUsage, nil
 		}
 		return nil, fragment, hasUsage, nil
