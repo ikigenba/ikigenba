@@ -16,7 +16,7 @@ identically; `Seq` is a monotonic counter within a turn, reset at each
 ```go
 // RecordType is the closed set of event-log record kinds. There is deliberately
 // no "warning" kind: fail-loud (D4) removed the concept — an unresolved cost is
-// Cost.Known=false, an unexpressible request fails at Send.
+// zero, an unexpressible request fails at Send.
 type RecordType string
 
 const (
@@ -86,11 +86,10 @@ func (l *Log) Close() error
 ```
 
 **Cost is present and always priced on the accounting records.** Every `usage`
-and `summary` record carries a `Cost`, resolved through the three-deep path (D3);
-its `Known` may be false, but the field is always there, so a log reader never has
-to reprice. The cumulative `summary.Cost.Known` is false if any turn's cost was
-unknown, mirroring the aggregation rule (D3) — a log total is honest about
-under-counting for the same reason the in-memory total is.
+and `summary` record carries a `Cost`, resolved through the D3 path (wire figure,
+catalog offering, else zero); the field is always there, so a log reader never
+has to reprice. The cumulative `summary.Cost` is the plain sum of the turns'
+costs, mirroring the aggregation rule (D3).
 
 ## REQUIREMENTS
 
@@ -100,7 +99,7 @@ under-counting for the same reason the in-memory total is.
 - R-5KP1-C3WR: A `nil` log MUST write nothing and MUST require no per-call-site nil check; log payloads MUST reuse the canonical `Identity`/`Usage`/`Cost`/`Error`/`Block` types rather than log-only shadow structs.
 - R-5LWX-PVNG: A log write failure MUST NOT abort the turn and MUST NOT change `Stream.Err()`; the failure MAY be retained on the log for inspection.
 - R-5N4U-3NE5: `Close` MUST emit exactly one cumulative `summary` record and MUST be idempotent; a `Send` after `Close` MUST return `ErrClosed`.
-- R-5OCQ-HF4U: Every `usage` and `summary` record MUST carry a `Cost` resolved through the D3 path, and the `summary` cost's `Known` MUST be false whenever any contributing turn's cost was unknown.
+- R-O2MS-9NCE: Every `usage` and `summary` record MUST carry a `Cost` resolved through the D3 path, and the `summary` cost MUST be the integer sum of the contributing turns' costs.
 - R-URVJ-1JCJ: `agentkit` MUST export `type RecordType string` whose complete set of exported constants is exactly `RecordTurnStart = "turn_start"`, `RecordMessage = "message"`, `RecordToolUse = "tool_use"`, `RecordToolResult = "tool_result"`, `RecordOutput = "output"`, `RecordUsage = "usage"`, `RecordError = "error"`, `RecordRetry = "retry"`, `RecordTurnEnd = "turn_end"`, `RecordSummary = "summary"`, with no other member.
 - R-UT3F-FB38: `agentkit` MUST export `type LogRecord struct { Type RecordType; Time time.Time; Seq int; Identity *Identity; Message *Message; ToolUse *ToolUse; ToolResult *ToolResult; Output json.RawMessage; Usage *Usage; Cost *Cost; Err *Error; Retry *RetryInfo }` with exactly those fields and their documented JSON tags (`type`, `time`, `seq`, and `omitempty` fields `identity`/`message`/`tool_use`/`tool_result`/`output`/`usage`/`cost`/`error`/`retry`).
 - R-0NE8-TO91: `agentkit` MUST export `type RetryInfo struct { Attempt int; Delay time.Duration; Reason string }` with exactly those three fields.

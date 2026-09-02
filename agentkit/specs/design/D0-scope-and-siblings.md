@@ -12,8 +12,9 @@ Message + block model; the four wires and five endpoints; credentials;
 generation settings + reasoning representability; tool definition + the canonical
 schema subset + per-wire schema rendering + runtime argument validation; the
 turn/orchestration loop; deferred tools + the `load_tools` meta-tool; the
-message-granular event stream; usage; cost + the shipped chat-only rate table;
-errors; the JSONL event log; `agentkit/retry` (public leaf); the SSE frame reader
+message-granular event stream; usage; cost; the model catalog (the static rate
+table, per-provider offerings, reasoning vocabularies, and model resolution —
+D21); errors; the JSONL event log; `agentkit/retry` (public leaf); the SSE frame reader
 (public leaf); the sibling-facing export contract.
 
 ## Out to sibling sub-projects (pending — NOT designed in agentkit's specs)
@@ -24,8 +25,6 @@ functionality back into agentkit.
 
 - **`toolkit`** — bash / read / write / edit / glob / grep + WebSearch / WebFetch.
 - **`ocr`** — document text extraction.
-- **`catalog`** — advisory extras: context windows, reasoning vocabularies, model
-  discovery.
 - **`mcp`** — remote MCP tool discovery. Consumer does
   `tools, err := mcp.Discover(ctx, server)` → `[]agentkit.Tool`, appended to
   `conv.Tools`. (D-B.) This is why agentkit MUST export `NewToolFromSchema`
@@ -48,7 +47,8 @@ reachable via OpenRouter (`z-ai/glm-*` slugs).
 - The sealed `Tool` interface, `Pricing` / `Cost` / `Usage` / `Identity`, the
   error taxonomy + `Retryable(err) bool`, and `agentkit/retry` — the shared
   vocabulary every sibling builds against.
-- The rate table is CHAT-ONLY and lives in agentkit as the one deliberate
-  exception to "values live in siblings." `embed` ships no rate table.
+- The catalog (D21) is CHAT-ONLY and lives in the root package: it is the only
+  rate table, and cost resolves from it with no consumer-supplied price. `embed`
+  ships no rate table.
 
 Full export contract is designed in D17 (the sibling-facing export contract).

@@ -97,8 +97,8 @@ var ErrClosed = errors.New("agentkit: conversation closed")
 
 Fail-loud is a deliberate stance that removed a whole type. There is **no
 `Warning` channel**: the two things the old design warned about are gone as
-warnings. A cost that could not be resolved is reported through `Cost.Known`
-(D3), not a warning. A forced tool-choice on a wire that cannot express it does
+warnings. A cost that could not be resolved is reported as zero (D3), not a
+warning. A forced tool-choice on a wire that cannot express it does
 not degrade silently — it fails at `Send` with `ErrInvalidConfig`, the same way
 an unrepresentable reasoning form or an out-of-subset tool schema fails. Every
 condition that would have been a warning is now either a typed field or a hard

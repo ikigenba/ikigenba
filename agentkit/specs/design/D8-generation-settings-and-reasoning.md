@@ -58,24 +58,30 @@ const (
 
 // ReasoningConfig is a neutral reasoning request. Mode selects the shape; Effort
 // is read only when Mode is ReasoningEffort and Budget only when Mode is
-// ReasoningBudget. A Mode a wire cannot express fails at Send. It is named
+// ReasoningBudget. Under ReasoningEffort, Effort's zero value EffortNone is the
+// literal "none" level some vendors accept, not an absent value. A Mode a wire cannot express fails at Send. It is named
 // ReasoningConfig, not Reasoning, because the D2 block variant owns the exported
 // name Reasoning in package agentkit; the Settings field keeps the name Reasoning.
 type ReasoningConfig struct {
 	Mode   ReasoningMode
-	Effort Effort // low | medium | high
+	Effort Effort // none | minimal | low | medium | high | xhigh | max
 	Budget int    // token budget, when Mode is ReasoningBudget
 }
 
 // Effort is the neutral reasoning effort level, read only when a ReasoningConfig's Mode
-// is ReasoningEffort. The zero value EffortNone means "not an effort request".
+// is ReasoningEffort. The set is exhaustive over every level any cataloged offering
+// accepts (D21); a wire renders the level's lowercase name verbatim, and whether a
+// given model honors it is the vendor's judgment, not agentkit's.
 type Effort int
 
 const (
-	EffortNone   Effort = iota // unset — not an effort request
+	EffortNone    Effort = iota // "none" — the vendor's no-reasoning effort level
+	EffortMinimal
 	EffortLow
 	EffortMedium
 	EffortHigh
+	EffortXHigh
+	EffortMax
 )
 
 // ToolChoice steers whether, and which, tool the model may call this turn. Like
@@ -129,6 +135,8 @@ release: only a genuinely new *wire shape* (not a new model) requires library wo
 - R-ZU4N-N6GD: `agentkit` MUST export `type Settings struct { Temperature *float64; TopP *float64; MaxOutputTokens *int; StopSequences []string; ToolChoice ToolChoice; Reasoning ReasoningConfig }` with exactly those fields.
 - R-ZWKG-EPXR: `agentkit` MUST export `type ReasoningMode int` with the constants `ReasoningDefault`, `ReasoningOff`, `ReasoningOn`, `ReasoningEffort`, `ReasoningBudget` declared in that `iota` order starting at 0.
 - R-ZXSC-SHOG: `agentkit` MUST export `type ReasoningConfig struct { Mode ReasoningMode; Effort Effort; Budget int }` with exactly those three fields.
-- R-ZZ09-69F5: `agentkit` MUST export `type Effort int` with the constants `EffortNone`, `EffortLow`, `EffortMedium`, `EffortHigh` declared in that `iota` order starting at 0.
+- R-NU3H-L95J: `agentkit` MUST export `type Effort int` with the constants `EffortNone`, `EffortMinimal`, `EffortLow`, `EffortMedium`, `EffortHigh`, `EffortXHigh`, `EffortMax` declared in that `iota` order starting at 0.
+- R-NVBD-Z0W8: A wire that renders `ReasoningEffort` MUST emit the level's lowercase constant name (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) verbatim for every `Effort` constant, with no per-level rejection or substitution.
+- R-NXR6-QKDM: The Anthropic Messages wire MUST express `ReasoningEffort` through the Messages API's effort control, in addition to the off and budget shapes it already expresses.
 - R-0085-K15U: `agentkit` MUST export `type ToolChoice struct { Mode ToolChoiceMode; Name string }` with exactly those two fields.
 - R-01G1-XSWJ: `agentkit` MUST export `type ToolChoiceMode int` with the constants `ToolChoiceAuto`, `ToolChoiceNone`, `ToolChoiceRequired`, `ToolChoiceTool` declared in that `iota` order starting at 0.

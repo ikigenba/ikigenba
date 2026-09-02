@@ -34,6 +34,7 @@ func NewEndpoint(baseURL string, auth AuthApplier, opts ...EndpointOption) (Endp
 // each returns an error.
 type EndpointOption func(*endpointConfig) error
 
+func WithName(name string) EndpointOption            // identity name, e.g. "anthropic"; keys catalog pricing (D3, D21)
 func WithHeader(name, value string) EndpointOption   // extra static headers (attribution, beta flags)
 func WithFramer(f Framer) EndpointOption             // override the default SSE Framer (D5)
 func WithClassifier(c ErrorClassifier) EndpointOption
@@ -105,7 +106,9 @@ type Provider interface {
 - R-3H39-MBXP: The composed `Provider` SPI MUST be public and implementable by a consumer as the final escape-hatch rung, with the same standing as a vendor constructor.
 - R-YEPA-QILV: `agentkit` MUST export `Endpoint` as an opaque struct type with no exported fields, constructed only through `NewEndpoint`.
 - R-ZKDG-L0IT: `agentkit` MUST export `EndpointOption` as a functional-option type that configures an `Endpoint` at construction and returns an `error`.
-- R-YFX7-4ACK: `agentkit` MUST export the endpoint options `WithHeader(name, value string) EndpointOption`, `WithFramer(f Framer) EndpointOption`, `WithClassifier(c ErrorClassifier) EndpointOption`, `WithMutator(m RequestMutator) EndpointOption`, and `WithHTTPClient(c *http.Client) EndpointOption`.
+- R-NYZ3-4C4B: `agentkit` MUST export the endpoint options `WithName(name string) EndpointOption`, `WithHeader(name, value string) EndpointOption`, `WithFramer(f Framer) EndpointOption`, `WithClassifier(c ErrorClassifier) EndpointOption`, `WithMutator(m RequestMutator) EndpointOption`, and `WithHTTPClient(c *http.Client) EndpointOption`.
+- R-O06Z-I3V0: A conversation's `Identity.Endpoint` MUST equal the endpoint's `WithName` value when one was given and the endpoint's base URL string otherwise.
+- R-O1EV-VVLP: `WithName` MUST reject an empty name with `ErrInvalidConfig` at endpoint construction.
 - R-ZMT9-CK07: `agentkit` MUST export the `AuthApplier` interface whose method set is exactly `Apply(ctx context.Context, req *http.Request, body []byte) error`.
 - R-ZO15-QBQW: `agentkit` MUST export `type RequestMutator func(req *http.Request, body *[]byte) error`.
 - R-ZP92-43HL: `agentkit` MUST export `type ErrorClassifier func(status int, header http.Header, body []byte) error`.
