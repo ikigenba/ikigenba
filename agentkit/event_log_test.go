@@ -147,7 +147,6 @@ func decodeLogRecords(t *testing.T, data []byte) []LogRecord {
 }
 
 func TestRecordTypeIsClosedEnumeration(t *testing.T) {
-	// R-0KYG-24RN
 	// R-URVJ-1JCJ
 	recordType := reflect.TypeFor[RecordType]()
 	if recordType.Name() != "RecordType" || recordType.Kind() != reflect.String {
@@ -187,7 +186,6 @@ func TestRecordTypeIsClosedEnumeration(t *testing.T) {
 }
 
 func TestLogRecordDeclarationIsExact(t *testing.T) {
-	// R-0M6C-FWIC
 	// R-UT3F-FB38
 	typeOf := reflect.TypeFor[LogRecord]()
 	if typeOf.Name() != "LogRecord" || typeOf.Kind() != reflect.Struct {
