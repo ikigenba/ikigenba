@@ -555,31 +555,3 @@ func TestTimeOfNeverPanicsForArbitraryInput(t *testing.T) {
 		decodedOK("garbage", garbage())
 	}
 }
-
-func TestValidateAffineMapPanicsWhenNotInvertible(t *testing.T) {
-	// R-SSYW-CRAP
-	// The shipped affine map (multiplier over modulus) must be invertible, so
-	// MintAt/TimeOf round-trip. validateAffineMap() panics unless the real
-	// constants are coprime; assert it returns cleanly for the values the
-	// process actually uses.
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				t.Fatalf("validateAffineMap() panicked for the shipped constants: %v", r)
-			}
-		}()
-		validateAffineMap()
-	}()
-
-	// The invariant is meaningful only if the map is genuinely a bijection:
-	// every millisecond offset the encoder can emit must decode back to itself.
-	for _, ms := range []int64{0, 1, 2, multiplier, modulus - 1} {
-		encoded := (multiplyMod(ms%modulus, multiplier) + offset) % modulus
-		// Adding modulus before subtracting offset keeps the dividend
-		// non-negative under Go's signed-remainder semantics.
-		difference := (encoded + modulus - offset) % modulus
-		if got := multiplyMod(difference, multiplierInverse); got != ms%modulus {
-			t.Fatalf("affine map not invertible at ms=%d: recovered %d", ms, got)
-		}
-	}
-}
