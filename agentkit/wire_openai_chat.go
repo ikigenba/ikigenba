@@ -43,9 +43,26 @@ type chatToolFunction struct {
 	Arguments string `json:"arguments"`
 }
 
-func (w *openAIChatWire) encodeRequest(state RequestState) ([]byte, error) {
-	messages := make([]chatMessage, 0, len(state.History))
-	for _, message := range state.History {
+type chatNamedFunction struct {
+	Name string `json:"name"`
+}
+
+type chatNamedTool struct {
+	Type     string            `json:"type"`
+	Function chatNamedFunction `json:"function"`
+}
+
+type openAIChatRequest struct {
+	Model           string          `json:"model"`
+	Messages        []chatMessage   `json:"messages"`
+	ReasoningEffort string          `json:"reasoning_effort,omitempty"`
+	ToolChoice      any             `json:"tool_choice,omitempty"`
+	Tools           json.RawMessage `json:"tools,omitempty"`
+}
+
+func buildOpenAIChatMessages(history []Message) ([]chatMessage, error) {
+	messages := make([]chatMessage, 0, len(history))
+	for _, message := range history {
 		encoded := chatMessage{Role: openAIRole(message.Role)}
 		for _, block := range message.Blocks {
 			switch block := block.(type) {
@@ -76,35 +93,34 @@ func (w *openAIChatWire) encodeRequest(state RequestState) ([]byte, error) {
 		}
 		messages = append(messages, encoded)
 	}
-	type namedFunction struct {
-		Name string `json:"name"`
-	}
-	type namedTool struct {
-		Type     string        `json:"type"`
-		Function namedFunction `json:"function"`
-	}
-	request := struct {
-		Messages        []chatMessage   `json:"messages"`
-		ReasoningEffort string          `json:"reasoning_effort,omitempty"`
-		ToolChoice      any             `json:"tool_choice,omitempty"`
-		Tools           json.RawMessage `json:"tools,omitempty"`
-	}{Messages: messages}
-	switch state.Settings.Reasoning.Mode {
+	return messages, nil
+}
+
+func configureOpenAIChatRequest(request *openAIChatRequest, settings Settings) {
+	switch settings.Reasoning.Mode {
 	case ReasoningOff:
 		request.ReasoningEffort = "none"
 	case ReasoningEffort:
-		request.ReasoningEffort = effortName(state.Settings.Reasoning.Effort)
+		request.ReasoningEffort = effortName(settings.Reasoning.Effort)
 	}
-	switch state.Settings.ToolChoice.Mode {
+	switch settings.ToolChoice.Mode {
 	case ToolChoiceNone:
 		request.ToolChoice = "none"
 	case ToolChoiceRequired:
 		request.ToolChoice = "required"
 	case ToolChoiceTool:
-		request.ToolChoice = namedTool{Type: "function", Function: namedFunction{Name: state.Settings.ToolChoice.Name}}
+		request.ToolChoice = chatNamedTool{Type: "function", Function: chatNamedFunction{Name: settings.ToolChoice.Name}}
 	}
+}
+
+func (w *openAIChatWire) encodeRequest(state RequestState) ([]byte, error) {
+	messages, err := buildOpenAIChatMessages(state.History)
+	if err != nil {
+		return nil, err
+	}
+	request := openAIChatRequest{Model: state.Model, Messages: messages}
+	configureOpenAIChatRequest(&request, state.Settings)
 	if len(state.Tools) > 0 {
-		var err error
 		request.Tools, err = w.RenderTools(state.Tools)
 		if err != nil {
 			return nil, err

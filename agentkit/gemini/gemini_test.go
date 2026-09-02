@@ -3,9 +3,11 @@ package gemini
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"testing"
 
@@ -15,6 +17,19 @@ import (
 type parityAuth struct{}
 
 func (parityAuth) Apply(context.Context, *http.Request, []byte) error { return nil }
+
+type capturingCredential struct {
+	url *url.URL
+	err error
+}
+
+func (credential *capturingCredential) apply(_ context.Context, request *http.Request, _ []byte) error {
+	capturedURL := *request.URL
+	credential.url = &capturedURL
+	return credential.err
+}
+
+func (*capturingCredential) isGeminiCredential() {}
 
 type parityRequest struct {
 	path string
@@ -88,5 +103,33 @@ func TestNewSelectsGeminiWire(t *testing.T) {
 	}
 	if _, exists := (<-seen)["contents"]; !exists {
 		t.Fatal("Gemini constructor did not select the Gemini codec")
+	}
+}
+
+func TestNewPlacesEscapedModelInDefaultURLPath(t *testing.T) {
+	// R-TDVN-CXY2
+	terminal := errors.New("stop after URL capture")
+	credential := &capturingCredential{err: terminal}
+	model := "vendor/model:latest"
+	conversation, err := New(credential, model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := conversation.Send(context.Background(), agentkit.Text{Text: "hello"})
+	for event := range stream.Events() {
+		_ = event
+	}
+	if !errors.Is(stream.Err(), terminal) {
+		t.Fatalf("stream error = %v, want sentinel %v", stream.Err(), terminal)
+	}
+	if credential.url == nil {
+		t.Fatal("credential did not capture the request URL")
+	}
+	wantPath := "/v1beta/models/vendor%2Fmodel:latest:streamGenerateContent"
+	if credential.url.EscapedPath() != wantPath {
+		t.Fatalf("escaped request path = %q, want %q", credential.url.EscapedPath(), wantPath)
+	}
+	if credential.url.Query().Get("alt") != "sse" {
+		t.Fatalf("request query = %q, want alt=sse", credential.url.RawQuery)
 	}
 }

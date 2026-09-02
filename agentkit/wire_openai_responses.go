@@ -45,6 +45,7 @@ type responsesNamedTool struct {
 }
 
 type openAIResponsesRequest struct {
+	Model      string              `json:"model"`
 	Input      []json.RawMessage   `json:"input"`
 	Reasoning  *responsesReasoning `json:"reasoning,omitempty"`
 	ToolChoice any                 `json:"tool_choice,omitempty"`
@@ -57,6 +58,7 @@ func (w *openAIResponsesWire) encodeRequest(state RequestState) ([]byte, error) 
 		return nil, err
 	}
 	request := buildOpenAIResponsesRequest(input, state.Settings)
+	request.Model = state.Model
 	if len(state.Tools) > 0 {
 		request.Tools, err = w.RenderTools(state.Tools)
 		if err != nil {

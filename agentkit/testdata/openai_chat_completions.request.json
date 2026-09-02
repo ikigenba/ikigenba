@@ -1,1 +1,1 @@
-{"messages":[{"role":"assistant","content":"Hello"}]}
+{"model":"vendor/model:latest","messages":[{"role":"assistant","content":"Hello"}]}

@@ -54,6 +54,7 @@ type anthropicToolChoice struct {
 }
 
 type anthropicRequest struct {
+	Model      string               `json:"model"`
 	Messages   []anthropicMessage   `json:"messages"`
 	Thinking   *anthropicThinking   `json:"thinking,omitempty"`
 	ToolChoice *anthropicToolChoice `json:"tool_choice,omitempty"`
@@ -109,7 +110,7 @@ func (w *anthropicWire) encodeRequest(state RequestState) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	request := anthropicRequest{Messages: messages}
+	request := anthropicRequest{Model: state.Model, Messages: messages}
 	configureAnthropicRequest(&request, state.Settings)
 	if len(state.Tools) > 0 {
 		request.Tools, err = w.RenderTools(state.Tools)

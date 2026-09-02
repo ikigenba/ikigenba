@@ -100,7 +100,7 @@ func TestWireOwnsOnlyBodyGrammar(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", test.name, err)
 		}
-		assertExactRequestRoot(t, test.name, body, test.rootKey)
+		assertExactRequestRoot(t, test.name, body, test.rootKey, state.Model)
 		for _, fragment := range test.want {
 			if !bytes.Contains(body, []byte(fragment)) {
 				t.Errorf("%s body %s does not own required grammar fragment %s", test.name, body, fragment)
@@ -183,14 +183,22 @@ func assertEndpointConcernsAreOutsideWireInterface(t *testing.T) {
 	}
 }
 
-func assertExactRequestRoot(t *testing.T, wireName string, body []byte, wantKey string) {
+func assertExactRequestRoot(t *testing.T, wireName string, body []byte, wantKey, wantModel string) {
 	t.Helper()
 	var root map[string]json.RawMessage
 	if err := json.Unmarshal(body, &root); err != nil {
 		t.Fatalf("%s request body is invalid JSON: %v", wireName, err)
 	}
-	if len(root) != 1 || root[wantKey] == nil {
-		t.Fatalf("%s request root keys = %v, want only body-grammar key %q (no base URL, auth, headers, or error envelope)", wireName, reflect.ValueOf(root).MapKeys(), wantKey)
+	wantKeys := 1
+	if wireName != "gemini" {
+		wantKeys++
+		var model string
+		if err := json.Unmarshal(root["model"], &model); err != nil || model != wantModel {
+			t.Fatalf("%s request model = %q, %v; want %q", wireName, model, err, wantModel)
+		}
+	}
+	if len(root) != wantKeys || root[wantKey] == nil {
+		t.Fatalf("%s request root keys = %v, want body-grammar key %q and its grammar-owned fields only", wireName, reflect.ValueOf(root).MapKeys(), wantKey)
 	}
 }
 
@@ -815,7 +823,7 @@ func TestRequestBodiesEmbedRenderedToolsOnceAndInOrder(t *testing.T) {
 		if len(schemas) != 2 {
 			t.Fatalf("%T request declaration count = %d, want 2", wire, len(schemas))
 		}
-		if !bytes.Contains(bodyTools, []byte(`"name":"search"`)) || bytes.Index(bodyTools, []byte(`"name":"search"`)) >= bytes.Index(bodyTools, []byte(`"name":"fetch"`)) {
+		if bytes.Index(bodyTools, []byte(`"name":"search"`)) >= bytes.Index(bodyTools, []byte(`"name":"fetch"`)) {
 			t.Errorf("%T reordered tools in request: %s", wire, bodyTools)
 		}
 	}
@@ -992,19 +1000,19 @@ func TestSupportedSettingsAreEncodedByOwningWireGrammar(t *testing.T) {
 			name:     "anthropic budget and named tool",
 			wire:     newAnthropicWire(nil),
 			settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningBudget, Budget: 4096}, ToolChoice: ToolChoice{Mode: ToolChoiceTool, Name: "lookup"}},
-			want:     `{"messages":[],"thinking":{"type":"enabled","budget_tokens":4096},"tool_choice":{"type":"tool","name":"lookup"}}` + "\n",
+			want:     `{"model":"opaque-model-has-no-capability-role","messages":[],"thinking":{"type":"enabled","budget_tokens":4096},"tool_choice":{"type":"tool","name":"lookup"}}` + "\n",
 		},
 		{
 			name:     "responses effort and no tools",
 			wire:     newOpenAIResponsesWire(nil),
 			settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningEffort, Effort: EffortHigh}, ToolChoice: ToolChoice{Mode: ToolChoiceNone}},
-			want:     `{"input":[],"reasoning":{"effort":"high"},"tool_choice":"none"}` + "\n",
+			want:     `{"model":"opaque-model-has-no-capability-role","input":[],"reasoning":{"effort":"high"},"tool_choice":"none"}` + "\n",
 		},
 		{
 			name:     "chat off and named tool",
 			wire:     newOpenAIChatWire(nil),
 			settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningOff}, ToolChoice: ToolChoice{Mode: ToolChoiceTool, Name: "lookup"}},
-			want:     `{"messages":[],"reasoning_effort":"none","tool_choice":{"type":"function","function":{"name":"lookup"}}}` + "\n",
+			want:     `{"model":"opaque-model-has-no-capability-role","messages":[],"reasoning_effort":"none","tool_choice":{"type":"function","function":{"name":"lookup"}}}` + "\n",
 		},
 		{
 			name:     "gemini bare on and required tool",
@@ -1076,7 +1084,7 @@ func TestEveryWireRoundTripsCapturedMessageBytes(t *testing.T) {
 				}
 				parsed = event.(MessageDone).Message
 			}
-			got, err := wire.EncodeRequest(RequestState{History: History{parsed}})
+			got, err := wire.EncodeRequest(RequestState{Model: "vendor/model:latest", History: History{parsed}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1086,6 +1094,68 @@ func TestEveryWireRoundTripsCapturedMessageBytes(t *testing.T) {
 			}
 			if !bytes.Equal(got, want) {
 				t.Fatalf("request bytes = %q, want fixture bytes %q", got, want)
+			}
+		})
+	}
+}
+
+func TestWireRequestModelPlacementMatchesFixtures(t *testing.T) {
+	const model = "vendor/model:latest"
+	tests := []struct {
+		fixture  wireFixture
+		hasModel bool
+	}{
+		// R-TBFU-LEGO
+		{wireFixtures()[0], true},
+		// R-TCNQ-Z67D (OpenAI Responses)
+		{wireFixtures()[1], true},
+		// R-TCNQ-Z67D (OpenAI Chat Completions)
+		{wireFixtures()[2], true},
+		// R-TDVN-CXY2
+		{wireFixtures()[3], false},
+	}
+	for _, test := range tests {
+		t.Run(test.fixture.name, func(t *testing.T) {
+			response, err := os.Open(test.fixture.response)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = response.Close() }()
+			wire := test.fixture.make(nil)
+			var parsed Message
+			for event, decodeErr := range wire.DecodeStream(SSEFrames(response)) {
+				if decodeErr != nil {
+					t.Fatal(decodeErr)
+				}
+				parsed = event.(MessageDone).Message
+			}
+			got, err := wire.EncodeRequest(RequestState{Model: model, History: History{parsed}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := os.ReadFile(test.fixture.request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Fatalf("request bytes = %q, want fixture bytes %q", got, want)
+			}
+			var root map[string]json.RawMessage
+			if err := json.Unmarshal(got, &root); err != nil {
+				t.Fatal(err)
+			}
+			rawModel, exists := root["model"]
+			if exists != test.hasModel {
+				t.Fatalf("top-level model presence = %v, want %v", exists, test.hasModel)
+			}
+			if test.hasModel {
+				var decodedModel string
+				if err := json.Unmarshal(rawModel, &decodedModel); err != nil {
+					t.Fatal(err)
+				}
+				if decodedModel != model {
+					t.Fatalf("top-level model = %q, want verbatim %q", decodedModel, model)
+				}
 			}
 		})
 	}
