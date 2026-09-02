@@ -50,22 +50,24 @@ type DeferredGroup struct {
 // NewConversation constructs a conversation driven by provider. The provider,
 // its identity, and the HTTP client cannot be reassigned after construction.
 func NewConversation(provider Provider, client *http.Client, cfg Config) *Conversation {
-	_ = cfg
-	return &Conversation{
+	conversation := &Conversation{
 		provider: provider,
 		client:   client,
 		identity: provider.Identity(),
+		settings: cloneSettings(cfg.Settings),
+		options:  cloneProviderOptions(cfg.Options),
+		tools:    cloneTools(cfg.Tools),
+		deferred: cloneDeferredGroups(cfg.Deferred),
 	}
+	if cfg.Log != nil {
+		conversation.eventSink = cfg.Log
+	}
+	return conversation
 }
 
 // Deferred registers on-demand tool groups on the conversation.
 func (c *Conversation) Deferred(groups ...DeferredGroup) {
-	owned := make([]DeferredGroup, len(groups))
-	for index, group := range groups {
-		owned[index] = group
-		owned[index].Tools = cloneTools(group.Tools)
-	}
-	c.deferred = append(c.deferred, owned...)
+	c.deferred = append(c.deferred, cloneDeferredGroups(groups)...)
 }
 
 // Send drives one turn: it appends the user blocks, calls the model, runs any
@@ -305,6 +307,15 @@ func cloneProviderOptions(options ProviderOptions) ProviderOptions {
 
 func cloneTools(tools []Tool) []Tool {
 	return append([]Tool(nil), tools...)
+}
+
+func cloneDeferredGroups(groups []DeferredGroup) []DeferredGroup {
+	clone := make([]DeferredGroup, len(groups))
+	for index, group := range groups {
+		clone[index] = group
+		clone[index].Tools = cloneTools(group.Tools)
+	}
+	return clone
 }
 
 func (c *Conversation) execute(request *http.Request) (*http.Response, error) {

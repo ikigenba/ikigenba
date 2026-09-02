@@ -766,6 +766,223 @@ func successfulPhase15Client(transportCalls *int) *http.Client {
 	})}
 }
 
+func TestZeroConfigLeavesEveryOptionalRequestAxisEmpty(t *testing.T) {
+	// R-SQPK-3AUV
+	provider := &phase15Provider{
+		model: "zero-config-model",
+		responses: [][]Event{{MessageDone{Message: Message{
+			Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}},
+		}}}},
+	}
+	transportCalls := 0
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
+	stream := conversation.Send(context.Background(), Text{Text: "hello"})
+	drainStream(stream)
+
+	if stream.Err() != nil || transportCalls != 1 || len(provider.states) != 1 {
+		t.Fatalf("zero-config Send = %v, transport=%d states=%d", stream.Err(), transportCalls, len(provider.states))
+	}
+	state := provider.states[0]
+	if !reflect.DeepEqual(state.Settings, Settings{}) || state.Options != nil || len(state.Tools) != 0 {
+		t.Fatalf("zero-config request axes = settings %#v, options %#v, tools %#v", state.Settings, state.Options, state.Tools)
+	}
+	if _, declaresOutput := reflect.TypeFor[RequestState]().FieldByName("Output"); declaresOutput {
+		t.Fatal("zero Config declared structured output through RequestState")
+	}
+	if conversation.eventSink != nil {
+		t.Fatalf("nil Config.Log installed event sink %#v", conversation.eventSink)
+	}
+}
+
+func TestNewConversationOwnsAllMutableConfigInputs(t *testing.T) {
+	// R-SRXG-H2LK
+	temperature := 0.25
+	topP := 0.75
+	maxTokens := 321
+	stopSequences := []string{"construction-stop"}
+	eager := phase17Tool("owned_eager")
+	deferred := phase17Tool("owned_deferred")
+	eagerSlice := []Tool{eager}
+	deferredTools := []Tool{deferred}
+	groups := []DeferredGroup{{Name: "owned_group", Blurb: "owned blurb", Tools: deferredTools}}
+	optionValue := json.RawMessage(`{"construction":"value"}`)
+	options := ProviderOptions{"extension": optionValue}
+	callerSettings := Settings{
+		Temperature: &temperature, TopP: &topP, MaxOutputTokens: &maxTokens,
+		StopSequences: stopSequences,
+	}
+	wantSettings := cloneSettings(callerSettings)
+	wantOptions := cloneProviderOptions(options)
+
+	load := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{
+		ID: "load-owned", Name: loadToolsName, Input: json.RawMessage(`{"names":["owned_group"]}`),
+	}}}
+	done := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: load}}, {MessageDone{Message: done}}}}
+	transportCalls := 0
+	cfg := Config{
+		Tools: eagerSlice, Deferred: groups, Settings: callerSettings, Options: options,
+	}
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), cfg)
+
+	cfg.Tools[0] = phase17Tool("mutated_eager")
+	cfg.Deferred[0].Tools[0] = phase17Tool("mutated_deferred")
+	cfg.Deferred[0] = DeferredGroup{Name: "mutated_group", Tools: []Tool{phase17Tool("replacement")}}
+	cfg.Settings.StopSequences[0] = "mutated-stop"
+	*cfg.Settings.Temperature = 9
+	*cfg.Settings.TopP = 9
+	*cfg.Settings.MaxOutputTokens = 999
+	cfg.Options["extension"][0] = '['
+	cfg.Options["extension"] = json.RawMessage(`{"mutated":true}`)
+	cfg.Options["added"] = json.RawMessage(`true`)
+
+	stream := conversation.Send(context.Background(), Text{Text: "go"})
+	drainStream(stream)
+	if stream.Err() != nil || transportCalls != 2 || len(provider.states) != 2 {
+		t.Fatalf("owned-config Send = %v, transport=%d states=%d", stream.Err(), transportCalls, len(provider.states))
+	}
+	for index, state := range provider.states {
+		if !reflect.DeepEqual(state.Settings, wantSettings) || !reflect.DeepEqual(state.Options, wantOptions) {
+			t.Errorf("state %d mutable config changed: settings=%#v options=%#v", index, state.Settings, state.Options)
+		}
+	}
+	if got := toolNames(provider.states[0].Tools); !reflect.DeepEqual(got, []string{loadToolsName, "owned_eager"}) {
+		t.Fatalf("first owned tool snapshot = %v", got)
+	}
+	if got := toolNames(provider.states[1].Tools); !reflect.DeepEqual(got, []string{loadToolsName, "owned_eager", "owned_deferred"}) {
+		t.Fatalf("nested deferred tool snapshot = %v", got)
+	}
+}
+
+func TestConfiguredToolsSettingsAndOptionsPersistAcrossTurns(t *testing.T) {
+	// R-ST5C-UUC9
+	// R-SVL5-MDTN
+	callbackCalls := 0
+	tool := MustTool("configured_tool", "", func(context.Context, phase15Input) (string, error) {
+		callbackCalls++
+		return "called", nil
+	})
+	temperature := 0.4
+	settings := Settings{Temperature: &temperature, StopSequences: []string{"END"}}
+	options := ProviderOptions{"custom": json.RawMessage(`{"enabled":true}`)}
+	call := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{
+		ID: "configured-call", Name: tool.Name(), Input: json.RawMessage(`{"city":"Oslo"}`),
+	}}}
+	doneOne := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "first done"}}}
+	doneTwo := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "second done"}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{
+		{MessageDone{Message: call}}, {MessageDone{Message: doneOne}}, {MessageDone{Message: doneTwo}},
+	}}
+	transportCalls := 0
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+		Tools: []Tool{tool}, Settings: settings, Options: options,
+	})
+	first := conversation.Send(context.Background(), Text{Text: "turn one"})
+	drainStream(first)
+	second := conversation.Send(context.Background(), Text{Text: "turn two"})
+	drainStream(second)
+
+	if first.Err() != nil || second.Err() != nil || callbackCalls != 1 || transportCalls != 3 || len(provider.states) != 3 {
+		t.Fatalf("configured turns = errors %v/%v callback=%d transport=%d states=%d", first.Err(), second.Err(), callbackCalls, transportCalls, len(provider.states))
+	}
+	for index, state := range provider.states {
+		if got := toolNames(state.Tools); !reflect.DeepEqual(got, []string{"configured_tool"}) {
+			t.Errorf("state %d eager tools = %v", index, got)
+		}
+		if !reflect.DeepEqual(state.Settings, settings) || !reflect.DeepEqual(state.Options, options) {
+			t.Errorf("state %d fixed config = settings %#v options %#v", index, state.Settings, state.Options)
+		}
+	}
+	result := provider.states[1].History[len(provider.states[1].History)-1].Blocks[0].(ToolResult)
+	if result.ToolUseID != "configured-call" || result.Content != "called" || result.IsError {
+		t.Fatalf("configured eager dispatch result = %#v", result)
+	}
+}
+
+func TestConfiguredLogReceivesEveryConversationTurn(t *testing.T) {
+	// R-SY0Y-DXB1
+	done := MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{done}, {done}}}
+	transportCalls := 0
+	var output bytes.Buffer
+	log := NewLog(&output, func() time.Time { return time.Date(2034, 2, 3, 4, 5, 6, 0, time.UTC) })
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Log: log})
+	for _, prompt := range []string{"first", "second"} {
+		stream := conversation.Send(context.Background(), Text{Text: prompt})
+		drainStream(stream)
+		if stream.Err() != nil {
+			t.Fatal(stream.Err())
+		}
+	}
+	records := decodeLogRecords(t, output.Bytes())
+	counts := make(map[RecordType]int)
+	for _, record := range records {
+		counts[record.Type]++
+	}
+	if counts[RecordTurnStart] != 2 || counts[RecordMessage] != 2 || counts[RecordTurnEnd] != 2 {
+		t.Fatalf("configured log record counts = %#v; records=%#v", counts, records)
+	}
+
+	nilLogConversation := NewConversation(&phase15Provider{model: "model", responses: [][]Event{{done}}}, successfulPhase15Client(new(int)), Config{})
+	nilLogStream := nilLogConversation.Send(context.Background(), Text{Text: "nil log"})
+	drainStream(nilLogStream)
+	if nilLogStream.Err() != nil || nilLogConversation.eventSink != nil {
+		t.Fatalf("nil Config.Log = err %v sink %#v", nilLogStream.Err(), nilLogConversation.eventSink)
+	}
+}
+
+type phase5ReservedProvider struct {
+	*phase15Provider
+}
+
+func (*phase5ReservedProvider) reservedKeys() []string { return []string{"reserved"} }
+
+func TestInvalidConfigInputsFailOnlyWhenSendIsConsumed(t *testing.T) {
+	// R-9GCK-P42P
+	tests := []struct {
+		name string
+		cfg  Config
+	}{
+		{name: "invalid eager tool", cfg: Config{Tools: []Tool{nil}}},
+		{name: "invalid deferred inventory", cfg: Config{Deferred: []DeferredGroup{{Name: "bad", Tools: []Tool{nil}}}}},
+		{name: "reserved option collision", cfg: Config{Options: ProviderOptions{"reserved": json.RawMessage(`true`)}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			provider := &phase5ReservedProvider{phase15Provider: &phase15Provider{model: "model"}}
+			transportCalls := 0
+			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), test.cfg)
+			if conversation == nil {
+				t.Fatal("construction rejected invalid Send-time config")
+			}
+			conversation.history = History{{Role: RoleSystem, Blocks: []Block{Text{Text: "unchanged"}}}}
+			before, err := json.Marshal(conversation.history)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			stream := conversation.Send(context.Background(), Text{Text: "not committed"})
+			if len(provider.states) != 0 || transportCalls != 0 {
+				t.Fatal("creating an unconsumed Stream crossed a provider boundary")
+			}
+			drainStream(stream)
+			if !errors.Is(stream.Err(), ErrInvalidConfig) {
+				t.Fatalf("Send error = %v, want ErrInvalidConfig", stream.Err())
+			}
+			if len(provider.states) != 0 || provider.decodeCalls != 0 || provider.classifyCalls != 0 || transportCalls != 0 {
+				t.Fatalf("invalid config calls: build=%d decode=%d classify=%d transport=%d", len(provider.states), provider.decodeCalls, provider.classifyCalls, transportCalls)
+			}
+			after, err := json.Marshal(conversation.history)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(after, before) {
+				t.Fatalf("history changed: before=%s after=%s", before, after)
+			}
+		})
+	}
+}
+
 type captureEventSink struct {
 	records []eventRecord
 }
