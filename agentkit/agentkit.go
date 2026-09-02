@@ -54,9 +54,12 @@ type RequestState struct {
 
 // Stream is the live view of one turn's events.
 type Stream struct {
-	drive    func(func(Event) bool) error
-	err      error
-	consumed bool
+	drive          func(func(Event) bool) error
+	err            error
+	consumed       bool
+	outputDeclared bool
+	outputValue    json.RawMessage
+	outputDone     bool
 }
 
 // Events returns the turn's events in order. A Stream is single-use.
@@ -67,7 +70,13 @@ func (s *Stream) Events() iter.Seq[Event] {
 		}
 		s.consumed = true
 		if s.drive != nil {
-			s.err = s.drive(yield)
+			s.err = s.drive(func(event Event) bool {
+				if output, ok := event.(OutputDone); ok {
+					s.outputValue = append(s.outputValue[:0], output.Value...)
+					s.outputDone = true
+				}
+				return yield(event)
+			})
 			s.drive = nil
 		}
 	}

@@ -75,7 +75,7 @@ func NewConversation(provider Provider, client *http.Client, cfg Config) *Conver
 // arrives as additional Block variants, never as a second method.
 func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream {
 	turn := c.snapshotTurn(blocks)
-	return &Stream{drive: func(yield func(Event) bool) error {
+	return &Stream{outputDeclared: c.output != nil, drive: func(yield func(Event) bool) error {
 		log, _ := c.eventSink.(*Log)
 		if log.isClosed() {
 			return ErrClosed
@@ -167,29 +167,9 @@ func (c *Conversation) snapshotTurn(blocks []Block) turnSnapshot {
 }
 
 func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator, snapshot turnSnapshot, yield func(Event) bool, accounting *turnAccounting) error {
-	outputAttempts := 0
-	outputLimit := 0
-	if c.output != nil {
-		outputLimit = c.output.MaxAttempts
-		if outputLimit == 0 {
-			outputLimit = DefaultOutputAttempts
-		}
-	}
+	output := newTurnOutputProgress(c.output)
 	for {
-		candidate := append(cloneHistory(snapshot.baseHistory), cloneHistory(snapshot.turn)...)
-		roundEvents, completed, err := c.roundTrip(ctx, RequestState{
-			Model:    c.identity.Model,
-			History:  candidate,
-			Settings: cloneSettings(snapshot.settings),
-			Options:  cloneProviderOptions(snapshot.options),
-			Tools:    orchestrator.advertisedSnapshot(),
-			Output:   cloneOutputContract(c.output),
-		}, yield)
-		if provider, ok := c.provider.(accountingProvider); ok {
-			accounting.add(provider.turnAccounting())
-		} else {
-			accounting.add(providerAccounting{})
-		}
+		assistant, calls, completed, err := c.executeTurnRoundTrip(ctx, orchestrator, snapshot, yield, accounting)
 		if !completed {
 			return err
 		}
@@ -197,42 +177,105 @@ func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator
 			return err
 		}
 
-		assistant, calls := completedAssistantMessages(roundEvents)
 		snapshot.turn = append(snapshot.turn, assistant...)
 		if len(calls) == 0 {
-			if c.output != nil {
-				outputAttempts++
-				text := completedAssistantText(assistant)
-				if result := validateOutputDocument(c.output.Schema, json.RawMessage(text)); result != nil {
-					if outputAttempts >= outputLimit {
-						return invalidOutputError(c.identity, outputAttempts)
-					}
-					corrective := correctiveOutputMessage(result)
-					snapshot.turn = append(snapshot.turn, corrective)
-					if !publishEvent(c.eventSink, yield, MessageDone{Message: corrective}) {
-						return nil
-					}
-					continue
-				}
-				if !yield(OutputDone{Value: append(json.RawMessage(nil), text...)}) {
-					return nil
-				}
+			action, err := c.finishNoToolRound(&snapshot, assistant, &output, yield)
+			switch action {
+			case turnRetry:
+				continue
+			case turnCommit:
+				c.history = append(c.history, cloneHistory(snapshot.turn)...)
 			}
-			c.history = append(c.history, cloneHistory(snapshot.turn)...)
-			return nil
+			return err
 		}
 
-		results := make([]Block, 0, len(calls))
-		for _, call := range calls {
-			result := orchestrator.dispatch(ctx, call)
-			results = append(results, result)
-			if !publishEvent(c.eventSink, yield, ToolReturn{Result: result}) {
-				return nil
-			}
+		if !c.dispatchTurnTools(ctx, orchestrator, &snapshot, calls, yield) {
+			return nil
 		}
-		toolMessage := Message{Role: RoleTool, Blocks: results}
-		snapshot.turn = append(snapshot.turn, toolMessage)
 	}
+}
+
+type turnOutputProgress struct {
+	attempts int
+	limit    int
+}
+
+func newTurnOutputProgress(contract *OutputContract) turnOutputProgress {
+	if contract == nil {
+		return turnOutputProgress{}
+	}
+	limit := contract.MaxAttempts
+	if limit == 0 {
+		limit = DefaultOutputAttempts
+	}
+	return turnOutputProgress{limit: limit}
+}
+
+func (c *Conversation) executeTurnRoundTrip(ctx context.Context, orchestrator *orchestrator, snapshot turnSnapshot, yield func(Event) bool, accounting *turnAccounting) (History, []ToolUse, bool, error) {
+	candidate := append(cloneHistory(snapshot.baseHistory), cloneHistory(snapshot.turn)...)
+	events, completed, err := c.roundTrip(ctx, RequestState{
+		Model:    c.identity.Model,
+		History:  candidate,
+		Settings: cloneSettings(snapshot.settings),
+		Options:  cloneProviderOptions(snapshot.options),
+		Tools:    orchestrator.advertisedSnapshot(),
+		Output:   cloneOutputContract(c.output),
+	}, yield)
+	if provider, ok := c.provider.(accountingProvider); ok {
+		accounting.add(provider.turnAccounting())
+	} else {
+		accounting.add(providerAccounting{})
+	}
+	if !completed || err != nil {
+		return nil, nil, completed, err
+	}
+	assistant, calls := completedAssistantMessages(events)
+	return assistant, calls, true, nil
+}
+
+type turnAction uint8
+
+const (
+	turnAbandon turnAction = iota
+	turnRetry
+	turnCommit
+)
+
+func (c *Conversation) finishNoToolRound(snapshot *turnSnapshot, assistant History, output *turnOutputProgress, yield func(Event) bool) (turnAction, error) {
+	if c.output == nil {
+		return turnCommit, nil
+	}
+	output.attempts++
+	text := completedAssistantText(assistant)
+	if result := validateOutputDocument(c.output.Schema, json.RawMessage(text)); result != nil {
+		if output.attempts >= output.limit {
+			return turnAbandon, invalidOutputError(c.identity, output.attempts)
+		}
+		corrective := correctiveOutputMessage(result)
+		snapshot.turn = append(snapshot.turn, corrective)
+		if !publishEvent(c.eventSink, yield, MessageDone{Message: corrective}) {
+			return turnAbandon, nil
+		}
+		return turnRetry, nil
+	}
+	if !yield(OutputDone{Value: append(json.RawMessage(nil), text...)}) {
+		return turnAbandon, nil
+	}
+	return turnCommit, nil
+}
+
+func (c *Conversation) dispatchTurnTools(ctx context.Context, orchestrator *orchestrator, snapshot *turnSnapshot, calls []ToolUse, yield func(Event) bool) bool {
+	results := make([]Block, 0, len(calls))
+	for _, call := range calls {
+		result := orchestrator.dispatch(ctx, call)
+		results = append(results, result)
+		if !publishEvent(c.eventSink, yield, ToolReturn{Result: result}) {
+			return false
+		}
+	}
+	toolMessage := Message{Role: RoleTool, Blocks: results}
+	snapshot.turn = append(snapshot.turn, toolMessage)
+	return true
 }
 
 func invalidOutputError(identity Identity, attempts int) *Error {

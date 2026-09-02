@@ -1158,6 +1158,91 @@ func TestStructuredOutputValidTerminationPreservesBytesAndOrder(t *testing.T) {
 	}
 }
 
+func TestOutputDrivesStructuredStreamOnceAndRetainsResult(t *testing.T) {
+	type result struct {
+		Answer string `json:"answer"`
+	}
+	message := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: `{"answer":"yes"}`}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: message}}}}
+	transportCalls := 0
+	schema := json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"answer":{"type":"string"}},"required":["answer"]}`)
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+		Output: &OutputContract{Schema: schema, MaxAttempts: 1},
+	})
+	stream := conversation.Send(context.Background(), Text{Text: "answer"})
+
+	first, err := Output[result](stream)
+	second, secondErr := Output[result](stream)
+	// R-UFOJ-7TXL
+	if err != nil || secondErr != nil || first != (result{Answer: "yes"}) || second != first ||
+		transportCalls != 1 || len(provider.states) != 1 || len(drainStream(stream)) != 0 {
+		t.Fatalf("Output calls = (%#v, %v), (%#v, %v); transport=%d states=%d",
+			first, err, second, secondErr, transportCalls, len(provider.states))
+	}
+}
+
+func TestOutputDecodesNormallyDrainedStructuredStream(t *testing.T) {
+	type result struct {
+		Count int `json:"count"`
+	}
+	message := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: `{"count":4}`}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: message}}}}
+	transportCalls := 0
+	schema := json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"count":{"type":"integer"}},"required":["count"]}`)
+	stream := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+		Output: &OutputContract{Schema: schema, MaxAttempts: 1},
+	}).Send(context.Background(), Text{Text: "count"})
+	events := drainStream(stream)
+
+	got, err := Output[result](stream)
+	// R-UFOJ-7TXL
+	if err != nil || got != (result{Count: 4}) || len(events) != 2 || transportCalls != 1 || len(provider.states) != 1 {
+		t.Fatalf("drained Output = (%#v, %v), events=%#v transport=%d states=%d",
+			got, err, events, transportCalls, len(provider.states))
+	}
+}
+
+func TestOutputReturnsExactTerminalStreamError(t *testing.T) {
+	message := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: `{"value":-1}`}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: message}}}}
+	transportCalls := 0
+	schema := json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"value":{"type":"integer","minimum":0}},"required":["value"]}`)
+	stream := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+		Output: &OutputContract{Schema: schema, MaxAttempts: 1},
+	}).Send(context.Background(), Text{Text: "answer"})
+
+	got, err := Output[map[string]int](stream)
+	var outputTerminal, streamTerminal *Error
+	errors.As(err, &outputTerminal)
+	errors.As(stream.Err(), &streamTerminal)
+	// R-UFOJ-7TXL
+	if err == nil || outputTerminal == nil || outputTerminal != streamTerminal || got != nil ||
+		transportCalls != 1 || len(provider.states) != 1 {
+		t.Fatalf("terminal Output = (%#v, %v), stream err=%v transport=%d states=%d",
+			got, err, stream.Err(), transportCalls, len(provider.states))
+	}
+}
+
+func TestOutputDoesNotResumeAbandonedStructuredStream(t *testing.T) {
+	message := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: `{"answer":"yes"}`}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: message}}}}
+	transportCalls := 0
+	schema := json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"answer":{"type":"string"}},"required":["answer"]}`)
+	stream := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+		Output: &OutputContract{Schema: schema, MaxAttempts: 1},
+	}).Send(context.Background(), Text{Text: "answer"})
+	for range stream.Events() {
+		break
+	}
+
+	got, err := Output[map[string]string](stream)
+	// R-UFOJ-7TXL
+	if err == nil || got != nil || !strings.Contains(err.Error(), "without completed output") ||
+		transportCalls != 1 || len(provider.states) != 1 {
+		t.Fatalf("abandoned Output = (%#v, %v), transport=%d states=%d", got, err, transportCalls, len(provider.states))
+	}
+}
+
 func TestStructuredOutputRejectsEmptyCompletedResponseWithoutCommit(t *testing.T) {
 	prior := History{{Role: RoleSystem, Blocks: []Block{Text{Text: "stable"}}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{}}}
