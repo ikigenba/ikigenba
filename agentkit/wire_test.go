@@ -224,6 +224,103 @@ func TestAnthropicMessagesEmbedsNativeOutputContract(t *testing.T) {
 	}
 }
 
+func TestOpenAIChatCompletionsEmbedsNativeOutputContract(t *testing.T) {
+	// R-TZTU-8TAK
+	schema := json.RawMessage(`{"type":"object","description":"plan","properties":{"owner":{"$ref":"#/$defs/Owner"},"steps":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string","minLength":3},"done":{"type":"boolean"}},"required":["title","done"]}}},"required":["owner","steps"],"$defs":{"Owner":{"type":"object","properties":{"name":{"type":"string"},"profile":{"type":"object","properties":{"score":{"type":"integer","minimum":0}},"required":["score"]}},"required":["name","profile"]}}}`)
+	original := append([]byte(nil), schema...)
+	state := RequestState{
+		Model:   "gpt-chat-fixture",
+		History: History{{Role: RoleUser, Blocks: []Block{Text{Text: "Return the plan."}}}},
+		Settings: Settings{
+			Reasoning:  ReasoningConfig{Mode: ReasoningEffort, Effort: EffortMedium},
+			ToolChoice: ToolChoice{Mode: ToolChoiceTool, Name: "lookup"},
+		},
+		Tools: []Tool{fixtureTool{
+			name:        "lookup",
+			description: "Look up context.",
+			schema:      json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`),
+		}},
+		Output: &OutputContract{Schema: schema, MaxAttempts: 5},
+	}
+
+	body, err := newOpenAIChatWire(nil).EncodeRequest(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile("testdata/openai_chat_completions.output_contract.request.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(body, want) {
+		t.Fatalf("encoded request = %s\nwant fixture = %s", body, want)
+	}
+	if len(body) == 0 || body[len(body)-1] != '\n' {
+		t.Fatal("encoded request has no trailing newline")
+	}
+	if !bytes.Equal(schema, original) {
+		t.Fatalf("EncodeRequest mutated source schema: %s, want %s", schema, original)
+	}
+
+	document := decodeOutputSchemaTestDocument(t, body)
+	wantTopLevel := []string{"messages", "model", "reasoning_effort", "response_format", "tool_choice", "tools"}
+	if got := sortedJSONKeys(document); !slices.Equal(got, wantTopLevel) {
+		t.Fatalf("top-level keys = %v, want %v", got, wantTopLevel)
+	}
+	if document["model"] != "gpt-chat-fixture" || document["reasoning_effort"] != "medium" {
+		t.Fatalf("existing request settings were not preserved: %#v", document)
+	}
+	if _, ok := document["messages"].([]any); !ok {
+		t.Fatalf("messages = %#v", document["messages"])
+	}
+	if _, ok := document["tools"].([]any); !ok {
+		t.Fatalf("tools = %#v", document["tools"])
+	}
+
+	responseFormat, ok := document["response_format"].(map[string]any)
+	if !ok || !slices.Equal(sortedJSONKeys(responseFormat), []string{"json_schema", "type"}) {
+		t.Fatalf("response_format = %#v", document["response_format"])
+	}
+	if responseFormat["type"] != "json_schema" {
+		t.Fatalf("response_format.type = %#v", responseFormat["type"])
+	}
+	jsonSchema, ok := responseFormat["json_schema"].(map[string]any)
+	if !ok || !slices.Equal(sortedJSONKeys(jsonSchema), []string{"name", "schema", "strict"}) {
+		t.Fatalf("response_format.json_schema = %#v", responseFormat["json_schema"])
+	}
+	if jsonSchema["name"] != "agentkit_output" || jsonSchema["strict"] != true {
+		t.Fatalf("response_format.json_schema metadata = %#v", jsonSchema)
+	}
+	rendered, ok := jsonSchema["schema"].(map[string]any)
+	if !ok {
+		t.Fatalf("response_format.json_schema.schema is not an object: %#v", jsonSchema["schema"])
+	}
+	assertEveryOutputObjectClosed(t, rendered, "$.response_format.json_schema.schema")
+	properties := rendered["properties"].(map[string]any)
+	if got := properties["owner"].(map[string]any)["$ref"]; got != "#/$defs/Owner" {
+		t.Errorf("rendered reference = %#v", got)
+	}
+	title := properties["steps"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)["title"].(map[string]any)
+	if containsJSONKey(rendered, "minLength") || title["description"] != "Length must be >= 3." {
+		t.Errorf("rendered constrained title = %#v", title)
+	}
+	score := rendered["$defs"].(map[string]any)["Owner"].(map[string]any)["properties"].(map[string]any)["profile"].(map[string]any)["properties"].(map[string]any)["score"].(map[string]any)
+	if containsJSONKey(rendered, "minimum") || score["description"] != "Value must be >= 0." {
+		t.Errorf("rendered constrained score = %#v", score)
+	}
+	if containsJSONKey(document, "MaxAttempts") || containsJSONKey(document, "max_attempts") {
+		t.Fatalf("request leaked MaxAttempts: %s", body)
+	}
+
+	invalid := RequestState{Output: &OutputContract{Schema: json.RawMessage(`{"type":"object","properties":{"bad":{"allOf":[{"type":"string"}]}},"required":["bad"]}`)}}
+	invalidBody, invalidErr := newOpenAIChatWire(nil).EncodeRequest(invalid)
+	if invalidErr == nil || invalidBody != nil {
+		t.Fatalf("invalid output schema encoded as %s with error %v", invalidBody, invalidErr)
+	}
+	if !strings.Contains(invalidErr.Error(), "OpenAI Chat output schema") || !strings.Contains(invalidErr.Error(), "allOf") {
+		t.Fatalf("invalid output schema error is not useful: %v", invalidErr)
+	}
+}
+
 func sortedJSONKeys(document map[string]any) []string {
 	keys := make([]string, 0, len(document))
 	for key := range document {

@@ -52,12 +52,24 @@ type chatNamedTool struct {
 	Function chatNamedFunction `json:"function"`
 }
 
+type openAIChatJSONSchema struct {
+	Name   string          `json:"name"`
+	Strict bool            `json:"strict"`
+	Schema json.RawMessage `json:"schema"`
+}
+
+type openAIChatResponseFormat struct {
+	Type       string               `json:"type"`
+	JSONSchema openAIChatJSONSchema `json:"json_schema"`
+}
+
 type openAIChatRequest struct {
-	Model           string          `json:"model"`
-	Messages        []chatMessage   `json:"messages"`
-	ReasoningEffort string          `json:"reasoning_effort,omitempty"`
-	ToolChoice      any             `json:"tool_choice,omitempty"`
-	Tools           json.RawMessage `json:"tools,omitempty"`
+	Model           string                    `json:"model"`
+	Messages        []chatMessage             `json:"messages"`
+	ReasoningEffort string                    `json:"reasoning_effort,omitempty"`
+	ToolChoice      any                       `json:"tool_choice,omitempty"`
+	Tools           json.RawMessage           `json:"tools,omitempty"`
+	ResponseFormat  *openAIChatResponseFormat `json:"response_format,omitempty"`
 }
 
 func buildOpenAIChatMessages(history []Message) ([]chatMessage, error) {
@@ -129,6 +141,18 @@ func (w *openAIChatWire) encodeRequest(state RequestState) ([]byte, error) {
 		return nil, err
 	}
 	request := openAIChatRequest{Model: state.Model, Messages: messages}
+	if state.Output != nil {
+		schema, renderErr := w.renderOutputSchema(state.Output.Schema)
+		if renderErr != nil {
+			return nil, fmt.Errorf("agentkit: render OpenAI Chat output schema: %w", renderErr)
+		}
+		request.ResponseFormat = &openAIChatResponseFormat{
+			Type: "json_schema",
+			JSONSchema: openAIChatJSONSchema{
+				Name: "agentkit_output", Strict: true, Schema: schema,
+			},
+		}
+	}
 	configureOpenAIChatRequest(&request, state.Settings)
 	if len(state.Tools) > 0 {
 		request.Tools, err = w.RenderTools(state.Tools)
