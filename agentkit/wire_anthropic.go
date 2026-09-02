@@ -1,6 +1,7 @@
 package agentkit
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -128,13 +129,24 @@ func anthropicRole(role Role) string {
 
 func newAnthropicDecoder() frameDecoder {
 	var text string
+	var toolUses []*anthropicStreamToolUse
+	toolUsesByIndex := make(map[int]*anthropicStreamToolUse)
 	var usage usageNormalizer
 	return func(frame []byte) (*Message, usageFragment, bool, error) {
 		var event struct {
-			Type  string `json:"type"`
+			Type         string `json:"type"`
+			Index        int    `json:"index"`
+			ContentBlock struct {
+				Type  string          `json:"type"`
+				ID    string          `json:"id"`
+				Name  string          `json:"name"`
+				Input json.RawMessage `json:"input"`
+			} `json:"content_block"`
 			Delta struct {
-				Text  string `json:"text"`
-				Usage struct {
+				Type        string `json:"type"`
+				Text        string `json:"text"`
+				PartialJSON string `json:"partial_json"`
+				Usage       struct {
 					OutputTokens *int64 `json:"output_tokens"`
 				} `json:"usage"`
 			} `json:"delta"`
@@ -152,16 +164,74 @@ func newAnthropicDecoder() frameDecoder {
 		case "message_start":
 			fragment := usage.update(event.Message.Usage.InputTokens, event.Message.Usage.CachedTokens, nil, nil)
 			return nil, fragment, true, nil
+		case "content_block_start":
+			if event.ContentBlock.Type == "tool_use" {
+				toolUse := &anthropicStreamToolUse{
+					id:         event.ContentBlock.ID,
+					name:       event.ContentBlock.Name,
+					startInput: append(json.RawMessage(nil), event.ContentBlock.Input...),
+				}
+				toolUses = append(toolUses, toolUse)
+				toolUsesByIndex[event.Index] = toolUse
+			}
 		case "content_block_delta":
-			text += event.Delta.Text
+			switch event.Delta.Type {
+			case "text_delta":
+				text += event.Delta.Text
+			case "input_json_delta":
+				if toolUse := toolUsesByIndex[event.Index]; toolUse != nil {
+					toolUse.input.WriteString(event.Delta.PartialJSON)
+				}
+			}
+		case "content_block_stop":
+			if toolUse := toolUsesByIndex[event.Index]; toolUse != nil {
+				if err := toolUse.finish(); err != nil {
+					return nil, usageFragment{}, false, err
+				}
+				delete(toolUsesByIndex, event.Index)
+			}
 		case "message_delta":
 			return nil, usage.update(nil, nil, event.Delta.Usage.OutputTokens, nil), true, nil
 		case "message_stop":
-			message := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: text}}}
+			blocks := make([]Block, 0, 1+len(toolUses))
+			if text != "" {
+				blocks = append(blocks, Text{Text: text})
+			}
+			for _, toolUse := range toolUses {
+				if toolUse.output == nil {
+					if err := toolUse.finish(); err != nil {
+						return nil, usageFragment{}, false, err
+					}
+				}
+				blocks = append(blocks, *toolUse.output)
+			}
+			message := Message{Role: RoleAssistant, Blocks: blocks}
 			return &message, usageFragment{}, false, nil
 		}
 		return nil, usageFragment{}, false, nil
 	}
+}
+
+type anthropicStreamToolUse struct {
+	id         string
+	name       string
+	startInput json.RawMessage
+	input      bytes.Buffer
+	output     *ToolUse
+}
+
+func (t *anthropicStreamToolUse) finish() error {
+	input := t.startInput
+	if t.input.Len() > 0 {
+		input = t.input.Bytes()
+	}
+	input = bytes.TrimSpace(input)
+	if len(input) == 0 || input[0] != '{' || !json.Valid(input) {
+		return fmt.Errorf("agentkit: Anthropic tool use %q input is not a JSON object", t.id)
+	}
+	decoded := ToolUse{ID: t.id, Name: t.name, Input: append(json.RawMessage(nil), input...)}
+	t.output = &decoded
+	return nil
 }
 
 func renderAnthropicTools(tools []Tool) (json.RawMessage, error) {

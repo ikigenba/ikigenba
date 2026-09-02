@@ -284,6 +284,62 @@ func TestDecodeStreamYieldsOnlyCompletedMessages(t *testing.T) {
 	}
 }
 
+func TestAnthropicDecodeStreamEmitsToolUseFromGolden(t *testing.T) {
+	// R-T44G-AS0I
+	response, err := os.Open("testdata/anthropic_messages_tool_call.sse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = response.Close() }()
+
+	var messages []Message
+	for event, decodeErr := range newAnthropicWire(nil).DecodeStream(SSEFrames(response)) {
+		if decodeErr != nil {
+			t.Fatal(decodeErr)
+		}
+		completed, ok := event.(MessageDone)
+		if !ok {
+			t.Fatalf("event type = %T, want MessageDone", event)
+		}
+		messages = append(messages, completed.Message)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("decoded %d messages, want one", len(messages))
+	}
+	if len(messages[0].Blocks) != 2 {
+		t.Fatalf("decoded %d blocks, want exactly two tool uses: %#v", len(messages[0].Blocks), messages[0].Blocks)
+	}
+
+	want := []struct {
+		id    string
+		name  string
+		input map[string]any
+	}{
+		{"toolu_weather_AQID_01", "lookup_weather", map[string]any{"city": "Chicago", "units": "metric"}},
+		{"toolu_route_verbatim-02", "plan_route", map[string]any{"destination": "Museum Campus", "avoid_tolls": true}},
+	}
+	for index, block := range messages[0].Blocks {
+		toolUse, ok := block.(ToolUse)
+		if !ok {
+			t.Fatalf("block %d type = %T, want ToolUse", index, block)
+		}
+		if toolUse.ID != want[index].id || toolUse.Name != want[index].name {
+			t.Errorf("tool use %d id/name = %q/%q, want %q/%q", index, toolUse.ID, toolUse.Name, want[index].id, want[index].name)
+		}
+		var input any
+		if err := json.Unmarshal(toolUse.Input, &input); err != nil {
+			t.Fatalf("tool use %d input %q is invalid JSON: %v", index, toolUse.Input, err)
+		}
+		object, ok := input.(map[string]any)
+		if !ok {
+			t.Fatalf("tool use %d input decoded as %T, want JSON object (not a JSON-encoded string)", index, input)
+		}
+		if !reflect.DeepEqual(object, want[index].input) {
+			t.Errorf("tool use %d input = %#v, want %#v", index, object, want[index].input)
+		}
+	}
+}
+
 func TestDecodeStreamMergesAbsoluteUsageFieldWise(t *testing.T) {
 	// R-300O-9JJZ
 	wire := newAnthropicWire(nil).(*anthropicWire)
