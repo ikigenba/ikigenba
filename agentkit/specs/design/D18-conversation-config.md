@@ -71,4 +71,4 @@ loading, cache-stable ordering) is unchanged; only the registration door moved.
 - R-SVL5-MDTN: `Config.Settings` and `Config.Options` MUST be the `Settings` and `Options` carried in the `RequestState` of every round-trip of every turn, unchanged across the conversation's life.
 - R-SY0Y-DXB1: `Config.Log` MUST be the event log written for every turn of the conversation, and a nil `Config.Log` MUST write nothing.
 - R-SZ8U-RP1Q: A `Conversation` built by a vendor package's `New` with `WithConfig(cfg)` and one built by `NewForWire` with the same `cfg` MUST be behaviorally identical apart from credential typing.
-- R-T0GR-5GSF: Passing a `Config` whose `Tools`, `Deferred`, `Options`, or `Output` fail their `Send`-time gates (D11, D12, D20) MUST NOT fail construction; the fault MUST surface from `Send` as `ErrInvalidConfig` with no provider call and `History` unchanged.
+- R-9GCK-P42P: Passing a `Config` whose `Tools`, `Deferred`, or `Options` fail their `Send`-time gates (D11, D12) MUST NOT fail construction; the fault MUST surface from `Send` as `ErrInvalidConfig` with no provider call and `History` unchanged.
