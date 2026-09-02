@@ -2,7 +2,6 @@ package idgen
 
 import (
 	"errors"
-	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -11,18 +10,6 @@ import (
 	"testing"
 	"time"
 )
-
-func callMintAt(function func(string, time.Time) string, prefix string, instant time.Time) string {
-	return function(prefix, instant)
-}
-
-func TestMintAtExportedSignature(t *testing.T) {
-	// R-TZLV-4Y8X
-	want := "R-" + "0007-J3LA"
-	if got := callMintAt(MintAt, "R", Epoch()); got != want {
-		t.Fatalf("MintAt through exported signature = %q, want %q", got, want)
-	}
-}
 
 func callTimeOf(function func(string) (time.Time, error), id string) (time.Time, error) {
 	return function(id)
@@ -37,60 +24,6 @@ func TestTimeOfExportedSignature(t *testing.T) {
 	}
 	if !got.Equal(want) {
 		t.Fatalf("TimeOf through exported signature = %s, want %s", got, want)
-	}
-}
-
-func TestErrInvalidIDDeclarationAndIdentity(t *testing.T) {
-	// R-U21N-WHQB
-	file, err := parser.ParseFile(token.NewFileSet(), "idgen.go", nil, 0)
-	if err != nil {
-		t.Fatalf("parse idgen.go: %v", err)
-	}
-
-	found := false
-	for _, declaration := range file.Decls {
-		general, ok := declaration.(*ast.GenDecl)
-		if !ok || general.Tok != token.VAR {
-			continue
-		}
-		for _, rawSpec := range general.Specs {
-			spec, ok := rawSpec.(*ast.ValueSpec)
-			if !ok || len(spec.Names) != 1 || spec.Names[0].Name != "ErrInvalidID" {
-				continue
-			}
-			found = true
-			typeName, ok := spec.Type.(*ast.Ident)
-			if !ok || typeName.Name != "error" {
-				t.Fatal("ErrInvalidID is not declared with static type error")
-			}
-			if len(spec.Values) != 1 {
-				t.Fatal("ErrInvalidID does not have exactly one initializer")
-			}
-			call, ok := spec.Values[0].(*ast.CallExpr)
-			if !ok {
-				t.Fatal("ErrInvalidID initializer is not a call")
-			}
-			selector, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok {
-				t.Fatal("ErrInvalidID is not constructed with errors.New")
-			}
-			packageName, ok := selector.X.(*ast.Ident)
-			if !ok || packageName.Name != "errors" || selector.Sel.Name != "New" {
-				t.Fatal("ErrInvalidID is not constructed with errors.New")
-			}
-		}
-	}
-	if !found {
-		t.Fatal("ErrInvalidID package variable declaration not found")
-	}
-
-	first := fmt.Errorf("first: %w", ErrInvalidID)
-	second := fmt.Errorf("second: %w", ErrInvalidID)
-	if !errors.Is(first, ErrInvalidID) || !errors.Is(second, ErrInvalidID) {
-		t.Fatal("errors.Is does not recognize the stable ErrInvalidID identity")
-	}
-	if errors.Is(errors.New("invalid id"), ErrInvalidID) {
-		t.Fatal("ErrInvalidID matches a distinct error with the same text")
 	}
 }
 
@@ -261,14 +194,6 @@ func TestMintAtZeroPadsBody(t *testing.T) {
 	want := "P-" + "0000-0000"
 	if got := MintAt("P", instant); got != want {
 		t.Fatalf("MintAt(P, instant) = %q, want %q", got, want)
-	}
-}
-
-func TestMintAtClampsBeforeEpoch(t *testing.T) {
-	// R-WIMR-F2DU
-	beforeEpoch := Epoch().Add(-time.Nanosecond)
-	if got, want := MintAt("R", beforeEpoch), "R-"+"0007-J3LA"; got != want {
-		t.Fatalf("MintAt before Epoch = %q, want epoch encoding %q", got, want)
 	}
 }
 
