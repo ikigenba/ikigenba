@@ -65,11 +65,6 @@ func NewConversation(provider Provider, client *http.Client, cfg Config) *Conver
 	return conversation
 }
 
-// Deferred registers on-demand tool groups on the conversation.
-func (c *Conversation) Deferred(groups ...DeferredGroup) {
-	c.deferred = append(c.deferred, cloneDeferredGroups(groups)...)
-}
-
 // Send drives one turn: it appends the user blocks, calls the model, runs any
 // tool round-trips to completion, and returns a Stream of message-granular
 // events (D13). Provider, endpoint, and model are fixed for the conversation's
@@ -234,7 +229,7 @@ func (c *Conversation) roundTrip(ctx context.Context, state RequestState, yield 
 
 	response, err := c.execute(request)
 	if err != nil {
-		return nil, true, wrapProviderError(err, CategoryTransport, 0, c.identity)
+		return nil, false, wrapProviderError(err, CategoryTransport, 0, c.identity)
 	}
 
 	return c.consumeResponse(ctx, response, yield)

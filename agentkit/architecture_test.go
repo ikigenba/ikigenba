@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 )
 
 var (
@@ -661,12 +662,21 @@ func TestJSONSchemaVocabularyIsDocumentedStringGrammarNotExportedConstants(t *te
 			}
 		}
 	}
+	if !strings.Contains(newToolDocumentation, "jsonschema string tag") {
+		t.Errorf("NewTool documentation does not describe the jsonschema string tag grammar:\n%s", newToolDocumentation)
+	}
+	documentedTokens := make(map[string]bool)
+	for _, token := range strings.FieldsFunc(newToolDocumentation, func(character rune) bool {
+		return unicode.IsSpace(character) || strings.ContainsRune(`\",.`, character)
+	}) {
+		documentedTokens[token] = true
+	}
 	for _, fragment := range []string{
-		"jsonschema string tag", "required", "enum=a|b", "description=text", "minimum=n", "maximum=n",
+		"required", "enum=a|b", "description=text", "minimum=n", "maximum=n",
 		"exclusiveMinimum=n", "exclusiveMaximum=n", "multipleOf=n", "minLength=n", "maxLength=n",
 		"pattern=expr", "format=name", "minItems=n", "maxItems=n", "uniqueItems=true|false",
 	} {
-		if !strings.Contains(newToolDocumentation, fragment) {
+		if !documentedTokens[fragment] {
 			t.Errorf("NewTool documentation does not describe string grammar fragment %q:\n%s", fragment, newToolDocumentation)
 		}
 	}
@@ -1005,6 +1015,7 @@ func interfaceFieldCount(interfaceType *ast.InterfaceType) int {
 
 func TestConversationPublicShape(t *testing.T) {
 	// R-YURK-JTY8
+	// R-SPHN-PJ46
 	conversationType := reflect.TypeOf(Conversation{})
 	if conversationType.Name() != "Conversation" || !token.IsExported(conversationType.Name()) || conversationType.Kind() != reflect.Struct {
 		t.Fatalf("Conversation name/kind = %q/%s, want exported Conversation struct", conversationType.Name(), conversationType.Kind())
@@ -1016,7 +1027,8 @@ func TestConversationPublicShape(t *testing.T) {
 		}
 	}
 
-	send, ok := reflect.TypeOf((*Conversation)(nil)).MethodByName("Send")
+	pointerType := reflect.TypeFor[*Conversation]()
+	send, ok := pointerType.MethodByName("Send")
 	if !ok {
 		t.Fatal("*Conversation has no exported Send method")
 	}
@@ -1024,8 +1036,7 @@ func TestConversationPublicShape(t *testing.T) {
 	if send.Type != wantSend || !send.Type.IsVariadic() {
 		t.Fatalf("Send type = %s (variadic=%t), want %s (variadic=true)", send.Type, send.Type.IsVariadic(), wantSend)
 	}
-	wantMethods := []string{"Deferred", "Send"}
-	pointerType := reflect.TypeOf((*Conversation)(nil))
+	wantMethods := []string{"Send"}
 	if pointerType.NumMethod() != len(wantMethods) {
 		t.Fatalf("*Conversation exported method count = %d, want exactly %d", pointerType.NumMethod(), len(wantMethods))
 	}
@@ -1061,15 +1072,10 @@ func TestDeferredGroupDeclarationIsExact(t *testing.T) {
 	}
 }
 
-func TestConversationDeferredMethodSignatureIsExact(t *testing.T) {
+func TestConversationHasNoDeferredMethod(t *testing.T) {
 	// R-0R1X-YZH4
-	deferred, ok := reflect.TypeOf((*Conversation)(nil)).MethodByName("Deferred")
-	if !ok {
-		t.Fatal("*Conversation has no exported Deferred method")
-	}
-	want := reflect.TypeOf(func(*Conversation, ...DeferredGroup) {})
-	if deferred.Type != want || !deferred.Type.IsVariadic() {
-		t.Fatalf("Deferred type = %s (variadic=%t), want %s (variadic=true)", deferred.Type, deferred.Type.IsVariadic(), want)
+	if _, ok := reflect.TypeFor[*Conversation]().MethodByName("Deferred"); ok {
+		t.Fatal("*Conversation unexpectedly has an exported Deferred method")
 	}
 }
 

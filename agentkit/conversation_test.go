@@ -180,11 +180,11 @@ func newConversationAxesFixture(t *testing.T) (*Conversation, *fixtureProvider, 
 	return conversation, provider, unknownModel, capture
 }
 
-func TestConversationExposesOnlyDeferredAndSendAsExportedMethods(t *testing.T) {
+func TestConversationExposesOnlySendAsExportedMethod(t *testing.T) {
 	// R-1POH-Q9DL
 	conversation, _, _, _ := newConversationAxesFixture(t)
 	conversationType := reflect.TypeOf(conversation)
-	want := []string{"Deferred", "Send"}
+	want := []string{"Send"}
 	if conversationType.NumMethod() != len(want) {
 		t.Fatalf("Conversation has %d exported methods, want exactly %d", conversationType.NumMethod(), len(want))
 	}
@@ -370,7 +370,7 @@ func TestSendIsSoleVerbAndAcceptsDifferentBlockVariants(t *testing.T) {
 		t.Fatalf("Send did not carry both block variants: %#v", provider.states)
 	}
 	conversationType := reflect.TypeOf(conversation)
-	if got := conversationType.NumMethod(); got != 2 || conversationType.Method(0).Name != "Deferred" || conversationType.Method(1).Name != "Send" {
+	if got := conversationType.NumMethod(); got != 1 || conversationType.Method(0).Name != "Send" {
 		t.Fatalf("Conversation exported methods changed: %v", conversationType)
 	}
 }
@@ -1377,7 +1377,7 @@ func TestSendCompletesToolRoundTripsWithFixedClonedConfigAndOneCommit(t *testing
 		t.Fatal("tool result did not preserve the vendor call id byte-for-byte")
 	}
 	conversationType := reflect.TypeOf(conversation)
-	if got := conversationType.NumMethod(); got != 2 || conversationType.Method(0).Name != "Deferred" || conversationType.Method(1).Name != "Send" {
+	if got := conversationType.NumMethod(); got != 1 || conversationType.Method(0).Name != "Send" {
 		t.Fatalf("Conversation exported methods changed: %v", conversationType)
 	}
 	if _, mutated := conversation.options["mutated"]; mutated || !bytes.Equal(conversation.options["vendor_flag"], []byte(`{"mode":"exact"}`)) {
@@ -1480,6 +1480,7 @@ func toolNames(tools []Tool) []string {
 
 func TestDeferredToolsAreOwnedValidatedAndWithheldUntilLoaded(t *testing.T) {
 	// R-5PKM-V6VJ
+	// R-UUBB-T2TX
 	deferred := Tool(&concreteTool{
 		name:   "records_lookup",
 		schema: json.RawMessage(`{"type":"object","properties":{}}`),
@@ -1490,8 +1491,7 @@ func TestDeferredToolsAreOwnedValidatedAndWithheldUntilLoaded(t *testing.T) {
 	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: load}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
-	conversation.Deferred(DeferredGroup{Name: "records", Blurb: "Record operations", Tools: registered})
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Deferred: []DeferredGroup{{Name: "records", Blurb: "Record operations", Tools: registered}}})
 	registered[0] = phase17Tool("caller_mutation")
 
 	stream := conversation.Send(context.Background(), Text{Text: "go"})
@@ -1508,21 +1508,27 @@ func TestDeferredToolsAreOwnedValidatedAndWithheldUntilLoaded(t *testing.T) {
 	if provider.states[1].Tools[1] != deferred {
 		t.Fatal("loaded deferred member is not the registered ordinary Tool value")
 	}
+	if !bytes.Equal(provider.states[1].Tools[1].Schema(), deferred.Schema()) {
+		t.Fatal("loaded deferred member did not retain its full ordinary Tool schema")
+	}
 	for _, placement := range []string{"eager", "deferred"} {
 		t.Run("invalid "+placement, func(t *testing.T) {
 			provider := &phase15Provider{model: "model"}
 			calls := 0
-			conversation := NewConversation(provider, successfulPhase15Client(&calls), Config{})
 			invalid := concreteTool{name: "bad", schema: json.RawMessage(`{"type":"array"}`)}
+			cfg := Config{}
 			if placement == "eager" {
-				conversation.tools = []Tool{invalid}
+				cfg.Tools = []Tool{invalid}
 			} else {
-				conversation.Deferred(DeferredGroup{Name: "bad_group", Tools: []Tool{invalid}})
+				cfg.Deferred = []DeferredGroup{{Name: "bad_group", Tools: []Tool{invalid}}}
 			}
+			conversation := NewConversation(provider, successfulPhase15Client(&calls), cfg)
+			conversation.history = History{{Role: RoleSystem, Blocks: []Block{Text{Text: "unchanged"}}}}
+			before := cloneHistory(conversation.history)
 			failed := conversation.Send(context.Background(), Text{Text: "blocked"})
 			drainStream(failed)
-			if !errors.Is(failed.Err(), ErrInvalidConfig) || calls != 0 || len(provider.states) != 0 {
-				t.Fatalf("%s validation = %v, transport=%d provider=%d", placement, failed.Err(), calls, len(provider.states))
+			if !errors.Is(failed.Err(), ErrInvalidConfig) || calls != 0 || len(provider.states) != 0 || !reflect.DeepEqual(conversation.history, before) {
+				t.Fatalf("%s validation = %v, transport=%d provider=%d history=%#v", placement, failed.Err(), calls, len(provider.states), conversation.history)
 			}
 		})
 	}
@@ -1530,6 +1536,7 @@ func TestDeferredToolsAreOwnedValidatedAndWithheldUntilLoaded(t *testing.T) {
 
 func TestDeferredGroupsConditionallySynthesizeExactlyOneLoader(t *testing.T) {
 	// R-5QSJ-8YM8
+	// R-SUD9-8M2Y
 	for _, test := range []struct {
 		name   string
 		groups []DeferredGroup
@@ -1540,8 +1547,7 @@ func TestDeferredGroupsConditionallySynthesizeExactlyOneLoader(t *testing.T) {
 		{name: "several", groups: []DeferredGroup{{Name: "one", Tools: []Tool{phase17Tool("a")}}, {Name: "two", Tools: []Tool{phase17Tool("b")}}}, want: []string{loadToolsName}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			conversation := NewConversation(&phase15Provider{model: "model"}, http.DefaultClient, Config{})
-			conversation.Deferred(test.groups...)
+			conversation := NewConversation(&phase15Provider{model: "model"}, http.DefaultClient, Config{Deferred: test.groups})
 			o, err := conversation.prepareOrchestrator()
 			if err != nil {
 				t.Fatal(err)
@@ -1550,6 +1556,13 @@ func TestDeferredGroupsConditionallySynthesizeExactlyOneLoader(t *testing.T) {
 				t.Fatalf("advertised = %v, want %v", got, test.want)
 			}
 		})
+	}
+	conversationType := reflect.TypeFor[*Conversation]()
+	if conversationType.NumMethod() != 1 || conversationType.Method(0).Name != "Send" {
+		t.Fatalf("post-construction method set = %v, want only Send", conversationType)
+	}
+	if _, exists := conversationType.MethodByName("Deferred"); exists {
+		t.Fatal("post-construction Deferred registration still exists")
 	}
 }
 
@@ -1562,11 +1575,10 @@ func TestLoadToolsCatalogContainsOnlyGroupBlurbsAndBareNames(t *testing.T) {
 		description: secretDescription,
 		schema:      json.RawMessage(`{"type":"object","properties":{"schema_only_secret":{"type":"string"}}}`),
 	}
-	conversation := NewConversation(&phase15Provider{model: "model"}, http.DefaultClient, Config{})
-	conversation.Deferred(
-		DeferredGroup{Name: "group_token_71", Blurb: "blurb token 82", Tools: []Tool{tool}},
-		DeferredGroup{Name: "group_token_64", Blurb: "blurb token 55", Tools: []Tool{phase17Tool("tool_token_46")}},
-	)
+	conversation := NewConversation(&phase15Provider{model: "model"}, http.DefaultClient, Config{Deferred: []DeferredGroup{
+		{Name: "group_token_71", Blurb: "blurb token 82", Tools: []Tool{tool}},
+		{Name: "group_token_64", Blurb: "blurb token 55", Tools: []Tool{phase17Tool("tool_token_46")}},
+	}})
 	o, err := conversation.prepareOrchestrator()
 	if err != nil {
 		t.Fatal(err)
@@ -1595,11 +1607,10 @@ func TestLoadToolsBatchesGroupsAndToolsWithInBandUnknownRecovery(t *testing.T) {
 	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: firstLoad}}, {MessageDone{Message: secondLoad}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
-	conversation.Deferred(
-		DeferredGroup{Name: "group_a", Blurb: "A", Tools: []Tool{a1, a2}},
-		DeferredGroup{Name: "group_b", Blurb: "B", Tools: []Tool{solo, b2}},
-	)
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Deferred: []DeferredGroup{
+		{Name: "group_a", Blurb: "A", Tools: []Tool{a1, a2}},
+		{Name: "group_b", Blurb: "B", Tools: []Tool{solo, b2}},
+	}})
 	stream := conversation.Send(context.Background(), Text{Text: "go"})
 	drainStream(stream)
 	if stream.Err() != nil || transportCalls != 3 {
@@ -1631,8 +1642,7 @@ func TestDeferredLoadingIsMonotonicAcrossConversationSends(t *testing.T) {
 	done := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: loadSecond}}, {MessageDone{Message: done}}, {MessageDone{Message: loadFirst}}, {MessageDone{Message: done}}}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
-	conversation.Deferred(DeferredGroup{Name: "all", Blurb: "All", Tools: []Tool{phase17Tool("first"), phase17Tool("second")}})
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Deferred: []DeferredGroup{{Name: "all", Blurb: "All", Tools: []Tool{phase17Tool("first"), phase17Tool("second")}}}})
 	firstStream := conversation.Send(context.Background(), Text{Text: "turn one"})
 	drainStream(firstStream)
 	secondStream := conversation.Send(context.Background(), Text{Text: "turn two"})
@@ -1661,9 +1671,10 @@ func TestAdvertisedToolsUseSortedBaseAndTailOnlyLoadOrder(t *testing.T) {
 	done := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: load}}, {MessageDone{Message: done}}}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
-	conversation.tools = []Tool{phase17Tool("z_eager"), phase17Tool("a_eager")}
-	conversation.Deferred(DeferredGroup{Name: "tails", Blurb: "Tails", Tools: []Tool{phase17Tool("tail_a"), phase17Tool("tail_z")}})
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+		Tools:    []Tool{phase17Tool("z_eager"), phase17Tool("a_eager")},
+		Deferred: []DeferredGroup{{Name: "tails", Blurb: "Tails", Tools: []Tool{phase17Tool("tail_a"), phase17Tool("tail_z")}}},
+	})
 	drainStream(conversation.Send(context.Background(), Text{Text: "go"}))
 	wantBase := []string{"a_eager", loadToolsName, "z_eager"}
 	if got := toolNames(provider.states[0].Tools); !reflect.DeepEqual(got, wantBase) {
@@ -1677,12 +1688,11 @@ func TestAdvertisedToolsUseSortedBaseAndTailOnlyLoadOrder(t *testing.T) {
 
 func TestDeferredRegistrationSynthesizesExactLoadToolsSchema(t *testing.T) {
 	// R-0S9U-CR7T
-	conversation := NewConversation(&phase15Provider{model: "model"}, http.DefaultClient, Config{})
-	conversation.Deferred(DeferredGroup{
+	conversation := NewConversation(&phase15Provider{model: "model"}, http.DefaultClient, Config{Deferred: []DeferredGroup{{
 		Name:  "search",
 		Blurb: "Search stored records",
 		Tools: []Tool{phase17Tool("search_records")},
-	})
+	}}})
 	orchestrator, err := conversation.prepareOrchestrator()
 	if err != nil {
 		t.Fatal(err)
@@ -1743,15 +1753,14 @@ func TestSendGatesTheCompleteLiveToolSetOnceBeforeAllBoundaries(t *testing.T) {
 	providerWithoutGroups := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: ordinaryLoadToolsCall}}, {MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "ok"}}}}}}}
 	transportWithoutGroups := 0
 	ordinaryCalls := 0
-	conversationWithoutGroups := NewConversation(providerWithoutGroups, successfulPhase15Client(&transportWithoutGroups), Config{})
-	conversationWithoutGroups.tools = []Tool{concreteTool{
+	conversationWithoutGroups := NewConversation(providerWithoutGroups, successfulPhase15Client(&transportWithoutGroups), Config{Tools: []Tool{concreteTool{
 		name:   loadToolsName,
 		schema: json.RawMessage(`{"type":"object","properties":{}}`),
 		call: func(context.Context, json.RawMessage) (string, error) {
 			ordinaryCalls++
 			return "ordinary consumer tool", nil
 		},
-	}}
+	}}})
 	streamWithoutGroups := conversationWithoutGroups.Send(context.Background(), Text{Text: "allowed"})
 	drainStream(streamWithoutGroups)
 	if streamWithoutGroups.Err() != nil || transportWithoutGroups != 2 || ordinaryCalls != 1 {
@@ -1762,9 +1771,10 @@ func TestSendGatesTheCompleteLiveToolSetOnceBeforeAllBoundaries(t *testing.T) {
 	deferredCount := &phase17CountingTool{name: "deferred_count", schema: json.RawMessage(`{"type":"object","properties":{}}`), call: func(context.Context, json.RawMessage) (string, error) { return "", nil }}
 	gateProvider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "ok"}}}}}}}
 	gateCalls := 0
-	gateConversation := NewConversation(gateProvider, successfulPhase15Client(&gateCalls), Config{})
-	gateConversation.tools = []Tool{eagerCount}
-	gateConversation.Deferred(DeferredGroup{Name: "counted", Tools: []Tool{deferredCount}})
+	gateConversation := NewConversation(gateProvider, successfulPhase15Client(&gateCalls), Config{
+		Tools:    []Tool{eagerCount},
+		Deferred: []DeferredGroup{{Name: "counted", Tools: []Tool{deferredCount}}},
+	})
 	gateStream := gateConversation.Send(context.Background(), Text{Text: "validate union"})
 	drainStream(gateStream)
 	if gateStream.Err() != nil || eagerCount.schemaCalls != 1 || deferredCount.schemaCalls != 1 {
@@ -1774,9 +1784,7 @@ func TestSendGatesTheCompleteLiveToolSetOnceBeforeAllBoundaries(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			provider := &phase15Provider{model: "model"}
 			transportCalls := 0
-			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
-			conversation.tools = test.eager
-			conversation.deferred = test.deferred
+			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Tools: test.eager, Deferred: test.deferred})
 			callbackCalls := 0
 			conversation.validate = func() error { callbackCalls++; return nil }
 			conversation.history = History{{Role: RoleSystem, Blocks: []Block{Text{Text: "unchanged"}}}}
@@ -1812,8 +1820,7 @@ func TestSendGatesTheCompleteLiveToolSetOnceBeforeAllBoundaries(t *testing.T) {
 	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
-	conversation.tools = []Tool{counting}
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Tools: []Tool{counting}})
 	stream := conversation.Send(context.Background(), Text{Text: "go"})
 	drainStream(stream)
 	if stream.Err() != nil {
@@ -1892,19 +1899,19 @@ func TestUnknownAndDeferredDirectCallsRecoverWithoutGuessedExecution(t *testing.
 			callbackCalls := 0
 			first := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "unknown-id", Name: callName, Input: json.RawMessage(`{"guessed":true}`)}}}
 			final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "recovered"}}}
-			provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
-			transportCalls := 0
-			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
+			cfg := Config{}
 			if test.deferred {
 				callName = "secret"
 				first.Blocks[0] = ToolUse{ID: "unknown-id", Name: callName, Input: json.RawMessage(`{"guessed":true}`)}
-				provider.responses[0] = []Event{MessageDone{Message: first}}
 				secret := concreteTool{name: callName, schema: json.RawMessage(`{"type":"object","properties":{}}`), call: func(context.Context, json.RawMessage) (string, error) {
 					callbackCalls++
 					return "must not execute", nil
 				}}
-				conversation.deferred = []DeferredGroup{{Tools: []Tool{secret}}}
+				cfg.Deferred = []DeferredGroup{{Tools: []Tool{secret}}}
 			}
+			provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
+			transportCalls := 0
+			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), cfg)
 
 			stream := conversation.Send(context.Background(), Text{Text: "go"})
 			drainStream(stream)
