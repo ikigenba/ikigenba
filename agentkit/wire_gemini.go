@@ -58,7 +58,9 @@ type geminiThinkingConfig struct {
 }
 
 type geminiGenerationConfig struct {
-	ThinkingConfig *geminiThinkingConfig `json:"thinkingConfig,omitempty"`
+	ThinkingConfig     *geminiThinkingConfig `json:"thinkingConfig,omitempty"`
+	ResponseMIMEType   string                `json:"responseMimeType,omitempty"`
+	ResponseJSONSchema json.RawMessage       `json:"responseJsonSchema,omitempty"`
 }
 
 type geminiFunctionCallingConfig struct {
@@ -86,6 +88,17 @@ func (w *geminiWire) encodeRequest(state RequestState) ([]byte, error) {
 		Contents:         contents,
 		GenerationConfig: buildGeminiThinkingConfig(state.Settings.Reasoning),
 		ToolConfig:       buildGeminiToolConfig(state.Settings.ToolChoice),
+	}
+	if state.Output != nil {
+		schema, renderErr := w.renderOutputSchema(state.Output.Schema)
+		if renderErr != nil {
+			return nil, fmt.Errorf("agentkit: render Gemini output schema: %w", renderErr)
+		}
+		if request.GenerationConfig == nil {
+			request.GenerationConfig = &geminiGenerationConfig{}
+		}
+		request.GenerationConfig.ResponseMIMEType = "application/json"
+		request.GenerationConfig.ResponseJSONSchema = schema
 	}
 	if len(state.Tools) > 0 {
 		rendered, renderErr := w.RenderTools(state.Tools)

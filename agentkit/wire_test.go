@@ -424,6 +424,123 @@ func TestOpenAIResponsesEmbedsNativeOutputContract(t *testing.T) {
 	}
 }
 
+func TestGeminiGenerateContentEmbedsNativeOutputContract(t *testing.T) {
+	// R-U29N-0CRY
+	schema := json.RawMessage(`{"type":"object","description":"report","properties":{"owner":{"$ref":"#/$defs/Owner"},"entries":{"type":"array","items":{"type":"object","properties":{"label":{"type":"string","maxLength":12},"metrics":{"type":"object","properties":{"score":{"type":"number","minimum":0}},"required":["score"]}},"required":["label","metrics"]}}},"required":["owner","entries"],"$defs":{"Owner":{"type":"object","properties":{"name":{"type":"string","pattern":"^[A-Z]"}},"required":["name"]}}}`)
+	original := append([]byte(nil), schema...)
+	state := RequestState{
+		Model:   "gemini-endpoint-model-sentinel",
+		History: History{{Role: RoleUser, Blocks: []Block{Text{Text: "Return the report."}}}},
+		Settings: Settings{
+			Reasoning:  ReasoningConfig{Mode: ReasoningBudget, Budget: 321},
+			ToolChoice: ToolChoice{Mode: ToolChoiceTool, Name: "lookup"},
+		},
+		Tools: []Tool{fixtureTool{
+			name:        "lookup",
+			description: "Look up report data.",
+			schema:      json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`),
+		}},
+		Output: &OutputContract{Schema: schema, MaxAttempts: 9},
+	}
+
+	body, err := newGeminiWire(nil).EncodeRequest(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile("testdata/gemini_generate_content.output_contract.request.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(body, want) {
+		t.Fatalf("encoded request = %s\nwant fixture = %s", body, want)
+	}
+	if len(body) == 0 || body[len(body)-1] != '\n' {
+		t.Fatal("encoded request has no trailing newline")
+	}
+	if !bytes.Equal(schema, original) {
+		t.Fatalf("EncodeRequest mutated source schema: %s, want %s", schema, original)
+	}
+
+	document := decodeOutputSchemaTestDocument(t, body)
+	if got, want := sortedJSONKeys(document), []string{"contents", "generationConfig", "toolConfig", "tools"}; !slices.Equal(got, want) {
+		t.Fatalf("top-level keys = %v, want %v", got, want)
+	}
+	if _, exists := document["model"]; exists {
+		t.Fatalf("Gemini request contains endpoint-owned model: %#v", document["model"])
+	}
+	if _, ok := document["contents"].([]any); !ok {
+		t.Fatalf("contents = %#v", document["contents"])
+	}
+	if _, ok := document["tools"].([]any); !ok {
+		t.Fatalf("tools = %#v", document["tools"])
+	}
+	toolConfig, ok := document["toolConfig"].(map[string]any)
+	if !ok {
+		t.Fatalf("toolConfig = %#v", document["toolConfig"])
+	}
+	calling := toolConfig["functionCallingConfig"].(map[string]any)
+	if calling["mode"] != "ANY" || !reflect.DeepEqual(calling["allowedFunctionNames"], []any{"lookup"}) {
+		t.Fatalf("functionCallingConfig = %#v", calling)
+	}
+
+	generationConfig, ok := document["generationConfig"].(map[string]any)
+	if !ok || !slices.Equal(sortedJSONKeys(generationConfig), []string{"responseJsonSchema", "responseMimeType", "thinkingConfig"}) {
+		t.Fatalf("generationConfig = %#v", document["generationConfig"])
+	}
+	if generationConfig["responseMimeType"] != "application/json" {
+		t.Fatalf("responseMimeType = %#v", generationConfig["responseMimeType"])
+	}
+	if _, exists := generationConfig["responseSchema"]; exists {
+		t.Fatalf("generationConfig contains legacy responseSchema: %#v", generationConfig)
+	}
+	thinking, ok := generationConfig["thinkingConfig"].(map[string]any)
+	if !ok || thinking["thinkingBudget"] != json.Number("321") {
+		t.Fatalf("thinkingConfig = %#v", generationConfig["thinkingConfig"])
+	}
+	rendered, ok := generationConfig["responseJsonSchema"].(map[string]any)
+	if !ok {
+		t.Fatalf("responseJsonSchema is not an object: %#v", generationConfig["responseJsonSchema"])
+	}
+	assertEveryOutputObjectClosed(t, rendered, "$.generationConfig.responseJsonSchema")
+	properties := rendered["properties"].(map[string]any)
+	if got := properties["owner"].(map[string]any)["$ref"]; got != "#/$defs/Owner" {
+		t.Errorf("rendered reference = %#v", got)
+	}
+	entryProperties := properties["entries"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)
+	if containsJSONKey(rendered, "maxLength") || entryProperties["label"].(map[string]any)["description"] != "Length must be <= 12." {
+		t.Errorf("rendered constrained label = %#v", entryProperties["label"])
+	}
+	score := entryProperties["metrics"].(map[string]any)["properties"].(map[string]any)["score"].(map[string]any)
+	if containsJSONKey(rendered, "minimum") || score["description"] != "Value must be >= 0." {
+		t.Errorf("rendered constrained score = %#v", score)
+	}
+	ownerName := rendered["$defs"].(map[string]any)["Owner"].(map[string]any)["properties"].(map[string]any)["name"].(map[string]any)
+	if containsJSONKey(rendered, "pattern") || ownerName["description"] != `Value must match pattern "^[A-Z]".` {
+		t.Errorf("rendered constrained owner name = %#v", ownerName)
+	}
+	if containsJSONKey(document, "MaxAttempts") || containsJSONKey(document, "max_attempts") {
+		t.Fatalf("request leaked MaxAttempts: %s", body)
+	}
+
+	outputOnlyBody, err := newGeminiWire(nil).EncodeRequest(RequestState{Output: &OutputContract{Schema: schema}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outputOnly := decodeOutputSchemaTestDocument(t, outputOnlyBody)["generationConfig"].(map[string]any)
+	if !slices.Equal(sortedJSONKeys(outputOnly), []string{"responseJsonSchema", "responseMimeType"}) || outputOnly["responseMimeType"] != "application/json" {
+		t.Fatalf("output-only generationConfig = %#v", outputOnly)
+	}
+
+	invalid := RequestState{Output: &OutputContract{Schema: json.RawMessage(`{"type":"object","properties":{"bad":{"allOf":[{"type":"string"}]}},"required":["bad"]}`)}}
+	invalidBody, invalidErr := newGeminiWire(nil).EncodeRequest(invalid)
+	if invalidErr == nil || invalidBody != nil {
+		t.Fatalf("invalid output schema encoded as %s with error %v", invalidBody, invalidErr)
+	}
+	if !strings.Contains(invalidErr.Error(), "Gemini output schema") || !strings.Contains(invalidErr.Error(), "allOf") {
+		t.Fatalf("invalid output schema error is not useful: %v", invalidErr)
+	}
+}
+
 func sortedJSONKeys(document map[string]any) []string {
 	keys := make([]string, 0, len(document))
 	for key := range document {
