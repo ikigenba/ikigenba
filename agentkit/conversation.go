@@ -97,7 +97,6 @@ func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream {
 	}}
 }
 
-// llm-lint:ignore same-name-different-kind
 type turnAccounting struct {
 	usage        Usage
 	wireAmount   int64
@@ -135,7 +134,6 @@ type providerAccounting struct {
 }
 
 type accountingProvider interface {
-	// llm-lint:ignore same-name-different-kind
 	turnAccounting() providerAccounting
 }
 

@@ -34,7 +34,6 @@ var supportedOutputFormats = map[string]func(string) bool{
 
 // OutputSchema derives an output-subset schema from T's jsonschema struct
 // tags. Every represented field is required, and pointer fields are nullable.
-// llm-lint:ignore god-entrypoint
 func OutputSchema[T any]() (json.RawMessage, error) {
 	typeOf := reflect.TypeFor[T]()
 	if typeOf.Kind() != reflect.Struct {
@@ -132,8 +131,7 @@ func deriveOutputSchema(typeOf reflect.Type, visiting map[reflect.Type]bool) (ma
 func ValidateOutputSchema(schema json.RawMessage) error {
 	document, err := decodeSingleJSON(schema)
 	if err != nil {
-		// llm-lint:ignore error-context-restated-by-caller
-		return fmt.Errorf("invalid JSON schema: %w", err)
+		return fmt.Errorf("schema: %w", err)
 	}
 	root, ok := document.(map[string]any)
 	if !ok {
@@ -654,7 +652,6 @@ func decodeSingleJSON(data []byte) (any, error) {
 	decoder.UseNumber()
 	var value any
 	if err := decoder.Decode(&value); err != nil {
-		// llm-lint:ignore io-error-mapped-to-data-error
 		return nil, fmt.Errorf("invalid JSON: %w", err)
 	}
 	var trailing any
