@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+var _ error = ErrInvalidID
+
 func mustMintAt(t *testing.T, prefix string, instant time.Time) string {
 	t.Helper()
 	id, err := MintAt(prefix, instant)
@@ -256,6 +258,52 @@ func TestMintAtExportedSignature(t *testing.T) {
 	id, err := callMintAt(MintAt, "R", Epoch())
 	if err != nil || id == "" {
 		t.Fatalf("MintAt through exported signature = (%q, %v), want a non-empty id and nil error", id, err)
+	}
+}
+
+func TestErrInvalidIDDeclarationAndIdentity(t *testing.T) {
+	// R-AXI2-8KM2
+	if ErrInvalidID == nil {
+		t.Fatal("ErrInvalidID is nil, want a non-nil error sentinel")
+	}
+	if wrapped := fmt.Errorf("context: %w", ErrInvalidID); !errors.Is(wrapped, ErrInvalidID) {
+		t.Fatalf("errors.Is(%v, ErrInvalidID) = false, want true", wrapped)
+	}
+
+	file, err := parser.ParseFile(token.NewFileSet(), "idgen.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse idgen.go: %v", err)
+	}
+	var matchingDeclarations int
+	for _, declaration := range file.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok != token.VAR {
+			continue
+		}
+		for _, specification := range general.Specs {
+			value, ok := specification.(*ast.ValueSpec)
+			if !ok || len(value.Names) != 1 || value.Names[0].Name != "ErrInvalidID" {
+				continue
+			}
+			matchingDeclarations++
+			call, callOK := singleCall(value.Values)
+			if !callOK {
+				t.Errorf("ErrInvalidID initializer is not a single call to errors.New")
+				continue
+			}
+			selector, selectorOK := call.Fun.(*ast.SelectorExpr)
+			if !selectorOK {
+				t.Errorf("ErrInvalidID initializer is not a call to errors.New")
+				continue
+			}
+			packageName, packageOK := selector.X.(*ast.Ident)
+			if !packageOK || packageName.Name != "errors" || selector.Sel.Name != "New" {
+				t.Errorf("ErrInvalidID initializer is not a call to errors.New")
+			}
+		}
+	}
+	if matchingDeclarations != 1 {
+		t.Fatalf("found %d ErrInvalidID declarations, want exactly 1", matchingDeclarations)
 	}
 }
 

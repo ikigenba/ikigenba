@@ -29,9 +29,7 @@ func Epoch() time.Time {
 }
 
 // ErrInvalidID wraps the error TimeOf returns for a malformed id.
-//
-//nolint:revive // The exported variable's static error type is part of the API contract.
-var ErrInvalidID error = errors.New("invalid id")
+var ErrInvalidID = errors.New("invalid id")
 
 // ErrTimeRange wraps the error MintAt returns for an instant outside the
 // representable window [Epoch(), Epoch()+36⁸ms).
