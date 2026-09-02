@@ -33,6 +33,12 @@ func Epoch() time.Time {
 //nolint:revive // The exported variable's static error type is part of the API contract.
 var ErrInvalidID error = errors.New("invalid id")
 
+// ErrTimeRange wraps the error MintAt returns for an instant outside the
+// representable window [Epoch(), Epoch()+36⁸ms).
+//
+//nolint:revive // The exported variable's static error type is part of the API contract.
+var ErrTimeRange error = errors.New("time out of range")
+
 func init() {
 	validateDerivedConstants()
 	validateAffineMap()
@@ -51,27 +57,23 @@ func validateDerivedConstants() {
 	}
 }
 
-// MintAt returns "<prefix>-XXXX-XXXX" for the given instant. Instants before
-// Epoch() are clamped to Epoch(). The caller guarantees prefix satisfies
-// ValidPrefix (cli validates at the flag boundary; D5); MintAt does not
-// re-validate.
-//
-// The representable range is the half-open window [Epoch, Epoch+36^8 ms),
-// approximately 89 years. Instants at or beyond the ceiling wrap modulo 36^8
-// and collide with an earlier instant in the window; offsets beyond
-// time.Duration's range first saturate according to time.Sub. Callers that
-// need to distinguish later instants must range-check before calling MintAt.
-func MintAt(prefix string, t time.Time) string {
+// MintAt returns "<prefix>-XXXX-XXXX" for the given instant, or an error
+// wrapping ErrTimeRange when t falls outside the representable window
+// [Epoch(), Epoch()+36⁸ms). Every id it returns round-trips through TimeOf to
+// t. The caller guarantees prefix satisfies ValidPrefix (cli validates at the
+// flag boundary; D5); MintAt does not re-validate.
+func MintAt(prefix string, t time.Time) (string, error) {
 	epoch := Epoch()
-	if t.Before(epoch) {
-		t = epoch
+	ceiling := epoch.Add(time.Duration(modulus) * time.Millisecond)
+	if t.Before(epoch) || !t.Before(ceiling) {
+		return "", fmt.Errorf("%w: instant %s is outside [%s, %s)", ErrTimeRange, t, epoch, ceiling)
 	}
 
 	ms := int64(t.Sub(epoch) / time.Millisecond)
 	n := (multiplyMod(ms, multiplier) + offset) % modulus
 	body := encodeBase36(n)
 
-	return prefix + "-" + body[:groupWidth] + "-" + body[groupWidth:]
+	return prefix + "-" + body[:groupWidth] + "-" + body[groupWidth:], nil
 }
 
 // TimeOf inverts the body of any "<prefix>-XXXX-XXXX" id to the instant it

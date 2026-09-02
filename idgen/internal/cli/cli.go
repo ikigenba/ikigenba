@@ -273,7 +273,12 @@ func mintIdentifiers(number int, prefix string, stdout, stderr io.Writer, clock 
 			instant = advanced
 		}
 
-		if _, err := io.WriteString(out, idgen.MintAt(prefix, instant)+"\n"); err != nil {
+		id, err := idgen.MintAt(prefix, instant)
+		if err != nil {
+			_, _ = fmt.Fprintf(stderr, "idgen: minting id: %v\n", err)
+			return exitFailure
+		}
+		if _, err := io.WriteString(out, id+"\n"); err != nil {
 			return exitFailure
 		}
 		millisecond := instant.UnixMilli()

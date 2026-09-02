@@ -2,14 +2,27 @@ package idgen
 
 import (
 	"errors"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"math"
 	"strings"
 	"testing"
 	"time"
 )
+
+func mustMintAt(t *testing.T, prefix string, instant time.Time) string {
+	t.Helper()
+	id, err := MintAt(prefix, instant)
+	if err != nil {
+		t.Fatalf("MintAt(%q, %s) returned unexpected error: %v", prefix, instant, err)
+	}
+	return id
+}
+
+func callMintAt(function func(string, time.Time) (string, error), prefix string, instant time.Time) (string, error) {
+	return function(prefix, instant)
+}
 
 func callTimeOf(function func(string) (time.Time, error), id string) (time.Time, error) {
 	return function(id)
@@ -174,7 +187,7 @@ func assertEpochDeclaration(t *testing.T) {
 func TestMintAtEpochGoldenVector(t *testing.T) {
 	// R-WHEV-1AN5
 	want := "R-" + "0007-J3LA"
-	if got := MintAt("R", Epoch()); got != want {
+	if got := mustMintAt(t, "R", Epoch()); got != want {
 		t.Fatalf("MintAt(R, Epoch) = %q, want %q", got, want)
 	}
 }
@@ -183,7 +196,7 @@ func TestMintAtAbsoluteInstantGoldenVector(t *testing.T) {
 	// R-SLNI-24UJ
 	instant := time.Date(2026, time.March, 15, 12, 0, 0, 0, time.UTC)
 	want := "R-" + "OBCA-0VLA"
-	if got := MintAt("R", instant); got != want {
+	if got := mustMintAt(t, "R", instant); got != want {
 		t.Fatalf("MintAt(R, instant) = %q, want %q", got, want)
 	}
 }
@@ -192,7 +205,7 @@ func TestMintAtZeroPadsBody(t *testing.T) {
 	// R-SMVE-FWL8
 	instant := Epoch().Add(1143449080754 * time.Millisecond)
 	want := "P-" + "0000-0000"
-	if got := MintAt("P", instant); got != want {
+	if got := mustMintAt(t, "P", instant); got != want {
 		t.Fatalf("MintAt(P, instant) = %q, want %q", got, want)
 	}
 }
@@ -225,7 +238,7 @@ func TestMintAtTimeOfRoundTrip(t *testing.T) {
 	for _, ms := range offsets {
 		instant := Epoch().Add(time.Duration(ms) * time.Millisecond)
 		for _, prefix := range prefixes {
-			id := MintAt(prefix, instant)
+			id := mustMintAt(t, prefix, instant)
 			got, err := TimeOf(id)
 			if err != nil {
 				t.Fatalf("TimeOf(MintAt(%q, offset %dms)) returned error: %v", prefix, ms, err)
@@ -238,45 +251,97 @@ func TestMintAtTimeOfRoundTrip(t *testing.T) {
 	}
 }
 
-func TestMintAtEncodingBoundaryBehavior(t *testing.T) {
-	const (
-		maxRepresentableOffsetMillis = modulus - 1
-		encodingPeriodMillis         = maxRepresentableOffsetMillis + 1
-		saturatedDurationMillis      = math.MaxInt64 / int64(time.Millisecond)
-	)
+func TestMintAtExportedSignature(t *testing.T) {
+	// R-FRLW-OBWD
+	id, err := callMintAt(MintAt, "R", Epoch())
+	if err != nil || id == "" {
+		t.Fatalf("MintAt through exported signature = (%q, %v), want a non-empty id and nil error", id, err)
+	}
+}
 
+func TestErrTimeRangeDeclarationAndIdentity(t *testing.T) {
+	// R-FSTT-23N2
+	sentinel := ErrTimeRange
+	if sentinel == nil || !errors.Is(fmt.Errorf("context: %w", sentinel), ErrTimeRange) {
+		t.Fatalf("ErrTimeRange = %v, want a non-nil identity-comparable error sentinel", sentinel)
+	}
+
+	file, err := parser.ParseFile(token.NewFileSet(), "idgen.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse idgen.go: %v", err)
+	}
+	var matchingDeclarations int
+	for _, declaration := range file.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok != token.VAR {
+			continue
+		}
+		for _, specification := range general.Specs {
+			value, ok := specification.(*ast.ValueSpec)
+			if !ok || len(value.Names) != 1 || value.Names[0].Name != "ErrTimeRange" {
+				continue
+			}
+			matchingDeclarations++
+			typeName, typeOK := value.Type.(*ast.Ident)
+			call, callOK := singleCall(value.Values)
+			if !typeOK || typeName.Name != "error" || !callOK {
+				t.Errorf("ErrTimeRange declaration must be `var ErrTimeRange error = errors.New(...)`")
+				continue
+			}
+			selector, selectorOK := call.Fun.(*ast.SelectorExpr)
+			if !selectorOK {
+				t.Errorf("ErrTimeRange declaration must be `var ErrTimeRange error = errors.New(...)`")
+				continue
+			}
+			packageName, packageOK := selector.X.(*ast.Ident)
+			if !packageOK || packageName.Name != "errors" || selector.Sel.Name != "New" {
+				t.Errorf("ErrTimeRange declaration must be `var ErrTimeRange error = errors.New(...)`")
+			}
+		}
+	}
+	if matchingDeclarations != 1 {
+		t.Fatalf("found %d ErrTimeRange declarations, want exactly 1", matchingDeclarations)
+	}
+}
+
+func singleCall(expressions []ast.Expr) (*ast.CallExpr, bool) {
+	if len(expressions) != 1 {
+		return nil, false
+	}
+	call, ok := expressions[0].(*ast.CallExpr)
+	return call, ok
+}
+
+func TestMintAtRejectsOutsideRepresentableWindow(t *testing.T) {
+	// R-FU1P-FVDR
+	ceiling := Epoch().Add(time.Duration(modulus) * time.Millisecond)
 	tests := []struct {
-		name             string
-		instant          time.Time
-		wantOffsetMillis int64
+		name      string
+		instant   time.Time
+		wantError bool
 	}{
-		{
-			name:             "last representable offset",
-			instant:          Epoch().Add(time.Duration(maxRepresentableOffsetMillis) * time.Millisecond),
-			wantOffsetMillis: maxRepresentableOffsetMillis,
-		},
-		{
-			name:             "one past representable offset wraps to epoch",
-			instant:          Epoch().Add(time.Duration(encodingPeriodMillis) * time.Millisecond),
-			wantOffsetMillis: 0,
-		},
-		{
-			name:             "far future time saturates time.Duration",
-			instant:          Epoch().AddDate(1000, 0, 0),
-			wantOffsetMillis: saturatedDurationMillis % encodingPeriodMillis,
-		},
+		{name: "before epoch", instant: Epoch().Add(-time.Nanosecond), wantError: true},
+		{name: "epoch", instant: Epoch()},
+		{name: "final representable millisecond", instant: ceiling.Add(-time.Millisecond)},
+		{name: "exact ceiling", instant: ceiling, wantError: true},
+		{name: "after ceiling", instant: ceiling.Add(time.Nanosecond), wantError: true},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			id := MintAt("R", test.instant)
-			got, err := TimeOf(id)
-			if err != nil {
-				t.Fatalf("TimeOf(MintAt(R, %s)) returned error: %v", test.instant, err)
+			id, err := MintAt("R", test.instant)
+			if test.wantError {
+				if id != "" || !errors.Is(err, ErrTimeRange) {
+					t.Fatalf("MintAt(R, %s) = (%q, %v), want no id and an error wrapping ErrTimeRange", test.instant, id, err)
+				}
+				return
 			}
-			want := Epoch().Add(time.Duration(test.wantOffsetMillis) * time.Millisecond)
-			if !got.Equal(want) {
-				t.Fatalf("TimeOf(MintAt(R, %s)) = %s, want %s", test.instant, got, want)
+			if err != nil || id == "" {
+				t.Fatalf("MintAt(R, %s) = (%q, %v), want a non-empty id and nil error", test.instant, id, err)
+			}
+			got, decodeErr := TimeOf(id)
+			if decodeErr != nil || !got.Equal(test.instant) {
+				t.Fatalf("TimeOf(%q) = (%s, %v), want (%s, nil)", id, got, decodeErr, test.instant)
 			}
 		})
 	}
@@ -359,15 +424,14 @@ func TestTimeOfNeverPanicsForArbitraryInput(t *testing.T) {
 
 	// wellFormedID builds a canonical id straight from the format's own minter,
 	// so it always survives the shape guard and drives the decode + timestamp
-	// path. The millisecond offset is a wide non-negative value (top bits shifted
-	// off so the multiply into a time.Duration cannot overflow and the offset
-	// never lands before Epoch); sweeping it spreads the encoded body across the
-	// base-36 space, since MintAt folds any offset through its encoding ring.
+	// path. The millisecond offset is sampled across the representable window;
+	// sweeping it spreads the encoded body across the base-36 space.
+	const maxRepresentableOffsetMillis = uint64(2_821_109_907_455)
 	prefixes := []string{"R", "S", "SPEC", "abc123", "Z9", "Requirement"}
 	wellFormedID := func() string {
 		prefix := prefixes[nextRandom()%uint64(len(prefixes))]
-		ms := int64(nextRandom() >> 22)
-		return MintAt(prefix, Epoch().Add(time.Duration(ms)*time.Millisecond))
+		ms := int64(nextRandom() % (maxRepresentableOffsetMillis + 1))
+		return mustMintAt(t, prefix, Epoch().Add(time.Duration(ms)*time.Millisecond))
 	}
 
 	// nearMissID mutates one byte of a well-formed id to an arbitrary value.

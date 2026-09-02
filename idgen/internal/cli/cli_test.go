@@ -308,6 +308,15 @@ func runMint(args []string, clock Clock) (string, string, ExitCode) {
 	return stdout.String(), stderr.String(), code
 }
 
+func mustMintAt(t *testing.T, prefix string, instant time.Time) string {
+	t.Helper()
+	id, err := idgen.MintAt(prefix, instant)
+	if err != nil {
+		t.Fatalf("MintAt(%q, %s) returned unexpected error: %v", prefix, instant, err)
+	}
+	return id
+}
+
 func assertMintLines(t *testing.T, output string) []string {
 	t.Helper()
 	if output == "" || !strings.HasSuffix(output, "\n") {
@@ -581,7 +590,7 @@ func TestRunOptionSetExact(t *testing.T) {
 	}
 
 	instant := time.Date(2026, time.August, 31, 10, 20, 30, 400000000, time.UTC)
-	decodeID := idgen.MintAt("Exact", instant)
+	decodeID := mustMintAt(t, "Exact", instant)
 	originalVersion := version
 	t.Cleanup(func() { version = originalVersion })
 	version = "v82.73.64"
@@ -672,7 +681,7 @@ func TestRunPrefixDefaultsToR(t *testing.T) {
 // mint rejects positionals, and decode alone accepts positional ids.
 func TestRunSingleCommandGrammar(t *testing.T) {
 	instant := time.Date(2026, time.August, 31, 13, 14, 15, 160000000, time.UTC)
-	id := idgen.MintAt("Grammar", instant)
+	id := mustMintAt(t, "Grammar", instant)
 
 	for _, args := range [][]string{{"mint"}, {"decode"}, {id}, {id, "--decode"}} {
 		stdout, stderr, code := runCLI(args, "", &fakeClock{now: instant})
@@ -748,7 +757,7 @@ func TestRunMintReturnsFailureWhenOutputCannotBeWritten(t *testing.T) {
 	stdout := &failingWriter{}
 	var stderr bytes.Buffer
 
-	exitCode := Run(nil, strings.NewReader(""), stdout, &stderr, &fakeClock{now: time.Unix(0, 0)})
+	exitCode := Run(nil, strings.NewReader(""), stdout, &stderr, &fakeClock{now: idgen.Epoch()})
 
 	if exitCode != exitFailure {
 		t.Errorf("Run() exit code = %d, want %d", exitCode, int(exitFailure))
@@ -782,6 +791,22 @@ func TestRunNumberMintsRequestedDistinctIDsWithVirtualClock(t *testing.T) {
 			t.Errorf("output id %q is duplicated", id)
 		}
 		seen[id] = struct{}{}
+	}
+}
+
+func TestRunMintRejectsUnrepresentableClockInstant(t *testing.T) {
+	// R-FV9L-TN4G
+	clock := &fakeClock{now: idgen.Epoch().Add(-time.Nanosecond)}
+	stdout, stderr, exitCode := runMint([]string{"-n", "1"}, clock)
+
+	if exitCode != exitFailure {
+		t.Errorf("Run() exit code = %d, want %d", exitCode, int(exitFailure))
+	}
+	if stderr == "" {
+		t.Error("stderr is empty, want a mint-range diagnostic")
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
 	}
 }
 
@@ -1099,7 +1124,7 @@ func TestRunRejectsNonPositiveNumbersBeforeMinting(t *testing.T) {
 // R-T7LO-Y071: --decode routes to decoding without consulting the mint clock.
 func TestRunDecodeRoutesAwayFromMinting(t *testing.T) {
 	instant := time.Date(2026, time.August, 29, 12, 34, 56, 789123000, time.FixedZone("test", -5*60*60))
-	id := idgen.MintAt("Route", instant)
+	id := mustMintAt(t, "Route", instant)
 	clock := &fakeClock{now: instant.Add(time.Hour)}
 
 	stdout, stderr, exitCode := runCLI([]string{"--decode", "--version", "--version=false", id}, "", clock)
@@ -1121,7 +1146,7 @@ func TestRunDecodeRoutesAwayFromMinting(t *testing.T) {
 // R-T8TL-BRXQ: number and prefix flags are accepted but inert in decode mode.
 func TestRunMintFlagsDoNotChangeDecodeOutput(t *testing.T) {
 	instant := time.Date(2026, time.September, 1, 2, 3, 4, 567890000, time.UTC)
-	id := idgen.MintAt("Inert", instant)
+	id := mustMintAt(t, "Inert", instant)
 	wantStdout := decodedLine(instant)
 	tests := []struct {
 		name string
@@ -1151,7 +1176,7 @@ func TestRunDecodesPositionalsInOrder(t *testing.T) {
 		time.Date(2026, time.September, 2, 3, 4, 5, 123456000, time.FixedZone("west", -7*60*60)),
 		time.Date(2027, time.November, 30, 22, 21, 20, 987654000, time.FixedZone("east", 9*60*60)),
 	}
-	ids := []string{idgen.MintAt("First", instants[0]), idgen.MintAt("Second", instants[1])}
+	ids := []string{mustMintAt(t, "First", instants[0]), mustMintAt(t, "Second", instants[1])}
 
 	stdout, stderr, exitCode := runCLI(append([]string{"--decode"}, ids...), "", &fakeClock{})
 
@@ -1168,7 +1193,7 @@ func TestRunDecodesPositionalsInOrder(t *testing.T) {
 
 func TestRunDecodeReturnsFailureWhenOutputCannotBeWritten(t *testing.T) {
 	instant := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
-	token := idgen.MintAt("R", instant)
+	token := mustMintAt(t, "R", instant)
 	stdout := &failingWriter{}
 	var stderr bytes.Buffer
 
@@ -1203,7 +1228,7 @@ func TestRunDecodeInvalidDiagnosticAddsOnlyTokenContext(t *testing.T) {
 
 func TestRunDecodeReportsWhenInputStopsEarly(t *testing.T) {
 	instant := time.Date(2026, time.January, 2, 3, 4, 5, 678000000, time.UTC)
-	token := idgen.MintAt("Read", instant)
+	token := mustMintAt(t, "Read", instant)
 	stdin := io.MultiReader(strings.NewReader(token+" "), iotest.ErrReader(io.ErrUnexpectedEOF))
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -1228,7 +1253,7 @@ func TestRunDecodesMixedWhitespaceStdinLikePositionals(t *testing.T) {
 		time.Date(2027, time.July, 8, 9, 10, 11, 333444000, time.UTC),
 		time.Date(2028, time.December, 13, 14, 15, 16, 555666000, time.UTC),
 	}
-	ids := []string{idgen.MintAt("A", instants[0]), idgen.MintAt("B", instants[1]), idgen.MintAt("C", instants[2])}
+	ids := []string{mustMintAt(t, "A", instants[0]), mustMintAt(t, "B", instants[1]), mustMintAt(t, "C", instants[2])}
 	wantStdout := decodedLine(instants[0]) + decodedLine(instants[1]) + decodedLine(instants[2])
 	stdin := " \t" + ids[0] + "\n\n" + ids[1] + " \t\r\n" + ids[2] + "  "
 
@@ -1242,7 +1267,7 @@ func TestRunDecodesMixedWhitespaceStdinLikePositionals(t *testing.T) {
 // R-TEX3-8MN7: positional decode does not read stdin.
 func TestRunPositionalDecodeNeverReadsStdin(t *testing.T) {
 	instant := time.Date(2026, time.October, 2, 3, 4, 5, 678901000, time.UTC)
-	id := idgen.MintAt("Position", instant)
+	id := mustMintAt(t, "Position", instant)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
@@ -1259,7 +1284,7 @@ func TestRunDecodeContinuesPastMalformedTokens(t *testing.T) {
 		time.Date(2026, time.April, 5, 6, 7, 8, 234567000, time.UTC),
 		time.Date(2026, time.April, 5, 6, 7, 9, 876543000, time.UTC),
 	}
-	ids := []string{idgen.MintAt("Good", instants[0]), idgen.MintAt("AlsoGood", instants[1])}
+	ids := []string{mustMintAt(t, "Good", instants[0]), mustMintAt(t, "AlsoGood", instants[1])}
 	bad := []string{"broken", "not_an_id"}
 	args := []string{"--decode", bad[0], ids[0], bad[1], ids[1]}
 
@@ -1326,7 +1351,7 @@ func TestRunDecodeOutputIgnoresTZEnvironment(t *testing.T) {
 	}
 
 	instant := time.Date(2026, time.June, 7, 8, 9, 10, 765432000, time.FixedZone("origin", 10*60*60))
-	id := idgen.MintAt("Zone", instant)
+	id := mustMintAt(t, "Zone", instant)
 	testBinary, err := os.Executable()
 	if err != nil {
 		t.Fatalf("resolve test executable: %v", err)
