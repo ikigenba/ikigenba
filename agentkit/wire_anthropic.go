@@ -18,7 +18,7 @@ func newAnthropicWire(classifier wireClassifier) WireFormat {
 		classifier: classifier,
 		capabilities: wireCapabilities{
 			name:       "Anthropic Messages",
-			reasoning:  reasoningShapeOff | reasoningShapeBudget,
+			reasoning:  reasoningShapeOff | reasoningShapeEffort | reasoningShapeBudget,
 			toolChoice: toolChoiceShapeRequired | toolChoiceShapeTool,
 		},
 	}
@@ -59,7 +59,8 @@ type anthropicOutputFormat struct {
 }
 
 type anthropicOutputConfig struct {
-	Format anthropicOutputFormat `json:"format"`
+	Effort string                 `json:"effort,omitempty"`
+	Format *anthropicOutputFormat `json:"format,omitempty"`
 }
 
 type anthropicRequest struct {
@@ -104,6 +105,11 @@ func configureAnthropicRequest(request *anthropicRequest, settings Settings) {
 	switch settings.Reasoning.Mode {
 	case ReasoningOff:
 		request.Thinking = &anthropicThinking{Type: "disabled"}
+	case ReasoningEffort:
+		if request.OutputConfig == nil {
+			request.OutputConfig = &anthropicOutputConfig{}
+		}
+		request.OutputConfig.Effort = effortName(settings.Reasoning.Effort)
 	case ReasoningBudget:
 		request.Thinking = &anthropicThinking{Type: "enabled", BudgetTokens: settings.Reasoning.Budget}
 	}
@@ -127,7 +133,7 @@ func (w *anthropicWire) encodeRequest(state RequestState) ([]byte, error) {
 			return nil, fmt.Errorf("agentkit: render Anthropic output schema: %w", renderErr)
 		}
 		request.OutputConfig = &anthropicOutputConfig{
-			Format: anthropicOutputFormat{Type: "json_schema", Schema: schema},
+			Format: &anthropicOutputFormat{Type: "json_schema", Schema: schema},
 		}
 	}
 	configureAnthropicRequest(&request, state.Settings)

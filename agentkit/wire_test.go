@@ -1706,6 +1706,79 @@ func TestSupportedSettingsAreEncodedByOwningWireGrammar(t *testing.T) {
 	}
 }
 
+func TestAnthropicMessagesRendersReasoningEffortInOutputConfig(t *testing.T) {
+	// R-NXR6-QKDM
+	wire := newAnthropicWire(nil)
+	validator, ok := wire.(interface{ validateSettings(Settings) error })
+	if !ok {
+		t.Fatalf("%T has no body-grammar capability declaration", wire)
+	}
+
+	tests := []struct {
+		name     string
+		settings Settings
+		want     string
+	}{
+		{
+			name:     "effort only",
+			settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningEffort, Effort: EffortHigh}},
+			want:     `{"model":"opaque-model","messages":[],"output_config":{"effort":"high"}}` + "\n",
+		},
+		{
+			name:     "off remains thinking disabled",
+			settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningOff}},
+			want:     `{"model":"opaque-model","messages":[],"thinking":{"type":"disabled"}}` + "\n",
+		},
+		{
+			name:     "budget remains enabled thinking",
+			settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningBudget, Budget: 4096}},
+			want:     `{"model":"opaque-model","messages":[],"thinking":{"type":"enabled","budget_tokens":4096}}` + "\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validator.validateSettings(test.settings); err != nil {
+				t.Fatalf("supported reasoning settings rejected: %v", err)
+			}
+			body, err := wire.EncodeRequest(RequestState{Model: "opaque-model", Settings: test.settings})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(body) != test.want {
+				t.Fatalf("encoded body = %s, want exact Anthropic grammar %s", body, test.want)
+			}
+		})
+	}
+
+	schema := json.RawMessage(`{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"]}`)
+	body, err := wire.EncodeRequest(RequestState{
+		Model:    "opaque-model",
+		Settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningEffort, Effort: EffortMinimal}},
+		Output:   &OutputContract{Schema: schema},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := decodeOutputSchemaTestDocument(t, body)
+	outputConfig, ok := document["output_config"].(map[string]any)
+	if !ok {
+		t.Fatalf("output_config = %#v", document["output_config"])
+	}
+	if got := sortedJSONKeys(outputConfig); !slices.Equal(got, []string{"effort", "format"}) {
+		t.Fatalf("output_config keys = %v, want effort and format only in body %s", got, body)
+	}
+	if outputConfig["effort"] != "minimal" {
+		t.Fatalf("output_config.effort = %#v, want minimal", outputConfig["effort"])
+	}
+	format, ok := outputConfig["format"].(map[string]any)
+	if !ok || format["type"] != "json_schema" || format["schema"] == nil {
+		t.Fatalf("output_config.format = %#v, want populated JSON-schema format", outputConfig["format"])
+	}
+	if _, present := document["thinking"]; present {
+		t.Fatalf("effort request also emitted thinking: %s", body)
+	}
+}
+
 func TestEffortCapableWiresRenderEveryEffortLevelVerbatim(t *testing.T) {
 	// R-NVBD-Z0W8
 	efforts := []struct {
@@ -1725,6 +1798,17 @@ func TestEffortCapableWiresRenderEveryEffortLevelVerbatim(t *testing.T) {
 		wire           WireFormat
 		renderedEffort func(map[string]any) any
 	}{
+		{
+			name: "anthropic_messages",
+			wire: newAnthropicWire(nil),
+			renderedEffort: func(document map[string]any) any {
+				outputConfig, ok := document["output_config"].(map[string]any)
+				if !ok {
+					return nil
+				}
+				return outputConfig["effort"]
+			},
+		},
 		{
 			name: "openai_chat_completions",
 			wire: newOpenAIChatWire(nil),
