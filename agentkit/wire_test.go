@@ -135,6 +135,104 @@ func TestPortableOutputSchemaRejectsInvalidInputPerWire(t *testing.T) {
 	}
 }
 
+func TestAnthropicMessagesEmbedsNativeOutputContract(t *testing.T) {
+	// R-TYLX-V1JV
+	schema := json.RawMessage(`{"type":"object","description":"report","properties":{"profile":{"$ref":"#/$defs/Profile"},"items":{"type":"array","items":{"type":"object","properties":{"score":{"type":"integer","minimum":0},"label":{"type":"string"}},"required":["score","label"]}}},"required":["profile","items"],"$defs":{"Profile":{"type":"object","properties":{"name":{"type":"string","minLength":2},"contact":{"type":"object","properties":{"active":{"type":"boolean"}},"required":["active"]}},"required":["name","contact"]}}}`)
+	original := append([]byte(nil), schema...)
+	state := RequestState{
+		Model:   "claude-sonnet-fixture",
+		History: History{{Role: RoleUser, Blocks: []Block{Text{Text: "Return the report."}}}},
+		Output:  &OutputContract{Schema: schema, MaxAttempts: 7},
+	}
+
+	body, err := newAnthropicWire(nil).EncodeRequest(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile("testdata/anthropic_messages.output_contract.request.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(body, want) {
+		t.Fatalf("encoded request = %s\nwant fixture = %s", body, want)
+	}
+	if len(body) == 0 || body[len(body)-1] != '\n' {
+		t.Fatal("encoded request has no trailing newline")
+	}
+	if !bytes.Equal(schema, original) {
+		t.Fatalf("EncodeRequest mutated source schema: %s, want %s", schema, original)
+	}
+
+	document := decodeOutputSchemaTestDocument(t, body)
+	if got := sortedJSONKeys(document); !slices.Equal(got, []string{"messages", "model", "output_config"}) {
+		t.Fatalf("top-level keys = %v", got)
+	}
+	outputConfig, ok := document["output_config"].(map[string]any)
+	if !ok || !slices.Equal(sortedJSONKeys(outputConfig), []string{"format"}) {
+		t.Fatalf("output_config = %#v", document["output_config"])
+	}
+	format, ok := outputConfig["format"].(map[string]any)
+	if !ok || !slices.Equal(sortedJSONKeys(format), []string{"schema", "type"}) {
+		t.Fatalf("output_config.format = %#v", outputConfig["format"])
+	}
+	if format["type"] != "json_schema" {
+		t.Fatalf("output_config.format.type = %#v", format["type"])
+	}
+	rendered, ok := format["schema"].(map[string]any)
+	if !ok {
+		t.Fatalf("output_config.format.schema is not an object: %#v", format["schema"])
+	}
+	assertEveryOutputObjectClosed(t, rendered, "$.output_config.format.schema")
+	properties := rendered["properties"].(map[string]any)
+	if got := properties["profile"].(map[string]any)["$ref"]; got != "#/$defs/Profile" {
+		t.Errorf("rendered reference = %#v", got)
+	}
+	score := properties["items"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)["score"].(map[string]any)
+	if containsJSONKey(rendered, "minimum") || score["description"] != "Value must be >= 0." {
+		t.Errorf("rendered constrained score = %#v", score)
+	}
+	name := rendered["$defs"].(map[string]any)["Profile"].(map[string]any)["properties"].(map[string]any)["name"].(map[string]any)
+	if containsJSONKey(rendered, "minLength") || name["description"] != "Length must be >= 2." {
+		t.Errorf("rendered constrained name = %#v", name)
+	}
+	if containsJSONKey(document, "MaxAttempts") || containsJSONKey(document, "max_attempts") {
+		t.Fatalf("request leaked MaxAttempts: %s", body)
+	}
+
+	endpoint, err := NewEndpoint("https://anthropic.invalid/v1/messages", wireLoopAuth{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := newComposedProvider(newAnthropicWire(nil), endpoint, Identity{})
+	request, err := provider.BuildRequest(context.Background(), state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name := range request.Header {
+		if strings.EqualFold(name, "anthropic-beta") {
+			t.Fatalf("ordinary Anthropic request emitted beta header %q", name)
+		}
+	}
+
+	invalid := RequestState{Output: &OutputContract{Schema: json.RawMessage(`{"type":"object","properties":{"bad":{"allOf":[{"type":"string"}]}},"required":["bad"]}`)}}
+	invalidBody, invalidErr := newAnthropicWire(nil).EncodeRequest(invalid)
+	if invalidErr == nil || invalidBody != nil {
+		t.Fatalf("invalid output schema encoded as %s with error %v", invalidBody, invalidErr)
+	}
+	if !strings.Contains(invalidErr.Error(), "Anthropic output schema") || !strings.Contains(invalidErr.Error(), "allOf") {
+		t.Fatalf("invalid output schema error is not useful: %v", invalidErr)
+	}
+}
+
+func sortedJSONKeys(document map[string]any) []string {
+	keys := make([]string, 0, len(document))
+	for key := range document {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	return keys
+}
+
 func decodeOutputSchemaTestDocument(t *testing.T, data []byte) map[string]any {
 	t.Helper()
 	decoder := json.NewDecoder(bytes.NewReader(data))

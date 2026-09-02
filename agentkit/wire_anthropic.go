@@ -53,12 +53,22 @@ type anthropicToolChoice struct {
 	Name string `json:"name,omitempty"`
 }
 
+type anthropicOutputFormat struct {
+	Type   string          `json:"type"`
+	Schema json.RawMessage `json:"schema"`
+}
+
+type anthropicOutputConfig struct {
+	Format anthropicOutputFormat `json:"format"`
+}
+
 type anthropicRequest struct {
-	Model      string               `json:"model"`
-	Messages   []anthropicMessage   `json:"messages"`
-	Thinking   *anthropicThinking   `json:"thinking,omitempty"`
-	ToolChoice *anthropicToolChoice `json:"tool_choice,omitempty"`
-	Tools      json.RawMessage      `json:"tools,omitempty"`
+	Model        string                 `json:"model"`
+	Messages     []anthropicMessage     `json:"messages"`
+	OutputConfig *anthropicOutputConfig `json:"output_config,omitempty"`
+	Thinking     *anthropicThinking     `json:"thinking,omitempty"`
+	ToolChoice   *anthropicToolChoice   `json:"tool_choice,omitempty"`
+	Tools        json.RawMessage        `json:"tools,omitempty"`
 }
 
 func buildAnthropicMessages(history []Message) ([]anthropicMessage, error) {
@@ -111,6 +121,15 @@ func (w *anthropicWire) encodeRequest(state RequestState) ([]byte, error) {
 		return nil, err
 	}
 	request := anthropicRequest{Model: state.Model, Messages: messages}
+	if state.Output != nil {
+		schema, renderErr := w.renderOutputSchema(state.Output.Schema)
+		if renderErr != nil {
+			return nil, fmt.Errorf("agentkit: render Anthropic output schema: %w", renderErr)
+		}
+		request.OutputConfig = &anthropicOutputConfig{
+			Format: anthropicOutputFormat{Type: "json_schema", Schema: schema},
+		}
+	}
 	configureAnthropicRequest(&request, state.Settings)
 	if len(state.Tools) > 0 {
 		request.Tools, err = w.RenderTools(state.Tools)
