@@ -381,8 +381,6 @@ func assertEventSeam(t *testing.T) {
 }
 
 func TestConversationConstructorDeclarationsAreExact(t *testing.T) {
-	// R-Y8LS-TNWE
-	// R-Y9TP-7FN3
 	// R-SLTY-K7W3
 	// R-SN1U-XZMS
 	newForWire := reflect.TypeOf(NewForWire)

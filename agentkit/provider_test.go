@@ -143,7 +143,6 @@ func TestKnownWireModelCompositionRetainsModelVerbatim(t *testing.T) {
 }
 
 func TestNewForWireUsesEveryKnownCodecAndSuppliedEndpoint(t *testing.T) {
-	// R-Y8LS-TNWE
 	// R-SLTY-K7W3
 	const model = "released/today:model-latest"
 	tests := []struct {

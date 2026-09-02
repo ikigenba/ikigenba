@@ -47,7 +47,6 @@ func (p *externalProvider) Identity() agentkit.Identity {
 func TestExternalProviderDrivesSend(t *testing.T) {
 	// R-1VRZ-N432
 	// R-3H39-MBXP
-	// R-Y9TP-7FN3
 	// R-SN1U-XZMS
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusOK)
