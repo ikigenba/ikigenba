@@ -6,6 +6,7 @@ const (
 	eventRecordMessage eventRecordKind = iota + 1
 	eventRecordToolUse
 	eventRecordToolResult
+	eventRecordOutput
 )
 
 // eventRecord is the private, message-granular bridge consumed by the later
@@ -27,6 +28,8 @@ func recordForEvent(event Event) eventRecord {
 		return eventRecord{kind: eventRecordToolUse, value: value.Use}
 	case ToolReturn:
 		return eventRecord{kind: eventRecordToolResult, value: value.Result}
+	case OutputDone:
+		return eventRecord{kind: eventRecordOutput, value: value.Value}
 	default:
 		panic("agentkit: invalid Event implementation")
 	}

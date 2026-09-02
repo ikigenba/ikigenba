@@ -258,7 +258,7 @@ func (c *Conversation) finishNoToolRound(snapshot *turnSnapshot, assistant Histo
 		}
 		return turnRetry, nil
 	}
-	if !yield(OutputDone{Value: append(json.RawMessage(nil), text...)}) {
+	if !publishEvent(c.eventSink, yield, OutputDone{Value: append(json.RawMessage(nil), text...)}) {
 		return turnAbandon, nil
 	}
 	return turnCommit, nil

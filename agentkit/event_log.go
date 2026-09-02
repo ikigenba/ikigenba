@@ -231,6 +231,8 @@ func (l *Log) record(record eventRecord) {
 	case eventRecordToolResult:
 		value := record.value.(ToolResult)
 		entry.Type, entry.ToolResult = RecordToolResult, &value
+	case eventRecordOutput:
+		entry.Type, entry.Output = RecordOutput, record.value.(json.RawMessage)
 	default:
 		panic("agentkit: invalid event record kind")
 	}

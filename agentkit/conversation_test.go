@@ -1477,16 +1477,28 @@ func TestStructuredOutputCorrectionRetriesAndCommitsFullTranscript(t *testing.T)
 		t.Fatalf("corrected history = %#v, want %#v", got, want)
 	}
 	var loggedMessages History
-	for _, record := range decodeLogRecords(t, logOutput.Bytes()) {
-		if record.Type == RecordMessage && record.Message != nil {
+	var projected []Event
+	outputCount := 0
+	outputPosition := -1
+	records := decodeLogRecords(t, logOutput.Bytes())
+	for index, record := range records {
+		switch record.Type {
+		case RecordMessage:
 			loggedMessages = append(loggedMessages, *record.Message)
-		}
-		if record.Type == RecordOutput {
-			t.Fatalf("phase-31 log unexpectedly recorded OutputDone: %#v", record)
+			projected = append(projected, MessageDone{Message: *record.Message})
+		case RecordOutput:
+			outputCount++
+			outputPosition = index
+			projected = append(projected, OutputDone{Value: record.Output})
 		}
 	}
 	if !reflect.DeepEqual(loggedMessages, History{rejected, corrective, accepted}) {
 		t.Fatalf("logged corrected messages = %#v", loggedMessages)
+	}
+	// R-UI4B-ZDEZ
+	if len(records) != 7 || outputCount != 1 || outputPosition != 4 || !bytes.Equal(records[outputPosition].Output, []byte(acceptedText)) ||
+		!reflect.DeepEqual(projected, events) || records[5].Type != RecordUsage || records[6].Type != RecordTurnEnd {
+		t.Fatalf("structured log does not mirror live events exactly once in order: records=%#v projected=%#v events=%#v", records, projected, events)
 	}
 }
 
@@ -1506,8 +1518,10 @@ func TestStructuredOutputAttemptLimitsExhaustWithoutCommit(t *testing.T) {
 			}
 			provider := &phase15Provider{model: "model", responses: responses}
 			transportCalls := 0
+			var logOutput bytes.Buffer
 			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
 				Output: &OutputContract{Schema: schema, MaxAttempts: test.maxAttempts},
+				Log:    NewLog(&logOutput, func() time.Time { return time.Time{} }),
 			})
 			conversation.history = cloneHistory(prior)
 			stream := conversation.Send(context.Background(), Text{Text: "answer"})
@@ -1534,7 +1548,31 @@ func TestStructuredOutputAttemptLimitsExhaustWithoutCommit(t *testing.T) {
 					t.Fatalf("exhausted turn emitted OutputDone: %#v", events)
 				}
 			}
+			for _, record := range decodeLogRecords(t, logOutput.Bytes()) {
+				if record.Type == RecordOutput {
+					t.Fatalf("exhausted turn logged output without OutputDone: %#v", record)
+				}
+			}
 		})
+	}
+}
+
+func TestNoContractTurnDoesNotLogOutput(t *testing.T) {
+	message := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: `{"value":1}`}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: message}}}}
+	transportCalls := 0
+	var logOutput bytes.Buffer
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+		Log: NewLog(&logOutput, func() time.Time { return time.Time{} }),
+	})
+	events := drainStream(conversation.Send(context.Background(), Text{Text: "answer"}))
+	if !reflect.DeepEqual(events, []Event{MessageDone{Message: message}}) {
+		t.Fatalf("no-contract events = %#v", events)
+	}
+	for _, record := range decodeLogRecords(t, logOutput.Bytes()) {
+		if record.Type == RecordOutput {
+			t.Fatalf("no-contract turn logged output: %#v", record)
+		}
 	}
 }
 
@@ -1570,6 +1608,8 @@ func TestDurableLogMirrorsMultiRoundStreamAtMessageGranularity(t *testing.T) {
 			projected = append(projected, ToolCall{Use: *record.ToolUse})
 		case RecordToolResult:
 			projected = append(projected, ToolReturn{Result: *record.ToolResult})
+		case RecordOutput:
+			projected = append(projected, OutputDone{Value: record.Output})
 		}
 	}
 	if !reflect.DeepEqual(projected, events) {
@@ -1582,17 +1622,23 @@ func TestDurableLogMirrorsMultiRoundStreamAtMessageGranularity(t *testing.T) {
 
 func TestLogFailureDoesNotAlterSuccessOrTerminalStreamSemantics(t *testing.T) {
 	// R-5LWX-PVNG
-	message := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "kept"}}}
+	text := `{"value":1}`
+	message := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: text}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: message}}}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
-	conversation.eventSink = NewLog(failingLogWriter{}, func() time.Time { return time.Time{} })
+	failure := &failingLogWriter{}
+	writer := &scriptedLogWriter{steps: []io.Writer{io.Discard, io.Discard, failure}}
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+		Output: &OutputContract{Schema: json.RawMessage(`{"type":"object","properties":{"value":{"type":"integer"}},"required":["value"]}`)},
+		Log:    NewLog(writer, func() time.Time { return time.Time{} }),
+	})
 	stream := conversation.Send(context.Background(), Text{Text: "hello"})
-	if events := drainStream(stream); !reflect.DeepEqual(events, []Event{MessageDone{Message: message}}) || stream.Err() != nil {
+	wantEvents := []Event{MessageDone{Message: message}, OutputDone{Value: json.RawMessage(text)}}
+	if events := drainStream(stream); !reflect.DeepEqual(events, wantEvents) || stream.Err() != nil {
 		t.Fatalf("failing log changed successful stream: events=%#v err=%v", events, stream.Err())
 	}
-	if len(conversation.history) != 2 {
-		t.Fatalf("failing log changed committed history: %#v", conversation.history)
+	if len(conversation.history) != 2 || !failure.called {
+		t.Fatalf("output log failure changed history or did not occur at output: history=%#v failure=%t", conversation.history, failure.called)
 	}
 
 	terminal := errors.New("decode failed")
@@ -1700,9 +1746,27 @@ func TestConversationCloseSummarizesResolvedCostsAndRejectsLaterSend(t *testing.
 	}
 }
 
-type failingLogWriter struct{}
+type scriptedLogWriter struct {
+	steps []io.Writer
+}
 
-func (failingLogWriter) Write([]byte) (int, error) { return 0, errors.New("log disk full") }
+func (w *scriptedLogWriter) Write(data []byte) (int, error) {
+	if len(w.steps) == 0 {
+		return 0, errors.New("unexpected log write")
+	}
+	step := w.steps[0]
+	w.steps = w.steps[1:]
+	return step.Write(data)
+}
+
+type failingLogWriter struct {
+	called bool
+}
+
+func (w *failingLogWriter) Write([]byte) (int, error) {
+	w.called = true
+	return 0, errors.New("log disk full")
+}
 
 func assertSelectedLogPayloads(t *testing.T, records []LogRecord) {
 	t.Helper()
