@@ -8,7 +8,7 @@ import (
 )
 
 // Event is one thing that happened during a turn, at message granularity. It is
-// a sealed union of MessageDone, ToolCall, and ToolReturn.
+// a sealed union of MessageDone, ToolCall, ToolReturn, and OutputDone.
 type Event interface {
 	isEvent()
 }
@@ -32,6 +32,7 @@ type ToolReturn struct {
 func (MessageDone) isEvent() {}
 func (ToolCall) isEvent()    {}
 func (ToolReturn) isEvent()  {}
+func (OutputDone) isEvent()  {}
 
 // ProviderOptions is an untyped, wire-specific escape hatch merged shallowly at
 // the top level of the request body. agentkit enumerates no keys; each wire and

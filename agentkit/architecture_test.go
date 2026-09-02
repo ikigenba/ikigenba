@@ -25,6 +25,7 @@ var (
 	_ Event = MessageDone{}
 	_ Event = ToolCall{}
 	_ Event = ToolReturn{}
+	_ Event = OutputDone{}
 )
 
 func TestEndpointDeclarationsAreExact(t *testing.T) {
@@ -238,12 +239,18 @@ func TestRequestStateDeclarationIsExact(t *testing.T) {
 
 func TestMessageDoneDeclarationIsExactAndImplementsEvent(t *testing.T) {
 	// R-0B78-ZYU3
-	assertEventWrapper(t, "MessageDone", reflect.TypeFor[MessageDone](), "Message", reflect.TypeFor[Message]())
+	assertEventWrapper(t, "agentkit.go", "MessageDone", reflect.TypeFor[MessageDone](), "Message", reflect.TypeFor[Message]())
 	assertEventSeam(t)
 }
 
-func TestEventIsSealedToExactlyThreeVariants(t *testing.T) {
+func TestOutputDoneDeclarationIsExactAndImplementsEvent(t *testing.T) {
+	// R-TOUQ-SVMB
+	assertEventWrapper(t, "output.go", "OutputDone", reflect.TypeFor[OutputDone](), "Value", reflect.TypeFor[json.RawMessage]())
+}
+
+func TestEventIsSealedToExactlyFourVariants(t *testing.T) {
 	// R-4YQU-G8K9
+	// R-UQNM-NRLU
 	assertEventSeam(t)
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -274,7 +281,7 @@ func TestEventIsSealedToExactlyThreeVariants(t *testing.T) {
 			implementations = append(implementations, identifier.Name)
 		}
 	}
-	want := []string{"MessageDone", "ToolCall", "ToolReturn"}
+	want := []string{"MessageDone", "ToolCall", "ToolReturn", "OutputDone"}
 	if !reflect.DeepEqual(implementations, want) {
 		t.Fatalf("in-package Event implementations = %v, want exactly %v", implementations, want)
 	}
@@ -282,12 +289,12 @@ func TestEventIsSealedToExactlyThreeVariants(t *testing.T) {
 
 func TestToolCallDeclarationIsExactAndImplementsEvent(t *testing.T) {
 	// R-0CF5-DQKS
-	assertEventWrapper(t, "ToolCall", reflect.TypeFor[ToolCall](), "Use", reflect.TypeFor[ToolUse]())
+	assertEventWrapper(t, "agentkit.go", "ToolCall", reflect.TypeFor[ToolCall](), "Use", reflect.TypeFor[ToolUse]())
 }
 
 func TestToolReturnDeclarationIsExactAndImplementsEvent(t *testing.T) {
 	// R-0DN1-RIBH
-	assertEventWrapper(t, "ToolReturn", reflect.TypeFor[ToolReturn](), "Result", reflect.TypeFor[ToolResult]())
+	assertEventWrapper(t, "agentkit.go", "ToolReturn", reflect.TypeFor[ToolReturn](), "Result", reflect.TypeFor[ToolResult]())
 }
 
 func TestStreamDeclarationIsOpaqueWithExactMethods(t *testing.T) {
@@ -330,7 +337,7 @@ func TestStreamDeclarationIsOpaqueWithExactMethods(t *testing.T) {
 	}
 }
 
-func assertEventWrapper(t *testing.T, name string, wrapper reflect.Type, fieldName string, fieldType reflect.Type) {
+func assertEventWrapper(t *testing.T, filename string, name string, wrapper reflect.Type, fieldName string, fieldType reflect.Type) {
 	t.Helper()
 	if wrapper.Name() != name || wrapper.Kind() != reflect.Struct || !token.IsExported(wrapper.Name()) {
 		t.Fatalf("%s name/kind = %q/%s, want exported defined struct", name, wrapper.Name(), wrapper.Kind())
@@ -345,7 +352,7 @@ func assertEventWrapper(t *testing.T, name string, wrapper reflect.Type, fieldNa
 	if !wrapper.Implements(reflect.TypeFor[Event]()) {
 		t.Fatalf("%s does not implement Event", name)
 	}
-	specification := declaredType(t, "agentkit.go", name)
+	specification := declaredType(t, filename, name)
 	if specification.Assign.IsValid() {
 		t.Fatalf("%s is an alias", name)
 	}
