@@ -31,7 +31,6 @@ var (
 func TestEndpointDeclarationsAreExact(t *testing.T) {
 	// R-YEPA-QILV
 	// R-ZKDG-L0IT
-	// R-YFX7-4ACK
 	// R-ZMT9-CK07
 	// R-ZO15-QBQW
 	// R-ZP92-43HL
