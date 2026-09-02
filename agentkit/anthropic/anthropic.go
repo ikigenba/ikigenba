@@ -23,6 +23,7 @@ type config struct {
 	baseURL         string
 	hasBaseOverride bool
 	api             API
+	conversation    agentkit.Config
 }
 
 // WithAPI selects the Anthropic API surface.
@@ -36,7 +37,16 @@ func WithAPI(api API) Option {
 // Option configures an Anthropic conversation.
 type Option func(*config) error
 
-// WithBaseURL overrides the Anthropic API-key endpoint.
+// WithConfig supplies the construction-time conversation configuration.
+func WithConfig(cfg agentkit.Config) Option {
+	return func(configuration *config) error {
+		configuration.conversation = cfg
+		return nil
+	}
+}
+
+// WithBaseURL overrides the Anthropic API-key endpoint. raw must be a valid
+// absolute HTTP(S) URL.
 func WithBaseURL(raw string) Option {
 	return func(configuration *config) error {
 		configuration.baseURL = raw
@@ -69,5 +79,5 @@ func New(credential Credential, model string, options ...Option) (*agentkit.Conv
 	if err != nil {
 		return nil, err
 	}
-	return agentkit.NewForWire(agentkit.KnownWireAnthropicMessages, endpoint, model, agentkit.Config{})
+	return agentkit.NewForWire(agentkit.KnownWireAnthropicMessages, endpoint, model, configuration.conversation)
 }

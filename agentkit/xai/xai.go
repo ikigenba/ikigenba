@@ -22,12 +22,22 @@ type config struct {
 	baseURL         string
 	hasBaseOverride bool
 	api             API
+	conversation    agentkit.Config
 }
 
 // Option configures an xAI conversation.
 type Option func(*config) error
 
-// WithBaseURL overrides the xAI API-key endpoint.
+// WithConfig supplies the construction-time conversation configuration.
+func WithConfig(cfg agentkit.Config) Option {
+	return func(configuration *config) error {
+		configuration.conversation = cfg
+		return nil
+	}
+}
+
+// WithBaseURL overrides the xAI API-key endpoint. raw must be a valid absolute
+// HTTP(S) URL.
 func WithBaseURL(raw string) Option {
 	return func(configuration *config) error {
 		configuration.baseURL = raw
@@ -64,7 +74,7 @@ func New(credential Credential, model string, options ...Option) (*agentkit.Conv
 	if err != nil {
 		return nil, err
 	}
-	return agentkit.NewForWire(wire, endpoint, model, agentkit.Config{})
+	return agentkit.NewForWire(wire, endpoint, model, configuration.conversation)
 }
 
 func buildConfig(options []Option) (config, error) {

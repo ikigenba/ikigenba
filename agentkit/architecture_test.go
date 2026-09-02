@@ -1828,6 +1828,66 @@ func TestSiblingContractWithholdsRootOwnedMechanismsAndKeepsOptionsLocal(t *test
 	}
 }
 
+func TestVendorWithConfigDeclarationsAndForwardingAreExact(t *testing.T) {
+	// R-SO9R-BRDH
+	for _, filename := range []string{"anthropic/anthropic.go", "openai/openai.go", "gemini/gemini.go", "xai/xai.go", "openrouter/openrouter.go"} {
+		t.Run(filename, func(t *testing.T) {
+			configuration := declaredType(t, filename, "config")
+			structure, ok := configuration.Type.(*ast.StructType)
+			if !ok {
+				t.Fatalf("config = %T, want struct", configuration.Type)
+			}
+			configFields := 0
+			for _, field := range structure.Fields.List {
+				if renderedNode(t, field.Type) != "agentkit.Config" {
+					continue
+				}
+				configFields++
+				if len(field.Names) != 1 || field.Names[0].Name != "conversation" || field.Names[0].IsExported() {
+					t.Fatalf("agentkit.Config field = %v, want private conversation", field.Names)
+				}
+			}
+			if configFields != 1 {
+				t.Fatalf("agentkit.Config field count = %d, want one", configFields)
+			}
+
+			withConfig := declaredFunction(t, filename, "WithConfig")
+			if got := renderedNode(t, withConfig.Type); got != "func(cfg agentkit.Config) Option" {
+				t.Fatalf("WithConfig declaration = %s", got)
+			}
+			storesArgument := false
+			ast.Inspect(withConfig.Body, func(node ast.Node) bool {
+				assignment, ok := node.(*ast.AssignStmt)
+				if !ok || len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
+					return true
+				}
+				storesArgument = renderedNode(t, assignment.Lhs[0]) == "configuration.conversation" && renderedNode(t, assignment.Rhs[0]) == "cfg"
+				return !storesArgument
+			})
+			if !storesArgument {
+				t.Fatal("WithConfig does not store cfg in configuration.conversation")
+			}
+
+			constructor := declaredFunction(t, filename, "New")
+			assertedCalls := 0
+			ast.Inspect(constructor.Body, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok || renderedNode(t, call.Fun) != "agentkit.NewForWire" {
+					return true
+				}
+				assertedCalls++
+				if len(call.Args) != 4 || renderedNode(t, call.Args[3]) != "configuration.conversation" {
+					t.Fatalf("NewForWire arguments = %s, want stored conversation config fourth", renderedNode(t, call))
+				}
+				return true
+			})
+			if assertedCalls != 1 {
+				t.Fatalf("NewForWire call count = %d, want one", assertedCalls)
+			}
+		})
+	}
+}
+
 type listedPackage struct {
 	ImportPath string
 	Imports    []string

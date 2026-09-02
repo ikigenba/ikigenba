@@ -8,13 +8,23 @@ import (
 )
 
 type config struct {
-	baseURL string
+	baseURL      string
+	conversation agentkit.Config
 }
 
 // Option configures a Gemini conversation.
 type Option func(*config) error
 
-// WithBaseURL overrides the Gemini endpoint.
+// WithConfig supplies the construction-time conversation configuration.
+func WithConfig(cfg agentkit.Config) Option {
+	return func(configuration *config) error {
+		configuration.conversation = cfg
+		return nil
+	}
+}
+
+// WithBaseURL overrides the Gemini endpoint. raw must be a valid absolute
+// HTTP(S) URL.
 func WithBaseURL(raw string) Option {
 	return func(configuration *config) error {
 		configuration.baseURL = raw
@@ -40,5 +50,5 @@ func New(credential Credential, model string, options ...Option) (*agentkit.Conv
 	if err != nil {
 		return nil, err
 	}
-	return agentkit.NewForWire(agentkit.KnownWireGemini, endpoint, model, agentkit.Config{})
+	return agentkit.NewForWire(agentkit.KnownWireGemini, endpoint, model, configuration.conversation)
 }
