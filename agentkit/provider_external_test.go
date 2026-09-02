@@ -48,6 +48,7 @@ func TestExternalProviderDrivesSend(t *testing.T) {
 	// R-1VRZ-N432
 	// R-3H39-MBXP
 	// R-Y9TP-7FN3
+	// R-SN1U-XZMS
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusOK)
 	}))
@@ -60,7 +61,7 @@ func TestExternalProviderDrivesSend(t *testing.T) {
 		clientCalls++
 		return serverClient.Transport.RoundTrip(request)
 	})}
-	conversation := agentkit.NewConversation(provider, client)
+	conversation := agentkit.NewConversation(provider, client, agentkit.Config{})
 
 	for event := range conversation.Send(context.Background(), agentkit.Text{Text: "hello"}).Events() {
 		_ = event

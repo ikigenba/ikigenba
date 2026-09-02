@@ -133,7 +133,7 @@ func TestKnownWireModelCompositionRetainsModelVerbatim(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := NewForWire(KnownWireGemini, endpoint, "vendor/model:latest")
+	conversation, err := NewForWire(KnownWireGemini, endpoint, "vendor/model:latest", Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,6 +144,7 @@ func TestKnownWireModelCompositionRetainsModelVerbatim(t *testing.T) {
 
 func TestNewForWireUsesEveryKnownCodecAndSuppliedEndpoint(t *testing.T) {
 	// R-Y8LS-TNWE
+	// R-SLTY-K7W3
 	const model = "released/today:model-latest"
 	tests := []struct {
 		name           string
@@ -189,7 +190,7 @@ func TestNewForWireUsesEveryKnownCodecAndSuppliedEndpoint(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			conversation, err := NewForWire(test.wire, endpoint, model)
+			conversation, err := NewForWire(test.wire, endpoint, model, Config{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -212,7 +213,7 @@ func TestNewForWireUsesEveryKnownCodecAndSuppliedEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := NewForWire(KnownWire(99), endpoint, model)
+	conversation, err := NewForWire(KnownWire(99), endpoint, model, Config{})
 	if conversation != nil || !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("unknown wire result = (%v, %v), want (nil, ErrInvalidConfig)", conversation, err)
 	}

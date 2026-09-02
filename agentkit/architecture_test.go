@@ -151,6 +151,46 @@ func TestProviderOptionsDeclarationIsExact(t *testing.T) {
 	}
 }
 
+func TestConfigDeclarationIsExact(t *testing.T) {
+	// R-SKM2-6G5E
+	configType := reflect.TypeFor[Config]()
+	if configType.Name() != "Config" || !token.IsExported(configType.Name()) || configType.Kind() != reflect.Struct {
+		t.Fatalf("Config name/kind = %q/%s, want exported defined struct", configType.Name(), configType.Kind())
+	}
+	wantFields := []struct {
+		name   string
+		typeOf reflect.Type
+	}{
+		{name: "Tools", typeOf: reflect.TypeFor[[]Tool]()},
+		{name: "Deferred", typeOf: reflect.TypeFor[[]DeferredGroup]()},
+		{name: "Settings", typeOf: reflect.TypeFor[Settings]()},
+		{name: "Options", typeOf: reflect.TypeFor[ProviderOptions]()},
+		{name: "Output", typeOf: reflect.TypeFor[*OutputContract]()},
+		{name: "Log", typeOf: reflect.TypeFor[*Log]()},
+	}
+	if configType.NumField() != len(wantFields) {
+		t.Fatalf("Config field count = %d, want exactly %d", configType.NumField(), len(wantFields))
+	}
+	for index, want := range wantFields {
+		field := configType.Field(index)
+		if field.Name != want.name || field.Type != want.typeOf || !field.IsExported() {
+			t.Fatalf("Config field %d = %s %s (exported=%t), want %s %s exported", index, field.Name, field.Type, field.IsExported(), want.name, want.typeOf)
+		}
+	}
+
+	specification := declaredType(t, "conversation.go", "Config")
+	if specification.Assign.IsValid() {
+		t.Fatal("Config is an alias, want a defined struct")
+	}
+	structType, ok := specification.Type.(*ast.StructType)
+	if !ok {
+		t.Fatalf("Config declaration is %T, want struct", specification.Type)
+	}
+	if got := renderedNode(t, structType); got != "struct {\n\tTools    []Tool\n\tDeferred []DeferredGroup\n\tSettings Settings\n\tOptions  ProviderOptions\n\tOutput   *OutputContract\n\tLog      *Log\n}" {
+		t.Fatalf("Config declaration = %q, want exact six-field declaration", got)
+	}
+}
+
 func TestRequestStateDeclarationIsExact(t *testing.T) {
 	// R-09ZC-M73E
 	stateType := reflect.TypeFor[RequestState]()
@@ -343,13 +383,15 @@ func assertEventSeam(t *testing.T) {
 func TestConversationConstructorDeclarationsAreExact(t *testing.T) {
 	// R-Y8LS-TNWE
 	// R-Y9TP-7FN3
+	// R-SLTY-K7W3
+	// R-SN1U-XZMS
 	newForWire := reflect.TypeOf(NewForWire)
-	wantNewForWire := reflect.TypeOf(func(KnownWire, Endpoint, string) (*Conversation, error) { return nil, nil })
+	wantNewForWire := reflect.TypeOf(func(KnownWire, Endpoint, string, Config) (*Conversation, error) { return nil, nil })
 	if newForWire != wantNewForWire || newForWire.IsVariadic() {
 		t.Fatalf("NewForWire = %s variadic=%t, want exactly %s non-variadic", newForWire, newForWire.IsVariadic(), wantNewForWire)
 	}
 	newConversation := reflect.TypeOf(NewConversation)
-	wantNewConversation := reflect.TypeOf(func(Provider, *http.Client) *Conversation { return nil })
+	wantNewConversation := reflect.TypeOf(func(Provider, *http.Client, Config) *Conversation { return nil })
 	if newConversation != wantNewConversation || newConversation.IsVariadic() {
 		t.Fatalf("NewConversation = %s variadic=%t, want exactly %s non-variadic", newConversation, newConversation.IsVariadic(), wantNewConversation)
 	}
@@ -359,8 +401,8 @@ func TestConversationConstructorDeclarationsAreExact(t *testing.T) {
 		params   int
 		results  int
 	}{
-		{filename: "provider.go", name: "NewForWire", params: 3, results: 2},
-		{filename: "conversation.go", name: "NewConversation", params: 2, results: 1},
+		{filename: "provider.go", name: "NewForWire", params: 4, results: 2},
+		{filename: "conversation.go", name: "NewConversation", params: 3, results: 1},
 	} {
 		function := declaredFunction(t, declaration.filename, declaration.name)
 		if function.Recv != nil || function.Type.Params.NumFields() != declaration.params || function.Type.Results.NumFields() != declaration.results {

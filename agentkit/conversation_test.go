@@ -96,7 +96,7 @@ func (p *fixtureProvider) Identity() Identity {
 
 func genericFixture(wire fixtureWire, endpoint fixtureEndpoint, model string, client *http.Client) (*Conversation, *fixtureProvider) {
 	provider := &fixtureProvider{wire: wire, endpoint: endpoint, model: model}
-	return NewConversation(provider, client), provider
+	return NewConversation(provider, client, Config{}), provider
 }
 
 func vendorFixture(endpointURL, model string, client *http.Client) (*Conversation, *fixtureProvider) {
@@ -127,7 +127,7 @@ func TestEndpointConversationExecutesWithDefaultHTTPClient(t *testing.T) {
 	if defaultEndpoint.config.client != http.DefaultClient {
 		t.Fatal("endpoint did not retain http.DefaultClient as its default")
 	}
-	defaultConversation := newEndpointConversation(&testWire{}, defaultEndpoint, Identity{Model: "default-model"})
+	defaultConversation := newEndpointConversation(&testWire{}, defaultEndpoint, Identity{Model: "default-model"}, Config{})
 	drainStream(defaultConversation.Send(context.Background(), Text{Text: "hello"}))
 	if defaultCalls != 1 {
 		t.Fatalf("default client calls = %d, want 1", defaultCalls)
@@ -149,7 +149,7 @@ func TestEndpointConversationExecutesWithOverrideHTTPClient(t *testing.T) {
 	if overrideEndpoint.config.client != overrideClient {
 		t.Fatal("WithHTTPClient did not retain the selected client")
 	}
-	overrideConversation := newEndpointConversation(&testWire{}, overrideEndpoint, Identity{Model: "override-model"})
+	overrideConversation := newEndpointConversation(&testWire{}, overrideEndpoint, Identity{Model: "override-model"}, Config{})
 	drainStream(overrideConversation.Send(context.Background(), Text{Text: "hello"}))
 	if overrideCalls != 1 {
 		t.Fatalf("override client calls = %d, want 1", overrideCalls)
@@ -533,7 +533,7 @@ func TestUnsupportedSettingsFailAtStartOfSendWithoutMutation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "controlled", Model: "opaque-model"})
+			conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "controlled", Model: "opaque-model"}, Config{})
 			conversation.settings = cloneSettings(test.settings)
 			conversation.history = History{{Role: RoleSystem, Blocks: []Block{Text{Text: "stable"}}}}
 			beforeHistory, err := json.Marshal(conversation.history)
@@ -581,7 +581,7 @@ func TestWireCapabilityDecisionIgnoresOpaqueModel(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "controlled", Model: model})
+		conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "controlled", Model: model}, Config{})
 		conversation.settings = settings
 		stream := conversation.Send(context.Background(), Text{Text: "hello"})
 		drainStream(stream)
@@ -628,7 +628,7 @@ func TestUnknownModelReachesVendorAndClassifier(t *testing.T) {
 		func(state RequestState) { encodedState = state },
 		func() { t.Fatal("non-2xx response must not be decoded") },
 	)
-	conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "controlled", Model: unknownModel})
+	conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "controlled", Model: unknownModel}, Config{})
 	conversation.settings = settings
 
 	stream := conversation.Send(context.Background(), Text{Text: "hello"})
@@ -779,7 +779,7 @@ func TestDurableLogMirrorsMultiRoundStreamAtMessageGranularity(t *testing.T) {
 	transportCalls := 0
 	var output bytes.Buffer
 	log := NewLog(&output, func() time.Time { return time.Date(2033, 1, 1, 0, 0, 0, 0, time.UTC) })
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	conversation.eventSink = log
 	conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) { return "sunny", nil })}
 
@@ -813,7 +813,7 @@ func TestLogFailureDoesNotAlterSuccessOrTerminalStreamSemantics(t *testing.T) {
 	message := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "kept"}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: message}}}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	conversation.eventSink = NewLog(failingLogWriter{}, func() time.Time { return time.Time{} })
 	stream := conversation.Send(context.Background(), Text{Text: "hello"})
 	if events := drainStream(stream); !reflect.DeepEqual(events, []Event{MessageDone{Message: message}}) || stream.Err() != nil {
@@ -827,7 +827,7 @@ func TestLogFailureDoesNotAlterSuccessOrTerminalStreamSemantics(t *testing.T) {
 	provider = &phase15Provider{model: "model", decodeErrors: []error{terminal}}
 	transportCalls = 0
 	var output bytes.Buffer
-	conversation = NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation = NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	conversation.eventSink = NewLog(&output, func() time.Time { return time.Time{} })
 	stream = conversation.Send(context.Background(), Text{Text: "fail"})
 	drainStream(stream)
@@ -853,7 +853,7 @@ func TestLogFailureDoesNotAlterSuccessOrTerminalStreamSemantics(t *testing.T) {
 		transportCalls++
 		return nil, context.Canceled
 	})}
-	conversation = NewConversation(provider, cancelClient)
+	conversation = NewConversation(provider, cancelClient, Config{})
 	conversation.eventSink = NewLog(&output, func() time.Time { return time.Time{} })
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -887,7 +887,7 @@ func TestConversationCloseSummarizesResolvedCostsAndRejectsLaterSend(t *testing.
 	transportCalls := 0
 	var output bytes.Buffer
 	log := NewLog(&output, func() time.Time { return time.Time{} })
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	conversation.eventSink = log
 	for range 2 {
 		stream := conversation.Send(context.Background(), Text{Text: "turn"})
@@ -998,7 +998,7 @@ func TestStreamConsumptionDrivesLiveEventsInRoundTripOrder(t *testing.T) {
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
 	toolCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	tool := &phase17CountingTool{
 		name:   "weather",
 		schema: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}`),
@@ -1041,7 +1041,7 @@ func TestStreamEarlyStopHaltsTurnAndCannotReplay(t *testing.T) {
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
 	toolCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) {
 		toolCalls++
 		return "unused", nil
@@ -1072,7 +1072,7 @@ func TestStreamEventsAndPrivateLogBridgeHaveExactParity(t *testing.T) {
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
 	sink := &captureEventSink{}
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	conversation.eventSink = sink
 	conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) { return "sunny", nil })}
 
@@ -1110,7 +1110,7 @@ func TestSendCompletesToolRoundTripsWithFixedClonedConfigAndOneCommit(t *testing
 	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "clear skies"}}}
 	provider := &phase15Provider{model: "fixed/model β", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	temperature := 0.25
 	conversation.settings = Settings{Temperature: &temperature, StopSequences: []string{"END"}}
 	conversation.options = ProviderOptions{"vendor_flag": json.RawMessage(`{"mode":"exact"}`)}
@@ -1203,7 +1203,7 @@ func TestToolDispatchFailuresAreInBandAndRecoverable(t *testing.T) {
 			final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "recovered"}}}
 			provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 			transportCalls := 0
-			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 			conversation.tools = test.tools(&callbackCalls)
 
 			stream := conversation.Send(context.Background(), Text{Text: "go"})
@@ -1273,7 +1273,7 @@ func TestDeferredToolsAreOwnedValidatedAndWithheldUntilLoaded(t *testing.T) {
 	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: load}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	conversation.Deferred(DeferredGroup{Name: "records", Blurb: "Record operations", Tools: registered})
 	registered[0] = phase17Tool("caller_mutation")
 
@@ -1295,7 +1295,7 @@ func TestDeferredToolsAreOwnedValidatedAndWithheldUntilLoaded(t *testing.T) {
 		t.Run("invalid "+placement, func(t *testing.T) {
 			provider := &phase15Provider{model: "model"}
 			calls := 0
-			conversation := NewConversation(provider, successfulPhase15Client(&calls))
+			conversation := NewConversation(provider, successfulPhase15Client(&calls), Config{})
 			invalid := concreteTool{name: "bad", schema: json.RawMessage(`{"type":"array"}`)}
 			if placement == "eager" {
 				conversation.tools = []Tool{invalid}
@@ -1323,7 +1323,7 @@ func TestDeferredGroupsConditionallySynthesizeExactlyOneLoader(t *testing.T) {
 		{name: "several", groups: []DeferredGroup{{Name: "one", Tools: []Tool{phase17Tool("a")}}, {Name: "two", Tools: []Tool{phase17Tool("b")}}}, want: []string{loadToolsName}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			conversation := NewConversation(&phase15Provider{model: "model"}, http.DefaultClient)
+			conversation := NewConversation(&phase15Provider{model: "model"}, http.DefaultClient, Config{})
 			conversation.Deferred(test.groups...)
 			o, err := conversation.prepareOrchestrator()
 			if err != nil {
@@ -1345,7 +1345,7 @@ func TestLoadToolsCatalogContainsOnlyGroupBlurbsAndBareNames(t *testing.T) {
 		description: secretDescription,
 		schema:      json.RawMessage(`{"type":"object","properties":{"schema_only_secret":{"type":"string"}}}`),
 	}
-	conversation := NewConversation(&phase15Provider{model: "model"}, http.DefaultClient)
+	conversation := NewConversation(&phase15Provider{model: "model"}, http.DefaultClient, Config{})
 	conversation.Deferred(
 		DeferredGroup{Name: "group_token_71", Blurb: "blurb token 82", Tools: []Tool{tool}},
 		DeferredGroup{Name: "group_token_64", Blurb: "blurb token 55", Tools: []Tool{phase17Tool("tool_token_46")}},
@@ -1378,7 +1378,7 @@ func TestLoadToolsBatchesGroupsAndToolsWithInBandUnknownRecovery(t *testing.T) {
 	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: firstLoad}}, {MessageDone{Message: secondLoad}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	conversation.Deferred(
 		DeferredGroup{Name: "group_a", Blurb: "A", Tools: []Tool{a1, a2}},
 		DeferredGroup{Name: "group_b", Blurb: "B", Tools: []Tool{solo, b2}},
@@ -1414,7 +1414,7 @@ func TestDeferredLoadingIsMonotonicAcrossConversationSends(t *testing.T) {
 	done := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: loadSecond}}, {MessageDone{Message: done}}, {MessageDone{Message: loadFirst}}, {MessageDone{Message: done}}}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	conversation.Deferred(DeferredGroup{Name: "all", Blurb: "All", Tools: []Tool{phase17Tool("first"), phase17Tool("second")}})
 	firstStream := conversation.Send(context.Background(), Text{Text: "turn one"})
 	drainStream(firstStream)
@@ -1444,7 +1444,7 @@ func TestAdvertisedToolsUseSortedBaseAndTailOnlyLoadOrder(t *testing.T) {
 	done := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: load}}, {MessageDone{Message: done}}}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	conversation.tools = []Tool{phase17Tool("z_eager"), phase17Tool("a_eager")}
 	conversation.Deferred(DeferredGroup{Name: "tails", Blurb: "Tails", Tools: []Tool{phase17Tool("tail_a"), phase17Tool("tail_z")}})
 	drainStream(conversation.Send(context.Background(), Text{Text: "go"}))
@@ -1460,7 +1460,7 @@ func TestAdvertisedToolsUseSortedBaseAndTailOnlyLoadOrder(t *testing.T) {
 
 func TestDeferredRegistrationSynthesizesExactLoadToolsSchema(t *testing.T) {
 	// R-0S9U-CR7T
-	conversation := NewConversation(&phase15Provider{model: "model"}, http.DefaultClient)
+	conversation := NewConversation(&phase15Provider{model: "model"}, http.DefaultClient, Config{})
 	conversation.Deferred(DeferredGroup{
 		Name:  "search",
 		Blurb: "Search stored records",
@@ -1526,7 +1526,7 @@ func TestSendGatesTheCompleteLiveToolSetOnceBeforeAllBoundaries(t *testing.T) {
 	providerWithoutGroups := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: ordinaryLoadToolsCall}}, {MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "ok"}}}}}}}
 	transportWithoutGroups := 0
 	ordinaryCalls := 0
-	conversationWithoutGroups := NewConversation(providerWithoutGroups, successfulPhase15Client(&transportWithoutGroups))
+	conversationWithoutGroups := NewConversation(providerWithoutGroups, successfulPhase15Client(&transportWithoutGroups), Config{})
 	conversationWithoutGroups.tools = []Tool{concreteTool{
 		name:   loadToolsName,
 		schema: json.RawMessage(`{"type":"object","properties":{}}`),
@@ -1545,7 +1545,7 @@ func TestSendGatesTheCompleteLiveToolSetOnceBeforeAllBoundaries(t *testing.T) {
 	deferredCount := &phase17CountingTool{name: "deferred_count", schema: json.RawMessage(`{"type":"object","properties":{}}`), call: func(context.Context, json.RawMessage) (string, error) { return "", nil }}
 	gateProvider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "ok"}}}}}}}
 	gateCalls := 0
-	gateConversation := NewConversation(gateProvider, successfulPhase15Client(&gateCalls))
+	gateConversation := NewConversation(gateProvider, successfulPhase15Client(&gateCalls), Config{})
 	gateConversation.tools = []Tool{eagerCount}
 	gateConversation.Deferred(DeferredGroup{Name: "counted", Tools: []Tool{deferredCount}})
 	gateStream := gateConversation.Send(context.Background(), Text{Text: "validate union"})
@@ -1557,7 +1557,7 @@ func TestSendGatesTheCompleteLiveToolSetOnceBeforeAllBoundaries(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			provider := &phase15Provider{model: "model"}
 			transportCalls := 0
-			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 			conversation.tools = test.eager
 			conversation.deferred = test.deferred
 			callbackCalls := 0
@@ -1595,7 +1595,7 @@ func TestSendGatesTheCompleteLiveToolSetOnceBeforeAllBoundaries(t *testing.T) {
 	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	conversation.tools = []Tool{counting}
 	stream := conversation.Send(context.Background(), Text{Text: "go"})
 	drainStream(stream)
@@ -1639,7 +1639,7 @@ func TestOrchestratorValidatesEveryCallBeforeInvokingTool(t *testing.T) {
 			final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "recovered"}}}
 			provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 			transportCalls := 0
-			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 			conversation.tools = []Tool{tool}
 
 			stream := conversation.Send(context.Background(), Text{Text: "go"})
@@ -1677,7 +1677,7 @@ func TestUnknownAndDeferredDirectCallsRecoverWithoutGuessedExecution(t *testing.
 			final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "recovered"}}}
 			provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 			transportCalls := 0
-			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 			if test.deferred {
 				callName = "secret"
 				first.Blocks[0] = ToolUse{ID: "unknown-id", Name: callName, Input: json.RawMessage(`{"guessed":true}`)}
@@ -1723,7 +1723,7 @@ func TestToolCallbackErrorIsCorrelatedDeliveredAndRecoverable(t *testing.T) {
 	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "recovered"}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	runtimeTool, err := NewToolFromSchema("boom", "remote tool", json.RawMessage(`{"type":"object","properties":{}}`), func(context.Context, json.RawMessage) (string, error) {
 		return "discarded", errors.New(distinctive)
 	})
@@ -1770,7 +1770,7 @@ func TestSiblingRuntimeSchemaAndRootEagerToolsShareTheSendTimeGate(t *testing.T)
 			provider := &phase15Provider{model: "model"}
 			transportCalls := 0
 			callbackCalls := 0
-			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls))
+			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 			conversation.tools = []Tool{test.tool(&callbackCalls)}
 
 			stream := conversation.Send(context.Background(), Text{Text: "blocked"})
@@ -1824,7 +1824,7 @@ func TestTerminalFailuresAfterCompletedRoundTripPreserveEventsAndAtomicHistory(t
 			transport := &phase15Transport{steps: []phase15TransportStep{{response: success()}, second}}
 			client := &http.Client{Transport: transport}
 			toolCalls := 0
-			conversation := NewConversation(provider, client)
+			conversation := NewConversation(provider, client, Config{})
 			conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) {
 				toolCalls++
 				return "sunny", nil
@@ -1913,7 +1913,7 @@ func TestProviderOptionsReservedCollisionFailsBeforeProviderBoundaries(t *testin
 		t.Fatal(err)
 	}
 	wire := &phase15Wire{reserved: []string{"model"}}
-	conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "phase15", Model: "model"})
+	conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "phase15", Model: "model"}, Config{})
 	conversation.history = History{{Role: RoleSystem, Blocks: []Block{Text{Text: "stable"}}}}
 	conversation.options = ProviderOptions{"model": json.RawMessage(`"override"`)}
 	before, _ := json.Marshal(conversation.history)
@@ -1946,7 +1946,7 @@ func TestProviderOptionsNoncollidingSnapshotIsCloned(t *testing.T) {
 		t.Fatal(err)
 	}
 	wire := &phase15Wire{reserved: []string{"model"}}
-	conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "phase15", Model: "model"})
+	conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "phase15", Model: "model"}, Config{})
 	conversation.options = ProviderOptions{"safe": json.RawMessage(`{"verbatim":true}`)}
 	stream := conversation.Send(context.Background(), Text{Text: "allowed"})
 	drainStream(stream)

@@ -22,7 +22,7 @@ const (
 
 // NewForWire constructs a conversation from a known wire, caller-built
 // endpoint, and verbatim model name.
-func NewForWire(wireName KnownWire, endpoint Endpoint, model string) (*Conversation, error) {
+func NewForWire(wireName KnownWire, endpoint Endpoint, model string, cfg Config) (*Conversation, error) {
 	var wire WireFormat
 	switch wireName {
 	case KnownWireAnthropicMessages:
@@ -38,7 +38,7 @@ func NewForWire(wireName KnownWire, endpoint Endpoint, model string) (*Conversat
 	}
 
 	identity := Identity{Endpoint: endpoint.config.baseURL.String(), AuthMode: "custom", Model: model}
-	return newEndpointConversation(wire, endpoint, identity), nil
+	return newEndpointConversation(wire, endpoint, identity, cfg), nil
 }
 
 // Provider is the composed wire-format and endpoint adapter driven for one
@@ -65,9 +65,9 @@ func newComposedProvider(wire WireFormat, endpoint Endpoint, identity Identity) 
 	return &composedProvider{wire: wire, endpoint: endpoint, identity: identity}
 }
 
-func newEndpointConversation(wire WireFormat, endpoint Endpoint, identity Identity) *Conversation {
+func newEndpointConversation(wire WireFormat, endpoint Endpoint, identity Identity, cfg Config) *Conversation {
 	provider := newComposedProvider(wire, endpoint, identity)
-	conversation := NewConversation(provider, endpoint.config.client)
+	conversation := NewConversation(provider, endpoint.config.client, cfg)
 	if validator, ok := provider.(interface{ validateSettings(Settings) error }); ok {
 		conversation.validate = func() error {
 			return validator.validateSettings(conversation.settings)

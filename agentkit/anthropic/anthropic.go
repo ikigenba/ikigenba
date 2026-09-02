@@ -69,5 +69,5 @@ func New(credential Credential, model string, options ...Option) (*agentkit.Conv
 	if err != nil {
 		return nil, err
 	}
-	return agentkit.NewForWire(agentkit.KnownWireAnthropicMessages, endpoint, model)
+	return agentkit.NewForWire(agentkit.KnownWireAnthropicMessages, endpoint, model, agentkit.Config{})
 }

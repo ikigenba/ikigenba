@@ -53,7 +53,7 @@ func TestGenericKnownWireAcceptsBareAuthApplier(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := agentkit.NewForWire(agentkit.KnownWireAnthropicMessages, endpoint, "external-model")
+	conversation, err := agentkit.NewForWire(agentkit.KnownWireAnthropicMessages, endpoint, "external-model", agentkit.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}

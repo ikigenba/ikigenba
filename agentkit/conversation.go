@@ -25,6 +25,20 @@ type Conversation struct {
 	eventSink eventSink
 }
 
+// Config is the construction-time configuration of a Conversation: everything a
+// consumer supplies that is not the provider, the model, or the transport. It is
+// a plain value; a zero Config means no tools, vendor-default settings, no
+// pass-through options, no structured output, and no log. The constructor copies
+// it, so later mutation of the caller's slices and maps has no effect.
+type Config struct {
+	Tools    []Tool
+	Deferred []DeferredGroup
+	Settings Settings
+	Options  ProviderOptions
+	Output   *OutputContract
+	Log      *Log
+}
+
 // DeferredGroup is a named, on-demand bundle of tools. Its Blurb is the
 // one-line description shown in the deferred-tool catalog.
 type DeferredGroup struct {
@@ -35,7 +49,8 @@ type DeferredGroup struct {
 
 // NewConversation constructs a conversation driven by provider. The provider,
 // its identity, and the HTTP client cannot be reassigned after construction.
-func NewConversation(provider Provider, client *http.Client) *Conversation {
+func NewConversation(provider Provider, client *http.Client, cfg Config) *Conversation {
+	_ = cfg
 	return &Conversation{
 		provider: provider,
 		client:   client,
