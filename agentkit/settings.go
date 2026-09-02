@@ -34,32 +34,37 @@ const (
 	ReasoningDefault ReasoningMode = iota // leave reasoning to the vendor default
 	ReasoningOff                          // explicitly disable reasoning
 	ReasoningOn                           // bare on, no parameter
-	ReasoningEffort                       // low/medium/high effort level
+	ReasoningEffort                       // reasoning effort level
 	ReasoningBudget                       // an explicit token budget
 )
 
 // ReasoningConfig is a neutral reasoning request. Mode selects the shape; Effort
 // is read only when Mode is ReasoningEffort and Budget only when Mode is
-// ReasoningBudget. A Mode a wire cannot express fails at Send. ReasoningConfig
-// describes a generation request; the exported Reasoning block instead describes
-// transcript content. The Settings field uses the domain label Reasoning for its
-// request value.
+// ReasoningBudget. Under ReasoningEffort, Effort's zero value EffortNone is the
+// literal "none" level some vendors accept, not an absent value. A Mode a wire cannot express fails at Send. It is named
+// ReasoningConfig, not Reasoning, because the D2 block variant owns the exported
+// name Reasoning in package agentkit; the Settings field keeps the name Reasoning.
 type ReasoningConfig struct {
 	Mode   ReasoningMode
-	Effort Effort // low | medium | high
+	Effort Effort // none | minimal | low | medium | high | xhigh | max
 	Budget int    // token budget, when Mode is ReasoningBudget
 }
 
 // Effort is the neutral reasoning effort level, read only when a ReasoningConfig's Mode
-// is ReasoningEffort. The zero value EffortNone means "not an effort request".
+// is ReasoningEffort. The set is exhaustive over every level any cataloged offering
+// accepts (D21); a wire renders the level's lowercase name verbatim, and whether a given
+// model honors it is the vendor's judgment, not agentkit's.
 type Effort int
 
 // Neutral reasoning effort levels.
 const (
-	EffortNone Effort = iota // unset — not an effort request
+	EffortNone Effort = iota // "none" — the vendor's no-reasoning effort level
+	EffortMinimal
 	EffortLow
 	EffortMedium
 	EffortHigh
+	EffortXHigh
+	EffortMax
 )
 
 // ToolChoice steers whether, and which, tool the model may call this turn. Like
@@ -131,8 +136,8 @@ func validateReasoningConfig(config ReasoningConfig) error {
 			return fmt.Errorf("mode %s cannot carry effort or budget", reasoningModeName(config.Mode))
 		}
 	case ReasoningEffort:
-		if config.Effort < EffortLow || config.Effort > EffortHigh {
-			return fmt.Errorf("effort mode requires low, medium, or high effort")
+		if config.Effort < EffortNone || config.Effort > EffortMax {
+			return fmt.Errorf("effort mode requires a declared effort level")
 		}
 		if config.Budget != 0 {
 			return fmt.Errorf("effort mode cannot carry a budget")
@@ -228,12 +233,20 @@ func toolChoiceModeName(mode ToolChoiceMode) string {
 
 func effortName(effort Effort) string {
 	switch effort {
+	case EffortNone:
+		return "none"
+	case EffortMinimal:
+		return "minimal"
 	case EffortLow:
 		return "low"
 	case EffortMedium:
 		return "medium"
 	case EffortHigh:
 		return "high"
+	case EffortXHigh:
+		return "xhigh"
+	case EffortMax:
+		return "max"
 	default:
 		return ""
 	}

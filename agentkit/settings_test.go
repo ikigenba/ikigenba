@@ -36,9 +36,13 @@ func TestReasoningConfigExpressesEveryNeutralShape(t *testing.T) {
 		{Mode: ReasoningDefault},
 		{Mode: ReasoningOff},
 		{Mode: ReasoningOn},
+		{Mode: ReasoningEffort, Effort: EffortNone},
+		{Mode: ReasoningEffort, Effort: EffortMinimal},
 		{Mode: ReasoningEffort, Effort: EffortLow},
 		{Mode: ReasoningEffort, Effort: EffortMedium},
 		{Mode: ReasoningEffort, Effort: EffortHigh},
+		{Mode: ReasoningEffort, Effort: EffortXHigh},
+		{Mode: ReasoningEffort, Effort: EffortMax},
 		{Mode: ReasoningBudget, Budget: 8000},
 	}
 	capabilities := wireCapabilities{
@@ -61,6 +65,11 @@ func TestReasoningConfigExpressesEveryNeutralShape(t *testing.T) {
 	}
 	if !reflect.DeepEqual(seen, wantModes) {
 		t.Fatalf("consumer-expressible reasoning modes = %v, want %v", seen, wantModes)
+	}
+	for _, effort := range []Effort{-1, EffortMax + 1} {
+		if err := capabilities.validate(Settings{Reasoning: ReasoningConfig{Mode: ReasoningEffort, Effort: effort}}); err == nil {
+			t.Errorf("out-of-range effort %d was accepted", effort)
+		}
 	}
 }
 

@@ -1706,6 +1706,86 @@ func TestSupportedSettingsAreEncodedByOwningWireGrammar(t *testing.T) {
 	}
 }
 
+func TestEffortCapableWiresRenderEveryEffortLevelVerbatim(t *testing.T) {
+	// R-NVBD-Z0W8
+	efforts := []struct {
+		effort Effort
+		want   string
+	}{
+		{EffortNone, "none"},
+		{EffortMinimal, "minimal"},
+		{EffortLow, "low"},
+		{EffortMedium, "medium"},
+		{EffortHigh, "high"},
+		{EffortXHigh, "xhigh"},
+		{EffortMax, "max"},
+	}
+	wires := []struct {
+		name           string
+		wire           WireFormat
+		renderedEffort func(map[string]any) any
+	}{
+		{
+			name: "openai_chat_completions",
+			wire: newOpenAIChatWire(nil),
+			renderedEffort: func(document map[string]any) any {
+				return document["reasoning_effort"]
+			},
+		},
+		{
+			name: "openai_responses",
+			wire: newOpenAIResponsesWire(nil),
+			renderedEffort: func(document map[string]any) any {
+				reasoning, ok := document["reasoning"].(map[string]any)
+				if !ok {
+					return nil
+				}
+				return reasoning["effort"]
+			},
+		},
+		{
+			name: "gemini_generate_content",
+			wire: newGeminiWire(nil),
+			renderedEffort: func(document map[string]any) any {
+				generationConfig, ok := document["generationConfig"].(map[string]any)
+				if !ok {
+					return nil
+				}
+				thinkingConfig, ok := generationConfig["thinkingConfig"].(map[string]any)
+				if !ok {
+					return nil
+				}
+				return thinkingConfig["thinkingLevel"]
+			},
+		},
+	}
+	for _, wireTest := range wires {
+		for _, effortTest := range efforts {
+			t.Run(wireTest.name+"/"+effortTest.want, func(t *testing.T) {
+				settings := Settings{Reasoning: ReasoningConfig{Mode: ReasoningEffort, Effort: effortTest.effort}}
+				validator, ok := wireTest.wire.(interface{ validateSettings(Settings) error })
+				if !ok {
+					t.Fatalf("%T has no body-grammar capability declaration", wireTest.wire)
+				}
+				if err := validator.validateSettings(settings); err != nil {
+					t.Fatalf("effort %q rejected: %v", effortTest.want, err)
+				}
+				body, err := wireTest.wire.EncodeRequest(RequestState{Model: "opaque-model", Settings: settings})
+				if err != nil {
+					t.Fatalf("encode effort %q: %v", effortTest.want, err)
+				}
+				var document map[string]any
+				if err := json.Unmarshal(body, &document); err != nil {
+					t.Fatalf("decode request body: %v", err)
+				}
+				if got := wireTest.renderedEffort(document); got != effortTest.want {
+					t.Fatalf("rendered effort = %#v, want %q in body %s", got, effortTest.want, body)
+				}
+			})
+		}
+	}
+}
+
 type wireFixture struct {
 	name     string
 	response string

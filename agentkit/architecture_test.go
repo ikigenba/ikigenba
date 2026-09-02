@@ -1607,6 +1607,18 @@ func TestReasoningModeDeclarationIsDefinedIntWithExactTypedIotaSequence(t *testi
 	})
 }
 
+func TestEffortDeclarationIsDefinedIntWithExactTypedIotaSequence(t *testing.T) {
+	// R-NU3H-L95J
+	want := []Effort{0, 1, 2, 3, 4, 5, 6}
+	got := []Effort{EffortNone, EffortMinimal, EffortLow, EffortMedium, EffortHigh, EffortXHigh, EffortMax}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Effort values = %v, want %v", got, want)
+	}
+	assertDefinedIntTypedIota(t, "settings.go", "Effort", []string{
+		"EffortNone", "EffortMinimal", "EffortLow", "EffortMedium", "EffortHigh", "EffortXHigh", "EffortMax",
+	})
+}
+
 func TestReasoningConfigDeclarationHasExactNeutralReasoningFields(t *testing.T) {
 	// R-ZXSC-SHOG
 	assertExactStructFields(t, reflect.TypeFor[ReasoningConfig](), []exactStructField{
