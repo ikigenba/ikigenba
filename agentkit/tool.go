@@ -86,7 +86,7 @@ func deriveToolSchema(typeOf reflect.Type, visiting map[reflect.Type]bool) (map[
 			if !field.IsExported() {
 				continue
 			}
-			jsonName, _, skip := toolJSONField(field)
+			jsonName, skip := toolJSONField(field)
 			if skip {
 				continue
 			}
@@ -144,21 +144,18 @@ func deriveToolSchema(typeOf reflect.Type, visiting map[reflect.Type]bool) (map[
 	}
 }
 
-func toolJSONField(field reflect.StructField) (name string, omitEmpty, skip bool) {
+func toolJSONField(field reflect.StructField) (name string, skip bool) {
 	name = field.Name
 	if tag, ok := field.Tag.Lookup("json"); ok {
 		parts := strings.Split(tag, ",")
 		if parts[0] == "-" {
-			return "", false, true
+			return "", true
 		}
 		if parts[0] != "" {
 			name = parts[0]
 		}
-		for _, option := range parts[1:] {
-			omitEmpty = omitEmpty || option == "omitempty"
-		}
 	}
-	return name, omitEmpty, false
+	return name, false
 }
 
 func applyToolSchemaTag(schema map[string]any, tag string) (bool, error) {

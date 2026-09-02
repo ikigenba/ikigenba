@@ -7,9 +7,105 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"reflect"
 	"strconv"
 	"strings"
 )
+
+// OutputSchema derives an output-subset schema from T's jsonschema struct
+// tags. Every represented field is required, and pointer fields are nullable.
+func OutputSchema[T any]() (json.RawMessage, error) {
+	typeOf := reflect.TypeFor[T]()
+	if typeOf.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("agentkit: derive output schema: root type %s is not an object", typeOf)
+	}
+
+	schemaValue, err := deriveOutputSchema(typeOf, make(map[reflect.Type]bool))
+	if err != nil {
+		return nil, fmt.Errorf("agentkit: derive output schema: %w", err)
+	}
+	schema, err := json.Marshal(schemaValue)
+	if err != nil {
+		return nil, fmt.Errorf("agentkit: derive output schema: %w", err)
+	}
+	if err := ValidateOutputSchema(schema); err != nil {
+		return nil, fmt.Errorf("agentkit: derive output schema: %w", err)
+	}
+	return schema, nil
+}
+
+func deriveOutputSchema(typeOf reflect.Type, visiting map[reflect.Type]bool) (map[string]any, error) {
+	if typeOf.Kind() == reflect.Pointer {
+		ordinaryType := typeOf
+		for ordinaryType.Kind() == reflect.Pointer {
+			ordinaryType = ordinaryType.Elem()
+		}
+		ordinary, err := deriveOutputSchema(ordinaryType, visiting)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{
+			"anyOf": []any{ordinary, map[string]any{"type": "null"}},
+		}, nil
+	}
+	if visiting[typeOf] {
+		return nil, fmt.Errorf("recursive output type %s is not supported", typeOf)
+	}
+	visiting[typeOf] = true
+	defer delete(visiting, typeOf)
+
+	switch typeOf.Kind() {
+	case reflect.Struct:
+		properties := make(map[string]any)
+		required := make([]string, 0, typeOf.NumField())
+		for index := range typeOf.NumField() {
+			field := typeOf.Field(index)
+			if !field.IsExported() {
+				continue
+			}
+			jsonName, skip := toolJSONField(field)
+			if skip {
+				continue
+			}
+			property, err := deriveOutputSchema(field.Type, visiting)
+			if err != nil {
+				return nil, fmt.Errorf("field %s: %w", field.Name, err)
+			}
+			tagTarget := property
+			if field.Type.Kind() == reflect.Pointer {
+				tagTarget = property["anyOf"].([]any)[0].(map[string]any)
+			}
+			if _, err := applyToolSchemaTag(tagTarget, field.Tag.Get("jsonschema")); err != nil {
+				return nil, fmt.Errorf("field %s jsonschema tag: %w", field.Name, err)
+			}
+			properties[jsonName] = property
+			required = append(required, jsonName)
+		}
+		return map[string]any{
+			"type":                 "object",
+			"properties":           properties,
+			"required":             required,
+			"additionalProperties": false,
+		}, nil
+	case reflect.Slice, reflect.Array:
+		items, err := deriveOutputSchema(typeOf.Elem(), visiting)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"type": "array", "items": items}, nil
+	case reflect.String:
+		return map[string]any{"type": "string"}, nil
+	case reflect.Bool:
+		return map[string]any{"type": "boolean"}, nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return map[string]any{"type": "integer"}, nil
+	case reflect.Float32, reflect.Float64:
+		return map[string]any{"type": "number"}, nil
+	default:
+		return nil, fmt.Errorf("output type %s is not supported", typeOf)
+	}
+}
 
 // ValidateOutputSchema reports whether schema lies within the output subset.
 func ValidateOutputSchema(schema json.RawMessage) error {

@@ -3,9 +3,229 @@ package agentkit
 import (
 	"encoding/json"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
+
+type outputSchemaContractFixture struct {
+	Name string `json:"name"`
+}
+
+type outputSchemaNestedFixture struct {
+	Code string `json:"code"`
+	Rank int    `json:"rank,omitempty"`
+}
+
+type outputSchemaPrimitivesFixture struct {
+	String  string
+	Bool    bool
+	Int     int
+	Int8    int8
+	Int16   int16
+	Int32   int32
+	Int64   int64
+	Uint    uint
+	Uint8   uint8
+	Uint16  uint16
+	Uint32  uint32
+	Uint64  uint64
+	Float32 float32
+	Float64 float64
+}
+
+type outputSchemaDerivationFixture struct {
+	Text       string                        `json:"label" jsonschema:"required,enum=red|green,description=display color,minLength=1,maxLength=10,pattern=^[a-z]+$,format=future-format"`
+	Enabled    bool                          `jsonschema:"enum=true|false"`
+	Signed     int8                          `json:"signed,omitempty" jsonschema:"enum=-2|3,minimum=-2,maximum=3,exclusiveMinimum=-3,exclusiveMaximum=4,multipleOf=1"`
+	Unsigned   uint64                        `json:"unsigned"`
+	Fraction   float32                       `json:"fraction" jsonschema:"minimum=0.5,maximum=9.5,exclusiveMinimum=0,exclusiveMaximum=10,multipleOf=0.5"`
+	Nested     outputSchemaNestedFixture     `json:"nested"`
+	Rows       []outputSchemaNestedFixture   `json:"rows" jsonschema:"minItems=1,maxItems=4,uniqueItems=true"`
+	Pair       [2]bool                       `json:"pair"`
+	Primitives outputSchemaPrimitivesFixture `json:"primitives"`
+	Optional   *string                       `json:"optional,omitempty" jsonschema:"enum=yes|no,description=nullable choice,minLength=2,maxLength=3,pattern=^[a-z]+$,format=choice"`
+	Deep       **outputSchemaNestedFixture   `json:"deep"`
+	Skipped    string                        `json:"-"`
+	unexported string                        //nolint:unused // Reflection is the behavior under test.
+}
+
+type outputSchemaRecursiveFixture struct {
+	Next *outputSchemaRecursiveFixture `json:"next"`
+}
+
+func TestOutputSchemaHasExactPublicSignature(t *testing.T) {
+	// R-TL71-NKE8
+	// The explicit conversion proves the exact public function type.
+	derive := (func() (json.RawMessage, error))(OutputSchema[outputSchemaContractFixture]) //nolint:unconvert
+	schema, err := derive()
+	if err != nil {
+		t.Fatalf("OutputSchema returned error: %v", err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(schema, &document); err != nil {
+		t.Fatalf("OutputSchema returned invalid JSON: %v", err)
+	}
+	if document["type"] != "object" {
+		t.Fatalf("root type = %v, want object", document["type"])
+	}
+	if err := ValidateOutputSchema(schema); err != nil {
+		t.Fatalf("OutputSchema returned unusable schema: %v", err)
+	}
+}
+
+func TestOutputSchemaDerivesOutputSubset(t *testing.T) {
+	// R-TUY8-PQBS
+	schema, err := OutputSchema[outputSchemaDerivationFixture]()
+	if err != nil {
+		t.Fatalf("OutputSchema returned error: %v", err)
+	}
+	if err := ValidateOutputSchema(schema); err != nil {
+		t.Fatalf("ValidateOutputSchema rejected derived schema: %v", err)
+	}
+
+	var root map[string]any
+	if err := json.Unmarshal(schema, &root); err != nil {
+		t.Fatalf("decode schema: %v", err)
+	}
+	properties := root["properties"].(map[string]any)
+	wantRootNames := []string{"Enabled", "deep", "fraction", "label", "nested", "optional", "pair", "primitives", "rows", "signed", "unsigned"}
+	assertOutputRequired(t, root, wantRootNames)
+	if root["additionalProperties"] != false {
+		t.Errorf("root additionalProperties = %v, want false", root["additionalProperties"])
+	}
+	if _, present := properties["Skipped"]; present {
+		t.Error("json-skipped field was emitted")
+	}
+	if _, present := properties["unexported"]; present {
+		t.Error("unexported field was emitted")
+	}
+
+	assertOutputValues(t, properties["label"].(map[string]any), map[string]any{
+		"type": "string", "enum": []any{"red", "green"}, "description": "display color",
+		"minLength": float64(1), "maxLength": float64(10), "pattern": "^[a-z]+$", "format": "future-format",
+	})
+	assertOutputValues(t, properties["Enabled"].(map[string]any), map[string]any{
+		"type": "boolean", "enum": []any{true, false},
+	})
+	assertOutputValues(t, properties["signed"].(map[string]any), map[string]any{
+		"type": "integer", "enum": []any{float64(-2), float64(3)}, "minimum": float64(-2), "maximum": float64(3),
+		"exclusiveMinimum": float64(-3), "exclusiveMaximum": float64(4), "multipleOf": float64(1),
+	})
+	assertOutputValues(t, properties["unsigned"].(map[string]any), map[string]any{"type": "integer"})
+	assertOutputValues(t, properties["fraction"].(map[string]any), map[string]any{
+		"type": "number", "minimum": 0.5, "maximum": 9.5, "exclusiveMinimum": float64(0),
+		"exclusiveMaximum": float64(10), "multipleOf": 0.5,
+	})
+
+	nested := properties["nested"].(map[string]any)
+	assertOutputRequired(t, nested, []string{"code", "rank"})
+	rows := properties["rows"].(map[string]any)
+	assertOutputValues(t, rows, map[string]any{"type": "array", "minItems": float64(1), "maxItems": float64(4), "uniqueItems": true})
+	assertOutputRequired(t, rows["items"].(map[string]any), []string{"code", "rank"})
+	if got := properties["pair"].(map[string]any)["items"].(map[string]any)["type"]; got != "boolean" {
+		t.Errorf("array item type = %v, want boolean", got)
+	}
+	primitiveProperties := properties["primitives"].(map[string]any)["properties"].(map[string]any)
+	wantPrimitiveTypes := map[string]string{
+		"String": "string", "Bool": "boolean", "Int": "integer", "Int8": "integer",
+		"Int16": "integer", "Int32": "integer", "Int64": "integer", "Uint": "integer",
+		"Uint8": "integer", "Uint16": "integer", "Uint32": "integer", "Uint64": "integer",
+		"Float32": "number", "Float64": "number",
+	}
+	for name, wantType := range wantPrimitiveTypes {
+		if got := primitiveProperties[name].(map[string]any)["type"]; got != wantType {
+			t.Errorf("primitive %s type = %v, want %s", name, got, wantType)
+		}
+	}
+	primitiveNames := make([]string, 0, len(wantPrimitiveTypes))
+	for name := range wantPrimitiveTypes {
+		primitiveNames = append(primitiveNames, name)
+	}
+	assertOutputRequired(t, properties["primitives"].(map[string]any), primitiveNames)
+
+	optional := properties["optional"].(map[string]any)
+	branches := optional["anyOf"].([]any)
+	if len(branches) != 2 || !reflect.DeepEqual(branches[1], map[string]any{"type": "null"}) {
+		t.Fatalf("optional anyOf = %#v, want ordinary schema plus null", branches)
+	}
+	assertOutputValues(t, branches[0].(map[string]any), map[string]any{
+		"type": "string", "enum": []any{"yes", "no"}, "description": "nullable choice",
+		"minLength": float64(2), "maxLength": float64(3), "pattern": "^[a-z]+$", "format": "choice",
+	})
+	deepBranches := properties["deep"].(map[string]any)["anyOf"].([]any)
+	assertOutputRequired(t, deepBranches[0].(map[string]any), []string{"code", "rank"})
+
+	failures := []struct {
+		name string
+		call func() error
+		want string
+	}{
+		{"unknown tag", outputSchemaError[struct {
+			Value string `jsonschema:"mystery=x"`
+		}], "unknown option"},
+		{"empty tag option", outputSchemaError[struct {
+			Value string `jsonschema:","`
+		}], "empty option"},
+		{"duplicate tag option", outputSchemaError[struct {
+			Value string `jsonschema:"format=a,format=b"`
+		}], "duplicate option"},
+		{"malformed enum", outputSchemaError[struct {
+			Value int `jsonschema:"enum=word"`
+		}], "enum value"},
+		{"non-finite number", outputSchemaError[struct {
+			Value float64 `jsonschema:"maximum=NaN"`
+		}], "finite number"},
+		{"negative length", outputSchemaError[struct {
+			Value string `jsonschema:"minLength=-1"`
+		}], "non-negative integer"},
+		{"malformed uniqueItems", outputSchemaError[struct {
+			Value []string `jsonschema:"uniqueItems=yes"`
+		}], "true or false"},
+		{"unsupported type", outputSchemaError[struct{ Value map[string]string }], "not supported"},
+		{"recursive type", outputSchemaError[outputSchemaRecursiveFixture], "recursive"},
+		{"non-object root", outputSchemaError[string], "not an object"},
+	}
+	for _, test := range failures {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.call()
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Errorf("OutputSchema error = %v, want diagnostic containing %q", err, test.want)
+			}
+		})
+	}
+}
+
+func outputSchemaError[T any]() error {
+	_, err := OutputSchema[T]()
+	return err
+}
+
+func assertOutputRequired(t *testing.T, schema map[string]any, want []string) {
+	t.Helper()
+	gotValues := schema["required"].([]any)
+	got := make([]string, len(gotValues))
+	for index, value := range gotValues {
+		got[index] = value.(string)
+	}
+	slices.Sort(got)
+	slices.Sort(want)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("required = %v, want %v", got, want)
+	}
+	if schema["additionalProperties"] != false {
+		t.Errorf("additionalProperties = %v, want false", schema["additionalProperties"])
+	}
+}
+
+func assertOutputValues(t *testing.T, schema, want map[string]any) {
+	t.Helper()
+	for key, wantValue := range want {
+		if got := schema[key]; !reflect.DeepEqual(got, wantValue) {
+			t.Errorf("%s = %#v, want %#v", key, got, wantValue)
+		}
+	}
+}
 
 func TestValidateOutputSchemaHasExactPublicSignature(t *testing.T) {
 	// R-TMEY-1C4X
