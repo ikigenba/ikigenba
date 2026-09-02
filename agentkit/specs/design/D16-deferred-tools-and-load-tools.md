@@ -12,8 +12,9 @@ A **deferred tool** is an ordinary `Tool` (D9) — constructed, schema-validated
 and callable exactly like an eager one — that the consumer registers as *not
 surfaced up front*. Registration groups deferred tools under a named group with a
 one-line blurb; a group is the unit the model loads and the unit the catalog
-lists. The registration surface hangs off the conversation config, beside the
-eager `Tools`:
+lists. Groups are supplied at construction as `Config.Deferred`, beside the eager
+`Config.Tools` (D18); registering any group makes the orchestrator synthesize the
+built-in `load_tools` meta-tool.
 
 ```go
 package agentkit
@@ -27,10 +28,6 @@ type DeferredGroup struct {
 	Blurb string // one-line description shown in the load_tools catalog
 	Tools []Tool
 }
-
-// Deferred registers on-demand tool groups on the conversation. Registering any
-// group makes the orchestrator synthesize the built-in load_tools meta-tool.
-func (c *Conversation) Deferred(groups ...DeferredGroup)
 ```
 
 When at least one deferred group exists, the orchestrator **synthesizes one
@@ -85,7 +82,7 @@ defect before the turn starts, and a load can never fail for a schema reason.
 
 ## REQUIREMENTS
 
-- R-5PKM-V6VJ: Deferred tools MUST be registered on the `Conversation` as named groups and MUST be ordinary `Tool` values, validated at `Send` identically to eager `Tools` but withheld from the advertised toolset until loaded.
+- R-UUBB-T2TX: Deferred tools MUST be registered as named groups through `Config.Deferred` (D18) and MUST be ordinary `Tool` values, validated at `Send` identically to eager `Config.Tools` but withheld from the advertised toolset until loaded.
 - R-5QSJ-8YM8: When at least one deferred group is registered, the orchestrator MUST synthesize exactly one built-in `load_tools` meta-tool and advertise it alongside the eager tools.
 - R-5S0F-MQCX: The synthesized `load_tools` description MUST list, per group, the group blurb and the bare tool names, and MUST NOT include any tool's own description or JSON schema.
 - R-5T8C-0I3M: A `load_tools` call MUST accept a batched list of group-or-tool names, and from the next round-trip every named tool MUST be an ordinary member of the advertised toolset with its full schema; unknown names MUST be reported in the tool result without ending the turn.
@@ -94,5 +91,4 @@ defect before the turn starts, and a load can never fail for a schema reason.
 - R-5WW1-5TBP: The advertised tool array MUST be a name-sorted base (eager `Tools` ∪ `load_tools`) followed by loaded tools in load order, a load MUST only append to the tail, and the Anthropic adapter MUST transmit that order without re-sorting so the cache prefix is stable across round-trips.
 - R-5Y3X-JL2E: `Send` MUST run one validation gate over the union of eager tools, all deferred groups, and `load_tools` (name uniqueness and canonical-subset schema, D11) before any provider call, failing with `ErrInvalidConfig` rather than deferring a schema failure to load time.
 - R-0PU1-L7QF: `agentkit` MUST export `type DeferredGroup struct { Name string; Blurb string; Tools []Tool }` with exactly those three fields.
-- R-0R1X-YZH4: `agentkit` MUST export the method `func (c *Conversation) Deferred(groups ...DeferredGroup)`.
 - R-0S9U-CR7T: The synthesized deferred-tools meta-tool MUST be named exactly `load_tools` and MUST accept exactly one argument: an array of strings under the key `names`.

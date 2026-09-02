@@ -13,8 +13,9 @@ switch rule, because a switch cannot happen.
 A `Conversation` cleanly splits **config** (immutable, set at construction) from
 **transcript** (grows one whole turn at a time). Config is the composed `Provider`
 (D6), the `Model` string, the generation `Settings` (D8), the validated
-`ProviderOptions`, the registered tool set (eager and deferred, D16), and the
-optional event `Log` (D15) and injected `Clock` (D14). The transcript is the
+`ProviderOptions`, the registered tool set (eager and deferred, D16), the optional structured-output
+contract (D20), and the optional event `Log` (D15) and injected `Clock` (D14) —
+all supplied through `Config` (D18). The transcript is the
 `History` (D2). Nothing reassigns config after construction.
 
 ```go
@@ -37,6 +38,7 @@ type RequestState struct {
 	Settings Settings        // generation settings and reasoning shape (D8)
 	Options  ProviderOptions // validated pass-through (already collision-checked)
 	Tools    []Tool          // resolved live tool set for this round-trip (D9, D16)
+	Output   *OutputContract // structured-output contract, nil for none (D20)
 }
 ```
 
@@ -79,4 +81,4 @@ request the seam cannot faithfully express is refused, not silently reshaped.
 - R-4V35-AXC6: `Send` MUST reject a `ProviderOptions` map whose keys intersect the wire+endpoint reserved-key set with `ErrInvalidConfig`, making no provider call and leaving `History` unchanged.
 - R-4XIY-2GTK: Constructing a `Conversation` with both a transport-baking credential and `WithBaseURL` MUST fail with `ErrInvalidConfig` at construction (L2).
 - R-08RG-8FCP: `agentkit` MUST export `type ProviderOptions map[string]json.RawMessage`.
-- R-09ZC-M73E: `agentkit` MUST export `type RequestState struct { Model string; History []Message; Settings Settings; Options ProviderOptions; Tools []Tool }` with exactly those fields.
+- R-UPFQ-9ZV5: `agentkit` MUST export `type RequestState struct { Model string; History []Message; Settings Settings; Options ProviderOptions; Tools []Tool; Output *OutputContract }` with exactly those fields.

@@ -50,7 +50,9 @@ package's unexported `isCredential()`); on the generic path a custom base URL's
 vendor is unknowable, so no such safety can exist — and that is correct.
 
 The single exported entry point of a conversation is `Send`; everything else is
-injected at construction. Dependencies point one way: vendor package →
+injected at construction through the vendor constructor's options or, on the
+generic path, the `Config` value (D18). The constructor signatures are declared
+in D18. Dependencies point one way: vendor package →
 `Conversation` → `WireFormat`/`Endpoint` → the wire codec and transport. Nothing
 below `Conversation` reaches back up.
 
@@ -140,5 +142,3 @@ type Identity struct {
 - R-YURK-JTY8: `agentkit` MUST export `Conversation` as an opaque struct type with no exported fields, exposing the method `func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream`.
 - R-YVZG-XLOX: `agentkit` MUST export `type Identity struct { Endpoint string; AuthMode string; Model string }` with exactly those three string fields.
 - R-Y7DW-FW5P: `agentkit` MUST export `type KnownWire int` with the constants `KnownWireAnthropicMessages`, `KnownWireOpenAIResponses`, `KnownWireOpenAIChat`, `KnownWireGemini` declared in that `iota` order starting at 0, enumerating the built-in wires selectable on the generic construction path.
-- R-Y8LS-TNWE: `agentkit` MUST export `func NewForWire(wire KnownWire, endpoint Endpoint, model string) (*Conversation, error)` as the generic wire constructor, taking the wire, endpoint, and model as required positional parameters with no functional options.
-- R-Y9TP-7FN3: `agentkit` MUST export `func NewConversation(provider Provider, client *http.Client) *Conversation` as the rung-5 constructor that injects a caller-implemented `Provider` and HTTP client directly.

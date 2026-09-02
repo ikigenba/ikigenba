@@ -9,25 +9,29 @@ the wire codec (D5); no chunk, delta, or framing artifact escapes into the event
 stream. This is the same granularity the event log records (D15): the log is the
 durable transcript of exactly these events.
 
-`Event` is a **sealed union** of exactly three variants, closed by an unexported
-marker so a consumer switches it exhaustively. The variants wrap the corresponding
+`Event` is a **sealed union** of exactly four variants, closed by an unexported
+marker so a consumer switches it exhaustively. Three wrap the corresponding
 `Block` types (D2); they are named for what happened rather than reusing the block
 type names, so the event union and the block union stay distinct types in one
-package.
+package. The fourth, `OutputDone`, is declared in D20: it carries the validated
+structured result and is the last event of a turn under an output contract.
 
 ```go
 package agentkit
 
 // Event is one thing that happened during a turn, at message granularity. It is
 // a sealed union — the unexported isEvent marker keeps the set closed to
-// MessageDone, ToolCall, and ToolReturn so a consumer can switch it exhaustively.
+// MessageDone, ToolCall, ToolReturn, and OutputDone so a consumer can switch it
+// exhaustively.
 type Event interface {
 	isEvent()
 }
 
-// MessageDone reports that the model finished one assistant message. Message is
-// the completed message (its Block slice from D2), carrying any text and
-// reasoning blocks in order.
+// MessageDone reports that one protocol message completed. Message is the
+// completed message (its Block slice from D2). It is usually the model's
+// assistant message, carrying text and reasoning blocks in order; under an
+// output contract it is also how the orchestrator's RoleUser corrective message
+// (D20) is surfaced, so Message.Role tells the two apart.
 type MessageDone struct {
 	Message Message
 }
@@ -87,7 +91,7 @@ is spliced once on success — the `Stream` is the *live* view, `History` the
 
 ## REQUIREMENTS
 
-- R-4YQU-G8K9: `Event` MUST be a sealed union of exactly `MessageDone`, `ToolCall`, and `ToolReturn` — an interface with an unexported marker — so a consumer switches it exhaustively.
+- R-UQNM-NRLU: `Event` MUST be a sealed union of exactly `MessageDone`, `ToolCall`, `ToolReturn`, and `OutputDone` (D20) — an interface with an unexported marker — so a consumer switches it exhaustively.
 - R-4ZYQ-U0AY: A `Stream` MUST yield events at message granularity, one per completed protocol message, and MUST NOT expose token deltas or any framing artifact.
 - R-516N-7S1N: A `Stream` MUST yield events in the order they occur across the turn's round-trips, delivering each round-trip's events as that round-trip completes rather than only at turn end.
 - R-52EJ-LJSC: A tool returning an error MUST surface as a `ToolReturn` with `IsError` set and MUST NOT be reported by `Stream.Err()`.

@@ -24,6 +24,7 @@ const (
 	RecordMessage    RecordType = "message"
 	RecordToolUse    RecordType = "tool_use"
 	RecordToolResult RecordType = "tool_result"
+	RecordOutput     RecordType = "output"      // validated structured result (D20)
 	RecordUsage      RecordType = "usage"
 	RecordError      RecordType = "error"
 	RecordRetry      RecordType = "retry"
@@ -44,6 +45,7 @@ type LogRecord struct {
 	Message    *Message    `json:"message,omitempty"`     // message (one completed Message, D2/D13)
 	ToolUse    *ToolUse    `json:"tool_use,omitempty"`    // tool_use
 	ToolResult *ToolResult `json:"tool_result,omitempty"` // tool_result
+	Output     json.RawMessage `json:"output,omitempty"`  // output (OutputDone.Value, D20)
 	Usage      *Usage      `json:"usage,omitempty"`       // usage, summary
 	Cost       *Cost       `json:"cost,omitempty"`        // usage, summary
 	Err        *Error      `json:"error,omitempty"`       // error
@@ -99,7 +101,7 @@ under-counting for the same reason the in-memory total is.
 - R-5LWX-PVNG: A log write failure MUST NOT abort the turn and MUST NOT change `Stream.Err()`; the failure MAY be retained on the log for inspection.
 - R-5N4U-3NE5: `Close` MUST emit exactly one cumulative `summary` record and MUST be idempotent; a `Send` after `Close` MUST return `ErrClosed`.
 - R-5OCQ-HF4U: Every `usage` and `summary` record MUST carry a `Cost` resolved through the D3 path, and the `summary` cost's `Known` MUST be false whenever any contributing turn's cost was unknown.
-- R-0KYG-24RN: `agentkit` MUST export `type RecordType string` whose complete set of exported constants is exactly `RecordTurnStart = "turn_start"`, `RecordMessage = "message"`, `RecordToolUse = "tool_use"`, `RecordToolResult = "tool_result"`, `RecordUsage = "usage"`, `RecordError = "error"`, `RecordRetry = "retry"`, `RecordTurnEnd = "turn_end"`, `RecordSummary = "summary"`, with no other member.
-- R-0M6C-FWIC: `agentkit` MUST export `type LogRecord struct { Type RecordType; Time time.Time; Seq int; Identity *Identity; Message *Message; ToolUse *ToolUse; ToolResult *ToolResult; Usage *Usage; Cost *Cost; Err *Error; Retry *RetryInfo }` with exactly those fields and their documented JSON tags (`type`, `time`, `seq`, and `omitempty` pointer fields `identity`/`message`/`tool_use`/`tool_result`/`usage`/`cost`/`error`/`retry`).
+- R-URVJ-1JCJ: `agentkit` MUST export `type RecordType string` whose complete set of exported constants is exactly `RecordTurnStart = "turn_start"`, `RecordMessage = "message"`, `RecordToolUse = "tool_use"`, `RecordToolResult = "tool_result"`, `RecordOutput = "output"`, `RecordUsage = "usage"`, `RecordError = "error"`, `RecordRetry = "retry"`, `RecordTurnEnd = "turn_end"`, `RecordSummary = "summary"`, with no other member.
+- R-UT3F-FB38: `agentkit` MUST export `type LogRecord struct { Type RecordType; Time time.Time; Seq int; Identity *Identity; Message *Message; ToolUse *ToolUse; ToolResult *ToolResult; Output json.RawMessage; Usage *Usage; Cost *Cost; Err *Error; Retry *RetryInfo }` with exactly those fields and their documented JSON tags (`type`, `time`, `seq`, and `omitempty` fields `identity`/`message`/`tool_use`/`tool_result`/`output`/`usage`/`cost`/`error`/`retry`).
 - R-0NE8-TO91: `agentkit` MUST export `type RetryInfo struct { Attempt int; Delay time.Duration; Reason string }` with exactly those three fields.
 - R-0OM5-7FZQ: `agentkit` MUST export `Log` as an opaque type together with `func NewLog(w io.Writer, now func() time.Time) *Log` and the method `func (*Log) Close() error`.
