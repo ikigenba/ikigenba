@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
 )
 
 type anthropicWire struct{ wireCodec }
@@ -128,8 +129,7 @@ func anthropicRole(role Role) string {
 }
 
 func newAnthropicDecoder() frameDecoder {
-	var text string
-	var toolUses []*anthropicStreamToolUse
+	blocksByIndex := make(map[int]*anthropicStreamBlock)
 	toolUsesByIndex := make(map[int]*anthropicStreamToolUse)
 	var usage usageNormalizer
 	return func(frame []byte) (*Message, usageFragment, bool, error) {
@@ -165,19 +165,27 @@ func newAnthropicDecoder() frameDecoder {
 			fragment := usage.update(event.Message.Usage.InputTokens, event.Message.Usage.CachedTokens, nil, nil)
 			return nil, fragment, true, nil
 		case "content_block_start":
-			if event.ContentBlock.Type == "tool_use" {
+			switch event.ContentBlock.Type {
+			case "text":
+				blocksByIndex[event.Index] = &anthropicStreamBlock{}
+			case "tool_use":
 				toolUse := &anthropicStreamToolUse{
 					id:         event.ContentBlock.ID,
 					name:       event.ContentBlock.Name,
 					startInput: append(json.RawMessage(nil), event.ContentBlock.Input...),
 				}
-				toolUses = append(toolUses, toolUse)
+				blocksByIndex[event.Index] = &anthropicStreamBlock{toolUse: toolUse}
 				toolUsesByIndex[event.Index] = toolUse
 			}
 		case "content_block_delta":
 			switch event.Delta.Type {
 			case "text_delta":
-				text += event.Delta.Text
+				block := blocksByIndex[event.Index]
+				if block == nil {
+					block = &anthropicStreamBlock{}
+					blocksByIndex[event.Index] = block
+				}
+				block.text.WriteString(event.Delta.Text)
 			case "input_json_delta":
 				if toolUse := toolUsesByIndex[event.Index]; toolUse != nil {
 					toolUse.input.WriteString(event.Delta.PartialJSON)
@@ -193,23 +201,37 @@ func newAnthropicDecoder() frameDecoder {
 		case "message_delta":
 			return nil, usage.update(nil, nil, event.Delta.Usage.OutputTokens, nil), true, nil
 		case "message_stop":
-			blocks := make([]Block, 0, 1+len(toolUses))
-			if text != "" {
-				blocks = append(blocks, Text{Text: text})
+			indices := make([]int, 0, len(blocksByIndex))
+			for index := range blocksByIndex {
+				indices = append(indices, index)
 			}
-			for _, toolUse := range toolUses {
-				if toolUse.output == nil {
-					if err := toolUse.finish(); err != nil {
+			sort.Ints(indices)
+			blocks := make([]Block, 0, len(indices))
+			for _, index := range indices {
+				block := blocksByIndex[index]
+				if block.toolUse == nil {
+					if block.text.Len() > 0 {
+						blocks = append(blocks, Text{Text: block.text.String()})
+					}
+					continue
+				}
+				if block.toolUse.output == nil {
+					if err := block.toolUse.finish(); err != nil {
 						return nil, usageFragment{}, false, err
 					}
 				}
-				blocks = append(blocks, *toolUse.output)
+				blocks = append(blocks, *block.toolUse.output)
 			}
 			message := Message{Role: RoleAssistant, Blocks: blocks}
 			return &message, usageFragment{}, false, nil
 		}
 		return nil, usageFragment{}, false, nil
 	}
+}
+
+type anthropicStreamBlock struct {
+	text    bytes.Buffer
+	toolUse *anthropicStreamToolUse
 }
 
 type anthropicStreamToolUse struct {

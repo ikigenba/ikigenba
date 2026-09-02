@@ -162,8 +162,7 @@ func openAIRole(role Role) string {
 }
 
 func newOpenAIResponsesDecoder() frameDecoder {
-	var text string
-	var functionCalls []*openAIResponsesFunctionCall
+	blocksByIndex := make(map[int]*openAIResponsesStreamBlock)
 	functionCallsByID := make(map[string]*openAIResponsesFunctionCall)
 	functionCallsByIndex := make(map[int]*openAIResponsesFunctionCall)
 	var normalizer usageNormalizer
@@ -199,16 +198,26 @@ func newOpenAIResponsesDecoder() frameDecoder {
 		}
 		switch event.Type {
 		case "response.output_text.delta":
-			text += event.Delta
+			block := blocksByIndex[event.OutputIndex]
+			if block == nil {
+				block = &openAIResponsesStreamBlock{}
+				blocksByIndex[event.OutputIndex] = block
+			}
+			block.text.WriteString(event.Delta)
 		case "response.output_item.added":
-			if event.Item.Type == "function_call" {
+			switch event.Item.Type {
+			case "message":
+				if blocksByIndex[event.OutputIndex] == nil {
+					blocksByIndex[event.OutputIndex] = &openAIResponsesStreamBlock{}
+				}
+			case "function_call":
 				functionCall := &openAIResponsesFunctionCall{
 					itemID:      event.Item.ID,
 					outputIndex: event.OutputIndex,
 					callID:      event.Item.CallID,
 					name:        event.Item.Name,
 				}
-				functionCalls = append(functionCalls, functionCall)
+				blocksByIndex[event.OutputIndex] = &openAIResponsesStreamBlock{functionCall: functionCall}
 				functionCallsByID[functionCall.itemID] = functionCall
 				functionCallsByIndex[functionCall.outputIndex] = functionCall
 			}
@@ -234,15 +243,21 @@ func newOpenAIResponsesDecoder() frameDecoder {
 		case "response.completed":
 			usage := event.Response.Usage
 			fragment := normalizer.update(usage.InputTokens, usage.InputDetails.CachedTokens, usage.OutputTokens, usage.OutputDetails.ReasoningTokens)
-			blocks := make([]Block, 0, 1+len(functionCalls))
-			if text != "" {
-				blocks = append(blocks, Text{Text: text})
+			indices := make([]int, 0, len(blocksByIndex))
+			for index := range blocksByIndex {
+				indices = append(indices, index)
 			}
-			sort.SliceStable(functionCalls, func(left, right int) bool {
-				return functionCalls[left].outputIndex < functionCalls[right].outputIndex
-			})
-			for _, functionCall := range functionCalls {
-				toolUse, err := functionCall.toolUse()
+			sort.Ints(indices)
+			blocks := make([]Block, 0, len(indices))
+			for _, index := range indices {
+				block := blocksByIndex[index]
+				if block.functionCall == nil {
+					if block.text.Len() > 0 {
+						blocks = append(blocks, Text{Text: block.text.String()})
+					}
+					continue
+				}
+				toolUse, err := block.functionCall.toolUse()
 				if err != nil {
 					return nil, usageFragment{}, false, err
 				}
@@ -253,6 +268,11 @@ func newOpenAIResponsesDecoder() frameDecoder {
 		}
 		return nil, usageFragment{}, false, nil
 	}
+}
+
+type openAIResponsesStreamBlock struct {
+	text         bytes.Buffer
+	functionCall *openAIResponsesFunctionCall
 }
 
 type openAIResponsesFunctionCall struct {

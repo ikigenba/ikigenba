@@ -1,6 +1,7 @@
 package agentkit
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -176,8 +177,7 @@ func buildGeminiToolConfig(choice ToolChoice) *geminiToolConfig {
 }
 
 func newGeminiDecoder() frameDecoder {
-	var text string
-	var functionCalls []geminiFunctionCall
+	var blocks []Block
 	var normalizer usageNormalizer
 	return func(frame []byte) (*Message, usageFragment, bool, error) {
 		var response struct {
@@ -200,9 +200,22 @@ func newGeminiDecoder() frameDecoder {
 		finished := false
 		for _, candidate := range response.Candidates {
 			for _, part := range candidate.Content.Parts {
-				text += part.Text
+				if part.Text != "" {
+					if len(blocks) > 0 {
+						if text, ok := blocks[len(blocks)-1].(Text); ok {
+							text.Text += part.Text
+							blocks[len(blocks)-1] = text
+							continue
+						}
+					}
+					blocks = append(blocks, Text{Text: part.Text})
+				}
 				if part.FunctionCall != nil {
-					functionCalls = append(functionCalls, *part.FunctionCall)
+					toolUse, err := part.FunctionCall.toolUse()
+					if err != nil {
+						return nil, usageFragment{}, false, err
+					}
+					blocks = append(blocks, toolUse)
 				}
 			}
 			finished = finished || candidate.FinishReason != ""
@@ -214,18 +227,19 @@ func newGeminiDecoder() frameDecoder {
 			fragment = normalizer.update(usage.PromptTokens, usage.CachedTokens, usage.CandidateTokens, usage.ThoughtsTokens)
 		}
 		if finished {
-			blocks := make([]Block, 0, 1+len(functionCalls))
-			if text != "" {
-				blocks = append(blocks, Text{Text: text})
-			}
-			for _, call := range functionCalls {
-				blocks = append(blocks, ToolUse{ID: call.ID, Name: call.Name, Input: call.Args})
-			}
 			message := Message{Role: RoleAssistant, Blocks: blocks}
 			return &message, fragment, hasUsage, nil
 		}
 		return nil, fragment, hasUsage, nil
 	}
+}
+
+func (c geminiFunctionCall) toolUse() (ToolUse, error) {
+	input := bytes.TrimSpace(c.Args)
+	if len(input) == 0 || input[0] != '{' || !json.Valid(input) {
+		return ToolUse{}, fmt.Errorf("agentkit: Gemini function call %q input is not a JSON object", c.ID)
+	}
+	return ToolUse{ID: c.ID, Name: c.Name, Input: append(json.RawMessage(nil), input...)}, nil
 }
 
 func renderGeminiTools(tools []Tool) (json.RawMessage, error) {

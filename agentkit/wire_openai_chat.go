@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"sort"
 )
 
 type openAIChatWire struct{ wireCodec }
@@ -116,7 +115,7 @@ func (w *openAIChatWire) encodeRequest(state RequestState) ([]byte, error) {
 }
 
 func newOpenAIChatDecoder() frameDecoder {
-	var text string
+	var orderedBlocks []*openAIChatStreamBlock
 	toolCallsByIndex := make(map[int]*openAIChatStreamToolCall)
 	var normalizer usageNormalizer
 	return func(frame []byte) (*Message, usageFragment, bool, error) {
@@ -151,12 +150,18 @@ func newOpenAIChatDecoder() frameDecoder {
 			return nil, usageFragment{}, false, err
 		}
 		for _, choice := range chunk.Choices {
-			text += choice.Delta.Content
+			if choice.Delta.Content != "" {
+				if len(orderedBlocks) == 0 || orderedBlocks[len(orderedBlocks)-1].toolCall != nil {
+					orderedBlocks = append(orderedBlocks, &openAIChatStreamBlock{})
+				}
+				orderedBlocks[len(orderedBlocks)-1].text.WriteString(choice.Delta.Content)
+			}
 			for _, delta := range choice.Delta.ToolCalls {
 				toolCall := toolCallsByIndex[delta.Index]
 				if toolCall == nil {
 					toolCall = &openAIChatStreamToolCall{}
 					toolCallsByIndex[delta.Index] = toolCall
+					orderedBlocks = append(orderedBlocks, &openAIChatStreamBlock{toolCall: toolCall})
 				}
 				if delta.ID != "" {
 					toolCall.id = delta.ID
@@ -167,17 +172,13 @@ func newOpenAIChatDecoder() frameDecoder {
 				toolCall.arguments.WriteString(delta.Function.Arguments)
 			}
 			if choice.FinishReason != nil {
-				blocks := make([]Block, 0, 1+len(toolCallsByIndex))
-				if text != "" {
-					blocks = append(blocks, Text{Text: text})
-				}
-				indices := make([]int, 0, len(toolCallsByIndex))
-				for index := range toolCallsByIndex {
-					indices = append(indices, index)
-				}
-				sort.Ints(indices)
-				for _, index := range indices {
-					toolUse, err := toolCallsByIndex[index].toolUse()
+				blocks := make([]Block, 0, len(orderedBlocks))
+				for _, block := range orderedBlocks {
+					if block.toolCall == nil {
+						blocks = append(blocks, Text{Text: block.text.String()})
+						continue
+					}
+					toolUse, err := block.toolCall.toolUse()
 					if err != nil {
 						return nil, usageFragment{}, false, err
 					}
@@ -193,6 +194,11 @@ func newOpenAIChatDecoder() frameDecoder {
 		}
 		return nil, usageFragment{}, false, nil
 	}
+}
+
+type openAIChatStreamBlock struct {
+	text     bytes.Buffer
+	toolCall *openAIChatStreamToolCall
 }
 
 type openAIChatStreamToolCall struct {

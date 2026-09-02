@@ -306,38 +306,7 @@ func TestAnthropicDecodeStreamEmitsToolUseFromGolden(t *testing.T) {
 	if len(messages) != 1 {
 		t.Fatalf("decoded %d messages, want one", len(messages))
 	}
-	if len(messages[0].Blocks) != 2 {
-		t.Fatalf("decoded %d blocks, want exactly two tool uses: %#v", len(messages[0].Blocks), messages[0].Blocks)
-	}
-
-	want := []struct {
-		id    string
-		name  string
-		input map[string]any
-	}{
-		{"toolu_weather_AQID_01", "lookup_weather", map[string]any{"city": "Chicago", "units": "metric"}},
-		{"toolu_route_verbatim-02", "plan_route", map[string]any{"destination": "Museum Campus", "avoid_tolls": true}},
-	}
-	for index, block := range messages[0].Blocks {
-		toolUse, ok := block.(ToolUse)
-		if !ok {
-			t.Fatalf("block %d type = %T, want ToolUse", index, block)
-		}
-		if toolUse.ID != want[index].id || toolUse.Name != want[index].name {
-			t.Errorf("tool use %d id/name = %q/%q, want %q/%q", index, toolUse.ID, toolUse.Name, want[index].id, want[index].name)
-		}
-		var input any
-		if err := json.Unmarshal(toolUse.Input, &input); err != nil {
-			t.Fatalf("tool use %d input %q is invalid JSON: %v", index, toolUse.Input, err)
-		}
-		object, ok := input.(map[string]any)
-		if !ok {
-			t.Fatalf("tool use %d input decoded as %T, want JSON object (not a JSON-encoded string)", index, input)
-		}
-		if !reflect.DeepEqual(object, want[index].input) {
-			t.Errorf("tool use %d input = %#v, want %#v", index, object, want[index].input)
-		}
-	}
+	assertMixedToolMessage(t, messages[0], anthropicMixedToolBlocks())
 }
 
 func TestOpenAIResponsesDecodeStreamEmitsToolUseFromGolden(t *testing.T) {
@@ -362,38 +331,7 @@ func TestOpenAIResponsesDecodeStreamEmitsToolUseFromGolden(t *testing.T) {
 	if len(messages) != 1 {
 		t.Fatalf("decoded %d messages, want one", len(messages))
 	}
-	if len(messages[0].Blocks) != 2 {
-		t.Fatalf("decoded %d blocks, want exactly two tool uses: %#v", len(messages[0].Blocks), messages[0].Blocks)
-	}
-
-	want := []struct {
-		id    string
-		name  string
-		input map[string]any
-	}{
-		{"call_weather_verbatim-01", "lookup_weather", map[string]any{"city": "Chicago", "units": "metric"}},
-		{"call_route_AQID_02", "plan_route", map[string]any{"destination": "Museum Campus", "avoid_tolls": true}},
-	}
-	for index, block := range messages[0].Blocks {
-		toolUse, ok := block.(ToolUse)
-		if !ok {
-			t.Fatalf("block %d type = %T, want ToolUse", index, block)
-		}
-		if toolUse.ID != want[index].id || toolUse.Name != want[index].name {
-			t.Errorf("tool use %d id/name = %q/%q, want %q/%q", index, toolUse.ID, toolUse.Name, want[index].id, want[index].name)
-		}
-		var input any
-		if err := json.Unmarshal(toolUse.Input, &input); err != nil {
-			t.Fatalf("tool use %d input %q is invalid JSON: %v", index, toolUse.Input, err)
-		}
-		object, ok := input.(map[string]any)
-		if !ok {
-			t.Fatalf("tool use %d input decoded as %T, want JSON object (not a JSON-encoded string)", index, input)
-		}
-		if !reflect.DeepEqual(object, want[index].input) {
-			t.Errorf("tool use %d input = %#v, want %#v", index, object, want[index].input)
-		}
-	}
+	assertMixedToolMessage(t, messages[0], openAIResponsesMixedToolBlocks())
 }
 
 func TestOpenAIChatDecodeStreamEmitsToolUseFromGolden(t *testing.T) {
@@ -418,38 +356,7 @@ func TestOpenAIChatDecodeStreamEmitsToolUseFromGolden(t *testing.T) {
 	if len(messages) != 1 {
 		t.Fatalf("decoded %d messages, want one", len(messages))
 	}
-	if len(messages[0].Blocks) != 2 {
-		t.Fatalf("decoded %d blocks, want exactly two tool uses: %#v", len(messages[0].Blocks), messages[0].Blocks)
-	}
-
-	want := []struct {
-		id    string
-		name  string
-		input map[string]any
-	}{
-		{"chatcall_weather_verbatim-01", "lookup_weather_chat", map[string]any{"city": "Chicago", "units": "metric"}},
-		{"chatcall_route_AQID_02", "plan_route_chat", map[string]any{"destination": "Museum Campus", "avoid_tolls": true}},
-	}
-	for index, block := range messages[0].Blocks {
-		toolUse, ok := block.(ToolUse)
-		if !ok {
-			t.Fatalf("block %d type = %T, want ToolUse", index, block)
-		}
-		if toolUse.ID != want[index].id || toolUse.Name != want[index].name {
-			t.Errorf("tool use %d id/name = %q/%q, want %q/%q", index, toolUse.ID, toolUse.Name, want[index].id, want[index].name)
-		}
-		var input any
-		if err := json.Unmarshal(toolUse.Input, &input); err != nil {
-			t.Fatalf("tool use %d input %q is invalid JSON: %v", index, toolUse.Input, err)
-		}
-		object, ok := input.(map[string]any)
-		if !ok {
-			t.Fatalf("tool use %d input decoded as %T, want JSON object (not a JSON-encoded string)", index, input)
-		}
-		if !reflect.DeepEqual(object, want[index].input) {
-			t.Errorf("tool use %d input = %#v, want %#v", index, object, want[index].input)
-		}
-	}
+	assertMixedToolMessage(t, messages[0], openAIChatMixedToolBlocks())
 }
 
 func TestGeminiDecodeStreamEmitsToolUseFromGolden(t *testing.T) {
@@ -474,37 +381,130 @@ func TestGeminiDecodeStreamEmitsToolUseFromGolden(t *testing.T) {
 	if len(messages) != 1 {
 		t.Fatalf("decoded %d messages, want one", len(messages))
 	}
-	if len(messages[0].Blocks) != 2 {
-		t.Fatalf("decoded %d blocks, want exactly two tool uses: %#v", len(messages[0].Blocks), messages[0].Blocks)
-	}
+	assertMixedToolMessage(t, messages[0], geminiMixedToolBlocks())
+}
 
-	want := []struct {
-		id    string
-		name  string
-		input map[string]any
-	}{
-		{"gemini_weather_verbatim-01", "lookup_weather_gemini", map[string]any{"city": "Chicago", "days": float64(3)}},
-		{"gemini_route_AQID_02", "plan_route_gemini", map[string]any{"destination": "Museum Campus", "avoid_tolls": true}},
+type mixedToolBlock struct {
+	text  string
+	id    string
+	name  string
+	input map[string]any
+}
+
+func anthropicMixedToolBlocks() []mixedToolBlock {
+	return mixedToolBlocks(
+		"toolu_weather_AQID_01", "lookup_weather", map[string]any{"city": "Chicago", "units": "metric"},
+		"toolu_route_verbatim-02", "plan_route", map[string]any{"destination": "Museum Campus", "avoid_tolls": true},
+	)
+}
+
+func openAIResponsesMixedToolBlocks() []mixedToolBlock {
+	return mixedToolBlocks(
+		"call_weather_verbatim-01", "lookup_weather", map[string]any{"city": "Chicago", "units": "metric"},
+		"call_route_AQID_02", "plan_route", map[string]any{"destination": "Museum Campus", "avoid_tolls": true},
+	)
+}
+
+func openAIChatMixedToolBlocks() []mixedToolBlock {
+	return mixedToolBlocks(
+		"chatcall_weather_verbatim-01", "lookup_weather_chat", map[string]any{"city": "Chicago", "units": "metric"},
+		"chatcall_route_AQID_02", "plan_route_chat", map[string]any{"destination": "Museum Campus", "avoid_tolls": true},
+	)
+}
+
+func geminiMixedToolBlocks() []mixedToolBlock {
+	return mixedToolBlocks(
+		"gemini_weather_verbatim-01", "lookup_weather_gemini", map[string]any{"city": "Chicago", "days": float64(3)},
+		"gemini_route_AQID_02", "plan_route_gemini", map[string]any{"destination": "Museum Campus", "avoid_tolls": true},
+	)
+}
+
+func mixedToolBlocks(firstID, firstName string, firstInput map[string]any, secondID, secondName string, secondInput map[string]any) []mixedToolBlock {
+	return []mixedToolBlock{
+		{text: "Before weather. "},
+		{id: firstID, name: firstName, input: firstInput},
+		{text: "Then route. "},
+		{id: secondID, name: secondName, input: secondInput},
+		{text: "Ready."},
 	}
-	for index, block := range messages[0].Blocks {
+}
+
+func assertMixedToolMessage(t *testing.T, message Message, want []mixedToolBlock) {
+	t.Helper()
+	if message.Role != RoleAssistant {
+		t.Errorf("message role = %v, want assistant", message.Role)
+	}
+	if len(message.Blocks) != len(want) {
+		t.Fatalf("decoded %d blocks, want exact mixed sequence of %d: %#v", len(message.Blocks), len(want), message.Blocks)
+	}
+	for index, expected := range want {
+		block := message.Blocks[index]
+		if expected.text != "" {
+			text, ok := block.(Text)
+			if !ok || text.Text != expected.text {
+				t.Errorf("block %d = %#v, want Text %q", index, block, expected.text)
+			}
+			continue
+		}
 		toolUse, ok := block.(ToolUse)
 		if !ok {
 			t.Fatalf("block %d type = %T, want ToolUse", index, block)
 		}
-		if toolUse.ID != want[index].id || toolUse.Name != want[index].name {
-			t.Errorf("tool use %d id/name = %q/%q, want %q/%q", index, toolUse.ID, toolUse.Name, want[index].id, want[index].name)
+		if toolUse.ID != expected.id || toolUse.Name != expected.name {
+			t.Errorf("block %d id/name = %q/%q, want %q/%q", index, toolUse.ID, toolUse.Name, expected.id, expected.name)
 		}
 		var input any
 		if err := json.Unmarshal(toolUse.Input, &input); err != nil {
-			t.Fatalf("tool use %d input %q is invalid JSON: %v", index, toolUse.Input, err)
+			t.Fatalf("block %d input %q is invalid JSON: %v", index, toolUse.Input, err)
 		}
 		object, ok := input.(map[string]any)
 		if !ok {
-			t.Fatalf("tool use %d input decoded as %T, want JSON object (not a JSON-encoded string)", index, input)
+			t.Fatalf("block %d input decoded as %T, want JSON object (not a JSON-encoded string)", index, input)
 		}
-		if !reflect.DeepEqual(object, want[index].input) {
-			t.Errorf("tool use %d input = %#v, want %#v", index, object, want[index].input)
+		if !reflect.DeepEqual(object, expected.input) {
+			t.Errorf("block %d input = %#v, want %#v", index, object, expected.input)
 		}
+	}
+}
+
+func TestEveryWireDecodesMixedToolCallsInVendorOrderWithObjectInput(t *testing.T) {
+	// R-T901-TUZA
+	// R-TA7Y-7MPZ
+	tests := []struct {
+		name     string
+		wire     WireFormat
+		response string
+		want     []mixedToolBlock
+	}{
+		{"anthropic", newAnthropicWire(nil), "testdata/anthropic_messages_tool_call.sse", anthropicMixedToolBlocks()},
+		{"responses", newOpenAIResponsesWire(nil), "testdata/openai_responses_tool_call.sse", openAIResponsesMixedToolBlocks()},
+		{"chat", newOpenAIChatWire(nil), "testdata/openai_chat_completions_tool_call.sse", openAIChatMixedToolBlocks()},
+		{"gemini", newGeminiWire(nil), "testdata/gemini_generate_content_tool_call.sse", geminiMixedToolBlocks()},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response, err := os.Open(test.response)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = response.Close() }()
+
+			var messages []Message
+			for event, decodeErr := range test.wire.DecodeStream(SSEFrames(response)) {
+				if decodeErr != nil {
+					t.Fatal(decodeErr)
+				}
+				completed, ok := event.(MessageDone)
+				if !ok {
+					t.Fatalf("event type = %T, want MessageDone", event)
+				}
+				messages = append(messages, completed.Message)
+			}
+			if len(messages) != 1 {
+				t.Fatalf("decoded %d messages, want exactly one", len(messages))
+			}
+			assertMixedToolMessage(t, messages[0], test.want)
+		})
 	}
 }
 
