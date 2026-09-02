@@ -249,7 +249,6 @@ func TestOutputDoneDeclarationIsExactAndImplementsEvent(t *testing.T) {
 }
 
 func TestEventIsSealedToExactlyFourVariants(t *testing.T) {
-	// R-4YQU-G8K9
 	// R-UQNM-NRLU
 	assertEventSeam(t)
 	entries, err := os.ReadDir(".")
