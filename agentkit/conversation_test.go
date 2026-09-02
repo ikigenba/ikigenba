@@ -786,7 +786,7 @@ func TestZeroConfigLeavesEveryOptionalRequestAxisEmpty(t *testing.T) {
 	if !reflect.DeepEqual(state.Settings, Settings{}) || state.Options != nil || len(state.Tools) != 0 {
 		t.Fatalf("zero-config request axes = settings %#v, options %#v, tools %#v", state.Settings, state.Options, state.Tools)
 	}
-	if _, declaresOutput := reflect.TypeFor[RequestState]().FieldByName("Output"); declaresOutput {
+	if state.Output != nil {
 		t.Fatal("zero Config declared structured output through RequestState")
 	}
 	if conversation.eventSink != nil {

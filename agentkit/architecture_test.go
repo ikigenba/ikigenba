@@ -194,6 +194,7 @@ func TestConfigDeclarationIsExact(t *testing.T) {
 
 func TestRequestStateDeclarationIsExact(t *testing.T) {
 	// R-09ZC-M73E
+	// R-UPFQ-9ZV5
 	stateType := reflect.TypeFor[RequestState]()
 	if stateType.Name() != "RequestState" || !token.IsExported(stateType.Name()) || stateType.Kind() != reflect.Struct {
 		t.Fatalf("RequestState name/kind = %q/%s, want exported defined struct", stateType.Name(), stateType.Kind())
@@ -207,6 +208,7 @@ func TestRequestStateDeclarationIsExact(t *testing.T) {
 		{name: "Settings", typeOf: reflect.TypeFor[Settings]()},
 		{name: "Options", typeOf: reflect.TypeFor[ProviderOptions]()},
 		{name: "Tools", typeOf: reflect.TypeFor[[]Tool]()},
+		{name: "Output", typeOf: reflect.TypeFor[*OutputContract]()},
 	}
 	if stateType.NumField() != len(wantFields) {
 		t.Fatalf("RequestState field count = %d, want exactly %d", stateType.NumField(), len(wantFields))
@@ -230,8 +232,8 @@ func TestRequestStateDeclarationIsExact(t *testing.T) {
 	if !ok {
 		t.Fatalf("RequestState declaration is %T, want struct", specification.Type)
 	}
-	if got := renderedNode(t, structType); got != "struct {\n\tModel    string\n\tHistory  []Message\n\tSettings Settings\n\tOptions  ProviderOptions\n\tTools    []Tool\n}" {
-		t.Fatalf("RequestState declaration = %q, want exact five-field declaration", got)
+	if got := renderedNode(t, structType); got != "struct {\n\tModel    string\n\tHistory  []Message\n\tSettings Settings\n\tOptions  ProviderOptions\n\tTools    []Tool\n\tOutput   *OutputContract\n}" {
+		t.Fatalf("RequestState declaration = %q, want exact six-field declaration", got)
 	}
 }
 

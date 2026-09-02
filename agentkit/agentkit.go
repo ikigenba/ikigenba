@@ -41,13 +41,14 @@ type ProviderOptions map[string]json.RawMessage
 
 // RequestState is the immutable input the Provider consumes for one round-trip.
 // It is a snapshot: History and Tools reflect this round-trip only, while Model,
-// Settings, and Options are fixed for the conversation.
+// Settings, Options, and Output are fixed for the conversation.
 type RequestState struct {
 	Model    string
 	History  []Message
 	Settings Settings
 	Options  ProviderOptions
 	Tools    []Tool
+	Output   *OutputContract
 }
 
 // Stream is the live view of one turn's events.
