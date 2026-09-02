@@ -172,6 +172,7 @@ func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator
 			Settings: cloneSettings(snapshot.settings),
 			Options:  cloneProviderOptions(snapshot.options),
 			Tools:    orchestrator.advertisedSnapshot(),
+			Output:   cloneOutputContract(c.output),
 		}, yield)
 		if provider, ok := c.provider.(accountingProvider); ok {
 			accounting.add(provider.turnAccounting())
@@ -188,6 +189,15 @@ func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator
 		assistant, calls := completedAssistantMessages(roundEvents)
 		snapshot.turn = append(snapshot.turn, assistant...)
 		if len(calls) == 0 {
+			if c.output != nil {
+				text := completedAssistantText(assistant)
+				if violation := validateOutputDocument(c.output.Schema, json.RawMessage(text)); violation != nil {
+					return fmt.Errorf("invalid structured output: %w", violation)
+				}
+				if !yield(OutputDone{Value: append(json.RawMessage(nil), text...)}) {
+					return nil
+				}
+			}
 			c.history = append(c.history, cloneHistory(snapshot.turn)...)
 			return nil
 		}
@@ -203,6 +213,18 @@ func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator
 		toolMessage := Message{Role: RoleTool, Blocks: results}
 		snapshot.turn = append(snapshot.turn, toolMessage)
 	}
+}
+
+func completedAssistantText(messages History) []byte {
+	var text []byte
+	for _, message := range messages {
+		for _, block := range message.Blocks {
+			if visible, ok := block.(Text); ok {
+				text = append(text, visible.Text...)
+			}
+		}
+	}
+	return text
 }
 
 func (c *Conversation) validateConfig() error {

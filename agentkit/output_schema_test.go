@@ -35,7 +35,7 @@ type outputSchemaPrimitivesFixture struct {
 }
 
 type outputSchemaDerivationFixture struct {
-	Text       string                        `json:"label" jsonschema:"required,enum=red|green,description=display color,minLength=1,maxLength=10,pattern=^[a-z]+$,format=future-format"`
+	Text       string                        `json:"label" jsonschema:"required,enum=red|green,description=display color,minLength=1,maxLength=10,pattern=^[a-z]+$,format=hostname"`
 	Enabled    bool                          `jsonschema:"enum=true|false"`
 	Signed     int8                          `json:"signed,omitempty" jsonschema:"enum=-2|3,minimum=-2,maximum=3,exclusiveMinimum=-3,exclusiveMaximum=4,multipleOf=1"`
 	Unsigned   uint64                        `json:"unsigned"`
@@ -44,7 +44,7 @@ type outputSchemaDerivationFixture struct {
 	Rows       []outputSchemaNestedFixture   `json:"rows" jsonschema:"minItems=1,maxItems=4,uniqueItems=true"`
 	Pair       [2]bool                       `json:"pair"`
 	Primitives outputSchemaPrimitivesFixture `json:"primitives"`
-	Optional   *string                       `json:"optional,omitempty" jsonschema:"enum=yes|no,description=nullable choice,minLength=2,maxLength=3,pattern=^[a-z]+$,format=choice"`
+	Optional   *string                       `json:"optional,omitempty" jsonschema:"enum=yes|no,description=nullable choice,minLength=2,maxLength=3,pattern=^[a-z]+$,format=hostname"`
 	Deep       **outputSchemaNestedFixture   `json:"deep"`
 	Skipped    string                        `json:"-"`
 	unexported string                        //nolint:unused // Reflection is the behavior under test.
@@ -103,7 +103,7 @@ func TestOutputSchemaDerivesOutputSubset(t *testing.T) {
 
 	assertOutputValues(t, properties["label"].(map[string]any), map[string]any{
 		"type": "string", "enum": []any{"red", "green"}, "description": "display color",
-		"minLength": float64(1), "maxLength": float64(10), "pattern": "^[a-z]+$", "format": "future-format",
+		"minLength": float64(1), "maxLength": float64(10), "pattern": "^[a-z]+$", "format": "hostname",
 	})
 	assertOutputValues(t, properties["Enabled"].(map[string]any), map[string]any{
 		"type": "boolean", "enum": []any{true, false},
@@ -151,7 +151,7 @@ func TestOutputSchemaDerivesOutputSubset(t *testing.T) {
 	}
 	assertOutputValues(t, branches[0].(map[string]any), map[string]any{
 		"type": "string", "enum": []any{"yes", "no"}, "description": "nullable choice",
-		"minLength": float64(2), "maxLength": float64(3), "pattern": "^[a-z]+$", "format": "choice",
+		"minLength": float64(2), "maxLength": float64(3), "pattern": "^[a-z]+$", "format": "hostname",
 	})
 	deepBranches := properties["deep"].(map[string]any)["anyOf"].([]any)
 	assertOutputRequired(t, deepBranches[0].(map[string]any), []string{"code", "rank"})
@@ -255,7 +255,7 @@ func TestValidateOutputSchemaAcceptsRecursiveOutputSubset(t *testing.T) {
 				},
 				"properties":{
 					"address":{"$ref":"#/$defs/Address"},
-					"label":{"type":"string","description":"short label","enum":["alpha","beta"],"minLength":1,"maxLength":8,"pattern":"^[a-z]+$","format":"future-format-name"},
+					"label":{"type":"string","description":"short label","enum":["alpha","beta"],"minLength":1,"maxLength":8,"pattern":"^[a-z]+$","format":"hostname"},
 					"score":{"type":"number","minimum":0,"maximum":10,"exclusiveMinimum":-1,"exclusiveMaximum":11,"multipleOf":0.5,"const":2.5},
 					"count":{"type":"integer","minimum":0,"const":2},
 					"enabled":{"type":"boolean","const":true},
@@ -339,5 +339,110 @@ func TestValidateOutputSchemaRejectsOutsideSubsetWithDiagnostics(t *testing.T) {
 				t.Errorf("ValidateOutputSchema(%s) = %v, want diagnostic containing %q", test.schema, err, test.want)
 			}
 		})
+	}
+}
+
+func TestValidateOutputSchemaGatesFormatsAndPatterns(t *testing.T) {
+	// R-UKK4-QWWD
+	formats := []string{"date-time", "date", "time", "email", "uri", "uuid", "ipv4", "ipv6", "hostname"}
+	for _, format := range formats {
+		schema := json.RawMessage(`{"type":"object","properties":{"value":{"type":"string","format":"` + format + `"}},"required":["value"]}`)
+		if err := ValidateOutputSchema(schema); err != nil {
+			t.Errorf("supported format %q rejected: %v", format, err)
+		}
+	}
+	for name, schema := range map[string]string{
+		"unsupported format": `{"type":"object","properties":{"value":{"type":"string","format":"future"}},"required":["value"]}`,
+		"malformed pattern":  `{"type":"object","properties":{"value":{"type":"string","pattern":"["}},"required":["value"]}`,
+	} {
+		if err := ValidateOutputSchema(json.RawMessage(schema)); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+}
+
+func TestOutputDocumentValidatorEnforcesFullSchema(t *testing.T) {
+	// R-U758-JFQQ
+	schema := json.RawMessage(`{
+		"type":"object","additionalProperties":false,
+		"$defs":{"row":{"type":"object","additionalProperties":false,"properties":{"line":{"type":"number","minimum":0.1,"multipleOf":0.1}},"required":["line"]}},
+		"properties":{
+			"rows":{"type":"array","items":{"$ref":"#/$defs/row"},"minItems":1,"maxItems":2,"uniqueItems":true},
+			"label":{"type":"string","minLength":2,"maxLength":3,"pattern":"^[αβ]+$"},
+			"choice":{"enum":[{"x":1}],"type":"object","additionalProperties":false,"properties":{"x":{"type":"number"}},"required":["x"]},
+			"fixed":{"const":[1,2],"type":"array","items":{"type":"integer"}},
+			"note":{"anyOf":[{"type":"string"},{"type":"null"}]}
+		},"required":["rows","label","choice","fixed","note"]}`)
+	valid := json.RawMessage(`{"rows":[{"line":0.3}],"label":"αβ","choice":{"x":1.0},"fixed":[1.0,2],"note":null}`)
+	if violation := validateOutputDocument(schema, valid); violation != nil {
+		t.Fatalf("valid full document rejected: %v", violation)
+	}
+	tests := []struct {
+		name string
+		doc  string
+		path string
+	}{
+		{"malformed", `{"rows":`, "$"},
+		{"trailing", string(valid) + ` {}`, "$"},
+		{"wrong type", `{"rows":[{"line":0.3}],"label":7,"choice":{"x":1},"fixed":[1,2],"note":null}`, "$.label"},
+		{"missing required", `{"rows":[{"line":0.3}],"choice":{"x":1},"fixed":[1,2],"note":null}`, "$.label"},
+		{"closed nested object", `{"rows":[{"line":0.3,"extra":true}],"label":"αβ","choice":{"x":1},"fixed":[1,2],"note":null}`, "$.rows[0].extra"},
+		{"items reference", `{"rows":[{"line":"bad"}],"label":"αβ","choice":{"x":1},"fixed":[1,2],"note":null}`, "$.rows[0].line"},
+		{"exact decimal multiple", `{"rows":[{"line":0.3000000000000000000000000000000000000001}],"label":"αβ","choice":{"x":1},"fixed":[1,2],"note":null}`, "$.rows[0].line"},
+		{"array minimum", `{"rows":[],"label":"αβ","choice":{"x":1},"fixed":[1,2],"note":null}`, "$.rows"},
+		{"array maximum", `{"rows":[{"line":0.1},{"line":0.2},{"line":0.3}],"label":"αβ","choice":{"x":1},"fixed":[1,2],"note":null}`, "$.rows"},
+		{"rune min length", `{"rows":[{"line":0.3}],"label":"α","choice":{"x":1},"fixed":[1,2],"note":null}`, "$.label"},
+		{"rune max length", `{"rows":[{"line":0.3}],"label":"αβαβ","choice":{"x":1},"fixed":[1,2],"note":null}`, "$.label"},
+		{"pattern", `{"rows":[{"line":0.3}],"label":"αx","choice":{"x":1},"fixed":[1,2],"note":null}`, "$.label"},
+		{"compound enum", `{"rows":[{"line":0.3}],"label":"αβ","choice":{"x":2},"fixed":[1,2],"note":null}`, "$.choice"},
+		{"compound const", `{"rows":[{"line":0.3}],"label":"αβ","choice":{"x":1},"fixed":[1,3],"note":null}`, "$.fixed"},
+		{"nullable mismatch", `{"rows":[{"line":0.3}],"label":"αβ","choice":{"x":1},"fixed":[1,2],"note":4}`, "$.note"},
+		{"unique compound items", `{"rows":[{"line":0.3},{"line":0.30}],"label":"αβ","choice":{"x":1},"fixed":[1,2],"note":null}`, "$.rows[1]"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			violation := validateOutputDocument(schema, json.RawMessage(test.doc))
+			if violation == nil || !strings.Contains(violation.Path, test.path) {
+				t.Fatalf("violation = %#v, want path %q", violation, test.path)
+			}
+		})
+	}
+}
+
+func TestOutputDocumentValidatorEnforcesNumericConstraintFamilies(t *testing.T) {
+	// R-UJC8-D55O
+	schema := json.RawMessage(`{"type":"object","properties":{"value":{"type":"number","minimum":-2,"maximum":10,"exclusiveMinimum":-3,"exclusiveMaximum":11,"multipleOf":0.0000000000000000001}},"required":["value"]}`)
+	for _, value := range []string{"-3", "-2.1", "11", "10.0000000000000000001", "0.00000000000000000015"} {
+		violation := validateOutputDocument(schema, json.RawMessage(`{"value":`+value+`}`))
+		if violation == nil || violation.Path != "$.value" {
+			t.Errorf("constraint-only value %s violation = %#v", value, violation)
+		}
+	}
+	if violation := validateOutputDocument(schema, json.RawMessage(`{"value":0.0000000000000000003}`)); violation != nil {
+		t.Fatalf("exact rational multiple rejected: %v", violation)
+	}
+}
+
+func TestOutputDocumentValidatorEnforcesSupportedFormats(t *testing.T) {
+	// R-UKK4-QWWD
+	tests := []struct{ format, valid, invalid string }{
+		{"date-time", "2024-02-29T23:59:59Z", "2023-02-29T23:59:59Z"},
+		{"date", "2024-02-29", "2023-02-29"},
+		{"time", "23:59:59+05:30", "23:59:59"},
+		{"email", "name@example.com", "Name <name@example.com>"},
+		{"uri", "https://example.com/a?b=c", "/relative"},
+		{"uuid", "123e4567-e89b-42d3-a456-426614174000", "123e4567e89b-42d3-a456-426614174000"},
+		{"ipv4", "192.0.2.1", "::ffff:192.0.2.1"},
+		{"ipv6", "2001:db8::1", "192.0.2.1"},
+		{"hostname", "api.example-1.com", "-api.example.com"},
+	}
+	for _, test := range tests {
+		schema := json.RawMessage(`{"type":"object","properties":{"value":{"type":"string","format":"` + test.format + `"}},"required":["value"]}`)
+		if violation := validateOutputDocument(schema, json.RawMessage(`{"value":"`+test.valid+`"}`)); violation != nil {
+			t.Errorf("%s valid value rejected: %v", test.format, violation)
+		}
+		if violation := validateOutputDocument(schema, json.RawMessage(`{"value":"`+test.invalid+`"}`)); violation == nil {
+			t.Errorf("%s invalid value accepted", test.format)
+		}
 	}
 }

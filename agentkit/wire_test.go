@@ -86,7 +86,7 @@ func TestPortableOutputSchemaRetainsGrammarAndClosesObjects(t *testing.T) {
 
 func TestPortableOutputSchemaMovesConstraintsToProse(t *testing.T) {
 	// R-TXE1-H9T6
-	schema := json.RawMessage(`{"type":"object","properties":{"number":{"type":"number","description":"Existing numeric rule.","minimum":-1e+400,"maximum":9.99e+999,"exclusiveMinimum":-2,"exclusiveMaximum":10,"multipleOf":1e-300},"text":{"type":"string","minLength":2,"maxLength":8,"pattern":"^[A-Z]+\\s?$","format":"custom/value"},"list":{"type":"array","minItems":1,"maxItems":4,"uniqueItems":true,"items":{"type":"string","description":"Item.","pattern":"^x+$"}},"repeatable":{"type":"array","uniqueItems":false,"items":{"type":"integer","minimum":-5}},"maybe":{"anyOf":[{"type":"number","maximum":1e+400},{"type":"null"}]},"defined":{"$ref":"#/$defs/Count"}},"required":["number","text","list","repeatable","maybe","defined"],"$defs":{"Count":{"type":"integer","minimum":0,"multipleOf":2}}}`)
+	schema := json.RawMessage(`{"type":"object","properties":{"number":{"type":"number","description":"Existing numeric rule.","minimum":-1e+400,"maximum":9.99e+999,"exclusiveMinimum":-2,"exclusiveMaximum":10,"multipleOf":1e-300},"text":{"type":"string","minLength":2,"maxLength":8,"pattern":"^[A-Z]+\\s?$","format":"email"},"list":{"type":"array","minItems":1,"maxItems":4,"uniqueItems":true,"items":{"type":"string","description":"Item.","pattern":"^x+$"}},"repeatable":{"type":"array","uniqueItems":false,"items":{"type":"integer","minimum":-5}},"maybe":{"anyOf":[{"type":"number","maximum":1e+400},{"type":"null"}]},"defined":{"$ref":"#/$defs/Count"}},"required":["number","text","list","repeatable","maybe","defined"],"$defs":{"Count":{"type":"integer","minimum":0,"multipleOf":2}}}`)
 	tests := []struct {
 		name    string
 		wire    WireFormat
@@ -588,7 +588,7 @@ func assertPhase23ConstraintDescriptions(t *testing.T, document map[string]any) 
 	properties := document["properties"].(map[string]any)
 	descriptions := map[string]string{
 		"number":     `Existing numeric rule. Value must be >= -1e+400. Value must be <= 9.99e+999. Value must be > -2. Value must be < 10. Value must be a multiple of 1e-300.`,
-		"text":       `Length must be >= 2. Length must be <= 8. Value must match pattern "^[A-Z]+\\s?$". Value must use format "custom/value".`,
+		"text":       `Length must be >= 2. Length must be <= 8. Value must match pattern "^[A-Z]+\\s?$". Value must use format "email".`,
 		"list":       `Item count must be >= 1. Item count must be <= 4. Items must be unique.`,
 		"repeatable": `Items may repeat.`,
 	}

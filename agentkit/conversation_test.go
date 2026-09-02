@@ -698,6 +698,12 @@ func (t *phase15Transport) RoundTrip(*http.Request) (*http.Response, error) {
 
 func (p *phase15Provider) BuildRequest(ctx context.Context, state RequestState) (*http.Request, error) {
 	p.states = append(p.states, cloneRequestState(state))
+	if state.Output != nil {
+		state.Output.MaxAttempts = 999
+		if len(state.Output.Schema) > 0 {
+			state.Output.Schema[0] = '!'
+		}
+	}
 	if state.Options != nil {
 		state.Options["mutated"] = json.RawMessage(`true`)
 		for key := range state.Options {
@@ -756,6 +762,7 @@ func cloneRequestState(state RequestState) RequestState {
 		Settings: cloneSettings(state.Settings),
 		Options:  cloneProviderOptions(state.Options),
 		Tools:    cloneTools(state.Tools),
+		Output:   cloneOutputContract(state.Output),
 	}
 }
 
@@ -777,7 +784,7 @@ func TestZeroConfigLeavesEveryOptionalRequestAxisEmpty(t *testing.T) {
 	transportCalls := 0
 	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	stream := conversation.Send(context.Background(), Text{Text: "hello"})
-	drainStream(stream)
+	events := drainStream(stream)
 
 	if stream.Err() != nil || transportCalls != 1 || len(provider.states) != 1 {
 		t.Fatalf("zero-config Send = %v, transport=%d states=%d", stream.Err(), transportCalls, len(provider.states))
@@ -788,6 +795,10 @@ func TestZeroConfigLeavesEveryOptionalRequestAxisEmpty(t *testing.T) {
 	}
 	if state.Output != nil {
 		t.Fatal("zero Config declared structured output through RequestState")
+	}
+	// R-UEGM-U26W
+	if len(events) != 1 || reflect.TypeOf(events[0]) != reflect.TypeFor[MessageDone]() {
+		t.Fatalf("no-contract events = %#v, want one MessageDone and no OutputDone", events)
 	}
 	if conversation.eventSink != nil {
 		t.Fatalf("nil Config.Log installed event sink %#v", conversation.eventSink)
@@ -1084,7 +1095,9 @@ func TestOutputContractValidationAtSendBoundary(t *testing.T) {
 	}
 	for _, test := range accepted {
 		t.Run(test.name, func(t *testing.T) {
-			provider := &phase15Provider{model: "model"}
+			provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: Message{
+				Role: RoleAssistant, Blocks: []Block{Text{Text: `{}`}},
+			}}}}}
 			transportCalls := 0
 			stream := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: test.contract}).Send(context.Background(), Text{Text: "accepted"})
 			drainStream(stream)
@@ -1099,7 +1112,9 @@ func TestOutputContractValidationAtSendBoundary(t *testing.T) {
 func TestOutputContractIsOwnedByConversation(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{},"required":[],"additionalProperties":false}`)
 	contract := &OutputContract{Schema: schema, MaxAttempts: 1}
-	provider := &phase15Provider{model: "model"}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: Message{
+		Role: RoleAssistant, Blocks: []Block{Text{Text: `{}`}},
+	}}}}}
 	transportCalls := 0
 	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: contract})
 
@@ -1112,6 +1127,172 @@ func TestOutputContractIsOwnedByConversation(t *testing.T) {
 	// R-U5XC-5O01
 	if stream.Err() != nil || len(provider.states) != 1 || transportCalls != 1 {
 		t.Fatalf("caller mutation altered retained output contract: err=%v build=%d transport=%d", stream.Err(), len(provider.states), transportCalls)
+	}
+}
+
+func TestStructuredOutputValidTerminationPreservesBytesAndOrder(t *testing.T) {
+	text := "  {\n  \"score\": 0.30, \"label\": \"ok\"\n}  "
+	message := Message{Role: RoleAssistant, Blocks: []Block{Reasoning{Text: "ignore me"}, Text{Text: text}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: message}}}}
+	transportCalls := 0
+	schema := json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"score":{"type":"number","minimum":0,"multipleOf":0.1},"label":{"type":"string","pattern":"^[a-z]+$"}},"required":["score","label"]}`)
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: &OutputContract{Schema: schema}})
+	user := Text{Text: "answer"}
+	stream := conversation.Send(context.Background(), user)
+	events := drainStream(stream)
+
+	// R-U758-JFQQ
+	if len(events) != 2 || !reflect.DeepEqual(events[0], MessageDone{Message: message}) || transportCalls != 1 || stream.Err() != nil {
+		t.Fatalf("structured turn events = %#v, transport=%d err=%v", events, transportCalls, stream.Err())
+	}
+	// R-UEGM-U26W
+	output, ok := events[1].(OutputDone)
+	if !ok || !bytes.Equal(output.Value, []byte(text)) || provider.states[0].Output == nil {
+		t.Fatalf("final output = %#v, state output=%#v", events[1], provider.states[0].Output)
+	}
+	if got := conversation.history; !reflect.DeepEqual(got, History{{Role: RoleUser, Blocks: []Block{user}}, message}) {
+		t.Fatalf("history = %#v, want messages only", got)
+	}
+	if provider.states[0].Output == conversation.output || !bytes.Equal(conversation.output.Schema, schema) {
+		t.Fatal("request did not own a defensive output-contract snapshot")
+	}
+}
+
+func TestStructuredOutputRejectsEmptyCompletedResponseWithoutCommit(t *testing.T) {
+	prior := History{{Role: RoleSystem, Blocks: []Block{Text{Text: "stable"}}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{}}}
+	transportCalls := 0
+	schema := json.RawMessage(`{"type":"object","properties":{},"required":[],"additionalProperties":false}`)
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: &OutputContract{Schema: schema}})
+	conversation.history = cloneHistory(prior)
+
+	stream := conversation.Send(context.Background(), Text{Text: "answer"})
+	events := drainStream(stream)
+
+	// R-U758-JFQQ
+	if stream.Err() == nil || !strings.Contains(stream.Err().Error(), "$") || transportCalls != 1 || len(events) != 0 {
+		t.Fatalf("empty structured response: err=%v transport=%d events=%#v", stream.Err(), transportCalls, events)
+	}
+	if !reflect.DeepEqual(conversation.history, prior) {
+		t.Fatalf("empty structured response committed history: got %#v, want %#v", conversation.history, prior)
+	}
+}
+
+func TestStructuredOutputToolRoundTripSkipsTextValidation(t *testing.T) {
+	call := ToolUse{ID: "call", Name: "weather", Input: json.RawMessage(`{"city":"Oslo"}`)}
+	first := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "not json"}, call}}
+	finalText := `{"answer":"sunny"}`
+	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: finalText}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{
+		{MessageDone{Message: first}},
+		{MessageDone{Message: final}},
+	}}
+	transportCalls := 0
+	toolCalls := 0
+	schema := json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"answer":{"type":"string"}},"required":["answer"]}`)
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: &OutputContract{Schema: schema, MaxAttempts: 2}})
+	conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) {
+		toolCalls++
+		return "sunny", nil
+	})}
+	user := Message{Role: RoleUser, Blocks: []Block{Text{Text: "forecast"}}}
+	stream := conversation.Send(context.Background(), user.Blocks...)
+	events := drainStream(stream)
+	result := ToolResult{ToolUseID: call.ID, Content: "sunny"}
+	wantEvents := []Event{
+		MessageDone{Message: first},
+		ToolCall{Use: call},
+		ToolReturn{Result: result},
+		MessageDone{Message: final},
+		OutputDone{Value: json.RawMessage(finalText)},
+	}
+
+	// R-U8D4-X7HF
+	if stream.Err() != nil || transportCalls != 2 || toolCalls != 1 || len(provider.states) != 2 || !reflect.DeepEqual(events, wantEvents) {
+		t.Fatalf("tool output turn: err=%v transport=%d tool=%d states=%d events=%#v, want %#v",
+			stream.Err(), transportCalls, toolCalls, len(provider.states), events, wantEvents)
+	}
+	wantHistory := History{user, first, {Role: RoleTool, Blocks: []Block{result}}, final}
+	if !reflect.DeepEqual(conversation.history, wantHistory) {
+		t.Fatalf("committed tool output history = %#v, want %#v", conversation.history, wantHistory)
+	}
+	if provider.states[0].Output == nil || provider.states[1].Output == nil ||
+		provider.states[0].Output == provider.states[1].Output ||
+		!bytes.Equal(provider.states[1].Output.Schema, schema) || provider.states[1].Output.MaxAttempts != 2 {
+		t.Fatalf("output snapshots = %#v, %#v", provider.states[0].Output, provider.states[1].Output)
+	}
+	last := provider.states[1].History[len(provider.states[1].History)-1]
+	if last.Role != RoleTool || len(last.Blocks) != 1 {
+		t.Fatalf("second request history = %#v", provider.states[1].History)
+	}
+}
+
+func TestStructuredOutputRejectsLocalConstraintWithoutCommit(t *testing.T) {
+	prior := History{{Role: RoleSystem, Blocks: []Block{Text{Text: "stable"}}}}
+	message := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: `{"rows":[{"line":-3}]}`}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: message}}}}
+	transportCalls := 0
+	schema := json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"rows":{"type":"array","uniqueItems":true,"items":{"type":"object","additionalProperties":false,"properties":{"line":{"type":"number","minimum":0}},"required":["line"]}}},"required":["rows"]}`)
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: &OutputContract{Schema: schema}})
+	conversation.history = cloneHistory(prior)
+	stream := conversation.Send(context.Background(), Text{Text: "answer"})
+	events := drainStream(stream)
+
+	// R-UJC8-D55O
+	if stream.Err() == nil || !strings.Contains(stream.Err().Error(), "$.rows[0].line") || transportCalls != 1 {
+		t.Fatalf("local constraint result: err=%v transport=%d", stream.Err(), transportCalls)
+	}
+	if len(events) != 1 || !reflect.DeepEqual(events[0], MessageDone{Message: message}) || !reflect.DeepEqual(conversation.history, prior) {
+		t.Fatalf("rejected effects: events=%#v history=%#v", events, conversation.history)
+	}
+}
+
+func TestStructuredOutputFormatGateAndLocalMeaning(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{"when":{"type":"string","format":"date"}},"required":["when"]}`)
+	for _, test := range []struct {
+		name string
+		text string
+		ok   bool
+	}{{"valid", `{"when":"2024-02-29"}`, true}, {"invalid", `{"when":"2023-02-29"}`, false}} {
+		t.Run(test.name, func(t *testing.T) {
+			provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: test.text}}}}}}}
+			transportCalls := 0
+			stream := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: &OutputContract{Schema: schema}}).Send(context.Background(), Text{Text: "date"})
+			events := drainStream(stream)
+			// R-UKK4-QWWD
+			if (stream.Err() == nil) != test.ok || transportCalls != 1 || (len(events) == 2) != test.ok {
+				t.Fatalf("format turn: err=%v events=%#v transport=%d", stream.Err(), events, transportCalls)
+			}
+		})
+	}
+
+	provider := &phase15Provider{model: "model"}
+	transportCalls := 0
+	unsupported := json.RawMessage(`{"type":"object","properties":{"x":{"type":"string","format":"future"}},"required":["x"]}`)
+	stream := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: &OutputContract{Schema: unsupported}}).Send(context.Background(), Text{Text: "x"})
+	drainStream(stream)
+	if !errors.Is(stream.Err(), ErrInvalidConfig) || transportCalls != 0 || len(provider.states) != 0 {
+		t.Fatalf("unsupported format crossed provider gate: err=%v transport=%d", stream.Err(), transportCalls)
+	}
+}
+
+func TestStructuredOutputEarlyStopDoesNotCommit(t *testing.T) {
+	message := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: `{}`}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: message}}}}
+	transportCalls := 0
+	schema := json.RawMessage(`{"type":"object","properties":{},"required":[]}`)
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: &OutputContract{Schema: schema}})
+	stream := conversation.Send(context.Background(), Text{Text: "answer"})
+	seen := 0
+	for range stream.Events() {
+		seen++
+		if seen == 2 {
+			break
+		}
+	}
+	// R-UEGM-U26W
+	if seen != 2 || len(conversation.history) != 0 || len(drainStream(stream)) != 0 {
+		t.Fatalf("early output stop: seen=%d history=%#v", seen, conversation.history)
 	}
 }
 

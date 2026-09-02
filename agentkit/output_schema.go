@@ -7,10 +7,29 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"net"
+	"net/mail"
+	"net/netip"
+	"net/url"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
+	"time"
+	"unicode/utf8"
 )
+
+var supportedOutputFormats = map[string]func(string) bool{
+	"date-time": validOutputDateTime,
+	"date":      validOutputDate,
+	"time":      validOutputTime,
+	"email":     validOutputEmail,
+	"uri":       validOutputURI,
+	"uuid":      validOutputUUID,
+	"ipv4":      validOutputIPv4,
+	"ipv6":      validOutputIPv6,
+	"hostname":  validOutputHostname,
+}
 
 // OutputSchema derives an output-subset schema from T's jsonschema struct
 // tags. Every represented field is required, and pointer fields are nullable.
@@ -109,17 +128,8 @@ func deriveOutputSchema(typeOf reflect.Type, visiting map[reflect.Type]bool) (ma
 
 // ValidateOutputSchema reports whether schema lies within the output subset.
 func ValidateOutputSchema(schema json.RawMessage) error {
-	decoder := json.NewDecoder(bytes.NewReader(schema))
-	decoder.UseNumber()
-	var document any
-	if err := decoder.Decode(&document); err != nil {
-		return fmt.Errorf("invalid JSON schema: %w", err)
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return errors.New("invalid JSON schema: multiple JSON values")
-		}
+	document, err := decodeSingleJSON(schema)
+	if err != nil {
 		return fmt.Errorf("invalid JSON schema: %w", err)
 	}
 	root, ok := document.(map[string]any)
@@ -244,8 +254,19 @@ func validateOutputKeywords(schema map[string]any, allowed map[string]bool, path
 	}
 	for _, keyword := range []string{"pattern", "format"} {
 		if value, present := schema[keyword]; present {
-			if _, ok := value.(string); !ok {
+			text, ok := value.(string)
+			if !ok {
 				return fmt.Errorf("%s: %s must be a string", path, keyword)
+			}
+			if keyword == "pattern" {
+				if _, err := regexp.Compile(text); err != nil {
+					return fmt.Errorf("%s: pattern is not a valid regular expression: %w", path, err)
+				}
+			}
+			if keyword == "format" {
+				if _, supported := supportedOutputFormats[text]; !supported {
+					return fmt.Errorf("%s: format %q is not supported", path, text)
+				}
 			}
 		}
 	}
@@ -574,4 +595,305 @@ func isOutputNonNegativeInteger(value any) bool {
 	number := value.(json.Number)
 	rational, _ := new(big.Rat).SetString(number.String())
 	return rational.Sign() >= 0
+}
+
+type outputViolation struct {
+	Path    string
+	Message string
+}
+
+func (v *outputViolation) Error() string {
+	return v.Path + ": " + v.Message
+}
+
+func validateOutputDocument(schema, document json.RawMessage) *outputViolation {
+	rootValue, err := decodeSingleJSON(schema)
+	if err != nil {
+		return &outputViolation{Path: "$", Message: "invalid retained schema: " + err.Error()}
+	}
+	root, ok := rootValue.(map[string]any)
+	if !ok {
+		return &outputViolation{Path: "$", Message: "schema root is not an object"}
+	}
+	value, err := decodeSingleJSON(document)
+	if err != nil {
+		return &outputViolation{Path: "$", Message: err.Error()}
+	}
+	validator := outputDocumentValidator{root: root}
+	return validator.validate(root, value, "$")
+}
+
+func decodeSingleJSON(data []byte) (any, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return nil, fmt.Errorf("invalid JSON: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return nil, errors.New("multiple JSON values")
+		}
+		return nil, fmt.Errorf("invalid trailing JSON: %w", err)
+	}
+	return value, nil
+}
+
+type outputDocumentValidator struct {
+	root map[string]any
+}
+
+func (v outputDocumentValidator) validate(schema map[string]any, value any, path string) *outputViolation {
+	if reference, present := schema["$ref"]; present {
+		target, _, err := outputSchemaValidator(v).resolveReference(reference, path)
+		if err != nil {
+			return &outputViolation{Path: path, Message: err.Error()}
+		}
+		return v.validate(target, value, path)
+	}
+	if branches, present := schema["anyOf"].([]any); present {
+		if value == nil {
+			for _, branch := range branches {
+				if branch.(map[string]any)["type"] == "null" {
+					return nil
+				}
+			}
+		}
+		for _, branch := range branches {
+			candidate := branch.(map[string]any)
+			if candidate["type"] != "null" {
+				return v.validate(candidate, value, path)
+			}
+		}
+	}
+	typeName := schema["type"].(string)
+	if !outputValueMatchesType(value, typeName) {
+		return &outputViolation{Path: path, Message: fmt.Sprintf("must be %s", typeName)}
+	}
+	if expected, present := schema["const"]; present && !equalOutputJSON(value, expected) {
+		return &outputViolation{Path: path, Message: "does not equal const"}
+	}
+	if choices, present := schema["enum"].([]any); present {
+		matched := false
+		for _, choice := range choices {
+			matched = matched || equalOutputJSON(value, choice)
+		}
+		if !matched {
+			return &outputViolation{Path: path, Message: "is not one of enum values"}
+		}
+	}
+	switch typeName {
+	case "object":
+		return v.validateObjectValue(schema, value.(map[string]any), path)
+	case "array":
+		return v.validateArrayValue(schema, value.([]any), path)
+	case "string":
+		return validateOutputString(schema, value.(string), path)
+	case "number", "integer":
+		return validateOutputNumber(schema, value, path)
+	}
+	return nil
+}
+
+func (v outputDocumentValidator) validateObjectValue(schema map[string]any, value map[string]any, path string) *outputViolation {
+	properties, _ := schema["properties"].(map[string]any)
+	required, _ := schema["required"].([]any)
+	for _, item := range required {
+		name := item.(string)
+		if _, present := value[name]; !present {
+			return &outputViolation{Path: outputPropertyPath(path, name), Message: "is required"}
+		}
+	}
+	for name, childValue := range value {
+		child, declared := properties[name]
+		if !declared {
+			return &outputViolation{Path: outputPropertyPath(path, name), Message: "property is not declared"}
+		}
+		if violation := v.validate(child.(map[string]any), childValue, outputPropertyPath(path, name)); violation != nil {
+			return violation
+		}
+	}
+	return nil
+}
+
+func (v outputDocumentValidator) validateArrayValue(schema map[string]any, value []any, path string) *outputViolation {
+	if violation := validateOutputCardinality(schema, len(value), path); violation != nil {
+		return violation
+	}
+	if unique, _ := schema["uniqueItems"].(bool); unique {
+		for index := range value {
+			for prior := range index {
+				if equalOutputJSON(value[index], value[prior]) {
+					return &outputViolation{Path: fmt.Sprintf("%s[%d]", path, index), Message: "must be unique"}
+				}
+			}
+		}
+	}
+	items := schema["items"].(map[string]any)
+	for index, item := range value {
+		if violation := v.validate(items, item, fmt.Sprintf("%s[%d]", path, index)); violation != nil {
+			return violation
+		}
+	}
+	return nil
+}
+
+func validateOutputCardinality(schema map[string]any, length int, path string) *outputViolation {
+	if minimum, present := outputSchemaInt(schema["minItems"]); present && length < minimum {
+		return &outputViolation{Path: path, Message: fmt.Sprintf("must contain at least %d items", minimum)}
+	}
+	if maximum, present := outputSchemaInt(schema["maxItems"]); present && length > maximum {
+		return &outputViolation{Path: path, Message: fmt.Sprintf("must contain at most %d items", maximum)}
+	}
+	return nil
+}
+
+func validateOutputString(schema map[string]any, value, path string) *outputViolation {
+	length := utf8.RuneCountInString(value)
+	if minimum, present := outputSchemaInt(schema["minLength"]); present && length < minimum {
+		return &outputViolation{Path: path, Message: fmt.Sprintf("length must be at least %d", minimum)}
+	}
+	if maximum, present := outputSchemaInt(schema["maxLength"]); present && length > maximum {
+		return &outputViolation{Path: path, Message: fmt.Sprintf("length must be at most %d", maximum)}
+	}
+	if pattern, present := schema["pattern"].(string); present && !regexp.MustCompile(pattern).MatchString(value) {
+		return &outputViolation{Path: path, Message: fmt.Sprintf("must match pattern %q", pattern)}
+	}
+	if format, present := schema["format"].(string); present && !supportedOutputFormats[format](value) {
+		return &outputViolation{Path: path, Message: fmt.Sprintf("must satisfy format %q", format)}
+	}
+	return nil
+}
+
+func validateOutputNumber(schema map[string]any, value any, path string) *outputViolation {
+	number, _ := outputFiniteNumber(value)
+	checks := []struct {
+		keyword string
+		valid   func(int) bool
+		text    string
+	}{
+		{"minimum", func(c int) bool { return c >= 0 }, "must be >="},
+		{"maximum", func(c int) bool { return c <= 0 }, "must be <="},
+		{"exclusiveMinimum", func(c int) bool { return c > 0 }, "must be >"},
+		{"exclusiveMaximum", func(c int) bool { return c < 0 }, "must be <"},
+	}
+	for _, check := range checks {
+		if limitValue, present := schema[check.keyword]; present {
+			limit, _ := outputFiniteNumber(limitValue)
+			if !check.valid(number.Cmp(limit)) {
+				return &outputViolation{Path: path, Message: check.text + " " + limitValue.(json.Number).String()}
+			}
+		}
+	}
+	if divisorValue, present := schema["multipleOf"]; present {
+		divisor, _ := outputFiniteNumber(divisorValue)
+		quotient := new(big.Rat).Quo(number, divisor)
+		if !quotient.IsInt() {
+			return &outputViolation{Path: path, Message: "must be a multiple of " + divisorValue.(json.Number).String()}
+		}
+	}
+	return nil
+}
+
+func equalOutputJSON(left, right any) bool {
+	if leftNumber, ok := outputFiniteNumber(left); ok {
+		rightNumber, rightOK := outputFiniteNumber(right)
+		return rightOK && leftNumber.Cmp(rightNumber) == 0
+	}
+	switch leftValue := left.(type) {
+	case map[string]any:
+		rightValue, ok := right.(map[string]any)
+		if !ok || len(leftValue) != len(rightValue) {
+			return false
+		}
+		for key, value := range leftValue {
+			other, present := rightValue[key]
+			if !present || !equalOutputJSON(value, other) {
+				return false
+			}
+		}
+		return true
+	case []any:
+		rightValue, ok := right.([]any)
+		if !ok || len(leftValue) != len(rightValue) {
+			return false
+		}
+		for index := range leftValue {
+			if !equalOutputJSON(leftValue[index], rightValue[index]) {
+				return false
+			}
+		}
+		return true
+	default:
+		return reflect.DeepEqual(left, right)
+	}
+}
+
+func outputSchemaInt(value any) (int, bool) {
+	number, ok := value.(json.Number)
+	if !ok {
+		return 0, false
+	}
+	integer, err := strconv.Atoi(number.String())
+	return integer, err == nil
+}
+
+func outputPropertyPath(path, name string) string {
+	if regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`).MatchString(name) {
+		return path + "." + name
+	}
+	encoded, _ := json.Marshal(name)
+	return path + "[" + string(encoded) + "]"
+}
+
+func validOutputDateTime(value string) bool {
+	_, err := time.Parse(time.RFC3339, value)
+	return err == nil
+}
+func validOutputDate(value string) bool { _, err := time.Parse("2006-01-02", value); return err == nil }
+func validOutputTime(value string) bool {
+	_, err := time.Parse(time.RFC3339, "2000-01-01T"+value)
+	return err == nil
+}
+func validOutputEmail(value string) bool {
+	address, err := mail.ParseAddress(value)
+	return err == nil && address.Address == value && strings.Contains(value, "@")
+}
+func validOutputURI(value string) bool {
+	parsed, err := url.ParseRequestURI(value)
+	return err == nil && parsed.IsAbs()
+}
+func validOutputUUID(value string) bool {
+	matched, _ := regexp.MatchString(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`, value)
+	return matched
+}
+func validOutputIPv4(value string) bool {
+	address, err := netip.ParseAddr(value)
+	return err == nil && address.Is4()
+}
+func validOutputIPv6(value string) bool {
+	address := net.ParseIP(value)
+	return address != nil && strings.Contains(value, ":")
+}
+func validOutputHostname(value string) bool {
+	if len(value) == 0 || len(value) > 253 || strings.HasSuffix(value, ".") {
+		return false
+	}
+	for _, label := range strings.Split(value, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, character := range label {
+			if !isOutputHostnameCharacter(character) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func isOutputHostnameCharacter(character rune) bool {
+	return character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' ||
+		character >= '0' && character <= '9' || character == '-'
 }
