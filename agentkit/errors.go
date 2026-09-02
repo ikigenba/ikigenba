@@ -80,6 +80,9 @@ var ErrInvalidConfig = errors.New("agentkit: invalid configuration")
 // ErrClosed identifies a conversation that can no longer accept a Send.
 var ErrClosed = errors.New("agentkit: conversation closed")
 
+// ErrInvalidOutput identifies structured output rejected after all attempts.
+var ErrInvalidOutput = errors.New("agentkit: structured output rejected")
+
 func categoryName(category Category) string {
 	switch category {
 	case CategoryAuth:

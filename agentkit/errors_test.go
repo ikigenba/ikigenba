@@ -24,6 +24,12 @@ func TestSentinelDeclarations(t *testing.T) {
 		"ErrInvalidConfig": ErrInvalidConfig,
 		"ErrClosed":        ErrClosed,
 	}
+	checkSentinelValues(t, wantMessages, sentinels)
+	checkDirectSentinelDeclarations(t, wantMessages)
+}
+
+func checkSentinelValues(t *testing.T, wantMessages map[string]string, sentinels map[string]error) {
+	t.Helper()
 	for name, sentinel := range sentinels {
 		if sentinel == nil {
 			t.Fatalf("%s is nil", name)
@@ -35,7 +41,10 @@ func TestSentinelDeclarations(t *testing.T) {
 	if errors.Is(ErrInvalidConfig, ErrClosed) || errors.Is(ErrClosed, ErrInvalidConfig) {
 		t.Fatal("ErrInvalidConfig and ErrClosed are the same sentinel")
 	}
+}
 
+func checkDirectSentinelDeclarations(t *testing.T, wantMessages map[string]string) {
+	t.Helper()
 	parsed, err := parser.ParseFile(token.NewFileSet(), "errors.go", nil, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -47,11 +56,11 @@ func TestSentinelDeclarations(t *testing.T) {
 			continue
 		}
 		for _, specification := range general.Specs {
-			valueSpecification := specification.(*ast.ValueSpec)
-			if len(valueSpecification.Names) != 1 {
+			value := specification.(*ast.ValueSpec)
+			if len(value.Names) != 1 {
 				continue
 			}
-			name := valueSpecification.Names[0].Name
+			name := value.Names[0].Name
 			wantMessage, wanted := wantMessages[name]
 			if !wanted {
 				continue
@@ -59,33 +68,14 @@ func TestSentinelDeclarations(t *testing.T) {
 			if !ast.IsExported(name) || found[name] {
 				t.Fatalf("%s is not one uniquely declared exported package variable", name)
 			}
-			if valueSpecification.Type != nil {
-				identifier, isError := valueSpecification.Type.(*ast.Ident)
+			if value.Type != nil {
+				identifier, isError := value.Type.(*ast.Ident)
 				if !isError || identifier.Name != "error" {
-					t.Fatalf("%s explicit static type is %T, want error", name, valueSpecification.Type)
+					t.Fatalf("%s explicit static type is %T, want error", name, value.Type)
 				}
 			}
-			if len(valueSpecification.Values) != 1 {
-				t.Fatalf("%s initializer count = %d, want one direct errors.New call", name, len(valueSpecification.Values))
-			}
-			call, isCall := valueSpecification.Values[0].(*ast.CallExpr)
-			if !isCall {
-				t.Fatalf("%s initializer = %T, want direct errors.New call", name, valueSpecification.Values[0])
-			}
-			selector, isSelector := call.Fun.(*ast.SelectorExpr)
-			packageName, hasPackageName := func() (*ast.Ident, bool) {
-				if !isSelector {
-					return nil, false
-				}
-				identifier, ok := selector.X.(*ast.Ident)
-				return identifier, ok
-			}()
-			if !isSelector || !hasPackageName || packageName.Name != "errors" || selector.Sel.Name != "New" || len(call.Args) != 1 {
-				t.Fatalf("%s is not initialized directly by errors.New with one argument", name)
-			}
-			message, isLiteral := call.Args[0].(*ast.BasicLit)
-			if !isLiteral || message.Kind != token.STRING || message.Value != fmt.Sprintf("%q", wantMessage) {
-				t.Fatalf("%s errors.New argument = %v, want exact message %q", name, call.Args[0], wantMessage)
+			if !isDirectErrorsNew(value, wantMessage) {
+				t.Fatalf("%s is not initialized directly by errors.New with exact message %q", name, wantMessage)
 			}
 			found[name] = true
 		}
@@ -97,8 +87,80 @@ func TestSentinelDeclarations(t *testing.T) {
 	}
 }
 
+func TestInvalidOutputSentinel(t *testing.T) {
+	// R-TRAJ-KF3P
+	t.Run("direct declaration", testInvalidOutputDeclaration)
+	t.Run("identity and wrapping", testInvalidOutputIdentityAndWrapping)
+}
+
+func testInvalidOutputDeclaration(t *testing.T) {
+	parsed, err := parser.ParseFile(token.NewFileSet(), "errors.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := 0
+	for _, declaration := range parsed.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok != token.VAR {
+			continue
+		}
+		for _, specification := range general.Specs {
+			value := specification.(*ast.ValueSpec)
+			if len(value.Names) != 1 || value.Names[0].Name != "ErrInvalidOutput" {
+				continue
+			}
+			found++
+			if !ast.IsExported(value.Names[0].Name) || !isDirectErrorsNew(value, "agentkit: structured output rejected") {
+				t.Fatal("ErrInvalidOutput is not declared directly with the exact errors.New message")
+			}
+		}
+	}
+	if found != 1 {
+		t.Fatalf("ErrInvalidOutput package declarations = %d, want exactly one", found)
+	}
+}
+
+func isDirectErrorsNew(value *ast.ValueSpec, wantMessage string) bool {
+	if len(value.Values) != 1 {
+		return false
+	}
+	call, ok := value.Values[0].(*ast.CallExpr)
+	if !ok || len(call.Args) != 1 {
+		return false
+	}
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != "New" {
+		return false
+	}
+	packageName, ok := selector.X.(*ast.Ident)
+	message, literal := call.Args[0].(*ast.BasicLit)
+	return ok && literal && packageName.Name == "errors" && message.Kind == token.STRING && message.Value == fmt.Sprintf("%q", wantMessage)
+}
+
+func testInvalidOutputIdentityAndWrapping(t *testing.T) {
+	if ErrInvalidOutput == nil || ErrInvalidOutput.Error() != "agentkit: structured output rejected" {
+		t.Fatalf("ErrInvalidOutput = %v, want exact non-nil sentinel", ErrInvalidOutput)
+	}
+	if !errors.Is(ErrInvalidOutput, ErrInvalidOutput) {
+		t.Fatal("errors.Is(ErrInvalidOutput, itself) = false")
+	}
+	if errors.Is(ErrInvalidOutput, ErrInvalidConfig) || errors.Is(ErrInvalidOutput, ErrClosed) {
+		t.Fatal("ErrInvalidOutput is not distinct from existing sentinels")
+	}
+	wrapped := &Error{err: fmt.Errorf("invalid document: %w", ErrInvalidOutput)}
+	if !errors.Is(wrapped, ErrInvalidOutput) {
+		t.Fatal("ErrInvalidOutput is not discoverable through *Error wrapping")
+	}
+}
+
 func TestErrorHasOnePublicShapeAndWrapsCause(t *testing.T) {
 	// R-2K5Z-AIWY
+	t.Run("category values", testCategoryValues)
+	t.Run("error shape", testErrorShape)
+	t.Run("error and unwrap", testErrorTextAndUnwrap)
+}
+
+func testCategoryValues(t *testing.T) {
 	categories := []Category{
 		CategoryUnknown,
 		CategoryAuth,
@@ -114,7 +176,9 @@ func TestErrorHasOnePublicShapeAndWrapsCause(t *testing.T) {
 			t.Fatalf("category at index %d has value %d, want exact value %d", value, category, value)
 		}
 	}
+}
 
+func testErrorShape(t *testing.T) {
 	type field struct {
 		name     string
 		typeName string
@@ -139,7 +203,9 @@ func TestErrorHasOnePublicShapeAndWrapsCause(t *testing.T) {
 			t.Fatalf("Error field %d = (%s, %s, exported=%t), want %#v", index, actual.Name, actual.Type, actual.IsExported(), expected)
 		}
 	}
+}
 
+func testErrorTextAndUnwrap(t *testing.T) {
 	cause := errors.New("socket closed")
 	providerError := &Error{
 		Category: CategoryTransport,
