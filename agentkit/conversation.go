@@ -20,6 +20,7 @@ type Conversation struct {
 	options   ProviderOptions
 	tools     []Tool
 	deferred  []DeferredGroup
+	output    *OutputContract
 	loaded    []string
 	validate  func() error
 	eventSink eventSink
@@ -58,6 +59,7 @@ func NewConversation(provider Provider, client *http.Client, cfg Config) *Conver
 		options:  cloneProviderOptions(cfg.Options),
 		tools:    cloneTools(cfg.Tools),
 		deferred: cloneDeferredGroups(cfg.Deferred),
+		output:   cloneOutputContract(cfg.Output),
 	}
 	if cfg.Log != nil {
 		conversation.eventSink = cfg.Log
@@ -204,6 +206,14 @@ func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator
 }
 
 func (c *Conversation) validateConfig() error {
+	if c.output != nil {
+		if err := ValidateOutputSchema(c.output.Schema); err != nil {
+			return fmt.Errorf("output schema: %w", err)
+		}
+		if c.output.MaxAttempts < 0 {
+			return fmt.Errorf("output MaxAttempts must not be negative: %d", c.output.MaxAttempts)
+		}
+	}
 	if c.validate != nil {
 		if err := c.validate(); err != nil {
 			return err
@@ -219,6 +229,15 @@ func (c *Conversation) validateConfig() error {
 		}
 	}
 	return nil
+}
+
+func cloneOutputContract(contract *OutputContract) *OutputContract {
+	if contract == nil {
+		return nil
+	}
+	clone := *contract
+	clone.Schema = append(json.RawMessage(nil), contract.Schema...)
+	return &clone
 }
 
 func (c *Conversation) roundTrip(ctx context.Context, state RequestState, yield func(Event) bool) ([]Event, bool, error) {

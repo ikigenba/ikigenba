@@ -983,6 +983,138 @@ func TestInvalidConfigInputsFailOnlyWhenSendIsConsumed(t *testing.T) {
 	}
 }
 
+func TestOutputContractValidationAtSendBoundary(t *testing.T) {
+	validSchema := json.RawMessage(`{"type":"object","properties":{},"required":[],"additionalProperties":false}`)
+	invalidSchema := json.RawMessage(`{"type":"object","oneOf":[]}`)
+	if err := ValidateOutputSchema(invalidSchema); err == nil {
+		t.Fatal("invalid-schema fixture unexpectedly passed ValidateOutputSchema")
+	}
+
+	invalid := []struct {
+		name       string
+		contract   *OutputContract
+		diagnostic string
+	}{
+		{name: "schema outside output subset", contract: &OutputContract{Schema: invalidSchema}, diagnostic: "oneOf"},
+		{name: "negative attempt limit", contract: &OutputContract{Schema: validSchema, MaxAttempts: -1}, diagnostic: "MaxAttempts"},
+	}
+	for _, test := range invalid {
+		t.Run(test.name, func(t *testing.T) {
+			provider := &phase15Provider{model: "model"}
+			transportCalls := 0
+			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: test.contract})
+			if conversation == nil {
+				t.Fatal("construction rejected output config before Send")
+			}
+			conversation.history = History{{Role: RoleSystem, Blocks: []Block{Text{Text: "unchanged"}}}}
+			before, err := json.Marshal(conversation.history)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			stream := conversation.Send(context.Background(), Text{Text: "not committed"})
+			if stream.Err() != nil || len(provider.states) != 0 || transportCalls != 0 {
+				t.Fatalf("unconsumed Stream crossed validation boundary: err=%v build=%d transport=%d", stream.Err(), len(provider.states), transportCalls)
+			}
+			events := drainStream(stream)
+			// R-U5XC-5O01
+			if !errors.Is(stream.Err(), ErrInvalidConfig) || !strings.Contains(stream.Err().Error(), test.diagnostic) {
+				t.Fatalf("Send error = %v, want diagnostic ErrInvalidConfig containing %q", stream.Err(), test.diagnostic)
+			}
+			if len(events) != 0 || len(provider.states) != 0 || provider.decodeCalls != 0 || provider.classifyCalls != 0 || transportCalls != 0 {
+				t.Fatalf("invalid output config effects: events=%#v build=%d decode=%d classify=%d transport=%d", events, len(provider.states), provider.decodeCalls, provider.classifyCalls, transportCalls)
+			}
+			after, err := json.Marshal(conversation.history)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(after, before) {
+				t.Fatalf("history changed: before=%s after=%s", before, after)
+			}
+
+			encodeCalls, mutateCalls, authCalls := 0, 0, 0
+			decodeCalls, classifyCalls, composedTransportCalls := 0, 0, 0
+			wire := boundaryWire(wireCapabilities{name: "output boundary"}, func(RequestState) {
+				encodeCalls++
+			}, func() {
+				decodeCalls++
+			})
+			endpoint, err := NewEndpoint(
+				"https://provider.invalid/generate",
+				authFunc(func(context.Context, *http.Request, []byte) error { authCalls++; return nil }),
+				WithMutator(func(*http.Request, *[]byte) error { mutateCalls++; return nil }),
+				WithClassifier(func(int, http.Header, []byte) error { classifyCalls++; return nil }),
+				WithHTTPClient(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+					composedTransportCalls++
+					return nil, errors.New("transport must not run")
+				})}),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			composed := newEndpointConversation(wire, endpoint, Identity{Endpoint: "controlled", Model: "model"}, Config{Output: test.contract})
+			composed.history = History{{Role: RoleSystem, Blocks: []Block{Text{Text: "unchanged"}}}}
+			composedBefore, err := json.Marshal(composed.history)
+			if err != nil {
+				t.Fatal(err)
+			}
+			composedStream := composed.Send(context.Background(), Text{Text: "not committed"})
+			composedEvents := drainStream(composedStream)
+			composedAfter, err := json.Marshal(composed.history)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// R-U5XC-5O01
+			if !errors.Is(composedStream.Err(), ErrInvalidConfig) || len(composedEvents) != 0 ||
+				encodeCalls != 0 || mutateCalls != 0 || authCalls != 0 || composedTransportCalls != 0 || decodeCalls != 0 || classifyCalls != 0 ||
+				!bytes.Equal(composedAfter, composedBefore) {
+				t.Fatalf("composed boundary effects: err=%v events=%#v encode=%d mutate=%d auth=%d transport=%d decode=%d classify=%d history=%s",
+					composedStream.Err(), composedEvents, encodeCalls, mutateCalls, authCalls, composedTransportCalls, decodeCalls, classifyCalls, composedAfter)
+			}
+		})
+	}
+
+	accepted := []struct {
+		name     string
+		contract *OutputContract
+	}{
+		{name: "nil contract"},
+		{name: "zero attempt limit", contract: &OutputContract{Schema: validSchema}},
+		{name: "positive attempt limit", contract: &OutputContract{Schema: validSchema, MaxAttempts: 2}},
+	}
+	for _, test := range accepted {
+		t.Run(test.name, func(t *testing.T) {
+			provider := &phase15Provider{model: "model"}
+			transportCalls := 0
+			stream := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: test.contract}).Send(context.Background(), Text{Text: "accepted"})
+			drainStream(stream)
+			// R-U5XC-5O01
+			if stream.Err() != nil || len(provider.states) != 1 || transportCalls != 1 {
+				t.Fatalf("accepted output boundary: err=%v build=%d transport=%d", stream.Err(), len(provider.states), transportCalls)
+			}
+		})
+	}
+}
+
+func TestOutputContractIsOwnedByConversation(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{},"required":[],"additionalProperties":false}`)
+	contract := &OutputContract{Schema: schema, MaxAttempts: 1}
+	provider := &phase15Provider{model: "model"}
+	transportCalls := 0
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: contract})
+
+	copy(schema[9:15], "broken")
+	contract.Schema = json.RawMessage(`{"type":"object","oneOf":[]}`)
+	contract.MaxAttempts = -1
+	stream := conversation.Send(context.Background(), Text{Text: "uses construction-time copy"})
+	drainStream(stream)
+
+	// R-U5XC-5O01
+	if stream.Err() != nil || len(provider.states) != 1 || transportCalls != 1 {
+		t.Fatalf("caller mutation altered retained output contract: err=%v build=%d transport=%d", stream.Err(), len(provider.states), transportCalls)
+	}
+}
+
 type captureEventSink struct {
 	records []eventRecord
 }
