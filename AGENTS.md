@@ -1,1 +1,1 @@
-read all `.agents/*/SKILL.md` files
+take note of the available skills: `.agents/*/SKILL.md`
