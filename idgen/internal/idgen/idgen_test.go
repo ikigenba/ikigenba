@@ -30,6 +30,20 @@ func callTimeOf(function func(string) (time.Time, error), id string) (time.Time,
 	return function(id)
 }
 
+func TestValidateAffineMapRejectsNonCoprimeMultiplier(t *testing.T) {
+	// R-Y36K-9M90
+	deferredPanic := false
+	func() {
+		defer func() {
+			deferredPanic = recover() != nil
+		}()
+		validateAffineMap(6, 36)
+	}()
+	if !deferredPanic {
+		t.Fatal("validateAffineMap(6, 36) did not panic for a non-coprime multiplier and modulus")
+	}
+}
+
 func TestTimeOfExportedSignature(t *testing.T) {
 	// R-U0TR-IPZM
 	want := Epoch()

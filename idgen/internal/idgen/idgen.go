@@ -39,7 +39,7 @@ var ErrTimeRange error = errors.New("time out of range")
 
 func init() {
 	validateDerivedConstants()
-	validateAffineMap()
+	validateAffineMap(multiplier, modulus)
 }
 
 func validateDerivedConstants() {
@@ -178,11 +178,10 @@ func validBodyPart(part string) bool {
 	return true
 }
 
-// validateAffineMap confirms that the shipped affine map (multiplier over
-// modulus) is invertible: modulus is positive and multiplier is coprime with
-// it, so MintAt/TimeOf form a bijection. It reads the package constants
-// directly because the process only ever ships those values.
-func validateAffineMap() {
+// validateAffineMap confirms that an affine map is invertible: modulus is
+// positive and multiplier is coprime with it, so encoding and decoding can
+// form a bijection.
+func validateAffineMap(multiplier, modulus int64) {
 	if modulus <= 0 {
 		panic("idgen: affine modulus must be positive")
 	}
