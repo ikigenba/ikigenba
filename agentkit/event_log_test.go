@@ -148,6 +148,7 @@ func decodeLogRecords(t *testing.T, data []byte) []LogRecord {
 
 func TestRecordTypeIsClosedEnumeration(t *testing.T) {
 	// R-0KYG-24RN
+	// R-URVJ-1JCJ
 	recordType := reflect.TypeFor[RecordType]()
 	if recordType.Name() != "RecordType" || recordType.Kind() != reflect.String {
 		t.Fatalf("RecordType = %q/%s, want defined string type", recordType.Name(), recordType.Kind())
@@ -158,6 +159,7 @@ func TestRecordTypeIsClosedEnumeration(t *testing.T) {
 		"RecordMessage":    "message",
 		"RecordToolUse":    "tool_use",
 		"RecordToolResult": "tool_result",
+		"RecordOutput":     "output",
 		"RecordUsage":      "usage",
 		"RecordError":      "error",
 		"RecordRetry":      "retry",
@@ -172,7 +174,8 @@ func TestRecordTypeIsClosedEnumeration(t *testing.T) {
 	values := map[string]RecordType{
 		"RecordTurnStart": RecordTurnStart, "RecordMessage": RecordMessage,
 		"RecordToolUse": RecordToolUse, "RecordToolResult": RecordToolResult,
-		"RecordUsage": RecordUsage, "RecordError": RecordError,
+		"RecordOutput": RecordOutput,
+		"RecordUsage":  RecordUsage, "RecordError": RecordError,
 		"RecordRetry": RecordRetry, "RecordTurnEnd": RecordTurnEnd,
 		"RecordSummary": RecordSummary,
 	}
@@ -185,6 +188,7 @@ func TestRecordTypeIsClosedEnumeration(t *testing.T) {
 
 func TestLogRecordDeclarationIsExact(t *testing.T) {
 	// R-0M6C-FWIC
+	// R-UT3F-FB38
 	typeOf := reflect.TypeFor[LogRecord]()
 	if typeOf.Name() != "LogRecord" || typeOf.Kind() != reflect.Struct {
 		t.Fatalf("LogRecord = %q/%s, want defined struct", typeOf.Name(), typeOf.Kind())
@@ -201,12 +205,58 @@ func TestLogRecordDeclarationIsExact(t *testing.T) {
 		{"Message", reflect.TypeFor[*Message](), `json:"message,omitempty"`},
 		{"ToolUse", reflect.TypeFor[*ToolUse](), `json:"tool_use,omitempty"`},
 		{"ToolResult", reflect.TypeFor[*ToolResult](), `json:"tool_result,omitempty"`},
+		{"Output", reflect.TypeFor[json.RawMessage](), `json:"output,omitempty"`},
 		{"Usage", reflect.TypeFor[*Usage](), `json:"usage,omitempty"`},
 		{"Cost", reflect.TypeFor[*Cost](), `json:"cost,omitempty"`},
 		{"Err", reflect.TypeFor[*Error](), `json:"error,omitempty"`},
 		{"Retry", reflect.TypeFor[*RetryInfo](), `json:"retry,omitempty"`},
 	}
 	assertExactStruct(t, typeOf, want)
+}
+
+func TestLogRecordOutputJSONCodec(t *testing.T) {
+	output := json.RawMessage(`{"answer":[1,true],"nested":{"value":"ok"}}`)
+	record := LogRecord{Type: RecordOutput, Output: output}
+
+	encoded, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &object); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(object["output"], output) {
+		t.Fatalf("encoded output = %s, want raw document %s", object["output"], output)
+	}
+	for _, key := range []string{"identity", "message", "tool_use", "tool_result", "usage", "cost", "error", "retry"} {
+		if _, present := object[key]; present {
+			t.Errorf("unrelated payload %q is present in %s", key, encoded)
+		}
+	}
+
+	var decoded LogRecord
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Type != RecordOutput || !bytes.Equal(decoded.Output, output) {
+		t.Fatalf("decoded output record = %#v, want type %q and output %s", decoded, RecordOutput, output)
+	}
+	if decoded.Identity != nil || decoded.Message != nil || decoded.ToolUse != nil || decoded.ToolResult != nil || decoded.Usage != nil || decoded.Cost != nil || decoded.Err != nil || decoded.Retry != nil {
+		t.Fatalf("decoded output record contains unrelated payloads: %#v", decoded)
+	}
+
+	empty, err := json.Marshal(LogRecord{Type: RecordOutput})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var emptyObject map[string]json.RawMessage
+	if err := json.Unmarshal(empty, &emptyObject); err != nil {
+		t.Fatal(err)
+	}
+	if _, present := emptyObject["output"]; present {
+		t.Fatalf("empty output was not omitted: %s", empty)
+	}
 }
 
 func TestRetryInfoDeclarationIsExact(t *testing.T) {

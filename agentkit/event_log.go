@@ -20,6 +20,7 @@ const (
 	RecordMessage    RecordType = "message"
 	RecordToolUse    RecordType = "tool_use"
 	RecordToolResult RecordType = "tool_result"
+	RecordOutput     RecordType = "output"
 	RecordUsage      RecordType = "usage"
 	RecordError      RecordType = "error"
 	RecordRetry      RecordType = "retry"
@@ -36,14 +37,15 @@ type LogRecord struct {
 	Time time.Time  `json:"time"`
 	Seq  int        `json:"seq"`
 
-	Identity   *Identity   `json:"identity,omitempty"`    // turn_start
-	Message    *Message    `json:"message,omitempty"`     // message (one completed Message, D2/D13)
-	ToolUse    *ToolUse    `json:"tool_use,omitempty"`    // tool_use
-	ToolResult *ToolResult `json:"tool_result,omitempty"` // tool_result
-	Usage      *Usage      `json:"usage,omitempty"`       // usage, summary
-	Cost       *Cost       `json:"cost,omitempty"`        // usage, summary
-	Err        *Error      `json:"error,omitempty"`       // error
-	Retry      *RetryInfo  `json:"retry,omitempty"`       // retry
+	Identity   *Identity       `json:"identity,omitempty"`    // turn_start
+	Message    *Message        `json:"message,omitempty"`     // message (one completed Message, D2/D13)
+	ToolUse    *ToolUse        `json:"tool_use,omitempty"`    // tool_use
+	ToolResult *ToolResult     `json:"tool_result,omitempty"` // tool_result
+	Output     json.RawMessage `json:"output,omitempty"`      // output (OutputDone.Value, D20)
+	Usage      *Usage          `json:"usage,omitempty"`       // usage, summary
+	Cost       *Cost           `json:"cost,omitempty"`        // usage, summary
+	Err        *Error          `json:"error,omitempty"`       // error
+	Retry      *RetryInfo      `json:"retry,omitempty"`       // retry
 }
 
 // RetryInfo records one backoff wait emitted by the retry driver (D14).
@@ -61,6 +63,7 @@ type logRecordJSON struct {
 	Message    json.RawMessage `json:"message,omitempty"`
 	ToolUse    *ToolUse        `json:"tool_use,omitempty"`
 	ToolResult *ToolResult     `json:"tool_result,omitempty"`
+	Output     json.RawMessage `json:"output,omitempty"`
 	Usage      *Usage          `json:"usage,omitempty"`
 	Cost       *Cost           `json:"cost,omitempty"`
 	Err        *Error          `json:"error,omitempty"`
@@ -72,7 +75,7 @@ type logRecordJSON struct {
 func (r LogRecord) MarshalJSON() ([]byte, error) {
 	encoded := logRecordJSON{
 		Type: r.Type, Time: r.Time, Seq: r.Seq, Identity: r.Identity,
-		ToolUse: r.ToolUse, ToolResult: r.ToolResult, Usage: r.Usage,
+		ToolUse: r.ToolUse, ToolResult: r.ToolResult, Output: r.Output, Usage: r.Usage,
 		Cost: r.Cost, Err: r.Err, Retry: r.Retry,
 	}
 	if r.Message != nil {
@@ -99,7 +102,7 @@ func (r *LogRecord) UnmarshalJSON(data []byte) error {
 	*r = LogRecord{
 		Type: encoded.Type, Time: encoded.Time, Seq: encoded.Seq,
 		Identity: encoded.Identity, ToolUse: encoded.ToolUse,
-		ToolResult: encoded.ToolResult, Usage: encoded.Usage,
+		ToolResult: encoded.ToolResult, Output: encoded.Output, Usage: encoded.Usage,
 		Cost: encoded.Cost, Err: encoded.Err, Retry: encoded.Retry,
 	}
 	if len(encoded.Message) != 0 {
