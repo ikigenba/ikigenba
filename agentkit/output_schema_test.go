@@ -402,7 +402,7 @@ func TestOutputDocumentValidatorEnforcesFullSchema(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			violation := validateOutputDocument(schema, json.RawMessage(test.doc))
-			if violation == nil || !strings.Contains(violation.Path, test.path) {
+			if violation == nil || !strings.Contains(violation.Violations[0].Path, test.path) {
 				t.Fatalf("violation = %#v, want path %q", violation, test.path)
 			}
 		})
@@ -414,7 +414,7 @@ func TestOutputDocumentValidatorEnforcesNumericConstraintFamilies(t *testing.T) 
 	schema := json.RawMessage(`{"type":"object","properties":{"value":{"type":"number","minimum":-2,"maximum":10,"exclusiveMinimum":-3,"exclusiveMaximum":11,"multipleOf":0.0000000000000000001}},"required":["value"]}`)
 	for _, value := range []string{"-3", "-2.1", "11", "10.0000000000000000001", "0.00000000000000000015"} {
 		violation := validateOutputDocument(schema, json.RawMessage(`{"value":`+value+`}`))
-		if violation == nil || violation.Path != "$.value" {
+		if violation == nil || violation.Violations[0].Path != "$.value" {
 			t.Errorf("constraint-only value %s violation = %#v", value, violation)
 		}
 	}
@@ -444,5 +444,37 @@ func TestOutputDocumentValidatorEnforcesSupportedFormats(t *testing.T) {
 		if violation := validateOutputDocument(schema, json.RawMessage(`{"value":"`+test.invalid+`"}`)); violation == nil {
 			t.Errorf("%s invalid value accepted", test.format)
 		}
+	}
+}
+
+func TestOutputDocumentValidatorCollectsStableExactViolations(t *testing.T) {
+	schema := json.RawMessage(`{
+		"type":"object","additionalProperties":false,
+		"properties":{
+			"items":{"type":"array","items":{"type":"object","additionalProperties":false,"properties":{"line":{"type":"number","minimum":0}},"required":["line"]}},
+			"name":{"type":"string","minLength":2,"pattern":"^[a-z]+$"},
+			"needed":{"type":"boolean"}
+		},"required":["items","name","needed"]}`)
+	document := json.RawMessage(`{"items":[{"line":-0.00000000000000000000001},{"line":-2}],"name":"","z":"a\nb"}`)
+	result := validateOutputDocument(schema, document)
+	if result == nil {
+		t.Fatal("multi-violation document accepted")
+	}
+	want := []outputViolation{
+		{Path: "$.needed", Rule: "is required", Present: false},
+		{Path: "$.items[0].line", Rule: "must be >= 0", Offending: json.Number("-0.00000000000000000000001"), Present: true},
+		{Path: "$.items[1].line", Rule: "must be >= 0", Offending: json.Number("-2"), Present: true},
+		{Path: "$.name", Rule: "length must be at least 2", Offending: "", Present: true},
+		{Path: "$.name", Rule: `must match pattern "^[a-z]+$"`, Offending: "", Present: true},
+		{Path: "$.z", Rule: "property must be declared by the schema", Offending: "a\nb", Present: true},
+	}
+	// R-UASX-OQYT
+	if !reflect.DeepEqual(result.Violations, want) {
+		t.Fatalf("violations = %#v, want stable exact %#v", result.Violations, want)
+	}
+	malformed := validateOutputDocument(schema, json.RawMessage(`{"items":`))
+	if malformed == nil || len(malformed.Violations) != 1 || malformed.Violations[0].Path != "$" ||
+		malformed.Violations[0].Offending != `{"items":` || !strings.Contains(malformed.Violations[0].Rule, "exactly one document") {
+		t.Fatalf("malformed diagnostic = %#v", malformed)
 	}
 }

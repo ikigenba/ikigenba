@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -33,6 +34,7 @@ var supportedOutputFormats = map[string]func(string) bool{
 
 // OutputSchema derives an output-subset schema from T's jsonschema struct
 // tags. Every represented field is required, and pointer fields are nullable.
+// llm-lint:ignore god-entrypoint
 func OutputSchema[T any]() (json.RawMessage, error) {
 	typeOf := reflect.TypeFor[T]()
 	if typeOf.Kind() != reflect.Struct {
@@ -130,6 +132,7 @@ func deriveOutputSchema(typeOf reflect.Type, visiting map[reflect.Type]bool) (ma
 func ValidateOutputSchema(schema json.RawMessage) error {
 	document, err := decodeSingleJSON(schema)
 	if err != nil {
+		// llm-lint:ignore error-context-restated-by-caller
 		return fmt.Errorf("invalid JSON schema: %w", err)
 	}
 	root, ok := document.(map[string]any)
@@ -598,29 +601,52 @@ func isOutputNonNegativeInteger(value any) bool {
 }
 
 type outputViolation struct {
-	Path    string
-	Message string
+	Path      string
+	Rule      string
+	Offending any
+	Present   bool
 }
 
 func (v *outputViolation) Error() string {
-	return v.Path + ": " + v.Message
+	return v.Path + ": " + v.Rule
 }
 
-func validateOutputDocument(schema, document json.RawMessage) *outputViolation {
+type outputValidationResult struct {
+	Violations []outputViolation
+}
+
+func newOutputValidationResult(violations []outputViolation) *outputValidationResult {
+	if len(violations) == 0 {
+		return nil
+	}
+	return &outputValidationResult{Violations: violations}
+}
+
+func (r *outputValidationResult) Error() string {
+	if r == nil || len(r.Violations) == 0 {
+		return ""
+	}
+	return (&r.Violations[0]).Error()
+}
+
+func validateOutputDocument(schema, document json.RawMessage) *outputValidationResult {
 	rootValue, err := decodeSingleJSON(schema)
 	if err != nil {
-		return &outputViolation{Path: "$", Message: "invalid retained schema: " + err.Error()}
+		return newOutputValidationResult([]outputViolation{{Path: "$", Rule: "retained schema must be valid: " + err.Error(), Offending: string(schema), Present: true}})
 	}
 	root, ok := rootValue.(map[string]any)
 	if !ok {
-		return &outputViolation{Path: "$", Message: "schema root is not an object"}
+		return newOutputValidationResult([]outputViolation{{Path: "$", Rule: "retained schema root must be an object", Offending: rootValue, Present: true}})
 	}
 	value, err := decodeSingleJSON(document)
 	if err != nil {
-		return &outputViolation{Path: "$", Message: err.Error()}
+		return newOutputValidationResult([]outputViolation{{
+			Path: "$", Rule: "must be valid JSON containing exactly one document: " + err.Error(),
+			Offending: string(document), Present: true,
+		}})
 	}
 	validator := outputDocumentValidator{root: root}
-	return validator.validate(root, value, "$")
+	return newOutputValidationResult(validator.validate(root, value, "$"))
 }
 
 func decodeSingleJSON(data []byte) (any, error) {
@@ -628,6 +654,7 @@ func decodeSingleJSON(data []byte) (any, error) {
 	decoder.UseNumber()
 	var value any
 	if err := decoder.Decode(&value); err != nil {
+		// llm-lint:ignore io-error-mapped-to-data-error
 		return nil, fmt.Errorf("invalid JSON: %w", err)
 	}
 	var trailing any
@@ -644,11 +671,11 @@ type outputDocumentValidator struct {
 	root map[string]any
 }
 
-func (v outputDocumentValidator) validate(schema map[string]any, value any, path string) *outputViolation {
+func (v outputDocumentValidator) validate(schema map[string]any, value any, path string) []outputViolation {
 	if reference, present := schema["$ref"]; present {
 		target, _, err := outputSchemaValidator(v).resolveReference(reference, path)
 		if err != nil {
-			return &outputViolation{Path: path, Message: err.Error()}
+			return []outputViolation{{Path: path, Rule: err.Error(), Offending: value, Present: true}}
 		}
 		return v.validate(target, value, path)
 	}
@@ -669,10 +696,11 @@ func (v outputDocumentValidator) validate(schema map[string]any, value any, path
 	}
 	typeName := schema["type"].(string)
 	if !outputValueMatchesType(value, typeName) {
-		return &outputViolation{Path: path, Message: fmt.Sprintf("must be %s", typeName)}
+		return []outputViolation{{Path: path, Rule: fmt.Sprintf("must be %s", typeName), Offending: value, Present: true}}
 	}
+	var violations []outputViolation
 	if expected, present := schema["const"]; present && !equalOutputJSON(value, expected) {
-		return &outputViolation{Path: path, Message: "does not equal const"}
+		violations = append(violations, outputViolation{Path: path, Rule: "must equal const", Offending: value, Present: true})
 	}
 	if choices, present := schema["enum"].([]any); present {
 		matched := false
@@ -680,93 +708,99 @@ func (v outputDocumentValidator) validate(schema map[string]any, value any, path
 			matched = matched || equalOutputJSON(value, choice)
 		}
 		if !matched {
-			return &outputViolation{Path: path, Message: "is not one of enum values"}
+			violations = append(violations, outputViolation{Path: path, Rule: "must be one of the enum values", Offending: value, Present: true})
 		}
 	}
 	switch typeName {
 	case "object":
-		return v.validateObjectValue(schema, value.(map[string]any), path)
+		violations = append(violations, v.validateObjectValue(schema, value.(map[string]any), path)...)
 	case "array":
-		return v.validateArrayValue(schema, value.([]any), path)
+		violations = append(violations, v.validateArrayValue(schema, value.([]any), path)...)
 	case "string":
-		return validateOutputString(schema, value.(string), path)
+		violations = append(violations, validateOutputString(schema, value.(string), path)...)
 	case "number", "integer":
-		return validateOutputNumber(schema, value, path)
+		violations = append(violations, validateOutputNumber(schema, value, path)...)
 	}
-	return nil
+	return violations
 }
 
-func (v outputDocumentValidator) validateObjectValue(schema map[string]any, value map[string]any, path string) *outputViolation {
+func (v outputDocumentValidator) validateObjectValue(schema map[string]any, value map[string]any, path string) []outputViolation {
 	properties, _ := schema["properties"].(map[string]any)
 	required, _ := schema["required"].([]any)
+	var violations []outputViolation
 	for _, item := range required {
 		name := item.(string)
 		if _, present := value[name]; !present {
-			return &outputViolation{Path: outputPropertyPath(path, name), Message: "is required"}
+			violations = append(violations, outputViolation{Path: outputPropertyPath(path, name), Rule: "is required", Present: false})
 		}
 	}
-	for name, childValue := range value {
+	names := make([]string, 0, len(value))
+	for name := range value {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		childValue := value[name]
 		child, declared := properties[name]
 		if !declared {
-			return &outputViolation{Path: outputPropertyPath(path, name), Message: "property is not declared"}
+			violations = append(violations, outputViolation{Path: outputPropertyPath(path, name), Rule: "property must be declared by the schema", Offending: childValue, Present: true})
+			continue
 		}
-		if violation := v.validate(child.(map[string]any), childValue, outputPropertyPath(path, name)); violation != nil {
-			return violation
-		}
+		violations = append(violations, v.validate(child.(map[string]any), childValue, outputPropertyPath(path, name))...)
 	}
-	return nil
+	return violations
 }
 
-func (v outputDocumentValidator) validateArrayValue(schema map[string]any, value []any, path string) *outputViolation {
-	if violation := validateOutputCardinality(schema, len(value), path); violation != nil {
-		return violation
-	}
+func (v outputDocumentValidator) validateArrayValue(schema map[string]any, value []any, path string) []outputViolation {
+	violations := validateOutputCardinality(schema, value, path)
 	if unique, _ := schema["uniqueItems"].(bool); unique {
 		for index := range value {
 			for prior := range index {
 				if equalOutputJSON(value[index], value[prior]) {
-					return &outputViolation{Path: fmt.Sprintf("%s[%d]", path, index), Message: "must be unique"}
+					violations = append(violations, outputViolation{Path: fmt.Sprintf("%s[%d]", path, index), Rule: "must be unique within the array", Offending: value[index], Present: true})
+					break
 				}
 			}
 		}
 	}
 	items := schema["items"].(map[string]any)
 	for index, item := range value {
-		if violation := v.validate(items, item, fmt.Sprintf("%s[%d]", path, index)); violation != nil {
-			return violation
-		}
+		violations = append(violations, v.validate(items, item, fmt.Sprintf("%s[%d]", path, index))...)
 	}
-	return nil
+	return violations
 }
 
-func validateOutputCardinality(schema map[string]any, length int, path string) *outputViolation {
-	if minimum, present := outputSchemaInt(schema["minItems"]); present && length < minimum {
-		return &outputViolation{Path: path, Message: fmt.Sprintf("must contain at least %d items", minimum)}
+func validateOutputCardinality(schema map[string]any, value []any, path string) []outputViolation {
+	var violations []outputViolation
+	if minimum, present := outputSchemaInt(schema["minItems"]); present && len(value) < minimum {
+		violations = append(violations, outputViolation{Path: path, Rule: fmt.Sprintf("must contain at least %d items", minimum), Offending: value, Present: true})
 	}
-	if maximum, present := outputSchemaInt(schema["maxItems"]); present && length > maximum {
-		return &outputViolation{Path: path, Message: fmt.Sprintf("must contain at most %d items", maximum)}
+	if maximum, present := outputSchemaInt(schema["maxItems"]); present && len(value) > maximum {
+		violations = append(violations, outputViolation{Path: path, Rule: fmt.Sprintf("must contain at most %d items", maximum), Offending: value, Present: true})
 	}
-	return nil
+	return violations
 }
 
-func validateOutputString(schema map[string]any, value, path string) *outputViolation {
+func validateOutputString(schema map[string]any, value, path string) []outputViolation {
+	var violations []outputViolation
 	length := utf8.RuneCountInString(value)
 	if minimum, present := outputSchemaInt(schema["minLength"]); present && length < minimum {
-		return &outputViolation{Path: path, Message: fmt.Sprintf("length must be at least %d", minimum)}
+		violations = append(violations, outputViolation{Path: path, Rule: fmt.Sprintf("length must be at least %d", minimum), Offending: value, Present: true})
 	}
 	if maximum, present := outputSchemaInt(schema["maxLength"]); present && length > maximum {
-		return &outputViolation{Path: path, Message: fmt.Sprintf("length must be at most %d", maximum)}
+		violations = append(violations, outputViolation{Path: path, Rule: fmt.Sprintf("length must be at most %d", maximum), Offending: value, Present: true})
 	}
 	if pattern, present := schema["pattern"].(string); present && !regexp.MustCompile(pattern).MatchString(value) {
-		return &outputViolation{Path: path, Message: fmt.Sprintf("must match pattern %q", pattern)}
+		violations = append(violations, outputViolation{Path: path, Rule: fmt.Sprintf("must match pattern %q", pattern), Offending: value, Present: true})
 	}
 	if format, present := schema["format"].(string); present && !supportedOutputFormats[format](value) {
-		return &outputViolation{Path: path, Message: fmt.Sprintf("must satisfy format %q", format)}
+		violations = append(violations, outputViolation{Path: path, Rule: fmt.Sprintf("must satisfy format %q", format), Offending: value, Present: true})
 	}
-	return nil
+	return violations
 }
 
-func validateOutputNumber(schema map[string]any, value any, path string) *outputViolation {
+func validateOutputNumber(schema map[string]any, value any, path string) []outputViolation {
+	var violations []outputViolation
 	number, _ := outputFiniteNumber(value)
 	checks := []struct {
 		keyword string
@@ -782,7 +816,7 @@ func validateOutputNumber(schema map[string]any, value any, path string) *output
 		if limitValue, present := schema[check.keyword]; present {
 			limit, _ := outputFiniteNumber(limitValue)
 			if !check.valid(number.Cmp(limit)) {
-				return &outputViolation{Path: path, Message: check.text + " " + limitValue.(json.Number).String()}
+				violations = append(violations, outputViolation{Path: path, Rule: check.text + " " + limitValue.(json.Number).String(), Offending: value, Present: true})
 			}
 		}
 	}
@@ -790,10 +824,10 @@ func validateOutputNumber(schema map[string]any, value any, path string) *output
 		divisor, _ := outputFiniteNumber(divisorValue)
 		quotient := new(big.Rat).Quo(number, divisor)
 		if !quotient.IsInt() {
-			return &outputViolation{Path: path, Message: "must be a multiple of " + divisorValue.(json.Number).String()}
+			violations = append(violations, outputViolation{Path: path, Rule: "must be a multiple of " + divisorValue.(json.Number).String(), Offending: value, Present: true})
 		}
 	}
-	return nil
+	return violations
 }
 
 func equalOutputJSON(left, right any) bool {

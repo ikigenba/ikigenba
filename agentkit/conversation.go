@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 // Conversation binds a provider and its stable identity to a growing
@@ -96,6 +97,7 @@ func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream {
 	}}
 }
 
+// llm-lint:ignore same-name-different-kind
 type turnAccounting struct {
 	usage        Usage
 	wireAmount   int64
@@ -133,6 +135,7 @@ type providerAccounting struct {
 }
 
 type accountingProvider interface {
+	// llm-lint:ignore same-name-different-kind
 	turnAccounting() providerAccounting
 }
 
@@ -164,6 +167,14 @@ func (c *Conversation) snapshotTurn(blocks []Block) turnSnapshot {
 }
 
 func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator, snapshot turnSnapshot, yield func(Event) bool, accounting *turnAccounting) error {
+	outputAttempts := 0
+	outputLimit := 0
+	if c.output != nil {
+		outputLimit = c.output.MaxAttempts
+		if outputLimit == 0 {
+			outputLimit = DefaultOutputAttempts
+		}
+	}
 	for {
 		candidate := append(cloneHistory(snapshot.baseHistory), cloneHistory(snapshot.turn)...)
 		roundEvents, completed, err := c.roundTrip(ctx, RequestState{
@@ -190,9 +201,18 @@ func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator
 		snapshot.turn = append(snapshot.turn, assistant...)
 		if len(calls) == 0 {
 			if c.output != nil {
+				outputAttempts++
 				text := completedAssistantText(assistant)
-				if violation := validateOutputDocument(c.output.Schema, json.RawMessage(text)); violation != nil {
-					return fmt.Errorf("invalid structured output: %w", violation)
+				if result := validateOutputDocument(c.output.Schema, json.RawMessage(text)); result != nil {
+					if outputAttempts >= outputLimit {
+						return invalidOutputError(c.identity, outputAttempts)
+					}
+					corrective := correctiveOutputMessage(result)
+					snapshot.turn = append(snapshot.turn, corrective)
+					if !publishEvent(c.eventSink, yield, MessageDone{Message: corrective}) {
+						return nil
+					}
+					continue
 				}
 				if !yield(OutputDone{Value: append(json.RawMessage(nil), text...)}) {
 					return nil
@@ -213,6 +233,39 @@ func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator
 		toolMessage := Message{Role: RoleTool, Blocks: results}
 		snapshot.turn = append(snapshot.turn, toolMessage)
 	}
+}
+
+func invalidOutputError(identity Identity, attempts int) *Error {
+	message := fmt.Sprintf("structured output rejected after %d attempts", attempts)
+	return &Error{
+		Category: CategoryUnknown,
+		Message:  message,
+		Endpoint: identity,
+		err:      fmt.Errorf("%w: %s", ErrInvalidOutput, message),
+	}
+}
+
+func correctiveOutputMessage(result *outputValidationResult) Message {
+	var text strings.Builder
+	text.WriteString("Correct the structured output and return exactly one JSON document. Fix every violation:\n")
+	for _, violation := range result.Violations {
+		text.WriteString("- ")
+		text.WriteString(violation.Path)
+		text.WriteString(": ")
+		text.WriteString(violation.Rule)
+		text.WriteString("; offending value: ")
+		if !violation.Present {
+			text.WriteString("missing")
+		} else {
+			encoded, err := json.Marshal(violation.Offending)
+			if err != nil {
+				encoded = []byte("null")
+			}
+			text.Write(encoded)
+		}
+		text.WriteByte('\n')
+	}
+	return Message{Role: RoleUser, Blocks: []Block{Text{Text: text.String()}}}
 }
 
 func completedAssistantText(messages History) []byte {
