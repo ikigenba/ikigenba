@@ -1,8 +1,10 @@
 package agentkit
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
 )
 
 type openAIResponsesWire struct{ wireCodec }
@@ -161,11 +163,24 @@ func openAIRole(role Role) string {
 
 func newOpenAIResponsesDecoder() frameDecoder {
 	var text string
+	var functionCalls []*openAIResponsesFunctionCall
+	functionCallsByID := make(map[string]*openAIResponsesFunctionCall)
+	functionCallsByIndex := make(map[int]*openAIResponsesFunctionCall)
 	var normalizer usageNormalizer
 	return func(frame []byte) (*Message, usageFragment, bool, error) {
 		var event struct {
-			Type     string `json:"type"`
-			Delta    string `json:"delta"`
+			Type        string `json:"type"`
+			Delta       string `json:"delta"`
+			ItemID      string `json:"item_id"`
+			OutputIndex int    `json:"output_index"`
+			Arguments   string `json:"arguments"`
+			Item        struct {
+				ID        string `json:"id"`
+				Type      string `json:"type"`
+				CallID    string `json:"call_id"`
+				Name      string `json:"name"`
+				Arguments string `json:"arguments"`
+			} `json:"item"`
 			Response struct {
 				Usage struct {
 					InputTokens  *int64 `json:"input_tokens"`
@@ -185,14 +200,88 @@ func newOpenAIResponsesDecoder() frameDecoder {
 		switch event.Type {
 		case "response.output_text.delta":
 			text += event.Delta
+		case "response.output_item.added":
+			if event.Item.Type == "function_call" {
+				functionCall := &openAIResponsesFunctionCall{
+					itemID:      event.Item.ID,
+					outputIndex: event.OutputIndex,
+					callID:      event.Item.CallID,
+					name:        event.Item.Name,
+				}
+				functionCalls = append(functionCalls, functionCall)
+				functionCallsByID[functionCall.itemID] = functionCall
+				functionCallsByIndex[functionCall.outputIndex] = functionCall
+			}
+		case "response.function_call_arguments.delta":
+			if functionCall := openAIResponsesCallForEvent(functionCallsByID, functionCallsByIndex, event.ItemID, event.OutputIndex); functionCall != nil {
+				functionCall.argumentDeltas.WriteString(event.Delta)
+			}
+		case "response.function_call_arguments.done":
+			if functionCall := openAIResponsesCallForEvent(functionCallsByID, functionCallsByIndex, event.ItemID, event.OutputIndex); functionCall != nil {
+				functionCall.finalArguments = event.Arguments
+				functionCall.hasFinalArguments = true
+			}
+		case "response.output_item.done":
+			if event.Item.Type == "function_call" {
+				functionCall := openAIResponsesCallForEvent(functionCallsByID, functionCallsByIndex, event.Item.ID, event.OutputIndex)
+				if functionCall != nil {
+					functionCall.callID = event.Item.CallID
+					functionCall.name = event.Item.Name
+					functionCall.finalArguments = event.Item.Arguments
+					functionCall.hasFinalArguments = true
+				}
+			}
 		case "response.completed":
 			usage := event.Response.Usage
 			fragment := normalizer.update(usage.InputTokens, usage.InputDetails.CachedTokens, usage.OutputTokens, usage.OutputDetails.ReasoningTokens)
-			message := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: text}}}
+			blocks := make([]Block, 0, 1+len(functionCalls))
+			if text != "" {
+				blocks = append(blocks, Text{Text: text})
+			}
+			sort.SliceStable(functionCalls, func(left, right int) bool {
+				return functionCalls[left].outputIndex < functionCalls[right].outputIndex
+			})
+			for _, functionCall := range functionCalls {
+				toolUse, err := functionCall.toolUse()
+				if err != nil {
+					return nil, usageFragment{}, false, err
+				}
+				blocks = append(blocks, toolUse)
+			}
+			message := Message{Role: RoleAssistant, Blocks: blocks}
 			return &message, fragment, true, nil
 		}
 		return nil, usageFragment{}, false, nil
 	}
+}
+
+type openAIResponsesFunctionCall struct {
+	itemID            string
+	outputIndex       int
+	callID            string
+	name              string
+	argumentDeltas    bytes.Buffer
+	finalArguments    string
+	hasFinalArguments bool
+}
+
+func openAIResponsesCallForEvent(byID map[string]*openAIResponsesFunctionCall, byIndex map[int]*openAIResponsesFunctionCall, itemID string, outputIndex int) *openAIResponsesFunctionCall {
+	if itemID != "" {
+		return byID[itemID]
+	}
+	return byIndex[outputIndex]
+}
+
+func (c *openAIResponsesFunctionCall) toolUse() (ToolUse, error) {
+	arguments := c.argumentDeltas.Bytes()
+	if c.hasFinalArguments {
+		arguments = []byte(c.finalArguments)
+	}
+	arguments = bytes.TrimSpace(arguments)
+	if len(arguments) == 0 || arguments[0] != '{' || !json.Valid(arguments) {
+		return ToolUse{}, fmt.Errorf("agentkit: OpenAI Responses function call %q arguments are not a JSON object", c.itemID)
+	}
+	return ToolUse{ID: c.callID, Name: c.name, Input: append(json.RawMessage(nil), arguments...)}, nil
 }
 
 func renderOpenAIResponsesTools(tools []Tool) (json.RawMessage, error) {
