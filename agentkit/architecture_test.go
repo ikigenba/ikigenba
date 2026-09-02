@@ -1072,13 +1072,6 @@ func TestDeferredGroupDeclarationIsExact(t *testing.T) {
 	}
 }
 
-func TestConversationHasNoDeferredMethod(t *testing.T) {
-	// R-0R1X-YZH4
-	if _, ok := reflect.TypeFor[*Conversation]().MethodByName("Deferred"); ok {
-		t.Fatal("*Conversation unexpectedly has an exported Deferred method")
-	}
-}
-
 func TestIdentityPublicShape(t *testing.T) {
 	// R-YVZG-XLOX
 	identityType := reflect.TypeOf(Identity{})

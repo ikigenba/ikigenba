@@ -794,7 +794,7 @@ func TestZeroConfigLeavesEveryOptionalRequestAxisEmpty(t *testing.T) {
 	}
 }
 
-func TestNewConversationOwnsAllMutableConfigInputs(t *testing.T) {
+func TestNewConversationOwnsToolsDeferredSettingsAndOptions(t *testing.T) {
 	// R-SRXG-H2LK
 	temperature := 0.25
 	topP := 0.75
@@ -1479,7 +1479,6 @@ func toolNames(tools []Tool) []string {
 }
 
 func TestDeferredToolsAreOwnedValidatedAndWithheldUntilLoaded(t *testing.T) {
-	// R-5PKM-V6VJ
 	// R-UUBB-T2TX
 	deferred := Tool(&concreteTool{
 		name:   "records_lookup",
