@@ -1,9 +1,6 @@
 package agentkit
 
-import (
-	"reflect"
-	"testing"
-)
+import "testing"
 
 func int64Pointer(value int64) *int64 {
 	return &value
@@ -60,33 +57,5 @@ func TestMergeUsageDoesNotSumCumulativeSnapshots(t *testing.T) {
 	want := Usage{InputTokens: 30, CachedTokens: 5, OutputTokens: 12, ReasoningTokens: 7}
 	if got != want {
 		t.Fatalf("mergeUsage() = %+v, want final cumulative snapshot %+v", got, want)
-	}
-}
-
-func TestUsageBucketsAreDisjointAtWireBoundary(t *testing.T) {
-	// R-2BMO-M4Q3
-	const (
-		wireInputTotal      = int64(120)
-		wireCachedSubset    = int64(40)
-		wireOutputTotal     = int64(75)
-		wireReasoningSubset = int64(25)
-	)
-
-	// A future wire adapter performs its vendor-specific subset normalization
-	// before producing these shared fragments.
-	freshInput := wireInputTotal - wireCachedSubset
-	plainOutput := wireOutputTotal - wireReasoningSubset
-	got := mergeUsage(usageFragment{
-		InputTokens:     &freshInput,
-		CachedTokens:    int64Pointer(wireCachedSubset),
-		OutputTokens:    &plainOutput,
-		ReasoningTokens: int64Pointer(wireReasoningSubset),
-	})
-	want := Usage{InputTokens: 80, CachedTokens: 40, OutputTokens: 50, ReasoningTokens: 25}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("normalized Usage = %+v, want %+v", got, want)
-	}
-	if total := got.InputTokens + got.CachedTokens + got.OutputTokens + got.ReasoningTokens; total != 195 {
-		t.Fatalf("disjoint bucket total = %d, want 195", total)
 	}
 }

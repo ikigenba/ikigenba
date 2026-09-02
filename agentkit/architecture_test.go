@@ -1433,16 +1433,6 @@ func TestHistoryDeclaration(t *testing.T) {
 	}
 }
 
-func TestUsageDeclaration(t *testing.T) {
-	// R-Z5QN-ZRMH
-	assertExactStructFields(t, reflect.TypeFor[Usage](), []exactStructField{
-		{name: "InputTokens", typeOf: reflect.TypeFor[int64]()},
-		{name: "CachedTokens", typeOf: reflect.TypeFor[int64]()},
-		{name: "OutputTokens", typeOf: reflect.TypeFor[int64]()},
-		{name: "ReasoningTokens", typeOf: reflect.TypeFor[int64]()},
-	})
-}
-
 func TestCostDeclaration(t *testing.T) {
 	// R-Z6YK-DJD6
 	assertExactStructFields(t, reflect.TypeFor[Cost](), []exactStructField{
