@@ -193,7 +193,6 @@ func TestConfigDeclarationIsExact(t *testing.T) {
 }
 
 func TestRequestStateDeclarationIsExact(t *testing.T) {
-	// R-09ZC-M73E
 	// R-UPFQ-9ZV5
 	stateType := reflect.TypeFor[RequestState]()
 	if stateType.Name() != "RequestState" || !token.IsExported(stateType.Name()) || stateType.Kind() != reflect.Struct {
