@@ -19,5 +19,5 @@ func (realClock) Sleep(d time.Duration) {
 }
 
 func main() {
-	os.Exit(cli.Run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr, realClock{}))
+	os.Exit(int(cli.Run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr, realClock{})))
 }

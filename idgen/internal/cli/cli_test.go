@@ -3,8 +3,10 @@ package cli
 import (
 	"bytes"
 	"go/ast"
+	"go/importer"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"io"
 	"os"
 	"os/exec"
@@ -17,6 +19,123 @@ import (
 
 	"github.com/ikigenba/ikigenba/idgen/internal/idgen"
 )
+
+type sourceTestImporter struct {
+	standard types.Importer
+}
+
+func (sourceTestImporter sourceTestImporter) Import(path string) (*types.Package, error) {
+	if path == "github.com/ikigenba/ikigenba/idgen/internal/idgen" {
+		pkg := types.NewPackage(path, "idgen")
+		pkg.MarkComplete()
+		return pkg, nil
+	}
+	return sourceTestImporter.standard.Import(path)
+}
+
+// R-VKIS-QBJ8: ExitCode is the sole exported defined exit-code type, with
+// exactly the three specified typed package constants and numeric values.
+func TestExitCodeDeclarationAndValues(t *testing.T) {
+	t.Parallel()
+
+	fset := token.NewFileSet()
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read cli package: %v", err)
+	}
+	files := make([]*ast.File, 0, len(entries))
+	var declarations int
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		file, parseErr := parser.ParseFile(fset, entry.Name(), nil, 0)
+		if parseErr != nil {
+			t.Fatalf("parse %s: %v", entry.Name(), parseErr)
+		}
+		files = append(files, file)
+		for _, declaration := range file.Decls {
+			general, ok := declaration.(*ast.GenDecl)
+			if !ok || general.Tok != token.TYPE {
+				continue
+			}
+			for _, specification := range general.Specs {
+				typeSpec := specification.(*ast.TypeSpec)
+				if typeSpec.Name.Name == "ExitCode" {
+					declarations++
+				}
+			}
+		}
+	}
+	if declarations != 1 {
+		t.Fatalf("found %d ExitCode declarations, want exactly 1", declarations)
+	}
+
+	checked, err := (&types.Config{
+		IgnoreFuncBodies: true,
+		Importer:         sourceTestImporter{standard: importer.Default()},
+	}).Check(
+		"github.com/ikigenba/ikigenba/idgen/internal/cli",
+		fset,
+		files,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("type-check cli package: %v", err)
+	}
+	exitObject, ok := checked.Scope().Lookup("ExitCode").(*types.TypeName)
+	if !ok || !exitObject.Exported() {
+		t.Fatalf("ExitCode object = %T, exported = %t; want exported type name", checked.Scope().Lookup("ExitCode"), ok && exitObject.Exported())
+	}
+	exitType, ok := exitObject.Type().(*types.Named)
+	if !ok {
+		t.Fatalf("ExitCode type = %T, want distinct defined type", exitObject.Type())
+	}
+	underlying, ok := exitType.Underlying().(*types.Basic)
+	if !ok || underlying.Kind() != types.Int {
+		t.Fatalf("ExitCode underlying type = %v, want int", exitType.Underlying())
+	}
+
+	wantConstants := map[string]string{
+		"exitSuccess": "0",
+		"exitFailure": "1",
+		"exitUsage":   "2",
+	}
+	gotConstants := make(map[string]string)
+	for _, name := range checked.Scope().Names() {
+		constant, ok := checked.Scope().Lookup(name).(*types.Const)
+		if ok && types.Identical(constant.Type(), exitType) {
+			gotConstants[name] = constant.Val().ExactString()
+		}
+	}
+	if len(gotConstants) != len(wantConstants) {
+		t.Fatalf("ExitCode constants = %v, want exactly %v", gotConstants, wantConstants)
+	}
+	for name, want := range wantConstants {
+		if got, exists := gotConstants[name]; !exists || got != want {
+			t.Errorf("%s = %q (present %t), want ExitCode value %s", name, got, exists, want)
+		}
+	}
+}
+
+// R-VLQP-439X: Run returns ExitCode directly and completes in-process.
+func TestRunReturnsExitCodeInProcess(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	result := struct{ code ExitCode }{
+		code: Run([]string{"--help"}, strings.NewReader(""), &stdout, &stderr, &fakeClock{}),
+	}
+	code := result.code
+
+	if code != exitSuccess {
+		t.Errorf("Run(--help) = %d, want %d", code, exitSuccess)
+	}
+	if stdout.String() != expectedUsage || stderr.Len() != 0 {
+		t.Errorf("Run(--help) streams = (%q, %q), want (%q, empty)", stdout.String(), stderr.String(), expectedUsage)
+	}
+}
 
 // R-U39K-A9H0: Clock is exported as an interface with exactly the specified
 // method names, parameter name and types, return type, and no embedded methods.
@@ -181,12 +300,12 @@ func (c *scheduledClock) Sleep(d time.Duration) {
 	c.now = c.now.Add(d)
 }
 
-func runMint(args []string, clock Clock) (string, string, exitCode) {
+func runMint(args []string, clock Clock) (string, string, ExitCode) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
 	code := Run(args, bytes.NewReader(nil), &stdout, &stderr, clock)
-	return stdout.String(), stderr.String(), exitCode(code)
+	return stdout.String(), stderr.String(), code
 }
 
 func assertMintLines(t *testing.T, output string) []string {
@@ -216,11 +335,11 @@ func decodedTimes(t *testing.T, ids []string) []time.Time {
 	return times
 }
 
-func runCLI(args []string, stdin string, clock Clock) (string, string, exitCode) {
+func runCLI(args []string, stdin string, clock Clock) (string, string, ExitCode) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	code := Run(args, strings.NewReader(stdin), &stdout, &stderr, clock)
-	return stdout.String(), stderr.String(), exitCode(code)
+	return stdout.String(), stderr.String(), code
 }
 
 func prefixAgreementSample(seed uint64) []string {
@@ -284,7 +403,7 @@ func TestRunHelpAliasesPrintUsageExactlyOnce(t *testing.T) {
 
 			exitCode := Run([]string{alias}, forbiddenReader{t: t}, &stdout, &stderr, clock)
 
-			if exitCode != int(exitSuccess) {
+			if exitCode != exitSuccess {
 				t.Errorf("Run(%q) exit code = %d, want %d", alias, exitCode, int(exitSuccess))
 			}
 			if got := stdout.String(); got != expectedUsage {
@@ -328,7 +447,7 @@ func TestRunLongVersionPrintsVersion(t *testing.T) {
 
 	exitCode := Run([]string{"--version"}, forbiddenReader{t: t}, &stdout, &stderr, clock)
 
-	if exitCode != int(exitSuccess) || stdout.String() != wantOutput || stderr.Len() != 0 {
+	if exitCode != exitSuccess || stdout.String() != wantOutput || stderr.Len() != 0 {
 		t.Errorf("Run() = (stdout %q, stderr %q, exit %d), want (%q, empty, %d)", stdout.String(), stderr.String(), exitCode, wantOutput, int(exitSuccess))
 	}
 	if clock.nowCalls != 0 || clock.sleepCalls != 0 {
@@ -403,7 +522,7 @@ func TestRunInformationalModesIgnoreOutputWriteErrors(t *testing.T) {
 
 		exitCode := Run(args, strings.NewReader(""), stdout, &stderr, &fakeClock{})
 
-		if exitCode != int(exitSuccess) {
+		if exitCode != exitSuccess {
 			t.Errorf("Run(%q) exit code = %d, want %d", args, exitCode, int(exitSuccess))
 		}
 		if stdout.writes != 1 {
@@ -423,7 +542,7 @@ func TestRunUnknownOptionPrintsDiagnosticAndUsageExactlyOnce(t *testing.T) {
 
 	exitCode := Run([]string{"--not-an-option"}, forbiddenReader{t: t}, &stdout, &stderr, clock)
 
-	if exitCode != int(exitUsage) {
+	if exitCode != exitUsage {
 		t.Errorf("Run() exit code = %d, want %d", exitCode, int(exitUsage))
 	}
 	if stdout.Len() != 0 {
@@ -582,7 +701,7 @@ func TestRunMintRejectsPositionalArgument(t *testing.T) {
 
 	exitCode := Run([]string{unexpected}, forbiddenReader{t: t}, &stdout, &stderr, clock)
 
-	if exitCode != int(exitUsage) {
+	if exitCode != exitUsage {
 		t.Errorf("Run() exit code = %d, want %d", exitCode, int(exitUsage))
 	}
 	if stdout.Len() != 0 {
@@ -605,7 +724,7 @@ func TestRunBareInvocationMintsOneDefaultID(t *testing.T) {
 
 	gotExit := Run([]string{}, bytes.NewReader(nil), &stdout, &stderr, clock)
 
-	if gotExit != int(exitSuccess) {
+	if gotExit != exitSuccess {
 		t.Errorf("Run() exit code = %d, want %d", gotExit, int(exitSuccess))
 	}
 	if got, want := stdout.String(), "R-"+"YQT6-50XA"+"\n"; got != want {
@@ -631,7 +750,7 @@ func TestRunMintReturnsFailureWhenOutputCannotBeWritten(t *testing.T) {
 
 	exitCode := Run(nil, strings.NewReader(""), stdout, &stderr, &fakeClock{now: time.Unix(0, 0)})
 
-	if exitCode != int(exitFailure) {
+	if exitCode != exitFailure {
 		t.Errorf("Run() exit code = %d, want %d", exitCode, int(exitFailure))
 	}
 	if stdout.writes != 1 {
@@ -836,7 +955,7 @@ func TestRunPrefixAliasesReplaceDefaultPrefix(t *testing.T) {
 
 			exitCode := Run(test.args, bytes.NewReader(nil), &stdout, &stderr, clock)
 
-			if exitCode != int(exitSuccess) {
+			if exitCode != exitSuccess {
 				t.Errorf("Run() exit code = %d, want %d", exitCode, int(exitSuccess))
 			}
 			if stderr.Len() != 0 {
@@ -887,7 +1006,7 @@ func TestRunRejectsInvalidPrefixesBeforeMinting(t *testing.T) {
 
 			exitCode := Run([]string{"--prefix", test.prefix}, bytes.NewReader(nil), &stdout, &stderr, clock)
 
-			if exitCode != int(exitUsage) {
+			if exitCode != exitUsage {
 				t.Errorf("Run() exit code = %d, want %d", exitCode, int(exitUsage))
 			}
 			if got, want := stderr.String(), "idgen: invalid prefix\n"+expectedUsage; got != want {
@@ -961,7 +1080,7 @@ func TestRunRejectsNonPositiveNumbersBeforeMinting(t *testing.T) {
 
 			exitCode := Run(test.args, bytes.NewReader(nil), &stdout, &stderr, clock)
 
-			if exitCode != int(exitUsage) {
+			if exitCode != exitUsage {
 				t.Errorf("Run() exit code = %d, want %d", exitCode, int(exitUsage))
 			}
 			if got, want := stderr.String(), "idgen: --number must be > 0\n"+expectedUsage; got != want {
@@ -1055,7 +1174,7 @@ func TestRunDecodeReturnsFailureWhenOutputCannotBeWritten(t *testing.T) {
 
 	exitCode := Run([]string{"--decode", token}, strings.NewReader(""), stdout, &stderr, &fakeClock{})
 
-	if exitCode != int(exitFailure) {
+	if exitCode != exitFailure {
 		t.Errorf("Run() exit code = %d, want %d", exitCode, int(exitFailure))
 	}
 	if stdout.writes != 1 {
@@ -1091,7 +1210,7 @@ func TestRunDecodeReportsWhenInputStopsEarly(t *testing.T) {
 
 	exitCode := Run([]string{"--decode"}, stdin, &stdout, &stderr, &fakeClock{})
 
-	if exitCode != int(exitFailure) {
+	if exitCode != exitFailure {
 		t.Errorf("Run() exit code = %d, want %d", exitCode, int(exitFailure))
 	}
 	if got, want := stdout.String(), decodedLine(instant); got != want {
@@ -1129,7 +1248,7 @@ func TestRunPositionalDecodeNeverReadsStdin(t *testing.T) {
 
 	exitCode := Run([]string{"--decode", id}, forbiddenReader{t: t}, &stdout, &stderr, &fakeClock{})
 
-	if exitCode != int(exitSuccess) || stdout.String() != decodedLine(instant) || stderr.Len() != 0 {
+	if exitCode != exitSuccess || stdout.String() != decodedLine(instant) || stderr.Len() != 0 {
 		t.Errorf("Run() = (stdout %q, stderr %q, exit %d), want (%q, empty, %d)", stdout.String(), stderr.String(), exitCode, decodedLine(instant), int(exitSuccess))
 	}
 }
@@ -1203,7 +1322,7 @@ func TestRunDecodeOutputIgnoresTZEnvironment(t *testing.T) {
 			os.Stderr,
 			&fakeClock{},
 		)
-		os.Exit(exitCode)
+		os.Exit(int(exitCode))
 	}
 
 	instant := time.Date(2026, time.June, 7, 8, 9, 10, 765432000, time.FixedZone("origin", 10*60*60))

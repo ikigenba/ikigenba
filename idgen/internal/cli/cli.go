@@ -14,16 +14,15 @@ import (
 	"github.com/ikigenba/ikigenba/idgen/internal/idgen"
 )
 
-// exitCode is the closed set of process exit statuses the CLI can produce. It
-// is threaded through every internal signature that carries a status, and is
-// converted to a bare int only at the exported Run boundary that os.Exit
-// requires.
-type exitCode int
+// ExitCode is the closed set of process exit statuses the CLI can produce. It
+// is threaded through every internal signature that carries a status and is
+// converted to a bare int only at the process boundary.
+type ExitCode int
 
 const (
-	exitSuccess exitCode = 0
-	exitFailure exitCode = 1
-	exitUsage   exitCode = 2
+	exitSuccess ExitCode = 0
+	exitFailure ExitCode = 1
+	exitUsage   ExitCode = 2
 )
 
 type commandMode uint8
@@ -186,7 +185,7 @@ type Clock interface {
 }
 
 // Run executes the CLI and returns its process exit code.
-func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, clock Clock) int {
+func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, clock Clock) ExitCode {
 	flags := flag.NewFlagSet("idgen", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.Usage = func() {
@@ -201,25 +200,25 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, clock Clock) 
 	if spelling := invalidOptionSpelling(flags, args); spelling != "" {
 		_, _ = io.WriteString(stderr, "flag provided but not defined: "+optionDiagnosticName(spelling)+"\n")
 		flags.Usage()
-		return int(exitUsage)
+		return exitUsage
 	}
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			return int(exitSuccess)
+			return exitSuccess
 		}
-		return int(exitUsage)
+		return exitUsage
 	}
 	switch modes.selected() {
 	case modeHelp:
 		writeInformationalOutput(stdout, usageText)
-		return int(exitSuccess)
+		return exitSuccess
 	case modeVersion:
 		writeInformationalOutput(stdout, version+"\n")
-		return int(exitSuccess)
+		return exitSuccess
 	case modeDecode:
-		return int(runDecode(flags.Args(), stdin, stdout, stderr))
+		return runDecode(flags.Args(), stdin, stdout, stderr)
 	default:
-		return int(runMintMode(flags.Args(), *number, *prefix, stdout, stderr, flags.Usage, clock))
+		return runMintMode(flags.Args(), *number, *prefix, stdout, stderr, flags.Usage, clock)
 	}
 }
 
@@ -238,7 +237,7 @@ func runMintMode(
 	stdout, stderr io.Writer,
 	usage func(),
 	clock Clock,
-) exitCode {
+) ExitCode {
 	if len(args) > 0 {
 		_, _ = io.WriteString(stderr, "idgen: unexpected argument "+strconv.Quote(args[0])+"\n")
 		usage()
@@ -257,7 +256,7 @@ func runMintMode(
 	return mintIdentifiers(number, prefix, stdout, stderr, clock)
 }
 
-func mintIdentifiers(number int, prefix string, stdout, stderr io.Writer, clock Clock) exitCode {
+func mintIdentifiers(number int, prefix string, stdout, stderr io.Writer, clock Clock) ExitCode {
 	// previousMillisecond is nil until the first id is minted, so "no id yet" is
 	// a state distinct from any real millisecond value (including 0, a valid
 	// Unix millisecond). The nil check is the single mechanism gating the
@@ -322,7 +321,7 @@ func formatUTC(instant time.Time) string {
 	return instant.UTC().Format("2006-01-02T15:04:05.000Z")
 }
 
-func runDecode(args []string, stdin io.Reader, stdout, stderr io.Writer) exitCode {
+func runDecode(args []string, stdin io.Reader, stdout, stderr io.Writer) ExitCode {
 	failed := false
 	var inputErr error
 	out := bufio.NewWriter(stdout)
