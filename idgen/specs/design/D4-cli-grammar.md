@@ -24,8 +24,9 @@ is a usage error that names the unexpected argument. `-n`/`-p` supplied
 alongside `--decode` are accepted but inert (they are mint concerns with no
 decode meaning).
 
-Exit-code taxonomy, as package constants `exitSuccess = 0`, `exitFailure = 1`,
-`exitUsage = 2`:
+Exit-code taxonomy, as the exported type `ExitCode` (underlying type `int`)
+with package constants `exitSuccess = 0`, `exitFailure = 1`, `exitUsage = 2`.
+`Run` returns this type (D1); `main` converts it to `int` for `os.Exit`:
 
 - `0` — success (including help and version).
 - `1` — decode data failure: at least one malformed id in an otherwise valid
@@ -37,7 +38,7 @@ Exit-code taxonomy, as package constants `exitSuccess = 0`, `exitFailure = 1`,
 
 ## REQUIREMENTS
 
-- R-U4HG-O17P: Package `internal/cli` MUST define a typed exit-code enumeration with exactly three named values: `exitSuccess` = 0, `exitFailure` = 1, and `exitUsage` = 2.
+- R-VKIS-QBJ8: Package `internal/cli` MUST export a type named `ExitCode` — a typed exit-code enumeration whose underlying type is `int` — with exactly three named values: `exitSuccess` = 0, `exitFailure` = 1, and `exitUsage` = 2.
 - R-U5PD-1SYE: The command MUST accept exactly this option set, with short and long forms equivalent where both exist: `-n`/`--number`, `-p`/`--prefix`, `--decode`, `-h`/`--help`, `-V`/`--version`; and no other options.
 - R-U6X9-FKP3: The `--number` option MUST default to 1 when not supplied.
 - R-U855-TCFS: The `--prefix` option MUST default to `R` when not supplied.

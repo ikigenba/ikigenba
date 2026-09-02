@@ -1,3 +1,7 @@
 # Build output
 bin/
 dist/
+
+# Spec build-loop working state
+specs/build/
+specs/issues/
