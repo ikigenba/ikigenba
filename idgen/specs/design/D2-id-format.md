@@ -37,17 +37,22 @@ func Epoch() time.Time
 // ErrInvalidID wraps the error TimeOf returns for a malformed id.
 var ErrInvalidID = errors.New("invalid id")
 
+// ErrTimeRange wraps the error MintAt returns for an instant outside the
+// representable window [Epoch(), Epoch()+36⁸ms).
+var ErrTimeRange = errors.New("time out of range")
+
 // ValidPrefix reports whether prefix is a well-formed id prefix: a non-empty
 // run of letters and digits, matching the prefix portion of the decode
 // grammar. It is the single authority on the prefix grammar; callers that
 // validate a prefix ask it rather than re-deriving the character class.
 func ValidPrefix(prefix string) bool
 
-// MintAt returns "<prefix>-XXXX-XXXX" for the given instant. Instants before
-// Epoch() are clamped to Epoch(). The caller guarantees prefix satisfies
-// ValidPrefix (cli validates at the flag boundary; D5); MintAt does not
-// re-validate.
-func MintAt(prefix string, t time.Time) string
+// MintAt returns "<prefix>-XXXX-XXXX" for the given instant, or an error
+// wrapping ErrTimeRange when t falls outside the representable window
+// [Epoch(), Epoch()+36⁸ms). Every id it returns round-trips through TimeOf to
+// t. The caller guarantees prefix satisfies ValidPrefix (cli validates at the
+// flag boundary; D5); MintAt does not re-validate.
+func MintAt(prefix string, t time.Time) (string, error)
 
 // TimeOf inverts the body of any "<prefix>-XXXX-XXXX" id to the instant it
 // was minted from, at millisecond precision, in UTC. Ids of any prefix
@@ -81,15 +86,16 @@ against the shipping binary):
 
 ## REQUIREMENTS
 
-- R-TZLV-4Y8X: Package `idgen` MUST export `MintAt(prefix string, t time.Time) string`.
+- R-FRLW-OBWD: Package `idgen` MUST export `MintAt(prefix string, t time.Time) (string, error)`.
 - R-U0TR-IPZM: Package `idgen` MUST export `TimeOf(id string) (time.Time, error)`.
-- R-U21N-WHQB: Package `idgen` MUST export `ErrInvalidID` as a package-level variable of type `error`, constructed with `errors.New`, so that `errors.Is(err, ErrInvalidID)` compares by identity.
+- R-AXI2-8KM2: Package `idgen` MUST export `ErrInvalidID` as a package-level variable whose static type is `error` and whose value is constructed with `errors.New`, so that `errors.Is(err, ErrInvalidID)` compares by identity; its static type MUST be checked by assignability (a compile-time `var _ error = ErrInvalidID`), not by requiring an explicit `error` annotation on the declaration.
+- R-FSTT-23N2: Package `idgen` MUST export `ErrTimeRange` as a package-level variable of type `error`, constructed with `errors.New`, so that `errors.Is(err, ErrTimeRange)` compares by identity.
 - R-SJ7P-ALD5: `TimeOf(MintAt(p, t))` MUST return `t` truncated to the millisecond, verified by an ordinary deterministic test (not a Go fuzz target) sweeping a large (hundreds+) PRNG-seeded sample of `ms ∈ [0, 36⁸)` across several valid prefixes.
 - R-HF29-98B6: Package `idgen` MUST expose the epoch as the exported function `Epoch() time.Time` returning 2026-01-01T00:00:00 UTC, and MUST NOT export it as an assignable package-level variable.
 - R-WHEV-1AN5: `MintAt("R", Epoch())` MUST return the id with prefix `R` and the independently derived golden body `0007-J3LA`, pinning the affine offset constant.
 - R-SLNI-24UJ: `MintAt("R", ...)` of the literal absolute instant 2026-03-15T12:00:00.000Z (written as a civil time, not as an offset from the `Epoch` symbol) MUST return the id with prefix `R` and the independently derived golden body `OBCA-0VLA`, pinning the affine multiplier, the 4-4 split, and the 2026 epoch together.
 - R-SMVE-FWL8: `MintAt` MUST zero-pad the body to exactly 8 characters for small millisecond values.
-- R-WIMR-F2DU: `MintAt` MUST clamp instants before `Epoch()` to `Epoch()` (they encode as ms 0).
+- R-FU1P-FVDR: `MintAt` MUST return an error wrapping `ErrTimeRange` for any `t` before `Epoch()` or at or after `Epoch()`+36⁸ ms, and a nil error for any `t` within the half-open window [`Epoch()`, `Epoch()`+36⁸ ms).
 - R-SPB7-7G2M: `TimeOf` MUST decode ids with differing prefixes (e.g. `R`, `S`, `SPEC`) but the same body to the same instant.
 - R-SQJ3-L7TB: `TimeOf` MUST return an error wrapping `ErrInvalidID` for every input that does not match the decode grammar `^[A-Za-z0-9]+-([0-9A-Z]{4})-([0-9A-Z]{4})$`.
 - R-SRQZ-YZK0: `TimeOf` MUST never panic, verified by an ordinary deterministic test (not a Go fuzz target) sweeping a large PRNG-seeded sample of arbitrary and adversarial strings, each of which yields either an `ErrInvalidID`-wrapping error or a valid time.

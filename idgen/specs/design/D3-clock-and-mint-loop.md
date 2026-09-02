@@ -30,6 +30,11 @@ Observable consequences of the contract:
   minted millisecond; the minted sequence within one invocation never repeats
   or goes backward. There is no cross-invocation protection — that is inherent
   to wall-clock ids and is documented, not defended against.
+- **Unrepresentable instant: fail, don't lie.** If the clock reports an
+  instant outside `idgen`'s representable window (D2), `MintAt` returns an
+  error rather than an id; the mint fails (exit 1) rather than emitting an id
+  that would decode to the wrong time. Unreachable with a real clock this side
+  of the ~89-year ceiling, but the loop handles it rather than trusting it.
 
 Each minted id is written to stdout on its own line, in mint order.
 
@@ -42,3 +47,4 @@ Each minted id is written to stdout on its own line, in mint order.
 - R-SZ2E-9M06: The default single mint MUST call `Sleep` zero times.
 - R-T0AA-NDQV: A minted id MUST decode (via `TimeOf`) to the millisecond of an instant the injected clock actually reported, never a future instant.
 - R-T1I7-15HK: With a fake clock that steps backward mid-sequence and recovers only as `Sleep` advances it, the minted millisecond sequence MUST be strictly increasing and MUST advance past the pre-step value (the loop waits out the excursion rather than emitting duplicates).
+- R-FV9L-TN4G: With a fake `Clock` reporting an instant outside `idgen`'s representable window (D2), `-n 1` MUST exit 1 with a non-empty stderr diagnostic and MUST NOT print an id.
