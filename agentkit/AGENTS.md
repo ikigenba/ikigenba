@@ -56,6 +56,14 @@ Rules are promoted individually: a promotion flips the rule file to
 Un-promoted rules stay disabled — they make no LLM calls and print nothing — so
 every finding the gate reports fails it.
 
+A per-finding `llm-lint:ignore` directive (and likewise a `//nolint` comment for
+golangci-lint) counts as a disabled linter. Never add one to make a gate pass.
+A finding is fixed by applying the rule's recommendation below the contract
+seam; if that cannot be done without changing an exported name, signature, or
+observable behavior, or if the finding is wrong, file an issue under
+`specs/issues/` so a human can adjudicate — restructure the code, sharpen the
+rule in `lint-rules/`, or amend the design.
+
 ## Commit conventions
 
 ```

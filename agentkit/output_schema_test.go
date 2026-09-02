@@ -47,8 +47,12 @@ type outputSchemaDerivationFixture struct {
 	Optional   *string                       `json:"optional,omitempty" jsonschema:"enum=yes|no,description=nullable choice,minLength=2,maxLength=3,pattern=^[a-z]+$,format=hostname"`
 	Deep       **outputSchemaNestedFixture   `json:"deep"`
 	Skipped    string                        `json:"-"`
-	unexported string                        //nolint:unused // Reflection is the behavior under test.
+	unexported string
 }
+
+// Reflection is the behavior under test: the unexported field exists only so
+// derivation can be seen to skip it.
+var _ = outputSchemaDerivationFixture{}.unexported
 
 type outputSchemaRecursiveFixture struct {
 	Next *outputSchemaRecursiveFixture `json:"next"`
@@ -56,8 +60,10 @@ type outputSchemaRecursiveFixture struct {
 
 func TestOutputSchemaHasExactPublicSignature(t *testing.T) {
 	// R-TL71-NKE8
-	// The explicit conversion proves the exact public function type.
-	derive := (func() (json.RawMessage, error))(OutputSchema[outputSchemaContractFixture]) //nolint:unconvert
+	derive := OutputSchema[outputSchemaContractFixture]
+	if got, want := reflect.TypeOf(derive), reflect.TypeOf((func() (json.RawMessage, error))(nil)); got != want {
+		t.Fatalf("OutputSchema[T] type = %v, want %v", got, want)
+	}
 	schema, err := derive()
 	if err != nil {
 		t.Fatalf("OutputSchema returned error: %v", err)

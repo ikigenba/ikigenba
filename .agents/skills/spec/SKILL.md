@@ -42,7 +42,7 @@ Each project has an `AGENTS.md` beside `specs/` that declares the concrete verif
 
 - **Toolchain**: the tools and versions that must be present.
 - **Test files**: where the project's tests live (the file set the canonical gap greps for ids).
-- **Gates**: an ordered list of exact commands, each of which must exit 0 to pass — there may be several (for example tests, end-to-end tests, and linting). All must pass, with no skips laundering a failure.
+- **Gates**: an ordered list of exact commands, each of which must exit 0 to pass — there may be several (for example tests, end-to-end tests, and linting). All must pass, with no skips laundering a failure. A per-finding suppression comment (`nolint`, `llm-lint:ignore`, `eslint-disable`, and the like) is a skip: build never adds one; a finding it cannot fix below the contract seam, or believes is wrong, is filed as an issue for a human to adjudicate.
 - **Commit conventions**: the phase-commit message format verify follows, plus any co-author/session trailer. Default:
 
   ```

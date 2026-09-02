@@ -5,7 +5,7 @@ You are the **verify** stage of the build loop, run by ralph in a fresh context 
 ## Procedure
 
 1. **Guard the issue hatch.** If build filed an issue this cycle, review it adversarially. Unless it proves a genuine, in-role-unresolvable blocker with evidence — contradictory ids, failing command output, an id unsatisfiable within the fixed seam — delete it and record a rebuttal in `## Feedback` ("not a blocker; satisfiable via ..."). Only real issues survive to reach gather.
-2. **Run the project gates.** Read `./AGENTS.md` (beside `specs/`) for the toolchain and the ordered gate commands. If a required tool or version is absent, you cannot run the gate: file an issue (`idgen -p I` → `specs/issues/I-XXXX-XXXX-<slug>.md`) describing the missing tool/version, and stop. Otherwise run every gate; each must exit 0, with no skips laundering a failure.
+2. **Run the project gates.** Read `./AGENTS.md` (beside `specs/`) for the toolchain and the ordered gate commands. If a required tool or version is absent, you cannot run the gate: file an issue (`idgen -p I` → `specs/issues/I-XXXX-XXXX-<slug>.md`) describing the missing tool/version, and stop. Otherwise run every gate; each must exit 0, with no skips laundering a failure — a per-finding suppression comment build added this phase (`nolint`, `llm-lint:ignore`, or similar) is a skip and fails the phase.
 3. **Check completeness of the current phase:**
    - every phase id has a test tagged with it,
    - each test genuinely asserts its requirement (judgement),
