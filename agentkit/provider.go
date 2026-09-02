@@ -37,7 +37,11 @@ func NewForWire(wireName KnownWire, endpoint Endpoint, model string, cfg Config)
 		return nil, fmt.Errorf("%w: unknown wire format %d", ErrInvalidConfig, wireName)
 	}
 
-	identity := Identity{Endpoint: endpoint.config.baseURL.String(), AuthMode: "custom", Model: model}
+	endpointIdentity := endpoint.config.name
+	if endpointIdentity == "" {
+		endpointIdentity = endpoint.config.baseURL.String()
+	}
+	identity := Identity{Endpoint: endpointIdentity, AuthMode: "custom", Model: model}
 	return newEndpointConversation(wire, endpoint, identity, cfg), nil
 }
 

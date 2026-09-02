@@ -29,6 +29,7 @@ var (
 )
 
 func TestEndpointDeclarationsAreExact(t *testing.T) {
+	// R-NYZ3-4C4B
 	// R-YEPA-QILV
 	// R-ZKDG-L0IT
 	// R-ZMT9-CK07
@@ -84,6 +85,7 @@ func TestEndpointDeclarationsAreExact(t *testing.T) {
 		t.Fatalf("NewEndpoint = %s variadic=%t, want %s variadic", constructor, constructor.IsVariadic(), wantConstructor)
 	}
 	optionFunctions := map[string]reflect.Type{
+		"WithName":       reflect.TypeOf(func(string) EndpointOption { return nil }),
 		"WithHeader":     reflect.TypeOf(func(string, string) EndpointOption { return nil }),
 		"WithFramer":     reflect.TypeOf(func(Framer) EndpointOption { return nil }),
 		"WithClassifier": reflect.TypeOf(func(ErrorClassifier) EndpointOption { return nil }),
@@ -91,6 +93,7 @@ func TestEndpointDeclarationsAreExact(t *testing.T) {
 		"WithHTTPClient": reflect.TypeOf(func(*http.Client) EndpointOption { return nil }),
 	}
 	actualFunctions := map[string]reflect.Type{
+		"WithName":   reflect.TypeOf(WithName),
 		"WithHeader": reflect.TypeOf(WithHeader), "WithFramer": reflect.TypeOf(WithFramer),
 		"WithClassifier": reflect.TypeOf(WithClassifier), "WithMutator": reflect.TypeOf(WithMutator),
 		"WithHTTPClient": reflect.TypeOf(WithHTTPClient),
@@ -2370,7 +2373,7 @@ func TestEndpointAndProviderArchitecture(t *testing.T) {
 			publicFunctions[function.Name.Name] = true
 		}
 	}
-	wantFunctions := []string{"NewEndpoint", "WithHeader", "WithFramer", "WithClassifier", "WithMutator", "WithHTTPClient"}
+	wantFunctions := []string{"NewEndpoint", "WithName", "WithHeader", "WithFramer", "WithClassifier", "WithMutator", "WithHTTPClient"}
 	if len(publicFunctions) != len(wantFunctions) {
 		t.Fatalf("endpoint public functions = %v, want exact option vocabulary", publicFunctions)
 	}

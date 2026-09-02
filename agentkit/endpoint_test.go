@@ -54,6 +54,18 @@ func TestNewEndpointValidatesRequiredInputsAndOptions(t *testing.T) {
 	}
 }
 
+func TestWithNameRejectsEmptyEndpointName(t *testing.T) {
+	// R-O1EV-VVLP
+	_, err := NewEndpoint(
+		"https://example.test",
+		authFunc(func(context.Context, *http.Request, []byte) error { return nil }),
+		WithName(""),
+	)
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("empty endpoint name error = %v, want ErrInvalidConfig", err)
+	}
+}
+
 func TestEndpointOwnsCompleteTransportConfiguration(t *testing.T) {
 	// R-YH53-I239
 	framerCalls := 0

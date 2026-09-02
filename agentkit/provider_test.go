@@ -142,6 +142,44 @@ func TestKnownWireModelCompositionRetainsModelVerbatim(t *testing.T) {
 	}
 }
 
+func TestNewForWireSelectsEndpointIdentity(t *testing.T) {
+	// R-O06Z-I3V0
+	auth := authFunc(func(context.Context, *http.Request, []byte) error { return nil })
+	tests := []struct {
+		name    string
+		baseURL string
+		options []EndpointOption
+		want    string
+	}{
+		{
+			name:    "configured name",
+			baseURL: "https://named.example.test/custom/path",
+			options: []EndpointOption{WithName("custom-deployment")},
+			want:    "custom-deployment",
+		},
+		{
+			name:    "base URL fallback",
+			baseURL: "https://fallback.example.test/custom/path",
+			want:    "https://fallback.example.test/custom/path",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			endpoint, err := NewEndpoint(test.baseURL, auth, test.options...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			conversation, err := NewForWire(KnownWireOpenAIResponses, endpoint, "model", Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if conversation.identity.Endpoint != test.want || conversation.provider.Identity().Endpoint != test.want {
+				t.Fatalf("endpoint identity = %q / %q, want %q", conversation.identity.Endpoint, conversation.provider.Identity().Endpoint, test.want)
+			}
+		})
+	}
+}
+
 func TestNewForWireUsesEveryKnownCodecAndSuppliedEndpoint(t *testing.T) {
 	// R-SLTY-K7W3
 	const model = "released/today:model-latest"

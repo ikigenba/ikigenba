@@ -37,6 +37,7 @@ const (
 )
 
 type endpointConfig struct {
+	name           string
 	baseURL        *url.URL
 	headers        http.Header
 	framer         Framer
@@ -45,6 +46,17 @@ type endpointConfig struct {
 	auth           AuthApplier
 	modelPlacement modelPlacement
 	client         *http.Client
+}
+
+// WithName sets the endpoint identity name used by generic wire conversations.
+func WithName(name string) EndpointOption {
+	return func(config *endpointConfig) error {
+		if name == "" {
+			return fmt.Errorf("%w: empty endpoint name", ErrInvalidConfig)
+		}
+		config.name = name
+		return nil
+	}
 }
 
 // WithHeader adds a static request header.
