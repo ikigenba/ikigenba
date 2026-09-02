@@ -44,12 +44,24 @@ type responsesNamedTool struct {
 	Name string `json:"name"`
 }
 
+type openAIResponsesJSONSchemaFormat struct {
+	Type   string          `json:"type"`
+	Name   string          `json:"name"`
+	Strict bool            `json:"strict"`
+	Schema json.RawMessage `json:"schema"`
+}
+
+type openAIResponsesText struct {
+	Format openAIResponsesJSONSchemaFormat `json:"format"`
+}
+
 type openAIResponsesRequest struct {
-	Model      string              `json:"model"`
-	Input      []json.RawMessage   `json:"input"`
-	Reasoning  *responsesReasoning `json:"reasoning,omitempty"`
-	ToolChoice any                 `json:"tool_choice,omitempty"`
-	Tools      json.RawMessage     `json:"tools,omitempty"`
+	Model      string               `json:"model"`
+	Input      []json.RawMessage    `json:"input"`
+	Reasoning  *responsesReasoning  `json:"reasoning,omitempty"`
+	ToolChoice any                  `json:"tool_choice,omitempty"`
+	Tools      json.RawMessage      `json:"tools,omitempty"`
+	Text       *openAIResponsesText `json:"text,omitempty"`
 }
 
 func (w *openAIResponsesWire) encodeRequest(state RequestState) ([]byte, error) {
@@ -59,6 +71,17 @@ func (w *openAIResponsesWire) encodeRequest(state RequestState) ([]byte, error) 
 	}
 	request := buildOpenAIResponsesRequest(input, state.Settings)
 	request.Model = state.Model
+	if state.Output != nil {
+		schema, renderErr := w.renderOutputSchema(state.Output.Schema)
+		if renderErr != nil {
+			return nil, fmt.Errorf("agentkit: render OpenAI Responses output schema: %w", renderErr)
+		}
+		request.Text = &openAIResponsesText{
+			Format: openAIResponsesJSONSchemaFormat{
+				Type: "json_schema", Name: "agentkit_output", Strict: true, Schema: schema,
+			},
+		}
+	}
 	if len(state.Tools) > 0 {
 		request.Tools, err = w.RenderTools(state.Tools)
 		if err != nil {
