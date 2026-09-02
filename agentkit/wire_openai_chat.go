@@ -1,8 +1,10 @@
 package agentkit
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
 )
 
 type openAIChatWire struct{ wireCodec }
@@ -115,12 +117,22 @@ func (w *openAIChatWire) encodeRequest(state RequestState) ([]byte, error) {
 
 func newOpenAIChatDecoder() frameDecoder {
 	var text string
+	toolCallsByIndex := make(map[int]*openAIChatStreamToolCall)
 	var normalizer usageNormalizer
 	return func(frame []byte) (*Message, usageFragment, bool, error) {
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
-					Content string `json:"content"`
+					Content   string `json:"content"`
+					ToolCalls []struct {
+						Index    int    `json:"index"`
+						ID       string `json:"id"`
+						Type     string `json:"type"`
+						Function struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
 				} `json:"delta"`
 				FinishReason *string `json:"finish_reason"`
 			} `json:"choices"`
@@ -140,8 +152,38 @@ func newOpenAIChatDecoder() frameDecoder {
 		}
 		for _, choice := range chunk.Choices {
 			text += choice.Delta.Content
+			for _, delta := range choice.Delta.ToolCalls {
+				toolCall := toolCallsByIndex[delta.Index]
+				if toolCall == nil {
+					toolCall = &openAIChatStreamToolCall{}
+					toolCallsByIndex[delta.Index] = toolCall
+				}
+				if delta.ID != "" {
+					toolCall.id = delta.ID
+				}
+				if delta.Function.Name != "" {
+					toolCall.name = delta.Function.Name
+				}
+				toolCall.arguments.WriteString(delta.Function.Arguments)
+			}
 			if choice.FinishReason != nil {
-				message := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: text}}}
+				blocks := make([]Block, 0, 1+len(toolCallsByIndex))
+				if text != "" {
+					blocks = append(blocks, Text{Text: text})
+				}
+				indices := make([]int, 0, len(toolCallsByIndex))
+				for index := range toolCallsByIndex {
+					indices = append(indices, index)
+				}
+				sort.Ints(indices)
+				for _, index := range indices {
+					toolUse, err := toolCallsByIndex[index].toolUse()
+					if err != nil {
+						return nil, usageFragment{}, false, err
+					}
+					blocks = append(blocks, toolUse)
+				}
+				message := Message{Role: RoleAssistant, Blocks: blocks}
 				return &message, usageFragment{}, false, nil
 			}
 		}
@@ -151,6 +193,20 @@ func newOpenAIChatDecoder() frameDecoder {
 		}
 		return nil, usageFragment{}, false, nil
 	}
+}
+
+type openAIChatStreamToolCall struct {
+	id        string
+	name      string
+	arguments bytes.Buffer
+}
+
+func (c *openAIChatStreamToolCall) toolUse() (ToolUse, error) {
+	input := bytes.TrimSpace(c.arguments.Bytes())
+	if len(input) == 0 || input[0] != '{' || !json.Valid(input) {
+		return ToolUse{}, fmt.Errorf("agentkit: OpenAI Chat tool call %q input is not a JSON object", c.id)
+	}
+	return ToolUse{ID: c.id, Name: c.name, Input: append(json.RawMessage(nil), input...)}, nil
 }
 
 func renderOpenAIChatTools(tools []Tool) (json.RawMessage, error) {
