@@ -13,7 +13,7 @@ func newGeminiWire(classifier wireClassifier) WireFormat {
 	wire.wireCodec = wireCodec{
 		encode:     wire.encodeRequest,
 		decoder:    newGeminiDecoder,
-		reserved:   []string{"gemini"},
+		reserved:   []string{"gemini", "generationConfig"},
 		classifier: classifier,
 		capabilities: wireCapabilities{
 			name:       "Gemini GenerateContent",
@@ -174,6 +174,7 @@ func buildGeminiThinkingConfig(reasoning ReasoningConfig) *geminiGenerationConfi
 		budget := reasoning.Budget
 		thinking = &geminiThinkingConfig{ThinkingBudget: &budget}
 	}
+	// Keep unknown or future reasoning modes absent instead of emitting a partial config.
 	if thinking == nil {
 		return nil
 	}
@@ -190,6 +191,7 @@ func buildGeminiToolConfig(choice ToolChoice) *geminiToolConfig {
 	case ToolChoiceTool:
 		calling = &geminiFunctionCallingConfig{Mode: "ANY", AllowedFunctionNames: []string{choice.Name}}
 	}
+	// Keep unknown or future tool-choice modes absent instead of emitting a partial config.
 	if calling == nil {
 		return nil
 	}

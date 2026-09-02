@@ -2155,6 +2155,65 @@ func TestProviderOptionsReservedCollisionFailsBeforeProviderBoundaries(t *testin
 	}
 }
 
+func TestBuiltInOutputOptionCollisionsFailBeforeProviderBoundaries(t *testing.T) {
+	// R-U3HJ-E4IN
+	tests := []struct {
+		name string
+		wire KnownWire
+		key  string
+	}{
+		{name: "anthropic_messages", wire: KnownWireAnthropicMessages, key: "output_config"},
+		{name: "openai_responses", wire: KnownWireOpenAIResponses, key: "text"},
+		{name: "openai_chat_completions", wire: KnownWireOpenAIChat, key: "response_format"},
+		{name: "gemini_generate_content", wire: KnownWireGemini, key: "generationConfig"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			authCalls := 0
+			transportCalls := 0
+			client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				transportCalls++
+				return nil, errors.New("unexpected HTTP request")
+			})}
+			endpoint, err := NewEndpoint(
+				"https://phase28.invalid",
+				authFunc(func(context.Context, *http.Request, []byte) error { authCalls++; return nil }),
+				WithHTTPClient(client),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			conversation, err := NewForWire(test.wire, endpoint, "phase28-model", Config{
+				Options: ProviderOptions{test.key: json.RawMessage(`{"collision":true}`)},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			conversation.history = History{{Role: RoleSystem, Blocks: []Block{Text{Text: "stable"}}}}
+			before, err := json.Marshal(conversation.history)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			stream := conversation.Send(context.Background(), Text{Text: "blocked"})
+			drainStream(stream)
+			if !errors.Is(stream.Err(), ErrInvalidConfig) {
+				t.Fatalf("Stream.Err() = %v, want ErrInvalidConfig", stream.Err())
+			}
+			after, err := json.Marshal(conversation.history)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if authCalls != 0 || transportCalls != 0 {
+				t.Fatalf("provider calls after collision: auth=%d HTTP=%d", authCalls, transportCalls)
+			}
+			if !bytes.Equal(before, after) {
+				t.Fatalf("history changed: before=%s after=%s", before, after)
+			}
+		})
+	}
+}
+
 func TestProviderOptionsNoncollidingSnapshotIsCloned(t *testing.T) {
 	// R-4V35-AXC6
 	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {

@@ -613,6 +613,103 @@ func assertPhase23ConstraintDescriptions(t *testing.T, document map[string]any) 
 	}
 }
 
+func TestBuiltInWiresReserveStructuredOutputEnvelopeKeys(t *testing.T) {
+	// R-U3HJ-E4IN
+	tests := []struct {
+		name string
+		wire WireFormat
+		want []string
+	}{
+		{name: "anthropic_messages", wire: newAnthropicWire(nil), want: []string{"anthropic", "output_config"}},
+		{name: "openai_responses", wire: newOpenAIResponsesWire(nil), want: []string{"openai", "text"}},
+		{name: "openai_chat_completions", wire: newOpenAIChatWire(nil), want: []string{"openai", "response_format"}},
+		{name: "gemini_generate_content", wire: newGeminiWire(nil), want: []string{"gemini", "generationConfig"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			reserved := test.wire.ReservedKeys()
+			if !slices.Equal(reserved, test.want) {
+				t.Fatalf("ReservedKeys() = %v, want %v", reserved, test.want)
+			}
+			reserved[len(reserved)-1] = "mutated"
+			if fresh := test.wire.ReservedKeys(); !slices.Equal(fresh, test.want) {
+				t.Fatalf("ReservedKeys() after caller mutation = %v, want defensive copy %v", fresh, test.want)
+			}
+		})
+	}
+}
+
+func TestNilOutputPreservesCapturedWireRequestBytes(t *testing.T) {
+	// R-U4PF-RW9C
+	for _, fixture := range wireFixtures() {
+		t.Run(fixture.name, func(t *testing.T) {
+			response, err := os.Open(fixture.response)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = response.Close() }()
+
+			wire := fixture.make(nil)
+			var message Message
+			for event, decodeErr := range wire.DecodeStream(SSEFrames(response)) {
+				if decodeErr != nil {
+					t.Fatal(decodeErr)
+				}
+				message = event.(MessageDone).Message
+			}
+			body, err := wire.EncodeRequest(RequestState{
+				Model:   "vendor/model:latest",
+				History: History{message},
+				Output:  nil,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := os.ReadFile(fixture.request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(body, want) {
+				t.Fatalf("nil-output request bytes = %q, want pre-D20 fixture bytes %q", body, want)
+			}
+
+			root := decodeOutputSchemaTestDocument(t, body)
+			outputKey := map[string]string{
+				"anthropic_messages":      "output_config",
+				"openai_responses":        "text",
+				"openai_chat_completions": "response_format",
+				"gemini_generate_content": "generationConfig",
+			}[fixture.name]
+			if _, exists := root[outputKey]; exists {
+				t.Fatalf("nil-output request contains %q: %s", outputKey, body)
+			}
+		})
+	}
+
+	reasoningBody, err := newGeminiWire(nil).EncodeRequest(RequestState{
+		History: History{{Role: RoleUser, Blocks: []Block{Text{Text: "reason"}}}},
+		Settings: Settings{
+			Reasoning: ReasoningConfig{Mode: ReasoningBudget, Budget: 321},
+		},
+		Output: nil,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	generationConfig, ok := decodeOutputSchemaTestDocument(t, reasoningBody)["generationConfig"].(map[string]any)
+	if !ok {
+		t.Fatalf("Gemini reasoning generationConfig is absent: %s", reasoningBody)
+	}
+	if thinking, ok := generationConfig["thinkingConfig"].(map[string]any); !ok || thinking["thinkingBudget"] != json.Number("321") {
+		t.Fatalf("Gemini thinkingConfig = %#v, want budget 321", generationConfig["thinkingConfig"])
+	}
+	for _, key := range []string{"responseMimeType", "responseJsonSchema"} {
+		if _, exists := generationConfig[key]; exists {
+			t.Errorf("nil-output Gemini reasoning request contains %q: %s", key, reasoningBody)
+		}
+	}
+}
+
 func TestWireSelectionIsConstructorOnly(t *testing.T) {
 	// R-2WCZ-48BW
 	conversationType := reflect.TypeFor[Conversation]()

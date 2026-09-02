@@ -14,7 +14,7 @@ func newAnthropicWire(classifier wireClassifier) WireFormat {
 	wire.wireCodec = wireCodec{
 		encode:     wire.encodeRequest,
 		decoder:    newAnthropicDecoder,
-		reserved:   []string{"anthropic"},
+		reserved:   []string{"anthropic", "output_config"},
 		classifier: classifier,
 		capabilities: wireCapabilities{
 			name:       "Anthropic Messages",

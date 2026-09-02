@@ -13,7 +13,7 @@ func newOpenAIChatWire(classifier wireClassifier) WireFormat {
 	wire.wireCodec = wireCodec{
 		encode:     wire.encodeRequest,
 		decoder:    newOpenAIChatDecoder,
-		reserved:   []string{"openai"},
+		reserved:   []string{"openai", "response_format"},
 		classifier: classifier,
 		capabilities: wireCapabilities{
 			name:       "OpenAI Chat Completions",

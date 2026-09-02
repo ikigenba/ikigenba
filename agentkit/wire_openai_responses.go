@@ -14,7 +14,7 @@ func newOpenAIResponsesWire(classifier wireClassifier) WireFormat {
 	wire.wireCodec = wireCodec{
 		encode:     wire.encodeRequest,
 		decoder:    newOpenAIResponsesDecoder,
-		reserved:   []string{"openai"},
+		reserved:   []string{"openai", "text"},
 		classifier: classifier,
 		capabilities: wireCapabilities{
 			name:       "OpenAI Responses",
