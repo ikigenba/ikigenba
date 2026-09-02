@@ -39,6 +39,7 @@ type geminiFunctionCall struct {
 }
 
 type geminiFunctionResponse struct {
+	ID       string `json:"id,omitempty"`
 	Name     string `json:"name"`
 	Response struct {
 		Output  string `json:"output"`
@@ -107,6 +108,7 @@ func (w *geminiWire) encodeRequest(state RequestState) ([]byte, error) {
 
 func buildGeminiContents(history []Message) ([]geminiContent, error) {
 	contents := make([]geminiContent, 0, len(history))
+	callNames := make(map[string]string)
 	for _, message := range history {
 		role := "user"
 		if message.Role == RoleAssistant {
@@ -126,9 +128,14 @@ func buildGeminiContents(history []Message) ([]geminiContent, error) {
 				}
 				content.Parts = append(content.Parts, part)
 			case ToolUse:
-				content.Parts = append(content.Parts, geminiPart{FunctionCall: &geminiFunctionCall{Name: block.Name, Args: block.Input}})
+				callNames[block.ID] = block.Name
+				content.Parts = append(content.Parts, geminiPart{FunctionCall: &geminiFunctionCall{ID: block.ID, Name: block.Name, Args: block.Input}})
 			case ToolResult:
-				response := &geminiFunctionResponse{Name: block.ToolUseID}
+				name := callNames[block.ToolUseID]
+				if name == "" {
+					name = block.ToolUseID
+				}
+				response := &geminiFunctionResponse{ID: block.ToolUseID, Name: name}
 				response.Response.Output = block.Content
 				response.Response.IsError = block.IsError
 				content.Parts = append(content.Parts, geminiPart{FunctionResponse: response})

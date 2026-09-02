@@ -64,6 +64,7 @@ func buildOpenAIChatMessages(history []Message) ([]chatMessage, error) {
 	messages := make([]chatMessage, 0, len(history))
 	for _, message := range history {
 		encoded := chatMessage{Role: openAIRole(message.Role)}
+		var toolResults []chatMessage
 		for _, block := range message.Blocks {
 			switch block := block.(type) {
 			case Text:
@@ -89,9 +90,18 @@ func buildOpenAIChatMessages(history []Message) ([]chatMessage, error) {
 			case ToolResult:
 				encoded.ToolCallID = block.ToolUseID
 				encoded.Content += block.Content
+				toolResults = append(toolResults, chatMessage{
+					Role:       openAIRole(RoleTool),
+					Content:    block.Content,
+					ToolCallID: block.ToolUseID,
+				})
 			}
 		}
-		messages = append(messages, encoded)
+		if message.Role == RoleTool && len(toolResults) > 1 {
+			messages = append(messages, toolResults...)
+		} else {
+			messages = append(messages, encoded)
+		}
 	}
 	return messages, nil
 }

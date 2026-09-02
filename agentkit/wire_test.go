@@ -5,11 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"iter"
 	"net/http"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -1064,6 +1066,361 @@ func wireFixturesByName() map[string]wireFixture {
 		"responses": fixtures[1],
 		"chat":      fixtures[2],
 		"gemini":    fixtures[3],
+	}
+}
+
+type wireLoopAuth struct{}
+
+func (wireLoopAuth) Apply(context.Context, *http.Request, []byte) error { return nil }
+
+type wireLoopTransport struct {
+	responses [][]byte
+	requests  [][]byte
+}
+
+func (transport *wireLoopTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	body, err := io.ReadAll(request.Body)
+	if err != nil {
+		return nil, err
+	}
+	transport.requests = append(transport.requests, append([]byte(nil), body...))
+	index := len(transport.requests) - 1
+	if index >= len(transport.responses) {
+		return nil, fmt.Errorf("unexpected HTTP round-trip %d", index+1)
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(bytes.NewReader(transport.responses[index])),
+	}, nil
+}
+
+type wireLoopCall struct {
+	id     string
+	name   string
+	input  map[string]any
+	result string
+}
+
+func TestEveryWireCompletesFixtureDrivenToolLoop(t *testing.T) {
+	// R-TF3J-QPOR
+	tests := []struct {
+		name       string
+		wire       KnownWire
+		toolCalls  string
+		final      string
+		blocks     []mixedToolBlock
+		assertBody func(*testing.T, []byte, []wireLoopCall)
+	}{
+		{"anthropic_messages", KnownWireAnthropicMessages, "testdata/anthropic_messages_tool_call.sse", "testdata/anthropic_messages.sse", anthropicMixedToolBlocks(), assertAnthropicLoopBody},
+		{"openai_responses", KnownWireOpenAIResponses, "testdata/openai_responses_tool_call.sse", "testdata/openai_responses.sse", openAIResponsesMixedToolBlocks(), assertResponsesLoopBody},
+		{"openai_chat_completions", KnownWireOpenAIChat, "testdata/openai_chat_completions_tool_call.sse", "testdata/openai_chat_completions.sse", openAIChatMixedToolBlocks(), assertChatLoopBody},
+		{"gemini_generate_content", KnownWireGemini, "testdata/gemini_generate_content_tool_call.sse", "testdata/gemini_generate_content.sse", geminiMixedToolBlocks(), assertGeminiLoopBody},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			calls := loopCalls(test.blocks)
+			tools := make([]Tool, 0, len(calls))
+			dispatches := make([]int, len(calls))
+			for index, call := range calls {
+				schema := schemaForLoopInput(t, call.input)
+				tool, err := NewToolFromSchema(call.name, "offline fixture tool", schema, func(_ context.Context, raw json.RawMessage) (string, error) {
+					var input map[string]any
+					if err := json.Unmarshal(raw, &input); err != nil {
+						return "", err
+					}
+					if !reflect.DeepEqual(input, call.input) {
+						return "", fmt.Errorf("dispatch input = %#v, want %#v", input, call.input)
+					}
+					dispatches[index]++
+					return call.result, nil
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				tools = append(tools, tool)
+			}
+
+			first, err := os.ReadFile(test.toolCalls)
+			if err != nil {
+				t.Fatal(err)
+			}
+			second, err := os.ReadFile(test.final)
+			if err != nil {
+				t.Fatal(err)
+			}
+			transport := &wireLoopTransport{responses: [][]byte{first, second}}
+			endpoint, err := NewEndpoint("https://offline.invalid/v1/generate", wireLoopAuth{}, WithHTTPClient(&http.Client{Transport: transport}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			conversation, err := NewForWire(test.wire, endpoint, "fixture-model", Config{Tools: tools})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var events []Event
+			stream := conversation.Send(context.Background(), Text{Text: "use both fixture tools"})
+			for event := range stream.Events() {
+				events = append(events, event)
+			}
+			if stream.Err() != nil {
+				t.Fatal(stream.Err())
+			}
+			assertLoopEvents(t, events, test.blocks, calls)
+			for index, count := range dispatches {
+				if count != 1 {
+					t.Errorf("tool %q dispatched %d times, want once", calls[index].name, count)
+				}
+			}
+			if len(transport.requests) != 2 {
+				t.Fatalf("HTTP round-trips = %d, want exactly two", len(transport.requests))
+			}
+			test.assertBody(t, transport.requests[1], calls)
+		})
+	}
+}
+
+func loopCalls(blocks []mixedToolBlock) []wireLoopCall {
+	var calls []wireLoopCall
+	for _, block := range blocks {
+		if block.id != "" {
+			calls = append(calls, wireLoopCall{
+				id: block.id, name: block.name, input: block.input,
+				result: "offline result for " + block.id,
+			})
+		}
+	}
+	return calls
+}
+
+func schemaForLoopInput(t *testing.T, input map[string]any) json.RawMessage {
+	t.Helper()
+	properties := make(map[string]any, len(input))
+	required := make([]string, 0, len(input))
+	for name, value := range input {
+		kind := ""
+		switch value.(type) {
+		case string:
+			kind = "string"
+		case bool:
+			kind = "boolean"
+		case float64:
+			kind = "number"
+		default:
+			t.Fatalf("unsupported fixture argument %q of type %T", name, value)
+		}
+		properties[name] = map[string]any{"type": kind}
+		required = append(required, name)
+	}
+	slices.Sort(required)
+	schema, err := json.Marshal(map[string]any{"type": "object", "properties": properties, "required": required})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return schema
+}
+
+func assertLoopEvents(t *testing.T, events []Event, blocks []mixedToolBlock, calls []wireLoopCall) {
+	t.Helper()
+	if len(events) != 2+len(calls)*2 {
+		t.Fatalf("events = %#v, want MessageDone, calls, returns, MessageDone", events)
+	}
+	first, ok := events[0].(MessageDone)
+	if !ok {
+		t.Fatalf("event 0 = %T, want MessageDone", events[0])
+	}
+	assertMixedToolMessage(t, first.Message, blocks)
+	for index, want := range calls {
+		call, ok := events[index+1].(ToolCall)
+		if !ok {
+			t.Fatalf("event %d = %T, want ToolCall", index+1, events[index+1])
+		}
+		assertLoopToolUse(t, call.Use, want)
+		returned, ok := events[index+1+len(calls)].(ToolReturn)
+		if !ok {
+			t.Fatalf("event %d = %T, want ToolReturn", index+1+len(calls), events[index+1+len(calls)])
+		}
+		if returned.Result.ToolUseID != want.id || returned.Result.Content != want.result || returned.Result.IsError {
+			t.Errorf("tool return = %#v, want id %q content %q and no error", returned.Result, want.id, want.result)
+		}
+	}
+	final, ok := events[len(events)-1].(MessageDone)
+	if !ok || final.Message.Role != RoleAssistant || len(final.Message.Blocks) != 1 {
+		t.Fatalf("final event = %#v, want one-block assistant MessageDone", events[len(events)-1])
+	}
+	text, ok := final.Message.Blocks[0].(Text)
+	if !ok || text.Text != "Hello" {
+		t.Fatalf("final block = %#v, want Text Hello", final.Message.Blocks[0])
+	}
+}
+
+func assertLoopToolUse(t *testing.T, use ToolUse, want wireLoopCall) {
+	t.Helper()
+	var input map[string]any
+	if err := json.Unmarshal(use.Input, &input); err != nil {
+		t.Fatal(err)
+	}
+	if use.ID != want.id || use.Name != want.name || !reflect.DeepEqual(input, want.input) {
+		t.Errorf("tool call = id %q name %q input %#v, want %q %q %#v", use.ID, use.Name, input, want.id, want.name, want.input)
+	}
+}
+
+func loopBodyObject(t *testing.T, body []byte) map[string]any {
+	t.Helper()
+	var object map[string]any
+	if err := json.Unmarshal(body, &object); err != nil {
+		t.Fatalf("second request is not vendor JSON: %v\n%s", err, body)
+	}
+	return object
+}
+
+func objectSlice(t *testing.T, value any, context string) []map[string]any {
+	t.Helper()
+	items, ok := value.([]any)
+	if !ok {
+		t.Fatalf("%s = %T, want array", context, value)
+	}
+	objects := make([]map[string]any, len(items))
+	for index, item := range items {
+		objects[index], ok = item.(map[string]any)
+		if !ok {
+			t.Fatalf("%s[%d] = %T, want object", context, index, item)
+		}
+	}
+	return objects
+}
+
+func assertAnthropicLoopBody(t *testing.T, body []byte, calls []wireLoopCall) {
+	t.Helper()
+	root := loopBodyObject(t, body)
+	var uses, results []map[string]any
+	for _, message := range objectSlice(t, root["messages"], "messages") {
+		for _, block := range objectSlice(t, message["content"], "messages[].content") {
+			switch block["type"] {
+			case "tool_use":
+				uses = append(uses, block)
+			case "tool_result":
+				results = append(results, block)
+			}
+		}
+	}
+	assertObjectCalls(t, uses, results, calls, "id", "name", "input", "tool_use_id", "content")
+}
+
+func assertResponsesLoopBody(t *testing.T, body []byte, calls []wireLoopCall) {
+	t.Helper()
+	root := loopBodyObject(t, body)
+	var uses, results []map[string]any
+	for _, item := range objectSlice(t, root["input"], "input") {
+		switch item["type"] {
+		case "function_call":
+			uses = append(uses, item)
+		case "function_call_output":
+			results = append(results, item)
+		}
+	}
+	assertStringArgumentCalls(t, uses, results, calls, "call_id", "name", "arguments", "call_id", "output")
+}
+
+func assertChatLoopBody(t *testing.T, body []byte, calls []wireLoopCall) {
+	t.Helper()
+	root := loopBodyObject(t, body)
+	var uses, results []map[string]any
+	for _, message := range objectSlice(t, root["messages"], "messages") {
+		if message["role"] == "assistant" && message["tool_calls"] != nil {
+			uses = append(uses, objectSlice(t, message["tool_calls"], "assistant.tool_calls")...)
+		}
+		if message["role"] == "tool" {
+			results = append(results, message)
+		}
+	}
+	if len(uses) != len(calls) || len(results) != len(calls) {
+		t.Fatalf("chat second request has %d calls and %d results, want %d each", len(uses), len(results), len(calls))
+	}
+	for index, want := range calls {
+		function, ok := uses[index]["function"].(map[string]any)
+		if !ok {
+			t.Fatalf("tool_calls[%d].function = %T, want object", index, uses[index]["function"])
+		}
+		assertStringArgumentCall(t, uses[index]["id"], function["name"], function["arguments"], want)
+		if results[index]["tool_call_id"] != want.id || results[index]["content"] != want.result {
+			t.Errorf("tool message %d = %#v, want id %q content %q", index, results[index], want.id, want.result)
+		}
+	}
+}
+
+func assertGeminiLoopBody(t *testing.T, body []byte, calls []wireLoopCall) {
+	t.Helper()
+	root := loopBodyObject(t, body)
+	var uses, results []map[string]any
+	for _, content := range objectSlice(t, root["contents"], "contents") {
+		for _, part := range objectSlice(t, content["parts"], "contents[].parts") {
+			if call, ok := part["functionCall"].(map[string]any); ok {
+				uses = append(uses, call)
+			}
+			if result, ok := part["functionResponse"].(map[string]any); ok {
+				results = append(results, result)
+			}
+		}
+	}
+	if len(uses) != len(calls) || len(results) != len(calls) {
+		t.Fatalf("gemini second request has %d calls and %d results, want %d each", len(uses), len(results), len(calls))
+	}
+	for index, want := range calls {
+		if uses[index]["id"] != want.id || uses[index]["name"] != want.name || !reflect.DeepEqual(uses[index]["args"], want.input) {
+			t.Errorf("functionCall %d = %#v, want id/name/args for %#v", index, uses[index], want)
+		}
+		response, ok := results[index]["response"].(map[string]any)
+		if !ok {
+			t.Fatalf("functionResponse %d response = %T, want object", index, results[index]["response"])
+		}
+		if results[index]["id"] != want.id || results[index]["name"] != want.name || response["output"] != want.result {
+			t.Errorf("functionResponse %d = %#v, want correlated %#v", index, results[index], want)
+		}
+	}
+}
+
+func assertObjectCalls(t *testing.T, uses, results []map[string]any, calls []wireLoopCall, useID, useName, useArgs, resultID, resultContent string) {
+	t.Helper()
+	if len(uses) != len(calls) || len(results) != len(calls) {
+		t.Fatalf("second request has %d calls and %d results, want %d each", len(uses), len(results), len(calls))
+	}
+	for index, want := range calls {
+		if uses[index][useID] != want.id || uses[index][useName] != want.name || !reflect.DeepEqual(uses[index][useArgs], want.input) {
+			t.Errorf("call %d = %#v, want %#v", index, uses[index], want)
+		}
+		if results[index][resultID] != want.id || results[index][resultContent] != want.result || results[index]["is_error"] == true {
+			t.Errorf("result %d = %#v, want %#v", index, results[index], want)
+		}
+	}
+}
+
+func assertStringArgumentCalls(t *testing.T, uses, results []map[string]any, calls []wireLoopCall, useID, useName, useArgs, resultID, resultContent string) {
+	t.Helper()
+	if len(uses) != len(calls) || len(results) != len(calls) {
+		t.Fatalf("second request has %d calls and %d results, want %d each", len(uses), len(results), len(calls))
+	}
+	for index, want := range calls {
+		assertStringArgumentCall(t, uses[index][useID], uses[index][useName], uses[index][useArgs], want)
+		if results[index][resultID] != want.id || results[index][resultContent] != want.result {
+			t.Errorf("result %d = %#v, want %#v", index, results[index], want)
+		}
+	}
+}
+
+func assertStringArgumentCall(t *testing.T, id, name, arguments any, want wireLoopCall) {
+	t.Helper()
+	argumentText, ok := arguments.(string)
+	if !ok {
+		t.Fatalf("arguments = %T, want JSON string", arguments)
+	}
+	var input map[string]any
+	if err := json.Unmarshal([]byte(argumentText), &input); err != nil {
+		t.Fatalf("arguments = %q, want JSON object string: %v", argumentText, err)
+	}
+	if id != want.id || name != want.name || !reflect.DeepEqual(input, want.input) {
+		t.Errorf("call = id %#v name %#v input %#v, want %#v", id, name, input, want)
 	}
 }
 
