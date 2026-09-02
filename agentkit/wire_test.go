@@ -47,6 +47,157 @@ func allTestWires() []WireFormat {
 	}
 }
 
+type portableOutputSchemaWire interface {
+	renderOutputSchema(json.RawMessage) (json.RawMessage, error)
+}
+
+func TestPortableOutputSchemaRetainsGrammarAndClosesObjects(t *testing.T) {
+	// R-TW65-3I2H
+	schema := json.RawMessage(`{"type":"object","description":"result","properties":{"choice":{"type":"string","description":"selected value","enum":["alpha","beta"],"const":"alpha"},"nested":{"type":"object","properties":{"flag":{"type":"boolean"}},"required":["flag"],"additionalProperties":false},"rows":{"type":"array","items":{"type":"object","properties":{"id":{"type":"integer"}},"required":["id"]}},"maybe":{"anyOf":[{"type":"object","properties":{"label":{"type":"string"}},"required":["label"]},{"type":"null"}]},"definition":{"$ref":"#/$defs/Record"}},"required":["choice","nested","rows","maybe","definition"],"$defs":{"Record":{"type":"object","description":"stored record","properties":{"code":{"type":"string"}},"required":["code"]}}}`)
+	want := decodeOutputSchemaTestDocument(t, json.RawMessage(`{"type":"object","description":"result","additionalProperties":false,"properties":{"choice":{"type":"string","description":"selected value","enum":["alpha","beta"],"const":"alpha"},"nested":{"type":"object","properties":{"flag":{"type":"boolean"}},"required":["flag"],"additionalProperties":false},"rows":{"type":"array","items":{"type":"object","additionalProperties":false,"properties":{"id":{"type":"integer"}},"required":["id"]}},"maybe":{"anyOf":[{"type":"object","additionalProperties":false,"properties":{"label":{"type":"string"}},"required":["label"]},{"type":"null"}]},"definition":{"$ref":"#/$defs/Record"}},"required":["choice","nested","rows","maybe","definition"],"$defs":{"Record":{"type":"object","description":"stored record","additionalProperties":false,"properties":{"code":{"type":"string"}},"required":["code"]}}}`))
+	original := append([]byte(nil), schema...)
+
+	for _, wire := range allTestWires() {
+		renderer, ok := wire.(portableOutputSchemaWire)
+		if !ok {
+			t.Fatalf("%T does not expose the private portable output renderer", wire)
+		}
+		got, err := renderer.renderOutputSchema(schema)
+		if err != nil {
+			t.Fatalf("%T: %v", wire, err)
+		}
+		again, err := renderer.renderOutputSchema(schema)
+		if err != nil {
+			t.Fatalf("%T second render: %v", wire, err)
+		}
+		if !bytes.Equal(got, again) {
+			t.Errorf("%T rendered nondeterministically:\n%s\n%s", wire, got, again)
+		}
+		if !bytes.Equal(schema, original) {
+			t.Fatalf("%T mutated source bytes: %s, want %s", wire, schema, original)
+		}
+		document := decodeOutputSchemaTestDocument(t, got)
+		if !reflect.DeepEqual(document, want) {
+			t.Errorf("%T grammar render = %#v, want %#v", wire, document, want)
+		}
+		assertEveryOutputObjectClosed(t, document, "$")
+	}
+}
+
+func TestPortableOutputSchemaMovesConstraintsToProse(t *testing.T) {
+	// R-TXE1-H9T6
+	schema := json.RawMessage(`{"type":"object","properties":{"number":{"type":"number","description":"Existing numeric rule.","minimum":-1e+400,"maximum":9.99e+999,"exclusiveMinimum":-2,"exclusiveMaximum":10,"multipleOf":1e-300},"text":{"type":"string","minLength":2,"maxLength":8,"pattern":"^[A-Z]+\\s?$","format":"custom/value"},"list":{"type":"array","minItems":1,"maxItems":4,"uniqueItems":true,"items":{"type":"string","description":"Item.","pattern":"^x+$"}},"repeatable":{"type":"array","uniqueItems":false,"items":{"type":"integer","minimum":-5}},"maybe":{"anyOf":[{"type":"number","maximum":1e+400},{"type":"null"}]},"defined":{"$ref":"#/$defs/Count"}},"required":["number","text","list","repeatable","maybe","defined"],"$defs":{"Count":{"type":"integer","minimum":0,"multipleOf":2}}}`)
+	tests := []struct {
+		name    string
+		wire    WireFormat
+		fixture string
+	}{
+		{"anthropic_messages", newAnthropicWire(nil), "testdata/anthropic_messages.output_schema.json"},
+		{"openai_responses", newOpenAIResponsesWire(nil), "testdata/openai_responses.output_schema.json"},
+		{"openai_chat_completions", newOpenAIChatWire(nil), "testdata/openai_chat_completions.output_schema.json"},
+		{"gemini_generate_content", newGeminiWire(nil), "testdata/gemini_generate_content.output_schema.json"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := test.wire.(portableOutputSchemaWire).renderOutputSchema(schema)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := os.ReadFile(test.fixture)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Fatalf("rendered bytes = %s\nwant fixture = %s", got, want)
+			}
+			document := decodeOutputSchemaTestDocument(t, got)
+			for _, keyword := range []string{"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minLength", "maxLength", "pattern", "format", "minItems", "maxItems", "uniqueItems"} {
+				if containsJSONKey(document, keyword) {
+					t.Errorf("rendered schema retains constraint keyword %q", keyword)
+				}
+			}
+			assertPhase23ConstraintDescriptions(t, document)
+		})
+	}
+}
+
+func TestPortableOutputSchemaRejectsInvalidInputPerWire(t *testing.T) {
+	invalid := json.RawMessage(`{"type":"object","properties":{"bad":{"allOf":[{"type":"string"}]}},"required":["bad"]}`)
+	for _, wire := range allTestWires() {
+		got, err := wire.(portableOutputSchemaWire).renderOutputSchema(invalid)
+		if err == nil || got != nil {
+			t.Errorf("%T rendered invalid output schema as %s with error %v", wire, got, err)
+			continue
+		}
+		if !strings.Contains(err.Error(), "allOf") {
+			t.Errorf("%T diagnostic %q does not name allOf", wire, err)
+		}
+	}
+}
+
+func decodeOutputSchemaTestDocument(t *testing.T, data []byte) map[string]any {
+	t.Helper()
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var document map[string]any
+	if err := decoder.Decode(&document); err != nil {
+		t.Fatal(err)
+	}
+	return document
+}
+
+func assertEveryOutputObjectClosed(t *testing.T, schema map[string]any, path string) {
+	t.Helper()
+	if schema["type"] == "object" && schema["additionalProperties"] != false {
+		t.Errorf("object %s is not closed: %#v", path, schema)
+	}
+	for _, keyword := range []string{"properties", "$defs"} {
+		if children, ok := schema[keyword].(map[string]any); ok {
+			for name, child := range children {
+				assertEveryOutputObjectClosed(t, child.(map[string]any), path+"."+keyword+"."+name)
+			}
+		}
+	}
+	if item, ok := schema["items"].(map[string]any); ok {
+		assertEveryOutputObjectClosed(t, item, path+".items")
+	}
+	if branches, ok := schema["anyOf"].([]any); ok {
+		for index, branch := range branches {
+			assertEveryOutputObjectClosed(t, branch.(map[string]any), fmt.Sprintf("%s.anyOf[%d]", path, index))
+		}
+	}
+}
+
+func assertPhase23ConstraintDescriptions(t *testing.T, document map[string]any) {
+	t.Helper()
+	properties := document["properties"].(map[string]any)
+	descriptions := map[string]string{
+		"number":     `Existing numeric rule. Value must be >= -1e+400. Value must be <= 9.99e+999. Value must be > -2. Value must be < 10. Value must be a multiple of 1e-300.`,
+		"text":       `Length must be >= 2. Length must be <= 8. Value must match pattern "^[A-Z]+\\s?$". Value must use format "custom/value".`,
+		"list":       `Item count must be >= 1. Item count must be <= 4. Items must be unique.`,
+		"repeatable": `Items may repeat.`,
+	}
+	for name, want := range descriptions {
+		if got := properties[name].(map[string]any)["description"]; got != want {
+			t.Errorf("%s description = %q, want %q", name, got, want)
+		}
+	}
+	if got := properties["list"].(map[string]any)["items"].(map[string]any)["description"]; got != `Item. Value must match pattern "^x+$".` {
+		t.Errorf("list item description = %q", got)
+	}
+	if got := properties["repeatable"].(map[string]any)["items"].(map[string]any)["description"]; got != `Value must be >= -5.` {
+		t.Errorf("repeatable item description = %q", got)
+	}
+	maybe := properties["maybe"].(map[string]any)["anyOf"].([]any)[0].(map[string]any)
+	if got := maybe["description"]; got != `Value must be <= 1e+400.` {
+		t.Errorf("nullable branch description = %q", got)
+	}
+	definition := document["$defs"].(map[string]any)["Count"].(map[string]any)
+	if got := definition["description"]; got != `Value must be >= 0. Value must be a multiple of 2.` {
+		t.Errorf("definition description = %q", got)
+	}
+}
+
 func TestWireSelectionIsConstructorOnly(t *testing.T) {
 	// R-2WCZ-48BW
 	conversationType := reflect.TypeFor[Conversation]()

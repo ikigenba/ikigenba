@@ -1,11 +1,13 @@
 package agentkit
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"iter"
 	"net/http"
+	"strings"
 )
 
 // Framer splits a response body into payload frames without interpreting the
@@ -96,6 +98,111 @@ func (w *wireCodec) cloneWithClassifier(classifier wireClassifier) wireCodec {
 
 func (w *wireCodec) validateSettings(settings Settings) error {
 	return w.capabilities.validate(settings)
+}
+
+type outputConstraint struct {
+	keyword string
+	prose   func(any) string
+}
+
+var outputConstraints = []outputConstraint{
+	{"minimum", func(value any) string { return "Value must be >= " + outputConstraintValue(value) + "." }},
+	{"maximum", func(value any) string { return "Value must be <= " + outputConstraintValue(value) + "." }},
+	{"exclusiveMinimum", func(value any) string { return "Value must be > " + outputConstraintValue(value) + "." }},
+	{"exclusiveMaximum", func(value any) string { return "Value must be < " + outputConstraintValue(value) + "." }},
+	{"multipleOf", func(value any) string { return "Value must be a multiple of " + outputConstraintValue(value) + "." }},
+	{"minLength", func(value any) string { return "Length must be >= " + outputConstraintValue(value) + "." }},
+	{"maxLength", func(value any) string { return "Length must be <= " + outputConstraintValue(value) + "." }},
+	{"pattern", func(value any) string { return "Value must match pattern " + outputConstraintValue(value) + "." }},
+	{"format", func(value any) string { return "Value must use format " + outputConstraintValue(value) + "." }},
+	{"minItems", func(value any) string { return "Item count must be >= " + outputConstraintValue(value) + "." }},
+	{"maxItems", func(value any) string { return "Item count must be <= " + outputConstraintValue(value) + "." }},
+	{"uniqueItems", outputUniqueItemsConstraint},
+}
+
+// renderOutputSchema produces the common strict schema shown to every model.
+// Vendor request envelopes deliberately remain the responsibility of each wire.
+func (w *wireCodec) renderOutputSchema(schema json.RawMessage) (json.RawMessage, error) {
+	if err := ValidateOutputSchema(schema); err != nil {
+		return nil, fmt.Errorf("agentkit: render output schema: %w", err)
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(schema))
+	decoder.UseNumber()
+	var root map[string]any
+	if err := decoder.Decode(&root); err != nil {
+		return nil, fmt.Errorf("agentkit: render output schema: %w", err)
+	}
+	renderOutputSchemaNode(root)
+	rendered, err := marshalPortableOutputSchema(root)
+	if err != nil {
+		return nil, fmt.Errorf("agentkit: render output schema: %w", err)
+	}
+	return rendered, nil
+}
+
+func marshalPortableOutputSchema(root map[string]any) ([]byte, error) {
+	var encoded bytes.Buffer
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(root); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(encoded.Bytes(), []byte{'\n'}), nil
+}
+
+func renderOutputSchemaNode(schema map[string]any) {
+	if schema["type"] == "object" {
+		if _, present := schema["additionalProperties"]; !present {
+			schema["additionalProperties"] = false
+		}
+	}
+
+	statements := make([]string, 0, len(outputConstraints))
+	for _, constraint := range outputConstraints {
+		if value, present := schema[constraint.keyword]; present {
+			statements = append(statements, constraint.prose(value))
+			delete(schema, constraint.keyword)
+		}
+	}
+	if len(statements) != 0 {
+		description, _ := schema["description"].(string)
+		if description != "" {
+			description += " "
+		}
+		schema["description"] = description + strings.Join(statements, " ")
+	}
+
+	for _, keyword := range []string{"properties", "$defs"} {
+		if children, ok := schema[keyword].(map[string]any); ok {
+			for _, child := range children {
+				renderOutputSchemaNode(child.(map[string]any))
+			}
+		}
+	}
+	if item, ok := schema["items"].(map[string]any); ok {
+		renderOutputSchemaNode(item)
+	}
+	if branches, ok := schema["anyOf"].([]any); ok {
+		for _, branch := range branches {
+			renderOutputSchemaNode(branch.(map[string]any))
+		}
+	}
+}
+
+func outputConstraintValue(value any) string {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		panic("validated output constraint cannot fail to marshal: " + err.Error())
+	}
+	return string(encoded)
+}
+
+func outputUniqueItemsConstraint(value any) string {
+	if value.(bool) {
+		return "Items must be unique."
+	}
+	return "Items may repeat."
 }
 
 type usageNormalizer struct {
