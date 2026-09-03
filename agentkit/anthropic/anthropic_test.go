@@ -59,6 +59,66 @@ func TestAPIDeclarationDefaultsToMessagesAndRejectsUnshippedTextCodec(t *testing
 	}
 }
 
+func TestNewReportsAuthModeFromCredential(t *testing.T) {
+	// R-UFIH-AUGX
+	// OAuth credentials reject WithBaseURL (mutually exclusive), so the oauth
+	// case builds against the default endpoint and cancels the context before
+	// the request goes out; RecordTurnStart carries the AuthMode regardless of
+	// whether the send itself reaches a server.
+	for _, testCase := range []struct {
+		name         string
+		credential   Credential
+		overrideURL  bool
+		wantAuthMode string
+	}{
+		{"api key", APIKey("key"), true, "api_key"},
+		{"oauth", OAuth(tokenSourceFunc(func(context.Context) (string, error) { return "token", nil })), false, "oauth"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				writer.Header().Set("Content-Type", "text/event-stream")
+				_, _ = io.WriteString(writer, "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":2}}}\n\ndata: {\"type\":\"message_delta\",\"delta\":{\"usage\":{\"output_tokens\":3}}}\n\ndata: {\"type\":\"message_stop\"}\n\n")
+			}))
+			defer server.Close()
+
+			var output bytes.Buffer
+			options := []Option{WithConfig(agentkit.Config{Log: agentkit.NewLog(&output, nil)})}
+			ctx := context.Background()
+			if testCase.overrideURL {
+				options = append(options, WithBaseURL(server.URL))
+			} else {
+				cancelled, cancel := context.WithCancel(context.Background())
+				cancel()
+				ctx = cancelled
+			}
+			conversation, err := New(testCase.credential, "model", options...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for event := range conversation.Send(ctx, agentkit.Text{Text: "hello"}).Events() {
+				_ = event
+			}
+
+			var identity *agentkit.Identity
+			decoder := json.NewDecoder(&output)
+			for {
+				var record agentkit.LogRecord
+				if err := decoder.Decode(&record); err == io.EOF {
+					break
+				} else if err != nil {
+					t.Fatal(err)
+				}
+				if record.Type == agentkit.RecordTurnStart {
+					identity = record.Identity
+				}
+			}
+			if identity == nil || identity.AuthMode != testCase.wantAuthMode {
+				t.Fatalf("turn identity = %+v, want AuthMode %q", identity, testCase.wantAuthMode)
+			}
+		})
+	}
+}
+
 func TestNewNamesAnthropicEndpointAndUsesCatalogPricing(t *testing.T) {
 	// R-OP9X-DYMU
 	// R-OQHT-RQDJ

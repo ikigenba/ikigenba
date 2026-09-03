@@ -51,6 +51,44 @@ func TestAPISelectsChatByDefaultAndResponsesAsAlternate(t *testing.T) {
 	}
 }
 
+func TestNewReportsAPIKeyAuthMode(t *testing.T) {
+	// R-UFIH-AUGX
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(writer, "data: {\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":3}}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"done\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	var output bytes.Buffer
+	conversation, err := New(APIKey("key"), "model",
+		WithBaseURL(server.URL),
+		WithConfig(agentkit.Config{Log: agentkit.NewLog(&output, nil)}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for event := range conversation.Send(context.Background(), agentkit.Text{Text: "hello"}).Events() {
+		_ = event
+	}
+
+	var identity *agentkit.Identity
+	decoder := json.NewDecoder(&output)
+	for {
+		var record agentkit.LogRecord
+		if err := decoder.Decode(&record); err == io.EOF {
+			break
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		if record.Type == agentkit.RecordTurnStart {
+			identity = record.Identity
+		}
+	}
+	if identity == nil || identity.AuthMode != "api_key" {
+		t.Fatalf("turn identity = %+v, want AuthMode %q", identity, "api_key")
+	}
+}
+
 func TestNewNamesOpenRouterEndpointAndUsesCatalogPricing(t *testing.T) {
 	// R-OP9X-DYMU
 	// R-OQHT-RQDJ

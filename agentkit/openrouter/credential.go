@@ -28,6 +28,13 @@ type authAdapter struct{ credential Credential }
 
 func (authAdapter) EndpointIdentity() string { return "openrouter" }
 
+func (adapter authAdapter) AuthMode() string {
+	if _, oauth := adapter.credential.(interface{ bakesTransport() }); oauth {
+		return "oauth"
+	}
+	return "api_key"
+}
+
 func (adapter authAdapter) Apply(ctx context.Context, request *http.Request, body []byte) error {
 	return adapter.credential.apply(ctx, request, body)
 }

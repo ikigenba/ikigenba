@@ -38,10 +38,14 @@ func New(wireName KnownWire, endpoint Endpoint, model string, cfg Config) (*Conv
 	}
 
 	endpointIdentity := endpoint.config.baseURL.String()
+	authMode := "custom"
 	if named, ok := endpoint.config.auth.(interface{ EndpointIdentity() string }); ok {
 		endpointIdentity = named.EndpointIdentity()
 	}
-	identity := Identity{Endpoint: endpointIdentity, AuthMode: "custom", Model: model}
+	if moded, ok := endpoint.config.auth.(interface{ AuthMode() string }); ok {
+		authMode = moded.AuthMode()
+	}
+	identity := Identity{Endpoint: endpointIdentity, AuthMode: authMode, Model: model}
 	return newEndpointConversation(wire, endpoint, identity, cfg), nil
 }
 
