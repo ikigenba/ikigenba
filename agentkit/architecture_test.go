@@ -1441,6 +1441,18 @@ func TestCostDeclaration(t *testing.T) {
 	})
 }
 
+func TestUsageDeclaration(t *testing.T) {
+	// R-ND0W-8GRT
+	assertExactStructFields(t, reflect.TypeFor[Usage](), []exactStructField{
+		{name: "InputTokens", typeOf: reflect.TypeFor[int64]()},
+		{name: "CachedTokens", typeOf: reflect.TypeFor[int64]()},
+		{name: "CacheWrite5mTokens", typeOf: reflect.TypeFor[int64]()},
+		{name: "CacheWrite1hTokens", typeOf: reflect.TypeFor[int64]()},
+		{name: "OutputTokens", typeOf: reflect.TypeFor[int64]()},
+		{name: "ReasoningTokens", typeOf: reflect.TypeFor[int64]()},
+	})
+}
+
 func TestPricingDeclaration(t *testing.T) {
 	// R-Z86G-RB3V
 	assertExactStructFields(t, reflect.TypeFor[Pricing](), []exactStructField{
