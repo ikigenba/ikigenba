@@ -113,8 +113,8 @@ The catalog match is by the conversation's `Identity` (D1): the offering whose
 `Provider` equals `Identity.Endpoint` and whose `WireModel` equals
 `Identity.Model` supplies the `Pricing`. Vendor packages name their endpoints
 with their `Provider` value (D6, D21), so a conversation built through a vendor
-constructor for a cataloged model prices itself with no help from the app. A
-custom base URL or an unlisted model finds no offering and prices to zero.
+constructor for a cataloged model prices itself with no help from the app. An
+unlisted model finds no offering and prices to zero.
 
 ## REQUIREMENTS
 
