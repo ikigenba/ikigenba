@@ -1461,6 +1461,33 @@ func TestCostDeclarationIsExact(t *testing.T) {
 	}
 }
 
+func TestRateTierDeclarationIsExact(t *testing.T) {
+	// R-NJ4E-5BHA
+	assertExactStructFields(t, reflect.TypeFor[RateTier](), []exactStructField{
+		{name: "MinInputTokens", typeOf: reflect.TypeFor[int64]()},
+		{name: "InputUncached", typeOf: reflect.TypeFor[int64]()},
+		{name: "CacheReadInput", typeOf: reflect.TypeFor[int64]()},
+		{name: "CacheWrite5m", typeOf: reflect.TypeFor[int64]()},
+		{name: "CacheWrite1h", typeOf: reflect.TypeFor[int64]()},
+		{name: "Output", typeOf: reflect.TypeFor[int64]()},
+	})
+}
+
+func TestPricingDeclarationAndCostMethodAreExact(t *testing.T) {
+	// R-NKCA-J37Z
+	// R-NLK6-WUYO
+	assertExactStructFields(t, reflect.TypeFor[Pricing](), []exactStructField{
+		{name: "Tiers", typeOf: reflect.TypeFor[[]RateTier]()},
+	})
+
+	pricingType := reflect.TypeFor[Pricing]()
+	method, ok := pricingType.MethodByName("Cost")
+	wantMethod := reflect.TypeOf(func(Pricing, Usage) Cost { return 0 })
+	if !ok || method.Type != wantMethod {
+		t.Fatalf("Pricing.Cost = %v (present=%t), want exact value-receiver signature %s", method.Type, ok, wantMethod)
+	}
+}
+
 func TestTextDeclaration(t *testing.T) {
 	// R-Z0V2-GONP
 	assertExactBlockStruct(t, reflect.TypeFor[Text](), []exactStructField{
