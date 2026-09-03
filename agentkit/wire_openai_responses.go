@@ -267,7 +267,7 @@ func newOpenAIResponsesDecoder() frameDecoder {
 			}
 		case "response.completed":
 			usage := event.Response.Usage
-			fragment := normalizer.update(usage.InputTokens, usage.InputDetails.CachedTokens, usage.OutputTokens, usage.OutputDetails.ReasoningTokens)
+			fragment := normalizer.update(usage.InputTokens, usage.InputDetails.CachedTokens, nil, nil, usage.OutputTokens, usage.OutputDetails.ReasoningTokens)
 			indices := make([]int, 0, len(blocksByIndex))
 			for index := range blocksByIndex {
 				indices = append(indices, index)

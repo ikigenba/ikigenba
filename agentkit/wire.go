@@ -206,23 +206,38 @@ func outputUniqueItemsConstraint(value any) string {
 }
 
 type usageNormalizer struct {
-	input     *int64
-	cached    *int64
-	output    *int64
-	reasoning *int64
+	input        *int64
+	cached       *int64
+	cacheWrite5m *int64
+	cacheWrite1h *int64
+	output       *int64
+	reasoning    *int64
 }
 
-func (n *usageNormalizer) update(input, cached, output, reasoning *int64) usageFragment {
+func (n *usageNormalizer) update(input, cached, cacheWrite5m, cacheWrite1h, output, reasoning *int64) usageFragment {
 	n.input = lastPresent(n.input, input)
 	n.cached = lastPresent(n.cached, cached)
+	n.cacheWrite5m = lastPresent(n.cacheWrite5m, cacheWrite5m)
+	n.cacheWrite1h = lastPresent(n.cacheWrite1h, cacheWrite1h)
 	n.output = lastPresent(n.output, output)
 	n.reasoning = lastPresent(n.reasoning, reasoning)
 
-	fragment := usageFragment{CachedTokens: n.cached, ReasoningTokens: n.reasoning}
+	fragment := usageFragment{
+		CachedTokens:       n.cached,
+		CacheWrite5mTokens: n.cacheWrite5m,
+		CacheWrite1hTokens: n.cacheWrite1h,
+		ReasoningTokens:    n.reasoning,
+	}
 	if n.input != nil {
 		value := *n.input
 		if n.cached != nil {
 			value -= *n.cached
+		}
+		if n.cacheWrite5m != nil {
+			value -= *n.cacheWrite5m
+		}
+		if n.cacheWrite1h != nil {
+			value -= *n.cacheWrite1h
 		}
 		fragment.InputTokens = &value
 	}

@@ -178,8 +178,12 @@ func newAnthropicDecoder() frameDecoder {
 			} `json:"delta"`
 			Message struct {
 				Usage struct {
-					InputTokens  *int64 `json:"input_tokens"`
-					CachedTokens *int64 `json:"cache_read_input_tokens"`
+					InputTokens   *int64 `json:"input_tokens"`
+					CachedTokens  *int64 `json:"cache_read_input_tokens"`
+					CacheCreation struct {
+						Ephemeral5mTokens *int64 `json:"ephemeral_5m_input_tokens"`
+						Ephemeral1hTokens *int64 `json:"ephemeral_1h_input_tokens"`
+					} `json:"cache_creation"`
 				} `json:"usage"`
 			} `json:"message"`
 		}
@@ -188,7 +192,15 @@ func newAnthropicDecoder() frameDecoder {
 		}
 		switch event.Type {
 		case "message_start":
-			fragment := usage.update(event.Message.Usage.InputTokens, event.Message.Usage.CachedTokens, nil, nil)
+			messageUsage := event.Message.Usage
+			fragment := usage.update(
+				messageUsage.InputTokens,
+				messageUsage.CachedTokens,
+				messageUsage.CacheCreation.Ephemeral5mTokens,
+				messageUsage.CacheCreation.Ephemeral1hTokens,
+				nil,
+				nil,
+			)
 			return nil, fragment, true, nil
 		case "content_block_start":
 			switch event.ContentBlock.Type {
@@ -225,7 +237,7 @@ func newAnthropicDecoder() frameDecoder {
 				delete(toolUsesByIndex, event.Index)
 			}
 		case "message_delta":
-			return nil, usage.update(nil, nil, event.Delta.Usage.OutputTokens, nil), true, nil
+			return nil, usage.update(nil, nil, nil, nil, event.Delta.Usage.OutputTokens, nil), true, nil
 		case "message_stop":
 			indices := make([]int, 0, len(blocksByIndex))
 			for index := range blocksByIndex {

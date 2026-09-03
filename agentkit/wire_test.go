@@ -73,9 +73,7 @@ func TestPortableOutputSchemaRetainsGrammarAndClosesObjects(t *testing.T) {
 		if !bytes.Equal(got, again) {
 			t.Errorf("%T rendered nondeterministically:\n%s\n%s", wire, got, again)
 		}
-		if !bytes.Equal(schema, original) {
-			t.Fatalf("%T mutated source bytes: %s, want %s", wire, schema, original)
-		}
+		assertBytesUnchanged(t, fmt.Sprintf("%T source schema", wire), schema, original)
 		document := decodeOutputSchemaTestDocument(t, got)
 		if !reflect.DeepEqual(document, want) {
 			t.Errorf("%T grammar render = %#v, want %#v", wire, document, want)
@@ -156,12 +154,8 @@ func TestAnthropicMessagesEmbedsNativeOutputContract(t *testing.T) {
 	if !bytes.Equal(body, want) {
 		t.Fatalf("encoded request = %s\nwant fixture = %s", body, want)
 	}
-	if len(body) == 0 || body[len(body)-1] != '\n' {
-		t.Fatal("encoded request has no trailing newline")
-	}
-	if !bytes.Equal(schema, original) {
-		t.Fatalf("EncodeRequest mutated source schema: %s, want %s", schema, original)
-	}
+	assertTrailingNewline(t, body)
+	assertBytesUnchanged(t, "EncodeRequest source schema", schema, original)
 
 	document := decodeOutputSchemaTestDocument(t, body)
 	if got := sortedJSONKeys(document); !slices.Equal(got, []string{"messages", "model", "output_config"}) {
@@ -195,9 +189,7 @@ func TestAnthropicMessagesEmbedsNativeOutputContract(t *testing.T) {
 	if containsJSONKey(rendered, "minLength") || name["description"] != "Length must be >= 2." {
 		t.Errorf("rendered constrained name = %#v", name)
 	}
-	if containsJSONKey(document, "MaxAttempts") || containsJSONKey(document, "max_attempts") {
-		t.Fatalf("request leaked MaxAttempts: %s", body)
-	}
+	assertNoMaxAttempts(t, document, body)
 
 	endpoint, err := NewEndpoint("https://anthropic.invalid/v1/messages", wireLoopAuth{})
 	if err != nil {
@@ -254,12 +246,8 @@ func TestOpenAIChatCompletionsEmbedsNativeOutputContract(t *testing.T) {
 	if !bytes.Equal(body, want) {
 		t.Fatalf("encoded request = %s\nwant fixture = %s", body, want)
 	}
-	if len(body) == 0 || body[len(body)-1] != '\n' {
-		t.Fatal("encoded request has no trailing newline")
-	}
-	if !bytes.Equal(schema, original) {
-		t.Fatalf("EncodeRequest mutated source schema: %s, want %s", schema, original)
-	}
+	assertTrailingNewline(t, body)
+	assertBytesUnchanged(t, "EncodeRequest source schema", schema, original)
 
 	document := decodeOutputSchemaTestDocument(t, body)
 	wantTopLevel := []string{"messages", "model", "reasoning_effort", "response_format", "tool_choice", "tools"}
@@ -307,9 +295,7 @@ func TestOpenAIChatCompletionsEmbedsNativeOutputContract(t *testing.T) {
 	if containsJSONKey(rendered, "minimum") || score["description"] != "Value must be >= 0." {
 		t.Errorf("rendered constrained score = %#v", score)
 	}
-	if containsJSONKey(document, "MaxAttempts") || containsJSONKey(document, "max_attempts") {
-		t.Fatalf("request leaked MaxAttempts: %s", body)
-	}
+	assertNoMaxAttempts(t, document, body)
 
 	invalid := RequestState{Output: &OutputContract{Schema: json.RawMessage(`{"type":"object","properties":{"bad":{"allOf":[{"type":"string"}]}},"required":["bad"]}`)}}
 	invalidBody, invalidErr := newOpenAIChatWire(nil).EncodeRequest(invalid)
@@ -351,12 +337,8 @@ func TestOpenAIResponsesEmbedsNativeOutputContract(t *testing.T) {
 	if !bytes.Equal(body, want) {
 		t.Fatalf("encoded request = %s\nwant fixture = %s", body, want)
 	}
-	if len(body) == 0 || body[len(body)-1] != '\n' {
-		t.Fatal("encoded request has no trailing newline")
-	}
-	if !bytes.Equal(schema, original) {
-		t.Fatalf("EncodeRequest mutated source schema: %s, want %s", schema, original)
-	}
+	assertTrailingNewline(t, body)
+	assertBytesUnchanged(t, "EncodeRequest source schema", schema, original)
 
 	document := decodeOutputSchemaTestDocument(t, body)
 	wantTopLevel := []string{"input", "model", "reasoning", "text", "tool_choice", "tools"}
@@ -410,9 +392,7 @@ func TestOpenAIResponsesEmbedsNativeOutputContract(t *testing.T) {
 	if containsJSONKey(rendered, "pattern") || personName["description"] != `Value must match pattern "^[A-Z]".` {
 		t.Errorf("rendered constrained name = %#v", personName)
 	}
-	if containsJSONKey(document, "MaxAttempts") || containsJSONKey(document, "max_attempts") {
-		t.Fatalf("request leaked MaxAttempts: %s", body)
-	}
+	assertNoMaxAttempts(t, document, body)
 
 	invalid := RequestState{Output: &OutputContract{Schema: json.RawMessage(`{"type":"object","properties":{"bad":{"allOf":[{"type":"string"}]}},"required":["bad"]}`)}}
 	invalidBody, invalidErr := newOpenAIResponsesWire(nil).EncodeRequest(invalid)
@@ -454,12 +434,8 @@ func TestGeminiGenerateContentEmbedsNativeOutputContract(t *testing.T) {
 	if !bytes.Equal(body, want) {
 		t.Fatalf("encoded request = %s\nwant fixture = %s", body, want)
 	}
-	if len(body) == 0 || body[len(body)-1] != '\n' {
-		t.Fatal("encoded request has no trailing newline")
-	}
-	if !bytes.Equal(schema, original) {
-		t.Fatalf("EncodeRequest mutated source schema: %s, want %s", schema, original)
-	}
+	assertTrailingNewline(t, body)
+	assertBytesUnchanged(t, "EncodeRequest source schema", schema, original)
 
 	document := decodeOutputSchemaTestDocument(t, body)
 	if got, want := sortedJSONKeys(document), []string{"contents", "generationConfig", "toolConfig", "tools"}; !slices.Equal(got, want) {
@@ -518,9 +494,7 @@ func TestGeminiGenerateContentEmbedsNativeOutputContract(t *testing.T) {
 	if containsJSONKey(rendered, "pattern") || ownerName["description"] != `Value must match pattern "^[A-Z]".` {
 		t.Errorf("rendered constrained owner name = %#v", ownerName)
 	}
-	if containsJSONKey(document, "MaxAttempts") || containsJSONKey(document, "max_attempts") {
-		t.Fatalf("request leaked MaxAttempts: %s", body)
-	}
+	assertNoMaxAttempts(t, document, body)
 
 	outputOnlyBody, err := newGeminiWire(nil).EncodeRequest(RequestState{Output: &OutputContract{Schema: schema}})
 	if err != nil {
@@ -727,8 +701,30 @@ func TestWireSelectionIsConstructorOnly(t *testing.T) {
 	}
 }
 
+func assertTrailingNewline(t *testing.T, body []byte) {
+	t.Helper()
+	if len(body) == 0 || body[len(body)-1] != '\n' {
+		t.Fatal("encoded request has no trailing newline")
+	}
+}
+
+func assertBytesUnchanged(t *testing.T, label string, got, want []byte) {
+	t.Helper()
+	if !bytes.Equal(got, want) {
+		t.Fatalf("%s mutated: %s, want %s", label, got, want)
+	}
+}
+
+func assertNoMaxAttempts(t *testing.T, document map[string]any, body []byte) {
+	t.Helper()
+	if containsJSONKey(document, "MaxAttempts") || containsJSONKey(document, "max_attempts") {
+		t.Fatalf("request leaked MaxAttempts: %s", body)
+	}
+}
+
 func TestWireOwnsOnlyBodyGrammar(t *testing.T) {
 	// R-YB1L-L7DS
+	// R-NGOL-DRZW
 	assertEndpointConcernsAreOutsideWireInterface(t)
 	state := RequestState{Model: "endpoint-owned-model", History: History{
 		{Role: RoleAssistant, Blocks: []Block{
@@ -748,7 +744,7 @@ func TestWireOwnsOnlyBodyGrammar(t *testing.T) {
 		wantTools []string
 		wantUsage Usage
 	}{
-		{"anthropic", newAnthropicWire(nil), json.RawMessage(`{"type":"thinking","thinking":"replayed","signature":"sig"}`), "messages", []string{`"thinking":"replayed"`, `"signature":"sig"`, `"type":"tool_use"`, `"type":"tool_result"`, `"is_error":true`}, []string{`"name":"lookup"`, `"input_schema":`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4}},
+		{"anthropic", newAnthropicWire(nil), json.RawMessage(`{"type":"thinking","thinking":"replayed","signature":"sig"}`), "messages", []string{`"thinking":"replayed"`, `"signature":"sig"`, `"type":"tool_use"`, `"type":"tool_result"`, `"is_error":true`}, []string{`"name":"lookup"`, `"input_schema":`}, Usage{InputTokens: 10, CachedTokens: 2, CacheWrite5mTokens: 3, CacheWrite1hTokens: 5, OutputTokens: 4}},
 		{"responses", newOpenAIResponsesWire(nil), json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"replayed"}]}`), "input", []string{`"type":"reasoning"`, `"id":"rs_1"`, `"text":"replayed"`, `"arguments":"{\"q\":\"value\"}"`}, []string{`"type":"function"`, `"name":"lookup"`, `"parameters":`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}},
 		{"chat", newOpenAIChatWire(nil), json.RawMessage(`{"reasoning_content":"replayed"}`), "messages", []string{`"reasoning_content":"replayed"`, `"tool_calls"`, `"arguments":"{\"q\":\"value\"}"`, `"tool_call_id":"call_1"`}, []string{`"type":"function"`, `"function":{"name":"lookup"`, `"parameters":`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}},
 		{"gemini", newGeminiWire(nil), json.RawMessage(`{"text":"replayed","thought":true,"thoughtSignature":"sig"}`), "contents", []string{`"text":"replayed"`, `"thought":true`, `"thoughtSignature":"sig"`, `"functionCall"`, `"args":{"q":"value"}`, `"functionResponse"`, `"isError":true`}, []string{`"functionDeclarations":`, `"name":"lookup"`, `"parameters":`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}},

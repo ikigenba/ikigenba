@@ -246,7 +246,7 @@ func newGeminiDecoder() frameDecoder {
 		hasUsage := response.Usage != nil
 		if hasUsage {
 			usage := response.Usage
-			fragment = normalizer.update(usage.PromptTokens, usage.CachedTokens, usage.CandidateTokens, usage.ThoughtsTokens)
+			fragment = normalizer.update(usage.PromptTokens, usage.CachedTokens, nil, nil, usage.CandidateTokens, usage.ThoughtsTokens)
 		}
 		if finished {
 			message := Message{Role: RoleAssistant, Blocks: blocks}

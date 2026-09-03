@@ -1,5 +1,5 @@
 event: message_start
-data: {"type":"message_start","message":{"usage":{"input_tokens":12,"cache_read_input_tokens":2}}}
+data: {"type":"message_start","message":{"usage":{"input_tokens":20,"cache_read_input_tokens":2,"cache_creation":{"ephemeral_5m_input_tokens":3,"ephemeral_1h_input_tokens":5}}}}
 
 event: content_block_delta
 data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Hel"}}
@@ -12,4 +12,3 @@ data: {"type":"message_delta","delta":{"usage":{"output_tokens":4}}}
 
 event: message_stop
 data: {"type":"message_stop"}
-

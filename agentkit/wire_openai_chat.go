@@ -240,7 +240,7 @@ func newOpenAIChatDecoder() frameDecoder {
 		}
 		if chunk.Usage != nil {
 			usage := chunk.Usage
-			return nil, normalizer.update(usage.PromptTokens, usage.PromptDetails.CachedTokens, usage.CompletionTokens, usage.CompletionDetails.ReasoningTokens), true, nil
+			return nil, normalizer.update(usage.PromptTokens, usage.PromptDetails.CachedTokens, nil, nil, usage.CompletionTokens, usage.CompletionDetails.ReasoningTokens), true, nil
 		}
 		return nil, usageFragment{}, false, nil
 	}
