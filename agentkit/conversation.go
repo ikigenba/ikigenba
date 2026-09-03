@@ -85,7 +85,7 @@ func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream {
 		var terminal error
 		defer func() {
 			log.recordError(terminal)
-			log.finish(accounting.usage, resolveCost(c.identity.Model, accounting.usage, accounting.wireCost(), accounting.pricing))
+			log.finish(accounting.usage, resolveCost(c.identity, accounting.usage, accounting.wireCost()))
 		}()
 		orchestrator, err := c.prepareOrchestrator()
 		if err != nil {
@@ -103,7 +103,6 @@ type turnAccounting struct {
 	wireRounds   int
 	rounds       int
 	allWireCosts bool
-	pricing      map[string]Pricing
 }
 
 func (a *turnAccounting) add(round providerAccounting) {
@@ -114,9 +113,6 @@ func (a *turnAccounting) add(round providerAccounting) {
 	} else {
 		a.wireAmount += *round.wireAmount
 		a.wireRounds++
-	}
-	if round.pricing != nil {
-		a.pricing = round.pricing
 	}
 }
 
@@ -130,7 +126,6 @@ func (a *turnAccounting) wireCost() *int64 {
 type providerAccounting struct {
 	usage      Usage
 	wireAmount *int64
-	pricing    map[string]Pricing
 }
 
 type accountingProvider interface {

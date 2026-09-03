@@ -64,17 +64,55 @@ func TestPredecodedWireCostPresenceControlsFallback(t *testing.T) {
 	// R-2IY2-WR69
 	const billedMilliUSD = int64(7)
 	convertedNanoUSD := billedMilliUSD * 1_000_000
-	consumer := map[string]Pricing{
-		"custom-chat": {Tiers: []RateTier{{InputUncached: 23}}},
-	}
+	identity := Identity{Endpoint: string(ProviderOpenAI), Model: "gpt-5.4-nano"}
 
-	present := resolveCost("custom-chat", Usage{InputTokens: 3}, &convertedNanoUSD, consumer)
+	present := resolveCost(identity, Usage{InputTokens: 3}, &convertedNanoUSD)
 	if present != Cost(7_000_000) {
 		t.Fatalf("present predecoded wire cost = %d, want 7000000 nano-USD", present)
 	}
-	absent := resolveCost("custom-chat", Usage{InputTokens: 3}, nil, consumer)
-	if absent != Cost(69) {
-		t.Fatalf("absent wire cost fallback = %d, want consumer-priced amount 69", absent)
+	absent := resolveCost(identity, Usage{InputTokens: 3}, nil)
+	if absent != Cost(600) {
+		t.Fatalf("absent wire cost fallback = %d, want catalog-priced amount 600", absent)
+	}
+}
+
+func TestResolveCostUsesWireThenExactCatalogOffering(t *testing.T) {
+	// R-NP7W-266R
+	usage := Usage{InputTokens: 2, CachedTokens: 3, OutputTokens: 5, ReasoningTokens: 7}
+	identity := Identity{Endpoint: string(ProviderOpenAI), Model: "gpt-5.4-nano"}
+	wireAmount := int64(91)
+	if got := resolveCost(identity, usage, &wireAmount); got != Cost(91) {
+		t.Fatalf("wire-priced cost = %d, want exact wire amount 91", got)
+	}
+	const wantCatalogCost = Cost(2*200 + 3*20 + (5+7)*1250)
+	if got := resolveCost(identity, usage, nil); got != wantCatalogCost {
+		t.Fatalf("catalog-priced cost = %d, want %d", got, wantCatalogCost)
+	}
+}
+
+func TestResolveCostMatchesOfferingProviderAndWireModelExactly(t *testing.T) {
+	// R-NQFS-FXXG
+	usage := Usage{InputTokens: 2, OutputTokens: 3}
+	const want = Cost(2*200 + 3*1250)
+	if got := resolveCost(Identity{Endpoint: string(ProviderOpenAI), Model: "gpt-5.4-nano"}, usage, nil); got != want {
+		t.Fatalf("exact offering cost = %d, want %d", got, want)
+	}
+	for _, identity := range []Identity{
+		{Endpoint: string(ProviderXAI), Model: "gpt-5.4-nano"},
+		{Endpoint: string(ProviderOpenAI), Model: "openai/gpt-5.4-nano"},
+		{Endpoint: string(ProviderOpenRouter), Model: "gpt-5.4-nano"},
+	} {
+		if got := resolveCost(identity, usage, nil); got != 0 {
+			t.Errorf("mismatched identity %+v cost = %d, want zero", identity, got)
+		}
+	}
+}
+
+func TestResolveCostReturnsZeroForOffCatalogIdentity(t *testing.T) {
+	// R-NRNO-TPO5
+	identity := Identity{Endpoint: "custom-provider", Model: "released-today"}
+	if got := resolveCost(identity, Usage{InputTokens: 10, OutputTokens: 20}, nil); got != 0 {
+		t.Fatalf("off-catalog cost = %d, want zero", got)
 	}
 }
 

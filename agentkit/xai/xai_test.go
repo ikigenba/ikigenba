@@ -1,6 +1,7 @@
 package xai
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -112,5 +113,56 @@ func TestOAuthAndBaseURLConflictAtConstruction(t *testing.T) {
 	}
 	if calls != 0 {
 		t.Fatalf("token source called %d times during rejected construction", calls)
+	}
+}
+
+func TestNewNamesXAIEndpointAndUsesCatalogPricing(t *testing.T) {
+	// R-EKRG-9Y2W
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(writer, "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":2,\"output_tokens\":3}}}\n\n")
+	}))
+	defer server.Close()
+
+	var output bytes.Buffer
+	conversation, err := New(APIKey("key"), "grok-4.5",
+		WithBaseURL(server.URL),
+		WithConfig(agentkit.Config{Log: agentkit.NewLog(&output, nil)}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, streamErr := collectParityStream(conversation.Send(context.Background(), agentkit.Text{Text: "hello"}))
+	if streamErr != nil {
+		t.Fatal(streamErr)
+	}
+	const wantCost = agentkit.Cost(2*2_000 + 3*6_000)
+	assertXAITurnIdentityAndCost(t, output.Bytes(), agentkit.ProviderXAI, wantCost)
+}
+
+func assertXAITurnIdentityAndCost(t *testing.T, data []byte, provider agentkit.ProviderID, want agentkit.Cost) {
+	t.Helper()
+	var identity *agentkit.Identity
+	var cost *agentkit.Cost
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	for {
+		var record agentkit.LogRecord
+		if err := decoder.Decode(&record); err == io.EOF {
+			break
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		if record.Type == agentkit.RecordTurnStart {
+			identity = record.Identity
+		}
+		if record.Type == agentkit.RecordUsage {
+			cost = record.Cost
+		}
+	}
+	if identity == nil || identity.Endpoint != string(provider) {
+		t.Fatalf("turn identity = %+v, want endpoint %q", identity, provider)
+	}
+	if cost == nil || *cost != want {
+		t.Fatalf("turn cost = %v, want catalog amount %d", cost, want)
 	}
 }

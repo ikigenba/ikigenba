@@ -79,7 +79,7 @@ func New(credential Credential, model string, options ...Option) (*agentkit.Conv
 	default:
 		return nil, fmt.Errorf("%w: unsupported OpenRouter API %d", agentkit.ErrInvalidConfig, configuration.api)
 	}
-	endpoint, err := agentkit.NewEndpoint(configuration.baseURL, authAdapter{credential})
+	endpoint, err := agentkit.NewEndpoint(configuration.baseURL, authAdapter{credential}, agentkit.WithName(string(agentkit.ProviderOpenRouter)))
 	if err != nil {
 		return nil, err
 	}

@@ -75,7 +75,7 @@ func New(credential Credential, model string, options ...Option) (*agentkit.Conv
 	if configuration.api != Messages {
 		return nil, fmt.Errorf("%w: unsupported Anthropic API %d", agentkit.ErrInvalidConfig, configuration.api)
 	}
-	endpoint, err := agentkit.NewEndpoint(configuration.baseURL, authAdapter{credential})
+	endpoint, err := agentkit.NewEndpoint(configuration.baseURL, authAdapter{credential}, agentkit.WithName(string(agentkit.ProviderAnthropic)))
 	if err != nil {
 		return nil, err
 	}

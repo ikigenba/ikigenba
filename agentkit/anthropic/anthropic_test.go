@@ -1,6 +1,7 @@
 package anthropic
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -142,5 +143,52 @@ func TestNewSelectsAnthropicMessagesWireAndEndpoint(t *testing.T) {
 	}
 	if _, exists := request.body["messages"]; !exists {
 		t.Fatalf("selected wire body lacks messages: %v", request.body)
+	}
+}
+
+func TestNewNamesAnthropicEndpointAndUsesCatalogPricing(t *testing.T) {
+	// R-EKRG-9Y2W
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(writer, "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":2}}}\n\ndata: {\"type\":\"message_delta\",\"delta\":{\"usage\":{\"output_tokens\":3}}}\n\ndata: {\"type\":\"message_stop\"}\n\n")
+	}))
+	defer server.Close()
+
+	var output bytes.Buffer
+	conversation, err := New(APIKey("key"), "claude-haiku-4-5",
+		WithBaseURL(server.URL),
+		WithConfig(agentkit.Config{Log: agentkit.NewLog(&output, nil)}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, streamErr := collectParityStream(conversation.Send(context.Background(), agentkit.Text{Text: "hello"}))
+	if streamErr != nil {
+		t.Fatal(streamErr)
+	}
+
+	var identity *agentkit.Identity
+	var cost *agentkit.Cost
+	decoder := json.NewDecoder(&output)
+	for {
+		var record agentkit.LogRecord
+		if err := decoder.Decode(&record); err == io.EOF {
+			break
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		if record.Type == agentkit.RecordTurnStart {
+			identity = record.Identity
+		}
+		if record.Type == agentkit.RecordUsage {
+			cost = record.Cost
+		}
+	}
+	if identity == nil || identity.Endpoint != string(agentkit.ProviderAnthropic) {
+		t.Fatalf("turn identity = %+v, want endpoint %q", identity, agentkit.ProviderAnthropic)
+	}
+	const wantCost = agentkit.Cost(2*1_000 + 3*5_000)
+	if cost == nil || *cost != wantCost {
+		t.Fatalf("turn cost = %v, want 2 input at 1000 plus 3 output at 5000 = %d", cost, wantCost)
 	}
 }

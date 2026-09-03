@@ -665,6 +665,7 @@ type boundaryTestWire struct{ wireCodec }
 func (*boundaryTestWire) RenderTools([]Tool) (json.RawMessage, error) { return nil, nil }
 
 type phase15Provider struct {
+	endpoint        string
 	model           string
 	states          []RequestState
 	responses       [][]Event
@@ -743,7 +744,11 @@ func (p *phase15Provider) Classify(int, http.Header, []byte) error {
 }
 
 func (p *phase15Provider) Identity() Identity {
-	return Identity{Endpoint: "phase15", AuthMode: "fixture", Model: p.model}
+	endpoint := p.endpoint
+	if endpoint == "" {
+		endpoint = "phase15"
+	}
+	return Identity{Endpoint: endpoint, AuthMode: "fixture", Model: p.model}
 }
 
 func (p *phase15Provider) turnAccounting() providerAccounting {
@@ -771,6 +776,88 @@ func successfulPhase15Client(transportCalls *int) *http.Client {
 		*transportCalls++
 		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}, nil
 	})}
+}
+
+func TestOffCatalogConversationConstructsSendsAndPricesToZero(t *testing.T) {
+	// R-OPSV-JAFL
+	// R-NRNO-TPO5
+	const model = "released-today-uncataloged"
+	if _, ok := ResolveModel(model, ProviderID("phase15")); ok {
+		t.Fatalf("test model %q unexpectedly resolved in catalog", model)
+	}
+	provider := &phase15Provider{
+		model: model,
+		responses: [][]Event{{MessageDone{Message: Message{
+			Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}},
+		}}}},
+		accounting: []providerAccounting{{usage: Usage{InputTokens: 2, OutputTokens: 3}}},
+	}
+	transportCalls := 0
+	var logOutput bytes.Buffer
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+		Log: NewLog(&logOutput, func() time.Time { return time.Time{} }),
+	})
+	stream := conversation.Send(context.Background(), Text{Text: "hello"})
+	drainStream(stream)
+	if stream.Err() != nil || transportCalls != 1 || len(provider.states) != 1 {
+		t.Fatalf("off-catalog Send error=%v transport=%d states=%d, want normal completed request", stream.Err(), transportCalls, len(provider.states))
+	}
+	if provider.states[0].Model != model {
+		t.Fatalf("sent model = %q, want %q verbatim", provider.states[0].Model, model)
+	}
+	for _, record := range decodeLogRecords(t, logOutput.Bytes()) {
+		if record.Type == RecordUsage {
+			if record.Cost == nil || *record.Cost != 0 {
+				t.Fatalf("off-catalog usage cost = %v, want zero", record.Cost)
+			}
+			return
+		}
+	}
+	t.Fatal("off-catalog Send emitted no usage record")
+}
+
+func TestCatalogPricingUsesMergedUsageAcrossRounds(t *testing.T) {
+	// R-NP7W-266R
+	call := ToolUse{ID: "catalog-price-call", Name: "lookup", Input: json.RawMessage(`{"key":"value"}`)}
+	provider := &phase15Provider{
+		endpoint: string(ProviderOpenAI),
+		model:    "gpt-5.4",
+		responses: [][]Event{
+			{MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{call}}}},
+			{MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}}},
+		},
+		accounting: []providerAccounting{
+			{usage: Usage{InputTokens: 100_000, CachedTokens: 20_000, OutputTokens: 3, ReasoningTokens: 5}},
+			{usage: Usage{InputTokens: 100_000, CachedTokens: 60_001, OutputTokens: 7, ReasoningTokens: 11}},
+		},
+	}
+	transportCalls := 0
+	var logOutput bytes.Buffer
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+		Log: NewLog(&logOutput, func() time.Time { return time.Time{} }),
+		Tools: []Tool{MustTool("lookup", "", func(context.Context, phase15Input) (string, error) {
+			return "found", nil
+		})},
+	})
+	stream := conversation.Send(context.Background(), Text{Text: "price both rounds"})
+	drainStream(stream)
+	if stream.Err() != nil || transportCalls != 2 || provider.accountingCalls != 2 {
+		t.Fatalf("multi-round Send error=%v transport=%d accounting=%d, want successful two-round turn", stream.Err(), transportCalls, provider.accountingCalls)
+	}
+
+	const wantCost = Cost(200_000*5_000 + 80_001*500 + (3+5+7+11)*22_500)
+	for _, record := range decodeLogRecords(t, logOutput.Bytes()) {
+		if record.Type == RecordUsage {
+			if record.Usage == nil || *record.Usage != (Usage{InputTokens: 200_000, CachedTokens: 80_001, OutputTokens: 10, ReasoningTokens: 16}) {
+				t.Fatalf("logged merged usage = %#v, want both rounds summed", record.Usage)
+			}
+			if record.Cost == nil || *record.Cost != wantCost {
+				t.Fatalf("merged catalog cost = %v, want exact second-tier amount %d", record.Cost, wantCost)
+			}
+			return
+		}
+	}
+	t.Fatal("multi-round Send emitted no usage record")
 }
 
 func TestZeroConfigLeavesEveryOptionalRequestAxisEmpty(t *testing.T) {

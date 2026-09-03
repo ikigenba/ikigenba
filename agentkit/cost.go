@@ -24,16 +24,6 @@ type Pricing struct {
 	Tiers []RateTier
 }
 
-var builtInChatPricing = map[string]Pricing{
-	"gpt-4.1-mini": {
-		Tiers: []RateTier{{
-			InputUncached:  400,
-			CacheReadInput: 100,
-			Output:         1_600,
-		}},
-	},
-}
-
 // Cost prices a Usage against this schedule. An empty schedule prices to zero.
 func (p Pricing) Cost(u Usage) Cost {
 	if len(p.Tiers) == 0 {
@@ -55,19 +45,16 @@ func (p Pricing) Cost(u Usage) Cost {
 		(u.OutputTokens+u.ReasoningTokens)*tier.Output)
 }
 
-func priceUsage(usage Usage, pricing Pricing) Cost {
-	return pricing.Cost(usage)
-}
-
-func resolveCost(model string, usage Usage, wireAmount *int64, consumerPricing map[string]Pricing) Cost {
+func resolveCost(conversationIdentity Identity, usage Usage, wireAmount *int64) Cost {
 	if wireAmount != nil {
 		return Cost(*wireAmount)
 	}
-	if pricing, ok := consumerPricing[model]; ok {
-		return priceUsage(usage, pricing)
-	}
-	if pricing, ok := builtInChatPricing[model]; ok {
-		return priceUsage(usage, pricing)
+	for _, entry := range catalogTable {
+		for _, candidate := range entry.Offerings {
+			if string(candidate.Provider) == conversationIdentity.Endpoint && candidate.WireModel == conversationIdentity.Model {
+				return candidate.Pricing.Cost(usage)
+			}
+		}
 	}
 	return 0
 }

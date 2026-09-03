@@ -46,7 +46,7 @@ func New(credential Credential, model string, options ...Option) (*agentkit.Conv
 			return nil, err
 		}
 	}
-	endpoint, err := agentkit.NewEndpoint(configuration.baseURL, authAdapter{credential})
+	endpoint, err := agentkit.NewEndpoint(configuration.baseURL, authAdapter{credential}, agentkit.WithName(string(agentkit.ProviderGemini)))
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,7 @@
 package gemini
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -131,5 +132,56 @@ func TestNewPlacesEscapedModelInDefaultURLPath(t *testing.T) {
 	}
 	if credential.url.Query().Get("alt") != "sse" {
 		t.Fatalf("request query = %q, want alt=sse", credential.url.RawQuery)
+	}
+}
+
+func TestNewNamesGeminiEndpointAndUsesCatalogPricing(t *testing.T) {
+	// R-EKRG-9Y2W
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(writer, "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"done\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":2,\"candidatesTokenCount\":3}}\n\n")
+	}))
+	defer server.Close()
+
+	var output bytes.Buffer
+	conversation, err := New(APIKey("key"), "gemini-2.5-flash",
+		WithBaseURL(server.URL),
+		WithConfig(agentkit.Config{Log: agentkit.NewLog(&output, nil)}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, streamErr := collectParityStream(conversation.Send(context.Background(), agentkit.Text{Text: "hello"}))
+	if streamErr != nil {
+		t.Fatal(streamErr)
+	}
+	const wantCost = agentkit.Cost(2*300 + 3*2_500)
+	assertGeminiTurnIdentityAndCost(t, output.Bytes(), agentkit.ProviderGemini, wantCost)
+}
+
+func assertGeminiTurnIdentityAndCost(t *testing.T, data []byte, provider agentkit.ProviderID, want agentkit.Cost) {
+	t.Helper()
+	var identity *agentkit.Identity
+	var cost *agentkit.Cost
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	for {
+		var record agentkit.LogRecord
+		if err := decoder.Decode(&record); err == io.EOF {
+			break
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		if record.Type == agentkit.RecordTurnStart {
+			identity = record.Identity
+		}
+		if record.Type == agentkit.RecordUsage {
+			cost = record.Cost
+		}
+	}
+	if identity == nil || identity.Endpoint != string(provider) {
+		t.Fatalf("turn identity = %+v, want endpoint %q", identity, provider)
+	}
+	if cost == nil || *cost != want {
+		t.Fatalf("turn cost = %v, want catalog amount %d", cost, want)
 	}
 }
