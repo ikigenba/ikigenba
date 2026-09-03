@@ -90,10 +90,16 @@ func (w *wireCodec) ReservedKeys() []string {
 }
 
 func (w *wireCodec) classifyResponse(status int, header http.Header, body []byte) error {
-	if w.classifier == nil {
-		return nil
+	if w.classifier != nil {
+		if err := w.classifier(status, header, body); err != nil {
+			return err
+		}
 	}
-	return w.classifier(status, header, body)
+	return &Error{
+		Category: classifyStatus(status),
+		Status:   status,
+		Message:  string(body),
+	}
 }
 
 func (w *wireCodec) validateSettings(settings Settings) error {

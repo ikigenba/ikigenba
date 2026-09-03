@@ -241,34 +241,32 @@ func TestSendValidationFailsBeforeConfiguredProviderBoundaries(t *testing.T) {
 	}
 }
 
-func TestNonSuccessResponseUsesClassifierInputsAndResult(t *testing.T) {
-	// R-2LDV-OANN
-	body := []byte(`{"error":{"code":"throttled","message":"slow down"}}`)
-	header := http.Header{"Retry-After": []string{"1750ms"}, "X-Fixture": []string{"exact"}}
-	classified := &Error{
-		Category:   CategoryRateLimit,
-		Status:     http.StatusTooManyRequests,
-		Code:       "throttled",
-		Message:    "slow down",
-		RetryAfter: 1750 * time.Millisecond,
+func TestBuiltInWireClassifiesNonSuccessResponse(t *testing.T) {
+	// R-OGQM-PKFZ
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusPaymentRequired)
+		_, _ = writer.Write([]byte("quota exhausted"))
+	}))
+	t.Cleanup(server.Close)
+
+	endpoint, err := NewEndpoint(server.URL, authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
+	if err != nil {
+		t.Fatal(err)
 	}
-	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-		return &http.Response{
-			StatusCode: http.StatusTooManyRequests,
-			Header:     header,
-			Body:       io.NopCloser(bytes.NewReader(body)),
-		}, nil
-	})}
-	conversation, provider := vendorFixture("http://provider.invalid", "model", client)
-	provider.classify = func(int, http.Header, []byte) error { return classified }
+	useDefaultHTTPClient(t, server.Client())
+	conversation, err := NewForWire(KnownWireOpenAIChat, endpoint, "model", Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	stream := conversation.Send(context.Background(), Text{Text: "hello"})
 	drainStream(stream)
-	if reflect.ValueOf(stream.err).Pointer() != reflect.ValueOf(classified).Pointer() {
-		t.Fatalf("terminal error = %#v, want classifier result %#v unchanged", stream.err, classified)
+	var providerError *Error
+	if !errors.As(stream.err, &providerError) {
+		t.Fatalf("Send error type = %T, want *Error", stream.err)
 	}
-	if provider.classifiedStatus != http.StatusTooManyRequests || !reflect.DeepEqual(provider.classifiedHeader, header) || !bytes.Equal(provider.classifiedBody, body) {
-		t.Fatalf("classifier inputs = (%d, %#v, %q), want (%d, %#v, %q)", provider.classifiedStatus, provider.classifiedHeader, provider.classifiedBody, http.StatusTooManyRequests, header, body)
+	if providerError.Status != http.StatusPaymentRequired || providerError.Category != CategoryInsufficientQuota {
+		t.Fatalf("Send error = %#v, want status %d and CategoryInsufficientQuota", providerError, http.StatusPaymentRequired)
 	}
 }
 

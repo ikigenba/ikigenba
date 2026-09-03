@@ -106,6 +106,25 @@ func categoryName(category Category) string {
 	}
 }
 
+func classifyStatus(status int) Category {
+	switch status {
+	case 401, 403:
+		return CategoryAuth
+	case 400, 404, 409, 413, 415, 422:
+		return CategoryInvalidRequest
+	case 402:
+		return CategoryInsufficientQuota
+	case 429:
+		return CategoryRateLimit
+	case 408, 504:
+		return CategoryTimeout
+	case 500, 502, 503, 529:
+		return CategoryOverloaded
+	default:
+		return CategoryUnknown
+	}
+}
+
 func invalidConfigError(identity Identity, cause error) *Error {
 	wrapped := ErrInvalidConfig
 	message := ErrInvalidConfig.Error()
