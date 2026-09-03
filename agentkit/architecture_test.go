@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"go/ast"
 	"go/format"
 	"go/parser"
@@ -573,6 +574,19 @@ func TestConversationConstructionFixesOrchestrationConfiguration(t *testing.T) {
 	conversationType := reflect.TypeFor[*Conversation]()
 	if conversationType.NumMethod() != 1 || conversationType.Method(0).Name != "Send" {
 		t.Fatalf("Conversation exposes reassignment method(s): %v", conversationType)
+	}
+}
+
+func TestNewHasExactSignatureAndRejectsUnknownWire(t *testing.T) {
+	// R-OKEB-UVO2
+	wantSignature := reflect.TypeOf(func(KnownWire, Endpoint, string, Config) (*Conversation, error) {
+		return nil, nil
+	})
+	assertFunctionSignature(t, reflect.TypeOf(New), wantSignature)
+
+	conversation, err := New(KnownWire(99), Endpoint{}, "model", Config{})
+	if conversation != nil || !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("New with unknown wire = (%v, %v), want (nil, ErrInvalidConfig)", conversation, err)
 	}
 }
 
