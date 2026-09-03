@@ -5,8 +5,8 @@
 `Read`, `Write`, `Edit`, `Glob`, `Grep` — as ready-made `agentkit.Tool` values.
 It is the sibling agentkit's D0 names for exactly this job: agentkit owns the
 conversation loop and the tool seam, toolkit owns the tools. Module path
-`github.com/ikigenba/ikigenba/toolkit`, its own `go.mod`, `go 1.26`, no
-`go.work`; every command runs from this sub-project directory. It follows the
+`github.com/ikigenba/ikigenba/toolkit`, its own `go.mod` specifying a Go
+version, no `go.work`; every command runs from this sub-project directory. It follows the
 monorepo's house layout:
 
 ```
@@ -14,7 +14,7 @@ toolkit/                                (this sub-project; go.mod lives here)
 ├── AGENTS.md                           spec-driven build contract, gates
 ├── README.md
 ├── Makefile                            build test lint llm-lint fmt clean
-├── go.mod                              go 1.26; pins agentkit by tag
+├── go.mod                              Go version + module requires
 ├── .golangci.yml  .llm-lint.json  lint-rules/
 ├── specs/design/D<int>-<slug>.md       these documents
 ├── specs/loops/{gather,build,verify}.md + executable run
@@ -113,7 +113,7 @@ func WithSkip(patterns ...string) SkipOption
 
 ## REQUIREMENTS
 
-- R-C1N8-ZFDG: The module MUST be `github.com/ikigenba/ikigenba/toolkit` with `go 1.26` in its own `go.mod` and no `go.work`, and it MUST require `github.com/ikigenba/ikigenba/agentkit v0.1.0`, `github.com/boyter/gocodewalker v1.5.1`, and `github.com/bmatcuk/doublestar/v4 v4.10.0`.
+- R-3AIY-084U: The module MUST be `github.com/ikigenba/ikigenba/toolkit` with its own `go.mod` that specifies a Go version and no `go.work`, and it MUST require `github.com/ikigenba/ikigenba/agentkit`, `github.com/boyter/gocodewalker`, and `github.com/bmatcuk/doublestar/v4`.
 - R-C2V5-D745: Package `toolkit` MUST export `func Bash(root string) (agentkit.Tool, error)`.
 - R-C431-QYUU: Package `toolkit` MUST export `func Read(root string) (agentkit.Tool, error)`.
 - R-C5AY-4QLJ: Package `toolkit` MUST export `func Write(root string) (agentkit.Tool, error)`.
