@@ -128,6 +128,11 @@ reasoning vocabulary is checked — the application reads all four from the one
 `Offering`. A `false` result is not an error; the application decides whether
 to refuse or to pass the pair through unvalidated and unpriced.
 
+A vendor round-trip test proves the identity/pricing link by asserting the
+logged `Identity.Endpoint` against the literal string (`"openrouter"`), not
+against the `ProviderID` constant; `TestProviderIDVocabulary`-style tests pin
+the constants to the same literals separately.
+
 Auth methods, environment-variable names, and auth files are the application's
 business and are deliberately not here: the catalog knows models and
 offerings, and the vendor packages (D7) know credentials.

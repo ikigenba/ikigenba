@@ -29,11 +29,16 @@ one status covers two categories (an OpenAI 429 that is really exhausted quota,
 a Gemini 400 that is really a bad key) — is deferred to a later design that adds
 per-wire envelope parsing on top of the table. Until then `Error.Code` and
 `Error.Message` may be empty and the status table is the whole classification
-of the *category*. One header is read today, because it is wire-agnostic: the
-standard `Retry-After` header (RFC 9110, delta-seconds or HTTP-date) is lifted
-into `Error.RetryAfter`. Vendor-specific reset headers (an OpenAI
-`x-ratelimit-reset-*`, a Gemini `retryInfo` in the body) wait for the envelope
-design. Nothing in the root drives `agentkit/retry` yet: the leaf exists (D14),
+of the *category*. One header is read today, because it is wire-agnostic: a
+`Retry-After` header in RFC 9110 delta-seconds form is lifted into
+`Error.RetryAfter`. The HTTP-date form is deliberately not read — its value
+depends on the wall clock, which classification has no injected source for,
+and a test of it could only assert a tolerance. Vendor-specific reset headers
+(an OpenAI `x-ratelimit-reset-*`, a Gemini `retryInfo` in the body) wait for
+the envelope design. The natural test drives a fake server that answers 429
+with `Retry-After: 30` through `Send` and asserts `RetryAfter == 30 *
+time.Second` as a literal; a missing or non-integer header is asserted to
+leave the field zero. Nothing in the root drives `agentkit/retry` yet: the leaf exists (D14),
 `RetryAfter` is the floor it would read, and the orchestrator-side wiring — when
 a turn retries, what it logs (`RecordRetry`, D15) — is a later design.
 
@@ -136,5 +141,5 @@ condition that would have been a warning is now either a typed field or a hard
 - R-ZBU5-WMBY: `agentkit` MUST export `type Error struct { Category Category; Status int; Code string; Message string; RetryAfter time.Duration; Endpoint Identity }` with those exported fields plus an unexported wrapped cause, and `*Error` MUST implement `Error() string` and `Unwrap() error`.
 - R-ZD22-AE2N: `agentkit` MUST export `func Retryable(err error) bool`.
 - R-ZE9Y-O5TC: `agentkit` MUST export the sentinel errors `ErrInvalidConfig` and `ErrClosed`, each an `error` created with `errors.New`.
-- R-UBUS-5J8U: Built-in classification MUST set `Error.RetryAfter` from a `Retry-After` response header, accepting both RFC 9110 forms — a non-negative delta-seconds integer as that many seconds, and an HTTP-date as the duration from now until that date — and MUST leave `RetryAfter` zero when the header is absent, unparseable, or names a time already past.
+- R-1JWR-1RWS: Built-in classification MUST set `Error.RetryAfter` to N seconds when the response carries a `Retry-After` header whose value is a non-negative integer N (RFC 9110 delta-seconds), and MUST leave `RetryAfter` zero when the header is absent or its value is anything else, including an HTTP-date.
 - R-OHYJ-3C6O: Built-in classification MUST map HTTP status to `Category` as: 401 and 403 → `CategoryAuth`; 400, 404, 409, 413, 415, and 422 → `CategoryInvalidRequest`; 402 → `CategoryInsufficientQuota`; 429 → `CategoryRateLimit`; 408 and 504 → `CategoryTimeout`; 500, 502, 503, and 529 → `CategoryOverloaded`; every other non-2xx status → `CategoryUnknown`.

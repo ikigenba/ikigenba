@@ -111,6 +111,16 @@ handed: `Endpoint` is the package's `ProviderID`, and `AuthMode` follows the
 credential — `"api_key"` for an `APIKey` credential, `"oauth"` for an `OAuth`
 one (D7). Those are the only two auth modes; there is no third.
 
+How this is observed in tests: `Identity` reaches a consumer through the
+`turn_start` log record and through `Error.Endpoint`. Tests pin both fields
+against bare string literals (`"anthropic"`, `"api_key"`), never against a
+production constant — the lint gate rejects an expectation taken from the code
+under test, and the literal is the contract anyway. The `"oauth"` case needs no
+network: an `OAuth` credential refuses `WithBaseURL` (D7), but the auth applier
+runs while the request is being built, before any HTTP call, so a token source
+that returns an error makes `Send` fail with an `*Error` whose `Endpoint`
+carries the identity and a `turn_start` record already written to the log.
+
 ## REQUIREMENTS
 
 - R-1OGL-CHMW: The module MUST declare path `github.com/ikigenba/ikigenba/agentkit` in its own `go.mod` at `go 1.26`, with no `go.work` file, so every gate and command runs from the `agentkit/` directory.
