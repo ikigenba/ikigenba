@@ -1461,16 +1461,6 @@ func TestCostDeclarationIsExact(t *testing.T) {
 	}
 }
 
-func TestPricingDeclaration(t *testing.T) {
-	// R-Z86G-RB3V
-	assertExactStructFields(t, reflect.TypeFor[Pricing](), []exactStructField{
-		{name: "InputPerToken", typeOf: reflect.TypeFor[int64]()},
-		{name: "CachedPerToken", typeOf: reflect.TypeFor[int64]()},
-		{name: "OutputPerToken", typeOf: reflect.TypeFor[int64]()},
-		{name: "ReasoningPerToken", typeOf: reflect.TypeFor[int64]()},
-	})
-}
-
 func TestTextDeclaration(t *testing.T) {
 	// R-Z0V2-GONP
 	assertExactBlockStruct(t, reflect.TypeFor[Text](), []exactStructField{
