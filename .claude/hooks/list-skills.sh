@@ -16,7 +16,7 @@ if ((${#files[@]} == 0)); then
   echo "Project skills: none found under .agents/skills/."
   exit 0
 fi
-echo "Project skills (.agents/skills/<name>/SKILL.md). When a request names one or matches its description, read that SKILL.md and follow it before acting:"
+echo "Project skills (.agents/skills/<name>/SKILL.md), enumerated by the SessionStart hook. This listing satisfies the AGENTS.md instruction to enumerate the skills at session start; do not repeat it. When a request names one or matches its description, read that SKILL.md and follow it before acting:"
 for f in "${files[@]}"; do
   name=$(sed -n '/^---$/,/^---$/{s/^name:[[:space:]]*//p}' "$f" | head -1)
   desc=$(sed -n '/^---$/,/^---$/{s/^description:[[:space:]]*//p}' "$f" | head -1)
