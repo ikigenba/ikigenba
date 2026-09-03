@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"syscall"
+	"time"
 
 	"github.com/ikigenba/ikigenba/agentkit"
 )
@@ -29,23 +31,55 @@ func Bash(root string) (agentkit.Tool, error) {
 }
 
 func runBash(ctx context.Context, bashPath, root string, input bashInput) (string, error) {
+	effectiveTimeout := 120000
+	if input.Timeout != nil {
+		effectiveTimeout = *input.Timeout
+	}
+
 	// #nosec G204 -- executing the caller-supplied shell command is the tool's purpose.
-	cmd := exec.CommandContext(ctx, bashPath, "-c", input.Command)
+	cmd := exec.Command(bashPath, "-c", input.Command)
 	cmd.Dir = root
 	cmd.Env = os.Environ()
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
 
-	err := cmd.Run()
-	if err == nil {
-		return output.String(), nil
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("bash: %w", err)
 	}
 
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return fmt.Sprintf("%s\n[exit code %d]", output.String(), exitErr.ExitCode()), nil
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	timer := time.NewTimer(time.Duration(effectiveTimeout) * time.Millisecond)
+	defer timer.Stop()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			return output.String(), nil
+		}
+
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return fmt.Sprintf("%s\n[exit code %d]", output.String(), exitErr.ExitCode()), nil
+		}
+		return "", fmt.Errorf("bash: %w", err)
+	case <-ctx.Done():
+		killProcessGroup(cmd.Process.Pid)
+		<-done
+		return "", fmt.Errorf("bash: %w: %s", ctx.Err(), output.String())
+	case <-timer.C:
+		killProcessGroup(cmd.Process.Pid)
+		<-done
+		return "", fmt.Errorf("command timed out after %d ms: %s", effectiveTimeout, output.String())
 	}
-	return "", fmt.Errorf("bash: %w", err)
+}
+
+func killProcessGroup(pid int) {
+	_ = syscall.Kill(-pid, syscall.SIGKILL)
 }

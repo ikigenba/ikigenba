@@ -3,11 +3,15 @@ package toolkit
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 func TestBashConstructor(t *testing.T) {
@@ -157,5 +161,105 @@ func TestBashReturnsNonzeroExitAsResult(t *testing.T) {
 	}
 	if want := strings.Join([]string{"failure", "[exit code 3]"}, "\n"); got != want {
 		t.Errorf("Call() = %q, want %q", got, want)
+	}
+}
+
+func TestBashTimeout(t *testing.T) {
+	tool, err := Bash(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// R-E8WP-UIKL: an omitted timeout permits an ordinary command to finish,
+	// while an explicit timeout returns the required prefix and captured output.
+	got, err := tool.Call(context.Background(), json.RawMessage(`{"command":"printf default-timeout"}`))
+	if err != nil {
+		t.Fatalf("Call() with default timeout error = %v", err)
+	}
+	if want := "default-timeout"; got != want {
+		t.Errorf("Call() with default timeout = %q, want %q", got, want)
+	}
+
+	_, err = tool.Call(context.Background(), json.RawMessage(`{"command":"echo hi; sleep 5","timeout":100}`))
+	if err == nil {
+		t.Fatal("Call() with explicit timeout error = nil, want an error")
+	}
+	if want := "command timed out after 100 ms"; !strings.HasPrefix(err.Error(), want) {
+		t.Errorf("Call() error = %q, want prefix %q", err, want)
+	}
+	if !strings.Contains(err.Error(), "hi\n") {
+		t.Errorf("Call() error = %q, want captured output", err)
+	}
+}
+
+func TestBashCancellationWrapsContextError(t *testing.T) {
+	root := t.TempDir()
+	tool, err := Bash(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, callErr := tool.Call(ctx, json.RawMessage(`{"command":"touch started; sleep 5"}`))
+		done <- callErr
+	}()
+
+	started := filepath.Join(root, "started")
+	deadline := time.Now().Add(time.Second)
+	for {
+		if _, statErr := os.Stat(started); statErr == nil {
+			break
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatal(statErr)
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("command did not start before cancellation")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+
+	// R-EBCI-M21Z: cancellation while the command runs wraps ctx.Err().
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Call() error = %v, want wrapped context.Canceled", err)
+	}
+}
+
+func TestBashTimeoutKillsBackgroundProcess(t *testing.T) {
+	tool, err := Bash(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = tool.Call(context.Background(), json.RawMessage(`{"command":"sleep 5 & child=$!; echo $child; wait","timeout":100}`))
+	if err == nil {
+		t.Fatal("Call() error = nil, want a timeout error")
+	}
+	fields := strings.Fields(err.Error())
+	if len(fields) == 0 {
+		t.Fatalf("Call() error = %q, want child pid in captured output", err)
+	}
+	pid, parseErr := strconv.Atoi(fields[len(fields)-1])
+	if parseErr != nil {
+		t.Fatalf("parse child pid from Call() error %q: %v", err, parseErr)
+	}
+
+	// R-ECKE-ZTSO: the timed-out shell and its background child share an
+	// isolated process group, and the child does not survive the group kill.
+	deadline := time.Now().Add(time.Second)
+	for {
+		killErr := syscall.Kill(pid, 0)
+		if errors.Is(killErr, syscall.ESRCH) {
+			break
+		}
+		if killErr != nil {
+			t.Fatalf("probe child process %d: %v", pid, killErr)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("background process %d survived timeout", pid)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
