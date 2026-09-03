@@ -25,12 +25,16 @@ type globMatch struct {
 
 // Glob creates a tool that finds files whose relative paths match a doublestar glob.
 func Glob(root string, opts ...GlobOption) (agentkit.Tool, error) {
+	root, err := resolveRoot(root)
+	if err != nil {
+		return nil, err
+	}
 	config := globConfig{}
 	for _, opt := range opts {
 		opt.applyGlob(&config)
 	}
 
-	return agentkit.NewTool[globInput]("Glob", "Find files matching a doublestar glob", func(_ context.Context, input globInput) (string, error) {
+	return agentkit.NewTool[globInput]("Glob", "Find files matching a doublestar glob", capOutput(func(_ context.Context, input globInput) (string, error) {
 		if !doublestar.ValidatePattern(input.Pattern) {
 			return "", fmt.Errorf("pattern %q is not a valid glob", input.Pattern)
 		}
@@ -53,7 +57,7 @@ func Glob(root string, opts ...GlobOption) (agentkit.Tool, error) {
 		}
 		sortGlobMatches(matches)
 		return renderGlobMatches(matches), nil
-	})
+	}))
 }
 
 func collectGlobMatches(root, searchDir, pattern string, skipPatterns []string) ([]globMatch, error) {

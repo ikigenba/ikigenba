@@ -33,14 +33,18 @@ type grepInput struct {
 
 // Grep creates a tool that searches regular files for a Go regular expression.
 func Grep(root string, opts ...GrepOption) (agentkit.Tool, error) {
+	root, err := resolveRoot(root)
+	if err != nil {
+		return nil, err
+	}
 	config := grepConfig{}
 	for _, opt := range opts {
 		opt.applyGrep(&config)
 	}
 
-	return agentkit.NewTool[grepInput]("Grep", "Search file contents with a regular expression", func(_ context.Context, input grepInput) (string, error) {
+	return agentkit.NewTool[grepInput]("Grep", "Search file contents with a regular expression", capOutput(func(_ context.Context, input grepInput) (string, error) {
 		return runGrep(root, config.skipPatterns, input)
-	})
+	}))
 }
 
 func runGrep(root string, skipPatterns []string, input grepInput) (string, error) {

@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
@@ -20,7 +19,11 @@ type readInput struct {
 
 // Read returns a tool that reads numbered lines from files beneath root.
 func Read(root string) (agentkit.Tool, error) {
-	return agentkit.NewTool[readInput]("Read", "Read a file with line numbers", func(_ context.Context, input readInput) (string, error) {
+	root, err := resolveRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	return agentkit.NewTool[readInput]("Read", "Read a file with line numbers", capOutput(func(_ context.Context, input readInput) (string, error) {
 		contents, err := readTextFile(root, input.FilePath)
 		if err != nil {
 			return "", err
@@ -41,12 +44,14 @@ func Read(root string) (agentkit.Tool, error) {
 		}
 
 		return renderLines(contents, input.FilePath, offset, limit)
-	})
+	}))
 }
 
 func readTextFile(root, filePath string) ([]byte, error) {
-	// Path confinement is deliberately added by a later build phase.
-	path := filepath.Clean(filepath.Join(root, filePath))
+	path, err := resolveSearchPath(root, "file_path", filePath)
+	if err != nil {
+		return nil, err
+	}
 	stat, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -58,6 +63,7 @@ func readTextFile(root, filePath string) ([]byte, error) {
 		return nil, fmt.Errorf("file_path %q is a directory", filePath)
 	}
 
+	// #nosec G304 -- resolveSearchPath confines path to the validated tool root.
 	contents, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("file_path %q: %w", filePath, err)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/ikigenba/ikigenba/agentkit"
@@ -19,7 +18,11 @@ type editInput struct {
 
 // Edit returns a tool that replaces exact text in an existing file beneath root.
 func Edit(root string) (agentkit.Tool, error) {
-	return agentkit.NewTool[editInput]("Edit", "Replace exact text in an existing file", func(_ context.Context, input editInput) (string, error) {
+	root, err := resolveRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	return agentkit.NewTool[editInput]("Edit", "Replace exact text in an existing file", capOutput(func(_ context.Context, input editInput) (string, error) {
 		if err := validateEdit(input); err != nil {
 			return "", err
 		}
@@ -31,7 +34,6 @@ func Edit(root string) (agentkit.Tool, error) {
 		if err != nil {
 			return "", err
 		}
-		// Path confinement is deliberately added by a later build phase.
 		if err := os.WriteFile(path, replacedContents, mode); err != nil {
 			return "", fmt.Errorf("file_path %q: %w", input.FilePath, err)
 		}
@@ -39,7 +41,7 @@ func Edit(root string) (agentkit.Tool, error) {
 		// This response deliberately preserves the supplied path verbatim as part
 		// of the tool's specified data format; it is not a diagnostic.
 		return fmt.Sprintf("replaced %d occurrence(s) of old_string in %s", replaced, input.FilePath), nil
-	})
+	}))
 }
 
 func validateEdit(input editInput) error {
@@ -50,8 +52,10 @@ func validateEdit(input editInput) error {
 }
 
 func editableFile(root, filePath string) (string, os.FileMode, []byte, error) {
-	// Path confinement is deliberately added by a later build phase.
-	path := filepath.Clean(filepath.Join(root, filePath))
+	path, err := resolveSearchPath(root, "file_path", filePath)
+	if err != nil {
+		return "", 0, nil, err
+	}
 	stat, err := os.Stat(path)
 	switch {
 	case os.IsNotExist(err):
@@ -62,6 +66,7 @@ func editableFile(root, filePath string) (string, os.FileMode, []byte, error) {
 		return "", 0, nil, fmt.Errorf("file_path %q is a directory", filePath)
 	}
 
+	// #nosec G304 -- resolveSearchPath confines path to the validated tool root.
 	contents, err := os.ReadFile(path)
 	if err != nil {
 		return "", 0, nil, fmt.Errorf("file_path %q: %w", filePath, err)

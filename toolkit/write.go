@@ -16,9 +16,15 @@ type writeInput struct {
 
 // Write returns a tool that replaces a file's contents beneath root.
 func Write(root string) (agentkit.Tool, error) {
-	return agentkit.NewTool[writeInput]("Write", "Write the entire contents of a file", func(_ context.Context, input writeInput) (string, error) {
-		// Path confinement is deliberately added by a later build phase.
-		path := filepath.Clean(filepath.Join(root, input.FilePath))
+	root, err := resolveRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	return agentkit.NewTool[writeInput]("Write", "Write the entire contents of a file", capOutput(func(_ context.Context, input writeInput) (string, error) {
+		path, err := resolveSearchPath(root, "file_path", input.FilePath)
+		if err != nil {
+			return "", err
+		}
 		mode := os.FileMode(0o644)
 
 		stat, err := os.Stat(path)
@@ -44,5 +50,5 @@ func Write(root string) (agentkit.Tool, error) {
 		// This response deliberately preserves the supplied path verbatim as part
 		// of the tool's specified data format; it is not a diagnostic.
 		return fmt.Sprintf("wrote %d bytes to %s", len(input.Content), input.FilePath), nil
-	})
+	}))
 }
