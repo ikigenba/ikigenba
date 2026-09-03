@@ -3,6 +3,7 @@ package agentkit
 import (
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -288,6 +289,96 @@ func TestCatalogReturnsFullSortedStructurallyUniqueTable(t *testing.T) {
 				t.Fatalf("catalog entry %q repeats provider %q", entry.Model, offering.Provider)
 			}
 			providers[offering.Provider] = true
+		}
+	}
+}
+
+func TestCatalogOfferingDataQuality(t *testing.T) {
+	// R-OJPD-MFQ4
+	for _, entry := range Catalog() {
+		for _, offering := range entry.Offerings {
+			if offering.WireModel == "" {
+				t.Errorf("%q offering on %q has an empty wire model", entry.Model, offering.Provider)
+			}
+			if offering.Provider == ProviderOpenRouter && !strings.Contains(offering.WireModel, "/") {
+				t.Errorf("%q OpenRouter wire model %q does not contain a slash", entry.Model, offering.WireModel)
+			}
+			if offering.Context <= 0 {
+				t.Errorf("%q offering on %q has context %d, want greater than zero", entry.Model, offering.Provider, offering.Context)
+			}
+
+			tiers := offering.Pricing.Tiers
+			if len(tiers) == 0 {
+				t.Errorf("%q offering on %q has no pricing tiers", entry.Model, offering.Provider)
+				continue
+			}
+			if tiers[0].MinInputTokens != 0 {
+				t.Errorf("%q offering on %q first pricing tier starts at %d tokens, want zero", entry.Model, offering.Provider, tiers[0].MinInputTokens)
+			}
+			for index, tier := range tiers {
+				if index > 0 && tier.MinInputTokens <= tiers[index-1].MinInputTokens {
+					t.Errorf("%q offering on %q pricing tier %d starts at %d tokens, want greater than prior threshold %d", entry.Model, offering.Provider, index, tier.MinInputTokens, tiers[index-1].MinInputTokens)
+				}
+				if tier.InputUncached <= 0 {
+					t.Errorf("%q offering on %q pricing tier %d has uncached input rate %d, want greater than zero", entry.Model, offering.Provider, index, tier.InputUncached)
+				}
+				if tier.Output <= 0 {
+					t.Errorf("%q offering on %q pricing tier %d has output rate %d, want greater than zero", entry.Model, offering.Provider, index, tier.Output)
+				}
+			}
+		}
+	}
+}
+
+func TestCatalogReasoningInvariants(t *testing.T) {
+	// R-OM56-DZ7I
+	for _, entry := range Catalog() {
+		for _, offering := range entry.Offerings {
+			spec := offering.Reasoning
+			if !spec.Accepts(spec.Default) {
+				t.Errorf("%q offering on %q does not accept its reasoning default %+v", entry.Model, offering.Provider, spec.Default)
+			}
+
+			switch spec.Kind {
+			case ReasoningKindEffort:
+				if len(spec.Levels) == 0 {
+					t.Errorf("%q effort offering on %q has no reasoning levels", entry.Model, offering.Provider)
+				}
+				seen := make(map[Effort]bool, len(spec.Levels))
+				for _, level := range spec.Levels {
+					if seen[level] {
+						t.Errorf("%q effort offering on %q repeats reasoning level %v", entry.Model, offering.Provider, level)
+					}
+					seen[level] = true
+				}
+			case ReasoningKindBudget:
+				if spec.MinBudget >= spec.MaxBudget {
+					t.Errorf("%q budget offering on %q has range [%d, %d], want minimum less than maximum", entry.Model, offering.Provider, spec.MinBudget, spec.MaxBudget)
+				}
+			case ReasoningKindNone:
+				if spec.CanEnable || spec.CanDisable {
+					t.Errorf("%q none-kind offering on %q has enable flags (%t, %t), want both false", entry.Model, offering.Provider, spec.CanEnable, spec.CanDisable)
+				}
+				if len(spec.Levels) != 0 {
+					t.Errorf("%q none-kind offering on %q has reasoning levels %v, want none", entry.Model, offering.Provider, spec.Levels)
+				}
+			}
+		}
+	}
+}
+
+func TestCatalogCoversEveryBuiltInProvider(t *testing.T) {
+	// R-ELZC-NPTL
+	providers := []ProviderID{
+		ProviderAnthropic,
+		ProviderOpenAI,
+		ProviderGemini,
+		ProviderXAI,
+		ProviderOpenRouter,
+	}
+	for _, provider := range providers {
+		if entries := CatalogFor(provider); len(entries) == 0 {
+			t.Errorf("CatalogFor(%q) returned no entries", provider)
 		}
 	}
 }
