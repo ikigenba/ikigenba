@@ -7,35 +7,35 @@ import (
 	"io"
 	"iter"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Framer splits a response body into payload frames without interpreting the
 // vendor grammar carried by those frames.
 type Framer func(io.Reader) iter.Seq2[[]byte, error]
 
-// WireFormat is the internal codec contract selected by provider constructors.
-type WireFormat interface {
-	EncodeRequest(state RequestState) ([]byte, error)
+// wireFormat is the internal codec contract selected by provider constructors.
+type wireFormat interface {
+	EncodeRequest(state requestState) ([]byte, error)
 	DecodeStream(frames iter.Seq2[[]byte, error]) iter.Seq2[Event, error]
 	RenderTools(tools []Tool) (json.RawMessage, error)
 	ReservedKeys() []string
 }
 
-type wireClassifier = ErrorClassifier
-
 type frameDecoder func(frame []byte) (message *Message, usage usageFragment, hasUsage bool, err error)
 
 type wireCodec struct {
-	encode       func(RequestState) ([]byte, error)
+	encode       func(requestState) ([]byte, error)
 	decoder      func() frameDecoder
 	reserved     []string
-	classifier   wireClassifier
+	classifier   errorClassifier
 	lastUsage    Usage
 	capabilities wireCapabilities
 }
 
-func (w *wireCodec) EncodeRequest(state RequestState) ([]byte, error) {
+func (w *wireCodec) EncodeRequest(state requestState) ([]byte, error) {
 	return w.encode(state)
 }
 
@@ -45,7 +45,7 @@ func (w *wireCodec) DecodeStream(frames iter.Seq2[[]byte, error]) iter.Seq2[Even
 		var fragments []usageFragment
 		for frame, frameErr := range frames {
 			if frameErr != nil {
-				// WireFormat preserves the Framer's error verbatim; the provider
+				// wireFormat preserves the Framer's error verbatim; the provider
 				// boundary does not declare a second, transport-specific error seam.
 				yield(nil, frameErr)
 				return
@@ -89,11 +89,39 @@ func (w *wireCodec) ReservedKeys() []string {
 	return append([]string(nil), w.reserved...)
 }
 
-func (w *wireCodec) cloneWithClassifier(classifier wireClassifier) wireCodec {
-	clone := *w
-	clone.classifier = classifier
-	clone.lastUsage = Usage{}
-	return clone
+func (w *wireCodec) classifyResponse(status int, header http.Header, body []byte) error {
+	if w.classifier != nil {
+		if err := w.classifier(status, header, body); err != nil {
+			return err
+		}
+	}
+	return &Error{
+		Category:   classifyStatus(status),
+		Status:     status,
+		Message:    string(body),
+		RetryAfter: parseRetryAfter(header),
+	}
+}
+
+// parseRetryAfter reads the RFC 9110 delta-seconds form of a Retry-After
+// header (a non-negative integer count of seconds) and returns it as a
+// Duration. It deliberately does not parse the HTTP-date form: that value
+// depends on the wall clock, which classification has no injected source
+// for. A missing header, a negative number, a non-integer, or an HTTP-date
+// all yield zero.
+func parseRetryAfter(header http.Header) time.Duration {
+	if header == nil {
+		return 0
+	}
+	value := header.Get("Retry-After")
+	if value == "" {
+		return 0
+	}
+	seconds, err := strconv.Atoi(value)
+	if err != nil || seconds < 0 {
+		return 0
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 func (w *wireCodec) validateSettings(settings Settings) error {

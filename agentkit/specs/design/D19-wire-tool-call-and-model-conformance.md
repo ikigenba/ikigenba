@@ -23,10 +23,9 @@ in the same assistant message is preserved, in order, as a sibling `Text` block.
 **Encode side: the model.** No wire request body carries the model string, and no
 endpoint places it in the path. Three wires — Anthropic Messages, OpenAI Responses,
 OpenAI Chat — take the model as a top-level body field; the Gemini grammar takes
-it in the URL path, which the endpoint owns (D6). The Gemini vendor constructor
-already builds that path; the generic Gemini route relies on the caller's endpoint
-URL to name the model. The three body-grammar wires read `RequestState.Model` and
-emit it; the Gemini wire emits none.
+it in the URL path, which the endpoint owns (D6). The `gemini` vendor package
+builds that path. The three body-grammar wires read the conversation's model
+string and emit it; the Gemini wire emits none.
 
 Vendor byte facts — field names, event types, the exact SSE shape of a tool call —
 live in golden fixtures under `testdata/` and in the per-wire conformance tests,
@@ -41,7 +40,7 @@ rely on.
 - R-T7S5-G38L: The Gemini wire's `DecodeStream` MUST emit a `ToolUse` block for each function-call part in the vendor stream, carrying the call id the wire correlates on, the function name, and the arguments as a JSON object, pinned by a golden fixture under `testdata/`.
 - R-T901-TUZA: A `ToolUse.Input` emitted by any shipped wire MUST be a JSON object (never a JSON-encoded string), so the orchestrator validates and dispatches one argument encoding.
 - R-TA7Y-7MPZ: When an assistant message carries both text and tool calls, every shipped wire MUST emit the `Text` and `ToolUse` blocks in the vendor's order within one `MessageDone`, dropping neither.
-- R-TBFU-LEGO: The Anthropic Messages wire's `EncodeRequest` MUST emit `RequestState.Model` verbatim as the top-level `model` field of the request body, pinned by the wire's request fixture.
-- R-TCNQ-Z67D: The OpenAI Responses and OpenAI Chat wires' `EncodeRequest` MUST each emit `RequestState.Model` verbatim as the top-level `model` field of the request body, pinned by each wire's request fixture.
+- R-ORPQ-5I48: The Anthropic Messages wire MUST emit the conversation's model string verbatim as the top-level `model` field of the request body, pinned by the wire's request fixture.
+- R-OU5I-X1LM: The OpenAI Responses and OpenAI Chat wires MUST each emit the conversation's model string verbatim as the top-level `model` field of the request body, pinned by each wire's request fixture.
 - R-TDVN-CXY2: The Gemini wire's `EncodeRequest` MUST NOT emit a model field in the request body, and the `gemini` vendor constructor MUST place the model in the request URL path.
 - R-TF3J-QPOR: An offline turn driven against a replayed tool-call fixture MUST complete the full loop — `ToolCall` emitted, the tool dispatched, `ToolReturn` emitted, a second round-trip whose request body carries the `ToolUse` and `ToolResult`, and a final `MessageDone` — for every shipped wire.

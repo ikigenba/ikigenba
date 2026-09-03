@@ -1,8 +1,11 @@
 package agentkit_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/ikigenba/ikigenba/agentkit"
+	"github.com/ikigenba/ikigenba/agentkit/anthropic"
 )
 
 type signingAuth struct {
@@ -22,6 +26,32 @@ type signingAuth struct {
 }
 
 type authContextKey struct{}
+
+type parityAnthropicAuth struct{}
+
+func (parityAnthropicAuth) Apply(context.Context, *http.Request, []byte) error { return nil }
+func (parityAnthropicAuth) EndpointIdentity() string                           { return "anthropic" }
+
+type configParityServer struct {
+	t        *testing.T
+	requests [][]byte
+}
+
+func (server *configParityServer) handle(writer http.ResponseWriter, request *http.Request) {
+	body, err := io.ReadAll(request.Body)
+	if err != nil {
+		server.t.Errorf("read request: %v", err)
+		return
+	}
+	server.requests = append(server.requests, body)
+	writer.Header().Set("Content-Type", "text/event-stream")
+	_, _ = io.WriteString(writer, "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":2}}}\n\n"+
+		"data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\"}}\n\n"+
+		"data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"same reply\"}}\n\n"+
+		"data: {\"type\":\"content_block_stop\",\"index\":0}\n\n"+
+		"data: {\"type\":\"message_delta\",\"delta\":{\"usage\":{\"output_tokens\":3}}}\n\n"+
+		"data: {\"type\":\"message_stop\"}\n\n")
+}
 
 func (auth *signingAuth) Apply(ctx context.Context, request *http.Request, body []byte) error {
 	auth.applyCallCount++
@@ -49,11 +79,11 @@ func TestGenericKnownWireAcceptsBareAuthApplier(t *testing.T) {
 
 	ctx := context.WithValue(context.Background(), authContextKey{}, "final")
 	auth := &signingAuth{t: t, wantContext: ctx}
-	endpoint, err := agentkit.NewEndpoint(server.URL, auth, agentkit.WithHTTPClient(server.Client()))
+	endpoint, err := agentkit.NewEndpoint(server.URL, auth)
 	if err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := agentkit.NewForWire(agentkit.KnownWireAnthropicMessages, endpoint, "external-model", agentkit.Config{})
+	conversation, err := agentkit.New(agentkit.KnownWireAnthropicMessages, endpoint, "external-model", agentkit.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,21 +95,105 @@ func TestGenericKnownWireAcceptsBareAuthApplier(t *testing.T) {
 	}
 }
 
-func TestNewEndpointAcceptsIndependentlyImplementedBareAuthApplier(t *testing.T) {
-	// R-YOGH-SOJF
-	auth := &signingAuth{t: t, wantContext: context.Background()}
-	endpoint, err := agentkit.NewEndpoint("https://custom.example/v1", auth)
+func TestVendorAndRootConfigConstructionHaveWireAndEventParity(t *testing.T) {
+	// R-OLM8-8NER
+	capture := &configParityServer{t: t}
+	server := httptest.NewServer(http.HandlerFunc(capture.handle))
+	defer server.Close()
+
+	var logOutput bytes.Buffer
+	cfg := newConfigParityConfig(t, &logOutput)
+	vendorConversation, rootConversation := newConfigParityConversations(t, server.URL, cfg)
+	vendorEvents, vendorErr := collectExternalEvents(vendorConversation.Send(context.Background(), agentkit.Text{Text: "hello"}))
+	rootEvents, rootErr := collectExternalEvents(rootConversation.Send(context.Background(), agentkit.Text{Text: "hello"}))
+
+	if vendorErr != nil || rootErr != nil {
+		t.Fatalf("Send errors = vendor %v, root %v", vendorErr, rootErr)
+	}
+	if len(capture.requests) != 2 || !bytes.Equal(capture.requests[0], capture.requests[1]) {
+		t.Fatalf("request bodies differ: vendor=%q root=%q", valueAt(capture.requests, 0), valueAt(capture.requests, 1))
+	}
+	if !reflect.DeepEqual(vendorEvents, rootEvents) {
+		t.Fatalf("event streams differ: vendor=%#v root=%#v", vendorEvents, rootEvents)
+	}
+	assertConfigParityAccounting(t, &logOutput)
+}
+
+func newConfigParityConfig(t *testing.T, logOutput io.Writer) agentkit.Config {
+	t.Helper()
+	tool, err := agentkit.NewTool("lookup", "Look up a value.", func(context.Context, struct {
+		Query string `json:"query" jsonschema:"required"`
+	}) (string, error) {
+		return "unused", nil
+	})
 	if err != nil {
-		t.Fatalf("NewEndpoint rejected bare AuthApplier: %v", err)
+		t.Fatal(err)
 	}
-	if reflect.TypeOf(endpoint).Name() != "Endpoint" {
-		t.Fatalf("NewEndpoint returned %T", endpoint)
+	return agentkit.Config{
+		Tools:    []agentkit.Tool{tool},
+		Settings: agentkit.Settings{ToolChoice: agentkit.ToolChoice{Mode: agentkit.ToolChoiceRequired}},
+		Options:  agentkit.ProviderOptions{"metadata": json.RawMessage(`{"user_id":"parity"}`)},
+		Log:      agentkit.NewLog(logOutput, nil),
 	}
+}
+
+func newConfigParityConversations(t *testing.T, baseURL string, cfg agentkit.Config) (*agentkit.Conversation, *agentkit.Conversation) {
+	t.Helper()
+	const model = "claude-haiku-4-5"
+	vendorConversation, err := anthropic.New(anthropic.APIKey("key"), model, anthropic.WithBaseURL(baseURL), anthropic.WithConfig(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint, err := agentkit.NewEndpoint(baseURL, parityAnthropicAuth{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootConversation, err := agentkit.New(agentkit.KnownWireAnthropicMessages, endpoint, model, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return vendorConversation, rootConversation
+}
+
+func assertConfigParityAccounting(t *testing.T, logOutput io.Reader) {
+	t.Helper()
+	var accounting []agentkit.LogRecord
+	decoder := json.NewDecoder(logOutput)
+	for {
+		var record agentkit.LogRecord
+		if err := decoder.Decode(&record); err == io.EOF {
+			break
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		if record.Type == agentkit.RecordUsage {
+			accounting = append(accounting, record)
+		}
+	}
+	if len(accounting) != 2 || accounting[0].Usage == nil || accounting[0].Cost == nil ||
+		accounting[1].Usage == nil || accounting[1].Cost == nil ||
+		!reflect.DeepEqual(accounting[0].Usage, accounting[1].Usage) || *accounting[0].Cost != *accounting[1].Cost {
+		t.Fatalf("usage/cost differ: vendor=%#v root=%#v", valueAt(accounting, 0), valueAt(accounting, 1))
+	}
+}
+
+func collectExternalEvents(stream *agentkit.Stream) ([]agentkit.Event, error) {
+	var events []agentkit.Event
+	for event := range stream.Events() {
+		events = append(events, event)
+	}
+	return events, stream.Err()
+}
+
+func valueAt[T any](values []T, index int) any {
+	if index >= len(values) {
+		return nil
+	}
+	return values[index]
 }
 
 func TestVendorCredentialsAndOptionsAreCompileTimeIsolated(t *testing.T) {
 	// R-3IB6-03OE
-	// R-YPOE-6GA4
 	// R-65FB-U7IK
 	temporary := t.TempDir()
 	writeCompileFixture(t, temporary)
@@ -119,7 +233,7 @@ func invalid() {
 	_, _ = openrouter.New(gemini.APIKey("wrong"), "model")
 	_, _ = gemini.New(xai.APIKey("wrong"), "model")
 	_, _ = anthropic.New(anthropic.APIKey("key"), "model", openai.WithBaseURL("https://example.test"))
-	_, _ = anthropic.New(anthropic.APIKey("key"), "model", agentkit.WithHTTPClient(http.DefaultClient))
+	_, _ = anthropic.New(anthropic.APIKey("key"), "model", openai.WithBaseURL("https://example.test"))
 	_, _ = agentkit.NewEndpoint("https://example.test", nil, openai.WithBaseURL("https://example.test"))
 }
 `
@@ -140,7 +254,7 @@ func runCompileFixture(directory string) ([]byte, error) {
 
 func assertCompileIsolation(t *testing.T, output []byte) {
 	t.Helper()
-	for _, want := range []string{"missing method apply", "openai.Option", "agentkit.EndpointOption"} {
+	for _, want := range []string{"missing method apply", "openai.Option", "too many arguments in call to agentkit.NewEndpoint"} {
 		if !strings.Contains(string(output), want) {
 			t.Fatalf("compile failure missing %q:\n%s", want, output)
 		}

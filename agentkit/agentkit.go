@@ -40,10 +40,10 @@ func (OutputDone) isEvent()  {}
 // reserved one fails at Send. There is no override.
 type ProviderOptions map[string]json.RawMessage
 
-// RequestState is the immutable input the Provider consumes for one round-trip.
+// requestState is the immutable input the wire provider consumes for one round-trip.
 // It is a snapshot: History and Tools reflect this round-trip only, while Model,
 // Settings, Options, and Output are fixed for the conversation.
-type RequestState struct {
+type requestState struct {
 	Model    string
 	History  []Message
 	Settings Settings

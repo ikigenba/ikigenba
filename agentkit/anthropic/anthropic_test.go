@@ -8,20 +8,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/agentkit"
 )
-
-type parityAuth struct{}
-
-func (parityAuth) Apply(context.Context, *http.Request, []byte) error { return nil }
-
-type parityRequest struct {
-	path string
-	body []byte
-}
 
 func collectParityStream(stream *agentkit.Stream) ([]agentkit.Event, error) {
 	var events []agentkit.Event
@@ -29,45 +19,6 @@ func collectParityStream(stream *agentkit.Stream) ([]agentkit.Event, error) {
 		events = append(events, event)
 	}
 	return events, stream.Err()
-}
-
-func TestWithConfigMatchesGenericConstructor(t *testing.T) {
-	// R-SZ8U-RP1Q
-	requests := make(chan parityRequest, 2)
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		body, _ := io.ReadAll(request.Body)
-		requests <- parityRequest{path: request.URL.Path, body: body}
-		writer.Header().Set("Content-Type", "text/event-stream")
-		_, _ = io.WriteString(writer, "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\ndata: {\"type\":\"message_stop\"}\n\n")
-	}))
-	defer server.Close()
-
-	cfg := agentkit.Config{Settings: agentkit.Settings{StopSequences: []string{"phase-four"}}}
-	vendor, err := New(APIKey("vendor-key"), "parity-model", WithConfig(agentkit.Config{}), WithBaseURL(server.URL+"/v1/messages"), WithAPI(Messages), WithConfig(cfg))
-	if err != nil {
-		t.Fatal(err)
-	}
-	endpoint, err := agentkit.NewEndpoint(server.URL+"/v1/messages", parityAuth{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	generic, err := agentkit.NewForWire(agentkit.KnownWireAnthropicMessages, endpoint, "parity-model", cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	vendorEvents, vendorErr := collectParityStream(vendor.Send(context.Background(), agentkit.Text{Text: "hello"}))
-	genericEvents, genericErr := collectParityStream(generic.Send(context.Background(), agentkit.Text{Text: "hello"}))
-	vendorRequest, genericRequest := <-requests, <-requests
-	if !reflect.DeepEqual(vendorRequest, genericRequest) {
-		t.Fatalf("requests differ: vendor=%+v generic=%+v", vendorRequest, genericRequest)
-	}
-	if !reflect.DeepEqual(vendorEvents, genericEvents) || len(vendorEvents) != 1 {
-		t.Fatalf("events differ: vendor=%#v generic=%#v", vendorEvents, genericEvents)
-	}
-	if vendorErr != nil || genericErr != nil {
-		t.Fatalf("stream errors differ: vendor=%v generic=%v", vendorErr, genericErr)
-	}
 }
 
 func TestOAuthAndBaseURLConflictAtConstruction(t *testing.T) {
@@ -108,46 +59,70 @@ func TestAPIDeclarationDefaultsToMessagesAndRejectsUnshippedTextCodec(t *testing
 	}
 }
 
-func TestNewSelectsAnthropicMessagesWireAndEndpoint(t *testing.T) {
-	// R-YPOE-6GA4
-	type observedRequest struct {
-		path   string
-		apiKey string
-		body   map[string]json.RawMessage
-	}
-	seen := make(chan observedRequest, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		body, _ := io.ReadAll(request.Body)
-		var object map[string]json.RawMessage
-		_ = json.Unmarshal(body, &object)
-		seen <- observedRequest{
-			path:   request.URL.Path,
-			apiKey: request.Header.Get("X-Api-Key"),
-			body:   object,
-		}
-		writer.Header().Set("Content-Type", "text/event-stream")
-	}))
-	defer server.Close()
+func TestNewReportsAuthModeFromCredential(t *testing.T) {
+	// R-UFIH-AUGX
+	// OAuth credentials reject WithBaseURL (mutually exclusive), so the oauth
+	// case builds against the default endpoint and cancels the context before
+	// the request goes out; RecordTurnStart carries the AuthMode regardless of
+	// whether the send itself reaches a server.
+	for _, testCase := range []struct {
+		name         string
+		credential   Credential
+		overrideURL  bool
+		wantAuthMode string
+	}{
+		{"api key", APIKey("key"), true, "api_key"},
+		{"oauth", OAuth(tokenSourceFunc(func(context.Context) (string, error) { return "token", nil })), false, "oauth"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				writer.Header().Set("Content-Type", "text/event-stream")
+				_, _ = io.WriteString(writer, "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":2}}}\n\ndata: {\"type\":\"message_delta\",\"delta\":{\"usage\":{\"output_tokens\":3}}}\n\ndata: {\"type\":\"message_stop\"}\n\n")
+			}))
+			defer server.Close()
 
-	conversation, err := New(APIKey("secret"), "verbatim-model", WithBaseURL(server.URL+"/v1/messages"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for event := range conversation.Send(context.Background(), agentkit.Text{Text: "hello"}).Events() {
-		_ = event
-	}
+			var output bytes.Buffer
+			options := []Option{WithConfig(agentkit.Config{Log: agentkit.NewLog(&output, nil)})}
+			ctx := context.Background()
+			if testCase.overrideURL {
+				options = append(options, WithBaseURL(server.URL))
+			} else {
+				cancelled, cancel := context.WithCancel(context.Background())
+				cancel()
+				ctx = cancelled
+			}
+			conversation, err := New(testCase.credential, "model", options...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for event := range conversation.Send(ctx, agentkit.Text{Text: "hello"}).Events() {
+				_ = event
+			}
 
-	request := <-seen
-	if request.path != "/v1/messages" || request.apiKey != "secret" {
-		t.Fatalf("endpoint request path=%q api-key=%q", request.path, request.apiKey)
-	}
-	if _, exists := request.body["messages"]; !exists {
-		t.Fatalf("selected wire body lacks messages: %v", request.body)
+			var identity *agentkit.Identity
+			decoder := json.NewDecoder(&output)
+			for {
+				var record agentkit.LogRecord
+				if err := decoder.Decode(&record); err == io.EOF {
+					break
+				} else if err != nil {
+					t.Fatal(err)
+				}
+				if record.Type == agentkit.RecordTurnStart {
+					identity = record.Identity
+				}
+			}
+			if identity == nil || identity.AuthMode != testCase.wantAuthMode {
+				t.Fatalf("turn identity = %+v, want AuthMode %q", identity, testCase.wantAuthMode)
+			}
+		})
 	}
 }
 
 func TestNewNamesAnthropicEndpointAndUsesCatalogPricing(t *testing.T) {
-	// R-EKRG-9Y2W
+	// R-OP9X-DYMU
+	// R-OQHT-RQDJ
+	// R-UEAK-X2Q8
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(writer, "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":2}}}\n\ndata: {\"type\":\"message_delta\",\"delta\":{\"usage\":{\"output_tokens\":3}}}\n\ndata: {\"type\":\"message_stop\"}\n\n")
@@ -184,8 +159,8 @@ func TestNewNamesAnthropicEndpointAndUsesCatalogPricing(t *testing.T) {
 			cost = record.Cost
 		}
 	}
-	if identity == nil || identity.Endpoint != string(agentkit.ProviderAnthropic) {
-		t.Fatalf("turn identity = %+v, want endpoint %q", identity, agentkit.ProviderAnthropic)
+	if identity == nil || identity.Endpoint != "anthropic" {
+		t.Fatalf("turn identity = %+v, want endpoint %q", identity, "anthropic")
 	}
 	const wantCost = agentkit.Cost(2*1_000 + 3*5_000)
 	if cost == nil || *cost != wantCost {

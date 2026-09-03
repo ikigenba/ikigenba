@@ -9,7 +9,7 @@ import (
 
 type openAIResponsesWire struct{ wireCodec }
 
-func newOpenAIResponsesWire(classifier wireClassifier) WireFormat {
+func newOpenAIResponsesWire(classifier errorClassifier) wireFormat {
 	wire := &openAIResponsesWire{}
 	wire.wireCodec = wireCodec{
 		encode:     wire.encodeRequest,
@@ -64,7 +64,7 @@ type openAIResponsesRequest struct {
 	Text       *openAIResponsesText `json:"text,omitempty"`
 }
 
-func (w *openAIResponsesWire) encodeRequest(state RequestState) ([]byte, error) {
+func (w *openAIResponsesWire) encodeRequest(state requestState) ([]byte, error) {
 	input, err := buildOpenAIResponsesInput(state.History)
 	if err != nil {
 		return nil, err
@@ -348,10 +348,4 @@ func (w *openAIResponsesWire) RenderTools(tools []Tool) (json.RawMessage, error)
 		return nil, err
 	}
 	return renderOpenAIResponsesTools(tools)
-}
-
-func (w *openAIResponsesWire) withClassifier(classifier wireClassifier) WireFormat {
-	clone := &openAIResponsesWire{wireCodec: w.cloneWithClassifier(classifier)}
-	clone.encode = clone.encodeRequest
-	return clone
 }

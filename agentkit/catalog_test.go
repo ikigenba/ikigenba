@@ -8,7 +8,7 @@ import (
 )
 
 func TestProviderIDVocabulary(t *testing.T) {
-	// R-EFVU-QV44
+	// R-UD2O-JAZJ
 	want := []ProviderID{"anthropic", "openai", "gemini", "xai", "openrouter"}
 	got := []ProviderID{ProviderAnthropic, ProviderOpenAI, ProviderGemini, ProviderXAI, ProviderOpenRouter}
 	if !reflect.DeepEqual(got, want) {
@@ -16,12 +16,8 @@ func TestProviderIDVocabulary(t *testing.T) {
 	}
 
 	providerIDType := reflect.TypeOf(ProviderID(""))
-	providerType := reflect.TypeOf((*Provider)(nil)).Elem()
 	if providerIDType.Name() != "ProviderID" || providerIDType.Kind() != reflect.String {
 		t.Fatalf("ProviderID type = %v (kind %v), want named string", providerIDType, providerIDType.Kind())
-	}
-	if providerIDType == providerType {
-		t.Fatal("ProviderID is not distinct from the Provider SPI interface")
 	}
 }
 
@@ -293,6 +289,11 @@ func TestCatalogReturnsFullSortedStructurallyUniqueTable(t *testing.T) {
 	}
 }
 
+// TestCatalogOfferingDataQuality is a table-wide invariant sweep: the catalog
+// table is data that grows without a design change, so the requirement states
+// bounds (non-empty, greater than zero, strictly increasing), not values. The
+// exact figures for the pinned fixture entries are asserted by
+// TestResolveModelPinnedClaudeSonnet5 and TestResolveModelPinnedGPT56Sol.
 func TestCatalogOfferingDataQuality(t *testing.T) {
 	// R-OJPD-MFQ4
 	for _, entry := range Catalog() {
@@ -330,6 +331,9 @@ func TestCatalogOfferingDataQuality(t *testing.T) {
 	}
 }
 
+// TestCatalogReasoningInvariants is the reasoning half of the same table-wide
+// sweep: the requirement fixes the relationship (default accepted, minimum
+// below maximum), and the pinned fixture tests carry the exact defaults.
 func TestCatalogReasoningInvariants(t *testing.T) {
 	// R-OM56-DZ7I
 	for _, entry := range Catalog() {

@@ -3,6 +3,7 @@ package agentkit
 import (
 	"errors"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -36,29 +37,6 @@ func (r *byteReader) Read(destination []byte) (int, error) {
 	return 1, nil
 }
 
-func TestSSEFramesIsStandalonePublicLeaf(t *testing.T) {
-	// R-33OD-EUS2
-	input := ": keep-alive\r\nevent: ignored\r\ndata: first\r\ndata: second\r\n\r\n" +
-		"data:\n\n\n" +
-		"data: final"
-	var frames [][]byte
-	for frame, err := range SSEFrames(strings.NewReader(input)) {
-		if err != nil {
-			t.Fatal(err)
-		}
-		frames = append(frames, frame)
-	}
-	want := []string{"first\nsecond", "", "final"}
-	if len(frames) != len(want) {
-		t.Fatalf("frames = %q, want %q", frames, want)
-	}
-	for index := range want {
-		if string(frames[index]) != want[index] {
-			t.Fatalf("frame %d = %q, want %q", index, frames[index], want[index])
-		}
-	}
-}
-
 func TestSSEFramesStopsAtTerminalSentinel(t *testing.T) {
 	input := "data: before\n\ndata: [DONE]\n\ndata: after\n\n"
 	var frames []string
@@ -70,6 +48,21 @@ func TestSSEFramesStopsAtTerminalSentinel(t *testing.T) {
 	}
 	if len(frames) != 1 || frames[0] != "before" {
 		t.Fatalf("frames = %q, want only pre-sentinel payload", frames)
+	}
+}
+
+func TestSSEFramesIsAStandalonePublicLeaf(t *testing.T) {
+	// R-O9F8-EXZT
+	reader := io.Reader(strings.NewReader(": keep-alive\n\ndata: sibling payload\n\ndata: [DONE]\n\n"))
+	var frames []string
+	for frame, err := range SSEFrames(reader) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		frames = append(frames, string(frame))
+	}
+	if !reflect.DeepEqual(frames, []string{"sibling payload"}) {
+		t.Fatalf("standalone SSE frames = %q, want sibling payload without a wire codec", frames)
 	}
 }
 

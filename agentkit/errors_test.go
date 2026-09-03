@@ -1,7 +1,6 @@
 package agentkit
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"go/ast"
@@ -9,9 +8,7 @@ import (
 	"go/token"
 	"net/http"
 	"reflect"
-	"strings"
 	"testing"
-	"time"
 )
 
 func TestSentinelDeclarations(t *testing.T) {
@@ -280,74 +277,56 @@ func TestConfigurationAndLifecycleSentinelsSurviveErrorWrapping(t *testing.T) {
 	}
 }
 
-type syntheticEnvelope struct {
-	Error struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	} `json:"error"`
-}
-
-func syntheticClassify(status int, header http.Header, body []byte) error {
-	var envelope syntheticEnvelope
-	if err := json.Unmarshal(body, &envelope); err != nil {
-		return &Error{Category: CategoryUnknown, Status: status, Message: err.Error(), err: err}
-	}
-
-	retryAfter, _ := time.ParseDuration(header.Get("Retry-After"))
-	category := CategoryInvalidRequest
-	if strings.Contains(envelope.Error.Message, "credential") {
-		category = CategoryAuth
-	}
-
-	return &Error{
-		Category:   category,
-		Status:     status,
-		Code:       envelope.Error.Code,
-		Message:    envelope.Error.Message,
-		RetryAfter: retryAfter,
-	}
-}
-
-func TestClassifierReceivesFullResponseAndLiftsRetryHint(t *testing.T) {
-	// R-2LDV-OANN
-	// R-2MLS-22EC
-	header := http.Header{
-		"Retry-After":  []string{"2250ms"},
-		"X-Request-Id": []string{"request-123"},
-	}
-	body := []byte(`{"error":{"code":"shared-code","message":"bad credential supplied"}}`)
-
-	err := syntheticClassify(http.StatusTooManyRequests, header, body)
-	var providerError *Error
-	if !errors.As(err, &providerError) {
-		t.Fatalf("classifier error type = %T, want *Error", err)
-	}
-	if providerError.Status != http.StatusTooManyRequests || providerError.Code != "shared-code" || providerError.Message != "bad credential supplied" {
-		t.Fatalf("classifier result lost status or exact body fields: %#v", providerError)
-	}
-	if providerError.RetryAfter != 2250*time.Millisecond {
-		t.Fatalf("RetryAfter = %v, want typed 2.25s from response header", providerError.RetryAfter)
-	}
-}
-
-func TestClassifierMayDisambiguateSharedStatusAndCodeByMessage(t *testing.T) {
-	// R-2NTO-FU51
+func TestBuiltInStatusClassification(t *testing.T) {
+	// R-OHYJ-3C6O
 	tests := []struct {
-		message  string
+		status   int
 		category Category
 	}{
-		{message: "bad credential supplied", category: CategoryAuth},
-		{message: "unknown model requested", category: CategoryInvalidRequest},
+		{status: 401, category: CategoryAuth},
+		{status: 403, category: CategoryAuth},
+		{status: 400, category: CategoryInvalidRequest},
+		{status: 404, category: CategoryInvalidRequest},
+		{status: 409, category: CategoryInvalidRequest},
+		{status: 413, category: CategoryInvalidRequest},
+		{status: 415, category: CategoryInvalidRequest},
+		{status: 422, category: CategoryInvalidRequest},
+		{status: 402, category: CategoryInsufficientQuota},
+		{status: 429, category: CategoryRateLimit},
+		{status: 408, category: CategoryTimeout},
+		{status: 504, category: CategoryTimeout},
+		{status: 500, category: CategoryOverloaded},
+		{status: 502, category: CategoryOverloaded},
+		{status: 503, category: CategoryOverloaded},
+		{status: 529, category: CategoryOverloaded},
+		{status: 300, category: CategoryUnknown},
+		{status: 418, category: CategoryUnknown},
+		{status: 599, category: CategoryUnknown},
 	}
 	for _, test := range tests {
-		body := []byte(fmt.Sprintf(`{"error":{"code":"shared-code","message":%q}}`, test.message))
-		err := syntheticClassify(http.StatusBadRequest, make(http.Header), body)
-		var providerError *Error
-		if !errors.As(err, &providerError) {
-			t.Fatalf("classifier error type = %T, want *Error", err)
+		t.Run(fmt.Sprintf("status_%d", test.status), func(t *testing.T) {
+			if got := classifyStatus(test.status); got != test.category {
+				t.Fatalf("classifyStatus(%d) = %v, want %v", test.status, got, test.category)
+			}
+		})
+	}
+
+	known := map[int]Category{}
+	for _, test := range tests {
+		if test.category != CategoryUnknown {
+			known[test.status] = test.category
 		}
-		if providerError.Status != http.StatusBadRequest || providerError.Code != "shared-code" || providerError.Category != test.category {
-			t.Fatalf("classification for %q = %#v, want shared status/code and category %v", test.message, providerError, test.category)
+	}
+	for status := 100; status <= 599; status++ {
+		if status >= http.StatusOK && status < http.StatusMultipleChoices {
+			continue
+		}
+		want := CategoryUnknown
+		if category, ok := known[status]; ok {
+			want = category
+		}
+		if got := classifyStatus(status); got != want {
+			t.Fatalf("classifyStatus(%d) = %v, want %v", status, got, want)
 		}
 	}
 }

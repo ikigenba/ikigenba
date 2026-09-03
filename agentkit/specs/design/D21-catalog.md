@@ -38,10 +38,9 @@ The shape:
 package agentkit
 
 // ProviderID names the vendor constructor package that serves an offering.
-// It is a value type, distinct from the Provider SPI interface (D6). Values
-// are the package names, and are also what a vendor package's New names its
-// endpoint with (D6 WithName), so Identity.Endpoint equals the ProviderID of
-// the offering that prices the conversation.
+// Values are the package names, and are also what a vendor package's New
+// reports as Identity.Endpoint (D1), so the conversation prices from the
+// offering whose Provider matches its own identity.
 type ProviderID string
 
 const (
@@ -129,6 +128,11 @@ reasoning vocabulary is checked — the application reads all four from the one
 `Offering`. A `false` result is not an error; the application decides whether
 to refuse or to pass the pair through unvalidated and unpriced.
 
+A vendor round-trip test proves the identity/pricing link by asserting the
+logged `Identity.Endpoint` against the literal string (`"openrouter"`), not
+against the `ProviderID` constant; `TestProviderIDVocabulary`-style tests pin
+the constants to the same literals separately.
+
 Auth methods, environment-variable names, and auth files are the application's
 business and are deliberately not here: the catalog knows models and
 offerings, and the vendor packages (D7) know credentials.
@@ -147,7 +151,7 @@ adding a model is an edit to that file and nothing else.
 
 ## REQUIREMENTS
 
-- R-EFVU-QV44: `agentkit` MUST export `type ProviderID string` with the constants `ProviderAnthropic = "anthropic"`, `ProviderOpenAI = "openai"`, `ProviderGemini = "gemini"`, `ProviderXAI = "xai"`, and `ProviderOpenRouter = "openrouter"`, distinct from the `Provider` SPI interface (D6).
+- R-UD2O-JAZJ: `agentkit` MUST export `type ProviderID string` with the constants `ProviderAnthropic = "anthropic"`, `ProviderOpenAI = "openai"`, `ProviderGemini = "gemini"`, `ProviderXAI = "xai"`, and `ProviderOpenRouter = "openrouter"`.
 - R-O52L-16TS: `agentkit` MUST export `type Vendor string` with the constants `VendorAnthropic = "anthropic"`, `VendorOpenAI = "openai"`, `VendorGoogle = "google"`, `VendorXAI = "x-ai"`, `VendorZAI = "z-ai"`, `VendorDeepSeek = "deepseek"`, `VendorMoonshot = "moonshotai"`, `VendorNVIDIA = "nvidia"`, and `VendorQwen = "qwen"`.
 - R-O6AH-EYKH: `agentkit` MUST export `type ReasoningKind int` with the constants `ReasoningKindNone`, `ReasoningKindEffort`, `ReasoningKindBudget`, `ReasoningKindToggle` declared in that `iota` order starting at 0.
 - R-O7ID-SQB6: `agentkit` MUST export `type ReasoningSpec struct { Kind ReasoningKind; Levels []Effort; MinBudget int; MaxBudget int; CanEnable bool; CanDisable bool; Default ReasoningConfig }` with exactly those fields.
@@ -165,5 +169,5 @@ adding a model is an edit to that file and nothing else.
 - R-OND2-RQY7: `ResolveModel("claude-sonnet-5", "")` MUST return an offering with `Provider` `ProviderAnthropic` and `WireModel` `"claude-sonnet-5"`; `ResolveModel("claude-sonnet-5", ProviderOpenRouter)` MUST return an offering with `WireModel` `"anthropic/claude-sonnet-5"`; and `ResolveModel("claude-sonnet-5", ProviderGemini)` MUST return `false`.
 - R-OOKZ-5IOW: `ResolveModel("gpt-5.6-sol", "")` MUST return an offering with `Provider` `ProviderOpenAI`, `WireModel` `"gpt-5.6-sol"`, and a `Reasoning.Default` of `ReasoningConfig{Mode: ReasoningEffort, Effort: EffortMedium}`.
 - R-OPSV-JAFL: The catalog MUST NOT gate construction or `Send`: a conversation for a model or provider/model pair that `ResolveModel` reports `false` for MUST construct and send exactly as a cataloged one does, differing only in pricing to zero (D3).
-- R-EKRG-9Y2W: Each vendor package's `New` (`anthropic`, `openai`, `gemini`, `xai`, `openrouter`) MUST construct its endpoint with `WithName` set to its own `ProviderID` value, so that the resulting conversation's `Identity.Endpoint` equals that `ProviderID` and a cataloged wire model prices from its offering.
+- R-UEAK-X2Q8: A `Conversation` built by a vendor package's `New` (`anthropic`, `openai`, `gemini`, `xai`, `openrouter`) MUST report an `Identity.Endpoint` equal to that package's own `ProviderID` value, so that a cataloged wire model prices from its offering on that provider.
 - R-ELZC-NPTL: For each of the five `ProviderID` constants, `CatalogFor` MUST return a non-empty result.

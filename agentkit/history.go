@@ -112,25 +112,25 @@ func unmarshalBlock(data []byte) (Block, error) {
 		return nil, err
 	}
 	switch tag.Type {
-	case "text":
+	case Text{}.BlockType():
 		var block jsonText
 		if err := json.Unmarshal(data, &block); err != nil {
 			return nil, err
 		}
 		return Text{Text: block.Text, Provider: block.Provider}, nil
-	case "reasoning":
+	case Reasoning{}.BlockType():
 		var block jsonReasoning
 		if err := json.Unmarshal(data, &block); err != nil {
 			return nil, err
 		}
 		return Reasoning{Text: block.Text, Redacted: block.Redacted, Provider: block.Provider}, nil
-	case "tool_use":
+	case ToolUse{}.BlockType():
 		var block jsonToolUse
 		if err := json.Unmarshal(data, &block); err != nil {
 			return nil, err
 		}
 		return ToolUse{ID: block.ID, Name: block.Name, Input: block.Input, Provider: block.Provider}, nil
-	case "tool_result":
+	case ToolResult{}.BlockType():
 		var block jsonToolResult
 		if err := json.Unmarshal(data, &block); err != nil {
 			return nil, err

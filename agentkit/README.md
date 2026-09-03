@@ -23,16 +23,16 @@ or shipped a model on a Tuesday. agentkit keeps them orthogonal:
 
 - **`WireFormat`** — the internal codec (Anthropic Messages, OpenAI Responses,
   OpenAI Chat Completions, Gemini generateContent), selected by a constructor.
-- **`Endpoint`** — a public, option-built transport: base URL, auth applier,
-  headers, framing, error classifier, request-mutation hook, replay encoding.
+- **`Endpoint`** — the transport: a base URL and an auth applier, nothing more.
 - **`Model`** — a free-form string, never gated, passed verbatim. A model
   released today runs with no agentkit release; an unknown model is the vendor's
   400, not ours.
 
-Vendor packages (`anthropic.New(...)`, `openai.New(...)`, …) bake a
-`(WireFormat, Endpoint)` pair with their own typed credentials; the generic wire
-path is public too, so a new vendor speaking a known wire needs no code here. One
-verb drives a conversation — `conv.Send(ctx, agentkit.Text("hi"))` — returning a
+Vendor packages (`anthropic.New(...)`, `openai.New(...)`, …) pair a built-in
+wire with an endpoint and their own typed credentials, and they are the only way
+to build a conversation. The one thing a consumer customizes is the base URL,
+via each package's `WithBaseURL`; everything else is assembled from parts defined
+in this library. One verb drives a conversation — `conv.Send(ctx, agentkit.Text("hi"))` — returning a
 stream of message-granular events, running any tool round-trips to completion.
 
 Day-one endpoints: OpenAI, Anthropic, Google Gemini, xAI, OpenRouter.

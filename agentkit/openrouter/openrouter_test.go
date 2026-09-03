@@ -7,20 +7,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/agentkit"
 )
-
-type parityAuth struct{}
-
-func (parityAuth) Apply(context.Context, *http.Request, []byte) error { return nil }
-
-type parityRequest struct {
-	path string
-	body []byte
-}
 
 func collectParityStream(stream *agentkit.Stream) ([]agentkit.Event, error) {
 	var events []agentkit.Event
@@ -28,45 +18,6 @@ func collectParityStream(stream *agentkit.Stream) ([]agentkit.Event, error) {
 		events = append(events, event)
 	}
 	return events, stream.Err()
-}
-
-func TestWithConfigMatchesGenericConstructor(t *testing.T) {
-	// R-SZ8U-RP1Q
-	requests := make(chan parityRequest, 2)
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		body, _ := io.ReadAll(request.Body)
-		requests <- parityRequest{path: request.URL.Path, body: body}
-		writer.Header().Set("Content-Type", "text/event-stream")
-		_, _ = io.WriteString(writer, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{}}}\n\n")
-	}))
-	defer server.Close()
-
-	cfg := agentkit.Config{Settings: agentkit.Settings{StopSequences: []string{"phase-four"}}}
-	vendor, err := New(APIKey("vendor-key"), "parity-model", WithConfig(agentkit.Config{}), WithBaseURL(server.URL+"/v1/responses"), WithAPI(Responses), WithConfig(cfg))
-	if err != nil {
-		t.Fatal(err)
-	}
-	endpoint, err := agentkit.NewEndpoint(server.URL+"/v1/responses", parityAuth{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	generic, err := agentkit.NewForWire(agentkit.KnownWireOpenAIResponses, endpoint, "parity-model", cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	vendorEvents, vendorErr := collectParityStream(vendor.Send(context.Background(), agentkit.Text{Text: "hello"}))
-	genericEvents, genericErr := collectParityStream(generic.Send(context.Background(), agentkit.Text{Text: "hello"}))
-	vendorRequest, genericRequest := <-requests, <-requests
-	if !reflect.DeepEqual(vendorRequest, genericRequest) {
-		t.Fatalf("requests differ: vendor=%+v generic=%+v", vendorRequest, genericRequest)
-	}
-	if !reflect.DeepEqual(vendorEvents, genericEvents) || len(vendorEvents) != 1 {
-		t.Fatalf("events differ: vendor=%#v generic=%#v", vendorEvents, genericEvents)
-	}
-	if vendorErr != nil || genericErr != nil {
-		t.Fatalf("stream errors differ: vendor=%v generic=%v", vendorErr, genericErr)
-	}
 }
 
 func TestAPISelectsChatByDefaultAndResponsesAsAlternate(t *testing.T) {
@@ -100,8 +51,48 @@ func TestAPISelectsChatByDefaultAndResponsesAsAlternate(t *testing.T) {
 	}
 }
 
+func TestNewReportsAPIKeyAuthMode(t *testing.T) {
+	// R-UFIH-AUGX
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(writer, "data: {\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":3}}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"done\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	var output bytes.Buffer
+	conversation, err := New(APIKey("key"), "model",
+		WithBaseURL(server.URL),
+		WithConfig(agentkit.Config{Log: agentkit.NewLog(&output, nil)}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for event := range conversation.Send(context.Background(), agentkit.Text{Text: "hello"}).Events() {
+		_ = event
+	}
+
+	var identity *agentkit.Identity
+	decoder := json.NewDecoder(&output)
+	for {
+		var record agentkit.LogRecord
+		if err := decoder.Decode(&record); err == io.EOF {
+			break
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		if record.Type == agentkit.RecordTurnStart {
+			identity = record.Identity
+		}
+	}
+	if identity == nil || identity.AuthMode != "api_key" {
+		t.Fatalf("turn identity = %+v, want AuthMode %q", identity, "api_key")
+	}
+}
+
 func TestNewNamesOpenRouterEndpointAndUsesCatalogPricing(t *testing.T) {
-	// R-EKRG-9Y2W
+	// R-OP9X-DYMU
+	// R-OQHT-RQDJ
+	// R-UEAK-X2Q8
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(writer, "data: {\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":3}}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"done\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
@@ -121,10 +112,10 @@ func TestNewNamesOpenRouterEndpointAndUsesCatalogPricing(t *testing.T) {
 		t.Fatal(streamErr)
 	}
 	const wantCost = agentkit.Cost(2*200 + 3*1_250)
-	assertOpenRouterTurnIdentityAndCost(t, output.Bytes(), agentkit.ProviderOpenRouter, wantCost)
+	assertOpenRouterTurnIdentityAndCost(t, output.Bytes(), "openrouter", wantCost)
 }
 
-func assertOpenRouterTurnIdentityAndCost(t *testing.T, data []byte, provider agentkit.ProviderID, want agentkit.Cost) {
+func assertOpenRouterTurnIdentityAndCost(t *testing.T, data []byte, wantEndpoint string, want agentkit.Cost) {
 	t.Helper()
 	var identity *agentkit.Identity
 	var cost *agentkit.Cost
@@ -143,8 +134,8 @@ func assertOpenRouterTurnIdentityAndCost(t *testing.T, data []byte, provider age
 			cost = record.Cost
 		}
 	}
-	if identity == nil || identity.Endpoint != string(provider) {
-		t.Fatalf("turn identity = %+v, want endpoint %q", identity, provider)
+	if identity == nil || identity.Endpoint != wantEndpoint {
+		t.Fatalf("turn identity = %+v, want endpoint %q", identity, wantEndpoint)
 	}
 	if cost == nil || *cost != want {
 		t.Fatalf("turn cost = %v, want catalog amount %d", cost, want)

@@ -177,7 +177,7 @@ func (o *orchestrator) dispatchLoader(call ToolUse) ToolResult {
 	}
 	result.Content = "Deferred tools loaded."
 	if len(unknown) > 0 {
-		result.Content += fmt.Sprintf(" Unknown names: %s.", strings.Join(unknown, ", "))
+		result.Content += fmt.Sprintf(" Unknown names: %q.", unknown)
 	}
 	return result
 }
@@ -223,6 +223,13 @@ func (o *orchestrator) dispatch(ctx context.Context, call ToolUse) ToolResult {
 	if call.Name == loadToolsName && o.hasLoader {
 		return o.dispatchLoader(call)
 	}
+	return dispatchTool(ctx, tool, call)
+}
+
+// dispatchTool runs one regular tool call, reporting a call error in-band as
+// an error result rather than failing the turn.
+func dispatchTool(ctx context.Context, tool Tool, call ToolUse) ToolResult {
+	result := ToolResult{ToolUseID: call.ID}
 	content, err := tool.Call(ctx, append(json.RawMessage(nil), call.Input...))
 	result.Content = content
 	if err != nil {

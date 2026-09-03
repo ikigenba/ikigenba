@@ -24,6 +24,13 @@ func drainStream(stream *Stream) []Event {
 	return events
 }
 
+func useDefaultHTTPClient(t *testing.T, client *http.Client) {
+	t.Helper()
+	original := http.DefaultClient
+	http.DefaultClient = client
+	t.Cleanup(func() { http.DefaultClient = original })
+}
+
 type fixtureWire struct {
 	name string
 }
@@ -37,7 +44,7 @@ type fixtureProvider struct {
 	wire               fixtureWire
 	endpoint           fixtureEndpoint
 	model              string
-	states             []RequestState
+	states             []requestState
 	buildErr           error
 	decodeErr          error
 	classifyErr        error
@@ -50,7 +57,7 @@ type fixtureProvider struct {
 	classify           func(int, http.Header, []byte) error
 }
 
-func (p *fixtureProvider) BuildRequest(ctx context.Context, state RequestState) (*http.Request, error) {
+func (p *fixtureProvider) BuildRequest(ctx context.Context, state requestState) (*http.Request, error) {
 	p.states = append(p.states, state)
 	if p.buildErr != nil {
 		return nil, p.buildErr
@@ -96,7 +103,7 @@ func (p *fixtureProvider) Identity() Identity {
 
 func genericFixture(wire fixtureWire, endpoint fixtureEndpoint, model string, client *http.Client) (*Conversation, *fixtureProvider) {
 	provider := &fixtureProvider{wire: wire, endpoint: endpoint, model: model}
-	return NewConversation(provider, client, Config{}), provider
+	return newConversation(provider, client, Config{}), provider
 }
 
 func vendorFixture(endpointURL, model string, client *http.Client) (*Conversation, *fixtureProvider) {
@@ -109,7 +116,11 @@ func vendorFixture(endpointURL, model string, client *http.Client) (*Conversatio
 }
 
 func TestEndpointConversationExecutesWithDefaultHTTPClient(t *testing.T) {
-	// R-YKSS-NDBC
+	// R-OFIQ-BSPA
+	wantConstructor := reflect.TypeOf(func(string, AuthApplier) (Endpoint, error) { return Endpoint{}, nil })
+	if got := reflect.TypeOf(NewEndpoint); got != wantConstructor || got.IsVariadic() {
+		t.Fatalf("endpoint construction exposes transport hooks: %s variadic=%t", got, got.IsVariadic())
+	}
 	originalDefault := http.DefaultClient
 	t.Cleanup(func() { http.DefaultClient = originalDefault })
 
@@ -124,35 +135,10 @@ func TestEndpointConversationExecutesWithDefaultHTTPClient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if defaultEndpoint.config.client != http.DefaultClient {
-		t.Fatal("endpoint did not retain http.DefaultClient as its default")
-	}
 	defaultConversation := newEndpointConversation(&testWire{}, defaultEndpoint, Identity{Model: "default-model"}, Config{})
 	drainStream(defaultConversation.Send(context.Background(), Text{Text: "hello"}))
 	if defaultCalls != 1 {
 		t.Fatalf("default client calls = %d, want 1", defaultCalls)
-	}
-}
-
-func TestEndpointConversationExecutesWithOverrideHTTPClient(t *testing.T) {
-	// R-YKSS-NDBC
-	overrideCalls := 0
-	overrideClient := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-		overrideCalls++
-		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}, nil
-	})}
-	auth := authFunc(func(context.Context, *http.Request, []byte) error { return nil })
-	overrideEndpoint, err := NewEndpoint("https://override.test/messages", auth, WithHTTPClient(overrideClient))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if overrideEndpoint.config.client != overrideClient {
-		t.Fatal("WithHTTPClient did not retain the selected client")
-	}
-	overrideConversation := newEndpointConversation(&testWire{}, overrideEndpoint, Identity{Model: "override-model"}, Config{})
-	drainStream(overrideConversation.Send(context.Background(), Text{Text: "hello"}))
-	if overrideCalls != 1 {
-		t.Fatalf("override client calls = %d, want 1", overrideCalls)
 	}
 }
 
@@ -178,21 +164,6 @@ func newConversationAxesFixture(t *testing.T) (*Conversation, *fixtureProvider, 
 		server.Client(),
 	)
 	return conversation, provider, unknownModel, capture
-}
-
-func TestConversationExposesOnlySendAsExportedMethod(t *testing.T) {
-	// R-1POH-Q9DL
-	conversation, _, _, _ := newConversationAxesFixture(t)
-	conversationType := reflect.TypeOf(conversation)
-	want := []string{"Send"}
-	if conversationType.NumMethod() != len(want) {
-		t.Fatalf("Conversation has %d exported methods, want exactly %d", conversationType.NumMethod(), len(want))
-	}
-	for index, name := range want {
-		if got := conversationType.Method(index).Name; got != name {
-			t.Fatalf("exported Conversation method %d = %q, want %q", index, got, name)
-		}
-	}
 }
 
 func TestConversationSendsModelVerbatim(t *testing.T) {
@@ -270,34 +241,80 @@ func TestSendValidationFailsBeforeConfiguredProviderBoundaries(t *testing.T) {
 	}
 }
 
-func TestNonSuccessResponseUsesClassifierInputsAndResult(t *testing.T) {
-	// R-2LDV-OANN
-	body := []byte(`{"error":{"code":"throttled","message":"slow down"}}`)
-	header := http.Header{"Retry-After": []string{"1750ms"}, "X-Fixture": []string{"exact"}}
-	classified := &Error{
-		Category:   CategoryRateLimit,
-		Status:     http.StatusTooManyRequests,
-		Code:       "throttled",
-		Message:    "slow down",
-		RetryAfter: 1750 * time.Millisecond,
+func TestBuiltInWireClassifiesNonSuccessResponse(t *testing.T) {
+	// R-OGQM-PKFZ
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusPaymentRequired)
+		_, _ = writer.Write([]byte("quota exhausted"))
+	}))
+	t.Cleanup(server.Close)
+
+	endpoint, err := NewEndpoint(server.URL, authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
+	if err != nil {
+		t.Fatal(err)
 	}
-	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-		return &http.Response{
-			StatusCode: http.StatusTooManyRequests,
-			Header:     header,
-			Body:       io.NopCloser(bytes.NewReader(body)),
-		}, nil
-	})}
-	conversation, provider := vendorFixture("http://provider.invalid", "model", client)
-	provider.classify = func(int, http.Header, []byte) error { return classified }
+	useDefaultHTTPClient(t, server.Client())
+	conversation, err := New(KnownWireOpenAIChat, endpoint, "model", Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	stream := conversation.Send(context.Background(), Text{Text: "hello"})
 	drainStream(stream)
-	if reflect.ValueOf(stream.err).Pointer() != reflect.ValueOf(classified).Pointer() {
-		t.Fatalf("terminal error = %#v, want classifier result %#v unchanged", stream.err, classified)
+	var providerError *Error
+	if !errors.As(stream.err, &providerError) {
+		t.Fatalf("Send error type = %T, want *Error", stream.err)
 	}
-	if provider.classifiedStatus != http.StatusTooManyRequests || !reflect.DeepEqual(provider.classifiedHeader, header) || !bytes.Equal(provider.classifiedBody, body) {
-		t.Fatalf("classifier inputs = (%d, %#v, %q), want (%d, %#v, %q)", provider.classifiedStatus, provider.classifiedHeader, provider.classifiedBody, http.StatusTooManyRequests, header, body)
+	if providerError.Status != http.StatusPaymentRequired || providerError.Category != CategoryInsufficientQuota {
+		t.Fatalf("Send error = %#v, want status %d and CategoryInsufficientQuota", providerError, http.StatusPaymentRequired)
+	}
+}
+
+func TestBuiltInWireLiftsRetryAfterHeaderIntoError(t *testing.T) {
+	// R-1JWR-1RWS
+	tests := []struct {
+		name  string
+		set   bool
+		value string
+		want  time.Duration
+	}{
+		{name: "delta-seconds", set: true, value: "30", want: 30 * time.Second},
+		{name: "absent", set: false, want: 0},
+		{name: "http-date", set: true, value: "Wed, 21 Oct 2026 07:28:00 GMT", want: 0},
+		{name: "negative", set: true, value: "-5", want: 0},
+		{name: "non-integer", set: true, value: "3.5", want: 0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				if test.set {
+					writer.Header().Set("Retry-After", test.value)
+				}
+				writer.WriteHeader(http.StatusTooManyRequests)
+				_, _ = writer.Write([]byte("slow down"))
+			}))
+			t.Cleanup(server.Close)
+
+			endpoint, err := NewEndpoint(server.URL, authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
+			if err != nil {
+				t.Fatal(err)
+			}
+			useDefaultHTTPClient(t, server.Client())
+			conversation, err := New(KnownWireOpenAIChat, endpoint, "model", Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			stream := conversation.Send(context.Background(), Text{Text: "hello"})
+			drainStream(stream)
+			var providerError *Error
+			if !errors.As(stream.err, &providerError) {
+				t.Fatalf("Send error type = %T, want *Error", stream.err)
+			}
+			if providerError.RetryAfter != test.want {
+				t.Fatalf("RetryAfter = %v, want %v", providerError.RetryAfter, test.want)
+			}
+		})
 	}
 }
 
@@ -308,7 +325,7 @@ func TestTransportFailureIsWrappedWithStableIdentity(t *testing.T) {
 		return nil, cause
 	})}
 	conversation, provider := vendorFixture("http://provider.invalid", "original-model", client)
-	wantIdentity := provider.Identity()
+	wantIdentity := Identity{Endpoint: "vendor", AuthMode: "fixture", Model: "original-model"}
 	provider.model = "changed-after-construction"
 
 	stream := conversation.Send(context.Background(), Text{Text: "hello"})
@@ -372,31 +389,6 @@ func TestSendIsSoleVerbAndAcceptsDifferentBlockVariants(t *testing.T) {
 	conversationType := reflect.TypeOf(conversation)
 	if got := conversationType.NumMethod(); got != 1 || conversationType.Method(0).Name != "Send" {
 		t.Fatalf("Conversation exported methods changed: %v", conversationType)
-	}
-}
-
-func TestVendorAndGenericRoutesAreEquivalent(t *testing.T) {
-	// R-1UK3-9CCD
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	defer server.Close()
-	model := "any-new-model"
-	vendorConversation, vendorProvider := vendorFixture(server.URL, model, server.Client())
-	genericConversation, genericProvider := genericFixture(
-		fixtureWire{name: "messages"},
-		fixtureEndpoint{name: "vendor", url: server.URL},
-		model,
-		server.Client(),
-	)
-
-	vendorStream := vendorConversation.Send(context.Background(), Text{Text: "hello"})
-	genericStream := genericConversation.Send(context.Background(), Text{Text: "hello"})
-	vendorEvents := drainStream(vendorStream)
-	genericEvents := drainStream(genericStream)
-	if !reflect.DeepEqual(vendorProvider.states, genericProvider.states) {
-		t.Fatalf("construction routes produced different states: vendor=%#v generic=%#v", vendorProvider.states, genericProvider.states)
-	}
-	if !reflect.DeepEqual(vendorEvents, genericEvents) || !reflect.DeepEqual(vendorStream.Err(), genericStream.Err()) {
-		t.Fatalf("construction routes produced different streams: vendor=%#v generic=%#v", vendorEvents, genericEvents)
 	}
 }
 
@@ -510,26 +502,12 @@ func TestUnsupportedSettingsFailAtStartOfSendWithoutMutation(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			encodeCalls := 0
 			decodeCalls := 0
-			classifyCalls := 0
-			transportCalls := 0
-			wire := boundaryWire(test.capabilities, func(RequestState) {
+			wire := boundaryWire(test.capabilities, func(requestState) {
 				encodeCalls++
 			}, func() {
 				decodeCalls++
 			})
-			client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-				transportCalls++
-				return nil, errors.New("transport must not run")
-			})}
-			endpoint, err := NewEndpoint(
-				"https://provider.invalid/generate",
-				authFunc(func(context.Context, *http.Request, []byte) error { return nil }),
-				WithHTTPClient(client),
-				WithClassifier(func(int, http.Header, []byte) error {
-					classifyCalls++
-					return errors.New("classifier must not run")
-				}),
-			)
+			endpoint, err := NewEndpoint("https://provider.invalid/generate", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -550,8 +528,8 @@ func TestUnsupportedSettingsFailAtStartOfSendWithoutMutation(t *testing.T) {
 			if !strings.Contains(stream.err.Error(), "controlled grammar") || !strings.Contains(stream.err.Error(), test.context) {
 				t.Fatalf("Send error lacks setting/wire context: %v", stream.err)
 			}
-			if encodeCalls != 0 || decodeCalls != 0 || classifyCalls != 0 || transportCalls != 0 {
-				t.Fatalf("boundary calls after invalid setting: encode/build=%d decode=%d classify=%d transport=%d", encodeCalls, decodeCalls, classifyCalls, transportCalls)
+			if encodeCalls != 0 || decodeCalls != 0 {
+				t.Fatalf("boundary calls after invalid setting: encode/build=%d decode=%d", encodeCalls, decodeCalls)
 			}
 			afterHistory, err := json.Marshal(conversation.history)
 			if err != nil {
@@ -574,7 +552,7 @@ func TestWireCapabilityDecisionIgnoresOpaqueModel(t *testing.T) {
 	for _, model := range models {
 		wire := boundaryWire(
 			wireCapabilities{name: "effort-only grammar", reasoning: reasoningShapeEffort},
-			func(RequestState) { t.Fatalf("model %q reached EncodeRequest after wire rejection", model) },
+			func(requestState) { t.Fatalf("model %q reached EncodeRequest after wire rejection", model) },
 			func() { t.Fatalf("model %q reached Decode after wire rejection", model) },
 		)
 		endpoint, err := NewEndpoint("https://provider.invalid", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
@@ -595,7 +573,7 @@ func TestUnknownModelReachesVendorAndClassifier(t *testing.T) {
 	// R-3WXY-LCKQ
 	unknownModel := "released-after-agentkit/opaque:model-beta"
 	settings := Settings{Reasoning: ReasoningConfig{Mode: ReasoningBudget, Budget: 2048}}
-	var encodedState RequestState
+	var encodedState requestState
 	transportCalls := 0
 	responseBody := []byte(`{"error":"unsupported model"}`)
 	classified := &Error{Category: CategoryInvalidRequest, Status: http.StatusBadRequest, Code: "model_not_found", Message: "unsupported model"}
@@ -607,27 +585,24 @@ func TestUnknownModelReachesVendorAndClassifier(t *testing.T) {
 			Body:       io.NopCloser(bytes.NewReader(responseBody)),
 		}, nil
 	})}
+	useDefaultHTTPClient(t, client)
 	classifierCalls := 0
-	endpoint, err := NewEndpoint(
-		"https://provider.invalid/generate",
-		authFunc(func(context.Context, *http.Request, []byte) error { return nil }),
-		WithHTTPClient(client),
-		WithClassifier(func(status int, header http.Header, body []byte) error {
-			classifierCalls++
-			if status != http.StatusBadRequest || header.Get("X-Vendor") != "exact" || !bytes.Equal(body, responseBody) {
-				t.Fatalf("classifier inputs = (%d, %#v, %q)", status, header, body)
-			}
-			return classified
-		}),
-	)
+	endpoint, err := NewEndpoint("https://provider.invalid/generate", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
 	if err != nil {
 		t.Fatal(err)
 	}
 	wire := boundaryWire(
 		wireCapabilities{name: "budget grammar", reasoning: reasoningShapeBudget},
-		func(state RequestState) { encodedState = state },
+		func(state requestState) { encodedState = state },
 		func() { t.Fatal("non-2xx response must not be decoded") },
 	)
+	wire.classifier = func(status int, header http.Header, body []byte) error {
+		classifierCalls++
+		if status != http.StatusBadRequest || header.Get("X-Vendor") != "exact" || !bytes.Equal(body, responseBody) {
+			t.Fatalf("classifier inputs = (%d, %#v, %q)", status, header, body)
+		}
+		return classified
+	}
 	conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "controlled", Model: unknownModel}, Config{})
 	conversation.settings = settings
 
@@ -644,10 +619,10 @@ func TestUnknownModelReachesVendorAndClassifier(t *testing.T) {
 	}
 }
 
-func boundaryWire(capabilities wireCapabilities, encoded func(RequestState), decoded func()) WireFormat {
+func boundaryWire(capabilities wireCapabilities, encoded func(requestState), decoded func()) *boundaryTestWire {
 	return &boundaryTestWire{wireCodec: wireCodec{
 		capabilities: capabilities,
-		encode: func(state RequestState) ([]byte, error) {
+		encode: func(state requestState) ([]byte, error) {
 			encoded(state)
 			return []byte(`{}`), nil
 		},
@@ -667,7 +642,7 @@ func (*boundaryTestWire) RenderTools([]Tool) (json.RawMessage, error) { return n
 type phase15Provider struct {
 	endpoint        string
 	model           string
-	states          []RequestState
+	states          []requestState
 	responses       [][]Event
 	decodeErrors    []error
 	decodeCalls     int
@@ -697,7 +672,7 @@ func (t *phase15Transport) RoundTrip(*http.Request) (*http.Response, error) {
 	return step.response, step.err
 }
 
-func (p *phase15Provider) BuildRequest(ctx context.Context, state RequestState) (*http.Request, error) {
+func (p *phase15Provider) BuildRequest(ctx context.Context, state requestState) (*http.Request, error) {
 	p.states = append(p.states, cloneRequestState(state))
 	if state.Output != nil {
 		state.Output.MaxAttempts = 999
@@ -760,8 +735,8 @@ func (p *phase15Provider) turnAccounting() providerAccounting {
 	return providerAccounting{}
 }
 
-func cloneRequestState(state RequestState) RequestState {
-	return RequestState{
+func cloneRequestState(state requestState) requestState {
+	return requestState{
 		Model:    state.Model,
 		History:  cloneHistory(state.History),
 		Settings: cloneSettings(state.Settings),
@@ -794,7 +769,7 @@ func TestOffCatalogConversationConstructsSendsAndPricesToZero(t *testing.T) {
 	}
 	transportCalls := 0
 	var logOutput bytes.Buffer
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{
 		Log: NewLog(&logOutput, func() time.Time { return time.Time{} }),
 	})
 	stream := conversation.Send(context.Background(), Text{Text: "hello"})
@@ -833,7 +808,7 @@ func TestCatalogPricingUsesMergedUsageAcrossRounds(t *testing.T) {
 	}
 	transportCalls := 0
 	var logOutput bytes.Buffer
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{
 		Log: NewLog(&logOutput, func() time.Time { return time.Time{} }),
 		Tools: []Tool{MustTool("lookup", "", func(context.Context, phase15Input) (string, error) {
 			return "found", nil
@@ -869,7 +844,7 @@ func TestZeroConfigLeavesEveryOptionalRequestAxisEmpty(t *testing.T) {
 		}}}},
 	}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	stream := conversation.Send(context.Background(), Text{Text: "hello"})
 	events := drainStream(stream)
 
@@ -881,7 +856,7 @@ func TestZeroConfigLeavesEveryOptionalRequestAxisEmpty(t *testing.T) {
 		t.Fatalf("zero-config request axes = settings %#v, options %#v, tools %#v", state.Settings, state.Options, state.Tools)
 	}
 	if state.Output != nil {
-		t.Fatal("zero Config declared structured output through RequestState")
+		t.Fatal("zero Config declared structured output through requestState")
 	}
 	// R-UEGM-U26W
 	if len(events) != 1 || reflect.TypeOf(events[0]) != reflect.TypeFor[MessageDone]() {
@@ -921,7 +896,7 @@ func TestNewConversationOwnsToolsDeferredSettingsAndOptions(t *testing.T) {
 	cfg := Config{
 		Tools: eagerSlice, Deferred: groups, Settings: callerSettings, Options: options,
 	}
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), cfg)
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), cfg)
 
 	cfg.Tools[0] = phase17Tool("mutated_eager")
 	cfg.Deferred[0].Tools[0] = phase17Tool("mutated_deferred")
@@ -954,7 +929,6 @@ func TestNewConversationOwnsToolsDeferredSettingsAndOptions(t *testing.T) {
 
 func TestConfiguredToolsSettingsAndOptionsPersistAcrossTurns(t *testing.T) {
 	// R-ST5C-UUC9
-	// R-SVL5-MDTN
 	callbackCalls := 0
 	tool := MustTool("configured_tool", "", func(context.Context, phase15Input) (string, error) {
 		callbackCalls++
@@ -972,7 +946,7 @@ func TestConfiguredToolsSettingsAndOptionsPersistAcrossTurns(t *testing.T) {
 		{MessageDone{Message: call}}, {MessageDone{Message: doneOne}}, {MessageDone{Message: doneTwo}},
 	}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{
 		Tools: []Tool{tool}, Settings: settings, Options: options,
 	})
 	first := conversation.Send(context.Background(), Text{Text: "turn one"})
@@ -997,6 +971,41 @@ func TestConfiguredToolsSettingsAndOptionsPersistAcrossTurns(t *testing.T) {
 	}
 }
 
+func TestConstructionSettingsAndOptionsEncodeUnchangedOnEveryRoundTrip(t *testing.T) {
+	// R-OMU4-MF5G
+	temperature := 0.35
+	settings := Settings{Temperature: &temperature, StopSequences: []string{"fixed-stop"}}
+	options := ProviderOptions{"vendor": json.RawMessage(`{"fixed":true}`)}
+	wantSettings := cloneSettings(settings)
+	wantOptions := cloneProviderOptions(options)
+	done := MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{done}, {done}}}
+	transportCalls := 0
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{
+		Settings: settings,
+		Options:  options,
+	})
+
+	settings.StopSequences[0] = "caller-mutation"
+	options["vendor"] = json.RawMessage(`{"fixed":false}`)
+	for _, prompt := range []string{"first", "second"} {
+		stream := conversation.Send(context.Background(), Text{Text: prompt})
+		drainStream(stream)
+		if stream.Err() != nil {
+			t.Fatal(stream.Err())
+		}
+	}
+
+	if transportCalls != 2 || len(provider.states) != 2 {
+		t.Fatalf("round trips = transport %d, encoded states %d; want 2 and 2", transportCalls, len(provider.states))
+	}
+	for index, state := range provider.states {
+		if !reflect.DeepEqual(state.Settings, wantSettings) || !reflect.DeepEqual(state.Options, wantOptions) {
+			t.Fatalf("round trip %d encoded settings/options = %#v/%#v, want unchanged %#v/%#v", index, state.Settings, state.Options, wantSettings, wantOptions)
+		}
+	}
+}
+
 func TestConfiguredLogReceivesEveryConversationTurn(t *testing.T) {
 	// R-SY0Y-DXB1
 	done := MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}}
@@ -1004,7 +1013,7 @@ func TestConfiguredLogReceivesEveryConversationTurn(t *testing.T) {
 	transportCalls := 0
 	var output bytes.Buffer
 	log := NewLog(&output, func() time.Time { return time.Date(2034, 2, 3, 4, 5, 6, 0, time.UTC) })
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Log: log})
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Log: log})
 	for _, prompt := range []string{"first", "second"} {
 		stream := conversation.Send(context.Background(), Text{Text: prompt})
 		drainStream(stream)
@@ -1021,7 +1030,7 @@ func TestConfiguredLogReceivesEveryConversationTurn(t *testing.T) {
 		t.Fatalf("configured log record counts = %#v; records=%#v", counts, records)
 	}
 
-	nilLogConversation := NewConversation(&phase15Provider{model: "model", responses: [][]Event{{done}}}, successfulPhase15Client(new(int)), Config{})
+	nilLogConversation := newConversation(&phase15Provider{model: "model", responses: [][]Event{{done}}}, successfulPhase15Client(new(int)), Config{})
 	nilLogStream := nilLogConversation.Send(context.Background(), Text{Text: "nil log"})
 	drainStream(nilLogStream)
 	if nilLogStream.Err() != nil || nilLogConversation.eventSink != nil {
@@ -1049,7 +1058,7 @@ func TestInvalidConfigInputsFailOnlyWhenSendIsConsumed(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			provider := &phase5ReservedProvider{phase15Provider: &phase15Provider{model: "model"}}
 			transportCalls := 0
-			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), test.cfg)
+			conversation := newConversation(provider, successfulPhase15Client(&transportCalls), test.cfg)
 			if conversation == nil {
 				t.Fatal("construction rejected invalid Send-time config")
 			}
@@ -1100,7 +1109,7 @@ func TestOutputContractValidationAtSendBoundary(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			provider := &phase15Provider{model: "model"}
 			transportCalls := 0
-			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: test.contract})
+			conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: test.contract})
 			if conversation == nil {
 				t.Fatal("construction rejected output config before Send")
 			}
@@ -1130,23 +1139,14 @@ func TestOutputContractValidationAtSendBoundary(t *testing.T) {
 				t.Fatalf("history changed: before=%s after=%s", before, after)
 			}
 
-			encodeCalls, mutateCalls, authCalls := 0, 0, 0
-			decodeCalls, classifyCalls, composedTransportCalls := 0, 0, 0
-			wire := boundaryWire(wireCapabilities{name: "output boundary"}, func(RequestState) {
+			encodeCalls, authCalls := 0, 0
+			decodeCalls := 0
+			wire := boundaryWire(wireCapabilities{name: "output boundary"}, func(requestState) {
 				encodeCalls++
 			}, func() {
 				decodeCalls++
 			})
-			endpoint, err := NewEndpoint(
-				"https://provider.invalid/generate",
-				authFunc(func(context.Context, *http.Request, []byte) error { authCalls++; return nil }),
-				WithMutator(func(*http.Request, *[]byte) error { mutateCalls++; return nil }),
-				WithClassifier(func(int, http.Header, []byte) error { classifyCalls++; return nil }),
-				WithHTTPClient(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-					composedTransportCalls++
-					return nil, errors.New("transport must not run")
-				})}),
-			)
+			endpoint, err := NewEndpoint("https://provider.invalid/generate", authFunc(func(context.Context, *http.Request, []byte) error { authCalls++; return nil }))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1164,10 +1164,10 @@ func TestOutputContractValidationAtSendBoundary(t *testing.T) {
 			}
 			// R-U5XC-5O01
 			if !errors.Is(composedStream.Err(), ErrInvalidConfig) || len(composedEvents) != 0 ||
-				encodeCalls != 0 || mutateCalls != 0 || authCalls != 0 || composedTransportCalls != 0 || decodeCalls != 0 || classifyCalls != 0 ||
+				encodeCalls != 0 || authCalls != 0 || decodeCalls != 0 ||
 				!bytes.Equal(composedAfter, composedBefore) {
-				t.Fatalf("composed boundary effects: err=%v events=%#v encode=%d mutate=%d auth=%d transport=%d decode=%d classify=%d history=%s",
-					composedStream.Err(), composedEvents, encodeCalls, mutateCalls, authCalls, composedTransportCalls, decodeCalls, classifyCalls, composedAfter)
+				t.Fatalf("composed boundary effects: err=%v events=%#v encode=%d auth=%d decode=%d history=%s",
+					composedStream.Err(), composedEvents, encodeCalls, authCalls, decodeCalls, composedAfter)
 			}
 		})
 	}
@@ -1186,7 +1186,7 @@ func TestOutputContractValidationAtSendBoundary(t *testing.T) {
 				Role: RoleAssistant, Blocks: []Block{Text{Text: `{}`}},
 			}}}}}
 			transportCalls := 0
-			stream := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: test.contract}).Send(context.Background(), Text{Text: "accepted"})
+			stream := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: test.contract}).Send(context.Background(), Text{Text: "accepted"})
 			drainStream(stream)
 			// R-U5XC-5O01
 			if stream.Err() != nil || len(provider.states) != 1 || transportCalls != 1 {
@@ -1203,7 +1203,7 @@ func TestOutputContractIsOwnedByConversation(t *testing.T) {
 		Role: RoleAssistant, Blocks: []Block{Text{Text: `{}`}},
 	}}}}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: contract})
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: contract})
 
 	copy(schema[9:15], "broken")
 	contract.Schema = json.RawMessage(`{"type":"object","oneOf":[]}`)
@@ -1223,7 +1223,7 @@ func TestStructuredOutputValidTerminationPreservesBytesAndOrder(t *testing.T) {
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: message}}}}
 	transportCalls := 0
 	schema := json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"score":{"type":"number","minimum":0,"multipleOf":0.1},"label":{"type":"string","pattern":"^[a-z]+$"}},"required":["score","label"]}`)
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: &OutputContract{Schema: schema, MaxAttempts: 1}})
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: &OutputContract{Schema: schema, MaxAttempts: 1}})
 	user := Text{Text: "answer"}
 	stream := conversation.Send(context.Background(), user)
 	events := drainStream(stream)
@@ -1253,7 +1253,7 @@ func TestOutputDrivesStructuredStreamOnceAndRetainsResult(t *testing.T) {
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: message}}}}
 	transportCalls := 0
 	schema := json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"answer":{"type":"string"}},"required":["answer"]}`)
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{
 		Output: &OutputContract{Schema: schema, MaxAttempts: 1},
 	})
 	stream := conversation.Send(context.Background(), Text{Text: "answer"})
@@ -1276,7 +1276,7 @@ func TestOutputDecodesNormallyDrainedStructuredStream(t *testing.T) {
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: message}}}}
 	transportCalls := 0
 	schema := json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"count":{"type":"integer"}},"required":["count"]}`)
-	stream := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+	stream := newConversation(provider, successfulPhase15Client(&transportCalls), Config{
 		Output: &OutputContract{Schema: schema, MaxAttempts: 1},
 	}).Send(context.Background(), Text{Text: "count"})
 	events := drainStream(stream)
@@ -1294,7 +1294,7 @@ func TestOutputReturnsExactTerminalStreamError(t *testing.T) {
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: message}}}}
 	transportCalls := 0
 	schema := json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"value":{"type":"integer","minimum":0}},"required":["value"]}`)
-	stream := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+	stream := newConversation(provider, successfulPhase15Client(&transportCalls), Config{
 		Output: &OutputContract{Schema: schema, MaxAttempts: 1},
 	}).Send(context.Background(), Text{Text: "answer"})
 
@@ -1315,7 +1315,7 @@ func TestOutputDoesNotResumeAbandonedStructuredStream(t *testing.T) {
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: message}}}}
 	transportCalls := 0
 	schema := json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"answer":{"type":"string"}},"required":["answer"]}`)
-	stream := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+	stream := newConversation(provider, successfulPhase15Client(&transportCalls), Config{
 		Output: &OutputContract{Schema: schema, MaxAttempts: 1},
 	}).Send(context.Background(), Text{Text: "answer"})
 	for range stream.Events() {
@@ -1335,7 +1335,7 @@ func TestStructuredOutputRejectsEmptyCompletedResponseWithoutCommit(t *testing.T
 	provider := &phase15Provider{model: "model", responses: [][]Event{{}}}
 	transportCalls := 0
 	schema := json.RawMessage(`{"type":"object","properties":{},"required":[],"additionalProperties":false}`)
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: &OutputContract{Schema: schema, MaxAttempts: 1}})
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: &OutputContract{Schema: schema, MaxAttempts: 1}})
 	conversation.history = cloneHistory(prior)
 
 	stream := conversation.Send(context.Background(), Text{Text: "answer"})
@@ -1362,7 +1362,7 @@ func TestStructuredOutputToolRoundTripSkipsTextValidation(t *testing.T) {
 	transportCalls := 0
 	toolCalls := 0
 	schema := json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"answer":{"type":"string"}},"required":["answer"]}`)
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: &OutputContract{Schema: schema, MaxAttempts: 1}})
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: &OutputContract{Schema: schema, MaxAttempts: 1}})
 	conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) {
 		toolCalls++
 		return "sunny", nil
@@ -1406,7 +1406,7 @@ func TestStructuredOutputRejectsLocalConstraintWithoutCommit(t *testing.T) {
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: message}}}}
 	transportCalls := 0
 	schema := json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{"rows":{"type":"array","uniqueItems":true,"items":{"type":"object","additionalProperties":false,"properties":{"line":{"type":"number","minimum":0}},"required":["line"]}}},"required":["rows"]}`)
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: &OutputContract{Schema: schema, MaxAttempts: 1}})
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: &OutputContract{Schema: schema, MaxAttempts: 1}})
 	conversation.history = cloneHistory(prior)
 	stream := conversation.Send(context.Background(), Text{Text: "answer"})
 	events := drainStream(stream)
@@ -1430,7 +1430,7 @@ func TestStructuredOutputFormatGateAndLocalMeaning(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: test.text}}}}}}}
 			transportCalls := 0
-			stream := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: &OutputContract{Schema: schema, MaxAttempts: 1}}).Send(context.Background(), Text{Text: "date"})
+			stream := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: &OutputContract{Schema: schema, MaxAttempts: 1}}).Send(context.Background(), Text{Text: "date"})
 			events := drainStream(stream)
 			// R-UKK4-QWWD
 			if (stream.Err() == nil) != test.ok || transportCalls != 1 || (len(events) == 2) != test.ok {
@@ -1442,7 +1442,7 @@ func TestStructuredOutputFormatGateAndLocalMeaning(t *testing.T) {
 	provider := &phase15Provider{model: "model"}
 	transportCalls := 0
 	unsupported := json.RawMessage(`{"type":"object","properties":{"x":{"type":"string","format":"future"}},"required":["x"]}`)
-	stream := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: &OutputContract{Schema: unsupported}}).Send(context.Background(), Text{Text: "x"})
+	stream := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: &OutputContract{Schema: unsupported}}).Send(context.Background(), Text{Text: "x"})
 	drainStream(stream)
 	if !errors.Is(stream.Err(), ErrInvalidConfig) || transportCalls != 0 || len(provider.states) != 0 {
 		t.Fatalf("unsupported format crossed provider gate: err=%v transport=%d", stream.Err(), transportCalls)
@@ -1454,7 +1454,7 @@ func TestStructuredOutputEarlyStopDoesNotCommit(t *testing.T) {
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: message}}}}
 	transportCalls := 0
 	schema := json.RawMessage(`{"type":"object","properties":{},"required":[]}`)
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: &OutputContract{Schema: schema}})
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Output: &OutputContract{Schema: schema}})
 	stream := conversation.Send(context.Background(), Text{Text: "answer"})
 	seen := 0
 	for range stream.Events() {
@@ -1477,7 +1477,7 @@ func TestStructuredOutputEarlyStopOnCorrectionDoesNotRedrive(t *testing.T) {
 		{MessageDone{Message: rejected}}, {MessageDone{Message: accepted}},
 	}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{
 		Output: &OutputContract{Schema: schema, MaxAttempts: 2},
 	})
 	prior := History{{Role: RoleSystem, Blocks: []Block{Text{Text: "stable"}}}}
@@ -1517,7 +1517,7 @@ func TestStructuredOutputCorrectionRetriesAndCommitsFullTranscript(t *testing.T)
 	transportCalls := 0
 	var logOutput bytes.Buffer
 	log := NewLog(&logOutput, func() time.Time { return time.Date(2035, 1, 2, 3, 4, 5, 0, time.UTC) })
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{
 		Output: &OutputContract{Schema: schema, MaxAttempts: 2}, Log: log,
 	})
 	user := Message{Role: RoleUser, Blocks: []Block{Text{Text: "answer"}}}
@@ -1606,7 +1606,7 @@ func TestStructuredOutputAttemptLimitsExhaustWithoutCommit(t *testing.T) {
 			provider := &phase15Provider{model: "model", responses: responses}
 			transportCalls := 0
 			var logOutput bytes.Buffer
-			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+			conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{
 				Output: &OutputContract{Schema: schema, MaxAttempts: test.maxAttempts},
 				Log:    NewLog(&logOutput, func() time.Time { return time.Time{} }),
 			})
@@ -1615,10 +1615,11 @@ func TestStructuredOutputAttemptLimitsExhaustWithoutCommit(t *testing.T) {
 			events := drainStream(stream)
 
 			var terminal *Error
+			wantIdentity := Identity{Endpoint: "phase15", AuthMode: "fixture", Model: "model"}
 			// R-UC0U-2IPI
 			if !errors.As(stream.Err(), &terminal) || !errors.Is(stream.Err(), ErrInvalidOutput) ||
-				terminal.Category != CategoryUnknown || terminal.Endpoint != provider.Identity() || Retryable(stream.Err()) {
-				t.Fatalf("terminal error = %#v, want non-retryable CategoryUnknown wrapping ErrInvalidOutput for %#v", stream.Err(), provider.Identity())
+				terminal.Category != CategoryUnknown || terminal.Endpoint != wantIdentity || Retryable(stream.Err()) {
+				t.Fatalf("terminal error = %#v, want non-retryable CategoryUnknown wrapping ErrInvalidOutput for %#v", stream.Err(), wantIdentity)
 			}
 			if transportCalls != test.wantAttempts || len(provider.states) != test.wantAttempts {
 				t.Fatalf("attempts = transport %d states %d, want %d", transportCalls, len(provider.states), test.wantAttempts)
@@ -1649,7 +1650,7 @@ func TestNoContractTurnDoesNotLogOutput(t *testing.T) {
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: message}}}}
 	transportCalls := 0
 	var logOutput bytes.Buffer
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{
 		Log: NewLog(&logOutput, func() time.Time { return time.Time{} }),
 	})
 	events := drainStream(conversation.Send(context.Background(), Text{Text: "answer"}))
@@ -1676,7 +1677,7 @@ func TestDurableLogMirrorsMultiRoundStreamAtMessageGranularity(t *testing.T) {
 	transportCalls := 0
 	var output bytes.Buffer
 	log := NewLog(&output, func() time.Time { return time.Date(2033, 1, 1, 0, 0, 0, 0, time.UTC) })
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	conversation.eventSink = log
 	conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) { return "sunny", nil })}
 
@@ -1715,7 +1716,7 @@ func TestLogFailureDoesNotAlterSuccessOrTerminalStreamSemantics(t *testing.T) {
 	transportCalls := 0
 	failure := &failingLogWriter{}
 	writer := &scriptedLogWriter{steps: []io.Writer{io.Discard, io.Discard, failure}}
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{
 		Output: &OutputContract{Schema: json.RawMessage(`{"type":"object","properties":{"value":{"type":"integer"}},"required":["value"]}`)},
 		Log:    NewLog(writer, func() time.Time { return time.Time{} }),
 	})
@@ -1732,7 +1733,7 @@ func TestLogFailureDoesNotAlterSuccessOrTerminalStreamSemantics(t *testing.T) {
 	provider = &phase15Provider{model: "model", decodeErrors: []error{terminal}}
 	transportCalls = 0
 	var output bytes.Buffer
-	conversation = NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
+	conversation = newConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	conversation.eventSink = NewLog(&output, func() time.Time { return time.Time{} })
 	stream = conversation.Send(context.Background(), Text{Text: "fail"})
 	drainStream(stream)
@@ -1758,7 +1759,7 @@ func TestLogFailureDoesNotAlterSuccessOrTerminalStreamSemantics(t *testing.T) {
 		transportCalls++
 		return nil, context.Canceled
 	})}
-	conversation = NewConversation(provider, cancelClient, Config{})
+	conversation = newConversation(provider, cancelClient, Config{})
 	conversation.eventSink = NewLog(&output, func() time.Time { return time.Time{} })
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -1780,7 +1781,7 @@ func TestConversationCloseIsIdempotentAndRejectsLaterSend(t *testing.T) {
 	transportCalls := 0
 	var output bytes.Buffer
 	log := NewLog(&output, func() time.Time { return time.Time{} })
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	conversation.eventSink = log
 	if err := log.Close(); err != nil {
 		t.Fatal(err)
@@ -1894,7 +1895,7 @@ func TestStreamConsumptionDrivesLiveEventsInRoundTripOrder(t *testing.T) {
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
 	toolCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	tool := &phase17CountingTool{
 		name:   "weather",
 		schema: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}`),
@@ -1937,7 +1938,7 @@ func TestStreamEarlyStopHaltsTurnAndCannotReplay(t *testing.T) {
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
 	toolCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) {
 		toolCalls++
 		return "unused", nil
@@ -1968,7 +1969,7 @@ func TestStreamEventsAndPrivateLogBridgeHaveExactParity(t *testing.T) {
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
 	sink := &captureEventSink{}
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	conversation.eventSink = sink
 	conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) { return "sunny", nil })}
 
@@ -1995,7 +1996,6 @@ type phase15Input struct {
 
 func TestSendCompletesToolRoundTripsWithFixedClonedConfigAndOneCommit(t *testing.T) {
 	// R-4NRR-0AW0
-	// R-4OZN-E2MP
 	// R-4Q7J-RUDE
 	// R-4TV8-X5LH
 	callID := "vendor::call/β-0099-not-a-local-id"
@@ -2006,7 +2006,7 @@ func TestSendCompletesToolRoundTripsWithFixedClonedConfigAndOneCommit(t *testing
 	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "clear skies"}}}
 	provider := &phase15Provider{model: "fixed/model β", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	temperature := 0.25
 	conversation.settings = Settings{Temperature: &temperature, StopSequences: []string{"END"}}
 	conversation.options = ProviderOptions{"vendor_flag": json.RawMessage(`{"mode":"exact"}`)}
@@ -2099,7 +2099,7 @@ func TestToolDispatchFailuresAreInBandAndRecoverable(t *testing.T) {
 			final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "recovered"}}}
 			provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 			transportCalls := 0
-			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
+			conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 			conversation.tools = test.tools(&callbackCalls)
 
 			stream := conversation.Send(context.Background(), Text{Text: "go"})
@@ -2169,7 +2169,7 @@ func TestDeferredToolsAreOwnedValidatedAndWithheldUntilLoaded(t *testing.T) {
 	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: load}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Deferred: []DeferredGroup{{Name: "records", Blurb: "Record operations", Tools: registered}}})
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Deferred: []DeferredGroup{{Name: "records", Blurb: "Record operations", Tools: registered}}})
 	registered[0] = phase17Tool("caller_mutation")
 
 	stream := conversation.Send(context.Background(), Text{Text: "go"})
@@ -2200,7 +2200,7 @@ func TestDeferredToolsAreOwnedValidatedAndWithheldUntilLoaded(t *testing.T) {
 			} else {
 				cfg.Deferred = []DeferredGroup{{Name: "bad_group", Tools: []Tool{invalid}}}
 			}
-			conversation := NewConversation(provider, successfulPhase15Client(&calls), cfg)
+			conversation := newConversation(provider, successfulPhase15Client(&calls), cfg)
 			conversation.history = History{{Role: RoleSystem, Blocks: []Block{Text{Text: "unchanged"}}}}
 			before := cloneHistory(conversation.history)
 			failed := conversation.Send(context.Background(), Text{Text: "blocked"})
@@ -2225,7 +2225,7 @@ func TestDeferredGroupsConditionallySynthesizeExactlyOneLoader(t *testing.T) {
 		{name: "several", groups: []DeferredGroup{{Name: "one", Tools: []Tool{phase17Tool("a")}}, {Name: "two", Tools: []Tool{phase17Tool("b")}}}, want: []string{loadToolsName}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			conversation := NewConversation(&phase15Provider{model: "model"}, http.DefaultClient, Config{Deferred: test.groups})
+			conversation := newConversation(&phase15Provider{model: "model"}, http.DefaultClient, Config{Deferred: test.groups})
 			o, err := conversation.prepareOrchestrator()
 			if err != nil {
 				t.Fatal(err)
@@ -2253,7 +2253,7 @@ func TestLoadToolsCatalogContainsOnlyGroupBlurbsAndBareNames(t *testing.T) {
 		description: secretDescription,
 		schema:      json.RawMessage(`{"type":"object","properties":{"schema_only_secret":{"type":"string"}}}`),
 	}
-	conversation := NewConversation(&phase15Provider{model: "model"}, http.DefaultClient, Config{Deferred: []DeferredGroup{
+	conversation := newConversation(&phase15Provider{model: "model"}, http.DefaultClient, Config{Deferred: []DeferredGroup{
 		{Name: "group_token_71", Blurb: "blurb token 82", Tools: []Tool{tool}},
 		{Name: "group_token_64", Blurb: "blurb token 55", Tools: []Tool{phase17Tool("tool_token_46")}},
 	}})
@@ -2285,7 +2285,7 @@ func TestLoadToolsBatchesGroupsAndToolsWithInBandUnknownRecovery(t *testing.T) {
 	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: firstLoad}}, {MessageDone{Message: secondLoad}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Deferred: []DeferredGroup{
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Deferred: []DeferredGroup{
 		{Name: "group_a", Blurb: "A", Tools: []Tool{a1, a2}},
 		{Name: "group_b", Blurb: "B", Tools: []Tool{solo, b2}},
 	}})
@@ -2320,7 +2320,7 @@ func TestDeferredLoadingIsMonotonicAcrossConversationSends(t *testing.T) {
 	done := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: loadSecond}}, {MessageDone{Message: done}}, {MessageDone{Message: loadFirst}}, {MessageDone{Message: done}}}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Deferred: []DeferredGroup{{Name: "all", Blurb: "All", Tools: []Tool{phase17Tool("first"), phase17Tool("second")}}}})
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Deferred: []DeferredGroup{{Name: "all", Blurb: "All", Tools: []Tool{phase17Tool("first"), phase17Tool("second")}}}})
 	firstStream := conversation.Send(context.Background(), Text{Text: "turn one"})
 	drainStream(firstStream)
 	secondStream := conversation.Send(context.Background(), Text{Text: "turn two"})
@@ -2349,7 +2349,7 @@ func TestAdvertisedToolsUseSortedBaseAndTailOnlyLoadOrder(t *testing.T) {
 	done := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: load}}, {MessageDone{Message: done}}}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{
 		Tools:    []Tool{phase17Tool("z_eager"), phase17Tool("a_eager")},
 		Deferred: []DeferredGroup{{Name: "tails", Blurb: "Tails", Tools: []Tool{phase17Tool("tail_a"), phase17Tool("tail_z")}}},
 	})
@@ -2366,7 +2366,7 @@ func TestAdvertisedToolsUseSortedBaseAndTailOnlyLoadOrder(t *testing.T) {
 
 func TestDeferredRegistrationSynthesizesExactLoadToolsSchema(t *testing.T) {
 	// R-0S9U-CR7T
-	conversation := NewConversation(&phase15Provider{model: "model"}, http.DefaultClient, Config{Deferred: []DeferredGroup{{
+	conversation := newConversation(&phase15Provider{model: "model"}, http.DefaultClient, Config{Deferred: []DeferredGroup{{
 		Name:  "search",
 		Blurb: "Search stored records",
 		Tools: []Tool{phase17Tool("search_records")},
@@ -2431,7 +2431,7 @@ func TestSendGatesTheCompleteLiveToolSetOnceBeforeAllBoundaries(t *testing.T) {
 	providerWithoutGroups := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: ordinaryLoadToolsCall}}, {MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "ok"}}}}}}}
 	transportWithoutGroups := 0
 	ordinaryCalls := 0
-	conversationWithoutGroups := NewConversation(providerWithoutGroups, successfulPhase15Client(&transportWithoutGroups), Config{Tools: []Tool{concreteTool{
+	conversationWithoutGroups := newConversation(providerWithoutGroups, successfulPhase15Client(&transportWithoutGroups), Config{Tools: []Tool{concreteTool{
 		name:   loadToolsName,
 		schema: json.RawMessage(`{"type":"object","properties":{}}`),
 		call: func(context.Context, json.RawMessage) (string, error) {
@@ -2449,7 +2449,7 @@ func TestSendGatesTheCompleteLiveToolSetOnceBeforeAllBoundaries(t *testing.T) {
 	deferredCount := &phase17CountingTool{name: "deferred_count", schema: json.RawMessage(`{"type":"object","properties":{}}`), call: func(context.Context, json.RawMessage) (string, error) { return "", nil }}
 	gateProvider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "ok"}}}}}}}
 	gateCalls := 0
-	gateConversation := NewConversation(gateProvider, successfulPhase15Client(&gateCalls), Config{
+	gateConversation := newConversation(gateProvider, successfulPhase15Client(&gateCalls), Config{
 		Tools:    []Tool{eagerCount},
 		Deferred: []DeferredGroup{{Name: "counted", Tools: []Tool{deferredCount}}},
 	})
@@ -2462,7 +2462,7 @@ func TestSendGatesTheCompleteLiveToolSetOnceBeforeAllBoundaries(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			provider := &phase15Provider{model: "model"}
 			transportCalls := 0
-			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Tools: test.eager, Deferred: test.deferred})
+			conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Tools: test.eager, Deferred: test.deferred})
 			callbackCalls := 0
 			conversation.validate = func() error { callbackCalls++; return nil }
 			conversation.history = History{{Role: RoleSystem, Blocks: []Block{Text{Text: "unchanged"}}}}
@@ -2498,7 +2498,7 @@ func TestSendGatesTheCompleteLiveToolSetOnceBeforeAllBoundaries(t *testing.T) {
 	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{Tools: []Tool{counting}})
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Tools: []Tool{counting}})
 	stream := conversation.Send(context.Background(), Text{Text: "go"})
 	drainStream(stream)
 	if stream.Err() != nil {
@@ -2541,7 +2541,7 @@ func TestOrchestratorValidatesEveryCallBeforeInvokingTool(t *testing.T) {
 			final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "recovered"}}}
 			provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 			transportCalls := 0
-			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
+			conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 			conversation.tools = []Tool{tool}
 
 			stream := conversation.Send(context.Background(), Text{Text: "go"})
@@ -2589,7 +2589,7 @@ func TestUnknownAndDeferredDirectCallsRecoverWithoutGuessedExecution(t *testing.
 			}
 			provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 			transportCalls := 0
-			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), cfg)
+			conversation := newConversation(provider, successfulPhase15Client(&transportCalls), cfg)
 
 			stream := conversation.Send(context.Background(), Text{Text: "go"})
 			drainStream(stream)
@@ -2625,7 +2625,7 @@ func TestToolCallbackErrorIsCorrelatedDeliveredAndRecoverable(t *testing.T) {
 	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "recovered"}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
-	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	runtimeTool, err := NewToolFromSchema("boom", "remote tool", json.RawMessage(`{"type":"object","properties":{}}`), func(context.Context, json.RawMessage) (string, error) {
 		return "discarded", errors.New(distinctive)
 	})
@@ -2672,7 +2672,7 @@ func TestSiblingRuntimeSchemaAndRootEagerToolsShareTheSendTimeGate(t *testing.T)
 			provider := &phase15Provider{model: "model"}
 			transportCalls := 0
 			callbackCalls := 0
-			conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
+			conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 			conversation.tools = []Tool{test.tool(&callbackCalls)}
 
 			stream := conversation.Send(context.Background(), Text{Text: "blocked"})
@@ -2726,7 +2726,7 @@ func TestTerminalFailuresAfterCompletedRoundTripPreserveEventsAndAtomicHistory(t
 			transport := &phase15Transport{steps: []phase15TransportStep{{response: success()}, second}}
 			client := &http.Client{Transport: transport}
 			toolCalls := 0
-			conversation := NewConversation(provider, client, Config{})
+			conversation := newConversation(provider, client, Config{})
 			conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) {
 				toolCalls++
 				return "sunny", nil
@@ -2778,10 +2778,10 @@ type phase15Wire struct {
 	reserved    []string
 	encodeCalls int
 	decodeCalls int
-	state       RequestState
+	state       requestState
 }
 
-func (w *phase15Wire) EncodeRequest(state RequestState) ([]byte, error) {
+func (w *phase15Wire) EncodeRequest(state requestState) ([]byte, error) {
 	w.encodeCalls++
 	w.state = cloneRequestState(state)
 	state.Options["safe"] = json.RawMessage(`null`)
@@ -2800,17 +2800,7 @@ func TestProviderOptionsReservedCollisionFailsBeforeProviderBoundaries(t *testin
 	// R-4V35-AXC6
 	authCalls := 0
 	transportCalls := 0
-	classifyCalls := 0
-	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-		transportCalls++
-		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}, nil
-	})}
-	endpoint, err := NewEndpoint(
-		"https://phase15.invalid",
-		authFunc(func(context.Context, *http.Request, []byte) error { authCalls++; return nil }),
-		WithHTTPClient(client),
-		WithClassifier(func(int, http.Header, []byte) error { classifyCalls++; return errors.New("unused") }),
-	)
+	endpoint, err := NewEndpoint("https://phase15.invalid", authFunc(func(context.Context, *http.Request, []byte) error { authCalls++; return nil }))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2826,8 +2816,8 @@ func TestProviderOptionsReservedCollisionFailsBeforeProviderBoundaries(t *testin
 		t.Fatalf("Stream.Err() = %v, want ErrInvalidConfig", stream.Err())
 	}
 	after, _ := json.Marshal(conversation.history)
-	if wire.encodeCalls != 0 || wire.decodeCalls != 0 || authCalls != 0 || transportCalls != 0 || classifyCalls != 0 {
-		t.Fatalf("calls after collision: encode=%d decode=%d auth=%d transport=%d classify=%d", wire.encodeCalls, wire.decodeCalls, authCalls, transportCalls, classifyCalls)
+	if wire.encodeCalls != 0 || wire.decodeCalls != 0 || authCalls != 0 || transportCalls != 0 {
+		t.Fatalf("calls after collision: encode=%d decode=%d auth=%d transport=%d", wire.encodeCalls, wire.decodeCalls, authCalls, transportCalls)
 	}
 	if !bytes.Equal(before, after) {
 		t.Fatalf("history changed: before=%s after=%s", before, after)
@@ -2854,15 +2844,12 @@ func TestBuiltInOutputOptionCollisionsFailBeforeProviderBoundaries(t *testing.T)
 				transportCalls++
 				return nil, errors.New("unexpected HTTP request")
 			})}
-			endpoint, err := NewEndpoint(
-				"https://phase28.invalid",
-				authFunc(func(context.Context, *http.Request, []byte) error { authCalls++; return nil }),
-				WithHTTPClient(client),
-			)
+			useDefaultHTTPClient(t, client)
+			endpoint, err := NewEndpoint("https://phase28.invalid", authFunc(func(context.Context, *http.Request, []byte) error { authCalls++; return nil }))
 			if err != nil {
 				t.Fatal(err)
 			}
-			conversation, err := NewForWire(test.wire, endpoint, "phase28-model", Config{
+			conversation, err := New(test.wire, endpoint, "phase28-model", Config{
 				Options: ProviderOptions{test.key: json.RawMessage(`{"collision":true}`)},
 			})
 			if err != nil {
@@ -2898,11 +2885,8 @@ func TestProviderOptionsNoncollidingSnapshotIsCloned(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}, nil
 	})}
-	endpoint, err := NewEndpoint(
-		"https://phase15.invalid",
-		authFunc(func(context.Context, *http.Request, []byte) error { return nil }),
-		WithHTTPClient(client),
-	)
+	useDefaultHTTPClient(t, client)
+	endpoint, err := NewEndpoint("https://phase15.invalid", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
 	if err != nil {
 		t.Fatal(err)
 	}

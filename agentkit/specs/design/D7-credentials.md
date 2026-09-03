@@ -55,17 +55,17 @@ method, not a hierarchy. `TokenSource` shapes legitimately differ per vendor (on
 returns only a bearer, another a bearer plus an account id), and forcing them into
 a common signature would be a false unification of its own.
 
-Compile-time safety exists on the vendor path and **cannot** exist on the generic
-path, because a custom base URL's vendor is unknowable — and that is correct, not a
-gap. The generic wire constructor takes a bare `AuthApplier` directly; there is no
-sealed credential there to mis-pair, so the compile-time guard has nothing to guard
-and is rightly absent. The generic path trades the guard for reach.
+Compile-time safety lives in the vendor packages, which are the only
+construction route (D1). The root `NewEndpoint` takes a bare `AuthApplier`
+because the vendor packages, as separate Go packages, must hand their sealed
+credentials across a package boundary; there is no consumer path on which the
+missing guard could matter, and a consumer never defines an auth mechanism.
 
 One transport interaction is enforced at construction (L2): a **transport-baking
 credential** (an OAuth credential that moves host, path, and headers —
 D6) and `WithBaseURL` are **mutually exclusive**. Supplying both is
 `ErrInvalidConfig` at construction time, before any request. `WithBaseURL` is for
-the API-key and generic paths only, where the transport is not already fixed by the
+the API-key path only, where the transport is not already fixed by the
 credential; letting both win would leave two conflicting sources of truth for the
 host.
 
@@ -78,8 +78,8 @@ host.
 - R-3OEN-WYDV: A per-vendor `TokenSource` MAY expose a vendor-specific shape (e.g. bearer-only vs. bearer-plus-account-id); the design MUST NOT force one common `TokenSource` signature across vendors.
 - R-YM0P-1521: The `anthropic` package MUST export a sealed `Credential` interface whose method set is exactly the package-private `apply(ctx context.Context, req *http.Request, body []byte) error` and the package-private marker `isAnthropicCredential()`, plus the constructors `APIKey(key string) Credential`, `OAuth(ts TokenSource) Credential`, and `New(cred Credential, model string, opts ...Option) (*agentkit.Conversation, error)`.
 - R-YN8L-EWSQ: The `openai` package MUST export a sealed `Credential` interface whose method set is exactly the package-private `apply(ctx context.Context, req *http.Request, body []byte) error` and the package-private marker `isOpenAICredential()`, plus the constructors `APIKey(key string) Credential`, `OAuth(ts TokenSource) Credential`, and `New(cred Credential, model string, opts ...Option) (*agentkit.Conversation, error)`.
-- R-YOGH-SOJF: `NewEndpoint` MUST accept a bare `AuthApplier` with no compile-time vendor guard, and this absence MUST be treated as correct given an unknowable custom-base-URL vendor on the generic path.
-- R-YPOE-6GA4: Every vendor constructor package MUST export a sealed `Credential` interface carrying its own package-private marker, an `APIKey(key string) Credential` constructor, and a `New(cred Credential, model string, opts ...Option) (*agentkit.Conversation, error)` constructor that bakes a selectable `(WireFormat, Endpoint)` pair, with `model` a required positional parameter.
+- R-OO21-06W5: `NewEndpoint` MUST accept any `AuthApplier` with no compile-time vendor guard; vendor credential typing MUST live solely in each vendor package's sealed `Credential`.
+- R-OP9X-DYMU: Every vendor constructor package MUST export a sealed `Credential` interface carrying its own package-private marker, an `APIKey(key string) Credential` constructor, and a `New(cred Credential, model string, opts ...Option) (*agentkit.Conversation, error)` constructor that selects a built-in wire by `KnownWire` and builds its `Endpoint`, with `model` a required positional parameter.
 - R-YQWA-K80T: The `anthropic` package MUST export `type TokenSource interface { Token(ctx context.Context) (string, error) }`.
 - R-YS46-XZRI: The `openai` package MUST export `type TokenSource interface { Token(ctx context.Context) (bearer, accountID string, err error) }`.
 - R-YTC3-BRI7: The `xai` package MUST export `type TokenSource interface { Token(ctx context.Context) (string, error) }`.
@@ -90,3 +90,4 @@ host.
 - R-YZFL-8M7O: The `xai` package MUST export a sealed `Credential` interface whose method set is exactly the package-private `apply(ctx context.Context, req *http.Request, body []byte) error` and the package-private marker `isXAICredential()`, plus `APIKey(key string) Credential`, `OAuth(ts TokenSource) Credential`, and `New(cred Credential, model string, opts ...Option) (*agentkit.Conversation, error)`.
 - R-Z0NH-MDYD: The `openrouter` package MUST export a sealed `Credential` interface whose method set is exactly the package-private `apply(ctx context.Context, req *http.Request, body []byte) error` and the package-private marker `isOpenRouterCredential()`, plus `APIKey(key string) Credential` and `New(cred Credential, model string, opts ...Option) (*agentkit.Conversation, error)`; it MUST NOT export an `OAuth` constructor or a `TokenSource`.
 - R-Z1VE-05P2: The `gemini` package MUST export a sealed `Credential` interface whose method set is exactly the package-private `apply(ctx context.Context, req *http.Request, body []byte) error` and the package-private marker `isGeminiCredential()`, plus `APIKey(key string) Credential` and `New(cred Credential, model string, opts ...Option) (*agentkit.Conversation, error)`; it MUST NOT export an `OAuth` constructor, `TokenSource`, or `API` enum.
+- R-OQHT-RQDJ: Every vendor constructor package MUST export `func WithBaseURL(raw string) Option`, which MUST replace the package's default base URL with `raw`, and this MUST be the only transport customization a consumer can supply.

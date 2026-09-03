@@ -9,7 +9,7 @@ import (
 
 type anthropicWire struct{ wireCodec }
 
-func newAnthropicWire(classifier wireClassifier) WireFormat {
+func newAnthropicWire(classifier errorClassifier) wireFormat {
 	wire := &anthropicWire{}
 	wire.wireCodec = wireCodec{
 		encode:     wire.encodeRequest,
@@ -121,7 +121,7 @@ func configureAnthropicRequest(request *anthropicRequest, settings Settings) {
 	}
 }
 
-func (w *anthropicWire) encodeRequest(state RequestState) ([]byte, error) {
+func (w *anthropicWire) encodeRequest(state requestState) ([]byte, error) {
 	messages, err := buildAnthropicMessages(state.History)
 	if err != nil {
 		return nil, err
@@ -312,10 +312,4 @@ func (w *anthropicWire) RenderTools(tools []Tool) (json.RawMessage, error) {
 		return nil, err
 	}
 	return renderAnthropicTools(tools)
-}
-
-func (w *anthropicWire) withClassifier(classifier wireClassifier) WireFormat {
-	clone := &anthropicWire{wireCodec: w.cloneWithClassifier(classifier)}
-	clone.encode = clone.encodeRequest
-	return clone
 }
