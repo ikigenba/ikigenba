@@ -10,8 +10,8 @@ import (
 )
 
 // RecordType is the closed set of event-log record kinds. There is deliberately
-// no "warning" kind: fail-loud (D4) removed the concept — an unresolved cost is
-// Cost.Known=false, an unexpressible request fails at Send.
+// no "warning" kind: fail-loud (D4) removed the concept; an unexpressible
+// request fails at Send.
 type RecordType string
 
 // RecordType values enumerate the event-log record kinds.
@@ -173,7 +173,7 @@ type Log struct {
 // NewLog builds a log over w, timestamping with now. A nil w yields a nil-
 // behaving log. now is injected for determinism (D3).
 func NewLog(w io.Writer, now func() time.Time) *Log {
-	return &Log{w: w, now: now, totalCost: Cost{Known: true}}
+	return &Log{w: w, now: now}
 }
 
 // Close emits exactly one cumulative summary record — total Usage and total

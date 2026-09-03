@@ -1,14 +1,8 @@
 package agentkit
 
-// Cost is the price of one turn in nano-USD (1e-9 USD). Known reports whether
-// Amount reflects a real figure; a false Known means the amount is unresolved
-// (typically zero) and must not be treated as "this turn was free". Aggregation
-// propagates Known: summing any Cost whose Known is false yields a sum whose
-// Known is false, so a cumulative total can never silently under-count.
-type Cost struct {
-	Amount int64 // nano-USD
-	Known  bool
-}
+// Cost is the price of one turn in nano-USD (1e-9 USD). It is a bare amount;
+// aggregation is ordinary addition.
+type Cost int64
 
 // Pricing is a consumer-supplied per-model rate, consulted when a wire reports
 // no cost of its own. Rates are nano-USD per token so the arithmetic stays in
@@ -30,18 +24,15 @@ var builtInChatPricing = map[string]Pricing{
 }
 
 func priceUsage(usage Usage, pricing Pricing) Cost {
-	return Cost{
-		Amount: usage.InputTokens*pricing.InputPerToken +
-			usage.CachedTokens*pricing.CachedPerToken +
-			usage.OutputTokens*pricing.OutputPerToken +
-			usage.ReasoningTokens*pricing.ReasoningPerToken,
-		Known: true,
-	}
+	return Cost(usage.InputTokens*pricing.InputPerToken +
+		usage.CachedTokens*pricing.CachedPerToken +
+		usage.OutputTokens*pricing.OutputPerToken +
+		usage.ReasoningTokens*pricing.ReasoningPerToken)
 }
 
 func resolveCost(model string, usage Usage, wireAmount *int64, consumerPricing map[string]Pricing) Cost {
 	if wireAmount != nil {
-		return Cost{Amount: *wireAmount, Known: true}
+		return Cost(*wireAmount)
 	}
 	if pricing, ok := consumerPricing[model]; ok {
 		return priceUsage(usage, pricing)
@@ -49,14 +40,13 @@ func resolveCost(model string, usage Usage, wireAmount *int64, consumerPricing m
 	if pricing, ok := builtInChatPricing[model]; ok {
 		return priceUsage(usage, pricing)
 	}
-	return Cost{}
+	return 0
 }
 
 func aggregateCosts(costs ...Cost) Cost {
-	total := Cost{Known: true}
+	var total Cost
 	for _, cost := range costs {
-		total.Amount += cost.Amount
-		total.Known = total.Known && cost.Known
+		total += cost
 	}
 	return total
 }

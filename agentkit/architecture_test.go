@@ -1445,6 +1445,22 @@ func TestUsageDeclaration(t *testing.T) {
 	})
 }
 
+func TestCostDeclarationIsExact(t *testing.T) {
+	// R-NHWH-RJQL
+	costType := reflect.TypeFor[Cost]()
+	if costType.Name() != "Cost" || !token.IsExported(costType.Name()) || costType.Kind() != reflect.Int64 {
+		t.Fatalf("Cost name/kind = %q/%s, want exported defined int64", costType.Name(), costType.Kind())
+	}
+	specification := declaredType(t, "cost.go", "Cost")
+	if specification.Assign.IsValid() {
+		t.Fatal("Cost is an alias, want a defined type")
+	}
+	identifier, ok := specification.Type.(*ast.Ident)
+	if !ok || identifier.Name != "int64" || renderedNode(t, specification.Type) != "int64" {
+		t.Fatalf("Cost declaration = %T %q, want exactly type Cost int64", specification.Type, renderedNode(t, specification.Type))
+	}
+}
+
 func TestPricingDeclaration(t *testing.T) {
 	// R-Z86G-RB3V
 	assertExactStructFields(t, reflect.TypeFor[Pricing](), []exactStructField{

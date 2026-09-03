@@ -100,10 +100,10 @@ func assertExternalErrorAndValueVocabulary(t *testing.T) {
 	identity := agentkit.Identity{Endpoint: "mcp", AuthMode: "remote", Model: "server"}
 	usage := agentkit.Usage{InputTokens: 1, CachedTokens: 2, OutputTokens: 3, ReasoningTokens: 4}
 	pricing := agentkit.Pricing{InputPerToken: 5, CachedPerToken: 6, OutputPerToken: 7, ReasoningPerToken: 8}
-	cost := agentkit.Cost{Amount: 70, Known: true}
+	cost := agentkit.Cost(70)
 	providerErr := &agentkit.Error{Category: agentkit.CategoryTransport, Status: 503, Code: "dead", Message: "server unavailable", RetryAfter: time.Second, Endpoint: identity}
 	if !agentkit.Retryable(providerErr) || !errors.Is(fmt.Errorf("closed: %w", agentkit.ErrClosed), agentkit.ErrClosed) || agentkit.ErrInvalidConfig == nil ||
-		usage.InputTokens != 1 || pricing.OutputPerToken != 7 || !cost.Known || providerErr.Endpoint != identity {
+		usage.InputTokens != 1 || pricing.OutputPerToken != 7 || cost != 70 || providerErr.Endpoint != identity {
 		t.Fatal("external error/value vocabulary is not usable with its documented fields and policy")
 	}
 }

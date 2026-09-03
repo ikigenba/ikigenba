@@ -40,9 +40,9 @@ func TestLogRecordsUseInjectedTimePerTurnSequenceAndFullIdentity(t *testing.T) {
 	identity := Identity{Endpoint: "https://api.example/v1", AuthMode: "oauth", Model: "model-a"}
 	log.start(identity)
 	log.record(eventRecord{kind: eventRecordMessage, value: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "one"}}}})
-	log.finish(Usage{}, Cost{})
+	log.finish(Usage{}, 0)
 	log.start(identity)
-	log.finish(Usage{}, Cost{})
+	log.finish(Usage{}, 0)
 
 	records := decodeLogRecords(t, output.Bytes())
 	if len(records) != 7 {
@@ -66,7 +66,7 @@ func TestNilLogIsSilentSafeAndRecordsCanonicalPayloads(t *testing.T) {
 	var nilLog *Log
 	nilLog.start(Identity{})
 	nilLog.record(eventRecord{})
-	nilLog.finish(Usage{}, Cost{})
+	nilLog.finish(Usage{}, 0)
 	if err := nilLog.Close(); err != nil {
 		t.Fatalf("nil receiver Close() = %v", err)
 	}
@@ -74,7 +74,7 @@ func TestNilLogIsSilentSafeAndRecordsCanonicalPayloads(t *testing.T) {
 	log := NewLog(nil, func() time.Time { clockCalls++; return time.Time{} })
 	log.start(Identity{})
 	log.record(eventRecord{kind: eventRecordToolUse, value: ToolUse{ID: "call", Name: "tool"}})
-	log.finish(Usage{}, Cost{})
+	log.finish(Usage{}, 0)
 	if err := log.Close(); err != nil || clockCalls != 0 {
 		t.Fatalf("nil-writer log Close/clock = %v/%d, want nil/0", err, clockCalls)
 	}
@@ -93,13 +93,14 @@ func TestNilLogIsSilentSafeAndRecordsCanonicalPayloads(t *testing.T) {
 	}
 }
 
-func TestCloseWritesOneCumulativeSummaryAndPropagatesUnknownCost(t *testing.T) {
+func TestUsageAndSummaryRecordsCarryPlainlySummedCosts(t *testing.T) {
+	// R-O2MS-9NCE
 	var output bytes.Buffer
 	log := NewLog(&output, func() time.Time { return time.Date(2032, 1, 1, 0, 0, 0, 0, time.UTC) })
 	log.start(Identity{})
-	log.finish(Usage{InputTokens: 2, OutputTokens: 3}, Cost{Amount: 11, Known: true})
+	log.finish(Usage{InputTokens: 2, OutputTokens: 3}, Cost(11))
 	log.start(Identity{})
-	log.finish(Usage{CachedTokens: 5, ReasoningTokens: 7}, Cost{Amount: 13, Known: false})
+	log.finish(Usage{CachedTokens: 5, ReasoningTokens: 7}, Cost(13))
 	if err := log.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -108,12 +109,16 @@ func TestCloseWritesOneCumulativeSummaryAndPropagatesUnknownCost(t *testing.T) {
 		t.Fatalf("second Close changed output or errored: %v", err)
 	}
 	records := decodeLogRecords(t, output.Bytes())
-	if len(records) != 7 || records[1].Type != RecordUsage || records[1].Cost == nil || records[4].Type != RecordUsage || records[4].Cost == nil {
+	if len(records) != 7 {
+		t.Fatalf("record count = %d, want exactly 7", len(records))
+	}
+	if records[1].Type != RecordUsage || records[1].Cost == nil || *records[1].Cost != Cost(11) ||
+		records[4].Type != RecordUsage || records[4].Cost == nil || *records[4].Cost != Cost(13) {
 		t.Fatalf("usage records missing mandatory costs: %#v", records)
 	}
 	summary := records[6]
 	wantUsage := Usage{InputTokens: 2, CachedTokens: 5, OutputTokens: 3, ReasoningTokens: 7}
-	wantCost := Cost{Amount: 24, Known: false}
+	wantCost := Cost(24)
 	if summary.Type != RecordSummary || summary.Usage == nil || *summary.Usage != wantUsage || summary.Cost == nil || *summary.Cost != wantCost {
 		t.Fatalf("summary = %#v, want usage %+v cost %+v", summary, wantUsage, wantCost)
 	}
