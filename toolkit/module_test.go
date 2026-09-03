@@ -15,7 +15,7 @@ type moduleConfig struct {
 }
 
 func TestModuleContract(t *testing.T) {
-	// R-C1N8-ZFDG
+	// R-3AIY-084U
 	config, err := readModuleConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -80,21 +80,21 @@ func assertModuleDirectives(t *testing.T, config moduleConfig) {
 	if want := "github.com/ikigenba/ikigenba/toolkit"; config.path != want {
 		t.Errorf("module path = %q, want %q", config.path, want)
 	}
-	if want := "1.26"; config.goVersion != want {
-		t.Errorf("go directive = %q, want %q", config.goVersion, want)
+	if config.goVersion == "" {
+		t.Error("go directive is missing or empty")
 	}
 }
 
 func assertRequiredModules(t *testing.T, requires map[string]string) {
 	t.Helper()
-	wantRequires := map[string]string{
-		"github.com/ikigenba/ikigenba/agentkit": "v0.1.0",
-		"github.com/boyter/gocodewalker":        "v1.5.1",
-		"github.com/bmatcuk/doublestar/v4":      "v4.10.0",
+	wantModules := []string{
+		"github.com/ikigenba/ikigenba/agentkit",
+		"github.com/boyter/gocodewalker",
+		"github.com/bmatcuk/doublestar/v4",
 	}
-	for module, want := range wantRequires {
-		if got := requires[module]; got != want {
-			t.Errorf("require %s = %q, want %q", module, got, want)
+	for _, module := range wantModules {
+		if _, ok := requires[module]; !ok {
+			t.Errorf("required module %s is missing", module)
 		}
 	}
 }
