@@ -60,6 +60,33 @@ type ReasoningSpec struct {
 	Default    ReasoningConfig
 }
 
+// Accepts reports whether r is inside the offering's reasoning vocabulary.
+func (s ReasoningSpec) Accepts(r ReasoningConfig) bool {
+	switch r.Mode {
+	case ReasoningDefault:
+		return true
+	case ReasoningOff:
+		return s.CanDisable
+	case ReasoningOn:
+		return s.Kind == ReasoningKindToggle && s.CanEnable
+	case ReasoningEffort:
+		if s.Kind != ReasoningKindEffort {
+			return false
+		}
+		for _, level := range s.Levels {
+			if r.Effort == level {
+				return true
+			}
+		}
+		return false
+	case ReasoningBudget:
+		return s.Kind == ReasoningKindBudget &&
+			s.MinBudget <= r.Budget && r.Budget <= s.MaxBudget
+	default:
+		return false
+	}
+}
+
 // Offering is one model as served by one provider.
 type Offering struct {
 	Provider  ProviderID

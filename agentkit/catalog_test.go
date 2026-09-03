@@ -60,6 +60,127 @@ func TestReasoningSpecShape(t *testing.T) {
 	})
 }
 
+func TestReasoningSpecAcceptsSignature(t *testing.T) {
+	// R-O8QA-6I1V
+	assertReasoningSpecAcceptsSignature(t, ReasoningSpec.Accepts)
+}
+
+func assertReasoningSpecAcceptsSignature(t *testing.T, accepts func(ReasoningSpec, ReasoningConfig) bool) {
+	t.Helper()
+	if !accepts(ReasoningSpec{}, ReasoningConfig{Mode: ReasoningDefault}) {
+		t.Fatal("ReasoningSpec.Accepts rejected ReasoningDefault")
+	}
+}
+
+func TestReasoningSpecAcceptsVocabulary(t *testing.T) {
+	// R-OKXA-07GT
+	tests := []struct {
+		name string
+		spec ReasoningSpec
+		got  ReasoningConfig
+		want bool
+	}{
+		{
+			name: "default regardless of kind and fields",
+			spec: ReasoningSpec{Kind: ReasoningKindNone, MinBudget: 10, MaxBudget: 1},
+			got:  ReasoningConfig{Mode: ReasoningDefault, Effort: EffortMax, Budget: -1},
+			want: true,
+		},
+		{
+			name: "off when disabling is allowed",
+			spec: ReasoningSpec{Kind: ReasoningKindBudget, CanDisable: true},
+			got:  ReasoningConfig{Mode: ReasoningOff},
+			want: true,
+		},
+		{
+			name: "off when disabling is not allowed",
+			spec: ReasoningSpec{Kind: ReasoningKindToggle, CanDisable: false},
+			got:  ReasoningConfig{Mode: ReasoningOff},
+			want: false,
+		},
+		{
+			name: "on for enabled toggle",
+			spec: ReasoningSpec{Kind: ReasoningKindToggle, CanEnable: true},
+			got:  ReasoningConfig{Mode: ReasoningOn},
+			want: true,
+		},
+		{
+			name: "on rejected for disabled toggle",
+			spec: ReasoningSpec{Kind: ReasoningKindToggle, CanEnable: false},
+			got:  ReasoningConfig{Mode: ReasoningOn},
+			want: false,
+		},
+		{
+			name: "on rejected for wrong kind even when enabled",
+			spec: ReasoningSpec{Kind: ReasoningKindEffort, CanEnable: true},
+			got:  ReasoningConfig{Mode: ReasoningOn},
+			want: false,
+		},
+		{
+			name: "effort exact membership",
+			spec: ReasoningSpec{Kind: ReasoningKindEffort, Levels: []Effort{EffortLow, EffortHigh}},
+			got:  ReasoningConfig{Mode: ReasoningEffort, Effort: EffortHigh},
+			want: true,
+		},
+		{
+			name: "effort non-membership",
+			spec: ReasoningSpec{Kind: ReasoningKindEffort, Levels: []Effort{EffortLow, EffortHigh}},
+			got:  ReasoningConfig{Mode: ReasoningEffort, Effort: EffortMedium},
+			want: false,
+		},
+		{
+			name: "effort rejected for wrong kind",
+			spec: ReasoningSpec{Kind: ReasoningKindToggle, Levels: []Effort{EffortHigh}},
+			got:  ReasoningConfig{Mode: ReasoningEffort, Effort: EffortHigh},
+			want: false,
+		},
+		{
+			name: "budget inclusive minimum",
+			spec: ReasoningSpec{Kind: ReasoningKindBudget, MinBudget: 100, MaxBudget: 200},
+			got:  ReasoningConfig{Mode: ReasoningBudget, Budget: 100},
+			want: true,
+		},
+		{
+			name: "budget inclusive maximum",
+			spec: ReasoningSpec{Kind: ReasoningKindBudget, MinBudget: 100, MaxBudget: 200},
+			got:  ReasoningConfig{Mode: ReasoningBudget, Budget: 200},
+			want: true,
+		},
+		{
+			name: "budget below minimum",
+			spec: ReasoningSpec{Kind: ReasoningKindBudget, MinBudget: 100, MaxBudget: 200},
+			got:  ReasoningConfig{Mode: ReasoningBudget, Budget: 99},
+			want: false,
+		},
+		{
+			name: "budget above maximum",
+			spec: ReasoningSpec{Kind: ReasoningKindBudget, MinBudget: 100, MaxBudget: 200},
+			got:  ReasoningConfig{Mode: ReasoningBudget, Budget: 201},
+			want: false,
+		},
+		{
+			name: "budget rejected for wrong kind",
+			spec: ReasoningSpec{Kind: ReasoningKindToggle, MinBudget: 100, MaxBudget: 200},
+			got:  ReasoningConfig{Mode: ReasoningBudget, Budget: 150},
+			want: false,
+		},
+		{
+			name: "unknown mode",
+			spec: ReasoningSpec{Kind: ReasoningKindToggle, CanEnable: true, CanDisable: true},
+			got:  ReasoningConfig{Mode: ReasoningMode(99)},
+			want: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.spec.Accepts(test.got); got != test.want {
+				t.Errorf("ReasoningSpec.Accepts(%+v) = %t, want %t for spec %+v", test.got, got, test.want, test.spec)
+			}
+		})
+	}
+}
+
 func TestOfferingShape(t *testing.T) {
 	// R-EH3R-4MUT
 	assertStructShape(t, Offering{}, []fieldShape{
