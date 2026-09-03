@@ -64,7 +64,6 @@ func TestNewPlacesEscapedModelInDefaultURLPath(t *testing.T) {
 }
 
 func TestNewNamesGeminiEndpointAndUsesCatalogPricing(t *testing.T) {
-	// R-EKRG-9Y2W
 	// R-OP9X-DYMU
 	// R-OQHT-RQDJ
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {

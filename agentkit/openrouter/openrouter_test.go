@@ -52,7 +52,6 @@ func TestAPISelectsChatByDefaultAndResponsesAsAlternate(t *testing.T) {
 }
 
 func TestNewNamesOpenRouterEndpointAndUsesCatalogPricing(t *testing.T) {
-	// R-EKRG-9Y2W
 	// R-OP9X-DYMU
 	// R-OQHT-RQDJ
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
@@ -74,10 +73,10 @@ func TestNewNamesOpenRouterEndpointAndUsesCatalogPricing(t *testing.T) {
 		t.Fatal(streamErr)
 	}
 	const wantCost = agentkit.Cost(2*200 + 3*1_250)
-	assertOpenRouterTurnIdentityAndCost(t, output.Bytes(), agentkit.ProviderOpenRouter, wantCost)
+	assertOpenRouterTurnIdentityAndCost(t, output.Bytes(), "openrouter", wantCost)
 }
 
-func assertOpenRouterTurnIdentityAndCost(t *testing.T, data []byte, provider agentkit.ProviderID, want agentkit.Cost) {
+func assertOpenRouterTurnIdentityAndCost(t *testing.T, data []byte, wantEndpoint string, want agentkit.Cost) {
 	t.Helper()
 	var identity *agentkit.Identity
 	var cost *agentkit.Cost
@@ -96,8 +95,8 @@ func assertOpenRouterTurnIdentityAndCost(t *testing.T, data []byte, provider age
 			cost = record.Cost
 		}
 	}
-	if identity == nil || identity.Endpoint != string(provider) {
-		t.Fatalf("turn identity = %+v, want endpoint %q", identity, provider)
+	if identity == nil || identity.Endpoint != wantEndpoint {
+		t.Fatalf("turn identity = %+v, want endpoint %q", identity, wantEndpoint)
 	}
 	if cost == nil || *cost != want {
 		t.Fatalf("turn cost = %v, want catalog amount %d", cost, want)

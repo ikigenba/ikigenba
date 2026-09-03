@@ -8,7 +8,6 @@ import (
 )
 
 func TestProviderIDVocabulary(t *testing.T) {
-	// R-EFVU-QV44
 	want := []ProviderID{"anthropic", "openai", "gemini", "xai", "openrouter"}
 	got := []ProviderID{ProviderAnthropic, ProviderOpenAI, ProviderGemini, ProviderXAI, ProviderOpenRouter}
 	if !reflect.DeepEqual(got, want) {

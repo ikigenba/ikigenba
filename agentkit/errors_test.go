@@ -303,7 +303,6 @@ func syntheticClassify(status int, header http.Header, body []byte) error {
 }
 
 func TestClassifierReceivesFullResponseAndLiftsRetryHint(t *testing.T) {
-	// R-2MLS-22EC
 	header := http.Header{
 		"Retry-After":  []string{"2250ms"},
 		"X-Request-Id": []string{"request-123"},

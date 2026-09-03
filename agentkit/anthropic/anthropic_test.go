@@ -60,7 +60,6 @@ func TestAPIDeclarationDefaultsToMessagesAndRejectsUnshippedTextCodec(t *testing
 }
 
 func TestNewNamesAnthropicEndpointAndUsesCatalogPricing(t *testing.T) {
-	// R-EKRG-9Y2W
 	// R-OP9X-DYMU
 	// R-OQHT-RQDJ
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
@@ -99,8 +98,8 @@ func TestNewNamesAnthropicEndpointAndUsesCatalogPricing(t *testing.T) {
 			cost = record.Cost
 		}
 	}
-	if identity == nil || identity.Endpoint != string(agentkit.ProviderAnthropic) {
-		t.Fatalf("turn identity = %+v, want endpoint %q", identity, agentkit.ProviderAnthropic)
+	if identity == nil || identity.Endpoint != "anthropic" {
+		t.Fatalf("turn identity = %+v, want endpoint %q", identity, "anthropic")
 	}
 	const wantCost = agentkit.Cost(2*1_000 + 3*5_000)
 	if cost == nil || *cost != wantCost {
