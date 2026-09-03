@@ -2,6 +2,7 @@ package agentkit
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -199,6 +200,247 @@ func TestCatalogEntryShape(t *testing.T) {
 		{"Vendor", reflect.TypeOf(Vendor(""))},
 		{"Offerings", reflect.TypeOf([]Offering(nil))},
 	})
+}
+
+func TestCatalogQuerySignatures(t *testing.T) {
+	// R-EIBN-IELI
+	assertCatalogQuerySignatures(t, Catalog, CatalogFor, LookupModel, ResolveModel)
+}
+
+func assertCatalogQuerySignatures(
+	t *testing.T,
+	catalog func() []CatalogEntry,
+	catalogFor func(ProviderID) []CatalogEntry,
+	lookup func(string) (CatalogEntry, bool),
+	resolve func(string, ProviderID) (Offering, bool),
+) {
+	t.Helper()
+	if len(catalog()) == 0 || len(catalogFor(ProviderAnthropic)) == 0 {
+		t.Fatal("catalog query functions returned no known entries")
+	}
+	if _, ok := lookup("claude-sonnet-5"); !ok {
+		t.Fatal("LookupModel did not find a known model")
+	}
+	if _, ok := resolve("claude-sonnet-5", ""); !ok {
+		t.Fatal("ResolveModel did not resolve a known model")
+	}
+}
+
+func TestCatalogReturnsFullSortedStructurallyUniqueTable(t *testing.T) {
+	// R-ODLV-PL0N
+	entries := Catalog()
+	wantModels := []string{
+		"claude-fable-5",
+		"claude-haiku-4-5",
+		"claude-opus-4-8",
+		"claude-opus-5",
+		"claude-sonnet-4-6",
+		"claude-sonnet-5",
+		"deepseek-v4-flash",
+		"deepseek-v4-pro",
+		"gemini-2.5-flash",
+		"gemini-2.5-pro",
+		"gemini-3.1-flash-lite",
+		"gemini-3.1-pro-preview",
+		"gemini-3.5-flash",
+		"gemini-3.7-flash",
+		"glm-4.6",
+		"glm-4.7",
+		"glm-5.1",
+		"glm-5.2",
+		"gpt-5.4",
+		"gpt-5.4-mini",
+		"gpt-5.4-nano",
+		"gpt-5.5",
+		"gpt-5.5-pro",
+		"gpt-5.6-luna",
+		"gpt-5.6-sol",
+		"gpt-5.6-terra",
+		"grok-4.20",
+		"grok-4.20-multi-agent",
+		"grok-4.3",
+		"grok-4.5",
+		"grok-4.6",
+		"kimi-k2.6",
+		"kimi-k2.7-code",
+		"kimi-k3",
+		"nemotron-3.5-lightning",
+		"qwen3.8-27b",
+		"qwen3.8-max",
+	}
+	gotModels := make([]string, len(entries))
+	for index, entry := range entries {
+		gotModels[index] = entry.Model
+	}
+	if !reflect.DeepEqual(gotModels, wantModels) {
+		t.Fatalf("Catalog models = %q, want full sorted table %q", gotModels, wantModels)
+	}
+	for index, entry := range entries {
+		if index > 0 && entries[index-1].Model >= entry.Model {
+			t.Fatalf("catalog models not strictly ascending at %q, %q", entries[index-1].Model, entry.Model)
+		}
+		if len(entry.Offerings) == 0 {
+			t.Fatalf("catalog entry %q has no offerings", entry.Model)
+		}
+		providers := make(map[ProviderID]bool, len(entry.Offerings))
+		for _, offering := range entry.Offerings {
+			if providers[offering.Provider] {
+				t.Fatalf("catalog entry %q repeats provider %q", entry.Model, offering.Provider)
+			}
+			providers[offering.Provider] = true
+		}
+	}
+}
+
+func TestCatalogForAndLookupModelSelection(t *testing.T) {
+	// R-OG1O-H4I1
+	const provider = ProviderOpenAI
+	wantModels := []string{
+		"gpt-5.4",
+		"gpt-5.4-mini",
+		"gpt-5.4-nano",
+		"gpt-5.5",
+		"gpt-5.5-pro",
+		"gpt-5.6-luna",
+		"gpt-5.6-sol",
+		"gpt-5.6-terra",
+	}
+
+	entries := CatalogFor(provider)
+	gotModels := make([]string, len(entries))
+	for index, entry := range entries {
+		gotModels[index] = entry.Model
+	}
+	if !reflect.DeepEqual(gotModels, wantModels) {
+		t.Fatalf("CatalogFor(%q) models = %q, want exactly %q", provider, gotModels, wantModels)
+	}
+
+	want := expectedClaudeSonnet5()
+	got, ok := LookupModel(want.Model)
+	if !ok || !reflect.DeepEqual(got, want) {
+		t.Fatalf("LookupModel(%q) = (%+v, %t), want (%+v, true)", want.Model, got, ok, want)
+	}
+	if got, ok := LookupModel("not-a-catalog-model"); ok || !reflect.DeepEqual(got, CatalogEntry{}) {
+		t.Fatalf("unknown LookupModel = (%+v, %t), want zero value and false", got, ok)
+	}
+}
+
+func TestResolveModelSelectionAndFailures(t *testing.T) {
+	// R-OH9K-UW8Q
+	entry := expectedClaudeSonnet5()
+
+	got, ok := ResolveModel(entry.Model, "")
+	if !ok || !reflect.DeepEqual(got, entry.Offerings[0]) {
+		t.Fatalf("default ResolveModel = (%+v, %t), want first offering (%+v, true)", got, ok, entry.Offerings[0])
+	}
+	want := entry.Offerings[1]
+	got, ok = ResolveModel(entry.Model, want.Provider)
+	if !ok || !reflect.DeepEqual(got, want) {
+		t.Fatalf("explicit ResolveModel = (%+v, %t), want (%+v, true)", got, ok, want)
+	}
+	if _, ok := ResolveModel("not-a-catalog-model", ""); ok {
+		t.Fatal("ResolveModel accepted an unknown model")
+	}
+	if _, ok := ResolveModel(entry.Model, ProviderGemini); ok {
+		t.Fatalf("ResolveModel accepted unavailable provider %q for %q", ProviderGemini, entry.Model)
+	}
+}
+
+func TestCatalogQueriesReturnDefensiveCopies(t *testing.T) {
+	// R-OIHH-8NZF
+	const model = "claude-sonnet-5"
+	want := expectedClaudeSonnet5()
+
+	entries := Catalog()
+	index := slices.IndexFunc(entries, func(entry CatalogEntry) bool { return entry.Model == model })
+	if index < 0 {
+		t.Fatalf("Catalog omitted %q", model)
+	}
+	mutateCatalogEntry(&entries[index])
+	assertLookupUnchanged(t, model, want)
+
+	providerEntries := CatalogFor(ProviderAnthropic)
+	index = slices.IndexFunc(providerEntries, func(entry CatalogEntry) bool { return entry.Model == model })
+	if index < 0 {
+		t.Fatalf("CatalogFor omitted %q", model)
+	}
+	mutateCatalogEntry(&providerEntries[index])
+	assertLookupUnchanged(t, model, want)
+
+	lookedUp, ok := LookupModel(model)
+	if !ok {
+		t.Fatalf("LookupModel omitted %q", model)
+	}
+	mutateCatalogEntry(&lookedUp)
+	entries = Catalog()
+	index = slices.IndexFunc(entries, func(entry CatalogEntry) bool { return entry.Model == model })
+	if index < 0 || !reflect.DeepEqual(entries[index], want) {
+		t.Fatalf("Catalog changed after mutating LookupModel result: %+v", entries)
+	}
+
+	offering, ok := ResolveModel(model, ProviderAnthropic)
+	if !ok {
+		t.Fatalf("ResolveModel omitted %q on %q", model, ProviderAnthropic)
+	}
+	offering.Pricing.Tiers[0].Output = -1
+	offering.Reasoning.Levels[0] = Effort(99)
+	got, ok := ResolveModel(model, ProviderAnthropic)
+	if !ok || !reflect.DeepEqual(got, want.Offerings[0]) {
+		t.Fatalf("ResolveModel changed after mutating prior result: (%+v, %t)", got, ok)
+	}
+}
+
+func expectedClaudeSonnet5() CatalogEntry {
+	levels := []Effort{EffortLow, EffortMedium, EffortHigh, EffortXHigh, EffortMax}
+	reasoning := ReasoningSpec{
+		Kind:       ReasoningKindEffort,
+		Levels:     levels,
+		CanDisable: true,
+		Default:    ReasoningConfig{Mode: ReasoningEffort, Effort: EffortMedium},
+	}
+	pricing := Pricing{Tiers: []RateTier{{
+		MinInputTokens: 0,
+		InputUncached:  3000,
+		CacheReadInput: 300,
+		CacheWrite5m:   3750,
+		CacheWrite1h:   6000,
+		Output:         15000,
+	}}}
+	return CatalogEntry{
+		Model:  "claude-sonnet-5",
+		Vendor: VendorAnthropic,
+		Offerings: []Offering{
+			{
+				Provider:  ProviderAnthropic,
+				WireModel: "claude-sonnet-5",
+				Context:   1_000_000,
+				Pricing:   pricing,
+				Reasoning: reasoning,
+			},
+			{
+				Provider:  ProviderOpenRouter,
+				WireModel: "anthropic/claude-sonnet-5",
+				Context:   1_000_000,
+				Pricing:   pricing,
+				Reasoning: reasoning,
+			},
+		},
+	}
+}
+
+func mutateCatalogEntry(entry *CatalogEntry) {
+	entry.Model = "mutated"
+	entry.Offerings[0].WireModel = "mutated"
+	entry.Offerings[0].Pricing.Tiers[0].Output = -1
+	entry.Offerings[0].Reasoning.Levels[0] = Effort(99)
+}
+
+func assertLookupUnchanged(t *testing.T, model string, want CatalogEntry) {
+	t.Helper()
+	got, ok := LookupModel(model)
+	if !ok || !reflect.DeepEqual(got, want) {
+		t.Fatalf("LookupModel changed after mutating another query result: (%+v, %t)", got, ok)
+	}
 }
 
 type fieldShape struct {

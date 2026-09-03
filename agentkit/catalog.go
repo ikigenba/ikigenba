@@ -1,5 +1,10 @@
 package agentkit
 
+import (
+	"cmp"
+	"slices"
+)
+
 // ProviderID names the vendor constructor package that serves an offering.
 // It is a value type, distinct from the Provider SPI interface (D6). Values
 // are the package names, and are also what a vendor package's New names its
@@ -102,4 +107,100 @@ type CatalogEntry struct {
 	Model     string
 	Vendor    Vendor
 	Offerings []Offering
+}
+
+// Catalog returns every known model, sorted by model name.
+func Catalog() []CatalogEntry {
+	entries := make([]CatalogEntry, len(catalogTable))
+	for index, entry := range catalogTable {
+		entries[index] = cloneCatalogEntry(entry)
+	}
+	sortCatalogEntries(entries)
+	return entries
+}
+
+// CatalogFor returns the known models offered by p, sorted by model name.
+func CatalogFor(p ProviderID) []CatalogEntry {
+	entries := make([]CatalogEntry, 0)
+	for _, entry := range catalogTable {
+		if _, ok := findOffering(entry, p); ok {
+			entries = append(entries, cloneCatalogEntry(entry))
+		}
+	}
+	sortCatalogEntries(entries)
+	return entries
+}
+
+// LookupModel returns the catalog entry whose model name exactly matches model.
+func LookupModel(model string) (CatalogEntry, bool) {
+	for _, entry := range catalogTable {
+		if entry.Model == model {
+			return cloneCatalogEntry(entry), true
+		}
+	}
+	return CatalogEntry{}, false
+}
+
+// ResolveModel returns the default offering for model, or its offering from p.
+func ResolveModel(model string, p ProviderID) (Offering, bool) {
+	for _, entry := range catalogTable {
+		if entry.Model != model {
+			continue
+		}
+		if p == "" {
+			if len(entry.Offerings) == 0 {
+				return Offering{}, false
+			}
+			return cloneOffering(entry.Offerings[0]), true
+		}
+		offering, ok := findOffering(entry, p)
+		if !ok {
+			return Offering{}, false
+		}
+		return cloneOffering(offering), true
+	}
+	return Offering{}, false
+}
+
+func findOffering(entry CatalogEntry, p ProviderID) (Offering, bool) {
+	for _, offering := range entry.Offerings {
+		if offering.Provider == p {
+			return offering, true
+		}
+	}
+	return Offering{}, false
+}
+
+func cloneCatalogEntry(entry CatalogEntry) CatalogEntry {
+	offerings := entry.Offerings
+	entry.Offerings = make([]Offering, len(offerings))
+	for index, offering := range offerings {
+		entry.Offerings[index] = cloneOffering(offering)
+	}
+	return entry
+}
+
+func cloneOffering(offering Offering) Offering {
+	offering.Pricing.Tiers = slices.Clone(offering.Pricing.Tiers)
+	offering.Reasoning = cloneReasoningSpec(offering.Reasoning)
+	return offering
+}
+
+func cloneReasoningSpec(spec ReasoningSpec) ReasoningSpec {
+	if spec.Kind != ReasoningKindToggle {
+		spec.Levels = slices.Clone(spec.Levels)
+		return spec
+	}
+
+	cloned := toggleSpec(spec.CanEnable, spec.CanDisable, spec.Default)
+	cloned.Levels = slices.Clone(spec.Levels)
+	cloned.MinBudget = spec.MinBudget
+	cloned.MaxBudget = spec.MaxBudget
+	return cloned
+}
+
+func sortCatalogEntries(entries []CatalogEntry) {
+	slices.SortFunc(entries, func(left, right CatalogEntry) int {
+		return cmp.Compare(left.Model, right.Model)
+	})
 }
