@@ -33,9 +33,9 @@ pieces, and the whole rest of the design hangs off keeping them separate:
   replay mechanics. It is never an assignable field; a constructor selects one of
   four (Anthropic Messages, OpenAI Responses, OpenAI Chat Completions, Gemini
   generateContent). Detailed in D5.
-- **`Endpoint`** — the public, opaque, option-built transport: base URL and path,
-  auth applier, extra headers, framing, error classifier, request-mutation hook,
-  and the HTTP client. Detailed in D6.
+- **`Endpoint`** — the opaque transport description: base URL (with any
+  model-in-path placement baked in) and the auth applier, and nothing else.
+  Detailed in D6.
 - **`Model`** — a free-flow string, never gated, passed verbatim. A model released
   today runs with no agentkit release; an unknown model is the vendor's 400, not
   ours.
@@ -100,11 +100,16 @@ package agentkit
 // fused string, so consumers filter on each independently (D15). It is immutable
 // for the conversation's life.
 type Identity struct {
-	Endpoint string // endpoint name, e.g. "openai", "anthropic", "xai" (a ProviderID value on the vendor path, D21)
-	AuthMode string // "api_key", "oauth", "sigv4"
+	Endpoint string // the vendor package's ProviderID value, e.g. "openai", "anthropic", "xai" (D21)
+	AuthMode string // "api_key" or "oauth"
 	Model    string // the verbatim model string
 }
 ```
+
+Both provenance fields are fixed by the vendor constructor from what it was
+handed: `Endpoint` is the package's `ProviderID`, and `AuthMode` follows the
+credential — `"api_key"` for an `APIKey` credential, `"oauth"` for an `OAuth`
+one (D7). Those are the only two auth modes; there is no third.
 
 ## REQUIREMENTS
 
@@ -116,5 +121,6 @@ type Identity struct {
 - R-O3BQ-I3AC: Dependencies MUST point one way — vendor package → `Conversation` → wire codec/`Endpoint` → transport — verified by the absence of any import from a lower layer back to `Conversation` or a vendor package.
 - R-YURK-JTY8: `agentkit` MUST export `Conversation` as an opaque struct type with no exported fields, exposing the method `func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream`.
 - R-YVZG-XLOX: `agentkit` MUST export `type Identity struct { Endpoint string; AuthMode string; Model string }` with exactly those three string fields.
+- R-UFIH-AUGX: A `Conversation` built by a vendor package's `New` MUST report `Identity.AuthMode` `"api_key"` when constructed with that package's `APIKey` credential and `"oauth"` when constructed with its `OAuth` credential, and MUST produce no other `AuthMode` value.
 - R-O4JM-VV11: `agentkit` MUST export `type KnownWire int` with the constants `KnownWireAnthropicMessages`, `KnownWireOpenAIResponses`, `KnownWireOpenAIChat`, `KnownWireGemini` declared in that `iota` order starting at 0, enumerating the built-in wire codecs a vendor package selects at construction.
 - R-O5RJ-9MRQ: The root package's exported construction seam MUST be exactly `New`, `NewEndpoint`, `Endpoint`, `AuthApplier`, and `KnownWire`, and every vendor package's `New` MUST build its `Conversation` by calling `NewEndpoint` and then `New`.

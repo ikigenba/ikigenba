@@ -14,8 +14,8 @@ A `Conversation` cleanly splits **config** (immutable, set at construction) from
 **transcript** (grows one whole turn at a time). Config is the wire codec (D5) paired with
 the `Endpoint` (D6), the `Model` string, the generation `Settings` (D8), the validated
 `ProviderOptions`, the registered tool set (eager and deferred, D16), the optional structured-output
-contract (D20), and the optional event `Log` (D15) and injected `Clock` (D14) —
-all supplied through `Config` (D18). The transcript is the
+contract (D20), and the optional event `Log` (D15, which carries its own injected
+clock) — all supplied through `Config` (D18). The transcript is the
 `History` (D2). Nothing reassigns config after construction.
 
 ```go

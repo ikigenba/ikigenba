@@ -2,7 +2,7 @@
 
 A Go library that talks to LLM chat/completions APIs and runs an agentic tool
 loop. It decomposes the old "provider" axis into three orthogonal pieces — a
-`WireFormat` codec, an option-built `Endpoint`, and a free-form `Model` string —
+built-in wire codec, an opaque `Endpoint` (base URL plus auth), and a free-form `Model` string —
 so a new vendor or a day-one model needs no library release. Module path
 `github.com/ikigenba/ikigenba/agentkit`.
 

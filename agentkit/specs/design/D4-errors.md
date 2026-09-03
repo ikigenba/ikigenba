@@ -14,7 +14,7 @@ it.** Each built-in wire classifies its vendor's error responses (D5); there is
 no consumer-installable classifier. The classifier receives the HTTP status, the
 response headers, and the body bytes, and returns a populated `*Error`. Headers are not optional input: a
 retry-after or rate-limit-reset value lives only in the headers, and the
-classifier lifts it into a typed `RetryAfter` on the error so the retry layer
+classifier lifts it into a typed `RetryAfter` on the error so a retry layer
 (D14) never re-parses a header. Body is required because some endpoints do not
 separate distinct failures at the envelope level — a bad credential and an
 unknown model can both arrive as the same status and the same envelope code,
@@ -28,7 +28,14 @@ the vendor's JSON error envelope — its `code` and `message`, and the cases whe
 one status covers two categories (an OpenAI 429 that is really exhausted quota,
 a Gemini 400 that is really a bad key) — is deferred to a later design that adds
 per-wire envelope parsing on top of the table. Until then `Error.Code` and
-`Error.Message` may be empty and the status table is the whole classification.
+`Error.Message` may be empty and the status table is the whole classification
+of the *category*. One header is read today, because it is wire-agnostic: the
+standard `Retry-After` header (RFC 9110, delta-seconds or HTTP-date) is lifted
+into `Error.RetryAfter`. Vendor-specific reset headers (an OpenAI
+`x-ratelimit-reset-*`, a Gemini `retryInfo` in the body) wait for the envelope
+design. Nothing in the root drives `agentkit/retry` yet: the leaf exists (D14),
+`RetryAfter` is the floor it would read, and the orchestrator-side wiring — when
+a turn retries, what it logs (`RecordRetry`, D15) — is a later design.
 
 ```go
 // Category is a closed enumeration of failure kinds, carried on Error. It is a
@@ -84,7 +91,10 @@ the stream decode (D5/D13), not only at the moment the response headers land: th
 adapter, on seeing an error frame, runs the same classification path (status is
 the already-seen 200, but the body is the error frame and any trailing headers
 are absent) and surfaces the resulting `*Error` as the stream's terminal error.
-There is one classification path, invoked from two points.
+There is one classification path, invoked from two points. Recognizing a
+vendor's error *frame* is envelope parsing, so the built-in wires do not yet
+detect one; the path is reachable and exercised, and the per-wire frame
+recognizers arrive with the envelope design.
 
 **Config failures and lifecycle failures are fail-loud sentinels.** Two
 conditions are the consumer's mistake, not the provider's, and are reported as
@@ -117,7 +127,6 @@ condition that would have been a warning is now either a typed field or a hard
 
 - R-2K5Z-AIWY: agentkit MUST return provider failures as a single `*Error` type whose failure kind is a `Category` field, and MUST NOT distinguish failure kinds by distinct Go error types.
 - R-OGQM-PKFZ: A non-2xx HTTP response MUST surface from `Send` as a populated `*Error` whose `Status` is the response status and whose `Category` is assigned by the library's built-in classification, with no consumer-installed classifier involved.
-- R-2MLS-22EC: The classifier MUST lift a retry hint from response headers into `Error.RetryAfter` as a typed duration; downstream retry logic MUST read that field rather than re-parsing headers.
 - R-2P1K-TLVQ: The same classification path MUST be reachable from inside the stream decode so that an error frame arriving after an HTTP 200 is surfaced as the stream's terminal `*Error`.
 - R-2RHD-L5D4: `Retryable(err)` MUST be the single authority on retryability, returning true for rate-limit, overloaded, timeout, and transport categories and false for auth, invalid-request, insufficient-quota, and unknown, unwrapping to find an agentkit `*Error`.
 - R-2SP9-YX3T: `ErrInvalidConfig` and `ErrClosed` MUST be sentinel errors comparable via `errors.Is`, including when wrapped in `*Error`.
@@ -127,4 +136,5 @@ condition that would have been a warning is now either a typed field or a hard
 - R-ZBU5-WMBY: `agentkit` MUST export `type Error struct { Category Category; Status int; Code string; Message string; RetryAfter time.Duration; Endpoint Identity }` with those exported fields plus an unexported wrapped cause, and `*Error` MUST implement `Error() string` and `Unwrap() error`.
 - R-ZD22-AE2N: `agentkit` MUST export `func Retryable(err error) bool`.
 - R-ZE9Y-O5TC: `agentkit` MUST export the sentinel errors `ErrInvalidConfig` and `ErrClosed`, each an `error` created with `errors.New`.
+- R-UBUS-5J8U: Built-in classification MUST set `Error.RetryAfter` from a `Retry-After` response header, accepting both RFC 9110 forms — a non-negative delta-seconds integer as that many seconds, and an HTTP-date as the duration from now until that date — and MUST leave `RetryAfter` zero when the header is absent, unparseable, or names a time already past.
 - R-OHYJ-3C6O: Built-in classification MUST map HTTP status to `Category` as: 401 and 403 → `CategoryAuth`; 400, 404, 409, 413, 415, and 422 → `CategoryInvalidRequest`; 402 → `CategoryInsufficientQuota`; 429 → `CategoryRateLimit`; 408 and 504 → `CategoryTimeout`; 500, 502, 503, and 529 → `CategoryOverloaded`; every other non-2xx status → `CategoryUnknown`.
