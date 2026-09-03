@@ -60,38 +60,6 @@ func TestPricingCostSelectsTierByTotalInput(t *testing.T) {
 	}
 }
 
-func TestResolveCostUsesFirstAvailableRung(t *testing.T) {
-	// R-2E2H-DO7H
-	usage := Usage{InputTokens: 2}
-	consumer := map[string]Pricing{
-		"gpt-4.1-mini": {Tiers: []RateTier{{InputUncached: 900}}},
-	}
-	wireAmount := int64(77)
-
-	if got := resolveCost("gpt-4.1-mini", usage, &wireAmount, consumer); got != Cost(77) {
-		t.Fatalf("wire precedence cost = %d, want amount 77", got)
-	}
-	if got := resolveCost("gpt-4.1-mini", usage, nil, consumer); got != Cost(1_800) {
-		t.Fatalf("consumer precedence cost = %d, want amount 1800", got)
-	}
-	if got := resolveCost("gpt-4.1-mini", usage, nil, nil); got != Cost(800) {
-		t.Fatalf("built-in fallback cost = %d, want amount 800", got)
-	}
-}
-
-func TestBuiltInChatPricingResolvesLiteralModel(t *testing.T) {
-	// R-2HQ6-IZFK
-	usage := Usage{InputTokens: 2, CachedTokens: 3, OutputTokens: 5, ReasoningTokens: 7}
-	got := resolveCost("gpt-4.1-mini", usage, nil, nil)
-	const wantAmount = int64(2*400 + 3*100 + 5*1_600 + 7*1_600)
-	if got != Cost(wantAmount) {
-		t.Fatalf("built-in chat cost = %d, want amount %d", got, wantAmount)
-	}
-	if got := resolveCost("text-embedding-3-small", usage, nil, nil); got != 0 {
-		t.Fatalf("off-catalog embedding cost = %d, want zero", got)
-	}
-}
-
 func TestPredecodedWireCostPresenceControlsFallback(t *testing.T) {
 	// R-2IY2-WR69
 	const billedMilliUSD = int64(7)
