@@ -349,9 +349,3 @@ func (w *openAIResponsesWire) RenderTools(tools []Tool) (json.RawMessage, error)
 	}
 	return renderOpenAIResponsesTools(tools)
 }
-
-func (w *openAIResponsesWire) withClassifier(classifier wireClassifier) WireFormat {
-	clone := &openAIResponsesWire{wireCodec: w.cloneWithClassifier(classifier)}
-	clone.encode = clone.encodeRequest
-	return clone
-}

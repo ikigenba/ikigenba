@@ -37,9 +37,9 @@ func NewForWire(wireName KnownWire, endpoint Endpoint, model string, cfg Config)
 		return nil, fmt.Errorf("%w: unknown wire format %d", ErrInvalidConfig, wireName)
 	}
 
-	endpointIdentity := endpoint.config.name
-	if endpointIdentity == "" {
-		endpointIdentity = endpoint.config.baseURL.String()
+	endpointIdentity := endpoint.config.baseURL.String()
+	if named, ok := endpoint.config.auth.(interface{ EndpointIdentity() string }); ok {
+		endpointIdentity = named.EndpointIdentity()
 	}
 	identity := Identity{Endpoint: endpointIdentity, AuthMode: "custom", Model: model}
 	return newEndpointConversation(wire, endpoint, identity, cfg), nil
@@ -60,22 +60,15 @@ type composedProvider struct {
 	identity Identity
 }
 
-func newComposedProvider(wire WireFormat, endpoint Endpoint, identity Identity) Provider {
-	if classifiable, ok := wire.(interface {
-		withClassifier(wireClassifier) WireFormat
-	}); ok {
-		wire = classifiable.withClassifier(endpoint.config.classifier)
-	}
+func newComposedProvider(wire WireFormat, endpoint Endpoint, identity Identity) *composedProvider {
 	return &composedProvider{wire: wire, endpoint: endpoint, identity: identity}
 }
 
 func newEndpointConversation(wire WireFormat, endpoint Endpoint, identity Identity, cfg Config) *Conversation {
 	provider := newComposedProvider(wire, endpoint, identity)
-	conversation := NewConversation(provider, endpoint.config.client, cfg)
-	if validator, ok := provider.(interface{ validateSettings(Settings) error }); ok {
-		conversation.validate = func() error {
-			return validator.validateSettings(conversation.settings)
-		}
+	conversation := NewConversation(provider, http.DefaultClient, cfg)
+	conversation.validate = func() error {
+		return provider.validateSettings(conversation.settings)
 	}
 	return conversation
 }
@@ -90,13 +83,6 @@ func (provider *composedProvider) BuildRequest(ctx context.Context, state Reques
 	if err != nil {
 		return nil, err
 	}
-	request.Header = provider.endpoint.config.headers.Clone()
-	if err := provider.endpoint.config.mutator(request, &body); err != nil {
-		return nil, err
-	}
-	if body == nil {
-		body = []byte{}
-	}
 	synchronizeRequestBody(request, body)
 	if err := provider.endpoint.config.auth.Apply(ctx, request, body); err != nil {
 		return nil, err
@@ -110,12 +96,17 @@ func (provider *composedProvider) Decode(_ context.Context, response *http.Respo
 			yield(nil, fmt.Errorf("agentkit: response body is required"))
 		}
 	}
-	frames := provider.endpoint.config.framer(response.Body)
+	frames := SSEFrames(response.Body)
 	return provider.wire.DecodeStream(frames)
 }
 
 func (provider *composedProvider) Classify(status int, header http.Header, body []byte) error {
-	return provider.endpoint.config.classifier(status, header, body)
+	if classifier, ok := provider.wire.(interface {
+		classifyResponse(int, http.Header, []byte) error
+	}); ok {
+		return classifier.classifyResponse(status, header, body)
+	}
+	return nil
 }
 
 func (provider *composedProvider) Identity() Identity { return provider.identity }

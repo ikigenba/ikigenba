@@ -8,7 +8,7 @@ import (
 // ProviderID names the vendor constructor package that serves an offering.
 // It is a value type, distinct from the Provider SPI interface (D6). Values
 // are the package names, and are also what a vendor package's New names its
-// endpoint with (D6 WithName), so Identity.Endpoint equals the ProviderID of
+// endpoint with its vendor auth adapter, so Identity.Endpoint equals the ProviderID of
 // the offering that prices the conversation.
 type ProviderID string
 

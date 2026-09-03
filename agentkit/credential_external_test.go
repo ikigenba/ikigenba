@@ -48,7 +48,7 @@ func TestGenericKnownWireAcceptsBareAuthApplier(t *testing.T) {
 
 	ctx := context.WithValue(context.Background(), authContextKey{}, "final")
 	auth := &signingAuth{t: t, wantContext: ctx}
-	endpoint, err := agentkit.NewEndpoint(server.URL, auth, agentkit.WithHTTPClient(server.Client()))
+	endpoint, err := agentkit.NewEndpoint(server.URL, auth)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func invalid() {
 	_, _ = openrouter.New(gemini.APIKey("wrong"), "model")
 	_, _ = gemini.New(xai.APIKey("wrong"), "model")
 	_, _ = anthropic.New(anthropic.APIKey("key"), "model", openai.WithBaseURL("https://example.test"))
-	_, _ = anthropic.New(anthropic.APIKey("key"), "model", agentkit.WithHTTPClient(http.DefaultClient))
+	_, _ = anthropic.New(anthropic.APIKey("key"), "model", openai.WithBaseURL("https://example.test"))
 	_, _ = agentkit.NewEndpoint("https://example.test", nil, openai.WithBaseURL("https://example.test"))
 }
 `
@@ -126,7 +126,7 @@ func runCompileFixture(directory string) ([]byte, error) {
 
 func assertCompileIsolation(t *testing.T, output []byte) {
 	t.Helper()
-	for _, want := range []string{"missing method apply", "openai.Option", "agentkit.EndpointOption"} {
+	for _, want := range []string{"missing method apply", "openai.Option", "too many arguments in call to agentkit.NewEndpoint"} {
 		if !strings.Contains(string(output), want) {
 			t.Fatalf("compile failure missing %q:\n%s", want, output)
 		}

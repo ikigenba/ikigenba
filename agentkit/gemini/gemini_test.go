@@ -84,10 +84,10 @@ func TestNewNamesGeminiEndpointAndUsesCatalogPricing(t *testing.T) {
 		t.Fatal(streamErr)
 	}
 	const wantCost = agentkit.Cost(2*300 + 3*2_500)
-	assertGeminiTurnIdentityAndCost(t, output.Bytes(), agentkit.ProviderGemini, wantCost)
+	assertGeminiTurnIdentityAndCost(t, output.Bytes(), "gemini", wantCost)
 }
 
-func assertGeminiTurnIdentityAndCost(t *testing.T, data []byte, provider agentkit.ProviderID, want agentkit.Cost) {
+func assertGeminiTurnIdentityAndCost(t *testing.T, data []byte, wantEndpoint string, want agentkit.Cost) {
 	t.Helper()
 	var identity *agentkit.Identity
 	var cost *agentkit.Cost
@@ -106,8 +106,8 @@ func assertGeminiTurnIdentityAndCost(t *testing.T, data []byte, provider agentki
 			cost = record.Cost
 		}
 	}
-	if identity == nil || identity.Endpoint != string(provider) {
-		t.Fatalf("turn identity = %+v, want endpoint %q", identity, provider)
+	if identity == nil || identity.Endpoint != wantEndpoint {
+		t.Fatalf("turn identity = %+v, want endpoint %q", identity, wantEndpoint)
 	}
 	if cost == nil || *cost != want {
 		t.Fatalf("turn cost = %v, want catalog amount %d", cost, want)

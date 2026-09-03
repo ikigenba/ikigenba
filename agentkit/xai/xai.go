@@ -70,7 +70,7 @@ func New(credential Credential, model string, options ...Option) (*agentkit.Conv
 	if err != nil {
 		return nil, err
 	}
-	endpoint, err := agentkit.NewEndpoint(baseURL, authAdapter{credential}, agentkit.WithName(string(agentkit.ProviderXAI)))
+	endpoint, err := agentkit.NewEndpoint(baseURL, authAdapter{credential})
 	if err != nil {
 		return nil, err
 	}

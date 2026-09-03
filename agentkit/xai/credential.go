@@ -54,6 +54,8 @@ func (oauthCredential) bakesTransport()  {}
 
 type authAdapter struct{ credential Credential }
 
+func (authAdapter) EndpointIdentity() string { return "xai" }
+
 func (adapter authAdapter) Apply(ctx context.Context, request *http.Request, body []byte) error {
 	return adapter.credential.apply(ctx, request, body)
 }

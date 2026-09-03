@@ -294,12 +294,6 @@ func (w *geminiWire) RenderTools(tools []Tool) (json.RawMessage, error) {
 	return renderGeminiTools(tools)
 }
 
-func (w *geminiWire) withClassifier(classifier wireClassifier) WireFormat {
-	clone := &geminiWire{wireCodec: w.cloneWithClassifier(classifier)}
-	clone.encode = clone.encodeRequest
-	return clone
-}
-
 func narrowGeminiSchema(schema json.RawMessage) (json.RawMessage, error) {
 	var root any
 	if err := json.Unmarshal(schema, &root); err != nil {

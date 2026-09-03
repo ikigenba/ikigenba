@@ -89,11 +89,11 @@ func (w *wireCodec) ReservedKeys() []string {
 	return append([]string(nil), w.reserved...)
 }
 
-func (w *wireCodec) cloneWithClassifier(classifier wireClassifier) wireCodec {
-	clone := *w
-	clone.classifier = classifier
-	clone.lastUsage = Usage{}
-	return clone
+func (w *wireCodec) classifyResponse(status int, header http.Header, body []byte) error {
+	if w.classifier == nil {
+		return nil
+	}
+	return w.classifier(status, header, body)
 }
 
 func (w *wireCodec) validateSettings(settings Settings) error {

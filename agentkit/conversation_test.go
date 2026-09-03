@@ -24,6 +24,13 @@ func drainStream(stream *Stream) []Event {
 	return events
 }
 
+func useDefaultHTTPClient(t *testing.T, client *http.Client) {
+	t.Helper()
+	original := http.DefaultClient
+	http.DefaultClient = client
+	t.Cleanup(func() { http.DefaultClient = original })
+}
+
 type fixtureWire struct {
 	name string
 }
@@ -109,7 +116,11 @@ func vendorFixture(endpointURL, model string, client *http.Client) (*Conversatio
 }
 
 func TestEndpointConversationExecutesWithDefaultHTTPClient(t *testing.T) {
-	// R-YKSS-NDBC
+	// R-OFIQ-BSPA
+	wantConstructor := reflect.TypeOf(func(string, AuthApplier) (Endpoint, error) { return Endpoint{}, nil })
+	if got := reflect.TypeOf(NewEndpoint); got != wantConstructor || got.IsVariadic() {
+		t.Fatalf("endpoint construction exposes transport hooks: %s variadic=%t", got, got.IsVariadic())
+	}
 	originalDefault := http.DefaultClient
 	t.Cleanup(func() { http.DefaultClient = originalDefault })
 
@@ -124,35 +135,10 @@ func TestEndpointConversationExecutesWithDefaultHTTPClient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if defaultEndpoint.config.client != http.DefaultClient {
-		t.Fatal("endpoint did not retain http.DefaultClient as its default")
-	}
 	defaultConversation := newEndpointConversation(&testWire{}, defaultEndpoint, Identity{Model: "default-model"}, Config{})
 	drainStream(defaultConversation.Send(context.Background(), Text{Text: "hello"}))
 	if defaultCalls != 1 {
 		t.Fatalf("default client calls = %d, want 1", defaultCalls)
-	}
-}
-
-func TestEndpointConversationExecutesWithOverrideHTTPClient(t *testing.T) {
-	// R-YKSS-NDBC
-	overrideCalls := 0
-	overrideClient := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-		overrideCalls++
-		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}, nil
-	})}
-	auth := authFunc(func(context.Context, *http.Request, []byte) error { return nil })
-	overrideEndpoint, err := NewEndpoint("https://override.test/messages", auth, WithHTTPClient(overrideClient))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if overrideEndpoint.config.client != overrideClient {
-		t.Fatal("WithHTTPClient did not retain the selected client")
-	}
-	overrideConversation := newEndpointConversation(&testWire{}, overrideEndpoint, Identity{Model: "override-model"}, Config{})
-	drainStream(overrideConversation.Send(context.Background(), Text{Text: "hello"}))
-	if overrideCalls != 1 {
-		t.Fatalf("override client calls = %d, want 1", overrideCalls)
 	}
 }
 
@@ -470,26 +456,12 @@ func TestUnsupportedSettingsFailAtStartOfSendWithoutMutation(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			encodeCalls := 0
 			decodeCalls := 0
-			classifyCalls := 0
-			transportCalls := 0
 			wire := boundaryWire(test.capabilities, func(RequestState) {
 				encodeCalls++
 			}, func() {
 				decodeCalls++
 			})
-			client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-				transportCalls++
-				return nil, errors.New("transport must not run")
-			})}
-			endpoint, err := NewEndpoint(
-				"https://provider.invalid/generate",
-				authFunc(func(context.Context, *http.Request, []byte) error { return nil }),
-				WithHTTPClient(client),
-				WithClassifier(func(int, http.Header, []byte) error {
-					classifyCalls++
-					return errors.New("classifier must not run")
-				}),
-			)
+			endpoint, err := NewEndpoint("https://provider.invalid/generate", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -510,8 +482,8 @@ func TestUnsupportedSettingsFailAtStartOfSendWithoutMutation(t *testing.T) {
 			if !strings.Contains(stream.err.Error(), "controlled grammar") || !strings.Contains(stream.err.Error(), test.context) {
 				t.Fatalf("Send error lacks setting/wire context: %v", stream.err)
 			}
-			if encodeCalls != 0 || decodeCalls != 0 || classifyCalls != 0 || transportCalls != 0 {
-				t.Fatalf("boundary calls after invalid setting: encode/build=%d decode=%d classify=%d transport=%d", encodeCalls, decodeCalls, classifyCalls, transportCalls)
+			if encodeCalls != 0 || decodeCalls != 0 {
+				t.Fatalf("boundary calls after invalid setting: encode/build=%d decode=%d", encodeCalls, decodeCalls)
 			}
 			afterHistory, err := json.Marshal(conversation.history)
 			if err != nil {
@@ -567,19 +539,9 @@ func TestUnknownModelReachesVendorAndClassifier(t *testing.T) {
 			Body:       io.NopCloser(bytes.NewReader(responseBody)),
 		}, nil
 	})}
+	useDefaultHTTPClient(t, client)
 	classifierCalls := 0
-	endpoint, err := NewEndpoint(
-		"https://provider.invalid/generate",
-		authFunc(func(context.Context, *http.Request, []byte) error { return nil }),
-		WithHTTPClient(client),
-		WithClassifier(func(status int, header http.Header, body []byte) error {
-			classifierCalls++
-			if status != http.StatusBadRequest || header.Get("X-Vendor") != "exact" || !bytes.Equal(body, responseBody) {
-				t.Fatalf("classifier inputs = (%d, %#v, %q)", status, header, body)
-			}
-			return classified
-		}),
-	)
+	endpoint, err := NewEndpoint("https://provider.invalid/generate", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -588,6 +550,13 @@ func TestUnknownModelReachesVendorAndClassifier(t *testing.T) {
 		func(state RequestState) { encodedState = state },
 		func() { t.Fatal("non-2xx response must not be decoded") },
 	)
+	wire.classifier = func(status int, header http.Header, body []byte) error {
+		classifierCalls++
+		if status != http.StatusBadRequest || header.Get("X-Vendor") != "exact" || !bytes.Equal(body, responseBody) {
+			t.Fatalf("classifier inputs = (%d, %#v, %q)", status, header, body)
+		}
+		return classified
+	}
 	conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "controlled", Model: unknownModel}, Config{})
 	conversation.settings = settings
 
@@ -604,7 +573,7 @@ func TestUnknownModelReachesVendorAndClassifier(t *testing.T) {
 	}
 }
 
-func boundaryWire(capabilities wireCapabilities, encoded func(RequestState), decoded func()) WireFormat {
+func boundaryWire(capabilities wireCapabilities, encoded func(RequestState), decoded func()) *boundaryTestWire {
 	return &boundaryTestWire{wireCodec: wireCodec{
 		capabilities: capabilities,
 		encode: func(state RequestState) ([]byte, error) {
@@ -1124,23 +1093,14 @@ func TestOutputContractValidationAtSendBoundary(t *testing.T) {
 				t.Fatalf("history changed: before=%s after=%s", before, after)
 			}
 
-			encodeCalls, mutateCalls, authCalls := 0, 0, 0
-			decodeCalls, classifyCalls, composedTransportCalls := 0, 0, 0
+			encodeCalls, authCalls := 0, 0
+			decodeCalls := 0
 			wire := boundaryWire(wireCapabilities{name: "output boundary"}, func(RequestState) {
 				encodeCalls++
 			}, func() {
 				decodeCalls++
 			})
-			endpoint, err := NewEndpoint(
-				"https://provider.invalid/generate",
-				authFunc(func(context.Context, *http.Request, []byte) error { authCalls++; return nil }),
-				WithMutator(func(*http.Request, *[]byte) error { mutateCalls++; return nil }),
-				WithClassifier(func(int, http.Header, []byte) error { classifyCalls++; return nil }),
-				WithHTTPClient(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-					composedTransportCalls++
-					return nil, errors.New("transport must not run")
-				})}),
-			)
+			endpoint, err := NewEndpoint("https://provider.invalid/generate", authFunc(func(context.Context, *http.Request, []byte) error { authCalls++; return nil }))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1158,10 +1118,10 @@ func TestOutputContractValidationAtSendBoundary(t *testing.T) {
 			}
 			// R-U5XC-5O01
 			if !errors.Is(composedStream.Err(), ErrInvalidConfig) || len(composedEvents) != 0 ||
-				encodeCalls != 0 || mutateCalls != 0 || authCalls != 0 || composedTransportCalls != 0 || decodeCalls != 0 || classifyCalls != 0 ||
+				encodeCalls != 0 || authCalls != 0 || decodeCalls != 0 ||
 				!bytes.Equal(composedAfter, composedBefore) {
-				t.Fatalf("composed boundary effects: err=%v events=%#v encode=%d mutate=%d auth=%d transport=%d decode=%d classify=%d history=%s",
-					composedStream.Err(), composedEvents, encodeCalls, mutateCalls, authCalls, composedTransportCalls, decodeCalls, classifyCalls, composedAfter)
+				t.Fatalf("composed boundary effects: err=%v events=%#v encode=%d auth=%d decode=%d history=%s",
+					composedStream.Err(), composedEvents, encodeCalls, authCalls, decodeCalls, composedAfter)
 			}
 		})
 	}
@@ -2794,17 +2754,7 @@ func TestProviderOptionsReservedCollisionFailsBeforeProviderBoundaries(t *testin
 	// R-4V35-AXC6
 	authCalls := 0
 	transportCalls := 0
-	classifyCalls := 0
-	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-		transportCalls++
-		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}, nil
-	})}
-	endpoint, err := NewEndpoint(
-		"https://phase15.invalid",
-		authFunc(func(context.Context, *http.Request, []byte) error { authCalls++; return nil }),
-		WithHTTPClient(client),
-		WithClassifier(func(int, http.Header, []byte) error { classifyCalls++; return errors.New("unused") }),
-	)
+	endpoint, err := NewEndpoint("https://phase15.invalid", authFunc(func(context.Context, *http.Request, []byte) error { authCalls++; return nil }))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2820,8 +2770,8 @@ func TestProviderOptionsReservedCollisionFailsBeforeProviderBoundaries(t *testin
 		t.Fatalf("Stream.Err() = %v, want ErrInvalidConfig", stream.Err())
 	}
 	after, _ := json.Marshal(conversation.history)
-	if wire.encodeCalls != 0 || wire.decodeCalls != 0 || authCalls != 0 || transportCalls != 0 || classifyCalls != 0 {
-		t.Fatalf("calls after collision: encode=%d decode=%d auth=%d transport=%d classify=%d", wire.encodeCalls, wire.decodeCalls, authCalls, transportCalls, classifyCalls)
+	if wire.encodeCalls != 0 || wire.decodeCalls != 0 || authCalls != 0 || transportCalls != 0 {
+		t.Fatalf("calls after collision: encode=%d decode=%d auth=%d transport=%d", wire.encodeCalls, wire.decodeCalls, authCalls, transportCalls)
 	}
 	if !bytes.Equal(before, after) {
 		t.Fatalf("history changed: before=%s after=%s", before, after)
@@ -2848,11 +2798,8 @@ func TestBuiltInOutputOptionCollisionsFailBeforeProviderBoundaries(t *testing.T)
 				transportCalls++
 				return nil, errors.New("unexpected HTTP request")
 			})}
-			endpoint, err := NewEndpoint(
-				"https://phase28.invalid",
-				authFunc(func(context.Context, *http.Request, []byte) error { authCalls++; return nil }),
-				WithHTTPClient(client),
-			)
+			useDefaultHTTPClient(t, client)
+			endpoint, err := NewEndpoint("https://phase28.invalid", authFunc(func(context.Context, *http.Request, []byte) error { authCalls++; return nil }))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -2892,11 +2839,8 @@ func TestProviderOptionsNoncollidingSnapshotIsCloned(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}, nil
 	})}
-	endpoint, err := NewEndpoint(
-		"https://phase15.invalid",
-		authFunc(func(context.Context, *http.Request, []byte) error { return nil }),
-		WithHTTPClient(client),
-	)
+	useDefaultHTTPClient(t, client)
+	endpoint, err := NewEndpoint("https://phase15.invalid", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
 	if err != nil {
 		t.Fatal(err)
 	}

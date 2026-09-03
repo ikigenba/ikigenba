@@ -313,9 +313,3 @@ func (w *anthropicWire) RenderTools(tools []Tool) (json.RawMessage, error) {
 	}
 	return renderAnthropicTools(tools)
 }
-
-func (w *anthropicWire) withClassifier(classifier wireClassifier) WireFormat {
-	clone := &anthropicWire{wireCodec: w.cloneWithClassifier(classifier)}
-	clone.encode = clone.encodeRequest
-	return clone
-}

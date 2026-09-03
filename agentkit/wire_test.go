@@ -855,8 +855,6 @@ func assertEndpointConcernsAreOutsideWireInterface(t *testing.T) {
 	}{
 		{"base URL", "baseURL"},
 		{"auth", "auth"},
-		{"headers", "headers"},
-		{"error envelope", "classifier"},
 	}
 	for _, concern := range concerns {
 		field, ok := endpointType.FieldByName(concern.field)
@@ -1979,7 +1977,8 @@ func TestEveryWireCompletesFixtureDrivenToolLoop(t *testing.T) {
 				t.Fatal(err)
 			}
 			transport := &wireLoopTransport{responses: [][]byte{first, second}}
-			endpoint, err := NewEndpoint("https://offline.invalid/v1/generate", wireLoopAuth{}, WithHTTPClient(&http.Client{Transport: transport}))
+			useDefaultHTTPClient(t, &http.Client{Transport: transport})
+			endpoint, err := NewEndpoint("https://offline.invalid/v1/generate", wireLoopAuth{})
 			if err != nil {
 				t.Fatal(err)
 			}

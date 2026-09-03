@@ -29,13 +29,8 @@ var (
 )
 
 func TestEndpointDeclarationsAreExact(t *testing.T) {
-	// R-NYZ3-4C4B
 	// R-YEPA-QILV
-	// R-ZKDG-L0IT
 	// R-ZMT9-CK07
-	// R-ZO15-QBQW
-	// R-ZP92-43HL
-	// R-YICZ-VTTY
 	endpointType := reflect.TypeFor[Endpoint]()
 	if endpointType.Name() != "Endpoint" || endpointType.Kind() != reflect.Struct || !token.IsExported(endpointType.Name()) {
 		t.Fatalf("Endpoint name/kind = %q/%s, want exported named struct", endpointType.Name(), endpointType.Kind())
@@ -53,16 +48,6 @@ func TestEndpointDeclarationsAreExact(t *testing.T) {
 		t.Fatalf("Endpoint declaration is %T, want struct", endpointSpecification.Type)
 	}
 
-	optionType := reflect.TypeFor[EndpointOption]()
-	configPointer := reflect.TypeFor[*endpointConfig]()
-	errorType := reflect.TypeFor[error]()
-	if optionType.Name() != "EndpointOption" || optionType.Kind() != reflect.Func || optionType.NumIn() != 1 || optionType.In(0) != configPointer || optionType.NumOut() != 1 || optionType.Out(0) != errorType {
-		t.Fatalf("EndpointOption = %s, want defined func(*endpointConfig) error", optionType)
-	}
-	if specification := declaredType(t, "endpoint.go", "EndpointOption"); specification.Assign.IsValid() {
-		t.Fatal("EndpointOption is an alias")
-	}
-
 	assertDefinedEndpointType(t, "AuthApplier", reflect.TypeFor[AuthApplier](), reflect.Interface)
 	authType := reflect.TypeFor[AuthApplier]()
 	wantApply := reflect.TypeOf(func(context.Context, *http.Request, []byte) error { return nil })
@@ -74,35 +59,8 @@ func TestEndpointDeclarationsAreExact(t *testing.T) {
 		t.Fatalf("AuthApplier.Apply = %v (present=%t), want %s", apply.Type, ok, wantApply)
 	}
 
-	assertDefinedEndpointType(t, "RequestMutator", reflect.TypeFor[RequestMutator](), reflect.Func)
-	assertFunctionSignature(t, reflect.TypeFor[RequestMutator](), reflect.TypeOf(func(*http.Request, *[]byte) error { return nil }))
 	assertDefinedEndpointType(t, "ErrorClassifier", reflect.TypeFor[ErrorClassifier](), reflect.Func)
 	assertFunctionSignature(t, reflect.TypeFor[ErrorClassifier](), reflect.TypeOf(func(int, http.Header, []byte) error { return nil }))
-
-	constructor := reflect.TypeOf(NewEndpoint)
-	wantConstructor := reflect.TypeOf(func(string, AuthApplier, ...EndpointOption) (Endpoint, error) { return Endpoint{}, nil })
-	if constructor != wantConstructor || !constructor.IsVariadic() {
-		t.Fatalf("NewEndpoint = %s variadic=%t, want %s variadic", constructor, constructor.IsVariadic(), wantConstructor)
-	}
-	optionFunctions := map[string]reflect.Type{
-		"WithName":       reflect.TypeOf(func(string) EndpointOption { return nil }),
-		"WithHeader":     reflect.TypeOf(func(string, string) EndpointOption { return nil }),
-		"WithFramer":     reflect.TypeOf(func(Framer) EndpointOption { return nil }),
-		"WithClassifier": reflect.TypeOf(func(ErrorClassifier) EndpointOption { return nil }),
-		"WithMutator":    reflect.TypeOf(func(RequestMutator) EndpointOption { return nil }),
-		"WithHTTPClient": reflect.TypeOf(func(*http.Client) EndpointOption { return nil }),
-	}
-	actualFunctions := map[string]reflect.Type{
-		"WithName":   reflect.TypeOf(WithName),
-		"WithHeader": reflect.TypeOf(WithHeader), "WithFramer": reflect.TypeOf(WithFramer),
-		"WithClassifier": reflect.TypeOf(WithClassifier), "WithMutator": reflect.TypeOf(WithMutator),
-		"WithHTTPClient": reflect.TypeOf(WithHTTPClient),
-	}
-	for name, want := range optionFunctions {
-		if actualFunctions[name] != want {
-			t.Fatalf("%s = %s, want %s", name, actualFunctions[name], want)
-		}
-	}
 }
 
 func TestProviderOptionsDeclarationIsExact(t *testing.T) {
@@ -1718,13 +1676,6 @@ func TestSiblingContractWithholdsRootOwnedMechanismsAndKeepsOptionsLocal(t *test
 		}
 	}
 
-	rootOption := declaredType(t, "endpoint.go", "EndpointOption")
-	if rootOption.Assign.IsValid() || renderedNode(t, rootOption.Type) != "func(*endpointConfig) error" {
-		t.Fatalf("EndpointOption = %s alias=%t", renderedNode(t, rootOption.Type), rootOption.Assign.IsValid())
-	}
-	if got := renderedNode(t, declaredFunction(t, "endpoint.go", "WithHTTPClient").Type); got != "func(client *http.Client) EndpointOption" {
-		t.Fatalf("root WithHTTPClient declaration = %s", got)
-	}
 	for _, filename := range []string{"anthropic/anthropic.go", "openai/openai.go", "openrouter/openrouter.go", "gemini/gemini.go", "xai/xai.go"} {
 		option := declaredType(t, filename, "Option")
 		if option.Assign.IsValid() || renderedNode(t, option.Type) != "func(*config) error" {
@@ -2139,62 +2090,5 @@ func TestAuthenticationHasOneRuntimeInterface(t *testing.T) {
 	}
 	if len(authInterfaces) != 1 || len(authInterfaces["AuthApplier"]) != 1 || authInterfaces["AuthApplier"][0] != "Apply" {
 		t.Fatalf("authentication runtime interfaces = %v, want only AuthApplier.Apply", authInterfaces)
-	}
-}
-
-func TestEndpointAndProviderArchitecture(t *testing.T) {
-	// R-3ENG-USGB
-	fileSet := token.NewFileSet()
-	source, err := os.ReadFile("endpoint.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	parsed, err := parser.ParseFile(fileSet, "endpoint.go", source, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	publicFunctions := map[string]bool{}
-	for _, declaration := range parsed.Decls {
-		function, ok := declaration.(*ast.FuncDecl)
-		if ok && function.Recv == nil && ast.IsExported(function.Name.Name) {
-			publicFunctions[function.Name.Name] = true
-		}
-	}
-	wantFunctions := []string{"NewEndpoint", "WithName", "WithHeader", "WithFramer", "WithClassifier", "WithMutator", "WithHTTPClient"}
-	if len(publicFunctions) != len(wantFunctions) {
-		t.Fatalf("endpoint public functions = %v, want exact option vocabulary", publicFunctions)
-	}
-	for _, name := range wantFunctions {
-		if !publicFunctions[name] {
-			t.Fatalf("missing endpoint option %s", name)
-		}
-	}
-	if strings.Contains(string(source), "PathTemplate") || strings.Contains(string(source), "WithPath") {
-		t.Fatal("endpoint introduced a separate path-template concept")
-	}
-
-	providerSource, err := os.ReadFile("provider.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	providerFile, err := parser.ParseFile(fileSet, "provider.go", providerSource, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, declaration := range providerFile.Decls {
-		general, ok := declaration.(*ast.GenDecl)
-		if !ok {
-			continue
-		}
-		for _, specification := range general.Specs {
-			typeSpecification, ok := specification.(*ast.TypeSpec)
-			if !ok || typeSpecification.Name.Name != "Provider" {
-				continue
-			}
-			providerInterface := typeSpecification.Type.(*ast.InterfaceType)
-			if len(providerInterface.Methods.List) != 4 {
-				t.Fatalf("Provider has %d methods, want four", len(providerInterface.Methods.List))
-			}
-		}
 	}
 }

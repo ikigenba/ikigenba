@@ -288,9 +288,3 @@ func (w *openAIChatWire) RenderTools(tools []Tool) (json.RawMessage, error) {
 	}
 	return renderOpenAIChatTools(tools)
 }
-
-func (w *openAIChatWire) withClassifier(classifier wireClassifier) WireFormat {
-	clone := &openAIChatWire{wireCodec: w.cloneWithClassifier(classifier)}
-	clone.encode = clone.encodeRequest
-	return clone
-}
