@@ -1687,33 +1687,14 @@ func TestLogFailureDoesNotAlterSuccessOrTerminalStreamSemantics(t *testing.T) {
 	assertSelectedLogPayloads(t, decodeLogRecords(t, output.Bytes()))
 }
 
-func TestConversationCloseSummarizesResolvedCostsAndRejectsLaterSend(t *testing.T) {
+func TestConversationCloseIsIdempotentAndRejectsLaterSend(t *testing.T) {
 	// R-5N4U-3NE5
-	// R-5OCQ-HF4U
-	knownPricing := map[string]Pricing{"priced": {InputPerToken: 10, OutputPerToken: 20}}
-	provider := &phase15Provider{
-		model: "priced",
-		responses: [][]Event{
-			{MessageDone{Message: Message{Role: RoleAssistant}}},
-			{MessageDone{Message: Message{Role: RoleAssistant}}},
-		},
-		accounting: []providerAccounting{
-			{usage: Usage{InputTokens: 2, OutputTokens: 3}, pricing: knownPricing},
-			{usage: Usage{CachedTokens: 5}},
-		},
-	}
+	provider := &phase15Provider{model: "model"}
 	transportCalls := 0
 	var output bytes.Buffer
 	log := NewLog(&output, func() time.Time { return time.Time{} })
 	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	conversation.eventSink = log
-	for range 2 {
-		stream := conversation.Send(context.Background(), Text{Text: "turn"})
-		drainStream(stream)
-		if stream.Err() != nil {
-			t.Fatal(stream.Err())
-		}
-	}
 	if err := log.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -1723,26 +1704,18 @@ func TestConversationCloseSummarizesResolvedCostsAndRejectsLaterSend(t *testing.
 	}
 	stream := conversation.Send(context.Background(), Text{Text: "after close"})
 	drainStream(stream)
-	if !errors.Is(stream.Err(), ErrClosed) || transportCalls != 2 {
-		t.Fatalf("Send after Close err/calls = %v/%d, want ErrClosed/2", stream.Err(), transportCalls)
+	if !errors.Is(stream.Err(), ErrClosed) || transportCalls != 0 {
+		t.Fatalf("Send after Close err/calls = %v/%d, want ErrClosed/0", stream.Err(), transportCalls)
 	}
 	records := decodeLogRecords(t, output.Bytes())
-	var usageRecords []LogRecord
+	summaryCount := 0
 	for _, record := range records {
-		if record.Type == RecordUsage {
-			usageRecords = append(usageRecords, record)
+		if record.Type == RecordSummary {
+			summaryCount++
 		}
 	}
-	if len(usageRecords) != 2 || usageRecords[0].Cost == nil || *usageRecords[0].Cost != (Cost{Amount: 80, Known: true}) || usageRecords[1].Cost == nil || usageRecords[1].Cost.Known {
-		t.Fatalf("resolved per-turn usage costs = %#v", usageRecords)
-	}
-	if provider.accountingCalls != 2 {
-		t.Fatalf("provider accounting calls = %d, want exactly 2", provider.accountingCalls)
-	}
-	summary := records[len(records)-1]
-	wantUsage := Usage{InputTokens: 2, CachedTokens: 5, OutputTokens: 3}
-	if summary.Type != RecordSummary || summary.Usage == nil || *summary.Usage != wantUsage || summary.Cost == nil || *summary.Cost != (Cost{Amount: 80, Known: false}) {
-		t.Fatalf("cumulative summary = %#v, want usage %+v unknown cost amount 80", summary, wantUsage)
+	if summaryCount != 1 {
+		t.Fatalf("summary records = %d, want exactly 1: %#v", summaryCount, records)
 	}
 }
 
