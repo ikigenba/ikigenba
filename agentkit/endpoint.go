@@ -18,9 +18,9 @@ type AuthApplier interface {
 	Apply(ctx context.Context, req *http.Request, body []byte) error
 }
 
-// ErrorClassifier classifies a provider response from its complete transport
+// errorClassifier classifies a provider response from its complete transport
 // inputs.
-type ErrorClassifier func(status int, header http.Header, body []byte) error
+type errorClassifier func(status int, header http.Header, body []byte) error
 
 type endpointConfig struct {
 	baseURL *url.URL

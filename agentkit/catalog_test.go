@@ -16,7 +16,7 @@ func TestProviderIDVocabulary(t *testing.T) {
 	}
 
 	providerIDType := reflect.TypeOf(ProviderID(""))
-	providerType := reflect.TypeOf((*Provider)(nil)).Elem()
+	providerType := reflect.TypeOf((*wireProvider)(nil)).Elem()
 	if providerIDType.Name() != "ProviderID" || providerIDType.Kind() != reflect.String {
 		t.Fatalf("ProviderID type = %v (kind %v), want named string", providerIDType, providerIDType.Kind())
 	}

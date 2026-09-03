@@ -8,7 +8,7 @@ import (
 
 type geminiWire struct{ wireCodec }
 
-func newGeminiWire(classifier wireClassifier) WireFormat {
+func newGeminiWire(classifier errorClassifier) wireFormat {
 	wire := &geminiWire{}
 	wire.wireCodec = wireCodec{
 		encode:     wire.encodeRequest,
@@ -79,7 +79,7 @@ type geminiRequest struct {
 	Tools            json.RawMessage         `json:"tools,omitempty"`
 }
 
-func (w *geminiWire) encodeRequest(state RequestState) ([]byte, error) {
+func (w *geminiWire) encodeRequest(state requestState) ([]byte, error) {
 	contents, err := buildGeminiContents(state.History)
 	if err != nil {
 		return nil, err

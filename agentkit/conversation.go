@@ -13,7 +13,7 @@ import (
 // Conversation binds a provider and its stable identity to a growing
 // transcript.
 type Conversation struct {
-	provider  Provider
+	provider  wireProvider
 	client    *http.Client
 	identity  Identity
 	history   History
@@ -49,9 +49,9 @@ type DeferredGroup struct {
 	Tools []Tool
 }
 
-// NewConversation constructs a conversation driven by provider. The provider,
+// newConversation constructs a conversation driven by provider. The provider,
 // its identity, and the HTTP client cannot be reassigned after construction.
-func NewConversation(provider Provider, client *http.Client, cfg Config) *Conversation {
+func newConversation(provider wireProvider, client *http.Client, cfg Config) *Conversation {
 	conversation := &Conversation{
 		provider: provider,
 		client:   client,
@@ -206,7 +206,7 @@ func newTurnOutputProgress(contract *OutputContract) turnOutputProgress {
 
 func (c *Conversation) executeTurnRoundTrip(ctx context.Context, orchestrator *orchestrator, snapshot turnSnapshot, yield func(Event) bool, accounting *turnAccounting) (History, []ToolUse, bool, error) {
 	candidate := append(cloneHistory(snapshot.baseHistory), cloneHistory(snapshot.turn)...)
-	events, completed, err := c.roundTrip(ctx, RequestState{
+	events, completed, err := c.roundTrip(ctx, requestState{
 		Model:    c.identity.Model,
 		History:  candidate,
 		Settings: cloneSettings(snapshot.settings),
@@ -351,7 +351,7 @@ func cloneOutputContract(contract *OutputContract) *OutputContract {
 	return &clone
 }
 
-func (c *Conversation) roundTrip(ctx context.Context, state RequestState, yield func(Event) bool) ([]Event, bool, error) {
+func (c *Conversation) roundTrip(ctx context.Context, state requestState, yield func(Event) bool) ([]Event, bool, error) {
 	request, err := c.buildRequest(ctx, state)
 	if err != nil {
 		return nil, true, wrapProviderError(err, CategoryUnknown, 0, c.identity)
@@ -365,7 +365,7 @@ func (c *Conversation) roundTrip(ctx context.Context, state RequestState, yield 
 	return c.consumeResponse(ctx, response, yield)
 }
 
-func (c *Conversation) buildRequest(ctx context.Context, state RequestState) (*http.Request, error) {
+func (c *Conversation) buildRequest(ctx context.Context, state requestState) (*http.Request, error) {
 	return c.provider.BuildRequest(ctx, state)
 }
 

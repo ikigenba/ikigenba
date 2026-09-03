@@ -8,7 +8,7 @@ import (
 
 type openAIChatWire struct{ wireCodec }
 
-func newOpenAIChatWire(classifier wireClassifier) WireFormat {
+func newOpenAIChatWire(classifier errorClassifier) wireFormat {
 	wire := &openAIChatWire{}
 	wire.wireCodec = wireCodec{
 		encode:     wire.encodeRequest,
@@ -135,7 +135,7 @@ func configureOpenAIChatRequest(request *openAIChatRequest, settings Settings) {
 	}
 }
 
-func (w *openAIChatWire) encodeRequest(state RequestState) ([]byte, error) {
+func (w *openAIChatWire) encodeRequest(state requestState) ([]byte, error) {
 	messages, err := buildOpenAIChatMessages(state.History)
 	if err != nil {
 		return nil, err

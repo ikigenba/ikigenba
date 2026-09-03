@@ -17,10 +17,10 @@ import (
 )
 
 var (
-	_ WireFormat = (*anthropicWire)(nil)
-	_ WireFormat = (*openAIResponsesWire)(nil)
-	_ WireFormat = (*openAIChatWire)(nil)
-	_ WireFormat = (*geminiWire)(nil)
+	_ wireFormat = (*anthropicWire)(nil)
+	_ wireFormat = (*openAIResponsesWire)(nil)
+	_ wireFormat = (*openAIChatWire)(nil)
+	_ wireFormat = (*geminiWire)(nil)
 	_ Framer     = SSEFrames
 )
 
@@ -38,8 +38,8 @@ func (fixtureTool) Call(context.Context, json.RawMessage) (string, error) {
 	return "", nil
 }
 
-func allTestWires() []WireFormat {
-	return []WireFormat{
+func allTestWires() []wireFormat {
+	return []wireFormat{
 		newAnthropicWire(nil),
 		newOpenAIResponsesWire(nil),
 		newOpenAIChatWire(nil),
@@ -84,7 +84,7 @@ func TestConcreteWiresOwnCodecGrammarAndClassificationOnly(t *testing.T) {
 					t.Fatalf("wire codec has no %s ownership field", fieldName)
 				}
 			}
-			body, err := wire.EncodeRequest(RequestState{Model: "owned-grammar"})
+			body, err := wire.EncodeRequest(requestState{Model: "owned-grammar"})
 			if err != nil || !json.Valid(body) {
 				t.Fatalf("wire-owned request grammar = %q, error %v", body, err)
 			}
@@ -143,7 +143,7 @@ func TestPortableOutputSchemaMovesConstraintsToProse(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"number":{"type":"number","description":"Existing numeric rule.","minimum":-1e+400,"maximum":9.99e+999,"exclusiveMinimum":-2,"exclusiveMaximum":10,"multipleOf":1e-300},"text":{"type":"string","minLength":2,"maxLength":8,"pattern":"^[A-Z]+\\s?$","format":"email"},"list":{"type":"array","minItems":1,"maxItems":4,"uniqueItems":true,"items":{"type":"string","description":"Item.","pattern":"^x+$"}},"repeatable":{"type":"array","uniqueItems":false,"items":{"type":"integer","minimum":-5}},"maybe":{"anyOf":[{"type":"number","maximum":1e+400},{"type":"null"}]},"defined":{"$ref":"#/$defs/Count"}},"required":["number","text","list","repeatable","maybe","defined"],"$defs":{"Count":{"type":"integer","minimum":0,"multipleOf":2}}}`)
 	tests := []struct {
 		name    string
-		wire    WireFormat
+		wire    wireFormat
 		fixture string
 	}{
 		{"anthropic_messages", newAnthropicWire(nil), "testdata/anthropic_messages.output_schema.json"},
@@ -193,7 +193,7 @@ func TestAnthropicMessagesEmbedsNativeOutputContract(t *testing.T) {
 	// R-TYLX-V1JV
 	schema := json.RawMessage(`{"type":"object","description":"report","properties":{"profile":{"$ref":"#/$defs/Profile"},"items":{"type":"array","items":{"type":"object","properties":{"score":{"type":"integer","minimum":0},"label":{"type":"string"}},"required":["score","label"]}}},"required":["profile","items"],"$defs":{"Profile":{"type":"object","properties":{"name":{"type":"string","minLength":2},"contact":{"type":"object","properties":{"active":{"type":"boolean"}},"required":["active"]}},"required":["name","contact"]}}}`)
 	original := append([]byte(nil), schema...)
-	state := RequestState{
+	state := requestState{
 		Model:   "claude-sonnet-fixture",
 		History: History{{Role: RoleUser, Blocks: []Block{Text{Text: "Return the report."}}}},
 		Output:  &OutputContract{Schema: schema, MaxAttempts: 7},
@@ -262,7 +262,7 @@ func TestAnthropicMessagesEmbedsNativeOutputContract(t *testing.T) {
 		}
 	}
 
-	invalid := RequestState{Output: &OutputContract{Schema: json.RawMessage(`{"type":"object","properties":{"bad":{"allOf":[{"type":"string"}]}},"required":["bad"]}`)}}
+	invalid := requestState{Output: &OutputContract{Schema: json.RawMessage(`{"type":"object","properties":{"bad":{"allOf":[{"type":"string"}]}},"required":["bad"]}`)}}
 	invalidBody, invalidErr := newAnthropicWire(nil).EncodeRequest(invalid)
 	if invalidErr == nil || invalidBody != nil {
 		t.Fatalf("invalid output schema encoded as %s with error %v", invalidBody, invalidErr)
@@ -276,7 +276,7 @@ func TestOpenAIChatCompletionsEmbedsNativeOutputContract(t *testing.T) {
 	// R-TZTU-8TAK
 	schema := json.RawMessage(`{"type":"object","description":"plan","properties":{"owner":{"$ref":"#/$defs/Owner"},"steps":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string","minLength":3},"done":{"type":"boolean"}},"required":["title","done"]}}},"required":["owner","steps"],"$defs":{"Owner":{"type":"object","properties":{"name":{"type":"string"},"profile":{"type":"object","properties":{"score":{"type":"integer","minimum":0}},"required":["score"]}},"required":["name","profile"]}}}`)
 	original := append([]byte(nil), schema...)
-	state := RequestState{
+	state := requestState{
 		Model:   "gpt-chat-fixture",
 		History: History{{Role: RoleUser, Blocks: []Block{Text{Text: "Return the plan."}}}},
 		Settings: Settings{
@@ -353,7 +353,7 @@ func TestOpenAIChatCompletionsEmbedsNativeOutputContract(t *testing.T) {
 	}
 	assertNoMaxAttempts(t, document, body)
 
-	invalid := RequestState{Output: &OutputContract{Schema: json.RawMessage(`{"type":"object","properties":{"bad":{"allOf":[{"type":"string"}]}},"required":["bad"]}`)}}
+	invalid := requestState{Output: &OutputContract{Schema: json.RawMessage(`{"type":"object","properties":{"bad":{"allOf":[{"type":"string"}]}},"required":["bad"]}`)}}
 	invalidBody, invalidErr := newOpenAIChatWire(nil).EncodeRequest(invalid)
 	if invalidErr == nil || invalidBody != nil {
 		t.Fatalf("invalid output schema encoded as %s with error %v", invalidBody, invalidErr)
@@ -367,7 +367,7 @@ func TestOpenAIResponsesEmbedsNativeOutputContract(t *testing.T) {
 	// R-U11Q-ML19
 	schema := json.RawMessage(`{"type":"object","description":"work result","properties":{"assignee":{"$ref":"#/$defs/Person"},"tasks":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string","minLength":4},"priority":{"type":"integer","minimum":1}},"required":["title","priority"]}}},"required":["assignee","tasks"],"$defs":{"Person":{"type":"object","properties":{"name":{"type":"string","pattern":"^[A-Z]"}},"required":["name"]}}}`)
 	original := append([]byte(nil), schema...)
-	state := RequestState{
+	state := requestState{
 		Model:   "gpt-responses-fixture",
 		History: History{{Role: RoleUser, Blocks: []Block{Text{Text: "Return the work result."}}}},
 		Settings: Settings{
@@ -450,7 +450,7 @@ func TestOpenAIResponsesEmbedsNativeOutputContract(t *testing.T) {
 	}
 	assertNoMaxAttempts(t, document, body)
 
-	invalid := RequestState{Output: &OutputContract{Schema: json.RawMessage(`{"type":"object","properties":{"bad":{"allOf":[{"type":"string"}]}},"required":["bad"]}`)}}
+	invalid := requestState{Output: &OutputContract{Schema: json.RawMessage(`{"type":"object","properties":{"bad":{"allOf":[{"type":"string"}]}},"required":["bad"]}`)}}
 	invalidBody, invalidErr := newOpenAIResponsesWire(nil).EncodeRequest(invalid)
 	if invalidErr == nil || invalidBody != nil {
 		t.Fatalf("invalid output schema encoded as %s with error %v", invalidBody, invalidErr)
@@ -464,7 +464,7 @@ func TestGeminiGenerateContentEmbedsNativeOutputContract(t *testing.T) {
 	// R-U29N-0CRY
 	schema := json.RawMessage(`{"type":"object","description":"report","properties":{"owner":{"$ref":"#/$defs/Owner"},"entries":{"type":"array","items":{"type":"object","properties":{"label":{"type":"string","maxLength":12},"metrics":{"type":"object","properties":{"score":{"type":"number","minimum":0}},"required":["score"]}},"required":["label","metrics"]}}},"required":["owner","entries"],"$defs":{"Owner":{"type":"object","properties":{"name":{"type":"string","pattern":"^[A-Z]"}},"required":["name"]}}}`)
 	original := append([]byte(nil), schema...)
-	state := RequestState{
+	state := requestState{
 		Model:   "gemini-endpoint-model-sentinel",
 		History: History{{Role: RoleUser, Blocks: []Block{Text{Text: "Return the report."}}}},
 		Settings: Settings{
@@ -552,7 +552,7 @@ func TestGeminiGenerateContentEmbedsNativeOutputContract(t *testing.T) {
 	}
 	assertNoMaxAttempts(t, document, body)
 
-	outputOnlyBody, err := newGeminiWire(nil).EncodeRequest(RequestState{Output: &OutputContract{Schema: schema}})
+	outputOnlyBody, err := newGeminiWire(nil).EncodeRequest(requestState{Output: &OutputContract{Schema: schema}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -561,7 +561,7 @@ func TestGeminiGenerateContentEmbedsNativeOutputContract(t *testing.T) {
 		t.Fatalf("output-only generationConfig = %#v", outputOnly)
 	}
 
-	invalid := RequestState{Output: &OutputContract{Schema: json.RawMessage(`{"type":"object","properties":{"bad":{"allOf":[{"type":"string"}]}},"required":["bad"]}`)}}
+	invalid := requestState{Output: &OutputContract{Schema: json.RawMessage(`{"type":"object","properties":{"bad":{"allOf":[{"type":"string"}]}},"required":["bad"]}`)}}
 	invalidBody, invalidErr := newGeminiWire(nil).EncodeRequest(invalid)
 	if invalidErr == nil || invalidBody != nil {
 		t.Fatalf("invalid output schema encoded as %s with error %v", invalidBody, invalidErr)
@@ -647,7 +647,7 @@ func TestBuiltInWiresReserveStructuredOutputEnvelopeKeys(t *testing.T) {
 	// R-U3HJ-E4IN
 	tests := []struct {
 		name string
-		wire WireFormat
+		wire wireFormat
 		want []string
 	}{
 		{name: "anthropic_messages", wire: newAnthropicWire(nil), want: []string{"anthropic", "output_config"}},
@@ -687,7 +687,7 @@ func TestNilOutputPreservesCapturedWireRequestBytes(t *testing.T) {
 				}
 				message = event.(MessageDone).Message
 			}
-			body, err := wire.EncodeRequest(RequestState{
+			body, err := wire.EncodeRequest(requestState{
 				Model:   "vendor/model:latest",
 				History: History{message},
 				Output:  nil,
@@ -716,7 +716,7 @@ func TestNilOutputPreservesCapturedWireRequestBytes(t *testing.T) {
 		})
 	}
 
-	reasoningBody, err := newGeminiWire(nil).EncodeRequest(RequestState{
+	reasoningBody, err := newGeminiWire(nil).EncodeRequest(requestState{
 		History: History{{Role: RoleUser, Blocks: []Block{Text{Text: "reason"}}}},
 		Settings: Settings{
 			Reasoning: ReasoningConfig{Mode: ReasoningBudget, Budget: 321},
@@ -764,7 +764,7 @@ func assertNoMaxAttempts(t *testing.T, document map[string]any, body []byte) {
 func TestWireOwnsOnlyBodyGrammar(t *testing.T) {
 	// R-NGOL-DRZW
 	assertEndpointConcernsAreOutsideWireInterface(t)
-	state := RequestState{Model: "endpoint-owned-model", History: History{
+	state := requestState{Model: "endpoint-owned-model", History: History{
 		{Role: RoleAssistant, Blocks: []Block{
 			Text{Text: "Hello"},
 			Reasoning{Text: "think", Provider: json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"think"}]}`)},
@@ -775,7 +775,7 @@ func TestWireOwnsOnlyBodyGrammar(t *testing.T) {
 	tool := fixtureTool{name: "lookup", description: "look up", schema: json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}}}`)}
 	tests := []struct {
 		name      string
-		wire      WireFormat
+		wire      wireFormat
 		replay    json.RawMessage
 		rootKey   string
 		want      []string
@@ -847,7 +847,7 @@ func TestWireOwnsOnlyBodyGrammar(t *testing.T) {
 
 func assertEndpointConcernsAreOutsideWireInterface(t *testing.T) {
 	t.Helper()
-	wireType := reflect.TypeFor[WireFormat]()
+	wireType := reflect.TypeFor[wireFormat]()
 	endpointType := reflect.TypeFor[endpointConfig]()
 	concerns := []struct {
 		name  string
@@ -864,16 +864,16 @@ func assertEndpointConcernsAreOutsideWireInterface(t *testing.T) {
 		for index := range wireType.NumMethod() {
 			method := wireType.Method(index)
 			if strings.Contains(strings.ToLower(method.Name), strings.ToLower(concern.field)) {
-				t.Errorf("WireFormat method %q owns endpoint %s", method.Name, concern.name)
+				t.Errorf("wireFormat method %q owns endpoint %s", method.Name, concern.name)
 			}
 			for parameter := range method.Type.NumIn() {
 				if method.Type.In(parameter) == field.Type {
-					t.Errorf("WireFormat.%s accepts endpoint-owned %s type %s", method.Name, concern.name, field.Type)
+					t.Errorf("wireFormat.%s accepts endpoint-owned %s type %s", method.Name, concern.name, field.Type)
 				}
 			}
 			for result := range method.Type.NumOut() {
 				if method.Type.Out(result) == field.Type {
-					t.Errorf("WireFormat.%s returns endpoint-owned %s type %s", method.Name, concern.name, field.Type)
+					t.Errorf("wireFormat.%s returns endpoint-owned %s type %s", method.Name, concern.name, field.Type)
 				}
 			}
 		}
@@ -947,7 +947,7 @@ func assertResponsesCallItemTypes(t *testing.T, body []byte) {
 	}
 }
 
-func decodedWireUsage(wire WireFormat) Usage {
+func decodedWireUsage(wire wireFormat) Usage {
 	switch wire := wire.(type) {
 	case *anthropicWire:
 		return wire.lastUsage
@@ -1177,7 +1177,7 @@ func TestEveryWireDecodesMixedToolCallsInVendorOrderWithObjectInput(t *testing.T
 	// R-TA7Y-7MPZ
 	tests := []struct {
 		name     string
-		wire     WireFormat
+		wire     wireFormat
 		response string
 		want     []mixedToolBlock
 	}{
@@ -1346,7 +1346,7 @@ func TestPerWireToolDeclarationGoldenAndSchemaOwnership(t *testing.T) {
 	// R-4E0J-Y4YG
 	tests := []struct {
 		name    string
-		wire    WireFormat
+		wire    wireFormat
 		fixture string
 	}{
 		{"openai_responses", newOpenAIResponsesWire(nil), "testdata/openai_responses.tools.json"},
@@ -1426,7 +1426,7 @@ func TestGeminiOwnsRecursiveSchemaNarrowing(t *testing.T) {
 			t.Errorf("Gemini rendering mutated source schema %d: %s, want %s", index, tool.Schema(), originals[index])
 		}
 	}
-	for _, wire := range []WireFormat{newOpenAIResponsesWire(nil), newOpenAIChatWire(nil), newAnthropicWire(nil)} {
+	for _, wire := range []wireFormat{newOpenAIResponsesWire(nil), newOpenAIChatWire(nil), newAnthropicWire(nil)} {
 		other, err := wire.RenderTools(tools)
 		if err != nil {
 			t.Fatal(err)
@@ -1442,7 +1442,7 @@ func TestRequestBodiesEmbedRenderedToolsOnceAndInOrder(t *testing.T) {
 	// R-47X2-1A8Z
 	tools := phase16Tools()
 	tests := []struct {
-		wire    WireFormat
+		wire    wireFormat
 		fixture string
 	}{
 		{newAnthropicWire(nil), "testdata/anthropic_messages.tools.json"},
@@ -1452,7 +1452,7 @@ func TestRequestBodiesEmbedRenderedToolsOnceAndInOrder(t *testing.T) {
 	}
 	for _, test := range tests {
 		wire := test.wire
-		body, err := wire.EncodeRequest(RequestState{Tools: tools})
+		body, err := wire.EncodeRequest(requestState{Tools: tools})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1520,7 +1520,7 @@ func TestAnthropicPreservesSuppliedToolOrderInRenderingAndRequest(t *testing.T) 
 	if !reflect.DeepEqual(renderedNames, want) {
 		t.Fatalf("RenderTools order = %v, want %v", renderedNames, want)
 	}
-	body, err := wire.EncodeRequest(RequestState{Tools: tools})
+	body, err := wire.EncodeRequest(requestState{Tools: tools})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1541,7 +1541,7 @@ func TestAnthropicPreservesSuppliedToolOrderInRenderingAndRequest(t *testing.T) 
 	}
 }
 
-func renderedToolSchemas(t *testing.T, wire WireFormat, rendered json.RawMessage) []any {
+func renderedToolSchemas(t *testing.T, wire wireFormat, rendered json.RawMessage) []any {
 	t.Helper()
 	var declarations []map[string]any
 	switch wire.(type) {
@@ -1657,7 +1657,7 @@ func TestSupportedSettingsAreEncodedByOwningWireGrammar(t *testing.T) {
 	// R-3VQ2-7KU1
 	tests := []struct {
 		name     string
-		wire     WireFormat
+		wire     wireFormat
 		settings Settings
 		want     string
 	}{
@@ -1695,7 +1695,7 @@ func TestSupportedSettingsAreEncodedByOwningWireGrammar(t *testing.T) {
 			if err := validator.validateSettings(test.settings); err != nil {
 				t.Fatalf("supported settings rejected: %v", err)
 			}
-			body, err := test.wire.EncodeRequest(RequestState{Model: "opaque-model-has-no-capability-role", Settings: test.settings})
+			body, err := test.wire.EncodeRequest(requestState{Model: "opaque-model-has-no-capability-role", Settings: test.settings})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1740,7 +1740,7 @@ func TestAnthropicMessagesRendersReasoningEffortInOutputConfig(t *testing.T) {
 			if err := validator.validateSettings(test.settings); err != nil {
 				t.Fatalf("supported reasoning settings rejected: %v", err)
 			}
-			body, err := wire.EncodeRequest(RequestState{Model: "opaque-model", Settings: test.settings})
+			body, err := wire.EncodeRequest(requestState{Model: "opaque-model", Settings: test.settings})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1751,7 +1751,7 @@ func TestAnthropicMessagesRendersReasoningEffortInOutputConfig(t *testing.T) {
 	}
 
 	schema := json.RawMessage(`{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"]}`)
-	body, err := wire.EncodeRequest(RequestState{
+	body, err := wire.EncodeRequest(requestState{
 		Model:    "opaque-model",
 		Settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningEffort, Effort: EffortMinimal}},
 		Output:   &OutputContract{Schema: schema},
@@ -1795,7 +1795,7 @@ func TestEffortCapableWiresRenderEveryEffortLevelVerbatim(t *testing.T) {
 	}
 	wires := []struct {
 		name           string
-		wire           WireFormat
+		wire           wireFormat
 		renderedEffort func(map[string]any) any
 	}{
 		{
@@ -1854,7 +1854,7 @@ func TestEffortCapableWiresRenderEveryEffortLevelVerbatim(t *testing.T) {
 				if err := validator.validateSettings(settings); err != nil {
 					t.Fatalf("effort %q rejected: %v", effortTest.want, err)
 				}
-				body, err := wireTest.wire.EncodeRequest(RequestState{Model: "opaque-model", Settings: settings})
+				body, err := wireTest.wire.EncodeRequest(requestState{Model: "opaque-model", Settings: settings})
 				if err != nil {
 					t.Fatalf("encode effort %q: %v", effortTest.want, err)
 				}
@@ -1874,7 +1874,7 @@ type wireFixture struct {
 	name     string
 	response string
 	request  string
-	make     func(wireClassifier) WireFormat
+	make     func(errorClassifier) wireFormat
 }
 
 func wireFixtures() []wireFixture {
@@ -1982,7 +1982,7 @@ func TestEveryWireCompletesFixtureDrivenToolLoop(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			conversation, err := NewForWire(test.wire, endpoint, "fixture-model", Config{Tools: tools})
+			conversation, err := New(test.wire, endpoint, "fixture-model", Config{Tools: tools})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -2269,7 +2269,7 @@ func TestEveryWireRoundTripsCapturedMessageBytes(t *testing.T) {
 				}
 				parsed = event.(MessageDone).Message
 			}
-			got, err := wire.EncodeRequest(RequestState{Model: "vendor/model:latest", History: History{parsed}})
+			got, err := wire.EncodeRequest(requestState{Model: "vendor/model:latest", History: History{parsed}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -2314,7 +2314,7 @@ func TestWireRequestModelPlacementMatchesFixtures(t *testing.T) {
 				}
 				parsed = event.(MessageDone).Message
 			}
-			got, err := wire.EncodeRequest(RequestState{Model: model, History: History{parsed}})
+			got, err := wire.EncodeRequest(requestState{Model: model, History: History{parsed}})
 			if err != nil {
 				t.Fatal(err)
 			}

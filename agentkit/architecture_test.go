@@ -59,8 +59,6 @@ func TestEndpointDeclarationsAreExact(t *testing.T) {
 		t.Fatalf("AuthApplier.Apply = %v (present=%t), want %s", apply.Type, ok, wantApply)
 	}
 
-	assertDefinedEndpointType(t, "ErrorClassifier", reflect.TypeFor[ErrorClassifier](), reflect.Func)
-	assertFunctionSignature(t, reflect.TypeFor[ErrorClassifier](), reflect.TypeOf(func(int, http.Header, []byte) error { return nil }))
 }
 
 func TestProviderOptionsDeclarationIsExact(t *testing.T) {
@@ -169,7 +167,7 @@ func TestEventIsSealedToExactlyFourVariants(t *testing.T) {
 						if formatErr := format.Node(&rendered, token.NewFileSet(), field.Type); formatErr != nil {
 							t.Fatal(formatErr)
 						}
-						for _, codecName := range []string{"WireFormat", "anthropicWire", "openAIResponsesWire", "openAIChatWire", "geminiWire"} {
+						for _, codecName := range []string{"wireFormat", "anthropicWire", "openAIResponsesWire", "openAIChatWire", "geminiWire"} {
 							if strings.Contains(rendered.String(), codecName) {
 								t.Fatalf("consumer-visible %s.%s exposes assignable wire codec %s", specification.Name, field.Names[0], rendered.String())
 							}
@@ -302,17 +300,17 @@ func assertEventSeam(t *testing.T) {
 
 func TestBuiltInWireSelectionIsConstructionOnly(t *testing.T) {
 	// R-O6ZF-NEIF
-	constructor := reflect.TypeOf(NewForWire)
+	constructor := reflect.TypeOf(New)
 	if constructor.In(0) != reflect.TypeFor[KnownWire]() {
-		t.Fatalf("NewForWire selector = %s, want KnownWire", constructor.In(0))
+		t.Fatalf("New selector = %s, want KnownWire", constructor.In(0))
 	}
-	wireType := reflect.TypeFor[WireFormat]()
+	wireType := reflect.TypeFor[wireFormat]()
 	for _, consumerType := range []reflect.Type{
 		reflect.TypeFor[Conversation](),
 		reflect.TypeFor[Config](),
 		reflect.TypeFor[Endpoint](),
 		reflect.TypeFor[Identity](),
-		reflect.TypeFor[RequestState](),
+		reflect.TypeFor[requestState](),
 	} {
 		for index := range consumerType.NumField() {
 			field := consumerType.Field(index)
@@ -344,16 +342,186 @@ func TestBuiltInWireSelectionIsConstructionOnly(t *testing.T) {
 				if formatErr := format.Node(&rendered, token.NewFileSet(), parameter.Type); formatErr != nil {
 					t.Fatal(formatErr)
 				}
-				if rendered.String() == "WireFormat" {
-					t.Fatalf("exported function %s accepts a selectable WireFormat", function.Name)
+				if rendered.String() == "wireFormat" {
+					t.Fatalf("exported function %s accepts a selectable wireFormat", function.Name)
 				}
 			}
 		}
 	}
 }
 
+func TestKnownWireDeclarationEnumeratesBuiltInCodecs(t *testing.T) {
+	// R-O4JM-VV11
+	wireType := reflect.TypeFor[KnownWire]()
+	if wireType.Name() != "KnownWire" || wireType.Kind() != reflect.Int || !token.IsExported(wireType.Name()) {
+		t.Fatalf("KnownWire name/kind = %q/%s, want exported defined int", wireType.Name(), wireType.Kind())
+	}
+	if specification := declaredType(t, "provider.go", "KnownWire"); specification.Assign.IsValid() || renderedNode(t, specification.Type) != "int" {
+		t.Fatalf("KnownWire declaration = %s alias=%t, want defined int", renderedNode(t, specification.Type), specification.Assign.IsValid())
+	}
+	want := []struct {
+		name  string
+		value KnownWire
+	}{
+		{name: "KnownWireAnthropicMessages", value: KnownWireAnthropicMessages},
+		{name: "KnownWireOpenAIResponses", value: KnownWireOpenAIResponses},
+		{name: "KnownWireOpenAIChat", value: KnownWireOpenAIChat},
+		{name: "KnownWireGemini", value: KnownWireGemini},
+	}
+	for index, entry := range want {
+		if entry.value != KnownWire(index) {
+			t.Fatalf("%s = %d, want %d", entry.name, entry.value, index)
+		}
+	}
+
+	parsed, err := parser.ParseFile(token.NewFileSet(), "provider.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, declaration := range parsed.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok != token.CONST {
+			continue
+		}
+		for _, rawSpecification := range general.Specs {
+			specification := rawSpecification.(*ast.ValueSpec)
+			for _, name := range specification.Names {
+				if strings.HasPrefix(name.Name, "KnownWire") {
+					names = append(names, name.Name)
+				}
+			}
+		}
+	}
+	wantNames := []string{"KnownWireAnthropicMessages", "KnownWireOpenAIResponses", "KnownWireOpenAIChat", "KnownWireGemini"}
+	if !reflect.DeepEqual(names, wantNames) {
+		t.Fatalf("KnownWire constants = %v, want %v in iota order", names, wantNames)
+	}
+}
+
+func TestRootConstructionSeamRetiresProviderSPI(t *testing.T) {
+	// R-O23U-4BJN
+	// R-O5RJ-9MRQ
+	forbidden := map[string]bool{
+		"NewConversation": false,
+		"NewForWire":      false,
+		"Provider":        false,
+		"WireFormat":      false,
+		"RequestState":    false,
+		"EndpointOption":  false,
+		"RequestMutator":  false,
+		"ErrorClassifier": false,
+		"WithHeader":      false,
+		"WithFramer":      false,
+		"WithClassifier":  false,
+		"WithMutator":     false,
+		"WithHTTPClient":  false,
+	}
+	required := map[string]bool{
+		"New":         false,
+		"NewEndpoint": false,
+		"Endpoint":    false,
+		"AuthApplier": false,
+		"KnownWire":   false,
+	}
+
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, filename := range files {
+		if strings.HasSuffix(filename, "_test.go") {
+			continue
+		}
+		parsed, parseErr := parser.ParseFile(token.NewFileSet(), filename, nil, 0)
+		if parseErr != nil {
+			t.Fatal(parseErr)
+		}
+		for _, declaration := range parsed.Decls {
+			var names []*ast.Ident
+			switch declaration := declaration.(type) {
+			case *ast.FuncDecl:
+				if declaration.Recv == nil {
+					names = []*ast.Ident{declaration.Name}
+				}
+			case *ast.GenDecl:
+				for _, rawSpecification := range declaration.Specs {
+					switch specification := rawSpecification.(type) {
+					case *ast.TypeSpec:
+						names = append(names, specification.Name)
+					case *ast.ValueSpec:
+						names = append(names, specification.Names...)
+					}
+				}
+			}
+			for _, name := range names {
+				if !name.IsExported() {
+					continue
+				}
+				if _, prohibited := forbidden[name.Name]; prohibited {
+					t.Fatalf("root package still exports prohibited construction symbol %s", name.Name)
+				}
+				if _, expected := required[name.Name]; expected {
+					required[name.Name] = true
+				}
+			}
+		}
+	}
+	for name, found := range required {
+		if !found {
+			t.Errorf("root construction seam does not export %s", name)
+		}
+	}
+}
+
+func TestPackageImportsPointTowardTransport(t *testing.T) {
+	// R-O3BQ-I3AC
+	const rootImport = "github.com/ikigenba/ikigenba/agentkit"
+	vendorImports := map[string]bool{
+		rootImport + "/anthropic":  true,
+		rootImport + "/openai":     true,
+		rootImport + "/gemini":     true,
+		rootImport + "/xai":        true,
+		rootImport + "/openrouter": true,
+	}
+	err := filepath.Walk(".", func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if info.IsDir() {
+			if path == "specs" || strings.HasPrefix(path, "specs"+string(filepath.Separator)) || strings.HasPrefix(info.Name(), ".") && path != "." {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		parsed, parseErr := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if parseErr != nil {
+			return parseErr
+		}
+		directory := filepath.ToSlash(filepath.Dir(path))
+		lowerLayer := directory == "retry" || strings.HasPrefix(directory, "retry/") || directory == "internal" || strings.HasPrefix(directory, "internal/")
+		for _, imported := range parsed.Imports {
+			importPath := strings.Trim(imported.Path.Value, `"`)
+			if vendorImports[importPath] {
+				t.Errorf("lower dependency %s imports vendor package %s", path, importPath)
+			}
+			if lowerLayer && importPath == rootImport {
+				t.Errorf("lower layer %s imports Conversation root package", path)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestConversationConstructionFixesOrchestrationConfiguration(t *testing.T) {
 	// R-OJ6F-H3XD
+	// R-O0VX-QJSY
 	auth := authFunc(func(context.Context, *http.Request, []byte) error { return nil })
 	endpointA, err := NewEndpoint("https://one.invalid/messages", auth)
 	if err != nil {
@@ -370,11 +538,11 @@ func TestConversationConstructionFixesOrchestrationConfiguration(t *testing.T) {
 		Settings: Settings{Temperature: &temperature, StopSequences: []string{"fixed"}},
 		Options:  ProviderOptions{"fixed": json.RawMessage(`true`)},
 	}
-	first, err := NewForWire(KnownWireAnthropicMessages, endpointA, "model-a", cfg)
+	first, err := New(KnownWireAnthropicMessages, endpointA, "model-a", cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := NewForWire(KnownWireOpenAIResponses, endpointB, "model-b", cfg)
+	second, err := New(KnownWireOpenAIResponses, endpointB, "model-b", cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -939,6 +1107,7 @@ func declaredFunction(t *testing.T, filename, name string) *ast.FuncDecl {
 func TestConversationPublicShape(t *testing.T) {
 	// R-YURK-JTY8
 	// R-SPHN-PJ46
+	// R-O0VX-QJSY
 	conversationType := reflect.TypeOf(Conversation{})
 	if conversationType.Name() != "Conversation" || !token.IsExported(conversationType.Name()) || conversationType.Kind() != reflect.Struct {
 		t.Fatalf("Conversation name/kind = %q/%s, want exported Conversation struct", conversationType.Name(), conversationType.Kind())
@@ -1689,6 +1858,7 @@ func TestSiblingContractWithholdsRootOwnedMechanismsAndKeepsOptionsLocal(t *test
 
 func TestVendorWithConfigDeclarationsAndForwardingAreExact(t *testing.T) {
 	// R-SO9R-BRDH
+	// R-O5RJ-9MRQ
 	for _, filename := range []string{"anthropic/anthropic.go", "openai/openai.go", "gemini/gemini.go", "xai/xai.go", "openrouter/openrouter.go"} {
 		t.Run(filename, func(t *testing.T) {
 			configuration := declaredType(t, filename, "config")
@@ -1731,17 +1901,17 @@ func TestVendorWithConfigDeclarationsAndForwardingAreExact(t *testing.T) {
 			assertedCalls := 0
 			ast.Inspect(constructor.Body, func(node ast.Node) bool {
 				call, ok := node.(*ast.CallExpr)
-				if !ok || renderedNode(t, call.Fun) != "agentkit.NewForWire" {
+				if !ok || renderedNode(t, call.Fun) != "agentkit.New" {
 					return true
 				}
 				assertedCalls++
 				if len(call.Args) != 4 || renderedNode(t, call.Args[3]) != "configuration.conversation" {
-					t.Fatalf("NewForWire arguments = %s, want stored conversation config fourth", renderedNode(t, call))
+					t.Fatalf("New arguments = %s, want stored conversation config fourth", renderedNode(t, call))
 				}
 				return true
 			})
 			if assertedCalls != 1 {
-				t.Fatalf("NewForWire call count = %d, want one", assertedCalls)
+				t.Fatalf("New call count = %d, want one", assertedCalls)
 			}
 		})
 	}

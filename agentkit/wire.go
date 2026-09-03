@@ -14,28 +14,26 @@ import (
 // vendor grammar carried by those frames.
 type Framer func(io.Reader) iter.Seq2[[]byte, error]
 
-// WireFormat is the internal codec contract selected by provider constructors.
-type WireFormat interface {
-	EncodeRequest(state RequestState) ([]byte, error)
+// wireFormat is the internal codec contract selected by provider constructors.
+type wireFormat interface {
+	EncodeRequest(state requestState) ([]byte, error)
 	DecodeStream(frames iter.Seq2[[]byte, error]) iter.Seq2[Event, error]
 	RenderTools(tools []Tool) (json.RawMessage, error)
 	ReservedKeys() []string
 }
 
-type wireClassifier = ErrorClassifier
-
 type frameDecoder func(frame []byte) (message *Message, usage usageFragment, hasUsage bool, err error)
 
 type wireCodec struct {
-	encode       func(RequestState) ([]byte, error)
+	encode       func(requestState) ([]byte, error)
 	decoder      func() frameDecoder
 	reserved     []string
-	classifier   wireClassifier
+	classifier   errorClassifier
 	lastUsage    Usage
 	capabilities wireCapabilities
 }
 
-func (w *wireCodec) EncodeRequest(state RequestState) ([]byte, error) {
+func (w *wireCodec) EncodeRequest(state requestState) ([]byte, error) {
 	return w.encode(state)
 }
 
@@ -45,7 +43,7 @@ func (w *wireCodec) DecodeStream(frames iter.Seq2[[]byte, error]) iter.Seq2[Even
 		var fragments []usageFragment
 		for frame, frameErr := range frames {
 			if frameErr != nil {
-				// WireFormat preserves the Framer's error verbatim; the provider
+				// wireFormat preserves the Framer's error verbatim; the provider
 				// boundary does not declare a second, transport-specific error seam.
 				yield(nil, frameErr)
 				return

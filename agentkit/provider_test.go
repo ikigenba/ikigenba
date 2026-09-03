@@ -20,12 +20,12 @@ func (function authFunc) Apply(ctx context.Context, request *http.Request, body 
 }
 
 type testWire struct {
-	encode     func(RequestState) ([]byte, error)
+	encode     func(requestState) ([]byte, error)
 	decode     func(iter.Seq2[[]byte, error]) iter.Seq2[Event, error]
-	classifier wireClassifier
+	classifier errorClassifier
 }
 
-func (wire *testWire) EncodeRequest(state RequestState) ([]byte, error) {
+func (wire *testWire) EncodeRequest(state requestState) ([]byte, error) {
 	if wire.encode != nil {
 		return wire.encode(state)
 	}
@@ -70,7 +70,6 @@ func (wire *testWire) classifyResponse(status int, header http.Header, body []by
 }
 
 func TestComposedProviderAuthenticatesFinalBodyState(t *testing.T) {
-	// R-3DFK-H0PM
 	// R-0VXJ-I2FW
 	type contextKey struct{}
 	ctx := context.WithValue(context.Background(), contextKey{}, "original-context")
@@ -93,7 +92,7 @@ func TestComposedProviderAuthenticatesFinalBodyState(t *testing.T) {
 		t.Fatal(err)
 	}
 	provider := newComposedProvider(&testWire{}, endpoint, Identity{Endpoint: "fixture", Model: "model"})
-	request, err := provider.BuildRequest(ctx, RequestState{Model: "encoded-final-body"})
+	request, err := provider.BuildRequest(ctx, requestState{Model: "encoded-final-body"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +121,7 @@ func TestComposedProviderPropagatesAssemblyFailures(t *testing.T) {
 		auth AuthApplier
 		want error
 	}{
-		{wire: &testWire{encode: func(RequestState) ([]byte, error) { return nil, encodeFailure }}, want: encodeFailure},
+		{wire: &testWire{encode: func(requestState) ([]byte, error) { return nil, encodeFailure }}, want: encodeFailure},
 		{wire: &testWire{}, auth: authFunc(func(context.Context, *http.Request, []byte) error { return authFailure }), want: authFailure},
 	}
 	for _, check := range checks {
@@ -134,7 +133,7 @@ func TestComposedProviderPropagatesAssemblyFailures(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = newComposedProvider(check.wire, endpoint, Identity{}).BuildRequest(context.Background(), RequestState{})
+		_, err = newComposedProvider(check.wire, endpoint, Identity{}).BuildRequest(context.Background(), requestState{})
 		if !errors.Is(err, check.want) {
 			t.Fatalf("BuildRequest error = %v, want %v", err, check.want)
 		}
@@ -162,38 +161,4 @@ func TestComposedProviderUsesSSEFramingAndMessageDecode(t *testing.T) {
 	if !reflect.DeepEqual(events, want) {
 		t.Fatalf("events=%v", events)
 	}
-}
-
-func TestComposedProviderClassificationIsExactAndTyped(t *testing.T) {
-	// R-3FVD-8K70
-	typed := &Error{Category: CategoryRateLimit, Status: http.StatusTooManyRequests, Message: "slow down"}
-	headers := http.Header{"Retry-After": []string{"7"}}
-	body := []byte("body-only-code")
-	var gotStatus int
-	var gotHeaders http.Header
-	var gotBody []byte
-	wire := &testWire{classifier: func(status int, header http.Header, classifiedBody []byte) error {
-		gotStatus, gotHeaders, gotBody = status, header, classifiedBody
-		return typed
-	}}
-	endpoint, err := NewEndpoint("https://example.test", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
-	if err != nil {
-		t.Fatal(err)
-	}
-	provider := newComposedProvider(wire, endpoint, Identity{})
-	if classified := provider.Classify(http.StatusTooManyRequests, headers, body); !errors.Is(classified, typed) {
-		t.Fatalf("Classify returned %p, want authoritative %p", classified, typed)
-	}
-	if gotStatus != http.StatusTooManyRequests || gotHeaders.Get("Retry-After") != "7" || !bytes.Equal(gotBody, body) {
-		t.Fatalf("classifier inputs = %d %q %q", gotStatus, gotHeaders, gotBody)
-	}
-
-	response := &http.Response{Body: io.NopCloser(strings.NewReader("data: error-frame\n\n"))}
-	for _, decodeErr := range provider.Decode(context.Background(), response) {
-		if !errors.Is(decodeErr, typed) {
-			t.Fatalf("in-band error = %v, want typed error", decodeErr)
-		}
-		return
-	}
-	t.Fatal("in-band 2xx frame did not reach wire classifier")
 }

@@ -12,7 +12,7 @@ import (
 // KnownWire identifies a built-in wire format available to the generic route.
 type KnownWire int
 
-// Known wire names accepted by NewForWire.
+// Known wire names accepted by New.
 const (
 	KnownWireAnthropicMessages KnownWire = iota
 	KnownWireOpenAIResponses
@@ -20,10 +20,10 @@ const (
 	KnownWireGemini
 )
 
-// NewForWire constructs a conversation from a known wire, caller-built
+// New constructs a conversation from a known wire, caller-built
 // endpoint, and verbatim model name.
-func NewForWire(wireName KnownWire, endpoint Endpoint, model string, cfg Config) (*Conversation, error) {
-	var wire WireFormat
+func New(wireName KnownWire, endpoint Endpoint, model string, cfg Config) (*Conversation, error) {
+	var wire wireFormat
 	switch wireName {
 	case KnownWireAnthropicMessages:
 		wire = newAnthropicWire(nil)
@@ -45,35 +45,35 @@ func NewForWire(wireName KnownWire, endpoint Endpoint, model string, cfg Config)
 	return newEndpointConversation(wire, endpoint, identity, cfg), nil
 }
 
-// Provider is the composed wire-format and endpoint adapter driven for one
+// wireProvider is the composed wire-format and endpoint adapter driven for one
 // round-trip.
-type Provider interface {
-	BuildRequest(ctx context.Context, state RequestState) (*http.Request, error)
+type wireProvider interface {
+	BuildRequest(ctx context.Context, state requestState) (*http.Request, error)
 	Decode(ctx context.Context, resp *http.Response) iter.Seq2[Event, error]
 	Classify(status int, header http.Header, body []byte) error
 	Identity() Identity
 }
 
 type composedProvider struct {
-	wire     WireFormat
+	wire     wireFormat
 	endpoint Endpoint
 	identity Identity
 }
 
-func newComposedProvider(wire WireFormat, endpoint Endpoint, identity Identity) *composedProvider {
+func newComposedProvider(wire wireFormat, endpoint Endpoint, identity Identity) *composedProvider {
 	return &composedProvider{wire: wire, endpoint: endpoint, identity: identity}
 }
 
-func newEndpointConversation(wire WireFormat, endpoint Endpoint, identity Identity, cfg Config) *Conversation {
+func newEndpointConversation(wire wireFormat, endpoint Endpoint, identity Identity, cfg Config) *Conversation {
 	provider := newComposedProvider(wire, endpoint, identity)
-	conversation := NewConversation(provider, http.DefaultClient, cfg)
+	conversation := newConversation(provider, http.DefaultClient, cfg)
 	conversation.validate = func() error {
 		return provider.validateSettings(conversation.settings)
 	}
 	return conversation
 }
 
-func (provider *composedProvider) BuildRequest(ctx context.Context, state RequestState) (*http.Request, error) {
+func (provider *composedProvider) BuildRequest(ctx context.Context, state requestState) (*http.Request, error) {
 	body, err := provider.wire.EncodeRequest(state)
 	if err != nil {
 		return nil, err
@@ -116,9 +116,9 @@ func (provider *composedProvider) turnAccounting() providerAccounting {
 }
 
 // takeBuiltInWireUsage adapts the package's concrete codecs to conversation
-// accounting without widening WireFormat or adding an accounting method to the
+// accounting without widening wireFormat or adding an accounting method to the
 // codec seam.
-func takeBuiltInWireUsage(wire WireFormat) Usage {
+func takeBuiltInWireUsage(wire wireFormat) Usage {
 	var codec *wireCodec
 	switch wire := wire.(type) {
 	case *anthropicWire:
