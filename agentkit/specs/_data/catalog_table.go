@@ -51,7 +51,7 @@ var (
 
 // offer builds one offering; openRouter builds the OpenRouter offering for a
 // model whose router pricing and reasoning match its native offering.
-func offer(provider Provider, wireModel string, context int64, pricing Pricing, reasoning ReasoningSpec) Offering {
+func offer(provider ProviderID, wireModel string, context int64, pricing Pricing, reasoning ReasoningSpec) Offering {
 	return Offering{Provider: provider, WireModel: wireModel, Context: context, Pricing: pricing, Reasoning: reasoning}
 }
 

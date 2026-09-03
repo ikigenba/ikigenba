@@ -124,7 +124,7 @@ package agentkit
 // fused string, so consumers filter on each independently (D15). It is immutable
 // for the conversation's life.
 type Identity struct {
-	Endpoint string // endpoint name, e.g. "openai", "anthropic", "xai" (D6 WithName; a Provider value on the vendor path, D21)
+	Endpoint string // endpoint name, e.g. "openai", "anthropic", "xai" (D6 WithName; a ProviderID value on the vendor path, D21)
 	AuthMode string // "api_key", "oauth", "sigv4"
 	Model    string // the verbatim model string
 }

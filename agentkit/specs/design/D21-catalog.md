@@ -37,18 +37,19 @@ The shape:
 ```go
 package agentkit
 
-// Provider names the vendor constructor package that serves an offering.
-// Values are the package names, and are also what a vendor package's New
-// names its endpoint with (D6 WithName), so Identity.Endpoint equals the
-// Provider of the offering that prices the conversation.
-type Provider string
+// ProviderID names the vendor constructor package that serves an offering.
+// It is a value type, distinct from the Provider SPI interface (D6). Values
+// are the package names, and are also what a vendor package's New names its
+// endpoint with (D6 WithName), so Identity.Endpoint equals the ProviderID of
+// the offering that prices the conversation.
+type ProviderID string
 
 const (
-	ProviderAnthropic  Provider = "anthropic"
-	ProviderOpenAI     Provider = "openai"
-	ProviderGemini     Provider = "gemini"
-	ProviderXAI        Provider = "xai"
-	ProviderOpenRouter Provider = "openrouter"
+	ProviderAnthropic  ProviderID = "anthropic"
+	ProviderOpenAI     ProviderID = "openai"
+	ProviderGemini     ProviderID = "gemini"
+	ProviderXAI        ProviderID = "xai"
+	ProviderOpenRouter ProviderID = "openrouter"
 )
 
 // Vendor names a model's creator, in OpenRouter namespace spelling, so an
@@ -97,7 +98,7 @@ func (s ReasoningSpec) Accepts(r ReasoningConfig) bool
 
 // Offering is one model as served by one provider.
 type Offering struct {
-	Provider  Provider
+	Provider  ProviderID
 	WireModel string        // the exact model string sent on the wire
 	Context   int64         // context window in tokens
 	Pricing   Pricing       // full price schedule (D3); never empty
@@ -113,9 +114,9 @@ type CatalogEntry struct {
 }
 
 func Catalog() []CatalogEntry                                    // every entry, sorted by Model
-func CatalogFor(p Provider) []CatalogEntry                       // entries with an offering on p, sorted
+func CatalogFor(p ProviderID) []CatalogEntry                       // entries with an offering on p, sorted
 func LookupModel(model string) (CatalogEntry, bool)              // one entry by model name
-func ResolveModel(model string, p Provider) (Offering, bool)     // p == "" means the default offering
+func ResolveModel(model string, p ProviderID) (Offering, bool)     // p == "" means the default offering
 ```
 
 `ResolveModel` is the shorthand. `ResolveModel("claude-sonnet-5", "")` yields
@@ -146,14 +147,14 @@ adding a model is an edit to that file and nothing else.
 
 ## REQUIREMENTS
 
-- R-O3UO-NF33: `agentkit` MUST export `type Provider string` with the constants `ProviderAnthropic = "anthropic"`, `ProviderOpenAI = "openai"`, `ProviderGemini = "gemini"`, `ProviderXAI = "xai"`, and `ProviderOpenRouter = "openrouter"`.
+- R-EFVU-QV44: `agentkit` MUST export `type ProviderID string` with the constants `ProviderAnthropic = "anthropic"`, `ProviderOpenAI = "openai"`, `ProviderGemini = "gemini"`, `ProviderXAI = "xai"`, and `ProviderOpenRouter = "openrouter"`, distinct from the `Provider` SPI interface (D6).
 - R-O52L-16TS: `agentkit` MUST export `type Vendor string` with the constants `VendorAnthropic = "anthropic"`, `VendorOpenAI = "openai"`, `VendorGoogle = "google"`, `VendorXAI = "x-ai"`, `VendorZAI = "z-ai"`, `VendorDeepSeek = "deepseek"`, `VendorMoonshot = "moonshotai"`, `VendorNVIDIA = "nvidia"`, and `VendorQwen = "qwen"`.
 - R-O6AH-EYKH: `agentkit` MUST export `type ReasoningKind int` with the constants `ReasoningKindNone`, `ReasoningKindEffort`, `ReasoningKindBudget`, `ReasoningKindToggle` declared in that `iota` order starting at 0.
 - R-O7ID-SQB6: `agentkit` MUST export `type ReasoningSpec struct { Kind ReasoningKind; Levels []Effort; MinBudget int; MaxBudget int; CanEnable bool; CanDisable bool; Default ReasoningConfig }` with exactly those fields.
 - R-O8QA-6I1V: `agentkit` MUST export `func (s ReasoningSpec) Accepts(r ReasoningConfig) bool`.
-- R-O9Y6-K9SK: `agentkit` MUST export `type Offering struct { Provider Provider; WireModel string; Context int64; Pricing Pricing; Reasoning ReasoningSpec }` with exactly those fields.
+- R-EH3R-4MUT: `agentkit` MUST export `type Offering struct { Provider ProviderID; WireModel string; Context int64; Pricing Pricing; Reasoning ReasoningSpec }` with exactly those fields.
 - R-OB62-Y1J9: `agentkit` MUST export `type CatalogEntry struct { Model string; Vendor Vendor; Offerings []Offering }` with exactly those fields.
-- R-OCDZ-BT9Y: `agentkit` MUST export `func Catalog() []CatalogEntry`, `func CatalogFor(p Provider) []CatalogEntry`, `func LookupModel(model string) (CatalogEntry, bool)`, and `func ResolveModel(model string, p Provider) (Offering, bool)`.
+- R-EIBN-IELI: `agentkit` MUST export `func Catalog() []CatalogEntry`, `func CatalogFor(p ProviderID) []CatalogEntry`, `func LookupModel(model string) (CatalogEntry, bool)`, and `func ResolveModel(model string, p ProviderID) (Offering, bool)`.
 - R-ODLV-PL0N: `Catalog()` MUST return every entry sorted ascending by `Model`, with no two entries sharing a `Model`, every entry holding at least one offering, and no two offerings of one entry sharing a `Provider`.
 - R-OG1O-H4I1: `CatalogFor(p)` MUST return exactly the entries that hold an offering whose `Provider` is `p`, sorted ascending by `Model`, and `LookupModel` MUST return the entry whose `Model` equals its argument or `false`.
 - R-OH9K-UW8Q: `ResolveModel(model, "")` MUST return the entry's first offering; `ResolveModel(model, p)` with a non-empty `p` MUST return the entry's offering whose `Provider` is `p`; an unknown model or an entry with no offering on `p` MUST return `false`.
@@ -164,5 +165,5 @@ adding a model is an edit to that file and nothing else.
 - R-OND2-RQY7: `ResolveModel("claude-sonnet-5", "")` MUST return an offering with `Provider` `ProviderAnthropic` and `WireModel` `"claude-sonnet-5"`; `ResolveModel("claude-sonnet-5", ProviderOpenRouter)` MUST return an offering with `WireModel` `"anthropic/claude-sonnet-5"`; and `ResolveModel("claude-sonnet-5", ProviderGemini)` MUST return `false`.
 - R-OOKZ-5IOW: `ResolveModel("gpt-5.6-sol", "")` MUST return an offering with `Provider` `ProviderOpenAI`, `WireModel` `"gpt-5.6-sol"`, and a `Reasoning.Default` of `ReasoningConfig{Mode: ReasoningEffort, Effort: EffortMedium}`.
 - R-OPSV-JAFL: The catalog MUST NOT gate construction or `Send`: a conversation for a model or provider/model pair that `ResolveModel` reports `false` for MUST construct and send exactly as a cataloged one does, differing only in pricing to zero (D3).
-- R-OR0R-X26A: Each vendor package's `New` (`anthropic`, `openai`, `gemini`, `xai`, `openrouter`) MUST construct its endpoint with `WithName` set to its own `Provider` value, so that the resulting conversation's `Identity.Endpoint` equals that `Provider` and a cataloged wire model prices from its offering.
-- R-AUKU-L0JW: For each of the five `Provider` constants, `CatalogFor` MUST return a non-empty result.
+- R-EKRG-9Y2W: Each vendor package's `New` (`anthropic`, `openai`, `gemini`, `xai`, `openrouter`) MUST construct its endpoint with `WithName` set to its own `ProviderID` value, so that the resulting conversation's `Identity.Endpoint` equals that `ProviderID` and a cataloged wire model prices from its offering.
+- R-ELZC-NPTL: For each of the five `ProviderID` constants, `CatalogFor` MUST return a non-empty result.
