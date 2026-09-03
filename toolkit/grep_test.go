@@ -177,6 +177,144 @@ func TestGrepNoMatchesFound(t *testing.T) {
 	// R-EL3P-O7ZJ
 }
 
+func TestGrepCount(t *testing.T) {
+	root := t.TempDir()
+	for name, contents := range map[string]string{
+		"zzz.txt": "hit\nmiss\nhit",
+		"aaa.txt": "miss\nhit",
+		"mmm.txt": "miss only",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(contents), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	tool, err := Grep(root)
+	if err != nil {
+		t.Fatalf("Grep() error = %v", err)
+	}
+
+	got, err := tool.Call(context.Background(), json.RawMessage(`{"pattern":"hit","output_mode":"count"}`))
+	if err != nil {
+		t.Fatalf("Grep count call error = %v", err)
+	}
+	want := filepath.Join(root, "aaa.txt") + ":1\n" + filepath.Join(root, "zzz.txt") + ":2"
+	if got != want {
+		t.Errorf("Grep count result = %q, want %q", got, want)
+	}
+
+	got, err = tool.Call(context.Background(), json.RawMessage(`{"pattern":"absent","output_mode":"count"}`))
+	if err != nil {
+		t.Fatalf("Grep empty count call error = %v", err)
+	}
+	if got != "No matches found" {
+		t.Errorf("Grep empty count result = %q, want no matches", got)
+	}
+	// R-DVHT-N1EY
+}
+
+func TestGrepContent(t *testing.T) {
+	root := t.TempDir()
+	aaaPath := filepath.Join(root, "aaa.txt")
+	zzzPath := filepath.Join(root, "zzz.txt")
+	if err := os.WriteFile(aaaPath, []byte("hit first\nplain\nhit third"), 0o600); err != nil {
+		t.Fatalf("write aaa fixture: %v", err)
+	}
+	if err := os.WriteFile(zzzPath, []byte("plain\nhit second"), 0o600); err != nil {
+		t.Fatalf("write zzz fixture: %v", err)
+	}
+	tool, err := Grep(root)
+	if err != nil {
+		t.Fatalf("Grep() error = %v", err)
+	}
+
+	got, err := tool.Call(context.Background(), json.RawMessage(`{"pattern":"hit","output_mode":"content"}`))
+	if err != nil {
+		t.Fatalf("Grep content call error = %v", err)
+	}
+	want := strings.Join([]string{
+		aaaPath + ":1:hit first", "--", aaaPath + ":3:hit third", "--", zzzPath + ":2:hit second",
+	}, "\n")
+	if got != want {
+		t.Errorf("Grep numbered content = %q, want %q", got, want)
+	}
+
+	got, err = tool.Call(context.Background(), json.RawMessage(`{"pattern":"hit","output_mode":"content","-n":false}`))
+	if err != nil {
+		t.Fatalf("Grep unnumbered content call error = %v", err)
+	}
+	want = strings.Join([]string{
+		aaaPath + ":hit first", "--", aaaPath + ":hit third", "--", zzzPath + ":hit second",
+	}, "\n")
+	if got != want {
+		t.Errorf("Grep unnumbered content = %q, want %q", got, want)
+	}
+	// R-DWPQ-0T5N
+}
+
+func TestGrepContentContext(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "lines.txt")
+	contents := "zero\none\nhit two\nthree\nfour\nfive\nhit six\nseven\neight"
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	tool, err := Grep(root)
+	if err != nil {
+		t.Fatalf("Grep() error = %v", err)
+	}
+
+	tests := []struct {
+		name  string
+		flags string
+		want  string
+	}{
+		{"after", `,"-A":1`, strings.Join([]string{path + ":3:hit two", path + "-4-three", "--", path + ":7:hit six", path + "-8-seven"}, "\n")},
+		{"before", `,"-B":1`, strings.Join([]string{path + "-2-one", path + ":3:hit two", "--", path + "-6-five", path + ":7:hit six"}, "\n")},
+		{"common", `,"-C":1`, strings.Join([]string{path + "-2-one", path + ":3:hit two", path + "-4-three", "--", path + "-6-five", path + ":7:hit six", path + "-8-seven"}, "\n")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			input := `{"pattern":"hit","output_mode":"content"` + test.flags + `}`
+			got, err := tool.Call(context.Background(), json.RawMessage(input))
+			if err != nil {
+				t.Fatalf("Grep context call error = %v", err)
+			}
+			if got != test.want {
+				t.Errorf("Grep context result = %q, want %q", got, test.want)
+			}
+			if strings.HasPrefix(got, "--\n") || strings.HasSuffix(got, "\n--") {
+				t.Errorf("Grep context has edge separator: %q", got)
+			}
+		})
+	}
+	// R-DXXM-EKWC
+}
+
+func TestGrepIgnoresContentFlagsInOtherModes(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "lines.txt")
+	if err := os.WriteFile(path, []byte("before\nhit\nafter"), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	tool, err := Grep(root)
+	if err != nil {
+		t.Fatalf("Grep() error = %v", err)
+	}
+
+	plain, err := tool.Call(context.Background(), json.RawMessage(`{"pattern":"hit","output_mode":"count"}`))
+	if err != nil {
+		t.Fatalf("plain Grep count call error = %v", err)
+	}
+	flagged, err := tool.Call(context.Background(), json.RawMessage(`{"pattern":"hit","output_mode":"count","-n":false,"-A":4,"-B":3,"-C":2}`))
+	if err != nil {
+		t.Fatalf("flagged Grep count call error = %v", err)
+	}
+	if flagged != plain || flagged != path+":1" {
+		t.Errorf("flagged count = %q, plain count = %q, want %q", flagged, plain, path+":1")
+	}
+	// R-DZ5I-SCN1
+}
+
 func assertSchemaProperty(t *testing.T, properties map[string]any, name, wantType, constraint string, wantConstraint any) {
 	t.Helper()
 	property, ok := properties[name].(map[string]any)
