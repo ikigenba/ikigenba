@@ -4,3 +4,5 @@ every `.agents/skills/*/SKILL.md` file.
 
 This project is spec managed.  Direct source code changes are not allowed
 without direct user instruction.
+
+This project requires squash merges to main.
