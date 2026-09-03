@@ -437,6 +437,50 @@ func TestResolveModelSelectionAndFailures(t *testing.T) {
 	}
 }
 
+func TestResolveModelPinnedClaudeSonnet5(t *testing.T) {
+	// R-OND2-RQY7
+	got, ok := ResolveModel("claude-sonnet-5", "")
+	if !ok {
+		t.Fatal("ResolveModel did not resolve claude-sonnet-5 with the default provider")
+	}
+	if got.Provider != ProviderAnthropic {
+		t.Errorf("default provider = %q, want %q", got.Provider, ProviderAnthropic)
+	}
+	if got.WireModel != "claude-sonnet-5" {
+		t.Errorf("default wire model = %q, want %q", got.WireModel, "claude-sonnet-5")
+	}
+
+	got, ok = ResolveModel("claude-sonnet-5", ProviderOpenRouter)
+	if !ok {
+		t.Fatal("ResolveModel did not resolve claude-sonnet-5 for OpenRouter")
+	}
+	if got.WireModel != "anthropic/claude-sonnet-5" {
+		t.Errorf("OpenRouter wire model = %q, want %q", got.WireModel, "anthropic/claude-sonnet-5")
+	}
+
+	if _, ok := ResolveModel("claude-sonnet-5", ProviderGemini); ok {
+		t.Fatal("ResolveModel resolved unavailable claude-sonnet-5 Gemini pairing")
+	}
+}
+
+func TestResolveModelPinnedGPT56Sol(t *testing.T) {
+	// R-OOKZ-5IOW
+	got, ok := ResolveModel("gpt-5.6-sol", "")
+	if !ok {
+		t.Fatal("ResolveModel did not resolve gpt-5.6-sol with the default provider")
+	}
+	if got.Provider != ProviderOpenAI {
+		t.Errorf("default provider = %q, want %q", got.Provider, ProviderOpenAI)
+	}
+	if got.WireModel != "gpt-5.6-sol" {
+		t.Errorf("default wire model = %q, want %q", got.WireModel, "gpt-5.6-sol")
+	}
+	wantDefault := ReasoningConfig{Mode: ReasoningEffort, Effort: EffortMedium}
+	if !reflect.DeepEqual(got.Reasoning.Default, wantDefault) {
+		t.Errorf("default reasoning = %+v, want %+v", got.Reasoning.Default, wantDefault)
+	}
+}
+
 func TestCatalogQueriesReturnDefensiveCopies(t *testing.T) {
 	// R-OIHH-8NZF
 	const model = "claude-sonnet-5"
