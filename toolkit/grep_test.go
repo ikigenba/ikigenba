@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -313,6 +314,239 @@ func TestGrepIgnoresContentFlagsInOtherModes(t *testing.T) {
 		t.Errorf("flagged count = %q, plain count = %q, want %q", flagged, plain, path+":1")
 	}
 	// R-DZ5I-SCN1
+}
+
+func TestGrepGlobFilter(t *testing.T) {
+	root := t.TempDir()
+	nested := filepath.Join(root, "nested")
+	if err := os.Mkdir(nested, 0o700); err != nil {
+		t.Fatalf("make nested fixture directory: %v", err)
+	}
+	goPath := filepath.Join(root, "a.go")
+	txtPath := filepath.Join(nested, "b.txt")
+	for path, contents := range map[string]string{goPath: "needle", txtPath: "needle"} {
+		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+			t.Fatalf("write fixture %s: %v", path, err)
+		}
+	}
+	tool, err := Grep(root)
+	if err != nil {
+		t.Fatalf("Grep() error = %v", err)
+	}
+
+	got, err := tool.Call(context.Background(), json.RawMessage(`{"pattern":"needle","glob":"*.go"}`))
+	if err != nil {
+		t.Fatalf("glob-filtered Grep call error = %v", err)
+	}
+	// R-DQM8-3YG6
+	if got != goPath {
+		t.Errorf("glob-filtered result = %q, want only %q", got, goPath)
+	}
+	if strings.Contains(got, txtPath) {
+		t.Errorf("glob-filtered result contains excluded path %q", txtPath)
+	}
+
+	_, err = tool.Call(context.Background(), json.RawMessage(`{"pattern":"needle","glob":"["}`))
+	if err == nil {
+		t.Fatal("Grep with invalid glob returned nil error")
+	}
+	if !strings.Contains(err.Error(), "glob") {
+		t.Errorf("invalid glob error = %q, want it to name glob", err)
+	}
+}
+
+func TestGrepPathFileAndDirectory(t *testing.T) {
+	root := t.TempDir()
+	subdir := filepath.Join(root, "subdir")
+	if err := os.Mkdir(subdir, 0o700); err != nil {
+		t.Fatalf("make subdirectory: %v", err)
+	}
+	targetPath := filepath.Join(subdir, "target.txt")
+	plainPath := filepath.Join(subdir, "plain.txt")
+	siblingPath := filepath.Join(root, "sibling.txt")
+	for path, contents := range map[string]string{
+		targetPath:  "needle in target",
+		plainPath:   "unrelated",
+		siblingPath: "needle in sibling",
+	} {
+		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+			t.Fatalf("write fixture %s: %v", path, err)
+		}
+	}
+	tool, err := Grep(root)
+	if err != nil {
+		t.Fatalf("Grep() error = %v", err)
+	}
+
+	got, err := tool.Call(context.Background(), json.RawMessage(`{"pattern":"needle","path":"subdir/target.txt"}`))
+	if err != nil {
+		t.Fatalf("file-path Grep call error = %v", err)
+	}
+	// R-DRU4-HQ6V
+	if got != targetPath {
+		t.Errorf("file-path result = %q, want only %q", got, targetPath)
+	}
+
+	got, err = tool.Call(context.Background(), json.RawMessage(`{"pattern":"needle","path":"subdir"}`))
+	if err != nil {
+		t.Fatalf("directory-path Grep call error = %v", err)
+	}
+	if got != targetPath {
+		t.Errorf("directory-path result = %q, want only %q", got, targetPath)
+	}
+	if strings.Contains(got, siblingPath) {
+		t.Errorf("directory-path result contains outside sibling %q", siblingPath)
+	}
+
+	_, err = tool.Call(context.Background(), json.RawMessage(`{"pattern":"needle","path":"missing"}`))
+	if err == nil || !strings.Contains(err.Error(), "path") {
+		t.Errorf("missing path error = %v, want an error naming path", err)
+	}
+}
+
+func TestGrepSkipsBinaryFiles(t *testing.T) {
+	root := t.TempDir()
+	textPath := filepath.Join(root, "text.txt")
+	binaryPath := filepath.Join(root, "binary.dat")
+	if err := os.WriteFile(textPath, []byte("needle in text"), 0o600); err != nil {
+		t.Fatalf("write text fixture: %v", err)
+	}
+	if err := os.WriteFile(binaryPath, []byte("needle before\x00needle after"), 0o600); err != nil {
+		t.Fatalf("write binary fixture: %v", err)
+	}
+	tool, err := Grep(root)
+	if err != nil {
+		t.Fatalf("Grep() error = %v", err)
+	}
+
+	got, err := tool.Call(context.Background(), json.RawMessage(`{"pattern":"needle"}`))
+	if err != nil {
+		t.Fatalf("Grep binary-skip call error = %v", err)
+	}
+	// R-DT20-VHXK
+	if got != textPath {
+		t.Errorf("binary-skip result = %q, want only %q", got, textPath)
+	}
+	if strings.Contains(got, binaryPath) {
+		t.Errorf("binary-skip result contains binary path %q", binaryPath)
+	}
+}
+
+func TestGrepMultiline(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "lines.txt")
+	if err := os.WriteFile(path, []byte("zero\none\ntwo\nthree"), 0o600); err != nil {
+		t.Fatalf("write multiline fixture: %v", err)
+	}
+	tool, err := Grep(root)
+	if err != nil {
+		t.Fatalf("Grep() error = %v", err)
+	}
+
+	got, err := tool.Call(context.Background(), json.RawMessage(`{"pattern":"one.*two"}`))
+	if err != nil {
+		t.Fatalf("single-line Grep call error = %v", err)
+	}
+	if got != "No matches found" {
+		t.Errorf("single-line result = %q, want no matches", got)
+	}
+
+	got, err = tool.Call(context.Background(), json.RawMessage(`{"pattern":"one.*two","multiline":true}`))
+	if err != nil {
+		t.Fatalf("multiline files Grep call error = %v", err)
+	}
+	// R-E0DF-64DQ
+	if got != path {
+		t.Errorf("multiline files result = %q, want %q", got, path)
+	}
+
+	got, err = tool.Call(context.Background(), json.RawMessage(`{"pattern":"one.*two","multiline":true,"output_mode":"count"}`))
+	if err != nil {
+		t.Fatalf("multiline count Grep call error = %v", err)
+	}
+	if want := path + ":1"; got != want {
+		t.Errorf("multiline count result = %q, want %q", got, want)
+	}
+
+	got, err = tool.Call(context.Background(), json.RawMessage(`{"pattern":"one.*two","multiline":true,"output_mode":"content"}`))
+	if err != nil {
+		t.Fatalf("multiline content Grep call error = %v", err)
+	}
+	want := path + ":2:one\n" + path + ":3:two"
+	if got != want {
+		t.Errorf("multiline content result = %q, want %q", got, want)
+	}
+}
+
+func TestGrepHeadLimit(t *testing.T) {
+	root := t.TempDir()
+	var paths []string
+	for _, name := range []string{"e.txt", "a.txt", "d.txt", "b.txt", "c.txt"} {
+		path := filepath.Join(root, name)
+		if err := os.WriteFile(path, []byte("hit"), 0o600); err != nil {
+			t.Fatalf("write fixture %s: %v", name, err)
+		}
+		paths = append(paths, path)
+	}
+	tool, err := Grep(root)
+	if err != nil {
+		t.Fatalf("Grep() error = %v", err)
+	}
+
+	got, err := tool.Call(context.Background(), json.RawMessage(`{"pattern":"hit","head_limit":3}`))
+	if err != nil {
+		t.Fatalf("limited Grep call error = %v", err)
+	}
+	sort.Strings(paths)
+	want := strings.Join(append(append([]string(nil), paths[:3]...), "[truncated to first 3 entries]"), "\n")
+	// R-EJVT-AG8U
+	if got != want {
+		t.Errorf("limited result = %q, want %q", got, want)
+	}
+
+	got, err = tool.Call(context.Background(), json.RawMessage(`{"pattern":"hit","glob":"a.txt","head_limit":3}`))
+	if err != nil {
+		t.Fatalf("under-limit Grep call error = %v", err)
+	}
+	if got != paths[0] || strings.Contains(got, "[truncated") {
+		t.Errorf("under-limit result = %q, want %q without truncation", got, paths[0])
+	}
+
+	contentRoot := t.TempDir()
+	aPath := filepath.Join(contentRoot, "a.txt")
+	bPath := filepath.Join(contentRoot, "b.txt")
+	for _, path := range []string{aPath, bPath} {
+		if err := os.WriteFile(path, []byte("hit\ncontext"), 0o600); err != nil {
+			t.Fatalf("write content fixture %s: %v", path, err)
+		}
+	}
+	contentTool, err := Grep(contentRoot)
+	if err != nil {
+		t.Fatalf("Grep() for content root error = %v", err)
+	}
+	got, err = contentTool.Call(context.Background(), json.RawMessage(`{"pattern":"hit","output_mode":"content","-A":1,"head_limit":3}`))
+	if err != nil {
+		t.Fatalf("limited content Grep call error = %v", err)
+	}
+	want = strings.Join([]string{
+		aPath + ":1:hit", aPath + "-2-context", "--", bPath + ":1:hit", "[truncated to first 3 entries]",
+	}, "\n")
+	if got != want {
+		t.Errorf("limited content result = %q, want %q", got, want)
+	}
+	if strings.Count(got, "[truncated") != 1 || !strings.HasSuffix(got, "[truncated to first 3 entries]") {
+		t.Errorf("limited content truncation placement = %q", got)
+	}
+
+	got, err = contentTool.Call(context.Background(), json.RawMessage(`{"pattern":"hit","output_mode":"content","-A":1,"head_limit":2}`))
+	if err != nil {
+		t.Fatalf("group-boundary content Grep call error = %v", err)
+	}
+	if strings.Contains(got, "--\n[truncated") {
+		t.Errorf("group-boundary truncation has a trailing separator: %q", got)
+	}
+
+	// The default head limit is 250 entries.
 }
 
 func assertSchemaProperty(t *testing.T, properties map[string]any, name, wantType, constraint string, wantConstraint any) {
