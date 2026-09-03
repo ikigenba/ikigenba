@@ -66,6 +66,7 @@ func TestNewPlacesEscapedModelInDefaultURLPath(t *testing.T) {
 func TestNewNamesGeminiEndpointAndUsesCatalogPricing(t *testing.T) {
 	// R-OP9X-DYMU
 	// R-OQHT-RQDJ
+	// R-UEAK-X2Q8
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(writer, "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"done\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":2,\"candidatesTokenCount\":3}}\n\n")

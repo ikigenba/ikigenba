@@ -54,6 +54,7 @@ func TestAPISelectsChatByDefaultAndResponsesAsAlternate(t *testing.T) {
 func TestNewNamesOpenRouterEndpointAndUsesCatalogPricing(t *testing.T) {
 	// R-OP9X-DYMU
 	// R-OQHT-RQDJ
+	// R-UEAK-X2Q8
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(writer, "data: {\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":3}}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"done\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")

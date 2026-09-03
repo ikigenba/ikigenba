@@ -1,7 +1,6 @@
 package agentkit
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"go/ast"
@@ -10,7 +9,6 @@ import (
 	"net/http"
 	"reflect"
 	"testing"
-	"time"
 )
 
 func TestSentinelDeclarations(t *testing.T) {
@@ -276,49 +274,6 @@ func TestConfigurationAndLifecycleSentinelsSurviveErrorWrapping(t *testing.T) {
 				t.Fatalf("errors.Is(%v, %v) = false", providerError, test.sentinel)
 			}
 		})
-	}
-}
-
-type syntheticEnvelope struct {
-	Error struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	} `json:"error"`
-}
-
-func syntheticClassify(status int, header http.Header, body []byte) error {
-	var envelope syntheticEnvelope
-	if err := json.Unmarshal(body, &envelope); err != nil {
-		return &Error{Category: CategoryUnknown, Status: status, Message: err.Error(), err: err}
-	}
-
-	retryAfter, _ := time.ParseDuration(header.Get("Retry-After"))
-	return &Error{
-		Category:   classifyStatus(status),
-		Status:     status,
-		Code:       envelope.Error.Code,
-		Message:    envelope.Error.Message,
-		RetryAfter: retryAfter,
-	}
-}
-
-func TestClassifierReceivesFullResponseAndLiftsRetryHint(t *testing.T) {
-	header := http.Header{
-		"Retry-After":  []string{"2250ms"},
-		"X-Request-Id": []string{"request-123"},
-	}
-	body := []byte(`{"error":{"code":"shared-code","message":"bad credential supplied"}}`)
-
-	err := syntheticClassify(http.StatusTooManyRequests, header, body)
-	var providerError *Error
-	if !errors.As(err, &providerError) {
-		t.Fatalf("classifier error type = %T, want *Error", err)
-	}
-	if providerError.Status != http.StatusTooManyRequests || providerError.Code != "shared-code" || providerError.Message != "bad credential supplied" {
-		t.Fatalf("classifier result lost status or exact body fields: %#v", providerError)
-	}
-	if providerError.RetryAfter != 2250*time.Millisecond {
-		t.Fatalf("RetryAfter = %v, want typed 2.25s from response header", providerError.RetryAfter)
 	}
 }
 

@@ -82,6 +82,7 @@ func TestAPIKeyAllowsBaseURL(t *testing.T) {
 func TestNewNamesOpenAIEndpointAndUsesCatalogPricing(t *testing.T) {
 	// R-OP9X-DYMU
 	// R-OQHT-RQDJ
+	// R-UEAK-X2Q8
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(writer, "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":2,\"output_tokens\":3}}}\n\n")
