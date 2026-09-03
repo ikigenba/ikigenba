@@ -7,7 +7,9 @@ import (
 	"io"
 	"iter"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Framer splits a response body into payload frames without interpreting the
@@ -94,10 +96,32 @@ func (w *wireCodec) classifyResponse(status int, header http.Header, body []byte
 		}
 	}
 	return &Error{
-		Category: classifyStatus(status),
-		Status:   status,
-		Message:  string(body),
+		Category:   classifyStatus(status),
+		Status:     status,
+		Message:    string(body),
+		RetryAfter: parseRetryAfter(header),
 	}
+}
+
+// parseRetryAfter reads the RFC 9110 delta-seconds form of a Retry-After
+// header (a non-negative integer count of seconds) and returns it as a
+// Duration. It deliberately does not parse the HTTP-date form: that value
+// depends on the wall clock, which classification has no injected source
+// for. A missing header, a negative number, a non-integer, or an HTTP-date
+// all yield zero.
+func parseRetryAfter(header http.Header) time.Duration {
+	if header == nil {
+		return 0
+	}
+	value := header.Get("Retry-After")
+	if value == "" {
+		return 0
+	}
+	seconds, err := strconv.Atoi(value)
+	if err != nil || seconds < 0 {
+		return 0
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 func (w *wireCodec) validateSettings(settings Settings) error {

@@ -270,6 +270,54 @@ func TestBuiltInWireClassifiesNonSuccessResponse(t *testing.T) {
 	}
 }
 
+func TestBuiltInWireLiftsRetryAfterHeaderIntoError(t *testing.T) {
+	// R-1JWR-1RWS
+	tests := []struct {
+		name  string
+		set   bool
+		value string
+		want  time.Duration
+	}{
+		{name: "delta-seconds", set: true, value: "30", want: 30 * time.Second},
+		{name: "absent", set: false, want: 0},
+		{name: "http-date", set: true, value: "Wed, 21 Oct 2026 07:28:00 GMT", want: 0},
+		{name: "negative", set: true, value: "-5", want: 0},
+		{name: "non-integer", set: true, value: "3.5", want: 0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				if test.set {
+					writer.Header().Set("Retry-After", test.value)
+				}
+				writer.WriteHeader(http.StatusTooManyRequests)
+				_, _ = writer.Write([]byte("slow down"))
+			}))
+			t.Cleanup(server.Close)
+
+			endpoint, err := NewEndpoint(server.URL, authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
+			if err != nil {
+				t.Fatal(err)
+			}
+			useDefaultHTTPClient(t, server.Client())
+			conversation, err := New(KnownWireOpenAIChat, endpoint, "model", Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			stream := conversation.Send(context.Background(), Text{Text: "hello"})
+			drainStream(stream)
+			var providerError *Error
+			if !errors.As(stream.err, &providerError) {
+				t.Fatalf("Send error type = %T, want *Error", stream.err)
+			}
+			if providerError.RetryAfter != test.want {
+				t.Fatalf("RetryAfter = %v, want %v", providerError.RetryAfter, test.want)
+			}
+		})
+	}
+}
+
 func TestTransportFailureIsWrappedWithStableIdentity(t *testing.T) {
 	// R-2K5Z-AIWY
 	cause := errors.New("connection refused")
