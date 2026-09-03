@@ -1935,6 +1935,7 @@ func TestCredentialWorldsRemainVendorLocal(t *testing.T) {
 	// R-3IB6-03OE
 	// R-3JJ2-DVF3
 	// R-3OEN-WYDV
+	// R-OO21-06W5
 	fileSet := token.NewFileSet()
 	rootEntries, err := os.ReadDir(".")
 	if err != nil {
@@ -2021,6 +2022,7 @@ func TestPhaseEightVendorDeclarationsAreExact(t *testing.T) {
 	// R-YN8L-EWSQ
 	// R-YQWA-K80T
 	// R-YS46-XZRI
+	// R-OP9X-DYMU
 	// R-YTC3-BRI7
 	// R-YUJZ-PJ8W
 	// R-YVRW-3AZL

@@ -61,6 +61,8 @@ func TestAPIDeclarationDefaultsToMessagesAndRejectsUnshippedTextCodec(t *testing
 
 func TestNewNamesAnthropicEndpointAndUsesCatalogPricing(t *testing.T) {
 	// R-EKRG-9Y2W
+	// R-OP9X-DYMU
+	// R-OQHT-RQDJ
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(writer, "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":2}}}\n\ndata: {\"type\":\"message_delta\",\"delta\":{\"usage\":{\"output_tokens\":3}}}\n\ndata: {\"type\":\"message_stop\"}\n\n")

@@ -62,6 +62,7 @@ func TestEndpointOwnsOnlyBaseURLAndAuth(t *testing.T) {
 func TestNewEndpointHasExactConstructorAndValidation(t *testing.T) {
 	// R-OBV1-6HH7
 	// R-OEAT-Y0YL
+	// R-OO21-06W5
 	wantSignature := reflect.TypeOf(func(string, AuthApplier) (Endpoint, error) { return Endpoint{}, nil })
 	if got := reflect.TypeOf(NewEndpoint); got != wantSignature || got.IsVariadic() {
 		t.Fatalf("NewEndpoint = %s variadic=%t, want %s non-variadic", got, got.IsVariadic(), wantSignature)
