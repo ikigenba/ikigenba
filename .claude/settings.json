@@ -1,0 +1,17 @@
+{
+  "claudeMdExcludes": [
+    "/home/*/.claude/CLAUDE.md"
+  ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.claude/hooks/list-skills.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}
