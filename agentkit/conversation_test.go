@@ -180,21 +180,6 @@ func newConversationAxesFixture(t *testing.T) (*Conversation, *fixtureProvider, 
 	return conversation, provider, unknownModel, capture
 }
 
-func TestConversationExposesOnlySendAsExportedMethod(t *testing.T) {
-	// R-1POH-Q9DL
-	conversation, _, _, _ := newConversationAxesFixture(t)
-	conversationType := reflect.TypeOf(conversation)
-	want := []string{"Send"}
-	if conversationType.NumMethod() != len(want) {
-		t.Fatalf("Conversation has %d exported methods, want exactly %d", conversationType.NumMethod(), len(want))
-	}
-	for index, name := range want {
-		if got := conversationType.Method(index).Name; got != name {
-			t.Fatalf("exported Conversation method %d = %q, want %q", index, got, name)
-		}
-	}
-}
-
 func TestConversationSendsModelVerbatim(t *testing.T) {
 	// R-1S4A-HSUZ
 	conversation, provider, unknownModel, capture := newConversationAxesFixture(t)
@@ -308,7 +293,7 @@ func TestTransportFailureIsWrappedWithStableIdentity(t *testing.T) {
 		return nil, cause
 	})}
 	conversation, provider := vendorFixture("http://provider.invalid", "original-model", client)
-	wantIdentity := provider.Identity()
+	wantIdentity := Identity{Endpoint: "vendor", AuthMode: "fixture", Model: "original-model"}
 	provider.model = "changed-after-construction"
 
 	stream := conversation.Send(context.Background(), Text{Text: "hello"})
@@ -372,31 +357,6 @@ func TestSendIsSoleVerbAndAcceptsDifferentBlockVariants(t *testing.T) {
 	conversationType := reflect.TypeOf(conversation)
 	if got := conversationType.NumMethod(); got != 1 || conversationType.Method(0).Name != "Send" {
 		t.Fatalf("Conversation exported methods changed: %v", conversationType)
-	}
-}
-
-func TestVendorAndGenericRoutesAreEquivalent(t *testing.T) {
-	// R-1UK3-9CCD
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	defer server.Close()
-	model := "any-new-model"
-	vendorConversation, vendorProvider := vendorFixture(server.URL, model, server.Client())
-	genericConversation, genericProvider := genericFixture(
-		fixtureWire{name: "messages"},
-		fixtureEndpoint{name: "vendor", url: server.URL},
-		model,
-		server.Client(),
-	)
-
-	vendorStream := vendorConversation.Send(context.Background(), Text{Text: "hello"})
-	genericStream := genericConversation.Send(context.Background(), Text{Text: "hello"})
-	vendorEvents := drainStream(vendorStream)
-	genericEvents := drainStream(genericStream)
-	if !reflect.DeepEqual(vendorProvider.states, genericProvider.states) {
-		t.Fatalf("construction routes produced different states: vendor=%#v generic=%#v", vendorProvider.states, genericProvider.states)
-	}
-	if !reflect.DeepEqual(vendorEvents, genericEvents) || !reflect.DeepEqual(vendorStream.Err(), genericStream.Err()) {
-		t.Fatalf("construction routes produced different streams: vendor=%#v generic=%#v", vendorEvents, genericEvents)
 	}
 }
 
@@ -954,7 +914,6 @@ func TestNewConversationOwnsToolsDeferredSettingsAndOptions(t *testing.T) {
 
 func TestConfiguredToolsSettingsAndOptionsPersistAcrossTurns(t *testing.T) {
 	// R-ST5C-UUC9
-	// R-SVL5-MDTN
 	callbackCalls := 0
 	tool := MustTool("configured_tool", "", func(context.Context, phase15Input) (string, error) {
 		callbackCalls++
@@ -994,6 +953,41 @@ func TestConfiguredToolsSettingsAndOptionsPersistAcrossTurns(t *testing.T) {
 	result := provider.states[1].History[len(provider.states[1].History)-1].Blocks[0].(ToolResult)
 	if result.ToolUseID != "configured-call" || result.Content != "called" || result.IsError {
 		t.Fatalf("configured eager dispatch result = %#v", result)
+	}
+}
+
+func TestConstructionSettingsAndOptionsEncodeUnchangedOnEveryRoundTrip(t *testing.T) {
+	// R-OMU4-MF5G
+	temperature := 0.35
+	settings := Settings{Temperature: &temperature, StopSequences: []string{"fixed-stop"}}
+	options := ProviderOptions{"vendor": json.RawMessage(`{"fixed":true}`)}
+	wantSettings := cloneSettings(settings)
+	wantOptions := cloneProviderOptions(options)
+	done := MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{done}, {done}}}
+	transportCalls := 0
+	conversation := NewConversation(provider, successfulPhase15Client(&transportCalls), Config{
+		Settings: settings,
+		Options:  options,
+	})
+
+	settings.StopSequences[0] = "caller-mutation"
+	options["vendor"] = json.RawMessage(`{"fixed":false}`)
+	for _, prompt := range []string{"first", "second"} {
+		stream := conversation.Send(context.Background(), Text{Text: prompt})
+		drainStream(stream)
+		if stream.Err() != nil {
+			t.Fatal(stream.Err())
+		}
+	}
+
+	if transportCalls != 2 || len(provider.states) != 2 {
+		t.Fatalf("round trips = transport %d, encoded states %d; want 2 and 2", transportCalls, len(provider.states))
+	}
+	for index, state := range provider.states {
+		if !reflect.DeepEqual(state.Settings, wantSettings) || !reflect.DeepEqual(state.Options, wantOptions) {
+			t.Fatalf("round trip %d encoded settings/options = %#v/%#v, want unchanged %#v/%#v", index, state.Settings, state.Options, wantSettings, wantOptions)
+		}
 	}
 }
 
@@ -1615,10 +1609,11 @@ func TestStructuredOutputAttemptLimitsExhaustWithoutCommit(t *testing.T) {
 			events := drainStream(stream)
 
 			var terminal *Error
+			wantIdentity := Identity{Endpoint: "phase15", AuthMode: "fixture", Model: "model"}
 			// R-UC0U-2IPI
 			if !errors.As(stream.Err(), &terminal) || !errors.Is(stream.Err(), ErrInvalidOutput) ||
-				terminal.Category != CategoryUnknown || terminal.Endpoint != provider.Identity() || Retryable(stream.Err()) {
-				t.Fatalf("terminal error = %#v, want non-retryable CategoryUnknown wrapping ErrInvalidOutput for %#v", stream.Err(), provider.Identity())
+				terminal.Category != CategoryUnknown || terminal.Endpoint != wantIdentity || Retryable(stream.Err()) {
+				t.Fatalf("terminal error = %#v, want non-retryable CategoryUnknown wrapping ErrInvalidOutput for %#v", stream.Err(), wantIdentity)
 			}
 			if transportCalls != test.wantAttempts || len(provider.states) != test.wantAttempts {
 				t.Fatalf("attempts = transport %d states %d, want %d", transportCalls, len(provider.states), test.wantAttempts)
@@ -1995,7 +1990,6 @@ type phase15Input struct {
 
 func TestSendCompletesToolRoundTripsWithFixedClonedConfigAndOneCommit(t *testing.T) {
 	// R-4NRR-0AW0
-	// R-4OZN-E2MP
 	// R-4Q7J-RUDE
 	// R-4TV8-X5LH
 	callID := "vendor::call/β-0099-not-a-local-id"

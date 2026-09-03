@@ -9,9 +9,10 @@ every new endpoint envelope to grow a new leaf type and every consumer `switch`
 to grow a new case; a category enum on a shared struct absorbs a new endpoint by
 mapping its envelope to an existing category.
 
-**Classification is a seam that sees the whole response.** Each endpoint owns a
-classifier that receives the HTTP status, the response headers, and the body
-bytes, and returns a populated `*Error`. Headers are not optional input: a
+**Classification is a seam that sees the whole response, and the library owns
+it.** Each built-in wire classifies its vendor's error responses (D5); there is
+no consumer-installable classifier. The classifier receives the HTTP status, the
+response headers, and the body bytes, and returns a populated `*Error`. Headers are not optional input: a
 retry-after or rate-limit-reset value lives only in the headers, and the
 classifier lifts it into a typed `RetryAfter` on the error so the retry layer
 (D14) never re-parses a header. Body is required because some endpoints do not
@@ -20,6 +21,14 @@ unknown model can both arrive as the same status and the same envelope code,
 distinguishable only by the human-readable message text. The classifier is thus
 allowed to inspect message text as a last resort, and the category it assigns is
 authoritative regardless of how it decided.
+
+**What is designed now is the status table.** Every built-in wire maps the HTTP
+status to a `Category` with one shared table (the requirement below). Reading
+the vendor's JSON error envelope — its `code` and `message`, and the cases where
+one status covers two categories (an OpenAI 429 that is really exhausted quota,
+a Gemini 400 that is really a bad key) — is deferred to a later design that adds
+per-wire envelope parsing on top of the table. Until then `Error.Code` and
+`Error.Message` may be empty and the status table is the whole classification.
 
 ```go
 // Category is a closed enumeration of failure kinds, carried on Error. It is a
@@ -107,9 +116,8 @@ condition that would have been a warning is now either a typed field or a hard
 ## REQUIREMENTS
 
 - R-2K5Z-AIWY: agentkit MUST return provider failures as a single `*Error` type whose failure kind is a `Category` field, and MUST NOT distinguish failure kinds by distinct Go error types.
-- R-2LDV-OANN: An endpoint classifier MUST receive the HTTP status, the response headers, and the body bytes, and MUST return a populated `*Error`.
+- R-OGQM-PKFZ: A non-2xx HTTP response MUST surface from `Send` as a populated `*Error` whose `Status` is the response status and whose `Category` is assigned by the library's built-in classification, with no consumer-installed classifier involved.
 - R-2MLS-22EC: The classifier MUST lift a retry hint from response headers into `Error.RetryAfter` as a typed duration; downstream retry logic MUST read that field rather than re-parsing headers.
-- R-2NTO-FU51: When two distinct failures share an endpoint's status and envelope code, the classifier MUST be permitted to disambiguate them from message text and MUST still assign an authoritative `Category`.
 - R-2P1K-TLVQ: The same classification path MUST be reachable from inside the stream decode so that an error frame arriving after an HTTP 200 is surfaced as the stream's terminal `*Error`.
 - R-2RHD-L5D4: `Retryable(err)` MUST be the single authority on retryability, returning true for rate-limit, overloaded, timeout, and transport categories and false for auth, invalid-request, insufficient-quota, and unknown, unwrapping to find an agentkit `*Error`.
 - R-2SP9-YX3T: `ErrInvalidConfig` and `ErrClosed` MUST be sentinel errors comparable via `errors.Is`, including when wrapped in `*Error`.
@@ -119,3 +127,4 @@ condition that would have been a warning is now either a typed field or a hard
 - R-ZBU5-WMBY: `agentkit` MUST export `type Error struct { Category Category; Status int; Code string; Message string; RetryAfter time.Duration; Endpoint Identity }` with those exported fields plus an unexported wrapped cause, and `*Error` MUST implement `Error() string` and `Unwrap() error`.
 - R-ZD22-AE2N: `agentkit` MUST export `func Retryable(err error) bool`.
 - R-ZE9Y-O5TC: `agentkit` MUST export the sentinel errors `ErrInvalidConfig` and `ErrClosed`, each an `error` created with `errors.New`.
+- R-OHYJ-3C6O: Built-in classification MUST map HTTP status to `Category` as: 401 and 403 → `CategoryAuth`; 400, 404, 409, 413, 415, and 422 → `CategoryInvalidRequest`; 402 → `CategoryInsufficientQuota`; 429 → `CategoryRateLimit`; 408 and 504 → `CategoryTimeout`; 500, 502, 503, and 529 → `CategoryOverloaded`; every other non-2xx status → `CategoryUnknown`.

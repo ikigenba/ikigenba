@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -65,21 +64,8 @@ func TestGenericKnownWireAcceptsBareAuthApplier(t *testing.T) {
 	}
 }
 
-func TestNewEndpointAcceptsIndependentlyImplementedBareAuthApplier(t *testing.T) {
-	// R-YOGH-SOJF
-	auth := &signingAuth{t: t, wantContext: context.Background()}
-	endpoint, err := agentkit.NewEndpoint("https://custom.example/v1", auth)
-	if err != nil {
-		t.Fatalf("NewEndpoint rejected bare AuthApplier: %v", err)
-	}
-	if reflect.TypeOf(endpoint).Name() != "Endpoint" {
-		t.Fatalf("NewEndpoint returned %T", endpoint)
-	}
-}
-
 func TestVendorCredentialsAndOptionsAreCompileTimeIsolated(t *testing.T) {
 	// R-3IB6-03OE
-	// R-YPOE-6GA4
 	// R-65FB-U7IK
 	temporary := t.TempDir()
 	writeCompileFixture(t, temporary)

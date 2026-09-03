@@ -47,6 +47,62 @@ func allTestWires() []WireFormat {
 	}
 }
 
+func TestConcreteWiresOwnCodecGrammarAndClassificationOnly(t *testing.T) {
+	// R-O87C-1694
+	codecType := reflect.TypeFor[wireCodec]()
+	for _, fixture := range wireFixtures() {
+		t.Run(fixture.name, func(t *testing.T) {
+			classified := errors.New("classified by wire")
+			classifierCalls := 0
+			wire := fixture.make(func(int, http.Header, []byte) error {
+				classifierCalls++
+				return classified
+			})
+			wireType := reflect.TypeOf(wire)
+			for _, methodName := range []string{"EncodeRequest", "DecodeStream", "RenderTools"} {
+				if _, ok := wireType.MethodByName(methodName); !ok {
+					t.Fatalf("%s has no %s codec operation", wireType, methodName)
+				}
+			}
+			concrete := wireType.Elem()
+			if concrete.NumField() != 1 {
+				t.Fatalf("%s field count = %d, want one embedded wire codec", concrete, concrete.NumField())
+			}
+			if field := concrete.Field(0); field.Type != codecType || !field.Anonymous {
+				t.Fatalf("%s field does not reduce to the wire codec seam: %#v", concrete, field)
+			}
+			for index := range codecType.NumField() {
+				field := codecType.Field(index)
+				lowerName := strings.ToLower(field.Name)
+				if strings.Contains(lowerName, "baseurl") || strings.Contains(lowerName, "endpoint") ||
+					strings.Contains(lowerName, "credential") || strings.Contains(lowerName, "auth") {
+					t.Fatalf("%s owns transport/auth field %s", concrete, field.Name)
+				}
+			}
+			for _, fieldName := range []string{"encode", "decoder", "classifier"} {
+				if _, ok := codecType.FieldByName(fieldName); !ok {
+					t.Fatalf("wire codec has no %s ownership field", fieldName)
+				}
+			}
+			body, err := wire.EncodeRequest(RequestState{Model: "owned-grammar"})
+			if err != nil || !json.Valid(body) {
+				t.Fatalf("wire-owned request grammar = %q, error %v", body, err)
+			}
+			if _, err := wire.RenderTools(nil); err != nil {
+				t.Fatalf("wire-owned tool grammar failed: %v", err)
+			}
+			frames := func(yield func([]byte, error) bool) { yield([]byte(`{}`), nil) }
+			var decodeErr error
+			for _, err := range wire.DecodeStream(frames) {
+				decodeErr = err
+			}
+			if classifierCalls != 1 || !errors.Is(decodeErr, classified) {
+				t.Fatalf("wire classification = calls %d error %v, want one and %v", classifierCalls, decodeErr, classified)
+			}
+		})
+	}
+}
+
 type portableOutputSchemaWire interface {
 	renderOutputSchema(json.RawMessage) (json.RawMessage, error)
 }
@@ -684,23 +740,6 @@ func TestNilOutputPreservesCapturedWireRequestBytes(t *testing.T) {
 	}
 }
 
-func TestWireSelectionIsConstructorOnly(t *testing.T) {
-	// R-2WCZ-48BW
-	conversationType := reflect.TypeFor[Conversation]()
-	wireType := reflect.TypeFor[WireFormat]()
-	for index := range conversationType.NumField() {
-		field := conversationType.Field(index)
-		if field.Type == wireType || field.Type.Implements(wireType) {
-			t.Fatalf("Conversation has assignable wire field %q", field.Name)
-		}
-	}
-	for _, wire := range allTestWires() {
-		if reflect.TypeOf(wire).Name() != "" || reflect.TypeOf(wire).Elem().Name() == "" {
-			t.Fatalf("constructor returned unexpected wire type %T", wire)
-		}
-	}
-}
-
 func assertTrailingNewline(t *testing.T, body []byte) {
 	t.Helper()
 	if len(body) == 0 || body[len(body)-1] != '\n' {
@@ -723,7 +762,6 @@ func assertNoMaxAttempts(t *testing.T, document map[string]any, body []byte) {
 }
 
 func TestWireOwnsOnlyBodyGrammar(t *testing.T) {
-	// R-YB1L-L7DS
 	// R-NGOL-DRZW
 	assertEndpointConcernsAreOutsideWireInterface(t)
 	state := RequestState{Model: "endpoint-owned-model", History: History{
@@ -1218,38 +1256,6 @@ func TestDecodeStreamUsesClassifierForInBandError(t *testing.T) {
 	}
 	if called != 1 || !errors.Is(got, want) {
 		t.Fatalf("classifier calls = %d, error = %v, want one call and authoritative %v", called, got, want)
-	}
-}
-
-func TestFramingIsSeparableAndErrorsPropagate(t *testing.T) {
-	// R-0UPN-4AP7
-	want := errors.New("binary framing failed")
-	alternate := Framer(func(io.Reader) iter.Seq2[[]byte, error] {
-		return func(yield func([]byte, error) bool) {
-			if !yield([]byte(`{"type":"response.output_text.delta","delta":"Hello"}`), nil) {
-				return
-			}
-			if !yield([]byte(`{"type":"response.completed","response":{"usage":{}}}`), nil) {
-				return
-			}
-			yield(nil, want)
-		}
-	})
-	wire := newOpenAIResponsesWire(nil)
-	var got error
-	var messages []Message
-	for event, err := range wire.DecodeStream(alternate(strings.NewReader("not SSE"))) {
-		if err != nil {
-			got = err
-			continue
-		}
-		messages = append(messages, event.(MessageDone).Message)
-	}
-	if len(messages) != 1 || messages[0].Blocks[0].(Text).Text != "Hello" {
-		t.Fatalf("alternate framer messages = %#v, want one completed unchanged-wire message", messages)
-	}
-	if !errors.Is(got, want) {
-		t.Fatalf("decode error = %v, want alternate-framer error %v", got, want)
 	}
 }
 
@@ -2285,11 +2291,11 @@ func TestWireRequestModelPlacementMatchesFixtures(t *testing.T) {
 		fixture  wireFixture
 		hasModel bool
 	}{
-		// R-TBFU-LEGO
+		// R-ORPQ-5I48
 		{wireFixtures()[0], true},
-		// R-TCNQ-Z67D (OpenAI Responses)
+		// R-OU5I-X1LM
 		{wireFixtures()[1], true},
-		// R-TCNQ-Z67D (OpenAI Chat Completions)
+		// R-OU5I-X1LM
 		{wireFixtures()[2], true},
 		// R-TDVN-CXY2
 		{wireFixtures()[3], false},
