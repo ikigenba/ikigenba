@@ -3,7 +3,7 @@ package toolkit
 import (
 	"context"
 	"fmt"
-	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -35,8 +35,19 @@ func Glob(root string, opts ...GlobOption) (agentkit.Tool, error) {
 			return "", fmt.Errorf("pattern %q is not a valid glob", input.Pattern)
 		}
 
-		// Path confinement is deliberately added by a later build phase.
-		matches, err := collectGlobMatches(root, input.Pattern)
+		searchDir, err := resolveSearchPath(root, "path", input.Path)
+		if err != nil {
+			return "", err
+		}
+		info, err := os.Stat(searchDir)
+		if err != nil {
+			return "", fmt.Errorf("path %q could not be resolved: %w", input.Path, err)
+		}
+		if !info.IsDir() {
+			return "", fmt.Errorf("path %q is not a directory", input.Path)
+		}
+
+		matches, err := collectGlobMatches(root, searchDir, input.Pattern, config.skipPatterns)
 		if err != nil {
 			return "", err
 		}
@@ -45,34 +56,28 @@ func Glob(root string, opts ...GlobOption) (agentkit.Tool, error) {
 	})
 }
 
-func collectGlobMatches(root, pattern string) ([]globMatch, error) {
-	var matches []globMatch
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() || !d.Type().IsRegular() {
-			return nil
-		}
+func collectGlobMatches(root, searchDir, pattern string, skipPatterns []string) ([]globMatch, error) {
+	paths, err := walkTree(root, searchDir, skipPatterns)
+	if err != nil {
+		return nil, err
+	}
 
-		rel, err := filepath.Rel(root, path)
+	var matches []globMatch
+	for _, path := range paths {
+		rel, err := filepath.Rel(searchDir, path)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		matched, _ := doublestar.Match(pattern, filepath.ToSlash(rel))
 		if !matched {
-			return nil
+			continue
 		}
 
-		info, err := d.Info()
+		info, err := os.Stat(path)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		matches = append(matches, globMatch{path: path, modTime: info.ModTime()})
-		return nil
-	})
-	if err != nil {
-		return nil, err
 	}
 	return matches, nil
 }

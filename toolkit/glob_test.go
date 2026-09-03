@@ -184,6 +184,199 @@ func TestGlobRejectsInvalidPattern(t *testing.T) {
 	// R-DLQM-KVHE
 }
 
+func TestGlobHonorsIgnoreFiles(t *testing.T) {
+	root := t.TempDir()
+	nested := filepath.Join(root, "nested")
+	if err := os.Mkdir(nested, 0o700); err != nil {
+		t.Fatalf("make nested directory: %v", err)
+	}
+	for path, contents := range map[string]string{
+		filepath.Join(root, ".gitignore"):        "*.log\n",
+		filepath.Join(root, ".ignore"):           "ignored.txt\n",
+		filepath.Join(nested, ".gitignore"):      "*.tmp\n",
+		filepath.Join(root, "keep.txt"):          "needle",
+		filepath.Join(root, "top.log"):           "needle",
+		filepath.Join(root, "ignored.txt"):       "needle",
+		filepath.Join(nested, "keep.txt"):        "needle",
+		filepath.Join(nested, "nested-drop.tmp"): "needle",
+	} {
+		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+			t.Fatalf("write fixture %s: %v", path, err)
+		}
+	}
+
+	tool, err := Glob(root)
+	if err != nil {
+		t.Fatalf("Glob() error = %v", err)
+	}
+	got, err := tool.Call(context.Background(), json.RawMessage(`{"pattern":"**/*.txt"}`))
+	if err != nil {
+		t.Fatalf("Glob call error = %v", err)
+	}
+	// R-DARJ-4XT5
+	for _, want := range []string{filepath.Join(root, "keep.txt"), filepath.Join(nested, "keep.txt")} {
+		if !contains(strings.Split(got, "\n"), want) {
+			t.Errorf("Glob result %q does not contain %q", got, want)
+		}
+	}
+	for _, excluded := range []string{"top.log", "ignored.txt", "nested-drop.tmp"} {
+		if strings.Contains(got, excluded) {
+			t.Errorf("Glob result %q contains ignored file %q", got, excluded)
+		}
+	}
+}
+
+func TestGlobSkipPatternsAndHiddenEntries(t *testing.T) {
+	root := t.TempDir()
+	for _, dir := range []string{"generated", ".hidden"} {
+		if err := os.Mkdir(filepath.Join(root, dir), 0o700); err != nil {
+			t.Fatalf("make fixture directory %s: %v", dir, err)
+		}
+	}
+	for _, name := range []string{"keep.txt", "skip.log", "generated/result.txt", ".env", ".hidden/inside.txt"} {
+		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(name)), []byte("needle"), 0o600); err != nil {
+			t.Fatalf("write fixture %s: %v", name, err)
+		}
+	}
+
+	tool, err := Glob(root, WithSkip("*.log"), WithSkip("generated/"))
+	if err != nil {
+		t.Fatalf("Glob() error = %v", err)
+	}
+	got, err := tool.Call(context.Background(), json.RawMessage(`{"pattern":"**/*"}`))
+	if err != nil {
+		t.Fatalf("Glob call error = %v", err)
+	}
+	// R-DBZF-IPJU
+	if strings.Contains(got, "skip.log") || strings.Contains(got, "generated") {
+		t.Errorf("Glob result contains WithSkip match: %q", got)
+	}
+	// R-DD7B-WHAJ
+	for _, want := range []string{filepath.Join(root, ".env"), filepath.Join(root, ".hidden", "inside.txt")} {
+		if !contains(strings.Split(got, "\n"), want) {
+			t.Errorf("Glob result %q does not contain hidden path %q", got, want)
+		}
+	}
+
+	hiddenSkippingTool, err := Glob(root, WithSkip(".*"))
+	if err != nil {
+		t.Fatalf("Glob() with hidden skip error = %v", err)
+	}
+	got, err = hiddenSkippingTool.Call(context.Background(), json.RawMessage(`{"pattern":"**/*"}`))
+	if err != nil {
+		t.Fatalf("hidden-skipping Glob call error = %v", err)
+	}
+	if strings.Contains(got, ".env") || strings.Contains(got, ".hidden") {
+		t.Errorf("Glob result contains explicitly skipped hidden path: %q", got)
+	}
+}
+
+func TestGlobSymlinkWalkPolicy(t *testing.T) {
+	temp := t.TempDir()
+	root := filepath.Join(temp, "root")
+	outsideDir := filepath.Join(temp, "outside")
+	for _, dir := range []string{root, outsideDir} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatalf("make fixture directory %s: %v", dir, err)
+		}
+	}
+	inside := filepath.Join(root, "inside.txt")
+	outside := filepath.Join(outsideDir, "outside.txt")
+	for _, path := range []string{inside, outside} {
+		if err := os.WriteFile(path, []byte("needle"), 0o600); err != nil {
+			t.Fatalf("write fixture %s: %v", path, err)
+		}
+	}
+	insideLink := filepath.Join(root, "inside-link.txt")
+	outsideLink := filepath.Join(root, "outside-link.txt")
+	directoryLink := filepath.Join(root, "directory-link")
+	for link, target := range map[string]string{
+		insideLink:    inside,
+		outsideLink:   outside,
+		directoryLink: outsideDir,
+	} {
+		if err := os.Symlink(target, link); err != nil {
+			t.Fatalf("symlink %s to %s: %v", link, target, err)
+		}
+	}
+
+	tool, err := Glob(root)
+	if err != nil {
+		t.Fatalf("Glob() error = %v", err)
+	}
+	got, err := tool.Call(context.Background(), json.RawMessage(`{"pattern":"**/*.txt"}`))
+	if err != nil {
+		t.Fatalf("Glob call error = %v", err)
+	}
+	// R-DEF8-A918
+	if !contains(strings.Split(got, "\n"), insideLink) {
+		t.Errorf("Glob result %q omits in-root file symlink %q", got, insideLink)
+	}
+	if strings.Contains(got, outsideLink) || strings.Contains(got, directoryLink) {
+		t.Errorf("Glob result contains escaping symlink: %q", got)
+	}
+}
+
+func TestGlobPathResolution(t *testing.T) {
+	temp := t.TempDir()
+	root := filepath.Join(temp, "root")
+	subdir := filepath.Join(root, "subdir")
+	outsideDir := filepath.Join(temp, "outside")
+	for _, dir := range []string{subdir, outsideDir} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatalf("make fixture directory %s: %v", dir, err)
+		}
+	}
+	nested := filepath.Join(subdir, "nested.txt")
+	sibling := filepath.Join(root, "sibling.txt")
+	for _, path := range []string{nested, sibling, filepath.Join(outsideDir, "outside.txt")} {
+		if err := os.WriteFile(path, []byte("needle"), 0o600); err != nil {
+			t.Fatalf("write fixture %s: %v", path, err)
+		}
+	}
+
+	tool, err := Glob(root)
+	if err != nil {
+		t.Fatalf("Glob() error = %v", err)
+	}
+	for name, path := range map[string]string{"relative": "subdir", "absolute": subdir} {
+		t.Run(name, func(t *testing.T) {
+			input, err := json.Marshal(map[string]string{"pattern": "*.txt", "path": path})
+			if err != nil {
+				t.Fatalf("marshal input: %v", err)
+			}
+			got, err := tool.Call(context.Background(), input)
+			if err != nil {
+				t.Fatalf("Glob call error = %v", err)
+			}
+			if got != nested {
+				t.Errorf("Glob result = %q, want only %q", got, nested)
+			}
+		})
+	}
+
+	got, err := tool.Call(context.Background(), json.RawMessage(`{"pattern":"**/*.txt"}`))
+	if err != nil {
+		t.Fatalf("default-path Glob call error = %v", err)
+	}
+	// R-DFN4-O0RX
+	for _, want := range []string{nested, sibling} {
+		if !contains(strings.Split(got, "\n"), want) {
+			t.Errorf("default-path result %q does not contain %q", got, want)
+		}
+	}
+
+	for _, path := range []string{"sibling.txt", "../outside"} {
+		input, err := json.Marshal(map[string]string{"pattern": "*.txt", "path": path})
+		if err != nil {
+			t.Fatalf("marshal invalid path input: %v", err)
+		}
+		if _, err := tool.Call(context.Background(), input); err == nil || !strings.Contains(err.Error(), "path") {
+			t.Errorf("Glob path %q error = %v, want an error naming path", path, err)
+		}
+	}
+}
+
 func contains(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {

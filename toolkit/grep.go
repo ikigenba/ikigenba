@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -40,11 +39,11 @@ func Grep(root string, opts ...GrepOption) (agentkit.Tool, error) {
 	}
 
 	return agentkit.NewTool[grepInput]("Grep", "Search file contents with a regular expression", func(_ context.Context, input grepInput) (string, error) {
-		return runGrep(root, input)
+		return runGrep(root, config.skipPatterns, input)
 	})
 }
 
-func runGrep(root string, input grepInput) (string, error) {
+func runGrep(root string, skipPatterns []string, input grepInput) (string, error) {
 	pattern, err := compileGrepPattern(input.Pattern, input.IgnoreCase, input.Multiline)
 	if err != nil {
 		return "", err
@@ -53,7 +52,7 @@ func runGrep(root string, input grepInput) (string, error) {
 		return "", fmt.Errorf("glob %q is not valid", input.Glob)
 	}
 
-	matches, err := collectGrepMatches(root, pattern, input)
+	matches, err := collectGrepMatches(root, skipPatterns, pattern, input)
 	if err != nil {
 		return "", err
 	}
@@ -85,7 +84,7 @@ func compileGrepPattern(pattern string, ignoreCase, multiline bool) (*regexp.Reg
 	}
 	compiled, err := regexp.Compile(source)
 	if err != nil {
-		return nil, fmt.Errorf("pattern %q is not a valid regular expression: %w", pattern, err)
+		return nil, fmt.Errorf("pattern %q: %w", pattern, err)
 	}
 	return compiled, nil
 }
@@ -101,10 +100,10 @@ type grepSpan struct {
 	end   int
 }
 
-func collectGrepMatches(root string, pattern *regexp.Regexp, input grepInput) ([]grepMatch, error) {
-	searchPath := root
-	if input.Path != "" {
-		searchPath = filepath.Join(root, input.Path)
+func collectGrepMatches(root string, skipPatterns []string, pattern *regexp.Regexp, input grepInput) ([]grepMatch, error) {
+	searchPath, err := resolveSearchPath(root, "path", input.Path)
+	if err != nil {
+		return nil, err
 	}
 	info, err := os.Stat(searchPath)
 	if err != nil {
@@ -127,17 +126,7 @@ func collectGrepMatches(root string, pattern *regexp.Regexp, input grepInput) ([
 		return nil, fmt.Errorf("path %q is not a regular file or directory", input.Path)
 	}
 
-	var paths []string
-	err = filepath.WalkDir(searchPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() || !d.Type().IsRegular() {
-			return nil
-		}
-		paths = append(paths, filepath.Clean(path))
-		return nil
-	})
+	paths, err := walkTree(root, searchPath, skipPatterns)
 	if err != nil {
 		return nil, fmt.Errorf("searching %q stopped early: %w", searchPath, err)
 	}
@@ -211,7 +200,7 @@ func renderGrepMatches(matches []grepMatch) []string {
 func renderGrepCounts(matches []grepMatch) []string {
 	results := make([]string, len(matches))
 	for i, match := range matches {
-		results[i] = match.path + ":" + strconv.Itoa(len(match.spans))
+		results[i] = strings.Join([]string{match.path, strconv.Itoa(len(match.spans))}, ":")
 	}
 	return results
 }
@@ -288,9 +277,9 @@ func renderGrepContentLine(match grepMatch, line int, lineNumbers bool) string {
 		separator = ":"
 	}
 	if lineNumbers {
-		return match.path + separator + strconv.Itoa(line+1) + separator + match.lines[line]
+		return strings.Join([]string{match.path, strconv.Itoa(line + 1), match.lines[line]}, separator)
 	}
-	return match.path + separator + match.lines[line]
+	return strings.Join([]string{match.path, match.lines[line]}, separator)
 }
 
 func lineInSpans(spans []grepSpan, line int) bool {
