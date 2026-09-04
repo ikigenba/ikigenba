@@ -21,7 +21,7 @@ type wireFormat interface {
 	EncodeRequest(state requestState) ([]byte, error)
 	DecodeStream(frames iter.Seq2[[]byte, error]) iter.Seq2[Event, error]
 	RenderTools(tools []Tool) (json.RawMessage, error)
-	ReservedKeys() []string
+	OptionSpecs() []OptionSpec
 }
 
 // WireFormat is the codec for one vendor body grammar. Its EncodeRequest
@@ -31,7 +31,7 @@ type WireFormat interface {
 	EncodeRequest(state requestState) ([]byte, error)
 	DecodeStream(frames iter.Seq2[[]byte, error]) iter.Seq2[Event, error]
 	RenderTools(tools []Tool) (json.RawMessage, error)
-	ReservedKeys() []string
+	OptionSpecs() []OptionSpec
 }
 
 type frameDecoder func(frame []byte) (message *Message, usage usageFragment, hasUsage bool, err error)
@@ -39,10 +39,36 @@ type frameDecoder func(frame []byte) (message *Message, usage usageFragment, has
 type wireCodec struct {
 	encode       func(requestState) ([]byte, error)
 	decoder      func() frameDecoder
-	reserved     []string
+	optionSpecs  []OptionSpec
 	classifier   errorClassifier
 	lastUsage    Usage
 	capabilities wireCapabilities
+}
+
+// wireOptionSpecsWithStop is the option vocabulary of every shipped wire
+// whose grammar has a stop-sequence parameter (R-W1FE-EXAX).
+var wireOptionSpecsWithStop = []OptionSpec{
+	{Name: "effort", Kind: OptionKindReasoning, Description: "Reasoning effort level: none, minimal, low, medium, high, xhigh, or max."},
+	{Name: "max_output_tokens", Kind: OptionKindInteger, Description: "Maximum number of tokens the model may generate in its response."},
+	{Name: "stop", Kind: OptionKindTextList, Description: "JSON array of strings; generation stops when the model emits one of them."},
+	{Name: "temperature", Kind: OptionKindNumber, Description: "Sampling temperature controlling response randomness."},
+	{Name: "thinking", Kind: OptionKindReasoning, Description: "Bare reasoning toggle: on, off, or dynamic."},
+	{Name: "thinking_budget", Kind: OptionKindReasoning, Description: "Reasoning token budget as a non-negative integer, off, or dynamic."},
+	{Name: "thinking_level", Kind: OptionKindReasoning, Description: "Reasoning effort level: none, minimal, low, medium, high, xhigh, or max."},
+	{Name: "top_p", Kind: OptionKindNumber, Description: "Nucleus sampling probability mass."},
+}
+
+// wireOptionSpecsWithoutStop is wireOptionSpecsWithStop minus "stop", for
+// the Responses-family wires, whose grammar has no stop-sequence parameter
+// (R-W1FE-EXAX).
+var wireOptionSpecsWithoutStop = []OptionSpec{
+	{Name: "effort", Kind: OptionKindReasoning, Description: "Reasoning effort level: none, minimal, low, medium, high, xhigh, or max."},
+	{Name: "max_output_tokens", Kind: OptionKindInteger, Description: "Maximum number of tokens the model may generate in its response."},
+	{Name: "temperature", Kind: OptionKindNumber, Description: "Sampling temperature controlling response randomness."},
+	{Name: "thinking", Kind: OptionKindReasoning, Description: "Bare reasoning toggle: on, off, or dynamic."},
+	{Name: "thinking_budget", Kind: OptionKindReasoning, Description: "Reasoning token budget as a non-negative integer, off, or dynamic."},
+	{Name: "thinking_level", Kind: OptionKindReasoning, Description: "Reasoning effort level: none, minimal, low, medium, high, xhigh, or max."},
+	{Name: "top_p", Kind: OptionKindNumber, Description: "Nucleus sampling probability mass."},
 }
 
 func (w *wireCodec) EncodeRequest(state requestState) ([]byte, error) {
@@ -95,8 +121,8 @@ func validateCanonicalTools(tools []Tool) error {
 	return nil
 }
 
-func (w *wireCodec) ReservedKeys() []string {
-	return append([]string(nil), w.reserved...)
+func (w *wireCodec) OptionSpecs() []OptionSpec {
+	return append([]OptionSpec(nil), w.optionSpecs...)
 }
 
 func (w *wireCodec) classifyResponse(status int, header http.Header, body []byte) error {
@@ -137,6 +163,9 @@ func parseRetryAfter(header http.Header) time.Duration {
 }
 
 func (w *wireCodec) validateSettings(settings Settings) error {
+	if err := validateOptions(settings.Options, w.optionSpecs); err != nil {
+		return err
+	}
 	return w.capabilities.validate(settings)
 }
 

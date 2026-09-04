@@ -367,10 +367,16 @@ func TestReasoningKindValuesAndOrder(t *testing.T) {
 	}
 }
 
+func TestReasoningSpecAcceptsSignature(t *testing.T) {
+	// R-O8QA-6I1V
+	assertReasoningSpecAcceptsSignature(t, ReasoningSpec.Accepts)
+}
+
 func TestReasoningSpecShape(t *testing.T) {
-	// R-O7ID-SQB6
+	// R-O11N-T3ME
 	assertStructShape(t, ReasoningSpec{}, []fieldShape{
 		{"Kind", reflect.TypeOf(ReasoningKind(0))},
+		{"Term", reflect.TypeOf("")},
 		{"Levels", reflect.TypeOf([]Effort(nil))},
 		{"MinBudget", reflect.TypeOf(int(0))},
 		{"MaxBudget", reflect.TypeOf(int(0))},
@@ -378,11 +384,6 @@ func TestReasoningSpecShape(t *testing.T) {
 		{"CanDisable", reflect.TypeOf(false)},
 		{"Default", reflect.TypeOf(ReasoningConfig{})},
 	})
-}
-
-func TestReasoningSpecAcceptsSignature(t *testing.T) {
-	// R-O8QA-6I1V
-	assertReasoningSpecAcceptsSignature(t, ReasoningSpec.Accepts)
 }
 
 func assertReasoningSpecAcceptsSignature(t *testing.T, accepts func(ReasoningSpec, ReasoningConfig) bool) {
@@ -501,6 +502,97 @@ func TestReasoningSpecAcceptsVocabulary(t *testing.T) {
 	}
 }
 
+func TestCatalogReasoningTermVocabulary(t *testing.T) {
+	// R-O29K-6VD3
+	for _, entry := range Catalog() {
+		for _, offering := range entry.Offerings {
+			term := offering.Reasoning.Term
+			switch offering.Reasoning.Kind {
+			case ReasoningKindEffort:
+				if term != "effort" && term != "thinking_level" {
+					t.Errorf("%q offering on %q has effort-kind Term %q, want \"effort\" or \"thinking_level\"", entry.Model, offering.ID, term)
+				}
+			case ReasoningKindBudget:
+				if term != "thinking_budget" {
+					t.Errorf("%q offering on %q has budget-kind Term %q, want \"thinking_budget\"", entry.Model, offering.ID, term)
+				}
+			case ReasoningKindToggle:
+				if term != "thinking" {
+					t.Errorf("%q offering on %q has toggle-kind Term %q, want \"thinking\"", entry.Model, offering.ID, term)
+				}
+			case ReasoningKindNone:
+				if term != "" {
+					t.Errorf("%q offering on %q has none-kind Term %q, want empty", entry.Model, offering.ID, term)
+				}
+			}
+		}
+	}
+}
+
+func TestCatalogReasoningVocabularySendable(t *testing.T) {
+	// R-W8QS-PJR3
+	for _, entry := range Catalog() {
+		for _, offering := range entry.Offerings {
+			validator, ok := offering.WireFormat.(interface{ validateSettings(Settings) error })
+			if !ok {
+				t.Fatalf("%q offering %q: WireFormat has no validateSettings", entry.Model, offering.ID)
+			}
+
+			var vocabulary []ReasoningConfig
+			spec := offering.Reasoning
+			if spec.CanDisable {
+				vocabulary = append(vocabulary, ReasoningConfig{Mode: ReasoningOff})
+			}
+			if spec.Kind == ReasoningKindToggle && spec.CanEnable {
+				vocabulary = append(vocabulary, ReasoningConfig{Mode: ReasoningOn})
+			}
+			for _, level := range spec.Levels {
+				vocabulary = append(vocabulary, ReasoningConfig{Mode: ReasoningEffort, Effort: level})
+			}
+			if spec.Kind == ReasoningKindBudget {
+				vocabulary = append(vocabulary,
+					ReasoningConfig{Mode: ReasoningBudget, Budget: spec.MinBudget},
+					ReasoningConfig{Mode: ReasoningBudget, Budget: spec.MaxBudget},
+				)
+			}
+			vocabulary = append(vocabulary, spec.Default)
+
+			for _, c := range vocabulary {
+				settings := Settings{Options: Options{spec.Term: c.String()}}
+				if err := validator.validateSettings(settings); err != nil {
+					t.Errorf("%q offering %q: %s=%q rejected: %v", entry.Model, offering.ID, spec.Term, settings.Options[spec.Term], err)
+				}
+			}
+		}
+	}
+}
+
+func TestCatalogReasoningTermPinnedModels(t *testing.T) {
+	// R-O3HG-KN3S
+	wantTerm := map[string]string{
+		"gemini-3.5-flash":       "thinking_level",
+		"gemini-3.7-flash":       "thinking_level",
+		"gemini-3.1-flash-lite":  "thinking_level",
+		"gemini-3.1-pro-preview": "thinking_level",
+		"claude-opus-5":          "effort",
+		"gemini-2.5-flash":       "thinking_budget",
+		"claude-haiku-4-5":       "thinking_budget",
+		"deepseek-v4-pro":        "thinking",
+		"grok-4.20":              "thinking",
+	}
+	for _, entry := range Catalog() {
+		want, ok := wantTerm[entry.Model]
+		if !ok {
+			continue
+		}
+		for _, offering := range entry.Offerings {
+			if offering.Reasoning.Term != want {
+				t.Errorf("%q offering on %q has Term %q, want %q", entry.Model, offering.ID, offering.Reasoning.Term, want)
+			}
+		}
+	}
+}
+
 func TestOAuthClientShape(t *testing.T) {
 	// R-0702-EGC7
 	assertStructShape(t, OAuthClient{}, []fieldShape{
@@ -608,6 +700,7 @@ func expectedClaudeSonnet5() CatalogEntry {
 	levels := []Effort{EffortLow, EffortMedium, EffortHigh, EffortXHigh, EffortMax}
 	reasoning := ReasoningSpec{
 		Kind:       ReasoningKindEffort,
+		Term:       "effort",
 		Levels:     levels,
 		CanDisable: true,
 		Default:    ReasoningConfig{Mode: ReasoningEffort, Effort: EffortMedium},

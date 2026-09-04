@@ -34,20 +34,13 @@ func (ToolCall) isEvent()    {}
 func (ToolReturn) isEvent()  {}
 func (OutputDone) isEvent()  {}
 
-// ProviderOptions is an untyped, wire-specific escape hatch merged shallowly at
-// the top level of the request body. agentkit enumerates no keys; each wire and
-// endpoint declares the keys it reserves, and a consumer key colliding with a
-// reserved one fails at Send. There is no override.
-type ProviderOptions map[string]json.RawMessage
-
 // requestState is the immutable input the wire provider consumes for one round-trip.
 // It is a snapshot: History and Tools reflect this round-trip only, while Model,
-// Settings, Options, and Output are fixed for the conversation.
+// Settings and Output are fixed for the conversation.
 type requestState struct {
 	Model    string
 	History  []Message
 	Settings Settings
-	Options  ProviderOptions
 	Tools    []Tool
 	Output   *OutputContract
 }

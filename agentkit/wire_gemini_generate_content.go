@@ -14,10 +14,10 @@ func GeminiGenerateContentWire() WireFormat { return newGeminiGenerateContentWir
 func newGeminiGenerateContentWire(classifier errorClassifier) wireFormat {
 	wire := &geminiWire{}
 	wire.wireCodec = wireCodec{
-		encode:     wire.encodeRequest,
-		decoder:    newGeminiDecoder,
-		reserved:   []string{"gemini", "generationConfig"},
-		classifier: classifier,
+		encode:      wire.encodeRequest,
+		decoder:     newGeminiDecoder,
+		optionSpecs: wireOptionSpecsWithStop,
+		classifier:  classifier,
 		capabilities: wireCapabilities{
 			name:       "Gemini GenerateContent",
 			reasoning:  reasoningShapeOff | reasoningShapeOn | reasoningShapeEffort | reasoningShapeBudget,
@@ -61,6 +61,10 @@ type geminiThinkingConfig struct {
 }
 
 type geminiGenerationConfig struct {
+	Temperature        *float64              `json:"temperature,omitempty"`
+	TopP               *float64              `json:"topP,omitempty"`
+	MaxOutputTokens    *int                  `json:"maxOutputTokens,omitempty"`
+	StopSequences      []string              `json:"stopSequences,omitempty"`
 	ThinkingConfig     *geminiThinkingConfig `json:"thinkingConfig,omitempty"`
 	ResponseMIMEType   string                `json:"responseMimeType,omitempty"`
 	ResponseJSONSchema json.RawMessage       `json:"responseJsonSchema,omitempty"`
@@ -89,7 +93,7 @@ func (w *geminiWire) encodeRequest(state requestState) ([]byte, error) {
 	}
 	request := geminiRequest{
 		Contents:         contents,
-		GenerationConfig: buildGeminiThinkingConfig(state.Settings.Reasoning),
+		GenerationConfig: applyGeminiSamplingOptions(buildGeminiThinkingConfig(settingsReasoning(state.Settings)), state.Settings.Options),
 		ToolConfig:       buildGeminiToolConfig(state.Settings.ToolChoice),
 	}
 	if state.Output != nil {
@@ -182,6 +186,38 @@ func buildGeminiThinkingConfig(reasoning ReasoningConfig) *geminiGenerationConfi
 		return nil
 	}
 	return &geminiGenerationConfig{ThinkingConfig: thinking}
+}
+
+// applyGeminiSamplingOptions folds temperature, top_p, max_output_tokens,
+// and stop from options into config, allocating config if it is nil and at
+// least one of the four is present (R-OLRY-B787). It leaves config
+// (including a nil config) untouched when none of the four is present, so
+// a Settings with no sampling option and no reasoning option still encodes
+// with GenerationConfig absent (R-OPFN-GIGA).
+func applyGeminiSamplingOptions(config *geminiGenerationConfig, options Options) *geminiGenerationConfig {
+	temperature, hasTemperature := settingsFloatOption(options, "temperature")
+	topP, hasTopP := settingsFloatOption(options, "top_p")
+	maxOutputTokens, hasMaxOutputTokens := settingsMaxOutputTokens(options)
+	stop, hasStop := settingsStopSequences(options)
+	if !hasTemperature && !hasTopP && !hasMaxOutputTokens && !hasStop {
+		return config
+	}
+	if config == nil {
+		config = &geminiGenerationConfig{}
+	}
+	if hasTemperature {
+		config.Temperature = &temperature
+	}
+	if hasTopP {
+		config.TopP = &topP
+	}
+	if hasMaxOutputTokens {
+		config.MaxOutputTokens = &maxOutputTokens
+	}
+	if hasStop {
+		config.StopSequences = stop
+	}
+	return config
 }
 
 func buildGeminiToolConfig(choice ToolChoice) *geminiToolConfig {

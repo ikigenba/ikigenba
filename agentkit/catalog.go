@@ -68,6 +68,7 @@ const (
 // behavior. Accepts reports whether a request is inside the vocabulary.
 type ReasoningSpec struct {
 	Kind       ReasoningKind
+	Term       string
 	Levels     []Effort
 	MinBudget  int
 	MaxBudget  int

@@ -14,10 +14,10 @@ func OpenAIChatWire() WireFormat { return newOpenAIChatWire(nil) }
 func newOpenAIChatWire(classifier errorClassifier) wireFormat {
 	wire := &openAIChatWire{}
 	wire.wireCodec = wireCodec{
-		encode:     wire.encodeRequest,
-		decoder:    newOpenAIChatDecoder,
-		reserved:   []string{"openai", "response_format"},
-		classifier: classifier,
+		encode:      wire.encodeRequest,
+		decoder:     newOpenAIChatDecoder,
+		optionSpecs: wireOptionSpecsWithStop,
+		classifier:  classifier,
 		capabilities: wireCapabilities{
 			name:       "OpenAI Chat Completions",
 			reasoning:  reasoningShapeOff | reasoningShapeEffort,
@@ -55,6 +55,11 @@ type chatNamedTool struct {
 	Function chatNamedFunction `json:"function"`
 }
 
+type chatReasoning struct {
+	Enabled   *bool `json:"enabled,omitempty"`
+	MaxTokens *int  `json:"max_tokens,omitempty"`
+}
+
 type openAIChatJSONSchema struct {
 	Name   string          `json:"name"`
 	Strict bool            `json:"strict"`
@@ -67,12 +72,17 @@ type openAIChatResponseFormat struct {
 }
 
 type openAIChatRequest struct {
-	Model           string                    `json:"model"`
-	Messages        []chatMessage             `json:"messages"`
-	ReasoningEffort string                    `json:"reasoning_effort,omitempty"`
-	ToolChoice      any                       `json:"tool_choice,omitempty"`
-	Tools           json.RawMessage           `json:"tools,omitempty"`
-	ResponseFormat  *openAIChatResponseFormat `json:"response_format,omitempty"`
+	Model               string                    `json:"model"`
+	Messages            []chatMessage             `json:"messages"`
+	Temperature         *float64                  `json:"temperature,omitempty"`
+	TopP                *float64                  `json:"top_p,omitempty"`
+	MaxCompletionTokens *int                      `json:"max_completion_tokens,omitempty"`
+	Stop                []string                  `json:"stop,omitempty"`
+	ReasoningEffort     string                    `json:"reasoning_effort,omitempty"`
+	Reasoning           *chatReasoning            `json:"reasoning,omitempty"`
+	ToolChoice          any                       `json:"tool_choice,omitempty"`
+	Tools               json.RawMessage           `json:"tools,omitempty"`
+	ResponseFormat      *openAIChatResponseFormat `json:"response_format,omitempty"`
 }
 
 func buildOpenAIChatMessages(history []Message) ([]chatMessage, error) {
@@ -122,11 +132,30 @@ func buildOpenAIChatMessages(history []Message) ([]chatMessage, error) {
 }
 
 func configureOpenAIChatRequest(request *openAIChatRequest, settings Settings) {
-	switch settings.Reasoning.Mode {
+	reasoning := settingsReasoning(settings)
+	switch reasoning.Mode {
 	case ReasoningOff:
 		request.ReasoningEffort = "none"
 	case ReasoningEffort:
-		request.ReasoningEffort = effortName(settings.Reasoning.Effort)
+		request.ReasoningEffort = effortName(reasoning.Effort)
+	case ReasoningOn:
+		enabled := true
+		request.Reasoning = &chatReasoning{Enabled: &enabled}
+	case ReasoningBudget:
+		budget := reasoning.Budget
+		request.Reasoning = &chatReasoning{MaxTokens: &budget}
+	}
+	if v, ok := settingsFloatOption(settings.Options, "temperature"); ok {
+		request.Temperature = &v
+	}
+	if v, ok := settingsFloatOption(settings.Options, "top_p"); ok {
+		request.TopP = &v
+	}
+	if v, ok := settingsMaxOutputTokens(settings.Options); ok {
+		request.MaxCompletionTokens = &v
+	}
+	if v, ok := settingsStopSequences(settings.Options); ok {
+		request.Stop = v
 	}
 	switch settings.ToolChoice.Mode {
 	case ToolChoiceNone:

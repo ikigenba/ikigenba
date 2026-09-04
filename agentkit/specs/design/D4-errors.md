@@ -108,7 +108,8 @@ sentinel errors comparable with `errors.Is`:
 ```go
 // ErrInvalidConfig is returned (wrapped in *Error with CategoryInvalidRequest)
 // when a Conversation is constructed or a Send is issued with a configuration
-// that cannot be honored: a reserved-key collision in ProviderOptions, a
+// that cannot be honored: an option key the wire does not know or a value it
+// cannot parse (D8), a
 // base-URL set against a transport-baking credential, or a generation setting a
 // wire cannot express (e.g. a reasoning form with no representation). Such a
 // Send makes no provider call and leaves History unchanged.

@@ -11,18 +11,17 @@ type responsesWire struct{ wireCodec }
 // xai and openrouter). Its request body grammar and decoded events are
 // identical to OpenAIResponsesWire's; only the credential header logic
 // differs, and that lives outside the wire.
-func ResponsesWire() WireFormat { return newResponsesWire(nil) }
+func ResponsesWire() WireFormat { return newResponsesWire() }
 
-func newResponsesWire(classifier errorClassifier) wireFormat {
+func newResponsesWire() wireFormat {
 	wire := &responsesWire{}
 	wire.wireCodec = wireCodec{
-		encode:     wire.encodeRequest,
-		decoder:    newOpenAIResponsesDecoder,
-		reserved:   []string{"openai", "text"},
-		classifier: classifier,
+		encode:      wire.encodeRequest,
+		decoder:     newOpenAIResponsesDecoder,
+		optionSpecs: wireOptionSpecsWithoutStop,
 		capabilities: wireCapabilities{
 			name:       "Responses",
-			reasoning:  reasoningShapeOff | reasoningShapeEffort,
+			reasoning:  reasoningShapeOff | reasoningShapeEffort | reasoningShapeOn | reasoningShapeBudget,
 			toolChoice: toolChoiceShapeNone | toolChoiceShapeRequired | toolChoiceShapeTool,
 		},
 	}

@@ -12,8 +12,9 @@ switch rule, because a switch cannot happen.
 
 A `Conversation` cleanly splits **config** (immutable, set at construction) from
 **transcript** (grows one whole turn at a time). Config is the wire codec (D5) paired with
-the `Endpoint` (D6), the `Model` string, the generation `Settings` (D8), the validated
-`ProviderOptions`, the registered tool set (eager and deferred, D16), the optional structured-output
+the `Endpoint` (D6), the `Model` string, the generation `Settings` (D8) — the
+user's string options, the tool-choice directive, and the reasoning request —
+the registered tool set (eager and deferred, D16), the optional structured-output
 contract (D20), and the optional event `Log` (D15, which carries its own injected
 clock) — all supplied through `Config` (D18). The transcript is the
 `History` (D2). Nothing reassigns config after construction.
@@ -21,26 +22,26 @@ clock) — all supplied through `Config` (D18). The transcript is the
 ```go
 package agentkit
 
-// ProviderOptions is an untyped, wire-specific escape hatch merged shallowly at
-// the top level of the request body. agentkit enumerates no keys; each wire and
-// endpoint declares the keys it reserves (WireFormat.ReservedKeys, D5), and a
-// consumer key colliding with a reserved one fails at Send. There is no override.
-type ProviderOptions map[string]json.RawMessage
-
 // requestState is the immutable input the wire consumes for one round-trip
 // (D5 EncodeRequest). It is unexported: only built-in wires read it. It is a snapshot: the History and Tools
 // reflect this round-trip only — History grows across round-trips as tool results
-// are appended, and Tools grows when load_tools runs (D16) — while Model,
-// Settings, and Options are fixed for the conversation.
+// are appended, and Tools grows when load_tools runs (D16) — while Model and
+// Settings are fixed for the conversation.
 type requestState struct {
 	Model    string          // verbatim model string (D1)
 	History  []Message       // transcript snapshot for this round-trip
-	Settings Settings        // generation settings and reasoning shape (D8)
-	Options  ProviderOptions // validated pass-through (already collision-checked)
+	Settings Settings        // options, tool choice, and reasoning shape (D8), already validated
 	Tools    []Tool          // resolved live tool set for this round-trip (D9, D16)
 	Output   *OutputContract // structured-output contract, nil for none (D20)
 }
 ```
+
+There is no raw pass-through map. An earlier revision carried `ProviderOptions`,
+a `map[string]json.RawMessage` merged shallowly into the request body with only a
+reserved-key collision check and every other key forwarded silently. It is gone:
+every option a consumer can send is a string in `Settings.Options` that the wire
+must recognize and parse (D8), so an unknown key is a `Send`-time
+`ErrInvalidConfig`, never bytes the vendor sees.
 
 **History is buffered, then appended once on success.** The orchestrator collects
 every block the turn produces — assistant messages, tool-use blocks, the tool
@@ -60,14 +61,16 @@ unrecoverable decode — ends the turn, appends nothing, and surfaces on
 orchestrator correlates a `ToolResult` to its `ToolUse` on the exact id the wire
 parsed (D2), minting no neutral id.
 
-Two config-collision checks fail loud at the boundary rather than reaching the
-vendor. **ProviderOptions** (D-E): before the first round-trip, `Send` intersects
-the consumer's option keys with the wire+endpoint reserved-key set; any
-intersection returns `ErrInvalidConfig` (D4) with no provider call and `History`
-unchanged. **Credential mode** (L2): a credential whose mode the catalog offering
-does not list is `ErrInvalidConfig` from `Offering.Authenticator`, before any turn (D7).
-Both are of a piece with the library's fail-loud stance (D4, D8, D9): a
-request the seam cannot faithfully express is refused, not silently reshaped.
+Config checks fail loud at the boundary rather than reaching the vendor.
+**Settings** (D8): before the first round-trip, `Send` asks the wire to validate
+`Settings` — every option key must be in the wire's vocabulary and parse under
+its declared kind, and the reasoning and tool-choice shapes must be ones the
+wire can express; any failure returns `ErrInvalidConfig` (D4) with no provider
+call and `History` unchanged. **Credential mode** (L2): a credential whose mode
+the catalog offering does not list is `ErrInvalidConfig` from
+`Offering.Authenticator`, before any turn (D7). Both are of a piece with the
+library's fail-loud stance (D4, D8, D9): a request the seam cannot faithfully
+express is refused, not silently reshaped.
 
 ## REQUIREMENTS
 
@@ -77,5 +80,4 @@ request the seam cannot faithfully express is refused, not silently reshaped.
 - R-4RFG-5M43: A tool returning an error, an unknown tool name, and an argument-validation failure (D11) MUST each become a `ToolResult` with `IsError` set and be fed back to the model, and MUST NOT end the turn.
 - R-4SNC-JDUS: A terminal error (transport, classified vendor error, unrecoverable decode) MUST end the turn, append nothing to `History`, and surface on `Stream.Err()`.
 - R-4TV8-X5LH: The orchestrator MUST correlate each `ToolResult` to its `ToolUse` by the vendor's verbatim call id and MUST NOT substitute a library-minted identifier.
-- R-4V35-AXC6: `Send` MUST reject a `ProviderOptions` map whose keys intersect the wire+endpoint reserved-key set with `ErrInvalidConfig`, making no provider call and leaving `History` unchanged.
-- R-08RG-8FCP: `agentkit` MUST export `type ProviderOptions map[string]json.RawMessage`.
+- R-NZTR-FBVP: `agentkit` MUST NOT export `ProviderOptions`, and `Conversation` MUST accept no raw JSON pass-through at construction or at `Send`.

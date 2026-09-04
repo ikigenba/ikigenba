@@ -18,7 +18,6 @@ type Conversation struct {
 	identity  Identity
 	history   History
 	settings  Settings
-	options   ProviderOptions
 	tools     []Tool
 	deferred  []DeferredGroup
 	output    *OutputContract
@@ -30,13 +29,12 @@ type Conversation struct {
 // Config is the construction-time configuration of a Conversation: everything a
 // consumer supplies that is not the provider, the model, or the transport. It is
 // a plain value; a zero Config means no tools, vendor-default settings, no
-// pass-through options, no structured output, and no log. The constructor copies
-// it, so later mutation of the caller's slices and maps has no effect.
+// structured output, and no log. The constructor copies it, so later mutation of
+// the caller's slices and maps has no effect.
 type Config struct {
 	Tools    []Tool
 	Deferred []DeferredGroup
 	Settings Settings
-	Options  ProviderOptions
 	Output   *OutputContract
 	Log      *Log
 }
@@ -57,7 +55,6 @@ func newConversation(provider wireProvider, client *http.Client, cfg Config) *Co
 		client:   client,
 		identity: provider.Identity(),
 		settings: cloneSettings(cfg.Settings),
-		options:  cloneProviderOptions(cfg.Options),
 		tools:    cloneTools(cfg.Tools),
 		deferred: cloneDeferredGroups(cfg.Deferred),
 		output:   cloneOutputContract(cfg.Output),
@@ -81,7 +78,7 @@ func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream {
 			return ErrClosed
 		}
 		log.start(c.identity)
-		accounting := turnAccounting{allWireCosts: true}
+		accounting := turnTotals{allWireCosts: true}
 		var terminal error
 		defer func() {
 			log.recordError(terminal)
@@ -97,7 +94,7 @@ func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream {
 	}}
 }
 
-type turnAccounting struct {
+type turnTotals struct {
 	usage        Usage
 	wireAmount   int64
 	wireRounds   int
@@ -105,7 +102,7 @@ type turnAccounting struct {
 	allWireCosts bool
 }
 
-func (a *turnAccounting) add(round providerAccounting) {
+func (a *turnTotals) add(round providerAccounting) {
 	a.rounds++
 	a.usage = addUsage(a.usage, round.usage)
 	if round.wireAmount == nil {
@@ -116,7 +113,7 @@ func (a *turnAccounting) add(round providerAccounting) {
 	}
 }
 
-func (a *turnAccounting) wireCost() *int64 {
+func (a *turnTotals) wireCost() *int64 {
 	if a.rounds == 0 || !a.allWireCosts || a.wireRounds != a.rounds {
 		return nil
 	}
@@ -147,7 +144,6 @@ type turnSnapshot struct {
 	baseHistory History
 	turn        History
 	settings    Settings
-	options     ProviderOptions
 }
 
 func (c *Conversation) snapshotTurn(blocks []Block) turnSnapshot {
@@ -155,11 +151,10 @@ func (c *Conversation) snapshotTurn(blocks []Block) turnSnapshot {
 		baseHistory: cloneHistory(c.history),
 		turn:        History{{Role: RoleUser, Blocks: cloneBlocks(blocks)}},
 		settings:    cloneSettings(c.settings),
-		options:     cloneProviderOptions(c.options),
 	}
 }
 
-func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator, snapshot turnSnapshot, yield func(Event) bool, accounting *turnAccounting) error {
+func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator, snapshot turnSnapshot, yield func(Event) bool, accounting *turnTotals) error {
 	output := newTurnOutputProgress(c.output)
 	for {
 		assistant, calls, completed, err := c.executeTurnRoundTrip(ctx, orchestrator, snapshot, yield, accounting)
@@ -172,12 +167,9 @@ func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator
 
 		snapshot.turn = append(snapshot.turn, assistant...)
 		if len(calls) == 0 {
-			action, err := c.finishNoToolRound(&snapshot, assistant, &output, yield)
-			switch action {
-			case turnRetry:
+			completed, err := c.completeNoToolRound(&snapshot, assistant, &output, yield)
+			if !completed {
 				continue
-			case turnCommit:
-				c.history = append(c.history, cloneHistory(snapshot.turn)...)
 			}
 			return err
 		}
@@ -186,6 +178,17 @@ func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator
 			return nil
 		}
 	}
+}
+
+func (c *Conversation) completeNoToolRound(snapshot *turnSnapshot, assistant History, output *turnOutputProgress, yield func(Event) bool) (bool, error) {
+	action, err := c.finishNoToolRound(snapshot, assistant, output, yield)
+	if action == turnRetry {
+		return false, err
+	}
+	if action == turnCommit {
+		c.history = append(c.history, cloneHistory(snapshot.turn)...)
+	}
+	return true, err
 }
 
 type turnOutputProgress struct {
@@ -204,13 +207,12 @@ func newTurnOutputProgress(contract *OutputContract) turnOutputProgress {
 	return turnOutputProgress{limit: limit}
 }
 
-func (c *Conversation) executeTurnRoundTrip(ctx context.Context, orchestrator *orchestrator, snapshot turnSnapshot, yield func(Event) bool, accounting *turnAccounting) (History, []ToolUse, bool, error) {
+func (c *Conversation) executeTurnRoundTrip(ctx context.Context, orchestrator *orchestrator, snapshot turnSnapshot, yield func(Event) bool, accounting *turnTotals) (History, []ToolUse, bool, error) {
 	candidate := append(cloneHistory(snapshot.baseHistory), cloneHistory(snapshot.turn)...)
 	events, completed, err := c.roundTrip(ctx, requestState{
 		Model:    c.identity.Model,
 		History:  candidate,
 		Settings: cloneSettings(snapshot.settings),
-		Options:  cloneProviderOptions(snapshot.options),
 		Tools:    orchestrator.advertisedSnapshot(),
 		Output:   cloneOutputContract(c.output),
 	}, yield)
@@ -330,15 +332,6 @@ func (c *Conversation) validateConfig() error {
 			return err
 		}
 	}
-	reservedProvider, ok := c.provider.(interface{ reservedKeys() []string })
-	if !ok || len(c.options) == 0 {
-		return nil
-	}
-	for _, key := range reservedProvider.reservedKeys() {
-		if _, collision := c.options[key]; collision {
-			return fmt.Errorf("%w: ProviderOptions key %q is reserved", ErrInvalidConfig, key)
-		}
-	}
 	return nil
 }
 
@@ -455,17 +448,6 @@ func cloneBlocks(blocks []Block) []Block {
 			value.Provider = append([]byte(nil), value.Provider...)
 			clone[index] = value
 		}
-	}
-	return clone
-}
-
-func cloneProviderOptions(options ProviderOptions) ProviderOptions {
-	if options == nil {
-		return nil
-	}
-	clone := make(ProviderOptions, len(options))
-	for key, value := range options {
-		clone[key] = append(json.RawMessage(nil), value...)
 	}
 	return clone
 }

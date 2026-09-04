@@ -134,10 +134,6 @@ func takeBuiltInWireUsage(wire wireFormat) Usage {
 	return usage
 }
 
-func (provider *composedProvider) reservedKeys() []string {
-	return provider.wire.ReservedKeys()
-}
-
 func (provider *composedProvider) validateSettings(settings Settings) error {
 	validator, ok := provider.wire.(interface{ validateSettings(Settings) error })
 	if !ok {

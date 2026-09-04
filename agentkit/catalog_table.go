@@ -19,22 +19,34 @@ func tier(minInput, uncached, cacheRead, write5m, write1h, output int64) RateTie
 
 func rates(tiers ...RateTier) Pricing { return Pricing{Tiers: tiers} }
 
+// The Term on each spec is the vendor's own word for the knob (D21): "effort"
+// for an effort level, "thinking_level" for Gemini 3.x's level, "thinking_budget"
+// for an integer budget, and "thinking" for a bare toggle. It is a model datum,
+// so it is the same on every host that serves the model.
+
 func effortSpec(levels []Effort, def Effort, canDisable bool) ReasoningSpec {
 	return ReasoningSpec{
-		Kind: ReasoningKindEffort, Levels: levels, CanDisable: canDisable,
+		Kind: ReasoningKindEffort, Term: "effort", Levels: levels, CanDisable: canDisable,
 		Default: ReasoningConfig{Mode: ReasoningEffort, Effort: def},
 	}
 }
 
+// levelSpec is effortSpec under Gemini 3.x's name for the same control.
+func levelSpec(levels []Effort, def Effort, canDisable bool) ReasoningSpec {
+	spec := effortSpec(levels, def, canDisable)
+	spec.Term = "thinking_level"
+	return spec
+}
+
 func budgetSpec(minBudget, maxBudget int, canDisable bool, def ReasoningConfig) ReasoningSpec {
 	return ReasoningSpec{
-		Kind: ReasoningKindBudget, MinBudget: minBudget, MaxBudget: maxBudget,
+		Kind: ReasoningKindBudget, Term: "thinking_budget", MinBudget: minBudget, MaxBudget: maxBudget,
 		CanDisable: canDisable, Default: def,
 	}
 }
 
 func toggleSpec(canEnable, canDisable bool, def ReasoningConfig) ReasoningSpec {
-	return ReasoningSpec{Kind: ReasoningKindToggle, CanEnable: canEnable, CanDisable: canDisable, Default: def}
+	return ReasoningSpec{Kind: ReasoningKindToggle, Term: "thinking", CanEnable: canEnable, CanDisable: canDisable, Default: def}
 }
 
 var (
@@ -184,38 +196,38 @@ var catalogTable = []CatalogEntry{
 	}},
 	{Model: "gemini-3.5-flash", Offerings: []Offering{
 		offer(OfferingGeminiGenerateContent, "gemini-3.5-flash", 1_048_576,
-			rates(tier(0, 1500, 150, 0, 0, 9000)), effortSpec(minToHigh, EffortMedium, false)),
+			rates(tier(0, 1500, 150, 0, 0, 9000)), levelSpec(minToHigh, EffortMedium, false)),
 		offer(OfferingOpenRouterChat, "google/gemini-3.5-flash", 1_048_576,
-			rates(tier(0, 1500, 150, 0, 0, 9000)), effortSpec(minToHigh, EffortMedium, false)),
+			rates(tier(0, 1500, 150, 0, 0, 9000)), levelSpec(minToHigh, EffortMedium, false)),
 		offer(OfferingOpenRouterResponses, "google/gemini-3.5-flash", 1_048_576,
-			rates(tier(0, 1500, 150, 0, 0, 9000)), effortSpec(minToHigh, EffortMedium, false)),
+			rates(tier(0, 1500, 150, 0, 0, 9000)), levelSpec(minToHigh, EffortMedium, false)),
 	}},
 	{Model: "gemini-3.7-flash", Offerings: []Offering{
 		offer(OfferingGeminiGenerateContent, "gemini-3.7-flash", 1_048_576,
-			rates(tier(0, 750, 75, 0, 0, 3750)), effortSpec(lowToHigh, EffortMedium, false)),
+			rates(tier(0, 750, 75, 0, 0, 3750)), levelSpec(lowToHigh, EffortMedium, false)),
 		offer(OfferingOpenRouterChat, "google/gemini-3.7-flash", 1_048_576,
-			rates(tier(0, 375, 38, 0, 0, 1875)), effortSpec(lowToHigh, EffortMedium, false)),
+			rates(tier(0, 375, 38, 0, 0, 1875)), levelSpec(lowToHigh, EffortMedium, false)),
 		offer(OfferingOpenRouterResponses, "google/gemini-3.7-flash", 1_048_576,
-			rates(tier(0, 375, 38, 0, 0, 1875)), effortSpec(lowToHigh, EffortMedium, false)),
+			rates(tier(0, 375, 38, 0, 0, 1875)), levelSpec(lowToHigh, EffortMedium, false)),
 	}},
 	{Model: "gemini-3.1-flash-lite", Offerings: []Offering{
 		offer(OfferingGeminiGenerateContent, "gemini-3.1-flash-lite", 1_048_576,
-			rates(tier(0, 250, 25, 0, 0, 1500)), effortSpec(minToHigh, EffortMedium, false)),
+			rates(tier(0, 250, 25, 0, 0, 1500)), levelSpec(minToHigh, EffortMedium, false)),
 		offer(OfferingOpenRouterChat, "google/gemini-3.1-flash-lite", 1_048_576,
-			rates(tier(0, 250, 25, 0, 0, 1500)), effortSpec(minToHigh, EffortMedium, true)),
+			rates(tier(0, 250, 25, 0, 0, 1500)), levelSpec(minToHigh, EffortMedium, true)),
 		offer(OfferingOpenRouterResponses, "google/gemini-3.1-flash-lite", 1_048_576,
-			rates(tier(0, 250, 25, 0, 0, 1500)), effortSpec(minToHigh, EffortMedium, true)),
+			rates(tier(0, 250, 25, 0, 0, 1500)), levelSpec(minToHigh, EffortMedium, true)),
 	}},
 	{Model: "gemini-3.1-pro-preview", Offerings: []Offering{
 		offer(OfferingGeminiGenerateContent, "gemini-3.1-pro-preview", 1_048_576,
 			rates(tier(0, 2000, 200, 0, 0, 12000), tier(200_001, 4000, 400, 0, 0, 18000)),
-			effortSpec(lowToHigh, EffortHigh, false)),
+			levelSpec(lowToHigh, EffortHigh, false)),
 		offer(OfferingOpenRouterChat, "google/gemini-3.1-pro-preview", 1_048_576,
 			rates(tier(0, 2000, 200, 0, 0, 12000), tier(200_001, 4000, 400, 0, 0, 18000)),
-			effortSpec(lowToHigh, EffortHigh, false)),
+			levelSpec(lowToHigh, EffortHigh, false)),
 		offer(OfferingOpenRouterResponses, "google/gemini-3.1-pro-preview", 1_048_576,
 			rates(tier(0, 2000, 200, 0, 0, 12000), tier(200_001, 4000, 400, 0, 0, 18000)),
-			effortSpec(lowToHigh, EffortHigh, false)),
+			levelSpec(lowToHigh, EffortHigh, false)),
 	}},
 
 	// ---- OpenAI -------------------------------------------------------------

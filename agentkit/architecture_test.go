@@ -119,6 +119,45 @@ func TestEndpointDeclarationsAreExact(t *testing.T) {
 
 }
 
+func TestConfigDeclarationIsExact(t *testing.T) {
+	// R-NUY5-W8WX
+	configType := reflect.TypeFor[Config]()
+	if configType.Name() != "Config" || !token.IsExported(configType.Name()) || configType.Kind() != reflect.Struct {
+		t.Fatalf("Config name/kind = %q/%s, want exported defined struct", configType.Name(), configType.Kind())
+	}
+	wantFields := []struct {
+		name   string
+		typeOf reflect.Type
+	}{
+		{name: "Tools", typeOf: reflect.TypeFor[[]Tool]()},
+		{name: "Deferred", typeOf: reflect.TypeFor[[]DeferredGroup]()},
+		{name: "Settings", typeOf: reflect.TypeFor[Settings]()},
+		{name: "Output", typeOf: reflect.TypeFor[*OutputContract]()},
+		{name: "Log", typeOf: reflect.TypeFor[*Log]()},
+	}
+	if configType.NumField() != len(wantFields) {
+		t.Fatalf("Config field count = %d, want exactly %d", configType.NumField(), len(wantFields))
+	}
+	for index, want := range wantFields {
+		field := configType.Field(index)
+		if field.Name != want.name || field.Type != want.typeOf || !field.IsExported() {
+			t.Fatalf("Config field %d = %s %s (exported=%t), want %s %s exported", index, field.Name, field.Type, field.IsExported(), want.name, want.typeOf)
+		}
+	}
+
+	specification := declaredType(t, "conversation.go", "Config")
+	if specification.Assign.IsValid() {
+		t.Fatal("Config is an alias, want a defined struct")
+	}
+	structType, ok := specification.Type.(*ast.StructType)
+	if !ok {
+		t.Fatalf("Config declaration is %T, want struct", specification.Type)
+	}
+	if got := renderedNode(t, structType); got != "struct {\n\tTools    []Tool\n\tDeferred []DeferredGroup\n\tSettings Settings\n\tOutput   *OutputContract\n\tLog      *Log\n}" {
+		t.Fatalf("Config declaration = %q, want exact five-field declaration", got)
+	}
+}
+
 // R-PU3A-GJ3X
 func TestModuleContainsOnlyRootAndRetryPackages(t *testing.T) {
 	packageDirectories := make(map[string]bool)
@@ -187,68 +226,6 @@ func TestEndpointOwnsOnlyBaseURLAndAuth(t *testing.T) {
 	}
 	if authField.Name != "auth" || authField.Type != reflect.TypeFor[Authenticator]() {
 		t.Fatalf("Endpoint auth field = %s %s, want auth Authenticator", authField.Name, authField.Type)
-	}
-}
-
-func TestProviderOptionsDeclarationIsExact(t *testing.T) {
-	// R-08RG-8FCP
-	optionsType := reflect.TypeFor[ProviderOptions]()
-	if optionsType.Name() != "ProviderOptions" || !token.IsExported(optionsType.Name()) || optionsType.Kind() != reflect.Map {
-		t.Fatalf("ProviderOptions name/kind = %q/%s, want exported defined map", optionsType.Name(), optionsType.Kind())
-	}
-	if optionsType.Key() != reflect.TypeFor[string]() || optionsType.Elem() != reflect.TypeFor[json.RawMessage]() {
-		t.Fatalf("ProviderOptions = map[%s]%s, want exactly map[string]json.RawMessage", optionsType.Key(), optionsType.Elem())
-	}
-	specification := declaredType(t, "agentkit.go", "ProviderOptions")
-	if specification.Assign.IsValid() {
-		t.Fatal("ProviderOptions is an alias, want a defined map type")
-	}
-	mapType, ok := specification.Type.(*ast.MapType)
-	if !ok {
-		t.Fatalf("ProviderOptions declaration is %T, want map type", specification.Type)
-	}
-	if got := renderedNode(t, mapType); got != "map[string]json.RawMessage" {
-		t.Fatalf("ProviderOptions declaration = %q, want exactly %q", got, "map[string]json.RawMessage")
-	}
-}
-
-func TestConfigDeclarationIsExact(t *testing.T) {
-	// R-SKM2-6G5E
-	configType := reflect.TypeFor[Config]()
-	if configType.Name() != "Config" || !token.IsExported(configType.Name()) || configType.Kind() != reflect.Struct {
-		t.Fatalf("Config name/kind = %q/%s, want exported defined struct", configType.Name(), configType.Kind())
-	}
-	wantFields := []struct {
-		name   string
-		typeOf reflect.Type
-	}{
-		{name: "Tools", typeOf: reflect.TypeFor[[]Tool]()},
-		{name: "Deferred", typeOf: reflect.TypeFor[[]DeferredGroup]()},
-		{name: "Settings", typeOf: reflect.TypeFor[Settings]()},
-		{name: "Options", typeOf: reflect.TypeFor[ProviderOptions]()},
-		{name: "Output", typeOf: reflect.TypeFor[*OutputContract]()},
-		{name: "Log", typeOf: reflect.TypeFor[*Log]()},
-	}
-	if configType.NumField() != len(wantFields) {
-		t.Fatalf("Config field count = %d, want exactly %d", configType.NumField(), len(wantFields))
-	}
-	for index, want := range wantFields {
-		field := configType.Field(index)
-		if field.Name != want.name || field.Type != want.typeOf || !field.IsExported() {
-			t.Fatalf("Config field %d = %s %s (exported=%t), want %s %s exported", index, field.Name, field.Type, field.IsExported(), want.name, want.typeOf)
-		}
-	}
-
-	specification := declaredType(t, "conversation.go", "Config")
-	if specification.Assign.IsValid() {
-		t.Fatal("Config is an alias, want a defined struct")
-	}
-	structType, ok := specification.Type.(*ast.StructType)
-	if !ok {
-		t.Fatalf("Config declaration is %T, want struct", specification.Type)
-	}
-	if got := renderedNode(t, structType); got != "struct {\n\tTools    []Tool\n\tDeferred []DeferredGroup\n\tSettings Settings\n\tOptions  ProviderOptions\n\tOutput   *OutputContract\n\tLog      *Log\n}" {
-		t.Fatalf("Config declaration = %q, want exact six-field declaration", got)
 	}
 }
 
@@ -424,6 +401,7 @@ func assertEventSeam(t *testing.T) {
 
 func TestConversationConstructionFixesOrchestrationConfiguration(t *testing.T) {
 	// R-OJ6F-H3XD
+	// R-NW62-A0NM
 	auth := authFunc(func(context.Context, *http.Request, []byte) error { return nil })
 	endpointA, err := NewEndpoint("https://one.invalid/messages", auth)
 	if err != nil {
@@ -433,12 +411,10 @@ func TestConversationConstructionFixesOrchestrationConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	temperature := 0.2
 	tool := fixtureTool{name: "fixed_tool", schema: json.RawMessage(`{"type":"object"}`)}
 	cfg := Config{
 		Tools:    []Tool{tool},
-		Settings: Settings{Temperature: &temperature, StopSequences: []string{"fixed"}},
-		Options:  ProviderOptions{"fixed": json.RawMessage(`true`)},
+		Settings: Settings{Options: Options{"temperature": "0.2", "stop": `["fixed"]`}},
 	}
 	first, err := New(AnthropicMessagesWire(), endpointA, "model-a", cfg)
 	if err != nil {
@@ -449,8 +425,7 @@ func TestConversationConstructionFixesOrchestrationConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg.Tools[0] = fixtureTool{name: "mutated", schema: json.RawMessage(`{"type":"object"}`)}
-	cfg.Settings.StopSequences[0] = "mutated"
-	cfg.Options["fixed"] = json.RawMessage(`false`)
+	cfg.Settings.Options["stop"] = `["mutated"]`
 
 	firstProvider := first.provider.(*composedProvider)
 	secondProvider := second.provider.(*composedProvider)
@@ -467,15 +442,11 @@ func TestConversationConstructionFixesOrchestrationConfiguration(t *testing.T) {
 	}
 	for index, conversation := range []*Conversation{first, second} {
 		if len(conversation.tools) != 1 || conversation.tools[0].Name() != "fixed_tool" ||
-			conversation.settings.StopSequences[0] != "fixed" ||
-			!bytes.Equal(conversation.options["fixed"], []byte(`true`)) {
-			t.Fatalf("conversation %d construction config changed: tools=%v settings=%#v options=%#v", index, toolNames(conversation.tools), conversation.settings, conversation.options)
+			conversation.settings.Options["stop"] != `["fixed"]` {
+			t.Fatalf("conversation %d construction config changed: tools=%v settings=%#v", index, toolNames(conversation.tools), conversation.settings)
 		}
 	}
-	conversationType := reflect.TypeFor[*Conversation]()
-	if conversationType.NumMethod() != 1 || conversationType.Method(0).Name != "Send" {
-		t.Fatalf("Conversation exposes reassignment method(s): %v", conversationType)
-	}
+	assertConversationExportsOnlySend(t)
 }
 
 // R-K99Q-W31Y
@@ -612,6 +583,8 @@ func TestNewDeclarationTakesWireFormatAndRejectsNilWire(t *testing.T) {
 
 func TestWireFormatDeclarationIsExactAndSealed(t *testing.T) {
 	// R-K6TY-4JKK
+	// R-OXYY-4WN5
+	// R-OWR1-R4WG
 	wireType := reflect.TypeFor[WireFormat]()
 	if wireType.Name() != "WireFormat" || !token.IsExported(wireType.Name()) || wireType.Kind() != reflect.Interface {
 		t.Fatalf("WireFormat name/kind = %q/%s, want exported named interface", wireType.Name(), wireType.Kind())
@@ -620,7 +593,7 @@ func TestWireFormatDeclarationIsExactAndSealed(t *testing.T) {
 		"EncodeRequest": reflect.TypeOf(func(requestState) ([]byte, error) { return nil, nil }),
 		"DecodeStream":  reflect.TypeOf(func(iter.Seq2[[]byte, error]) iter.Seq2[Event, error] { return nil }),
 		"RenderTools":   reflect.TypeOf(func([]Tool) (json.RawMessage, error) { return nil, nil }),
-		"ReservedKeys":  reflect.TypeOf(func() []string { return nil }),
+		"OptionSpecs":   reflect.TypeOf(func() []OptionSpec { return nil }),
 	}
 	if wireType.NumMethod() != len(wantMethods) {
 		t.Fatalf("WireFormat method count = %d, want %d", wireType.NumMethod(), len(wantMethods))
@@ -641,14 +614,14 @@ func TestWireFormatDeclarationIsExactAndSealed(t *testing.T) {
 	if !ok {
 		t.Fatalf("WireFormat declaration is %T, want interface", interfaceSpecification.Type)
 	}
-	methodNames := []string{"EncodeRequest", "DecodeStream", "RenderTools", "ReservedKeys"}
+	methodNames := []string{"EncodeRequest", "DecodeStream", "RenderTools", "OptionSpecs"}
 	if got := interfaceMethodNames(interfaceType); !reflect.DeepEqual(got, methodNames) {
 		t.Fatalf("WireFormat methods = %v, want exactly %v in order", got, methodNames)
 	}
 	assertASTMethod(t, interfaceType, "EncodeRequest", []string{"requestState"}, []string{"[]byte", "error"})
 	assertASTMethod(t, interfaceType, "DecodeStream", []string{"iter.Seq2[[]byte, error]"}, []string{"iter.Seq2[Event, error]"})
 	assertASTMethod(t, interfaceType, "RenderTools", []string{"[]Tool"}, []string{"json.RawMessage", "error"})
-	assertASTMethod(t, interfaceType, "ReservedKeys", nil, []string{"[]string"})
+	assertASTMethod(t, interfaceType, "OptionSpecs", nil, []string{"[]OptionSpec"})
 
 	tests := []struct {
 		name     string
@@ -716,7 +689,7 @@ type outsider struct{}
 func (outsider) EncodeRequest(requestState) ([]byte, error) { return nil, nil }
 func (outsider) DecodeStream(iter.Seq2[[]byte, error]) iter.Seq2[agentkit.Event, error] { return nil }
 func (outsider) RenderTools([]agentkit.Tool) (json.RawMessage, error) { return nil, nil }
-func (outsider) ReservedKeys() []string { return nil }
+func (outsider) OptionSpecs() []agentkit.OptionSpec { return nil }
 
 var _ agentkit.WireFormat = outsider{}
 `
@@ -1320,14 +1293,14 @@ func TestConversationPublicShape(t *testing.T) {
 	if send.Type != wantSend || !send.Type.IsVariadic() {
 		t.Fatalf("Send type = %s (variadic=%t), want %s (variadic=true)", send.Type, send.Type.IsVariadic(), wantSend)
 	}
-	wantMethods := []string{"Send"}
-	if pointerType.NumMethod() != len(wantMethods) {
-		t.Fatalf("*Conversation exported method count = %d, want exactly %d", pointerType.NumMethod(), len(wantMethods))
-	}
-	for index, wantName := range wantMethods {
-		if got := pointerType.Method(index).Name; got != wantName {
-			t.Fatalf("*Conversation method %d = %q, want %q", index, got, wantName)
-		}
+	assertConversationExportsOnlySend(t)
+}
+
+func assertConversationExportsOnlySend(t *testing.T) {
+	t.Helper()
+	pointerType := reflect.TypeFor[*Conversation]()
+	if pointerType.NumMethod() != 1 || pointerType.Method(0).Name != "Send" {
+		t.Fatalf("*Conversation exported methods = %v, want exactly Send", pointerType)
 	}
 }
 
@@ -1804,18 +1777,6 @@ func TestToolResultDeclaration(t *testing.T) {
 	})
 }
 
-func TestSettingsDeclarationHasExactGenerationControlFields(t *testing.T) {
-	// R-ZU4N-N6GD
-	assertExactStructFields(t, reflect.TypeFor[Settings](), []exactStructField{
-		{name: "Temperature", typeOf: reflect.TypeFor[*float64]()},
-		{name: "TopP", typeOf: reflect.TypeFor[*float64]()},
-		{name: "MaxOutputTokens", typeOf: reflect.TypeFor[*int]()},
-		{name: "StopSequences", typeOf: reflect.TypeFor[[]string]()},
-		{name: "ToolChoice", typeOf: reflect.TypeFor[ToolChoice]()},
-		{name: "Reasoning", typeOf: reflect.TypeFor[ReasoningConfig]()},
-	})
-}
-
 func TestReasoningModeDeclarationIsDefinedIntWithExactTypedIotaSequence(t *testing.T) {
 	// R-ZWKG-EPXR
 	want := []ReasoningMode{0, 1, 2, 3, 4}
@@ -2041,6 +2002,7 @@ func TestSiblingContractWithholdsRootOwnedMechanismsAndKeepsOptionsLocal(t *test
 
 func TestRootPackageExportsNoRetiredProviderMachinery(t *testing.T) {
 	// R-VU9D-EHC1
+	// R-NZTR-FBVP
 	assertRootPackageDeclaresNone(t, map[string]bool{
 		"NewConversation": true,
 		"NewForWire":      true,
@@ -2055,6 +2017,7 @@ func TestRootPackageExportsNoRetiredProviderMachinery(t *testing.T) {
 		"WithClassifier":  true,
 		"WithMutator":     true,
 		"WithHTTPClient":  true,
+		"ProviderOptions": true,
 	})
 }
 

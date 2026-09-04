@@ -61,7 +61,7 @@ func (wire *testWire) defaultDecodeStream(frames iter.Seq2[[]byte, error]) iter.
 }
 
 func (*testWire) RenderTools([]Tool) (json.RawMessage, error) { return nil, nil }
-func (*testWire) ReservedKeys() []string                      { return nil }
+func (*testWire) OptionSpecs() []OptionSpec                   { return nil }
 func (wire *testWire) classifyResponse(status int, header http.Header, body []byte) error {
 	if wire.classifier == nil {
 		return nil
@@ -141,7 +141,6 @@ func TestComposedProviderAuthenticatesRequestBodyBytes(t *testing.T) {
 	}
 }
 
-// R-K1YC-LGLS
 // R-K4E5-D036
 func TestAnthropicWireSetsRequiredProtocolHeader(t *testing.T) {
 	endpoint, err := NewEndpoint("https://example.test", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))

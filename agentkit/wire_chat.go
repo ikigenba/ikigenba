@@ -11,18 +11,17 @@ type chatWire struct{ wireCodec }
 // xai and openrouter). Its request body grammar and decoded events are
 // identical to OpenAIChatWire's; only the credential header logic differs,
 // and that lives outside the wire.
-func ChatWire() WireFormat { return newChatWire(nil) }
+func ChatWire() WireFormat { return newChatWire() }
 
-func newChatWire(classifier errorClassifier) wireFormat {
+func newChatWire() wireFormat {
 	wire := &chatWire{}
 	wire.wireCodec = wireCodec{
-		encode:     wire.encodeRequest,
-		decoder:    newOpenAIChatDecoder,
-		reserved:   []string{"openai", "response_format"},
-		classifier: classifier,
+		encode:      wire.encodeRequest,
+		decoder:     newOpenAIChatDecoder,
+		optionSpecs: wireOptionSpecsWithStop,
 		capabilities: wireCapabilities{
 			name:       "Chat Completions",
-			reasoning:  reasoningShapeOff | reasoningShapeEffort,
+			reasoning:  reasoningShapeOff | reasoningShapeEffort | reasoningShapeOn | reasoningShapeBudget,
 			toolChoice: toolChoiceShapeNone | toolChoiceShapeRequired | toolChoiceShapeTool,
 		},
 	}

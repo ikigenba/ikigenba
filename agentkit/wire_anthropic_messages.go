@@ -16,10 +16,10 @@ func AnthropicMessagesWire() WireFormat { return newAnthropicMessagesWire(nil) }
 func newAnthropicMessagesWire(classifier errorClassifier) wireFormat {
 	wire := &anthropicWire{}
 	wire.wireCodec = wireCodec{
-		encode:     wire.encodeRequest,
-		decoder:    newAnthropicDecoder,
-		reserved:   []string{"anthropic", "output_config"},
-		classifier: classifier,
+		encode:      wire.encodeRequest,
+		decoder:     newAnthropicDecoder,
+		optionSpecs: wireOptionSpecsWithStop,
+		classifier:  classifier,
 		capabilities: wireCapabilities{
 			name:       "Anthropic Messages",
 			reasoning:  reasoningShapeOff | reasoningShapeEffort | reasoningShapeBudget,
@@ -53,7 +53,7 @@ type anthropicMessage struct {
 
 type anthropicThinking struct {
 	Type         string `json:"type"`
-	BudgetTokens int    `json:"budget_tokens,omitempty"`
+	BudgetTokens int    `json:"budget_tokens"`
 }
 
 type anthropicToolChoice struct {
@@ -72,12 +72,16 @@ type anthropicOutputConfig struct {
 }
 
 type anthropicRequest struct {
-	Model        string                 `json:"model"`
-	Messages     []anthropicMessage     `json:"messages"`
-	OutputConfig *anthropicOutputConfig `json:"output_config,omitempty"`
-	Thinking     *anthropicThinking     `json:"thinking,omitempty"`
-	ToolChoice   *anthropicToolChoice   `json:"tool_choice,omitempty"`
-	Tools        json.RawMessage        `json:"tools,omitempty"`
+	Model         string                 `json:"model"`
+	Messages      []anthropicMessage     `json:"messages"`
+	Temperature   *float64               `json:"temperature,omitempty"`
+	TopP          *float64               `json:"top_p,omitempty"`
+	MaxTokens     *int                   `json:"max_tokens,omitempty"`
+	StopSequences []string               `json:"stop_sequences,omitempty"`
+	OutputConfig  *anthropicOutputConfig `json:"output_config,omitempty"`
+	Thinking      *anthropicThinking     `json:"thinking,omitempty"`
+	ToolChoice    *anthropicToolChoice   `json:"tool_choice,omitempty"`
+	Tools         json.RawMessage        `json:"tools,omitempty"`
 }
 
 func buildAnthropicMessages(history []Message) ([]anthropicMessage, error) {
@@ -110,16 +114,29 @@ func buildAnthropicMessages(history []Message) ([]anthropicMessage, error) {
 }
 
 func configureAnthropicRequest(request *anthropicRequest, settings Settings) {
-	switch settings.Reasoning.Mode {
+	reasoning := settingsReasoning(settings)
+	switch reasoning.Mode {
 	case ReasoningOff:
 		request.Thinking = &anthropicThinking{Type: "disabled"}
 	case ReasoningEffort:
 		if request.OutputConfig == nil {
 			request.OutputConfig = &anthropicOutputConfig{}
 		}
-		request.OutputConfig.Effort = effortName(settings.Reasoning.Effort)
+		request.OutputConfig.Effort = effortName(reasoning.Effort)
 	case ReasoningBudget:
-		request.Thinking = &anthropicThinking{Type: "enabled", BudgetTokens: settings.Reasoning.Budget}
+		request.Thinking = &anthropicThinking{Type: "enabled", BudgetTokens: reasoning.Budget}
+	}
+	if v, ok := settingsFloatOption(settings.Options, "temperature"); ok {
+		request.Temperature = &v
+	}
+	if v, ok := settingsFloatOption(settings.Options, "top_p"); ok {
+		request.TopP = &v
+	}
+	if v, ok := settingsMaxOutputTokens(settings.Options); ok {
+		request.MaxTokens = &v
+	}
+	if v, ok := settingsStopSequences(settings.Options); ok {
+		request.StopSequences = v
 	}
 	switch settings.ToolChoice.Mode {
 	case ToolChoiceRequired:

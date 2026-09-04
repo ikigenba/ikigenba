@@ -31,7 +31,11 @@ inside which — cached ⊂ input, reasoning ⊂ output, and so on); the tool
 declaration shape and the tool-result shape; whether tool-call arguments travel
 as a JSON string or a JSON object; reasoning replay in full — both its mechanics (how a
 prior reasoning block is echoed back on the next turn) and its body encoding — and
-whether a requested reasoning shape is even expressible on this wire. The wire also owns the
+whether a requested reasoning shape is even expressible on this wire; and the
+**option vocabulary** — which wire-neutral option names it accepts, how each
+value parses, and which body key each renders to (D8). An earlier revision
+exposed `ReservedKeys` for a raw pass-through map's collision check; the
+pass-through is gone (D12) and so is the method. The wire also owns the
 classification of its vendor's error responses into `Category` (D4), because the
 error envelope is part of the vendor's grammar. The wire also owns the
 **protocol headers**: every header the vendor's HTTP protocol requires
@@ -51,8 +55,9 @@ wins (never whole-object last-wins), which is a decode-side invariant of the wir
 
 ```go
 // WireFormat is the codec for one vendor body grammar. It is exported so a
-// consumer can pass a value from one of the four constructors to New, but its
-// methods are unexported: wires are defined only inside agentkit.
+// consumer can pass a value from one of the six constructors to New and can
+// ask it to describe its options, but its request-side methods take unexported
+// types: wires are defined only inside agentkit.
 type WireFormat interface {
 	// EncodeRequest renders the assembled turn state into a request body for
 	// this wire. Base URL is the Endpoint's concern (D6); EncodeRequest
@@ -71,9 +76,11 @@ type WireFormat interface {
 	// before send.
 	RenderTools(tools []Tool) (json.RawMessage, error)
 
-	// ReservedKeys lists the ProviderOptions keys this wire consumes, for the
-	// collision check at Send (D-E).
-	ReservedKeys() []string
+	// OptionSpecs describes the string options this wire accepts in
+	// Settings.Options (D8): each wire-neutral name, the value kind that fixes
+	// how the user's string is parsed, and a one-line description. It is the
+	// wire's whole option vocabulary — a key not listed here fails at Send.
+	OptionSpecs() []OptionSpec
 }
 ```
 
@@ -108,9 +115,10 @@ in requirement text; the requirements below fix the seam's shape.
 ## REQUIREMENTS
 
 - R-K0QG-7OV3: A wire codec MUST be selectable only by passing a `WireFormat` value obtained from one of the six root constructors to `New`, and MUST NOT be an assignable field on a `Conversation` or any consumer-visible value.
-- R-K1YC-LGLS: A wire codec MUST own the request body grammar, the streaming event vocabulary, the usage location and subset topology, the tool declaration and tool-result shapes, reasoning replay in full — both its mechanics and its body encoding — the classification of its vendor's error responses (D4), the vendor's required protocol headers, and the placement of a credential on the request; it MUST NOT own the base URL or hold a credential.
+- R-OWR1-R4WG: A wire codec MUST own the request body grammar, the streaming event vocabulary, the usage location and subset topology, the tool declaration and tool-result shapes, reasoning replay in full — both its mechanics and its body encoding — the option vocabulary it accepts and each option's body encoding (D8), the classification of its vendor's error responses (D4), the vendor's required protocol headers, and the placement of a credential on the request; it MUST NOT own the base URL or hold a credential.
+- R-OXYY-4WN5: The `WireFormat` interface MUST declare the exported method `OptionSpecs() []OptionSpec` and MUST NOT declare `ReservedKeys`.
 - R-K4E5-D036: Every request built with `AnthropicMessagesWire()` MUST carry the header `anthropic-version: 2023-06-01`.
-- R-K5M1-QRTV: For the same request state, `ChatWire()` and `OpenAIChatWire()` MUST produce byte-identical request bodies, as MUST `ResponsesWire()` and `OpenAIResponsesWire()`; and for the same frames each pair MUST yield identical events.
+- R-OZ6U-IODU: For every request state that both wires of a pair accept, `ChatWire()` and `OpenAIChatWire()` MUST produce byte-identical request bodies, as MUST `ResponsesWire()` and `OpenAIResponsesWire()`; each pair MUST return identical `OptionSpecs()`; and for the same frames each pair MUST yield identical events.
 - R-2YSR-VRTA: `DecodeStream` MUST terminate framing decode within the wire and yield only message-granular events; no framing artifact may reach the orchestrator.
 - R-300O-9JJZ: `DecodeStream` MUST merge `Usage` field-wise with each field treated as absolute and last-non-absent winning, and MUST NOT replace usage as a whole object.
 - R-318K-NBAO: An in-band vendor error arriving after a 2xx status MUST be surfaced through `DecodeStream`'s error channel (the classifier MUST be reachable from inside the decode).

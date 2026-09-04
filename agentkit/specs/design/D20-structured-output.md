@@ -122,7 +122,6 @@ classifier. There is no forced-tool fallback for older models.
 - R-TZTU-8TAK: The OpenAI Chat wire MUST render the contract under the top-level `response_format` request field as a strict JSON-schema format, pinned by a golden fixture.
 - R-U11Q-ML19: The OpenAI Responses wire MUST render the contract under the top-level `text` request field as a strict JSON-schema format, pinned by a golden fixture.
 - R-U29N-0CRY: The Gemini wire MUST render the contract under `generationConfig` as a JSON response MIME type plus response schema, pinned by a golden fixture.
-- R-U3HJ-E4IN: Each shipped wire's `ReservedKeys` MUST include the top-level request key it consumes for the output contract, so a colliding `ProviderOptions` key fails at `Send` with `ErrInvalidConfig`.
 - R-U4PF-RW9C: When `Config.Output` is nil, no shipped wire's request body MAY contain any structured-output field, and the body MUST be byte-identical to the body produced before this design.
 - R-U5XC-5O01: `Send` MUST fail with `ErrInvalidConfig`, making no provider call and leaving `History` unchanged, when `Config.Output.Schema` fails `ValidateOutputSchema` or `Config.Output.MaxAttempts` is negative.
 - R-U758-JFQQ: Under an output contract, a round-trip yielding no tool call MUST have its assistant text parsed as JSON and validated against the full schema (grammar and constraint tiers), and on success the orchestrator MUST emit `OutputDone` and end the turn.

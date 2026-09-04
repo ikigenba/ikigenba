@@ -675,6 +675,7 @@ func (roundTrip roundTripFunc) RoundTrip(request *http.Request) (*http.Response,
 func TestUnsupportedSettingsFailAtStartOfSendWithoutMutation(t *testing.T) {
 	// R-3S2D-29LY
 	// R-3UI5-TT3C
+	// R-NYLV-1K50
 	tests := []struct {
 		name         string
 		context      string
@@ -685,7 +686,7 @@ func TestUnsupportedSettingsFailAtStartOfSendWithoutMutation(t *testing.T) {
 			name:         "reasoning budget",
 			context:      "reasoning mode budget",
 			capabilities: wireCapabilities{name: "controlled grammar", reasoning: reasoningShapeEffort, toolChoice: toolChoiceShapeTool},
-			settings:     Settings{Reasoning: ReasoningConfig{Mode: ReasoningBudget, Budget: 4096}},
+			settings:     Settings{Options: Options{"thinking_budget": "4096"}},
 		},
 		{
 			name:         "named tool",
@@ -707,8 +708,7 @@ func TestUnsupportedSettingsFailAtStartOfSendWithoutMutation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "controlled", Model: "opaque-model"}, Config{})
-			conversation.settings = cloneSettings(test.settings)
+			conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "controlled", Model: "opaque-model"}, Config{Settings: test.settings})
 			conversation.history = History{{Role: RoleSystem, Blocks: []Block{Text{Text: "stable"}}}}
 			beforeHistory, err := json.Marshal(conversation.history)
 			if err != nil {
@@ -741,9 +741,128 @@ func TestUnsupportedSettingsFailAtStartOfSendWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestReasoningTermMismatchAndConflictFailAtStartOfSendWithoutMutation(t *testing.T) {
+	// R-W3V7-6GSB
+	// R-W533-K8J0
+	tests := []struct {
+		name     string
+		options  Options
+		wantKeys []string
+	}{
+		{name: "term mismatch", options: Options{"thinking": "high"}, wantKeys: []string{"thinking"}},
+		{name: "conflict", options: Options{"effort": "high", "thinking": "on"}, wantKeys: []string{"effort", "thinking"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			encodeCalls := 0
+			decodeCalls := 0
+			wire := boundaryWire(
+				wireCapabilities{
+					name:      "controlled grammar",
+					reasoning: reasoningShapeOff | reasoningShapeOn | reasoningShapeEffort | reasoningShapeBudget,
+				},
+				func(requestState) { encodeCalls++ },
+				func() { decodeCalls++ },
+			)
+			endpoint, err := NewEndpoint("https://provider.invalid/generate", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
+			if err != nil {
+				t.Fatal(err)
+			}
+			conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "controlled", Model: "opaque-model"}, Config{Settings: Settings{Options: test.options}})
+			conversation.history = History{{Role: RoleSystem, Blocks: []Block{Text{Text: "stable"}}}}
+			beforeHistory, err := json.Marshal(conversation.history)
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeSettings := cloneSettings(conversation.settings)
+
+			stream := conversation.Send(context.Background(), Text{Text: "not appended"})
+			drainStream(stream)
+			if !errors.Is(stream.err, ErrInvalidConfig) {
+				t.Fatalf("Send error = %v, want ErrInvalidConfig", stream.err)
+			}
+			for _, key := range test.wantKeys {
+				if !strings.Contains(stream.err.Error(), key) {
+					t.Errorf("Send error = %v, want reasoning key %q", stream.err, key)
+				}
+			}
+			if encodeCalls != 0 || decodeCalls != 0 {
+				t.Fatalf("boundary calls after invalid reasoning: encode/build=%d decode=%d", encodeCalls, decodeCalls)
+			}
+			afterHistory, err := json.Marshal(conversation.history)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(afterHistory, beforeHistory) {
+				t.Fatalf("History changed: before=%s after=%s", beforeHistory, afterHistory)
+			}
+			if !reflect.DeepEqual(conversation.settings, beforeSettings) {
+				t.Fatalf("reasoning option was substituted or dropped: before=%#v after=%#v", beforeSettings, conversation.settings)
+			}
+		})
+	}
+}
+
+func TestUnknownOrUnparsableOptionFailsAtStartOfSendWithoutMutation(t *testing.T) {
+	// R-OI49-5W04
+	// R-OJC5-JNQT
+	tests := []struct {
+		name    string
+		options Options
+		wantKey string
+	}{
+		{name: "unknown option", options: Options{"not_a_real_option": "x"}, wantKey: "not_a_real_option"},
+		{name: "unparsable option", options: Options{"temperature": "not-a-number"}, wantKey: "temperature"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			encodeCalls := 0
+			decodeCalls := 0
+			wire := boundaryWire(
+				wireCapabilities{name: "controlled grammar"},
+				func(requestState) { encodeCalls++ },
+				func() { decodeCalls++ },
+			)
+			endpoint, err := NewEndpoint("https://provider.invalid/generate", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
+			if err != nil {
+				t.Fatal(err)
+			}
+			conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "controlled", Model: "opaque-model"}, Config{Settings: Settings{Options: test.options}})
+			conversation.history = History{{Role: RoleSystem, Blocks: []Block{Text{Text: "stable"}}}}
+			beforeHistory, err := json.Marshal(conversation.history)
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeSettings := cloneSettings(conversation.settings)
+
+			stream := conversation.Send(context.Background(), Text{Text: "not appended"})
+			drainStream(stream)
+			if !errors.Is(stream.err, ErrInvalidConfig) {
+				t.Fatalf("Send error = %v, want ErrInvalidConfig", stream.err)
+			}
+			if !strings.Contains(stream.err.Error(), test.wantKey) {
+				t.Fatalf("Send error = %v, want offending key %q", stream.err, test.wantKey)
+			}
+			if encodeCalls != 0 || decodeCalls != 0 {
+				t.Fatalf("boundary calls after invalid option: encode/build=%d decode=%d", encodeCalls, decodeCalls)
+			}
+			afterHistory, err := json.Marshal(conversation.history)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(afterHistory, beforeHistory) {
+				t.Fatalf("History changed: before=%s after=%s", beforeHistory, afterHistory)
+			}
+			if !reflect.DeepEqual(conversation.settings, beforeSettings) {
+				t.Fatalf("option was substituted or dropped: before=%#v after=%#v", beforeSettings, conversation.settings)
+			}
+		})
+	}
+}
+
 func TestWireCapabilityDecisionIgnoresOpaqueModel(t *testing.T) {
 	// R-3VQ2-7KU1
-	settings := Settings{Reasoning: ReasoningConfig{Mode: ReasoningOn}}
+	settings := Settings{Options: Options{"thinking": "on"}}
 	models := []string{"old-looking-model", "released-today/unknown:model-beta"}
 	for _, model := range models {
 		wire := boundaryWire(
@@ -768,7 +887,7 @@ func TestWireCapabilityDecisionIgnoresOpaqueModel(t *testing.T) {
 func TestUnknownModelReachesVendorAndClassifier(t *testing.T) {
 	// R-3WXY-LCKQ
 	unknownModel := "released-after-agentkit/opaque:model-beta"
-	settings := Settings{Reasoning: ReasoningConfig{Mode: ReasoningBudget, Budget: 2048}}
+	settings := Settings{Options: Options{"thinking_budget": "2048"}}
 	var encodedState requestState
 	transportCalls := 0
 	responseBody := []byte(`{"error":"unsupported model"}`)
@@ -818,6 +937,7 @@ func TestUnknownModelReachesVendorAndClassifier(t *testing.T) {
 func boundaryWire(capabilities wireCapabilities, encoded func(requestState), decoded func()) *boundaryTestWire {
 	return &boundaryTestWire{wireCodec: wireCodec{
 		capabilities: capabilities,
+		optionSpecs:  wireOptionSpecsWithStop,
 		encode: func(state requestState) ([]byte, error) {
 			encoded(state)
 			return []byte(`{}`), nil
@@ -876,13 +996,6 @@ func (p *phase15Provider) BuildRequest(ctx context.Context, state requestState) 
 			state.Output.Schema[0] = '!'
 		}
 	}
-	if state.Options != nil {
-		state.Options["mutated"] = json.RawMessage(`true`)
-		for key := range state.Options {
-			state.Options[key] = json.RawMessage(`null`)
-			break
-		}
-	}
 	if len(state.History) > 0 {
 		state.History[0].Blocks = nil
 	}
@@ -936,7 +1049,6 @@ func cloneRequestState(state requestState) requestState {
 		Model:    state.Model,
 		History:  cloneHistory(state.History),
 		Settings: cloneSettings(state.Settings),
-		Options:  cloneProviderOptions(state.Options),
 		Tools:    cloneTools(state.Tools),
 		Output:   cloneOutputContract(state.Output),
 	}
@@ -1048,8 +1160,8 @@ func TestZeroConfigLeavesEveryOptionalRequestAxisEmpty(t *testing.T) {
 		t.Fatalf("zero-config Send = %v, transport=%d states=%d", stream.Err(), transportCalls, len(provider.states))
 	}
 	state := provider.states[0]
-	if !reflect.DeepEqual(state.Settings, Settings{}) || state.Options != nil || len(state.Tools) != 0 {
-		t.Fatalf("zero-config request axes = settings %#v, options %#v, tools %#v", state.Settings, state.Options, state.Tools)
+	if !reflect.DeepEqual(state.Settings, Settings{}) || len(state.Tools) != 0 {
+		t.Fatalf("zero-config request axes = settings %#v, tools %#v", state.Settings, state.Tools)
 	}
 	if state.Output != nil {
 		t.Fatal("zero Config declared structured output through requestState")
@@ -1063,82 +1175,15 @@ func TestZeroConfigLeavesEveryOptionalRequestAxisEmpty(t *testing.T) {
 	}
 }
 
-func TestNewConversationOwnsToolsDeferredSettingsAndOptions(t *testing.T) {
-	// R-SRXG-H2LK
-	temperature := 0.25
-	topP := 0.75
-	maxTokens := 321
-	stopSequences := []string{"construction-stop"}
-	eager := phase17Tool("owned_eager")
-	deferred := phase17Tool("owned_deferred")
-	eagerSlice := []Tool{eager}
-	deferredTools := []Tool{deferred}
-	groups := []DeferredGroup{{Name: "owned_group", Blurb: "owned blurb", Tools: deferredTools}}
-	optionValue := json.RawMessage(`{"construction":"value"}`)
-	options := ProviderOptions{"extension": optionValue}
-	callerSettings := Settings{
-		Temperature: &temperature, TopP: &topP, MaxOutputTokens: &maxTokens,
-		StopSequences: stopSequences,
-	}
-	wantTemperature := 0.25
-	wantTopP := 0.75
-	wantMaxTokens := 321
-	wantSettings := Settings{
-		Temperature: &wantTemperature, TopP: &wantTopP, MaxOutputTokens: &wantMaxTokens,
-		StopSequences: []string{"construction-stop"},
-	}
-	wantOptions := ProviderOptions{"extension": json.RawMessage(`{"construction":"value"}`)}
-
-	load := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{
-		ID: "load-owned", Name: loadToolsName, Input: json.RawMessage(`{"names":["owned_group"]}`),
-	}}}
-	done := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
-	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: load}}, {MessageDone{Message: done}}}}
-	transportCalls := 0
-	cfg := Config{
-		Tools: eagerSlice, Deferred: groups, Settings: callerSettings, Options: options,
-	}
-	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), cfg)
-
-	cfg.Tools[0] = phase17Tool("mutated_eager")
-	cfg.Deferred[0].Tools[0] = phase17Tool("mutated_deferred")
-	cfg.Deferred[0] = DeferredGroup{Name: "mutated_group", Tools: []Tool{phase17Tool("replacement")}}
-	cfg.Settings.StopSequences[0] = "mutated-stop"
-	*cfg.Settings.Temperature = 9
-	*cfg.Settings.TopP = 9
-	*cfg.Settings.MaxOutputTokens = 999
-	cfg.Options["extension"][0] = '['
-	cfg.Options["extension"] = json.RawMessage(`{"mutated":true}`)
-	cfg.Options["added"] = json.RawMessage(`true`)
-
-	stream := conversation.Send(context.Background(), Text{Text: "go"})
-	drainStream(stream)
-	if stream.Err() != nil || transportCalls != 2 || len(provider.states) != 2 {
-		t.Fatalf("owned-config Send = %v, transport=%d states=%d", stream.Err(), transportCalls, len(provider.states))
-	}
-	for index, state := range provider.states {
-		if !reflect.DeepEqual(state.Settings, wantSettings) || !reflect.DeepEqual(state.Options, wantOptions) {
-			t.Errorf("state %d mutable config changed: settings=%#v options=%#v", index, state.Settings, state.Options)
-		}
-	}
-	if got := toolNames(provider.states[0].Tools); !reflect.DeepEqual(got, []string{loadToolsName, "owned_eager"}) {
-		t.Fatalf("first owned tool snapshot = %v", got)
-	}
-	if got := toolNames(provider.states[1].Tools); !reflect.DeepEqual(got, []string{loadToolsName, "owned_eager", "owned_deferred"}) {
-		t.Fatalf("nested deferred tool snapshot = %v", got)
-	}
-}
-
 func TestConfiguredToolsSettingsAndOptionsPersistAcrossTurns(t *testing.T) {
 	// R-ST5C-UUC9
+	// R-NXDY-NSEB
 	callbackCalls := 0
 	tool := MustTool("configured_tool", "", func(context.Context, phase15Input) (string, error) {
 		callbackCalls++
 		return "called", nil
 	})
-	temperature := 0.4
-	settings := Settings{Temperature: &temperature, StopSequences: []string{"END"}}
-	options := ProviderOptions{"custom": json.RawMessage(`{"enabled":true}`)}
+	settings := Settings{Options: Options{"temperature": "0.4", "stop": `["END"]`}}
 	call := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{
 		ID: "configured-call", Name: tool.Name(), Input: json.RawMessage(`{"city":"Oslo"}`),
 	}}}
@@ -1149,7 +1194,7 @@ func TestConfiguredToolsSettingsAndOptionsPersistAcrossTurns(t *testing.T) {
 	}}
 	transportCalls := 0
 	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{
-		Tools: []Tool{tool}, Settings: settings, Options: options,
+		Tools: []Tool{tool}, Settings: settings,
 	})
 	first := conversation.Send(context.Background(), Text{Text: "turn one"})
 	drainStream(first)
@@ -1163,49 +1208,13 @@ func TestConfiguredToolsSettingsAndOptionsPersistAcrossTurns(t *testing.T) {
 		if got := toolNames(state.Tools); !reflect.DeepEqual(got, []string{"configured_tool"}) {
 			t.Errorf("state %d eager tools = %v", index, got)
 		}
-		if !reflect.DeepEqual(state.Settings, settings) || !reflect.DeepEqual(state.Options, options) {
-			t.Errorf("state %d fixed config = settings %#v options %#v", index, state.Settings, state.Options)
+		if !reflect.DeepEqual(state.Settings, settings) {
+			t.Errorf("state %d fixed config = settings %#v", index, state.Settings)
 		}
 	}
 	result := provider.states[1].History[len(provider.states[1].History)-1].Blocks[0].(ToolResult)
 	if result.ToolUseID != "configured-call" || result.Content != "called" || result.IsError {
 		t.Fatalf("configured eager dispatch result = %#v", result)
-	}
-}
-
-func TestConstructionSettingsAndOptionsEncodeUnchangedOnEveryRoundTrip(t *testing.T) {
-	// R-OMU4-MF5G
-	temperature := 0.35
-	settings := Settings{Temperature: &temperature, StopSequences: []string{"fixed-stop"}}
-	options := ProviderOptions{"vendor": json.RawMessage(`{"fixed":true}`)}
-	wantTemperature := 0.35
-	wantSettings := Settings{Temperature: &wantTemperature, StopSequences: []string{"fixed-stop"}}
-	wantOptions := ProviderOptions{"vendor": json.RawMessage(`{"fixed":true}`)}
-	done := MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}}
-	provider := &phase15Provider{model: "model", responses: [][]Event{{done}, {done}}}
-	transportCalls := 0
-	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{
-		Settings: settings,
-		Options:  options,
-	})
-
-	settings.StopSequences[0] = "caller-mutation"
-	options["vendor"] = json.RawMessage(`{"fixed":false}`)
-	for _, prompt := range []string{"first", "second"} {
-		stream := conversation.Send(context.Background(), Text{Text: prompt})
-		drainStream(stream)
-		if stream.Err() != nil {
-			t.Fatal(stream.Err())
-		}
-	}
-
-	if transportCalls != 2 || len(provider.states) != 2 {
-		t.Fatalf("round trips = transport %d, encoded states %d; want 2 and 2", transportCalls, len(provider.states))
-	}
-	for index, state := range provider.states {
-		if !reflect.DeepEqual(state.Settings, wantSettings) || !reflect.DeepEqual(state.Options, wantOptions) {
-			t.Fatalf("round trip %d encoded settings/options = %#v/%#v, want unchanged %#v/%#v", index, state.Settings, state.Options, wantSettings, wantOptions)
-		}
 	}
 }
 
@@ -1238,58 +1247,6 @@ func TestConfiguredLogReceivesEveryConversationTurn(t *testing.T) {
 	drainStream(nilLogStream)
 	if nilLogStream.Err() != nil || nilLogConversation.eventSink != nil {
 		t.Fatalf("nil Config.Log = err %v sink %#v", nilLogStream.Err(), nilLogConversation.eventSink)
-	}
-}
-
-type phase5ReservedProvider struct {
-	*phase15Provider
-}
-
-func (*phase5ReservedProvider) reservedKeys() []string { return []string{"reserved"} }
-
-func TestInvalidConfigInputsFailOnlyWhenSendIsConsumed(t *testing.T) {
-	// R-9GCK-P42P
-	tests := []struct {
-		name string
-		cfg  Config
-	}{
-		{name: "invalid eager tool", cfg: Config{Tools: []Tool{nil}}},
-		{name: "invalid deferred inventory", cfg: Config{Deferred: []DeferredGroup{{Name: "bad", Tools: []Tool{nil}}}}},
-		{name: "reserved option collision", cfg: Config{Options: ProviderOptions{"reserved": json.RawMessage(`true`)}}},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			provider := &phase5ReservedProvider{phase15Provider: &phase15Provider{model: "model"}}
-			transportCalls := 0
-			conversation := newConversation(provider, successfulPhase15Client(&transportCalls), test.cfg)
-			if conversation == nil {
-				t.Fatal("construction rejected invalid Send-time config")
-			}
-			conversation.history = History{{Role: RoleSystem, Blocks: []Block{Text{Text: "unchanged"}}}}
-			before, err := json.Marshal(conversation.history)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			stream := conversation.Send(context.Background(), Text{Text: "not committed"})
-			if len(provider.states) != 0 || transportCalls != 0 {
-				t.Fatal("creating an unconsumed Stream crossed a provider boundary")
-			}
-			drainStream(stream)
-			if !errors.Is(stream.Err(), ErrInvalidConfig) {
-				t.Fatalf("Send error = %v, want ErrInvalidConfig", stream.Err())
-			}
-			if len(provider.states) != 0 || provider.decodeCalls != 0 || provider.classifyCalls != 0 || transportCalls != 0 {
-				t.Fatalf("invalid config calls: build=%d decode=%d classify=%d transport=%d", len(provider.states), provider.decodeCalls, provider.classifyCalls, transportCalls)
-			}
-			after, err := json.Marshal(conversation.history)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !bytes.Equal(after, before) {
-				t.Fatalf("history changed: before=%s after=%s", before, after)
-			}
-		})
 	}
 }
 
@@ -2210,9 +2167,7 @@ func TestSendCompletesToolRoundTripsWithFixedClonedConfigAndOneCommit(t *testing
 	provider := &phase15Provider{model: "fixed/model β", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
 	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{})
-	temperature := 0.25
-	conversation.settings = Settings{Temperature: &temperature, StopSequences: []string{"END"}}
-	conversation.options = ProviderOptions{"vendor_flag": json.RawMessage(`{"mode":"exact"}`)}
+	conversation.settings = Settings{Options: Options{"temperature": "0.25", "stop": `["END"]`}}
 	toolCalls := 0
 	weather := MustTool("weather", "look up weather", func(_ context.Context, input phase15Input) (string, error) {
 		toolCalls++
@@ -2238,7 +2193,7 @@ func TestSendCompletesToolRoundTripsWithFixedClonedConfigAndOneCommit(t *testing
 	}
 	for index, state := range provider.states {
 		if state.Model != provider.model || !reflect.DeepEqual(state.History, []Message(wantHistories[index])) ||
-			!reflect.DeepEqual(state.Settings, conversation.settings) || !reflect.DeepEqual(state.Options, conversation.options) ||
+			!reflect.DeepEqual(state.Settings, conversation.settings) ||
 			len(state.Tools) != 1 || state.Tools[0].Name() != weather.Name() || !bytes.Equal(state.Tools[0].Schema(), weather.Schema()) {
 			t.Fatalf("round-trip state %d = %#v, want fixed cloned config and history %#v", index, state, wantHistories[index])
 		}
@@ -2262,10 +2217,7 @@ func TestSendCompletesToolRoundTripsWithFixedClonedConfigAndOneCommit(t *testing
 	if got := conversationType.NumMethod(); got != 1 || conversationType.Method(0).Name != "Send" {
 		t.Fatalf("Conversation exported methods changed: %v", conversationType)
 	}
-	if _, mutated := conversation.options["mutated"]; mutated || !bytes.Equal(conversation.options["vendor_flag"], []byte(`{"mode":"exact"}`)) {
-		t.Fatalf("provider snapshot mutated fixed options: %#v", conversation.options)
-	}
-	if conversation.tools[0] == nil || conversation.settings.StopSequences[0] != "END" || conversation.history[0].Blocks == nil {
+	if conversation.tools[0] == nil || conversation.settings.Options["stop"] != `["END"]` || conversation.history[0].Blocks == nil {
 		t.Fatal("provider snapshot mutated fixed config or prior history")
 	}
 }
@@ -2362,6 +2314,7 @@ func toolNames(tools []Tool) []string {
 
 func TestDeferredToolsAreOwnedValidatedAndWithheldUntilLoaded(t *testing.T) {
 	// R-UUBB-T2TX
+	// R-NW62-A0NM
 	deferred := Tool(&concreteTool{
 		name:   "records_lookup",
 		schema: json.RawMessage(`{"type":"object","properties":{}}`),
@@ -2616,6 +2569,7 @@ func TestSendGatesTheCompleteLiveToolSetOnceBeforeAllBoundaries(t *testing.T) {
 	// R-4F8G-BWP5
 	// R-4GGC-POFU
 	// R-5Y3X-JL2E
+	// R-NYLV-1K50
 	tests := []struct {
 		name     string
 		eager    []Tool
@@ -2974,137 +2928,5 @@ func TestTerminalFailuresAfterCompletedRoundTripPreserveEventsAndAtomicHistory(t
 				t.Fatalf("message before decode failure was lost: %#v", events)
 			}
 		})
-	}
-}
-
-type phase15Wire struct {
-	reserved    []string
-	encodeCalls int
-	decodeCalls int
-	state       requestState
-}
-
-func (w *phase15Wire) EncodeRequest(state requestState) ([]byte, error) {
-	w.encodeCalls++
-	w.state = cloneRequestState(state)
-	state.Options["safe"] = json.RawMessage(`null`)
-	return []byte(`{}`), nil
-}
-
-func (w *phase15Wire) DecodeStream(iter.Seq2[[]byte, error]) iter.Seq2[Event, error] {
-	w.decodeCalls++
-	return func(func(Event, error) bool) {}
-}
-
-func (*phase15Wire) RenderTools([]Tool) (json.RawMessage, error) { return nil, nil }
-func (w *phase15Wire) ReservedKeys() []string                    { return append([]string(nil), w.reserved...) }
-
-func TestProviderOptionsReservedCollisionFailsBeforeProviderBoundaries(t *testing.T) {
-	// R-4V35-AXC6
-	authCalls := 0
-	transportCalls := 0
-	endpoint, err := NewEndpoint("https://phase15.invalid", authFunc(func(context.Context, *http.Request, []byte) error { authCalls++; return nil }))
-	if err != nil {
-		t.Fatal(err)
-	}
-	wire := &phase15Wire{reserved: []string{"model"}}
-	conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "phase15", Model: "model"}, Config{})
-	conversation.history = History{{Role: RoleSystem, Blocks: []Block{Text{Text: "stable"}}}}
-	conversation.options = ProviderOptions{"model": json.RawMessage(`"override"`)}
-	before, _ := json.Marshal(conversation.history)
-
-	stream := conversation.Send(context.Background(), Text{Text: "blocked"})
-	drainStream(stream)
-	if !errors.Is(stream.Err(), ErrInvalidConfig) {
-		t.Fatalf("Stream.Err() = %v, want ErrInvalidConfig", stream.Err())
-	}
-	after, _ := json.Marshal(conversation.history)
-	if wire.encodeCalls != 0 || wire.decodeCalls != 0 || authCalls != 0 || transportCalls != 0 {
-		t.Fatalf("calls after collision: encode=%d decode=%d auth=%d transport=%d", wire.encodeCalls, wire.decodeCalls, authCalls, transportCalls)
-	}
-	if !bytes.Equal(before, after) {
-		t.Fatalf("history changed: before=%s after=%s", before, after)
-	}
-}
-
-func TestBuiltInOutputOptionCollisionsFailBeforeProviderBoundaries(t *testing.T) {
-	// R-U3HJ-E4IN
-	tests := []struct {
-		name string
-		wire WireFormat
-		key  string
-	}{
-		{name: "anthropic_messages", wire: AnthropicMessagesWire(), key: "output_config"},
-		{name: "openai_responses", wire: OpenAIResponsesWire(), key: "text"},
-		{name: "openai_chat_completions", wire: OpenAIChatWire(), key: "response_format"},
-		{name: "gemini_generate_content", wire: GeminiGenerateContentWire(), key: "generationConfig"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			authCalls := 0
-			transportCalls := 0
-			client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-				transportCalls++
-				return nil, errors.New("unexpected HTTP request")
-			})}
-			useDefaultHTTPClient(t, client)
-			endpoint, err := NewEndpoint("https://phase28.invalid", authFunc(func(context.Context, *http.Request, []byte) error { authCalls++; return nil }))
-			if err != nil {
-				t.Fatal(err)
-			}
-			conversation, err := New(test.wire, endpoint, "phase28-model", Config{
-				Options: ProviderOptions{test.key: json.RawMessage(`{"collision":true}`)},
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			conversation.history = History{{Role: RoleSystem, Blocks: []Block{Text{Text: "stable"}}}}
-			before, err := json.Marshal(conversation.history)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			stream := conversation.Send(context.Background(), Text{Text: "blocked"})
-			drainStream(stream)
-			if !errors.Is(stream.Err(), ErrInvalidConfig) {
-				t.Fatalf("Stream.Err() = %v, want ErrInvalidConfig", stream.Err())
-			}
-			after, err := json.Marshal(conversation.history)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if authCalls != 0 || transportCalls != 0 {
-				t.Fatalf("provider calls after collision: auth=%d HTTP=%d", authCalls, transportCalls)
-			}
-			if !bytes.Equal(before, after) {
-				t.Fatalf("history changed: before=%s after=%s", before, after)
-			}
-		})
-	}
-}
-
-func TestProviderOptionsNoncollidingSnapshotIsCloned(t *testing.T) {
-	// R-4V35-AXC6
-	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}, nil
-	})}
-	useDefaultHTTPClient(t, client)
-	endpoint, err := NewEndpoint("https://phase15.invalid", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
-	if err != nil {
-		t.Fatal(err)
-	}
-	wire := &phase15Wire{reserved: []string{"model"}}
-	conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "phase15", Model: "model"}, Config{})
-	conversation.options = ProviderOptions{"safe": json.RawMessage(`{"verbatim":true}`)}
-	stream := conversation.Send(context.Background(), Text{Text: "allowed"})
-	drainStream(stream)
-	if stream.Err() != nil {
-		t.Fatal(stream.Err())
-	}
-	if wire.encodeCalls != 1 || !bytes.Equal(wire.state.Options["safe"], []byte(`{"verbatim":true}`)) {
-		t.Fatalf("noncolliding options snapshot = %#v, encode calls %d", wire.state.Options, wire.encodeCalls)
-	}
-	if !bytes.Equal(conversation.options["safe"], []byte(`{"verbatim":true}`)) {
-		t.Fatalf("provider mutated conversation options: %#v", conversation.options)
 	}
 }

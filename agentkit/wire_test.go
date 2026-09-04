@@ -50,7 +50,7 @@ func allTestWires() []wireFormat {
 }
 
 func TestGenericAndOpenAIWirePairsAreByteIdentical(t *testing.T) {
-	// R-K5M1-QRTV
+	// R-OZ6U-IODU
 	tool := fixtureTool{name: "lookup", description: "look up", schema: json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}}}`)}
 	state := requestState{
 		Model: "provider/model:latest",
@@ -63,7 +63,7 @@ func TestGenericAndOpenAIWirePairsAreByteIdentical(t *testing.T) {
 			{Role: RoleTool, Blocks: []Block{ToolResult{ToolUseID: "call_1", Content: "answer"}}},
 		},
 		Tools:    []Tool{tool},
-		Settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningEffort, Effort: EffortMedium}, ToolChoice: ToolChoice{Mode: ToolChoiceTool, Name: "lookup"}},
+		Settings: Settings{Options: Options{"effort": "medium"}, ToolChoice: ToolChoice{Mode: ToolChoiceTool, Name: "lookup"}},
 		Output:   &OutputContract{Schema: json.RawMessage(`{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"]}`)},
 	}
 
@@ -73,11 +73,14 @@ func TestGenericAndOpenAIWirePairsAreByteIdentical(t *testing.T) {
 		openAI   wireFormat
 		response string
 	}{
-		{"chat", newChatWire(nil), newOpenAIChatWire(nil), "testdata/openai_chat_completions_tool_call.sse"},
-		{"responses", newResponsesWire(nil), newOpenAIResponsesWire(nil), "testdata/openai_responses_tool_call.sse"},
+		{"chat", newChatWire(), newOpenAIChatWire(nil), "testdata/openai_chat_completions_tool_call.sse"},
+		{"responses", newResponsesWire(), newOpenAIResponsesWire(nil), "testdata/openai_responses_tool_call.sse"},
 	}
 	for _, pair := range pairs {
 		t.Run(pair.name, func(t *testing.T) {
+			if !reflect.DeepEqual(pair.generic.OptionSpecs(), pair.openAI.OptionSpecs()) {
+				t.Fatalf("OptionSpecs differ:\ngeneric: %#v\nOpenAI:  %#v", pair.generic.OptionSpecs(), pair.openAI.OptionSpecs())
+			}
 			genericBody, err := pair.generic.EncodeRequest(state)
 			if err != nil {
 				t.Fatal(err)
@@ -295,7 +298,7 @@ func TestOpenAIChatCompletionsEmbedsNativeOutputContract(t *testing.T) {
 		Model:   "gpt-chat-fixture",
 		History: History{{Role: RoleUser, Blocks: []Block{Text{Text: "Return the plan."}}}},
 		Settings: Settings{
-			Reasoning:  ReasoningConfig{Mode: ReasoningEffort, Effort: EffortMedium},
+			Options:    Options{"effort": "medium"},
 			ToolChoice: ToolChoice{Mode: ToolChoiceTool, Name: "lookup"},
 		},
 		Tools: []Tool{fixtureTool{
@@ -386,7 +389,7 @@ func TestOpenAIResponsesEmbedsNativeOutputContract(t *testing.T) {
 		Model:   "gpt-responses-fixture",
 		History: History{{Role: RoleUser, Blocks: []Block{Text{Text: "Return the work result."}}}},
 		Settings: Settings{
-			Reasoning:  ReasoningConfig{Mode: ReasoningEffort, Effort: EffortHigh},
+			Options:    Options{"effort": "high"},
 			ToolChoice: ToolChoice{Mode: ToolChoiceTool, Name: "lookup"},
 		},
 		Tools: []Tool{fixtureTool{
@@ -483,7 +486,7 @@ func TestGeminiGenerateContentEmbedsNativeOutputContract(t *testing.T) {
 		Model:   "gemini-endpoint-model-sentinel",
 		History: History{{Role: RoleUser, Blocks: []Block{Text{Text: "Return the report."}}}},
 		Settings: Settings{
-			Reasoning:  ReasoningConfig{Mode: ReasoningBudget, Budget: 321},
+			Options:    Options{"thinking_budget": "321"},
 			ToolChoice: ToolChoice{Mode: ToolChoiceTool, Name: "lookup"},
 		},
 		Tools: []Tool{fixtureTool{
@@ -658,32 +661,6 @@ func assertPhase23ConstraintDescriptions(t *testing.T, document map[string]any) 
 	}
 }
 
-func TestBuiltInWiresReserveStructuredOutputEnvelopeKeys(t *testing.T) {
-	// R-U3HJ-E4IN
-	tests := []struct {
-		name string
-		wire wireFormat
-		want []string
-	}{
-		{name: "anthropic_messages", wire: newAnthropicMessagesWire(nil), want: []string{"anthropic", "output_config"}},
-		{name: "openai_responses", wire: newOpenAIResponsesWire(nil), want: []string{"openai", "text"}},
-		{name: "openai_chat_completions", wire: newOpenAIChatWire(nil), want: []string{"openai", "response_format"}},
-		{name: "gemini_generate_content", wire: newGeminiGenerateContentWire(nil), want: []string{"gemini", "generationConfig"}},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			reserved := test.wire.ReservedKeys()
-			if !slices.Equal(reserved, test.want) {
-				t.Fatalf("ReservedKeys() = %v, want %v", reserved, test.want)
-			}
-			reserved[len(reserved)-1] = "mutated"
-			if fresh := test.wire.ReservedKeys(); !slices.Equal(fresh, test.want) {
-				t.Fatalf("ReservedKeys() after caller mutation = %v, want defensive copy %v", fresh, test.want)
-			}
-		})
-	}
-}
-
 func TestNilOutputPreservesCapturedWireRequestBytes(t *testing.T) {
 	// R-U4PF-RW9C
 	for _, fixture := range wireFixtures() {
@@ -734,7 +711,7 @@ func TestNilOutputPreservesCapturedWireRequestBytes(t *testing.T) {
 	reasoningBody, err := newGeminiGenerateContentWire(nil).EncodeRequest(requestState{
 		History: History{{Role: RoleUser, Blocks: []Block{Text{Text: "reason"}}}},
 		Settings: Settings{
-			Reasoning: ReasoningConfig{Mode: ReasoningBudget, Budget: 321},
+			Options: Options{"thinking_budget": "321"},
 		},
 		Output: nil,
 	})
@@ -835,7 +812,7 @@ func TestWireOwnsOnlyBodyGrammar(t *testing.T) {
 				t.Errorf("%s tool declarations %s lack wire-owned fragment %s", test.name, declarations, fragment)
 			}
 		}
-		if len(wire.ReservedKeys()) == 0 {
+		if len(wire.OptionSpecs()) == 0 {
 			t.Fatalf("%T did not identify its provider option grammar", wire)
 		}
 		fixture := wireFixturesByName()[test.name]
@@ -857,6 +834,98 @@ func TestWireOwnsOnlyBodyGrammar(t *testing.T) {
 		if got := decodedWireUsage(wire); got != test.wantUsage {
 			t.Errorf("%s normalized vendor usage topology to %+v", test.name, got)
 		}
+	}
+}
+
+func TestWireOptionSpecsAreWellFormedAndOrdered(t *testing.T) {
+	// R-OEGK-0KS1
+	tests := []struct {
+		name string
+		wire WireFormat
+	}{
+		{"AnthropicMessagesWire", AnthropicMessagesWire()},
+		{"GeminiGenerateContentWire", GeminiGenerateContentWire()},
+		{"ChatWire", ChatWire()},
+		{"ResponsesWire", ResponsesWire()},
+		{"OpenAIChatWire", OpenAIChatWire()},
+		{"OpenAIResponsesWire", OpenAIResponsesWire()},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			specs := test.wire.OptionSpecs()
+			original := append([]OptionSpec(nil), specs...)
+			seen := make(map[string]bool, len(specs))
+			for index, spec := range specs {
+				if spec.Name == "" || spec.Description == "" {
+					t.Errorf("OptionSpecs()[%d] = %#v, want non-empty name and description", index, spec)
+				}
+				if seen[spec.Name] {
+					t.Errorf("OptionSpecs() contains duplicate name %q", spec.Name)
+				}
+				seen[spec.Name] = true
+				if index > 0 && specs[index-1].Name >= spec.Name {
+					t.Errorf("OptionSpecs() names are not strictly ascending: %q before %q", specs[index-1].Name, spec.Name)
+				}
+			}
+			if len(specs) == 0 {
+				t.Fatal("OptionSpecs() returned no options")
+			}
+			specs[0] = OptionSpec{}
+			if got := test.wire.OptionSpecs(); !reflect.DeepEqual(got, original) {
+				t.Fatalf("OptionSpecs() after caller mutation = %#v, want %#v", got, original)
+			}
+		})
+	}
+}
+
+func TestWireOptionSpecsMatchDesignVocabulary(t *testing.T) {
+	// R-W1FE-EXAX
+	type optionIdentity struct {
+		name string
+		kind OptionKind
+	}
+	withStop := []optionIdentity{
+		{"effort", OptionKindReasoning},
+		{"max_output_tokens", OptionKindInteger},
+		{"stop", OptionKindTextList},
+		{"temperature", OptionKindNumber},
+		{"thinking", OptionKindReasoning},
+		{"thinking_budget", OptionKindReasoning},
+		{"thinking_level", OptionKindReasoning},
+		{"top_p", OptionKindNumber},
+	}
+	withoutStop := []optionIdentity{
+		{"effort", OptionKindReasoning},
+		{"max_output_tokens", OptionKindInteger},
+		{"temperature", OptionKindNumber},
+		{"thinking", OptionKindReasoning},
+		{"thinking_budget", OptionKindReasoning},
+		{"thinking_level", OptionKindReasoning},
+		{"top_p", OptionKindNumber},
+	}
+	tests := []struct {
+		name string
+		wire WireFormat
+		want []optionIdentity
+	}{
+		{"AnthropicMessagesWire", AnthropicMessagesWire(), withStop},
+		{"GeminiGenerateContentWire", GeminiGenerateContentWire(), withStop},
+		{"ChatWire", ChatWire(), withStop},
+		{"OpenAIChatWire", OpenAIChatWire(), withStop},
+		{"ResponsesWire", ResponsesWire(), withoutStop},
+		{"OpenAIResponsesWire", OpenAIResponsesWire(), withoutStop},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			specs := test.wire.OptionSpecs()
+			got := make([]optionIdentity, len(specs))
+			for index, spec := range specs {
+				got[index] = optionIdentity{name: spec.Name, kind: spec.Kind}
+			}
+			if !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("OptionSpecs() identities = %#v, want %#v", got, test.want)
+			}
+		})
 	}
 }
 
@@ -1187,7 +1256,7 @@ func assertMixedToolMessage(t *testing.T, message Message, want []mixedToolBlock
 	}
 }
 
-func TestEveryWireDecodesMixedToolCallsInVendorOrderWithObjectInput(t *testing.T) {
+func TestFixtureWireDecodesMixedToolCallsInVendorOrderWithObjectInput(t *testing.T) {
 	// R-T901-TUZA
 	// R-TA7Y-7MPZ
 	tests := []struct {
@@ -1679,25 +1748,25 @@ func TestSupportedSettingsAreEncodedByOwningWireGrammar(t *testing.T) {
 		{
 			name:     "anthropic budget and named tool",
 			wire:     newAnthropicMessagesWire(nil),
-			settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningBudget, Budget: 4096}, ToolChoice: ToolChoice{Mode: ToolChoiceTool, Name: "lookup"}},
+			settings: Settings{Options: Options{"thinking_budget": "4096"}, ToolChoice: ToolChoice{Mode: ToolChoiceTool, Name: "lookup"}},
 			want:     `{"model":"opaque-model-has-no-capability-role","messages":[],"thinking":{"type":"enabled","budget_tokens":4096},"tool_choice":{"type":"tool","name":"lookup"}}` + "\n",
 		},
 		{
 			name:     "responses effort and no tools",
 			wire:     newOpenAIResponsesWire(nil),
-			settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningEffort, Effort: EffortHigh}, ToolChoice: ToolChoice{Mode: ToolChoiceNone}},
+			settings: Settings{Options: Options{"effort": "high"}, ToolChoice: ToolChoice{Mode: ToolChoiceNone}},
 			want:     `{"model":"opaque-model-has-no-capability-role","input":[],"reasoning":{"effort":"high"},"tool_choice":"none"}` + "\n",
 		},
 		{
 			name:     "chat off and named tool",
 			wire:     newOpenAIChatWire(nil),
-			settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningOff}, ToolChoice: ToolChoice{Mode: ToolChoiceTool, Name: "lookup"}},
+			settings: Settings{Options: Options{"effort": "off"}, ToolChoice: ToolChoice{Mode: ToolChoiceTool, Name: "lookup"}},
 			want:     `{"model":"opaque-model-has-no-capability-role","messages":[],"reasoning_effort":"none","tool_choice":{"type":"function","function":{"name":"lookup"}}}` + "\n",
 		},
 		{
 			name:     "gemini bare on and required tool",
 			wire:     newGeminiGenerateContentWire(nil),
-			settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningOn}, ToolChoice: ToolChoice{Mode: ToolChoiceRequired}},
+			settings: Settings{Options: Options{"thinking": "on"}, ToolChoice: ToolChoice{Mode: ToolChoiceRequired}},
 			want:     `{"contents":[],"generationConfig":{"thinkingConfig":{"thinkingBudget":-1}},"toolConfig":{"functionCallingConfig":{"mode":"ANY"}}}` + "\n",
 		},
 	}
@@ -1721,6 +1790,326 @@ func TestSupportedSettingsAreEncodedByOwningWireGrammar(t *testing.T) {
 	}
 }
 
+func TestSamplingOptionsAreEncodedByOwningWireGrammar(t *testing.T) {
+	// R-OKK1-XFHI
+	// R-OLRY-B787
+	// R-OMZU-OYYW
+	// R-OO7R-2QPL
+	withStop := Options{
+		"temperature": "0.5", "top_p": "0.9", "max_output_tokens": "256", "stop": `["END","STOP"]`,
+	}
+	withoutStop := Options{
+		"temperature": "0.5", "top_p": "0.9", "max_output_tokens": "256",
+	}
+	tests := []struct {
+		name     string
+		wire     wireFormat
+		settings Settings
+		want     string
+	}{
+		{
+			name:     "anthropic messages",
+			wire:     newAnthropicMessagesWire(nil),
+			settings: Settings{Options: withStop},
+			want:     `{"model":"opaque-model","messages":[],"temperature":0.5,"top_p":0.9,"max_tokens":256,"stop_sequences":["END","STOP"]}` + "\n",
+		},
+		{
+			name:     "gemini generate content",
+			wire:     newGeminiGenerateContentWire(nil),
+			settings: Settings{Options: withStop},
+			want:     `{"contents":[],"generationConfig":{"temperature":0.5,"topP":0.9,"maxOutputTokens":256,"stopSequences":["END","STOP"]}}` + "\n",
+		},
+		{
+			name:     "openai chat",
+			wire:     newOpenAIChatWire(nil),
+			settings: Settings{Options: withStop},
+			want:     `{"model":"opaque-model","messages":[],"temperature":0.5,"top_p":0.9,"max_completion_tokens":256,"stop":["END","STOP"]}` + "\n",
+		},
+		{
+			name:     "chat",
+			wire:     newChatWire(),
+			settings: Settings{Options: withStop},
+			want:     `{"model":"opaque-model","messages":[],"temperature":0.5,"top_p":0.9,"max_completion_tokens":256,"stop":["END","STOP"]}` + "\n",
+		},
+		{
+			name:     "openai responses",
+			wire:     newOpenAIResponsesWire(nil),
+			settings: Settings{Options: withoutStop},
+			want:     `{"model":"opaque-model","input":[],"temperature":0.5,"top_p":0.9,"max_output_tokens":256}` + "\n",
+		},
+		{
+			name:     "responses",
+			wire:     newResponsesWire(),
+			settings: Settings{Options: withoutStop},
+			want:     `{"model":"opaque-model","input":[],"temperature":0.5,"top_p":0.9,"max_output_tokens":256}` + "\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			validator, ok := test.wire.(interface{ validateSettings(Settings) error })
+			if !ok {
+				t.Fatalf("%T has no settings validator", test.wire)
+			}
+			if err := validator.validateSettings(test.settings); err != nil {
+				t.Fatalf("sampling options rejected: %v", err)
+			}
+			body, err := test.wire.EncodeRequest(requestState{Model: "opaque-model", Settings: test.settings})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(body) != test.want {
+				t.Fatalf("encoded body = %s, want exact sampling grammar %s", body, test.want)
+			}
+		})
+	}
+}
+
+func TestSamplingOptionsRenderIndependently(t *testing.T) {
+	// R-OPFN-GIGA
+	keys := []string{"temperature", "top_p", "max_tokens", "stop_sequences"}
+	tests := []struct {
+		name    string
+		options Options
+		wantKey string
+	}{
+		{name: "temperature", options: Options{"temperature": "0.5"}, wantKey: "temperature"},
+		{name: "top p", options: Options{"top_p": "0.9"}, wantKey: "top_p"},
+		{name: "max output tokens", options: Options{"max_output_tokens": "256"}, wantKey: "max_tokens"},
+		{name: "stop", options: Options{"stop": `["END"]`}, wantKey: "stop_sequences"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			wire := newAnthropicMessagesWire(nil)
+			settings := Settings{Options: test.options}
+			validator, ok := wire.(interface{ validateSettings(Settings) error })
+			if !ok {
+				t.Fatalf("%T has no settings validator", wire)
+			}
+			if err := validator.validateSettings(settings); err != nil {
+				t.Fatalf("sampling option rejected: %v", err)
+			}
+			body, err := wire.EncodeRequest(requestState{Model: "opaque-model", Settings: settings})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var document any
+			if err := json.Unmarshal(body, &document); err != nil {
+				t.Fatal(err)
+			}
+			for _, key := range keys {
+				if got := containsJSONKey(document, key); got != (key == test.wantKey) {
+					t.Errorf("key %q presence = %t, want %t in %s", key, got, key == test.wantKey, body)
+				}
+			}
+		})
+	}
+}
+
+func TestSamplingOptionsAbsentIsByteIdenticalToPreOptionsRequest(t *testing.T) {
+	// R-OPFN-GIGA
+	tests := []struct {
+		name string
+		wire wireFormat
+		want string
+	}{
+		{name: "anthropic messages", wire: newAnthropicMessagesWire(nil), want: `{"model":"opaque-model","messages":[]}` + "\n"},
+		{name: "gemini generate content", wire: newGeminiGenerateContentWire(nil), want: `{"contents":[]}` + "\n"},
+		{name: "openai chat", wire: newOpenAIChatWire(nil), want: `{"model":"opaque-model","messages":[]}` + "\n"},
+		{name: "chat", wire: newChatWire(), want: `{"model":"opaque-model","messages":[]}` + "\n"},
+		{name: "openai responses", wire: newOpenAIResponsesWire(nil), want: `{"model":"opaque-model","input":[]}` + "\n"},
+		{name: "responses", wire: newResponsesWire(), want: `{"model":"opaque-model","input":[]}` + "\n"},
+	}
+	for _, test := range tests {
+		for _, options := range []Options{nil, {}} {
+			label := "nil options"
+			if options != nil {
+				label = "empty options"
+			}
+			t.Run(test.name+"/"+label, func(t *testing.T) {
+				body, err := test.wire.EncodeRequest(requestState{
+					Model: "opaque-model", Settings: Settings{Options: options},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if string(body) != test.want {
+					t.Fatalf("encoded body = %s, want pre-options body %s", body, test.want)
+				}
+			})
+		}
+	}
+}
+
+func TestZeroBudgetReasoningIsAcceptedAndRenderedVerbatim(t *testing.T) {
+	// R-W7IW-BS0E
+	tests := []struct {
+		name string
+		wire wireFormat
+		want string
+	}{
+		{
+			name: "anthropic messages",
+			wire: newAnthropicMessagesWire(nil),
+			want: `{"model":"opaque-model","messages":[],"thinking":{"type":"enabled","budget_tokens":0}}` + "\n",
+		},
+		{
+			name: "gemini generate content",
+			wire: newGeminiGenerateContentWire(nil),
+			want: `{"contents":[],"generationConfig":{"thinkingConfig":{"thinkingBudget":0}}}` + "\n",
+		},
+	}
+	settings := Settings{Options: Options{"thinking_budget": "0"}}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			validator, ok := test.wire.(interface{ validateSettings(Settings) error })
+			if !ok {
+				t.Fatalf("%T has no settings validator", test.wire)
+			}
+			if err := validator.validateSettings(settings); err != nil {
+				t.Fatalf("zero reasoning budget rejected: %v", err)
+			}
+			body, err := test.wire.EncodeRequest(requestState{Model: "opaque-model", Settings: settings})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(body) != test.want {
+				t.Fatalf("encoded body = %s, want zero budget verbatim in %s", body, test.want)
+			}
+		})
+	}
+}
+
+func TestGenericChatAndResponsesWiresRenderReasoningOnAndBudget(t *testing.T) {
+	// R-P0EQ-WG4J
+	// R-P1MN-A7V8
+	tests := []struct {
+		name     string
+		wire     wireFormat
+		settings Settings
+		want     string
+	}{
+		{
+			name:     "chat on",
+			wire:     newChatWire(),
+			settings: Settings{Options: Options{"thinking": "on"}},
+			want:     `{"model":"opaque-model","messages":[],"reasoning":{"enabled":true}}` + "\n",
+		},
+		{
+			name:     "chat budget",
+			wire:     newChatWire(),
+			settings: Settings{Options: Options{"thinking_budget": "8192"}},
+			want:     `{"model":"opaque-model","messages":[],"reasoning":{"max_tokens":8192}}` + "\n",
+		},
+		{
+			name:     "responses on",
+			wire:     newResponsesWire(),
+			settings: Settings{Options: Options{"thinking": "on"}},
+			want:     `{"model":"opaque-model","input":[],"reasoning":{"enabled":true}}` + "\n",
+		},
+		{
+			name:     "responses budget",
+			wire:     newResponsesWire(),
+			settings: Settings{Options: Options{"thinking_budget": "8192"}},
+			want:     `{"model":"opaque-model","input":[],"reasoning":{"max_tokens":8192}}` + "\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			validator, ok := test.wire.(interface{ validateSettings(Settings) error })
+			if !ok {
+				t.Fatalf("%T has no settings validator", test.wire)
+			}
+			if err := validator.validateSettings(test.settings); err != nil {
+				t.Fatalf("generic-wire reasoning shape rejected: %v", err)
+			}
+			body, err := test.wire.EncodeRequest(requestState{Model: "opaque-model", Settings: test.settings})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(body) != test.want {
+				t.Fatalf("encoded body = %s, want exact generic reasoning grammar %s", body, test.want)
+			}
+		})
+	}
+}
+
+func TestOpenAIWiresRejectReasoningOnAndBudget(t *testing.T) {
+	// R-P2UJ-NZLX
+	wires := []struct {
+		name string
+		wire wireFormat
+	}{
+		{name: "openai chat", wire: newOpenAIChatWire(nil)},
+		{name: "openai responses", wire: newOpenAIResponsesWire(nil)},
+	}
+	options := []struct {
+		name    string
+		options Options
+	}{
+		{name: "on", options: Options{"thinking": "on"}},
+		{name: "budget", options: Options{"thinking_budget": "8192"}},
+	}
+	for _, wireTest := range wires {
+		t.Run(wireTest.name, func(t *testing.T) {
+			validator, ok := wireTest.wire.(interface{ validateSettings(Settings) error })
+			if !ok {
+				t.Fatalf("%T has no settings validator", wireTest.wire)
+			}
+			for _, test := range options {
+				t.Run(test.name, func(t *testing.T) {
+					err := validator.validateSettings(Settings{Options: test.options})
+					if !errors.Is(err, ErrInvalidConfig) {
+						t.Fatalf("validateSettings() error = %v, want ErrInvalidConfig", err)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestWireCodecValidateSettingsRejectsUnknownOrUnparsableOption(t *testing.T) {
+	// R-OI49-5W04
+	// R-OJC5-JNQT
+	wires := []struct {
+		name string
+		wire wireFormat
+	}{
+		{name: "anthropic messages", wire: newAnthropicMessagesWire(nil)},
+		{name: "gemini generate content", wire: newGeminiGenerateContentWire(nil)},
+		{name: "chat", wire: newChatWire()},
+		{name: "openai chat", wire: newOpenAIChatWire(nil)},
+		{name: "responses", wire: newResponsesWire()},
+		{name: "openai responses", wire: newOpenAIResponsesWire(nil)},
+	}
+	tests := []struct {
+		name    string
+		options Options
+		wantKey string
+	}{
+		{name: "unknown option", options: Options{"not_a_real_option": "x"}, wantKey: "not_a_real_option"},
+		{name: "unparsable option", options: Options{"temperature": "not-a-number"}, wantKey: "temperature"},
+	}
+	for _, wireTest := range wires {
+		t.Run(wireTest.name, func(t *testing.T) {
+			validator, ok := wireTest.wire.(interface{ validateSettings(Settings) error })
+			if !ok {
+				t.Fatalf("%T has no settings validator", wireTest.wire)
+			}
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					err := validator.validateSettings(Settings{Options: test.options})
+					if !errors.Is(err, ErrInvalidConfig) {
+						t.Fatalf("validateSettings() error = %v, want ErrInvalidConfig", err)
+					}
+					if !strings.Contains(err.Error(), test.wantKey) {
+						t.Fatalf("validateSettings() error = %v, want offending key %q", err, test.wantKey)
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestAnthropicMessagesRendersReasoningEffortInOutputConfig(t *testing.T) {
 	// R-NXR6-QKDM
 	wire := newAnthropicMessagesWire(nil)
@@ -1736,17 +2125,17 @@ func TestAnthropicMessagesRendersReasoningEffortInOutputConfig(t *testing.T) {
 	}{
 		{
 			name:     "effort only",
-			settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningEffort, Effort: EffortHigh}},
+			settings: Settings{Options: Options{"effort": "high"}},
 			want:     `{"model":"opaque-model","messages":[],"output_config":{"effort":"high"}}` + "\n",
 		},
 		{
 			name:     "off remains thinking disabled",
-			settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningOff}},
-			want:     `{"model":"opaque-model","messages":[],"thinking":{"type":"disabled"}}` + "\n",
+			settings: Settings{Options: Options{"effort": "off"}},
+			want:     `{"model":"opaque-model","messages":[],"thinking":{"type":"disabled","budget_tokens":0}}` + "\n",
 		},
 		{
 			name:     "budget remains enabled thinking",
-			settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningBudget, Budget: 4096}},
+			settings: Settings{Options: Options{"thinking_budget": "4096"}},
 			want:     `{"model":"opaque-model","messages":[],"thinking":{"type":"enabled","budget_tokens":4096}}` + "\n",
 		},
 	}
@@ -1768,7 +2157,7 @@ func TestAnthropicMessagesRendersReasoningEffortInOutputConfig(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"]}`)
 	body, err := wire.EncodeRequest(requestState{
 		Model:    "opaque-model",
-		Settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningEffort, Effort: EffortMinimal}},
+		Settings: Settings{Options: Options{"effort": "minimal"}},
 		Output:   &OutputContract{Schema: schema},
 	})
 	if err != nil {
@@ -1861,7 +2250,7 @@ func TestEffortCapableWiresRenderEveryEffortLevelVerbatim(t *testing.T) {
 	for _, wireTest := range wires {
 		for _, effortTest := range efforts {
 			t.Run(wireTest.name+"/"+effortTest.want, func(t *testing.T) {
-				settings := Settings{Reasoning: ReasoningConfig{Mode: ReasoningEffort, Effort: effortTest.effort}}
+				settings := Settings{Options: Options{"effort": effortTest.effort.String()}}
 				validator, ok := wireTest.wire.(interface{ validateSettings(Settings) error })
 				if !ok {
 					t.Fatalf("%T has no body-grammar capability declaration", wireTest.wire)
@@ -1946,7 +2335,7 @@ type wireLoopCall struct {
 
 // R-TF3J-QPOR
 // R-U2LH-88H7
-func TestEveryWireCompletesFixtureDrivenToolLoop(t *testing.T) {
+func TestFixtureWireCompletesFixtureDrivenToolLoop(t *testing.T) {
 	tests := []struct {
 		name       string
 		wire       WireFormat
@@ -2268,7 +2657,7 @@ func assertStringArgumentCall(t *testing.T, id, name, arguments any, want wireLo
 	}
 }
 
-func TestEveryWireRoundTripsCapturedMessageBytes(t *testing.T) {
+func TestFixtureWireRoundTripsCapturedMessageBytes(t *testing.T) {
 	// R-3646-6E9G
 	for _, test := range wireFixtures() {
 		t.Run(test.name, func(t *testing.T) {

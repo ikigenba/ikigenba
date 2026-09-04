@@ -15,10 +15,10 @@ func OpenAIResponsesWire() WireFormat { return newOpenAIResponsesWire(nil) }
 func newOpenAIResponsesWire(classifier errorClassifier) wireFormat {
 	wire := &openAIResponsesWire{}
 	wire.wireCodec = wireCodec{
-		encode:     wire.encodeRequest,
-		decoder:    newOpenAIResponsesDecoder,
-		reserved:   []string{"openai", "text"},
-		classifier: classifier,
+		encode:      wire.encodeRequest,
+		decoder:     newOpenAIResponsesDecoder,
+		optionSpecs: wireOptionSpecsWithoutStop,
+		classifier:  classifier,
 		capabilities: wireCapabilities{
 			name:       "OpenAI Responses",
 			reasoning:  reasoningShapeOff | reasoningShapeEffort,
@@ -39,7 +39,9 @@ type responsesInput struct {
 }
 
 type responsesReasoning struct {
-	Effort string `json:"effort"`
+	Effort    string `json:"effort,omitempty"`
+	Enabled   *bool  `json:"enabled,omitempty"`
+	MaxTokens *int   `json:"max_tokens,omitempty"`
 }
 
 type responsesNamedTool struct {
@@ -59,12 +61,15 @@ type openAIResponsesText struct {
 }
 
 type openAIResponsesRequest struct {
-	Model      string               `json:"model"`
-	Input      []json.RawMessage    `json:"input"`
-	Reasoning  *responsesReasoning  `json:"reasoning,omitempty"`
-	ToolChoice any                  `json:"tool_choice,omitempty"`
-	Tools      json.RawMessage      `json:"tools,omitempty"`
-	Text       *openAIResponsesText `json:"text,omitempty"`
+	Model           string               `json:"model"`
+	Input           []json.RawMessage    `json:"input"`
+	Temperature     *float64             `json:"temperature,omitempty"`
+	TopP            *float64             `json:"top_p,omitempty"`
+	MaxOutputTokens *int                 `json:"max_output_tokens,omitempty"`
+	Reasoning       *responsesReasoning  `json:"reasoning,omitempty"`
+	ToolChoice      any                  `json:"tool_choice,omitempty"`
+	Tools           json.RawMessage      `json:"tools,omitempty"`
+	Text            *openAIResponsesText `json:"text,omitempty"`
 }
 
 func (w *openAIResponsesWire) encodeRequest(state requestState) ([]byte, error) {
@@ -159,11 +164,27 @@ func buildOpenAIResponsesInput(history []Message) ([]json.RawMessage, error) {
 
 func buildOpenAIResponsesRequest(input []json.RawMessage, settings Settings) openAIResponsesRequest {
 	request := openAIResponsesRequest{Input: input}
-	switch settings.Reasoning.Mode {
+	if v, ok := settingsFloatOption(settings.Options, "temperature"); ok {
+		request.Temperature = &v
+	}
+	if v, ok := settingsFloatOption(settings.Options, "top_p"); ok {
+		request.TopP = &v
+	}
+	if v, ok := settingsMaxOutputTokens(settings.Options); ok {
+		request.MaxOutputTokens = &v
+	}
+	reasoning := settingsReasoning(settings)
+	switch reasoning.Mode {
 	case ReasoningOff:
 		request.Reasoning = &responsesReasoning{Effort: "none"}
 	case ReasoningEffort:
-		request.Reasoning = &responsesReasoning{Effort: effortName(settings.Reasoning.Effort)}
+		request.Reasoning = &responsesReasoning{Effort: effortName(reasoning.Effort)}
+	case ReasoningOn:
+		enabled := true
+		request.Reasoning = &responsesReasoning{Enabled: &enabled}
+	case ReasoningBudget:
+		budget := reasoning.Budget
+		request.Reasoning = &responsesReasoning{MaxTokens: &budget}
 	}
 	switch settings.ToolChoice.Mode {
 	case ToolChoiceNone:

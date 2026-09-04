@@ -100,13 +100,18 @@ const (
 )
 
 // ReasoningSpec is one offering's reasoning vocabulary in the neutral D8
-// model. Levels is read for the effort kind, MinBudget/MaxBudget for the
-// budget kind, CanEnable for the toggle kind, CanDisable for any kind.
+// model. Term is the vendor's own word for the knob — "effort",
+// "thinking_level", "thinking_budget", or "thinking" — which an application
+// prints as the option's name and accepts as the key a user types; it is a
+// model datum, so a Gemini 3.x model keeps "thinking_level" on its OpenRouter
+// offerings too. Levels is read for the effort kind, MinBudget/MaxBudget for
+// the budget kind, CanEnable for the toggle kind, CanDisable for any kind.
 // Default is the request an application should make when the user has not
 // chosen; ReasoningDefault as the Default means the vendor's own dynamic
 // behavior. Accepts reports whether a request is inside the vocabulary.
 type ReasoningSpec struct {
 	Kind       ReasoningKind
+	Term       string
 	Levels     []Effort
 	MinBudget  int
 	MaxBudget  int
@@ -203,9 +208,35 @@ over `Catalog()` by `Offering.Host`; there is no separate vendor label.
 The table itself is data, not contract: entries are added, repriced, and
 retired without touching this document. What the contract fixes is the shape
 above and a set of invariants every entry must satisfy — the table is complete
-on cost, every default is inside its own vocabulary, wire names are non-empty
-— so the table can grow freely while staying trustworthy. A few pinned entries
-anchor resolution with real fixtures.
+on cost, every default is inside its own vocabulary, wire names are non-empty,
+every reasoning term matches its kind — so the table can grow freely while
+staying trustworthy. A few pinned entries anchor resolution with real fixtures.
+
+One invariant reaches across to the wire seam: **everything the catalog says an
+offering accepts, the offering's wire must be able to send.** The vocabulary a
+`ReasoningSpec` describes — `off` when `CanDisable`, `on` for an enableable
+toggle, each level in `Levels`, the budget range, and the `Default` itself — is
+what an application will put in front of a user, and a value the user can pick
+that then fails at `Send` as "wire cannot express" is a catalog lie. `Term` is
+also the key every wire accepts for that value (D8), so the help row and the
+typed option agree by construction. The
+invariant test walks every offering, writes each request in its vocabulary
+as the option `Term=value` a user would type, and asserts the offering's
+`WireFormat` validates it (D8). It is what forces
+the generic `chat` and `responses` wires to render the toggle and budget forms
+that OpenRouter's models need (D8), rather than the table being trimmed to
+what the wires happened to express.
+
+The reasoning term follows the kind, and its spelling is fixed so an
+application's help text and a user's typed key agree across every model:
+
+| `Kind` | `Term` | Models |
+|---|---|---|
+| effort | `effort` | Anthropic, OpenAI, xAI, GLM 5.2, Qwen |
+| effort | `thinking_level` | Gemini 3.x |
+| budget | `thinking_budget` | Gemini 2.5, Claude Haiku 4.5 |
+| toggle | `thinking` | DeepSeek, Kimi, GLM 4.x/5.1, Nemotron, Grok toggles |
+| none | `""` | — |
 
 The seed table is authored by hand, not by the build loop: it lives at
 `specs/_data/catalog_table.go` (a directory Go tooling ignores) and is
@@ -219,7 +250,7 @@ adding a model is an edit to that file and nothing else.
 - R-JDKC-Y1RW: `agentkit` MUST export `type WireName string` with exactly the constants `WireMessages = "messages"`, `WireGenerateContent = "generate-content"`, `WireChat = "chat"`, and `WireResponses = "responses"`.
 - R-JES9-BTIL: `agentkit` MUST NOT export any of `Vendor`, `ProviderID`, `ResolveModel`, `LookupModel`, or `CatalogFor`.
 - R-O6AH-EYKH: `agentkit` MUST export `type ReasoningKind int` with the constants `ReasoningKindNone`, `ReasoningKindEffort`, `ReasoningKindBudget`, `ReasoningKindToggle` declared in that `iota` order starting at 0.
-- R-O7ID-SQB6: `agentkit` MUST export `type ReasoningSpec struct { Kind ReasoningKind; Levels []Effort; MinBudget int; MaxBudget int; CanEnable bool; CanDisable bool; Default ReasoningConfig }` with exactly those fields.
+- R-O11N-T3ME: `agentkit` MUST export `type ReasoningSpec struct { Kind ReasoningKind; Term string; Levels []Effort; MinBudget int; MaxBudget int; CanEnable bool; CanDisable bool; Default ReasoningConfig }` with exactly those fields.
 - R-O8QA-6I1V: `agentkit` MUST export `func (s ReasoningSpec) Accepts(r ReasoningConfig) bool`.
 - R-0702-EGC7: `agentkit` MUST export `type OAuthClient struct { TokenURL string; ClientID string }` with exactly those fields.
 - R-JG05-PL9A: `agentkit` MUST export `type Offering struct { ID OfferingID; Host Host; WireName WireName; WireFormat WireFormat; BaseURL string; AuthModes []AuthMode; OAuth OAuthClient; WireModel string; Context int64; Pricing Pricing; Reasoning ReasoningSpec }` with exactly those fields.
@@ -238,6 +269,9 @@ adding a model is an edit to that file and nothing else.
 - R-JTF1-X2EX: Every offering in the table MUST have a non-empty `WireModel` (containing a `/` when `Host` is `HostOpenRouter`), a `Context` greater than zero, and a `Pricing` with at least one tier whose first tier's `MinInputTokens` is zero, whose tiers have strictly increasing `MinInputTokens`, and whose every tier has `InputUncached` and `Output` greater than zero.
 - R-OKXA-07GT: `ReasoningSpec.Accepts` MUST return true for `ReasoningDefault` always; for `ReasoningOff` iff `CanDisable`; for `ReasoningOn` iff `Kind` is `ReasoningKindToggle` and `CanEnable`; for `ReasoningEffort` iff `Kind` is `ReasoningKindEffort` and the level is in `Levels`; for `ReasoningBudget` iff `Kind` is `ReasoningKindBudget` and `MinBudget <= Budget <= MaxBudget`; and false otherwise.
 - R-OM56-DZ7I: Every offering's `Reasoning.Default` MUST be accepted by its own `Reasoning`; an effort-kind spec MUST have non-empty `Levels` with no duplicates; a budget-kind spec MUST have `MinBudget` less than `MaxBudget`; a none-kind spec MUST have `CanEnable` and `CanDisable` false and empty `Levels`.
+- R-O29K-6VD3: Every offering's `Reasoning.Term` MUST be `"effort"` or `"thinking_level"` when `Kind` is `ReasoningKindEffort`, `"thinking_budget"` when `Kind` is `ReasoningKindBudget`, `"thinking"` when `Kind` is `ReasoningKindToggle`, and `""` when `Kind` is `ReasoningKindNone`.
+- R-O3HG-KN3S: Every offering of `gemini-3.5-flash`, `gemini-3.7-flash`, `gemini-3.1-flash-lite`, and `gemini-3.1-pro-preview` MUST have `Reasoning.Term` `"thinking_level"`; every offering of `claude-opus-5` MUST have `"effort"`; every offering of `gemini-2.5-flash` and `claude-haiku-4-5` MUST have `"thinking_budget"`; and every offering of `deepseek-v4-pro` and `grok-4.20` MUST have `"thinking"`.
+- R-W8QS-PJR3: For every offering, each request `c` in its reasoning vocabulary — `ReasoningConfig{Mode: ReasoningOff}` when `CanDisable`; `ReasoningConfig{Mode: ReasoningOn}` when `Kind` is `ReasoningKindToggle` and `CanEnable`; `ReasoningConfig{Mode: ReasoningEffort, Effort: level}` for each level in `Levels`; `ReasoningConfig{Mode: ReasoningBudget, Budget: b}` for `b` equal to `MinBudget` and to `MaxBudget`; and `Reasoning.Default` — MUST, as `Settings{Options: Options{Term: c.String()}}`, pass the `Send`-time settings validation of the offering's `WireFormat` (D8), so that no vocabulary value can fail `Send` with `ErrInvalidConfig`.
 - R-JUMY-AU5M: `Lookup("claude-sonnet-5", "", "")` MUST return an offering with `ID` `OfferingAnthropicMessages` and `WireModel` `"claude-sonnet-5"`; `Lookup("claude-sonnet-5", "openrouter", "chat")` MUST return an offering with `ID` `OfferingOpenRouterChat` and `WireModel` `"anthropic/claude-sonnet-5"`; and `Lookup("claude-sonnet-5", "gemini", "")` MUST return an error wrapping `ErrNotFound`.
 - R-JVUU-OLWB: `Lookup("gpt-5.6-sol", "", "")` MUST return an offering with `ID` `OfferingOpenAIResponses`, `WireModel` `"gpt-5.6-sol"`, and a `Reasoning.Default` of `ReasoningConfig{Mode: ReasoningEffort, Effort: EffortMedium}`; `Lookup("gpt-5.6-sol", "openrouter", "")` MUST return an offering with `ID` `OfferingOpenRouterResponses`; and `Lookup("gpt-5.6-sol", "openai", "messages")` MUST return an error wrapping `ErrNotFound`.
 - R-JX2R-2DN0: `Lookup("deepseek-v4-flash", "", "")` MUST return an offering with `Host` `HostOpenRouter`, and `Lookup("no-such-model", "", "")` MUST return an error wrapping `ErrNotFound`.

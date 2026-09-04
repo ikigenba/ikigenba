@@ -1,26 +1,119 @@
 package agentkit
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"sort"
+	"strconv"
+	"strings"
+)
 
-// Settings are the generation controls for a turn. Every field is optional: a
-// zero Settings requests the vendor's own defaults for everything. Pointer
-// fields distinguish "unset" (leave to the vendor) from a deliberate zero (e.g.
-// Temperature 0). Settings carries no vendor vocabulary — each wire renders the
-// subset it can express (D5) and fails loud on what it cannot (see ReasoningConfig).
+// Options are the user's generation options, verbatim: option name to the
+// string the user supplied. Sampling and output options use wire-neutral
+// names; the reasoning option uses the model's own term from the catalog
+// (D21) — "effort", "thinking_level", "thinking_budget", or "thinking" — and
+// every wire accepts all four. The wire parses each value under the kind its
+// OptionSpec declares and rejects, at Send, any key it does not know or any
+// value it cannot parse. A nil or empty Options sends no option.
+type Options map[string]string
+
+// OptionKind is the value shape an option accepts; it fixes how the wire
+// parses the user's string.
+type OptionKind int
+
+// Supported option value shapes.
+const (
+	OptionKindNumber    OptionKind = iota // a finite decimal number: "0.7", "1", "2e-1"
+	OptionKindInteger                     // a base-10 integer: "4096", "-1"
+	OptionKindText                        // any string, passed through verbatim
+	OptionKindTextList                    // a JSON array of strings: `["END","STOP"]`
+	OptionKindReasoning                   // a reasoning choice: "high", "off", "on", "8192", "dynamic"
+)
+
+// OptionSpec describes one option a wire accepts: the wire-neutral name a
+// consumer uses as the Options key, the kind that fixes the value grammar, and
+// a one-line description suitable for help text.
+type OptionSpec struct {
+	Name        string
+	Kind        OptionKind
+	Description string
+}
+
+// validateOptions checks Settings.Options against the wire's option
+// vocabulary: every key must name a known OptionSpec (R-OI49-5W04) and its
+// value must parse under that spec's Kind grammar (R-OJC5-JNQT, whose
+// grammar per kind is R-W2NA-SP1M). Keys are checked in sorted order so the
+// reported key is deterministic when more than one is invalid. A nil or
+// empty Options is always valid.
+func validateOptions(options Options, specs []OptionSpec) error {
+	if len(options) == 0 {
+		return nil
+	}
+	byName := make(map[string]OptionSpec, len(specs))
+	for _, spec := range specs {
+		byName[spec.Name] = spec
+	}
+	keys := make([]string, 0, len(options))
+	for key := range options {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		spec, ok := byName[key]
+		if !ok {
+			return fmt.Errorf("%w: unknown option %q", ErrInvalidConfig, key)
+		}
+		if err := validateOptionValue(spec.Kind, options[key]); err != nil {
+			return fmt.Errorf("%w: option %q: %w", ErrInvalidConfig, key, err)
+		}
+	}
+	return nil
+}
+
+// validateOptionValue parses value under kind's grammar (R-W2NA-SP1M).
+func validateOptionValue(kind OptionKind, value string) error {
+	switch kind {
+	case OptionKindNumber:
+		parsed, err := strconv.ParseFloat(value, 64)
+		if err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+			return fmt.Errorf("invalid number %q", value)
+		}
+	case OptionKindInteger:
+		if _, err := strconv.ParseInt(value, 10, 64); err != nil {
+			return fmt.Errorf("invalid integer %q", value)
+		}
+	case OptionKindText:
+		// any string is accepted verbatim
+	case OptionKindTextList:
+		var elements []any
+		if err := json.Unmarshal([]byte(value), &elements); err != nil {
+			return fmt.Errorf("invalid text list %q", value)
+		}
+		for _, element := range elements {
+			if _, ok := element.(string); !ok {
+				return fmt.Errorf("invalid text list %q: element is not a string", value)
+			}
+		}
+	case OptionKindReasoning:
+		if _, err := ParseReasoning(value); err != nil {
+			return fmt.Errorf("invalid reasoning value %q", value)
+		}
+	default:
+		return fmt.Errorf("unknown option kind %d", kind)
+	}
+	return nil
+}
+
+// Settings are the generation controls for a turn. A zero Settings requests
+// the vendor's own defaults for everything and sends no option. Settings
+// carries no vendor vocabulary; each wire renders what it can express and
+// fails loud on what it cannot.
 type Settings struct {
-	// Temperature and TopP are the sampling knobs, passed through when set.
-	Temperature *float64
-	TopP        *float64
-	// MaxOutputTokens caps generated tokens (excluding nothing — the vendor's
-	// own accounting decides whether reasoning counts against it).
-	MaxOutputTokens *int
-	// StopSequences are verbatim stop strings, passed through when non-empty.
-	StopSequences []string
+	// Options are the user's string options, including the reasoning choice.
+	Options Options
 	// ToolChoice directs tool selection for the turn (see ToolChoice).
 	ToolChoice ToolChoice
-	// Reasoning requests generation behavior in a wire-neutral shape (see
-	// ReasoningConfig); it is not transcript content.
-	Reasoning ReasoningConfig
 }
 
 // ReasoningMode is the neutral reasoning request. A wire renders the shapes it
@@ -67,6 +160,60 @@ const (
 	EffortMax
 )
 
+// ParseReasoning parses the value grammar of an OptionKindReasoning option.
+func ParseReasoning(s string) (ReasoningConfig, error) {
+	switch s {
+	case "dynamic":
+		return ReasoningConfig{Mode: ReasoningDefault}, nil
+	case "off":
+		return ReasoningConfig{Mode: ReasoningOff}, nil
+	case "on":
+		return ReasoningConfig{Mode: ReasoningOn}, nil
+	case "none":
+		return ReasoningConfig{Mode: ReasoningEffort, Effort: EffortNone}, nil
+	case "minimal":
+		return ReasoningConfig{Mode: ReasoningEffort, Effort: EffortMinimal}, nil
+	case "low":
+		return ReasoningConfig{Mode: ReasoningEffort, Effort: EffortLow}, nil
+	case "medium":
+		return ReasoningConfig{Mode: ReasoningEffort, Effort: EffortMedium}, nil
+	case "high":
+		return ReasoningConfig{Mode: ReasoningEffort, Effort: EffortHigh}, nil
+	case "xhigh":
+		return ReasoningConfig{Mode: ReasoningEffort, Effort: EffortXHigh}, nil
+	case "max":
+		return ReasoningConfig{Mode: ReasoningEffort, Effort: EffortMax}, nil
+	}
+
+	if budget, err := strconv.Atoi(s); err == nil && budget >= 0 {
+		return ReasoningConfig{Mode: ReasoningBudget, Budget: budget}, nil
+	}
+	return ReasoningConfig{}, fmt.Errorf("invalid reasoning value %q", s)
+}
+
+// String returns the value as ParseReasoning's canonical input grammar.
+func (c ReasoningConfig) String() string {
+	switch c.Mode {
+	case ReasoningDefault:
+		return "dynamic"
+	case ReasoningOff:
+		return "off"
+	case ReasoningOn:
+		return "on"
+	case ReasoningEffort:
+		return c.Effort.String()
+	case ReasoningBudget:
+		return strconv.Itoa(c.Budget)
+	default:
+		return ""
+	}
+}
+
+// String returns the effort level's lowercase name.
+func (e Effort) String() string {
+	return effortName(e)
+}
+
 // ToolChoice steers whether, and which, tool the model may call this turn. Like
 // ReasoningConfig it is neutral and fail-loud: a wire that cannot express the chosen
 // mode rejects it at Send (ErrInvalidConfig), never silently downgrades. The zero
@@ -110,17 +257,124 @@ type wireCapabilities struct {
 	toolChoice toolChoiceShapes
 }
 
+// reasoningOptionKeys are the four reasoning term keys a catalog offering may
+// use (D21); Settings.Options may carry at most one of them (R-W533-K8J0).
+var reasoningOptionKeys = []string{"effort", "thinking_level", "thinking_budget", "thinking"}
+
+// reasoningTermAdmits reports whether mode is an admissible ParseReasoning
+// result for the reasoning term key (R-W3V7-6GSB).
+func reasoningTermAdmits(key string, mode ReasoningMode) bool {
+	switch key {
+	case "effort", "thinking_level":
+		return mode == ReasoningEffort || mode == ReasoningOff || mode == ReasoningDefault
+	case "thinking_budget":
+		return mode == ReasoningBudget || mode == ReasoningOff || mode == ReasoningDefault
+	case "thinking":
+		return mode == ReasoningOn || mode == ReasoningOff || mode == ReasoningDefault
+	default:
+		return false
+	}
+}
+
+// resolveReasoning is the R-W6AZ-Y09P reasoning shape a wire renders and
+// validates for a Send: ParseReasoning(v) of the one reasoning option
+// present in options, or ReasoningConfig{Mode: ReasoningDefault} when none
+// is present. It fails when more than one reasoning key is present
+// (R-W533-K8J0, naming the conflicting keys in sorted order for determinism)
+// or when the parsed Mode does not fit its term (R-W3V7-6GSB). By the time
+// this runs, validateOptions has already confirmed any present value parses
+// under OptionKindReasoning's grammar, so the ParseReasoning call here is not
+// expected to fail — but its error is still surfaced for defense in depth.
+func resolveReasoning(options Options) (ReasoningConfig, error) {
+	var present []string
+	for _, key := range reasoningOptionKeys {
+		if _, ok := options[key]; ok {
+			present = append(present, key)
+		}
+	}
+	if len(present) > 1 {
+		sort.Strings(present)
+		return ReasoningConfig{}, fmt.Errorf("conflicting reasoning options: %s", strings.Join(present, ", "))
+	}
+	if len(present) == 0 {
+		return ReasoningConfig{Mode: ReasoningDefault}, nil
+	}
+	key := present[0]
+	config, err := ParseReasoning(options[key])
+	if err != nil {
+		return ReasoningConfig{}, fmt.Errorf("option %q: %w", key, err)
+	}
+	if !reasoningTermAdmits(key, config.Mode) {
+		return ReasoningConfig{}, fmt.Errorf("option %q does not admit mode %s", key, reasoningModeName(config.Mode))
+	}
+	return config, nil
+}
+
+// settingsReasoning returns the ReasoningConfig carried by Settings.Options
+// (R-W6AZ-Y09P), ignoring a resolveReasoning error: every render call site
+// runs only after wireCodec.validateSettings has already called
+// resolveReasoning (via wireCapabilities.validate) and returned nil, so the
+// error branch here is unreachable in practice.
+func settingsReasoning(settings Settings) ReasoningConfig {
+	config, _ := resolveReasoning(settings.Options)
+	return config
+}
+
+// settingsFloatOption returns the parsed float64 value of options[key] and
+// true, or (0, false) if key is absent. It is called only after
+// validateOptions has confirmed any present value parses under
+// OptionKindNumber, so the ignored parse error mirrors settingsReasoning's
+// defense-in-depth comment: unreachable in practice, but harmless if it were
+// ever reached (R-OKK1-XFHI, R-OLRY-B787, R-OMZU-OYYW, R-OO7R-2QPL).
+func settingsFloatOption(options Options, key string) (float64, bool) {
+	value, ok := options[key]
+	if !ok {
+		return 0, false
+	}
+	parsed, _ := strconv.ParseFloat(value, 64)
+	return parsed, true
+}
+
+// settingsMaxOutputTokens returns the parsed int value of
+// options["max_output_tokens"] and true, or (0, false) if the key is absent.
+// See settingsFloatOption's comment on the ignored parse error.
+func settingsMaxOutputTokens(options Options) (int, bool) {
+	value, ok := options["max_output_tokens"]
+	if !ok {
+		return 0, false
+	}
+	parsed, _ := strconv.ParseInt(value, 10, 64)
+	return int(parsed), true
+}
+
+// settingsStopSequences returns the parsed []string value of options["stop"]
+// and true, or (nil, false) if the key is absent. See settingsFloatOption's
+// comment on the ignored parse error.
+func settingsStopSequences(options Options) ([]string, bool) {
+	value, ok := options["stop"]
+	if !ok {
+		return nil, false
+	}
+	var elements []string
+	_ = json.Unmarshal([]byte(value), &elements)
+	return elements, true
+}
+
 func (capabilities wireCapabilities) validate(settings Settings) error {
-	if err := validateReasoningConfig(settings.Reasoning); err != nil {
+	reasoning, err := resolveReasoning(settings.Options)
+	if err != nil {
+		return fmt.Errorf("%w: %s reasoning: %w", ErrInvalidConfig, capabilities.name, err)
+	}
+	if err := validateReasoningConfig(reasoning); err != nil {
 		return fmt.Errorf("%w: %s reasoning: %w", ErrInvalidConfig, capabilities.name, err)
 	}
 	if err := validateToolChoice(settings.ToolChoice); err != nil {
 		return fmt.Errorf("%w: %s tool choice: %w", ErrInvalidConfig, capabilities.name, err)
 	}
 
-	reasoningShape := shapeForReasoning(settings.Reasoning.Mode)
+	reasoningShape := shapeForReasoning(reasoning.Mode)
 	if reasoningShape != 0 && capabilities.reasoning&reasoningShape == 0 {
-		return fmt.Errorf("%w: %s wire cannot express reasoning mode %s", ErrInvalidConfig, capabilities.name, reasoningModeName(settings.Reasoning.Mode))
+		return fmt.Errorf("%w: %s wire cannot express reasoning mode %s", ErrInvalidConfig, capabilities.name, reasoningModeName(reasoning.Mode))
 	}
 	toolChoiceShape := shapeForToolChoice(settings.ToolChoice.Mode)
 	if toolChoiceShape != 0 && capabilities.toolChoice&toolChoiceShape == 0 {
@@ -143,8 +397,8 @@ func validateReasoningConfig(config ReasoningConfig) error {
 			return fmt.Errorf("effort mode cannot carry a budget")
 		}
 	case ReasoningBudget:
-		if config.Budget <= 0 {
-			return fmt.Errorf("budget mode requires a positive budget")
+		if config.Budget < 0 {
+			return fmt.Errorf("budget mode requires a non-negative budget")
 		}
 		if config.Effort != EffortNone {
 			return fmt.Errorf("budget mode cannot carry an effort")
@@ -254,27 +508,15 @@ func effortName(effort Effort) string {
 
 func cloneSettings(settings Settings) Settings {
 	clone := settings
-	if settings.Temperature != nil {
-		value := *settings.Temperature
-		clone.Temperature = &value
+	if settings.Options != nil {
+		clone.Options = make(Options, len(settings.Options))
+		for key, value := range settings.Options {
+			clone.Options[key] = value
+		}
 	}
-	if settings.TopP != nil {
-		value := *settings.TopP
-		clone.TopP = &value
-	}
-	if settings.MaxOutputTokens != nil {
-		value := *settings.MaxOutputTokens
-		clone.MaxOutputTokens = &value
-	}
-	clone.StopSequences = append([]string(nil), settings.StopSequences...)
 	return clone
 }
 
 func settingsAreZero(settings Settings) bool {
-	return settings.Temperature == nil &&
-		settings.TopP == nil &&
-		settings.MaxOutputTokens == nil &&
-		len(settings.StopSequences) == 0 &&
-		settings.ToolChoice == (ToolChoice{}) &&
-		settings.Reasoning == (ReasoningConfig{})
+	return len(settings.Options) == 0 && settings.ToolChoice == (ToolChoice{})
 }
