@@ -1,93 +1,107 @@
 # D7-credentials
 
-Credentials are the input to an `AuthApplier` (D6), and agentkit deliberately
-keeps **two credential worlds that are never unified**. A vendor package defines
-its own credential set — its own constructors, its own closed set of accepted
-shapes — and typed safety lives *inside* that package rather than in a shared root
-type. The point is compile-time credential safety: passing one vendor's credential
-to another vendor's constructor must not compile. `anthropic.New(openai.OAuth(ts), model)`
-is a compile error, and that is the whole design, not an accident of naming.
-
-The mechanism is a per-package **unexported marker method**. Each vendor package's
-credential interface carries a method only that package can implement, so a value
-from another world does not satisfy it:
+A credential is what a consumer holds — an API key, or a source of OAuth
+tokens. The wire format (D5) is what knows where a credential goes on the
+request. agentkit keeps those two apart. The root package exports one sealed
+`Credential` type with two constructors, and every `Offering` says which
+credential modes it accepts and turns a credential into the `Authenticator`
+(D6) that pairs it with the offering's wire format. There are no per-vendor
+packages: the whole construction path is root symbols driven by catalog data.
 
 ```go
-// package anthropic
-//
-// Credential is the sealed set of Anthropic credentials. The unexported marker
-// means only this package can produce a value satisfying it, so a credential
-// from any other vendor package fails to type-check at anthropic.New.
+package agentkit
+
+// AuthMode names how a credential is presented; its values are also what a
+// conversation reports as Identity.AuthMode (D1).
+type AuthMode string
+
+const (
+	AuthModeAPIKey AuthMode = "api_key"
+	AuthModeOAuth  AuthMode = "oauth"
+)
+
+// Credential is the sealed set of consumer credentials. Its methods are
+// unexported, so a value comes only from APIKey or OAuth.
 type Credential interface {
-	apply(ctx context.Context, req *http.Request, body []byte) error
-	isAnthropicCredential()
+	mode() AuthMode
+	isCredential()
 }
 
-func APIKey(key string) Credential          // x-api-key world
-func OAuth(ts TokenSource) Credential        // OAuth world; bakes transport (L2)
+func APIKey(key string) Credential
+func OAuth(source TokenSource) Credential
 
-func New(cred Credential, model string, opts ...Option) (*agentkit.Conversation, error)
+// Token is one OAuth grant. AccountID is optional; only providers that need
+// it (OpenAI) read it.
+type Token struct {
+	Bearer    string
+	AccountID string
+}
+
+// TokenSource yields the current token and can mint a new one. Token is
+// called before every request; Refresh is called by the conversation when a
+// request comes back 401 (D22). The root ships one concrete source,
+// Offering.TokenSource (D22); the interface stays public so tests can fake it.
+type TokenSource interface {
+	Token(ctx context.Context) (Token, error)
+	Refresh(ctx context.Context) (Token, error)
+}
+
+// Authenticator turns a credential into the authenticator for this offering:
+// it holds the credential and hands each resolved value to o.WireFormat,
+// which places it on the request (D5).
+func (o Offering) Authenticator(cred Credential) (Authenticator, error)
 ```
+
+The consumer's flow is: resolve an offering, pick a credential whose mode the
+offering lists, build the endpoint, construct:
 
 ```go
-// package openai
-//
-// Credential is the sealed set of OpenAI credentials, sealed by its own
-// unexported marker — structurally distinct from anthropic.Credential even
-// though both wrap an AuthApplier.
-type Credential interface {
-	apply(ctx context.Context, req *http.Request, body []byte) error
-	isOpenAICredential()
-}
-
-func APIKey(key string) Credential           // Bearer world
-func OAuth(ts TokenSource) Credential        // bakes transport: host/path/headers move (L2)
-func New(cred Credential, model string, opts ...Option) (*agentkit.Conversation, error)
+offering, _ := agentkit.Lookup("claude-sonnet-5", "", "")
+auth, _     := offering.Authenticator(agentkit.APIKey(key))
+ep, _       := agentkit.NewEndpoint(offering.BaseURL, auth)   // or a proxy URL
+conv, _     := agentkit.New(offering.WireFormat, ep, offering.WireModel, cfg)
 ```
 
-The two worlds are structurally distinct types; there is intentionally no single
-root `Credential` interface spanning them, because a unifying interface would
-re-open exactly the cross-world substitution the marker forbids. What the two
-worlds share is only the runtime shape they both feed — the `AuthApplier` — and a
-single `Apply` method covers every scheme: a static API key, an OAuth token
-source, or SigV4 body signing. A full auth-type taxonomy is cut; there is one
-method, not a hierarchy. `TokenSource` shapes legitimately differ per vendor (one
-returns only a bearer, another a bearer plus an account id), and forcing them into
-a common signature would be a false unification of its own.
+`AuthModes` is the discovery surface: an application that holds several kinds
+of credential reads it to decide which to offer. `Authenticator` is the guard: a
+credential whose mode the offering does not list is `ErrInvalidConfig` at
+construction, before any request. Choosing between credentials is the
+application's business; where an OAuth token lives is the application's
+`TokenStore`, and how it is refreshed is D22.
 
-Compile-time safety lives in the vendor packages, which are the only
-construction route (D1). The root `NewEndpoint` takes a bare `AuthApplier`
-because the vendor packages, as separate Go packages, must hand their sealed
-credentials across a package boundary; there is no consumer path on which the
-missing guard could matter, and a consumer never defines an auth mechanism.
+Where a credential lands is fixed per wire format (D5), because a consumer who
+overrides `BaseURL` to point at a proxy still relies on the headers being
+right. The authenticator resolves the credential — the key, or the current
+token from the source — and the wire format places it:
 
-One transport interaction is enforced at construction (L2): a **transport-baking
-credential** (an OAuth credential that moves host, path, and headers —
-D6) and `WithBaseURL` are **mutually exclusive**. Supplying both is
-`ErrInvalidConfig` at construction time, before any request. `WithBaseURL` is for
-the API-key path only, where the transport is not already fixed by the
-credential; letting both win would leave two conflicting sources of truth for the
-host.
+| Wire format | API key | OAuth |
+|---|---|---|
+| `AnthropicMessagesWire()` | `x-api-key` header | not accepted (Anthropic's terms do not permit it) |
+| `GeminiGenerateContentWire()` | `key` query parameter | not accepted |
+| `ChatWire()`, `ResponsesWire()` | `Authorization: Bearer` | `Authorization: Bearer` |
+| `OpenAIChatWire()`, `OpenAIResponsesWire()` | `Authorization: Bearer` | `Authorization: Bearer` + `ChatGPT-Account-Id` |
+
+Whether a credential mode is accepted at all is the offering's `AuthModes`,
+not the wire's: OpenRouter speaks the generic chat wire and lists only
+`api_key`.
+
+The `Authenticator` an offering returns also carries the provenance that
+`New` reads into `Identity` (D1): `Identity.Endpoint` is the offering's
+`ID` string and `Identity.AuthMode` the credential's mode. That is the
+link cost (D3) prices on, and it holds even when the consumer overrides the
+base URL — a proxy in front of Anthropic still prices as Anthropic.
+
+A base-URL override and OAuth are no longer mutually exclusive: the consumer
+owns the URL they pass to `NewEndpoint`, so there is one source of truth.
 
 ## REQUIREMENTS
 
-- R-3IB6-03OE: Each vendor package MUST define its own sealed credential interface carrying a package-private marker method, so a credential value from one vendor package MUST NOT satisfy another vendor package's constructor (a compile error).
-- R-3JJ2-DVF3: There MUST NOT be a single shared credential interface spanning the two credential worlds; the only shared abstraction is the `AuthApplier` runtime shape.
-- R-3KQY-RN5S: A single `Apply(ctx context.Context, req *http.Request, body []byte) error` method MUST cover API-key, OAuth, and body-signing (SigV4) schemes; no separate auth-type hierarchy may be introduced.
-- R-3N6R-J6N6: Supplying both a transport-baking credential and `WithBaseURL` MUST fail with `ErrInvalidConfig` at construction, before any request is issued (L2).
-- R-3OEN-WYDV: A per-vendor `TokenSource` MAY expose a vendor-specific shape (e.g. bearer-only vs. bearer-plus-account-id); the design MUST NOT force one common `TokenSource` signature across vendors.
-- R-YM0P-1521: The `anthropic` package MUST export a sealed `Credential` interface whose method set is exactly the package-private `apply(ctx context.Context, req *http.Request, body []byte) error` and the package-private marker `isAnthropicCredential()`, plus the constructors `APIKey(key string) Credential`, `OAuth(ts TokenSource) Credential`, and `New(cred Credential, model string, opts ...Option) (*agentkit.Conversation, error)`.
-- R-YN8L-EWSQ: The `openai` package MUST export a sealed `Credential` interface whose method set is exactly the package-private `apply(ctx context.Context, req *http.Request, body []byte) error` and the package-private marker `isOpenAICredential()`, plus the constructors `APIKey(key string) Credential`, `OAuth(ts TokenSource) Credential`, and `New(cred Credential, model string, opts ...Option) (*agentkit.Conversation, error)`.
-- R-OO21-06W5: `NewEndpoint` MUST accept any `AuthApplier` with no compile-time vendor guard; vendor credential typing MUST live solely in each vendor package's sealed `Credential`.
-- R-OP9X-DYMU: Every vendor constructor package MUST export a sealed `Credential` interface carrying its own package-private marker, an `APIKey(key string) Credential` constructor, and a `New(cred Credential, model string, opts ...Option) (*agentkit.Conversation, error)` constructor that selects a built-in wire by `KnownWire` and builds its `Endpoint`, with `model` a required positional parameter.
-- R-YQWA-K80T: The `anthropic` package MUST export `type TokenSource interface { Token(ctx context.Context) (string, error) }`.
-- R-YS46-XZRI: The `openai` package MUST export `type TokenSource interface { Token(ctx context.Context) (bearer, accountID string, err error) }`.
-- R-YTC3-BRI7: The `xai` package MUST export `type TokenSource interface { Token(ctx context.Context) (string, error) }`.
-- R-YUJZ-PJ8W: The `anthropic` package MUST export `type API int` with constants `Messages` (0) and `TextCompletions` declared in that `iota` order, and `func WithAPI(api API) Option`; the zero value selects Messages.
-- R-YVRW-3AZL: The `openai` package MUST export `type API int` with constants `Responses` (0) and `ChatCompletions` declared in that `iota` order, and `func WithAPI(api API) Option`; the zero value selects Responses.
-- R-YWZS-H2QA: The `xai` package MUST export `type API int` with constants `Responses` (0) and `ChatCompletions` declared in that `iota` order, and `func WithAPI(api API) Option`; the zero value selects Responses.
-- R-YY7O-UUGZ: The `openrouter` package MUST export `type API int` with constants `ChatCompletions` (0) and `Responses` declared in that `iota` order, and `func WithAPI(api API) Option`; the zero value selects ChatCompletions.
-- R-YZFL-8M7O: The `xai` package MUST export a sealed `Credential` interface whose method set is exactly the package-private `apply(ctx context.Context, req *http.Request, body []byte) error` and the package-private marker `isXAICredential()`, plus `APIKey(key string) Credential`, `OAuth(ts TokenSource) Credential`, and `New(cred Credential, model string, opts ...Option) (*agentkit.Conversation, error)`.
-- R-Z0NH-MDYD: The `openrouter` package MUST export a sealed `Credential` interface whose method set is exactly the package-private `apply(ctx context.Context, req *http.Request, body []byte) error` and the package-private marker `isOpenRouterCredential()`, plus `APIKey(key string) Credential` and `New(cred Credential, model string, opts ...Option) (*agentkit.Conversation, error)`; it MUST NOT export an `OAuth` constructor or a `TokenSource`.
-- R-Z1VE-05P2: The `gemini` package MUST export a sealed `Credential` interface whose method set is exactly the package-private `apply(ctx context.Context, req *http.Request, body []byte) error` and the package-private marker `isGeminiCredential()`, plus `APIKey(key string) Credential` and `New(cred Credential, model string, opts ...Option) (*agentkit.Conversation, error)`; it MUST NOT export an `OAuth` constructor, `TokenSource`, or `API` enum.
-- R-OQHT-RQDJ: Every vendor constructor package MUST export `func WithBaseURL(raw string) Option`, which MUST replace the package's default base URL with `raw`, and this MUST be the only transport customization a consumer can supply.
+- R-P5PA-T4A1: `agentkit` MUST export `type AuthMode string` with the constants `AuthModeAPIKey = "api_key"` and `AuthModeOAuth = "oauth"`.
+- R-P6X7-6W0Q: `agentkit` MUST export a sealed `Credential` interface, not implementable outside the root package, together with the constructors `APIKey(key string) Credential` and `OAuth(source TokenSource) Credential`.
+- R-V7UO-KE8S: `agentkit` MUST export `type Token struct { Bearer string; AccountID string }` with exactly those fields and `type TokenSource interface { Token(ctx context.Context) (Token, error); Refresh(ctx context.Context) (Token, error) }`.
+- R-KE5C-F60Q: `NewEndpoint` MUST accept any `Authenticator` with no compile-time guard on its origin.
+- R-KFD8-SXRF: A single `Authenticate(ctx context.Context, req *http.Request, body []byte) error` method MUST cover API-key, OAuth, and body-signing (SigV4) schemes; no separate auth-type hierarchy may be introduced.
+- R-KGL5-6PI4: `agentkit` MUST export `func (o Offering) Authenticator(cred Credential) (Authenticator, error)`, which MUST return `ErrInvalidConfig` for a nil `cred` or for a credential whose mode is not in `o.AuthModes`, and MUST NOT export `Offering.Auth`.
+- R-KHT1-KH8T: The authenticator from `o.Authenticator(APIKey(k))` MUST transmit `k` as placed by `o.WireFormat`: as the `x-api-key` header when it is `AnthropicMessagesWire()`, as the `key` URL query parameter when it is `GeminiGenerateContentWire()`, and as the `Authorization: Bearer k` header when it is `ChatWire()`, `ResponsesWire()`, `OpenAIChatWire()`, or `OpenAIResponsesWire()`.
+- R-KJ0X-Y8ZI: The authenticator from `o.Authenticator(OAuth(src))` MUST call `src.Token(ctx)` on every request and transmit `Token.Bearer` as the `Authorization: Bearer` header; when `o.WireFormat` is `OpenAIResponsesWire()` or `OpenAIChatWire()` it MUST also transmit `Token.AccountID` as the `ChatGPT-Account-Id` header and MUST fail with `ErrInvalidConfig` when `AccountID` is empty; and `Authenticate` MUST return `ErrInvalidConfig` for a nil `src` and MUST return `src`'s error unchanged when `Token` fails.
+- R-KK8U-C0Q7: A `Conversation` built by `New(o.WireFormat, NewEndpoint(url, auth), model, cfg)` where `auth` came from `o.Authenticator(cred)` MUST report `Identity.Endpoint` equal to `string(o.ID)` for any `url`, and `Identity.AuthMode` equal to `"api_key"` for an `APIKey` credential and `"oauth"` for an `OAuth` credential.

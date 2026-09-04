@@ -7,7 +7,6 @@ import (
 	"go/parser"
 	"go/token"
 	"net/http"
-	"net/url"
 	"reflect"
 	"testing"
 )
@@ -41,29 +40,11 @@ func TestEndpointExportsNoOptionFunctions(t *testing.T) {
 	}
 }
 
-func TestEndpointOwnsOnlyBaseURLAndAuth(t *testing.T) {
-	// R-OD2X-K97W
-	wantFields := map[string]reflect.Type{
-		"baseURL": reflect.TypeFor[*url.URL](),
-		"auth":    reflect.TypeFor[AuthApplier](),
-	}
-	configType := reflect.TypeFor[endpointConfig]()
-	if configType.NumField() != len(wantFields) {
-		t.Fatalf("endpoint config has %d fields, want only baseURL and auth", configType.NumField())
-	}
-	for name, wantType := range wantFields {
-		field, ok := configType.FieldByName(name)
-		if !ok || field.Type != wantType {
-			t.Fatalf("endpoint config field %q = %v (present=%t), want %v", name, field.Type, ok, wantType)
-		}
-	}
-}
-
 func TestNewEndpointHasExactConstructorAndValidation(t *testing.T) {
+	// R-KAHN-9USN
+	// R-KE5C-F60Q
 	// R-OBV1-6HH7
-	// R-OEAT-Y0YL
-	// R-OO21-06W5
-	wantSignature := reflect.TypeOf(func(string, AuthApplier) (Endpoint, error) { return Endpoint{}, nil })
+	wantSignature := reflect.TypeOf(func(string, Authenticator) (Endpoint, error) { return Endpoint{}, nil })
 	if got := reflect.TypeOf(NewEndpoint); got != wantSignature || got.IsVariadic() {
 		t.Fatalf("NewEndpoint = %s variadic=%t, want %s non-variadic", got, got.IsVariadic(), wantSignature)
 	}

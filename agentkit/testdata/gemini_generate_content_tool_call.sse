@@ -1,3 +1,3 @@
 data: {"candidates":[{"content":{"role":"model","parts":[{"text":"Before weather. "},{"functionCall":{"id":"gemini_weather_verbatim-01","name":"lookup_weather_gemini","args":{"city":"Chicago","days":3}}},{"text":"Then route. "}]}}]}
 
-data: {"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"id":"gemini_route_AQID_02","name":"plan_route_gemini","args":{"destination":"Museum Campus","avoid_tolls":true}}},{"text":"Ready."}]},"finishReason":"STOP"}]}
+data: {"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"id":"  gemini_route:AQID-02!  ","name":"plan_route_gemini","args":{"destination":"Museum Campus","avoid_tolls":true}}},{"text":"Ready."}]},"finishReason":"STOP"}]}

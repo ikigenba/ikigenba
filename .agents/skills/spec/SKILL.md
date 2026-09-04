@@ -38,7 +38,7 @@ The gap is the diff: an id in design but not tests must be **added**; an id in t
 
 ## Project gates (AGENTS.md)
 
-Each project has an `AGENTS.md` beside `specs/` that declares the concrete verification gates. The specifics are kept here, not in this skill, because projects differ. It must declare:
+Each project has an `AGENTS.md` beside `specs/` that declares the concrete verification gates. That directory — the parent of `specs/` — is the project's working directory: every loop stage, gate command, and path in this skill is relative to it, and a monorepo may hold several such projects below one git root. The specifics are kept here, not in this skill, because projects differ. It must declare:
 
 - **Toolchain**: the tools and versions that must be present.
 - **Test files**: where the project's tests live (the file set the canonical gap greps for ids).

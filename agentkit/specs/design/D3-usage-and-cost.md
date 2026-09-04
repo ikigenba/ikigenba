@@ -110,11 +110,11 @@ against their long-context threshold. Reasoning tokens bill at the tier's
 output rate; no vendor prices them separately.
 
 The catalog match is by the conversation's `Identity` (D1): the offering whose
-`Provider` equals `Identity.Endpoint` and whose `WireModel` equals
-`Identity.Model` supplies the `Pricing`. Vendor packages name their endpoints
-with their `Provider` value (D6, D21), so a conversation built through a vendor
-constructor for a cataloged model prices itself with no help from the app. An
-unlisted model finds no offering and prices to zero.
+`ID` equals `Identity.Endpoint` and whose `WireModel` equals
+`Identity.Model` supplies the `Pricing`. The authenticator `Offering.Authenticator` returns
+names its endpoint with the offering's `ID` value (D7, D21), so a
+conversation built from a cataloged offering prices itself with no help from
+the app. An unlisted model finds no offering and prices to zero.
 
 ## REQUIREMENTS
 
@@ -131,7 +131,7 @@ unlisted model finds no offering and prices to zero.
 - R-NMS3-AMPD: `Pricing.Cost` MUST select the last tier whose `MinInputTokens` is less than or equal to the sum of `InputTokens`, `CachedTokens`, `CacheWrite5mTokens`, and `CacheWrite1hTokens`, falling back to the first tier when no later tier's floor is reached.
 - R-NNZZ-OEG2: `Pricing.Cost` MUST equal `InputTokens×InputUncached + CachedTokens×CacheReadInput + CacheWrite5mTokens×CacheWrite5m + CacheWrite1hTokens×CacheWrite1h + (OutputTokens+ReasoningTokens)×Output` using the selected tier's rates.
 - R-NP7W-266R: A turn's `Cost` MUST be the wire-reported figure when the wire carries one, otherwise the catalog offering's `Pricing.Cost` of the merged `Usage` when an offering matches the conversation, otherwise zero; and nothing but the amount MUST be surfaced to the consumer.
-- R-NQFS-FXXG: The catalog offering used to price a conversation MUST be the one whose `Provider` equals `Identity.Endpoint` and whose `WireModel` equals `Identity.Model`; any other pair MUST match no offering.
+- R-KLGQ-PSGW: The catalog offering used to price a conversation MUST be the one whose `ID` equals `Identity.Endpoint` and whose `WireModel` equals `Identity.Model`; any other pair MUST match no offering.
 - R-NRNO-TPO5: A turn whose conversation matches no catalog offering and whose wire reports no cost MUST complete normally with a `Cost` of zero, never an error.
 - R-NSVL-7HEU: Aggregating `Cost` values over turns MUST be plain integer addition of the amounts.
 - R-2IY2-WR69: A wire that reports its own billed cost MUST decode it to nano-USD with that wire's fixed unit; an absent wire cost MUST fall through to the next rung rather than resolve to zero.

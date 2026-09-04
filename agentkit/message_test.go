@@ -75,27 +75,3 @@ func TestEveryVariantHasBareProviderPayload(t *testing.T) {
 		}
 	}
 }
-
-func TestReasoningKindIsIndependentOfProviderPayload(t *testing.T) {
-	// R-233D-XQJ8
-	blocks := []Block{
-		Text{Text: "visible", Provider: json.RawMessage(`{"signature":true}`)},
-		Reasoning{Text: "thought", Provider: nil},
-	}
-	if _, ok := blocks[0].(Text); !ok || blocks[0].BlockType() != "text" {
-		t.Fatalf("text with provider payload changed kind: %T", blocks[0])
-	}
-	if reasoning, ok := blocks[1].(Reasoning); !ok || reasoning.Provider != nil || blocks[1].BlockType() != "reasoning" {
-		t.Fatalf("reasoning without provider payload changed kind: %#v", blocks[1])
-	}
-}
-
-func TestToolResultUsesVendorCallIDVerbatim(t *testing.T) {
-	// R-24BA-BI9X
-	vendorID := " vendor/call:id beta "
-	use := ToolUse{ID: vendorID, Name: "lookup"}
-	result := ToolResult{ToolUseID: use.ID, Content: "done"}
-	if result.ToolUseID != vendorID {
-		t.Fatalf("ToolUseID = %q, want vendor ID verbatim %q", result.ToolUseID, vendorID)
-	}
-}

@@ -19,7 +19,9 @@ import (
 var (
 	_ wireFormat = (*anthropicWire)(nil)
 	_ wireFormat = (*openAIResponsesWire)(nil)
+	_ wireFormat = (*responsesWire)(nil)
 	_ wireFormat = (*openAIChatWire)(nil)
+	_ wireFormat = (*chatWire)(nil)
 	_ wireFormat = (*geminiWire)(nil)
 	_ Framer     = SSEFrames
 )
@@ -40,64 +42,77 @@ func (fixtureTool) Call(context.Context, json.RawMessage) (string, error) {
 
 func allTestWires() []wireFormat {
 	return []wireFormat{
-		newAnthropicWire(nil),
+		newAnthropicMessagesWire(nil),
 		newOpenAIResponsesWire(nil),
 		newOpenAIChatWire(nil),
-		newGeminiWire(nil),
+		newGeminiGenerateContentWire(nil),
 	}
 }
 
-func TestConcreteWiresOwnCodecGrammarAndClassificationOnly(t *testing.T) {
-	// R-O87C-1694
-	codecType := reflect.TypeFor[wireCodec]()
-	for _, fixture := range wireFixtures() {
-		t.Run(fixture.name, func(t *testing.T) {
-			classified := errors.New("classified by wire")
-			classifierCalls := 0
-			wire := fixture.make(func(int, http.Header, []byte) error {
-				classifierCalls++
-				return classified
-			})
-			wireType := reflect.TypeOf(wire)
-			for _, methodName := range []string{"EncodeRequest", "DecodeStream", "RenderTools"} {
-				if _, ok := wireType.MethodByName(methodName); !ok {
-					t.Fatalf("%s has no %s codec operation", wireType, methodName)
+func TestGenericAndOpenAIWirePairsAreByteIdentical(t *testing.T) {
+	// R-K5M1-QRTV
+	tool := fixtureTool{name: "lookup", description: "look up", schema: json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}}}`)}
+	state := requestState{
+		Model: "provider/model:latest",
+		History: History{
+			{Role: RoleUser, Blocks: []Block{Text{Text: "Find the value."}}},
+			{Role: RoleAssistant, Blocks: []Block{
+				Text{Text: "Checking."},
+				ToolUse{ID: "call_1", Name: "lookup", Input: json.RawMessage(`{"q":"value"}`)},
+			}},
+			{Role: RoleTool, Blocks: []Block{ToolResult{ToolUseID: "call_1", Content: "answer"}}},
+		},
+		Tools:    []Tool{tool},
+		Settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningEffort, Effort: EffortMedium}, ToolChoice: ToolChoice{Mode: ToolChoiceTool, Name: "lookup"}},
+		Output:   &OutputContract{Schema: json.RawMessage(`{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"]}`)},
+	}
+
+	pairs := []struct {
+		name     string
+		generic  wireFormat
+		openAI   wireFormat
+		response string
+	}{
+		{"chat", newChatWire(nil), newOpenAIChatWire(nil), "testdata/openai_chat_completions_tool_call.sse"},
+		{"responses", newResponsesWire(nil), newOpenAIResponsesWire(nil), "testdata/openai_responses_tool_call.sse"},
+	}
+	for _, pair := range pairs {
+		t.Run(pair.name, func(t *testing.T) {
+			genericBody, err := pair.generic.EncodeRequest(state)
+			if err != nil {
+				t.Fatal(err)
+			}
+			openAIBody, err := pair.openAI.EncodeRequest(state)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(genericBody, openAIBody) {
+				t.Fatalf("request bodies differ:\ngeneric: %s\nOpenAI:  %s", genericBody, openAIBody)
+			}
+
+			decode := func(wire wireFormat) ([]Event, Usage) {
+				t.Helper()
+				response, openErr := os.Open(pair.response)
+				if openErr != nil {
+					t.Fatal(openErr)
 				}
-			}
-			concrete := wireType.Elem()
-			if concrete.NumField() != 1 {
-				t.Fatalf("%s field count = %d, want one embedded wire codec", concrete, concrete.NumField())
-			}
-			if field := concrete.Field(0); field.Type != codecType || !field.Anonymous {
-				t.Fatalf("%s field does not reduce to the wire codec seam: %#v", concrete, field)
-			}
-			for index := range codecType.NumField() {
-				field := codecType.Field(index)
-				lowerName := strings.ToLower(field.Name)
-				if strings.Contains(lowerName, "baseurl") || strings.Contains(lowerName, "endpoint") ||
-					strings.Contains(lowerName, "credential") || strings.Contains(lowerName, "auth") {
-					t.Fatalf("%s owns transport/auth field %s", concrete, field.Name)
+				defer func() { _ = response.Close() }()
+				var events []Event
+				for event, decodeErr := range wire.DecodeStream(SSEFrames(response)) {
+					if decodeErr != nil {
+						t.Fatal(decodeErr)
+					}
+					events = append(events, event)
 				}
+				return events, takeBuiltInWireUsage(wire)
 			}
-			for _, fieldName := range []string{"encode", "decoder", "classifier"} {
-				if _, ok := codecType.FieldByName(fieldName); !ok {
-					t.Fatalf("wire codec has no %s ownership field", fieldName)
-				}
+			genericEvents, genericUsage := decode(pair.generic)
+			openAIEvents, openAIUsage := decode(pair.openAI)
+			if !reflect.DeepEqual(genericEvents, openAIEvents) {
+				t.Fatalf("decoded events differ:\ngeneric: %#v\nOpenAI:  %#v", genericEvents, openAIEvents)
 			}
-			body, err := wire.EncodeRequest(requestState{Model: "owned-grammar"})
-			if err != nil || !json.Valid(body) {
-				t.Fatalf("wire-owned request grammar = %q, error %v", body, err)
-			}
-			if _, err := wire.RenderTools(nil); err != nil {
-				t.Fatalf("wire-owned tool grammar failed: %v", err)
-			}
-			frames := func(yield func([]byte, error) bool) { yield([]byte(`{}`), nil) }
-			var decodeErr error
-			for _, err := range wire.DecodeStream(frames) {
-				decodeErr = err
-			}
-			if classifierCalls != 1 || !errors.Is(decodeErr, classified) {
-				t.Fatalf("wire classification = calls %d error %v, want one and %v", classifierCalls, decodeErr, classified)
+			if genericUsage != openAIUsage {
+				t.Fatalf("decoded usage differs: generic %+v, OpenAI %+v", genericUsage, openAIUsage)
 			}
 		})
 	}
@@ -146,10 +161,10 @@ func TestPortableOutputSchemaMovesConstraintsToProse(t *testing.T) {
 		wire    wireFormat
 		fixture string
 	}{
-		{"anthropic_messages", newAnthropicWire(nil), "testdata/anthropic_messages.output_schema.json"},
+		{"anthropic_messages", newAnthropicMessagesWire(nil), "testdata/anthropic_messages.output_schema.json"},
 		{"openai_responses", newOpenAIResponsesWire(nil), "testdata/openai_responses.output_schema.json"},
 		{"openai_chat_completions", newOpenAIChatWire(nil), "testdata/openai_chat_completions.output_schema.json"},
-		{"gemini_generate_content", newGeminiWire(nil), "testdata/gemini_generate_content.output_schema.json"},
+		{"gemini_generate_content", newGeminiGenerateContentWire(nil), "testdata/gemini_generate_content.output_schema.json"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -199,7 +214,7 @@ func TestAnthropicMessagesEmbedsNativeOutputContract(t *testing.T) {
 		Output:  &OutputContract{Schema: schema, MaxAttempts: 7},
 	}
 
-	body, err := newAnthropicWire(nil).EncodeRequest(state)
+	body, err := newAnthropicMessagesWire(nil).EncodeRequest(state)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +266,7 @@ func TestAnthropicMessagesEmbedsNativeOutputContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider := newComposedProvider(newAnthropicWire(nil), endpoint, Identity{})
+	provider := newComposedProvider(newAnthropicMessagesWire(nil), endpoint, Identity{})
 	request, err := provider.BuildRequest(context.Background(), state)
 	if err != nil {
 		t.Fatal(err)
@@ -263,7 +278,7 @@ func TestAnthropicMessagesEmbedsNativeOutputContract(t *testing.T) {
 	}
 
 	invalid := requestState{Output: &OutputContract{Schema: json.RawMessage(`{"type":"object","properties":{"bad":{"allOf":[{"type":"string"}]}},"required":["bad"]}`)}}
-	invalidBody, invalidErr := newAnthropicWire(nil).EncodeRequest(invalid)
+	invalidBody, invalidErr := newAnthropicMessagesWire(nil).EncodeRequest(invalid)
 	if invalidErr == nil || invalidBody != nil {
 		t.Fatalf("invalid output schema encoded as %s with error %v", invalidBody, invalidErr)
 	}
@@ -479,7 +494,7 @@ func TestGeminiGenerateContentEmbedsNativeOutputContract(t *testing.T) {
 		Output: &OutputContract{Schema: schema, MaxAttempts: 9},
 	}
 
-	body, err := newGeminiWire(nil).EncodeRequest(state)
+	body, err := newGeminiGenerateContentWire(nil).EncodeRequest(state)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -552,7 +567,7 @@ func TestGeminiGenerateContentEmbedsNativeOutputContract(t *testing.T) {
 	}
 	assertNoMaxAttempts(t, document, body)
 
-	outputOnlyBody, err := newGeminiWire(nil).EncodeRequest(requestState{Output: &OutputContract{Schema: schema}})
+	outputOnlyBody, err := newGeminiGenerateContentWire(nil).EncodeRequest(requestState{Output: &OutputContract{Schema: schema}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -562,7 +577,7 @@ func TestGeminiGenerateContentEmbedsNativeOutputContract(t *testing.T) {
 	}
 
 	invalid := requestState{Output: &OutputContract{Schema: json.RawMessage(`{"type":"object","properties":{"bad":{"allOf":[{"type":"string"}]}},"required":["bad"]}`)}}
-	invalidBody, invalidErr := newGeminiWire(nil).EncodeRequest(invalid)
+	invalidBody, invalidErr := newGeminiGenerateContentWire(nil).EncodeRequest(invalid)
 	if invalidErr == nil || invalidBody != nil {
 		t.Fatalf("invalid output schema encoded as %s with error %v", invalidBody, invalidErr)
 	}
@@ -650,10 +665,10 @@ func TestBuiltInWiresReserveStructuredOutputEnvelopeKeys(t *testing.T) {
 		wire wireFormat
 		want []string
 	}{
-		{name: "anthropic_messages", wire: newAnthropicWire(nil), want: []string{"anthropic", "output_config"}},
+		{name: "anthropic_messages", wire: newAnthropicMessagesWire(nil), want: []string{"anthropic", "output_config"}},
 		{name: "openai_responses", wire: newOpenAIResponsesWire(nil), want: []string{"openai", "text"}},
 		{name: "openai_chat_completions", wire: newOpenAIChatWire(nil), want: []string{"openai", "response_format"}},
-		{name: "gemini_generate_content", wire: newGeminiWire(nil), want: []string{"gemini", "generationConfig"}},
+		{name: "gemini_generate_content", wire: newGeminiGenerateContentWire(nil), want: []string{"gemini", "generationConfig"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -716,7 +731,7 @@ func TestNilOutputPreservesCapturedWireRequestBytes(t *testing.T) {
 		})
 	}
 
-	reasoningBody, err := newGeminiWire(nil).EncodeRequest(requestState{
+	reasoningBody, err := newGeminiGenerateContentWire(nil).EncodeRequest(requestState{
 		History: History{{Role: RoleUser, Blocks: []Block{Text{Text: "reason"}}}},
 		Settings: Settings{
 			Reasoning: ReasoningConfig{Mode: ReasoningBudget, Budget: 321},
@@ -782,10 +797,10 @@ func TestWireOwnsOnlyBodyGrammar(t *testing.T) {
 		wantTools []string
 		wantUsage Usage
 	}{
-		{"anthropic", newAnthropicWire(nil), json.RawMessage(`{"type":"thinking","thinking":"replayed","signature":"sig"}`), "messages", []string{`"thinking":"replayed"`, `"signature":"sig"`, `"type":"tool_use"`, `"type":"tool_result"`, `"is_error":true`}, []string{`"name":"lookup"`, `"input_schema":`}, Usage{InputTokens: 10, CachedTokens: 2, CacheWrite5mTokens: 3, CacheWrite1hTokens: 5, OutputTokens: 4}},
+		{"anthropic", newAnthropicMessagesWire(nil), json.RawMessage(`{"type":"thinking","thinking":"replayed","signature":"sig"}`), "messages", []string{`"thinking":"replayed"`, `"signature":"sig"`, `"type":"tool_use"`, `"type":"tool_result"`, `"is_error":true`}, []string{`"name":"lookup"`, `"input_schema":`}, Usage{InputTokens: 10, CachedTokens: 2, CacheWrite5mTokens: 3, CacheWrite1hTokens: 5, OutputTokens: 4}},
 		{"responses", newOpenAIResponsesWire(nil), json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"replayed"}]}`), "input", []string{`"type":"reasoning"`, `"id":"rs_1"`, `"text":"replayed"`, `"arguments":"{\"q\":\"value\"}"`}, []string{`"type":"function"`, `"name":"lookup"`, `"parameters":`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}},
 		{"chat", newOpenAIChatWire(nil), json.RawMessage(`{"reasoning_content":"replayed"}`), "messages", []string{`"reasoning_content":"replayed"`, `"tool_calls"`, `"arguments":"{\"q\":\"value\"}"`, `"tool_call_id":"call_1"`}, []string{`"type":"function"`, `"function":{"name":"lookup"`, `"parameters":`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}},
-		{"gemini", newGeminiWire(nil), json.RawMessage(`{"text":"replayed","thought":true,"thoughtSignature":"sig"}`), "contents", []string{`"text":"replayed"`, `"thought":true`, `"thoughtSignature":"sig"`, `"functionCall"`, `"args":{"q":"value"}`, `"functionResponse"`, `"isError":true`}, []string{`"functionDeclarations":`, `"name":"lookup"`, `"parameters":`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}},
+		{"gemini", newGeminiGenerateContentWire(nil), json.RawMessage(`{"text":"replayed","thought":true,"thoughtSignature":"sig"}`), "contents", []string{`"text":"replayed"`, `"thought":true`, `"thoughtSignature":"sig"`, `"functionCall"`, `"args":{"q":"value"}`, `"functionResponse"`, `"isError":true`}, []string{`"functionDeclarations":`, `"name":"lookup"`, `"parameters":`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}},
 	}
 	for _, test := range tests {
 		wire := test.wire
@@ -998,7 +1013,7 @@ func TestAnthropicDecodeStreamEmitsToolUseFromGolden(t *testing.T) {
 	defer func() { _ = response.Close() }()
 
 	var messages []Message
-	for event, decodeErr := range newAnthropicWire(nil).DecodeStream(SSEFrames(response)) {
+	for event, decodeErr := range newAnthropicMessagesWire(nil).DecodeStream(SSEFrames(response)) {
 		if decodeErr != nil {
 			t.Fatal(decodeErr)
 		}
@@ -1073,7 +1088,7 @@ func TestGeminiDecodeStreamEmitsToolUseFromGolden(t *testing.T) {
 	defer func() { _ = response.Close() }()
 
 	var messages []Message
-	for event, decodeErr := range newGeminiWire(nil).DecodeStream(SSEFrames(response)) {
+	for event, decodeErr := range newGeminiGenerateContentWire(nil).DecodeStream(SSEFrames(response)) {
 		if decodeErr != nil {
 			t.Fatal(decodeErr)
 		}
@@ -1099,28 +1114,28 @@ type mixedToolBlock struct {
 func anthropicMixedToolBlocks() []mixedToolBlock {
 	return mixedToolBlocks(
 		"toolu_weather_AQID_01", "lookup_weather", map[string]any{"city": "Chicago", "units": "metric"},
-		"toolu_route_verbatim-02", "plan_route", map[string]any{"destination": "Museum Campus", "avoid_tolls": true},
+		"  toolu_route:verbatim-02!  ", "plan_route", map[string]any{"destination": "Museum Campus", "avoid_tolls": true},
 	)
 }
 
 func openAIResponsesMixedToolBlocks() []mixedToolBlock {
 	return mixedToolBlocks(
 		"call_weather_verbatim-01", "lookup_weather", map[string]any{"city": "Chicago", "units": "metric"},
-		"call_route_AQID_02", "plan_route", map[string]any{"destination": "Museum Campus", "avoid_tolls": true},
+		"  call_route:AQID-02!  ", "plan_route", map[string]any{"destination": "Museum Campus", "avoid_tolls": true},
 	)
 }
 
 func openAIChatMixedToolBlocks() []mixedToolBlock {
 	return mixedToolBlocks(
 		"chatcall_weather_verbatim-01", "lookup_weather_chat", map[string]any{"city": "Chicago", "units": "metric"},
-		"chatcall_route_AQID_02", "plan_route_chat", map[string]any{"destination": "Museum Campus", "avoid_tolls": true},
+		"  chatcall_route:AQID-02!  ", "plan_route_chat", map[string]any{"destination": "Museum Campus", "avoid_tolls": true},
 	)
 }
 
 func geminiMixedToolBlocks() []mixedToolBlock {
 	return mixedToolBlocks(
 		"gemini_weather_verbatim-01", "lookup_weather_gemini", map[string]any{"city": "Chicago", "days": float64(3)},
-		"gemini_route_AQID_02", "plan_route_gemini", map[string]any{"destination": "Museum Campus", "avoid_tolls": true},
+		"  gemini_route:AQID-02!  ", "plan_route_gemini", map[string]any{"destination": "Museum Campus", "avoid_tolls": true},
 	)
 }
 
@@ -1181,10 +1196,10 @@ func TestEveryWireDecodesMixedToolCallsInVendorOrderWithObjectInput(t *testing.T
 		response string
 		want     []mixedToolBlock
 	}{
-		{"anthropic", newAnthropicWire(nil), "testdata/anthropic_messages_tool_call.sse", anthropicMixedToolBlocks()},
+		{"anthropic", newAnthropicMessagesWire(nil), "testdata/anthropic_messages_tool_call.sse", anthropicMixedToolBlocks()},
 		{"responses", newOpenAIResponsesWire(nil), "testdata/openai_responses_tool_call.sse", openAIResponsesMixedToolBlocks()},
 		{"chat", newOpenAIChatWire(nil), "testdata/openai_chat_completions_tool_call.sse", openAIChatMixedToolBlocks()},
-		{"gemini", newGeminiWire(nil), "testdata/gemini_generate_content_tool_call.sse", geminiMixedToolBlocks()},
+		{"gemini", newGeminiGenerateContentWire(nil), "testdata/gemini_generate_content_tool_call.sse", geminiMixedToolBlocks()},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1215,7 +1230,7 @@ func TestEveryWireDecodesMixedToolCallsInVendorOrderWithObjectInput(t *testing.T
 
 func TestDecodeStreamMergesAbsoluteUsageFieldWise(t *testing.T) {
 	// R-300O-9JJZ
-	wire := newAnthropicWire(nil).(*anthropicWire)
+	wire := newAnthropicMessagesWire(nil).(*anthropicWire)
 	frames := sequenceFrames(
 		`{"type":"message_start","message":{"usage":{"input_tokens":100,"cache_read_input_tokens":25}}}`,
 		`{"type":"message_delta","delta":{"usage":{"output_tokens":9}}}`,
@@ -1267,7 +1282,7 @@ func TestRenderToolsRejectsOutsideCanonicalSubset(t *testing.T) {
 	}
 }
 
-func TestCanonicalToolSchemaRendersPortablyAcrossEveryWire(t *testing.T) {
+func TestCanonicalToolSchemaRendersPortablyAcrossFourVendorWires(t *testing.T) {
 	// R-46P5-NIIA
 	schema := json.RawMessage(`{"type":"object","description":"portable input","properties":{"filter":{"type":"object","properties":{"name":{"type":"string","enum":["red","green"],"minLength":3,"maxLength":5,"pattern":"^[a-z]+$"}},"required":["name"]},"scores":{"type":"array","items":{"type":"number","minimum":0,"maximum":1},"minItems":1,"maxItems":3}},"required":["filter","scores"]}`)
 	if err := ValidateToolSchema(schema); err != nil {
@@ -1351,8 +1366,8 @@ func TestPerWireToolDeclarationGoldenAndSchemaOwnership(t *testing.T) {
 	}{
 		{"openai_responses", newOpenAIResponsesWire(nil), "testdata/openai_responses.tools.json"},
 		{"openai_chat_completions", newOpenAIChatWire(nil), "testdata/openai_chat_completions.tools.json"},
-		{"anthropic_messages", newAnthropicWire(nil), "testdata/anthropic_messages.tools.json"},
-		{"gemini_generate_content", newGeminiWire(nil), "testdata/gemini_generate_content.tools.json"},
+		{"anthropic_messages", newAnthropicMessagesWire(nil), "testdata/anthropic_messages.tools.json"},
+		{"gemini_generate_content", newGeminiGenerateContentWire(nil), "testdata/gemini_generate_content.tools.json"},
 	}
 	tools := phase16Tools()
 	for _, test := range tests {
@@ -1402,7 +1417,7 @@ func TestGeminiOwnsRecursiveSchemaNarrowing(t *testing.T) {
 	for index, tool := range tools {
 		originals[index] = append([]byte(nil), tool.Schema()...)
 	}
-	gemini := newGeminiWire(nil)
+	gemini := newGeminiGenerateContentWire(nil)
 	rendered, err := gemini.RenderTools(tools)
 	if err != nil {
 		t.Fatal(err)
@@ -1426,7 +1441,7 @@ func TestGeminiOwnsRecursiveSchemaNarrowing(t *testing.T) {
 			t.Errorf("Gemini rendering mutated source schema %d: %s, want %s", index, tool.Schema(), originals[index])
 		}
 	}
-	for _, wire := range []wireFormat{newOpenAIResponsesWire(nil), newOpenAIChatWire(nil), newAnthropicWire(nil)} {
+	for _, wire := range []wireFormat{newOpenAIResponsesWire(nil), newOpenAIChatWire(nil), newAnthropicMessagesWire(nil)} {
 		other, err := wire.RenderTools(tools)
 		if err != nil {
 			t.Fatal(err)
@@ -1445,10 +1460,10 @@ func TestRequestBodiesEmbedRenderedToolsOnceAndInOrder(t *testing.T) {
 		wire    wireFormat
 		fixture string
 	}{
-		{newAnthropicWire(nil), "testdata/anthropic_messages.tools.json"},
+		{newAnthropicMessagesWire(nil), "testdata/anthropic_messages.tools.json"},
 		{newOpenAIResponsesWire(nil), "testdata/openai_responses.tools.json"},
 		{newOpenAIChatWire(nil), "testdata/openai_chat_completions.tools.json"},
-		{newGeminiWire(nil), "testdata/gemini_generate_content.tools.json"},
+		{newGeminiGenerateContentWire(nil), "testdata/gemini_generate_content.tools.json"},
 	}
 	for _, test := range tests {
 		wire := test.wire
@@ -1501,7 +1516,7 @@ func TestAnthropicPreservesSuppliedToolOrderInRenderingAndRequest(t *testing.T) 
 		fixtureTool{name: "a_first_alphabetically", description: "a", schema: json.RawMessage(`{"type":"object","properties":{}}`)},
 		fixtureTool{name: "m_middle_alphabetically", description: "m", schema: json.RawMessage(`{"type":"object","properties":{}}`)},
 	}
-	wire := newAnthropicWire(nil)
+	wire := newAnthropicMessagesWire(nil)
 	rendered, err := wire.RenderTools(tools)
 	if err != nil {
 		t.Fatal(err)
@@ -1663,7 +1678,7 @@ func TestSupportedSettingsAreEncodedByOwningWireGrammar(t *testing.T) {
 	}{
 		{
 			name:     "anthropic budget and named tool",
-			wire:     newAnthropicWire(nil),
+			wire:     newAnthropicMessagesWire(nil),
 			settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningBudget, Budget: 4096}, ToolChoice: ToolChoice{Mode: ToolChoiceTool, Name: "lookup"}},
 			want:     `{"model":"opaque-model-has-no-capability-role","messages":[],"thinking":{"type":"enabled","budget_tokens":4096},"tool_choice":{"type":"tool","name":"lookup"}}` + "\n",
 		},
@@ -1681,7 +1696,7 @@ func TestSupportedSettingsAreEncodedByOwningWireGrammar(t *testing.T) {
 		},
 		{
 			name:     "gemini bare on and required tool",
-			wire:     newGeminiWire(nil),
+			wire:     newGeminiGenerateContentWire(nil),
 			settings: Settings{Reasoning: ReasoningConfig{Mode: ReasoningOn}, ToolChoice: ToolChoice{Mode: ToolChoiceRequired}},
 			want:     `{"contents":[],"generationConfig":{"thinkingConfig":{"thinkingBudget":-1}},"toolConfig":{"functionCallingConfig":{"mode":"ANY"}}}` + "\n",
 		},
@@ -1708,7 +1723,7 @@ func TestSupportedSettingsAreEncodedByOwningWireGrammar(t *testing.T) {
 
 func TestAnthropicMessagesRendersReasoningEffortInOutputConfig(t *testing.T) {
 	// R-NXR6-QKDM
-	wire := newAnthropicWire(nil)
+	wire := newAnthropicMessagesWire(nil)
 	validator, ok := wire.(interface{ validateSettings(Settings) error })
 	if !ok {
 		t.Fatalf("%T has no body-grammar capability declaration", wire)
@@ -1800,7 +1815,7 @@ func TestEffortCapableWiresRenderEveryEffortLevelVerbatim(t *testing.T) {
 	}{
 		{
 			name: "anthropic_messages",
-			wire: newAnthropicWire(nil),
+			wire: newAnthropicMessagesWire(nil),
 			renderedEffort: func(document map[string]any) any {
 				outputConfig, ok := document["output_config"].(map[string]any)
 				if !ok {
@@ -1829,7 +1844,7 @@ func TestEffortCapableWiresRenderEveryEffortLevelVerbatim(t *testing.T) {
 		},
 		{
 			name: "gemini_generate_content",
-			wire: newGeminiWire(nil),
+			wire: newGeminiGenerateContentWire(nil),
 			renderedEffort: func(document map[string]any) any {
 				generationConfig, ok := document["generationConfig"].(map[string]any)
 				if !ok {
@@ -1879,10 +1894,10 @@ type wireFixture struct {
 
 func wireFixtures() []wireFixture {
 	return []wireFixture{
-		{"anthropic_messages", "testdata/anthropic_messages.sse", "testdata/anthropic_messages.request.json", newAnthropicWire},
+		{"anthropic_messages", "testdata/anthropic_messages.sse", "testdata/anthropic_messages.request.json", newAnthropicMessagesWire},
 		{"openai_responses", "testdata/openai_responses.sse", "testdata/openai_responses.request.json", newOpenAIResponsesWire},
 		{"openai_chat_completions", "testdata/openai_chat_completions.sse", "testdata/openai_chat_completions.request.json", newOpenAIChatWire},
-		{"gemini_generate_content", "testdata/gemini_generate_content.sse", "testdata/gemini_generate_content.request.json", newGeminiWire},
+		{"gemini_generate_content", "testdata/gemini_generate_content.sse", "testdata/gemini_generate_content.request.json", newGeminiGenerateContentWire},
 	}
 }
 
@@ -1898,7 +1913,7 @@ func wireFixturesByName() map[string]wireFixture {
 
 type wireLoopAuth struct{}
 
-func (wireLoopAuth) Apply(context.Context, *http.Request, []byte) error { return nil }
+func (wireLoopAuth) Authenticate(context.Context, *http.Request, []byte) error { return nil }
 
 type wireLoopTransport struct {
 	responses [][]byte
@@ -1929,20 +1944,21 @@ type wireLoopCall struct {
 	result string
 }
 
+// R-TF3J-QPOR
+// R-U2LH-88H7
 func TestEveryWireCompletesFixtureDrivenToolLoop(t *testing.T) {
-	// R-TF3J-QPOR
 	tests := []struct {
 		name       string
-		wire       KnownWire
+		wire       WireFormat
 		toolCalls  string
 		final      string
 		blocks     []mixedToolBlock
 		assertBody func(*testing.T, []byte, []wireLoopCall)
 	}{
-		{"anthropic_messages", KnownWireAnthropicMessages, "testdata/anthropic_messages_tool_call.sse", "testdata/anthropic_messages.sse", anthropicMixedToolBlocks(), assertAnthropicLoopBody},
-		{"openai_responses", KnownWireOpenAIResponses, "testdata/openai_responses_tool_call.sse", "testdata/openai_responses.sse", openAIResponsesMixedToolBlocks(), assertResponsesLoopBody},
-		{"openai_chat_completions", KnownWireOpenAIChat, "testdata/openai_chat_completions_tool_call.sse", "testdata/openai_chat_completions.sse", openAIChatMixedToolBlocks(), assertChatLoopBody},
-		{"gemini_generate_content", KnownWireGemini, "testdata/gemini_generate_content_tool_call.sse", "testdata/gemini_generate_content.sse", geminiMixedToolBlocks(), assertGeminiLoopBody},
+		{"anthropic_messages", AnthropicMessagesWire(), "testdata/anthropic_messages_tool_call.sse", "testdata/anthropic_messages.sse", anthropicMixedToolBlocks(), assertAnthropicLoopBody},
+		{"openai_responses", OpenAIResponsesWire(), "testdata/openai_responses_tool_call.sse", "testdata/openai_responses.sse", openAIResponsesMixedToolBlocks(), assertResponsesLoopBody},
+		{"openai_chat_completions", OpenAIChatWire(), "testdata/openai_chat_completions_tool_call.sse", "testdata/openai_chat_completions.sse", openAIChatMixedToolBlocks(), assertChatLoopBody},
+		{"gemini_generate_content", GeminiGenerateContentWire(), "testdata/gemini_generate_content_tool_call.sse", "testdata/gemini_generate_content.sse", geminiMixedToolBlocks(), assertGeminiLoopBody},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -2296,7 +2312,7 @@ func TestWireRequestModelPlacementMatchesFixtures(t *testing.T) {
 		{wireFixtures()[1], true},
 		// R-OU5I-X1LM
 		{wireFixtures()[2], true},
-		// R-TDVN-CXY2
+		// R-PLJZ-S4X2
 		{wireFixtures()[3], false},
 	}
 	for _, test := range tests {

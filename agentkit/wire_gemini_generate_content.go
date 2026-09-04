@@ -8,7 +8,10 @@ import (
 
 type geminiWire struct{ wireCodec }
 
-func newGeminiWire(classifier errorClassifier) wireFormat {
+// GeminiGenerateContentWire returns the built-in Gemini GenerateContent wire codec.
+func GeminiGenerateContentWire() WireFormat { return newGeminiGenerateContentWire(nil) }
+
+func newGeminiGenerateContentWire(classifier errorClassifier) wireFormat {
 	wire := &geminiWire{}
 	wire.wireCodec = wireCodec{
 		encode:     wire.encodeRequest,
@@ -105,15 +108,15 @@ func (w *geminiWire) encodeRequest(state requestState) ([]byte, error) {
 		if renderErr != nil {
 			return nil, renderErr
 		}
-		var declaration struct {
+		var toolEnvelope struct {
 			Tools json.RawMessage `json:"tools"`
 		}
 		// RenderTools currently returns marshaled JSON; keep the boundary check so
 		// encodeRequest remains defensive if that private implementation changes.
-		if err := json.Unmarshal(rendered, &declaration); err != nil {
+		if err := json.Unmarshal(rendered, &toolEnvelope); err != nil {
 			return nil, err
 		}
-		request.Tools = declaration.Tools
+		request.Tools = toolEnvelope.Tools
 	}
 	encoded, err := json.Marshal(request)
 	return append(encoded, '\n'), err

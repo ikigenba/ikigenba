@@ -78,9 +78,9 @@ from the whole design (D4), and re-introducing it at the tool seam would resurre
 it. It does not export the **30k output-cap constant**: truncating oversized tool
 output is `toolkit`'s own convention, not a root invariant, so the number lives in
 `toolkit`. And it deliberately exports **no shared `WithBaseURL` / `WithHTTPClient`
-symbols**: each module — root, each vendor package, each sibling — defines its own
-`Option` type, so a base-URL option on one is not assignable to another and the
-two credential worlds (D7) cannot be crossed by accident.
+symbols**: each module — root, each sibling — defines its own `Option` type, so
+a base-URL option on one is not assignable to another; the root itself has no
+option type, since the base URL is a positional parameter of `NewEndpoint`.
 
 The sibling that pushes hardest on this contract is **`mcp`** (D-B), and it
 validates the export list precisely. `mcp.Discover(ctx, server)` returns

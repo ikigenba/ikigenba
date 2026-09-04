@@ -15,7 +15,7 @@ import (
 
 type authFunc func(context.Context, *http.Request, []byte) error
 
-func (function authFunc) Apply(ctx context.Context, request *http.Request, body []byte) error {
+func (function authFunc) Authenticate(ctx context.Context, request *http.Request, body []byte) error {
 	return function(ctx, request, body)
 }
 
@@ -69,56 +69,12 @@ func (wire *testWire) classifyResponse(status int, header http.Header, body []by
 	return wire.classifier(status, header, body)
 }
 
-func TestComposedProviderAuthenticatesFinalBodyState(t *testing.T) {
-	// R-0VXJ-I2FW
-	type contextKey struct{}
-	ctx := context.WithValue(context.Background(), contextKey{}, "original-context")
-	authCalls := 0
-	endpoint, err := NewEndpoint(
-		"https://original.test/v1",
-		authFunc(func(authCtx context.Context, request *http.Request, body []byte) error {
-			authCalls++
-			if authCtx.Value(contextKey{}) != "original-context" || request.Context() != ctx {
-				t.Fatal("auth did not receive the original request context")
-			}
-			if string(body) != "encoded-final-body" || request.URL.String() != "https://original.test/v1" {
-				t.Fatalf("auth saw request %q and body %q before final assembly", request.URL, body)
-			}
-			request.Header.Set("Authorization", "signed-final-body")
-			return nil
-		}),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	provider := newComposedProvider(&testWire{}, endpoint, Identity{Endpoint: "fixture", Model: "model"})
-	request, err := provider.BuildRequest(ctx, requestState{Model: "encoded-final-body"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if authCalls != 1 || request.Header.Get("Authorization") != "signed-final-body" {
-		t.Fatalf("assembled headers = %q", request.Header)
-	}
-	body, err := io.ReadAll(request.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	replay, err := request.GetBody()
-	if err != nil {
-		t.Fatal(err)
-	}
-	replayBody, _ := io.ReadAll(replay)
-	if string(body) != "encoded-final-body" || !bytes.Equal(body, replayBody) || request.ContentLength != int64(len(body)) {
-		t.Fatalf("body=%q replay=%q length=%d", body, replayBody, request.ContentLength)
-	}
-}
-
 func TestComposedProviderPropagatesAssemblyFailures(t *testing.T) {
 	encodeFailure := errors.New("encode failed")
 	authFailure := errors.New("auth failed")
 	checks := []struct {
 		wire *testWire
-		auth AuthApplier
+		auth Authenticator
 		want error
 	}{
 		{wire: &testWire{encode: func(requestState) ([]byte, error) { return nil, encodeFailure }}, want: encodeFailure},
@@ -137,6 +93,80 @@ func TestComposedProviderPropagatesAssemblyFailures(t *testing.T) {
 		if !errors.Is(err, check.want) {
 			t.Fatalf("BuildRequest error = %v, want %v", err, check.want)
 		}
+	}
+}
+
+// R-U1DK-UGQI
+func TestComposedProviderAuthenticatesRequestBodyBytes(t *testing.T) {
+	encodedBody := []byte(`{"model":"body-signing-model","stream":true}`)
+	wire := &testWire{encode: func(requestState) ([]byte, error) {
+		return encodedBody, nil
+	}}
+	var authenticatedBody []byte
+	endpoint, err := NewEndpoint("https://example.test", authFunc(func(_ context.Context, _ *http.Request, body []byte) error {
+		authenticatedBody = body
+		return nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request, err := newComposedProvider(wire, endpoint, Identity{}).BuildRequest(
+		context.Background(),
+		requestState{Model: "body-signing-model"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(authenticatedBody, encodedBody) {
+		t.Fatalf("authenticated body = %q, want %q", authenticatedBody, encodedBody)
+	}
+	if request.GetBody == nil {
+		t.Fatal("request.GetBody is nil")
+	}
+	requestBody, err := request.GetBody()
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotBody, readErr := io.ReadAll(requestBody)
+	closeErr := requestBody.Close()
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if !bytes.Equal(gotBody, encodedBody) {
+		t.Fatalf("request body = %q, want %q", gotBody, encodedBody)
+	}
+}
+
+// R-K1YC-LGLS
+// R-K4E5-D036
+func TestAnthropicWireSetsRequiredProtocolHeader(t *testing.T) {
+	endpoint, err := NewEndpoint("https://example.test", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	checks := []struct {
+		name string
+		wire wireFormat
+		want string
+	}{
+		{name: "anthropic", wire: AnthropicMessagesWire(), want: "2023-06-01"},
+		{name: "other wire", wire: ChatWire()},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			request, buildErr := newComposedProvider(check.wire, endpoint, Identity{}).BuildRequest(context.Background(), requestState{})
+			if buildErr != nil {
+				t.Fatal(buildErr)
+			}
+			if got := request.Header.Get("anthropic-version"); got != check.want {
+				t.Fatalf("anthropic-version = %q, want %q", got, check.want)
+			}
+		})
 	}
 }
 

@@ -4,6 +4,24 @@ import (
 	"testing"
 )
 
+func TestResolveCostMatchesOfferingIDAndWireModelExactly(t *testing.T) {
+	// R-KLGQ-PSGW
+	usage := Usage{InputTokens: 2, OutputTokens: 3}
+	const want = Cost(2*200 + 3*1250)
+	if got := resolveCost(Identity{Endpoint: string(OfferingOpenAIResponses), Model: "gpt-5.4-nano"}, usage, nil); got != want {
+		t.Fatalf("exact offering cost = %d, want %d", got, want)
+	}
+	for _, identity := range []Identity{
+		{Endpoint: string(OfferingXAIResponses), Model: "gpt-5.4-nano"},
+		{Endpoint: string(OfferingOpenAIResponses), Model: "openai/gpt-5.4-nano"},
+		{Endpoint: string(OfferingOpenRouterChat), Model: "gpt-5.4-nano"},
+	} {
+		if got := resolveCost(identity, usage, nil); got != 0 {
+			t.Errorf("mismatched identity %+v cost = %d, want zero", identity, got)
+		}
+	}
+}
+
 func TestPricingCostEmptyScheduleIsZero(t *testing.T) {
 	// R-NLK6-WUYO
 	usage := Usage{
@@ -64,7 +82,7 @@ func TestPredecodedWireCostPresenceControlsFallback(t *testing.T) {
 	// R-2IY2-WR69
 	const billedMilliUSD = int64(7)
 	convertedNanoUSD := billedMilliUSD * 1_000_000
-	identity := Identity{Endpoint: string(ProviderOpenAI), Model: "gpt-5.4-nano"}
+	identity := Identity{Endpoint: string(OfferingOpenAIResponses), Model: "gpt-5.4-nano"}
 
 	present := resolveCost(identity, Usage{InputTokens: 3}, &convertedNanoUSD)
 	if present != Cost(7_000_000) {
@@ -79,7 +97,7 @@ func TestPredecodedWireCostPresenceControlsFallback(t *testing.T) {
 func TestResolveCostUsesWireThenExactCatalogOffering(t *testing.T) {
 	// R-NP7W-266R
 	usage := Usage{InputTokens: 2, CachedTokens: 3, OutputTokens: 5, ReasoningTokens: 7}
-	identity := Identity{Endpoint: string(ProviderOpenAI), Model: "gpt-5.4-nano"}
+	identity := Identity{Endpoint: string(OfferingOpenAIResponses), Model: "gpt-5.4-nano"}
 	wireAmount := int64(91)
 	if got := resolveCost(identity, usage, &wireAmount); got != Cost(91) {
 		t.Fatalf("wire-priced cost = %d, want exact wire amount 91", got)
@@ -87,24 +105,6 @@ func TestResolveCostUsesWireThenExactCatalogOffering(t *testing.T) {
 	const wantCatalogCost = Cost(2*200 + 3*20 + (5+7)*1250)
 	if got := resolveCost(identity, usage, nil); got != wantCatalogCost {
 		t.Fatalf("catalog-priced cost = %d, want %d", got, wantCatalogCost)
-	}
-}
-
-func TestResolveCostMatchesOfferingProviderAndWireModelExactly(t *testing.T) {
-	// R-NQFS-FXXG
-	usage := Usage{InputTokens: 2, OutputTokens: 3}
-	const want = Cost(2*200 + 3*1250)
-	if got := resolveCost(Identity{Endpoint: string(ProviderOpenAI), Model: "gpt-5.4-nano"}, usage, nil); got != want {
-		t.Fatalf("exact offering cost = %d, want %d", got, want)
-	}
-	for _, identity := range []Identity{
-		{Endpoint: string(ProviderXAI), Model: "gpt-5.4-nano"},
-		{Endpoint: string(ProviderOpenAI), Model: "openai/gpt-5.4-nano"},
-		{Endpoint: string(ProviderOpenRouter), Model: "gpt-5.4-nano"},
-	} {
-		if got := resolveCost(identity, usage, nil); got != 0 {
-			t.Errorf("mismatched identity %+v cost = %d, want zero", identity, got)
-		}
 	}
 }
 

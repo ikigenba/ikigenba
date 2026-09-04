@@ -4,7 +4,7 @@ data: {"id":"chatcmpl_tool_calls_01","object":"chat.completion.chunk","choices":
 
 data: {"id":"chatcmpl_tool_calls_01","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Then route. "},"finish_reason":null}]}
 
-data: {"id":"chatcmpl_tool_calls_01","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"chatcall_route_AQID_02","type":"function","function":{"name":"plan_route_chat","arguments":"{\"destination\":\"Museum "}}]},"finish_reason":null}]}
+data: {"id":"chatcmpl_tool_calls_01","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"  chatcall_route:AQID-02!  ","type":"function","function":{"name":"plan_route_chat","arguments":"{\"destination\":\"Museum "}}]},"finish_reason":null}]}
 
 data: {"id":"chatcmpl_tool_calls_01","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"Campus\",\"avoid_tolls\":"}}]},"finish_reason":null}]}
 

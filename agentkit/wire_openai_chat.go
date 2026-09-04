@@ -8,6 +8,9 @@ import (
 
 type openAIChatWire struct{ wireCodec }
 
+// OpenAIChatWire returns the built-in OpenAI Chat wire codec.
+func OpenAIChatWire() WireFormat { return newOpenAIChatWire(nil) }
+
 func newOpenAIChatWire(classifier errorClassifier) wireFormat {
 	wire := &openAIChatWire{}
 	wire.wireCodec = wireCodec{

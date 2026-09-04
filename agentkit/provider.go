@@ -9,32 +9,11 @@ import (
 	"net/http"
 )
 
-// KnownWire identifies a built-in wire format available to the generic route.
-type KnownWire int
-
-// Known wire names accepted by New.
-const (
-	KnownWireAnthropicMessages KnownWire = iota
-	KnownWireOpenAIResponses
-	KnownWireOpenAIChat
-	KnownWireGemini
-)
-
-// New constructs a conversation from a known wire, caller-built
-// endpoint, and verbatim model name.
-func New(wireName KnownWire, endpoint Endpoint, model string, cfg Config) (*Conversation, error) {
-	var wire wireFormat
-	switch wireName {
-	case KnownWireAnthropicMessages:
-		wire = newAnthropicWire(nil)
-	case KnownWireOpenAIResponses:
-		wire = newOpenAIResponsesWire(nil)
-	case KnownWireOpenAIChat:
-		wire = newOpenAIChatWire(nil)
-	case KnownWireGemini:
-		wire = newGeminiWire(nil)
-	default:
-		return nil, fmt.Errorf("%w: unknown wire format %d", ErrInvalidConfig, wireName)
+// New constructs a conversation from a built-in wire, caller-built endpoint,
+// and verbatim model name.
+func New(wire WireFormat, endpoint Endpoint, model string, cfg Config) (*Conversation, error) {
+	if wire == nil {
+		return nil, fmt.Errorf("%w: nil wire", ErrInvalidConfig)
 	}
 
 	endpointIdentity := endpoint.config.baseURL.String()
@@ -88,10 +67,20 @@ func (provider *composedProvider) BuildRequest(ctx context.Context, state reques
 		return nil, err
 	}
 	synchronizeRequestBody(request, body)
-	if err := provider.endpoint.config.auth.Apply(ctx, request, body); err != nil {
+	if setter, ok := provider.wire.(interface{ setProtocolHeaders(*http.Request) }); ok {
+		setter.setProtocolHeaders(request)
+	}
+	if err := provider.endpoint.config.auth.Authenticate(ctx, request, body); err != nil {
 		return nil, err
 	}
 	return request, nil
+}
+
+// refreshHook exposes the endpoint's auth applier's 401 hook, if it has one
+// (D22): only an OAuth applier implements oauthRefreshHook.
+func (provider *composedProvider) refreshHook() (oauthRefreshHook, bool) {
+	hook, ok := provider.endpoint.config.auth.(oauthRefreshHook)
+	return hook, ok
 }
 
 func (provider *composedProvider) Decode(_ context.Context, response *http.Response) iter.Seq2[Event, error] {
@@ -129,7 +118,11 @@ func takeBuiltInWireUsage(wire wireFormat) Usage {
 		codec = &wire.wireCodec
 	case *openAIResponsesWire:
 		codec = &wire.wireCodec
+	case *responsesWire:
+		codec = &wire.wireCodec
 	case *openAIChatWire:
+		codec = &wire.wireCodec
+	case *chatWire:
 		codec = &wire.wireCodec
 	case *geminiWire:
 		codec = &wire.wireCodec

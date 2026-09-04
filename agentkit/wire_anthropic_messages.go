@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"sort"
 )
 
 type anthropicWire struct{ wireCodec }
 
-func newAnthropicWire(classifier errorClassifier) wireFormat {
+// AnthropicMessagesWire returns the built-in Anthropic Messages wire codec.
+func AnthropicMessagesWire() WireFormat { return newAnthropicMessagesWire(nil) }
+
+func newAnthropicMessagesWire(classifier errorClassifier) wireFormat {
 	wire := &anthropicWire{}
 	wire.wireCodec = wireCodec{
 		encode:     wire.encodeRequest,
@@ -23,6 +27,10 @@ func newAnthropicWire(classifier errorClassifier) wireFormat {
 		},
 	}
 	return wire
+}
+
+func (w *anthropicWire) setProtocolHeaders(req *http.Request) {
+	req.Header.Set("anthropic-version", "2023-06-01")
 }
 
 type anthropicContent struct {

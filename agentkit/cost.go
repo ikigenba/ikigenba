@@ -51,7 +51,7 @@ func resolveCost(conversationIdentity Identity, usage Usage, wireAmount *int64) 
 	}
 	for _, entry := range catalogTable {
 		for _, candidate := range entry.Offerings {
-			if string(candidate.Provider) == conversationIdentity.Endpoint && candidate.WireModel == conversationIdentity.Model {
+			if string(candidate.ID) == conversationIdentity.Endpoint && candidate.WireModel == conversationIdentity.Model {
 				return candidate.Pricing.Cost(usage)
 			}
 		}

@@ -117,7 +117,7 @@ func vendorFixture(endpointURL, model string, client *http.Client) (*Conversatio
 
 func TestEndpointConversationExecutesWithDefaultHTTPClient(t *testing.T) {
 	// R-OFIQ-BSPA
-	wantConstructor := reflect.TypeOf(func(string, AuthApplier) (Endpoint, error) { return Endpoint{}, nil })
+	wantConstructor := reflect.TypeOf(func(string, Authenticator) (Endpoint, error) { return Endpoint{}, nil })
 	if got := reflect.TypeOf(NewEndpoint); got != wantConstructor || got.IsVariadic() {
 		t.Fatalf("endpoint construction exposes transport hooks: %s variadic=%t", got, got.IsVariadic())
 	}
@@ -139,6 +139,202 @@ func TestEndpointConversationExecutesWithDefaultHTTPClient(t *testing.T) {
 	drainStream(defaultConversation.Send(context.Background(), Text{Text: "hello"}))
 	if defaultCalls != 1 {
 		t.Fatalf("default client calls = %d, want 1", defaultCalls)
+	}
+}
+
+func phase10TestWire() *testWire {
+	return &testWire{classifier: func(status int, _ http.Header, _ []byte) error {
+		if status >= http.StatusOK && status < http.StatusMultipleChoices {
+			return nil
+		}
+		return &Error{Category: classifyStatus(status), Status: status, Message: http.StatusText(status)}
+	}}
+}
+
+// countingRefreshSource records Refresh calls; tokenSourceStub itself keeps no
+// such tally.
+type countingRefreshSource struct {
+	*tokenSourceStub
+	refreshes int
+}
+
+func (s *countingRefreshSource) Refresh(ctx context.Context) (Token, error) {
+	s.refreshes++
+	return s.tokenSourceStub.Refresh(ctx)
+}
+
+// R-04K9-MWUT
+func TestConversationSurfacesOAuthRefreshFailureUnchanged(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		requests++
+		writer.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	refreshErr := &Error{Category: CategoryAuth, Status: http.StatusBadGateway, Message: "refresh rejected"}
+	source := &countingRefreshSource{tokenSourceStub: &tokenSourceStub{token: Token{Bearer: "stale"}, refreshErr: refreshErr}}
+	endpoint, err := NewEndpoint(server.URL, oauthApplier{provider: OfferingAnthropicMessages, source: source})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation := newEndpointConversation(phase10TestWire(), endpoint, Identity{Model: "m"}, Config{})
+	stream := conversation.Send(context.Background(), Text{Text: "hello"})
+	if events := drainStream(stream); len(events) != 0 {
+		t.Fatalf("failed refresh emitted events %#v", events)
+	}
+	var providerErr *Error
+	if !errors.As(stream.Err(), &providerErr) || providerErr != refreshErr {
+		t.Fatalf("Send error = %v (%p), want exact refresh error %v (%p)", stream.Err(), providerErr, refreshErr, refreshErr)
+	}
+	if requests != 1 || source.refreshes != 1 {
+		t.Fatalf("requests = %d, Refresh calls = %d; want 1 and 1", requests, source.refreshes)
+	}
+}
+
+// R-KNWJ-HBYA
+func TestConversationOAuth401RefreshesAndReissuesOnce(t *testing.T) {
+	t.Run("successful refresh", func(t *testing.T) {
+		requests := 0
+		var authorizations []string
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			requests++
+			authorizations = append(authorizations, request.Header.Get("Authorization"))
+			if requests == 1 {
+				writer.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			writer.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(writer, "data: refreshed\n\n")
+		}))
+		defer server.Close()
+
+		source := &countingRefreshSource{tokenSourceStub: &tokenSourceStub{
+			token:        Token{Bearer: "stale"},
+			refreshToken: Token{Bearer: "fresh"},
+		}}
+		offering := Offering{ID: OfferingAnthropicMessages, AuthModes: []AuthMode{AuthModeOAuth}}
+		authenticator, err := offering.Authenticator(OAuth(source))
+		if err != nil {
+			t.Fatal(err)
+		}
+		endpoint, err := NewEndpoint(server.URL, authenticator)
+		if err != nil {
+			t.Fatal(err)
+		}
+		conversation := newEndpointConversation(phase10TestWire(), endpoint, Identity{Model: "m"}, Config{})
+		stream := conversation.Send(context.Background(), Text{Text: "hello"})
+		events := drainStream(stream)
+		wantEvents := []Event{MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "refreshed"}}}}}
+		if stream.Err() != nil {
+			t.Fatalf("Send error = %v, want nil", stream.Err())
+		}
+		if !reflect.DeepEqual(events, wantEvents) {
+			t.Fatalf("events = %#v, want the single plain-200 event %#v", events, wantEvents)
+		}
+		if requests != 2 || source.refreshes != 1 {
+			t.Fatalf("requests = %d, Refresh calls = %d; want 2 and 1", requests, source.refreshes)
+		}
+		if !reflect.DeepEqual(authorizations, []string{"Bearer stale", "Bearer fresh"}) {
+			t.Fatalf("Authorization headers = %q, want stale then refreshed bearer", authorizations)
+		}
+	})
+
+	t.Run("second 401 surfaces without another refresh", func(t *testing.T) {
+		requests := 0
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			requests++
+			writer.WriteHeader(http.StatusUnauthorized)
+		}))
+		defer server.Close()
+
+		source := &countingRefreshSource{tokenSourceStub: &tokenSourceStub{
+			token:        Token{Bearer: "stale"},
+			refreshToken: Token{Bearer: "fresh"},
+		}}
+		offering := Offering{ID: OfferingAnthropicMessages, AuthModes: []AuthMode{AuthModeOAuth}}
+		authenticator, err := offering.Authenticator(OAuth(source))
+		if err != nil {
+			t.Fatal(err)
+		}
+		endpoint, err := NewEndpoint(server.URL, authenticator)
+		if err != nil {
+			t.Fatal(err)
+		}
+		conversation := newEndpointConversation(phase10TestWire(), endpoint, Identity{Model: "m"}, Config{})
+		stream := conversation.Send(context.Background(), Text{Text: "hello"})
+		if events := drainStream(stream); len(events) != 0 {
+			t.Fatalf("401 exchange emitted events %#v", events)
+		}
+		var providerErr *Error
+		if !errors.As(stream.Err(), &providerErr) || providerErr.Status != http.StatusUnauthorized {
+			t.Fatalf("Send error = %v, want classified *Error with status 401", stream.Err())
+		}
+		if requests != 2 || source.refreshes != 1 {
+			t.Fatalf("requests = %d, Refresh calls = %d; want 2 and 1", requests, source.refreshes)
+		}
+	})
+
+	t.Run("non-401 does not refresh", func(t *testing.T) {
+		requests := 0
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			requests++
+			writer.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		source := &countingRefreshSource{tokenSourceStub: &tokenSourceStub{token: Token{Bearer: "current"}}}
+		offering := Offering{ID: OfferingAnthropicMessages, AuthModes: []AuthMode{AuthModeOAuth}}
+		authenticator, err := offering.Authenticator(OAuth(source))
+		if err != nil {
+			t.Fatal(err)
+		}
+		endpoint, err := NewEndpoint(server.URL, authenticator)
+		if err != nil {
+			t.Fatal(err)
+		}
+		conversation := newEndpointConversation(phase10TestWire(), endpoint, Identity{Model: "m"}, Config{})
+		stream := conversation.Send(context.Background(), Text{Text: "hello"})
+		drainStream(stream)
+		var providerErr *Error
+		if !errors.As(stream.Err(), &providerErr) || providerErr.Status != http.StatusInternalServerError {
+			t.Fatalf("Send error = %v, want classified *Error with status 500", stream.Err())
+		}
+		if requests != 1 || source.refreshes != 0 {
+			t.Fatalf("requests = %d, Refresh calls = %d; want 1 and 0", requests, source.refreshes)
+		}
+	})
+}
+
+// R-KP4F-V3OZ
+func TestConversationAPIKey401DoesNotReissue(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		requests++
+		writer.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	offering := Offering{ID: OfferingAnthropicMessages, AuthModes: []AuthMode{AuthModeAPIKey}}
+	authenticator, err := offering.Authenticator(APIKey("secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint, err := NewEndpoint(server.URL, authenticator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation := newEndpointConversation(phase10TestWire(), endpoint, Identity{Model: "m"}, Config{})
+	stream := conversation.Send(context.Background(), Text{Text: "hello"})
+	if events := drainStream(stream); len(events) != 0 {
+		t.Fatalf("401 exchange emitted events %#v", events)
+	}
+	var providerErr *Error
+	if !errors.As(stream.Err(), &providerErr) || providerErr.Status != http.StatusUnauthorized {
+		t.Fatalf("Send error = %v, want classified *Error with status 401", stream.Err())
+	}
+	if requests != 1 {
+		t.Fatalf("requests = %d, want 1", requests)
 	}
 }
 
@@ -254,7 +450,7 @@ func TestBuiltInWireClassifiesNonSuccessResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	useDefaultHTTPClient(t, server.Client())
-	conversation, err := New(KnownWireOpenAIChat, endpoint, "model", Config{})
+	conversation, err := New(OpenAIChatWire(), endpoint, "model", Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +496,7 @@ func TestBuiltInWireLiftsRetryAfterHeaderIntoError(t *testing.T) {
 				t.Fatal(err)
 			}
 			useDefaultHTTPClient(t, server.Client())
-			conversation, err := New(KnownWireOpenAIChat, endpoint, "model", Config{})
+			conversation, err := New(OpenAIChatWire(), endpoint, "model", Config{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -754,10 +950,10 @@ func successfulPhase15Client(transportCalls *int) *http.Client {
 }
 
 func TestOffCatalogConversationConstructsSendsAndPricesToZero(t *testing.T) {
-	// R-OPSV-JAFL
 	// R-NRNO-TPO5
+	// R-JYAN-G5DP
 	const model = "released-today-uncataloged"
-	if _, ok := ResolveModel(model, ProviderID("phase15")); ok {
+	if _, err := Lookup(model, "", ""); err == nil {
 		t.Fatalf("test model %q unexpectedly resolved in catalog", model)
 	}
 	provider := &phase15Provider{
@@ -795,7 +991,7 @@ func TestCatalogPricingUsesMergedUsageAcrossRounds(t *testing.T) {
 	// R-NP7W-266R
 	call := ToolUse{ID: "catalog-price-call", Name: "lookup", Input: json.RawMessage(`{"key":"value"}`)}
 	provider := &phase15Provider{
-		endpoint: string(ProviderOpenAI),
+		endpoint: string(OfferingOpenAIResponses),
 		model:    "gpt-5.4",
 		responses: [][]Event{
 			{MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{call}}}},
@@ -884,8 +1080,14 @@ func TestNewConversationOwnsToolsDeferredSettingsAndOptions(t *testing.T) {
 		Temperature: &temperature, TopP: &topP, MaxOutputTokens: &maxTokens,
 		StopSequences: stopSequences,
 	}
-	wantSettings := cloneSettings(callerSettings)
-	wantOptions := cloneProviderOptions(options)
+	wantTemperature := 0.25
+	wantTopP := 0.75
+	wantMaxTokens := 321
+	wantSettings := Settings{
+		Temperature: &wantTemperature, TopP: &wantTopP, MaxOutputTokens: &wantMaxTokens,
+		StopSequences: []string{"construction-stop"},
+	}
+	wantOptions := ProviderOptions{"extension": json.RawMessage(`{"construction":"value"}`)}
 
 	load := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{
 		ID: "load-owned", Name: loadToolsName, Input: json.RawMessage(`{"names":["owned_group"]}`),
@@ -976,8 +1178,9 @@ func TestConstructionSettingsAndOptionsEncodeUnchangedOnEveryRoundTrip(t *testin
 	temperature := 0.35
 	settings := Settings{Temperature: &temperature, StopSequences: []string{"fixed-stop"}}
 	options := ProviderOptions{"vendor": json.RawMessage(`{"fixed":true}`)}
-	wantSettings := cloneSettings(settings)
-	wantOptions := cloneProviderOptions(options)
+	wantTemperature := 0.35
+	wantSettings := Settings{Temperature: &wantTemperature, StopSequences: []string{"fixed-stop"}}
+	wantOptions := ProviderOptions{"vendor": json.RawMessage(`{"fixed":true}`)}
 	done := MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{done}, {done}}}
 	transportCalls := 0
@@ -1596,7 +1799,7 @@ func TestStructuredOutputAttemptLimitsExhaustWithoutCommit(t *testing.T) {
 		name         string
 		maxAttempts  int
 		wantAttempts int
-	}{{name: "default", wantAttempts: DefaultOutputAttempts}, {name: "one", maxAttempts: 1, wantAttempts: 1}} {
+	}{{name: "default", wantAttempts: 3}, {name: "one", maxAttempts: 1, wantAttempts: 1}} {
 		t.Run(test.name, func(t *testing.T) {
 			responses := make([][]Event, test.wantAttempts)
 			for index := range responses {
@@ -2828,13 +3031,13 @@ func TestBuiltInOutputOptionCollisionsFailBeforeProviderBoundaries(t *testing.T)
 	// R-U3HJ-E4IN
 	tests := []struct {
 		name string
-		wire KnownWire
+		wire WireFormat
 		key  string
 	}{
-		{name: "anthropic_messages", wire: KnownWireAnthropicMessages, key: "output_config"},
-		{name: "openai_responses", wire: KnownWireOpenAIResponses, key: "text"},
-		{name: "openai_chat_completions", wire: KnownWireOpenAIChat, key: "response_format"},
-		{name: "gemini_generate_content", wire: KnownWireGemini, key: "generationConfig"},
+		{name: "anthropic_messages", wire: AnthropicMessagesWire(), key: "output_config"},
+		{name: "openai_responses", wire: OpenAIResponsesWire(), key: "text"},
+		{name: "openai_chat_completions", wire: OpenAIChatWire(), key: "response_format"},
+		{name: "gemini_generate_content", wire: GeminiGenerateContentWire(), key: "generationConfig"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

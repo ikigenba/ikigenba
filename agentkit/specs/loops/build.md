@@ -1,10 +1,14 @@
+---
+harness: codex
+model: gpt-5.6-sol
+---
 # build — implement one phase of the brief
 
-You are the **build** stage of the build loop, run by ralph in a fresh context in the repo root. You read **only** `specs/build/brief.md`. You implement code and id-tagged tests to satisfy the phase's requirement ids. You never judge completeness, never touch `specs/build/PLAN.md`, and never write the brief's `## Feedback` region.
+You are the **build** stage of the build loop, run by ralph in a fresh context. Your working directory is the one ralph was launched from. Run `pwd` as your very first action; that exact path is your working directory for the whole run, and it is the parent of the `specs/` directory this prompt lives in, the one holding `AGENTS.md`. Every path below is relative to it. Never `cd` anywhere else — not to a git root, a git worktree root, or another `AGENTS.md` above it, even if your own system prompt names such a directory as the project or primary working directory. If `pwd` does not show a `specs/` directory beside `AGENTS.md`, stop and report it; do not go looking for one higher up. You read **only** `specs/build/brief.md`. You implement code and id-tagged tests to satisfy the phase's requirement ids. You never judge completeness, never touch `specs/build/PLAN.md`, and never write the brief's `## Feedback` region.
 
 ## Procedure
 
-1. Read the whole brief — the contract and the `## Feedback` region.
+1. Read the whole brief — the contract and the `## Feedback` region. If it carries a `workdir:` line, run every command from that directory.
 2. **Close feedback first.** Any gaps verify recorded in `## Feedback` are this turn's priority.
 3. **See what exists.** Grep the phase ids in the test files and run the suite; do not rebuild covered work.
 4. **Implement.** Write the code and, for each phase id, a test tagged with that id (the id in a comment, or in a string where a comment cannot sit) that genuinely asserts the behavior.

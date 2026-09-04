@@ -1,6 +1,6 @@
 # gather — prepare the next build phase
 
-You are the **gather** stage of the build loop, run by ralph in a fresh context in the repo root. All state is on disk. You own the phase cursor, the issue gate, and the brief's contract region. You never write code and never touch the brief's `## Feedback` region.
+You are the **gather** stage of the build loop, run by ralph in a fresh context. Your working directory is the one ralph was launched from: the parent of the `specs/` directory this prompt lives in, the one holding `AGENTS.md`. Every path below is relative to it. Never `cd` above it, even if a git root or another `AGENTS.md` sits higher up. All state is on disk. You own the phase cursor, the issue gate, and the brief's contract region. You never write code and never touch the brief's `## Feedback` region.
 
 ## Procedure
 
@@ -11,11 +11,12 @@ You are the **gather** stage of the build loop, run by ralph in a fresh context 
 5. **Author the brief.** Otherwise take the first unfinished phase and overwrite `specs/build/brief.md` with everything build needs for that phase alone:
    - the exact design prose for the elements in scope,
    - the phase's requirement ids with their exact text (from `specs/design/`),
-   - exact paths to the code and test files to touch and where new tests go,
+   - exact paths to the code and test files to touch and where new tests go — and, whenever the phase renames or removes an exported name, an explicit grant to make the mechanical follow-through (rename, field add, deletion) in every other file that would otherwise fail to compile, so a fixed file list never blocks a gate,
    - copied interface signatures of any dependency in another module this phase calls,
    - conventions: read `./AGENTS.md` (beside `specs/`) and copy the toolchain and gate commands build needs (build/test/format), plus test placement and naming and the id-tag rule (the id in a comment, or in a string where a comment cannot sit),
    - definition of done: each id has a test that exists, passes, and genuinely asserts the requirement (no bare literals, no skips),
    - a `## Feedback` region — leave any existing verify feedback in place for build to consume,
+   - a `workdir:` line holding the absolute path of your working directory (`pwd`), so build and verify run from the same place,
    - a status line: `status: building`.
 
    Report `NEXT`.

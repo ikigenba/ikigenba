@@ -24,6 +24,16 @@ type wireFormat interface {
 	ReservedKeys() []string
 }
 
+// WireFormat is the codec for one vendor body grammar. Its EncodeRequest
+// parameter is package-private, so wire formats can only be implemented by
+// agentkit.
+type WireFormat interface {
+	EncodeRequest(state requestState) ([]byte, error)
+	DecodeStream(frames iter.Seq2[[]byte, error]) iter.Seq2[Event, error]
+	RenderTools(tools []Tool) (json.RawMessage, error)
+	ReservedKeys() []string
+}
+
 type frameDecoder func(frame []byte) (message *Message, usage usageFragment, hasUsage bool, err error)
 
 type wireCodec struct {
@@ -102,6 +112,8 @@ func (w *wireCodec) classifyResponse(status int, header http.Header, body []byte
 		RetryAfter: parseRetryAfter(header),
 	}
 }
+
+func (w *wireCodec) setProtocolHeaders(*http.Request) {}
 
 // parseRetryAfter reads the RFC 9110 delta-seconds form of a Retry-After
 // header (a non-negative integer count of seconds) and returns it as a

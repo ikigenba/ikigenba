@@ -28,11 +28,12 @@ or shipped a model on a Tuesday. agentkit keeps them orthogonal:
   released today runs with no agentkit release; an unknown model is the vendor's
   400, not ours.
 
-Vendor packages (`anthropic.New(...)`, `openai.New(...)`, …) pair a built-in
-wire with an endpoint and their own typed credentials, and they are the only way
-to build a conversation. The one thing a consumer customizes is the base URL,
-via each package's `WithBaseURL`; everything else is assembled from parts defined
-in this library. One verb drives a conversation — `conv.Send(ctx, agentkit.Text("hi"))` — returning a
+The catalog knows each provider: an `Offering` carries the wire, the default
+base URL, the credential modes the provider accepts, and the wire model. The
+consumer resolves an offering, hands it a root credential (`APIKey` or
+`OAuth`), and assembles the conversation from those parts. The one thing a
+consumer customizes is the URL passed to `NewEndpoint`; everything else comes
+from the library. One verb drives a conversation — `conv.Send(ctx, agentkit.Text("hi"))` — returning a
 stream of message-granular events, running any tool round-trips to completion.
 
 Day-one endpoints: OpenAI, Anthropic, Google Gemini, xAI, OpenRouter.

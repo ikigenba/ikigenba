@@ -351,6 +351,10 @@ func cloneOutputContract(contract *OutputContract) *OutputContract {
 	return &clone
 }
 
+type refreshableProvider interface {
+	refreshHook() (oauthRefreshHook, bool)
+}
+
 func (c *Conversation) roundTrip(ctx context.Context, state requestState, yield func(Event) bool) ([]Event, bool, error) {
 	request, err := c.buildRequest(ctx, state)
 	if err != nil {
@@ -362,7 +366,43 @@ func (c *Conversation) roundTrip(ctx context.Context, state requestState, yield 
 		return nil, false, wrapProviderError(err, CategoryTransport, 0, c.identity)
 	}
 
+	response, err = c.reissueAfterUnauthorized(ctx, state, response)
+	if err != nil {
+		return nil, true, err
+	}
+
 	return c.consumeResponse(ctx, response, yield)
+}
+
+// reissueAfterUnauthorized implements D22's reactive 401 path: exactly one
+// refresh-and-retry when the response is 401 and the applier exposes the
+// hook; any other status, or an applier without the hook, passes response
+// through unchanged and never calls Refresh.
+func (c *Conversation) reissueAfterUnauthorized(ctx context.Context, state requestState, response *http.Response) (*http.Response, error) {
+	if response.StatusCode != http.StatusUnauthorized {
+		return response, nil
+	}
+	refreshable, ok := c.provider.(refreshableProvider)
+	if !ok {
+		return response, nil
+	}
+	hook, ok := refreshable.refreshHook()
+	if !ok {
+		return response, nil
+	}
+	_ = response.Body.Close()
+	if err := hook.refreshOn401(ctx); err != nil {
+		return nil, wrapProviderError(err, CategoryAuth, response.StatusCode, c.identity)
+	}
+	request, err := c.buildRequest(ctx, state)
+	if err != nil {
+		return nil, wrapProviderError(err, CategoryUnknown, 0, c.identity)
+	}
+	retried, err := c.execute(request)
+	if err != nil {
+		return nil, wrapProviderError(err, CategoryTransport, 0, c.identity)
+	}
+	return retried, nil
 }
 
 func (c *Conversation) buildRequest(ctx context.Context, state requestState) (*http.Request, error) {

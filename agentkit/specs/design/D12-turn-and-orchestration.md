@@ -64,10 +64,9 @@ Two config-collision checks fail loud at the boundary rather than reaching the
 vendor. **ProviderOptions** (D-E): before the first round-trip, `Send` intersects
 the consumer's option keys with the wire+endpoint reserved-key set; any
 intersection returns `ErrInvalidConfig` (D4) with no provider call and `History`
-unchanged. **Base URL versus transport-baking credential** (L2): a credential that
-bakes its own transport (an OpenAI/xAI OAuth credential) and `WithBaseURL` are mutually
-exclusive, and supplying both is `ErrInvalidConfig` at construction, before any
-turn. Both are of a piece with the library's fail-loud stance (D4, D8, D9): a
+unchanged. **Credential mode** (L2): a credential whose mode the catalog offering
+does not list is `ErrInvalidConfig` from `Offering.Authenticator`, before any turn (D7).
+Both are of a piece with the library's fail-loud stance (D4, D8, D9): a
 request the seam cannot faithfully express is refused, not silently reshaped.
 
 ## REQUIREMENTS
@@ -79,5 +78,4 @@ request the seam cannot faithfully express is refused, not silently reshaped.
 - R-4SNC-JDUS: A terminal error (transport, classified vendor error, unrecoverable decode) MUST end the turn, append nothing to `History`, and surface on `Stream.Err()`.
 - R-4TV8-X5LH: The orchestrator MUST correlate each `ToolResult` to its `ToolUse` by the vendor's verbatim call id and MUST NOT substitute a library-minted identifier.
 - R-4V35-AXC6: `Send` MUST reject a `ProviderOptions` map whose keys intersect the wire+endpoint reserved-key set with `ErrInvalidConfig`, making no provider call and leaving `History` unchanged.
-- R-4XIY-2GTK: Constructing a `Conversation` with both a transport-baking credential and `WithBaseURL` MUST fail with `ErrInvalidConfig` at construction (L2).
 - R-08RG-8FCP: `agentkit` MUST export `type ProviderOptions map[string]json.RawMessage`.

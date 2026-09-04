@@ -23,8 +23,8 @@ in the same assistant message is preserved, in order, as a sibling `Text` block.
 **Encode side: the model.** No wire request body carries the model string, and no
 endpoint places it in the path. Three wires — Anthropic Messages, OpenAI Responses,
 OpenAI Chat — take the model as a top-level body field; the Gemini grammar takes
-it in the URL path, which the endpoint owns (D6). The `gemini` vendor package
-builds that path. The three body-grammar wires read the conversation's model
+it in the URL path, which the endpoint owns (D6). The catalog offering's
+`BaseURL` carries that path (D21). The three body-grammar wires read the conversation's model
 string and emit it; the Gemini wire emits none.
 
 Vendor byte facts — field names, event types, the exact SSE shape of a tool call —
@@ -42,5 +42,5 @@ rely on.
 - R-TA7Y-7MPZ: When an assistant message carries both text and tool calls, every shipped wire MUST emit the `Text` and `ToolUse` blocks in the vendor's order within one `MessageDone`, dropping neither.
 - R-ORPQ-5I48: The Anthropic Messages wire MUST emit the conversation's model string verbatim as the top-level `model` field of the request body, pinned by the wire's request fixture.
 - R-OU5I-X1LM: The OpenAI Responses and OpenAI Chat wires MUST each emit the conversation's model string verbatim as the top-level `model` field of the request body, pinned by each wire's request fixture.
-- R-TDVN-CXY2: The Gemini wire's `EncodeRequest` MUST NOT emit a model field in the request body, and the `gemini` vendor constructor MUST place the model in the request URL path.
+- R-PLJZ-S4X2: The Gemini wire's `EncodeRequest` MUST NOT emit a model field in the request body; the model reaches Gemini only through the `BaseURL` path the catalog offering bakes in.
 - R-TF3J-QPOR: An offline turn driven against a replayed tool-call fixture MUST complete the full loop — `ToolCall` emitted, the tool dispatched, `ToolReturn` emitted, a second round-trip whose request body carries the `ToolUse` and `ToolResult`, and a final `MessageDone` — for every shipped wire.

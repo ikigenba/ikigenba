@@ -133,8 +133,7 @@ persisting a partial turn.
 - R-1ZFO-SFB5: Every `Block` variant MUST carry an opaque provider payload as bare bytes with no endpoint tag and no `kind` discriminator, and agentkit MUST replay that payload byte-identically without inspecting it.
 - R-20NL-671U: Each `Block` variant MUST report a stable serialization discriminator via `BlockType()`, distinct from the opaque provider payload, sufficient for a `History` to unmarshal back to the correct concrete variants.
 - R-21VH-JYSJ: A `History` MUST round-trip through `json.Marshal`/`json.Unmarshal` to an equal sequence of concrete `Block` variants, including each block's provider payload.
-- R-233D-XQJ8: Whether a block is `Reasoning` MUST be determined by the wire's parse step, not by the presence or absence of provider payload bytes.
-- R-24BA-BI9X: A `ToolResult` MUST correlate to its `ToolUse` by the vendor's verbatim call id, and agentkit MUST NOT substitute a library-minted identifier.
+- R-U2LH-88H7: When a wire decodes a vendor tool call, the resulting `ToolUse.ID` MUST equal the vendor's call id verbatim (including surrounding whitespace or punctuation), and re-encoding a `ToolResult` whose `ToolUseID` is that value MUST place the same id on the wire unchanged; agentkit MUST NOT generate or substitute its own identifier at any step.
 - R-25J6-PA0M: A `History` MUST always end at a turn boundary — the blocks of a turn that fails mid-loop MUST NOT be appended, so no serialized History contains a partial turn.
 - R-YX7D-BDFM: `agentkit` MUST export `type Role int` with the constants `RoleSystem`, `RoleUser`, `RoleAssistant`, `RoleTool` declared in that `iota` order starting at 0.
 - R-YYF9-P56B: `agentkit` MUST export `type Message struct { Role Role; Blocks []Block }` with exactly those two fields.

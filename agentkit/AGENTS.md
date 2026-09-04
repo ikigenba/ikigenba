@@ -7,8 +7,8 @@ so a new vendor or a day-one model needs no library release. Module path
 `github.com/ikigenba/ikigenba/agentkit`.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
-build loop writes the code (the root package, `retry/`, `internal/`, the vendor
-packages, and `go.mod`'s dependency graph fill in as it does). See the `spec`
+build loop writes the code (the root package, `retry/`, and `go.mod`'s
+dependency graph fill in as it does). See the `spec`
 skill and `docs/spec-system.md` at the repo root. Everything below is declared
 for the loop's verify role, which reads this file directly.
 

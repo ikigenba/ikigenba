@@ -2,40 +2,51 @@ package agentkit
 
 import (
 	"cmp"
+	"errors"
+	"fmt"
 	"slices"
 )
 
-// ProviderID names the vendor constructor package that serves an offering.
-// It is a value type, distinct from the Provider SPI interface (D6). Values
-// are the package names, and are also what a vendor package's New names its
-// endpoint with its vendor auth adapter, so Identity.Endpoint equals the ProviderID of
-// the offering that prices the conversation.
-type ProviderID string
+// OfferingID is the catalog's key for one host/wire-format pair, spelled
+// "<host>-<wire format>". A conversation built from the offering reports it
+// as Identity.Endpoint (D1, D7); cost matches on it (D3). Users never type it.
+type OfferingID string
 
-// Provider identifiers for the built-in vendor constructor packages.
+// Offering ids for the built-in transports.
 const (
-	ProviderAnthropic  ProviderID = "anthropic"
-	ProviderOpenAI     ProviderID = "openai"
-	ProviderGemini     ProviderID = "gemini"
-	ProviderXAI        ProviderID = "xai"
-	ProviderOpenRouter ProviderID = "openrouter"
+	OfferingAnthropicMessages     OfferingID = "anthropic-messages"
+	OfferingOpenAIResponses       OfferingID = "openai-responses"
+	OfferingOpenAIChat            OfferingID = "openai-chat"
+	OfferingGeminiGenerateContent OfferingID = "gemini-generate-content"
+	OfferingXAIResponses          OfferingID = "xai-responses"
+	OfferingXAIChat               OfferingID = "xai-chat"
+	OfferingOpenRouterChat        OfferingID = "openrouter-chat"
+	OfferingOpenRouterResponses   OfferingID = "openrouter-responses"
 )
 
-// Vendor names a model's creator, in OpenRouter namespace spelling, so an
-// OpenRouter wire model is conventionally Vendor + "/" + Model.
-type Vendor string
+// Host names who serves an offering. It is the second Lookup argument.
+type Host string
 
-// Vendor names in OpenRouter namespace spelling.
+// Host names.
 const (
-	VendorAnthropic Vendor = "anthropic"
-	VendorOpenAI    Vendor = "openai"
-	VendorGoogle    Vendor = "google"
-	VendorXAI       Vendor = "x-ai"
-	VendorZAI       Vendor = "z-ai"
-	VendorDeepSeek  Vendor = "deepseek"
-	VendorMoonshot  Vendor = "moonshotai"
-	VendorNVIDIA    Vendor = "nvidia"
-	VendorQwen      Vendor = "qwen"
+	HostAnthropic  Host = "anthropic"
+	HostOpenAI     Host = "openai"
+	HostGemini     Host = "gemini"
+	HostXAI        Host = "xai"
+	HostOpenRouter Host = "openrouter"
+)
+
+// WireName names the wire format an offering speaks. It is the third Lookup
+// argument. Two constructors may share a name (D5): ChatWire and
+// OpenAIChatWire are both "chat"; the offering says which codec applies.
+type WireName string
+
+// Wire format names.
+const (
+	WireMessages        WireName = "messages"
+	WireGenerateContent WireName = "generate-content"
+	WireChat            WireName = "chat"
+	WireResponses       WireName = "responses"
 )
 
 // ReasoningKind is the shape of an offering's native reasoning control.
@@ -92,20 +103,34 @@ func (s ReasoningSpec) Accepts(r ReasoningConfig) bool {
 	}
 }
 
-// Offering is one model as served by one provider.
+// OAuthClient is the OAuth client identity an offering's host uses when
+// AuthModes includes AuthModeOAuth: the token endpoint and the public client
+// id to present against it.
+type OAuthClient struct {
+	TokenURL string
+	ClientID string
+}
+
+// Offering is one model as served by one host over one wire format:
+// everything New needs.
 type Offering struct {
-	Provider  ProviderID
-	WireModel string  // the exact model string sent on the wire
-	Context   int64   // context window in tokens
-	Pricing   Pricing // full price schedule (D3); never empty
-	Reasoning ReasoningSpec
+	ID         OfferingID
+	Host       Host
+	WireName   WireName
+	WireFormat WireFormat // the codec to pass to New
+	BaseURL    string     // the host's default URL, model-in-path baked in
+	AuthModes  []AuthMode // credential modes Authenticator accepts, in preference order
+	OAuth      OAuthClient
+	WireModel  string  // the exact model string sent on the wire
+	Context    int64   // context window in tokens
+	Pricing    Pricing // full price schedule (D3); never empty
+	Reasoning  ReasoningSpec
 }
 
 // CatalogEntry is everything the catalog knows about one model name. The
-// first offering is the default provider.
+// first offering is the default host.
 type CatalogEntry struct {
 	Model     string
-	Vendor    Vendor
 	Offerings []Offering
 }
 
@@ -119,56 +144,73 @@ func Catalog() []CatalogEntry {
 	return entries
 }
 
-// CatalogFor returns the known models offered by p, sorted by model name.
-func CatalogFor(p ProviderID) []CatalogEntry {
-	entries := make([]CatalogEntry, 0)
-	for _, entry := range catalogTable {
-		if _, ok := findOffering(entry, p); ok {
-			entries = append(entries, cloneCatalogEntry(entry))
-		}
-	}
-	sortCatalogEntries(entries)
-	return entries
-}
+// ErrNotFound is what Lookup wraps when no offering matches.
+var ErrNotFound = errors.New("agentkit: catalog entry not found")
 
-// LookupModel returns the catalog entry whose model name exactly matches model.
-func LookupModel(model string) (CatalogEntry, bool) {
+// Lookup is the catalog's shorthand: given a model name and optionally a
+// host and wire format, it resolves the one matching Offering. An empty
+// host means the entry's default host (its first offering's Host); an empty
+// wire means the highest-ranked wire format the chosen host offers for that
+// model, ranked responses above chat. Anything that fails to match wraps
+// ErrNotFound naming the argument that missed.
+func Lookup(model string, host Host, wire WireName) (Offering, error) {
+	var matchedEntry *CatalogEntry
 	for _, entry := range catalogTable {
 		if entry.Model == model {
-			return cloneCatalogEntry(entry), true
+			matchedEntry = &entry
+			break
 		}
 	}
-	return CatalogEntry{}, false
-}
+	if matchedEntry == nil {
+		return Offering{}, fmt.Errorf("agentkit: lookup model %q: %w", model, ErrNotFound)
+	}
 
-// ResolveModel returns the default offering for model, or its offering from p.
-func ResolveModel(model string, p ProviderID) (Offering, bool) {
-	for _, entry := range catalogTable {
-		if entry.Model != model {
+	effectiveHost := host
+	if effectiveHost == "" && len(matchedEntry.Offerings) != 0 {
+		effectiveHost = matchedEntry.Offerings[0].Host
+	}
+
+	var chosen *Offering
+	for index := range matchedEntry.Offerings {
+		offering := &matchedEntry.Offerings[index]
+		if offering.Host != effectiveHost {
 			continue
 		}
-		if p == "" {
-			if len(entry.Offerings) == 0 {
-				return Offering{}, false
+		if wire != "" {
+			if offering.WireName == wire {
+				return cloneOffering(*offering), nil
 			}
-			return cloneOffering(entry.Offerings[0]), true
+			continue
 		}
-		offering, ok := findOffering(entry, p)
-		if !ok {
-			return Offering{}, false
+		if chosen == nil || wireRank(offering.WireName) > wireRank(chosen.WireName) {
+			chosen = offering
 		}
-		return cloneOffering(offering), true
 	}
-	return Offering{}, false
+
+	if chosen != nil {
+		return cloneOffering(*chosen), nil
+	}
+	if !hostOffered(*matchedEntry, effectiveHost) {
+		return Offering{}, fmt.Errorf("agentkit: lookup host %q: %w", host, ErrNotFound)
+	}
+	return Offering{}, fmt.Errorf("agentkit: lookup wire %q: %w", wire, ErrNotFound)
 }
 
-func findOffering(entry CatalogEntry, p ProviderID) (Offering, bool) {
-	for _, offering := range entry.Offerings {
-		if offering.Provider == p {
-			return offering, true
-		}
+func hostOffered(entry CatalogEntry, host Host) bool {
+	return slices.ContainsFunc(entry.Offerings, func(offering Offering) bool {
+		return offering.Host == host
+	})
+}
+
+func wireRank(wire WireName) int {
+	switch wire {
+	case WireResponses:
+		return 2
+	case WireChat:
+		return 1
+	default:
+		return 0
 	}
-	return Offering{}, false
 }
 
 func cloneCatalogEntry(entry CatalogEntry) CatalogEntry {
@@ -181,6 +223,7 @@ func cloneCatalogEntry(entry CatalogEntry) CatalogEntry {
 }
 
 func cloneOffering(offering Offering) Offering {
+	offering.AuthModes = slices.Clone(offering.AuthModes)
 	offering.Pricing.Tiers = slices.Clone(offering.Pricing.Tiers)
 	offering.Reasoning = cloneReasoningSpec(offering.Reasoning)
 	return offering

@@ -9,6 +9,9 @@ import (
 
 type openAIResponsesWire struct{ wireCodec }
 
+// OpenAIResponsesWire returns the built-in OpenAI Responses wire codec.
+func OpenAIResponsesWire() WireFormat { return newOpenAIResponsesWire(nil) }
+
 func newOpenAIResponsesWire(classifier errorClassifier) wireFormat {
 	wire := &openAIResponsesWire{}
 	wire.wireCodec = wireCodec{
