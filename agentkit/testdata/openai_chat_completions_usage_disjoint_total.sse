@@ -1,0 +1,8 @@
+data: {"choices":[{"delta":{"role":"assistant","content":"Hello"},"finish_reason":null}]}
+
+data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+
+data: {"choices":[],"usage":{"prompt_tokens":199,"completion_tokens":1,"completion_tokens_details":{"reasoning_tokens":97},"total_tokens":297}}
+
+data: [DONE]
+

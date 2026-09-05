@@ -149,7 +149,17 @@ func buildGeminiContents(history []Message) ([]geminiContent, error) {
 				content.Parts = append(content.Parts, part)
 			case ToolUse:
 				callNames[block.ID] = block.Name
-				content.Parts = append(content.Parts, geminiPart{FunctionCall: &geminiFunctionCall{ID: block.ID, Name: block.Name, Args: block.Input}})
+				part := geminiPart{FunctionCall: &geminiFunctionCall{ID: block.ID, Name: block.Name, Args: block.Input}}
+				if len(block.Provider) > 0 {
+					var provider struct {
+						ThoughtSignature string `json:"thoughtSignature"`
+					}
+					if err := json.Unmarshal(block.Provider, &provider); err != nil {
+						return nil, fmt.Errorf("agentkit: invalid Gemini tool-use replay: %w", err)
+					}
+					part.ThoughtSignature = provider.ThoughtSignature
+				}
+				content.Parts = append(content.Parts, part)
 			case ToolResult:
 				name := callNames[block.ToolUseID]
 				if name == "" {
@@ -272,7 +282,7 @@ func newGeminiDecoder() frameDecoder {
 					blocks = append(blocks, Text{Text: part.Text})
 				}
 				if part.FunctionCall != nil {
-					toolUse, err := part.FunctionCall.toolUse()
+					toolUse, err := part.FunctionCall.toolUse(part.ThoughtSignature)
 					if err != nil {
 						return nil, usageFragment{}, false, err
 					}
@@ -295,12 +305,22 @@ func newGeminiDecoder() frameDecoder {
 	}
 }
 
-func (c geminiFunctionCall) toolUse() (ToolUse, error) {
+func (c geminiFunctionCall) toolUse(thoughtSignature string) (ToolUse, error) {
 	input := bytes.TrimSpace(c.Args)
 	if len(input) == 0 || input[0] != '{' || !json.Valid(input) {
 		return ToolUse{}, fmt.Errorf("agentkit: Gemini function call %q input is not a JSON object", c.ID)
 	}
-	return ToolUse{ID: c.ID, Name: c.Name, Input: append(json.RawMessage(nil), input...)}, nil
+	toolUse := ToolUse{ID: c.ID, Name: c.Name, Input: append(json.RawMessage(nil), input...)}
+	if thoughtSignature != "" {
+		provider, err := json.Marshal(struct {
+			ThoughtSignature string `json:"thoughtSignature"`
+		}{ThoughtSignature: thoughtSignature})
+		if err != nil {
+			return ToolUse{}, err
+		}
+		toolUse.Provider = provider
+	}
+	return toolUse, nil
 }
 
 func renderGeminiTools(tools []Tool) (json.RawMessage, error) {

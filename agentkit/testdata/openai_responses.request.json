@@ -1,1 +1,1 @@
-{"model":"vendor/model:latest","input":[{"role":"assistant","content":[{"type":"output_text","text":"Hello"}]}]}
+{"model":"vendor/model:latest","input":[{"role":"assistant","content":[{"type":"output_text","text":"Hello"}]}],"stream":true,"store":false}

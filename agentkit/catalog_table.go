@@ -65,17 +65,18 @@ var (
 )
 
 // offeringTransport is the per-id transport an offering carries: the host and
-// wire name a user types, the wire codec, the default base URL (Gemini's
-// names the model in its path), the credential modes the host accepts, and —
-// for the OAuth hosts — the token endpoint and public client id a refresh
-// needs (D22).
+// wire name a user types, the wire codec, the api_key endpoint URL (Gemini's
+// names the model in its path), and — where the host honors an OAuth bearer —
+// the oauth endpoint spec (D21). alwaysOAuth lists that spec on every
+// offering of the id (xAI); otherwise it is listed only where codex() opts a
+// model in, because the Codex backend serves a subset of OpenAI's models.
 type offeringTransport struct {
-	host      Host
-	wireName  WireName
-	wire      WireFormat
-	baseURL   func(wireModel string) string
-	authModes []AuthMode
-	oauth     OAuthClient
+	host        Host
+	wireName    WireName
+	wire        WireFormat
+	apiKeyURL   func(wireModel string) string
+	oauth       EndpointSpec
+	alwaysOAuth bool
 }
 
 func fixedURL(raw string) func(string) string { return func(string) string { return raw } }
@@ -84,17 +85,6 @@ func geminiURL(wireModel string) string {
 	return "https://generativelanguage.googleapis.com/v1beta/models/" + url.PathEscape(wireModel) + ":streamGenerateContent?alt=sse"
 }
 
-var (
-	keyOrOAuth = []AuthMode{AuthModeAPIKey, AuthModeOAuth}
-	keyOnly    = []AuthMode{AuthModeAPIKey}
-	noOAuth    = OAuthClient{}
-
-	// Public PKCE clients: the same token endpoints and client ids the oauth
-	// CLI's --help examples log in with. Anthropic's terms do not permit OAuth.
-	openAIOAuth = OAuthClient{TokenURL: openAIRefreshEndpoint, ClientID: openAIClientID}
-	xaiOAuth    = OAuthClient{TokenURL: xaiRefreshEndpoint, ClientID: xaiClientID}
-)
-
 const (
 	openAIRefreshEndpoint = "https://auth.openai.com/oauth/token"
 	openAIClientID        = "app_EMoamEEZ73f0CkXaXp7hrann"
@@ -102,72 +92,106 @@ const (
 	xaiClientID           = "b1a00492-073a-47ea-816f-4c329264a828"
 )
 
+var (
+	// Public PKCE clients: the same refresh endpoints and client ids the oauth
+	// CLI's --help examples log in with. Anthropic's terms do not permit OAuth.
+	openAIRotation = Rotation{RefreshURL: openAIRefreshEndpoint, ClientID: openAIClientID}
+	xaiRotation    = Rotation{RefreshURL: xaiRefreshEndpoint, ClientID: xaiClientID}
+
+	// A ChatGPT OAuth token is honored only by the Codex backend, never by
+	// api.openai.com, and only on the responses protocol (proven live, D21).
+	codexOAuth = EndpointSpec{AuthMode: AuthModeOAuth, BaseURL: "https://chatgpt.com/backend-api/codex/responses", Rotation: openAIRotation}
+	// api.x.ai accepts an xAI OAuth bearer on both protocols at the same URLs.
+	xaiResponsesOAuth = EndpointSpec{AuthMode: AuthModeOAuth, BaseURL: "https://api.x.ai/v1/responses", Rotation: xaiRotation}
+	xaiChatOAuth      = EndpointSpec{AuthMode: AuthModeOAuth, BaseURL: "https://api.x.ai/v1/chat/completions", Rotation: xaiRotation}
+	noOAuth           = EndpointSpec{}
+)
+
 var offeringTransports = map[OfferingID]offeringTransport{
-	OfferingAnthropicMessages:     {HostAnthropic, WireMessages, AnthropicMessagesWire(), fixedURL("https://api.anthropic.com/v1/messages"), keyOnly, noOAuth},
-	OfferingOpenAIResponses:       {HostOpenAI, WireResponses, OpenAIResponsesWire(), fixedURL("https://api.openai.com/v1/responses"), keyOrOAuth, openAIOAuth},
-	OfferingOpenAIChat:            {HostOpenAI, WireChat, OpenAIChatWire(), fixedURL("https://api.openai.com/v1/chat/completions"), keyOrOAuth, openAIOAuth},
-	OfferingGeminiGenerateContent: {HostGemini, WireGenerateContent, GeminiGenerateContentWire(), geminiURL, keyOnly, noOAuth},
-	OfferingXAIResponses:          {HostXAI, WireResponses, ResponsesWire(), fixedURL("https://api.x.ai/v1/responses"), keyOrOAuth, xaiOAuth},
-	OfferingXAIChat:               {HostXAI, WireChat, ChatWire(), fixedURL("https://api.x.ai/v1/chat/completions"), keyOrOAuth, xaiOAuth},
-	OfferingOpenRouterChat:        {HostOpenRouter, WireChat, ChatWire(), fixedURL("https://openrouter.ai/api/v1/chat/completions"), keyOnly, noOAuth},
-	OfferingOpenRouterResponses:   {HostOpenRouter, WireResponses, ResponsesWire(), fixedURL("https://openrouter.ai/api/v1/responses"), keyOnly, noOAuth},
+	OfferingAnthropicMessages:     {HostAnthropic, WireMessages, AnthropicMessagesWire(), fixedURL("https://api.anthropic.com/v1/messages"), noOAuth, false},
+	OfferingOpenAIResponses:       {HostOpenAI, WireResponses, OpenAIResponsesWire(), fixedURL("https://api.openai.com/v1/responses"), codexOAuth, false},
+	OfferingOpenAIChat:            {HostOpenAI, WireChat, OpenAIChatWire(), fixedURL("https://api.openai.com/v1/chat/completions"), noOAuth, false},
+	OfferingGeminiGenerateContent: {HostGemini, WireGenerateContent, GeminiGenerateContentWire(), geminiURL, noOAuth, false},
+	OfferingXAIResponses:          {HostXAI, WireResponses, ResponsesWire(), fixedURL("https://api.x.ai/v1/responses"), xaiResponsesOAuth, true},
+	OfferingXAIChat:               {HostXAI, WireChat, ChatWire(), fixedURL("https://api.x.ai/v1/chat/completions"), xaiChatOAuth, true},
+	OfferingOpenRouterChat:        {HostOpenRouter, WireChat, ChatWire(), fixedURL("https://openrouter.ai/api/v1/chat/completions"), noOAuth, false},
+	OfferingOpenRouterResponses:   {HostOpenRouter, WireResponses, ResponsesWire(), fixedURL("https://openrouter.ai/api/v1/responses"), noOAuth, false},
 }
 
-// offer builds one offering, filling its transport from offeringTransports.
+// offer builds one offering, filling its transport from offeringTransports:
+// the api_key endpoint spec first, then the oauth spec when the id always
+// lists one.
 func offer(id OfferingID, wireModel string, context int64, pricing Pricing, reasoning ReasoningSpec) Offering {
 	transport := offeringTransports[id]
+	endpoints := []EndpointSpec{{AuthMode: AuthModeAPIKey, BaseURL: transport.apiKeyURL(wireModel)}}
+	if transport.alwaysOAuth {
+		endpoints = append(endpoints, transport.oauth)
+	}
 	return Offering{
 		ID: id, Host: transport.host, WireName: transport.wireName, WireFormat: transport.wire,
-		BaseURL: transport.baseURL(wireModel), AuthModes: append([]AuthMode(nil), transport.authModes...),
-		OAuth: transport.oauth, WireModel: wireModel, Context: context, Pricing: pricing, Reasoning: reasoning,
+		Endpoints: endpoints, WireModel: wireModel, Context: context, Pricing: pricing, Reasoning: reasoning,
 	}
+}
+
+// codex opts an openai-responses offering into the Codex oauth endpoint: the
+// model is one the Codex backend serves under a ChatGPT account.
+func codex(o Offering) Offering {
+	o.Endpoints = append(o.Endpoints, offeringTransports[o.ID].oauth)
+	return o
+}
+
+// maxOutput records the vendor's output cap, read from the vendor's own
+// rejection of an oversize max_tokens (D21). Only Anthropic's are proven.
+func maxOutput(o Offering, limit int64) Offering {
+	o.MaxOutputTokens = limit
+	return o
 }
 
 var catalogTable = []CatalogEntry{
 	// ---- Anthropic ----------------------------------------------------------
 	{Model: "claude-opus-5", Offerings: []Offering{
-		offer(OfferingAnthropicMessages, "claude-opus-5", 1_000_000,
-			rates(tier(0, 5000, 500, 6250, 10000, 25000)), effortSpec(lowToMax, EffortMedium, true)),
+		maxOutput(offer(OfferingAnthropicMessages, "claude-opus-5", 1_000_000,
+			rates(tier(0, 5000, 500, 6250, 10000, 25000)), effortSpec(lowToMax, EffortMedium, true)), 128000),
 		offer(OfferingOpenRouterChat, "anthropic/claude-opus-5", 1_000_000,
 			rates(tier(0, 5000, 500, 6250, 10000, 25000)), effortSpec(lowToMax, EffortMedium, true)),
 		offer(OfferingOpenRouterResponses, "anthropic/claude-opus-5", 1_000_000,
 			rates(tier(0, 5000, 500, 6250, 10000, 25000)), effortSpec(lowToMax, EffortMedium, true)),
 	}},
 	{Model: "claude-opus-4-8", Offerings: []Offering{
-		offer(OfferingAnthropicMessages, "claude-opus-4-8", 1_000_000,
-			rates(tier(0, 5000, 500, 6250, 10000, 25000)), effortSpec(lowToMax, EffortHigh, true)),
+		maxOutput(offer(OfferingAnthropicMessages, "claude-opus-4-8", 1_000_000,
+			rates(tier(0, 5000, 500, 6250, 10000, 25000)), effortSpec(lowToMax, EffortHigh, true)), 128000),
 		offer(OfferingOpenRouterChat, "anthropic/claude-opus-4.8", 1_000_000,
 			rates(tier(0, 5000, 500, 6250, 10000, 25000)), effortSpec(lowToMax, EffortHigh, true)),
 		offer(OfferingOpenRouterResponses, "anthropic/claude-opus-4.8", 1_000_000,
 			rates(tier(0, 5000, 500, 6250, 10000, 25000)), effortSpec(lowToMax, EffortHigh, true)),
 	}},
 	{Model: "claude-sonnet-4-6", Offerings: []Offering{
-		offer(OfferingAnthropicMessages, "claude-sonnet-4-6", 1_000_000,
-			rates(tier(0, 3000, 300, 3750, 6000, 15000)), effortSpec(lowHighMax, EffortHigh, true)),
+		maxOutput(offer(OfferingAnthropicMessages, "claude-sonnet-4-6", 1_000_000,
+			rates(tier(0, 3000, 300, 3750, 6000, 15000)), effortSpec(lowHighMax, EffortHigh, true)), 128000),
 		offer(OfferingOpenRouterChat, "anthropic/claude-sonnet-4.6", 1_000_000,
 			rates(tier(0, 3000, 300, 3750, 6000, 15000)), effortSpec(lowHighMax, EffortHigh, true)),
 		offer(OfferingOpenRouterResponses, "anthropic/claude-sonnet-4.6", 1_000_000,
 			rates(tier(0, 3000, 300, 3750, 6000, 15000)), effortSpec(lowHighMax, EffortHigh, true)),
 	}},
 	{Model: "claude-haiku-4-5", Offerings: []Offering{
-		offer(OfferingAnthropicMessages, "claude-haiku-4-5", 200_000,
-			rates(tier(0, 1000, 100, 1250, 2000, 5000)), budgetSpec(1024, 4096, true, reasoningOff)),
+		maxOutput(offer(OfferingAnthropicMessages, "claude-haiku-4-5", 200_000,
+			rates(tier(0, 1000, 100, 1250, 2000, 5000)), budgetSpec(1024, 4096, true, reasoningOff)), 64000),
 		offer(OfferingOpenRouterChat, "anthropic/claude-haiku-4.5", 200_000,
 			rates(tier(0, 1000, 100, 1250, 2000, 5000)), budgetSpec(1024, 4096, true, reasoningOff)),
 		offer(OfferingOpenRouterResponses, "anthropic/claude-haiku-4.5", 200_000,
 			rates(tier(0, 1000, 100, 1250, 2000, 5000)), budgetSpec(1024, 4096, true, reasoningOff)),
 	}},
 	{Model: "claude-fable-5", Offerings: []Offering{
-		offer(OfferingAnthropicMessages, "claude-fable-5", 1_000_000,
-			rates(tier(0, 10000, 1000, 12500, 20000, 50000)), effortSpec(lowToMax, EffortMedium, false)),
+		maxOutput(offer(OfferingAnthropicMessages, "claude-fable-5", 1_000_000,
+			rates(tier(0, 10000, 1000, 12500, 20000, 50000)), effortSpec(lowToMax, EffortMedium, false)), 128000),
 		offer(OfferingOpenRouterChat, "anthropic/claude-fable-5", 1_000_000,
 			rates(tier(0, 10000, 1000, 12500, 20000, 50000)), effortSpec(lowToMax, EffortMedium, false)),
 		offer(OfferingOpenRouterResponses, "anthropic/claude-fable-5", 1_000_000,
 			rates(tier(0, 10000, 1000, 12500, 20000, 50000)), effortSpec(lowToMax, EffortMedium, false)),
 	}},
 	{Model: "claude-sonnet-5", Offerings: []Offering{
-		offer(OfferingAnthropicMessages, "claude-sonnet-5", 1_000_000,
-			rates(tier(0, 3000, 300, 3750, 6000, 15000)), effortSpec(lowToMax, EffortMedium, true)),
+		maxOutput(offer(OfferingAnthropicMessages, "claude-sonnet-5", 1_000_000,
+			rates(tier(0, 3000, 300, 3750, 6000, 15000)), effortSpec(lowToMax, EffortMedium, true)), 128000),
 		offer(OfferingOpenRouterChat, "anthropic/claude-sonnet-5", 1_000_000,
 			rates(tier(0, 3000, 300, 3750, 6000, 15000)), effortSpec(lowToMax, EffortMedium, true)),
 		offer(OfferingOpenRouterResponses, "anthropic/claude-sonnet-5", 1_000_000,
@@ -242,9 +266,9 @@ var catalogTable = []CatalogEntry{
 			rates(tier(0, 30000, 30000, 0, 0, 180000)), effortSpec(highXHigh, EffortHigh, false)),
 	}},
 	{Model: "gpt-5.5", Offerings: []Offering{
-		offer(OfferingOpenAIResponses, "gpt-5.5", 1_050_000,
+		codex(offer(OfferingOpenAIResponses, "gpt-5.5", 1_050_000,
 			rates(tier(0, 5000, 500, 0, 0, 30000), tier(272_001, 10000, 1000, 0, 0, 45000)),
-			effortSpec(noneToXHigh, EffortMedium, true)),
+			effortSpec(noneToXHigh, EffortMedium, true))),
 		offer(OfferingOpenAIChat, "gpt-5.5", 1_050_000,
 			rates(tier(0, 5000, 500, 0, 0, 30000), tier(272_001, 10000, 1000, 0, 0, 45000)),
 			effortSpec(noneToXHigh, EffortMedium, true)),
@@ -270,8 +294,8 @@ var catalogTable = []CatalogEntry{
 			effortSpec(noneToXHigh, EffortNone, true)),
 	}},
 	{Model: "gpt-5.4-mini", Offerings: []Offering{
-		offer(OfferingOpenAIResponses, "gpt-5.4-mini", 400_000,
-			rates(tier(0, 750, 75, 0, 0, 4500)), effortSpec(noneToXHigh, EffortNone, true)),
+		codex(offer(OfferingOpenAIResponses, "gpt-5.4-mini", 400_000,
+			rates(tier(0, 750, 75, 0, 0, 4500)), effortSpec(noneToXHigh, EffortNone, true))),
 		offer(OfferingOpenAIChat, "gpt-5.4-mini", 400_000,
 			rates(tier(0, 750, 75, 0, 0, 4500)), effortSpec(noneToXHigh, EffortNone, true)),
 		offer(OfferingOpenRouterChat, "openai/gpt-5.4-mini", 400_000,
@@ -290,8 +314,8 @@ var catalogTable = []CatalogEntry{
 			rates(tier(0, 200, 20, 0, 0, 1250)), effortSpec(noneToXHigh, EffortNone, true)),
 	}},
 	{Model: "gpt-5.6-sol", Offerings: []Offering{
-		offer(OfferingOpenAIResponses, "gpt-5.6-sol", 1_050_000,
-			rates(tier(0, 5000, 500, 0, 0, 30000)), effortSpec(noneToXHigh, EffortMedium, true)),
+		codex(offer(OfferingOpenAIResponses, "gpt-5.6-sol", 1_050_000,
+			rates(tier(0, 5000, 500, 0, 0, 30000)), effortSpec(noneToXHigh, EffortMedium, true))),
 		offer(OfferingOpenAIChat, "gpt-5.6-sol", 1_050_000,
 			rates(tier(0, 5000, 500, 0, 0, 30000)), effortSpec(noneToXHigh, EffortMedium, true)),
 		offer(OfferingOpenRouterChat, "openai/gpt-5.6-sol", 1_050_000,
@@ -300,8 +324,8 @@ var catalogTable = []CatalogEntry{
 			rates(tier(0, 5000, 500, 0, 0, 30000)), effortSpec(noneToXHigh, EffortMedium, true)),
 	}},
 	{Model: "gpt-5.6-terra", Offerings: []Offering{
-		offer(OfferingOpenAIResponses, "gpt-5.6-terra", 1_050_000,
-			rates(tier(0, 2500, 250, 0, 0, 15000)), effortSpec(noneToXHigh, EffortMedium, true)),
+		codex(offer(OfferingOpenAIResponses, "gpt-5.6-terra", 1_050_000,
+			rates(tier(0, 2500, 250, 0, 0, 15000)), effortSpec(noneToXHigh, EffortMedium, true))),
 		offer(OfferingOpenAIChat, "gpt-5.6-terra", 1_050_000,
 			rates(tier(0, 2500, 250, 0, 0, 15000)), effortSpec(noneToXHigh, EffortMedium, true)),
 		offer(OfferingOpenRouterChat, "openai/gpt-5.6-terra", 1_050_000,
@@ -310,8 +334,8 @@ var catalogTable = []CatalogEntry{
 			rates(tier(0, 2500, 250, 0, 0, 15000)), effortSpec(noneToXHigh, EffortMedium, true)),
 	}},
 	{Model: "gpt-5.6-luna", Offerings: []Offering{
-		offer(OfferingOpenAIResponses, "gpt-5.6-luna", 400_000,
-			rates(tier(0, 1000, 100, 0, 0, 6000)), effortSpec(noneToXHigh, EffortMedium, true)),
+		codex(offer(OfferingOpenAIResponses, "gpt-5.6-luna", 400_000,
+			rates(tier(0, 1000, 100, 0, 0, 6000)), effortSpec(noneToXHigh, EffortMedium, true))),
 		offer(OfferingOpenAIChat, "gpt-5.6-luna", 400_000,
 			rates(tier(0, 1000, 100, 0, 0, 6000)), effortSpec(noneToXHigh, EffortMedium, true)),
 		offer(OfferingOpenRouterChat, "openai/gpt-5.6-luna", 400_000,

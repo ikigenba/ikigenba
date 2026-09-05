@@ -3,10 +3,6 @@ package agentkit
 import (
 	"context"
 	"errors"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"testing"
@@ -22,313 +18,47 @@ func TestAuthModeContract(t *testing.T) {
 	}
 }
 
-// R-P6X7-6W0Q
-func TestCredentialIsSealedWithExactConstructors(t *testing.T) {
-	checkCredentialInterface(t)
-	checkCredentialConstructorSignatures(t)
-	checkCredentialConstructorBehavior(t)
-	checkCredentialExports(t)
-}
-
-func checkCredentialInterface(t *testing.T) {
-	t.Helper()
-	credentialType := reflect.TypeFor[Credential]()
-	if credentialType.Kind() != reflect.Interface || credentialType.NumMethod() != 2 {
-		t.Fatalf("Credential = %s with %d methods, want interface with 2 methods", credentialType, credentialType.NumMethod())
+// R-K1WX-1GLC
+func TestTokenAndRotatorContractExcludeRetiredCredentialTypes(t *testing.T) {
+	tokenType := reflect.TypeFor[Token]()
+	if tokenType.NumField() != 2 {
+		t.Fatalf("Token has %d fields, want 2", tokenType.NumField())
 	}
-	for index, name := range []string{"isCredential", "mode"} {
-		method := credentialType.Method(index)
-		if method.Name != name || method.PkgPath == "" {
-			t.Fatalf("Credential method %d = %s (package %q), want unexported %s", index, method.Name, method.PkgPath, name)
+	if field, ok := tokenType.FieldByName("Bearer"); !ok || field.Type.Kind() != reflect.String {
+		t.Fatalf("Token.Bearer missing or wrong type: %+v, ok=%v", field, ok)
+	}
+	if field, ok := tokenType.FieldByName("AccountID"); !ok || field.Type.Kind() != reflect.String {
+		t.Fatalf("Token.AccountID missing or wrong type: %+v, ok=%v", field, ok)
+	}
+
+	rotatorType := reflect.TypeFor[Rotator]()
+	if rotatorType.Kind() != reflect.Interface {
+		t.Fatalf("Rotator kind = %s, want Interface", rotatorType.Kind())
+	}
+	if rotatorType.NumMethod() != 3 {
+		t.Fatalf("Rotator has %d methods, want 3 (AuthMode, Token, Rotate)", rotatorType.NumMethod())
+	}
+	for _, name := range []string{"AuthMode", "Token", "Rotate"} {
+		if _, ok := rotatorType.MethodByName(name); !ok {
+			t.Fatalf("Rotator missing method %s", name)
 		}
 	}
-}
-
-func checkCredentialConstructorSignatures(t *testing.T) {
-	t.Helper()
-	wantAPIKeySignature := reflect.TypeOf(func(string) Credential { return nil })
-	wantOAuthSignature := reflect.TypeOf(func(TokenSource) Credential { return nil })
-	if got := reflect.TypeOf(APIKey); got != wantAPIKeySignature || got.IsVariadic() {
-		t.Fatalf("APIKey = %s variadic=%t, want %s non-variadic", got, got.IsVariadic(), wantAPIKeySignature)
-	}
-	if got := reflect.TypeOf(OAuth); got != wantOAuthSignature || got.IsVariadic() {
-		t.Fatalf("OAuth = %s variadic=%t, want %s non-variadic", got, got.IsVariadic(), wantOAuthSignature)
-	}
-}
-
-func checkCredentialConstructorBehavior(t *testing.T) {
-	t.Helper()
-	source := &tokenSourceStub{}
-	if credential := APIKey("secret"); credential.mode() != AuthModeAPIKey {
-		t.Fatalf("APIKey mode = %q, want %q", credential.mode(), AuthModeAPIKey)
-	}
-	if credential := OAuth(source); credential.mode() != AuthModeOAuth {
-		t.Fatalf("OAuth mode = %q, want %q", credential.mode(), AuthModeOAuth)
-	}
-	if got := OAuth(source).(oauthCredential).source; got != source {
-		t.Fatal("OAuth did not retain its TokenSource")
-	}
-}
-
-func checkCredentialExports(t *testing.T) {
-	t.Helper()
-	parsed, err := parser.ParseFile(token.NewFileSet(), "credential.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var exportedFunctions []string
-	for _, declaration := range parsed.Decls {
-		function, ok := declaration.(*ast.FuncDecl)
-		if ok && function.Recv == nil && function.Name.IsExported() {
-			exportedFunctions = append(exportedFunctions, function.Name.Name)
-		}
-	}
-	if !reflect.DeepEqual(exportedFunctions, []string{"APIKey", "OAuth"}) {
-		t.Fatalf("credential exports functions %v, want only APIKey and OAuth", exportedFunctions)
-	}
-}
-
-// R-KGL5-6PI4
-func TestOfferingAuthenticatorDeclarationIsExact(t *testing.T) {
-	offeringType := reflect.TypeFor[Offering]()
-	method, ok := offeringType.MethodByName("Authenticator")
-	wantType := reflect.TypeOf(func(Offering, Credential) (Authenticator, error) { return nil, nil })
-	if !ok || method.Type != wantType {
-		t.Fatalf("Offering.Authenticator = %v (present=%t), want %s", method.Type, ok, wantType)
-	}
-	if oldMethod, exists := offeringType.MethodByName("Auth"); exists {
-		t.Fatalf("Offering.Auth still exported with type %s", oldMethod.Type)
-	}
-
-	offering := Offering{ID: OfferingAnthropicMessages, AuthModes: []AuthMode{AuthModeAPIKey}}
-	if _, err := offering.Authenticator(nil); !errors.Is(err, ErrInvalidConfig) {
-		t.Fatalf("Authenticator(nil) error = %v, want ErrInvalidConfig", err)
-	}
-	if _, err := offering.Authenticator(OAuth(&tokenSourceStub{})); !errors.Is(err, ErrInvalidConfig) {
-		t.Fatalf("Authenticator(OAuth) error = %v, want ErrInvalidConfig for unsupported mode", err)
-	}
-	authenticator, err := offering.Authenticator(APIKey("secret"))
-	if err != nil || authenticator == nil {
-		t.Fatalf("Authenticator(APIKey) = %v, %v; want non-nil authenticator and nil error", authenticator, err)
-	}
-}
-
-// R-KK8U-C0Q7
-func TestConversationIdentityFollowsOfferingAndCredential(t *testing.T) {
-	offering := Offering{
-		ID:         OfferingID("identity-test-offering"),
-		WireFormat: ChatWire(),
-		AuthModes:  []AuthMode{AuthModeAPIKey, AuthModeOAuth},
-	}
-	credentials := []struct {
-		name     string
-		value    Credential
-		wantMode string
-	}{
-		{name: "API key", value: APIKey("secret"), wantMode: "api_key"},
-		{name: "OAuth", value: OAuth(&tokenSourceStub{}), wantMode: "oauth"},
-	}
-	urls := []string{
-		"https://example.test",
-		"https://proxy.test/v1/custom-path",
-	}
-
-	for _, credential := range credentials {
-		t.Run(credential.name, func(t *testing.T) {
-			for _, rawURL := range urls {
-				t.Run(rawURL, func(t *testing.T) {
-					authenticator, err := offering.Authenticator(credential.value)
-					if err != nil {
-						t.Fatal(err)
-					}
-					endpoint, err := NewEndpoint(rawURL, authenticator)
-					if err != nil {
-						t.Fatal(err)
-					}
-					conversation, err := New(offering.WireFormat, endpoint, "identity-model", Config{})
-					if err != nil {
-						t.Fatal(err)
-					}
-					if got := conversation.identity.Endpoint; got != string(offering.ID) {
-						t.Fatalf("Identity.Endpoint = %q, want %q for URL %q", got, offering.ID, rawURL)
-					}
-					if got := conversation.identity.AuthMode; got != credential.wantMode {
-						t.Fatalf("Identity.AuthMode = %q, want %q for URL %q", got, credential.wantMode, rawURL)
-					}
-				})
-			}
-		})
-	}
-}
-
-// R-KHT1-KH8T
-func TestAPIKeyPlacementFollowsWireFormat(t *testing.T) {
-	checks := []struct {
-		name         string
-		wire         WireFormat
-		wantHeader   string
-		wantQueryKey string
-	}{
-		{name: "anthropic", wire: AnthropicMessagesWire(), wantHeader: "x-api-key"},
-		{name: "gemini", wire: GeminiGenerateContentWire(), wantQueryKey: "secret"},
-		{name: "chat", wire: ChatWire(), wantHeader: "Authorization"},
-		{name: "responses", wire: ResponsesWire(), wantHeader: "Authorization"},
-		{name: "OpenAI chat", wire: OpenAIChatWire(), wantHeader: "Authorization"},
-		{name: "OpenAI responses", wire: OpenAIResponsesWire(), wantHeader: "Authorization"},
-	}
-	for _, check := range checks {
-		t.Run(check.name, func(t *testing.T) {
-			offering := Offering{
-				ID:         OfferingID("custom-offering"),
-				WireFormat: check.wire,
-				AuthModes:  []AuthMode{AuthModeAPIKey},
-			}
-			authenticator, err := offering.Authenticator(APIKey("secret"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			request := httptest.NewRequest(http.MethodPost, "https://example.test?alt=sse", nil)
-			if err := authenticator.Authenticate(context.Background(), request, nil); err != nil {
-				t.Fatal(err)
-			}
-
-			if got := request.URL.Query().Get("alt"); got != "sse" {
-				t.Fatalf("existing alt query = %q, want sse", got)
-			}
-			if got := request.URL.Query().Get("key"); got != check.wantQueryKey {
-				t.Fatalf("key query = %q, want %q", got, check.wantQueryKey)
-			}
-			wantHeaderValue := "secret"
-			if check.wantHeader == "Authorization" {
-				wantHeaderValue = "Bearer secret"
-			}
-			for _, header := range []string{"x-api-key", "Authorization"} {
-				want := ""
-				if header == check.wantHeader {
-					want = wantHeaderValue
-				}
-				if got := request.Header.Get(header); got != want {
-					t.Fatalf("%s = %q, want %q", header, got, want)
-				}
-			}
-		})
-	}
-}
-
-// R-KJ0X-Y8ZI
-func TestOAuthApplicationFollowsWireFormat(t *testing.T) {
-	t.Run("token is resolved for every request", func(t *testing.T) {
-		source := &tokenSourceStub{token: Token{Bearer: "token", AccountID: "ignored"}}
-		authenticator, err := (Offering{
-			ID:         OfferingID("custom-offering"),
-			WireFormat: ChatWire(),
-			AuthModes:  []AuthMode{AuthModeOAuth},
-		}).Authenticator(OAuth(source))
-		if err != nil {
-			t.Fatal(err)
-		}
-		for range 2 {
-			request := httptest.NewRequest(http.MethodPost, "https://example.test", nil)
-			if err := authenticator.Authenticate(context.Background(), request, nil); err != nil {
-				t.Fatal(err)
-			}
-			if got := request.Header.Get("Authorization"); got != "Bearer token" {
-				t.Fatalf("Authorization = %q, want Bearer token", got)
-			}
-			if got := request.Header.Get("ChatGPT-Account-Id"); got != "" {
-				t.Fatalf("ChatGPT-Account-Id = %q, want empty", got)
-			}
-		}
-		if source.calls != 2 {
-			t.Fatalf("Token calls = %d, want 2", source.calls)
-		}
-	})
-
-	for _, check := range []struct {
-		name string
-		wire WireFormat
-	}{
-		{name: "OpenAI chat", wire: OpenAIChatWire()},
-		{name: "OpenAI responses", wire: OpenAIResponsesWire()},
-	} {
-		t.Run(check.name, func(t *testing.T) {
-			for _, accountID := range []string{"account", ""} {
-				source := &tokenSourceStub{token: Token{Bearer: "token", AccountID: accountID}}
-				authenticator, err := (Offering{
-					ID:         OfferingID("custom-offering"),
-					WireFormat: check.wire,
-					AuthModes:  []AuthMode{AuthModeOAuth},
-				}).Authenticator(OAuth(source))
-				if err != nil {
-					t.Fatal(err)
-				}
-				request := httptest.NewRequest(http.MethodPost, "https://example.test", nil)
-				authErr := authenticator.Authenticate(context.Background(), request, nil)
-				if accountID == "" {
-					if !errors.Is(authErr, ErrInvalidConfig) {
-						t.Fatalf("Authenticate error = %v, want ErrInvalidConfig", authErr)
-					}
-					continue
-				}
-				if authErr != nil {
-					t.Fatal(authErr)
-				}
-				if got := request.Header.Get("Authorization"); got != "Bearer token" {
-					t.Fatalf("Authorization = %q, want Bearer token", got)
-				}
-				if got := request.Header.Get("ChatGPT-Account-Id"); got != accountID {
-					t.Fatalf("ChatGPT-Account-Id = %q, want %q", got, accountID)
-				}
-			}
-		})
-	}
-
-	t.Run("nil source", func(t *testing.T) {
-		authenticator, err := (Offering{
-			ID:         OfferingID("custom-offering"),
-			WireFormat: ChatWire(),
-			AuthModes:  []AuthMode{AuthModeOAuth},
-		}).Authenticator(OAuth(nil))
-		if err != nil {
-			t.Fatal(err)
-		}
-		request := httptest.NewRequest(http.MethodPost, "https://example.test", nil)
-		if err := authenticator.Authenticate(context.Background(), request, nil); !errors.Is(err, ErrInvalidConfig) {
-			t.Fatalf("Authenticate error = %v, want ErrInvalidConfig", err)
-		}
-	})
-
-	t.Run("token error is unchanged", func(t *testing.T) {
-		tokenErr := errors.New("token failed")
-		authenticator, err := (Offering{
-			ID:         OfferingID("custom-offering"),
-			WireFormat: ChatWire(),
-			AuthModes:  []AuthMode{AuthModeOAuth},
-		}).Authenticator(OAuth(&tokenSourceStub{err: tokenErr}))
-		if err != nil {
-			t.Fatal(err)
-		}
-		request := httptest.NewRequest(http.MethodPost, "https://example.test", nil)
-		if err := authenticator.Authenticate(context.Background(), request, nil); !errors.Is(err, tokenErr) {
-			t.Fatalf("Authenticate error = %v, want %v", err, tokenErr)
-		}
-	})
 }
 
 type tokenSourceStub struct {
 	token        Token
 	err          error
-	calls        int
 	refreshToken Token
 	refreshErr   error
 }
 
+func (s *tokenSourceStub) AuthMode() AuthMode { return AuthModeOAuth }
+
 func (s *tokenSourceStub) Token(context.Context) (Token, error) {
-	s.calls++
 	return s.token, s.err
 }
 
-func (s *tokenSourceStub) Refresh(context.Context) (Token, error) {
+func (s *tokenSourceStub) Rotate(context.Context, Rotation) (Token, error) {
 	if s.refreshErr != nil {
 		return s.refreshToken, s.refreshErr
 	}
@@ -339,4 +69,175 @@ func (s *tokenSourceStub) Refresh(context.Context) (Token, error) {
 		s.token = s.refreshToken
 	}
 	return s.token, nil
+}
+
+type rotatorStub struct {
+	mode   AuthMode
+	tokens []Token
+	err    error
+	calls  int
+}
+
+func (s *rotatorStub) AuthMode() AuthMode { return s.mode }
+
+func (s *rotatorStub) Token(context.Context) (Token, error) {
+	s.calls++
+	if s.err != nil {
+		return Token{}, s.err
+	}
+	return s.tokens[(s.calls-1)%len(s.tokens)], nil
+}
+
+func (*rotatorStub) Rotate(context.Context, Rotation) (Token, error) { return Token{}, nil }
+
+// R-K5KM-6RTF
+func TestOfferingAuthenticatorRequiresAcceptedRotator(t *testing.T) {
+	wantSignature := reflect.TypeOf(func(Offering, Rotator) (Authenticator, error) { return nil, nil })
+	if got := reflect.TypeOf(Offering.Authenticator); got != wantSignature {
+		t.Fatalf("Offering.Authenticator type = %s, want %s", got, wantSignature)
+	}
+
+	offering := Offering{ID: OfferingAnthropicMessages, Endpoints: []EndpointSpec{{AuthMode: AuthModeAPIKey}}}
+	if _, err := offering.Authenticator(nil); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("Authenticator(nil) error = %v, want ErrInvalidConfig", err)
+	}
+	unmatched := &rotatorStub{mode: AuthModeOAuth}
+	if _, err := offering.Authenticator(unmatched); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("Authenticator(unmatched) error = %v, want ErrInvalidConfig", err)
+	}
+
+	offeringType := reflect.TypeFor[Offering]()
+	for _, retired := range []string{"Auth", "TokenSource"} {
+		if _, exists := offeringType.MethodByName(retired); exists {
+			t.Fatalf("Offering still exports retired method %s", retired)
+		}
+	}
+}
+
+// R-K6SI-KJK4
+func TestAPIKeyAuthenticatorUsesRotatorTokenForSpecifiedWiresAndEachRequest(t *testing.T) {
+	tests := []struct {
+		name       string
+		wire       WireFormat
+		wantHeader string
+		wantQuery  string
+	}{
+		{name: "anthropic", wire: AnthropicMessagesWire(), wantHeader: "x-api-key"},
+		{name: "gemini", wire: GeminiGenerateContentWire(), wantQuery: "key"},
+		{name: "chat", wire: ChatWire(), wantHeader: "Authorization"},
+		{name: "responses", wire: ResponsesWire(), wantHeader: "Authorization"},
+		{name: "openai chat", wire: OpenAIChatWire(), wantHeader: "Authorization"},
+		{name: "openai responses", wire: OpenAIResponsesWire(), wantHeader: "Authorization"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			rotator := &rotatorStub{mode: AuthModeAPIKey, tokens: []Token{{Bearer: "first"}, {Bearer: "second"}}}
+			offering := Offering{ID: OfferingAnthropicMessages, WireFormat: test.wire, Endpoints: []EndpointSpec{{AuthMode: AuthModeAPIKey}}}
+			authenticator, err := offering.Authenticator(rotator)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest("GET", "https://example.test/path?keep=yes", nil)
+			for call, bearer := range []string{"first", "second"} {
+				if err := authenticator.Authenticate(context.Background(), request, nil); err != nil {
+					t.Fatalf("Authenticate call %d: %v", call+1, err)
+				}
+				if test.wantQuery != "" && request.URL.Query().Get(test.wantQuery) != bearer {
+					t.Fatalf("query %s after call %d = %q, want %q", test.wantQuery, call+1, request.URL.Query().Get(test.wantQuery), bearer)
+				}
+				if test.wantHeader != "" {
+					want := bearer
+					if test.wantHeader == "Authorization" {
+						want = "Bearer " + bearer
+					}
+					if got := request.Header.Get(test.wantHeader); got != want {
+						t.Fatalf("header %s after call %d = %q, want %q", test.wantHeader, call+1, got, want)
+					}
+				}
+			}
+			if rotator.calls != 2 {
+				t.Fatalf("Token calls = %d, want 2", rotator.calls)
+			}
+		})
+	}
+
+	tokenErr := errors.New("token failed")
+	rotator := &rotatorStub{mode: AuthModeAPIKey, err: tokenErr}
+	authenticator, err := (Offering{WireFormat: ChatWire(), Endpoints: []EndpointSpec{{AuthMode: AuthModeAPIKey}}}).Authenticator(rotator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := authenticator.Authenticate(context.Background(), httptest.NewRequest("GET", "https://example.test", nil), nil); !errors.Is(got, tokenErr) {
+		t.Fatalf("Authenticate error = %v, want exact Token error %v", got, tokenErr)
+	}
+}
+
+// R-K98B-C31I
+func TestOAuthAuthenticatorUsesRotatorTokenAndOpenAIAccountID(t *testing.T) {
+	rotator := &rotatorStub{mode: AuthModeOAuth, tokens: []Token{
+		{Bearer: "first", AccountID: "account-1"},
+		{Bearer: "second", AccountID: "account-2"},
+	}}
+	offering := Offering{ID: OfferingOpenAIResponses, WireFormat: OpenAIResponsesWire(), Endpoints: []EndpointSpec{{AuthMode: AuthModeOAuth}}}
+	authenticator, err := offering.Authenticator(rotator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest("GET", "https://example.test", nil)
+	for call, token := range rotator.tokens {
+		if err := authenticator.Authenticate(context.Background(), request, nil); err != nil {
+			t.Fatalf("Authenticate call %d: %v", call+1, err)
+		}
+		if got, want := request.Header.Get("Authorization"), "Bearer "+token.Bearer; got != want {
+			t.Fatalf("Authorization after call %d = %q, want %q", call+1, got, want)
+		}
+		if got := request.Header.Get("ChatGPT-Account-Id"); got != token.AccountID {
+			t.Fatalf("ChatGPT-Account-Id after call %d = %q, want %q", call+1, got, token.AccountID)
+		}
+	}
+	if rotator.calls != 2 {
+		t.Fatalf("Token calls = %d, want 2", rotator.calls)
+	}
+
+	t.Run("generic OAuth wires use bearer header", func(t *testing.T) {
+		value := "oauth-token"
+		for _, wire := range []WireFormat{AnthropicMessagesWire(), GeminiGenerateContentWire(), ChatWire(), ResponsesWire()} {
+			r := &rotatorStub{mode: AuthModeOAuth, tokens: []Token{{Bearer: value}}}
+			auth, authErr := (Offering{WireFormat: wire, Endpoints: []EndpointSpec{{AuthMode: AuthModeOAuth}}}).Authenticator(r)
+			if authErr != nil {
+				t.Fatal(authErr)
+			}
+			req := httptest.NewRequest("GET", "https://example.test", nil)
+			if authErr := auth.Authenticate(context.Background(), req, nil); authErr != nil {
+				t.Fatal(authErr)
+			}
+			if got, want := req.Header.Get("Authorization"), "Bearer "+value; got != want {
+				t.Fatalf("Authorization = %q, want %q", got, want)
+			}
+		}
+	})
+
+	t.Run("OpenAI account ID is required", func(t *testing.T) {
+		value := "oauth-token"
+		r := &rotatorStub{mode: AuthModeOAuth, tokens: []Token{{Bearer: value}}}
+		auth, authErr := offering.Authenticator(r)
+		if authErr != nil {
+			t.Fatal(authErr)
+		}
+		if got := auth.Authenticate(context.Background(), httptest.NewRequest("GET", "https://example.test", nil), nil); !errors.Is(got, ErrInvalidConfig) {
+			t.Fatalf("Authenticate error = %v, want ErrInvalidConfig", got)
+		}
+	})
+
+	t.Run("Token error is unchanged", func(t *testing.T) {
+		tokenErr := errors.New("token failed")
+		r := &rotatorStub{mode: AuthModeOAuth, err: tokenErr}
+		auth, authErr := offering.Authenticator(r)
+		if authErr != nil {
+			t.Fatal(authErr)
+		}
+		if got := auth.Authenticate(context.Background(), httptest.NewRequest("GET", "https://example.test", nil), nil); !errors.Is(got, tokenErr) {
+			t.Fatalf("Authenticate error = %v, want exact Token error %v", got, tokenErr)
+		}
+	})
 }

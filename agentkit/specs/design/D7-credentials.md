@@ -1,12 +1,14 @@
 # D7-credentials
 
-A credential is what a consumer holds — an API key, or a source of OAuth
-tokens. The wire format (D5) is what knows where a credential goes on the
-request. agentkit keeps those two apart. The root package exports one sealed
-`Credential` type with two constructors, and every `Offering` says which
-credential modes it accepts and turns a credential into the `Authenticator`
-(D6) that pairs it with the offering's wire format. There are no per-vendor
-packages: the whole construction path is root symbols driven by catalog data.
+A credential is a secret that can be presented on a request now and, for some
+kinds, replaced with a fresh one when the vendor rejects it. agentkit names
+that behavior a **rotator**: something that hands over the current token and
+knows how to rotate it. Two rotators ship. An API key never rotates. An OAuth
+token rotates through a `TokenStore` (D22), the place the token lives. The
+catalog offering (D21) turns a rotator into the `Authenticator` (D6) that pairs
+it with the offering's wire format, and knows which of its endpoints that
+rotator's mode is served from. There are no per-vendor packages: the whole
+construction path is root symbols driven by catalog data.
 
 ```go
 package agentkit
@@ -20,88 +22,101 @@ const (
 	AuthModeOAuth  AuthMode = "oauth"
 )
 
-// Credential is the sealed set of consumer credentials. Its methods are
-// unexported, so a value comes only from APIKey or OAuth.
-type Credential interface {
-	mode() AuthMode
-	isCredential()
-}
-
-func APIKey(key string) Credential
-func OAuth(source TokenSource) Credential
-
-// Token is one OAuth grant. AccountID is optional; only providers that need
-// it (OpenAI) read it.
+// Token is one presentable secret. AccountID is optional; only the OpenAI
+// wires read it.
 type Token struct {
 	Bearer    string
 	AccountID string
 }
 
-// TokenSource yields the current token and can mint a new one. Token is
-// called before every request; Refresh is called by the conversation when a
-// request comes back 401 (D22). The root ships one concrete source,
-// Offering.TokenSource (D22); the interface stays public so tests can fake it.
-type TokenSource interface {
+// Rotator presents the current secret and can rotate it. AuthMode says which
+// kind of credential this is, so an offering can pick the endpoint spec that
+// serves it. Rotate receives the offering's Rotation (D21): where to send the
+// refresh and which client id to present.
+type Rotator interface {
+	AuthMode() AuthMode
 	Token(ctx context.Context) (Token, error)
-	Refresh(ctx context.Context) (Token, error)
+	Rotate(ctx context.Context, r Rotation) (Token, error)
 }
 
-// Authenticator turns a credential into the authenticator for this offering:
-// it holds the credential and hands each resolved value to o.WireFormat,
-// which places it on the request (D5).
-func (o Offering) Authenticator(cred Credential) (Authenticator, error)
+// APIKeyRotator is the non-rotating rotator: Token always returns key, and
+// Rotate fails because an API key cannot be refreshed.
+func APIKeyRotator(key string) Rotator
+
+// OAuthRotator rotates through store: Token reads the stored access token,
+// Rotate posts the refresh grant and writes the result back (D22).
+func OAuthRotator(store TokenStore) Rotator
+
+// Authenticator turns a rotator into the authenticator for this offering: it
+// holds the rotator, remembers which endpoint spec serves its mode, and hands
+// each token to o.WireFormat, which places it on the request (D5).
+func (o Offering) Authenticator(r Rotator) (Authenticator, error)
 ```
 
-The consumer's flow is: resolve an offering, pick a credential whose mode the
-offering lists, build the endpoint, construct:
+The consumer's flow is the same shape for both kinds of credential: resolve an
+offering, build a rotator, ask the offering for an authenticator, build the
+endpoint from the authenticator, construct:
 
 ```go
-offering, _ := agentkit.Lookup("claude-sonnet-5", "", "")
-auth, _     := offering.Authenticator(agentkit.APIKey(key))
-ep, _       := agentkit.NewEndpoint(offering.BaseURL, auth)   // or a proxy URL
+offering, _ := agentkit.Lookup("gpt-5.6-sol", "openai", "responses")
+auth, _     := offering.Authenticator(agentkit.APIKeyRotator(key))
+ep, _       := agentkit.NewEndpoint(auth)
 conv, _     := agentkit.New(offering.WireFormat, ep, offering.WireModel, cfg)
 ```
 
-`AuthModes` is the discovery surface: an application that holds several kinds
-of credential reads it to decide which to offer. `Authenticator` is the guard: a
-credential whose mode the offering does not list is `ErrInvalidConfig` at
-construction, before any request. Choosing between credentials is the
-application's business; where an OAuth token lives is the application's
-`TokenStore`, and how it is refreshed is D22.
+```go
+offering, _ := agentkit.Lookup("gpt-5.6-sol", "openai", "responses")
+auth, _     := offering.Authenticator(agentkit.OAuthRotator(agentkit.FileTokenStore(path)))
+ep, _       := agentkit.NewEndpoint(auth)
+conv, _     := agentkit.New(offering.WireFormat, ep, offering.WireModel, cfg)
+```
 
-Where a credential lands is fixed per wire format (D5), because a consumer who
-overrides `BaseURL` to point at a proxy still relies on the headers being
-right. The authenticator resolves the credential — the key, or the current
-token from the source — and the wire format places it:
+The two flows differ in one expression. `NewEndpoint(auth)` needs no URL
+because the authenticator came from an offering and knows the endpoint spec
+for its mode (D6, D21); the OAuth flow above therefore posts to the Codex
+backend, the only host that honors a ChatGPT token, while the API-key flow
+posts to the platform API. `Offering.Endpoints` is the discovery surface: an
+application that holds several kinds of credential reads it to decide which
+to offer. `Authenticator` is the guard: a rotator whose mode no endpoint spec
+of the offering lists is `ErrInvalidConfig` at construction, before any
+request. Choosing between credentials is the application's business; where an
+OAuth token lives is the application's `TokenStore`, and how it is rotated is
+D22.
+
+Where a token lands is fixed per wire format (D5), because a consumer who
+overrides the URL to point at a proxy still relies on the headers being right.
+The authenticator resolves the token and the wire format places it:
 
 | Wire format | API key | OAuth |
 |---|---|---|
 | `AnthropicMessagesWire()` | `x-api-key` header | not accepted (Anthropic's terms do not permit it) |
 | `GeminiGenerateContentWire()` | `key` query parameter | not accepted |
 | `ChatWire()`, `ResponsesWire()` | `Authorization: Bearer` | `Authorization: Bearer` |
-| `OpenAIChatWire()`, `OpenAIResponsesWire()` | `Authorization: Bearer` | `Authorization: Bearer` + `ChatGPT-Account-Id` |
+| `OpenAIChatWire()` | `Authorization: Bearer` | not accepted (no chat endpoint honors a ChatGPT token) |
+| `OpenAIResponsesWire()` | `Authorization: Bearer` | `Authorization: Bearer` + `ChatGPT-Account-Id` |
 
-Whether a credential mode is accepted at all is the offering's `AuthModes`,
-not the wire's: OpenRouter speaks the generic chat wire and lists only
-`api_key`.
+Whether a credential mode is accepted at all is the offering's `Endpoints`,
+not the wire's: OpenRouter speaks the generic chat wire and lists only an
+`api_key` spec. The OAuth column was proven live before being written: a
+ChatGPT token is rejected by `api.openai.com` on both protocols and by every
+Codex chat path, and accepted only by the Codex responses endpoint; an xAI
+token is accepted on both xAI protocols at `api.x.ai` with the bearer alone.
 
 The `Authenticator` an offering returns also carries the provenance that
-`New` reads into `Identity` (D1): `Identity.Endpoint` is the offering's
-`ID` string and `Identity.AuthMode` the credential's mode. That is the
-link cost (D3) prices on, and it holds even when the consumer overrides the
-base URL — a proxy in front of Anthropic still prices as Anthropic.
-
-A base-URL override and OAuth are no longer mutually exclusive: the consumer
-owns the URL they pass to `NewEndpoint`, so there is one source of truth.
+`New` reads into `Identity` (D1): `Identity.Endpoint` is the offering's `ID`
+string and `Identity.AuthMode` the rotator's mode. That is the link cost (D3)
+prices on, and it holds even when the consumer overrides the base URL: a proxy
+in front of Anthropic still prices as Anthropic.
 
 ## REQUIREMENTS
 
 - R-P5PA-T4A1: `agentkit` MUST export `type AuthMode string` with the constants `AuthModeAPIKey = "api_key"` and `AuthModeOAuth = "oauth"`.
-- R-P6X7-6W0Q: `agentkit` MUST export a sealed `Credential` interface, not implementable outside the root package, together with the constructors `APIKey(key string) Credential` and `OAuth(source TokenSource) Credential`.
-- R-V7UO-KE8S: `agentkit` MUST export `type Token struct { Bearer string; AccountID string }` with exactly those fields and `type TokenSource interface { Token(ctx context.Context) (Token, error); Refresh(ctx context.Context) (Token, error) }`.
+- R-K1WX-1GLC: `agentkit` MUST export `type Token struct { Bearer string; AccountID string }` with exactly those fields and `type Rotator interface { AuthMode() AuthMode; Token(ctx context.Context) (Token, error); Rotate(ctx context.Context, r Rotation) (Token, error) }` with exactly that method set, and MUST NOT export `Credential`, `APIKey`, `OAuth`, or `TokenSource`.
+- R-K34T-F8C1: `agentkit` MUST export `func APIKeyRotator(key string) Rotator`, whose `AuthMode` returns `AuthModeAPIKey`, whose `Token` returns `Token{Bearer: key}` with no store or network access, and whose `Rotate` returns `ErrInvalidConfig` without any network access.
+- R-K4CP-T02Q: `agentkit` MUST export `func OAuthRotator(store TokenStore) Rotator`, whose `AuthMode` returns `AuthModeOAuth`; its `Token` and `Rotate` behavior is fixed by D22.
 - R-KE5C-F60Q: `NewEndpoint` MUST accept any `Authenticator` with no compile-time guard on its origin.
 - R-KFD8-SXRF: A single `Authenticate(ctx context.Context, req *http.Request, body []byte) error` method MUST cover API-key, OAuth, and body-signing (SigV4) schemes; no separate auth-type hierarchy may be introduced.
-- R-KGL5-6PI4: `agentkit` MUST export `func (o Offering) Authenticator(cred Credential) (Authenticator, error)`, which MUST return `ErrInvalidConfig` for a nil `cred` or for a credential whose mode is not in `o.AuthModes`, and MUST NOT export `Offering.Auth`.
-- R-KHT1-KH8T: The authenticator from `o.Authenticator(APIKey(k))` MUST transmit `k` as placed by `o.WireFormat`: as the `x-api-key` header when it is `AnthropicMessagesWire()`, as the `key` URL query parameter when it is `GeminiGenerateContentWire()`, and as the `Authorization: Bearer k` header when it is `ChatWire()`, `ResponsesWire()`, `OpenAIChatWire()`, or `OpenAIResponsesWire()`.
-- R-KJ0X-Y8ZI: The authenticator from `o.Authenticator(OAuth(src))` MUST call `src.Token(ctx)` on every request and transmit `Token.Bearer` as the `Authorization: Bearer` header; when `o.WireFormat` is `OpenAIResponsesWire()` or `OpenAIChatWire()` it MUST also transmit `Token.AccountID` as the `ChatGPT-Account-Id` header and MUST fail with `ErrInvalidConfig` when `AccountID` is empty; and `Authenticate` MUST return `ErrInvalidConfig` for a nil `src` and MUST return `src`'s error unchanged when `Token` fails.
-- R-KK8U-C0Q7: A `Conversation` built by `New(o.WireFormat, NewEndpoint(url, auth), model, cfg)` where `auth` came from `o.Authenticator(cred)` MUST report `Identity.Endpoint` equal to `string(o.ID)` for any `url`, and `Identity.AuthMode` equal to `"api_key"` for an `APIKey` credential and `"oauth"` for an `OAuth` credential.
+- R-K5KM-6RTF: `agentkit` MUST export `func (o Offering) Authenticator(r Rotator) (Authenticator, error)`, which MUST return `ErrInvalidConfig` for a nil `r` or for a rotator whose `AuthMode()` matches no `EndpointSpec.AuthMode` in `o.Endpoints`, and MUST NOT export `Offering.Auth` or `Offering.TokenSource`.
+- R-K6SI-KJK4: The authenticator from `o.Authenticator(r)` where `r.AuthMode()` is `AuthModeAPIKey` MUST call `r.Token(ctx)` on every request and transmit `Token.Bearer` as placed by `o.WireFormat`: as the `x-api-key` header when it is `AnthropicMessagesWire()`, as the `key` URL query parameter when it is `GeminiGenerateContentWire()`, and as the `Authorization: Bearer <Bearer>` header when it is `ChatWire()`, `ResponsesWire()`, `OpenAIChatWire()`, or `OpenAIResponsesWire()`; and `Authenticate` MUST return `r`'s error unchanged when `Token` fails.
+- R-K98B-C31I: The authenticator from `o.Authenticator(r)` where `r.AuthMode()` is `AuthModeOAuth` MUST call `r.Token(ctx)` on every request and transmit `Token.Bearer` as the `Authorization: Bearer` header; when `o.WireFormat` is `OpenAIResponsesWire()` it MUST also transmit `Token.AccountID` as the `ChatGPT-Account-Id` header and MUST fail with `ErrInvalidConfig` when `AccountID` is empty; and `Authenticate` MUST return `r`'s error unchanged when `Token` fails.
+- R-KAG7-PUS7: A `Conversation` built by `New(o.WireFormat, ep, model, cfg)` where `ep` was built by `NewEndpoint` from `o.Authenticator(r)` MUST report `Identity.Endpoint` equal to `string(o.ID)` whether or not `WithBaseURL` was given, and `Identity.AuthMode` equal to `string(r.AuthMode())`.

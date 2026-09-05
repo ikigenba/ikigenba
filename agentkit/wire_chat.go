@@ -33,7 +33,12 @@ func (w *chatWire) encodeRequest(state requestState) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	request := openAIChatRequest{Model: state.Model, Messages: messages}
+	request := openAIChatRequest{
+		Model:         state.Model,
+		Messages:      messages,
+		Stream:        true,
+		StreamOptions: openAIChatStreamOptions{IncludeUsage: true},
+	}
 	if state.Output != nil {
 		schema, renderErr := w.renderOutputSchema(state.Output.Schema)
 		if renderErr != nil {

@@ -22,6 +22,15 @@ option's declared kind, fails `Send` with `ErrInvalidConfig` and no provider
 call. There is no raw pass-through and no silent forwarding: what reaches the
 vendor is exactly what the wire understood.
 
+One control has no vendor default. Anthropic Messages rejects every request
+without `max_tokens`, unary or streaming, as proven live. So when the caller
+sets no `max_output_tokens`, the Anthropic wire sends the cap the catalog
+records for the conversation's offering, `Offering.MaxOutputTokens` (D21),
+found by the same identity match cost uses (D3). A conversation on that wire
+that matches no offering and sets no option has nothing to send and fails at
+`Send`, before any provider call. Every other wire leaves an absent option
+absent.
+
 Because the wire has to understand what it can and cannot do, it can also
 **describe** it. `WireFormat.OptionSpecs()` (D5) returns the wire's option
 vocabulary — each name, the value shape it accepts, and a one-line description
@@ -289,7 +298,8 @@ release: only a genuinely new *wire shape* (not a new model) requires library wo
 - R-OLRY-B787: The Gemini GenerateContent wire MUST render `temperature` as `generationConfig.temperature` (a JSON number), `top_p` as `generationConfig.topP` (a JSON number), `max_output_tokens` as `generationConfig.maxOutputTokens` (a JSON integer), and `stop` as `generationConfig.stopSequences` (a JSON array of strings), pinned by a golden fixture.
 - R-OMZU-OYYW: The OpenAI Chat wire and `ChatWire()` MUST render `temperature` as top-level `temperature` (a JSON number), `top_p` as `top_p` (a JSON number), `max_output_tokens` as `max_completion_tokens` (a JSON integer), and `stop` as `stop` (a JSON array of strings), pinned by a golden fixture.
 - R-OO7R-2QPL: The OpenAI Responses wire and `ResponsesWire()` MUST render `temperature` as top-level `temperature` (a JSON number), `top_p` as `top_p` (a JSON number), and `max_output_tokens` as `max_output_tokens` (a JSON integer), pinned by a golden fixture.
-- R-OPFN-GIGA: An option absent from `Settings.Options` MUST produce no corresponding field in the request body, and a request built from a nil or empty `Options` MUST be byte-identical to one built before this design added options.
+- R-KBO4-3MIW: An option absent from `Settings.Options` MUST produce no corresponding field in the request body, except that the Anthropic Messages wire MUST still send `max_tokens` as R-KCW0-HE9L fixes; and the fields every request of a wire carries regardless of options (`stream`, `stream_options`, `store`, D5) MUST be identical whether `Options` is nil, empty, or populated.
+- R-KCW0-HE9L: A `Send` on a conversation whose wire is `AnthropicMessagesWire()` MUST send `max_tokens` equal to the parsed `max_output_tokens` option when present, otherwise equal to the `MaxOutputTokens` of the catalog offering whose `ID` equals `Identity.Endpoint` and whose `WireModel` equals `Identity.Model` when that value is non-zero, and otherwise MUST fail with `ErrInvalidConfig`, making no provider call and leaving `History` unchanged.
 - R-ZWKG-EPXR: `agentkit` MUST export `type ReasoningMode int` with the constants `ReasoningDefault`, `ReasoningOff`, `ReasoningOn`, `ReasoningEffort`, `ReasoningBudget` declared in that `iota` order starting at 0.
 - R-ZXSC-SHOG: `agentkit` MUST export `type ReasoningConfig struct { Mode ReasoningMode; Effort Effort; Budget int }` with exactly those three fields.
 - R-NU3H-L95J: `agentkit` MUST export `type Effort int` with the constants `EffortNone`, `EffortMinimal`, `EffortLow`, `EffortMedium`, `EffortHigh`, `EffortXHigh`, `EffortMax` declared in that `iota` order starting at 0.

@@ -38,7 +38,11 @@ func (OutputDone) isEvent()  {}
 // It is a snapshot: History and Tools reflect this round-trip only, while Model,
 // Settings and Output are fixed for the conversation.
 type requestState struct {
-	Model    string
+	Model string
+	// Identity is the conversation's stable provenance, needed by wires whose
+	// grammar depends on more than the model string (e.g. Anthropic's required
+	// max_tokens).
+	Identity Identity
 	History  []Message
 	Settings Settings
 	Tools    []Tool

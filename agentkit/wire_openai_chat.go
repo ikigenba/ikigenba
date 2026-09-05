@@ -71,9 +71,15 @@ type openAIChatResponseFormat struct {
 	JSONSchema openAIChatJSONSchema `json:"json_schema"`
 }
 
+type openAIChatStreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
+}
+
 type openAIChatRequest struct {
 	Model               string                    `json:"model"`
 	Messages            []chatMessage             `json:"messages"`
+	Stream              bool                      `json:"stream"`
+	StreamOptions       openAIChatStreamOptions   `json:"stream_options"`
 	Temperature         *float64                  `json:"temperature,omitempty"`
 	TopP                *float64                  `json:"top_p,omitempty"`
 	MaxCompletionTokens *int                      `json:"max_completion_tokens,omitempty"`
@@ -172,7 +178,12 @@ func (w *openAIChatWire) encodeRequest(state requestState) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	request := openAIChatRequest{Model: state.Model, Messages: messages}
+	request := openAIChatRequest{
+		Model:         state.Model,
+		Messages:      messages,
+		Stream:        true,
+		StreamOptions: openAIChatStreamOptions{IncludeUsage: true},
+	}
 	if state.Output != nil {
 		schema, renderErr := w.renderOutputSchema(state.Output.Schema)
 		if renderErr != nil {
@@ -200,6 +211,7 @@ func newOpenAIChatDecoder() frameDecoder {
 	var orderedBlocks []*openAIChatStreamBlock
 	toolCallsByIndex := make(map[int]*openAIChatStreamToolCall)
 	var normalizer usageNormalizer
+	done := false
 	return func(frame []byte) (*Message, usageFragment, bool, error) {
 		var chunk struct {
 			Choices []struct {
@@ -220,6 +232,7 @@ func newOpenAIChatDecoder() frameDecoder {
 			Usage *struct {
 				PromptTokens     *int64 `json:"prompt_tokens"`
 				CompletionTokens *int64 `json:"completion_tokens"`
+				TotalTokens      *int64 `json:"total_tokens"`
 				PromptDetails    struct {
 					CachedTokens *int64 `json:"cached_tokens"`
 				} `json:"prompt_tokens_details"`
@@ -254,6 +267,9 @@ func newOpenAIChatDecoder() frameDecoder {
 				toolCall.arguments.WriteString(delta.Function.Arguments)
 			}
 			if choice.FinishReason != nil {
+				if done {
+					continue
+				}
 				blocks := make([]Block, 0, len(orderedBlocks))
 				for _, block := range orderedBlocks {
 					if block.toolCall == nil {
@@ -267,15 +283,33 @@ func newOpenAIChatDecoder() frameDecoder {
 					blocks = append(blocks, toolUse)
 				}
 				message := Message{Role: RoleAssistant, Blocks: blocks}
+				done = true
+				if chunk.Usage != nil {
+					usage := chunk.Usage
+					output := chatUsageCompletionTokens(usage.PromptTokens, usage.CompletionTokens, usage.CompletionDetails.ReasoningTokens, usage.TotalTokens)
+					return &message, normalizer.update(usage.PromptTokens, usage.PromptDetails.CachedTokens, nil, nil, output, usage.CompletionDetails.ReasoningTokens), true, nil
+				}
 				return &message, usageFragment{}, false, nil
 			}
 		}
 		if chunk.Usage != nil {
 			usage := chunk.Usage
-			return nil, normalizer.update(usage.PromptTokens, usage.PromptDetails.CachedTokens, nil, nil, usage.CompletionTokens, usage.CompletionDetails.ReasoningTokens), true, nil
+			output := chatUsageCompletionTokens(usage.PromptTokens, usage.CompletionTokens, usage.CompletionDetails.ReasoningTokens, usage.TotalTokens)
+			return nil, normalizer.update(usage.PromptTokens, usage.PromptDetails.CachedTokens, nil, nil, output, usage.CompletionDetails.ReasoningTokens), true, nil
 		}
 		return nil, usageFragment{}, false, nil
 	}
+}
+
+func chatUsageCompletionTokens(prompt, completion, reasoning, total *int64) *int64 {
+	if prompt == nil || completion == nil || reasoning == nil || total == nil {
+		return completion
+	}
+	if *prompt+*completion == *total || *prompt+*completion+*reasoning != *total {
+		return completion
+	}
+	effectiveCompletion := *completion + *reasoning
+	return &effectiveCompletion
 }
 
 type openAIChatStreamBlock struct {

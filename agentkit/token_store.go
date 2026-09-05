@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-// TokenStore is where a TokenSource keeps its bytes. The bytes are opaque to
+// TokenStore is where an OAuth rotator keeps its bytes. The bytes are opaque to
 // the store. This is the sole intended extension point of the OAuth path.
 // R-ZOPK-NW7S
 type TokenStore interface {

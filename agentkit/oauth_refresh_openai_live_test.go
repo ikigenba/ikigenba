@@ -1,4 +1,4 @@
-//go:build integration
+//go:build live
 
 package agentkit
 
@@ -9,46 +9,48 @@ import (
 	"testing"
 )
 
-func TestOAuthRefreshOpenAI(t *testing.T) {
+func TestLiveOAuthRefreshOpenAI(t *testing.T) {
 	path := os.Getenv("AGENTKIT_OPENAI_OAUTH_FILE")
 	if path == "" {
-		t.Skip("AGENTKIT_OPENAI_OAUTH_FILE is unset")
+		t.Fatal("AGENTKIT_OPENAI_OAUTH_FILE is unset")
 	}
 
-	beforeData, err := os.ReadFile(path)
+	before, err := os.ReadFile(path)
 	if err != nil {
-		t.Skipf("cannot read OpenAI OAuth file: %v", err)
+		t.Fatalf("read OpenAI OAuth file: %v", err)
 	}
-	var before struct {
+	var beforeToken struct {
 		AccessToken string `json:"access_token"`
 	}
-	if err := json.Unmarshal(beforeData, &before); err != nil {
-		t.Fatalf("decode OpenAI OAuth file before refresh: %v", err)
+	if err := json.Unmarshal(before, &beforeToken); err != nil {
+		t.Fatalf("decode OpenAI OAuth file before rotation: %v", err)
 	}
 
-	offering, err := Lookup("gpt-5.6-sol", HostOpenAI, WireResponses)
+	offering, err := Lookup("gpt-5.4-mini", HostOpenAI, WireResponses)
 	if err != nil {
 		t.Fatalf("look up OpenAI responses offering: %v", err)
 	}
-	source, err := offering.TokenSource(FileTokenStore(path))
-	if err != nil {
-		t.Fatalf("construct OpenAI token source: %v", err)
-	}
-	if _, err := source.Refresh(context.Background()); err != nil {
-		t.Fatalf("refresh OpenAI OAuth token: %v", err)
+	spec, ok := offering.endpointForAuthMode(AuthModeOAuth)
+	if !ok {
+		t.Fatal("OpenAI responses offering has no oauth endpoint spec")
 	}
 
-	afterData, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read OpenAI OAuth file after refresh: %v", err)
+	rotator := OAuthRotator(FileTokenStore(path))
+	if _, err := rotator.Rotate(context.Background(), spec.Rotation); err != nil {
+		t.Fatalf("rotate OpenAI OAuth token: %v", err)
 	}
-	var after struct {
+
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read OpenAI OAuth file after rotation: %v", err)
+	}
+	var afterToken struct {
 		AccessToken string `json:"access_token"`
 	}
-	if err := json.Unmarshal(afterData, &after); err != nil {
-		t.Fatalf("decode OpenAI OAuth file after refresh: %v", err)
+	if err := json.Unmarshal(after, &afterToken); err != nil {
+		t.Fatalf("decode OpenAI OAuth file after rotation: %v", err)
 	}
-	if after.AccessToken == before.AccessToken {
-		t.Fatal("OpenAI access_token did not change after refresh")
+	if afterToken.AccessToken == beforeToken.AccessToken {
+		t.Fatal("OpenAI access_token did not change after rotation")
 	}
 }

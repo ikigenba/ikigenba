@@ -8,7 +8,7 @@ event: content_block_delta
 data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"lo"}}
 
 event: message_delta
-data: {"type":"message_delta","delta":{"usage":{"output_tokens":4}}}
+data: {"type":"message_delta","delta":{},"usage":{"output_tokens":4}}
 
 event: message_stop
 data: {"type":"message_stop"}

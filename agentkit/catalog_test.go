@@ -45,18 +45,17 @@ func TestWireNameVocabulary(t *testing.T) {
 	}
 }
 
+// R-KGJP-MPHO
 func TestOfferingShape(t *testing.T) {
-	// R-JG05-PL9A
 	assertStructShape(t, Offering{}, []fieldShape{
 		{"ID", reflect.TypeOf(OfferingID(""))},
 		{"Host", reflect.TypeOf(Host(""))},
 		{"WireName", reflect.TypeOf(WireName(""))},
 		{"WireFormat", reflect.TypeOf((*WireFormat)(nil)).Elem()},
-		{"BaseURL", reflect.TypeOf("")},
-		{"AuthModes", reflect.TypeOf([]AuthMode(nil))},
-		{"OAuth", reflect.TypeOf(OAuthClient{})},
+		{"Endpoints", reflect.TypeOf([]EndpointSpec(nil))},
 		{"WireModel", reflect.TypeOf("")},
 		{"Context", reflect.TypeOf(int64(0))},
+		{"MaxOutputTokens", reflect.TypeOf(int64(0))},
 		{"Pricing", reflect.TypeOf(Pricing{})},
 		{"Reasoning", reflect.TypeOf(ReasoningSpec{})},
 	})
@@ -197,43 +196,6 @@ func TestCatalogExportsNoRetiredQuerySurface(t *testing.T) {
 	})
 }
 
-// R-JH82-3CZZ
-func TestCatalogOfferingsCarryFixedTransport(t *testing.T) {
-	wantByID := map[OfferingID]struct {
-		host     Host
-		name     WireName
-		wireType string
-		url      string
-		auth     []AuthMode
-		oauth    OAuthClient
-	}{
-		OfferingAnthropicMessages:     {HostAnthropic, WireMessages, "*agentkit.anthropicWire", "https://api.anthropic.com/v1/messages", []AuthMode{AuthModeAPIKey}, OAuthClient{}},
-		OfferingOpenAIResponses:       {HostOpenAI, WireResponses, "*agentkit.openAIResponsesWire", "https://api.openai.com/v1/responses", []AuthMode{AuthModeAPIKey, AuthModeOAuth}, OAuthClient{"https://auth.openai.com/oauth/token", "app_EMoamEEZ73f0CkXaXp7hrann"}},
-		OfferingOpenAIChat:            {HostOpenAI, WireChat, "*agentkit.openAIChatWire", "https://api.openai.com/v1/chat/completions", []AuthMode{AuthModeAPIKey, AuthModeOAuth}, OAuthClient{"https://auth.openai.com/oauth/token", "app_EMoamEEZ73f0CkXaXp7hrann"}},
-		OfferingGeminiGenerateContent: {HostGemini, WireGenerateContent, "*agentkit.geminiWire", "", []AuthMode{AuthModeAPIKey}, OAuthClient{}},
-		OfferingXAIResponses:          {HostXAI, WireResponses, "*agentkit.responsesWire", "https://api.x.ai/v1/responses", []AuthMode{AuthModeAPIKey, AuthModeOAuth}, OAuthClient{"https://auth.x.ai/oauth2/token", "b1a00492-073a-47ea-816f-4c329264a828"}},
-		OfferingXAIChat:               {HostXAI, WireChat, "*agentkit.chatWire", "https://api.x.ai/v1/chat/completions", []AuthMode{AuthModeAPIKey, AuthModeOAuth}, OAuthClient{"https://auth.x.ai/oauth2/token", "b1a00492-073a-47ea-816f-4c329264a828"}},
-		OfferingOpenRouterChat:        {HostOpenRouter, WireChat, "*agentkit.chatWire", "https://openrouter.ai/api/v1/chat/completions", []AuthMode{AuthModeAPIKey}, OAuthClient{}},
-		OfferingOpenRouterResponses:   {HostOpenRouter, WireResponses, "*agentkit.responsesWire", "https://openrouter.ai/api/v1/responses", []AuthMode{AuthModeAPIKey}, OAuthClient{}},
-	}
-	for _, entry := range Catalog() {
-		for _, offering := range entry.Offerings {
-			want, ok := wantByID[offering.ID]
-			if !ok {
-				t.Errorf("%q offering has unknown id %q", entry.Model, offering.ID)
-				continue
-			}
-			wantURL := want.url
-			if offering.ID == OfferingGeminiGenerateContent {
-				wantURL = "https://generativelanguage.googleapis.com/v1beta/models/" + url.PathEscape(offering.WireModel) + ":streamGenerateContent?alt=sse"
-			}
-			if offering.Host != want.host || offering.WireName != want.name || reflect.TypeOf(offering.WireFormat).String() != want.wireType || offering.BaseURL != wantURL || !slices.Equal(offering.AuthModes, want.auth) || offering.OAuth != want.oauth {
-				t.Errorf("%q offering %q transport = {%q %q %T %q %v %+v}, want {%q %q %s %q %v %+v}", entry.Model, offering.ID, offering.Host, offering.WireName, offering.WireFormat, offering.BaseURL, offering.AuthModes, offering.OAuth, want.host, want.name, want.wireType, wantURL, want.auth, want.oauth)
-			}
-		}
-	}
-}
-
 // R-JIFY-H4QO
 func TestCatalogAlternateAPIOfferingsArePaired(t *testing.T) {
 	for _, entry := range Catalog() {
@@ -333,6 +295,272 @@ func TestCatalogOfferingDataInvariants(t *testing.T) {
 				}
 				if tier.InputUncached <= 0 || tier.Output <= 0 {
 					t.Errorf("%q offering %q pricing tier %d has non-positive rates", entry.Model, offering.ID, i)
+				}
+			}
+		}
+	}
+}
+
+// R-KK7E-S0PR
+func TestCatalogEndpointsWellFormed(t *testing.T) {
+	for _, entry := range Catalog() {
+		for _, offering := range entry.Offerings {
+			// This explicit invariant intentionally overlaps the first-endpoint safety
+			// guard in TestCatalogFixedTransportByID: R-KK7E-S0PR requires a dedicated
+			// public-surface test covering every endpoint, not only the first one.
+			if len(offering.Endpoints) == 0 {
+				t.Errorf("%q offering %q has no endpoints", entry.Model, offering.ID)
+			}
+
+			authModes := make(map[AuthMode]int, len(offering.Endpoints))
+			for _, spec := range offering.Endpoints {
+				authModes[spec.AuthMode]++
+				if authModes[spec.AuthMode] > 1 {
+					t.Errorf("%q offering %q repeats auth mode %q", entry.Model, offering.ID, spec.AuthMode)
+				}
+
+				u, err := url.Parse(spec.BaseURL)
+				if err != nil || !u.IsAbs() || (u.Scheme != "http" && u.Scheme != "https") {
+					t.Errorf("%q offering %q endpoint %q is not an absolute HTTP(S) URL: %v", entry.Model, offering.ID, spec.BaseURL, err)
+				}
+
+				wantRotationFields := spec.AuthMode == AuthModeOAuth
+				if (spec.Rotation.RefreshURL != "") != wantRotationFields || (spec.Rotation.ClientID != "") != wantRotationFields {
+					t.Errorf("%q offering %q auth mode %q has rotation %+v", entry.Model, offering.ID, spec.AuthMode, spec.Rotation)
+				}
+			}
+		}
+	}
+}
+
+// R-KMN7-JK75
+func TestCatalogMaxOutputTokensByHostAndModel(t *testing.T) {
+	for _, entry := range Catalog() {
+		for _, offering := range entry.Offerings {
+			var want int64
+			switch {
+			case offering.Host != HostAnthropic:
+				want = 0
+			case entry.Model == "claude-haiku-4-5":
+				want = 64_000
+			default:
+				want = 128_000
+			}
+			if offering.MaxOutputTokens != want {
+				t.Errorf("%q offering %q MaxOutputTokens = %d, want %d", entry.Model, offering.ID, offering.MaxOutputTokens, want)
+			}
+		}
+	}
+}
+
+// R-KNV3-XBXU
+func TestCatalogEndpointsMutationIsolated(t *testing.T) {
+	const model = "claude-sonnet-5"
+	entries := Catalog()
+	index := slices.IndexFunc(entries, func(entry CatalogEntry) bool { return entry.Model == model })
+	if index < 0 {
+		t.Fatalf("Catalog omitted %q", model)
+	}
+	beforeEntries := Catalog()
+	beforeIndex := slices.IndexFunc(beforeEntries, func(entry CatalogEntry) bool { return entry.Model == model })
+	if beforeIndex < 0 {
+		t.Fatalf("second Catalog call omitted %q", model)
+	}
+	wantCatalogEndpoints := slices.Clone(beforeEntries[beforeIndex].Offerings[0].Endpoints)
+
+	entries[index].Offerings[0].Endpoints[0].BaseURL = "https://mutated.example/base"
+	entries[index].Offerings[0].Endpoints = append(entries[index].Offerings[0].Endpoints, EndpointSpec{
+		AuthMode: AuthModeOAuth,
+		BaseURL:  "https://mutated.example/x",
+		Rotation: Rotation{RefreshURL: "https://mutated.example/r", ClientID: "mutated"},
+	})
+	afterEntries := Catalog()
+	afterIndex := slices.IndexFunc(afterEntries, func(entry CatalogEntry) bool { return entry.Model == model })
+	if afterIndex < 0 || !reflect.DeepEqual(afterEntries[afterIndex].Offerings[0].Endpoints, wantCatalogEndpoints) {
+		t.Fatalf("Catalog endpoints changed after mutating a prior result: %+v", afterEntries)
+	}
+
+	offering, err := Lookup(model, "", "")
+	if err != nil {
+		t.Fatalf("Lookup omitted %q: %v", model, err)
+	}
+	wantLookupEndpoints := slices.Clone(offering.Endpoints)
+	offering.Endpoints[0].BaseURL = "https://mutated.example/lookup"
+	offering.Endpoints = append(offering.Endpoints, EndpointSpec{
+		AuthMode: AuthModeOAuth,
+		BaseURL:  "https://mutated.example/x",
+		Rotation: Rotation{RefreshURL: "https://mutated.example/r", ClientID: "mutated"},
+	})
+	afterLookup, err := Lookup(model, "", "")
+	if err != nil || !reflect.DeepEqual(afterLookup.Endpoints, wantLookupEndpoints) {
+		t.Fatalf("Lookup endpoints changed after mutating a prior result: (%+v, %v)", afterLookup.Endpoints, err)
+	}
+}
+
+// R-KHRM-0H8D
+func TestCatalogFixedTransportByID(t *testing.T) {
+	for _, entry := range Catalog() {
+		for _, offering := range entry.Offerings {
+			var wantHost Host
+			var wantWireName WireName
+			var wantWireType string
+			var wantBaseURL string
+			switch offering.ID {
+			case OfferingAnthropicMessages:
+				wantHost = HostAnthropic
+				wantWireName = WireMessages
+				wantWireType = "*agentkit.anthropicWire"
+				wantBaseURL = "https://api.anthropic.com/v1/messages"
+			case OfferingOpenAIResponses:
+				wantHost = HostOpenAI
+				wantWireName = WireResponses
+				wantWireType = "*agentkit.openAIResponsesWire"
+				wantBaseURL = "https://api.openai.com/v1/responses"
+			case OfferingOpenAIChat:
+				wantHost = HostOpenAI
+				wantWireName = WireChat
+				wantWireType = "*agentkit.openAIChatWire"
+				wantBaseURL = "https://api.openai.com/v1/chat/completions"
+			case OfferingGeminiGenerateContent:
+				wantHost = HostGemini
+				wantWireName = WireGenerateContent
+				wantWireType = "*agentkit.geminiWire"
+				wantBaseURL = "https://generativelanguage.googleapis.com/v1beta/models/" + url.PathEscape(offering.WireModel) + ":streamGenerateContent?alt=sse"
+			case OfferingXAIResponses:
+				wantHost = HostXAI
+				wantWireName = WireResponses
+				wantWireType = "*agentkit.responsesWire"
+				wantBaseURL = "https://api.x.ai/v1/responses"
+			case OfferingXAIChat:
+				wantHost = HostXAI
+				wantWireName = WireChat
+				wantWireType = "*agentkit.chatWire"
+				wantBaseURL = "https://api.x.ai/v1/chat/completions"
+			case OfferingOpenRouterChat:
+				wantHost = HostOpenRouter
+				wantWireName = WireChat
+				wantWireType = "*agentkit.chatWire"
+				wantBaseURL = "https://openrouter.ai/api/v1/chat/completions"
+			case OfferingOpenRouterResponses:
+				wantHost = HostOpenRouter
+				wantWireName = WireResponses
+				wantWireType = "*agentkit.responsesWire"
+				wantBaseURL = "https://openrouter.ai/api/v1/responses"
+			default:
+				t.Fatalf("%q has unexpected offering ID %q", entry.Model, offering.ID)
+			}
+
+			if offering.Host != wantHost {
+				t.Errorf("%q offering %q Host = %q, want %q", entry.Model, offering.ID, offering.Host, wantHost)
+			}
+			if offering.WireName != wantWireName {
+				t.Errorf("%q offering %q WireName = %q, want %q", entry.Model, offering.ID, offering.WireName, wantWireName)
+			}
+			if got := reflect.TypeOf(offering.WireFormat); got == nil || got.String() != wantWireType {
+				t.Errorf("%q offering %q WireFormat type = %v, want %q", entry.Model, offering.ID, got, wantWireType)
+			}
+			if len(offering.Endpoints) == 0 {
+				t.Errorf("%q offering %q has no endpoints", entry.Model, offering.ID)
+				continue
+			}
+			if got := offering.Endpoints[0].AuthMode; got != AuthModeAPIKey {
+				t.Errorf("%q offering %q first endpoint AuthMode = %q, want %q", entry.Model, offering.ID, got, AuthModeAPIKey)
+			}
+			if got := offering.Endpoints[0].BaseURL; got != wantBaseURL {
+				t.Errorf("%q offering %q first endpoint BaseURL = %q, want %q", entry.Model, offering.ID, got, wantBaseURL)
+			}
+		}
+	}
+}
+
+// R-KIZI-E8Z2
+func TestCatalogOAuthEndpointsByID(t *testing.T) {
+	wantOpenAIRotation := Rotation{
+		RefreshURL: "https://auth.openai.com/oauth/token",
+		ClientID:   "app_EMoamEEZ73f0CkXaXp7hrann",
+	}
+	wantXAIRotation := Rotation{
+		RefreshURL: "https://auth.x.ai/oauth2/token",
+		ClientID:   "b1a00492-073a-47ea-816f-4c329264a828",
+	}
+	for _, entry := range Catalog() {
+		for _, offering := range entry.Offerings {
+			var oauth *EndpointSpec
+			for index := range offering.Endpoints {
+				if offering.Endpoints[index].AuthMode == AuthModeOAuth {
+					oauth = &offering.Endpoints[index]
+					break
+				}
+			}
+
+			switch offering.ID {
+			case OfferingOpenAIResponses:
+				if oauth != nil {
+					if oauth.BaseURL != "https://chatgpt.com/backend-api/codex/responses" {
+						t.Errorf("%q OpenAI responses OAuth BaseURL = %q, want ChatGPT Codex responses URL", entry.Model, oauth.BaseURL)
+					}
+					if oauth.Rotation != wantOpenAIRotation {
+						t.Errorf("%q OpenAI responses OAuth Rotation = %+v, want %+v", entry.Model, oauth.Rotation, wantOpenAIRotation)
+					}
+				}
+			case OfferingXAIResponses, OfferingXAIChat:
+				if oauth == nil {
+					t.Errorf("%q offering %q has no OAuth endpoint", entry.Model, offering.ID)
+					continue
+				}
+				wantBaseURL := "https://api.x.ai/v1/responses"
+				if offering.ID == OfferingXAIChat {
+					wantBaseURL = "https://api.x.ai/v1/chat/completions"
+				}
+				if oauth.BaseURL != wantBaseURL {
+					t.Errorf("%q offering %q OAuth BaseURL = %q, want %q", entry.Model, offering.ID, oauth.BaseURL, wantBaseURL)
+				}
+				if oauth.Rotation != wantXAIRotation {
+					t.Errorf("%q offering %q OAuth Rotation = %+v, want %+v", entry.Model, offering.ID, oauth.Rotation, wantXAIRotation)
+				}
+			default:
+				if oauth != nil {
+					t.Errorf("%q offering %q unexpectedly has OAuth endpoint %+v", entry.Model, offering.ID, *oauth)
+				}
+			}
+		}
+	}
+}
+
+// R-KLFB-5SGG
+func TestCatalogOpenAIResponsesOAuthModelSet(t *testing.T) {
+	wantOAuth := map[string]bool{
+		"gpt-5.6-sol":   true,
+		"gpt-5.6-terra": true,
+		"gpt-5.6-luna":  true,
+		"gpt-5.5":       true,
+		"gpt-5.4-mini":  true,
+	}
+	for _, entry := range Catalog() {
+		for _, offering := range entry.Offerings {
+			if offering.ID == OfferingOpenAIResponses {
+				hasOAuth := false
+				for _, endpoint := range offering.Endpoints {
+					if endpoint.AuthMode == AuthModeOAuth {
+						hasOAuth = true
+						break
+					}
+				}
+				if hasOAuth != wantOAuth[entry.Model] {
+					t.Errorf("%q OpenAI responses has OAuth endpoint = %t, want %t", entry.Model, hasOAuth, wantOAuth[entry.Model])
+				}
+			}
+
+			if offering.ID == OfferingXAIResponses || offering.ID == OfferingXAIChat {
+				hasOAuth := false
+				for _, endpoint := range offering.Endpoints {
+					if endpoint.AuthMode == AuthModeOAuth {
+						hasOAuth = true
+						break
+					}
+				}
+				if !hasOAuth {
+					t.Errorf("%q offering %q has no OAuth endpoint", entry.Model, offering.ID)
 				}
 			}
 		}
@@ -593,11 +821,20 @@ func TestCatalogReasoningTermPinnedModels(t *testing.T) {
 	}
 }
 
-func TestOAuthClientShape(t *testing.T) {
-	// R-0702-EGC7
-	assertStructShape(t, OAuthClient{}, []fieldShape{
-		{"TokenURL", reflect.TypeOf("")},
+// R-KE3W-V60A
+func TestRotationShape(t *testing.T) {
+	assertStructShape(t, Rotation{}, []fieldShape{
+		{"RefreshURL", reflect.TypeOf("")},
 		{"ClientID", reflect.TypeOf("")},
+	})
+}
+
+// R-KFBT-8XQZ
+func TestEndpointSpecShape(t *testing.T) {
+	assertStructShape(t, EndpointSpec{}, []fieldShape{
+		{"AuthMode", reflect.TypeOf(AuthMode(""))},
+		{"BaseURL", reflect.TypeOf("")},
+		{"Rotation", reflect.TypeOf(Rotation{})},
 	})
 }
 
@@ -638,36 +875,6 @@ func TestCatalogReasoningInvariants(t *testing.T) {
 				}
 			}
 		}
-	}
-}
-
-// TestCatalogOAuthAuthModeInvariant verifies that OAuth is advertised exactly
-// when the offering carries both fields required to refresh credentials.
-// R-0ANR-JRKA
-func TestCatalogOAuthAuthModeInvariant(t *testing.T) {
-	for _, entry := range Catalog() {
-		for _, offering := range entry.Offerings {
-			hasOAuthMode := slices.Contains(offering.AuthModes, AuthModeOAuth)
-			hasOAuthClient := offering.OAuth.TokenURL != "" && offering.OAuth.ClientID != ""
-			if hasOAuthMode != hasOAuthClient {
-				t.Errorf("%q offering on %q has AuthModes %v and OAuth %+v, want OAuth mode iff both OAuth fields are non-empty", entry.Model, offering.ID, offering.AuthModes, offering.OAuth)
-			}
-		}
-	}
-}
-
-// R-PSVE-2RD8
-func TestResolveModelAuthModesAreDefensiveCopies(t *testing.T) {
-	first, err := Lookup("claude-sonnet-5", "", "")
-	if err != nil || len(first.AuthModes) == 0 {
-		t.Fatalf("Lookup(claude-sonnet-5) = (%+v, %v), want offering with authentication modes", first, err)
-	}
-	want := []AuthMode{AuthModeAPIKey}
-	first.AuthModes[0] = AuthMode("mutated")
-
-	second, err := Lookup("claude-sonnet-5", "", "")
-	if err != nil || !slices.Equal(second.AuthModes, want) {
-		t.Fatalf("AuthModes after mutating prior Lookup result = (%v, %v), want (%v, nil)", second.AuthModes, err, want)
 	}
 }
 
@@ -717,24 +924,23 @@ func expectedClaudeSonnet5() CatalogEntry {
 		Model: "claude-sonnet-5",
 		Offerings: []Offering{
 			{
-				ID:         OfferingAnthropicMessages,
-				Host:       HostAnthropic,
-				WireName:   WireMessages,
-				WireFormat: nil,
-				BaseURL:    "https://api.anthropic.com/v1/messages",
-				AuthModes:  []AuthMode{AuthModeAPIKey},
-				WireModel:  "claude-sonnet-5",
-				Context:    1_000_000,
-				Pricing:    pricing,
-				Reasoning:  reasoning,
+				ID:              OfferingAnthropicMessages,
+				Host:            HostAnthropic,
+				WireName:        WireMessages,
+				WireFormat:      nil,
+				Endpoints:       []EndpointSpec{{AuthMode: AuthModeAPIKey, BaseURL: "https://api.anthropic.com/v1/messages"}},
+				WireModel:       "claude-sonnet-5",
+				Context:         1_000_000,
+				MaxOutputTokens: 128_000,
+				Pricing:         pricing,
+				Reasoning:       reasoning,
 			},
 			{
 				ID:         OfferingOpenRouterChat,
 				Host:       HostOpenRouter,
 				WireName:   WireChat,
 				WireFormat: nil,
-				BaseURL:    "https://openrouter.ai/api/v1/chat/completions",
-				AuthModes:  []AuthMode{AuthModeAPIKey},
+				Endpoints:  []EndpointSpec{{AuthMode: AuthModeAPIKey, BaseURL: "https://openrouter.ai/api/v1/chat/completions"}},
 				WireModel:  "anthropic/claude-sonnet-5",
 				Context:    1_000_000,
 				Pricing:    pricing,
@@ -745,8 +951,7 @@ func expectedClaudeSonnet5() CatalogEntry {
 				Host:       HostOpenRouter,
 				WireName:   WireResponses,
 				WireFormat: nil,
-				BaseURL:    "https://openrouter.ai/api/v1/responses",
-				AuthModes:  []AuthMode{AuthModeAPIKey},
+				Endpoints:  []EndpointSpec{{AuthMode: AuthModeAPIKey, BaseURL: "https://openrouter.ai/api/v1/responses"}},
 				WireModel:  "anthropic/claude-sonnet-5",
 				Context:    1_000_000,
 				Pricing:    pricing,

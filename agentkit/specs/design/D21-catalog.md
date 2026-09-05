@@ -122,32 +122,41 @@ type ReasoningSpec struct {
 
 func (s ReasoningSpec) Accepts(r ReasoningConfig) bool
 
-// OAuthClient is what a refresh needs beyond the stored token: the host's
-// token endpoint and the public client id the oauth CLI logged in with. It is
-// zero on every offering that does not list oauth.
-type OAuthClient struct {
-	TokenURL string
-	ClientID string
+// Rotation is what an OAuth rotation needs beyond the stored token: where
+// the refresh request is sent and the app id it must present (D22). It is
+// zero on every EndpointSpec whose AuthMode is api_key.
+type Rotation struct {
+	RefreshURL string
+	ClientID   string
+}
+
+// EndpointSpec is one way to reach an offering: the credential kind, where
+// requests go under it, and how that credential is rotated. An offering has
+// one spec per credential kind it accepts; the URL belongs here, not on the
+// offering, because it can differ by credential kind (OpenAI's platform API
+// takes an API key; only the Codex backend honors a ChatGPT OAuth token).
+type EndpointSpec struct {
+	AuthMode AuthMode
+	BaseURL  string   // where chat requests are sent, model-in-path baked in
+	Rotation Rotation // how to get a fresh token; zero for api_key
 }
 
 // Offering is one model as served by one host over one wire format:
 // everything New needs.
 type Offering struct {
-	ID         OfferingID
-	Host       Host
-	WireName   WireName
-	WireFormat WireFormat    // the codec to pass to New
-	BaseURL    string        // the host's default URL, model-in-path baked in
-	AuthModes  []AuthMode    // credential modes Authenticator accepts, in preference order
-	OAuth      OAuthClient   // refresh endpoint and client id; zero unless oauth is listed
-	WireModel  string        // the exact model string sent on the wire
-	Context    int64         // context window in tokens
-	Pricing    Pricing       // full price schedule (D3); never empty
-	Reasoning  ReasoningSpec
+	ID              OfferingID
+	Host            Host
+	WireName        WireName
+	WireFormat      WireFormat     // the codec to pass to New
+	Endpoints       []EndpointSpec // one per credential kind, api_key first
+	WireModel       string         // the exact model string sent on the wire
+	Context         int64          // context window in tokens
+	MaxOutputTokens int64          // the vendor's output cap; zero when unknown
+	Pricing         Pricing        // full price schedule (D3); never empty
+	Reasoning       ReasoningSpec
 }
 
-func (o Offering) Authenticator(cred Credential) (Authenticator, error)  // D7
-func (o Offering) TokenSource(store TokenStore) (TokenSource, error)       // D22
+func (o Offering) Authenticator(r Rotator) (Authenticator, error)  // D7
 
 // CatalogEntry is everything the catalog knows about one model name. The
 // first offering is the default host.
@@ -171,28 +180,46 @@ the chosen host offers for that model. Anything that fails to match wraps
 
 ```go
 offering, _ := agentkit.Lookup("claude-sonnet-5", "", "")
-auth, _     := offering.Authenticator(agentkit.APIKey(key))
-ep, _       := agentkit.NewEndpoint(offering.BaseURL, auth)
+auth, _     := offering.Authenticator(agentkit.APIKeyRotator(key))
+ep, _       := agentkit.NewEndpoint(auth)
 conv, _     := agentkit.New(offering.WireFormat, ep, offering.WireModel, cfg)
 ```
 
 `Lookup("claude-sonnet-5", "openrouter", "chat")` yields a different offering
 entirely: the generic chat wire, the OpenRouter URL, send
-`anthropic/claude-sonnet-5`. The host changes the wire format, the URL, the
-accepted credential modes, the wire model, the price schedule, and the
-reasoning vocabulary — the application reads all of them from the one
-`Offering` and hands three of them straight to `New`.
+`anthropic/claude-sonnet-5`. The host changes the wire format, the endpoint
+specs, the wire model, the price schedule, and the reasoning vocabulary; the
+application reads all of them from the one `Offering` and hands two of them
+straight to `New`.
 
-Every offering id's transport — host, wire name, codec, default URL, accepted
-credential modes, and for the OAuth hosts the token endpoint and client id —
-is fixed per id, and a host's alternate protocol is simply another id with its
-own offerings: `openai-chat` beside `openai-responses`, `xai-chat` beside
-`xai-responses`, `openrouter-responses` beside `openrouter-chat`. Where a host
-serves the same model on both of its protocols, the table carries both
-offerings with identical wire model, pricing, and reasoning, so nothing is lost
-by choosing the alternate. OpenAI's own host uses the OpenAI-specific codecs
-(D5) because its credential placement differs; xAI and OpenRouter use the
-generic ones.
+Every offering id's transport, host, wire name, codec, and the `api_key`
+endpoint URL, is fixed per id, and a host's alternate protocol is simply
+another id with its own offerings: `openai-chat` beside `openai-responses`,
+`xai-chat` beside `xai-responses`, `openrouter-responses` beside
+`openrouter-chat`. Where a host serves the same model on both of its
+protocols, the table carries both offerings with identical wire model,
+pricing, and reasoning, so nothing is lost by choosing the alternate. OpenAI's
+own host uses the OpenAI-specific codecs (D5) because its credential placement
+differs; xAI and OpenRouter use the generic ones.
+
+The `oauth` endpoint spec is per offering, not per id, because it was proven
+live to be so. A ChatGPT OAuth token is honored only by the Codex backend,
+`https://chatgpt.com/backend-api/codex/responses`, never by `api.openai.com`
+on either protocol, and the Codex backend serves only a subset of the models
+the platform API serves. So `openai-responses` lists an `oauth` spec at the
+Codex URL only on the models Codex serves, `openai-chat` never lists one, and
+the xAI offerings list an `oauth` spec at the same URL as their `api_key`
+spec, since `api.x.ai` accepts an xAI OAuth bearer on both protocols. Every
+such fact is an external dependency and is re-proven by the live matrix (D23)
+whenever the matrix is built.
+
+`MaxOutputTokens` is the vendor's cap on one response's output, the value the
+Anthropic wire sends as `max_tokens` when the caller sets no
+`max_output_tokens` option (D8), because Anthropic rejects a request without
+one. The caps were read from Anthropic's own rejection of an oversize request:
+64000 for Claude Haiku 4.5, 128000 for every other cataloged Claude model. It
+is zero on offerings whose cap has not been proven; zero means unknown, and no
+wire currently needs it there.
 
 A round-trip test proves the identity/pricing link by asserting the logged
 `Identity.Endpoint` against the literal string (`"openrouter-chat"`), not
@@ -201,9 +228,10 @@ same literals separately.
 
 Which credential to use, environment-variable names, and token files are the
 application's business and are deliberately not here: the catalog knows
-offerings and the wire format knows where a credential goes (D5, D7); the
-application knows which credentials it holds. Grouping for display is a walk
-over `Catalog()` by `Offering.Host`; there is no separate vendor label.
+offerings and their endpoint specs, and the wire format knows where a
+credential goes (D5, D7); the application knows which credentials it holds.
+Grouping for display is a walk over `Catalog()` by `Offering.Host`; there is
+no separate vendor label.
 
 The table itself is data, not contract: entries are added, repriced, and
 retired without touching this document. What the contract fixes is the shape
@@ -252,13 +280,17 @@ adding a model is an edit to that file and nothing else.
 - R-O6AH-EYKH: `agentkit` MUST export `type ReasoningKind int` with the constants `ReasoningKindNone`, `ReasoningKindEffort`, `ReasoningKindBudget`, `ReasoningKindToggle` declared in that `iota` order starting at 0.
 - R-O11N-T3ME: `agentkit` MUST export `type ReasoningSpec struct { Kind ReasoningKind; Term string; Levels []Effort; MinBudget int; MaxBudget int; CanEnable bool; CanDisable bool; Default ReasoningConfig }` with exactly those fields.
 - R-O8QA-6I1V: `agentkit` MUST export `func (s ReasoningSpec) Accepts(r ReasoningConfig) bool`.
-- R-0702-EGC7: `agentkit` MUST export `type OAuthClient struct { TokenURL string; ClientID string }` with exactly those fields.
-- R-JG05-PL9A: `agentkit` MUST export `type Offering struct { ID OfferingID; Host Host; WireName WireName; WireFormat WireFormat; BaseURL string; AuthModes []AuthMode; OAuth OAuthClient; WireModel string; Context int64; Pricing Pricing; Reasoning ReasoningSpec }` with exactly those fields.
-- R-JH82-3CZZ: Every offering in the table MUST carry the `Host`, `WireName`, `WireFormat`, `BaseURL`, `AuthModes`, and `OAuth` fixed for its `ID`: `anthropic-messages` → `anthropic`, `messages`, `AnthropicMessagesWire()`, `https://api.anthropic.com/v1/messages`, `[api_key]`; `openai-responses` → `openai`, `responses`, `OpenAIResponsesWire()`, `https://api.openai.com/v1/responses`, `[api_key, oauth]`; `openai-chat` → `openai`, `chat`, `OpenAIChatWire()`, `https://api.openai.com/v1/chat/completions`, `[api_key, oauth]`; `gemini-generate-content` → `gemini`, `generate-content`, `GeminiGenerateContentWire()`, `https://generativelanguage.googleapis.com/v1beta/models/<WireModel>:streamGenerateContent?alt=sse` with `<WireModel>` path-escaped, `[api_key]`; `xai-responses` → `xai`, `responses`, `ResponsesWire()`, `https://api.x.ai/v1/responses`, `[api_key, oauth]`; `xai-chat` → `xai`, `chat`, `ChatWire()`, `https://api.x.ai/v1/chat/completions`, `[api_key, oauth]`; `openrouter-chat` → `openrouter`, `chat`, `ChatWire()`, `https://openrouter.ai/api/v1/chat/completions`, `[api_key]`; `openrouter-responses` → `openrouter`, `responses`, `ResponsesWire()`, `https://openrouter.ai/api/v1/responses`, `[api_key]`; with `OAuth` equal to `{TokenURL: "https://auth.openai.com/oauth/token", ClientID: "app_EMoamEEZ73f0CkXaXp7hrann"}` for `openai-responses` and `openai-chat`, `{TokenURL: "https://auth.x.ai/oauth2/token", ClientID: "b1a00492-073a-47ea-816f-4c329264a828"}` for `xai-responses` and `xai-chat`, and the zero `OAuthClient` for every other id.
-- R-0ANR-JRKA: For every offering in the table, `AuthModes` MUST contain `AuthModeOAuth` if and only if both `OAuth.TokenURL` and `OAuth.ClientID` are non-empty.
+- R-KE3W-V60A: `agentkit` MUST export `type Rotation struct { RefreshURL string; ClientID string }` with exactly those fields, and MUST NOT export `OAuthClient`.
+- R-KFBT-8XQZ: `agentkit` MUST export `type EndpointSpec struct { AuthMode AuthMode; BaseURL string; Rotation Rotation }` with exactly those fields.
+- R-KGJP-MPHO: `agentkit` MUST export `type Offering struct { ID OfferingID; Host Host; WireName WireName; WireFormat WireFormat; Endpoints []EndpointSpec; WireModel string; Context int64; MaxOutputTokens int64; Pricing Pricing; Reasoning ReasoningSpec }` with exactly those fields.
+- R-KHRM-0H8D: Every offering in the table MUST carry the `Host`, `WireName`, and `WireFormat` fixed for its `ID`, and its `Endpoints` MUST begin with an `EndpointSpec` whose `AuthMode` is `AuthModeAPIKey` and whose `BaseURL` is fixed for its `ID`: `anthropic-messages` → `anthropic`, `messages`, `AnthropicMessagesWire()`, `https://api.anthropic.com/v1/messages`; `openai-responses` → `openai`, `responses`, `OpenAIResponsesWire()`, `https://api.openai.com/v1/responses`; `openai-chat` → `openai`, `chat`, `OpenAIChatWire()`, `https://api.openai.com/v1/chat/completions`; `gemini-generate-content` → `gemini`, `generate-content`, `GeminiGenerateContentWire()`, `https://generativelanguage.googleapis.com/v1beta/models/<WireModel>:streamGenerateContent?alt=sse` with `<WireModel>` path-escaped; `xai-responses` → `xai`, `responses`, `ResponsesWire()`, `https://api.x.ai/v1/responses`; `xai-chat` → `xai`, `chat`, `ChatWire()`, `https://api.x.ai/v1/chat/completions`; `openrouter-chat` → `openrouter`, `chat`, `ChatWire()`, `https://openrouter.ai/api/v1/chat/completions`; `openrouter-responses` → `openrouter`, `responses`, `ResponsesWire()`, `https://openrouter.ai/api/v1/responses`.
+- R-KIZI-E8Z2: Every `EndpointSpec` in the table whose `AuthMode` is `AuthModeOAuth` MUST be, by its offering's `ID`: for `openai-responses`, `BaseURL` `https://chatgpt.com/backend-api/codex/responses` and `Rotation` `{RefreshURL: "https://auth.openai.com/oauth/token", ClientID: "app_EMoamEEZ73f0CkXaXp7hrann"}`; for `xai-responses`, `BaseURL` `https://api.x.ai/v1/responses` and `Rotation` `{RefreshURL: "https://auth.x.ai/oauth2/token", ClientID: "b1a00492-073a-47ea-816f-4c329264a828"}`; for `xai-chat`, `BaseURL` `https://api.x.ai/v1/chat/completions` and that same xAI `Rotation`; and no offering with any other `ID` MUST carry an `oauth` spec.
+- R-KK7E-S0PR: For every offering in the table, `Endpoints` MUST be non-empty, MUST hold at most one spec per `AuthMode`, every spec's `BaseURL` MUST be an absolute HTTP(S) URL, and a spec's `Rotation` MUST be non-zero in both fields if and only if its `AuthMode` is `AuthModeOAuth`.
+- R-KLFB-5SGG: The `openai-responses` offerings of exactly the models `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, and `gpt-5.4-mini` MUST carry an `oauth` `EndpointSpec`, and the `openai-responses` offering of every other model MUST NOT; every `xai-responses` and `xai-chat` offering MUST carry one.
+- R-KMN7-JK75: `MaxOutputTokens` MUST be `64000` on the `anthropic-messages` offering of `claude-haiku-4-5`, `128000` on every other `anthropic-messages` offering, and `0` on every offering whose `Host` is not `HostAnthropic`.
+- R-KNV3-XBXU: Mutating a returned `Offering`'s `Endpoints` slice or any element of it MUST have no effect on any later catalog call.
 - R-JIFY-H4QO: For every entry, an offering with `ID` `OfferingOpenAIResponses` MUST be paired with one with `OfferingOpenAIChat`, one with `OfferingXAIResponses` with one with `OfferingXAIChat`, and one with `OfferingOpenRouterChat` with one with `OfferingOpenRouterResponses`, each pair sharing `WireModel`, `Context`, `Pricing`, and `Reasoning`.
 - R-JJNU-UWHD: For every entry holding an offering whose `Host` is not `HostOpenRouter`, the entry's first offering MUST NOT have `Host` `HostOpenRouter`.
-- R-PSVE-2RD8: Mutating a returned `Offering`'s `AuthModes` slice MUST have no effect on any later catalog call.
 - R-JKVR-8O82: `agentkit` MUST export `type CatalogEntry struct { Model string; Offerings []Offering }` with exactly those fields.
 - R-JM3N-MFYR: `agentkit` MUST export `var ErrNotFound error`, `func Catalog() []CatalogEntry`, and `func Lookup(model string, host Host, wire WireName) (Offering, error)`.
 - R-JNBK-07PG: `Catalog()` MUST return every entry sorted ascending by `Model`, with no two entries sharing a `Model`, every entry holding at least one offering, and no two offerings of one entry sharing an `ID`.

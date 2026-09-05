@@ -10,6 +10,14 @@ import (
 
 type anthropicWire struct{ wireCodec }
 
+var anthropicOfferingMaxOutputTokens func(Identity) (int64, bool)
+
+func init() {
+	// Initialize after package variables so constructing catalog wire formats
+	// does not create an initialization cycle back through catalogTable.
+	anthropicOfferingMaxOutputTokens = offeringMaxOutputTokens
+}
+
 // AnthropicMessagesWire returns the built-in Anthropic Messages wire codec.
 func AnthropicMessagesWire() WireFormat { return newAnthropicMessagesWire(nil) }
 
@@ -74,6 +82,7 @@ type anthropicOutputConfig struct {
 type anthropicRequest struct {
 	Model         string                 `json:"model"`
 	Messages      []anthropicMessage     `json:"messages"`
+	Stream        bool                   `json:"stream"`
 	Temperature   *float64               `json:"temperature,omitempty"`
 	TopP          *float64               `json:"top_p,omitempty"`
 	MaxTokens     *int                   `json:"max_tokens,omitempty"`
@@ -113,7 +122,7 @@ func buildAnthropicMessages(history []Message) ([]anthropicMessage, error) {
 	return messages, nil
 }
 
-func configureAnthropicRequest(request *anthropicRequest, settings Settings) {
+func configureAnthropicRequest(request *anthropicRequest, settings Settings, identity Identity) {
 	reasoning := settingsReasoning(settings)
 	switch reasoning.Mode {
 	case ReasoningOff:
@@ -134,6 +143,9 @@ func configureAnthropicRequest(request *anthropicRequest, settings Settings) {
 	}
 	if v, ok := settingsMaxOutputTokens(settings.Options); ok {
 		request.MaxTokens = &v
+	} else if limit, found := anthropicOfferingMaxOutputTokens(identity); found && limit != 0 {
+		fallback := int(limit)
+		request.MaxTokens = &fallback
 	}
 	if v, ok := settingsStopSequences(settings.Options); ok {
 		request.StopSequences = v
@@ -151,7 +163,7 @@ func (w *anthropicWire) encodeRequest(state requestState) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	request := anthropicRequest{Model: state.Model, Messages: messages}
+	request := anthropicRequest{Model: state.Model, Messages: messages, Stream: true}
 	if state.Output != nil {
 		schema, renderErr := w.renderOutputSchema(state.Output.Schema)
 		if renderErr != nil {
@@ -161,7 +173,7 @@ func (w *anthropicWire) encodeRequest(state requestState) ([]byte, error) {
 			Format: &anthropicOutputFormat{Type: "json_schema", Schema: schema},
 		}
 	}
-	configureAnthropicRequest(&request, state.Settings)
+	configureAnthropicRequest(&request, state.Settings, state.Identity)
 	if len(state.Tools) > 0 {
 		request.Tools, err = w.RenderTools(state.Tools)
 		if err != nil {
@@ -170,6 +182,18 @@ func (w *anthropicWire) encodeRequest(state requestState) ([]byte, error) {
 	}
 	encoded, err := json.Marshal(request)
 	return append(encoded, '\n'), err
+}
+
+// validateMaxTokens enforces R-KCW0-HE9L: Send must have a max_tokens value
+// to send, from either the max_output_tokens option or a catalog match.
+func (w *anthropicWire) validateMaxTokens(identity Identity, settings Settings) error {
+	if _, ok := settingsMaxOutputTokens(settings.Options); ok {
+		return nil
+	}
+	if limit, found := offeringMaxOutputTokens(identity); found && limit != 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: Anthropic Messages: max_tokens requires the max_output_tokens option or a catalog offering with a known MaxOutputTokens for endpoint %q model %q", ErrInvalidConfig, identity.Endpoint, identity.Model)
 }
 
 func anthropicRole(role Role) string {
@@ -197,10 +221,10 @@ func newAnthropicDecoder() frameDecoder {
 				Type        string `json:"type"`
 				Text        string `json:"text"`
 				PartialJSON string `json:"partial_json"`
-				Usage       struct {
-					OutputTokens *int64 `json:"output_tokens"`
-				} `json:"usage"`
 			} `json:"delta"`
+			Usage struct {
+				OutputTokens *int64 `json:"output_tokens"`
+			} `json:"usage"`
 			Message struct {
 				Usage struct {
 					InputTokens   *int64 `json:"input_tokens"`
@@ -262,7 +286,7 @@ func newAnthropicDecoder() frameDecoder {
 				delete(toolUsesByIndex, event.Index)
 			}
 		case "message_delta":
-			return nil, usage.update(nil, nil, nil, nil, event.Delta.Usage.OutputTokens, nil), true, nil
+			return nil, usage.update(nil, nil, nil, nil, event.Usage.OutputTokens, nil), true, nil
 		case "message_stop":
 			indices := make([]int, 0, len(blocksByIndex))
 			for index := range blocksByIndex {

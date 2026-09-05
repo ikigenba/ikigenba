@@ -85,7 +85,7 @@ func TestComposedProviderPropagatesAssemblyFailures(t *testing.T) {
 		if auth == nil {
 			auth = authFunc(func(context.Context, *http.Request, []byte) error { return nil })
 		}
-		endpoint, err := NewEndpoint("https://example.test", auth)
+		endpoint, err := NewEndpoint(auth, WithBaseURL("https://example.test"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -103,10 +103,10 @@ func TestComposedProviderAuthenticatesRequestBodyBytes(t *testing.T) {
 		return encodedBody, nil
 	}}
 	var authenticatedBody []byte
-	endpoint, err := NewEndpoint("https://example.test", authFunc(func(_ context.Context, _ *http.Request, body []byte) error {
+	endpoint, err := NewEndpoint(authFunc(func(_ context.Context, _ *http.Request, body []byte) error {
 		authenticatedBody = body
 		return nil
-	}))
+	}), WithBaseURL("https://example.test"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestComposedProviderAuthenticatesRequestBodyBytes(t *testing.T) {
 
 // R-K4E5-D036
 func TestAnthropicWireSetsRequiredProtocolHeader(t *testing.T) {
-	endpoint, err := NewEndpoint("https://example.test", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
+	endpoint, err := NewEndpoint(authFunc(func(context.Context, *http.Request, []byte) error { return nil }), WithBaseURL("https://example.test"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,8 +169,38 @@ func TestAnthropicWireSetsRequiredProtocolHeader(t *testing.T) {
 	}
 }
 
+// R-E4OU-QHXO
+func TestEveryWireRequestCarriesJSONContentType(t *testing.T) {
+	endpoint, err := NewEndpoint(authFunc(func(context.Context, *http.Request, []byte) error { return nil }), WithBaseURL("https://example.test"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wires := []struct {
+		name string
+		wire wireFormat
+	}{
+		{name: "anthropic_messages", wire: AnthropicMessagesWire()},
+		{name: "gemini_generate_content", wire: GeminiGenerateContentWire()},
+		{name: "chat", wire: ChatWire()},
+		{name: "responses", wire: ResponsesWire()},
+		{name: "openai_chat", wire: OpenAIChatWire()},
+		{name: "openai_responses", wire: OpenAIResponsesWire()},
+	}
+	for _, test := range wires {
+		t.Run(test.name, func(t *testing.T) {
+			request, buildErr := newComposedProvider(test.wire, endpoint, Identity{}).BuildRequest(context.Background(), requestState{})
+			if buildErr != nil {
+				t.Fatal(buildErr)
+			}
+			if got := request.Header.Get("Content-Type"); got != "application/json" {
+				t.Fatalf("Content-Type = %q, want application/json", got)
+			}
+		})
+	}
+}
+
 func TestComposedProviderUsesSSEFramingAndMessageDecode(t *testing.T) {
-	endpoint, err := NewEndpoint("https://example.test", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
+	endpoint, err := NewEndpoint(authFunc(func(context.Context, *http.Request, []byte) error { return nil }), WithBaseURL("https://example.test"))
 	if err != nil {
 		t.Fatal(err)
 	}

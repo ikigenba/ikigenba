@@ -42,19 +42,20 @@ pieces, and the whole rest of the design hangs off keeping them separate:
   ours.
 
 There are no vendor packages. The catalog (D21) is what knows each host:
-an `Offering` carries the wire format, the default base URL, the credential
-modes the host accepts, and the wire model, and `Offering.Authenticator` turns
-a root `Credential` (D7) into an `Authenticator`. **The consumer assembles
-the conversation from root symbols and catalog data**:
+an `Offering` carries the wire format, one endpoint spec per credential kind
+the host accepts (each with its own URL), and the wire model, and
+`Offering.Authenticator` turns a root `Rotator` (D7) into an `Authenticator`.
+**The consumer assembles the conversation from root symbols and catalog
+data**:
 
 ```go
 offering, _ := agentkit.Lookup("claude-sonnet-5", "", "")
-auth, _     := offering.Authenticator(agentkit.APIKey(key))
-ep, _       := agentkit.NewEndpoint(offering.BaseURL, auth)   // any URL works here
+auth, _     := offering.Authenticator(agentkit.APIKeyRotator(key))
+ep, _       := agentkit.NewEndpoint(auth)                      // WithBaseURL(url) to override
 conv, _     := agentkit.New(offering.WireFormat, ep, offering.WireModel, cfg)
 ```
 
-The one thing a consumer customizes is the URL handed to `NewEndpoint`; every
+The one thing a consumer customizes is the URL, through `WithBaseURL`; every
 other part of a conversation — the wire codec, the auth mechanism, error
 classification, response framing, the HTTP client — is defined inside agentkit.
 A new host is a new `OfferingID` and table rows, never consumer code.
@@ -107,10 +108,9 @@ type Identity struct {
 
 Both provenance fields travel on the `Authenticator` that
 `Offering.Authenticator` returns: `Endpoint` is the offering's `OfferingID`,
-and `AuthMode` follows the credential — `"api_key"` for an `APIKey` credential,
-`"oauth"` for an `OAuth` one (D7). Those are the only two auth modes; there is
-no third. An authenticator that did not come from an offering yields
-`Endpoint` equal to the base URL and `AuthMode` `"custom"`.
+and `AuthMode` follows the rotator — `"api_key"` for `APIKeyRotator`,
+`"oauth"` for `OAuthRotator` (D7). Those are the only two auth modes; there is
+no third, and every authenticator comes from an offering.
 
 How this is observed in tests: `Identity` reaches a consumer through the
 `turn_start` log record and through `Error.Endpoint`. Tests pin both fields
@@ -129,8 +129,8 @@ carries the identity and a `turn_start` record already written to the log.
 - R-1S4A-HSUZ: A `Model` MUST be carried and transmitted verbatim as a free-form string with no allow-list, gate, or capability check; an unrecognized model MUST reach the vendor and surface as a vendor error, never a pre-flight rejection.
 - R-1TC6-VKLO: `Conversation.Send(ctx, ...Block)` MUST be the sole verb for advancing a conversation, and additional input modalities MUST be expressible as new `Block` variants without adding a second send method.
 - R-PU3A-GJ3X: The module MUST consist of exactly the packages `github.com/ikigenba/ikigenba/agentkit` and `github.com/ikigenba/ikigenba/agentkit/retry`; in particular no `anthropic`, `openai`, `gemini`, `xai`, or `openrouter` package may exist.
-- R-VU9D-EHC1: `agentkit` MUST NOT export any of `NewConversation`, `NewForWire`, `Provider`, `KnownWire`, `RequestState`, `EndpointOption`, `RequestMutator`, `ErrorClassifier`, `WithHeader`, `WithFramer`, `WithClassifier`, `WithMutator`, or `WithHTTPClient`.
+- R-1OL8-V3X0: `agentkit` MUST NOT export any of `NewConversation`, `NewForWire`, `Provider`, `KnownWire`, `RequestState`, `RequestMutator`, `ErrorClassifier`, `WithHeader`, `WithFramer`, `WithClassifier`, `WithMutator`, or `WithHTTPClient`.
 - R-YURK-JTY8: `agentkit` MUST export `Conversation` as an opaque struct type with no exported fields, exposing the method `func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream`.
 - R-YVZG-XLOX: `agentkit` MUST export `type Identity struct { Endpoint string; AuthMode string; Model string }` with exactly those three string fields.
 - R-K6TY-4JKK: `agentkit` MUST export a sealed `WireFormat` interface, not implementable outside the root package, together with exactly six argument-less constructors `AnthropicMessagesWire() WireFormat`, `GeminiGenerateContentWire() WireFormat`, `ChatWire() WireFormat`, `ResponsesWire() WireFormat`, `OpenAIChatWire() WireFormat`, and `OpenAIResponsesWire() WireFormat`, one per built-in wire codec.
-- R-K99Q-W31Y: The root package's exported construction seam MUST be exactly `New`, `NewEndpoint`, `Endpoint`, `Authenticator`, `WireFormat` and its six constructors, `Credential` with `APIKey` and `OAuth`, `TokenSource`, `Token`, `TokenStore`, `FileTokenStore`, `AuthMode`, `OAuthClient`, `Offering.Authenticator`, and `Offering.TokenSource`, and a conversation for any cataloged offering MUST be constructible from those symbols and the offering's fields alone.
+- R-1PT5-8VNP: The root package's exported construction seam MUST be exactly `New`, `NewEndpoint`, `EndpointOption`, `WithBaseURL`, `Endpoint`, `Authenticator`, `WireFormat` and its six constructors, `Rotator`, `APIKeyRotator`, `OAuthRotator`, `Token`, `TokenStore`, `FileTokenStore`, `AuthMode`, `Rotation`, `EndpointSpec`, and `Offering.Authenticator`, and a conversation for any cataloged offering MUST be constructible from those symbols and the offering's fields alone.

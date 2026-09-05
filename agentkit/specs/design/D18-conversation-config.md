@@ -53,8 +53,8 @@ credential (D7); `Config` is the fourth, consumer-authored part:
 
 ```go
 offering, _ := agentkit.Lookup("claude-sonnet-5", "", "")
-auth, _     := offering.Authenticator(agentkit.APIKey(key))
-ep, _       := agentkit.NewEndpoint(offering.BaseURL, auth)
+auth, _     := offering.Authenticator(agentkit.APIKeyRotator(key))
+ep, _       := agentkit.NewEndpoint(auth)
 conv, err := agentkit.New(offering.WireFormat, ep, offering.WireModel,
 	agentkit.Config{Tools: tools, Settings: settings})
 ```

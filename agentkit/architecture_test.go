@@ -23,31 +23,41 @@ import (
 	"unicode"
 )
 
-// R-FL18-TBCM
-func TestLiveOAuthRefreshFixturesExistWithIntegrationTag(t *testing.T) {
-	openAIContents, err := os.ReadFile("oauth_refresh_openai_live_test.go")
-	if err != nil {
-		t.Fatalf("read OpenAI live OAuth fixture: %v", err)
-	}
-	xAIContents, err := os.ReadFile("oauth_refresh_xai_live_test.go")
-	if err != nil {
-		t.Fatalf("read xAI live OAuth fixture: %v", err)
-	}
+var (
+	_ Event = MessageDone{}
+	_ Event = ToolCall{}
+	_ Event = ToolReturn{}
+	_ Event = OutputDone{}
+)
+
+// R-L023-R1CS
+func TestLiveOAuthRefreshFixturesExistWithLiveTag(t *testing.T) {
 	fixtures := []struct {
 		name                string
 		environmentVariable string
-		contents            []byte
+		model               string
+		host                string
 	}{
-		{"oauth_refresh_openai_live_test.go", "AGENTKIT_OPENAI_OAUTH_FILE", openAIContents},
-		{"oauth_refresh_xai_live_test.go", "AGENTKIT_XAI_OAUTH_FILE", xAIContents},
+		{"oauth_refresh_openai_live_test.go", "AGENTKIT_OPENAI_OAUTH_FILE", "gpt-5.4-mini", "HostOpenAI"},
+		{"oauth_refresh_xai_live_test.go", "AGENTKIT_XAI_OAUTH_FILE", "grok-4.3", "HostXAI"},
 	}
 	for _, fixture := range fixtures {
 		t.Run(fixture.name, func(t *testing.T) {
-			text := string(fixture.contents)
-			if !strings.HasPrefix(strings.TrimLeftFunc(text, unicode.IsSpace), "//go:build integration") {
-				t.Fatal("live OAuth fixture does not begin with the integration build constraint")
+			contents, err := os.ReadFile(fixture.name)
+			if err != nil {
+				t.Fatalf("read live OAuth fixture: %v", err)
 			}
-			for _, fragment := range []string{"func Test", "t.Skip", fixture.environmentVariable, "FileTokenStore", ".Refresh("} {
+			text := string(contents)
+			if !strings.HasPrefix(strings.TrimLeftFunc(text, unicode.IsSpace), "//go:build live") {
+				t.Fatal("live OAuth fixture does not begin with the live build constraint")
+			}
+			if strings.Contains(text, "t.Skip") {
+				t.Fatal("live OAuth fixture must fail, never skip, on a missing credential")
+			}
+			for _, fragment := range []string{
+				"func Test", fixture.environmentVariable, "OAuthRotator", "FileTokenStore",
+				".Rotate(", fixture.model, fixture.host, "WireResponses", "access_token",
+			} {
 				if !strings.Contains(text, fragment) {
 					t.Fatalf("live OAuth fixture does not contain %q", fragment)
 				}
@@ -56,34 +66,112 @@ func TestLiveOAuthRefreshFixturesExistWithIntegrationTag(t *testing.T) {
 	}
 }
 
-// R-FM95-733B
-func TestMakefileDeclaresLiveOAuthTargetExclusively(t *testing.T) {
+// R-L65L-NW29
+func TestMakefileDeclaresLiveTargetExclusively(t *testing.T) {
 	contents, err := os.ReadFile("Makefile")
 	if err != nil {
 		t.Fatalf("read Makefile: %v", err)
 	}
 	text := string(contents)
+	if strings.Contains(text, "live-oauth") {
+		t.Fatal("Makefile must not declare a live-oauth target")
+	}
+	if strings.Contains(text, "-tags integration") {
+		t.Fatal("Makefile must not pass -tags integration to any target")
+	}
 	for _, fragment := range []string{
-		"live-oauth:",
+		"live:",
 		"AGENTKIT_OPENAI_OAUTH_FILE=$(HOME)/.agentkit/openai-auth.json",
 		"AGENTKIT_XAI_OAUTH_FILE=$(HOME)/.agentkit/x-ai-auth.json",
-		"go test -tags integration -run OAuthRefresh ./...",
+		"go test -tags live -count=1 -run '^TestLive' ./...",
 	} {
 		if !strings.Contains(text, fragment) {
 			t.Fatalf("Makefile does not contain %q", fragment)
 		}
 	}
-	if count := strings.Count(text, "-tags integration"); count != 1 {
-		t.Fatalf("Makefile integration-tag use count = %d, want 1", count)
+	if count := strings.Count(text, "-tags live"); count != 1 {
+		t.Fatalf("Makefile live-tag use count = %d, want 1", count)
 	}
 }
 
-var (
-	_ Event = MessageDone{}
-	_ Event = ToolCall{}
-	_ Event = ToolReturn{}
-	_ Event = OutputDone{}
-)
+// R-L1A0-4T3H
+func TestLiveMatrixFixtureExistsWithLiveTag(t *testing.T) {
+	contents, err := os.ReadFile("live_matrix_test.go")
+	if err != nil {
+		t.Fatalf("read live matrix fixture: %v", err)
+	}
+	text := string(contents)
+	if !strings.HasPrefix(strings.TrimLeftFunc(text, unicode.IsSpace), "//go:build live") {
+		t.Fatal("live matrix fixture does not begin with the live build constraint")
+	}
+	if !strings.Contains(text, "func TestLiveMatrix(") {
+		t.Fatal("live matrix fixture does not declare TestLiveMatrix")
+	}
+	for _, subtestName := range []string{
+		"anthropic-messages/api_key",
+		"openai-responses/api_key",
+		"openai-responses/oauth",
+		"openai-chat/api_key",
+		"gemini-generate-content/api_key",
+		"xai-responses/api_key",
+		"xai-responses/oauth",
+		"xai-chat/api_key",
+		"xai-chat/oauth",
+		"openrouter-chat/api_key",
+		"openrouter-responses/api_key",
+	} {
+		if !strings.Contains(text, subtestName) {
+			t.Fatalf("live matrix fixture does not name subtest %q", subtestName)
+		}
+	}
+}
+
+// R-L3PS-WCKV
+func TestLiveMatrixRunsExactCells(t *testing.T) {
+	contents, err := os.ReadFile("live_matrix_test.go")
+	if err != nil {
+		t.Fatalf("read live matrix fixture: %v", err)
+	}
+	text := string(contents)
+	if !strings.Contains(text, "Lookup(") {
+		t.Fatal("live matrix fixture does not resolve cells with Lookup")
+	}
+	for _, fragment := range []string{
+		"OfferingAnthropicMessages", "claude-haiku-4-5",
+		"OfferingOpenAIResponses", "gpt-5.4-nano", "gpt-5.4-mini",
+		"OfferingOpenAIChat",
+		"OfferingGeminiGenerateContent", "gemini-3.1-flash-lite",
+		"OfferingXAIResponses", "grok-4.3",
+		"OfferingXAIChat",
+		"OfferingOpenRouterChat",
+		"OfferingOpenRouterResponses",
+	} {
+		if !strings.Contains(text, fragment) {
+			t.Fatalf("live matrix fixture does not contain %q", fragment)
+		}
+	}
+}
+
+// R-L2HW-IKU6
+func TestLiveMatrixSubtestsFailNeverSkipOnMissingCredential(t *testing.T) {
+	contents, err := os.ReadFile("live_matrix_test.go")
+	if err != nil {
+		t.Fatalf("read live matrix fixture: %v", err)
+	}
+	text := string(contents)
+	if strings.Contains(text, "t.Skip") {
+		t.Fatal("live matrix fixture must fail, never skip, on a missing credential")
+	}
+	for _, fragment := range []string{
+		"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "XAI_API_KEY", "OPENROUTER_API_KEY",
+		"AGENTKIT_OPENAI_OAUTH_FILE", "AGENTKIT_XAI_OAUTH_FILE",
+		"os.Getenv", "t.Fatalf",
+	} {
+		if !strings.Contains(text, fragment) {
+			t.Fatalf("live matrix fixture does not contain %q", fragment)
+		}
+	}
+}
 
 func TestEndpointDeclarationsAreExact(t *testing.T) {
 	// R-KBPJ-NMJC
@@ -189,26 +277,6 @@ func TestModuleContainsOnlyRootAndRetryPackages(t *testing.T) {
 	}
 }
 
-// R-V7UO-KE8S
-func TestTokenSourceAndTokenDeclarationsAreExact(t *testing.T) {
-	tokenSourceType := reflect.TypeFor[TokenSource]()
-	wantTokenMethod := reflect.TypeOf(func(context.Context) (Token, error) { return Token{}, nil })
-	tokenMethod, tokenOK := tokenSourceType.MethodByName("Token")
-	refreshMethod, refreshOK := tokenSourceType.MethodByName("Refresh")
-	if tokenSourceType.Name() != "TokenSource" || tokenSourceType.Kind() != reflect.Interface ||
-		tokenSourceType.NumMethod() != 2 ||
-		!tokenOK || tokenMethod.Type != wantTokenMethod ||
-		!refreshOK || refreshMethod.Type != wantTokenMethod {
-		t.Fatalf("TokenSource = %s with Token %v (present=%t) Refresh %v (present=%t), want two methods Token%s and Refresh%s", tokenSourceType, tokenMethod.Type, tokenOK, refreshMethod.Type, refreshOK, wantTokenMethod, wantTokenMethod)
-	}
-	tokenType := reflect.TypeFor[Token]()
-	if tokenType.Name() != "Token" || tokenType.Kind() != reflect.Struct || tokenType.NumField() != 2 ||
-		tokenType.Field(0).Name != "Bearer" || tokenType.Field(0).Type != reflect.TypeFor[string]() ||
-		tokenType.Field(1).Name != "AccountID" || tokenType.Field(1).Type != reflect.TypeFor[string]() {
-		t.Fatalf("Token shape = %s, want struct { Bearer string; AccountID string }", tokenType)
-	}
-}
-
 // R-PWJ3-82LB
 func TestEndpointOwnsOnlyBaseURLAndAuth(t *testing.T) {
 	endpointType := reflect.TypeFor[Endpoint]()
@@ -216,8 +284,8 @@ func TestEndpointOwnsOnlyBaseURLAndAuth(t *testing.T) {
 		t.Fatalf("Endpoint fields = %v, want only config", reflect.VisibleFields(endpointType))
 	}
 	configType := endpointType.Field(0).Type
-	if configType.Kind() != reflect.Struct || configType.NumField() != 2 {
-		t.Fatalf("Endpoint config = %s with %d fields, want a two-field struct", configType, configType.NumField())
+	if configType.Kind() != reflect.Struct || configType.NumField() != 4 {
+		t.Fatalf("Endpoint config = %s with %d fields, want two durable fields and two option scratch fields", configType, configType.NumField())
 	}
 	baseURLField := configType.Field(0)
 	authField := configType.Field(1)
@@ -226,6 +294,14 @@ func TestEndpointOwnsOnlyBaseURLAndAuth(t *testing.T) {
 	}
 	if authField.Name != "auth" || authField.Type != reflect.TypeFor[Authenticator]() {
 		t.Fatalf("Endpoint auth field = %s %s, want auth Authenticator", authField.Name, authField.Type)
+	}
+	auth := authFunc(func(context.Context, *http.Request, []byte) error { return nil })
+	endpoint, err := NewEndpoint(auth, WithBaseURL("https://example.test"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if endpoint.config.overrideBaseURL != "" || endpoint.config.overrideSet {
+		t.Fatalf("constructed Endpoint retained option scratch state: %+v", endpoint.config)
 	}
 }
 
@@ -403,11 +479,11 @@ func TestConversationConstructionFixesOrchestrationConfiguration(t *testing.T) {
 	// R-OJ6F-H3XD
 	// R-NW62-A0NM
 	auth := authFunc(func(context.Context, *http.Request, []byte) error { return nil })
-	endpointA, err := NewEndpoint("https://one.invalid/messages", auth)
+	endpointA, err := NewEndpoint(auth, WithBaseURL("https://one.invalid/messages"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	endpointB, err := NewEndpoint("https://two.invalid/responses", auth)
+	endpointB, err := NewEndpoint(auth, WithBaseURL("https://two.invalid/responses"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,30 +525,101 @@ func TestConversationConstructionFixesOrchestrationConfiguration(t *testing.T) {
 	assertConversationExportsOnlySend(t)
 }
 
-// R-K99Q-W31Y
+// R-KAG7-PUS7
+func TestConversationIdentityMatchesOfferingAndRotatorWithAndWithoutBaseURLOverride(t *testing.T) {
+	var offering Offering
+	found := false
+	for _, entry := range Catalog() {
+		for _, candidate := range entry.Offerings {
+			for _, spec := range candidate.Endpoints {
+				if spec.AuthMode == AuthModeAPIKey {
+					offering, found = candidate, true
+				}
+			}
+			if found {
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		t.Fatal("no cataloged offering accepts AuthModeAPIKey")
+	}
+	const wantEndpoint = "anthropic-messages"
+	if got := string(offering.ID); got != wantEndpoint {
+		t.Fatalf("selected Offering.ID = %q, want fixture %q", got, wantEndpoint)
+	}
+
+	rotator := APIKeyRotator("test-key")
+	const wantAuthMode = "api_key"
+	if got := string(rotator.AuthMode()); got != wantAuthMode {
+		t.Fatalf("rotator.AuthMode = %q, want fixture %q", got, wantAuthMode)
+	}
+	auth, err := offering.Authenticator(rotator)
+	if err != nil {
+		t.Fatalf("Authenticator: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		opts []EndpointOption
+	}{
+		{name: "offering default base URL", opts: nil},
+		{name: "WithBaseURL override", opts: []EndpointOption{WithBaseURL("https://override.invalid/v1")}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			endpoint, err := NewEndpoint(auth, tc.opts...)
+			if err != nil {
+				t.Fatalf("NewEndpoint: %v", err)
+			}
+			conversation, err := New(offering.WireFormat, endpoint, offering.WireModel, Config{})
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			if got := conversation.identity.Endpoint; got != wantEndpoint {
+				t.Fatalf("Identity.Endpoint = %q, want offering identity %q", got, wantEndpoint)
+			}
+			if got := conversation.identity.AuthMode; got != wantAuthMode {
+				t.Fatalf("Identity.AuthMode = %q, want rotator mode %q", got, wantAuthMode)
+			}
+		})
+	}
+}
+
+// R-1PT5-8VNP
 func TestConstructionSeamIsExactAndSufficientForEveryOffering(t *testing.T) {
 	for _, entry := range Catalog() {
 		for _, offering := range entry.Offerings {
 			t.Run(entry.Model+"/"+string(offering.ID), func(t *testing.T) {
-				var credential Credential
-				for _, mode := range offering.AuthModes {
-					if mode == AuthModeAPIKey {
-						credential = APIKey("test-key")
+				var rotator Rotator
+				var endpointSpec EndpointSpec
+				for _, spec := range offering.Endpoints {
+					if spec.AuthMode == AuthModeAPIKey {
+						rotator = APIKeyRotator("test-key")
+						endpointSpec = spec
 						break
 					}
 				}
-				if credential == nil {
-					credential = OAuth(&tokenSourceStub{})
+				if rotator == nil {
+					rotator = &tokenSourceStub{}
+					for _, spec := range offering.Endpoints {
+						if spec.AuthMode == AuthModeOAuth {
+							endpointSpec = spec
+							break
+						}
+					}
 				}
-				authenticator, err := offering.Authenticator(credential)
+				authenticator, err := offering.Authenticator(rotator)
 				if err != nil {
 					t.Fatalf("Authenticator: %v", err)
 				}
-				baseURL := offering.BaseURL
+				baseURL := endpointSpec.BaseURL
 				if baseURL == "" {
 					baseURL = "https://example.test"
 				}
-				endpoint, err := NewEndpoint(baseURL, authenticator)
+				endpoint, err := NewEndpoint(authenticator, WithBaseURL(baseURL))
 				if err != nil {
 					t.Fatalf("NewEndpoint: %v", err)
 				}
@@ -492,7 +639,9 @@ func TestConstructionSeamIsExactAndSufficientForEveryOffering(t *testing.T) {
 	}
 	symbols := []symbolCheck{
 		{name: "New", got: reflect.TypeOf(New), want: reflect.TypeOf(func(WireFormat, Endpoint, string, Config) (*Conversation, error) { return nil, nil }), kind: reflect.Func},
-		{name: "NewEndpoint", got: reflect.TypeOf(NewEndpoint), want: reflect.TypeOf(func(string, Authenticator) (Endpoint, error) { return Endpoint{}, nil }), kind: reflect.Func},
+		{name: "NewEndpoint", got: reflect.TypeOf(NewEndpoint), want: reflect.TypeOf(func(Authenticator, ...EndpointOption) (Endpoint, error) { return Endpoint{}, nil }), kind: reflect.Func},
+		{name: "EndpointOption", got: reflect.TypeFor[EndpointOption](), kind: reflect.Func},
+		{name: "WithBaseURL", got: reflect.TypeOf(WithBaseURL), want: reflect.TypeOf(func(string) EndpointOption { return nil }), kind: reflect.Func},
 		{name: "Endpoint", got: reflect.TypeFor[Endpoint](), kind: reflect.Struct},
 		{name: "Authenticator", got: reflect.TypeFor[Authenticator](), kind: reflect.Interface},
 		{name: "WireFormat", got: reflect.TypeFor[WireFormat](), kind: reflect.Interface},
@@ -502,24 +651,24 @@ func TestConstructionSeamIsExactAndSufficientForEveryOffering(t *testing.T) {
 		{name: "ResponsesWire", got: reflect.TypeOf(ResponsesWire), want: reflect.TypeOf(func() WireFormat { return nil }), kind: reflect.Func},
 		{name: "OpenAIChatWire", got: reflect.TypeOf(OpenAIChatWire), want: reflect.TypeOf(func() WireFormat { return nil }), kind: reflect.Func},
 		{name: "OpenAIResponsesWire", got: reflect.TypeOf(OpenAIResponsesWire), want: reflect.TypeOf(func() WireFormat { return nil }), kind: reflect.Func},
-		{name: "Credential", got: reflect.TypeFor[Credential](), kind: reflect.Interface},
-		{name: "APIKey", got: reflect.TypeOf(APIKey), want: reflect.TypeOf(func(string) Credential { return nil }), kind: reflect.Func},
-		{name: "OAuth", got: reflect.TypeOf(OAuth), want: reflect.TypeOf(func(TokenSource) Credential { return nil }), kind: reflect.Func},
-		{name: "TokenSource", got: reflect.TypeFor[TokenSource](), kind: reflect.Interface},
+		{name: "Rotator", got: reflect.TypeFor[Rotator](), kind: reflect.Interface},
+		{name: "APIKeyRotator", got: reflect.TypeOf(APIKeyRotator), want: reflect.TypeOf(func(string) Rotator { return nil }), kind: reflect.Func},
+		{name: "OAuthRotator", got: reflect.TypeOf(OAuthRotator), want: reflect.TypeOf(func(TokenStore) Rotator { return nil }), kind: reflect.Func},
 		{name: "Token", got: reflect.TypeFor[Token](), kind: reflect.Struct},
 		{name: "TokenStore", got: reflect.TypeFor[TokenStore](), kind: reflect.Interface},
 		{name: "FileTokenStore", got: reflect.TypeOf(FileTokenStore), want: reflect.TypeOf(func(string) TokenStore { return nil }), kind: reflect.Func},
 		{name: "AuthMode", got: reflect.TypeFor[AuthMode](), kind: reflect.String},
-		{name: "OAuthClient", got: reflect.TypeFor[OAuthClient](), kind: reflect.Struct},
-		{name: "Offering.Authenticator", got: reflect.TypeOf(Offering.Authenticator), want: reflect.TypeOf(func(Offering, Credential) (Authenticator, error) { return nil, nil }), kind: reflect.Func},
-		{name: "Offering.TokenSource", got: reflect.TypeOf(Offering.TokenSource), want: reflect.TypeOf(func(Offering, TokenStore) (TokenSource, error) { return nil, nil }), kind: reflect.Func},
+		{name: "Rotation", got: reflect.TypeFor[Rotation](), kind: reflect.Struct},
+		{name: "EndpointSpec", got: reflect.TypeFor[EndpointSpec](), kind: reflect.Struct},
+		{name: "Offering.Authenticator", got: reflect.TypeOf(Offering.Authenticator), want: reflect.TypeOf(func(Offering, Rotator) (Authenticator, error) { return nil, nil }), kind: reflect.Func},
 	}
 	wantNames := []string{
-		"New", "NewEndpoint", "Endpoint", "Authenticator", "WireFormat",
+		"New", "NewEndpoint", "EndpointOption", "WithBaseURL", "Endpoint", "Authenticator", "WireFormat",
 		"AnthropicMessagesWire", "GeminiGenerateContentWire", "ChatWire",
-		"ResponsesWire", "OpenAIChatWire", "OpenAIResponsesWire", "Credential",
-		"APIKey", "OAuth", "TokenSource", "Token", "TokenStore", "FileTokenStore",
-		"AuthMode", "OAuthClient", "Offering.Authenticator", "Offering.TokenSource",
+		"ResponsesWire", "OpenAIChatWire", "OpenAIResponsesWire",
+		"Rotator", "APIKeyRotator", "OAuthRotator",
+		"Token", "TokenStore", "FileTokenStore",
+		"AuthMode", "Rotation", "EndpointSpec", "Offering.Authenticator",
 	}
 	gotNames := make([]string, len(symbols))
 	for index, symbol := range symbols {
@@ -544,7 +693,7 @@ func TestNewDeclarationTakesWireFormatAndRejectsNilWire(t *testing.T) {
 	assertASTFunction(t, declarations, "New", []string{"WireFormat", "Endpoint", "string", "Config"}, []string{"*Conversation", "error"}, false)
 
 	auth := authFunc(func(context.Context, *http.Request, []byte) error { return nil })
-	endpoint, err := NewEndpoint("https://example.invalid/wire", auth)
+	endpoint, err := NewEndpoint(auth, WithBaseURL("https://example.invalid/wire"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1972,7 +2121,7 @@ func TestSiblingContractWithholdsRootOwnedMechanismsAndKeepsOptionsLocal(t *test
 		for _, declaration := range parsed.Decls {
 			switch declaration := declaration.(type) {
 			case *ast.FuncDecl:
-				if declaration.Name.IsExported() && (declaration.Name.Name == "ValidateToolArguments" || declaration.Name.Name == "WithBaseURL") {
+				if declaration.Name.IsExported() && declaration.Name.Name == "ValidateToolArguments" {
 					t.Fatalf("root exports prohibited function %s", declaration.Name.Name)
 				}
 			case *ast.GenDecl:
@@ -2000,16 +2149,15 @@ func TestSiblingContractWithholdsRootOwnedMechanismsAndKeepsOptionsLocal(t *test
 
 }
 
+// R-NZTR-FBVP
+// R-1OL8-V3X0
 func TestRootPackageExportsNoRetiredProviderMachinery(t *testing.T) {
-	// R-VU9D-EHC1
-	// R-NZTR-FBVP
 	assertRootPackageDeclaresNone(t, map[string]bool{
 		"NewConversation": true,
 		"NewForWire":      true,
 		"Provider":        true,
 		"Known" + "Wire":  true,
 		"RequestState":    true,
-		"EndpointOption":  true,
 		"RequestMutator":  true,
 		"ErrorClassifier": true,
 		"WithHeader":      true,

@@ -211,6 +211,7 @@ func (c *Conversation) executeTurnRoundTrip(ctx context.Context, orchestrator *o
 	candidate := append(cloneHistory(snapshot.baseHistory), cloneHistory(snapshot.turn)...)
 	events, completed, err := c.roundTrip(ctx, requestState{
 		Model:    c.identity.Model,
+		Identity: c.identity,
 		History:  candidate,
 		Settings: cloneSettings(snapshot.settings),
 		Tools:    orchestrator.advertisedSnapshot(),

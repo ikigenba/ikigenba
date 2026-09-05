@@ -40,4 +40,4 @@ You are the **gather** stage of the build loop, run by ralph in a fresh context.
 
 ## Report
 
-End with a status on its own line — `NEXT` or `DONE` — and a one-sentence message. `DONE` is the only stop; its message must say whether the run finished (no steps left) or halted on open issues.
+End with a status on its own line — `NEXT` or `DONE` — and a one-sentence message. `DONE` is the only stop, and gather is the only stage allowed to emit it; its message must say whether the run finished (no steps left) or halted on open issues. When the harness asks for a structured status field, it must hold the same word you ended with — ralph reads the field, not the prose.

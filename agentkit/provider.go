@@ -67,6 +67,7 @@ func (provider *composedProvider) BuildRequest(ctx context.Context, state reques
 		return nil, err
 	}
 	synchronizeRequestBody(request, body)
+	request.Header.Set("Content-Type", "application/json")
 	if setter, ok := provider.wire.(interface{ setProtocolHeaders(*http.Request) }); ok {
 		setter.setProtocolHeaders(request)
 	}
@@ -142,7 +143,15 @@ func (provider *composedProvider) validateSettings(settings Settings) error {
 		}
 		return fmt.Errorf("%w: selected wire does not declare settings capabilities", ErrInvalidConfig)
 	}
-	return validator.validateSettings(settings)
+	if err := validator.validateSettings(settings); err != nil {
+		return err
+	}
+	if extra, ok := provider.wire.(interface {
+		validateMaxTokens(Identity, Settings) error
+	}); ok {
+		return extra.validateMaxTokens(provider.identity, settings)
+	}
+	return nil
 }
 
 func synchronizeRequestBody(request *http.Request, body []byte) {

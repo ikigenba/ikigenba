@@ -117,8 +117,8 @@ func vendorFixture(endpointURL, model string, client *http.Client) (*Conversatio
 
 func TestEndpointConversationExecutesWithDefaultHTTPClient(t *testing.T) {
 	// R-OFIQ-BSPA
-	wantConstructor := reflect.TypeOf(func(string, Authenticator) (Endpoint, error) { return Endpoint{}, nil })
-	if got := reflect.TypeOf(NewEndpoint); got != wantConstructor || got.IsVariadic() {
+	wantConstructor := reflect.TypeOf(func(Authenticator, ...EndpointOption) (Endpoint, error) { return Endpoint{}, nil })
+	if got := reflect.TypeOf(NewEndpoint); got != wantConstructor || !got.IsVariadic() {
 		t.Fatalf("endpoint construction exposes transport hooks: %s variadic=%t", got, got.IsVariadic())
 	}
 	originalDefault := http.DefaultClient
@@ -131,7 +131,7 @@ func TestEndpointConversationExecutesWithDefaultHTTPClient(t *testing.T) {
 	})}
 	http.DefaultClient = defaultClient
 	auth := authFunc(func(context.Context, *http.Request, []byte) error { return nil })
-	defaultEndpoint, err := NewEndpoint("https://default.test/messages", auth)
+	defaultEndpoint, err := NewEndpoint(auth, WithBaseURL("https://default.test/messages"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,92 +151,103 @@ func phase10TestWire() *testWire {
 	}}
 }
 
-// countingRefreshSource records Refresh calls; tokenSourceStub itself keeps no
+// countingRefreshSource records Rotate calls; tokenSourceStub itself keeps no
 // such tally.
 type countingRefreshSource struct {
 	*tokenSourceStub
 	refreshes int
 }
 
-func (s *countingRefreshSource) Refresh(ctx context.Context) (Token, error) {
+func (s *countingRefreshSource) Rotate(ctx context.Context, r Rotation) (Token, error) {
 	s.refreshes++
-	return s.tokenSourceStub.Refresh(ctx)
+	return s.tokenSourceStub.Rotate(ctx, r)
 }
 
-// R-04K9-MWUT
+// R-KXMA-ZHVE
 func TestConversationSurfacesOAuthRefreshFailureUnchanged(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		requests++
 		writer.WriteHeader(http.StatusUnauthorized)
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
 
-	refreshErr := &Error{Category: CategoryAuth, Status: http.StatusBadGateway, Message: "refresh rejected"}
-	source := &countingRefreshSource{tokenSourceStub: &tokenSourceStub{token: Token{Bearer: "stale"}, refreshErr: refreshErr}}
-	endpoint, err := NewEndpoint(server.URL, oauthApplier{provider: OfferingAnthropicMessages, source: source})
+	refreshErr := &Error{Category: CategoryAuth, Status: http.StatusUnauthorized, Message: "refresh failed"}
+	source := &countingRefreshSource{tokenSourceStub: &tokenSourceStub{
+		token:      Token{Bearer: "stale"},
+		refreshErr: refreshErr,
+	}}
+	auth := oauthApplier{provider: OfferingAnthropicMessages, rotator: source}
+	endpoint, err := NewEndpoint(auth, WithBaseURL(server.URL))
 	if err != nil {
 		t.Fatal(err)
 	}
 	conversation := newEndpointConversation(phase10TestWire(), endpoint, Identity{Model: "m"}, Config{})
 	stream := conversation.Send(context.Background(), Text{Text: "hello"})
-	if events := drainStream(stream); len(events) != 0 {
-		t.Fatalf("failed refresh emitted events %#v", events)
+	events := drainStream(stream)
+
+	if len(events) != 0 {
+		t.Fatalf("events = %#v, want none", events)
 	}
 	var providerErr *Error
 	if !errors.As(stream.Err(), &providerErr) || providerErr != refreshErr {
-		t.Fatalf("Send error = %v (%p), want exact refresh error %v (%p)", stream.Err(), providerErr, refreshErr, refreshErr)
+		t.Fatalf("stream error = %v, want exact refresh error %p", stream.Err(), refreshErr)
 	}
-	if requests != 1 || source.refreshes != 1 {
-		t.Fatalf("requests = %d, Refresh calls = %d; want 1 and 1", requests, source.refreshes)
+	if requests != 1 {
+		t.Fatalf("requests = %d, want 1", requests)
+	}
+	if source.refreshes != 1 {
+		t.Fatalf("refreshes = %d, want 1", source.refreshes)
 	}
 }
 
-// R-KNWJ-HBYA
+// R-KWEE-LQ4P
 func TestConversationOAuth401RefreshesAndReissuesOnce(t *testing.T) {
 	t.Run("successful refresh", func(t *testing.T) {
-		requests := 0
 		var authorizations []string
 		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-			requests++
 			authorizations = append(authorizations, request.Header.Get("Authorization"))
-			if requests == 1 {
+			if len(authorizations) == 1 {
 				writer.WriteHeader(http.StatusUnauthorized)
 				return
 			}
 			writer.WriteHeader(http.StatusOK)
 			_, _ = io.WriteString(writer, "data: refreshed\n\n")
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		source := &countingRefreshSource{tokenSourceStub: &tokenSourceStub{
 			token:        Token{Bearer: "stale"},
 			refreshToken: Token{Bearer: "fresh"},
 		}}
-		offering := Offering{ID: OfferingAnthropicMessages, AuthModes: []AuthMode{AuthModeOAuth}}
-		authenticator, err := offering.Authenticator(OAuth(source))
+		offering := Offering{ID: OfferingAnthropicMessages, Endpoints: []EndpointSpec{{AuthMode: AuthModeOAuth}}}
+		auth, err := offering.Authenticator(source)
 		if err != nil {
 			t.Fatal(err)
 		}
-		endpoint, err := NewEndpoint(server.URL, authenticator)
+		endpoint, err := NewEndpoint(auth, WithBaseURL(server.URL))
 		if err != nil {
 			t.Fatal(err)
 		}
 		conversation := newEndpointConversation(phase10TestWire(), endpoint, Identity{Model: "m"}, Config{})
 		stream := conversation.Send(context.Background(), Text{Text: "hello"})
 		events := drainStream(stream)
+
 		wantEvents := []Event{MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "refreshed"}}}}}
 		if stream.Err() != nil {
-			t.Fatalf("Send error = %v, want nil", stream.Err())
+			t.Fatalf("stream error = %v, want nil", stream.Err())
 		}
 		if !reflect.DeepEqual(events, wantEvents) {
-			t.Fatalf("events = %#v, want the single plain-200 event %#v", events, wantEvents)
+			t.Fatalf("events = %#v, want %#v", events, wantEvents)
 		}
-		if requests != 2 || source.refreshes != 1 {
-			t.Fatalf("requests = %d, Refresh calls = %d; want 2 and 1", requests, source.refreshes)
+		if len(authorizations) != 2 {
+			t.Fatalf("requests = %d, want 2", len(authorizations))
+		}
+		if source.refreshes != 1 {
+			t.Fatalf("refreshes = %d, want 1", source.refreshes)
 		}
 		if !reflect.DeepEqual(authorizations, []string{"Bearer stale", "Bearer fresh"}) {
-			t.Fatalf("Authorization headers = %q, want stale then refreshed bearer", authorizations)
+			t.Fatalf("Authorization headers = %#v, want stale then fresh bearer tokens", authorizations)
 		}
 	})
 
@@ -246,32 +257,37 @@ func TestConversationOAuth401RefreshesAndReissuesOnce(t *testing.T) {
 			requests++
 			writer.WriteHeader(http.StatusUnauthorized)
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		source := &countingRefreshSource{tokenSourceStub: &tokenSourceStub{
 			token:        Token{Bearer: "stale"},
 			refreshToken: Token{Bearer: "fresh"},
 		}}
-		offering := Offering{ID: OfferingAnthropicMessages, AuthModes: []AuthMode{AuthModeOAuth}}
-		authenticator, err := offering.Authenticator(OAuth(source))
+		offering := Offering{ID: OfferingAnthropicMessages, Endpoints: []EndpointSpec{{AuthMode: AuthModeOAuth}}}
+		auth, err := offering.Authenticator(source)
 		if err != nil {
 			t.Fatal(err)
 		}
-		endpoint, err := NewEndpoint(server.URL, authenticator)
+		endpoint, err := NewEndpoint(auth, WithBaseURL(server.URL))
 		if err != nil {
 			t.Fatal(err)
 		}
 		conversation := newEndpointConversation(phase10TestWire(), endpoint, Identity{Model: "m"}, Config{})
 		stream := conversation.Send(context.Background(), Text{Text: "hello"})
-		if events := drainStream(stream); len(events) != 0 {
-			t.Fatalf("401 exchange emitted events %#v", events)
+		events := drainStream(stream)
+
+		if len(events) != 0 {
+			t.Fatalf("events = %#v, want none", events)
 		}
 		var providerErr *Error
 		if !errors.As(stream.Err(), &providerErr) || providerErr.Status != http.StatusUnauthorized {
-			t.Fatalf("Send error = %v, want classified *Error with status 401", stream.Err())
+			t.Fatalf("stream error = %v, want classified 401 error", stream.Err())
 		}
-		if requests != 2 || source.refreshes != 1 {
-			t.Fatalf("requests = %d, Refresh calls = %d; want 2 and 1", requests, source.refreshes)
+		if requests != 2 {
+			t.Fatalf("requests = %d, want 2", requests)
+		}
+		if source.refreshes != 1 {
+			t.Fatalf("refreshes = %d, want 1", source.refreshes)
 		}
 	})
 
@@ -281,57 +297,66 @@ func TestConversationOAuth401RefreshesAndReissuesOnce(t *testing.T) {
 			requests++
 			writer.WriteHeader(http.StatusInternalServerError)
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		source := &countingRefreshSource{tokenSourceStub: &tokenSourceStub{token: Token{Bearer: "current"}}}
-		offering := Offering{ID: OfferingAnthropicMessages, AuthModes: []AuthMode{AuthModeOAuth}}
-		authenticator, err := offering.Authenticator(OAuth(source))
+		offering := Offering{ID: OfferingAnthropicMessages, Endpoints: []EndpointSpec{{AuthMode: AuthModeOAuth}}}
+		auth, err := offering.Authenticator(source)
 		if err != nil {
 			t.Fatal(err)
 		}
-		endpoint, err := NewEndpoint(server.URL, authenticator)
+		endpoint, err := NewEndpoint(auth, WithBaseURL(server.URL))
 		if err != nil {
 			t.Fatal(err)
 		}
 		conversation := newEndpointConversation(phase10TestWire(), endpoint, Identity{Model: "m"}, Config{})
 		stream := conversation.Send(context.Background(), Text{Text: "hello"})
-		drainStream(stream)
+		events := drainStream(stream)
+
+		if len(events) != 0 {
+			t.Fatalf("events = %#v, want none", events)
+		}
 		var providerErr *Error
 		if !errors.As(stream.Err(), &providerErr) || providerErr.Status != http.StatusInternalServerError {
-			t.Fatalf("Send error = %v, want classified *Error with status 500", stream.Err())
+			t.Fatalf("stream error = %v, want classified 500 error", stream.Err())
 		}
-		if requests != 1 || source.refreshes != 0 {
-			t.Fatalf("requests = %d, Refresh calls = %d; want 1 and 0", requests, source.refreshes)
+		if requests != 1 {
+			t.Fatalf("requests = %d, want 1", requests)
+		}
+		if source.refreshes != 0 {
+			t.Fatalf("refreshes = %d, want 0", source.refreshes)
 		}
 	})
 }
 
-// R-KP4F-V3OZ
+// R-KYU7-D9M3
 func TestConversationAPIKey401DoesNotReissue(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		requests++
 		writer.WriteHeader(http.StatusUnauthorized)
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
 
-	offering := Offering{ID: OfferingAnthropicMessages, AuthModes: []AuthMode{AuthModeAPIKey}}
-	authenticator, err := offering.Authenticator(APIKey("secret"))
+	offering := Offering{ID: OfferingAnthropicMessages, Endpoints: []EndpointSpec{{AuthMode: AuthModeAPIKey}}}
+	auth, err := offering.Authenticator(APIKeyRotator("secret"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	endpoint, err := NewEndpoint(server.URL, authenticator)
+	endpoint, err := NewEndpoint(auth, WithBaseURL(server.URL))
 	if err != nil {
 		t.Fatal(err)
 	}
 	conversation := newEndpointConversation(phase10TestWire(), endpoint, Identity{Model: "m"}, Config{})
 	stream := conversation.Send(context.Background(), Text{Text: "hello"})
-	if events := drainStream(stream); len(events) != 0 {
-		t.Fatalf("401 exchange emitted events %#v", events)
+	events := drainStream(stream)
+
+	if len(events) != 0 {
+		t.Fatalf("events = %#v, want none", events)
 	}
 	var providerErr *Error
 	if !errors.As(stream.Err(), &providerErr) || providerErr.Status != http.StatusUnauthorized {
-		t.Fatalf("Send error = %v, want classified *Error with status 401", stream.Err())
+		t.Fatalf("stream error = %v, want classified 401 error", stream.Err())
 	}
 	if requests != 1 {
 		t.Fatalf("requests = %d, want 1", requests)
@@ -445,7 +470,7 @@ func TestBuiltInWireClassifiesNonSuccessResponse(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	endpoint, err := NewEndpoint(server.URL, authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
+	endpoint, err := NewEndpoint(authFunc(func(context.Context, *http.Request, []byte) error { return nil }), WithBaseURL(server.URL))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -491,7 +516,7 @@ func TestBuiltInWireLiftsRetryAfterHeaderIntoError(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			endpoint, err := NewEndpoint(server.URL, authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
+			endpoint, err := NewEndpoint(authFunc(func(context.Context, *http.Request, []byte) error { return nil }), WithBaseURL(server.URL))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -672,6 +697,91 @@ func (roundTrip roundTripFunc) RoundTrip(request *http.Request) (*http.Response,
 	return roundTrip(request)
 }
 
+// R-KCW0-HE9L
+func TestAnthropicSendRequiresMaxTokensFromOptionOrCatalog(t *testing.T) {
+	tests := []struct {
+		name       string
+		identity   Identity
+		settings   Settings
+		wantTokens int
+		wantErr    bool
+	}{
+		{
+			name:       "option present",
+			identity:   Identity{Endpoint: "unrecognized-endpoint", Model: "unrecognized-model"},
+			settings:   Settings{Options: Options{"max_output_tokens": "77"}},
+			wantTokens: 77,
+		},
+		{
+			name:       "catalog fallback",
+			identity:   Identity{Endpoint: string(OfferingAnthropicMessages), Model: "claude-opus-5"},
+			wantTokens: 128000,
+		},
+		{
+			name:     "neither",
+			identity: Identity{Endpoint: "unrecognized-endpoint", Model: "unrecognized-model"},
+			wantErr:  true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			calls := 0
+			var body struct {
+				MaxTokens *int `json:"max_tokens"`
+			}
+			var decodeErr error
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				calls++
+				decodeErr = json.NewDecoder(request.Body).Decode(&body)
+				writer.WriteHeader(http.StatusOK)
+			}))
+			defer server.Close()
+
+			endpoint, err := NewEndpoint(authFunc(func(context.Context, *http.Request, []byte) error { return nil }), WithBaseURL(server.URL))
+			if err != nil {
+				t.Fatal(err)
+			}
+			conversation := newEndpointConversation(AnthropicMessagesWire(), endpoint, test.identity, Config{Settings: test.settings})
+			conversation.history = History{{Role: RoleSystem, Blocks: []Block{Text{Text: "stable"}}}}
+			before, err := json.Marshal(conversation.history)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			stream := conversation.Send(context.Background(), Text{Text: "hello"})
+			drainStream(stream)
+			if test.wantErr {
+				if !errors.Is(stream.Err(), ErrInvalidConfig) {
+					t.Fatalf("Send error = %v, want ErrInvalidConfig", stream.Err())
+				}
+				if calls != 0 {
+					t.Fatalf("provider calls = %d, want 0", calls)
+				}
+				after, marshalErr := json.Marshal(conversation.history)
+				if marshalErr != nil {
+					t.Fatal(marshalErr)
+				}
+				if !bytes.Equal(after, before) {
+					t.Fatalf("History changed: before=%s after=%s", before, after)
+				}
+				return
+			}
+			if stream.Err() != nil {
+				t.Fatalf("Send error = %v, want nil", stream.Err())
+			}
+			if calls != 1 {
+				t.Fatalf("provider calls = %d, want 1", calls)
+			}
+			if decodeErr != nil {
+				t.Fatalf("decode request: %v", decodeErr)
+			}
+			if body.MaxTokens == nil || *body.MaxTokens != test.wantTokens {
+				t.Fatalf("max_tokens = %v, want %d", body.MaxTokens, test.wantTokens)
+			}
+		})
+	}
+}
+
 func TestUnsupportedSettingsFailAtStartOfSendWithoutMutation(t *testing.T) {
 	// R-3S2D-29LY
 	// R-3UI5-TT3C
@@ -704,7 +814,7 @@ func TestUnsupportedSettingsFailAtStartOfSendWithoutMutation(t *testing.T) {
 			}, func() {
 				decodeCalls++
 			})
-			endpoint, err := NewEndpoint("https://provider.invalid/generate", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
+			endpoint, err := NewEndpoint(authFunc(func(context.Context, *http.Request, []byte) error { return nil }), WithBaseURL("https://provider.invalid/generate"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -764,7 +874,7 @@ func TestReasoningTermMismatchAndConflictFailAtStartOfSendWithoutMutation(t *tes
 				func(requestState) { encodeCalls++ },
 				func() { decodeCalls++ },
 			)
-			endpoint, err := NewEndpoint("https://provider.invalid/generate", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
+			endpoint, err := NewEndpoint(authFunc(func(context.Context, *http.Request, []byte) error { return nil }), WithBaseURL("https://provider.invalid/generate"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -823,7 +933,7 @@ func TestUnknownOrUnparsableOptionFailsAtStartOfSendWithoutMutation(t *testing.T
 				func(requestState) { encodeCalls++ },
 				func() { decodeCalls++ },
 			)
-			endpoint, err := NewEndpoint("https://provider.invalid/generate", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
+			endpoint, err := NewEndpoint(authFunc(func(context.Context, *http.Request, []byte) error { return nil }), WithBaseURL("https://provider.invalid/generate"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -870,7 +980,7 @@ func TestWireCapabilityDecisionIgnoresOpaqueModel(t *testing.T) {
 			func(requestState) { t.Fatalf("model %q reached EncodeRequest after wire rejection", model) },
 			func() { t.Fatalf("model %q reached Decode after wire rejection", model) },
 		)
-		endpoint, err := NewEndpoint("https://provider.invalid", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
+		endpoint, err := NewEndpoint(authFunc(func(context.Context, *http.Request, []byte) error { return nil }), WithBaseURL("https://provider.invalid"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -902,7 +1012,7 @@ func TestUnknownModelReachesVendorAndClassifier(t *testing.T) {
 	})}
 	useDefaultHTTPClient(t, client)
 	classifierCalls := 0
-	endpoint, err := NewEndpoint("https://provider.invalid/generate", authFunc(func(context.Context, *http.Request, []byte) error { return nil }))
+	endpoint, err := NewEndpoint(authFunc(func(context.Context, *http.Request, []byte) error { return nil }), WithBaseURL("https://provider.invalid/generate"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1306,7 +1416,7 @@ func TestOutputContractValidationAtSendBoundary(t *testing.T) {
 			}, func() {
 				decodeCalls++
 			})
-			endpoint, err := NewEndpoint("https://provider.invalid/generate", authFunc(func(context.Context, *http.Request, []byte) error { authCalls++; return nil }))
+			endpoint, err := NewEndpoint(authFunc(func(context.Context, *http.Request, []byte) error { authCalls++; return nil }), WithBaseURL("https://provider.invalid/generate"))
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -18,24 +18,30 @@ for the loop's verify role, which reads this file directly.
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - `llm-lint` on PATH, with its provider API key present in the environment
 - `idgen` on PATH (minting requirement ids for spec work)
+- For the conditional live gate (below): `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  `GEMINI_API_KEY`, `XAI_API_KEY`, and `OPENROUTER_API_KEY` in the environment,
+  and OAuth token files at `~/.agentkit/openai-auth.json` and
+  `~/.agentkit/x-ai-auth.json` written by the `oauth` CLI.
 
 ## Test files
 
 The project's spec tests are all `*_test.go` files under this module, **excluding**
-the live fixture-capture tests named `*_live_test.go` (which are guarded by a
-`//go:build integration` tag and carry no requirement ids — they capture and
-replay vendor bytes, they do not verify a requirement). This is the file set the
-canonical gap greps for requirement ids:
+the live tests named `*_live_test.go` (which are guarded by a `//go:build live`
+tag and carry no requirement ids — they prove the vendor facts the designs
+record, and an offline architecture test carries the id that pins each live
+file's existence and shape). This is the file set the canonical gap greps for
+requirement ids:
 
 ```
 grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' --exclude='*_live_test.go' . | sort -u
 ```
 
-Live tests are double-gated (`//go:build integration` plus an env-presence skip),
-run only to capture fixtures, and are excluded above so they never contribute an
-id to the gap. Every requirement id is proved by an offline `*_test.go`; a golden
-SSE fixture lives under `testdata/` and carries no id-shaped literal that is not a
-genuine requirement-id tag.
+Live tests are gated by `//go:build live` only. They never skip: a missing
+credential fails the test, because a missing credential is a missing proof. They
+are excluded above so they never contribute an id to the gap. Every requirement
+id is proved by an offline `*_test.go`; a golden SSE fixture lives under
+`testdata/` and carries no id-shaped literal that is not a genuine
+requirement-id tag.
 
 ## Gates
 
@@ -48,6 +54,14 @@ skipped tests, no disabled linters laundering a failure.
 3. `go test -race ./...`
 4. `golangci-lint run`
 5. `llm-lint --concurrency 16 --verbose .` (doubles the default in-flight calls of 8; `--verbose` prints per-pair progress)
+6. `make live` — **conditional**: run only when the phase's diff (the working
+   tree against the last phase commit) adds or modifies a `*_live_test.go`
+   file; otherwise it is not run and not counted. It drives every catalog
+   offering and credential kind against the real vendor host (D23), so the
+   phase that creates or extends a live test must pass it live, and later
+   phases do not pay for it. When it applies and a credential from the
+   toolchain list is absent, that is a missing tool: file an issue, do not
+   pass or skip.
 
 llm-lint also loads this project's own rules from `lint-rules/` (wired via
 `.llm-lint.json`, found by ancestor walk) and recurses the module from the root.

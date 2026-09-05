@@ -63,6 +63,8 @@ type openAIResponsesText struct {
 type openAIResponsesRequest struct {
 	Model           string               `json:"model"`
 	Input           []json.RawMessage    `json:"input"`
+	Stream          bool                 `json:"stream"`
+	Store           bool                 `json:"store"`
 	Temperature     *float64             `json:"temperature,omitempty"`
 	TopP            *float64             `json:"top_p,omitempty"`
 	MaxOutputTokens *int                 `json:"max_output_tokens,omitempty"`
@@ -163,7 +165,7 @@ func buildOpenAIResponsesInput(history []Message) ([]json.RawMessage, error) {
 }
 
 func buildOpenAIResponsesRequest(input []json.RawMessage, settings Settings) openAIResponsesRequest {
-	request := openAIResponsesRequest{Input: input}
+	request := openAIResponsesRequest{Input: input, Stream: true, Store: false}
 	if v, ok := settingsFloatOption(settings.Options, "temperature"); ok {
 		request.Temperature = &v
 	}

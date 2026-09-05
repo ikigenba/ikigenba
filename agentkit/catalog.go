@@ -104,28 +104,37 @@ func (s ReasoningSpec) Accepts(r ReasoningConfig) bool {
 	}
 }
 
-// OAuthClient is the OAuth client identity an offering's host uses when
-// AuthModes includes AuthModeOAuth: the token endpoint and the public client
-// id to present against it.
-type OAuthClient struct {
-	TokenURL string
-	ClientID string
+// Rotation is what an OAuth rotation needs beyond the stored token: where
+// the refresh request is sent and the app id it must present (D22). It is
+// zero on every EndpointSpec whose AuthMode is api_key.
+type Rotation struct {
+	RefreshURL string
+	ClientID   string
+}
+
+// EndpointSpec is one way to reach an offering: the credential kind, where
+// requests go under it, and how that credential is rotated. An offering has
+// one spec per credential kind it accepts; the URL belongs here, not on the
+// offering, because it can differ by credential kind.
+type EndpointSpec struct {
+	AuthMode AuthMode
+	BaseURL  string   // where chat requests are sent, model-in-path baked in
+	Rotation Rotation // how to get a fresh token; zero for api_key
 }
 
 // Offering is one model as served by one host over one wire format:
 // everything New needs.
 type Offering struct {
-	ID         OfferingID
-	Host       Host
-	WireName   WireName
-	WireFormat WireFormat // the codec to pass to New
-	BaseURL    string     // the host's default URL, model-in-path baked in
-	AuthModes  []AuthMode // credential modes Authenticator accepts, in preference order
-	OAuth      OAuthClient
-	WireModel  string  // the exact model string sent on the wire
-	Context    int64   // context window in tokens
-	Pricing    Pricing // full price schedule (D3); never empty
-	Reasoning  ReasoningSpec
+	ID              OfferingID
+	Host            Host
+	WireName        WireName
+	WireFormat      WireFormat     // the codec to pass to New
+	Endpoints       []EndpointSpec // one per credential kind, api_key first
+	WireModel       string         // the exact model string sent on the wire
+	Context         int64          // context window in tokens
+	MaxOutputTokens int64          // the vendor's output cap; zero when unknown
+	Pricing         Pricing        // full price schedule (D3); never empty
+	Reasoning       ReasoningSpec
 }
 
 // CatalogEntry is everything the catalog knows about one model name. The
@@ -148,6 +157,22 @@ func Catalog() []CatalogEntry {
 // ErrNotFound is what Lookup wraps when no offering matches.
 var ErrNotFound = errors.New("agentkit: catalog entry not found")
 
+// offeringMaxOutputTokens returns the MaxOutputTokens of the catalog
+// offering whose ID equals identity.Endpoint and whose WireModel equals
+// identity.Model, and whether such an offering exists. It does not require
+// the offering's MaxOutputTokens to be non-zero; callers that need a
+// sendable value check that themselves.
+func offeringMaxOutputTokens(identity Identity) (int64, bool) {
+	for _, entry := range catalogTable {
+		for _, candidate := range entry.Offerings {
+			if string(candidate.ID) == identity.Endpoint && candidate.WireModel == identity.Model {
+				return candidate.MaxOutputTokens, true
+			}
+		}
+	}
+	return 0, false
+}
+
 // Lookup is the catalog's shorthand: given a model name and optionally a
 // host and wire format, it resolves the one matching Offering. An empty
 // host means the entry's default host (its first offering's Host); an empty
@@ -155,13 +180,7 @@ var ErrNotFound = errors.New("agentkit: catalog entry not found")
 // model, ranked responses above chat. Anything that fails to match wraps
 // ErrNotFound naming the argument that missed.
 func Lookup(model string, host Host, wire WireName) (Offering, error) {
-	var matchedEntry *CatalogEntry
-	for _, entry := range catalogTable {
-		if entry.Model == model {
-			matchedEntry = &entry
-			break
-		}
-	}
+	matchedEntry := findEntry(model)
 	if matchedEntry == nil {
 		return Offering{}, fmt.Errorf("agentkit: lookup model %q: %w", model, ErrNotFound)
 	}
@@ -171,23 +190,7 @@ func Lookup(model string, host Host, wire WireName) (Offering, error) {
 		effectiveHost = matchedEntry.Offerings[0].Host
 	}
 
-	var chosen *Offering
-	for index := range matchedEntry.Offerings {
-		offering := &matchedEntry.Offerings[index]
-		if offering.Host != effectiveHost {
-			continue
-		}
-		if wire != "" {
-			if offering.WireName == wire {
-				return cloneOffering(*offering), nil
-			}
-			continue
-		}
-		if chosen == nil || wireRank(offering.WireName) > wireRank(chosen.WireName) {
-			chosen = offering
-		}
-	}
-
+	chosen := findOffering(*matchedEntry, effectiveHost, wire)
 	if chosen != nil {
 		return cloneOffering(*chosen), nil
 	}
@@ -195,6 +198,35 @@ func Lookup(model string, host Host, wire WireName) (Offering, error) {
 		return Offering{}, fmt.Errorf("agentkit: lookup host %q: %w", host, ErrNotFound)
 	}
 	return Offering{}, fmt.Errorf("agentkit: lookup wire %q: %w", wire, ErrNotFound)
+}
+
+func findEntry(model string) *CatalogEntry {
+	for index := range catalogTable {
+		if catalogTable[index].Model == model {
+			return &catalogTable[index]
+		}
+	}
+	return nil
+}
+
+func findOffering(entry CatalogEntry, host Host, wire WireName) *Offering {
+	var chosen *Offering
+	for index := range entry.Offerings {
+		offering := &entry.Offerings[index]
+		if offering.Host != host {
+			continue
+		}
+		if wire != "" {
+			if offering.WireName == wire {
+				return offering
+			}
+			continue
+		}
+		if chosen == nil || wireRank(offering.WireName) > wireRank(chosen.WireName) {
+			chosen = offering
+		}
+	}
+	return chosen
 }
 
 func hostOffered(entry CatalogEntry, host Host) bool {
@@ -224,7 +256,7 @@ func cloneCatalogEntry(entry CatalogEntry) CatalogEntry {
 }
 
 func cloneOffering(offering Offering) Offering {
-	offering.AuthModes = slices.Clone(offering.AuthModes)
+	offering.Endpoints = slices.Clone(offering.Endpoints)
 	offering.Pricing.Tiers = slices.Clone(offering.Pricing.Tiers)
 	offering.Reasoning = cloneReasoningSpec(offering.Reasoning)
 	return offering

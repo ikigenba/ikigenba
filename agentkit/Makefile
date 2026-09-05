@@ -19,9 +19,9 @@ clean:
 install:
 	go install ./...
 
-live-oauth:
+live:
 	AGENTKIT_OPENAI_OAUTH_FILE=$(HOME)/.agentkit/openai-auth.json \
 	AGENTKIT_XAI_OAUTH_FILE=$(HOME)/.agentkit/x-ai-auth.json \
-	go test -tags integration -run OAuthRefresh ./...
+	go test -tags live -count=1 -run '^TestLive' ./...
 
-.PHONY: build test lint llm-lint fmt clean install live-oauth
+.PHONY: build test lint llm-lint fmt clean install live
