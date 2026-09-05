@@ -19,7 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/agentkit"
 )
 
-// R-V5IC-JWS4
+// R-B7BA-NWHT
 func TestOpenRequiresAPIKeyEnvironmentVariable(t *testing.T) {
 	cfg := openConfig(t, "http://provider.invalid")
 	cfg.Getenv = func(name string) string {
@@ -33,7 +33,7 @@ func TestOpenRequiresAPIKeyEnvironmentVariable(t *testing.T) {
 	}
 }
 
-// R-V5IC-JWS4
+// R-B7BA-NWHT
 func TestOpenUsesAPIKeyFromPlannedEnvironmentVariable(t *testing.T) {
 	requests := make(chan capturedRequest, 1)
 	server := successfulServer(t, requests)
@@ -59,7 +59,7 @@ func TestOpenUsesAPIKeyFromPlannedEnvironmentVariable(t *testing.T) {
 	}
 }
 
-// R-V6Q8-XOIT
+// R-B8J7-1O8I
 func TestOpenOAuthReadsTokenFileAndNamesSourceFailure(t *testing.T) {
 	cfg := openConfig(t, "http://provider.invalid")
 	cfg.Wire = "responses"
@@ -74,6 +74,13 @@ func TestOpenOAuthReadsTokenFileAndNamesSourceFailure(t *testing.T) {
 	}
 	if _, err := Open(cfg); err == nil || !strings.Contains(err.Error(), cfg.AuthFile) {
 		t.Fatalf("unreadable OAuth file error = %v, want diagnostic naming %q", err, cfg.AuthFile)
+	}
+	cfg.AuthFile = filepath.Join(t.TempDir(), "tokenless.json")
+	if err := os.WriteFile(cfg.AuthFile, []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(cfg); err == nil || !strings.Contains(err.Error(), cfg.AuthFile) {
+		t.Fatalf("tokenless OAuth file error = %v, want diagnostic naming %q", err, cfg.AuthFile)
 	}
 
 	requests := make(chan capturedRequest, 1)

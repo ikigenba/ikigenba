@@ -181,7 +181,7 @@ func TestResolveEnvironmentVariableAndAuthPaths(t *testing.T) {
 	}
 }
 
-// R-V32J-SDAQ
+// R-B4VH-WD0F
 func TestResolveAuthenticationMode(t *testing.T) {
 	cfg := resolveConfig(t)
 	plan, err := Resolve(cfg)
@@ -210,19 +210,25 @@ func TestResolveAuthenticationMode(t *testing.T) {
 	if err != nil || plan.AuthMode != agentkit.AuthModeAPIKey {
 		t.Fatalf("explicit mode = %q, error %v, want api_key", plan.AuthMode, err)
 	}
-	cfg.Auth = "unsupported"
+	cfg.Auth = "oauth"
 	if _, err := Resolve(cfg); err == nil || !strings.Contains(err.Error(), "auth") {
-		t.Fatalf("unsupported auth error = %v, want diagnostic naming auth", err)
+		t.Fatalf("auth absent from offering error = %v, want diagnostic naming auth", err)
 	}
 }
 
-// R-V4AG-651F
+// R-B63E-A4R4
 func TestResolveBaseURL(t *testing.T) {
 	cfg := resolveConfig(t)
 	plan, err := Resolve(cfg)
-	const defaultBaseURL = "https://api.openai.com/v1/responses"
-	if err != nil || plan.BaseURL != defaultBaseURL {
-		t.Fatalf("default base URL = %q, error %v, want %q", plan.BaseURL, err, defaultBaseURL)
+	const platformBaseURL = "https://api.openai.com/v1/responses"
+	if err != nil || plan.BaseURL != platformBaseURL {
+		t.Fatalf("API-key base URL = %q, error %v, want %q", plan.BaseURL, err, platformBaseURL)
+	}
+	cfg.Auth = "oauth"
+	plan, err = Resolve(cfg)
+	const oauthBaseURL = "https://chatgpt.com/backend-api/codex/responses"
+	if err != nil || plan.BaseURL != oauthBaseURL {
+		t.Fatalf("OAuth base URL = %q, error %v, want %q", plan.BaseURL, err, oauthBaseURL)
 	}
 	cfg.BaseURL = "https://loopback.example/v1"
 	plan, err = Resolve(cfg)
