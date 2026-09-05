@@ -114,6 +114,7 @@ func TestResolveOffCatalogOfferingWithoutWireUsesHostsFirstOffering(t *testing.T
 		{MinInputTokens: 0, InputUncached: 2500, CacheReadInput: 250, Output: 15000},
 		{MinInputTokens: 272_001, InputUncached: 5000, CacheReadInput: 500, Output: 22500},
 	}})
+	want.Endpoints = want.Endpoints[:1]
 	want.Reasoning.Default.Effort = agentkit.EffortNone
 	assertOffering(t, got.Offering, want)
 	if got.Model != cfg.Model {
@@ -123,11 +124,20 @@ func TestResolveOffCatalogOfferingWithoutWireUsesHostsFirstOffering(t *testing.T
 
 func openAIResponsesOffering(wireModel string, contextWindow int64, pricing agentkit.Pricing) agentkit.Offering {
 	return agentkit.Offering{
-		ID:        agentkit.OfferingOpenAIResponses,
-		Host:      agentkit.HostOpenAI,
-		WireName:  agentkit.WireResponses,
-		BaseURL:   "https://api.openai.com/v1/responses",
-		AuthModes: []agentkit.AuthMode{agentkit.AuthModeAPIKey, agentkit.AuthModeOAuth},
+		ID:       agentkit.OfferingOpenAIResponses,
+		Host:     agentkit.HostOpenAI,
+		WireName: agentkit.WireResponses,
+		Endpoints: []agentkit.EndpointSpec{
+			{AuthMode: agentkit.AuthModeAPIKey, BaseURL: "https://api.openai.com/v1/responses"},
+			{
+				AuthMode: agentkit.AuthModeOAuth,
+				BaseURL:  "https://chatgpt.com/backend-api/codex/responses",
+				Rotation: agentkit.Rotation{
+					RefreshURL: "https://auth.openai.com/oauth/token",
+					ClientID:   strings.Join([]string{"app", "EMoamEEZ73f0CkXaXp7hrann"}, "_"),
+				},
+			},
+		},
 		WireModel: wireModel,
 		Context:   contextWindow,
 		Pricing:   pricing,
@@ -146,12 +156,7 @@ func assertOffering(t *testing.T, got, want agentkit.Offering) {
 	if wireType := fmt.Sprintf("%T", got.WireFormat); wireType != "*agentkit.openAIResponsesWire" {
 		t.Errorf("offering wire format type = %q, want %q", wireType, "*agentkit.openAIResponsesWire")
 	}
-	wantClientID := strings.Join([]string{"app", "EMoamEEZ73f0CkXaXp7hrann"}, "_")
-	if got.OAuth.TokenURL != "https://auth.openai.com/oauth/token" || got.OAuth.ClientID != wantClientID {
-		t.Errorf("offering OAuth client = %+v, want OpenAI token URL and public client id %q", got.OAuth, wantClientID)
-	}
 	got.WireFormat = nil
-	got.OAuth = agentkit.OAuthClient{}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("offering = %+v, want %+v", got, want)
 	}

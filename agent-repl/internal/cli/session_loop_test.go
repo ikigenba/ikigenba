@@ -205,10 +205,13 @@ func TestRunDecoratedLifecycleIsOrderedAndSummaryMatchesLogSink(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "ordered.txt"), []byte("ordered result"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		_ = decodeBody(t, request)
-		if calls.Add(1) == 1 {
+		body := decodeBody(t, request)
+		encoded, err := json.Marshal(body["messages"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Contains(encoded, []byte("ordered result")) {
 			writeToolCallWithUsage(writer, "Read", `{"file_path":"ordered.txt"}`, 11, 7, 2, 3)
 			return
 		}
@@ -314,8 +317,9 @@ func TestRunInflightInterruptCancelsTurnThenSendsNextLine(t *testing.T) {
 	firstStarted := make(chan struct{})
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		_ = decodeBody(t, request)
-		if calls.Add(1) == 1 {
+		prompt := lastUserText(t, decodeBody(t, request))
+		calls.Add(1)
+		if prompt == "cancel me" {
 			close(firstStarted)
 			<-request.Context().Done()
 			return
@@ -353,13 +357,14 @@ func TestRunMapsOptionsAndInjectedDependenciesIntoRealSessionBehavior(t *testing
 		if body["model"] != "gpt-5.6-sol" || body["temperature"] != float64(0.25) {
 			t.Errorf("mapped model/settings = %#v", body)
 		}
-		if requests.Add(1) == 1 {
+		requests.Add(1)
+		encoded, err := json.Marshal(body["messages"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Contains(encoded, []byte("rooted-content")) {
 			writeToolCall(writer, "Read", `{"file_path":"root-marker.txt"}`)
 			return
-		}
-		encoded, _ := json.Marshal(body["messages"])
-		if !bytes.Contains(encoded, []byte("rooted-content")) {
-			t.Errorf("tool result did not come from injected root: %s", encoded)
 		}
 		writeChatSuccess(writer, "tool complete")
 	}))
@@ -408,7 +413,7 @@ func TestRunMapsAuthFileIntoOAuthCredential(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	args := configuredArgs(server.URL)
-	args = append(args, "-c", "auth=oauth", "-c", "auth_file="+authFile)
+	args = append(args, "-c", "wire=responses", "-c", "auth=oauth", "-c", "auth_file="+authFile)
 	deps := testDeps(t, t.TempDir())
 	deps.Getenv = func(name string) string {
 		t.Fatalf("OAuth session unexpectedly called Getenv(%q)", name)
@@ -569,16 +574,17 @@ type completionAwareReader struct {
 
 func (reader *completionAwareReader) Read(buffer []byte) (int, error) {
 	index := int(reader.reads.Add(1)) - 1
-	if index == 1 {
+	if index >= len(reader.lines) {
+		return 0, io.EOF
+	}
+	line := reader.lines[index]
+	if bytes.Equal(line, []byte("second\n")) {
 		close(reader.secondRead)
 		if !reader.handlerComplete.Load() {
 			reader.readBeforeComplete.Store(true)
 		}
 	}
-	if index >= len(reader.lines) {
-		return 0, io.EOF
-	}
-	return copy(buffer, reader.lines[index]), nil
+	return copy(buffer, line), nil
 }
 
 func newBlockingReader() *blockingReader {

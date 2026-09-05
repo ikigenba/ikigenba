@@ -66,8 +66,8 @@ func supportsOAuth(catalog []agentkit.CatalogEntry, host agentkit.Host) bool {
 			if offering.Host != host {
 				continue
 			}
-			for _, mode := range offering.AuthModes {
-				if mode == agentkit.AuthModeOAuth {
+			for _, endpoint := range offering.Endpoints {
+				if endpoint.AuthMode == agentkit.AuthModeOAuth {
 					return true
 				}
 			}

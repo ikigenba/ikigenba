@@ -62,6 +62,45 @@ func TestProvidersListsOAuthOnlyForSupportingHosts(t *testing.T) {
 	}
 }
 
+// R-B9R3-FFZ7
+func TestProvidersDerivesOAuthLinesFromOfferingEndpoints(t *testing.T) {
+	lines := strings.Split(help.Providers(), "\n")
+	claimed := make(map[int]bool)
+	for _, host := range hosts() {
+		apiKey := fmt.Sprintf("  %-13s", host)
+		apiKeyIndex := lineWithPrefix(t, lines, apiKey)
+		claimed[apiKeyIndex] = true
+
+		oauthIndex := apiKeyIndex + 1
+		hasOAuth := oauthIndex < len(lines) && strings.Contains(lines[oauthIndex], "auth=oauth")
+		if !hostSupportsOAuth(host) {
+			if hasOAuth {
+				t.Errorf("unsupported host %q has OAuth line %q", host, lines[oauthIndex])
+			}
+			continue
+		}
+
+		want := fmt.Sprintf("%15s%-14s(auth_file=~/.agent-repl/%s-auth.json)", "", "auth=oauth", host)
+		if !hasOAuth {
+			t.Errorf("supporting host %q has no OAuth line immediately after its API-key line", host)
+			continue
+		}
+		if lines[oauthIndex] != want {
+			t.Errorf("OAuth line for %q = %q, want %q", host, lines[oauthIndex], want)
+		}
+		claimed[oauthIndex] = true
+	}
+	if len(claimed) != len(lines) {
+		var extra []string
+		for i, line := range lines {
+			if !claimed[i] {
+				extra = append(extra, line)
+			}
+		}
+		t.Fatalf("unexpected provider lines: %q", extra)
+	}
+}
+
 // R-VMKX-WP5U
 func TestModelsGroupsEveryCatalogModelByOrderedHost(t *testing.T) {
 	sections := strings.Split(help.Models(), "\n\n")
@@ -74,18 +113,13 @@ func TestModelsGroupsEveryCatalogModelByOrderedHost(t *testing.T) {
 		if lines[0] != string(wantHosts[i]) {
 			t.Errorf("section %d host = %q, want %q", i, lines[0], wantHosts[i])
 		}
-		var wantModels []string
-		for _, entry := range agentkit.Catalog() {
-			if _, ok := firstOffering(entry, wantHosts[i]); ok {
-				wantModels = append(wantModels, entry.Model)
-			}
-		}
-		if len(lines)-1 != len(wantModels) {
-			t.Fatalf("host %q row count = %d, want %d", wantHosts[i], len(lines)-1, len(wantModels))
-		}
-		for row, model := range wantModels {
-			if !strings.HasPrefix(lines[row+1], "  "+model) {
-				t.Errorf("host %q row %d = %q, want model %q", wantHosts[i], row, lines[row+1], model)
+	}
+
+	rows := renderedRows(t)
+	for _, entry := range agentkit.Catalog() {
+		for _, offering := range entry.Offerings {
+			if _, ok := rows[string(offering.Host)][entry.Model]; !ok {
+				t.Errorf("catalog model %q missing under host %q", entry.Model, offering.Host)
 			}
 		}
 	}
@@ -191,8 +225,8 @@ func hostSupportsOAuth(host agentkit.Host) bool {
 	for _, entry := range agentkit.Catalog() {
 		for _, offering := range entry.Offerings {
 			if offering.Host == host {
-				for _, mode := range offering.AuthModes {
-					if mode == agentkit.AuthModeOAuth {
+				for _, endpoint := range offering.Endpoints {
+					if endpoint.AuthMode == agentkit.AuthModeOAuth {
 						return true
 					}
 				}
@@ -209,6 +243,17 @@ func firstOffering(entry agentkit.CatalogEntry, host agentkit.Host) (agentkit.Of
 		}
 	}
 	return agentkit.Offering{}, false
+}
+
+func lineWithPrefix(t *testing.T, lines []string, prefix string) int {
+	t.Helper()
+	for i, line := range lines {
+		if strings.HasPrefix(line, prefix) {
+			return i
+		}
+	}
+	t.Fatalf("no provider line begins with %q in %q", prefix, lines)
+	return -1
 }
 
 func renderedRows(t *testing.T) map[string]map[string]string {

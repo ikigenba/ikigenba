@@ -62,6 +62,7 @@ func TestOpenUsesAPIKeyFromPlannedEnvironmentVariable(t *testing.T) {
 // R-V6Q8-XOIT
 func TestOpenOAuthReadsTokenFileAndNamesSourceFailure(t *testing.T) {
 	cfg := openConfig(t, "http://provider.invalid")
+	cfg.Wire = "responses"
 	cfg.Auth = "oauth"
 	cfg.AuthFile = filepath.Join(t.TempDir(), "missing-token.json")
 	if _, err := Open(cfg); err == nil || !strings.Contains(err.Error(), cfg.AuthFile) {

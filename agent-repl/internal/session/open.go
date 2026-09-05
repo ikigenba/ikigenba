@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/ikigenba/ikigenba/agentkit"
@@ -14,15 +15,15 @@ func Open(cfg Config) (*Session, error) {
 		return nil, err
 	}
 
-	credential, err := credential(cfg, plan)
+	rotator, err := credential(cfg, plan)
 	if err != nil {
 		return nil, err
 	}
-	authenticator, err := plan.Offering.Authenticator(credential)
+	authenticator, err := plan.Offering.Authenticator(rotator)
 	if err != nil {
 		return nil, fmt.Errorf("authenticate: %w", err)
 	}
-	endpoint, err := agentkit.NewEndpoint(plan.BaseURL, authenticator)
+	endpoint, err := agentkit.NewEndpoint(authenticator, agentkit.WithBaseURL(plan.BaseURL))
 	if err != nil {
 		return nil, fmt.Errorf("endpoint %q: %w", plan.BaseURL, err)
 	}
@@ -43,23 +44,23 @@ func Open(cfg Config) (*Session, error) {
 	return &Session{plan: plan, conversation: conversation}, nil
 }
 
-func credential(cfg Config, plan Plan) (agentkit.Credential, error) {
+func credential(cfg Config, plan Plan) (agentkit.Rotator, error) {
 	switch plan.AuthMode {
 	case agentkit.AuthModeAPIKey:
 		if cfg.Getenv == nil {
-			return nil, fmt.Errorf("environment variable %s cannot be read", plan.EnvVar)
+			return nil, fmt.Errorf("environment variable %q cannot be read", plan.EnvVar)
 		}
 		key := cfg.Getenv(plan.EnvVar)
 		if key == "" {
-			return nil, fmt.Errorf("environment variable %s is empty", plan.EnvVar)
+			return nil, fmt.Errorf("environment variable %q is empty", plan.EnvVar)
 		}
-		return agentkit.APIKey(key), nil
+		return agentkit.APIKeyRotator(key), nil
 	case agentkit.AuthModeOAuth:
-		source, err := plan.Offering.TokenSource(agentkit.FileTokenStore(plan.AuthFile))
-		if err != nil {
+		rotator := agentkit.OAuthRotator(agentkit.FileTokenStore(plan.AuthFile))
+		if _, err := rotator.Token(context.Background()); err != nil {
 			return nil, fmt.Errorf("oauth token file %q: %w", plan.AuthFile, err)
 		}
-		return agentkit.OAuth(source), nil
+		return rotator, nil
 	default:
 		return nil, fmt.Errorf("auth %q is not supported", plan.AuthMode)
 	}
