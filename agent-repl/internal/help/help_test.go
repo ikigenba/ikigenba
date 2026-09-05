@@ -38,30 +38,6 @@ func TestProvidersListsHostsInOrderWithAPIKeyFormatting(t *testing.T) {
 	}
 }
 
-// R-VK55-55OG
-func TestProvidersListsOAuthOnlyForSupportingHosts(t *testing.T) {
-	lines := strings.Split(help.Providers(), "\n")
-	line := 0
-	for _, host := range hosts() {
-		line++
-		wantOAuth := hostSupportsOAuth(host)
-		hasOAuth := line < len(lines) && strings.Contains(lines[line], "auth=oauth")
-		if hasOAuth != wantOAuth {
-			t.Errorf("host %q OAuth line present = %t, want %t", host, hasOAuth, wantOAuth)
-		}
-		if hasOAuth {
-			want := fmt.Sprintf("%15s%-14s(auth_file=~/.agent-repl/%s-auth.json)", "", "auth=oauth", host)
-			if lines[line] != want {
-				t.Errorf("OAuth line for %q = %q, want %q", host, lines[line], want)
-			}
-			line++
-		}
-	}
-	if line != len(lines) {
-		t.Fatalf("unexpected provider lines: %q", lines[line:])
-	}
-}
-
 // R-B9R3-FFZ7
 func TestProvidersDerivesOAuthLinesFromOfferingEndpoints(t *testing.T) {
 	lines := strings.Split(help.Providers(), "\n")
