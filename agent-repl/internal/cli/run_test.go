@@ -31,7 +31,13 @@ func (reader failOnRead) Read([]byte) (int, error) {
 func TestRunIsCallableInProcessAndReturnsAnExitCode(t *testing.T) {
 	type runSignature func(context.Context, []string, io.Reader, io.Writer, io.Writer, cli.Deps) int
 	var run runSignature = cli.Run
-	if got := run(t.Context(), nil, strings.NewReader(""), io.Discard, io.Discard, cli.Deps{}); got != 0 {
+	deps := cli.Deps{
+		Home:   t.TempDir(),
+		Getenv: func(string) string { return "test-api-key" },
+		Now:    func() time.Time { return time.Unix(0, 0) },
+		Root:   t.TempDir(),
+	}
+	if got := run(t.Context(), nil, strings.NewReader(""), io.Discard, io.Discard, deps); got != 0 {
 		t.Fatalf("Run(valid arguments) = %d, want 0", got)
 	}
 }
