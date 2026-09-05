@@ -58,7 +58,8 @@ of its `Text` blocks, joined by newlines, printed as is — the model's own line
 breaks are kept); `tool` for a tool call (the tool name, a space, and the
 input as compact JSON); `result` for a tool result (the tool name recovered
 from the matching call, a space, `error: ` when the result is an error, and
-the content collapsed by `OneLine`); `error` for a turn's terminal error.
+the content collapsed by `OneLine`); `error` for a turn's terminal error (its
+text collapsed by `OneLine`, so a provider message can never split the line).
 Tool calls and results are never truncated: they are the record of what the
 model did, and the log has the same bytes. A model message with no `Text`
 block renders nothing. `OutputDone` renders nothing.
@@ -86,7 +87,7 @@ a script watching stdout sees only records.
 - R-WLY1-01NZ: `Decorated.Event` with a `ToolCall` MUST write `tool › `, the tool name, a space, the input as compact JSON (`json.Compact`) or `OneLine` of the input bytes when they are not valid JSON, a newline, and a blank line to stdout.
 - R-WN5X-DTEO: `Decorated.Event` with a `ToolReturn` MUST write `result › `, the name of the tool from the earlier `ToolCall` whose `Use.ID` equals the result's `ToolUseID` (or the `ToolUseID` itself when no such call was seen), a space, `error: ` iff `IsError`, `OneLine` of the content, a newline, and a blank line to stdout.
 - R-WODT-RL5D: `Decorated.Event` with an `OutputDone` MUST write nothing.
-- R-WPLQ-5CW2: `Decorated.Error` MUST write `error › `, `err.Error()`, a newline, and a blank line to stderr and nothing to stdout.
+- R-CNZG-JOTG: `Decorated.Error` MUST write `error › `, `OneLine` of `err.Error()`, a newline, and a blank line to stderr and nothing to stdout.
 - R-WS1I-WWDG: `Decorated.Summary` MUST write to stdout exactly the three lines `summary`, `· tokens  in=<InputTokens> cache(r=<CachedTokens> w=<CacheWrite5mTokens+CacheWrite1hTokens>) out=<OutputTokens> reasoning=<ReasoningTokens> total=<sum of all six fields>`, and `· cost     $<cost> session` where `<cost>` is `Cost` divided by 1,000,000,000 formatted with exactly six decimals, each line newline-terminated.
 - R-WT9F-AO45: In decorated mode, `Run` MUST call `Prompt` before each read of stdin, `Begin` once for each line that is sent, `Event` for every event of the turn's stream in order, `Error` for the stream's terminal error when non-nil, `End` once when the session ends, and `Summary` with the values from `LogSink.Summary` after closing the log.
 - R-WUHB-OFUU: In raw mode, `Run` MUST include stdout among the `LogSink` destinations so that stdout receives exactly the record lines agentkit writes and nothing else, MUST write no prompt, transcript, or summary block to stdout, and MUST still write turn errors to stderr through `Decorated.Error`.
