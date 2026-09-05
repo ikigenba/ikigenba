@@ -16,7 +16,7 @@ their choices (D4), not for second-guessing them.
 | `wire`      | agentkit wire name: `messages` `generate-content` `chat` `responses` | the offering's own        |
 | `auth`      | `api_key` or `oauth`                                 | `oauth` when offered and the token file exists, else `api_key` |
 | `auth_file` | OAuth token file path                                | `~/.agent-repl/<provider>-auth.json`      |
-| `base_url`  | request URL prefix                                   | the offering's `BaseURL`                  |
+| `base_url`  | request URL prefix                                   | the offering's endpoint for the chosen `auth` |
 
 **Validation without I/O** (`Flags.Validate`, D2) produces `Options`:
 
@@ -83,23 +83,34 @@ func (s *Session) Send(ctx context.Context, prompt string) *agentkit.Stream
 ```
 
 `Resolve` picks the offering with `agentkit.Lookup(model, provider, wire)`.
-For an off-catalog model it borrows the transport — wire format, base URL,
-auth modes, OAuth client — of the first cataloged offering on that host that
-matches `wire` (or the host's first offering when `wire` is empty), and sends
-the user's model string as the wire model. The API-key variable is the host
-name upper-cased with `_API_KEY` appended; the default token file is
-`<Home>/.agent-repl/<host>-auth.json`. When `Auth` is empty, the mode is
-`oauth` if the offering lists it *and* the token file exists, else `api_key`.
+For an off-catalog model it borrows the transport — wire format and endpoint
+specs — of the first cataloged offering on that host that matches `wire` (or
+the host's first offering when `wire` is empty), and sends the user's model
+string as the wire model. The API-key variable is the host name upper-cased
+with `_API_KEY` appended; the default token file is
+`<Home>/.agent-repl/<host>-auth.json`.
 
-`Open` then builds the credential — `agentkit.APIKey` from the variable, or
-`agentkit.OAuth` over `agentkit.FileTokenStore(AuthFile)` through
-`Offering.TokenSource`, which reads the file once and refreshes into it — the
-endpoint from `BaseURL` (the offering's, unless overridden), the six toolkit
-tools rooted at `Root` with `.git` skipped for `Glob` and `Grep`, and the
-conversation with `Settings.Options` set to `Settings` and the supplied log.
-An empty API-key variable, a missing or unreadable token file, an `auth` the
-offering does not list, or a tool that cannot be constructed is an `Open`
-error; the composition root turns every `Open` error into exit 1 (D2).
+An offering carries one `agentkit.EndpointSpec` per credential kind it accepts
+(`Offering.Endpoints`, `api_key` first), and the request URL lives on the spec
+because it can differ by kind: OpenAI's OAuth spec points at the Codex backend,
+not the platform API. agent-repl never hardcodes a vendor URL; it takes the
+spec matching the chosen mode, and `base_url` is a pure override of it. When
+`Auth` is empty, the mode is `oauth` if the offering has an `oauth` spec *and*
+the token file exists, else `api_key`. `Plan.BaseURL` is the URL requests will
+actually go to: the override when given, else that spec's `BaseURL`.
+
+`Open` then builds the rotator — `agentkit.APIKeyRotator` from the variable,
+or `agentkit.OAuthRotator` over `agentkit.FileTokenStore(AuthFile)`, which
+reads the file once and refreshes into it — turns it into an authenticator with
+`Offering.Authenticator`, builds the endpoint with `agentkit.NewEndpoint`
+pointed at `Plan.BaseURL`, the six toolkit tools rooted at `Root` with `.git`
+skipped for `Glob` and `Grep`, and the conversation with `Settings.Options` set
+to `Settings` and the supplied log. The OAuth rotator reads lazily, so `Open`
+asks it for its token once up front: a missing, unreadable, or tokenless file
+fails before the first prompt rather than mid-session. An empty API-key
+variable, a bad token file, an `auth` the offering has no spec for, or a tool
+that cannot be constructed is an `Open` error; the composition root turns every
+`Open` error into exit 1 (D2).
 
 ## REQUIREMENTS
 
@@ -116,10 +127,10 @@ error; the composition root turns every `Open` error into exit 1 (D2).
 - R-UY6Y-9ABY: For a cataloged model, `Resolve` MUST set `Plan.Offering` to the offering `agentkit.Lookup(cfg.Model, agentkit.Host(cfg.Provider), agentkit.WireName(cfg.Wire))` returns and `Plan.Model` to that offering's `WireModel`.
 - R-UZEU-N22N: For a model not in the catalog, `Resolve` MUST set `Plan.Offering` to the first cataloged offering whose `Host` equals `cfg.Provider` and, when `cfg.Wire` is non-empty, whose `WireName` equals it, with `WireModel` replaced by `cfg.Model`, and MUST set `Plan.Model` to `cfg.Model`.
 - R-V1UN-ELK1: `Resolve` MUST set `Plan.EnvVar` to `cfg.Provider` upper-cased followed by `_API_KEY`, and `Plan.AuthFile` to `cfg.AuthFile` when non-empty, else `<cfg.Home>/.agent-repl/<cfg.Provider>-auth.json`.
-- R-V32J-SDAQ: When `cfg.Auth` is empty, `Resolve` MUST set `Plan.AuthMode` to `oauth` iff the offering's `AuthModes` contains `agentkit.AuthModeOAuth` and the file at `Plan.AuthFile` exists, and to `api_key` otherwise; when `cfg.Auth` is non-empty it MUST use it, returning an error naming `auth` when the offering's `AuthModes` does not contain it.
-- R-V4AG-651F: `Resolve` MUST set `Plan.BaseURL` to `cfg.BaseURL` when non-empty, else to the offering's `BaseURL`.
-- R-V5IC-JWS4: With `Plan.AuthMode` `api_key`, `Open` MUST authenticate with `agentkit.APIKey` of `cfg.Getenv(Plan.EnvVar)` and MUST return an error naming the variable when that value is empty.
-- R-V6Q8-XOIT: With `Plan.AuthMode` `oauth`, `Open` MUST authenticate with `agentkit.OAuth` over the token source `Plan.Offering.TokenSource(agentkit.FileTokenStore(Plan.AuthFile))` returns, and MUST return an error naming the file when the source cannot be built.
+- R-B4VH-WD0F: When `cfg.Auth` is empty, `Resolve` MUST set `Plan.AuthMode` to `oauth` iff `Plan.Offering.Endpoints` contains a spec whose `AuthMode` is `agentkit.AuthModeOAuth` and the file at `Plan.AuthFile` exists, and to `api_key` otherwise; when `cfg.Auth` is non-empty it MUST use it, returning an error naming `auth` when no spec in `Plan.Offering.Endpoints` has that `AuthMode`.
+- R-B63E-A4R4: `Resolve` MUST set `Plan.BaseURL` to `cfg.BaseURL` when non-empty, else to the `BaseURL` of the spec in `Plan.Offering.Endpoints` whose `AuthMode` equals `Plan.AuthMode`, verified by `gpt-5.6-sol` on `openai` resolving to different URLs under `oauth` and `api_key`.
+- R-B7BA-NWHT: With `Plan.AuthMode` `api_key`, `Open` MUST authenticate with `agentkit.APIKeyRotator` of `cfg.Getenv(Plan.EnvVar)` and MUST return an error naming the variable when that value is empty.
+- R-B8J7-1O8I: With `Plan.AuthMode` `oauth`, `Open` MUST authenticate with `agentkit.OAuthRotator` over `agentkit.FileTokenStore(Plan.AuthFile)`, and MUST return an error naming the file when the file is missing, unreadable, or yields no token, rather than deferring that failure to the first `Send`.
 - R-V7Y5-BG9I: `Open` MUST send requests to `Plan.BaseURL`, verified by an `httptest` server named through `cfg.BaseURL` receiving the request.
 - R-V961-P807: `Open` MUST register exactly the six toolkit tools `Bash`, `Read`, `Write`, `Edit`, `Glob`, and `Grep` rooted at `cfg.Root`, with `Glob` and `Grep` skipping `.git`, verified by the tool declarations the `httptest` provider receives and by a `Read` of a file under `cfg.Root`.
 - R-VADY-2ZQW: `Open` MUST pass `cfg.Settings` to the conversation as `agentkit.Settings.Options` unchanged, verified by an unknown key producing an `agentkit.ErrInvalidConfig` from `Send` rather than an `Open` error.

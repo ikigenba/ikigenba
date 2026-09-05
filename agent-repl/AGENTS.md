@@ -17,7 +17,7 @@ directly.
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - `llm-lint` on PATH, with its provider API key present in the environment
 - `idgen` on PATH — for spec authoring only; the loop never mints an id.
-- Network access to the Go module proxy for `agentkit` (`v0.3.0`+) and
+- Network access to the Go module proxy for `agentkit` (`v0.4.0`+) and
   `toolkit`, both published from this monorepo under `agentkit/v*` and
   `toolkit/v*` tags.
 
