@@ -147,6 +147,97 @@ func TestOpenRoutesSingleTextPromptToOverrideURL(t *testing.T) {
 	}
 }
 
+// R-NE13-04WX
+func TestOpenInstallsConfiguredSystemFile(t *testing.T) {
+	t.Run("verbatim before user message", func(t *testing.T) {
+		requests := make(chan capturedRequest, 1)
+		server := successfulServer(t, requests)
+		contents := " \nExact system prompt.\n\t"
+		systemFile := filepath.Join(t.TempDir(), "system prompt.txt")
+		if err := os.WriteFile(systemFile, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cfg := openConfig(t, server.URL)
+		cfg.SystemFile = systemFile
+		session, err := Open(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stream := session.Send(context.Background(), "first user prompt")
+		drain(stream)
+		if stream.Err() != nil {
+			t.Fatal(stream.Err())
+		}
+
+		messages := requestMessages(t, <-requests)
+		want := []requestMessage{
+			{Role: "system", Content: contents},
+			{Role: "user", Content: "first user prompt"},
+		}
+		if !slices.Equal(messages, want) {
+			t.Fatalf("messages = %+v, want %+v", messages, want)
+		}
+	})
+
+	t.Run("empty path adds no system message", func(t *testing.T) {
+		requests := make(chan capturedRequest, 1)
+		server := successfulServer(t, requests)
+		cfg := openConfig(t, server.URL)
+		if cfg.SystemFile != "" {
+			t.Fatalf("SystemFile = %q, want empty configuration", cfg.SystemFile)
+		}
+		session, err := Open(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stream := session.Send(context.Background(), "only user prompt")
+		drain(stream)
+		if stream.Err() != nil {
+			t.Fatal(stream.Err())
+		}
+
+		messages := requestMessages(t, <-requests)
+		want := []requestMessage{{Role: "user", Content: "only user prompt"}}
+		if !slices.Equal(messages, want) {
+			t.Fatalf("messages = %+v, want %+v", messages, want)
+		}
+	})
+}
+
+// R-NF8Z-DWNM
+func TestOpenNamesUnreadableSystemFileWithoutRequest(t *testing.T) {
+	requests := make(chan capturedRequest, 1)
+	server := successfulServer(t, requests)
+	cfg := openConfig(t, server.URL)
+	cfg.SystemFile = filepath.Join(t.TempDir(), "missing-system.txt")
+
+	_, err := Open(cfg)
+	if err == nil || !strings.Contains(err.Error(), cfg.SystemFile) {
+		t.Fatalf("Open error = %v, want error naming %q", err, cfg.SystemFile)
+	}
+	assertNoRequest(t, requests)
+}
+
+// R-NGGV-ROEB
+func TestOpenPreservesInvalidSystemErrorWithoutRequest(t *testing.T) {
+	requests := make(chan capturedRequest, 1)
+	server := successfulServer(t, requests)
+	cfg := openConfig(t, server.URL)
+	cfg.SystemFile = filepath.Join(t.TempDir(), "blank-system.txt")
+	if err := os.WriteFile(cfg.SystemFile, []byte(" \n\t\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Open(cfg)
+	if err == nil || !strings.Contains(err.Error(), cfg.SystemFile) {
+		t.Fatalf("Open error = %v, want error naming %q", err, cfg.SystemFile)
+	}
+	if !errors.Is(err, agentkit.ErrInvalidArgument) {
+		t.Fatalf("Open error = %v, want agentkit.ErrInvalidArgument", err)
+	}
+	assertNoRequest(t, requests)
+}
+
 // R-V961-P807
 func TestOpenProvidesSixRootedToolsWithGitExcluded(t *testing.T) {
 	root := t.TempDir()
@@ -265,6 +356,29 @@ type capturedRequest struct {
 	path   string
 	header http.Header
 	body   map[string]json.RawMessage
+}
+
+type requestMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+func requestMessages(t *testing.T, request capturedRequest) []requestMessage {
+	t.Helper()
+	var messages []requestMessage
+	if err := json.Unmarshal(request.body["messages"], &messages); err != nil {
+		t.Fatal(err)
+	}
+	return messages
+}
+
+func assertNoRequest(t *testing.T, requests <-chan capturedRequest) {
+	t.Helper()
+	select {
+	case request := <-requests:
+		t.Fatalf("unexpected provider request: %+v", request)
+	default:
+	}
 }
 
 func successfulServer(t *testing.T, requests chan<- capturedRequest) *httptest.Server {

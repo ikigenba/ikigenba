@@ -9,17 +9,18 @@ import (
 
 // Config describes the choices and dependencies needed to open a session.
 type Config struct {
-	Provider string
-	Model    string
-	Wire     string
-	Auth     string
-	AuthFile string
-	BaseURL  string
-	Settings map[string]string
-	Home     string
-	Getenv   func(string) string
-	Root     string
-	Log      *agentkit.Log
+	Provider   string
+	Model      string
+	Wire       string
+	Auth       string
+	AuthFile   string
+	BaseURL    string
+	SystemFile string
+	Settings   map[string]string
+	Home       string
+	Getenv     func(string) string
+	Root       string
+	Log        *agentkit.Log
 }
 
 // Plan records every decision made before a session is opened.

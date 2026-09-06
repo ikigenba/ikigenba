@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/ikigenba/ikigenba/agentkit"
 	"github.com/ikigenba/ikigenba/toolkit"
@@ -40,6 +41,15 @@ func Open(cfg Config) (*Session, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("conversation: %w", err)
+	}
+	if cfg.SystemFile != "" {
+		contents, err := os.ReadFile(cfg.SystemFile)
+		if err != nil {
+			return nil, fmt.Errorf("read system file %q: %w", cfg.SystemFile, err)
+		}
+		if err := conversation.AddSystem(string(contents)); err != nil {
+			return nil, fmt.Errorf("add system file %q: %w", cfg.SystemFile, err)
+		}
 	}
 	return &Session{plan: plan, conversation: conversation}, nil
 }
