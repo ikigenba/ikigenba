@@ -1,0 +1,1 @@
+{"systemInstruction":{"parts":[{"text":"leading"},{"text":"added between the turns"}]},"contents":[{"role":"user","parts":[{"text":"first prompt"}]},{"role":"model","parts":[{"text":"first reply"}]},{"role":"user","parts":[{"text":"second prompt"}]}]}

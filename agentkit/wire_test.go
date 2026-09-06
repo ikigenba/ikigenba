@@ -246,6 +246,48 @@ func TestAnthropicMessagesRendersSystemMessagesByPlacement(t *testing.T) {
 	}
 }
 
+// R-WR37-7DA2
+func TestGeminiGenerateContentHoistsAllSystemMessages(t *testing.T) {
+	history := History{
+		{Role: RoleSystem, Blocks: []Block{Text{Text: "leading"}}},
+		{Role: RoleUser, Blocks: []Block{Text{Text: "first prompt"}}},
+		{Role: RoleAssistant, Blocks: []Block{Text{Text: "first reply"}}},
+		{Role: RoleSystem, Blocks: []Block{Text{Text: "added between the turns"}}},
+		{Role: RoleUser, Blocks: []Block{Text{Text: "second prompt"}}},
+	}
+	wire := GeminiGenerateContentWire()
+
+	encoded, err := wire.EncodeRequest(requestState{Model: "opaque-model", History: history})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile("testdata/gemini_generate_content_system_messages.request.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(encoded, want) {
+		t.Fatalf("encoded request = %s\nwant fixture = %s", encoded, want)
+	}
+
+	withoutSystem, err := wire.EncodeRequest(requestState{
+		Model:   "vendor/model:latest",
+		History: History{{Role: RoleAssistant, Blocks: []Block{Text{Text: "Hello"}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantWithoutSystem, err := os.ReadFile("testdata/gemini_generate_content.request.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(withoutSystem, wantWithoutSystem) {
+		t.Fatalf("request without system messages = %s\nwant fixture = %s", withoutSystem, wantWithoutSystem)
+	}
+	if bytes.Contains(withoutSystem, []byte(`"systemInstruction"`)) {
+		t.Fatalf("request without system messages contains systemInstruction key: %s", withoutSystem)
+	}
+}
+
 // R-IQL6-2OOL
 func TestStreamingRequestBodiesEnableStreaming(t *testing.T) {
 	wires := []WireFormat{AnthropicMessagesWire(), ChatWire(), OpenAIChatWire(), XAIChatWire(), ResponsesWire(), OpenAIResponsesWire(), XAIResponsesWire()}

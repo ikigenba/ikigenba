@@ -55,6 +55,10 @@ type geminiContent struct {
 	Parts []geminiPart `json:"parts"`
 }
 
+type geminiSystemInstruction struct {
+	Parts []geminiPart `json:"parts"`
+}
+
 type geminiThinkingConfig struct {
 	ThinkingBudget *int   `json:"thinkingBudget,omitempty"`
 	ThinkingLevel  string `json:"thinkingLevel,omitempty"`
@@ -80,14 +84,15 @@ type geminiToolConfig struct {
 }
 
 type geminiRequest struct {
-	Contents         []geminiContent         `json:"contents"`
-	GenerationConfig *geminiGenerationConfig `json:"generationConfig,omitempty"`
-	ToolConfig       *geminiToolConfig       `json:"toolConfig,omitempty"`
-	Tools            json.RawMessage         `json:"tools,omitempty"`
+	SystemInstruction *geminiSystemInstruction `json:"systemInstruction,omitempty"`
+	Contents          []geminiContent          `json:"contents"`
+	GenerationConfig  *geminiGenerationConfig  `json:"generationConfig,omitempty"`
+	ToolConfig        *geminiToolConfig        `json:"toolConfig,omitempty"`
+	Tools             json.RawMessage          `json:"tools,omitempty"`
 }
 
 func (w *geminiGenerateContentWire) encodeRequest(state requestState) ([]byte, error) {
-	contents, err := buildGeminiContents(state.History)
+	contents, systemParts, err := buildGeminiContents(state.History)
 	if err != nil {
 		return nil, err
 	}
@@ -95,6 +100,9 @@ func (w *geminiGenerateContentWire) encodeRequest(state requestState) ([]byte, e
 		Contents:         contents,
 		GenerationConfig: applyGeminiSamplingOptions(buildGeminiThinkingConfig(settingsReasoning(state.Settings)), state.Settings.Options),
 		ToolConfig:       buildGeminiToolConfig(state.Settings.ToolChoice),
+	}
+	if len(systemParts) > 0 {
+		request.SystemInstruction = &geminiSystemInstruction{Parts: systemParts}
 	}
 	if state.Output != nil {
 		schema, renderErr := w.renderOutputSchema(state.Output.Schema)
@@ -126,10 +134,19 @@ func (w *geminiGenerateContentWire) encodeRequest(state requestState) ([]byte, e
 	return append(encoded, '\n'), err
 }
 
-func buildGeminiContents(history []Message) ([]geminiContent, error) {
+func buildGeminiContents(history []Message) ([]geminiContent, []geminiPart, error) {
 	contents := make([]geminiContent, 0, len(history))
+	var systemParts []geminiPart
 	callNames := make(map[string]string)
 	for _, message := range history {
+		if message.Role == RoleSystem {
+			for _, block := range message.Blocks {
+				if block, ok := block.(Text); ok {
+					systemParts = append(systemParts, geminiPart{Text: block.Text})
+				}
+			}
+			continue
+		}
 		role := "user"
 		if message.Role == RoleAssistant {
 			role = "model"
@@ -143,7 +160,7 @@ func buildGeminiContents(history []Message) ([]geminiContent, error) {
 				part := geminiPart{Text: block.Text, Thought: true}
 				if len(block.Provider) > 0 {
 					if err := json.Unmarshal(block.Provider, &part); err != nil {
-						return nil, fmt.Errorf("agentkit: invalid Gemini reasoning replay: %w", err)
+						return nil, nil, fmt.Errorf("agentkit: invalid Gemini reasoning replay: %w", err)
 					}
 				}
 				content.Parts = append(content.Parts, part)
@@ -155,7 +172,7 @@ func buildGeminiContents(history []Message) ([]geminiContent, error) {
 						ThoughtSignature string `json:"thoughtSignature"`
 					}
 					if err := json.Unmarshal(block.Provider, &provider); err != nil {
-						return nil, fmt.Errorf("agentkit: invalid Gemini tool-use replay: %w", err)
+						return nil, nil, fmt.Errorf("agentkit: invalid Gemini tool-use replay: %w", err)
 					}
 					part.ThoughtSignature = provider.ThoughtSignature
 				}
@@ -173,7 +190,7 @@ func buildGeminiContents(history []Message) ([]geminiContent, error) {
 		}
 		contents = append(contents, content)
 	}
-	return contents, nil
+	return contents, systemParts, nil
 }
 
 func buildGeminiThinkingConfig(reasoning ReasoningConfig) *geminiGenerationConfig {
