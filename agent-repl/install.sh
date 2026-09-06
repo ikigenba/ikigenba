@@ -21,19 +21,22 @@ esac
 asset="${BINARY}_${os}_${arch}.tar.gz"
 if [ "$AGENT_REPL_VERSION" = latest ]; then
     # This is a monorepo: the repo's "latest release" may belong to another
-    # tool, so resolve the newest agent-repl/v* release through the API instead of
-    # the releases/latest shortcut.
-    url=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=100" \
-        | grep -oE "https://github.com/${REPO}/releases/download/agent-repl(%2F|/)v[^\"]*/${asset}" \
-        | head -1)
-    if [ -z "$url" ]; then
+    # tool, and the API does not order releases by version -- it returns them
+    # in lexical tag order, where v0.9.0 outranks v0.10.0. Collect every
+    # agent-repl release carrying this asset and take the highest version.
+    AGENT_REPL_VERSION=v$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=100" \
+        | grep -oE "https://github.com/${REPO}/releases/download/agent-repl(%2F|/)v[0-9]+\.[0-9]+\.[0-9]+/${asset}" \
+        | sed -E 's#.*/agent-repl(%2F|/)v##; s#/.*##' \
+        | sort -t. -k1,1n -k2,2n -k3,3n \
+        | tail -1)
+    if [ "$AGENT_REPL_VERSION" = v ]; then
         echo "agent-repl: no agent-repl release with asset ${asset} found" >&2
         exit 1
     fi
-else
-    # Tags are agent-repl/vX.Y.Z; the slash is percent-encoded in download URLs.
-    url="https://github.com/${REPO}/releases/download/agent-repl%2F${AGENT_REPL_VERSION}/${asset}"
 fi
+
+# Tags are agent-repl/vX.Y.Z; the slash is percent-encoded in download URLs.
+url="https://github.com/${REPO}/releases/download/agent-repl%2F${AGENT_REPL_VERSION}/${asset}"
 
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' 0 HUP INT TERM
