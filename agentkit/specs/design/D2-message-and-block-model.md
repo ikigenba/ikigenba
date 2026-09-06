@@ -13,7 +13,8 @@ and reasoning in order, a tool round-trip is a `Message` of `ToolResult` blocks,
 and so on. `Role` is a small closed enumeration; system context is a role, not a
 side channel, so a wire that carries system text out-of-band (in a top-level
 field) renders it from the `RoleSystem` message rather than the library keeping a
-separate slot.
+separate slot. `Conversation.AddSystem` is how a `RoleSystem` message enters the
+transcript, and D24 states each wire's rendering of it.
 
 ```go
 package agentkit

@@ -121,9 +121,14 @@ sentinel errors comparable with `errors.Is`:
 // Send makes no provider call and leaves History unchanged.
 var ErrInvalidConfig = errors.New("agentkit: invalid configuration")
 
-// ErrClosed is returned when Send is called on a Conversation whose event log
-// has been Closed, or on an otherwise finalized Conversation.
+// ErrClosed is returned when Send or AddSystem is called on a Conversation
+// whose event log has been Closed, or on an otherwise finalized Conversation.
 var ErrClosed = errors.New("agentkit: conversation closed")
+
+// ErrInvalidArgument is returned when a call's own argument cannot be honored
+// regardless of configuration: AddSystem with empty or blank text (D24). The
+// call has no effect and leaves History unchanged.
+var ErrInvalidArgument = errors.New("agentkit: invalid argument")
 ```
 
 Fail-loud is a deliberate stance that removed a whole type. There is **no
@@ -141,12 +146,12 @@ condition that would have been a warning is now either a typed field or a hard
 - R-OGQM-PKFZ: A non-2xx HTTP response MUST surface from `Send` as a populated `*Error` whose `Status` is the response status and whose `Category` is assigned by the library's built-in classification, with no consumer-installed classifier involved.
 - R-2P1K-TLVQ: The same classification path MUST be reachable from inside the stream decode so that an error frame arriving after an HTTP 200 is surfaced as the stream's terminal `*Error`.
 - R-2RHD-L5D4: `Retryable(err)` MUST be the single authority on retryability, returning true for rate-limit, overloaded, timeout, and transport categories and false for auth, invalid-request, insufficient-quota, and unknown, unwrapping to find an agentkit `*Error`.
-- R-2SP9-YX3T: `ErrInvalidConfig` and `ErrClosed` MUST be sentinel errors comparable via `errors.Is`, including when wrapped in `*Error`.
+- R-CJTD-QX2U: `ErrInvalidConfig`, `ErrClosed`, and `ErrInvalidArgument` MUST be sentinel errors comparable via `errors.Is`, including when wrapped in `*Error`.
 - R-2TX6-COUI: A `Send` that fails configuration validation MUST make no provider call and MUST leave History unchanged.
 - R-2V52-QGL7: A forced tool-choice a wire cannot express MUST fail at `Send` with `ErrInvalidConfig` rather than degrade silently; agentkit MUST expose no `Warning` type or warning channel.
 - R-ZAM9-IUL9: `agentkit` MUST export `type Category int` with the constants `CategoryUnknown`, `CategoryAuth`, `CategoryInvalidRequest`, `CategoryRateLimit`, `CategoryOverloaded`, `CategoryInsufficientQuota`, `CategoryTimeout`, `CategoryTransport` declared in that `iota` order starting at 0.
 - R-ZBU5-WMBY: `agentkit` MUST export `type Error struct { Category Category; Status int; Code string; Message string; RetryAfter time.Duration; Endpoint Identity }` with those exported fields plus an unexported wrapped cause, and `*Error` MUST implement `Error() string` and `Unwrap() error`.
 - R-ZD22-AE2N: `agentkit` MUST export `func Retryable(err error) bool`.
-- R-ZE9Y-O5TC: `agentkit` MUST export the sentinel errors `ErrInvalidConfig` and `ErrClosed`, each an `error` created with `errors.New`.
+- R-CL1A-4OTJ: `agentkit` MUST export the sentinel errors `ErrInvalidConfig`, `ErrClosed`, and `ErrInvalidArgument`, each an `error` created with `errors.New`.
 - R-1JWR-1RWS: Built-in classification MUST set `Error.RetryAfter` to N seconds when the response carries a `Retry-After` header whose value is a non-negative integer N (RFC 9110 delta-seconds), and MUST leave `RetryAfter` zero when the header is absent or its value is anything else, including an HTTP-date.
 - R-OHYJ-3C6O: Built-in classification MUST map HTTP status to `Category` as: 401 and 403 → `CategoryAuth`; 400, 404, 409, 413, 415, and 422 → `CategoryInvalidRequest`; 402 → `CategoryInsufficientQuota`; 429 → `CategoryRateLimit`; 408 and 504 → `CategoryTimeout`; 500, 502, 503, and 529 → `CategoryOverloaded`; every other non-2xx status → `CategoryUnknown`.
