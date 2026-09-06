@@ -208,7 +208,7 @@ func buildOpenAIResponsesRequest(input []json.RawMessage, settings Settings) ope
 func openAIRole(role Role) string {
 	switch role {
 	case RoleSystem:
-		return "developer"
+		return "system"
 	case RoleAssistant:
 		return "assistant"
 	case RoleTool:

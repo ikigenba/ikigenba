@@ -126,6 +126,72 @@ func TestGenericOpenAIAndXAIWirePairsAreByteIdentical(t *testing.T) {
 	}
 }
 
+// R-WM7L-OABA
+func TestChatAndResponsesWiresRenderSystemMessagesInPlace(t *testing.T) {
+	state := requestState{
+		Model: "opaque-model",
+		History: History{
+			{Role: RoleSystem, Blocks: []Block{Text{Text: "You are a helpful assistant."}}},
+			{Role: RoleUser, Blocks: []Block{Text{Text: "Hello"}}},
+			{Role: RoleAssistant, Blocks: []Block{Text{Text: "Hi there"}}},
+			{Role: RoleSystem, Blocks: []Block{Text{Text: "Remember to be concise."}}},
+			{Role: RoleUser, Blocks: []Block{Text{Text: "Continue"}}},
+		},
+	}
+	families := []struct {
+		name       string
+		wires      []WireFormat
+		fixture    string
+		messageKey string
+	}{
+		{
+			name:       "chat",
+			wires:      []WireFormat{ChatWire(), OpenAIChatWire(), XAIChatWire()},
+			fixture:    "testdata/chat_completions_system_messages.request.json",
+			messageKey: "messages",
+		},
+		{
+			name:       "responses",
+			wires:      []WireFormat{ResponsesWire(), OpenAIResponsesWire(), XAIResponsesWire()},
+			fixture:    "testdata/responses_system_messages.request.json",
+			messageKey: "input",
+		},
+	}
+	forbiddenRole := "devel" + "oper"
+
+	for _, family := range families {
+		t.Run(family.name, func(t *testing.T) {
+			want, err := os.ReadFile(family.fixture)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, wire := range family.wires {
+				body, encodeErr := wire.EncodeRequest(state)
+				if encodeErr != nil {
+					t.Fatal(encodeErr)
+				}
+				if !bytes.Equal(body, want) {
+					t.Fatalf("%T encoded request = %s\nwant fixture = %s", wire, body, want)
+				}
+				document := decodeOutputSchemaTestDocument(t, body)
+				messages, ok := document[family.messageKey].([]any)
+				if !ok {
+					t.Fatalf("%T %s = %#v", wire, family.messageKey, document[family.messageKey])
+				}
+				for index, message := range messages {
+					object, ok := message.(map[string]any)
+					if !ok {
+						t.Fatalf("%T %s[%d] = %#v", wire, family.messageKey, index, message)
+					}
+					if object["role"] == forbiddenRole {
+						t.Errorf("%T %s[%d] emitted developer role", wire, family.messageKey, index)
+					}
+				}
+			}
+		})
+	}
+}
+
 // R-IQL6-2OOL
 func TestStreamingRequestBodiesEnableStreaming(t *testing.T) {
 	wires := []WireFormat{AnthropicMessagesWire(), ChatWire(), OpenAIChatWire(), XAIChatWire(), ResponsesWire(), OpenAIResponsesWire(), XAIResponsesWire()}
