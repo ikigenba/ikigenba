@@ -62,6 +62,7 @@ var (
 	minToHigh   = []Effort{EffortMinimal, EffortLow, EffortMedium, EffortHigh}
 	highXHigh   = []Effort{EffortHigh, EffortXHigh}
 	lowMedXHigh = []Effort{EffortLow, EffortMedium, EffortXHigh}
+	minToMax    = []Effort{EffortMinimal, EffortLow, EffortMedium, EffortHigh, EffortXHigh, EffortMax}
 )
 
 // offeringTransport is the per-id transport an offering carries: the host and
@@ -189,6 +190,14 @@ var catalogTable = []CatalogEntry{
 		offer(OfferingOpenRouterResponses, "anthropic/claude-fable-5", 1_000_000,
 			rates(tier(0, 10000, 1000, 12500, 20000, 50000)), effortSpec(lowToMax, EffortMedium, false)),
 	}},
+	{Model: "claude-fable-5-1", Offerings: []Offering{
+		maxOutput(offer(OfferingAnthropicMessages, "claude-fable-5-1", 1_000_000,
+			rates(tier(0, 10000, 250, 12500, 20000, 50000)), effortSpec(lowToMax, EffortHigh, false)), 128000),
+		offer(OfferingOpenRouterChat, "anthropic/claude-fable-5.1", 1_000_000,
+			rates(tier(0, 10000, 250, 12500, 20000, 50000)), effortSpec(lowToMax, EffortHigh, false)),
+		offer(OfferingOpenRouterResponses, "anthropic/claude-fable-5.1", 1_000_000,
+			rates(tier(0, 10000, 250, 12500, 20000, 50000)), effortSpec(lowToMax, EffortHigh, false)),
+	}},
 	{Model: "claude-sonnet-5", Offerings: []Offering{
 		maxOutput(offer(OfferingAnthropicMessages, "claude-sonnet-5", 1_000_000,
 			rates(tier(0, 3000, 300, 3750, 6000, 15000)), effortSpec(lowToMax, EffortMedium, true)), 128000),
@@ -252,6 +261,25 @@ var catalogTable = []CatalogEntry{
 		offer(OfferingOpenRouterResponses, "google/gemini-3.1-pro-preview", 1_048_576,
 			rates(tier(0, 2000, 200, 0, 0, 12000), tier(200_001, 4000, 400, 0, 0, 18000)),
 			levelSpec(lowToHigh, EffortHigh, false)),
+	}},
+
+	// gemini-3.8-flash disables natively (thinkingBudget 0 answers with no
+	// thought tokens) but OpenRouter rejects reasoning "none" for it (D21).
+	{Model: "gemini-3.8-flash", Offerings: []Offering{
+		offer(OfferingGeminiGenerateContent, "gemini-3.8-flash", 1_048_576,
+			rates(tier(0, 1500, 150, 0, 0, 7500)), levelSpec(lowToHigh, EffortMedium, true)),
+		offer(OfferingOpenRouterChat, "google/gemini-3.8-flash", 1_048_576,
+			rates(tier(0, 1500, 150, 0, 0, 7500)), levelSpec(lowToHigh, EffortMedium, false)),
+		offer(OfferingOpenRouterResponses, "google/gemini-3.8-flash", 1_048_576,
+			rates(tier(0, 1500, 150, 0, 0, 7500)), levelSpec(lowToHigh, EffortMedium, false)),
+	}},
+	{Model: "gemini-3.5-flash-lite", Offerings: []Offering{
+		offer(OfferingGeminiGenerateContent, "gemini-3.5-flash-lite", 1_048_576,
+			rates(tier(0, 300, 30, 0, 0, 2500)), levelSpec(minToHigh, EffortMinimal, false)),
+		offer(OfferingOpenRouterChat, "google/gemini-3.5-flash-lite", 1_048_576,
+			rates(tier(0, 300, 30, 0, 0, 2500)), levelSpec(minToHigh, EffortMinimal, false)),
+		offer(OfferingOpenRouterResponses, "google/gemini-3.5-flash-lite", 1_048_576,
+			rates(tier(0, 300, 30, 0, 0, 2500)), levelSpec(minToHigh, EffortMinimal, false)),
 	}},
 
 	// ---- OpenAI -------------------------------------------------------------
@@ -342,6 +370,20 @@ var catalogTable = []CatalogEntry{
 			rates(tier(0, 1000, 100, 0, 0, 6000)), effortSpec(noneToXHigh, EffortMedium, true)),
 		offer(OfferingOpenRouterResponses, "openai/gpt-5.6-luna", 400_000,
 			rates(tier(0, 1000, 100, 0, 0, 6000)), effortSpec(noneToXHigh, EffortMedium, true)),
+	}},
+	{Model: "gpt-6-astra", Offerings: []Offering{
+		codex(offer(OfferingOpenAIResponses, "gpt-6-astra", 1_050_000,
+			rates(tier(0, 10000, 1000, 0, 0, 50000), tier(272_001, 20000, 2000, 0, 0, 75000)),
+			effortSpec(lowToMax, EffortMedium, false))),
+		offer(OfferingOpenAIChat, "gpt-6-astra", 1_050_000,
+			rates(tier(0, 10000, 1000, 0, 0, 50000), tier(272_001, 20000, 2000, 0, 0, 75000)),
+			effortSpec(lowToMax, EffortMedium, false)),
+		offer(OfferingOpenRouterChat, "openai/gpt-6-astra", 1_050_000,
+			rates(tier(0, 10000, 1000, 0, 0, 50000), tier(272_001, 20000, 2000, 0, 0, 75000)),
+			effortSpec(lowToMax, EffortMedium, false)),
+		offer(OfferingOpenRouterResponses, "openai/gpt-6-astra", 1_050_000,
+			rates(tier(0, 10000, 1000, 0, 0, 50000), tier(272_001, 20000, 2000, 0, 0, 75000)),
+			effortSpec(lowToMax, EffortMedium, false)),
 	}},
 
 	// ---- xAI ----------------------------------------------------------------
@@ -486,5 +528,51 @@ var catalogTable = []CatalogEntry{
 			rates(tier(0, 600, 110, 0, 0, 2200)), toggleSpec(true, true, reasoningOn)),
 		offer(OfferingOpenRouterResponses, "z-ai/glm-4.6", 202_752,
 			rates(tier(0, 600, 110, 0, 0, 2200)), toggleSpec(true, true, reasoningOn)),
+	}},
+	// OpenRouter completes "medium" for GLM 5.3 although Z.ai documents only
+	// low/high/max; "none" is rejected (D21, September 2026 additions).
+	{Model: "glm-5.3", Offerings: []Offering{
+		offer(OfferingOpenRouterChat, "z-ai/glm-5.3", 1_310_720,
+			rates(tier(0, 1400, 260, 0, 0, 4400)), effortSpec(lowHighMax, EffortMax, false)),
+		offer(OfferingOpenRouterResponses, "z-ai/glm-5.3", 1_310_720,
+			rates(tier(0, 1400, 260, 0, 0, 4400)), effortSpec(lowHighMax, EffortMax, false)),
+	}},
+	{Model: "glm-5.3-flash", Offerings: []Offering{
+		offer(OfferingOpenRouterChat, "z-ai/glm-5.3-flash", 1_310_720,
+			rates(tier(0, 150, 30, 0, 0, 500)), effortSpec(lowHighMax, EffortMax, false)),
+		offer(OfferingOpenRouterResponses, "z-ai/glm-5.3-flash", 1_310_720,
+			rates(tier(0, 150, 30, 0, 0, 500)), effortSpec(lowHighMax, EffortMax, false)),
+	}},
+	{Model: "qwen3.8-flash", Offerings: []Offering{
+		offer(OfferingOpenRouterChat, "qwen/qwen3.8-flash", 1_000_000,
+			rates(tier(0, 150, 16, 0, 0, 470)), toggleSpec(true, true, reasoningOn)),
+		offer(OfferingOpenRouterResponses, "qwen/qwen3.8-flash", 1_000_000,
+			rates(tier(0, 150, 16, 0, 0, 470)), toggleSpec(true, true, reasoningOn)),
+	}},
+	// Hunyuan is priced in RMB; the row is a fixed conversion of Tencent's list.
+	{Model: "hunyuan-4-preview", Offerings: []Offering{
+		offer(OfferingOpenRouterChat, "tencent/hy4-preview", 1_000_000,
+			rates(tier(0, 890, 45, 0, 0, 2680)), toggleSpec(true, true, reasoningOn)),
+		offer(OfferingOpenRouterResponses, "tencent/hy4-preview", 1_000_000,
+			rates(tier(0, 890, 45, 0, 0, 2680)), toggleSpec(true, true, reasoningOn)),
+	}},
+	{Model: "minimax-m3", Offerings: []Offering{
+		offer(OfferingOpenRouterChat, "minimax/minimax-m3", 1_048_576,
+			rates(tier(0, 300, 60, 0, 0, 1200), tier(512_001, 600, 120, 0, 0, 2400)), toggleSpec(true, true, reasoningOn)),
+		offer(OfferingOpenRouterResponses, "minimax/minimax-m3", 1_048_576,
+			rates(tier(0, 300, 60, 0, 0, 1200), tier(512_001, 600, 120, 0, 0, 2400)), toggleSpec(true, true, reasoningOn)),
+	}},
+	// NVIDIA publishes no per-token price for Nemotron 3 Ultra; the row carries OpenRouter's.
+	{Model: "nemotron-3-ultra", Offerings: []Offering{
+		offer(OfferingOpenRouterChat, "nvidia/nemotron-3-ultra-550b-a55b", 262_144,
+			rates(tier(0, 500, 100, 0, 0, 2200)), toggleSpec(true, true, reasoningOn)),
+		offer(OfferingOpenRouterResponses, "nvidia/nemotron-3-ultra-550b-a55b", 262_144,
+			rates(tier(0, 500, 100, 0, 0, 2200)), toggleSpec(true, true, reasoningOn)),
+	}},
+	{Model: "muse-spark-1.3", Offerings: []Offering{
+		offer(OfferingOpenRouterChat, "meta/muse-spark-1.3", 1_048_576,
+			rates(tier(0, 1250, 150, 0, 0, 4250)), effortSpec(minToMax, EffortMedium, false)),
+		offer(OfferingOpenRouterResponses, "meta/muse-spark-1.3", 1_048_576,
+			rates(tier(0, 1250, 150, 0, 0, 4250)), effortSpec(minToMax, EffortMedium, false)),
 	}},
 }

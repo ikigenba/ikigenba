@@ -1,13 +1,30 @@
 package agentkit
 
 import (
+	"bytes"
 	"errors"
 	"net/url"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
 )
+
+// R-59J0-X9Y5
+func TestCatalogTableMatchesSeed(t *testing.T) {
+	got, err := os.ReadFile("catalog_table.go")
+	if err != nil {
+		t.Fatalf("read catalog_table.go: %v", err)
+	}
+	want, err := os.ReadFile("specs/_data/catalog_table.go")
+	if err != nil {
+		t.Fatalf("read specs/_data/catalog_table.go: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Error("catalog_table.go is not byte-identical to specs/_data/catalog_table.go")
+	}
+}
 
 func TestOfferingIDVocabulary(t *testing.T) {
 	// R-JB4K-6IAI
@@ -239,10 +256,10 @@ func TestCatalogReturnsFullSortedStructurallyUniqueTable(t *testing.T) {
 	// R-JNBK-07PG
 	entries := Catalog()
 	wantModels := []string{
-		"claude-fable-5", "claude-haiku-4-5", "claude-opus-4-8", "claude-opus-5", "claude-sonnet-4-6", "claude-sonnet-5",
-		"deepseek-v4-flash", "deepseek-v4-pro", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.1-flash-lite", "gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-3.7-flash",
-		"glm-4.6", "glm-4.7", "glm-5.1", "glm-5.2", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5.5", "gpt-5.5-pro", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra",
-		"grok-4.20", "grok-4.20-multi-agent", "grok-4.3", "grok-4.5", "grok-4.6", "kimi-k2.6", "kimi-k2.7-code", "kimi-k3", "nemotron-3.5-lightning", "qwen3.8-27b", "qwen3.8-max",
+		"claude-fable-5", "claude-fable-5-1", "claude-haiku-4-5", "claude-opus-4-8", "claude-opus-5", "claude-sonnet-4-6", "claude-sonnet-5",
+		"deepseek-v4-flash", "deepseek-v4-pro", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.1-flash-lite", "gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.7-flash", "gemini-3.8-flash",
+		"glm-4.6", "glm-4.7", "glm-5.1", "glm-5.2", "glm-5.3", "glm-5.3-flash", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5.5", "gpt-5.5-pro", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-6-astra",
+		"grok-4.20", "grok-4.20-multi-agent", "grok-4.3", "grok-4.5", "grok-4.6", "hunyuan-4-preview", "kimi-k2.6", "kimi-k2.7-code", "kimi-k3", "minimax-m3", "muse-spark-1.3", "nemotron-3-ultra", "nemotron-3.5-lightning", "qwen3.8-27b", "qwen3.8-flash", "qwen3.8-max",
 	}
 	gotModels := make([]string, len(entries))
 	for i, entry := range entries {
@@ -305,12 +322,7 @@ func TestCatalogOfferingDataInvariants(t *testing.T) {
 func TestCatalogEndpointsWellFormed(t *testing.T) {
 	for _, entry := range Catalog() {
 		for _, offering := range entry.Offerings {
-			// This explicit invariant intentionally overlaps the first-endpoint safety
-			// guard in TestCatalogOfferingsCarryFixedRootWireTransport: R-KK7E-S0PR requires a dedicated
-			// public-surface test covering every endpoint, not only the first one.
-			if len(offering.Endpoints) == 0 {
-				t.Errorf("%q offering %q has no endpoints", entry.Model, offering.ID)
-			}
+			requireEndpoints(t, entry, offering)
 
 			authModes := make(map[AuthMode]int, len(offering.Endpoints))
 			for _, spec := range offering.Endpoints {
@@ -395,8 +407,7 @@ func TestCatalogOfferingsCarryFixedRootWireTransport(t *testing.T) {
 			if got := reflect.TypeOf(offering.WireFormat); got == nil || got.String() != wantWireType {
 				t.Errorf("%q offering %q WireFormat type = %v, want %q", entry.Model, offering.ID, got, wantWireType)
 			}
-			if len(offering.Endpoints) == 0 {
-				t.Errorf("%q offering %q has no endpoints", entry.Model, offering.ID)
+			if !requireEndpoints(t, entry, offering) {
 				continue
 			}
 			if got := offering.Endpoints[0].AuthMode; got != AuthModeAPIKey {
@@ -407,6 +418,15 @@ func TestCatalogOfferingsCarryFixedRootWireTransport(t *testing.T) {
 			}
 		}
 	}
+}
+
+func requireEndpoints(t *testing.T, entry CatalogEntry, offering Offering) bool {
+	t.Helper()
+	if len(offering.Endpoints) == 0 {
+		t.Errorf("%q offering %q has no endpoints", entry.Model, offering.ID)
+		return false
+	}
+	return true
 }
 
 // R-KMN7-JK75
@@ -527,9 +547,10 @@ func TestCatalogOAuthEndpointsByID(t *testing.T) {
 	}
 }
 
-// R-KLFB-5SGG
+// R-ABP3-N5HW
 func TestCatalogOpenAIResponsesOAuthModelSet(t *testing.T) {
 	wantOAuth := map[string]bool{
+		"gpt-6-astra":   true,
 		"gpt-5.6-sol":   true,
 		"gpt-5.6-terra": true,
 		"gpt-5.6-luna":  true,
