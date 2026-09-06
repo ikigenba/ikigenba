@@ -1239,19 +1239,37 @@ func TestCatalogPricingUsesMergedUsageAcrossRounds(t *testing.T) {
 		t.Fatalf("multi-round Send error=%v transport=%d accounting=%d, want successful two-round turn", stream.Err(), transportCalls, provider.accountingCalls)
 	}
 
+	wantUsage := Usage{InputTokens: 200_000, CachedTokens: 80_001, OutputTokens: 10, ReasoningTokens: 16}
 	const wantCost = Cost(200_000*5_000 + 80_001*500 + (3+5+7+11)*22_500)
-	for _, record := range decodeLogRecords(t, logOutput.Bytes()) {
-		if record.Type == RecordUsage {
-			if record.Usage == nil || *record.Usage != (Usage{InputTokens: 200_000, CachedTokens: 80_001, OutputTokens: 10, ReasoningTokens: 16}) {
-				t.Fatalf("logged merged usage = %#v, want both rounds summed", record.Usage)
-			}
-			if record.Cost == nil || *record.Cost != wantCost {
-				t.Fatalf("merged catalog cost = %v, want exact second-tier amount %d", record.Cost, wantCost)
-			}
-			return
+	records := decodeLogRecords(t, logOutput.Bytes())
+	var summedUsage Usage
+	var summedCost Cost
+	usageRecords := 0
+	var turnEnd *LogRecord
+	for index := range records {
+		switch records[index].Type {
+		case RecordUsage:
+			usageRecords++
+			summedUsage = addUsage(summedUsage, *records[index].Usage)
+			summedCost += *records[index].Cost
+		case RecordTurnEnd:
+			turnEnd = &records[index]
 		}
 	}
-	t.Fatal("multi-round Send emitted no usage record")
+	// R-TEY9-5652: one usage record per round-trip, never a merged one.
+	if usageRecords != 2 {
+		t.Fatalf("usage records = %d, want exactly 2 (one per round-trip)", usageRecords)
+	}
+	if summedUsage != wantUsage {
+		t.Fatalf("summed usage across round-trips = %#v, want %#v", summedUsage, wantUsage)
+	}
+	if summedCost != wantCost {
+		t.Fatalf("summed cost across round-trips = %v, want exact second-tier amount %d", summedCost, wantCost)
+	}
+	// R-TG65-IXVR: turn_end equals the field-wise sum of those usage records.
+	if turnEnd == nil || turnEnd.Usage == nil || *turnEnd.Usage != summedUsage || turnEnd.Cost == nil || *turnEnd.Cost != summedCost {
+		t.Fatalf("turn_end = %#v, want summed usage %#v cost %d", turnEnd, summedUsage, summedCost)
+	}
 }
 
 func TestZeroConfigLeavesEveryOptionalRequestAxisEmpty(t *testing.T) {
@@ -1977,8 +1995,8 @@ func TestStructuredOutputCorrectionRetriesAndCommitsFullTranscript(t *testing.T)
 		t.Fatalf("logged corrected messages = %#v, want committed history %#v", loggedMessages, conversation.history)
 	}
 	// R-UI4B-ZDEZ
-	if len(records) != 8 || outputCount != 1 || outputPosition != 5 || !bytes.Equal(records[outputPosition].Output, []byte(acceptedText)) ||
-		!reflect.DeepEqual(projected, events) || records[6].Type != RecordUsage || records[7].Type != RecordTurnEnd {
+	if len(records) != 9 || outputCount != 1 || outputPosition != 7 || !bytes.Equal(records[outputPosition].Output, []byte(acceptedText)) ||
+		!reflect.DeepEqual(projected, events) || records[3].Type != RecordUsage || records[6].Type != RecordUsage || records[8].Type != RecordTurnEnd {
 		t.Fatalf("structured log does not mirror live events exactly once in order: records=%#v projected=%#v events=%#v", records, projected, events)
 	}
 }
@@ -2131,7 +2149,7 @@ func TestDurableLogMirrorsMultiRoundStreamAtMessageGranularity(t *testing.T) {
 	if toolMessageRecords != 1 {
 		t.Fatalf("tool-result message records = %d, want exactly 1", toolMessageRecords)
 	}
-	if bytes.Contains(output.Bytes(), []byte("delta")) || len(records) != len(events)+5 ||
+	if bytes.Contains(output.Bytes(), []byte("delta")) || len(records) != len(events)+6 ||
 		records[0].Type != RecordTurnStart || records[len(records)-2].Type != RecordUsage || records[len(records)-1].Type != RecordTurnEnd {
 		t.Fatalf("log is not one message-granular line per protocol/lifecycle event: %s", output.Bytes())
 	}
@@ -2292,14 +2310,12 @@ func assertSelectedLogPayloads(t *testing.T, records []LogRecord) {
 			want = map[string]bool{"tool_use": true}
 		case RecordToolResult:
 			want = map[string]bool{"tool_result": true}
-		case RecordUsage, RecordSummary:
+		case RecordUsage, RecordTurnEnd, RecordSummary:
 			want = map[string]bool{"usage": true, "cost": true}
 		case RecordError:
 			want = map[string]bool{"error": true}
 		case RecordRetry:
 			want = map[string]bool{"retry": true}
-		case RecordTurnEnd:
-			want = map[string]bool{}
 		default:
 			t.Fatalf("record %d has unknown type %q", index, record.Type)
 		}

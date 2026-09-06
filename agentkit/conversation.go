@@ -101,11 +101,11 @@ func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream {
 		}
 		log.start(c.identity)
 		recordMessage(c.eventSink, turn.turn[0])
-		accounting := turnTotals{allWireCosts: true}
+		accounting := turnTotals{}
 		var terminal error
 		defer func() {
 			log.recordError(terminal)
-			log.finish(accounting.usage, resolveCost(c.identity, accounting.usage, accounting.wireCost()))
+			log.finish()
 		}()
 		orchestrator, err := c.prepareOrchestrator()
 		if err != nil {
@@ -117,30 +117,29 @@ func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream {
 	}}
 }
 
+// turnTotals tracks the merged Usage across every round-trip completed so
+// far this turn — used only to compute each new round-trip's marginal
+// share of catalog pricing (see addRound) so that summing every round's
+// Cost reproduces the catalog price of the turn's full merged Usage (D3,
+// R-NP7W-266R), exactly as R-TG65-IXVR's turn_end sum requires.
 type turnTotals struct {
-	usage        Usage
-	wireAmount   int64
-	wireRounds   int
-	rounds       int
-	allWireCosts bool
+	usage Usage
 }
 
-func (a *turnTotals) add(round providerAccounting) {
-	a.rounds++
+// addRound folds one round-trip's provider accounting into the turn's
+// running usage and resolves that round-trip's own Cost through the D3
+// path: the wire-reported figure when present, otherwise the catalog
+// delta between the merged usage through this round and through the prior
+// round. Because Pricing.Cost is tiered on cumulative input tokens, this
+// marginal share is what makes summing every round's Cost equal the
+// one-shot catalog price of the turn's whole merged Usage.
+func (a *turnTotals) addRound(identity Identity, round providerAccounting) (Usage, Cost) {
+	before := a.usage
 	a.usage = addUsage(a.usage, round.usage)
-	if round.wireAmount == nil {
-		a.allWireCosts = false
-	} else {
-		a.wireAmount += *round.wireAmount
-		a.wireRounds++
+	if round.wireAmount != nil {
+		return round.usage, Cost(*round.wireAmount)
 	}
-}
-
-func (a *turnTotals) wireCost() *int64 {
-	if a.rounds == 0 || !a.allWireCosts || a.wireRounds != a.rounds {
-		return nil
-	}
-	return &a.wireAmount
+	return round.usage, resolveCost(identity, a.usage, nil) - resolveCost(identity, before, nil)
 }
 
 type providerAccounting struct {
@@ -240,11 +239,13 @@ func (c *Conversation) executeTurnRoundTrip(ctx context.Context, orchestrator *o
 		Tools:    orchestrator.advertisedSnapshot(),
 		Output:   cloneOutputContract(c.output),
 	}, yield)
+	var round providerAccounting
 	if provider, ok := c.provider.(accountingProvider); ok {
-		accounting.add(provider.turnAccounting())
-	} else {
-		accounting.add(providerAccounting{})
+		round = provider.turnAccounting()
 	}
+	usage, cost := accounting.addRound(c.identity, round)
+	log, _ := c.eventSink.(*Log)
+	log.usage(usage, cost)
 	if !completed || err != nil {
 		return nil, nil, completed, err
 	}

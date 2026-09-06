@@ -40,9 +40,11 @@ func TestLogRecordsUseInjectedTimePerTurnSequenceAndFullIdentity(t *testing.T) {
 	identity := Identity{Endpoint: "https://api.example/v1", AuthMode: "oauth", Model: "model-a"}
 	log.start(identity)
 	log.record(eventRecord{kind: eventRecordMessage, value: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "one"}}}})
-	log.finish(Usage{}, 0)
+	log.usage(Usage{}, 0)
+	log.finish()
 	log.start(identity)
-	log.finish(Usage{}, 0)
+	log.usage(Usage{}, 0)
+	log.finish()
 
 	records := decodeLogRecords(t, output.Bytes())
 	if len(records) != 7 {
@@ -66,7 +68,8 @@ func TestNilLogIsSilentSafeAndRecordsCanonicalPayloads(t *testing.T) {
 	var nilLog *Log
 	nilLog.start(Identity{})
 	nilLog.record(eventRecord{})
-	nilLog.finish(Usage{}, 0)
+	nilLog.usage(Usage{}, 0)
+	nilLog.finish()
 	if err := nilLog.Close(); err != nil {
 		t.Fatalf("nil receiver Close() = %v", err)
 	}
@@ -74,7 +77,8 @@ func TestNilLogIsSilentSafeAndRecordsCanonicalPayloads(t *testing.T) {
 	log := NewLog(nil, func() time.Time { clockCalls++; return time.Time{} }, "")
 	log.start(Identity{})
 	log.record(eventRecord{kind: eventRecordToolUse, value: ToolUse{ID: "call", Name: "tool"}})
-	log.finish(Usage{}, 0)
+	log.usage(Usage{}, 0)
+	log.finish()
 	if err := log.Close(); err != nil || clockCalls != 0 {
 		t.Fatalf("nil-writer log Close/clock = %v/%d, want nil/0", err, clockCalls)
 	}
@@ -93,14 +97,18 @@ func TestNilLogIsSilentSafeAndRecordsCanonicalPayloads(t *testing.T) {
 	}
 }
 
-func TestUsageAndSummaryRecordsCarryPlainlySummedCosts(t *testing.T) {
-	// R-O2MS-9NCE
+// R-TEY9-5652
+// R-TG65-IXVR
+// R-THE1-WPMG
+func TestUsageRecordsArePerRoundTripAndSummedIntoTurnEndAndSummary(t *testing.T) {
 	var output bytes.Buffer
 	log := NewLog(&output, func() time.Time { return time.Date(2032, 1, 1, 0, 0, 0, 0, time.UTC) }, "")
 	log.start(Identity{})
-	log.finish(Usage{InputTokens: 2, OutputTokens: 3}, Cost(11))
+	log.usage(Usage{InputTokens: 2, OutputTokens: 3}, Cost(11))
+	log.usage(Usage{CachedTokens: 5, ReasoningTokens: 7}, Cost(13))
+	log.finish()
 	log.start(Identity{})
-	log.finish(Usage{CachedTokens: 5, ReasoningTokens: 7}, Cost(13))
+	log.finish()
 	if err := log.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -108,19 +116,34 @@ func TestUsageAndSummaryRecordsCarryPlainlySummedCosts(t *testing.T) {
 	if err := log.Close(); err != nil || output.String() != before {
 		t.Fatalf("second Close changed output or errored: %v", err)
 	}
+
 	records := decodeLogRecords(t, output.Bytes())
 	if len(records) != 7 {
 		t.Fatalf("record count = %d, want exactly 7", len(records))
 	}
+	// R-TEY9-5652: two round-trips in the first turn, two distinct usage records.
 	if records[1].Type != RecordUsage || records[1].Cost == nil || *records[1].Cost != Cost(11) ||
-		records[4].Type != RecordUsage || records[4].Cost == nil || *records[4].Cost != Cost(13) {
-		t.Fatalf("usage records missing mandatory costs: %#v", records)
+		records[2].Type != RecordUsage || records[2].Cost == nil || *records[2].Cost != Cost(13) {
+		t.Fatalf("per-round usage records = %#v, want two separate records, not one aggregate", records[1:3])
 	}
+	// R-TG65-IXVR: turn_end sums the usage records written since turn_start.
+	firstTurnEnd := records[3]
+	wantFirstUsage := Usage{InputTokens: 2, CachedTokens: 5, OutputTokens: 3, ReasoningTokens: 7}
+	if firstTurnEnd.Type != RecordTurnEnd || firstTurnEnd.Usage == nil || *firstTurnEnd.Usage != wantFirstUsage ||
+		firstTurnEnd.Cost == nil || *firstTurnEnd.Cost != Cost(24) {
+		t.Fatalf("first turn_end = %#v, want summed usage %+v and cost 24", firstTurnEnd, wantFirstUsage)
+	}
+	// R-TG65-IXVR: a turn with no round-trip gets zero values.
+	secondTurnEnd := records[5]
+	if secondTurnEnd.Type != RecordTurnEnd || secondTurnEnd.Usage == nil || *secondTurnEnd.Usage != (Usage{}) ||
+		secondTurnEnd.Cost == nil || *secondTurnEnd.Cost != Cost(0) {
+		t.Fatalf("no-round-trip turn_end = %#v, want zero Usage and Cost", secondTurnEnd)
+	}
+	// R-THE1-WPMG: summary sums every turn_end record.
 	summary := records[6]
-	wantUsage := Usage{InputTokens: 2, CachedTokens: 5, OutputTokens: 3, ReasoningTokens: 7}
-	wantCost := Cost(24)
-	if summary.Type != RecordSummary || summary.Usage == nil || *summary.Usage != wantUsage || summary.Cost == nil || *summary.Cost != wantCost {
-		t.Fatalf("summary = %#v, want usage %+v cost %+v", summary, wantUsage, wantCost)
+	if summary.Type != RecordSummary || summary.Usage == nil || *summary.Usage != wantFirstUsage ||
+		summary.Cost == nil || *summary.Cost != Cost(24) {
+		t.Fatalf("summary = %#v, want usage %+v cost 24", summary, wantFirstUsage)
 	}
 	if summary.Identity != nil || summary.Message != nil || summary.ToolUse != nil || summary.ToolResult != nil || summary.Err != nil || summary.Retry != nil {
 		t.Fatalf("summary contains unrelated payloads: %#v", summary)
@@ -334,7 +357,8 @@ func TestLogStampsIDOnEveryRecordAndOmitsWhenEmpty(t *testing.T) {
 	log := NewLog(&withID, func() time.Time { return time.Time{} }, "agent-7")
 	log.start(Identity{})
 	log.record(eventRecord{kind: eventRecordMessage, value: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "x"}}}})
-	log.finish(Usage{}, 0)
+	log.usage(Usage{}, 0)
+	log.finish()
 	if err := log.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +385,8 @@ func TestLogStampsIDOnEveryRecordAndOmitsWhenEmpty(t *testing.T) {
 	empty := NewLog(&withoutID, func() time.Time { return time.Time{} }, "")
 	empty.start(Identity{})
 	empty.record(eventRecord{kind: eventRecordMessage, value: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "x"}}}})
-	empty.finish(Usage{}, 0)
+	empty.usage(Usage{}, 0)
+	empty.finish()
 	if err := empty.Close(); err != nil {
 		t.Fatal(err)
 	}

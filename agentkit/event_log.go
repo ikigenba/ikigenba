@@ -45,8 +45,8 @@ type LogRecord struct {
 	ToolUse    *ToolUse        `json:"tool_use,omitempty"`    // tool_use
 	ToolResult *ToolResult     `json:"tool_result,omitempty"` // tool_result
 	Output     json.RawMessage `json:"output,omitempty"`      // output (OutputDone.Value, D20)
-	Usage      *Usage          `json:"usage,omitempty"`       // usage, summary
-	Cost       *Cost           `json:"cost,omitempty"`        // usage, summary
+	Usage      *Usage          `json:"usage,omitempty"`       // usage, turn_end, summary
+	Cost       *Cost           `json:"cost,omitempty"`        // usage, turn_end, summary
 	Limit      *LimitInfo      `json:"limit,omitempty"`       // limit (D25)
 	Err        *Error          `json:"error,omitempty"`       // error
 	Retry      *RetryInfo      `json:"retry,omitempty"`       // retry
@@ -169,6 +169,8 @@ type Log struct {
 	seq       int
 	closed    bool
 	writeErr  error
+	turnUsage Usage
+	turnCost  Cost
 	total     Usage
 	totalCost Cost
 }
@@ -215,6 +217,8 @@ func (l *Log) start(identity Identity) {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.turnUsage = Usage{}
+	l.turnCost = 0
 	l.write(LogRecord{Type: RecordTurnStart, Identity: &identity})
 }
 
@@ -243,6 +247,20 @@ func (l *Log) record(record eventRecord) {
 	l.write(entry)
 }
 
+// usage writes one usage record for a single provider round-trip
+// (R-TEY9-5652) and folds it into the running total finish will emit on
+// turn_end (R-TG65-IXVR).
+func (l *Log) usage(usage Usage, cost Cost) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.turnUsage = addUsage(l.turnUsage, usage)
+	l.turnCost = aggregateCosts(l.turnCost, cost)
+	l.write(LogRecord{Type: RecordUsage, Usage: &usage, Cost: &cost})
+}
+
 func (l *Log) recordError(err error) {
 	if l == nil || err == nil {
 		return
@@ -256,16 +274,20 @@ func (l *Log) recordError(err error) {
 	l.write(LogRecord{Type: RecordError, Err: canonical})
 }
 
-func (l *Log) finish(usage Usage, cost Cost) {
+// finish writes the turn_end record carrying the field-wise sums of the
+// usage records written since the matching start — zero values when the
+// turn completed no round-trip (R-TG65-IXVR) — and folds them into the
+// log's cumulative summary total (R-THE1-WPMG).
+func (l *Log) finish() {
 	if l == nil {
 		return
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	usage, cost := l.turnUsage, l.turnCost
 	l.total = addUsage(l.total, usage)
 	l.totalCost = aggregateCosts(l.totalCost, cost)
-	l.write(LogRecord{Type: RecordUsage, Usage: &usage, Cost: &cost})
-	l.write(LogRecord{Type: RecordTurnEnd})
+	l.write(LogRecord{Type: RecordTurnEnd, Usage: &usage, Cost: &cost})
 }
 
 func (l *Log) write(record LogRecord) {
