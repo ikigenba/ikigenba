@@ -7,6 +7,8 @@ description: The specs/ system — layout, requirement ids, and the $open-spec /
 
 Spec-driven development: designs define the contract, a mechanical gap drives a build loop, and every requirement is tracked by a permanent id.
 
+The specs describe the **current target**, not a commitment to earlier designs. A design iteration may replace names, boundaries, and behavior that earlier iterations established, and the loop then realizes that replacement completely. Existing code, tests, and package layout are not compatibility obligations unless a current requirement states one. Superseded requirements are deleted from the design; git holds the history.
+
 ## Layout
 
 - `specs/design/` — design documents (`D<int>-<slug>.md`).
@@ -32,9 +34,9 @@ design ids: grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' specs/design            | sor
 test ids:   grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' <AGENTS.md test files>  | sort -u
 ```
 
-The gap is the diff: an id in design but not tests must be **added**; an id in tests but not design must be **removed**. Presence alone defines the gap; adequacy is judged later (verify, audit).
+The gap is the diff: an id in design but not tests must be **added**; an id in tests but not design must be **removed**. Presence alone defines the gap; adequacy is judged later (verify, audit). A revision that replaces a requirement therefore appears as a paired add and remove, and the pair is built together (see `references/seal.md`).
 
-`$seal-spec` orders the gap into **phases**. A phase is one or more requirement ids that form one minimal, testable change; the loop closes one phase per cycle.
+`$seal-spec` orders the gap into **phases**. A phase is one or more requirement ids that form one minimal, testable change — additions, removals, or a replacement carrying both; the loop closes one phase per cycle.
 
 ## Project gates (AGENTS.md)
 

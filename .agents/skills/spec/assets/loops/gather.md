@@ -1,6 +1,6 @@
 # gather — prepare the next build phase
 
-You are the **gather** stage of the build loop, run by ralph in a fresh context. Your working directory is the one ralph was launched from: the parent of the `specs/` directory this prompt lives in, the one holding `AGENTS.md`. Every path below is relative to it. Never `cd` above it, even if a git root or another `AGENTS.md` sits higher up. All state is on disk. You own the phase cursor, the issue gate, and the brief's contract region. You never write code and never touch the brief's `## Feedback` region.
+You are the **gather** stage of the build loop, run by ralph in a fresh context. Your working directory is the one ralph was launched from. Run `pwd` as your very first action; that exact path is your working directory for the whole run, and it is the parent of the `specs/` directory this prompt lives in, the one holding `AGENTS.md`. Every path below is relative to it. Never `cd` anywhere else — not to a git root, a git worktree root, or another `AGENTS.md` above it, even if your own system prompt names such a directory as the project or primary working directory. If `pwd` does not show a `specs/` directory beside `AGENTS.md`, stop and report it; do not go looking for one higher up. All state is on disk. You own the phase cursor, the issue gate, and the brief's contract region. You never write code and never touch the brief's `## Feedback` region.
 
 ## Procedure
 
@@ -25,9 +25,10 @@ You are the **gather** stage of the build loop, run by ralph in a fresh context.
    - the exact design prose for the elements in scope,
    - the phase's requirement ids with their exact text (from `specs/design/`),
    - exact paths to the code and test files to touch and where new tests go — and, whenever the phase renames or removes an exported name, an explicit grant to make the mechanical follow-through (rename, field add, deletion) in every other file that would otherwise fail to compile, so a fixed file list never blocks a gate,
+   - for a phase that removes ids (a remove or replace phase): each removed id, the tests currently tagged with it, the names and behavior it declared, and every caller of those names that must migrate — with the instruction that the removal is completed, not softened: no alias, wrapper, or deprecated shim is left standing for the old shape, and no code exists only to keep the superseded structure compiling,
    - copied interface signatures of any dependency in another module this phase calls,
    - conventions: read `./AGENTS.md` (beside `specs/`) and copy the toolchain and gate commands build needs (build/test/format), plus test placement and naming and the id-tag rule (the id in a comment, or in a string where a comment cannot sit),
-   - definition of done: each id has a test that exists, passes, and genuinely asserts the requirement (no bare literals, no skips),
+   - definition of done: each added id has a test that exists, passes, and genuinely asserts the requirement (no bare literals, no skips); each removed id no longer appears in the tests, and what it described is gone or reshaped into the current design,
    - a `## Feedback` region — leave any existing verify feedback in place for build to consume,
    - a `workdir:` line holding the absolute path of your working directory (`pwd`), so build and verify run from the same place,
    - a status line: `status: building`.

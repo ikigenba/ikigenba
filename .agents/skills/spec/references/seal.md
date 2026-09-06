@@ -3,14 +3,15 @@
 See `../SKILL.md` for the layout, id rules, and the canonical tag/grep.
 
 1. **Check the gates exist.** Confirm `AGENTS.md` (beside `specs/`) declares a gate section (toolchain + ordered gate commands). If it does not, stop and say so — verify has nothing to run without it.
-2. **Ensure the loop exists.** For each of `specs/loops/{gather,build,verify}.md` that is missing, copy it from this skill's `assets/loops/`. Create `specs/build/` and `specs/issues/` if absent.
+2. **Ensure the loop exists.** For each of `specs/loops/{gather,build,verify}.md` that is missing, copy it from this skill's `assets/loops/`. For each that exists but differs from the template below any leading front matter, report the drift and refresh it, keeping the project's front matter in place. Create `specs/build/` and `specs/issues/` if absent.
    **Reset stale build state.** `specs/build/` is gitignored working state that may hold a previous run's residue. Remove any leftover `brief.md` and overwrite `PLAN.md` from scratch, so the loop starts from the freshly computed gap. (The gap already excludes completed requirements — they have tests — so a fresh plan contains only outstanding work.)
-3. **Compute the gap** with the canonical greps in `../SKILL.md`: ids in design but not tests → add; ids in tests but not design → remove.
-4. **Write `specs/build/PLAN.md`** — the gap ordered into phases. A phase is one or more requirement ids that form one minimal, testable change; its ids share a single action. Order phases logically (dependencies inferred from the design: build a type before the operation that returns it, an earlier state before a later one). Keep each phase ultra-brief — the action and its ids only; later agents resolve the ids against `specs/`. Overwrite the file per gap.
+3. **Compute the gap** with the canonical greps in `../SKILL.md`: ids in design but not tests → add; ids in tests but not design → remove. Then identify replacements: an id deleted and ids added in the same design document since the last seal (`git diff` of `specs/design/`) are one change, not two, and are phased together below.
+4. **Write `specs/build/PLAN.md`** — the gap ordered into phases. A phase is one or more requirement ids that form one minimal, testable change. Its ids are listed with their actions: an add phase, a remove phase, or a replace phase carrying both the added ids and the removed ids they supersede, so build lands the new shape and retires the old one in the same cycle rather than leaving an alias or bridging layer between them. Order phases logically (dependencies inferred from the design: build a type before the operation that returns it, an earlier state before a later one). Keep each phase ultra-brief — the action and its ids only; later agents resolve the ids against `specs/`. Overwrite the file per gap.
 
 ```
 1. [add] R-NEDL-QRWM, R-QRWM-NEDL
-2. [remove] R-ABCD-EFGH
+2. [replace] add R-JKLM-NOPQ; remove R-ABCD-EFGH
+3. [remove] R-WXYZ-STUV
 ```
 
 The plan only orders the current gap. Executing the steps and verifying adequacy belong to the loop.
