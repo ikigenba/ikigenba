@@ -11,6 +11,11 @@ import (
 // it independent of the production variable makes output regressions visible.
 const expectedInitialVersion = "v0.9.0"
 
+// expectedSuccessfulExitCode is a test-owned anchor for the CLI contract. It
+// must remain independent of the production exitSuccess constant so a change
+// to that constant makes the version-path assertion fail.
+const expectedSuccessfulExitCode = 0
+
 type versionFailOnRead struct {
 	t *testing.T
 }
@@ -31,8 +36,8 @@ func TestVersionSpellingsExitEarlyWithIdenticalBareVersion(t *testing.T) {
 				Home: "/directory-that-does-not-exist/agent-repl-home",
 				Root: "/directory-that-does-not-exist/agent-repl-root",
 			})
-			if code != int(exitSuccess) {
-				t.Errorf("Run(%q) code = %d, want %d", argument, code, exitSuccess)
+			if code != expectedSuccessfulExitCode {
+				t.Errorf("Run(%q) code = %d, want %d", argument, code, expectedSuccessfulExitCode)
 			}
 			if got, want := stdout.String(), expectedInitialVersion+"\n"; got != want {
 				t.Errorf("Run(%q) stdout = %q, want %q", argument, got, want)
