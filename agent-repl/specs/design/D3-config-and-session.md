@@ -1,6 +1,6 @@
 # D3-config-and-session
 
-Every choice a user makes is a `-c key=value` string. Six keys are
+Every choice a user makes is a `-c key=value` string. Seven keys are
 **interpreted** by agent-repl because they pick *which* conversation to build
 rather than *how* the model generates; every other key is **passed through** to
 agentkit as a `Settings.Options` entry, unchanged and unchecked. agentkit
@@ -17,6 +17,7 @@ their choices (D4), not for second-guessing them.
 | `auth`      | `api_key` or `oauth`                                 | `oauth` when offered and the token file exists, else `api_key` |
 | `auth_file` | OAuth token file path                                | `~/.agent-repl/<provider>-auth.json`      |
 | `base_url`  | request URL prefix                                   | the offering's endpoint for the chosen `auth` |
+| `system_file` | path to a file whose contents become the system prompt | *(none)*                              |
 
 **Validation without I/O** (`Flags.Validate`, D2) produces `Options`:
 
@@ -30,6 +31,7 @@ type Options struct {
     Auth     string            // "" when decided at open (file existence)
     AuthFile string            // "" for the default path
     BaseURL  string            // "" for the offering's own
+    SystemFile string          // "" for no system prompt
     Settings map[string]string // every non-interpreted key, verbatim
     Raw      bool
     Version  bool
@@ -58,6 +60,7 @@ type Config struct {
     Auth     string            // "" to decide by token-file existence
     AuthFile string            // "" for the default path
     BaseURL  string            // "" for the offering's own
+    SystemFile string          // "" for no system prompt
     Settings map[string]string // agentkit Settings.Options, verbatim
     Home     string            // ~/.agent-repl lives here
     Getenv   func(string) string
@@ -112,16 +115,31 @@ variable, a bad token file, an `auth` the offering has no spec for, or a tool
 that cannot be constructed is an `Open` error; the composition root turns every
 `Open` error into exit 1 (D2).
 
+**The system prompt.** `system_file` names a file whose contents are the
+conversation's system prompt. The path is used verbatim, like `auth_file`: no
+tilde expansion, and a relative path resolves against the working directory.
+`Validate` only carries the path; `Open` reads the file and hands the bytes,
+untrimmed, to `agentkit.Conversation.AddSystem` before the first `Send`, so
+the message sits at the head of agentkit's `History` and agentkit renders it
+in whatever form the wire documents (agentkit D24). agent-repl adds no check
+of its own: agentkit rejects empty or whitespace-only text, and that
+rejection, like a file that cannot be read, is an `Open` error naming the
+path. Where the text lands in a request, and that it recurs on every turn,
+is agentkit's contract, not agent-repl's; agent-repl's observable is only
+that the file's text reaches the provider. Nothing renders or logs the
+prompt: agentkit's log records protocol events, never consumer input.
+
 ## REQUIREMENTS
 
-- R-ULZY-FKX0: Package `internal/options` MUST export an `Options` struct whose fields are exactly `Provider string`, `Model string`, `Wire string`, `Auth string`, `AuthFile string`, `BaseURL string`, `Settings map[string]string`, `Raw bool`, and `Version bool`.
-- R-UN7U-TCNP: `Flags.Validate` MUST fold `Flags.Config` so that for a repeated key the last `Pair` wins, MUST place the values of `provider`, `model`, `wire`, `auth`, `auth_file`, and `base_url` in the corresponding `Options` fields, and MUST place every other key verbatim in `Options.Settings`.
+- R-N7XL-3A7G: Package `internal/options` MUST export an `Options` struct whose fields are exactly `Provider string`, `Model string`, `Wire string`, `Auth string`, `AuthFile string`, `BaseURL string`, `SystemFile string`, `Settings map[string]string`, `Raw bool`, and `Version bool`.
+- R-NADD-UTOU: `Flags.Validate` MUST fold `Flags.Config` so that for a repeated key the last `Pair` wins, MUST place the values of `provider`, `model`, `wire`, `auth`, `auth_file`, `base_url`, and `system_file` in the corresponding `Options` fields, and MUST place every other key verbatim in `Options.Settings`.
+- R-NCT6-MD68: `Flags.Validate` MUST accept a `system_file` value naming a path that does not exist, placing it in `Options.SystemFile` without reading it or returning an error.
 - R-UOFR-74EE: `Flags.Validate` MUST set `Options.Model` to `gpt-5.6-sol` when no `model` pair is present, and MUST return an error naming `model` when a `model` pair is present with an empty value.
 - R-UPNN-KW53: `Flags.Validate` MUST return an error naming the key and the value when `provider` is given and is not one of `anthropic`, `gemini`, `openai`, `openrouter`, `xai`; when `auth` is given and is not `api_key` or `oauth`; or when `wire` is given and is not one of `messages`, `generate-content`, `chat`, `responses`.
 - R-UQVJ-YNVS: When `model` is set (explicitly or by default) and `provider` is absent, `Flags.Validate` MUST set `Options.Provider` to the `Host` of the first offering `agentkit.Lookup(model, "", "")` returns, and MUST return an error naming `model` when that lookup fails.
 - R-US3G-CFMH: When `provider` is given, `Flags.Validate` MUST accept any non-empty `model`, including one not in the catalog, and leave `Options.Provider` as given.
 - R-UTBC-Q7D6: `Flags.Validate` MUST NOT read the environment or any file, verified by validating options whose `auth_file` names a path that does not exist and whose API-key variable is unset.
-- R-UUJ9-3Z3V: Package `internal/session` MUST export a `Config` struct whose fields are exactly `Provider string`, `Model string`, `Wire string`, `Auth string`, `AuthFile string`, `BaseURL string`, `Settings map[string]string`, `Home string`, `Getenv func(string) string`, `Root string`, and `Log *agentkit.Log`.
+- R-NBLA-8LFJ: Package `internal/session` MUST export a `Config` struct whose fields are exactly `Provider string`, `Model string`, `Wire string`, `Auth string`, `AuthFile string`, `BaseURL string`, `SystemFile string`, `Settings map[string]string`, `Home string`, `Getenv func(string) string`, `Root string`, and `Log *agentkit.Log`.
 - R-UVR5-HQUK: Package `internal/session` MUST export a `Plan` struct whose fields are exactly `Offering agentkit.Offering`, `Model string`, `AuthMode agentkit.AuthMode`, `EnvVar string`, `AuthFile string`, and `BaseURL string`.
 - R-UWZ1-VIL9: Package `internal/session` MUST export `Resolve(cfg Config) (Plan, error)`, `Open(cfg Config) (*Session, error)`, and on `*Session` the methods `Plan() Plan` and `Send(ctx context.Context, prompt string) *agentkit.Stream`.
 - R-UY6Y-9ABY: For a cataloged model, `Resolve` MUST set `Plan.Offering` to the offering `agentkit.Lookup(cfg.Model, agentkit.Host(cfg.Provider), agentkit.WireName(cfg.Wire))` returns and `Plan.Model` to that offering's `WireModel`.
@@ -136,3 +154,6 @@ that cannot be constructed is an `Open` error; the composition root turns every
 - R-VADY-2ZQW: `Open` MUST pass `cfg.Settings` to the conversation as `agentkit.Settings.Options` unchanged, verified by an unknown key producing an `agentkit.ErrInvalidConfig` from `Send` rather than an `Open` error.
 - R-VBLU-GRHL: `Open` MUST pass `cfg.Log` to the conversation, verified by a turn producing records on the log's writer.
 - R-VCTQ-UJ8A: `Session.Send` MUST send `prompt` as a single `agentkit.Text` block and return the resulting stream.
+- R-NE13-04WX: When `cfg.SystemFile` is non-empty, `Open` MUST read the file at that path and pass its entire contents, unmodified, to the conversation's `AddSystem` before any `Send`, verified by the first request an `httptest` provider receives containing the file's text; when `cfg.SystemFile` is empty, `Open` MUST NOT call `AddSystem`, verified by that request containing no system entry.
+- R-NF8Z-DWNM: When `cfg.SystemFile` names a file that cannot be read, `Open` MUST return an error whose text contains the path, and no request MUST reach the `httptest` provider.
+- R-NGGV-ROEB: When the conversation's `AddSystem` rejects the file's contents, `Open` MUST return an error whose text contains the path and that satisfies `errors.Is(err, agentkit.ErrInvalidArgument)`, and no request MUST reach the `httptest` provider, verified with a file containing only white space.

@@ -77,6 +77,7 @@ a bare -c model=NAME must name a cataloged model (its provider is derived).
 any other model needs -c provider=... too and is priced at 0.
 every other -c key is passed to the wire as an option; unknown keys fail at send.
 -c base_url=URL sends requests to URL instead of the provider's endpoint.
+-c system_file=PATH sends the file's contents as the system prompt before the first message.
 ```
 
 The examples above are illustrations; the rows in the real text come from the
@@ -94,7 +95,7 @@ release data. `-V` and `--version` print it bare on its own line to stdout.
 - R-VE1N-8AYZ: Package `internal/options` MUST export `Usage() string`.
 - R-VF9J-M2PO: Package `internal/help` MUST export `Providers() string` and `Models() string`.
 - R-VGHF-ZUGD: `options.Usage()` MUST begin with the fixed head byte-for-byte as quoted above, from the `usage:` line through the `providers:` line inclusive, followed by a newline.
-- R-VHPC-DM72: `options.Usage()` MUST consist of, in order: the fixed head, `help.Providers()`, a blank line, `help.Models()`, a blank line, and the fixed trailer byte-for-byte as quoted above, with nothing else.
+- R-NHOS-5G50: `options.Usage()` MUST consist of, in order: the fixed head, `help.Providers()`, a blank line, `help.Models()`, a blank line, and the fixed trailer byte-for-byte as quoted above, with nothing else.
 - R-VIX8-RDXR: `help.Providers()` MUST contain one line per agentkit host in host-name order, formatted as two spaces, the host name left-justified in 13 columns, `auth=api_key` left-justified in 14 columns, and the host name upper-cased followed by `_API_KEY` in parentheses.
 - R-B9R3-FFZ7: For each host with at least one cataloged offering whose `Endpoints` contains a spec with `AuthMode` `agentkit.AuthModeOAuth`, `help.Providers()` MUST follow that host's line with a line of 15 spaces, `auth=oauth` left-justified in 14 columns, and `(auth_file=~/.agent-repl/<host>-auth.json)`, and MUST emit no such line for any other host.
 - R-VMKX-WP5U: `help.Models()` MUST contain one section per agentkit host in host-name order, each beginning with the host name on its own line and followed by one row per `agentkit.Catalog()` entry that has an offering on that host, in catalog order, with consecutive sections separated by exactly one blank line.
