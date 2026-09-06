@@ -3,8 +3,6 @@ package cli_test
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"fmt"
 	"io"
 	"reflect"
 	"strings"
@@ -12,11 +10,8 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/agent-repl/internal/cli"
+	"github.com/ikigenba/ikigenba/agent-repl/internal/options"
 )
-
-// expectedUsageDigest is the SHA-256 digest of the phase-8 options.Usage()
-// contract. It is independent of the production call made by cli.Run.
-const expectedUsageDigest = "0095e0c08af91a372fff0a655b359a7765ea4dab128620a1bdb8e72bcdcf5946"
 
 type failOnRead struct {
 	t *testing.T
@@ -76,7 +71,7 @@ func TestHelpSpellingsExitBeforeSessionWorkAndPlaceUsageOnStdout(t *testing.T) {
 			if code != 0 {
 				t.Errorf("Run(%q) code = %d, want 0", argument, code)
 			}
-			assertUsageDigest(t, stdout)
+			assertUsageText(t, stdout)
 			if stderr != "" {
 				t.Errorf("Run(%q) stderr = %q, want empty", argument, stderr)
 			}
@@ -98,7 +93,7 @@ func TestUnknownFlagIsAUsageErrorOnStderr(t *testing.T) {
 		t.Errorf("Run(unknown flag) stderr = %q, want one leading diagnostic", stderr)
 		return
 	}
-	assertUsageDigest(t, strings.TrimPrefix(stderr, diagnostic))
+	assertUsageText(t, strings.TrimPrefix(stderr, diagnostic))
 }
 
 // R-UJK5-O1FM
@@ -128,16 +123,19 @@ func TestUsageErrorsReportTheirCauseExactlyOnce(t *testing.T) {
 			if !found {
 				t.Fatalf("Run(%q) stderr has no diagnostic line: %q", test.args, stderr)
 			}
-			assertUsageDigest(t, usage)
+			assertUsageText(t, usage)
 		})
 	}
 }
 
-func assertUsageDigest(t *testing.T, output string) {
+// assertUsageText holds Run's placed text to the requirement's own words: the
+// bytes MUST be options.Usage(). The fixed head, trailer, and composition of
+// that text are pinned byte-for-byte in internal/options, so this assertion
+// stays correct across an agentkit catalog release.
+func assertUsageText(t *testing.T, output string) {
 	t.Helper()
-	got := fmt.Sprintf("%x", sha256.Sum256([]byte(output)))
-	if got != expectedUsageDigest {
-		t.Errorf("usage output SHA-256 = %s, want %s", got, expectedUsageDigest)
+	if want := options.Usage(); output != want {
+		t.Errorf("usage output = %q, want options.Usage() = %q", output, want)
 	}
 }
 
