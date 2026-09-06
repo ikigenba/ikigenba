@@ -8,15 +8,20 @@ import (
 type chatWire struct{ wireCodec }
 
 // ChatWire returns the built-in generic Chat Completions wire codec (used by
-// xai and openrouter). Its request body grammar and decoded events are
+// openrouter). Its request body grammar and decoded events are
 // identical to OpenAIChatWire's; only the credential header logic differs,
 // and that lives outside the wire.
 func ChatWire() WireFormat { return newChatWire() }
 
 func newChatWire() wireFormat {
 	wire := &chatWire{}
-	wire.wireCodec = wireCodec{
-		encode:      wire.encodeRequest,
+	wire.wireCodec = newChatWireCodec(wire.encodeRequest)
+	return wire
+}
+
+func newChatWireCodec(encode func(requestState) ([]byte, error)) wireCodec {
+	return wireCodec{
+		encode:      encode,
 		decoder:     newOpenAIChatDecoder,
 		optionSpecs: wireOptionSpecsWithStop,
 		capabilities: wireCapabilities{
@@ -25,10 +30,13 @@ func newChatWire() wireFormat {
 			toolChoice: toolChoiceShapeNone | toolChoiceShapeRequired | toolChoiceShapeTool,
 		},
 	}
-	return wire
 }
 
 func (w *chatWire) encodeRequest(state requestState) ([]byte, error) {
+	return encodeChatRequest(&w.wireCodec, state)
+}
+
+func encodeChatRequest(codec *wireCodec, state requestState) ([]byte, error) {
 	messages, err := buildOpenAIChatMessages(state.History)
 	if err != nil {
 		return nil, err
@@ -40,7 +48,7 @@ func (w *chatWire) encodeRequest(state requestState) ([]byte, error) {
 		StreamOptions: openAIChatStreamOptions{IncludeUsage: true},
 	}
 	if state.Output != nil {
-		schema, renderErr := w.renderOutputSchema(state.Output.Schema)
+		schema, renderErr := codec.renderOutputSchema(state.Output.Schema)
 		if renderErr != nil {
 			return nil, fmt.Errorf("agentkit: render OpenAI Chat output schema: %w", renderErr)
 		}
@@ -53,7 +61,7 @@ func (w *chatWire) encodeRequest(state requestState) ([]byte, error) {
 	}
 	configureOpenAIChatRequest(&request, state.Settings)
 	if len(state.Tools) > 0 {
-		request.Tools, err = w.RenderTools(state.Tools)
+		request.Tools, err = renderChatTools(state.Tools)
 		if err != nil {
 			return nil, err
 		}
@@ -63,6 +71,13 @@ func (w *chatWire) encodeRequest(state requestState) ([]byte, error) {
 }
 
 func (w *chatWire) RenderTools(tools []Tool) (json.RawMessage, error) {
+	if err := validateCanonicalTools(tools); err != nil {
+		return nil, err
+	}
+	return renderOpenAIChatTools(tools)
+}
+
+func renderChatTools(tools []Tool) (json.RawMessage, error) {
 	if err := validateCanonicalTools(tools); err != nil {
 		return nil, err
 	}

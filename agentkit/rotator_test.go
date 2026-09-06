@@ -10,9 +10,11 @@ import (
 	"net/url"
 	"reflect"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // R-K34T-F8C1
@@ -104,55 +106,144 @@ func (s *fakeTokenStore) storedData() []byte {
 	return append([]byte(nil), s.data...)
 }
 
-// R-KP30-B3OJ
-func TestOAuthRotatorTokenReadsOnceAndCaches(t *testing.T) {
-	ctx := context.Background()
-	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"https://api.openai.com/auth":{"chatgpt_account_id":"acct-1"}}`))
-	jwt := "header." + payload + ".signature"
-	store := &fakeTokenStore{data: []byte(`{"access_token":"` + jwt + `","refresh_token":"r"}`)}
-	rotator := OAuthRotator(store)
-
-	if got := store.readCount(); got != 0 {
-		t.Fatalf("OAuthRotator() made %d store reads, want 0", got)
-	}
-	for i := 0; i < 2; i++ {
-		token, err := rotator.Token(ctx)
-		if err != nil {
-			t.Fatalf("Token() call %d error = %v", i+1, err)
-		}
-		if want := (Token{Bearer: jwt, AccountID: "acct-1"}); token != want {
-			t.Fatalf("Token() call %d = %#v, want %#v", i+1, token, want)
-		}
-	}
-	if got := store.readCount(); got != 1 {
-		t.Fatalf("two Token() calls made %d store reads, want 1", got)
-	}
-
-	sentinel := errors.New("read failed")
-	_, err := OAuthRotator(&fakeTokenStore{err: sentinel}).Token(ctx)
-	if !errors.Is(err, sentinel) {
-		t.Fatalf("Token() error = %v, want unchanged sentinel error", err)
-	}
-
-	for name, data := range map[string][]byte{
-		"missing access token": []byte(`{}`),
-		"invalid JSON":         []byte(`not-json`),
-	} {
-		t.Run(name, func(t *testing.T) {
-			_, err := OAuthRotator(&fakeTokenStore{data: data}).Token(ctx)
-			if !errors.Is(err, ErrInvalidConfig) {
-				t.Fatalf("Token() error = %v, want ErrInvalidConfig", err)
-			}
-		})
-	}
-
-	token, err := OAuthRotator(&fakeTokenStore{data: []byte(`{"access_token":"opaque"}`)}).Token(ctx)
+func craftJWT(t *testing.T, claims map[string]any) string {
+	t.Helper()
+	header, err := json.Marshal(map[string]string{"alg": "none"})
 	if err != nil {
-		t.Fatalf("Token() with opaque bearer error = %v", err)
+		t.Fatal(err)
 	}
-	if want := (Token{Bearer: "opaque"}); token != want {
-		t.Fatalf("Token() with opaque bearer = %#v, want %#v", token, want)
+	payload, err := json.Marshal(claims)
+	if err != nil {
+		t.Fatal(err)
 	}
+	encode := base64.RawURLEncoding.EncodeToString
+	return strings.Join([]string{encode(header), encode(payload), encode([]byte("sig"))}, ".")
+}
+
+// R-J0CD-4UM5
+func TestOAuthRotatorTokenContract(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("invalid stored tokens", func(t *testing.T) {
+		for _, test := range []struct {
+			name string
+			data []byte
+		}{
+			{name: "invalid JSON", data: []byte("not-json")},
+			{name: "not an object", data: []byte(`[]`)},
+			{name: "missing access token", data: []byte(`{}`)},
+			{name: "empty access token", data: []byte(`{"access_token":""}`)},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				store := &fakeTokenStore{data: test.data}
+				rotator := OAuthRotator(store)
+				if got := store.readCount(); got != 0 {
+					t.Fatalf("OAuthRotator() made %d reads, want 0", got)
+				}
+				_, err := rotator.Token(ctx)
+				if !errors.Is(err, ErrInvalidConfig) {
+					t.Fatalf("Token() error = %v, want ErrInvalidConfig", err)
+				}
+				if got := store.readCount(); got != 1 {
+					t.Fatalf("Token() made %d reads, want exactly 1", got)
+				}
+			})
+		}
+	})
+
+	t.Run("store error unchanged", func(t *testing.T) {
+		sentinel := errors.New("read failed")
+		store := &fakeTokenStore{err: sentinel}
+		rotator := OAuthRotator(store)
+		_, err := rotator.Token(ctx)
+		if !errors.Is(err, sentinel) {
+			t.Fatalf("Token() error = %v, want unchanged sentinel error", err)
+		}
+		if got := store.readCount(); got != 1 {
+			t.Fatalf("Token() made %d reads, want exactly 1", got)
+		}
+	})
+
+	t.Run("JWT claims cache and rotate", func(t *testing.T) {
+		const initialExpiry int64 = 1_900_000_000
+		initialJWT := craftJWT(t, map[string]any{
+			"https://api.openai.com/auth": map[string]any{"chatgpt_account_id": "account-old"},
+			"exp":                         initialExpiry,
+		})
+		store := &fakeTokenStore{data: []byte(`{"access_token":"` + initialJWT + `","refresh_token":"refresh"}`)}
+		rotator := OAuthRotator(store)
+		if got := store.readCount(); got != 0 {
+			t.Fatalf("OAuthRotator() made %d reads, want 0", got)
+		}
+
+		initial, err := rotator.Token(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if initial.Bearer != initialJWT || initial.AccountID != "account-old" || !initial.ExpiresAt.Equal(time.Unix(initialExpiry, 0)) {
+			t.Fatalf("Token() = %#v, want initial JWT claims and expiry", initial)
+		}
+		if got := store.readCount(); got != 1 {
+			t.Fatalf("first Token() made %d reads, want exactly 1", got)
+		}
+		cached, err := rotator.Token(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cached != initial || store.readCount() != 1 {
+			t.Fatalf("second Token() = %#v after %d reads, want %#v after 1 read", cached, store.readCount(), initial)
+		}
+
+		const rotatedExpiry int64 = 2_000_000_000
+		rotatedJWT := craftJWT(t, map[string]any{
+			"https://api.openai.com/auth": map[string]any{"chatgpt_account_id": "account-new"},
+			"exp":                         rotatedExpiry,
+		})
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"` + rotatedJWT + `","refresh_token":"new-refresh"}`))
+		}))
+		t.Cleanup(server.Close)
+
+		rotated, err := rotator.Rotate(ctx, Rotation{RefreshURL: server.URL, ClientID: "client"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rotated.Bearer != rotatedJWT || rotated.AccountID != "account-new" || !rotated.ExpiresAt.Equal(time.Unix(rotatedExpiry, 0)) {
+			t.Fatalf("Rotate() = %#v, want rotated JWT claims and expiry", rotated)
+		}
+		afterRotate, err := rotator.Token(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if afterRotate != rotated || store.readCount() != 1 {
+			t.Fatalf("Token() after Rotate() = %#v after %d reads, want %#v after 1 read", afterRotate, store.readCount(), rotated)
+		}
+	})
+
+	t.Run("missing and malformed JWT claims", func(t *testing.T) {
+		tests := []struct {
+			name   string
+			bearer string
+		}{
+			{name: "claims absent", bearer: craftJWT(t, map[string]any{})},
+			{name: "expiry not numeric", bearer: craftJWT(t, map[string]any{"exp": "later"})},
+			{name: "expiry null", bearer: craftJWT(t, map[string]any{"exp": nil})},
+			{name: "opaque bearer", bearer: strings.Join([]string{"opaque", "token"}, "-")},
+		}
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				store := &fakeTokenStore{data: []byte(`{"access_token":"` + test.bearer + `"}`)}
+				token, err := OAuthRotator(store).Token(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if token.Bearer != test.bearer || token.AccountID != "" || !token.ExpiresAt.IsZero() {
+					t.Fatalf("Token() = %#v, want bearer with empty AccountID and zero ExpiresAt", token)
+				}
+			})
+		}
+	})
 }
 
 // R-KQAW-OVF8

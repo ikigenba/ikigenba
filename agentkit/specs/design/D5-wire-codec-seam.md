@@ -9,19 +9,76 @@ argument-less root constructor named `<X>Wire()` and hands it to `New`,
 which pairs it with an `Endpoint` (D6) for the orchestrator. Each constructor
 `<X>Wire` lives in `wire_<x>.go`, so the constructor and its file always read the
 same (the file rule names layout on purpose, overriding the usual public-only
-scope). Six wires ship:
+scope). Eight wires ship:
 
-| Constructor | `WireName` (D21) | Credential placement | Used by hosts |
-|---|---|---|---|
-| `AnthropicMessagesWire()` | `messages` | `x-api-key` header; also sets `anthropic-version` | anthropic |
-| `GeminiGenerateContentWire()` | `generate-content` | `key` query parameter | gemini |
-| `ChatWire()` | `chat` | `Authorization: Bearer` | xai, openrouter |
-| `ResponsesWire()` | `responses` | `Authorization: Bearer` | xai, openrouter |
-| `OpenAIChatWire()` | `chat` | bearer | openai |
-| `OpenAIResponsesWire()` | `responses` | bearer, plus `ChatGPT-Account-Id` under OAuth | openai |
+| Constructor | Struct | `WireName` (D21) | Credential placement | Used by hosts |
+|---|---|---|---|---|
+| `AnthropicMessagesWire()` | `anthropicMessagesWire` | `messages` | `x-api-key` header; also sets `anthropic-version` | anthropic |
+| `GeminiGenerateContentWire()` | `geminiGenerateContentWire` | `generate-content` | `key` query parameter | gemini |
+| `ChatWire()` | `chatWire` | `chat` | `Authorization: Bearer` | openrouter |
+| `ResponsesWire()` | `responsesWire` | `responses` | `Authorization: Bearer` | openrouter |
+| `OpenAIChatWire()` | `openAIChatWire` | `chat` | bearer | openai |
+| `OpenAIResponsesWire()` | `openAIResponsesWire` | `responses` | bearer, plus `ChatGPT-Account-Id` under OAuth | openai |
+| `XAIChatWire()` | `xaiChatWire` | `chat` | `Authorization: Bearer` | xai |
+| `XAIResponsesWire()` | `xaiResponsesWire` | `responses` | `Authorization: Bearer` | xai |
+
+**Every wire is its own struct, and the struct is named for its grammar.**
+Each constructor returns a distinct type `<x>Wire`, declared as
+`struct{ wireCodec }` with `wireCodec` as its sole, embedded field: the
+generic wires are `<format>Wire`, a vendor's variant is `<provider><format>Wire`.
+Names carry the design: `anthropicMessagesWire` says there is a Messages
+grammar and that Anthropic may have others (it has, and will again), where a
+name like `anthropicWire` would claim the whole vendor and collide with the
+next format. The rule is enforced on unexported types on purpose, overriding
+the usual public-only scope, for the same reason as the file rule: it is how
+a reader identifies a wire, and how the catalog test tells an xAI wire from
+the generic wire it otherwise resembles. There are no derived wires: a vendor
+variant that shares a family's grammar shares the encode and decode
+*functions*, not a struct, so bodies stay byte-identical without a type
+hierarchy.
 
 The OpenAI pair is the generic pair with one more header on the responses
-side; body grammar and decode are identical, and a test pins that.
+side; the xAI pair is the generic pair with one more error classification
+(below). Body grammar and decode are identical across each family of three,
+and a test pins that.
+
+**A rejected credential is a wire classification.** The wire owns the
+classification of its vendor's error responses (D4), and one classification
+matters beyond the `Category`: whether the vendor refused the credential
+itself, as opposed to refusing the request for any other reason. That is what
+the OAuth re-issue path (D22) needs to know, and only the wire can say it,
+because each vendor says it differently. Both facts below were captured live
+on 2026-09-05 and contradict the vendors' published error tables, which is
+why neither is assumed:
+
+- xAI answers a present-but-invalid OAuth token, expired or with a bad
+  signature, with **`403`** and the body
+  `{"code":"unauthenticated:bad-credentials","error":"The OAuth2 access token could not be validated."}`
+  on both `/v1/responses` and `/v1/chat/completions`. Its `401` is reserved
+  for a request with no credential at all
+  (`{"code":"unauthenticated:no-credentials",...}`), which no rotation can
+  fix; a malformed bearer or a bad API key is `400 invalid-argument`; and a
+  valid credential asking for an unknown model is `404 not-found`. The
+  published table says an invalid token is `401` and `403` is a permission
+  problem; for the OAuth path that is not what the host does.
+- OpenAI's Codex responses endpoint answers a present-but-invalid token with
+  **`401`** (`{"error":{"code":"unauthorized_unknown",...},"status":401}`
+  for a bad signature); `api.openai.com` answers a bad API key with `401`
+  `invalid_api_key`. Its `403` is documented as a region block. The
+  expired-token body on Codex was not captured (no expired token was
+  available); the vendor's own client recovers on any `401`, and so does
+  this wire.
+
+So `XAIResponsesWire()` and `XAIChatWire()` classify exactly a `403` whose
+JSON body carries `code` equal to `unauthenticated:bad-credentials` as a
+rejected credential, and `OpenAIResponsesWire()` classifies exactly a `401`.
+The generic wires and the other built-ins classify nothing as a rejected
+credential: no offering that speaks them lists an OAuth endpoint, so the
+classification would have no observable effect and no live proof. The
+classification is not a field on `*Error`; its one observable effect is the
+D22 re-issue, and that is how the requirements below are tested: a fake
+server answering the vendor's exact body through `Send` under an OAuth
+authenticator, asserting whether a rotation happened.
 
 **Streaming is requested in the body, and that is a proven vendor fact, not a
 default.** Every built-in wire decodes its response as SSE, but only Gemini
@@ -41,8 +98,9 @@ it. Anthropic additionally requires `max_tokens` on every request (D8).
 while OpenAI and xAI place it on a trailing chunk with empty `choices`. The
 chat decoder therefore reads `usage` from every chunk, including the one that
 completes the message, and completes the message exactly once per stream
-regardless of how many trailing chunks repeat a `finish_reason`. xAI and OpenRouter ride the generic
-wires unchanged, which is why wire and endpoint are separate axes (D6).
+regardless of how many trailing chunks repeat a `finish_reason`. OpenRouter rides the generic
+wires unchanged, and xAI's pair differs from them only in error classification,
+which is why wire and endpoint are separate axes (D6).
 
 **Three more facts the live matrix (D23) proved, each one a request the
 hand-written fixtures had wrong.** Every request carries
@@ -100,7 +158,7 @@ wins (never whole-object last-wins), which is a decode-side invariant of the wir
 
 ```go
 // WireFormat is the codec for one vendor body grammar. It is exported so a
-// consumer can pass a value from one of the six constructors to New and can
+// consumer can pass a value from one of the eight constructors to New and can
 // ask it to describe its options, but its request-side methods take unexported
 // types: wires are defined only inside agentkit.
 type WireFormat interface {
@@ -159,19 +217,19 @@ in requirement text; the requirements below fix the seam's shape.
 
 ## REQUIREMENTS
 
-- R-K0QG-7OV3: A wire codec MUST be selectable only by passing a `WireFormat` value obtained from one of the six root constructors to `New`, and MUST NOT be an assignable field on a `Conversation` or any consumer-visible value.
+- R-IKHO-5TZ4: A wire codec MUST be selectable only by passing a `WireFormat` value obtained from one of the eight root constructors to `New`, and MUST NOT be an assignable field on a `Conversation` or any consumer-visible value.
 - R-OWR1-R4WG: A wire codec MUST own the request body grammar, the streaming event vocabulary, the usage location and subset topology, the tool declaration and tool-result shapes, reasoning replay in full — both its mechanics and its body encoding — the option vocabulary it accepts and each option's body encoding (D8), the classification of its vendor's error responses (D4), the vendor's required protocol headers, and the placement of a credential on the request; it MUST NOT own the base URL or hold a credential.
 - R-OXYY-4WN5: The `WireFormat` interface MUST declare the exported method `OptionSpecs() []OptionSpec` and MUST NOT declare `ReservedKeys`.
 - R-K4E5-D036: Every request built with `AnthropicMessagesWire()` MUST carry the header `anthropic-version: 2023-06-01`.
-- R-JPPX-7R6E: Every request body produced by `AnthropicMessagesWire()`, `ChatWire()`, `OpenAIChatWire()`, `ResponsesWire()`, and `OpenAIResponsesWire()` MUST carry the top-level field `"stream":true`, pinned by the golden request fixtures.
-- R-JS5P-ZANS: Every request body produced by `ChatWire()` and `OpenAIChatWire()` MUST carry the top-level field `"stream_options":{"include_usage":true}`, pinned by the golden request fixture.
-- R-JTDM-D2EH: Every request body produced by `ResponsesWire()` and `OpenAIResponsesWire()` MUST carry the top-level field `"store":false`, pinned by the golden request fixture.
+- R-IQL6-2OOL: Every request body produced by `AnthropicMessagesWire()`, `ChatWire()`, `OpenAIChatWire()`, `XAIChatWire()`, `ResponsesWire()`, `OpenAIResponsesWire()`, and `XAIResponsesWire()` MUST carry the top-level field `"stream":true`, pinned by the golden request fixtures.
+- R-IRT2-GGFA: Every request body produced by `ChatWire()`, `OpenAIChatWire()`, and `XAIChatWire()` MUST carry the top-level field `"stream_options":{"include_usage":true}`, pinned by the golden request fixture.
+- R-IT0Y-U85Z: Every request body produced by `ResponsesWire()`, `OpenAIResponsesWire()`, and `XAIResponsesWire()` MUST carry the top-level field `"store":false`, pinned by the golden request fixture.
 - R-JULI-QU56: `DecodeStream` on `ChatWire()` and `OpenAIChatWire()` MUST merge a `usage` object carried on a chunk that also carries a choice with a non-null `finish_reason`, MUST merge one carried on a later chunk with empty `choices`, and MUST yield exactly one `MessageDone` per stream however many chunks carry a `finish_reason`; pinned by golden fixtures in both placements.
-- R-E4OU-QHXO: Every request built by any of the six shipped wires MUST carry the header `Content-Type: application/json`.
+- R-ILPK-JLPT: Every request built by any of the eight shipped wires MUST carry the header `Content-Type: application/json`.
 - R-E74N-I1F2: `DecodeStream` on `AnthropicMessagesWire()` MUST read `output_tokens` from the `usage` object at the top level of the `message_delta` event, beside `delta`, so that a stream's merged `Usage` carries both the `message_start` input tokens and the `message_delta` output tokens; pinned by golden fixtures carrying `usage` in that placement.
 - R-E8CJ-VT5R: `DecodeStream` on `GeminiGenerateContentWire()` MUST carry a `functionCall` part's `thoughtSignature` in the resulting `ToolUse` block's `Provider` payload, and `EncodeRequest` MUST replay it as the `thoughtSignature` of the `functionCall` part rendered for that `ToolUse`; pinned by a golden fixture carrying a signature.
 - R-SBI8-RVG3: `DecodeStream` on `ChatWire()` and `OpenAIChatWire()` MUST size `OutputTokens` from a chunk's `usage` object by its `total_tokens`: when `prompt_tokens + completion_tokens == total_tokens`, `OutputTokens` MUST be `completion_tokens − reasoning_tokens`; otherwise, when `prompt_tokens + completion_tokens + reasoning_tokens == total_tokens`, `OutputTokens` MUST be `completion_tokens`; in every other case, including an absent `total_tokens`, `OutputTokens` MUST be `completion_tokens − reasoning_tokens`; `ReasoningTokens` MUST be `reasoning_tokens` in every case; pinned by golden fixtures in both the nested and the disjoint topology.
-- R-OZ6U-IODU: For every request state that both wires of a pair accept, `ChatWire()` and `OpenAIChatWire()` MUST produce byte-identical request bodies, as MUST `ResponsesWire()` and `OpenAIResponsesWire()`; each pair MUST return identical `OptionSpecs()`; and for the same frames each pair MUST yield identical events.
+- R-IPD9-OWXW: For every request state that all wires of a family accept, `ChatWire()`, `OpenAIChatWire()`, and `XAIChatWire()` MUST produce byte-identical request bodies, as MUST `ResponsesWire()`, `OpenAIResponsesWire()`, and `XAIResponsesWire()`; each family MUST return identical `OptionSpecs()`; and for the same frames each family MUST yield identical events.
 - R-2YSR-VRTA: `DecodeStream` MUST terminate framing decode within the wire and yield only message-granular events; no framing artifact may reach the orchestrator.
 - R-300O-9JJZ: `DecodeStream` MUST merge `Usage` field-wise with each field treated as absolute and last-non-absent winning, and MUST NOT replace usage as a whole object.
 - R-318K-NBAO: An in-band vendor error arriving after a 2xx status MUST be surfaced through `DecodeStream`'s error channel (the classifier MUST be reachable from inside the decode).
@@ -180,4 +238,7 @@ in requirement text; the requirements below fix the seam's shape.
 - R-3646-6E9G: Every shipped wire MUST satisfy a round-trip property test: parsing a fixture into a `Message` and re-assembling the request body MUST reproduce the fixture's input bytes exactly.
 - R-ZGPR-FPAQ: `agentkit` MUST export `type Framer func(io.Reader) iter.Seq2[[]byte, error]`.
 - R-ZHXN-TH1F: `agentkit` MUST export `func SSEFrames(r io.Reader) iter.Seq2[[]byte, error]`, assignable to `Framer`.
-- R-K368-Z8CH: Each exported wire constructor `<X>Wire` MUST be declared in the file `wire_<x>.go` (`<x>` being `<X>` in snake_case) — `AnthropicMessagesWire` in `wire_anthropic_messages.go`, `GeminiGenerateContentWire` in `wire_gemini_generate_content.go`, `ChatWire` in `wire_chat.go`, `ResponsesWire` in `wire_responses.go`, `OpenAIChatWire` in `wire_openai_chat.go`, `OpenAIResponsesWire` in `wire_openai_responses.go` — so a constructor and its file share the same `<X>`.
+- R-IU8V-7ZWO: `XAIResponsesWire()` and `XAIChatWire()` MUST classify a response as a rejected credential exactly when its status is `403` and its body is a JSON object whose `code` field is the string `unauthenticated:bad-credentials`; a `403` with any other body, and a response of any other status including `401`, MUST NOT be classified as a rejected credential, the classification being observable as whether the D22 re-issue path rotates.
+- R-IVGR-LRND: `OpenAIResponsesWire()` MUST classify a response as a rejected credential exactly when its status is `401`, whatever its body; a response of any other status, including `403`, MUST NOT be classified as a rejected credential, the classification being observable as whether the D22 re-issue path rotates.
+- R-IMXG-XDGI: Each exported wire constructor `<X>Wire` MUST be declared in the file `wire_<x>.go` (`<x>` being `<X>` in snake_case) — `AnthropicMessagesWire` in `wire_anthropic_messages.go`, `GeminiGenerateContentWire` in `wire_gemini_generate_content.go`, `ChatWire` in `wire_chat.go`, `ResponsesWire` in `wire_responses.go`, `OpenAIChatWire` in `wire_openai_chat.go`, `OpenAIResponsesWire` in `wire_openai_responses.go`, `XAIChatWire` in `wire_xai_chat.go`, `XAIResponsesWire` in `wire_xai_responses.go` — so a constructor and its file share the same `<X>`.
+- R-HC0C-ZEW7: Each of the eight root wire constructors MUST return a `WireFormat` whose dynamic type is a pointer to a distinct unexported struct declared as `struct{ wireCodec }` with `wireCodec` as its sole, embedded field, named for the constructor: `AnthropicMessagesWire()` → `anthropicMessagesWire`, `GeminiGenerateContentWire()` → `geminiGenerateContentWire`, `ChatWire()` → `chatWire`, `ResponsesWire()` → `responsesWire`, `OpenAIChatWire()` → `openAIChatWire`, `OpenAIResponsesWire()` → `openAIResponsesWire`, `XAIChatWire()` → `xaiChatWire`, `XAIResponsesWire()` → `xaiResponsesWire`; and `agentkit` MUST declare no other type that embeds `wireCodec`.

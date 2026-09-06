@@ -23,10 +23,13 @@ const (
 )
 
 // Token is one presentable secret. AccountID is optional; only the OpenAI
-// wires read it.
+// wires read it. ExpiresAt is the access token's own expiry when the token
+// carries one (a JWT exp claim), zero otherwise; the OAuth authenticator
+// rotates ahead of it (D22).
 type Token struct {
 	Bearer    string
 	AccountID string
+	ExpiresAt time.Time
 }
 
 // Rotator presents the current secret and can rotate it. AuthMode says which
@@ -94,6 +97,7 @@ The authenticator resolves the token and the wire format places it:
 | `ChatWire()`, `ResponsesWire()` | `Authorization: Bearer` | `Authorization: Bearer` |
 | `OpenAIChatWire()` | `Authorization: Bearer` | not accepted (no chat endpoint honors a ChatGPT token) |
 | `OpenAIResponsesWire()` | `Authorization: Bearer` | `Authorization: Bearer` + `ChatGPT-Account-Id` |
+| `XAIChatWire()`, `XAIResponsesWire()` | `Authorization: Bearer` | `Authorization: Bearer` |
 
 Whether a credential mode is accepted at all is the offering's `Endpoints`,
 not the wire's: OpenRouter speaks the generic chat wire and lists only an
@@ -111,12 +115,12 @@ in front of Anthropic still prices as Anthropic.
 ## REQUIREMENTS
 
 - R-P5PA-T4A1: `agentkit` MUST export `type AuthMode string` with the constants `AuthModeAPIKey = "api_key"` and `AuthModeOAuth = "oauth"`.
-- R-K1WX-1GLC: `agentkit` MUST export `type Token struct { Bearer string; AccountID string }` with exactly those fields and `type Rotator interface { AuthMode() AuthMode; Token(ctx context.Context) (Token, error); Rotate(ctx context.Context, r Rotation) (Token, error) }` with exactly that method set, and MUST NOT export `Credential`, `APIKey`, `OAuth`, or `TokenSource`.
+- R-IXWK-DB4R: `agentkit` MUST export `type Token struct { Bearer string; AccountID string; ExpiresAt time.Time }` with exactly those fields and `type Rotator interface { AuthMode() AuthMode; Token(ctx context.Context) (Token, error); Rotate(ctx context.Context, r Rotation) (Token, error) }` with exactly that method set, and MUST NOT export `Credential`, `APIKey`, `OAuth`, or `TokenSource`.
 - R-K34T-F8C1: `agentkit` MUST export `func APIKeyRotator(key string) Rotator`, whose `AuthMode` returns `AuthModeAPIKey`, whose `Token` returns `Token{Bearer: key}` with no store or network access, and whose `Rotate` returns `ErrInvalidConfig` without any network access.
 - R-K4CP-T02Q: `agentkit` MUST export `func OAuthRotator(store TokenStore) Rotator`, whose `AuthMode` returns `AuthModeOAuth`; its `Token` and `Rotate` behavior is fixed by D22.
 - R-KE5C-F60Q: `NewEndpoint` MUST accept any `Authenticator` with no compile-time guard on its origin.
 - R-KFD8-SXRF: A single `Authenticate(ctx context.Context, req *http.Request, body []byte) error` method MUST cover API-key, OAuth, and body-signing (SigV4) schemes; no separate auth-type hierarchy may be introduced.
 - R-K5KM-6RTF: `agentkit` MUST export `func (o Offering) Authenticator(r Rotator) (Authenticator, error)`, which MUST return `ErrInvalidConfig` for a nil `r` or for a rotator whose `AuthMode()` matches no `EndpointSpec.AuthMode` in `o.Endpoints`, and MUST NOT export `Offering.Auth` or `Offering.TokenSource`.
-- R-K6SI-KJK4: The authenticator from `o.Authenticator(r)` where `r.AuthMode()` is `AuthModeAPIKey` MUST call `r.Token(ctx)` on every request and transmit `Token.Bearer` as placed by `o.WireFormat`: as the `x-api-key` header when it is `AnthropicMessagesWire()`, as the `key` URL query parameter when it is `GeminiGenerateContentWire()`, and as the `Authorization: Bearer <Bearer>` header when it is `ChatWire()`, `ResponsesWire()`, `OpenAIChatWire()`, or `OpenAIResponsesWire()`; and `Authenticate` MUST return `r`'s error unchanged when `Token` fails.
+- R-IWON-ZJE2: The authenticator from `o.Authenticator(r)` where `r.AuthMode()` is `AuthModeAPIKey` MUST call `r.Token(ctx)` on every request and transmit `Token.Bearer` as placed by `o.WireFormat`: as the `x-api-key` header when it is `AnthropicMessagesWire()`, as the `key` URL query parameter when it is `GeminiGenerateContentWire()`, and as the `Authorization: Bearer <Bearer>` header when it is `ChatWire()`, `ResponsesWire()`, `OpenAIChatWire()`, `OpenAIResponsesWire()`, `XAIChatWire()`, or `XAIResponsesWire()`; and `Authenticate` MUST return `r`'s error unchanged when `Token` fails.
 - R-K98B-C31I: The authenticator from `o.Authenticator(r)` where `r.AuthMode()` is `AuthModeOAuth` MUST call `r.Token(ctx)` on every request and transmit `Token.Bearer` as the `Authorization: Bearer` header; when `o.WireFormat` is `OpenAIResponsesWire()` it MUST also transmit `Token.AccountID` as the `ChatGPT-Account-Id` header and MUST fail with `ErrInvalidConfig` when `AccountID` is empty; and `Authenticate` MUST return `r`'s error unchanged when `Token` fails.
 - R-KAG7-PUS7: A `Conversation` built by `New(o.WireFormat, ep, model, cfg)` where `ep` was built by `NewEndpoint` from `o.Authenticator(r)` MUST report `Identity.Endpoint` equal to `string(o.ID)` whether or not `WithBaseURL` was given, and `Identity.AuthMode` equal to `string(r.AuthMode())`.

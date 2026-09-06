@@ -112,8 +112,8 @@ var offeringTransports = map[OfferingID]offeringTransport{
 	OfferingOpenAIResponses:       {HostOpenAI, WireResponses, OpenAIResponsesWire(), fixedURL("https://api.openai.com/v1/responses"), codexOAuth, false},
 	OfferingOpenAIChat:            {HostOpenAI, WireChat, OpenAIChatWire(), fixedURL("https://api.openai.com/v1/chat/completions"), noOAuth, false},
 	OfferingGeminiGenerateContent: {HostGemini, WireGenerateContent, GeminiGenerateContentWire(), geminiURL, noOAuth, false},
-	OfferingXAIResponses:          {HostXAI, WireResponses, ResponsesWire(), fixedURL("https://api.x.ai/v1/responses"), xaiResponsesOAuth, true},
-	OfferingXAIChat:               {HostXAI, WireChat, ChatWire(), fixedURL("https://api.x.ai/v1/chat/completions"), xaiChatOAuth, true},
+	OfferingXAIResponses:          {HostXAI, WireResponses, XAIResponsesWire(), fixedURL("https://api.x.ai/v1/responses"), xaiResponsesOAuth, true},
+	OfferingXAIChat:               {HostXAI, WireChat, XAIChatWire(), fixedURL("https://api.x.ai/v1/chat/completions"), xaiChatOAuth, true},
 	OfferingOpenRouterChat:        {HostOpenRouter, WireChat, ChatWire(), fixedURL("https://openrouter.ai/api/v1/chat/completions"), noOAuth, false},
 	OfferingOpenRouterResponses:   {HostOpenRouter, WireResponses, ResponsesWire(), fixedURL("https://openrouter.ai/api/v1/responses"), noOAuth, false},
 }

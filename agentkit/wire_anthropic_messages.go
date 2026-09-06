@@ -8,7 +8,7 @@ import (
 	"sort"
 )
 
-type anthropicWire struct{ wireCodec }
+type anthropicMessagesWire struct{ wireCodec }
 
 var anthropicOfferingMaxOutputTokens func(Identity) (int64, bool)
 
@@ -22,7 +22,7 @@ func init() {
 func AnthropicMessagesWire() WireFormat { return newAnthropicMessagesWire(nil) }
 
 func newAnthropicMessagesWire(classifier errorClassifier) wireFormat {
-	wire := &anthropicWire{}
+	wire := &anthropicMessagesWire{}
 	wire.wireCodec = wireCodec{
 		encode:      wire.encodeRequest,
 		decoder:     newAnthropicDecoder,
@@ -37,7 +37,7 @@ func newAnthropicMessagesWire(classifier errorClassifier) wireFormat {
 	return wire
 }
 
-func (w *anthropicWire) setProtocolHeaders(req *http.Request) {
+func (w *anthropicMessagesWire) setProtocolHeaders(req *http.Request) {
 	req.Header.Set("anthropic-version", "2023-06-01")
 }
 
@@ -158,7 +158,7 @@ func configureAnthropicRequest(request *anthropicRequest, settings Settings, ide
 	}
 }
 
-func (w *anthropicWire) encodeRequest(state requestState) ([]byte, error) {
+func (w *anthropicMessagesWire) encodeRequest(state requestState) ([]byte, error) {
 	messages, err := buildAnthropicMessages(state.History)
 	if err != nil {
 		return nil, err
@@ -186,7 +186,7 @@ func (w *anthropicWire) encodeRequest(state requestState) ([]byte, error) {
 
 // validateMaxTokens enforces R-KCW0-HE9L: Send must have a max_tokens value
 // to send, from either the max_output_tokens option or a catalog match.
-func (w *anthropicWire) validateMaxTokens(identity Identity, settings Settings) error {
+func (w *anthropicMessagesWire) validateMaxTokens(identity Identity, settings Settings) error {
 	if _, ok := settingsMaxOutputTokens(settings.Options); ok {
 		return nil
 	}
@@ -356,7 +356,7 @@ func renderAnthropicTools(tools []Tool) (json.RawMessage, error) {
 	return json.Marshal(declarations)
 }
 
-func (w *anthropicWire) RenderTools(tools []Tool) (json.RawMessage, error) {
+func (w *anthropicMessagesWire) RenderTools(tools []Tool) (json.RawMessage, error) {
 	if err := validateCanonicalTools(tools); err != nil {
 		return nil, err
 	}

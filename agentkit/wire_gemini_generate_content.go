@@ -6,13 +6,13 @@ import (
 	"fmt"
 )
 
-type geminiWire struct{ wireCodec }
+type geminiGenerateContentWire struct{ wireCodec }
 
 // GeminiGenerateContentWire returns the built-in Gemini GenerateContent wire codec.
 func GeminiGenerateContentWire() WireFormat { return newGeminiGenerateContentWire(nil) }
 
 func newGeminiGenerateContentWire(classifier errorClassifier) wireFormat {
-	wire := &geminiWire{}
+	wire := &geminiGenerateContentWire{}
 	wire.wireCodec = wireCodec{
 		encode:      wire.encodeRequest,
 		decoder:     newGeminiDecoder,
@@ -86,7 +86,7 @@ type geminiRequest struct {
 	Tools            json.RawMessage         `json:"tools,omitempty"`
 }
 
-func (w *geminiWire) encodeRequest(state requestState) ([]byte, error) {
+func (w *geminiGenerateContentWire) encodeRequest(state requestState) ([]byte, error) {
 	contents, err := buildGeminiContents(state.History)
 	if err != nil {
 		return nil, err
@@ -346,7 +346,7 @@ func renderGeminiTools(tools []Tool) (json.RawMessage, error) {
 	}{{FunctionDeclarations: declarations}}})
 }
 
-func (w *geminiWire) RenderTools(tools []Tool) (json.RawMessage, error) {
+func (w *geminiGenerateContentWire) RenderTools(tools []Tool) (json.RawMessage, error) {
 	if err := validateCanonicalTools(tools); err != nil {
 		return nil, err
 	}

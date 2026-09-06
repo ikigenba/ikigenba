@@ -35,7 +35,13 @@ of the *category*. One header is read today, because it is wire-agnostic: a
 depends on the wall clock, which classification has no injected source for,
 and a test of it could only assert a tolerance. Vendor-specific reset headers
 (an OpenAI `x-ratelimit-reset-*`, a Gemini `retryInfo` in the body) wait for
-the envelope design. The natural test drives a fake server that answers 429
+the envelope design. One narrow envelope reading exists ahead of it: the xAI
+wires read the `code` field of a `403` body to recognise a **rejected
+credential** (D5), because xAI answers an expired or invalid OAuth token with
+`403` and a body code, never with `401`, as captured live. That reading feeds
+only the OAuth re-issue path (D22); it does not populate `Error.Code`, and it
+is not consumer-visible on `*Error`. Exposing it there is the envelope
+design's question, not this one's. The natural test drives a fake server that answers 429
 with `Retry-After: 30` through `Send` and asserts `RetryAfter == 30 *
 time.Second` as a literal; a missing or non-integer header is asserted to
 leave the field zero. Nothing in the root drives `agentkit/retry` yet: the leaf exists (D14),

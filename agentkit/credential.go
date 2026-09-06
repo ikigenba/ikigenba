@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 )
 
 // AuthMode names how a credential is presented.
@@ -16,10 +17,17 @@ const (
 	AuthModeOAuth AuthMode = "oauth"
 )
 
-// Token is one OAuth grant. AccountID is optional.
+// OAuthRefreshWindow is how far ahead of its expiry a stored OAuth token is
+// proactively rotated (D22): a token that would expire within this window
+// is refreshed before the request is sent, the same window OpenAI's own
+// Codex client uses.
+const OAuthRefreshWindow time.Duration = 5 * time.Minute
+
+// Token is one presentable secret. AccountID and ExpiresAt are optional.
 type Token struct {
 	Bearer    string
 	AccountID string
+	ExpiresAt time.Time
 }
 
 // Authenticator turns a rotator into the authenticator for this offering: it
@@ -71,9 +79,9 @@ func (a apiKeyApplier) Authenticate(ctx context.Context, req *http.Request, _ []
 		return err
 	}
 	switch a.wire.(type) {
-	case *anthropicWire:
+	case *anthropicMessagesWire:
 		req.Header.Set("x-api-key", token.Bearer)
-	case *geminiWire:
+	case *geminiGenerateContentWire:
 		query := req.URL.Query()
 		query.Set("key", token.Bearer)
 		req.URL.RawQuery = query.Encode()
@@ -107,6 +115,12 @@ func (a oauthApplier) Authenticate(ctx context.Context, req *http.Request, _ []b
 	token, err := a.rotator.Token(ctx)
 	if err != nil {
 		return err
+	}
+	if !token.ExpiresAt.IsZero() && !token.ExpiresAt.After(time.Now().Add(OAuthRefreshWindow)) {
+		token, err = a.rotator.Rotate(ctx, a.rotation)
+		if err != nil {
+			return err
+		}
 	}
 	req.Header.Set("Authorization", "Bearer "+token.Bearer)
 	switch a.wire.(type) {

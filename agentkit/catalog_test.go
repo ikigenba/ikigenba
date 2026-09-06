@@ -306,7 +306,7 @@ func TestCatalogEndpointsWellFormed(t *testing.T) {
 	for _, entry := range Catalog() {
 		for _, offering := range entry.Offerings {
 			// This explicit invariant intentionally overlaps the first-endpoint safety
-			// guard in TestCatalogFixedTransportByID: R-KK7E-S0PR requires a dedicated
+			// guard in TestCatalogOfferingsCarryFixedRootWireTransport: R-KK7E-S0PR requires a dedicated
 			// public-surface test covering every endpoint, not only the first one.
 			if len(offering.Endpoints) == 0 {
 				t.Errorf("%q offering %q has no endpoints", entry.Model, offering.ID)
@@ -328,6 +328,82 @@ func TestCatalogEndpointsWellFormed(t *testing.T) {
 				if (spec.Rotation.RefreshURL != "") != wantRotationFields || (spec.Rotation.ClientID != "") != wantRotationFields {
 					t.Errorf("%q offering %q auth mode %q has rotation %+v", entry.Model, offering.ID, spec.AuthMode, spec.Rotation)
 				}
+			}
+		}
+	}
+}
+
+// R-HD89-D6MW
+func TestCatalogOfferingsCarryFixedRootWireTransport(t *testing.T) {
+	for _, entry := range Catalog() {
+		for _, offering := range entry.Offerings {
+			var wantHost Host
+			var wantWireName WireName
+			var wantWireType string
+			var wantBaseURL string
+			switch offering.ID {
+			case OfferingAnthropicMessages:
+				wantHost = HostAnthropic
+				wantWireName = WireMessages
+				wantWireType = "*agentkit.anthropicMessagesWire"
+				wantBaseURL = "https://api.anthropic.com/v1/messages"
+			case OfferingOpenAIResponses:
+				wantHost = HostOpenAI
+				wantWireName = WireResponses
+				wantWireType = "*agentkit.openAIResponsesWire"
+				wantBaseURL = "https://api.openai.com/v1/responses"
+			case OfferingOpenAIChat:
+				wantHost = HostOpenAI
+				wantWireName = WireChat
+				wantWireType = "*agentkit.openAIChatWire"
+				wantBaseURL = "https://api.openai.com/v1/chat/completions"
+			case OfferingGeminiGenerateContent:
+				wantHost = HostGemini
+				wantWireName = WireGenerateContent
+				wantWireType = "*agentkit.geminiGenerateContentWire"
+				wantBaseURL = "https://generativelanguage.googleapis.com/v1beta/models/" + url.PathEscape(offering.WireModel) + ":streamGenerateContent?alt=sse"
+			case OfferingXAIResponses:
+				wantHost = HostXAI
+				wantWireName = WireResponses
+				wantWireType = "*agentkit.xaiResponsesWire"
+				wantBaseURL = "https://api.x.ai/v1/responses"
+			case OfferingXAIChat:
+				wantHost = HostXAI
+				wantWireName = WireChat
+				wantWireType = "*agentkit.xaiChatWire"
+				wantBaseURL = "https://api.x.ai/v1/chat/completions"
+			case OfferingOpenRouterChat:
+				wantHost = HostOpenRouter
+				wantWireName = WireChat
+				wantWireType = "*agentkit.chatWire"
+				wantBaseURL = "https://openrouter.ai/api/v1/chat/completions"
+			case OfferingOpenRouterResponses:
+				wantHost = HostOpenRouter
+				wantWireName = WireResponses
+				wantWireType = "*agentkit.responsesWire"
+				wantBaseURL = "https://openrouter.ai/api/v1/responses"
+			default:
+				t.Fatalf("%q has unexpected offering ID %q", entry.Model, offering.ID)
+			}
+
+			if offering.Host != wantHost {
+				t.Errorf("%q offering %q Host = %q, want %q", entry.Model, offering.ID, offering.Host, wantHost)
+			}
+			if offering.WireName != wantWireName {
+				t.Errorf("%q offering %q WireName = %q, want %q", entry.Model, offering.ID, offering.WireName, wantWireName)
+			}
+			if got := reflect.TypeOf(offering.WireFormat); got == nil || got.String() != wantWireType {
+				t.Errorf("%q offering %q WireFormat type = %v, want %q", entry.Model, offering.ID, got, wantWireType)
+			}
+			if len(offering.Endpoints) == 0 {
+				t.Errorf("%q offering %q has no endpoints", entry.Model, offering.ID)
+				continue
+			}
+			if got := offering.Endpoints[0].AuthMode; got != AuthModeAPIKey {
+				t.Errorf("%q offering %q first endpoint AuthMode = %q, want %q", entry.Model, offering.ID, got, AuthModeAPIKey)
+			}
+			if got := offering.Endpoints[0].BaseURL; got != wantBaseURL {
+				t.Errorf("%q offering %q first endpoint BaseURL = %q, want %q", entry.Model, offering.ID, got, wantBaseURL)
 			}
 		}
 	}
@@ -394,82 +470,6 @@ func TestCatalogEndpointsMutationIsolated(t *testing.T) {
 	afterLookup, err := Lookup(model, "", "")
 	if err != nil || !reflect.DeepEqual(afterLookup.Endpoints, wantLookupEndpoints) {
 		t.Fatalf("Lookup endpoints changed after mutating a prior result: (%+v, %v)", afterLookup.Endpoints, err)
-	}
-}
-
-// R-KHRM-0H8D
-func TestCatalogFixedTransportByID(t *testing.T) {
-	for _, entry := range Catalog() {
-		for _, offering := range entry.Offerings {
-			var wantHost Host
-			var wantWireName WireName
-			var wantWireType string
-			var wantBaseURL string
-			switch offering.ID {
-			case OfferingAnthropicMessages:
-				wantHost = HostAnthropic
-				wantWireName = WireMessages
-				wantWireType = "*agentkit.anthropicWire"
-				wantBaseURL = "https://api.anthropic.com/v1/messages"
-			case OfferingOpenAIResponses:
-				wantHost = HostOpenAI
-				wantWireName = WireResponses
-				wantWireType = "*agentkit.openAIResponsesWire"
-				wantBaseURL = "https://api.openai.com/v1/responses"
-			case OfferingOpenAIChat:
-				wantHost = HostOpenAI
-				wantWireName = WireChat
-				wantWireType = "*agentkit.openAIChatWire"
-				wantBaseURL = "https://api.openai.com/v1/chat/completions"
-			case OfferingGeminiGenerateContent:
-				wantHost = HostGemini
-				wantWireName = WireGenerateContent
-				wantWireType = "*agentkit.geminiWire"
-				wantBaseURL = "https://generativelanguage.googleapis.com/v1beta/models/" + url.PathEscape(offering.WireModel) + ":streamGenerateContent?alt=sse"
-			case OfferingXAIResponses:
-				wantHost = HostXAI
-				wantWireName = WireResponses
-				wantWireType = "*agentkit.responsesWire"
-				wantBaseURL = "https://api.x.ai/v1/responses"
-			case OfferingXAIChat:
-				wantHost = HostXAI
-				wantWireName = WireChat
-				wantWireType = "*agentkit.chatWire"
-				wantBaseURL = "https://api.x.ai/v1/chat/completions"
-			case OfferingOpenRouterChat:
-				wantHost = HostOpenRouter
-				wantWireName = WireChat
-				wantWireType = "*agentkit.chatWire"
-				wantBaseURL = "https://openrouter.ai/api/v1/chat/completions"
-			case OfferingOpenRouterResponses:
-				wantHost = HostOpenRouter
-				wantWireName = WireResponses
-				wantWireType = "*agentkit.responsesWire"
-				wantBaseURL = "https://openrouter.ai/api/v1/responses"
-			default:
-				t.Fatalf("%q has unexpected offering ID %q", entry.Model, offering.ID)
-			}
-
-			if offering.Host != wantHost {
-				t.Errorf("%q offering %q Host = %q, want %q", entry.Model, offering.ID, offering.Host, wantHost)
-			}
-			if offering.WireName != wantWireName {
-				t.Errorf("%q offering %q WireName = %q, want %q", entry.Model, offering.ID, offering.WireName, wantWireName)
-			}
-			if got := reflect.TypeOf(offering.WireFormat); got == nil || got.String() != wantWireType {
-				t.Errorf("%q offering %q WireFormat type = %v, want %q", entry.Model, offering.ID, got, wantWireType)
-			}
-			if len(offering.Endpoints) == 0 {
-				t.Errorf("%q offering %q has no endpoints", entry.Model, offering.ID)
-				continue
-			}
-			if got := offering.Endpoints[0].AuthMode; got != AuthModeAPIKey {
-				t.Errorf("%q offering %q first endpoint AuthMode = %q, want %q", entry.Model, offering.ID, got, AuthModeAPIKey)
-			}
-			if got := offering.Endpoints[0].BaseURL; got != wantBaseURL {
-				t.Errorf("%q offering %q first endpoint BaseURL = %q, want %q", entry.Model, offering.ID, got, wantBaseURL)
-			}
-		}
 	}
 }
 
@@ -991,7 +991,7 @@ func catalogEntryEqual(got, want CatalogEntry) bool {
 
 func offeringEqual(got, want Offering) bool {
 	wireTypes := map[OfferingID]string{
-		OfferingAnthropicMessages:   "*agentkit.anthropicWire",
+		OfferingAnthropicMessages:   "*agentkit.anthropicMessagesWire",
 		OfferingOpenRouterChat:      "*agentkit.chatWire",
 		OfferingOpenRouterResponses: "*agentkit.responsesWire",
 	}

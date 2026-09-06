@@ -1,6 +1,7 @@
 package agentkit
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -368,12 +369,13 @@ func (c *Conversation) roundTrip(ctx context.Context, state requestState, yield 
 	return c.consumeResponse(ctx, response, yield)
 }
 
-// reissueAfterUnauthorized implements D22's reactive 401 path: exactly one
-// refresh-and-retry when the response is 401 and the applier exposes the
-// hook; any other status, or an applier without the hook, passes response
-// through unchanged and never calls Refresh.
+// reissueAfterUnauthorized implements D22's reactive rejected-credential
+// path: exactly one refresh-and-retry when the wire classifies the response
+// as a rejected credential and the applier exposes the hook; any other
+// response, or an applier without the hook, passes the response through
+// unchanged (restoring its body if read) and never calls Rotate.
 func (c *Conversation) reissueAfterUnauthorized(ctx context.Context, state requestState, response *http.Response) (*http.Response, error) {
-	if response.StatusCode != http.StatusUnauthorized {
+	if response.StatusCode >= http.StatusOK && response.StatusCode < http.StatusMultipleChoices {
 		return response, nil
 	}
 	refreshable, ok := c.provider.(refreshableProvider)
@@ -384,7 +386,16 @@ func (c *Conversation) reissueAfterUnauthorized(ctx context.Context, state reque
 	if !ok {
 		return response, nil
 	}
+	body, err := io.ReadAll(response.Body)
 	_ = response.Body.Close()
+	if err != nil {
+		return nil, wrapProviderError(err, CategoryUnknown, response.StatusCode, c.identity)
+	}
+	classifier, _ := c.provider.(rejectedCredentialClassifier)
+	if classifier == nil || !classifier.isRejectedCredential(response.StatusCode, body) {
+		response.Body = io.NopCloser(bytes.NewReader(body))
+		return response, nil
+	}
 	if err := hook.refreshOn401(ctx); err != nil {
 		return nil, wrapProviderError(err, CategoryAuth, response.StatusCode, c.identity)
 	}

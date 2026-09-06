@@ -169,7 +169,7 @@ func TestAnthropicWireSetsRequiredProtocolHeader(t *testing.T) {
 	}
 }
 
-// R-E4OU-QHXO
+// R-ILPK-JLPT
 func TestEveryWireRequestCarriesJSONContentType(t *testing.T) {
 	endpoint, err := NewEndpoint(authFunc(func(context.Context, *http.Request, []byte) error { return nil }), WithBaseURL("https://example.test"))
 	if err != nil {
@@ -185,6 +185,8 @@ func TestEveryWireRequestCarriesJSONContentType(t *testing.T) {
 		{name: "responses", wire: ResponsesWire()},
 		{name: "openai_chat", wire: OpenAIChatWire()},
 		{name: "openai_responses", wire: OpenAIResponsesWire()},
+		{name: "xai_chat", wire: XAIChatWire()},
+		{name: "xai_responses", wire: XAIResponsesWire()},
 	}
 	for _, test := range wires {
 		t.Run(test.name, func(t *testing.T) {

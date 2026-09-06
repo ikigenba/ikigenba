@@ -115,6 +115,228 @@ func vendorFixture(endpointURL, model string, client *http.Client) (*Conversatio
 	)
 }
 
+type credentialRotationStub struct {
+	mode        AuthMode
+	token       Token
+	rotated     Token
+	rotateErr   error
+	rotateCalls int
+	rotations   []Rotation
+}
+
+func (s *credentialRotationStub) AuthMode() AuthMode { return s.mode }
+
+func (s *credentialRotationStub) Token(context.Context) (Token, error) {
+	return s.token, nil
+}
+
+func (s *credentialRotationStub) Rotate(_ context.Context, rotation Rotation) (Token, error) {
+	s.rotateCalls++
+	s.rotations = append(s.rotations, rotation)
+	if s.rotateErr != nil {
+		return Token{}, s.rotateErr
+	}
+	s.token = s.rotated
+	return s.token, nil
+}
+
+type credentialHTTPResponse struct {
+	status int
+	body   string
+}
+
+type credentialExchangeResult struct {
+	events         []Event
+	err            error
+	rotator        *credentialRotationStub
+	authorizations []string
+}
+
+func runCredentialExchange(t *testing.T, wire WireFormat, mode AuthMode, responses []credentialHTTPResponse, rotateErr error) credentialExchangeResult {
+	t.Helper()
+	var authorizations []string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		authorizations = append(authorizations, request.Header.Get("Authorization"))
+		index := len(authorizations) - 1
+		if index >= len(responses) {
+			t.Errorf("request %d exceeded configured responses", index+1)
+			writer.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		response := responses[index]
+		if response.status >= http.StatusOK && response.status < http.StatusMultipleChoices {
+			writer.Header().Set("Content-Type", "text/event-stream")
+		}
+		writer.WriteHeader(response.status)
+		_, _ = io.WriteString(writer, response.body)
+	}))
+	t.Cleanup(server.Close)
+
+	rotator := &credentialRotationStub{
+		mode:      mode,
+		token:     Token{Bearer: "old-token", AccountID: "account"},
+		rotated:   Token{Bearer: "new-token", AccountID: "account"},
+		rotateErr: rotateErr,
+	}
+	rotation := Rotation{RefreshURL: "https://unused.test", ClientID: "client"}
+	offering := Offering{
+		ID:         OfferingID("credential-test"),
+		WireFormat: wire,
+		WireModel:  "test-model",
+		Endpoints:  []EndpointSpec{{AuthMode: mode, BaseURL: server.URL, Rotation: rotation}},
+	}
+	authenticator, err := offering.Authenticator(rotator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint, err := NewEndpoint(authenticator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := New(offering.WireFormat, endpoint, offering.WireModel, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := conversation.Send(context.Background(), Text{Text: "hello"})
+	events := drainStream(stream)
+	return credentialExchangeResult{
+		events:         events,
+		err:            stream.Err(),
+		rotator:        rotator,
+		authorizations: authorizations,
+	}
+}
+
+func credentialSuccessResponse(wire WireFormat) credentialHTTPResponse {
+	switch wire.(type) {
+	case *chatWire, *xaiChatWire:
+		return credentialHTTPResponse{
+			status: http.StatusOK,
+			body:   "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n",
+		}
+	default:
+		return credentialHTTPResponse{
+			status: http.StatusOK,
+			body: "data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"delta\":\"ok\"}\n\n" +
+				"data: {\"type\":\"response.completed\",\"response\":{\"usage\":{}}}\n\n",
+		}
+	}
+}
+
+// R-IU8V-7ZWO
+// R-IVGR-LRND
+func TestBuiltInWiresClassifyRejectedCredentialsThroughOAuthReissue(t *testing.T) {
+	xaiRejected := `{"code":"unauthenticated:bad-credentials","error":"The OAuth2 access token could not be validated."}`
+	tests := []struct {
+		name       string
+		wire       func() WireFormat
+		status     int
+		body       string
+		wantRotate bool
+	}{
+		{name: "xai responses exact", wire: XAIResponsesWire, status: http.StatusForbidden, body: xaiRejected, wantRotate: true},
+		{name: "xai responses unrelated 403", wire: XAIResponsesWire, status: http.StatusForbidden, body: `{"code":"permission-denied"}`},
+		{name: "xai responses malformed 403", wire: XAIResponsesWire, status: http.StatusForbidden, body: `not-json`},
+		{name: "xai responses rejected body at 401", wire: XAIResponsesWire, status: http.StatusUnauthorized, body: xaiRejected},
+		{name: "xai chat exact", wire: XAIChatWire, status: http.StatusForbidden, body: xaiRejected, wantRotate: true},
+		{name: "xai chat unrelated 403", wire: XAIChatWire, status: http.StatusForbidden, body: `{"code":"unauthenticated:no-credentials"}`},
+		{name: "xai chat rejected body at 401", wire: XAIChatWire, status: http.StatusUnauthorized, body: xaiRejected},
+		{name: "openai 401 rejected-shaped body", wire: OpenAIResponsesWire, status: http.StatusUnauthorized, body: xaiRejected, wantRotate: true},
+		{name: "openai 401 unrelated body", wire: OpenAIResponsesWire, status: http.StatusUnauthorized, body: `not-json`, wantRotate: true},
+		{name: "openai exact xai 403", wire: OpenAIResponsesWire, status: http.StatusForbidden, body: xaiRejected},
+		{name: "openai unrelated 403", wire: OpenAIResponsesWire, status: http.StatusForbidden, body: `{"error":"region blocked"}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			wire := test.wire()
+			responses := []credentialHTTPResponse{{status: test.status, body: test.body}}
+			if test.wantRotate {
+				responses = append(responses, credentialSuccessResponse(wire))
+			}
+			result := runCredentialExchange(t, wire, AuthModeOAuth, responses, nil)
+			wantRotateCalls := 0
+			wantRequests := 1
+			if test.wantRotate {
+				wantRotateCalls = 1
+				wantRequests = 2
+				if result.err != nil || len(result.events) != 1 {
+					t.Fatalf("successful reissue events/error = (%#v, %v), want one event and nil", result.events, result.err)
+				}
+			} else {
+				var providerErr *Error
+				if !errors.As(result.err, &providerErr) || providerErr.Status != test.status || providerErr.Message != test.body {
+					t.Fatalf("unclassified response error = %#v, want status %d body %q", result.err, test.status, test.body)
+				}
+			}
+			if result.rotator.rotateCalls != wantRotateCalls || len(result.authorizations) != wantRequests {
+				t.Fatalf("rotate/requests = %d/%d, want %d/%d", result.rotator.rotateCalls, len(result.authorizations), wantRotateCalls, wantRequests)
+			}
+		})
+	}
+}
+
+// R-J1K9-IMCU
+func TestConversationReissuesRejectedOAuthCredentialExactlyOnce(t *testing.T) {
+	rejected := credentialHTTPResponse{status: http.StatusForbidden, body: `{"code":"unauthenticated:bad-credentials"}`}
+	t.Run("successful rotation uses endpoint rotation and new token", func(t *testing.T) {
+		wire := XAIResponsesWire()
+		result := runCredentialExchange(t, wire, AuthModeOAuth, []credentialHTTPResponse{rejected, credentialSuccessResponse(wire)}, nil)
+		wantRotation := Rotation{RefreshURL: "https://unused.test", ClientID: "client"}
+		if result.err != nil || result.rotator.rotateCalls != 1 || !reflect.DeepEqual(result.rotator.rotations, []Rotation{wantRotation}) {
+			t.Fatalf("result error/rotations = %v/%#v, want nil and %#v", result.err, result.rotator.rotations, []Rotation{wantRotation})
+		}
+		if !reflect.DeepEqual(result.authorizations, []string{"Bearer old-token", "Bearer new-token"}) {
+			t.Fatalf("Authorization headers = %#v, want old then new token", result.authorizations)
+		}
+		if len(result.events) != 1 {
+			t.Fatalf("events = %#v, want only the re-issued response event", result.events)
+		}
+	})
+
+	t.Run("second rejection surfaces without another rotation", func(t *testing.T) {
+		result := runCredentialExchange(t, XAIResponsesWire(), AuthModeOAuth, []credentialHTTPResponse{rejected, rejected}, nil)
+		var providerErr *Error
+		if !errors.As(result.err, &providerErr) || providerErr.Status != http.StatusForbidden {
+			t.Fatalf("second rejection error = %#v, want 403 *Error", result.err)
+		}
+		if result.rotator.rotateCalls != 1 || len(result.authorizations) != 2 {
+			t.Fatalf("rotate/requests = %d/%d, want 1/2", result.rotator.rotateCalls, len(result.authorizations))
+		}
+	})
+}
+
+// R-J2S5-WE3J
+func TestConversationSurfacesRejectedCredentialRotationErrorUnchanged(t *testing.T) {
+	rotationErr := &Error{Category: CategoryAuth, Status: http.StatusTeapot, Message: "rotation failed"}
+	result := runCredentialExchange(t, OpenAIResponsesWire(), AuthModeOAuth, []credentialHTTPResponse{{
+		status: http.StatusUnauthorized,
+		body:   `{"error":"expired"}`,
+	}}, rotationErr)
+	var providerErr *Error
+	if !errors.As(result.err, &providerErr) || providerErr != rotationErr {
+		t.Fatalf("rotation error = %#v (As %#v), want original %#v", result.err, providerErr, rotationErr)
+	}
+	if result.rotator.rotateCalls != 1 || len(result.authorizations) != 1 {
+		t.Fatalf("rotate/requests = %d/%d, want 1/1", result.rotator.rotateCalls, len(result.authorizations))
+	}
+}
+
+// R-J402-A5U8
+func TestConversationNeverRotatesRejectedAPIKeyCredential(t *testing.T) {
+	body := `{"error":"invalid_api_key"}`
+	result := runCredentialExchange(t, OpenAIResponsesWire(), AuthModeAPIKey, []credentialHTTPResponse{{
+		status: http.StatusUnauthorized,
+		body:   body,
+	}}, errors.New("Rotate must not be called"))
+	var providerErr *Error
+	if !errors.As(result.err, &providerErr) || providerErr.Status != http.StatusUnauthorized || providerErr.Message != body {
+		t.Fatalf("API-key response error = %#v, want original classified 401", result.err)
+	}
+	if result.rotator.rotateCalls != 0 || len(result.authorizations) != 1 {
+		t.Fatalf("rotate/requests = %d/%d, want 0/1", result.rotator.rotateCalls, len(result.authorizations))
+	}
+}
+
 func TestEndpointConversationExecutesWithDefaultHTTPClient(t *testing.T) {
 	// R-OFIQ-BSPA
 	wantConstructor := reflect.TypeOf(func(Authenticator, ...EndpointOption) (Endpoint, error) { return Endpoint{}, nil })
@@ -139,227 +361,6 @@ func TestEndpointConversationExecutesWithDefaultHTTPClient(t *testing.T) {
 	drainStream(defaultConversation.Send(context.Background(), Text{Text: "hello"}))
 	if defaultCalls != 1 {
 		t.Fatalf("default client calls = %d, want 1", defaultCalls)
-	}
-}
-
-func phase10TestWire() *testWire {
-	return &testWire{classifier: func(status int, _ http.Header, _ []byte) error {
-		if status >= http.StatusOK && status < http.StatusMultipleChoices {
-			return nil
-		}
-		return &Error{Category: classifyStatus(status), Status: status, Message: http.StatusText(status)}
-	}}
-}
-
-// countingRefreshSource records Rotate calls; tokenSourceStub itself keeps no
-// such tally.
-type countingRefreshSource struct {
-	*tokenSourceStub
-	refreshes int
-}
-
-func (s *countingRefreshSource) Rotate(ctx context.Context, r Rotation) (Token, error) {
-	s.refreshes++
-	return s.tokenSourceStub.Rotate(ctx, r)
-}
-
-// R-KXMA-ZHVE
-func TestConversationSurfacesOAuthRefreshFailureUnchanged(t *testing.T) {
-	requests := 0
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-		requests++
-		writer.WriteHeader(http.StatusUnauthorized)
-	}))
-	t.Cleanup(server.Close)
-
-	refreshErr := &Error{Category: CategoryAuth, Status: http.StatusUnauthorized, Message: "refresh failed"}
-	source := &countingRefreshSource{tokenSourceStub: &tokenSourceStub{
-		token:      Token{Bearer: "stale"},
-		refreshErr: refreshErr,
-	}}
-	auth := oauthApplier{provider: OfferingAnthropicMessages, rotator: source}
-	endpoint, err := NewEndpoint(auth, WithBaseURL(server.URL))
-	if err != nil {
-		t.Fatal(err)
-	}
-	conversation := newEndpointConversation(phase10TestWire(), endpoint, Identity{Model: "m"}, Config{})
-	stream := conversation.Send(context.Background(), Text{Text: "hello"})
-	events := drainStream(stream)
-
-	if len(events) != 0 {
-		t.Fatalf("events = %#v, want none", events)
-	}
-	var providerErr *Error
-	if !errors.As(stream.Err(), &providerErr) || providerErr != refreshErr {
-		t.Fatalf("stream error = %v, want exact refresh error %p", stream.Err(), refreshErr)
-	}
-	if requests != 1 {
-		t.Fatalf("requests = %d, want 1", requests)
-	}
-	if source.refreshes != 1 {
-		t.Fatalf("refreshes = %d, want 1", source.refreshes)
-	}
-}
-
-// R-KWEE-LQ4P
-func TestConversationOAuth401RefreshesAndReissuesOnce(t *testing.T) {
-	t.Run("successful refresh", func(t *testing.T) {
-		var authorizations []string
-		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-			authorizations = append(authorizations, request.Header.Get("Authorization"))
-			if len(authorizations) == 1 {
-				writer.WriteHeader(http.StatusUnauthorized)
-				return
-			}
-			writer.WriteHeader(http.StatusOK)
-			_, _ = io.WriteString(writer, "data: refreshed\n\n")
-		}))
-		t.Cleanup(server.Close)
-
-		source := &countingRefreshSource{tokenSourceStub: &tokenSourceStub{
-			token:        Token{Bearer: "stale"},
-			refreshToken: Token{Bearer: "fresh"},
-		}}
-		offering := Offering{ID: OfferingAnthropicMessages, Endpoints: []EndpointSpec{{AuthMode: AuthModeOAuth}}}
-		auth, err := offering.Authenticator(source)
-		if err != nil {
-			t.Fatal(err)
-		}
-		endpoint, err := NewEndpoint(auth, WithBaseURL(server.URL))
-		if err != nil {
-			t.Fatal(err)
-		}
-		conversation := newEndpointConversation(phase10TestWire(), endpoint, Identity{Model: "m"}, Config{})
-		stream := conversation.Send(context.Background(), Text{Text: "hello"})
-		events := drainStream(stream)
-
-		wantEvents := []Event{MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "refreshed"}}}}}
-		if stream.Err() != nil {
-			t.Fatalf("stream error = %v, want nil", stream.Err())
-		}
-		if !reflect.DeepEqual(events, wantEvents) {
-			t.Fatalf("events = %#v, want %#v", events, wantEvents)
-		}
-		if len(authorizations) != 2 {
-			t.Fatalf("requests = %d, want 2", len(authorizations))
-		}
-		if source.refreshes != 1 {
-			t.Fatalf("refreshes = %d, want 1", source.refreshes)
-		}
-		if !reflect.DeepEqual(authorizations, []string{"Bearer stale", "Bearer fresh"}) {
-			t.Fatalf("Authorization headers = %#v, want stale then fresh bearer tokens", authorizations)
-		}
-	})
-
-	t.Run("second 401 surfaces without another refresh", func(t *testing.T) {
-		requests := 0
-		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-			requests++
-			writer.WriteHeader(http.StatusUnauthorized)
-		}))
-		t.Cleanup(server.Close)
-
-		source := &countingRefreshSource{tokenSourceStub: &tokenSourceStub{
-			token:        Token{Bearer: "stale"},
-			refreshToken: Token{Bearer: "fresh"},
-		}}
-		offering := Offering{ID: OfferingAnthropicMessages, Endpoints: []EndpointSpec{{AuthMode: AuthModeOAuth}}}
-		auth, err := offering.Authenticator(source)
-		if err != nil {
-			t.Fatal(err)
-		}
-		endpoint, err := NewEndpoint(auth, WithBaseURL(server.URL))
-		if err != nil {
-			t.Fatal(err)
-		}
-		conversation := newEndpointConversation(phase10TestWire(), endpoint, Identity{Model: "m"}, Config{})
-		stream := conversation.Send(context.Background(), Text{Text: "hello"})
-		events := drainStream(stream)
-
-		if len(events) != 0 {
-			t.Fatalf("events = %#v, want none", events)
-		}
-		var providerErr *Error
-		if !errors.As(stream.Err(), &providerErr) || providerErr.Status != http.StatusUnauthorized {
-			t.Fatalf("stream error = %v, want classified 401 error", stream.Err())
-		}
-		if requests != 2 {
-			t.Fatalf("requests = %d, want 2", requests)
-		}
-		if source.refreshes != 1 {
-			t.Fatalf("refreshes = %d, want 1", source.refreshes)
-		}
-	})
-
-	t.Run("non-401 does not refresh", func(t *testing.T) {
-		requests := 0
-		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-			requests++
-			writer.WriteHeader(http.StatusInternalServerError)
-		}))
-		t.Cleanup(server.Close)
-
-		source := &countingRefreshSource{tokenSourceStub: &tokenSourceStub{token: Token{Bearer: "current"}}}
-		offering := Offering{ID: OfferingAnthropicMessages, Endpoints: []EndpointSpec{{AuthMode: AuthModeOAuth}}}
-		auth, err := offering.Authenticator(source)
-		if err != nil {
-			t.Fatal(err)
-		}
-		endpoint, err := NewEndpoint(auth, WithBaseURL(server.URL))
-		if err != nil {
-			t.Fatal(err)
-		}
-		conversation := newEndpointConversation(phase10TestWire(), endpoint, Identity{Model: "m"}, Config{})
-		stream := conversation.Send(context.Background(), Text{Text: "hello"})
-		events := drainStream(stream)
-
-		if len(events) != 0 {
-			t.Fatalf("events = %#v, want none", events)
-		}
-		var providerErr *Error
-		if !errors.As(stream.Err(), &providerErr) || providerErr.Status != http.StatusInternalServerError {
-			t.Fatalf("stream error = %v, want classified 500 error", stream.Err())
-		}
-		if requests != 1 {
-			t.Fatalf("requests = %d, want 1", requests)
-		}
-		if source.refreshes != 0 {
-			t.Fatalf("refreshes = %d, want 0", source.refreshes)
-		}
-	})
-}
-
-// R-KYU7-D9M3
-func TestConversationAPIKey401DoesNotReissue(t *testing.T) {
-	requests := 0
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-		requests++
-		writer.WriteHeader(http.StatusUnauthorized)
-	}))
-	t.Cleanup(server.Close)
-
-	offering := Offering{ID: OfferingAnthropicMessages, Endpoints: []EndpointSpec{{AuthMode: AuthModeAPIKey}}}
-	auth, err := offering.Authenticator(APIKeyRotator("secret"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	endpoint, err := NewEndpoint(auth, WithBaseURL(server.URL))
-	if err != nil {
-		t.Fatal(err)
-	}
-	conversation := newEndpointConversation(phase10TestWire(), endpoint, Identity{Model: "m"}, Config{})
-	stream := conversation.Send(context.Background(), Text{Text: "hello"})
-	events := drainStream(stream)
-
-	if len(events) != 0 {
-		t.Fatalf("events = %#v, want none", events)
-	}
-	var providerErr *Error
-	if !errors.As(stream.Err(), &providerErr) || providerErr.Status != http.StatusUnauthorized {
-		t.Fatalf("stream error = %v, want classified 401 error", stream.Err())
-	}
-	if requests != 1 {
-		t.Fatalf("requests = %d, want 1", requests)
 	}
 }
 

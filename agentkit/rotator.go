@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Rotator presents the current secret and can rotate it.
@@ -85,10 +86,7 @@ func (r *oauthRotator) Token(ctx context.Context) (Token, error) {
 		return Token{}, fmt.Errorf("OAuth token has no access_token: %w", ErrInvalidConfig)
 	}
 
-	r.token = Token{
-		Bearer:    accessToken,
-		AccountID: openAIAccountID(accessToken),
-	}
+	r.token = tokenFromAccessToken(accessToken)
 	r.raw = append(r.raw[:0], raw...)
 	r.cached = true
 	return r.token, nil
@@ -135,82 +133,27 @@ func (r *oauthRotator) rotateOnce(ctx context.Context, rotation Rotation) (Token
 		return Token{}, fmt.Errorf("OAuth rotation has no refresh URL: %w", ErrInvalidConfig)
 	}
 
-	r.mu.Lock()
-	raw := append([]byte(nil), r.raw...)
-	r.mu.Unlock()
-	if len(raw) == 0 {
-		var err error
-		raw, err = r.store.Read(ctx)
-		if err != nil {
-			return Token{}, fmt.Errorf("read OAuth refresh token: %w", ErrInvalidConfig)
-		}
-	}
-
-	var stored map[string]any
-	if err := json.Unmarshal(raw, &stored); err != nil {
-		return Token{}, fmt.Errorf("decode OAuth refresh token: %w", ErrInvalidConfig)
-	}
-	refreshToken, ok := stored["refresh_token"].(string)
-	if !ok || refreshToken == "" {
-		return Token{}, fmt.Errorf("OAuth token has no refresh_token: %w", ErrInvalidConfig)
-	}
-
-	form := url.Values{
-		"grant_type":    {"refresh_token"},
-		"refresh_token": {refreshToken},
-		"client_id":     {rotation.ClientID},
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rotation.RefreshURL, strings.NewReader(form.Encode()))
+	refreshToken, err := r.refreshToken(ctx)
 	if err != nil {
-		return Token{}, fmt.Errorf("build OAuth refresh request: %w", err)
+		return Token{}, err
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
+	req, err := oauthRefreshRequest(ctx, rotation, refreshToken)
 	if err != nil {
-		return Token{}, &Error{Category: CategoryTransport}
+		return Token{}, err
 	}
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	body, err := io.ReadAll(resp.Body)
+	body, err := executeOAuthRefresh(req)
 	if err != nil {
-		return Token{}, &Error{Category: CategoryTransport, Status: resp.StatusCode}
+		return Token{}, err
 	}
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		var oauthError struct {
-			Code    string `json:"error"`
-			Message string `json:"error_description"`
-		}
-		_ = json.Unmarshal(body, &oauthError)
-		return Token{}, &Error{
-			Category: CategoryAuth,
-			Status:   resp.StatusCode,
-			Code:     oauthError.Code,
-			Message:  oauthError.Message,
-		}
-	}
-
-	accessToken, response, ok, err := oauthAccessToken(body)
-	if err != nil || !ok {
-		return Token{}, fmt.Errorf("OAuth token endpoint has no access_token: %w", ErrInvalidConfig)
-	}
-
-	updated := body
-	if _, ok := response["refresh_token"]; !ok {
-		response["refresh_token"], _ = json.Marshal(refreshToken)
-		updated, _ = json.Marshal(response)
+	accessToken, updated, err := mergeOAuthRefresh(body, refreshToken)
+	if err != nil {
+		return Token{}, err
 	}
 	if err := r.store.Write(ctx, updated); err != nil {
 		return Token{}, err
 	}
 
-	token := Token{
-		Bearer:    accessToken,
-		AccountID: openAIAccountID(accessToken),
-	}
+	token := tokenFromAccessToken(accessToken)
 	r.mu.Lock()
 	r.token = token
 	r.raw = append(r.raw[:0], updated...)
@@ -220,22 +163,130 @@ func (r *oauthRotator) rotateOnce(ctx context.Context, rotation Rotation) (Token
 	return token, nil
 }
 
-func openAIAccountID(accessToken string) string {
+func (r *oauthRotator) refreshToken(ctx context.Context) (string, error) {
+	r.mu.Lock()
+	raw := append([]byte(nil), r.raw...)
+	r.mu.Unlock()
+	if len(raw) == 0 {
+		var err error
+		raw, err = r.store.Read(ctx)
+		if err != nil {
+			return "", fmt.Errorf("read OAuth refresh token: %w", ErrInvalidConfig)
+		}
+	}
+
+	var stored map[string]any
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		return "", fmt.Errorf("decode OAuth refresh token: %w", ErrInvalidConfig)
+	}
+	refreshToken, ok := stored["refresh_token"].(string)
+	if !ok || refreshToken == "" {
+		return "", fmt.Errorf("OAuth token has no refresh_token: %w", ErrInvalidConfig)
+	}
+	return refreshToken, nil
+}
+
+func oauthRefreshRequest(ctx context.Context, rotation Rotation, refreshToken string) (*http.Request, error) {
+	form := url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshToken},
+		"client_id":     {rotation.ClientID},
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rotation.RefreshURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("build OAuth refresh request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	return req, nil
+}
+
+func executeOAuthRefresh(req *http.Request) ([]byte, error) {
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, &Error{Category: CategoryTransport}
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, &Error{Category: CategoryTransport, Status: resp.StatusCode}
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		var oauthError struct {
+			Code    string `json:"error"`
+			Message string `json:"error_description"`
+		}
+		_ = json.Unmarshal(body, &oauthError)
+		return nil, &Error{
+			Category: CategoryAuth,
+			Status:   resp.StatusCode,
+			Code:     oauthError.Code,
+			Message:  oauthError.Message,
+		}
+	}
+	return body, nil
+}
+
+func mergeOAuthRefresh(body []byte, refreshToken string) (string, []byte, error) {
+	accessToken, response, ok, err := oauthAccessToken(body)
+	if err != nil || !ok {
+		return "", nil, fmt.Errorf("OAuth token endpoint has no access_token: %w", ErrInvalidConfig)
+	}
+
+	updated := body
+	if _, ok := response["refresh_token"]; !ok {
+		response["refresh_token"], _ = json.Marshal(refreshToken)
+		updated, _ = json.Marshal(response)
+	}
+	return accessToken, updated, nil
+}
+
+func tokenFromAccessToken(accessToken string) Token {
+	claims := jwtPayloadClaims(accessToken)
+	return Token{
+		Bearer:    accessToken,
+		AccountID: openAIAccountID(claims),
+		ExpiresAt: accessTokenExpiry(claims),
+	}
+}
+
+func jwtPayloadClaims(accessToken string) map[string]json.RawMessage {
 	segments := strings.Split(accessToken, ".")
 	if len(segments) != 3 {
-		return ""
+		return nil
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(segments[1])
 	if err != nil {
-		return ""
+		return nil
 	}
-	var claims struct {
-		OpenAIAuth struct {
-			AccountID string `json:"chatgpt_account_id"`
-		} `json:"https://api.openai.com/auth"`
-	}
+	var claims map[string]json.RawMessage
 	if err := json.Unmarshal(payload, &claims); err != nil {
+		return nil
+	}
+	return claims
+}
+
+func openAIAccountID(claims map[string]json.RawMessage) string {
+	var openAIAuth struct {
+		AccountID string `json:"chatgpt_account_id"`
+	}
+	if err := json.Unmarshal(claims["https://api.openai.com/auth"], &openAIAuth); err != nil {
 		return ""
 	}
-	return claims.OpenAIAuth.AccountID
+	return openAIAuth.AccountID
+}
+
+func accessTokenExpiry(claims map[string]json.RawMessage) time.Time {
+	var claim any
+	if err := json.Unmarshal(claims["exp"], &claim); err != nil {
+		return time.Time{}
+	}
+	expiry, numeric := claim.(float64)
+	if !numeric {
+		return time.Time{}
+	}
+	return time.Unix(int64(expiry), 0)
 }

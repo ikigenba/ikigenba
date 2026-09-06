@@ -30,6 +30,24 @@ var (
 	_ Event = OutputDone{}
 )
 
+// assertLiveBuildConstraint is the single encoding of the rule that a live
+// fixture begins with the live build constraint.
+func assertLiveBuildConstraint(t *testing.T, label, text string) {
+	t.Helper()
+	if !strings.HasPrefix(strings.TrimLeftFunc(text, unicode.IsSpace), "//go:build live") {
+		t.Fatalf("%s does not begin with the live build constraint", label)
+	}
+}
+
+// assertNeverSkips is the single encoding of the rule that a live fixture
+// fails, never skips, on a missing credential.
+func assertNeverSkips(t *testing.T, label, text string) {
+	t.Helper()
+	if strings.Contains(text, "t.Skip") {
+		t.Fatalf("%s must fail, never skip, on a missing credential", label)
+	}
+}
+
 // R-L023-R1CS
 func TestLiveOAuthRefreshFixturesExistWithLiveTag(t *testing.T) {
 	fixtures := []struct {
@@ -48,12 +66,8 @@ func TestLiveOAuthRefreshFixturesExistWithLiveTag(t *testing.T) {
 				t.Fatalf("read live OAuth fixture: %v", err)
 			}
 			text := string(contents)
-			if !strings.HasPrefix(strings.TrimLeftFunc(text, unicode.IsSpace), "//go:build live") {
-				t.Fatal("live OAuth fixture does not begin with the live build constraint")
-			}
-			if strings.Contains(text, "t.Skip") {
-				t.Fatal("live OAuth fixture must fail, never skip, on a missing credential")
-			}
+			assertLiveBuildConstraint(t, "live OAuth fixture", text)
+			assertNeverSkips(t, "live OAuth fixture", text)
 			for _, fragment := range []string{
 				"func Test", fixture.environmentVariable, "OAuthRotator", "FileTokenStore",
 				".Rotate(", fixture.model, fixture.host, "WireResponses", "access_token",
@@ -61,6 +75,57 @@ func TestLiveOAuthRefreshFixturesExistWithLiveTag(t *testing.T) {
 				if !strings.Contains(text, fragment) {
 					t.Fatalf("live OAuth fixture does not contain %q", fragment)
 				}
+			}
+		})
+	}
+}
+
+// R-ED2W-P9IU
+func TestLiveOAuthReissueFixturesExistWithLiveTag(t *testing.T) {
+	fixtures := []struct {
+		name                string
+		environmentVariable string
+		model               string
+		host                string
+	}{
+		{"oauth_reissue_openai_live_test.go", "AGENTKIT_OPENAI_OAUTH_FILE", "gpt-5.4-mini", "HostOpenAI"},
+		{"oauth_reissue_xai_live_test.go", "AGENTKIT_XAI_OAUTH_FILE", "grok-4.3", "HostXAI"},
+	}
+	for _, fixture := range fixtures {
+		t.Run(fixture.name, func(t *testing.T) {
+			contents, err := os.ReadFile(fixture.name)
+			if err != nil {
+				t.Fatalf("read live OAuth reissue fixture: %v", err)
+			}
+			text := string(contents)
+			assertLiveBuildConstraint(t, "live OAuth reissue fixture", text)
+			assertNeverSkips(t, "live OAuth reissue fixture", text)
+			for _, fragment := range []string{
+				"func TestLive", fixture.environmentVariable, "OAuthRotator", "NewEndpoint",
+				".Send(", fixture.model, fixture.host, "WireResponses", "access_token",
+				"MessageDone", "stream.Err()",
+			} {
+				if !strings.Contains(text, fragment) {
+					t.Fatalf("live OAuth reissue fixture does not contain %q", fragment)
+				}
+			}
+			if strings.Contains(text, "WithBaseURL") {
+				t.Fatal("live OAuth reissue fixture must use the vendor default base URL")
+			}
+
+			parsed, err := parser.ParseFile(token.NewFileSet(), fixture.name, contents, 0)
+			if err != nil {
+				t.Fatalf("parse live OAuth reissue fixture: %v", err)
+			}
+			testCount := 0
+			for _, declaration := range parsed.Decls {
+				function, ok := declaration.(*ast.FuncDecl)
+				if ok && function.Recv == nil && strings.HasPrefix(function.Name.Name, "TestLive") {
+					testCount++
+				}
+			}
+			if testCount != 1 {
+				t.Fatalf("live OAuth reissue fixture declares %d TestLive functions, want 1", testCount)
 			}
 		})
 	}
@@ -101,9 +166,7 @@ func TestLiveMatrixFixtureExistsWithLiveTag(t *testing.T) {
 		t.Fatalf("read live matrix fixture: %v", err)
 	}
 	text := string(contents)
-	if !strings.HasPrefix(strings.TrimLeftFunc(text, unicode.IsSpace), "//go:build live") {
-		t.Fatal("live matrix fixture does not begin with the live build constraint")
-	}
+	assertLiveBuildConstraint(t, "live matrix fixture", text)
 	if !strings.Contains(text, "func TestLiveMatrix(") {
 		t.Fatal("live matrix fixture does not declare TestLiveMatrix")
 	}
@@ -159,9 +222,7 @@ func TestLiveMatrixSubtestsFailNeverSkipOnMissingCredential(t *testing.T) {
 		t.Fatalf("read live matrix fixture: %v", err)
 	}
 	text := string(contents)
-	if strings.Contains(text, "t.Skip") {
-		t.Fatal("live matrix fixture must fail, never skip, on a missing credential")
-	}
+	assertNeverSkips(t, "live matrix fixture", text)
 	for _, fragment := range []string{
 		"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "XAI_API_KEY", "OPENROUTER_API_KEY",
 		"AGENTKIT_OPENAI_OAUTH_FILE", "AGENTKIT_XAI_OAUTH_FILE",
@@ -349,7 +410,7 @@ func TestEventIsSealedToExactlyFourVariants(t *testing.T) {
 						if formatErr := format.Node(&rendered, token.NewFileSet(), field.Type); formatErr != nil {
 							t.Fatal(formatErr)
 						}
-						for _, codecName := range []string{"wireFormat", "anthropicWire", "openAIResponsesWire", "responsesWire", "openAIChatWire", "chatWire", "geminiWire"} {
+						for _, codecName := range []string{"wireFormat", "anthropicMessagesWire", "openAIResponsesWire", "responsesWire", "openAIChatWire", "chatWire", "geminiGenerateContentWire", "xaiChatWire", "xaiResponsesWire"} {
 							if strings.Contains(rendered.String(), codecName) {
 								t.Fatalf("consumer-visible %s.%s exposes assignable wire codec %s", specification.Name, field.Names[0], rendered.String())
 							}
@@ -505,7 +566,7 @@ func TestConversationConstructionFixesOrchestrationConfiguration(t *testing.T) {
 
 	firstProvider := first.provider.(*composedProvider)
 	secondProvider := second.provider.(*composedProvider)
-	if _, ok := firstProvider.wire.(*anthropicWire); !ok {
+	if _, ok := firstProvider.wire.(*anthropicMessagesWire); !ok {
 		t.Fatalf("first construction wire = %T, want Anthropic", firstProvider.wire)
 	}
 	if _, ok := secondProvider.wire.(*openAIResponsesWire); !ok {
@@ -588,7 +649,7 @@ func TestConversationIdentityMatchesOfferingAndRotatorWithAndWithoutBaseURLOverr
 	}
 }
 
-// R-1PT5-8VNP
+// R-IJ9R-S28F
 func TestConstructionSeamIsExactAndSufficientForEveryOffering(t *testing.T) {
 	for _, entry := range Catalog() {
 		for _, offering := range entry.Offerings {
@@ -651,6 +712,8 @@ func TestConstructionSeamIsExactAndSufficientForEveryOffering(t *testing.T) {
 		{name: "ResponsesWire", got: reflect.TypeOf(ResponsesWire), want: reflect.TypeOf(func() WireFormat { return nil }), kind: reflect.Func},
 		{name: "OpenAIChatWire", got: reflect.TypeOf(OpenAIChatWire), want: reflect.TypeOf(func() WireFormat { return nil }), kind: reflect.Func},
 		{name: "OpenAIResponsesWire", got: reflect.TypeOf(OpenAIResponsesWire), want: reflect.TypeOf(func() WireFormat { return nil }), kind: reflect.Func},
+		{name: "XAIChatWire", got: reflect.TypeOf(XAIChatWire), want: reflect.TypeOf(func() WireFormat { return nil }), kind: reflect.Func},
+		{name: "XAIResponsesWire", got: reflect.TypeOf(XAIResponsesWire), want: reflect.TypeOf(func() WireFormat { return nil }), kind: reflect.Func},
 		{name: "Rotator", got: reflect.TypeFor[Rotator](), kind: reflect.Interface},
 		{name: "APIKeyRotator", got: reflect.TypeOf(APIKeyRotator), want: reflect.TypeOf(func(string) Rotator { return nil }), kind: reflect.Func},
 		{name: "OAuthRotator", got: reflect.TypeOf(OAuthRotator), want: reflect.TypeOf(func(TokenStore) Rotator { return nil }), kind: reflect.Func},
@@ -664,10 +727,9 @@ func TestConstructionSeamIsExactAndSufficientForEveryOffering(t *testing.T) {
 	}
 	wantNames := []string{
 		"New", "NewEndpoint", "EndpointOption", "WithBaseURL", "Endpoint", "Authenticator", "WireFormat",
-		"AnthropicMessagesWire", "GeminiGenerateContentWire", "ChatWire",
-		"ResponsesWire", "OpenAIChatWire", "OpenAIResponsesWire",
-		"Rotator", "APIKeyRotator", "OAuthRotator",
-		"Token", "TokenStore", "FileTokenStore",
+		"AnthropicMessagesWire", "GeminiGenerateContentWire", "ChatWire", "ResponsesWire",
+		"OpenAIChatWire", "OpenAIResponsesWire", "XAIChatWire", "XAIResponsesWire",
+		"Rotator", "APIKeyRotator", "OAuthRotator", "Token", "TokenStore", "FileTokenStore",
 		"AuthMode", "Rotation", "EndpointSpec", "Offering.Authenticator",
 	}
 	gotNames := make([]string, len(symbols))
@@ -687,7 +749,7 @@ func TestConstructionSeamIsExactAndSufficientForEveryOffering(t *testing.T) {
 
 // R-W1KR-P3S7
 // R-VT1H-0PLC
-// R-K0QG-7OV3
+// R-IKHO-5TZ4
 func TestNewDeclarationTakesWireFormatAndRejectsNilWire(t *testing.T) {
 	declarations := parsePackageDeclarations(t, ".")
 	assertASTFunction(t, declarations, "New", []string{"WireFormat", "Endpoint", "string", "Config"}, []string{"*Conversation", "error"}, false)
@@ -707,12 +769,14 @@ func TestNewDeclarationTakesWireFormatAndRejectsNilWire(t *testing.T) {
 		wire WireFormat
 		want reflect.Type
 	}{
-		{"anthropic_messages", AnthropicMessagesWire(), reflect.TypeFor[*anthropicWire]()},
+		{"anthropic_messages", AnthropicMessagesWire(), reflect.TypeFor[*anthropicMessagesWire]()},
 		{"openai_responses", OpenAIResponsesWire(), reflect.TypeFor[*openAIResponsesWire]()},
 		{"responses", ResponsesWire(), reflect.TypeFor[*responsesWire]()},
 		{"openai_chat_completions", OpenAIChatWire(), reflect.TypeFor[*openAIChatWire]()},
 		{"chat", ChatWire(), reflect.TypeFor[*chatWire]()},
-		{"gemini_generate_content", GeminiGenerateContentWire(), reflect.TypeFor[*geminiWire]()},
+		{"gemini_generate_content", GeminiGenerateContentWire(), reflect.TypeFor[*geminiGenerateContentWire]()},
+		{"xai_chat", XAIChatWire(), reflect.TypeFor[*xaiChatWire]()},
+		{"xai_responses", XAIResponsesWire(), reflect.TypeFor[*xaiResponsesWire]()},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			conversation, err := New(test.wire, endpoint, "model", Config{})
@@ -731,7 +795,6 @@ func TestNewDeclarationTakesWireFormatAndRejectsNilWire(t *testing.T) {
 }
 
 func TestWireFormatDeclarationIsExactAndSealed(t *testing.T) {
-	// R-K6TY-4JKK
 	// R-OXYY-4WN5
 	// R-OWR1-R4WG
 	wireType := reflect.TypeFor[WireFormat]()
@@ -777,15 +840,16 @@ func TestWireFormatDeclarationIsExactAndSealed(t *testing.T) {
 		exported func() WireFormat
 		wantType reflect.Type
 	}{
-		{"AnthropicMessagesWire", AnthropicMessagesWire, reflect.TypeFor[*anthropicWire]()},
-		{"GeminiGenerateContentWire", GeminiGenerateContentWire, reflect.TypeFor[*geminiWire]()},
+		{"AnthropicMessagesWire", AnthropicMessagesWire, reflect.TypeFor[*anthropicMessagesWire]()},
+		{"GeminiGenerateContentWire", GeminiGenerateContentWire, reflect.TypeFor[*geminiGenerateContentWire]()},
 		{"ChatWire", ChatWire, reflect.TypeFor[*chatWire]()},
 		{"ResponsesWire", ResponsesWire, reflect.TypeFor[*responsesWire]()},
 		{"OpenAIChatWire", OpenAIChatWire, reflect.TypeFor[*openAIChatWire]()},
 		{"OpenAIResponsesWire", OpenAIResponsesWire, reflect.TypeFor[*openAIResponsesWire]()},
+		{"XAIChatWire", XAIChatWire, reflect.TypeFor[*xaiChatWire]()},
+		{"XAIResponsesWire", XAIResponsesWire, reflect.TypeFor[*xaiResponsesWire]()},
 	}
 	wantConstructors := make(map[string]bool, len(tests))
-	seenTypes := make(map[reflect.Type]string, len(tests))
 	for _, test := range tests {
 		wantConstructors[test.name] = true
 		assertASTFunction(t, declarations, test.name, nil, []string{"WireFormat"}, false)
@@ -793,10 +857,6 @@ func TestWireFormatDeclarationIsExactAndSealed(t *testing.T) {
 		if got == nil {
 			t.Fatalf("%s returned nil", test.name)
 		}
-		if previous, exists := seenTypes[reflect.TypeOf(got)]; exists {
-			t.Fatalf("%s and %s return the same concrete wire type %T", test.name, previous, got)
-		}
-		seenTypes[reflect.TypeOf(got)] = test.name
 		if reflect.TypeOf(got) != test.wantType {
 			t.Fatalf("%s returned %T, want the built-in codec %v", test.name, got, test.wantType)
 		}
@@ -811,12 +871,103 @@ func TestWireFormatDeclarationIsExactAndSealed(t *testing.T) {
 		}
 	}
 	if len(gotConstructors) != len(wantConstructors) {
-		t.Fatalf("exported wire constructors = %v, want exactly six", gotConstructors)
+		t.Fatalf("exported wire constructors = %v, want exactly eight", gotConstructors)
 	}
 }
 
+// R-HC0C-ZEW7
+func TestRootWireConstructorsHaveDistinctSoleCodecTypes(t *testing.T) {
+	wires := []struct {
+		filename    string
+		typeName    string
+		constructor func() WireFormat
+	}{
+		{"wire_anthropic_messages.go", "anthropicMessagesWire", AnthropicMessagesWire},
+		{"wire_gemini_generate_content.go", "geminiGenerateContentWire", GeminiGenerateContentWire},
+		{"wire_chat.go", "chatWire", ChatWire},
+		{"wire_responses.go", "responsesWire", ResponsesWire},
+		{"wire_openai_chat.go", "openAIChatWire", OpenAIChatWire},
+		{"wire_openai_responses.go", "openAIResponsesWire", OpenAIResponsesWire},
+		{"wire_xai_chat.go", "xaiChatWire", XAIChatWire},
+		{"wire_xai_responses.go", "xaiResponsesWire", XAIResponsesWire},
+	}
+
+	allowedTypes := make(map[string]bool, len(wires))
+	dynamicTypes := make(map[reflect.Type]string, len(wires))
+	for _, wire := range wires {
+		allowedTypes[wire.typeName] = true
+		structure, ok := declaredType(t, wire.filename, wire.typeName).Type.(*ast.StructType)
+		if !ok {
+			t.Errorf("%s in %s is not a struct", wire.typeName, wire.filename)
+			continue
+		}
+		if len(structure.Fields.List) != 1 {
+			t.Errorf("%s fields = %d, want sole embedded wireCodec", wire.typeName, len(structure.Fields.List))
+			continue
+		}
+		field := structure.Fields.List[0]
+		codec, isIdentifier := field.Type.(*ast.Ident)
+		if len(field.Names) != 0 || !isIdentifier || codec.Name != "wireCodec" {
+			t.Errorf("%s sole field = %#v, want embedded wireCodec", wire.typeName, field)
+		}
+
+		dynamicType := reflect.TypeOf(wire.constructor())
+		wantType := "*agentkit." + wire.typeName
+		if dynamicType == nil || dynamicType.String() != wantType {
+			t.Errorf("%s() dynamic type = %v, want %s", strings.TrimSuffix(strings.TrimPrefix(wire.filename, "wire_"), ".go"), dynamicType, wantType)
+		}
+		if prior, duplicate := dynamicTypes[dynamicType]; duplicate {
+			t.Errorf("%s and %s constructors share dynamic type %v", prior, wire.typeName, dynamicType)
+		}
+		dynamicTypes[dynamicType] = wire.typeName
+	}
+	if len(dynamicTypes) != len(wires) {
+		t.Errorf("root constructors have %d distinct dynamic types, want %d", len(dynamicTypes), len(wires))
+	}
+
+	filenames, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	embeddingTypes := 0
+	for _, filename := range filenames {
+		if filename == "wire.go" || strings.HasSuffix(filename, "_test.go") {
+			continue
+		}
+		parsed, parseErr := parser.ParseFile(token.NewFileSet(), filename, nil, 0)
+		if parseErr != nil {
+			t.Fatal(parseErr)
+		}
+		for _, declaration := range parsed.Decls {
+			general, ok := declaration.(*ast.GenDecl)
+			if !ok || general.Tok != token.TYPE {
+				continue
+			}
+			for _, rawSpecification := range general.Specs {
+				specification := rawSpecification.(*ast.TypeSpec)
+				structure, ok := specification.Type.(*ast.StructType)
+				if !ok {
+					continue
+				}
+				for _, field := range structure.Fields.List {
+					codec, isIdentifier := field.Type.(*ast.Ident)
+					if len(field.Names) == 0 && isIdentifier && codec.Name == "wireCodec" {
+						embeddingTypes++
+						if !allowedTypes[specification.Name.Name] {
+							t.Errorf("production type %s in %s also embeds wireCodec", specification.Name.Name, filename)
+						}
+					}
+				}
+			}
+		}
+	}
+	if embeddingTypes != len(wires) {
+		t.Errorf("production types embedding wireCodec = %d, want exactly %d", embeddingTypes, len(wires))
+	}
+}
+
+// R-II1V-EAHQ
 func TestExternalPackageCannotImplementWireFormat(t *testing.T) {
-	// R-K6TY-4JKK
 	workingDirectory, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -859,8 +1010,8 @@ var _ agentkit.WireFormat = outsider{}
 	}
 }
 
+// R-IMXG-XDGI
 func TestWireConstructorsMatchFileNames(t *testing.T) {
-	// R-K368-Z8CH
 	constructors := []struct {
 		name     string
 		filename string
@@ -871,6 +1022,8 @@ func TestWireConstructorsMatchFileNames(t *testing.T) {
 		{"ResponsesWire", "wire_responses.go"},
 		{"OpenAIChatWire", "wire_openai_chat.go"},
 		{"OpenAIResponsesWire", "wire_openai_responses.go"},
+		{"XAIChatWire", "wire_xai_chat.go"},
+		{"XAIResponsesWire", "wire_xai_responses.go"},
 	}
 	for _, constructor := range constructors {
 		for _, candidate := range constructors {
@@ -1112,7 +1265,7 @@ func TestEveryToolConstructionAndWireRenderingUsesExportedSchemaChecker(t *testi
 	if !functionCallsIdentifier(canonicalValidation, "ValidateToolSchema") {
 		t.Fatal("common canonical tool validation does not defensively call exported ValidateToolSchema")
 	}
-	for _, filename := range []string{"wire_responses.go", "wire_chat.go", "wire_openai_responses.go", "wire_openai_chat.go", "wire_anthropic_messages.go", "wire_gemini_generate_content.go"} {
+	for _, filename := range []string{"wire_responses.go", "wire_chat.go", "wire_openai_responses.go", "wire_openai_chat.go", "wire_anthropic_messages.go", "wire_gemini_generate_content.go", "wire_xai_chat.go", "wire_xai_responses.go"} {
 		wireRender := declaredMethod(t, filename, "RenderTools")
 		if !functionCallsIdentifier(wireRender, "validateCanonicalTools") {
 			t.Errorf("%s RenderTools does not call the one common canonical validator", filename)
@@ -1165,14 +1318,14 @@ func TestConcreteWiresOwnToolDeclarationShaping(t *testing.T) {
 		},
 		{
 			filename:       "wire_anthropic_messages.go",
-			receiver:       "anthropicWire",
+			receiver:       "anthropicMessagesWire",
 			renderer:       "renderAnthropicTools",
 			wrapperMarkers: []string{"json:\"name\"", "json:\"description\"", "json:\"input_schema\""},
 			forbidden:      []string{"json:\"type\"", "json:\"parameters\"", "json:\"functionDeclarations\""},
 		},
 		{
 			filename:       "wire_gemini_generate_content.go",
-			receiver:       "geminiWire",
+			receiver:       "geminiGenerateContentWire",
 			renderer:       "renderGeminiTools",
 			wrapperMarkers: []string{"json:\"tools\"", "json:\"functionDeclarations\"", "json:\"name\"", "json:\"description\"", "json:\"parameters\""},
 			forbidden:      []string{"json:\"type\"", "json:\"input_schema\""},
@@ -1422,6 +1575,7 @@ func TestConversationPublicShape(t *testing.T) {
 	// R-YURK-JTY8
 	// R-SPHN-PJ46
 	// R-VT1H-0PLC
+	// R-IKHO-5TZ4
 	conversationType := reflect.TypeOf(Conversation{})
 	if conversationType.Name() != "Conversation" || !token.IsExported(conversationType.Name()) || conversationType.Kind() != reflect.Struct {
 		t.Fatalf("Conversation name/kind = %q/%s, want exported Conversation struct", conversationType.Name(), conversationType.Kind())

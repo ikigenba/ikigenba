@@ -17,12 +17,14 @@ import (
 )
 
 var (
-	_ wireFormat = (*anthropicWire)(nil)
+	_ wireFormat = (*anthropicMessagesWire)(nil)
 	_ wireFormat = (*openAIResponsesWire)(nil)
 	_ wireFormat = (*responsesWire)(nil)
 	_ wireFormat = (*openAIChatWire)(nil)
 	_ wireFormat = (*chatWire)(nil)
-	_ wireFormat = (*geminiWire)(nil)
+	_ wireFormat = (*geminiGenerateContentWire)(nil)
+	_ wireFormat = (*xaiChatWire)(nil)
+	_ wireFormat = (*xaiResponsesWire)(nil)
 	_ Framer     = SSEFrames
 )
 
@@ -44,13 +46,15 @@ func allTestWires() []wireFormat {
 	return []wireFormat{
 		newAnthropicMessagesWire(nil),
 		newOpenAIResponsesWire(nil),
+		newResponsesWire(),
 		newOpenAIChatWire(nil),
+		newChatWire(),
 		newGeminiGenerateContentWire(nil),
 	}
 }
 
-func TestGenericAndOpenAIWirePairsAreByteIdentical(t *testing.T) {
-	// R-OZ6U-IODU
+// R-IPD9-OWXW
+func TestGenericOpenAIAndXAIWirePairsAreByteIdentical(t *testing.T) {
 	tool := fixtureTool{name: "lookup", description: "look up", schema: json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}}}`)}
 	state := requestState{
 		Model: "provider/model:latest",
@@ -67,35 +71,24 @@ func TestGenericAndOpenAIWirePairsAreByteIdentical(t *testing.T) {
 		Output:   &OutputContract{Schema: json.RawMessage(`{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"]}`)},
 	}
 
-	pairs := []struct {
+	families := []struct {
 		name     string
-		generic  wireFormat
-		openAI   wireFormat
+		wires    []WireFormat
 		response string
 	}{
-		{"chat", newChatWire(), newOpenAIChatWire(nil), "testdata/openai_chat_completions_tool_call.sse"},
-		{"responses", newResponsesWire(), newOpenAIResponsesWire(nil), "testdata/openai_responses_tool_call.sse"},
+		{"chat", []WireFormat{newChatWire(), newOpenAIChatWire(nil), XAIChatWire()}, "testdata/openai_chat_completions_tool_call.sse"},
+		{"responses", []WireFormat{newResponsesWire(), newOpenAIResponsesWire(nil), XAIResponsesWire()}, "testdata/openai_responses_tool_call.sse"},
 	}
-	for _, pair := range pairs {
-		t.Run(pair.name, func(t *testing.T) {
-			if !reflect.DeepEqual(pair.generic.OptionSpecs(), pair.openAI.OptionSpecs()) {
-				t.Fatalf("OptionSpecs differ:\ngeneric: %#v\nOpenAI:  %#v", pair.generic.OptionSpecs(), pair.openAI.OptionSpecs())
-			}
-			genericBody, err := pair.generic.EncodeRequest(state)
+	for _, family := range families {
+		t.Run(family.name, func(t *testing.T) {
+			baselineSpecs := family.wires[0].OptionSpecs()
+			baselineBody, err := family.wires[0].EncodeRequest(state)
 			if err != nil {
 				t.Fatal(err)
 			}
-			openAIBody, err := pair.openAI.EncodeRequest(state)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !bytes.Equal(genericBody, openAIBody) {
-				t.Fatalf("request bodies differ:\ngeneric: %s\nOpenAI:  %s", genericBody, openAIBody)
-			}
-
-			decode := func(wire wireFormat) ([]Event, Usage) {
+			decode := func(wire WireFormat) ([]Event, Usage) {
 				t.Helper()
-				response, openErr := os.Open(pair.response)
+				response, openErr := os.Open(family.response)
 				if openErr != nil {
 					t.Fatal(openErr)
 				}
@@ -109,15 +102,83 @@ func TestGenericAndOpenAIWirePairsAreByteIdentical(t *testing.T) {
 				}
 				return events, takeBuiltInWireUsage(wire)
 			}
-			genericEvents, genericUsage := decode(pair.generic)
-			openAIEvents, openAIUsage := decode(pair.openAI)
-			if !reflect.DeepEqual(genericEvents, openAIEvents) {
-				t.Fatalf("decoded events differ:\ngeneric: %#v\nOpenAI:  %#v", genericEvents, openAIEvents)
-			}
-			if genericUsage != openAIUsage {
-				t.Fatalf("decoded usage differs: generic %+v, OpenAI %+v", genericUsage, openAIUsage)
+			baselineEvents, baselineUsage := decode(family.wires[0])
+			for index, wire := range family.wires[1:] {
+				if !reflect.DeepEqual(baselineSpecs, wire.OptionSpecs()) {
+					t.Fatalf("wire %d OptionSpecs differ:\nbaseline: %#v\nactual:   %#v", index+1, baselineSpecs, wire.OptionSpecs())
+				}
+				body, encodeErr := wire.EncodeRequest(state)
+				if encodeErr != nil {
+					t.Fatal(encodeErr)
+				}
+				if !bytes.Equal(baselineBody, body) {
+					t.Fatalf("wire %d request body differs:\nbaseline: %s\nactual:   %s", index+1, baselineBody, body)
+				}
+				events, usage := decode(wire)
+				if !reflect.DeepEqual(baselineEvents, events) {
+					t.Fatalf("wire %d decoded events differ:\nbaseline: %#v\nactual:   %#v", index+1, baselineEvents, events)
+				}
+				if baselineUsage != usage {
+					t.Fatalf("wire %d decoded usage differs: baseline %+v, actual %+v", index+1, baselineUsage, usage)
+				}
 			}
 		})
+	}
+}
+
+// R-IQL6-2OOL
+func TestStreamingRequestBodiesEnableStreaming(t *testing.T) {
+	wires := []WireFormat{AnthropicMessagesWire(), ChatWire(), OpenAIChatWire(), XAIChatWire(), ResponsesWire(), OpenAIResponsesWire(), XAIResponsesWire()}
+	for _, wire := range wires {
+		body, err := wire.EncodeRequest(requestState{Model: "opaque-model"})
+		if err != nil {
+			t.Fatalf("%T EncodeRequest: %v", wire, err)
+		}
+		var root map[string]any
+		if err := json.Unmarshal(body, &root); err != nil {
+			t.Fatalf("%T request is not JSON: %v", wire, err)
+		}
+		if got := root["stream"]; got != true {
+			t.Errorf("%T stream = %#v, want true", wire, got)
+		}
+	}
+}
+
+// R-IRT2-GGFA
+func TestChatRequestBodiesIncludeStreamingUsage(t *testing.T) {
+	wires := []WireFormat{ChatWire(), OpenAIChatWire(), XAIChatWire()}
+	want := map[string]any{"include_usage": true}
+	for _, wire := range wires {
+		body, err := wire.EncodeRequest(requestState{Model: "opaque-model"})
+		if err != nil {
+			t.Fatalf("%T EncodeRequest: %v", wire, err)
+		}
+		var root map[string]any
+		if err := json.Unmarshal(body, &root); err != nil {
+			t.Fatalf("%T request is not JSON: %v", wire, err)
+		}
+		if got := root["stream_options"]; !reflect.DeepEqual(got, want) {
+			t.Errorf("%T stream_options = %#v, want %#v", wire, got, want)
+		}
+	}
+}
+
+// R-IT0Y-U85Z
+func TestResponsesRequestBodiesDisableStorage(t *testing.T) {
+	wires := []WireFormat{ResponsesWire(), OpenAIResponsesWire(), XAIResponsesWire()}
+	for _, wire := range wires {
+		body, err := wire.EncodeRequest(requestState{Model: "opaque-model"})
+		if err != nil {
+			t.Fatalf("%T EncodeRequest: %v", wire, err)
+		}
+		var root map[string]any
+		if err := json.Unmarshal(body, &root); err != nil {
+			t.Fatalf("%T request is not JSON: %v", wire, err)
+		}
+		got, ok := root["store"]
+		if !ok || got != false {
+			t.Errorf("%T store = %#v, present = %t; want false and present", wire, got, ok)
+		}
 	}
 }
 
@@ -1039,13 +1100,13 @@ func assertResponsesCallItemTypes(t *testing.T, body []byte) {
 
 func decodedWireUsage(wire wireFormat) Usage {
 	switch wire := wire.(type) {
-	case *anthropicWire:
+	case *anthropicMessagesWire:
 		return wire.lastUsage
 	case *openAIResponsesWire:
 		return wire.lastUsage
 	case *openAIChatWire:
 		return wire.lastUsage
-	case *geminiWire:
+	case *geminiGenerateContentWire:
 		return wire.lastUsage
 	default:
 		panic("unknown test wire")
@@ -1305,7 +1366,7 @@ func TestFixtureWireDecodesMixedToolCallsInVendorOrderWithObjectInput(t *testing
 
 func TestDecodeStreamMergesAbsoluteUsageFieldWise(t *testing.T) {
 	// R-300O-9JJZ
-	wire := newAnthropicMessagesWire(nil).(*anthropicWire)
+	wire := newAnthropicMessagesWire(nil).(*anthropicMessagesWire)
 	frames := sequenceFrames(
 		`{"type":"message_start","message":{"usage":{"input_tokens":100,"cache_read_input_tokens":25}}}`,
 		`{"type":"message_delta","delta":{},"usage":{"output_tokens":9}}`,
@@ -1325,7 +1386,7 @@ func TestDecodeStreamMergesAbsoluteUsageFieldWise(t *testing.T) {
 
 // R-E74N-I1F2
 func TestAnthropicMessageDeltaUsageIsReadFromEventTopLevel(t *testing.T) {
-	wire := newAnthropicMessagesWire(nil).(*anthropicWire)
+	wire := newAnthropicMessagesWire(nil).(*anthropicMessagesWire)
 	frames := sequenceFrames(
 		`{"type":"message_start","message":{"usage":{"input_tokens":17}}}`,
 		`{"type":"message_delta","delta":{},"usage":{"output_tokens":6}}`,
@@ -1614,7 +1675,7 @@ func TestCanonicalToolSchemaRendersPortablyAcrossFourVendorWires(t *testing.T) {
 			t.Errorf("%T rendered invalid JSON: %v", wire, err)
 			continue
 		}
-		if _, trimming := wire.(*geminiWire); trimming {
+		if _, trimming := wire.(*geminiGenerateContentWire); trimming {
 			schemas := renderedToolSchemas(t, wire, rendered)
 			if len(schemas) != 1 {
 				t.Errorf("%T rendered %d schemas, want one", wire, len(schemas))
@@ -1706,7 +1767,7 @@ func TestRenderToolsNeverWidensCanonicalSchemas(t *testing.T) {
 			if err := json.Unmarshal(tool.Schema(), &canonical); err != nil {
 				t.Fatal(err)
 			}
-			if _, trimming := wire.(*geminiWire); trimming {
+			if _, trimming := wire.(*geminiGenerateContentWire); trimming {
 				assertJSONNarrowing(t, gotSchemas[index], canonical, "$")
 			} else if !reflect.DeepEqual(gotSchemas[index], canonical) {
 				t.Errorf("%T schema %d changed: %#v, want %#v", wire, index, gotSchemas[index], canonical)
@@ -1789,7 +1850,7 @@ func TestRequestBodiesEmbedRenderedToolsOnceAndInOrder(t *testing.T) {
 			t.Fatal(err)
 		}
 		var declaration map[string]json.RawMessage
-		if _, gemini := wire.(*geminiWire); gemini {
+		if _, gemini := wire.(*geminiGenerateContentWire); gemini {
 			if err := json.Unmarshal(rendered, &declaration); err != nil {
 				t.Fatal(err)
 			}
@@ -1799,7 +1860,7 @@ func TestRequestBodiesEmbedRenderedToolsOnceAndInOrder(t *testing.T) {
 			t.Errorf("%T request tools = %s, want its RenderTools shape %s", wire, bodyTools, rendered)
 		}
 		schemas := renderedToolSchemas(t, wire, func() json.RawMessage {
-			if _, gemini := wire.(*geminiWire); gemini {
+			if _, gemini := wire.(*geminiGenerateContentWire); gemini {
 				wrapped, _ := json.Marshal(map[string]json.RawMessage{"tools": bodyTools})
 				return wrapped
 			}
@@ -1865,7 +1926,7 @@ func renderedToolSchemas(t *testing.T, wire wireFormat, rendered json.RawMessage
 	t.Helper()
 	var declarations []map[string]any
 	switch wire.(type) {
-	case *geminiWire:
+	case *geminiGenerateContentWire:
 		var root struct {
 			Tools []struct {
 				Declarations []map[string]any `json:"functionDeclarations"`
@@ -1886,13 +1947,13 @@ func renderedToolSchemas(t *testing.T, wire wireFormat, rendered json.RawMessage
 	schemas := make([]any, len(declarations))
 	for index, declaration := range declarations {
 		switch wire.(type) {
-		case *openAIResponsesWire:
+		case *openAIResponsesWire, *responsesWire:
 			schemas[index] = declaration["parameters"]
-		case *openAIChatWire:
+		case *openAIChatWire, *chatWire:
 			schemas[index] = declaration["function"].(map[string]any)["parameters"]
-		case *anthropicWire:
+		case *anthropicMessagesWire:
 			schemas[index] = declaration["input_schema"]
-		case *geminiWire:
+		case *geminiGenerateContentWire:
 			schemas[index] = declaration["parameters"]
 		}
 	}
@@ -2023,68 +2084,6 @@ func TestSupportedSettingsAreEncodedByOwningWireGrammar(t *testing.T) {
 				t.Fatalf("encoded body = %s, want exact owning-wire grammar %s", body, test.want)
 			}
 		})
-	}
-}
-
-func TestStreamingRequestBodiesEnableStreaming(t *testing.T) {
-	// R-JPPX-7R6E
-	wires := []wireFormat{
-		newAnthropicMessagesWire(nil),
-		newChatWire(),
-		newOpenAIChatWire(nil),
-		newResponsesWire(),
-		newOpenAIResponsesWire(nil),
-	}
-	for _, wire := range wires {
-		body, err := wire.EncodeRequest(requestState{Model: "opaque-model"})
-		if err != nil {
-			t.Fatalf("%T EncodeRequest: %v", wire, err)
-		}
-		var root map[string]any
-		if err := json.Unmarshal(body, &root); err != nil {
-			t.Fatalf("%T request is not JSON: %v", wire, err)
-		}
-		if got := root["stream"]; got != true {
-			t.Errorf("%T stream = %#v, want true", wire, got)
-		}
-	}
-}
-
-func TestChatRequestBodiesIncludeStreamingUsage(t *testing.T) {
-	// R-JS5P-ZANS
-	wires := []wireFormat{newChatWire(), newOpenAIChatWire(nil)}
-	want := map[string]any{"include_usage": true}
-	for _, wire := range wires {
-		body, err := wire.EncodeRequest(requestState{Model: "opaque-model"})
-		if err != nil {
-			t.Fatalf("%T EncodeRequest: %v", wire, err)
-		}
-		var root map[string]any
-		if err := json.Unmarshal(body, &root); err != nil {
-			t.Fatalf("%T request is not JSON: %v", wire, err)
-		}
-		if got := root["stream_options"]; !reflect.DeepEqual(got, want) {
-			t.Errorf("%T stream_options = %#v, want %#v", wire, got, want)
-		}
-	}
-}
-
-func TestResponsesRequestBodiesDisableStorage(t *testing.T) {
-	// R-JTDM-D2EH
-	wires := []wireFormat{newResponsesWire(), newOpenAIResponsesWire(nil)}
-	for _, wire := range wires {
-		body, err := wire.EncodeRequest(requestState{Model: "opaque-model"})
-		if err != nil {
-			t.Fatalf("%T EncodeRequest: %v", wire, err)
-		}
-		var root map[string]any
-		if err := json.Unmarshal(body, &root); err != nil {
-			t.Fatalf("%T request is not JSON: %v", wire, err)
-		}
-		got, ok := root["store"]
-		if !ok || got != false {
-			t.Errorf("%T store = %#v, present = %t; want false and present", wire, got, ok)
-		}
 	}
 }
 

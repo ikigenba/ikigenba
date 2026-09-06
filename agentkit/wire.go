@@ -37,12 +37,20 @@ type WireFormat interface {
 type frameDecoder func(frame []byte) (message *Message, usage usageFragment, hasUsage bool, err error)
 
 type wireCodec struct {
-	encode       func(requestState) ([]byte, error)
-	decoder      func() frameDecoder
-	optionSpecs  []OptionSpec
-	classifier   errorClassifier
-	lastUsage    Usage
-	capabilities wireCapabilities
+	encode            func(requestState) ([]byte, error)
+	decoder           func() frameDecoder
+	optionSpecs       []OptionSpec
+	classifier        errorClassifier
+	rejectsCredential func(status int, body []byte) bool
+	lastUsage         Usage
+	capabilities      wireCapabilities
+}
+
+// isRejectedCredential reports whether status/body is this wire's vendor
+// signal for "the credential itself was refused" (D5/D22). Wires that never
+// list an OAuth endpoint leave rejectsCredential nil and always answer false.
+func (w *wireCodec) isRejectedCredential(status int, body []byte) bool {
+	return w.rejectsCredential != nil && w.rejectsCredential(status, body)
 }
 
 // wireOptionSpecsWithStop is the option vocabulary of every shipped wire

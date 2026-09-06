@@ -43,6 +43,15 @@ type composedProvider struct {
 	identity Identity
 }
 
+// rejectedCredentialClassifier lets Conversation ask the wire whether a
+// response is a rejected credential (D5/D22) without widening wireProvider.
+// Only composedProvider (backed by a built-in wire whose rejectsCredential
+// is set) implements it; a fake wireProvider in tests that doesn't simply
+// answers "no" via the failed type assertion in reissueAfterUnauthorized.
+type rejectedCredentialClassifier interface {
+	isRejectedCredential(status int, body []byte) bool
+}
+
 func newComposedProvider(wire wireFormat, endpoint Endpoint, identity Identity) *composedProvider {
 	return &composedProvider{wire: wire, endpoint: endpoint, identity: identity}
 }
@@ -103,6 +112,15 @@ func (provider *composedProvider) Classify(status int, header http.Header, body 
 	return nil
 }
 
+func (provider *composedProvider) isRejectedCredential(status int, body []byte) bool {
+	if classifier, ok := provider.wire.(interface {
+		isRejectedCredential(int, []byte) bool
+	}); ok {
+		return classifier.isRejectedCredential(status, body)
+	}
+	return false
+}
+
 func (provider *composedProvider) Identity() Identity { return provider.identity }
 
 func (provider *composedProvider) turnAccounting() providerAccounting {
@@ -115,7 +133,7 @@ func (provider *composedProvider) turnAccounting() providerAccounting {
 func takeBuiltInWireUsage(wire wireFormat) Usage {
 	var codec *wireCodec
 	switch wire := wire.(type) {
-	case *anthropicWire:
+	case *anthropicMessagesWire:
 		codec = &wire.wireCodec
 	case *openAIResponsesWire:
 		codec = &wire.wireCodec
@@ -125,7 +143,11 @@ func takeBuiltInWireUsage(wire wireFormat) Usage {
 		codec = &wire.wireCodec
 	case *chatWire:
 		codec = &wire.wireCodec
-	case *geminiWire:
+	case *geminiGenerateContentWire:
+		codec = &wire.wireCodec
+	case *xaiChatWire:
+		codec = &wire.wireCodec
+	case *xaiResponsesWire:
 		codec = &wire.wireCodec
 	default:
 		return Usage{}

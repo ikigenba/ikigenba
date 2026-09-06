@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"sort"
 )
 
@@ -11,6 +12,10 @@ type openAIResponsesWire struct{ wireCodec }
 
 // OpenAIResponsesWire returns the built-in OpenAI Responses wire codec.
 func OpenAIResponsesWire() WireFormat { return newOpenAIResponsesWire(nil) }
+
+func openAIRejectsCredential(status int, _ []byte) bool {
+	return status == http.StatusUnauthorized
+}
 
 func newOpenAIResponsesWire(classifier errorClassifier) wireFormat {
 	wire := &openAIResponsesWire{}
@@ -25,6 +30,7 @@ func newOpenAIResponsesWire(classifier errorClassifier) wireFormat {
 			toolChoice: toolChoiceShapeNone | toolChoiceShapeRequired | toolChoiceShapeTool,
 		},
 	}
+	wire.rejectsCredential = openAIRejectsCredential
 	return wire
 }
 

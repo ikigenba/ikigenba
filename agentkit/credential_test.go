@@ -3,9 +3,12 @@ package agentkit
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // R-P5PA-T4A1
@@ -18,31 +21,53 @@ func TestAuthModeContract(t *testing.T) {
 	}
 }
 
-// R-K1WX-1GLC
-func TestTokenAndRotatorContractExcludeRetiredCredentialTypes(t *testing.T) {
+// R-IXWK-DB4R
+func TestTokenAndRotatorContract(t *testing.T) {
 	tokenType := reflect.TypeFor[Token]()
-	if tokenType.NumField() != 2 {
-		t.Fatalf("Token has %d fields, want 2", tokenType.NumField())
+	wantFields := []struct {
+		name   string
+		typeOf reflect.Type
+	}{
+		{name: "Bearer", typeOf: reflect.TypeFor[string]()},
+		{name: "AccountID", typeOf: reflect.TypeFor[string]()},
+		{name: "ExpiresAt", typeOf: reflect.TypeFor[time.Time]()},
 	}
-	if field, ok := tokenType.FieldByName("Bearer"); !ok || field.Type.Kind() != reflect.String {
-		t.Fatalf("Token.Bearer missing or wrong type: %+v, ok=%v", field, ok)
+	if tokenType.Kind() != reflect.Struct || tokenType.NumField() != len(wantFields) {
+		t.Fatalf("Token = %s with %d fields, want struct with %d fields", tokenType.Kind(), tokenType.NumField(), len(wantFields))
 	}
-	if field, ok := tokenType.FieldByName("AccountID"); !ok || field.Type.Kind() != reflect.String {
-		t.Fatalf("Token.AccountID missing or wrong type: %+v, ok=%v", field, ok)
+	for index, want := range wantFields {
+		field := tokenType.Field(index)
+		if field.Name != want.name || field.Type != want.typeOf {
+			t.Errorf("Token field %d = %s %s, want %s %s", index, field.Name, field.Type, want.name, want.typeOf)
+		}
 	}
 
 	rotatorType := reflect.TypeFor[Rotator]()
-	if rotatorType.Kind() != reflect.Interface {
-		t.Fatalf("Rotator kind = %s, want Interface", rotatorType.Kind())
+	wantMethods := map[string]reflect.Type{
+		"AuthMode": reflect.TypeOf(func() AuthMode { return "" }),
+		"Token":    reflect.TypeOf(func(context.Context) (Token, error) { return Token{}, nil }),
+		"Rotate":   reflect.TypeOf(func(context.Context, Rotation) (Token, error) { return Token{}, nil }),
 	}
-	if rotatorType.NumMethod() != 3 {
-		t.Fatalf("Rotator has %d methods, want 3 (AuthMode, Token, Rotate)", rotatorType.NumMethod())
+	if rotatorType.Kind() != reflect.Interface || rotatorType.NumMethod() != len(wantMethods) {
+		t.Fatalf("Rotator = %s with %d methods, want interface with %d methods", rotatorType.Kind(), rotatorType.NumMethod(), len(wantMethods))
 	}
-	for _, name := range []string{"AuthMode", "Token", "Rotate"} {
-		if _, ok := rotatorType.MethodByName(name); !ok {
-			t.Fatalf("Rotator missing method %s", name)
+	for name, wantSignature := range wantMethods {
+		method, ok := rotatorType.MethodByName(name)
+		if !ok {
+			t.Errorf("Rotator has no %s method", name)
+			continue
+		}
+		if method.Type != wantSignature {
+			t.Errorf("Rotator.%s type = %s, want %s", name, method.Type, wantSignature)
 		}
 	}
+
+	assertRootPackageDeclaresNone(t, map[string]bool{
+		"Credential":  true,
+		"APIKey":      true,
+		"OAuth":       true,
+		"TokenSource": true,
+	})
 }
 
 type tokenSourceStub struct {
@@ -72,10 +97,14 @@ func (s *tokenSourceStub) Rotate(context.Context, Rotation) (Token, error) {
 }
 
 type rotatorStub struct {
-	mode   AuthMode
-	tokens []Token
-	err    error
-	calls  int
+	mode        AuthMode
+	tokens      []Token
+	err         error
+	calls       int
+	rotateToken Token
+	rotateErr   error
+	rotateCalls int
+	gotRotation Rotation
 }
 
 func (s *rotatorStub) AuthMode() AuthMode { return s.mode }
@@ -88,7 +117,14 @@ func (s *rotatorStub) Token(context.Context) (Token, error) {
 	return s.tokens[(s.calls-1)%len(s.tokens)], nil
 }
 
-func (*rotatorStub) Rotate(context.Context, Rotation) (Token, error) { return Token{}, nil }
+func (s *rotatorStub) Rotate(_ context.Context, rotation Rotation) (Token, error) {
+	s.rotateCalls++
+	s.gotRotation = rotation
+	if s.rotateErr != nil {
+		return Token{}, s.rotateErr
+	}
+	return s.rotateToken, nil
+}
 
 // R-K5KM-6RTF
 func TestOfferingAuthenticatorRequiresAcceptedRotator(t *testing.T) {
@@ -114,7 +150,7 @@ func TestOfferingAuthenticatorRequiresAcceptedRotator(t *testing.T) {
 	}
 }
 
-// R-K6SI-KJK4
+// R-IWON-ZJE2
 func TestAPIKeyAuthenticatorUsesRotatorTokenForSpecifiedWiresAndEachRequest(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -128,6 +164,8 @@ func TestAPIKeyAuthenticatorUsesRotatorTokenForSpecifiedWiresAndEachRequest(t *t
 		{name: "responses", wire: ResponsesWire(), wantHeader: "Authorization"},
 		{name: "openai chat", wire: OpenAIChatWire(), wantHeader: "Authorization"},
 		{name: "openai responses", wire: OpenAIResponsesWire(), wantHeader: "Authorization"},
+		{name: "xai chat", wire: XAIChatWire(), wantHeader: "Authorization"},
+		{name: "xai responses", wire: XAIResponsesWire(), wantHeader: "Authorization"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -238,6 +276,151 @@ func TestOAuthAuthenticatorUsesRotatorTokenAndOpenAIAccountID(t *testing.T) {
 		}
 		if got := auth.Authenticate(context.Background(), httptest.NewRequest("GET", "https://example.test", nil), nil); !errors.Is(got, tokenErr) {
 			t.Fatalf("Authenticate error = %v, want exact Token error %v", got, tokenErr)
+		}
+	})
+}
+
+// R-J6FV-1PBM
+func TestOAuthRefreshWindow(t *testing.T) {
+	if reflect.TypeOf(OAuthRefreshWindow) != reflect.TypeFor[time.Duration]() {
+		t.Fatalf("OAuthRefreshWindow type = %T, want time.Duration", OAuthRefreshWindow)
+	}
+	if OAuthRefreshWindow != 5*time.Minute {
+		t.Fatalf("OAuthRefreshWindow = %s, want %s", OAuthRefreshWindow, 5*time.Minute)
+	}
+}
+
+// R-J7NR-FH2B
+func TestOAuthAuthenticatorProactivelyRotatesExpiringTokens(t *testing.T) {
+	rotation := Rotation{RefreshURL: "https://unused.test", ClientID: "client-id"}
+	tests := []struct {
+		name       string
+		expiresAt  func() time.Time
+		wire       WireFormat
+		wantRotate bool
+	}{
+		{name: "unknown expiry", expiresAt: func() time.Time { return time.Time{} }, wire: ChatWire()},
+		{name: "after window", expiresAt: func() time.Time { return time.Now().Add(OAuthRefreshWindow + time.Minute) }, wire: ChatWire()},
+		{name: "inside window", expiresAt: func() time.Time { return time.Now().Add(OAuthRefreshWindow - time.Minute) }, wire: OpenAIResponsesWire(), wantRotate: true},
+		{name: "at boundary", expiresAt: func() time.Time { return time.Now().Add(OAuthRefreshWindow) }, wire: ChatWire(), wantRotate: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			stored := Token{Bearer: "stored-bearer", AccountID: "stored-account", ExpiresAt: test.expiresAt()}
+			rotated := Token{Bearer: "rotated-bearer", AccountID: "rotated-account"}
+			rotator := &rotatorStub{mode: AuthModeOAuth, tokens: []Token{stored}, rotateToken: rotated}
+			offering := Offering{
+				ID:         OfferingOpenAIResponses,
+				WireFormat: test.wire,
+				Endpoints:  []EndpointSpec{{AuthMode: AuthModeOAuth, Rotation: rotation}},
+			}
+			authenticator, err := offering.Authenticator(rotator)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest(http.MethodPost, "https://example.test", nil)
+			if err := authenticator.Authenticate(context.Background(), request, nil); err != nil {
+				t.Fatal(err)
+			}
+
+			wantRotateCalls := 0
+			wantToken := stored
+			if test.wantRotate {
+				wantRotateCalls = 1
+				wantToken = rotated
+			}
+			if rotator.calls != 1 {
+				t.Fatalf("Token calls = %d, want 1", rotator.calls)
+			}
+			if rotator.rotateCalls != wantRotateCalls {
+				t.Fatalf("Rotate calls = %d, want %d", rotator.rotateCalls, wantRotateCalls)
+			}
+			if test.wantRotate && rotator.gotRotation != rotation {
+				t.Fatalf("Rotate rotation = %#v, want %#v", rotator.gotRotation, rotation)
+			}
+			if got, want := request.Header.Get("Authorization"), "Bearer "+wantToken.Bearer; got != want {
+				t.Fatalf("Authorization = %q, want %q", got, want)
+			}
+			if _, openAIWire := test.wire.(*openAIResponsesWire); openAIWire {
+				if got := request.Header.Get("ChatGPT-Account-Id"); got != wantToken.AccountID {
+					t.Fatalf("ChatGPT-Account-Id = %q, want %q", got, wantToken.AccountID)
+				}
+			}
+		})
+	}
+}
+
+// R-EBV0-BHS5
+func TestOAuthProactiveRotationFailureStopsRequest(t *testing.T) {
+	rotation := Rotation{RefreshURL: "https://unused.test", ClientID: "client-id"}
+	rotateErr := &Error{Category: CategoryAuth, Status: http.StatusBadRequest, Code: "invalid_grant"}
+	newRotator := func() *rotatorStub {
+		return &rotatorStub{
+			mode:      AuthModeOAuth,
+			tokens:    []Token{{Bearer: "stored-bearer", ExpiresAt: time.Now().Add(time.Minute)}},
+			rotateErr: rotateErr,
+		}
+	}
+
+	t.Run("Authenticate returns error without applying credentials", func(t *testing.T) {
+		rotator := newRotator()
+		offering := Offering{WireFormat: ChatWire(), Endpoints: []EndpointSpec{{AuthMode: AuthModeOAuth, Rotation: rotation}}}
+		authenticator, err := offering.Authenticator(rotator)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request := httptest.NewRequest(http.MethodPost, "https://example.test", nil)
+		if got := authenticator.Authenticate(context.Background(), request, nil); !errors.Is(got, rotateErr) {
+			t.Fatalf("Authenticate error = %v, want exact error %v", got, rotateErr)
+		}
+		if rotator.calls != 1 || rotator.rotateCalls != 1 {
+			t.Fatalf("Token calls, Rotate calls = %d, %d; want 1, 1", rotator.calls, rotator.rotateCalls)
+		}
+		if got := request.Header.Get("Authorization"); got != "" {
+			t.Fatalf("Authorization = %q, want empty", got)
+		}
+	})
+
+	t.Run("Conversation sends no request and preserves provider error", func(t *testing.T) {
+		var requests atomic.Int64
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			requests.Add(1)
+			t.Error("Conversation sent a request after proactive rotation failed")
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		t.Cleanup(server.Close)
+
+		rotator := newRotator()
+		offering := Offering{
+			WireFormat: ChatWire(),
+			Endpoints: []EndpointSpec{{
+				AuthMode: AuthModeOAuth,
+				BaseURL:  server.URL,
+				Rotation: rotation,
+			}},
+		}
+		authenticator, err := offering.Authenticator(rotator)
+		if err != nil {
+			t.Fatal(err)
+		}
+		endpoint, err := NewEndpoint(authenticator)
+		if err != nil {
+			t.Fatal(err)
+		}
+		conversation, err := New(ChatWire(), endpoint, "test-model", Config{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		stream := conversation.Send(context.Background(), Text{Text: "hello"})
+		for event := range stream.Events() {
+			t.Errorf("Send emitted unexpected event after authentication failure: %#v", event)
+		}
+		var providerErr *Error
+		if !errors.As(stream.Err(), &providerErr) || providerErr != rotateErr {
+			t.Fatalf("Send error = %v, want preserved error %v", stream.Err(), rotateErr)
+		}
+		if got := requests.Load(); got != 0 {
+			t.Fatalf("Conversation sent %d requests, want none", got)
 		}
 	})
 }
