@@ -12,14 +12,16 @@ import (
 )
 
 func TestSentinelDeclarations(t *testing.T) {
-	// R-ZE9Y-O5TC
+	// R-CL1A-4OTJ
 	wantMessages := map[string]string{
-		"ErrInvalidConfig": "agentkit: invalid configuration",
-		"ErrClosed":        "agentkit: conversation closed",
+		"ErrInvalidConfig":   "agentkit: invalid configuration",
+		"ErrClosed":          "agentkit: conversation closed",
+		"ErrInvalidArgument": "agentkit: invalid argument",
 	}
 	sentinels := map[string]error{
-		"ErrInvalidConfig": ErrInvalidConfig,
-		"ErrClosed":        ErrClosed,
+		"ErrInvalidConfig":   ErrInvalidConfig,
+		"ErrClosed":          ErrClosed,
+		"ErrInvalidArgument": ErrInvalidArgument,
 	}
 	checkSentinelValues(t, wantMessages, sentinels)
 	checkDirectSentinelDeclarations(t, wantMessages)
@@ -35,8 +37,12 @@ func checkSentinelValues(t *testing.T, wantMessages map[string]string, sentinels
 			t.Fatalf("%s.Error() = %q, want %q", name, got, wantMessages[name])
 		}
 	}
-	if errors.Is(ErrInvalidConfig, ErrClosed) || errors.Is(ErrClosed, ErrInvalidConfig) {
-		t.Fatal("ErrInvalidConfig and ErrClosed are the same sentinel")
+	for name, sentinel := range sentinels {
+		for otherName, otherSentinel := range sentinels {
+			if name != otherName && errors.Is(sentinel, otherSentinel) {
+				t.Fatalf("%s and %s are the same sentinel", name, otherName)
+			}
+		}
 	}
 }
 
@@ -255,13 +261,14 @@ func TestRetryableIsTheOnlyCategoryPolicy(t *testing.T) {
 }
 
 func TestConfigurationAndLifecycleSentinelsSurviveErrorWrapping(t *testing.T) {
-	// R-2SP9-YX3T
+	// R-CJTD-QX2U
 	tests := []struct {
 		name     string
 		sentinel error
 	}{
 		{name: "invalid config", sentinel: ErrInvalidConfig},
 		{name: "closed", sentinel: ErrClosed},
+		{name: "invalid argument", sentinel: ErrInvalidArgument},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
