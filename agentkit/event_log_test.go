@@ -19,7 +19,7 @@ import (
 )
 
 func TestLogRecordsUseInjectedTimePerTurnSequenceAndFullIdentity(t *testing.T) {
-	// R-5FTF-T0XZ
+	// R-TA2N-M36A
 	// R-5JH4-YC62
 	var output bytes.Buffer
 	times := []time.Time{
@@ -48,7 +48,7 @@ func TestLogRecordsUseInjectedTimePerTurnSequenceAndFullIdentity(t *testing.T) {
 	if len(records) != 7 {
 		t.Fatalf("record count = %d, want exactly 7", len(records))
 	}
-	wantSeq := []int{0, 1, 2, 3, 0, 1, 2}
+	wantSeq := []int{0, 1, 2, 3, 4, 5, 6}
 	for index := range records {
 		if records[index].Time != times[index] || records[index].Seq != wantSeq[index] {
 			t.Errorf("record %d time/seq = %s/%d, want %s/%d", index, records[index].Time, records[index].Seq, times[index], wantSeq[index])

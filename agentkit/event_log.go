@@ -31,7 +31,7 @@ const (
 
 // LogRecord is one line of the log. Type selects which payload pointer is set;
 // the rest are nil and omitted. ID is the log's identity, the same on every
-// record. Time is the injected clock's reading; Seq is monotonic within a turn.
+// record. Time is the injected clock's reading; Seq is monotonic over the log.
 // The payloads reuse the canonical types verbatim — no log-only shadow structs
 // — so the log and the live stream never drift.
 type LogRecord struct {
@@ -89,11 +89,7 @@ func (r LogRecord) MarshalJSON() ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		var messages []json.RawMessage
-		if err := json.Unmarshal(history, &messages); err != nil {
-			return nil, err
-		}
-		encoded.Message = messages[0]
+		encoded.Message = history[1 : len(history)-1]
 	}
 	return json.Marshal(encoded)
 }
@@ -219,7 +215,6 @@ func (l *Log) start(identity Identity) {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.seq = 0
 	l.write(LogRecord{Type: RecordTurnStart, Identity: &identity})
 }
 
