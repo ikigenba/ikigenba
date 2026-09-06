@@ -60,7 +60,7 @@ One bullet per requirement:
 - Mint each `<id>` with `idgen` (`idgen -n N` mints N at once). See `../SKILL.md`.
 - `<requirement text>` uses a modal verb (MUST/SHOULD/MAY) and states one testable assertion.
 - A requirement must be testable: there must be a finite, deterministic procedure that decides whether it holds, and running that procedure must be efficient. Do not write requirements whose only test would be to exhaustively check an infinite or intractable set of cases.
-- Never assume an external dependency. A fact about something outside the project — a vendor host, a protocol's required fields, a credential a host honors, a limit — is proven by observing the real thing (a live request, a real response) before it is written into a requirement. Prior art and memory are not proof.
+- Never assume an external dependency. A fact about something outside the project — a vendor host, a protocol's required fields, a credential a host honors, a limit — must be proven by observing the real thing (a live request, a real response) before the design is sealed. Prior art and memory are not proof. The proof does not gate the writing: a requirement may be drafted from documentation and research, and the observation may be gathered at any point before `$seal-spec` — a probe run while designing, an existing live test, a recorded real response. Verification done earlier in the work counts and is not repeated at seal time; `$seal-spec` only checks that it exists.
 
 Requirements come in two forms, and a design needs both:
 

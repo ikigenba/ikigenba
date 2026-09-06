@@ -16,7 +16,8 @@ See `../SKILL.md` for the layout, id rules, and the canonical tag/grep.
 
 The plan only orders the current gap. Executing the steps and verifying adequacy belong to the loop.
 
-5. **Commit the seal.** Stage and commit everything the sealed state depends on — the design documents, `AGENTS.md`, and `specs/loops/` (`specs/build/` and `specs/issues/` are gitignored working state), plus any other uncommitted project files the loop will build against. Use the project's commit conventions (no `Requirements:` trailer — that belongs to phase commits). This pins the exact contract the loop starts from, so every later phase commit diffs against a known seal point.
+5. **Check the proofs.** Every requirement that states a fact about an external dependency (see `design.md`, "Never assume an external dependency") must be backed by an observation of the real thing before the seal. Verification gathered at any earlier point — a probe run during design, an existing live test, a recorded real response — counts; do not re-run it. If any such fact is still unproven, stop and gather the proof (or ask the user to) before sealing.
+6. **Commit the seal.** Stage and commit everything the sealed state depends on — the design documents, `AGENTS.md`, and `specs/loops/` (`specs/build/` and `specs/issues/` are gitignored working state), plus any other uncommitted project files the loop will build against. Use the project's commit conventions (no `Requirements:` trailer — that belongs to phase commits). This pins the exact contract the loop starts from, so every later phase commit diffs against a known seal point.
 
 Then run the loop **from the directory that holds `specs/` and `AGENTS.md`** — the subproject directory, never the git top-level:
 
