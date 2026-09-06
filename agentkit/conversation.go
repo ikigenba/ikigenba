@@ -81,7 +81,9 @@ func (c *Conversation) AddSystem(text string) error {
 	if log.isClosed() {
 		return ErrClosed
 	}
-	c.history = append(c.history, Message{Role: RoleSystem, Blocks: []Block{Text{Text: text}}})
+	message := Message{Role: RoleSystem, Blocks: []Block{Text{Text: text}}}
+	c.history = append(c.history, message)
+	recordMessage(c.eventSink, message)
 	return nil
 }
 
@@ -98,6 +100,7 @@ func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream {
 			return ErrClosed
 		}
 		log.start(c.identity)
+		recordMessage(c.eventSink, turn.turn[0])
 		accounting := turnTotals{allWireCosts: true}
 		var terminal error
 		defer func() {
@@ -290,6 +293,7 @@ func (c *Conversation) dispatchTurnTools(ctx context.Context, orchestrator *orch
 		}
 	}
 	toolMessage := Message{Role: RoleTool, Blocks: results}
+	recordMessage(c.eventSink, toolMessage)
 	snapshot.turn = append(snapshot.turn, toolMessage)
 	return true
 }

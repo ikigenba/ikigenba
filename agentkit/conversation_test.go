@@ -1349,7 +1349,7 @@ func TestConfiguredLogReceivesEveryConversationTurn(t *testing.T) {
 	for _, record := range records {
 		counts[record.Type]++
 	}
-	if counts[RecordTurnStart] != 2 || counts[RecordMessage] != 2 || counts[RecordTurnEnd] != 2 {
+	if counts[RecordTurnStart] != 2 || counts[RecordMessage] != 4 || counts[RecordTurnEnd] != 2 {
 		t.Fatalf("configured log record counts = %#v; records=%#v", counts, records)
 	}
 
@@ -1444,8 +1444,8 @@ func TestAddSystemRejectsClosedLogWithoutChangingHistory(t *testing.T) {
 	}
 }
 
-// R-WSB3-L50R
-func TestAddSystemAndRenderedSystemMessagesAreSilentInLog(t *testing.T) {
+// R-TX8Q-VQ9H
+func TestAddSystemWritesMessageRecordAndSendEmitsNoRoleSystemEvent(t *testing.T) {
 	done := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: done}}}}
 	transportCalls := 0
@@ -1453,11 +1453,14 @@ func TestAddSystemAndRenderedSystemMessagesAreSilentInLog(t *testing.T) {
 	log := NewLog(&output, func() time.Time { return time.Time{} }, "")
 	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Log: log})
 
-	if err := conversation.AddSystem("unlogged system input"); err != nil {
+	if err := conversation.AddSystem("logged system input"); err != nil {
 		t.Fatal(err)
 	}
-	if records := decodeLogRecords(t, output.Bytes()); len(records) != 0 {
-		t.Fatalf("AddSystem log records = %#v, want none", records)
+	wantSystem := Message{Role: RoleSystem, Blocks: []Block{Text{Text: "logged system input"}}}
+	afterAddSystem := decodeLogRecords(t, output.Bytes())
+	if len(afterAddSystem) != 1 || afterAddSystem[0].Type != RecordMessage || afterAddSystem[0].Message == nil ||
+		!reflect.DeepEqual(*afterAddSystem[0].Message, wantSystem) {
+		t.Fatalf("AddSystem log records = %#v, want exactly one message record carrying %#v", afterAddSystem, wantSystem)
 	}
 	stream := conversation.Send(context.Background(), Text{Text: "hello"})
 	events := drainStream(stream)
@@ -1465,18 +1468,15 @@ func TestAddSystemAndRenderedSystemMessagesAreSilentInLog(t *testing.T) {
 		t.Fatal(stream.Err())
 	}
 	if !reflect.DeepEqual(events, []Event{MessageDone{Message: done}}) {
-		t.Fatalf("Send events = %#v, want no system-message event", events)
+		t.Fatalf("Send events = %#v, want no event for the rendered RoleSystem message", events)
 	}
 	records := decodeLogRecords(t, output.Bytes())
 	counts := make(map[RecordType]int)
 	for _, record := range records {
 		counts[record.Type]++
 	}
-	if counts[RecordTurnStart] != 1 || counts[RecordMessage] != 1 || counts[RecordUsage] != 1 || counts[RecordTurnEnd] != 1 || len(records) != 4 {
-		t.Fatalf("records after Send = %#v, want only normal turn lifecycle and assistant message", records)
-	}
-	if bytes.Contains(output.Bytes(), []byte("unlogged system input")) {
-		t.Fatalf("system input appeared in log: %s", output.Bytes())
+	if counts[RecordTurnStart] != 1 || counts[RecordMessage] != 3 || counts[RecordUsage] != 1 || counts[RecordTurnEnd] != 1 || len(records) != 6 {
+		t.Fatalf("records after Send = %#v, want AddSystem's message plus the normal turn lifecycle (user+assistant messages)", records)
 	}
 }
 
@@ -1962,6 +1962,9 @@ func TestStructuredOutputCorrectionRetriesAndCommitsFullTranscript(t *testing.T)
 		switch record.Type {
 		case RecordMessage:
 			loggedMessages = append(loggedMessages, *record.Message)
+			if index == 1 {
+				continue // R-TBAJ-ZUWZ: the opening user message has no stream event
+			}
 			projected = append(projected, MessageDone{Message: *record.Message})
 		case RecordOutput:
 			outputCount++
@@ -1969,12 +1972,13 @@ func TestStructuredOutputCorrectionRetriesAndCommitsFullTranscript(t *testing.T)
 			projected = append(projected, OutputDone{Value: record.Output})
 		}
 	}
-	if !reflect.DeepEqual(loggedMessages, History{rejected, corrective, accepted}) {
-		t.Fatalf("logged corrected messages = %#v", loggedMessages)
+	// R-TDQC-REED
+	if !reflect.DeepEqual(loggedMessages, conversation.history) {
+		t.Fatalf("logged corrected messages = %#v, want committed history %#v", loggedMessages, conversation.history)
 	}
 	// R-UI4B-ZDEZ
-	if len(records) != 7 || outputCount != 1 || outputPosition != 4 || !bytes.Equal(records[outputPosition].Output, []byte(acceptedText)) ||
-		!reflect.DeepEqual(projected, events) || records[5].Type != RecordUsage || records[6].Type != RecordTurnEnd {
+	if len(records) != 8 || outputCount != 1 || outputPosition != 5 || !bytes.Equal(records[outputPosition].Output, []byte(acceptedText)) ||
+		!reflect.DeepEqual(projected, events) || records[6].Type != RecordUsage || records[7].Type != RecordTurnEnd {
 		t.Fatalf("structured log does not mirror live events exactly once in order: records=%#v projected=%#v events=%#v", records, projected, events)
 	}
 }
@@ -2058,8 +2062,11 @@ type captureEventSink struct {
 	records []eventRecord
 }
 
+// R-TBAJ-ZUWZ
+// R-TCIG-DMNO
+// R-TDQC-REED
+// R-TW0U-HYIS
 func TestDurableLogMirrorsMultiRoundStreamAtMessageGranularity(t *testing.T) {
-	// R-5ELJ-F97A
 	call := ToolUse{ID: "logged-call", Name: "weather", Input: json.RawMessage(`{"city":"Oslo"}`)}
 	first := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "checking"}, call}}
 	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "sunny"}}}
@@ -2077,10 +2084,38 @@ func TestDurableLogMirrorsMultiRoundStreamAtMessageGranularity(t *testing.T) {
 	}
 	records := decodeLogRecords(t, output.Bytes())
 	assertSelectedLogPayloads(t, records)
-	var projected []Event
+
+	user := Message{Role: RoleUser, Blocks: []Block{Text{Text: "forecast"}}}
+	toolResult := ToolResult{ToolUseID: call.ID, Content: "sunny"}
+	toolMessage := Message{Role: RoleTool, Blocks: []Block{toolResult}}
+
+	if records[0].Type != RecordTurnStart || records[1].Type != RecordMessage || records[1].Message == nil ||
+		!reflect.DeepEqual(*records[1].Message, user) {
+		t.Fatalf("opening records = %#v, want turn_start then the user message %#v", records[:2], user)
+	}
+
+	var loggedMessages History
 	for _, record := range records {
+		if record.Type == RecordMessage {
+			loggedMessages = append(loggedMessages, *record.Message)
+		}
+	}
+	if !reflect.DeepEqual(loggedMessages, conversation.history) {
+		t.Fatalf("logged messages = %#v, want committed history %#v", loggedMessages, conversation.history)
+	}
+
+	var projected []Event
+	toolMessageRecords := 0
+	for _, record := range records[2:] {
 		switch record.Type {
 		case RecordMessage:
+			if record.Message.Role == RoleTool {
+				toolMessageRecords++
+				if !reflect.DeepEqual(*record.Message, toolMessage) {
+					t.Fatalf("logged tool message = %#v, want %#v", *record.Message, toolMessage)
+				}
+				continue
+			}
 			projected = append(projected, MessageDone{Message: *record.Message})
 		case RecordToolUse:
 			projected = append(projected, ToolCall{Use: *record.ToolUse})
@@ -2093,7 +2128,11 @@ func TestDurableLogMirrorsMultiRoundStreamAtMessageGranularity(t *testing.T) {
 	if !reflect.DeepEqual(projected, events) {
 		t.Fatalf("log projection = %#v, want exact live event order %#v", projected, events)
 	}
-	if bytes.Contains(output.Bytes(), []byte("delta")) || len(records) != len(events)+3 || records[0].Type != RecordTurnStart || records[len(records)-2].Type != RecordUsage || records[len(records)-1].Type != RecordTurnEnd {
+	if toolMessageRecords != 1 {
+		t.Fatalf("tool-result message records = %d, want exactly 1", toolMessageRecords)
+	}
+	if bytes.Contains(output.Bytes(), []byte("delta")) || len(records) != len(events)+5 ||
+		records[0].Type != RecordTurnStart || records[len(records)-2].Type != RecordUsage || records[len(records)-1].Type != RecordTurnEnd {
 		t.Fatalf("log is not one message-granular line per protocol/lifecycle event: %s", output.Bytes())
 	}
 }
@@ -2140,6 +2179,17 @@ func TestLogFailureDoesNotAlterSuccessOrTerminalStreamSemantics(t *testing.T) {
 	}
 	if !foundError {
 		t.Fatalf("terminal error record missing from %#v", records)
+	}
+	// R-TDQC-REED
+	var loggedMessages History
+	for _, record := range records {
+		if record.Type == RecordMessage {
+			loggedMessages = append(loggedMessages, *record.Message)
+		}
+	}
+	wantPartial := History{{Role: RoleUser, Blocks: []Block{Text{Text: "fail"}}}}
+	if !reflect.DeepEqual(loggedMessages, wantPartial) {
+		t.Fatalf("partial-turn logged messages = %#v, want just the input produced before the failure %#v", loggedMessages, wantPartial)
 	}
 
 	provider = &phase15Provider{model: "model"}
@@ -2351,8 +2401,8 @@ func TestStreamEarlyStopHaltsTurnAndCannotReplay(t *testing.T) {
 	}
 }
 
-func TestStreamEventsAndPrivateLogBridgeHaveExactParity(t *testing.T) {
-	// R-54UC-D39Q
+// R-TW0U-HYIS
+func TestStreamEventsAndPrivateLogBridgeRecordsExtraMessagesBesidesEveryEvent(t *testing.T) {
 	call := ToolUse{ID: "parity-call", Name: "weather", Input: json.RawMessage(`{"city":"Oslo"}`)}
 	first := Message{Role: RoleAssistant, Blocks: []Block{call}}
 	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
@@ -2364,19 +2414,23 @@ func TestStreamEventsAndPrivateLogBridgeHaveExactParity(t *testing.T) {
 	conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) { return "sunny", nil })}
 
 	events := drainStream(conversation.Send(context.Background(), Text{Text: "forecast"}))
+	user := Message{Role: RoleUser, Blocks: []Block{Text{Text: "forecast"}}}
 	result := ToolResult{ToolUseID: call.ID, Content: "sunny"}
+	toolMessage := Message{Role: RoleTool, Blocks: []Block{result}}
 	wantEvents := []Event{MessageDone{Message: first}, ToolCall{Use: call}, ToolReturn{Result: result}, MessageDone{Message: final}}
 	wantRecords := []eventRecord{
+		{kind: eventRecordMessage, value: user},
 		{kind: eventRecordMessage, value: first},
 		{kind: eventRecordToolUse, value: call},
 		{kind: eventRecordToolResult, value: result},
+		{kind: eventRecordMessage, value: toolMessage},
 		{kind: eventRecordMessage, value: final},
 	}
 	if !reflect.DeepEqual(events, wantEvents) {
 		t.Fatalf("live events = %#v, want %#v", events, wantEvents)
 	}
 	if !reflect.DeepEqual(sink.records, wantRecords) {
-		t.Fatalf("bridge records = %#v, want independent protocol records %#v", sink.records, wantRecords)
+		t.Fatalf("bridge records = %#v, want every event plus the user/tool-result messages %#v", sink.records, wantRecords)
 	}
 }
 
