@@ -6,8 +6,9 @@ round-trips, and after iteration ends it reports the turn's terminal error, if
 any. Events are **message-granular** — one event per completed protocol message,
 never a token delta. Streaming decode (SSE or any other framing) terminates inside
 the wire codec (D5); no chunk, delta, or framing artifact escapes into the event
-stream. This is the same granularity the event log records (D15): the log is the
-durable transcript of exactly these events.
+stream. This is the same granularity the event log records (D15): every event
+here has a record there, and the log additionally holds what the stream never
+carries — the consumer's own input, per-round-trip accounting, and refusals.
 
 `Event` is a **sealed union** of exactly four variants, closed by an unexported
 marker so a consumer switches it exhaustively. Three wrap the corresponding
@@ -96,7 +97,7 @@ is spliced once on success — the `Stream` is the *live* view, `History` the
 - R-516N-7S1N: A `Stream` MUST yield events in the order they occur across the turn's round-trips, delivering each round-trip's events as that round-trip completes rather than only at turn end.
 - R-52EJ-LJSC: A tool returning an error MUST surface as a `ToolReturn` with `IsError` set and MUST NOT be reported by `Stream.Err()`.
 - R-53MF-ZBJ1: `Stream.Err()` MUST report the turn's terminal error (transport, classified vendor error, or unrecoverable decode) once iteration has stopped, and `nil` for a turn that completed cleanly.
-- R-54UC-D39Q: The events a `Stream` yields MUST match, one for one and in order, the message-granular records written to the event log (D15) for the same turn.
+- R-TW0U-HYIS: Every event a `Stream` yields MUST have a corresponding record in the event log (D15) for the same turn — `MessageDone` as `message`, `ToolCall` as `tool_use`, `ToolReturn` as `tool_result`, `OutputDone` as `output` — in the same order; the log MAY carry records with no stream counterpart, and the stream MUST NOT yield an event with no log record.
 - R-0B78-ZYU3: `agentkit` MUST export `type MessageDone struct { Message Message }`, and `MessageDone` MUST implement `Event`.
 - R-0CF5-DQKS: `agentkit` MUST export `type ToolCall struct { Use ToolUse }`, and `ToolCall` MUST implement `Event`.
 - R-0DN1-RIBH: `agentkit` MUST export `type ToolReturn struct { Result ToolResult }`, and `ToolReturn` MUST implement `Event`.

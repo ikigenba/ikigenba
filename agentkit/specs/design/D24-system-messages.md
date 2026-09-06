@@ -84,10 +84,12 @@ the error sends the text as a user message or picks a newer model.
 list, so each `RoleSystem` message becomes one block in that list. No join
 separator is invented, and the blocks stay individually addressable.
 
-**The event log is untouched.** The log (D15) records a turn's protocol events
-and never the consumer's own input; `AddSystem` is consumer input and writes no
-record, and `Send` emits no event for the system messages it renders. Recording
-consumer input in the log is a separate design.
+**The event log records it.** The log (D15) is the transcript, so `AddSystem`
+writes one `message` record carrying the `RoleSystem` message. It sits between
+turns, outside any `turn_start`/`turn_end` pair, which is exactly where the
+message sits in `History`. `Send` emits no event and no record for the system
+messages it renders — they were recorded when they entered, not each time a wire
+re-renders them.
 
 ## REQUIREMENTS
 
@@ -101,4 +103,4 @@ consumer input in the log is a separate design.
 - R-WONE-FTSO: `AnthropicMessagesWire()` MUST render every `RoleSystem` message that follows a non-`RoleSystem` message in `History` as the `messages` entry `{"role":"system","content":[{"type":"text","text":"<text>"}]}` placed immediately after the rendering of the first `RoleUser` message that follows it in `History`, consecutive such messages keeping their History order, and MUST NOT place any of them in the top-level `system` array; pinned by a golden request fixture.
 - R-WPVA-TLJD: `AnthropicMessagesWire()` MUST produce the same `system` and `messages` rendering for a given `History` regardless of the model string; a vendor rejection of an in-band system message MUST surface as the turn's terminal `*Error` on `Stream.Err()` with `History` unchanged, and the wire MUST NOT hoist or drop the message in response to the model.
 - R-WR37-7DA2: `GeminiGenerateContentWire()` MUST render every `RoleSystem` message, at any History position, as one `{"text":"<text>"}` element of the top-level `systemInstruction.parts` array in History order with no `role` field on `systemInstruction`, MUST omit `systemInstruction` when there are none, and MUST NOT render any of them inside `contents`; pinned by golden request fixtures holding a leading and an interleaved system message.
-- R-WSB3-L50R: `AddSystem` MUST write no record to the conversation's `Log`, and `Send` MUST emit no `Event` and no log record for the `RoleSystem` messages it renders.
+- R-TX8Q-VQ9H: A successful `AddSystem` MUST write exactly one `message` record (D15) carrying the appended `RoleSystem` message to the conversation's `Log`, outside any `turn_start`/`turn_end` pair, and `Send` MUST emit no `Event` and no log record for the `RoleSystem` messages it renders.

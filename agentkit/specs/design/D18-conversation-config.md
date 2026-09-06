@@ -24,6 +24,7 @@ type Config struct {
 	Settings Settings        // generation options, tool choice, and reasoning (D8)
 	Output   *OutputContract // structured-output contract, nil for none (D20)
 	Log      *Log            // event log, nil for none (D15)
+	Limits   Limits          // lifetime tool-call and context bounds, zero for none (D25)
 }
 ```
 
@@ -72,7 +73,7 @@ still constructs and the fault surfaces from the first `Send` as
 
 ## REQUIREMENTS
 
-- R-NUY5-W8WX: `agentkit` MUST export `type Config struct { Tools []Tool; Deferred []DeferredGroup; Settings Settings; Output *OutputContract; Log *Log }` with exactly those fields.
+- R-TYGN-9I06: `agentkit` MUST export `type Config struct { Tools []Tool; Deferred []DeferredGroup; Settings Settings; Output *OutputContract; Log *Log; Limits Limits }` with exactly those fields.
 - R-W1KR-P3S7: `agentkit` MUST export `func New(wire WireFormat, endpoint Endpoint, model string, cfg Config) (*Conversation, error)` as the sole root constructor, taking the wire, endpoint, model, and config as required positional parameters with no functional options, and MUST return `ErrInvalidConfig` for a nil `wire`.
 - R-WTIZ-YWRG: The exported method set of `Conversation` MUST be exactly `Send` and `AddSystem` (D24); in particular no `Deferred` method and no other post-construction attach method may exist.
 - R-SQPK-3AUV: A `Conversation` built from a zero `Config` MUST advertise no tools, request vendor defaults for every generation control, send no pass-through options, declare no structured output, and write no log.

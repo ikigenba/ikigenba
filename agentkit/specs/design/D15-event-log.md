@@ -1,17 +1,33 @@
 # D15-event-log
 
-A consumer that wants a durable trace of a turn supplies an `io.Writer` at
-construction; agentkit writes **one JSON object per line, one line per protocol
-event** of the turn — the same shape a `codex exec --json` stream has. The log is
-**message-granular**: it mirrors the D13 event stream exactly and carries no token
-deltas. It is a forensic sibling to `Stream`, not a second control path — the
-consumer already drives the turn through `Stream`; the log is what is left on disk
-afterward.
+A consumer that wants a durable record of a conversation supplies an
+`io.Writer` at construction; agentkit writes **one JSON object per line** for
+everything that happens to that conversation. The log is **the transcript**:
+every message that enters the conversation — the consumer's system and user
+messages as much as the model's replies and the tool results — is a record,
+in the order it entered, together with the protocol events around it. `History`
+(D2) is a projection of the log: the committed messages of the successful turns.
+An application that keeps only the log has everything it needs to show what an
+agent was asked, what it said, what it ran, what it cost, and why it stopped.
 
-**Time is injected, monotonic sequence is per-turn.** Each record's `Time` comes
-from an injected clock (the idgen-precedent pattern, D3), so a replayed turn logs
-identically; `Seq` is a monotonic counter within a turn, reset at each
-`turn_start`, so a reader can order records without trusting clock resolution.
+The log is **message-granular**: it mirrors the D13 event stream and carries no
+token deltas. Every event the stream yields has a record in the log; the log
+also carries records the stream never yields — the consumer's own input, the
+per-round-trip accounting, the turn brackets, and the reason a turn was refused.
+It is a forensic sibling to `Stream`, not a second control path — the consumer
+drives the turn through `Stream`; the log is what is left on disk afterward.
+
+**A log has an identity.** `NewLog` takes an `id` the consumer chooses — in
+practice a UUID or an agent address — and writes it on every record. A
+multi-agent application that merges many conversations' logs into one store can
+then filter a single agent's lifecycle, or a subtree of agents by id prefix,
+with no wrapper of its own around the writer.
+
+**Time is injected, sequence is per log.** Each record's `Time` comes from an
+injected clock (the idgen-precedent pattern, D3), so a replayed conversation
+logs identically; `Seq` is a monotonic counter over the whole log, starting at
+zero and never reset, so a reader orders records — including the system
+messages that sit between turns — without trusting clock resolution.
 
 ```go
 // RecordType is the closed set of event-log record kinds. There is deliberately
@@ -21,35 +37,39 @@ type RecordType string
 
 const (
 	RecordTurnStart  RecordType = "turn_start"
-	RecordMessage    RecordType = "message"
+	RecordMessage    RecordType = "message"     // every Message that enters the conversation
 	RecordToolUse    RecordType = "tool_use"
 	RecordToolResult RecordType = "tool_result"
 	RecordOutput     RecordType = "output"      // validated structured result (D20)
-	RecordUsage      RecordType = "usage"
+	RecordUsage      RecordType = "usage"       // one provider round-trip's accounting
+	RecordLimit      RecordType = "limit"       // a turn refused by a Limits bound (D25)
 	RecordError      RecordType = "error"
 	RecordRetry      RecordType = "retry"
-	RecordTurnEnd    RecordType = "turn_end"
-	RecordSummary    RecordType = "summary"
+	RecordTurnEnd    RecordType = "turn_end"    // carries the turn's total Usage and Cost
+	RecordSummary    RecordType = "summary"     // carries the conversation's total Usage and Cost
 )
 
 // LogRecord is one line of the log. Type selects which payload pointer is set;
-// the rest are nil and omitted. Time is the injected clock's reading; Seq is
-// monotonic within a turn. The payloads reuse the canonical types verbatim — no
-// log-only shadow structs — so the log and the live stream never drift.
+// the rest are nil and omitted. ID is the log's identity, the same on every
+// record. Time is the injected clock's reading; Seq is monotonic over the log.
+// The payloads reuse the canonical types verbatim — no log-only shadow structs
+// — so the log and the live stream never drift.
 type LogRecord struct {
 	Type RecordType `json:"type"`
+	ID   string     `json:"id,omitempty"`
 	Time time.Time  `json:"time"`
 	Seq  int        `json:"seq"`
 
-	Identity   *Identity   `json:"identity,omitempty"`    // turn_start
-	Message    *Message    `json:"message,omitempty"`     // message (one completed Message, D2/D13)
-	ToolUse    *ToolUse    `json:"tool_use,omitempty"`    // tool_use
-	ToolResult *ToolResult `json:"tool_result,omitempty"` // tool_result
-	Output     json.RawMessage `json:"output,omitempty"`  // output (OutputDone.Value, D20)
-	Usage      *Usage      `json:"usage,omitempty"`       // usage, summary
-	Cost       *Cost       `json:"cost,omitempty"`        // usage, summary
-	Err        *Error      `json:"error,omitempty"`       // error
-	Retry      *RetryInfo  `json:"retry,omitempty"`       // retry
+	Identity   *Identity       `json:"identity,omitempty"`    // turn_start
+	Message    *Message        `json:"message,omitempty"`     // message (one Message, D2)
+	ToolUse    *ToolUse        `json:"tool_use,omitempty"`    // tool_use
+	ToolResult *ToolResult     `json:"tool_result,omitempty"` // tool_result
+	Output     json.RawMessage `json:"output,omitempty"`      // output (OutputDone.Value, D20)
+	Usage      *Usage          `json:"usage,omitempty"`       // usage, turn_end, summary
+	Cost       *Cost           `json:"cost,omitempty"`        // usage, turn_end, summary
+	Limit      *LimitInfo      `json:"limit,omitempty"`       // limit (D25)
+	Err        *Error          `json:"error,omitempty"`       // error
+	Retry      *RetryInfo      `json:"retry,omitempty"`       // retry
 }
 
 // RetryInfo records one backoff wait emitted by the retry driver (D14).
@@ -60,23 +80,59 @@ type RetryInfo struct {
 }
 ```
 
-**`turn_start` carries the full `Identity` split (D1).** Because `Identity` keeps
-endpoint, auth mode, and model as separate fields rather than one fused id, a
-consumer post-processing a log file can filter "every OpenAI turn" and "every
-OAuth-paid turn" independently — the log never collapses that distinction
-into a single provider string.
+**Every message is a record.** A `message` record is written for each `Message`
+as it enters the conversation, whoever authored it:
+
+- `AddSystem` (D24) writes the `RoleSystem` message it appends. It sits between
+  turns, outside any `turn_start`/`turn_end` pair.
+- `Send` writes the `RoleUser` message built from the caller's blocks
+  immediately after `turn_start`, before any provider call — so a turn that
+  fails, or is refused by a limit, still shows what was asked.
+- Each completed `RoleAssistant` message is written as the stream yields it,
+  followed by a `tool_use` record per `ToolUse` block it carries.
+- Each dispatched tool writes a `tool_result` record as it returns, and once the
+  round's tools have all returned the `RoleTool` message that carries those
+  results back to the model is written as one `message` record.
+- The corrective `RoleUser` message of a structured-output retry (D20) is
+  written as the stream yields it.
+
+The consequence is the projection rule: for a turn that commits, the `message`
+records between its `turn_start` and `turn_end` are exactly the messages the
+turn spliced onto `History`, in order. For a turn that ends in a terminal error
+or a limit, they are exactly the messages the turn produced up to the failure —
+messages `History` never received, and which only the log preserves. The
+`tool_use` and `tool_result` records duplicate blocks that also appear inside
+messages; they are kept because they are the log's mirror of the live `ToolCall`
+and `ToolReturn` events, and because a search over "what did this agent run"
+should not have to open messages to find out.
+
+**Accounting is per round-trip, totalled per turn and per log.** A `usage`
+record follows every completed provider round-trip with that round-trip's
+`Usage` and `Cost` — the input side of that record is the context the model held
+on that call, which is what a context limit (D25) reads. `turn_end` carries the
+turn's total, the sum of its `usage` records, so a reader who wants the old
+per-turn figure has it without adding. `summary`, written once on `Close`,
+carries the conversation's total. Every `Cost` is resolved through the D3 path
+(wire figure, catalog offering, else zero), so a log reader never reprices.
+
+**Refusals are records.** When a `Limits` bound (D25) stops a turn the log gets
+a `limit` record naming the bound, its value, and the value that crossed it. That
+is the searchable answer to "why did this agent stop", distinct from an `error`
+record, which is a provider or transport failure.
 
 **The log is best-effort and never load-bearing.** A `nil` log is valid and
 writes nothing, so the orchestrator carries no per-call-site nil check. A write
 failure is retained on the log for inspection but **never aborts the turn and
 never changes `Stream.Err()`** — a full disk must not fail a model call that
-otherwise succeeded. The live `Stream` is the source of truth; the log is a
-recording of it.
+otherwise succeeded. The live `Stream` is the source of truth for the turn in
+flight; the log is the record of it.
 
 ```go
-// NewLog builds a log over w, timestamping with now. A nil w yields a nil-
-// behaving log. now is injected for determinism (D3).
-func NewLog(w io.Writer, now func() time.Time) *Log
+// NewLog builds a log over w, timestamping with now and stamping id on every
+// record. A nil w yields a nil-behaving log. now is injected for determinism
+// (D3). id is the consumer's identity for this conversation, written verbatim;
+// an empty id omits the field.
+func NewLog(w io.Writer, now func() time.Time, id string) *Log
 
 // Close emits exactly one cumulative summary record — total Usage and total
 // Cost across the conversation's turns — and marks the log closed. It is
@@ -85,22 +141,21 @@ func NewLog(w io.Writer, now func() time.Time) *Log
 func (l *Log) Close() error
 ```
 
-**Cost is present and always priced on the accounting records.** Every `usage`
-and `summary` record carries a `Cost`, resolved through the D3 path (wire figure,
-catalog offering, else zero); the field is always there, so a log reader never
-has to reprice. The cumulative `summary.Cost` is the plain sum of the turns'
-costs, mirroring the aggregation rule (D3).
-
 ## REQUIREMENTS
 
-- R-5ELJ-F97A: When a log writer is supplied, agentkit MUST write exactly one JSON object per line, one line per protocol event of a turn, message-granular and carrying no token deltas, matching the D13 event stream.
-- R-5FTF-T0XZ: Each `LogRecord` MUST timestamp from the injected clock and MUST carry a `Seq` that is monotonic within a turn and reset at each `turn_start`.
+- R-T572-307I: `agentkit` MUST export `type RecordType string` whose complete set of exported constants is exactly `RecordTurnStart = "turn_start"`, `RecordMessage = "message"`, `RecordToolUse = "tool_use"`, `RecordToolResult = "tool_result"`, `RecordOutput = "output"`, `RecordUsage = "usage"`, `RecordLimit = "limit"`, `RecordError = "error"`, `RecordRetry = "retry"`, `RecordTurnEnd = "turn_end"`, `RecordSummary = "summary"`, with no other member.
+- R-T6EY-GRY7: `agentkit` MUST export `type LogRecord struct { Type RecordType; ID string; Time time.Time; Seq int; Identity *Identity; Message *Message; ToolUse *ToolUse; ToolResult *ToolResult; Output json.RawMessage; Usage *Usage; Cost *Cost; Limit *LimitInfo; Err *Error; Retry *RetryInfo }` with exactly those fields and the JSON tags `type`, `id` (omitempty), `time`, `seq`, and the `omitempty` fields `identity`/`message`/`tool_use`/`tool_result`/`output`/`usage`/`cost`/`limit`/`error`/`retry`.
+- R-T7MU-UJOW: `agentkit` MUST export `Log` as an opaque type together with `func NewLog(w io.Writer, now func() time.Time, id string) *Log` and the method `func (*Log) Close() error`.
+- R-T8UR-8BFL: Every record a `Log` writes MUST carry the `id` given to `NewLog` verbatim in its `ID` field, and the field MUST be omitted from the JSON line when that `id` is empty.
+- R-TA2N-M36A: Each `LogRecord` MUST timestamp from the injected clock, and `Seq` MUST be `0` on the first record a `Log` writes and increase by exactly one on every subsequent record for the life of the log, never reset.
+- R-TBAJ-ZUWZ: `Send` MUST write a `message` record carrying the `RoleUser` message built from the caller's blocks immediately after the turn's `turn_start` record and before any provider call, including on a turn that ends in a terminal error or is refused by a limit (D25).
+- R-TCIG-DMNO: After the `tool_result` records of a round-trip, the orchestrator MUST write one `message` record carrying the `RoleTool` message whose blocks are that round-trip's `ToolResult` blocks in dispatch order.
+- R-TDQC-REED: For a turn that commits, the `message` records written between its `turn_start` and `turn_end`, in order, MUST equal the sequence of `Message` values the turn appended to `History`; for a turn that ends in a terminal error or a limit refusal, they MUST equal the messages the turn produced up to that point, in order.
+- R-TEY9-5652: After every completed provider round-trip the orchestrator MUST write one `usage` record carrying that round-trip's merged `Usage` and its `Cost` resolved through the D3 path, and MUST NOT write a `usage` record that aggregates more than one round-trip.
+- R-TG65-IXVR: Every `turn_end` record MUST carry `Usage` and `Cost` equal to the field-wise integer sums of the `usage` records written since that turn's `turn_start`, and zero values when the turn completed no round-trip.
+- R-THE1-WPMG: The `summary` record MUST carry `Usage` and `Cost` equal to the field-wise integer sums of every `turn_end` record the log has written.
 - R-5JH4-YC62: A `turn_start` record MUST carry the `Identity` with endpoint, auth mode, and model as separate fields so a consumer can filter on each independently.
 - R-5KP1-C3WR: A `nil` log MUST write nothing and MUST require no per-call-site nil check; log payloads MUST reuse the canonical `Identity`/`Usage`/`Cost`/`Error`/`Block` types rather than log-only shadow structs.
 - R-5LWX-PVNG: A log write failure MUST NOT abort the turn and MUST NOT change `Stream.Err()`; the failure MAY be retained on the log for inspection.
 - R-5N4U-3NE5: `Close` MUST emit exactly one cumulative `summary` record and MUST be idempotent; a `Send` after `Close` MUST return `ErrClosed`.
-- R-O2MS-9NCE: Every `usage` and `summary` record MUST carry a `Cost` resolved through the D3 path, and the `summary` cost MUST be the integer sum of the contributing turns' costs.
-- R-URVJ-1JCJ: `agentkit` MUST export `type RecordType string` whose complete set of exported constants is exactly `RecordTurnStart = "turn_start"`, `RecordMessage = "message"`, `RecordToolUse = "tool_use"`, `RecordToolResult = "tool_result"`, `RecordOutput = "output"`, `RecordUsage = "usage"`, `RecordError = "error"`, `RecordRetry = "retry"`, `RecordTurnEnd = "turn_end"`, `RecordSummary = "summary"`, with no other member.
-- R-UT3F-FB38: `agentkit` MUST export `type LogRecord struct { Type RecordType; Time time.Time; Seq int; Identity *Identity; Message *Message; ToolUse *ToolUse; ToolResult *ToolResult; Output json.RawMessage; Usage *Usage; Cost *Cost; Err *Error; Retry *RetryInfo }` with exactly those fields and their documented JSON tags (`type`, `time`, `seq`, and `omitempty` fields `identity`/`message`/`tool_use`/`tool_result`/`output`/`usage`/`cost`/`error`/`retry`).
 - R-0NE8-TO91: `agentkit` MUST export `type RetryInfo struct { Attempt int; Delay time.Duration; Reason string }` with exactly those three fields.
-- R-0OM5-7FZQ: `agentkit` MUST export `Log` as an opaque type together with `func NewLog(w io.Writer, now func() time.Time) *Log` and the method `func (*Log) Close() error`.
