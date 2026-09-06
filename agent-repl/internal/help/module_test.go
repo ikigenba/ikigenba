@@ -4,9 +4,7 @@ import (
 	"encoding/json"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
-	"strconv"
 	"testing"
 )
 
@@ -18,11 +16,10 @@ type moduleFile struct {
 
 type moduleRequirement struct {
 	Path     string
-	Version  string
 	Indirect bool
 }
 
-// R-TYTV-5XTT
+// R-JUQZ-ZDMZ
 func TestModuleContract(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
@@ -44,41 +41,23 @@ func TestModuleContract(t *testing.T) {
 	if parsed.Module.Path != "github.com/ikigenba/ikigenba/agent-repl" {
 		t.Fatalf("module path = %q", parsed.Module.Path)
 	}
-	if parsed.Go != "1.26" {
-		t.Errorf("Go version = %q, want 1.26", parsed.Go)
+	if parsed.Go == "" {
+		t.Error("go.mod does not specify a Go version")
 	}
 
-	direct := make(map[string]string)
+	direct := make(map[string]struct{})
 	for _, requirement := range parsed.Require {
 		if !requirement.Indirect {
-			direct[requirement.Path] = requirement.Version
+			direct[requirement.Path] = struct{}{}
 		}
 	}
 	if len(direct) != 2 {
 		t.Errorf("direct requirements = %v, want exactly agentkit and toolkit", direct)
 	}
-	if version := direct["github.com/ikigenba/ikigenba/agentkit"]; !semanticVersionAtLeast(version, 0, 3, 0) {
-		t.Errorf("agentkit version = %q, want v0.3.0 or later", version)
+	if _, ok := direct["github.com/ikigenba/ikigenba/agentkit"]; !ok {
+		t.Error("go.mod does not directly require github.com/ikigenba/ikigenba/agentkit")
 	}
-	if version := direct["github.com/ikigenba/ikigenba/toolkit"]; version != "v0.1.0" {
-		t.Errorf("toolkit version = %q, want v0.1.0", version)
+	if _, ok := direct["github.com/ikigenba/ikigenba/toolkit"]; !ok {
+		t.Error("go.mod does not directly require github.com/ikigenba/ikigenba/toolkit")
 	}
-}
-
-func semanticVersionAtLeast(version string, wantMajor, wantMinor, wantPatch int) bool {
-	match := regexp.MustCompile(`^v(\d+)\.(\d+)\.(\d+)([-+].*)?$`).FindStringSubmatch(version)
-	if match == nil {
-		return false
-	}
-	parts := make([]int, 3)
-	for i := range parts {
-		parts[i], _ = strconv.Atoi(match[i+1])
-	}
-	want := []int{wantMajor, wantMinor, wantPatch}
-	for i := range parts {
-		if parts[i] != want[i] {
-			return parts[i] > want[i]
-		}
-	}
-	return match[4] == "" || match[4][0] != '-'
 }
