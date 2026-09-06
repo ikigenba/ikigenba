@@ -63,3 +63,10 @@ func addUsage(left, right Usage) Usage {
 		ReasoningTokens:    left.ReasoningTokens + right.ReasoningTokens,
 	}
 }
+
+// usageTotal is the sum of Usage's six buckets — the "context" a round-trip
+// consumed, as read by the MaxContextTokens checkpoint (D25).
+func usageTotal(usage Usage) int64 {
+	return usage.InputTokens + usage.CachedTokens + usage.CacheWrite5mTokens +
+		usage.CacheWrite1hTokens + usage.OutputTokens + usage.ReasoningTokens
+}

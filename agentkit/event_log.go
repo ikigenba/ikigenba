@@ -261,6 +261,19 @@ func (l *Log) usage(usage Usage, cost Cost) {
 	l.write(LogRecord{Type: RecordUsage, Usage: &usage, Cost: &cost})
 }
 
+// limit writes one limit record for a turn refused by a Limits bound (D25).
+// Callers only ever call this synchronously before returning the turn's
+// terminal error, which is what keeps the record ahead of finish's turn_end
+// write (R-TUSY-46S3).
+func (l *Log) limit(info LimitInfo) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.write(LogRecord{Type: RecordLimit, Limit: &info})
+}
+
 func (l *Log) recordError(err error) {
 	if l == nil || err == nil {
 		return

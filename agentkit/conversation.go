@@ -14,17 +14,20 @@ import (
 // Conversation binds a provider and its stable identity to a growing
 // transcript.
 type Conversation struct {
-	provider  wireProvider
-	client    *http.Client
-	identity  Identity
-	history   History
-	settings  Settings
-	tools     []Tool
-	deferred  []DeferredGroup
-	output    *OutputContract
-	loaded    []string
-	validate  func() error
-	eventSink eventSink
+	provider            wireProvider
+	client              *http.Client
+	identity            Identity
+	history             History
+	settings            Settings
+	tools               []Tool
+	deferred            []DeferredGroup
+	output              *OutputContract
+	loaded              []string
+	validate            func() error
+	eventSink           eventSink
+	limits              Limits
+	toolCallsDispatched int
+	lastRoundContext    int64
 }
 
 // Config is the construction-time configuration of a Conversation: everything a
@@ -60,6 +63,7 @@ func newConversation(provider wireProvider, client *http.Client, cfg Config) *Co
 		tools:    cloneTools(cfg.Tools),
 		deferred: cloneDeferredGroups(cfg.Deferred),
 		output:   cloneOutputContract(cfg.Output),
+		limits:   cfg.Limits,
 	}
 	if cfg.Log != nil {
 		conversation.eventSink = cfg.Log
@@ -177,6 +181,9 @@ func (c *Conversation) snapshotTurn(blocks []Block) turnSnapshot {
 }
 
 func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator, snapshot turnSnapshot, yield func(Event) bool, accounting *turnTotals) error {
+	if refusal := c.refuseContextOverLimit(); refusal != nil {
+		return refusal
+	}
 	output := newTurnOutputProgress(c.output)
 	for {
 		assistant, calls, completed, err := c.executeTurnRoundTrip(ctx, orchestrator, snapshot, yield, accounting)
@@ -196,10 +203,52 @@ func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator
 			return err
 		}
 
+		if refusal := c.refuseToolCallOverLimit(calls); refusal != nil {
+			return refusal
+		}
+		c.toolCallsDispatched += len(calls)
+
 		if !c.dispatchTurnTools(ctx, orchestrator, &snapshot, calls, yield) {
 			return nil
 		}
 	}
+}
+
+// refuseContextOverLimit is the D25 context checkpoint: the sum of the six
+// Usage buckets of the most recently completed round-trip (lastRoundContext,
+// updated in executeTurnRoundTrip after every round-trip regardless of turn)
+// against MaxContextTokens. It runs at the start of every Send and again
+// before every tool dispatch (R-TSD5-CNAP), and never fires when
+// MaxContextTokens is zero (R-TOPG-7C2M).
+func (c *Conversation) refuseContextOverLimit() error {
+	if c.limits.MaxContextTokens <= 0 || c.lastRoundContext <= c.limits.MaxContextTokens {
+		return nil
+	}
+	log, _ := c.eventSink.(*Log)
+	log.limit(LimitInfo{Kind: LimitContextTokens, Max: c.limits.MaxContextTokens, Actual: c.lastRoundContext})
+	return fmt.Errorf("%w: %s max=%d actual=%d", ErrLimitExceeded, LimitContextTokens, c.limits.MaxContextTokens, c.lastRoundContext)
+}
+
+// refuseToolCallOverLimit is the D25 dispatch checkpoint: first the context
+// bound (same rule as refuseContextOverLimit, re-checked because the round
+// that just requested these calls is now the most recently completed one),
+// then the tool-call bound — this round's calls added to every tool call the
+// conversation has actually dispatched over its life (R-TR58-YVK0). It never
+// fires when MaxToolCalls is zero (R-TOPG-7C2M).
+func (c *Conversation) refuseToolCallOverLimit(calls []ToolUse) error {
+	if refusal := c.refuseContextOverLimit(); refusal != nil {
+		return refusal
+	}
+	if c.limits.MaxToolCalls <= 0 {
+		return nil
+	}
+	total := c.toolCallsDispatched + len(calls)
+	if total <= c.limits.MaxToolCalls {
+		return nil
+	}
+	log, _ := c.eventSink.(*Log)
+	log.limit(LimitInfo{Kind: LimitToolCalls, Max: int64(c.limits.MaxToolCalls), Actual: int64(total)})
+	return fmt.Errorf("%w: %s max=%d actual=%d", ErrLimitExceeded, LimitToolCalls, c.limits.MaxToolCalls, total)
 }
 
 func (c *Conversation) completeNoToolRound(snapshot *turnSnapshot, assistant History, output *turnOutputProgress, yield func(Event) bool) (bool, error) {
@@ -246,6 +295,7 @@ func (c *Conversation) executeTurnRoundTrip(ctx context.Context, orchestrator *o
 	usage, cost := accounting.addRound(c.identity, round)
 	log, _ := c.eventSink.(*Log)
 	log.usage(usage, cost)
+	c.lastRoundContext = usageTotal(usage)
 	if !completed || err != nil {
 		return nil, nil, completed, err
 	}
@@ -345,6 +395,9 @@ func completedAssistantText(messages History) []byte {
 }
 
 func (c *Conversation) validateConfig() error {
+	if c.limits.MaxToolCalls < 0 || c.limits.MaxContextTokens < 0 {
+		return fmt.Errorf("limits must not be negative: %+v", c.limits)
+	}
 	if c.output != nil {
 		if err := ValidateOutputSchema(c.output.Schema); err != nil {
 			return fmt.Errorf("output schema: %w", err)
