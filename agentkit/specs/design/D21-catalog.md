@@ -261,16 +261,65 @@ application's help text and a user's typed key agree across every model:
 
 | `Kind` | `Term` | Models |
 |---|---|---|
-| effort | `effort` | Anthropic, OpenAI, xAI, GLM 5.2, Qwen |
+| effort | `effort` | Anthropic, OpenAI, xAI, GLM 5.2/5.3, Qwen 3.8 Max/27B, Muse Spark |
 | effort | `thinking_level` | Gemini 3.x |
 | budget | `thinking_budget` | Gemini 2.5, Claude Haiku 4.5 |
-| toggle | `thinking` | DeepSeek, Kimi, GLM 4.x/5.1, Nemotron, Grok toggles |
+| toggle | `thinking` | DeepSeek, Kimi, GLM 4.x/5.1, Nemotron, Qwen 3.8 Flash, Hunyuan, MiniMax, Grok toggles |
 | none | `""` | — |
 
-The seed table is authored by hand, not by the build loop: it lives at
-`specs/_data/catalog_table.go` (a directory Go tooling ignores) and is
-installed verbatim as the root package's `catalog_table.go`. Repricing or
-adding a model is an edit to that file and nothing else.
+The table has exactly one source: `specs/_data/catalog_table.go`, authored by
+hand (a directory Go tooling ignores), and installed verbatim as the root
+package's `catalog_table.go`. That identity is a requirement, so the loop
+installs the seed and a drift between the two files fails a gate. Repricing
+or adding a model is an edit to the seed, then a copy into the root package,
+and nothing else: no requirement pins a row's numbers, and no test may
+hardcode the model list — a test that needs the rows reads `Catalog()`. What
+the requirements do pin is the shape, the invariants above, the vendor facts
+proven live (the `oauth` set, the output caps), and a few resolution
+fixtures on rows that must therefore keep existing. A row is proven live
+before it is added — every level in its vocabulary, its disable form, and
+its default sent to every host the row lists and answered with a completion,
+every value the row excludes sent and rejected — so a row records
+observation, not documentation.
+
+### The September 2026 additions
+
+Eleven models entered the seed in one revision, from live probes on
+2026-09-06: `claude-fable-5-1`, `gpt-6-astra`, `gemini-3.8-flash`,
+`gemini-3.5-flash-lite`, `glm-5.3`, `glm-5.3-flash`, `qwen3.8-flash`,
+`hunyuan-4-preview`, `minimax-m3`, `nemotron-3-ultra`, and `muse-spark-1.3`.
+The facts those probes settled, where they differ from the vendors' pages:
+
+- **Output caps stay zero off Anthropic.** OpenRouter reports a
+  `max_completion_tokens` for every routed model, but the cap is only
+  recorded where the vendor's own rejection proved it (see `MaxOutputTokens`
+  above), so every non-Anthropic offering keeps `0`. Anthropic rejected
+  `max_tokens: 128001` on `claude-fable-5-1` naming `128000`, which the
+  existing cap rule already requires.
+- **Disable is per host.** `gemini-3.8-flash` accepts `thinkingBudget: 0` on
+  Google's own host and answers with no thought tokens, but OpenRouter rejects
+  reasoning `none` for it ("Reasoning is mandatory for this endpoint"); so
+  `CanDisable` is true on `gemini-generate-content` and false on both
+  OpenRouter offerings — the mirror image of `gemini-3.1-flash-lite`.
+  `gemini-3.5-flash-lite` rejects the disable form on every host.
+- **OpenRouter widens GLM's levels.** Z.ai documents `low`/`high`/`max` for
+  GLM 5.3, but OpenRouter (the only host the catalog lists for it) completes
+  `medium` too, so the vocabulary is `low`/`medium`/`high`/`max` with `max`
+  the default. `reasoning: none` is rejected.
+- **No `none` on Muse Spark or GPT-6 Astra.** Both enumerate their levels in
+  the rejection: Muse Spark takes `minimal` through `max`; GPT-6 Astra takes
+  `low` through `max` ("Supported values are: 'low', 'medium', 'high',
+  'xhigh', and 'max'"). Neither vendor names a default, so the catalog's
+  `medium` is agentkit's choice.
+- **The Codex backend serves `gpt-6-astra`** under a ChatGPT OAuth token, so
+  its `openai-responses` offering joins the `oauth` set.
+- **Toggles round-trip both ways.** Qwen 3.8 Flash, Hunyuan 4 preview,
+  MiniMax M3, and Nemotron 3 Ultra each completed with reasoning enabled and
+  with reasoning `none` on both OpenRouter wires.
+- **Prices are vendor list, in nano-USD.** Hunyuan's is a fixed conversion of
+  Tencent's RMB price; Nemotron 3 Ultra has no NVIDIA per-token price, so its
+  row carries OpenRouter's. Gemini 3.8 Flash uses the standard price, not the
+  introductory one.
 
 ## REQUIREMENTS
 
@@ -287,7 +336,7 @@ adding a model is an edit to that file and nothing else.
 - R-HD89-D6MW: Every offering in the table MUST carry the `Host` and `WireName` fixed for its `ID`, a `WireFormat` whose dynamic type is the struct type fixed for the root constructor named for its `ID` (per R-HC0C-ZEW7), and its `Endpoints` MUST begin with an `EndpointSpec` whose `AuthMode` is `AuthModeAPIKey` and whose `BaseURL` is fixed for its `ID`: `anthropic-messages` → `anthropic`, `messages`, `AnthropicMessagesWire()`, `https://api.anthropic.com/v1/messages`; `openai-responses` → `openai`, `responses`, `OpenAIResponsesWire()`, `https://api.openai.com/v1/responses`; `openai-chat` → `openai`, `chat`, `OpenAIChatWire()`, `https://api.openai.com/v1/chat/completions`; `gemini-generate-content` → `gemini`, `generate-content`, `GeminiGenerateContentWire()`, `https://generativelanguage.googleapis.com/v1beta/models/<WireModel>:streamGenerateContent?alt=sse` with `<WireModel>` path-escaped; `xai-responses` → `xai`, `responses`, `XAIResponsesWire()`, `https://api.x.ai/v1/responses`; `xai-chat` → `xai`, `chat`, `XAIChatWire()`, `https://api.x.ai/v1/chat/completions`; `openrouter-chat` → `openrouter`, `chat`, `ChatWire()`, `https://openrouter.ai/api/v1/chat/completions`; `openrouter-responses` → `openrouter`, `responses`, `ResponsesWire()`, `https://openrouter.ai/api/v1/responses`.
 - R-KIZI-E8Z2: Every `EndpointSpec` in the table whose `AuthMode` is `AuthModeOAuth` MUST be, by its offering's `ID`: for `openai-responses`, `BaseURL` `https://chatgpt.com/backend-api/codex/responses` and `Rotation` `{RefreshURL: "https://auth.openai.com/oauth/token", ClientID: "app_EMoamEEZ73f0CkXaXp7hrann"}`; for `xai-responses`, `BaseURL` `https://api.x.ai/v1/responses` and `Rotation` `{RefreshURL: "https://auth.x.ai/oauth2/token", ClientID: "b1a00492-073a-47ea-816f-4c329264a828"}`; for `xai-chat`, `BaseURL` `https://api.x.ai/v1/chat/completions` and that same xAI `Rotation`; and no offering with any other `ID` MUST carry an `oauth` spec.
 - R-KK7E-S0PR: For every offering in the table, `Endpoints` MUST be non-empty, MUST hold at most one spec per `AuthMode`, every spec's `BaseURL` MUST be an absolute HTTP(S) URL, and a spec's `Rotation` MUST be non-zero in both fields if and only if its `AuthMode` is `AuthModeOAuth`.
-- R-KLFB-5SGG: The `openai-responses` offerings of exactly the models `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, and `gpt-5.4-mini` MUST carry an `oauth` `EndpointSpec`, and the `openai-responses` offering of every other model MUST NOT; every `xai-responses` and `xai-chat` offering MUST carry one.
+- R-ABP3-N5HW: The `openai-responses` offerings of exactly the models `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, and `gpt-5.4-mini` MUST carry an `oauth` `EndpointSpec`, and the `openai-responses` offering of every other model MUST NOT; every `xai-responses` and `xai-chat` offering MUST carry one.
 - R-KMN7-JK75: `MaxOutputTokens` MUST be `64000` on the `anthropic-messages` offering of `claude-haiku-4-5`, `128000` on every other `anthropic-messages` offering, and `0` on every offering whose `Host` is not `HostAnthropic`.
 - R-KNV3-XBXU: Mutating a returned `Offering`'s `Endpoints` slice or any element of it MUST have no effect on any later catalog call.
 - R-JIFY-H4QO: For every entry, an offering with `ID` `OfferingOpenAIResponses` MUST be paired with one with `OfferingOpenAIChat`, one with `OfferingXAIResponses` with one with `OfferingXAIChat`, and one with `OfferingOpenRouterChat` with one with `OfferingOpenRouterResponses`, each pair sharing `WireModel`, `Context`, `Pricing`, and `Reasoning`.
@@ -310,3 +359,4 @@ adding a model is an edit to that file and nothing else.
 - R-JX2R-2DN0: `Lookup("deepseek-v4-flash", "", "")` MUST return an offering with `Host` `HostOpenRouter`, and `Lookup("no-such-model", "", "")` MUST return an error wrapping `ErrNotFound`.
 - R-JYAN-G5DP: The catalog MUST NOT gate construction or `Send`: a conversation for a model or host/model pair that `Lookup` reports `ErrNotFound` for MUST construct and send exactly as a cataloged one does, differing only in pricing to zero (D3).
 - R-JZIJ-TX4E: For each of the five `Host` constants, `Catalog()` MUST contain at least one offering whose `Host` is that constant.
+- R-59J0-X9Y5: The root package file `catalog_table.go` MUST be byte-identical to `specs/_data/catalog_table.go`.
