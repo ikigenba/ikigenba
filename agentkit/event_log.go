@@ -22,6 +22,7 @@ const (
 	RecordToolResult RecordType = "tool_result"
 	RecordOutput     RecordType = "output"
 	RecordUsage      RecordType = "usage"
+	RecordLimit      RecordType = "limit" // a turn refused by a Limits bound (D25)
 	RecordError      RecordType = "error"
 	RecordRetry      RecordType = "retry"
 	RecordTurnEnd    RecordType = "turn_end"
@@ -29,11 +30,13 @@ const (
 )
 
 // LogRecord is one line of the log. Type selects which payload pointer is set;
-// the rest are nil and omitted. Time is the injected clock's reading; Seq is
-// monotonic within a turn. The payloads reuse the canonical types verbatim — no
-// log-only shadow structs — so the log and the live stream never drift.
+// the rest are nil and omitted. ID is the log's identity, the same on every
+// record. Time is the injected clock's reading; Seq is monotonic within a turn.
+// The payloads reuse the canonical types verbatim — no log-only shadow structs
+// — so the log and the live stream never drift.
 type LogRecord struct {
 	Type RecordType `json:"type"`
+	ID   string     `json:"id,omitempty"`
 	Time time.Time  `json:"time"`
 	Seq  int        `json:"seq"`
 
@@ -44,6 +47,7 @@ type LogRecord struct {
 	Output     json.RawMessage `json:"output,omitempty"`      // output (OutputDone.Value, D20)
 	Usage      *Usage          `json:"usage,omitempty"`       // usage, summary
 	Cost       *Cost           `json:"cost,omitempty"`        // usage, summary
+	Limit      *LimitInfo      `json:"limit,omitempty"`       // limit (D25)
 	Err        *Error          `json:"error,omitempty"`       // error
 	Retry      *RetryInfo      `json:"retry,omitempty"`       // retry
 }
@@ -57,6 +61,7 @@ type RetryInfo struct {
 
 type logRecordJSON struct {
 	Type       RecordType      `json:"type"`
+	ID         string          `json:"id,omitempty"`
 	Time       time.Time       `json:"time"`
 	Seq        int             `json:"seq"`
 	Identity   *Identity       `json:"identity,omitempty"`
@@ -66,6 +71,7 @@ type logRecordJSON struct {
 	Output     json.RawMessage `json:"output,omitempty"`
 	Usage      *Usage          `json:"usage,omitempty"`
 	Cost       *Cost           `json:"cost,omitempty"`
+	Limit      *LimitInfo      `json:"limit,omitempty"`
 	Err        *Error          `json:"error,omitempty"`
 	Retry      *RetryInfo      `json:"retry,omitempty"`
 }
@@ -74,9 +80,9 @@ type logRecordJSON struct {
 // single Message payload while retaining LogRecord's one-object shape.
 func (r LogRecord) MarshalJSON() ([]byte, error) {
 	encoded := logRecordJSON{
-		Type: r.Type, Time: r.Time, Seq: r.Seq, Identity: r.Identity,
+		Type: r.Type, ID: r.ID, Time: r.Time, Seq: r.Seq, Identity: r.Identity,
 		ToolUse: r.ToolUse, ToolResult: r.ToolResult, Output: r.Output, Usage: r.Usage,
-		Cost: r.Cost, Err: r.Err, Retry: r.Retry,
+		Cost: r.Cost, Limit: r.Limit, Err: r.Err, Retry: r.Retry,
 	}
 	if r.Message != nil {
 		history, err := json.Marshal(History{*r.Message})
@@ -100,10 +106,10 @@ func (r *LogRecord) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*r = LogRecord{
-		Type: encoded.Type, Time: encoded.Time, Seq: encoded.Seq,
+		Type: encoded.Type, ID: encoded.ID, Time: encoded.Time, Seq: encoded.Seq,
 		Identity: encoded.Identity, ToolUse: encoded.ToolUse,
 		ToolResult: encoded.ToolResult, Output: encoded.Output, Usage: encoded.Usage,
-		Cost: encoded.Cost, Err: encoded.Err, Retry: encoded.Retry,
+		Cost: encoded.Cost, Limit: encoded.Limit, Err: encoded.Err, Retry: encoded.Retry,
 	}
 	if len(encoded.Message) != 0 {
 		var history History
@@ -163,6 +169,7 @@ type Log struct {
 	mu        sync.Mutex
 	w         io.Writer
 	now       func() time.Time
+	id        string
 	seq       int
 	closed    bool
 	writeErr  error
@@ -170,10 +177,12 @@ type Log struct {
 	totalCost Cost
 }
 
-// NewLog builds a log over w, timestamping with now. A nil w yields a nil-
-// behaving log. now is injected for determinism (D3).
-func NewLog(w io.Writer, now func() time.Time) *Log {
-	return &Log{w: w, now: now}
+// NewLog builds a log over w, timestamping with now and stamping id on every
+// record. A nil w yields a nil-behaving log. now is injected for determinism
+// (D3). id is the consumer's identity for this conversation, written verbatim;
+// an empty id omits the field.
+func NewLog(w io.Writer, now func() time.Time, id string) *Log {
+	return &Log{w: w, now: now, id: id}
 }
 
 // Close emits exactly one cumulative summary record — total Usage and total
@@ -271,6 +280,7 @@ func (l *Log) write(record LogRecord) {
 	if l.now != nil {
 		record.Time = l.now()
 	}
+	record.ID = l.id
 	record.Seq = l.seq
 	l.seq++
 	line, err := json.Marshal(record)

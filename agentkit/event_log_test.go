@@ -36,7 +36,7 @@ func TestLogRecordsUseInjectedTimePerTurnSequenceAndFullIdentity(t *testing.T) {
 		value := times[clockCall]
 		clockCall++
 		return value
-	})
+	}, "")
 	identity := Identity{Endpoint: "https://api.example/v1", AuthMode: "oauth", Model: "model-a"}
 	log.start(identity)
 	log.record(eventRecord{kind: eventRecordMessage, value: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "one"}}}})
@@ -71,7 +71,7 @@ func TestNilLogIsSilentSafeAndRecordsCanonicalPayloads(t *testing.T) {
 		t.Fatalf("nil receiver Close() = %v", err)
 	}
 	clockCalls := 0
-	log := NewLog(nil, func() time.Time { clockCalls++; return time.Time{} })
+	log := NewLog(nil, func() time.Time { clockCalls++; return time.Time{} }, "")
 	log.start(Identity{})
 	log.record(eventRecord{kind: eventRecordToolUse, value: ToolUse{ID: "call", Name: "tool"}})
 	log.finish(Usage{}, 0)
@@ -80,7 +80,7 @@ func TestNilLogIsSilentSafeAndRecordsCanonicalPayloads(t *testing.T) {
 	}
 
 	var output bytes.Buffer
-	log = NewLog(&output, func() time.Time { return time.Time{} })
+	log = NewLog(&output, func() time.Time { return time.Time{} }, "")
 	message := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "canonical"}}}
 	log.start(Identity{})
 	log.record(eventRecord{kind: eventRecordMessage, value: message})
@@ -96,7 +96,7 @@ func TestNilLogIsSilentSafeAndRecordsCanonicalPayloads(t *testing.T) {
 func TestUsageAndSummaryRecordsCarryPlainlySummedCosts(t *testing.T) {
 	// R-O2MS-9NCE
 	var output bytes.Buffer
-	log := NewLog(&output, func() time.Time { return time.Date(2032, 1, 1, 0, 0, 0, 0, time.UTC) })
+	log := NewLog(&output, func() time.Time { return time.Date(2032, 1, 1, 0, 0, 0, 0, time.UTC) }, "")
 	log.start(Identity{})
 	log.finish(Usage{InputTokens: 2, OutputTokens: 3}, Cost(11))
 	log.start(Identity{})
@@ -152,7 +152,7 @@ func decodeLogRecords(t *testing.T, data []byte) []LogRecord {
 }
 
 func TestRecordTypeIsClosedEnumeration(t *testing.T) {
-	// R-URVJ-1JCJ
+	// R-T572-307I
 	recordType := reflect.TypeFor[RecordType]()
 	if recordType.Name() != "RecordType" || recordType.Kind() != reflect.String {
 		t.Fatalf("RecordType = %q/%s, want defined string type", recordType.Name(), recordType.Kind())
@@ -165,6 +165,7 @@ func TestRecordTypeIsClosedEnumeration(t *testing.T) {
 		"RecordToolResult": "tool_result",
 		"RecordOutput":     "output",
 		"RecordUsage":      "usage",
+		"RecordLimit":      "limit",
 		"RecordError":      "error",
 		"RecordRetry":      "retry",
 		"RecordTurnEnd":    "turn_end",
@@ -179,7 +180,8 @@ func TestRecordTypeIsClosedEnumeration(t *testing.T) {
 		"RecordTurnStart": RecordTurnStart, "RecordMessage": RecordMessage,
 		"RecordToolUse": RecordToolUse, "RecordToolResult": RecordToolResult,
 		"RecordOutput": RecordOutput,
-		"RecordUsage":  RecordUsage, "RecordError": RecordError,
+		"RecordUsage":  RecordUsage, "RecordLimit": RecordLimit,
+		"RecordError": RecordError,
 		"RecordRetry": RecordRetry, "RecordTurnEnd": RecordTurnEnd,
 		"RecordSummary": RecordSummary,
 	}
@@ -191,7 +193,7 @@ func TestRecordTypeIsClosedEnumeration(t *testing.T) {
 }
 
 func TestLogRecordDeclarationIsExact(t *testing.T) {
-	// R-UT3F-FB38
+	// R-T6EY-GRY7
 	typeOf := reflect.TypeFor[LogRecord]()
 	if typeOf.Name() != "LogRecord" || typeOf.Kind() != reflect.Struct {
 		t.Fatalf("LogRecord = %q/%s, want defined struct", typeOf.Name(), typeOf.Kind())
@@ -202,6 +204,7 @@ func TestLogRecordDeclarationIsExact(t *testing.T) {
 		tag    string
 	}{
 		{"Type", reflect.TypeFor[RecordType](), `json:"type"`},
+		{"ID", reflect.TypeFor[string](), `json:"id,omitempty"`},
 		{"Time", reflect.TypeFor[time.Time](), `json:"time"`},
 		{"Seq", reflect.TypeFor[int](), `json:"seq"`},
 		{"Identity", reflect.TypeFor[*Identity](), `json:"identity,omitempty"`},
@@ -211,10 +214,24 @@ func TestLogRecordDeclarationIsExact(t *testing.T) {
 		{"Output", reflect.TypeFor[json.RawMessage](), `json:"output,omitempty"`},
 		{"Usage", reflect.TypeFor[*Usage](), `json:"usage,omitempty"`},
 		{"Cost", reflect.TypeFor[*Cost](), `json:"cost,omitempty"`},
+		{"Limit", reflect.TypeFor[*LimitInfo](), `json:"limit,omitempty"`},
 		{"Err", reflect.TypeFor[*Error](), `json:"error,omitempty"`},
 		{"Retry", reflect.TypeFor[*RetryInfo](), `json:"retry,omitempty"`},
 	}
 	assertExactStruct(t, typeOf, want)
+
+	record := LogRecord{Type: RecordLimit, ID: "agent-7", Limit: &LimitInfo{}}
+	encoded, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded LogRecord
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(decoded, record) {
+		t.Fatalf("LogRecord JSON round trip = %#v, want %#v", decoded, record)
+	}
 }
 
 func TestLogRecordOutputJSONCodec(t *testing.T) {
@@ -281,7 +298,7 @@ func TestRetryInfoDeclarationIsExact(t *testing.T) {
 }
 
 func TestLogIsOpaqueAndCallable(t *testing.T) {
-	// R-0OM5-7FZQ
+	// R-T7MU-UJOW
 	typeOf := reflect.TypeFor[Log]()
 	if typeOf.Name() != "Log" || typeOf.Kind() != reflect.Struct {
 		t.Fatalf("Log = %q/%s, want defined opaque struct", typeOf.Name(), typeOf.Kind())
@@ -292,7 +309,7 @@ func TestLogIsOpaqueAndCallable(t *testing.T) {
 		}
 	}
 
-	wantConstructor := reflect.TypeOf(func(io.Writer, func() time.Time) *Log { return nil })
+	wantConstructor := reflect.TypeOf(func(io.Writer, func() time.Time, string) *Log { return nil })
 	if got := reflect.TypeOf(NewLog); got != wantConstructor {
 		t.Fatalf("NewLog = %s, want %s", got, wantConstructor)
 	}
@@ -302,12 +319,60 @@ func TestLogIsOpaqueAndCallable(t *testing.T) {
 		t.Fatalf("(*Log).Close = %v (present=%t), want %s", closeMethod.Type, ok, wantClose)
 	}
 
-	log := NewLog(nil, func() time.Time { return time.Time{} })
+	log := NewLog(nil, func() time.Time { return time.Time{} }, "")
 	if log == nil {
 		t.Fatal("NewLog returned nil, want callable *Log")
 	}
 	if err := log.Close(); err != nil {
 		t.Fatalf("Close() = %v, want nil scaffolding result", err)
+	}
+}
+
+func TestLogStampsIDOnEveryRecordAndOmitsWhenEmpty(t *testing.T) {
+	// R-T8UR-8BFL
+	var withID bytes.Buffer
+	log := NewLog(&withID, func() time.Time { return time.Time{} }, "agent-7")
+	log.start(Identity{})
+	log.record(eventRecord{kind: eventRecordMessage, value: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "x"}}}})
+	log.finish(Usage{}, 0)
+	if err := log.Close(); err != nil {
+		t.Fatal(err)
+	}
+	records := decodeLogRecords(t, withID.Bytes())
+	if len(records) == 0 {
+		t.Fatal("log wrote no records")
+	}
+	for index, record := range records {
+		if record.ID != "agent-7" {
+			t.Fatalf("record %d ID = %q, want %q", index, record.ID, "agent-7")
+		}
+	}
+	for index, line := range bytes.Split(bytes.TrimSuffix(withID.Bytes(), []byte{'\n'}), []byte{'\n'}) {
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(line, &raw); err != nil {
+			t.Fatalf("line %d decode: %v", index, err)
+		}
+		if _, present := raw["id"]; !present {
+			t.Fatalf("line %d missing id: %s", index, line)
+		}
+	}
+
+	var withoutID bytes.Buffer
+	empty := NewLog(&withoutID, func() time.Time { return time.Time{} }, "")
+	empty.start(Identity{})
+	empty.record(eventRecord{kind: eventRecordMessage, value: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "x"}}}})
+	empty.finish(Usage{}, 0)
+	if err := empty.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for index, line := range bytes.Split(bytes.TrimSuffix(withoutID.Bytes(), []byte{'\n'}), []byte{'\n'}) {
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(line, &raw); err != nil {
+			t.Fatalf("empty-id line %d decode: %v", index, err)
+		}
+		if _, present := raw["id"]; present {
+			t.Fatalf("empty-id line %d has an id key: %s", index, line)
+		}
 	}
 }
 

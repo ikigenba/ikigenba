@@ -77,7 +77,7 @@ func TestLiveMatrix(t *testing.T) {
 func assertLiveMatrixTextTurn(t *testing.T, offering Offering, endpoint Endpoint, model string) {
 	t.Helper()
 	var log bytes.Buffer
-	conversation, err := New(offering.WireFormat, endpoint, model, Config{Log: NewLog(&log, time.Now)})
+	conversation, err := New(offering.WireFormat, endpoint, model, Config{Log: NewLog(&log, time.Now, "")})
 	if err != nil {
 		t.Fatalf("build text conversation: %v", err)
 	}
@@ -126,7 +126,7 @@ func assertLiveMatrixToolTurn(t *testing.T, offering Offering, endpoint Endpoint
 	}) (string, error) {
 		return in.Text, nil
 	})
-	conversation, err := New(offering.WireFormat, endpoint, model, Config{Tools: []Tool{echo}, Log: NewLog(&log, time.Now)})
+	conversation, err := New(offering.WireFormat, endpoint, model, Config{Tools: []Tool{echo}, Log: NewLog(&log, time.Now, "")})
 	if err != nil {
 		t.Fatalf("build tool conversation: %v", err)
 	}
@@ -162,7 +162,7 @@ func assertLiveMatrixSystemSequence(t *testing.T, offering Offering, endpoint En
 	const secondToken = "zqsecond4m2"
 
 	var log bytes.Buffer
-	config := Config{Log: NewLog(&log, time.Now)}
+	config := Config{Log: NewLog(&log, time.Now, "")}
 	if cell.model == "claude-opus-5" {
 		config.Settings = Settings{Options: Options{"effort": "low"}}
 	}

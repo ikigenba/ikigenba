@@ -1189,7 +1189,7 @@ func TestOffCatalogConversationConstructsSendsAndPricesToZero(t *testing.T) {
 	transportCalls := 0
 	var logOutput bytes.Buffer
 	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{
-		Log: NewLog(&logOutput, func() time.Time { return time.Time{} }),
+		Log: NewLog(&logOutput, func() time.Time { return time.Time{} }, ""),
 	})
 	stream := conversation.Send(context.Background(), Text{Text: "hello"})
 	drainStream(stream)
@@ -1228,7 +1228,7 @@ func TestCatalogPricingUsesMergedUsageAcrossRounds(t *testing.T) {
 	transportCalls := 0
 	var logOutput bytes.Buffer
 	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{
-		Log: NewLog(&logOutput, func() time.Time { return time.Time{} }),
+		Log: NewLog(&logOutput, func() time.Time { return time.Time{} }, ""),
 		Tools: []Tool{MustTool("lookup", "", func(context.Context, phase15Input) (string, error) {
 			return "found", nil
 		})},
@@ -1335,7 +1335,7 @@ func TestConfiguredLogReceivesEveryConversationTurn(t *testing.T) {
 	provider := &phase15Provider{model: "model", responses: [][]Event{{done}, {done}}}
 	transportCalls := 0
 	var output bytes.Buffer
-	log := NewLog(&output, func() time.Time { return time.Date(2034, 2, 3, 4, 5, 6, 0, time.UTC) })
+	log := NewLog(&output, func() time.Time { return time.Date(2034, 2, 3, 4, 5, 6, 0, time.UTC) }, "")
 	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Log: log})
 	for _, prompt := range []string{"first", "second"} {
 		stream := conversation.Send(context.Background(), Text{Text: prompt})
@@ -1429,7 +1429,7 @@ func TestAddSystemRejectsUnicodeWhitespaceWithoutChangingHistory(t *testing.T) {
 // R-WIJW-IZ37
 func TestAddSystemRejectsClosedLogWithoutChangingHistory(t *testing.T) {
 	var output bytes.Buffer
-	log := NewLog(&output, func() time.Time { return time.Time{} })
+	log := NewLog(&output, func() time.Time { return time.Time{} }, "")
 	conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(new(int)), Config{Log: log})
 	conversation.history = History{{Role: RoleUser, Blocks: []Block{Text{Text: "existing"}}}}
 	before := cloneHistory(conversation.history)
@@ -1450,7 +1450,7 @@ func TestAddSystemAndRenderedSystemMessagesAreSilentInLog(t *testing.T) {
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: done}}}}
 	transportCalls := 0
 	var output bytes.Buffer
-	log := NewLog(&output, func() time.Time { return time.Time{} })
+	log := NewLog(&output, func() time.Time { return time.Time{} }, "")
 	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Log: log})
 
 	if err := conversation.AddSystem("unlogged system input"); err != nil {
@@ -1906,7 +1906,7 @@ func TestStructuredOutputCorrectionRetriesAndCommitsFullTranscript(t *testing.T)
 	}}
 	transportCalls := 0
 	var logOutput bytes.Buffer
-	log := NewLog(&logOutput, func() time.Time { return time.Date(2035, 1, 2, 3, 4, 5, 0, time.UTC) })
+	log := NewLog(&logOutput, func() time.Time { return time.Date(2035, 1, 2, 3, 4, 5, 0, time.UTC) }, "")
 	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{
 		Output: &OutputContract{Schema: schema, MaxAttempts: 2}, Log: log,
 	})
@@ -1998,7 +1998,7 @@ func TestStructuredOutputAttemptLimitsExhaustWithoutCommit(t *testing.T) {
 			var logOutput bytes.Buffer
 			conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{
 				Output: &OutputContract{Schema: schema, MaxAttempts: test.maxAttempts},
-				Log:    NewLog(&logOutput, func() time.Time { return time.Time{} }),
+				Log:    NewLog(&logOutput, func() time.Time { return time.Time{} }, ""),
 			})
 			conversation.history = cloneHistory(prior)
 			stream := conversation.Send(context.Background(), Text{Text: "answer"})
@@ -2041,7 +2041,7 @@ func TestNoContractTurnDoesNotLogOutput(t *testing.T) {
 	transportCalls := 0
 	var logOutput bytes.Buffer
 	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{
-		Log: NewLog(&logOutput, func() time.Time { return time.Time{} }),
+		Log: NewLog(&logOutput, func() time.Time { return time.Time{} }, ""),
 	})
 	events := drainStream(conversation.Send(context.Background(), Text{Text: "answer"}))
 	if !reflect.DeepEqual(events, []Event{MessageDone{Message: message}}) {
@@ -2066,7 +2066,7 @@ func TestDurableLogMirrorsMultiRoundStreamAtMessageGranularity(t *testing.T) {
 	provider := &phase15Provider{model: "gpt-4.1-mini", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
 	transportCalls := 0
 	var output bytes.Buffer
-	log := NewLog(&output, func() time.Time { return time.Date(2033, 1, 1, 0, 0, 0, 0, time.UTC) })
+	log := NewLog(&output, func() time.Time { return time.Date(2033, 1, 1, 0, 0, 0, 0, time.UTC) }, "")
 	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	conversation.eventSink = log
 	conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) { return "sunny", nil })}
@@ -2108,7 +2108,7 @@ func TestLogFailureDoesNotAlterSuccessOrTerminalStreamSemantics(t *testing.T) {
 	writer := &scriptedLogWriter{steps: []io.Writer{io.Discard, io.Discard, failure}}
 	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{
 		Output: &OutputContract{Schema: json.RawMessage(`{"type":"object","properties":{"value":{"type":"integer"}},"required":["value"]}`)},
-		Log:    NewLog(writer, func() time.Time { return time.Time{} }),
+		Log:    NewLog(writer, func() time.Time { return time.Time{} }, ""),
 	})
 	stream := conversation.Send(context.Background(), Text{Text: "hello"})
 	wantEvents := []Event{MessageDone{Message: message}, OutputDone{Value: json.RawMessage(text)}}
@@ -2124,7 +2124,7 @@ func TestLogFailureDoesNotAlterSuccessOrTerminalStreamSemantics(t *testing.T) {
 	transportCalls = 0
 	var output bytes.Buffer
 	conversation = newConversation(provider, successfulPhase15Client(&transportCalls), Config{})
-	conversation.eventSink = NewLog(&output, func() time.Time { return time.Time{} })
+	conversation.eventSink = NewLog(&output, func() time.Time { return time.Time{} }, "")
 	stream = conversation.Send(context.Background(), Text{Text: "fail"})
 	drainStream(stream)
 	if !errors.Is(stream.Err(), terminal) || stream.Err().Error() != "unknown: provider response decoding ended before completion: decode failed (status 200)" || len(conversation.history) != 0 {
@@ -2150,7 +2150,7 @@ func TestLogFailureDoesNotAlterSuccessOrTerminalStreamSemantics(t *testing.T) {
 		return nil, context.Canceled
 	})}
 	conversation = newConversation(provider, cancelClient, Config{})
-	conversation.eventSink = NewLog(&output, func() time.Time { return time.Time{} })
+	conversation.eventSink = NewLog(&output, func() time.Time { return time.Time{} }, "")
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
 	stream = conversation.Send(canceled, Text{Text: "cancelled"})
@@ -2170,7 +2170,7 @@ func TestConversationCloseIsIdempotentAndRejectsLaterSend(t *testing.T) {
 	provider := &phase15Provider{model: "model"}
 	transportCalls := 0
 	var output bytes.Buffer
-	log := NewLog(&output, func() time.Time { return time.Time{} })
+	log := NewLog(&output, func() time.Time { return time.Time{} }, "")
 	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	conversation.eventSink = log
 	if err := log.Close(); err != nil {
