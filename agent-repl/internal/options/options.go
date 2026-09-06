@@ -10,15 +10,16 @@ const defaultModel = "gpt-5.6-sol"
 
 // Options contains the semantically validated command-line options.
 type Options struct {
-	Provider string
-	Model    string
-	Wire     string
-	Auth     string
-	AuthFile string
-	BaseURL  string
-	Settings map[string]string
-	Raw      bool
-	Version  bool
+	Provider   string
+	Model      string
+	Wire       string
+	Auth       string
+	AuthFile   string
+	BaseURL    string
+	SystemFile string
+	Settings   map[string]string
+	Raw        bool
+	Version    bool
 }
 
 // Validate folds and semantically validates the parsed configuration flags.
@@ -48,6 +49,8 @@ func (flags Flags) Validate() (Options, error) {
 			options.AuthFile = pair.Value
 		case "base_url":
 			options.BaseURL = pair.Value
+		case "system_file":
+			options.SystemFile = pair.Value
 		default:
 			options.Settings[pair.Key] = pair.Value
 		}

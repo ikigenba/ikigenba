@@ -2,9 +2,97 @@ package options
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+// R-N7XL-3A7G
+func TestOptionsHasExactExportedShape(t *testing.T) {
+	want := []reflect.StructField{
+		{Name: "Provider", Type: reflect.TypeFor[string]()},
+		{Name: "Model", Type: reflect.TypeFor[string]()},
+		{Name: "Wire", Type: reflect.TypeFor[string]()},
+		{Name: "Auth", Type: reflect.TypeFor[string]()},
+		{Name: "AuthFile", Type: reflect.TypeFor[string]()},
+		{Name: "BaseURL", Type: reflect.TypeFor[string]()},
+		{Name: "SystemFile", Type: reflect.TypeFor[string]()},
+		{Name: "Settings", Type: reflect.TypeFor[map[string]string]()},
+		{Name: "Raw", Type: reflect.TypeFor[bool]()},
+		{Name: "Version", Type: reflect.TypeFor[bool]()},
+	}
+
+	got := reflect.TypeFor[Options]()
+	if got.NumField() != len(want) {
+		t.Fatalf("Options has %d fields, want %d", got.NumField(), len(want))
+	}
+	for index, wantField := range want {
+		gotField := got.Field(index)
+		if gotField.Name != wantField.Name || gotField.Type != wantField.Type {
+			t.Errorf("Options field %d = %s %v, want %s %v", index, gotField.Name, gotField.Type, wantField.Name, wantField.Type)
+		}
+	}
+}
+
+// R-NADD-UTOU
+func TestValidateFoldsAllConfigPairsLastWins(t *testing.T) {
+	got, err := (Flags{Config: []Pair{
+		{Key: "provider", Value: "not-a-provider"},
+		{Key: "model", Value: ""},
+		{Key: "wire", Value: "not-a-wire"},
+		{Key: "auth", Value: "not-an-auth-mode"},
+		{Key: "auth_file", Value: "old-auth"},
+		{Key: "base_url", Value: "old-base"},
+		{Key: "system_file", Value: "old-system"},
+		{Key: "temperature", Value: "0.1"},
+		{Key: "provider", Value: "xai"},
+		{Key: "model", Value: "future-model"},
+		{Key: "wire", Value: "responses"},
+		{Key: "auth", Value: "api_key"},
+		{Key: "auth_file", Value: "final-auth"},
+		{Key: "base_url", Value: "final-base"},
+		{Key: "system_file", Value: "final-system"},
+		{Key: "temperature", Value: "0.9"},
+		{Key: "unknown.key", Value: "verbatim value"},
+	}, Raw: true, Version: true}).Validate()
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	want := Options{
+		Provider:   "xai",
+		Model:      "future-model",
+		Wire:       "responses",
+		Auth:       "api_key",
+		AuthFile:   "final-auth",
+		BaseURL:    "final-base",
+		SystemFile: "final-system",
+		Settings: map[string]string{
+			"temperature": "0.9",
+			"unknown.key": "verbatim value",
+		},
+		Raw:     true,
+		Version: true,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Validate() = %#v, want %#v", got, want)
+	}
+}
+
+// R-NCT6-MD68
+func TestValidateCarriesNonexistentSystemFileWithoutIO(t *testing.T) {
+	path := t.TempDir() + "/missing/system-prompt.txt"
+	got, err := (Flags{Config: []Pair{{Key: "system_file", Value: path}}}).Validate()
+	if err != nil {
+		t.Fatalf("Validate() error = %v for nonexistent system file", err)
+	}
+	if got.SystemFile != path {
+		t.Fatalf("Validate() system file = %q, want %q", got.SystemFile, path)
+	}
+	if _, found := got.Settings["system_file"]; found {
+		t.Fatal("Validate() retained interpreted system_file in Settings")
+	}
+}
 
 // R-U9SY-LVI2
 func TestFlagsValidateReturnsOptions(t *testing.T) {
