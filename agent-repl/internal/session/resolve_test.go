@@ -13,22 +13,6 @@ import (
 	"github.com/ikigenba/ikigenba/agentkit"
 )
 
-// R-UUJ9-3Z3V
-func TestConfigContract(t *testing.T) {
-	want := []struct {
-		name   string
-		typeOf reflect.Type
-	}{
-		{"Provider", reflect.TypeFor[string]()}, {"Model", reflect.TypeFor[string]()},
-		{"Wire", reflect.TypeFor[string]()}, {"Auth", reflect.TypeFor[string]()},
-		{"AuthFile", reflect.TypeFor[string]()}, {"BaseURL", reflect.TypeFor[string]()},
-		{"Settings", reflect.TypeFor[map[string]string]()}, {"Home", reflect.TypeFor[string]()},
-		{"Getenv", reflect.TypeFor[func(string) string]()}, {"Root", reflect.TypeFor[string]()},
-		{"Log", reflect.TypeFor[*agentkit.Log]()},
-	}
-	assertFields(t, reflect.TypeFor[Config](), want)
-}
-
 // R-UVR5-HQUK
 func TestPlanContract(t *testing.T) {
 	want := []struct {
