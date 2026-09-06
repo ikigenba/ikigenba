@@ -14,9 +14,9 @@ import (
 	"github.com/ikigenba/ikigenba/agent-repl/internal/cli"
 )
 
-// expectedUsageDigest is the SHA-256 digest of the phase-7 options.Usage()
+// expectedUsageDigest is the SHA-256 digest of the phase-8 options.Usage()
 // contract. It is independent of the production call made by cli.Run.
-const expectedUsageDigest = "01423baf6c935e21195f51201d7dae6c3d119f9289fbec5c75f0a91458f3aa61"
+const expectedUsageDigest = "0095e0c08af91a372fff0a655b359a7765ea4dab128620a1bdb8e72bcdcf5946"
 
 type failOnRead struct {
 	t *testing.T
