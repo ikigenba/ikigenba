@@ -6,8 +6,9 @@ through `github.com/ikigenba/ikigenba/agentkit`, with the six local tools from
 whole configuration is `-c key=value` strings, the help screen is generated
 from agentkit's catalog, and every request option except the handful that pick
 the provider and credentials is handed to agentkit unchecked. Module path
-`github.com/ikigenba/ikigenba/agent-repl`, Go 1.26. It depends on agentkit
-(`v0.3.0` or later) and toolkit; otherwise the standard library only.
+`github.com/ikigenba/ikigenba/agent-repl`, targeting the Go version pinned
+in `go.mod`. It depends on agentkit and toolkit; otherwise the standard
+library only.
 
 ```
 agent-repl/                         (this sub-project; go.mod lives here)
@@ -77,13 +78,13 @@ oauth's D01, this requirement depends on D2–D6 having landed and belongs in a
 final phase.
 
 **Version.** A single `var version` in `internal/cli` carries the version
-string in source, never injected at build time (D4). The initial release is
-`v0.8.0`, the successor of the previously installed `agentrepl` binary; that
-value is release data, edited directly.
+string in source, never injected at build time (D4). It is the successor of
+the previously installed `agentrepl` binary; that value is release data,
+edited directly.
 
 ## REQUIREMENTS
 
-- R-TYTV-5XTT: The module MUST be `github.com/ikigenba/ikigenba/agent-repl` with its own `go.mod` that specifies a Go version, MUST require `github.com/ikigenba/ikigenba/agentkit` at `v0.3.0` or later and `github.com/ikigenba/ikigenba/toolkit`, and MUST require no other module directly.
+- R-JUQZ-ZDMZ: The module MUST be `github.com/ikigenba/ikigenba/agent-repl` with its own `go.mod` that specifies a Go version, MUST require `github.com/ikigenba/ikigenba/agentkit` and `github.com/ikigenba/ikigenba/toolkit`, and MUST require no other module directly.
 - R-U01R-JPKI: Package `internal/cli` MUST export `Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, deps Deps) int`, and calling it MUST return an exit code in-process without terminating the calling program.
 - R-U19N-XHB7: Package `internal/cli` MUST export a `Deps` struct whose fields are exactly `Home string`, `Getenv func(string) string`, `Now func() time.Time`, `Root string`, and `Interrupts <-chan struct{}`.
 - R-U2HK-B91W: A session run through `Run` MUST obtain its home directory, its environment lookups, its clock, and its tool root from the corresponding `Deps` fields, verified by injected values each of which is observable in the session's behavior (the log file path, the credential used, the log timestamps, and a tool's resolved root).
