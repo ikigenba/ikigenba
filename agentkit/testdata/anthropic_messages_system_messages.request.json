@@ -1,0 +1,1 @@
+{"model":"opaque-model","system":[{"type":"text","text":"leading"}],"messages":[{"role":"user","content":[{"type":"text","text":"first prompt"}]},{"role":"assistant","content":[{"type":"text","text":"first reply"}]},{"role":"user","content":[{"type":"text","text":"second prompt"}]},{"role":"system","content":[{"type":"text","text":"added between the turns"}]}],"stream":true}

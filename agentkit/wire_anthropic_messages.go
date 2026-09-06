@@ -81,6 +81,7 @@ type anthropicOutputConfig struct {
 
 type anthropicRequest struct {
 	Model         string                 `json:"model"`
+	System        []anthropicContent     `json:"system,omitempty"`
 	Messages      []anthropicMessage     `json:"messages"`
 	Stream        bool                   `json:"stream"`
 	Temperature   *float64               `json:"temperature,omitempty"`
@@ -93,33 +94,61 @@ type anthropicRequest struct {
 	Tools         json.RawMessage        `json:"tools,omitempty"`
 }
 
-func buildAnthropicMessages(history []Message) ([]anthropicMessage, error) {
-	messages := make([]anthropicMessage, 0, len(history))
-	for _, message := range history {
-		encoded := anthropicMessage{Role: anthropicRole(message.Role)}
+func buildAnthropicMessages(history []Message) ([]anthropicMessage, []anthropicContent, error) {
+	encodeContent := func(message Message) ([]anthropicContent, error) {
+		var content []anthropicContent
 		for _, block := range message.Blocks {
 			switch block := block.(type) {
 			case Text:
-				encoded.Content = append(encoded.Content, anthropicContent{Type: "text", Text: block.Text})
+				content = append(content, anthropicContent{Type: "text", Text: block.Text})
 			case Reasoning:
 				if len(block.Provider) > 0 {
 					var replay anthropicContent
 					if err := json.Unmarshal(block.Provider, &replay); err != nil {
 						return nil, fmt.Errorf("agentkit: invalid Anthropic reasoning replay: %w", err)
 					}
-					encoded.Content = append(encoded.Content, replay)
+					content = append(content, replay)
 				} else {
-					encoded.Content = append(encoded.Content, anthropicContent{Type: "thinking", Thinking: block.Text})
+					content = append(content, anthropicContent{Type: "thinking", Thinking: block.Text})
 				}
 			case ToolUse:
-				encoded.Content = append(encoded.Content, anthropicContent{Type: "tool_use", ID: block.ID, Name: block.Name, Input: block.Input})
+				content = append(content, anthropicContent{Type: "tool_use", ID: block.ID, Name: block.Name, Input: block.Input})
 			case ToolResult:
-				encoded.Content = append(encoded.Content, anthropicContent{Type: "tool_result", ToolUseID: block.ToolUseID, Content: block.Content, IsError: block.IsError})
+				content = append(content, anthropicContent{Type: "tool_result", ToolUseID: block.ToolUseID, Content: block.Content, IsError: block.IsError})
 			}
 		}
-		messages = append(messages, encoded)
+		return content, nil
 	}
-	return messages, nil
+
+	boundary := 0
+	var system []anthropicContent
+	for boundary < len(history) && history[boundary].Role == RoleSystem {
+		content, err := encodeContent(history[boundary])
+		if err != nil {
+			return nil, nil, err
+		}
+		system = append(system, content...)
+		boundary++
+	}
+
+	messages := make([]anthropicMessage, 0, len(history))
+	var pendingSystem []anthropicContent
+	for _, message := range history[boundary:] {
+		content, err := encodeContent(message)
+		if err != nil {
+			return nil, nil, err
+		}
+		if message.Role == RoleSystem {
+			pendingSystem = append(pendingSystem, content...)
+			continue
+		}
+		messages = append(messages, anthropicMessage{Role: anthropicRole(message.Role), Content: content})
+		if message.Role == RoleUser && len(pendingSystem) > 0 {
+			messages = append(messages, anthropicMessage{Role: "system", Content: pendingSystem})
+			pendingSystem = nil
+		}
+	}
+	return messages, system, nil
 }
 
 func configureAnthropicRequest(request *anthropicRequest, settings Settings, identity Identity) {
@@ -159,11 +188,11 @@ func configureAnthropicRequest(request *anthropicRequest, settings Settings, ide
 }
 
 func (w *anthropicMessagesWire) encodeRequest(state requestState) ([]byte, error) {
-	messages, err := buildAnthropicMessages(state.History)
+	messages, system, err := buildAnthropicMessages(state.History)
 	if err != nil {
 		return nil, err
 	}
-	request := anthropicRequest{Model: state.Model, Messages: messages, Stream: true}
+	request := anthropicRequest{Model: state.Model, System: system, Messages: messages, Stream: true}
 	if state.Output != nil {
 		schema, renderErr := w.renderOutputSchema(state.Output.Schema)
 		if renderErr != nil {
