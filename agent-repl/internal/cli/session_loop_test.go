@@ -67,8 +67,8 @@ func TestRunConsumesTurnBeforeReadingNextLine(t *testing.T) {
 			writer.(http.Flusher).Flush()
 			close(firstEvent)
 			<-allowCompletion
-			_, _ = io.WriteString(writer, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
 			handlerComplete.Store(true)
+			_, _ = io.WriteString(writer, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
 			return
 		}
 		writeChatSuccess(writer, "second answer")
@@ -77,7 +77,6 @@ func TestRunConsumesTurnBeforeReadingNextLine(t *testing.T) {
 
 	reader := &completionAwareReader{
 		lines:           [][]byte{[]byte("first\n"), []byte("second\n")},
-		secondRead:      make(chan struct{}),
 		handlerComplete: &handlerComplete,
 	}
 	done := make(chan int, 1)
@@ -85,11 +84,6 @@ func TestRunConsumesTurnBeforeReadingNextLine(t *testing.T) {
 		done <- cli.Run(t.Context(), configuredArgs(server.URL), reader, io.Discard, io.Discard, testDeps(t, t.TempDir()))
 	}()
 	await(t, firstEvent)
-	select {
-	case <-reader.secondRead:
-		t.Fatal("Run read the second line before the first stream completed")
-	case <-time.After(100 * time.Millisecond):
-	}
 	close(allowCompletion)
 	if code := awaitValue(t, done); code != 0 {
 		t.Fatalf("Run code = %d", code)
@@ -564,10 +558,13 @@ type blockingReader struct {
 	once    sync.Once
 }
 
+// completionAwareReader serves stdin lines and records whether the second
+// line was requested before the provider handler had completed the first
+// stream, so the ordering claim is checked at the read itself rather than by
+// waiting out a window.
 type completionAwareReader struct {
 	lines              [][]byte
 	reads              atomic.Int32
-	secondRead         chan struct{}
 	handlerComplete    *atomic.Bool
 	readBeforeComplete atomic.Bool
 }
@@ -578,11 +575,8 @@ func (reader *completionAwareReader) Read(buffer []byte) (int, error) {
 		return 0, io.EOF
 	}
 	line := reader.lines[index]
-	if bytes.Equal(line, []byte("second\n")) {
-		close(reader.secondRead)
-		if !reader.handlerComplete.Load() {
-			reader.readBeforeComplete.Store(true)
-		}
+	if bytes.Equal(line, []byte("second\n")) && !reader.handlerComplete.Load() {
+		reader.readBeforeComplete.Store(true)
 	}
 	return copy(buffer, line), nil
 }
