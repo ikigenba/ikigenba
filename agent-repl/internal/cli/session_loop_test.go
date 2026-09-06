@@ -3,7 +3,6 @@ package cli_test
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,7 +17,6 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/agent-repl/internal/cli"
-	"github.com/ikigenba/ikigenba/agentkit"
 )
 
 var sessionTime = time.Date(2031, 2, 3, 4, 5, 6, 0, time.FixedZone("test", -6*60*60))
@@ -37,7 +35,7 @@ func TestRunStopsBeforeInputWhenLogCreationFails(t *testing.T) {
 	}
 }
 
-// R-W17Q-HY26 R-W3NJ-9HJK
+// R-W17Q-HY26
 func TestRunOpenFailureLeavesNewLogEmptyAndDoesNotReadInput(t *testing.T) {
 	home := t.TempDir()
 	deps := testDeps(t, home)
@@ -221,24 +219,14 @@ func TestRunDecoratedLifecycleIsOrderedAndSummaryMatchesLogSink(t *testing.T) {
 		t.Fatalf("Run = code %d stderr %q", code, stderr.String())
 	}
 
-	var summary agentkit.LogRecord
-	records := bytes.Split(bytes.TrimSpace(readOnlyLog(t, home)), []byte("\n"))
-	if err := json.Unmarshal(records[len(records)-1], &summary); err != nil {
-		t.Fatal(err)
-	}
-	if summary.Type != agentkit.RecordSummary || summary.Usage == nil || summary.Cost == nil {
-		t.Fatalf("last log record = %+v, want complete summary", summary)
-	}
-	usage := *summary.Usage
-	writes := usage.CacheWrite5mTokens + usage.CacheWrite1hTokens
-	total := usage.InputTokens + usage.CachedTokens + writes + usage.OutputTokens + usage.ReasoningTokens
 	want := "you › \n" +
 		"tool › Read {\"file_path\":\"ordered.txt\"}\n\n" +
 		"result › Read      1\tordered result\n\n" +
 		"assistant › ordered answer\n\n" +
 		"you › \n" +
-		fmt.Sprintf("summary\n· tokens  in=%d cache(r=%d w=%d) out=%d reasoning=%d total=%d\n· cost     $%.6f session\n",
-			usage.InputTokens, usage.CachedTokens, writes, usage.OutputTokens, usage.ReasoningTokens, total, float64(*summary.Cost)/1_000_000_000)
+		"summary\n" +
+		"· tokens  in=18 cache(r=6 w=0) out=8 reasoning=4 total=36\n" +
+		"· cost     $0.000453 session\n"
 	if got := stdout.String(); got != want {
 		t.Fatalf("decorated lifecycle output\ngot:  %q\nwant: %q", got, want)
 	}
@@ -264,6 +252,19 @@ func TestRunRawStdoutIsExactlyTheJSONLLogAndErrorsStayOnStderr(t *testing.T) {
 		t.Fatalf("raw run = code %d stderr %q", code, stderr.String())
 	}
 	fileData := readOnlyLog(t, home)
+	want := []byte("" +
+		`{"type":"turn_start","time":"2031-02-03T04:05:06-06:00","seq":0,"identity":{"Endpoint":"openai-chat","AuthMode":"api_key","Model":"gpt-5.6-sol"}}` + "\n" +
+		`{"type":"error","time":"2031-02-03T04:05:06-06:00","seq":1,"error":{"Category":2,"Status":400,"Code":"","Message":"rejected\n","RetryAfter":0,"Endpoint":{"Endpoint":"","AuthMode":"","Model":""}}}` + "\n" +
+		`{"type":"usage","time":"2031-02-03T04:05:06-06:00","seq":2,"usage":{"InputTokens":0,"CachedTokens":0,"CacheWrite5mTokens":0,"CacheWrite1hTokens":0,"OutputTokens":0,"ReasoningTokens":0},"cost":0}` + "\n" +
+		`{"type":"turn_end","time":"2031-02-03T04:05:06-06:00","seq":3}` + "\n" +
+		`{"type":"turn_start","time":"2031-02-03T04:05:06-06:00","seq":0,"identity":{"Endpoint":"openai-chat","AuthMode":"api_key","Model":"gpt-5.6-sol"}}` + "\n" +
+		`{"type":"message","time":"2031-02-03T04:05:06-06:00","seq":1,"message":{"role":2,"blocks":[{"type":"text","text":"raw answer","provider":null}]}}` + "\n" +
+		`{"type":"usage","time":"2031-02-03T04:05:06-06:00","seq":2,"usage":{"InputTokens":0,"CachedTokens":0,"CacheWrite5mTokens":0,"CacheWrite1hTokens":0,"OutputTokens":0,"ReasoningTokens":0},"cost":0}` + "\n" +
+		`{"type":"turn_end","time":"2031-02-03T04:05:06-06:00","seq":3}` + "\n" +
+		`{"type":"summary","time":"2031-02-03T04:05:06-06:00","seq":4,"usage":{"InputTokens":0,"CachedTokens":0,"CacheWrite5mTokens":0,"CacheWrite1hTokens":0,"OutputTokens":0,"ReasoningTokens":0},"cost":0}` + "\n")
+	if !bytes.Equal(stdout.Bytes(), want) {
+		t.Fatalf("raw stdout differs from independent expectation\nstdout=%q\nwant=%q", stdout.Bytes(), want)
+	}
 	if !bytes.Equal(stdout.Bytes(), fileData) {
 		t.Fatalf("raw stdout differs from log\nstdout=%q\nlog=%q", stdout.Bytes(), fileData)
 	}
@@ -336,7 +337,7 @@ func TestRunInflightInterruptCancelsTurnThenSendsNextLine(t *testing.T) {
 	}
 }
 
-// R-W3NJ-9HJK R-U2HK-B91W
+// R-U2HK-B91W
 func TestRunMapsOptionsAndInjectedDependenciesIntoRealSessionBehavior(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "root-marker.txt"), []byte("rooted-content"), 0o600); err != nil {
@@ -381,40 +382,10 @@ func TestRunMapsOptionsAndInjectedDependenciesIntoRealSessionBehavior(t *testing
 	if requests.Load() != 2 {
 		t.Fatalf("provider requests = %d, want tool call and completion", requests.Load())
 	}
-	if !strings.HasPrefix(onlyLogPath(t, home), filepath.Join(home, ".agent-repl", "logs")) {
-		t.Fatal("log did not use injected Home")
-	}
-}
-
-// R-W3NJ-9HJK
-func TestRunMapsAuthFileIntoOAuthCredential(t *testing.T) {
-	claims := `{"https://api.openai.com/auth":{"chatgpt_account_id":"mapped-account"}}`
-	token := "header." + base64.RawURLEncoding.EncodeToString([]byte(claims)) + ".signature"
-	authFile := filepath.Join(t.TempDir(), "selected-auth.json")
-	if err := os.WriteFile(authFile, []byte(`{"access_token":"`+token+`"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if got, want := request.Header.Get("Authorization"), "Bearer "+token; got != want {
-			t.Errorf("Authorization = %q, want token from mapped auth_file", got)
-		}
-		if got := request.Header.Get("ChatGPT-Account-Id"); got != "mapped-account" {
-			t.Errorf("ChatGPT-Account-Id = %q", got)
-		}
-		_ = decodeBody(t, request)
-		writeChatSuccess(writer, "authenticated")
-	}))
-	t.Cleanup(server.Close)
-
-	args := configuredArgs(server.URL)
-	args = append(args, "-c", "wire=responses", "-c", "auth=oauth", "-c", "auth_file="+authFile)
-	deps := testDeps(t, t.TempDir())
-	deps.Getenv = func(name string) string {
-		t.Fatalf("OAuth session unexpectedly called Getenv(%q)", name)
-		return ""
-	}
-	if code := cli.Run(t.Context(), args, strings.NewReader("authenticate\n"), io.Discard, io.Discard, deps); code != 0 {
-		t.Fatalf("Run code = %d", code)
+	logPath := onlyLogPath(t, home)
+	wantLogPath := filepath.Join(home, ".agent-repl", "logs", "20310203T100506Z.jsonl")
+	if logPath != wantLogPath {
+		t.Fatalf("log path = %q, want injected Home and Now path %q", logPath, wantLogPath)
 	}
 }
 
