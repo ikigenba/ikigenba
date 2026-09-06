@@ -159,8 +159,8 @@ func TestMakefileDeclaresLiveTargetExclusively(t *testing.T) {
 	}
 }
 
-// R-L1A0-4T3H
-func TestLiveMatrixFixtureExistsWithLiveTag(t *testing.T) {
+// R-WUQW-COI5
+func TestLiveMatrixFixtureNamesOneSubtestPerCell(t *testing.T) {
 	contents, err := os.ReadFile("live_matrix_test.go")
 	if err != nil {
 		t.Fatalf("read live matrix fixture: %v", err)
@@ -170,27 +170,21 @@ func TestLiveMatrixFixtureExistsWithLiveTag(t *testing.T) {
 	if !strings.Contains(text, "func TestLiveMatrix(") {
 		t.Fatal("live matrix fixture does not declare TestLiveMatrix")
 	}
-	for _, subtestName := range []string{
-		"anthropic-messages/api_key",
-		"openai-responses/api_key",
-		"openai-responses/oauth",
-		"openai-chat/api_key",
-		"gemini-generate-content/api_key",
-		"xai-responses/api_key",
-		"xai-responses/oauth",
-		"xai-chat/api_key",
-		"xai-chat/oauth",
-		"openrouter-chat/api_key",
-		"openrouter-responses/api_key",
+	for _, fragment := range []string{
+		"for _, cell := range liveMatrixCells",
+		`t.Run(string(cell.offering)+"/"+string(cell.authMode)+"/"+cell.model`,
 	} {
-		if !strings.Contains(text, subtestName) {
-			t.Fatalf("live matrix fixture does not name subtest %q", subtestName)
+		if !strings.Contains(text, fragment) {
+			t.Fatalf("live matrix fixture does not contain %q", fragment)
 		}
+	}
+	if rows := liveMatrixCellRows(t, contents); len(rows) != 12 {
+		t.Fatalf("live matrix cell count = %d, want 12", len(rows))
 	}
 }
 
-// R-L3PS-WCKV
-func TestLiveMatrixRunsExactCells(t *testing.T) {
+// R-WVYS-QG8U
+func TestLiveMatrixRunsExactModelHostWireCells(t *testing.T) {
 	contents, err := os.ReadFile("live_matrix_test.go")
 	if err != nil {
 		t.Fatalf("read live matrix fixture: %v", err)
@@ -199,20 +193,92 @@ func TestLiveMatrixRunsExactCells(t *testing.T) {
 	if !strings.Contains(text, "Lookup(") {
 		t.Fatal("live matrix fixture does not resolve cells with Lookup")
 	}
+	want := []string{
+		`{OfferingAnthropicMessages, AuthModeAPIKey, HostAnthropic, WireMessages, "claude-haiku-4-5"}`,
+		`{OfferingAnthropicMessages, AuthModeAPIKey, HostAnthropic, WireMessages, "claude-opus-5"}`,
+		`{OfferingOpenAIResponses, AuthModeAPIKey, HostOpenAI, WireResponses, "gpt-5.4-nano"}`,
+		`{OfferingOpenAIResponses, AuthModeOAuth, HostOpenAI, WireResponses, "gpt-5.4-mini"}`,
+		`{OfferingOpenAIChat, AuthModeAPIKey, HostOpenAI, WireChat, "gpt-5.4-nano"}`,
+		`{OfferingGeminiGenerateContent, AuthModeAPIKey, HostGemini, WireGenerateContent, "gemini-3.1-flash-lite"}`,
+		`{OfferingXAIResponses, AuthModeAPIKey, HostXAI, WireResponses, "grok-4.3"}`,
+		`{OfferingXAIResponses, AuthModeOAuth, HostXAI, WireResponses, "grok-4.3"}`,
+		`{OfferingXAIChat, AuthModeAPIKey, HostXAI, WireChat, "grok-4.3"}`,
+		`{OfferingXAIChat, AuthModeOAuth, HostXAI, WireChat, "grok-4.3"}`,
+		`{OfferingOpenRouterChat, AuthModeAPIKey, HostOpenRouter, WireChat, "gpt-5.4-nano"}`,
+		`{OfferingOpenRouterResponses, AuthModeAPIKey, HostOpenRouter, WireResponses, "gpt-5.4-nano"}`,
+	}
+	got := liveMatrixCellRows(t, contents)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("live matrix cells = %#v, want %#v", got, want)
+	}
+}
+
+// R-WX6P-47ZJ
+func TestLiveMatrixRunsTextToolAndSystemSequences(t *testing.T) {
+	contents, err := os.ReadFile("live_matrix_test.go")
+	if err != nil {
+		t.Fatalf("read live matrix fixture: %v", err)
+	}
+	text := string(contents)
 	for _, fragment := range []string{
-		"OfferingAnthropicMessages", "claude-haiku-4-5",
-		"OfferingOpenAIResponses", "gpt-5.4-nano", "gpt-5.4-mini",
-		"OfferingOpenAIChat",
-		"OfferingGeminiGenerateContent", "gemini-3.1-flash-lite",
-		"OfferingXAIResponses", "grok-4.3",
-		"OfferingXAIChat",
-		"OfferingOpenRouterChat",
-		"OfferingOpenRouterResponses",
+		"offering.Authenticator(rotator)", "APIKeyRotator(credential)",
+		"OAuthRotator(FileTokenStore(credential))", "NewEndpoint(auth)",
+		"assertLiveMatrixTextTurn(t, offering, endpoint, cell.model)",
+		"assertLiveMatrixToolTurn(t, offering, endpoint, cell.model)",
+		"assertLiveMatrixSystemSequence(t, offering, endpoint, cell)",
+		"New(offering.WireFormat, endpoint", "Config{Log:", "stream.Err()",
+		"MessageDone", "RecordUsage", "InputTokens", "OutputTokens",
+		"ToolCall", `event.Use.Name == "echo"`, "ToolReturn",
+		"conversation.AddSystem", "first.Err()", "second.Err()",
+		"strings.Contains(text.Text, firstToken)", "strings.Contains(text.Text, secondToken)",
+		"OfferingAnthropicMessages", "AuthModeAPIKey", `cell.model == "claude-haiku-4-5"`,
+		"errors.As(streamErr, &vendorError)", "vendorError.Status != 400",
 	} {
 		if !strings.Contains(text, fragment) {
 			t.Fatalf("live matrix fixture does not contain %q", fragment)
 		}
 	}
+	if count := strings.Count(text, "conversation.AddSystem"); count != 2 {
+		t.Fatalf("live matrix AddSystem call count = %d, want 2", count)
+	}
+	if strings.Contains(text, "WithBaseURL") {
+		t.Fatal("live matrix fixture must use vendor default base URLs")
+	}
+}
+
+func liveMatrixCellRows(t *testing.T, contents []byte) []string {
+	t.Helper()
+	parsed, err := parser.ParseFile(token.NewFileSet(), "live_matrix_test.go", contents, 0)
+	if err != nil {
+		t.Fatalf("parse live matrix fixture: %v", err)
+	}
+	for _, declaration := range parsed.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok != token.VAR {
+			continue
+		}
+		for _, specification := range general.Specs {
+			value, ok := specification.(*ast.ValueSpec)
+			if !ok || len(value.Names) != 1 || value.Names[0].Name != "liveMatrixCells" || len(value.Values) != 1 {
+				continue
+			}
+			literal, ok := value.Values[0].(*ast.CompositeLit)
+			if !ok {
+				t.Fatal("liveMatrixCells is not a composite literal")
+			}
+			rows := make([]string, 0, len(literal.Elts))
+			for _, element := range literal.Elts {
+				var formatted bytes.Buffer
+				if err := format.Node(&formatted, token.NewFileSet(), element); err != nil {
+					t.Fatalf("format live matrix cell: %v", err)
+				}
+				rows = append(rows, formatted.String())
+			}
+			return rows
+		}
+	}
+	t.Fatal("live matrix fixture does not declare liveMatrixCells")
+	return nil
 }
 
 // R-L2HW-IKU6

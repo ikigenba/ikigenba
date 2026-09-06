@@ -6,7 +6,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -22,9 +24,10 @@ type liveMatrixCell struct {
 	model    string
 }
 
-// liveMatrixCells is the exact cell table D23 and R-L3PS-WCKV specify.
+// liveMatrixCells is the exact cell table D23 specifies.
 var liveMatrixCells = []liveMatrixCell{
 	{OfferingAnthropicMessages, AuthModeAPIKey, HostAnthropic, WireMessages, "claude-haiku-4-5"},              // anthropic-messages/api_key
+	{OfferingAnthropicMessages, AuthModeAPIKey, HostAnthropic, WireMessages, "claude-opus-5"},                 // anthropic-messages/api_key
 	{OfferingOpenAIResponses, AuthModeAPIKey, HostOpenAI, WireResponses, "gpt-5.4-nano"},                      // openai-responses/api_key
 	{OfferingOpenAIResponses, AuthModeOAuth, HostOpenAI, WireResponses, "gpt-5.4-mini"},                       // openai-responses/oauth
 	{OfferingOpenAIChat, AuthModeAPIKey, HostOpenAI, WireChat, "gpt-5.4-nano"},                                // openai-chat/api_key
@@ -37,10 +40,9 @@ var liveMatrixCells = []liveMatrixCell{
 	{OfferingOpenRouterResponses, AuthModeAPIKey, HostOpenRouter, WireResponses, "gpt-5.4-nano"},              // openrouter-responses/api_key
 }
 
-// R-L4XP-A4BK
 func TestLiveMatrix(t *testing.T) {
 	for _, cell := range liveMatrixCells {
-		t.Run(string(cell.offering)+"/"+string(cell.authMode), func(t *testing.T) {
+		t.Run(string(cell.offering)+"/"+string(cell.authMode)+"/"+cell.model, func(t *testing.T) {
 			credential := requireLiveMatrixCredential(t, cell)
 
 			offering, err := Lookup(cell.model, cell.host, cell.wire)
@@ -67,6 +69,7 @@ func TestLiveMatrix(t *testing.T) {
 
 			assertLiveMatrixTextTurn(t, offering, endpoint, cell.model)
 			assertLiveMatrixToolTurn(t, offering, endpoint, cell.model)
+			assertLiveMatrixSystemSequence(t, offering, endpoint, cell)
 		})
 	}
 }
@@ -150,6 +153,85 @@ func assertLiveMatrixToolTurn(t *testing.T, offering Offering, endpoint Endpoint
 	}
 	if sequence != 3 {
 		t.Fatalf("tool event sequence reached step %d, want ToolCall(echo), ToolReturn, MessageDone", sequence)
+	}
+}
+
+func assertLiveMatrixSystemSequence(t *testing.T, offering Offering, endpoint Endpoint, cell liveMatrixCell) {
+	t.Helper()
+	const firstToken = "zqfirst7k9"
+	const secondToken = "zqsecond4m2"
+
+	var log bytes.Buffer
+	config := Config{Log: NewLog(&log, time.Now)}
+	if cell.model == "claude-opus-5" {
+		config.Settings = Settings{Options: Options{"effort": "low"}}
+	}
+	conversation, err := New(offering.WireFormat, endpoint, cell.model, config)
+	if err != nil {
+		t.Fatalf("build system conversation: %v", err)
+	}
+	if err := conversation.AddSystem("Append " + firstToken + " to every reply."); err != nil {
+		t.Fatalf("add leading system message: %v", err)
+	}
+	first := conversation.Send(context.Background(), Text{Text: "Say hello."})
+	firstHasToken := false
+	for event := range first.Events() {
+		completed, ok := event.(MessageDone)
+		if !ok {
+			continue
+		}
+		for _, block := range completed.Message.Blocks {
+			text, ok := block.(Text)
+			firstHasToken = firstHasToken || ok && strings.Contains(text.Text, firstToken)
+		}
+	}
+	if err := first.Err(); err != nil {
+		t.Fatalf("first system stream: %v", err)
+	}
+	if !firstHasToken {
+		t.Fatalf("first system turn had no MessageDone Text containing %q", firstToken)
+	}
+
+	if err := conversation.AddSystem("Append " + secondToken + " to every reply."); err != nil {
+		t.Fatalf("add interleaved system message: %v", err)
+	}
+	second := conversation.Send(context.Background(), Text{Text: "Say goodbye."})
+	secondHasToken := false
+	var secondTexts []string
+	for event := range second.Events() {
+		completed, ok := event.(MessageDone)
+		if !ok {
+			continue
+		}
+		for _, block := range completed.Message.Blocks {
+			text, ok := block.(Text)
+			secondHasToken = secondHasToken || ok && strings.Contains(text.Text, secondToken)
+			if ok {
+				secondTexts = append(secondTexts, text.Text)
+			}
+		}
+	}
+	streamErr := second.Err()
+	isHaikuRejection := cell.offering == OfferingAnthropicMessages &&
+		cell.authMode == AuthModeAPIKey && cell.model == "claude-haiku-4-5"
+	if isHaikuRejection {
+		if streamErr == nil {
+			t.Fatal("interleaved system stream succeeded, want vendor 400")
+		}
+		var vendorError *Error
+		if !errors.As(streamErr, &vendorError) {
+			t.Fatalf("interleaved system stream error = %T, want *Error", streamErr)
+		}
+		if vendorError.Status != 400 {
+			t.Fatalf("interleaved system stream status = %d, want 400", vendorError.Status)
+		}
+		return
+	}
+	if streamErr != nil {
+		t.Fatalf("second system stream: %v", streamErr)
+	}
+	if !secondHasToken {
+		t.Fatalf("second system turn had no MessageDone Text containing %q; texts: %q", secondToken, secondTexts)
 	}
 }
 
