@@ -30,14 +30,15 @@ type Conversation struct {
 // Config is the construction-time configuration of a Conversation: everything a
 // consumer supplies that is not the provider, the model, or the transport. It is
 // a plain value; a zero Config means no tools, vendor-default settings, no
-// structured output, and no log. The constructor copies it, so later mutation of
-// the caller's slices and maps has no effect.
+// structured output, no log, and no lifetime limits. The constructor copies it,
+// so later mutation of the caller's slices and maps has no effect.
 type Config struct {
 	Tools    []Tool
 	Deferred []DeferredGroup
 	Settings Settings
 	Output   *OutputContract
 	Log      *Log
+	Limits   Limits
 }
 
 // DeferredGroup is a named, on-demand bundle of tools. Its Blurb is the

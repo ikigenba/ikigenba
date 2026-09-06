@@ -335,7 +335,7 @@ func TestEndpointDeclarationsAreExact(t *testing.T) {
 }
 
 func TestConfigDeclarationIsExact(t *testing.T) {
-	// R-NUY5-W8WX
+	// R-TYGN-9I06
 	configType := reflect.TypeFor[Config]()
 	if configType.Name() != "Config" || !token.IsExported(configType.Name()) || configType.Kind() != reflect.Struct {
 		t.Fatalf("Config name/kind = %q/%s, want exported defined struct", configType.Name(), configType.Kind())
@@ -349,6 +349,7 @@ func TestConfigDeclarationIsExact(t *testing.T) {
 		{name: "Settings", typeOf: reflect.TypeFor[Settings]()},
 		{name: "Output", typeOf: reflect.TypeFor[*OutputContract]()},
 		{name: "Log", typeOf: reflect.TypeFor[*Log]()},
+		{name: "Limits", typeOf: reflect.TypeFor[Limits]()},
 	}
 	if configType.NumField() != len(wantFields) {
 		t.Fatalf("Config field count = %d, want exactly %d", configType.NumField(), len(wantFields))
@@ -368,8 +369,8 @@ func TestConfigDeclarationIsExact(t *testing.T) {
 	if !ok {
 		t.Fatalf("Config declaration is %T, want struct", specification.Type)
 	}
-	if got := renderedNode(t, structType); got != "struct {\n\tTools    []Tool\n\tDeferred []DeferredGroup\n\tSettings Settings\n\tOutput   *OutputContract\n\tLog      *Log\n}" {
-		t.Fatalf("Config declaration = %q, want exact five-field declaration", got)
+	if got := renderedNode(t, structType); got != "struct {\n\tTools    []Tool\n\tDeferred []DeferredGroup\n\tSettings Settings\n\tOutput   *OutputContract\n\tLog      *Log\n\tLimits   Limits\n}" {
+		t.Fatalf("Config declaration = %q, want exact six-field declaration", got)
 	}
 }
 
