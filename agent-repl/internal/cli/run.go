@@ -45,10 +45,10 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 // public boundary because its fixed API contract returns int.
 func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, deps Deps) exitCode {
 	flags, err := options.ParseFlags(args)
-	if errors.Is(err, options.ErrHelp) {
-		return writeText(stdout, options.Usage(), exitSuccess)
-	}
 	if err != nil {
+		if errors.Is(err, options.ErrHelp) {
+			return writeText(stdout, options.Usage(), exitSuccess)
+		}
 		return writeUsageError(stderr, err)
 	}
 
@@ -74,7 +74,25 @@ type cliSession struct {
 	sink      *render.LogSink
 	opened    *session.Session
 	decorated *render.Decorated
+	stdout    *recordingWriter
 	raw       bool
+}
+
+type recordingWriter struct {
+	destination io.Writer
+	err         error
+}
+
+func (writer *recordingWriter) Write(data []byte) (int, error) {
+	if writer.err != nil {
+		return 0, writer.err
+	}
+	written, err := writer.destination.Write(data)
+	if err == nil && written != len(data) {
+		err = io.ErrShortWrite
+	}
+	writer.err = err
+	return written, err
 }
 
 func openCLISession(opts options.Options, stdout, stderr io.Writer, deps Deps) (*cliSession, error) {
@@ -83,24 +101,26 @@ func openCLISession(opts options.Options, stdout, stderr io.Writer, deps Deps) (
 		return nil, err
 	}
 
+	trackedStdout := &recordingWriter{destination: stdout}
 	destinations := []io.Writer{file}
 	if opts.Raw {
-		destinations = append(destinations, stdout)
+		destinations = append(destinations, trackedStdout)
 	}
 	sink := render.NewLogSink(destinations...)
 	log := agentkit.NewLog(sink, deps.Now)
 	opened, err := session.Open(session.Config{
-		Provider: opts.Provider,
-		Model:    opts.Model,
-		Wire:     opts.Wire,
-		Auth:     opts.Auth,
-		AuthFile: opts.AuthFile,
-		BaseURL:  opts.BaseURL,
-		Settings: opts.Settings,
-		Home:     deps.Home,
-		Getenv:   deps.Getenv,
-		Root:     deps.Root,
-		Log:      log,
+		Provider:   opts.Provider,
+		Model:      opts.Model,
+		Wire:       opts.Wire,
+		Auth:       opts.Auth,
+		AuthFile:   opts.AuthFile,
+		BaseURL:    opts.BaseURL,
+		SystemFile: opts.SystemFile,
+		Settings:   opts.Settings,
+		Home:       deps.Home,
+		Getenv:     deps.Getenv,
+		Root:       deps.Root,
+		Log:        log,
 	})
 	if err != nil {
 		_ = file.Close()
@@ -111,7 +131,8 @@ func openCLISession(opts options.Options, stdout, stderr io.Writer, deps Deps) (
 		log:       log,
 		sink:      sink,
 		opened:    opened,
-		decorated: render.NewDecorated(stdout, stderr),
+		decorated: render.NewDecorated(trackedStdout, stderr),
+		stdout:    trackedStdout,
 		raw:       opts.Raw,
 	}, nil
 }
@@ -125,6 +146,9 @@ func (active *cliSession) execute(ctx context.Context, stdin io.Reader, interrup
 		if usage, cost, ok := active.sink.Summary(); ok {
 			active.decorated.Summary(usage, cost)
 		}
+	}
+	if active.stdout.err != nil {
+		return exitFailure
 	}
 	return exitSuccess
 }

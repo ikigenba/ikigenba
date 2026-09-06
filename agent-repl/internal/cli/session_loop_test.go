@@ -3,6 +3,7 @@ package cli_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -150,12 +151,18 @@ func TestRunDecoratedLoopCreatesPrivateCompleteLog(t *testing.T) {
 func TestRunContinuesAfterProviderStreamError(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		_ = decodeBody(t, request)
-		if calls.Add(1) == 1 {
+		prompt := lastUserText(t, decodeBody(t, request))
+		calls.Add(1)
+		if prompt == "first" {
 			http.Error(writer, `{"error":{"message":"first turn rejected","type":"bad_request"}}`, http.StatusBadRequest)
 			return
 		}
-		writeChatSuccess(writer, "second succeeded")
+		if prompt == "second" {
+			writeChatSuccess(writer, "second succeeded")
+			return
+		}
+		t.Errorf("unexpected provider prompt %q", prompt)
+		http.Error(writer, "unexpected prompt", http.StatusBadRequest)
 	}))
 	t.Cleanup(server.Close)
 
@@ -236,12 +243,18 @@ func TestRunDecoratedLifecycleIsOrderedAndSummaryMatchesLogSink(t *testing.T) {
 func TestRunRawStdoutIsExactlyTheJSONLLogAndErrorsStayOnStderr(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		_ = decodeBody(t, request)
-		if calls.Add(1) == 1 {
+		prompt := lastUserText(t, decodeBody(t, request))
+		calls.Add(1)
+		if prompt == "bad" {
 			http.Error(writer, "rejected", http.StatusBadRequest)
 			return
 		}
-		writeChatSuccess(writer, "raw answer")
+		if prompt == "good" {
+			writeChatSuccess(writer, "raw answer")
+			return
+		}
+		t.Errorf("unexpected provider prompt %q", prompt)
+		http.Error(writer, "unexpected prompt", http.StatusBadRequest)
 	}))
 	t.Cleanup(server.Close)
 	home := t.TempDir()
@@ -337,10 +350,15 @@ func TestRunInflightInterruptCancelsTurnThenSendsNextLine(t *testing.T) {
 	}
 }
 
-// R-U2HK-B91W
+// R-NIWO-J7VP R-U2HK-B91W
 func TestRunMapsOptionsAndInjectedDependenciesIntoRealSessionBehavior(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "root-marker.txt"), []byte("rooted-content"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	systemContents := " \nExact mapped system prompt.\n\t"
+	systemFile := filepath.Join(t.TempDir(), "system prompt.txt")
+	if err := os.WriteFile(systemFile, []byte(systemContents), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var requests atomic.Int32
@@ -351,6 +369,14 @@ func TestRunMapsOptionsAndInjectedDependenciesIntoRealSessionBehavior(t *testing
 		body := decodeBody(t, request)
 		if body["model"] != "gpt-5.6-sol" || body["temperature"] != float64(0.25) {
 			t.Errorf("mapped model/settings = %#v", body)
+		}
+		messages, ok := body["messages"].([]any)
+		if !ok || len(messages) == 0 {
+			t.Fatalf("mapped messages = %#v", body["messages"])
+		}
+		system, ok := messages[0].(map[string]any)
+		if !ok || system["role"] != "system" || system["content"] != systemContents {
+			t.Errorf("first mapped message = %#v, want exact system prompt %q", messages[0], systemContents)
 		}
 		requests.Add(1)
 		encoded, err := json.Marshal(body["messages"])
@@ -375,7 +401,7 @@ func TestRunMapsOptionsAndInjectedDependenciesIntoRealSessionBehavior(t *testing
 		return "injected-credential"
 	}
 	args := configuredArgs(server.URL)
-	args = append(args, "-c", "temperature=0.25", "-c", "auth_file=/unused-but-mapped")
+	args = append(args, "-c", "temperature=0.25", "-c", "system_file="+systemFile)
 	if code := cli.Run(t.Context(), args, strings.NewReader("use the rooted file\n"), io.Discard, io.Discard, deps); code != 0 {
 		t.Fatalf("Run code = %d", code)
 	}
@@ -386,6 +412,38 @@ func TestRunMapsOptionsAndInjectedDependenciesIntoRealSessionBehavior(t *testing
 	wantLogPath := filepath.Join(home, ".agent-repl", "logs", "20310203T100506Z.jsonl")
 	if logPath != wantLogPath {
 		t.Fatalf("log path = %q, want injected Home and Now path %q", logPath, wantLogPath)
+	}
+}
+
+// R-NIWO-J7VP
+func TestRunMapsAuthFileIntoOAuthCredential(t *testing.T) {
+	claims := `{"https://api.openai.com/auth":{"chatgpt_account_id":"mapped-account"}}`
+	token := "header." + base64.RawURLEncoding.EncodeToString([]byte(claims)) + ".signature"
+	authFile := filepath.Join(t.TempDir(), "selected-auth.json")
+	if err := os.WriteFile(authFile, []byte(`{"access_token":"`+token+`"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if got, want := request.Header.Get("Authorization"), "Bearer "+token; got != want {
+			t.Errorf("Authorization = %q, want token from mapped auth_file", got)
+		}
+		if got := request.Header.Get("ChatGPT-Account-Id"); got != "mapped-account" {
+			t.Errorf("ChatGPT-Account-Id = %q", got)
+		}
+		_ = decodeBody(t, request)
+		writeChatSuccess(writer, "authenticated")
+	}))
+	t.Cleanup(server.Close)
+
+	args := configuredArgs(server.URL)
+	args = append(args, "-c", "wire=responses", "-c", "auth=oauth", "-c", "auth_file="+authFile)
+	deps := testDeps(t, t.TempDir())
+	deps.Getenv = func(name string) string {
+		t.Fatalf("OAuth session unexpectedly called Getenv(%q)", name)
+		return ""
+	}
+	if code := cli.Run(t.Context(), args, strings.NewReader("authenticate\n"), io.Discard, io.Discard, deps); code != 0 {
+		t.Fatalf("Run code = %d", code)
 	}
 }
 
