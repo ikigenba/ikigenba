@@ -9,7 +9,7 @@ import (
 
 // expectedInitialVersion is release data fixed by the phase-7 brief. Keeping
 // it independent of the production variable makes output regressions visible.
-const expectedInitialVersion = "v0.8.0"
+const expectedInitialVersion = "v0.9.0"
 
 type versionFailOnRead struct {
 	t *testing.T
