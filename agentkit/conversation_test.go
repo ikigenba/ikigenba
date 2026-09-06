@@ -598,7 +598,7 @@ func TestDecodeCanUseClassifierForInBandErrorAfterHTTP200(t *testing.T) {
 	}
 }
 
-func TestSendIsSoleVerbAndAcceptsDifferentBlockVariants(t *testing.T) {
+func TestSendAcceptsDifferentBlockVariants(t *testing.T) {
 	// R-1TC6-VKLO
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer server.Close()
@@ -609,7 +609,7 @@ func TestSendIsSoleVerbAndAcceptsDifferentBlockVariants(t *testing.T) {
 		t.Fatalf("Send did not carry both block variants: %#v", provider.states)
 	}
 	conversationType := reflect.TypeOf(conversation)
-	if got := conversationType.NumMethod(); got != 1 || conversationType.Method(0).Name != "Send" {
+	if got := conversationType.NumMethod(); got != 2 || conversationType.Method(0).Name != "AddSystem" || conversationType.Method(1).Name != "Send" {
 		t.Fatalf("Conversation exported methods changed: %v", conversationType)
 	}
 }
@@ -1358,6 +1358,125 @@ func TestConfiguredLogReceivesEveryConversationTurn(t *testing.T) {
 	drainStream(nilLogStream)
 	if nilLogStream.Err() != nil || nilLogConversation.eventSink != nil {
 		t.Fatalf("nil Config.Log = err %v sink %#v", nilLogStream.Err(), nilLogConversation.eventSink)
+	}
+}
+
+// R-WG43-RFLT
+// R-WJRS-WQTW
+func TestAddSystemAppendsDistinctTurnBoundariesBeforeSend(t *testing.T) {
+	done := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: done}}}}
+	transportCalls := 0
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{})
+
+	first := Message{Role: RoleSystem, Blocks: []Block{Text{Text: "first system message"}}}
+	second := Message{Role: RoleSystem, Blocks: []Block{Text{Text: "second system message"}}}
+	if err := conversation.AddSystem("first system message"); err != nil {
+		t.Fatal(err)
+	}
+	if err := conversation.AddSystem("second system message"); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := conversation.history, (History{first, second}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("history after AddSystem calls = %#v, want distinct messages %#v", got, want)
+	}
+	if len(provider.states) != 0 || provider.decodeCalls != 0 || provider.classifyCalls != 0 || transportCalls != 0 {
+		t.Fatalf("provider calls before Send: build=%d decode=%d classify=%d transport=%d", len(provider.states), provider.decodeCalls, provider.classifyCalls, transportCalls)
+	}
+
+	user := Message{Role: RoleUser, Blocks: []Block{Text{Text: "hello"}}}
+	stream := conversation.Send(context.Background(), Text{Text: "hello"})
+	events := drainStream(stream)
+	if stream.Err() != nil {
+		t.Fatal(stream.Err())
+	}
+	if !reflect.DeepEqual(events, []Event{MessageDone{Message: done}}) {
+		t.Fatalf("Send events = %#v, want only assistant message", events)
+	}
+	wantRequestHistory := History{first, second, user}
+	if len(provider.states) != 1 || len(provider.states[0].History) != len(wantRequestHistory) {
+		t.Fatalf("provider history = %#v, want system boundaries before user turn %#v", provider.states, wantRequestHistory)
+	}
+	for index, want := range wantRequestHistory {
+		got := provider.states[0].History[index]
+		if got.Role != want.Role || len(got.Blocks) != 1 {
+			t.Fatalf("provider history message %d = %#v, want %#v", index, got, want)
+		}
+		gotText, ok := got.Blocks[0].(Text)
+		wantText := want.Blocks[0].(Text)
+		if !ok || gotText.Text != wantText.Text || len(gotText.Provider) != 0 {
+			t.Fatalf("provider history message %d = %#v, want %#v", index, got, want)
+		}
+	}
+	if got, want := conversation.history, (History{first, second, user, done}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("committed history = %#v, want turn spliced after system messages %#v", got, want)
+	}
+}
+
+// R-CM96-IGK8
+func TestAddSystemRejectsUnicodeWhitespaceWithoutChangingHistory(t *testing.T) {
+	conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(new(int)), Config{})
+	for _, text := range []string{"", "   \t\n", "\u00a0", "\u2003"} {
+		if err := conversation.AddSystem(text); !errors.Is(err, ErrInvalidArgument) {
+			t.Errorf("AddSystem(%q) error = %v, want ErrInvalidArgument", text, err)
+		}
+	}
+	if len(conversation.history) != 0 {
+		t.Fatalf("history after invalid AddSystem calls = %#v, want empty", conversation.history)
+	}
+}
+
+// R-WIJW-IZ37
+func TestAddSystemRejectsClosedLogWithoutChangingHistory(t *testing.T) {
+	var output bytes.Buffer
+	log := NewLog(&output, func() time.Time { return time.Time{} })
+	conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(new(int)), Config{Log: log})
+	conversation.history = History{{Role: RoleUser, Blocks: []Block{Text{Text: "existing"}}}}
+	before := cloneHistory(conversation.history)
+	if err := log.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := conversation.AddSystem("after close"); !errors.Is(err, ErrClosed) {
+		t.Fatalf("AddSystem after Close error = %v, want ErrClosed", err)
+	}
+	if !reflect.DeepEqual(conversation.history, before) {
+		t.Fatalf("history after closed AddSystem = %#v, want unchanged %#v", conversation.history, before)
+	}
+}
+
+// R-WSB3-L50R
+func TestAddSystemAndRenderedSystemMessagesAreSilentInLog(t *testing.T) {
+	done := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: done}}}}
+	transportCalls := 0
+	var output bytes.Buffer
+	log := NewLog(&output, func() time.Time { return time.Time{} })
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Log: log})
+
+	if err := conversation.AddSystem("unlogged system input"); err != nil {
+		t.Fatal(err)
+	}
+	if records := decodeLogRecords(t, output.Bytes()); len(records) != 0 {
+		t.Fatalf("AddSystem log records = %#v, want none", records)
+	}
+	stream := conversation.Send(context.Background(), Text{Text: "hello"})
+	events := drainStream(stream)
+	if stream.Err() != nil {
+		t.Fatal(stream.Err())
+	}
+	if !reflect.DeepEqual(events, []Event{MessageDone{Message: done}}) {
+		t.Fatalf("Send events = %#v, want no system-message event", events)
+	}
+	records := decodeLogRecords(t, output.Bytes())
+	counts := make(map[RecordType]int)
+	for _, record := range records {
+		counts[record.Type]++
+	}
+	if counts[RecordTurnStart] != 1 || counts[RecordMessage] != 1 || counts[RecordUsage] != 1 || counts[RecordTurnEnd] != 1 || len(records) != 4 {
+		t.Fatalf("records after Send = %#v, want only normal turn lifecycle and assistant message", records)
+	}
+	if bytes.Contains(output.Bytes(), []byte("unlogged system input")) {
+		t.Fatalf("system input appeared in log: %s", output.Bytes())
 	}
 }
 
@@ -2325,7 +2444,7 @@ func TestSendCompletesToolRoundTripsWithFixedClonedConfigAndOneCommit(t *testing
 		t.Fatal("tool result did not preserve the vendor call id byte-for-byte")
 	}
 	conversationType := reflect.TypeOf(conversation)
-	if got := conversationType.NumMethod(); got != 1 || conversationType.Method(0).Name != "Send" {
+	if got := conversationType.NumMethod(); got != 2 || conversationType.Method(0).Name != "AddSystem" || conversationType.Method(1).Name != "Send" {
 		t.Fatalf("Conversation exported methods changed: %v", conversationType)
 	}
 	if conversation.tools[0] == nil || conversation.settings.Options["stop"] != `["END"]` || conversation.history[0].Blocks == nil {
@@ -2503,8 +2622,8 @@ func TestDeferredGroupsConditionallySynthesizeExactlyOneLoader(t *testing.T) {
 		})
 	}
 	conversationType := reflect.TypeFor[*Conversation]()
-	if conversationType.NumMethod() != 1 || conversationType.Method(0).Name != "Send" {
-		t.Fatalf("post-construction method set = %v, want only Send", conversationType)
+	if conversationType.NumMethod() != 2 || conversationType.Method(0).Name != "AddSystem" || conversationType.Method(1).Name != "Send" {
+		t.Fatalf("post-construction method set = %v, want only AddSystem and Send", conversationType)
 	}
 	if _, exists := conversationType.MethodByName("Deferred"); exists {
 		t.Fatal("post-construction Deferred registration still exists")

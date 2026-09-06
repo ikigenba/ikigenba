@@ -583,7 +583,7 @@ func TestConversationConstructionFixesOrchestrationConfiguration(t *testing.T) {
 			t.Fatalf("conversation %d construction config changed: tools=%v settings=%#v", index, toolNames(conversation.tools), conversation.settings)
 		}
 	}
-	assertConversationExportsOnlySend(t)
+	assertConversationExportsOnlyAddSystemAndSend(t)
 }
 
 // R-KAG7-PUS7
@@ -1573,7 +1573,8 @@ func declaredFunction(t *testing.T, filename, name string) *ast.FuncDecl {
 
 func TestConversationPublicShape(t *testing.T) {
 	// R-YURK-JTY8
-	// R-SPHN-PJ46
+	// R-WEW7-DNV4
+	// R-WTIZ-YWRG
 	// R-VT1H-0PLC
 	// R-IKHO-5TZ4
 	conversationType := reflect.TypeOf(Conversation{})
@@ -1596,14 +1597,22 @@ func TestConversationPublicShape(t *testing.T) {
 	if send.Type != wantSend || !send.Type.IsVariadic() {
 		t.Fatalf("Send type = %s (variadic=%t), want %s (variadic=true)", send.Type, send.Type.IsVariadic(), wantSend)
 	}
-	assertConversationExportsOnlySend(t)
+	addSystem, ok := pointerType.MethodByName("AddSystem")
+	if !ok {
+		t.Fatal("*Conversation has no exported AddSystem method")
+	}
+	wantAddSystem := reflect.TypeOf(func(*Conversation, string) error { return nil })
+	if addSystem.Type != wantAddSystem {
+		t.Fatalf("AddSystem type = %s, want %s", addSystem.Type, wantAddSystem)
+	}
+	assertConversationExportsOnlyAddSystemAndSend(t)
 }
 
-func assertConversationExportsOnlySend(t *testing.T) {
+func assertConversationExportsOnlyAddSystemAndSend(t *testing.T) {
 	t.Helper()
 	pointerType := reflect.TypeFor[*Conversation]()
-	if pointerType.NumMethod() != 1 || pointerType.Method(0).Name != "Send" {
-		t.Fatalf("*Conversation exported methods = %v, want exactly Send", pointerType)
+	if pointerType.NumMethod() != 2 || pointerType.Method(0).Name != "AddSystem" || pointerType.Method(1).Name != "Send" {
+		t.Fatalf("*Conversation exported methods = %v, want exactly AddSystem and Send", pointerType)
 	}
 }
 

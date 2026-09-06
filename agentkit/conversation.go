@@ -66,6 +66,24 @@ func newConversation(provider wireProvider, client *http.Client, cfg Config) *Co
 	return conversation
 }
 
+// AddSystem appends one RoleSystem message holding a single Text block to
+// the conversation's History. It makes no provider call and returns no
+// Stream; the message is part of History before AddSystem returns. Empty
+// or whitespace-only text is rejected with ErrInvalidArgument; after the
+// conversation's Log is closed AddSystem returns ErrClosed. In both cases
+// History is unchanged.
+func (c *Conversation) AddSystem(text string) error {
+	if strings.TrimSpace(text) == "" {
+		return ErrInvalidArgument
+	}
+	log, _ := c.eventSink.(*Log)
+	if log.isClosed() {
+		return ErrClosed
+	}
+	c.history = append(c.history, Message{Role: RoleSystem, Blocks: []Block{Text{Text: text}}})
+	return nil
+}
+
 // Send drives one turn: it appends the user blocks, calls the model, runs any
 // tool round-trips to completion, and returns a Stream of message-granular
 // events (D13). Provider, endpoint, and model are fixed for the conversation's
@@ -375,7 +393,7 @@ func (c *Conversation) roundTrip(ctx context.Context, state requestState, yield 
 // response, or an applier without the hook, passes the response through
 // unchanged (restoring its body if read) and never calls Rotate.
 func (c *Conversation) reissueAfterUnauthorized(ctx context.Context, state requestState, response *http.Response) (*http.Response, error) {
-	if response.StatusCode >= http.StatusOK && response.StatusCode < http.StatusMultipleChoices {
+	if isHTTPSuccess(response.StatusCode) {
 		return response, nil
 	}
 	refreshable, ok := c.provider.(refreshableProvider)
@@ -490,7 +508,7 @@ func (c *Conversation) consumeResponse(ctx context.Context, response *http.Respo
 		_ = response.Body.Close()
 	}()
 
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+	if !isHTTPSuccess(response.StatusCode) {
 		body, readErr := io.ReadAll(response.Body)
 		if readErr != nil {
 			contextual := fmt.Errorf("provider error response body ended before it could be read completely: %w", readErr)
@@ -524,4 +542,8 @@ func (c *Conversation) consumeResponse(ctx context.Context, response *http.Respo
 	}
 
 	return events, true, nil
+}
+
+func isHTTPSuccess(status int) bool {
+	return status >= http.StatusOK && status < http.StatusMultipleChoices
 }
