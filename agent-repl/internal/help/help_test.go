@@ -77,7 +77,6 @@ func TestProvidersDerivesOAuthLinesFromOfferingEndpoints(t *testing.T) {
 	}
 }
 
-// R-VMKX-WP5U
 func TestModelsGroupsEveryCatalogModelByOrderedHost(t *testing.T) {
 	sections := strings.Split(help.Models(), "\n\n")
 	wantHosts := hosts()
