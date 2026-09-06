@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -181,6 +182,9 @@ func TestResolveEnvironmentVariableAndAuthPaths(t *testing.T) {
 	}
 }
 
+// authWord matches "auth" as a whole word, so "oauth" alone cannot satisfy it.
+var authWord = regexp.MustCompile(`\bauth\b`)
+
 // R-B4VH-WD0F
 func TestResolveAuthenticationMode(t *testing.T) {
 	cfg := resolveConfig(t)
@@ -211,8 +215,9 @@ func TestResolveAuthenticationMode(t *testing.T) {
 		t.Fatalf("explicit mode = %q, error %v, want api_key", plan.AuthMode, err)
 	}
 	cfg.Auth = "oauth"
-	if _, err := Resolve(cfg); err == nil || !strings.Contains(err.Error(), "auth") {
-		t.Fatalf("auth absent from offering error = %v, want diagnostic naming auth", err)
+	_, err = Resolve(cfg)
+	if err == nil || !authWord.MatchString(err.Error()) {
+		t.Fatalf("auth absent from offering error = %v, want diagnostic naming auth as a whole word", err)
 	}
 }
 
