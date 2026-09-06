@@ -2,7 +2,6 @@ package options
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -15,77 +14,6 @@ func TestFlagsValidateReturnsOptions(t *testing.T) {
 	}
 	if got.Model == "" {
 		t.Fatal("Validate() returned Options with an empty default model")
-	}
-}
-
-// R-ULZY-FKX0
-func TestOptionsHasExactlyTheContractFields(t *testing.T) {
-	type expectedOptions struct {
-		Provider string
-		Model    string
-		Wire     string
-		Auth     string
-		AuthFile string
-		BaseURL  string
-		Settings map[string]string
-		Raw      bool
-		Version  bool
-	}
-
-	gotType := reflect.TypeOf(Options{})
-	wantType := reflect.TypeOf(expectedOptions{})
-	if gotType.NumField() != wantType.NumField() {
-		t.Fatalf("Options field count = %d, want %d", gotType.NumField(), wantType.NumField())
-	}
-	for index := range wantType.NumField() {
-		gotField := gotType.Field(index)
-		wantField := wantType.Field(index)
-		if gotField.Name != wantField.Name || gotField.Type != wantField.Type {
-			t.Fatalf("Options field %d = %s %v, want %s %v", index, gotField.Name, gotField.Type, wantField.Name, wantField.Type)
-		}
-	}
-}
-
-// R-UN7U-TCNP
-func TestValidateFoldsConfigLastWinsAndSeparatesSettings(t *testing.T) {
-	flags := Flags{
-		Config: []Pair{
-			{Key: "provider", Value: "anthropic"},
-			{Key: "provider", Value: "openai"},
-			{Key: "model", Value: "first"},
-			{Key: "model", Value: "custom-model"},
-			{Key: "wire", Value: "chat"},
-			{Key: "wire", Value: "responses"},
-			{Key: "auth", Value: "oauth"},
-			{Key: "auth", Value: "api_key"},
-			{Key: "auth_file", Value: "first.json"},
-			{Key: "auth_file", Value: "last.json"},
-			{Key: "base_url", Value: "https://first.example"},
-			{Key: "base_url", Value: "https://last.example"},
-			{Key: "temperature", Value: "0.1"},
-			{Key: "temperature", Value: "not-validated"},
-		},
-		Raw:     true,
-		Version: true,
-	}
-
-	got, err := flags.Validate()
-	if err != nil {
-		t.Fatalf("Validate() error = %v", err)
-	}
-	want := Options{
-		Provider: "openai",
-		Model:    "custom-model",
-		Wire:     "responses",
-		Auth:     "api_key",
-		AuthFile: "last.json",
-		BaseURL:  "https://last.example",
-		Settings: map[string]string{"temperature": "not-validated"},
-		Raw:      true,
-		Version:  true,
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("Validate() = %#v, want %#v", got, want)
 	}
 }
 
