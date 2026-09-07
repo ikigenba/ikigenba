@@ -19,7 +19,7 @@ type moduleRequirement struct {
 	Indirect bool
 }
 
-// R-JUQZ-ZDMZ
+// R-OWY5-60C0
 func TestModuleContract(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
@@ -51,13 +51,17 @@ func TestModuleContract(t *testing.T) {
 			direct[requirement.Path] = struct{}{}
 		}
 	}
-	if len(direct) != 2 {
-		t.Errorf("direct requirements = %v, want exactly agentkit and toolkit", direct)
+	want := []string{
+		"github.com/google/uuid",
+		"github.com/ikigenba/ikigenba/agentkit",
+		"github.com/ikigenba/ikigenba/toolkit",
 	}
-	if _, ok := direct["github.com/ikigenba/ikigenba/agentkit"]; !ok {
-		t.Error("go.mod does not directly require github.com/ikigenba/ikigenba/agentkit")
+	if len(direct) != len(want) {
+		t.Fatalf("direct requirements = %v, want exactly %v", direct, want)
 	}
-	if _, ok := direct["github.com/ikigenba/ikigenba/toolkit"]; !ok {
-		t.Error("go.mod does not directly require github.com/ikigenba/ikigenba/toolkit")
+	for _, path := range want {
+		if _, ok := direct[path]; !ok {
+			t.Errorf("go.mod does not directly require %s", path)
+		}
 	}
 }

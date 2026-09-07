@@ -92,7 +92,7 @@ func TestRunConsumesTurnBeforeReadingNextLine(t *testing.T) {
 	}
 }
 
-// R-VYRX-QEKS R-W2FM-VPSV R-W4VF-N9A9 R-W7B8-ESRN
+// R-VYRX-QEKS R-P31N-2V1H R-W4VF-N9A9 R-W7B8-ESRN
 // R-WDEQ-BNH4 R-WT9F-AO45
 func TestRunDecoratedLoopCreatesPrivateCompleteLog(t *testing.T) {
 	var mu sync.Mutex
@@ -143,6 +143,9 @@ func TestRunDecoratedLoopCreatesPrivateCompleteLog(t *testing.T) {
 	for _, record := range records {
 		if got := record["time"]; got != "2031-02-03T04:05:06-06:00" {
 			t.Fatalf("record time = %v, want injected clock", got)
+		}
+		if got := record["id"]; got != "test-log-id" {
+			t.Fatalf("record id = %v, want injected log id", got)
 		}
 	}
 }
@@ -239,7 +242,7 @@ func TestRunDecoratedLifecycleIsOrderedAndSummaryMatchesLogSink(t *testing.T) {
 	}
 }
 
-// R-WUHB-OFUU
+// R-WUHB-OFUU R-P31N-2V1H
 func TestRunRawStdoutIsExactlyTheJSONLLogAndErrorsStayOnStderr(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -266,15 +269,17 @@ func TestRunRawStdoutIsExactlyTheJSONLLogAndErrorsStayOnStderr(t *testing.T) {
 	}
 	fileData := readOnlyLog(t, home)
 	want := []byte("" +
-		`{"type":"turn_start","time":"2031-02-03T04:05:06-06:00","seq":0,"identity":{"Endpoint":"openai-chat","AuthMode":"api_key","Model":"gpt-5.6-sol"}}` + "\n" +
-		`{"type":"error","time":"2031-02-03T04:05:06-06:00","seq":1,"error":{"Category":2,"Status":400,"Code":"","Message":"rejected\n","RetryAfter":0,"Endpoint":{"Endpoint":"","AuthMode":"","Model":""}}}` + "\n" +
-		`{"type":"usage","time":"2031-02-03T04:05:06-06:00","seq":2,"usage":{"InputTokens":0,"CachedTokens":0,"CacheWrite5mTokens":0,"CacheWrite1hTokens":0,"OutputTokens":0,"ReasoningTokens":0},"cost":0}` + "\n" +
-		`{"type":"turn_end","time":"2031-02-03T04:05:06-06:00","seq":3}` + "\n" +
-		`{"type":"turn_start","time":"2031-02-03T04:05:06-06:00","seq":0,"identity":{"Endpoint":"openai-chat","AuthMode":"api_key","Model":"gpt-5.6-sol"}}` + "\n" +
-		`{"type":"message","time":"2031-02-03T04:05:06-06:00","seq":1,"message":{"role":2,"blocks":[{"type":"text","text":"raw answer","provider":null}]}}` + "\n" +
-		`{"type":"usage","time":"2031-02-03T04:05:06-06:00","seq":2,"usage":{"InputTokens":0,"CachedTokens":0,"CacheWrite5mTokens":0,"CacheWrite1hTokens":0,"OutputTokens":0,"ReasoningTokens":0},"cost":0}` + "\n" +
-		`{"type":"turn_end","time":"2031-02-03T04:05:06-06:00","seq":3}` + "\n" +
-		`{"type":"summary","time":"2031-02-03T04:05:06-06:00","seq":4,"usage":{"InputTokens":0,"CachedTokens":0,"CacheWrite5mTokens":0,"CacheWrite1hTokens":0,"OutputTokens":0,"ReasoningTokens":0},"cost":0}` + "\n")
+		`{"type":"turn_start","id":"test-log-id","time":"2031-02-03T04:05:06-06:00","seq":0,"identity":{"Endpoint":"openai-chat","AuthMode":"api_key","Model":"gpt-5.6-sol"}}` + "\n" +
+		`{"type":"message","id":"test-log-id","time":"2031-02-03T04:05:06-06:00","seq":1,"message":{"role":1,"blocks":[{"type":"text","text":"bad","provider":null}]}}` + "\n" +
+		`{"type":"usage","id":"test-log-id","time":"2031-02-03T04:05:06-06:00","seq":2,"usage":{"InputTokens":0,"CachedTokens":0,"CacheWrite5mTokens":0,"CacheWrite1hTokens":0,"OutputTokens":0,"ReasoningTokens":0},"cost":0}` + "\n" +
+		`{"type":"error","id":"test-log-id","time":"2031-02-03T04:05:06-06:00","seq":3,"error":{"Category":2,"Status":400,"Code":"","Message":"rejected\n","RetryAfter":0,"Endpoint":{"Endpoint":"","AuthMode":"","Model":""}}}` + "\n" +
+		`{"type":"turn_end","id":"test-log-id","time":"2031-02-03T04:05:06-06:00","seq":4,"usage":{"InputTokens":0,"CachedTokens":0,"CacheWrite5mTokens":0,"CacheWrite1hTokens":0,"OutputTokens":0,"ReasoningTokens":0},"cost":0}` + "\n" +
+		`{"type":"turn_start","id":"test-log-id","time":"2031-02-03T04:05:06-06:00","seq":5,"identity":{"Endpoint":"openai-chat","AuthMode":"api_key","Model":"gpt-5.6-sol"}}` + "\n" +
+		`{"type":"message","id":"test-log-id","time":"2031-02-03T04:05:06-06:00","seq":6,"message":{"role":1,"blocks":[{"type":"text","text":"good","provider":null}]}}` + "\n" +
+		`{"type":"message","id":"test-log-id","time":"2031-02-03T04:05:06-06:00","seq":7,"message":{"role":2,"blocks":[{"type":"text","text":"raw answer","provider":null}]}}` + "\n" +
+		`{"type":"usage","id":"test-log-id","time":"2031-02-03T04:05:06-06:00","seq":8,"usage":{"InputTokens":0,"CachedTokens":0,"CacheWrite5mTokens":0,"CacheWrite1hTokens":0,"OutputTokens":0,"ReasoningTokens":0},"cost":0}` + "\n" +
+		`{"type":"turn_end","id":"test-log-id","time":"2031-02-03T04:05:06-06:00","seq":9,"usage":{"InputTokens":0,"CachedTokens":0,"CacheWrite5mTokens":0,"CacheWrite1hTokens":0,"OutputTokens":0,"ReasoningTokens":0},"cost":0}` + "\n" +
+		`{"type":"summary","id":"test-log-id","time":"2031-02-03T04:05:06-06:00","seq":10,"usage":{"InputTokens":0,"CachedTokens":0,"CacheWrite5mTokens":0,"CacheWrite1hTokens":0,"OutputTokens":0,"ReasoningTokens":0},"cost":0}` + "\n")
 	if !bytes.Equal(stdout.Bytes(), want) {
 		t.Fatalf("raw stdout differs from independent expectation\nstdout=%q\nwant=%q", stdout.Bytes(), want)
 	}
@@ -350,7 +355,7 @@ func TestRunInflightInterruptCancelsTurnThenSendsNextLine(t *testing.T) {
 	}
 }
 
-// R-NIWO-J7VP R-U2HK-B91W
+// R-NIWO-J7VP R-OZDX-XJTE
 func TestRunMapsOptionsAndInjectedDependenciesIntoRealSessionBehavior(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "root-marker.txt"), []byte("rooted-content"), 0o600); err != nil {
@@ -413,6 +418,11 @@ func TestRunMapsOptionsAndInjectedDependenciesIntoRealSessionBehavior(t *testing
 	if logPath != wantLogPath {
 		t.Fatalf("log path = %q, want injected Home and Now path %q", logPath, wantLogPath)
 	}
+	for _, record := range decodeRecords(t, readFile(t, logPath)) {
+		if got := record["id"]; got != deps.LogID {
+			t.Fatalf("record id = %v, want injected LogID %q", got, deps.LogID)
+		}
+	}
 }
 
 // R-NIWO-J7VP
@@ -463,6 +473,7 @@ func testDeps(t *testing.T, home string) cli.Deps {
 		Home:   home,
 		Getenv: func(string) string { return "test-api-key" },
 		Now:    func() time.Time { return sessionTime },
+		LogID:  "test-log-id",
 		Root:   t.TempDir(),
 	}
 }

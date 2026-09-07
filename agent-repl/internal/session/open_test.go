@@ -337,7 +337,7 @@ func TestOpenPassesLogToConversation(t *testing.T) {
 	server := successfulServer(t, requests)
 	var output bytes.Buffer
 	cfg := openConfig(t, server.URL)
-	cfg.Log = agentkit.NewLog(&output, func() time.Time { return time.Unix(1, 0).UTC() })
+	cfg.Log = agentkit.NewLog(&output, func() time.Time { return time.Unix(1, 0).UTC() }, "open-test-log-id")
 	session, err := Open(cfg)
 	if err != nil {
 		t.Fatal(err)

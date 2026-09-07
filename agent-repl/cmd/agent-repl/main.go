@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/ikigenba/ikigenba/agent-repl/internal/cli"
 )
 
@@ -36,6 +37,7 @@ func run() int {
 		Home:       home,
 		Getenv:     os.Getenv,
 		Now:        time.Now,
+		LogID:      uuid.NewString(),
 		Root:       root,
 		Interrupts: interrupts,
 	})

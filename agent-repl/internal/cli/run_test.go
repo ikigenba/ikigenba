@@ -30,6 +30,7 @@ func TestRunIsCallableInProcessAndReturnsAnExitCode(t *testing.T) {
 		Home:   t.TempDir(),
 		Getenv: func(string) string { return "test-api-key" },
 		Now:    func() time.Time { return time.Unix(0, 0) },
+		LogID:  "run-callable-test",
 		Root:   t.TempDir(),
 	}
 	if got := run(t.Context(), nil, strings.NewReader(""), io.Discard, io.Discard, deps); got != 0 {
@@ -37,7 +38,7 @@ func TestRunIsCallableInProcessAndReturnsAnExitCode(t *testing.T) {
 	}
 }
 
-// R-U19N-XHB7
+// R-OY61-JS2P
 func TestDepsHasExactlyTheSpecifiedFields(t *testing.T) {
 	interruptType := reflect.TypeOf((<-chan struct{})(nil))
 	want := []struct {
@@ -47,6 +48,7 @@ func TestDepsHasExactlyTheSpecifiedFields(t *testing.T) {
 		{name: "Home", typeOf: reflect.TypeOf("")},
 		{name: "Getenv", typeOf: reflect.TypeOf((func(string) string)(nil))},
 		{name: "Now", typeOf: reflect.TypeOf((func() time.Time)(nil))},
+		{name: "LogID", typeOf: reflect.TypeOf("")},
 		{name: "Root", typeOf: reflect.TypeOf("")},
 		{name: "Interrupts", typeOf: interruptType},
 	}
@@ -153,7 +155,8 @@ func runCLI(t *testing.T, args []string) (string, string, int) {
 			t.Fatal("Run consulted the clock during an early exit")
 			return time.Time{}
 		},
-		Root: "/directory-that-does-not-exist/agent-repl-root",
+		LogID: "early-exit-test",
+		Root:  "/directory-that-does-not-exist/agent-repl-root",
 	}
 	code := cli.Run(t.Context(), args, failOnRead{t: t}, &stdout, &stderr, deps)
 	return stdout.String(), stderr.String(), code

@@ -31,6 +31,7 @@ type Deps struct {
 	Home       string
 	Getenv     func(string) string
 	Now        func() time.Time
+	LogID      string
 	Root       string
 	Interrupts <-chan struct{}
 }
@@ -107,7 +108,7 @@ func openCLISession(opts options.Options, stdout, stderr io.Writer, deps Deps) (
 		destinations = append(destinations, trackedStdout)
 	}
 	sink := render.NewLogSink(destinations...)
-	log := agentkit.NewLog(sink, deps.Now)
+	log := agentkit.NewLog(sink, deps.Now, deps.LogID)
 	opened, err := session.Open(session.Config{
 		Provider:   opts.Provider,
 		Model:      opts.Model,

@@ -33,8 +33,9 @@ func TestVersionSpellingsExitEarlyWithIdenticalBareVersion(t *testing.T) {
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
 			code := Run(t.Context(), []string{argument}, versionFailOnRead{t: t}, &stdout, &stderr, Deps{
-				Home: "/directory-that-does-not-exist/agent-repl-home",
-				Root: "/directory-that-does-not-exist/agent-repl-root",
+				Home:  "/directory-that-does-not-exist/agent-repl-home",
+				LogID: "version-early-exit-test",
+				Root:  "/directory-that-does-not-exist/agent-repl-root",
 			})
 			if code != expectedSuccessfulExitCode {
 				t.Errorf("Run(%q) code = %d, want %d", argument, code, expectedSuccessfulExitCode)

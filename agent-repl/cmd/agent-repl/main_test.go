@@ -10,27 +10,28 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
 
-// R-U4XD-2SJA
+// R-P0LU-BBK3
 func TestBuiltBinaryWiresProcessEnvironmentAndStreams(t *testing.T) {
 	const (
 		prompt = "answer through the real binary"
 		reply  = "binary wiring confirmed"
 	)
 	apiKey := strings.Repeat("x", 20)
-	server := newTestProvider(t, apiKey, prompt, reply)
+	server := requestCheckingProvider(t, apiKey, prompt, reply)
 	binary := buildAgentREPL(t)
 	home := t.TempDir()
 	command := runAgentREPL(t, binary, server.URL, home, apiKey, prompt)
 
 	assertSuccessfulRun(t, command, reply)
-	assertOneLogFile(t, home)
+	assertSingleUUIDLog(t, home)
 }
 
-func newTestProvider(t *testing.T, apiKey, prompt, reply string) *httptest.Server {
+func requestCheckingProvider(t *testing.T, apiKey, prompt, reply string) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if got, want := request.Header.Get("Authorization"), "Bearer "+apiKey; got != want {
@@ -61,7 +62,7 @@ func buildAgentREPL(t *testing.T) string {
 	}
 	build := runProcess(t, goTool, []string{"build", "-o", binary, "./cmd/agent-repl"}, filepath.Join("..", ".."), os.Environ(), "")
 	if !build.success {
-		t.Fatalf("build binary: %s\n%s", build.stdout, build.stderr)
+		t.Fatalf("build binary: stdout=%q stderr=%q", build.stdout, build.stderr)
 	}
 	return binary
 }
@@ -81,7 +82,7 @@ func runAgentREPL(t *testing.T, binary, baseURL, home, apiKey, prompt string) pr
 func assertSuccessfulRun(t *testing.T, command processResult, reply string) {
 	t.Helper()
 	if !command.success {
-		t.Fatalf("run binary\nstdout: %s\nstderr: %s", command.stdout, command.stderr)
+		t.Fatalf("run binary: stdout=%q stderr=%q", command.stdout, command.stderr)
 	}
 	wantStdout := "you › \n" +
 		"assistant › " + reply + "\n\n" +
@@ -94,7 +95,7 @@ func assertSuccessfulRun(t *testing.T, command processResult, reply string) {
 	}
 }
 
-func assertOneLogFile(t *testing.T, home string) {
+func assertSingleUUIDLog(t *testing.T, home string) {
 	t.Helper()
 	logs, err := filepath.Glob(filepath.Join(home, ".agent-repl", "logs", "*.jsonl"))
 	if err != nil {
@@ -102,6 +103,32 @@ func assertOneLogFile(t *testing.T, home string) {
 	}
 	if len(logs) != 1 {
 		t.Fatalf("log files = %q, want exactly one JSONL file", logs)
+	}
+	data, err := os.ReadFile(logs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := bytes.Split(bytes.TrimSpace(data), []byte("\n"))
+	if len(lines) == 0 || len(lines[0]) == 0 {
+		t.Fatal("log has no records")
+	}
+	uuidV4 := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	var logID string
+	for _, line := range lines {
+		var record struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(line, &record); err != nil {
+			t.Fatalf("decode log record %q: %v", line, err)
+		}
+		if !uuidV4.MatchString(record.ID) {
+			t.Fatalf("log record id = %q, want lowercase RFC 4122 version 4 UUID", record.ID)
+		}
+		if logID == "" {
+			logID = record.ID
+		} else if record.ID != logID {
+			t.Fatalf("log record id = %q, want session id %q", record.ID, logID)
+		}
 	}
 }
 
