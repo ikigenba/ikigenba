@@ -80,6 +80,12 @@ var ErrInvalidConfig = errors.New("agentkit: invalid configuration")
 // ErrClosed identifies a conversation that can no longer accept a Send.
 var ErrClosed = errors.New("agentkit: conversation closed")
 
+// ErrSavepointActive identifies an operation refused while a savepoint is live.
+var ErrSavepointActive = errors.New("agentkit: savepoint active")
+
+// ErrTurnInFlight identifies an operation refused while a turn is in flight.
+var ErrTurnInFlight = errors.New("agentkit: turn in flight")
+
 // ErrInvalidArgument identifies a call whose own argument cannot be honored
 // regardless of configuration.
 var ErrInvalidArgument = errors.New("agentkit: invalid argument")

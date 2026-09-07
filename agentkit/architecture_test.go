@@ -650,7 +650,7 @@ func TestConversationConstructionFixesOrchestrationConfiguration(t *testing.T) {
 			t.Fatalf("conversation %d construction config changed: tools=%v settings=%#v", index, toolNames(conversation.tools), conversation.settings)
 		}
 	}
-	assertConversationExportsOnlyAddSystemAndSend(t)
+	assertConversationExportsExactly(t)
 }
 
 // R-KAG7-PUS7
@@ -1641,7 +1641,7 @@ func declaredFunction(t *testing.T, filename, name string) *ast.FuncDecl {
 func TestConversationPublicShape(t *testing.T) {
 	// R-YURK-JTY8
 	// R-WEW7-DNV4
-	// R-WTIZ-YWRG
+	// R-7KE4-A3OZ
 	// R-VT1H-0PLC
 	// R-IKHO-5TZ4
 	conversationType := reflect.TypeOf(Conversation{})
@@ -1672,14 +1672,52 @@ func TestConversationPublicShape(t *testing.T) {
 	if addSystem.Type != wantAddSystem {
 		t.Fatalf("AddSystem type = %s, want %s", addSystem.Type, wantAddSystem)
 	}
-	assertConversationExportsOnlyAddSystemAndSend(t)
+	wantMethods := map[string]reflect.Type{
+		"Close":     reflect.TypeOf(func(*Conversation) error { return nil }),
+		"Release":   reflect.TypeOf(func(*Conversation, Savepoint) error { return nil }),
+		"Restore":   reflect.TypeOf(func(*Conversation, Savepoint) error { return nil }),
+		"Savepoint": reflect.TypeOf(func(*Conversation) (Savepoint, error) { return Savepoint{}, nil }),
+	}
+	for name, want := range wantMethods {
+		method, exists := pointerType.MethodByName(name)
+		if !exists {
+			t.Fatalf("*Conversation has no exported %s method", name)
+		}
+		if method.Type != want {
+			t.Fatalf("%s type = %s, want %s", name, method.Type, want)
+		}
+	}
+	assertConversationExportsExactly(t)
 }
 
-func assertConversationExportsOnlyAddSystemAndSend(t *testing.T) {
+func assertConversationExportsExactly(t *testing.T) {
+	// R-8A00-BA9K
 	t.Helper()
 	pointerType := reflect.TypeFor[*Conversation]()
-	if pointerType.NumMethod() != 2 || pointerType.Method(0).Name != "AddSystem" || pointerType.Method(1).Name != "Send" {
-		t.Fatalf("*Conversation exported methods = %v, want exactly AddSystem and Send", pointerType)
+	want := []string{"AddSystem", "Close", "Release", "Restore", "Savepoint", "Send"}
+	if pointerType.NumMethod() != len(want) {
+		t.Fatalf("*Conversation has %d exported methods, want exactly %v", pointerType.NumMethod(), want)
+	}
+	for index, name := range want {
+		if got := pointerType.Method(index).Name; got != name {
+			t.Fatalf("*Conversation exported method %d = %s, want exact method set %v", index, got, want)
+		}
+	}
+}
+
+func TestSavepointIsOpaque(t *testing.T) {
+	// R-7J67-WBYA
+	savepointType := reflect.TypeFor[Savepoint]()
+	if savepointType.Name() != "Savepoint" || !token.IsExported(savepointType.Name()) {
+		t.Fatalf("Savepoint name = %q, want exported Savepoint type", savepointType.Name())
+	}
+	for index := range savepointType.NumField() {
+		if field := savepointType.Field(index); field.IsExported() {
+			t.Fatalf("Savepoint field %q is exported", field.Name)
+		}
+	}
+	if savepointType.NumMethod() != 0 || reflect.PointerTo(savepointType).NumMethod() != 0 {
+		t.Fatalf("Savepoint value/pointer exported methods = %d/%d, want 0/0", savepointType.NumMethod(), reflect.PointerTo(savepointType).NumMethod())
 	}
 }
 

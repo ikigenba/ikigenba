@@ -28,6 +28,7 @@ type Conversation struct {
 	limits              Limits
 	toolCallsDispatched int
 	lastRoundContext    int64
+	closed              bool
 }
 
 // Config is the construction-time configuration of a Conversation: everything a
@@ -81,8 +82,7 @@ func (c *Conversation) AddSystem(text string) error {
 	if strings.TrimSpace(text) == "" {
 		return ErrInvalidArgument
 	}
-	log, _ := c.eventSink.(*Log)
-	if log.isClosed() {
+	if c.isClosed() {
 		return ErrClosed
 	}
 	message := Message{Role: RoleSystem, Blocks: []Block{Text{Text: text}}}
@@ -99,10 +99,10 @@ func (c *Conversation) AddSystem(text string) error {
 func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream {
 	turn := c.snapshotTurn(blocks)
 	return &Stream{outputDeclared: c.output != nil, drive: func(yield func(Event) bool) error {
-		log, _ := c.eventSink.(*Log)
-		if log.isClosed() {
+		if c.isClosed() {
 			return ErrClosed
 		}
+		log, _ := c.eventSink.(*Log)
 		log.start(c.identity)
 		recordMessage(c.eventSink, turn.turn[0])
 		accounting := turnTotals{}
@@ -119,6 +119,14 @@ func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream {
 		terminal = c.driveTurn(ctx, orchestrator, turn, yield, &accounting)
 		return terminal
 	}}
+}
+
+func (c *Conversation) isClosed() bool {
+	if c.closed {
+		return true
+	}
+	log, _ := c.eventSink.(*Log)
+	return log.isClosed()
 }
 
 // turnTotals tracks the merged Usage across every round-trip completed so
@@ -187,10 +195,7 @@ func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator
 	output := newTurnOutputProgress(c.output)
 	for {
 		assistant, calls, completed, err := c.executeTurnRoundTrip(ctx, orchestrator, snapshot, yield, accounting)
-		if !completed {
-			return err
-		}
-		if err != nil {
+		if err != nil || !completed {
 			return err
 		}
 

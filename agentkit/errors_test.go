@@ -27,6 +27,42 @@ func TestSentinelDeclarations(t *testing.T) {
 	checkDirectSentinelDeclarations(t, wantMessages)
 }
 
+func TestSavepointSentinelDeclarationsAndWrapping(t *testing.T) {
+	// R-7LM0-NVFO
+	wantMessages := map[string]string{
+		"ErrSavepointActive": "agentkit: savepoint active",
+		"ErrTurnInFlight":    "agentkit: turn in flight",
+	}
+	sentinels := map[string]error{
+		"ErrSavepointActive": ErrSavepointActive,
+		"ErrTurnInFlight":    ErrTurnInFlight,
+	}
+	checkSentinelValues(t, wantMessages, sentinels)
+	checkDirectSentinelDeclarations(t, wantMessages)
+	allOthers := []error{
+		ErrInvalidConfig,
+		ErrClosed,
+		ErrInvalidArgument,
+		ErrInvalidOutput,
+		ErrLimitExceeded,
+		ErrNotFound,
+	}
+	for name, sentinel := range sentinels {
+		if !errors.Is(sentinel, sentinel) {
+			t.Fatalf("errors.Is(%s, itself) = false", name)
+		}
+		for _, other := range allOthers {
+			if errors.Is(sentinel, other) || errors.Is(other, sentinel) {
+				t.Fatalf("%s is not distinct from %v", name, other)
+			}
+		}
+		wrapped := &Error{err: fmt.Errorf("lifecycle refusal: %w", sentinel)}
+		if !errors.Is(wrapped, sentinel) {
+			t.Fatalf("%s is not discoverable through *Error wrapping", name)
+		}
+	}
+}
+
 func checkSentinelValues(t *testing.T, wantMessages map[string]string, sentinels map[string]error) {
 	t.Helper()
 	for name, sentinel := range sentinels {

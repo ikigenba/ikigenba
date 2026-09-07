@@ -608,10 +608,7 @@ func TestSendAcceptsDifferentBlockVariants(t *testing.T) {
 	if len(provider.states) != 1 || len(provider.states[0].History) != 1 || len(provider.states[0].History[0].Blocks) != 2 {
 		t.Fatalf("Send did not carry both block variants: %#v", provider.states)
 	}
-	conversationType := reflect.TypeOf(conversation)
-	if got := conversationType.NumMethod(); got != 2 || conversationType.Method(0).Name != "AddSystem" || conversationType.Method(1).Name != "Send" {
-		t.Fatalf("Conversation exported methods changed: %v", conversationType)
-	}
+	assertConversationExportsExactly(t)
 }
 
 func TestSendSnapshotPreservesPayloadAndCommitsCompleteUserTurn(t *testing.T) {
@@ -2513,10 +2510,7 @@ func TestSendCompletesToolRoundTripsWithFixedClonedConfigAndOneCommit(t *testing
 	if result.Blocks[0].(ToolResult).ToolUseID != callID || provider.states[1].History[3].Blocks[0].(ToolResult).ToolUseID != callID {
 		t.Fatal("tool result did not preserve the vendor call id byte-for-byte")
 	}
-	conversationType := reflect.TypeOf(conversation)
-	if got := conversationType.NumMethod(); got != 2 || conversationType.Method(0).Name != "AddSystem" || conversationType.Method(1).Name != "Send" {
-		t.Fatalf("Conversation exported methods changed: %v", conversationType)
-	}
+	assertConversationExportsExactly(t)
 	if conversation.tools[0] == nil || conversation.settings.Options["stop"] != `["END"]` || conversation.history[0].Blocks == nil {
 		t.Fatal("provider snapshot mutated fixed config or prior history")
 	}
@@ -2692,9 +2686,7 @@ func TestDeferredGroupsConditionallySynthesizeExactlyOneLoader(t *testing.T) {
 		})
 	}
 	conversationType := reflect.TypeFor[*Conversation]()
-	if conversationType.NumMethod() != 2 || conversationType.Method(0).Name != "AddSystem" || conversationType.Method(1).Name != "Send" {
-		t.Fatalf("post-construction method set = %v, want only AddSystem and Send", conversationType)
-	}
+	assertConversationExportsExactly(t)
 	if _, exists := conversationType.MethodByName("Deferred"); exists {
 		t.Fatal("post-construction Deferred registration still exists")
 	}
