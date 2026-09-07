@@ -84,7 +84,9 @@ is versioned by tag from the monorepo:
   `git tag --list 'toolkit/v*' --sort=-v:refname | head -1`.
 - A consumer pins a version with an ordinary `require
   github.com/ikigenba/ikigenba/toolkit vMAJOR.MINOR.PATCH` in its own `go.mod`.
-- toolkit pins agentkit the same way (`agentkit/v*` tags); bumping that pin is
-  a design change, since the required version is stated in `specs/design/D1`.
+- toolkit pins agentkit the same way (`agentkit/v*` tags). The pinned version
+  lives only in `go.mod`, never in a design document: `specs/design/D1` names
+  the module, and the build run moves the pin to whatever release carries the
+  surface the current designs use.
 - The version is release data, not spec-governed: the spec fixes the library's
   shape, never its version number. Cut a release by tagging a green `main`.
