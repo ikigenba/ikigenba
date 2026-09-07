@@ -374,6 +374,41 @@ func TestAnthropicMessagesOmitsCacheControlAtEmptySavepointPrefix(t *testing.T) 
 	}
 }
 
+// R-LC8M-BVVD
+func TestGeminiGenerateContentOmitsCachedContentWithoutLiveSavepoint(t *testing.T) {
+	response, err := os.Open("testdata/gemini_generate_content.sse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = response.Close() }()
+
+	wire := newGeminiGenerateContentWire(nil)
+	var parsed Message
+	for event, decodeErr := range wire.DecodeStream(SSEFrames(response)) {
+		if decodeErr != nil {
+			t.Fatal(decodeErr)
+		}
+		parsed = event.(MessageDone).Message
+	}
+
+	body, err := GeminiGenerateContentWire().EncodeRequest(requestState{
+		Model: "vendor/model:latest", History: History{parsed},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile("testdata/gemini_generate_content.request.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(body, want) {
+		t.Fatalf("request bytes = %q, want fixture bytes %q", body, want)
+	}
+	if bytes.Contains(body, []byte("cachedContent")) {
+		t.Fatalf("request contains cachedContent: %s", body)
+	}
+}
+
 // R-WR37-7DA2
 func TestGeminiGenerateContentHoistsAllSystemMessages(t *testing.T) {
 	history := History{
