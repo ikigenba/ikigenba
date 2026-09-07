@@ -1,6 +1,4 @@
 {
-  "autoCompactEnabled": true,
-  "autoCompactWindow": 200000,
   "claudeMdExcludes": [
     "/home/*/.claude/CLAUDE.md"
   ],
