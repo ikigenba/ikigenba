@@ -91,7 +91,11 @@ func (h *harness) supervisorTools(address string) ([]agentkit.Tool, error) {
 		children.next++
 		childAddress := fmt.Sprintf("%s.%d", address, children.next)
 		children.Unlock()
-		return h.runAgent(ctx, childAddress, input.Role, input.Prompt)
+		report, err := h.runAgent(ctx, childAddress, input.Role, input.Prompt)
+		if err != nil {
+			return "", fmt.Errorf("child %s terminated: %w", childAddress, err)
+		}
+		return report, nil
 	})
 	if err != nil {
 		return nil, err

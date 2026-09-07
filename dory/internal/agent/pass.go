@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/ikigenba/ikigenba/agentkit"
 	"github.com/ikigenba/ikigenba/dory/internal/model"
@@ -13,7 +14,14 @@ import (
 )
 
 type harness struct {
-	cfg Config
+	cfg    Config
+	totals passTotals
+}
+
+type passTotals struct {
+	sync.Mutex
+	usage agentkit.Usage
+	cost  agentkit.Cost
 }
 
 func runPass(ctx context.Context, cfg Config, prompt string) (Result, error) {
@@ -24,7 +32,8 @@ func runPass(ctx context.Context, cfg Config, prompt string) (Result, error) {
 	address := strconv.Itoa(pass)
 	runner := harness{cfg: cfg}
 	report, err := runner.runAgent(ctx, address, RoleSupervisor, prompt)
-	return Result{Address: address, Report: report}, err
+	usage, cost := runner.summary()
+	return Result{Address: address, Report: report, Usage: usage, Cost: cost}, err
 }
 
 func (h *harness) runAgent(ctx context.Context, address string, role Role, prompt string) (report string, err error) {
@@ -32,9 +41,13 @@ func (h *harness) runAgent(ctx context.Context, address string, role Role, promp
 		return "", err
 	}
 
-	log := h.newAgentLog(address)
+	log, writer := h.newAgentLog(address)
 	defer func() {
-		err = errors.Join(err, log.Close())
+		closeErr := log.Close()
+		if usage, cost, ok := writer.Summary(); ok {
+			h.addSummary(usage, cost)
+		}
+		err = errors.Join(err, closeErr)
 	}()
 
 	conversation, err := h.newConversation(address, role, log)
@@ -51,9 +64,27 @@ func (h *harness) runAgent(ctx context.Context, address string, role Role, promp
 	return report, nil
 }
 
-func (h *harness) newAgentLog(address string) *agentkit.Log {
+func (h *harness) newAgentLog(address string) (*agentkit.Log, *store.LogWriter) {
 	writer := store.NewLogWriter(h.cfg.Store, address, h.cfg.Trace.Record)
-	return agentkit.NewLog(writer, h.cfg.Now, address)
+	return agentkit.NewLog(writer, h.cfg.Now, address), writer
+}
+
+func (h *harness) addSummary(usage agentkit.Usage, cost agentkit.Cost) {
+	h.totals.Lock()
+	defer h.totals.Unlock()
+	h.totals.usage.InputTokens += usage.InputTokens
+	h.totals.usage.CachedTokens += usage.CachedTokens
+	h.totals.usage.CacheWrite5mTokens += usage.CacheWrite5mTokens
+	h.totals.usage.CacheWrite1hTokens += usage.CacheWrite1hTokens
+	h.totals.usage.OutputTokens += usage.OutputTokens
+	h.totals.usage.ReasoningTokens += usage.ReasoningTokens
+	h.totals.cost += cost
+}
+
+func (h *harness) summary() (agentkit.Usage, agentkit.Cost) {
+	h.totals.Lock()
+	defer h.totals.Unlock()
+	return h.totals.usage, h.totals.cost
 }
 
 func (h *harness) newConversation(address string, role Role, log *agentkit.Log) (*agentkit.Conversation, error) {
