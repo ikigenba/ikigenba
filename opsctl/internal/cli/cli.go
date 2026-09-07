@@ -3,8 +3,8 @@ package cli
 
 import (
 	"flag"
-	"fmt"
 	"io"
+	"strings"
 )
 
 type exitCode int
@@ -59,7 +59,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, deps Deps) in
 func run(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	help, showVersion, rest, err := parseTopLevel(args)
 	if err != nil {
-		_, _ = io.WriteString(stderr, usageText)
+		writeUsage(stderr)
 		return exitUsage
 	}
 	if help {
@@ -69,7 +69,7 @@ func run(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 		return writeOut(stdout, version+"\n")
 	}
 	if len(rest) == 0 {
-		_, _ = io.WriteString(stderr, usageText)
+		writeUsage(stderr)
 		return exitUsage
 	}
 	return dispatch(rest[0], rest[1:], stdout, stderr, deps)
@@ -99,6 +99,29 @@ func writeOut(w io.Writer, s string) exitCode {
 	return exitOK
 }
 
+// writeUsage writes usageText to stderr with every line prefixed by "opsctl: ".
+func writeUsage(stderr io.Writer) {
+	remaining := usageText
+	for remaining != "" {
+		line, rest, found := strings.Cut(remaining, "\n")
+		_, _ = io.WriteString(stderr, "opsctl: "+line+"\n")
+		if !found {
+			break
+		}
+		remaining = rest
+	}
+}
+
+// diagnosticArg keeps a user-supplied token on one diagnostic line.
+func diagnosticArg(s string) string {
+	if !strings.ContainsAny(s, "\n\r") {
+		return s
+	}
+	s = strings.ReplaceAll(s, "\n", `\n`)
+	s = strings.ReplaceAll(s, "\r", `\r`)
+	return s
+}
+
 func dispatch(name string, args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	switch name {
 	case "config":
@@ -106,8 +129,8 @@ func dispatch(name string, args []string, stdout, stderr io.Writer, deps Deps) e
 	case "version":
 		return writeOut(stdout, version+"\n")
 	default:
-		_, _ = fmt.Fprintf(stderr, "opsctl: unknown command: %q\n", name)
-		_, _ = io.WriteString(stderr, usageText)
+		_, _ = io.WriteString(stderr, "opsctl: unknown command: "+diagnosticArg(name)+"\n")
+		writeUsage(stderr)
 		return exitUsage
 	}
 }

@@ -51,6 +51,51 @@ Keys match ^[a-z0-9_.-]+$. Values may not contain newlines.
 
 const wantVersion = "v0.1.0"
 
+func usageOnStderr() string {
+	return prefixEachLine(wantUsage, "opsctl: ")
+}
+
+func prefixEachLine(s, prefix string) string {
+	if s == "" {
+		return ""
+	}
+	var b strings.Builder
+	for s != "" {
+		line, rest, found := strings.Cut(s, "\n")
+		b.WriteString(prefix)
+		b.WriteString(line)
+		b.WriteByte('\n')
+		if !found {
+			break
+		}
+		s = rest
+	}
+	return b.String()
+}
+
+func assertEveryLinePrefixed(t *testing.T, name, stderr, prefix string) {
+	t.Helper()
+	if stderr == "" {
+		t.Errorf("%s: stderr is empty, want lines beginning with %q", name, prefix)
+		return
+	}
+	lines := strings.Split(stderr, "\n")
+	if lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	} else {
+		t.Errorf("%s: stderr is not newline-terminated: %q", name, stderr)
+	}
+	if len(lines) == 0 {
+		t.Errorf("%s: stderr has no lines", name)
+		return
+	}
+	for i, line := range lines {
+		if !strings.HasPrefix(line, prefix) {
+			t.Errorf("%s: stderr line %d = %q, want prefix %q", name, i, line, prefix)
+		}
+	}
+}
+
 func invoke(args []string, deps cli.Deps) (stdout, stderr string, code int) {
 	var outBuf, errBuf bytes.Buffer
 	code = cli.Run(args, strings.NewReader(""), &outBuf, &errBuf, deps)
@@ -101,7 +146,7 @@ func TestTopLevelGrammar(t *testing.T) {
 	}
 
 	stdout, stderr, code = invoke([]string{"--not-an-option"}, user)
-	if code != 2 || stdout != "" || stderr != wantUsage {
+	if code != 2 || stdout != "" || stderr != usageOnStderr() {
 		t.Errorf("unknown option: exit %d stdout %q stderr %q, want exit 2, empty stdout, usage on stderr", code, stdout, stderr)
 	}
 }
@@ -124,7 +169,7 @@ func TestCommandSet(t *testing.T) {
 	if code != 2 {
 		t.Errorf("status: exit %d, want 2", code)
 	}
-	wantErr := "opsctl: unknown command: \"status\"\n" + wantUsage
+	wantErr := "opsctl: unknown command: status\n" + usageOnStderr()
 	if stdout != "" || stderr != wantErr {
 		t.Errorf("status: stdout %q stderr %q, want empty stdout and %q", stdout, stderr, wantErr)
 	}
@@ -156,7 +201,7 @@ func TestNoCommandPrintsUsage(t *testing.T) {
 	if stdout != "" {
 		t.Errorf("stdout = %q, want empty", stdout)
 	}
-	if stderr != wantUsage {
+	if stderr != usageOnStderr() {
 		t.Errorf("stderr = %q, want usage text", stderr)
 	}
 }
@@ -171,7 +216,7 @@ func TestUnknownCommand(t *testing.T) {
 		if stdout != "" {
 			t.Errorf("%s: stdout = %q, want empty", name, stdout)
 		}
-		want := "opsctl: unknown command: " + strconv.Quote(name) + "\n" + wantUsage
+		want := "opsctl: unknown command: " + name + "\n" + usageOnStderr()
 		if stderr != want {
 			t.Errorf("%s: stderr = %q, want %q", name, stderr, want)
 		}
@@ -188,7 +233,7 @@ func TestUnknownOption(t *testing.T) {
 		if stdout != "" {
 			t.Errorf("%q: stdout = %q, want empty", args, stdout)
 		}
-		if stderr != wantUsage {
+		if stderr != usageOnStderr() {
 			t.Errorf("%q: stderr = %q, want usage text", args, stderr)
 		}
 	}
@@ -339,21 +384,27 @@ func TestHelpAndVersionWithoutRoot(t *testing.T) {
 
 func TestStderrPrefix(t *testing.T) {
 	// R-NE81-NO6Y
-	_, stderr, _ := invoke([]string{"nosuch"}, depsAt(t, 0))
-	first, _, _ := strings.Cut(stderr, "\n")
-	if first != "opsctl: unknown command: \"nosuch\"" {
-		t.Errorf("unknown command first line = %q, want %q", first, "opsctl: unknown command: \"nosuch\"")
+	user := depsAt(t, 1)
+	root := depsAt(t, 0)
+
+	outside := []struct {
+		name string
+		args []string
+		deps cli.Deps
+	}{
+		{"no command", nil, root},
+		{"unknown command", []string{"nosuch"}, root},
+		{"unknown command with newline", []string{"no\nsuch"}, root},
+		{"unknown option", []string{"--not-an-option"}, user},
+		{"root refusal", []string{"config", "set", "dns.zones=x"}, user},
+	}
+	for _, tc := range outside {
+		_, stderr, _ := invoke(tc.args, tc.deps)
+		assertEveryLinePrefixed(t, tc.name, stderr, "opsctl: ")
 	}
 
-	_, stderr, _ = invoke([]string{"config", "set", "dns.zones=x"}, depsAt(t, 1))
-	if stderr != "opsctl: must run as root\n" {
-		t.Errorf("root refusal stderr = %q, want %q", stderr, "opsctl: must run as root\n")
-	}
-
-	_, stderr, _ = invoke([]string{"config", "get", "missing.key"}, depsAt(t, 0))
-	if stderr != "opsctl config: key not set\n" {
-		t.Errorf("inside config stderr = %q, want %q", stderr, "opsctl config: key not set\n")
-	}
+	_, stderr, _ := invoke([]string{"config", "get", "missing.key"}, root)
+	assertEveryLinePrefixed(t, "inside config", stderr, "opsctl config: ")
 }
 
 func TestSuccessWritesNoStderr(t *testing.T) {
