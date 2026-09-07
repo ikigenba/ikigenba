@@ -1,15 +1,16 @@
 package agentkit
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 )
 
-func newAbandonedTurnConversation(t *testing.T, withSavepoint bool) (*Conversation, Savepoint) {
-	t.Helper()
+func newAbandonedTurnConversation(withSavepoint bool) (*Conversation, Savepoint, error) {
 	first := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "call-1", Name: "weather", Input: json.RawMessage(`{"city":"Oslo"}`)}}}
 	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
@@ -19,7 +20,7 @@ func newAbandonedTurnConversation(t *testing.T, withSavepoint bool) (*Conversati
 		var err error
 		sp, err = conversation.Savepoint()
 		if err != nil {
-			t.Fatalf("Savepoint() error = %v, want nil", err)
+			return nil, Savepoint{}, err
 		}
 	}
 	conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) {
@@ -29,12 +30,15 @@ func newAbandonedTurnConversation(t *testing.T, withSavepoint bool) (*Conversati
 	for range stream.Events() {
 		break
 	}
-	return conversation, sp
+	return conversation, sp, nil
 }
 
 func TestSavepointRejectsWhileTurnInFlight(t *testing.T) {
 	// R-7QHM-6YEG
-	conversation, _ := newAbandonedTurnConversation(t, false)
+	conversation, _, err := newAbandonedTurnConversation(false)
+	if err != nil {
+		t.Fatalf("setup abandoned turn: %v", err)
+	}
 
 	sp, err := conversation.Savepoint()
 	if !reflect.DeepEqual(sp, Savepoint{}) {
@@ -50,7 +54,10 @@ func TestSavepointRejectsWhileTurnInFlight(t *testing.T) {
 
 func TestRestoreRejectsWhileTurnInFlight(t *testing.T) {
 	// R-7QHM-6YEG
-	conversation, sp := newAbandonedTurnConversation(t, true)
+	conversation, sp, err := newAbandonedTurnConversation(true)
+	if err != nil {
+		t.Fatalf("setup abandoned turn: %v", err)
+	}
 	wantHistory := conversation.history
 
 	if err := conversation.Restore(sp); !errors.Is(err, ErrTurnInFlight) {
@@ -63,7 +70,10 @@ func TestRestoreRejectsWhileTurnInFlight(t *testing.T) {
 
 func TestReleaseRejectsWhileTurnInFlight(t *testing.T) {
 	// R-7QHM-6YEG
-	conversation, sp := newAbandonedTurnConversation(t, true)
+	conversation, sp, err := newAbandonedTurnConversation(true)
+	if err != nil {
+		t.Fatalf("setup abandoned turn: %v", err)
+	}
 
 	if err := conversation.Release(sp); !errors.Is(err, ErrTurnInFlight) {
 		t.Fatalf("Release() error = %v, want ErrTurnInFlight", err)
@@ -75,7 +85,10 @@ func TestReleaseRejectsWhileTurnInFlight(t *testing.T) {
 
 func TestCloseRejectsWhileTurnInFlight(t *testing.T) {
 	// R-7QHM-6YEG
-	conversation, _ := newAbandonedTurnConversation(t, false)
+	conversation, _, err := newAbandonedTurnConversation(false)
+	if err != nil {
+		t.Fatalf("setup abandoned turn: %v", err)
+	}
 
 	if err := conversation.Close(); !errors.Is(err, ErrTurnInFlight) {
 		t.Fatalf("Close() error = %v, want ErrTurnInFlight", err)
@@ -366,8 +379,12 @@ func TestSavepointAndRestoreBeforeAnySend(t *testing.T) {
 }
 
 func TestConversationCloseMarksConversationClosed(t *testing.T) {
+	// R-854E-S7AS
 	// R-7KE4-A3OZ
-	conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(new(int)), Config{})
+	provider := &phase15Provider{model: "model"}
+	transportCalls := 0
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{})
+	before := conversation.history
 	if err := conversation.Close(); err != nil {
 		t.Fatalf("Close() error = %v, want nil", err)
 	}
@@ -381,5 +398,126 @@ func TestConversationCloseMarksConversationClosed(t *testing.T) {
 	drainStream(stream)
 	if !errors.Is(stream.Err(), ErrClosed) {
 		t.Fatalf("Send after Close error = %v, want ErrClosed", stream.Err())
+	}
+	if transportCalls != 0 || len(provider.states) != 0 {
+		t.Fatalf("provider calls after Close: build=%d transport=%d, want 0/0", len(provider.states), transportCalls)
+	}
+	if !reflect.DeepEqual(conversation.history, before) {
+		t.Fatalf("History after rejected operations = %#v, want unchanged %#v", conversation.history, before)
+	}
+}
+
+func TestCloseIsIdempotentAndDoesNotCloseLog(t *testing.T) {
+	// R-83WI-EFK3
+	var output bytes.Buffer
+	log := NewLog(&output, func() time.Time { return time.Time{} }, "")
+	conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(new(int)), Config{Log: log})
+	if err := conversation.AddSystem("instructions"); err != nil {
+		t.Fatalf("AddSystem() error = %v", err)
+	}
+	before := cloneHistory(conversation.history)
+
+	if err := conversation.Close(); err != nil {
+		t.Fatalf("Close() error = %v, want nil", err)
+	}
+	if !conversation.closed || log.isClosed() {
+		t.Fatalf("after Close(): conversation.closed=%t log.closed=%t, want true/false", conversation.closed, log.isClosed())
+	}
+	if !reflect.DeepEqual(conversation.history, before) {
+		t.Fatalf("History after Close() = %#v, want unchanged %#v", conversation.history, before)
+	}
+
+	if err := conversation.Close(); err != nil {
+		t.Fatalf("second Close() error = %v, want nil", err)
+	}
+	if !conversation.closed || log.isClosed() {
+		t.Fatalf("after second Close(): conversation.closed=%t log.closed=%t, want true/false", conversation.closed, log.isClosed())
+	}
+	if !reflect.DeepEqual(conversation.history, before) {
+		t.Fatalf("History after second Close() = %#v, want unchanged %#v", conversation.history, before)
+	}
+}
+
+func TestSavepointRejectsAfterClose(t *testing.T) {
+	// R-854E-S7AS
+	transportCalls := 0
+	conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(&transportCalls), Config{})
+	before := conversation.history
+	if err := conversation.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	sp, err := conversation.Savepoint()
+	if !reflect.DeepEqual(sp, Savepoint{}) {
+		t.Fatalf("Savepoint() = %#v, want zero value", sp)
+	}
+	if !errors.Is(err, ErrClosed) {
+		t.Fatalf("Savepoint() error = %v, want ErrClosed", err)
+	}
+	if transportCalls != 0 {
+		t.Fatalf("Savepoint() transport calls = %d, want 0", transportCalls)
+	}
+	if !reflect.DeepEqual(conversation.history, before) {
+		t.Fatalf("History after Savepoint() = %#v, want unchanged %#v", conversation.history, before)
+	}
+}
+
+func TestRestoreRejectsAfterClose(t *testing.T) {
+	// R-854E-S7AS
+	transportCalls := 0
+	conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(&transportCalls), Config{})
+	if err := conversation.AddSystem("at savepoint"); err != nil {
+		t.Fatalf("AddSystem() error = %v", err)
+	}
+	sp, err := conversation.Savepoint()
+	if err != nil {
+		t.Fatalf("Savepoint() error = %v", err)
+	}
+	if err := conversation.AddSystem("after savepoint"); err != nil {
+		t.Fatalf("AddSystem() after Savepoint error = %v", err)
+	}
+	if err := conversation.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	before := cloneHistory(conversation.history)
+
+	if err := conversation.Restore(sp); !errors.Is(err, ErrClosed) {
+		t.Fatalf("Restore() error = %v, want ErrClosed", err)
+	}
+	if transportCalls != 0 {
+		t.Fatalf("Restore() transport calls = %d, want 0", transportCalls)
+	}
+	if !reflect.DeepEqual(conversation.history, before) {
+		t.Fatalf("History after Restore() = %#v, want unchanged %#v", conversation.history, before)
+	}
+}
+
+func TestReleaseRejectsAfterClose(t *testing.T) {
+	// R-854E-S7AS
+	transportCalls := 0
+	conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(&transportCalls), Config{})
+	if err := conversation.AddSystem("at savepoint"); err != nil {
+		t.Fatalf("AddSystem() error = %v", err)
+	}
+	sp, err := conversation.Savepoint()
+	if err != nil {
+		t.Fatalf("Savepoint() error = %v", err)
+	}
+	if err := conversation.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	before := cloneHistory(conversation.history)
+
+	if err := conversation.Release(sp); !errors.Is(err, ErrClosed) {
+		t.Fatalf("Release() error = %v, want ErrClosed", err)
+	}
+	if transportCalls != 0 {
+		t.Fatalf("Release() transport calls = %d, want 0", transportCalls)
+	}
+	if !reflect.DeepEqual(conversation.history, before) {
+		t.Fatalf("History after Release() = %#v, want unchanged %#v", conversation.history, before)
+	}
+	if !conversation.liveSavepoint {
+		t.Fatal("Release() ended the live savepoint after Close()")
 	}
 }

@@ -11,6 +11,9 @@ func (c *Conversation) Savepoint() (Savepoint, error) {
 	if c.turnInFlight {
 		return Savepoint{}, ErrTurnInFlight
 	}
+	if c.isClosed() {
+		return Savepoint{}, ErrClosed
+	}
 	if c.liveSavepoint {
 		return Savepoint{}, ErrSavepointActive
 	}
@@ -26,6 +29,9 @@ func (c *Conversation) Restore(sp Savepoint) error {
 	if c.turnInFlight {
 		return ErrTurnInFlight
 	}
+	if c.isClosed() {
+		return ErrClosed
+	}
 	if !c.isLiveSavepoint(sp) {
 		return ErrInvalidArgument
 	}
@@ -39,6 +45,9 @@ func (c *Conversation) Restore(sp Savepoint) error {
 func (c *Conversation) Release(sp Savepoint) error {
 	if c.turnInFlight {
 		return ErrTurnInFlight
+	}
+	if c.isClosed() {
+		return ErrClosed
 	}
 	if !c.isLiveSavepoint(sp) {
 		return ErrInvalidArgument
