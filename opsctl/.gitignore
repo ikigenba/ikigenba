@@ -1,6 +1,7 @@
 # Build output
 bin/
 dist/
+cmd/opsctl/opsctl.help.test
 
 # Spec issues — the build run's escalation channel; kept out of git.
 specs/issues/
