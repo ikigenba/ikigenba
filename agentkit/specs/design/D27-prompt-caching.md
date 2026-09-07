@@ -17,7 +17,10 @@ nothing upstream of it left that can move. On Anthropic the mark lands wherever
 the last pre-mark message was rendered — inside `messages`, or on the last
 `system` block when only system messages precede it (D24 hoists leading system
 messages out of `messages`); the vendor honours a breakpoint in either place.
-`toolConfig` rides along in the Gemini cache with the tools: `Settings` is fixed
+The Gemini cache names its model as a resource, `models/<name>`, where every
+`generateContent` request already puts the same name in its path; the bare
+name in the cache body is an "Invalid model name". `toolConfig` rides along
+in the Gemini cache with the tools: `Settings` is fixed
 for the conversation's life (D18), so tool choice is part of the frozen prefix
 too, and a cache that carried the tools but not the choice would silently
 change what the model may call.
@@ -124,7 +127,7 @@ are kept in `docs/probes/prompt-caching.md`.
 - R-KWDX-CV8C: A `cache_control` object `AnthropicMessagesWire()` emits MUST be exactly `{"type":"ephemeral"}` with no `ttl` member, so every cache write takes the vendor's five-minute default.
 - R-KXLT-QMZ1: `ChatWire()`, `OpenAIChatWire()`, `XAIChatWire()`, `ResponsesWire()`, `OpenAIResponsesWire()`, and `XAIResponsesWire()` MUST each render a byte-identical request body whether or not a savepoint is live, and a live savepoint MUST NOT cause any of them to fail at `Send`; pinned by golden request fixtures.
 - R-LC8M-BVVD: With no live savepoint, `GeminiGenerateContentWire()` MUST create no cache resource, MUST emit no `cachedContent` member, and MUST render the request exactly as it does today; pinned by a golden request fixture.
-- R-NVAA-ZXAR: On the first provider round-trip after a savepoint is taken, `GeminiGenerateContentWire()` MUST create one `cachedContents` resource by `POST` whose `model` is the conversation's model, whose `contents` are the `History` messages up to the savepoint's mark, whose `systemInstruction` is that history's system rendering, whose `tools` are the advertised tools, and whose `toolConfig` is the rendering of `Settings.ToolChoice` (D8) that the request would otherwise carry — each member omitted exactly when the uncached request would omit it — and MUST omit `ttl`.
+- R-Z0V6-102E: On the first provider round-trip after a savepoint is taken, `GeminiGenerateContentWire()` MUST create one `cachedContents` resource by `POST` whose `model` is the conversation's model in the host's resource form, `models/` followed by the model string — the bare string is rejected as an invalid model name — whose `contents` are the `History` messages up to the savepoint's mark, whose `systemInstruction` is that history's system rendering, whose `tools` are the advertised tools, and whose `toolConfig` is the rendering of `Settings.ToolChoice` (D8) that the request would otherwise carry — each member omitted exactly when the uncached request would omit it — and MUST omit `ttl`.
 - R-L01M-I6GF: While a `cachedContents` resource is live for the conversation, every `generateContent` request `GeminiGenerateContentWire()` builds MUST set `cachedContent` to that resource's name, MUST omit from `contents` every `History` message at or before the savepoint's mark, and MUST omit the `systemInstruction`, `tools`, and `toolConfig` members entirely; pinned by a golden request fixture.
 - R-L2HF-9PXT: A `Restore` MUST NOT delete the conversation's `cachedContents` resource, and the first `generateContent` request after a `Restore` MUST reference the same resource name as the request before it.
 - R-L3PB-NHOI: `Release` and `Close` (D26) MUST each delete the conversation's `cachedContents` resource by `DELETE` on its name, and a conversation that has been released or closed MUST leave no `cachedContents` resource it created undeleted.

@@ -18,10 +18,15 @@ for the loop's verify role, which reads this file directly.
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - `llm-lint` on PATH, with its provider API key present in the environment
 - `idgen` on PATH (minting requirement ids for spec work)
-- For the conditional live gate (below): `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
-  `GEMINI_API_KEY`, `XAI_API_KEY`, and `OPENROUTER_API_KEY` in the environment,
-  and OAuth token files at `~/.agentkit/openai-auth.json` and
-  `~/.agentkit/x-ai-auth.json` written by the `oauth` CLI.
+- For the conditional live gate (below): `GEMINI_API_KEY`, `XAI_API_KEY`, and
+  `OPENROUTER_API_KEY` in the environment; `ANTHROPIC_API_KEY` and
+  `OPENAI_API_KEY` resolved by the `live` Makefile target itself from the
+  keyring via `secret-tool`, so their absence from the shell environment is
+  not a missing credential; and OAuth token files at
+  `~/.agentkit/openai-auth.json` and `~/.agentkit/x-ai-auth.json` written by
+  the `oauth` CLI. Judge a credential present or absent by running `make live`
+  as written, never by inspecting the environment: a missing credential fails
+  the subtest that needs it with a message naming it.
 
 ## Test files
 
