@@ -253,7 +253,9 @@ func TestReleaseKeepsHistoryAndLimitsAndEndsSavepoint(t *testing.T) {
 
 func TestRestoreRewindsHistoryAndKeepsSavepointLive(t *testing.T) {
 	// R-7RPI-KQ55
-	conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(new(int)), Config{})
+	done := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "after savepoint"}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: done}}}}
+	conversation := newConversation(provider, successfulPhase15Client(new(int)), Config{})
 	if err := conversation.AddSystem("at savepoint"); err != nil {
 		t.Fatalf("AddSystem() error = %v", err)
 	}
@@ -262,8 +264,10 @@ func TestRestoreRewindsHistoryAndKeepsSavepointLive(t *testing.T) {
 		t.Fatalf("Savepoint() error = %v, want nil", err)
 	}
 	want := cloneHistory(conversation.history)
-	if err := conversation.AddSystem("after savepoint"); err != nil {
-		t.Fatalf("AddSystem() after Savepoint error = %v", err)
+	stream := conversation.Send(context.Background(), Text{Text: "after savepoint"})
+	drainStream(stream)
+	if stream.Err() != nil {
+		t.Fatalf("Send() after Savepoint error = %v", stream.Err())
 	}
 
 	if err := conversation.Restore(sp); err != nil {
@@ -333,13 +337,17 @@ func TestRestoreRewindsToolCallCheckpoint(t *testing.T) {
 func TestSavepointAndRestoreBeforeAnySend(t *testing.T) {
 	// R-6OEI-KH07
 	t.Run("empty history", func(t *testing.T) {
-		conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(new(int)), Config{})
+		done := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
+		provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: done}}}}
+		conversation := newConversation(provider, successfulPhase15Client(new(int)), Config{})
 		sp, err := conversation.Savepoint()
 		if err != nil {
 			t.Fatalf("Savepoint() error = %v, want nil", err)
 		}
-		if err := conversation.AddSystem("after savepoint"); err != nil {
-			t.Fatalf("AddSystem() error = %v", err)
+		stream := conversation.Send(context.Background(), Text{Text: "after savepoint"})
+		drainStream(stream)
+		if stream.Err() != nil {
+			t.Fatalf("Send() error = %v", stream.Err())
 		}
 		if err := conversation.Restore(sp); err != nil {
 			t.Fatalf("Restore() error = %v, want nil", err)
@@ -350,7 +358,9 @@ func TestSavepointAndRestoreBeforeAnySend(t *testing.T) {
 	})
 
 	t.Run("system messages only", func(t *testing.T) {
-		conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(new(int)), Config{})
+		done := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
+		provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: done}}}}
+		conversation := newConversation(provider, successfulPhase15Client(new(int)), Config{})
 		for _, text := range []string{"first", "second"} {
 			if err := conversation.AddSystem(text); err != nil {
 				t.Fatalf("AddSystem(%q) error = %v", text, err)
@@ -361,8 +371,10 @@ func TestSavepointAndRestoreBeforeAnySend(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Savepoint() error = %v, want nil", err)
 		}
-		if err := conversation.AddSystem("after savepoint"); err != nil {
-			t.Fatalf("AddSystem() after Savepoint error = %v", err)
+		stream := conversation.Send(context.Background(), Text{Text: "after savepoint"})
+		drainStream(stream)
+		if stream.Err() != nil {
+			t.Fatalf("Send() after Savepoint error = %v", stream.Err())
 		}
 		if err := conversation.Restore(sp); err != nil {
 			t.Fatalf("Restore() error = %v, want nil", err)
@@ -472,9 +484,6 @@ func TestRestoreRejectsAfterClose(t *testing.T) {
 	sp, err := conversation.Savepoint()
 	if err != nil {
 		t.Fatalf("Savepoint() error = %v", err)
-	}
-	if err := conversation.AddSystem("after savepoint"); err != nil {
-		t.Fatalf("AddSystem() after Savepoint error = %v", err)
 	}
 	if err := conversation.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)

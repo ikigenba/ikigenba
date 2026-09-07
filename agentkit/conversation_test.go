@@ -2788,6 +2788,125 @@ func TestLoadToolsSuspendedWhileSavepointLive(t *testing.T) {
 	}
 }
 
+func TestAddSystemSuspendedWhileSavepointLive(t *testing.T) {
+	// R-7XT0-HKUM
+	var output bytes.Buffer
+	conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(new(int)), Config{
+		Log: NewLog(&output, func() time.Time { return time.Time{} }, ""),
+	})
+	if err := conversation.AddSystem("before"); err != nil {
+		t.Fatalf("AddSystem before Savepoint error = %v, want nil", err)
+	}
+	before := cloneHistory(conversation.history)
+	if _, err := conversation.Savepoint(); err != nil {
+		t.Fatalf("Savepoint() error = %v, want nil", err)
+	}
+
+	if err := conversation.AddSystem("after"); !errors.Is(err, ErrSavepointActive) {
+		t.Fatalf("AddSystem while savepoint live error = %v, want ErrSavepointActive", err)
+	}
+	if !reflect.DeepEqual(conversation.history, before) {
+		t.Fatalf("history after refused AddSystem = %#v, want unchanged %#v", conversation.history, before)
+	}
+	wantMessage := Message{Role: RoleSystem, Blocks: []Block{Text{Text: "before"}}}
+	records := decodeLogRecords(t, output.Bytes())
+	if len(records) != 1 || records[0].Type != RecordMessage || records[0].Message == nil ||
+		!reflect.DeepEqual(*records[0].Message, wantMessage) {
+		t.Fatalf("AddSystem log records = %#v, want only successful message %#v", records, wantMessage)
+	}
+}
+
+func TestToolSequenceStableAcrossRoundTripsWhileSavepointLive(t *testing.T) {
+	// R-81GP-MW2P
+	loadA := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "load-a", Name: loadToolsName, Input: json.RawMessage(`{"names":["group_a"]}`)}}}
+	loadB := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "load-b", Name: loadToolsName, Input: json.RawMessage(`{"names":["group_b"]}`)}}}
+	done := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{
+		{MessageDone{Message: loadA}}, {MessageDone{Message: done}},
+		{MessageDone{Message: loadB}}, {MessageDone{Message: done}},
+		{MessageDone{Message: done}},
+	}}
+	transportCalls := 0
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Deferred: []DeferredGroup{
+		{Name: "group_a", Blurb: "A", Tools: []Tool{phase17Tool("a1")}},
+		{Name: "group_b", Blurb: "B", Tools: []Tool{phase17Tool("b1")}},
+	}})
+
+	first := conversation.Send(context.Background(), Text{Text: "load before savepoint"})
+	drainStream(first)
+	if first.Err() != nil {
+		t.Fatalf("first Send error = %v, want nil", first.Err())
+	}
+	if _, err := conversation.Savepoint(); err != nil {
+		t.Fatalf("Savepoint() error = %v, want nil", err)
+	}
+	second := conversation.Send(context.Background(), Text{Text: "attempt load while savepoint live"})
+	drainStream(second)
+	if second.Err() != nil {
+		t.Fatalf("second Send error = %v, want nil", second.Err())
+	}
+	third := conversation.Send(context.Background(), Text{Text: "one more turn"})
+	drainStream(third)
+	if third.Err() != nil || transportCalls != 5 || len(provider.states) != 5 {
+		t.Fatalf("third Send error = %v, transport calls = %d, states = %d", third.Err(), transportCalls, len(provider.states))
+	}
+
+	want := toolNames(provider.states[2].Tools)
+	if !reflect.DeepEqual(want, []string{loadToolsName, "a1"}) {
+		t.Fatalf("first post-savepoint tools = %v, want loader and preloaded a1", want)
+	}
+	for index := 3; index < len(provider.states); index++ {
+		if got := toolNames(provider.states[index].Tools); !reflect.DeepEqual(got, want) {
+			t.Fatalf("tools at post-savepoint state %d = %v, want stable sequence %v", index, got, want)
+		}
+	}
+}
+
+func TestRestoreLeavesLoadedDeferredToolsUnchanged(t *testing.T) {
+	// R-82OM-0NTE
+	load := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "load-a", Name: loadToolsName, Input: json.RawMessage(`{"names":["group_a"]}`)}}}
+	done := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{
+		{MessageDone{Message: load}}, {MessageDone{Message: done}},
+		{MessageDone{Message: done}},
+		{MessageDone{Message: done}},
+	}}
+	transportCalls := 0
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Deferred: []DeferredGroup{
+		{Name: "group_a", Blurb: "A", Tools: []Tool{phase17Tool("a1")}},
+	}})
+
+	loadTurn := conversation.Send(context.Background(), Text{Text: "load deferred tool"})
+	drainStream(loadTurn)
+	if loadTurn.Err() != nil {
+		t.Fatalf("load Send error = %v, want nil", loadTurn.Err())
+	}
+	savepoint, err := conversation.Savepoint()
+	if err != nil {
+		t.Fatalf("Savepoint() error = %v, want nil", err)
+	}
+	intervening := conversation.Send(context.Background(), Text{Text: "after savepoint"})
+	drainStream(intervening)
+	if intervening.Err() != nil {
+		t.Fatalf("intervening Send error = %v, want nil", intervening.Err())
+	}
+	if err := conversation.Restore(savepoint); err != nil {
+		t.Fatalf("Restore() error = %v, want nil", err)
+	}
+	if !reflect.DeepEqual(conversation.loaded, []string{"a1"}) {
+		t.Fatalf("loaded tools after Restore = %v, want [a1]", conversation.loaded)
+	}
+
+	afterRestore := conversation.Send(context.Background(), Text{Text: "after restore"})
+	drainStream(afterRestore)
+	if afterRestore.Err() != nil || transportCalls != 4 || len(provider.states) != 4 {
+		t.Fatalf("post-Restore Send error = %v, transport calls = %d, states = %d", afterRestore.Err(), transportCalls, len(provider.states))
+	}
+	if got := toolNames(provider.states[len(provider.states)-1].Tools); !reflect.DeepEqual(got, []string{loadToolsName, "a1"}) {
+		t.Fatalf("post-Restore advertised tools = %v, want loaded deferred tool preserved", got)
+	}
+}
+
 func TestDeferredLoadingIsMonotonicAcrossConversationSends(t *testing.T) {
 	// R-5UG8-E9UB
 	loadSecond := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "second", Name: loadToolsName, Input: json.RawMessage(`{"names":["second"]}`)}}}

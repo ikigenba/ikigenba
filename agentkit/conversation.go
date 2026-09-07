@@ -88,7 +88,8 @@ func newConversation(provider wireProvider, client *http.Client, cfg Config) *Co
 // the conversation's History. It makes no provider call and returns no
 // Stream; the message is part of History before AddSystem returns. Empty
 // or whitespace-only text is rejected with ErrInvalidArgument; after the
-// conversation's Log is closed AddSystem returns ErrClosed. In both cases
+// conversation's Log is closed AddSystem returns ErrClosed, and while a
+// savepoint is live it returns ErrSavepointActive. In every rejection case
 // History is unchanged.
 func (c *Conversation) AddSystem(text string) error {
 	if strings.TrimSpace(text) == "" {
@@ -96,6 +97,9 @@ func (c *Conversation) AddSystem(text string) error {
 	}
 	if c.isClosed() {
 		return ErrClosed
+	}
+	if c.liveSavepoint {
+		return ErrSavepointActive
 	}
 	message := Message{Role: RoleSystem, Blocks: []Block{Text{Text: text}}}
 	c.history = append(c.history, message)
@@ -116,41 +120,49 @@ func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream {
 	}
 	turn := c.snapshotTurn(blocks)
 	c.state = conversationInFlight
-	turnFinished := true
 	return &Stream{outputDeclared: c.output != nil, drive: func(yield func(Event) bool) error {
-		defer func() {
-			if turnFinished {
-				c.state = conversationReady
-			}
-		}()
-		downstream := yield
-		yield = func(event Event) bool {
-			if downstream(event) {
-				return true
-			}
-			turnFinished = false
-			return false
-		}
-		if c.isClosed() {
-			return ErrClosed
-		}
-		log, _ := c.eventSink.(*Log)
-		log.start(c.identity)
-		recordMessage(c.eventSink, turn.turn[0])
-		accounting := turnTotals{}
-		var terminal error
-		defer func() {
-			log.recordError(terminal)
-			log.finish()
-		}()
-		orchestrator, err := c.prepareOrchestrator()
-		if err != nil {
-			terminal = invalidConfigError(c.identity, err)
-			return terminal
-		}
-		terminal = c.driveTurn(ctx, orchestrator, turn, yield, &accounting)
-		return terminal
+		return c.driveSend(ctx, turn, yield)
 	}}
+}
+
+func (c *Conversation) driveSend(ctx context.Context, turn turnSnapshot, yield func(Event) bool) error {
+	turnFinished := true
+	defer func() {
+		if turnFinished {
+			c.state = conversationReady
+		}
+	}()
+	downstream := yield
+	yield = func(event Event) bool {
+		if downstream(event) {
+			return true
+		}
+		turnFinished = false
+		return false
+	}
+	if c.isClosed() {
+		return ErrClosed
+	}
+	log, _ := c.eventSink.(*Log)
+	log.start(c.identity)
+	recordMessage(c.eventSink, turn.turn[0])
+	accounting := turnTotals{}
+	var terminal error
+	defer func() {
+		// recordError only persists canonical *Error values. Sentinel-wrapped
+		// limit refusals are intentionally represented solely by the structured
+		// limit record written at their checkpoint, so this does not duplicate
+		// their diagnostic.
+		log.recordError(terminal)
+		log.finish()
+	}()
+	orchestrator, err := c.prepareOrchestrator()
+	if err != nil {
+		terminal = invalidConfigError(c.identity, err)
+		return terminal
+	}
+	terminal = c.driveTurn(ctx, orchestrator, turn, yield, &accounting)
+	return terminal
 }
 
 func (c *Conversation) isClosed() bool {
