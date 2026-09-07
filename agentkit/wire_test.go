@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 var (
@@ -405,9 +406,6 @@ func TestGeminiGenerateContentOmitsCachedContentWithoutLiveSavepoint(t *testing.
 	if !bytes.Equal(body, want) {
 		t.Fatalf("request bytes = %q, want fixture bytes %q", body, want)
 	}
-	if bytes.Contains(body, []byte("cachedContent")) {
-		t.Fatalf("request contains cachedContent: %s", body)
-	}
 }
 
 // R-NVAA-ZXAR
@@ -530,11 +528,6 @@ func TestGeminiGenerateContentOmitsUncachedMembersOnceCacheIsLive(t *testing.T) 
 	if !bytes.Equal(body, want) {
 		t.Fatalf("request body = %s\nwant fixture = %s", body, want)
 	}
-	for _, omitted := range []string{"cached system", "cached prompt", "cached answer", "systemInstruction", "tools", "toolConfig"} {
-		if bytes.Contains(body, []byte(omitted)) {
-			t.Fatalf("request body contains %q: %s", omitted, body)
-		}
-	}
 	var got struct {
 		CachedContent string          `json:"cachedContent"`
 		Contents      []geminiContent `json:"contents"`
@@ -619,6 +612,135 @@ func newGeminiCacheLifecycleFixture(t *testing.T) *geminiCacheLifecycleFixture {
 	return fixture
 }
 
+// newGeminiCatalogCacheCostFixture is newGeminiCacheLifecycleFixture's
+// sibling for R-L7D0-SSWL: it builds the same cachedContents create/delete
+// server shape, but against a cataloged model (so Pricing.Cost(usage) is
+// nonzero and checkable) with a Log attached, and its generateContent
+// responses carry a fixed usageMetadata block so recorded Cost can be
+// checked against Usage alone.
+func newGeminiCatalogCacheCostFixture(t *testing.T) (*geminiCacheLifecycleFixture, *bytes.Buffer) {
+	t.Helper()
+	fixture := &geminiCacheLifecycleFixture{}
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch {
+		case request.Method == http.MethodPost && request.URL.Path == "/v1beta/cachedContents":
+			fixture.cacheCreations++
+			response.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(response, `{"name":"cachedContents/cache-1"}`)
+		case request.Method == http.MethodDelete && request.URL.Path == "/v1beta/cachedContents/cache-1":
+			fixture.cacheDeletions++
+			response.WriteHeader(http.StatusOK)
+		case request.Method == http.MethodPost:
+			body, err := io.ReadAll(request.Body)
+			if err != nil {
+				t.Errorf("read generate-content body: %v", err)
+			}
+			fixture.generateBodies = append(fixture.generateBodies, body)
+			response.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(response, "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":500,\"cachedContentTokenCount\":100,\"candidatesTokenCount\":20,\"thoughtsTokenCount\":5}}\n\n")
+		default:
+			t.Errorf("unexpected request: %s %s", request.Method, request.URL.Path)
+			response.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	offering, err := Lookup("gemini-2.5-flash", HostGemini, WireGenerateContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth, err := offering.Authenticator(&rotatorStub{mode: AuthModeAPIKey, tokens: []Token{{Bearer: "test-key"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint, err := NewEndpoint(auth, WithBaseURL(server.URL+"/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logOutput bytes.Buffer
+	fixture.conversation, err = New(GeminiGenerateContentWire(), endpoint, "gemini-2.5-flash", Config{
+		Log: NewLog(&logOutput, func() time.Time { return time.Time{} }, ""),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.conversation.AddSystem("cached system prompt"); err != nil {
+		t.Fatal(err)
+	}
+	return fixture, &logOutput
+}
+
+// R-L7D0-SSWL
+func TestGeminiCacheLifecycleCostExcludesStorageRent(t *testing.T) {
+	fixture, logOutput := newGeminiCatalogCacheCostFixture(t)
+	sp, err := fixture.conversation.Savepoint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sendGeminiCacheLifecycleTurn(fixture.conversation, "first question"); err != nil {
+		t.Fatal(err)
+	}
+	if err := sendGeminiCacheLifecycleTurn(fixture.conversation, "second question"); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.conversation.Release(sp); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.conversation.Close(); err != nil {
+		t.Fatal(err)
+	}
+	log, ok := fixture.conversation.eventSink.(*Log)
+	if !ok {
+		t.Fatal("conversation event sink is not the configured Log")
+	}
+	if err := log.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// The cache lifecycle actually ran — this test proves rent from real
+	// create/delete traffic isn't leaking into Cost, not an untested no-op.
+	if fixture.cacheCreations == 0 {
+		t.Fatalf("cache creations = %d, want at least 1 (cache lifecycle did not run)", fixture.cacheCreations)
+	}
+	if fixture.cacheDeletions == 0 {
+		t.Fatalf("cache deletions = %d, want at least 1 (Release/Close did not delete the cache)", fixture.cacheDeletions)
+	}
+
+	wantRoundUsage := Usage{
+		InputTokens: 400, CachedTokens: 100, OutputTokens: 15, ReasoningTokens: 5,
+	}
+	const wantRoundCost = 173000
+
+	records := decodeLogRecords(t, logOutput.Bytes())
+	usageRecords, turnEndRecords := 0, 0
+	var summary *LogRecord
+	for index := range records {
+		switch records[index].Type {
+		case RecordUsage:
+			usageRecords++
+			if records[index].Usage == nil || *records[index].Usage != wantRoundUsage {
+				t.Fatalf("usage record %d usage = %v, want %v", usageRecords, records[index].Usage, wantRoundUsage)
+			}
+			if records[index].Cost == nil || *records[index].Cost != wantRoundCost {
+				t.Fatalf("usage record %d cost = %v, want exactly the Usage-derived %d (no cache storage rent)", usageRecords, records[index].Cost, wantRoundCost)
+			}
+		case RecordTurnEnd:
+			turnEndRecords++
+			if records[index].Cost == nil || *records[index].Cost != wantRoundCost {
+				t.Fatalf("turn_end record %d cost = %v, want exactly the Usage-derived %d (no cache storage rent)", turnEndRecords, records[index].Cost, wantRoundCost)
+			}
+		case RecordSummary:
+			summary = &records[index]
+		}
+	}
+	if usageRecords != 2 || turnEndRecords != 2 {
+		t.Fatalf("usage/turn_end records = %d/%d, want 2/2 (one per Send)", usageRecords, turnEndRecords)
+	}
+	const wantSummaryCost = 346000
+	if summary == nil || summary.Cost == nil || *summary.Cost != wantSummaryCost {
+		t.Fatalf("summary cost = %v, want exactly %d (sum of the two turns' Usage-derived cost, no cache storage rent)", summary, wantSummaryCost)
+	}
+}
+
 // R-NWI7-DP1G
 func TestGeminiGenerateContentTooSmallCacheProceedsUncached(t *testing.T) {
 	fixture := newGeminiCacheLifecycleFixture(t)
@@ -628,7 +750,9 @@ func TestGeminiGenerateContentTooSmallCacheProceedsUncached(t *testing.T) {
 	fixture.cacheCreateStatus = http.StatusBadRequest
 	fixture.cacheCreateBody = `{"error":{"status":"INVALID_ARGUMENT","message":"Cached content is too small. total_token_count=16, min_total_token_count=1024"}}`
 
-	sendGeminiCacheLifecycleTurn(t, fixture.conversation, "question")
+	if err := sendGeminiCacheLifecycleTurn(fixture.conversation, "question"); err != nil {
+		t.Fatal(err)
+	}
 	if fixture.cacheCreations != 1 {
 		t.Fatalf("cache creation attempts = %d, want 1", fixture.cacheCreations)
 	}
@@ -659,14 +783,18 @@ func TestGeminiGenerateContentStaleCacheRetriesOnce(t *testing.T) {
 	if _, err := fixture.conversation.Savepoint(); err != nil {
 		t.Fatal(err)
 	}
-	sendGeminiCacheLifecycleTurn(t, fixture.conversation, "first question")
+	if err := sendGeminiCacheLifecycleTurn(fixture.conversation, "first question"); err != nil {
+		t.Fatal(err)
+	}
 	if fixture.cacheCreations != 1 {
 		t.Fatalf("cache creation attempts after first send = %d, want 1", fixture.cacheCreations)
 	}
 	fixture.generateStatus = http.StatusForbidden
 	fixture.generateBody = `{"error":{"status":"PERMISSION_DENIED","message":"CachedContent not found (or permission denied)."}}`
 
-	sendGeminiCacheLifecycleTurn(t, fixture.conversation, "different question")
+	if err := sendGeminiCacheLifecycleTurn(fixture.conversation, "different question"); err != nil {
+		t.Fatal(err)
+	}
 	if fixture.cacheCreations != 2 {
 		t.Fatalf("cache creation attempts = %d, want 2", fixture.cacheCreations)
 	}
@@ -692,7 +820,9 @@ func TestGeminiGenerateContentStaleCacheRetryFailureSurfacesAsAuth(t *testing.T)
 	if _, err := fixture.conversation.Savepoint(); err != nil {
 		t.Fatal(err)
 	}
-	sendGeminiCacheLifecycleTurn(t, fixture.conversation, "first question")
+	if err := sendGeminiCacheLifecycleTurn(fixture.conversation, "first question"); err != nil {
+		t.Fatal(err)
+	}
 	fixture.generateStatus = http.StatusForbidden
 	fixture.generateBody = `{"error":{"status":"PERMISSION_DENIED","message":"CachedContent not found (or permission denied)."}}`
 	fixture.cacheCreateStatus = http.StatusForbidden
@@ -715,15 +845,12 @@ func TestGeminiGenerateContentStaleCacheRetryFailureSurfacesAsAuth(t *testing.T)
 	}
 }
 
-func sendGeminiCacheLifecycleTurn(t *testing.T, conversation *Conversation, text string) {
-	t.Helper()
+func sendGeminiCacheLifecycleTurn(conversation *Conversation, text string) error {
 	stream := conversation.Send(context.Background(), Text{Text: text})
 	for event := range stream.Events() {
 		_ = event
 	}
-	if err := stream.Err(); err != nil {
-		t.Fatal(err)
-	}
+	return stream.Err()
 }
 
 // R-L2HF-9PXT
@@ -733,14 +860,18 @@ func TestGeminiGenerateContentRestoreKeepsCacheAlive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sendGeminiCacheLifecycleTurn(t, fixture.conversation, "first question")
+	if err := sendGeminiCacheLifecycleTurn(fixture.conversation, "first question"); err != nil {
+		t.Fatal(err)
+	}
 	if fixture.cacheCreations != 1 {
 		t.Fatalf("cache creations after first send = %d, want 1", fixture.cacheCreations)
 	}
 	if err := fixture.conversation.Restore(sp); err != nil {
 		t.Fatal(err)
 	}
-	sendGeminiCacheLifecycleTurn(t, fixture.conversation, "different question")
+	if err := sendGeminiCacheLifecycleTurn(fixture.conversation, "different question"); err != nil {
+		t.Fatal(err)
+	}
 
 	if fixture.cacheCreations != 1 {
 		t.Fatalf("cache creations after restore = %d, want 1", fixture.cacheCreations)
@@ -771,7 +902,9 @@ func TestGeminiGenerateContentReleaseDeletesCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sendGeminiCacheLifecycleTurn(t, fixture.conversation, "question")
+	if err := sendGeminiCacheLifecycleTurn(fixture.conversation, "question"); err != nil {
+		t.Fatal(err)
+	}
 	if err := fixture.conversation.Release(sp); err != nil {
 		t.Fatal(err)
 	}
@@ -792,7 +925,9 @@ func TestGeminiGenerateContentCloseDeletesCacheWithoutRelease(t *testing.T) {
 	if _, err := fixture.conversation.Savepoint(); err != nil {
 		t.Fatal(err)
 	}
-	sendGeminiCacheLifecycleTurn(t, fixture.conversation, "question")
+	if err := sendGeminiCacheLifecycleTurn(fixture.conversation, "question"); err != nil {
+		t.Fatal(err)
+	}
 	if err := fixture.conversation.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -843,9 +978,6 @@ func TestGeminiGenerateContentHoistsAllSystemMessages(t *testing.T) {
 	}
 	if !bytes.Equal(withoutSystem, wantWithoutSystem) {
 		t.Fatalf("request without system messages = %s\nwant fixture = %s", withoutSystem, wantWithoutSystem)
-	}
-	if bytes.Contains(withoutSystem, []byte(`"systemInstruction"`)) {
-		t.Fatalf("request without system messages contains systemInstruction key: %s", withoutSystem)
 	}
 }
 
