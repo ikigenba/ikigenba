@@ -22,6 +22,7 @@ func (c *Conversation) Restore(sp Savepoint) error {
 	if !c.isLiveSavepoint(sp) {
 		return ErrInvalidArgument
 	}
+	c.history = cloneHistory(c.savepointHistory)
 	return nil
 }
 

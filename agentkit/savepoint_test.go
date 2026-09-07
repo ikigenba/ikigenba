@@ -123,6 +123,89 @@ func TestRestoreAndReleaseRejectNonLiveSavepoint(t *testing.T) {
 	})
 }
 
+func TestRestoreRewindsHistoryAndKeepsSavepointLive(t *testing.T) {
+	// R-7RPI-KQ55
+	conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(new(int)), Config{})
+	if err := conversation.AddSystem("at savepoint"); err != nil {
+		t.Fatalf("AddSystem() error = %v", err)
+	}
+	sp, err := conversation.Savepoint()
+	if err != nil {
+		t.Fatalf("Savepoint() error = %v, want nil", err)
+	}
+	want := cloneHistory(conversation.history)
+	if err := conversation.AddSystem("after savepoint"); err != nil {
+		t.Fatalf("AddSystem() after Savepoint error = %v", err)
+	}
+
+	if err := conversation.Restore(sp); err != nil {
+		t.Fatalf("first Restore() error = %v, want nil", err)
+	}
+	if !reflect.DeepEqual(conversation.history, want) {
+		t.Fatalf("History after first Restore() = %#v, want %#v", conversation.history, want)
+	}
+
+	conversation.history[0].Blocks[0] = Text{Text: "caller mutation"}
+	conversation.history = append(conversation.history, Message{
+		Role:   RoleSystem,
+		Blocks: []Block{Text{Text: "caller append"}},
+	})
+	if err := conversation.Restore(sp); err != nil {
+		t.Fatalf("second Restore() error = %v, want nil", err)
+	}
+	if !reflect.DeepEqual(conversation.history, want) {
+		t.Fatalf("History after second Restore() = %#v, want %#v", conversation.history, want)
+	}
+}
+
+func TestSavepointAndRestoreBeforeAnySend(t *testing.T) {
+	// R-6OEI-KH07
+	t.Run("empty history", func(t *testing.T) {
+		conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(new(int)), Config{})
+		sp, err := conversation.Savepoint()
+		if err != nil {
+			t.Fatalf("Savepoint() error = %v, want nil", err)
+		}
+		if err := conversation.AddSystem("after savepoint"); err != nil {
+			t.Fatalf("AddSystem() error = %v", err)
+		}
+		if err := conversation.Restore(sp); err != nil {
+			t.Fatalf("Restore() error = %v, want nil", err)
+		}
+		if len(conversation.history) != 0 {
+			t.Fatalf("History length after Restore() = %d, want 0", len(conversation.history))
+		}
+	})
+
+	t.Run("system messages only", func(t *testing.T) {
+		conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(new(int)), Config{})
+		for _, text := range []string{"first", "second"} {
+			if err := conversation.AddSystem(text); err != nil {
+				t.Fatalf("AddSystem(%q) error = %v", text, err)
+			}
+		}
+		want := cloneHistory(conversation.history)
+		sp, err := conversation.Savepoint()
+		if err != nil {
+			t.Fatalf("Savepoint() error = %v, want nil", err)
+		}
+		if err := conversation.AddSystem("after savepoint"); err != nil {
+			t.Fatalf("AddSystem() after Savepoint error = %v", err)
+		}
+		if err := conversation.Restore(sp); err != nil {
+			t.Fatalf("Restore() error = %v, want nil", err)
+		}
+		if !reflect.DeepEqual(conversation.history, want) {
+			t.Fatalf("History after Restore() = %#v, want %#v", conversation.history, want)
+		}
+		for index, message := range conversation.history {
+			if message.Role != RoleSystem {
+				t.Errorf("History[%d].Role = %v, want RoleSystem", index, message.Role)
+			}
+		}
+	})
+}
+
 func TestConversationCloseMarksConversationClosed(t *testing.T) {
 	// R-7KE4-A3OZ
 	conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(new(int)), Config{})
