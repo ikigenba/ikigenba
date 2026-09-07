@@ -199,9 +199,9 @@ func (w *geminiGenerateContentWire) prepareCache(ctx context.Context, client *ht
 	defer func() { _ = response.Body.Close() }()
 	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
-		return fmt.Errorf("agentkit: read Gemini cached content response: %w", err)
+		return fmt.Errorf("agentkit: Gemini cached content response: %w", err)
 	}
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+	if !isHTTPSuccess(response.StatusCode) {
 		return fmt.Errorf("agentkit: create Gemini cached content: status %d: %q", response.StatusCode, responseBody)
 	}
 	var created struct {
@@ -212,6 +212,40 @@ func (w *geminiGenerateContentWire) prepareCache(ctx context.Context, client *ht
 	}
 	w.cacheName = created.Name
 	w.cacheMark = state.SavepointMark
+	return nil
+}
+
+func (w *geminiGenerateContentWire) releaseCache(ctx context.Context, client *http.Client, endpoint Endpoint) error {
+	if w.cacheName == "" {
+		return nil
+	}
+
+	deleteURL := *endpoint.config.baseURL
+	deleteURL.Path = "/v1beta/" + w.cacheName
+	deleteURL.RawPath = ""
+	deleteURL.RawQuery = ""
+	deleteURL.Fragment = ""
+	request, err := http.NewRequestWithContext(ctx, http.MethodDelete, deleteURL.String(), nil)
+	if err != nil {
+		return err
+	}
+	if err := endpoint.config.auth.Authenticate(ctx, request, nil); err != nil {
+		return err
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return fmt.Errorf("agentkit: delete Gemini cached content: %w", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	responseBody, err := io.ReadAll(response.Body)
+	if err != nil {
+		return fmt.Errorf("agentkit: Gemini cached content delete response: %w", err)
+	}
+	if !isHTTPSuccess(response.StatusCode) {
+		return fmt.Errorf("agentkit: delete Gemini cached content: status %d: %q", response.StatusCode, responseBody)
+	}
+	w.cacheName = ""
+	w.cacheMark = 0
 	return nil
 }
 
@@ -258,7 +292,7 @@ func buildGeminiContents(history []Message) ([]geminiContent, []geminiPart, erro
 				part := geminiPart{Text: block.Text, Thought: true}
 				if len(block.Provider) > 0 {
 					if err := json.Unmarshal(block.Provider, &part); err != nil {
-						return nil, nil, fmt.Errorf("agentkit: invalid Gemini reasoning replay: %w", err)
+						return nil, nil, fmt.Errorf("agentkit: Gemini reasoning replay: %w", err)
 					}
 				}
 				content.Parts = append(content.Parts, part)
@@ -270,7 +304,7 @@ func buildGeminiContents(history []Message) ([]geminiContent, []geminiPart, erro
 						ThoughtSignature string `json:"thoughtSignature"`
 					}
 					if err := json.Unmarshal(block.Provider, &provider); err != nil {
-						return nil, nil, fmt.Errorf("agentkit: invalid Gemini tool-use replay: %w", err)
+						return nil, nil, fmt.Errorf("agentkit: Gemini tool-use replay: %w", err)
 					}
 					part.ThoughtSignature = provider.ThoughtSignature
 				}
@@ -397,11 +431,11 @@ func newGeminiDecoder() frameDecoder {
 					blocks = append(blocks, Text{Text: part.Text})
 				}
 				if part.FunctionCall != nil {
-					toolUse, err := part.FunctionCall.toolUse(part.ThoughtSignature)
+					use, err := part.FunctionCall.asToolUse(part.ThoughtSignature)
 					if err != nil {
 						return nil, usageFragment{}, false, err
 					}
-					blocks = append(blocks, toolUse)
+					blocks = append(blocks, use)
 				}
 			}
 			finished = finished || candidate.FinishReason != ""
@@ -420,7 +454,7 @@ func newGeminiDecoder() frameDecoder {
 	}
 }
 
-func (c geminiFunctionCall) toolUse(thoughtSignature string) (ToolUse, error) {
+func (c geminiFunctionCall) asToolUse(thoughtSignature string) (ToolUse, error) {
 	input := bytes.TrimSpace(c.Args)
 	if len(input) == 0 || input[0] != '{' || !json.Valid(input) {
 		return ToolUse{}, fmt.Errorf("agentkit: Gemini function call %q input is not a JSON object", c.ID)

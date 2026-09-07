@@ -50,6 +50,13 @@ type cachePreparer interface {
 	prepareCache(context.Context, *http.Client, Endpoint, requestState) error
 }
 
+// cacheReleaser lets a wire format delete an out-of-band resource it created
+// for prompt caching, when the conversation using it is Released or Closed.
+// Gemini uses it to delete its cachedContents resource.
+type cacheReleaser interface {
+	releaseCache(context.Context, *http.Client, Endpoint) error
+}
+
 // rejectedCredentialClassifier lets Conversation ask the wire whether a
 // response is a rejected credential (D5/D22) without widening wireProvider.
 // Only composedProvider (backed by a built-in wire whose rejectsCredential
@@ -96,6 +103,13 @@ func (provider *composedProvider) BuildRequest(ctx context.Context, state reques
 		return nil, err
 	}
 	return request, nil
+}
+
+func (provider *composedProvider) releaseCache(ctx context.Context) error {
+	if releaser, ok := provider.wire.(cacheReleaser); ok {
+		return releaser.releaseCache(ctx, provider.client, provider.endpoint)
+	}
+	return nil
 }
 
 // refreshHook exposes the endpoint's auth applier's 401 hook, if it has one

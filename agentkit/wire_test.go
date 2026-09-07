@@ -550,6 +550,147 @@ func TestGeminiGenerateContentOmitsUncachedMembersOnceCacheIsLive(t *testing.T) 
 	}
 }
 
+type geminiCacheLifecycleFixture struct {
+	conversation   *Conversation
+	cacheCreations int
+	cacheDeletions int
+	generateBodies [][]byte
+}
+
+func newGeminiCacheLifecycleFixture(t *testing.T) *geminiCacheLifecycleFixture {
+	t.Helper()
+	fixture := &geminiCacheLifecycleFixture{}
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch {
+		case request.Method == http.MethodPost && request.URL.Path == "/v1beta/cachedContents":
+			fixture.cacheCreations++
+			response.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(response, `{"name":"cachedContents/cache-1"}`)
+		case request.Method == http.MethodDelete && request.URL.Path == "/v1beta/cachedContents/cache-1":
+			fixture.cacheDeletions++
+			response.WriteHeader(http.StatusOK)
+		case request.Method == http.MethodPost:
+			body, err := io.ReadAll(request.Body)
+			if err != nil {
+				t.Errorf("read generate-content body: %v", err)
+			}
+			fixture.generateBodies = append(fixture.generateBodies, body)
+			response.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(response, "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}]}\n\n")
+		default:
+			t.Errorf("unexpected request: %s %s", request.Method, request.URL.Path)
+			response.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	endpoint, err := NewEndpoint(authFunc(func(context.Context, *http.Request, []byte) error { return nil }),
+		WithBaseURL(server.URL+"/v1beta/models/gemini-test-model:streamGenerateContent?alt=sse"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.conversation, err = New(GeminiGenerateContentWire(), endpoint, "gemini-test-model", Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.conversation.AddSystem("cached system prompt"); err != nil {
+		t.Fatal(err)
+	}
+	return fixture
+}
+
+func sendGeminiCacheLifecycleTurn(t *testing.T, conversation *Conversation, text string) {
+	t.Helper()
+	stream := conversation.Send(context.Background(), Text{Text: text})
+	for event := range stream.Events() {
+		_ = event
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// R-L2HF-9PXT
+func TestGeminiGenerateContentRestoreKeepsCacheAlive(t *testing.T) {
+	fixture := newGeminiCacheLifecycleFixture(t)
+	sp, err := fixture.conversation.Savepoint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendGeminiCacheLifecycleTurn(t, fixture.conversation, "first question")
+	if fixture.cacheCreations != 1 {
+		t.Fatalf("cache creations after first send = %d, want 1", fixture.cacheCreations)
+	}
+	if err := fixture.conversation.Restore(sp); err != nil {
+		t.Fatal(err)
+	}
+	sendGeminiCacheLifecycleTurn(t, fixture.conversation, "different question")
+
+	if fixture.cacheCreations != 1 {
+		t.Fatalf("cache creations after restore = %d, want 1", fixture.cacheCreations)
+	}
+	if fixture.cacheDeletions != 0 {
+		t.Fatalf("cache deletions after restore = %d, want 0", fixture.cacheDeletions)
+	}
+	if len(fixture.generateBodies) != 2 {
+		t.Fatalf("generate-content requests = %d, want 2", len(fixture.generateBodies))
+	}
+	for index, body := range fixture.generateBodies {
+		var got struct {
+			CachedContent string `json:"cachedContent"`
+		}
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatalf("decode generate-content request %d: %v", index+1, err)
+		}
+		if got.CachedContent != "cachedContents/cache-1" {
+			t.Fatalf("request %d cachedContent = %q, want cachedContents/cache-1", index+1, got.CachedContent)
+		}
+	}
+}
+
+// R-L3PB-NHOI
+func TestGeminiGenerateContentReleaseDeletesCache(t *testing.T) {
+	fixture := newGeminiCacheLifecycleFixture(t)
+	sp, err := fixture.conversation.Savepoint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendGeminiCacheLifecycleTurn(t, fixture.conversation, "question")
+	if err := fixture.conversation.Release(sp); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.cacheDeletions != 1 {
+		t.Fatalf("cache deletions after release = %d, want 1", fixture.cacheDeletions)
+	}
+	if err := fixture.conversation.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.cacheDeletions != 1 {
+		t.Fatalf("cache deletions after close = %d, want still 1", fixture.cacheDeletions)
+	}
+}
+
+// R-L3PB-NHOI
+func TestGeminiGenerateContentCloseDeletesCacheWithoutRelease(t *testing.T) {
+	fixture := newGeminiCacheLifecycleFixture(t)
+	if _, err := fixture.conversation.Savepoint(); err != nil {
+		t.Fatal(err)
+	}
+	sendGeminiCacheLifecycleTurn(t, fixture.conversation, "question")
+	if err := fixture.conversation.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.cacheDeletions != 1 {
+		t.Fatalf("cache deletions after close = %d, want 1", fixture.cacheDeletions)
+	}
+	if err := fixture.conversation.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.cacheDeletions != 1 {
+		t.Fatalf("cache deletions after second close = %d, want still 1", fixture.cacheDeletions)
+	}
+}
+
 // R-WR37-7DA2
 func TestGeminiGenerateContentHoistsAllSystemMessages(t *testing.T) {
 	history := History{

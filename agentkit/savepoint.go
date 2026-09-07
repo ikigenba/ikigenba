@@ -1,5 +1,7 @@
 package agentkit
 
+import "context"
+
 // Savepoint is an opaque handle to a point in a Conversation's history.
 type Savepoint struct {
 	owner *Conversation
@@ -56,6 +58,11 @@ func (c *Conversation) Release(sp Savepoint) error {
 	if !c.isLiveSavepoint(sp) {
 		return ErrInvalidArgument
 	}
+	if releaser, ok := c.provider.(cacheReleasingProvider); ok {
+		if err := releaser.releaseCache(context.Background()); err != nil {
+			return err
+		}
+	}
 	c.liveSavepoint = false
 	c.savepointHistory = nil
 	log, _ := c.eventSink.(*Log)
@@ -71,6 +78,14 @@ func (c *Conversation) isLiveSavepoint(sp Savepoint) bool {
 func (c *Conversation) Close() error {
 	if c.state == conversationInFlight {
 		return ErrTurnInFlight
+	}
+	if c.isClosed() {
+		return nil
+	}
+	if releaser, ok := c.provider.(cacheReleasingProvider); ok {
+		if err := releaser.releaseCache(context.Background()); err != nil {
+			return err
+		}
 	}
 	c.state = conversationClosed
 	return nil

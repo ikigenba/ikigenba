@@ -207,6 +207,10 @@ type accountingProvider interface {
 	turnAccounting() providerAccounting
 }
 
+type cacheReleasingProvider interface {
+	releaseCache(context.Context) error
+}
+
 func (c *Conversation) prepareOrchestrator() (*orchestrator, error) {
 	orchestrator := newOrchestrator(c.tools, c.deferred, &c.loaded)
 	if err := validateToolSet(orchestrator.inventory); err != nil {
@@ -329,10 +333,6 @@ func newTurnOutputProgress(contract *OutputContract) turnOutputProgress {
 
 func (c *Conversation) executeTurnRoundTrip(ctx context.Context, orchestrator *orchestrator, snapshot turnSnapshot, yield func(Event) bool, accounting *turnTotals) (History, []ToolUse, bool, error) {
 	candidate := append(cloneHistory(snapshot.baseHistory), cloneHistory(snapshot.turn)...)
-	mark := 0
-	if c.liveSavepoint {
-		mark = len(c.savepointHistory)
-	}
 	events, completed, err := c.roundTrip(ctx, requestState{
 		Model:         c.identity.Model,
 		Identity:      c.identity,
@@ -340,7 +340,7 @@ func (c *Conversation) executeTurnRoundTrip(ctx context.Context, orchestrator *o
 		Settings:      cloneSettings(snapshot.settings),
 		Tools:         orchestrator.advertisedSnapshot(),
 		Output:        cloneOutputContract(c.output),
-		SavepointMark: mark,
+		SavepointMark: len(c.savepointHistory),
 	}, yield)
 	var round providerAccounting
 	if provider, ok := c.provider.(accountingProvider); ok {
