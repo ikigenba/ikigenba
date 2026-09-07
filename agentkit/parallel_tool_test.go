@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"reflect"
@@ -46,6 +47,19 @@ func TestAccessConstructorsAndConflictGeometry(t *testing.T) {
 
 type parallelInput struct {
 	Name string `json:"name" jsonschema:"required"`
+}
+
+type callBoundaryTool struct {
+	concreteTool
+	index  int
+	starts chan<- int
+}
+
+func (callBoundaryTool) acknowledgesCallEntryStart() {}
+
+func (t callBoundaryTool) Call(ctx context.Context, input json.RawMessage) (string, error) {
+	t.starts <- t.index
+	return t.concreteTool.Call(ctx, input)
 }
 
 // R-D2F1-R87R
@@ -228,48 +242,55 @@ fastReturned:
 
 // R-D3MY-4ZYG
 func TestNonConflictingDispatchesReachCallBoundaryInModelOrder(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		firstReady := make(chan struct{})
-		allowFirstStart := make(chan struct{})
-		release := make(chan struct{})
-		callStarts := make(chan int, 2)
-		prepared := []preparedDispatch{
-			{access: BlocksNone(), run: func(_ context.Context, started func()) ToolResult {
-				close(firstReady)
-				<-allowFirstStart
-				callStarts <- 0
-				started()
-				<-release
-				return ToolResult{ToolUseID: "first"}
-			}},
-			{access: BlocksNone(), run: func(_ context.Context, started func()) ToolResult {
-				callStarts <- 1
-				started()
-				<-release
-				return ToolResult{ToolUseID: "second"}
-			}},
-		}
-
-		completed := startToolDispatches(context.Background(), prepared)
-		<-firstReady
-		synctest.Wait()
+	const callCount = 32
+	calls := make([]ToolUse, callCount)
+	tools := make([]Tool, callCount)
+	starts := make(chan int, callCount)
+	release := make(chan struct{})
+	for index := range callCount {
+		name := fmt.Sprintf("tool-%02d", index)
+		calls[index] = ToolUse{ID: name, Name: name, Input: json.RawMessage(`{"name":"x"}`)}
+		tool := MustTool(name, "", func(context.Context, parallelInput) (string, error) {
+			<-release
+			return name, nil
+		}, func(parallelInput) Access { return BlocksNone() })
+		tools[index] = callBoundaryTool{concreteTool: tool.(concreteTool), index: index, starts: starts}
+	}
+	blocks := make([]Block, callCount)
+	for index, call := range calls {
+		blocks[index] = call
+	}
+	provider := &phase15Provider{responses: [][]Event{
+		{MessageDone{Message: Message{Role: RoleAssistant, Blocks: blocks}}},
+		{MessageDone{Message: Message{Role: RoleAssistant}}},
+	}}
+	transportCalls := 0
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Tools: tools})
+	stream := conversation.Send(context.Background(), Text{Text: "go"})
+	done := make(chan struct{})
+	go func() {
+		drainStream(stream)
+		close(done)
+	}()
+	for want := range callCount {
 		select {
-		case index := <-callStarts:
-			t.Fatalf("call %d reached its boundary before the first call was admitted", index)
-		default:
+		case got := <-starts:
+			if got != want {
+				t.Fatalf("regular Tool.Call start %d = %d, want model-order index %d", want, got, want)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("only %d/%d non-conflicting regular Tool.Call invocations started", want, callCount)
 		}
-
-		close(allowFirstStart)
-		if first := <-callStarts; first != 0 {
-			t.Fatalf("first call boundary = %d, want 0", first)
-		}
-		if second := <-callStarts; second != 1 {
-			t.Fatalf("second call boundary = %d, want 1", second)
-		}
-		close(release)
-		<-completed
-		<-completed
-	})
+	}
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("non-conflicting regular tool round did not complete")
+	}
+	if stream.Err() != nil {
+		t.Fatal(stream.Err())
+	}
 }
 
 type lockedBuffer struct {

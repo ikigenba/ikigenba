@@ -34,11 +34,24 @@ type concreteTool struct {
 	access      func(json.RawMessage) Access
 }
 
-func (t concreteTool) Name() string            { return t.name }
-func (t concreteTool) Description() string     { return t.description }
-func (t concreteTool) Schema() json.RawMessage { return t.schema }
-func (t concreteTool) isTool()                 {}
+type toolDispatchContext struct {
+	context.Context
+	started func()
+}
+
+type callEntryStartAcknowledger interface {
+	acknowledgesCallEntryStart()
+}
+
+func (t concreteTool) Name() string                { return t.name }
+func (t concreteTool) Description() string         { return t.description }
+func (t concreteTool) Schema() json.RawMessage     { return t.schema }
+func (t concreteTool) isTool()                     {}
+func (t concreteTool) acknowledgesCallEntryStart() {}
 func (t concreteTool) Call(ctx context.Context, args json.RawMessage) (string, error) {
+	if dispatch, ok := ctx.(*toolDispatchContext); ok {
+		dispatch.started()
+	}
 	return t.call(ctx, args)
 }
 func (t concreteTool) Access(args json.RawMessage) Access {
@@ -251,26 +264,20 @@ func applyToolSchemaTag(schema map[string]any, tag string) (bool, error) {
 }
 
 func parseToolEnumValue(typeName any, raw string) (any, error) {
-	switch typeName {
-	case "string":
-		return raw, nil
-	case "integer":
-		value, err := strconv.ParseInt(raw, 10, 64)
-		if err == nil {
-			return value, nil
-		}
-	case "number":
-		value, err := strconv.ParseFloat(raw, 64)
-		if _, finite := finiteToolNumber(value); err == nil && finite {
-			return value, nil
-		}
-	case "boolean":
-		value, err := strconv.ParseBool(raw)
-		if err == nil {
-			return value, nil
-		}
-	default:
+	name, supported := typeName.(string)
+	if !supported || (name != "string" && name != "integer" && name != "number" && name != "boolean") {
 		return nil, fmt.Errorf("is not supported for schema type %q", typeName)
+	}
+	var value any = raw
+	if name != "string" {
+		decoder := json.NewDecoder(strings.NewReader(raw))
+		decoder.UseNumber()
+		if err := decoder.Decode(&value); err != nil || ensureToolSchemaEOF(decoder) != nil {
+			return nil, fmt.Errorf("must match schema type %q", typeName)
+		}
+	}
+	if toolEnumMatchesType(value, name) {
+		return value, nil
 	}
 	return nil, fmt.Errorf("must match schema type %q", typeName)
 }

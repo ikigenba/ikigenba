@@ -304,7 +304,14 @@ func (o *orchestrator) prepareDispatch(call ToolUse, savepointLive bool) prepare
 // an error result rather than failing the turn.
 func dispatchTool(ctx context.Context, tool Tool, call ToolUse, started func()) ToolResult {
 	result := ToolResult{ToolUseID: call.ID}
-	started()
+	if _, acknowledgesAtEntry := tool.(callEntryStartAcknowledger); acknowledgesAtEntry {
+		ctx = &toolDispatchContext{Context: ctx, started: started}
+	} else {
+		// Tool is sealed outside agentkit, but package-internal implementations
+		// still use the legacy boundary because they cannot participate in the
+		// constructor-backed Call-entry handshake.
+		started()
+	}
 	content, err := tool.Call(ctx, append(json.RawMessage(nil), call.Input...))
 	result.Content = content
 	if err != nil {
