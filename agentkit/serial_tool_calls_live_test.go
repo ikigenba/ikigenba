@@ -65,6 +65,7 @@ func liveSerialToolEndpoint(t *testing.T, cell liveMatrixCell) (Offering, Endpoi
 
 func assertLiveSerialMessageCounts(t *testing.T, stream *Stream) {
 	t.Helper()
+	toolTurnRan := false
 	for event := range stream.Events() {
 		message, ok := event.(MessageDone)
 		if !ok || message.Message.Role != RoleAssistant {
@@ -74,6 +75,7 @@ func assertLiveSerialMessageCounts(t *testing.T, stream *Stream) {
 		for _, block := range message.Message.Blocks {
 			if _, ok := block.(ToolUse); ok {
 				uses++
+				toolTurnRan = true
 			}
 		}
 		if uses > 1 {
@@ -82,5 +84,8 @@ func assertLiveSerialMessageCounts(t *testing.T, stream *Stream) {
 	}
 	if err := stream.Err(); err != nil {
 		t.Fatalf("serial tool call stream: %v", err)
+	}
+	if !toolTurnRan {
+		t.Fatal("serial tool call stream completed without a tool turn")
 	}
 }

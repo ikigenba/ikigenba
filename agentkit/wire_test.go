@@ -70,19 +70,24 @@ func TestSerialToolCallWireFieldsMatchGoldenFixtures(t *testing.T) {
 		name    string
 		wires   []WireFormat
 		fixture string
+		choice  ToolChoice
 	}{
-		{"anthropic", []WireFormat{AnthropicMessagesWire()}, "testdata/anthropic_messages.serial_tool_calls.request.json"},
-		{"chat", []WireFormat{ChatWire(), OpenAIChatWire(), XAIChatWire()}, "testdata/chat.serial_tool_calls.request.json"},
-		{"responses", []WireFormat{ResponsesWire(), OpenAIResponsesWire(), XAIResponsesWire()}, "testdata/responses.serial_tool_calls.request.json"},
+		{"anthropic/auto", []WireFormat{AnthropicMessagesWire()}, "testdata/anthropic_messages.serial_tool_calls.request.json", ToolChoice{}},
+		{"anthropic/required", []WireFormat{AnthropicMessagesWire()}, "testdata/anthropic_messages.serial_tool_calls_required.request.json", ToolChoice{Mode: ToolChoiceRequired}},
+		{"anthropic/named", []WireFormat{AnthropicMessagesWire()}, "testdata/anthropic_messages.serial_tool_calls_named.request.json", ToolChoice{Mode: ToolChoiceTool, Name: "lookup"}},
+		{"chat", []WireFormat{ChatWire(), OpenAIChatWire(), XAIChatWire()}, "testdata/chat.serial_tool_calls.request.json", ToolChoice{}},
+		{"responses", []WireFormat{ResponsesWire(), OpenAIResponsesWire(), XAIResponsesWire()}, "testdata/responses.serial_tool_calls.request.json", ToolChoice{}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			fixtureState := state
+			fixtureState.Settings.ToolChoice = test.choice
 			want, err := os.ReadFile(test.fixture)
 			if err != nil {
 				t.Fatal(err)
 			}
 			for _, wire := range test.wires {
-				got, encodeErr := wire.EncodeRequest(state)
+				got, encodeErr := wire.EncodeRequest(fixtureState)
 				if encodeErr != nil {
 					t.Fatal(encodeErr)
 				}

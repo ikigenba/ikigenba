@@ -132,30 +132,14 @@ func (c *Conversation) driveSend(ctx context.Context, turn turnSnapshot, yield f
 			c.state = conversationReady
 		}
 	}()
-	downstream := yield
-	yield = func(event Event) bool {
-		if downstream(event) {
-			return true
-		}
-		turnFinished = false
-		return false
-	}
+	yield = trackTurnConsumption(yield, &turnFinished)
 	if c.isClosed() {
 		return ErrClosed
 	}
-	log, _ := c.eventSink.(*Log)
-	log.start(c.identity)
-	recordMessage(c.eventSink, turn.turn[0])
+	log := c.beginTurnLog(turn)
 	accounting := turnTotals{}
 	var terminal error
-	defer func() {
-		// recordError only persists canonical *Error values. Sentinel-wrapped
-		// limit refusals are intentionally represented solely by the structured
-		// limit record written at their checkpoint, so this does not duplicate
-		// their diagnostic.
-		log.recordError(terminal)
-		log.finish()
-	}()
+	defer func() { finishTurnLog(log, terminal) }()
 	orchestrator, err := c.prepareOrchestrator()
 	if err != nil {
 		terminal = invalidConfigError(c.identity, err)
@@ -163,6 +147,30 @@ func (c *Conversation) driveSend(ctx context.Context, turn turnSnapshot, yield f
 	}
 	terminal = c.driveTurn(ctx, orchestrator, turn, yield, &accounting)
 	return terminal
+}
+
+func trackTurnConsumption(downstream func(Event) bool, turnFinished *bool) func(Event) bool {
+	return func(event Event) bool {
+		if downstream(event) {
+			return true
+		}
+		*turnFinished = false
+		return false
+	}
+}
+
+func (c *Conversation) beginTurnLog(turn turnSnapshot) *Log {
+	log, _ := c.eventSink.(*Log)
+	log.start(c.identity)
+	recordMessage(c.eventSink, turn.turn[0])
+	return log
+}
+
+func finishTurnLog(log *Log, terminal error) {
+	// recordError only persists canonical *Error values. Sentinel-wrapped
+	// limit refusals are represented by the structured limit checkpoint alone.
+	log.recordError(terminal)
+	log.finish()
 }
 
 func (c *Conversation) isClosed() bool {
@@ -435,25 +443,47 @@ func prepareToolDispatches(orchestrator *orchestrator, calls []ToolUse, savepoin
 }
 
 func startToolDispatches(ctx context.Context, prepared []preparedDispatch) <-chan toolCompletion {
-	done := make([]chan struct{}, len(prepared))
 	completed := make(chan toolCompletion, len(prepared))
-	for index := range done {
-		done[index] = make(chan struct{})
-	}
-	for index := range prepared {
-		go runPreparedDispatch(ctx, prepared, done, completed, index)
-	}
+	go scheduleToolDispatches(ctx, prepared, completed)
 	return completed
 }
 
-func runPreparedDispatch(ctx context.Context, prepared []preparedDispatch, done []chan struct{}, completed chan<- toolCompletion, index int) {
-	defer close(done[index])
+func scheduleToolDispatches(ctx context.Context, prepared []preparedDispatch, completed chan<- toolCompletion) {
+	workerResults := make(chan toolCompletion, len(prepared))
+	launched := make([]bool, len(prepared))
+	finished := make([]bool, len(prepared))
+	remaining := len(prepared)
+	for remaining > 0 {
+		for index := range prepared {
+			if launched[index] || dispatchBlockedByEarlier(prepared, finished, index) {
+				continue
+			}
+			launched[index] = true
+			started := make(chan struct{})
+			go runPreparedDispatch(ctx, prepared[index], workerResults, index, started)
+			// Acknowledging the dispatch boundary makes admission order explicit;
+			// merely launching goroutines in order does not order their starts.
+			<-started
+		}
+		result := <-workerResults
+		finished[result.index] = true
+		remaining--
+		completed <- result
+	}
+}
+
+func dispatchBlockedByEarlier(prepared []preparedDispatch, finished []bool, index int) bool {
 	for earlier := range index {
-		if accessesConflict(prepared[earlier].access, prepared[index].access) {
-			<-done[earlier]
+		if !finished[earlier] && accessesConflict(prepared[earlier].access, prepared[index].access) {
+			return true
 		}
 	}
-	completed <- toolCompletion{index: index, result: prepared[index].run(ctx)}
+	return false
+}
+
+func runPreparedDispatch(ctx context.Context, prepared preparedDispatch, completed chan<- toolCompletion, index int, started chan<- struct{}) {
+	close(started)
+	completed <- toolCompletion{index: index, result: prepared.run(ctx)}
 }
 
 func invalidOutputError(identity Identity, attempts int) *Error {
