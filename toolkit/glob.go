@@ -57,7 +57,9 @@ func Glob(root string, opts ...GlobOption) (agentkit.Tool, error) {
 		}
 		sortGlobMatches(matches)
 		return renderGlobMatches(matches), nil
-	}))
+	}), func(input globInput) agentkit.Access {
+		return fileToolAccess(root, "path", input.Path, false)
+	})
 }
 
 func collectGlobMatches(root, searchDir, pattern string, skipPatterns []string) ([]globMatch, error) {

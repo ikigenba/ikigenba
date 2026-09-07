@@ -41,7 +41,9 @@ func Edit(root string) (agentkit.Tool, error) {
 		// This response deliberately preserves the supplied path verbatim as part
 		// of the tool's specified data format; it is not a diagnostic.
 		return fmt.Sprintf("replaced %d occurrence(s) of old_string in %s", replaced, input.FilePath), nil
-	}))
+	}), func(input editInput) agentkit.Access {
+		return fileToolAccess(root, "file_path", input.FilePath, false)
+	})
 }
 
 func validateEdit(input editInput) error {

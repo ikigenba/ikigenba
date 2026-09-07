@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/boyter/gocodewalker"
+	"github.com/ikigenba/ikigenba/agentkit"
 )
 
 func walkTree(root, searchDir string, skipPatterns []string) ([]string, error) {
@@ -92,6 +93,17 @@ func resolveSearchPath(root, argName, path string) (string, error) {
 		return "", fmt.Errorf("%s %q resolves outside the tool root", argName, path)
 	}
 	return resolved, nil
+}
+
+func fileToolAccess(root, argName, path string, readOnly bool) agentkit.Access {
+	resolved, err := resolveSearchPath(root, argName, path)
+	if err != nil {
+		return agentkit.BlocksAll()
+	}
+	if readOnly {
+		return agentkit.BlocksNone()
+	}
+	return agentkit.BlocksPaths(resolved)
 }
 
 func pathWithinRoot(root, target string) bool {

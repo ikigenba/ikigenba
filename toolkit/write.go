@@ -50,5 +50,7 @@ func Write(root string) (agentkit.Tool, error) {
 		// This response deliberately preserves the supplied path verbatim as part
 		// of the tool's specified data format; it is not a diagnostic.
 		return fmt.Sprintf("wrote %d bytes to %s", len(input.Content), input.FilePath), nil
-	}))
+	}), func(input writeInput) agentkit.Access {
+		return fileToolAccess(root, "file_path", input.FilePath, false)
+	})
 }

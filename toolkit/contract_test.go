@@ -147,6 +147,47 @@ func TestFileToolsConfinePaths(t *testing.T) {
 	}
 }
 
+func TestUnresolvableFileToolPathsBlockAll(t *testing.T) {
+	// R-DOD8-N3K9: failed path resolution makes file-tool access conservative.
+	base := t.TempDir()
+	root := filepath.Join(base, "root")
+	outside := filepath.Join(base, "outside")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(outside, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "escaping")); err != nil {
+		t.Fatal(err)
+	}
+	escapingPath := filepath.Join("escaping", "target.txt")
+
+	tests := []struct {
+		name  string
+		make  func(string) (agentkit.Tool, error)
+		input string
+	}{
+		{name: "Read", make: Read, input: fmt.Sprintf(`{"file_path":%q}`, escapingPath)},
+		{name: "Write", make: Write, input: fmt.Sprintf(`{"file_path":%q,"content":"changed"}`, escapingPath)},
+		{name: "Edit", make: Edit, input: fmt.Sprintf(`{"file_path":%q,"old_string":"old","new_string":"new"}`, escapingPath)},
+		{name: "Glob", make: func(root string) (agentkit.Tool, error) { return Glob(root) }, input: fmt.Sprintf(`{"pattern":"*","path":%q}`, escapingPath)},
+		{name: "Grep", make: func(root string) (agentkit.Tool, error) { return Grep(root) }, input: fmt.Sprintf(`{"pattern":"target","path":%q}`, escapingPath)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			tool, err := test.make(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := tool.Access(json.RawMessage(test.input))
+			if want := agentkit.BlocksAll(); !reflect.DeepEqual(got, want) {
+				t.Errorf("Access(%s) = %#v, want %#v", test.input, got, want)
+			}
+		})
+	}
+}
+
 func TestToolOutputCap(t *testing.T) {
 	// R-EUUW-QDX3: successful output is capped by Unicode character count with the exact marker.
 	tool, err := Bash(t.TempDir())

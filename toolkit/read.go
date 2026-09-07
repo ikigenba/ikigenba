@@ -44,7 +44,9 @@ func Read(root string) (agentkit.Tool, error) {
 		}
 
 		return renderLines(contents, input.FilePath, offset, limit)
-	}))
+	}), func(input readInput) agentkit.Access {
+		return fileToolAccess(root, "file_path", input.FilePath, true)
+	})
 }
 
 func readTextFile(root, filePath string) ([]byte, error) {

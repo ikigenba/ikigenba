@@ -44,7 +44,9 @@ func Grep(root string, opts ...GrepOption) (agentkit.Tool, error) {
 
 	return agentkit.NewTool[grepInput]("Grep", "Search file contents with a regular expression", capOutput(func(_ context.Context, input grepInput) (string, error) {
 		return runGrep(root, config.skipPatterns, input)
-	}))
+	}), func(input grepInput) agentkit.Access {
+		return fileToolAccess(root, "path", input.Path, false)
+	})
 }
 
 func runGrep(root string, skipPatterns []string, input grepInput) (string, error) {

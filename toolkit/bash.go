@@ -26,12 +26,12 @@ func Bash(root string) (agentkit.Tool, error) {
 	}
 	bashPath, err := exec.LookPath("bash")
 	if err != nil {
-		return nil, fmt.Errorf("bash: %w", err)
+		return nil, err
 	}
 
 	return agentkit.NewTool[bashInput]("Bash", "Run a shell command starting in the root directory; commands are not confined to the root", capOutput(func(ctx context.Context, input bashInput) (string, error) {
 		return runBash(ctx, bashPath, root, input)
-	}))
+	}), func(bashInput) agentkit.Access { return agentkit.BlocksAll() })
 }
 
 func runBash(ctx context.Context, bashPath, root string, input bashInput) (string, error) {
