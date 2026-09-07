@@ -45,7 +45,7 @@ func publishEvent(sink eventSink, yield func(Event) bool, event Event) bool {
 // recordMessage writes one message record directly to sink for a Message
 // that has no corresponding live Stream event — the turn's opening RoleUser
 // message (D15, R-TBAJ-ZUWZ), the aggregated RoleTool round-trip message
-// (R-TCIG-DMNO), and an AddSystem append (R-TX8Q-VQ9H).
+// (R-DN5C-9BTK), and an AddSystem append (R-TX8Q-VQ9H).
 func recordMessage(sink eventSink, message Message) {
 	if sink != nil {
 		sink.record(eventRecord{kind: eventRecordMessage, value: message})
