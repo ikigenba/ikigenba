@@ -212,7 +212,7 @@ func TestNegativeLimitsFailBeforeProviderAndPreserveHistory(t *testing.T) {
 	}
 }
 
-// R-TR58-YVK0
+// R-6LYP-SXIT
 // R-TUSY-46S3
 func TestToolCallLimitRefusesWholeDispatchAndTracksLifetime(t *testing.T) {
 	t.Run("one round exceeds budget", func(t *testing.T) {
@@ -272,7 +272,7 @@ func TestToolCallLimitRefusesWholeDispatchAndTracksLifetime(t *testing.T) {
 	})
 }
 
-// R-TSD5-CNAP
+// R-8EVL-UD8C
 // R-TTL1-QF1E
 func TestContextLimitRefusesOnlySubsequentWork(t *testing.T) {
 	const maxContext = int64(20)

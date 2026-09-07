@@ -31,6 +31,7 @@ type Conversation struct {
 	liveSavepoint       bool
 	savepointGeneration uint64
 	savepointHistory    History
+	savepointToolCalls  int
 	closed              bool
 }
 
@@ -226,7 +227,7 @@ func (c *Conversation) driveTurn(ctx context.Context, orchestrator *orchestrator
 // Usage buckets of the most recently completed round-trip (lastRoundContext,
 // updated in executeTurnRoundTrip after every round-trip regardless of turn)
 // against MaxContextTokens. It runs at the start of every Send and again
-// before every tool dispatch (R-TSD5-CNAP), and never fires when
+// before every tool dispatch (R-8EVL-UD8C), and never fires when
 // MaxContextTokens is zero (R-TOPG-7C2M).
 func (c *Conversation) refuseContextOverLimit() error {
 	if c.limits.MaxContextTokens <= 0 || c.lastRoundContext <= c.limits.MaxContextTokens {
@@ -241,8 +242,8 @@ func (c *Conversation) refuseContextOverLimit() error {
 // bound (same rule as refuseContextOverLimit, re-checked because the round
 // that just requested these calls is now the most recently completed one),
 // then the tool-call bound — this round's calls added to every tool call the
-// conversation has actually dispatched over its life (R-TR58-YVK0). It never
-// fires when MaxToolCalls is zero (R-TOPG-7C2M).
+// conversation has actually dispatched over its current history
+// (R-6LYP-SXIT). It never fires when MaxToolCalls is zero (R-TOPG-7C2M).
 func (c *Conversation) refuseToolCallOverLimit(calls []ToolUse) error {
 	if refusal := c.refuseContextOverLimit(); refusal != nil {
 		return refusal

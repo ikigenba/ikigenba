@@ -195,6 +195,50 @@ func TestRestoreRewindsHistoryAndKeepsSavepointLive(t *testing.T) {
 	}
 }
 
+func TestRestoreZeroesContextCheckpoint(t *testing.T) {
+	// R-7SXE-YHVU
+	conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(new(int)), Config{})
+	conversation.lastRoundContext = 5
+	sp, err := conversation.Savepoint()
+	if err != nil {
+		t.Fatalf("Savepoint() error = %v, want nil", err)
+	}
+	conversation.lastRoundContext = 8
+
+	if err := conversation.Restore(sp); err != nil {
+		t.Fatalf("Restore() error = %v, want nil", err)
+	}
+	if conversation.lastRoundContext != 0 {
+		t.Fatalf("lastRoundContext after Restore() = %d, want 0", conversation.lastRoundContext)
+	}
+}
+
+func TestRestoreRewindsToolCallCheckpoint(t *testing.T) {
+	// R-7VD7-Q1D8
+	conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(new(int)), Config{})
+	conversation.toolCallsDispatched = 2
+	sp, err := conversation.Savepoint()
+	if err != nil {
+		t.Fatalf("Savepoint() error = %v, want nil", err)
+	}
+	conversation.toolCallsDispatched = 5
+
+	if err := conversation.Restore(sp); err != nil {
+		t.Fatalf("first Restore() error = %v, want nil", err)
+	}
+	if conversation.toolCallsDispatched != 2 {
+		t.Fatalf("toolCallsDispatched after first Restore() = %d, want 2", conversation.toolCallsDispatched)
+	}
+
+	conversation.toolCallsDispatched = 7
+	if err := conversation.Restore(sp); err != nil {
+		t.Fatalf("second Restore() error = %v, want nil", err)
+	}
+	if conversation.toolCallsDispatched != 2 {
+		t.Fatalf("toolCallsDispatched after second Restore() = %d, want 2", conversation.toolCallsDispatched)
+	}
+}
+
 func TestSavepointAndRestoreBeforeAnySend(t *testing.T) {
 	// R-6OEI-KH07
 	t.Run("empty history", func(t *testing.T) {

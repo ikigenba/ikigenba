@@ -13,6 +13,7 @@ func (c *Conversation) Savepoint() (Savepoint, error) {
 	}
 	c.savepointGeneration++
 	c.savepointHistory = cloneHistory(c.history)
+	c.savepointToolCalls = c.toolCallsDispatched
 	c.liveSavepoint = true
 	return Savepoint{owner: c, id: c.savepointGeneration}, nil
 }
@@ -23,6 +24,8 @@ func (c *Conversation) Restore(sp Savepoint) error {
 		return ErrInvalidArgument
 	}
 	c.history = cloneHistory(c.savepointHistory)
+	c.toolCallsDispatched = c.savepointToolCalls
+	c.lastRoundContext = 0
 	return nil
 }
 
