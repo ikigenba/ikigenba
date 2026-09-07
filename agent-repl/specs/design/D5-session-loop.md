@@ -28,9 +28,14 @@ Log.Close, summary, exit 0
 UTC formatted `20060102T150405Z`. The directory is created if missing (mode
 `0700`) and the file is created new (mode `0600`). The log is agentkit's own
 `Log` over a sink that forwards each record line to the file and, in raw
-mode, to stdout (D6). The summary block a person sees at the end is read off
-that same stream: the `summary` record agentkit writes on `Close` carries the
-cumulative usage and cost, so agent-repl never keeps its own totals.
+mode, to stdout (D6), built with `Deps.Now` as its clock and `Deps.LogID` as
+its identity, so every record carries the session's UUID (D1). The file is
+the whole transcript: agentkit records the user's prompt, any system file,
+and each message the model and the tools produce, with one `usage` record per
+provider round-trip and the turn's total on `turn_end`. The summary block a
+person sees at the end is read off that same stream: the `summary` record
+agentkit writes on `Close` carries the cumulative usage and cost, so
+agent-repl never keeps its own totals.
 
 **The loop.** Each iteration prints the prompt (decorated mode only), reads
 one line of stdin, and either ends the session, skips the line, or runs a turn:
@@ -64,7 +69,7 @@ stop.
 - R-VYRX-QEKS: `Run` MUST create the directory `<Deps.Home>/.agent-repl/logs` with mode `0700` when it does not exist and create the file `<Deps.Home>/.agent-repl/logs/<stamp>.jsonl` with mode `0600`, where `<stamp>` is `Deps.Now()` in UTC formatted `20060102T150405Z`, before the first prompt.
 - R-VZZU-46BH: When the log directory or file cannot be created, `Run` MUST write `error: ` followed by the cause to stderr, write nothing to stdout, and exit 1.
 - R-W17Q-HY26: When `session.Open` fails, `Run` MUST write `error: ` followed by the cause to stderr, exit 1, and leave the created log file containing no records.
-- R-W2FM-VPSV: `Run` MUST build the session's `agentkit.Log` with `agentkit.NewLog` over a writer that appends every record line to the log file, timestamped by `Deps.Now`, such that after a session the file holds exactly the records agentkit wrote, one JSON object per line, ending with a `summary` record.
+- R-P31N-2V1H: `Run` MUST build the session's `agentkit.Log` with `agentkit.NewLog` over a writer that appends every record line to the log file, timestamped by `Deps.Now` and identified by `Deps.LogID`, such that after a session the file holds exactly the records agentkit wrote, one JSON object per line, each carrying `Deps.LogID` in its `id` field, ending with a `summary` record.
 - R-NIWO-J7VP: `Run` MUST build `session.Config` from `Options` and `Deps` field for field — `Provider`, `Model`, `Wire`, `Auth`, `AuthFile`, `BaseURL`, `SystemFile`, and `Settings` from `Options`; `Home`, `Getenv`, and `Root` from `Deps` — and pass the log it created.
 - R-W4VF-N9A9: For each line of stdin that is non-empty after stripping a trailing `\n` or `\r\n`, `Run` MUST call `Session.Send` exactly once with that line and consume the returned stream to completion before reading the next line; a line that is empty after stripping MUST cause no `Send`.
 - R-W7B8-ESRN: A final line of stdin that ends without a newline MUST be sent as a turn.
