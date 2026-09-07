@@ -26,6 +26,35 @@ func TestEditConstructor(t *testing.T) {
 	}
 }
 
+func TestEditAccessBlocksResolvedPath(t *testing.T) {
+	root := t.TempDir()
+	actual := filepath.Join(root, "actual")
+	if err := os.Mkdir(actual, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("actual", filepath.Join(root, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	tool, err := Edit(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		filePath string
+		resolved string
+	}{
+		{filePath: filepath.Join("plain", "file.txt"), resolved: filepath.Join(root, "plain", "file.txt")},
+		{filePath: filepath.Join(root, "absolute.txt"), resolved: filepath.Join(root, "absolute.txt")},
+		{filePath: filepath.Join("linked", "file.txt"), resolved: filepath.Join(actual, "file.txt")},
+	}
+	for _, test := range tests {
+		args := json.RawMessage(fmt.Sprintf(`{"file_path":%q,"old_string":"old","new_string":"new"}`, test.filePath))
+		// R-DS0X-SESC: Edit blocks the D1-resolved file_path.
+		assertAccessValue(t, tool.Access(args), 1, []string{test.resolved})
+	}
+}
+
 func TestEditSchema(t *testing.T) {
 	tool, err := Edit(t.TempDir())
 	if err != nil {
@@ -197,10 +226,10 @@ func TestEditReplacesAndPreservesMode(t *testing.T) {
 		newString  string
 		replaceAll bool
 		want       string
-		wantCount  int
+		wantResult string
 	}{
-		{name: "single default", content: "before old after", oldString: "old", newString: "new", want: "before new after", wantCount: 1},
-		{name: "all occurrences", content: "old middle old", oldString: "old", newString: "new", replaceAll: true, want: "new middle new", wantCount: 2},
+		{name: "single default", content: "before old after", oldString: "old", newString: "new", want: "before new after", wantResult: "replaced 1 occurrence(s) of old_string in editable.txt"},
+		{name: "all occurrences", content: "old middle old", oldString: "old", newString: "new", replaceAll: true, want: "new middle new", wantResult: "replaced 2 occurrence(s) of old_string in editable.txt"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -235,8 +264,8 @@ func TestEditReplacesAndPreservesMode(t *testing.T) {
 			if gotMode := stat.Mode().Perm(); gotMode != 0o600 {
 				t.Errorf("file mode = %#o, want %#o", gotMode, os.FileMode(0o600))
 			}
-			if wantResult := fmt.Sprintf("replaced %d occurrence(s) of old_string in %s", test.wantCount, filePath); got != wantResult {
-				t.Errorf("Call() = %q, want %q", got, wantResult)
+			if got != test.wantResult {
+				t.Errorf("Call() = %q, want %q", got, test.wantResult)
 			}
 		})
 	}

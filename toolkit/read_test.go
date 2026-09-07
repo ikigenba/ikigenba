@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/ikigenba/ikigenba/agentkit"
 )
 
 func TestReadConstructorAndSchema(t *testing.T) {
@@ -57,6 +59,49 @@ func TestReadConstructorAndSchema(t *testing.T) {
 		if got := property["minimum"]; got != float64(1) {
 			t.Errorf("%s minimum = %#v, want 1", name, got)
 		}
+	}
+}
+
+func TestReadAccessBlocksNoneForResolvedPaths(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "actual"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("actual", filepath.Join(root, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	tool, err := Read(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, filePath := range []string{
+		filepath.Join("plain", "file.txt"),
+		filepath.Join(root, "absolute.txt"),
+		filepath.Join("linked", "file.txt"),
+	} {
+		args := json.RawMessage(fmt.Sprintf(`{"file_path":%q}`, filePath))
+		// R-DPL5-0VAY: every successfully resolved Read path blocks no paths.
+		assertAccessValue(t, tool.Access(args), 0, nil)
+	}
+}
+
+func assertAccessValue(t *testing.T, got agentkit.Access, wantKind uint64, wantPaths []string) {
+	t.Helper()
+	value := reflect.ValueOf(got)
+	if gotKind := value.FieldByName("kind").Uint(); gotKind != wantKind {
+		t.Errorf("Access kind = %d, want %d", gotKind, wantKind)
+	}
+	paths := value.FieldByName("paths")
+	var gotPaths []string
+	if !paths.IsNil() {
+		gotPaths = make([]string, paths.Len())
+		for index := range paths.Len() {
+			gotPaths[index] = paths.Index(index).String()
+		}
+	}
+	if !reflect.DeepEqual(gotPaths, wantPaths) {
+		t.Errorf("Access paths = %q, want %q", gotPaths, wantPaths)
 	}
 }
 
@@ -172,16 +217,16 @@ func TestReadReportsPartialRange(t *testing.T) {
 		t.Fatal(err)
 	}
 	// R-CQ18-MU7C: partial reads report the actual range and total line count.
-	if !strings.HasSuffix(got, "\n[showing lines 1-3 of 5]") {
-		t.Errorf("partial Call() = %q, want range trailer", got)
+	if want := "     1\tone\n     2\ttwo\n     3\tthree\n[showing lines 1-3 of 5]"; got != want {
+		t.Errorf("partial Call() = %q, want %q", got, want)
 	}
 
 	got, err = tool.Call(context.Background(), json.RawMessage(`{"file_path":"five.txt"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(got, "[showing lines") {
-		t.Errorf("complete Call() = %q, want no range trailer", got)
+	if want := "     1\tone\n     2\ttwo\n     3\tthree\n     4\tfour\n     5\tfive"; got != want {
+		t.Errorf("complete Call() = %q, want %q", got, want)
 	}
 }
 

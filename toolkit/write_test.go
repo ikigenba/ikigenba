@@ -26,6 +26,35 @@ func TestWriteConstructor(t *testing.T) {
 	}
 }
 
+func TestWriteAccessBlocksResolvedPath(t *testing.T) {
+	root := t.TempDir()
+	actual := filepath.Join(root, "actual")
+	if err := os.Mkdir(actual, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("actual", filepath.Join(root, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	tool, err := Write(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		filePath string
+		resolved string
+	}{
+		{filePath: filepath.Join("plain", "file.txt"), resolved: filepath.Join(root, "plain", "file.txt")},
+		{filePath: filepath.Join(root, "absolute.txt"), resolved: filepath.Join(root, "absolute.txt")},
+		{filePath: filepath.Join("linked", "file.txt"), resolved: filepath.Join(actual, "file.txt")},
+	}
+	for _, test := range tests {
+		args := json.RawMessage(fmt.Sprintf(`{"file_path":%q,"content":"value"}`, test.filePath))
+		// R-DQT1-EN1N: Write blocks the D1-resolved file_path.
+		assertAccessValue(t, tool.Access(args), 1, []string{test.resolved})
+	}
+}
+
 func TestWriteSchema(t *testing.T) {
 	tool, err := Write(t.TempDir())
 	if err != nil {
@@ -152,7 +181,7 @@ func TestWriteReportsByteCount(t *testing.T) {
 	}
 
 	// R-CZSF-P04W: success reports the byte length and supplied path exactly.
-	if want := fmt.Sprintf("wrote %d bytes to %s", len(content), filePath); got != want {
+	if want := "wrote 5 bytes to unicode.txt"; got != want {
 		t.Errorf("Call() = %q, want %q", got, want)
 	}
 }
