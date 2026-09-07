@@ -4,8 +4,9 @@ The orchestrator is the loop behind `Send`. One `Send` drives one **turn**: it
 appends the caller's blocks to the transcript, calls the model, and runs tool
 round-trips to completion, returning a `*Stream` (D13) of message-granular events.
 A turn is any number of provider round-trips — the model answers, and while its
-answer is a set of tool calls the orchestrator dispatches them, feeds the results
-back, and calls again, until the model returns a round-trip with no tool calls.
+answer is a set of tool calls the orchestrator dispatches them (concurrently
+where the tools' declared access allows, D28), feeds the results back, and
+calls again, until the model returns a round-trip with no tool calls.
 Wire, endpoint, and model are fixed for the conversation's life; only the
 transcript grows. There is no swap-vendors machinery and no drop-reasoning-on-
 switch rule, because a switch cannot happen.

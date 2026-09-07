@@ -3,8 +3,9 @@
 Between accepting a tool set and dispatching a model's tool call, agentkit runs two
 guards: a **one-time schema-and-name gate at `Send`**, and a **per-call argument
 validation before dispatch**. Both are the library's, not the tool author's — a
-tool's `Call` (D9) is invoked only with arguments already checked against its
-schema, and a tool never has to defend itself against a malformed call.
+tool's `Call` and `Access` (D9, D28) are invoked only with arguments already
+checked against its schema, and a tool never has to defend itself against a
+malformed call.
 
 **The `Send`-time gate runs once over the whole live tool set.** The live set is
 the union of the eagerly registered tools, the deferred tool groups, and the

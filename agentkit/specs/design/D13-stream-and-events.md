@@ -47,6 +47,8 @@ type ToolCall struct {
 // ToolReturn reports that the orchestrator ran a tool and is feeding the result
 // back to the model. Result is the ToolResult block (D2); Result.IsError marks an
 // in-band tool failure (D12), which is a normal event, not a stream error.
+// Calls of one round-trip may run concurrently (D28), so ToolReturns arrive in
+// completion order; Result.ToolUseID pairs each with its ToolCall.
 type ToolReturn struct {
 	Result ToolResult
 }

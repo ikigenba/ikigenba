@@ -1,6 +1,7 @@
 # D9-tool-definition-and-schema-subset
 
-A `Tool` is a name, a description, an input JSON Schema, and a call function. It is
+A `Tool` is a name, a description, an input JSON Schema, a call function, and an
+access function that says what a call blocks while it runs (D28). It is
 a **sealed union** — an unexported marker keeps the set of constructions closed to
 agentkit, so the orchestrator can trust every `Tool` it dispatches came through one
 of the library's validated constructors. Consumers never implement `Tool`
@@ -25,6 +26,9 @@ type Tool interface {
 	// Call runs the tool. A returned error becomes an IsError ToolResult the
 	// model may recover from (D11); it is never turn-ending.
 	Call(ctx context.Context, args json.RawMessage) (string, error)
+	// Access reports what a call with these arguments blocks while it runs
+	// (D28). Like Call it sees only arguments that passed validation (D11).
+	Access(args json.RawMessage) Access
 	isTool()
 }
 ```
@@ -34,26 +38,31 @@ generic over a Go input type and derives the schema from its `jsonschema` struct
 tags. It **returns an error** rather than panicking, because a tool's schema is
 often assembled from configuration data, and a config typo must not crash the host
 process — the old design could only panic here, which made a data error fatal.
+Every constructor takes the call function and the access function side by side:
+a tool always says what it blocks, and `BlocksAll()` is written where it applies
+rather than assumed.
 
 ```go
 // NewTool builds a Tool from a Go input type In, deriving the input schema from
 // In's `jsonschema` struct tags. It returns an error if the derived schema falls
 // outside the canonical subset (below) or the tags are malformed. fn receives the
-// decoded In and returns the tool's textual output.
-func NewTool[In any](name, description string, fn func(ctx context.Context, in In) (string, error)) (Tool, error)
+// decoded In and returns the tool's textual output; access receives the same
+// decoded In and returns what the call blocks (D28).
+func NewTool[In any](name, description string, fn func(ctx context.Context, in In) (string, error), access func(in In) Access) (Tool, error)
 
 // MustTool is the panicking sibling of NewTool, for a tool whose schema is a
 // compile-time constant the author has already proven valid (e.g. a package-level
 // var). Prefer NewTool wherever the schema derives from data.
-func MustTool[In any](name, description string, fn func(ctx context.Context, in In) (string, error)) Tool
+func MustTool[In any](name, description string, fn func(ctx context.Context, in In) (string, error), access func(in In) Access) Tool
 
 // NewToolFromSchema builds a Tool from a raw input schema with no backing Go
 // type, for dynamically-sourced tools (a discovered MCP tool, D0). This is a
 // deliberate, narrow reversal of the old design's refusal of raw-schema tools:
 // a discovered tool has no Go type to derive from, yet must still be callable.
 // The schema is still validated against the canonical subset — here and again at
-// Send (D11) — so a runtime schema is no less safe than a derived one.
-func NewToolFromSchema(name, description string, schema json.RawMessage, fn func(ctx context.Context, args json.RawMessage) (string, error)) (Tool, error)
+// Send (D11) — so a runtime schema is no less safe than a derived one. access
+// sees the raw validated arguments, as fn does.
+func NewToolFromSchema(name, description string, schema json.RawMessage, fn func(ctx context.Context, args json.RawMessage) (string, error), access func(args json.RawMessage) Access) (Tool, error)
 ```
 
 **The `jsonschema` struct-tag vocabulary is a documented string contract, not a
@@ -106,8 +115,8 @@ purpose.
 - R-449C-VZ0W: agentkit MUST define one canonical schema subset — the intersection all four wires can render — and MUST reject `$ref`/`$defs`, `additionalProperties`, and tool-unfriendly `anyOf`/`oneOf`/`allOf` forms within it.
 - R-45H9-9QRL: `ValidateToolSchema` MUST be exported and MUST be the single checker used by every constructor, by the `Send`-time gate (D11), and by siblings validating a discovered schema.
 - R-46P5-NIIA: A tool schema accepted as canonical MUST be renderable by every shipped wire, so a tool set moves between vendors unchanged or fails identically on all of them.
-- R-02NY-BKN8: `agentkit` MUST export the sealed `Tool` interface whose method set is exactly `Name() string`, `Description() string`, `Schema() json.RawMessage`, `Call(ctx context.Context, args json.RawMessage) (string, error)`, and the unexported marker `isTool()`.
-- R-03VU-PCDX: `agentkit` MUST export `func NewTool[In any](name, description string, fn func(ctx context.Context, in In) (string, error)) (Tool, error)`.
-- R-053R-344M: `agentkit` MUST export `func MustTool[In any](name, description string, fn func(ctx context.Context, in In) (string, error)) Tool`.
-- R-06BN-GVVB: `agentkit` MUST export `func NewToolFromSchema(name, description string, schema json.RawMessage, fn func(ctx context.Context, args json.RawMessage) (string, error)) (Tool, error)`.
+- R-DH1U-CH43: `agentkit` MUST export the sealed `Tool` interface whose method set is exactly `Name() string`, `Description() string`, `Schema() json.RawMessage`, `Call(ctx context.Context, args json.RawMessage) (string, error)`, `Access(args json.RawMessage) Access`, and the unexported marker `isTool()`.
+- R-DI9Q-Q8US: `agentkit` MUST export `func NewTool[In any](name, description string, fn func(ctx context.Context, in In) (string, error), access func(in In) Access) (Tool, error)`.
+- R-DJHN-40LH: `agentkit` MUST export `func MustTool[In any](name, description string, fn func(ctx context.Context, in In) (string, error), access func(in In) Access) Tool`.
+- R-DKPJ-HSC6: `agentkit` MUST export `func NewToolFromSchema(name, description string, schema json.RawMessage, fn func(ctx context.Context, args json.RawMessage) (string, error), access func(args json.RawMessage) Access) (Tool, error)`.
 - R-07JJ-UNM0: `agentkit` MUST export `func ValidateToolSchema(schema json.RawMessage) error`.

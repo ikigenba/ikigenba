@@ -21,6 +21,7 @@ package agentkit
 type Tool interface {
 	Name() string
 	Call(ctx context.Context, input json.RawMessage) (string, error)
+	Access(input json.RawMessage) Access // what a call blocks (D28)
 	// ... schema accessor + unexported marker (D9)
 }
 
@@ -28,18 +29,22 @@ type Tool interface {
 // parameter's `jsonschema` struct tags and RETURNS AN ERROR on a malformed tag or
 // unsupported type. This replaces the old library's panic-only constructor, whose
 // failure mode meant config-driven tool data could crash the host process.
-func NewTool[In any](name, desc string, fn func(context.Context, In) (string, error)) (Tool, error)
+func NewTool[In any](name, desc string, fn func(context.Context, In) (string, error), access func(In) Access) (Tool, error)
 
 // MustTool is the panicking sibling of NewTool, for static tool definitions where
 // a bad schema is a programming error the author wants surfaced at init.
-func MustTool[In any](name, desc string, fn func(context.Context, In) (string, error)) Tool
+func MustTool[In any](name, desc string, fn func(context.Context, In) (string, error), access func(In) Access) Tool
 
 // NewToolFromSchema builds a tool from a runtime-sourced schema for tools that
 // have no Go input type — the mcp sibling's remotely-discovered tools, above all.
 // This is a narrow, deliberate reversal of the old design's refusal of raw-schema
 // tools; the root still validates the schema against the canonical subset at Send.
-func NewToolFromSchema(name, desc string, schema json.RawMessage, fn func(context.Context, json.RawMessage) (string, error)) (Tool, error)
+func NewToolFromSchema(name, desc string, schema json.RawMessage, fn func(context.Context, json.RawMessage) (string, error), access func(json.RawMessage) Access) (Tool, error)
 ```
+
+Beside the constructors sits the access vocabulary a tool author needs:
+`Access` and its three constructors `BlocksNone`, `BlocksPaths`, `BlocksAll`
+(D28).
 
 Around those constructors agentkit exports the supporting vocabulary a tool author
 needs and nothing they do not: the **`jsonschema` struct-tag vocabulary** as a

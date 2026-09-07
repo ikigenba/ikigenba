@@ -90,9 +90,11 @@ as it enters the conversation, whoever authored it:
   fails, or is refused by a limit, still shows what was asked.
 - Each completed `RoleAssistant` message is written as the stream yields it,
   followed by a `tool_use` record per `ToolUse` block it carries.
-- Each dispatched tool writes a `tool_result` record as it returns, and once the
+- Each dispatched tool writes a `tool_result` record as it returns — in
+  completion order, since calls may run concurrently (D28) — and once the
   round's tools have all returned the `RoleTool` message that carries those
-  results back to the model is written as one `message` record.
+  results back to the model is written as one `message` record, its blocks in
+  the order the model requested the calls.
 - The corrective `RoleUser` message of a structured-output retry (D20) is
   written as the stream yields it.
 
@@ -149,7 +151,7 @@ func (l *Log) Close() error
 - R-T8UR-8BFL: Every record a `Log` writes MUST carry the `id` given to `NewLog` verbatim in its `ID` field, and the field MUST be omitted from the JSON line when that `id` is empty.
 - R-TA2N-M36A: Each `LogRecord` MUST timestamp from the injected clock, and `Seq` MUST be `0` on the first record a `Log` writes and increase by exactly one on every subsequent record for the life of the log, never reset.
 - R-TBAJ-ZUWZ: `Send` MUST write a `message` record carrying the `RoleUser` message built from the caller's blocks immediately after the turn's `turn_start` record and before any provider call, including on a turn that ends in a terminal error or is refused by a limit (D25).
-- R-TCIG-DMNO: After the `tool_result` records of a round-trip, the orchestrator MUST write one `message` record carrying the `RoleTool` message whose blocks are that round-trip's `ToolResult` blocks in dispatch order.
+- R-DN5C-9BTK: After the `tool_result` records of a round-trip, the orchestrator MUST write one `message` record carrying the `RoleTool` message whose blocks are that round-trip's `ToolResult` blocks in the order of the `ToolUse` blocks of the assistant message that requested them, whatever order the calls returned in.
 - R-TDQC-REED: For a turn that commits, the `message` records written between its `turn_start` and `turn_end`, in order, MUST equal the sequence of `Message` values the turn appended to `History`; for a turn that ends in a terminal error or a limit refusal, they MUST equal the messages the turn produced up to that point, in order.
 - R-TEY9-5652: After every completed provider round-trip the orchestrator MUST write one `usage` record carrying that round-trip's merged `Usage` and its `Cost` resolved through the D3 path, and MUST NOT write a `usage` record that aggregates more than one round-trip.
 - R-TG65-IXVR: Every `turn_end` record MUST carry `Usage` and `Cost` equal to the field-wise integer sums of the `usage` records written since that turn's `turn_start`, and zero values when the turn completed no round-trip.

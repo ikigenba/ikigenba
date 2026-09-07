@@ -80,6 +80,9 @@ type Settings struct {
 	Options Options
 	// ToolChoice directs tool selection for the turn (see ToolChoice).
 	ToolChoice ToolChoice
+	// SerialToolCalls asks the model for at most one tool call per round-trip
+	// (D28). false leaves the vendor default, which is parallel, in place.
+	SerialToolCalls bool
 }
 ```
 
@@ -212,7 +215,9 @@ const (
 
 `ToolChoice` stays a typed value rather than a string option because it is
 not a user setting: it is the application's orchestration directive for a
-turn, chosen by program logic, not by a person at a prompt. `ReasoningConfig`
+turn, chosen by program logic, not by a person at a prompt. `SerialToolCalls`
+is a typed value for the same reason; how each wire renders it, and that the
+Gemini wire cannot, is D28. `ReasoningConfig`
 stays exported because the catalog speaks it (`ReasoningSpec.Default`,
 `Accepts`), not because a consumer sets it on `Settings`.
 
@@ -285,7 +290,7 @@ release: only a genuinely new *wire shape* (not a new model) requires library wo
 - R-O8D2-3Q2K: `agentkit` MUST export `type Options map[string]string`.
 - R-VXRP-9M2U: `agentkit` MUST export `type OptionKind int` with the constants `OptionKindNumber`, `OptionKindInteger`, `OptionKindText`, `OptionKindTextList`, `OptionKindReasoning` declared in that `iota` order starting at 0.
 - R-OASU-V9JY: `agentkit` MUST export `type OptionSpec struct { Name string; Kind OptionKind; Description string }` with exactly those fields.
-- R-W07I-15K8: `agentkit` MUST export `type Settings struct { Options Options; ToolChoice ToolChoice }` with exactly those fields.
+- R-DLXF-VK2V: `agentkit` MUST export `type Settings struct { Options Options; ToolChoice ToolChoice; SerialToolCalls bool }` with exactly those fields.
 - R-OEGK-0KS1: Every `OptionSpec` returned by a shipped wire's `OptionSpecs()` MUST have a non-empty `Name` and a non-empty `Description`, no two MUST share a `Name`, the slice MUST be in ascending `Name` order, and mutating a returned slice MUST have no effect on a later call.
 - R-W1FE-EXAX: `AnthropicMessagesWire()`, `GeminiGenerateContentWire()`, `ChatWire()`, and `OpenAIChatWire()` MUST each return from `OptionSpecs()` exactly the names `effort` (`OptionKindReasoning`), `max_output_tokens` (`OptionKindInteger`), `stop` (`OptionKindTextList`), `temperature` (`OptionKindNumber`), `thinking` (`OptionKindReasoning`), `thinking_budget` (`OptionKindReasoning`), `thinking_level` (`OptionKindReasoning`), and `top_p` (`OptionKindNumber`); and `ResponsesWire()` and `OpenAIResponsesWire()` MUST each return exactly that set without `stop`.
 - R-W2NA-SP1M: An `Options` value MUST parse under its `OptionSpec.Kind` as follows, and `Send` MUST reject any other text with `ErrInvalidConfig`: `OptionKindNumber` accepts exactly the strings `strconv.ParseFloat(s, 64)` accepts that denote a finite value; `OptionKindInteger` accepts exactly the strings `strconv.ParseInt(s, 10, 64)` accepts; `OptionKindText` accepts any string; `OptionKindTextList` accepts exactly a JSON array whose every element is a JSON string; `OptionKindReasoning` accepts exactly the strings `ParseReasoning` accepts.
