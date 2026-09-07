@@ -28,6 +28,9 @@ type Conversation struct {
 	limits              Limits
 	toolCallsDispatched int
 	lastRoundContext    int64
+	liveSavepoint       bool
+	savepointGeneration uint64
+	savepointHistory    History
 	closed              bool
 }
 

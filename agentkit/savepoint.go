@@ -2,22 +2,41 @@ package agentkit
 
 // Savepoint is an opaque handle to a point in a Conversation's history.
 type Savepoint struct {
-	id uint64
+	owner *Conversation
+	id    uint64
 }
 
 // Savepoint returns an opaque handle associated with the Conversation.
 func (c *Conversation) Savepoint() (Savepoint, error) {
-	return Savepoint{id: 1}, nil
+	if c.liveSavepoint {
+		return Savepoint{}, ErrSavepointActive
+	}
+	c.savepointGeneration++
+	c.savepointHistory = cloneHistory(c.history)
+	c.liveSavepoint = true
+	return Savepoint{owner: c, id: c.savepointGeneration}, nil
 }
 
 // Restore accepts a Savepoint handle.
-func (c *Conversation) Restore(_ Savepoint) error {
+func (c *Conversation) Restore(sp Savepoint) error {
+	if !c.isLiveSavepoint(sp) {
+		return ErrInvalidArgument
+	}
 	return nil
 }
 
 // Release accepts a Savepoint handle.
-func (c *Conversation) Release(_ Savepoint) error {
+func (c *Conversation) Release(sp Savepoint) error {
+	if !c.isLiveSavepoint(sp) {
+		return ErrInvalidArgument
+	}
+	c.liveSavepoint = false
+	c.savepointHistory = nil
 	return nil
+}
+
+func (c *Conversation) isLiveSavepoint(sp Savepoint) bool {
+	return c.liveSavepoint && sp.owner == c && sp.id == c.savepointGeneration
 }
 
 // Close marks the Conversation closed without closing its consumer-owned Log.
