@@ -9,7 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/ikigenba/ikigenba/agentkit"
 
 	// Register the SQLite database/sql driver.
 	_ "modernc.org/sqlite"
@@ -76,6 +79,52 @@ type Store struct {
 	id   string
 	root string
 	now  func() time.Time
+}
+
+// LogWriter is the transcript destination for one agentkit log.
+type LogWriter struct {
+	mu      sync.Mutex
+	store   *Store
+	address string
+	text    func(agentkit.LogRecord) string
+	usage   agentkit.Usage
+	cost    agentkit.Cost
+	summary bool
+}
+
+// NewLogWriter builds a transcript writer for address.
+func NewLogWriter(s *Store, address string, text func(agentkit.LogRecord) string) *LogWriter {
+	return &LogWriter{store: s, address: address, text: text}
+}
+
+// Write decodes and appends one agentkit JSON-lines record.
+func (w *LogWriter) Write(p []byte) (int, error) {
+	var record agentkit.LogRecord
+	if err := json.Unmarshal(p, &record); err != nil {
+		return 0, fmt.Errorf("decode transcript record: %w", err)
+	}
+	raw := p
+	if len(raw) > 0 && raw[len(raw)-1] == '\n' {
+		raw = raw[:len(raw)-1]
+	}
+	if _, err := w.store.Add(w.address, KindTranscript, w.text(record), raw); err != nil {
+		return 0, err
+	}
+	if record.Type == agentkit.RecordSummary && record.Usage != nil && record.Cost != nil {
+		w.mu.Lock()
+		w.usage = *record.Usage
+		w.cost = *record.Cost
+		w.summary = true
+		w.mu.Unlock()
+	}
+	return len(p), nil
+}
+
+// Summary returns the most recently stored summary record's totals.
+func (w *LogWriter) Summary() (agentkit.Usage, agentkit.Cost, bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.usage, w.cost, w.summary
 }
 
 // Create exclusively creates and initializes a session database at path.

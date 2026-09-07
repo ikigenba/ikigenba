@@ -7,6 +7,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -16,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/agentkit"
 	"github.com/ikigenba/ikigenba/dory/internal/store"
 )
 
@@ -93,12 +95,38 @@ func TestStorePublicAPIIsOpaqueAndAppendOnly(t *testing.T) {
 
 	wantPackageExports := []string{
 		"Create", "Entry", "ErrNotFound", "Filter", "Hit", "Kind",
-		"KindNote", "KindPrompt", "KindReport", "KindTranscript", "Open",
-		"Page", "PageSize", "PreviewRunes", "Store",
+		"KindNote", "KindPrompt", "KindReport", "KindTranscript", "LogWriter",
+		"NewLogWriter", "Open", "Page", "PageSize", "PreviewRunes", "Store",
 	}
 	gotPackageExports := packageExports(t)
 	if !slices.Equal(gotPackageExports, wantPackageExports) {
 		t.Fatalf("package exports = %v, want %v", gotPackageExports, wantPackageExports)
+	}
+}
+
+func TestLogWriterPublicAPIIsOpaque(t *testing.T) {
+	// R-IU9D-311N
+	assertNewLogWriterSignature := func(_ func(*store.Store, string, func(agentkit.LogRecord) string) *store.LogWriter) {}
+	assertNewLogWriterSignature(store.NewLogWriter)
+	var _ io.Writer = (*store.LogWriter)(nil)
+	var _ interface {
+		Write([]byte) (int, error)
+		Summary() (agentkit.Usage, agentkit.Cost, bool)
+	} = (*store.LogWriter)(nil)
+
+	typ := reflect.TypeFor[store.LogWriter]()
+	for i := range typ.NumField() {
+		if typ.Field(i).IsExported() {
+			t.Errorf("LogWriter field %q is exported", typ.Field(i).Name)
+		}
+	}
+	wantMethods := []string{"Summary", "Write"}
+	gotMethods := make([]string, reflect.TypeFor[*store.LogWriter]().NumMethod())
+	for i := range gotMethods {
+		gotMethods[i] = reflect.TypeFor[*store.LogWriter]().Method(i).Name
+	}
+	if !slices.Equal(gotMethods, wantMethods) {
+		t.Fatalf("exported methods = %v, want %v", gotMethods, wantMethods)
 	}
 }
 
