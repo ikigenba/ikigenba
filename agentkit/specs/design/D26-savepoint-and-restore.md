@@ -118,8 +118,8 @@ which is what cost and audit want.
 - R-83WI-EFK3: `Close` MUST be idempotent — a second `Close` MUST change nothing and return `nil` — and MUST NOT close the conversation's `Log`.
 - R-854E-S7AS: After `Close`, each of `Send`, `AddSystem`, `Savepoint`, `Restore`, and `Release` MUST return an error satisfying `errors.Is(err, ErrClosed)`, make no provider call, and leave `History` unchanged.
 - R-86CB-5Z1H: A successful `Savepoint`, `Restore`, and `Release` MUST each write exactly one log record (D15), of type `RecordSavepoint`, `RecordRestore`, and `RecordRelease` respectively, outside any `turn_start`/`turn_end` pair; a call that returns an error MUST write none.
-- R-87K7-JQS6: Replaying a log's records in `Seq` order — collecting each `message` record's `Message`, and on each `restore` record discarding those collected since the preceding `savepoint` record — MUST yield exactly the conversation's `History`.
-- R-88S3-XIIV: `Savepoint` MUST succeed on a `Conversation` that has completed no `Send`, and a `Restore` to such a savepoint MUST leave `History` empty.
+- R-6N6M-6P9I: Replaying a log's records in `Seq` order — collecting each `message` record's `Message`, on each `turn_end` record discarding those collected since its `turn_start` when an `error` or `limit` record was written between the two, and on each `restore` record discarding those collected since the preceding `savepoint` record — MUST yield exactly the conversation's `History`.
+- R-6OEI-KH07: `Savepoint` MUST succeed on a `Conversation` that has completed no `Send`, and a `Restore` to such a savepoint MUST leave `History` holding exactly the `RoleSystem` messages `AddSystem` had appended before the savepoint was taken — empty when there were none.
 This design also revises requirements owned by other documents; each revision is
 made in its own document, not here. D18 re-mints the `Conversation` method set to
 name the four new operations. D15 re-mints `RecordType` for the three new record

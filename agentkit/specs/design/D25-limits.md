@@ -21,7 +21,7 @@ package agentkit
 
 // Limits bounds a Conversation's current history. A zero field is no bound.
 type Limits struct {
-	MaxToolCalls     int   // tool calls dispatchable since the last Restore
+	MaxToolCalls     int   // tool calls dispatchable over the current history
 	MaxContextTokens int64 // largest context one round-trip may consume
 }
 
@@ -58,8 +58,9 @@ point the conversation is over budget when
   `Usage` buckets (D3) for that call, across any turn — exceeds
   `MaxContextTokens`, or
 - (at the dispatch checkpoint only) dispatching this round-trip's tool calls
-  would bring the number of tool calls dispatched since the most recent
-  `Restore` (D26) past `MaxToolCalls`.
+  would bring the number of tool calls dispatched over the current history —
+  a `Restore` (D26) puts the count back to what it was at the savepoint — past
+  `MaxToolCalls`.
 
 Over budget means the work is refused: no provider call is made, no tool is
 dispatched, a `limit` record is written to the log naming the bound and the
@@ -90,7 +91,7 @@ the `limit` record is the whole account.
 - R-TNHJ-TKBX: `agentkit` MUST export the sentinel error `ErrLimitExceeded`, created with `errors.New`, and a limit refusal's terminal error MUST satisfy `errors.Is(err, ErrLimitExceeded)`, MUST NOT be an `*Error`, and `Retryable` MUST return false for it.
 - R-TOPG-7C2M: A `Conversation` whose `Config.Limits` is the zero value MUST never write a `limit` record and MUST never end a turn with `ErrLimitExceeded`.
 - R-TPXC-L3TB: A `Send` on a `Conversation` whose `Config.Limits` has a negative `MaxToolCalls` or a negative `MaxContextTokens` MUST fail with `ErrInvalidConfig`, make no provider call, and leave `History` unchanged.
-- R-8DNP-GLHN: When `MaxToolCalls` is positive and a round-trip requests tool calls whose count, added to the number of tool calls the conversation has dispatched since its most recent successful `Restore` (D26) — or since the conversation began, if it has had none — exceeds `MaxToolCalls`, the orchestrator MUST dispatch none of them, write one `limit` record with `Kind` `LimitToolCalls`, `Max` equal to `MaxToolCalls`, and `Actual` equal to that sum, and end the turn with `ErrLimitExceeded` on `Stream.Err()` and `History` unchanged.
+- R-6LYP-SXIT: When `MaxToolCalls` is positive and a round-trip requests tool calls whose count, added to the number of tool calls the conversation has dispatched over its current history — every dispatch since the conversation began, less those a successful `Restore` (D26) rewound past, so that after a `Restore` the count is what it was when the savepoint was taken — exceeds `MaxToolCalls`, the orchestrator MUST dispatch none of them, write one `limit` record with `Kind` `LimitToolCalls`, `Max` equal to `MaxToolCalls`, and `Actual` equal to that sum, and end the turn with `ErrLimitExceeded` on `Stream.Err()` and `History` unchanged.
 - R-8EVL-UD8C: When `MaxContextTokens` is positive and the sum of the six `Usage` fields of the most recently completed provider round-trip, in any turn since the conversation's most recent successful `Restore` (D26), exceeds `MaxContextTokens`, the orchestrator MUST, at the next start of a `Send` or the next tool dispatch, whichever comes first, make no provider call and dispatch no tool, write one `limit` record with `Kind` `LimitContextTokens`, `Max` equal to `MaxContextTokens`, and `Actual` equal to that sum, and end the turn with `ErrLimitExceeded` on `Stream.Err()` and `History` unchanged.
 - R-TTL1-QF1E: A round-trip that requests no tool calls MUST complete its turn normally regardless of its context total; an over-limit context MUST only refuse subsequent work.
 - R-TUSY-46S3: A limit refusal MUST write exactly one `limit` record and no `error` record, and the `limit` record MUST precede the turn's `turn_end` record.
