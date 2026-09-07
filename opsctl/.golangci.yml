@@ -1,0 +1,19 @@
+version: "2"
+
+linters:
+  # The v2 standard set (errcheck, govet, ineffassign, staticcheck, unused)
+  # plus a curated strict layer.
+  default: standard
+  enable:
+    - errorlint
+    - gocritic
+    - gosec
+    - misspell
+    - revive
+    - unconvert
+    - unparam
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
