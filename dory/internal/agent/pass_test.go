@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -66,16 +65,26 @@ func (t *passTrace) Record(record agentkit.LogRecord) string {
 
 type passProvider struct {
 	t      *testing.T
-	store  *store.Store
+	script []passResponse
 	server *httptest.Server
 
 	mu       sync.Mutex
 	requests []map[string]any
 }
 
-func newPassProvider(t *testing.T, session *store.Store) *passProvider {
+type passResponse struct {
+	before func()
+	write  func(io.Writer)
+}
+
+type supervisorToolCall struct {
+	name  string
+	input string
+}
+
+func newPassProvider(t *testing.T, script []passResponse) *passProvider {
 	t.Helper()
-	provider := &passProvider{t: t, store: session}
+	provider := &passProvider{t: t, script: script}
 	provider.server = httptest.NewServer(http.HandlerFunc(provider.serveHTTP))
 	t.Cleanup(provider.server.Close)
 	return provider
@@ -99,39 +108,142 @@ func (p *passProvider) serveHTTP(w http.ResponseWriter, request *http.Request) {
 	requestNumber := len(p.requests)
 	p.mu.Unlock()
 
-	if requestNumber == 1 {
-		assertStoredPrompt(p.t, p.store, "1", rootPrompt)
-	}
-	if requestNumber == 2 {
-		assertStoredPrompt(p.t, p.store, "1.1", childPrompt)
-	}
-
 	w.Header().Set("Content-Type", "text/event-stream")
-	switch requestNumber {
-	case 1:
-		writeToolCall(w, "delegate-call", "delegate", `{"role":"worker","prompt":"inspect fixture"}`)
-	case 2:
-		writeToolCall(w, "read-call", "Read", `{"file_path":"fixture.txt"}`)
-	case 3:
-		writeToolCall(w, "glob-call", "Glob", `{"pattern":"**/*"}`)
-	case 4:
-		writeToolCall(w, "grep-call", "Grep", `{"pattern":"private marker"}`)
-	case 5:
-		writeText(w, "child ", "report")
-	case 6:
-		writeText(w, "root ", "report")
-	case 7:
-		writeEmptyMessage(w)
-	default:
+	if requestNumber > len(p.script) {
 		p.t.Errorf("unexpected provider request %d", requestNumber)
 		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
+	response := p.script[requestNumber-1]
+	if response.before != nil {
+		response.before()
+	}
+	response.write(w)
 }
 
 func (p *passProvider) capturedRequests() []map[string]any {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return append([]map[string]any(nil), p.requests...)
+}
+
+// R-J8W5-O9XZ
+func TestSupervisorToolsAdvertiseExactSchemas(t *testing.T) {
+	session := createPassStore(t, t.TempDir())
+	requests, _, err := runSupervisorToolCalls(t, session, nil)
+	if err != nil {
+		t.Fatalf("RunPass: %v", err)
+	}
+	if len(requests) != 1 {
+		t.Fatalf("provider requests = %d, want 1", len(requests))
+	}
+
+	want := map[string]string{
+		"search":   `{"type":"object","properties":{"query":{"type":"string"},"kind":{"type":"string"},"address":{"type":"string"},"page":{"type":"integer","minimum":1}},"required":["query"]}`,
+		"fetch":    `{"type":"object","properties":{"id":{"type":"integer"}},"required":["id"]}`,
+		"remember": `{"type":"object","properties":{"text":{"type":"string","minLength":1}},"required":["text"]}`,
+		"delegate": `{"type":"object","properties":{"role":{"type":"string","enum":["supervisor","worker"]},"prompt":{"type":"string","minLength":1}},"required":["role","prompt"]}`,
+	}
+	got := advertisedToolSchemas(t, requests[0])
+	if len(got) != len(want) {
+		t.Fatalf("advertised schemas = %v, want exactly search, fetch, remember, and delegate", got)
+	}
+	for name, rawWant := range want {
+		var decodedWant map[string]any
+		if err := json.Unmarshal([]byte(rawWant), &decodedWant); err != nil {
+			t.Fatalf("decode expected %s schema: %v", name, err)
+		}
+		if !reflect.DeepEqual(got[name], decodedWant) {
+			t.Errorf("%s schema = %#v, want exactly %#v", name, got[name], decodedWant)
+		}
+	}
+}
+
+// R-JA42-21OO
+func TestSupervisorSearchTranslatesFiltersAndReportsUnknownKinds(t *testing.T) {
+	session := createPassStore(t, t.TempDir())
+	for index := range store.PageSize + 1 {
+		address := "3"
+		if index%2 != 0 {
+			address = "3.1"
+		}
+		addPassEntry(t, session, address, store.KindNote, fmt.Sprintf("needle note %02d", index), nil)
+	}
+	addPassEntry(t, session, "3.2", store.KindReport, "needle excluded report", nil)
+	addPassEntry(t, session, "3.2", store.KindTranscript, "needle excluded transcript", json.RawMessage(`{"record":true}`))
+	addPassEntry(t, session, "31", store.KindNote, "needle wrong address", nil)
+	addPassEntry(t, session, "3", store.KindNote, "different query", nil)
+
+	want := store.Page{
+		Hits:  []store.Hit{{ID: 1, Address: "3", Kind: store.KindNote, Preview: "needle note 00"}},
+		Page:  2,
+		Pages: 2,
+		Total: store.PageSize + 1,
+	}
+	requests, trace, err := runSupervisorToolCalls(t, session, []supervisorToolCall{
+		{name: "search", input: `{"query":"needle","kind":"note,report,-report","address":"3","page":2}`},
+		{name: "search", input: `{"query":"needle","kind":"note,unknown-kind"}`},
+	})
+	if err != nil {
+		t.Fatalf("RunPass: %v", err)
+	}
+	var got store.Page
+	if err := json.Unmarshal([]byte(toolResultForCall(t, requests[1], "tool-call-1")), &got); err != nil {
+		t.Fatalf("decode search result: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("search result = %#v, want Store.Search result %#v", got, want)
+	}
+	unknown := toolResultForCall(t, requests[2], "tool-call-2")
+	if !contains(unknown, "unknown-kind") {
+		t.Errorf("unknown-kind result = %q, want offending kind named", unknown)
+	}
+	assertToolReturnError(t, trace, "tool-call-2")
+}
+
+// R-JBBY-FTFD
+func TestSupervisorFetchReturnsFullEntryAndNamesMissingID(t *testing.T) {
+	session := createPassStore(t, t.TempDir())
+	id := addPassEntry(t, session, "7.2", store.KindTranscript, "full fetched entry", json.RawMessage(`{"detail":"kept"}`))
+	want := store.Entry{
+		ID: id, Address: "7.2", Kind: store.KindTranscript, Text: "full fetched entry",
+		Raw: json.RawMessage(`{"detail":"kept"}`), Created: passTime(),
+	}
+	missingID := int64(987654)
+	requests, trace, err := runSupervisorToolCalls(t, session, []supervisorToolCall{
+		{name: "fetch", input: fmt.Sprintf(`{"id":%d}`, id)},
+		{name: "fetch", input: fmt.Sprintf(`{"id":%d}`, missingID)},
+	})
+	if err != nil {
+		t.Fatalf("RunPass: %v", err)
+	}
+	var got store.Entry
+	if err := json.Unmarshal([]byte(toolResultForCall(t, requests[1], "tool-call-1")), &got); err != nil {
+		t.Fatalf("decode fetch result: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("fetch result = %#v, want full entry %#v", got, want)
+	}
+	missing := toolResultForCall(t, requests[2], "tool-call-2")
+	if !contains(missing, fmt.Sprint(missingID)) {
+		t.Errorf("missing fetch result = %q, want id %d", missing, missingID)
+	}
+	assertToolReturnError(t, trace, "tool-call-2")
+}
+
+// R-JCJU-TL62
+func TestSupervisorRememberStoresNoteAtCallingAddress(t *testing.T) {
+	session := createPassStore(t, t.TempDir())
+	requests, _, err := runSupervisorToolCalls(t, session, []supervisorToolCall{
+		{name: "remember", input: `{"text":"retain this exact note"}`},
+	})
+	if err != nil {
+		t.Fatalf("RunPass: %v", err)
+	}
+	if got := toolResultForCall(t, requests[1], "tool-call-1"); got != "ok" {
+		t.Fatalf("remember result = %q, want exactly ok", got)
+	}
+	assertEntry(t, allPassEntries(t, session), "1", store.KindNote, "retain this exact note")
 }
 
 // R-J2SN-RF8I
@@ -152,7 +264,23 @@ func TestRunPassPersistsAndRunsRootAndDelegatedAgents(t *testing.T) {
 		t.Fatal(err)
 	}
 	session := createPassStore(t, root)
-	provider := newPassProvider(t, session)
+	provider := newPassProvider(t, []passResponse{
+		{
+			before: func() { assertStoredPrompt(t, session, "1", rootPrompt) },
+			write: func(w io.Writer) {
+				writeToolCall(w, "delegate-call", "delegate", `{"role":"worker","prompt":"inspect fixture"}`)
+			},
+		},
+		{
+			before: func() { assertStoredPrompt(t, session, "1.1", childPrompt) },
+			write:  func(w io.Writer) { writeToolCall(w, "read-call", "Read", `{"file_path":"fixture.txt"}`) },
+		},
+		{write: func(w io.Writer) { writeToolCall(w, "glob-call", "Glob", `{"pattern":"**/*"}`) }},
+		{write: func(w io.Writer) { writeToolCall(w, "grep-call", "Grep", `{"pattern":"private marker"}`) }},
+		{write: func(w io.Writer) { writeText(w, "child ", "report") }},
+		{write: func(w io.Writer) { writeText(w, "root ", "report") }},
+		{write: writeEmptyMessage},
+	})
 	factory := openPassFactory(t, provider.server.URL)
 	trace := &passTrace{}
 	cfg := agent.Config{
@@ -238,20 +366,15 @@ func TestRunPassJoinsLastAssistantTextBlocks(t *testing.T) {
 // R-JJV9-47M8
 func TestRunPassTracesEventsAndTerminalProviderError(t *testing.T) {
 	session := createPassStore(t, t.TempDir())
-	var requestCount atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		requestNumber := requestCount.Add(1)
-		w.Header().Set("Content-Type", "text/event-stream")
-		if requestNumber == 1 {
-			writeToolCall(w, "search-call", "search", `{}`)
-			return
-		}
-		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":\"received before error\"},\"finish_reason\":\"stop\"}]}\n\n")
-		_, _ = io.WriteString(w, "data: {not-json}\n\n")
-	}))
-	t.Cleanup(server.Close)
+	provider := newPassProvider(t, []passResponse{
+		{write: func(w io.Writer) { writeToolCall(w, "search-call", "search", `{}`) }},
+		{write: func(w io.Writer) {
+			_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":\"received before error\"},\"finish_reason\":\"stop\"}]}\n\n")
+			_, _ = io.WriteString(w, "data: {not-json}\n\n")
+		}},
+	})
 	trace := &passTrace{}
-	factory := openPassFactory(t, server.URL)
+	factory := openPassFactory(t, provider.server.URL)
 	result, err := agent.RunPass(context.Background(), agent.Config{
 		Store: session, Supervisor: factory, Worker: factory, Root: t.TempDir(), Now: passTime, Trace: trace,
 	}, "fail after one event")
@@ -337,6 +460,125 @@ func openPassFactoryForOffering(t *testing.T, baseURL string, offeringID agentki
 }
 
 func passTime() time.Time { return time.Date(2036, 2, 3, 4, 5, 6, 0, time.UTC) }
+
+func runSupervisorToolCalls(
+	t *testing.T,
+	session *store.Store,
+	calls []supervisorToolCall,
+) ([]map[string]any, *passTrace, error) {
+	t.Helper()
+	var mu sync.Mutex
+	var requests []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Errorf("read provider request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal(body, &decoded); err != nil {
+			t.Errorf("decode provider request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		requests = append(requests, decoded)
+		requestIndex := len(requests) - 1
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		if requestIndex < len(calls) {
+			call := calls[requestIndex]
+			writeToolCall(w, fmt.Sprintf("tool-call-%d", requestIndex+1), call.name, call.input)
+			return
+		}
+		writeText(w, "tool scenario complete")
+	}))
+	t.Cleanup(server.Close)
+	trace := &passTrace{}
+	factory := openPassFactory(t, server.URL)
+	_, err := agent.RunPass(context.Background(), agent.Config{
+		Store: session, Supervisor: factory, Worker: factory, Root: t.TempDir(), Now: passTime, Trace: trace,
+	}, "exercise supervisor tools")
+	mu.Lock()
+	defer mu.Unlock()
+	return append([]map[string]any(nil), requests...), trace, err
+}
+
+func advertisedToolSchemas(t *testing.T, request map[string]any) map[string]map[string]any {
+	t.Helper()
+	rawTools, ok := request["tools"].([]any)
+	if !ok {
+		t.Fatalf("tools = %#v", request["tools"])
+	}
+	result := make(map[string]map[string]any, len(rawTools))
+	for _, rawTool := range rawTools {
+		tool, ok := rawTool.(map[string]any)
+		if !ok {
+			t.Fatalf("tool = %#v", rawTool)
+		}
+		function, ok := tool["function"].(map[string]any)
+		if !ok {
+			t.Fatalf("tool function = %#v", tool["function"])
+		}
+		name := fmt.Sprint(function["name"])
+		schema, ok := function["parameters"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s parameters = %#v", name, function["parameters"])
+		}
+		result[name] = schema
+	}
+	return result
+}
+
+func toolResultForCall(t *testing.T, request map[string]any, callID string) string {
+	t.Helper()
+	messages, ok := request["messages"].([]any)
+	if !ok {
+		t.Fatalf("messages = %#v", request["messages"])
+	}
+	for _, raw := range messages {
+		message, ok := raw.(map[string]any)
+		if ok && message["role"] == "tool" && message["tool_call_id"] == callID {
+			return fmt.Sprint(message["content"])
+		}
+	}
+	t.Fatalf("no tool result for call %q in %#v", callID, messages)
+	return ""
+}
+
+func assertToolReturnError(t *testing.T, trace *passTrace, callID string) {
+	t.Helper()
+	trace.mu.Lock()
+	defer trace.mu.Unlock()
+	for _, event := range trace.events {
+		returned, ok := event.event.(agentkit.ToolReturn)
+		if ok && returned.Result.ToolUseID == callID {
+			if !returned.Result.IsError {
+				t.Errorf("tool return %q IsError = false, want true", callID)
+			}
+			return
+		}
+	}
+	t.Errorf("missing traced tool return for call %q", callID)
+}
+
+func addPassEntry(
+	t *testing.T,
+	session *store.Store,
+	address string,
+	kind store.Kind,
+	text string,
+	raw json.RawMessage,
+) int64 {
+	t.Helper()
+	id, err := session.Add(address, kind, text, raw)
+	if err != nil {
+		t.Fatalf("Add(%q, %q): %v", address, kind, err)
+	}
+	return id
+}
 
 func writeToolCall(w io.Writer, id, name, input string) {
 	_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"tool_calls\":[{\"index\":0,\"id\":%q,\"type\":\"function\",\"function\":{\"name\":%q,\"arguments\":%q}}]},\"finish_reason\":\"tool_calls\"}]}\n\n", id, name, input)
@@ -451,7 +693,7 @@ func renderedRecord(record agentkit.LogRecord) string {
 func assertMessages(t *testing.T, request map[string]any, system, user string) {
 	t.Helper()
 	messages, ok := request["messages"].([]any)
-	if !ok || len(messages) < 2 {
+	if !ok || len(messages) != 2 {
 		t.Fatalf("messages = %#v, want system followed by user", request["messages"])
 	}
 	want := []struct{ role, content string }{{"system", system}, {"user", user}}
