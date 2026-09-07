@@ -131,6 +131,106 @@ func TestLiveOAuthReissueFixturesExistWithLiveTag(t *testing.T) {
 	}
 }
 
+// R-1ETZ-7OQ0
+func TestLiveCacheFixtureExistsWithLiveTagAndSubtests(t *testing.T) {
+	contents, err := os.ReadFile("cache_live_test.go")
+	if err != nil {
+		t.Fatalf("read live cache fixture: %v", err)
+	}
+	text := string(contents)
+	assertLiveBuildConstraint(t, "live cache fixture", text)
+	assertNeverSkips(t, "live cache fixture", text)
+	for _, fragment := range []string{
+		"func TestLiveCache",
+		`requireLiveMatrixCredential`,
+		`t.Run("anthropic-messages"`,
+		`t.Run("openai-responses"`,
+		`t.Run("openai-chat"`,
+		`t.Run("gemini-generate-content"`,
+		`t.Run("xai-responses"`,
+	} {
+		if !strings.Contains(text, fragment) {
+			t.Fatalf("live cache fixture does not contain %q", fragment)
+		}
+	}
+	if count := strings.Count(text, `t.Run("`); count != 5 {
+		t.Fatalf("live cache fixture declares %d subtests, want exactly 5", count)
+	}
+}
+
+// R-6PME-Y8QW
+func TestLiveCacheSubtestsExerciseSavepointRestoreAndAssertCache(t *testing.T) {
+	contents, err := os.ReadFile("cache_live_test.go")
+	if err != nil {
+		t.Fatalf("read live cache fixture: %v", err)
+	}
+	text := string(contents)
+	names := []string{
+		"anthropic-messages",
+		"openai-responses",
+		"openai-chat",
+		"gemini-generate-content",
+		"xai-responses",
+	}
+	segments := make(map[string]string, len(names))
+	for i, name := range names {
+		marker := `t.Run("` + name + `"`
+		start := strings.Index(text, marker)
+		if start < 0 {
+			t.Fatalf("live cache fixture has no %s subtest", name)
+		}
+		end := len(text)
+		if i+1 < len(names) {
+			next := `t.Run("` + names[i+1] + `"`
+			end = strings.Index(text[start+len(marker):], next)
+			if end < 0 {
+				t.Fatalf("live cache fixture has no %s subtest after %s", names[i+1], name)
+			}
+			end += start + len(marker)
+		}
+		segments[name] = text[start:end]
+	}
+
+	for _, name := range names {
+		segment := segments[name]
+		savepoint := strings.Index(segment, "Savepoint()")
+		restore := strings.Index(segment, ".Restore(")
+		if savepoint < 0 || restore < savepoint {
+			t.Fatalf("%s subtest does not savepoint before restore", name)
+		}
+		firstSend := strings.Index(segment[savepoint:], ".Send(")
+		secondSend := strings.Index(segment[restore:], ".Send(")
+		if firstSend < 0 || savepoint+firstSend > restore || secondSend < 0 {
+			t.Fatalf("%s subtest does not send before and after restore", name)
+		}
+		wantErrChecks := 3
+		if name == "anthropic-messages" {
+			wantErrChecks = 2
+		}
+		if count := strings.Count(segment, "stream.Err()"); count != wantErrChecks {
+			t.Fatalf("%s subtest checks stream.Err() %d times, want %d", name, count, wantErrChecks)
+		}
+	}
+
+	anthropic := segments["anthropic-messages"]
+	savepoint := strings.Index(anthropic, "Savepoint()")
+	if !strings.Contains(anthropic, "AddSystem(") {
+		t.Fatal("anthropic-messages subtest does not build its prefix with AddSystem")
+	}
+	if strings.Contains(anthropic[:savepoint], ".Send(") {
+		t.Fatal("anthropic-messages subtest sends before its savepoint")
+	}
+
+	for _, name := range names[:4] {
+		if !strings.Contains(segments[name], "CachedTokens") {
+			t.Fatalf("%s subtest does not assert cached tokens", name)
+		}
+	}
+	if strings.Contains(segments["xai-responses"], "CachedTokens") {
+		t.Fatal("xai-responses subtest must not inspect cached tokens")
+	}
+}
+
 // R-L65L-NW29
 func TestMakefileDeclaresLiveTargetExclusively(t *testing.T) {
 	contents, err := os.ReadFile("Makefile")
