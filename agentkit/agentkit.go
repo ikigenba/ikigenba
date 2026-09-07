@@ -47,6 +47,13 @@ type requestState struct {
 	Settings Settings
 	Tools    []Tool
 	Output   *OutputContract
+	// SavepointMark is the count of leading History messages that existed
+	// before the conversation's live savepoint was taken (D26/D27) — zero
+	// when no savepoint is live, or when the savepoint was taken on an empty
+	// History. A wire that supports request-prefix caching (only
+	// AnthropicMessagesWire, as of this phase) uses it to find the boundary
+	// between the stable, already-sent prefix and what has been added since.
+	SavepointMark int
 }
 
 // Stream is the live view of one turn's events.

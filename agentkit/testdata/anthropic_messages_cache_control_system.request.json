@@ -1,0 +1,1 @@
+{"model":"opaque-model","system":[{"type":"text","text":"sys one"},{"type":"text","text":"sys two","cache_control":{"type":"ephemeral"}}],"messages":[{"role":"user","content":[{"type":"text","text":"prompt"}]}],"stream":true}

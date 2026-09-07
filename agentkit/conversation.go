@@ -329,13 +329,18 @@ func newTurnOutputProgress(contract *OutputContract) turnOutputProgress {
 
 func (c *Conversation) executeTurnRoundTrip(ctx context.Context, orchestrator *orchestrator, snapshot turnSnapshot, yield func(Event) bool, accounting *turnTotals) (History, []ToolUse, bool, error) {
 	candidate := append(cloneHistory(snapshot.baseHistory), cloneHistory(snapshot.turn)...)
+	mark := 0
+	if c.liveSavepoint {
+		mark = len(c.savepointHistory)
+	}
 	events, completed, err := c.roundTrip(ctx, requestState{
-		Model:    c.identity.Model,
-		Identity: c.identity,
-		History:  candidate,
-		Settings: cloneSettings(snapshot.settings),
-		Tools:    orchestrator.advertisedSnapshot(),
-		Output:   cloneOutputContract(c.output),
+		Model:         c.identity.Model,
+		Identity:      c.identity,
+		History:       candidate,
+		Settings:      cloneSettings(snapshot.settings),
+		Tools:         orchestrator.advertisedSnapshot(),
+		Output:        cloneOutputContract(c.output),
+		SavepointMark: mark,
 	}, yield)
 	var round providerAccounting
 	if provider, ok := c.provider.(accountingProvider); ok {

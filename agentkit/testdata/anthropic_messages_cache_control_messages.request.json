@@ -1,0 +1,1 @@
+{"model":"opaque-model","messages":[{"role":"user","content":[{"type":"text","text":"first"}]},{"role":"assistant","content":[{"type":"text","text":"first reply","cache_control":{"type":"ephemeral"}}]},{"role":"user","content":[{"type":"text","text":"second"}]}],"stream":true}

@@ -42,16 +42,21 @@ func (w *anthropicMessagesWire) setProtocolHeaders(req *http.Request) {
 }
 
 type anthropicContent struct {
-	Type      string          `json:"type"`
-	Text      string          `json:"text,omitempty"`
-	Thinking  string          `json:"thinking,omitempty"`
-	Signature string          `json:"signature,omitempty"`
-	ID        string          `json:"id,omitempty"`
-	Name      string          `json:"name,omitempty"`
-	Input     json.RawMessage `json:"input,omitempty"`
-	ToolUseID string          `json:"tool_use_id,omitempty"`
-	Content   string          `json:"content,omitempty"`
-	IsError   bool            `json:"is_error,omitempty"`
+	Type         string                 `json:"type"`
+	Text         string                 `json:"text,omitempty"`
+	Thinking     string                 `json:"thinking,omitempty"`
+	Signature    string                 `json:"signature,omitempty"`
+	ID           string                 `json:"id,omitempty"`
+	Name         string                 `json:"name,omitempty"`
+	Input        json.RawMessage        `json:"input,omitempty"`
+	ToolUseID    string                 `json:"tool_use_id,omitempty"`
+	Content      string                 `json:"content,omitempty"`
+	IsError      bool                   `json:"is_error,omitempty"`
+	CacheControl *anthropicCacheControl `json:"cache_control,omitempty"`
+}
+
+type anthropicCacheControl struct {
+	Type string `json:"type"`
 }
 
 type anthropicMessage struct {
@@ -94,7 +99,7 @@ type anthropicRequest struct {
 	Tools         json.RawMessage        `json:"tools,omitempty"`
 }
 
-func buildAnthropicMessages(history []Message) ([]anthropicMessage, []anthropicContent, error) {
+func buildAnthropicMessages(history []Message, mark int) ([]anthropicMessage, []anthropicContent, *anthropicContent, error) {
 	encodeContent := func(message Message) ([]anthropicContent, error) {
 		var content []anthropicContent
 		for _, block := range message.Blocks {
@@ -125,30 +130,55 @@ func buildAnthropicMessages(history []Message) ([]anthropicMessage, []anthropicC
 	for boundary < len(history) && history[boundary].Role == RoleSystem {
 		content, err := encodeContent(history[boundary])
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		system = append(system, content...)
 		boundary++
 	}
 
+	// Record the cache boundary by index so the final pointer is taken only
+	// after all appends that could reallocate the slices are complete.
+	markSystem := mark > 0 && mark <= boundary
+	markMsgIndex, markBlockIndex := -1, -1
+	pendingMarkBlockIndex := -1
+
 	messages := make([]anthropicMessage, 0, len(history))
 	var pendingSystem []anthropicContent
-	for _, message := range history[boundary:] {
+	for i, message := range history[boundary:] {
+		index := boundary + i
 		content, err := encodeContent(message)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if message.Role == RoleSystem {
 			pendingSystem = append(pendingSystem, content...)
+			if mark == index+1 && len(content) > 0 {
+				pendingMarkBlockIndex = len(pendingSystem) - 1
+			}
 			continue
 		}
 		messages = append(messages, anthropicMessage{Role: anthropicRole(message.Role), Content: content})
+		if mark == index+1 && len(content) > 0 {
+			markMsgIndex, markBlockIndex = len(messages)-1, len(content)-1
+		}
 		if message.Role == RoleUser && len(pendingSystem) > 0 {
 			messages = append(messages, anthropicMessage{Role: "system", Content: pendingSystem})
+			if pendingMarkBlockIndex >= 0 {
+				markMsgIndex, markBlockIndex = len(messages)-1, pendingMarkBlockIndex
+				pendingMarkBlockIndex = -1
+			}
 			pendingSystem = nil
 		}
 	}
-	return messages, system, nil
+
+	switch {
+	case markSystem && len(system) > 0:
+		return messages, system, &system[len(system)-1], nil
+	case markMsgIndex >= 0:
+		return messages, system, &messages[markMsgIndex].Content[markBlockIndex], nil
+	default:
+		return messages, system, nil, nil
+	}
 }
 
 func configureAnthropicRequest(request *anthropicRequest, settings Settings, identity Identity) {
@@ -188,9 +218,12 @@ func configureAnthropicRequest(request *anthropicRequest, settings Settings, ide
 }
 
 func (w *anthropicMessagesWire) encodeRequest(state requestState) ([]byte, error) {
-	messages, system, err := buildAnthropicMessages(state.History)
+	messages, system, cacheBlock, err := buildAnthropicMessages(state.History, state.SavepointMark)
 	if err != nil {
 		return nil, err
+	}
+	if cacheBlock != nil {
+		cacheBlock.CacheControl = &anthropicCacheControl{Type: "ephemeral"}
 	}
 	request := anthropicRequest{Model: state.Model, System: system, Messages: messages, Stream: true}
 	if state.Output != nil {

@@ -246,6 +246,84 @@ func TestAnthropicMessagesRendersSystemMessagesByPlacement(t *testing.T) {
 	}
 }
 
+// R-NU2E-M5K2
+// R-KWDX-CV8C
+func TestAnthropicMessagesPlacesCacheControlOnSystemBoundary(t *testing.T) {
+	history := History{
+		{Role: RoleSystem, Blocks: []Block{Text{Text: "sys one"}}},
+		{Role: RoleSystem, Blocks: []Block{Text{Text: "sys two"}}},
+		{Role: RoleUser, Blocks: []Block{Text{Text: "prompt"}}},
+	}
+	encoded, err := AnthropicMessagesWire().EncodeRequest(requestState{
+		Model: "opaque-model", History: history, SavepointMark: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile("testdata/anthropic_messages_cache_control_system.request.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(encoded, want) {
+		t.Fatalf("encoded request = %s\nwant fixture = %s", encoded, want)
+	}
+}
+
+// R-NU2E-M5K2
+func TestAnthropicMessagesPlacesOneCacheControlAtMessageBoundary(t *testing.T) {
+	history := History{
+		{Role: RoleUser, Blocks: []Block{Text{Text: "first"}}},
+		{Role: RoleAssistant, Blocks: []Block{Text{Text: "first reply"}}},
+		{Role: RoleUser, Blocks: []Block{Text{Text: "second"}}},
+	}
+	encoded, err := AnthropicMessagesWire().EncodeRequest(requestState{
+		Model: "opaque-model", History: history, SavepointMark: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile("testdata/anthropic_messages_cache_control_messages.request.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(encoded, want) {
+		t.Fatalf("encoded request = %s\nwant fixture = %s", encoded, want)
+	}
+	if count := bytes.Count(encoded, []byte(`"cache_control"`)); count != 1 {
+		t.Fatalf("cache_control count = %d, want 1: %s", count, encoded)
+	}
+}
+
+// R-KV60-Z3HN
+func TestAnthropicMessagesOmitsCacheControlWithoutLiveSavepoint(t *testing.T) {
+	history := History{
+		{Role: RoleUser, Blocks: []Block{Text{Text: "first"}}},
+		{Role: RoleAssistant, Blocks: []Block{Text{Text: "first reply"}}},
+		{Role: RoleUser, Blocks: []Block{Text{Text: "second"}}},
+	}
+	encoded, err := AnthropicMessagesWire().EncodeRequest(requestState{Model: "opaque-model", History: history})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte("cache_control")) {
+		t.Fatalf("request contains cache_control: %s", encoded)
+	}
+}
+
+// R-NU2E-M5K2
+func TestAnthropicMessagesOmitsCacheControlAtEmptySavepointPrefix(t *testing.T) {
+	history := History{{Role: RoleUser, Blocks: []Block{Text{Text: "first"}}}}
+	encoded, err := AnthropicMessagesWire().EncodeRequest(requestState{
+		Model: "opaque-model", History: history, SavepointMark: 0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte("cache_control")) {
+		t.Fatalf("request contains cache_control: %s", encoded)
+	}
+}
+
 // R-WR37-7DA2
 func TestGeminiGenerateContentHoistsAllSystemMessages(t *testing.T) {
 	history := History{
