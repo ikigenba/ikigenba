@@ -192,6 +192,56 @@ func TestChatAndResponsesWiresRenderSystemMessagesInPlace(t *testing.T) {
 	}
 }
 
+// R-KXLT-QMZ1
+func TestChatAndResponsesWiresIgnoreSavepointMark(t *testing.T) {
+	history := History{
+		{Role: RoleSystem, Blocks: []Block{Text{Text: "You are a helpful assistant."}}},
+		{Role: RoleUser, Blocks: []Block{Text{Text: "Hello"}}},
+		{Role: RoleAssistant, Blocks: []Block{Text{Text: "Hi there"}}},
+		{Role: RoleSystem, Blocks: []Block{Text{Text: "Remember to be concise."}}},
+		{Role: RoleUser, Blocks: []Block{Text{Text: "Continue"}}},
+	}
+	state := requestState{Model: "opaque-model", History: history}
+	families := []struct {
+		name    string
+		wires   []WireFormat
+		fixture string
+	}{
+		{
+			name:    "chat",
+			wires:   []WireFormat{ChatWire(), OpenAIChatWire(), XAIChatWire()},
+			fixture: "testdata/chat_completions_system_messages.request.json",
+		},
+		{
+			name:    "responses",
+			wires:   []WireFormat{ResponsesWire(), OpenAIResponsesWire(), XAIResponsesWire()},
+			fixture: "testdata/responses_system_messages.request.json",
+		},
+	}
+	marks := []int{0, 2, len(history)}
+
+	for _, family := range families {
+		t.Run(family.name, func(t *testing.T) {
+			want, err := os.ReadFile(family.fixture)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, wire := range family.wires {
+				for _, mark := range marks {
+					state.SavepointMark = mark
+					body, encodeErr := wire.EncodeRequest(state)
+					if encodeErr != nil {
+						t.Fatal(encodeErr)
+					}
+					if !bytes.Equal(body, want) {
+						t.Fatalf("%T with SavepointMark %d encoded request = %s\nwant fixture = %s", wire, mark, body, want)
+					}
+				}
+			}
+		})
+	}
+}
+
 // R-WNFI-221Z
 // R-WONE-FTSO
 // R-WPVA-TLJD

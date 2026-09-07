@@ -492,6 +492,56 @@ func TestBuiltInWireClassifiesNonSuccessResponse(t *testing.T) {
 	}
 }
 
+// R-KXLT-QMZ1
+func TestNonAnthropicBuiltInWiresSendWithLiveSavepoint(t *testing.T) {
+	tests := []struct {
+		name string
+		wire WireFormat
+	}{
+		{name: "chat", wire: ChatWire()},
+		{name: "openai-chat", wire: OpenAIChatWire()},
+		{name: "xai-chat", wire: XAIChatWire()},
+		{name: "responses", wire: ResponsesWire()},
+		{name: "openai-responses", wire: OpenAIResponsesWire()},
+		{name: "xai-responses", wire: XAIResponsesWire()},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := credentialSuccessResponse(test.wire)
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				writer.Header().Set("Content-Type", "text/event-stream")
+				writer.WriteHeader(response.status)
+				_, _ = io.WriteString(writer, response.body)
+			}))
+			t.Cleanup(server.Close)
+
+			endpoint, err := NewEndpoint(authFunc(func(context.Context, *http.Request, []byte) error { return nil }), WithBaseURL(server.URL))
+			if err != nil {
+				t.Fatal(err)
+			}
+			useDefaultHTTPClient(t, server.Client())
+			conversation, err := New(test.wire, endpoint, "model", Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			first := conversation.Send(context.Background(), Text{Text: "before savepoint"})
+			drainStream(first)
+			if first.Err() != nil {
+				t.Fatalf("first Send error = %v", first.Err())
+			}
+			if _, err := conversation.Savepoint(); err != nil {
+				t.Fatal(err)
+			}
+			second := conversation.Send(context.Background(), Text{Text: "after savepoint"})
+			drainStream(second)
+			if second.Err() != nil {
+				t.Fatalf("second Send error = %v", second.Err())
+			}
+		})
+	}
+}
+
 func TestBuiltInWireLiftsRetryAfterHeaderIntoError(t *testing.T) {
 	// R-1JWR-1RWS
 	tests := []struct {
