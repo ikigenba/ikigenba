@@ -17,7 +17,7 @@ curl -fsSL https://raw.githubusercontent.com/ikigenba/ikigenba/main/agent-repl/i
 Pin a version or change the destination with env vars:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ikigenba/ikigenba/main/agent-repl/install.sh | AGENT_REPL_VERSION=v0.10.0 BINDIR=/usr/local/bin sh
+curl -fsSL https://raw.githubusercontent.com/ikigenba/ikigenba/main/agent-repl/install.sh | AGENT_REPL_VERSION=v0.11.0 BINDIR=/usr/local/bin sh
 ```
 
 ## What agent-repl is
