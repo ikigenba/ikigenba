@@ -205,19 +205,27 @@ func encodeStore(m map[string]string) ([]byte, error) {
 
 func decodeStore(data []byte) (map[string]string, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
-	var m map[string]string
-	if err := dec.Decode(&m); err != nil {
+	var raw map[string]any
+	if err := dec.Decode(&raw); err != nil {
 		return nil, err
 	}
-	if m == nil {
+	if raw == nil {
 		return nil, errors.New("not a JSON object")
 	}
 	tok, err := dec.Token()
-	if errors.Is(err, io.EOF) {
-		return m, nil
+	if !errors.Is(err, io.EOF) {
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("trailing token %v", tok)
 	}
-	if err != nil {
-		return nil, err
+	m := make(map[string]string, len(raw))
+	for k, v := range raw {
+		s, ok := v.(string)
+		if !ok {
+			return nil, fmt.Errorf("non-string value for %q", k)
+		}
+		m[k] = s
 	}
-	return nil, fmt.Errorf("trailing token %v", tok)
+	return m, nil
 }
