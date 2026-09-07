@@ -126,11 +126,11 @@ func TestValidateOptionsChecksKeyLegalityAndGrammar(t *testing.T) {
 }
 
 func TestSettingsHasExactWireNeutralShapeAndZeroValue(t *testing.T) {
-	// R-W07I-15K8
+	// R-DLXF-VK2V: Settings has exactly Options, ToolChoice, and SerialToolCalls.
 	// R-O755-PYBV
 	typeOfSettings := reflect.TypeFor[Settings]()
-	if got := typeOfSettings.NumField(); got != 2 {
-		t.Fatalf("Settings field count = %d, want 2", got)
+	if got := typeOfSettings.NumField(); got != 3 {
+		t.Fatalf("Settings field count = %d, want 3", got)
 	}
 	wantFields := []struct {
 		name   string
@@ -138,6 +138,7 @@ func TestSettingsHasExactWireNeutralShapeAndZeroValue(t *testing.T) {
 	}{
 		{name: "Options", typeOf: reflect.TypeFor[Options]()},
 		{name: "ToolChoice", typeOf: reflect.TypeFor[ToolChoice]()},
+		{name: "SerialToolCalls", typeOf: reflect.TypeFor[bool]()},
 	}
 	for index, want := range wantFields {
 		field := typeOfSettings.Field(index)
@@ -147,6 +148,9 @@ func TestSettingsHasExactWireNeutralShapeAndZeroValue(t *testing.T) {
 	}
 	if !settingsAreZero(Settings{}) || !reflect.DeepEqual(cloneSettings(Settings{}), Settings{}) {
 		t.Fatal("zero Settings does not preserve vendor defaults with no options")
+	}
+	if settingsAreZero(Settings{SerialToolCalls: true}) {
+		t.Fatal("Settings with SerialToolCalls enabled was treated as zero")
 	}
 }
 
@@ -336,7 +340,8 @@ func TestConflictingReasoningOptionsFail(t *testing.T) {
 
 	_, firstErr := resolveReasoning(Options{"thinking": "on", "effort": "high"})
 	_, secondErr := resolveReasoning(Options{"effort": "high", "thinking": "on"})
-	if firstErr == nil || secondErr == nil || firstErr.Error() != secondErr.Error() {
+	const wantConflict = "conflicting reasoning options: effort, thinking"
+	if firstErr == nil || firstErr.Error() != wantConflict || secondErr == nil || secondErr.Error() != firstErr.Error() {
 		t.Fatalf("conflict errors are not deterministic: first=%v second=%v", firstErr, secondErr)
 	}
 }

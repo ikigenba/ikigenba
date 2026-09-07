@@ -114,6 +114,8 @@ type Settings struct {
 	Options Options
 	// ToolChoice directs tool selection for the turn (see ToolChoice).
 	ToolChoice ToolChoice
+	// SerialToolCalls asks the model for at most one tool call per round-trip.
+	SerialToolCalls bool
 }
 
 // ReasoningMode is the neutral reasoning request. A wire renders the shapes it
@@ -518,5 +520,5 @@ func cloneSettings(settings Settings) Settings {
 }
 
 func settingsAreZero(settings Settings) bool {
-	return len(settings.Options) == 0 && settings.ToolChoice == (ToolChoice{})
+	return len(settings.Options) == 0 && settings.ToolChoice == (ToolChoice{}) && !settings.SerialToolCalls
 }
