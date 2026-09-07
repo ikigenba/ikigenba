@@ -211,6 +211,14 @@ type cacheReleasingProvider interface {
 	releaseCache(context.Context) error
 }
 
+type cacheStaleProvider interface {
+	isCacheStaleRejection(status int, body []byte) bool
+}
+
+type cacheInvalidatingProvider interface {
+	invalidateCache()
+}
+
 func (c *Conversation) prepareOrchestrator() (*orchestrator, error) {
 	orchestrator := newOrchestrator(c.tools, c.deferred, &c.loaded)
 	if err := validateToolSet(orchestrator.inventory); err != nil {
@@ -496,6 +504,10 @@ func (c *Conversation) roundTrip(ctx context.Context, state requestState, yield 
 	if err != nil {
 		return nil, true, err
 	}
+	response, err = c.reissueAfterStaleCache(ctx, state, response)
+	if err != nil {
+		return nil, true, err
+	}
 
 	return c.consumeResponse(ctx, response, yield)
 }
@@ -529,6 +541,40 @@ func (c *Conversation) reissueAfterUnauthorized(ctx context.Context, state reque
 	}
 	if err := hook.refreshOn401(ctx); err != nil {
 		return nil, wrapProviderError(err, CategoryAuth, response.StatusCode, c.identity)
+	}
+	request, err := c.buildRequest(ctx, state)
+	if err != nil {
+		return nil, wrapProviderError(err, CategoryUnknown, 0, c.identity)
+	}
+	retried, err := c.execute(request)
+	if err != nil {
+		return nil, wrapProviderError(err, CategoryTransport, 0, c.identity)
+	}
+	return retried, nil
+}
+
+// reissueAfterStaleCache rebuilds a stale referenced cache and retries the
+// generate request exactly once (R-NXQ3-RGS5). The retry response is returned
+// directly, so any second rejection follows ordinary classification.
+func (c *Conversation) reissueAfterStaleCache(ctx context.Context, state requestState, response *http.Response) (*http.Response, error) {
+	if isHTTPSuccess(response.StatusCode) {
+		return response, nil
+	}
+	classifier, ok := c.provider.(cacheStaleProvider)
+	if !ok {
+		return response, nil
+	}
+	body, err := io.ReadAll(response.Body)
+	_ = response.Body.Close()
+	if err != nil {
+		return nil, wrapProviderError(err, CategoryUnknown, response.StatusCode, c.identity)
+	}
+	if !classifier.isCacheStaleRejection(response.StatusCode, body) {
+		response.Body = io.NopCloser(bytes.NewReader(body))
+		return response, nil
+	}
+	if invalidator, ok := c.provider.(cacheInvalidatingProvider); ok {
+		invalidator.invalidateCache()
 	}
 	request, err := c.buildRequest(ctx, state)
 	if err != nil {

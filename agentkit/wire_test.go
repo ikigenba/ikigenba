@@ -551,10 +551,14 @@ func TestGeminiGenerateContentOmitsUncachedMembersOnceCacheIsLive(t *testing.T) 
 }
 
 type geminiCacheLifecycleFixture struct {
-	conversation   *Conversation
-	cacheCreations int
-	cacheDeletions int
-	generateBodies [][]byte
+	conversation      *Conversation
+	cacheCreations    int
+	cacheDeletions    int
+	generateBodies    [][]byte
+	cacheCreateStatus int
+	cacheCreateBody   string
+	generateStatus    int
+	generateBody      string
 }
 
 func newGeminiCacheLifecycleFixture(t *testing.T) *geminiCacheLifecycleFixture {
@@ -565,6 +569,13 @@ func newGeminiCacheLifecycleFixture(t *testing.T) *geminiCacheLifecycleFixture {
 		case request.Method == http.MethodPost && request.URL.Path == "/v1beta/cachedContents":
 			fixture.cacheCreations++
 			response.Header().Set("Content-Type", "application/json")
+			if fixture.cacheCreateStatus != 0 {
+				response.WriteHeader(fixture.cacheCreateStatus)
+				_, _ = io.WriteString(response, fixture.cacheCreateBody)
+				fixture.cacheCreateStatus = 0
+				fixture.cacheCreateBody = ""
+				return
+			}
 			_, _ = io.WriteString(response, `{"name":"cachedContents/cache-1"}`)
 		case request.Method == http.MethodDelete && request.URL.Path == "/v1beta/cachedContents/cache-1":
 			fixture.cacheDeletions++
@@ -575,6 +586,14 @@ func newGeminiCacheLifecycleFixture(t *testing.T) *geminiCacheLifecycleFixture {
 				t.Errorf("read generate-content body: %v", err)
 			}
 			fixture.generateBodies = append(fixture.generateBodies, body)
+			if fixture.generateStatus != 0 {
+				response.Header().Set("Content-Type", "application/json")
+				response.WriteHeader(fixture.generateStatus)
+				_, _ = io.WriteString(response, fixture.generateBody)
+				fixture.generateStatus = 0
+				fixture.generateBody = ""
+				return
+			}
 			response.Header().Set("Content-Type", "text/event-stream")
 			_, _ = io.WriteString(response, "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}]}\n\n")
 		default:
@@ -589,7 +608,8 @@ func newGeminiCacheLifecycleFixture(t *testing.T) *geminiCacheLifecycleFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixture.conversation, err = New(GeminiGenerateContentWire(), endpoint, "gemini-test-model", Config{})
+	tool := fixtureTool{name: "lookup", description: "look up a value", schema: json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}}}`)}
+	fixture.conversation, err = New(GeminiGenerateContentWire(), endpoint, "gemini-test-model", Config{Tools: []Tool{tool}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -597,6 +617,102 @@ func newGeminiCacheLifecycleFixture(t *testing.T) *geminiCacheLifecycleFixture {
 		t.Fatal(err)
 	}
 	return fixture
+}
+
+// R-NWI7-DP1G
+func TestGeminiGenerateContentTooSmallCacheProceedsUncached(t *testing.T) {
+	fixture := newGeminiCacheLifecycleFixture(t)
+	if _, err := fixture.conversation.Savepoint(); err != nil {
+		t.Fatal(err)
+	}
+	fixture.cacheCreateStatus = http.StatusBadRequest
+	fixture.cacheCreateBody = `{"error":{"status":"INVALID_ARGUMENT","message":"Cached content is too small. total_token_count=16, min_total_token_count=1024"}}`
+
+	sendGeminiCacheLifecycleTurn(t, fixture.conversation, "question")
+	if fixture.cacheCreations != 1 {
+		t.Fatalf("cache creation attempts = %d, want 1", fixture.cacheCreations)
+	}
+	if fixture.cacheDeletions != 0 {
+		t.Fatalf("cache deletions = %d, want 0", fixture.cacheDeletions)
+	}
+	if len(fixture.generateBodies) != 1 {
+		t.Fatalf("generate-content requests = %d, want 1", len(fixture.generateBodies))
+	}
+	var got geminiRequest
+	if err := json.Unmarshal(fixture.generateBodies[0], &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.CachedContent != "" {
+		t.Fatalf("cachedContent = %q, want empty", got.CachedContent)
+	}
+	if got.SystemInstruction == nil || len(got.SystemInstruction.Parts) != 1 || got.SystemInstruction.Parts[0].Text != "cached system prompt" {
+		t.Fatalf("systemInstruction = %#v, want uncached system prompt", got.SystemInstruction)
+	}
+	if len(got.Tools) == 0 {
+		t.Fatalf("tools absent from uncached request: %s", fixture.generateBodies[0])
+	}
+}
+
+// R-NXQ3-RGS5
+func TestGeminiGenerateContentStaleCacheRetriesOnce(t *testing.T) {
+	fixture := newGeminiCacheLifecycleFixture(t)
+	if _, err := fixture.conversation.Savepoint(); err != nil {
+		t.Fatal(err)
+	}
+	sendGeminiCacheLifecycleTurn(t, fixture.conversation, "first question")
+	if fixture.cacheCreations != 1 {
+		t.Fatalf("cache creation attempts after first send = %d, want 1", fixture.cacheCreations)
+	}
+	fixture.generateStatus = http.StatusForbidden
+	fixture.generateBody = `{"error":{"status":"PERMISSION_DENIED","message":"CachedContent not found (or permission denied)."}}`
+
+	sendGeminiCacheLifecycleTurn(t, fixture.conversation, "different question")
+	if fixture.cacheCreations != 2 {
+		t.Fatalf("cache creation attempts = %d, want 2", fixture.cacheCreations)
+	}
+	if len(fixture.generateBodies) != 3 {
+		t.Fatalf("generate-content requests = %d, want 3", len(fixture.generateBodies))
+	}
+	for _, index := range []int{1, 2} {
+		var got struct {
+			CachedContent string `json:"cachedContent"`
+		}
+		if err := json.Unmarshal(fixture.generateBodies[index], &got); err != nil {
+			t.Fatalf("decode generate-content request %d: %v", index+1, err)
+		}
+		if got.CachedContent != "cachedContents/cache-1" {
+			t.Fatalf("request %d cachedContent = %q, want cachedContents/cache-1", index+1, got.CachedContent)
+		}
+	}
+}
+
+// R-NXQ3-RGS5
+func TestGeminiGenerateContentStaleCacheRetryFailureSurfacesAsAuth(t *testing.T) {
+	fixture := newGeminiCacheLifecycleFixture(t)
+	if _, err := fixture.conversation.Savepoint(); err != nil {
+		t.Fatal(err)
+	}
+	sendGeminiCacheLifecycleTurn(t, fixture.conversation, "first question")
+	fixture.generateStatus = http.StatusForbidden
+	fixture.generateBody = `{"error":{"status":"PERMISSION_DENIED","message":"CachedContent not found (or permission denied)."}}`
+	fixture.cacheCreateStatus = http.StatusForbidden
+	fixture.cacheCreateBody = `{"error":{"status":"PERMISSION_DENIED","message":"credential rejected"}}`
+
+	stream := fixture.conversation.Send(context.Background(), Text{Text: "different question"})
+	for event := range stream.Events() {
+		_ = event
+	}
+	err := stream.Err()
+	if err == nil {
+		t.Fatal("Stream.Err() = nil, want recreation failure")
+	}
+	var providerError *Error
+	if !errors.As(err, &providerError) {
+		t.Fatalf("Stream.Err() = %T %v, want *Error", err, err)
+	}
+	if providerError.Category != CategoryAuth || providerError.Status != http.StatusForbidden {
+		t.Fatalf("error category/status = %v/%d, want %v/%d", providerError.Category, providerError.Status, CategoryAuth, http.StatusForbidden)
+	}
 }
 
 func sendGeminiCacheLifecycleTurn(t *testing.T, conversation *Conversation, text string) {

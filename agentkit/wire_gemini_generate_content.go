@@ -7,12 +7,24 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 type geminiGenerateContentWire struct {
 	wireCodec
-	cacheMark int
-	cacheName string
+	cacheMark        int
+	cacheName        string
+	requestUsedCache bool
+}
+
+// geminiCacheErrorStatus is the error.status / error.message shape Gemini
+// uses for both cache failure modes (D27), rather than the generateContent
+// response grammar.
+type geminiCacheErrorStatus struct {
+	Error struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	} `json:"error"`
 }
 
 // GeminiGenerateContentWire returns the built-in Gemini GenerateContent wire codec.
@@ -100,19 +112,37 @@ type geminiRequest struct {
 }
 
 func (w *geminiGenerateContentWire) encodeRequest(state requestState) ([]byte, error) {
+	contents, systemParts, cacheLive, err := w.buildRequestContents(state)
+	if err != nil {
+		return nil, err
+	}
+	request := assembleGeminiRequest(state, contents, systemParts, cacheLive, w.cacheName)
+	if err := w.addOutputSchema(&request, state.Output); err != nil {
+		return nil, err
+	}
+	if err := w.addRequestTools(&request, state.Tools, cacheLive); err != nil {
+		return nil, err
+	}
+	encoded, err := json.Marshal(request)
+	return append(encoded, '\n'), err
+}
+
+func (w *geminiGenerateContentWire) buildRequestContents(state requestState) ([]geminiContent, []geminiPart, bool, error) {
 	cacheLive := w.cacheName != "" && w.cacheMark == state.SavepointMark
+	w.requestUsedCache = cacheLive
 	history := state.History
 	if cacheLive {
 		history = history[state.SavepointMark:]
 	}
 	contents, systemParts, err := buildGeminiContents(history)
-	if err != nil {
-		return nil, err
-	}
+	return contents, systemParts, cacheLive, err
+}
+
+func assembleGeminiRequest(state requestState, contents []geminiContent, systemParts []geminiPart, cacheLive bool, cacheName string) geminiRequest {
 	request := geminiRequest{
 		Contents:         contents,
 		GenerationConfig: applyGeminiSamplingOptions(buildGeminiThinkingConfig(settingsReasoning(state.Settings)), state.Settings.Options),
-		CachedContent:    w.cacheName,
+		CachedContent:    cacheName,
 	}
 	if !cacheLive {
 		request.CachedContent = ""
@@ -121,26 +151,35 @@ func (w *geminiGenerateContentWire) encodeRequest(state requestState) ([]byte, e
 			request.SystemInstruction = &geminiSystemInstruction{Parts: systemParts}
 		}
 	}
-	if state.Output != nil {
-		schema, renderErr := w.renderOutputSchema(state.Output.Schema)
-		if renderErr != nil {
-			return nil, fmt.Errorf("agentkit: render Gemini output schema: %w", renderErr)
-		}
-		if request.GenerationConfig == nil {
-			request.GenerationConfig = &geminiGenerationConfig{}
-		}
-		request.GenerationConfig.ResponseMIMEType = "application/json"
-		request.GenerationConfig.ResponseJSONSchema = schema
+	return request
+}
+
+func (w *geminiGenerateContentWire) addOutputSchema(request *geminiRequest, output *OutputContract) error {
+	if output == nil {
+		return nil
 	}
-	if !cacheLive && len(state.Tools) > 0 {
-		rendered, renderErr := w.renderToolList(state.Tools)
-		if renderErr != nil {
-			return nil, renderErr
-		}
-		request.Tools = rendered
+	schema, err := w.renderOutputSchema(output.Schema)
+	if err != nil {
+		return fmt.Errorf("agentkit: render Gemini output schema: %w", err)
 	}
-	encoded, err := json.Marshal(request)
-	return append(encoded, '\n'), err
+	if request.GenerationConfig == nil {
+		request.GenerationConfig = &geminiGenerationConfig{}
+	}
+	request.GenerationConfig.ResponseMIMEType = "application/json"
+	request.GenerationConfig.ResponseJSONSchema = schema
+	return nil
+}
+
+func (w *geminiGenerateContentWire) addRequestTools(request *geminiRequest, tools []Tool, cacheLive bool) error {
+	if cacheLive || len(tools) == 0 {
+		return nil
+	}
+	rendered, err := w.renderToolList(tools)
+	if err != nil {
+		return err
+	}
+	request.Tools = rendered
+	return nil
 }
 
 type geminiCachedContentRequest struct {
@@ -202,7 +241,12 @@ func (w *geminiGenerateContentWire) prepareCache(ctx context.Context, client *ht
 		return fmt.Errorf("agentkit: Gemini cached content response: %w", err)
 	}
 	if !isHTTPSuccess(response.StatusCode) {
-		return fmt.Errorf("agentkit: create Gemini cached content: status %d: %q", response.StatusCode, responseBody)
+		if isGeminiCacheTooSmallRejection(response.StatusCode, responseBody) {
+			// R-NWI7-DP1G: a below-minimum prefix is not a consumer error.
+			// Keep the cache empty so encodeRequest renders the turn uncached.
+			return nil
+		}
+		return classifiedGeminiCacheError(response.StatusCode, response.Header, responseBody)
 	}
 	var created struct {
 		Name string `json:"name"`
@@ -242,11 +286,52 @@ func (w *geminiGenerateContentWire) releaseCache(ctx context.Context, client *ht
 		return fmt.Errorf("agentkit: Gemini cached content delete response: %w", err)
 	}
 	if !isHTTPSuccess(response.StatusCode) {
-		return fmt.Errorf("agentkit: delete Gemini cached content: status %d: %q", response.StatusCode, responseBody)
+		return classifiedGeminiCacheError(response.StatusCode, response.Header, responseBody)
 	}
 	w.cacheName = ""
-	w.cacheMark = 0
 	return nil
+}
+
+// isGeminiCacheTooSmallRejection reports whether body is the host's
+// below-minimum-size cachedContents creation rejection (R-NWI7-DP1G).
+func isGeminiCacheTooSmallRejection(status int, body []byte) bool {
+	if status != http.StatusBadRequest {
+		return false
+	}
+	var parsed geminiCacheErrorStatus
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return false
+	}
+	return parsed.Error.Status == "INVALID_ARGUMENT" && strings.HasPrefix(parsed.Error.Message, "Cached content is too small")
+}
+
+// classifiedGeminiCacheError gives cachedContents failures the same *Error
+// shape as ordinary response classification, including auth for a 403.
+func classifiedGeminiCacheError(status int, header http.Header, body []byte) error {
+	return &Error{
+		Category:   classifyStatus(status),
+		Status:     status,
+		Message:    string(body),
+		RetryAfter: parseRetryAfter(header),
+	}
+}
+
+// isCacheStaleRejection recognizes a missing cachedContents resource only
+// when the rejected request actually referenced the cache (R-NXQ3-RGS5).
+func (w *geminiGenerateContentWire) isCacheStaleRejection(status int, body []byte) bool {
+	if status != http.StatusForbidden || !w.requestUsedCache {
+		return false
+	}
+	var parsed geminiCacheErrorStatus
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return false
+	}
+	return parsed.Error.Status == "PERMISSION_DENIED"
+}
+
+// invalidateCache makes the next cache preparation recreate the resource.
+func (w *geminiGenerateContentWire) invalidateCache() {
+	w.cacheName = ""
 }
 
 func (w *geminiGenerateContentWire) renderToolList(tools []Tool) (json.RawMessage, error) {

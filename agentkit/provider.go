@@ -66,6 +66,12 @@ type rejectedCredentialClassifier interface {
 	isRejectedCredential(status int, body []byte) bool
 }
 
+// cacheStaleClassifier lets Conversation recognize a vendor's stale-cache
+// response without widening wireProvider.
+type cacheStaleClassifier interface {
+	isCacheStaleRejection(status int, body []byte) bool
+}
+
 func newComposedProvider(wire wireFormat, endpoint Endpoint, identity Identity) *composedProvider {
 	return &composedProvider{wire: wire, endpoint: endpoint, identity: identity, client: http.DefaultClient}
 }
@@ -145,6 +151,19 @@ func (provider *composedProvider) isRejectedCredential(status int, body []byte) 
 		return classifier.isRejectedCredential(status, body)
 	}
 	return false
+}
+
+func (provider *composedProvider) isCacheStaleRejection(status int, body []byte) bool {
+	if classifier, ok := provider.wire.(cacheStaleClassifier); ok {
+		return classifier.isCacheStaleRejection(status, body)
+	}
+	return false
+}
+
+func (provider *composedProvider) invalidateCache() {
+	if invalidator, ok := provider.wire.(interface{ invalidateCache() }); ok {
+		invalidator.invalidateCache()
+	}
 }
 
 func (provider *composedProvider) Identity() Identity { return provider.identity }

@@ -970,7 +970,7 @@ func TestRootWireConstructorsHaveDistinctSoleCodecTypes(t *testing.T) {
 		}
 		wantFields := 1
 		if wire.typeName == "geminiGenerateContentWire" {
-			wantFields = 3
+			wantFields = 4
 		}
 		if len(structure.Fields.List) != wantFields {
 			t.Errorf("%s fields = %d, want embedded wireCodec plus required private state", wire.typeName, len(structure.Fields.List))
@@ -984,13 +984,18 @@ func TestRootWireConstructorsHaveDistinctSoleCodecTypes(t *testing.T) {
 		if wire.typeName == "geminiGenerateContentWire" {
 			cacheMark := structure.Fields.List[1]
 			cacheName := structure.Fields.List[2]
+			requestUsedCache := structure.Fields.List[3]
 			markType, markIsIdentifier := cacheMark.Type.(*ast.Ident)
 			nameType, nameIsIdentifier := cacheName.Type.(*ast.Ident)
+			requestUsedCacheType, requestUsedCacheIsIdentifier := requestUsedCache.Type.(*ast.Ident)
 			if len(cacheMark.Names) != 1 || cacheMark.Names[0].Name != "cacheMark" || !markIsIdentifier || markType.Name != "int" {
 				t.Errorf("gemini cache mark field = %#v, want cacheMark int", cacheMark)
 			}
 			if len(cacheName.Names) != 1 || cacheName.Names[0].Name != "cacheName" || !nameIsIdentifier || nameType.Name != "string" {
 				t.Errorf("gemini cache name field = %#v, want cacheName string", cacheName)
+			}
+			if len(requestUsedCache.Names) != 1 || requestUsedCache.Names[0].Name != "requestUsedCache" || !requestUsedCacheIsIdentifier || requestUsedCacheType.Name != "bool" {
+				t.Errorf("gemini request cache-use field = %#v, want requestUsedCache bool", requestUsedCache)
 			}
 		}
 
