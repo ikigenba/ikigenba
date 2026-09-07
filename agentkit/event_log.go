@@ -225,6 +225,33 @@ func (l *Log) start(identity Identity) {
 	l.write(LogRecord{Type: RecordTurnStart, Identity: &identity})
 }
 
+func (l *Log) savepoint() {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.write(LogRecord{Type: RecordSavepoint})
+}
+
+func (l *Log) restore() {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.write(LogRecord{Type: RecordRestore})
+}
+
+func (l *Log) release() {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.write(LogRecord{Type: RecordRelease})
+}
+
 func (l *Log) record(record eventRecord) {
 	if l == nil {
 		return

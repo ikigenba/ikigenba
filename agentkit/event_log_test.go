@@ -2,7 +2,9 @@ package agentkit
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"go/ast"
 	"go/constant"
 	"go/importer"
@@ -13,10 +15,245 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestSavepointLifecycleWritesExactlyOneRecordOnSuccess(t *testing.T) {
+	// R-86CB-5Z1H
+	var output bytes.Buffer
+	log := NewLog(&output, func() time.Time { return time.Time{} }, "")
+	conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(new(int)), Config{Log: log})
+
+	sp, err := conversation.Savepoint()
+	if err != nil {
+		t.Fatalf("Savepoint() error = %v, want nil", err)
+	}
+	if err := conversation.Restore(sp); err != nil {
+		t.Fatalf("Restore() error = %v, want nil", err)
+	}
+	if err := conversation.Release(sp); err != nil {
+		t.Fatalf("Release() error = %v, want nil", err)
+	}
+
+	records := decodeLogRecords(t, output.Bytes())
+	want := []RecordType{RecordSavepoint, RecordRestore, RecordRelease}
+	if len(records) != len(want) {
+		t.Fatalf("lifecycle record count = %d, want exactly %d: %#v", len(records), len(want), records)
+	}
+	for index, record := range records {
+		if record.Type != want[index] {
+			t.Errorf("record %d type = %q, want %q", index, record.Type, want[index])
+		}
+		if record.Type == RecordTurnStart || record.Type == RecordTurnEnd {
+			t.Errorf("lifecycle record %d unexpectedly introduced a turn boundary: %#v", index, record)
+		}
+	}
+}
+
+func TestSavepointLifecycleWritesNothingOnError(t *testing.T) {
+	// R-86CB-5Z1H
+	tests := []struct {
+		name    string
+		prepare func(*Conversation, *bytes.Buffer) func() error
+		wantErr error
+	}{
+		{
+			name: "savepoint while turn in flight",
+			prepare: func(conversation *Conversation, _ *bytes.Buffer) func() error {
+				conversation.state = conversationInFlight
+				return func() error { _, err := conversation.Savepoint(); return err }
+			},
+			wantErr: ErrTurnInFlight,
+		},
+		{
+			name: "savepoint while closed",
+			prepare: func(conversation *Conversation, _ *bytes.Buffer) func() error {
+				conversation.state = conversationClosed
+				return func() error { _, err := conversation.Savepoint(); return err }
+			},
+			wantErr: ErrClosed,
+		},
+		{
+			name: "savepoint while already active",
+			prepare: func(conversation *Conversation, output *bytes.Buffer) func() error {
+				if _, err := conversation.Savepoint(); err != nil {
+					t.Fatalf("setup Savepoint() error = %v", err)
+				}
+				output.Reset()
+				return func() error { _, err := conversation.Savepoint(); return err }
+			},
+			wantErr: ErrSavepointActive,
+		},
+		{
+			name: "restore while turn in flight",
+			prepare: func(conversation *Conversation, _ *bytes.Buffer) func() error {
+				conversation.state = conversationInFlight
+				return func() error { return conversation.Restore(Savepoint{}) }
+			},
+			wantErr: ErrTurnInFlight,
+		},
+		{
+			name: "restore while closed",
+			prepare: func(conversation *Conversation, _ *bytes.Buffer) func() error {
+				conversation.state = conversationClosed
+				return func() error { return conversation.Restore(Savepoint{}) }
+			},
+			wantErr: ErrClosed,
+		},
+		{
+			name: "restore with invalid handle",
+			prepare: func(conversation *Conversation, _ *bytes.Buffer) func() error {
+				return func() error { return conversation.Restore(Savepoint{}) }
+			},
+			wantErr: ErrInvalidArgument,
+		},
+		{
+			name: "release while turn in flight",
+			prepare: func(conversation *Conversation, _ *bytes.Buffer) func() error {
+				conversation.state = conversationInFlight
+				return func() error { return conversation.Release(Savepoint{}) }
+			},
+			wantErr: ErrTurnInFlight,
+		},
+		{
+			name: "release while closed",
+			prepare: func(conversation *Conversation, _ *bytes.Buffer) func() error {
+				conversation.state = conversationClosed
+				return func() error { return conversation.Release(Savepoint{}) }
+			},
+			wantErr: ErrClosed,
+		},
+		{
+			name: "release with invalid handle",
+			prepare: func(conversation *Conversation, _ *bytes.Buffer) func() error {
+				return func() error { return conversation.Release(Savepoint{}) }
+			},
+			wantErr: ErrInvalidArgument,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			log := NewLog(&output, func() time.Time { return time.Time{} }, "")
+			conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(new(int)), Config{Log: log})
+			invoke := test.prepare(conversation, &output)
+
+			if err := invoke(); !errors.Is(err, test.wantErr) {
+				t.Fatalf("operation error = %v, want %v", err, test.wantErr)
+			}
+			if output.Len() != 0 {
+				records := decodeLogRecords(t, output.Bytes())
+				for _, record := range records {
+					if record.Type == RecordSavepoint || record.Type == RecordRestore || record.Type == RecordRelease {
+						t.Fatalf("failed operation wrote lifecycle record %#v", record)
+					}
+				}
+				t.Fatalf("failed operation wrote unexpected records: %#v", records)
+			}
+		})
+	}
+}
+
+func TestReplayAcrossFailedTurnAndRestoreReconstructsHistory(t *testing.T) {
+	// R-6N6M-6P9I
+	committed := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "committed"}}}
+	temporary := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "temporary"}}}
+	provider := &phase15Provider{
+		model:        "model",
+		responses:    [][]Event{{MessageDone{Message: committed}}, nil, {MessageDone{Message: temporary}}},
+		decodeErrors: []error{nil, errors.New("discard this turn")},
+	}
+	var output bytes.Buffer
+	conversation := newConversation(provider, successfulPhase15Client(new(int)), Config{
+		Log: NewLog(&output, func() time.Time { return time.Time{} }, ""),
+	})
+
+	first := conversation.Send(context.Background(), Text{Text: "keep"})
+	drainStream(first)
+	if first.Err() != nil {
+		t.Fatalf("committed Send error = %v", first.Err())
+	}
+	failed := conversation.Send(context.Background(), Text{Text: "failed"})
+	drainStream(failed)
+	if failed.Err() == nil {
+		t.Fatal("failed Send error = nil, want terminal error")
+	}
+	sp, err := conversation.Savepoint()
+	if err != nil {
+		t.Fatalf("Savepoint() error = %v", err)
+	}
+	temporaryTurn := conversation.Send(context.Background(), Text{Text: "remove"})
+	drainStream(temporaryTurn)
+	if temporaryTurn.Err() != nil {
+		t.Fatalf("temporary Send error = %v", temporaryTurn.Err())
+	}
+	if err := conversation.Restore(sp); err != nil {
+		t.Fatalf("Restore() error = %v", err)
+	}
+	if err := conversation.Release(sp); err != nil {
+		t.Fatalf("Release() error = %v", err)
+	}
+
+	replay := func(records []LogRecord) History {
+		records = append([]LogRecord(nil), records...)
+		sort.Slice(records, func(i, j int) bool { return records[i].Seq < records[j].Seq })
+		var history History
+		var turn History
+		inTurn := false
+		discardTurn := false
+		savepointLength := -1
+		for _, record := range records {
+			switch record.Type {
+			case RecordTurnStart:
+				inTurn = true
+				discardTurn = false
+				turn = nil
+			case RecordMessage:
+				if inTurn {
+					turn = append(turn, *record.Message)
+				} else {
+					history = append(history, *record.Message)
+				}
+			case RecordError, RecordLimit:
+				if inTurn {
+					discardTurn = true
+				}
+			case RecordTurnEnd:
+				if !discardTurn {
+					history = append(history, turn...)
+				}
+				inTurn = false
+				turn = nil
+			case RecordSavepoint:
+				savepointLength = len(history)
+			case RecordRestore:
+				if savepointLength >= 0 {
+					history = history[:savepointLength]
+				}
+			case RecordRelease:
+				savepointLength = -1
+			}
+		}
+		return history
+	}
+
+	records := decodeLogRecords(t, output.Bytes())
+	counts := make(map[RecordType]int)
+	for _, record := range records {
+		counts[record.Type]++
+	}
+	if counts[RecordTurnStart] != 3 || counts[RecordTurnEnd] != 3 || counts[RecordError] != 1 ||
+		counts[RecordSavepoint] != 1 || counts[RecordRestore] != 1 || counts[RecordRelease] != 1 {
+		t.Fatalf("scenario did not exercise every replay marker: counts=%#v records=%#v", counts, records)
+	}
+	if got := replay(records); !reflect.DeepEqual(got, conversation.history) {
+		t.Fatalf("replayed History = %#v, want live History %#v", got, conversation.history)
+	}
+}
 
 func TestLogRecordsUseInjectedTimePerTurnSequenceAndFullIdentity(t *testing.T) {
 	// R-TA2N-M36A

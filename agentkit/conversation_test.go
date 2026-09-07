@@ -2810,9 +2810,12 @@ func TestAddSystemSuspendedWhileSavepointLive(t *testing.T) {
 	}
 	wantMessage := Message{Role: RoleSystem, Blocks: []Block{Text{Text: "before"}}}
 	records := decodeLogRecords(t, output.Bytes())
-	if len(records) != 1 || records[0].Type != RecordMessage || records[0].Message == nil ||
+	if len(records) != 2 || records[0].Type != RecordMessage || records[0].Message == nil ||
 		!reflect.DeepEqual(*records[0].Message, wantMessage) {
-		t.Fatalf("AddSystem log records = %#v, want only successful message %#v", records, wantMessage)
+		t.Fatalf("AddSystem log records = %#v, want successful message %#v followed by savepoint", records, wantMessage)
+	}
+	if records[1].Type != RecordSavepoint {
+		t.Fatalf("record after successful AddSystem = %#v, want savepoint lifecycle record", records[1])
 	}
 }
 

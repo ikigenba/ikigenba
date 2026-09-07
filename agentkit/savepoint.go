@@ -21,6 +21,8 @@ func (c *Conversation) Savepoint() (Savepoint, error) {
 	c.savepointHistory = cloneHistory(c.history)
 	c.savepointToolCalls = c.toolCallsDispatched
 	c.liveSavepoint = true
+	log, _ := c.eventSink.(*Log)
+	log.savepoint()
 	return Savepoint{owner: c, id: c.savepointGeneration}, nil
 }
 
@@ -38,6 +40,8 @@ func (c *Conversation) Restore(sp Savepoint) error {
 	c.history = cloneHistory(c.savepointHistory)
 	c.toolCallsDispatched = c.savepointToolCalls
 	c.lastRoundContext = 0
+	log, _ := c.eventSink.(*Log)
+	log.restore()
 	return nil
 }
 
@@ -54,6 +58,8 @@ func (c *Conversation) Release(sp Savepoint) error {
 	}
 	c.liveSavepoint = false
 	c.savepointHistory = nil
+	log, _ := c.eventSink.(*Log)
+	log.release()
 	return nil
 }
 
