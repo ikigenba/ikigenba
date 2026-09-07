@@ -2,6 +2,8 @@
 package cli
 
 import (
+	"flag"
+	"fmt"
 	"io"
 )
 
@@ -36,6 +38,9 @@ Exit codes:
 Run 'opsctl <command> --help' for details on a command.
 `
 
+// version is the opsctl version (vMAJOR.MINOR.PATCH), set in source.
+var version = "v0.1.0"
+
 // Deps carries what a command cannot be deterministic about.
 type Deps struct {
 	Root string // filesystem root every host path is resolved under ("/" in production)
@@ -48,21 +53,47 @@ type Deps struct {
 // the process exit code.
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, deps Deps) int {
 	_ = stdin
-	if isHelp(args) {
-		return int(writeHelp(stdout))
-	}
-	if len(args) == 0 {
-		return int(exitUsage)
-	}
-	return int(dispatch(args[0], args[1:], stdout, stderr, deps))
+	return int(run(args, stdout, stderr, deps))
 }
 
-func isHelp(args []string) bool {
-	return len(args) == 1 && (args[0] == "--help" || args[0] == "-h")
+func run(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
+	help, showVersion, rest, err := parseTopLevel(args)
+	if err != nil {
+		_, _ = io.WriteString(stderr, usageText)
+		return exitUsage
+	}
+	if help {
+		return writeOut(stdout, usageText)
+	}
+	if showVersion {
+		return writeOut(stdout, version+"\n")
+	}
+	if len(rest) == 0 {
+		_, _ = io.WriteString(stderr, usageText)
+		return exitUsage
+	}
+	return dispatch(rest[0], rest[1:], stdout, stderr, deps)
 }
 
-func writeHelp(stdout io.Writer) exitCode {
-	if _, err := io.WriteString(stdout, usageText); err != nil {
+func parseTopLevel(args []string) (help, showVersion bool, rest []string, err error) {
+	fs := flag.NewFlagSet("opsctl", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.Usage = func() {}
+	boolFlag(fs, "h", "help", &help)
+	boolFlag(fs, "V", "version", &showVersion)
+	if err = fs.Parse(args); err != nil {
+		return false, false, nil, err
+	}
+	return help, showVersion, fs.Args(), nil
+}
+
+func boolFlag(fs *flag.FlagSet, short, long string, dest *bool) {
+	fs.BoolVar(dest, short, false, "")
+	fs.BoolVar(dest, long, false, "")
+}
+
+func writeOut(w io.Writer, s string) exitCode {
+	if _, err := io.WriteString(w, s); err != nil {
 		return exitFail
 	}
 	return exitOK
@@ -72,7 +103,23 @@ func dispatch(name string, args []string, stdout, stderr io.Writer, deps Deps) e
 	switch name {
 	case "config":
 		return runConfig(args, stdout, stderr, deps)
+	case "version":
+		return writeOut(stdout, version+"\n")
 	default:
+		_, _ = fmt.Fprintf(stderr, "opsctl: unknown command: %q\n", name)
+		_, _ = io.WriteString(stderr, usageText)
 		return exitUsage
 	}
+}
+
+func isCommandHelp(args []string) bool {
+	return len(args) > 0 && (args[0] == "-h" || args[0] == "--help")
+}
+
+func requireRoot(deps Deps, stderr io.Writer) exitCode {
+	if deps.EUID == 0 {
+		return exitOK
+	}
+	_, _ = io.WriteString(stderr, "opsctl: must run as root\n")
+	return exitRefused
 }

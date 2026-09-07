@@ -8,32 +8,37 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 )
 
+const configUsage = `Usage: opsctl config <subcommand> [arguments]
+
+Read and write the host configuration store (/etc/ikigenba/config.json).
+
+Subcommands:
+  get KEY        print the value of KEY; exit 1 if KEY is not set
+  set KEY=VALUE  set KEY to VALUE, creating or replacing it
+  del KEY        remove KEY; succeeds whether or not KEY is set
+  list           print every KEY=VALUE, one per line, sorted by key
+
+Keys match ^[a-z0-9_.-]+$. Values may not contain newlines.
+`
+
 func runConfig(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
+	if isCommandHelp(args) {
+		return writeOut(stdout, configUsage)
+	}
+	if code := requireRoot(deps, stderr); code != exitOK {
+		return code
+	}
 	if len(args) == 0 {
 		return exitUsage
 	}
 	switch args[0] {
 	case "set":
-		if code := requireRoot(deps, stderr); code != 0 {
-			return code
-		}
 		return configSet(args[1:], stderr, deps)
 	case "get":
-		if code := requireRoot(deps, stderr); code != 0 {
-			return code
-		}
 		return configGet(args[1:], stdout, stderr, deps)
 	default:
 		return exitUsage
 	}
-}
-
-func requireRoot(deps Deps, stderr io.Writer) exitCode {
-	if deps.EUID == 0 {
-		return exitOK
-	}
-	_, _ = io.WriteString(stderr, "opsctl: must run as root\n")
-	return exitRefused
 }
 
 func configSet(args []string, stderr io.Writer, deps Deps) exitCode {
