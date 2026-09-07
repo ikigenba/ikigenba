@@ -2124,7 +2124,7 @@ func TestRuntimeToolValidationIsOwnedOnlyByTheUnexportedOrchestrator(t *testing.
 	}
 
 	dispatch := declaredFunction(t, "orchestrator.go", "dispatch")
-	if dispatch.Name.IsExported() || dispatch.Recv == nil || renderedNode(t, dispatch.Type) != "func(ctx context.Context, call ToolUse) ToolResult" || renderedNode(t, dispatch.Recv.List[0].Type) != "*orchestrator" {
+	if dispatch.Name.IsExported() || dispatch.Recv == nil || renderedNode(t, dispatch.Type) != "func(ctx context.Context, call ToolUse, savepointLive bool) ToolResult" || renderedNode(t, dispatch.Recv.List[0].Type) != "*orchestrator" {
 		t.Fatalf("dispatch declaration = receiver %s type %s", renderedNode(t, dispatch.Recv.List[0].Type), renderedNode(t, dispatch.Type))
 	}
 

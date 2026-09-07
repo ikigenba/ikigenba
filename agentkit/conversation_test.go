@@ -2723,7 +2723,7 @@ func TestLoadToolsCatalogContainsOnlyGroupBlurbsAndBareNames(t *testing.T) {
 }
 
 func TestLoadToolsBatchesGroupsAndToolsWithInBandUnknownRecovery(t *testing.T) {
-	// R-5T8C-0I3M
+	// R-8G3I-84Z1
 	a1 := concreteTool{name: "a1", schema: json.RawMessage(`{"type":"object","properties":{"alpha_marker":{"type":"string"}}}`)}
 	a2 := phase17Tool("a2")
 	solo := phase17Tool("solo")
@@ -2758,6 +2758,33 @@ func TestLoadToolsBatchesGroupsAndToolsWithInBandUnknownRecovery(t *testing.T) {
 	secondResult := provider.states[2].History[len(provider.states[2].History)-1].Blocks[0].(ToolResult)
 	if secondResult.IsError {
 		t.Fatalf("already-loaded name became terminal: %#v", secondResult)
+	}
+}
+
+func TestLoadToolsSuspendedWhileSavepointLive(t *testing.T) {
+	// R-7Z0W-VCLB
+	first := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "load-suspended", Name: loadToolsName, Input: json.RawMessage(`{"names":["group_a"]}`)}}}
+	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
+	transportCalls := 0
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Deferred: []DeferredGroup{
+		{Name: "group_a", Tools: []Tool{phase17Tool("secret")}},
+	}})
+	if _, err := conversation.Savepoint(); err != nil {
+		t.Fatalf("Savepoint() error = %v, want nil", err)
+	}
+
+	stream := conversation.Send(context.Background(), Text{Text: "go"})
+	drainStream(stream)
+	if stream.Err() != nil || transportCalls != 2 {
+		t.Fatalf("turn = %v, calls %d", stream.Err(), transportCalls)
+	}
+	result := provider.states[1].History[len(provider.states[1].History)-1].Blocks[0].(ToolResult)
+	if !result.IsError || !strings.Contains(result.Content, "savepoint") {
+		t.Fatalf("suspended load result = %#v", result)
+	}
+	if before, after := toolNames(provider.states[0].Tools), toolNames(provider.states[1].Tools); !reflect.DeepEqual(after, before) {
+		t.Fatalf("tools changed while savepoint was live: before=%v after=%v", before, after)
 	}
 }
 
@@ -3012,7 +3039,7 @@ func TestOrchestratorValidatesEveryCallBeforeInvokingTool(t *testing.T) {
 
 func TestUnknownAndDeferredDirectCallsRecoverWithoutGuessedExecution(t *testing.T) {
 	// R-4IW5-H7X8
-	// R-5VO4-S1L0
+	// R-5UUD-8XZT
 	for _, test := range []struct {
 		name          string
 		deferred      bool
@@ -3063,6 +3090,42 @@ func TestUnknownAndDeferredDirectCallsRecoverWithoutGuessedExecution(t *testing.
 				t.Fatalf("next round did not advertise full deferred schema: %s", provider.states[1].Tools[1].Schema())
 			}
 		})
+	}
+}
+
+func TestDeferredDirectCallSuspendedWhileSavepointLive(t *testing.T) {
+	// R-808T-94C0
+	callbackCalls := 0
+	secret := concreteTool{
+		name:   "secret",
+		schema: json.RawMessage(`{"type":"object","properties":{}}`),
+		call: func(context.Context, json.RawMessage) (string, error) {
+			callbackCalls++
+			return "must not execute", nil
+		},
+	}
+	first := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "secret-suspended", Name: "secret", Input: json.RawMessage(`{"guessed":true}`)}}}
+	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
+	transportCalls := 0
+	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{Deferred: []DeferredGroup{
+		{Name: "group_a", Tools: []Tool{secret}},
+	}})
+	if _, err := conversation.Savepoint(); err != nil {
+		t.Fatalf("Savepoint() error = %v, want nil", err)
+	}
+
+	stream := conversation.Send(context.Background(), Text{Text: "go"})
+	drainStream(stream)
+	if stream.Err() != nil || transportCalls != 2 || callbackCalls != 0 {
+		t.Fatalf("turn = %v, transport calls %d, callback calls %d", stream.Err(), transportCalls, callbackCalls)
+	}
+	result := provider.states[1].History[len(provider.states[1].History)-1].Blocks[0].(ToolResult)
+	if !result.IsError {
+		t.Fatalf("suspended direct-call result = %#v", result)
+	}
+	if before, after := toolNames(provider.states[0].Tools), toolNames(provider.states[1].Tools); !reflect.DeepEqual(after, before) {
+		t.Fatalf("tools changed while savepoint was live: before=%v after=%v", before, after)
 	}
 }
 

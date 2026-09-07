@@ -11,6 +11,14 @@ import (
 	"strings"
 )
 
+type conversationState uint8
+
+const (
+	conversationReady conversationState = iota
+	conversationInFlight
+	conversationClosed
+)
+
 // Conversation binds a provider and its stable identity to a growing
 // transcript.
 type Conversation struct {
@@ -32,8 +40,7 @@ type Conversation struct {
 	savepointGeneration uint64
 	savepointHistory    History
 	savepointToolCalls  int
-	closed              bool
-	turnInFlight        bool
+	state               conversationState
 }
 
 // Config is the construction-time configuration of a Conversation: everything a
@@ -102,13 +109,18 @@ func (c *Conversation) AddSystem(text string) error {
 // life; only the transcript grows. Send is the one verb — multimodal input
 // arrives as additional Block variants, never as a second method.
 func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream {
+	if c.isClosed() {
+		return &Stream{outputDeclared: c.output != nil, drive: func(func(Event) bool) error {
+			return ErrClosed
+		}}
+	}
 	turn := c.snapshotTurn(blocks)
-	c.turnInFlight = true
+	c.state = conversationInFlight
 	turnFinished := true
 	return &Stream{outputDeclared: c.output != nil, drive: func(yield func(Event) bool) error {
 		defer func() {
 			if turnFinished {
-				c.turnInFlight = false
+				c.state = conversationReady
 			}
 		}()
 		downstream := yield
@@ -142,7 +154,7 @@ func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream {
 }
 
 func (c *Conversation) isClosed() bool {
-	if c.closed {
+	if c.state == conversationClosed {
 		return true
 	}
 	log, _ := c.eventSink.(*Log)
@@ -362,7 +374,7 @@ func (c *Conversation) finishNoToolRound(snapshot *turnSnapshot, assistant Histo
 func (c *Conversation) dispatchTurnTools(ctx context.Context, orchestrator *orchestrator, snapshot *turnSnapshot, calls []ToolUse, yield func(Event) bool) bool {
 	results := make([]Block, 0, len(calls))
 	for _, call := range calls {
-		result := orchestrator.dispatch(ctx, call)
+		result := orchestrator.dispatch(ctx, call, c.liveSavepoint)
 		results = append(results, result)
 		if !publishEvent(c.eventSink, yield, ToolReturn{Result: result}) {
 			return false

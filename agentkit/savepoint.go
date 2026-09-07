@@ -8,7 +8,7 @@ type Savepoint struct {
 
 // Savepoint returns an opaque handle associated with the Conversation.
 func (c *Conversation) Savepoint() (Savepoint, error) {
-	if c.turnInFlight {
+	if c.state == conversationInFlight {
 		return Savepoint{}, ErrTurnInFlight
 	}
 	if c.isClosed() {
@@ -26,7 +26,7 @@ func (c *Conversation) Savepoint() (Savepoint, error) {
 
 // Restore accepts a Savepoint handle.
 func (c *Conversation) Restore(sp Savepoint) error {
-	if c.turnInFlight {
+	if c.state == conversationInFlight {
 		return ErrTurnInFlight
 	}
 	if c.isClosed() {
@@ -43,7 +43,7 @@ func (c *Conversation) Restore(sp Savepoint) error {
 
 // Release accepts a Savepoint handle.
 func (c *Conversation) Release(sp Savepoint) error {
-	if c.turnInFlight {
+	if c.state == conversationInFlight {
 		return ErrTurnInFlight
 	}
 	if c.isClosed() {
@@ -63,9 +63,9 @@ func (c *Conversation) isLiveSavepoint(sp Savepoint) bool {
 
 // Close marks the Conversation closed without closing its consumer-owned Log.
 func (c *Conversation) Close() error {
-	if c.turnInFlight {
+	if c.state == conversationInFlight {
 		return ErrTurnInFlight
 	}
-	c.closed = true
+	c.state = conversationClosed
 	return nil
 }

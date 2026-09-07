@@ -93,7 +93,7 @@ func TestCloseRejectsWhileTurnInFlight(t *testing.T) {
 	if err := conversation.Close(); !errors.Is(err, ErrTurnInFlight) {
 		t.Fatalf("Close() error = %v, want ErrTurnInFlight", err)
 	}
-	if conversation.closed {
+	if conversation.state == conversationClosed {
 		t.Fatal("Close() marked conversation closed while turn was in flight")
 	}
 }
@@ -420,8 +420,8 @@ func TestCloseIsIdempotentAndDoesNotCloseLog(t *testing.T) {
 	if err := conversation.Close(); err != nil {
 		t.Fatalf("Close() error = %v, want nil", err)
 	}
-	if !conversation.closed || log.isClosed() {
-		t.Fatalf("after Close(): conversation.closed=%t log.closed=%t, want true/false", conversation.closed, log.isClosed())
+	if conversation.state != conversationClosed || log.isClosed() {
+		t.Fatalf("after Close(): conversation.state=%v log.closed=%t, want closed/false", conversation.state, log.isClosed())
 	}
 	if !reflect.DeepEqual(conversation.history, before) {
 		t.Fatalf("History after Close() = %#v, want unchanged %#v", conversation.history, before)
@@ -430,8 +430,8 @@ func TestCloseIsIdempotentAndDoesNotCloseLog(t *testing.T) {
 	if err := conversation.Close(); err != nil {
 		t.Fatalf("second Close() error = %v, want nil", err)
 	}
-	if !conversation.closed || log.isClosed() {
-		t.Fatalf("after second Close(): conversation.closed=%t log.closed=%t, want true/false", conversation.closed, log.isClosed())
+	if conversation.state != conversationClosed || log.isClosed() {
+		t.Fatalf("after second Close(): conversation.state=%v log.closed=%t, want closed/false", conversation.state, log.isClosed())
 	}
 	if !reflect.DeepEqual(conversation.history, before) {
 		t.Fatalf("History after second Close() = %#v, want unchanged %#v", conversation.history, before)
