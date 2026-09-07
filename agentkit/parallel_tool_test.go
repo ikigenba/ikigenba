@@ -63,12 +63,11 @@ func TestToolAccessUsesValidatedConstructorArgumentsExactlyOnce(t *testing.T) {
 		typedAccessCalls.Add(1)
 		typedAccessed.Store(true)
 		typedInputs = append(typedInputs, input)
-		return BlocksPaths(input.Name)
+		return BlocksPaths("must/exact", "another/path")
 	})
 	var rawInputs []string
 	var rawAccessCalls atomic.Int32
 	var rawAccessed atomic.Bool
-	rawWant := BlocksPaths("raw/path")
 	raw, err := NewToolFromSchema("raw", "", json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`), func(context.Context, json.RawMessage) (string, error) {
 		if !rawAccessed.Load() {
 			t.Fatal("raw Call started before Access")
@@ -78,37 +77,46 @@ func TestToolAccessUsesValidatedConstructorArgumentsExactlyOnce(t *testing.T) {
 		rawAccessCalls.Add(1)
 		rawAccessed.Store(true)
 		rawInputs = append(rawInputs, string(input))
-		return rawWant
+		return BlocksPaths("raw/path")
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	orchestrator := newOrchestrator([]Tool{typed, raw}, nil, nil)
 	valid := ToolUse{ID: "1", Name: "typed", Input: json.RawMessage(`{"name":"clean"}`)}
-	if result := orchestrator.prepareDispatch(valid, false).run(context.Background()); result.IsError {
+	if result := orchestrator.prepareDispatch(valid, false).runDirect(context.Background()); result.IsError {
 		t.Fatalf("valid dispatch failed: %#v", result)
 	}
-	orchestrator.prepareDispatch(ToolUse{ID: "2", Name: "typed", Input: json.RawMessage(`{"name":1}`)}, false).run(context.Background())
-	orchestrator.prepareDispatch(ToolUse{ID: "3", Name: "missing", Input: json.RawMessage(`{}`)}, false).run(context.Background())
+	orchestrator.prepareDispatch(ToolUse{ID: "2", Name: "typed", Input: json.RawMessage(`{"name":1}`)}, false).runDirect(context.Background())
+	orchestrator.prepareDispatch(ToolUse{ID: "3", Name: "missing", Input: json.RawMessage(`{}`)}, false).runDirect(context.Background())
 	if typedAccessCalls.Load() != 1 || !reflect.DeepEqual(typedInputs, []parallelInput{{Name: "clean"}}) {
 		t.Fatalf("typed Access calls=%d inputs=%#v", typedAccessCalls.Load(), typedInputs)
 	}
 	rawDispatch := orchestrator.prepareDispatch(ToolUse{ID: "4", Name: "raw", Input: json.RawMessage(`{"name":"raw"}`)}, false)
+	rawWant := Access{kind: accessPaths, paths: []string{"raw/path"}}
 	if !reflect.DeepEqual(rawDispatch.access, rawWant) {
 		t.Fatalf("NewToolFromSchema access = %#v, want callback value %#v", rawDispatch.access, rawWant)
 	}
-	rawDispatch.run(context.Background())
+	rawDispatch.runDirect(context.Background())
 	if rawAccessCalls.Load() != 1 || !reflect.DeepEqual(rawInputs, []string{`{"name":"raw"}`}) {
 		t.Fatalf("raw Access calls=%d inputs=%q", rawAccessCalls.Load(), rawInputs)
 	}
-	if got := typed.Access(json.RawMessage(`{"name":"folder/file"}`)); !accessesConflict(got, BlocksPaths("folder")) {
-		t.Fatal("MustTool did not retain its typed access function")
+	mustWant := Access{kind: accessPaths, paths: []string{"must/exact", "another/path"}}
+	if got := typed.Access(json.RawMessage(`{"name":"folder/file"}`)); !reflect.DeepEqual(got, mustWant) {
+		t.Fatalf("MustTool access = %#v, want callback value %#v", got, mustWant)
 	}
 	created, err := NewTool("new", "", func(context.Context, parallelInput) (string, error) { return "", nil }, func(input parallelInput) Access {
-		return BlocksPaths(input.Name)
+		if input != (parallelInput{Name: "folder/file"}) {
+			t.Fatalf("NewTool access input = %#v, want decoded arguments", input)
+		}
+		return BlocksPaths("new/exact", "other/path")
 	})
-	if err != nil || !accessesConflict(created.Access(json.RawMessage(`{"name":"folder/file"}`)), BlocksPaths("folder")) {
-		t.Fatalf("NewTool access: tool=%v err=%v", created, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newWant := Access{kind: accessPaths, paths: []string{"new/exact", "other/path"}}
+	if got := created.Access(json.RawMessage(`{"name":"folder/file"}`)); !reflect.DeepEqual(got, newWant) {
+		t.Fatalf("NewTool access = %#v, want callback value %#v", got, newWant)
 	}
 }
 
@@ -124,15 +132,10 @@ func TestParallelDispatchCompletionOrderAndStableTranscript(t *testing.T) {
 		{MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}}},
 	}}
 	started := make(chan string, 2)
-	var startMu sync.Mutex
-	var startOrder []string
 	releaseSlow := make(chan struct{})
 	fastFinished := make(chan struct{})
 	tool := func(name string) Tool {
 		return MustTool(name, "", func(context.Context, parallelInput) (string, error) {
-			startMu.Lock()
-			startOrder = append(startOrder, name)
-			startMu.Unlock()
 			started <- name
 			if name == "slow" {
 				<-releaseSlow
@@ -168,12 +171,6 @@ func TestParallelDispatchCompletionOrderAndStableTranscript(t *testing.T) {
 	}
 	if !seen["slow"] || !seen["fast"] {
 		t.Fatalf("started = %v", seen)
-	}
-	startMu.Lock()
-	gotStartOrder := append([]string(nil), startOrder...)
-	startMu.Unlock()
-	if !reflect.DeepEqual(gotStartOrder, []string{"slow", "fast"}) {
-		t.Fatalf("Call start order = %v, want model order", gotStartOrder)
 	}
 	for {
 		select {
@@ -227,6 +224,52 @@ fastReturned:
 	if !reflect.DeepEqual(loggedReturns, returns) {
 		t.Fatalf("tool_result log order = %v, want %v", loggedReturns, returns)
 	}
+}
+
+// R-D3MY-4ZYG
+func TestNonConflictingDispatchesReachCallBoundaryInModelOrder(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		firstReady := make(chan struct{})
+		allowFirstStart := make(chan struct{})
+		release := make(chan struct{})
+		callStarts := make(chan int, 2)
+		prepared := []preparedDispatch{
+			{access: BlocksNone(), run: func(_ context.Context, started func()) ToolResult {
+				close(firstReady)
+				<-allowFirstStart
+				callStarts <- 0
+				started()
+				<-release
+				return ToolResult{ToolUseID: "first"}
+			}},
+			{access: BlocksNone(), run: func(_ context.Context, started func()) ToolResult {
+				callStarts <- 1
+				started()
+				<-release
+				return ToolResult{ToolUseID: "second"}
+			}},
+		}
+
+		completed := startToolDispatches(context.Background(), prepared)
+		<-firstReady
+		synctest.Wait()
+		select {
+		case index := <-callStarts:
+			t.Fatalf("call %d reached its boundary before the first call was admitted", index)
+		default:
+		}
+
+		close(allowFirstStart)
+		if first := <-callStarts; first != 0 {
+			t.Fatalf("first call boundary = %d, want 0", first)
+		}
+		if second := <-callStarts; second != 1 {
+			t.Fatalf("second call boundary = %d, want 1", second)
+		}
+		close(release)
+		<-completed
+		<-completed
+	})
 }
 
 type lockedBuffer struct {

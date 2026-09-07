@@ -482,8 +482,7 @@ func dispatchBlockedByEarlier(prepared []preparedDispatch, finished []bool, inde
 }
 
 func runPreparedDispatch(ctx context.Context, prepared preparedDispatch, completed chan<- toolCompletion, index int, started chan<- struct{}) {
-	close(started)
-	completed <- toolCompletion{index: index, result: prepared.run(ctx)}
+	completed <- toolCompletion{index: index, result: prepared.run(ctx, func() { close(started) })}
 }
 
 func invalidOutputError(identity Identity, attempts int) *Error {

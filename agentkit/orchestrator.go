@@ -238,17 +238,24 @@ func loaderNames(arguments json.RawMessage) []string {
 
 type preparedDispatch struct {
 	access Access
-	run    func(context.Context) ToolResult
+	run    func(context.Context, func()) ToolResult
+}
+
+func (p preparedDispatch) runDirect(ctx context.Context) ToolResult {
+	return p.run(ctx, func() {})
 }
 
 // dispatch resolves and runs one model tool call. Every failure is returned
 // in-band so the model can correct the call on its next round-trip.
 func (o *orchestrator) dispatch(ctx context.Context, call ToolUse, savepointLive bool) ToolResult {
-	return o.prepareDispatch(call, savepointLive).run(ctx)
+	return o.prepareDispatch(call, savepointLive).runDirect(ctx)
 }
 
 func preparedResult(access Access, result ToolResult) preparedDispatch {
-	return preparedDispatch{access: access, run: func(context.Context) ToolResult { return result }}
+	return preparedDispatch{access: access, run: func(_ context.Context, started func()) ToolResult {
+		started()
+		return result
+	}}
 }
 
 func (o *orchestrator) prepareDispatch(call ToolUse, savepointLive bool) preparedDispatch {
@@ -262,7 +269,8 @@ func (o *orchestrator) prepareDispatch(call ToolUse, savepointLive bool) prepare
 				result.Content = fmt.Sprintf("agentkit: unknown tool %q because the deferred tool is not loaded; a live savepoint is suspending the load, so call %q after releasing it", call.Name, loadToolsName)
 				return preparedResult(BlocksAll(), result)
 			}
-			return preparedDispatch{access: BlocksAll(), run: func(context.Context) ToolResult {
+			return preparedDispatch{access: BlocksAll(), run: func(_ context.Context, started func()) ToolResult {
+				started()
 				o.load(deferred)
 				result.Content = fmt.Sprintf("agentkit: unknown tool %q because the deferred tool is not loaded; call %q first, then retry with its advertised schema", call.Name, loadToolsName)
 				return result
@@ -281,20 +289,22 @@ func (o *orchestrator) prepareDispatch(call ToolUse, savepointLive bool) prepare
 			return preparedResult(BlocksAll(), o.dispatchLoaderSuspended(call))
 		}
 		names := loaderNames(call.Input)
-		return preparedDispatch{access: BlocksAll(), run: func(context.Context) ToolResult {
+		return preparedDispatch{access: BlocksAll(), run: func(_ context.Context, started func()) ToolResult {
+			started()
 			return o.dispatchLoader(call.ID, names)
 		}}
 	}
 	access := tool.Access(call.Input)
-	return preparedDispatch{access: access, run: func(ctx context.Context) ToolResult {
-		return dispatchTool(ctx, tool, call)
+	return preparedDispatch{access: access, run: func(ctx context.Context, started func()) ToolResult {
+		return dispatchTool(ctx, tool, call, started)
 	}}
 }
 
 // dispatchTool runs one regular tool call, reporting a call error in-band as
 // an error result rather than failing the turn.
-func dispatchTool(ctx context.Context, tool Tool, call ToolUse) ToolResult {
+func dispatchTool(ctx context.Context, tool Tool, call ToolUse, started func()) ToolResult {
 	result := ToolResult{ToolUseID: call.ID}
+	started()
 	content, err := tool.Call(ctx, append(json.RawMessage(nil), call.Input...))
 	result.Content = content
 	if err != nil {
