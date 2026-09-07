@@ -2,7 +2,7 @@
 package model
 
 import (
-	"errors"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,7 +38,9 @@ type Plan struct {
 
 // Factory holds the fixed configuration for fresh role conversations.
 type Factory struct {
-	plan Plan
+	plan     Plan
+	endpoint agentkit.Endpoint
+	settings agentkit.Options
 }
 
 // Resolve turns a role configuration into a concrete model plan.
@@ -82,7 +84,50 @@ func Open(cfg Config) (*Factory, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Factory{plan: plan}, nil
+	rotator, err := openRotator(cfg, plan)
+	if err != nil {
+		return nil, err
+	}
+	authenticator, err := plan.Offering.Authenticator(rotator)
+	if err != nil {
+		return nil, fmt.Errorf("create authenticator: %w", err)
+	}
+	endpoint, err := agentkit.NewEndpoint(authenticator, agentkit.WithBaseURL(plan.BaseURL))
+	if err != nil {
+		return nil, fmt.Errorf("create endpoint: %w", err)
+	}
+	return &Factory{plan: plan, endpoint: endpoint, settings: cloneOptions(cfg.Settings)}, nil
+}
+
+func openRotator(cfg Config, plan Plan) (agentkit.Rotator, error) {
+	switch plan.AuthMode {
+	case agentkit.AuthModeAPIKey:
+		getenv := cfg.Getenv
+		if getenv == nil {
+			getenv = os.Getenv
+		}
+		key := getenv(plan.EnvVar)
+		if key == "" {
+			return nil, fmt.Errorf("environment variable %q is empty", plan.EnvVar)
+		}
+		return agentkit.APIKeyRotator(key), nil
+	case agentkit.AuthModeOAuth:
+		rotator := agentkit.OAuthRotator(agentkit.FileTokenStore(plan.AuthFile))
+		if _, err := rotator.Token(context.Background()); err != nil {
+			return nil, fmt.Errorf("read OAuth token file %q: %w", plan.AuthFile, err)
+		}
+		return rotator, nil
+	default:
+		return nil, fmt.Errorf("unsupported auth mode %q", plan.AuthMode)
+	}
+}
+
+func cloneOptions(settings map[string]string) agentkit.Options {
+	options := make(agentkit.Options, len(settings))
+	for key, value := range settings {
+		options[key] = value
+	}
+	return options
 }
 
 // Plan returns the factory's resolved model plan.
@@ -90,10 +135,14 @@ func (f *Factory) Plan() Plan {
 	return f.plan
 }
 
-// New builds a fresh conversation. Conversation construction is completed in
-// the next phase; the method is present now to establish the package surface.
-func (f *Factory) New(_ []agentkit.Tool, _ *agentkit.Log) (*agentkit.Conversation, error) {
-	return nil, errors.New("model conversation construction is not implemented")
+// New builds a fresh conversation with the role's fixed model configuration.
+func (f *Factory) New(tools []agentkit.Tool, log *agentkit.Log) (*agentkit.Conversation, error) {
+	return agentkit.New(f.plan.Offering.WireFormat, f.endpoint, f.plan.Model, agentkit.Config{
+		Tools:    tools,
+		Settings: agentkit.Settings{Options: f.settings},
+		Log:      log,
+		Limits:   agentkit.Limits{MaxContextTokens: f.plan.MaxContext},
+	})
 }
 
 func resolveOffering(cfg Config) (agentkit.Offering, string, error) {

@@ -59,6 +59,7 @@ func TestExactFunctionAndMethodSignatures(t *testing.T) {
 	}
 
 	cfg := catalogConfig(t)
+	cfg.Getenv = func(string) string { return "test-api-key" }
 	factory, err := model.Open(cfg)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
