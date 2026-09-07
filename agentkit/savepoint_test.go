@@ -123,6 +123,43 @@ func TestRestoreAndReleaseRejectNonLiveSavepoint(t *testing.T) {
 	})
 }
 
+func TestReleaseKeepsHistoryAndLimitsAndEndsSavepoint(t *testing.T) {
+	// R-7WL4-3T3X
+	conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(new(int)), Config{})
+	if err := conversation.AddSystem("instructions"); err != nil {
+		t.Fatalf("AddSystem() error = %v", err)
+	}
+	conversation.toolCallsDispatched = 3
+	conversation.lastRoundContext = 5
+
+	sp, err := conversation.Savepoint()
+	if err != nil {
+		t.Fatalf("Savepoint() error = %v, want nil", err)
+	}
+	wantHistory := cloneHistory(conversation.history)
+	wantToolCalls := conversation.toolCallsDispatched
+	wantContextTokens := conversation.lastRoundContext
+
+	if err := conversation.Release(sp); err != nil {
+		t.Fatalf("Release() error = %v, want nil", err)
+	}
+	if !reflect.DeepEqual(conversation.history, wantHistory) {
+		t.Fatalf("History after Release() = %#v, want unchanged %#v", conversation.history, wantHistory)
+	}
+	if conversation.toolCallsDispatched != wantToolCalls {
+		t.Fatalf("toolCallsDispatched after Release() = %d, want unchanged %d", conversation.toolCallsDispatched, wantToolCalls)
+	}
+	if conversation.lastRoundContext != wantContextTokens {
+		t.Fatalf("lastRoundContext after Release() = %d, want unchanged %d", conversation.lastRoundContext, wantContextTokens)
+	}
+	if err := conversation.Restore(sp); !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("Restore() after Release() error = %v, want ErrInvalidArgument", err)
+	}
+	if err := conversation.Release(sp); !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("second Release() error = %v, want ErrInvalidArgument", err)
+	}
+}
+
 func TestRestoreRewindsHistoryAndKeepsSavepointLive(t *testing.T) {
 	// R-7RPI-KQ55
 	conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(new(int)), Config{})
