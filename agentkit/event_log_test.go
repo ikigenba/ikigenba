@@ -175,7 +175,7 @@ func decodeLogRecords(t *testing.T, data []byte) []LogRecord {
 }
 
 func TestRecordTypeIsClosedEnumeration(t *testing.T) {
-	// R-T572-307I
+	// R-8B7W-P209
 	recordType := reflect.TypeFor[RecordType]()
 	if recordType.Name() != "RecordType" || recordType.Kind() != reflect.String {
 		t.Fatalf("RecordType = %q/%s, want defined string type", recordType.Name(), recordType.Kind())
@@ -193,6 +193,9 @@ func TestRecordTypeIsClosedEnumeration(t *testing.T) {
 		"RecordRetry":      "retry",
 		"RecordTurnEnd":    "turn_end",
 		"RecordSummary":    "summary",
+		"RecordSavepoint":  "savepoint",
+		"RecordRestore":    "restore",
+		"RecordRelease":    "release",
 	}
 	got := exportedConstantsOfType(t, "RecordType")
 	if !reflect.DeepEqual(got, want) {
@@ -206,7 +209,9 @@ func TestRecordTypeIsClosedEnumeration(t *testing.T) {
 		"RecordUsage":  RecordUsage, "RecordLimit": RecordLimit,
 		"RecordError": RecordError,
 		"RecordRetry": RecordRetry, "RecordTurnEnd": RecordTurnEnd,
-		"RecordSummary": RecordSummary,
+		"RecordSummary":   RecordSummary,
+		"RecordSavepoint": RecordSavepoint, "RecordRestore": RecordRestore,
+		"RecordRelease": RecordRelease,
 	}
 	for name, value := range values {
 		if string(value) != want[name] {

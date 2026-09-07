@@ -27,6 +27,9 @@ const (
 	RecordRetry      RecordType = "retry"
 	RecordTurnEnd    RecordType = "turn_end"
 	RecordSummary    RecordType = "summary"
+	RecordSavepoint  RecordType = "savepoint" // D26
+	RecordRestore    RecordType = "restore"   // D26
+	RecordRelease    RecordType = "release"   // D26
 )
 
 // LogRecord is one line of the log. Type selects which payload pointer is set;
