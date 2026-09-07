@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	// Register the SQLite database/sql driver.
@@ -121,10 +122,7 @@ func createDatabaseFile(path string) error {
 }
 
 func initializeDatabase(db *sql.DB, id, root string, creationTime time.Time) error {
-	created, err := encodeTime(creationTime)
-	if err != nil {
-		return fmt.Errorf("encode session creation time: %w", err)
-	}
+	created := encodeTime(creationTime)
 	tx, err := db.Begin()
 	if err != nil {
 		return fmt.Errorf("begin session initialization: %w", err)
@@ -144,6 +142,11 @@ func initializeDatabase(db *sql.DB, id, root string, creationTime time.Time) err
 			text TEXT NOT NULL,
 			raw BLOB,
 			created BLOB NOT NULL
+		);
+		CREATE VIRTUAL TABLE entries_fts USING fts5(
+			text,
+			content = 'entries',
+			content_rowid = 'id'
 		);
 	`); err != nil {
 		return fmt.Errorf("create session schema: %w", err)
@@ -208,11 +211,13 @@ func (s *Store) NextPass() (int, error) {
 
 // Add appends an entry and returns its database row id.
 func (s *Store) Add(address string, kind Kind, text string, raw json.RawMessage) (int64, error) {
-	created, err := encodeTime(s.now())
+	created := encodeTime(s.now())
+	tx, err := s.db.Begin()
 	if err != nil {
-		return 0, fmt.Errorf("encode entry creation time: %w", err)
+		return 0, fmt.Errorf("begin append: %w", err)
 	}
-	result, err := s.db.Exec(
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.Exec(
 		"INSERT INTO entries(address, kind, text, raw, created) VALUES (?, ?, ?, ?, ?)",
 		address, kind, text, nullableRaw(raw), created,
 	)
@@ -223,12 +228,113 @@ func (s *Store) Add(address string, kind Kind, text string, raw json.RawMessage)
 	if err != nil {
 		return 0, fmt.Errorf("read appended entry id: %w", err)
 	}
+	if _, err := tx.Exec("INSERT INTO entries_fts(rowid, text) VALUES (?, ?)", id, text); err != nil {
+		return 0, fmt.Errorf("index appended entry: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit append: %w", err)
+	}
 	return id, nil
 }
 
-// Search provides the search API seam implemented by the next phase.
-func (s *Store) Search(_ string, _ Filter) (Page, error) {
-	return Page{}, nil
+// Search returns a relevance-ordered page of entries matching an FTS5 query.
+func (s *Store) Search(query string, filter Filter) (Page, error) {
+	pageNumber := filter.Page
+	if pageNumber <= 0 {
+		pageNumber = 1
+	}
+	predicate, args := searchPredicate(query, filter)
+	total, err := s.countSearchMatches(predicate, args)
+	if err != nil {
+		return Page{}, err
+	}
+	pages := (total + PageSize - 1) / PageSize
+	page := Page{Hits: []Hit{}, Page: pageNumber, Pages: pages, Total: total}
+	if pageNumber > pages {
+		return page, nil
+	}
+	page.Hits, err = s.searchHits(predicate, args, pageNumber)
+	if err != nil {
+		return Page{}, err
+	}
+	return page, nil
+}
+
+func (s *Store) countSearchMatches(predicate string, args []any) (int, error) {
+	countQuery := strings.Join([]string{
+		"SELECT COUNT(*) FROM entries_fts JOIN entries AS e ON e.id = entries_fts.rowid WHERE ",
+		predicate,
+	}, "")
+	var total int
+	if err := s.db.QueryRow(countQuery, args...).Scan(&total); err != nil {
+		return 0, fmt.Errorf("count search matches: %w", err)
+	}
+	return total, nil
+}
+
+func (s *Store) searchHits(predicate string, args []any, pageNumber int) ([]Hit, error) {
+	hitArgs := append(append([]any{}, args...), PageSize, (pageNumber-1)*PageSize)
+	hitQuery := strings.Join([]string{`
+		SELECT e.id, e.address, e.kind, e.text
+		FROM entries_fts
+		JOIN entries AS e ON e.id = entries_fts.rowid
+		WHERE `, predicate, `
+		ORDER BY bm25(entries_fts) ASC, e.id DESC
+		LIMIT ? OFFSET ?`}, "")
+	rows, err := s.db.Query(hitQuery, hitArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("search entries: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	hits := []Hit{}
+	for rows.Next() {
+		var hit Hit
+		var text string
+		if err := rows.Scan(&hit.ID, &hit.Address, &hit.Kind, &text); err != nil {
+			return nil, fmt.Errorf("read search hit: %w", err)
+		}
+		hit.Preview = preview(text)
+		hits = append(hits, hit)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate search hits: %w", err)
+	}
+	return hits, nil
+}
+
+func searchPredicate(query string, filter Filter) (string, []any) {
+	predicates := []string{"entries_fts MATCH ?"}
+	args := []any{query}
+	if len(filter.Kinds) > 0 {
+		predicates = append(predicates, "e.kind IN ("+placeholders(len(filter.Kinds))+")")
+		for _, kind := range filter.Kinds {
+			args = append(args, kind)
+		}
+	}
+	if len(filter.Exclude) > 0 {
+		predicates = append(predicates, "e.kind NOT IN ("+placeholders(len(filter.Exclude))+")")
+		for _, kind := range filter.Exclude {
+			args = append(args, kind)
+		}
+	}
+	if filter.Address != "" {
+		predicates = append(predicates, "(e.address = ? OR substr(e.address, 1, length(?) + 1) = ? || '.')")
+		args = append(args, filter.Address, filter.Address, filter.Address)
+	}
+	return strings.Join(predicates, " AND "), args
+}
+
+func placeholders(count int) string {
+	return strings.TrimSuffix(strings.Repeat("?,", count), ",")
+}
+
+func preview(text string) string {
+	oneLine := strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ").Replace(text)
+	runes := []rune(oneLine)
+	if len(runes) > PreviewRunes {
+		runes = runes[:PreviewRunes]
+	}
+	return string(runes)
 }
 
 // Fetch returns the complete entry identified by id.
@@ -261,8 +367,9 @@ func clock(now func() time.Time) func() time.Time {
 	return now
 }
 
-func encodeTime(value time.Time) ([]byte, error) {
-	return value.MarshalBinary()
+func encodeTime(value time.Time) []byte {
+	encoded, _ := value.MarshalBinary()
+	return encoded
 }
 
 func nullableRaw(raw json.RawMessage) any {
