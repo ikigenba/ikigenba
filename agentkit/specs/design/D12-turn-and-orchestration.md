@@ -48,9 +48,12 @@ every block the turn produces — assistant messages, tool-use blocks, the tool
 results it runs — in a turn-local buffer, and splices that buffer onto `History`
 only when the turn completes without a terminal error. A turn that fails
 mid-loop appends **nothing**: `History` always ends at a turn boundary (D2), never
-mid-turn. There are no eager writes and no rollback-by-truncation — the failed
-turn simply never touched `History`. Nothing is lost, because the consumer already
-observed every completed round-trip through the `Stream` as it happened.
+mid-turn. There are no eager writes, and a failed turn needs no unwinding — it
+simply never touched `History`. Nothing is lost, because the consumer already
+observed every completed round-trip through the `Stream` as it happened. (A
+consumer may deliberately rewind a *committed* transcript to an earlier turn
+boundary; that is `Restore`, D26, and it is a separate operation from anything
+the turn loop does.)
 
 **Tool errors are in-band, never turn-ending.** A tool returning an error becomes
 a `ToolResult` with `IsError` set (D2), fed back to the model to recover from; the

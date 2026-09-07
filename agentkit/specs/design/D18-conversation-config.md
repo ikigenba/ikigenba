@@ -75,7 +75,7 @@ still constructs and the fault surfaces from the first `Send` as
 
 - R-TYGN-9I06: `agentkit` MUST export `type Config struct { Tools []Tool; Deferred []DeferredGroup; Settings Settings; Output *OutputContract; Log *Log; Limits Limits }` with exactly those fields.
 - R-W1KR-P3S7: `agentkit` MUST export `func New(wire WireFormat, endpoint Endpoint, model string, cfg Config) (*Conversation, error)` as the sole root constructor, taking the wire, endpoint, model, and config as required positional parameters with no functional options, and MUST return `ErrInvalidConfig` for a nil `wire`.
-- R-WTIZ-YWRG: The exported method set of `Conversation` MUST be exactly `Send` and `AddSystem` (D24); in particular no `Deferred` method and no other post-construction attach method may exist.
+- R-8A00-BA9K: The exported method set of `Conversation` MUST be exactly `Send`, `AddSystem` (D24), `Savepoint`, `Restore`, `Release`, and `Close` (D26); in particular no `Deferred` method and no other post-construction attach method may exist.
 - R-SQPK-3AUV: A `Conversation` built from a zero `Config` MUST advertise no tools, request vendor defaults for every generation control, send no pass-through options, declare no structured output, and write no log.
 - R-NW62-A0NM: The constructor MUST copy `Config` such that mutating the caller's `Tools`, `Deferred`, or `Settings.Options` after construction has no observable effect on any subsequent `Send`.
 - R-ST5C-UUC9: `Config.Tools` MUST be the eager tool set: every tool in it MUST be advertised on every round-trip of every turn and MUST be dispatchable by name (D11).

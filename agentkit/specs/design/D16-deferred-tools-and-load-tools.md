@@ -69,7 +69,8 @@ emits a fixed order: first a **name-sorted base** — the eager `Tools` plus
 **extends the tail**; it never reorders or reinserts. The Anthropic adapter
 **preserves the orchestrator's order verbatim** (no re-sort) so the cached prefix
 survives from one round-trip to the next; a wire that re-sorts its tools (Gemini,
-whose caching is implicit) makes the point moot and is free to do so. The result
+whose explicit cache carries the tool declarations in the cached resource rather
+than in each request, D27) makes the point moot and is free to do so. The result
 is that turn N+1's advertised tools are turn N's array with zero or more entries
 appended — a stable prefix by construction.
 
@@ -85,9 +86,9 @@ defect before the turn starts, and a load can never fail for a schema reason.
 - R-UUBB-T2TX: Deferred tools MUST be registered as named groups through `Config.Deferred` (D18) and MUST be ordinary `Tool` values, validated at `Send` identically to eager `Config.Tools` but withheld from the advertised toolset until loaded.
 - R-5QSJ-8YM8: When at least one deferred group is registered, the orchestrator MUST synthesize exactly one built-in `load_tools` meta-tool and advertise it alongside the eager tools.
 - R-5S0F-MQCX: The synthesized `load_tools` description MUST list, per group, the group blurb and the bare tool names, and MUST NOT include any tool's own description or JSON schema.
-- R-5T8C-0I3M: A `load_tools` call MUST accept a batched list of group-or-tool names, and from the next round-trip every named tool MUST be an ordinary member of the advertised toolset with its full schema; unknown names MUST be reported in the tool result without ending the turn.
+- R-8G3I-84Z1: A `load_tools` call MUST accept a batched list of group-or-tool names, and unless a savepoint is live (D26) every named tool MUST from the next round-trip be an ordinary member of the advertised toolset with its full schema; unknown names MUST be reported in the tool result without ending the turn.
 - R-5UG8-E9UB: Loading MUST be monotonic and conversation-scoped — a loaded tool MUST remain loaded for the conversation's life, and no unload operation may exist.
-- R-5VO4-S1L0: A direct call to a deferred-but-unloaded tool MUST NOT execute the model-supplied arguments; the orchestrator MUST return an `IsError` `ToolResult` naming `load_tools` and MUST load the tool as a side effect so recovery completes in one iteration.
+- R-5UUD-8XZT: A direct call to a deferred-but-unloaded tool MUST NOT execute the model-supplied arguments; the orchestrator MUST return an `IsError` `ToolResult` naming `load_tools`, and unless a savepoint is live (D26) MUST load the tool as a side effect so recovery completes in one iteration.
 - R-5WW1-5TBP: The advertised tool array MUST be a name-sorted base (eager `Tools` ∪ `load_tools`) followed by loaded tools in load order, a load MUST only append to the tail, and the Anthropic adapter MUST transmit that order without re-sorting so the cache prefix is stable across round-trips.
 - R-5Y3X-JL2E: `Send` MUST run one validation gate over the union of eager tools, all deferred groups, and `load_tools` (name uniqueness and canonical-subset schema, D11) before any provider call, failing with `ErrInvalidConfig` rather than deferring a schema failure to load time.
 - R-0PU1-L7QF: `agentkit` MUST export `type DeferredGroup struct { Name string; Blurb string; Tools []Tool }` with exactly those three fields.
