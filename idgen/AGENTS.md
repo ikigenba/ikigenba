@@ -5,17 +5,16 @@ prefix `R`) from a 2026 UTC epoch and decodes them back to timestamps. Module pa
 `github.com/ikigenba/ikigenba/idgen`.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
-build loop writes the code (`cmd/`, `internal/`, `go.mod` are absent until it
-does). See the `spec` skill and `docs/spec-system.md` at the repo root.
-Everything below is declared for the loop's verify role, which reads this file
-directly.
+build run writes the code (`cmd/`, `internal/`, `go.mod` are absent until it
+does). See the `spec` and `build-spec` skills and `docs/spec-system.md` at the
+repo root. Everything below is the ground the run computes the gap and runs
+the gates against; it is human-authored and read-only to the run.
 
 ## Toolchain
 
 - Go 1.26 (`go version` must report 1.26+)
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - `llm-lint` on PATH, with its provider API key present in the environment
-- `idgen` on PATH (minting requirement ids for spec work)
 
 ## Test files
 
@@ -66,7 +65,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 The `Requirements:` trailer lists the phase's ids so history stays greppable
 by id.
 
-## Releasing (infrastructure — outside the spec loop)
+## Releasing (infrastructure — outside the spec system)
 
 Releases are cut from this monorepo by tag. The release machinery is
 hand-maintained infrastructure, not spec-governed code:
@@ -82,4 +81,4 @@ hand-maintained infrastructure, not spec-governed code:
   never ldflags-injected. Its *value* is release data, not spec-governed: edit
   `internal/cli/version.go` directly to the new `vMAJOR.MINOR.PATCH` (the spec
   fixes only its shape), keep it valid against the gates, merge, then tag to
-  match. No spec-loop cycle is needed to bump it.
+  match. No build run is needed to bump it.

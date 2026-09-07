@@ -1,12 +1,12 @@
 # D19-wire-tool-call-and-model-conformance
 
 Two wire-conformance gaps sit between the design and a working tool loop, and
-this document pins them with fresh ids so the build loop sees them. Both are
+this document pins them with fresh ids so the build run sees them. Both are
 implied by earlier requirements whose ids already carry passing tests — D12's
 "alternate round-trips and tool dispatch" presumes a decoder that emits tool
 calls, and D1's "model transmitted verbatim" presumes an encoder that transmits
 it — but the gap is computed from id presence alone, so an implied obligation
-with no id of its own is invisible to the loop.
+with no id of its own is invisible to the run.
 
 **Decode side: tool calls.** Every shipped wire's `DecodeStream` today assembles
 an assistant `MessageDone` carrying only `Text`. The encode side already renders

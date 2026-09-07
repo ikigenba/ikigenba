@@ -97,14 +97,14 @@ the launcher's contract against an injected command factory instead.
 **Phase ordering note.** The binary-level requirements below are not
 satisfiable until D02–D11 have landed — there is no working login to drive
 until the protocol, callback, options, and orchestration contracts exist. They
-belong to this document because the seam is what they prove, but `$seal-spec`
-must order them into a **final** phase rather than an early one. idgen has the
+belong to this document because the seam is what they prove, but the build
+run must order them into a **final** phase rather than an early one. idgen has the
 same tension in its D1, whose binary smoke ("the built binary prints an id")
 depends on its D2–D4; this is that situation, stated here so the plan does not
 have to rediscover it. That sibling requirement is deliberately described rather
 than cited by id: the gap is computed by grepping every id-shaped literal in
 `specs/design/`, so quoting another project's id here would enter this project's
-gap and send the loop hunting for a test that does not belong to it.
+gap and send the run hunting for a test that does not belong to it.
 
 ## REQUIREMENTS
 

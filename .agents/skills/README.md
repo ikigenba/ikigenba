@@ -6,7 +6,7 @@ This directory is the canonical, repo-scoped home for Agent Skills
 Skills follow the [Agent Skills](https://agentskills.io) open standard.
 The format is specified at https://agentskills.io/specification.
 
-There are no skills here yet. Add one skill per subdirectory.
+One skill per subdirectory: `spec`, `build-spec`, `grill-me`, `handoff`.
 
 ## Who loads this path
 

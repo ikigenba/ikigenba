@@ -7,17 +7,17 @@ so a new vendor or a day-one model needs no library release. Module path
 `github.com/ikigenba/ikigenba/agentkit`.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
-build loop writes the code (the root package, `retry/`, and `go.mod`'s
-dependency graph fill in as it does). See the `spec`
-skill and `docs/spec-system.md` at the repo root. Everything below is declared
-for the loop's verify role, which reads this file directly.
+build run writes the code (the root package, `retry/`, and `go.mod`'s
+dependency graph fill in as it does). See the `spec` and
+`build-spec` skills and `docs/spec-system.md` at the repo root. Everything below
+is the ground the run computes the gap and runs the gates against; it is
+human-authored and read-only to the run.
 
 ## Toolchain
 
 - Go 1.26 (`go version` must report 1.26+)
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - `llm-lint` on PATH, with its provider API key present in the environment
-- `idgen` on PATH (minting requirement ids for spec work)
 - For the conditional live gate (below): `GEMINI_API_KEY`, `XAI_API_KEY`, and
   `OPENROUTER_API_KEY` in the environment; `ANTHROPIC_API_KEY` and
   `OPENAI_API_KEY` resolved by the `live` Makefile target itself from the
@@ -98,7 +98,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 The `Requirements:` trailer lists the phase's ids so history stays greppable
 by id.
 
-## Releasing (infrastructure — outside the spec loop)
+## Releasing (infrastructure — outside the spec system)
 
 agentkit is a library, consumed by sibling sub-projects in this monorepo by
 module path; there is no binary to ship. It is versioned by tag from the

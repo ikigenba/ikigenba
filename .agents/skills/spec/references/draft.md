@@ -1,4 +1,4 @@
-# Authoring a design document ($open-spec)
+# Authoring a design document (draft-spec)
 
 See `../SKILL.md` for the layout and id rules.
 
@@ -6,7 +6,7 @@ First establish what is already known by reading `specs/design/` and the codebas
 
 A design document defines a feature or subsystem. It defines the public contract between modules and nothing about how modules are implemented internally.
 
-**The requirements are the design.** The `## REQUIREMENTS` list is the design document's entire normative content: something is part of the contract if and only if a requirement states it. The prose above the list — code blocks included — is a friendly overview for the reader, never the contract; a name, field, signature, or constant that appears only in prose is not designed, because the machinery that makes design real (the id freeze, the gap, the loop, audit) sees only requirements. If an in-scope item matters enough to write down, it matters enough to state as a requirement.
+**The requirements are the design.** The `## REQUIREMENTS` list is the design document's entire normative content: something is part of the contract if and only if a requirement states it. The prose above the list — code blocks included — is a friendly overview for the reader, never the contract; a name, field, signature, or constant that appears only in prose is not designed, because the machinery that makes design real (the id freeze, the gap, the build run, audit) sees only requirements. If an in-scope item matters enough to write down, it matters enough to state as a requirement.
 
 ## Scope
 
@@ -17,7 +17,7 @@ Everything in scope must be captured **as requirements**, not merely described i
 In scope (the public surface):
 
 - Domain language: the concrete, shared vocabulary — entities, terms, and their definitions.
-- Module boundaries and responsibilities: what modules/subsystems exist and what each owns. Every design states which module or package its exported names live in. A package is one concern, small enough for a reader or a build agent to hold whole — on the order of a dozen files. When a design would push a package past that, splitting it is a design decision made here, as a re-minted layout requirement, never something left for build to improvise.
+- Module boundaries and responsibilities: what modules/subsystems exist and what each owns. Every design states which module or package its exported names live in. A package is one concern, small enough for a reader or a build agent to hold whole — on the order of a dozen files. When a design would push a package past that, splitting it is a design decision made here, as a re-minted layout requirement, never something left for the run to improvise.
 - Names of public things: modules, types, constants, operations.
 - Public types and data shapes that cross a boundary, including their fields.
 - Operation signatures: name, parameters, return type, and errors/failure modes surfaced. The shape only, never the body. (e.g. an exported Go function signature or interface, a module's exported JavaScript functions.)
@@ -60,7 +60,7 @@ One bullet per requirement:
 - Mint each `<id>` with `idgen` (`idgen -n N` mints N at once). See `../SKILL.md`.
 - `<requirement text>` uses a modal verb (MUST/SHOULD/MAY) and states one testable assertion.
 - A requirement must be testable: there must be a finite, deterministic procedure that decides whether it holds, and running that procedure must be efficient. Do not write requirements whose only test would be to exhaustively check an infinite or intractable set of cases.
-- Never assume an external dependency. A fact about something outside the project — a vendor host, a protocol's required fields, a credential a host honors, a limit — must be proven by observing the real thing (a live request, a real response) before the design is sealed. Prior art and memory are not proof. The proof does not gate the writing: a requirement may be drafted from documentation and research, and the observation may be gathered at any point before `$seal-spec` — a probe run while designing, an existing live test, a recorded real response. Verification done earlier in the work counts and is not repeated at seal time; `$seal-spec` only checks that it exists.
+- Never assume an external dependency. A fact about something outside the project — a vendor host, a protocol's required fields, a credential a host honors, a limit — must be proven by observing the real thing (a live request, a real response) before the design is checked. Prior art and memory are not proof. The proof does not gate the writing: a requirement may be drafted from documentation and research, and the observation may be gathered at any point before `check-spec` — a probe run while designing, an existing live test, a recorded real response. Verification done earlier in the work counts and is not repeated at check time; `check-spec` only checks that it exists.
 
 Requirements come in two forms, and a design needs both:
 
@@ -71,21 +71,21 @@ If every structural requirement were deleted, the design should no longer name a
 
 ## Changing a design
 
-A design document defines the current target, not a commitment to what earlier iterations decided. When adding to or revising a design, actively reconsider the decisions already in place — names, type shapes, boundaries, and especially package layout, which is usually settled when the scope was one design and quietly goes stale as designs accumulate — wherever changing them would produce clearer, simpler code. The existing implementation is not a reason to keep an inferior shape: build restructures to fit the current design, and superseded structure and tests carry no compatibility claim unless a current requirement states one. When a revision replaces something, put the whole replacement in the requirements — the new declaration, the deletion of the old one, and any compatibility that genuinely must be kept — so the gap shows the addition and the removal together and the loop retires the old shape instead of bridging to it.
+A design document defines the current target, not a commitment to what earlier iterations decided. When adding to or revising a design, actively reconsider the decisions already in place — names, type shapes, boundaries, and especially package layout, which is usually settled when the scope was one design and quietly goes stale as designs accumulate — wherever changing them would produce clearer, simpler code. The existing implementation is not a reason to keep an inferior shape: the run restructures to fit the current design, and superseded structure and tests carry no compatibility claim unless a current requirement states one. When a revision replaces something, put the whole replacement in the requirements — the new declaration, the deletion of the old one, and any compatibility that genuinely must be kept — so the gap shows the addition and the removal together and the run retires the old shape instead of bridging to it.
 
-Design documents are never sealed; they may change at any time. Their prose may be rewritten freely — it is non-normative, so rewriting it changes nothing; a rewrite that *would* change the contract is really a requirement change and must be made in the `REQUIREMENTS` list. **Requirement text may not be rewritten.**
+Design documents are never frozen; they may change at any time. Their prose may be rewritten freely — it is non-normative, so rewriting it changes nothing; a rewrite that *would* change the contract is really a requirement change and must be made in the `REQUIREMENTS` list. **Requirement text may not be rewritten.**
 
 - **A requirement's text is frozen the moment its id is minted.** To change it — by any amount, for any reason — delete the requirement and add a new one with a freshly minted id. There is no exception: not a typo, not a renamed symbol, not a clarification, not a rewording that means exactly the same thing. Never edit the text beside an existing id, and never reuse an id.
-- Why the rule is absolute: the gap is computed from **id presence alone** (see `../SKILL.md`), so an edited requirement produces no gap entry. The loop never sees it, the tagged test is never revisited, and the design and the suite silently disagree — the id now points at text no test was ever checked against. A new id makes the change visible as `[add]`, and deleting the old one makes the stale test visible as `[remove]`.
+- Why the rule is absolute: the gap is computed from **id presence alone** (see `../SKILL.md`), so an edited requirement produces no gap entry. The run never sees it, the tagged test is never revisited, and the design and the suite silently disagree — the id now points at text no test was ever checked against. A new id makes the change visible as `[add]`, and deleting the old one makes the stale test visible as `[remove]`.
 - Do not reason about whether a change is "material" or "just wording." That judgement is what fails: a reworded requirement still means the same thing, which is precisely why it feels safe to edit and why the omission goes unnoticed. Text changed → new id. The only edits that keep an id are ones that leave its text byte-identical.
-- After editing any design document, recompute the gap and confirm every change you made appears in it. A change you intended that produces no gap entry is a change the loop cannot apply.
+- After editing any design document, recompute the gap and confirm every change you made appears in it. A change you intended that produces no gap entry is a change the run cannot apply.
 - The `REQUIREMENTS` list holds only the current contract. Superseded requirements are deleted; git holds the history.
 
 ## Review: canonical consumer usage
 
 End by showing the intended consumer experience, before anything is built. For a package, write canonical usage: complete, representative tasks a consumer accomplishes with the proposed API, using exactly the names and signatures the structural requirements declare. For an application, show the equivalent user interaction. Present this first and with minimal prose — the complete task, not the individual declaration, is the unit of review. For a revision, show the current usage and the proposed usage side by side. Put each unresolved decision immediately beside the usage it affects.
 
-Judge from the examples whether the names, shapes, and sequence of interactions make sense together: could someone who sees only these names say what each thing is and why there is exactly one of it? Then check that every name the usage introduces resolves to a structural requirement (grep the design for each identifier); a name that appears only in the example is contract squatting in prose. The usage is non-normative like all prose — it must follow the requirements, never stand in for them. This adds no approval step; build stays human-gated as before.
+Judge from the examples whether the names, shapes, and sequence of interactions make sense together: could someone who sees only these names say what each thing is and why there is exactly one of it? Then check that every name the usage introduces resolves to a structural requirement (grep the design for each identifier); a name that appears only in the example is contract squatting in prose. The usage is non-normative like all prose — it must follow the requirements, never stand in for them. This adds no approval step; the build run stays human-gated.
 
 ## Example
 

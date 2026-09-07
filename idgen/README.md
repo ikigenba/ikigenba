@@ -1,7 +1,10 @@
+> [!WARNING]
+> This is unsupported AI slop.
+
 # idgen
 
 `idgen` is built **spec-first**: the design documents under `specs/design/`
-define the contract, and an automated build loop wrote the code, tested it,
+define the contract, and an agent-driven build run wrote the code, tested it,
 and proved it against the spec. Unlike a hand-written tool, every behavior
 here traces to a requirement id, and every requirement id to a test.
 
@@ -86,13 +89,11 @@ are declared in [`AGENTS.md`](AGENTS.md).
 - `specs/design/` — six design documents; each requirement carries a permanent
   `R-XXXX-XXXX` id, and every test tags the id it proves, so coverage is a
   `grep`.
-- `specs/loops/` — the gather → build → verify prompts the build loop runs
-  (via `ralph`, or any agent driving the same cycle).
 - `AGENTS.md` — the toolchain, test-file set, gates, and commit conventions
-  the loop verifies against.
+  the build run verifies against.
 
-To change idgen, change the spec — `$open-spec`, then `$seal-spec`, then run
-the loop — rather than editing the code directly.
+To change idgen, change the spec — `draft-spec`, then `check-spec`, then
+`build-spec` — rather than editing the code directly.
 
 ## Releases
 

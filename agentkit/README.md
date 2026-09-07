@@ -1,7 +1,10 @@
+> [!WARNING]
+> This is unsupported AI slop.
+
 # agentkit
 
 `agentkit` is built **spec-first**: the design documents under `specs/design/`
-define the contract, and an automated build loop writes the code, tests it, and
+define the contract, and an agent-driven build run writes the code, tests it, and
 proves it against the spec. Every behavior traces to a requirement id, and every
 requirement id to a test.
 
@@ -55,10 +58,8 @@ The full verification gates (format, build, race tests, `golangci-lint`,
 - `specs/design/` — the design documents; each requirement carries a permanent
   `R-XXXX-XXXX` id, and every test tags the id it proves, so coverage is a
   `grep`.
-- `specs/loops/` — the gather → build → verify prompts the build loop runs
-  (via `ralph`, or any agent driving the same cycle).
 - `AGENTS.md` — the toolchain, test-file set, gates, and commit conventions the
-  loop verifies against.
+  build run verifies against.
 
-To change agentkit, change the spec — `$open-spec`, then `$seal-spec`, then run
-the loop — rather than editing the code directly.
+To change agentkit, change the spec — `draft-spec`, then `check-spec`, then
+`build-spec` — rather than editing the code directly.

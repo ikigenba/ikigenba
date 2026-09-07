@@ -2,6 +2,5 @@
 bin/
 dist/
 
-# Spec build-loop working state
-specs/build/
+# Spec issues — the build run's escalation channel; kept out of git.
 specs/issues/

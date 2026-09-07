@@ -1,3 +1,6 @@
+> [!WARNING]
+> This is unsupported AI slop.
+
 # dory
 
 An experimental coding harness built from agents that remember nothing.

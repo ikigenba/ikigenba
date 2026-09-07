@@ -7,17 +7,16 @@ tools for workers, an address-prefixed trace on stdout, and the root's report
 plus a cost line at the end. Module path `github.com/ikigenba/ikigenba/dory`.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
-build loop writes the code (`cmd/`, `internal/`, `go.mod` are absent until it
-does). See the `spec` skill and `docs/spec-system.md` at the repo root.
-Everything below is declared for the loop's verify role, which reads this file
-directly.
+build run writes the code (`cmd/`, `internal/`, `go.mod` are absent until it
+does). See the `spec` and `build-spec` skills and `docs/spec-system.md` at the
+repo root. Everything below is the ground the run computes the gap and runs
+the gates against; it is human-authored and read-only to the run.
 
 ## Toolchain
 
 - Go 1.26 (`go version` must report 1.26+)
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - `llm-lint` on PATH, with its provider API key present in the environment
-- `idgen` on PATH — for spec authoring only; the loop never mints an id.
 - Network access to the Go module proxy for `agentkit` and `toolkit`, both
   published from this monorepo under `agentkit/v*` and `toolkit/v*` tags, and
   for `github.com/google/uuid` and `modernc.org/sqlite`.
@@ -26,10 +25,10 @@ directly.
 
 Every direct dependency is approved by a human, and the approval is recorded
 in the design: D1 names the exact set of direct requirements, and a gate test
-compares `go.mod` against it. The loop never adds a module; a phase that
+compares `go.mod` against it. The run never adds a module; a phase that
 appears to need one files an issue for a human to adjudicate. Adopting a new
 release of an approved dependency is a dependency edit, not a design change,
-and the loop makes it whenever a phase's requirements only compile against
+and the run makes it whenever a phase's requirements only compile against
 the newer release.
 
 ## Test files
@@ -93,7 +92,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 The `Requirements:` trailer lists the phase's ids so history stays greppable
 by id.
 
-## Releasing (infrastructure — outside the spec loop)
+## Releasing (infrastructure — outside the spec system)
 
 Releases are cut from this monorepo by tag, following agent-repl: tag
 `dory/vMAJOR.MINOR.PATCH` on `main`; the version string is source-carried in

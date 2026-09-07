@@ -269,7 +269,7 @@ application's help text and a user's typed key agree across every model:
 
 The table has exactly one source: `specs/_data/catalog_table.go`, authored by
 hand (a directory Go tooling ignores), and installed verbatim as the root
-package's `catalog_table.go`. That identity is a requirement, so the loop
+package's `catalog_table.go`. That identity is a requirement, so the run
 installs the seed and a drift between the two files fails a gate. Repricing
 or adding a model is an edit to the seed, then a copy into the root package,
 and nothing else: no requirement pins a row's numbers, and no test may

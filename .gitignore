@@ -1,6 +1,3 @@
-# Loop working state — disposable and regenerable by $seal-spec from the gap.
-# (**/ so the patterns also match sub-projects, e.g. idgen/specs/build/)
-**/specs/build/
-
-# Issues — handling still to be decided; kept out of git for now.
+# Issues — the build run's escalation channel; kept out of git.
+# (**/ so the pattern also matches sub-projects, e.g. idgen/specs/issues/)
 **/specs/issues/

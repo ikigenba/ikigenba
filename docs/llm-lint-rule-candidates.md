@@ -142,7 +142,7 @@ Test quality:
    error, clamp, or document.
 3. **Behavior bug uncovered by any requirement**: unknown flag prints the
    usage block twice (D4's exactly-once requirement covers only --help).
-4. **$audit-spec candidates** — tagged tests that don't genuinely prove
+4. **audit-spec candidates** — tagged tests that don't genuinely prove
    their ids: R-TPW6-OKBG (vacuous Contains), R-TNGD-X0U2 (TZ placebo),
    R-SRQZ-YZK0 (unreachable domain), R-SJ7P-ALD5 (impl-derived domain),
    R-T1I7-15HK (call-ordinal fake), R-T55W-6GPN (Contains admits the

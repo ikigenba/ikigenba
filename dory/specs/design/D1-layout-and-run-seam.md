@@ -10,7 +10,7 @@ SQLite store the supervisors search. Module path
 **Direct dependencies are an approved list**, as in agent-repl. The module's
 direct requirements are exactly agentkit, toolkit, `github.com/google/uuid`,
 and `modernc.org/sqlite`; everything else in `go.mod` is `// indirect`. A test
-compares `go.mod`'s direct requirements against that list, so the build loop
+compares `go.mod`'s direct requirements against that list, so the build run
 cannot promote a module without a human first replacing the requirement that
 names the set. Versions are not pinned here; adopting a release is a
 dependency edit, not a design change.

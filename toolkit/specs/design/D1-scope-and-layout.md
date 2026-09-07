@@ -17,7 +17,6 @@ toolkit/                                (this sub-project; go.mod lives here)
 ├── go.mod                              Go version + module requires
 ├── .golangci.yml  .llm-lint.json  lint-rules/
 ├── specs/design/D<int>-<slug>.md       these documents
-├── specs/loops/{gather,build,verify}.md + executable run
 └── *.go                                the single package `toolkit`
 ```
 

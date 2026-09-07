@@ -6,10 +6,11 @@ as ready-made `agentkit.Tool` values, each built against an explicit root
 directory. Module path `github.com/ikigenba/ikigenba/toolkit`.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
-build loop writes the code (the `toolkit` package and `go.mod`'s dependency
-graph fill in as it does). See the `spec` skill and `docs/spec-system.md` at the
-repo root. Everything below is declared for the loop's verify role, which reads
-this file directly.
+build run writes the code (the `toolkit` package and `go.mod`'s dependency
+graph fill in as it does). See the `spec` and `build-spec` skills and
+`docs/spec-system.md` at the repo root. Everything below is the ground the run
+computes the gap and runs the gates against; it is human-authored and
+read-only to the run.
 
 ## Toolchain
 
@@ -17,7 +18,6 @@ this file directly.
 - `bash` on PATH (the `Bash` tool shells out to it; its tests run real commands)
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - `llm-lint` on PATH, with its provider API key present in the environment
-- `idgen` on PATH (minting requirement ids for spec work)
 
 ## Test files
 
@@ -75,7 +75,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 The `Requirements:` trailer lists the phase's ids so history stays greppable
 by id.
 
-## Releasing (infrastructure — outside the spec loop)
+## Releasing (infrastructure — outside the spec system)
 
 toolkit is a library, consumed by module path; there is no binary to ship. It
 is versioned by tag from the monorepo:

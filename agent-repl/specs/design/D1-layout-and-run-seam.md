@@ -13,7 +13,7 @@ in `go.mod`.
 requirements are exactly agentkit, toolkit, and `github.com/google/uuid`;
 everything else in `go.mod` is `// indirect`. That list is the record of
 human approval: a test compares `go.mod`'s direct requirements against it, so
-the build loop cannot promote a new module without a human first replacing the
+the build run cannot promote a new module without a human first replacing the
 requirement that names the set. Versions are deliberately not pinned here —
 adopting a release is a dependency edit, not a design change. `go.sum` and the
 module cache are not consulted; indirect entries move without anyone approving

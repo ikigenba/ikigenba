@@ -1,3 +1,6 @@
+> [!WARNING]
+> This is unsupported AI slop.
+
 # Ikigenba
 
 This is a monorepo. Each subfolder is a component of the Ikigenba super project.

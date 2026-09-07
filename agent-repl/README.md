@@ -1,7 +1,10 @@
+> [!WARNING]
+> This is unsupported AI slop.
+
 # agent-repl
 
 `agent-repl` is built **spec-first**: the design documents under
-`specs/design/` define the contract, and an automated build loop writes the
+`specs/design/` define the contract, and an agent-driven build run writes the
 code, tests it, and proves it against the spec. Every behavior traces to a
 requirement id, and every requirement id to a test. See
 [how the spec system works](../docs/spec-system.md).
@@ -69,11 +72,10 @@ The full verification gates are declared in [`AGENTS.md`](AGENTS.md).
 
 - `specs/design/` — six design documents; each requirement carries a permanent
   `R-XXXX-XXXX` id, and every test tags the id it proves.
-- `specs/loops/` — the gather → build → verify prompts the build loop runs.
 - `AGENTS.md` — the toolchain, test-file set, gates, and commit conventions.
 
-To change agent-repl, change the spec — `$open-spec`, then `$seal-spec`, then
-run the loop — rather than editing the code directly.
+To change agent-repl, change the spec — `draft-spec`, then `check-spec`, then
+`build-spec` — rather than editing the code directly.
 
 ## Releases
 
