@@ -80,6 +80,22 @@ func TestLiveOAuthRefreshFixturesExistWithLiveTag(t *testing.T) {
 	}
 }
 
+// R-DEM1-KXMP
+func TestSerialToolCallsLiveFixtureExists(t *testing.T) {
+	contents, err := os.ReadFile("serial_tool_calls_live_test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(contents)
+	assertLiveBuildConstraint(t, "serial tool calls live fixture", text)
+	assertNeverSkips(t, "serial tool calls live fixture", text)
+	for _, fragment := range []string{"func TestLiveSerialToolCalls", "liveMatrixCells", "OfferingGeminiGenerateContent", "SerialToolCalls: true", "ToolUse", "stream.Err()"} {
+		if !strings.Contains(text, fragment) {
+			t.Fatalf("serial tool calls live fixture does not contain %q", fragment)
+		}
+	}
+}
+
 // R-ED2W-P9IU
 func TestLiveOAuthReissueFixturesExistWithLiveTag(t *testing.T) {
 	fixtures := []struct {

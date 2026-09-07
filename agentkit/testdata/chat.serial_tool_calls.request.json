@@ -1,0 +1,1 @@
+{"model":"model","messages":[{"role":"user","content":"use tools"}],"stream":true,"stream_options":{"include_usage":true},"tools":[{"type":"function","function":{"name":"lookup","description":"look up","parameters":{"type":"object","properties":{}}}}],"parallel_tool_calls":false}

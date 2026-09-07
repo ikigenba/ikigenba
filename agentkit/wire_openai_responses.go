@@ -67,17 +67,18 @@ type openAIResponsesText struct {
 }
 
 type openAIResponsesRequest struct {
-	Model           string               `json:"model"`
-	Input           []json.RawMessage    `json:"input"`
-	Stream          bool                 `json:"stream"`
-	Store           bool                 `json:"store"`
-	Temperature     *float64             `json:"temperature,omitempty"`
-	TopP            *float64             `json:"top_p,omitempty"`
-	MaxOutputTokens *int                 `json:"max_output_tokens,omitempty"`
-	Reasoning       *responsesReasoning  `json:"reasoning,omitempty"`
-	ToolChoice      any                  `json:"tool_choice,omitempty"`
-	Tools           json.RawMessage      `json:"tools,omitempty"`
-	Text            *openAIResponsesText `json:"text,omitempty"`
+	Model             string               `json:"model"`
+	Input             []json.RawMessage    `json:"input"`
+	Stream            bool                 `json:"stream"`
+	Store             bool                 `json:"store"`
+	Temperature       *float64             `json:"temperature,omitempty"`
+	TopP              *float64             `json:"top_p,omitempty"`
+	MaxOutputTokens   *int                 `json:"max_output_tokens,omitempty"`
+	Reasoning         *responsesReasoning  `json:"reasoning,omitempty"`
+	ToolChoice        any                  `json:"tool_choice,omitempty"`
+	Tools             json.RawMessage      `json:"tools,omitempty"`
+	Text              *openAIResponsesText `json:"text,omitempty"`
+	ParallelToolCalls *bool                `json:"parallel_tool_calls,omitempty"`
 }
 
 func (w *openAIResponsesWire) encodeRequest(state requestState) ([]byte, error) {
@@ -99,6 +100,10 @@ func (w *openAIResponsesWire) encodeRequest(state requestState) ([]byte, error) 
 		}
 	}
 	if len(state.Tools) > 0 {
+		if state.Settings.SerialToolCalls {
+			parallel := false
+			request.ParallelToolCalls = &parallel
+		}
 		request.Tools, err = w.RenderTools(state.Tools)
 		if err != nil {
 			return nil, err

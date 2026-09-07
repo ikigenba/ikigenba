@@ -1,0 +1,1 @@
+{"model":"model","input":[{"role":"user","content":[{"type":"input_text","text":"use tools"}]}],"stream":true,"store":false,"tools":[{"type":"function","name":"lookup","description":"look up","parameters":{"type":"object","properties":{}}}],"parallel_tool_calls":false}

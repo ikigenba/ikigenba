@@ -46,6 +46,16 @@ func newGeminiGenerateContentWire(classifier errorClassifier) wireFormat {
 	return wire
 }
 
+func (w *geminiGenerateContentWire) validateSettings(settings Settings) error {
+	if err := w.wireCodec.validateSettings(settings); err != nil {
+		return err
+	}
+	if settings.SerialToolCalls {
+		return fmt.Errorf("%w: Gemini GenerateContent cannot express serial tool calls", ErrInvalidConfig)
+	}
+	return nil
+}
+
 type geminiPart struct {
 	Text             string                  `json:"text,omitempty"`
 	Thought          bool                    `json:"thought,omitempty"`

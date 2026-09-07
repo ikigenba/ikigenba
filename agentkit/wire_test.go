@@ -14,6 +14,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -53,6 +54,80 @@ func allTestWires() []wireFormat {
 		newOpenAIChatWire(nil),
 		newChatWire(),
 		newGeminiGenerateContentWire(nil),
+	}
+}
+
+// R-D8IJ-O2X8
+// R-D9QG-1UNX
+// R-DDE5-75W0
+func TestSerialToolCallWireFieldsMatchGoldenFixtures(t *testing.T) {
+	tool := fixtureTool{name: "lookup", description: "look up", schema: json.RawMessage(`{"type":"object","properties":{}}`)}
+	state := requestState{
+		Model: "model", History: History{{Role: RoleUser, Blocks: []Block{Text{Text: "use tools"}}}},
+		Settings: Settings{SerialToolCalls: true}, Tools: []Tool{tool},
+	}
+	tests := []struct {
+		name    string
+		wires   []WireFormat
+		fixture string
+	}{
+		{"anthropic", []WireFormat{AnthropicMessagesWire()}, "testdata/anthropic_messages.serial_tool_calls.request.json"},
+		{"chat", []WireFormat{ChatWire(), OpenAIChatWire(), XAIChatWire()}, "testdata/chat.serial_tool_calls.request.json"},
+		{"responses", []WireFormat{ResponsesWire(), OpenAIResponsesWire(), XAIResponsesWire()}, "testdata/responses.serial_tool_calls.request.json"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			want, err := os.ReadFile(test.fixture)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, wire := range test.wires {
+				got, encodeErr := wire.EncodeRequest(state)
+				if encodeErr != nil {
+					t.Fatal(encodeErr)
+				}
+				if !bytes.Equal(got, want) {
+					t.Fatalf("request mismatch\n got: %s\nwant: %s", got, want)
+				}
+			}
+		})
+	}
+
+	for _, wire := range []WireFormat{AnthropicMessagesWire(), ChatWire(), OpenAIChatWire(), XAIChatWire(), ResponsesWire(), OpenAIResponsesWire(), XAIResponsesWire(), GeminiGenerateContentWire()} {
+		for _, noFieldState := range []requestState{
+			{Model: "model", History: state.History, Tools: []Tool{tool}},
+			{Model: "model", History: state.History, Settings: Settings{SerialToolCalls: true}},
+		} {
+			body, err := wire.EncodeRequest(noFieldState)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if bytes.Contains(body, []byte("parallel_tool_calls")) || bytes.Contains(body, []byte("disable_parallel_tool_use")) {
+				t.Fatalf("zero/inapplicable serial setting emitted field: %s", body)
+			}
+		}
+	}
+}
+
+// R-DAYC-FMEM
+func TestGeminiRejectsSerialToolCallsBeforeProviderRequest(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		calls.Add(1)
+	}))
+	defer server.Close()
+	endpoint, err := NewEndpoint(authFunc(func(context.Context, *http.Request, []byte) error { return nil }), WithBaseURL(server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := New(GeminiGenerateContentWire(), endpoint, "model", Config{Settings: Settings{SerialToolCalls: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := conversation.Send(context.Background(), Text{Text: "hello"})
+	drainStream(stream)
+	if !errors.Is(stream.Err(), ErrInvalidConfig) || calls.Load() != 0 || len(conversation.history) != 0 {
+		t.Fatalf("err=%v provider calls=%d history=%#v", stream.Err(), calls.Load(), conversation.history)
 	}
 }
 
@@ -592,7 +667,7 @@ func newGeminiCacheLifecycleFixture(t *testing.T) *geminiCacheLifecycleFixture {
 			response.Header().Set("Content-Type", "text/event-stream")
 			_, _ = io.WriteString(response, "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}]}\n\n")
 		default:
-			t.Errorf("unexpected request: %s %s", request.Method, request.URL.Path)
+			t.Errorf("unexpected request: %q %q", request.Method, request.URL.Path)
 			response.WriteHeader(http.StatusNotFound)
 		}
 	}))
@@ -641,7 +716,7 @@ func newGeminiCatalogCacheCostFixture(t *testing.T) (*geminiCacheLifecycleFixtur
 			response.Header().Set("Content-Type", "text/event-stream")
 			_, _ = io.WriteString(response, "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":500,\"cachedContentTokenCount\":100,\"candidatesTokenCount\":20,\"thoughtsTokenCount\":5}}\n\n")
 		default:
-			t.Errorf("unexpected request: %s %s", request.Method, request.URL.Path)
+			t.Errorf("unexpected request: %q %q", request.Method, request.URL.Path)
 			response.WriteHeader(http.StatusNotFound)
 		}
 	}))
@@ -700,11 +775,11 @@ func TestGeminiCacheLifecycleCostExcludesStorageRent(t *testing.T) {
 	}
 	// The cache lifecycle actually ran — this test proves rent from real
 	// create/delete traffic isn't leaking into Cost, not an untested no-op.
-	if fixture.cacheCreations == 0 {
-		t.Fatalf("cache creations = %d, want at least 1 (cache lifecycle did not run)", fixture.cacheCreations)
+	if fixture.cacheCreations != 1 {
+		t.Fatalf("cache creations = %d, want exactly 1", fixture.cacheCreations)
 	}
-	if fixture.cacheDeletions == 0 {
-		t.Fatalf("cache deletions = %d, want at least 1 (Release/Close did not delete the cache)", fixture.cacheDeletions)
+	if fixture.cacheDeletions != 1 {
+		t.Fatalf("cache deletions = %d, want exactly 1", fixture.cacheDeletions)
 	}
 
 	wantRoundUsage := Usage{

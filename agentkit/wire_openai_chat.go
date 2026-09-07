@@ -89,6 +89,7 @@ type openAIChatRequest struct {
 	ToolChoice          any                       `json:"tool_choice,omitempty"`
 	Tools               json.RawMessage           `json:"tools,omitempty"`
 	ResponseFormat      *openAIChatResponseFormat `json:"response_format,omitempty"`
+	ParallelToolCalls   *bool                     `json:"parallel_tool_calls,omitempty"`
 }
 
 func buildOpenAIChatMessages(history []Message) ([]chatMessage, error) {
@@ -198,6 +199,10 @@ func (w *openAIChatWire) encodeRequest(state requestState) ([]byte, error) {
 	}
 	configureOpenAIChatRequest(&request, state.Settings)
 	if len(state.Tools) > 0 {
+		if state.Settings.SerialToolCalls {
+			parallel := false
+			request.ParallelToolCalls = &parallel
+		}
 		request.Tools, err = w.RenderTools(state.Tools)
 		if err != nil {
 			return nil, err

@@ -27,10 +27,11 @@ type deferredLoader struct {
 	description string
 }
 
-func (l deferredLoader) Name() string          { return loadToolsName }
-func (l deferredLoader) Description() string   { return l.description }
-func (deferredLoader) Schema() json.RawMessage { return loadToolsSchema }
-func (deferredLoader) isTool()                 {}
+func (l deferredLoader) Name() string                { return loadToolsName }
+func (l deferredLoader) Description() string         { return l.description }
+func (deferredLoader) Schema() json.RawMessage       { return loadToolsSchema }
+func (deferredLoader) isTool()                       {}
+func (deferredLoader) Access(json.RawMessage) Access { return BlocksAll() }
 func (deferredLoader) Call(context.Context, json.RawMessage) (string, error) {
 	return "", fmt.Errorf("agentkit: %s is orchestrator-managed", loadToolsName)
 }
@@ -227,18 +228,30 @@ func validateToolArguments(schema, arguments json.RawMessage) (any, error) {
 	return value, nil
 }
 
-func loaderNames(arguments any) []string {
-	items := arguments.(map[string]any)["names"].([]any)
-	names := make([]string, len(items))
-	for index, item := range items {
-		names[index] = item.(string)
+func loaderNames(arguments json.RawMessage) []string {
+	var input struct {
+		Names []string `json:"names"`
 	}
-	return names
+	_ = json.Unmarshal(arguments, &input)
+	return input.Names
+}
+
+type preparedDispatch struct {
+	access Access
+	run    func(context.Context) ToolResult
 }
 
 // dispatch resolves and runs one model tool call. Every failure is returned
 // in-band so the model can correct the call on its next round-trip.
 func (o *orchestrator) dispatch(ctx context.Context, call ToolUse, savepointLive bool) ToolResult {
+	return o.prepareDispatch(call, savepointLive).run(ctx)
+}
+
+func preparedResult(access Access, result ToolResult) preparedDispatch {
+	return preparedDispatch{access: access, run: func(context.Context) ToolResult { return result }}
+}
+
+func (o *orchestrator) prepareDispatch(call ToolUse, savepointLive bool) preparedDispatch {
 	result := ToolResult{ToolUseID: call.ID}
 	tool, exists := o.byName[call.Name]
 	if !exists {
@@ -247,26 +260,35 @@ func (o *orchestrator) dispatch(ctx context.Context, call ToolUse, savepointLive
 		if deferred, known := o.deferred[call.Name]; known {
 			if savepointLive {
 				result.Content = fmt.Sprintf("agentkit: unknown tool %q because the deferred tool is not loaded; a live savepoint is suspending the load, so call %q after releasing it", call.Name, loadToolsName)
-			} else {
+				return preparedResult(BlocksAll(), result)
+			}
+			return preparedDispatch{access: BlocksAll(), run: func(context.Context) ToolResult {
 				o.load(deferred)
 				result.Content = fmt.Sprintf("agentkit: unknown tool %q because the deferred tool is not loaded; call %q first, then retry with its advertised schema", call.Name, loadToolsName)
-			}
+				return result
+			}}
 		}
-		return result
+		return preparedResult(BlocksNone(), result)
 	}
-	arguments, err := validateToolArguments(tool.Schema(), call.Input)
+	_, err := validateToolArguments(tool.Schema(), call.Input)
 	if err != nil {
 		result.Content = fmt.Sprintf("agentkit: invalid arguments for tool %q: %v", call.Name, err)
 		result.IsError = true
-		return result
+		return preparedResult(BlocksNone(), result)
 	}
 	if _, managed := tool.(deferredLoader); managed {
 		if savepointLive {
-			return o.dispatchLoaderSuspended(call)
+			return preparedResult(BlocksAll(), o.dispatchLoaderSuspended(call))
 		}
-		return o.dispatchLoader(call.ID, loaderNames(arguments))
+		names := loaderNames(call.Input)
+		return preparedDispatch{access: BlocksAll(), run: func(context.Context) ToolResult {
+			return o.dispatchLoader(call.ID, names)
+		}}
 	}
-	return dispatchTool(ctx, tool, call)
+	access := tool.Access(call.Input)
+	return preparedDispatch{access: access, run: func(ctx context.Context) ToolResult {
+		return dispatchTool(ctx, tool, call)
+	}}
 }
 
 // dispatchTool runs one regular tool call, reporting a call error in-band as

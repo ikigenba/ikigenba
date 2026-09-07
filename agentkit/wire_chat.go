@@ -61,6 +61,10 @@ func encodeChatRequest(codec *wireCodec, state requestState) ([]byte, error) {
 	}
 	configureOpenAIChatRequest(&request, state.Settings)
 	if len(state.Tools) > 0 {
+		if state.Settings.SerialToolCalls {
+			parallel := false
+			request.ParallelToolCalls = &parallel
+		}
 		request.Tools, err = renderChatTools(state.Tools)
 		if err != nil {
 			return nil, err

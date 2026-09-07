@@ -2128,7 +2128,6 @@ type captureEventSink struct {
 }
 
 // R-TBAJ-ZUWZ
-// R-TCIG-DMNO
 // R-TDQC-REED
 // R-TW0U-HYIS
 func TestDurableLogMirrorsMultiRoundStreamAtMessageGranularity(t *testing.T) {

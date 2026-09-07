@@ -397,18 +397,63 @@ func (c *Conversation) finishNoToolRound(snapshot *turnSnapshot, assistant Histo
 }
 
 func (c *Conversation) dispatchTurnTools(ctx context.Context, orchestrator *orchestrator, snapshot *turnSnapshot, calls []ToolUse, yield func(Event) bool) bool {
-	results := make([]Block, 0, len(calls))
-	for _, call := range calls {
-		result := orchestrator.dispatch(ctx, call, c.liveSavepoint)
-		results = append(results, result)
-		if !publishEvent(c.eventSink, yield, ToolReturn{Result: result}) {
-			return false
-		}
+	completed := startToolDispatches(ctx, prepareToolDispatches(orchestrator, calls, c.liveSavepoint))
+	results, published := c.collectToolDispatches(completed, len(calls), yield)
+	if !published {
+		return false
 	}
 	toolMessage := Message{Role: RoleTool, Blocks: results}
 	recordMessage(c.eventSink, toolMessage)
 	snapshot.turn = append(snapshot.turn, toolMessage)
 	return true
+}
+
+func (c *Conversation) collectToolDispatches(completed <-chan toolCompletion, count int, yield func(Event) bool) ([]Block, bool) {
+	results := make([]Block, count)
+	publishing := true
+	for range count {
+		completion := <-completed
+		results[completion.index] = completion.result
+		if publishing && !publishEvent(c.eventSink, yield, ToolReturn{Result: completion.result}) {
+			publishing = false
+		}
+	}
+	return results, publishing
+}
+
+type toolCompletion struct {
+	index  int
+	result ToolResult
+}
+
+func prepareToolDispatches(orchestrator *orchestrator, calls []ToolUse, savepointLive bool) []preparedDispatch {
+	prepared := make([]preparedDispatch, len(calls))
+	for index, call := range calls {
+		prepared[index] = orchestrator.prepareDispatch(call, savepointLive)
+	}
+	return prepared
+}
+
+func startToolDispatches(ctx context.Context, prepared []preparedDispatch) <-chan toolCompletion {
+	done := make([]chan struct{}, len(prepared))
+	completed := make(chan toolCompletion, len(prepared))
+	for index := range done {
+		done[index] = make(chan struct{})
+	}
+	for index := range prepared {
+		go runPreparedDispatch(ctx, prepared, done, completed, index)
+	}
+	return completed
+}
+
+func runPreparedDispatch(ctx context.Context, prepared []preparedDispatch, done []chan struct{}, completed chan<- toolCompletion, index int) {
+	defer close(done[index])
+	for earlier := range index {
+		if accessesConflict(prepared[earlier].access, prepared[index].access) {
+			<-done[earlier]
+		}
+	}
+	completed <- toolCompletion{index: index, result: prepared[index].run(ctx)}
 }
 
 func invalidOutputError(identity Identity, attempts int) *Error {
@@ -532,7 +577,7 @@ func (c *Conversation) reissueAfterUnauthorized(ctx context.Context, state reque
 	body, err := io.ReadAll(response.Body)
 	_ = response.Body.Close()
 	if err != nil {
-		return nil, wrapProviderError(err, CategoryUnknown, response.StatusCode, c.identity)
+		return nil, wrapProviderError(fmt.Errorf("credential-rejection response body was truncated: %w", err), CategoryTransport, response.StatusCode, c.identity)
 	}
 	classifier, _ := c.provider.(rejectedCredentialClassifier)
 	if classifier == nil || !classifier.isRejectedCredential(response.StatusCode, body) {
@@ -567,7 +612,7 @@ func (c *Conversation) reissueAfterStaleCache(ctx context.Context, state request
 	body, err := io.ReadAll(response.Body)
 	_ = response.Body.Close()
 	if err != nil {
-		return nil, wrapProviderError(err, CategoryUnknown, response.StatusCode, c.identity)
+		return nil, wrapProviderError(fmt.Errorf("stale-cache response body was truncated: %w", err), CategoryTransport, response.StatusCode, c.identity)
 	}
 	if !classifier.isCacheStaleRejection(response.StatusCode, body) {
 		response.Body = io.NopCloser(bytes.NewReader(body))

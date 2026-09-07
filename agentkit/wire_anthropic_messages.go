@@ -70,8 +70,9 @@ type anthropicThinking struct {
 }
 
 type anthropicToolChoice struct {
-	Type string `json:"type"`
-	Name string `json:"name,omitempty"`
+	Type                   string `json:"type"`
+	Name                   string `json:"name,omitempty"`
+	DisableParallelToolUse bool   `json:"disable_parallel_tool_use,omitempty"`
 }
 
 type anthropicOutputFormat struct {
@@ -100,85 +101,101 @@ type anthropicRequest struct {
 }
 
 func buildAnthropicMessages(history []Message, mark int) ([]anthropicMessage, []anthropicContent, *anthropicContent, error) {
-	encodeContent := func(message Message) ([]anthropicContent, error) {
-		var content []anthropicContent
-		for _, block := range message.Blocks {
-			switch block := block.(type) {
-			case Text:
-				content = append(content, anthropicContent{Type: "text", Text: block.Text})
-			case Reasoning:
-				if len(block.Provider) > 0 {
-					var replay anthropicContent
-					if err := json.Unmarshal(block.Provider, &replay); err != nil {
-						return nil, fmt.Errorf("agentkit: invalid Anthropic reasoning replay: %w", err)
-					}
-					content = append(content, replay)
-				} else {
-					content = append(content, anthropicContent{Type: "thinking", Thinking: block.Text})
-				}
-			case ToolUse:
-				content = append(content, anthropicContent{Type: "tool_use", ID: block.ID, Name: block.Name, Input: block.Input})
-			case ToolResult:
-				content = append(content, anthropicContent{Type: "tool_result", ToolUseID: block.ToolUseID, Content: block.Content, IsError: block.IsError})
-			}
-		}
-		return content, nil
+	system, boundary, err := extractAnthropicSystem(history)
+	if err != nil {
+		return nil, nil, nil, err
 	}
+	built, err := buildAnthropicMessageBodies(history, boundary, mark)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if mark > 0 && mark <= boundary && len(system) > 0 {
+		return built.messages, system, &system[len(system)-1], nil
+	}
+	if built.markMessage >= 0 {
+		return built.messages, system, &built.messages[built.markMessage].Content[built.markBlock], nil
+	}
+	return built.messages, system, nil, nil
+}
 
+func encodeAnthropicContent(message Message) ([]anthropicContent, error) {
+	var content []anthropicContent
+	for _, block := range message.Blocks {
+		switch block := block.(type) {
+		case Text:
+			content = append(content, anthropicContent{Type: "text", Text: block.Text})
+		case Reasoning:
+			if len(block.Provider) == 0 {
+				content = append(content, anthropicContent{Type: "thinking", Thinking: block.Text})
+				continue
+			}
+			var replay anthropicContent
+			if err := json.Unmarshal(block.Provider, &replay); err != nil {
+				return nil, fmt.Errorf("agentkit: invalid Anthropic reasoning replay: %w", err)
+			}
+			content = append(content, replay)
+		case ToolUse:
+			content = append(content, anthropicContent{Type: "tool_use", ID: block.ID, Name: block.Name, Input: block.Input})
+		case ToolResult:
+			content = append(content, anthropicContent{Type: "tool_result", ToolUseID: block.ToolUseID, Content: block.Content, IsError: block.IsError})
+		}
+	}
+	return content, nil
+}
+
+func extractAnthropicSystem(history []Message) ([]anthropicContent, int, error) {
 	boundary := 0
 	var system []anthropicContent
 	for boundary < len(history) && history[boundary].Role == RoleSystem {
-		content, err := encodeContent(history[boundary])
+		content, err := encodeAnthropicContent(history[boundary])
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, 0, err
 		}
 		system = append(system, content...)
 		boundary++
 	}
+	return system, boundary, nil
+}
 
-	// Record the cache boundary by index so the final pointer is taken only
-	// after all appends that could reallocate the slices are complete.
-	markSystem := mark > 0 && mark <= boundary
-	markMsgIndex, markBlockIndex := -1, -1
-	pendingMarkBlockIndex := -1
+type anthropicMessageBuild struct {
+	messages    []anthropicMessage
+	markMessage int
+	markBlock   int
+}
 
+func buildAnthropicMessageBodies(history []Message, boundary, mark int) (anthropicMessageBuild, error) {
+	built := anthropicMessageBuild{messages: make([]anthropicMessage, 0, len(history)), markMessage: -1, markBlock: -1}
+	pendingMarkBlock := -1
 	messages := make([]anthropicMessage, 0, len(history))
 	var pendingSystem []anthropicContent
 	for i, message := range history[boundary:] {
 		index := boundary + i
-		content, err := encodeContent(message)
+		content, err := encodeAnthropicContent(message)
 		if err != nil {
-			return nil, nil, nil, err
+			return anthropicMessageBuild{}, err
 		}
 		if message.Role == RoleSystem {
 			pendingSystem = append(pendingSystem, content...)
 			if mark == index+1 && len(content) > 0 {
-				pendingMarkBlockIndex = len(pendingSystem) - 1
+				pendingMarkBlock = len(pendingSystem) - 1
 			}
 			continue
 		}
 		messages = append(messages, anthropicMessage{Role: anthropicRole(message.Role), Content: content})
 		if mark == index+1 && len(content) > 0 {
-			markMsgIndex, markBlockIndex = len(messages)-1, len(content)-1
+			built.markMessage, built.markBlock = len(messages)-1, len(content)-1
 		}
 		if message.Role == RoleUser && len(pendingSystem) > 0 {
 			messages = append(messages, anthropicMessage{Role: "system", Content: pendingSystem})
-			if pendingMarkBlockIndex >= 0 {
-				markMsgIndex, markBlockIndex = len(messages)-1, pendingMarkBlockIndex
-				pendingMarkBlockIndex = -1
+			if pendingMarkBlock >= 0 {
+				built.markMessage, built.markBlock = len(messages)-1, pendingMarkBlock
+				pendingMarkBlock = -1
 			}
 			pendingSystem = nil
 		}
 	}
-
-	switch {
-	case markSystem && len(system) > 0:
-		return messages, system, &system[len(system)-1], nil
-	case markMsgIndex >= 0:
-		return messages, system, &messages[markMsgIndex].Content[markBlockIndex], nil
-	default:
-		return messages, system, nil, nil
-	}
+	built.messages = messages
+	return built, nil
 }
 
 func configureAnthropicRequest(request *anthropicRequest, settings Settings, identity Identity) {
@@ -234,6 +251,12 @@ func (w *anthropicMessagesWire) encodeRequest(state requestState) ([]byte, error
 	}
 	configureAnthropicRequest(&request, state.Settings, state.Identity)
 	if len(state.Tools) > 0 {
+		if state.Settings.SerialToolCalls {
+			if request.ToolChoice == nil {
+				request.ToolChoice = &anthropicToolChoice{Type: "auto"}
+			}
+			request.ToolChoice.DisableParallelToolUse = true
+		}
 		request.Tools, err = w.RenderTools(state.Tools)
 		if err != nil {
 			return nil, err

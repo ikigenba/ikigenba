@@ -55,6 +55,10 @@ func encodeResponsesRequest(codec *wireCodec, state requestState) ([]byte, error
 		}
 	}
 	if len(state.Tools) > 0 {
+		if state.Settings.SerialToolCalls {
+			parallel := false
+			request.ParallelToolCalls = &parallel
+		}
 		request.Tools, err = renderResponsesTools(state.Tools)
 		if err != nil {
 			return nil, err
