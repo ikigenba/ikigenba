@@ -200,11 +200,8 @@ func configureAnthropicRequest(request *anthropicRequest, settings Settings, ide
 	if v, ok := settingsFloatOption(settings.Options, "top_p"); ok {
 		request.TopP = &v
 	}
-	if v, ok := settingsMaxOutputTokens(settings.Options); ok {
+	if v, ok := anthropicMaxTokens(settings, identity); ok {
 		request.MaxTokens = &v
-	} else if limit, found := anthropicOfferingMaxOutputTokens(identity); found && limit != 0 {
-		fallback := int(limit)
-		request.MaxTokens = &fallback
 	}
 	if v, ok := settingsStopSequences(settings.Options); ok {
 		request.StopSequences = v
@@ -246,13 +243,23 @@ func (w *anthropicMessagesWire) encodeRequest(state requestState) ([]byte, error
 	return append(encoded, '\n'), err
 }
 
+// anthropicMaxTokens is the one sourcing rule for the request's max_tokens: the
+// max_output_tokens option when set, else a catalog offering's non-zero
+// MaxOutputTokens. Both the request encoder and validateMaxTokens defer to it.
+func anthropicMaxTokens(settings Settings, identity Identity) (int, bool) {
+	if v, ok := settingsMaxOutputTokens(settings.Options); ok {
+		return v, true
+	}
+	if limit, found := anthropicOfferingMaxOutputTokens(identity); found && limit != 0 {
+		return int(limit), true
+	}
+	return 0, false
+}
+
 // validateMaxTokens enforces R-KCW0-HE9L: Send must have a max_tokens value
 // to send, from either the max_output_tokens option or a catalog match.
 func (w *anthropicMessagesWire) validateMaxTokens(identity Identity, settings Settings) error {
-	if _, ok := settingsMaxOutputTokens(settings.Options); ok {
-		return nil
-	}
-	if limit, found := offeringMaxOutputTokens(identity); found && limit != 0 {
+	if _, ok := anthropicMaxTokens(settings, identity); ok {
 		return nil
 	}
 	return fmt.Errorf("%w: Anthropic Messages: max_tokens requires the max_output_tokens option or a catalog offering with a known MaxOutputTokens for endpoint %q model %q", ErrInvalidConfig, identity.Endpoint, identity.Model)
