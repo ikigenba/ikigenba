@@ -77,25 +77,44 @@ func TestProvidersDerivesOAuthLinesFromOfferingEndpoints(t *testing.T) {
 	}
 }
 
+// R-VMKX-WP5U
 func TestModelsGroupsEveryCatalogModelByOrderedHost(t *testing.T) {
-	sections := strings.Split(help.Models(), "\n\n")
+	output := help.Models()
 	wantHosts := hosts()
+	if strings.HasPrefix(output, "\n") || strings.HasSuffix(output, "\n") {
+		t.Fatalf("Models has a leading or trailing blank-line artifact: %q", output)
+	}
+	if strings.Contains(output, "\n\n\n") {
+		t.Fatalf("Models has more than one blank line between sections: %q", output)
+	}
+	if got, want := strings.Count(output, "\n\n"), len(wantHosts)-1; got != want {
+		t.Fatalf("blank-line separator count = %d, want %d", got, want)
+	}
+
+	sections := strings.Split(output, "\n\n")
 	if len(sections) != len(wantHosts) {
 		t.Fatalf("section count = %d, want %d", len(sections), len(wantHosts))
 	}
+
+	wantModels := catalogModelsByHost()
 	for i, section := range sections {
 		lines := strings.Split(section, "\n")
-		if lines[0] != string(wantHosts[i]) {
-			t.Errorf("section %d host = %q, want %q", i, lines[0], wantHosts[i])
+		if got, want := lines[0], string(wantHosts[i]); got != want {
+			t.Errorf("section %d heading = %q, want bare host name %q", i, got, want)
+			continue
 		}
-	}
 
-	rows := renderedRows(t)
-	for _, entry := range agentkit.Catalog() {
-		for _, offering := range entry.Offerings {
-			if _, ok := rows[string(offering.Host)][entry.Model]; !ok {
-				t.Errorf("catalog model %q missing under host %q", entry.Model, offering.Host)
+		gotModels := make([]string, 0, len(lines)-1)
+		for rowIndex, row := range lines[1:] {
+			fields := strings.Fields(row)
+			if len(fields) == 0 {
+				t.Fatalf("host %q row %d is empty", wantHosts[i], rowIndex)
 			}
+			gotModels = append(gotModels, fields[0])
+		}
+		want := wantModels[wantHosts[i]]
+		if got := strings.Join(gotModels, "\n"); got != strings.Join(want, "\n") {
+			t.Errorf("models under host %q = %q, want catalog order %q", wantHosts[i], gotModels, want)
 		}
 	}
 }
@@ -193,6 +212,21 @@ func hosts() []agentkit.Host {
 		result = append(result, host)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result
+}
+
+func catalogModelsByHost() map[agentkit.Host][]string {
+	result := make(map[agentkit.Host][]string)
+	for _, entry := range agentkit.Catalog() {
+		seen := make(map[agentkit.Host]bool)
+		for _, offering := range entry.Offerings {
+			if seen[offering.Host] {
+				continue
+			}
+			seen[offering.Host] = true
+			result[offering.Host] = append(result[offering.Host], entry.Model)
+		}
+	}
 	return result
 }
 
