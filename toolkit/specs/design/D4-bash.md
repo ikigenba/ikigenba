@@ -50,3 +50,4 @@ shell is a construction-time error, not a per-call surprise.
 - R-E8WP-UIKL: `Bash` MUST treat an absent `timeout` as 120000 milliseconds, and when the command runs longer than `timeout` milliseconds it MUST return an error whose text begins with `command timed out after N ms` (N the effective timeout) and contains the output captured before the kill.
 - R-EBCI-M21Z: When `ctx` is cancelled while the command runs, `Bash` MUST return an error that wraps `ctx.Err()`.
 - R-ECKE-ZTSO: `Bash` MUST run the command in its own process group, and on timeout or cancellation MUST kill every process in that group so no descendant of the command survives the call.
+- R-DUGQ-JY9Q: `Bash`'s `Access` MUST equal `agentkit.BlocksAll()` for every argument set.

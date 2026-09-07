@@ -95,6 +95,14 @@ func WithSkip(patterns ...string) SkipOption
 - **Every result is capped** at 30,000 characters. The cap is toolkit's own
   constant (agentkit refuses to export one, D17) and is unexported. A truncated
   result ends with an explicit marker so the model knows it saw a prefix.
+- **Access is declared per tool** (agentkit D28): every tool passes an access
+  function to its agentkit constructor saying what a call blocks while it runs,
+  so agentkit can run the calls of one round concurrently where safe. `Read`
+  blocks nothing; `Write`, `Edit`, `Glob`, and `Grep` block the resolved path
+  they touch; `Bash` blocks everything. The access function uses the same path
+  resolution as the call; when resolution fails, the tool declares `BlocksAll`,
+  since the call is about to fail in-band without touching anything and the
+  conservative answer costs nothing.
 - **Root confinement**: a path argument may be absolute or relative. A relative
   path is joined to the root. The result is cleaned and its longest existing
   prefix is resolved through symlinks; the resolved path must equal the root or
@@ -128,3 +136,4 @@ func WithSkip(patterns ...string) SkipOption
 - R-CHHX-YG0H: A path argument given to `Read`, `Write`, `Edit`, `Glob`, or `Grep` MUST be resolved by joining a relative path to the root, cleaning it, and resolving symlinks on its longest existing prefix; a resolved path that is neither the root nor beneath the root MUST make `Call` return an error whose text contains the argument name and the path as given.
 - R-EUUW-QDX3: Every `Call` result string MUST contain at most 30,000 characters (Unicode code points) of tool output; when the output would be longer, the tool MUST return exactly its first 30,000 characters followed by a newline and the marker `[output truncated: showing 30000 of N characters]`, where N is the untruncated length, and nothing else.
 - R-CL5N-3R8K: Every `Call` MUST return `("", err)` with a non-nil `err` on failure and `(text, nil)` on success; a tool MUST NOT return both a non-empty string and a non-nil error.
+- R-DOD8-N3K9: When `Read`, `Write`, `Edit`, `Glob`, or `Grep` cannot resolve a path argument per R-CHHX-YG0H, its `Access` for those arguments MUST equal `agentkit.BlocksAll()`.

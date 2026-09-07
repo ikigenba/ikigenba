@@ -91,3 +91,6 @@ value is not a sentinel.
 - R-D73T-ZML2: `Edit` MUST locate `old_string` by exact byte-for-byte comparison and MUST return an error containing `old_string not found` when the file contains no occurrence, without modifying the file.
 - R-D8BQ-DEBR: When `replace_all` is absent or `false` and the file contains more than one occurrence of `old_string`, `Edit` MUST return an error stating the number of occurrences found, without modifying the file.
 - R-D9JM-R62G: `Edit` MUST replace the single occurrence when `replace_all` is absent or `false`, or every occurrence when `replace_all` is `true`, rewrite the file preserving its mode, and return the text `replaced N occurrence(s) of old_string in <file_path>` with N the number replaced and `file_path` as given.
+- R-DPL5-0VAY: `Read`'s `Access` MUST equal `agentkit.BlocksNone()` for every argument set whose `file_path` resolves per D1.
+- R-DQT1-EN1N: `Write`'s `Access` MUST equal `agentkit.BlocksPaths(p)` where `p` is `file_path` resolved per D1.
+- R-DS0X-SESC: `Edit`'s `Access` MUST equal `agentkit.BlocksPaths(p)` where `p` is `file_path` resolved per D1.

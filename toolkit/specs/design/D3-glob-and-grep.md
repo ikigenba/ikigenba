@@ -105,3 +105,4 @@ entries, in addition to the character cap every tool has (D1).
 - R-E0DF-64DQ: When `multiline` is `true`, `Grep` MUST match `pattern` against the whole file content with `.` matching newlines, MUST count and report a match at the line where it begins, and in `content` mode MUST render every line the match spans.
 - R-EJVT-AG8U: `Grep` MUST return at most `head_limit` entries (default 250) — lines of output in `content` mode, files in the other modes — and when entries were dropped MUST append a final line `[truncated to first N entries]` where N is the limit.
 - R-EL3P-O7ZJ: `Grep` MUST return the text `No matches found` when no file contains a match.
+- R-DT8U-66J1: `Glob`'s and `Grep`'s `Access` MUST equal `agentkit.BlocksPaths(p)` where `p` is the search directory: the root when `path` is absent, otherwise `path` resolved per D1.
