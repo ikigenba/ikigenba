@@ -33,6 +33,7 @@ type Conversation struct {
 	savepointHistory    History
 	savepointToolCalls  int
 	closed              bool
+	turnInFlight        bool
 }
 
 // Config is the construction-time configuration of a Conversation: everything a
@@ -102,7 +103,22 @@ func (c *Conversation) AddSystem(text string) error {
 // arrives as additional Block variants, never as a second method.
 func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream {
 	turn := c.snapshotTurn(blocks)
+	c.turnInFlight = true
+	turnFinished := true
 	return &Stream{outputDeclared: c.output != nil, drive: func(yield func(Event) bool) error {
+		defer func() {
+			if turnFinished {
+				c.turnInFlight = false
+			}
+		}()
+		downstream := yield
+		yield = func(event Event) bool {
+			if downstream(event) {
+				return true
+			}
+			turnFinished = false
+			return false
+		}
 		if c.isClosed() {
 			return ErrClosed
 		}

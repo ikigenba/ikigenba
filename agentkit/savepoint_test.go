@@ -2,10 +2,88 @@ package agentkit
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"testing"
 )
+
+func newAbandonedTurnConversation(t *testing.T, withSavepoint bool) (*Conversation, Savepoint) {
+	t.Helper()
+	first := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "call-1", Name: "weather", Input: json.RawMessage(`{"city":"Oslo"}`)}}}
+	final := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
+	provider := &phase15Provider{model: "model", responses: [][]Event{{MessageDone{Message: first}}, {MessageDone{Message: final}}}}
+	conversation := newConversation(provider, successfulPhase15Client(new(int)), Config{})
+	var sp Savepoint
+	if withSavepoint {
+		var err error
+		sp, err = conversation.Savepoint()
+		if err != nil {
+			t.Fatalf("Savepoint() error = %v, want nil", err)
+		}
+	}
+	conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) {
+		return "sunny", nil
+	})}
+	stream := conversation.Send(context.Background(), Text{Text: "forecast"})
+	for range stream.Events() {
+		break
+	}
+	return conversation, sp
+}
+
+func TestSavepointRejectsWhileTurnInFlight(t *testing.T) {
+	// R-7QHM-6YEG
+	conversation, _ := newAbandonedTurnConversation(t, false)
+
+	sp, err := conversation.Savepoint()
+	if !reflect.DeepEqual(sp, Savepoint{}) {
+		t.Fatalf("Savepoint() = %#v, want zero value", sp)
+	}
+	if !errors.Is(err, ErrTurnInFlight) {
+		t.Fatalf("Savepoint() error = %v, want ErrTurnInFlight", err)
+	}
+	if conversation.liveSavepoint {
+		t.Fatal("Savepoint() created a live savepoint while turn was in flight")
+	}
+}
+
+func TestRestoreRejectsWhileTurnInFlight(t *testing.T) {
+	// R-7QHM-6YEG
+	conversation, sp := newAbandonedTurnConversation(t, true)
+	wantHistory := conversation.history
+
+	if err := conversation.Restore(sp); !errors.Is(err, ErrTurnInFlight) {
+		t.Fatalf("Restore() error = %v, want ErrTurnInFlight", err)
+	}
+	if !reflect.DeepEqual(conversation.history, wantHistory) {
+		t.Fatalf("History after Restore() = %#v, want unchanged %#v", conversation.history, wantHistory)
+	}
+}
+
+func TestReleaseRejectsWhileTurnInFlight(t *testing.T) {
+	// R-7QHM-6YEG
+	conversation, sp := newAbandonedTurnConversation(t, true)
+
+	if err := conversation.Release(sp); !errors.Is(err, ErrTurnInFlight) {
+		t.Fatalf("Release() error = %v, want ErrTurnInFlight", err)
+	}
+	if !conversation.liveSavepoint {
+		t.Fatal("Release() ended live savepoint while turn was in flight")
+	}
+}
+
+func TestCloseRejectsWhileTurnInFlight(t *testing.T) {
+	// R-7QHM-6YEG
+	conversation, _ := newAbandonedTurnConversation(t, false)
+
+	if err := conversation.Close(); !errors.Is(err, ErrTurnInFlight) {
+		t.Fatalf("Close() error = %v, want ErrTurnInFlight", err)
+	}
+	if conversation.closed {
+		t.Fatal("Close() marked conversation closed while turn was in flight")
+	}
+}
 
 func TestSavepointRecordsHistoryWithoutProviderCall(t *testing.T) {
 	// R-7MTX-1N6D
