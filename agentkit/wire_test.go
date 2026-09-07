@@ -36,10 +36,11 @@ type fixtureTool struct {
 	schema      json.RawMessage
 }
 
-func (t fixtureTool) Name() string            { return t.name }
-func (t fixtureTool) Description() string     { return t.description }
-func (t fixtureTool) Schema() json.RawMessage { return t.schema }
-func (fixtureTool) isTool()                   {}
+func (t fixtureTool) Name() string                { return t.name }
+func (t fixtureTool) Description() string         { return t.description }
+func (t fixtureTool) Schema() json.RawMessage     { return t.schema }
+func (fixtureTool) isTool()                       {}
+func (fixtureTool) Access(json.RawMessage) Access { return BlocksAll() }
 func (fixtureTool) Call(context.Context, json.RawMessage) (string, error) {
 	return "", nil
 }
@@ -2512,7 +2513,7 @@ func TestCanonicalToolSchemaRendersPortablyAcrossFourVendorWires(t *testing.T) {
 	}
 	tool, err := NewToolFromSchema("portable", "all wires", schema, func(context.Context, json.RawMessage) (string, error) {
 		return "", nil
-	})
+	}, blocksAllForTest[json.RawMessage])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3573,7 +3574,7 @@ func TestFixtureWireCompletesFixtureDrivenToolLoop(t *testing.T) {
 					}
 					dispatches[index]++
 					return call.result, nil
-				})
+				}, blocksAllForTest[json.RawMessage])
 				if err != nil {
 					t.Fatal(err)
 				}

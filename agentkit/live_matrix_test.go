@@ -125,6 +125,10 @@ func assertLiveMatrixToolTurn(t *testing.T, offering Offering, endpoint Endpoint
 		Text string `json:"text"`
 	}) (string, error) {
 		return in.Text, nil
+	}, func(struct {
+		Text string `json:"text"`
+	}) Access {
+		return BlocksAll()
 	})
 	conversation, err := New(offering.WireFormat, endpoint, model, Config{Tools: []Tool{echo}, Log: NewLog(&log, time.Now, "")})
 	if err != nil {

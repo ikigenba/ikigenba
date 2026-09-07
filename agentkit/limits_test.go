@@ -157,7 +157,7 @@ func TestZeroLimitsNeverRefuseWork(t *testing.T) {
 		Tools: []Tool{MustTool("lookup", "", func(context.Context, phase15Input) (string, error) {
 			toolCalls++
 			return "found", nil
-		})},
+		}, blocksAllForTest[phase15Input])},
 	})
 	stream := conversation.Send(context.Background(), Text{Text: "lookup"})
 	drainStream(stream)
@@ -230,7 +230,7 @@ func TestToolCallLimitRefusesWholeDispatchAndTracksLifetime(t *testing.T) {
 			Tools: []Tool{MustTool("lookup", "", func(context.Context, phase15Input) (string, error) {
 				toolCalls++
 				return "found", nil
-			})},
+			}, blocksAllForTest[phase15Input])},
 		})
 		before := marshalLimitTestHistory(t, conversation.history)
 		stream := conversation.Send(context.Background(), Text{Text: "lookup"})
@@ -259,8 +259,8 @@ func TestToolCallLimitRefusesWholeDispatchAndTracksLifetime(t *testing.T) {
 			Limits: Limits{MaxToolCalls: 2},
 			Log:    NewLog(&output, func() time.Time { return time.Time{} }, ""),
 			Tools: []Tool{
-				MustTool("first", "", func(context.Context, phase15Input) (string, error) { firstCalls++; return "ok", nil }),
-				MustTool("second", "", func(context.Context, phase15Input) (string, error) { secondCalls++; return "ok", nil }),
+				MustTool("first", "", func(context.Context, phase15Input) (string, error) { firstCalls++; return "ok", nil }, blocksAllForTest[phase15Input]),
+				MustTool("second", "", func(context.Context, phase15Input) (string, error) { secondCalls++; return "ok", nil }, blocksAllForTest[phase15Input]),
 			},
 		})
 		stream := conversation.Send(context.Background(), Text{Text: "lookup"})
@@ -333,7 +333,7 @@ func TestContextLimitRefusesOnlySubsequentWork(t *testing.T) {
 			Tools: []Tool{MustTool("lookup", "", func(context.Context, phase15Input) (string, error) {
 				toolCalls++
 				return "found", nil
-			})},
+			}, blocksAllForTest[phase15Input])},
 		})
 		before := marshalLimitTestHistory(t, conversation.history)
 		stream := conversation.Send(context.Background(), Text{Text: "lookup"})

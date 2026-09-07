@@ -17,13 +17,15 @@ type siblingTypedInput struct {
 	Query string `json:"query" jsonschema:"required,minLength=1"`
 }
 
+func siblingBlocksAll[In any](In) agentkit.Access { return agentkit.BlocksAll() }
+
 func discoverSiblingTools(schemas []json.RawMessage, calls *int) ([]agentkit.Tool, error) {
 	tools := make([]agentkit.Tool, 0, len(schemas))
 	for _, schema := range schemas {
 		tool, err := agentkit.NewToolFromSchema("remote", "discovered tool", schema, func(context.Context, json.RawMessage) (string, error) {
 			*calls++
 			return "remote result", nil
-		})
+		}, siblingBlocksAll[json.RawMessage])
 		if err != nil {
 			return nil, fmt.Errorf("discover remote tool: %w", err)
 		}
@@ -46,13 +48,13 @@ func assertExternalToolConstruction(t *testing.T) {
 	t.Helper()
 	typed, err := agentkit.NewTool("typed", "typed tool", func(context.Context, siblingTypedInput) (string, error) {
 		return "typed result", nil
-	})
+	}, siblingBlocksAll[siblingTypedInput])
 	if err != nil {
 		t.Fatal(err)
 	}
 	must := agentkit.MustTool("must", "static tool", func(context.Context, siblingTypedInput) (string, error) {
 		return "must result", nil
-	})
+	}, siblingBlocksAll[siblingTypedInput])
 	callbackCalls := 0
 	discovered, err := discoverSiblingTools([]json.RawMessage{json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}`)}, &callbackCalls)
 	if err != nil {

@@ -22,6 +22,7 @@ type Tool interface {
 	Description() string
 	Schema() json.RawMessage
 	Call(ctx context.Context, args json.RawMessage) (string, error)
+	Access(args json.RawMessage) Access
 	isTool()
 }
 
@@ -30,6 +31,7 @@ type concreteTool struct {
 	description string
 	schema      json.RawMessage
 	call        func(context.Context, json.RawMessage) (string, error)
+	access      func(json.RawMessage) Access
 }
 
 func (t concreteTool) Name() string            { return t.name }
@@ -38,6 +40,12 @@ func (t concreteTool) Schema() json.RawMessage { return t.schema }
 func (t concreteTool) isTool()                 {}
 func (t concreteTool) Call(ctx context.Context, args json.RawMessage) (string, error) {
 	return t.call(ctx, args)
+}
+func (t concreteTool) Access(args json.RawMessage) Access {
+	if t.access == nil {
+		return BlocksAll()
+	}
+	return t.access(args)
 }
 
 // NewTool builds a Tool from a Go input type and a typed callback.
@@ -49,7 +57,7 @@ func (t concreteTool) Call(ctx context.Context, args json.RawMessage) (string, e
 // "format=name", "minItems=n", "maxItems=n", and "uniqueItems=true|false"
 // are recognized. Unknown keys and malformed values make NewTool return an
 // error. JSON field names continue to come from the field's json tag.
-func NewTool[In any](name, description string, fn func(ctx context.Context, in In) (string, error)) (Tool, error) {
+func NewTool[In any](name, description string, fn func(ctx context.Context, in In) (string, error), access func(in In) Access) (Tool, error) {
 	schemaValue, err := deriveToolSchema(reflect.TypeFor[In](), make(map[reflect.Type]bool))
 	if err != nil {
 		return nil, fmt.Errorf("agentkit: derive tool schema: %w", err)
@@ -58,12 +66,25 @@ func NewTool[In any](name, description string, fn func(ctx context.Context, in I
 	if err != nil {
 		return nil, fmt.Errorf("agentkit: derive tool schema: %w", err)
 	}
-	return newTool(name, description, schema, func(ctx context.Context, args json.RawMessage) (string, error) {
+	decode := func(args json.RawMessage) (In, error) {
 		var input In
 		if err := json.Unmarshal(args, &input); err != nil {
-			return "", fmt.Errorf("agentkit: decode tool arguments: %w", err)
+			return input, fmt.Errorf("agentkit: decode tool arguments: %w", err)
+		}
+		return input, nil
+	}
+	return newTool(name, description, schema, func(ctx context.Context, args json.RawMessage) (string, error) {
+		input, err := decode(args)
+		if err != nil {
+			return "", err
 		}
 		return fn(ctx, input)
+	}, func(args json.RawMessage) Access {
+		input, err := decode(args)
+		if err != nil {
+			panic(err)
+		}
+		return access(input)
 	})
 }
 
@@ -280,8 +301,8 @@ func parseToolNonNegativeInteger(key, raw string, hasValue bool) (int64, error) 
 }
 
 // MustTool is the panicking sibling of NewTool.
-func MustTool[In any](name, description string, fn func(ctx context.Context, in In) (string, error)) Tool {
-	tool, err := NewTool(name, description, fn)
+func MustTool[In any](name, description string, fn func(ctx context.Context, in In) (string, error), access func(in In) Access) Tool {
+	tool, err := NewTool(name, description, fn, access)
 	if err != nil {
 		panic(err)
 	}
@@ -289,15 +310,15 @@ func MustTool[In any](name, description string, fn func(ctx context.Context, in 
 }
 
 // NewToolFromSchema builds a Tool from a raw input schema and callback.
-func NewToolFromSchema(name, description string, schema json.RawMessage, fn func(ctx context.Context, args json.RawMessage) (string, error)) (Tool, error) {
-	return newTool(name, description, schema, fn)
+func NewToolFromSchema(name, description string, schema json.RawMessage, fn func(ctx context.Context, args json.RawMessage) (string, error), access func(args json.RawMessage) Access) (Tool, error) {
+	return newTool(name, description, schema, fn, access)
 }
 
-func newTool(name, description string, schema json.RawMessage, fn func(context.Context, json.RawMessage) (string, error)) (Tool, error) {
+func newTool(name, description string, schema json.RawMessage, fn func(context.Context, json.RawMessage) (string, error), access func(json.RawMessage) Access) (Tool, error) {
 	if err := ValidateToolSchema(schema); err != nil {
 		return nil, fmt.Errorf("agentkit: tool %q: %w", name, err)
 	}
-	return concreteTool{name: name, description: description, schema: schema, call: fn}, nil
+	return concreteTool{name: name, description: description, schema: schema, call: fn, access: access}, nil
 }
 
 // ValidateToolSchema reports whether a raw schema lies within the canonical

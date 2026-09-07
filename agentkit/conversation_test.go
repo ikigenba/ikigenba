@@ -1278,7 +1278,7 @@ func TestCatalogPricingUsesMergedUsageAcrossRounds(t *testing.T) {
 		Log: NewLog(&logOutput, func() time.Time { return time.Time{} }, ""),
 		Tools: []Tool{MustTool("lookup", "", func(context.Context, phase15Input) (string, error) {
 			return "found", nil
-		})},
+		}, blocksAllForTest[phase15Input])},
 	})
 	stream := conversation.Send(context.Background(), Text{Text: "price both rounds"})
 	drainStream(stream)
@@ -1358,7 +1358,7 @@ func TestConfiguredToolsSettingsAndOptionsPersistAcrossTurns(t *testing.T) {
 	tool := MustTool("configured_tool", "", func(context.Context, phase15Input) (string, error) {
 		callbackCalls++
 		return "called", nil
-	})
+	}, blocksAllForTest[phase15Input])
 	settings := Settings{Options: Options{"temperature": "0.4", "stop": `["END"]`}}
 	call := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{
 		ID: "configured-call", Name: tool.Name(), Input: json.RawMessage(`{"city":"Oslo"}`),
@@ -1821,7 +1821,7 @@ func TestStructuredOutputToolRoundTripSkipsTextValidation(t *testing.T) {
 	conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) {
 		toolCalls++
 		return "sunny", nil
-	})}
+	}, blocksAllForTest[phase15Input])}
 	user := Message{Role: RoleUser, Blocks: []Block{Text{Text: "forecast"}}}
 	stream := conversation.Send(context.Background(), user.Blocks...)
 	events := drainStream(stream)
@@ -2141,7 +2141,7 @@ func TestDurableLogMirrorsMultiRoundStreamAtMessageGranularity(t *testing.T) {
 	log := NewLog(&output, func() time.Time { return time.Date(2033, 1, 1, 0, 0, 0, 0, time.UTC) }, "")
 	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	conversation.eventSink = log
-	conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) { return "sunny", nil })}
+	conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) { return "sunny", nil }, blocksAllForTest[phase15Input])}
 
 	events := drainStream(conversation.Send(context.Background(), Text{Text: "forecast"}))
 	if len(events) != 4 {
@@ -2445,7 +2445,7 @@ func TestStreamEarlyStopHaltsTurnAndCannotReplay(t *testing.T) {
 	conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) {
 		toolCalls++
 		return "unused", nil
-	})}
+	}, blocksAllForTest[phase15Input])}
 
 	stream := conversation.Send(context.Background(), Text{Text: "stop"})
 	seen := 0
@@ -2474,7 +2474,7 @@ func TestStreamEventsAndPrivateLogBridgeRecordsExtraMessagesBesidesEveryEvent(t 
 	sink := &captureEventSink{}
 	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	conversation.eventSink = sink
-	conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) { return "sunny", nil })}
+	conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) { return "sunny", nil }, blocksAllForTest[phase15Input])}
 
 	events := drainStream(conversation.Send(context.Background(), Text{Text: "forecast"}))
 	user := Message{Role: RoleUser, Blocks: []Block{Text{Text: "forecast"}}}
@@ -2519,7 +2519,7 @@ func TestSendCompletesToolRoundTripsWithFixedClonedConfigAndOneCommit(t *testing
 	weather := MustTool("weather", "look up weather", func(_ context.Context, input phase15Input) (string, error) {
 		toolCalls++
 		return "weather for " + input.City, nil
-	})
+	}, blocksAllForTest[phase15Input])
 	conversation.tools = []Tool{weather}
 	prior := Message{Role: RoleSystem, Blocks: []Block{Text{Text: "stable"}}}
 	conversation.history = History{prior}
@@ -2581,13 +2581,13 @@ func TestToolDispatchFailuresAreInBandAndRecoverable(t *testing.T) {
 			return []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) {
 				*calls++
 				return "must not run", nil
-			})}
+			}, blocksAllForTest[phase15Input])}
 		}},
 		{name: "callback error", toolName: "weather", input: json.RawMessage(`{"city":"Oslo"}`), wantCallbackCalls: 1, tools: func(calls *int) []Tool {
 			return []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) {
 				*calls++
 				return "", errors.New("tool backend unavailable")
-			})}
+			}, blocksAllForTest[phase15Input])}
 		}},
 	}
 	for _, test := range tests {
@@ -2632,10 +2632,11 @@ type phase17CountingTool struct {
 	call        func(context.Context, json.RawMessage) (string, error)
 }
 
-func (t *phase17CountingTool) Name() string            { return t.name }
-func (t *phase17CountingTool) Description() string     { return "phase 17 fixture" }
-func (t *phase17CountingTool) Schema() json.RawMessage { t.schemaCalls++; return t.schema }
-func (t *phase17CountingTool) isTool()                 {}
+func (t *phase17CountingTool) Name() string                  { return t.name }
+func (t *phase17CountingTool) Description() string           { return "phase 17 fixture" }
+func (t *phase17CountingTool) Schema() json.RawMessage       { t.schemaCalls++; return t.schema }
+func (t *phase17CountingTool) isTool()                       {}
+func (t *phase17CountingTool) Access(json.RawMessage) Access { return BlocksAll() }
 func (t *phase17CountingTool) Call(ctx context.Context, input json.RawMessage) (string, error) {
 	return t.call(ctx, input)
 }
@@ -2645,6 +2646,7 @@ func phase17Tool(name string) Tool {
 		name:   name,
 		schema: json.RawMessage(`{"type":"object","properties":{}}`),
 		call:   func(context.Context, json.RawMessage) (string, error) { return "ok", nil },
+		access: func(json.RawMessage) Access { return BlocksAll() },
 	}
 }
 
@@ -3181,7 +3183,7 @@ func TestOrchestratorValidatesEveryCallBeforeInvokingTool(t *testing.T) {
 				callbackCalls++
 				callbackInput = append(json.RawMessage(nil), input...)
 				return "accepted", nil
-			})
+			}, blocksAllForTest[json.RawMessage])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -3312,7 +3314,7 @@ func TestToolCallbackErrorIsCorrelatedDeliveredAndRecoverable(t *testing.T) {
 	conversation := newConversation(provider, successfulPhase15Client(&transportCalls), Config{})
 	runtimeTool, err := NewToolFromSchema("boom", "remote tool", json.RawMessage(`{"type":"object","properties":{}}`), func(context.Context, json.RawMessage) (string, error) {
 		return "discarded", errors.New(distinctive)
-	})
+	}, blocksAllForTest[json.RawMessage])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3414,7 +3416,7 @@ func TestTerminalFailuresAfterCompletedRoundTripPreserveEventsAndAtomicHistory(t
 			conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) {
 				toolCalls++
 				return "sunny", nil
-			})}
+			}, blocksAllForTest[phase15Input])}
 			conversation.history = History{{Role: RoleSystem, Blocks: []Block{Text{Text: "stable"}}}}
 			before, err := json.Marshal(conversation.history)
 			if err != nil {

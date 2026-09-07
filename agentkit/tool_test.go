@@ -15,12 +15,18 @@ type typedToolInput struct {
 	Query string `json:"query" jsonschema:"required"`
 }
 
+func blocksAllForTest[In any](In) Access { return BlocksAll() }
+
 func TestTypedToolExposesContractAndAdaptsRawArguments(t *testing.T) {
 	wantErr := errors.New("callback failure")
 	var received typedToolInput
+	var accessReceived typedToolInput
 	tool, err := NewTool("lookup", "look up a query", func(_ context.Context, input typedToolInput) (string, error) {
 		received = input
 		return "typed result", wantErr
+	}, func(input typedToolInput) Access {
+		accessReceived = input
+		return BlocksPaths(input.Query)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -42,10 +48,14 @@ func TestTypedToolExposesContractAndAdaptsRawArguments(t *testing.T) {
 	if result != "typed result" || !errors.Is(callErr, wantErr) || received.Query != "weather" {
 		t.Fatalf("Call = %q, %v with input %#v", result, callErr, received)
 	}
+	gotAccess := tool.Access(json.RawMessage(`{"query":"forecast"}`))
+	if accessReceived.Query != "forecast" || gotAccess.kind != accessPaths || !reflect.DeepEqual(gotAccess.paths, []string{"forecast"}) {
+		t.Fatalf("Access input=%#v result=%#v, want decoded input and its path", accessReceived, gotAccess)
+	}
 
 	must := MustTool("must", "must constructor", func(context.Context, typedToolInput) (string, error) {
 		return "must result", nil
-	})
+	}, blocksAllForTest[typedToolInput])
 	if got, err := must.Call(context.Background(), json.RawMessage(`{"query":"value"}`)); err != nil || got != "must result" {
 		t.Fatalf("MustTool Call = %q, %v", got, err)
 	}
@@ -55,9 +65,13 @@ func TestRawSchemaToolPreservesSchemaAndCallbackBoundary(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"}}}`)
 	args := json.RawMessage(`{"query":"weather"}`)
 	var received json.RawMessage
+	var accessReceived json.RawMessage
 	tool, err := NewToolFromSchema("raw", "raw schema", schema, func(_ context.Context, input json.RawMessage) (string, error) {
 		received = input
 		return "raw result", nil
+	}, func(input json.RawMessage) Access {
+		accessReceived = input
+		return BlocksNone()
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -68,6 +82,9 @@ func TestRawSchemaToolPreservesSchemaAndCallbackBoundary(t *testing.T) {
 	result, err := tool.Call(context.Background(), args)
 	if err != nil || result != "raw result" || !reflect.DeepEqual(received, args) {
 		t.Fatalf("Call = %q, %v with args %s", result, err, received)
+	}
+	if got := tool.Access(args); !reflect.DeepEqual(accessReceived, args) || got.kind != accessNone {
+		t.Fatalf("Access input=%s result=%#v, want raw args and BlocksNone", accessReceived, got)
 	}
 }
 
@@ -113,7 +130,7 @@ func TestNewToolDerivesDocumentedTagVocabularyAndReturnsSchemaFaults(t *testing.
 	// R-3ZDR-CW24
 	tool, err := NewTool("typed", "typed schema", func(context.Context, phase13TypedInput) (string, error) {
 		return "ok", nil
-	})
+	}, blocksAllForTest[phase13TypedInput])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,13 +191,13 @@ func TestNewToolDerivesDocumentedTagVocabularyAndReturnsSchemaFaults(t *testing.
 		want string
 	}{
 		{"malformed value", func() (Tool, error) {
-			return NewTool("bad-length", "", func(context.Context, phase13BadLengthTag) (string, error) { return "", nil })
+			return NewTool("bad-length", "", func(context.Context, phase13BadLengthTag) (string, error) { return "", nil }, blocksAllForTest[phase13BadLengthTag])
 		}, "minLength"},
 		{"unknown key", func() (Tool, error) {
-			return NewTool("bad-key", "", func(context.Context, phase13UnknownTag) (string, error) { return "", nil })
+			return NewTool("bad-key", "", func(context.Context, phase13UnknownTag) (string, error) { return "", nil }, blocksAllForTest[phase13UnknownTag])
 		}, "madeUp"},
 		{"derived noncanonical map", func() (Tool, error) {
-			return NewTool("map", "", func(context.Context, phase13MapInput) (string, error) { return "", nil })
+			return NewTool("map", "", func(context.Context, phase13MapInput) (string, error) { return "", nil }, blocksAllForTest[phase13MapInput])
 		}, "additionalProperties"},
 	}
 	for _, test := range invalid {
@@ -201,11 +218,11 @@ func TestNewToolDerivesDocumentedTagVocabularyAndReturnsSchemaFaults(t *testing.
 func TestMustToolMatchesNewToolAndPanicsOnTheSameInvalidSchema(t *testing.T) {
 	// R-40LN-QNST
 	callback := func(_ context.Context, input typedToolInput) (string, error) { return "seen:" + input.Query, nil }
-	regular, err := NewTool("lookup", "description", callback)
+	regular, err := NewTool("lookup", "description", callback, blocksAllForTest[typedToolInput])
 	if err != nil {
 		t.Fatal(err)
 	}
-	must := MustTool("lookup", "description", callback)
+	must := MustTool("lookup", "description", callback, blocksAllForTest[typedToolInput])
 	if regular.Name() != must.Name() || regular.Description() != must.Description() || !bytes.Equal(regular.Schema(), must.Schema()) {
 		t.Fatalf("NewTool and MustTool differ: %q/%q/%s versus %q/%q/%s", regular.Name(), regular.Description(), regular.Schema(), must.Name(), must.Description(), must.Schema())
 	}
@@ -221,7 +238,7 @@ func TestMustToolMatchesNewToolAndPanicsOnTheSameInvalidSchema(t *testing.T) {
 			t.Fatalf("MustTool panic = %v, want canonical-subset diagnostic", panicValue)
 		}
 	}()
-	_ = MustTool("invalid", "", func(context.Context, phase13MapInput) (string, error) { return "", nil })
+	_ = MustTool("invalid", "", func(context.Context, phase13MapInput) (string, error) { return "", nil }, blocksAllForTest[phase13MapInput])
 }
 
 func TestNewToolFromSchemaValidatesAndPreservesRawBoundary(t *testing.T) {
@@ -232,7 +249,7 @@ func TestNewToolFromSchemaValidatesAndPreservesRawBoundary(t *testing.T) {
 	tool, err := NewToolFromSchema("raw", "dynamic", schema, func(_ context.Context, got json.RawMessage) (string, error) {
 		received = got
 		return "raw-result", nil
-	})
+	}, blocksAllForTest[json.RawMessage])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +259,7 @@ func TestNewToolFromSchemaValidatesAndPreservesRawBoundary(t *testing.T) {
 	}
 	if invalid, invalidErr := NewToolFromSchema("bad", "", json.RawMessage(`{"type":"object","additionalProperties":true}`), func(context.Context, json.RawMessage) (string, error) {
 		return "", nil
-	}); invalidErr == nil || invalid != nil || !strings.Contains(invalidErr.Error(), "additionalProperties") {
+	}, blocksAllForTest[json.RawMessage]); invalidErr == nil || invalid != nil || !strings.Contains(invalidErr.Error(), "additionalProperties") {
 		t.Fatalf("invalid raw construction = %#v, %v", invalid, invalidErr)
 	}
 }
@@ -254,16 +271,16 @@ func TestOnlyMustToolPanicsForInvalidSchemas(t *testing.T) {
 		call func() (Tool, error)
 	}{
 		{name: "malformed typed tag", call: func() (Tool, error) {
-			return NewTool("bad-tag", "", func(context.Context, phase13BadLengthTag) (string, error) { return "", nil })
+			return NewTool("bad-tag", "", func(context.Context, phase13BadLengthTag) (string, error) { return "", nil }, blocksAllForTest[phase13BadLengthTag])
 		}},
 		{name: "unsupported typed input", call: func() (Tool, error) {
-			return NewTool("bad-type", "", func(context.Context, phase26UnsupportedInput) (string, error) { return "", nil })
+			return NewTool("bad-type", "", func(context.Context, phase26UnsupportedInput) (string, error) { return "", nil }, blocksAllForTest[phase26UnsupportedInput])
 		}},
 		{name: "malformed raw JSON", call: func() (Tool, error) {
-			return NewToolFromSchema("bad-json", "", json.RawMessage(`{"type":"object"`), func(context.Context, json.RawMessage) (string, error) { return "", nil })
+			return NewToolFromSchema("bad-json", "", json.RawMessage(`{"type":"object"`), func(context.Context, json.RawMessage) (string, error) { return "", nil }, blocksAllForTest[json.RawMessage])
 		}},
 		{name: "noncanonical raw schema", call: func() (Tool, error) {
-			return NewToolFromSchema("bad-subset", "", json.RawMessage(`{"type":"object","additionalProperties":true}`), func(context.Context, json.RawMessage) (string, error) { return "", nil })
+			return NewToolFromSchema("bad-subset", "", json.RawMessage(`{"type":"object","additionalProperties":true}`), func(context.Context, json.RawMessage) (string, error) { return "", nil }, blocksAllForTest[json.RawMessage])
 		}},
 	}
 	for _, test := range tests {
@@ -286,7 +303,7 @@ func TestOnlyMustToolPanicsForInvalidSchemas(t *testing.T) {
 			t.Fatal("MustTool accepted invalid schema without panicking")
 		}
 	}()
-	_ = MustTool("must-fail", "", func(context.Context, phase26UnsupportedInput) (string, error) { return "", nil })
+	_ = MustTool("must-fail", "", func(context.Context, phase26UnsupportedInput) (string, error) { return "", nil }, blocksAllForTest[phase26UnsupportedInput])
 }
 
 func TestValidateToolSchemaRecursivelyDefinesCanonicalSubset(t *testing.T) {

@@ -25,7 +25,7 @@ func newAbandonedTurnConversation(withSavepoint bool) (*Conversation, Savepoint,
 	}
 	conversation.tools = []Tool{MustTool("weather", "", func(context.Context, phase15Input) (string, error) {
 		return "sunny", nil
-	})}
+	}, blocksAllForTest[phase15Input])}
 	stream := conversation.Send(context.Background(), Text{Text: "forecast"})
 	for range stream.Events() {
 		break
