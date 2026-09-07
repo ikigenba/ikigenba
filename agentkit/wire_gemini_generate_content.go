@@ -190,17 +190,35 @@ type geminiCachedContentRequest struct {
 	ToolConfig        *geminiToolConfig        `json:"toolConfig,omitempty"`
 }
 
+type geminiCachedContentResponse struct {
+	statusCode int
+	header     http.Header
+	body       []byte
+}
+
 func (w *geminiGenerateContentWire) prepareCache(ctx context.Context, client *http.Client, endpoint Endpoint, state requestState) error {
 	if state.SavepointMark <= 0 || (w.cacheName != "" && w.cacheMark == state.SavepointMark) {
 		return nil
 	}
 
-	contents, systemParts, err := buildGeminiContents(state.History[:state.SavepointMark])
+	cacheRequest, err := w.buildCacheRequest(state)
 	if err != nil {
 		return err
 	}
+	response, err := sendGeminiCacheRequest(ctx, client, endpoint, cacheRequest)
+	if err != nil {
+		return err
+	}
+	return w.handleCacheResponse(response, state.SavepointMark)
+}
+
+func (w *geminiGenerateContentWire) buildCacheRequest(state requestState) (geminiCachedContentRequest, error) {
+	contents, systemParts, err := buildGeminiContents(state.History[:state.SavepointMark])
+	if err != nil {
+		return geminiCachedContentRequest{}, err
+	}
 	cacheRequest := geminiCachedContentRequest{
-		Model:      state.Model,
+		Model:      "models/" + state.Model,
 		Contents:   contents,
 		ToolConfig: buildGeminiToolConfig(state.Settings.ToolChoice),
 	}
@@ -210,10 +228,19 @@ func (w *geminiGenerateContentWire) prepareCache(ctx context.Context, client *ht
 	if len(state.Tools) > 0 {
 		rendered, renderErr := w.renderToolList(state.Tools)
 		if renderErr != nil {
-			return renderErr
+			return geminiCachedContentRequest{}, renderErr
 		}
 		cacheRequest.Tools = rendered
 	}
+	return cacheRequest, nil
+}
+
+func sendGeminiCacheRequest(
+	ctx context.Context,
+	client *http.Client,
+	endpoint Endpoint,
+	cacheRequest geminiCachedContentRequest,
+) (geminiCachedContentResponse, error) {
 	// Every member of cacheRequest is either a scalar, a typed JSON-safe
 	// structure, or RawMessage emitted by renderToolList above.
 	body, _ := json.Marshal(cacheRequest)
@@ -225,37 +252,45 @@ func (w *geminiGenerateContentWire) prepareCache(ctx context.Context, client *ht
 	cacheURL.Fragment = ""
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, cacheURL.String(), bytes.NewReader(body))
 	if err != nil {
-		return err
+		return geminiCachedContentResponse{}, err
 	}
 	request.Header.Set("Content-Type", "application/json")
 	if err := endpoint.config.auth.Authenticate(ctx, request, body); err != nil {
-		return err
+		return geminiCachedContentResponse{}, err
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return fmt.Errorf("agentkit: create Gemini cached content: %w", err)
+		return geminiCachedContentResponse{}, fmt.Errorf("agentkit: create Gemini cached content: %w", err)
 	}
 	defer func() { _ = response.Body.Close() }()
 	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
-		return fmt.Errorf("agentkit: Gemini cached content response: %w", err)
+		return geminiCachedContentResponse{}, fmt.Errorf("agentkit: Gemini cached content response: %w", err)
 	}
-	if !isHTTPSuccess(response.StatusCode) {
-		if isGeminiCacheTooSmallRejection(response.StatusCode, responseBody) {
+	return geminiCachedContentResponse{
+		statusCode: response.StatusCode,
+		header:     response.Header,
+		body:       responseBody,
+	}, nil
+}
+
+func (w *geminiGenerateContentWire) handleCacheResponse(response geminiCachedContentResponse, savepointMark int) error {
+	if !isHTTPSuccess(response.statusCode) {
+		if isGeminiCacheTooSmallRejection(response.statusCode, response.body) {
 			// R-NWI7-DP1G: a below-minimum prefix is not a consumer error.
 			// Keep the cache empty so encodeRequest renders the turn uncached.
 			return nil
 		}
-		return classifiedGeminiCacheError(response.StatusCode, response.Header, responseBody)
+		return classifiedGeminiCacheError(response.statusCode, response.header, response.body)
 	}
 	var created struct {
 		Name string `json:"name"`
 	}
-	if err := json.Unmarshal(responseBody, &created); err != nil {
+	if err := json.Unmarshal(response.body, &created); err != nil {
 		return fmt.Errorf("agentkit: decode Gemini cached content response: %w", err)
 	}
 	w.cacheName = created.Name
-	w.cacheMark = state.SavepointMark
+	w.cacheMark = savepointMark
 	return nil
 }
 

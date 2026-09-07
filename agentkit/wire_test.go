@@ -408,7 +408,7 @@ func TestGeminiGenerateContentOmitsCachedContentWithoutLiveSavepoint(t *testing.
 	}
 }
 
-// R-NVAA-ZXAR
+// R-Z0V6-102E
 func TestGeminiGenerateContentCreatesCacheOnFirstRoundTripAfterSavepoint(t *testing.T) {
 	var cacheBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
@@ -462,10 +462,11 @@ func TestGeminiGenerateContentCreatesCacheOnFirstRoundTripAfterSavepoint(t *test
 		t.Fatalf("cache body contains ttl: %s", cacheBody)
 	}
 	var model string
-	if err := json.Unmarshal(got["model"], &model); err != nil || model != state.Model {
-		t.Fatalf("model = %q, error %v; want %q", model, err, state.Model)
+	wantModel := "models/" + state.Model
+	if err := json.Unmarshal(got["model"], &model); err != nil || model != wantModel {
+		t.Fatalf("model = %q, error %v; want %q", model, err, wantModel)
 	}
-	wantCacheBody := []byte(`{"model":"gemini-test-model","contents":[{"role":"user","parts":[{"text":"cached prompt"}]},{"role":"model","parts":[{"text":"cached answer"}]}],"systemInstruction":{"parts":[{"text":"cached system"}]},"tools":[{"functionDeclarations":[{"name":"lookup","description":"look up a value","parameters":{"properties":{"q":{"type":"string"}},"type":"object"}}]}],"toolConfig":{"functionCallingConfig":{"mode":"ANY","allowedFunctionNames":["lookup"]}}}`)
+	wantCacheBody := []byte(`{"model":"models/gemini-test-model","contents":[{"role":"user","parts":[{"text":"cached prompt"}]},{"role":"model","parts":[{"text":"cached answer"}]}],"systemInstruction":{"parts":[{"text":"cached system"}]},"tools":[{"functionDeclarations":[{"name":"lookup","description":"look up a value","parameters":{"properties":{"q":{"type":"string"}},"type":"object"}}]}],"toolConfig":{"functionCallingConfig":{"mode":"ANY","allowedFunctionNames":["lookup"]}}}`)
 	if !bytes.Equal(cacheBody, wantCacheBody) {
 		t.Fatalf("cache body = %s\nwant = %s", cacheBody, wantCacheBody)
 	}
