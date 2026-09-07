@@ -54,6 +54,5 @@ type Result struct {
 
 // RunPass runs one root supervisor and everything it delegates.
 func RunPass(ctx context.Context, cfg Config, prompt string) (Result, error) {
-	_, _, _ = ctx, cfg, prompt
-	return Result{}, nil
+	return runPass(ctx, cfg, prompt)
 }
