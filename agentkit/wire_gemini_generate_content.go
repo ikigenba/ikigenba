@@ -2,11 +2,18 @@ package agentkit
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 )
 
-type geminiGenerateContentWire struct{ wireCodec }
+type geminiGenerateContentWire struct {
+	wireCodec
+	cacheMark int
+	cacheName string
+}
 
 // GeminiGenerateContentWire returns the built-in Gemini GenerateContent wire codec.
 func GeminiGenerateContentWire() WireFormat { return newGeminiGenerateContentWire(nil) }
@@ -89,20 +96,30 @@ type geminiRequest struct {
 	GenerationConfig  *geminiGenerationConfig  `json:"generationConfig,omitempty"`
 	ToolConfig        *geminiToolConfig        `json:"toolConfig,omitempty"`
 	Tools             json.RawMessage          `json:"tools,omitempty"`
+	CachedContent     string                   `json:"cachedContent,omitempty"`
 }
 
 func (w *geminiGenerateContentWire) encodeRequest(state requestState) ([]byte, error) {
-	contents, systemParts, err := buildGeminiContents(state.History)
+	cacheLive := w.cacheName != "" && w.cacheMark == state.SavepointMark
+	history := state.History
+	if cacheLive {
+		history = history[state.SavepointMark:]
+	}
+	contents, systemParts, err := buildGeminiContents(history)
 	if err != nil {
 		return nil, err
 	}
 	request := geminiRequest{
 		Contents:         contents,
 		GenerationConfig: applyGeminiSamplingOptions(buildGeminiThinkingConfig(settingsReasoning(state.Settings)), state.Settings.Options),
-		ToolConfig:       buildGeminiToolConfig(state.Settings.ToolChoice),
+		CachedContent:    w.cacheName,
 	}
-	if len(systemParts) > 0 {
-		request.SystemInstruction = &geminiSystemInstruction{Parts: systemParts}
+	if !cacheLive {
+		request.CachedContent = ""
+		request.ToolConfig = buildGeminiToolConfig(state.Settings.ToolChoice)
+		if len(systemParts) > 0 {
+			request.SystemInstruction = &geminiSystemInstruction{Parts: systemParts}
+		}
 	}
 	if state.Output != nil {
 		schema, renderErr := w.renderOutputSchema(state.Output.Schema)
@@ -115,23 +132,104 @@ func (w *geminiGenerateContentWire) encodeRequest(state requestState) ([]byte, e
 		request.GenerationConfig.ResponseMIMEType = "application/json"
 		request.GenerationConfig.ResponseJSONSchema = schema
 	}
-	if len(state.Tools) > 0 {
-		rendered, renderErr := w.RenderTools(state.Tools)
+	if !cacheLive && len(state.Tools) > 0 {
+		rendered, renderErr := w.renderToolList(state.Tools)
 		if renderErr != nil {
 			return nil, renderErr
 		}
-		var toolEnvelope struct {
-			Tools json.RawMessage `json:"tools"`
-		}
-		// RenderTools currently returns marshaled JSON; keep the boundary check so
-		// encodeRequest remains defensive if that private implementation changes.
-		if err := json.Unmarshal(rendered, &toolEnvelope); err != nil {
-			return nil, err
-		}
-		request.Tools = toolEnvelope.Tools
+		request.Tools = rendered
 	}
 	encoded, err := json.Marshal(request)
 	return append(encoded, '\n'), err
+}
+
+type geminiCachedContentRequest struct {
+	Model             string                   `json:"model"`
+	Contents          []geminiContent          `json:"contents"`
+	SystemInstruction *geminiSystemInstruction `json:"systemInstruction,omitempty"`
+	Tools             json.RawMessage          `json:"tools,omitempty"`
+	ToolConfig        *geminiToolConfig        `json:"toolConfig,omitempty"`
+}
+
+func (w *geminiGenerateContentWire) prepareCache(ctx context.Context, client *http.Client, endpoint Endpoint, state requestState) error {
+	if state.SavepointMark <= 0 || (w.cacheName != "" && w.cacheMark == state.SavepointMark) {
+		return nil
+	}
+
+	contents, systemParts, err := buildGeminiContents(state.History[:state.SavepointMark])
+	if err != nil {
+		return err
+	}
+	cacheRequest := geminiCachedContentRequest{
+		Model:      state.Model,
+		Contents:   contents,
+		ToolConfig: buildGeminiToolConfig(state.Settings.ToolChoice),
+	}
+	if len(systemParts) > 0 {
+		cacheRequest.SystemInstruction = &geminiSystemInstruction{Parts: systemParts}
+	}
+	if len(state.Tools) > 0 {
+		rendered, renderErr := w.renderToolList(state.Tools)
+		if renderErr != nil {
+			return renderErr
+		}
+		cacheRequest.Tools = rendered
+	}
+	// Every member of cacheRequest is either a scalar, a typed JSON-safe
+	// structure, or RawMessage emitted by renderToolList above.
+	body, _ := json.Marshal(cacheRequest)
+
+	cacheURL := *endpoint.config.baseURL
+	cacheURL.Path = "/v1beta/cachedContents"
+	cacheURL.RawPath = ""
+	cacheURL.RawQuery = ""
+	cacheURL.Fragment = ""
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, cacheURL.String(), bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	if err := endpoint.config.auth.Authenticate(ctx, request, body); err != nil {
+		return err
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return fmt.Errorf("agentkit: create Gemini cached content: %w", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	responseBody, err := io.ReadAll(response.Body)
+	if err != nil {
+		return fmt.Errorf("agentkit: read Gemini cached content response: %w", err)
+	}
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("agentkit: create Gemini cached content: status %d: %q", response.StatusCode, responseBody)
+	}
+	var created struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(responseBody, &created); err != nil {
+		return fmt.Errorf("agentkit: decode Gemini cached content response: %w", err)
+	}
+	w.cacheName = created.Name
+	w.cacheMark = state.SavepointMark
+	return nil
+}
+
+func (w *geminiGenerateContentWire) renderToolList(tools []Tool) (json.RawMessage, error) {
+	rendered, err := w.RenderTools(tools)
+	if err != nil {
+		return nil, err
+	}
+	var envelope struct {
+		Tools json.RawMessage `json:"tools"`
+	}
+	// RenderTools currently returns marshaled JSON from a typed envelope. Keep
+	// this boundary check in one place so callers do not duplicate that grammar
+	// if the private renderer changes.
+	if err := json.Unmarshal(rendered, &envelope); err != nil {
+		return nil, err
+	}
+	return envelope.Tools, nil
 }
 
 func buildGeminiContents(history []Message) ([]geminiContent, []geminiPart, error) {
@@ -329,12 +427,10 @@ func (c geminiFunctionCall) toolUse(thoughtSignature string) (ToolUse, error) {
 	}
 	toolUse := ToolUse{ID: c.ID, Name: c.Name, Input: append(json.RawMessage(nil), input...)}
 	if thoughtSignature != "" {
-		provider, err := json.Marshal(struct {
+		// A struct containing only a string is unconditionally JSON-marshalable.
+		provider, _ := json.Marshal(struct {
 			ThoughtSignature string `json:"thoughtSignature"`
 		}{ThoughtSignature: thoughtSignature})
-		if err != nil {
-			return ToolUse{}, err
-		}
 		toolUse.Provider = provider
 	}
 	return toolUse, nil

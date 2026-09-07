@@ -9,6 +9,7 @@ import (
 	"io"
 	"iter"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"reflect"
 	"slices"
@@ -406,6 +407,146 @@ func TestGeminiGenerateContentOmitsCachedContentWithoutLiveSavepoint(t *testing.
 	}
 	if bytes.Contains(body, []byte("cachedContent")) {
 		t.Fatalf("request contains cachedContent: %s", body)
+	}
+}
+
+// R-NVAA-ZXAR
+func TestGeminiGenerateContentCreatesCacheOnFirstRoundTripAfterSavepoint(t *testing.T) {
+	var cacheBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/v1beta/cachedContents" {
+			t.Errorf("request path = %q, want /v1beta/cachedContents", request.URL.Path)
+			response.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if request.Method != http.MethodPost {
+			t.Errorf("request method = %q, want POST", request.Method)
+		}
+		var err error
+		cacheBody, err = io.ReadAll(request.Body)
+		if err != nil {
+			t.Errorf("read cache body: %v", err)
+		}
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(response, `{"name":"cachedContents/cache-1"}`)
+	}))
+	defer server.Close()
+
+	endpoint, err := NewEndpoint(authFunc(func(context.Context, *http.Request, []byte) error { return nil }),
+		WithBaseURL(server.URL+"/v1beta/models/gemini-test-model:streamGenerateContent?alt=sse"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool := fixtureTool{name: "lookup", description: "look up a value", schema: json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}}}`)}
+	history := History{
+		{Role: RoleSystem, Blocks: []Block{Text{Text: "cached system"}}},
+		{Role: RoleUser, Blocks: []Block{Text{Text: "cached prompt"}}},
+		{Role: RoleAssistant, Blocks: []Block{Text{Text: "cached answer"}}},
+		{Role: RoleUser, Blocks: []Block{Text{Text: "fresh prompt"}}},
+	}
+	state := requestState{
+		Model:         "gemini-test-model",
+		History:       history,
+		Settings:      Settings{ToolChoice: ToolChoice{Mode: ToolChoiceTool, Name: "lookup"}},
+		Tools:         []Tool{tool},
+		SavepointMark: 3,
+	}
+	provider := newComposedProvider(newGeminiGenerateContentWire(nil), endpoint, Identity{})
+	if _, err := provider.BuildRequest(context.Background(), state); err != nil {
+		t.Fatal(err)
+	}
+
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(cacheBody, &got); err != nil {
+		t.Fatalf("decode cache body: %v: %s", err, cacheBody)
+	}
+	if _, ok := got["ttl"]; ok {
+		t.Fatalf("cache body contains ttl: %s", cacheBody)
+	}
+	var model string
+	if err := json.Unmarshal(got["model"], &model); err != nil || model != state.Model {
+		t.Fatalf("model = %q, error %v; want %q", model, err, state.Model)
+	}
+	wantCacheBody := []byte(`{"model":"gemini-test-model","contents":[{"role":"user","parts":[{"text":"cached prompt"}]},{"role":"model","parts":[{"text":"cached answer"}]}],"systemInstruction":{"parts":[{"text":"cached system"}]},"tools":[{"functionDeclarations":[{"name":"lookup","description":"look up a value","parameters":{"properties":{"q":{"type":"string"}},"type":"object"}}]}],"toolConfig":{"functionCallingConfig":{"mode":"ANY","allowedFunctionNames":["lookup"]}}}`)
+	if !bytes.Equal(cacheBody, wantCacheBody) {
+		t.Fatalf("cache body = %s\nwant = %s", cacheBody, wantCacheBody)
+	}
+}
+
+// R-L01M-I6GF
+func TestGeminiGenerateContentOmitsUncachedMembersOnceCacheIsLive(t *testing.T) {
+	cacheCreations := 0
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/v1beta/cachedContents" {
+			t.Errorf("request path = %q, want /v1beta/cachedContents", request.URL.Path)
+			response.WriteHeader(http.StatusNotFound)
+			return
+		}
+		cacheCreations++
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(response, `{"name":"cachedContents/cache-1"}`)
+	}))
+	defer server.Close()
+
+	endpoint, err := NewEndpoint(authFunc(func(context.Context, *http.Request, []byte) error { return nil }),
+		WithBaseURL(server.URL+"/v1beta/models/gemini-test-model:streamGenerateContent?alt=sse"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := requestState{
+		Model: "gemini-test-model",
+		History: History{
+			{Role: RoleSystem, Blocks: []Block{Text{Text: "cached system"}}},
+			{Role: RoleUser, Blocks: []Block{Text{Text: "cached prompt"}}},
+			{Role: RoleAssistant, Blocks: []Block{Text{Text: "cached answer"}}},
+			{Role: RoleUser, Blocks: []Block{Text{Text: "fresh prompt"}}},
+		},
+		Settings: Settings{ToolChoice: ToolChoice{Mode: ToolChoiceTool, Name: "lookup"}},
+		Tools: []Tool{fixtureTool{
+			name: "lookup", description: "look up a value",
+			schema: json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}}}`),
+		}},
+		SavepointMark: 3,
+	}
+	provider := newComposedProvider(newGeminiGenerateContentWire(nil), endpoint, Identity{})
+	if _, err := provider.BuildRequest(context.Background(), state); err != nil {
+		t.Fatal(err)
+	}
+	request, err := provider.BuildRequest(context.Background(), state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cacheCreations != 1 {
+		t.Fatalf("cache creation requests = %d, want 1", cacheCreations)
+	}
+	body, err := io.ReadAll(request.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile("testdata/gemini_generate_content_cached.request.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(body, want) {
+		t.Fatalf("request body = %s\nwant fixture = %s", body, want)
+	}
+	for _, omitted := range []string{"cached system", "cached prompt", "cached answer", "systemInstruction", "tools", "toolConfig"} {
+		if bytes.Contains(body, []byte(omitted)) {
+			t.Fatalf("request body contains %q: %s", omitted, body)
+		}
+	}
+	var got struct {
+		CachedContent string          `json:"cachedContent"`
+		Contents      []geminiContent `json:"contents"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.CachedContent != "cachedContents/cache-1" {
+		t.Fatalf("cachedContent = %q, want cachedContents/cache-1", got.CachedContent)
+	}
+	if len(got.Contents) != 1 || got.Contents[0].Parts[0].Text != "fresh prompt" {
+		t.Fatalf("contents = %#v, want only fresh prompt", got.Contents)
 	}
 }
 

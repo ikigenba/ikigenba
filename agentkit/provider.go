@@ -41,6 +41,13 @@ type composedProvider struct {
 	wire     wireFormat
 	endpoint Endpoint
 	identity Identity
+	client   *http.Client
+}
+
+// cachePreparer lets a wire format create an out-of-band resource needed to
+// encode the current request. Gemini uses it for explicit prompt caching.
+type cachePreparer interface {
+	prepareCache(context.Context, *http.Client, Endpoint, requestState) error
 }
 
 // rejectedCredentialClassifier lets Conversation ask the wire whether a
@@ -53,7 +60,7 @@ type rejectedCredentialClassifier interface {
 }
 
 func newComposedProvider(wire wireFormat, endpoint Endpoint, identity Identity) *composedProvider {
-	return &composedProvider{wire: wire, endpoint: endpoint, identity: identity}
+	return &composedProvider{wire: wire, endpoint: endpoint, identity: identity, client: http.DefaultClient}
 }
 
 func newEndpointConversation(wire wireFormat, endpoint Endpoint, identity Identity, cfg Config) *Conversation {
@@ -66,6 +73,11 @@ func newEndpointConversation(wire wireFormat, endpoint Endpoint, identity Identi
 }
 
 func (provider *composedProvider) BuildRequest(ctx context.Context, state requestState) (*http.Request, error) {
+	if preparer, ok := provider.wire.(cachePreparer); ok {
+		if err := preparer.prepareCache(ctx, provider.client, provider.endpoint, state); err != nil {
+			return nil, err
+		}
+	}
 	body, err := provider.wire.EncodeRequest(state)
 	if err != nil {
 		return nil, err
