@@ -25,6 +25,22 @@ func TestBashConstructor(t *testing.T) {
 	}
 }
 
+func TestBashAccessBlocksAllForEveryArgumentSet(t *testing.T) {
+	tool, err := Bash(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, args := range []json.RawMessage{
+		json.RawMessage(`{"command":"true"}`),
+		json.RawMessage(`{"command":"printf output","timeout":1}`),
+		json.RawMessage(`{"command":"cd /","timeout":600000}`),
+	} {
+		// R-DUGQ-JY9Q: Bash blocks every other call independently of its arguments.
+		assertAccessValue(t, tool.Access(args), 2, nil)
+	}
+}
+
 func TestBashSchema(t *testing.T) {
 	tool, err := Bash(t.TempDir())
 	if err != nil {
