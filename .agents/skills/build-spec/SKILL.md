@@ -1,6 +1,6 @@
 ---
 name: build-spec
-description: Close the gap between specs/design and the code by recursive delegation — the shape of the problem and what done looks like, not a procedure. Human-gated; never self-invoked.
+description: Close the mechanical id gap between specs/design and the tests by recursive delegation — the shape of the problem and what done looks like, not a procedure. Stops clean when the gap is empty; adequacy of already-matched ids is audit-spec's job. Human-gated; never self-invoked.
 ---
 
 # close the gap
@@ -15,7 +15,12 @@ zero, or to stop and say precisely why that cannot be done.
 The design is a set of documents, each a coherent seam of the program,
 each ending in requirements with permanent ids. The gap is mechanical:
 every id in the design must be proved by a tagged test, and no test may
-carry an id the design no longer has. Load the `spec` skill for the id
+carry an id the design no longer has. The gap is the whole of the job
+and the boundary of your authority. An empty gap is a finished run:
+report the id counts and stop — no delegation, no inspecting existing
+tests, no edits, no commits. Adequacy of ids already proved on both
+sides is `audit-spec`'s work, and only a human invokes it. Load the
+`spec` skill for the id
 rules and the canonical greps. `AGENTS.md` declares the test files,
 toolchain, gates, and commit convention; every agent computes the gap
 and runs the gates against that one declaration. If either is missing,
@@ -39,9 +44,11 @@ more than one scope's worth of work, and the way to guarantee that is
 structural: every agent in the run is exactly one of three things.
 
 A **coordinator** holds a gap and owns closing it, but never edits a
-source or test file. It computes its gap, partitions it into scopes,
-delegates each scope to a fresh agent, has each result verified, and
-reports upward. It holds at most a handful of children — about six. A
+source or test file. It computes its gap; an empty gap is nothing to
+close, so it reports the id counts and stops without spawning a child.
+Otherwise it partitions the gap into scopes, delegates each scope to a
+fresh agent, has each result verified, and reports upward. It holds at
+most a handful of children — about six. A
 gap that partitions into more scopes than that is split among
 sub-coordinators, so no single context ever accumulates a dozen
 reports and a dozen verdicts. The root is always a coordinator, and
@@ -66,13 +73,15 @@ delegates. The decision is never "does this fit in my context." It is
 only "is this one scope," and if not, split.
 
 A **verifier** holds one scope and tries to prove it is not closed. It
-reads the scope's design document, its code, and its tests, and checks
-each of the four points under "what done looks like" for each id —
-above all that every tagged test genuinely asserts its requirement, not
-merely that it exists and passes. It never edits a file. It returns
-pass, or fail with evidence: the id, the file, and what is wrong. A
-verifier that wants to fix what it found has left its role; it reports
-instead.
+reads the scope's design document and the code and tests written to
+close its gap ids, and for each of those ids checks the points under
+"what done looks like" — above all that the test added or changed for it
+genuinely asserts its requirement, not merely that it exists and passes.
+It judges only the work this run performed; an id already proved on both
+sides before the run is outside its scope. It never edits a file. It
+returns pass, or fail with evidence: the id, the file, and what is
+wrong. A verifier that wants to fix what it found has left its role; it
+reports instead.
 
 Delegation is always to a fresh agent, never a fork. A fork inherits
 the parent's context, which is exactly the thing being protected. The
@@ -108,7 +117,9 @@ parent delegates that split instead.
 ## What done looks like
 
 - Both greps agree: the id sets are identical.
-- Every tagged test genuinely asserts its requirement.
+- Every test added or changed to close a gap id genuinely asserts that
+  requirement. Ids already proved before the run are not re-audited
+  here — that is `audit-spec`.
 - Every gate exits 0, with nothing skipped or suppressed.
 - The work is committed in green phases per the commit convention, each
   naming its ids.
@@ -124,6 +135,9 @@ parent delegates that split instead.
   ids are the design's. Neither `specs/design/` nor `AGENTS.md` is ever
   edited by this run; an issue is how you ask for them to change.
 - No alias, shim, or forwarding layer preserves a superseded shape.
+- Nothing is edited or committed that is not the closing of a specific
+  gap id. Every commit names the gap ids it closes; a run whose gap is
+  empty writes nothing and commits nothing.
 
 ## Halting
 
