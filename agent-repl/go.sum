@@ -6,9 +6,9 @@ github.com/danwakefield/fnmatch v0.0.0-20160403171240-cbb64ac3d964 h1:y5HC9v93H5
 github.com/danwakefield/fnmatch v0.0.0-20160403171240-cbb64ac3d964/go.mod h1:Xd9hchkHSWYkEqJwUGisez3G1QY8Ryz0sdWrLPMGjLk=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
-github.com/ikigenba/ikigenba/agentkit v0.8.0 h1:kw5fgAabg+9Y9aKXXKR+xyYb26szjwgLwVWVCtNtLXo=
-github.com/ikigenba/ikigenba/agentkit v0.8.0/go.mod h1:BWx72jITh545mxnrC5wFB6PqfMNvfh9qUX6B2eeodvk=
-github.com/ikigenba/ikigenba/toolkit v0.1.0 h1:4EgUh4L69jZEQj79L7sRsjxNu2APHzJWY2CxxNDPyiU=
-github.com/ikigenba/ikigenba/toolkit v0.1.0/go.mod h1:G9Yvr1iTkeWFVu+5mYbxDnuqfSiWqp0pt1CkYtRCZuI=
+github.com/ikigenba/ikigenba/agentkit v0.11.0 h1:RCJSujBJlC69iamF1kQ1hKOGqtbW1AFkgRbUnSfgelY=
+github.com/ikigenba/ikigenba/agentkit v0.11.0/go.mod h1:BWx72jITh545mxnrC5wFB6PqfMNvfh9qUX6B2eeodvk=
+github.com/ikigenba/ikigenba/toolkit v0.2.0 h1:+YimcWB6ASO/vFxjNgnOlSvr26l3GJs6eG/WNPskn0E=
+github.com/ikigenba/ikigenba/toolkit v0.2.0/go.mod h1:dEGYPpnPkT3RF2A/Hyf7opTa2feHH6si+Sk6AZQgcLQ=
 golang.org/x/sync v0.12.0 h1:MHc5BpPuC30uJk597Ri8TV3CNZcTLu6B6z4lJy+g6Jw=
 golang.org/x/sync v0.12.0/go.mod h1:1dzgHSNfp02xaA81J2MS99Qcpr2w7fw1gpm99rleRqA=

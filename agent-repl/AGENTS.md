@@ -16,7 +16,7 @@ the gates against; it is human-authored and read-only to the run.
 - Go 1.26 (`go version` must report 1.26+)
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - `llm-lint` on PATH, with its provider API key present in the environment
-- Network access to the Go module proxy for `agentkit` (`v0.8.0`+) and
+- Network access to the Go module proxy for `agentkit` (`v0.11.0`+) and
   `toolkit`, both published from this monorepo under `agentkit/v*` and
   `toolkit/v*` tags, and for `github.com/google/uuid`.
 

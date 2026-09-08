@@ -83,7 +83,19 @@ func Resolve(cfg Config) (Plan, error)
 func Open(cfg Config) (*Session, error)
 func (s *Session) Plan() Plan
 func (s *Session) Send(ctx context.Context, prompt string) *agentkit.Stream
+func (s *Session) Close() error // closes the conversation; the log stays the caller's
 ```
+
+**Lifetime.** A session ends with `Close`, which closes the agentkit
+conversation and nothing else: the `Log` in `Config` belongs to the caller,
+who closes it afterwards (D5). agentkit records the close as a `closed` record
+(agentkit D26), the last thing the conversation writes before the log's own
+`summary`, and refuses any later `Send` with `ErrClosed`. `Close` is idempotent,
+like the conversation's own, so a caller need not track whether it already
+closed. The one error it can surface today is agentkit's provider-side cleanup
+failing, which agent-repl never triggers because it takes no savepoint; the
+signature carries the error anyway so that when agentkit gives `Close` more
+work, the caller sees it without a signature change.
 
 `Resolve` picks the offering with `agentkit.Lookup(model, provider, wire)`.
 For an off-catalog model it borrows the transport — wire format and endpoint
@@ -141,7 +153,7 @@ prompt: agentkit's log records protocol events, never consumer input.
 - R-UTBC-Q7D6: `Flags.Validate` MUST NOT read the environment or any file, verified by validating options whose `auth_file` names a path that does not exist and whose API-key variable is unset.
 - R-NBLA-8LFJ: Package `internal/session` MUST export a `Config` struct whose fields are exactly `Provider string`, `Model string`, `Wire string`, `Auth string`, `AuthFile string`, `BaseURL string`, `SystemFile string`, `Settings map[string]string`, `Home string`, `Getenv func(string) string`, `Root string`, and `Log *agentkit.Log`.
 - R-UVR5-HQUK: Package `internal/session` MUST export a `Plan` struct whose fields are exactly `Offering agentkit.Offering`, `Model string`, `AuthMode agentkit.AuthMode`, `EnvVar string`, `AuthFile string`, and `BaseURL string`.
-- R-UWZ1-VIL9: Package `internal/session` MUST export `Resolve(cfg Config) (Plan, error)`, `Open(cfg Config) (*Session, error)`, and on `*Session` the methods `Plan() Plan` and `Send(ctx context.Context, prompt string) *agentkit.Stream`.
+- R-ANGT-BS97: Package `internal/session` MUST export `Resolve(cfg Config) (Plan, error)`, `Open(cfg Config) (*Session, error)`, and on `*Session` the methods `Plan() Plan`, `Send(ctx context.Context, prompt string) *agentkit.Stream`, and `Close() error`.
 - R-UY6Y-9ABY: For a cataloged model, `Resolve` MUST set `Plan.Offering` to the offering `agentkit.Lookup(cfg.Model, agentkit.Host(cfg.Provider), agentkit.WireName(cfg.Wire))` returns and `Plan.Model` to that offering's `WireModel`.
 - R-UZEU-N22N: For a model not in the catalog, `Resolve` MUST set `Plan.Offering` to the first cataloged offering whose `Host` equals `cfg.Provider` and, when `cfg.Wire` is non-empty, whose `WireName` equals it, with `WireModel` replaced by `cfg.Model`, and MUST set `Plan.Model` to `cfg.Model`.
 - R-V1UN-ELK1: `Resolve` MUST set `Plan.EnvVar` to `cfg.Provider` upper-cased followed by `_API_KEY`, and `Plan.AuthFile` to `cfg.AuthFile` when non-empty, else `<cfg.Home>/.agent-repl/<cfg.Provider>-auth.json`.
@@ -154,6 +166,7 @@ prompt: agentkit's log records protocol events, never consumer input.
 - R-VADY-2ZQW: `Open` MUST pass `cfg.Settings` to the conversation as `agentkit.Settings.Options` unchanged, verified by an unknown key producing an `agentkit.ErrInvalidConfig` from `Send` rather than an `Open` error.
 - R-VBLU-GRHL: `Open` MUST pass `cfg.Log` to the conversation, verified by a turn producing records on the log's writer.
 - R-VCTQ-UJ8A: `Session.Send` MUST send `prompt` as a single `agentkit.Text` block and return the resulting stream.
+- R-AOOP-PJZW: `Session.Close` MUST close the conversation: the first `Close` on an open session MUST return `nil` and write exactly one `closed` record to `cfg.Log`, a second `Close` MUST return `nil` and write no record, and a `Send` after `Close` MUST return a stream whose `Err()` satisfies `errors.Is(err, agentkit.ErrClosed)` with no request reaching the `httptest` provider.
 - R-NE13-04WX: When `cfg.SystemFile` is non-empty, `Open` MUST read the file at that path and pass its entire contents, unmodified, to the conversation's `AddSystem` before any `Send`, verified by the first request an `httptest` provider receives containing the file's text; when `cfg.SystemFile` is empty, `Open` MUST NOT call `AddSystem`, verified by that request containing no system entry.
 - R-NF8Z-DWNM: When `cfg.SystemFile` names a file that cannot be read, `Open` MUST return an error whose text contains the path, and no request MUST reach the `httptest` provider.
 - R-NGGV-ROEB: When the conversation's `AddSystem` rejects the file's contents, `Open` MUST return an error whose text contains the path and that satisfies `errors.Is(err, agentkit.ErrInvalidArgument)`, and no request MUST reach the `httptest` provider, verified with a file containing only white space.

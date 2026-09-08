@@ -16,11 +16,11 @@ Validate ──error─────▶ error + usage → stderr, exit 2
     ▼
 create log file ──error─▶ error → stderr, exit 1
     ▼
-session.Open ──error─▶ error → stderr, exit 1
+session.Open ──error─▶ error → stderr, Log.Close, exit 1
     ▼
 loop: prompt, read line, send, render ... until EOF or interrupt at prompt
     ▼
-Log.Close, summary, exit 0
+Session.Close, Log.Close, summary, exit 0
 ```
 
 **The log file.** Every session writes agentkit's event log to
@@ -30,11 +30,13 @@ UTC formatted `20060102T150405Z`. The directory is created if missing (mode
 `Log` over a sink that forwards each record line to the file and, in raw
 mode, to stdout (D6), built with `Deps.Now` as its clock and `Deps.LogID` as
 its identity, so every record carries the session's UUID (D1). The file is
-the whole transcript: agentkit records the user's prompt, any system file,
+the whole transcript: agentkit opens it with a `conversation` record naming
+the endpoint, settings, and tools, records the user's prompt, any system file,
 and each message the model and the tools produce, with one `usage` record per
-provider round-trip and the turn's total on `turn_end`. The summary block a
+provider round-trip and the turn's total on `turn_end`, and ends the
+conversation with a `closed` record (agentkit D26). The summary block a
 person sees at the end is read off that same stream: the `summary` record
-agentkit writes on `Close` carries the cumulative usage and cost, so
+agentkit writes on `Log.Close` carries the cumulative usage and cost, so
 agent-repl never keeps its own totals.
 
 **The loop.** Each iteration prints the prompt (decorated mode only), reads
@@ -58,18 +60,33 @@ agentkit's history unchanged (its own guarantee), so the next prompt continues
 the same conversation.
 
 **Ending.** However the session ends — end of input, interrupt at the prompt,
-or `ctx` done — `Run` closes the log (which writes the `summary` record),
-renders the summary in decorated mode, and returns 0. A turn that failed does
-not change the exit code: the user saw the error and chose to continue or
+or `ctx` done — `Run` closes the session (which writes the `closed` record),
+then closes the log (which writes the `summary` record), then the file,
+renders the summary in decorated mode, and returns 0. The order is the
+ownership order: agent-repl opened the conversation over the log over the
+file, and closes them innermost first. An error from `Session.Close` is
+rendered to stderr through `Decorated.Error` and changes nothing else: the
+log is still closed and the exit code is still 0. A turn that failed does not
+change the exit code either: the user saw the error and chose to continue or
 stop.
+
+**A failed `Open` ends the same way.** `Run` created the log file and the log
+before `Open`, so it closes them on `Open`'s failure exactly as it does after
+a session, and `Open` closes the conversation it built before returning an
+error that arises after that point (a rejected system file). Every log file
+agent-repl leaves behind therefore ends with the `summary` record, whether or
+not a turn ever ran: a failure before the conversation exists leaves
+`summary` alone, and one after it leaves `conversation`, `closed`, `summary`.
+The log records the failure's shape, not its text — the error goes to stderr
+(D2), never into the log.
 
 ## REQUIREMENTS
 
 - R-VXK1-CMU3: `Run` MUST sequence its steps as `ParseFlags`, then help and version short-circuits, then `Validate`, then log-file creation, then `session.Open`, then the input loop, such that a usage error creates no log file and reads no stdin, and a log-file or `Open` failure reads no stdin.
 - R-VYRX-QEKS: `Run` MUST create the directory `<Deps.Home>/.agent-repl/logs` with mode `0700` when it does not exist and create the file `<Deps.Home>/.agent-repl/logs/<stamp>.jsonl` with mode `0600`, where `<stamp>` is `Deps.Now()` in UTC formatted `20060102T150405Z`, before the first prompt.
 - R-VZZU-46BH: When the log directory or file cannot be created, `Run` MUST write `error: ` followed by the cause to stderr, write nothing to stdout, and exit 1.
-- R-W17Q-HY26: When `session.Open` fails, `Run` MUST write `error: ` followed by the cause to stderr, exit 1, and leave the created log file containing no records.
-- R-P31N-2V1H: `Run` MUST build the session's `agentkit.Log` with `agentkit.NewLog` over a writer that appends every record line to the log file, timestamped by `Deps.Now` and identified by `Deps.LogID`, such that after a session the file holds exactly the records agentkit wrote, one JSON object per line, each carrying `Deps.LogID` in its `id` field, ending with a `summary` record.
+- R-APWM-3BQL: When `session.Open` fails, `Run` MUST write `error: ` followed by the cause to stderr, close the log exactly once, and exit 1, so that the created log file ends with the `summary` record; verified both by a failure before the conversation exists (an empty API-key variable), whose log holds exactly a `summary` record, and by a failure after it (a system file containing only white space), whose log holds exactly `conversation`, `closed`, `summary`.
+- R-AR4I-H3HA: `Run` MUST build the session's `agentkit.Log` with `agentkit.NewLog` over a writer that appends every record line to the log file, timestamped by `Deps.Now` and identified by `Deps.LogID`, such that after a session the file holds exactly the records agentkit wrote, one JSON object per line, each carrying `Deps.LogID` in its `id` field, beginning with a `conversation` record and ending with a `closed` record followed by a `summary` record.
 - R-NIWO-J7VP: `Run` MUST build `session.Config` from `Options` and `Deps` field for field — `Provider`, `Model`, `Wire`, `Auth`, `AuthFile`, `BaseURL`, `SystemFile`, and `Settings` from `Options`; `Home`, `Getenv`, and `Root` from `Deps` — and pass the log it created.
 - R-W4VF-N9A9: For each line of stdin that is non-empty after stripping a trailing `\n` or `\r\n`, `Run` MUST call `Session.Send` exactly once with that line and consume the returned stream to completion before reading the next line; a line that is empty after stripping MUST cause no `Send`.
 - R-W7B8-ESRN: A final line of stdin that ends without a newline MUST be sent as a turn.
@@ -77,4 +94,4 @@ stop.
 - R-W9R1-6C91: A receive on `Deps.Interrupts` while a turn is in flight MUST cancel the context passed to `Session.Send` for that turn, and `Run` MUST then continue to read and send subsequent lines.
 - R-WAYX-K3ZQ: A receive on `Deps.Interrupts` while `Run` is waiting for a line of stdin MUST end the session exactly as end of input does, exiting 0 even when stdin has not reached end of input.
 - R-WC6T-XVQF: When the `ctx` passed to `Run` is cancelled, `Run` MUST return 0 within a bounded time without waiting for further stdin.
-- R-WDEQ-BNH4: At end of input and on an interrupt at the prompt, `Run` MUST close the log exactly once before returning, so the log file ends with the `summary` record, and MUST exit 0.
+- R-ASCE-UV7Z: At end of input and on an interrupt at the prompt, `Run` MUST close the session exactly once and then close the log exactly once before returning, so the log file ends with a `closed` record followed by the `summary` record and no record follows `summary`, and MUST exit 0.
