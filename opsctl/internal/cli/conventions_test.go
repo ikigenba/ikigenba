@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"go/ast"
 	"go/parser"
@@ -9,12 +10,14 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/cli"
+	"github.com/ikigenba/ikigenba/opsctl/internal/dns"
 )
 
 const wantUsage = `Usage: opsctl [options] <command> [arguments]
@@ -142,6 +145,10 @@ func TestTopLevelGrammar(t *testing.T) {
 	user := depsAt(t, 1)
 	root := depsAt(t, 0)
 
+	if got, want := functionSwitchCases(t, "unknownTopLevelOption"), []string{"--help", "--version", "-V", "-h"}; !slices.Equal(got, want) {
+		t.Fatalf("accepted top-level option names = %q, want exactly %q", got, want)
+	}
+
 	stdout, stderr, code := invoke([]string{"-h"}, user)
 	if code != 0 || stderr != "" || stdout != wantUsage {
 		t.Errorf("-h: exit %d stdout %q stderr %q, want exit 0, usage on stdout, empty stderr", code, stdout, stderr)
@@ -198,6 +205,10 @@ func TestCommandSet(t *testing.T) {
 	// R-LZWK-KAJV
 	user := depsAt(t, 1)
 
+	if got, want := functionSwitchCases(t, "dispatch"), []string{"config", "dns", "version"}; !slices.Equal(got, want) {
+		t.Fatalf("top-level dispatch cases = %q, want exactly %q", got, want)
+	}
+
 	stdout, stderr, code := invoke([]string{"config", "--help"}, user)
 	if code != 0 || stderr != "" || stdout != wantConfigUsage {
 		t.Errorf("config: exit %d stdout %q stderr %q, want config usage", code, stdout, stderr)
@@ -213,14 +224,59 @@ func TestCommandSet(t *testing.T) {
 		t.Errorf("dns: exit %d stdout %q stderr %q, want recognized action refused as non-root", code, stdout, stderr)
 	}
 
-	stdout, stderr, code = invoke([]string{"status"}, user)
-	if code != 2 {
-		t.Errorf("status: exit %d, want 2", code)
+	for _, name := range []string{"status", "other", "config-backup", "VERSION"} {
+		stdout, stderr, code = invoke([]string{name}, user)
+		wantErr := "opsctl: unknown command '" + name + "'\n\nsee 'opsctl --help' for usage\n"
+		if code != 2 || stdout != "" || stderr != wantErr {
+			t.Errorf("%s: exit %d stdout %q stderr %q, want exit 2, empty stdout and %q", name, code, stdout, stderr, wantErr)
+		}
 	}
-	wantErr := "opsctl: unknown command 'status'\n\nsee 'opsctl --help' for usage\n"
-	if stdout != "" || stderr != wantErr {
-		t.Errorf("status: stdout %q stderr %q, want empty stdout and %q", stdout, stderr, wantErr)
+}
+
+func parseCLIFile(t *testing.T) *ast.File {
+	t.Helper()
+	parsed, err := parser.ParseFile(token.NewFileSet(), "cli.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse cli.go: %v", err)
 	}
+	return parsed
+}
+
+func namedFunction(t *testing.T, name string) *ast.FuncDecl {
+	t.Helper()
+	for _, decl := range parseCLIFile(t).Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if ok && fn.Name.Name == name {
+			return fn
+		}
+	}
+	t.Fatalf("function %s not found in cli.go", name)
+	return nil
+}
+
+func functionSwitchCases(t *testing.T, function string) []string {
+	t.Helper()
+	var values []string
+	ast.Inspect(namedFunction(t, function).Body, func(node ast.Node) bool {
+		clause, ok := node.(*ast.CaseClause)
+		if !ok {
+			return true
+		}
+		for _, expression := range clause.List {
+			literal, ok := expression.(*ast.BasicLit)
+			if !ok || literal.Kind != token.STRING {
+				continue
+			}
+			value, err := strconv.Unquote(literal.Value)
+			if err != nil {
+				t.Fatalf("unquote dispatch case: %v", err)
+			}
+			values = append(values, value)
+		}
+		return true
+	})
+	slices.Sort(values)
+	return values
 }
 
 func TestTopLevelHelp(t *testing.T) {
@@ -302,6 +358,14 @@ func TestUnknownOption(t *testing.T) {
 func TestVersionVar(t *testing.T) {
 	// R-N9CG-4L86
 	re := regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+	value := versionLiteral(t)
+	if !re.MatchString(value) {
+		t.Errorf("version = %q, want to match %s", value, re.String())
+	}
+}
+
+func versionLiteral(t *testing.T) string {
+	t.Helper()
 	fset := token.NewFileSet()
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -357,9 +421,7 @@ func TestVersionVar(t *testing.T) {
 	if !found {
 		t.Fatal("package-level var version string not found")
 	}
-	if !re.MatchString(value) {
-		t.Errorf("version = %q, want to match %s", value, re.String())
-	}
+	return value
 }
 
 func TestVersionOutput(t *testing.T) {
@@ -425,6 +487,7 @@ func TestHelpAndVersionWithoutRoot(t *testing.T) {
 		{[]string{"--version"}, wantVersion + "\n"},
 		{[]string{"-V"}, wantVersion + "\n"},
 		{[]string{"version"}, wantVersion + "\n"},
+		{[]string{"version", "--help"}, wantVersion + "\n"},
 		{[]string{"config", "--help"}, wantConfigUsage},
 	}
 	for _, tc := range cases {
@@ -450,8 +513,9 @@ func TestStderrPrefix(t *testing.T) {
 	// R-R0P9-H29Y
 	user := depsAt(t, 1)
 	root := depsAt(t, 0)
+	configured := configuredDNSDeps(t, &fakeDNSProvider{recordsErr: map[string]error{"ZONE": errors.New("provider failed")}}, "example.com")
 
-	outside := []struct {
+	cases := []struct {
 		name string
 		args []string
 		deps cli.Deps
@@ -461,9 +525,24 @@ func TestStderrPrefix(t *testing.T) {
 		{"unknown command with newline", []string{"no\nsuch"}, root},
 		{"unknown option", []string{"--not-an-option"}, user},
 		{"root refusal", []string{"config", "set", "dns.zones=x"}, user},
+		{"config missing subcommand", []string{"config"}, root},
+		{"config unknown subcommand", []string{"config", "wat"}, root},
+		{"config malformed set", []string{"config", "set", "missing-equals"}, root},
+		{"config invalid key", []string{"config", "set", "BAD=value"}, root},
+		{"config missing key", []string{"config", "get", "missing.key"}, root},
+		{"dns missing subcommand", []string{"dns"}, root},
+		{"dns unknown subcommand", []string{"dns", "wat"}, root},
+		{"dns missing configuration", []string{"dns", "list", "example.com"}, root},
+		{"dns malformed list", []string{"dns", "list"}, configured},
+		{"dns unconfigured zone", []string{"dns", "list", "other.test"}, configured},
+		{"dns provider failure", []string{"dns", "list", "example.com"}, configured},
 	}
-	for _, tc := range outside {
+	for _, tc := range cases {
 		_, stderr, _ := invoke(tc.args, tc.deps)
+		if stderr == "" {
+			t.Errorf("%s: stderr is empty, want diagnostic", tc.name)
+			continue
+		}
 		first, _, _ := strings.Cut(stderr, "\n")
 		if !strings.HasPrefix(first, "opsctl: ") {
 			t.Errorf("%s: first stderr line = %q, want prefix %q", tc.name, first, "opsctl: ")
@@ -472,42 +551,58 @@ func TestStderrPrefix(t *testing.T) {
 			t.Errorf("%s: stderr contains usage text: %q", tc.name, stderr)
 		}
 	}
-
-	_, stderr, _ := invoke([]string{"config", "get", "missing.key"}, root)
-	first, _, _ := strings.Cut(stderr, "\n")
-	if !strings.HasPrefix(first, "opsctl: ") {
-		t.Errorf("inside config: first stderr line = %q, want prefix %q", first, "opsctl: ")
-	}
-	if strings.Contains(stderr, wantUsage) || strings.Contains(stderr, "Usage: opsctl") {
-		t.Errorf("inside config: stderr contains usage text: %q", stderr)
-	}
 }
 
 func TestSuccessWritesNoStderr(t *testing.T) {
 	// R-NGNU-F7OC
 	root := depsAt(t, 0)
 
-	_, stderr, code := invoke([]string{"version"}, root)
-	if code != 0 {
-		t.Fatalf("version: exit %d, want 0", code)
+	configCases := []struct {
+		name       string
+		args       []string
+		wantStdout string
+	}{
+		{"version", []string{"version"}, wantVersion + "\n"},
+		{"config set", []string{"config", "set", "test.key=value"}, ""},
+		{"config get", []string{"config", "get", "test.key"}, "value\n"},
+		{"config list", []string{"config", "list"}, "test.key=value\n"},
+		{"config del", []string{"config", "del", "test.key"}, ""},
 	}
-	if stderr != "" {
-		t.Errorf("version: stderr = %q, want empty", stderr)
+	for _, tc := range configCases {
+		stdout, stderr, code := invoke(tc.args, root)
+		if code != 0 || stdout != tc.wantStdout || stderr != "" {
+			t.Errorf("%s: exit %d stdout %q stderr %q, want exit 0, stdout %q, empty stderr", tc.name, code, stdout, stderr, tc.wantStdout)
+		}
 	}
 
-	_, stderr, code = invoke([]string{"config", "set", "dns.zones=ikigenba.dev"}, root)
-	if code != 0 {
-		t.Fatalf("config set: exit %d stderr %q, want 0", code, stderr)
+	provider := &fakeDNSProvider{records: map[string][]dns.Record{"ZONE": {
+		{Name: "example.com", Type: "SOA"},
+		{Name: "example.com", Type: "NS", TTL: 300, Values: []string{"ns.example"}},
+	}}}
+	dnsDeps := configuredDNSDeps(t, provider, "example.com")
+	dnsDeps.DNS.LookupNS = func(context.Context, string) ([]string, error) {
+		return []string{"ns.example"}, nil
 	}
-	if stderr != "" {
-		t.Errorf("config set: stderr = %q, want empty", stderr)
+	dnsDeps.Getenv = func(key string) string {
+		if key == "CERTBOT_DOMAIN" {
+			return "example.com"
+		}
+		return "token"
 	}
-
-	_, stderr, code = invoke([]string{"config", "get", "dns.zones"}, root)
-	if code != 0 {
-		t.Fatalf("config get: exit %d stderr %q, want 0", code, stderr)
-	}
-	if stderr != "" {
-		t.Errorf("config get: stderr = %q, want empty", stderr)
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"dns list", []string{"dns", "list", "example.com"}},
+		{"dns add", []string{"dns", "add", "record.example.com", "TXT", "value"}},
+		{"dns remove", []string{"dns", "remove", "record.example.com", "TXT", "value"}},
+		{"dns check", []string{"dns", "check"}},
+		{"dns acme-auth", []string{"dns", "acme-auth"}},
+		{"dns acme-cleanup", []string{"dns", "acme-cleanup"}},
+	} {
+		_, stderr, code := invoke(tc.args, dnsDeps)
+		if code != 0 || stderr != "" {
+			t.Errorf("%s: exit %d stderr %q, want exit 0 and empty stderr", tc.name, code, stderr)
+		}
 	}
 }
