@@ -253,6 +253,34 @@ func TestSetGetRoundTripAndFormat(t *testing.T) {
 	}
 }
 
+func TestSetWritesHTMLCharactersLiterally(t *testing.T) {
+	// R-R5KV-058Q
+	s := newStore(t)
+	const value = `<tag>&value>`
+	if err := s.Set("html", value); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(storeFile(s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "{\n  \"html\": \"<tag>&value>\"\n}\n"
+	if string(data) != want {
+		t.Errorf("config.json = %q, want %q", data, want)
+	}
+	for _, escaped := range []string{`\u003c`, `\u003e`, `\u0026`} {
+		if strings.Contains(string(data), escaped) {
+			t.Errorf("config.json contains HTML-safe escape %q: %q", escaped, data)
+		}
+	}
+
+	got, err := s.Get("html")
+	if err != nil || got != value {
+		t.Errorf("Get(html) = %q, %v, want %q, nil", got, err, value)
+	}
+}
+
 func TestGetAbsentKey(t *testing.T) {
 	// R-NQF1-HDLW
 	s := newStore(t)

@@ -231,6 +231,7 @@ func encodeStore(m map[string]string) ([]byte, error) {
 	}
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(m); err != nil {
 		return nil, err

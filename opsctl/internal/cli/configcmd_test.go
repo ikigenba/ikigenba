@@ -28,7 +28,7 @@ func TestConfigHelp(t *testing.T) {
 }
 
 func TestConfigGet(t *testing.T) {
-	// R-O068-JJJG
+	// R-R352-8LRC
 	deps := depsAt(t, 0)
 	_, stderr, code := invoke([]string{"config", "set", "dns.zones=ikigenba.dev"}, deps)
 	if code != 0 {
@@ -225,7 +225,7 @@ func TestConfigList(t *testing.T) {
 }
 
 func TestConfigMissingOrUnknownSubcommand(t *testing.T) {
-	// R-O69Q-GE8X
+	// R-D3B7-CGSQ
 	deps := depsAt(t, 0)
 	cases := []struct {
 		args []string
