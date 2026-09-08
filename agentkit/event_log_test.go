@@ -645,6 +645,28 @@ func TestNewWritesConversationRecordFromCopiedConfig(t *testing.T) {
 	}
 }
 
+func TestNewConversationRecordHasNilOutputWhenConfigOmitsIt(t *testing.T) {
+	// R-65S4-PFWI
+	var output bytes.Buffer
+	log := NewLog(&output, func() time.Time { return time.Time{} }, "")
+	auth := authFunc(func(context.Context, *http.Request, []byte) error { return nil })
+	endpoint, err := NewEndpoint(auth, WithBaseURL("https://example.test/v1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := New(&testWire{}, endpoint, "model-a", Config{Log: log}); err != nil {
+		t.Fatal(err)
+	}
+	records := decodeLogRecords(t, output.Bytes())
+	if len(records) != 1 || records[0].Type != RecordConversation || records[0].Conversation == nil {
+		t.Fatalf("records after New = %#v, want exactly one conversation record", records)
+	}
+	if records[0].Conversation.Output != nil {
+		t.Fatalf("conversation output = %#v, want nil when Config.Output is absent", records[0].Conversation.Output)
+	}
+}
+
 func TestConversationCloseWritesOneFinalClosedRecord(t *testing.T) {
 	// R-687X-GZDW
 	var output bytes.Buffer
