@@ -196,11 +196,11 @@ func TestDNSAddAndRemove(t *testing.T) {
 	assertDNSCall(t, provider.adds, "a.example.com", 45, "hello", start.Add(3*time.Second))
 
 	start = time.Now()
-	stdout, stderr, code = invoke([]string{"dns", "remove", "a.example.com", "txt", "hello"}, deps)
+	stdout, stderr, code = invoke([]string{"dns", "remove", "--timeout", "5s", "a.example.com", "txt", "hello"}, deps)
 	if code != 0 || stdout != "" || stderr != "" {
 		t.Fatalf("remove: exit %d stdout %q stderr %q", code, stdout, stderr)
 	}
-	assertDNSCall(t, provider.removes, "a.example.com", 0, "hello", start.Add(2*time.Minute))
+	assertDNSCall(t, provider.removes, "a.example.com", 0, "hello", start.Add(5*time.Second))
 
 	defaultProvider := &fakeDNSProvider{}
 	start = time.Now()
@@ -270,12 +270,31 @@ func TestDNSChangeFailures(t *testing.T) {
 		}
 	}
 
-	provider := &fakeDNSProvider{addErr: errors.New("provider exploded")}
-	deps := configuredDNSDeps(t, provider, "example.com")
-	provider.addErr = errors.New("provider exploded")
-	stdout, stderr, code := invoke([]string{"dns", "add", "x.example.com", "TXT", "v"}, deps)
-	if code != 1 || stdout != "" || stderr != "opsctl: provider exploded\n" {
-		t.Errorf("provider: exit %d stdout %q stderr %q", code, stdout, stderr)
+	for _, tc := range []struct {
+		subcommand string
+		args       []string
+	}{
+		{"add", []string{"x.example.com", "TXT", "v"}},
+		{"remove", []string{"x.example.com", "TXT", "v"}},
+		{"acme-auth", nil},
+		{"acme-cleanup", nil},
+	} {
+		provider := &fakeDNSProvider{
+			addErr:    errors.New("provider exploded"),
+			removeErr: errors.New("provider exploded"),
+		}
+		deps := configuredDNSDeps(t, provider, "example.com")
+		deps.Getenv = func(key string) string {
+			if key == "CERTBOT_DOMAIN" {
+				return "example.com"
+			}
+			return "v"
+		}
+		args := append([]string{"dns", tc.subcommand}, tc.args...)
+		stdout, stderr, code := invoke(args, deps)
+		if code != 1 || stdout != "" || stderr != "opsctl: provider exploded\n" {
+			t.Errorf("%s provider: exit %d stdout %q stderr %q", tc.subcommand, code, stdout, stderr)
+		}
 	}
 }
 
@@ -319,6 +338,35 @@ func TestDNSCheckAllZones(t *testing.T) {
 		"other.test: failed: unreachable\n"
 	if code != 1 || stdout != want || stderr != "" {
 		t.Errorf("check: exit %d stdout %q stderr %q, want %q", code, stdout, stderr, want)
+	}
+
+	healthyProvider := &fakeDNSProvider{records: map[string][]dns.Record{
+		"ZONE": {
+			{Name: "example.com", Type: "SOA"},
+			{Name: "example.com", Type: "NS", Values: []string{"ns1.example"}},
+		},
+		"ZONE2": {
+			{Name: "other.test", Type: "SOA"},
+			{Name: "other.test", Type: "NS", Values: []string{"ns1.other"}},
+		},
+	}}
+	healthyDeps := configuredDNSDeps(t, healthyProvider, "example.com", "other.test")
+	healthyDeps.DNS.LookupNS = func(_ context.Context, zone string) ([]string, error) {
+		switch zone {
+		case "example.com":
+			return []string{"ns1.example"}, nil
+		case "other.test":
+			return []string{"ns1.other"}, nil
+		default:
+			t.Fatalf("lookup unexpected zone %q", zone)
+			return nil, nil
+		}
+	}
+	stdout, stderr, code = invoke([]string{"dns", "check"}, healthyDeps)
+	want = "example.com: ok (route53 ZONE, 1 nameservers delegated)\n" +
+		"other.test: ok (route53 ZONE2, 1 nameservers delegated)\n"
+	if code != 0 || stdout != want || stderr != "" {
+		t.Errorf("healthy check: exit %d stdout %q stderr %q, want %q", code, stdout, stderr, want)
 	}
 }
 
