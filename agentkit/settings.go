@@ -236,6 +236,41 @@ const (
 	ToolChoiceTool                           // must call the tool named in ToolChoice.Name
 )
 
+// MarshalText returns the mode's wire-neutral textual representation.
+func (m ToolChoiceMode) MarshalText() ([]byte, error) {
+	switch m {
+	case ToolChoiceAuto:
+		return []byte("auto"), nil
+	case ToolChoiceNone:
+		return []byte("none"), nil
+	case ToolChoiceRequired:
+		return []byte("required"), nil
+	case ToolChoiceTool:
+		return []byte("tool"), nil
+	default:
+		return nil, fmt.Errorf("invalid tool choice mode %d", m)
+	}
+}
+
+// UnmarshalText parses the mode's wire-neutral textual representation.
+func (m *ToolChoiceMode) UnmarshalText(text []byte) error {
+	var parsed ToolChoiceMode
+	switch string(text) {
+	case "auto":
+		parsed = ToolChoiceAuto
+	case "none":
+		parsed = ToolChoiceNone
+	case "required":
+		parsed = ToolChoiceRequired
+	case "tool":
+		parsed = ToolChoiceTool
+	default:
+		return fmt.Errorf("invalid tool choice mode %q", text)
+	}
+	*m = parsed
+	return nil
+}
+
 type reasoningShapes uint8
 
 const (
