@@ -51,28 +51,6 @@ Keys match ^[a-z0-9_.-]+$. Values may not contain newlines.
 
 const wantVersion = "v0.1.0"
 
-func usageOnStderr() string {
-	return prefixEachLine(wantUsage, "opsctl: ")
-}
-
-func prefixEachLine(s, prefix string) string {
-	if s == "" {
-		return ""
-	}
-	var b strings.Builder
-	for s != "" {
-		line, rest, found := strings.Cut(s, "\n")
-		b.WriteString(prefix)
-		b.WriteString(line)
-		b.WriteByte('\n')
-		if !found {
-			break
-		}
-		s = rest
-	}
-	return b.String()
-}
-
 func assertEveryLinePrefixed(t *testing.T, name, stderr, prefix string) {
 	t.Helper()
 	if stderr == "" {
@@ -146,8 +124,9 @@ func TestTopLevelGrammar(t *testing.T) {
 	}
 
 	stdout, stderr, code = invoke([]string{"--not-an-option"}, user)
-	if code != 2 || stdout != "" || stderr != usageOnStderr() {
-		t.Errorf("unknown option: exit %d stdout %q stderr %q, want exit 2, empty stdout, usage on stderr", code, stdout, stderr)
+	wantErr := "opsctl: unknown option '--not-an-option'\n\nsee 'opsctl --help' for usage\n"
+	if code != 2 || stdout != "" || stderr != wantErr {
+		t.Errorf("unknown option: exit %d stdout %q stderr %q, want exit 2, empty stdout, stderr %q", code, stdout, stderr, wantErr)
 	}
 }
 
@@ -169,7 +148,7 @@ func TestCommandSet(t *testing.T) {
 	if code != 2 {
 		t.Errorf("status: exit %d, want 2", code)
 	}
-	wantErr := "opsctl: unknown command: status\n" + usageOnStderr()
+	wantErr := "opsctl: unknown command 'status'\n\nsee 'opsctl --help' for usage\n"
 	if stdout != "" || stderr != wantErr {
 		t.Errorf("status: stdout %q stderr %q, want empty stdout and %q", stdout, stderr, wantErr)
 	}
@@ -192,8 +171,8 @@ func TestTopLevelHelp(t *testing.T) {
 	}
 }
 
-func TestNoCommandPrintsUsage(t *testing.T) {
-	// R-N5OQ-ZA03
+func TestNoCommand(t *testing.T) {
+	// R-CYFL-TDTY
 	stdout, stderr, code := invoke(nil, depsAt(t, 0))
 	if code != 2 {
 		t.Errorf("exit %d, want 2", code)
@@ -201,13 +180,14 @@ func TestNoCommandPrintsUsage(t *testing.T) {
 	if stdout != "" {
 		t.Errorf("stdout = %q, want empty", stdout)
 	}
-	if stderr != usageOnStderr() {
-		t.Errorf("stderr = %q, want usage text", stderr)
+	want := "opsctl: no command given\n\nsee 'opsctl --help' for usage\n"
+	if stderr != want {
+		t.Errorf("stderr = %q, want %q", stderr, want)
 	}
 }
 
 func TestUnknownCommand(t *testing.T) {
-	// R-N6WN-D1QS
+	// R-CZNI-75KN
 	for _, name := range []string{"nosuch", "othercmd"} {
 		stdout, stderr, code := invoke([]string{name}, depsAt(t, 0))
 		if code != 2 {
@@ -216,7 +196,7 @@ func TestUnknownCommand(t *testing.T) {
 		if stdout != "" {
 			t.Errorf("%s: stdout = %q, want empty", name, stdout)
 		}
-		want := "opsctl: unknown command: " + name + "\n" + usageOnStderr()
+		want := "opsctl: unknown command '" + name + "'\n\nsee 'opsctl --help' for usage\n"
 		if stderr != want {
 			t.Errorf("%s: stderr = %q, want %q", name, stderr, want)
 		}
@@ -224,7 +204,7 @@ func TestUnknownCommand(t *testing.T) {
 }
 
 func TestUnknownOption(t *testing.T) {
-	// R-N84J-QTHH
+	// R-D0VE-KXBC
 	for _, args := range [][]string{{"--not-an-option"}, {"-Z"}} {
 		stdout, stderr, code := invoke(args, depsAt(t, 0))
 		if code != 2 {
@@ -233,8 +213,9 @@ func TestUnknownOption(t *testing.T) {
 		if stdout != "" {
 			t.Errorf("%q: stdout = %q, want empty", args, stdout)
 		}
-		if stderr != usageOnStderr() {
-			t.Errorf("%q: stderr = %q, want usage text", args, stderr)
+		want := "opsctl: unknown option '" + args[0] + "'\n\nsee 'opsctl --help' for usage\n"
+		if stderr != want {
+			t.Errorf("%q: stderr = %q, want %q", args, stderr, want)
 		}
 	}
 }
@@ -383,7 +364,7 @@ func TestHelpAndVersionWithoutRoot(t *testing.T) {
 }
 
 func TestStderrPrefix(t *testing.T) {
-	// R-NE81-NO6Y
+	// R-R0P9-H29Y
 	user := depsAt(t, 1)
 	root := depsAt(t, 0)
 
@@ -400,11 +381,23 @@ func TestStderrPrefix(t *testing.T) {
 	}
 	for _, tc := range outside {
 		_, stderr, _ := invoke(tc.args, tc.deps)
-		assertEveryLinePrefixed(t, tc.name, stderr, "opsctl: ")
+		first, _, _ := strings.Cut(stderr, "\n")
+		if !strings.HasPrefix(first, "opsctl: ") {
+			t.Errorf("%s: first stderr line = %q, want prefix %q", tc.name, first, "opsctl: ")
+		}
+		if strings.Contains(stderr, wantUsage) || strings.Contains(stderr, "Usage: opsctl") {
+			t.Errorf("%s: stderr contains usage text: %q", tc.name, stderr)
+		}
 	}
 
 	_, stderr, _ := invoke([]string{"config", "get", "missing.key"}, root)
-	assertEveryLinePrefixed(t, "inside config", stderr, "opsctl config: ")
+	first, _, _ := strings.Cut(stderr, "\n")
+	if !strings.HasPrefix(first, "opsctl: ") {
+		t.Errorf("inside config: first stderr line = %q, want prefix %q", first, "opsctl: ")
+	}
+	if strings.Contains(stderr, wantUsage) || strings.Contains(stderr, "Usage: opsctl") {
+		t.Errorf("inside config: stderr contains usage text: %q", stderr)
+	}
 }
 
 func TestSuccessWritesNoStderr(t *testing.T) {

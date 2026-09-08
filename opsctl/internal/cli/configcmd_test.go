@@ -53,7 +53,7 @@ func TestConfigGet(t *testing.T) {
 	if stdout != "" {
 		t.Errorf("get missing: stdout = %q, want empty", stdout)
 	}
-	want := "opsctl config: key not set: backup.s3_uri\n"
+	want := "opsctl: key not set: backup.s3_uri\n"
 	if stderr != want {
 		t.Errorf("get missing: stderr = %q, want %q", stderr, want)
 	}
@@ -107,9 +107,9 @@ func TestConfigSetUsageError(t *testing.T) {
 		arg  string
 		want string
 	}{
-		{"missing equals", "noequals", "opsctl config: set requires KEY=VALUE\n"},
-		{"invalid key", "INVALID=x", "opsctl config: invalid key: INVALID\n"},
-		{"newline value", "ok=line\nfeed", "opsctl config: invalid value\n"},
+		{"missing equals", "noequals", "opsctl: set requires KEY=VALUE\n"},
+		{"invalid key", "INVALID=x", "opsctl: invalid key: INVALID\n"},
+		{"newline value", "ok=line\nfeed", "opsctl: invalid value\n"},
 	}
 	for _, tc := range cases {
 		stdout, stderr, code := invoke([]string{"config", "set", tc.arg}, deps)
@@ -139,7 +139,7 @@ func TestConfigSetUsageError(t *testing.T) {
 	if stdout != "" {
 		t.Errorf("missing store: stdout = %q, want empty", stdout)
 	}
-	if stderr != "opsctl config: set requires KEY=VALUE\n" {
+	if stderr != "opsctl: set requires KEY=VALUE\n" {
 		t.Errorf("missing store: stderr = %q, want set-requires diagnostic", stderr)
 	}
 	if _, err := os.Stat(configFile(empty.Root)); !os.IsNotExist(err) {
@@ -170,7 +170,7 @@ func TestConfigDel(t *testing.T) {
 	if stdout != "" {
 		t.Errorf("get after del: stdout = %q, want empty", stdout)
 	}
-	if stderr != "opsctl config: key not set: drop\n" {
+	if stderr != "opsctl: key not set: drop\n" {
 		t.Errorf("get after del: stderr = %q, want key-not-set", stderr)
 	}
 
@@ -227,21 +227,24 @@ func TestConfigList(t *testing.T) {
 func TestConfigMissingOrUnknownSubcommand(t *testing.T) {
 	// R-O69Q-GE8X
 	deps := depsAt(t, 0)
-	wantErr := prefixEachLine(wantConfigUsage, "opsctl config: ")
-	for _, args := range [][]string{
-		{"config"},
-		{"config", "nosuch"},
-		{"config", "status"},
-	} {
-		stdout, stderr, code := invoke(args, deps)
+	cases := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"config"}, "opsctl: no config subcommand given\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "nosuch"}, "opsctl: unknown config subcommand 'nosuch'\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "status"}, "opsctl: unknown config subcommand 'status'\n\nsee 'opsctl config --help' for usage\n"},
+	}
+	for _, tc := range cases {
+		stdout, stderr, code := invoke(tc.args, deps)
 		if code != 2 {
-			t.Errorf("%q: exit %d, want 2", args, code)
+			t.Errorf("%q: exit %d, want 2", tc.args, code)
 		}
 		if stdout != "" {
-			t.Errorf("%q: stdout = %q, want empty", args, stdout)
+			t.Errorf("%q: stdout = %q, want empty", tc.args, stdout)
 		}
-		if stderr != wantErr {
-			t.Errorf("%q: stderr = %q, want prefixed config usage", args, stderr)
+		if stderr != tc.want {
+			t.Errorf("%q: stderr = %q, want %q", tc.args, stderr, tc.want)
 		}
 	}
 }
@@ -268,7 +271,7 @@ func TestConfigCorrupt(t *testing.T) {
 		if stdout != "" {
 			t.Errorf("%q: stdout = %q, want empty", args, stdout)
 		}
-		assertEveryLinePrefixed(t, strings.Join(args, " "), stderr, "opsctl config: ")
+		assertEveryLinePrefixed(t, strings.Join(args, " "), stderr, "opsctl: ")
 		if !strings.Contains(stderr, "config.json") {
 			t.Errorf("%q: stderr = %q, want to name config.json", args, stderr)
 		}

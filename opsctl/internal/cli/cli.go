@@ -59,7 +59,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, deps Deps) in
 func run(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	help, showVersion, rest, err := parseTopLevel(args)
 	if err != nil {
-		writeUsage(stderr)
+		writeUsageError(stderr, "unknown option '"+diagnosticArg(unknownTopLevelOption(args))+"'")
 		return exitUsage
 	}
 	if help {
@@ -69,10 +69,25 @@ func run(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 		return writeOut(stdout, version+"\n")
 	}
 	if len(rest) == 0 {
-		writeUsage(stderr)
+		writeUsageError(stderr, "no command given")
 		return exitUsage
 	}
 	return dispatch(rest[0], rest[1:], stdout, stderr, deps)
+}
+
+func unknownTopLevelOption(args []string) string {
+	for _, arg := range args {
+		if arg == "--" || !strings.HasPrefix(arg, "-") {
+			break
+		}
+		switch arg {
+		case "-h", "--help", "-V", "--version":
+			continue
+		default:
+			return arg
+		}
+	}
+	return ""
 }
 
 func parseTopLevel(args []string) (help, showVersion bool, rest []string, err error) {
@@ -99,21 +114,8 @@ func writeOut(w io.Writer, s string) exitCode {
 	return exitOK
 }
 
-// writeUsage writes usageText to stderr with every line prefixed by "opsctl: ".
-func writeUsage(stderr io.Writer) {
-	writePrefixed(stderr, "opsctl: ", usageText)
-}
-
-func writePrefixed(w io.Writer, prefix, text string) {
-	remaining := text
-	for remaining != "" {
-		line, rest, found := strings.Cut(remaining, "\n")
-		_, _ = io.WriteString(w, prefix+line+"\n")
-		if !found {
-			break
-		}
-		remaining = rest
-	}
+func writeUsageError(stderr io.Writer, message string) {
+	_, _ = io.WriteString(stderr, "opsctl: "+message+"\n\nsee 'opsctl --help' for usage\n")
 }
 
 // diagnosticArg keeps a user-supplied token on one diagnostic line.
@@ -133,8 +135,7 @@ func dispatch(name string, args []string, stdout, stderr io.Writer, deps Deps) e
 	case "version":
 		return writeOut(stdout, version+"\n")
 	default:
-		_, _ = io.WriteString(stderr, "opsctl: unknown command: "+diagnosticArg(name)+"\n")
-		writeUsage(stderr)
+		writeUsageError(stderr, "unknown command '"+diagnosticArg(name)+"'")
 		return exitUsage
 	}
 }

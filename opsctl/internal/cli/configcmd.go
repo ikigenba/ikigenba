@@ -30,7 +30,7 @@ func runConfig(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 		return code
 	}
 	if len(args) == 0 {
-		return writeConfigUsage(stderr)
+		return writeConfigUsageError(stderr, "no config subcommand given")
 	}
 	switch args[0] {
 	case "get":
@@ -42,36 +42,36 @@ func runConfig(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	case "list":
 		return configList(args[1:], stdout, stderr, deps)
 	default:
-		return writeConfigUsage(stderr)
+		return writeConfigUsageError(stderr, "unknown config subcommand '"+diagnosticArg(args[0])+"'")
 	}
 }
 
-func writeConfigUsage(stderr io.Writer) exitCode {
-	writePrefixed(stderr, "opsctl config: ", configUsage)
+func writeConfigUsageError(stderr io.Writer, message string) exitCode {
+	_, _ = io.WriteString(stderr, "opsctl: "+message+"\n\nsee 'opsctl config --help' for usage\n")
 	return exitUsage
 }
 
 func configErr(stderr io.Writer, err error) exitCode {
-	_, _ = fmt.Fprintf(stderr, "opsctl config: %v\n", err)
+	_, _ = fmt.Fprintf(stderr, "opsctl: %v\n", err)
 	return exitFail
 }
 
 func configSet(args []string, stderr io.Writer, deps Deps) exitCode {
 	if len(args) != 1 {
-		return writeConfigUsage(stderr)
+		return writeConfigUsageError(stderr, "config set requires KEY=VALUE")
 	}
 	key, value, found := strings.Cut(args[0], "=")
 	if !found {
-		_, _ = io.WriteString(stderr, "opsctl config: set requires KEY=VALUE\n")
+		_, _ = io.WriteString(stderr, "opsctl: set requires KEY=VALUE\n")
 		return exitUsage
 	}
 	if err := (config.Store{Root: deps.Root}).Set(key, value); err != nil {
 		if errors.Is(err, config.ErrInvalidKey) {
-			_, _ = io.WriteString(stderr, "opsctl config: invalid key: "+diagnosticArg(key)+"\n")
+			_, _ = io.WriteString(stderr, "opsctl: invalid key: "+diagnosticArg(key)+"\n")
 			return exitUsage
 		}
 		if errors.Is(err, config.ErrInvalidValue) {
-			_, _ = io.WriteString(stderr, "opsctl config: invalid value\n")
+			_, _ = io.WriteString(stderr, "opsctl: invalid value\n")
 			return exitUsage
 		}
 		return configErr(stderr, err)
@@ -81,12 +81,12 @@ func configSet(args []string, stderr io.Writer, deps Deps) exitCode {
 
 func configGet(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	if len(args) != 1 {
-		return writeConfigUsage(stderr)
+		return writeConfigUsageError(stderr, "config get requires KEY")
 	}
 	value, err := (config.Store{Root: deps.Root}).Get(args[0])
 	if err != nil {
 		if errors.Is(err, config.ErrNotSet) {
-			_, _ = io.WriteString(stderr, "opsctl config: key not set: "+diagnosticArg(args[0])+"\n")
+			_, _ = io.WriteString(stderr, "opsctl: key not set: "+diagnosticArg(args[0])+"\n")
 			return exitFail
 		}
 		return configErr(stderr, err)
@@ -99,7 +99,7 @@ func configGet(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 
 func configDel(args []string, stderr io.Writer, deps Deps) exitCode {
 	if len(args) != 1 {
-		return writeConfigUsage(stderr)
+		return writeConfigUsageError(stderr, "config del requires KEY")
 	}
 	if err := (config.Store{Root: deps.Root}).Del(args[0]); err != nil {
 		return configErr(stderr, err)
@@ -109,7 +109,7 @@ func configDel(args []string, stderr io.Writer, deps Deps) exitCode {
 
 func configList(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	if len(args) != 0 {
-		return writeConfigUsage(stderr)
+		return writeConfigUsageError(stderr, "config list takes no arguments")
 	}
 	entries, err := (config.Store{Root: deps.Root}).List()
 	if err != nil {
