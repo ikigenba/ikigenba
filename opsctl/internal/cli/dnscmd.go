@@ -153,6 +153,13 @@ func dnsError(stderr io.Writer, err error) exitCode {
 	return exitFail
 }
 
+type dnsRecordLine struct {
+	name  string
+	typ   string
+	ttl   int
+	value string
+}
+
 func dnsList(args []string, stdout, stderr io.Writer, client *dns.Client) exitCode {
 	if len(args) != 1 {
 		return writeDNSUsageError(stderr, "dns list requires ZONE")
@@ -165,16 +172,14 @@ func dnsList(args []string, stdout, stderr io.Writer, client *dns.Client) exitCo
 	if err != nil {
 		return dnsError(stderr, err)
 	}
-	type line struct {
-		name  string
-		typ   string
-		ttl   int
-		value string
-	}
-	var lines []line
+	return writeDNSRecordLines(stdout, flattenAndSortDNSRecords(records))
+}
+
+func flattenAndSortDNSRecords(records []dns.Record) []dnsRecordLine {
+	var lines []dnsRecordLine
 	for _, record := range records {
 		for _, value := range record.Values {
-			lines = append(lines, line{record.Name, record.Type, record.TTL, value})
+			lines = append(lines, dnsRecordLine{record.Name, record.Type, record.TTL, value})
 		}
 	}
 	sort.Slice(lines, func(i, j int) bool {
@@ -186,6 +191,10 @@ func dnsList(args []string, stdout, stderr io.Writer, client *dns.Client) exitCo
 		}
 		return lines[i].value < lines[j].value
 	})
+	return lines
+}
+
+func writeDNSRecordLines(stdout io.Writer, lines []dnsRecordLine) exitCode {
 	var output strings.Builder
 	for _, item := range lines {
 		_, _ = fmt.Fprintf(&output, "%s %s %d %s\n", item.name, item.typ, item.ttl, item.value)
@@ -319,7 +328,8 @@ func dnsChangeResult(stderr io.Writer, err error, name, timeout string) exitCode
 		return exitOK
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
-		_, _ = fmt.Fprintf(stderr, "opsctl: change to %s not confirmed within %s\n", diagnosticArg(name), timeout)
+		_, _ = fmt.Fprintf(stderr, "opsctl: change to %s not confirmed within %s\n",
+			diagnosticArg(name), diagnosticArg(timeout))
 		return exitFail
 	}
 	return dnsError(stderr, err)
@@ -329,25 +339,29 @@ func dnsCheck(args []string, stdout, stderr io.Writer, client *dns.Client, provi
 	if len(args) != 0 {
 		return writeDNSUsageError(stderr, "dns check takes no arguments")
 	}
+	var output strings.Builder
 	allOK := true
 	for _, zone := range client.Zones {
 		result, err := client.Check(context.Background(), zone)
 		if err != nil {
-			_, _ = fmt.Fprintf(stdout, "%s: failed: %v\n", zone.Name, err)
+			_, _ = fmt.Fprintf(&output, "%s: failed: %v\n", zone.Name, err)
 			allOK = false
 			continue
 		}
 		switch {
 		case result.ZoneName != zone.Name:
-			_, _ = fmt.Fprintf(stdout, "%s: failed: provider reports zone %s\n", zone.Name, result.ZoneName)
+			_, _ = fmt.Fprintf(&output, "%s: failed: provider reports zone %s\n", zone.Name, result.ZoneName)
 			allOK = false
 		case !result.Delegated:
-			_, _ = fmt.Fprintf(stdout, "%s: failed: nameservers are not delegated\n", zone.Name)
+			_, _ = fmt.Fprintf(&output, "%s: failed: nameservers are not delegated\n", zone.Name)
 			allOK = false
 		default:
-			_, _ = fmt.Fprintf(stdout, "%s: ok (%s %s, %d nameservers delegated)\n",
+			_, _ = fmt.Fprintf(&output, "%s: ok (%s %s, %d nameservers delegated)\n",
 				zone.Name, provider, zone.ID, len(result.Nameservers))
 		}
+	}
+	if code := writeOut(stdout, output.String()); code != exitOK {
+		return code
 	}
 	if allOK {
 		return exitOK

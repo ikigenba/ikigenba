@@ -55,6 +55,17 @@ type fakeDNSProvider struct {
 	removes    []dnsCall
 }
 
+type partialErrorWriter struct {
+	limit  int
+	output []byte
+}
+
+func (w *partialErrorWriter) Write(p []byte) (int, error) {
+	n := min(w.limit, len(p))
+	w.output = append(w.output, p[:n]...)
+	return n, errors.New("injected output failure")
+}
+
 func (p *fakeDNSProvider) Records(_ context.Context, zoneID string) ([]dns.Record, error) {
 	if err := p.recordsErr[zoneID]; err != nil {
 		return nil, err
@@ -367,6 +378,26 @@ func TestDNSCheckAllZones(t *testing.T) {
 		"other.test: ok (route53 ZONE2, 1 nameservers delegated)\n"
 	if code != 0 || stdout != want || stderr != "" {
 		t.Errorf("healthy check: exit %d stdout %q stderr %q, want %q", code, stdout, stderr, want)
+	}
+}
+
+func TestDNSCheckOutputFailure(t *testing.T) {
+	// R-LQ5D-I4MB
+	provider := &fakeDNSProvider{records: map[string][]dns.Record{
+		"ZONE": {
+			{Name: "example.com", Type: "SOA"},
+			{Name: "example.com", Type: "NS", Values: []string{"ns1.example"}},
+		},
+	}}
+	deps := configuredDNSDeps(t, provider, "example.com")
+	deps.DNS.LookupNS = func(context.Context, string) ([]string, error) {
+		return []string{"ns1.example"}, nil
+	}
+	stdout := &partialErrorWriter{limit: len("example.com")}
+	var stderr strings.Builder
+	code := cli.Run([]string{"dns", "check"}, strings.NewReader(""), stdout, &stderr, deps)
+	if code != 1 || string(stdout.output) != "example.com" || stderr.String() != "" {
+		t.Errorf("output failure: exit %d stdout %q stderr %q", code, stdout.output, stderr.String())
 	}
 }
 
