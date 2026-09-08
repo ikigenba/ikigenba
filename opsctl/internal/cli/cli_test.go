@@ -5,6 +5,8 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -14,6 +16,8 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/cli"
 	"github.com/ikigenba/ikigenba/opsctl/internal/dns"
 )
+
+var _ func([]string, io.Reader, io.Writer, io.Writer, cli.Deps) int = cli.Run
 
 func TestRunReturnsWithoutTerminating(t *testing.T) {
 	// R-MUPN-JCBU
@@ -66,7 +70,21 @@ func TestDepsFields(t *testing.T) {
 
 func TestHostPathsResolveUnderRoot(t *testing.T) {
 	// R-MYDC-ONJX
-	root := t.TempDir()
+	sandbox := t.TempDir()
+	root := filepath.Join(sandbox, "root")
+	outside := filepath.Join(sandbox, "outside")
+	if err := os.Mkdir(outside, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(outside, "marker")
+	if err := os.WriteFile(marker, []byte("unchanged"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before := filesystemStateOutside(t, sandbox, root)
+	t.Chdir(sandbox)
+	t.Setenv("HOME", outside)
+	t.Setenv("TMPDIR", outside)
+	t.Setenv("XDG_CONFIG_HOME", outside)
 	deps := cli.Deps{Root: root, EUID: 0}
 
 	var stdout, stderr bytes.Buffer
@@ -125,6 +143,53 @@ func TestHostPathsResolveUnderRoot(t *testing.T) {
 	if got, want := stdout.String(), "ikigenba.dev\n"; got != want {
 		t.Errorf("config get stdout = %q, want %q", got, want)
 	}
+	if after := filesystemStateOutside(t, sandbox, root); !reflect.DeepEqual(after, before) {
+		t.Errorf("filesystem outside Deps.Root changed:\nbefore: %v\nafter:  %v", before, after)
+	}
+}
+
+type filesystemEntry struct {
+	Mode           os.FileMode
+	ModificationNS int64
+	Content        string
+}
+
+func filesystemStateOutside(t *testing.T, sandbox, root string) map[string]filesystemEntry {
+	t.Helper()
+	state := map[string]filesystemEntry{}
+	err := filepath.WalkDir(sandbox, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == root {
+			return filepath.SkipDir
+		}
+		rel, err := filepath.Rel(sandbox, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		entry := filesystemEntry{Mode: info.Mode(), ModificationNS: info.ModTime().UnixNano()}
+		if info.Mode().IsRegular() {
+			data, err := fs.ReadFile(os.DirFS(sandbox), filepath.ToSlash(rel))
+			if err != nil {
+				return err
+			}
+			entry.Content = string(data)
+		}
+		state[rel] = entry
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return state
 }
 
 func assertNoOsExit(t *testing.T, dir string) {
@@ -143,18 +208,28 @@ func assertNoOsExit(t *testing.T, dir string) {
 		if parseErr != nil {
 			t.Fatalf("parse %s: %v", path, parseErr)
 		}
-		ast.Inspect(parsed, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
+		osNames := map[string]bool{}
+		for _, spec := range parsed.Imports {
+			if spec.Path.Value != `"os"` {
+				continue
 			}
-			sel, ok := call.Fun.(*ast.SelectorExpr)
+			switch {
+			case spec.Name == nil:
+				osNames["os"] = true
+			case spec.Name.Name == ".":
+				t.Errorf("%s dot-imports os, so uses of os.Exit cannot be excluded", path)
+			case spec.Name.Name != "_":
+				osNames[spec.Name.Name] = true
+			}
+		}
+		ast.Inspect(parsed, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
 			if !ok {
 				return true
 			}
 			ident, ok := sel.X.(*ast.Ident)
-			if ok && ident.Name == "os" && sel.Sel.Name == "Exit" {
-				t.Errorf("%s calls os.Exit", path)
+			if ok && osNames[ident.Name] && sel.Sel.Name == "Exit" {
+				t.Errorf("%s references os.Exit", path)
 			}
 			return true
 		})

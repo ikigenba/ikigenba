@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -39,36 +40,64 @@ func TestGoMod(t *testing.T) {
 func TestImportGraph(t *testing.T) {
 	// R-LYOO-6IT6
 	const module = "github.com/ikigenba/ikigenba/opsctl"
-	rules := []struct {
-		name          string
-		dir           string
-		moduleImports []string
+	moduleRoot := filepath.Join("..", "..")
+	rules := map[string]struct {
+		moduleImports map[string]bool
 		allowExternal bool
 	}{
-		{"cmd/opsctl", filepath.Join("..", "..", "cmd", "opsctl"), []string{module + "/internal/cli", module + "/internal/dns", module + "/internal/dns/route53"}, false},
-		{"internal/cli", ".", []string{module + "/internal/config", module + "/internal/dns"}, false},
-		{"internal/dns", filepath.Join("..", "dns"), []string{module + "/internal/config"}, false},
-		{"internal/dns/route53", filepath.Join("..", "dns", "route53"), []string{module + "/internal/dns"}, true},
-		{"internal/config", filepath.Join("..", "config"), nil, false},
+		"cmd/opsctl":           {importSet(module+"/internal/cli", module+"/internal/dns", module+"/internal/dns/route53"), false},
+		"internal/cli":         {importSet(module+"/internal/config", module+"/internal/dns"), false},
+		"internal/dns":         {importSet(module + "/internal/config"), false},
+		"internal/dns/route53": {importSet(module + "/internal/dns"), true},
+		"internal/config":      {importSet(), false},
 	}
-	for _, rule := range rules {
-		allowed := make(map[string]bool, len(rule.moduleImports))
-		for _, path := range rule.moduleImports {
-			allowed[path] = true
+	packages := modulePackages(t, moduleRoot)
+	if len(packages) != len(rules) {
+		t.Errorf("module packages = %v, want exactly %v", mapKeys(packages), mapKeys(rules))
+	}
+	for name, imports := range packages {
+		rule, ok := rules[name]
+		if !ok {
+			t.Errorf("unexpected module package %s", name)
+			continue
 		}
-		for _, path := range packageImports(t, rule.dir) {
+		gotModuleImports := map[string]bool{}
+		for path := range imports {
 			switch {
 			case strings.HasPrefix(path, module+"/"):
-				if !allowed[path] {
-					t.Errorf("%s imports forbidden module package %s", rule.name, path)
-				}
+				gotModuleImports[path] = true
 			case isExternalImport(path):
 				if !rule.allowExternal {
-					t.Errorf("%s imports external package %s", rule.name, path)
+					t.Errorf("%s imports external package %s", name, path)
 				}
 			}
 		}
+		if !reflect.DeepEqual(gotModuleImports, rule.moduleImports) {
+			t.Errorf("%s module imports = %v, want exactly %v", name, mapKeys(gotModuleImports), mapKeys(rule.moduleImports))
+		}
 	}
+	for name := range rules {
+		if _, ok := packages[name]; !ok {
+			t.Errorf("required module package %s is missing", name)
+		}
+	}
+}
+
+func importSet(paths ...string) map[string]bool {
+	set := make(map[string]bool, len(paths))
+	for _, path := range paths {
+		set[path] = true
+	}
+	return set
+}
+
+func mapKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	return keys
 }
 
 func directRequirements(goMod string) map[string]string {
@@ -97,41 +126,52 @@ func directRequirements(goMod string) map[string]string {
 	return requirements
 }
 
-func packageImports(t *testing.T, dir string) []string {
+func modulePackages(t *testing.T, root string) map[string]map[string]bool {
 	t.Helper()
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("read %s: %v", dir, err)
-	}
-	seen := map[string]bool{}
-	productionFiles := 0
-	fset := token.NewFileSet()
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
+	packages := map[string]map[string]bool{}
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
-		productionFiles++
-		path := filepath.Join(dir, entry.Name())
-		parsed, parseErr := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
-		if parseErr != nil {
-			t.Fatalf("parse %s: %v", path, parseErr)
+		if entry.IsDir() {
+			if path != root && (entry.Name() == "vendor" || entry.Name() == "testdata" || strings.HasPrefix(entry.Name(), ".")) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			return nil
+		}
+		relDir, err := filepath.Rel(root, filepath.Dir(path))
+		if err != nil {
+			return err
+		}
+		name := filepath.ToSlash(relDir)
+		if name == "." {
+			name = ""
+		}
+		imports := packages[name]
+		if imports == nil {
+			imports = map[string]bool{}
+			packages[name] = imports
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
 		}
 		for _, spec := range parsed.Imports {
-			importPath, unquoteErr := strconv.Unquote(spec.Path.Value)
-			if unquoteErr != nil {
-				t.Fatalf("unquote import in %s: %v", path, unquoteErr)
+			importPath, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				return err
 			}
-			seen[importPath] = true
+			imports[importPath] = true
 		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan module packages: %v", err)
 	}
-	if productionFiles == 0 {
-		t.Fatalf("no production Go files in %s", dir)
-	}
-	out := make([]string, 0, len(seen))
-	for path := range seen {
-		out = append(out, path)
-	}
-	return out
+	return packages
 }
 
 func isExternalImport(path string) bool {
