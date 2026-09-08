@@ -47,6 +47,16 @@ sub-coordinators, so no single context ever accumulates a dozen
 reports and a dozen verdicts. The root is always a coordinator, and
 writes no code whether the gap is one id or a hundred.
 
+A spawn refused for want of a thread is not a blocker. A coordinator
+with a running child waits for one to return and spawns again; a
+coordinator with none returns "not started, no capacity" so its slot
+goes to a branch that can move, and its parent re-delegates the scope
+after one of its other children returns. A coordinator that has
+received a no-capacity return goes serial, holding one child at a time
+until its gap closes, so a tree of idle coordinators collapses to one
+per level instead of respawning itself. Neither files, halts, or
+reports the refusal as a problem.
+
 A **leaf** holds one scope and implements it. A scope is one design
 document, or a cluster of ids within one document whose code and tests
 overlap — never more than one document, never more than about a dozen
@@ -90,6 +100,10 @@ A leaf reports in a fixed shape and nothing else: ids closed, commit
 hashes, the last line of each gate, and any issue filed by path. The
 report is a few lines. The work stays in the repository, where the
 parent verifies it without reading it.
+
+A leaf whose scope proves too large and whose depth leaves it no spawn
+tool does not push on; it reports the split it would have made, and its
+parent delegates that split instead.
 
 ## What done looks like
 
