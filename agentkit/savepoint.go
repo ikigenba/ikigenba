@@ -88,5 +88,7 @@ func (c *Conversation) Close() error {
 		}
 	}
 	c.state = conversationClosed
+	log, _ := c.eventSink.(*Log)
+	log.closeConversation()
 	return nil
 }

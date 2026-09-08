@@ -2337,19 +2337,19 @@ func assertSelectedLogPayloads(t *testing.T, records []LogRecord) {
 	t.Helper()
 	for index, record := range records {
 		present := map[string]bool{
-			"identity":    record.Identity != nil,
-			"message":     record.Message != nil,
-			"tool_use":    record.ToolUse != nil,
-			"tool_result": record.ToolResult != nil,
-			"usage":       record.Usage != nil,
-			"cost":        record.Cost != nil,
-			"error":       record.Err != nil,
-			"retry":       record.Retry != nil,
+			"conversation": record.Conversation != nil,
+			"message":      record.Message != nil,
+			"tool_use":     record.ToolUse != nil,
+			"tool_result":  record.ToolResult != nil,
+			"usage":        record.Usage != nil,
+			"cost":         record.Cost != nil,
+			"error":        record.Err != nil,
+			"retry":        record.Retry != nil,
 		}
 		var want map[string]bool
 		switch record.Type {
 		case RecordTurnStart:
-			want = map[string]bool{"identity": true}
+			want = map[string]bool{}
 		case RecordMessage:
 			want = map[string]bool{"message": true}
 		case RecordToolUse:
@@ -2373,7 +2373,7 @@ func assertSelectedLogPayloads(t *testing.T, records []LogRecord) {
 
 func payloadPresence(selected map[string]bool) map[string]bool {
 	all := map[string]bool{
-		"identity": false, "message": false, "tool_use": false,
+		"conversation": false, "message": false, "tool_use": false,
 		"tool_result": false, "usage": false, "cost": false,
 		"error": false, "retry": false,
 	}

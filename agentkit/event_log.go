@@ -16,21 +16,26 @@ type RecordType string
 
 // RecordType values enumerate the event-log record kinds.
 const (
-	RecordTurnStart  RecordType = "turn_start"
-	RecordMessage    RecordType = "message"
-	RecordToolUse    RecordType = "tool_use"
-	RecordToolResult RecordType = "tool_result"
-	RecordOutput     RecordType = "output"
-	RecordUsage      RecordType = "usage"
-	RecordLimit      RecordType = "limit" // a turn refused by a Limits bound (D25)
-	RecordError      RecordType = "error"
-	RecordRetry      RecordType = "retry"
-	RecordTurnEnd    RecordType = "turn_end"
-	RecordSummary    RecordType = "summary"
-	RecordSavepoint  RecordType = "savepoint" // D26
-	RecordRestore    RecordType = "restore"   // D26
-	RecordRelease    RecordType = "release"   // D26
+	RecordConversation RecordType = "conversation"
+	RecordTurnStart    RecordType = "turn_start"
+	RecordMessage      RecordType = "message"
+	RecordToolUse      RecordType = "tool_use"
+	RecordToolResult   RecordType = "tool_result"
+	RecordOutput       RecordType = "output"
+	RecordUsage        RecordType = "usage"
+	RecordLimit        RecordType = "limit" // a turn refused by a Limits bound (D25)
+	RecordError        RecordType = "error"
+	RecordRetry        RecordType = "retry"
+	RecordTurnEnd      RecordType = "turn_end"
+	RecordSummary      RecordType = "summary"
+	RecordSavepoint    RecordType = "savepoint" // D26
+	RecordRestore      RecordType = "restore"   // D26
+	RecordRelease      RecordType = "release"   // D26
+	RecordClosed       RecordType = "closed"
 )
+
+// LogFormatVersion identifies the record vocabulary written by this package.
+const LogFormatVersion = 1
 
 // LogRecord is one line of the log. Type selects which payload pointer is set;
 // the rest are nil and omitted. ID is the log's identity, the same on every
@@ -43,16 +48,42 @@ type LogRecord struct {
 	Time time.Time  `json:"time"`
 	Seq  int        `json:"seq"`
 
-	Identity   *Identity       `json:"identity,omitempty"`    // turn_start
-	Message    *Message        `json:"message,omitempty"`     // message (one completed Message, D2/D13)
-	ToolUse    *ToolUse        `json:"tool_use,omitempty"`    // tool_use
-	ToolResult *ToolResult     `json:"tool_result,omitempty"` // tool_result
-	Output     json.RawMessage `json:"output,omitempty"`      // output (OutputDone.Value, D20)
-	Usage      *Usage          `json:"usage,omitempty"`       // usage, turn_end, summary
-	Cost       *Cost           `json:"cost,omitempty"`        // usage, turn_end, summary
-	Limit      *LimitInfo      `json:"limit,omitempty"`       // limit (D25)
-	Err        *Error          `json:"error,omitempty"`       // error
-	Retry      *RetryInfo      `json:"retry,omitempty"`       // retry
+	Conversation *ConversationInfo `json:"conversation,omitempty"` // conversation
+	Message      *Message          `json:"message,omitempty"`      // message (one completed Message, D2/D13)
+	ToolUse      *ToolUse          `json:"tool_use,omitempty"`     // tool_use
+	ToolResult   *ToolResult       `json:"tool_result,omitempty"`  // tool_result
+	Output       json.RawMessage   `json:"output,omitempty"`       // output (OutputDone.Value, D20)
+	Usage        *Usage            `json:"usage,omitempty"`        // usage, turn_end, summary
+	Cost         *Cost             `json:"cost,omitempty"`         // usage, turn_end, summary
+	Limit        *LimitInfo        `json:"limit,omitempty"`        // limit (D25)
+	Err          *Error            `json:"error,omitempty"`        // error
+	Retry        *RetryInfo        `json:"retry,omitempty"`        // retry
+}
+
+// ConversationInfo records the construction facts fixed for a conversation's
+// lifetime.
+type ConversationInfo struct {
+	Format   int             `json:"format"`
+	Identity Identity        `json:"identity"`
+	Settings Settings        `json:"settings"`
+	Tools    []ToolInfo      `json:"tools,omitempty"`
+	Deferred []DeferredInfo  `json:"deferred,omitempty"`
+	Output   *OutputContract `json:"output,omitempty"`
+	Limits   Limits          `json:"limits"`
+}
+
+// ToolInfo is one advertised tool rendered as log data.
+type ToolInfo struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Schema      json.RawMessage `json:"schema"`
+}
+
+// DeferredInfo is one deferred tool group rendered as log data.
+type DeferredInfo struct {
+	Name  string     `json:"name"`
+	Blurb string     `json:"blurb"`
+	Tools []ToolInfo `json:"tools"`
 }
 
 // RetryInfo records one backoff wait emitted by the retry driver (D14).
@@ -63,27 +94,27 @@ type RetryInfo struct {
 }
 
 type logRecordJSON struct {
-	Type       RecordType      `json:"type"`
-	ID         string          `json:"id,omitempty"`
-	Time       time.Time       `json:"time"`
-	Seq        int             `json:"seq"`
-	Identity   *Identity       `json:"identity,omitempty"`
-	Message    json.RawMessage `json:"message,omitempty"`
-	ToolUse    *ToolUse        `json:"tool_use,omitempty"`
-	ToolResult *ToolResult     `json:"tool_result,omitempty"`
-	Output     json.RawMessage `json:"output,omitempty"`
-	Usage      *Usage          `json:"usage,omitempty"`
-	Cost       *Cost           `json:"cost,omitempty"`
-	Limit      *LimitInfo      `json:"limit,omitempty"`
-	Err        *Error          `json:"error,omitempty"`
-	Retry      *RetryInfo      `json:"retry,omitempty"`
+	Type         RecordType        `json:"type"`
+	ID           string            `json:"id,omitempty"`
+	Time         time.Time         `json:"time"`
+	Seq          int               `json:"seq"`
+	Conversation *ConversationInfo `json:"conversation,omitempty"`
+	Message      json.RawMessage   `json:"message,omitempty"`
+	ToolUse      *ToolUse          `json:"tool_use,omitempty"`
+	ToolResult   *ToolResult       `json:"tool_result,omitempty"`
+	Output       json.RawMessage   `json:"output,omitempty"`
+	Usage        *Usage            `json:"usage,omitempty"`
+	Cost         *Cost             `json:"cost,omitempty"`
+	Limit        *LimitInfo        `json:"limit,omitempty"`
+	Err          *Error            `json:"error,omitempty"`
+	Retry        *RetryInfo        `json:"retry,omitempty"`
 }
 
 // MarshalJSON uses History's canonical tagged Block representation for the
 // single Message payload while retaining LogRecord's one-object shape.
 func (r LogRecord) MarshalJSON() ([]byte, error) {
 	encoded := logRecordJSON{
-		Type: r.Type, ID: r.ID, Time: r.Time, Seq: r.Seq, Identity: r.Identity,
+		Type: r.Type, ID: r.ID, Time: r.Time, Seq: r.Seq, Conversation: r.Conversation,
 		ToolUse: r.ToolUse, ToolResult: r.ToolResult, Output: r.Output, Usage: r.Usage,
 		Cost: r.Cost, Limit: r.Limit, Err: r.Err, Retry: r.Retry,
 	}
@@ -106,7 +137,7 @@ func (r *LogRecord) UnmarshalJSON(data []byte) error {
 	}
 	*r = LogRecord{
 		Type: encoded.Type, ID: encoded.ID, Time: encoded.Time, Seq: encoded.Seq,
-		Identity: encoded.Identity, ToolUse: encoded.ToolUse,
+		Conversation: encoded.Conversation, ToolUse: encoded.ToolUse,
 		ToolResult: encoded.ToolResult, Output: encoded.Output, Usage: encoded.Usage,
 		Cost: encoded.Cost, Limit: encoded.Limit, Err: encoded.Err, Retry: encoded.Retry,
 	}
@@ -165,17 +196,40 @@ func nilJSON(value json.RawMessage) json.RawMessage {
 
 // Log is the opaque destination for a conversation's durable event trace.
 type Log struct {
-	mu        sync.Mutex
-	w         io.Writer
-	now       func() time.Time
-	id        string
-	seq       int
-	closed    bool
-	writeErr  error
-	turnUsage Usage
-	turnCost  Cost
-	total     Usage
-	totalCost Cost
+	mu                 sync.Mutex
+	w                  io.Writer
+	now                func() time.Time
+	id                 string
+	seq                int
+	closed             bool
+	conversationClosed bool
+	writeErr           error
+	turnUsage          Usage
+	turnCost           Cost
+	total              Usage
+	totalCost          Cost
+}
+
+func (l *Log) conversation(info ConversationInfo) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.write(LogRecord{Type: RecordConversation, Conversation: &info})
+}
+
+func (l *Log) closeConversation() {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closed || l.conversationClosed {
+		return
+	}
+	l.write(LogRecord{Type: RecordClosed})
+	l.conversationClosed = true
 }
 
 // NewLog builds a log over w, timestamping with now and stamping id on every
@@ -214,7 +268,7 @@ func (l *Log) isClosed() bool {
 	return l.closed
 }
 
-func (l *Log) start(identity Identity) {
+func (l *Log) start(_ Identity) {
 	if l == nil {
 		return
 	}
@@ -222,7 +276,7 @@ func (l *Log) start(identity Identity) {
 	defer l.mu.Unlock()
 	l.turnUsage = Usage{}
 	l.turnCost = 0
-	l.write(LogRecord{Type: RecordTurnStart, Identity: &identity})
+	l.write(LogRecord{Type: RecordTurnStart})
 }
 
 func (l *Log) savepoint() {
@@ -335,6 +389,9 @@ func (l *Log) finish() {
 
 func (l *Log) write(record LogRecord) {
 	if l.w == nil || l.writeErr != nil {
+		return
+	}
+	if (l.closed || l.conversationClosed) && record.Type != RecordSummary {
 		return
 	}
 	if l.now != nil {

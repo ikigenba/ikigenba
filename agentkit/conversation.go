@@ -84,6 +84,44 @@ func newConversation(provider wireProvider, client *http.Client, cfg Config) *Co
 	return conversation
 }
 
+func (c *Conversation) logInfo() ConversationInfo {
+	return ConversationInfo{
+		Format:   LogFormatVersion,
+		Identity: c.identity,
+		Settings: cloneSettings(c.settings),
+		Tools:    renderToolInfo(c.tools),
+		Deferred: renderDeferredInfo(c.deferred),
+		Output:   cloneOutputContract(c.output),
+		Limits:   c.limits,
+	}
+}
+
+func renderToolInfo(tools []Tool) []ToolInfo {
+	if len(tools) == 0 {
+		return nil
+	}
+	info := make([]ToolInfo, len(tools))
+	for index, tool := range tools {
+		info[index] = ToolInfo{
+			Name:        tool.Name(),
+			Description: tool.Description(),
+			Schema:      append(json.RawMessage(nil), tool.Schema()...),
+		}
+	}
+	return info
+}
+
+func renderDeferredInfo(groups []DeferredGroup) []DeferredInfo {
+	if len(groups) == 0 {
+		return nil
+	}
+	info := make([]DeferredInfo, len(groups))
+	for index, group := range groups {
+		info[index] = DeferredInfo{Name: group.Name, Blurb: group.Blurb, Tools: renderToolInfo(group.Tools)}
+	}
+	return info
+}
+
 // AddSystem appends one RoleSystem message holding a single Text block to
 // the conversation's History. It makes no provider call and returns no
 // Stream; the message is part of History before AddSystem returns. Empty

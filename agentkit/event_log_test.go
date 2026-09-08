@@ -12,6 +12,7 @@ import (
 	"go/token"
 	"go/types"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -257,7 +258,7 @@ func TestReplayAcrossFailedTurnAndRestoreReconstructsHistory(t *testing.T) {
 
 func TestLogRecordsUseInjectedTimePerTurnSequenceAndFullIdentity(t *testing.T) {
 	// R-TA2N-M36A
-	// R-5JH4-YC62
+	// R-6701-37N7
 	var output bytes.Buffer
 	times := []time.Time{
 		time.Date(2031, 2, 3, 4, 5, 6, 7, time.UTC),
@@ -294,8 +295,21 @@ func TestLogRecordsUseInjectedTimePerTurnSequenceAndFullIdentity(t *testing.T) {
 		}
 	}
 	for _, index := range []int{0, 4} {
-		if records[index].Type != RecordTurnStart || records[index].Identity == nil || *records[index].Identity != identity {
-			t.Fatalf("turn_start %d = %#v, want full identity %#v", index, records[index], identity)
+		if records[index].Type != RecordTurnStart {
+			t.Fatalf("record %d type = %q, want turn_start", index, records[index].Type)
+		}
+		encoded, err := json.Marshal(records[index])
+		if err != nil {
+			t.Fatal(err)
+		}
+		var object map[string]json.RawMessage
+		if err := json.Unmarshal(encoded, &object); err != nil {
+			t.Fatal(err)
+		}
+		for _, field := range []string{"conversation", "message", "tool_use", "tool_result", "output", "usage", "cost", "limit", "error", "retry"} {
+			if _, present := object[field]; present {
+				t.Errorf("turn_start %d contains payload %q: %s", index, field, encoded)
+			}
 		}
 	}
 }
@@ -329,7 +343,7 @@ func TestNilLogIsSilentSafeAndRecordsCanonicalPayloads(t *testing.T) {
 	if record.Message == nil || !reflect.DeepEqual(*record.Message, message) {
 		t.Fatalf("decoded canonical Message = %#v, want %#v", record.Message, message)
 	}
-	if record.Identity != nil || record.ToolUse != nil || record.ToolResult != nil || record.Usage != nil || record.Cost != nil || record.Err != nil || record.Retry != nil {
+	if record.Conversation != nil || record.ToolUse != nil || record.ToolResult != nil || record.Usage != nil || record.Cost != nil || record.Err != nil || record.Retry != nil {
 		t.Fatalf("message record contains unrelated payloads: %#v", record)
 	}
 }
@@ -382,7 +396,7 @@ func TestUsageRecordsArePerRoundTripAndSummedIntoTurnEndAndSummary(t *testing.T)
 		summary.Cost == nil || *summary.Cost != Cost(24) {
 		t.Fatalf("summary = %#v, want usage %+v cost 24", summary, wantFirstUsage)
 	}
-	if summary.Identity != nil || summary.Message != nil || summary.ToolUse != nil || summary.ToolResult != nil || summary.Err != nil || summary.Retry != nil {
+	if summary.Conversation != nil || summary.Message != nil || summary.ToolUse != nil || summary.ToolResult != nil || summary.Err != nil || summary.Retry != nil {
 		t.Fatalf("summary contains unrelated payloads: %#v", summary)
 	}
 }
@@ -412,27 +426,29 @@ func decodeLogRecords(t *testing.T, data []byte) []LogRecord {
 }
 
 func TestRecordTypeIsClosedEnumeration(t *testing.T) {
-	// R-8B7W-P209
+	// R-5W0X-N9YY
 	recordType := reflect.TypeFor[RecordType]()
 	if recordType.Name() != "RecordType" || recordType.Kind() != reflect.String {
 		t.Fatalf("RecordType = %q/%s, want defined string type", recordType.Name(), recordType.Kind())
 	}
 
 	want := map[string]string{
-		"RecordTurnStart":  "turn_start",
-		"RecordMessage":    "message",
-		"RecordToolUse":    "tool_use",
-		"RecordToolResult": "tool_result",
-		"RecordOutput":     "output",
-		"RecordUsage":      "usage",
-		"RecordLimit":      "limit",
-		"RecordError":      "error",
-		"RecordRetry":      "retry",
-		"RecordTurnEnd":    "turn_end",
-		"RecordSummary":    "summary",
-		"RecordSavepoint":  "savepoint",
-		"RecordRestore":    "restore",
-		"RecordRelease":    "release",
+		"RecordConversation": "conversation",
+		"RecordTurnStart":    "turn_start",
+		"RecordMessage":      "message",
+		"RecordToolUse":      "tool_use",
+		"RecordToolResult":   "tool_result",
+		"RecordOutput":       "output",
+		"RecordUsage":        "usage",
+		"RecordLimit":        "limit",
+		"RecordError":        "error",
+		"RecordRetry":        "retry",
+		"RecordTurnEnd":      "turn_end",
+		"RecordSummary":      "summary",
+		"RecordSavepoint":    "savepoint",
+		"RecordRestore":      "restore",
+		"RecordRelease":      "release",
+		"RecordClosed":       "closed",
 	}
 	got := exportedConstantsOfType(t, "RecordType")
 	if !reflect.DeepEqual(got, want) {
@@ -440,7 +456,8 @@ func TestRecordTypeIsClosedEnumeration(t *testing.T) {
 	}
 
 	values := map[string]RecordType{
-		"RecordTurnStart": RecordTurnStart, "RecordMessage": RecordMessage,
+		"RecordConversation": RecordConversation,
+		"RecordTurnStart":    RecordTurnStart, "RecordMessage": RecordMessage,
 		"RecordToolUse": RecordToolUse, "RecordToolResult": RecordToolResult,
 		"RecordOutput": RecordOutput,
 		"RecordUsage":  RecordUsage, "RecordLimit": RecordLimit,
@@ -449,6 +466,7 @@ func TestRecordTypeIsClosedEnumeration(t *testing.T) {
 		"RecordSummary":   RecordSummary,
 		"RecordSavepoint": RecordSavepoint, "RecordRestore": RecordRestore,
 		"RecordRelease": RecordRelease,
+		"RecordClosed":  RecordClosed,
 	}
 	for name, value := range values {
 		if string(value) != want[name] {
@@ -458,7 +476,7 @@ func TestRecordTypeIsClosedEnumeration(t *testing.T) {
 }
 
 func TestLogRecordDeclarationIsExact(t *testing.T) {
-	// R-T6EY-GRY7
+	// R-5YGQ-ETGC
 	typeOf := reflect.TypeFor[LogRecord]()
 	if typeOf.Name() != "LogRecord" || typeOf.Kind() != reflect.Struct {
 		t.Fatalf("LogRecord = %q/%s, want defined struct", typeOf.Name(), typeOf.Kind())
@@ -472,7 +490,7 @@ func TestLogRecordDeclarationIsExact(t *testing.T) {
 		{"ID", reflect.TypeFor[string](), `json:"id,omitempty"`},
 		{"Time", reflect.TypeFor[time.Time](), `json:"time"`},
 		{"Seq", reflect.TypeFor[int](), `json:"seq"`},
-		{"Identity", reflect.TypeFor[*Identity](), `json:"identity,omitempty"`},
+		{"Conversation", reflect.TypeFor[*ConversationInfo](), `json:"conversation,omitempty"`},
 		{"Message", reflect.TypeFor[*Message](), `json:"message,omitempty"`},
 		{"ToolUse", reflect.TypeFor[*ToolUse](), `json:"tool_use,omitempty"`},
 		{"ToolResult", reflect.TypeFor[*ToolResult](), `json:"tool_result,omitempty"`},
@@ -499,6 +517,171 @@ func TestLogRecordDeclarationIsExact(t *testing.T) {
 	}
 }
 
+func TestConversationLogDeclarationsAreExact(t *testing.T) {
+	// R-5ZOM-SL71
+	assertExactStruct(t, reflect.TypeFor[ConversationInfo](), []struct {
+		name   string
+		typeOf reflect.Type
+		tag    string
+	}{
+		{"Format", reflect.TypeFor[int](), `json:"format"`},
+		{"Identity", reflect.TypeFor[Identity](), `json:"identity"`},
+		{"Settings", reflect.TypeFor[Settings](), `json:"settings"`},
+		{"Tools", reflect.TypeFor[[]ToolInfo](), `json:"tools,omitempty"`},
+		{"Deferred", reflect.TypeFor[[]DeferredInfo](), `json:"deferred,omitempty"`},
+		{"Output", reflect.TypeFor[*OutputContract](), `json:"output,omitempty"`},
+		{"Limits", reflect.TypeFor[Limits](), `json:"limits"`},
+	})
+
+	// R-60WJ-6CXQ
+	assertExactStruct(t, reflect.TypeFor[ToolInfo](), []struct {
+		name   string
+		typeOf reflect.Type
+		tag    string
+	}{
+		{"Name", reflect.TypeFor[string](), `json:"name"`},
+		{"Description", reflect.TypeFor[string](), `json:"description"`},
+		{"Schema", reflect.TypeFor[json.RawMessage](), `json:"schema"`},
+	})
+
+	// R-624F-K4OF
+	assertExactStruct(t, reflect.TypeFor[DeferredInfo](), []struct {
+		name   string
+		typeOf reflect.Type
+		tag    string
+	}{
+		{"Name", reflect.TypeFor[string](), `json:"name"`},
+		{"Blurb", reflect.TypeFor[string](), `json:"blurb"`},
+		{"Tools", reflect.TypeFor[[]ToolInfo](), `json:"tools"`},
+	})
+}
+
+func TestLogFormatVersionIsUntypedOne(t *testing.T) {
+	// R-63CB-XWF4
+	type narrow uint8
+	var value narrow = LogFormatVersion
+	if value != 1 {
+		t.Fatalf("LogFormatVersion = %d, want 1", value)
+	}
+}
+
+func TestNewWritesConversationRecordFromCopiedConfig(t *testing.T) {
+	// R-64K8-BO5T
+	// R-65S4-PFWI
+	var output bytes.Buffer
+	log := NewLog(&output, func() time.Time { return time.Date(2035, 1, 2, 3, 4, 5, 0, time.UTC) }, "agent/root")
+	auth := authFunc(func(context.Context, *http.Request, []byte) error { return nil })
+	endpoint, err := NewEndpoint(auth, WithBaseURL("https://example.test/v1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	makeTool := func(name, description string, schema json.RawMessage) Tool {
+		tool, toolErr := NewToolFromSchema(name, description, schema, func(context.Context, json.RawMessage) (string, error) { return "", nil }, nil)
+		if toolErr != nil {
+			t.Fatal(toolErr)
+		}
+		return tool
+	}
+	first := makeTool("first", "eager one", json.RawMessage(`{"type":"object","properties":{}}`))
+	second := makeTool("second", "eager two", json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}}}`))
+	third := makeTool("third", "deferred one", json.RawMessage(`{"type":"object","properties":{"n":{"type":"integer"}}}`))
+	fourth := makeTool("fourth", "deferred two", json.RawMessage(`{"type":"object","properties":{"ok":{"type":"boolean"}}}`))
+	settings := Settings{Options: Options{"temperature": "0.25"}, SerialToolCalls: true}
+	contract := &OutputContract{Schema: json.RawMessage(`{"type":"object"}`), MaxAttempts: 4}
+	limits := Limits{MaxToolCalls: 7, MaxContextTokens: 1234}
+	cfg := Config{
+		Tools: []Tool{first, second},
+		Deferred: []DeferredGroup{
+			{Name: "later-a", Blurb: "load group a", Tools: []Tool{third, fourth}},
+			{Name: "later-b", Blurb: "load group b", Tools: []Tool{second}},
+		},
+		Settings: settings, Output: contract, Log: log, Limits: limits,
+	}
+	conversation, err := New(&testWire{}, endpoint, "model-a", cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := decodeLogRecords(t, output.Bytes())
+	if len(records) != 1 || records[0].Type != RecordConversation || records[0].Conversation == nil {
+		t.Fatalf("records after New = %#v, want exactly one conversation record", records)
+	}
+	want := ConversationInfo{
+		Format:   LogFormatVersion,
+		Identity: Identity{Endpoint: "https://example.test/v1", AuthMode: "custom", Model: "model-a"},
+		Settings: settings,
+		Tools: []ToolInfo{
+			{Name: "first", Description: "eager one", Schema: json.RawMessage(`{"type":"object","properties":{}}`)},
+			{Name: "second", Description: "eager two", Schema: json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}}}`)},
+		},
+		Deferred: []DeferredInfo{
+			{Name: "later-a", Blurb: "load group a", Tools: []ToolInfo{
+				{Name: "third", Description: "deferred one", Schema: json.RawMessage(`{"type":"object","properties":{"n":{"type":"integer"}}}`)},
+				{Name: "fourth", Description: "deferred two", Schema: json.RawMessage(`{"type":"object","properties":{"ok":{"type":"boolean"}}}`)},
+			}},
+			{Name: "later-b", Blurb: "load group b", Tools: []ToolInfo{
+				{Name: "second", Description: "eager two", Schema: json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}}}`)},
+			}},
+		},
+		Output: contract,
+		Limits: limits,
+	}
+	if !reflect.DeepEqual(*records[0].Conversation, want) {
+		t.Fatalf("conversation payload = %#v, want %#v", *records[0].Conversation, want)
+	}
+	if err := conversation.AddSystem("after construction"); err != nil {
+		t.Fatal(err)
+	}
+	records = decodeLogRecords(t, output.Bytes())
+	if len(records) != 2 || records[0].Type != RecordConversation || records[1].Type != RecordMessage {
+		t.Fatalf("record order = %#v, want conversation before every later record", records)
+	}
+
+	var failed bytes.Buffer
+	if _, err := New(nil, endpoint, "model-a", Config{Log: NewLog(&failed, time.Now, "failed")}); err == nil {
+		t.Fatal("New(nil wire) error = nil")
+	}
+	if failed.Len() != 0 {
+		t.Fatalf("failed New wrote %q, want no records", failed.Bytes())
+	}
+}
+
+func TestConversationCloseWritesOneFinalClosedRecord(t *testing.T) {
+	// R-687X-GZDW
+	var output bytes.Buffer
+	log := NewLog(&output, func() time.Time { return time.Time{} }, "")
+	conversation := newConversation(&phase15Provider{model: "model"}, successfulPhase15Client(new(int)), Config{Log: log})
+	log.start(Identity{})
+	log.finish()
+	if err := conversation.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := conversation.Close(); err != nil {
+		t.Fatal(err)
+	}
+	log.start(Identity{})
+	log.savepoint()
+	if err := log.Close(); err != nil {
+		t.Fatal(err)
+	}
+	records := decodeLogRecords(t, output.Bytes())
+	closed := 0
+	closedAt := -1
+	for index, record := range records {
+		if record.Type == RecordClosed {
+			closed++
+			closedAt = index
+		}
+	}
+	if closed != 1 {
+		t.Fatalf("closed record count = %d, want at most and exactly one in this close scenario: %#v", closed, records)
+	}
+	for _, record := range records[closedAt+1:] {
+		if record.Type != RecordSummary {
+			t.Fatalf("record %q followed closed, want only summary: %#v", record.Type, records)
+		}
+	}
+}
+
 func TestLogRecordOutputJSONCodec(t *testing.T) {
 	output := json.RawMessage(`{"answer":[1,true],"nested":{"value":"ok"}}`)
 	record := LogRecord{Type: RecordOutput, Output: output}
@@ -514,7 +697,7 @@ func TestLogRecordOutputJSONCodec(t *testing.T) {
 	if !bytes.Equal(object["output"], output) {
 		t.Fatalf("encoded output = %s, want raw document %s", object["output"], output)
 	}
-	for _, key := range []string{"identity", "message", "tool_use", "tool_result", "usage", "cost", "error", "retry"} {
+	for _, key := range []string{"conversation", "message", "tool_use", "tool_result", "usage", "cost", "error", "retry"} {
 		if _, present := object[key]; present {
 			t.Errorf("unrelated payload %q is present in %s", key, encoded)
 		}
@@ -527,7 +710,7 @@ func TestLogRecordOutputJSONCodec(t *testing.T) {
 	if decoded.Type != RecordOutput || !bytes.Equal(decoded.Output, output) {
 		t.Fatalf("decoded output record = %#v, want type %q and output %s", decoded, RecordOutput, output)
 	}
-	if decoded.Identity != nil || decoded.Message != nil || decoded.ToolUse != nil || decoded.ToolResult != nil || decoded.Usage != nil || decoded.Cost != nil || decoded.Err != nil || decoded.Retry != nil {
+	if decoded.Conversation != nil || decoded.Message != nil || decoded.ToolUse != nil || decoded.ToolResult != nil || decoded.Usage != nil || decoded.Cost != nil || decoded.Err != nil || decoded.Retry != nil {
 		t.Fatalf("decoded output record contains unrelated payloads: %#v", decoded)
 	}
 

@@ -25,7 +25,11 @@ func New(wire WireFormat, endpoint Endpoint, model string, cfg Config) (*Convers
 		authMode = moded.AuthMode()
 	}
 	identity := Identity{Endpoint: endpointIdentity, AuthMode: authMode, Model: model}
-	return newEndpointConversation(wire, endpoint, identity, cfg), nil
+	conversation := newEndpointConversation(wire, endpoint, identity, cfg)
+	if log, _ := conversation.eventSink.(*Log); log != nil {
+		log.conversation(conversation.logInfo())
+	}
+	return conversation, nil
 }
 
 // wireProvider is the composed wire-format and endpoint adapter driven for one
