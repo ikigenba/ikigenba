@@ -384,6 +384,7 @@ func TestActionRequiresRoot(t *testing.T) {
 	for _, args := range [][]string{
 		{"config", "set", "dns.zones=ikigenba.dev"},
 		{"config", "get", "dns.zones"},
+		{"dns", "list", "ikigenba.dev"},
 	} {
 		root := t.TempDir()
 		configDir := filepath.Join(root, "etc", "ikigenba")
