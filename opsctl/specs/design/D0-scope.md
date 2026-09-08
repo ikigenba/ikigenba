@@ -34,8 +34,8 @@ and `opsctl` never reads instance metadata or assumes anything about it.
   empty. Verbs: `get`, `set KEY=VALUE`, `del`, `list`. Each later design
   declares the keys it reads.
 - **Line-oriented output for agents.** stdout carries only the answer.
-  Diagnostics go to stderr, one per line, prefixed with the program and
-  command name. Exit codes are 0 success, 1 operation failed, 2 usage or
+  Diagnostics go to stderr in the Unix shape: `opsctl: <message>`, then a
+  blank line and unprefixed detail when there is any. Exit codes are 0 success, 1 operation failed, 2 usage or
   preflight failure, 3 refused because not root — and the help text lists
   them. No JSON mode yet.
 - **Idempotent commands, thin `init`.** Every setup command may be re-run
@@ -51,8 +51,17 @@ and `opsctl` never reads instance metadata or assumes anything about it.
   hostname-routed `server` blocks later.
 - **DNS goes through opsctl.** `opsctl` is the only thing on the box that
   writes DNS records, behind a provider seam with Route 53 as the first and
-  only provider; one provider is active at a time. certbot obtains wildcard
-  certificates per zone over DNS-01 using manual hooks that call `opsctl`.
+  only provider; one provider is active at a time. The zone id is supplied by
+  the person and entered into the config store by the agent; `opsctl` never
+  reads a bootstrap's own files such as `/etc/ikigenba/env`. The verbs are
+  value-level `add` and `remove`, never an overwrite, because a wildcard
+  certificate's DNS-01 challenge puts two TXT values at one name. certbot
+  obtains wildcard certificates per zone over DNS-01 using manual hooks that
+  call `opsctl dns acme-auth` and `acme-cleanup`.
+- **The AWS SDK is approved.** The Go SDK v2 modules for config, Route 53,
+  and later S3 are the only external dependencies, pinned in D1, and imported
+  by exactly one package per service so everything above the seam stays
+  standard library and is tested without the network.
 - **Backup to S3 through the SDK.** A daily systemd timer runs `opsctl backup
   run`, which tars `/etc/ikigenba/` and `/etc/letsencrypt/` to the configured
   S3 prefix. `restore` does only the data step, warns if units are active,
