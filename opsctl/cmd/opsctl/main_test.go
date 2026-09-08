@@ -42,6 +42,7 @@ Operate the ikigenba platform host. Must run as root.
 
 Commands:
   config    read and write the host configuration store
+  dns       manage DNS records in the zones opsctl owns
   version   print the version
 
 Options:

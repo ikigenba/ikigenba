@@ -23,6 +23,7 @@ Operate the ikigenba platform host. Must run as root.
 
 Commands:
   config    read and write the host configuration store
+  dns       manage DNS records in the zones opsctl owns
   version   print the version
 
 Options:
@@ -194,7 +195,7 @@ func TestTopLevelGrammar(t *testing.T) {
 }
 
 func TestCommandSet(t *testing.T) {
-	// R-N38Y-7QIP
+	// R-LZWK-KAJV
 	user := depsAt(t, 1)
 
 	stdout, stderr, code := invoke([]string{"config", "--help"}, user)
@@ -205,6 +206,11 @@ func TestCommandSet(t *testing.T) {
 	stdout, stderr, code = invoke([]string{"version"}, user)
 	if code != 0 || stderr != "" || stdout != wantVersion+"\n" {
 		t.Errorf("version: exit %d stdout %q stderr %q, want %q", code, stdout, stderr, wantVersion+"\n")
+	}
+
+	stdout, stderr, code = invoke([]string{"dns"}, user)
+	if code != 3 || stdout != "" || stderr != "opsctl: must run as root\n" {
+		t.Errorf("dns: exit %d stdout %q stderr %q, want recognized action refused as non-root", code, stdout, stderr)
 	}
 
 	stdout, stderr, code = invoke([]string{"status"}, user)
@@ -218,7 +224,7 @@ func TestCommandSet(t *testing.T) {
 }
 
 func TestTopLevelHelp(t *testing.T) {
-	// R-N4GU-LI9E
+	// R-M14G-Y2AK
 	user := depsAt(t, 1)
 	for _, args := range [][]string{{"--help"}, {"-h"}} {
 		stdout, stderr, code := invoke(args, user)
@@ -431,6 +437,11 @@ func TestHelpAndVersionWithoutRoot(t *testing.T) {
 		if stdout != tc.want {
 			t.Errorf("%q: stdout = %q, want %q", tc.args, stdout, tc.want)
 		}
+	}
+
+	stdout, stderr, code := invoke([]string{"dns", "--help"}, user)
+	if code != 0 || stderr != "" || stdout == "" {
+		t.Errorf("dns --help: exit %d stdout %q stderr %q, want non-empty help on stdout and success", code, stdout, stderr)
 	}
 }
 
