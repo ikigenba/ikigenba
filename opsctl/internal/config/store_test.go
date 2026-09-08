@@ -1,11 +1,14 @@
 package config_test
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
@@ -392,6 +395,147 @@ func TestCorruptFile(t *testing.T) {
 	}
 }
 
+func TestAtomicRenameWrite(t *testing.T) {
+	// R-NVAN-0GKO
+	s := newStore(t)
+	if err := s.Set("keep", "1"); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan struct{})
+	errCh := make(chan error, 1)
+	go func() {
+		for {
+			select {
+			case <-done:
+				errCh <- nil
+				return
+			default:
+				data, err := os.ReadFile(storeFile(s))
+				if err != nil {
+					errCh <- err
+					return
+				}
+				var m map[string]string
+				if err := json.Unmarshal(data, &m); err != nil {
+					errCh <- fmt.Errorf("unreadable config.json %q: %w", data, err)
+					return
+				}
+				if m == nil || len(data) == 0 || data[len(data)-1] != '\n' {
+					errCh <- fmt.Errorf("partial config.json %q", data)
+					return
+				}
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		select {
+		case <-done:
+		default:
+			close(done)
+			<-errCh
+		}
+	})
+
+	for i := 0; i < 40; i++ {
+		if err := s.Set("k", fmt.Sprintf("v%d", i)); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Del("k"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	close(done)
+	if err := <-errCh; err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := os.ReadDir(storeDir(s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		switch e.Name() {
+		case config.FileName, config.LockName:
+		default:
+			t.Errorf("leftover file %s", e.Name())
+		}
+	}
+
+	got, err := s.Get("keep")
+	if err != nil || got != "1" {
+		t.Errorf("Get(keep) = %q, %v, want 1, nil", got, err)
+	}
+}
+
+func TestConcurrentSetAndDel(t *testing.T) {
+	// R-NWIJ-E8BD
+	s := newStore(t)
+	const n = 20
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			defer wg.Done()
+			errs[i] = s.Set(fmt.Sprintf("k%d", i), fmt.Sprintf("v%d", i))
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("Set k%d: %v", i, err)
+		}
+	}
+
+	lockPath := storeLock(s)
+	info, err := os.Stat(lockPath)
+	if err != nil {
+		t.Fatalf("lock file %s: %v", lockPath, err)
+	}
+	if !info.Mode().IsRegular() {
+		t.Errorf("%s is not a regular file", lockPath)
+	}
+
+	for i := 0; i < n; i++ {
+		key := fmt.Sprintf("k%d", i)
+		want := fmt.Sprintf("v%d", i)
+		got, getErr := s.Get(key)
+		if getErr != nil || got != want {
+			t.Errorf("Get(%s) = %q, %v, want %q, nil", key, got, getErr, want)
+		}
+	}
+	entries, err := s.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != n {
+		t.Errorf("List len = %d, want %d", len(entries), n)
+	}
+
+	delErrs := make([]error, n)
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			defer wg.Done()
+			delErrs[i] = s.Del(fmt.Sprintf("k%d", i))
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range delErrs {
+		if err != nil {
+			t.Fatalf("Del k%d: %v", i, err)
+		}
+	}
+	entries, err = s.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("after concurrent Del, List = %#v, want empty", entries)
+	}
+}
+
 func newStore(t *testing.T) config.Store {
 	t.Helper()
 	return config.Store{Root: t.TempDir()}
@@ -403,6 +547,10 @@ func storeDir(s config.Store) string {
 
 func storeFile(s config.Store) string {
 	return filepath.Join(storeDir(s), config.FileName)
+}
+
+func storeLock(s config.Store) string {
+	return filepath.Join(storeDir(s), config.LockName)
 }
 
 func checkMethod(t *testing.T, recv reflect.Type, name string, in, out []reflect.Type) {

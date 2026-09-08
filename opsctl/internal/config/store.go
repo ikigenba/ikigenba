@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 )
 
 const (
@@ -84,31 +85,41 @@ func (s Store) Set(key, value string) error {
 	if strings.ContainsAny(value, "\n\r") {
 		return fmt.Errorf("%w", ErrInvalidValue)
 	}
-	m, err := s.load()
-	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			return err
+	return s.withLock(func() error {
+		m, err := s.load()
+		if err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+			m = map[string]string{}
 		}
-		m = map[string]string{}
-	}
-	m[key] = value
-	return s.save(m)
+		m[key] = value
+		return s.save(m)
+	})
 }
 
 // Del removes key. It is nil whether or not the key was set.
 func (s Store) Del(key string) error {
-	m, err := s.load()
-	if err != nil {
+	if _, err := os.Stat(s.dirPath()); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
 		return err
 	}
-	if _, ok := m[key]; !ok {
-		return nil
-	}
-	delete(m, key)
-	return s.save(m)
+	return s.holdLock(func() error {
+		m, err := s.load()
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		if _, ok := m[key]; !ok {
+			return nil
+		}
+		delete(m, key)
+		return s.save(m)
+	})
 }
 
 // List returns every entry sorted by Key.
@@ -138,6 +149,30 @@ func (s Store) dirPath() string {
 
 func (s Store) filePath() string {
 	return filepath.Join(s.dirPath(), FileName)
+}
+
+func (s Store) lockPath() string {
+	return filepath.Join(s.dirPath(), LockName)
+}
+
+func (s Store) withLock(fn func() error) error {
+	if err := os.MkdirAll(s.dirPath(), 0o700); err != nil {
+		return err
+	}
+	return s.holdLock(fn)
+}
+
+func (s Store) holdLock(fn func() error) error {
+	f, err := os.OpenFile(s.lockPath(), os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		return err
+	}
+	defer func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) }()
+	return fn()
 }
 
 func (s Store) load() (map[string]string, error) {

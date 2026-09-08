@@ -101,10 +101,14 @@ func writeOut(w io.Writer, s string) exitCode {
 
 // writeUsage writes usageText to stderr with every line prefixed by "opsctl: ".
 func writeUsage(stderr io.Writer) {
-	remaining := usageText
+	writePrefixed(stderr, "opsctl: ", usageText)
+}
+
+func writePrefixed(w io.Writer, prefix, text string) {
+	remaining := text
 	for remaining != "" {
 		line, rest, found := strings.Cut(remaining, "\n")
-		_, _ = io.WriteString(stderr, "opsctl: "+line+"\n")
+		_, _ = io.WriteString(w, prefix+line+"\n")
 		if !found {
 			break
 		}

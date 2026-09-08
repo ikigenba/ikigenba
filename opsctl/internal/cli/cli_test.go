@@ -76,6 +76,7 @@ func TestHostPathsResolveUnderRoot(t *testing.T) {
 	}
 
 	wantFile := filepath.Join(root, "etc", "ikigenba", "config.json")
+	wantLock := filepath.Join(root, "etc", "ikigenba", "config.lock")
 	if _, err := os.Stat(wantFile); err != nil {
 		t.Fatalf("config file missing under Root at %s: %v", wantFile, err)
 	}
@@ -102,8 +103,14 @@ func TestHostPathsResolveUnderRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 1 || files[0] != wantFile {
-		t.Errorf("files under Root = %v, want only %s", files, wantFile)
+	want := map[string]bool{wantFile: true, wantLock: true}
+	if len(files) != len(want) {
+		t.Errorf("files under Root = %v, want %s and %s", files, wantFile, wantLock)
+	}
+	for _, path := range files {
+		if !want[path] {
+			t.Errorf("unexpected file under Root: %s", path)
+		}
 	}
 
 	stdout.Reset()
