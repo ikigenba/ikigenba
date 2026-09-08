@@ -5,6 +5,8 @@ import (
 	"flag"
 	"io"
 	"strings"
+
+	"github.com/ikigenba/ikigenba/opsctl/internal/dns"
 )
 
 type exitCode int
@@ -43,8 +45,17 @@ var version = "v0.1.0"
 
 // Deps carries what a command cannot be deterministic about.
 type Deps struct {
-	Root string // filesystem root every host path is resolved under ("/" in production)
-	EUID int    // effective user id of the process
+	Root   string                  // filesystem root every host path is resolved under ("/" in production)
+	EUID   int                     // effective user id of the process
+	Getenv func(key string) string // process environment; nil reads as empty
+	DNS    dns.Env                 // provider registry and resolver
+}
+
+func (d Deps) getenv(key string) string {
+	if d.Getenv == nil {
+		return ""
+	}
+	return d.Getenv(key)
 }
 
 // Run executes the CLI. args are the program arguments without the program

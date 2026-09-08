@@ -5,6 +5,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -12,7 +13,7 @@ import (
 )
 
 func TestGoMod(t *testing.T) {
-	// R-MTHR-5KL5
+	// R-LV0Z-17L3
 	data, err := os.ReadFile(filepath.Join("..", "..", "go.mod"))
 	if err != nil {
 		t.Fatal(err)
@@ -24,53 +25,84 @@ func TestGoMod(t *testing.T) {
 	if !regexp.MustCompile(`(?m)^go \d+\.\d+`).MatchString(text) {
 		t.Fatalf("go.mod has no Go version:\n%s", text)
 	}
-	for _, line := range strings.Split(text, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) > 0 && fields[0] == "require" {
-			t.Fatalf("go.mod contains a require entry:\n%s", text)
-		}
+	want := map[string]string{
+		"github.com/aws/aws-sdk-go-v2":                 "v1.46.0",
+		"github.com/aws/aws-sdk-go-v2/config":          "v1.33.3",
+		"github.com/aws/aws-sdk-go-v2/service/route53": "v1.69.0",
+	}
+	got := directRequirements(text)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("direct requirements = %v, want %v", got, want)
 	}
 }
 
 func TestImportGraph(t *testing.T) {
-	// R-MZL9-2FAM
+	// R-LYOO-6IT6
 	const module = "github.com/ikigenba/ikigenba/opsctl"
-	cmdImports := moduleImports(t, filepath.Join("..", "..", "cmd", "opsctl"), module)
-	cliImports := moduleImports(t, ".", module)
-	configImports := moduleImports(t, filepath.Join("..", "config"), module)
-
-	wantCLI := module + "/internal/cli"
-	if !containsString(cmdImports, wantCLI) {
-		t.Errorf("cmd/opsctl does not import %s; got %v", wantCLI, cmdImports)
+	rules := []struct {
+		name          string
+		dir           string
+		moduleImports []string
+		allowExternal bool
+	}{
+		{"cmd/opsctl", filepath.Join("..", "..", "cmd", "opsctl"), []string{module + "/internal/cli", module + "/internal/dns", module + "/internal/dns/route53"}, false},
+		{"internal/cli", ".", []string{module + "/internal/config", module + "/internal/dns"}, false},
+		{"internal/dns", filepath.Join("..", "dns"), []string{module + "/internal/config"}, false},
+		{"internal/dns/route53", filepath.Join("..", "dns", "route53"), []string{module + "/internal/dns"}, true},
+		{"internal/config", filepath.Join("..", "config"), nil, false},
 	}
-	for _, path := range cmdImports {
-		if path != wantCLI {
-			t.Errorf("cmd/opsctl imports extra module package %s", path)
+	for _, rule := range rules {
+		allowed := make(map[string]bool, len(rule.moduleImports))
+		for _, path := range rule.moduleImports {
+			allowed[path] = true
 		}
-	}
-
-	wantConfig := module + "/internal/config"
-	if !containsString(cliImports, wantConfig) {
-		t.Errorf("internal/cli does not import %s; got %v", wantConfig, cliImports)
-	}
-	for _, path := range cliImports {
-		if path != wantConfig {
-			t.Errorf("internal/cli imports extra module package %s", path)
+		for _, path := range packageImports(t, rule.dir) {
+			switch {
+			case strings.HasPrefix(path, module+"/"):
+				if !allowed[path] {
+					t.Errorf("%s imports forbidden module package %s", rule.name, path)
+				}
+			case isExternalImport(path):
+				if !rule.allowExternal {
+					t.Errorf("%s imports external package %s", rule.name, path)
+				}
+			}
 		}
-	}
-
-	if len(configImports) != 0 {
-		t.Errorf("internal/config imports module packages %v, want none", configImports)
 	}
 }
 
-func moduleImports(t *testing.T, dir, module string) []string {
+func directRequirements(goMod string) map[string]string {
+	requirements := map[string]string{}
+	inBlock := false
+	for _, line := range strings.Split(goMod, "\n") {
+		line = strings.TrimSpace(line)
+		switch line {
+		case "require (":
+			inBlock = true
+			continue
+		case ")":
+			inBlock = false
+			continue
+		}
+		if strings.HasPrefix(line, "require ") {
+			line = strings.TrimSpace(strings.TrimPrefix(line, "require "))
+		} else if !inBlock {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && !strings.Contains(line, "// indirect") {
+			requirements[fields[0]] = fields[1]
+		}
+	}
+	return requirements
+}
+
+func packageImports(t *testing.T, dir string) []string {
 	t.Helper()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatalf("read %s: %v", dir, err)
 	}
-	prefix := module + "/"
 	seen := map[string]bool{}
 	productionFiles := 0
 	fset := token.NewFileSet()
@@ -89,9 +121,7 @@ func moduleImports(t *testing.T, dir, module string) []string {
 			if unquoteErr != nil {
 				t.Fatalf("unquote import in %s: %v", path, unquoteErr)
 			}
-			if strings.HasPrefix(importPath, prefix) {
-				seen[importPath] = true
-			}
+			seen[importPath] = true
 		}
 	}
 	if productionFiles == 0 {
@@ -104,11 +134,7 @@ func moduleImports(t *testing.T, dir, module string) []string {
 	return out
 }
 
-func containsString(list []string, want string) bool {
-	for _, item := range list {
-		if item == want {
-			return true
-		}
-	}
-	return false
+func isExternalImport(path string) bool {
+	first, _, _ := strings.Cut(path, "/")
+	return strings.Contains(first, ".")
 }

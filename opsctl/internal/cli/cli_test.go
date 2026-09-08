@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/cli"
+	"github.com/ikigenba/ikigenba/opsctl/internal/dns"
 )
 
 func TestRunReturnsWithoutTerminating(t *testing.T) {
@@ -36,27 +37,29 @@ func TestRunReturnsWithoutTerminating(t *testing.T) {
 }
 
 func TestDepsFields(t *testing.T) {
-	// R-MVXJ-X42J
+	// R-LXGR-SR2H
 	typ := reflect.TypeOf(cli.Deps{})
 	if typ.Kind() != reflect.Struct {
 		t.Fatalf("Deps is %s, want struct", typ.Kind())
 	}
-	want := map[string]reflect.Kind{
-		"Root": reflect.String,
-		"EUID": reflect.Int,
+	want := map[string]reflect.Type{
+		"Root":   reflect.TypeFor[string](),
+		"EUID":   reflect.TypeFor[int](),
+		"Getenv": reflect.TypeFor[func(string) string](),
+		"DNS":    reflect.TypeFor[dns.Env](),
 	}
 	if typ.NumField() != len(want) {
 		t.Fatalf("Deps has %d fields, want %d", typ.NumField(), len(want))
 	}
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
-		kind, ok := want[field.Name]
+		fieldType, ok := want[field.Name]
 		if !ok {
 			t.Errorf("unexpected Deps field %s %s", field.Name, field.Type)
 			continue
 		}
-		if field.Type.Kind() != kind {
-			t.Errorf("Deps.%s has type %s, want %s", field.Name, field.Type, kind)
+		if field.Type != fieldType {
+			t.Errorf("Deps.%s has type %s, want %s", field.Name, field.Type, fieldType)
 		}
 	}
 }
