@@ -9,7 +9,7 @@ import (
 
 // expectedInitialVersion is release data fixed by the phase-7 brief. Keeping
 // it independent of the production variable makes output regressions visible.
-const expectedInitialVersion = "v0.11.0"
+const expectedInitialVersion = "v0.12.0"
 
 // expectedSuccessfulExitCode is a test-owned anchor for the CLI contract. It
 // must remain independent of the production exitSuccess constant so a change
