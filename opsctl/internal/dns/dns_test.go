@@ -2,7 +2,10 @@ package dns
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
+	"fmt"
+	"net"
 	"reflect"
 	"strings"
 	"testing"
@@ -220,22 +223,25 @@ func TestClientDelegatesNormalisedMutationsAndPreservesErrors(t *testing.T) {
 
 // R-L5F3-010I
 func TestCheckFindsApexRecordsAndComparesDelegationAsSet(t *testing.T) {
+	apexNameservers := []string{"NS2.EXAMPLE.NET.", "ns1.example.net"}
 	provider := &fakeProvider{records: []Record{
-		{Name: "example.com", Type: "NS", Values: []string{"NS2.EXAMPLE.NET.", "ns1.example.net"}},
-		{Name: "example.com", Type: "SOA", Values: []string{"soa value"}},
+		{Name: "child.example.com", Type: "NS", Values: []string{"decoy.example.net"}},
+		{Name: "EXAMPLE.COM.", Type: "SOA", Values: []string{"soa value"}},
+		{Name: "example.com", Type: "NS", Values: apexNameservers},
 	}}
 	store := newStore(t, map[string]string{
 		KeyProvider:                       "route53",
 		KeyZones:                          "example.com",
 		ZoneKey("route53", "example.com"): "Z1",
 	})
+	delegatedNameservers := []string{"ns1.example.net.", "ns2.example.net"}
 	client, err := Open(t.Context(), store, Env{
 		Open: func(context.Context, string) (Provider, error) { return provider, nil },
 		LookupNS: func(_ context.Context, zone string) ([]string, error) {
 			if zone != "example.com" {
 				t.Fatalf("lookup zone = %q", zone)
 			}
-			return []string{"ns1.example.net.", "ns2.example.net"}, nil
+			return delegatedNameservers, nil
 		},
 	})
 	if err != nil {
@@ -245,11 +251,20 @@ func TestCheckFindsApexRecordsAndComparesDelegationAsSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.ZoneName != "example.com" || !result.Delegated || !reflect.DeepEqual(result.Nameservers, provider.records[0].Values) {
+	if result.ZoneName != "EXAMPLE.COM." || !result.Delegated || !reflect.DeepEqual(result.Nameservers, apexNameservers) {
 		t.Fatalf("Check = %#v", result)
 	}
 	if provider.recordsZone != "Z1" {
 		t.Fatalf("Records zone = %q", provider.recordsZone)
+	}
+
+	delegatedNameservers = []string{"ns1.example.net", "wrong.example.net"}
+	result, err = client.Check(t.Context(), client.Zones[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Delegated {
+		t.Fatalf("Check reported delegation for different nameserver sets: %#v", result)
 	}
 
 	provider.records = []Record{{Name: "example.com", Type: "NS", Values: []string{"ns1.example.net"}}}
@@ -260,23 +275,153 @@ func TestCheckFindsApexRecordsAndComparesDelegationAsSet(t *testing.T) {
 
 // R-L6MZ-DSR7
 func TestCheckUsesDefaultResolverWhenLookupNSIsNil(t *testing.T) {
-	original := defaultLookupNS
-	t.Cleanup(func() { defaultLookupNS = original })
-	called := false
-	defaultLookupNS = func(_ context.Context, zone string) ([]string, error) {
-		called = true
-		if zone != "example.com" {
-			t.Fatalf("lookup zone = %q", zone)
-		}
-		return []string{"ns.example.net."}, nil
+	original := net.DefaultResolver
+	served := make(chan error, 1)
+	net.DefaultResolver = &net.Resolver{
+		PreferGo: true,
+		Dial: func(_ context.Context, _, _ string) (net.Conn, error) {
+			client, server := net.Pipe()
+			go func() {
+				served <- serveNSResponse(server, "example.com", []string{"ns.example.net"})
+			}()
+			return client, nil
+		},
 	}
+	t.Cleanup(func() { net.DefaultResolver = original })
 	provider := &fakeProvider{records: []Record{
 		{Name: "example.com", Type: "SOA"},
 		{Name: "example.com", Type: "NS", Values: []string{"ns.example.net"}},
 	}}
-	client := Client{Provider: providerWithResolver{Provider: provider}, Zones: []Zone{{Name: "example.com", ID: "Z1"}}}
-	result, err := client.Check(t.Context(), client.Zones[0])
-	if err != nil || !called || !result.Delegated {
-		t.Fatalf("Check = %#v, %v; default called = %v", result, err, called)
+	store := newStore(t, map[string]string{
+		KeyProvider:                       "route53",
+		KeyZones:                          "example.com",
+		ZoneKey("route53", "example.com"): "Z1",
+	})
+	client, err := Open(t.Context(), store, Env{
+		Open: func(context.Context, string) (Provider, error) { return provider, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
+	result, err := client.Check(t.Context(), client.Zones[0])
+	if err != nil || !result.Delegated {
+		t.Fatalf("Check = %#v, %v", result, err)
+	}
+	if err := <-served; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func serveNSResponse(conn net.Conn, wantName string, nameservers []string) (returnErr error) {
+	defer func() {
+		returnErr = errors.Join(returnErr, conn.Close())
+	}()
+	answerHigh, answerLow, err := dnsWireLength(len(nameservers))
+	if err != nil || answerHigh != 0 {
+		return errors.New("too many DNS answers")
+	}
+	request := make([]byte, 512)
+	n, err := conn.Read(request)
+	if err != nil {
+		return fmt.Errorf("read DNS request: %w", err)
+	}
+	request = request[:n]
+	framed := len(request) >= 2 && int(binary.BigEndian.Uint16(request[:2])) == len(request)-2
+	if framed {
+		request = request[2:]
+	}
+	name, questionEnd, err := dnsQuestion(request)
+	if err != nil {
+		return err
+	}
+	if name != wantName {
+		return fmt.Errorf("DNS query name = %q, want %q", name, wantName)
+	}
+
+	response := append([]byte(nil), request[:2]...)
+	response = append(response, 0x81, 0x80, 0, 1, 0, answerLow, 0, 0, 0, 0)
+	response = append(response, request[12:questionEnd]...)
+	for _, nameserver := range nameservers {
+		rdata, err := dnsName(nameserver)
+		if err != nil {
+			return err
+		}
+		rdataHigh, rdataLow, err := dnsWireLength(len(rdata))
+		if err != nil {
+			return err
+		}
+		response = append(response, 0xc0, 0x0c, 0, 2, 0, 1, 0, 0, 0, 60)
+		response = append(response, rdataHigh, rdataLow)
+		response = append(response, rdata...)
+	}
+	if framed {
+		payload := response
+		payloadHigh, payloadLow, err := dnsWireLength(len(payload))
+		if err != nil {
+			return err
+		}
+		response = []byte{payloadHigh, payloadLow}
+		response = append(response, payload...)
+	}
+	if _, err := conn.Write(response); err != nil {
+		return fmt.Errorf("write DNS response: %w", err)
+	}
+	return nil
+}
+
+func dnsQuestion(message []byte) (string, int, error) {
+	if len(message) < 17 {
+		return "", 0, errors.New("short DNS request")
+	}
+	labels := make([]string, 0)
+	position := 12
+	for {
+		if position >= len(message) {
+			return "", 0, errors.New("truncated DNS question")
+		}
+		length := int(message[position])
+		position++
+		if length == 0 {
+			break
+		}
+		if position+length > len(message) {
+			return "", 0, errors.New("truncated DNS label")
+		}
+		labels = append(labels, string(message[position:position+length]))
+		position += length
+	}
+	if position+4 > len(message) || binary.BigEndian.Uint16(message[position:position+2]) != 2 {
+		return "", 0, errors.New("request is not an NS question")
+	}
+	return strings.Join(labels, "."), position + 4, nil
+}
+
+func dnsName(name string) ([]byte, error) {
+	var encoded []byte
+	for _, label := range strings.Split(name, ".") {
+		labelHigh, labelLow, err := dnsWireLength(len(label))
+		if err != nil || labelHigh != 0 {
+			return nil, errors.New("DNS label exceeds wire-format limit")
+		}
+		encoded = append(encoded, labelLow)
+		encoded = append(encoded, label...)
+	}
+	return append(encoded, 0), nil
+}
+
+func dnsWireLength(length int) (byte, byte, error) {
+	var high byte
+	var low byte
+	for range length {
+		if high == 255 && low == 255 {
+			return 0, 0, errors.New("DNS field exceeds wire-format limit")
+		}
+		if low == 255 {
+			high++
+			low = 0
+		} else {
+			low++
+		}
+	}
+	return high, low, nil
 }

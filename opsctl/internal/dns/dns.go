@@ -102,7 +102,7 @@ func Open(ctx context.Context, store config.Store, env Env) (*Client, error) {
 	}
 
 	if env.Open == nil {
-		return nil, fmt.Errorf("%w: %s", ErrUnknownProvider, provider)
+		return nil, fmt.Errorf("%w: %q", ErrUnknownProvider, provider)
 	}
 	opened, err := env.Open(ctx, provider)
 	if err != nil {
@@ -118,12 +118,12 @@ func required(store config.Store, key string) (string, error) {
 	value, err := store.Get(key)
 	if err != nil {
 		if errors.Is(err, config.ErrNotSet) {
-			return "", fmt.Errorf("%w: %s", ErrNotConfigured, key)
+			return "", fmt.Errorf("%w: %q", ErrNotConfigured, key)
 		}
 		return "", err
 	}
 	if value == "" {
-		return "", fmt.Errorf("%w: %s", ErrNotConfigured, key)
+		return "", fmt.Errorf("%w: %q", ErrNotConfigured, key)
 	}
 	return value, nil
 }
@@ -146,7 +146,7 @@ func (c *Client) ZoneFor(name string) (Zone, error) {
 		}
 	}
 	if !found {
-		return Zone{}, fmt.Errorf("%w: %s", ErrNoZone, name)
+		return Zone{}, fmt.Errorf("%w: %q", ErrNoZone, name)
 	}
 	return best, nil
 }
@@ -191,7 +191,7 @@ func (c *Client) Check(ctx context.Context, zone Zone) (CheckResult, error) {
 		}
 	}
 	if result.ZoneName == "" {
-		return CheckResult{}, fmt.Errorf("zone %s has no SOA record", zone.Name)
+		return CheckResult{}, fmt.Errorf("zone %q has no SOA record", zone.Name)
 	}
 	for _, record := range records {
 		if strings.EqualFold(record.Type, "NS") && normalise(record.Name) == normalise(result.ZoneName) {
@@ -200,28 +200,24 @@ func (c *Client) Check(ctx context.Context, zone Zone) (CheckResult, error) {
 		}
 	}
 
-	lookup := defaultLookupNS
+	var delegated []string
 	if wrapped, ok := c.Provider.(providerWithResolver); ok && wrapped.lookupNS != nil {
-		lookup = wrapped.lookupNS
+		delegated, err = wrapped.lookupNS(ctx, zone.Name)
+	} else {
+		var records []*net.NS
+		records, err = net.DefaultResolver.LookupNS(ctx, zone.Name)
+		if err == nil {
+			delegated = make([]string, len(records))
+			for i, record := range records {
+				delegated[i] = record.Host
+			}
+		}
 	}
-	delegated, err := lookup(ctx, zone.Name)
 	if err != nil {
 		return CheckResult{}, err
 	}
 	result.Delegated = sameNames(result.Nameservers, delegated)
 	return result, nil
-}
-
-var defaultLookupNS = func(ctx context.Context, zone string) ([]string, error) {
-	records, err := net.DefaultResolver.LookupNS(ctx, zone)
-	if err != nil {
-		return nil, err
-	}
-	names := make([]string, len(records))
-	for i, record := range records {
-		names[i] = record.Host
-	}
-	return names, nil
 }
 
 func sameNames(left, right []string) bool {
