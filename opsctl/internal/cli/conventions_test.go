@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"bytes"
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -10,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/cli"
@@ -85,6 +87,55 @@ func depsAt(t *testing.T, euid int) cli.Deps {
 	return cli.Deps{Root: t.TempDir(), EUID: euid}
 }
 
+func observeFilesystemAccess(t *testing.T, root string) func() {
+	t.Helper()
+	var paths []string
+	if walkErr := filepath.WalkDir(root, func(path string, _ os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		paths = append(paths, path)
+		return nil
+	}); walkErr != nil {
+		t.Fatalf("enumerate Root tree: %v", walkErr)
+	}
+
+	fd, err := syscall.InotifyInit1(syscall.IN_CLOEXEC | syscall.IN_NONBLOCK)
+	if err != nil {
+		t.Fatalf("initialize filesystem access observer: %v", err)
+	}
+	t.Cleanup(func() {
+		if closeErr := syscall.Close(fd); closeErr != nil {
+			t.Errorf("close filesystem access observer: %v", closeErr)
+		}
+	})
+
+	const events = syscall.IN_ACCESS | syscall.IN_ATTRIB | syscall.IN_CLOSE_WRITE |
+		syscall.IN_CLOSE_NOWRITE | syscall.IN_CREATE | syscall.IN_DELETE |
+		syscall.IN_DELETE_SELF | syscall.IN_MODIFY | syscall.IN_MOVE_SELF |
+		syscall.IN_MOVED_FROM | syscall.IN_MOVED_TO | syscall.IN_OPEN
+	for _, path := range paths {
+		if _, watchErr := syscall.InotifyAddWatch(fd, path, events); watchErr != nil {
+			t.Fatalf("watch %s: %v", path, watchErr)
+		}
+	}
+
+	return func() {
+		t.Helper()
+		buffer := make([]byte, 4096)
+		n, readErr := syscall.Read(fd, buffer)
+		if readErr != nil {
+			if errors.Is(readErr, syscall.EAGAIN) {
+				return
+			}
+			t.Fatalf("read filesystem access observer: %v", readErr)
+		}
+		if n != 0 {
+			t.Errorf("observed %d bytes of filesystem events under Root", n)
+		}
+	}
+}
+
 func TestTopLevelGrammar(t *testing.T) {
 	// R-N211-TYS0
 	user := depsAt(t, 1)
@@ -127,6 +178,18 @@ func TestTopLevelGrammar(t *testing.T) {
 	wantErr := "opsctl: unknown option '--not-an-option'\n\nsee 'opsctl --help' for usage\n"
 	if code != 2 || stdout != "" || stderr != wantErr {
 		t.Errorf("unknown option: exit %d stdout %q stderr %q, want exit 2, empty stdout, stderr %q", code, stdout, stderr, wantErr)
+	}
+
+	for _, option := range []string{
+		"--help=true", "--help=false", "-h=true", "-h=false",
+		"--version=true", "--version=false", "-V=true", "-V=false",
+		"-help", "-version", "--",
+	} {
+		stdout, stderr, code = invoke([]string{option}, user)
+		wantErr = "opsctl: unknown option '" + option + "'\n\nsee 'opsctl --help' for usage\n"
+		if code != 2 || stdout != "" || stderr != wantErr {
+			t.Errorf("%q: exit %d stdout %q stderr %q, want exit 2, empty stdout, stderr %q", option, code, stdout, stderr, wantErr)
+		}
 	}
 }
 
@@ -205,7 +268,17 @@ func TestUnknownCommand(t *testing.T) {
 
 func TestUnknownOption(t *testing.T) {
 	// R-D0VE-KXBC
-	for _, args := range [][]string{{"--not-an-option"}, {"-Z"}} {
+	for _, args := range [][]string{
+		{"--not-an-option"},
+		{"-Z"},
+		{"--help=true"},
+		{"-h=true"},
+		{"--version=true"},
+		{"-V=true"},
+		{"-help"},
+		{"-version"},
+		{"--"},
+	} {
 		stdout, stderr, code := invoke(args, depsAt(t, 0))
 		if code != 2 {
 			t.Errorf("%q: exit %d, want 2", args, code)
@@ -306,14 +379,19 @@ func TestActionRequiresRoot(t *testing.T) {
 		{"config", "set", "dns.zones=ikigenba.dev"},
 		{"config", "get", "dns.zones"},
 	} {
-		// Root is a regular file, so any read or write under it fails.
-		root := filepath.Join(t.TempDir(), "as-file")
-		if err := os.WriteFile(root, []byte("not-a-directory"), 0o600); err != nil {
+		root := t.TempDir()
+		configDir := filepath.Join(root, "etc", "ikigenba")
+		if err := os.MkdirAll(configDir, 0o700); err != nil {
 			t.Fatal(err)
 		}
+		if err := os.WriteFile(filepath.Join(configDir, "config.json"), []byte("{}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		assertNoAccess := observeFilesystemAccess(t, root)
 
 		var stdout, stderr bytes.Buffer
 		code := cli.Run(args, strings.NewReader(""), &stdout, &stderr, cli.Deps{Root: root, EUID: 1})
+		assertNoAccess()
 
 		if code != 3 {
 			t.Errorf("%q: exit %d, want 3 (stderr %q)", args, code, stderr.String())
@@ -325,13 +403,6 @@ func TestActionRequiresRoot(t *testing.T) {
 			t.Errorf("%q: stderr = %q, want %q", args, stderr.String(), "opsctl: must run as root\n")
 		}
 
-		info, err := os.Stat(root)
-		if err != nil {
-			t.Fatalf("%q: stat Root: %v", args, err)
-		}
-		if !info.Mode().IsRegular() {
-			t.Errorf("%q: Root is no longer a regular file; a command action wrote under it", args)
-		}
 	}
 }
 

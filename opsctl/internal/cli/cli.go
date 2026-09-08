@@ -77,7 +77,7 @@ func run(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 
 func unknownTopLevelOption(args []string) string {
 	for _, arg := range args {
-		if arg == "--" || !strings.HasPrefix(arg, "-") {
+		if !strings.HasPrefix(arg, "-") {
 			break
 		}
 		switch arg {
@@ -91,6 +91,10 @@ func unknownTopLevelOption(args []string) string {
 }
 
 func parseTopLevel(args []string) (help, showVersion bool, rest []string, err error) {
+	if option := unknownTopLevelOption(args); option != "" {
+		return false, false, nil, flag.ErrHelp
+	}
+
 	fs := flag.NewFlagSet("opsctl", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	fs.Usage = func() {}
