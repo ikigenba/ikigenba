@@ -96,10 +96,9 @@ func TestOpenRegistry(t *testing.T) {
 // R-LAAO-J3ZA
 func TestNewUsesEndpointDefaultCredentialsAndRegion(t *testing.T) {
 	setAWSEnvironment(t)
+	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if request.URL.Path != "/2013-04-01/hostedzone/Z1/rrset" {
-			t.Errorf("path = %q", request.URL.Path)
-		}
+		requests++
 		authorization := request.Header.Get("Authorization")
 		if !strings.Contains(authorization, "Credential=test-access-key/") {
 			t.Errorf("Authorization does not use default-chain environment credentials: %q", authorization)
@@ -107,7 +106,33 @@ func TestNewUsesEndpointDefaultCredentialsAndRegion(t *testing.T) {
 		if !strings.Contains(authorization, "/"+route53.Region+"/route53/aws4_request") {
 			t.Errorf("Authorization does not use %s: %q", route53.Region, authorization)
 		}
-		writeResponse(t, response, listResponse("", `<IsTruncated>false</IsTruncated>`))
+
+		switch requests {
+		case 1, 2:
+			if request.Method != http.MethodGet || request.URL.Path != "/2013-04-01/hostedzone/Z1/rrset" {
+				t.Errorf("request %d = %s %s", requests, request.Method, request.URL.Path)
+			}
+			writeResponse(t, response, listResponse("", `<IsTruncated>false</IsTruncated>`))
+		case 3, 6:
+			if request.Method != http.MethodPost || request.URL.Path != "/2013-04-01/hostedzone/Z1/rrset" {
+				t.Errorf("request %d = %s %s", requests, request.Method, request.URL.Path)
+			}
+			writeResponse(t, response, changeResponse("PENDING"))
+		case 4, 7:
+			if request.Method != http.MethodGet || request.URL.Path != "/2013-04-01/change/C1" {
+				t.Errorf("request %d = %s %s", requests, request.Method, request.URL.Path)
+			}
+			writeResponse(t, response, getChangeResponse("INSYNC"))
+		case 5:
+			if request.Method != http.MethodGet || request.URL.Path != "/2013-04-01/hostedzone/Z1/rrset" {
+				t.Errorf("request %d = %s %s", requests, request.Method, request.URL.Path)
+			}
+			record := recordSet("new.example.test.", "TXT", "60", resourceRecord(`&quot;token&quot;`))
+			writeResponse(t, response, listResponse(record, `<IsTruncated>false</IsTruncated>`))
+		default:
+			t.Errorf("unexpected request %d: %s %s", requests, request.Method, request.URL.Path)
+			response.WriteHeader(http.StatusNotFound)
+		}
 	}))
 	defer server.Close()
 
@@ -117,6 +142,15 @@ func TestNewUsesEndpointDefaultCredentialsAndRegion(t *testing.T) {
 	}
 	if _, err := provider.Records(context.Background(), "Z1"); err != nil {
 		t.Fatalf("Records: %v", err)
+	}
+	if err := provider.Add(context.Background(), "Z1", "new.example.test", "TXT", 60, "token"); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := provider.Remove(context.Background(), "Z1", "new.example.test", "TXT", "token"); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if requests != 7 {
+		t.Fatalf("request count = %d", requests)
 	}
 }
 
@@ -227,6 +261,9 @@ func TestAddPreservesSetAndQuotesTXT(t *testing.T) {
 			t.Errorf("change body missing %q: %s", want, body)
 		}
 	}
+	if strings.Index(body, "&#34;old&#34;") > strings.Index(body, "&#34;new&#34;") {
+		t.Errorf("new value was not appended after existing value: %s", body)
+	}
 
 	fake.listing = existing
 	fake.changeBodies = nil
@@ -242,7 +279,13 @@ func TestAddPreservesSetAndQuotesTXT(t *testing.T) {
 		t.Fatalf("Add absent: %v", err)
 	}
 	body = fake.changeBodies[0]
-	for _, want := range []string{"<TTL>60</TTL>", "&#34;token&#34;"} {
+	for _, want := range []string{
+		"<Action>UPSERT</Action>",
+		"<Name>new.example.test</Name>",
+		"<Type>TXT</Type>",
+		"<TTL>60</TTL>",
+		"&#34;token&#34;",
+	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("create body missing %q: %s", want, body)
 		}
@@ -288,25 +331,51 @@ func TestRemoveUpdatesDeletesAndSkipsAbsent(t *testing.T) {
 
 // R-LGE6-FYOR
 func TestChangesWaitForINSYNCAndWrapContextError(t *testing.T) {
-	fake := &changeServer{t: t, getStatuses: []string{"PENDING", "INSYNC"}}
-	provider, closeServer := newChangeProvider(t, fake)
-	defer closeServer()
-	if err := provider.Add(context.Background(), "Z1", "a.example.test", "A", 30, "192.0.2.1"); err != nil {
-		t.Fatalf("Add: %v", err)
-	}
-	if len(fake.getStatuses) != 0 {
-		t.Fatal("Add returned before INSYNC")
-	}
+	t.Run("Add", func(t *testing.T) {
+		fake := &changeServer{t: t, getStatuses: []string{"PENDING", "INSYNC"}}
+		provider, closeServer := newChangeProvider(t, fake)
+		defer closeServer()
+		if err := provider.Add(context.Background(), "Z1", "a.example.test", "A", 30, "192.0.2.1"); err != nil {
+			t.Fatalf("Add: %v", err)
+		}
+		if len(fake.getStatuses) != 0 {
+			t.Fatal("Add returned before INSYNC")
+		}
 
-	fake.listing = ""
-	fake.getStatuses = make([]string, 100)
-	for index := range fake.getStatuses {
-		fake.getStatuses[index] = "PENDING"
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
-	defer cancel()
-	err := provider.Add(ctx, "Z1", "b.example.test", "A", 30, "192.0.2.2")
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("Add cancellation error = %v", err)
-	}
+		fake.listing = ""
+		fake.getStatuses = make([]string, 100)
+		for index := range fake.getStatuses {
+			fake.getStatuses[index] = "PENDING"
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+		defer cancel()
+		err := provider.Add(ctx, "Z1", "b.example.test", "A", 30, "192.0.2.2")
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Add cancellation error = %v", err)
+		}
+	})
+
+	t.Run("Remove", func(t *testing.T) {
+		record := recordSet("a.example.test.", "A", "30", resourceRecord("192.0.2.1"))
+		fake := &changeServer{t: t, listing: record, getStatuses: []string{"PENDING", "INSYNC"}}
+		provider, closeServer := newChangeProvider(t, fake)
+		defer closeServer()
+		if err := provider.Remove(context.Background(), "Z1", "a.example.test", "A", "192.0.2.1"); err != nil {
+			t.Fatalf("Remove: %v", err)
+		}
+		if len(fake.getStatuses) != 0 {
+			t.Fatal("Remove returned before INSYNC")
+		}
+
+		fake.getStatuses = make([]string, 100)
+		for index := range fake.getStatuses {
+			fake.getStatuses[index] = "PENDING"
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+		defer cancel()
+		err := provider.Remove(ctx, "Z1", "a.example.test", "A", "192.0.2.1")
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Remove cancellation error = %v", err)
+		}
+	})
 }
