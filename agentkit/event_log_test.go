@@ -704,6 +704,116 @@ func TestConversationCloseWritesOneFinalClosedRecord(t *testing.T) {
 	}
 }
 
+type closeRecordProvider struct {
+	*phase15Provider
+	cleanupCalls int
+	cleanupErr   error
+	cleanupDone  bool
+}
+
+func (p *closeRecordProvider) releaseCache(context.Context) error {
+	p.cleanupCalls++
+	if p.cleanupErr != nil {
+		return p.cleanupErr
+	}
+	p.cleanupDone = true
+	return nil
+}
+
+type closeRecordWriter struct {
+	bytes.Buffer
+	provider        *closeRecordProvider
+	closedBeforeRun bool
+}
+
+func (w *closeRecordWriter) Write(data []byte) (int, error) {
+	var record LogRecord
+	if err := json.Unmarshal(bytes.TrimSpace(data), &record); err == nil && record.Type == RecordClosed && !w.provider.cleanupDone {
+		w.closedBeforeRun = true
+	}
+	return w.Buffer.Write(data)
+}
+
+func TestConversationCloseRecordsOnlySuccessfulFirstClose(t *testing.T) {
+	// R-69FT-UR4L
+	t.Run("successful cleanup precedes one closed record", func(t *testing.T) {
+		provider := &closeRecordProvider{phase15Provider: &phase15Provider{model: "model"}}
+		writer := &closeRecordWriter{provider: provider}
+		log := NewLog(writer, func() time.Time { return time.Time{} }, "")
+		conversation := newConversation(provider, successfulPhase15Client(new(int)), Config{Log: log})
+
+		if err := conversation.Close(); err != nil {
+			t.Fatalf("Close() error = %v, want nil", err)
+		}
+		if writer.closedBeforeRun {
+			t.Fatal("closed record was written before provider cleanup completed")
+		}
+		records := decodeLogRecords(t, writer.Bytes())
+		if len(records) != 1 || records[0].Type != RecordClosed {
+			t.Fatalf("Close records = %#v, want exactly one closed record outside a turn", records)
+		}
+		before := writer.String()
+		if err := conversation.Close(); err != nil {
+			t.Fatalf("second Close() error = %v, want nil", err)
+		}
+		if writer.String() != before || provider.cleanupCalls != 1 {
+			t.Fatalf("second Close changed output or repeated cleanup: output=%q cleanup calls=%d", writer.String(), provider.cleanupCalls)
+		}
+	})
+
+	t.Run("cleanup failure writes nothing", func(t *testing.T) {
+		cleanupErr := errors.New("cleanup failed")
+		provider := &closeRecordProvider{
+			phase15Provider: &phase15Provider{model: "model"},
+			cleanupErr:      cleanupErr,
+		}
+		var output bytes.Buffer
+		conversation := newConversation(provider, successfulPhase15Client(new(int)), Config{
+			Log: NewLog(&output, func() time.Time { return time.Time{} }, ""),
+		})
+
+		if err := conversation.Close(); !errors.Is(err, cleanupErr) {
+			t.Fatalf("Close() error = %v, want cleanup failure", err)
+		}
+		if output.Len() != 0 {
+			t.Fatalf("failed Close wrote %q, want nothing", output.Bytes())
+		}
+	})
+
+	t.Run("closed record write failure is returned", func(t *testing.T) {
+		provider := &closeRecordProvider{phase15Provider: &phase15Provider{model: "model"}}
+		failure := &failingLogWriter{}
+		conversation := newConversation(provider, successfulPhase15Client(new(int)), Config{
+			Log: NewLog(failure, func() time.Time { return time.Time{} }, ""),
+		})
+
+		if err := conversation.Close(); err == nil {
+			t.Fatal("Close() error = nil, want closed-record write failure")
+		}
+		if !failure.called || conversation.state == conversationClosed {
+			t.Fatalf("failed record write: called=%t state=%v, want called and still open", failure.called, conversation.state)
+		}
+	})
+
+	t.Run("already closed log writes nothing", func(t *testing.T) {
+		provider := &closeRecordProvider{phase15Provider: &phase15Provider{model: "model"}}
+		var output bytes.Buffer
+		log := NewLog(&output, func() time.Time { return time.Time{} }, "")
+		if err := log.Close(); err != nil {
+			t.Fatalf("Log.Close() error = %v", err)
+		}
+		before := output.String()
+		conversation := newConversation(provider, successfulPhase15Client(new(int)), Config{Log: log})
+
+		if err := conversation.Close(); err != nil {
+			t.Fatalf("Conversation.Close() error = %v, want nil", err)
+		}
+		if output.String() != before || provider.cleanupCalls != 0 {
+			t.Fatalf("Close with closed Log changed output or ran cleanup: output=%q cleanup calls=%d", output.String(), provider.cleanupCalls)
+		}
+	})
+}
+
 func TestLogRecordOutputJSONCodec(t *testing.T) {
 	output := json.RawMessage(`{"answer":[1,true],"nested":{"value":"ok"}}`)
 	record := LogRecord{Type: RecordOutput, Output: output}

@@ -219,17 +219,21 @@ func (l *Log) conversation(info ConversationInfo) {
 	l.write(LogRecord{Type: RecordConversation, Conversation: &info})
 }
 
-func (l *Log) closeConversation() {
+func (l *Log) closeConversation() error {
 	if l == nil {
-		return
+		return nil
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.closed || l.conversationClosed {
-		return
+		return nil
 	}
 	l.write(LogRecord{Type: RecordClosed})
+	if l.writeErr != nil {
+		return l.writeErr
+	}
 	l.conversationClosed = true
+	return nil
 }
 
 // NewLog builds a log over w, timestamping with now and stamping id on every
