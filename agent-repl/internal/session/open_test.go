@@ -352,6 +352,56 @@ func TestOpenPassesLogToConversation(t *testing.T) {
 	}
 }
 
+// R-AOOP-PJZW
+func TestSessionCloseIsIdempotentAndStopsSending(t *testing.T) {
+	requests := make(chan capturedRequest, 1)
+	server := successfulServer(t, requests)
+	var output bytes.Buffer
+	cfg := openConfig(t, server.URL)
+	cfg.Log = agentkit.NewLog(&output, func() time.Time { return time.Unix(1, 0).UTC() }, "close-test-log-id")
+	session, err := Open(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := session.Close(); err != nil {
+		t.Fatalf("first Close error = %v, want nil", err)
+	}
+	if got := countLogRecords(t, output.Bytes(), agentkit.RecordClosed); got != 1 {
+		t.Fatalf("closed records after first Close = %d, want 1", got)
+	}
+	if err := session.Close(); err != nil {
+		t.Fatalf("second Close error = %v, want nil", err)
+	}
+	if got := countLogRecords(t, output.Bytes(), agentkit.RecordClosed); got != 1 {
+		t.Fatalf("closed records after second Close = %d, want 1", got)
+	}
+
+	stream := session.Send(context.Background(), "must not reach provider")
+	drain(stream)
+	if !errors.Is(stream.Err(), agentkit.ErrClosed) {
+		t.Fatalf("Send after Close error = %v, want agentkit.ErrClosed", stream.Err())
+	}
+	assertNoRequest(t, requests)
+}
+
+func countLogRecords(t *testing.T, data []byte, recordType agentkit.RecordType) int {
+	t.Helper()
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	count := 0
+	for {
+		var record agentkit.LogRecord
+		if err := decoder.Decode(&record); errors.Is(err, io.EOF) {
+			return count
+		} else if err != nil {
+			t.Fatalf("decode log record: %v", err)
+		}
+		if record.Type == recordType {
+			count++
+		}
+	}
+}
+
 type capturedRequest struct {
 	path   string
 	header http.Header

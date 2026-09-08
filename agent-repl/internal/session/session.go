@@ -48,3 +48,8 @@ func (s *Session) Plan() Plan {
 func (s *Session) Send(ctx context.Context, prompt string) *agentkit.Stream {
 	return s.conversation.Send(ctx, agentkit.Text{Text: prompt})
 }
+
+// Close ends the underlying conversation without closing its caller-owned log.
+func (s *Session) Close() error {
+	return s.conversation.Close()
+}

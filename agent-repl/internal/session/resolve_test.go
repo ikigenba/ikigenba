@@ -42,7 +42,7 @@ func TestPlanContract(t *testing.T) {
 	assertFields(t, reflect.TypeFor[Plan](), want)
 }
 
-// R-UWZ1-VIL9
+// R-ANGT-BS97
 func TestSessionAPIContract(t *testing.T) {
 	if got, want := reflect.TypeOf(Resolve), reflect.TypeOf(func(Config) (Plan, error) { return Plan{}, nil }); got != want {
 		t.Fatalf("Resolve type = %s, want %s", got, want)
@@ -52,8 +52,9 @@ func TestSessionAPIContract(t *testing.T) {
 	}
 	sessionType := reflect.TypeFor[*Session]()
 	wantMethods := map[string]reflect.Type{
-		"Plan": reflect.TypeOf(func(*Session) Plan { return Plan{} }),
-		"Send": reflect.TypeOf(func(*Session, context.Context, string) *agentkit.Stream { return nil }),
+		"Plan":  reflect.TypeOf(func(*Session) Plan { return Plan{} }),
+		"Send":  reflect.TypeOf(func(*Session, context.Context, string) *agentkit.Stream { return nil }),
+		"Close": reflect.TypeOf(func(*Session) error { return nil }),
 	}
 	if sessionType.NumMethod() != len(wantMethods) {
 		t.Fatalf("Session method count = %d, want %d", sessionType.NumMethod(), len(wantMethods))
