@@ -166,18 +166,16 @@ func TestRunDecoratedLoopCreatesPrivateCompleteLog(t *testing.T) {
 		t.Fatalf("log name = %q, want %q", got, want)
 	}
 	records := decodeRecords(t, readFile(t, logPath))
-	if len(records) < 3 || records[0]["type"] != "conversation" ||
-		records[len(records)-2]["type"] != "closed" || records[len(records)-1]["type"] != "summary" {
-		t.Fatalf("records do not begin with conversation and end with closed, summary: %#v", records)
-	}
-	for _, record := range records {
-		if got := record["time"]; got != "2031-02-03T04:05:06-06:00" {
-			t.Fatalf("record time = %v, want injected clock", got)
-		}
-		if got := record["id"]; got != "test-log-id" {
-			t.Fatalf("record id = %v, want injected log id", got)
-		}
-	}
+	assertDeterministicRecordSequence(t, records,
+		"conversation",
+		"turn_start", "message", "message", "usage", "turn_end",
+		"turn_start", "message", "message", "usage", "turn_end",
+		"closed", "summary",
+	)
+	assertMessageRecord(t, records[2], 1, "first")
+	assertMessageRecord(t, records[3], 2, "answer first")
+	assertMessageRecord(t, records[7], 1, "final without newline")
+	assertMessageRecord(t, records[8], 2, "answer final without newline")
 }
 
 // R-W8J4-SKIC
@@ -302,10 +300,18 @@ func TestRunRawStdoutIsExactlyTheJSONLLogAndErrorsStayOnStderr(t *testing.T) {
 		t.Fatalf("raw stdout differs from log\nstdout=%q\nlog=%q", stdout.Bytes(), fileData)
 	}
 	records := decodeRecords(t, stdout.Bytes())
-	if len(records) < 3 || records[0]["type"] != "conversation" ||
-		records[len(records)-2]["type"] != "closed" || records[len(records)-1]["type"] != "summary" ||
-		strings.Contains(stdout.String(), "you › ") {
-		t.Fatalf("raw stdout is not JSONL bounded by conversation and closed, summary: %q", stdout.String())
+	assertDeterministicRecordSequence(t, records,
+		"conversation",
+		"turn_start", "message", "usage", "error", "turn_end",
+		"turn_start", "message", "message", "usage", "turn_end",
+		"closed", "summary",
+	)
+	assertMessageRecord(t, records[2], 1, "bad")
+	assertMessageRecord(t, records[7], 1, "good")
+	assertMessageRecord(t, records[8], 2, "raw answer")
+	assertProviderErrorRecord(t, records[4])
+	if strings.Contains(stdout.String(), "you › ") {
+		t.Fatalf("raw stdout contains decorated prompt: %q", stdout.String())
 	}
 }
 
@@ -605,6 +611,124 @@ func assertRecordTypes(t *testing.T, records []map[string]any, want ...string) {
 	}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("record types = %v, want %v", got, want)
+	}
+}
+
+func assertDeterministicRecordSequence(t *testing.T, records []map[string]any, wantTypes ...string) {
+	t.Helper()
+	assertRecordTypes(t, records, wantTypes...)
+	wantFields := map[string]int{
+		"conversation": 5,
+		"turn_start":   4,
+		"message":      5,
+		"usage":        6,
+		"error":        5,
+		"turn_end":     6,
+		"closed":       4,
+		"summary":      6,
+	}
+	for index, record := range records {
+		recordType := wantTypes[index]
+		if got, want := len(record), wantFields[recordType]; got != want {
+			t.Fatalf("record %d (%s) has %d fields, want %d: %#v", index, recordType, got, want, record)
+		}
+		if got := record["seq"]; got != float64(index) {
+			t.Fatalf("record %d sequence = %v, want %d", index, got, index)
+		}
+		if got := record["time"]; got != "2031-02-03T04:05:06-06:00" {
+			t.Fatalf("record %d time = %v, want injected clock", index, got)
+		}
+		if got := record["id"]; got != "test-log-id" {
+			t.Fatalf("record %d id = %v, want injected log id", index, got)
+		}
+		switch recordType {
+		case "conversation":
+			assertConversationRecord(t, record)
+		case "usage", "turn_end", "summary":
+			assertZeroUsageRecord(t, record)
+		}
+	}
+}
+
+func assertConversationRecord(t *testing.T, record map[string]any) {
+	t.Helper()
+	conversation, ok := record["conversation"].(map[string]any)
+	if !ok || len(conversation) != 5 || conversation["format"] != float64(1) {
+		t.Fatalf("conversation payload = %#v, want format 1 and five fields", record["conversation"])
+	}
+	identity, ok := conversation["identity"].(map[string]any)
+	if !ok || len(identity) != 3 || identity["AuthMode"] != "api_key" ||
+		identity["Endpoint"] != "openai-chat" || identity["Model"] != "gpt-5.6-sol" {
+		t.Fatalf("conversation identity = %#v", conversation["identity"])
+	}
+	limits, ok := conversation["limits"].(map[string]any)
+	if !ok || len(limits) != 2 || limits["MaxContextTokens"] != float64(0) || limits["MaxToolCalls"] != float64(0) {
+		t.Fatalf("conversation limits = %#v", conversation["limits"])
+	}
+	settings, ok := conversation["settings"].(map[string]any)
+	if !ok || len(settings) != 3 || settings["SerialToolCalls"] != false {
+		t.Fatalf("conversation settings = %#v", conversation["settings"])
+	}
+	options, optionsOK := settings["Options"].(map[string]any)
+	toolChoice, choiceOK := settings["ToolChoice"].(map[string]any)
+	if !optionsOK || len(options) != 0 || !choiceOK || len(toolChoice) != 2 ||
+		toolChoice["Mode"] != "auto" || toolChoice["Name"] != "" {
+		t.Fatalf("conversation settings = %#v", settings)
+	}
+	tools, ok := conversation["tools"].([]any)
+	if !ok || len(tools) != 6 {
+		t.Fatalf("conversation tools = %#v, want six toolkit definitions", conversation["tools"])
+	}
+	wantNames := []string{"Bash", "Read", "Write", "Edit", "Glob", "Grep"}
+	for index, value := range tools {
+		tool, ok := value.(map[string]any)
+		if !ok || len(tool) != 3 || tool["name"] != wantNames[index] || tool["description"] == "" || tool["schema"] == nil {
+			t.Fatalf("conversation tool %d = %#v, want complete %s definition", index, value, wantNames[index])
+		}
+	}
+}
+
+func assertZeroUsageRecord(t *testing.T, record map[string]any) {
+	t.Helper()
+	usage, ok := record["usage"].(map[string]any)
+	if !ok || len(usage) != 6 || record["cost"] != float64(0) {
+		t.Fatalf("usage record = %#v, want zero cost and six usage counters", record)
+	}
+	for name, value := range usage {
+		if value != float64(0) {
+			t.Fatalf("usage counter %s = %v, want 0", name, value)
+		}
+	}
+}
+
+func assertMessageRecord(t *testing.T, record map[string]any, wantRole float64, wantText string) {
+	t.Helper()
+	message, ok := record["message"].(map[string]any)
+	if !ok || len(message) != 2 || message["role"] != wantRole {
+		t.Fatalf("message record = %#v, want role %v", record, wantRole)
+	}
+	blocks, ok := message["blocks"].([]any)
+	if !ok || len(blocks) != 1 {
+		t.Fatalf("message blocks = %#v, want exactly one", message["blocks"])
+	}
+	block, ok := blocks[0].(map[string]any)
+	if !ok || len(block) != 3 || block["type"] != "text" || block["text"] != wantText || block["provider"] != nil {
+		t.Fatalf("message block = %#v, want text %q with nil provider", blocks[0], wantText)
+	}
+}
+
+func assertProviderErrorRecord(t *testing.T, record map[string]any) {
+	t.Helper()
+	providerError, ok := record["error"].(map[string]any)
+	if !ok || len(providerError) != 6 ||
+		providerError["Category"] != float64(2) || providerError["Code"] != "" ||
+		providerError["Message"] != "rejected\n" || providerError["RetryAfter"] != float64(0) ||
+		providerError["Status"] != float64(http.StatusBadRequest) {
+		t.Fatalf("provider error record = %#v, want deterministic HTTP 400 rejection", record)
+	}
+	endpoint, ok := providerError["Endpoint"].(map[string]any)
+	if !ok || len(endpoint) != 3 || endpoint["AuthMode"] != "" || endpoint["Endpoint"] != "" || endpoint["Model"] != "" {
+		t.Fatalf("provider error endpoint = %#v, want empty endpoint identity", providerError["Endpoint"])
 	}
 }
 
