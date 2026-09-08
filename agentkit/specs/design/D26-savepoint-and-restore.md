@@ -68,11 +68,21 @@ since the mark and simply stops offering to rewind it, or at `Close`.
 `Conversation` gains a `Close` because it needs an end of life of its own.
 Until now "closed" was the log's property: `Send` and `AddSystem` consult the
 `Log` (D15), so a conversation configured without one could never be closed at
-all and `ErrClosed` was unreachable for it. `Close` fixes that, and D27 gives it
-real work — a provider-side cache is a billed resource that must be released
-even when nothing else is. It does not close the `Log`: the consumer built the
-log and the consumer closes it. A log closed first still stops the conversation,
-because a `Send` that cannot be recorded loses its account of itself.
+all and `ErrClosed` was unreachable for it. `Close` fixes that. It is the
+conversation's generic end-of-life event: the wire is told, and does whatever
+its provider needs — for Gemini that is deleting a billed `cachedContents`
+resource (D27), for the others nothing. It does not close the `Log`: the
+consumer built the log and the consumer closes it. A log closed first still
+stops the conversation, because a `Send` that cannot be recorded loses its
+account of itself.
+
+Close is a state transition, so like `Savepoint`, `Restore`, and `Release` it
+is a record: the first successful `Close` writes one `closed` record (D15),
+after the wire's cleanup has succeeded, so the log carries the conversation's
+final state and a replay ends closed. A log with no `closed` record is a
+conversation that was never closed — resuming one later means constructing a
+new conversation seeded from the old history, with its own log and its own
+`conversation` record, never reopening this one.
 
 **Refusals are loud and specific.** Three ways to call these operations wrongly
 each get their own sentinel, so a consumer can tell them apart with `errors.Is`
@@ -118,12 +128,13 @@ which is what cost and audit want.
 - R-83WI-EFK3: `Close` MUST be idempotent — a second `Close` MUST change nothing and return `nil` — and MUST NOT close the conversation's `Log`.
 - R-854E-S7AS: After `Close`, each of `Send`, `AddSystem`, `Savepoint`, `Restore`, and `Release` MUST return an error satisfying `errors.Is(err, ErrClosed)`, make no provider call, and leave `History` unchanged.
 - R-86CB-5Z1H: A successful `Savepoint`, `Restore`, and `Release` MUST each write exactly one log record (D15), of type `RecordSavepoint`, `RecordRestore`, and `RecordRelease` respectively, outside any `turn_start`/`turn_end` pair; a call that returns an error MUST write none.
+- R-69FT-UR4L: The first `Close` that returns `nil` on an open conversation MUST write exactly one log record (D15) of type `RecordClosed`, outside any `turn_start`/`turn_end` pair and after any provider-side cleanup it performs; a `Close` that returns an error, a repeated `Close`, and a `Close` on a conversation whose `Log` is already closed MUST write none.
 - R-6N6M-6P9I: Replaying a log's records in `Seq` order — collecting each `message` record's `Message`, on each `turn_end` record discarding those collected since its `turn_start` when an `error` or `limit` record was written between the two, and on each `restore` record discarding those collected since the preceding `savepoint` record — MUST yield exactly the conversation's `History`.
 - R-6OEI-KH07: `Savepoint` MUST succeed on a `Conversation` that has completed no `Send`, and a `Restore` to such a savepoint MUST leave `History` holding exactly the `RoleSystem` messages `AddSystem` had appended before the savepoint was taken — empty when there were none.
 This design also revises requirements owned by other documents; each revision is
 made in its own document, not here. D18 re-mints the `Conversation` method set to
 name the four new operations. D15 re-mints `RecordType` for the three new record
-kinds. D25 re-mints both `Limits` checkpoints so their counters are scoped to the
+kinds and, later, for `closed`. D25 re-mints both `Limits` checkpoints so their counters are scoped to the
 current history rather than the conversation's life. D16 re-mints both of its
 loading paths so a live savepoint suspends them.
 

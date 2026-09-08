@@ -113,14 +113,15 @@ and `AuthMode` follows the rotator — `"api_key"` for `APIKeyRotator`,
 no third, and every authenticator comes from an offering.
 
 How this is observed in tests: `Identity` reaches a consumer through the
-`turn_start` log record and through `Error.Endpoint`. Tests pin both fields
+`conversation` log record (D15) and through `Error.Endpoint`. Tests pin both fields
 against bare string literals (`"anthropic-messages"`, `"api_key"`), never against a
 production constant — the lint gate rejects an expectation taken from the code
 under test, and the literal is the contract anyway. The `"oauth"` case needs no
 network: the authenticator
 runs while the request is being built, before any HTTP call, so a token source
 that returns an error makes `Send` fail with an `*Error` whose `Endpoint`
-carries the identity and a `turn_start` record already written to the log.
+carries the identity and a `turn_start` record already written to the log
+after the `conversation` record `New` wrote.
 
 ## REQUIREMENTS
 

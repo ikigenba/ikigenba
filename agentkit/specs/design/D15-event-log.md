@@ -23,6 +23,20 @@ multi-agent application that merges many conversations' logs into one store can
 then filter a single agent's lifecycle, or a subtree of agents by id prefix,
 with no wrapper of its own around the writer.
 
+**The log opens with the conversation, and it says when the conversation
+closed.** The first record `New` (D18) writes is a `conversation` record: the
+identity, the settings, the tools and deferred groups advertised, the output
+contract, the limits, and the log format version — everything fixed for the
+conversation's life, written once at the front instead of repeated on every
+turn. Codex's `session_meta` is the precedent. The last thing the conversation
+writes is a `closed` record from `Close` (D26); only the log's own `summary`
+may follow it. Together they make the log sufficient to reconstruct the
+conversation's state: a reader who replays the records is holding the same
+`History`, the same live savepoint, the same limit counters, and the same
+open-or-closed state the conversation had when it wrote them. The envelope
+already carries the log id, the time, and the sequence, so the `conversation`
+payload does not repeat them.
+
 **Time is injected, sequence is per log.** Each record's `Time` comes from an
 injected clock (the idgen-precedent pattern, D3), so a replayed conversation
 logs identically; `Seq` is a monotonic counter over the whole log, starting at
@@ -36,6 +50,7 @@ messages that sit between turns — without trusting clock resolution.
 type RecordType string
 
 const (
+	RecordConversation RecordType = "conversation" // written once by New: what is fixed for the conversation's life
 	RecordTurnStart  RecordType = "turn_start"
 	RecordMessage    RecordType = "message"     // every Message that enters the conversation
 	RecordToolUse    RecordType = "tool_use"
@@ -47,7 +62,13 @@ const (
 	RecordRetry      RecordType = "retry"
 	RecordTurnEnd    RecordType = "turn_end"    // carries the turn's total Usage and Cost
 	RecordSummary    RecordType = "summary"     // carries the conversation's total Usage and Cost
+	RecordClosed     RecordType = "closed"      // written once by Conversation.Close (D26)
 )
+
+// LogFormatVersion is the version of the record vocabulary this package
+// writes; the conversation record carries it so a reader knows which codec
+// produced the file.
+const LogFormatVersion = 1
 
 // LogRecord is one line of the log. Type selects which payload pointer is set;
 // the rest are nil and omitted. ID is the log's identity, the same on every
@@ -60,7 +81,7 @@ type LogRecord struct {
 	Time time.Time  `json:"time"`
 	Seq  int        `json:"seq"`
 
-	Identity   *Identity       `json:"identity,omitempty"`    // turn_start
+	Conversation *ConversationInfo `json:"conversation,omitempty"` // conversation
 	Message    *Message        `json:"message,omitempty"`     // message (one Message, D2)
 	ToolUse    *ToolUse        `json:"tool_use,omitempty"`    // tool_use
 	ToolResult *ToolResult     `json:"tool_result,omitempty"` // tool_result
@@ -78,7 +99,39 @@ type RetryInfo struct {
 	Delay   time.Duration `json:"delay"`
 	Reason  string        `json:"reason"` // the retried error's Error() text
 }
+
+// ConversationInfo is the payload of the conversation record: the construction
+// facts that never change afterward. Identity, Settings, Output and Limits are
+// the canonical types verbatim; Tools and Deferred are the advertised surface
+// rendered as data, since a Tool is code and cannot be logged.
+type ConversationInfo struct {
+	Format   int             `json:"format"`             // LogFormatVersion
+	Identity Identity        `json:"identity"`
+	Settings Settings        `json:"settings"`
+	Tools    []ToolInfo      `json:"tools,omitempty"`    // Config.Tools, in order
+	Deferred []DeferredInfo  `json:"deferred,omitempty"` // Config.Deferred, in order
+	Output   *OutputContract `json:"output,omitempty"`   // Config.Output
+	Limits   Limits          `json:"limits"`
+}
+
+// ToolInfo is one advertised tool as data.
+type ToolInfo struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Schema      json.RawMessage `json:"schema"`
+}
+
+// DeferredInfo is one deferred group (D16) as data.
+type DeferredInfo struct {
+	Name  string     `json:"name"`
+	Blurb string     `json:"blurb"`
+	Tools []ToolInfo `json:"tools"`
+}
 ```
+
+`turn_start` carries nothing: the identity it used to repeat on every turn
+lives in the `conversation` record now, and a reader filtering by endpoint or
+model reads it once at the front.
 
 **Every message is a record.** A `message` record is written for each `Message`
 as it enters the conversation, whoever authored it:
@@ -145,8 +198,15 @@ func (l *Log) Close() error
 
 ## REQUIREMENTS
 
-- R-8B7W-P209: `agentkit` MUST export `type RecordType string` whose complete set of exported constants is exactly `RecordTurnStart = "turn_start"`, `RecordMessage = "message"`, `RecordToolUse = "tool_use"`, `RecordToolResult = "tool_result"`, `RecordOutput = "output"`, `RecordUsage = "usage"`, `RecordLimit = "limit"`, `RecordError = "error"`, `RecordRetry = "retry"`, `RecordTurnEnd = "turn_end"`, `RecordSummary = "summary"`, `RecordSavepoint = "savepoint"`, `RecordRestore = "restore"`, `RecordRelease = "release"` (D26), with no other member.
-- R-T6EY-GRY7: `agentkit` MUST export `type LogRecord struct { Type RecordType; ID string; Time time.Time; Seq int; Identity *Identity; Message *Message; ToolUse *ToolUse; ToolResult *ToolResult; Output json.RawMessage; Usage *Usage; Cost *Cost; Limit *LimitInfo; Err *Error; Retry *RetryInfo }` with exactly those fields and the JSON tags `type`, `id` (omitempty), `time`, `seq`, and the `omitempty` fields `identity`/`message`/`tool_use`/`tool_result`/`output`/`usage`/`cost`/`limit`/`error`/`retry`.
+- R-5W0X-N9YY: `agentkit` MUST export `type RecordType string` whose complete set of exported constants is exactly `RecordConversation = "conversation"`, `RecordTurnStart = "turn_start"`, `RecordMessage = "message"`, `RecordToolUse = "tool_use"`, `RecordToolResult = "tool_result"`, `RecordOutput = "output"`, `RecordUsage = "usage"`, `RecordLimit = "limit"`, `RecordError = "error"`, `RecordRetry = "retry"`, `RecordTurnEnd = "turn_end"`, `RecordSummary = "summary"`, `RecordSavepoint = "savepoint"`, `RecordRestore = "restore"`, `RecordRelease = "release"` (D26), `RecordClosed = "closed"`, with no other member.
+- R-5YGQ-ETGC: `agentkit` MUST export `type LogRecord struct { Type RecordType; ID string; Time time.Time; Seq int; Conversation *ConversationInfo; Message *Message; ToolUse *ToolUse; ToolResult *ToolResult; Output json.RawMessage; Usage *Usage; Cost *Cost; Limit *LimitInfo; Err *Error; Retry *RetryInfo }` with exactly those fields and the JSON tags `type`, `id` (omitempty), `time`, `seq`, and the `omitempty` fields `conversation`/`message`/`tool_use`/`tool_result`/`output`/`usage`/`cost`/`limit`/`error`/`retry`.
+- R-5ZOM-SL71: `agentkit` MUST export `type ConversationInfo struct { Format int; Identity Identity; Settings Settings; Tools []ToolInfo; Deferred []DeferredInfo; Output *OutputContract; Limits Limits }` with exactly those fields and the JSON tags `format`, `identity`, `settings`, `tools` (omitempty), `deferred` (omitempty), `output` (omitempty), `limits`.
+- R-60WJ-6CXQ: `agentkit` MUST export `type ToolInfo struct { Name string; Description string; Schema json.RawMessage }` with exactly those fields and the JSON tags `name`, `description`, `schema`.
+- R-624F-K4OF: `agentkit` MUST export `type DeferredInfo struct { Name string; Blurb string; Tools []ToolInfo }` with exactly those fields and the JSON tags `name`, `blurb`, `tools`.
+- R-63CB-XWF4: `agentkit` MUST export the untyped integer constant `LogFormatVersion = 1`.
+- R-64K8-BO5T: A successful `New` (D18) given a non-nil `Config.Log` MUST write exactly one `conversation` record to that log before returning, and it MUST precede every other record the conversation writes; a `New` that returns an error MUST write none.
+- R-65S4-PFWI: The `conversation` record's `ConversationInfo` MUST carry `Format` equal to `LogFormatVersion`, `Identity` equal to the conversation's `Identity`, `Settings` and `Limits` equal to the `Config` values as copied at construction, `Output` equal to `Config.Output` (nil when none), `Tools` holding one `ToolInfo` per `Config.Tools` entry in order with that tool's `Name()`, `Description()`, and `Schema()`, and `Deferred` holding one `DeferredInfo` per `Config.Deferred` group in order with its `Name`, `Blurb`, and its tools rendered the same way.
+- R-687X-GZDW: A log MUST contain at most one `closed` record, and no record of any type other than `summary` may follow it.
 - R-T7MU-UJOW: `agentkit` MUST export `Log` as an opaque type together with `func NewLog(w io.Writer, now func() time.Time, id string) *Log` and the method `func (*Log) Close() error`.
 - R-T8UR-8BFL: Every record a `Log` writes MUST carry the `id` given to `NewLog` verbatim in its `ID` field, and the field MUST be omitted from the JSON line when that `id` is empty.
 - R-TA2N-M36A: Each `LogRecord` MUST timestamp from the injected clock, and `Seq` MUST be `0` on the first record a `Log` writes and increase by exactly one on every subsequent record for the life of the log, never reset.
@@ -156,7 +216,7 @@ func (l *Log) Close() error
 - R-TEY9-5652: After every completed provider round-trip the orchestrator MUST write one `usage` record carrying that round-trip's merged `Usage` and its `Cost` resolved through the D3 path, and MUST NOT write a `usage` record that aggregates more than one round-trip.
 - R-TG65-IXVR: Every `turn_end` record MUST carry `Usage` and `Cost` equal to the field-wise integer sums of the `usage` records written since that turn's `turn_start`, and zero values when the turn completed no round-trip.
 - R-THE1-WPMG: The `summary` record MUST carry `Usage` and `Cost` equal to the field-wise integer sums of every `turn_end` record the log has written.
-- R-5JH4-YC62: A `turn_start` record MUST carry the `Identity` with endpoint, auth mode, and model as separate fields so a consumer can filter on each independently.
+- R-6701-37N7: A `turn_start` record MUST carry no payload field: every `omitempty` field of `LogRecord` MUST be absent from its JSON line.
 - R-5KP1-C3WR: A `nil` log MUST write nothing and MUST require no per-call-site nil check; log payloads MUST reuse the canonical `Identity`/`Usage`/`Cost`/`Error`/`Block` types rather than log-only shadow structs.
 - R-5LWX-PVNG: A log write failure MUST NOT abort the turn and MUST NOT change `Stream.Err()`; the failure MAY be retained on the log for inspection.
 - R-5N4U-3NE5: `Close` MUST emit exactly one cumulative `summary` record and MUST be idempotent; a `Send` after `Close` MUST return `ErrClosed`.

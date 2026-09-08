@@ -319,3 +319,4 @@ release: only a genuinely new *wire shape* (not a new model) requires library wo
 - R-P2UJ-NZLX: `OpenAIChatWire()` and `OpenAIResponsesWire()` MUST fail `Send` with `ErrInvalidConfig`, making no provider call, for `ReasoningOn` and for `ReasoningBudget`, while `ChatWire()` and `ResponsesWire()` MUST accept both.
 - R-0085-K15U: `agentkit` MUST export `type ToolChoice struct { Mode ToolChoiceMode; Name string }` with exactly those two fields.
 - R-01G1-XSWJ: `agentkit` MUST export `type ToolChoiceMode int` with the constants `ToolChoiceAuto`, `ToolChoiceNone`, `ToolChoiceRequired`, `ToolChoiceTool` declared in that `iota` order starting at 0.
+- R-6ANQ-8IVA: `ToolChoiceMode` MUST implement `encoding.TextMarshaler` and `encoding.TextUnmarshaler` with the texts `auto`, `none`, `required`, and `tool` for the four constants in that order, so a `ToolChoice` marshals to JSON with its mode as that text (D15), and unmarshalling any other text MUST return an error.
