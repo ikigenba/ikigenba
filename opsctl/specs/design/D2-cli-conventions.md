@@ -15,10 +15,18 @@ the command-set requirement below.
 **Output contract.** Every command is written to be read by an agent over ssh
 far more often than by a person. stdout carries only the answer: a value, a
 list, a checklist line per step. There is no decoration, colour, or progress
-output. Every diagnostic — errors, warnings, usage on a usage error — goes to
-stderr, one line each, and every such line begins with the program name and,
-when inside a command, the command name: `opsctl: <message>` for a global
-problem, `opsctl config: <message>` inside `config`.
+output. Every diagnostic — an error or a warning — goes to stderr in the
+ordinary Unix form: its first line is `opsctl: <message>`, and any further
+detail follows after one blank line, unprefixed — the shape `git foo`
+uses. The usage text is never written to stderr; a usage error names the
+problem and points at `--help`:
+
+```
+$ opsctl bogus
+opsctl: unknown command 'bogus'
+
+see 'opsctl --help' for usage
+```
 
 **Exit codes.** Four, and the help text lists them, so an agent never needs
 to be told out of band:
@@ -73,12 +81,12 @@ report the same string. The spec fixes only its shape, a `v`-prefixed
 - R-N211-TYS0: The top-level grammar MUST be `opsctl [options] <command> [arguments]`, accepting exactly the options `-h`/`--help` and `-V`/`--version` before the command and no other top-level options.
 - R-N38Y-7QIP: The top-level command set MUST be exactly `config` and `version`.
 - R-N4GU-LI9E: `opsctl --help` and `opsctl -h` MUST print the top-level usage text quoted above, byte for byte, exactly once to stdout, write nothing to stderr, and exit 0.
-- R-N5OQ-ZA03: An invocation with no command MUST print the top-level usage text to stderr and exit 2.
-- R-N6WN-D1QS: An unknown command MUST exit 2 with stderr containing a line `opsctl: unknown command: <name>` naming the command and the top-level usage text.
-- R-N84J-QTHH: An unknown top-level option MUST exit 2 with a non-empty stderr that includes the top-level usage text.
+- R-CYFL-TDTY: An invocation with no command MUST write exactly the three lines `opsctl: no command given`, an empty line, and `see 'opsctl --help' for usage` to stderr, nothing to stdout, and exit 2.
+- R-CZNI-75KN: An unknown command MUST write exactly the three lines `opsctl: unknown command '<name>'`, an empty line, and `see 'opsctl --help' for usage` to stderr, nothing to stdout, and exit 2.
+- R-D0VE-KXBC: An unknown top-level option MUST write exactly the three lines `opsctl: unknown option '<option>'`, an empty line, and `see 'opsctl --help' for usage` to stderr, nothing to stdout, and exit 2.
 - R-N9CG-4L86: Package `internal/cli` MUST declare a package-level `var version string` whose value matches `^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`.
 - R-NAKC-ICYV: `opsctl version`, `opsctl -V`, and `opsctl --version` MUST each print exactly the version string followed by a single newline to stdout, write nothing to stderr, and exit 0.
 - R-NBS8-W4PK: Any invocation that would dispatch to a command's action with `Deps.EUID` not equal to 0 MUST write the single line `opsctl: must run as root` to stderr, write nothing to stdout, and exit 3 without reading or writing any file under `Deps.Root`.
 - R-ND05-9WG9: `--help`, `-h`, `--version`, `-V`, `version`, and `<command> --help` MUST succeed with `Deps.EUID` not equal to 0.
-- R-NE81-NO6Y: Every line `opsctl` writes to stderr MUST begin with `opsctl: ` when produced outside a command and with `opsctl <command>: ` when produced inside a command, where `<command>` is the top-level command name.
+- R-R0P9-H29Y: The first line of every diagnostic `opsctl` writes to stderr MUST begin with `opsctl: `, and the usage text MUST never be written to stderr.
 - R-NGNU-F7OC: On success a command MUST write nothing to stderr.

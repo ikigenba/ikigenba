@@ -13,7 +13,9 @@ on one output line. The empty string is a legal value and is distinct from
 the key being absent.
 
 **File format.** A single JSON object whose values are all strings, keys in
-sorted order, two-space indentation, trailing newline. Anything else — a
+sorted order, two-space indentation, trailing newline, and no HTML-safe
+escaping — `<`, `>`, and `&` appear literally, so a value reads the same in
+the file as it does from `get`. Anything else — a
 non-object top level, a non-string value, malformed JSON — is *corrupt*, and
 every operation reports it rather than treating the file as empty, because
 silently starting over is how a bootstrap re-run destroys real data. A missing
@@ -78,8 +80,9 @@ Keys match ^[a-z0-9_.-]+$. Values may not contain newlines.
 
 `set` splits its argument on the first `=`, so values may contain `=`.
 A missing `=`, an invalid key, or a value with a newline is a usage error
-(exit 2). A corrupt file is an operation failure (exit 1) whose message names
-the file.
+(exit 2). A missing or unknown subcommand is a usage error that points at
+`opsctl config --help`. A corrupt file is an operation failure (exit 1) whose
+message names the file.
 
 Canonical usage, as an agent would drive it over ssh:
 
@@ -89,7 +92,7 @@ $ opsctl config set acme.email=ops@ikigenba.dev
 $ opsctl config get dns.zones
 ikigenba.dev
 $ opsctl config get backup.s3_uri; echo "exit $?"
-opsctl config: key not set: backup.s3_uri
+opsctl: key not set: backup.s3_uri
 exit 1
 $ opsctl config list
 acme.email=ops@ikigenba.dev
@@ -108,6 +111,7 @@ exit 0
 - R-NMRC-C2DT: `Set` MUST return an error wrapping `ErrInvalidKey` for a key that `ValidKey` rejects, and an error wrapping `ErrInvalidValue` for a value containing `\n` or `\r`, and in either case MUST leave the file unchanged.
 - R-NNZ8-PU4I: `Set` on a store whose directory does not exist MUST create `<Root>/etc/ikigenba` with mode `0700` and `config.json` with mode `0600`.
 - R-NP75-3LV7: After `Set(key, value)` returns nil, `Get(key)` MUST return `value`, including when `value` is the empty string, and `config.json` MUST be a JSON object with string values only, keys in sorted order, two-space indentation, and a trailing newline.
+- R-R5KV-058Q: `Set` MUST write the characters `<`, `>`, and `&` in a value literally into `config.json`, never as `\u003c`, `\u003e`, or `\u0026` escapes.
 - R-NQF1-HDLW: `Get` MUST return an error wrapping `ErrNotSet` for a key that is absent, including when the file does not exist.
 - R-NRMX-V5CL: `Del` MUST return nil and leave the file without the key whether or not the key was set, and `Del` on a missing file MUST return nil without creating it.
 - R-NSUU-8X3A: `List` MUST return every entry sorted by key ascending, and an empty slice with a nil error when the file does not exist.
@@ -115,10 +119,10 @@ exit 0
 - R-NVAN-0GKO: `Set` and `Del` MUST write by creating a temporary file in `<Root>/etc/ikigenba` and renaming it over `config.json`, so that at no observable moment is `config.json` absent or partially written.
 - R-NWIJ-E8BD: `Set` and `Del` MUST hold an exclusive `flock` on `<Root>/etc/ikigenba/config.lock` for the whole read-modify-write, verified by concurrent `Set` calls of distinct keys from separate goroutines all persisting.
 - R-NYYC-5RSR: `opsctl config --help` and `opsctl config -h` MUST print the `config` usage text quoted above, byte for byte, to stdout and exit 0.
-- R-O068-JJJG: `opsctl config get KEY` MUST print the value followed by a single newline to stdout and exit 0 when set, and MUST print nothing to stdout, write `opsctl config: key not set: KEY` to stderr, and exit 1 when not set.
+- R-R352-8LRC: `opsctl config get KEY` MUST print the value followed by a single newline to stdout and exit 0 when set, and MUST print nothing to stdout, write exactly the line `opsctl: key not set: KEY` to stderr, and exit 1 when not set.
 - R-O1E4-XBA5: `opsctl config set KEY=VALUE` MUST split on the first `=` only, store the result, print nothing to stdout, and exit 0.
 - R-O2M1-B30U: `opsctl config set` with an argument lacking `=`, an invalid key, or a value containing a newline MUST exit 2 with a diagnostic on stderr and leave the store unchanged.
 - R-O3TX-OURJ: `opsctl config del KEY` MUST exit 0 and print nothing to stdout whether or not KEY was set.
 - R-O51U-2MI8: `opsctl config list` MUST print one `KEY=VALUE` line per entry sorted by key ascending to stdout and exit 0, printing nothing when the store is empty.
-- R-O69Q-GE8X: `opsctl config` with no subcommand or an unknown subcommand MUST print the `config` usage text to stderr and exit 2.
+- R-D3B7-CGSQ: `opsctl config` with no subcommand MUST write exactly the three lines `opsctl: no config subcommand given`, an empty line, and `see 'opsctl config --help' for usage` to stderr and exit 2, and with an unknown subcommand MUST write exactly the three lines `opsctl: unknown config subcommand '<name>'`, an empty line, and `see 'opsctl config --help' for usage` to stderr and exit 2.
 - R-O7HM-U5ZM: Every `config` subcommand MUST exit 1 with a stderr line naming `config.json` when the file is corrupt.
