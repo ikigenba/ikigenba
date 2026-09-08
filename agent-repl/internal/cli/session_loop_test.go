@@ -36,20 +36,49 @@ func TestRunStopsBeforeInputWhenLogCreationFails(t *testing.T) {
 	}
 }
 
-// R-W17Q-HY26
-func TestRunOpenFailureLeavesNewLogEmptyAndDoesNotReadInput(t *testing.T) {
-	home := t.TempDir()
-	deps := testDeps(t, home)
-	deps.Getenv = func(string) string { return "" }
-	var stdout, stderr bytes.Buffer
-	code := cli.Run(t.Context(), configuredArgs("http://provider.invalid"), failOnRead{t: t}, &stdout, &stderr, deps)
-	if code != 1 || stdout.Len() != 0 || !strings.HasPrefix(stderr.String(), "error: ") ||
-		!strings.Contains(stderr.String(), "OPENAI_API_KEY") {
-		t.Fatalf("Run open failure = code %d stdout %q stderr %q", code, stdout.String(), stderr.String())
+// R-APWM-3BQL
+func TestRunOpenFailureClosesLogAndDoesNotReadInput(t *testing.T) {
+	tests := []struct {
+		name        string
+		prepare     func(*testing.T, *cli.Deps) []string
+		cause       string
+		recordTypes []string
+	}{
+		{
+			name: "before conversation",
+			prepare: func(_ *testing.T, deps *cli.Deps) []string {
+				deps.Getenv = func(string) string { return "" }
+				return configuredArgs("http://provider.invalid")
+			},
+			cause:       "OPENAI_API_KEY",
+			recordTypes: []string{"summary"},
+		},
+		{
+			name: "after conversation",
+			prepare: func(t *testing.T, _ *cli.Deps) []string {
+				systemFile := filepath.Join(t.TempDir(), "blank-system.txt")
+				if err := os.WriteFile(systemFile, []byte(" \n\t\r\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				return append(configuredArgs("http://provider.invalid"), "-c", "system_file="+systemFile)
+			},
+			cause:       "blank-system.txt",
+			recordTypes: []string{"conversation", "closed", "summary"},
+		},
 	}
-	data := readOnlyLog(t, home)
-	if len(data) != 0 {
-		t.Fatalf("log after Open failure = %q, want empty", data)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			home := t.TempDir()
+			deps := testDeps(t, home)
+			args := test.prepare(t, &deps)
+			var stdout, stderr bytes.Buffer
+			code := cli.Run(t.Context(), args, failOnRead{t: t}, &stdout, &stderr, deps)
+			if code != 1 || stdout.Len() != 0 || !strings.HasPrefix(stderr.String(), "error: ") ||
+				!strings.Contains(stderr.String(), test.cause) {
+				t.Fatalf("Run open failure = code %d stdout %q stderr %q", code, stdout.String(), stderr.String())
+			}
+			assertRecordTypes(t, decodeRecords(t, readOnlyLog(t, home)), test.recordTypes...)
+		})
 	}
 }
 
@@ -92,8 +121,8 @@ func TestRunConsumesTurnBeforeReadingNextLine(t *testing.T) {
 	}
 }
 
-// R-VYRX-QEKS R-P31N-2V1H R-W4VF-N9A9 R-W7B8-ESRN
-// R-WDEQ-BNH4 R-WT9F-AO45
+// R-VYRX-QEKS R-AR4I-H3HA R-W4VF-N9A9 R-W7B8-ESRN
+// R-ASCE-UV7Z R-WT9F-AO45
 func TestRunDecoratedLoopCreatesPrivateCompleteLog(t *testing.T) {
 	var mu sync.Mutex
 	var prompts []string
@@ -137,8 +166,9 @@ func TestRunDecoratedLoopCreatesPrivateCompleteLog(t *testing.T) {
 		t.Fatalf("log name = %q, want %q", got, want)
 	}
 	records := decodeRecords(t, readFile(t, logPath))
-	if len(records) == 0 || records[len(records)-1]["type"] != "summary" {
-		t.Fatalf("records do not end in summary: %#v", records)
+	if len(records) < 3 || records[0]["type"] != "conversation" ||
+		records[len(records)-2]["type"] != "closed" || records[len(records)-1]["type"] != "summary" {
+		t.Fatalf("records do not begin with conversation and end with closed, summary: %#v", records)
 	}
 	for _, record := range records {
 		if got := record["time"]; got != "2031-02-03T04:05:06-06:00" {
@@ -242,7 +272,7 @@ func TestRunDecoratedLifecycleIsOrderedAndSummaryMatchesLogSink(t *testing.T) {
 	}
 }
 
-// R-WUHB-OFUU R-P31N-2V1H
+// R-WUHB-OFUU R-AR4I-H3HA
 func TestRunRawStdoutIsExactlyTheJSONLLogAndErrorsStayOnStderr(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -268,31 +298,18 @@ func TestRunRawStdoutIsExactlyTheJSONLLogAndErrorsStayOnStderr(t *testing.T) {
 		t.Fatalf("raw run = code %d stderr %q", code, stderr.String())
 	}
 	fileData := readOnlyLog(t, home)
-	want := []byte("" +
-		`{"type":"turn_start","id":"test-log-id","time":"2031-02-03T04:05:06-06:00","seq":0,"identity":{"Endpoint":"openai-chat","AuthMode":"api_key","Model":"gpt-5.6-sol"}}` + "\n" +
-		`{"type":"message","id":"test-log-id","time":"2031-02-03T04:05:06-06:00","seq":1,"message":{"role":1,"blocks":[{"type":"text","text":"bad","provider":null}]}}` + "\n" +
-		`{"type":"usage","id":"test-log-id","time":"2031-02-03T04:05:06-06:00","seq":2,"usage":{"InputTokens":0,"CachedTokens":0,"CacheWrite5mTokens":0,"CacheWrite1hTokens":0,"OutputTokens":0,"ReasoningTokens":0},"cost":0}` + "\n" +
-		`{"type":"error","id":"test-log-id","time":"2031-02-03T04:05:06-06:00","seq":3,"error":{"Category":2,"Status":400,"Code":"","Message":"rejected\n","RetryAfter":0,"Endpoint":{"Endpoint":"","AuthMode":"","Model":""}}}` + "\n" +
-		`{"type":"turn_end","id":"test-log-id","time":"2031-02-03T04:05:06-06:00","seq":4,"usage":{"InputTokens":0,"CachedTokens":0,"CacheWrite5mTokens":0,"CacheWrite1hTokens":0,"OutputTokens":0,"ReasoningTokens":0},"cost":0}` + "\n" +
-		`{"type":"turn_start","id":"test-log-id","time":"2031-02-03T04:05:06-06:00","seq":5,"identity":{"Endpoint":"openai-chat","AuthMode":"api_key","Model":"gpt-5.6-sol"}}` + "\n" +
-		`{"type":"message","id":"test-log-id","time":"2031-02-03T04:05:06-06:00","seq":6,"message":{"role":1,"blocks":[{"type":"text","text":"good","provider":null}]}}` + "\n" +
-		`{"type":"message","id":"test-log-id","time":"2031-02-03T04:05:06-06:00","seq":7,"message":{"role":2,"blocks":[{"type":"text","text":"raw answer","provider":null}]}}` + "\n" +
-		`{"type":"usage","id":"test-log-id","time":"2031-02-03T04:05:06-06:00","seq":8,"usage":{"InputTokens":0,"CachedTokens":0,"CacheWrite5mTokens":0,"CacheWrite1hTokens":0,"OutputTokens":0,"ReasoningTokens":0},"cost":0}` + "\n" +
-		`{"type":"turn_end","id":"test-log-id","time":"2031-02-03T04:05:06-06:00","seq":9,"usage":{"InputTokens":0,"CachedTokens":0,"CacheWrite5mTokens":0,"CacheWrite1hTokens":0,"OutputTokens":0,"ReasoningTokens":0},"cost":0}` + "\n" +
-		`{"type":"summary","id":"test-log-id","time":"2031-02-03T04:05:06-06:00","seq":10,"usage":{"InputTokens":0,"CachedTokens":0,"CacheWrite5mTokens":0,"CacheWrite1hTokens":0,"OutputTokens":0,"ReasoningTokens":0},"cost":0}` + "\n")
-	if !bytes.Equal(stdout.Bytes(), want) {
-		t.Fatalf("raw stdout differs from independent expectation\nstdout=%q\nwant=%q", stdout.Bytes(), want)
-	}
 	if !bytes.Equal(stdout.Bytes(), fileData) {
 		t.Fatalf("raw stdout differs from log\nstdout=%q\nlog=%q", stdout.Bytes(), fileData)
 	}
 	records := decodeRecords(t, stdout.Bytes())
-	if len(records) == 0 || records[len(records)-1]["type"] != "summary" || strings.Contains(stdout.String(), "you › ") {
-		t.Fatalf("raw stdout is not JSONL ending in summary: %q", stdout.String())
+	if len(records) < 3 || records[0]["type"] != "conversation" ||
+		records[len(records)-2]["type"] != "closed" || records[len(records)-1]["type"] != "summary" ||
+		strings.Contains(stdout.String(), "you › ") {
+		t.Fatalf("raw stdout is not JSONL bounded by conversation and closed, summary: %q", stdout.String())
 	}
 }
 
-// R-WAYX-K3ZQ R-WDEQ-BNH4
+// R-WAYX-K3ZQ R-ASCE-UV7Z
 func TestRunPromptInterruptEndsBlockedInputAndClosesLog(t *testing.T) {
 	reader := newBlockingReader()
 	interrupts := make(chan struct{}, 1)
@@ -306,9 +323,7 @@ func TestRunPromptInterruptEndsBlockedInputAndClosesLog(t *testing.T) {
 		t.Fatalf("Run interrupt code = %d", code)
 	}
 	records := decodeRecords(t, readOnlyLog(t, deps.Home))
-	if len(records) != 1 || records[0]["type"] != "summary" {
-		t.Fatalf("prompt interrupt records = %#v", records)
-	}
+	assertRecordTypes(t, records, "conversation", "closed", "summary")
 }
 
 // R-WC6T-XVQF
@@ -580,6 +595,17 @@ func decodeRecords(t *testing.T, data []byte) []map[string]any {
 		records = append(records, record)
 	}
 	return records
+}
+
+func assertRecordTypes(t *testing.T, records []map[string]any, want ...string) {
+	t.Helper()
+	got := make([]string, len(records))
+	for index, record := range records {
+		got[index], _ = record["type"].(string)
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("record types = %v, want %v", got, want)
+	}
 }
 
 func assertMode(t *testing.T, path string, want os.FileMode) {

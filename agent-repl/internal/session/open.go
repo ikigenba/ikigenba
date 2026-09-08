@@ -45,9 +45,11 @@ func Open(cfg Config) (*Session, error) {
 	if cfg.SystemFile != "" {
 		contents, err := os.ReadFile(cfg.SystemFile)
 		if err != nil {
+			_ = conversation.Close()
 			return nil, fmt.Errorf("read system file %q: %w", cfg.SystemFile, err)
 		}
 		if err := conversation.AddSystem(string(contents)); err != nil {
+			_ = conversation.Close()
 			return nil, fmt.Errorf("add system file %q: %w", cfg.SystemFile, err)
 		}
 	}

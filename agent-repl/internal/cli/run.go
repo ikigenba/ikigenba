@@ -124,6 +124,7 @@ func openCLISession(opts options.Options, stdout, stderr io.Writer, deps Deps) (
 		Log:        log,
 	})
 	if err != nil {
+		_ = log.Close()
 		_ = file.Close()
 		return nil, err
 	}
@@ -140,6 +141,9 @@ func openCLISession(opts options.Options, stdout, stderr io.Writer, deps Deps) (
 
 func (active *cliSession) execute(ctx context.Context, stdin io.Reader, interrupts <-chan struct{}) exitCode {
 	runSession(ctx, stdin, active.opened, active.decorated, active.raw, interrupts)
+	if err := active.opened.Close(); err != nil {
+		active.decorated.Error(fmt.Errorf("close session: %w", err))
+	}
 	_ = active.log.Close()
 	_ = active.file.Close()
 	if !active.raw {
