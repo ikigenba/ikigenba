@@ -370,11 +370,12 @@ func TestSessionCloseIsIdempotentAndStopsSending(t *testing.T) {
 	if got := countLogRecords(t, output.Bytes(), agentkit.RecordClosed); got != 1 {
 		t.Fatalf("closed records after first Close = %d, want 1", got)
 	}
+	outputAfterFirstClose := output.String()
 	if err := session.Close(); err != nil {
 		t.Fatalf("second Close error = %v, want nil", err)
 	}
-	if got := countLogRecords(t, output.Bytes(), agentkit.RecordClosed); got != 1 {
-		t.Fatalf("closed records after second Close = %d, want 1", got)
+	if got := output.String(); got != outputAfterFirstClose {
+		t.Fatalf("log output changed after second Close:\n before: %q\n  after: %q", outputAfterFirstClose, got)
 	}
 
 	stream := session.Send(context.Background(), "must not reach provider")
