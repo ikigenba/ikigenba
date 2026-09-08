@@ -43,7 +43,7 @@ func newStore(t *testing.T, values map[string]string) config.Store {
 	store := config.Store{Root: t.TempDir()}
 	for key, value := range values {
 		if err := store.Set(key, value); err != nil {
-			t.Fatalf("set %s: %v", key, err)
+			t.Fatalf("set %q: %v", key, err)
 		}
 	}
 	return store
@@ -91,6 +91,24 @@ func TestExportedShapesAndSignatures(t *testing.T) {
 	}
 
 	var _ Provider = (*fakeProvider)(nil)
+	providerType := reflect.TypeFor[Provider]()
+	providerMethods := []struct {
+		name string
+		typ  reflect.Type
+	}{
+		{"Add", reflect.TypeFor[func(context.Context, string, string, string, int, string) error]()},
+		{"Records", reflect.TypeFor[func(context.Context, string) ([]Record, error)]()},
+		{"Remove", reflect.TypeFor[func(context.Context, string, string, string, string) error]()},
+	}
+	if providerType.NumMethod() != len(providerMethods) {
+		t.Fatalf("Provider has %d methods, want %d", providerType.NumMethod(), len(providerMethods))
+	}
+	for i, want := range providerMethods {
+		got := providerType.Method(i)
+		if got.Name != want.name || got.Type != want.typ {
+			t.Fatalf("Provider method %d = %s %s, want %s %s", i, got.Name, got.Type, want.name, want.typ)
+		}
+	}
 	signatures := []struct {
 		got  reflect.Type
 		want reflect.Type
@@ -120,8 +138,19 @@ func TestOpenRejectsIncompleteConfigurationBeforeProvider(t *testing.T) {
 		{"empty provider", map[string]string{KeyProvider: ""}, KeyProvider},
 		{"missing zones", map[string]string{KeyProvider: "route53"}, KeyZones},
 		{"empty zones", map[string]string{KeyProvider: "route53", KeyZones: ""}, KeyZones},
-		{"missing zone id", map[string]string{KeyProvider: "route53", KeyZones: "example.com"}, ZoneKey("route53", "example.com")},
-		{"empty zone id", map[string]string{KeyProvider: "route53", KeyZones: "example.com", ZoneKey("route53", "example.com"): ""}, ZoneKey("route53", "example.com")},
+		{"missing zone id", map[string]string{KeyProvider: "route53", KeyZones: "example.com"}, "dns.route53.zone.example.com"},
+		{"empty zone id", map[string]string{KeyProvider: "route53", KeyZones: "example.com", "dns.route53.zone.example.com": ""}, "dns.route53.zone.example.com"},
+		{"later zone id missing", map[string]string{
+			KeyProvider:                    "route53",
+			KeyZones:                       "example.com,example.net",
+			"dns.route53.zone.example.com": "Z1",
+		}, "dns.route53.zone.example.net"},
+		{"later zone id empty", map[string]string{
+			KeyProvider:                    "route53",
+			KeyZones:                       "example.com,example.net",
+			"dns.route53.zone.example.com": "Z1",
+			"dns.route53.zone.example.net": "",
+		}, "dns.route53.zone.example.net"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -184,12 +213,19 @@ func TestOpenProviderRegistry(t *testing.T) {
 
 // R-L2ZA-8HJ4
 func TestZoneForUsesLongestLabelBoundedSuffix(t *testing.T) {
-	client := Client{Zones: []Zone{{Name: "example.com", ID: "parent"}, {Name: "deep.example.com", ID: "child"}}}
-	zone, err := client.ZoneFor("API.DEEP.EXAMPLE.COM.")
-	if err != nil || zone.ID != "child" {
-		t.Fatalf("ZoneFor child = %#v, %v", zone, err)
+	zoneOrders := [][]Zone{
+		{{Name: "example.com", ID: "parent"}, {Name: "deep.example.com", ID: "child"}},
+		{{Name: "deep.example.com", ID: "child"}, {Name: "example.com", ID: "parent"}},
 	}
-	zone, err = client.ZoneFor("EXAMPLE.COM.")
+	for i, zones := range zoneOrders {
+		client := Client{Zones: zones}
+		zone, err := client.ZoneFor("API.DEEP.EXAMPLE.COM.")
+		if err != nil || zone.ID != "child" {
+			t.Fatalf("ZoneFor child with order %d = %#v, %v", i, zone, err)
+		}
+	}
+	client := Client{Zones: zoneOrders[0]}
+	zone, err := client.ZoneFor("EXAMPLE.COM.")
 	if err != nil || zone.ID != "parent" {
 		t.Fatalf("ZoneFor apex = %#v, %v", zone, err)
 	}
@@ -206,17 +242,20 @@ func TestClientDelegatesNormalisedMutationsAndPreservesErrors(t *testing.T) {
 	addErr := errors.New("add failed")
 	removeErr := errors.New("remove failed")
 	provider := &fakeProvider{addErr: addErr, removeErr: removeErr}
-	client := Client{Provider: provider, Zones: []Zone{{Name: "example.com", ID: "Z1"}}}
-	if err := client.Add(t.Context(), "Probe.EXAMPLE.com.", "txt", 60, "Value"); !reflect.DeepEqual(err, addErr) {
+	client := Client{Provider: provider, Zones: []Zone{
+		{Name: "example.com", ID: "parent"},
+		{Name: "deep.example.com", ID: "child"},
+	}}
+	if err := client.Add(t.Context(), "Probe.DEEP.EXAMPLE.com.", "txt", 60, "Value"); !reflect.DeepEqual(err, addErr) {
 		t.Fatalf("Add error = %v", err)
 	}
-	if want := []any{"Z1", "probe.example.com", "TXT", 60, "Value"}; !reflect.DeepEqual(provider.addArgs, want) {
+	if want := []any{"child", "probe.deep.example.com", "TXT", 60, "Value"}; !reflect.DeepEqual(provider.addArgs, want) {
 		t.Fatalf("Add args = %#v, want %#v", provider.addArgs, want)
 	}
-	if err := client.Remove(t.Context(), "Probe.EXAMPLE.com.", "txt", "Value"); !reflect.DeepEqual(err, removeErr) {
+	if err := client.Remove(t.Context(), "Probe.DEEP.EXAMPLE.com.", "txt", "Value"); !reflect.DeepEqual(err, removeErr) {
 		t.Fatalf("Remove error = %v", err)
 	}
-	if want := []string{"Z1", "probe.example.com", "TXT", "Value"}; !reflect.DeepEqual(provider.removeArgs, want) {
+	if want := []string{"child", "probe.deep.example.com", "TXT", "Value"}; !reflect.DeepEqual(provider.removeArgs, want) {
 		t.Fatalf("Remove args = %#v, want %#v", provider.removeArgs, want)
 	}
 }
@@ -412,6 +451,8 @@ func dnsName(name string) ([]byte, error) {
 func dnsWireLength(length int) (byte, byte, error) {
 	var high byte
 	var low byte
+	// DNS wire lengths occupy 16 bits, so high=255 and low=255 encode the
+	// largest possible value, 65535; another byte cannot be represented.
 	for range length {
 		if high == 255 && low == 255 {
 			return 0, 0, errors.New("DNS field exceeds wire-format limit")
