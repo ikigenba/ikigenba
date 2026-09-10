@@ -10,15 +10,15 @@ terraform {
 }
 
 provider "aws" {
-  profile = "dev"
+  profile = "295229566359"
   region  = "us-east-2"
 
   default_tags {
     tags = {
-      Project     = "metaspot"
-      Environment = "dev"
-      ManagedBy   = "terraform"
-      Component   = "bootstrap"
+      Project   = "metaspot"
+      Account   = "295229566359"
+      ManagedBy = "terraform"
+      Component = "bootstrap"
     }
   }
 }

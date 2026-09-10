@@ -10,23 +10,23 @@ terraform {
 
   backend "s3" {
     bucket       = "metaspot-dev-tfstate-295229566359"
-    key          = "dev/terraform.tfstate"
+    key          = "295229566359/terraform.tfstate"
     region       = "us-east-2"
-    profile      = "dev"
+    profile      = "295229566359"
     encrypt      = true
     use_lockfile = true
   }
 }
 
 provider "aws" {
-  profile = "dev"
+  profile = "295229566359"
   region  = "us-east-2"
 
   default_tags {
     tags = {
-      Project     = "metaspot"
-      Environment = "dev"
-      ManagedBy   = "terraform"
+      Project   = "metaspot"
+      Account   = "295229566359"
+      ManagedBy = "terraform"
     }
   }
 }
