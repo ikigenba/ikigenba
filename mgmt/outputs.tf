@@ -33,6 +33,10 @@ output "logic_refinery_name_servers" {
 output "ikigenba_name_servers" {
   value = {
     "ikigenba.com" = aws_route53_zone.ikigenba_com.name_servers
-    "ikigenba.dev" = aws_route53_zone.ikigenba_dev.name_servers
   }
+}
+
+output "ikigenba_dev_transition_name_servers" {
+  description = "Former mgmt-zone nameservers retained temporarily for cached delegation."
+  value       = aws_route53_zone.ikigenba_dev.name_servers
 }

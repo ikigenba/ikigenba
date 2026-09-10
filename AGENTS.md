@@ -1,9 +1,10 @@
 # metaspot
 
-This directory contains the Terraform configuration for the AWS accounts you have access to. The topology is symmetric: one directory per AWS account, profile name = directory name = the subdomain it owns.
+This directory contains the Terraform configuration for the AWS accounts you have access to. The topology is symmetric: one directory per AWS account, profile name = directory name = the environment it owns.
 
 - `bootstrap/<name>/` — per-account state backend bootstrap (local state)
-- `mgmt/` — `mgmt` AWS account (132801647717), profile `mgmt`. Owns the apex `metaspot.org` zone, NS delegations to every child account, and the `aws_organizations_account` + IIC assignment resources for the org. No servers. Also the home for the rest of the registered-domain portfolio (registration + hosted zone both live here): `metaspot.net` and `michaelgreenly.com` (parked), the migrated `logic-refinery.*` zones, and `ikigenba.com` / `ikigenba.dev` (see below).
+- `mgmt/` — `mgmt` AWS account (132801647717), profile `mgmt`. Owns the apex `metaspot.org` zone, NS delegations to every child account, and the `aws_organizations_account` + IIC assignment resources for the org. No servers. Also the home for the registered-domain portfolio. Registration for `ikigenba.dev` remains here while its authoritative DNS is delegated at the registrar to the `dev` account.
+- `dev/` — `dev` AWS account (295229566359), profile `dev`. Owns the `ikigenba.dev` authoritative zone, host, and backup bucket.
 - `prod/` — `prod` AWS account (853624428511), profile `prod`. Owns `prod.metaspot.org`.
 - `test/` — `test` AWS account (213629091798), profile `test`. Owns `test.metaspot.org`.
 - `sandbox/` — `sandbox` AWS account (654596473544), profile `sandbox`. Owns `sandbox.metaspot.org`.
@@ -13,11 +14,15 @@ This directory contains the Terraform configuration for the AWS accounts you hav
 
 **Adding a new account** (customer or otherwise) follows the same pattern as `ai`: a new entry in `mgmt/accounts.tf` (creates the AWS account + IIC assignment), a new `bootstrap/<name>/`, a new `<name>/` root with its `<name>.metaspot.org` zone, and a new NS delegation in `mgmt/delegations.tf`. Email convention: `mgreenly+<name>@gmail.com`. Bucket naming: tfstate `metaspot-<name>-tfstate-<accountid>`, backups `<name>-metaspot-org-<accountid>`. Default region: `us-east-2`.
 
-**`ikigenba.com` — second customer apex.** `ikigenba.com` is the customer-facing product domain and plays the exact role `metaspot.org` plays internally: `mgmt` owns the apex zone (`mgmt/ikigenba.tf`) and delegates `<account>.ikigenba.com` out to per-customer member accounts via NS records. Onboarding a customer under it is the same `ai`-style pattern above, except the child root creates a `<account>.ikigenba.com` zone (instead of, or in addition to, `<account>.metaspot.org`) and the NS delegation goes in `mgmt/ikigenba.tf` rather than `mgmt/delegations.tf`. **`ikigenba.dev`** is the developer-docs site for the `ikigenba.com` services — a single apex with no customer subdomains and no delegation tree. Both are registered in `mgmt` with the hosted zones imported; both zones are currently **empty (no hosting stood up yet)** — they hold only the NS/SOA Route 53 creates automatically.
+**`ikigenba.com` — second customer apex.** `ikigenba.com` is the customer-facing product domain and plays the exact role `metaspot.org` plays internally: `mgmt` owns the apex zone (`mgmt/ikigenba.tf`) and delegates `<account>.ikigenba.com` out to per-customer member accounts via NS records. Onboarding a customer under it is the same `ai`-style pattern above, except the child root creates a `<account>.ikigenba.com` zone (instead of, or in addition to, `<account>.metaspot.org`) and the NS delegation goes in `mgmt/ikigenba.tf` rather than `mgmt/delegations.tf`. **`ikigenba.dev`** is the developer environment: `mgmt` owns its registration, while registrar nameservers delegate the apex to the `dev` account's hosted zone. The former `mgmt` hosted zone remains temporarily with matching apex and wildcard records so cached delegation continues to resolve during the handoff; remove it after the old NS TTL has expired.
 
 ## SSH access
 
 The `prod` EC2 instances are all Amazon Linux 2023, and the key below works on every one of them.
+
+The `dev` host uses `~/.ssh/id_ed25519_ikigenba_dev` with user `ec2-user`; the
+`Host ikigenba.dev dev` entry in `~/.ssh/config` pins it to the host's Elastic
+IP and selects that key.
 
 - **Key:** `~/.ssh/id_ed25519_ai4mgreenly` — matches the Terraform `aws_key_pair.ai4mgreenly` (public key comment `claude@logic-refinery.com`).
 - **User:** `ec2-user`
