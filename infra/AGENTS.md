@@ -1,16 +1,27 @@
 # infra
 
-The Terraform for the one AWS account this repository manages:
-**`295229566359`** (the `ikigenba.dev` account). The account is referred to by
-its ID everywhere here — directory names, state key, profile, tags. Nothing about the AWS
-organisation, the registration of `ikigenba.dev`, the `mgmt` account, the `int`
-account, or any other account or domain is managed or changed from here; those
-live elsewhere (the standalone `metaspot` repository) and are out of scope.
-Resource names, the `Project = "metaspot"` tag, the bucket names, and the
-backend bucket came in with that lineage and are unchanged — renaming any of
-them would churn live resources for no gain. The `dev` that survives in resource
-names, the key pair, the SSM path, and the host's ssh alias is a host/resource
-name, not the account's.
+The Terraform for the two AWS accounts this repository manages. Accounts are
+durability classes, and each account is referred to by its ID everywhere here —
+directory names, state key, profile, tags:
+
+- **`295229566359`** — *durable*. The `ikigenba.dev` account: the authoritative
+  `ikigenba.dev` hosted zone, the host answering at `ikigenba.dev`, and the
+  backup bucket. Existing content.
+- **`602773793009`** — *ephemeral*. Created 2026-09-10. No resources yet beyond
+  its state backend.
+
+The `Durability` tag carries the class (`durable` / `ephemeral`) on everything
+created from here on. New things — buckets, roots, tags — use the `ikigenba-`
+name and `Project = "ikigenba"`. Legacy names in the durable account
+(`metaspot-dev-tfstate-295229566359`, `Project = "metaspot"`, the `dev` in
+resource names, the key pair, the SSM path, the host's ssh alias) came in with
+that lineage and stay as they are — renaming them would churn live resources
+for no gain; the `dev` there is a host/resource name, not the account's.
+
+Nothing about the AWS organisation, the registration of `ikigenba.dev`, the
+`mgmt` account, the `int` account, or any other account or domain is managed
+or changed from here; those live elsewhere (the standalone `metaspot`
+repository) and are out of scope.
 
 **This module is not spec-governed.** There is no `specs/` here, no requirement
 ids, and none of the spec operations apply. It is hand-maintained: changes are
@@ -40,8 +51,20 @@ Every path below is relative to this directory (`infra/`). Region `us-east-2`.
   and is present in this worktree. A missing bootstrap state file makes `plan`
   propose creating a bucket that already exists — stop and restore the file
   rather than apply.
-- `bootstrap/modules/state-backend/` — the module `bootstrap/295229566359/`
-  sources.
+- `602773793009/` — the ephemeral account root. No resources yet. Backend: S3
+  bucket `ikigenba-tfstate-602773793009`, key `602773793009/terraform.tfstate`,
+  profile `602773793009`, region `us-east-2`, `use_lockfile = true`. Default
+  tags: `Project = "ikigenba"`, `Account = "602773793009"`,
+  `Durability = "ephemeral"`, `ManagedBy = "terraform"`. As above, the backend
+  block in `providers.tf` is the whole configuration.
+- `bootstrap/602773793009/` — the state-backend root for the ephemeral account;
+  calls `bootstrap/modules/state-backend/` to create
+  `ikigenba-tfstate-602773793009`. Same default tags plus
+  `Component = "bootstrap"`. **Local state**, same rule as above: its
+  `terraform.tfstate` is gitignored and present in this worktree; if it is
+  missing, stop and restore it rather than apply.
+- `bootstrap/modules/state-backend/` — the module both `bootstrap/*/` roots
+  source.
 - `templates/` — `ikigenba-env.sh.tftpl` (the first-boot user data) and
   `ikigenba-launch` (the platform launcher it installs). The `dev` host was
   created with these; `295229566359/dev.tf` renders `user_data` from them.
@@ -51,8 +74,9 @@ them. `.terraform.lock.hcl` files are tracked.
 
 ## Credentials
 
-Profile `295229566359` is under `sso-session metaspot` in `~/.aws/config`. Every
-Terraform command needs a live session — this is the precondition for the gates:
+Profiles `295229566359` and `602773793009` are under `sso-session metaspot` in
+`~/.aws/config`. Every Terraform command needs a live session — this is the
+precondition for the gates:
 
 ```
 aws sso login --sso-session metaspot
@@ -65,7 +89,8 @@ every change. Each must exit 0, and each `plan` must report `No changes` unless
 the change was meant to produce one.
 
 1. `terraform fmt -check -recursive` — from `infra/`.
-2. In each of `295229566359/` and `bootstrap/295229566359/`:
+2. In each of `295229566359/`, `602773793009/`, `bootstrap/295229566359/`,
+   and `bootstrap/602773793009/`:
    `terraform init -input=false`, then
    `terraform validate`, then
    `terraform plan -input=false -detailed-exitcode` (exit 0 is `No changes`;
