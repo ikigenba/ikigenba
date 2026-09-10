@@ -12,6 +12,12 @@ does). See the `spec` and `build-spec` skills and `docs/spec-system.md` at the
 repo root. Everything below is the ground the run computes the gap and runs
 the gates against; it is human-authored and read-only to the run.
 
+## Host
+
+The live box for this project is `ikigenba.dev` (ssh alias `dev`, root over
+ssh). Any real-world verification — a live DNS round-trip, checking installed
+prerequisites — runs there.
+
 ## Toolchain
 
 - Go 1.26 (`go version` must report 1.26+)

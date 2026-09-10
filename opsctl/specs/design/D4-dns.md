@@ -24,13 +24,15 @@ business:
 | key | value |
 |---|---|
 | `dns.provider` | the active provider; only `route53` exists |
-| `dns.zones` | comma-separated zones `opsctl` owns, e.g. `ikigenba.dev` |
-| `dns.<provider>.zone.<zone>` | the provider's id for `<zone>`, e.g. `dns.route53.zone.ikigenba.dev=Z09565073GHK8BYWQ1A78` |
+| `dns.zones` | comma-separated `NAME:ID` pairs of the zones `opsctl` owns, e.g. `ikigenba.dev:Z09565073GHK8BYWQ1A78` |
 
-The person supplies the zone id and the agent enters it with `config set`.
-A record name is mapped to a zone by longest-suffix match against
-`dns.zones`, on label boundaries, so the certbot hooks — which only receive a
-domain — need no zone argument.
+Every config key is fixed vocabulary; the zone name and its provider id are the
+only variable data, and they live entirely in the `dns.zones` value, so no key
+ever carries a name. Each entry is `NAME:ID`, split on the first colon; the
+person supplies the id and the agent enters the value with `config set`. A
+record name is mapped to a zone by longest-suffix match against the configured
+names, on label boundaries, so the certbot hooks — which only receive a domain
+— need no zone argument.
 
 ```go
 package dns
@@ -39,9 +41,6 @@ const (
     KeyProvider = "dns.provider"
     KeyZones    = "dns.zones"
 )
-
-// ZoneKey returns the config key holding provider's id for zone.
-func ZoneKey(provider, zone string) string   // "dns.<provider>.zone.<zone>"
 
 var (
     ErrNotConfigured   = errors.New("dns is not configured")
@@ -138,11 +137,10 @@ Options (add, remove, acme-auth, acme-cleanup):
   --ttl SECONDS       TTL when add creates a record (default 300; acme-auth uses 60)
 
 Configuration keys:
-  dns.provider                the active provider; only 'route53' is supported
-  dns.zones                   comma-separated zones opsctl owns
-  dns.<provider>.zone.<zone>  the provider's id for <zone>
+  dns.provider  the active provider; only 'route53' is supported
+  dns.zones     comma-separated NAME:ID pairs of the zones opsctl owns
 
-NAME is mapped to a zone by longest suffix match against dns.zones.
+NAME is mapped to a zone by longest suffix match against the zone names.
 ```
 
 Options come before the positional arguments. `list` prints
@@ -154,7 +152,7 @@ every problem at once:
 $ opsctl dns check
 ikigenba.dev: ok (route53 Z09565073GHK8BYWQ1A78, 4 nameservers delegated)
 $ opsctl dns check; echo "exit $?"
-ikigenba.dev: failed: dns.route53.zone.ikigenba.dev not set
+ikigenba.dev: failed: nameservers not delegated
 exit 1
 ```
 
@@ -173,8 +171,7 @@ Canonical usage, as an agent would drive it over ssh:
 
 ```
 $ opsctl config set dns.provider=route53
-$ opsctl config set dns.zones=ikigenba.dev
-$ opsctl config set dns.route53.zone.ikigenba.dev=Z09565073GHK8BYWQ1A78
+$ opsctl config set dns.zones=ikigenba.dev:Z09565073GHK8BYWQ1A78
 $ opsctl dns check
 ikigenba.dev: ok (route53 Z09565073GHK8BYWQ1A78, 4 nameservers delegated)
 $ opsctl dns add _probe.ikigenba.dev TXT hello
@@ -199,13 +196,13 @@ It is not a gate.
 
 ## REQUIREMENTS
 
-- R-KT83-6BLK: Package `internal/dns` MUST export the constants `KeyProvider = "dns.provider"` and `KeyZones = "dns.zones"`, the function `ZoneKey(provider, zone string) string` returning `"dns." + provider + ".zone." + zone`, and the errors `ErrNotConfigured`, `ErrNoZone`, and `ErrUnknownProvider`.
+- R-YSWA-UVTZ: Package `internal/dns` MUST export the constants `KeyProvider = "dns.provider"` and `KeyZones = "dns.zones"`, and the errors `ErrNotConfigured`, `ErrNoZone`, and `ErrUnknownProvider`.
 - R-KUFZ-K3C9: Package `internal/dns` MUST export the struct `Zone` with fields exactly `Name string` and `ID string`, and the struct `Record` with fields exactly `Name string`, `Type string`, `TTL int`, and `Values []string`.
 - R-KVNV-XV2Y: Package `internal/dns` MUST export the interface `Provider` with methods exactly `Records(ctx context.Context, zoneID string) ([]Record, error)`, `Add(ctx context.Context, zoneID, name, typ string, ttl int, value string) error`, and `Remove(ctx context.Context, zoneID, name, typ, value string) error`.
 - R-KWVS-BMTN: Package `internal/dns` MUST export the struct `Env` with fields exactly `Open func(ctx context.Context, provider string) (Provider, error)` and `LookupNS func(ctx context.Context, zone string) ([]string, error)`, and the struct `CheckResult` with fields exactly `ZoneName string`, `Nameservers []string`, and `Delegated bool`.
 - R-KY3O-PEKC: Package `internal/dns` MUST export the struct `Client` with fields exactly `Provider Provider` and `Zones []Zone`, the function `Open(ctx context.Context, store config.Store, env Env) (*Client, error)`, and the methods `(*Client) ZoneFor(name string) (Zone, error)`, `(*Client) Records(ctx context.Context, zone Zone) ([]Record, error)`, `(*Client) Add(ctx context.Context, name, typ string, ttl int, value string) error`, `(*Client) Remove(ctx context.Context, name, typ, value string) error`, and `(*Client) Check(ctx context.Context, zone Zone) (CheckResult, error)`.
-- R-KZBL-36B1: `Open` MUST return an error wrapping `ErrNotConfigured` whose message contains the offending key when `dns.provider` is unset or empty, when `dns.zones` is unset or empty, or when any zone listed in `dns.zones` has no `ZoneKey(provider, zone)` entry, and MUST not call `Env.Open` in those cases.
-- R-L0JH-GY1Q: `Open` MUST split `dns.zones` on commas, trim whitespace, lowercase, and strip one trailing dot from each entry, preserving order, and populate `Client.Zones` with each name and the value of its `ZoneKey` entry.
+- R-YU47-8NKO: `Open` MUST return an error that `errors.Is` `ErrNotConfigured`, without calling `Env.Open`, whose `Error()` is exactly `dns.provider not set` when `dns.provider` is unset or empty, exactly `dns.zones not set` when `dns.zones` is unset or empty, and otherwise `dns.zones malformed: ` followed by the first comma-separated entry, rendered with `%q`, that does not split on its first colon into a non-empty name and a non-empty id.
+- R-YVC3-MFBD: `Open` MUST split `dns.zones` on commas and each entry on its first colon into a name and an id, trim surrounding whitespace from both, lowercase the name and strip one trailing dot from it, leave the id unchanged apart from trimming, preserve order, and populate `Client.Zones` with each resulting name and id.
 - R-L1RD-UPSF: `Open` MUST call `Env.Open` with the value of `dns.provider` and return its error unchanged, and when `Env.Open` is nil MUST return an error wrapping `ErrUnknownProvider` that names the provider.
 - R-L2ZA-8HJ4: `ZoneFor` MUST lowercase the name and strip one trailing dot, return the configured zone with the longest name that equals the name or is a suffix of it preceded by a dot, and return an error wrapping `ErrNoZone` when no zone matches.
 - R-L476-M99T: `Client.Add` and `Client.Remove` MUST resolve the zone with `ZoneFor` and call the provider's `Add` or `Remove` with that zone's `ID`, the normalised name, the type uppercased, and the value unchanged, and MUST return the provider's error unchanged.
@@ -218,9 +215,9 @@ It is not a gate.
 - R-LDYD-OF7D: `Add` of the Route 53 provider MUST create the record set with `ttl` when it is absent, MUST otherwise submit the set with the existing values, the existing TTL, and the new value appended, MUST send TXT values enclosed in double quotes, and MUST return nil without submitting a change when the value is already present.
 - R-LF6A-26Y2: `Remove` of the Route 53 provider MUST submit the set without the value when other values remain, MUST delete the set when the value is its last, and MUST return nil without submitting a change when the set or the value is absent.
 - R-LGE6-FYOR: `Add` and `Remove` of the Route 53 provider MUST return nil only after `GetChange` reports the change `INSYNC`, and MUST return an error wrapping `ctx.Err()` when the context ends first.
-- R-LHM2-TQFG: `opsctl dns --help` and `opsctl dns -h` MUST print the `dns` usage text quoted above, byte for byte, to stdout and exit 0.
+- R-YWK0-0722: `opsctl dns --help` and `opsctl dns -h` MUST print the `dns` usage text quoted above, byte for byte, to stdout and exit 0.
 - R-LITZ-7I65: `opsctl dns` with no subcommand MUST write exactly the three lines `opsctl: no dns subcommand given`, an empty line, and `see 'opsctl dns --help' for usage` to stderr and exit 2, and with an unknown subcommand MUST write exactly the three lines `opsctl: unknown dns subcommand '<name>'`, an empty line, and `see 'opsctl dns --help' for usage` to stderr and exit 2.
-- R-LK1V-L9WU: Every `dns` subcommand MUST open the store through `dns.Open` with `Deps.DNS` as the environment, and when `Open` returns an error wrapping `dns.ErrNotConfigured` MUST write the single line `opsctl: <key> not set` naming the offending key to stderr and exit 1.
+- R-YXRW-DYSR: Every `dns` subcommand MUST open the store through `dns.Open` with `Deps.DNS` as the environment, and when `Open` returns an error wrapping `dns.ErrNotConfigured` MUST write the single line `opsctl: ` followed by that error's `Error()` text and a newline to stderr and exit 1.
 - R-LL9R-Z1NJ: `opsctl dns list ZONE` MUST print one line `NAME TYPE TTL VALUE` per value of every record in ZONE, sorted by name, then type, then value, to stdout and exit 0, and MUST write `opsctl: zone not configured: ZONE` followed by an empty line and `configured zones: <comma-separated Client.Zones names>` to stderr and exit 2 when ZONE is not a configured zone.
 - R-LMHO-CTE8: `opsctl dns add [--ttl SECONDS] [--timeout DURATION] NAME TYPE VALUE` MUST call `Client.Add` with TTL defaulting to 300 and a context whose deadline is DURATION from now defaulting to 2 minutes, print nothing to stdout, and exit 0 on success; `opsctl dns remove [--timeout DURATION] NAME TYPE VALUE` MUST likewise call `Client.Remove`.
 - R-LNPK-QL4X: `add` and `remove` with a wrong number of positional arguments, a `--ttl` that is not a positive integer, or a `--timeout` that is not a positive duration MUST exit 2 with a diagnostic on stderr, and when `ZoneFor` fails MUST write `opsctl: no configured zone contains '<NAME>'` followed by an empty line and `configured zones: <comma-separated Client.Zones names>` to stderr and exit 2.

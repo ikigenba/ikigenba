@@ -6,14 +6,22 @@ and records the decisions taken in discussion so the reasons survive.
 
 ## What opsctl is
 
-Ikigenba is a PaaS for running internal apps. Its core platform services all
-run on one Linux host. `opsctl` is the operations CLI for that host: a single
-Go binary installed at `/usr/local/bin/opsctl`, run as root over ssh by humans
-and by agents, that bootstraps the platform and manages it from then on. Every
-piece of platform state it owns is a plain file the host already understands —
-a JSON config file, an nginx config, systemd units — and every external
-dependency is an ordinary binary on the PATH or a credential the host's
-environment already provides.
+Ikigenba is a PaaS for running internal apps. A single deployment of the
+platform — every service, every database, nginx, and its certificates — is
+complete and self-contained on one Linux host. `opsctl` is the operations CLI
+for that host: a single Go binary installed at `/usr/local/bin/opsctl`, run as
+root over ssh by humans and by agents, that bootstraps the platform on the host
+and manages it from then on. Every piece of platform state it owns is a plain
+file the host already understands — a JSON config file, an nginx config,
+systemd units — and every external dependency is an ordinary binary on the PATH
+or a credential the host's environment already provides.
+
+A project runs many such hosts over time, each created, used, and torn down
+independently; a host knows nothing about the others, and `opsctl` reasons only
+about the one it runs on. The zone configured in `dns.zones` may be a parent
+zone under which this host's own name and its wildcard sit — `ZoneFor`'s
+longest-suffix match (D4) already resolves a record to that zone, so nothing in
+D4 changes.
 
 The box knows only that it is a Linux server. It never learns which cloud it
 runs in. AWS access (S3, Route 53) goes through the Go SDK's default
