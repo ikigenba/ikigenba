@@ -14,9 +14,9 @@ name, not the account's.
 
 **This module is not spec-governed.** There is no `specs/` here, no requirement
 ids, and none of the spec operations apply. It is hand-maintained: changes are
-made only on direct instruction, and `terraform apply` is always run by a human.
-An agent may `init`, `validate`, `fmt`, and `plan`; **it never applies, imports,
-moves, or edits state.**
+made only on direct instruction. An agent may `init`, `validate`, `fmt`, and
+`plan` freely; **it runs `terraform apply` only when directly instructed to**,
+and it never imports, moves, or edits state.
 
 Every path below is relative to this directory (`infra/`). Region `us-east-2`.
 
