@@ -1,0 +1,58 @@
+#!/bin/bash
+# /usr/local/bin/ikigenba-launch <app>
+#
+# Platform launcher. Installed by instance bootstrap (see
+# templates/ikigenba-env.sh.tftpl), invoked by every app's systemd unit:
+#   ExecStart=/usr/local/bin/ikigenba-launch <app>
+#
+# Contract (see AGENTS.md "Service layer"):
+#   1. Source /etc/ikigenba/env for identity/region.
+#   2. Source /opt/<app>/etc/current/manifest.env (non-secret defaults: PORT, etc.).
+#   3. Fetch /ikigenba/${IKIGENBA_ENV}/app-config/<app> from SSM — one
+#      parameter per app, a flat {KEY: value} JSON object. Hard-fail on any
+#      error (missing grant, missing parameter, network) — every app is
+#      seeded before first deploy (secret-less apps hold '{}'), so apps that
+#      expect secrets must not silently start without them.
+#   4. Export each KEY=value. SSM wins over manifest on key collision.
+#   5. exec /opt/<app>/bin/run. Secrets live only in this process's env;
+#      never written to disk.
+
+set -euo pipefail
+
+app="${1:?usage: ikigenba-launch <app>}"
+
+# 1. Identity / region.
+# shellcheck disable=SC1091
+source /etc/ikigenba/env
+
+# 2. Manifest defaults — sourced first so SSM can override on collision.
+manifest="/opt/${app}/etc/current/manifest.env"
+if [[ -f "$manifest" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$manifest"
+  set +a
+fi
+
+# 3. Fetch this app's secrets parameter. Hard-fail on any error, including
+#    ParameterNotFound — every app is seeded before first deploy (secret-less
+#    apps carry an explicit '{}'), so a missing parameter means the app was
+#    never seeded and must not start.
+blob=$(aws ssm get-parameter \
+  --name "/ikigenba/${IKIGENBA_ENV}/app-config/${app}" \
+  --with-decryption \
+  --region "${IKIGENBA_AWS_REGION}" \
+  --query 'Parameter.Value' \
+  --output text)
+
+# 4. Export each pair of the flat {KEY: value} object. jq emits shell-safe
+#    `export KEY=value` lines; eval imports them into this shell.
+assignments=$(jq -r '
+  to_entries[]
+  | "export \(.key)=\(.value | @sh)"
+' <<<"$blob")
+
+eval "$assignments"
+
+# 5. Hand off to the app's entrypoint.
+exec "/opt/${app}/bin/run"

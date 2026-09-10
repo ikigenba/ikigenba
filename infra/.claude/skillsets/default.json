@@ -1,0 +1,10 @@
+{
+  "preload": [
+    "rules",
+    "meta",
+    "align",
+    "principles",
+    "scratch",
+    "devlog"
+  ]
+}
