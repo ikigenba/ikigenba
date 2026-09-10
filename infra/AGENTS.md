@@ -7,8 +7,8 @@ directory names, state key, profile, tags:
 - **`295229566359`** — *durable*. The `ikigenba.dev` account: the authoritative
   `ikigenba.dev` hosted zone, the host answering at `ikigenba.dev`, and the
   backup bucket. Existing content.
-- **`602773793009`** — *ephemeral*. Created 2026-09-10. No resources yet beyond
-  its state backend.
+- **`602773793009`** — *ephemeral*. Created 2026-09-10. Owns the
+  `sandbox.ikigenba.dev` hosted zone, delegated from the durable zone.
 
 The `Durability` tag carries the class (`durable` / `ephemeral`) on everything
 created from here on. New things — buckets, roots, tags — use the `ikigenba-`
@@ -37,7 +37,11 @@ Every path below is relative to this directory (`infra/`). Region `us-east-2`.
   `ikigenba.dev` hosted zone (delegated at the registrar from the management
   account, which is out of scope here), one host answering at `ikigenba.dev` and
   `*.ikigenba.dev`, its security group, instance role and profile, Elastic IP,
-  and the backup bucket `ikigenba-dev-295229566359`. Backend: S3 bucket
+  and the backup bucket `ikigenba-dev-295229566359`. The zone also carries the
+  NS record delegating `sandbox.ikigenba.dev` to the ephemeral account
+  (`aws_route53_record.sandbox_ns` in `shared.tf`); its name servers are
+  hardcoded literals by policy — cross-account values are never read via
+  `terraform_remote_state`. Backend: S3 bucket
   `metaspot-dev-tfstate-295229566359`, key `295229566359/terraform.tfstate`,
   profile `295229566359`, region `us-east-2`, `use_lockfile = true`. Default
   tags: `Project = "metaspot"`, `Account = "295229566359"`,
@@ -51,7 +55,11 @@ Every path below is relative to this directory (`infra/`). Region `us-east-2`.
   and is present in this worktree. A missing bootstrap state file makes `plan`
   propose creating a bucket that already exists — stop and restore the file
   rather than apply.
-- `602773793009/` — the ephemeral account root. No resources yet. Backend: S3
+- `602773793009/` — the ephemeral account root. Owns the
+  `sandbox.ikigenba.dev` hosted zone (`dns.tf`), delegated by an NS record in
+  the durable `ikigenba.dev` zone; ephemeral space names are
+  `<space>.sandbox.ikigenba.dev`, written from this account. The zone's name
+  servers are the `sandbox_name_servers` output. Backend: S3
   bucket `ikigenba-tfstate-602773793009`, key `602773793009/terraform.tfstate`,
   profile `602773793009`, region `us-east-2`, `use_lockfile = true`. Default
   tags: `Project = "ikigenba"`, `Account = "602773793009"`,
