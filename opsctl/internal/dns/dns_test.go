@@ -51,8 +51,12 @@ func newStore(t *testing.T, values map[string]string) config.Store {
 
 // R-YSWA-UVTZ
 func TestVocabulary(t *testing.T) {
-	if KeyProvider != "dns.provider" || KeyZones != "dns.zones" {
-		t.Fatalf("keys = %q, %q", KeyProvider, KeyZones)
+	const (
+		providerKey = KeyProvider
+		zonesKey    = KeyZones
+	)
+	if providerKey != "dns.provider" || zonesKey != "dns.zones" {
+		t.Fatalf("keys = %q, %q", providerKey, zonesKey)
 	}
 	if ErrNotConfigured.Error() != "dns is not configured" ||
 		ErrNoZone.Error() != "no configured zone contains the name" ||
@@ -138,7 +142,7 @@ func TestOpenRejectsIncompleteConfigurationBeforeProvider(t *testing.T) {
 		{"missing separator", map[string]string{KeyProvider: "route53", KeyZones: "example.com"}, `dns.zones malformed: "example.com"`},
 		{"empty name", map[string]string{KeyProvider: "route53", KeyZones: " : Z1"}, `dns.zones malformed: " : Z1"`},
 		{"empty id", map[string]string{KeyProvider: "route53", KeyZones: "example.com: "}, `dns.zones malformed: "example.com: "`},
-		{"later malformed", map[string]string{KeyProvider: "route53", KeyZones: "example.com:Z1, bad"}, `dns.zones malformed: " bad"`},
+		{"first of multiple malformed", map[string]string{KeyProvider: "route53", KeyZones: "example.com:Z1, first bad,second bad"}, `dns.zones malformed: " first bad"`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -161,7 +165,7 @@ func TestOpenRejectsIncompleteConfigurationBeforeProvider(t *testing.T) {
 func TestOpenNormalisesZonesAndPreservesOrder(t *testing.T) {
 	store := newStore(t, map[string]string{
 		KeyProvider: "route53",
-		KeyZones:    " Example.COM. : Z1 , deep.EXAMPLE.com: Z2:part ",
+		KeyZones:    " Example.COM.. : Z1 , deep.EXAMPLE.com: Z2:part ",
 	})
 	client, err := Open(t.Context(), store, Env{Open: func(context.Context, string) (Provider, error) {
 		return &fakeProvider{}, nil
@@ -169,7 +173,7 @@ func TestOpenNormalisesZonesAndPreservesOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []Zone{{Name: "example.com", ID: "Z1"}, {Name: "deep.example.com", ID: "Z2:part"}}
+	want := []Zone{{Name: "example.com.", ID: "Z1"}, {Name: "deep.example.com", ID: "Z2:part"}}
 	if !reflect.DeepEqual(client.Zones, want) {
 		t.Fatalf("zones = %#v, want %#v", client.Zones, want)
 	}
@@ -345,7 +349,7 @@ func serveNSResponse(conn net.Conn, wantName string, nameservers []string) (retu
 	request := make([]byte, 512)
 	n, err := conn.Read(request)
 	if err != nil {
-		return fmt.Errorf("read DNS request: %w", err)
+		return fmt.Errorf("DNS request: %w", err)
 	}
 	request = request[:n]
 	framed := len(request) >= 2 && int(binary.BigEndian.Uint16(request[:2])) == len(request)-2
@@ -386,7 +390,7 @@ func serveNSResponse(conn net.Conn, wantName string, nameservers []string) (retu
 		response = append(response, payload...)
 	}
 	if _, err := conn.Write(response); err != nil {
-		return fmt.Errorf("write DNS response: %w", err)
+		return fmt.Errorf("DNS response: %w", err)
 	}
 	return nil
 }
