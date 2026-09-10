@@ -9,6 +9,7 @@ import (
 )
 
 func TestBinaryHelp(t *testing.T) {
+	// R-N0T5-G71B
 	// R-EALS-YXXE
 	t.Cleanup(func() { _ = os.Remove("opsctl.help.test") })
 	build := exec.Command("go", "build", "-o", "opsctl.help.test", ".")
