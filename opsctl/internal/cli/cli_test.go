@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"bytes"
+	"context"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -41,16 +42,18 @@ func TestRunReturnsWithoutTerminating(t *testing.T) {
 }
 
 func TestDepsFields(t *testing.T) {
-	// R-LXGR-SR2H
+	// R-E9DW-L66P
 	typ := reflect.TypeOf(cli.Deps{})
 	if typ.Kind() != reflect.Struct {
 		t.Fatalf("Deps is %s, want struct", typ.Kind())
 	}
 	want := map[string]reflect.Type{
-		"Root":   reflect.TypeFor[string](),
-		"EUID":   reflect.TypeFor[int](),
-		"Getenv": reflect.TypeFor[func(string) string](),
-		"DNS":    reflect.TypeFor[dns.Env](),
+		"Root":       reflect.TypeFor[string](),
+		"EUID":       reflect.TypeFor[int](),
+		"Getenv":     reflect.TypeFor[func(string) string](),
+		"DNS":        reflect.TypeFor[dns.Env](),
+		"LookPath":   reflect.TypeFor[func(string) (string, error)](),
+		"LookupHost": reflect.TypeFor[func(context.Context, string) ([]string, error)](),
 	}
 	if typ.NumField() != len(want) {
 		t.Fatalf("Deps has %d fields, want %d", typ.NumField(), len(want))

@@ -2,8 +2,11 @@
 package cli
 
 import (
+	"context"
 	"flag"
 	"io"
+	"net"
+	"os/exec"
 	"strings"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/dns"
@@ -46,10 +49,12 @@ var version = "v0.1.0"
 
 // Deps carries what a command cannot be deterministic about.
 type Deps struct {
-	Root   string                  // filesystem root every host path is resolved under ("/" in production)
-	EUID   int                     // effective user id of the process
-	Getenv func(key string) string // process environment; nil reads as empty
-	DNS    dns.Env                 // provider registry and resolver
+	Root       string                                                   // filesystem root every host path is resolved under ("/" in production)
+	EUID       int                                                      // effective user id of the process
+	Getenv     func(key string) string                                  // process environment; nil reads as empty
+	DNS        dns.Env                                                  // provider registry and resolver
+	LookPath   func(file string) (string, error)                        // PATH lookup; nil uses exec.LookPath
+	LookupHost func(ctx context.Context, host string) ([]string, error) // name resolution; nil uses net.DefaultResolver.LookupHost
 }
 
 func (d Deps) getenv(key string) string {
@@ -57,6 +62,20 @@ func (d Deps) getenv(key string) string {
 		return ""
 	}
 	return d.Getenv(key)
+}
+
+func (d Deps) lookPath(file string) (string, error) {
+	if d.LookPath == nil {
+		return exec.LookPath(file)
+	}
+	return d.LookPath(file)
+}
+
+func (d Deps) lookupHost(ctx context.Context, host string) ([]string, error) {
+	if d.LookupHost == nil {
+		return net.DefaultResolver.LookupHost(ctx, host)
+	}
+	return d.LookupHost(ctx, host)
 }
 
 // Run executes the CLI. args are the program arguments without the program
