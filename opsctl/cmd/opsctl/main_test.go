@@ -9,7 +9,7 @@ import (
 )
 
 func TestBinaryHelp(t *testing.T) {
-	// R-N0T5-G71B
+	// R-EALS-YXXE
 	t.Cleanup(func() { _ = os.Remove("opsctl.help.test") })
 	build := exec.Command("go", "build", "-o", "opsctl.help.test", ".")
 	if out, err := build.CombinedOutput(); err != nil {
@@ -43,6 +43,7 @@ Operate the ikigenba platform host. Must run as root.
 Commands:
   config    read and write the host configuration store
   dns       manage DNS records in the zones opsctl owns
+  init      run the setup sequence behind one preflight
   version   print the version
 
 Options:
