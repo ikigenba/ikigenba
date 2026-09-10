@@ -76,8 +76,10 @@ and `opsctl` never reads instance metadata or assumes anything about it.
   and never starts or stops anything. Litestream and per-service backup
   arrive with the first service that has a database.
 - **Two hand-maintained documents.** `bootstrap.md` is platform-agnostic and
-  ends when `ssh root@<zone>` works; `setup.md` takes that host through
-  install, `config set`, and `init`. Neither is spec-governed.
+  ends when `ssh root@<name>` works, `<name>` being the fully-qualified name
+  the host answers at and later the value of `host.name` (D5); `setup.md`
+  takes that host through install, `config set`, and `init`. Neither is
+  spec-governed.
 
 ## Deferred
 

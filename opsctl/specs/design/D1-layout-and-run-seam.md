@@ -20,7 +20,8 @@ opsctl/                              (this sub-project; go.mod lives here)
   knows nothing about flags or output.
 - **`internal/cli`** — everything between the process and the packages that
   do work: the command grammar and usage text, the exit-code taxonomy, the
-  root check, the version string, and the dispatch to each command (D2).
+  root check, the version string, and the dispatch to each command (D2),
+  including `init` and its preflight (D5).
 
   ```go
   package cli
@@ -33,19 +34,22 @@ opsctl/                              (this sub-project; go.mod lives here)
 
   // Deps carries what a command cannot be deterministic about.
   type Deps struct {
-      Root   string                  // filesystem root every host path is resolved under ("/" in production)
-      EUID   int                     // effective user id of the process
-      Getenv func(key string) string // process environment; nil reads as empty
-      DNS    dns.Env                 // provider registry and resolver (D4)
+      Root       string                                                   // filesystem root every host path is resolved under ("/" in production)
+      EUID       int                                                      // effective user id of the process
+      Getenv     func(key string) string                                  // process environment; nil reads as empty
+      DNS        dns.Env                                                  // provider registry and resolver (D4)
+      LookPath   func(file string) (string, error)                        // PATH lookup; nil: exec.LookPath (D5)
+      LookupHost func(ctx context.Context, host string) ([]string, error) // name resolution; nil: net.DefaultResolver.LookupHost (D5)
   }
   ```
 
 - **`internal/dns`** and **`internal/dns/route53`** — DNS records behind a
   provider seam (D4).
 - **`cmd/opsctl`** — `main` wires `os.Args[1:]`, `os.Stdin`, `os.Stdout`,
-  `os.Stderr`, `Root: "/"`, `EUID: os.Geteuid()`, `Getenv: os.Getenv`, and
-  `DNS: dns.Env{Open: route53.Open}` into `cli.Run` and passes the result to
-  `os.Exit`. It contains no other logic.
+  `os.Stderr`, `Root: "/"`, `EUID: os.Geteuid()`, `Getenv: os.Getenv`,
+  `DNS: dns.Env{Open: route53.Open}`, `LookPath: exec.LookPath`, and
+  `LookupHost: net.DefaultResolver.LookupHost` into `cli.Run` and passes the
+  result to `os.Exit`. It contains no other logic.
 
 **`Deps.Root` is why the gates need no root.** Every host path in every design
 is stated as an absolute path such as `/etc/ikigenba/config.json`, and every
@@ -53,7 +57,7 @@ package resolves it under `Deps.Root`. Tests pass a temporary directory as
 `Root` and `EUID: 0`, so the whole surface is exercised in-process by an
 ordinary user with no privileged file touched. Later designs extend `Deps`
 with a command runner and cloud clients as they need them; each extension is
-a re-mint of the `Deps` requirement.
+a re-mint of the `Deps` requirement, as D5's `LookPath` and `LookupHost` were.
 
 Dependencies point one way. `cmd/opsctl` imports `internal/cli`,
 `internal/dns`, and `internal/dns/route53` (the last only to wire the
@@ -71,7 +75,7 @@ so the proof runs as any user.
 
 - R-LV0Z-17L3: The module MUST be `github.com/ikigenba/ikigenba/opsctl` with its own `go.mod` that specifies a Go version, and the direct (non-`// indirect`) `require` entries of that `go.mod` MUST be exactly `github.com/aws/aws-sdk-go-v2 v1.46.0`, `github.com/aws/aws-sdk-go-v2/config v1.33.3`, and `github.com/aws/aws-sdk-go-v2/service/route53 v1.69.0`, verified by a test that reads `go.mod`.
 - R-MUPN-JCBU: Package `internal/cli` MUST export `Run(args []string, stdin io.Reader, stdout, stderr io.Writer, deps Deps) int`, and calling it MUST return an exit code in-process without terminating the calling program.
-- R-LXGR-SR2H: Package `internal/cli` MUST export a `Deps` struct whose fields are exactly `Root string`, `EUID int`, `Getenv func(key string) string`, and `DNS dns.Env`, and a nil `Getenv` MUST read as an empty environment.
+- R-E9DW-L66P: Package `internal/cli` MUST export a `Deps` struct whose fields are exactly `Root string`, `EUID int`, `Getenv func(key string) string`, `DNS dns.Env`, `LookPath func(file string) (string, error)`, and `LookupHost func(ctx context.Context, host string) ([]string, error)`; a nil `Getenv` MUST read as an empty environment, a nil `LookPath` MUST read as `exec.LookPath`, and a nil `LookupHost` MUST read as `net.DefaultResolver.LookupHost`.
 - R-MYDC-ONJX: Every host path a command reads or writes MUST be resolved under `Deps.Root`, verified by running `config set` and `config get` through `Run` with a temporary directory as `Root` and observing the file appear under that directory and nowhere else.
 - R-LYOO-6IT6: Within this module, `cmd/opsctl` MUST import only `internal/cli`, `internal/dns`, and `internal/dns/route53`; `internal/cli` only `internal/config` and `internal/dns`; `internal/dns` only `internal/config`; `internal/dns/route53` only `internal/dns`; `internal/config` nothing; and no package other than `internal/dns/route53` MUST import a package outside the standard library and this module, verified by a test over the packages' import lists.
 - R-N0T5-G71B: The binary built from `./cmd/opsctl`, run with the single argument `--help`, MUST print the usage text of D2 to stdout, write nothing to stderr, and exit 0.

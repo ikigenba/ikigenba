@@ -53,6 +53,7 @@ Operate the ikigenba platform host. Must run as root.
 Commands:
   config    read and write the host configuration store
   dns       manage DNS records in the zones opsctl owns
+  init      run the setup sequence behind one preflight
   version   print the version
 
 Options:
@@ -80,8 +81,8 @@ report the same string. The spec fixes only its shape, a `v`-prefixed
 ## REQUIREMENTS
 
 - R-N211-TYS0: The top-level grammar MUST be `opsctl [options] <command> [arguments]`, accepting exactly the options `-h`/`--help` and `-V`/`--version` before the command and no other top-level options.
-- R-LZWK-KAJV: The top-level command set MUST be exactly `config`, `dns`, and `version`.
-- R-M14G-Y2AK: `opsctl --help` and `opsctl -h` MUST print the top-level usage text quoted above, byte for byte, exactly once to stdout, write nothing to stderr, and exit 0.
+- R-EALS-YXXE: The top-level command set MUST be exactly `config`, `dns`, `init`, and `version`.
+- R-EBTP-CPO3: `opsctl --help` and `opsctl -h` MUST print the top-level usage text quoted above, byte for byte, exactly once to stdout, write nothing to stderr, and exit 0.
 - R-CYFL-TDTY: An invocation with no command MUST write exactly the three lines `opsctl: no command given`, an empty line, and `see 'opsctl --help' for usage` to stderr, nothing to stdout, and exit 2.
 - R-CZNI-75KN: An unknown command MUST write exactly the three lines `opsctl: unknown command '<name>'`, an empty line, and `see 'opsctl --help' for usage` to stderr, nothing to stdout, and exit 2.
 - R-D0VE-KXBC: An unknown top-level option MUST write exactly the three lines `opsctl: unknown option '<option>'`, an empty line, and `see 'opsctl --help' for usage` to stderr, nothing to stdout, and exit 2.

@@ -1,10 +1,11 @@
 # opsctl
 
 The operator CLI for the Ikigenba platform: a Go binary installed to
-`/usr/local/bin` on the single Linux host that runs the core platform
-services, and run there (typically over ssh) by humans and agents to
-bootstrap and manage the platform itself. Module path
-`github.com/ikigenba/ikigenba/opsctl`.
+`/usr/local/bin` on a Linux host that runs one complete deployment of the
+platform, and run there (typically over ssh) by humans and agents to
+bootstrap and manage that deployment. A project runs many such hosts over
+time, each created and torn down independently; `opsctl` reasons only about
+the one it runs on. Module path `github.com/ikigenba/ikigenba/opsctl`.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run writes the code (`cmd/`, `internal/`, `go.mod` are absent until it
