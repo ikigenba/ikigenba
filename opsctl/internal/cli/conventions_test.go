@@ -27,6 +27,7 @@ Operate the ikigenba platform host. Must run as root.
 Commands:
   config    read and write the host configuration store
   dns       manage DNS records in the zones opsctl owns
+  init      run the setup sequence behind one preflight
   version   print the version
 
 Options:
@@ -202,10 +203,10 @@ func TestTopLevelGrammar(t *testing.T) {
 }
 
 func TestCommandSet(t *testing.T) {
-	// R-LZWK-KAJV
+	// R-EALS-YXXE
 	user := depsAt(t, 1)
 
-	if got, want := functionSwitchCases(t, "dispatch"), []string{"config", "dns", "version"}; !slices.Equal(got, want) {
+	if got, want := functionSwitchCases(t, "dispatch"), []string{"config", "dns", "init", "version"}; !slices.Equal(got, want) {
 		t.Fatalf("top-level dispatch cases = %q, want exactly %q", got, want)
 	}
 
@@ -222,6 +223,11 @@ func TestCommandSet(t *testing.T) {
 	stdout, stderr, code = invoke([]string{"dns"}, user)
 	if code != 3 || stdout != "" || stderr != "opsctl: must run as root\n" {
 		t.Errorf("dns: exit %d stdout %q stderr %q, want recognized action refused as non-root", code, stdout, stderr)
+	}
+
+	stdout, stderr, code = invoke([]string{"init", "--help"}, user)
+	if code != 0 || stderr != "" || stdout != wantInitUsage {
+		t.Errorf("init: exit %d stdout %q stderr %q, want init usage", code, stdout, stderr)
 	}
 
 	for _, name := range []string{"status", "other", "config-backup", "VERSION"} {
@@ -280,7 +286,7 @@ func functionSwitchCases(t *testing.T, function string) []string {
 }
 
 func TestTopLevelHelp(t *testing.T) {
-	// R-M14G-Y2AK
+	// R-EBTP-CPO3
 	user := depsAt(t, 1)
 	for _, args := range [][]string{{"--help"}, {"-h"}} {
 		stdout, stderr, code := invoke(args, user)
