@@ -49,13 +49,10 @@ func newStore(t *testing.T, values map[string]string) config.Store {
 	return store
 }
 
-// R-KT83-6BLK
+// R-YSWA-UVTZ
 func TestVocabulary(t *testing.T) {
 	if KeyProvider != "dns.provider" || KeyZones != "dns.zones" {
 		t.Fatalf("keys = %q, %q", KeyProvider, KeyZones)
-	}
-	if got := ZoneKey("route53", "example.com"); got != "dns.route53.zone.example.com" {
-		t.Fatalf("ZoneKey = %q", got)
 	}
 	if ErrNotConfigured.Error() != "dns is not configured" ||
 		ErrNoZone.Error() != "no configured zone contains the name" ||
@@ -127,30 +124,21 @@ func TestExportedShapesAndSignatures(t *testing.T) {
 	}
 }
 
-// R-KZBL-36B1
+// R-YU47-8NKO
 func TestOpenRejectsIncompleteConfigurationBeforeProvider(t *testing.T) {
 	tests := []struct {
-		name    string
-		values  map[string]string
-		wantKey string
+		name   string
+		values map[string]string
+		want   string
 	}{
-		{"missing provider", nil, KeyProvider},
-		{"empty provider", map[string]string{KeyProvider: ""}, KeyProvider},
-		{"missing zones", map[string]string{KeyProvider: "route53"}, KeyZones},
-		{"empty zones", map[string]string{KeyProvider: "route53", KeyZones: ""}, KeyZones},
-		{"missing zone id", map[string]string{KeyProvider: "route53", KeyZones: "example.com"}, "dns.route53.zone.example.com"},
-		{"empty zone id", map[string]string{KeyProvider: "route53", KeyZones: "example.com", "dns.route53.zone.example.com": ""}, "dns.route53.zone.example.com"},
-		{"later zone id missing", map[string]string{
-			KeyProvider:                    "route53",
-			KeyZones:                       "example.com,example.net",
-			"dns.route53.zone.example.com": "Z1",
-		}, "dns.route53.zone.example.net"},
-		{"later zone id empty", map[string]string{
-			KeyProvider:                    "route53",
-			KeyZones:                       "example.com,example.net",
-			"dns.route53.zone.example.com": "Z1",
-			"dns.route53.zone.example.net": "",
-		}, "dns.route53.zone.example.net"},
+		{"missing provider", nil, "dns.provider not set"},
+		{"empty provider", map[string]string{KeyProvider: ""}, "dns.provider not set"},
+		{"missing zones", map[string]string{KeyProvider: "route53"}, "dns.zones not set"},
+		{"empty zones", map[string]string{KeyProvider: "route53", KeyZones: ""}, "dns.zones not set"},
+		{"missing separator", map[string]string{KeyProvider: "route53", KeyZones: "example.com"}, `dns.zones malformed: "example.com"`},
+		{"empty name", map[string]string{KeyProvider: "route53", KeyZones: " : Z1"}, `dns.zones malformed: " : Z1"`},
+		{"empty id", map[string]string{KeyProvider: "route53", KeyZones: "example.com: "}, `dns.zones malformed: "example.com: "`},
+		{"later malformed", map[string]string{KeyProvider: "route53", KeyZones: "example.com:Z1, bad"}, `dns.zones malformed: " bad"`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -159,8 +147,8 @@ func TestOpenRejectsIncompleteConfigurationBeforeProvider(t *testing.T) {
 				called = true
 				return &fakeProvider{}, nil
 			}})
-			if !errors.Is(err, ErrNotConfigured) || !strings.Contains(err.Error(), test.wantKey) {
-				t.Fatalf("Open error = %v, want ErrNotConfigured naming %q", err, test.wantKey)
+			if !errors.Is(err, ErrNotConfigured) || err.Error() != test.want {
+				t.Fatalf("Open error = %v, want ErrNotConfigured with text %q", err, test.want)
 			}
 			if called {
 				t.Fatal("provider opened before all configuration was validated")
@@ -169,13 +157,11 @@ func TestOpenRejectsIncompleteConfigurationBeforeProvider(t *testing.T) {
 	}
 }
 
-// R-L0JH-GY1Q
+// R-YVC3-MFBD
 func TestOpenNormalisesZonesAndPreservesOrder(t *testing.T) {
 	store := newStore(t, map[string]string{
-		KeyProvider:                            "route53",
-		KeyZones:                               " Example.COM. , deep.EXAMPLE.com ",
-		ZoneKey("route53", "example.com"):      "Z1",
-		ZoneKey("route53", "deep.example.com"): "Z2",
+		KeyProvider: "route53",
+		KeyZones:    " Example.COM. : Z1 , deep.EXAMPLE.com: Z2:part ",
 	})
 	client, err := Open(t.Context(), store, Env{Open: func(context.Context, string) (Provider, error) {
 		return &fakeProvider{}, nil
@@ -183,7 +169,7 @@ func TestOpenNormalisesZonesAndPreservesOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []Zone{{Name: "example.com", ID: "Z1"}, {Name: "deep.example.com", ID: "Z2"}}
+	want := []Zone{{Name: "example.com", ID: "Z1"}, {Name: "deep.example.com", ID: "Z2:part"}}
 	if !reflect.DeepEqual(client.Zones, want) {
 		t.Fatalf("zones = %#v, want %#v", client.Zones, want)
 	}
@@ -192,9 +178,8 @@ func TestOpenNormalisesZonesAndPreservesOrder(t *testing.T) {
 // R-L1RD-UPSF
 func TestOpenProviderRegistry(t *testing.T) {
 	store := newStore(t, map[string]string{
-		KeyProvider:                       "route53",
-		KeyZones:                          "example.com",
-		ZoneKey("route53", "example.com"): "Z1",
+		KeyProvider: "route53",
+		KeyZones:    "example.com:Z1",
 	})
 	sentinel := errors.New("open failed")
 	var gotProvider string
@@ -269,9 +254,8 @@ func TestCheckFindsApexRecordsAndComparesDelegationAsSet(t *testing.T) {
 		{Name: "example.com", Type: "NS", Values: apexNameservers},
 	}}
 	store := newStore(t, map[string]string{
-		KeyProvider:                       "route53",
-		KeyZones:                          "example.com",
-		ZoneKey("route53", "example.com"): "Z1",
+		KeyProvider: "route53",
+		KeyZones:    "example.com:Z1",
 	})
 	delegatedNameservers := []string{"ns1.example.net.", "ns2.example.net"}
 	client, err := Open(t.Context(), store, Env{
@@ -332,9 +316,8 @@ func TestCheckUsesDefaultResolverWhenLookupNSIsNil(t *testing.T) {
 		{Name: "example.com", Type: "NS", Values: []string{"ns.example.net"}},
 	}}
 	store := newStore(t, map[string]string{
-		KeyProvider:                       "route53",
-		KeyZones:                          "example.com",
-		ZoneKey("route53", "example.com"): "Z1",
+		KeyProvider: "route53",
+		KeyZones:    "example.com:Z1",
 	})
 	client, err := Open(t.Context(), store, Env{
 		Open: func(context.Context, string) (Provider, error) { return provider, nil },

@@ -30,11 +30,10 @@ Options (add, remove, acme-auth, acme-cleanup):
   --ttl SECONDS       TTL when add creates a record (default 300; acme-auth uses 60)
 
 Configuration keys:
-  dns.provider                the active provider; only 'route53' is supported
-  dns.zones                   comma-separated zones opsctl owns
-  dns.<provider>.zone.<zone>  the provider's id for <zone>
+  dns.provider  the active provider; only 'route53' is supported
+  dns.zones     comma-separated NAME:ID pairs of the zones opsctl owns
 
-NAME is mapped to a zone by longest suffix match against dns.zones.
+NAME is mapped to a zone by longest suffix match against the zone names.
 `
 
 type dnsCall struct {
@@ -86,7 +85,7 @@ func (p *fakeDNSProvider) Remove(ctx context.Context, zoneID, name, typ, value s
 }
 
 func TestDNSHelp(t *testing.T) {
-	// R-LHM2-TQFG
+	// R-YWK0-0722
 	for _, help := range []string{"--help", "-h"} {
 		stdout, stderr, code := invoke([]string{"dns", help}, depsAt(t, 1))
 		if code != 0 || stdout != wantDNSUsage || stderr != "" {
@@ -113,7 +112,7 @@ func TestDNSMissingAndUnknownSubcommand(t *testing.T) {
 }
 
 func TestDNSCommandsOpenConfiguredStore(t *testing.T) {
-	// R-LK1V-L9WU
+	// R-YXRW-DYSR
 	for _, args := range [][]string{
 		{"dns", "list", "example.com"},
 		{"dns", "add", "a.example.com", "TXT", "v"},
@@ -148,28 +147,38 @@ func TestDNSCommandsOpenConfiguredStore(t *testing.T) {
 	}
 
 	missing := []struct {
-		key  string
+		want string
 		seed map[string]string
 	}{
-		{dns.KeyProvider, nil},
-		{dns.KeyZones, map[string]string{dns.KeyProvider: "route53"}},
-		{dns.ZoneKey("route53", "example.com"), map[string]string{dns.KeyProvider: "route53", dns.KeyZones: "example.com"}},
+		{"dns.provider not set", nil},
+		{"dns.zones not set", map[string]string{dns.KeyProvider: "route53"}},
+		{`dns.zones malformed: "example.com"`, map[string]string{dns.KeyProvider: "route53", dns.KeyZones: "example.com"}},
+	}
+	commands := [][]string{
+		{"dns", "list", "example.com"},
+		{"dns", "add", "a.example.com", "TXT", "v"},
+		{"dns", "remove", "a.example.com", "TXT", "v"},
+		{"dns", "check"},
+		{"dns", "acme-auth"},
+		{"dns", "acme-cleanup"},
 	}
 	for _, tc := range missing {
-		deps := depsAt(t, 0)
-		for key, value := range tc.seed {
-			if err := (config.Store{Root: deps.Root}).Set(key, value); err != nil {
-				t.Fatal(err)
+		for _, args := range commands {
+			deps := depsAt(t, 0)
+			for key, value := range tc.seed {
+				if err := (config.Store{Root: deps.Root}).Set(key, value); err != nil {
+					t.Fatal(err)
+				}
 			}
-		}
-		deps.DNS.Open = func(context.Context, string) (dns.Provider, error) {
-			t.Error("Env.Open called for incomplete configuration")
-			return nil, errors.New("unexpected")
-		}
-		stdout, stderr, code := invoke([]string{"dns", "list", "example.com"}, deps)
-		want := "opsctl: " + tc.key + " not set\n"
-		if code != 1 || stdout != "" || stderr != want {
-			t.Errorf("missing %s: exit %d stdout %q stderr %q, want %q", tc.key, code, stdout, stderr, want)
+			deps.DNS.Open = func(context.Context, string) (dns.Provider, error) {
+				t.Error("Env.Open called for incomplete configuration")
+				return nil, errors.New("unexpected")
+			}
+			stdout, stderr, code := invoke(args, deps)
+			want := "opsctl: " + tc.want + "\n"
+			if code != 1 || stdout != "" || stderr != want {
+				t.Errorf("%q open error %s: exit %d stdout %q stderr %q, want %q", args, tc.want, code, stdout, stderr, want)
+			}
 		}
 	}
 }
@@ -467,14 +476,15 @@ func configuredDNSDeps(t *testing.T, provider dns.Provider, zones ...string) cli
 	t.Helper()
 	deps := depsAt(t, 0)
 	store := config.Store{Root: deps.Root}
-	entries := map[string]string{dns.KeyProvider: "route53", dns.KeyZones: strings.Join(zones, ",")}
+	zoneEntries := make([]string, len(zones))
 	for i, zone := range zones {
 		id := "ZONE"
 		if i > 0 {
 			id = fmt.Sprintf("ZONE%d", i+1)
 		}
-		entries[dns.ZoneKey("route53", zone)] = id
+		zoneEntries[i] = zone + ":" + id
 	}
+	entries := map[string]string{dns.KeyProvider: "route53", dns.KeyZones: strings.Join(zoneEntries, ",")}
 	for key, value := range entries {
 		if err := store.Set(key, value); err != nil {
 			t.Fatalf("set %s: %v", key, err)

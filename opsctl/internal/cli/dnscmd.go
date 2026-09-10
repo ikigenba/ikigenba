@@ -31,11 +31,10 @@ Options (add, remove, acme-auth, acme-cleanup):
   --ttl SECONDS       TTL when add creates a record (default 300; acme-auth uses 60)
 
 Configuration keys:
-  dns.provider                the active provider; only 'route53' is supported
-  dns.zones                   comma-separated zones opsctl owns
-  dns.<provider>.zone.<zone>  the provider's id for <zone>
+  dns.provider  the active provider; only 'route53' is supported
+  dns.zones     comma-separated NAME:ID pairs of the zones opsctl owns
 
-NAME is mapped to a zone by longest suffix match against dns.zones.
+NAME is mapped to a zone by longest suffix match against the zone names.
 `
 
 func runDNS(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
@@ -131,21 +130,10 @@ func writeDNSUsageError(stderr io.Writer, message string) exitCode {
 
 func dnsOpenError(stderr io.Writer, err error) exitCode {
 	if errors.Is(err, dns.ErrNotConfigured) {
-		key := dnsConfigKey(err.Error())
-		_, _ = fmt.Fprintf(stderr, "opsctl: %s not set\n", key)
+		_, _ = fmt.Fprintf(stderr, "opsctl: %v\n", err)
 		return exitFail
 	}
 	return dnsError(stderr, err)
-}
-
-func dnsConfigKey(message string) string {
-	for _, field := range strings.Fields(message) {
-		candidate := strings.Trim(field, "'\"(),:;")
-		if strings.HasPrefix(candidate, "dns.") {
-			return candidate
-		}
-	}
-	return "dns configuration"
 }
 
 func dnsError(stderr io.Writer, err error) exitCode {

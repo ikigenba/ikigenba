@@ -28,11 +28,6 @@ var (
 	ErrUnknownProvider = errors.New("unknown dns provider")
 )
 
-// ZoneKey returns the configuration key holding a provider's zone identifier.
-func ZoneKey(provider, zone string) string {
-	return "dns." + provider + ".zone." + zone
-}
-
 // Zone associates a DNS name with its provider identifier.
 type Zone struct {
 	Name string
@@ -89,16 +84,16 @@ func Open(ctx context.Context, store config.Store, env Env) (*Client, error) {
 		return nil, err
 	}
 
-	zoneNames := strings.Split(zonesValue, ",")
-	zones := make([]Zone, 0, len(zoneNames))
-	for _, name := range zoneNames {
-		name = normalise(strings.TrimSpace(name))
-		key := ZoneKey(provider, name)
-		id, getErr := required(store, key)
-		if getErr != nil {
-			return nil, getErr
+	entries := strings.Split(zonesValue, ",")
+	zones := make([]Zone, 0, len(entries))
+	for _, entry := range entries {
+		name, id, ok := strings.Cut(entry, ":")
+		name = strings.TrimSpace(name)
+		id = strings.TrimSpace(id)
+		if !ok || name == "" || id == "" {
+			return nil, notConfigured(fmt.Sprintf("dns.zones malformed: %q", entry))
 		}
-		zones = append(zones, Zone{Name: name, ID: id})
+		zones = append(zones, Zone{Name: normalise(name), ID: id})
 	}
 
 	if env.Open == nil {
@@ -118,14 +113,30 @@ func required(store config.Store, key string) (string, error) {
 	value, err := store.Get(key)
 	if err != nil {
 		if errors.Is(err, config.ErrNotSet) {
-			return "", fmt.Errorf("%w: %q", ErrNotConfigured, key)
+			return "", notConfigured(key + " not set")
 		}
 		return "", err
 	}
 	if value == "" {
-		return "", fmt.Errorf("%w: %q", ErrNotConfigured, key)
+		return "", notConfigured(key + " not set")
 	}
 	return value, nil
+}
+
+type configurationError struct {
+	message string
+}
+
+func (e configurationError) Error() string {
+	return e.message
+}
+
+func (e configurationError) Unwrap() error {
+	return ErrNotConfigured
+}
+
+func notConfigured(message string) error {
+	return configurationError{message: message}
 }
 
 func normalise(name string) string {
@@ -204,20 +215,25 @@ func (c *Client) Check(ctx context.Context, zone Zone) (CheckResult, error) {
 	if wrapped, ok := c.Provider.(providerWithResolver); ok && wrapped.lookupNS != nil {
 		delegated, err = wrapped.lookupNS(ctx, zone.Name)
 	} else {
-		var records []*net.NS
-		records, err = net.DefaultResolver.LookupNS(ctx, zone.Name)
-		if err == nil {
-			delegated = make([]string, len(records))
-			for i, record := range records {
-				delegated[i] = record.Host
-			}
-		}
+		delegated, err = resolveDefaultNS(ctx, zone.Name)
 	}
 	if err != nil {
 		return CheckResult{}, err
 	}
 	result.Delegated = sameNames(result.Nameservers, delegated)
 	return result, nil
+}
+
+func resolveDefaultNS(ctx context.Context, zoneName string) ([]string, error) {
+	records, err := net.DefaultResolver.LookupNS(ctx, zoneName)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(records))
+	for i, record := range records {
+		names[i] = record.Host
+	}
+	return names, nil
 }
 
 func sameNames(left, right []string) bool {
