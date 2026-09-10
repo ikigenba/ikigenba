@@ -283,6 +283,21 @@ func TestInitReportsZoneHostAndWildcardFailures(t *testing.T) {
 	}
 }
 
+func TestInitRejectsEmptyWildcardAddressSet(t *testing.T) {
+	// R-EP8L-K6TQ
+	deps := initDeps(t, map[string]string{"host.name": "example.com"})
+	deps.LookPath = foundInitTools
+	deps.LookupHost = func(context.Context, string) ([]string, error) { return nil, nil }
+
+	want := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\n" +
+		"dns.provider: failed: not set\ndns.zones: failed: not set\nhost.name: ok (example.com)\n" +
+		"wildcard example.com: failed: example.com resolves to  but _opsctl-preflight.example.com resolves to \n"
+	stdout, stderr, code := invoke([]string{"init"}, deps)
+	if code != 2 || stdout != want || stderr != "" {
+		t.Errorf("exit %d stdout %q stderr %q, want exit 2 stdout %q", code, stdout, stderr, want)
+	}
+}
+
 func TestInitIsReadOnlyAndRepeatable(t *testing.T) {
 	// R-EU47-39SI
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{

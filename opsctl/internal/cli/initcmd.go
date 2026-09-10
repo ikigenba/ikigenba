@@ -225,7 +225,7 @@ func (p *initPreflight) checkWildcard() {
 func (p *initPreflight) compareWildcard(probe string, addresses, probeAddresses []string) {
 	left := renderInitAddresses(addresses)
 	right := renderInitAddresses(probeAddresses)
-	if left != right {
+	if left == "" || left != right {
 		_, _ = fmt.Fprintf(&p.output, "wildcard %s: failed: %s resolves to %s but %s resolves to %s\n",
 			p.host, p.host, left, probe, right)
 		p.allOK = false
