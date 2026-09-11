@@ -7,4 +7,7 @@ locals {
   root_volume_gb     = 10
   backup_expiry_days = 7
   ssh_admin_cidr     = "208.118.151.172/32"
+  # The monthly cost budget only notifies; it never stops or changes anything.
+  budget_monthly_usd = 50
+  budget_email       = "mgreenly+602773793009@gmail.com"
 }
