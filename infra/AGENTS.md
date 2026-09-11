@@ -10,8 +10,7 @@ directory names, state key, profile, tags:
 - **`602773793009`** — *ephemeral*. Created 2026-09-10. Owns the
   `sandbox.ikigenba.dev` hosted zone, delegated from the durable zone.
 
-The `Durability` tag carries the class (`durable` / `ephemeral`) on everything
-created from here on. New things — buckets, roots, tags — use the `ikigenba-`
+New things — buckets, roots, tags — use the `ikigenba-`
 name and `Project = "ikigenba"`. Legacy names in the durable account
 (`metaspot-dev-tfstate-295229566359`, `Project = "metaspot"`, the `dev` in
 resource names, the key pair, the SSM path, the host's ssh alias) came in with
@@ -59,11 +58,18 @@ Every path below is relative to this directory (`infra/`). Region `us-east-2`.
   `sandbox.ikigenba.dev` hosted zone (`dns.tf`), delegated by an NS record in
   the durable `ikigenba.dev` zone; ephemeral space names are
   `<space>.sandbox.ikigenba.dev`, written from this account. The zone's name
-  servers are the `sandbox_name_servers` output. Backend: S3
+  servers are the `sandbox_name_servers` output. Also owns the substrate every
+  space is built on and nothing per-space: the `ikigenba-space` launch template
+  (`launch.tf`), the `ikigenba-space-boundary` permissions boundary (`iam.tf`),
+  the backup bucket `sandbox-ikigenba-dev-602773793009` (`backups.tf`), the
+  `ikigenba-space-` security group and default-VPC lookups (`network.tf`), the
+  `ikigenba` key pair (`ssh.tf`), the Parameter Store entry `/ikigenba/account`
+  (`account.tf`), and the account's knobs in `locals.tf`. See "Spaces in the
+  ephemeral account" below. Backend: S3
   bucket `ikigenba-tfstate-602773793009`, key `602773793009/terraform.tfstate`,
   profile `602773793009`, region `us-east-2`, `use_lockfile = true`. Default
   tags: `Project = "ikigenba"`, `Account = "602773793009"`,
-  `Durability = "ephemeral"`, `ManagedBy = "terraform"`. As above, the backend
+  `ManagedBy = "terraform"`. As above, the backend
   block in `providers.tf` is the whole configuration.
 - `bootstrap/602773793009/` — the state-backend root for the ephemeral account;
   calls `bootstrap/modules/state-backend/` to create
@@ -76,9 +82,34 @@ Every path below is relative to this directory (`infra/`). Region `us-east-2`.
 - `templates/` — `ikigenba-env.sh.tftpl` (the first-boot user data) and
   `ikigenba-launch` (the platform launcher it installs). The `dev` host was
   created with these; `295229566359/dev.tf` renders `user_data` from them.
+  Also `space-first-boot.sh`, the user data of the `ikigenba-space` launch
+  template (packages only), and `space-role-policy.json`, the per-space role
+  policy the operator-side tool renders; Terraform never reads the latter.
 
 `.terraform/` directories and provider caches are not tracked; `init` recreates
 them. `.terraform.lock.hcl` files are tracked.
+
+## Spaces in the ephemeral account
+
+A space is one EC2 instance in `602773793009`, launched from the
+`ikigenba-space` launch template by an operator-side tool, not by Terraform.
+The tool creates the instance profile `ikigenba-space-<name>` at launch; its
+role carries the `ikigenba-space-boundary` permissions boundary and an inline
+policy rendered from `templates/space-role-policy.json` (the literal `<name>`
+is the only placeholder). The boundary is the ceiling; the inline policy narrows
+it to the space's own SSM path `/ikigenba/<name>/*`, its own bucket prefix
+`<name>/`, and its own DNS names.
+
+Spaces are registered by the `Space=<name>` tag only; there is no per-space
+Terraform. A space holds no Elastic IP: its public address is the one the
+launch template assigns, and it is written into `sandbox.ikigenba.dev` as
+`<name>` and `*.<name>` A records with TTL 60.
+
+The account's properties for the tool live at Parameter Store
+`/ikigenba/account`, written only by Terraform (`account.tf`); `account` is a
+reserved space name for that reason. Objects in the backup bucket expire after
+`backup_expiry_days` (`locals.tf`). Launch-template changes affect new launches
+only.
 
 ## Credentials
 

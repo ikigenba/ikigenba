@@ -1,0 +1,76 @@
+{
+  "_comment": "Inline policy for the per-space instance role ikigenba-space-<name>. The operator-side tool substitutes the literal <name> with the space name at create time; Terraform never reads this file. The role also carries the ikigenba-space-boundary permissions boundary, which is the ceiling: nothing granted here can exceed it. Zone Z06868051R60S7WNGU1EQ is sandbox.ikigenba.dev in account 602773793009.",
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParametersByPath",
+        "ssm:PutParameter",
+        "ssm:DeleteParameter",
+        "ssm:DeleteParameters"
+      ],
+      "Resource": "arn:aws:ssm:us-east-2:602773793009:parameter/ikigenba/<name>/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "kms:Decrypt",
+        "kms:GenerateDataKey"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "kms:ViaService": "ssm.us-east-2.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::sandbox-ikigenba-dev-602773793009/<name>/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::sandbox-ikigenba-dev-602773793009",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "<name>/",
+            "<name>/*"
+          ]
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": "route53:ChangeResourceRecordSets",
+      "Resource": "arn:aws:route53:::hostedzone/Z06868051R60S7WNGU1EQ",
+      "Condition": {
+        "ForAllValues:StringLike": {
+          "route53:ChangeResourceRecordSetsNormalizedRecordNames": [
+            "<name>.sandbox.ikigenba.dev",
+            "*.<name>.sandbox.ikigenba.dev"
+          ]
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": "route53:ListResourceRecordSets",
+      "Resource": "arn:aws:route53:::hostedzone/Z06868051R60S7WNGU1EQ"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "route53:GetChange",
+      "Resource": "arn:aws:route53:::change/*"
+    }
+  ]
+}

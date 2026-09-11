@@ -24,10 +24,9 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project    = "ikigenba"
-      Account    = "602773793009"
-      Durability = "ephemeral"
-      ManagedBy  = "terraform"
+      Project   = "ikigenba"
+      Account   = "602773793009"
+      ManagedBy = "terraform"
     }
   }
 }
