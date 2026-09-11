@@ -1,5 +1,5 @@
 {
-  "_comment": "Inline policy for the per-space instance role ikigenba-space-<name>. The operator-side tool substitutes the literal <name> with the space name at create time; Terraform never reads this file. The role also carries the ikigenba-space-boundary permissions boundary, which is the ceiling: nothing granted here can exceed it. Zone Z06868051R60S7WNGU1EQ is sandbox.ikigenba.dev in account 602773793009.",
+  "_comment": "Inline policy for the per-space instance role ikigenba-space-<name>. The operator-side tool substitutes three literal placeholders at create time; Terraform never reads this file. <name> is the space name (its SSM path /ikigenba/<name>/* and its bucket prefix <name>/). <domain> is the space's domain, by default <name>.<account domain> where the account domain is the `domain` property at /ikigenba/account; the space's records are <domain> and *.<domain>. <zone_id> is the hosted zone found by longest-suffix match of <domain> over the account's hosted zones. The role also carries the ikigenba-space-boundary permissions boundary, which is the ceiling: nothing granted here can exceed it.",
   "Version": "2012-10-17",
   "Statement": [
     {
@@ -34,12 +34,12 @@
         "s3:PutObject",
         "s3:DeleteObject"
       ],
-      "Resource": "arn:aws:s3:::sandbox-ikigenba-dev-602773793009/<name>/*"
+      "Resource": "arn:aws:s3:::sbx-ikigenba-dev-602773793009/<name>/*"
     },
     {
       "Effect": "Allow",
       "Action": "s3:ListBucket",
-      "Resource": "arn:aws:s3:::sandbox-ikigenba-dev-602773793009",
+      "Resource": "arn:aws:s3:::sbx-ikigenba-dev-602773793009",
       "Condition": {
         "StringLike": {
           "s3:prefix": [
@@ -52,12 +52,12 @@
     {
       "Effect": "Allow",
       "Action": "route53:ChangeResourceRecordSets",
-      "Resource": "arn:aws:route53:::hostedzone/Z06868051R60S7WNGU1EQ",
+      "Resource": "arn:aws:route53:::hostedzone/<zone_id>",
       "Condition": {
         "ForAllValues:StringLike": {
           "route53:ChangeResourceRecordSetsNormalizedRecordNames": [
-            "<name>.sandbox.ikigenba.dev",
-            "*.<name>.sandbox.ikigenba.dev"
+            "<domain>",
+            "*.<domain>"
           ]
         }
       }
@@ -65,7 +65,7 @@
     {
       "Effect": "Allow",
       "Action": "route53:ListResourceRecordSets",
-      "Resource": "arn:aws:route53:::hostedzone/Z06868051R60S7WNGU1EQ"
+      "Resource": "arn:aws:route53:::hostedzone/<zone_id>"
     },
     {
       "Effect": "Allow",

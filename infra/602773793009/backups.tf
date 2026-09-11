@@ -1,5 +1,5 @@
 resource "aws_s3_bucket" "backups" {
-  bucket = "sandbox-ikigenba-dev-602773793009"
+  bucket = "sbx-ikigenba-dev-602773793009"
 }
 
 resource "aws_s3_bucket_public_access_block" "backups" {

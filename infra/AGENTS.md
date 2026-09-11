@@ -10,8 +10,8 @@ everywhere here — directory names, state key, profile, tags:
 - **`295229566359`** — the `ikigenba.dev` account: the authoritative
   `ikigenba.dev` hosted zone, the host answering at `ikigenba.dev`, and the
   backup bucket. Existing content; its substrate is not yet complete.
-- **`602773793009`** — the `sandbox.ikigenba.dev` account. Created
-  2026-09-10; full substrate. Owns the `sandbox.ikigenba.dev` hosted zone,
+- **`602773793009`** — the `sbx.ikigenba.dev` account. Created
+  2026-09-10; full substrate. Owns the `sbx.ikigenba.dev` hosted zone,
   delegated from the `ikigenba.dev` zone.
 
 New things — buckets, roots, tags — use the `ikigenba-`
@@ -43,10 +43,12 @@ Every path below is relative to this directory (`infra/`). Region `us-east-2`.
   account, which is out of scope here), one host answering at `ikigenba.dev` and
   `*.ikigenba.dev`, its security group, instance role and profile, Elastic IP,
   and the backup bucket `ikigenba-dev-295229566359`. The zone also carries the
-  NS record delegating `sandbox.ikigenba.dev` to `602773793009`
-  (`aws_route53_record.sandbox_ns` in `shared.tf`); its name servers are
-  hardcoded literals by policy — cross-account values are never read via
-  `terraform_remote_state`. Backend: S3 bucket
+  NS record delegating the ephemeral subzone to `602773793009` — it will be
+  `aws_route53_record.sbx_ns` for `sbx.ikigenba.dev` in `shared.tf` (phase B
+  of this change updates it; until then it is `aws_route53_record.sandbox_ns`
+  for `sandbox.ikigenba.dev`); its name servers are hardcoded literals by
+  policy — cross-account values are never read via `terraform_remote_state`.
+  Backend: S3 bucket
   `metaspot-dev-tfstate-295229566359`, key `295229566359/terraform.tfstate`,
   profile `295229566359`, region `us-east-2`, `use_lockfile = true`. Default
   tags: `Project = "metaspot"`, `Account = "295229566359"`,
@@ -60,14 +62,17 @@ Every path below is relative to this directory (`infra/`). Region `us-east-2`.
   and is present in this worktree. A missing bootstrap state file makes `plan`
   propose creating a bucket that already exists — stop and restore the file
   rather than apply.
-- `602773793009/` — the `sandbox.ikigenba.dev` account root. Owns the
-  `sandbox.ikigenba.dev` hosted zone (`dns.tf`), delegated by an NS record in
-  the `ikigenba.dev` zone in `295229566359`; space names are
-  `<space>.sandbox.ikigenba.dev`, written from this account. The zone's name
-  servers are the `sandbox_name_servers` output. Also owns the substrate every
-  space is built on and nothing per-space: the `ikigenba-space` launch template
-  (`launch.tf`), the `ikigenba-space-boundary` permissions boundary (`iam.tf`),
-  the backup bucket `sandbox-ikigenba-dev-602773793009` (`backups.tf`), the
+- `602773793009/` — the `sbx.ikigenba.dev` account root. The account's
+  `domain` is `sbx.ikigenba.dev`; it owns the `sbx.ikigenba.dev` hosted zone
+  (`dns.tf`), delegated by an NS record in the `ikigenba.dev` zone in
+  `295229566359`, and spaces are `<name>.sbx.ikigenba.dev` by default, written
+  from this account. The zone's name servers are the `sbx_name_servers`
+  output. Also owns the substrate every space is built on and nothing
+  per-space: the `ikigenba-space` launch template (`launch.tf`), the
+  `ikigenba-space-boundary` permissions boundary (`iam.tf`; its Route 53
+  statement covers every hosted zone in the account — the per-space policy
+  narrows to one), the backup bucket `sbx-ikigenba-dev-602773793009`
+  (`backups.tf`), the
   `ikigenba-space-` security group and default-VPC lookups (`network.tf`), the
   `ikigenba` key pair (`ssh.tf`), the Parameter Store entry `/ikigenba/account`
   (`account.tf`), the monthly cost budget `ikigenba-monthly` (`budget.tf`; its
@@ -101,21 +106,30 @@ them. `.terraform.lock.hcl` files are tracked.
 
 A space is one EC2 instance in `602773793009`, launched from the
 `ikigenba-space` launch template by an operator-side tool, not by Terraform.
+A space has a *domain*: by default `<name>.<account domain>`, where the
+account domain is the `domain` property at `/ikigenba/account`
+(`sbx.ikigenba.dev`), or one given explicitly — any name whose hosted zone is
+in the account, the apex of such a zone included. The tool finds the zone by
+longest-suffix match of the domain over the account's hosted zones.
+
 The tool creates the instance profile `ikigenba-space-<name>` at launch; its
 role carries the `ikigenba-space-boundary` permissions boundary and an inline
-policy rendered from `templates/space-role-policy.json` (the literal `<name>`
-is the only placeholder). The boundary is the ceiling; the inline policy narrows
-it to the space's own SSM path `/ikigenba/<name>/*`, its own bucket prefix
-`<name>/`, and its own DNS names.
+policy rendered from `templates/space-role-policy.json`, which has three
+literal placeholders: `<name>`, `<domain>`, and `<zone_id>` (the zone found
+above). The boundary is the ceiling; the inline policy narrows it to the
+space's own SSM path `/ikigenba/<name>/*`, its own bucket prefix `<name>/`,
+and its own DNS names `<domain>` and `*.<domain>` in its one zone.
 
-Spaces are registered by the `Space=<name>` tag only; there is no per-space
-Terraform. A space holds no Elastic IP: its public address is the one the
-launch template assigns, and it is written into `sandbox.ikigenba.dev` as
-`<name>` and `*.<name>` A records with TTL 60.
+Spaces are registered by the `Space=<name>` tag; the instance also carries
+`Domain=<fqdn>`. There is no per-space Terraform. A space holds no Elastic IP:
+its public address is the one the launch template assigns, and it is written
+into the space's zone as the `<domain>` and `*.<domain>` A records with
+TTL 60.
 
 The account's properties for the tool live at Parameter Store
 `/ikigenba/account`, written only by Terraform (`account.tf`); `account` is a
-reserved space name for that reason. Objects in the backup bucket expire after
+reserved space name for that reason. `sbx` and the manifest service names are
+reserved too: a tool must refuse them. Objects in the backup bucket expire after
 `backup_expiry_days` (`locals.tf`). Launch-template changes affect new launches
 only.
 

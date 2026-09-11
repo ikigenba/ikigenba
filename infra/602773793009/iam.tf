@@ -50,7 +50,10 @@ resource "aws_iam_policy" "space_boundary" {
           "route53:ChangeResourceRecordSets",
           "route53:ListResourceRecordSets",
         ]
-        Resource = aws_route53_zone.sandbox.arn
+        # Any hosted zone in the account: a space's domain may sit in the sbx
+        # zone or in any other zone this account owns, and the per-space inline
+        # policy narrows to the one zone that space's domain resolves to.
+        Resource = "arn:aws:route53:::hostedzone/*"
       },
       {
         Effect   = "Allow"

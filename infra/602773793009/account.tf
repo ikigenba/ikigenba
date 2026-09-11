@@ -1,10 +1,9 @@
 resource "aws_ssm_parameter" "account" {
   name        = "/ikigenba/account"
   type        = "String"
-  description = "Account properties read by devctl; written only by terraform."
+  description = "Account properties read by devctl; written only by terraform. `domain` is the default suffix for a space's domain."
   value = jsonencode({
-    zone_name                 = "sandbox.ikigenba.dev"
-    zone_id                   = aws_route53_zone.sandbox.zone_id
+    domain                    = "sbx.ikigenba.dev"
     backup_bucket             = aws_s3_bucket.backups.bucket
     launch_template_id        = aws_launch_template.space.id
     permissions_boundary_arn  = aws_iam_policy.space_boundary.arn
