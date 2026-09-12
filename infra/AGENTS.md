@@ -41,11 +41,12 @@ Every path below is relative to this directory (`infra/`). Region `us-east-2`.
 - `295229566359/` — the `ikigenba.dev` account root. The account's `domain`
   is `ikigenba.dev`; it owns the authoritative `ikigenba.dev` hosted zone
   (`shared.tf`; delegated at the registrar from the management account, which
-  is out of scope here), and spaces are `<name>.ikigenba.dev` by default,
-  written from this account. The zone also carries the NS record delegating
-  `sbx.ikigenba.dev` to `602773793009` (`aws_route53_record.sbx_ns` in
-  `shared.tf`); its name servers are hardcoded literals by policy —
-  cross-account values are never read via `terraform_remote_state`. Also owns
+  is out of scope here), and every space's domain ends in `ikigenba.dev`
+  (`ikigenba.dev` itself for the apex space), written from this account. The
+  zone also carries the NS record delegating `sbx.ikigenba.dev` to
+  `602773793009` (`aws_route53_record.sbx_ns` in `shared.tf`); its name
+  servers are hardcoded literals by policy — cross-account values are never
+  read via `terraform_remote_state`. Also owns
   the `dev` host (`dev.tf`): one instance answering at `ikigenba.dev` and
   `*.ikigenba.dev`, its `dev-` security group, instance role and profile, and
   Elastic IP. And the substrate every space is built on and nothing per-space:
@@ -78,9 +79,10 @@ Every path below is relative to this directory (`infra/`). Region `us-east-2`.
 - `602773793009/` — the `sbx.ikigenba.dev` account root. The account's
   `domain` is `sbx.ikigenba.dev`; it owns the `sbx.ikigenba.dev` hosted zone
   (`dns.tf`), delegated by an NS record in the `ikigenba.dev` zone in
-  `295229566359`, and spaces are `<name>.sbx.ikigenba.dev` by default, written
-  from this account. The zone's name servers are the `sbx_name_servers`
-  output. Also owns the substrate every space is built on and nothing
+  `295229566359`, and every space's domain ends in `sbx.ikigenba.dev`
+  (`sbx.ikigenba.dev` itself for the apex space), written from this account.
+  The zone's name servers are the `sbx_name_servers` output. Also owns the
+  substrate every space is built on and nothing
   per-space: the `ikigenba-space` launch template (`launch.tf`), the
   `ikigenba-space-boundary` permissions boundary (`iam.tf`; its Route 53
   statement covers every hosted zone in the account — the per-space policy
@@ -121,41 +123,54 @@ A space is one EC2 instance in an account, launched from that account's
 The contract below is the same in both accounts; only these per-account
 values differ:
 
-| account | `domain` | `backup_expiry_days` | `budget_monthly_usd` | `deploy_from_main_only` | `delete_secrets_on_destroy` | `delete_backups_on_destroy` |
-|---|---|---|---|---|---|---|
-| `295229566359` | `ikigenba.dev` | 30 | 75 | `true` | `false` | `false` |
-| `602773793009` | `sbx.ikigenba.dev` | 7 | 50 | `false` | `true` | `true` |
+| account | `domain` | `backup_expiry_days` | `backup_full_seconds` | `backup_incremental_seconds` | `backup_wal_seconds` | `budget_monthly_usd` | `deploy_from_main_only` | `delete_secrets_on_destroy` | `delete_backups_on_destroy` |
+|---|---|---|---|---|---|---|---|---|---|
+| `295229566359` | `ikigenba.dev` | 30 | 604800 | 86400 | 900 | 75 | `true` | `false` | `false` |
+| `602773793009` | `sbx.ikigenba.dev` | 7 | 0 | 0 | 0 | 50 | `false` | `true` | `true` |
 
-A space has a *domain*: by default `<name>.<account domain>`, where the
-account domain is the `domain` property at `/ikigenba/account`, or one given
-explicitly — any name whose hosted zone is in the account, the apex of such a
-zone included. The tool finds the zone by longest-suffix match of the domain
-over the account's hosted zones.
+A space has one identifier: its full domain — `foo.sbx.ikigenba.dev`, say, or
+the account domain itself for the apex space. The tool creates a space with
+`<domain> --account <account>`; the domain must end in the account's `domain`
+property at `/ikigenba/account` (equal to it is the apex space), and there is
+no separate name. The tool finds the zone by longest-suffix match of the
+domain over the account's hosted zones.
 
-The tool creates the instance profile `ikigenba-space-<name>` at launch; its
+The tool creates the instance profile `ikigenba-space-<domain>` at launch; its
 role carries the `ikigenba-space-boundary` permissions boundary and an inline
-policy rendered from `templates/space-role-policy.json`, which has five
-literal placeholders: `<name>`, `<domain>`, `<zone_id>` (the zone found
-above), `<account_id>` (the account the space is created in), and `<bucket>`
-(the account's backup bucket; `/ikigenba/account` supplies it as
-`backup_bucket`, and the boundary ARN as `permissions_boundary_arn`). The
-boundary is the ceiling; the inline policy narrows it to the space's own SSM
-path `/ikigenba/<name>/*`, its own bucket prefix `<name>/`, and its own DNS
+policy rendered from `templates/space-role-policy.json`, which has four
+literal placeholders: `<domain>`, `<zone_id>` (the zone found above),
+`<account_id>` (the account the space is created in), and `<bucket>` (the
+account's backup bucket; `/ikigenba/account` supplies it as `backup_bucket`,
+and the boundary ARN as `permissions_boundary_arn`). The boundary is the
+ceiling; the inline policy narrows it to the space's own SSM path
+`/ikigenba/<domain>/*`, its own bucket prefix `<domain>/`, and its own DNS
 names `<domain>` and `*.<domain>` in its one zone.
 
-Spaces are registered by the `Space=<name>` tag; the instance also carries
-`Domain=<fqdn>`. There is no per-space Terraform. A space holds no Elastic IP:
-its public address is the one the launch template assigns, and it is written
-into the space's zone as the `<domain>` and `*.<domain>` A records with
-TTL 60.
+Spaces are registered by the `Space=<domain>` tag, the only registry tag.
+There is no per-space Terraform. A space holds no Elastic IP: its public
+address is the one the launch template assigns, and it is written into the
+space's zone as the `<domain>` and `*.<domain>` A records with TTL 60.
+
+A space's secrets are one SSM SecureString per app: `/ikigenba/<domain>/<app>`
+holds a flat JSON object of that app's secrets. The values come from the
+operator's machine at space create — the platform generates nothing — and the
+host reads the entry through its instance role at app start.
+
+Backups are the account's three periods, in seconds, with `0` meaning never:
+`backup_full_seconds`, `backup_incremental_seconds`, and `backup_wal_seconds`
+(`locals.tf`, published in `/ikigenba/account`; see the table above). Every
+service in a space uses them, and the tool hands the three to the host at
+create. `602773793009` never backs up — its data is seed data — and its
+`delete_backups_on_destroy` and bucket expiry are unchanged by that.
 
 The account's properties for the tool live at Parameter Store
-`/ikigenba/account`, written only by Terraform (`account.tf`); `account` is a
-reserved space name for that reason. `sbx` (in `295229566359` it is the
-delegation to `602773793009`, not a space) and the manifest service names are
-reserved too: a tool must refuse them. Objects in the backup bucket expire after
-`backup_expiry_days` (`locals.tf`; see the table above). Launch-template
-changes affect new launches only.
+`/ikigenba/account`, written only by Terraform (`account.tf`); no space's
+path can collide with it, since every space's domain ends in the account
+domain. Reserved domains, which a tool must refuse: `sbx.<account domain>` (in `295229566359` it is the delegation to
+`602773793009`, not a space) and any `<app>.<existing space domain>` — apps
+answer at `<app>.<space domain>`, and a space there would shadow one. Objects
+in the backup bucket expire after `backup_expiry_days` (`locals.tf`; see the
+table above). Launch-template changes affect new launches only.
 
 ## Credentials
 

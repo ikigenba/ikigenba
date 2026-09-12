@@ -14,7 +14,7 @@ output "space_boundary_arn" {
 }
 
 output "backup_bucket" {
-  description = "Backup bucket shared by all spaces; each space writes under its own <name>/ prefix."
+  description = "Backup bucket shared by all spaces; each space writes under its own <domain>/ prefix."
   value       = aws_s3_bucket.backups.bucket
 }
 

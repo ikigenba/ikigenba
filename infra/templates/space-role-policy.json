@@ -1,5 +1,5 @@
 {
-  "_comment": "Inline policy for the per-space instance role ikigenba-space-<name>. The operator-side tool substitutes five literal placeholders at create time; Terraform never reads this file. <name> is the space name (its SSM path /ikigenba/<name>/* and its bucket prefix <name>/). <domain> is the space's domain, by default <name>.<account domain> where the account domain is the `domain` property at /ikigenba/account; the space's records are <domain> and *.<domain>. <zone_id> is the hosted zone found by longest-suffix match of <domain> over the account's hosted zones. <account_id> is the account the space is created in. <bucket> is the account's backup bucket, the `backup_bucket` property at /ikigenba/account; the role's permissions boundary ARN is the `permissions_boundary_arn` property there. The boundary is the ceiling: nothing granted here can exceed it.",
+  "_comment": "Inline policy for the per-space instance role ikigenba-space-<domain>. The operator-side tool substitutes four literal placeholders at create time; Terraform never reads this file. A space has one identifier: its full domain, <domain> (for example foo.sbx.ikigenba.dev, or the account domain itself for the apex space). It must end in the `domain` property at /ikigenba/account. That one value is the SSM path segment (/ikigenba/<domain>/*), the bucket prefix (<domain>/), the role name suffix, and the two DNS names the space owns, <domain> and *.<domain>. <zone_id> is the hosted zone found by longest-suffix match of <domain> over the account's hosted zones. <account_id> is the account the space is created in. <bucket> is the account's backup bucket, the `backup_bucket` property at /ikigenba/account; the role's permissions boundary ARN is the `permissions_boundary_arn` property there. The boundary is the ceiling: nothing granted here can exceed it.",
   "Version": "2012-10-17",
   "Statement": [
     {
@@ -12,7 +12,7 @@
         "ssm:DeleteParameter",
         "ssm:DeleteParameters"
       ],
-      "Resource": "arn:aws:ssm:us-east-2:<account_id>:parameter/ikigenba/<name>/*"
+      "Resource": "arn:aws:ssm:us-east-2:<account_id>:parameter/ikigenba/<domain>/*"
     },
     {
       "Effect": "Allow",
@@ -34,7 +34,7 @@
         "s3:PutObject",
         "s3:DeleteObject"
       ],
-      "Resource": "arn:aws:s3:::<bucket>/<name>/*"
+      "Resource": "arn:aws:s3:::<bucket>/<domain>/*"
     },
     {
       "Effect": "Allow",
@@ -43,8 +43,8 @@
       "Condition": {
         "StringLike": {
           "s3:prefix": [
-            "<name>/",
-            "<name>/*"
+            "<domain>/",
+            "<domain>/*"
           ]
         }
       }
