@@ -24,7 +24,7 @@ resource "aws_security_group" "dev" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["208.118.151.172/32"]
+    cidr_blocks = [local.ssh_admin_cidr]
   }
 
   egress {
