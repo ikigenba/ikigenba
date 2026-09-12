@@ -67,14 +67,18 @@ resource "aws_iam_role_policy" "dev_backups_rw" {
         Action = [
           "s3:GetObject",
           "s3:PutObject",
-          "s3:DeleteObject",
         ]
-        Resource = "${aws_s3_bucket.backups.arn}/*"
+        Resource = "${aws_s3_bucket.backups.arn}/ikigenba.dev/*"
       },
       {
         Effect   = "Allow"
         Action   = "s3:ListBucket"
         Resource = aws_s3_bucket.backups.arn
+        Condition = {
+          StringLike = {
+            "s3:prefix" = ["ikigenba.dev/", "ikigenba.dev/*"]
+          }
+        }
       },
     ]
   })
@@ -110,11 +114,8 @@ resource "aws_iam_role_policy" "dev_app_config" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect = "Allow"
-        Action = [
-          "ssm:GetParameter",
-          "ssm:PutParameter",
-        ]
+        Effect   = "Allow"
+        Action   = "ssm:GetParameter"
         Resource = "arn:aws:ssm:us-east-2:295229566359:parameter/ikigenba/dev/app-config/*"
       },
       {
@@ -146,6 +147,11 @@ resource "aws_instance" "dev" {
   root_block_device {
     volume_type = "gp3"
     volume_size = 10
+  }
+
+  metadata_options {
+    http_endpoint = "enabled"
+    http_tokens   = "required"
   }
 
   user_data = join("\n", [

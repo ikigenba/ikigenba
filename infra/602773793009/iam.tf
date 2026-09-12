@@ -10,11 +10,12 @@ resource "aws_iam_policy" "space_boundary" {
           "ssm:GetParameter",
           "ssm:GetParameters",
           "ssm:GetParametersByPath",
-          "ssm:PutParameter",
-          "ssm:DeleteParameter",
-          "ssm:DeleteParameters",
         ]
-        # Two wildcard segments: /ikigenba/<space>/<key>. /ikigenba/account is out of reach.
+        # `*` matches `/`, so parameter/ikigenba/*/* covers every path under
+        # /ikigenba/ that has at least two more segments — every space's
+        # /ikigenba/<domain>/<app> — and excludes only /ikigenba/account (one
+        # segment). Read-only: the operator-side tool is the only writer of
+        # secrets.
         Resource = "arn:aws:ssm:us-east-2:602773793009:parameter/ikigenba/*/*"
       },
       {
@@ -35,7 +36,6 @@ resource "aws_iam_policy" "space_boundary" {
         Action = [
           "s3:GetObject",
           "s3:PutObject",
-          "s3:DeleteObject",
         ]
         Resource = "${aws_s3_bucket.backups.arn}/*"
       },
@@ -46,13 +46,22 @@ resource "aws_iam_policy" "space_boundary" {
       },
       {
         Effect = "Allow"
-        Action = [
-          "route53:ChangeResourceRecordSets",
-          "route53:ListResourceRecordSets",
-        ]
+        Action = "route53:ChangeResourceRecordSets"
         # Any hosted zone in the account: a space's domain may sit in the sbx
         # zone or in any other zone this account owns, and the per-space inline
         # policy narrows to the one zone that space's domain resolves to.
+        # Record types A and TXT only: no space role can rewrite an NS
+        # delegation.
+        Resource = "arn:aws:route53:::hostedzone/*"
+        Condition = {
+          "ForAllValues:StringEquals" = {
+            "route53:ChangeResourceRecordSetsRecordTypes" = ["A", "TXT"]
+          }
+        }
+      },
+      {
+        Effect   = "Allow"
+        Action   = "route53:ListResourceRecordSets"
         Resource = "arn:aws:route53:::hostedzone/*"
       },
       {

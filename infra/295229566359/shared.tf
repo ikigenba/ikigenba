@@ -1,9 +1,16 @@
 resource "aws_route53_zone" "env" {
   name    = "ikigenba.dev"
   comment = "ikigenba.dev apex, delegated at the registrar from the mgmt account"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
-# Name servers of the ephemeral account's sbx.ikigenba.dev zone (account 602773793009), hardcoded by policy.
+# Name servers of the sbx.ikigenba.dev zone in account 602773793009, hardcoded
+# by policy (cross-account values are never read via terraform_remote_state).
+# These literals are the `sbx_name_servers` output of infra/602773793009 and
+# must be re-copied from it if that zone is ever recreated.
 resource "aws_route53_record" "sbx_ns" {
   zone_id = aws_route53_zone.env.zone_id
   name    = "sbx.ikigenba.dev"

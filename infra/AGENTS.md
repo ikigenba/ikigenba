@@ -72,10 +72,14 @@ Every path below is relative to this directory (`infra/`). Region `us-east-2`.
 - `bootstrap/295229566359/` — the state-backend root for the account; calls
   `bootstrap/modules/state-backend/` to create the tfstate bucket above. Same
   default tags plus `Component = "bootstrap"`.
-  **Local state**: `terraform.tfstate` sits beside its `.tf` files, gitignored,
-  and is present in this worktree. A missing bootstrap state file makes `plan`
-  propose creating a bucket that already exists — stop and restore the file
-  rather than apply.
+  **Local state**: `terraform.tfstate` (and its `.backup`) sits beside its
+  `.tf` files and is committed — `.gitignore` names the bootstrap state files
+  explicitly. It is committed because it is the only record that Terraform
+  owns the state bucket: a fresh clone must plan `No changes` here, and a
+  missing bootstrap state file would make `plan` propose creating a bucket
+  that already exists — if that happens, stop and restore the file rather
+  than apply. The state holds only the bucket and its configuration
+  resources, nothing secret.
 - `602773793009/` — the `sbx.ikigenba.dev` account root. The account's
   `domain` is `sbx.ikigenba.dev`; it owns the `sbx.ikigenba.dev` hosted zone
   (`dns.tf`), delegated by an NS record in the `ikigenba.dev` zone in
@@ -87,8 +91,9 @@ Every path below is relative to this directory (`infra/`). Region `us-east-2`.
   `ikigenba-space-boundary` permissions boundary (`iam.tf`; its Route 53
   statement covers every hosted zone in the account — the per-space policy
   narrows to one), the backup bucket `sbx-ikigenba-dev-602773793009`
-  (`backups.tf`), the
-  `ikigenba-space-` security group and default-VPC lookups (`network.tf`), the
+  (`backups.tf`; the one exception to the `ikigenba-` naming rule — it
+  predates the rule, and renaming a bucket is a destroy and recreate), the
+  `ikigenba-space-` security group and default-VPC lookup (`network.tf`), the
   `ikigenba` key pair (`ssh.tf`), the Parameter Store entry `/ikigenba/account`
   (`account.tf`), the monthly cost budget `ikigenba-monthly` (`budget.tf`; its
   amount and email are the `budget_monthly_usd` and `budget_email` locals),
@@ -102,8 +107,8 @@ Every path below is relative to this directory (`infra/`). Region `us-east-2`.
   calls `bootstrap/modules/state-backend/` to create
   `ikigenba-tfstate-602773793009`. Same default tags plus
   `Component = "bootstrap"`. **Local state**, same rule as above: its
-  `terraform.tfstate` is gitignored and present in this worktree; if it is
-  missing, stop and restore it rather than apply.
+  `terraform.tfstate` is committed; if `plan` proposes creating the bucket,
+  the state is missing — stop and restore it rather than apply.
 - `bootstrap/modules/state-backend/` — the module both `bootstrap/*/` roots
   source.
 - `templates/` — `ikigenba-env.sh.tftpl` (the first-boot user data) and
@@ -138,13 +143,28 @@ domain over the account's hosted zones.
 The tool creates the instance profile `ikigenba-space-<domain>` at launch; its
 role carries the `ikigenba-space-boundary` permissions boundary and an inline
 policy rendered from `templates/space-role-policy.json`, which has four
-literal placeholders: `<domain>`, `<zone_id>` (the zone found above),
-`<account_id>` (the account the space is created in), and `<bucket>` (the
-account's backup bucket; `/ikigenba/account` supplies it as `backup_bucket`,
-and the boundary ARN as `permissions_boundary_arn`). The boundary is the
-ceiling; the inline policy narrows it to the space's own SSM path
-`/ikigenba/<domain>/*`, its own bucket prefix `<domain>/`, and its own DNS
-names `<domain>` and `*.<domain>` in its one zone.
+literal placeholders the tool substitutes at create time (Terraform never
+reads the file, and the file carries no comment of its own — IAM's policy
+grammar allows only `Version`, `Id`, and `Statement`):
+
+- `<domain>` — the space's one identifier, its full domain (`foo.sbx.ikigenba.dev`,
+  say, or the account domain itself for the apex space); it must end in the
+  `domain` property at `/ikigenba/account`. That one value is the SSM path
+  segment (`/ikigenba/<domain>/*`), the bucket prefix (`<domain>/`), the role
+  name suffix, and the two DNS names the space owns, `<domain>` and
+  `*.<domain>`.
+- `<zone_id>` — the hosted zone found by longest-suffix match of `<domain>`
+  over the account's hosted zones.
+- `<account_id>` — the account the space is created in.
+- `<bucket>` — the account's backup bucket, the `backup_bucket` property at
+  `/ikigenba/account`; the role's permissions boundary ARN is the
+  `permissions_boundary_arn` property there.
+
+The boundary is the ceiling: nothing granted in the inline policy can exceed
+it. The inline policy narrows it to the space's own SSM path
+`/ikigenba/<domain>/*` (read only), its own bucket prefix `<domain>/` (get,
+put, list), and its own DNS names `<domain>` and `*.<domain>` in its one zone
+(record types `A` and `TXT` only).
 
 Spaces are registered by the `Space=<domain>` tag, the only registry tag.
 There is no per-space Terraform. A space holds no Elastic IP: its public
@@ -154,7 +174,9 @@ space's zone as the `<domain>` and `*.<domain>` A records with TTL 60.
 A space's secrets are one SSM SecureString per app: `/ikigenba/<domain>/<app>`
 holds a flat JSON object of that app's secrets. The values come from the
 operator's machine at space create — the platform generates nothing — and the
-host reads the entry through its instance role at app start.
+host reads the entry through its instance role at app start. The host can
+only read it; the operator-side tool is the only writer (see "Hosts write,
+never delete").
 
 Backups are the account's three periods, in seconds, with `0` meaning never:
 `backup_full_seconds`, `backup_incremental_seconds`, and `backup_wal_seconds`
@@ -166,17 +188,63 @@ create. `602773793009` never backs up — its data is seed data — and its
 The account's properties for the tool live at Parameter Store
 `/ikigenba/account`, written only by Terraform (`account.tf`); no space's
 path can collide with it, since every space's domain ends in the account
-domain. Reserved domains, which a tool must refuse: `sbx.<account domain>` (in `295229566359` it is the delegation to
-`602773793009`, not a space) and any `<app>.<existing space domain>` — apps
-answer at `<app>.<space domain>`, and a space there would shadow one. Objects
-in the backup bucket expire after `backup_expiry_days` (`locals.tf`; see the
-table above). Launch-template changes affect new launches only.
+domain. Reserved domains, which a tool must refuse — the general rule is
+that a domain is refused if the account's zone does not serve it:
+
+- `sbx.<account domain>` exactly, and any domain ending in
+  `.sbx.<account domain>`, when created in the account that delegates it away
+  (in `295229566359`, `sbx.ikigenba.dev` is the NS delegation to
+  `602773793009`, not a space; records under it in the `ikigenba.dev` zone
+  would be shadowed by the delegation and never served).
+- any `<app>.<existing space domain>` — apps answer at `<app>.<space domain>`,
+  and a space there would shadow one.
+
+Objects in the backup bucket expire after `backup_expiry_days` (`locals.tf`;
+see the table above). Launch-template changes affect new launches only.
+
+### Hosts write, never delete
+
+No host role — space roles and the `dev` host alike — holds `s3:DeleteObject`
+or `ssm:PutParameter`/`ssm:DeleteParameter`, and the `ikigenba-space-boundary`
+does not grant them, so no inline policy can. Bucket expiry
+(`backup_expiry_days`) is the only way a backup is deleted; the operator-side
+tool is the only writer of secrets. Host DNS writes are limited to record
+types `A` and `TXT` (boundary, space policy, and the space template's
+`ChangeResourceRecordSets` condition), so no host can rewrite an NS
+delegation. Accepted caveat: IAM cannot express "one label deep", so the apex
+space's `*.<account domain>` reach covers sibling spaces' `A` records too; a
+hosted zone is protected against destruction in Terraform
+(`prevent_destroy`), as is each state bucket. The `dev` host is the one
+exception to the DNS narrowing: it writes the whole `ikigenba.dev` zone, as
+it always has.
 
 ## Credentials
 
 Profiles `295229566359` and `602773793009` are under `sso-session metaspot` in
-`~/.aws/config`. Every Terraform command needs a live session — this is the
-precondition for the gates:
+`~/.aws/config`. AWS CLI v2 is required (`sso-session` stanzas are v2 only).
+The operator fills the `<placeholders>`:
+
+```
+[sso-session metaspot]
+sso_start_url = <SSO start URL>
+sso_region = <SSO region>
+sso_registration_scopes = sso:account:access
+
+[profile 295229566359]
+sso_session = metaspot
+sso_account_id = 295229566359
+sso_role_name = <role name>
+region = us-east-2
+
+[profile 602773793009]
+sso_session = metaspot
+sso_account_id = 602773793009
+sso_role_name = <role name>
+region = us-east-2
+```
+
+Every Terraform command needs a live session — this is the precondition for
+the gates:
 
 ```
 aws sso login --sso-session metaspot
@@ -203,6 +271,8 @@ Terraform 1.10+ is required (`required_version`); the AWS provider is pinned
 
 The `dev` host is Amazon Linux 2023, user `ec2-user`. The key pair `ikigenba_dev`
 is declared in `295229566359/shared.tf`; the private key is
-`~/.ssh/id_ed25519_ikigenba_dev`. The `Host ikigenba.dev dev` entry in
+`~/.ssh/id_ed25519_ikigenba_dev`. The key was generated by the operator with
+`ssh-keygen -t ed25519`; only the public half is in the repo (`ssh.tf` in each
+account root, and the legacy pair in `shared.tf`). The `Host ikigenba.dev dev` entry in
 `~/.ssh/config` pins the Elastic IP and selects the key. The `dev_ssh` output
 prints the exact command.

@@ -2,17 +2,6 @@ data "aws_vpc" "default" {
   default = true
 }
 
-data "aws_subnets" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
-  filter {
-    name   = "default-for-az"
-    values = ["true"]
-  }
-}
-
 resource "aws_security_group" "space" {
   name_prefix = "ikigenba-space-"
   description = "space hosts: public HTTP/HTTPS, admin-only SSH"
