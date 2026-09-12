@@ -3,17 +3,17 @@ resource "aws_route53_zone" "env" {
   comment = "ikigenba.dev apex, delegated at the registrar from the mgmt account"
 }
 
-# Name servers of the ephemeral account's sandbox.ikigenba.dev zone (account 602773793009), hardcoded by policy.
-resource "aws_route53_record" "sandbox_ns" {
+# Name servers of the ephemeral account's sbx.ikigenba.dev zone (account 602773793009), hardcoded by policy.
+resource "aws_route53_record" "sbx_ns" {
   zone_id = aws_route53_zone.env.zone_id
-  name    = "sandbox.ikigenba.dev"
+  name    = "sbx.ikigenba.dev"
   type    = "NS"
-  ttl     = 300
+  ttl     = 60
   records = [
-    "ns-1391.awsdns-45.org",
-    "ns-154.awsdns-19.com",
-    "ns-1577.awsdns-05.co.uk",
-    "ns-587.awsdns-09.net",
+    "ns-1067.awsdns-05.org",
+    "ns-168.awsdns-21.com",
+    "ns-1943.awsdns-50.co.uk",
+    "ns-753.awsdns-30.net",
   ]
 }
 

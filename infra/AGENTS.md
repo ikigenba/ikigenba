@@ -43,12 +43,10 @@ Every path below is relative to this directory (`infra/`). Region `us-east-2`.
   account, which is out of scope here), one host answering at `ikigenba.dev` and
   `*.ikigenba.dev`, its security group, instance role and profile, Elastic IP,
   and the backup bucket `ikigenba-dev-295229566359`. The zone also carries the
-  NS record delegating the ephemeral subzone to `602773793009` — it will be
-  `aws_route53_record.sbx_ns` for `sbx.ikigenba.dev` in `shared.tf` (phase B
-  of this change updates it; until then it is `aws_route53_record.sandbox_ns`
-  for `sandbox.ikigenba.dev`); its name servers are hardcoded literals by
-  policy — cross-account values are never read via `terraform_remote_state`.
-  Backend: S3 bucket
+  NS record delegating `sbx.ikigenba.dev` to `602773793009`
+  (`aws_route53_record.sbx_ns` in `shared.tf`); its name servers are
+  hardcoded literals by policy — cross-account values are never read via
+  `terraform_remote_state`. Backend: S3 bucket
   `metaspot-dev-tfstate-295229566359`, key `295229566359/terraform.tfstate`,
   profile `295229566359`, region `us-east-2`, `use_lockfile = true`. Default
   tags: `Project = "metaspot"`, `Account = "295229566359"`,
