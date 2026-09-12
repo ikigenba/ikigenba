@@ -5,7 +5,7 @@ root has the same shape — a hosted zone, a backup bucket, a security group, a
 key pair, a launch template, a permissions boundary, a cost budget, and the
 `/ikigenba/account` properties entry — and accounts differ only in the values
 of their `locals` and properties. Each account is referred to by its ID
-everywhere here — directory names, state key, profile, tags:
+everywhere here — directory names, state key, tags — and by name in `~/.aws/config`:
 
 - **`295229566359`** — the `ikigenba.dev` account: the authoritative
   `ikigenba.dev` hosted zone, the host answering at `ikigenba.dev`, and the
@@ -63,7 +63,7 @@ Every path below is relative to this directory (`infra/`). Region `us-east-2`.
   email are the `budget_monthly_usd` and `budget_email` locals), and the
   account's knobs in `locals.tf`. See "Spaces" below. Backend: S3 bucket
   `metaspot-dev-tfstate-295229566359`, key `295229566359/terraform.tfstate`,
-  profile `295229566359`, region `us-east-2`, `use_lockfile = true`. Default
+  profile `ikigenba-prod`, region `us-east-2`, `use_lockfile = true`. Default
   tags: `Project = "metaspot"`, `Account = "295229566359"`,
   `ManagedBy = "terraform"` — legacy, and every resource in this root,
   the space substrate included, carries them. The backend block in
@@ -99,7 +99,7 @@ Every path below is relative to this directory (`infra/`). Region `us-east-2`.
   amount and email are the `budget_monthly_usd` and `budget_email` locals),
   and the account's knobs in `locals.tf`. See "Spaces" below. Backend: S3
   bucket `ikigenba-tfstate-602773793009`, key `602773793009/terraform.tfstate`,
-  profile `602773793009`, region `us-east-2`, `use_lockfile = true`. Default
+  profile `ikigenba-sandbox`, region `us-east-2`, `use_lockfile = true`. Default
   tags: `Project = "ikigenba"`, `Account = "602773793009"`,
   `ManagedBy = "terraform"`. As above, the backend
   block in `providers.tf` is the whole configuration.
@@ -220,7 +220,8 @@ it always has.
 
 ## Credentials
 
-Profiles `295229566359` and `602773793009` are under `sso-session metaspot` in
+Profiles `ikigenba-prod` (`295229566359`) and `ikigenba-sandbox`
+(`602773793009`) are under `sso-session metaspot` in
 `~/.aws/config`. AWS CLI v2 is required (`sso-session` stanzas are v2 only).
 The operator fills the `<placeholders>`:
 
@@ -230,13 +231,13 @@ sso_start_url = <SSO start URL>
 sso_region = <SSO region>
 sso_registration_scopes = sso:account:access
 
-[profile 295229566359]
+[profile ikigenba-prod]
 sso_session = metaspot
 sso_account_id = 295229566359
 sso_role_name = <role name>
 region = us-east-2
 
-[profile 602773793009]
+[profile ikigenba-sandbox]
 sso_session = metaspot
 sso_account_id = 602773793009
 sso_role_name = <role name>

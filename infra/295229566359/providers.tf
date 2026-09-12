@@ -12,14 +12,14 @@ terraform {
     bucket       = "metaspot-dev-tfstate-295229566359"
     key          = "295229566359/terraform.tfstate"
     region       = "us-east-2"
-    profile      = "295229566359"
+    profile      = "ikigenba-prod"
     encrypt      = true
     use_lockfile = true
   }
 }
 
 provider "aws" {
-  profile = "295229566359"
+  profile = "ikigenba-prod"
   region  = "us-east-2"
 
   default_tags {

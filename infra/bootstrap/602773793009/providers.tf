@@ -10,7 +10,7 @@ terraform {
 }
 
 provider "aws" {
-  profile = "602773793009"
+  profile = "ikigenba-sandbox"
   region  = "us-east-2"
 
   default_tags {

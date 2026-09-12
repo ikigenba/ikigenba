@@ -12,14 +12,14 @@ terraform {
     bucket       = "ikigenba-tfstate-602773793009"
     key          = "602773793009/terraform.tfstate"
     region       = "us-east-2"
-    profile      = "602773793009"
+    profile      = "ikigenba-sandbox"
     encrypt      = true
     use_lockfile = true
   }
 }
 
 provider "aws" {
-  profile = "602773793009"
+  profile = "ikigenba-sandbox"
   region  = "us-east-2"
 
   default_tags {
