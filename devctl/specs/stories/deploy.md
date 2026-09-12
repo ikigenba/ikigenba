@@ -1,7 +1,7 @@
 # Stories — deploy
 
 Deploy puts one built file on one space. The file is what `build` wrote,
-`dist/<app>-<version>.tar.xz`; devctl copies it to the host's `/tmp/` and has
+`dist/<app>-<tag>.tar.xz`; devctl copies it to the host's `/tmp/` and has
 `opsctl` install it from there. Promotion is deploying the same file to a
 different space. What each space is running is read from the host with
 `space status`, never recorded anywhere else.
@@ -22,9 +22,9 @@ Output:
 ```
 Usage: devctl --account <name> deploy <domain> <file>
 
-Copy <file>, a dist/<app>-<version>.tar.xz written by build, to /tmp/ on the
-space at <domain> and have opsctl install it. The app and version are read
-from the file name.
+Copy <file>, a dist/<app>-<tag>.tar.xz written by build, to /tmp/ on the
+space at <domain> and have opsctl install it. The app and tag are read from
+the file name.
 ```
 
 Exits 0. The text is on stdout; stderr is empty.
@@ -39,22 +39,22 @@ Postconditions:
 
 ## A developer deploys an app they just built
 
-The app and version come from the file name. Before anything is copied, the
-`etc/env.list` inside the file is compared with the space's secrets object
-for that app. Each line of output is one step.
+The app and tag come from the file name. Before anything is copied, the
+`secrets` array in the `etc/manifest.toml` inside the file is compared with
+the space's secrets object for that app. Each line of output is one step.
 
 Command:
 
 ```
-$ devctl --account 602773793009 deploy foo.sbx.ikigenba.dev dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz
+$ devctl --account 602773793009 deploy foo.sbx.ikigenba.dev dist/crm-v0.1.0.tar.xz
 ```
 
 Output:
 
 ```
-file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
+file: ok (crm v0.1.0)
 secrets: ok (3 keys)
-copy: ok (-> ec2-user@3.19.79.227:/tmp/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz)
+copy: ok (-> ec2-user@3.19.79.227:/tmp/crm-v0.1.0.tar.xz)
 install: ok (opsctl installed crm)
 ```
 
@@ -66,21 +66,20 @@ Preconditions:
 - The space exists and its instance is `running`; `opsctl` is installed on
   it (`space create` did that).
 - The developer's ssh configuration can reach the instance as `ec2-user`.
-- `dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` exists, written
+- `dist/crm-v0.1.0.tar.xz` exists, written
   by `build`.
 - `/ikigenba/foo.sbx.ikigenba.dev/crm` holds every name the file's
-  `etc/env.list` declares.
+  manifest lists in `secrets`.
 
 Postconditions:
 
-- `/tmp/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` is on the host
-  and `sudo opsctl install /tmp/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz`
+- `/tmp/crm-v0.1.0.tar.xz` is on the host
+  and `sudo opsctl install /tmp/crm-v0.1.0.tar.xz`
   has been run over ssh and exited 0, so `crm.foo.sbx.ikigenba.dev` answers
   from the new binary. `crm`'s `state/` directory is untouched. What install
   does on the host is opsctl's; devctl runs it and reports its exit.
 - No other app on the space has changed.
-- `space status foo.sbx.ikigenba.dev` shows `crm` at
-  `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`.
+- `space status foo.sbx.ikigenba.dev` shows `crm` at `v0.1.0`.
 
 ## A developer promotes a tested release
 
@@ -112,8 +111,8 @@ Preconditions:
 - The developer's ssh configuration can reach the instance as `ec2-user`.
 - `dist/crm-v0.1.0.tar.xz` exists, written by `build` at the commit tagged
   `v0.1.0`.
-- `/ikigenba/ikigenba.dev/crm` holds every name the file's `etc/env.list`
-  declares.
+- `/ikigenba/ikigenba.dev/crm` holds every name the file's manifest
+  lists in `secrets`.
 
 Postconditions:
 
@@ -125,19 +124,19 @@ Postconditions:
 
 ## A developer deploys while the space lacks a secret the app declares
 
-Keys the object has that the file's `etc/env.list` no longer names are left
+Keys the object has that the file's manifest no longer names are left
 alone; only missing keys refuse the deploy.
 
 Command:
 
 ```
-$ devctl --account 602773793009 deploy foo.sbx.ikigenba.dev dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz
+$ devctl --account 602773793009 deploy foo.sbx.ikigenba.dev dist/crm-v0.1.0.tar.xz
 ```
 
 Output:
 
 ```
-file: ok (crm 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
+file: ok (crm v0.1.0)
 devctl: crm: secrets missing CRM_ORG,CRM_WEBHOOK_SECRET
 
 run 'devctl --account 602773793009 secrets push foo.sbx.ikigenba.dev crm'
@@ -149,8 +148,8 @@ Preconditions:
 
 - A live SSO session for the profile named by `--account`.
 - The space exists.
-- The file exists and its `etc/env.list` names `CRM_ORG` and
-  `CRM_WEBHOOK_SECRET`; `/ikigenba/foo.sbx.ikigenba.dev/crm` has neither key.
+- The file exists and its manifest lists `CRM_ORG` and `CRM_WEBHOOK_SECRET`
+  in `secrets`; `/ikigenba/foo.sbx.ikigenba.dev/crm` has neither key.
 
 Postconditions:
 
@@ -182,8 +181,8 @@ Postconditions:
 
 ## A developer deploys a file that build did not write
 
-The file name must be `<app>-<version>.tar.xz` and the file must hold
-`bin/<app>` and `etc/env.list`.
+The file name must be `<app>-<tag>.tar.xz` and the file must hold
+`bin/<app>` and `etc/manifest.toml`.
 
 Command:
 
@@ -194,7 +193,7 @@ $ devctl --account 602773793009 deploy foo.sbx.ikigenba.dev notes.tar.xz
 Output:
 
 ```
-devctl: 'notes.tar.xz' is not a file build wrote: name is not <app>-<version>.tar.xz
+devctl: 'notes.tar.xz' is not a file build wrote: name is not <app>-<tag>.tar.xz
 ```
 
 Exits 2. The line is on stderr; stdout is empty.
@@ -290,7 +289,7 @@ Preconditions:
   it.
 - The developer's ssh configuration can reach the instance as `ec2-user`.
 - `dist/gmail-v0.1.0.tar.xz` exists and
-  `/ikigenba/foo.sbx.ikigenba.dev/gmail` holds every name it declares.
+  `/ikigenba/foo.sbx.ikigenba.dev/gmail` holds every name its manifest lists in `secrets`.
 - `opsctl install` of the file on the host exits non-zero.
 
 Postconditions:

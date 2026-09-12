@@ -188,8 +188,8 @@ Preconditions:
 - `<domain>` ends in the account's `domain` property.
 - No instance is tagged `Space=<domain>` in the account.
 - `infra/templates/space-role-policy.json` is in the checkout.
-- Every app in the checkout has the values its `etc/env.list` names in the
-  developer's keyring (see `secrets.md`).
+- Every app in the checkout has the values its manifest's `secrets` array
+  names in the developer's keyring (see `secrets.md`).
 - `opsctl/` is in the checkout and the Go toolchain can cross-compile it for
   `linux/amd64`.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
@@ -263,8 +263,8 @@ Preconditions:
 - `<domain>` ends in the account's `domain` property, `ikigenba.dev`.
 - No instance is tagged `Space=<domain>` in the account.
 - `infra/templates/space-role-policy.json` is in the checkout.
-- Every app in the checkout has the values its `etc/env.list` names in the
-  developer's keyring (see `secrets.md`).
+- Every app in the checkout has the values its manifest's `secrets` array
+  names in the developer's keyring (see `secrets.md`).
 - `opsctl/` is in the checkout and the Go toolchain can cross-compile it for
   `linux/amd64`.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
@@ -336,8 +336,8 @@ Preconditions:
 - `<domain>` equals the account's `domain` property, `ikigenba.dev`.
 - No instance is tagged `Space=<domain>` in the account.
 - `infra/templates/space-role-policy.json` is in the checkout.
-- Every app in the checkout has the values its `etc/env.list` names in the
-  developer's keyring (see `secrets.md`).
+- Every app in the checkout has the values its manifest's `secrets` array
+  names in the developer's keyring (see `secrets.md`).
 - `opsctl/` is in the checkout and the Go toolchain can cross-compile it for
   `linux/amd64`.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
@@ -461,7 +461,7 @@ Preconditions:
 
 - A live SSO session for the profile named by `--account`.
 - An instance tagged `Space=foo.sbx.ikigenba.dev` exists in the account.
-- `crm/etc/env.list` is in the checkout.
+- `crm/` is a sub-project with a `main` package and `crm/etc/manifest.toml`.
 
 Postconditions:
 
@@ -512,8 +512,8 @@ Exits 2. The line is on stderr; stdout is empty.
 Preconditions:
 
 - A live SSO session for the profile named by `--account`.
-- `crm/etc/env.list` names `CRM_API_KEY` and neither the keyring nor the
-  environment has it.
+- `crm/etc/manifest.toml` lists `CRM_API_KEY` in `secrets` and neither the
+  keyring nor the environment has it.
 
 Postconditions:
 
@@ -580,8 +580,8 @@ Preconditions:
 - `<domain>` ends in the account's `domain` property.
 - No instance is tagged `Space=<domain>` in the account.
 - `infra/templates/space-role-policy.json` is in the checkout.
-- Every app in the checkout has the values its `etc/env.list` names in the
-  developer's keyring (see `secrets.md`).
+- Every app in the checkout has the values its manifest's `secrets` array
+  names in the developer's keyring (see `secrets.md`).
 - `opsctl/` is in the checkout and the Go toolchain can cross-compile it for
   `linux/amd64`.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
@@ -933,7 +933,7 @@ Output:
 
 ```
 crm v0.1.0 active
-dashboard 4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a active
+dashboard v0.0.9 active
 gmail v0.1.0 failed
 ```
 

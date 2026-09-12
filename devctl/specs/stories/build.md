@@ -2,7 +2,9 @@
 
 Build turns one app in the checkout into the file that deploy carries to a
 host. The file is what `opsctl` installs; devctl and opsctl agree on nothing
-else about an app.
+else about an app. A file is only ever built from a commit that is on `main`
+and carries a release tag, so every file's name says exactly what is inside
+it.
 
 ## A developer asks what `build` can do
 
@@ -20,10 +22,9 @@ Output:
 ```
 Usage: devctl build <app>
 
-Build <app> for linux/amd64 and write dist/<app>-<version>.tar.xz, the file
-deploy copies to a host and opsctl installs. <version> is the tag on HEAD when
-there is one, else HEAD's full SHA. A working tree with uncommitted changes is
-refused.
+Build <app> for linux/amd64 and write dist/<app>-<tag>.tar.xz, the file deploy
+copies to a host and opsctl installs. HEAD must be a commit on origin/main
+that a tag points at, with no uncommitted changes.
 ```
 
 Exits 0. The text is on stdout; stderr is empty.
@@ -36,51 +37,14 @@ Postconditions:
 
 - Nothing has changed.
 
-## A developer builds one app
+## A developer builds one app at a release
 
-A developer wants the file for one app, to inspect it or to install it on a
-host by hand. An app is a top-level directory of the checkout holding
-`etc/env.list`; its name is the directory name and its binary is the `main`
-package there. The version is the repo-wide tag on `HEAD` when there is one,
-else `HEAD`'s full SHA. The one line of output is the path written.
-
-Command:
-
-```
-$ devctl build crm
-```
-
-Output:
-
-```
-dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz
-```
-
-Exits 0. The line is on stdout; stderr is empty.
-
-Preconditions:
-
-- `crm/etc/env.list` is in the checkout.
-- The working tree has no uncommitted changes, `HEAD` is
-  `4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a`, and no tag points at it.
-- The Go toolchain can build `crm` for `linux/amd64`.
-- The built binary runs on the developer's machine.
-
-Postconditions:
-
-- `dist/crm-4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a.tar.xz` exists in the
-  checkout, replacing any earlier file of that name. `dist/` was created if
-  it did not exist.
-- The tarball holds, relative to its root and with no version anywhere
-  inside:
-  - `bin/crm`, the static `linux/amd64` binary;
-  - `etc/manifest.env`, emitted by running that binary with the argument
-    `manifest`;
-  - every other file under `crm/etc/`, `env.list` and `nginx.conf` included;
-  - `crm/share/` as `share/`, when the app has one.
-- Nothing outside `dist/` has changed.
-
-## A developer builds an app at a tagged commit
+A developer at a tagged commit wants the file for one app, to deploy it or to
+inspect it. An app is a sub-project of the checkout that has a `main` package
+and a committed `etc/manifest.toml`; its name is the directory name. The
+manifest is emitted by the binary itself (`<app> manifest`) and committed, so
+the binary is the source of truth; build regenerates it and checks the two
+agree. The one line of output is the path written.
 
 Command:
 
@@ -98,20 +62,27 @@ Exits 0. The line is on stdout; stderr is empty.
 
 Preconditions:
 
-- `crm/etc/env.list` is in the checkout.
-- The working tree has no uncommitted changes and the tag `v0.1.0` points at
-  `HEAD`.
+- `crm/` is a sub-project with a `main` package and `crm/etc/manifest.toml`.
+- The working tree has no uncommitted changes.
+- `HEAD` is reachable from `origin/main` and the tag `v0.1.0` points at it.
 - The Go toolchain can build `crm` for `linux/amd64`.
+- The built binary runs on the developer's machine, and `crm manifest` emits
+  exactly the committed `crm/etc/manifest.toml`.
 
 Postconditions:
 
-- `dist/crm-v0.1.0.tar.xz` exists, with the same contents as a build named by
-  SHA.
+- `dist/crm-v0.1.0.tar.xz` exists in the checkout, replacing any earlier file
+  of that name. `dist/` was created if it did not exist.
+- The tarball holds, relative to its root and with no version anywhere
+  inside:
+  - `bin/crm`, the static `linux/amd64` binary;
+  - `etc/manifest.toml`, emitted by running that binary with the argument
+    `manifest`;
+  - every other file under `crm/etc/`, `nginx.conf` included;
+  - `crm/share/` as `share/`, when the app has one.
+- Nothing outside `dist/` has changed.
 
 ## A developer builds with uncommitted changes
-
-Nothing is ever built from a tree that differs from its commit, so the file
-name always names exactly what is inside it.
 
 Command:
 
@@ -129,13 +100,96 @@ Exits 2. The line is on stderr; stdout is empty.
 
 Preconditions:
 
-- `crm/etc/env.list` is in the checkout.
+- `crm/` is a sub-project with a `main` package and `crm/etc/manifest.toml`.
 - The working tree has uncommitted changes, whether or not they are under
   `crm/`.
 
 Postconditions:
 
 - Nothing has changed. Nothing under `dist/` was written.
+
+## A developer builds at a commit that is not tagged
+
+Command:
+
+```
+$ devctl build crm
+```
+
+Output:
+
+```
+devctl: no tag points at HEAD (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- `crm/` is a sub-project with a `main` package and `crm/etc/manifest.toml`.
+- The working tree is clean and `HEAD` is reachable from `origin/main`.
+- No tag points at `HEAD`.
+
+Postconditions:
+
+- Nothing has changed.
+
+## A developer builds at a commit that is not on main
+
+Command:
+
+```
+$ devctl build crm
+```
+
+Output:
+
+```
+devctl: HEAD (9f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6) is not reachable from origin/main
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- `crm/` is a sub-project with a `main` package and `crm/etc/manifest.toml`.
+- The working tree is clean and the tag `v0.2.0` points at `HEAD`.
+- `HEAD` is not an ancestor of `origin/main`.
+
+Postconditions:
+
+- Nothing has changed.
+
+## A developer builds an app whose committed manifest is stale
+
+The binary emits the manifest; the committed copy exists so the checkout can
+be read without a build. When they differ, the committed copy is wrong.
+
+Command:
+
+```
+$ devctl build crm
+```
+
+Output:
+
+```
+devctl: crm: etc/manifest.toml does not match what the binary emits; run 'crm manifest > crm/etc/manifest.toml' and commit
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- `crm/` is a sub-project with a `main` package and `crm/etc/manifest.toml`.
+- The working tree is clean, `HEAD` is on `origin/main`, and a tag points at
+  it.
+- `crm` compiles, and `crm manifest` emits something other than the committed
+  file.
+
+Postconditions:
+
+- Nothing under `dist/` has changed.
 
 ## A developer builds an app that is not in the checkout
 
@@ -155,7 +209,8 @@ Exits 2. The line is on stderr; stdout is empty.
 
 Preconditions:
 
-- No `bogus/etc/env.list` in the checkout.
+- No sub-project `bogus` with a `main` package and `etc/manifest.toml` in the
+  checkout.
 
 Postconditions:
 
@@ -210,10 +265,13 @@ Exits 1. The text is on stderr; stdout is empty.
 
 Preconditions:
 
-- `dashboard/etc/env.list` is in the checkout.
+- `dashboard/` is a sub-project with a `main` package and
+  `dashboard/etc/manifest.toml`.
+- The working tree is clean, `HEAD` is on `origin/main`, and a tag points at
+  it.
 - `dashboard` does not compile for `linux/amd64`.
 
 Postconditions:
 
 - Nothing under `dist/` has changed; an earlier
-  `dist/dashboard-<version>.tar.xz`, if any, is as it was.
+  `dist/dashboard-<tag>.tar.xz`, if any, is as it was.

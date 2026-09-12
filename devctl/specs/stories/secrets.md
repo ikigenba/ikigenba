@@ -2,7 +2,7 @@
 
 An app's secrets are one Parameter Store SecureString per app per space,
 `/ikigenba/<domain>/<app>`, holding a flat JSON object whose keys are the names
-the app's `etc/env.list` declares. The developer's machine is the only source
+the app's manifest declares. The developer's machine is the only source
 of the values and devctl is the only writer; the host reads the object through
 its instance role at app start.
 
@@ -22,7 +22,7 @@ Output:
 ```
 Usage: devctl --account <name> secrets <subcommand> <domain> [<app>]
 
-Push the values an app's etc/env.list names from this machine's keyring to the
+Push the values an app's manifest names from this machine's keyring to the
 space's Parameter Store entry, or list which names a space holds. Values are
 never printed.
 
@@ -45,14 +45,24 @@ Postconditions:
 
 ## A developer pushes one app's secrets to a space
 
-An app has gained a `secret <NAME>` line and the space's object lacks the key,
-so a deploy would be refused. The developer puts the value in their keyring
-and pushes that one app, named by its directory.
+An app has gained a secret name in its manifest and the space's object lacks
+the key, so a deploy would be refused. The developer puts the value in their
+keyring and pushes that one app, named by its directory.
 
-An app is a top-level directory of the checkout holding `etc/env.list`; its
-name is the directory name. `etc/env.list` holds one declaration per line, and
-devctl reads exactly the lines of the form `secret <NAME>`; every other line
-(comments, `rotating`, `config`) is the app's own business and is ignored.
+An app is a sub-project of the checkout that has a `main` package and a
+committed `etc/manifest.toml`; its name is the directory name. The manifest's
+`secrets` array lists the names the app needs, and that array is all devctl
+reads from it here:
+
+```toml
+app = "crm"
+port = 3100
+default = false
+secrets = ["CRM_API_KEY", "CRM_API_SECRET", "CRM_ORG"]
+
+[env]
+OUTBOX_RETENTION_DAYS = "7"
+```
 
 Each value comes from the developer's login keyring, read with
 `secret-tool lookup name <NAME>`; an environment variable named `<NAME>`
@@ -78,20 +88,21 @@ Preconditions:
 
 - A live SSO session for the profile named by `--account`.
 - The space exists in the account (an instance tagged `Space=<domain>`).
-- `crm/etc/env.list` is in the checkout.
-- Every `secret <NAME>` in it has a value in the keyring or the environment.
+- `crm/etc/manifest.toml` is in the checkout.
+- Every name in its `secrets` array has a value in the keyring or the
+  environment.
 
 Postconditions:
 
 - `/ikigenba/foo.sbx.ikigenba.dev/crm` is a SecureString whose value is a
-  JSON object with exactly the `secret` names as keys and the keyring values
+  JSON object with exactly the `secrets` names as keys and the keyring values
   as values, overwriting whatever was there.
 - No other parameter has changed.
 
 ## A developer pushes every app's secrets to a space
 
 With `<app>` omitted, every app in the checkout is pushed, in name order. An
-app whose `etc/env.list` has no `secret` lines gets the object `{}`.
+app whose `secrets` array is empty or absent gets the object `{}`.
 
 Command:
 
@@ -113,8 +124,8 @@ Preconditions:
 
 - A live SSO session for the profile named by `--account`.
 - The space exists in the account.
-- Every `secret <NAME>` in every app's `etc/env.list` has a value in the
-  keyring or the environment.
+- Every name in every app's `secrets` array has a value in the keyring or
+  the environment.
 
 Postconditions:
 
@@ -141,8 +152,8 @@ Preconditions:
 
 - A live SSO session for the profile named by `--account`.
 - The space exists in the account.
-- `crm/etc/env.list` names `CRM_API_KEY` and neither the keyring nor the
-  environment has it.
+- `crm/etc/manifest.toml` lists `CRM_API_KEY` in `secrets` and neither the
+  keyring nor the environment has it.
 
 Postconditions:
 
@@ -167,7 +178,8 @@ Exits 2. The line is on stderr; stdout is empty.
 
 Preconditions:
 
-- No directory `bogus/etc/env.list` in the checkout.
+- No sub-project `bogus` with a `main` package and `etc/manifest.toml` in the
+  checkout.
 
 Postconditions:
 
