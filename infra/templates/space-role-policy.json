@@ -1,5 +1,5 @@
 {
-  "_comment": "Inline policy for the per-space instance role ikigenba-space-<name>. The operator-side tool substitutes three literal placeholders at create time; Terraform never reads this file. <name> is the space name (its SSM path /ikigenba/<name>/* and its bucket prefix <name>/). <domain> is the space's domain, by default <name>.<account domain> where the account domain is the `domain` property at /ikigenba/account; the space's records are <domain> and *.<domain>. <zone_id> is the hosted zone found by longest-suffix match of <domain> over the account's hosted zones. The role also carries the ikigenba-space-boundary permissions boundary, which is the ceiling: nothing granted here can exceed it.",
+  "_comment": "Inline policy for the per-space instance role ikigenba-space-<name>. The operator-side tool substitutes five literal placeholders at create time; Terraform never reads this file. <name> is the space name (its SSM path /ikigenba/<name>/* and its bucket prefix <name>/). <domain> is the space's domain, by default <name>.<account domain> where the account domain is the `domain` property at /ikigenba/account; the space's records are <domain> and *.<domain>. <zone_id> is the hosted zone found by longest-suffix match of <domain> over the account's hosted zones. <account_id> is the account the space is created in. <bucket> is the account's backup bucket, the `backup_bucket` property at /ikigenba/account; the role's permissions boundary ARN is the `permissions_boundary_arn` property there. The boundary is the ceiling: nothing granted here can exceed it.",
   "Version": "2012-10-17",
   "Statement": [
     {
@@ -12,7 +12,7 @@
         "ssm:DeleteParameter",
         "ssm:DeleteParameters"
       ],
-      "Resource": "arn:aws:ssm:us-east-2:602773793009:parameter/ikigenba/<name>/*"
+      "Resource": "arn:aws:ssm:us-east-2:<account_id>:parameter/ikigenba/<name>/*"
     },
     {
       "Effect": "Allow",
@@ -34,12 +34,12 @@
         "s3:PutObject",
         "s3:DeleteObject"
       ],
-      "Resource": "arn:aws:s3:::sbx-ikigenba-dev-602773793009/<name>/*"
+      "Resource": "arn:aws:s3:::<bucket>/<name>/*"
     },
     {
       "Effect": "Allow",
       "Action": "s3:ListBucket",
-      "Resource": "arn:aws:s3:::sbx-ikigenba-dev-602773793009",
+      "Resource": "arn:aws:s3:::<bucket>",
       "Condition": {
         "StringLike": {
           "s3:prefix": [

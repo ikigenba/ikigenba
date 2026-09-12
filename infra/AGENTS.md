@@ -134,11 +134,14 @@ over the account's hosted zones.
 
 The tool creates the instance profile `ikigenba-space-<name>` at launch; its
 role carries the `ikigenba-space-boundary` permissions boundary and an inline
-policy rendered from `templates/space-role-policy.json`, which has three
-literal placeholders: `<name>`, `<domain>`, and `<zone_id>` (the zone found
-above). The boundary is the ceiling; the inline policy narrows it to the
-space's own SSM path `/ikigenba/<name>/*`, its own bucket prefix `<name>/`,
-and its own DNS names `<domain>` and `*.<domain>` in its one zone.
+policy rendered from `templates/space-role-policy.json`, which has five
+literal placeholders: `<name>`, `<domain>`, `<zone_id>` (the zone found
+above), `<account_id>` (the account the space is created in), and `<bucket>`
+(the account's backup bucket; `/ikigenba/account` supplies it as
+`backup_bucket`, and the boundary ARN as `permissions_boundary_arn`). The
+boundary is the ceiling; the inline policy narrows it to the space's own SSM
+path `/ikigenba/<name>/*`, its own bucket prefix `<name>/`, and its own DNS
+names `<domain>` and `*.<domain>` in its one zone.
 
 Spaces are registered by the `Space=<name>` tag; the instance also carries
 `Domain=<fqdn>`. There is no per-space Terraform. A space holds no Elastic IP:
