@@ -8,14 +8,15 @@ imports the AWS SDK. Everything above the seam is standard library and is
 tested against a fake provider; the Route 53 package is tested against a fake
 HTTP endpoint; nothing in the gates touches AWS.
 
-**Why DNS at all.** Bootstrap created the apex and wildcard records, and
-nginx routes by hostname, so a new service needs no DNS change. The one write
-`opsctl` must make is the DNS-01 challenge for certbot: a TXT record at
-`_acme-challenge.<zone>`. A wildcard certificate covers both `<zone>` and
-`*.<zone>`, and the CA issues one token for each, both at the same name, so
-the provider must add a value to a record set and remove one value from it —
-never overwrite the set. The verbs are named `add` and `remove` for exactly
-that reason: the safe behaviour is the only behaviour.
+**Why DNS at all.** Bootstrap created the host's own record and the wildcard
+beneath it, and nginx routes by hostname, so a new service needs no DNS
+change. The one write `opsctl` must make is the DNS-01 challenge for certbot:
+a TXT record at `_acme-challenge.<host.name>`, where `host.name` is the name
+this host answers at (D5). A wildcard certificate covers both `<host.name>`
+and `*.<host.name>`, and the CA issues one token for each, both at the same
+name, so the provider must add a value to a record set and remove one value
+from it — never overwrite the set. The verbs are named `add` and `remove` for
+exactly that reason: the safe behaviour is the only behaviour.
 
 **Configuration.** Read from the config store (D3), never from any other file
 on the host — `/etc/ikigenba/env` and its like are a bootstrap's private

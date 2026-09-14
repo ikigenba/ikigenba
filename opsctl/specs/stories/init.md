@@ -225,10 +225,11 @@ Postconditions:
 
 ## An agent initialises a host whose config file is corrupt
 
-This is the one case where `init` cannot look at the host at all: every check
-after the first reads the store, so there is no report to write. That is a
-failure of the command, not a finding about the host, so it goes to stderr
-and stdout stays empty.
+This is the one case where `init` writes no report at all. Only the three PATH
+lookups could run; every check from `dns.provider` down reads the store, so
+the report would be missing everything it is for. A corrupt store is a failure
+of the command, not a finding about the host, so it goes to stderr and stdout
+stays empty.
 
 Command:
 

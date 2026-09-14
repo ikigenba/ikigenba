@@ -87,16 +87,16 @@ message names the file.
 Canonical usage, as an agent would drive it over ssh:
 
 ```
-$ opsctl config set dns.zones=ikigenba.dev
+$ opsctl config set dns.zones=ikigenba.dev:Z09565073GHK8BYWQ1A78
 $ opsctl config set acme.email=ops@ikigenba.dev
 $ opsctl config get dns.zones
-ikigenba.dev
+ikigenba.dev:Z09565073GHK8BYWQ1A78
 $ opsctl config get backup.s3_uri; echo "exit $?"
 opsctl: key not set: backup.s3_uri
 exit 1
 $ opsctl config list
 acme.email=ops@ikigenba.dev
-dns.zones=ikigenba.dev
+dns.zones=ikigenba.dev:Z09565073GHK8BYWQ1A78
 $ opsctl config del acme.email
 $ opsctl config del acme.email; echo "exit $?"
 exit 0
@@ -121,8 +121,8 @@ exit 0
 - R-NYYC-5RSR: `opsctl config --help` and `opsctl config -h` MUST print the `config` usage text quoted above, byte for byte, to stdout and exit 0.
 - R-R352-8LRC: `opsctl config get KEY` MUST print the value followed by a single newline to stdout and exit 0 when set, and MUST print nothing to stdout, write exactly the line `opsctl: key not set: KEY` to stderr, and exit 1 when not set.
 - R-O1E4-XBA5: `opsctl config set KEY=VALUE` MUST split on the first `=` only, store the result, print nothing to stdout, and exit 0.
-- R-O2M1-B30U: `opsctl config set` with an argument lacking `=`, an invalid key, or a value containing a newline MUST exit 2 with a diagnostic on stderr and leave the store unchanged.
+- R-8Q6R-PBF6: `opsctl config set` MUST, when its argument lacks `=`, when the key is not `ValidKey`, or when the value contains a newline, leave the store unchanged, print nothing to stdout, write to stderr exactly three lines — the diagnostic, an empty line, and `see 'opsctl config --help' for usage` — and exit 2; the diagnostic is `opsctl: config set needs KEY=VALUE`, `opsctl: invalid key: <key>`, or `opsctl: invalid value: newline in value for '<key>'` respectively, with the conditions tested in that order.
 - R-O3TX-OURJ: `opsctl config del KEY` MUST exit 0 and print nothing to stdout whether or not KEY was set.
 - R-O51U-2MI8: `opsctl config list` MUST print one `KEY=VALUE` line per entry sorted by key ascending to stdout and exit 0, printing nothing when the store is empty.
 - R-D3B7-CGSQ: `opsctl config` with no subcommand MUST write exactly the three lines `opsctl: no config subcommand given`, an empty line, and `see 'opsctl config --help' for usage` to stderr and exit 2, and with an unknown subcommand MUST write exactly the three lines `opsctl: unknown config subcommand '<name>'`, an empty line, and `see 'opsctl config --help' for usage` to stderr and exit 2.
-- R-O7HM-U5ZM: Every `config` subcommand MUST exit 1 with a stderr line naming `config.json` when the file is corrupt.
+- R-3C3B-V34P: Every `config` subcommand MUST, when the file is corrupt, print nothing to stdout, leave the file unchanged, write to stderr exactly the line `opsctl: <path> is corrupt` where `<path>` is the resolved path of `config.json`, and exit 1.
