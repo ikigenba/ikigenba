@@ -61,13 +61,34 @@ objects are litestream's and reach S3 by its path, not by the tarball's.
 A restore crosses that line, which is why `opsctl restore` stops units and
 `opsctl backup` never does. The files step replaces the whole of `state/`, and
 the database, its `-wal` and `-shm`, and the metadata directory live there and
-are not in the tarball -- so that step deletes exactly what litestream has open,
-while the service's own process is holding the same file. Both have to be down
+are not in the tarball — so that step deletes exactly what litestream has
+open, while the service's own process is holding the same file. Both have to be down
 before the files land, and the database is rebuilt before either comes back.
 
 `opsctl install` already restarts a service to upgrade it, so a restore doing
 the same is not a new kind of interruption. A restore is a brief outage,
 deliberately.
+
+One litestream covers the whole host, so taking it down for one service's
+restore stops replication for every database on it. **That window is accepted,
+and a litestream unit per database is deliberately not the answer.** Nothing is
+damaged by it: a checkpoint folds WAL frames into the database file rather than
+discarding them, so every committed transaction stays on disk, and no other
+service's files are read or written by a restore. What the window costs is that
+those transactions are not yet in S3.
+
+litestream closes the window itself when it comes back. If the WAL was not
+reset while it was gone it resumes from its last offset and the gap never
+existed. If an application did reset the WAL, litestream sees the salt or the
+offset disagree with its last LTX file and takes a fresh snapshot instead of
+failing — and a database restored under it, which is behind a replica holding a
+higher TXID, is a case it detects by that same route. Either way the database
+is fully replicated again shortly after the restore, and the only thing the gap
+costs is the ability to restore to an instant inside it, which is a precision
+`opsctl restore` never asks for: it takes the newest point and no other.
+
+What is left is losing the host *during* a restore an operator is running by
+hand. That is the accepted risk.
 
 **The two clocks are not synchronised, and are not meant to be.** A restore
 takes the newest files and, separately, the newest database — so the database
