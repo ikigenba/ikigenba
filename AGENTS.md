@@ -14,3 +14,15 @@ than `main`.
 Never use `git stash`. The stash stack is shared across all worktrees, so
 another session may pop or drop your entry. Set work aside with a temporary WIP
 commit, a dedicated local branch, or an isolated worktree instead.
+
+## Command-line conventions
+
+Every command-line program in this repository behaves the same way.
+
+- stdout carries the command's product. stderr carries diagnostics. A command
+  that fails writes the reason to stderr.
+- A diagnostic's first line begins `<program>: `. Further detail — another
+  program's output, or the next command to run — follows after exactly one
+  empty line, unprefixed. The usage text is never written to stderr.
+- Exit 0 on success, non-zero on failure. Which non-zero codes a program uses,
+  and what each means, is that program's own design.
