@@ -316,9 +316,10 @@ copy: ok (9 objects -> sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/restor
 devctl: restore: ssh ec2-user@3.19.79.227 sudo opsctl restore crm --prefix s3://sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/restore/crm/: exit status 1
 
 source: ok (restore/crm/2026-09-12T03:00:04Z.tar.zst, 12.4 MiB)
-unit: ok (ikigenba-crm.service inactive)
+stop: ok (ikigenba-crm.service, litestream.service)
 files: ok (/opt/crm/etc, /opt/crm/state, 12 files)
 db: failed: litestream restore: no snapshot under the prefix
+start: warning (ikigenba-crm.service, litestream.service left stopped)
 ```
 
 Exits 1. devctl's own `source:` and `copy:` lines are on stdout; the error

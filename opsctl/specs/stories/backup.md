@@ -58,6 +58,17 @@ database, `opsctl backup` **excludes** the database file, its `-wal` and
 `-shm`, and litestream's own `.<name>-litestream` metadata directory. Those
 objects are litestream's and reach S3 by its path, not by the tarball's.
 
+A restore crosses that line, which is why `opsctl restore` stops units and
+`opsctl backup` never does. The files step replaces the whole of `state/`, and
+the database, its `-wal` and `-shm`, and the metadata directory live there and
+are not in the tarball -- so that step deletes exactly what litestream has open,
+while the service's own process is holding the same file. Both have to be down
+before the files land, and the database is rebuilt before either comes back.
+
+`opsctl install` already restarts a service to upgrade it, so a restore doing
+the same is not a new kind of interruption. A restore is a brief outage,
+deliberately.
+
 **The two clocks are not synchronised, and are not meant to be.** A restore
 takes the newest files and, separately, the newest database — so the database
 is typically newer than the files around it. The database is what matters; a
@@ -483,8 +494,12 @@ Usage: opsctl restore SERVICE [--prefix <s3 uri>]
 
 Replace /opt/SERVICE/etc/ and /opt/SERVICE/state/ with the newest backup, and,
 when SERVICE declares a [database], replace that database with the newest
-litestream has. Nothing under bin/ or share/ is touched, and no service is
-started or stopped.
+litestream has. Nothing under bin/ or share/ is touched.
+
+SERVICE's unit is stopped for the restore and started again after it, and so is
+litestream.service, because the files step deletes the database both of them
+hold open. A restore is a brief outage. A unit that was already stopped is left
+stopped, and a failed restore leaves both stopped.
 
 Options:
   --prefix <s3 uri>   where to read from; defaults to <backup.s3_uri>SERVICE/
@@ -509,9 +524,10 @@ Postconditions:
 
 ## An operator puts a service back as it was
 
-The `db` line is the database's own newest point, which is later than the
-tarball's: the tarball is written on a timer and the database is replicated
-continuously.
+The service is running, so the restore stops it, and litestream with it, before
+the files land; both come back once the database is in place. The `db` line is
+the database's own newest point, which is later than the tarball's: the tarball
+is written on a timer and the database is replicated continuously.
 
 Command:
 
@@ -523,9 +539,10 @@ Output:
 
 ```
 source: ok (crm/2026-09-12T03:00:04Z.tar.zst, 1.2 MiB)
-unit: ok (ikigenba-crm.service inactive)
+stop: ok (ikigenba-crm.service, litestream.service)
 files: ok (/opt/crm/etc, /opt/crm/state, 12 files)
 db: ok (/opt/crm/state/crm.db, newest 2026-09-12T09:07:11Z)
+start: ok (litestream.service, ikigenba-crm.service)
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -536,7 +553,7 @@ Preconditions:
   under that prefix.
 - `<backup.s3_uri>crm/` holds at least one tarball and litestream has
   replicated `crm`'s database there.
-- `ikigenba-crm.service` is not active.
+- `ikigenba-crm.service` is active.
 
 Postconditions:
 
@@ -545,16 +562,22 @@ Postconditions:
   was there and is in neither is gone.
 - `/opt/crm/bin/` and `/opt/crm/share/` are untouched: the code on the host is
   the deploy's business, not the restore's.
-- No unit was started, stopped, enabled, or disabled, and nginx was not
-  reloaded.
-- No object under `<backup.s3_uri>` was written or deleted.
+- `ikigenba-crm.service` is active again and `litestream.service` is running,
+  replicating the restored database to `<backup.s3_uri>crm/` as before. The
+  service was down for the length of the restore and for no longer.
+- No unit was enabled or disabled, and nginx was not reloaded.
+- The restore itself wrote and deleted no object under `<backup.s3_uri>`. What
+  litestream ships once it is running again is litestream's business, not the
+  restore's.
 
 ## An operator puts back a service that keeps no database
 
 With no `[database]` in the manifest there is nothing for litestream to have
 replicated, and the whole of `state/` was in the tarball. The `db` line is
 absent rather than reported as skipped: a line claiming a database was handled
-would be a lie about what is on disk.
+would be a lie about what is on disk. litestream is absent from the `stop:` and
+`start:` lines for the same reason: this service gave it nothing to hold, so
+the restore has no cause to take it down and no cause to say it did.
 
 Command:
 
@@ -566,8 +589,9 @@ Output:
 
 ```
 source: ok (dashboard/2026-09-12T03:00:04Z.tar.zst, 1.1 MiB)
-unit: ok (ikigenba-dashboard.service inactive)
+stop: ok (ikigenba-dashboard.service)
 files: ok (/opt/dashboard/etc, /opt/dashboard/state, 40 files)
+start: ok (ikigenba-dashboard.service)
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -575,11 +599,14 @@ Exits 0. The lines are on stdout; stderr is empty.
 Preconditions:
 
 - `/opt/dashboard/etc/manifest.toml` declares no `[database]`.
+- `ikigenba-dashboard.service` is active.
 
 Postconditions:
 
 - `/opt/dashboard/state/` is exactly what the tarball holds, and is the whole
-  of it. No litestream call was made.
+  of it. No litestream call was made and `litestream.service` was left running
+  throughout, still replicating every other service's database.
+- `ikigenba-dashboard.service` is active again.
 
 ## An agent gives a service another space's data
 
@@ -600,9 +627,10 @@ Output:
 
 ```
 source: ok (restore/crm/2026-09-12T03:00:04Z.tar.zst, 12.4 MiB)
-unit: ok (ikigenba-crm.service inactive)
+stop: ok (ikigenba-crm.service, litestream.service)
 files: ok (/opt/crm/etc, /opt/crm/state, 12 files)
 db: ok (/opt/crm/state/crm.db, newest 2026-09-12T03:04:55Z)
+start: ok (litestream.service, ikigenba-crm.service)
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -610,51 +638,58 @@ Exits 0. The lines are on stdout; stderr is empty.
 Preconditions:
 
 - The named prefix holds a tarball and litestream's objects for `crm`.
-- `ikigenba-crm.service` is not active.
+- `ikigenba-crm.service` is active.
 
 Postconditions:
 
 - Everything the ordinary restore's postconditions say, read from the named
   prefix instead of `<backup.s3_uri>crm/`.
-- `<backup.s3_uri>crm/` was not read and not written: this host's own backup
-  history neither contributed to the restore nor gained an object from it.
-- Nothing under the staging prefix was deleted. Clearing it is devctl's, and
-  the bucket's lifecycle policy reaps what is left.
+- `--prefix` says where to read and nothing else. `/etc/litestream.yml` is
+  untouched, so the litestream that comes back up replicates the restored
+  database to `<backup.s3_uri>crm/`, this host's own prefix, and never to the
+  staging one.
+- `<backup.s3_uri>crm/` was not read and did not contribute to the restore.
+  This host's own backup history did not decide what the host now holds; from
+  the moment litestream is running again it records it.
+- Nothing under the staging prefix was deleted or written. Clearing it is
+  devctl's, and the bucket's lifecycle policy reaps what is left.
 
-## An operator restores a service that is running
+## An operator restores a service that was already stopped
 
-opsctl never starts or stops anything, so it does not stop the service for the
-operator — and it does not pretend the data underneath a running process was
-replaced quietly either. The state of the unit is a fact about the host, so it
-is part of the report rather than a diagnostic, and the restore still happens.
+A restore puts a service's data back; it does not decide whether the service
+should be running. An operator who stopped `crm` on purpose — mid-incident, or
+to hold it down while they look at it — gets it back stopped, and the report
+says so rather than leaving them to find out. litestream is a different matter:
+the restore took it down for its own reasons, so the restore puts it back.
 
 Command:
 
 ```
-$ sudo opsctl restore crm; echo "exit $?"
+$ sudo opsctl restore crm
 ```
 
 Output:
 
 ```
 source: ok (crm/2026-09-12T03:00:04Z.tar.zst, 1.2 MiB)
-unit: warning (ikigenba-crm.service is active)
+stop: ok (litestream.service, ikigenba-crm.service already inactive)
 files: ok (/opt/crm/etc, /opt/crm/state, 12 files)
 db: ok (/opt/crm/state/crm.db, newest 2026-09-12T09:07:11Z)
-exit 0
+start: ok (litestream.service, ikigenba-crm.service left inactive)
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- `ikigenba-crm.service` is active.
+- `ikigenba-crm.service` is installed and is not active.
 
 Postconditions:
 
 - Everything the ordinary restore's postconditions say, and: the unit is still
-  active and was never signalled. Whether the app noticed its data change
-  underneath it is the app's business; restarting it is the operator's.
+  inactive and was never started. `litestream.service` is running again.
+- No unit was enabled or disabled. Whether `crm` comes up at the next boot is
+  what it was before the restore.
 
 ## An operator restores a service with no backups
 
@@ -689,6 +724,12 @@ replication never started, a `[database]` added to a manifest after the last
 backup. The files are restored before the database is looked for, so the
 report says how far it got, and the exit code says it did not finish.
 
+Nothing is started again. `crm` would come up on the tarball's files with no
+database under them, which is a worse state than being down, and litestream
+would be asked to replicate a database that is not there. Leaving both stopped
+is what makes the failure visible and safe to re-run, so the `start:` line
+reports the units it left rather than claiming a step it did not take.
+
 Command:
 
 ```
@@ -699,9 +740,10 @@ Output:
 
 ```
 source: ok (crm/2026-09-12T03:00:04Z.tar.zst, 1.2 MiB)
-unit: ok (ikigenba-crm.service inactive)
+stop: ok (ikigenba-crm.service, litestream.service)
 files: ok (/opt/crm/etc, /opt/crm/state, 12 files)
 db: failed: litestream restore: no snapshot under the prefix
+start: warning (ikigenba-crm.service, litestream.service left stopped)
 exit 1
 ```
 
@@ -712,14 +754,18 @@ Preconditions:
 - `<backup.s3_uri>crm/` holds a tarball, and litestream has replicated
   nothing for `crm`.
 - `/opt/crm/etc/manifest.toml` in that tarball declares a `[database]`.
+- `ikigenba-crm.service` is active.
 
 Postconditions:
 
 - `/opt/crm/etc/` and `/opt/crm/state/` are the tarball's, and there is no
   database at `/opt/crm/state/crm.db`: the tarball never held one.
+- `ikigenba-crm.service` and `litestream.service` are both stopped, and
+  neither was enabled or disabled. No database on this host is being
+  replicated until one of them is started.
 - Nothing was rolled back. The host is left where an operator can look at it,
   and re-running the restore once the database objects are in place finishes
-  the job.
+  the job and starts both.
 
 ## An operator restores into a host that has never run the service
 
@@ -738,9 +784,10 @@ Output:
 
 ```
 source: ok (crm/2026-09-12T03:00:04Z.tar.zst, 1.2 MiB)
-unit: ok (no ikigenba-crm.service)
+stop: ok (litestream.service, no ikigenba-crm.service)
 files: ok (/opt/crm/etc, /opt/crm/state, 12 files)
 db: ok (/opt/crm/state/crm.db, newest 2026-09-12T09:07:11Z)
+start: ok (litestream.service)
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -755,6 +802,12 @@ Postconditions:
   was created with mode `0755` and holds nothing else.
 - The manifest the restore just wrote is what said the service declares a
   database, so the `db` line is there even though nothing was installed.
+- There is no unit to stop and none was written: a restore installs data, not
+  a service. `litestream.service` was stopped and started all the same,
+  because `state/` was replaced underneath it.
+- `litestream.service` does not replicate the restored database until `opsctl
+  init` has read the new manifest into `/etc/litestream.yml`. Until then the
+  database is on the host and is not being backed up.
 - `opsctl status` shows `crm - -` until an app is deployed over it.
 
 ## An operator runs restore with no service, or more than one
