@@ -151,8 +151,8 @@ $ sudo opsctl dns list ikigenba.dev
 Output:
 
 ```
-*.ikigenba.dev A 300 77.112.106.79
-ikigenba.dev A 300 77.112.106.79
+*.ikigenba.dev A 60 77.112.106.79
+ikigenba.dev A 60 77.112.106.79
 ikigenba.dev NS 172800 ns-132.awsdns-16.com
 ikigenba.dev NS 172800 ns-1653.awsdns-14.co.uk
 ikigenba.dev SOA 900 ns-132.awsdns-16.com. awsdns-hostmaster.amazon.com. 1 7200 900 1209600 86400
