@@ -1,3 +1,9 @@
 # Issues — the build run's escalation channel; kept out of git.
 # (**/ so the pattern also matches sub-projects, e.g. idgen/specs/issues/)
 **/specs/issues/
+
+# Build output. Every sub-project and every app owns its own bin/ and dist/;
+# no leading slash, so this covers all of them and a new one needs no
+# .gitignore of its own.
+bin/
+dist/

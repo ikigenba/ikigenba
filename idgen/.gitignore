@@ -1,6 +1,0 @@
-# Build output
-bin/
-dist/
-
-# Spec issues — the build run's escalation channel; kept out of git.
-specs/issues/
