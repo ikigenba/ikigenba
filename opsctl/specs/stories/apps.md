@@ -40,6 +40,9 @@ engine = "sqlite"
 path = "state/crm.db"
 ```
 
+A host may have no default app, in which case its own name answers 404 (see
+`nginx.md`); it may never have two.
+
 `install` reads the app, the port, `default`, and `secrets`. The `[env]` table
 it writes out; the `[database]` table it does not read at all — that one is
 `backup.md`'s, and it is in the manifest rather than the store because it is a
@@ -213,6 +216,40 @@ Postconditions:
 
 - `https://ikigenba.dev` and `https://dashboard.ikigenba.dev` both reach
   `127.0.0.1:3200`; every other name under the host still answers 404.
+
+## An operator installs a second default app
+
+Only one app answers at the host's own name. `install` reads the manifest of
+every app already under `/opt` and refuses before it writes anything.
+Installing the default app over itself is the upgrade path, not a conflict;
+only another app claiming the apex is.
+
+Command:
+
+```
+$ sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/dashboard-v0.0.9.tar.xz
+```
+
+Output:
+
+```
+file: ok (dashboard, port 3200, default)
+opsctl: dashboard: crm is already the default app
+```
+
+Exits 1. The first line is on stdout; the second is on stderr.
+
+Preconditions:
+
+- `dashboard`'s manifest sets `default = true`.
+- `crm` is installed and its manifest sets `default = true`.
+
+Postconditions:
+
+- Nothing has changed. `/opt/dashboard/` was not created, no unit was
+  written, and nginx was not reloaded.
+- Making `dashboard` the default means installing `crm` again with
+  `default = false` first.
 
 ## An agent installs an app whose secret has never been pushed
 
