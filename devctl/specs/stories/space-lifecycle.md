@@ -30,12 +30,11 @@ Subcommands:
   create <domain> [options]  create the space at <domain>
   destroy <domain>           remove the space and everything it owned
   stop <domain>              stop the instance; state is kept
-  start <domain>             start the instance and point its records at it
+  start <domain>             start the instance; its address is unchanged
   status <domain>            one line per app on the space: version and service state
 
 Options (create):
   --acme-email <address>  where the CA sends the space's expiry warnings; required
-  --elastic-ip            give the space a fixed address that survives stop and start
 
 Every subcommand needs --account. Run 'devctl space <subcommand> --help' for details.
 ```
@@ -67,7 +66,7 @@ Output:
 
 ```
 bar.sbx.ikigenba.dev stopped -
-foo.sbx.ikigenba.dev running 3.19.79.227
+foo.sbx.ikigenba.dev running 18.118.7.42
 new.sbx.ikigenba.dev running 18.220.10.5
 ```
 
@@ -151,9 +150,10 @@ A developer wants a fresh, complete copy of the platform at a domain of their
 choosing, ready for a deploy. `<domain>` is the space's one identifier, its
 full domain, typed in full every time: `foo.sbx.ikigenba.dev`,
 `staging.ikigenba.dev`, or the account domain itself for the apex space.
-Without `--elastic-ip` the address is whatever the launch assigned; `start`
-re-points the records after a stop. Each line of output is one step; the last
-line is the domain and the address.
+Every space is given an Elastic IP, so its address is fixed for the whole of
+its life: the records are written once, here, and every later stop and start
+leaves them alone. Each line of output is one step; the last line is the
+domain and the address.
 
 The host needs ten configuration keys before `opsctl init` will run, and
 `create` is what sets all ten. Seven it already knows: the domain is
@@ -179,11 +179,12 @@ domain: ok (zone sbx.ikigenba.dev Z02587302QXWONVKW632)
 secrets: ok (3 apps)
 role: ok (ikigenba-space-foo.sbx.ikigenba.dev)
 instance: ok (i-0c9e94542d98846a8 running, 3.19.79.227)
-records: ok (foo.sbx.ikigenba.dev, *.foo.sbx.ikigenba.dev -> 3.19.79.227, INSYNC)
+address: ok (elastic ip 18.118.7.42 associated)
+records: ok (foo.sbx.ikigenba.dev, *.foo.sbx.ikigenba.dev -> 18.118.7.42, INSYNC)
 host: ok (status checks passed, cloud-init done)
 opsctl: ok (v0.1.0 installed, 10 keys set)
 init: ok
-foo.sbx.ikigenba.dev 3.19.79.227
+foo.sbx.ikigenba.dev 18.118.7.42
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -221,89 +222,8 @@ Postconditions:
   that profile, tagged `Project=ikigenba` and `Space=<domain>` on the instance
   and its volume. It has passed its status checks and `cloud-init status
   --wait` has returned.
-- The space's records, the Route 53 `A` records `<domain>` and `*.<domain>`
-  with TTL 60 in the account's hosted zone whose name is the longest suffix
-  of `<domain>`, point at the instance's public address and the change is
-  `INSYNC`.
-- Every app's secrets object is at `/ikigenba/<domain>/<app>` (see
-  `secrets.md`).
-- `opsctl` is installed on the host and on root's PATH, and its configuration
-  store holds exactly the ten keys opsctl declares: `host.name=<domain>`,
-  `dns.provider=route53`, `dns.zones=<zone name>:<zone id>`, `aws.region` and
-  `backup.s3_uri` from the account's `region` and `backup_bucket` properties,
-  `acme.email` from `--acme-email`, and `backup.host_files_seconds`,
-  `backup.service_files_seconds`, `backup.service_db_seconds`, and
-  `backup.service_wal_seconds` set to the account's four periods.
-- `sudo opsctl init` has exited 0 on the host, so the host holds its
-  certificate, its generated nginx configuration, its litestream configuration
-  and unit, and its two backup timers, each enabled whose period is non-zero.
-- No apps are deployed; that is `deploy`.
-
-## A developer creates a space with a fixed address
-
-`--elastic-ip` allocates an Elastic IP tagged `Project=ikigenba` and
-`Space=<domain>`, associates it with the instance, and writes the records to
-it, so the address survives stop and start. There is no account default.
-
-Command:
-
-```
-$ devctl --account 295229566359 space create staging.ikigenba.dev --acme-email ops@ikigenba.dev --elastic-ip
-```
-
-Output:
-
-```
-account: ok (ikigenba.dev, us-east-2)
-domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
-secrets: ok (3 apps)
-role: ok (ikigenba-space-staging.ikigenba.dev)
-instance: ok (i-0a1b2c3d4e5f60718 running, 3.15.44.201)
-address: ok (elastic ip 18.220.10.5 associated)
-records: ok (staging.ikigenba.dev, *.staging.ikigenba.dev -> 18.220.10.5, INSYNC)
-host: ok (status checks passed, cloud-init done)
-opsctl: ok (v0.1.0 installed, 10 keys set)
-init: ok
-staging.ikigenba.dev 18.220.10.5
-```
-
-Exits 0. The lines are on stdout; stderr is empty.
-
-Preconditions:
-
-- A live SSO session for the profile named by `--account`.
-- The account has its properties, the JSON object at Parameter Store `/ikigenba/account`,
-  written by Terraform, with the keys `domain`, `backup_bucket`,
-  `launch_template_id`, `permissions_boundary_arn`, `region`,
-  `deploy_from_main_only`, `delete_secrets_on_destroy`,
-  `delete_backups_on_destroy`, `backup_host_files_seconds`,
-  `backup_service_files_seconds`, `backup_service_db_seconds`, and
-  `backup_service_wal_seconds`.
-- The account has a hosted zone whose name is a suffix of `<domain>`, and the
-  launch template, the permissions boundary, and the backup bucket the
-  properties name.
-- `<domain>` ends in the account's `domain` property, `ikigenba.dev`.
-- No instance is tagged `Space=<domain>` in the account.
-- Every app in the checkout has the values its manifest's `secrets` array
-  names in the developer's keyring (see `secrets.md`).
-- The opsctl release `space create` installs has been published, and the host can
-  reach it over the network.
-- `--acme-email` names an address the CA will accept.
-- The developer's ssh configuration can reach a new instance as `ec2-user`
-  with the account's `ikigenba` key pair.
-
-Postconditions:
-
 - An Elastic IP tagged `Project=ikigenba` and `Space=<domain>` is allocated
   and associated with the instance.
-- The role `ikigenba-space-<domain>` exists with the account's permissions
-  boundary attached and one inline policy named `space`, the template with
-  `<domain>`, `<zone_id>`, `<account_id>`, and `<bucket>` substituted. The
-  instance profile of the same name holds the role.
-- One instance is running, launched from the account's launch template with
-  that profile, tagged `Project=ikigenba` and `Space=<domain>` on the instance
-  and its volume. It has passed its status checks and `cloud-init status
-  --wait` has returned.
 - The space's records, the Route 53 `A` records `<domain>` and `*.<domain>`
   with TTL 60 in the account's hosted zone whose name is the longest suffix
   of `<domain>`, point at the Elastic IP and the change is `INSYNC`.
@@ -339,11 +259,12 @@ domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
 secrets: ok (3 apps)
 role: ok (ikigenba-space-ikigenba.dev)
 instance: ok (i-0f1e2d3c4b5a69788 running, 3.18.9.77)
-records: ok (ikigenba.dev, *.ikigenba.dev -> 3.18.9.77, INSYNC)
+address: ok (elastic ip 18.117.42.9 associated)
+records: ok (ikigenba.dev, *.ikigenba.dev -> 18.117.42.9, INSYNC)
 host: ok (status checks passed, cloud-init done)
 opsctl: ok (v0.1.0 installed, 10 keys set)
 init: ok
-ikigenba.dev 3.18.9.77
+ikigenba.dev 18.117.42.9
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -381,10 +302,11 @@ Postconditions:
   that profile, tagged `Project=ikigenba` and `Space=<domain>` on the instance
   and its volume. It has passed its status checks and `cloud-init status
   --wait` has returned.
+- An Elastic IP tagged `Project=ikigenba` and `Space=<domain>` is allocated
+  and associated with the instance.
 - The space's records, the Route 53 `A` records `<domain>` and `*.<domain>`
   with TTL 60 in the account's hosted zone whose name is the longest suffix
-  of `<domain>`, point at the instance's public address and the change is
-  `INSYNC`.
+  of `<domain>`, point at the Elastic IP and the change is `INSYNC`.
 - Every app's secrets object is at `/ikigenba/<domain>/<app>` (see
   `secrets.md`).
 - `opsctl` is installed on the host and on root's PATH, and its configuration
@@ -678,7 +600,7 @@ Output:
 
 ```
 instance: ok (i-0c9e94542d98846a8 terminated)
-address: ok (no elastic ip)
+address: ok (elastic ip 18.118.7.42 released)
 records: ok (2 deleted)
 secrets: ok (3 parameters deleted)
 backups: ok (0 objects deleted)
@@ -692,11 +614,12 @@ Preconditions:
 - A live SSO session for the profile named by `--account`.
 - The account has its properties at `/ikigenba/account`, with
   `delete_secrets_on_destroy` and `delete_backups_on_destroy` both true.
-- The space exists without an Elastic IP.
+- The space exists.
 
 Postconditions:
 
-- The space's instance is terminated.
+- The space's instance is terminated and its Elastic IP is disassociated and
+  released.
 - The `A` records `<domain>` and `*.<domain>` are gone from the zone. The
   wildcard is read back first,
   because Route 53 returns it as `\052.<domain>` and the delete must match
@@ -731,7 +654,7 @@ Preconditions:
 - A live SSO session for the profile named by `--account`.
 - The account's `delete_secrets_on_destroy` and `delete_backups_on_destroy`
   are both false.
-- The space exists with an Elastic IP tagged `Space=staging.ikigenba.dev`.
+- The space exists.
 
 Postconditions:
 
@@ -809,7 +732,7 @@ Output:
 
 ```
 instance: ok (i-0c9e94542d98846a8 terminated)
-address: ok (no elastic ip)
+address: ok (elastic ip 18.118.7.42 released)
 devctl: route53 ChangeResourceRecordSets: Throttling
 ```
 
@@ -825,10 +748,10 @@ Postconditions:
 - The steps that printed `ok` hold; the remaining steps did not run.
 - Running destroy again resumes from wherever things stand.
 
-## A developer stops a space that has a fixed address
+## A developer stops a space
 
 A developer leaves a space for a while but wants its disk and its state back
-later. With an Elastic IP the records stay, because the address does.
+later. The records stay, because the address does: a stop releases nothing.
 
 Command:
 
@@ -840,7 +763,7 @@ Output:
 
 ```
 instance: ok (i-0a1b2c3d4e5f60718 stopped)
-records: ok (kept, elastic ip)
+records: ok (unchanged, 18.220.10.5)
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -848,43 +771,12 @@ Exits 0. The lines are on stdout; stderr is empty.
 Preconditions:
 
 - A live SSO session for the profile named by `--account`.
-- The space's instance exists and is `running`, with an Elastic IP.
+- The space's instance exists and is `running`.
 
 Postconditions:
 
 - The instance is `stopped`. Its volume, its tags, its role, its secrets, its
   backups, and its `A` records `<domain>` and `*.<domain>` are untouched.
-
-## A developer stops a space that has no fixed address
-
-Without an Elastic IP the `A` records `<domain>` and `*.<domain>` are deleted, because the address is
-released with the stop and the name must not point at a stranger.
-
-Command:
-
-```
-$ devctl --account 602773793009 space stop foo.sbx.ikigenba.dev
-```
-
-Output:
-
-```
-instance: ok (i-0c9e94542d98846a8 stopped)
-records: ok (2 deleted)
-```
-
-Exits 0. The lines are on stdout; stderr is empty.
-
-Preconditions:
-
-- A live SSO session for the profile named by `--account`.
-- The space's instance exists and is `running`, without an Elastic IP.
-
-Postconditions:
-
-- The instance is `stopped`. Its volume, its tags, its role, its secrets, and
-  its backups are untouched.
-- The `A` records `<domain>` and `*.<domain>` are gone from the zone.
 
 ## A developer stops a space that is already stopped
 
@@ -898,7 +790,7 @@ Output:
 
 ```
 instance: ok (already stopped)
-records: ok (already gone)
+records: ok (unchanged, 18.118.7.42)
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -906,53 +798,18 @@ Exits 0. The lines are on stdout; stderr is empty.
 Preconditions:
 
 - A live SSO session for the profile named by `--account`.
-- The space's instance is `stopped`, without an Elastic IP, and its records
-  are gone.
+- The space's instance is `stopped`.
 
 Postconditions:
 
 - Nothing has changed.
 
-## A developer starts a stopped space that has no fixed address
+## A developer starts a stopped space
 
-The instance comes up on a new address, the records are written to it, and a
+The instance comes back at the address it had, so no record changes, and a
 renewal check runs on the host so a certificate that expired while the space
 was stopped is renewed. It is `sudo certbot renew`, never forced; certbot
 decides. The last line is the domain and the address.
-
-Command:
-
-```
-$ devctl --account 602773793009 space start foo.sbx.ikigenba.dev
-```
-
-Output:
-
-```
-instance: ok (i-0c9e94542d98846a8 running, 3.145.72.19)
-records: ok (foo.sbx.ikigenba.dev, *.foo.sbx.ikigenba.dev -> 3.145.72.19, INSYNC)
-host: ok (status checks passed)
-certificate: ok (certbot renew: not yet due)
-foo.sbx.ikigenba.dev 3.145.72.19
-```
-
-Exits 0. The lines are on stdout; stderr is empty.
-
-Preconditions:
-
-- A live SSO session for the profile named by `--account`.
-- The space's instance exists and is `stopped`, without an Elastic IP.
-- The developer's ssh configuration can reach the instance as `ec2-user`.
-
-Postconditions:
-
-- The instance is `running` and has passed its status checks.
-- The `A` records `<domain>` and `*.<domain>` point at the instance's new
-  public address and the change
-  is `INSYNC`.
-- `sudo certbot renew` has been run on the host over ssh and exited 0.
-
-## A developer starts a stopped space that has a fixed address
 
 Command:
 
@@ -975,7 +832,7 @@ Exits 0. The lines are on stdout; stderr is empty.
 Preconditions:
 
 - A live SSO session for the profile named by `--account`.
-- The space's instance exists and is `stopped`, with an Elastic IP.
+- The space's instance exists and is `stopped`.
 - The developer's ssh configuration can reach the instance as `ec2-user`.
 
 Postconditions:
@@ -1112,10 +969,10 @@ $ devctl --account 602773793009 space start foo.sbx.ikigenba.dev
 Output:
 
 ```
-instance: ok (i-0c9e94542d98846a8 running, 3.145.72.19)
-records: ok (foo.sbx.ikigenba.dev, *.foo.sbx.ikigenba.dev -> 3.145.72.19, INSYNC)
+instance: ok (i-0c9e94542d98846a8 running, 18.118.7.42)
+records: ok (unchanged, 18.118.7.42)
 host: ok (status checks passed)
-devctl: ssh ec2-user@3.145.72.19: connection timed out
+devctl: ssh ec2-user@18.118.7.42: connection timed out
 ```
 
 Exits 1. The `ok` lines are on stdout; the last line is on stderr.
@@ -1129,6 +986,6 @@ Preconditions:
 Postconditions:
 
 - The instance is `running` and the `A` records `<domain>` and `*.<domain>`
-  point at it.
-- No renewal check was run. Running start again on the running instance
-  re-points the records and runs the check.
+  still point at its Elastic IP.
+- No renewal check was run. Running start again on the running instance runs
+  the check.
