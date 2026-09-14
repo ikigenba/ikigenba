@@ -3,8 +3,9 @@
 `opsctl` is a Go CLI. Module path `github.com/ikigenba/ikigenba/opsctl`,
 targeting the Go version pinned in `go.mod`. Its direct dependencies are the
 AWS SDK modules named in the dependency requirement below, each approved by a
-human and pinned to an exact version; every other package is standard
-library, and the SDK is imported by exactly one package.
+human; which release of each satisfies that is data, and it lives in `go.mod`.
+Every other package is standard library, and the SDK is imported by exactly one
+package.
 
 ```
 opsctl/                              (this sub-project; go.mod lives here)
@@ -73,7 +74,7 @@ so the proof runs as any user.
 
 ## REQUIREMENTS
 
-- R-LV0Z-17L3: The module MUST be `github.com/ikigenba/ikigenba/opsctl` with its own `go.mod` that specifies a Go version, and the direct (non-`// indirect`) `require` entries of that `go.mod` MUST be exactly `github.com/aws/aws-sdk-go-v2 v1.46.0`, `github.com/aws/aws-sdk-go-v2/config v1.33.3`, and `github.com/aws/aws-sdk-go-v2/service/route53 v1.69.0`, verified by a test that reads `go.mod`.
+- R-EL9M-CEGL: The module MUST be `github.com/ikigenba/ikigenba/opsctl` with its own `go.mod` that specifies a Go version, and the module paths of the direct (non-`// indirect`) `require` entries of that `go.mod` MUST be exactly `github.com/aws/aws-sdk-go-v2`, `github.com/aws/aws-sdk-go-v2/config`, and `github.com/aws/aws-sdk-go-v2/service/route53`, verified by a test that reads `go.mod`.
 - R-MUPN-JCBU: Package `internal/cli` MUST export `Run(args []string, stdin io.Reader, stdout, stderr io.Writer, deps Deps) int`, and calling it MUST return an exit code in-process without terminating the calling program.
 - R-E9DW-L66P: Package `internal/cli` MUST export a `Deps` struct whose fields are exactly `Root string`, `EUID int`, `Getenv func(key string) string`, `DNS dns.Env`, `LookPath func(file string) (string, error)`, and `LookupHost func(ctx context.Context, host string) ([]string, error)`; a nil `Getenv` MUST read as an empty environment, a nil `LookPath` MUST read as `exec.LookPath`, and a nil `LookupHost` MUST read as `net.DefaultResolver.LookupHost`.
 - R-MYDC-ONJX: Every host path a command reads or writes MUST be resolved under `Deps.Root`, verified by running `config set` and `config get` through `Run` with a temporary directory as `Root` and observing the file appear under that directory and nowhere else.

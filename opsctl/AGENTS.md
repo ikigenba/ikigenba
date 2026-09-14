@@ -28,9 +28,10 @@ prerequisites — runs there.
 ## Dependencies
 
 Every direct dependency is approved by a human, and the approval is recorded
-in the design: D1 names the exact set of direct requirements with pinned
-versions (the AWS SDK v2 core, `config`, and `service/route53` modules), and a
-gate test compares `go.mod` against it. Transitive modules are whatever
+in the design: D1 names the exact set of direct requirements (the AWS SDK v2
+core, `config`, and `service/route53` modules), and a gate test compares the
+module paths in `go.mod` against it. Which release of each satisfies them is
+data, and it lives in `go.mod`. Transitive modules are whatever
 `go mod tidy` resolves for that set. The run never adds a direct module; a
 phase that appears to need one files an issue for a human to adjudicate.
 
