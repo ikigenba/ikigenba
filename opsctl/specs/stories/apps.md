@@ -233,11 +233,12 @@ $ sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/dashboa
 Output:
 
 ```
+fetch: ok (dashboard-v0.0.9.tar.xz, 5.2 MiB)
 file: ok (dashboard, port 3200, default)
 opsctl: dashboard: crm is already the default app
 ```
 
-Exits 1. The first line is on stdout; the second is on stderr.
+Exits 1. The `ok` lines are on stdout; the last line is on stderr.
 
 Preconditions:
 
@@ -265,11 +266,12 @@ $ sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/gmail-v
 Output:
 
 ```
+fetch: ok (gmail-v0.1.0.tar.xz, 6.1 MiB)
 file: ok (gmail, port 3300)
 opsctl: gmail: no value for 'GMAIL_CLIENT_SECRET' in /ikigenba/ikigenba.dev/gmail
 ```
 
-Exits 1. The first line is on stdout; the second is on stderr.
+Exits 1. The `ok` lines are on stdout; the last line is on stderr.
 
 Preconditions:
 
@@ -292,13 +294,15 @@ $ sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/notes.t
 Output:
 
 ```
+fetch: ok (notes.tar.xz, 2.0 MiB)
 opsctl: notes.tar.xz: no etc/manifest.toml in the file
 ```
 
-Exits 2. The line is on stderr; stdout is empty. A path that does not exist
-gives `opsctl: notes.tar.xz: no such object`, and a manifest that is not
-well-formed gives `opsctl: notes.tar.xz: etc/manifest.toml:` and the
-decoder's complaint, each exit 2.
+Exits 2. The `ok` line is on stdout; the last line is on stderr. A manifest
+that is not well-formed gives `opsctl: notes.tar.xz: etc/manifest.toml:` and
+the decoder's complaint after the same `fetch` line. A path that does not
+exist fails before it: `opsctl: notes.tar.xz: no such object` on stderr with
+stdout empty. Each exits 2.
 
 Preconditions:
 
