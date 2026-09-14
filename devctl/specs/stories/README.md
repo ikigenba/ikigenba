@@ -6,9 +6,9 @@ preconditions in the system, the exact command, what each option does, and the
 postconditions once the command has run.
 
 Stories are the input to `specs/design/`. A design realises a group of stories
-and assigns it requirement ids; when a group has been fully turned into designs,
-its file is deleted here, so this folder holds only what is not yet designed.
-Stories carry no requirement ids.
+and assigns it requirement ids. Stories carry no requirement ids. They are
+never deleted, designed or not, and when a design changes its stories are
+updated to match.
 
 Groups, in the order they are meant to be designed:
 

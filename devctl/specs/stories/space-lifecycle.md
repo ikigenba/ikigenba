@@ -189,7 +189,7 @@ Preconditions:
 - No instance is tagged `Space=<domain>` in the account.
 - Every app in the checkout has the values its manifest's `secrets` array
   names in the developer's keyring (see `secrets.md`).
-- The opsctl release `space create` pins has been published, and the host can
+- The opsctl release `space create` installs has been published, and the host can
   reach it over the network.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
   with the account's `ikigenba` key pair.
@@ -210,7 +210,7 @@ Postconditions:
   `INSYNC`.
 - Every app's secrets object is at `/ikigenba/<domain>/<app>` (see
   `secrets.md`).
-- `opsctl` is installed on the host at `/usr/local/bin/opsctl`, its config
+- `opsctl` is installed on the host and on root's PATH, its config
   store holds `host.name=<domain>`, `dns.provider=route53`,
   `dns.zones=<zone name>:<zone id>`, `backup.full_seconds`,
   `backup.incremental_seconds`, and `backup.wal_seconds` set to the account's
@@ -263,7 +263,7 @@ Preconditions:
 - No instance is tagged `Space=<domain>` in the account.
 - Every app in the checkout has the values its manifest's `secrets` array
   names in the developer's keyring (see `secrets.md`).
-- The opsctl release `space create` pins has been published, and the host can
+- The opsctl release `space create` installs has been published, and the host can
   reach it over the network.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
   with the account's `ikigenba` key pair.
@@ -285,7 +285,7 @@ Postconditions:
   of `<domain>`, point at the Elastic IP and the change is `INSYNC`.
 - Every app's secrets object is at `/ikigenba/<domain>/<app>` (see
   `secrets.md`).
-- `opsctl` is installed on the host at `/usr/local/bin/opsctl`, its config
+- `opsctl` is installed on the host and on root's PATH, its config
   store holds `host.name=<domain>`, `dns.provider=route53`,
   `dns.zones=<zone name>:<zone id>`, `backup.full_seconds`,
   `backup.incremental_seconds`, and `backup.wal_seconds` set to the account's
@@ -335,7 +335,7 @@ Preconditions:
 - No instance is tagged `Space=<domain>` in the account.
 - Every app in the checkout has the values its manifest's `secrets` array
   names in the developer's keyring (see `secrets.md`).
-- The opsctl release `space create` pins has been published, and the host can
+- The opsctl release `space create` installs has been published, and the host can
   reach it over the network.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
   with the account's `ikigenba` key pair.
@@ -356,7 +356,7 @@ Postconditions:
   `INSYNC`.
 - Every app's secrets object is at `/ikigenba/<domain>/<app>` (see
   `secrets.md`).
-- `opsctl` is installed on the host at `/usr/local/bin/opsctl`, its config
+- `opsctl` is installed on the host and on root's PATH, its config
   store holds `host.name=<domain>`, `dns.provider=route53`,
   `dns.zones=<zone name>:<zone id>`, `backup.full_seconds`,
   `backup.incremental_seconds`, and `backup.wal_seconds` set to the account's
@@ -578,7 +578,7 @@ Preconditions:
 - No instance is tagged `Space=<domain>` in the account.
 - Every app in the checkout has the values its manifest's `secrets` array
   names in the developer's keyring (see `secrets.md`).
-- The opsctl release `space create` pins has been published, and the host can
+- The opsctl release `space create` installs has been published, and the host can
   reach it over the network.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
   with the account's `ikigenba` key pair.
