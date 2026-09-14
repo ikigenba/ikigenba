@@ -28,4 +28,7 @@ Groups, in the order they are meant to be designed:
 9. `release.md` — getting opsctl onto a host in the first place.
 
 Each group states the line it adds to the top-level usage text under
-`Commands:`; `bootstrap.md` carries the frame with `version` alone.
+`Commands:`; `bootstrap.md` carries the frame with `version` alone. Each also
+declares the configuration keys it introduces, and only those; a command's
+help text lists every key that command reads, including keys another group
+declared.
