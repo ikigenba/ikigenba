@@ -80,8 +80,9 @@ Preconditions:
   written by Terraform, with the keys `domain`, `backup_bucket`,
   `launch_template_id`, `permissions_boundary_arn`, `region`,
   `deploy_from_main_only`, `delete_secrets_on_destroy`,
-  `delete_backups_on_destroy`, `backup_full_seconds`,
-  `backup_incremental_seconds`, and `backup_wal_seconds`.
+  `delete_backups_on_destroy`, `backup_host_files_seconds`,
+  `backup_service_files_seconds`, `backup_service_db_seconds`, and
+  `backup_service_wal_seconds`.
 - Three instances tagged `Project=ikigenba` with a `Space` tag exist in the
   account's region and are not terminated. A space's instance is the one
   tagged `Space=<domain>` that is not terminated; there is at most one.
@@ -154,12 +155,12 @@ Without `--elastic-ip` the address is whatever the launch assigned; `start`
 re-points the records after a stop. Each line of output is one step; the last
 line is the domain and the address.
 
-The host needs nine configuration keys before `opsctl init` will run, and
-`create` is what sets all nine. Six it already knows: the domain is
+The host needs ten configuration keys before `opsctl init` will run, and
+`create` is what sets all ten. Seven it already knows: the domain is
 `host.name`, the zone it found is `dns.zones`, the provider is `route53`, and
-the account's three backup periods are the three period keys. Two more it
+the account's four backup periods are the four period keys. Two more it
 reads from the account's properties: `region` becomes `aws.region`, and
-`backup_bucket` with the domain becomes `backup.s3_uri`. The ninth, the address
+`backup_bucket` with the domain becomes `backup.s3_uri`. The tenth, the address
 the CA sends expiry warnings to, is in neither place, so the developer supplies
 it with `--acme-email`. It is required rather than defaulted: a wrong address
 is only discovered when a certificate quietly expires.
@@ -180,7 +181,7 @@ role: ok (ikigenba-space-foo.sbx.ikigenba.dev)
 instance: ok (i-0c9e94542d98846a8 running, 3.19.79.227)
 records: ok (foo.sbx.ikigenba.dev, *.foo.sbx.ikigenba.dev -> 3.19.79.227, INSYNC)
 host: ok (status checks passed, cloud-init done)
-opsctl: ok (v0.1.0 installed, 9 keys set)
+opsctl: ok (v0.1.0 installed, 10 keys set)
 init: ok
 foo.sbx.ikigenba.dev 3.19.79.227
 ```
@@ -194,8 +195,9 @@ Preconditions:
   written by Terraform, with the keys `domain`, `backup_bucket`,
   `launch_template_id`, `permissions_boundary_arn`, `region`,
   `deploy_from_main_only`, `delete_secrets_on_destroy`,
-  `delete_backups_on_destroy`, `backup_full_seconds`,
-  `backup_incremental_seconds`, and `backup_wal_seconds`.
+  `delete_backups_on_destroy`, `backup_host_files_seconds`,
+  `backup_service_files_seconds`, `backup_service_db_seconds`, and
+  `backup_service_wal_seconds`.
 - The account has a hosted zone whose name is a suffix of `<domain>`, and the
   launch template, the permissions boundary, and the backup bucket the
   properties name.
@@ -226,14 +228,15 @@ Postconditions:
 - Every app's secrets object is at `/ikigenba/<domain>/<app>` (see
   `secrets.md`).
 - `opsctl` is installed on the host and on root's PATH, and its configuration
-  store holds exactly the nine keys opsctl declares: `host.name=<domain>`, `dns.provider=route53`,
-  `dns.zones=<zone name>:<zone id>`, `aws.region` and `backup.s3_uri` from the
-  account's `region` and `backup_bucket` properties, `acme.email` from
-  `--acme-email`, and `backup.full_seconds`, `backup.incremental_seconds`, and
-  `backup.wal_seconds` set to the account's three periods.
+  store holds exactly the ten keys opsctl declares: `host.name=<domain>`,
+  `dns.provider=route53`, `dns.zones=<zone name>:<zone id>`, `aws.region` and
+  `backup.s3_uri` from the account's `region` and `backup_bucket` properties,
+  `acme.email` from `--acme-email`, and `backup.host_files_seconds`,
+  `backup.service_files_seconds`, `backup.service_db_seconds`, and
+  `backup.service_wal_seconds` set to the account's four periods.
 - `sudo opsctl init` has exited 0 on the host, so the host holds its
-  certificate, its generated nginx configuration, and its three backup timers,
-  each enabled whose period is non-zero.
+  certificate, its generated nginx configuration, its litestream configuration
+  and unit, and its two backup timers, each enabled whose period is non-zero.
 - No apps are deployed; that is `deploy`.
 
 ## A developer creates a space with a fixed address
@@ -259,7 +262,7 @@ instance: ok (i-0a1b2c3d4e5f60718 running, 3.15.44.201)
 address: ok (elastic ip 18.220.10.5 associated)
 records: ok (staging.ikigenba.dev, *.staging.ikigenba.dev -> 18.220.10.5, INSYNC)
 host: ok (status checks passed, cloud-init done)
-opsctl: ok (v0.1.0 installed, 9 keys set)
+opsctl: ok (v0.1.0 installed, 10 keys set)
 init: ok
 staging.ikigenba.dev 18.220.10.5
 ```
@@ -273,8 +276,9 @@ Preconditions:
   written by Terraform, with the keys `domain`, `backup_bucket`,
   `launch_template_id`, `permissions_boundary_arn`, `region`,
   `deploy_from_main_only`, `delete_secrets_on_destroy`,
-  `delete_backups_on_destroy`, `backup_full_seconds`,
-  `backup_incremental_seconds`, and `backup_wal_seconds`.
+  `delete_backups_on_destroy`, `backup_host_files_seconds`,
+  `backup_service_files_seconds`, `backup_service_db_seconds`, and
+  `backup_service_wal_seconds`.
 - The account has a hosted zone whose name is a suffix of `<domain>`, and the
   launch template, the permissions boundary, and the backup bucket the
   properties name.
@@ -306,14 +310,15 @@ Postconditions:
 - Every app's secrets object is at `/ikigenba/<domain>/<app>` (see
   `secrets.md`).
 - `opsctl` is installed on the host and on root's PATH, and its configuration
-  store holds exactly the nine keys opsctl declares: `host.name=<domain>`, `dns.provider=route53`,
-  `dns.zones=<zone name>:<zone id>`, `aws.region` and `backup.s3_uri` from the
-  account's `region` and `backup_bucket` properties, `acme.email` from
-  `--acme-email`, and `backup.full_seconds`, `backup.incremental_seconds`, and
-  `backup.wal_seconds` set to the account's three periods.
+  store holds exactly the ten keys opsctl declares: `host.name=<domain>`,
+  `dns.provider=route53`, `dns.zones=<zone name>:<zone id>`, `aws.region` and
+  `backup.s3_uri` from the account's `region` and `backup_bucket` properties,
+  `acme.email` from `--acme-email`, and `backup.host_files_seconds`,
+  `backup.service_files_seconds`, `backup.service_db_seconds`, and
+  `backup.service_wal_seconds` set to the account's four periods.
 - `sudo opsctl init` has exited 0 on the host, so the host holds its
-  certificate, its generated nginx configuration, and its three backup timers,
-  each enabled whose period is non-zero.
+  certificate, its generated nginx configuration, its litestream configuration
+  and unit, and its two backup timers, each enabled whose period is non-zero.
 - No apps are deployed; that is `deploy`.
 
 ## A developer creates the apex space
@@ -336,7 +341,7 @@ role: ok (ikigenba-space-ikigenba.dev)
 instance: ok (i-0f1e2d3c4b5a69788 running, 3.18.9.77)
 records: ok (ikigenba.dev, *.ikigenba.dev -> 3.18.9.77, INSYNC)
 host: ok (status checks passed, cloud-init done)
-opsctl: ok (v0.1.0 installed, 9 keys set)
+opsctl: ok (v0.1.0 installed, 10 keys set)
 init: ok
 ikigenba.dev 3.18.9.77
 ```
@@ -350,8 +355,9 @@ Preconditions:
   written by Terraform, with the keys `domain`, `backup_bucket`,
   `launch_template_id`, `permissions_boundary_arn`, `region`,
   `deploy_from_main_only`, `delete_secrets_on_destroy`,
-  `delete_backups_on_destroy`, `backup_full_seconds`,
-  `backup_incremental_seconds`, and `backup_wal_seconds`.
+  `delete_backups_on_destroy`, `backup_host_files_seconds`,
+  `backup_service_files_seconds`, `backup_service_db_seconds`, and
+  `backup_service_wal_seconds`.
 - The account has a hosted zone whose name is a suffix of `<domain>`, and the
   launch template, the permissions boundary, and the backup bucket the
   properties name.
@@ -382,14 +388,15 @@ Postconditions:
 - Every app's secrets object is at `/ikigenba/<domain>/<app>` (see
   `secrets.md`).
 - `opsctl` is installed on the host and on root's PATH, and its configuration
-  store holds exactly the nine keys opsctl declares: `host.name=<domain>`, `dns.provider=route53`,
-  `dns.zones=<zone name>:<zone id>`, `aws.region` and `backup.s3_uri` from the
-  account's `region` and `backup_bucket` properties, `acme.email` from
-  `--acme-email`, and `backup.full_seconds`, `backup.incremental_seconds`, and
-  `backup.wal_seconds` set to the account's three periods.
+  store holds exactly the ten keys opsctl declares: `host.name=<domain>`,
+  `dns.provider=route53`, `dns.zones=<zone name>:<zone id>`, `aws.region` and
+  `backup.s3_uri` from the account's `region` and `backup_bucket` properties,
+  `acme.email` from `--acme-email`, and `backup.host_files_seconds`,
+  `backup.service_files_seconds`, `backup.service_db_seconds`, and
+  `backup.service_wal_seconds` set to the account's four periods.
 - `sudo opsctl init` has exited 0 on the host, so the host holds its
-  certificate, its generated nginx configuration, and its three backup timers,
-  each enabled whose period is non-zero.
+  certificate, its generated nginx configuration, its litestream configuration
+  and unit, and its two backup timers, each enabled whose period is non-zero.
 - No apps are deployed; that is `deploy`.
 
 ## A developer creates a space outside the account's domain
@@ -632,8 +639,9 @@ Preconditions:
   written by Terraform, with the keys `domain`, `backup_bucket`,
   `launch_template_id`, `permissions_boundary_arn`, `region`,
   `deploy_from_main_only`, `delete_secrets_on_destroy`,
-  `delete_backups_on_destroy`, `backup_full_seconds`,
-  `backup_incremental_seconds`, and `backup_wal_seconds`.
+  `delete_backups_on_destroy`, `backup_host_files_seconds`,
+  `backup_service_files_seconds`, `backup_service_db_seconds`, and
+  `backup_service_wal_seconds`.
 - The account has a hosted zone whose name is a suffix of `<domain>`, and the
   launch template, the permissions boundary, and the backup bucket the
   properties name.

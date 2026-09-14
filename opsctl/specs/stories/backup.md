@@ -5,16 +5,18 @@ one S3 prefix that belongs to this host and no other, and comes back from
 there. Nothing else on the host reads or writes that prefix, and the host's
 own role can reach no other space's.
 
-The top-level usage gains two lines under `Commands:`:
+Two different things are kept, so there are two pairs of commands. A
+**service** is what lives under `/opt/<name>/`; the **host** is the machine's
+own configuration and its certificate. A service backup never touches `/etc/`,
+and a host restore never touches `/opt/`.
+
+The top-level usage gains three lines under `Commands:`:
 
 ```
-  backup    back up the platform and its services to S3
-  restore   restore a service's data from its backups
+  backup    back up a service's files to S3
+  host      back up and restore the host's own configuration
+  restore   restore a service from its backups
 ```
-
-`init`'s sequence gains the step `timers`, after `nginx.conf`: the three
-service and timer pairs that run the three backup subcommands, at the periods
-the store names.
 
 Configuration keys:
 
@@ -22,15 +24,59 @@ Configuration keys:
 |---|---|
 | `aws.region` | the region the backup bucket lives in, e.g. `us-east-2` |
 | `backup.s3_uri` | the prefix this host backs up to, e.g. `s3://sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/` |
-| `backup.full_seconds` | how often the timer runs a full backup; `0` or unset means never |
-| `backup.incremental_seconds` | how often an incremental runs; `0` or unset means never |
-| `backup.wal_seconds` | how often write-ahead log segments ship; `0` or unset means never |
+| `backup.host_files_seconds` | how often the host's own configuration is copied; `0` or unset means never |
+| `backup.service_files_seconds` | how often every service's files are copied; `0` or unset means never |
+| `backup.service_db_seconds` | how often a declared database is snapshotted whole |
+| `backup.service_wal_seconds` | how often a declared database's committed changes are shipped |
 
-What is backed up, and what is not:
+## Two mechanisms, and where the line between them falls
 
-- `/etc/ikigenba/` and `/etc/letsencrypt/` — the host's configuration and its
-  certificate — under the name `platform`.
-- Every service's `etc/` and `state/`, under the service's own name.
+A service's files are copied on a timer: `opsctl backup` tars `etc/` and
+`state/` and writes one object. That is a walk of the filesystem, and it is
+honest about being one — it holds whatever was on disk while it ran.
+
+A SQLite database cannot be backed up that way. Copying the file while a
+writer is mid-transaction yields a torn file, and its `-wal` companion is a
+separate moving target that is meaningless without the exact database it
+belongs to. Worse, the application's own connection checkpoints and resets the
+WAL on its own schedule, so anything that only runs on a timer finds the
+history it needed already folded away.
+
+So a declared database is replicated by `litestream`, which runs continuously
+as `litestream.service`. Being resident is the whole point: it holds a read
+transaction open so the WAL cannot be reset past what it has not yet shipped,
+and it takes `wal_autocheckpoint` away from SQLite so it decides when frames
+are folded back. A one-shot run has no mark to hold and would lose
+transactions between invocations.
+
+`litestream` is on the host the way `nginx` and `certbot` are: it comes with
+the account's launch template, and `init` checks for it on PATH rather than
+installing it. opsctl drives it and never fetches it.
+
+The two mechanisms therefore do not overlap. For a service that declares a
+database, `opsctl backup` **excludes** the database file, its `-wal` and
+`-shm`, and litestream's own `.<name>-litestream` metadata directory. Those
+objects are litestream's and reach S3 by its path, not by the tarball's.
+
+**The two clocks are not synchronised, and are not meant to be.** A restore
+takes the newest files and, separately, the newest database — so the database
+is typically newer than the files around it. The database is what matters; a
+missing file is a missing file. An app that needs an artifact to be
+transactionally consistent with its rows must keep that artifact **in** the
+database.
+
+There is no incremental. SQLite has no incremental backup primitive, and
+litestream's compaction merges files it has already shipped rather than
+creating a recovery point that did not exist. What can be restored from is a
+snapshot and the committed changes after it, and nothing else.
+
+## What is backed up, and what is not
+
+- `/etc/ikigenba/` and `/etc/letsencrypt/` — the host's own configuration and
+  its certificate — by `opsctl host backup`, under `host/`.
+- Every service's `etc/` and `state/`, under the service's own name, by
+  `opsctl backup`.
+- Every declared database, under the service's own name, by `litestream`.
 - Never `cache/`: it is, by the name, reconstructible.
 - Never `/etc/nginx/` and never a unit file: both are generated from the
   configuration store and what is under `/opt`, so a restored host writes
@@ -52,16 +98,14 @@ path = "state/crm.db"
 This mirrors the split `nginx.md` already makes: a service is *discovered* by
 what is on disk, and gets more than the baseline only if its manifest asks for
 it. There, a manifest naming a `port` is what earns a server block. Here, a
-`[database]` table is what earns incrementals and WAL segments. A service with
-no manifest, or a manifest that declares no database, is backed up by fulls
-alone — which covers `platform`, and a service restored from backup but never
-installed.
+`[database]` table is what earns replication. A service with no manifest, or
+a manifest that declares no database, has its whole `state/` in the tarball
+and nothing else.
 
-**Not settled here.** What an incremental holds, what a WAL segment is, how the
-three kinds of object are told apart under `<backup.s3_uri><service>/`, and how
-`opsctl restore` chooses among them are open questions. This group fixes the
-three verbs, what declares a database, and who writes the timers; it does not
-fix the layout.
+`init`'s sequence gains two steps after `nginx.conf`: `litestream`, which
+writes `/etc/litestream.yml` from the declared databases and the two database
+periods and enables `litestream.service`, and `timers`, which writes the two
+service and timer pairs that run the two file backups at their periods.
 
 ## An operator asks what `backup` can do
 
@@ -78,21 +122,19 @@ $ opsctl backup -h
 Output:
 
 ```
-Usage: opsctl backup <subcommand>
+Usage: opsctl backup [SERVICE]
 
-Back the host up to the prefix in backup.s3_uri: /etc/ikigenba/ and
-/etc/letsencrypt/ as 'platform', and every service's etc/ and state/ under its
-own name. cache/ is never backed up, and neither is anything opsctl generates.
+Copy every service's etc/ and state/ to the prefix in backup.s3_uri, under the
+service's own name, or just SERVICE when one is named.
 
-Subcommands:
-  full         write one whole backup of the platform and of every service
-  incremental  write an incremental for every service that declares a database
-  wal          ship write-ahead log segments for every service that declares one
+Never copied: cache/, anything opsctl generates, and -- for a service that
+declares a [database] -- the database file, its -wal and -shm, and its
+litestream metadata directory. Those are replicated continuously by
+litestream.service. The host's own /etc/ is 'opsctl host backup'.
 
 A service declares its database with a [database] table in etc/manifest.toml
-naming its engine and its path. A service without one is covered by fulls
-alone. 'opsctl init' writes the timers that run these at the configured
-periods.
+naming its engine and its path. 'opsctl init' writes the timer that runs this
+at backup.service_files_seconds.
 
 Configuration keys:
   aws.region      the region the backup bucket lives in
@@ -109,23 +151,23 @@ Postconditions:
 
 - Nothing has changed.
 
-## The host backs itself up
+## The host backs up its services
 
-`ikigenba-backup-full.timer` runs this every `backup.full_seconds`. One line per thing
-backed up, in name order with `platform` first, so the timer's mail — or an
-operator running it by hand — says exactly what was written.
+`ikigenba-backup-services.timer` runs this every
+`backup.service_files_seconds`. One line per service, in name order, so the
+timer's mail — or an operator running it by hand — says exactly what was
+written.
 
 Command:
 
 ```
-$ sudo opsctl backup full
+$ sudo opsctl backup
 ```
 
 Output:
 
 ```
-platform: ok (2026-09-12T03:00:04Z.tar.zst, 48.2 KiB)
-crm: ok (2026-09-12T03:00:04Z.tar.zst, 12.4 MiB)
+crm: ok (2026-09-12T03:00:04Z.tar.zst, 1.2 MiB)
 dashboard: ok (2026-09-12T03:00:04Z.tar.zst, 1.1 MiB)
 ```
 
@@ -135,19 +177,50 @@ Preconditions:
 
 - `aws.region` and `backup.s3_uri` are set, and the host's role can write
   under that prefix.
-- Two services are installed.
+- Two services are installed. `/opt/crm/etc/manifest.toml` declares a
+  `[database]` at `state/crm.db`; `dashboard`'s declares none.
 
 Postconditions:
 
-- `<backup.s3_uri>platform/2026-09-12T03:00:04Z.tar.zst` holds
-  `/etc/ikigenba/` and `/etc/letsencrypt/`, and
-  `<backup.s3_uri><service>/2026-09-12T03:00:04Z.tar.zst` holds that
+- `<backup.s3_uri><service>/2026-09-12T03:00:04Z.tar.zst` holds that
   service's `etc/` and `state/`, for each service.
+- `crm`'s object holds no `state/crm.db`, no `state/crm.db-wal`, no
+  `state/crm.db-shm`, and nothing under `state/.crm.db-litestream/`.
+  `dashboard`'s object holds all of its `state/`.
 - Every object of one run carries the same timestamp, so a run is one set.
 - Nothing on the host has changed, and no earlier backup was deleted or
   overwritten. What is kept for how long is the bucket's lifecycle policy,
   which infra owns and opsctl never touches.
 - Running it again writes a new set under a new timestamp.
+
+## An operator backs up one service
+
+An operator about to do something risky to one service wants that service's
+files in the bucket now, and has no reason to wait for the timer or to touch
+the others.
+
+Command:
+
+```
+$ sudo opsctl backup crm
+```
+
+Output:
+
+```
+crm: ok (2026-09-12T14:22:51Z.tar.zst, 1.2 MiB)
+```
+
+Exits 0. The line is on stdout; stderr is empty.
+
+Preconditions:
+
+- `/opt/crm/` holds an `etc/` or a `state/`.
+
+Postconditions:
+
+- One object was written, under `crm/` and no other prefix. No other
+  service was read.
 
 ## The host backs up a service it cannot read
 
@@ -158,14 +231,13 @@ and the exit code says the report holds a failure.
 Command:
 
 ```
-$ sudo opsctl backup full; echo "exit $?"
+$ sudo opsctl backup; echo "exit $?"
 ```
 
 Output:
 
 ```
-platform: ok (2026-09-12T03:00:04Z.tar.zst, 48.2 KiB)
-crm: failed: /opt/crm/state/crm.db: permission denied
+crm: failed: /opt/crm/state/outbox: permission denied
 dashboard: ok (2026-09-12T03:00:04Z.tar.zst, 1.1 MiB)
 exit 1
 ```
@@ -174,19 +246,45 @@ Exits 1. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- `/opt/crm/state/crm.db` cannot be read.
+- `/opt/crm/state/outbox` cannot be read.
 
 Postconditions:
 
-- The platform's and `dashboard`'s objects were written. No object was
-  written for `crm`, and its earlier backups are untouched.
+- `dashboard`'s object was written. No object was written for `crm`, and its
+  earlier backups are untouched.
+- `crm`'s database is unaffected: litestream is still replicating it, and a
+  file the tarball could not read is not a file litestream reads.
+
+## An operator backs up a service that is not there
+
+Command:
+
+```
+$ sudo opsctl backup gmail
+```
+
+Output:
+
+```
+opsctl: no service 'gmail'
+```
+
+Exits 1. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- `/opt/gmail/` does not exist, or holds neither an `etc/` nor a `state/`.
+
+Postconditions:
+
+- Nothing has changed. No object was written.
 
 ## An agent backs up a host with nowhere to put it
 
 Command:
 
 ```
-$ sudo opsctl backup full
+$ sudo opsctl backup
 ```
 
 Output:
@@ -196,7 +294,8 @@ opsctl: backup.s3_uri not set
 ```
 
 Exits 1. The line is on stderr; stdout is empty. With `aws.region` unset the
-line is `opsctl: aws.region not set`. `incremental` and `wal` say the same.
+line is `opsctl: aws.region not set`. `opsctl host backup` and
+`opsctl restore` say the same.
 
 Preconditions:
 
@@ -206,98 +305,139 @@ Postconditions:
 
 - Nothing has changed. Nothing was read and no object was written.
 
-## The host backs up the services that declare a database
+## An operator asks what `host` can do
 
-`ikigenba-backup-incremental.timer` and `ikigenba-backup-wal.timer` run these
-every `backup.incremental_seconds` and every `backup.wal_seconds`. Only the
-services that declare a database appear: there is nothing an incremental or a
-segment could hold for the others, and a line claiming otherwise would be a lie
-about what is in the bucket.
-
-The object names below are the full's shape standing in until the layout is
-settled — see the note at the top of this group. What this story fixes is which
-services are reported and which are silent.
+The host's own configuration is not a service and is not shaped like one:
+there is one of it, it lives under `/etc/`, and restoring it replaces what the
+machine is rather than what an app holds. It gets its own noun for that
+reason.
 
 Command:
 
 ```
-$ sudo opsctl backup incremental
-$ sudo opsctl backup wal
+$ opsctl host --help
+```
+
+```
+$ opsctl host -h
 ```
 
 Output:
 
 ```
-crm: ok (2026-09-12T09:00:04Z.tar.zst, 3.7 MiB)
+Usage: opsctl host <subcommand>
+
+Back up and restore the host's own configuration: /etc/ikigenba/ and
+/etc/letsencrypt/, under 'host/' in backup.s3_uri. Nothing under /opt is
+touched either way -- that is 'opsctl backup' and 'opsctl restore'.
+
+Subcommands:
+  backup    write /etc/ikigenba/ and /etc/letsencrypt/ to S3
+  restore   replace them with the newest backup
+
+'opsctl init' writes the timer that runs the backup at
+backup.host_files_seconds.
+
+Configuration keys:
+  aws.region      the region the backup bucket lives in
+  backup.s3_uri   the prefix this host backs up to
 ```
 
+Exits 0. The text is on stdout; stderr is empty. It prints for any user.
+
+Preconditions:
+
+- `opsctl` is installed on the host.
+
+Postconditions:
+
+- Nothing has changed.
+
+## The host backs up its own configuration
+
+`ikigenba-backup-host.timer` runs this every `backup.host_files_seconds`.
+The configuration store is reconstructible — `devctl space create` writes
+every key — but the certificate is not: the CA rate-limits how often it will
+issue the same names, so a host rebuilt often can find itself unable to get
+one back.
+
+Command:
+
 ```
-crm: ok (2026-09-12T09:05:04Z.tar.zst, 96.0 KiB)
+$ sudo opsctl host backup
 ```
 
-Each exits 0. The lines are on stdout; stderr is empty.
+Output:
+
+```
+host: ok (2026-09-12T03:00:04Z.tar.zst, 48.2 KiB)
+```
+
+Exits 0. The line is on stdout; stderr is empty.
 
 Preconditions:
 
 - `aws.region` and `backup.s3_uri` are set, and the host's role can write
   under that prefix.
-- `/opt/crm/etc/manifest.toml` declares a `[database]` at `state/crm.db`.
-- `/opt/dashboard/etc/manifest.toml` declares none.
 
 Postconditions:
 
-- One object was written for `crm`. `dashboard` and `platform` have nothing
-  written for them and are not reported.
-- `/opt/crm/state/crm.db` is exactly as it was: both subcommands read it
-  through its engine and neither stops a writer.
-- No earlier object was deleted or overwritten.
+- `<backup.s3_uri>host/2026-09-12T03:00:04Z.tar.zst` holds `/etc/ikigenba/`
+  and `/etc/letsencrypt/`, with their modes.
+- Nothing under `/opt/` was read. No earlier object was deleted or
+  overwritten.
 
-## A service with no database gets fulls only
+## An operator gives a rebuilt host its certificate back
 
-A host where nothing declares a database still runs both timers; they simply
-find nothing to ship. Writing no object and saying so with the exit code is the
-honest answer, and it keeps the timer from filling the bucket with empty
-archives.
+`/etc/letsencrypt/` comes back rather than being re-issued, which is the
+point. The configuration store comes back with it, so a host restored this way
+is configured as the old one was — including any key set by hand that
+`space create` would not know to write.
 
 Command:
 
 ```
-$ sudo opsctl backup incremental; echo "exit $?"
+$ sudo opsctl host restore
 ```
 
 Output:
 
 ```
-exit 0
+source: ok (host/2026-09-12T03:00:04Z.tar.zst, 48.2 KiB)
+files: ok (/etc/ikigenba, /etc/letsencrypt, 31 files)
 ```
 
-Exits 0. Nothing is on stdout or stderr. `opsctl backup wal` behaves the same.
+Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- `aws.region` and `backup.s3_uri` are set.
-- No installed service's manifest holds a `[database]` table, or no service is
-  installed at all.
+- `aws.region` and `backup.s3_uri` are set, and the host's role can read
+  under that prefix.
+- `<backup.s3_uri>host/` holds at least one backup.
 
 Postconditions:
 
-- Nothing was read and no object was written. What those services hold comes
-  back from their fulls and from nothing else.
+- `/etc/ikigenba/` and `/etc/letsencrypt/` are exactly what the newest backup
+  holds, with their modes. Anything that was there and is not in the backup
+  is gone.
+- Nothing under `/opt/` was touched, no unit was started or stopped, and
+  nginx was not reloaded. `opsctl init` is what makes the host act on what
+  was just restored.
+- No object under `<backup.s3_uri>` was written or deleted.
 
 ## An operator asks for a period of zero
 
-A period of `0` — or a key that was never set — is how an account says it wants
-no backups of that kind. The unit pair is still written, so an operator can run
-one by hand with `systemctl start`, but the timer is left disabled and stopped
-and fires nothing.
+A period of `0` — or a key that was never set — is how an account says it
+wants no backups of that kind. The unit pair is still written, so an operator
+can run one by hand with `systemctl start`, but the timer is left disabled and
+stopped and fires nothing.
 
 Command:
 
 ```
-$ sudo opsctl config set backup.incremental_seconds=0
-$ sudo opsctl config set backup.wal_seconds=0
+$ sudo opsctl config set backup.service_files_seconds=0
 $ sudo opsctl init
-$ systemctl is-enabled ikigenba-backup-wal.timer; echo "exit $?"
+$ systemctl is-enabled ikigenba-backup-services.timer; echo "exit $?"
 ```
 
 Output:
@@ -313,15 +453,16 @@ Preconditions:
 
 Postconditions:
 
-- `ikigenba-backup-full.timer` is enabled and active at its period;
-  `ikigenba-backup-incremental.timer` and `ikigenba-backup-wal.timer` are
-  written, disabled, and not running.
-- A space whose three periods are all `0` writes no backups at all, so its
-  prefix stays empty and it can be a restore target but never a source.
-- `ikigenba-backup-<kind>.service` runs `opsctl backup <kind>` as root, and
-  changing a period is `opsctl config set` followed by `opsctl init`: a timer
-  is generated from the store, so an edit to one would be overwritten by the
+- `ikigenba-backup-host.timer` is enabled and active at its period;
+  `ikigenba-backup-services.timer` is written, disabled, and not running.
+- `ikigenba-backup-host.service` runs `opsctl host backup` as root and
+  `ikigenba-backup-services.service` runs `opsctl backup` as root; changing a
+  period is `opsctl config set` followed by `opsctl init`, because a timer is
+  generated from the store and an edit to one would be overwritten by the
   next `init`.
+- A space whose periods are all `0` and which has no service declaring a
+  database writes nothing at all, so its prefix stays empty and it can be a
+  restore target but never a source.
 
 ## An operator asks what `restore` can do
 
@@ -338,11 +479,18 @@ $ opsctl restore -h
 Output:
 
 ```
-Usage: opsctl restore SERVICE
+Usage: opsctl restore SERVICE [--prefix <s3 uri>]
 
-Replace /opt/SERVICE/state/ with the newest backup under
-<backup.s3_uri>SERVICE/. Data only: nothing under bin/, etc/, or share/ is
-touched, and no service is started or stopped.
+Replace /opt/SERVICE/etc/ and /opt/SERVICE/state/ with the newest backup, and,
+when SERVICE declares a [database], replace that database with the newest
+litestream has. Nothing under bin/ or share/ is touched, and no service is
+started or stopped.
+
+Options:
+  --prefix <s3 uri>   where to read from; defaults to <backup.s3_uri>SERVICE/
+
+The files and the database are restored to their own newest points, which are
+not the same instant. The database is the newer of the two.
 
 Configuration keys:
   aws.region      the region the backup bucket lives in
@@ -359,11 +507,11 @@ Postconditions:
 
 - Nothing has changed.
 
-## An agent gives a service another space's data
+## An operator puts a service back as it was
 
-`devctl restore` has already copied the source space's newest backup set into
-*this* host's prefix; from here it is an ordinary restore of the newest set
-this host can see. opsctl alone decides what a restore does on the host.
+The `db` line is the database's own newest point, which is later than the
+tarball's: the tarball is written on a timer and the database is replicated
+continuously.
 
 Command:
 
@@ -374,9 +522,10 @@ $ sudo opsctl restore crm
 Output:
 
 ```
-source: ok (crm/2026-09-12T03:00:04Z.tar.zst, 12.4 MiB)
+source: ok (crm/2026-09-12T03:00:04Z.tar.zst, 1.2 MiB)
 unit: ok (ikigenba-crm.service inactive)
-state: ok (/opt/crm/state, 12 files)
+files: ok (/opt/crm/etc, /opt/crm/state, 12 files)
+db: ok (/opt/crm/state/crm.db, newest 2026-09-12T09:07:11Z)
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -385,18 +534,92 @@ Preconditions:
 
 - `aws.region` and `backup.s3_uri` are set, and the host's role can read
   under that prefix.
-- `<backup.s3_uri>crm/` holds at least one backup.
+- `<backup.s3_uri>crm/` holds at least one tarball and litestream has
+  replicated `crm`'s database there.
 - `ikigenba-crm.service` is not active.
 
 Postconditions:
 
-- `/opt/crm/state/` is exactly what the newest backup holds. Anything that
-  was there and is not in the backup is gone.
-- `/opt/crm/bin/`, `/opt/crm/etc/`, and `/opt/crm/share/` are untouched: the
-  code on the host is the deploy's business, not the restore's.
+- `/opt/crm/etc/` and `/opt/crm/state/` are what the newest tarball holds,
+  and then `/opt/crm/state/crm.db` is what litestream restored. Anything that
+  was there and is in neither is gone.
+- `/opt/crm/bin/` and `/opt/crm/share/` are untouched: the code on the host is
+  the deploy's business, not the restore's.
 - No unit was started, stopped, enabled, or disabled, and nginx was not
   reloaded.
 - No object under `<backup.s3_uri>` was written or deleted.
+
+## An operator puts back a service that keeps no database
+
+With no `[database]` in the manifest there is nothing for litestream to have
+replicated, and the whole of `state/` was in the tarball. The `db` line is
+absent rather than reported as skipped: a line claiming a database was handled
+would be a lie about what is on disk.
+
+Command:
+
+```
+$ sudo opsctl restore dashboard
+```
+
+Output:
+
+```
+source: ok (dashboard/2026-09-12T03:00:04Z.tar.zst, 1.1 MiB)
+unit: ok (ikigenba-dashboard.service inactive)
+files: ok (/opt/dashboard/etc, /opt/dashboard/state, 40 files)
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- `/opt/dashboard/etc/manifest.toml` declares no `[database]`.
+
+Postconditions:
+
+- `/opt/dashboard/state/` is exactly what the tarball holds, and is the whole
+  of it. No litestream call was made.
+
+## An agent gives a service another space's data
+
+`devctl restore` has copied the source space's newest set — the tarball and
+litestream's objects — into a staging prefix under *this* host's own prefix,
+and names that prefix here. It is staged rather than written into `crm/`
+because `crm/` is this host's own backup history: another space's objects
+sitting in it would outlive the restore, and a later `opsctl restore crm` with
+no `--prefix` could pick one up.
+
+Command:
+
+```
+$ sudo opsctl restore crm --prefix s3://sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/restore/crm/
+```
+
+Output:
+
+```
+source: ok (restore/crm/2026-09-12T03:00:04Z.tar.zst, 12.4 MiB)
+unit: ok (ikigenba-crm.service inactive)
+files: ok (/opt/crm/etc, /opt/crm/state, 12 files)
+db: ok (/opt/crm/state/crm.db, newest 2026-09-12T03:04:55Z)
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- The named prefix holds a tarball and litestream's objects for `crm`.
+- `ikigenba-crm.service` is not active.
+
+Postconditions:
+
+- Everything the ordinary restore's postconditions say, read from the named
+  prefix instead of `<backup.s3_uri>crm/`.
+- `<backup.s3_uri>crm/` was not read and not written: this host's own backup
+  history neither contributed to the restore nor gained an object from it.
+- Nothing under the staging prefix was deleted. Clearing it is devctl's, and
+  the bucket's lifecycle policy reaps what is left.
 
 ## An operator restores a service that is running
 
@@ -414,9 +637,10 @@ $ sudo opsctl restore crm; echo "exit $?"
 Output:
 
 ```
-source: ok (crm/2026-09-12T03:00:04Z.tar.zst, 12.4 MiB)
+source: ok (crm/2026-09-12T03:00:04Z.tar.zst, 1.2 MiB)
 unit: warning (ikigenba-crm.service is active)
-state: ok (/opt/crm/state, 12 files)
+files: ok (/opt/crm/etc, /opt/crm/state, 12 files)
+db: ok (/opt/crm/state/crm.db, newest 2026-09-12T09:07:11Z)
 exit 0
 ```
 
@@ -428,7 +652,7 @@ Preconditions:
 
 Postconditions:
 
-- Everything the previous story's postconditions say, and: the unit is still
+- Everything the ordinary restore's postconditions say, and: the unit is still
   active and was never signalled. Whether the app noticed its data change
   underneath it is the app's business; restarting it is the operator's.
 
@@ -446,7 +670,8 @@ Output:
 opsctl: no backups for gmail under s3://sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/
 ```
 
-Exits 1. The line is on stderr; stdout is empty.
+Exits 1. The line is on stderr; stdout is empty. With `--prefix` given, the
+line names the prefix that was read.
 
 Preconditions:
 
@@ -456,11 +681,52 @@ Postconditions:
 
 - Nothing has changed. `/opt/gmail/` was neither created nor touched.
 
+## A restore finds files but no database
+
+The tarball and the database reach S3 by two different paths, so one can be
+there without the other — a prefix staged by hand, a service whose litestream
+replication never started, a `[database]` added to a manifest after the last
+backup. The files are restored before the database is looked for, so the
+report says how far it got, and the exit code says it did not finish.
+
+Command:
+
+```
+$ sudo opsctl restore crm; echo "exit $?"
+```
+
+Output:
+
+```
+source: ok (crm/2026-09-12T03:00:04Z.tar.zst, 1.2 MiB)
+unit: ok (ikigenba-crm.service inactive)
+files: ok (/opt/crm/etc, /opt/crm/state, 12 files)
+db: failed: litestream restore: no snapshot under the prefix
+exit 1
+```
+
+Exits 1. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- `<backup.s3_uri>crm/` holds a tarball, and litestream has replicated
+  nothing for `crm`.
+- `/opt/crm/etc/manifest.toml` in that tarball declares a `[database]`.
+
+Postconditions:
+
+- `/opt/crm/etc/` and `/opt/crm/state/` are the tarball's, and there is no
+  database at `/opt/crm/state/crm.db`: the tarball never held one.
+- Nothing was rolled back. The host is left where an operator can look at it,
+  and re-running the restore once the database objects are in place finishes
+  the job.
+
 ## An operator restores into a host that has never run the service
 
 A restore is how a fresh host is given another host's data, so the service
 need not be installed first. What comes back is data and only data: the host
-has a `state/` for a service with no binary until a deploy brings one.
+has an `etc/` and a `state/` for a service with no binary until a deploy brings
+one.
 
 Command:
 
@@ -471,9 +737,10 @@ $ sudo opsctl restore crm
 Output:
 
 ```
-source: ok (crm/2026-09-12T03:00:04Z.tar.zst, 12.4 MiB)
+source: ok (crm/2026-09-12T03:00:04Z.tar.zst, 1.2 MiB)
 unit: ok (no ikigenba-crm.service)
-state: ok (/opt/crm/state, 12 files)
+files: ok (/opt/crm/etc, /opt/crm/state, 12 files)
+db: ok (/opt/crm/state/crm.db, newest 2026-09-12T09:07:11Z)
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -484,8 +751,10 @@ Preconditions:
 
 Postconditions:
 
-- `/opt/crm/state/` holds the backup's data. `/opt/crm/` was created with
-  mode `0755` and holds nothing else.
+- `/opt/crm/etc/` and `/opt/crm/state/` hold the backup's data. `/opt/crm/`
+  was created with mode `0755` and holds nothing else.
+- The manifest the restore just wrote is what said the service declares a
+  database, so the `db` line is there even though nothing was installed.
 - `opsctl status` shows `crm - -` until an app is deployed over it.
 
 ## An operator runs restore with no service, or more than one
@@ -515,34 +784,34 @@ Postconditions:
 
 - Nothing has changed.
 
-## An operator runs `backup` with no subcommand, or one that does not exist
+## An operator runs `host` with no subcommand, or one that does not exist
 
 Command:
 
 ```
-$ sudo opsctl backup
+$ sudo opsctl host
 ```
 
 Output:
 
 ```
-opsctl: no backup subcommand given
+opsctl: no host subcommand given
 
-see 'opsctl backup --help' for usage
+see 'opsctl host --help' for usage
 ```
 
 Command:
 
 ```
-$ sudo opsctl backup restore crm
+$ sudo opsctl host status
 ```
 
 Output:
 
 ```
-opsctl: unknown backup subcommand 'restore'
+opsctl: unknown host subcommand 'status'
 
-see 'opsctl backup --help' for usage
+see 'opsctl host --help' for usage
 ```
 
 Both exit 2. The text is on stderr; stdout is empty.

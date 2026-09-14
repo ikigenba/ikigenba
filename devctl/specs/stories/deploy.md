@@ -1,9 +1,11 @@
 # Stories — deploy
 
 Deploy puts one built file on one space. The file is what `build` wrote,
-`<app>/dist/<app>-<tag>.tar.xz`; devctl copies it to the host's `/tmp/` and has
-`opsctl` install it from there. Promotion is deploying the same file to a
-different space. What each space is running is read from the host with
+`<app>/dist/<app>-<tag>.tar.xz`; devctl uploads it to the space's own
+`deploy/` prefix in the backup bucket and has `opsctl` install it from there.
+The file never travels over the ssh connection — the host fetches it with its
+own role, which can reach that prefix and no other space's. Promotion is
+deploying the same file to a different space. What each space is running is read from the host with
 `space status`, never recorded anywhere else.
 
 ## A developer asks what `deploy` can do
@@ -22,9 +24,9 @@ Output:
 ```
 Usage: devctl --account <name> deploy <domain> <file>
 
-Copy <file>, an <app>/dist/<app>-<tag>.tar.xz written by build, to /tmp/ on
-the space at <domain> and have opsctl install it. The app and tag are read
-from the file name.
+Upload <file>, an <app>/dist/<app>-<tag>.tar.xz written by build, to the
+deploy/ prefix of <domain>'s backup bucket and have opsctl on <domain> install
+it from there. The app and tag are read from the file name.
 ```
 
 Exits 0. The text is on stdout; stderr is empty.
@@ -39,7 +41,7 @@ Postconditions:
 
 ## A developer deploys an app they just built
 
-The app and tag come from the file name. Before anything is copied, the
+The app and tag come from the file name. Before anything is uploaded, the
 `secrets` array in the `etc/manifest.toml` inside the file is compared with
 the space's secrets object for that app. Each line of output is one step.
 
@@ -54,7 +56,7 @@ Output:
 ```
 file: ok (crm v0.1.0)
 secrets: ok (3 keys)
-copy: ok (-> ec2-user@3.19.79.227:/tmp/crm-v0.1.0.tar.xz)
+upload: ok (-> sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/deploy/crm-v0.1.0.tar.xz)
 install: ok (opsctl installed crm)
 ```
 
@@ -73,8 +75,8 @@ Preconditions:
 
 Postconditions:
 
-- `/tmp/crm-v0.1.0.tar.xz` is on the host
-  and `sudo opsctl install /tmp/crm-v0.1.0.tar.xz`
+- `sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/deploy/crm-v0.1.0.tar.xz` holds the file,
+  and `sudo opsctl install s3://sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/deploy/crm-v0.1.0.tar.xz`
   has been run over ssh and exited 0, so `crm.foo.sbx.ikigenba.dev` answers
   from the new binary. `crm`'s `state/` directory is untouched. What install
   does on the host is opsctl's; devctl runs it and reports its exit.
@@ -97,7 +99,7 @@ Output:
 ```
 file: ok (crm v0.1.0)
 secrets: ok (3 keys)
-copy: ok (-> ec2-user@3.18.9.77:/tmp/crm-v0.1.0.tar.xz)
+upload: ok (-> ikigenba-dev-295229566359/ikigenba.dev/deploy/crm-v0.1.0.tar.xz)
 install: ok (opsctl installed crm)
 ```
 
@@ -116,10 +118,10 @@ Preconditions:
 
 Postconditions:
 
-- `/tmp/crm-v0.1.0.tar.xz` is on the host and
-  `sudo opsctl install /tmp/crm-v0.1.0.tar.xz` has exited 0, so
-  `crm.ikigenba.dev` answers from the new binary. `crm`'s `state/` is
-  untouched.
+- `ikigenba-dev-295229566359/ikigenba.dev/deploy/crm-v0.1.0.tar.xz` holds the file and
+  `sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/crm-v0.1.0.tar.xz`
+  has exited 0, so `crm.ikigenba.dev` answers from the new binary. `crm`'s
+  `state/` is untouched.
 - `space status ikigenba.dev` shows `crm` at `v0.1.0`.
 
 ## A developer deploys while the space lacks a secret the app declares
@@ -153,7 +155,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. Nothing was copied.
+- Nothing has changed. Nothing was uploaded.
 
 ## A developer deploys a file that does not exist
 
@@ -274,8 +276,8 @@ Output:
 ```
 file: ok (gmail v0.1.0)
 secrets: ok (2 keys)
-copy: ok (-> ec2-user@3.19.79.227:/tmp/gmail-v0.1.0.tar.xz)
-devctl: install: ssh ec2-user@3.19.79.227 sudo opsctl install /tmp/gmail-v0.1.0.tar.xz: exit status 1
+upload: ok (-> sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/deploy/gmail-v0.1.0.tar.xz)
+devctl: install: ssh ec2-user@3.19.79.227 sudo opsctl install s3://sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/deploy/gmail-v0.1.0.tar.xz: exit status 1
 
 opsctl: gmail: service failed to start
 ```
@@ -294,6 +296,6 @@ Preconditions:
 
 Postconditions:
 
-- The file is in `/tmp/` on the host. `gmail` is whatever `opsctl` left;
-  `space status` reports it.
+- The file is under the space's `deploy/` prefix. `gmail` is whatever
+  `opsctl` left; `space status` reports it.
 - No other app on the space has changed.

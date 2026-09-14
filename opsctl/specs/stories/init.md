@@ -20,11 +20,11 @@ every app's own name all hang off it.
 
 The sequence is the setup commands that exist. It is empty until a group adds
 one to it, and each group that does says so; `certificates.md` adds
-`certificate`, `nginx.md` adds `nginx.conf`, and `backup.md` adds `timers`, in
-that order. Every setup command is idempotent, so `init` is too, and a step's
-inputs are read from the store every run — which is why changing a period or a
-zone is `config set` followed by `init`, and never an edit to something `init`
-generated.
+`certificate`, `nginx.md` adds `nginx.conf`, and `backup.md` adds `litestream`
+and `timers`, in that order. Every setup command is idempotent, so `init` is
+too, and a step's inputs are read from the store every run — which is why
+changing a period or a zone is `config set` followed by `init`, and never an
+edit to something `init` generated.
 
 Every check runs; none short-circuits another, so one run shows an agent
 everything that is missing rather than one thing per run. A check whose input
@@ -56,6 +56,7 @@ nothing runs and init exits 2. Safe to re-run.
 
 Checks, in order:
   nginx, certbot, systemctl  each found on PATH
+  litestream                 found on PATH
   dns.provider, dns.zones    set, and the provider opens (see 'opsctl dns --help')
   host.name                  set
   zone NAME                  every configured zone is reachable and delegated
@@ -65,6 +66,7 @@ Checks, in order:
 Sequence:
   certificate  obtain the host's certificate, or renew it if it is due
   nginx.conf   generate /etc/nginx/conf.d/ikigenba.conf and reload nginx
+  litestream   generate /etc/litestream.yml and enable litestream.service
   timers       write the backup units, enabling each timer whose period is set
 
 Configuration keys:
@@ -99,6 +101,7 @@ Output:
 nginx: ok (/usr/sbin/nginx)
 certbot: ok (/usr/bin/certbot)
 systemctl: ok (/usr/bin/systemctl)
+litestream: ok (/usr/local/bin/litestream)
 dns.provider: ok (route53)
 dns.zones: ok (ikigenba.dev)
 host.name: ok (ikigenba.dev)
@@ -112,7 +115,7 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- `nginx`, `certbot`, and `systemctl` are on the host's PATH.
+- `nginx`, `certbot`, `systemctl`, and `litestream` are on the host's PATH.
 - `dns.provider`, `dns.zones`, and `host.name` are set, and the host's
   credentials can read the configured zone.
 - Public DNS delegates the zone, and `ikigenba.dev` and
@@ -121,8 +124,10 @@ Preconditions:
 Postconditions:
 
 - The setup sequence has run: the host holds its certificate, the nginx file
-  generated from the store and what is under `/opt`, and the three backup unit
-  pairs with each timer enabled whose period the store gives as non-zero.
+  generated from the store and what is under `/opt`, `/etc/litestream.yml`
+  naming every declared database with `litestream.service` enabled, and the two
+  backup unit pairs with each timer enabled whose period the store gives as
+  non-zero.
 - Every setup command is idempotent, so a host that was already set up is
   unchanged by the run.
 
@@ -153,6 +158,7 @@ Output:
 nginx: ok (/usr/sbin/nginx)
 certbot: failed: not found on PATH
 systemctl: ok (/usr/bin/systemctl)
+litestream: ok (/usr/local/bin/litestream)
 dns.provider: ok (route53)
 dns.zones: ok (ikigenba.dev)
 host.name: failed: not set
@@ -186,7 +192,7 @@ $ sudo opsctl config set host.name=ikigenba.dev
 $ sudo opsctl init; echo "exit $?"
 ```
 
-Output: the nine `ok` lines of the ready host, and `exit 0`.
+Output: the ten `ok` lines of the ready host, and `exit 0`.
 
 Preconditions:
 

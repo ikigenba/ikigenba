@@ -24,7 +24,7 @@ Groups, in the order they are meant to be designed:
 5. `nginx.md` — the one nginx file opsctl generates.
 6. `certificates.md` — the host's wildcard certificate.
 7. `apps.md` — putting an app on the host and reading what is on it.
-8. `backup.md` — backing the host up, and restoring one service's data.
+8. `backup.md` — backing up the host and its services, and restoring them.
 9. `release.md` — getting opsctl onto a host in the first place.
 
 Each group states the line it adds to the top-level usage text under

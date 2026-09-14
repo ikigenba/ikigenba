@@ -1,8 +1,9 @@
 # Stories — apps
 
-An app reaches a host as one file: the `<app>-<tag>.tar.xz` devctl built and
-copied to `/tmp/`. opsctl installs it — and installing is everything between
-that file and the app answering at its own name. What each host is running is
+An app reaches a host as one object: the `<app>-<tag>.tar.xz` devctl built and
+uploaded to `<backup.s3_uri>deploy/`. opsctl fetches it with the host's own
+role and installs it — and installing is everything between that object and
+the app answering at its own name. What each host is running is
 read back from the host itself, never from a record kept anywhere else.
 
 The top-level usage gains two lines under `Commands:`:
@@ -16,7 +17,7 @@ One configuration key:
 
 | key | value |
 |---|---|
-| `aws.region` | the region this host's parameters and backups live in, e.g. `us-east-2` |
+| `aws.region` | the region this host's parameters, artifacts, and backups live in, e.g. `us-east-2` |
 
 The file's layout is devctl's contract and carries no version inside it:
 `bin/<app>`, `etc/manifest.toml`, whatever else the app keeps under `etc/`,
@@ -63,17 +64,18 @@ $ opsctl install -h
 Output:
 
 ```
-Usage: opsctl install FILE
+Usage: opsctl install URI
 
-Install the app in FILE, an <app>-<tag>.tar.xz built by devctl. The app name,
-its port, and the secrets it needs are read from etc/manifest.toml inside the
-file; the secret values are read from the parameter /ikigenba/<host.name>/<app>.
+Install the app at URI, an s3:// object holding an <app>-<tag>.tar.xz built by
+devctl. The app name, its port, and the secrets it needs are read from
+etc/manifest.toml inside it; the secret values are read from the parameter
+/ikigenba/<host.name>/<app>.
 
 Nothing under /opt/<app>/state/ or /opt/<app>/cache/ is touched, so installing
 over a running app keeps its data. Safe to re-run.
 
 Configuration keys:
-  aws.region  the region this host's parameters live in
+  aws.region  the region this host's parameters and artifacts live in
   host.name   the fully-qualified name this host answers at
 ```
 
@@ -89,19 +91,21 @@ Postconditions:
 
 ## An agent installs an app
 
-`devctl deploy` has copied the file to `/tmp/` and now runs one command over
-ssh. Each line of output is one step, and the last is exactly the line
-`status` will print for this app from now on.
+`devctl deploy` has uploaded the file and now runs one command over ssh. Each
+line of output is one step, and the last is exactly the line `status` will
+print for this app from now on. The `fetch` step is the host reading the object
+with its own role: the file never travels over the ssh connection.
 
 Command:
 
 ```
-$ sudo opsctl install /tmp/crm-v0.1.0.tar.xz
+$ sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/crm-v0.1.0.tar.xz
 ```
 
 Output:
 
 ```
+fetch: ok (crm-v0.1.0.tar.xz, 8.4 MiB)
 file: ok (crm, port 3100)
 secrets: ok (3 keys)
 unpack: ok (/opt/crm)
@@ -115,8 +119,8 @@ Exits 0. The lines are on stdout; stderr is empty.
 Preconditions:
 
 - `host.name` and `aws.region` are set, and `init` reported the host ready.
-- `/tmp/crm-v0.1.0.tar.xz` exists and holds `bin/crm` and
-  `etc/manifest.toml`.
+- The object holds `bin/crm` and `etc/manifest.toml`, and the host's role can
+  read it.
 - `/ikigenba/<host.name>/crm` holds every name the manifest's `secrets`
   array lists.
 - `crm` has never been installed on this host.
@@ -148,7 +152,7 @@ tarball carries no `state/`, and opsctl writes none.
 Command:
 
 ```
-$ sudo opsctl install /tmp/crm-v0.2.0.tar.xz
+$ sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/crm-v0.2.0.tar.xz
 ```
 
 Output:
@@ -184,7 +188,7 @@ well as its own, and the nginx step says so.
 Command:
 
 ```
-$ sudo opsctl install /tmp/dashboard-v0.0.9.tar.xz
+$ sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/dashboard-v0.0.9.tar.xz
 ```
 
 Output:
@@ -218,7 +222,7 @@ secret refuses the install rather than half-doing it.
 Command:
 
 ```
-$ sudo opsctl install /tmp/gmail-v0.1.0.tar.xz
+$ sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/gmail-v0.1.0.tar.xz
 ```
 
 Output:
@@ -245,18 +249,18 @@ Postconditions:
 Command:
 
 ```
-$ sudo opsctl install /tmp/notes.tar.xz
+$ sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/notes.tar.xz
 ```
 
 Output:
 
 ```
-opsctl: /tmp/notes.tar.xz: no etc/manifest.toml in the file
+opsctl: notes.tar.xz: no etc/manifest.toml in the file
 ```
 
 Exits 2. The line is on stderr; stdout is empty. A path that does not exist
-gives `opsctl: /tmp/notes.tar.xz: no such file`, and a manifest that is not
-well-formed gives `opsctl: /tmp/notes.tar.xz: etc/manifest.toml:` and the
+gives `opsctl: notes.tar.xz: no such object`, and a manifest that is not
+well-formed gives `opsctl: notes.tar.xz: etc/manifest.toml:` and the
 decoder's complaint, each exit 2.
 
 Preconditions:
@@ -276,7 +280,7 @@ relayed output has the journal in front of them.
 Command:
 
 ```
-$ sudo opsctl install /tmp/gmail-v0.1.0.tar.xz
+$ sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/gmail-v0.1.0.tar.xz
 ```
 
 Output:
@@ -317,13 +321,14 @@ $ sudo opsctl install
 Output:
 
 ```
-opsctl: install needs FILE
+opsctl: install needs URI
 
 see 'opsctl install --help' for usage
 ```
 
 Exits 2. The text is on stderr; stdout is empty. More than one operand gives
-`opsctl: install takes one FILE`.
+`opsctl: install takes one URI`. An operand that is not an `s3://` URI gives
+`opsctl: install takes an s3:// URI`.
 
 Preconditions:
 
