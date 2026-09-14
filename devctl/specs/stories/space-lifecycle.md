@@ -1000,9 +1000,9 @@ $ devctl --account 602773793009 space status foo.sbx.ikigenba.dev
 Output:
 
 ```
-crm v0.1.0 active
-dashboard v0.0.9 active
-gmail v0.1.0 failed
+crm v0.1.0 active wal
+dashboard v0.0.9 active -
+gmail v0.1.0 failed -
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.

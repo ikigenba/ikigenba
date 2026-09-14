@@ -829,7 +829,9 @@ Postconditions:
 - `litestream.service` does not replicate the restored database until `opsctl
   init` has read the new manifest into `/etc/litestream.yml`. Until then the
   database is on the host and is not being backed up.
-- `opsctl status` shows `crm - -` until an app is deployed over it.
+- `opsctl status` shows `crm - - wal` until an app is deployed over it: no
+  binary to ask a version of and no unit to ask a state of, but a restored
+  database whose journal mode it can read.
 
 ## An operator runs restore with no service, or more than one
 

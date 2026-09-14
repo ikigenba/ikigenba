@@ -177,7 +177,7 @@ Postconditions:
 
 - Everything the first install's postconditions say, and: `/opt/crm/state/`
   is byte for byte as it was, the unit was restarted rather than started, and
-  `status` now shows `crm v0.2.0 active`.
+  `status` now shows `crm v0.2.0 active wal`.
 - Installing the same file again produces the same six lines and exit 0.
 
 ## An agent installs the host's default app
@@ -308,7 +308,7 @@ Postconditions:
 - The app is unpacked, its unit is written and enabled, and nginx routes its
   name. The unit is `failed`. Nothing was rolled back: the host is left in
   the state an operator can inspect and fix, and `status` shows
-  `gmail v0.1.0 failed`.
+  `gmail v0.1.0 failed -`.
 
 ## An operator runs `install` with no file, or more than one
 
@@ -356,11 +356,17 @@ Output:
 Usage: opsctl status
 
 Print one line per service on this host, in name order: its name, the version
-its own binary reports, and the state of its systemd unit. A service is any
-/opt/<name>/ with an etc/ or state/ directory; '-' means opsctl could not ask.
+its own binary reports, the state of its systemd unit, and the journal mode of
+the database its manifest declares. A service is any /opt/<name>/ with an etc/
+or state/ directory; '-' means opsctl could not ask, or there was nothing to
+ask.
 
-The exit code is 0 whatever the report says. A failed unit is a fact about the
-host, not a failure of this command.
+A declared database must stay in WAL mode: litestream cannot replicate one in
+any other mode, so a service reporting anything but 'wal' is a service whose
+data is not reaching S3.
+
+The exit code is 0 whatever the report says. A failed unit and an unreplicable
+database are facts about the host, not failures of this command.
 ```
 
 Exits 0. The text is on stdout; stderr is empty. It prints for any user.
@@ -376,9 +382,13 @@ Postconditions:
 ## A developer asks what a host is running
 
 The answer comes from the host and nowhere else: the services under `/opt`,
-each app's own binary asked its version, and each app's unit asked its state.
-One line per app, in name order. `devctl space status` runs exactly this over
-ssh and copies the output to the developer's terminal byte for byte.
+each app's own binary asked its version, each app's unit asked its state, and
+each declared database asked its journal mode. One line per app, in name order.
+`devctl space status` runs exactly this over ssh and copies the output to the
+developer's terminal byte for byte.
+
+The fourth field is `-` for a service that declares no database, because there
+was nothing to ask — the same `-` the other fields use.
 
 Command:
 
@@ -389,9 +399,9 @@ $ sudo opsctl status
 Output:
 
 ```
-crm v0.1.0 active
-dashboard v0.0.9 active
-gmail v0.1.0 failed
+crm v0.1.0 active wal
+dashboard v0.0.9 active -
+gmail v0.1.0 failed -
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -399,6 +409,8 @@ Exits 0. The lines are on stdout; stderr is empty.
 Preconditions:
 
 - Three apps are installed; `gmail`'s unit is `failed`.
+- `crm`'s manifest declares a `[database]` and that database is in WAL mode.
+  Neither of the others declares one.
 
 Postconditions:
 
@@ -446,20 +458,62 @@ $ sudo opsctl status
 Output:
 
 ```
-crm v0.1.0 active
-gmail - -
+crm v0.1.0 active wal
+gmail - - -
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- `/opt/gmail/` holds a `state/` and no `bin/gmail`, and there is no
-  `ikigenba-gmail.service`.
+- `/opt/gmail/` holds a `state/` and no `bin/gmail`, there is no
+  `ikigenba-gmail.service`, and its manifest declares no database.
 
 Postconditions:
 
 - Nothing has changed.
+
+## A developer asks about a host whose database stopped being replicated
+
+Declaring a `[database]` obliges the app to keep it in WAL mode. litestream
+replicates nothing else, so an app that switches journal mode ends its own
+replication — and ends it silently, because the database goes on working, the
+unit goes on running, and the backup timer goes on writing a tarball that
+excludes the very file that is no longer being shipped. The failure surfaces
+at the next restore, which is the worst possible moment to learn about it.
+
+So status asks. The journal mode is a fact about the host, which is what status
+was asked to look at, so it is reported the way a failed unit is: in the line,
+with exit 0.
+
+Command:
+
+```
+$ sudo opsctl status
+```
+
+Output:
+
+```
+crm v0.1.0 active delete
+dashboard v0.0.9 active -
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- `crm`'s manifest declares a `[database]` and that database's journal mode is
+  `delete`.
+
+Postconditions:
+
+- Nothing has changed. status reads the journal mode and never sets it:
+  putting the database back into WAL mode is the app's to do, not opsctl's.
+
+`crm` is healthy by every other measure in the line, which is the point of
+reporting this one. Its unit is active, its version is what was installed, and
+its data has not been reaching S3 since whenever the mode changed.
 
 ## An operator gives status an argument
 
