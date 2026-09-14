@@ -21,6 +21,11 @@ Every command-line program in this repository behaves the same way.
 
 - stdout carries the command's product. stderr carries diagnostics. A command
   that fails writes the reason to stderr.
+- A command whose product is a report of what it found writes the whole report
+  to stdout, including the parts that say something is wrong. A finding is not
+  a diagnostic: it is a fact about the thing the command was asked to look at,
+  not about the command. When such a command fails, stderr carries why the
+  command failed, never a copy of the findings.
 - A diagnostic's first line begins `<program>: `. Further detail — another
   program's output, or the next command to run — follows after exactly one
   empty line, unprefixed. The usage text is never written to stderr.
