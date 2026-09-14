@@ -115,8 +115,9 @@ Every path below is relative to this directory (`infra/`). Region `us-east-2`.
   `ikigenba-launch` (the platform launcher it installs). The `dev` host was
   created with these; `295229566359/dev.tf` renders `user_data` from them.
   Also `space-first-boot.sh`, the user data of the `ikigenba-space` launch
-  template (packages only), and `space-role-policy.json`, the per-space role
-  policy the operator-side tool renders; Terraform never reads the latter.
+  template (packages only). The per-space role policy is not here: it belongs
+  to the tool that creates the role at launch, which embeds it in its own
+  binary.
 
 `.terraform/` directories and provider caches are not tracked; `init` recreates
 them. `.terraform.lock.hcl` files are tracked.
@@ -142,10 +143,10 @@ domain over the account's hosted zones.
 
 The tool creates the instance profile `ikigenba-space-<domain>` at launch; its
 role carries the `ikigenba-space-boundary` permissions boundary and an inline
-policy rendered from `templates/space-role-policy.json`, which has four
-literal placeholders the tool substitutes at create time (Terraform never
-reads the file, and the file carries no comment of its own — IAM's policy
-grammar allows only `Version`, `Id`, and `Statement`):
+policy the tool carries and renders itself, which has four literal
+placeholders it substitutes at create time (Terraform neither holds nor reads
+that document, and it carries no comment of its own — IAM's policy grammar
+allows only `Version`, `Id`, and `Statement`):
 
 - `<domain>` — the space's one identifier, its full domain (`foo.sbx.ikigenba.dev`,
   say, or the account domain itself for the apex space); it must end in the

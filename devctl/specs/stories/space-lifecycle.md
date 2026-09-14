@@ -187,11 +187,10 @@ Preconditions:
   properties name.
 - `<domain>` ends in the account's `domain` property.
 - No instance is tagged `Space=<domain>` in the account.
-- `infra/templates/space-role-policy.json` is in the checkout.
 - Every app in the checkout has the values its manifest's `secrets` array
   names in the developer's keyring (see `secrets.md`).
-- `opsctl/` is in the checkout and the Go toolchain can cross-compile it for
-  `linux/amd64`.
+- The opsctl release `space create` pins has been published, and the host can
+  reach it over the network.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
   with the account's `ikigenba` key pair.
 
@@ -262,11 +261,10 @@ Preconditions:
   properties name.
 - `<domain>` ends in the account's `domain` property, `ikigenba.dev`.
 - No instance is tagged `Space=<domain>` in the account.
-- `infra/templates/space-role-policy.json` is in the checkout.
 - Every app in the checkout has the values its manifest's `secrets` array
   names in the developer's keyring (see `secrets.md`).
-- `opsctl/` is in the checkout and the Go toolchain can cross-compile it for
-  `linux/amd64`.
+- The opsctl release `space create` pins has been published, and the host can
+  reach it over the network.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
   with the account's `ikigenba` key pair.
 
@@ -335,11 +333,10 @@ Preconditions:
   properties name.
 - `<domain>` equals the account's `domain` property, `ikigenba.dev`.
 - No instance is tagged `Space=<domain>` in the account.
-- `infra/templates/space-role-policy.json` is in the checkout.
 - Every app in the checkout has the values its manifest's `secrets` array
   names in the developer's keyring (see `secrets.md`).
-- `opsctl/` is in the checkout and the Go toolchain can cross-compile it for
-  `linux/amd64`.
+- The opsctl release `space create` pins has been published, and the host can
+  reach it over the network.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
   with the account's `ikigenba` key pair.
 
@@ -579,11 +576,10 @@ Preconditions:
   properties name.
 - `<domain>` ends in the account's `domain` property.
 - No instance is tagged `Space=<domain>` in the account.
-- `infra/templates/space-role-policy.json` is in the checkout.
 - Every app in the checkout has the values its manifest's `secrets` array
   names in the developer's keyring (see `secrets.md`).
-- `opsctl/` is in the checkout and the Go toolchain can cross-compile it for
-  `linux/amd64`.
+- The opsctl release `space create` pins has been published, and the host can
+  reach it over the network.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
   with the account's `ikigenba` key pair.
 - EC2 has no capacity for the launch template's instance type.

@@ -22,9 +22,9 @@ Output:
 ```
 Usage: devctl build <app>
 
-Build <app> for linux/amd64 and write dist/<app>-<tag>.tar.xz, the file deploy
-copies to a host and opsctl installs. HEAD must be a commit on origin/main
-that a tag points at, with no uncommitted changes.
+Build <app> for linux/amd64 and write <app>/dist/<app>-<tag>.tar.xz, the file
+deploy copies to a host and opsctl installs. HEAD must be a commit on
+origin/main that a tag points at, with no uncommitted changes.
 ```
 
 Exits 0. The text is on stdout; stderr is empty.
@@ -55,7 +55,7 @@ $ devctl build crm
 Output:
 
 ```
-dist/crm-v0.1.0.tar.xz
+crm/dist/crm-v0.1.0.tar.xz
 ```
 
 Exits 0. The line is on stdout; stderr is empty.
@@ -71,8 +71,8 @@ Preconditions:
 
 Postconditions:
 
-- `dist/crm-v0.1.0.tar.xz` exists in the checkout, replacing any earlier file
-  of that name. `dist/` was created if it did not exist.
+- `crm/dist/crm-v0.1.0.tar.xz` exists in the checkout, replacing any earlier
+  file of that name. `crm/dist/` was created if it did not exist.
 - The tarball holds, relative to its root and with no version anywhere
   inside:
   - `bin/crm`, the static `linux/amd64` binary;
@@ -80,7 +80,7 @@ Postconditions:
     `manifest`;
   - every other file under `crm/etc/`, `nginx.conf` included;
   - `crm/share/` as `share/`, when the app has one.
-- Nothing outside `dist/` has changed.
+- Nothing outside `crm/dist/` has changed.
 
 ## A developer builds with uncommitted changes
 
@@ -106,7 +106,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. Nothing under `dist/` was written.
+- Nothing has changed. Nothing under `crm/dist/` was written.
 
 ## A developer builds at a commit that is not tagged
 
@@ -189,7 +189,7 @@ Preconditions:
 
 Postconditions:
 
-- Nothing under `dist/` has changed.
+- Nothing under `crm/dist/` has changed.
 
 ## A developer builds an app that is not in the checkout
 
@@ -273,5 +273,5 @@ Preconditions:
 
 Postconditions:
 
-- Nothing under `dist/` has changed; an earlier
-  `dist/dashboard-<tag>.tar.xz`, if any, is as it was.
+- Nothing under `dashboard/dist/` has changed; an earlier
+  `dashboard/dist/dashboard-<tag>.tar.xz`, if any, is as it was.

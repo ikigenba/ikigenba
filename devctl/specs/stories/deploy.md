@@ -1,7 +1,7 @@
 # Stories — deploy
 
 Deploy puts one built file on one space. The file is what `build` wrote,
-`dist/<app>-<tag>.tar.xz`; devctl copies it to the host's `/tmp/` and has
+`<app>/dist/<app>-<tag>.tar.xz`; devctl copies it to the host's `/tmp/` and has
 `opsctl` install it from there. Promotion is deploying the same file to a
 different space. What each space is running is read from the host with
 `space status`, never recorded anywhere else.
@@ -22,9 +22,9 @@ Output:
 ```
 Usage: devctl --account <name> deploy <domain> <file>
 
-Copy <file>, a dist/<app>-<tag>.tar.xz written by build, to /tmp/ on the
-space at <domain> and have opsctl install it. The app and tag are read from
-the file name.
+Copy <file>, an <app>/dist/<app>-<tag>.tar.xz written by build, to /tmp/ on
+the space at <domain> and have opsctl install it. The app and tag are read
+from the file name.
 ```
 
 Exits 0. The text is on stdout; stderr is empty.
@@ -46,7 +46,7 @@ the space's secrets object for that app. Each line of output is one step.
 Command:
 
 ```
-$ devctl --account 602773793009 deploy foo.sbx.ikigenba.dev dist/crm-v0.1.0.tar.xz
+$ devctl --account 602773793009 deploy foo.sbx.ikigenba.dev crm/dist/crm-v0.1.0.tar.xz
 ```
 
 Output:
@@ -66,7 +66,7 @@ Preconditions:
 - The space exists and its instance is `running`; `opsctl` is installed on
   it (`space create` did that).
 - The developer's ssh configuration can reach the instance as `ec2-user`.
-- `dist/crm-v0.1.0.tar.xz` exists, written
+- `crm/dist/crm-v0.1.0.tar.xz` exists, written
   by `build`.
 - `/ikigenba/foo.sbx.ikigenba.dev/crm` holds every name the file's
   manifest lists in `secrets`.
@@ -89,7 +89,7 @@ sandbox space, against the space they are promoting to.
 Command:
 
 ```
-$ devctl --account 295229566359 deploy ikigenba.dev dist/crm-v0.1.0.tar.xz
+$ devctl --account 295229566359 deploy ikigenba.dev crm/dist/crm-v0.1.0.tar.xz
 ```
 
 Output:
@@ -109,7 +109,7 @@ Preconditions:
 - The apex space `ikigenba.dev` exists in the durable account, its instance
   is `running`, and `opsctl` is installed on it.
 - The developer's ssh configuration can reach the instance as `ec2-user`.
-- `dist/crm-v0.1.0.tar.xz` exists, written by `build` at the commit tagged
+- `crm/dist/crm-v0.1.0.tar.xz` exists, written by `build` at the commit tagged
   `v0.1.0`.
 - `/ikigenba/ikigenba.dev/crm` holds every name the file's manifest
   lists in `secrets`.
@@ -130,7 +130,7 @@ alone; only missing keys refuse the deploy.
 Command:
 
 ```
-$ devctl --account 602773793009 deploy foo.sbx.ikigenba.dev dist/crm-v0.1.0.tar.xz
+$ devctl --account 602773793009 deploy foo.sbx.ikigenba.dev crm/dist/crm-v0.1.0.tar.xz
 ```
 
 Output:
@@ -160,20 +160,20 @@ Postconditions:
 Command:
 
 ```
-$ devctl --account 602773793009 deploy foo.sbx.ikigenba.dev dist/crm-v0.2.0.tar.xz
+$ devctl --account 602773793009 deploy foo.sbx.ikigenba.dev crm/dist/crm-v0.2.0.tar.xz
 ```
 
 Output:
 
 ```
-devctl: no such file 'dist/crm-v0.2.0.tar.xz'
+devctl: no such file 'crm/dist/crm-v0.2.0.tar.xz'
 ```
 
 Exits 2. The line is on stderr; stdout is empty.
 
 Preconditions:
 
-- No file at `dist/crm-v0.2.0.tar.xz`.
+- No file at `crm/dist/crm-v0.2.0.tar.xz`.
 
 Postconditions:
 
@@ -237,7 +237,7 @@ Postconditions:
 Command:
 
 ```
-$ devctl --account 602773793009 deploy gone.sbx.ikigenba.dev dist/crm-v0.1.0.tar.xz
+$ devctl --account 602773793009 deploy gone.sbx.ikigenba.dev crm/dist/crm-v0.1.0.tar.xz
 ```
 
 Output:
@@ -252,7 +252,7 @@ Exits 1. The `ok` line is on stdout; the last line is on stderr.
 Preconditions:
 
 - A live SSO session for the profile named by `--account`.
-- `dist/crm-v0.1.0.tar.xz` exists.
+- `crm/dist/crm-v0.1.0.tar.xz` exists.
 - No instance in the account is tagged `Space=gone.sbx.ikigenba.dev`.
 
 Postconditions:
@@ -266,7 +266,7 @@ Postconditions:
 Command:
 
 ```
-$ devctl --account 602773793009 deploy foo.sbx.ikigenba.dev dist/gmail-v0.1.0.tar.xz
+$ devctl --account 602773793009 deploy foo.sbx.ikigenba.dev gmail/dist/gmail-v0.1.0.tar.xz
 ```
 
 Output:
@@ -288,7 +288,7 @@ Preconditions:
 - The space exists and its instance is `running`; `opsctl` is installed on
   it.
 - The developer's ssh configuration can reach the instance as `ec2-user`.
-- `dist/gmail-v0.1.0.tar.xz` exists and
+- `gmail/dist/gmail-v0.1.0.tar.xz` exists and
   `/ikigenba/foo.sbx.ikigenba.dev/gmail` holds every name its manifest lists in `secrets`.
 - `opsctl install` of the file on the host exits non-zero.
 
