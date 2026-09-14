@@ -55,6 +55,14 @@ Each project has an `AGENTS.md` beside `specs/` that declares the concrete groun
 
 If a required tool or version is absent, a gate cannot run; that is an issue (an environment blocker), never a pass or a skip.
 
+## Project independence
+
+A monorepo holds several projects below one git root; each is independent and stays that way. A project's `specs/` govern that project's own directory and nothing else.
+
+- **Never reach into a sibling's tree.** No requirement names a path inside another project, builds or reads another project's source, or writes into another project's directory.
+- **A sibling is consumed only as an installed external tool**, with the same standing as `ssh`, `git`, or a compiler: its published interface, never its internals or which release of it to use. See `references/draft.md`, "Depending on another project".
+- **Dependencies point one way and are declared.** If two projects would each have to know about the other, one of them is wrong. A need only the other project can satisfy is filed in `specs/issues/` for a human to adjudicate, never designed around by reaching across the boundary.
+
 ## Operations
 
 - `draft-spec` — author a design, and the `AGENTS.md` ground beside it. Read `references/draft.md`.

@@ -35,6 +35,31 @@ Out of scope (implementation):
 - Internal ordering of steps, micro-optimizations, and caching, unless a specific guarantee is itself part of the contract.
 - How state is stored or how transition logic is coded.
 - Anything a consumer can neither see nor depend on.
+- Version numbers — a dependency's, a tool's, a sibling's release. A design names *what* it depends on; which release satisfies that is data and lives where the data belongs (`go.mod`, a lockfile, `AGENTS.md`'s toolchain). A requirement never states a version.
+
+## Depending on another project
+
+Projects in one repository are independent, and a design keeps them that way (see `../SKILL.md`, "Project independence"). A sibling project is not a module of this one. It is reached only as an **installed external tool**, with exactly the standing of `ssh`, `git`, or a compiler.
+
+Allowed — the tool's published interface:
+
+- Invoking it by bare name on PATH, and relying on its documented command grammar, flags, arguments, and exit codes.
+- Naming it in prose, in help text, and in usage output.
+- Obtaining it from its published release, and running the installer that release ships.
+
+Not allowed — anything that is not the published interface:
+
+- Naming a path inside another project: its source directory, its build output, its templates, its configuration files.
+- Building it, or invoking a compiler on it. The other project builds and releases itself.
+- Writing anything into another project's directory.
+- Encoding its internals: source layout, build arrangement, release archive naming, or the shape of its output.
+- Asserting what its output *says*. Bytes that cross the boundary are relayed or carried verbatim: a requirement may assert **that** the relaying happens and that nothing alters the bytes, never what the bytes are. A test fixture standing in for the other project emits arbitrary bytes — a fixture shaped like the real output encodes exactly the knowledge the requirement was forbidden to state.
+- Stating which release of it to use; that is data.
+- Parsing its output to learn something this design already decided.
+
+An installed sibling is an external dependency like any other, so "Never assume an external dependency" above applies to it in full: its grammar is proven by observing the real tool, never by reading its design documents.
+
+Direction is one-way and declared. If two projects would each have to know about the other, one of them is wrong. A behavior only the other project can supply is filed in `specs/issues/`; it is never designed around by reaching across the boundary.
 
 ## Filename
 
@@ -46,7 +71,7 @@ Create the file in `specs/design/` as `D<int>-<slug>.md`.
 
 ## Contents
 
-1. Prose giving a friendly overview of the design element. Non-normative: it orients the reader and motivates the requirements, but it binds nothing. Illustrative code blocks are welcome here, on the same terms — illustration, not contract.
+1. Prose giving a friendly overview of the design element. It orients the reader and motivates the requirements, but binds nothing — only the `## REQUIREMENTS` list is contract. No code blocks: a signature, type, or constant belongs in the requirement that declares it, where it is contract and cannot drift from one. See the Example below.
 2. A `## REQUIREMENTS` heading, followed by a list of requirements. This list is the design (see above).
 
 ## Requirements
@@ -83,9 +108,9 @@ Design documents are never frozen; they may change at any time. Their prose may 
 
 ## Review: canonical consumer usage
 
-End by showing the intended consumer experience, before anything is built. For a package, write canonical usage: complete, representative tasks a consumer accomplishes with the proposed API, using exactly the names and signatures the structural requirements declare. For an application, show the equivalent user interaction. Present this first and with minimal prose — the complete task, not the individual declaration, is the unit of review. For a revision, show the current usage and the proposed usage side by side. Put each unresolved decision immediately beside the usage it affects.
+Before the design is checked, write the intended consumer experience as a review exercise — alongside the design, never in it. For a package, write canonical usage: complete, representative tasks a consumer accomplishes with the proposed API, using exactly the names and signatures the structural requirements declare. For an application, show the equivalent user interaction. Present this first and with minimal prose — the complete task, not the individual declaration, is the unit of review. For a revision, show the current usage and the proposed usage side by side. Put each unresolved decision immediately beside the usage it affects.
 
-Judge from the examples whether the names, shapes, and sequence of interactions make sense together: could someone who sees only these names say what each thing is and why there is exactly one of it? Then check that every name the usage introduces resolves to a structural requirement (grep the design for each identifier); a name that appears only in the example is contract squatting in prose. The usage is non-normative like all prose — it must follow the requirements, never stand in for them. This adds no approval step; the build run stays human-gated.
+Judge from the examples whether the names, shapes, and sequence of interactions make sense together: could someone who sees only these names say what each thing is and why there is exactly one of it? Then check that every name the usage introduces resolves to a structural requirement (grep the design for each identifier); a name that appears only in the example is contract squatting in prose. This adds no approval step; the build run stays human-gated.
 
 ## Example
 
