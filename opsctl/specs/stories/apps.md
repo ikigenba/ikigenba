@@ -21,8 +21,9 @@ One configuration key:
 The file's layout is devctl's contract and carries no version inside it:
 `bin/<app>`, `etc/manifest.toml`, whatever else the app keeps under `etc/`,
 and `share/` when the app has one. The manifest names the app, the port it
-listens on, whether it is the host's default app, the secrets it needs, and an
-`[env]` table of plain settings:
+listens on, whether it is the host's default app, the secrets it needs, an
+`[env]` table of plain settings, and a `[database]` table when the app keeps
+one:
 
 ```toml
 app = "crm"
@@ -32,7 +33,16 @@ secrets = ["CRM_API_KEY", "CRM_API_SECRET", "CRM_ORG"]
 
 [env]
 OUTBOX_RETENTION_DAYS = "7"
+
+[database]
+engine = "sqlite"
+path = "state/crm.db"
 ```
+
+`install` reads the app, the port, `default`, and `secrets`. The `[env]` table
+it writes out; the `[database]` table it does not read at all — that one is
+`backup.md`'s, and it is in the manifest rather than the store because it is a
+fact about the app, which travels with the app.
 
 Secret *values* never travel in the file. devctl wrote them to the parameter
 `/ikigenba/<host.name>/<app>` before the deploy, and the host's own role is

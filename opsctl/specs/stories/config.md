@@ -57,12 +57,22 @@ Postconditions:
 per key over ssh. Nothing is printed: the answer to "did it work" is the exit
 code.
 
+These nine are every key opsctl's own groups declare, and between them they are
+what `init` needs to bring the host to the state the store describes. A host
+that has them all and nothing else is a configured host.
+
 Command:
 
 ```
 $ sudo opsctl config set host.name=foo.sbx.ikigenba.dev
+$ sudo opsctl config set aws.region=us-east-2
+$ sudo opsctl config set acme.email=ops@ikigenba.dev
 $ sudo opsctl config set dns.provider=route53
 $ sudo opsctl config set dns.zones=sbx.ikigenba.dev:Z02587302QXWONVKW632
+$ sudo opsctl config set backup.s3_uri=s3://sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/
+$ sudo opsctl config set backup.full_seconds=86400
+$ sudo opsctl config set backup.incremental_seconds=3600
+$ sudo opsctl config set backup.wal_seconds=300
 ```
 
 Output:
@@ -82,7 +92,7 @@ Postconditions:
 - `/etc/ikigenba/` exists with mode `0700` and `/etc/ikigenba/config.json`
   with mode `0600`, holding a JSON object of string values with its keys in
   sorted order, two-space indentation, and a trailing newline.
-- The three keys hold exactly the values given. Any other key is untouched.
+- The nine keys hold exactly the values given. Any other key is untouched.
 - A reader at any moment saw a complete file: each write went to a temporary
   file in the same directory and was renamed over `config.json` under an
   exclusive lock on `/etc/ikigenba/config.lock`.
@@ -369,15 +379,16 @@ Postconditions:
 
 ## Two agents write different keys at the same moment
 
-`devctl space create` sets six keys in a row while an operator at a terminal
-sets a seventh. Neither loses the other's work: the read-modify-write of a
-`set` or a `del` holds an exclusive lock for its whole span.
+`devctl space create` sets the nine keys a host needs, one after another, while
+an operator at a terminal sets a key of their own. Neither loses the other's
+work: the read-modify-write of a `set` or a `del` holds an exclusive lock for
+its whole span.
 
 Command:
 
 ```
 $ sudo opsctl config set backup.wal_seconds=60 &
-$ sudo opsctl config set acme.email=ops@ikigenba.dev &
+$ sudo opsctl config set app.flags=--verbose=true &
 $ wait
 ```
 

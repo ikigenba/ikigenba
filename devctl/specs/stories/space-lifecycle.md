@@ -26,12 +26,16 @@ is one instance named by its full domain; the cloud's tags are the only
 registry.
 
 Subcommands:
-  list                            one line per space in the account
-  create <domain> [--elastic-ip]  create the space at <domain>
-  destroy <domain>                remove the space and everything it owned
-  stop <domain>                   stop the instance; state is kept
-  start <domain>                  start the instance and point its records at it
-  status <domain>                 one line per app on the space: version and service state
+  list                       one line per space in the account
+  create <domain> [options]  create the space at <domain>
+  destroy <domain>           remove the space and everything it owned
+  stop <domain>              stop the instance; state is kept
+  start <domain>             start the instance and point its records at it
+  status <domain>            one line per app on the space: version and service state
+
+Options (create):
+  --acme-email <address>  where the CA sends the space's expiry warnings; required
+  --elastic-ip            give the space a fixed address that survives stop and start
 
 Every subcommand needs --account. Run 'devctl space <subcommand> --help' for details.
 ```
@@ -150,10 +154,20 @@ Without `--elastic-ip` the address is whatever the launch assigned; `start`
 re-points the records after a stop. Each line of output is one step; the last
 line is the domain and the address.
 
+The host needs nine configuration keys before `opsctl init` will run, and
+`create` is what sets all nine. Six it already knows: the domain is
+`host.name`, the zone it found is `dns.zones`, the provider is `route53`, and
+the account's three backup periods are the three period keys. Two more it
+reads from the account's properties: `region` becomes `aws.region`, and
+`backup_bucket` with the domain becomes `backup.s3_uri`. The ninth, the address
+the CA sends expiry warnings to, is in neither place, so the developer supplies
+it with `--acme-email`. It is required rather than defaulted: a wrong address
+is only discovered when a certificate quietly expires.
+
 Command:
 
 ```
-$ devctl --account 602773793009 space create foo.sbx.ikigenba.dev
+$ devctl --account 602773793009 space create foo.sbx.ikigenba.dev --acme-email ops@ikigenba.dev
 ```
 
 Output:
@@ -166,7 +180,7 @@ role: ok (ikigenba-space-foo.sbx.ikigenba.dev)
 instance: ok (i-0c9e94542d98846a8 running, 3.19.79.227)
 records: ok (foo.sbx.ikigenba.dev, *.foo.sbx.ikigenba.dev -> 3.19.79.227, INSYNC)
 host: ok (status checks passed, cloud-init done)
-opsctl: ok (v0.1.0 installed, 6 keys set)
+opsctl: ok (v0.1.0 installed, 9 keys set)
 init: ok
 foo.sbx.ikigenba.dev 3.19.79.227
 ```
@@ -191,6 +205,7 @@ Preconditions:
   names in the developer's keyring (see `secrets.md`).
 - The opsctl release `space create` installs has been published, and the host can
   reach it over the network.
+- `--acme-email` names an address the CA will accept.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
   with the account's `ikigenba` key pair.
 
@@ -210,11 +225,15 @@ Postconditions:
   `INSYNC`.
 - Every app's secrets object is at `/ikigenba/<domain>/<app>` (see
   `secrets.md`).
-- `opsctl` is installed on the host and on root's PATH, its config
-  store holds `host.name=<domain>`, `dns.provider=route53`,
-  `dns.zones=<zone name>:<zone id>`, `backup.full_seconds`,
-  `backup.incremental_seconds`, and `backup.wal_seconds` set to the account's
-  three periods, and `sudo opsctl init` has exited 0 on the host.
+- `opsctl` is installed on the host and on root's PATH, and its configuration
+  store holds exactly the nine keys opsctl declares: `host.name=<domain>`, `dns.provider=route53`,
+  `dns.zones=<zone name>:<zone id>`, `aws.region` and `backup.s3_uri` from the
+  account's `region` and `backup_bucket` properties, `acme.email` from
+  `--acme-email`, and `backup.full_seconds`, `backup.incremental_seconds`, and
+  `backup.wal_seconds` set to the account's three periods.
+- `sudo opsctl init` has exited 0 on the host, so the host holds its
+  certificate, its generated nginx configuration, and its three backup timers,
+  each enabled whose period is non-zero.
 - No apps are deployed; that is `deploy`.
 
 ## A developer creates a space with a fixed address
@@ -226,7 +245,7 @@ it, so the address survives stop and start. There is no account default.
 Command:
 
 ```
-$ devctl --account 295229566359 space create staging.ikigenba.dev --elastic-ip
+$ devctl --account 295229566359 space create staging.ikigenba.dev --acme-email ops@ikigenba.dev --elastic-ip
 ```
 
 Output:
@@ -240,7 +259,7 @@ instance: ok (i-0a1b2c3d4e5f60718 running, 3.15.44.201)
 address: ok (elastic ip 18.220.10.5 associated)
 records: ok (staging.ikigenba.dev, *.staging.ikigenba.dev -> 18.220.10.5, INSYNC)
 host: ok (status checks passed, cloud-init done)
-opsctl: ok (v0.1.0 installed, 6 keys set)
+opsctl: ok (v0.1.0 installed, 9 keys set)
 init: ok
 staging.ikigenba.dev 18.220.10.5
 ```
@@ -265,6 +284,7 @@ Preconditions:
   names in the developer's keyring (see `secrets.md`).
 - The opsctl release `space create` installs has been published, and the host can
   reach it over the network.
+- `--acme-email` names an address the CA will accept.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
   with the account's `ikigenba` key pair.
 
@@ -285,11 +305,15 @@ Postconditions:
   of `<domain>`, point at the Elastic IP and the change is `INSYNC`.
 - Every app's secrets object is at `/ikigenba/<domain>/<app>` (see
   `secrets.md`).
-- `opsctl` is installed on the host and on root's PATH, its config
-  store holds `host.name=<domain>`, `dns.provider=route53`,
-  `dns.zones=<zone name>:<zone id>`, `backup.full_seconds`,
-  `backup.incremental_seconds`, and `backup.wal_seconds` set to the account's
-  three periods, and `sudo opsctl init` has exited 0 on the host.
+- `opsctl` is installed on the host and on root's PATH, and its configuration
+  store holds exactly the nine keys opsctl declares: `host.name=<domain>`, `dns.provider=route53`,
+  `dns.zones=<zone name>:<zone id>`, `aws.region` and `backup.s3_uri` from the
+  account's `region` and `backup_bucket` properties, `acme.email` from
+  `--acme-email`, and `backup.full_seconds`, `backup.incremental_seconds`, and
+  `backup.wal_seconds` set to the account's three periods.
+- `sudo opsctl init` has exited 0 on the host, so the host holds its
+  certificate, its generated nginx configuration, and its three backup timers,
+  each enabled whose period is non-zero.
 - No apps are deployed; that is `deploy`.
 
 ## A developer creates the apex space
@@ -299,7 +323,7 @@ Postconditions:
 Command:
 
 ```
-$ devctl --account 295229566359 space create ikigenba.dev
+$ devctl --account 295229566359 space create ikigenba.dev --acme-email ops@ikigenba.dev
 ```
 
 Output:
@@ -312,7 +336,7 @@ role: ok (ikigenba-space-ikigenba.dev)
 instance: ok (i-0f1e2d3c4b5a69788 running, 3.18.9.77)
 records: ok (ikigenba.dev, *.ikigenba.dev -> 3.18.9.77, INSYNC)
 host: ok (status checks passed, cloud-init done)
-opsctl: ok (v0.1.0 installed, 6 keys set)
+opsctl: ok (v0.1.0 installed, 9 keys set)
 init: ok
 ikigenba.dev 3.18.9.77
 ```
@@ -337,6 +361,7 @@ Preconditions:
   names in the developer's keyring (see `secrets.md`).
 - The opsctl release `space create` installs has been published, and the host can
   reach it over the network.
+- `--acme-email` names an address the CA will accept.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
   with the account's `ikigenba` key pair.
 
@@ -356,11 +381,15 @@ Postconditions:
   `INSYNC`.
 - Every app's secrets object is at `/ikigenba/<domain>/<app>` (see
   `secrets.md`).
-- `opsctl` is installed on the host and on root's PATH, its config
-  store holds `host.name=<domain>`, `dns.provider=route53`,
-  `dns.zones=<zone name>:<zone id>`, `backup.full_seconds`,
-  `backup.incremental_seconds`, and `backup.wal_seconds` set to the account's
-  three periods, and `sudo opsctl init` has exited 0 on the host.
+- `opsctl` is installed on the host and on root's PATH, and its configuration
+  store holds exactly the nine keys opsctl declares: `host.name=<domain>`, `dns.provider=route53`,
+  `dns.zones=<zone name>:<zone id>`, `aws.region` and `backup.s3_uri` from the
+  account's `region` and `backup_bucket` properties, `acme.email` from
+  `--acme-email`, and `backup.full_seconds`, `backup.incremental_seconds`, and
+  `backup.wal_seconds` set to the account's three periods.
+- `sudo opsctl init` has exited 0 on the host, so the host holds its
+  certificate, its generated nginx configuration, and its three backup timers,
+  each enabled whose period is non-zero.
 - No apps are deployed; that is `deploy`.
 
 ## A developer creates a space outside the account's domain
@@ -368,7 +397,7 @@ Postconditions:
 Command:
 
 ```
-$ devctl --account 602773793009 space create foo.example.com
+$ devctl --account 602773793009 space create foo.example.com --acme-email ops@ikigenba.dev
 ```
 
 Output:
@@ -393,7 +422,7 @@ Postconditions:
 Command:
 
 ```
-$ devctl --account 295229566359 space create foo.sbx.ikigenba.dev
+$ devctl --account 295229566359 space create foo.sbx.ikigenba.dev --acme-email ops@ikigenba.dev
 ```
 
 Output:
@@ -418,7 +447,7 @@ Postconditions:
 Command:
 
 ```
-$ devctl --account 295229566359 space create sbx.ikigenba.dev
+$ devctl --account 295229566359 space create sbx.ikigenba.dev --acme-email ops@ikigenba.dev
 ```
 
 Output:
@@ -443,7 +472,7 @@ Postconditions:
 Command:
 
 ```
-$ devctl --account 602773793009 space create crm.foo.sbx.ikigenba.dev
+$ devctl --account 602773793009 space create crm.foo.sbx.ikigenba.dev --acme-email ops@ikigenba.dev
 ```
 
 Output:
@@ -469,7 +498,7 @@ Postconditions:
 Command:
 
 ```
-$ devctl --account 602773793009 space create foo.sbx.ikigenba.dev
+$ devctl --account 602773793009 space create foo.sbx.ikigenba.dev --acme-email ops@ikigenba.dev
 ```
 
 Output:
@@ -495,7 +524,7 @@ Postconditions:
 Command:
 
 ```
-$ devctl --account 602773793009 space create new.sbx.ikigenba.dev
+$ devctl --account 602773793009 space create new.sbx.ikigenba.dev --acme-email ops@ikigenba.dev
 ```
 
 Output:
@@ -542,12 +571,46 @@ Postconditions:
 
 - Nothing has changed. No AWS call was made.
 
-## A developer's create fails part-way
+## A developer runs `space create` without an address for the CA
+
+There is no default and nothing to fall back on: the address is the developer's
+to choose, and a space created without one would only say so months later, when
+a certificate it could not warn anyone about expired. The refusal comes with the
+arguments, before the account is read.
 
 Command:
 
 ```
 $ devctl --account 602773793009 space create foo.sbx.ikigenba.dev
+```
+
+Output:
+
+```
+devctl: space create needs --acme-email <address>
+
+see 'devctl space --help' for usage
+```
+
+Exits 2. The text is on stderr; stdout is empty. A `--acme-email` with no
+value gives `devctl: option '--acme-email' requires a value`, also exit 2.
+
+Preconditions:
+
+- `bin/devctl` exists.
+
+Postconditions:
+
+- Nothing has changed. No AWS call was made, and nothing was checked about
+  `<domain>`: a missing operand and a missing required option are both
+  answered before the account is read.
+
+## A developer's create fails part-way
+
+Command:
+
+```
+$ devctl --account 602773793009 space create foo.sbx.ikigenba.dev --acme-email ops@ikigenba.dev
 ```
 
 Output:
@@ -580,6 +643,7 @@ Preconditions:
   names in the developer's keyring (see `secrets.md`).
 - The opsctl release `space create` installs has been published, and the host can
   reach it over the network.
+- `--acme-email` names an address the CA will accept.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
   with the account's `ikigenba` key pair.
 - EC2 has no capacity for the launch template's instance type.

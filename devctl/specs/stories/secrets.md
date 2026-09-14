@@ -52,7 +52,8 @@ keyring and pushes that one app, named by its directory.
 An app is a sub-project of the checkout that has a `main` package and a
 committed `etc/manifest.toml`; its name is the directory name. The manifest's
 `secrets` array lists the names the app needs, and that array is all devctl
-reads from it here:
+reads from it here — the port, the default flag, the `[env]` table, and the
+`[database]` table an app with one declares are all the host's business:
 
 ```toml
 app = "crm"
@@ -62,6 +63,10 @@ secrets = ["CRM_API_KEY", "CRM_API_SECRET", "CRM_ORG"]
 
 [env]
 OUTBOX_RETENTION_DAYS = "7"
+
+[database]
+engine = "sqlite"
+path = "state/crm.db"
 ```
 
 Each value comes from the developer's login keyring, read with

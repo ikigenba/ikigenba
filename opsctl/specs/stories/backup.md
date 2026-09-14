@@ -12,15 +12,19 @@ The top-level usage gains two lines under `Commands:`:
   restore   restore a service's data from its backups
 ```
 
+`init`'s sequence gains the step `timers`, after `nginx.conf`: the three
+service and timer pairs that run the three backup subcommands, at the periods
+the store names.
+
 Configuration keys:
 
 | key | value |
 |---|---|
 | `aws.region` | the region the backup bucket lives in, e.g. `us-east-2` |
 | `backup.s3_uri` | the prefix this host backs up to, e.g. `s3://sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/` |
-| `backup.full_seconds` | how often the timer runs a full backup |
-| `backup.incremental_seconds` | how often an incremental runs, once a service has a database |
-| `backup.wal_seconds` | how often write-ahead log segments ship, once a service has a database |
+| `backup.full_seconds` | how often the timer runs a full backup; `0` or unset means never |
+| `backup.incremental_seconds` | how often an incremental runs; `0` or unset means never |
+| `backup.wal_seconds` | how often write-ahead log segments ship; `0` or unset means never |
 
 What is backed up, and what is not:
 
@@ -34,6 +38,30 @@ What is backed up, and what is not:
 
 A service is discovered, never registered: any `/opt/<name>/` holding an
 `etc/` or a `state/` directory.
+
+A service **declares a database** when its `etc/manifest.toml` holds a
+`[database]` table naming the `engine` and the `path`, relative to the
+service's own directory, of the database that engine owns:
+
+```toml
+[database]
+engine = "sqlite"
+path = "state/crm.db"
+```
+
+This mirrors the split `nginx.md` already makes: a service is *discovered* by
+what is on disk, and gets more than the baseline only if its manifest asks for
+it. There, a manifest naming a `port` is what earns a server block. Here, a
+`[database]` table is what earns incrementals and WAL segments. A service with
+no manifest, or a manifest that declares no database, is backed up by fulls
+alone — which covers `platform`, and a service restored from backup but never
+installed.
+
+**Not settled here.** What an incremental holds, what a WAL segment is, how the
+three kinds of object are told apart under `<backup.s3_uri><service>/`, and how
+`opsctl restore` chooses among them are open questions. This group fixes the
+three verbs, what declares a database, and who writes the timers; it does not
+fix the layout.
 
 ## An operator asks what `backup` can do
 
@@ -57,7 +85,14 @@ Back the host up to the prefix in backup.s3_uri: /etc/ikigenba/ and
 own name. cache/ is never backed up, and neither is anything opsctl generates.
 
 Subcommands:
-  run   write one backup of the platform and of every service
+  full         write one whole backup of the platform and of every service
+  incremental  write an incremental for every service that declares a database
+  wal          ship write-ahead log segments for every service that declares one
+
+A service declares its database with a [database] table in etc/manifest.toml
+naming its engine and its path. A service without one is covered by fulls
+alone. 'opsctl init' writes the timers that run these at the configured
+periods.
 
 Configuration keys:
   aws.region      the region the backup bucket lives in
@@ -76,14 +111,14 @@ Postconditions:
 
 ## The host backs itself up
 
-A systemd timer runs this every `backup.full_seconds`. One line per thing
+`ikigenba-backup-full.timer` runs this every `backup.full_seconds`. One line per thing
 backed up, in name order with `platform` first, so the timer's mail — or an
 operator running it by hand — says exactly what was written.
 
 Command:
 
 ```
-$ sudo opsctl backup run
+$ sudo opsctl backup full
 ```
 
 Output:
@@ -123,7 +158,7 @@ and the exit code says the report holds a failure.
 Command:
 
 ```
-$ sudo opsctl backup run; echo "exit $?"
+$ sudo opsctl backup full; echo "exit $?"
 ```
 
 Output:
@@ -151,7 +186,7 @@ Postconditions:
 Command:
 
 ```
-$ sudo opsctl backup run
+$ sudo opsctl backup full
 ```
 
 Output:
@@ -161,7 +196,7 @@ opsctl: backup.s3_uri not set
 ```
 
 Exits 1. The line is on stderr; stdout is empty. With `aws.region` unset the
-line is `opsctl: aws.region not set`.
+line is `opsctl: aws.region not set`. `incremental` and `wal` say the same.
 
 Preconditions:
 
@@ -170,6 +205,123 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. Nothing was read and no object was written.
+
+## The host backs up the services that declare a database
+
+`ikigenba-backup-incremental.timer` and `ikigenba-backup-wal.timer` run these
+every `backup.incremental_seconds` and every `backup.wal_seconds`. Only the
+services that declare a database appear: there is nothing an incremental or a
+segment could hold for the others, and a line claiming otherwise would be a lie
+about what is in the bucket.
+
+The object names below are the full's shape standing in until the layout is
+settled — see the note at the top of this group. What this story fixes is which
+services are reported and which are silent.
+
+Command:
+
+```
+$ sudo opsctl backup incremental
+$ sudo opsctl backup wal
+```
+
+Output:
+
+```
+crm: ok (2026-09-12T09:00:04Z.tar.zst, 3.7 MiB)
+```
+
+```
+crm: ok (2026-09-12T09:05:04Z.tar.zst, 96.0 KiB)
+```
+
+Each exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- `aws.region` and `backup.s3_uri` are set, and the host's role can write
+  under that prefix.
+- `/opt/crm/etc/manifest.toml` declares a `[database]` at `state/crm.db`.
+- `/opt/dashboard/etc/manifest.toml` declares none.
+
+Postconditions:
+
+- One object was written for `crm`. `dashboard` and `platform` have nothing
+  written for them and are not reported.
+- `/opt/crm/state/crm.db` is exactly as it was: both subcommands read it
+  through its engine and neither stops a writer.
+- No earlier object was deleted or overwritten.
+
+## A service with no database gets fulls only
+
+A host where nothing declares a database still runs both timers; they simply
+find nothing to ship. Writing no object and saying so with the exit code is the
+honest answer, and it keeps the timer from filling the bucket with empty
+archives.
+
+Command:
+
+```
+$ sudo opsctl backup incremental; echo "exit $?"
+```
+
+Output:
+
+```
+exit 0
+```
+
+Exits 0. Nothing is on stdout or stderr. `opsctl backup wal` behaves the same.
+
+Preconditions:
+
+- `aws.region` and `backup.s3_uri` are set.
+- No installed service's manifest holds a `[database]` table, or no service is
+  installed at all.
+
+Postconditions:
+
+- Nothing was read and no object was written. What those services hold comes
+  back from their fulls and from nothing else.
+
+## An operator asks for a period of zero
+
+A period of `0` — or a key that was never set — is how an account says it wants
+no backups of that kind. The unit pair is still written, so an operator can run
+one by hand with `systemctl start`, but the timer is left disabled and stopped
+and fires nothing.
+
+Command:
+
+```
+$ sudo opsctl config set backup.incremental_seconds=0
+$ sudo opsctl config set backup.wal_seconds=0
+$ sudo opsctl init
+$ systemctl is-enabled ikigenba-backup-wal.timer; echo "exit $?"
+```
+
+Output:
+
+```
+disabled
+exit 1
+```
+
+Preconditions:
+
+- `opsctl init` reports the host ready.
+
+Postconditions:
+
+- `ikigenba-backup-full.timer` is enabled and active at its period;
+  `ikigenba-backup-incremental.timer` and `ikigenba-backup-wal.timer` are
+  written, disabled, and not running.
+- A space whose three periods are all `0` writes no backups at all, so its
+  prefix stays empty and it can be a restore target but never a source.
+- `ikigenba-backup-<kind>.service` runs `opsctl backup <kind>` as root, and
+  changing a period is `opsctl config set` followed by `opsctl init`: a timer
+  is generated from the store, so an edit to one would be overwritten by the
+  next `init`.
 
 ## An operator asks what `restore` can do
 

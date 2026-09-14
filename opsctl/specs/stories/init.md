@@ -20,8 +20,11 @@ every app's own name all hang off it.
 
 The sequence is the setup commands that exist. It is empty until a group adds
 one to it, and each group that does says so; `certificates.md` adds
-`certificate` and `nginx.md` adds `nginx.conf`, in that order. Every setup
-command is idempotent, so `init` is too.
+`certificate`, `nginx.md` adds `nginx.conf`, and `backup.md` adds `timers`, in
+that order. Every setup command is idempotent, so `init` is too, and a step's
+inputs are read from the store every run — which is why changing a period or a
+zone is `config set` followed by `init`, and never an edit to something `init`
+generated.
 
 Every check runs; none short-circuits another, so one run shows an agent
 everything that is missing rather than one thing per run. A check whose input
@@ -60,7 +63,9 @@ Checks, in order:
   wildcard NAME              host.name and _opsctl-preflight.host.name resolve alike
 
 Sequence:
-  none yet; each setup command adds itself here when it is designed
+  certificate  obtain the host's certificate, or renew it if it is due
+  nginx.conf   generate /etc/nginx/conf.d/ikigenba.conf and reload nginx
+  timers       write the backup units, enabling each timer whose period is set
 
 Configuration keys:
   host.name  the fully-qualified name this host answers at, at or under a configured zone
@@ -115,8 +120,11 @@ Preconditions:
 
 Postconditions:
 
-- The setup sequence has run. Every setup command is idempotent, so a host
-  that was already set up is unchanged by the run.
+- The setup sequence has run: the host holds its certificate, the nginx file
+  generated from the store and what is under `/opt`, and the three backup unit
+  pairs with each timer enabled whose period the store gives as non-zero.
+- Every setup command is idempotent, so a host that was already set up is
+  unchanged by the run.
 
 The wildcard line is the bootstrap's own done-condition — the apex and the
 wildcard both point at this host — checked from the host. It resolves a fixed
