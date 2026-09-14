@@ -140,6 +140,16 @@ leaves a copy of itself so the host can be moved forward later are opsctl's
 business; devctl invokes `opsctl` by bare name afterwards, on whatever PATH the
 installer arranged.
 
+**Observed**, on 2026-09-14: a release asset of this monorepo is served at
+`https://github.com/ikigenba/ikigenba/releases/download/<tag>/<asset>`, where
+`<tag>` is the monorepo tag with its slash intact. `GET` of
+`.../download/agent-repl/v0.12.0/agent-repl_darwin_amd64.tar.gz` returned 200
+and redirected to the asset. So the URL this design builds —
+`OpsctlReleaseBase`, `/`, `OpsctlVersion`, `/install.sh` — resolves as written
+once opsctl publishes a release carrying that asset. Whether opsctl's release
+carries `install.sh` is opsctl's to deliver; `specs/issues/` tracks what
+opsctl still owes.
+
 **The version is devctl's constant, not the host's answer.** devctl depends on
 opsctl's grammar — the six keys below, `init`, and `install`, `restore` and
 `status` in D6 and D9 — so the version those requirements assume belongs beside
