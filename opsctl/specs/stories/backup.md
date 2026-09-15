@@ -158,6 +158,17 @@ litestream again. Both leave `litestream.service` alone when the regenerated
 file is byte for byte the old one. `init` alone enables the unit; the others
 assume it is enabled, because `init` ran before any app reached the host.
 
+The generated file turns litestream's own retention off (`retention:
+enabled: false`). The host's role can write to the bucket but never delete
+from it, and litestream's retention deletes: left on, every retention pass
+would be refused and logged for the life of the host. Off, litestream never
+attempts a delete, and the bucket's expiry is the only retention there is.
+The consequence is that every snapshot and every change file stays until it
+expires, so `restore --at` can name any instant inside the account's expiry
+window, not only the last day. Verified against litestream 0.5.17, the
+version first boot installs, where the key guards every path that deletes
+from a replica.
+
 ## An operator asks what `backup` can do
 
 Command:
@@ -569,6 +580,18 @@ Postconditions:
 account keeps backups. Each line is one step; the backup lines are the same
 lines `opsctl backup` and `opsctl host backup` print, and every object of
 the run carries one timestamp.
+
+Stopping litestream is what finishes and closes its WAL stream, and that
+was verified against 0.5.17 rather than assumed. On stop it has 30 seconds
+by default (`shutdown-sync-timeout`) to finish the stream: one more sync of
+the database, the frames not yet shipped uploaded with retries, then the
+read lock released. The stream is continuous while it runs, so what remains
+to finish at stop is at most one WAL period of committed changes, normally
+a small upload. Should the stream not close in time, nothing is lost: every
+committed change is in the database file on disk, and the tarball this
+command writes next holds it; only the replica in S3 is behind. The packaged
+unit sets no stop timeout, so systemd's default 90 seconds covers the close.
+A second stop signal during the wait skips it.
 
 Command:
 

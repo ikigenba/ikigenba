@@ -14,19 +14,6 @@ for the build run and halts it while non-empty.
 
 These are outside the stories, but the workflow depends on them.
 
-### 13. Litestream retention versus the no-delete role
-
-- Litestream's retention expects to delete objects. The space role
-  deliberately holds no `s3:DeleteObject`. The stories do not say which
-  wins.
-- `opsctl retire` also relies on litestream shipping every WAL frame it
-  holds when systemd stops it, which is how it is documented but is
-  unverified against the pinned version.
-- Resolution: check litestream's behaviour when delete is refused; either
-  set retention to never in the generated `litestream.yml` and lean on
-  bucket expiry, or grant delete under the space's own prefix. Check the
-  shutdown sync at the same time.
-
 ### 14. Sandbox recreation and the duplicate-certificate limit
 
 - Recreating the same sandbox domain repeatedly hits Let's Encrypt's

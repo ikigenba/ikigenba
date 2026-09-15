@@ -222,8 +222,9 @@ see the table above). Launch-template changes affect new launches only.
 No host role — space roles and the `dev` host alike — holds `s3:DeleteObject`
 or `ssm:PutParameter`/`ssm:DeleteParameter`, and the `ikigenba-space-boundary`
 does not grant them, so no inline policy can. Bucket expiry
-(`backup_expiry_days`) is the only way a backup is deleted; the operator-side
-tool is the only writer of secrets. Host DNS writes are limited to record
+(`backup_expiry_days`) is the only way a backup is deleted; litestream runs
+with its own retention off for that reason, so it never asks; the
+operator-side tool is the only writer of secrets. Host DNS writes are limited to record
 types `A` and `TXT` (boundary, space policy, and the space template's
 `ChangeResourceRecordSets` condition), so no host can rewrite an NS
 delegation. Accepted caveat: IAM cannot express "one label deep", so the apex
