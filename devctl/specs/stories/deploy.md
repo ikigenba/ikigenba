@@ -1,12 +1,15 @@
 # Stories — deploy
 
 Deploy puts one built file on one space. The file is what `build` wrote,
-`<app>/dist/<app>-<tag>.tar.xz`; devctl uploads it to the space's own
-`deploy/` prefix in the backup bucket and has `opsctl` install it from there.
-The file never travels over the ssh connection — the host fetches it with its
-own role, which can reach that prefix and no other space's. Promotion is
-deploying the same file to a different space. What each space is running is read from the host with
-`space status`, never recorded anywhere else.
+`<app>/dist/<app>-<tag>.tar.xz`, where the tag is `v` followed by a semver
+version; devctl uploads it to the space's own `deploy/` prefix in the backup
+bucket and has `opsctl` install it from there. The file never travels over
+the ssh connection — the host fetches it with its own role, which can reach
+that prefix and no other space's. Promotion is deploying the same file to a
+different space. Any file build wrote can go to any space: a prerelease built
+on a branch deploys the same way as a release, and no account restricts what
+it accepts. What each space is running is read from the host with `space
+status`, never recorded anywhere else.
 
 ## A developer asks what `deploy` can do
 
@@ -26,7 +29,7 @@ Usage: devctl --account <name> deploy <domain> <file>
 
 Upload <file>, an <app>/dist/<app>-<tag>.tar.xz written by build, to the
 deploy/ prefix of <domain>'s backup bucket and have opsctl on <domain> install
-it from there. The app and tag are read from the file name.
+it from there. The app and tag (v<semver>) are read from the file name.
 ```
 
 Exits 0. The text is on stdout; stderr is empty.
@@ -41,9 +44,11 @@ Postconditions:
 
 ## A developer deploys an app they just built
 
-The app and tag come from the file name. Before anything is uploaded, the
-`secrets` array in the `etc/manifest.toml` inside the file is compared with
-the space's secrets object for that app. Each line of output is one step.
+The app and tag come from the file name: the tag is the `v<semver>` the name
+ends in before `.tar.xz`, and the app is everything before the `-` that
+precedes it. Before anything is uploaded, the `secrets` array in the
+`etc/manifest.toml` inside the file is compared with the space's secrets
+object for that app. Each line of output is one step.
 
 Command:
 
@@ -124,6 +129,47 @@ Postconditions:
   `state/` is untouched.
 - `space status ikigenba.dev` shows `crm` at `v0.1.0`.
 
+## A developer deploys a prerelease to a sandbox
+
+A file built at a prerelease tag on a branch. The tag is carried verbatim
+through the file name, the object key, and the version the host reports.
+
+Command:
+
+```
+$ devctl --account 602773793009 deploy foo.sbx.ikigenba.dev crm/dist/crm-v0.2.0-rc.1.tar.xz
+```
+
+Output:
+
+```
+file: ok (crm v0.2.0-rc.1)
+secrets: ok (3 keys)
+upload: ok (-> sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/deploy/crm-v0.2.0-rc.1.tar.xz)
+install: ok (opsctl installed crm)
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- A live SSO session for the profile named by `--account`.
+- The space exists and its instance is `running`; `opsctl` is installed on
+  it.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
+- `crm/dist/crm-v0.2.0-rc.1.tar.xz` exists, written by `build` at the commit
+  tagged `v0.2.0-rc.1`.
+- `/ikigenba/foo.sbx.ikigenba.dev/crm` holds every name the file's manifest
+  lists in `secrets`.
+
+Postconditions:
+
+- `sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/deploy/crm-v0.2.0-rc.1.tar.xz`
+  holds the file and `opsctl install` of it has exited 0, so
+  `crm.foo.sbx.ikigenba.dev` answers from the new binary. `crm`'s `state/`
+  is untouched.
+- `space status foo.sbx.ikigenba.dev` shows `crm` at `v0.2.0-rc.1`.
+
 ## A developer deploys while the space lacks a secret the app declares
 
 Keys the object has that the file's manifest no longer names are left
@@ -183,8 +229,9 @@ Postconditions:
 
 ## A developer deploys a file that build did not write
 
-The file name must be `<app>-<tag>.tar.xz` and the file must hold
-`bin/<app>` and `etc/manifest.toml`.
+The file name must be `<app>-v<semver>.tar.xz` and the file must hold
+`bin/<app>` and `etc/manifest.toml`. A name whose tag is not a semver
+version, `crm-latest.tar.xz` say, fails the same way.
 
 Command:
 
@@ -195,7 +242,7 @@ $ devctl --account 602773793009 deploy foo.sbx.ikigenba.dev notes.tar.xz
 Output:
 
 ```
-devctl: 'notes.tar.xz' is not a file build wrote: name is not <app>-<tag>.tar.xz
+devctl: 'notes.tar.xz' is not a file build wrote: name is not <app>-v<semver>.tar.xz
 ```
 
 Exits 2. The line is on stderr; stdout is empty.

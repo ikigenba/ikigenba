@@ -12,23 +12,6 @@ for the build run and halts it while non-empty.
 
 ## Missing commands and concepts
 
-### 4. The sandbox cannot receive branch work
-
-- Stories: `devctl/specs/stories/build.md`, `deploy.md`; account property
-  `deploy_from_main_only`.
-- Evidence: build requires HEAD to be on `origin/main` with a tag pointing at
-  it, unconditionally, and checks the binary's version against the tag.
-  `deploy_from_main_only` appears in every precondition list and is read by
-  nothing. The sandbox account sets it to `false`.
-- Consequence: the sandbox can only run released code, which defeats the
-  purpose the property implies.
-- Suggested resolution: decide. Either drop the property, or add a story for
-  an account where it is false: build accepts an untagged or off-main HEAD,
-  names the file by commit (`crm-<sha>.tar.xz` or similar), skips the
-  tag-versus-binary check, and deploy refuses such a file in an account
-  where the property is true. Note build takes no `--account`, so the
-  decision may belong to deploy.
-
 ### 5. Destroy takes no final backup
 
 - Stories: `devctl/specs/stories/space-lifecycle.md` (destroy),
@@ -101,7 +84,11 @@ These are outside the stories, but the workflow depends on them.
   `backup_service_db_seconds`, `backup_service_wal_seconds` from
   `/ikigenba/account`. `infra/*/account.tf` publishes `backup_full_seconds`,
   `backup_incremental_seconds`, `backup_wal_seconds`.
-- Resolution: change Terraform to publish the four keys the stories name.
+- Terraform also publishes `deploy_from_main_only`, which no story reads:
+  build accepts any commit a version tag points at, and deploy carries the
+  file to any space.
+- Resolution: change Terraform to publish the four keys the stories name and
+  drop `deploy_from_main_only`.
 
 ### 11. The launch template does not install litestream
 

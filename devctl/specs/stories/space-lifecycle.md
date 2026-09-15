@@ -84,8 +84,8 @@ Preconditions:
 - The account has its properties: the JSON object at Parameter Store `/ikigenba/account`,
   written by Terraform, with the keys `domain`, `backup_bucket`,
   `launch_template_id`, `permissions_boundary_arn`, `region`,
-  `deploy_from_main_only`, `delete_secrets_on_destroy`,
-  `delete_backups_on_destroy`, `backup_host_files_seconds`,
+  `delete_secrets_on_destroy`, `delete_backups_on_destroy`,
+  `backup_host_files_seconds`,
   `backup_service_files_seconds`, `backup_service_db_seconds`, and
   `backup_service_wal_seconds`.
 - Three instances tagged `Project=ikigenba` with a `Space` tag exist in the
@@ -207,8 +207,8 @@ Preconditions:
 - The account has its properties, the JSON object at Parameter Store `/ikigenba/account`,
   written by Terraform, with the keys `domain`, `backup_bucket`,
   `launch_template_id`, `permissions_boundary_arn`, `region`,
-  `deploy_from_main_only`, `delete_secrets_on_destroy`,
-  `delete_backups_on_destroy`, `backup_host_files_seconds`,
+  `delete_secrets_on_destroy`, `delete_backups_on_destroy`,
+  `backup_host_files_seconds`,
   `backup_service_files_seconds`, `backup_service_db_seconds`, and
   `backup_service_wal_seconds`.
 - The account has a hosted zone whose name is a suffix of `<domain>`, and the
@@ -287,8 +287,8 @@ Preconditions:
 - The account has its properties, the JSON object at Parameter Store `/ikigenba/account`,
   written by Terraform, with the keys `domain`, `backup_bucket`,
   `launch_template_id`, `permissions_boundary_arn`, `region`,
-  `deploy_from_main_only`, `delete_secrets_on_destroy`,
-  `delete_backups_on_destroy`, `backup_host_files_seconds`,
+  `delete_secrets_on_destroy`, `delete_backups_on_destroy`,
+  `backup_host_files_seconds`,
   `backup_service_files_seconds`, `backup_service_db_seconds`, and
   `backup_service_wal_seconds`.
 - The account has a hosted zone whose name is a suffix of `<domain>`, and the
@@ -572,8 +572,8 @@ Preconditions:
 - The account has its properties, the JSON object at Parameter Store `/ikigenba/account`,
   written by Terraform, with the keys `domain`, `backup_bucket`,
   `launch_template_id`, `permissions_boundary_arn`, `region`,
-  `deploy_from_main_only`, `delete_secrets_on_destroy`,
-  `delete_backups_on_destroy`, `backup_host_files_seconds`,
+  `delete_secrets_on_destroy`, `delete_backups_on_destroy`,
+  `backup_host_files_seconds`,
   `backup_service_files_seconds`, `backup_service_db_seconds`, and
   `backup_service_wal_seconds`.
 - The account has a hosted zone whose name is a suffix of `<domain>`, and the

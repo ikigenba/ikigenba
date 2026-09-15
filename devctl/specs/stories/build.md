@@ -2,9 +2,12 @@
 
 Build turns one app in the checkout into the file that deploy carries to a
 host. The file is what `opsctl` installs; devctl and opsctl agree on nothing
-else about an app. A file is only ever built from a commit that is on `main`
-and carries a release tag, so every file's name says exactly what is inside
-it.
+else about an app. A file is only ever built from a commit that a version tag
+points at, so every file's name says exactly what is inside it. A version tag
+is `v` followed by a semver version: `v0.1.0`, a prerelease such as
+`v0.2.0-rc.1`, or one with build metadata such as `v1.0.0+build.7`. Which
+branch the commit is on does not matter; a prerelease tag on a branch is how
+work reaches a sandbox before it is released.
 
 ## A developer asks what `build` can do
 
@@ -23,8 +26,8 @@ Output:
 Usage: devctl build <app>
 
 Build <app> for linux/amd64 and write <app>/dist/<app>-<tag>.tar.xz, the file
-deploy copies to a host and opsctl installs. HEAD must be a commit on
-origin/main that a tag points at, with no uncommitted changes.
+deploy copies to a host and opsctl installs. HEAD must be a commit that a
+version tag (v<semver>) points at, with no uncommitted changes.
 ```
 
 Exits 0. The text is on stdout; stderr is empty.
@@ -44,10 +47,11 @@ inspect it. An app is a sub-project of the checkout that has a `main` package
 and a committed `etc/manifest.toml`; its name is the directory name. The
 manifest is emitted by the binary itself (`<app> manifest`) and committed, so
 the binary is the source of truth; build regenerates it and checks the two
-agree. The file is named from the tag, but the version the app reports is
-compiled into it, so build asks the binary for that too (`<app> --version`) and
-checks it against the tag. Nothing downstream compares them again: a host only
-ever asks the binary. The one line of output is the path written.
+agree. The file is named from the tag, verbatim, but the version the app
+reports is compiled into it, so build asks the binary for that too (`<app>
+--version`) and checks it against the tag. Nothing downstream compares them
+again: a host only ever asks the binary. The one line of output is the path
+written.
 
 Command:
 
@@ -67,7 +71,7 @@ Preconditions:
 
 - `crm/` is a sub-project with a `main` package and `crm/etc/manifest.toml`.
 - The working tree has no uncommitted changes.
-- `HEAD` is reachable from `origin/main` and the tag `v0.1.0` points at it.
+- The tag `v0.1.0` points at `HEAD`.
 - The Go toolchain can build `crm` for `linux/amd64`.
 - The built binary runs on the developer's machine, `crm --version` prints
   `v0.1.0`, and `crm manifest` emits exactly the committed
@@ -112,7 +116,11 @@ Postconditions:
 
 - Nothing has changed. Nothing under `crm/dist/` was written.
 
-## A developer builds at a commit that is not tagged
+## A developer builds a prerelease on a branch
+
+The same build at a commit on a branch, where the tag is a prerelease. The
+file carries the tag verbatim, and the binary reports it verbatim; nothing
+about the branch is recorded anywhere.
 
 Command:
 
@@ -123,22 +131,32 @@ $ devctl build crm
 Output:
 
 ```
-devctl: no tag points at HEAD (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
+crm/dist/crm-v0.2.0-rc.1.tar.xz
 ```
 
-Exits 2. The line is on stderr; stdout is empty.
+Exits 0. The line is on stdout; stderr is empty.
 
 Preconditions:
 
 - `crm/` is a sub-project with a `main` package and `crm/etc/manifest.toml`.
-- The working tree is clean and `HEAD` is reachable from `origin/main`.
-- No tag points at `HEAD`.
+- The working tree has no uncommitted changes.
+- The tag `v0.2.0-rc.1` points at `HEAD`. `HEAD` is on any branch, or on
+  none.
+- The Go toolchain can build `crm` for `linux/amd64`.
+- The built binary runs on the developer's machine, `crm --version` prints
+  `v0.2.0-rc.1`, and `crm manifest` emits exactly the committed
+  `crm/etc/manifest.toml`.
 
 Postconditions:
 
-- Nothing has changed.
+- `crm/dist/crm-v0.2.0-rc.1.tar.xz` exists in the checkout, with the same
+  layout as any other file build writes.
+- Nothing outside `crm/dist/` has changed.
 
-## A developer builds at a commit that is not on main
+## A developer builds at a commit that is not tagged
+
+Tags that are not `v<semver>` do not count: a commit whose only tag is
+`release-2026-09` is untagged as far as build is concerned.
 
 Command:
 
@@ -149,7 +167,7 @@ $ devctl build crm
 Output:
 
 ```
-devctl: HEAD (9f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6) is not reachable from origin/main
+devctl: no version tag (v<semver>) points at HEAD (4b22285f0c1d9e2a7b6c5d4e3f2a1b0c9d8e7f6a)
 ```
 
 Exits 2. The line is on stderr; stdout is empty.
@@ -157,8 +175,8 @@ Exits 2. The line is on stderr; stdout is empty.
 Preconditions:
 
 - `crm/` is a sub-project with a `main` package and `crm/etc/manifest.toml`.
-- The working tree is clean and the tag `v0.2.0` points at `HEAD`.
-- `HEAD` is not an ancestor of `origin/main`.
+- The working tree is clean.
+- No tag of the form `v<semver>` points at `HEAD`.
 
 Postconditions:
 
@@ -186,8 +204,7 @@ Exits 2. The line is on stderr; stdout is empty.
 Preconditions:
 
 - `crm/` is a sub-project with a `main` package and `crm/etc/manifest.toml`.
-- The working tree is clean, `HEAD` is on `origin/main`, and a tag points at
-  it.
+- The working tree is clean and a version tag points at `HEAD`.
 - `crm` compiles, and `crm manifest` emits something other than the committed
   file.
 
@@ -218,8 +235,7 @@ Exits 2. The line is on stderr; stdout is empty.
 Preconditions:
 
 - `crm/` is a sub-project with a `main` package and `crm/etc/manifest.toml`.
-- The working tree is clean, `HEAD` is on `origin/main`, and the tag `v0.1.0`
-  points at it.
+- The working tree is clean and the tag `v0.1.0` points at `HEAD`.
 - `crm` compiles, and `crm --version` prints `v0.0.9`.
 
 Postconditions:
@@ -303,8 +319,7 @@ Preconditions:
 
 - `dashboard/` is a sub-project with a `main` package and
   `dashboard/etc/manifest.toml`.
-- The working tree is clean, `HEAD` is on `origin/main`, and a tag points at
-  it.
+- The working tree is clean and a version tag points at `HEAD`.
 - `dashboard` does not compile for `linux/amd64`.
 
 Postconditions:
