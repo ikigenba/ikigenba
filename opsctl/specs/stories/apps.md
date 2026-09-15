@@ -60,6 +60,16 @@ Secret *values* never travel in the file. devctl wrote them to the parameter
 `/ikigenba/<host.name>/<app>` before the deploy, and the host's own role is
 what reads them back; a host can read no other space's parameters.
 
+An app owns its schema, and the file carries what that takes: at every start
+the app creates the database its manifest declares if none is there, runs its
+migrations forward, and loads its seed data only when it created the database
+itself. opsctl never runs a migration and knows nothing about seeds. What the
+host promises is the order: a restore lands `etc/`, `state/`, and the database
+before the app's unit ever starts, and an install over a running app leaves
+`state/` alone, so an app that is restored or upgraded migrates forward over
+real data and never seeds over it. A space whose account backs nothing up
+holds what its apps seeded and what has been typed into them since.
+
 ## An operator asks what `install` can do
 
 Command:

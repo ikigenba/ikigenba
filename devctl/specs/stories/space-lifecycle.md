@@ -384,9 +384,11 @@ why it is that order.
    app starts over its own data.
 
 Restore comes before deploy, not after. A deploy onto empty state starts the
-app, and an app that finds no database makes one; a restore after that has
-to stop the app and replace what it made. A restore first has nothing to
-stop, and the deploy that follows is an ordinary deploy.
+app, and an app that finds no database makes one, migrates it, and seeds it
+(see opsctl's `apps.md`); a restore after that has to stop the app and
+replace what it made. A restore first has nothing to stop, and the deploy
+that follows is an ordinary deploy: the app finds its database, migrates it
+forward, and seeds nothing.
 
 Command:
 

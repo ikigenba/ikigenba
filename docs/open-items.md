@@ -12,17 +12,6 @@ for the build run and halts it while non-empty.
 
 ## Missing commands and concepts
 
-### 8. Seed data has no path
-
-- Stories: `devctl/specs/stories/restore.md`, `infra/AGENTS.md` ("Spaces").
-- Evidence: infra says the sandbox "never backs up — its data is seed data".
-  restore is deliberately within one space only ("no other space was read").
-  Nothing puts data onto a sandbox space.
-- Suggested resolution: decide where seed data comes from: the app itself
-  on first start, a `devctl` command that stages a tarball under a space's
-  own prefix for `restore` to find, or nothing, in which case infra's note
-  is corrected.
-
 ### 9. The app tag convention is underspecified
 
 - Stories: `devctl/specs/stories/build.md`, `opsctl/specs/stories/release.md`.
