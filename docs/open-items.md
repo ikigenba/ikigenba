@@ -10,18 +10,6 @@ These are story-level items across three projects, so they live here rather
 than in any one project's `specs/issues/`, which is gitignored working state
 for the build run and halts it while non-empty.
 
-## Where the stories disagree with infra
-
-These are outside the stories, but the workflow depends on them.
-
-### 14. Sandbox recreation and the duplicate-certificate limit
-
-- Recreating the same sandbox domain repeatedly hits Let's Encrypt's
-  duplicate-certificate limit. The sandbox has no host backup to restore a
-  certificate from.
-- Resolution: state the limit in the create story, or give the sandbox a
-  host backup period so the certificate survives a recreate.
-
 ## Smaller inconsistencies
 
 ### 15. secrets push requires an instance that create has not launched yet

@@ -192,7 +192,10 @@ that changes it. The host holds its own copy of the installer, which is what
 In an account that keeps backups there is one more step, `restore`, between
 `opsctl` and `init`: the space may have lived before, and its certificate
 and store are then in the bucket. This account deletes backups on destroy,
-so the step is absent here; the apex create story shows it.
+so the step is absent here and every create issues a new certificate; the
+CA allows five for the same names in any seven days, which only a space
+created and destroyed that often would reach. The apex create story shows
+the other case.
 
 Command:
 
