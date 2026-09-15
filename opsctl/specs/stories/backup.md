@@ -742,14 +742,15 @@ Postconditions:
 The tarball and the database reach S3 by two different paths, so one can be
 there without the other — a prefix staged by hand, a service whose litestream
 replication never started, a `[database]` added to a manifest after the last
-backup. The files are restored before the database is looked for, so the
-report says how far it got, and the exit code says it did not finish.
+backup. The files are restored before the database is looked for, so the steps
+that ran say so and the restore stops where it failed.
 
 Nothing is started again. `crm` would come up on the tarball's files with no
 database under them, which is a worse state than being down, and litestream
 would be asked to replicate a database that is not there. Leaving both stopped
-is what makes the failure visible and safe to re-run, so the `start:` line
-reports the units it left rather than claiming a step it did not take.
+is what makes the failure visible and safe to re-run, and the diagnostic says
+so, because an operator who reads only the error still has to know two units
+are down.
 
 Command:
 
@@ -763,12 +764,13 @@ Output:
 source: ok (crm/2026-09-12T03:00:04Z.tar.zst, 1.2 MiB)
 stop: ok (ikigenba-crm.service, litestream.service)
 files: ok (/opt/crm/etc, /opt/crm/state, 12 files)
-db: failed: litestream restore: no snapshot under the prefix
-start: warning (ikigenba-crm.service, litestream.service left stopped)
+opsctl: crm: litestream restore: no snapshot under the prefix
+
+ikigenba-crm.service and litestream.service were left stopped
 exit 1
 ```
 
-Exits 1. The lines are on stdout; stderr is empty.
+Exits 1. The `ok` lines are on stdout; the diagnostic is on stderr.
 
 Preconditions:
 
