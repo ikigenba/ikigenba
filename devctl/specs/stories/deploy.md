@@ -263,7 +263,8 @@ Postconditions:
 
 ## A developer's deploy fails on the host
 
-`opsctl`'s output follows the error line.
+`opsctl`'s output follows the error line, each line quoted with `> ` so it is
+plainly the other program's and not devctl's.
 
 Command:
 
@@ -279,7 +280,7 @@ secrets: ok (2 keys)
 upload: ok (-> sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/deploy/gmail-v0.1.0.tar.xz)
 devctl: install: ssh ec2-user@3.19.79.227 sudo opsctl install s3://sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/deploy/gmail-v0.1.0.tar.xz: exit status 1
 
-opsctl: gmail: service failed to start
+> opsctl: gmail: service failed to start
 ```
 
 Exits 1. The `ok` lines are on stdout; the rest is on stderr.

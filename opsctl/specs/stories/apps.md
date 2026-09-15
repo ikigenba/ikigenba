@@ -316,8 +316,8 @@ Postconditions:
 ## An agent installs an app whose service will not come up
 
 The app ran, or failed to, and systemd knows why. opsctl reports the step that
-failed and hands over what the host said, so the developer reading devctl's
-relayed output has the journal in front of them.
+failed and hands over what the host said, each line quoted with `> `, so the
+developer reading devctl's relayed output has the journal in front of them.
 
 Command:
 
@@ -335,8 +335,8 @@ unit: ok (ikigenba-gmail.service)
 nginx: ok (gmail.ikigenba.dev)
 opsctl: gmail: service failed to start
 
-ikigenba-gmail.service: Main process exited, code=exited, status=1/FAILURE
-gmail: listen tcp 127.0.0.1:3300: bind: address already in use
+> ikigenba-gmail.service: Main process exited, code=exited, status=1/FAILURE
+> gmail: listen tcp 127.0.0.1:3300: bind: address already in use
 ```
 
 Exits 1. The `ok` lines are on stdout; the rest is on stderr.

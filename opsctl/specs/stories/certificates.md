@@ -180,7 +180,8 @@ Postconditions:
 ## An operator obtains a certificate and the CA refuses
 
 The CA is another program on the far end of a network, and what it said is
-the only useful thing anyone has. certbot's output follows the error line.
+the only useful thing anyone has. certbot's output follows the error line,
+each line quoted with `> `.
 
 Command:
 
@@ -193,8 +194,8 @@ Output:
 ```
 opsctl: certbot certonly: exit status 1
 
-Some challenges have failed.
-Detail: DNS problem: NXDOMAIN looking up TXT for _acme-challenge.ikigenba.dev
+> Some challenges have failed.
+> Detail: DNS problem: NXDOMAIN looking up TXT for _acme-challenge.ikigenba.dev
 ```
 
 Exits 1. The text is on stderr; stdout is empty.

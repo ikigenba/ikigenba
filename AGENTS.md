@@ -26,8 +26,10 @@ Every command-line program in this repository behaves the same way.
   a diagnostic: it is a fact about the thing the command was asked to look at,
   not about the command. When such a command fails, stderr carries why the
   command failed, never a copy of the findings.
-- A diagnostic's first line begins `<program>: `. Further detail — another
-  program's output, or the next command to run — follows after exactly one
-  empty line, unprefixed. The usage text is never written to stderr.
+- A diagnostic's first line begins `<program>: `. Further detail follows after
+  exactly one empty line. Another program's output is quoted there, every line
+  prefixed `> `, so a reader can see at a glance which program is speaking.
+  Detail the program writes itself, such as the next command to run, is
+  unprefixed. The usage text is never written to stderr.
 - Exit 0 on success, non-zero on failure. Which non-zero codes a program uses,
   and what each means, is that program's own design.

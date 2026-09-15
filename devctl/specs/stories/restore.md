@@ -169,7 +169,8 @@ Postconditions:
 
 ## A developer's restore fails on the host
 
-`opsctl`'s output follows the error line.
+`opsctl`'s output follows the error line, each line quoted with `> ` so it is
+plainly the other program's and not devctl's.
 
 Command:
 
@@ -182,7 +183,7 @@ Output:
 ```
 devctl: restore: ssh ec2-user@3.19.79.227 sudo opsctl restore crm: exit status 1
 
-opsctl: no backups for crm under s3://sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/
+> opsctl: no backups for crm under s3://sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/
 ```
 
 Exits 1. The text is on stderr; stdout is empty.

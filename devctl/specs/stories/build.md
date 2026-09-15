@@ -279,7 +279,8 @@ Postconditions:
 
 ## A developer's build does not compile
 
-The compiler's output follows the error line.
+The compiler's output follows the error line, each line quoted with `> ` so
+it is plainly the compiler's and not devctl's.
 
 Command:
 
@@ -292,8 +293,8 @@ Output:
 ```
 devctl: build dashboard: exit status 1
 
-# github.com/ikigenba/ikigenba/dashboard
-./main.go:41:2: undefined: render
+> # github.com/ikigenba/ikigenba/dashboard
+> ./main.go:41:2: undefined: render
 ```
 
 Exits 1. The text is on stderr; stdout is empty.
