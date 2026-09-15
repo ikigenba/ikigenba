@@ -1,0 +1,298 @@
+{
+  "scope": "Disposable local fixture; not devctl implementation or a sibling app; no network during build",
+  "build_env": {
+    "GOOS": "linux",
+    "GOARCH": "amd64",
+    "CGO_ENABLED": "0",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOTOOLCHAIN": "local"
+  },
+  "commands": [
+    {
+      "argv": [
+        "git",
+        "init",
+        "-q"
+      ],
+      "cwd": "<fixture>",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "config",
+        "user.name",
+        "Disposable Observation"
+      ],
+      "cwd": "<fixture>",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "config",
+        "user.email",
+        "observation@example.invalid"
+      ],
+      "cwd": "<fixture>",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "add",
+        "."
+      ],
+      "cwd": "<fixture>",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "commit",
+        "-qm",
+        "Fixture"
+      ],
+      "cwd": "<fixture>",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "tag",
+        "crm-api/v1.2.3-rc.1+build.7"
+      ],
+      "cwd": "<fixture>",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "tag",
+        "other/v9.0.0"
+      ],
+      "cwd": "<fixture>",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "tag",
+        "-a",
+        "crm-api/v1.2.3",
+        "-m",
+        "Annotated fixture"
+      ],
+      "cwd": "<fixture>",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "--show-toplevel"
+      ],
+      "cwd": "<fixture>/crm-api",
+      "exit": 0,
+      "stdout": "<fixture>\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "<fixture>",
+      "exit": 0,
+      "stdout": "07eacb37aa3cccc8f8c9b9552fca9d173ad70ba3\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "status",
+        "--porcelain"
+      ],
+      "cwd": "<fixture>",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "tag",
+        "--points-at",
+        "HEAD"
+      ],
+      "cwd": "<fixture>",
+      "exit": 0,
+      "stdout": "crm-api/v1.2.3\ncrm-api/v1.2.3-rc.1+build.7\nother/v9.0.0\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "status",
+        "--porcelain"
+      ],
+      "cwd": "<fixture>",
+      "exit": 0,
+      "stdout": "?? untracked\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "-q",
+        "--detach"
+      ],
+      "cwd": "<fixture>",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "tag",
+        "--points-at",
+        "HEAD"
+      ],
+      "cwd": "<fixture>",
+      "exit": 0,
+      "stdout": "crm-api/v1.2.3\ncrm-api/v1.2.3-rc.1+build.7\nother/v9.0.0\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "go",
+        "version"
+      ],
+      "cwd": "<fixture>",
+      "exit": 0,
+      "stdout": "go version go1.26.5 linux/amd64\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "go",
+        "build",
+        "-o",
+        "<fixture>/crm-api/dist/stage/bin/crm-api",
+        "."
+      ],
+      "cwd": "<fixture>/crm-api",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "file",
+        "<fixture>/crm-api/dist/stage/bin/crm-api"
+      ],
+      "cwd": "<fixture>",
+      "exit": 0,
+      "stdout": "<fixture>/crm-api/dist/stage/bin/crm-api: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, Go BuildID=Gxlt2PIsoVc4xLxlfWTg/zsKV5cMUCNJUg5WyZoLU/bMLDG3-77HxGY8oHTyC6/qClO5xxwQxnF3HfoWEtX, BuildID[sha1]=32556bdc8ac8b76cffa7f31282e490209280ea43, with debug_info, not stripped\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "<fixture>/crm-api/dist/stage/bin/crm-api",
+        "--version"
+      ],
+      "cwd": "<fixture>",
+      "exit": 0,
+      "stdout": "v1.2.3-rc.1+build.7\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "<fixture>/crm-api/dist/stage/bin/crm-api",
+        "manifest"
+      ],
+      "cwd": "<fixture>",
+      "exit": 0,
+      "stdout": "app = \"crm-api\"\nsecrets = []\nport = 8080\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "tar",
+        "-c",
+        "-J",
+        "-f",
+        "<fixture>/crm-api/dist/crm-api-v1.2.3-rc.1+build.7.tar.xz",
+        "bin/crm-api",
+        "etc/manifest.toml",
+        "etc/settings.txt",
+        "share/page.txt"
+      ],
+      "cwd": "<fixture>/crm-api/dist/stage",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "tar",
+        "-t",
+        "-J",
+        "-f",
+        "<fixture>/crm-api/dist/crm-api-v1.2.3-rc.1+build.7.tar.xz"
+      ],
+      "cwd": "<fixture>",
+      "exit": 0,
+      "stdout": "bin/crm-api\netc/manifest.toml\netc/settings.txt\nshare/page.txt\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "tar",
+        "-x",
+        "-J",
+        "-O",
+        "-f",
+        "<fixture>/crm-api/dist/crm-api-v1.2.3-rc.1+build.7.tar.xz",
+        "etc/manifest.toml"
+      ],
+      "cwd": "<fixture>",
+      "exit": 0,
+      "stdout": "app = \"crm-api\"\nsecrets = []\nport = 8080\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "sh",
+        "-c",
+        "printf \"%s\\0\" 'two words' 'single'\"'\"'quote' '$(printf injected)' 'semi;colon' 'line\nbreak' '*' -option"
+      ],
+      "cwd": "<fixture>",
+      "exit": 0,
+      "stdout": "two words\u0000single'quote\u0000$(printf injected)\u0000semi;colon\u0000line\nbreak\u0000*\u0000-option\u0000",
+      "stderr": ""
+    }
+  ],
+  "archive_bytes_and_executable_mode_verified": true,
+  "shell_literal_values_verified": true
+}
