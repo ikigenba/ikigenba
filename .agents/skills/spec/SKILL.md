@@ -65,7 +65,7 @@ A monorepo holds several projects below one git root; each is independent and st
 
 ## Operations
 
-- `draft-spec` — author a design, and the `AGENTS.md` ground beside it. Read `references/draft.md`.
+- `draft-spec` — author a design, and the `AGENTS.md` ground beside it. Read `references/draft.md`. The sibling `draft-spec` skill supplies recursive delegation from user stories for one sub-project.
 - `check-spec` — check the design is buildable and commit the baseline the run starts from. Read `references/check.md`.
 - `audit-spec` — audit test adequacy, by recursive delegation like `build-spec`. Read `references/audit.md`.
 
