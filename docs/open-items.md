@@ -12,19 +12,6 @@ for the build run and halts it while non-empty.
 
 ## Missing commands and concepts
 
-### 6. Rebuilding a durable space is never sequenced
-
-- Stories: `opsctl/specs/stories/backup.md` (host restore, restore into a
-  host that never ran the service), `devctl/specs/stories/space-lifecycle.md`
-  (create), `restore.md`, `deploy.md`.
-- Evidence: the pieces exist on the opsctl side, but no story walks them in
-  order. devctl exposes neither `host restore` nor `init`. create's own
-  `init` obtains a fresh certificate before the old one could be restored,
-  which is the rate-limit case host backup exists to avoid.
-- Suggested resolution: write the disaster-recovery story end to end
-  (destroy or lose host, create, host restore, init, restore each app,
-  deploy each app) and decide which of its steps devctl drives.
-
 ### 7. Apps cannot be removed, restarted, or inspected
 
 - Stories: `opsctl/specs/stories/apps.md`, `devctl/specs/stories/deploy.md`,

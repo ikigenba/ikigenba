@@ -180,6 +180,11 @@ the first version, and `space init --opsctl` is the only later devctl command
 that changes it. The host holds its own copy of the installer, which is what
 `space init` runs.
 
+In an account that keeps backups there is one more step, `restore`, between
+`opsctl` and `init`: the space may have lived before, and its certificate
+and store are then in the bucket. This account deletes backups on destroy,
+so the step is absent here; the apex create story shows it.
+
 Command:
 
 ```
@@ -258,7 +263,12 @@ Postconditions:
 
 ## A developer creates the apex space
 
-`<domain>` may equal the account's `domain` property.
+`<domain>` may equal the account's `domain` property. This account keeps
+backups, so create looks for a host backup under the space's own prefix
+before `init` runs: a space that lived before has its certificate there,
+and the CA rate-limits how often it will issue the same names. This is the
+first time, so there is nothing to bring back and the line says so; the
+rebuild story below shows the other case.
 
 Command:
 
@@ -278,6 +288,7 @@ address: ok (elastic ip 18.117.42.9 associated)
 records: ok (created ikigenba.dev, *.ikigenba.dev -> 18.117.42.9, INSYNC)
 host: ok (status checks passed, cloud-init done)
 opsctl: ok (v0.1.0 installed, 10 keys set)
+restore: ok (no host backup)
 init: ok
 ikigenba.dev 18.117.42.9
 ```
@@ -299,6 +310,8 @@ Preconditions:
   properties name.
 - `<domain>` equals the account's `domain` property, `ikigenba.dev`.
 - No instance is tagged `Space=<domain>` in the account.
+- The account's `delete_backups_on_destroy` is false, and nothing is under
+  `ikigenba.dev/host/` in the backup bucket.
 - Every app in the checkout has the values its manifest's `secrets` array
   names in the developer's keyring (see `secrets.md`).
 - opsctl has a published release, and the host can reach it over the network.
@@ -330,11 +343,114 @@ Postconditions:
   `acme.email` from `--acme-email`, and `backup.host_files_seconds`,
   `backup.service_files_seconds`, `backup.service_db_seconds`, and
   `backup.service_wal_seconds` set to the account's four periods.
+- `ikigenba.dev/host/` was listed and found empty, so `opsctl host restore`
+  was not run and the ten keys were set once.
 - `sudo opsctl init` has exited 0 on the host, so the host holds its
   certificate, its generated nginx configuration, its litestream configuration
   and unit, its two backup timers, each enabled whose period is non-zero, and
   its certificate renewal timer, enabled.
 - No apps are deployed; that is `deploy`.
+
+## A developer rebuilds a durable space
+
+A durable space is one whose account keeps its backups, and a rebuild is
+how those backups earn their keep: the host is gone, by choice or by
+accident, and a new one is to hold everything the old one held. Every step
+is a command that already exists; what this story adds is the order, and
+why it is that order.
+
+1. `space destroy`, so the old host takes its final backup with `retire`
+   before it goes. When the host is already lost the backup cannot be taken,
+   and `space destroy --no-backup` clears what remains: the records, the
+   address, and the role. What the timers had not copied is lost with it.
+2. `space create`. Its `restore` step finds the host backup and runs
+   `sudo opsctl host restore`, which puts `/etc/letsencrypt/` and
+   `/etc/ikigenba/` back; create then sets its ten keys again, so what it
+   was told wins over the backup's copy of the store and any key an operator
+   set by hand survives. `init` finds the certificate current and asks the
+   CA for nothing.
+3. `restore <domain> <app>` for each app. The host has never run the app,
+   so the restore lands its `etc/` and `state/` and its database with no
+   binary and no unit, and litestream replicates the database from that
+   moment.
+4. `deploy <domain> <file>` for each app, over the restored data. install
+   replaces `bin/`, `etc/`, and `share/` and leaves `state/` alone, so the
+   app starts over its own data.
+
+Restore comes before deploy, not after. A deploy onto empty state starts the
+app, and an app that finds no database makes one; a restore after that has
+to stop the app and replace what it made. A restore first has nothing to
+stop, and the deploy that follows is an ordinary deploy.
+
+Command:
+
+```
+$ devctl --account 295229566359 space destroy ikigenba.dev
+$ devctl --account 295229566359 space create ikigenba.dev --acme-email ops@ikigenba.dev
+$ devctl --account 295229566359 restore ikigenba.dev crm
+$ devctl --account 295229566359 restore ikigenba.dev dashboard
+$ devctl --account 295229566359 deploy ikigenba.dev crm/dist/crm-v0.1.0.tar.xz
+$ devctl --account 295229566359 deploy ikigenba.dev dashboard/dist/dashboard-v0.0.9.tar.xz
+$ devctl --account 295229566359 space status ikigenba.dev
+```
+
+Output, with the create's lines before `opsctl` and the deploys' lines
+before `install` as in their own stories:
+
+```
+retire: ok (opsctl backed up crm, dashboard, host)
+instance: ok (i-0f1e2d3c4b5a69788 terminated)
+address: ok (elastic ip 18.117.42.9 released)
+records: ok (deleted ikigenba.dev, *.ikigenba.dev)
+secrets: ok (kept, delete_secrets_on_destroy=false)
+backups: ok (kept, delete_backups_on_destroy=false)
+role: ok (ikigenba-space-ikigenba.dev deleted)
+...
+opsctl: ok (v0.1.0 installed, 10 keys set)
+restore: ok (host/2026-09-12T14:22:51Z.tar.zst, 10 keys set again)
+init: ok
+ikigenba.dev 18.117.42.9
+restore: ok (opsctl restore crm)
+restore: ok (opsctl restore dashboard)
+...
+install: ok (opsctl installed crm)
+...
+install: ok (opsctl installed dashboard)
+crm v0.1.0 active wal
+dashboard v0.0.9 active -
+```
+
+Each command exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- A live SSO session for the profile named by `--account`.
+- The account's `delete_secrets_on_destroy` and `delete_backups_on_destroy`
+  are both false.
+- The apex space exists, its instance is `running`, and `crm` and
+  `dashboard` are deployed on it; `crm` declares a database.
+- The developer's ssh configuration can reach the old instance and the new
+  one as `ec2-user`.
+- `crm/dist/crm-v0.1.0.tar.xz` and `dashboard/dist/dashboard-v0.0.9.tar.xz`
+  exist, written by `build`.
+
+Postconditions:
+
+- After the destroy, `ikigenba.dev/host/`, `ikigenba.dev/crm/`, and
+  `ikigenba.dev/dashboard/` each hold an object from the retire, and the
+  secrets under `/ikigenba/ikigenba.dev/` are untouched.
+- After the create, the new host holds the old certificate: `opsctl host
+  restore` was run over ssh and exited 0 before the ten keys were set
+  again, and `init`'s certificate step found it current and asked the CA
+  for nothing. The store holds the ten keys as create derived them, plus
+  any other key the backup carried.
+- After the restores, `/opt/crm/` and `/opt/dashboard/` hold the backups'
+  `etc/` and `state/`, `crm`'s database is rebuilt to its last committed
+  transaction and replicating, and neither has a binary or a unit.
+- After the deploys, both apps answer from their binaries over the restored
+  data, and `space status` shows them as above.
+- The new instance has a new id and may have a new address; the records
+  point at it. Nothing about the old instance remains in the account.
 
 ## A developer creates a space outside the account's domain
 
@@ -601,8 +717,8 @@ Postconditions:
 
 ## A developer sets a space's host up again
 
-`create`'s last two steps, run again on a space that exists. Everything the
-host generates is generated from its configuration store, and `opsctl init`
+`create`'s `opsctl` and `init` steps, run again on a space that exists.
+Everything the host generates is generated from its configuration store, and `opsctl init`
 is what reads the store and makes the host match it; so when something the
 store came from has changed, the way back to a host that matches is to set
 the keys again and run `init` again. Terraform changed a backup period; an
