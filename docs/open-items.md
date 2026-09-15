@@ -10,20 +10,6 @@ These are story-level items across three projects, so they live here rather
 than in any one project's `specs/issues/`, which is gitignored working state
 for the build run and halts it while non-empty.
 
-## Missing commands and concepts
-
-### 9. The app tag convention is underspecified
-
-- Stories: `devctl/specs/stories/build.md`, `opsctl/specs/stories/release.md`.
-- Evidence: build assumes one bare `v*` tag at HEAD names the app's version
-  and checks `<app> --version` against it. opsctl releases as
-  `opsctl/<version>`. With several apps in one checkout, which tag names
-  which app when two point at HEAD, and whether every app's version bumps
-  in lockstep with one tag, is undecided.
-- Suggested resolution: state the convention. Either every app shares one
-  release tag and one version, or tags are `<app>/<version>` and build
-  looks for that app's tag alone.
-
 ## Where the stories disagree with infra
 
 These are outside the stories, but the workflow depends on them.

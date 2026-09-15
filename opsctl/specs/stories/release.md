@@ -8,9 +8,10 @@ only part of opsctl that is not opsctl.
 
 This group adds no command to the top-level usage.
 
-**The release.** Tagging `opsctl/<version>` publishes a release whose assets
-are, for that version: `opsctl-<version>-linux-amd64`, the static binary;
-`checksums.txt`; and `install.sh`. They are reachable at
+**The release.** Tagging `opsctl/<version>`, the `<name>/v<semver>` shape
+every sub-project in the checkout is tagged with, publishes a release whose
+assets are, for that version: `opsctl-<version>-linux-amd64`, the static
+binary; `checksums.txt`; and `install.sh`. They are reachable at
 `https://github.com/ikigenba/ikigenba/releases/download/opsctl/<version>/<asset>`,
 which is the shape a caller builds the installer's URL from.
 
