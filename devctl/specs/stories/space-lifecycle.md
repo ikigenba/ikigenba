@@ -165,6 +165,11 @@ the CA sends expiry warnings to, is in neither place, so the developer supplies
 it with `--acme-email`. It is required rather than defaulted: a wrong address
 is only discovered when a certificate quietly expires.
 
+The opsctl it installs is the newest release opsctl has published. The host
+then stays on that version until someone explicitly updates it: `create` is
+the only thing that chooses a version, and no later devctl command changes it.
+The host holds its own copy of the installer, which is what an update runs.
+
 Command:
 
 ```
@@ -206,8 +211,7 @@ Preconditions:
 - No instance is tagged `Space=<domain>` in the account.
 - Every app in the checkout has the values its manifest's `secrets` array
   names in the developer's keyring (see `secrets.md`).
-- The opsctl release `space create` installs has been published, and the host can
-  reach it over the network.
+- opsctl has a published release, and the host can reach it over the network.
 - `--acme-email` names an address the CA will accept.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
   with the account's `ikigenba` key pair.
@@ -286,8 +290,7 @@ Preconditions:
 - No instance is tagged `Space=<domain>` in the account.
 - Every app in the checkout has the values its manifest's `secrets` array
   names in the developer's keyring (see `secrets.md`).
-- The opsctl release `space create` installs has been published, and the host can
-  reach it over the network.
+- opsctl has a published release, and the host can reach it over the network.
 - `--acme-email` names an address the CA will accept.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
   with the account's `ikigenba` key pair.
@@ -571,8 +574,7 @@ Preconditions:
 - No instance is tagged `Space=<domain>` in the account.
 - Every app in the checkout has the values its manifest's `secrets` array
   names in the developer's keyring (see `secrets.md`).
-- The opsctl release `space create` installs has been published, and the host can
-  reach it over the network.
+- opsctl has a published release, and the host can reach it over the network.
 - `--acme-email` names an address the CA will accept.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
   with the account's `ikigenba` key pair.

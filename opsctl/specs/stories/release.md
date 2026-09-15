@@ -12,13 +12,13 @@ This group adds no command to the top-level usage.
 are, for that version: `opsctl-<version>-linux-amd64`, the static binary;
 `checksums.txt`; and `install.sh`. They are reachable at
 `https://github.com/ikigenba/ikigenba/releases/download/opsctl/<version>/<asset>`,
-which is the shape `devctl space create` builds the installer's URL from.
+which is the shape a caller builds the installer's URL from.
 
 **The version is the argument, not the URL.** `install.sh` takes the version
 it is to install as its one operand, so the copy of the script a host keeps can
-move that host to any version without being replaced first. devctl fetches the
-script from the version it intends to install and then names that version
-again on the command line; the two agreeing is not required, and the operand
+move that host to any version without being replaced first. A caller that
+fetched the script from one version's assets and names another on the command
+line gets the one it named: the two agreeing is not required, and the operand
 is what wins.
 
 ## An agent installs opsctl on a fresh host
