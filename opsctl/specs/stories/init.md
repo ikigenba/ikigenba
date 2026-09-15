@@ -24,7 +24,10 @@ one to it, and each group that does says so; `certificates.md` adds
 and `timers`, in that order. Every setup command is idempotent, so `init` is
 too, and a step's inputs are read from the store every run — which is why
 changing a period or a zone is `config set` followed by `init`, and never an
-edit to something `init` generated. Two of the generated files also answer to
+edit to something `init` generated. From the developer's machine that pair is
+`devctl space init`, which sets the keys `create` set and runs `init` again;
+`create` runs it once and `space init` runs it on any later day. Two of the
+generated files also answer to
 what is under `/opt`, and `install` and `restore` regenerate those themselves
 when they change it (see `apps.md` and `backup.md`); `init` remains the only
 command that enables the units behind them.

@@ -54,8 +54,9 @@ Postconditions:
 ## An agent configures a fresh host
 
 `devctl space create` has just brought a host up and drives one `config set`
-per key over ssh. Nothing is printed: the answer to "did it work" is the exit
-code.
+per key over ssh; `devctl space init` drives the same sets again on a live
+host whenever what a key came from has changed. Nothing is printed: the answer
+to "did it work" is the exit code.
 
 These ten are every key opsctl's own groups declare, and between them they are
 what `init` needs to bring the host to the state the store describes. A host

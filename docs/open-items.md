@@ -12,22 +12,6 @@ for the build run and halts it while non-empty.
 
 ## Missing commands and concepts
 
-### 2. No devctl path to re-run init, change a key, or upgrade opsctl on a live space
-
-- Stories: `devctl/specs/stories/space-lifecycle.md` (create),
-  `opsctl/specs/stories/init.md`, `release.md`.
-- Evidence: create says "create is the only thing that chooses a version, and
-  no later devctl command changes it." init.md says changing a period or a
-  zone is `config set` followed by `init`. release.md says a new opsctl acts
-  on a host "on the next init". No devctl command runs `config set`, `init`,
-  or the saved installer on an existing space.
-- Consequence: a durable space (the apex) can never take a new opsctl, a
-  changed backup period, or a re-read of its manifests without an operator
-  doing it by hand over ssh. Sandbox spaces can be recreated instead.
-- Suggested resolution: a `devctl space init <domain>` that re-derives the
-  ten keys and runs `opsctl init`, and a `devctl space upgrade <domain>
-  [<version>]` that runs the host's saved installer and then init.
-
 ### 3. Certificate renewal has no owner
 
 - Stories: `opsctl/specs/stories/certificates.md`, `init.md` (timers step),

@@ -63,7 +63,9 @@ Postconditions:
 ## An operator moves a host to a newer opsctl
 
 The copy the last install left behind takes the new version as its operand.
-Nothing is fetched to fetch the fetcher.
+Nothing is fetched to fetch the fetcher. From the developer's machine this is
+`devctl space init <domain> --opsctl <version>`, which runs exactly this
+command over ssh and then `init`.
 
 Command:
 
@@ -91,7 +93,7 @@ Postconditions:
 - The host's configuration store, its nginx file, its units, and everything
   under `/opt/` are untouched. A new opsctl on an old host is still that
   host; what a new version changes about it is `init`'s to do on the next
-  run.
+  run, which is why `devctl space init` runs the two together.
 - Installing `v0.2.0` again writes the same bytes and exits 0.
 
 ## An operator installs the version that is already there

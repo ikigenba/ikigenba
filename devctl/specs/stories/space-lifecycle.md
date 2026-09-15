@@ -2,13 +2,14 @@
 
 A space is one running copy of the platform: one EC2 instance in one account,
 named by its full domain, found by its tags. `space` is the command that lists,
-creates, destroys, stops, and starts them, and asks one what it is running. Nothing is kept on the developer's
-machine; the cloud is the registry.
+creates, destroys, stops, and starts them, sets one's host up again, and asks
+one what it is running. Nothing is kept on the developer's machine; the cloud
+is the registry.
 
 ## A developer asks what `space` can do
 
 The top-level usage gains the line `  space     list, create, destroy, stop,
-start, and inspect spaces` under `Commands:`.
+start, initialise, and inspect spaces` under `Commands:`.
 
 Command:
 
@@ -21,9 +22,9 @@ Output:
 ```
 Usage: devctl --account <name> space <subcommand> [arguments]
 
-List, create, destroy, stop, start, and inspect spaces in one account. A space
-is one instance named by its full domain; the cloud's tags are the only
-registry.
+List, create, destroy, stop, start, initialise, and inspect spaces in one
+account. A space is one instance named by its full domain; the cloud's tags
+are the only registry.
 
 Subcommands:
   list                       one line per space in the account
@@ -31,10 +32,15 @@ Subcommands:
   destroy <domain>           remove the space and everything it owned
   stop <domain>              stop the instance; state is kept
   start <domain>             start the instance; its address is unchanged
+  init <domain> [options]    set the host's keys again and run opsctl init
   status <domain>            one line per app: version, service state, database journal mode
 
 Options (create):
   --acme-email <address>  where the CA sends the space's expiry warnings; required
+
+Options (init):
+  --opsctl <version>      move the host to this opsctl release first
+  --acme-email <address>  change where the CA sends the space's expiry warnings
 
 Every subcommand needs --account. Run 'devctl space <subcommand> --help' for details.
 ```
@@ -166,9 +172,10 @@ it with `--acme-email`. It is required rather than defaulted: a wrong address
 is only discovered when a certificate quietly expires.
 
 The opsctl it installs is the newest release opsctl has published. The host
-then stays on that version until someone explicitly updates it: `create` is
-the only thing that chooses a version, and no later devctl command changes it.
-The host holds its own copy of the installer, which is what an update runs.
+then stays on that version until someone explicitly moves it: `create` chooses
+the first version, and `space init --opsctl` is the only later devctl command
+that changes it. The host holds its own copy of the installer, which is what
+`space init` runs.
 
 Command:
 
@@ -586,6 +593,274 @@ Postconditions:
   No instance was launched.
 - `space destroy foo.sbx.ikigenba.dev` removes what exists. `space create
   foo.sbx.ikigenba.dev` again is refused because the role exists.
+
+## A developer sets a space's host up again
+
+`create`'s last two steps, run again on a space that exists. Everything the
+host generates is generated from its configuration store, and `opsctl init`
+is what reads the store and makes the host match it; so when something the
+store came from has changed, the way back to a host that matches is to set
+the keys again and run `init` again. Terraform changed a backup period; an
+operator ran `opsctl host restore` and the host now holds a store that `init`
+has not acted on; a manifest was restored that `init` has not read. Nothing
+here needs ssh by hand.
+
+The nine keys `create` derives are derived the same way, from the account's
+properties and the zone, and set again; a value that has not changed is
+written over with itself. The tenth, `acme.email`, is derived from nothing,
+so it is left as it is unless `--acme-email` says otherwise. Any key an
+operator set by hand is not one of the ten and is untouched. The `opsctl`
+line says which version the host is on and whether this command put it
+there. Then `init` runs and its report is not relayed: it succeeded.
+
+Command:
+
+```
+$ devctl --account 602773793009 space init foo.sbx.ikigenba.dev
+```
+
+Output:
+
+```
+account: ok (sbx.ikigenba.dev, us-east-2)
+domain: ok (zone sbx.ikigenba.dev Z02587302QXWONVKW632)
+instance: ok (i-0c9e94542d98846a8 running, 18.118.7.42)
+opsctl: ok (v0.1.0 kept, 9 keys set)
+init: ok
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- A live SSO session for the profile named by `--account`.
+- The account has its properties at `/ikigenba/account`, with the keys
+  `create` reads.
+- The space exists, its instance is `running`, and `opsctl` is installed on
+  it.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
+
+Postconditions:
+
+- The host's configuration store holds the nine derived keys at the values
+  the account's properties and the zone give now: `host.name`,
+  `dns.provider`, `dns.zones`, `aws.region`, `backup.s3_uri`, and the four
+  backup periods. `acme.email` and every other key are as they were.
+- `/usr/local/bin/opsctl` is the version it was; the saved installer was not
+  run.
+- `sudo opsctl init` has exited 0 on the host, so the host holds its
+  certificate, its generated nginx configuration, its litestream configuration
+  and unit, and its two backup timers, each enabled whose period is non-zero,
+  all regenerated from what the store and `/opt` hold now.
+- No app was deployed, restarted, or stopped, and no record or secret was
+  touched. A change to a period reaches its timer; nothing else on the space
+  is different unless the store was.
+
+## A developer moves a space to a newer opsctl
+
+`--opsctl` names a release, and the host's own saved copy of the installer is
+run with that version as its operand before the keys are set and `init` runs.
+Installing the binary changes nothing on the host by itself: what a new
+version changes is `init`'s to do, which is why the two are one command.
+
+Command:
+
+```
+$ devctl --account 295229566359 space init ikigenba.dev --opsctl v0.2.0
+```
+
+Output:
+
+```
+account: ok (ikigenba.dev, us-east-2)
+domain: ok (zone ikigenba.dev Z09565073GHK8BYWQ1A78)
+instance: ok (i-0f1e2d3c4b5a69788 running, 18.117.42.9)
+opsctl: ok (v0.2.0 installed, 9 keys set)
+init: ok
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- A live SSO session for the profile named by `--account`.
+- The space exists, its instance is `running`, and `opsctl` is installed on
+  it with its saved installer at
+  `/usr/local/share/ikigenba/opsctl-install.sh`.
+- The release `opsctl/v0.2.0` exists and the host can reach it.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
+
+Postconditions:
+
+- `/usr/local/bin/opsctl` is `v0.2.0` and the saved installer is `v0.2.0`'s.
+- Everything the plain re-initialisation's postconditions say. `init` was
+  the new version's, so whatever `v0.2.0` generates differently is on the
+  host.
+- Naming the version that is already installed writes the same bytes and
+  reports `v0.2.0 installed` all the same: the installer ran, and the line
+  says what it did. A version with no release fails at the `opsctl` step,
+  before any key is set, with the installer's diagnostic relayed the way a
+  failed `init` is below.
+
+## A developer changes where the CA writes
+
+The one key `create` could not derive is the one `space init` cannot either,
+so it is the one option that changes it.
+
+Command:
+
+```
+$ devctl --account 602773793009 space init foo.sbx.ikigenba.dev --acme-email alerts@ikigenba.dev
+```
+
+Output:
+
+```
+account: ok (sbx.ikigenba.dev, us-east-2)
+domain: ok (zone sbx.ikigenba.dev Z02587302QXWONVKW632)
+instance: ok (i-0c9e94542d98846a8 running, 18.118.7.42)
+opsctl: ok (v0.1.0 kept, 10 keys set)
+init: ok
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- A live SSO session for the profile named by `--account`.
+- The space exists, its instance is `running`, and `opsctl` is installed on
+  it.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
+
+Postconditions:
+
+- Everything the plain re-initialisation's postconditions say, and
+  `acme.email` is `alerts@ikigenba.dev`.
+- The certificate the host holds is the one it held: `init`'s certificate
+  step renews when renewal is due, and a changed address is not that. The CA
+  learns the new address at the next renewal.
+
+## A developer's `space init` finds the host not ready
+
+`opsctl init` checks everything before it runs anything, and a failed check is
+on its stdout with exit 2. devctl relays the whole report after its own error
+line, each line quoted with `> `, so the developer sees exactly what the host
+said about itself. The keys were set before `init` ran and stay set; the
+sequence did not run.
+
+Command:
+
+```
+$ devctl --account 602773793009 space init foo.sbx.ikigenba.dev
+```
+
+Output:
+
+```
+account: ok (sbx.ikigenba.dev, us-east-2)
+domain: ok (zone sbx.ikigenba.dev Z02587302QXWONVKW632)
+instance: ok (i-0c9e94542d98846a8 running, 18.118.7.42)
+opsctl: ok (v0.1.0 kept, 9 keys set)
+devctl: init: ssh ec2-user@18.118.7.42 sudo opsctl init: exit status 2
+
+> nginx: ok (/usr/sbin/nginx)
+> certbot: failed: not found on PATH
+> systemctl: ok (/usr/bin/systemctl)
+> litestream: ok (/usr/local/bin/litestream)
+> dns.provider: ok (route53)
+> dns.zones: ok (sbx.ikigenba.dev)
+> host.name: ok (foo.sbx.ikigenba.dev)
+> zone sbx.ikigenba.dev: ok (route53 Z02587302QXWONVKW632, 4 nameservers delegated)
+> host foo.sbx.ikigenba.dev: ok (zone sbx.ikigenba.dev)
+> wildcard foo.sbx.ikigenba.dev: ok (18.118.7.42)
+```
+
+Exits 1. The `ok` lines are on stdout; the rest is on stderr.
+
+Preconditions:
+
+- A live SSO session for the profile named by `--account`.
+- The space exists, its instance is `running`, and `opsctl` is installed on
+  it.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
+- `certbot` has been removed from the host.
+
+Postconditions:
+
+- The store holds the nine keys as set. Nothing `init` generates was
+  written: the host's certificate, nginx configuration, litestream
+  configuration, and timers are as they were.
+- Running `space init` again once the host is fixed finishes the job.
+
+## A developer initialises a stopped space, or one that does not exist
+
+`init` needs a host to talk to. A stopped space is refused the way `status`
+refuses it, and a space that does not exist the way every subcommand refuses
+one.
+
+Command:
+
+```
+$ devctl --account 602773793009 space init bar.sbx.ikigenba.dev
+```
+
+Output:
+
+```
+devctl: 'bar.sbx.ikigenba.dev' is stopped
+```
+
+Command:
+
+```
+$ devctl --account 602773793009 space init gone.sbx.ikigenba.dev
+```
+
+Output:
+
+```
+devctl: no space at 'gone.sbx.ikigenba.dev'
+```
+
+Each exits 1. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- A live SSO session for the profile named by `--account`.
+- The instance tagged `Space=bar.sbx.ikigenba.dev` is `stopped`; no instance
+  is tagged `Space=gone.sbx.ikigenba.dev`.
+
+Postconditions:
+
+- Nothing has changed. No ssh connection was opened.
+
+## A developer runs `space init` without a domain
+
+Command:
+
+```
+$ devctl --account 602773793009 space init
+```
+
+Output:
+
+```
+devctl: space init needs <domain>
+
+see 'devctl space --help' for usage
+```
+
+Exits 2. The text is on stderr; stdout is empty. An `--opsctl` or
+`--acme-email` with no value gives `devctl: option '--opsctl' requires a
+value` or `devctl: option '--acme-email' requires a value`, also exit 2.
+
+Preconditions:
+
+- `bin/devctl` exists.
+
+Postconditions:
+
+- Nothing has changed. No AWS call was made.
 
 ## A developer destroys a space
 
