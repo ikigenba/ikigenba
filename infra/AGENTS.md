@@ -129,10 +129,10 @@ A space is one EC2 instance in an account, launched from that account's
 The contract below is the same in both accounts; only these per-account
 values differ:
 
-| account | `domain` | `backup_expiry_days` | `backup_full_seconds` | `backup_incremental_seconds` | `backup_wal_seconds` | `budget_monthly_usd` | `deploy_from_main_only` | `delete_secrets_on_destroy` | `delete_backups_on_destroy` |
+| account | `domain` | `backup_expiry_days` | `backup_host_files_seconds` | `backup_service_files_seconds` | `backup_service_db_seconds` | `backup_service_wal_seconds` | `budget_monthly_usd` | `delete_secrets_on_destroy` | `delete_backups_on_destroy` |
 |---|---|---|---|---|---|---|---|---|---|
-| `295229566359` | `ikigenba.dev` | 30 | 604800 | 86400 | 900 | 75 | `true` | `false` | `false` |
-| `602773793009` | `sbx.ikigenba.dev` | 7 | 0 | 0 | 0 | 50 | `false` | `true` | `true` |
+| `295229566359` | `ikigenba.dev` | 30 | 86400 | 86400 | 86400 | 900 | 75 | `false` | `false` |
+| `602773793009` | `sbx.ikigenba.dev` | 7 | 0 | 0 | 0 | 0 | 50 | `true` | `true` |
 
 A space has one identifier: its full domain — `foo.sbx.ikigenba.dev`, say, or
 the account domain itself for the apex space. The tool creates a space with
@@ -179,12 +179,16 @@ host reads the entry through its instance role at app start. The host can
 only read it; the operator-side tool is the only writer (see "Hosts write,
 never delete").
 
-Backups are the account's three periods, in seconds, with `0` meaning never:
-`backup_full_seconds`, `backup_incremental_seconds`, and `backup_wal_seconds`
-(`locals.tf`, published in `/ikigenba/account`; see the table above). Every
-service in a space uses them, and the tool hands the three to the host at
-create. `602773793009` never backs up — its data is seed data — and its
-`delete_backups_on_destroy` and bucket expiry are unchanged by that.
+Backups are the account's four periods, in seconds, with `0` meaning never:
+`backup_host_files_seconds` (the host's own configuration),
+`backup_service_files_seconds` (every service's files),
+`backup_service_db_seconds` (a whole snapshot of each declared database), and
+`backup_service_wal_seconds` (each database's committed changes)
+(`locals.tf`, published in `/ikigenba/account`; see the table above). They
+are opsctl's `backup.*` configuration keys by another name, and the tool
+hands the four to the host at create. `602773793009` never backs up — its
+data is seed data — and its `delete_backups_on_destroy` and bucket expiry
+are unchanged by that.
 
 The account's properties for the tool live at Parameter Store
 `/ikigenba/account`, written only by Terraform (`account.tf`); no space's

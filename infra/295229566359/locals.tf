@@ -6,11 +6,13 @@ locals {
   instance_type      = "t3.small"
   root_volume_gb     = 10
   backup_expiry_days = 30
-  # Backup periods, in seconds, for every service in every space; 0 means never.
-  backup_full_seconds        = 604800
-  backup_incremental_seconds = 86400
-  backup_wal_seconds         = 900
-  ssh_admin_cidr             = "208.118.151.172/32"
+  # Backup periods, in seconds, for every space; 0 means never. The names are
+  # opsctl's backup.* keys, which devctl hands to the host at create.
+  backup_host_files_seconds    = 86400
+  backup_service_files_seconds = 86400
+  backup_service_db_seconds    = 86400
+  backup_service_wal_seconds   = 900
+  ssh_admin_cidr               = "208.118.151.172/32"
   # The monthly cost budget only notifies; it never stops or changes anything.
   budget_monthly_usd = 75
   budget_email       = "mgreenly+295229566359@gmail.com"

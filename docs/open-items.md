@@ -14,18 +14,6 @@ for the build run and halts it while non-empty.
 
 These are outside the stories, but the workflow depends on them.
 
-### 10. Account backup properties do not match
-
-- Stories read `backup_host_files_seconds`, `backup_service_files_seconds`,
-  `backup_service_db_seconds`, `backup_service_wal_seconds` from
-  `/ikigenba/account`. `infra/*/account.tf` publishes `backup_full_seconds`,
-  `backup_incremental_seconds`, `backup_wal_seconds`.
-- Terraform also publishes `deploy_from_main_only`, which no story reads:
-  build accepts any commit a version tag points at, and deploy carries the
-  file to any space.
-- Resolution: change Terraform to publish the four keys the stories name and
-  drop `deploy_from_main_only`.
-
 ### 11. The launch template does not install litestream
 
 - `init` requires litestream on PATH; backup.md says it "comes with the
