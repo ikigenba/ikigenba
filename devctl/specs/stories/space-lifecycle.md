@@ -183,6 +183,12 @@ the CA sends expiry warnings to, is in neither place, so the developer supplies
 it with `--acme-email`. It is required rather than defaulted: a wrong address
 is only discovered when a certificate quietly expires.
 
+The `secrets` step writes the same objects `secrets push` writes, one per app
+in the checkout, and it is the one writer that does not require the space's
+instance to exist, because create is what is about to launch it. The step
+comes before the role and the instance so that a create refused for a
+missing keyring value leaves nothing in the account.
+
 The opsctl it installs is the newest release opsctl has published. The host
 then stays on that version until someone explicitly moves it: `create` chooses
 the first version, and `space init --opsctl` is the only later devctl command

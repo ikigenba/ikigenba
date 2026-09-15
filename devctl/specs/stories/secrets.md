@@ -194,6 +194,10 @@ Postconditions:
 
 ## A developer pushes to a space that does not exist
 
+A push to a space that is not there would leave an object nothing will ever
+read, so push checks. `space create` is the one path that writes the objects
+before the instance exists, and it is about to launch it.
+
 Command:
 
 ```

@@ -12,14 +12,6 @@ for the build run and halts it while non-empty.
 
 ## Smaller inconsistencies
 
-### 15. secrets push requires an instance that create has not launched yet
-
-- `secrets push` preconditions: "The space exists in the account (an
-  instance tagged `Space=<domain>`)". create pushes secrets before it
-  launches the instance.
-- Resolution: create's secrets step skips the existence check, and the
-  story says so.
-
 ### 16. Reserved app names
 
 - An app named `host` or `deploy` collides with the `host/` and `deploy/`
