@@ -45,9 +45,12 @@ A host may have no default app, in which case its own name answers 404 (see
 `nginx.md`); it may never have two.
 
 `install` reads the app, the port, `default`, and `secrets`. The `[env]` table
-it writes out; the `[database]` table it does not read at all — that one is
-`backup.md`'s, and it is in the manifest rather than the store because it is a
-fact about the app, which travels with the app.
+it writes out. The `[database]` table it reads for one purpose only: to
+regenerate `/etc/litestream.yml` from every manifest on the host, the way it
+regenerates nginx, so that a database arrives on the host and starts being
+replicated in the same command. What the table means, and what replication
+is, are `backup.md`'s. It is in the manifest rather than the store because it
+is a fact about the app, which travels with the app.
 
 Secret *values* never travel in the file. devctl wrote them to the parameter
 `/ikigenba/<host.name>/<app>` before the deploy, and the host's own role is
@@ -78,6 +81,11 @@ etc/manifest.toml inside it; the secret values are read from the parameter
 Nothing under /opt/<app>/state/ or /opt/<app>/cache/ is touched, so installing
 over a running app keeps its data. Safe to re-run.
 
+The nginx configuration and /etc/litestream.yml are regenerated from every app
+on the host, so an app that declares a [database] is replicated from the
+moment it is installed. litestream.service is restarted only when its
+configuration changed.
+
 Configuration keys:
   aws.region  the region this host's parameters and artifacts live in
   host.name   the fully-qualified name this host answers at
@@ -98,7 +106,10 @@ Postconditions:
 `devctl deploy` has uploaded the file and now runs one command over ssh. Each
 line of output is one step, and the last is exactly the line `status` will
 print for this app from now on. The `fetch` step is the host reading the object
-with its own role: the file never travels over the ssh connection.
+with its own role: the file never travels over the ssh connection. The
+`litestream` step names the database this manifest declares, now in
+`/etc/litestream.yml`; it comes before `service` so that replication is in
+place before the app writes its first row.
 
 Command:
 
@@ -115,6 +126,7 @@ secrets: ok (3 keys)
 unpack: ok (/opt/crm)
 unit: ok (ikigenba-crm.service)
 nginx: ok (crm.ikigenba.dev)
+litestream: ok (state/crm.db)
 service: ok (crm v0.1.0 active)
 ```
 
@@ -145,13 +157,21 @@ Postconditions:
   `multi-user.target`. systemd has been reloaded and the unit is enabled.
 - `/etc/nginx/conf.d/ikigenba.conf` has been regenerated and nginx reloaded,
   so `https://crm.ikigenba.dev` reaches `127.0.0.1:3100`.
+- `/etc/litestream.yml` has been regenerated from every manifest under `/opt`
+  and now names `/opt/crm/state/crm.db`, replicating to `<backup.s3_uri>crm/`.
+  Because the file changed, `litestream.service` was restarted; it is running.
+  Every other declared database on the host paused for the restart and is
+  replicating again, the same window `backup.md` accepts for a restore.
 - The unit is `active`, and the binary reports `v0.1.0`.
 - No other app on the host has changed.
 
 ## An agent deploys a new version over a running app
 
 The same command. Its whole point is that the app's data outlives it: the
-tarball carries no `state/`, and opsctl writes none.
+tarball carries no `state/`, and opsctl writes none. The new manifest declares
+the same database, so the regenerated `/etc/litestream.yml` is byte for byte
+the old one and litestream is left alone: an upgrade of one app does not
+interrupt the replication of any.
 
 Command:
 
@@ -167,6 +187,7 @@ secrets: ok (4 keys)
 unpack: ok (/opt/crm)
 unit: ok (ikigenba-crm.service)
 nginx: ok (crm.ikigenba.dev)
+litestream: ok (unchanged)
 service: ok (crm v0.2.0 active)
 ```
 
@@ -182,12 +203,17 @@ Postconditions:
 - Everything the first install's postconditions say, and: `/opt/crm/state/`
   is byte for byte as it was, the unit was restarted rather than started, and
   `status` now shows `crm v0.2.0 active wal`.
-- Installing the same file again produces the same six lines and exit 0.
+- `/etc/litestream.yml` is byte for byte as it was and `litestream.service`
+  was not restarted, so its replication of `crm.db` was never interrupted. A
+  manifest that changed its `[database]` path would have changed the file, and
+  the line would have named the new path and the service been restarted.
+- Installing the same file again produces the same seven lines and exit 0.
 
 ## An agent installs the host's default app
 
 The app whose manifest sets `default = true` answers at the host's own name as
-well as its own, and the nginx step says so.
+well as its own, and the nginx step says so. It declares no database, so the
+regenerated `/etc/litestream.yml` is what it was.
 
 Command:
 
@@ -203,6 +229,7 @@ secrets: ok (0 keys)
 unpack: ok (/opt/dashboard)
 unit: ok (ikigenba-dashboard.service)
 nginx: ok (dashboard.ikigenba.dev, ikigenba.dev)
+litestream: ok (unchanged)
 service: ok (dashboard v0.0.9 active)
 ```
 
@@ -217,6 +244,8 @@ Postconditions:
 
 - `https://ikigenba.dev` and `https://dashboard.ikigenba.dev` both reach
   `127.0.0.1:3200`; every other name under the host still answers 404.
+- `/etc/litestream.yml` is byte for byte as it was and `litestream.service`
+  was not restarted.
 
 ## An operator installs a second default app
 
@@ -333,6 +362,7 @@ secrets: ok (2 keys)
 unpack: ok (/opt/gmail)
 unit: ok (ikigenba-gmail.service)
 nginx: ok (gmail.ikigenba.dev)
+litestream: ok (unchanged)
 opsctl: gmail: service failed to start
 
 > ikigenba-gmail.service: Main process exited, code=exited, status=1/FAILURE
@@ -344,6 +374,7 @@ Exits 1. The `ok` lines are on stdout; the rest is on stderr.
 Preconditions:
 
 - Another process already holds port 3300.
+- `gmail`'s manifest declares no database.
 
 Postconditions:
 
@@ -351,6 +382,10 @@ Postconditions:
   name. The unit is `failed`. Nothing was rolled back: the host is left in
   the state an operator can inspect and fix, and `status` shows
   `gmail v0.1.0 failed -`.
+- Had the manifest declared a database, the `litestream` line would have
+  named it and the failure would still be the service's: a failed unit does
+  not undo a regenerated `/etc/litestream.yml`, and litestream replicates
+  whatever the app manages to write.
 
 ## An operator runs `install` with no file, or more than one
 

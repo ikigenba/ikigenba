@@ -12,24 +12,6 @@ for the build run and halts it while non-empty.
 
 ## Missing commands and concepts
 
-### 1. Database replication never starts after a deploy
-
-- Stories: `opsctl/specs/stories/apps.md` (install), `backup.md` (init's
-  `litestream` step), `init.md`.
-- Evidence: `opsctl install` runs fetch, file, secrets, unpack, unit, nginx,
-  service. Its postconditions regenerate nginx and never mention
-  `/etc/litestream.yml`. Only the `litestream` step of `init` reads declared
-  databases, and `init` runs once, inside `space create`, before any app is
-  installed. The restore-into-a-fresh-host story states the same limit
-  explicitly: "litestream.service does not replicate the restored database
-  until opsctl init has read the new manifest."
-- Consequence: an app deployed with a `[database]` is never replicated.
-  `status` shows `wal` because journal mode is the app's, so nothing signals
-  it. The failure surfaces at the first restore.
-- Suggested resolution: `install` (and `restore`) gain a `litestream` step
-  that regenerates `/etc/litestream.yml` and restarts `litestream.service`,
-  the same way `install` already regenerates nginx.
-
 ### 2. No devctl path to re-run init, change a key, or upgrade opsctl on a live space
 
 - Stories: `devctl/specs/stories/space-lifecycle.md` (create),
