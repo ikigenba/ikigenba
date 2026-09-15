@@ -185,7 +185,7 @@ secrets: ok (3 apps)
 role: ok (ikigenba-space-foo.sbx.ikigenba.dev)
 instance: ok (i-0c9e94542d98846a8 running, 3.19.79.227)
 address: ok (elastic ip 18.118.7.42 associated)
-records: ok (foo.sbx.ikigenba.dev, *.foo.sbx.ikigenba.dev -> 18.118.7.42, INSYNC)
+records: ok (created foo.sbx.ikigenba.dev, *.foo.sbx.ikigenba.dev -> 18.118.7.42, INSYNC)
 host: ok (status checks passed, cloud-init done)
 opsctl: ok (v0.1.0 installed, 10 keys set)
 init: ok
@@ -264,7 +264,7 @@ secrets: ok (3 apps)
 role: ok (ikigenba-space-ikigenba.dev)
 instance: ok (i-0f1e2d3c4b5a69788 running, 3.18.9.77)
 address: ok (elastic ip 18.117.42.9 associated)
-records: ok (ikigenba.dev, *.ikigenba.dev -> 18.117.42.9, INSYNC)
+records: ok (created ikigenba.dev, *.ikigenba.dev -> 18.117.42.9, INSYNC)
 host: ok (status checks passed, cloud-init done)
 opsctl: ok (v0.1.0 installed, 10 keys set)
 init: ok
@@ -603,7 +603,7 @@ Output:
 ```
 instance: ok (i-0c9e94542d98846a8 terminated)
 address: ok (elastic ip 18.118.7.42 released)
-records: ok (2 deleted)
+records: ok (deleted foo.sbx.ikigenba.dev, *.foo.sbx.ikigenba.dev)
 secrets: ok (3 parameters deleted)
 backups: ok (0 objects deleted)
 role: ok (ikigenba-space-foo.sbx.ikigenba.dev deleted)
@@ -643,7 +643,7 @@ Output:
 ```
 instance: ok (i-0a1b2c3d4e5f60718 terminated)
 address: ok (elastic ip 18.220.10.5 released)
-records: ok (2 deleted)
+records: ok (deleted staging.ikigenba.dev, *.staging.ikigenba.dev)
 secrets: ok (kept, delete_secrets_on_destroy=false)
 backups: ok (kept, delete_backups_on_destroy=false)
 role: ok (ikigenba-space-staging.ikigenba.dev deleted)
@@ -765,10 +765,9 @@ Output:
 
 ```
 instance: ok (i-0a1b2c3d4e5f60718 stopped)
-records: ok (unchanged, 18.220.10.5)
 ```
 
-Exits 0. The lines are on stdout; stderr is empty.
+Exits 0. The line is on stdout; stderr is empty.
 
 Preconditions:
 
@@ -792,10 +791,9 @@ Output:
 
 ```
 instance: ok (already stopped)
-records: ok (unchanged, 18.118.7.42)
 ```
 
-Exits 0. The lines are on stdout; stderr is empty.
+Exits 0. The line is on stdout; stderr is empty.
 
 Preconditions:
 
@@ -823,7 +821,6 @@ Output:
 
 ```
 instance: ok (i-0a1b2c3d4e5f60718 running, 18.220.10.5)
-records: ok (unchanged, 18.220.10.5)
 host: ok (status checks passed)
 certificate: ok (certbot renew: renewed)
 staging.ikigenba.dev 18.220.10.5
@@ -972,7 +969,6 @@ Output:
 
 ```
 instance: ok (i-0c9e94542d98846a8 running, 18.118.7.42)
-records: ok (unchanged, 18.118.7.42)
 host: ok (status checks passed)
 devctl: ssh ec2-user@18.118.7.42: connection timed out
 ```
