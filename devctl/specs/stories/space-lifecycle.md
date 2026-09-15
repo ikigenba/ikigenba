@@ -31,7 +31,7 @@ Subcommands:
   destroy <domain>           remove the space and everything it owned
   stop <domain>              stop the instance; state is kept
   start <domain>             start the instance; its address is unchanged
-  status <domain>            one line per app on the space: version and service state
+  status <domain>            one line per app: version, service state, database journal mode
 
 Options (create):
   --acme-email <address>  where the CA sends the space's expiry warnings; required
@@ -843,9 +843,12 @@ Postconditions:
 ## A developer asks what a space is running
 
 The answer comes from the host, never from a record kept elsewhere: over ssh,
-`opsctl` lists the installed apps, asks each app's binary its version, and
-reads each app's systemd unit state. One line per app, in name order: the
-app, the version, the unit state.
+`opsctl` lists the installed apps, asks each app's binary its version, reads
+each app's systemd unit state, and reads the journal mode of the database each
+app declares. `space status` copies that output byte for byte. One line per app,
+in name order: the app, the version, the unit state, and the database journal
+mode (`-` for an app that declares no database). A mode other than `wal` means
+that database is no longer reaching S3.
 
 Command:
 

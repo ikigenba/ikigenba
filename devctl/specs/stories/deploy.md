@@ -281,6 +281,9 @@ upload: ok (-> sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/deploy/gmail-v
 devctl: install: ssh ec2-user@3.19.79.227 sudo opsctl install s3://sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/deploy/gmail-v0.1.0.tar.xz: exit status 1
 
 > opsctl: gmail: service failed to start
+> 
+> > ikigenba-gmail.service: Main process exited, code=exited, status=1/FAILURE
+> > gmail: listen tcp 127.0.0.1:3300: bind: address already in use
 ```
 
 Exits 1. The `ok` lines are on stdout; the rest is on stderr.
