@@ -44,7 +44,10 @@ inspect it. An app is a sub-project of the checkout that has a `main` package
 and a committed `etc/manifest.toml`; its name is the directory name. The
 manifest is emitted by the binary itself (`<app> manifest`) and committed, so
 the binary is the source of truth; build regenerates it and checks the two
-agree. The one line of output is the path written.
+agree. The file is named from the tag, but the version the app reports is
+compiled into it, so build asks the binary for that too (`<app> --version`) and
+checks it against the tag. Nothing downstream compares them again: a host only
+ever asks the binary. The one line of output is the path written.
 
 Command:
 
@@ -66,8 +69,9 @@ Preconditions:
 - The working tree has no uncommitted changes.
 - `HEAD` is reachable from `origin/main` and the tag `v0.1.0` points at it.
 - The Go toolchain can build `crm` for `linux/amd64`.
-- The built binary runs on the developer's machine, and `crm manifest` emits
-  exactly the committed `crm/etc/manifest.toml`.
+- The built binary runs on the developer's machine, `crm --version` prints
+  `v0.1.0`, and `crm manifest` emits exactly the committed
+  `crm/etc/manifest.toml`.
 
 Postconditions:
 
@@ -186,6 +190,37 @@ Preconditions:
   it.
 - `crm` compiles, and `crm manifest` emits something other than the committed
   file.
+
+Postconditions:
+
+- Nothing under `crm/dist/` has changed.
+
+## A developer builds an app whose version string is stale
+
+The tag names the file; the binary carries its own. A file whose name and
+contents disagree would install as one version and report the other for the
+rest of its life, because the host only ever asks the binary.
+
+Command:
+
+```
+$ devctl build crm
+```
+
+Output:
+
+```
+devctl: crm: the tag is v0.1.0 but the binary reports v0.0.9
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- `crm/` is a sub-project with a `main` package and `crm/etc/manifest.toml`.
+- The working tree is clean, `HEAD` is on `origin/main`, and the tag `v0.1.0`
+  points at it.
+- `crm` compiles, and `crm --version` prints `v0.0.9`.
 
 Postconditions:
 

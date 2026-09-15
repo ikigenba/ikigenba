@@ -21,10 +21,11 @@ One configuration key:
 
 The file's layout is devctl's contract and carries no version inside it:
 `bin/<app>`, `etc/manifest.toml`, whatever else the app keeps under `etc/`,
-and `share/` when the app has one. The manifest names the app, the port it
-listens on, whether it is the host's default app, the secrets it needs, an
-`[env]` table of plain settings, and a `[database]` table when the app keeps
-one:
+and `share/` when the app has one. The version is nowhere in the file:
+`bin/<app>` answers `--version` with it, and that is what opsctl reports.
+The manifest names the app, the port it listens on, whether it is the host's
+default app, the secrets it needs, an `[env]` table of plain settings, and a
+`[database]` table when the app keeps one:
 
 ```toml
 app = "crm"
@@ -423,10 +424,10 @@ Postconditions:
 ## A developer asks what a host is running
 
 The answer comes from the host and nowhere else: the services under `/opt`,
-each app's own binary asked its version, each app's unit asked its state, and
-each declared database asked its journal mode. One line per app, in name order.
-`devctl space status` runs exactly this over ssh and copies the output to the
-developer's terminal byte for byte.
+each app's own binary asked its version with `--version`, each app's unit
+asked its state, and each declared database asked its journal mode. One line
+per app, in name order. `devctl space status` runs exactly this over ssh and
+copies the output to the developer's terminal byte for byte.
 
 The fourth field is `-` for a service that declares no database, because there
 was nothing to ask — the same `-` the other fields use.
