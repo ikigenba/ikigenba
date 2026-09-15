@@ -14,13 +14,6 @@ for the build run and halts it while non-empty.
 
 These are outside the stories, but the workflow depends on them.
 
-### 12. Elastic IPs
-
-- infra says "A space holds no Elastic IP". Every create story allocates
-  one. The default quota is five per region, which the sandbox will hit.
-- Resolution: update infra's contract to match the stories, and either
-  request a quota increase or state the limit.
-
 ### 13. Litestream retention versus the no-delete role
 
 - Litestream's retention expects to delete objects. The space role

@@ -167,8 +167,11 @@ full domain, typed in full every time: `foo.sbx.ikigenba.dev`,
 `staging.ikigenba.dev`, or the account domain itself for the apex space.
 Every space is given an Elastic IP, so its address is fixed for the whole of
 its life: the records are written once, here, and every later stop and start
-leaves them alone. Each line of output is one step; the last line is the
-domain and the address.
+leaves them alone. Elastic IPs are an account quota, five per region unless
+the account has asked for more, and each space holds one alongside whatever
+else the account holds; when the quota is exhausted, create fails at its
+address step and relays the AWS error. Each line of output is one step; the
+last line is the domain and the address.
 
 The host needs ten configuration keys before `opsctl init` will run, and
 `create` is what sets all ten. Seven it already knows: the domain is

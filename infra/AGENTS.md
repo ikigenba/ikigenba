@@ -131,10 +131,10 @@ A space is one EC2 instance in an account, launched from that account's
 The contract below is the same in both accounts; only these per-account
 values differ:
 
-| account | `domain` | `backup_expiry_days` | `backup_host_files_seconds` | `backup_service_files_seconds` | `backup_service_db_seconds` | `backup_service_wal_seconds` | `budget_monthly_usd` | `delete_secrets_on_destroy` | `delete_backups_on_destroy` |
-|---|---|---|---|---|---|---|---|---|---|
-| `295229566359` | `ikigenba.dev` | 30 | 86400 | 86400 | 86400 | 900 | 75 | `false` | `false` |
-| `602773793009` | `sbx.ikigenba.dev` | 7 | 0 | 0 | 0 | 0 | 50 | `true` | `true` |
+| account | `domain` | `backup_expiry_days` | `backup_host_files_seconds` | `backup_service_files_seconds` | `backup_service_db_seconds` | `backup_service_wal_seconds` | `budget_monthly_usd` | `delete_secrets_on_destroy` | `delete_backups_on_destroy` | Elastic IP quota |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `295229566359` | `ikigenba.dev` | 30 | 86400 | 86400 | 86400 | 900 | 75 | `false` | `false` | 5 (the `dev` host holds one) |
+| `602773793009` | `sbx.ikigenba.dev` | 7 | 0 | 0 | 0 | 0 | 50 | `true` | `true` | 5 (an increase to 20 was requested 2026-09-14, pending) |
 
 A space has one identifier: its full domain — `foo.sbx.ikigenba.dev`, say, or
 the account domain itself for the apex space. The tool creates a space with
@@ -170,9 +170,17 @@ put, list), and its own DNS names `<domain>` and `*.<domain>` in its one zone
 (record types `A` and `TXT` only).
 
 Spaces are registered by the `Space=<domain>` tag, the only registry tag.
-There is no per-space Terraform. A space holds no Elastic IP: its public
-address is the one the launch template assigns, and it is written into the
-space's zone as the `<domain>` and `*.<domain>` A records with TTL 60.
+There is no per-space Terraform. Every space holds one Elastic IP, tagged
+`Project=ikigenba` and `Space=<domain>`, allocated by the tool at create and
+released at destroy, so the address is fixed for the space's life; it is
+written into the space's zone as the `<domain>` and `*.<domain>` A records
+with TTL 60. The launch template still assigns a transient public address,
+because first boot fetches its packages before the tool has associated the
+Elastic IP. Elastic IPs are an account quota (`EC2-VPC Elastic IPs`,
+`L-0263D0A3`), five per region by default; the account's quota is in the
+table above, and the tool fails create at its address step when it is
+exhausted. The quota is not Terraform's to manage; it is raised by a
+Service Quotas request.
 
 A space's secrets are one SSM SecureString per app: `/ikigenba/<domain>/<app>`
 holds a flat JSON object of that app's secrets. The values come from the
