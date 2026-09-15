@@ -547,7 +547,15 @@ Postconditions:
 
 - Nothing has changed.
 
-## A developer creates a space where an existing space's app answers
+## A developer creates a space under an existing space
+
+A space's wildcard record, wildcard certificate, and nginx catch-all answer
+for every name beneath its domain: its apps today, and any app deployed to
+it later. So no space may lie under another, and no list of apps is
+consulted, from the checkout or from the host. The account domain is the
+one exception, since every space in the account lies under it by
+definition. The check reads only the account's instances, which create
+already lists.
 
 Command:
 
@@ -558,7 +566,7 @@ $ devctl --account 602773793009 space create crm.foo.sbx.ikigenba.dev --acme-ema
 Output:
 
 ```
-devctl: 'crm.foo.sbx.ikigenba.dev' is where app 'crm' of space 'foo.sbx.ikigenba.dev' answers
+devctl: 'crm.foo.sbx.ikigenba.dev' lies under space 'foo.sbx.ikigenba.dev'
 ```
 
 Exits 2. The line is on stderr; stdout is empty.
@@ -567,7 +575,6 @@ Preconditions:
 
 - A live SSO session for the profile named by `--account`.
 - An instance tagged `Space=foo.sbx.ikigenba.dev` exists in the account.
-- `crm/` is a sub-project with a `main` package and `crm/etc/manifest.toml`.
 
 Postconditions:
 

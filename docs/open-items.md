@@ -10,10 +10,4 @@ These are story-level items across three projects, so they live here rather
 than in any one project's `specs/issues/`, which is gitignored working state
 for the build run and halts it while non-empty.
 
-## Smaller inconsistencies
-
-### 17. create checks app names against the checkout, not the host
-
-- create refuses `<app>.<space>` by reading the checkout's apps. An app
-  deployed from an older checkout and since removed from it is not seen.
-- Resolution: accept as is and say so, or ask the existing space's host.
+No items are open.

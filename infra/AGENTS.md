@@ -211,8 +211,9 @@ that a domain is refused if the account's zone does not serve it:
   (in `295229566359`, `sbx.ikigenba.dev` is the NS delegation to
   `602773793009`, not a space; records under it in the `ikigenba.dev` zone
   would be shadowed by the delegation and never served).
-- any `<app>.<existing space domain>` — apps answer at `<app>.<space domain>`,
-  and a space there would shadow one.
+- any name under an existing space's domain, other than the account domain
+  itself — that space's wildcard record, certificate, and nginx catch-all
+  answer for everything beneath it, its apps today and any deployed later.
 
 Objects in the backup bucket expire after `backup_expiry_days` (`locals.tf`;
 see the table above). Launch-template changes affect new launches only.
