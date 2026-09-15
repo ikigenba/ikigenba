@@ -84,15 +84,17 @@ offset disagree with its last LTX file and takes a fresh snapshot instead of
 failing — and a database restored under it, which is behind a replica holding a
 higher TXID, is a case it detects by that same route. Either way the database
 is fully replicated again shortly after the restore, and the only thing the gap
-costs is the ability to restore to an instant inside it, which is a precision
-`opsctl restore` never asks for: it takes the newest point and no other.
+costs is the ability to restore to an instant inside it. `--at` can name such
+an instant, and litestream answers with the closest point it holds at or before
+it, so a restore aimed into a gap lands earlier than it was aimed.
 
 What is left is losing the host *during* a restore an operator is running by
 hand. That is the accepted risk.
 
 **The two clocks are not synchronised, and are not meant to be.** A restore
-takes the newest files and, separately, the newest database — so the database
-is typically newer than the files around it. The database is what matters; a
+takes the newest files at or before the moment asked for and, separately, the
+database at that moment itself — so the database is typically newer than the
+files around it. The database is what matters; a
 missing file is a missing file. An app that needs an artifact to be
 transactionally consistent with its rows must keep that artifact **in** the
 database.
@@ -511,11 +513,12 @@ $ opsctl restore -h
 Output:
 
 ```
-Usage: opsctl restore SERVICE [--prefix <s3 uri>]
+Usage: opsctl restore SERVICE [--at <timestamp>] [--prefix <s3 uri>]
 
-Replace /opt/SERVICE/etc/ and /opt/SERVICE/state/ with the newest backup, and,
-when SERVICE declares a [database], replace that database with the newest
-litestream has. Nothing under bin/ or share/ is touched.
+Replace /opt/SERVICE/etc/ and /opt/SERVICE/state/ with a backup, and, when
+SERVICE declares a [database], replace that database with what litestream
+holds. Without --at both halves are the newest there is. Nothing under bin/ or
+share/ is touched.
 
 SERVICE's unit is stopped for the restore and started again after it, and so is
 litestream.service, because the files step deletes the database both of them
@@ -523,10 +526,13 @@ hold open. A restore is a brief outage. A unit that was already stopped is left
 stopped, and a failed restore leaves both stopped.
 
 Options:
+  --at <timestamp>    restore the service as it was at this RFC 3339 moment
   --prefix <s3 uri>   where to read from; defaults to <backup.s3_uri>SERVICE/
 
-The files and the database are restored to their own newest points, which are
-not the same instant. The database is the newer of the two.
+--at governs both halves: the files come from the newest tarball written at or
+before that moment, and the database is rebuilt to the moment itself. The two
+are not the same instant, because the tarball is written on a timer and the
+database is replicated continuously.
 
 Configuration keys:
   aws.region      the region the backup bucket lives in
@@ -590,6 +596,83 @@ Postconditions:
 - The restore itself wrote and deleted no object under `<backup.s3_uri>`. What
   litestream ships once it is running again is litestream's business, not the
   restore's.
+
+## An operator puts a service back as it was at a moment
+
+Something went wrong during the day and the operator knows roughly when. `--at`
+names the moment, and both halves answer to it: the files are the newest
+tarball written at or before it, and the database is rebuilt to the moment
+itself. The `db` line reports the moment asked for rather than a newest.
+
+Command:
+
+```
+$ sudo opsctl restore crm --at 2026-09-11T18:00:00Z
+```
+
+Output:
+
+```
+source: ok (crm/2026-09-11T03:00:02Z.tar.zst, 1.2 MiB)
+stop: ok (ikigenba-crm.service, litestream.service)
+files: ok (/opt/crm/etc, /opt/crm/state, 12 files)
+db: ok (/opt/crm/state/crm.db, at 2026-09-11T18:00:00Z)
+start: ok (litestream.service, ikigenba-crm.service)
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- `aws.region` and `backup.s3_uri` are set, and the host's role can read
+  under that prefix.
+- `<backup.s3_uri>crm/` holds a tarball written at or before
+  `2026-09-11T18:00:00Z`, and litestream's objects there cover that moment.
+- `ikigenba-crm.service` is active.
+
+Postconditions:
+
+- Everything the ordinary restore's postconditions say, except that
+  `/opt/crm/etc/` and `/opt/crm/state/` are the `2026-09-11T03:00:02Z`
+  tarball's and `/opt/crm/state/crm.db` is the database as it stood at
+  `2026-09-11T18:00:00Z`.
+- Backups written after that moment were read past and not deleted. The
+  restore is a read: `<backup.s3_uri>crm/` holds what it held before.
+- litestream replicates forward from the restored database. The history it
+  wrote after the requested moment is litestream's to reconcile, and the
+  restore does not remove it.
+
+## An operator asks for a moment with no backup before it
+
+The tarball is the half that can be missing: litestream's objects begin when
+replication began, but the files begin at the first timer run. A moment before
+the first tarball has nothing to restore the files from, and the restore stops
+before it stops anything.
+
+Command:
+
+```
+$ sudo opsctl restore crm --at 2026-08-01T00:00:00Z
+```
+
+Output:
+
+```
+opsctl: crm: no backup at or before 2026-08-01T00:00:00Z
+```
+
+Exits 1. The line is on stderr; stdout is empty. With `--prefix` given, the
+line names the prefix that was read.
+
+Preconditions:
+
+- `<backup.s3_uri>crm/` holds tarballs, and the oldest is newer than
+  `2026-08-01T00:00:00Z`.
+
+Postconditions:
+
+- Nothing has changed. No unit was stopped and nothing under `/opt/crm/` was
+  read or written.
 
 ## An operator puts back a service that keeps no database
 
@@ -852,7 +935,8 @@ see 'opsctl restore --help' for usage
 ```
 
 Exits 2. The text is on stderr; stdout is empty. More than one operand gives
-`opsctl: restore takes one SERVICE`.
+`opsctl: restore takes one SERVICE`, and an `--at` that is not an RFC 3339
+timestamp gives `opsctl: --at takes an RFC 3339 timestamp`.
 
 Preconditions:
 
