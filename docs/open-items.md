@@ -14,13 +14,6 @@ for the build run and halts it while non-empty.
 
 These are outside the stories, but the workflow depends on them.
 
-### 11. The launch template does not install litestream
-
-- `init` requires litestream on PATH; backup.md says it "comes with the
-  account's launch template". `space-first-boot.sh` installs nginx, certbot,
-  awscli-2, and jq.
-- Resolution: first boot installs litestream at a pinned version.
-
 ### 12. Elastic IPs
 
 - infra says "A space holds no Elastic IP". Every create story allocates

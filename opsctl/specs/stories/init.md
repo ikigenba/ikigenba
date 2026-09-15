@@ -108,7 +108,7 @@ Output:
 nginx: ok (/usr/sbin/nginx)
 certbot: ok (/usr/bin/certbot)
 systemctl: ok (/usr/bin/systemctl)
-litestream: ok (/usr/local/bin/litestream)
+litestream: ok (/usr/bin/litestream)
 dns.provider: ok (route53)
 dns.zones: ok (ikigenba.dev)
 host.name: ok (ikigenba.dev)
@@ -165,7 +165,7 @@ Output:
 nginx: ok (/usr/sbin/nginx)
 certbot: failed: not found on PATH
 systemctl: ok (/usr/bin/systemctl)
-litestream: ok (/usr/local/bin/litestream)
+litestream: ok (/usr/bin/litestream)
 dns.provider: ok (route53)
 dns.zones: ok (ikigenba.dev)
 host.name: failed: not set

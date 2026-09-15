@@ -115,7 +115,9 @@ Every path below is relative to this directory (`infra/`). Region `us-east-2`.
   `ikigenba-launch` (the platform launcher it installs). The `dev` host was
   created with these; `295229566359/dev.tf` renders `user_data` from them.
   Also `space-first-boot.sh`, the user data of the `ikigenba-space` launch
-  template (packages only). The per-space role policy is not here: it belongs
+  template (packages only: nginx, certbot, awscli-2, and jq from the
+  distribution, and litestream from its GitHub release RPM, pinned by version
+  and sha256 in the script). The per-space role policy is not here: it belongs
   to the tool that creates the role at launch, which embeds it in its own
   binary.
 
