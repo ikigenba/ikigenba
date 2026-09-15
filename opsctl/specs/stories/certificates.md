@@ -12,6 +12,18 @@ certificate` under `Commands:`, and `init`'s sequence gains the step
 `certificate`, before `nginx.conf` — every nginx server block names the
 certificate, so nginx has nothing to load until this has run.
 
+Renewal has an owner, and it is opsctl. `init`'s `timers` step writes
+`ikigenba-renew-certificate.service`, which runs `certbot renew` as root, and
+`ikigenba-renew-certificate.timer`, which fires it twice a day at a random
+offset and is `Persistent=true`, so a host that was off when a firing was due
+runs it at boot. The timer has no period key and is always enabled: a host
+that holds a certificate has to renew it, and there is nothing for an account
+to opt out of. The same step masks the certbot package's own
+`certbot-renew.timer` when the package ships one, so exactly one thing on the
+host renews and the answer to "who renews" does not depend on packaging.
+What renewal does is still certbot's: the hooks `obtain` recorded re-prove
+the challenge through opsctl and reload nginx.
+
 One configuration key:
 
 | key | value |
@@ -47,7 +59,8 @@ Configuration keys:
   host.name   the fully-qualified name this host answers at
 
 Renewal is certbot's: 'certbot renew' re-runs the same hooks and reloads
-nginx, with no further configuration.
+nginx, with no further configuration. 'opsctl init' writes the timer that
+runs it twice a day, ikigenba-renew-certificate.timer.
 ```
 
 Exits 0. The text is on stdout; stderr is empty. It prints for any user.
@@ -91,9 +104,13 @@ Postconditions:
 - `/etc/letsencrypt/live/<host.name>/fullchain.pem` and `privkey.pem` exist,
   covering `<host.name>` and `*.<host.name>`.
 - certbot's renewal configuration for that certificate records the same
-  hooks, so `certbot renew` run by anyone — a systemd timer on the host, or
-  `devctl space start` over ssh — re-proves the challenge through opsctl and
-  reloads nginx afterwards, with nothing further to configure.
+  hooks, so `certbot renew` run by anyone re-proves the challenge through
+  opsctl and reloads nginx afterwards, with nothing further to configure. The
+  one that runs it on schedule is `ikigenba-renew-certificate.timer`, which
+  `init`'s `timers` step writes and enables. `devctl space start` runs it once
+  more over ssh when a space comes back from a stop: the persistent timer
+  would catch up at boot on its own, and start runs it in the foreground so
+  the developer sees the answer.
 - No challenge record is left behind: every value `acme-auth` added has been
   taken away by `acme-cleanup`.
 
@@ -274,4 +291,6 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. Renewal is certbot's own, not a subcommand here.
+- Nothing has changed. Renewal is certbot's own, not a subcommand here; the
+  timer `init` writes runs it, and `systemctl start
+  ikigenba-renew-certificate.service` runs it now.

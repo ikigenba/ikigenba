@@ -139,7 +139,10 @@ and nothing else.
 `init`'s sequence gains two steps after `nginx.conf`: `litestream`, which
 writes `/etc/litestream.yml` from the declared databases and the two database
 periods and enables `litestream.service`, and `timers`, which writes the two
-service and timer pairs that run the two file backups at their periods.
+service and timer pairs that run the two file backups at their periods. The
+same step writes the certificate renewal pair `certificates.md` describes; it
+is a timer on the host, so it is written where the timers are, but it has no
+period key and is always enabled.
 
 `init` is not the only writer of `/etc/litestream.yml`. The file is a pure
 function of the manifests under `/opt` and the two periods, so whatever
@@ -497,6 +500,8 @@ Postconditions:
 
 - `ikigenba-backup-host.timer` is enabled and active at its period;
   `ikigenba-backup-services.timer` is written, disabled, and not running.
+  `ikigenba-renew-certificate.timer` is enabled and active whatever the
+  periods say: there is no key that turns renewal off.
 - `ikigenba-backup-host.service` runs `opsctl host backup` as root and
   `ikigenba-backup-services.service` runs `opsctl backup` as root; changing a
   period is `opsctl config set` followed by `opsctl init`, because a timer is

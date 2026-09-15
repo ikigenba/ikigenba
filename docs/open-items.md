@@ -12,21 +12,6 @@ for the build run and halts it while non-empty.
 
 ## Missing commands and concepts
 
-### 3. Certificate renewal has no owner
-
-- Stories: `opsctl/specs/stories/certificates.md`, `init.md` (timers step),
-  `infra/templates/space-first-boot.sh`.
-- Evidence: certificates.md hands renewal to "a systemd timer on the host, or
-  `devctl space start`". init's `timers` step writes only the two backup
-  timers. First boot installs certbot and says nothing about its timer.
-- Consequence: a space that runs for 90 days without a stop/start cycle
-  expires its certificate. The stories anticipate this: `--acme-email` is
-  required "because a wrong address is only discovered when a certificate
-  quietly expires."
-- Suggested resolution: either the `timers` step writes and enables a
-  `certbot renew` timer, or first boot enables the package's own timer and
-  `init` checks that it is enabled.
-
 ### 4. The sandbox cannot receive branch work
 
 - Stories: `devctl/specs/stories/build.md`, `deploy.md`; account property

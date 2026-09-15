@@ -249,7 +249,8 @@ Postconditions:
   `backup.service_wal_seconds` set to the account's four periods.
 - `sudo opsctl init` has exited 0 on the host, so the host holds its
   certificate, its generated nginx configuration, its litestream configuration
-  and unit, and its two backup timers, each enabled whose period is non-zero.
+  and unit, its two backup timers, each enabled whose period is non-zero, and
+  its certificate renewal timer, enabled.
 - No apps are deployed; that is `deploy`.
 
 ## A developer creates the apex space
@@ -328,7 +329,8 @@ Postconditions:
   `backup.service_wal_seconds` set to the account's four periods.
 - `sudo opsctl init` has exited 0 on the host, so the host holds its
   certificate, its generated nginx configuration, its litestream configuration
-  and unit, and its two backup timers, each enabled whose period is non-zero.
+  and unit, its two backup timers, each enabled whose period is non-zero, and
+  its certificate renewal timer, enabled.
 - No apps are deployed; that is `deploy`.
 
 ## A developer creates a space outside the account's domain
@@ -650,8 +652,9 @@ Postconditions:
   run.
 - `sudo opsctl init` has exited 0 on the host, so the host holds its
   certificate, its generated nginx configuration, its litestream configuration
-  and unit, and its two backup timers, each enabled whose period is non-zero,
-  all regenerated from what the store and `/opt` hold now.
+  and unit, its two backup timers, each enabled whose period is non-zero, and
+  its certificate renewal timer, enabled, all regenerated from what the store
+  and `/opt` hold now.
 - No app was deployed, restarted, or stopped, and no record or secret was
   touched. A change to a period reaches its timer; nothing else on the space
   is different unless the store was.
@@ -1084,7 +1087,10 @@ Postconditions:
 The instance comes back at the address it had, so no record changes, and a
 renewal check runs on the host so a certificate that expired while the space
 was stopped is renewed. It is `sudo certbot renew`, never forced; certbot
-decides. The last line is the domain and the address.
+decides. The host's own renewal timer is persistent and would run the same
+check at boot; start runs it in the foreground so the developer sees the
+answer now rather than in a journal. The last line is the domain and the
+address.
 
 Command:
 

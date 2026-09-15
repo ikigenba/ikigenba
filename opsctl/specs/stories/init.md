@@ -73,7 +73,8 @@ Sequence:
   certificate  obtain the host's certificate, or renew it if it is due
   nginx.conf   generate /etc/nginx/conf.d/ikigenba.conf and reload nginx
   litestream   generate /etc/litestream.yml and enable litestream.service
-  timers       write the backup units, enabling each timer whose period is set
+  timers       write the backup and renewal units, enabling each backup timer
+               whose period is set and the renewal timer always
 
 Configuration keys:
   host.name  the fully-qualified name this host answers at, at or under a configured zone
@@ -131,9 +132,9 @@ Postconditions:
 
 - The setup sequence has run: the host holds its certificate, the nginx file
   generated from the store and what is under `/opt`, `/etc/litestream.yml`
-  naming every declared database with `litestream.service` enabled, and the two
+  naming every declared database with `litestream.service` enabled, the two
   backup unit pairs with each timer enabled whose period the store gives as
-  non-zero.
+  non-zero, and the certificate renewal pair with its timer enabled.
 - Every setup command is idempotent, so a host that was already set up is
   unchanged by the run.
 
