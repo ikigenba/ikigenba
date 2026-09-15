@@ -34,8 +34,7 @@ prerequisites — runs there.
 Production host tools such as nginx, certbot, systemctl, Litestream, and
 archive utilities are observed on `dev`, not invoked against the gate host.
 Tests use the injected D01 boundaries and controlled process fixtures.
-Recorded observations and their limits live in
-`specs/review/environment-observations.md`; mere tool availability is not
+Mere tool availability is not
 proof of its protocol or of a successful platform operation.
 
 ## Dependencies
@@ -90,8 +89,7 @@ executing installer code and fail if it cannot. There is no test-only
 installer option or public root override. Test assets and harness support
 files carry no requirement tags; the Go tests remain the sole test-id set.
 Release artifact inspection and publication fixtures run locally in that
-suite; gate tests never publish a release or push a tag. See
-`specs/review/ground-usage.md` for the consumer exercise and capability probes.
+suite; gate tests never publish a release or push a tag.
 
 ## Gates
 
