@@ -12,18 +12,6 @@ for the build run and halts it while non-empty.
 
 ## Missing commands and concepts
 
-### 5. Destroy takes no final backup
-
-- Stories: `devctl/specs/stories/space-lifecycle.md` (destroy),
-  `opsctl/specs/stories/backup.md`.
-- Evidence: destroy's first step terminates the instance. In the durable
-  account, service files are copied daily and WAL every 15 minutes, so up to
-  a day of files and 15 minutes of committed changes are lost on destroy.
-  No story states this.
-- Suggested resolution: when the account keeps backups, destroy runs
-  `opsctl backup` and `opsctl host backup` over ssh before terminating, and
-  reports those as steps. Otherwise the destroy story states the loss.
-
 ### 6. Rebuilding a durable space is never sequenced
 
 - Stories: `opsctl/specs/stories/backup.md` (host restore, restore into a
@@ -109,9 +97,13 @@ These are outside the stories, but the workflow depends on them.
 - Litestream's retention expects to delete objects. The space role
   deliberately holds no `s3:DeleteObject`. The stories do not say which
   wins.
+- `opsctl retire` also relies on litestream shipping every WAL frame it
+  holds when systemd stops it, which is how it is documented but is
+  unverified against the pinned version.
 - Resolution: check litestream's behaviour when delete is refused; either
   set retention to never in the generated `litestream.yml` and lean on
-  bucket expiry, or grant delete under the space's own prefix.
+  bucket expiry, or grant delete under the space's own prefix. Check the
+  shutdown sync at the same time.
 
 ### 14. Sandbox recreation and the duplicate-certificate limit
 

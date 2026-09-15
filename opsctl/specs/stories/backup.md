@@ -10,12 +10,18 @@ Two different things are kept, so there are two pairs of commands. A
 own configuration and its certificate. A service backup never touches `/etc/`,
 and a host restore never touches `/opt/`.
 
-The top-level usage gains three lines under `Commands:`:
+A host about to be discarded has one more thing to do: `opsctl retire`
+stops everything, lets litestream ship what it holds, and takes the service
+and host backups one last time, so a destroy loses nothing the timers had not
+yet copied.
+
+The top-level usage gains four lines under `Commands:`:
 
 ```
   backup    back up a service's files to S3
   host      back up and restore the host's own configuration
   restore   restore a service from its backups
+  retire    stop every service and take the host's final backup
 ```
 
 Configuration keys:
@@ -510,6 +516,138 @@ Postconditions:
 - A space whose periods are all `0` and which has no service declaring a
   database writes nothing at all, so its prefix stays empty and it can be a
   restore target but never a source.
+
+## An operator asks what `retire` can do
+
+`opsctl backup` never stops a unit, so it cannot capture a database: the
+database is litestream's, and litestream ships on its own clock. A host that
+is about to be thrown away needs both clocks stopped and read to the end.
+That is one verb rather than a flag on `backup`, because it is the one
+command here that interrupts service.
+
+Command:
+
+```
+$ opsctl retire --help
+```
+
+```
+$ opsctl retire -h
+```
+
+Output:
+
+```
+Usage: opsctl retire
+
+Take a host's final backup before it is discarded. Stop every service, then
+litestream.service so it ships every committed change it holds, then copy
+every service's files and the host's own configuration to backup.s3_uri
+exactly as 'opsctl backup' and 'opsctl host backup' would.
+
+Nothing is deleted or disabled. The units are left stopped; a host kept after
+all comes back with 'systemctl start' or a reboot.
+
+Configuration keys:
+  aws.region      the region the backup bucket lives in
+  backup.s3_uri   the prefix this host backs up to
+```
+
+Exits 0. The text is on stdout; stderr is empty. It prints for any user.
+
+Preconditions:
+
+- `opsctl` is installed on the host.
+
+Postconditions:
+
+- Nothing has changed.
+
+## An operator takes a host's final backup
+
+`devctl space destroy` runs this over ssh before it terminates a space whose
+account keeps backups. Each line is one step; the backup lines are the same
+lines `opsctl backup` and `opsctl host backup` print, and every object of
+the run carries one timestamp.
+
+Command:
+
+```
+$ sudo opsctl retire
+```
+
+Output:
+
+```
+services: ok (crm, dashboard stopped)
+litestream: ok (stopped, crm.db synced)
+crm: ok (2026-09-12T14:22:51Z.tar.zst, 1.2 MiB)
+dashboard: ok (2026-09-12T14:22:51Z.tar.zst, 1.1 MiB)
+host: ok (2026-09-12T14:22:51Z.tar.zst, 48.2 KiB)
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- `aws.region` and `backup.s3_uri` are set, and the host's role can write
+  under that prefix.
+- Two services are installed and their units are active.
+  `/opt/crm/etc/manifest.toml` declares a `[database]` at `state/crm.db`;
+  `dashboard`'s declares none. `litestream.service` is active and
+  replicating `crm.db`.
+
+Postconditions:
+
+- `ikigenba-crm.service`, `ikigenba-dashboard.service`, and
+  `litestream.service` are inactive. Nothing was disabled, masked, or
+  removed; the timers are as they were.
+- litestream was stopped after the services, so no writer was open when it
+  shut down, and its shutdown sync shipped every WAL frame it held. The
+  replica in S3 holds `crm.db` as of the last committed transaction.
+- `<backup.s3_uri>crm/2026-09-12T14:22:51Z.tar.zst`,
+  `<backup.s3_uri>dashboard/2026-09-12T14:22:51Z.tar.zst`, and
+  `<backup.s3_uri>host/2026-09-12T14:22:51Z.tar.zst` exist, with the same
+  contents and exclusions the two backup commands write. No earlier object
+  was deleted or overwritten.
+- A host with no services prints only the `services: ok (none)`,
+  `litestream: ok (stopped)`, and `host:` lines.
+
+## A host's final backup cannot read one service
+
+As with `opsctl backup`, one service's failure is reported and the rest of
+the run proceeds, so the operator sees every problem at once. The units stay
+stopped: the run's job was to stop them, and whoever ran it decides whether
+the host lives on.
+
+Command:
+
+```
+$ sudo opsctl retire; echo "exit $?"
+```
+
+Output:
+
+```
+services: ok (crm, dashboard stopped)
+litestream: ok (stopped, crm.db synced)
+crm: failed: /opt/crm/state/outbox: permission denied
+dashboard: ok (2026-09-12T14:22:51Z.tar.zst, 1.1 MiB)
+host: ok (2026-09-12T14:22:51Z.tar.zst, 48.2 KiB)
+exit 1
+```
+
+Exits 1. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- As for the previous story, and `/opt/crm/state/outbox` cannot be read.
+
+Postconditions:
+
+- Every unit is inactive. `dashboard`'s and the host's objects were written;
+  no object was written for `crm`, and its earlier backups are untouched.
+  `crm.db` was shipped in full before the files step ran.
 
 ## An operator asks what `restore` can do
 

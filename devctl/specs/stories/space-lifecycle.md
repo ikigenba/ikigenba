@@ -29,7 +29,7 @@ are the only registry.
 Subcommands:
   list                       one line per space in the account
   create <domain> [options]  create the space at <domain>
-  destroy <domain>           remove the space and everything it owned
+  destroy <domain> [options] remove the space and everything it owned
   stop <domain>              stop the instance; state is kept
   start <domain>             start the instance; its address is unchanged
   init <domain> [options]    set the host's keys again and run opsctl init
@@ -37,6 +37,9 @@ Subcommands:
 
 Options (create):
   --acme-email <address>  where the CA sends the space's expiry warnings; required
+
+Options (destroy):
+  --no-backup             skip the final backup an account that keeps backups takes
 
 Options (init):
   --opsctl <version>      move the host to this opsctl release first
@@ -868,7 +871,9 @@ Postconditions:
 ## A developer destroys a space
 
 A developer wants everything a space owned gone, so nothing lingers and
-nothing costs money. Each line of output is one step.
+nothing costs money. Each line of output is one step. This account deletes
+its backups on destroy, so there is nothing to take a final backup for and
+no `retire` step: the instance is simply terminated.
 
 Command:
 
@@ -910,6 +915,14 @@ Postconditions:
 
 ## A developer destroys a space whose account keeps secrets and backups
 
+The backups are the point of keeping them, and the timers only copy on their
+own schedule: service files daily, the host weekly, committed database
+changes every fifteen minutes. So before the instance goes, devctl has the
+host take its final backup with `sudo opsctl retire` over ssh, which stops
+every service, lets litestream ship what it holds, and writes the service
+and host backups one last time. The `retire` line summarises what opsctl
+backed up; what retire does on the host is opsctl's.
+
 Command:
 
 ```
@@ -919,6 +932,7 @@ $ devctl --account 295229566359 space destroy staging.ikigenba.dev
 Output:
 
 ```
+retire: ok (opsctl backed up crm, dashboard, host)
 instance: ok (i-0a1b2c3d4e5f60718 terminated)
 address: ok (elastic ip 18.220.10.5 released)
 records: ok (deleted staging.ikigenba.dev, *.staging.ikigenba.dev)
@@ -934,15 +948,138 @@ Preconditions:
 - A live SSO session for the profile named by `--account`.
 - The account's `delete_secrets_on_destroy` and `delete_backups_on_destroy`
   are both false.
-- The space exists.
+- The space exists and its instance is `running`; `opsctl` is installed on
+  it, with `crm` and `dashboard` deployed.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
 
 Postconditions:
 
+- `sudo opsctl retire` has been run over ssh and exited 0, so
+  `staging.ikigenba.dev/crm/`, `staging.ikigenba.dev/dashboard/`, and
+  `staging.ikigenba.dev/host/` in the backup bucket each hold a new object
+  from that run, and `crm`'s database replica is complete to its last
+  committed transaction.
 - The instance is terminated; the Elastic IP is disassociated and released;
   the `A` records `<domain>` and `*.<domain>`, and the role, profile, and
   policy are gone.
 - Every parameter under `/ikigenba/staging.ikigenba.dev/` and every object
-  under `staging.ikigenba.dev/` in the backup bucket are untouched.
+  under `staging.ikigenba.dev/` in the backup bucket are untouched, the new
+  objects included.
+
+## A developer destroys a space whose host cannot take a final backup
+
+`retire` failing is a reason not to terminate: the whole point of the step
+is that nothing is lost, and what opsctl reported is on the host, not gone.
+opsctl's output follows the error line, each line quoted with `> `. The
+instance is left as retire left it, with its services stopped, so the
+developer can fix the host and run destroy again, or decide the loss is
+acceptable and pass `--no-backup`.
+
+Command:
+
+```
+$ devctl --account 295229566359 space destroy staging.ikigenba.dev
+```
+
+Output:
+
+```
+devctl: retire: ssh ec2-user@18.220.10.5 sudo opsctl retire: exit status 1
+
+> services: ok (crm, dashboard stopped)
+> litestream: ok (stopped, crm.db synced)
+> crm: failed: /opt/crm/state/outbox: permission denied
+> dashboard: ok (2026-09-12T14:22:51Z.tar.zst, 1.1 MiB)
+> host: ok (2026-09-12T14:22:51Z.tar.zst, 48.2 KiB)
+```
+
+Exits 1. The text is on stderr; stdout is empty.
+
+Preconditions:
+
+- As for the previous story, and `opsctl retire` on the host exits non-zero.
+
+Postconditions:
+
+- Nothing in the account has changed: the instance is `running`, and its
+  address, records, secrets, backups, and role are as they were.
+- On the host, the units are whatever retire left; here, stopped.
+- Running destroy again runs retire again.
+
+## A developer destroys a stopped space whose account keeps backups
+
+A stopped host cannot take a backup. It is refused the way `status` refuses
+a stopped space, and the way out is to start it or to say the loss is
+accepted.
+
+Command:
+
+```
+$ devctl --account 295229566359 space destroy staging.ikigenba.dev
+```
+
+Output:
+
+```
+devctl: retire: instance i-0a1b2c3d4e5f60718 is stopped
+
+run 'devctl --account 295229566359 space start staging.ikigenba.dev' first, or pass --no-backup
+```
+
+Exits 1. The text is on stderr; stdout is empty.
+
+Preconditions:
+
+- A live SSO session for the profile named by `--account`.
+- The account's `delete_backups_on_destroy` is false.
+- The instance tagged `Space=staging.ikigenba.dev` is `stopped`.
+
+Postconditions:
+
+- Nothing has changed.
+
+## A developer destroys a space without its final backup
+
+`--no-backup` skips `retire`. What the timers had not copied since their
+last run is lost with the instance: up to a day of service files, up to a
+week of the host's own configuration, and up to fifteen minutes of committed
+database changes. The line says the step was skipped so the record of the
+destroy says so too.
+
+Command:
+
+```
+$ devctl --account 295229566359 space destroy staging.ikigenba.dev --no-backup
+```
+
+Output:
+
+```
+retire: skipped (--no-backup)
+instance: ok (i-0a1b2c3d4e5f60718 terminated)
+address: ok (elastic ip 18.220.10.5 released)
+records: ok (deleted staging.ikigenba.dev, *.staging.ikigenba.dev)
+secrets: ok (kept, delete_secrets_on_destroy=false)
+backups: ok (kept, delete_backups_on_destroy=false)
+role: ok (ikigenba-space-staging.ikigenba.dev deleted)
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- A live SSO session for the profile named by `--account`.
+- The account's `delete_secrets_on_destroy` and `delete_backups_on_destroy`
+  are both false.
+- The space exists; its instance may be `running` or `stopped`, and the host
+  need not be reachable.
+
+Postconditions:
+
+- No ssh connection was made. Nothing new is in the backup bucket.
+- Otherwise as for a destroy whose account keeps secrets and backups. In an
+  account that deletes backups on destroy the option is accepted and changes
+  nothing, and the `retire` line is not printed.
 
 ## A developer destroys a space that is already gone
 
@@ -972,7 +1109,9 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed. No ssh connection was made.
+- In an account that keeps backups the first line is
+  `retire: ok (already gone)`: there is no host to back up.
 
 ## A developer runs `space destroy` without a domain
 
