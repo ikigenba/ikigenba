@@ -17,4 +17,4 @@ Groups, in the order they are meant to be designed:
 3. `secrets.md` — putting an app's secrets where a space can read them.
 4. `build.md` — turning one app into the file deploy carries.
 5. `deploy.md` — putting one built app file on a space.
-6. `restore.md` — giving a space another space's data.
+6. `restore.md` — putting a space's app back from its own backups.

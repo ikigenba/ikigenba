@@ -513,7 +513,7 @@ $ opsctl restore -h
 Output:
 
 ```
-Usage: opsctl restore SERVICE [--at <timestamp>] [--prefix <s3 uri>]
+Usage: opsctl restore SERVICE [--at <timestamp>]
 
 Replace /opt/SERVICE/etc/ and /opt/SERVICE/state/ with a backup, and, when
 SERVICE declares a [database], replace that database with what litestream
@@ -527,7 +527,6 @@ stopped, and a failed restore leaves both stopped.
 
 Options:
   --at <timestamp>    restore the service as it was at this RFC 3339 moment
-  --prefix <s3 uri>   where to read from; defaults to <backup.s3_uri>SERVICE/
 
 --at governs both halves: the files come from the newest tarball written at or
 before that moment, and the database is rebuilt to the moment itself. The two
@@ -661,8 +660,7 @@ Output:
 opsctl: crm: no backup at or before 2026-08-01T00:00:00Z
 ```
 
-Exits 1. The line is on stderr; stdout is empty. With `--prefix` given, the
-line names the prefix that was read.
+Exits 1. The line is on stderr; stdout is empty.
 
 Preconditions:
 
@@ -711,52 +709,6 @@ Postconditions:
   of it. No litestream call was made and `litestream.service` was left running
   throughout, still replicating every other service's database.
 - `ikigenba-dashboard.service` is active again.
-
-## An agent gives a service another space's data
-
-`devctl restore` has copied the source space's newest set — the tarball and
-litestream's objects — into a staging prefix under *this* host's own prefix,
-and names that prefix here. It is staged rather than written into `crm/`
-because `crm/` is this host's own backup history: another space's objects
-sitting in it would outlive the restore, and a later `opsctl restore crm` with
-no `--prefix` could pick one up.
-
-Command:
-
-```
-$ sudo opsctl restore crm --prefix s3://sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/restore/crm/
-```
-
-Output:
-
-```
-source: ok (restore/crm/2026-09-12T03:00:04Z.tar.zst, 12.4 MiB)
-stop: ok (ikigenba-crm.service, litestream.service)
-files: ok (/opt/crm/etc, /opt/crm/state, 12 files)
-db: ok (/opt/crm/state/crm.db, newest 2026-09-12T03:04:55Z)
-start: ok (litestream.service, ikigenba-crm.service)
-```
-
-Exits 0. The lines are on stdout; stderr is empty.
-
-Preconditions:
-
-- The named prefix holds a tarball and litestream's objects for `crm`.
-- `ikigenba-crm.service` is active.
-
-Postconditions:
-
-- Everything the ordinary restore's postconditions say, read from the named
-  prefix instead of `<backup.s3_uri>crm/`.
-- `--prefix` says where to read and nothing else. `/etc/litestream.yml` is
-  untouched, so the litestream that comes back up replicates the restored
-  database to `<backup.s3_uri>crm/`, this host's own prefix, and never to the
-  staging one.
-- `<backup.s3_uri>crm/` was not read and did not contribute to the restore.
-  This host's own backup history did not decide what the host now holds; from
-  the moment litestream is running again it records it.
-- Nothing under the staging prefix was deleted or written. Clearing it is
-  devctl's, and the bucket's lifecycle policy reaps what is left.
 
 ## An operator restores a service that was already stopped
 
@@ -809,8 +761,7 @@ Output:
 opsctl: no backups for gmail under s3://sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/
 ```
 
-Exits 1. The line is on stderr; stdout is empty. With `--prefix` given, the
-line names the prefix that was read.
+Exits 1. The line is on stderr; stdout is empty.
 
 Preconditions:
 
