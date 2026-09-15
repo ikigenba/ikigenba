@@ -8,6 +8,12 @@ short of the app's data: `state/` stays on the host, so a later install lands
 over it. Restarting an app changes nothing on disk. What each host is running
 is read back from the host itself, never from a record kept anywhere else.
 
+The name the manifest declares is checked before anything is written, by the
+rule devctl's build story states: a DNS label that is not `host`, `deploy`,
+`backup-host`, `backup-services`, or `renew-certificate`, the prefixes and
+unit names the host already uses. A file can come from anywhere, so install
+does not trust that build checked.
+
 The top-level usage gains four lines under `Commands:`:
 
 ```
@@ -355,6 +361,33 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
+
+## An operator installs an app with a reserved name
+
+Command:
+
+```
+$ sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/host-v0.1.0.tar.xz
+```
+
+Output:
+
+```
+fetch: ok (host-v0.1.0.tar.xz, 2.0 MiB)
+opsctl: 'host' is not a usable app name
+```
+
+Exits 2. The `ok` line is on stdout; the last line is on stderr. A name that
+is not a DNS label fails the same way.
+
+Preconditions:
+
+- `opsctl` is running as root.
+- The file's `etc/manifest.toml` declares `app = "host"`.
+
+Postconditions:
+
+- Nothing has changed. Nothing under `/opt/` was written.
 
 ## An agent installs an app whose service will not come up
 

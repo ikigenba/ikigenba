@@ -13,6 +13,16 @@ apps tagged at one commit each get their own file from their own tag. Which
 branch the commit is on does not matter; a prerelease tag on a branch is how
 work reaches a sandbox before it is released.
 
+An app's name goes three places on a host, and each constrains it. It is a
+DNS label, because the app answers at `<app>.<host.name>`: lowercase
+letters, digits, and hyphens, at most 63 characters, not starting or ending
+with a hyphen. It is a prefix under the space's backup URI, where `host/`
+and `deploy/` already live. And it is a unit name, `ikigenba-<app>.service`,
+where `backup-host`, `backup-services`, and `renew-certificate` already
+live. A usable app name is a DNS label that is none of those five, and build
+refuses any other before it compiles anything. opsctl applies the same rule
+at install, because a file can come from anywhere.
+
 ## A developer asks what `build` can do
 
 The top-level usage gains the line `  build     build one app into its
@@ -272,6 +282,31 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
+
+## A developer builds an app with a reserved name
+
+Command:
+
+```
+$ devctl build host
+```
+
+Output:
+
+```
+devctl: 'host' is not a usable app name
+```
+
+Exits 2. The line is on stderr; stdout is empty. A name that is not a DNS
+label, `Crm` or `crm_v2` say, fails the same way.
+
+Preconditions:
+
+- `host/` is a sub-project with a `main` package and `host/etc/manifest.toml`.
+
+Postconditions:
+
+- Nothing has changed. Nothing was compiled.
 
 ## A developer runs `build` without an app
 
