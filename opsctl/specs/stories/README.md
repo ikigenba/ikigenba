@@ -23,7 +23,7 @@ Groups, in the order they are meant to be designed:
 4. `init.md` — the preflight and the setup sequence.
 5. `nginx.md` — the one nginx file opsctl generates.
 6. `certificates.md` — the host's wildcard certificate.
-7. `apps.md` — putting an app on the host and reading what is on it.
+7. `apps.md` — putting an app on the host, taking it off, restarting it, and reading what is on it.
 8. `backup.md` — backing up the host and its services, and restoring them.
 9. `release.md` — getting opsctl onto a host in the first place.
 

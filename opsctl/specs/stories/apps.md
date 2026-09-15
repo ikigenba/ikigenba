@@ -3,13 +3,17 @@
 An app reaches a host as one object: the `<app>-<tag>.tar.xz` devctl built and
 uploaded to `<backup.s3_uri>deploy/`. opsctl fetches it with the host's own
 role and installs it — and installing is everything between that object and
-the app answering at its own name. What each host is running is
-read back from the host itself, never from a record kept anywhere else.
+the app answering at its own name. Uninstalling is the reverse, and it stops
+short of the app's data: `state/` stays on the host, so a later install lands
+over it. Restarting an app changes nothing on disk. What each host is running
+is read back from the host itself, never from a record kept anywhere else.
 
-The top-level usage gains two lines under `Commands:`:
+The top-level usage gains four lines under `Commands:`:
 
 ```
   install   install an app from a built file
+  uninstall take an app off the host, keeping its data
+  restart   restart an installed app's service
   status    print every installed app, its version and its state
 ```
 
@@ -415,6 +419,331 @@ Postconditions:
 
 - Nothing has changed.
 
+## An operator asks what `uninstall` can do
+
+Command:
+
+```
+$ opsctl uninstall --help
+```
+
+```
+$ opsctl uninstall -h
+```
+
+Output:
+
+```
+Usage: opsctl uninstall APP
+
+Take APP off the host: stop and disable ikigenba-APP.service and remove it,
+then remove /opt/APP/bin/, etc/, share/, and cache/. /opt/APP/state/ is kept
+untouched, so APP is still a service the host backs up, and a later install
+lands over its data the way an install over a restore does. Removing state/ is
+a decision made by hand, never here.
+
+The nginx configuration and /etc/litestream.yml are regenerated from every app
+left on the host, so APP's name stops answering, and a database APP declared
+stops being replicated once litestream has shipped what it holds.
+
+The parameter /ikigenba/<host.name>/APP is not touched: it is devctl's.
+
+Configuration keys:
+  host.name  the fully-qualified name this host answers at
+```
+
+Exits 0. The text is on stdout; stderr is empty. It prints for any user.
+
+Preconditions:
+
+- `opsctl` is installed on the host.
+
+Postconditions:
+
+- Nothing has changed.
+
+## An agent uninstalls an app
+
+`devctl remove` runs this over ssh. Each line of output is one step, in the
+reverse of install's order: the service goes first so nothing writes while the
+rest is taken apart, and litestream goes last so that its restart's shutdown
+sync ships every WAL frame of the database before the regenerated
+configuration stops naming it. That is the same sync `retire` relies on. A
+unit that was already inactive or failed is disabled and removed all the same,
+and the `stop` line says `already inactive`.
+
+Command:
+
+```
+$ sudo opsctl uninstall crm
+```
+
+Output:
+
+```
+stop: ok (ikigenba-crm.service stopped, disabled)
+unit: ok (removed ikigenba-crm.service)
+files: ok (removed /opt/crm/bin, etc, share, cache; kept state)
+nginx: ok (crm.ikigenba.dev removed)
+litestream: ok (state/crm.db removed)
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- `host.name` is set.
+- `crm` is installed and its unit is `active`. Its manifest declares a
+  `[database]` at `state/crm.db`, and `litestream.service` is replicating it.
+
+Postconditions:
+
+- `ikigenba-crm.service` is inactive and disabled,
+  `/etc/systemd/system/ikigenba-crm.service` is gone, and systemd has been
+  reloaded.
+- `/opt/crm/` holds `state/` and nothing else. `bin/`, `etc/` with its
+  `env` file, `share/`, and `cache/` are gone. Nothing under `state/` was
+  read or written: the database, its `-wal` and `-shm`, and litestream's
+  metadata directory are as the service left them.
+- `/etc/nginx/conf.d/ikigenba.conf` has been regenerated and nginx reloaded:
+  `crm.ikigenba.dev` answers 404 under the host's wildcard block. Had `crm`
+  been the default app, the line would have read `crm.ikigenba.dev,
+  ikigenba.dev removed` and the apex would answer 404 again.
+- `/etc/litestream.yml` has been regenerated from the manifests left under
+  `/opt` and no longer names `/opt/crm/state/crm.db`. Because the file
+  changed, `litestream.service` was restarted. It was stopped after the
+  service, so no writer was open and its shutdown sync shipped every frame it
+  held: the replica under `<backup.s3_uri>crm/` holds `crm.db` as of the last
+  committed transaction. Every other declared database paused for the restart
+  and is replicating again.
+- `status` shows `crm - - -`: a service with a `state/` and no manifest, the
+  shape a restore into a fresh host leaves. `opsctl backup` now tars the whole
+  of `state/`, the quiet database included, because no manifest declares it.
+- `/ikigenba/<host.name>/crm` and the object under `<backup.s3_uri>deploy/`
+  are untouched. Installing `crm` again lands over its `state/` exactly as a
+  deploy over a restore does.
+- No other app on the host has changed.
+
+## An operator uninstalls the host's default app
+
+The app declared no database, so the regenerated `/etc/litestream.yml` is what
+it was and litestream is left alone. The nginx line names both names the app
+answered at.
+
+Command:
+
+```
+$ sudo opsctl uninstall dashboard
+```
+
+Output:
+
+```
+stop: ok (ikigenba-dashboard.service stopped, disabled)
+unit: ok (removed ikigenba-dashboard.service)
+files: ok (removed /opt/dashboard/bin, etc, share, cache; kept state)
+nginx: ok (dashboard.ikigenba.dev, ikigenba.dev removed)
+litestream: ok (unchanged)
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- `dashboard` is installed, its manifest sets `default = true`, and it
+  declares no database.
+
+Postconditions:
+
+- `https://ikigenba.dev` and `https://dashboard.ikigenba.dev` both answer
+  404. The host has no default app until an install brings one.
+- `/etc/litestream.yml` is byte for byte as it was and `litestream.service`
+  was not restarted.
+- `/opt/dashboard/` holds `state/` and nothing else.
+
+## An operator uninstalls an app that is not installed
+
+A directory with a `state/` and no binary is a service, and the host backs it
+up, but there is nothing installed to take off. Nothing is a stronger case of
+the same.
+
+Command:
+
+```
+$ sudo opsctl uninstall gmail
+```
+
+Output:
+
+```
+opsctl: gmail is not installed
+```
+
+Exits 1. The line is on stderr; stdout is empty. A name with no directory
+under `/opt/` at all gives `opsctl: no service 'gmail'`, also exit 1.
+
+Preconditions:
+
+- `/opt/gmail/` holds a `state/` and no `bin/gmail`, and there is no
+  `ikigenba-gmail.service`; or `/opt/gmail/` does not exist.
+
+Postconditions:
+
+- Nothing has changed.
+
+## An operator runs `uninstall` with no app, or more than one
+
+Command:
+
+```
+$ sudo opsctl uninstall
+```
+
+Output:
+
+```
+opsctl: uninstall needs APP
+
+see 'opsctl uninstall --help' for usage
+```
+
+Exits 2. The text is on stderr; stdout is empty. More than one operand gives
+`opsctl: uninstall takes one APP`.
+
+Preconditions:
+
+- `opsctl` is running as root.
+
+Postconditions:
+
+- Nothing has changed.
+
+## An operator asks what `restart` can do
+
+Command:
+
+```
+$ opsctl restart --help
+```
+
+```
+$ opsctl restart -h
+```
+
+Output:
+
+```
+Usage: opsctl restart APP
+
+Restart ikigenba-APP.service and report the service as the last line of
+'opsctl install' does. Nothing on disk changes: the binary, the environment
+file, and the unit are what the last install wrote, so a secret pushed since
+then is not picked up here. A unit that is inactive or failed is started.
+```
+
+Exits 0. The text is on stdout; stderr is empty. It prints for any user.
+
+Preconditions:
+
+- `opsctl` is installed on the host.
+
+Postconditions:
+
+- Nothing has changed.
+
+## A developer restarts an app
+
+`devctl space restart` runs this over ssh. The one line is install's
+`service` line: the same question asked of the same unit.
+
+Command:
+
+```
+$ sudo opsctl restart crm
+```
+
+Output:
+
+```
+service: ok (crm v0.1.0 active)
+```
+
+Exits 0. The line is on stdout; stderr is empty.
+
+Preconditions:
+
+- `crm` is installed. Its unit may be `active`, `inactive`, or `failed`.
+
+Postconditions:
+
+- `ikigenba-crm.service` is `active` and its main process is a new one.
+- Nothing under `/opt/crm/` or `/etc/` was written. The environment systemd
+  gave the new process is `/opt/crm/etc/env` as the last install wrote it.
+- No unit was enabled or disabled, nginx was not reloaded, and
+  `litestream.service` was not touched: the app closed and reopened its
+  database, and litestream never stopped watching it.
+- No other app on the host has changed.
+
+## A developer restarts an app whose service will not come back
+
+The same failure install reports, reported the same way: the step that failed
+and what the host said, each line quoted with `> `.
+
+Command:
+
+```
+$ sudo opsctl restart crm
+```
+
+Output:
+
+```
+opsctl: crm: service failed to start
+
+> ikigenba-crm.service: Main process exited, code=exited, status=1/FAILURE
+> crm: open /opt/crm/state/crm.db: permission denied
+```
+
+Exits 1. The text is on stderr; stdout is empty.
+
+Preconditions:
+
+- `crm` is installed and its binary exits at start.
+
+Postconditions:
+
+- The unit is `failed`, and `status` shows `crm v0.1.0 failed wal`. Nothing
+  on disk changed and nothing was rolled back: the host is left where an
+  operator can look at it.
+
+## An operator restarts an app that is not installed
+
+Command:
+
+```
+$ sudo opsctl restart gmail
+```
+
+Output:
+
+```
+opsctl: gmail is not installed
+```
+
+Exits 1. The line is on stderr; stdout is empty. A name with no directory
+under `/opt/` at all gives `opsctl: no service 'gmail'`, also exit 1. With no
+operand the line is `opsctl: restart needs APP`, with more than one
+`opsctl: restart takes one APP`, each followed by the usage hint and exit 2.
+
+Preconditions:
+
+- `/opt/gmail/` holds a `state/` and no `bin/gmail`, and there is no
+  `ikigenba-gmail.service`; or `/opt/gmail/` does not exist.
+
+Postconditions:
+
+- Nothing has changed.
+
 ## An operator asks what `status` can do
 
 Command:
@@ -523,7 +852,7 @@ Postconditions:
 ## A developer asks about a host holding a service opsctl did not install
 
 A directory under `/opt` with a `state/` and no binary is what a restore into
-a fresh host leaves. It is a service — the host will back it up — and it is
+a fresh host leaves, and what `uninstall` leaves behind. It is a service — the host will back it up — and it is
 not something opsctl can ask a version or a unit state of, so both are `-`.
 
 Command:

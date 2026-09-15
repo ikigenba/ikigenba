@@ -13,8 +13,8 @@ updated to match.
 Groups, in the order they are meant to be designed:
 
 1. `bootstrap.md` — running devctl at all.
-2. `space-lifecycle.md` — `space list`, `create`, `destroy`, `stop`, `start`, `status`.
+2. `space-lifecycle.md` — `space list`, `create`, `destroy`, `stop`, `start`, `init`, `status`, `restart`, `logs`.
 3. `secrets.md` — putting an app's secrets where a space can read them.
 4. `build.md` — turning one app into the file deploy carries.
-5. `deploy.md` — putting one built app file on a space.
+5. `deploy.md` — putting one built app file on a space, and taking an app off one.
 6. `restore.md` — putting a space's app back from its own backups.

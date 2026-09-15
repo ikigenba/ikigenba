@@ -2,9 +2,9 @@
 
 A space is one running copy of the platform: one EC2 instance in one account,
 named by its full domain, found by its tags. `space` is the command that lists,
-creates, destroys, stops, and starts them, sets one's host up again, and asks
-one what it is running. Nothing is kept on the developer's machine; the cloud
-is the registry.
+creates, destroys, stops, and starts them, sets one's host up again, asks one
+what it is running, restarts one of its apps, and reads that app's journal.
+Nothing is kept on the developer's machine; the cloud is the registry.
 
 ## A developer asks what `space` can do
 
@@ -23,8 +23,8 @@ Output:
 Usage: devctl --account <name> space <subcommand> [arguments]
 
 List, create, destroy, stop, start, initialise, and inspect spaces in one
-account. A space is one instance named by its full domain; the cloud's tags
-are the only registry.
+account, and restart or read the journal of one app on one. A space is one
+instance named by its full domain; the cloud's tags are the only registry.
 
 Subcommands:
   list                       one line per space in the account
@@ -34,6 +34,8 @@ Subcommands:
   start <domain>             start the instance; its address is unchanged
   init <domain> [options]    set the host's keys again and run opsctl init
   status <domain>            one line per app: version, service state, database journal mode
+  restart <domain> <app>     restart one app's service on the host
+  logs <domain> <app>        print one app's journal from the host
 
 Options (create):
   --acme-email <address>  where the CA sends the space's expiry warnings; required
@@ -44,6 +46,10 @@ Options (destroy):
 Options (init):
   --opsctl <version>      move the host to this opsctl release first
   --acme-email <address>  change where the CA sends the space's expiry warnings
+
+Options (logs):
+  --follow                keep printing as the app writes, until interrupted
+  --since <when>          start at this moment, as journalctl reads it: -1h, yesterday, 2026-09-11 18:00:00
 
 Every subcommand needs --account. Run 'devctl space <subcommand> --help' for details.
 ```
@@ -1440,6 +1446,9 @@ Postconditions:
 
 ## A developer asks what a stopped space is running
 
+`space restart` and `space logs` need the same host and refuse a stopped
+space with the same line.
+
 Command:
 
 ```
@@ -1477,6 +1486,14 @@ $ devctl --account 602773793009 space start gone.sbx.ikigenba.dev
 
 ```
 $ devctl --account 602773793009 space status gone.sbx.ikigenba.dev
+```
+
+```
+$ devctl --account 602773793009 space restart gone.sbx.ikigenba.dev crm
+```
+
+```
+$ devctl --account 602773793009 space logs gone.sbx.ikigenba.dev crm
 ```
 
 Output:
@@ -1526,3 +1543,212 @@ Postconditions:
   still point at its Elastic IP.
 - No renewal check was run. Running start again on the running instance runs
   the check.
+
+## A developer restarts an app on a space
+
+Over ssh, `opsctl restart` restarts the app's unit and reports it the way
+install's last line does; devctl reports opsctl's exit, the shape `restore`
+uses. A restart changes nothing on the host's disk. In particular it does not
+carry a pushed secret to the app: that is a deploy of the same file, and
+`secrets.md` says why.
+
+Command:
+
+```
+$ devctl --account 602773793009 space restart foo.sbx.ikigenba.dev crm
+```
+
+Output:
+
+```
+restart: ok (opsctl restarted crm)
+```
+
+Exits 0. The line is on stdout; stderr is empty.
+
+Preconditions:
+
+- A live SSO session for the profile named by `--account`.
+- The space's instance exists and is `running`; `opsctl` is installed on it.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
+- `crm` is installed on the host. Its unit may be `active`, `inactive`, or
+  `failed`.
+
+Postconditions:
+
+- `sudo opsctl restart crm` has been run on the host over ssh and exited 0,
+  so `ikigenba-crm.service` is `active` under a new process. What restart
+  does on the host is opsctl's.
+- Nothing on the host's disk changed, and no other app on the space has
+  changed.
+
+## A developer's restart fails on the host
+
+`opsctl`'s output follows the error line, each line quoted with `> `, so the
+journal the host relayed is in front of the developer.
+
+Command:
+
+```
+$ devctl --account 602773793009 space restart foo.sbx.ikigenba.dev crm
+```
+
+Output:
+
+```
+devctl: restart: ssh ec2-user@18.118.7.42 sudo opsctl restart crm: exit status 1
+
+> opsctl: crm: service failed to start
+> 
+> > ikigenba-crm.service: Main process exited, code=exited, status=1/FAILURE
+> > crm: open /opt/crm/state/crm.db: permission denied
+```
+
+Exits 1. The text is on stderr; stdout is empty. An app that is not on the
+host is refused the same way, with `> opsctl: no service 'gmail'`, or
+`> opsctl: gmail is not installed` for one the host holds data for but never
+installed.
+
+Preconditions:
+
+- A live SSO session for the profile named by `--account`.
+- The space's instance exists and is `running`; `opsctl` is installed on it.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
+- `opsctl restart crm` on the host exits non-zero.
+
+Postconditions:
+
+- `crm` on the host is whatever `opsctl` left; `space status` reports it,
+  here `crm v0.1.0 failed wal`.
+- No other app on the space has changed.
+
+## A developer reads an app's journal
+
+The journal is read from the host with `journalctl` and copied to the
+developer's terminal byte for byte, the way `status` copies opsctl's report.
+No opsctl command is involved: reading a journal changes nothing on the host,
+and the unit's name, `ikigenba-<app>.service`, is what install wrote and
+promised. Without options the last 100 lines are printed.
+
+Command:
+
+```
+$ devctl --account 602773793009 space logs foo.sbx.ikigenba.dev crm
+```
+
+Output:
+
+```
+Sep 12 09:07:11 ip-10-0-1-23 systemd[1]: Started ikigenba-crm.service.
+Sep 12 09:07:11 ip-10-0-1-23 crm[1842]: crm v0.1.0 listening on 127.0.0.1:3100
+Sep 12 09:07:40 ip-10-0-1-23 crm[1842]: GET /contacts 200 12ms
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- A live SSO session for the profile named by `--account`.
+- The space's instance exists and is `running`.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
+- `ikigenba-crm.service` exists on the host and its journal holds three
+  lines.
+
+Postconditions:
+
+- Nothing has changed. `sudo journalctl -u ikigenba-crm.service -n 100
+  --no-pager` was run on the host over ssh and its stdout was copied
+  unchanged; more than 100 lines would have been cut to the newest 100, the
+  way journalctl cuts them.
+
+## A developer follows an app's journal, or reads it from a moment
+
+`--follow` keeps the connection open and prints each line as the app writes
+it, until the developer interrupts the command; the interrupt is the exit.
+`--since` names the moment to start from and is handed to journalctl as it
+was typed, so journalctl's own syntax is what is accepted; with `--since`
+every line from that moment is printed, not the newest 100. The two combine.
+
+Command:
+
+```
+$ devctl --account 602773793009 space logs foo.sbx.ikigenba.dev crm --since -1h --follow
+```
+
+Output: every line `ikigenba-crm.service` wrote in the last hour, then each
+new line as it is written.
+
+Preconditions:
+
+- A live SSO session for the profile named by `--account`.
+- The space's instance exists and is `running`.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
+- `ikigenba-crm.service` exists on the host.
+
+Postconditions:
+
+- Nothing has changed. `sudo journalctl -u ikigenba-crm.service --since -1h
+  -f --no-pager` was run on the host over ssh. A `--since` journalctl cannot
+  parse is journalctl's to refuse: its diagnostic is relayed after
+  `devctl: logs: ssh ec2-user@18.118.7.42 sudo journalctl ...: exit status
+  1`, quoted with `> `, and the exit is 1.
+
+## A developer asks for the journal of an app that is not on the space
+
+journalctl would answer a name it has never seen with an empty journal, which
+is what a typo looks like too. The host is asked whether the unit exists
+first, and a name with no unit is refused.
+
+Command:
+
+```
+$ devctl --account 602773793009 space logs foo.sbx.ikigenba.dev gmail
+```
+
+Output:
+
+```
+devctl: no app 'gmail' on 'foo.sbx.ikigenba.dev'
+```
+
+Exits 1. The line is on stderr; stdout is empty. An app that was removed is
+refused the same way: its unit went with it.
+
+Preconditions:
+
+- A live SSO session for the profile named by `--account`.
+- The space's instance exists and is `running`.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
+- No `ikigenba-gmail.service` on the host.
+
+Postconditions:
+
+- Nothing has changed.
+
+## A developer runs `space restart` or `space logs` without a domain or an app
+
+Command:
+
+```
+$ devctl --account 602773793009 space restart foo.sbx.ikigenba.dev
+```
+
+Output:
+
+```
+devctl: space restart needs <domain> and <app>
+
+see 'devctl space --help' for usage
+```
+
+Exits 2. The text is on stderr; stdout is empty. `space logs` says `devctl:
+space logs needs <domain> and <app>`, and a `--since` with no value gives
+`devctl: option '--since' requires a value`, also exit 2.
+
+Preconditions:
+
+- `bin/devctl` exists.
+
+Postconditions:
+
+- Nothing has changed. No AWS call was made and no ssh connection was opened.

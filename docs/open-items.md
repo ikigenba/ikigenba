@@ -12,20 +12,6 @@ for the build run and halts it while non-empty.
 
 ## Missing commands and concepts
 
-### 7. Apps cannot be removed, restarted, or inspected
-
-- Stories: `opsctl/specs/stories/apps.md`, `devctl/specs/stories/deploy.md`,
-  `secrets.md`.
-- Evidence: there is no `opsctl uninstall` and no devctl counterpart, so a
-  deployed app is permanent. No story restarts an app or reads its journal
-  after the install-time relay. Secret rotation works by pushing and then
-  deploying the same file again, but no story says so.
-- Suggested resolution: an `opsctl uninstall <app>` (stop and disable the
-  unit, remove `bin/`, `etc/`, `share/`, regenerate nginx and litestream,
-  keep `state/`) with a devctl counterpart; a written story for rotating a
-  secret; a decision on whether restart and logs are devctl commands or
-  stay ssh-by-hand.
-
 ### 8. Seed data has no path
 
 - Stories: `devctl/specs/stories/restore.md`, `infra/AGENTS.md` ("Spaces").

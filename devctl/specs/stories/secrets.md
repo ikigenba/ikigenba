@@ -3,8 +3,10 @@
 An app's secrets are one Parameter Store SecureString per app per space,
 `/ikigenba/<domain>/<app>`, holding a flat JSON object whose keys are the names
 the app's manifest declares. The developer's machine is the only source
-of the values and devctl is the only writer; the host reads the object through
-its instance role at app start.
+of the values and devctl is the only writer. The host reads the object through
+its instance role when an app is installed, and writes the values into the
+app's environment file; a value pushed after that reaches the app at its next
+deploy and at no other moment.
 
 ## A developer asks what `secrets` can do
 
@@ -214,6 +216,59 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
+
+## A developer rotates a secret
+
+A value has to change: it leaked, it expired, the provider issued a new one.
+The developer puts the new value in their keyring, or the environment, and
+pushes the one app. That changes the parameter and nothing on the host: the
+host read the parameter when the app was installed and wrote what it found
+into `etc/env`, and the running app has that. What carries the new value to
+the host is a deploy of the file the space already runs. `install` reads the
+parameter again, rewrites `etc/env`, and restarts the unit, so the old value
+is gone from the host from that restart on. `space restart` alone would not
+do it: a restart re-reads the environment file, which only an install writes.
+
+Command:
+
+```
+$ devctl --account 602773793009 secrets push foo.sbx.ikigenba.dev crm
+$ devctl --account 602773793009 deploy foo.sbx.ikigenba.dev crm/dist/crm-v0.1.0.tar.xz
+```
+
+Output:
+
+```
+crm: ok (3 keys)
+file: ok (crm v0.1.0)
+secrets: ok (3 keys)
+upload: ok (-> sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/deploy/crm-v0.1.0.tar.xz)
+install: ok (opsctl installed crm)
+```
+
+Each command exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- A live SSO session for the profile named by `--account`.
+- The space exists, its instance is `running`, and `crm` at `v0.1.0` is
+  deployed on it.
+- The keyring or the environment holds the new value for `CRM_API_KEY`, and
+  values for every other name in `crm`'s `secrets` array.
+- `crm/dist/crm-v0.1.0.tar.xz` exists, written by `build`.
+
+Postconditions:
+
+- `/ikigenba/foo.sbx.ikigenba.dev/crm` holds the new value under
+  `CRM_API_KEY`; the other keys were written over with themselves.
+- `/opt/crm/etc/env` on the host holds the new value, and
+  `ikigenba-crm.service` has been restarted under it. The old value is nowhere
+  on the host.
+- `space status` shows `crm` at `v0.1.0`, as before: the deploy changed a
+  value, not a version.
+- Between the two commands the parameter and the host disagreed, and the app
+  ran on the old value. A rotation that cannot tolerate that window deploys
+  first and revokes the old value at the provider afterwards.
 
 ## A developer asks which secret names a space holds
 

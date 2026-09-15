@@ -14,7 +14,7 @@ A service is discovered, never registered: any `/opt/<name>/` holding an
 `etc/` or a `state/` directory is one. A service is *routed* when it also has
 an `etc/manifest.toml` naming a `port`; one without is known to the host but
 gets no server block, which is what a service restored from backup but never
-installed looks like. Routed services answer at `<name>.<host.name>`, and the
+installed looks like, and what one that was uninstalled looks like. Routed services answer at `<name>.<host.name>`, and the
 one whose manifest says `default = true` also answers at `<host.name>`.
 
 A service's block carries the TLS frame, the app's own `etc/nginx.conf` if it

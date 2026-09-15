@@ -11,6 +11,11 @@ on a branch deploys the same way as a release, and no account restricts what
 it accepts. What each space is running is read from the host with `space
 status`, never recorded anywhere else.
 
+`remove` is deploy's inverse: it has `opsctl` take one app off one space,
+stopping short of the app's data, so a later deploy of the app lands over
+what it left. Nothing in the account changes: the secrets stay where `secrets
+push` put them, and the file stays under `deploy/`.
+
 ## A developer asks what `deploy` can do
 
 The top-level usage gains the line `  deploy    put a built app file on a
@@ -350,3 +355,177 @@ Postconditions:
 - The file is under the space's `deploy/` prefix. `gmail` is whatever
   `opsctl` left; `space status` reports it.
 - No other app on the space has changed.
+
+## A developer asks what `remove` can do
+
+The top-level usage gains the line `  remove    take an app off a space`
+under `Commands:`.
+
+Command:
+
+```
+$ devctl remove --help
+```
+
+Output:
+
+```
+Usage: devctl --account <name> remove <domain> <app>
+
+Have opsctl on <domain> take <app> off the space: stop and remove its service,
+remove its binary and configuration, and stop routing its name. Its state/ is
+kept on the host and its secrets are kept in the account, so a later deploy of
+<app> lands over its data. What remove does on the host is opsctl's.
+```
+
+Exits 0. The text is on stdout; stderr is empty.
+
+Preconditions:
+
+- `bin/devctl` exists.
+
+Postconditions:
+
+- Nothing has changed.
+
+## A developer takes an app off a space
+
+The one line of output is opsctl's exit, the same shape `restore` uses. The
+app is named, and the host is asked: the checkout is not read, so an app
+deployed from an older checkout and since dropped from it can still be taken
+off.
+
+Command:
+
+```
+$ devctl --account 602773793009 remove foo.sbx.ikigenba.dev crm
+```
+
+Output:
+
+```
+remove: ok (opsctl uninstalled crm)
+```
+
+Exits 0. The line is on stdout; stderr is empty.
+
+Preconditions:
+
+- A live SSO session for the profile named by `--account`.
+- The space exists, its instance is `running`, and `opsctl` is installed on
+  it.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
+- `crm` is installed on the host.
+
+Postconditions:
+
+- `sudo opsctl uninstall crm` has been run on the host over ssh and exited 0,
+  so `crm.foo.sbx.ikigenba.dev` answers 404 and `crm`'s service, binary, and
+  configuration are gone from the host. `/opt/crm/state/` is kept, and a
+  database `crm` declared was shipped in full before replication of it
+  stopped. What uninstall does on the host is opsctl's.
+- `/ikigenba/foo.sbx.ikigenba.dev/crm` and every object under the space's
+  prefix in the backup bucket are untouched, `deploy/crm-v0.1.0.tar.xz`
+  included.
+- `space status foo.sbx.ikigenba.dev` shows `crm - - -`. Deploying
+  `crm/dist/crm-v0.1.0.tar.xz` again puts `crm` back over its data.
+- No other app on the space has changed.
+
+## A developer removes an app that is not on the space
+
+`opsctl`'s refusal follows the error line, quoted with `> `, as a failed
+deploy's is.
+
+Command:
+
+```
+$ devctl --account 602773793009 remove foo.sbx.ikigenba.dev gmail
+```
+
+Output:
+
+```
+devctl: remove: ssh ec2-user@18.118.7.42 sudo opsctl uninstall gmail: exit status 1
+
+> opsctl: no service 'gmail'
+```
+
+Exits 1. The text is on stderr; stdout is empty. An app the host holds data
+for but never installed is refused the same way, with
+`> opsctl: gmail is not installed`.
+
+Preconditions:
+
+- A live SSO session for the profile named by `--account`.
+- The space exists, its instance is `running`, and `opsctl` is installed on
+  it.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
+- Nothing under `/opt/gmail/` on the host.
+
+Postconditions:
+
+- Nothing has changed.
+
+## A developer removes from a space that does not exist, or one that is stopped
+
+Command:
+
+```
+$ devctl --account 602773793009 remove gone.sbx.ikigenba.dev crm
+```
+
+Output:
+
+```
+devctl: no space at 'gone.sbx.ikigenba.dev'
+```
+
+Command:
+
+```
+$ devctl --account 602773793009 remove bar.sbx.ikigenba.dev crm
+```
+
+Output:
+
+```
+devctl: 'bar.sbx.ikigenba.dev' is stopped
+```
+
+Each exits 1. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- A live SSO session for the profile named by `--account`.
+- No instance in the account is tagged `Space=gone.sbx.ikigenba.dev`; the
+  instance tagged `Space=bar.sbx.ikigenba.dev` is `stopped`.
+
+Postconditions:
+
+- Nothing has changed. No ssh connection was opened.
+
+## A developer runs `remove` without a domain or an app
+
+Command:
+
+```
+$ devctl --account 602773793009 remove foo.sbx.ikigenba.dev
+```
+
+Output:
+
+```
+devctl: remove needs <domain> and <app>
+
+see 'devctl remove --help' for usage
+```
+
+Exits 2. The text is on stderr; stdout is empty.
+
+Preconditions:
+
+- `bin/devctl` exists.
+
+Postconditions:
+
+- Nothing has changed. No AWS call was made and no ssh connection was opened.
