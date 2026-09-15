@@ -842,10 +842,11 @@ $ sudo opsctl restore crm --at 2026-08-01T00:00:00Z
 Output:
 
 ```
-opsctl: crm: no backup at or before 2026-08-01T00:00:00Z
+source: failed: crm: no backup at or before 2026-08-01T00:00:00Z
+opsctl: restore crm failed at source
 ```
 
-Exits 1. The line is on stderr; stdout is empty.
+Exits 1. The failed step is on stdout; the diagnostic is on stderr.
 
 Preconditions:
 
@@ -946,10 +947,11 @@ $ sudo opsctl restore gmail
 Output:
 
 ```
-opsctl: no backups for gmail under s3://sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/
+source: failed: no backups for gmail under s3://sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/
+opsctl: restore gmail failed at source
 ```
 
-Exits 1. The line is on stderr; stdout is empty.
+Exits 1. The failed step is on stdout; the diagnostic is on stderr.
 
 Preconditions:
 
@@ -988,13 +990,14 @@ Output:
 source: ok (crm/2026-09-12T03:00:04Z.tar.zst, 1.2 MiB)
 stop: ok (ikigenba-crm.service, litestream.service)
 files: ok (/opt/crm/etc, /opt/crm/state, 12 files)
-opsctl: crm: litestream restore: no snapshot under the prefix
+db: failed: no snapshot under the prefix
+opsctl: restore crm failed at db
 
 ikigenba-crm.service and litestream.service were left stopped
 exit 1
 ```
 
-Exits 1. The `ok` lines are on stdout; the diagnostic is on stderr.
+Exits 1. The `ok` and `failed` step lines are on stdout; the diagnostic is on stderr.
 
 Preconditions:
 

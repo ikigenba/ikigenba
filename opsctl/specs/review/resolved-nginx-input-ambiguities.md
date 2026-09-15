@@ -1,0 +1,7 @@
+# Nginx invalid inputs — resolved during drafting
+
+Source: `specs/stories/nginx.md`, intro routing outcomes and “An operator reads the configuration of a host running apps” (NG-I2, NG-APPS); `specs/stories/apps.md`, introductory invariant: a host may have no default app but “may never have two.”
+
+The root coordinator resolved these as routine invalid inputs using the apps invariant, rather than introducing a default-selection policy. D08 exposes each malformed manifest through `Service.ManifestError`. D06 R-G1J4-VLO8 rejects any such error and multiple routed defaults before rendering, output, file writes or execution. It returns an operational failure identifying the service/error or conflicting services; Standalone nginx show/apply reports it through D02, leaves stdout empty and exits 1; composed callers follow their own command output and exit policy, retaining completed progress where required by D09/D10. No default winner is selected and host state remains unchanged.
+
+This issue is resolved and independently verified in `specs/review/webhost-final-verification.md`; the final scoped stdout correction is verified in `specs/review/webhost-integration-verification.md`. The initial verifier records are historical. Failed reload destination state remains separately unresolved in [nginx-reload-failure.md](nginx-reload-failure.md); external observations remain a check-spec blocker in [webhost-external-observations.md](webhost-external-observations.md).

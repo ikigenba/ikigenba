@@ -37,7 +37,7 @@ $ sudo bash /tmp/opsctl-install v0.1.0
 Output:
 
 ```
-opsctl v0.1.0 -> /usr/local/bin/opsctl
+install: ok (opsctl v0.1.0 -> /usr/local/bin/opsctl)
 ```
 
 Exits 0. The line is on stdout; stderr is empty.
@@ -77,7 +77,7 @@ $ sudo bash /usr/local/share/ikigenba/opsctl-install.sh v0.2.0
 Output:
 
 ```
-opsctl v0.2.0 -> /usr/local/bin/opsctl
+install: ok (opsctl v0.2.0 -> /usr/local/bin/opsctl)
 ```
 
 Exits 0. The line is on stdout; stderr is empty.
@@ -108,7 +108,7 @@ $ sudo bash /usr/local/share/ikigenba/opsctl-install.sh v0.2.0
 Output:
 
 ```
-opsctl v0.2.0 -> /usr/local/bin/opsctl
+install: ok (opsctl v0.2.0 -> /usr/local/bin/opsctl)
 ```
 
 Exits 0. The line is on stdout; stderr is empty.
@@ -138,8 +138,6 @@ Output:
 
 ```
 opsctl-install: needs a version
-
-usage: opsctl-install <version>
 ```
 
 Exits 2. The text is on stderr; stdout is empty.
@@ -188,12 +186,14 @@ $ sudo bash /tmp/opsctl-install v9.9.9
 Output:
 
 ```
-opsctl-install: no release for v9.9.9
+install: failed: no release for v9.9.9
+opsctl-install: installation failed
 
 https://github.com/ikigenba/ikigenba/releases/download/opsctl/v9.9.9/checksums.txt: 404
 ```
 
-Exits 1. The text is on stderr; stdout is empty.
+Exits 1. The install outcome is on stdout; the command diagnostic and any
+additional detail are on stderr.
 
 Preconditions:
 
@@ -215,13 +215,15 @@ $ sudo bash /tmp/opsctl-install v0.1.0
 Output:
 
 ```
-opsctl-install: checksum mismatch for opsctl-v0.1.0-linux-amd64
+install: failed: checksum mismatch for opsctl-v0.1.0-linux-amd64
+opsctl-install: installation failed
 
 expected e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
      got 5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03
 ```
 
-Exits 1. The text is on stderr; stdout is empty.
+Exits 1. The install outcome is on stdout; the command diagnostic and any
+additional detail are on stderr.
 
 Preconditions:
 
@@ -248,10 +250,12 @@ $ sudo bash /tmp/opsctl-install v0.1.0
 Output:
 
 ```
-opsctl-install: asked for v0.1.0 but the binary reports v0.0.9
+install: failed: asked for v0.1.0 but the binary reports v0.0.9
+opsctl-install: installation failed
 ```
 
-Exits 1. The text is on stderr; stdout is empty.
+Exits 1. The install outcome is on stdout; the command diagnostic and any
+additional detail are on stderr.
 
 Preconditions:
 

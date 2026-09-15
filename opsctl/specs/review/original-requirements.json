@@ -1,0 +1,338 @@
+{
+  "R-EL9M-CEGL": {
+    "file": "specs/design/D1-layout-and-run-seam.md",
+    "text": "The module MUST be `github.com/ikigenba/ikigenba/opsctl` with its own `go.mod` that specifies a Go version, and the module paths of the direct (non-`// indirect`) `require` entries of that `go.mod` MUST be exactly `github.com/aws/aws-sdk-go-v2`, `github.com/aws/aws-sdk-go-v2/config`, and `github.com/aws/aws-sdk-go-v2/service/route53`, verified by a test that reads `go.mod`."
+  },
+  "R-MUPN-JCBU": {
+    "file": "specs/design/D1-layout-and-run-seam.md",
+    "text": "Package `internal/cli` MUST export `Run(args []string, stdin io.Reader, stdout, stderr io.Writer, deps Deps) int`, and calling it MUST return an exit code in-process without terminating the calling program."
+  },
+  "R-E9DW-L66P": {
+    "file": "specs/design/D1-layout-and-run-seam.md",
+    "text": "Package `internal/cli` MUST export a `Deps` struct whose fields are exactly `Root string`, `EUID int`, `Getenv func(key string) string`, `DNS dns.Env`, `LookPath func(file string) (string, error)`, and `LookupHost func(ctx context.Context, host string) ([]string, error)`; a nil `Getenv` MUST read as an empty environment, a nil `LookPath` MUST read as `exec.LookPath`, and a nil `LookupHost` MUST read as `net.DefaultResolver.LookupHost`."
+  },
+  "R-MYDC-ONJX": {
+    "file": "specs/design/D1-layout-and-run-seam.md",
+    "text": "Every host path a command reads or writes MUST be resolved under `Deps.Root`, verified by running `config set` and `config get` through `Run` with a temporary directory as `Root` and observing the file appear under that directory and nowhere else."
+  },
+  "R-LYOO-6IT6": {
+    "file": "specs/design/D1-layout-and-run-seam.md",
+    "text": "Within this module, `cmd/opsctl` MUST import only `internal/cli`, `internal/dns`, and `internal/dns/route53`; `internal/cli` only `internal/config` and `internal/dns`; `internal/dns` only `internal/config`; `internal/dns/route53` only `internal/dns`; `internal/config` nothing; and no package other than `internal/dns/route53` MUST import a package outside the standard library and this module, verified by a test over the packages' import lists."
+  },
+  "R-N0T5-G71B": {
+    "file": "specs/design/D1-layout-and-run-seam.md",
+    "text": "The binary built from `./cmd/opsctl`, run with the single argument `--help`, MUST print the usage text of D2 to stdout, write nothing to stderr, and exit 0."
+  },
+  "R-N211-TYS0": {
+    "file": "specs/design/D2-cli-conventions.md",
+    "text": "The top-level grammar MUST be `opsctl [options] <command> [arguments]`, accepting exactly the options `-h`/`--help` and `-V`/`--version` before the command and no other top-level options."
+  },
+  "R-EALS-YXXE": {
+    "file": "specs/design/D2-cli-conventions.md",
+    "text": "The top-level command set MUST be exactly `config`, `dns`, `init`, and `version`."
+  },
+  "R-EBTP-CPO3": {
+    "file": "specs/design/D2-cli-conventions.md",
+    "text": "`opsctl --help` and `opsctl -h` MUST print the top-level usage text quoted above, byte for byte, exactly once to stdout, write nothing to stderr, and exit 0."
+  },
+  "R-CYFL-TDTY": {
+    "file": "specs/design/D2-cli-conventions.md",
+    "text": "An invocation with no command MUST write exactly the three lines `opsctl: no command given`, an empty line, and `see 'opsctl --help' for usage` to stderr, nothing to stdout, and exit 2."
+  },
+  "R-CZNI-75KN": {
+    "file": "specs/design/D2-cli-conventions.md",
+    "text": "An unknown command MUST write exactly the three lines `opsctl: unknown command '<name>'`, an empty line, and `see 'opsctl --help' for usage` to stderr, nothing to stdout, and exit 2."
+  },
+  "R-D0VE-KXBC": {
+    "file": "specs/design/D2-cli-conventions.md",
+    "text": "An unknown top-level option MUST write exactly the three lines `opsctl: unknown option '<option>'`, an empty line, and `see 'opsctl --help' for usage` to stderr, nothing to stdout, and exit 2."
+  },
+  "R-N9CG-4L86": {
+    "file": "specs/design/D2-cli-conventions.md",
+    "text": "Package `internal/cli` MUST declare a package-level `var version string` whose value matches `^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$`."
+  },
+  "R-NAKC-ICYV": {
+    "file": "specs/design/D2-cli-conventions.md",
+    "text": "`opsctl version`, `opsctl -V`, and `opsctl --version` MUST each print exactly the version string followed by a single newline to stdout, write nothing to stderr, and exit 0."
+  },
+  "R-NBS8-W4PK": {
+    "file": "specs/design/D2-cli-conventions.md",
+    "text": "Any invocation that would dispatch to a command's action with `Deps.EUID` not equal to 0 MUST write the single line `opsctl: must run as root` to stderr, write nothing to stdout, and exit 3 without reading or writing any file under `Deps.Root`."
+  },
+  "R-ND05-9WG9": {
+    "file": "specs/design/D2-cli-conventions.md",
+    "text": "`--help`, `-h`, `--version`, `-V`, `version`, and `<command> --help` MUST succeed with `Deps.EUID` not equal to 0."
+  },
+  "R-R0P9-H29Y": {
+    "file": "specs/design/D2-cli-conventions.md",
+    "text": "The first line of every diagnostic `opsctl` writes to stderr MUST begin with `opsctl: `, and the usage text MUST never be written to stderr."
+  },
+  "R-NGNU-F7OC": {
+    "file": "specs/design/D2-cli-conventions.md",
+    "text": "On success a command MUST write nothing to stderr."
+  },
+  "R-NHVQ-SZF1": {
+    "file": "specs/design/D3-config-store.md",
+    "text": "Package `internal/config` MUST export the constants `Dir = \"/etc/ikigenba\"`, `FileName = \"config.json\"`, and `LockName = \"config.lock\"`."
+  },
+  "R-NJ3N-6R5Q": {
+    "file": "specs/design/D3-config-store.md",
+    "text": "Package `internal/config` MUST export the error values `ErrNotSet`, `ErrInvalidKey`, `ErrInvalidValue`, and `ErrCorrupt`."
+  },
+  "R-NKBJ-KIWF": {
+    "file": "specs/design/D3-config-store.md",
+    "text": "Package `internal/config` MUST export a `Store` struct whose only field is `Root string`, an `Entry` struct whose fields are exactly `Key string` and `Value string`, and the functions `ValidKey(key string) bool`, `(Store) Get(key string) (string, error)`, `(Store) Set(key, value string) error`, `(Store) Del(key string) error`, and `(Store) List() ([]Entry, error)`."
+  },
+  "R-NLJF-YAN4": {
+    "file": "specs/design/D3-config-store.md",
+    "text": "`ValidKey` MUST return true exactly for non-empty strings matching `^[a-z0-9_.-]+$`."
+  },
+  "R-NMRC-C2DT": {
+    "file": "specs/design/D3-config-store.md",
+    "text": "`Set` MUST return an error wrapping `ErrInvalidKey` for a key that `ValidKey` rejects, and an error wrapping `ErrInvalidValue` for a value containing `\\n` or `\\r`, and in either case MUST leave the file unchanged."
+  },
+  "R-NNZ8-PU4I": {
+    "file": "specs/design/D3-config-store.md",
+    "text": "`Set` on a store whose directory does not exist MUST create `<Root>/etc/ikigenba` with mode `0700` and `config.json` with mode `0600`."
+  },
+  "R-NP75-3LV7": {
+    "file": "specs/design/D3-config-store.md",
+    "text": "After `Set(key, value)` returns nil, `Get(key)` MUST return `value`, including when `value` is the empty string, and `config.json` MUST be a JSON object with string values only, keys in sorted order, two-space indentation, and a trailing newline."
+  },
+  "R-R5KV-058Q": {
+    "file": "specs/design/D3-config-store.md",
+    "text": "`Set` MUST write the characters `<`, `>`, and `&` in a value literally into `config.json`, never as `\\u003c`, `\\u003e`, or `\\u0026` escapes."
+  },
+  "R-NQF1-HDLW": {
+    "file": "specs/design/D3-config-store.md",
+    "text": "`Get` MUST return an error wrapping `ErrNotSet` for a key that is absent, including when the file does not exist."
+  },
+  "R-NRMX-V5CL": {
+    "file": "specs/design/D3-config-store.md",
+    "text": "`Del` MUST return nil and leave the file without the key whether or not the key was set, and `Del` on a missing file MUST return nil without creating it."
+  },
+  "R-NSUU-8X3A": {
+    "file": "specs/design/D3-config-store.md",
+    "text": "`List` MUST return every entry sorted by key ascending, and an empty slice with a nil error when the file does not exist."
+  },
+  "R-NU2Q-MOTZ": {
+    "file": "specs/design/D3-config-store.md",
+    "text": "`Get`, `Set`, `Del`, and `List` MUST return an error wrapping `ErrCorrupt` when `config.json` exists and is not a JSON object whose values are all strings, and `Set` and `Del` MUST leave the corrupt file unchanged."
+  },
+  "R-NVAN-0GKO": {
+    "file": "specs/design/D3-config-store.md",
+    "text": "`Set` and `Del` MUST write by creating a temporary file in `<Root>/etc/ikigenba` and renaming it over `config.json`, so that at no observable moment is `config.json` absent or partially written."
+  },
+  "R-NWIJ-E8BD": {
+    "file": "specs/design/D3-config-store.md",
+    "text": "`Set` and `Del` MUST hold an exclusive `flock` on `<Root>/etc/ikigenba/config.lock` for the whole read-modify-write, verified by concurrent `Set` calls of distinct keys from separate goroutines all persisting."
+  },
+  "R-NYYC-5RSR": {
+    "file": "specs/design/D3-config-store.md",
+    "text": "`opsctl config --help` and `opsctl config -h` MUST print the `config` usage text quoted above, byte for byte, to stdout and exit 0."
+  },
+  "R-R352-8LRC": {
+    "file": "specs/design/D3-config-store.md",
+    "text": "`opsctl config get KEY` MUST print the value followed by a single newline to stdout and exit 0 when set, and MUST print nothing to stdout, write exactly the line `opsctl: key not set: KEY` to stderr, and exit 1 when not set."
+  },
+  "R-O1E4-XBA5": {
+    "file": "specs/design/D3-config-store.md",
+    "text": "`opsctl config set KEY=VALUE` MUST split on the first `=` only, store the result, print nothing to stdout, and exit 0."
+  },
+  "R-8Q6R-PBF6": {
+    "file": "specs/design/D3-config-store.md",
+    "text": "`opsctl config set` MUST, when its argument lacks `=`, when the key is not `ValidKey`, or when the value contains a newline, leave the store unchanged, print nothing to stdout, write to stderr exactly three lines \u2014 the diagnostic, an empty line, and `see 'opsctl config --help' for usage` \u2014 and exit 2; the diagnostic is `opsctl: config set needs KEY=VALUE`, `opsctl: invalid key: <key>`, or `opsctl: invalid value: newline in value for '<key>'` respectively, with the conditions tested in that order."
+  },
+  "R-O3TX-OURJ": {
+    "file": "specs/design/D3-config-store.md",
+    "text": "`opsctl config del KEY` MUST exit 0 and print nothing to stdout whether or not KEY was set."
+  },
+  "R-O51U-2MI8": {
+    "file": "specs/design/D3-config-store.md",
+    "text": "`opsctl config list` MUST print one `KEY=VALUE` line per entry sorted by key ascending to stdout and exit 0, printing nothing when the store is empty."
+  },
+  "R-D3B7-CGSQ": {
+    "file": "specs/design/D3-config-store.md",
+    "text": "`opsctl config` with no subcommand MUST write exactly the three lines `opsctl: no config subcommand given`, an empty line, and `see 'opsctl config --help' for usage` to stderr and exit 2, and with an unknown subcommand MUST write exactly the three lines `opsctl: unknown config subcommand '<name>'`, an empty line, and `see 'opsctl config --help' for usage` to stderr and exit 2."
+  },
+  "R-3C3B-V34P": {
+    "file": "specs/design/D3-config-store.md",
+    "text": "Every `config` subcommand MUST, when the file is corrupt, print nothing to stdout, leave the file unchanged, write to stderr exactly the line `opsctl: <path> is corrupt` where `<path>` is the resolved path of `config.json`, and exit 1."
+  },
+  "R-YSWA-UVTZ": {
+    "file": "specs/design/D4-dns.md",
+    "text": "Package `internal/dns` MUST export the constants `KeyProvider = \"dns.provider\"` and `KeyZones = \"dns.zones\"`, and the errors `ErrNotConfigured`, `ErrNoZone`, and `ErrUnknownProvider`."
+  },
+  "R-KUFZ-K3C9": {
+    "file": "specs/design/D4-dns.md",
+    "text": "Package `internal/dns` MUST export the struct `Zone` with fields exactly `Name string` and `ID string`, and the struct `Record` with fields exactly `Name string`, `Type string`, `TTL int`, and `Values []string`."
+  },
+  "R-KVNV-XV2Y": {
+    "file": "specs/design/D4-dns.md",
+    "text": "Package `internal/dns` MUST export the interface `Provider` with methods exactly `Records(ctx context.Context, zoneID string) ([]Record, error)`, `Add(ctx context.Context, zoneID, name, typ string, ttl int, value string) error`, and `Remove(ctx context.Context, zoneID, name, typ, value string) error`."
+  },
+  "R-KWVS-BMTN": {
+    "file": "specs/design/D4-dns.md",
+    "text": "Package `internal/dns` MUST export the struct `Env` with fields exactly `Open func(ctx context.Context, provider string) (Provider, error)` and `LookupNS func(ctx context.Context, zone string) ([]string, error)`, and the struct `CheckResult` with fields exactly `ZoneName string`, `Nameservers []string`, and `Delegated bool`."
+  },
+  "R-KY3O-PEKC": {
+    "file": "specs/design/D4-dns.md",
+    "text": "Package `internal/dns` MUST export the struct `Client` with fields exactly `Provider Provider` and `Zones []Zone`, the function `Open(ctx context.Context, store config.Store, env Env) (*Client, error)`, and the methods `(*Client) ZoneFor(name string) (Zone, error)`, `(*Client) Records(ctx context.Context, zone Zone) ([]Record, error)`, `(*Client) Add(ctx context.Context, name, typ string, ttl int, value string) error`, `(*Client) Remove(ctx context.Context, name, typ, value string) error`, and `(*Client) Check(ctx context.Context, zone Zone) (CheckResult, error)`."
+  },
+  "R-YU47-8NKO": {
+    "file": "specs/design/D4-dns.md",
+    "text": "`Open` MUST return an error that `errors.Is` `ErrNotConfigured`, without calling `Env.Open`, whose `Error()` is exactly `dns.provider not set` when `dns.provider` is unset or empty, exactly `dns.zones not set` when `dns.zones` is unset or empty, and otherwise `dns.zones malformed: ` followed by the first comma-separated entry, rendered with `%q`, that does not split on its first colon into a non-empty name and a non-empty id."
+  },
+  "R-YVC3-MFBD": {
+    "file": "specs/design/D4-dns.md",
+    "text": "`Open` MUST split `dns.zones` on commas and each entry on its first colon into a name and an id, trim surrounding whitespace from both, lowercase the name and strip one trailing dot from it, leave the id unchanged apart from trimming, preserve order, and populate `Client.Zones` with each resulting name and id."
+  },
+  "R-L1RD-UPSF": {
+    "file": "specs/design/D4-dns.md",
+    "text": "`Open` MUST call `Env.Open` with the value of `dns.provider` and return its error unchanged, and when `Env.Open` is nil MUST return an error wrapping `ErrUnknownProvider` that names the provider."
+  },
+  "R-L2ZA-8HJ4": {
+    "file": "specs/design/D4-dns.md",
+    "text": "`ZoneFor` MUST lowercase the name and strip one trailing dot, return the configured zone with the longest name that equals the name or is a suffix of it preceded by a dot, and return an error wrapping `ErrNoZone` when no zone matches."
+  },
+  "R-L476-M99T": {
+    "file": "specs/design/D4-dns.md",
+    "text": "`Client.Add` and `Client.Remove` MUST resolve the zone with `ZoneFor` and call the provider's `Add` or `Remove` with that zone's `ID`, the normalised name, the type uppercased, and the value unchanged, and MUST return the provider's error unchanged."
+  },
+  "R-L5F3-010I": {
+    "file": "specs/design/D4-dns.md",
+    "text": "`Check` MUST call `Provider.Records` for the zone, set `ZoneName` to the name of the `SOA` record and `Nameservers` to the values of the `NS` record at that name, return an error when no `SOA` record is present, and set `Delegated` to true exactly when `Env.LookupNS(zone.Name)` returns the same set of names as `Nameservers` ignoring order, case, and trailing dots."
+  },
+  "R-L6MZ-DSR7": {
+    "file": "specs/design/D4-dns.md",
+    "text": "`Check` with a nil `Env.LookupNS` MUST resolve NS records through `net.DefaultResolver`."
+  },
+  "R-L7UV-RKHW": {
+    "file": "specs/design/D4-dns.md",
+    "text": "Package `internal/dns/route53` MUST export the constant `Region = \"us-east-1\"`, the function `New(ctx context.Context, endpoint string) (dns.Provider, error)`, and the function `Open(ctx context.Context, provider string) (dns.Provider, error)`."
+  },
+  "R-L92S-5C8L": {
+    "file": "specs/design/D4-dns.md",
+    "text": "`route53.Open` MUST return the provider from `New(ctx, \"\")` for `\"route53\"` and an error wrapping `dns.ErrUnknownProvider` naming the provider for any other value."
+  },
+  "R-LAAO-J3ZA": {
+    "file": "specs/design/D4-dns.md",
+    "text": "The provider returned by `New` MUST send every Route 53 request signed for region `Region` to `endpoint` when it is non-empty, verified against a fake HTTP endpoint, and MUST read credentials only through the SDK's default credential chain."
+  },
+  "R-LBIK-WVPZ": {
+    "file": "specs/design/D4-dns.md",
+    "text": "`Records` of the Route 53 provider MUST return one `Record` per record set with the trailing dot removed from the name, `\\052` decoded to `*`, TXT values with their enclosing double quotes removed, and MUST follow pagination until the listing is complete."
+  },
+  "R-LDYD-OF7D": {
+    "file": "specs/design/D4-dns.md",
+    "text": "`Add` of the Route 53 provider MUST create the record set with `ttl` when it is absent, MUST otherwise submit the set with the existing values, the existing TTL, and the new value appended, MUST send TXT values enclosed in double quotes, and MUST return nil without submitting a change when the value is already present."
+  },
+  "R-LF6A-26Y2": {
+    "file": "specs/design/D4-dns.md",
+    "text": "`Remove` of the Route 53 provider MUST submit the set without the value when other values remain, MUST delete the set when the value is its last, and MUST return nil without submitting a change when the set or the value is absent."
+  },
+  "R-LGE6-FYOR": {
+    "file": "specs/design/D4-dns.md",
+    "text": "`Add` and `Remove` of the Route 53 provider MUST return nil only after `GetChange` reports the change `INSYNC`, and MUST return an error wrapping `ctx.Err()` when the context ends first."
+  },
+  "R-YWK0-0722": {
+    "file": "specs/design/D4-dns.md",
+    "text": "`opsctl dns --help` and `opsctl dns -h` MUST print the `dns` usage text quoted above, byte for byte, to stdout and exit 0."
+  },
+  "R-LITZ-7I65": {
+    "file": "specs/design/D4-dns.md",
+    "text": "`opsctl dns` with no subcommand MUST write exactly the three lines `opsctl: no dns subcommand given`, an empty line, and `see 'opsctl dns --help' for usage` to stderr and exit 2, and with an unknown subcommand MUST write exactly the three lines `opsctl: unknown dns subcommand '<name>'`, an empty line, and `see 'opsctl dns --help' for usage` to stderr and exit 2."
+  },
+  "R-YXRW-DYSR": {
+    "file": "specs/design/D4-dns.md",
+    "text": "Every `dns` subcommand MUST open the store through `dns.Open` with `Deps.DNS` as the environment, and when `Open` returns an error wrapping `dns.ErrNotConfigured` MUST write the single line `opsctl: ` followed by that error's `Error()` text and a newline to stderr and exit 1."
+  },
+  "R-LL9R-Z1NJ": {
+    "file": "specs/design/D4-dns.md",
+    "text": "`opsctl dns list ZONE` MUST print one line `NAME TYPE TTL VALUE` per value of every record in ZONE, sorted by name, then type, then value, to stdout and exit 0, and MUST write `opsctl: zone not configured: ZONE` followed by an empty line and `configured zones: <comma-separated Client.Zones names>` to stderr and exit 2 when ZONE is not a configured zone."
+  },
+  "R-LMHO-CTE8": {
+    "file": "specs/design/D4-dns.md",
+    "text": "`opsctl dns add [--ttl SECONDS] [--timeout DURATION] NAME TYPE VALUE` MUST call `Client.Add` with TTL defaulting to 300 and a context whose deadline is DURATION from now defaulting to 2 minutes, print nothing to stdout, and exit 0 on success; `opsctl dns remove [--timeout DURATION] NAME TYPE VALUE` MUST likewise call `Client.Remove`."
+  },
+  "R-LNPK-QL4X": {
+    "file": "specs/design/D4-dns.md",
+    "text": "`add` and `remove` with a wrong number of positional arguments, a `--ttl` that is not a positive integer, or a `--timeout` that is not a positive duration MUST exit 2 with a diagnostic on stderr, and when `ZoneFor` fails MUST write `opsctl: no configured zone contains '<NAME>'` followed by an empty line and `configured zones: <comma-separated Client.Zones names>` to stderr and exit 2."
+  },
+  "R-LOXH-4CVM": {
+    "file": "specs/design/D4-dns.md",
+    "text": "When the provider returns an error wrapping `context.DeadlineExceeded`, `add`, `remove`, `acme-auth`, and `acme-cleanup` MUST write the single line `opsctl: change to <NAME> not confirmed within <DURATION>` to stderr and exit 1, and for any other provider error MUST write `opsctl: <error>` and exit 1."
+  },
+  "R-LQ5D-I4MB": {
+    "file": "specs/design/D4-dns.md",
+    "text": "`opsctl dns check` MUST call `Client.Check` for every configured zone in order, print for each one line `<zone>: ok (<provider> <id>, <n> nameservers delegated)` when `ZoneName` equals the zone name and `Delegated` is true, or `<zone>: failed: <reason>` otherwise or on error, to stdout, and exit 0 when every zone is ok and 1 otherwise."
+  },
+  "R-LRD9-VWD0": {
+    "file": "specs/design/D4-dns.md",
+    "text": "`opsctl dns acme-auth [--timeout DURATION]` MUST read `CERTBOT_DOMAIN` and `CERTBOT_VALIDATION` through `Deps.Getenv`, exit 2 with the single line `opsctl: acme-auth must be run by certbot as --manual-auth-hook` on stderr when either is empty, and otherwise call `Client.Add` with name `_acme-challenge.<CERTBOT_DOMAIN>`, type `TXT`, TTL 60, and the validation as the value, printing nothing to stdout and exiting 0 on success."
+  },
+  "R-LSL6-9O3P": {
+    "file": "specs/design/D4-dns.md",
+    "text": "`opsctl dns acme-cleanup [--timeout DURATION]` MUST read the same variables through `Deps.Getenv`, exit 2 with the single line `opsctl: acme-cleanup must be run by certbot as --manual-cleanup-hook` on stderr when either is empty, and otherwise call `Client.Remove` with name `_acme-challenge.<CERTBOT_DOMAIN>`, type `TXT`, and the validation as the value, printing nothing to stdout and exiting 0 on success."
+  },
+  "R-LTT2-NFUE": {
+    "file": "specs/design/D4-dns.md",
+    "text": "Every `dns` subcommand other than `--help` MUST be subject to the root check of D2."
+  },
+  "R-ED1L-QHES": {
+    "file": "specs/design/D5-init.md",
+    "text": "`opsctl init --help` and `opsctl init -h` MUST print the `init` usage text quoted above, byte for byte, to stdout, write nothing to stderr, and exit 0."
+  },
+  "R-EE9I-495H": {
+    "file": "specs/design/D5-init.md",
+    "text": "`opsctl init` with any argument other than `--help` or `-h` MUST write exactly the three lines `opsctl: init takes no arguments`, an empty line, and `see 'opsctl init --help' for usage` to stderr, nothing to stdout, and exit 2."
+  },
+  "R-EFHE-I0W6": {
+    "file": "specs/design/D5-init.md",
+    "text": "`opsctl init` other than `--help` and `-h` MUST be subject to the root check of D2."
+  },
+  "R-EHX7-9KDK": {
+    "file": "specs/design/D5-init.md",
+    "text": "`init` MUST look up `nginx`, `certbot`, and `systemctl`, in that order, through `Deps.LookPath`, and print for each the line `<name>: ok (<path>)` with the path `LookPath` returned, or `<name>: failed: not found on PATH` when `LookPath` returned an error."
+  },
+  "R-EJ53-NC49": {
+    "file": "specs/design/D5-init.md",
+    "text": "`init` MUST print `dns.provider: failed: not set` when `dns.provider` is unset or empty; otherwise, when `dns.provider` and `dns.zones` are both set and `dns.Open` with `Deps.DNS` returns an error that does not wrap `dns.ErrNotConfigured`, `dns.provider: failed: ` followed by that error's `Error()` text; and otherwise `dns.provider: ok (<value>)`."
+  },
+  "R-EKD0-13UY": {
+    "file": "specs/design/D5-init.md",
+    "text": "`init` MUST print `dns.zones: failed: not set` when `dns.zones` is unset or empty; otherwise, when `dns.provider` is also set and `dns.Open` with `Deps.DNS` returns an error wrapping `dns.ErrNotConfigured`, `dns.zones: failed: ` followed by that error's `Error()` text; and otherwise `dns.zones: ok (<names>)` where `<names>` is the comma-separated `Client.Zones` names in configured order."
+  },
+  "R-ELKW-EVLN": {
+    "file": "specs/design/D5-init.md",
+    "text": "`init` MUST read the config key `host.name` and print `host.name: failed: not set` when it is unset or empty, and otherwise `host.name: ok (<name>)` where `<name>` is the value lowercased with one trailing dot stripped."
+  },
+  "R-EMSS-SNCC": {
+    "file": "specs/design/D5-init.md",
+    "text": "When and only when the `dns.provider` and `dns.zones` lines are both ok, `init` MUST call `Client.Check` for every configured zone in order and print for each one line `zone <zone>: ok (<provider> <id>, <n> nameservers delegated)` when `ZoneName` equals the zone name and `Delegated` is true, or `zone <zone>: failed: <reason>` otherwise or on error."
+  },
+  "R-EO0P-6F31": {
+    "file": "specs/design/D5-init.md",
+    "text": "When and only when the `dns.provider`, `dns.zones`, and `host.name` lines are all ok, `init` MUST print `host <name>: ok (zone <zone>)` with the name of the zone `ZoneFor(<name>)` returns, or `host <name>: failed: no configured zone contains it` when `ZoneFor` returns an error wrapping `dns.ErrNoZone`, where `<name>` is the normalised `host.name`."
+  },
+  "R-EP8L-K6TQ": {
+    "file": "specs/design/D5-init.md",
+    "text": "When and only when the `host.name` line is ok, `init` MUST resolve `<name>` and `_opsctl-preflight.<name>` through `Deps.LookupHost` and print `wildcard <name>: ok (<addresses>)`, `<addresses>` being the sorted, de-duplicated, comma-separated address set, when both lookups succeed and return the same set ignoring order and duplicates; `wildcard <name>: failed: <name> resolves to <a> but _opsctl-preflight.<name> resolves to <b>` with each side rendered like `<addresses>` when they differ; and `wildcard <name>: failed: ` followed by the lookup error's `Error()` text when either lookup fails."
+  },
+  "R-EQGH-XYKF": {
+    "file": "specs/design/D5-init.md",
+    "text": "The stdout of `opsctl init` MUST consist of exactly the `nginx`, `certbot`, `systemctl`, `dns.provider`, `dns.zones`, and `host.name` lines, then the `zone` lines, the `host` line, and the `wildcard` line, in that order, each present exactly under the conditions its requirement states, and nothing else, and every line whose conditions hold MUST be printed even when an earlier line failed."
+  },
+  "R-EROE-BQB4": {
+    "file": "specs/design/D5-init.md",
+    "text": "`opsctl init` MUST exit 0 when every printed line is ok and 2 when any printed line is failed, and in both cases MUST write nothing to stderr."
+  },
+  "R-3EJ4-MMM3": {
+    "file": "specs/design/D5-init.md",
+    "text": "When `config.json` is corrupt, `opsctl init` MUST write nothing to stdout, write to stderr exactly the line `opsctl: <path> is corrupt` where `<path>` is the resolved path of `config.json`, and exit 1."
+  },
+  "R-EU47-39SI": {
+    "file": "specs/design/D5-init.md",
+    "text": "`opsctl init` MUST create, modify, and remove no file under `Deps.Root`, and two consecutive runs with identical `Deps` MUST produce identical stdout and identical exit codes."
+  }
+}

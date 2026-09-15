@@ -8,8 +8,8 @@ time, each created and torn down independently; `opsctl` reasons only about
 the one it runs on. Module path `github.com/ikigenba/ikigenba/opsctl`.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
-build run writes the code (`cmd/`, `internal/`, `go.mod` are absent until it
-does). See the `spec` and `build-spec` skills and `docs/spec-system.md` at the
+build run brings the existing `cmd/`, `internal/`, and `go.mod` into
+agreement with that target. See the `spec` and `build-spec` skills and `docs/spec-system.md` at the
 repo root. Everything below is the ground the run computes the gap and runs
 the gates against; it is human-authored and read-only to the run.
 
@@ -24,6 +24,19 @@ prerequisites — runs there.
 - Go 1.26 (`go version` must report 1.26+)
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - `llm-lint` on PATH, with its provider API key present in the environment
+- Linux amd64 gate environment, Bash 5.2+, and bubblewrap (`bwrap`) 0.11+
+  with working unprivileged user, mount, PID, and network namespaces. These
+  support installer subprocess tests inside the Go suite; they are not Go
+  module dependencies or additional installed-host prerequisites. An absent
+  tool or unavailable namespace is an environment failure, never a skipped
+  test.
+
+Production host tools such as nginx, certbot, systemctl, Litestream, and
+archive utilities are observed on `dev`, not invoked against the gate host.
+Tests use the injected D01 boundaries and controlled process fixtures.
+Recorded observations and their limits live in
+`specs/review/environment-observations.md`; mere tool availability is not
+proof of its protocol or of a successful platform operation.
 
 ## Dependencies
 
@@ -48,11 +61,37 @@ grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' cmd internal | sort
 `PREFIX-XXXX-XXXX` values, so no test literal can be mistaken for a
 requirement tag.
 
-**No root and no host paths in the gates.** Every host path is resolved under
-`cli.Deps.Root` (design D1), and the root check reads `cli.Deps.EUID`. Tests
-pass a temporary directory as `Root` and `0` as `EUID`; a test that touches
-`/etc`, `/opt`, or `/etc/systemd`, or that depends on the real effective uid,
-is a bug. The gates run as an ordinary user.
+**No root and no deployment-host paths in the gates.** Commands invoked
+through `cli.Run` resolve host paths under `cli.Deps.Root` (design D01), and
+the root check reads `cli.Deps.EUID`. Domain operations preserve the root
+boundary, including paths sent through `host.Env.Execute`. Tests supply a
+temporary root, explicit effective uid, process and cloud fixtures, DNS
+fixtures, and deterministic time. They never depend on the gate process's
+real effective uid or call real cloud, DNS, service, or certificate systems.
+The gates run as an ordinary user.
+
+D15's standalone Bash installer does not use `cli.Deps`. Its behavior tests
+also live in `cmd/` or `internal/` as `*_test.go` and execute the unmodified
+installer in a bubblewrap sandbox. The harness supplies a fresh filesystem
+view: writable deployment paths (`/usr/local`, `/etc`, `/opt`) and scratch
+paths belong solely to temporary fixtures; host tool executables and their
+runtime libraries may be mounted read-only. No live deployment tree,
+credentials, home directory, or host communication socket is exposed. A
+separate network namespace excludes external networking. Fixtures supply
+release downloads and candidate responses, while namespace effective uid
+is explicitly 0 or nonzero for the case under test, independent of the
+parent's uid. Root ownership assertions refer to uid 0 inside that namespace.
+
+A PATH wrapper alone is insufficient: shell redirects and absolute command
+paths bypass it, and Bash's builtin `EUID` cannot be overridden through the
+environment. Isolation must cover the shell and every descendant, including
+candidate execution. The harness must establish that boundary before
+executing installer code and fail if it cannot. There is no test-only
+installer option or public root override. Test assets and harness support
+files carry no requirement tags; the Go tests remain the sole test-id set.
+Release artifact inspection and publication fixtures run locally in that
+suite; gate tests never publish a release or push a tag. See
+`specs/review/ground-usage.md` for the consumer exercise and capability probes.
 
 ## Gates
 

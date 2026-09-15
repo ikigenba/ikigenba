@@ -124,8 +124,9 @@ Postconditions:
 ## An agent installs an app
 
 `devctl deploy` has uploaded the file and now runs one command over ssh. Each
-line of output is one step, and the last is exactly the line `status` will
-print for this app from now on. The `fetch` step is the host reading the object
+line of output is one attempted step and reports its success or failure. The
+last successful step reports the app, version and state; `status` independently
+adds the database journal mode in its four-column report. The `fetch` step is the host reading the object
 with its own role: the file never travels over the ssh connection. The
 `litestream` step names the database this manifest declares, now in
 `/etc/litestream.yml`; it comes before `service` so that replication is in
@@ -202,6 +203,7 @@ $ sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/crm-v0.
 Output:
 
 ```
+fetch: ok (crm-v0.2.0.tar.xz, 8.4 MiB)
 file: ok (crm, port 3100)
 secrets: ok (4 keys)
 unpack: ok (/opt/crm)
@@ -227,7 +229,7 @@ Postconditions:
   was not restarted, so its replication of `crm.db` was never interrupted. A
   manifest that changed its `[database]` path would have changed the file, and
   the line would have named the new path and the service been restarted.
-- Installing the same file again produces the same seven lines and exit 0.
+- Installing the same file again produces the same eight lines and exit 0.
 
 ## An agent installs the host's default app
 
@@ -244,6 +246,7 @@ $ sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/dashboa
 Output:
 
 ```
+fetch: ok (dashboard-v0.0.9.tar.xz, 5.2 MiB)
 file: ok (dashboard, port 3200, default)
 secrets: ok (0 keys)
 unpack: ok (/opt/dashboard)
@@ -284,11 +287,11 @@ Output:
 
 ```
 fetch: ok (dashboard-v0.0.9.tar.xz, 5.2 MiB)
-file: ok (dashboard, port 3200, default)
-opsctl: dashboard: crm is already the default app
+file: failed: dashboard: crm is already the default app
+opsctl: install failed
 ```
 
-Exits 1. The `ok` lines are on stdout; the last line is on stderr.
+Exits 1. The fetch and file outcome lines are on stdout; the last line is on stderr.
 
 Preconditions:
 
@@ -318,10 +321,11 @@ Output:
 ```
 fetch: ok (gmail-v0.1.0.tar.xz, 6.1 MiB)
 file: ok (gmail, port 3300)
-opsctl: gmail: no value for 'GMAIL_CLIENT_SECRET' in /ikigenba/ikigenba.dev/gmail
+secrets: failed: gmail: no value for 'GMAIL_CLIENT_SECRET' in /ikigenba/ikigenba.dev/gmail
+opsctl: install failed
 ```
 
-Exits 1. The `ok` lines are on stdout; the last line is on stderr.
+Exits 1. The step outcome lines are on stdout; the last line is on stderr.
 
 Preconditions:
 
@@ -345,14 +349,17 @@ Output:
 
 ```
 fetch: ok (notes.tar.xz, 2.0 MiB)
-opsctl: notes.tar.xz: no etc/manifest.toml in the file
+file: failed: notes.tar.xz: no etc/manifest.toml in the file
+opsctl: install failed
 ```
 
-Exits 2. The `ok` line is on stdout; the last line is on stderr. A manifest
-that is not well-formed gives `opsctl: notes.tar.xz: etc/manifest.toml:` and
-the decoder's complaint after the same `fetch` line. A path that does not
-exist fails before it: `opsctl: notes.tar.xz: no such object` on stderr with
-stdout empty. Each exits 2.
+Exits 2. The fetch and file outcome lines are on stdout; the last line is on
+stderr. A manifest that is not well-formed gives `file: failed: notes.tar.xz:
+etc/manifest.toml: <decoder complaint>` on stdout after the same fetch line,
+with `opsctl: install failed` on stderr. A missing object instead gives
+`fetch: failed: notes.tar.xz: no such object` on stdout and
+`opsctl: artifact download failed` on stderr, without attempting file
+validation. Each exits 2.
 
 Preconditions:
 
@@ -374,10 +381,11 @@ Output:
 
 ```
 fetch: ok (host-v0.1.0.tar.xz, 2.0 MiB)
-opsctl: 'host' is not a usable app name
+file: failed: 'host' is not a usable app name
+opsctl: install failed
 ```
 
-Exits 2. The `ok` line is on stdout; the last line is on stderr. A name that
+Exits 2. The fetch and file outcome lines are on stdout; the last line is on stderr. A name that
 is not a DNS label fails the same way.
 
 Preconditions:
@@ -404,19 +412,22 @@ $ sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/gmail-v
 Output:
 
 ```
+fetch: ok (gmail-v0.1.0.tar.xz, 6.1 MiB)
 file: ok (gmail, port 3300)
 secrets: ok (2 keys)
 unpack: ok (/opt/gmail)
 unit: ok (ikigenba-gmail.service)
 nginx: ok (gmail.ikigenba.dev)
 litestream: ok (unchanged)
-opsctl: gmail: service failed to start
+service: failed: gmail: service failed to start
+opsctl: install failed
 
 > ikigenba-gmail.service: Main process exited, code=exited, status=1/FAILURE
 > gmail: listen tcp 127.0.0.1:3300: bind: address already in use
 ```
 
-Exits 1. The `ok` lines are on stdout; the rest is on stderr.
+Exits 1. The step outcome lines are on stdout; the command diagnostic and quoted
+journal are on stderr.
 
 Preconditions:
 
@@ -619,11 +630,14 @@ $ sudo opsctl uninstall gmail
 Output:
 
 ```
-opsctl: gmail is not installed
+stop: failed: gmail is not installed
+opsctl: uninstall failed
 ```
 
-Exits 1. The line is on stderr; stdout is empty. A name with no directory
-under `/opt/` at all gives `opsctl: no service 'gmail'`, also exit 1.
+Exits 1. The stop outcome is on stdout; the command diagnostic is on stderr.
+A name with no directory under `/opt/` at all gives
+`stop: failed: no service 'gmail'` on stdout and the same command diagnostic,
+also exit 1.
 
 Preconditions:
 
@@ -741,13 +755,15 @@ $ sudo opsctl restart crm
 Output:
 
 ```
-opsctl: crm: service failed to start
+service: failed: crm: service failed to start
+opsctl: restart failed
 
 > ikigenba-crm.service: Main process exited, code=exited, status=1/FAILURE
 > crm: open /opt/crm/state/crm.db: permission denied
 ```
 
-Exits 1. The text is on stderr; stdout is empty.
+Exits 1. The service outcome is on stdout; the command diagnostic and quoted
+journal are on stderr.
 
 Preconditions:
 
@@ -770,13 +786,16 @@ $ sudo opsctl restart gmail
 Output:
 
 ```
-opsctl: gmail is not installed
+service: failed: gmail is not installed
+opsctl: restart failed
 ```
 
-Exits 1. The line is on stderr; stdout is empty. A name with no directory
-under `/opt/` at all gives `opsctl: no service 'gmail'`, also exit 1. With no
-operand the line is `opsctl: restart needs APP`, with more than one
-`opsctl: restart takes one APP`, each followed by the usage hint and exit 2.
+Exits 1. The service outcome is on stdout; the command diagnostic is on stderr.
+A name with no directory under `/opt/` at all gives
+`service: failed: no service 'gmail'` on stdout and the same command diagnostic,
+also exit 1. With no operand the diagnostic is `opsctl: restart needs APP`,
+with more than one `opsctl: restart takes one APP`, each followed by the usage
+hint and exit 2; these grammar failures have no service outcome and empty stdout.
 
 Preconditions:
 
