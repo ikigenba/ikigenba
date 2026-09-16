@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -62,9 +63,18 @@ func runInit(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 
 	entries, err := (config.Store{Root: deps.Root}).List()
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return configErr(stderr, err)
+		return initConfigErr(stderr, deps, err)
 	}
 	return runInitPreflight(stdout, deps, entries)
+}
+
+func initConfigErr(stderr io.Writer, deps Deps, err error) exitCode {
+	if errors.Is(err, config.ErrCorrupt) {
+		path := filepath.Join(deps.Root, filepath.FromSlash(strings.TrimPrefix(config.Dir, "/")), config.FileName)
+		writeDiagnostic(stderr, errors.New(diagnosticArg(path)+" is corrupt"))
+		return exitFail
+	}
+	return configErr(stderr, err)
 }
 
 func writeInitUsageError(stderr io.Writer, message string) exitCode {

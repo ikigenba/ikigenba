@@ -66,9 +66,12 @@ func TestInitHelp(t *testing.T) {
 }
 
 func TestInitRejectsArguments(t *testing.T) {
+	// R-LYOS-MASG R-ZBWG-K26K
 	want := "opsctl: init takes no arguments\n\nsee 'opsctl init --help' for usage\n"
 	for _, args := range [][]string{{"init", "extra"}, {"init", "--help", "extra"}, {"init", "-h", "extra"}} {
-		stdout, stderr, code := invoke(args, depsAt(t, 0))
+		deps, assertNoAccess := inertDeps(t, 0)
+		stdout, stderr, code := invoke(args, deps)
+		assertNoAccess()
 		if code != 2 || stdout != "" || stderr != want {
 			t.Errorf("%q: exit %d stdout %q stderr %q, want exit 2, empty stdout, stderr %q", args, code, stdout, stderr, want)
 		}
@@ -106,9 +109,23 @@ func TestInitRequiresRootBeforeWork(t *testing.T) {
 }
 
 func TestInitCorruptConfig(t *testing.T) {
-	// R-ESWA-PI1T
+	// R-LYOS-MASG R-LZWP-02J5 R-3EJ4-MMM3
 	deps := depsAt(t, 0)
 	writeCorrupt(t, deps.Root)
+	deps.LookPath = func(string) (string, error) {
+		t.Fatal("LookPath called after corrupt config read")
+		return "", nil
+	}
+	deps.LookupHost = func(context.Context, string) ([]string, error) {
+		t.Fatal("LookupHost called after corrupt config read")
+		return nil, nil
+	}
+	deps.Execute = func(context.Context, host.Command) (host.Result, error) {
+		t.Fatal("setup invoked after corrupt config read")
+		return host.Result{}, nil
+	}
+	path := filepath.Join(deps.Root, "etc", "ikigenba", "config.json")
+	before := treeState(t, deps.Root)
 
 	stdout, stderr, code := invoke([]string{"init"}, deps)
 	if code != 1 {
@@ -117,16 +134,83 @@ func TestInitCorruptConfig(t *testing.T) {
 	if stdout != "" {
 		t.Errorf("stdout = %q, want empty", stdout)
 	}
-	want := "opsctl: " + filepath.Join(deps.Root, "etc", "ikigenba", "config.json") + ": config file is corrupt\n"
+	want := "opsctl: " + path + " is corrupt\n"
 	if stderr != want {
 		t.Errorf("stderr = %q, want %q", stderr, want)
+	}
+	if after := treeState(t, deps.Root); !reflect.DeepEqual(after, before) {
+		t.Errorf("Root changed:\nbefore %#v\nafter  %#v", before, after)
+	}
+}
+
+func TestInitStoreReadFailuresRunNoWork(t *testing.T) {
+	// R-LYOS-MASG R-LZWP-02J5
+	deps := depsAt(t, 0)
+	path := filepath.Join(deps.Root, "etc", "ikigenba", "config.json")
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	deps.LookPath = func(string) (string, error) {
+		t.Fatal("LookPath called after config read failure")
+		return "", nil
+	}
+	deps.LookupHost = func(context.Context, string) ([]string, error) {
+		t.Fatal("LookupHost called after config read failure")
+		return nil, nil
+	}
+	deps.Execute = func(context.Context, host.Command) (host.Result, error) {
+		t.Fatal("setup invoked after config read failure")
+		return host.Result{}, nil
+	}
+	_, readErr := (config.Store{Root: deps.Root}).List()
+	if readErr == nil || errors.Is(readErr, config.ErrCorrupt) {
+		t.Fatalf("store read error = %v, want non-corruption error", readErr)
+	}
+	before := treeState(t, deps.Root)
+
+	stdout, stderr, code := invoke([]string{"init"}, deps)
+	if code != 1 || stdout != "" || stderr != "opsctl: "+readErr.Error()+"\n" {
+		t.Errorf("exit %d stdout %q stderr %q, want exit 1, empty stdout, stderr %q",
+			code, stdout, stderr, "opsctl: "+readErr.Error()+"\n")
+	}
+	if after := treeState(t, deps.Root); !reflect.DeepEqual(after, before) {
+		t.Errorf("Root changed:\nbefore %#v\nafter  %#v", before, after)
+	}
+}
+
+func TestInitMissingConfigurationIsReportedAsFindings(t *testing.T) {
+	// R-LZWP-02J5
+	for _, tc := range []struct {
+		name   string
+		values map[string]string
+	}{
+		{name: "missing file"},
+		{name: "missing keys", values: map[string]string{"unrelated": "value"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			deps := initDeps(t, tc.values)
+			deps.LookPath = foundInitTools
+			deps.Execute = func(context.Context, host.Command) (host.Result, error) {
+				t.Fatal("setup invoked with missing configuration")
+				return host.Result{}, nil
+			}
+			before := treeState(t, deps.Root)
+
+			stdout, stderr, code := invoke([]string{"init"}, deps)
+			want := "dns.provider: failed: not set\ndns.zones: failed: not set\nhost.name: failed: not set\n"
+			if code != 2 || stderr != "" || !strings.Contains(stdout, want) {
+				t.Errorf("exit %d stdout %q stderr %q, want findings %q", code, stdout, stderr, want)
+			}
+			if after := treeState(t, deps.Root); !reflect.DeepEqual(after, before) {
+				t.Errorf("Root changed:\nbefore %#v\nafter  %#v", before, after)
+			}
+		})
 	}
 }
 
 func TestInitHealthyPreflight(t *testing.T) {
 	// R-LIU3-NA5F R-LK20-11W4 R-LMHS-SLDI R-ELKW-EVLN
 	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL R-LRDE-BOCA
-	// R-EO0P-6F31 R-EP8L-K6TQ R-EQGH-XYKF R-EROE-BQB4
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZA": {
 			{Name: "example.com", Type: "SOA"},
@@ -356,7 +440,6 @@ func TestInitFailedPreflightRunsNoSetupAndChangesNoState(t *testing.T) {
 
 func TestInitAggregatesIndependentFailures(t *testing.T) {
 	// R-LIU3-NA5F R-LK20-11W4 R-LMHS-SLDI R-ELKW-EVLN
-	// R-EQGH-XYKF R-EROE-BQB4
 	deps := initDeps(t, map[string]string{dns.KeyZones: "example.com:ZONE"})
 	deps.LookPath = func(name string) (string, error) {
 		if name == "certbot" {
@@ -419,7 +502,6 @@ func TestInitClassifiesDNSOpenFailures(t *testing.T) {
 
 func TestInitReportsZoneHostAndWildcardFailures(t *testing.T) {
 	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL
-	// R-EO0P-6F31 R-EP8L-K6TQ R-EQGH-XYKF R-EROE-BQB4
 	provider := &fakeDNSProvider{
 		records: map[string][]dns.Record{
 			"WRONG": {{Name: "provider.test", Type: "SOA"}},
@@ -605,7 +687,6 @@ func TestInitReportEscapesProviderAndHostLookupErrors(t *testing.T) {
 }
 
 func TestInitRejectsEmptyWildcardAddressSet(t *testing.T) {
-	// R-EP8L-K6TQ
 	deps := initDeps(t, map[string]string{"host.name": "example.com"})
 	deps.LookPath = foundInitTools
 	deps.LookupHost = func(context.Context, string) ([]string, error) { return nil, nil }
