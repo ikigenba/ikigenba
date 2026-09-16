@@ -72,7 +72,7 @@ func TestDepsFields(t *testing.T) {
 }
 
 func TestHostPathsResolveUnderRoot(t *testing.T) {
-	// R-MYDC-ONJX
+	// R-GU6L-Z0L7
 	sandbox := t.TempDir()
 	root := filepath.Join(sandbox, "root")
 	outside := filepath.Join(sandbox, "outside")

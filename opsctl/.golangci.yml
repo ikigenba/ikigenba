@@ -12,6 +12,16 @@ linters:
     - revive
     - unconvert
     - unparam
+  exclusions:
+    rules:
+      # Human-approved exception for R-5LFH-HU7S: callers select the
+      # executables prescribed by the design; Exec passes arguments directly.
+      # Keep G204 active for every other subprocess call.
+      - path: ^internal/host/host\.go$
+        linters:
+          - gosec
+        text: '^G204:'
+        source: 'cmd := exec\.CommandContext\(ctx, command\.Name, command\.Args\.\.\.\)'
 
 formatters:
   enable:
