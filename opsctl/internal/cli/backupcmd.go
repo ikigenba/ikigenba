@@ -47,6 +47,10 @@ func runBackup(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	if code := requireRoot(deps, stderr); code != exitOK {
 		return code
 	}
+	if len(args) == 1 && args[0] == "" {
+		writeDiagnostic(stderr, fmt.Errorf("invalid service %q", args[0]))
+		return exitFail
+	}
 
 	service := ""
 	if len(args) == 1 {
@@ -104,11 +108,15 @@ func writeBackupResults(output io.Writer, results []backup.FileResult) (bool, er
 			_, _ = fmt.Fprintf(&report, "%s: failed: %s\n", diagnosticArg(result.Service), diagnosticArg(result.Err.Error()))
 			continue
 		}
-		_, _ = fmt.Fprintf(&report, "%s: ok (%s, %.1f MiB)\n",
-			diagnosticArg(result.Service), diagnosticArg(result.Object), float64(result.Size)/(1024*1024))
+		_, _ = fmt.Fprintf(&report, "%s: ok (%s, %s)\n",
+			diagnosticArg(result.Service), diagnosticArg(result.Object), formatMebibytes(result.Size))
 	}
 	_, err := io.WriteString(output, report.String())
 	return allOK, err
+}
+
+func formatMebibytes(size int64) string {
+	return fmt.Sprintf("%.1f MiB", float64(size)/(1024*1024))
 }
 
 func interruptedBackupService(results []backup.FileResult, runErr error) string {

@@ -40,8 +40,8 @@ func TestBackupCommandReportsResultsAndOperationalInterruptions(t *testing.T) {
 	// R-I252-Y8ZD
 	t.Run("all services and named service", func(t *testing.T) {
 		root := configuredBackupRoot(t)
-		writeBackupServiceFile(t, root, "zeta", "state/value", "zeta")
-		writeBackupServiceFile(t, root, "alpha", "state/value", "alpha")
+		writeBackupServiceFile(t, root, "zeta", "zeta")
+		writeBackupServiceFile(t, root, "alpha", "alpha")
 		client := &backupCLICloud{failService: "zeta"}
 		deps := backupCLIDeps(root, client, successfulBackupExecute)
 
@@ -75,9 +75,33 @@ func TestBackupCommandReportsResultsAndOperationalInterruptions(t *testing.T) {
 		}
 	})
 
+	t.Run("explicit empty service does not select all services", func(t *testing.T) {
+		root := configuredBackupRoot(t)
+		writeBackupServiceFile(t, root, "alpha", "unrelated")
+		client := &backupCLICloud{}
+		processUsed := false
+		cloudOpened := false
+		deps := backupCLIDeps(root, client, func(context.Context, host.Command) (host.Result, error) {
+			processUsed = true
+			return host.Result{}, errors.New("unexpected process access")
+		})
+		deps.Cloud.Open = func(context.Context, string) (cloud.Client, error) {
+			cloudOpened = true
+			return client, nil
+		}
+
+		stdout, stderr, code := invokeBackupCLI([]string{"backup", ""}, deps)
+		if code != 1 || stdout != "" || stderr != "opsctl: invalid service \"\"\n" {
+			t.Fatalf("empty service = exit %d stdout %q stderr %q", code, stdout, stderr)
+		}
+		if processUsed || cloudOpened || len(client.puts) != 0 {
+			t.Fatalf("empty service used process=%v cloud=%v uploads=%v", processUsed, cloudOpened, client.puts)
+		}
+	})
+
 	t.Run("interrupted archive identifies the attempted service", func(t *testing.T) {
 		root := configuredBackupRoot(t)
-		writeBackupServiceFile(t, root, "alpha", "state/value", "alpha")
+		writeBackupServiceFile(t, root, "alpha", "alpha")
 		execute := func(_ context.Context, command host.Command) (host.Result, error) {
 			switch command.Name {
 			case "getent":
@@ -100,9 +124,16 @@ func TestBackupCommandReportsResultsAndOperationalInterruptions(t *testing.T) {
 	})
 
 	t.Run("interruption between attempts has no service suffix", func(t *testing.T) {
-		results := []backup.FileResult{{Service: "alpha", Object: "alpha.tar.zst", Size: 1024}}
-		var stderr bytes.Buffer
+		results := []backup.FileResult{{Service: "alpha", Err: errors.New("archive unavailable")}}
+		var stdout, stderr bytes.Buffer
+		allOK, err := writeBackupResults(&stdout, results)
+		if err != nil || allOK {
+			t.Fatalf("write failed result = allOK %v, error %v", allOK, err)
+		}
 		writeBackupOperationalError(&stderr, results, context.Canceled)
+		if got, want := stdout.String(), "alpha: failed: archive unavailable\n"; got != want {
+			t.Fatalf("between-attempt report = %q, want %q", got, want)
+		}
 		if got, want := stderr.String(), "opsctl: backup failed\n"; got != want {
 			t.Fatalf("between-attempt diagnostic = %q, want %q", got, want)
 		}
@@ -199,9 +230,9 @@ func configuredBackupRoot(t *testing.T) string {
 	return root
 }
 
-func writeBackupServiceFile(t *testing.T, root, service, name, content string) {
+func writeBackupServiceFile(t *testing.T, root, service, content string) {
 	t.Helper()
-	filename := filepath.Join(root, "opt", service, filepath.FromSlash(name))
+	filename := filepath.Join(root, "opt", service, "state", "value")
 	if err := os.MkdirAll(filepath.Dir(filename), 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +259,7 @@ func successfulBackupExecute(_ context.Context, command host.Command) (host.Resu
 	case "getent":
 		return host.Result{ExitCode: 2}, nil
 	case "zstd":
-		compressed := make([]byte, 1572864)
+		compressed := make([]byte, 1530921)
 		copy(compressed, []byte{0x28, 0xb5, 0x2f, 0xfd})
 		return host.Result{Stdout: compressed}, nil
 	default:
