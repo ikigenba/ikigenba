@@ -5,10 +5,12 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"time"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/cli"
 	"github.com/ikigenba/ikigenba/opsctl/internal/dns"
 	"github.com/ikigenba/ikigenba/opsctl/internal/dns/route53"
+	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 )
 
 func main() {
@@ -19,5 +21,7 @@ func main() {
 		DNS:        dns.Env{Open: route53.Open},
 		LookPath:   exec.LookPath,
 		LookupHost: net.DefaultResolver.LookupHost,
+		Execute:    host.Exec,
+		Now:        time.Now,
 	}))
 }

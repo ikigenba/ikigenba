@@ -8,6 +8,10 @@ import (
 	"net"
 	"os/exec"
 	"strings"
+	"time"
+
+	"github.com/ikigenba/ikigenba/opsctl/internal/cloud"
+	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/dns"
 )
@@ -56,6 +60,9 @@ type Deps struct {
 	DNS        dns.Env                                                  // provider registry and resolver
 	LookPath   func(file string) (string, error)                        // PATH lookup; nil uses exec.LookPath
 	LookupHost func(ctx context.Context, host string) ([]string, error) // name resolution; nil uses net.DefaultResolver.LookupHost
+	Execute    func(context.Context, host.Command) (host.Result, error)
+	Now        func() time.Time
+	Cloud      cloud.Env
 }
 
 func (d Deps) getenv(key string) string {
@@ -85,7 +92,23 @@ func (d Deps) lookupHost(ctx context.Context, host string) ([]string, error) {
 // the process exit code.
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, deps Deps) int {
 	_ = stdin
-	return int(run(args, stdout, stderr, deps))
+	return int(run(args, stdout, stderr, normalizeDeps(deps)))
+}
+
+func normalizeDeps(deps Deps) Deps {
+	if deps.Getenv == nil {
+		deps.Getenv = func(string) string { return "" }
+	}
+	if deps.LookPath == nil {
+		deps.LookPath = exec.LookPath
+	}
+	if deps.LookupHost == nil {
+		deps.LookupHost = net.DefaultResolver.LookupHost
+	}
+	if deps.Now == nil {
+		deps.Now = time.Now
+	}
+	return deps
 }
 
 func run(args []string, stdout, stderr io.Writer, deps Deps) exitCode {

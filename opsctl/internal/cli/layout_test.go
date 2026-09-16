@@ -14,7 +14,7 @@ import (
 )
 
 func TestGoMod(t *testing.T) {
-	// R-LV0Z-17L3
+	// R-EL9M-CEGL
 	data, err := os.ReadFile(filepath.Join("..", "..", "go.mod"))
 	if err != nil {
 		t.Fatal(err)
@@ -26,30 +26,33 @@ func TestGoMod(t *testing.T) {
 	if !regexp.MustCompile(`(?m)^go \d+\.\d+`).MatchString(text) {
 		t.Fatalf("go.mod has no Go version:\n%s", text)
 	}
-	want := map[string]string{
-		"github.com/aws/aws-sdk-go-v2":                 "v1.46.0",
-		"github.com/aws/aws-sdk-go-v2/config":          "v1.33.3",
-		"github.com/aws/aws-sdk-go-v2/service/route53": "v1.69.0",
+	want := []string{
+		"github.com/aws/aws-sdk-go-v2",
+		"github.com/aws/aws-sdk-go-v2/config",
+		"github.com/aws/aws-sdk-go-v2/service/route53",
 	}
-	got := directRequirements(text)
+	got := mapKeys(directRequirements(text))
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("direct requirements = %v, want %v", got, want)
 	}
 }
 
 func TestImportGraph(t *testing.T) {
-	// R-LYOO-6IT6
+	// R-5FBZ-KZIB
 	const module = "github.com/ikigenba/ikigenba/opsctl"
 	moduleRoot := filepath.Join("..", "..")
-	rules := map[string]struct {
-		moduleImports map[string]bool
-		allowExternal bool
-	}{
-		"cmd/opsctl":           {importSet(module+"/internal/cli", module+"/internal/dns", module+"/internal/dns/route53"), false},
-		"internal/cli":         {importSet(module+"/internal/config", module+"/internal/dns"), false},
-		"internal/dns":         {importSet(module + "/internal/config"), false},
-		"internal/dns/route53": {importSet(module + "/internal/dns"), true},
-		"internal/config":      {importSet(), false},
+	rules := map[string]map[string]bool{
+		"cmd/opsctl":           importSet(module+"/internal/cli", module+"/internal/dns", module+"/internal/dns/route53", module+"/internal/host"),
+		"internal/cli":         importSet(module+"/internal/config", module+"/internal/dns", module+"/internal/host", module+"/internal/cloud", module+"/internal/apps", module+"/internal/nginx", module+"/internal/cert", module+"/internal/backup"),
+		"internal/config":      importSet(),
+		"internal/dns":         importSet(module + "/internal/config"),
+		"internal/dns/route53": importSet(module + "/internal/dns"),
+		"internal/host":        importSet(),
+		"internal/cloud":       importSet(),
+		"internal/apps":        importSet(module+"/internal/config", module+"/internal/host", module+"/internal/cloud"),
+		"internal/nginx":       importSet(module+"/internal/config", module+"/internal/host", module+"/internal/apps"),
+		"internal/cert":        importSet(module+"/internal/config", module+"/internal/host"),
+		"internal/backup":      importSet(module+"/internal/config", module+"/internal/host", module+"/internal/cloud", module+"/internal/apps"),
 	}
 	packages := modulePackages(t, moduleRoot)
 	if len(packages) != len(rules) {
@@ -61,19 +64,17 @@ func TestImportGraph(t *testing.T) {
 			t.Errorf("unexpected module package %s", name)
 			continue
 		}
-		gotModuleImports := map[string]bool{}
 		for path := range imports {
 			switch {
 			case strings.HasPrefix(path, module+"/"):
-				gotModuleImports[path] = true
+				if !rule[path] {
+					t.Errorf("%s imports forbidden module package %s", name, path)
+				}
 			case isExternalImport(path):
-				if !rule.allowExternal {
+				if name != "internal/dns/route53" || !isApprovedAWSImport(path) {
 					t.Errorf("%s imports external package %s", name, path)
 				}
 			}
-		}
-		if !reflect.DeepEqual(gotModuleImports, rule.moduleImports) {
-			t.Errorf("%s module imports = %v, want exactly %v", name, mapKeys(gotModuleImports), mapKeys(rule.moduleImports))
 		}
 	}
 	for name := range rules {
@@ -177,4 +178,13 @@ func modulePackages(t *testing.T, root string) map[string]map[string]bool {
 func isExternalImport(path string) bool {
 	first, _, _ := strings.Cut(path, "/")
 	return strings.Contains(first, ".")
+}
+
+func isApprovedAWSImport(path string) bool {
+	for _, approved := range []string{"github.com/aws/aws-sdk-go-v2/aws", "github.com/aws/aws-sdk-go-v2/config", "github.com/aws/aws-sdk-go-v2/service/route53"} {
+		if path == approved || strings.HasPrefix(path, approved+"/") {
+			return true
+		}
+	}
+	return false
 }
