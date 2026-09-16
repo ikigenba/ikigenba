@@ -34,17 +34,25 @@ var reservedNames = map[string]struct{}{
 	"renew-certificate": {},
 }
 
+type unusableAppNameError struct {
+	name string
+}
+
+func (failure *unusableAppNameError) Error() string {
+	return fmt.Sprintf("unusable app name %q", failure.name)
+}
+
 // ValidateName reports whether name can safely identify an app.
 func ValidateName(name string) error {
 	if len(name) == 0 || len(name) > 63 || !isASCIIAlphanumeric(name[0]) || !isASCIIAlphanumeric(name[len(name)-1]) {
-		return fmt.Errorf("unusable app name %q", name)
+		return &unusableAppNameError{name: name}
 	}
 
 	lower := make([]byte, len(name))
 	for i := range len(name) {
 		character := name[i]
 		if !isASCIIAlphanumeric(character) && character != '-' {
-			return fmt.Errorf("unusable app name %q", name)
+			return &unusableAppNameError{name: name}
 		}
 		if character >= 'A' && character <= 'Z' {
 			character += 'a' - 'A'
@@ -52,7 +60,7 @@ func ValidateName(name string) error {
 		lower[i] = character
 	}
 	if _, reserved := reservedNames[string(lower)]; reserved {
-		return fmt.Errorf("unusable app name %q", name)
+		return &unusableAppNameError{name: name}
 	}
 
 	return nil

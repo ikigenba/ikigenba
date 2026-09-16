@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/url"
 	"strings"
@@ -56,6 +57,10 @@ func runInstall(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	}, deps.Cloud, config.Store{Root: deps.Root}, args[0], apps.InstallHooks{})
 	if err != nil {
 		writeDiagnostic(stderr, err)
+		var failure *apps.InstallError
+		if errors.As(err, &failure) {
+			return exitCode(failure.Code)
+		}
 		return exitFail
 	}
 	return exitOK
