@@ -1,8 +1,14 @@
 package cli
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"io"
+	"strings"
+
+	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
+	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 )
 
 const restartUsage = `Usage: opsctl restart APP
@@ -52,8 +58,49 @@ func runLifecycleAction(name string, args []string, stdout, stderr io.Writer, de
 	if code := requireRoot(deps, stderr); code != exitOK {
 		return code
 	}
+	if name == "restart" {
+		return runRestart(args[0], stdout, stderr, deps)
+	}
 	writeDiagnostic(stderr, errors.New(diagnosticArg(name)+": operation is not implemented"))
 	return exitFail
+}
+
+func runRestart(app string, stdout, stderr io.Writer, deps Deps) exitCode {
+	row, err := apps.Restart(context.Background(), host.Env{
+		Root: deps.Root, Getenv: deps.Getenv, Execute: deps.Execute, Now: deps.Now,
+	}, app)
+	if err == nil {
+		if _, writeErr := io.WriteString(stdout, fmt.Sprintf("service: ok (%s %s active)\n", row.Name, row.Version)); writeErr != nil {
+			writeDiagnostic(stderr, &apps.LifecycleError{Code: 1, Message: "restart failed", Cause: writeErr})
+			return exitFail
+		}
+		return exitOK
+	}
+
+	var failure *apps.LifecycleError
+	if !errors.As(err, &failure) {
+		writeDiagnostic(stderr, err)
+		return exitFail
+	}
+	if isRestartPreflightFailure(failure) {
+		writeDiagnostic(stderr, failure)
+		return exitCode(failure.Code)
+	}
+
+	detail := strings.NewReplacer("\r", `\r`, "\n", `\n`).Replace(failure.Message)
+	_, reportErr := io.WriteString(stdout, "service: failed: "+detail+"\n")
+	cause := error(failure)
+	if reportErr != nil {
+		cause = errors.Join(failure, reportErr)
+	}
+	writeDiagnostic(stderr, &apps.LifecycleError{Code: 1, Message: "restart failed", Cause: cause})
+	return exitFail
+}
+
+func isRestartPreflightFailure(failure *apps.LifecycleError) bool {
+	return failure.Code == 2 || strings.HasPrefix(failure.Message, "no service '") ||
+		strings.HasSuffix(failure.Message, " is not installed") || strings.HasPrefix(failure.Message, "inspect service") ||
+		strings.HasPrefix(failure.Message, "inspect installed app")
 }
 
 func writeLifecycleUsageError(stderr io.Writer, command, message string) exitCode {

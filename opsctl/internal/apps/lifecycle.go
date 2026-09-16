@@ -3,6 +3,8 @@ package apps
 import (
 	"context"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"os"
 	"path"
 	"strings"
@@ -35,6 +37,104 @@ func (failure *LifecycleError) Error() string { return failure.Message }
 
 func (failure *LifecycleError) Unwrap() error { return failure.Cause }
 
+// Restart restarts an installed app and reports its resulting service state.
+func Restart(ctx context.Context, env host.Env, app string) (StatusRow, error) {
+	if err := ValidateName(app); err != nil {
+		return StatusRow{}, &LifecycleError{Code: 2, Message: fmt.Sprintf("'%s' is not a usable app name", safeDiagnosticToken(app)), Cause: err}
+	}
+	if err := restartPrerequisites(env.Root, app); err != nil {
+		return StatusRow{}, err
+	}
+	if env.Execute == nil {
+		err := errors.New("host execution is not configured")
+		return StatusRow{}, &LifecycleError{Code: 1, Message: "restart failed", Cause: err}
+	}
+
+	if err := restartInstalledUnit(ctx, env, app); err != nil {
+		return StatusRow{}, err
+	}
+	version, err := restartVersion(ctx, env, app)
+	if err != nil {
+		return StatusRow{}, err
+	}
+	return StatusRow{Name: app, Version: version, State: "active", JournalMode: "-"}, nil
+}
+
+func restartInstalledUnit(ctx context.Context, env host.Env, app string) error {
+	unit := appUnitName(app)
+	if err := executeInstallCommand(ctx, env, fmt.Sprintf("restart %s", unit), host.Command{
+		Name: "systemctl", Args: []string{"restart", unit},
+	}); err != nil {
+		return restartStartFailure(ctx, env, app, unit, err)
+	}
+	result, err := env.Execute(ctx, host.Command{Name: "systemctl", Args: []string{"is-active", unit}})
+	if err != nil {
+		failure := commandTransportError(fmt.Sprintf("inspect %s", unit), err)
+		return restartStartFailure(ctx, env, app, unit, failure)
+	}
+	if result.ExitCode != 0 || strings.TrimSpace(string(result.Stdout)) != "active" {
+		failure := &host.CommandError{Label: fmt.Sprintf("inspect %s", unit), Result: result}
+		return restartStartFailure(ctx, env, app, unit, failure)
+	}
+	return nil
+}
+
+func restartVersion(ctx context.Context, env host.Env, app string) (string, error) {
+	binary := rootedHostPath(env.Root, "opt", app, "bin", app)
+	result, err := env.Execute(ctx, host.Command{Name: binary, Args: []string{"--version"}})
+	if err != nil {
+		cause := commandTransportError(fmt.Sprintf("read %s version", safeDiagnosticToken(app)), err)
+		return "", &LifecycleError{Code: 1, Message: "read app version failed", Cause: cause}
+	}
+	if result.ExitCode != 0 {
+		cause := &host.CommandError{Label: fmt.Sprintf("read %s version", safeDiagnosticToken(app)), Result: result}
+		return "", &LifecycleError{Code: 1, Message: "read app version failed", Cause: cause}
+	}
+	return trimVersionLineEnding(string(result.Stdout)), nil
+}
+
+func restartPrerequisites(root, app string) error {
+	filesystem, err := os.OpenRoot(root)
+	if err != nil {
+		return &LifecycleError{Code: 1, Message: "inspect service failed", Cause: err}
+	}
+	defer func() { _ = filesystem.Close() }()
+
+	appPath := path.Join("opt", app)
+	info, err := filesystem.Stat(appPath)
+	if errors.Is(err, os.ErrNotExist) || err == nil && !info.IsDir() {
+		return &LifecycleError{Code: 1, Message: fmt.Sprintf("no service '%s'", safeDiagnosticToken(app)), Cause: err}
+	}
+	if err != nil {
+		return &LifecycleError{Code: 1, Message: "inspect service failed", Cause: err}
+	}
+	info, err = filesystem.Stat(path.Join(appPath, "bin", app))
+	if errors.Is(err, os.ErrNotExist) || err == nil && !info.Mode().IsRegular() {
+		return &LifecycleError{Code: 1, Message: safeDiagnosticToken(app) + " is not installed", Cause: err}
+	}
+	if err != nil {
+		return &LifecycleError{Code: 1, Message: "inspect installed app failed", Cause: err}
+	}
+	return nil
+}
+
+func restartStartFailure(ctx context.Context, env host.Env, app, unit string, startErr error) *LifecycleError {
+	message := fmt.Sprintf("%s: service failed to start", safeDiagnosticToken(app))
+	result, err := env.Execute(ctx, host.Command{
+		Name: "journalctl", Args: []string{"--unit", unit, "--no-pager", "--lines", "50"},
+	})
+	if err != nil {
+		journalErr := commandTransportError(fmt.Sprintf("obtain %s journal", unit), err)
+		return &LifecycleError{Code: 1, Message: message, Cause: errors.Join(startErr, journalErr)}
+	}
+	if result.ExitCode != 0 {
+		journalErr := &host.CommandError{Label: fmt.Sprintf("obtain %s journal", unit), Result: result}
+		return &LifecycleError{Code: 1, Message: message, Cause: errors.Join(startErr, journalErr)}
+	}
+	cause := &host.CommandError{Label: "journal captured after service startup failure", Result: result, Err: startErr}
+	return &LifecycleError{Code: 1, Message: message, Cause: cause}
+}
+
 // Status reports the independently observable state of every discovered service.
 func Status(ctx context.Context, env host.Env) ([]StatusRow, error) {
 	services, err := Discover(env.Root)
@@ -64,16 +164,18 @@ func serviceVersion(ctx context.Context, env host.Env, name string) string {
 	if err != nil || result.ExitCode != 0 {
 		return "-"
 	}
-	version := string(result.Stdout)
-	if strings.HasSuffix(version, "\r\n") {
-		version = strings.TrimSuffix(version, "\r\n")
-	} else {
-		version = strings.TrimSuffix(version, "\n")
-	}
+	version := trimVersionLineEnding(string(result.Stdout))
 	if version == "" {
 		return "-"
 	}
 	return version
+}
+
+func trimVersionLineEnding(version string) string {
+	if strings.HasSuffix(version, "\r\n") {
+		return strings.TrimSuffix(version, "\r\n")
+	}
+	return strings.TrimSuffix(version, "\n")
 }
 
 func serviceState(ctx context.Context, env host.Env, name string) string {
