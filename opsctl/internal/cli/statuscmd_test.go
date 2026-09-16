@@ -42,7 +42,7 @@ func TestStatusPrintsExactRowsAndTreatsFindingsAsSuccess(t *testing.T) {
 func TestStatusEnumerationAndWriteFailuresAreDiagnostics(t *testing.T) {
 	missingRoot := filepath.Join(t.TempDir(), "missing")
 	stdout, stderr, code := invoke([]string{"status"}, cli.Deps{Root: missingRoot, EUID: 0})
-	if code != 1 || stdout != "" || stderr != "opsctl: status failed\n" {
+	if code != 1 || stdout != "" || stderr != "opsctl: status report not produced: service enumeration did not complete: status failed\n" {
 		t.Fatalf("enumeration failure = exit %d stdout %q stderr %q", code, stdout, stderr)
 	}
 

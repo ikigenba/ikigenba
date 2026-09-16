@@ -24,7 +24,7 @@ func runStatus(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 		Root: deps.Root, Getenv: deps.Getenv, Execute: deps.Execute, Now: deps.Now,
 	})
 	if err != nil {
-		writeDiagnostic(stderr, err)
+		writeDiagnostic(stderr, fmt.Errorf("status report not produced: service enumeration did not complete: %w", err))
 		return exitFail
 	}
 
