@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
 	"sort"
 	"strings"
@@ -21,6 +22,7 @@ nothing runs and init exits 2. Safe to re-run.
 
 Checks, in order:
   nginx, certbot, systemctl  each found on PATH
+  litestream                 found on PATH
   dns.provider, dns.zones    set, and the provider opens (see 'opsctl dns --help')
   host.name                  set
   zone NAME                  every configured zone is reachable and delegated
@@ -28,10 +30,23 @@ Checks, in order:
   wildcard NAME              host.name and _opsctl-preflight.host.name resolve alike
 
 Sequence:
-  none yet; each setup command adds itself here when it is designed
+  certificate  obtain the host's certificate, or renew it if it is due
+  nginx.conf   generate /etc/nginx/conf.d/ikigenba.conf and reload nginx
+  litestream   generate /etc/litestream.yml and enable litestream.service
+  timers       write the backup and renewal units, enabling each backup timer
+               whose period is set and the renewal timer always
 
 Configuration keys:
   host.name  the fully-qualified name this host answers at, at or under a configured zone
+  dns.provider  the active provider; only 'route53' is supported
+  dns.zones  comma-separated NAME:ID pairs of the zones opsctl owns
+  acme.email  the address the CA sends expiry warnings to
+  aws.region  the region the backup bucket lives in
+  backup.s3_uri  the prefix this host backs up to
+  backup.host_files_seconds  how often the host configuration is copied; 0 or unset means never
+  backup.service_files_seconds  how often service files are copied; 0 or unset means never
+  backup.service_db_seconds  how often a declared database is snapshotted whole
+  backup.service_wal_seconds  how often a declared database's committed changes are shipped
 `
 
 func runInit(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
@@ -63,11 +78,12 @@ func writeInitUsageError(stderr io.Writer, message string) exitCode {
 func runInitPreflight(stdout io.Writer, deps Deps, entries []config.Entry) exitCode {
 	preflight := initPreflight{
 		deps:   deps,
+		store:  config.Store{Root: deps.Root},
 		values: make(map[string]string, len(entries)),
 		allOK:  true,
 	}
 	for _, entry := range entries {
-		preflight.values[entry.Key] = safeInitToken(entry.Value)
+		preflight.values[entry.Key] = entry.Value
 	}
 	preflight.checkTools()
 	preflight.checkDNSConfig()
@@ -80,9 +96,12 @@ func runInitPreflight(stdout io.Writer, deps Deps, entries []config.Entry) exitC
 
 type initPreflight struct {
 	deps       Deps
+	store      config.Store
 	values     map[string]string
 	output     strings.Builder
 	client     *dns.Client
+	zones      []dns.Zone
+	opened     dns.Provider
 	provider   string
 	host       string
 	providerOK bool
@@ -92,14 +111,14 @@ type initPreflight struct {
 }
 
 func (p *initPreflight) checkTools() {
-	for _, name := range []string{"nginx", "certbot", "systemctl"} {
+	for _, name := range []string{"nginx", "certbot", "systemctl", "litestream"} {
 		path, err := p.deps.lookPath(name)
 		if err != nil {
 			_, _ = fmt.Fprintf(&p.output, "%s: failed: not found on PATH\n", name)
 			p.allOK = false
 			continue
 		}
-		_, _ = fmt.Fprintf(&p.output, "%s: ok (%s)\n", name, path)
+		_, _ = fmt.Fprintf(&p.output, "%s: ok (%s)\n", name, diagnosticArg(path))
 	}
 }
 
@@ -109,45 +128,52 @@ func (p *initPreflight) checkDNSConfig() {
 	providerSet := p.provider != ""
 	zonesSet := zonesValue != ""
 	var openErr error
-	if providerSet && zonesSet {
-		p.client, openErr = dns.Open(context.Background(), config.Store{Root: p.deps.Root}, p.deps.DNS)
+	if providerSet {
+		if p.deps.DNS.Open == nil {
+			openErr = fmt.Errorf("%w: %q", dns.ErrUnknownProvider, p.provider)
+		} else {
+			p.opened, openErr = p.deps.DNS.Open(context.Background(), p.provider)
+		}
 	}
 	switch {
 	case !providerSet:
 		p.output.WriteString("dns.provider: failed: not set\n")
 		p.allOK = false
-	case openErr != nil && !errors.Is(openErr, dns.ErrNotConfigured):
-		_, _ = fmt.Fprintf(&p.output, "dns.provider: failed: %v\n", openErr)
+	case openErr != nil:
+		_, _ = fmt.Fprintf(&p.output, "dns.provider: failed: %s\n", diagnosticArg(openErr.Error()))
 		p.allOK = false
 	default:
-		_, _ = fmt.Fprintf(&p.output, "dns.provider: ok (%s)\n", p.provider)
+		_, _ = fmt.Fprintf(&p.output, "dns.provider: ok (%s)\n", diagnosticArg(p.provider))
 		p.providerOK = true
 	}
 	parsedZones, malformedZone, malformed := parseInitZones(zonesValue)
+	p.zones = parsedZones
 	switch {
 	case !zonesSet:
 		p.output.WriteString("dns.zones: failed: not set\n")
-		p.allOK = false
-	case providerSet && openErr != nil && errors.Is(openErr, dns.ErrNotConfigured):
-		_, _ = fmt.Fprintf(&p.output, "dns.zones: failed: %v\n", openErr)
 		p.allOK = false
 	case malformed:
 		_, _ = fmt.Fprintf(&p.output, "dns.zones: failed: dns.zones malformed: %q\n", malformedZone)
 		p.allOK = false
 	default:
-		if p.client != nil {
-			for i := range p.client.Zones {
-				p.client.Zones[i].Name = safeInitToken(p.client.Zones[i].Name)
-				p.client.Zones[i].ID = safeInitToken(p.client.Zones[i].ID)
-			}
-			parsedZones = p.client.Zones
-		}
-		names := make([]string, len(parsedZones))
-		for i, zone := range parsedZones {
-			names[i] = zone.Name
+		names := make([]string, len(p.zones))
+		for i, zone := range p.zones {
+			names[i] = diagnosticArg(zone.Name)
 		}
 		_, _ = fmt.Fprintf(&p.output, "dns.zones: ok (%s)\n", strings.Join(names, ","))
 		p.zonesOK = true
+	}
+	if p.providerOK && p.zonesOK {
+		p.client, openErr = dns.Open(context.Background(), p.store, dns.Env{
+			Open:     func(context.Context, string) (dns.Provider, error) { return p.opened, nil },
+			LookupNS: p.deps.DNS.LookupNS,
+		})
+		if openErr != nil {
+			// The same snapshot was parsed above, so this can only be a store read failure.
+			p.client = nil
+			p.providerOK = false
+			p.allOK = false
+		}
 	}
 }
 
@@ -159,47 +185,40 @@ func (p *initPreflight) checkHostConfig() {
 		p.output.WriteString("host.name: failed: not set\n")
 		p.allOK = false
 	} else {
-		_, _ = fmt.Fprintf(&p.output, "host.name: ok (%s)\n", p.host)
+		_, _ = fmt.Fprintf(&p.output, "host.name: ok (%s)\n", diagnosticArg(p.host))
 	}
 }
 
 func (p *initPreflight) checkZones() {
-	if !p.providerOK || !p.zonesOK {
+	if !p.providerOK || !p.zonesOK || p.client == nil {
 		return
 	}
-	for _, zone := range p.client.Zones {
-		result, err := p.client.Check(context.Background(), zone)
-		switch {
-		case err != nil:
-			_, _ = fmt.Fprintf(&p.output, "zone %s: failed: %v\n", zone.Name, err)
-			p.allOK = false
-		case result.ZoneName != zone.Name:
-			_, _ = fmt.Fprintf(&p.output, "zone %s: failed: provider reports zone %s\n", zone.Name, safeInitToken(result.ZoneName))
-			p.allOK = false
-		case !result.Delegated:
-			_, _ = fmt.Fprintf(&p.output, "zone %s: failed: nameservers are not delegated\n", zone.Name)
-			p.allOK = false
-		default:
-			_, _ = fmt.Fprintf(&p.output, "zone %s: ok (%s %s, %d nameservers delegated)\n",
-				zone.Name, p.provider, zone.ID, len(result.Nameservers))
-		}
+	var report strings.Builder
+	if dnsCheck(&report, p.client, p.provider) != exitOK {
+		p.allOK = false
+	}
+	for line := range strings.Lines(report.String()) {
+		p.output.WriteString("zone ")
+		p.output.WriteString(line)
 	}
 }
 
 func (p *initPreflight) checkHostZone() {
-	if !p.providerOK || !p.zonesOK || !p.hostOK {
+	if !p.zonesOK || !p.hostOK {
 		return
 	}
-	zone, err := p.client.ZoneFor(p.host)
+	zone, err := (&dns.Client{Zones: p.zones}).ZoneFor(p.host)
+	hostName := diagnosticArg(p.host)
 	switch {
 	case errors.Is(err, dns.ErrNoZone):
-		_, _ = fmt.Fprintf(&p.output, "host %s: failed: no configured zone contains it\n", p.host)
+		_, _ = fmt.Fprintf(&p.output, "host %s: failed: no configured zone contains it\n", hostName)
 		p.allOK = false
 	case err != nil:
-		_, _ = fmt.Fprintf(&p.output, "host %s: failed: %v\n", p.host, err)
+		_, _ = fmt.Fprintf(&p.output, "host %s: failed: %s\n", hostName, diagnosticArg(err.Error()))
 		p.allOK = false
 	default:
-		_, _ = fmt.Fprintf(&p.output, "host %s: ok (zone %s)\n", p.host, zone.Name)
+		_, _ = fmt.Fprintf(&p.output, "host %s: ok (zone %s)\n",
+			hostName, diagnosticArg(zone.Name))
 	}
 }
 
@@ -210,28 +229,37 @@ func (p *initPreflight) checkWildcard() {
 	probe := "_opsctl-preflight." + p.host
 	addresses, addressErr := p.deps.lookupHost(context.Background(), p.host)
 	probeAddresses, probeErr := p.deps.lookupHost(context.Background(), probe)
+	left, leftErr := renderInitAddresses(addresses)
+	if addressErr == nil {
+		addressErr = leftErr
+	}
+	right, rightErr := renderInitAddresses(probeAddresses)
+	if probeErr == nil {
+		probeErr = rightErr
+	}
+	hostName := diagnosticArg(p.host)
 	switch {
 	case addressErr != nil:
-		_, _ = fmt.Fprintf(&p.output, "wildcard %s: failed: %v\n", p.host, addressErr)
+		_, _ = fmt.Fprintf(&p.output, "wildcard %s: failed: %s\n", hostName, diagnosticArg(addressErr.Error()))
 		p.allOK = false
 	case probeErr != nil:
-		_, _ = fmt.Fprintf(&p.output, "wildcard %s: failed: %v\n", p.host, probeErr)
+		_, _ = fmt.Fprintf(&p.output, "wildcard %s: failed: %s\n", hostName, diagnosticArg(probeErr.Error()))
 		p.allOK = false
 	default:
-		p.compareWildcard(probe, addresses, probeAddresses)
+		p.compareWildcard(probe, left, right)
 	}
 }
 
-func (p *initPreflight) compareWildcard(probe string, addresses, probeAddresses []string) {
-	left := renderInitAddresses(addresses)
-	right := renderInitAddresses(probeAddresses)
+func (p *initPreflight) compareWildcard(probe, left, right string) {
+	hostName := diagnosticArg(p.host)
+	probeName := diagnosticArg(probe)
 	if left == "" || left != right {
 		_, _ = fmt.Fprintf(&p.output, "wildcard %s: failed: %s resolves to %s but %s resolves to %s\n",
-			p.host, p.host, left, probe, right)
+			hostName, hostName, left, probeName, right)
 		p.allOK = false
 		return
 	}
-	_, _ = fmt.Fprintf(&p.output, "wildcard %s: ok (%s)\n", p.host, left)
+	_, _ = fmt.Fprintf(&p.output, "wildcard %s: ok (%s)\n", hostName, left)
 }
 
 func (p *initPreflight) finish(stdout io.Writer) exitCode {
@@ -253,12 +281,12 @@ func parseInitZones(value string) ([]dns.Zone, string, bool) {
 	zones := make([]dns.Zone, 0, len(entries))
 	for _, entry := range entries {
 		name, id, ok := strings.Cut(entry, ":")
-		name = strings.TrimSpace(name)
+		name = normaliseInitName(strings.TrimSpace(name))
 		id = strings.TrimSpace(id)
 		if !ok || name == "" || id == "" {
 			return nil, entry, true
 		}
-		zones = append(zones, dns.Zone{Name: normaliseInitName(name), ID: id})
+		zones = append(zones, dns.Zone{Name: name, ID: id})
 	}
 	return zones, "", false
 }
@@ -279,10 +307,14 @@ func uniqueSorted(values []string) []string {
 	return result
 }
 
-func renderInitAddresses(values []string) string {
-	values = uniqueSorted(values)
-	for i := range values {
-		values[i] = safeInitToken(values[i])
+func renderInitAddresses(values []string) (string, error) {
+	canonical := make([]string, len(values))
+	for i, value := range values {
+		address, err := netip.ParseAddr(value)
+		if err != nil {
+			return "", fmt.Errorf("invalid address %q", safeInitToken(value))
+		}
+		canonical[i] = address.Unmap().String()
 	}
-	return strings.Join(values, ",")
+	return strings.Join(uniqueSorted(canonical), ","), nil
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/cli"
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 	"github.com/ikigenba/ikigenba/opsctl/internal/dns"
+	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 )
 
 const wantInitUsage = `Usage: opsctl init
@@ -23,6 +24,7 @@ nothing runs and init exits 2. Safe to re-run.
 
 Checks, in order:
   nginx, certbot, systemctl  each found on PATH
+  litestream                 found on PATH
   dns.provider, dns.zones    set, and the provider opens (see 'opsctl dns --help')
   host.name                  set
   zone NAME                  every configured zone is reachable and delegated
@@ -30,24 +32,40 @@ Checks, in order:
   wildcard NAME              host.name and _opsctl-preflight.host.name resolve alike
 
 Sequence:
-  none yet; each setup command adds itself here when it is designed
+  certificate  obtain the host's certificate, or renew it if it is due
+  nginx.conf   generate /etc/nginx/conf.d/ikigenba.conf and reload nginx
+  litestream   generate /etc/litestream.yml and enable litestream.service
+  timers       write the backup and renewal units, enabling each backup timer
+               whose period is set and the renewal timer always
 
 Configuration keys:
   host.name  the fully-qualified name this host answers at, at or under a configured zone
+  dns.provider  the active provider; only 'route53' is supported
+  dns.zones  comma-separated NAME:ID pairs of the zones opsctl owns
+  acme.email  the address the CA sends expiry warnings to
+  aws.region  the region the backup bucket lives in
+  backup.s3_uri  the prefix this host backs up to
+  backup.host_files_seconds  how often the host configuration is copied; 0 or unset means never
+  backup.service_files_seconds  how often service files are copied; 0 or unset means never
+  backup.service_db_seconds  how often a declared database is snapshotted whole
+  backup.service_wal_seconds  how often a declared database's committed changes are shipped
 `
 
 func TestInitHelp(t *testing.T) {
-	// R-ED1L-QHES
-	for _, args := range [][]string{{"init", "--help"}, {"init", "-h"}} {
-		stdout, stderr, code := invoke(args, depsAt(t, 1))
-		if code != 0 || stdout != wantInitUsage || stderr != "" {
-			t.Errorf("%q: exit %d stdout %q stderr %q", args, code, stdout, stderr)
+	// R-ZYRQ-L5HW
+	for _, uid := range []int{0, 1000} {
+		for _, args := range [][]string{{"init", "--help"}, {"init", "-h"}} {
+			deps, assertNoAccess := inertDeps(t, uid)
+			stdout, stderr, code := invoke(args, deps)
+			assertNoAccess()
+			if code != 0 || stdout != wantInitUsage || stderr != "" {
+				t.Errorf("uid %d %q: exit %d stdout %q stderr %q", uid, args, code, stdout, stderr)
+			}
 		}
 	}
 }
 
 func TestInitRejectsArguments(t *testing.T) {
-	// R-EE9I-495H
 	want := "opsctl: init takes no arguments\n\nsee 'opsctl init --help' for usage\n"
 	for _, args := range [][]string{{"init", "extra"}, {"init", "--help", "extra"}, {"init", "-h", "extra"}} {
 		stdout, stderr, code := invoke(args, depsAt(t, 0))
@@ -106,8 +124,9 @@ func TestInitCorruptConfig(t *testing.T) {
 }
 
 func TestInitHealthyPreflight(t *testing.T) {
-	// R-EHX7-9KDK R-EJ53-NC49 R-EKD0-13UY R-ELKW-EVLN
-	// R-EMSS-SNCC R-EO0P-6F31 R-EP8L-K6TQ R-EQGH-XYKF R-EROE-BQB4
+	// R-LIU3-NA5F R-LK20-11W4 R-LMHS-SLDI R-ELKW-EVLN
+	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL R-LRDE-BOCA
+	// R-EO0P-6F31 R-EP8L-K6TQ R-EQGH-XYKF R-EROE-BQB4
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZA": {
 			{Name: "example.com", Type: "SOA"},
@@ -128,7 +147,9 @@ func TestInitHealthyPreflight(t *testing.T) {
 		lookedUp = append(lookedUp, name)
 		return "/bin/" + name, nil
 	}
+	openCalls := 0
 	deps.DNS.Open = func(_ context.Context, name string) (dns.Provider, error) {
+		openCalls++
 		if name != "route53" {
 			t.Fatalf("opened provider %q", name)
 		}
@@ -152,6 +173,7 @@ func TestInitHealthyPreflight(t *testing.T) {
 	want := "nginx: ok (/bin/nginx)\n" +
 		"certbot: ok (/bin/certbot)\n" +
 		"systemctl: ok (/bin/systemctl)\n" +
+		"litestream: ok (/bin/litestream)\n" +
 		"dns.provider: ok (route53)\n" +
 		"dns.zones: ok (example.com,deep.example.com)\n" +
 		"host.name: ok (api.deep.example.com)\n" +
@@ -163,16 +185,177 @@ func TestInitHealthyPreflight(t *testing.T) {
 	if code != 0 || stdout != want || stderr != "" {
 		t.Fatalf("exit %d stdout %q stderr %q, want exit 0 stdout %q", code, stdout, stderr, want)
 	}
-	if !reflect.DeepEqual(lookedUp, []string{"nginx", "certbot", "systemctl"}) {
-		t.Errorf("LookPath calls = %v, want nginx, certbot, systemctl", lookedUp)
+	if !reflect.DeepEqual(lookedUp, []string{"nginx", "certbot", "systemctl", "litestream"}) {
+		t.Errorf("LookPath calls = %v, want nginx, certbot, systemctl, litestream", lookedUp)
 	}
 	if !reflect.DeepEqual(resolved, []string{"api.deep.example.com", "_opsctl-preflight.api.deep.example.com"}) {
 		t.Errorf("LookupHost calls = %v", resolved)
 	}
+	if openCalls != 1 {
+		t.Errorf("provider open calls = %d, want 1", openCalls)
+	}
+}
+
+func TestInitValidatesProviderAndZonesIndependently(t *testing.T) {
+	// R-LK20-11W4 R-LMHS-SLDI
+	t.Run("provider without zones", func(t *testing.T) {
+		deps := initDeps(t, map[string]string{dns.KeyProvider: "route53"})
+		deps.LookPath = foundInitTools
+		opened := 0
+		deps.DNS.Open = func(context.Context, string) (dns.Provider, error) {
+			opened++
+			return &fakeDNSProvider{}, nil
+		}
+		stdout, stderr, code := invoke([]string{"init"}, deps)
+		if code != 2 || stderr != "" || opened != 1 || !strings.Contains(stdout,
+			"dns.provider: ok (route53)\ndns.zones: failed: not set\n") {
+			t.Errorf("exit %d stdout %q stderr %q opens %d", code, stdout, stderr, opened)
+		}
+	})
+
+	t.Run("malformed zones without provider", func(t *testing.T) {
+		deps := initDeps(t, map[string]string{dns.KeyZones: " Example.COM. : ZONE ,broken"})
+		deps.LookPath = foundInitTools
+		deps.DNS.Open = func(context.Context, string) (dns.Provider, error) {
+			t.Fatal("provider opened without dns.provider")
+			return nil, nil
+		}
+		stdout, stderr, code := invoke([]string{"init"}, deps)
+		want := "dns.provider: failed: not set\ndns.zones: failed: dns.zones malformed: \"broken\"\n"
+		if code != 2 || stderr != "" || !strings.Contains(stdout, want) {
+			t.Errorf("exit %d stdout %q stderr %q, want fragment %q", code, stdout, stderr, want)
+		}
+	})
+
+	t.Run("normalization empties name", func(t *testing.T) {
+		deps := initDeps(t, map[string]string{dns.KeyZones: ". : ZONE"})
+		deps.LookPath = foundInitTools
+		stdout, stderr, code := invoke([]string{"init"}, deps)
+		want := "dns.provider: failed: not set\ndns.zones: failed: dns.zones malformed: \". : ZONE\"\n"
+		if code != 2 || stderr != "" || !strings.Contains(stdout, want) {
+			t.Errorf("exit %d stdout %q stderr %q, want fragment %q", code, stdout, stderr, want)
+		}
+	})
+
+	t.Run("raw malformed entry", func(t *testing.T) {
+		deps := initDeps(t, nil)
+		writeInitConfig(t, deps.Root, `{"dns.zones":"example.com:ZONE,bad\nentry"}`)
+		deps.LookPath = foundInitTools
+		stdout, stderr, code := invoke([]string{"init"}, deps)
+		want := "dns.provider: failed: not set\ndns.zones: failed: dns.zones malformed: \"bad\\nentry\"\n"
+		if code != 2 || stderr != "" || !strings.Contains(stdout, want) {
+			t.Errorf("exit %d stdout %q stderr %q, want fragment %q", code, stdout, stderr, want)
+		}
+	})
+
+	t.Run("nil opener", func(t *testing.T) {
+		deps := initDeps(t, map[string]string{dns.KeyProvider: "route53"})
+		deps.LookPath = foundInitTools
+		stdout, stderr, code := invoke([]string{"init"}, deps)
+		if code != 2 || stderr != "" || !strings.Contains(stdout,
+			"dns.provider: failed: unknown dns provider: \"route53\"\n") {
+			t.Errorf("exit %d stdout %q stderr %q", code, stdout, stderr)
+		}
+	})
+}
+
+func TestInitHostZoneDoesNotDependOnProvider(t *testing.T) {
+	// R-LOXL-K4UW
+	deps := initDeps(t, map[string]string{
+		dns.KeyProvider: "route53",
+		dns.KeyZones:    "Example.COM.:PARENT, Deep.Example.COM.:CHILD",
+		"host.name":     "API.Deep.Example.COM.",
+	})
+	deps.LookPath = foundInitTools
+	deps.DNS.Open = func(context.Context, string) (dns.Provider, error) {
+		return nil, errors.New("credentials unavailable")
+	}
+	deps.LookupHost = func(context.Context, string) ([]string, error) { return []string{"192.0.2.1"}, nil }
+	stdout, stderr, code := invoke([]string{"init"}, deps)
+	if code != 2 || stderr != "" || !strings.Contains(stdout,
+		"host api.deep.example.com: ok (zone deep.example.com)\n") {
+		t.Errorf("exit %d stdout %q stderr %q", code, stdout, stderr)
+	}
+}
+
+func TestInitWildcardCanonicalizesAddressesAndRunsBothLookups(t *testing.T) {
+	// R-LQ5H-XWLL
+	t.Run("canonical equal sets", func(t *testing.T) {
+		deps := initDeps(t, map[string]string{"host.name": "Example.COM."})
+		deps.LookPath = foundInitTools
+		var resolved []string
+		deps.LookupHost = func(_ context.Context, name string) ([]string, error) {
+			resolved = append(resolved, name)
+			switch name {
+			case "example.com":
+				return []string{"2001:0db8::1", "::ffff:192.0.2.1", "2001:db8::1"}, nil
+			case "_opsctl-preflight.example.com":
+				return []string{"192.0.2.1", "2001:db8::1"}, nil
+			default:
+				t.Fatalf("unexpected lookup %q", name)
+				return nil, nil
+			}
+		}
+		stdout, stderr, code := invoke([]string{"init"}, deps)
+		wantResolved := []string{"example.com", "_opsctl-preflight.example.com"}
+		if code != 2 || stderr != "" || !reflect.DeepEqual(resolved, wantResolved) || !strings.Contains(stdout,
+			"wildcard example.com: ok (192.0.2.1,2001:db8::1)\n") {
+			t.Errorf("exit %d stdout %q stderr %q lookups %v", code, stdout, stderr, resolved)
+		}
+	})
+
+	t.Run("invalid host result precedes probe error", func(t *testing.T) {
+		deps := initDeps(t, map[string]string{"host.name": "example.com"})
+		deps.LookPath = foundInitTools
+		var resolved []string
+		deps.LookupHost = func(_ context.Context, name string) ([]string, error) {
+			resolved = append(resolved, name)
+			switch name {
+			case "example.com":
+				return []string{"not-an-ip"}, nil
+			case "_opsctl-preflight.example.com":
+				return nil, errors.New("probe unavailable")
+			default:
+				t.Fatalf("unexpected lookup %q", name)
+				return nil, nil
+			}
+		}
+		stdout, stderr, code := invoke([]string{"init"}, deps)
+		wantResolved := []string{"example.com", "_opsctl-preflight.example.com"}
+		if code != 2 || stderr != "" || !reflect.DeepEqual(resolved, wantResolved) || !strings.Contains(stdout,
+			"wildcard example.com: failed: invalid address \"not-an-ip\"\n") {
+			t.Errorf("exit %d stdout %q stderr %q lookups %v", code, stdout, stderr, resolved)
+		}
+	})
+}
+
+func TestInitFailedPreflightRunsNoSetupAndChangesNoState(t *testing.T) {
+	// R-LSLA-PG2Z
+	deps := initDeps(t, map[string]string{"host.name": "example.com"})
+	deps.LookPath = func(name string) (string, error) {
+		if name == "certbot" {
+			return "", errors.New("missing")
+		}
+		return "/bin/" + name, nil
+	}
+	deps.LookupHost = func(context.Context, string) ([]string, error) { return []string{"192.0.2.1"}, nil }
+	deps.Execute = func(context.Context, host.Command) (host.Result, error) {
+		t.Fatal("setup process invoked after failed preflight")
+		return host.Result{}, nil
+	}
+	before := treeState(t, deps.Root)
+	stdout, stderr, code := invoke([]string{"init"}, deps)
+	after := treeState(t, deps.Root)
+	if code != 2 || stderr != "" || stdout == "" {
+		t.Errorf("exit %d stdout %q stderr %q", code, stdout, stderr)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Errorf("Root changed:\nbefore %#v\nafter  %#v", before, after)
+	}
 }
 
 func TestInitAggregatesIndependentFailures(t *testing.T) {
-	// R-EHX7-9KDK R-EJ53-NC49 R-EKD0-13UY R-ELKW-EVLN
+	// R-LIU3-NA5F R-LK20-11W4 R-LMHS-SLDI R-ELKW-EVLN
 	// R-EQGH-XYKF R-EROE-BQB4
 	deps := initDeps(t, map[string]string{dns.KeyZones: "example.com:ZONE"})
 	deps.LookPath = func(name string) (string, error) {
@@ -193,6 +376,7 @@ func TestInitAggregatesIndependentFailures(t *testing.T) {
 	want := "nginx: ok (/usr/bin/nginx)\n" +
 		"certbot: failed: not found on PATH\n" +
 		"systemctl: ok (/usr/bin/systemctl)\n" +
+		"litestream: ok (/usr/bin/litestream)\n" +
 		"dns.provider: failed: not set\n" +
 		"dns.zones: ok (example.com)\n" +
 		"host.name: failed: not set\n"
@@ -203,7 +387,7 @@ func TestInitAggregatesIndependentFailures(t *testing.T) {
 }
 
 func TestInitClassifiesDNSOpenFailures(t *testing.T) {
-	// R-EJ53-NC49 R-EKD0-13UY
+	// R-LK20-11W4 R-LMHS-SLDI
 	for _, tc := range []struct {
 		name, zones string
 		openErr     error
@@ -224,7 +408,7 @@ func TestInitClassifiesDNSOpenFailures(t *testing.T) {
 				return &fakeDNSProvider{}, nil
 			}
 			stdout, stderr, code := invoke([]string{"init"}, deps)
-			want := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\n" +
+			want := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\nlitestream: ok (/bin/litestream)\n" +
 				tc.wantDNS + "host.name: failed: not set\n"
 			if code != 2 || stderr != "" || stdout != want {
 				t.Errorf("exit %d stdout %q stderr %q, want exit 2 stdout %q", code, stdout, stderr, want)
@@ -234,7 +418,8 @@ func TestInitClassifiesDNSOpenFailures(t *testing.T) {
 }
 
 func TestInitReportsZoneHostAndWildcardFailures(t *testing.T) {
-	// R-EMSS-SNCC R-EO0P-6F31 R-EP8L-K6TQ R-EQGH-XYKF R-EROE-BQB4
+	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL
+	// R-EO0P-6F31 R-EP8L-K6TQ R-EQGH-XYKF R-EROE-BQB4
 	provider := &fakeDNSProvider{
 		records: map[string][]dns.Record{
 			"WRONG": {{Name: "provider.test", Type: "SOA"}},
@@ -259,18 +444,36 @@ func TestInitReportsZoneHostAndWildcardFailures(t *testing.T) {
 		}
 		return []string{"192.0.2.8"}, nil
 	}
+	dnsStdout, dnsStderr, dnsCode := invoke([]string{"dns", "check"}, deps)
+	if dnsCode != 1 || dnsStderr != "" {
+		t.Fatalf("dns check: exit %d stdout %q stderr %q", dnsCode, dnsStdout, dnsStderr)
+	}
 
-	prefix := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\n" +
+	prefix := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\nlitestream: ok (/bin/litestream)\n" +
 		"dns.provider: ok (route53)\ndns.zones: ok (wrong.test,undelegated.test,error.test)\n" +
 		"host.name: ok (outside.example)\n" +
-		"zone wrong.test: failed: provider reports zone provider.test\n" +
-		"zone undelegated.test: failed: nameservers are not delegated\n" +
+		"zone wrong.test: failed: provider zone name is provider.test\n" +
+		"zone undelegated.test: failed: nameservers not delegated\n" +
 		"zone error.test: failed: unreachable\n" +
 		"host outside.example: failed: no configured zone contains it\n"
 	want := prefix + "wildcard outside.example: failed: outside.example resolves to 192.0.2.8 but _opsctl-preflight.outside.example resolves to 192.0.2.9\n"
 	stdout, stderr, code := invoke([]string{"init"}, deps)
 	if code != 2 || stdout != want || stderr != "" {
 		t.Errorf("exit %d stdout %q stderr %q, want exit 2 stdout %q", code, stdout, stderr, want)
+	}
+	var wantZoneLines, gotZoneLines strings.Builder
+	for line := range strings.Lines(dnsStdout) {
+		wantZoneLines.WriteString("zone ")
+		wantZoneLines.WriteString(line)
+	}
+	for line := range strings.Lines(stdout) {
+		if strings.HasPrefix(line, "zone ") {
+			gotZoneLines.WriteString(line)
+		}
+	}
+	if gotZoneLines.String() != wantZoneLines.String() {
+		t.Errorf("init zone lines %q, want dns check lines with prefix %q",
+			gotZoneLines.String(), wantZoneLines.String())
 	}
 
 	deps.LookupHost = func(_ context.Context, name string) ([]string, error) {
@@ -283,13 +486,131 @@ func TestInitReportsZoneHostAndWildcardFailures(t *testing.T) {
 	}
 }
 
+func TestInitReportEscapesExternalLineBreaks(t *testing.T) {
+	// R-ZAOK-6AFV R-LRDE-BOCA
+	provider := &fakeDNSProvider{
+		recordsErr: map[string]error{"ZONE": errors.New("zone\nfailed\rhard")},
+	}
+	deps := initDeps(t, map[string]string{
+		dns.KeyProvider: "route53",
+		dns.KeyZones:    "example.com:ZONE",
+		"host.name":     "example.com",
+	})
+	deps.LookPath = func(name string) (string, error) {
+		return "/tools/" + name + "\nspoof\rline", nil
+	}
+	deps.DNS.Open = func(context.Context, string) (dns.Provider, error) { return provider, nil }
+	deps.LookupHost = func(_ context.Context, name string) ([]string, error) {
+		if strings.HasPrefix(name, "_opsctl-preflight.") {
+			return nil, errors.New("probe\nfailed\rhard")
+		}
+		return []string{"192.0.2.1"}, nil
+	}
+
+	want := "nginx: ok (/tools/nginx\\nspoof\\rline)\n" +
+		"certbot: ok (/tools/certbot\\nspoof\\rline)\n" +
+		"systemctl: ok (/tools/systemctl\\nspoof\\rline)\n" +
+		"litestream: ok (/tools/litestream\\nspoof\\rline)\n" +
+		"dns.provider: ok (route53)\n" +
+		"dns.zones: ok (example.com)\n" +
+		"host.name: ok (example.com)\n" +
+		"zone example.com: failed: zone\\nfailed\\rhard\n" +
+		"host example.com: ok (zone example.com)\n" +
+		"wildcard example.com: failed: probe\\nfailed\\rhard\n"
+	stdout, stderr, code := invoke([]string{"init"}, deps)
+	if code != 2 || stdout != want || stderr != "" {
+		t.Errorf("exit %d stdout %q stderr %q, want exit 2 stdout %q", code, stdout, stderr, want)
+	}
+	if lines := strings.Count(stdout, "\n"); lines != 10 {
+		t.Errorf("init wrote %d lines for ten eligible checks: %q", lines, stdout)
+	}
+}
+
+func TestInitReportEscapesRereadZoneConfiguration(t *testing.T) {
+	// R-ZAOK-6AFV R-LRDE-BOCA
+	const (
+		providerName = "route\n53"
+		zoneName     = "exa\nmple.com"
+		zoneID       = "ZONE\rID"
+	)
+	provider := &fakeDNSProvider{records: map[string][]dns.Record{
+		zoneID: {
+			{Name: zoneName, Type: "SOA"},
+			{Name: zoneName, Type: "NS", Values: []string{"ns1"}},
+		},
+	}}
+	deps := initDeps(t, nil)
+	writeInitConfig(t, deps.Root,
+		`{"dns.provider":"route\n53","dns.zones":"exa\nmple.com:ZONE\rID"}`)
+	deps.LookPath = foundInitTools
+	deps.DNS.Open = func(_ context.Context, name string) (dns.Provider, error) {
+		if name != providerName {
+			t.Fatalf("provider name = %q, want %q", name, providerName)
+		}
+		return provider, nil
+	}
+	deps.DNS.LookupNS = func(_ context.Context, name string) ([]string, error) {
+		if name != zoneName {
+			t.Fatalf("lookup zone = %q, want %q", name, zoneName)
+		}
+		return []string{"ns1"}, nil
+	}
+
+	want := "nginx: ok (/bin/nginx)\n" +
+		"certbot: ok (/bin/certbot)\n" +
+		"systemctl: ok (/bin/systemctl)\n" +
+		"litestream: ok (/bin/litestream)\n" +
+		"dns.provider: ok (route\\n53)\n" +
+		"dns.zones: ok (exa\\nmple.com)\n" +
+		"host.name: failed: not set\n" +
+		"zone exa\\nmple.com: ok (route\\n53 ZONE\\rID, 1 nameservers delegated)\n"
+	stdout, stderr, code := invoke([]string{"init"}, deps)
+	if code != 2 || stdout != want || stderr != "" {
+		t.Errorf("exit %d stdout %q stderr %q, want exit 2 stdout %q", code, stdout, stderr, want)
+	}
+	if lines := strings.Count(stdout, "\n"); lines != 8 {
+		t.Errorf("init wrote %d lines for eight eligible checks: %q", lines, stdout)
+	}
+}
+
+func TestInitReportEscapesProviderAndHostLookupErrors(t *testing.T) {
+	// R-LRDE-BOCA
+	deps := initDeps(t, map[string]string{
+		dns.KeyProvider: "route53",
+		"host.name":     "example.com",
+	})
+	deps.LookPath = foundInitTools
+	deps.DNS.Open = func(context.Context, string) (dns.Provider, error) {
+		return nil, errors.New("provider\nfailed\rhard")
+	}
+	deps.LookupHost = func(context.Context, string) ([]string, error) {
+		return nil, errors.New("host\nfailed\rhard")
+	}
+
+	want := "nginx: ok (/bin/nginx)\n" +
+		"certbot: ok (/bin/certbot)\n" +
+		"systemctl: ok (/bin/systemctl)\n" +
+		"litestream: ok (/bin/litestream)\n" +
+		"dns.provider: failed: provider\\nfailed\\rhard\n" +
+		"dns.zones: failed: not set\n" +
+		"host.name: ok (example.com)\n" +
+		"wildcard example.com: failed: host\\nfailed\\rhard\n"
+	stdout, stderr, code := invoke([]string{"init"}, deps)
+	if code != 2 || stdout != want || stderr != "" {
+		t.Errorf("exit %d stdout %q stderr %q, want exit 2 stdout %q", code, stdout, stderr, want)
+	}
+	if lines := strings.Count(stdout, "\n"); lines != 8 {
+		t.Errorf("init wrote %d lines for eight eligible checks: %q", lines, stdout)
+	}
+}
+
 func TestInitRejectsEmptyWildcardAddressSet(t *testing.T) {
 	// R-EP8L-K6TQ
 	deps := initDeps(t, map[string]string{"host.name": "example.com"})
 	deps.LookPath = foundInitTools
 	deps.LookupHost = func(context.Context, string) ([]string, error) { return nil, nil }
 
-	want := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\n" +
+	want := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\nlitestream: ok (/bin/litestream)\n" +
 		"dns.provider: failed: not set\ndns.zones: failed: not set\nhost.name: ok (example.com)\n" +
 		"wildcard example.com: failed: example.com resolves to  but _opsctl-preflight.example.com resolves to \n"
 	stdout, stderr, code := invoke([]string{"init"}, deps)
@@ -299,7 +620,7 @@ func TestInitRejectsEmptyWildcardAddressSet(t *testing.T) {
 }
 
 func TestInitIsReadOnlyAndRepeatable(t *testing.T) {
-	// R-EU47-39SI
+	// R-LSLA-PG2Z
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZONE": {
 			{Name: "example.com", Type: "SOA"},
@@ -313,12 +634,16 @@ func TestInitIsReadOnlyAndRepeatable(t *testing.T) {
 	deps.DNS.Open = func(context.Context, string) (dns.Provider, error) { return provider, nil }
 	deps.DNS.LookupNS = func(context.Context, string) ([]string, error) { return []string{"ns1"}, nil }
 	deps.LookupHost = func(context.Context, string) ([]string, error) { return []string{"192.0.2.1"}, nil }
+	deps.Execute = func(context.Context, host.Command) (host.Result, error) {
+		t.Fatal("setup process invoked during successful preflight")
+		return host.Result{}, nil
+	}
 	before := treeState(t, deps.Root)
 
 	stdout1, stderr1, code1 := invoke([]string{"init"}, deps)
 	stdout2, stderr2, code2 := invoke([]string{"init"}, deps)
 	after := treeState(t, deps.Root)
-	want := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\n" +
+	want := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\nlitestream: ok (/bin/litestream)\n" +
 		"dns.provider: ok (route53)\ndns.zones: ok (example.com)\nhost.name: ok (example.com)\n" +
 		"zone example.com: ok (route53 ZONE, 1 nameservers delegated)\n" +
 		"host example.com: ok (zone example.com)\nwildcard example.com: ok (192.0.2.1)\n"
@@ -343,6 +668,17 @@ func initDeps(t *testing.T, values map[string]string) cli.Deps {
 		}
 	}
 	return deps
+}
+
+func writeInitConfig(t *testing.T, root, contents string) {
+	t.Helper()
+	dir := filepath.Join(root, "etc", "ikigenba")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func foundInitTools(name string) (string, error) { return "/bin/" + name, nil }
