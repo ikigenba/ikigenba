@@ -297,7 +297,7 @@ func TestClientDelegatesNormalisedMutationsAndPreservesErrors(t *testing.T) {
 	}
 }
 
-// R-XTDA-HT2V
+// R-XTDA-HT2V R-FIQK-FVGO
 func TestCheckFindsApexRecordsAndComparesDelegationAsSet(t *testing.T) {
 	apexNameservers := []string{"NS2.EXAMPLE.NET.", "ns1.example.net"}
 	provider := &fakeProvider{records: []Record{
@@ -335,6 +335,9 @@ func TestCheckFindsApexRecordsAndComparesDelegationAsSet(t *testing.T) {
 	}
 	if provider.recordsZone != "Z1" {
 		t.Fatalf("Records zone = %q", provider.recordsZone)
+	}
+	if provider.addArgs != nil || provider.removeArgs != nil {
+		t.Fatalf("Check performed a provider write: add %#v remove %#v", provider.addArgs, provider.removeArgs)
 	}
 
 	delegatedNameservers = []string{"ns1.example.net", "wrong.example.net"}

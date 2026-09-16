@@ -57,15 +57,11 @@ func (p *provider) Records(ctx context.Context, zoneID string) ([]dns.Record, er
 	for _, set := range sets {
 		values := make([]string, 0, len(set.ResourceRecords))
 		for _, record := range set.ResourceRecords {
-			value := aws.ToString(record.Value)
-			if set.Type == types.RRTypeTxt {
-				value = unquoteTXT(value)
-			}
-			values = append(values, value)
+			values = append(values, decodeValue(string(set.Type), aws.ToString(record.Value)))
 		}
 		records = append(records, dns.Record{
 			Name:   normalizeName(aws.ToString(set.Name)),
-			Type:   string(set.Type),
+			Type:   strings.ToUpper(string(set.Type)),
 			TTL:    int(aws.ToInt64(set.TTL)),
 			Values: values,
 		})
@@ -82,7 +78,7 @@ func (p *provider) Add(ctx context.Context, zoneID, name, typ string, ttl int, v
 	encoded := encodeValue(typ, value)
 	if found {
 		for _, record := range set.ResourceRecords {
-			if aws.ToString(record.Value) == encoded {
+			if decodeValue(typ, aws.ToString(record.Value)) == value {
 				return nil
 			}
 		}
@@ -108,11 +104,10 @@ func (p *provider) Remove(ctx context.Context, zoneID, name, typ, value string) 
 		return nil
 	}
 
-	encoded := encodeValue(typ, value)
 	remaining := make([]types.ResourceRecord, 0, len(set.ResourceRecords))
 	found = false
 	for _, record := range set.ResourceRecords {
-		if aws.ToString(record.Value) == encoded {
+		if decodeValue(typ, aws.ToString(record.Value)) == value {
 			found = true
 			continue
 		}
@@ -210,19 +205,69 @@ func (p *provider) change(
 }
 
 func normalizeName(name string) string {
-	return strings.ReplaceAll(strings.TrimSuffix(name, "."), `\052`, "*")
+	return strings.ToLower(strings.ReplaceAll(strings.TrimSuffix(name, "."), `\052`, "*"))
 }
 
 func unquoteTXT(value string) string {
-	if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
-		return value[1 : len(value)-1]
+	if len(value) < 2 || value[0] != '"' {
+		return value
+	}
+
+	var decoded strings.Builder
+	for offset := 0; offset < len(value); {
+		if value[offset] != '"' {
+			return value
+		}
+		offset++
+		closed := false
+		for offset < len(value) {
+			switch value[offset] {
+			case '\\':
+				offset++
+				if offset == len(value) {
+					return value
+				}
+				decoded.WriteByte(value[offset])
+				offset++
+			case '"':
+				offset++
+				closed = true
+			default:
+				decoded.WriteByte(value[offset])
+				offset++
+			}
+			if closed {
+				break
+			}
+		}
+		if !closed {
+			return value
+		}
+		for offset < len(value) && (value[offset] == ' ' || value[offset] == '\t') {
+			offset++
+		}
+	}
+	return decoded.String()
+}
+
+func encodeValue(typ, value string) string {
+	switch typ {
+	case string(types.RRTypeTxt):
+		escaped := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(value)
+		return `"` + escaped + `"`
+	case string(types.RRTypeNs):
+		return value + "."
 	}
 	return value
 }
 
-func encodeValue(typ, value string) string {
-	if typ == string(types.RRTypeTxt) {
-		return `"` + value + `"`
+func decodeValue(typ, value string) string {
+	switch typ {
+	case string(types.RRTypeTxt):
+		return unquoteTXT(value)
+	case string(types.RRTypeNs):
+		return strings.TrimSuffix(value, ".")
+	default:
+		return value
 	}
-	return value
 }

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -65,8 +66,16 @@ func getChangeResponse(status string) string {
 		`</ChangeInfo></GetChangeResponse>`
 }
 
-// R-L7UV-RKHW
+// R-7JWE-YKBM R-ERWS-0X5E R-EUCK-SGMS
 func TestExportsAndNew(t *testing.T) {
+	newSignature := reflect.TypeFor[func(context.Context, string) (dns.Provider, error)]()
+	if got := reflect.TypeOf(route53.New); got != newSignature {
+		t.Fatalf("New signature = %s, want %s", got, newSignature)
+	}
+	openSignature := reflect.TypeFor[func(context.Context, string) (dns.Provider, error)]()
+	if got := reflect.TypeOf(route53.Open); got != openSignature {
+		t.Fatalf("Open signature = %s, want %s", got, openSignature)
+	}
 	setAWSEnvironment(t)
 	if route53.Region != "us-east-1" {
 		t.Fatalf("Region = %q", route53.Region)
@@ -97,6 +106,7 @@ func TestOpenRegistry(t *testing.T) {
 func TestNewUsesEndpointDefaultCredentialsAndRegion(t *testing.T) {
 	setAWSEnvironment(t)
 	requests := 0
+	recordExists := false
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		requests++
 		authorization := request.Header.Get("Authorization")
@@ -107,28 +117,22 @@ func TestNewUsesEndpointDefaultCredentialsAndRegion(t *testing.T) {
 			t.Errorf("Authorization does not use %s: %q", route53.Region, authorization)
 		}
 
-		switch requests {
-		case 1, 2:
-			if request.Method != http.MethodGet || request.URL.Path != "/2013-04-01/hostedzone/Z1/rrset" {
-				t.Errorf("request %d = %s %s", requests, request.Method, request.URL.Path)
+		switch {
+		case request.Method == http.MethodGet && request.URL.Path == "/2013-04-01/hostedzone/Z1/rrset":
+			records := ""
+			if recordExists {
+				records = recordSet("new.example.test.", "TXT", "60", resourceRecord(`&quot;token&quot;`))
 			}
-			writeResponse(t, response, listResponse("", `<IsTruncated>false</IsTruncated>`))
-		case 3, 6:
-			if request.Method != http.MethodPost || request.URL.Path != "/2013-04-01/hostedzone/Z1/rrset" {
-				t.Errorf("request %d = %s %s", requests, request.Method, request.URL.Path)
+			writeResponse(t, response, listResponse(records, `<IsTruncated>false</IsTruncated>`))
+		case request.Method == http.MethodPost && request.URL.Path == "/2013-04-01/hostedzone/Z1/rrset":
+			body, err := io.ReadAll(request.Body)
+			if err != nil {
+				t.Errorf("read change request: %v", err)
 			}
+			recordExists = !strings.Contains(string(body), "<Action>DELETE</Action>")
 			writeResponse(t, response, changeResponse("PENDING"))
-		case 4, 7:
-			if request.Method != http.MethodGet || request.URL.Path != "/2013-04-01/change/C1" {
-				t.Errorf("request %d = %s %s", requests, request.Method, request.URL.Path)
-			}
+		case request.Method == http.MethodGet && request.URL.Path == "/2013-04-01/change/C1":
 			writeResponse(t, response, getChangeResponse("INSYNC"))
-		case 5:
-			if request.Method != http.MethodGet || request.URL.Path != "/2013-04-01/hostedzone/Z1/rrset" {
-				t.Errorf("request %d = %s %s", requests, request.Method, request.URL.Path)
-			}
-			record := recordSet("new.example.test.", "TXT", "60", resourceRecord(`&quot;token&quot;`))
-			writeResponse(t, response, listResponse(record, `<IsTruncated>false</IsTruncated>`))
 		default:
 			t.Errorf("unexpected request %d: %s %s", requests, request.Method, request.URL.Path)
 			response.WriteHeader(http.StatusNotFound)
@@ -154,22 +158,28 @@ func TestNewUsesEndpointDefaultCredentialsAndRegion(t *testing.T) {
 	}
 }
 
-// R-LBIK-WVPZ
+// R-EWSD-K046 R-XUL6-VKTK
 func TestRecordsNormalizesValuesAndPaginates(t *testing.T) {
 	setAWSEnvironment(t)
 	var requests int
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		requests++
-		if requests == 1 {
-			records := recordSet(`\052.example.test.`, "TXT", "60", resourceRecord(`&quot;one&quot;`))
-			pagination := `<IsTruncated>true</IsTruncated><NextRecordName>example.test.</NextRecordName><NextRecordType>NS</NextRecordType>`
+		if request.Method != http.MethodGet {
+			t.Errorf("Records request method = %s, want GET", request.Method)
+		}
+		if request.URL.Query().Get("name") == "" {
+			records := recordSet(`\052.Example.TEST.`, "TXT", "60", resourceRecord(`&quot;one \&quot;quoted\&quot; &quot; &quot;\\tail&quot;`))
+			pagination := `<IsTruncated>true</IsTruncated><NextRecordName>example.test.</NextRecordName>` +
+				`<NextRecordType>NS</NextRecordType><NextRecordIdentifier>weighted-a</NextRecordIdentifier>`
 			writeResponse(t, response, listResponse(records, pagination))
 			return
 		}
-		if request.URL.Query().Get("name") != "example.test." || request.URL.Query().Get("type") != "NS" {
+		if request.URL.Query().Get("name") != "example.test." || request.URL.Query().Get("type") != "NS" ||
+			request.URL.Query().Get("identifier") != "weighted-a" {
 			t.Errorf("pagination query = %q", request.URL.RawQuery)
 		}
-		records := recordSet("example.test.", "NS", "172800", resourceRecord("ns-2.example."))
+		records := recordSet("Example.TEST.", "NS", "172800", resourceRecord("NS-2.Example.")) +
+			recordSet("Example.TEST.", "SOA", "900", resourceRecord("ns.example. hostmaster.example. 1 2 3 4 5"))
 		writeResponse(t, response, listResponse(records, `<IsTruncated>false</IsTruncated>`))
 	}))
 	defer server.Close()
@@ -185,14 +195,17 @@ func TestRecordsNormalizesValuesAndPaginates(t *testing.T) {
 	if requests != 2 {
 		t.Fatalf("request count = %d", requests)
 	}
-	if len(records) != 2 {
+	if len(records) != 3 {
 		t.Fatalf("records = %#v", records)
 	}
-	if got := records[0]; got.Name != "*.example.test" || got.Type != "TXT" || got.TTL != 60 || len(got.Values) != 1 || got.Values[0] != "one" {
+	if got := records[0]; got.Name != "*.example.test" || got.Type != "TXT" || got.TTL != 60 || len(got.Values) != 1 || got.Values[0] != `one "quoted" \tail` {
 		t.Errorf("first record = %#v", got)
 	}
-	if got := records[1]; got.Name != "example.test" || got.Values[0] != "ns-2.example." {
+	if got := records[1]; got.Name != "example.test" || got.Type != "NS" || got.TTL != 172800 || got.Values[0] != "NS-2.Example" {
 		t.Errorf("second record = %#v", got)
+	}
+	if got := records[2]; got.Name != "example.test" || got.Type != "SOA" || got.Values[0] != "ns.example. hostmaster.example. 1 2 3 4 5" {
+		t.Errorf("third record = %#v", got)
 	}
 }
 
@@ -202,6 +215,7 @@ type changeServer struct {
 	mu           sync.Mutex
 	changeBodies []string
 	getStatuses  []string
+	getCalls     int
 }
 
 func (fake *changeServer) handler(response http.ResponseWriter, request *http.Request) {
@@ -218,6 +232,7 @@ func (fake *changeServer) handler(response http.ResponseWriter, request *http.Re
 		fake.changeBodies = append(fake.changeBodies, string(body))
 		writeResponse(fake.t, response, changeResponse("PENDING"))
 	case request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/change/"):
+		fake.getCalls++
 		status := "INSYNC"
 		if len(fake.getStatuses) != 0 {
 			status = fake.getStatuses[0]
@@ -329,7 +344,113 @@ func TestRemoveUpdatesDeletesAndSkipsAbsent(t *testing.T) {
 	}
 }
 
-// R-LGE6-FYOR
+// R-FIQK-FVGO R-XUL6-VKTK
+func TestProviderBoundaryPreservesUnrequestedData(t *testing.T) {
+	values := resourceRecord("NS1.Example.") + resourceRecord("NS2.Example.")
+	target := recordSet("Delegated.Example.TEST.", "NS", "600", values)
+	unrelated := recordSet("other.example.test.", "A", "30", resourceRecord("192.0.2.9"))
+	fake := &changeServer{t: t, listing: target + unrelated}
+	provider, closeServer := newChangeProvider(t, fake)
+	defer closeServer()
+
+	records, err := provider.Records(t.Context(), "Z1")
+	if err != nil {
+		t.Fatalf("Records: %v", err)
+	}
+	if len(fake.changeBodies) != 0 || fake.getCalls != 0 {
+		t.Fatal("Records performed a write or change-status poll")
+	}
+	if len(records) != 2 || records[0].Name != "delegated.example.test" ||
+		records[0].Type != "NS" || !reflect.DeepEqual(records[0].Values, []string{"NS1.Example", "NS2.Example"}) {
+		t.Fatalf("Records = %#v", records)
+	}
+
+	if err := provider.Add(t.Context(), "Z1", records[0].Name, records[0].Type, 99, "NS3.Example"); err != nil {
+		t.Fatalf("Add listed representation: %v", err)
+	}
+	if len(fake.changeBodies) != 1 {
+		t.Fatalf("Add changes = %d", len(fake.changeBodies))
+	}
+	body := fake.changeBodies[0]
+	for _, want := range []string{
+		"<Name>Delegated.Example.TEST.</Name>", "<Type>NS</Type>", "<TTL>600</TTL>",
+		"<Value>NS1.Example.</Value>", "<Value>NS2.Example.</Value>", "<Value>NS3.Example.</Value>",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("Add body missing %q: %s", want, body)
+		}
+	}
+	if strings.Contains(body, "other.example.test") || strings.Contains(body, "192.0.2.9") {
+		t.Errorf("Add changed an unrelated record: %s", body)
+	}
+
+	fake.listing = recordSet("Delegated.Example.TEST.", "NS", "600", values+resourceRecord("NS3.Example.")) + unrelated
+	if err := provider.Remove(t.Context(), "Z1", records[0].Name, records[0].Type, records[0].Values[0]); err != nil {
+		t.Fatalf("Remove listed representation: %v", err)
+	}
+	if len(fake.changeBodies) != 2 {
+		t.Fatalf("Remove changes = %d", len(fake.changeBodies))
+	}
+	body = fake.changeBodies[1]
+	if strings.Contains(body, "NS1.Example.") || !strings.Contains(body, "NS2.Example.") ||
+		!strings.Contains(body, "NS3.Example.") || !strings.Contains(body, "<TTL>600</TTL>") {
+		t.Errorf("Remove did not preserve the rest of the set: %s", body)
+	}
+	if strings.Contains(body, "other.example.test") || strings.Contains(body, "192.0.2.9") {
+		t.Errorf("Remove changed an unrelated record: %s", body)
+	}
+}
+
+// R-EWSD-K046 R-XUL6-VKTK
+func TestTXTLogicalValuesRoundTrip(t *testing.T) {
+	providerValue := `&quot;part \&quot;quoted\&quot; &quot; &quot;\\tail&quot;`
+	logicalValue := `part "quoted" \tail`
+	fake := &changeServer{
+		t:       t,
+		listing: recordSet("txt.example.test.", "TXT", "120", resourceRecord(providerValue)),
+	}
+	provider, closeServer := newChangeProvider(t, fake)
+	defer closeServer()
+
+	records, err := provider.Records(t.Context(), "Z1")
+	if err != nil || len(records) != 1 || !reflect.DeepEqual(records[0].Values, []string{logicalValue}) {
+		t.Fatalf("Records = %#v, %v", records, err)
+	}
+	if err := provider.Add(t.Context(), "Z1", records[0].Name, records[0].Type, 99, records[0].Values[0]); err != nil {
+		t.Fatalf("idempotent Add of listed TXT: %v", err)
+	}
+	if len(fake.changeBodies) != 0 {
+		t.Fatal("Add did not recognize the listed logical TXT value")
+	}
+
+	newValue := `next "value" \path`
+	if err := provider.Add(t.Context(), "Z1", records[0].Name, records[0].Type, 99, newValue); err != nil {
+		t.Fatalf("Add escaped TXT: %v", err)
+	}
+	if len(fake.changeBodies) != 1 {
+		t.Fatalf("Add changes = %d", len(fake.changeBodies))
+	}
+	body := fake.changeBodies[0]
+	if !strings.Contains(body, `&#34;next \&#34;value\&#34; \\path&#34;`) {
+		t.Errorf("Add did not encode TXT quotes and backslashes: %s", body)
+	}
+
+	newProviderValue := `&quot;next \&quot;value\&quot; \\path&quot;`
+	fake.listing = recordSet("txt.example.test.", "TXT", "120", resourceRecord(providerValue)+resourceRecord(newProviderValue))
+	if err := provider.Remove(t.Context(), "Z1", records[0].Name, records[0].Type, records[0].Values[0]); err != nil {
+		t.Fatalf("Remove listed TXT: %v", err)
+	}
+	if len(fake.changeBodies) != 2 {
+		t.Fatalf("Remove changes = %d", len(fake.changeBodies))
+	}
+	body = fake.changeBodies[1]
+	if strings.Contains(body, "part") || !strings.Contains(body, `next \&#34;value\&#34; \\path`) ||
+		!strings.Contains(body, "<TTL>120</TTL>") {
+		t.Errorf("Remove did not preserve only the other logical TXT value: %s", body)
+	}
+}
+
+// R-EY09-XRUV
 func TestChangesWaitForINSYNCAndWrapContextError(t *testing.T) {
 	t.Run("Add", func(t *testing.T) {
 		fake := &changeServer{t: t, getStatuses: []string{"PENDING", "INSYNC"}}
@@ -352,6 +473,18 @@ func TestChangesWaitForINSYNCAndWrapContextError(t *testing.T) {
 		err := provider.Add(ctx, "Z1", "b.example.test", "A", 30, "192.0.2.2")
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("Add cancellation error = %v", err)
+		}
+		if len(fake.changeBodies) != 2 {
+			t.Fatalf("Add cancellation submitted rollback: %d change requests", len(fake.changeBodies))
+		}
+
+		fake.listing = recordSet("b.example.test.", "A", "30", resourceRecord("192.0.2.2"))
+		getCalls := fake.getCalls
+		if err := provider.Add(context.Background(), "Z1", "b.example.test", "A", 99, "192.0.2.2"); err != nil {
+			t.Fatalf("idempotent Add: %v", err)
+		}
+		if fake.getCalls != getCalls || len(fake.changeBodies) != 2 {
+			t.Fatal("idempotent Add submitted or waited for a change")
 		}
 	})
 
@@ -376,6 +509,18 @@ func TestChangesWaitForINSYNCAndWrapContextError(t *testing.T) {
 		err := provider.Remove(ctx, "Z1", "a.example.test", "A", "192.0.2.1")
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("Remove cancellation error = %v", err)
+		}
+		if len(fake.changeBodies) != 2 {
+			t.Fatalf("Remove cancellation submitted rollback: %d change requests", len(fake.changeBodies))
+		}
+
+		fake.listing = ""
+		getCalls := fake.getCalls
+		if err := provider.Remove(context.Background(), "Z1", "a.example.test", "A", "192.0.2.1"); err != nil {
+			t.Fatalf("idempotent Remove: %v", err)
+		}
+		if fake.getCalls != getCalls || len(fake.changeBodies) != 2 {
+			t.Fatal("idempotent Remove submitted or waited for a change")
 		}
 	})
 }
