@@ -303,7 +303,7 @@ func TestWriteFailuresPreserveHostStateAndCleanTemporaryFiles(t *testing.T) {
 		seedNginxSentinels(t, root)
 		destination := filepath.Join(configurationDirectory, "ikigenba.conf")
 		before := snapshotUnrelatedNginxFiles(t, root)
-		injectedFailure := observeNextTemporaryConfiguration(t, configurationDirectory, func() error {
+		injectedFailure := observeNextTemporaryConfiguration(t, configurationDirectory, func(string) error {
 			if err := os.Mkdir(destination, 0o750); err != nil {
 				return err
 			}
@@ -324,12 +324,65 @@ func TestWriteFailuresPreserveHostStateAndCleanTemporaryFiles(t *testing.T) {
 			t.Fatalf("Write error = %v, want publication failure", err)
 		}
 		assertNoTemporaryConfigurations(t, configurationDirectory)
-		if removeErr := os.RemoveAll(destination); removeErr != nil {
-			t.Fatalf("remove injected destination: %v", removeErr)
+		destinationInfo, statErr := os.Stat(destination)
+		if statErr != nil {
+			t.Fatalf("stat injected destination: %v", statErr)
 		}
-		if _, statErr := os.Stat(destination); !os.IsNotExist(statErr) {
-			t.Fatalf("destination after failed publication: %v", statErr)
+		if !destinationInfo.IsDir() || destinationInfo.Mode().Perm() != 0o750 {
+			t.Fatalf("injected destination mode = %v, want directory 0750", destinationInfo.Mode())
 		}
+		marker := filepath.Join(destination, "blocks-rename")
+		destinationRoot, openErr := os.OpenRoot(destination)
+		if openErr != nil {
+			t.Fatalf("open injected destination: %v", openErr)
+		}
+		markerContents, readErr := destinationRoot.ReadFile("blocks-rename")
+		closeErr := destinationRoot.Close()
+		if readErr != nil {
+			t.Fatalf("read injected destination marker: %v", readErr)
+		}
+		if closeErr != nil {
+			t.Fatalf("close injected destination: %v", closeErr)
+		}
+		if string(markerContents) != "injected" {
+			t.Fatalf("injected destination marker = %q, want %q", markerContents, "injected")
+		}
+		markerInfo, statErr := os.Stat(marker)
+		if statErr != nil {
+			t.Fatalf("stat injected destination marker: %v", statErr)
+		}
+		if markerInfo.Mode().Perm() != 0o600 {
+			t.Fatalf("injected destination marker mode = %04o, want 0600", markerInfo.Mode().Perm())
+		}
+		if after := snapshotUnrelatedNginxFiles(t, root); !reflect.DeepEqual(after, before) {
+			t.Fatalf("failed Write changed unrelated files under /etc/nginx\nbefore: %#v\nafter:  %#v", before, after)
+		}
+	})
+
+	t.Run("existing destination survives publication failure", func(t *testing.T) {
+		root := t.TempDir()
+		configurationDirectory := filepath.Join(root, "etc", "nginx", "conf.d")
+		mkdir(t, configurationDirectory)
+		seedNginxSentinels(t, root)
+		destination := filepath.Join(configurationDirectory, "ikigenba.conf")
+		previous := []byte("previous configuration\n")
+		if err := os.WriteFile(destination, previous, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		before := snapshotUnrelatedNginxFiles(t, root)
+		injectedFailure := observeNextTemporaryConfiguration(t, configurationDirectory, os.Remove)
+		hostName := strings.Repeat("h", 8<<20)
+		err := nginx.Write(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
+			t.Fatal("Write executed a command")
+			return host.Result{}, nil
+		}}, hostName)
+		if injectErr := <-injectedFailure; injectErr != nil {
+			t.Fatalf("inject publication failure: %v", injectErr)
+		}
+		if err == nil || !strings.Contains(err.Error(), "publish nginx configuration") {
+			t.Fatalf("Write error = %v, want publication failure", err)
+		}
+		assertPublishedConfiguration(t, configurationDirectory, previous, 0o600)
 		if after := snapshotUnrelatedNginxFiles(t, root); !reflect.DeepEqual(after, before) {
 			t.Fatalf("failed Write changed unrelated files under /etc/nginx\nbefore: %#v\nafter:  %#v", before, after)
 		}
@@ -666,8 +719,9 @@ func snapshotUnrelatedNginxFiles(t *testing.T, root string) map[string]treeEntry
 	nginxRoot := filepath.Join(root, "etc", "nginx")
 	all := snapshotTree(t, nginxRoot)
 	files := make(map[string]treeEntry)
+	destination := filepath.Join("conf.d", "ikigenba.conf")
 	for path, entry := range all {
-		if entry.Mode.IsDir() || path == filepath.Join("conf.d", "ikigenba.conf") {
+		if entry.Mode.IsDir() || path == destination || strings.HasPrefix(path, destination+string(filepath.Separator)) {
 			continue
 		}
 		files[path] = entry
@@ -675,7 +729,7 @@ func snapshotUnrelatedNginxFiles(t *testing.T, root string) map[string]treeEntry
 	return files
 }
 
-func observeNextTemporaryConfiguration(t *testing.T, directory string, inject func() error) <-chan error {
+func observeNextTemporaryConfiguration(t *testing.T, directory string, inject func(string) error) <-chan error {
 	t.Helper()
 	fd, err := syscall.InotifyInit1(syscall.IN_CLOEXEC)
 	if err != nil {
@@ -705,7 +759,7 @@ func observeNextTemporaryConfiguration(t *testing.T, directory string, inject fu
 				name := strings.TrimRight(string(buffer[offset+syscall.SizeofInotifyEvent:eventEnd]), "\x00")
 				if strings.HasPrefix(name, temporaryConfigurationPrefix) {
 					if inject != nil {
-						result <- inject()
+						result <- inject(filepath.Join(directory, name))
 						return
 					}
 					result <- nil
