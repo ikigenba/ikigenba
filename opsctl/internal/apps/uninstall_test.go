@@ -67,13 +67,46 @@ func TestUninstallRejectsEveryMissingPrerequisiteBeforeEffects(t *testing.T) {
 			before := snapshotUninstallTree(t, fixture.root)
 			err := fixture.uninstall()
 			var failure *apps.LifecycleError
-			if !errors.As(err, &failure) || len(fixture.commands) != 0 || len(fixture.reports) != 0 || fixture.configureCalls != 0 {
+			wantReports := 1
+			if test.name == "nil report" || test.name == "nil configure" {
+				wantReports = 0
+			}
+			if !errors.As(err, &failure) || len(fixture.commands) != 0 || len(fixture.reports) != wantReports ||
+				wantReports == 1 && (fixture.reports[0].step != "stop" || fixture.reports[0].success) || fixture.configureCalls != 0 {
 				t.Fatalf("Uninstall = %#v, commands = %#v, reports = %#v, configure calls = %d", err, fixture.commands, fixture.reports, fixture.configureCalls)
 			}
 			if after := snapshotUninstallTree(t, fixture.root); !reflect.DeepEqual(after, before) {
 				t.Fatalf("host tree mutated:\nbefore %#v\nafter  %#v", before, after)
 			}
 		})
+	}
+}
+
+func TestUninstallActionAndReportFailuresAreJoined(t *testing.T) {
+	// R-ETFY-8BTG R-EVVQ-ZVAU R-EX3N-DN1J
+	fixture := newUninstallFixture(t, "active")
+	actionErr := errors.New("stop transport failed")
+	reportErr := errors.New("report write failed")
+	fixture.report = func(step, _ string, success bool) error {
+		if step != "stop" || success {
+			t.Fatalf("outcome = %s success=%t, want failed stop", step, success)
+		}
+		return reportErr
+	}
+	err := apps.Uninstall(context.Background(), host.Env{Root: fixture.root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+		if reflect.DeepEqual(command.Args, []string{"is-active", "ikigenba-notes.service"}) {
+			return host.Result{Stdout: []byte("active\n")}, nil
+		}
+		if reflect.DeepEqual(command.Args, []string{"stop", "ikigenba-notes.service"}) {
+			return host.Result{}, actionErr
+		}
+		t.Fatalf("unexpected command %#v", command)
+		return host.Result{}, nil
+	}}, "notes", apps.UninstallHooks{Report: fixture.report, Configure: fixture.configure})
+	var commandErr *host.CommandError
+	if !errors.Is(err, actionErr) || !errors.Is(err, reportErr) || !errors.As(err, &commandErr) ||
+		commandErr.Label != "stop ikigenba-notes.service" {
+		t.Fatalf("Uninstall error = %#v, command error = %#v", err, commandErr)
 	}
 }
 

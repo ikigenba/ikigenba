@@ -98,7 +98,7 @@ func TestRestartCommandReportsFailureOnceWithStartupJournal(t *testing.T) {
 	}
 }
 
-func TestRestartCommandPreflightFailuresHaveNoOutcome(t *testing.T) {
+func TestRestartCommandValidationPrecedesServiceStage(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		app  string
@@ -107,7 +107,14 @@ func TestRestartCommandPreflightFailuresHaveNoOutcome(t *testing.T) {
 		code int
 	}{
 		{name: "invalid", app: "bad/name", root: func(t *testing.T) string { return filepath.Join(t.TempDir(), "missing") }, want: "opsctl: 'bad/name' is not a usable app name\n", code: 2},
-		{name: "missing", app: "notes", root: func(t *testing.T) string { return t.TempDir() }, want: "opsctl: no service 'notes'\n", code: 1},
+		{name: "missing", app: "notes", root: func(t *testing.T) string { return t.TempDir() }, want: "service: failed: no service 'notes'\n", code: 1},
+		{name: "binary missing", app: "notes", root: func(t *testing.T) string {
+			root := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(root, "opt/notes/etc"), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			return root
+		}, want: "service: failed: notes is not installed\n", code: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			executed := false
@@ -115,7 +122,11 @@ func TestRestartCommandPreflightFailuresHaveNoOutcome(t *testing.T) {
 				executed = true
 				return host.Result{}, nil
 			}})
-			if code != test.code || stdout != "" || stderr != test.want || executed {
+			wantStdout, wantStderr := "", test.want
+			if test.name != "invalid" {
+				wantStdout, wantStderr = test.want, "opsctl: restart failed\n"
+			}
+			if code != test.code || stdout != wantStdout || stderr != wantStderr || executed {
 				t.Fatalf("preflight = exit %d stdout %q stderr %q executed %t", code, stdout, stderr, executed)
 			}
 		})

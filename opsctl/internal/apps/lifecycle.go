@@ -40,7 +40,7 @@ func (failure *LifecycleError) Unwrap() error { return failure.Cause }
 // Uninstall removes an installed app's executable configuration while keeping
 // its state for backup and a later installation.
 func Uninstall(ctx context.Context, env host.Env, app string, hooks UninstallHooks) error {
-	workflow, err := prepareUninstall(ctx, env, app, hooks)
+	workflow, err := prepareUninstall(env, app, hooks)
 	if err != nil {
 		return err
 	}
@@ -53,32 +53,23 @@ type uninstallWorkflow struct {
 	unit     string
 	hooks    UninstallHooks
 	manifest Manifest
-	active   bool
 }
 
-func prepareUninstall(ctx context.Context, env host.Env, app string, hooks UninstallHooks) (*uninstallWorkflow, error) {
+func prepareUninstall(env host.Env, app string, hooks UninstallHooks) (*uninstallWorkflow, error) {
 	if err := ValidateName(app); err != nil {
 		return nil, &LifecycleError{Code: 2, Message: fmt.Sprintf("'%s' is not a usable app name", safeDiagnosticToken(app)), Cause: err}
 	}
 	if hooks.Report == nil {
-		return nil, &LifecycleError{Code: 1, Message: "uninstall report hook not set", Cause: errors.New("report callback is nil")}
+		return nil, &LifecycleError{Code: 1, Message: "uninstall report hook not set", Cause: errors.New("callback is nil")}
 	}
 	if hooks.Configure == nil {
-		return nil, &LifecycleError{Code: 1, Message: "uninstall configure hook not set", Cause: errors.New("configure callback is nil")}
+		return nil, &LifecycleError{Code: 1, Message: "uninstall configure hook not set", Cause: errors.New("callback is nil")}
 	}
 	if env.Execute == nil {
 		return nil, &LifecycleError{Code: 1, Message: "uninstall failed", Cause: errors.New("host execution is not configured")}
 	}
 
-	manifest, unit, err := uninstallFiles(env.Root, app)
-	if err != nil {
-		return nil, err
-	}
-	active, err := uninstallUnitActive(ctx, env, unit)
-	if err != nil {
-		return nil, err
-	}
-	return &uninstallWorkflow{env: env, app: app, unit: unit, hooks: hooks, manifest: manifest, active: active}, nil
+	return &uninstallWorkflow{env: env, app: app, hooks: hooks}, nil
 }
 
 func uninstallFiles(root, app string) (Manifest, string, error) {
@@ -136,7 +127,7 @@ func uninstallFiles(root, app string) (Manifest, string, error) {
 func uninstallUnitActive(ctx context.Context, env host.Env, unit string) (bool, error) {
 	result, err := env.Execute(ctx, host.Command{Name: "systemctl", Args: []string{"is-active", unit}})
 	if err != nil {
-		cause := commandTransportError(fmt.Sprintf("inspect %s", safeDiagnosticToken(unit)), err)
+		cause := commandTransportError(fmt.Sprintf("%s state", safeDiagnosticToken(unit)), err)
 		return false, &LifecycleError{Code: 1, Message: "inspect service failed", Cause: cause}
 	}
 	switch result.ExitCode {
@@ -145,7 +136,7 @@ func uninstallUnitActive(ctx context.Context, env host.Env, unit string) (bool, 
 	case 3, 4:
 		return false, nil
 	default:
-		cause := &host.CommandError{Label: fmt.Sprintf("inspect %s", safeDiagnosticToken(unit)), Result: result}
+		cause := &host.CommandError{Label: fmt.Sprintf("%s state", safeDiagnosticToken(unit)), Result: result}
 		return false, &LifecycleError{Code: 1, Message: "inspect service failed", Cause: cause}
 	}
 }
@@ -167,8 +158,19 @@ func (workflow *uninstallWorkflow) run(ctx context.Context) error {
 }
 
 func (workflow *uninstallWorkflow) stop(ctx context.Context) error {
+	manifest, unit, err := uninstallFiles(workflow.env.Root, workflow.app)
+	if err != nil {
+		return workflow.fail("stop", err)
+	}
+	workflow.manifest = manifest
+	workflow.unit = unit
+	active, err := uninstallUnitActive(ctx, workflow.env, unit)
+	if err != nil {
+		return workflow.fail("stop", err)
+	}
+
 	safeUnit := safeDiagnosticToken(workflow.unit)
-	if workflow.active {
+	if active {
 		if err := executeInstallCommand(ctx, workflow.env, "stop "+safeUnit, host.Command{
 			Name: "systemctl", Args: []string{"stop", workflow.unit},
 		}); err != nil {
@@ -181,7 +183,7 @@ func (workflow *uninstallWorkflow) stop(ctx context.Context) error {
 		return workflow.fail("stop", err)
 	}
 	detail := safeUnit + " already inactive, disabled"
-	if workflow.active {
+	if active {
 		detail = safeUnit + " stopped, disabled"
 	}
 	return workflow.report("stop", detail)
@@ -241,15 +243,12 @@ func Restart(ctx context.Context, env host.Env, app string) (StatusRow, error) {
 	if err := ValidateName(app); err != nil {
 		return StatusRow{}, &LifecycleError{Code: 2, Message: fmt.Sprintf("'%s' is not a usable app name", safeDiagnosticToken(app)), Cause: err}
 	}
-	if err := restartPrerequisites(env.Root, app); err != nil {
-		return StatusRow{}, err
-	}
 	if env.Execute == nil {
 		err := errors.New("host execution is not configured")
 		return StatusRow{}, &LifecycleError{Code: 1, Message: "restart failed", Cause: err}
 	}
 
-	if err := restartInstalledUnit(ctx, env, app); err != nil {
+	if err := restartServiceStage(ctx, env, app); err != nil {
 		return StatusRow{}, err
 	}
 	version, err := restartVersion(ctx, env, app)
@@ -257,6 +256,13 @@ func Restart(ctx context.Context, env host.Env, app string) (StatusRow, error) {
 		return StatusRow{}, err
 	}
 	return StatusRow{Name: app, Version: version, State: "active", JournalMode: "-"}, nil
+}
+
+func restartServiceStage(ctx context.Context, env host.Env, app string) error {
+	if err := restartPrerequisites(env.Root, app); err != nil {
+		return err
+	}
+	return restartInstalledUnit(ctx, env, app)
 }
 
 func restartInstalledUnit(ctx context.Context, env host.Env, app string) error {
@@ -282,11 +288,11 @@ func restartVersion(ctx context.Context, env host.Env, app string) (string, erro
 	binary := rootedHostPath(env.Root, "opt", app, "bin", app)
 	result, err := env.Execute(ctx, host.Command{Name: binary, Args: []string{"--version"}})
 	if err != nil {
-		cause := commandTransportError(fmt.Sprintf("read %s version", safeDiagnosticToken(app)), err)
+		cause := commandTransportError(fmt.Sprintf("execute %s binary", safeDiagnosticToken(app)), err)
 		return "", &LifecycleError{Code: 1, Message: "read app version failed", Cause: cause}
 	}
 	if result.ExitCode != 0 {
-		cause := &host.CommandError{Label: fmt.Sprintf("read %s version", safeDiagnosticToken(app)), Result: result}
+		cause := &host.CommandError{Label: fmt.Sprintf("execute %s binary", safeDiagnosticToken(app)), Result: result}
 		return "", &LifecycleError{Code: 1, Message: "read app version failed", Cause: cause}
 	}
 	return trimVersionLineEnding(string(result.Stdout)), nil
@@ -360,7 +366,7 @@ func restartStartFailure(ctx context.Context, env host.Env, app, unit string, st
 		journalErr := &host.CommandError{Label: fmt.Sprintf("obtain %s journal", safeDiagnosticToken(unit)), Result: result}
 		return &LifecycleError{Code: 1, Message: message, Cause: errors.Join(startErr, journalErr)}
 	}
-	cause := &host.CommandError{Label: "journal captured after service startup failure", Result: result, Err: startErr}
+	cause := &host.CommandError{Label: "journal captured", Result: result, Err: startErr}
 	return &LifecycleError{Code: 1, Message: message, Cause: cause}
 }
 

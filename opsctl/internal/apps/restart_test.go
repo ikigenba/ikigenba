@@ -113,7 +113,7 @@ func TestRestartChecksResultingStateAfterSuccessfulRestart(t *testing.T) {
 				var journal *host.CommandError
 				if !reflect.DeepEqual(row, apps.StatusRow{}) || !errors.As(err, &failure) || failure.Code != 1 ||
 					failure.Message != "notes: service failed to start" || !errors.As(err, &journal) ||
-					journal.Label != "journal captured after service startup failure" ||
+					journal.Label != "journal captured" ||
 					string(journal.Result.Stdout) != "journal for "+resultingState+"\n" {
 					t.Fatalf("Restart = (%#v, %#v), journal = %#v", row, err, journal)
 				}
