@@ -59,6 +59,44 @@ func Regenerate(ctx context.Context, env host.Env, store config.Store) (bool, er
 	return updateConfiguration(ctx, env.Root, renderConfiguration(env.Root, settings, services))
 }
 
+// SetupReplication generates the shared Litestream configuration and enables
+// its service, restarting it only when the configuration changed.
+func SetupReplication(ctx context.Context, env host.Env, store config.Store) error {
+	changed, err := Regenerate(ctx, env, store)
+	if err != nil {
+		return err
+	}
+	if env.Execute == nil {
+		return errors.New("setup replication: host execution is not configured")
+	}
+	if err := executeReplicationCommand(ctx, env, "enable litestream.service", "enable"); err != nil {
+		return err
+	}
+	action := "start"
+	if changed {
+		action = "restart"
+	}
+	return executeReplicationCommand(ctx, env, action+" litestream.service", action)
+}
+
+func executeReplicationCommand(ctx context.Context, env host.Env, label, action string) error {
+	result, err := env.Execute(ctx, host.Command{
+		Name: "systemctl",
+		Args: []string{action, "litestream.service"},
+	})
+	if err != nil {
+		var commandErr *host.CommandError
+		if errors.As(err, &commandErr) {
+			return err
+		}
+		return &host.CommandError{Label: label, Result: result, Err: err}
+	}
+	if result.ExitCode != 0 {
+		return &host.CommandError{Label: label, Result: result}
+	}
+	return nil
+}
+
 func regenerationInputs(ctx context.Context, root string, store config.Store) (replicationSettings, []databaseService, error) {
 	if err := ctx.Err(); err != nil {
 		return replicationSettings{}, nil, fmt.Errorf("regenerate litestream configuration: %w", err)
@@ -81,7 +119,7 @@ func regenerationInputs(ctx context.Context, root string, store config.Store) (r
 func updateConfiguration(ctx context.Context, root string, contents []byte) (bool, error) {
 	filesystem, err := os.OpenRoot(root)
 	if err != nil {
-		return false, fmt.Errorf("read /etc/litestream.yml: %w", err)
+		return false, fmt.Errorf("read /%s: %w", litestreamPath, err)
 	}
 	defer func() { _ = filesystem.Close() }()
 
@@ -90,13 +128,13 @@ func updateConfiguration(ctx context.Context, root string, contents []byte) (boo
 		return false, nil
 	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return false, fmt.Errorf("read /etc/litestream.yml: %w", err)
+		return false, fmt.Errorf("read /%s: %w", litestreamPath, err)
 	}
 	if err := ctx.Err(); err != nil {
 		return false, fmt.Errorf("regenerate litestream configuration: %w", err)
 	}
 	if err := publishConfiguration(filesystem, contents); err != nil {
-		return false, fmt.Errorf("write /etc/litestream.yml: %w", err)
+		return false, fmt.Errorf("write /%s: %w", litestreamPath, err)
 	}
 	return true, nil
 }
