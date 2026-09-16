@@ -152,6 +152,13 @@ func TestDiscoverUsesDirectoryIdentityAndRetainsStateOnlyServices(t *testing.T) 
 func TestServiceModelUsesHostLocalInputs(t *testing.T) {
 	root := t.TempDir()
 	manifestData := []byte("app = \"notes\"\nport = 3200\n[database]\nengine = \"sqlite\"\npath = \"state/notes.db\"\n")
+	wantManifest := apps.Manifest{
+		App:      "notes",
+		Port:     3200,
+		Secrets:  []string{},
+		Env:      map[string]string{},
+		Database: &apps.Database{Engine: "sqlite", Path: "state/notes.db"},
+	}
 	writeManifest(t, root, "notes", string(manifestData))
 	mkdirAll(t, filepath.Join(root, "opt", "notes", "state"))
 	writeFile(t, filepath.Join(root, "opt", "notes", "state", "notes.db"), []byte("database"))
@@ -164,12 +171,15 @@ func TestServiceModelUsesHostLocalInputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseManifest returned error: %v", err)
 	}
+	if !reflect.DeepEqual(decoded, wantManifest) {
+		t.Fatalf("ParseManifest = %#v, want %#v", decoded, wantManifest)
+	}
 	services, err := apps.Discover(root)
 	if err != nil {
 		t.Fatalf("Discover returned error: %v", err)
 	}
-	if len(services) != 1 || services[0].Name != "notes" || services[0].ManifestError != nil || !reflect.DeepEqual(services[0].Manifest, &decoded) {
-		t.Fatalf("shared exported contract result = %#v, decoded %#v", services, decoded)
+	if len(services) != 1 || services[0].Name != "notes" || services[0].ManifestError != nil || !reflect.DeepEqual(services[0].Manifest, &wantManifest) {
+		t.Fatalf("shared exported contract result = %#v, want manifest %#v", services, wantManifest)
 	}
 
 	writeFile(t, filepath.Join(root, "var", "lib", "opsctl", "registrations", "wrong"), []byte("changed remote record"))
