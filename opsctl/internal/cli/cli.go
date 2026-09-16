@@ -2,7 +2,9 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"io"
 	"net"
@@ -31,9 +33,19 @@ const usageText = `Usage: opsctl [options] <command> [arguments]
 Operate the ikigenba platform host. Must run as root.
 
 Commands:
+  backup    back up a service's files to S3
+  cert      obtain and inspect the host's certificate
   config    read and write the host configuration store
   dns       manage DNS records in the zones opsctl owns
+  host      back up and restore the host's own configuration
   init      run the setup sequence behind one preflight
+  install   install an app from a built file
+  nginx     generate the platform's nginx configuration
+  restart   restart an installed app's service
+  restore   restore a service from its backups
+  retire    stop every service and take the host's final backup
+  status    print every installed app, its version and its state
+  uninstall take an app off the host, keeping its data
   version   print the version
 
 Options:
@@ -189,6 +201,8 @@ func diagnosticArg(s string) string {
 
 func dispatch(name string, args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	switch name {
+	case "backup", "cert", "host", "install", "nginx", "restart", "restore", "retire", "status", "uninstall":
+		return runCommandFrame(name, args, stdout, stderr, deps)
 	case "config":
 		return runConfig(args, stdout, stderr, deps)
 	case "dns":
@@ -213,4 +227,51 @@ func requireRoot(deps Deps, stderr io.Writer) exitCode {
 	}
 	_, _ = io.WriteString(stderr, "opsctl: must run as root\n")
 	return exitRefused
+}
+
+// runCommandFrame provides grammar for actions whose domain is not built yet.
+func runCommandFrame(name string, args []string, stdout, stderr io.Writer, deps Deps) exitCode {
+	if isCommandHelp(args) {
+		return writeOut(stdout, "Usage: opsctl "+name+" [arguments]\n")
+	}
+	if code := requireRoot(deps, stderr); code != exitOK {
+		return code
+	}
+	writeDiagnostic(stderr, errors.New(name+": operation is not implemented"))
+	return exitFail
+}
+
+// writeDiagnostic keeps operation errors and captured process output on stderr.
+func writeDiagnostic(stderr io.Writer, err error) {
+	message, detail, _ := strings.Cut(err.Error(), "\n")
+	_, _ = io.WriteString(stderr, "opsctl: "+diagnosticArg(message)+"\n")
+	var commandErr *host.CommandError
+	if errors.As(err, &commandErr) {
+		if len(commandErr.Result.Stdout)+len(commandErr.Result.Stderr) == 0 {
+			return
+		}
+		_, _ = io.WriteString(stderr, "\n")
+		quoteCapture(stderr, commandErr.Result.Stdout)
+		quoteCapture(stderr, commandErr.Result.Stderr)
+		return
+	}
+	if detail != "" {
+		_, _ = io.WriteString(stderr, "\n"+strings.TrimLeft(detail, "\n"))
+		if !strings.HasSuffix(detail, "\n") {
+			_, _ = io.WriteString(stderr, "\n")
+		}
+	}
+}
+
+func quoteCapture(stderr io.Writer, capture []byte) {
+	for len(capture) > 0 {
+		line, rest, found := bytes.Cut(capture, []byte("\n"))
+		_, _ = io.WriteString(stderr, "> ")
+		_, _ = stderr.Write(line)
+		_, _ = io.WriteString(stderr, "\n")
+		if !found {
+			return
+		}
+		capture = rest
+	}
 }

@@ -52,7 +52,7 @@ func writeConfigUsageError(stderr io.Writer, message string) exitCode {
 }
 
 func configErr(stderr io.Writer, err error) exitCode {
-	_, _ = fmt.Fprintf(stderr, "opsctl: %v\n", err)
+	writeDiagnostic(stderr, err)
 	return exitFail
 }
 

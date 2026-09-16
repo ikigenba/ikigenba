@@ -10,7 +10,7 @@ import (
 
 func TestBinaryHelp(t *testing.T) {
 	// R-N0T5-G71B
-	// R-EALS-YXXE
+	// R-EJY9-95KZ
 	t.Cleanup(func() { _ = os.Remove("opsctl.help.test") })
 	build := exec.Command("go", "build", "-o", "opsctl.help.test", ".")
 	if out, err := build.CombinedOutput(); err != nil {
@@ -42,9 +42,19 @@ func TestBinaryHelp(t *testing.T) {
 Operate the ikigenba platform host. Must run as root.
 
 Commands:
+  backup    back up a service's files to S3
+  cert      obtain and inspect the host's certificate
   config    read and write the host configuration store
   dns       manage DNS records in the zones opsctl owns
+  host      back up and restore the host's own configuration
   init      run the setup sequence behind one preflight
+  install   install an app from a built file
+  nginx     generate the platform's nginx configuration
+  restart   restart an installed app's service
+  restore   restore a service from its backups
+  retire    stop every service and take the host's final backup
+  status    print every installed app, its version and its state
+  uninstall take an app off the host, keeping its data
   version   print the version
 
 Options:

@@ -25,9 +25,19 @@ const wantUsage = `Usage: opsctl [options] <command> [arguments]
 Operate the ikigenba platform host. Must run as root.
 
 Commands:
+  backup    back up a service's files to S3
+  cert      obtain and inspect the host's certificate
   config    read and write the host configuration store
   dns       manage DNS records in the zones opsctl owns
+  host      back up and restore the host's own configuration
   init      run the setup sequence behind one preflight
+  install   install an app from a built file
+  nginx     generate the platform's nginx configuration
+  restart   restart an installed app's service
+  restore   restore a service from its backups
+  retire    stop every service and take the host's final backup
+  status    print every installed app, its version and its state
+  uninstall take an app off the host, keeping its data
   version   print the version
 
 Options:
@@ -203,10 +213,10 @@ func TestTopLevelGrammar(t *testing.T) {
 }
 
 func TestCommandSet(t *testing.T) {
-	// R-EALS-YXXE
+	// R-EJY9-95KZ
 	user := depsAt(t, 1)
 
-	if got, want := functionSwitchCases(t, "dispatch"), []string{"config", "dns", "init", "version"}; !slices.Equal(got, want) {
+	if got, want := functionSwitchCases(t, "dispatch"), allCommands; !slices.Equal(got, want) {
 		t.Fatalf("top-level dispatch cases = %q, want exactly %q", got, want)
 	}
 
@@ -230,7 +240,7 @@ func TestCommandSet(t *testing.T) {
 		t.Errorf("init: exit %d stdout %q stderr %q, want init usage", code, stdout, stderr)
 	}
 
-	for _, name := range []string{"status", "other", "config-backup", "VERSION"} {
+	for _, name := range []string{"other", "config-backup", "VERSION"} {
 		stdout, stderr, code = invoke([]string{name}, user)
 		wantErr := "opsctl: unknown command '" + name + "'\n\nsee 'opsctl --help' for usage\n"
 		if code != 2 || stdout != "" || stderr != wantErr {
@@ -286,7 +296,7 @@ func functionSwitchCases(t *testing.T, function string) []string {
 }
 
 func TestTopLevelHelp(t *testing.T) {
-	// R-EBTP-CPO3
+	// R-EL65-MXBO
 	user := depsAt(t, 1)
 	for _, args := range [][]string{{"--help"}, {"-h"}} {
 		stdout, stderr, code := invoke(args, user)
@@ -475,7 +485,7 @@ func TestVersionOutput(t *testing.T) {
 }
 
 func TestActionRequiresRoot(t *testing.T) {
-	// R-NBS8-W4PK
+	// R-ENLY-EGT2
 	for _, args := range [][]string{
 		{"config", "set", "dns.zones=ikigenba.dev"},
 		{"config", "get", "dns.zones"},
@@ -543,7 +553,7 @@ func TestHelpAndVersionWithoutRoot(t *testing.T) {
 }
 
 func TestStderrPrefix(t *testing.T) {
-	// R-R0P9-H29Y
+	// R-EQ1R-60AG
 	user := depsAt(t, 1)
 	root := depsAt(t, 0)
 	configured := configuredDNSDeps(t, &fakeDNSProvider{recordsErr: map[string]error{"ZONE": errors.New("provider failed")}}, "example.com")

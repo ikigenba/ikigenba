@@ -130,14 +130,14 @@ func writeDNSUsageError(stderr io.Writer, message string) exitCode {
 
 func dnsOpenError(stderr io.Writer, err error) exitCode {
 	if errors.Is(err, dns.ErrNotConfigured) {
-		_, _ = fmt.Fprintf(stderr, "opsctl: %v\n", err)
+		writeDiagnostic(stderr, err)
 		return exitFail
 	}
 	return dnsError(stderr, err)
 }
 
 func dnsError(stderr io.Writer, err error) exitCode {
-	_, _ = fmt.Fprintf(stderr, "opsctl: %v\n", err)
+	writeDiagnostic(stderr, err)
 	return exitFail
 }
 
