@@ -124,6 +124,11 @@ func executeFileBackup(ctx context.Context, env host.Env, plan fileBackupPlan) (
 			}
 			continue
 		}
+		if err := ctx.Err(); err != nil {
+			result.Err = fmt.Errorf("archive %q: %w", selected.Name, err)
+			results = append(results, result)
+			return results, fmt.Errorf("backup files: %w", err)
+		}
 
 		object := strings.TrimSuffix(plan.prefix, "/") + "/" + selected.Name + "/" + plan.basename
 		uploadErr := plan.client.PutObject(ctx, object, bytes.NewReader(compressed))
@@ -134,6 +139,11 @@ func executeFileBackup(ctx context.Context, env host.Env, plan fileBackupPlan) (
 				return results, fmt.Errorf("backup files: %w", interrupted)
 			}
 			continue
+		}
+		if err := ctx.Err(); err != nil {
+			result.Err = fmt.Errorf("upload %q: %w", object, err)
+			results = append(results, result)
+			return results, fmt.Errorf("backup files: %w", err)
 		}
 		result.Object = plan.basename
 		result.Size = int64(len(compressed))
@@ -173,7 +183,7 @@ func selectFileServices(root, service string) ([]apps.Service, error) {
 func discoverFileService(root, name string) (apps.Service, bool, error) {
 	filesystem, err := os.OpenRoot(root)
 	if err != nil {
-		return apps.Service{}, false, fmt.Errorf("discover service %q: open root: %w", name, err)
+		return apps.Service{}, false, fmt.Errorf("discover service %q: %w", name, err)
 	}
 	defer func() { _ = filesystem.Close() }()
 
@@ -240,7 +250,7 @@ func singleQuotedDiagnostic(value string) string {
 func serviceArchive(ctx context.Context, env host.Env, service apps.Service) ([]byte, error) {
 	filesystem, err := os.OpenRoot(env.Root)
 	if err != nil {
-		return nil, fmt.Errorf("archive %q: open root: %w", service.Name, err)
+		return nil, fmt.Errorf("archive %q: %w", service.Name, err)
 	}
 	defer func() { _ = filesystem.Close() }()
 

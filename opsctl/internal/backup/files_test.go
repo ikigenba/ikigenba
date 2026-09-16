@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -108,6 +109,17 @@ func TestFilesSelectsAndArchivesServiceTrees(t *testing.T) {
 	writeFile(t, root, "opt/zeta/etc/env", "Z=1\n", 0o600)
 	writeFile(t, root, "opt/ignored/cache/item", "ignored", 0o600)
 	writeFile(t, root, "etc/systemd/system/generated.service", "unit", 0o644)
+	for name, mode := range map[string]fs.FileMode{
+		"opt/alpha/etc":               0o711,
+		"opt/alpha/state":             0o750,
+		"opt/alpha/etc/env":           0o640,
+		"opt/alpha/etc/manifest.toml": 0o440,
+		"opt/alpha/state/data.txt":    0o604,
+	} {
+		if err := os.Chmod(filepath.Join(root, filepath.FromSlash(name)), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
 	before := fileTreeSnapshot(t, root)
 
 	executor := &fileExecutor{uid: os.Getuid(), gid: os.Getgid(), user: "ikigenba", group: "ikigenba"}
@@ -120,13 +132,14 @@ func TestFilesSelectsAndArchivesServiceTrees(t *testing.T) {
 	if got := resultNames(results); !reflect.DeepEqual(got, []string{"alpha", "plain", "zeta"}) {
 		t.Fatalf("result services = %v", got)
 	}
+	wantSizes := map[string]int64{"alpha": 5648, "plain": 2576, "zeta": 2576}
 	for _, result := range results {
-		if result.Err != nil || result.Object != "2026-09-16T17:34:56.1234Z.tar.zst" || result.Size <= 0 {
+		if result.Err != nil || result.Object != "2026-09-16T17:34:56.1234Z.tar.zst" || result.Size != wantSizes[result.Service] {
 			t.Fatalf("result = %+v", result)
 		}
 		uri := "s3://bucket/host/" + result.Service + "/" + result.Object
 		if int64(len(client.objects[uri])) != result.Size {
-			t.Fatalf("object %s size = %d, result = %d", uri, len(client.objects[uri]), result.Size)
+			t.Fatalf("object %q size = %d, result = %d", uri, len(client.objects[uri]), result.Size)
 		}
 	}
 
@@ -138,8 +151,16 @@ func TestFilesSelectsAndArchivesServiceTrees(t *testing.T) {
 	if got := string(alpha["etc/env"].data); got != "TOKEN=value\n" {
 		t.Fatalf("etc/env = %q", got)
 	}
-	if got := alpha["etc/env"].header.Mode; got != 0o640 {
-		t.Fatalf("etc/env mode = %#o", got)
+	for name, want := range map[string]int64{
+		"etc/":              0o711,
+		"state/":            0o750,
+		"etc/env":           0o640,
+		"etc/manifest.toml": 0o440,
+		"state/data.txt":    0o604,
+	} {
+		if got := alpha[name].header.Mode; got != want {
+			t.Fatalf("%s mode = %#o, want %#o", name, got, want)
+		}
 	}
 	link := alpha["state/outside"].header
 	if link.Typeflag != tar.TypeSymlink || link.Linkname != "/etc/passwd" || len(alpha["state/outside"].data) != 0 {
@@ -176,7 +197,13 @@ func TestFilesExplicitSelectionAndInvalidDiscoveredName(t *testing.T) {
 	client := newFileCloud()
 	env := host.Env{Root: root, Now: func() time.Time { return time.Unix(1, 0) }, Execute: executor.execute}
 
+	otherAccess := newFileAccessWatch(t,
+		filepath.Join(root, "opt/other"),
+		filepath.Join(root, "opt/other/etc/manifest.toml"),
+	)
 	results, err := backup.Files(context.Background(), env, cloud.Env{Open: client.open}, store, "notes")
+	otherAccess.assertQuiet(t)
+	otherAccess.close()
 	if err != nil || len(results) != 1 || results[0].Service != "notes" || results[0].Err != nil {
 		t.Fatalf("explicit Files() = %+v, %v", results, err)
 	}
@@ -186,13 +213,22 @@ func TestFilesExplicitSelectionAndInvalidDiscoveredName(t *testing.T) {
 
 	for _, name := range []string{".", "..", "nested/name", "nul\x00name", "host", "deploy"} {
 		before := len(client.puts)
+		serviceAccess := newFileAccessWatch(t, filepath.Join(root, "opt"))
 		results, err = backup.Files(context.Background(), env, cloud.Env{Open: client.open}, store, name)
+		serviceAccess.assertQuiet(t)
+		serviceAccess.close()
 		if err == nil || len(results) != 0 || len(client.puts) != before {
 			t.Fatalf("Files(%q) = %+v, %v, uploads %v", name, results, err, client.puts)
 		}
 	}
 	for _, name := range []string{"missing", "neither"} {
+		otherAccess := newFileAccessWatch(t,
+			filepath.Join(root, "opt/other"),
+			filepath.Join(root, "opt/other/etc/manifest.toml"),
+		)
 		results, err = backup.Files(context.Background(), env, cloud.Env{Open: client.open}, store, name)
+		otherAccess.assertQuiet(t)
+		otherAccess.close()
 		if err == nil || err.Error() != "no service '"+name+"'" || len(results) != 0 {
 			t.Fatalf("Files(%q) = %+v, %v", name, results, err)
 		}
@@ -307,6 +343,34 @@ func TestFilesServiceFailuresContinueWithoutPartialObjects(t *testing.T) {
 		}
 	})
 
+	t.Run("interruption after successful compression", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cleanRoot := t.TempDir()
+		cleanStore := configuredFileStore(t, cleanRoot)
+		for _, name := range []string{"alpha", "beta"} {
+			writeFile(t, cleanRoot, "opt/"+name+"/state/value", name, 0o600)
+		}
+		executor := &fileExecutor{uid: os.Getuid(), gid: os.Getgid(), unmapped: true}
+		execute := func(ctx context.Context, command host.Command) (host.Result, error) {
+			result, executeErr := executor.execute(ctx, command)
+			if command.Name == "zstd" && executeErr == nil && result.ExitCode == 0 {
+				cancel()
+			}
+			return result, executeErr
+		}
+		interrupting := newFileCloud()
+		got, runErr := backup.Files(ctx, fileHostEnv(cleanRoot, execute), cloud.Env{Open: interrupting.open}, cleanStore, "")
+		if !errors.Is(runErr, context.Canceled) || len(got) != 1 || !errors.Is(got[0].Err, context.Canceled) {
+			t.Fatalf("compression interruption Files() = %+v, %v", got, runErr)
+		}
+		if len(interrupting.puts) != 0 {
+			t.Fatalf("compression interruption uploads = %v", interrupting.puts)
+		}
+		if got := strings.Count(strings.Join(executor.commands, "\n"), "zstd --quiet --stdout"); got != 1 {
+			t.Fatalf("compression commands = %v", executor.commands)
+		}
+	})
+
 	t.Run("interruption during attempted upload", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		interrupting := newFileCloud()
@@ -333,7 +397,7 @@ func TestFilesServiceFailuresContinueWithoutPartialObjects(t *testing.T) {
 		}
 	})
 
-	t.Run("interruption between attempts", func(t *testing.T) {
+	t.Run("interruption during successful upload", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		interrupting := newFileCloud()
 		interrupting.fail = func(_ string, _ []byte) error {
@@ -347,8 +411,11 @@ func TestFilesServiceFailuresContinueWithoutPartialObjects(t *testing.T) {
 		interruptEnv := env
 		interruptEnv.Root = cleanRoot
 		got, runErr := backup.Files(ctx, interruptEnv, cloud.Env{Open: interrupting.open}, cleanStore, "")
-		if !errors.Is(runErr, context.Canceled) || len(got) != 1 || got[0].Err != nil {
-			t.Fatalf("between-attempt Files() = %+v, %v", got, runErr)
+		if !errors.Is(runErr, context.Canceled) || len(got) != 1 || !errors.Is(got[0].Err, context.Canceled) || got[0].Object != "" || got[0].Size != 0 {
+			t.Fatalf("successful-upload interruption Files() = %+v, %v", got, runErr)
+		}
+		if len(interrupting.puts) != 1 || !strings.Contains(interrupting.puts[0], "/alpha/") || len(interrupting.objects) != 1 {
+			t.Fatalf("successful-upload interruption uploads = %v, objects = %v", interrupting.puts, interrupting.objects)
 		}
 	})
 }
@@ -490,6 +557,49 @@ type fileCloud struct {
 	objects map[string][]byte
 	puts    []string
 	fail    func(string, []byte) error
+}
+
+type fileAccessWatch struct {
+	fd int
+}
+
+func newFileAccessWatch(t *testing.T, names ...string) *fileAccessWatch {
+	t.Helper()
+	fd, err := syscall.InotifyInit1(syscall.IN_CLOEXEC | syscall.IN_NONBLOCK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	watch := &fileAccessWatch{fd: fd}
+	t.Cleanup(watch.close)
+	for _, name := range names {
+		if _, err := syscall.InotifyAddWatch(fd, name, syscall.IN_ACCESS|syscall.IN_OPEN); err != nil {
+			watch.close()
+			t.Fatal(err)
+		}
+	}
+	return watch
+}
+
+func (watch *fileAccessWatch) assertQuiet(t *testing.T) {
+	t.Helper()
+	buffer := make([]byte, syscall.SizeofInotifyEvent*4)
+	n, err := syscall.Read(watch.fd, buffer)
+	if errors.Is(err, syscall.EAGAIN) {
+		return
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("observed %d bytes of unexpected filesystem access events", n)
+	}
+}
+
+func (watch *fileAccessWatch) close() {
+	if watch.fd >= 0 {
+		_ = syscall.Close(watch.fd)
+		watch.fd = -1
+	}
 }
 
 func newFileCloud() *fileCloud {
