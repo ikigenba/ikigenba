@@ -179,7 +179,9 @@ func renderBackupTimer(backup fileBackupTimer) string {
 	unit.WriteString("[Unit]\nDescription=Schedule ")
 	unit.WriteString(backup.description)
 	unit.WriteString("\n\n[Timer]\n")
-	if backup.period != "" {
+	if backup.period == "" {
+		unit.WriteString("OnBootSec=infinity\n")
+	} else {
 		unit.WriteString("OnBootSec=")
 		unit.WriteString(backup.period)
 		unit.WriteString("\nOnUnitActiveSec=")

@@ -29,7 +29,8 @@ func TestSetupTimersPublishesRootOneshotServices(t *testing.T) {
 	requireSetupTimersAPI(backup.SetupTimers)
 	root := t.TempDir()
 	store := timerStore(t, root, "11", "22")
-	unitDirectory := filepath.Join(root, "etc", "systemd", "system")
+	wantUnits := expectedTimerUnits("11s", "22s")
+	unitDirectory := filepath.Join(root, systemdUnitTestDirectory)
 	if err := os.MkdirAll(unitDirectory, 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -46,37 +47,29 @@ func TestSetupTimersPublishesRootOneshotServices(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	publicationObservedAtReload := false
 	var commands []host.Command
 	env := host.Env{Root: root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
 		commands = append(commands, command)
+		if reflect.DeepEqual(command.Args, []string{"daemon-reload"}) {
+			if publicationObservedAtReload {
+				t.Fatal("daemon-reload ran more than once")
+			}
+			assertPublishedTimerUnits(t, root, wantUnits)
+			publicationObservedAtReload = true
+		} else if !publicationObservedAtReload {
+			t.Fatalf("systemd command before daemon-reload = %#v", command)
+		}
 		return host.Result{}, nil
 	}}
 	if err := backup.SetupTimers(context.Background(), env, store); err != nil {
 		t.Fatal(err)
 	}
 
-	wantUnits := map[string]string{
-		"ikigenba-backup-host.service": "[Unit]\nDescription=Ikigenba host file backup\n\n" +
-			"[Service]\nType=oneshot\nUser=root\nExecStart=/usr/local/bin/opsctl host backup\n",
-		"ikigenba-backup-host.timer": "[Unit]\nDescription=Schedule Ikigenba host file backup\n\n" +
-			"[Timer]\nOnBootSec=11s\nOnUnitActiveSec=11s\nUnit=ikigenba-backup-host.service\n\n" +
-			"[Install]\nWantedBy=timers.target\n",
-		"ikigenba-backup-services.service": "[Unit]\nDescription=Ikigenba service file backup\n\n" +
-			"[Service]\nType=oneshot\nUser=root\nExecStart=/usr/local/bin/opsctl backup\n",
-		"ikigenba-backup-services.timer": "[Unit]\nDescription=Schedule Ikigenba service file backup\n\n" +
-			"[Timer]\nOnBootSec=22s\nOnUnitActiveSec=22s\nUnit=ikigenba-backup-services.service\n\n" +
-			"[Install]\nWantedBy=timers.target\n",
-		"ikigenba-renew-certificate.service": "[Unit]\nDescription=Ikigenba certificate renewal\n\n" +
-			"[Service]\nType=oneshot\nUser=root\nExecStart=certbot renew\n",
-		"ikigenba-renew-certificate.timer": "[Unit]\nDescription=Schedule Ikigenba certificate renewal\n\n" +
-			"[Timer]\nOnCalendar=*-*-* 00,12:00:00\nRandomizedDelaySec=1h\nPersistent=true\n" +
-			"Unit=ikigenba-renew-certificate.service\n\n[Install]\nWantedBy=timers.target\n",
+	if !publicationObservedAtReload {
+		t.Fatal("daemon-reload did not observe published units")
 	}
-	for name, want := range wantUnits {
-		if got := readTimerUnit(t, root, name); got != want {
-			t.Errorf("%s = %q, want %q", name, got, want)
-		}
-	}
+	assertPublishedTimerUnits(t, root, wantUnits)
 	entries, err := os.ReadDir(unitDirectory)
 	if err != nil {
 		t.Fatal(err)
@@ -127,7 +120,7 @@ func TestSetupTimersSchedulesBackupsAndRenewalIndependently(t *testing.T) {
 		t.Errorf("host timer = %q, want %q", hostTimer, wantHostTimer)
 	}
 	wantServiceTimer := "[Unit]\nDescription=Schedule Ikigenba service file backup\n\n" +
-		"[Timer]\nUnit=ikigenba-backup-services.service\n\n[Install]\nWantedBy=timers.target\n"
+		"[Timer]\nOnBootSec=infinity\nUnit=ikigenba-backup-services.service\n\n[Install]\nWantedBy=timers.target\n"
 	if serviceTimer := readTimerUnit(t, root, "ikigenba-backup-services.timer"); serviceTimer != wantServiceTimer {
 		t.Errorf("service timer = %q, want %q", serviceTimer, wantServiceTimer)
 	}
@@ -173,18 +166,26 @@ func TestSetupTimersLeavesAbsentEmptyAndZeroPeriodsDisabled(t *testing.T) {
 			if err := store.Set("backup.service_files_seconds", "8"); err != nil {
 				t.Fatal(err)
 			}
+			validatedAtReload := false
 			var commands []host.Command
 			env := host.Env{Root: root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
 				commands = append(commands, command)
+				if reflect.DeepEqual(command.Args, []string{"daemon-reload"}) {
+					assertValidGeneratedTimerUnit(t, readTimerUnit(t, root, "ikigenba-backup-host.timer"))
+					validatedAtReload = true
+				}
 				return host.Result{}, nil
 			}}
 			if err := backup.SetupTimers(context.Background(), env, store); err != nil {
 				t.Fatal(err)
 			}
 			wantTimer := "[Unit]\nDescription=Schedule Ikigenba host file backup\n\n" +
-				"[Timer]\nUnit=ikigenba-backup-host.service\n\n[Install]\nWantedBy=timers.target\n"
+				"[Timer]\nOnBootSec=infinity\nUnit=ikigenba-backup-host.service\n\n[Install]\nWantedBy=timers.target\n"
 			if contents := readTimerUnit(t, root, "ikigenba-backup-host.timer"); contents != wantTimer {
 				t.Fatalf("disabled timer = %q, want %q", contents, wantTimer)
+			}
+			if !validatedAtReload {
+				t.Fatal("daemon-reload did not validate disabled timer")
 			}
 			wantPrefix := []host.Command{
 				{Name: "systemctl", Args: []string{"daemon-reload"}},
@@ -215,7 +216,7 @@ func TestSetupTimersRejectsInvalidPeriodsBeforeChanges(t *testing.T) {
 			if err := store.Set(test.key, test.value); err != nil {
 				t.Fatal(err)
 			}
-			unitDirectory := filepath.Join(root, "etc", "systemd", "system")
+			unitDirectory := filepath.Join(root, systemdUnitTestDirectory)
 			if err := os.MkdirAll(unitDirectory, 0o750); err != nil {
 				t.Fatal(err)
 			}
@@ -240,6 +241,71 @@ func TestSetupTimersRejectsInvalidPeriodsBeforeChanges(t *testing.T) {
 				t.Fatalf("unit directory = %v, %v; want only old unit", entries, readDirErr)
 			}
 		})
+	}
+}
+
+func TestSetupTimersStopsAfterMidPublicationFailure(t *testing.T) {
+	// R-FPZ6-2RZ0 R-FSEY-UBGE
+	root := t.TempDir()
+	store := timerStore(t, root, "11", "22")
+	unitDirectory := filepath.Join(root, systemdUnitTestDirectory)
+	if err := os.MkdirAll(unitDirectory, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	const stale = "stale generated content\n"
+	const failureIndex = 2
+	for index, name := range timerUnitNames {
+		destination := filepath.Join(unitDirectory, name)
+		if index == failureIndex {
+			if err := os.Mkdir(destination, 0o750); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(destination, "blocks-replacement"), []byte("marker\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		if err := os.WriteFile(destination, []byte(stale), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var commands []host.Command
+	env := host.Env{Root: root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+		commands = append(commands, command)
+		return host.Result{}, nil
+	}}
+	err := backup.SetupTimers(context.Background(), env, store)
+	if err == nil || !strings.Contains(err.Error(), timerUnitNames[failureIndex]) {
+		t.Fatalf("SetupTimers() error = %v, want publication failure naming %s", err, timerUnitNames[failureIndex])
+	}
+	if len(commands) != 0 {
+		t.Fatalf("systemd commands after publication failure = %#v, want none", commands)
+	}
+
+	wantUnits := expectedTimerUnits("11s", "22s")
+	for _, name := range timerUnitNames[:failureIndex] {
+		if got := readTimerUnit(t, root, name); got != wantUnits[name] {
+			t.Errorf("earlier published %s = %q, want %q", name, got, wantUnits[name])
+		}
+	}
+	marker, markerErr := readRootedTimerFile(root, filepath.ToSlash(filepath.Join(
+		systemdUnitTestDirectory, timerUnitNames[failureIndex], "blocks-replacement",
+	)))
+	if markerErr != nil || string(marker) != "marker\n" {
+		t.Fatalf("failed destination marker = %q, %v; want unchanged", marker, markerErr)
+	}
+	for _, name := range timerUnitNames[failureIndex+1:] {
+		if got := readTimerUnit(t, root, name); got != stale {
+			t.Errorf("later unpublished %s = %q, want stale content", name, got)
+		}
+	}
+	entries, readDirErr := os.ReadDir(unitDirectory)
+	if readDirErr != nil {
+		t.Fatal(readDirErr)
+	}
+	if len(entries) != len(timerUnitNames) {
+		t.Fatalf("unit directory after failure has %d entries, want %d: %v", len(entries), len(timerUnitNames), entries)
 	}
 }
 
@@ -365,7 +431,7 @@ func TestSetupTimersReturnsInputFilesystemAndContextFailures(t *testing.T) {
 	})
 }
 
-func TestSetupTimersStopsAfterEveryUnitOperationFailure(t *testing.T) {
+func TestSetupTimersStopsAfterUnitOperationFailuresWithPackageTimer(t *testing.T) {
 	// R-FSEY-UBGE
 	for _, state := range []struct {
 		name     string
@@ -450,6 +516,82 @@ func expectedTimerCommands(active, packageTimer bool) []host.Command {
 	return commands
 }
 
+const systemdUnitTestDirectory = "etc/systemd/system"
+
+func expectedTimerUnits(hostPeriod, servicePeriod string) map[string]string {
+	backupTimer := func(description, service, period string) string {
+		trigger := "OnBootSec=infinity\n"
+		if period != "" {
+			trigger = "OnBootSec=" + period + "\nOnUnitActiveSec=" + period + "\n"
+		}
+		return "[Unit]\nDescription=Schedule " + description + "\n\n[Timer]\n" + trigger +
+			"Unit=" + service + "\n\n[Install]\nWantedBy=timers.target\n"
+	}
+	return map[string]string{
+		"ikigenba-backup-host.service": "[Unit]\nDescription=Ikigenba host file backup\n\n" +
+			"[Service]\nType=oneshot\nUser=root\nExecStart=/usr/local/bin/opsctl host backup\n",
+		"ikigenba-backup-host.timer": backupTimer(
+			"Ikigenba host file backup", "ikigenba-backup-host.service", hostPeriod,
+		),
+		"ikigenba-backup-services.service": "[Unit]\nDescription=Ikigenba service file backup\n\n" +
+			"[Service]\nType=oneshot\nUser=root\nExecStart=/usr/local/bin/opsctl backup\n",
+		"ikigenba-backup-services.timer": backupTimer(
+			"Ikigenba service file backup", "ikigenba-backup-services.service", servicePeriod,
+		),
+		"ikigenba-renew-certificate.service": "[Unit]\nDescription=Ikigenba certificate renewal\n\n" +
+			"[Service]\nType=oneshot\nUser=root\nExecStart=certbot renew\n",
+		"ikigenba-renew-certificate.timer": "[Unit]\nDescription=Schedule Ikigenba certificate renewal\n\n" +
+			"[Timer]\nOnCalendar=*-*-* 00,12:00:00\nRandomizedDelaySec=1h\nPersistent=true\n" +
+			"Unit=ikigenba-renew-certificate.service\n\n[Install]\nWantedBy=timers.target\n",
+	}
+}
+
+func assertPublishedTimerUnits(t *testing.T, root string, wantUnits map[string]string) {
+	t.Helper()
+	for _, name := range timerUnitNames {
+		want, ok := wantUnits[name]
+		if !ok {
+			t.Fatalf("missing expected contents for %s", name)
+		}
+		got := readTimerUnit(t, root, name)
+		if got != want {
+			t.Errorf("%s at daemon-reload = %q, want %q", name, got, want)
+		}
+		if strings.HasSuffix(name, ".timer") {
+			assertValidGeneratedTimerUnit(t, got)
+		}
+	}
+}
+
+func assertValidGeneratedTimerUnit(t *testing.T, contents string) {
+	t.Helper()
+	insideTimerSection := false
+	hasTrigger := false
+	hasTarget := false
+	for _, line := range strings.Split(contents, "\n") {
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			insideTimerSection = line == "[Timer]"
+			continue
+		}
+		if !insideTimerSection {
+			continue
+		}
+		key, value, found := strings.Cut(line, "=")
+		if !found || value == "" {
+			continue
+		}
+		switch key {
+		case "OnActiveSec", "OnBootSec", "OnStartupSec", "OnUnitActiveSec", "OnUnitInactiveSec", "OnCalendar":
+			hasTrigger = true
+		case "Unit":
+			hasTarget = true
+		}
+	}
+	if !hasTrigger || !hasTarget {
+		t.Fatalf("invalid timer unit: trigger=%t target=%t contents=%q", hasTrigger, hasTarget, contents)
+	}
+}
+
 func timerStore(t *testing.T, root, hostPeriod, servicePeriod string) config.Store {
 	t.Helper()
 	store := config.Store{Root: root}
@@ -464,7 +606,7 @@ func timerStore(t *testing.T, root, hostPeriod, servicePeriod string) config.Sto
 
 func readTimerUnit(t *testing.T, root, name string) string {
 	t.Helper()
-	data, err := readRootedTimerFile(root, filepath.ToSlash(filepath.Join("etc", "systemd", "system", name)))
+	data, err := readRootedTimerFile(root, filepath.ToSlash(filepath.Join(systemdUnitTestDirectory, name)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -483,7 +625,7 @@ func readRootedTimerFile(root, name string) ([]byte, error) {
 func assertNoGeneratedTimerUnits(t *testing.T, root string) {
 	t.Helper()
 	for _, name := range timerUnitNames {
-		_, err := os.Stat(filepath.Join(root, "etc", "systemd", "system", name))
+		_, err := os.Stat(filepath.Join(root, systemdUnitTestDirectory, name))
 		if !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("%s exists or stat failed unexpectedly: %v", name, err)
 		}
