@@ -362,11 +362,15 @@ func TestUnknownOption(t *testing.T) {
 }
 
 func TestVersionVar(t *testing.T) {
-	// R-N9CG-4L86
+	// R-EME2-0P2D
 	re := regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 	value := versionLiteral(t)
 	if !re.MatchString(value) {
 		t.Errorf("version = %q, want to match %s", value, re.String())
+	}
+	stdout, stderr, code := invoke([]string{"version"}, depsAt(t, 1))
+	if stdout != wantVersion+"\n" || stderr != "" || code != 0 {
+		t.Errorf("runtime version: exit %d stdout %q stderr %q, want %q", code, stdout, stderr, wantVersion+"\n")
 	}
 }
 
@@ -388,6 +392,29 @@ func versionLiteral(t *testing.T) string {
 		if parseErr != nil {
 			t.Fatalf("parse %s: %v", path, parseErr)
 		}
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			var targets []ast.Expr
+			switch node := node.(type) {
+			case *ast.AssignStmt:
+				targets = node.Lhs
+			case *ast.IncDecStmt:
+				targets = []ast.Expr{node.X}
+			case *ast.UnaryExpr:
+				if node.Op == token.AND {
+					targets = []ast.Expr{node.X}
+				}
+			}
+			for _, target := range targets {
+				ident, ok := target.(*ast.Ident)
+				if !ok || ident.Name != "version" {
+					continue
+				}
+				if ident.Obj == nil || ident.Obj == parsed.Scope.Lookup("version") {
+					t.Errorf("%s: version must not be overridden or exposed for mutation", fset.Position(target.Pos()))
+				}
+			}
+			return true
+		})
 		for _, decl := range parsed.Decls {
 			gen, ok := decl.(*ast.GenDecl)
 			if !ok || gen.Tok != token.VAR {
