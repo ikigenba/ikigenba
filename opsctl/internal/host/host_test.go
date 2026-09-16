@@ -16,7 +16,7 @@ import (
 )
 
 func TestBoundaryFields(t *testing.T) {
-	// R-5GJV-YR90 R-5HRS-CIZP R-5IZO-QAQE R-GWME-QK2L
+	// R-5GJV-YR90 R-5HRS-CIZP R-5IZO-QAQE
 	cases := []struct {
 		typ    reflect.Type
 		fields map[string]reflect.Type
