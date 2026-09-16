@@ -88,12 +88,12 @@ func Open(ctx context.Context, store config.Store, env Env) (*Client, error) {
 	zones := make([]Zone, 0, len(entries))
 	for _, entry := range entries {
 		name, id, ok := strings.Cut(entry, ":")
-		name = strings.TrimSpace(name)
+		name = normalise(strings.TrimSpace(name))
 		id = strings.TrimSpace(id)
 		if !ok || name == "" || id == "" {
 			return nil, notConfigured(fmt.Sprintf("dns.zones malformed: %q", entry))
 		}
-		zones = append(zones, Zone{Name: normalise(name), ID: id})
+		zones = append(zones, Zone{Name: name, ID: id})
 	}
 
 	if env.Open == nil {

@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
@@ -49,7 +51,7 @@ func newStore(t *testing.T, values map[string]string) config.Store {
 	return store
 }
 
-// R-YSWA-UVTZ
+// R-DDWW-CBQX R-DISH-VEPP R-DMG7-0PXS R-DQ3W-615V R-DTRL-BCDY
 func TestVocabulary(t *testing.T) {
 	const (
 		providerKey = KeyProvider
@@ -65,7 +67,7 @@ func TestVocabulary(t *testing.T) {
 	}
 }
 
-// R-KUFZ-K3C9 R-KVNV-XV2Y R-KWVS-BMTN R-KY3O-PEKC
+// R-DW7E-2VVC R-DYN6-UFCQ R-E12Z-LYU4 R-KVNV-XV2Y R-KWVS-BMTN R-KY3O-PEKC R-E9MA-AD0Z
 func TestExportedShapesAndSignatures(t *testing.T) {
 	typesAndFields := []struct {
 		value any
@@ -128,7 +130,7 @@ func TestExportedShapesAndSignatures(t *testing.T) {
 	}
 }
 
-// R-YU47-8NKO
+// R-XS5E-41C6 R-FF2V-AK8L
 func TestOpenRejectsIncompleteConfigurationBeforeProvider(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -141,8 +143,10 @@ func TestOpenRejectsIncompleteConfigurationBeforeProvider(t *testing.T) {
 		{"empty zones", map[string]string{KeyProvider: "route53", KeyZones: ""}, "dns.zones not set"},
 		{"missing separator", map[string]string{KeyProvider: "route53", KeyZones: "example.com"}, `dns.zones malformed: "example.com"`},
 		{"empty name", map[string]string{KeyProvider: "route53", KeyZones: " : Z1"}, `dns.zones malformed: " : Z1"`},
+		{"name empty after normalization", map[string]string{KeyProvider: "route53", KeyZones: ". : Z1"}, `dns.zones malformed: ". : Z1"`},
 		{"empty id", map[string]string{KeyProvider: "route53", KeyZones: "example.com: "}, `dns.zones malformed: "example.com: "`},
 		{"first of multiple malformed", map[string]string{KeyProvider: "route53", KeyZones: "example.com:Z1, first bad,second bad"}, `dns.zones malformed: " first bad"`},
+		{"empty final entry", map[string]string{KeyProvider: "route53", KeyZones: "example.com:Z1,"}, `dns.zones malformed: ""`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -158,6 +162,26 @@ func TestOpenRejectsIncompleteConfigurationBeforeProvider(t *testing.T) {
 				t.Fatal("provider opened before all configuration was validated")
 			}
 		})
+	}
+}
+
+// R-FF2V-AK8L
+func TestOpenReadsProviderFirstAndPreservesStoreErrors(t *testing.T) {
+	_, err := Open(t.Context(), newStore(t, map[string]string{KeyZones: "example.com:Z1"}), Env{})
+	if !errors.Is(err, ErrNotConfigured) || err.Error() != "dns.provider not set" {
+		t.Fatalf("Open error = %v, want provider configuration error first", err)
+	}
+
+	store := config.Store{Root: t.TempDir()}
+	path := store.Root + config.Dir + "/" + config.FileName
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, gotErr := Open(t.Context(), store, Env{})
+	var pathErr *os.PathError
+	if reflect.TypeOf(gotErr) != reflect.TypeFor[*os.PathError]() || !errors.As(gotErr, &pathErr) ||
+		pathErr.Op != "read" || pathErr.Path != path || !errors.Is(pathErr.Err, syscall.EISDIR) {
+		t.Fatalf("Open error = %#v, want unchanged directory read error for %q", gotErr, path)
 	}
 }
 
