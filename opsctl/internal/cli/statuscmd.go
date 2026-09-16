@@ -11,8 +11,11 @@ import (
 )
 
 func runStatus(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
+	if isCommandHelp(args) {
+		return writeOut(stdout, statusUsage)
+	}
 	if len(args) != 0 {
-		return runCommandFrame("status", args, stdout, stderr, deps)
+		return writeLifecycleUsageError(stderr, "status", "status takes no arguments")
 	}
 	if code := requireRoot(deps, stderr); code != exitOK {
 		return code
@@ -31,6 +34,22 @@ func runStatus(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	}
 	return exitOK
 }
+
+const statusUsage = `Usage: opsctl status
+
+Print one line per service on this host, in name order: its name, the version
+its own binary reports, the state of its systemd unit, and the journal mode of
+the database its manifest declares. A service is any /opt/<name>/ with an etc/
+or state/ directory; '-' means opsctl could not ask, or there was nothing to
+ask.
+
+A declared database must stay in WAL mode: litestream cannot replicate one in
+any other mode, so a service reporting anything but 'wal' is a service whose
+data is not reaching S3.
+
+The exit code is 0 whatever the report says. A failed unit and an unreplicable
+database are facts about the host, not failures of this command.
+`
 
 func writeStatusRows(output io.Writer, rows []apps.StatusRow) error {
 	var report strings.Builder

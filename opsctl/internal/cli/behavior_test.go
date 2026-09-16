@@ -67,8 +67,11 @@ func TestNonVersionCommandsRefuseWithoutHostAccess(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/%d", name, uid), func(t *testing.T) {
 				deps, assertNoAccess := inertDeps(t, uid)
 				args := []string{name}
-				if name == "install" {
+				switch name {
+				case "install":
 					args = append(args, "s3://bucket/key")
+				case "restart", "uninstall":
+					args = append(args, "app")
 				}
 				stdout, stderr, code := invoke(args, deps)
 				assertNoAccess()
