@@ -46,12 +46,13 @@ type dnsCall struct {
 }
 
 type fakeDNSProvider struct {
-	records    map[string][]dns.Record
-	recordsErr map[string]error
-	addErr     error
-	removeErr  error
-	adds       []dnsCall
-	removes    []dnsCall
+	records     map[string][]dns.Record
+	recordsErr  map[string]error
+	recordCalls []string
+	addErr      error
+	removeErr   error
+	adds        []dnsCall
+	removes     []dnsCall
 }
 
 type partialErrorWriter struct {
@@ -66,6 +67,7 @@ func (w *partialErrorWriter) Write(p []byte) (int, error) {
 }
 
 func (p *fakeDNSProvider) Records(_ context.Context, zoneID string) ([]dns.Record, error) {
+	p.recordCalls = append(p.recordCalls, zoneID)
 	if err := p.recordsErr[zoneID]; err != nil {
 		return nil, err
 	}
@@ -85,11 +87,15 @@ func (p *fakeDNSProvider) Remove(ctx context.Context, zoneID, name, typ, value s
 }
 
 func TestDNSHelp(t *testing.T) {
-	// R-YWK0-0722
-	for _, help := range []string{"--help", "-h"} {
-		stdout, stderr, code := invoke([]string{"dns", help}, depsAt(t, 1))
-		if code != 0 || stdout != wantDNSUsage || stderr != "" {
-			t.Errorf("%s: exit %d stdout %q stderr %q", help, code, stdout, stderr)
+	// R-F1NZ-332Y
+	for _, uid := range []int{0, 1000} {
+		for _, help := range []string{"--help", "-h"} {
+			deps, assertNoAccess := inertDeps(t, uid)
+			stdout, stderr, code := invoke([]string{"dns", help}, deps)
+			assertNoAccess()
+			if code != 0 || stdout != wantDNSUsage || stderr != "" {
+				t.Errorf("%s uid %d: exit %d stdout %q stderr %q", help, uid, code, stdout, stderr)
+			}
 		}
 	}
 }
@@ -112,7 +118,7 @@ func TestDNSMissingAndUnknownSubcommand(t *testing.T) {
 }
 
 func TestDNSCommandsOpenConfiguredStore(t *testing.T) {
-	// R-YXRW-DYSR
+	// R-WL0S-P73L
 	for _, args := range [][]string{
 		{"dns", "list", "example.com"},
 		{"dns", "add", "a.example.com", "TXT", "v"},
@@ -174,6 +180,12 @@ func TestDNSCommandsOpenConfiguredStore(t *testing.T) {
 				t.Error("Env.Open called for incomplete configuration")
 				return nil, errors.New("unexpected")
 			}
+			deps.Getenv = func(key string) string {
+				if key == "CERTBOT_DOMAIN" {
+					return "example.com"
+				}
+				return "token"
+			}
 			stdout, stderr, code := invoke(args, deps)
 			want := "opsctl: " + tc.want + "\n"
 			if code != 1 || stdout != "" || stderr != want {
@@ -185,14 +197,16 @@ func TestDNSCommandsOpenConfiguredStore(t *testing.T) {
 
 func TestDNSList(t *testing.T) {
 	// R-LL9R-Z1NJ
+	// R-FME9-L6OR
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{"ZONE": {
 		{Name: "z.example.com", Type: "TXT", TTL: 10, Values: []string{"second", "first value"}},
 		{Name: "a.example.com", Type: "AAAA", TTL: 20, Values: []string{"::1"}},
 		{Name: "a.example.com", Type: "A", TTL: 30, Values: []string{"192.0.2.1"}},
+		{Name: "*.example.com", Type: "TXT", TTL: 40, Values: []string{"literal value with spaces"}},
 	}}}
 	deps := configuredDNSDeps(t, provider, "example.com", "other.test")
 	stdout, stderr, code := invoke([]string{"dns", "list", "EXAMPLE.COM."}, deps)
-	want := "a.example.com A 30 192.0.2.1\na.example.com AAAA 20 ::1\nz.example.com TXT 10 first value\nz.example.com TXT 10 second\n"
+	want := "*.example.com TXT 40 literal value with spaces\na.example.com A 30 192.0.2.1\na.example.com AAAA 20 ::1\nz.example.com TXT 10 first value\nz.example.com TXT 10 second\n"
 	if code != 0 || stdout != want || stderr != "" {
 		t.Errorf("list: exit %d stdout %q stderr %q, want %q", code, stdout, stderr, want)
 	}
@@ -206,6 +220,7 @@ func TestDNSList(t *testing.T) {
 
 func TestDNSAddAndRemove(t *testing.T) {
 	// R-LMHO-CTE8
+	// R-FTPN-VT4X
 	provider := &fakeDNSProvider{}
 	deps := configuredDNSDeps(t, provider, "example.com")
 	start := time.Now()
@@ -216,7 +231,7 @@ func TestDNSAddAndRemove(t *testing.T) {
 	assertDNSCall(t, provider.adds, "a.example.com", 45, "hello", start.Add(3*time.Second))
 
 	start = time.Now()
-	stdout, stderr, code = invoke([]string{"dns", "remove", "--timeout", "5s", "a.example.com", "txt", "hello"}, deps)
+	stdout, stderr, code = invoke([]string{"dns", "remove", "--ttl", "999", "--timeout", "5s", "a.example.com", "txt", "hello"}, deps)
 	if code != 0 || stdout != "" || stderr != "" {
 		t.Fatalf("remove: exit %d stdout %q stderr %q", code, stdout, stderr)
 	}
@@ -236,6 +251,7 @@ func TestDNSAddAndRemove(t *testing.T) {
 
 func TestDNSChangeUsageAndZoneErrors(t *testing.T) {
 	// R-LNPK-QL4X
+	// R-FL6D-7EY2
 	for _, args := range [][]string{
 		{"dns", "add", "name", "TXT"},
 		{"dns", "remove", "name", "TXT", "value", "extra"},
@@ -319,7 +335,7 @@ func TestDNSChangeFailures(t *testing.T) {
 }
 
 func TestDNSCheckAllZones(t *testing.T) {
-	// R-LQ5D-I4MB
+	// R-F6JK-M61Q
 	provider := &fakeDNSProvider{
 		records: map[string][]dns.Record{
 			"ZONE": {
@@ -353,11 +369,14 @@ func TestDNSCheckAllZones(t *testing.T) {
 	}
 	stdout, stderr, code := invoke([]string{"dns", "check"}, deps)
 	want := "example.com: ok (route53 ZONE, 2 nameservers delegated)\n" +
-		"wrong.test: failed: provider reports zone provider.test\n" +
-		"undelegated.test: failed: nameservers are not delegated\n" +
+		"wrong.test: failed: provider zone name is provider.test\n" +
+		"undelegated.test: failed: nameservers not delegated\n" +
 		"other.test: failed: unreachable\n"
 	if code != 1 || stdout != want || stderr != "" {
 		t.Errorf("check: exit %d stdout %q stderr %q, want %q", code, stdout, stderr, want)
+	}
+	if got := strings.Join(provider.recordCalls, ","); got != "ZONE,ZONE2,ZONE3,ZONE4" {
+		t.Errorf("check order = %q, want every configured zone in order", got)
 	}
 
 	healthyProvider := &fakeDNSProvider{records: map[string][]dns.Record{
@@ -391,7 +410,7 @@ func TestDNSCheckAllZones(t *testing.T) {
 }
 
 func TestDNSCheckOutputFailure(t *testing.T) {
-	// R-LQ5D-I4MB
+	// R-F6JK-M61Q
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZONE": {
 			{Name: "example.com", Type: "SOA"},
@@ -411,7 +430,7 @@ func TestDNSCheckOutputFailure(t *testing.T) {
 }
 
 func TestDNSACMEHooks(t *testing.T) {
-	// R-LRD9-VWD0
+	// R-9T74-56HN
 	// R-LSL6-9O3P
 	provider := &fakeDNSProvider{}
 	deps := configuredDNSDeps(t, provider, "example.com")
@@ -426,7 +445,7 @@ func TestDNSACMEHooks(t *testing.T) {
 		}
 	}
 	for _, subcommand := range []string{"acme-auth", "acme-cleanup"} {
-		stdout, stderr, code := invoke([]string{"dns", subcommand, "--timeout", "4s"}, deps)
+		stdout, stderr, code := invoke([]string{"dns", subcommand, "--ttl", "999", "--timeout", "4s"}, deps)
 		if code != 0 || stdout != "" || stderr != "" {
 			t.Errorf("%s: exit %d stdout %q stderr %q", subcommand, code, stdout, stderr)
 		}
@@ -457,17 +476,171 @@ func TestDNSACMEHooks(t *testing.T) {
 }
 
 func TestDNSSubcommandsRequireRoot(t *testing.T) {
-	// R-LTT2-NFUE
-	for _, subcommand := range []string{"list", "add", "remove", "check", "acme-auth", "acme-cleanup"} {
+	// R-F8ZD-DPJ4
+	for _, args := range [][]string{
+		{"dns"},
+		{"dns", "unknown"},
+		{"dns", "list"},
+		{"dns", "add"},
+		{"dns", "remove"},
+		{"dns", "check"},
+		{"dns", "acme-auth"},
+		{"dns", "acme-cleanup"},
+	} {
 		opened := false
 		deps := depsAt(t, 1)
 		deps.DNS.Open = func(context.Context, string) (dns.Provider, error) {
 			opened = true
 			return &fakeDNSProvider{}, nil
 		}
-		stdout, stderr, code := invoke([]string{"dns", subcommand}, deps)
+		stdout, stderr, code := invoke(args, deps)
 		if code != 3 || stdout != "" || stderr != "opsctl: must run as root\n" || opened {
-			t.Errorf("%s: exit %d stdout %q stderr %q opened %v", subcommand, code, stdout, stderr, opened)
+			t.Errorf("%v: exit %d stdout %q stderr %q opened %v", args, code, stdout, stderr, opened)
+		}
+	}
+}
+
+func TestDNSHookEnvironmentPrecedesConfiguration(t *testing.T) {
+	// R-WM8P-2YUA
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"auth argument", []string{"dns", "acme-auth", "unexpected"}, "opsctl: dns acme-auth takes no arguments\n\nsee 'opsctl dns --help' for usage\n"},
+		{"cleanup argument", []string{"dns", "acme-cleanup", "unexpected"}, "opsctl: dns acme-cleanup takes no arguments\n\nsee 'opsctl dns --help' for usage\n"},
+		{"auth missing environment", []string{"dns", "acme-auth"}, "opsctl: acme-auth must be run by certbot as --manual-auth-hook\n"},
+		{"cleanup missing environment", []string{"dns", "acme-cleanup"}, "opsctl: acme-cleanup must be run by certbot as --manual-cleanup-hook\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			deps, assertNoAccess := inertDeps(t, 0)
+			getenvCalls := 0
+			deps.Getenv = func(string) string {
+				getenvCalls++
+				return ""
+			}
+			stdout, stderr, code := invoke(tc.args, deps)
+			assertNoAccess()
+			if code != 2 || stdout != "" || stderr != tc.want {
+				t.Fatalf("exit %d stdout %q stderr %q, want %q", code, stdout, stderr, tc.want)
+			}
+			if strings.Contains(tc.name, "argument") && getenvCalls != 0 {
+				t.Fatalf("Getenv called %d times before argument rejection", getenvCalls)
+			}
+			if strings.Contains(tc.name, "environment") && getenvCalls != 2 {
+				t.Fatalf("Getenv called %d times, want both hook variables", getenvCalls)
+			}
+		})
+	}
+}
+
+func TestDNSGrammarAndProviderFailures(t *testing.T) {
+	// R-FW5G-NCMB
+	for _, args := range [][]string{
+		{"dns", "list"},
+		{"dns", "list", "example.com", "extra"},
+		{"dns", "check", "extra"},
+		{"dns", "check", "--timeout", "1s"},
+		{"dns", "add", "--timeout", "0s", "x.example.com", "TXT", "v"},
+		{"dns", "remove", "--ttl", "0", "x.example.com", "TXT", "v"},
+		{"dns", "acme-auth", "--timeout", "bad"},
+		{"dns", "acme-cleanup", "--ttl", "0"},
+	} {
+		deps, assertNoAccess := inertDeps(t, 0)
+		stdout, stderr, code := invoke(args, deps)
+		assertNoAccess()
+		if code != 2 || stdout != "" || stderr == "" || !strings.HasSuffix(stderr, "\n") {
+			t.Errorf("%q: exit %d stdout %q stderr %q", args, code, stdout, stderr)
+		}
+	}
+
+	providerFailure := configuredDNSDeps(t, &fakeDNSProvider{}, "example.com")
+	providerFailure.DNS.Open = func(context.Context, string) (dns.Provider, error) {
+		return nil, errors.New("provider unavailable")
+	}
+	stdout, stderr, code := invoke([]string{"dns", "check"}, providerFailure)
+	if code != 1 || stdout != "" || stderr != "opsctl: provider unavailable\n" {
+		t.Errorf("open failure: exit %d stdout %q stderr %q", code, stdout, stderr)
+	}
+
+	listFailure := configuredDNSDeps(t, &fakeDNSProvider{
+		recordsErr: map[string]error{"ZONE": errors.New("listing failed")},
+	}, "example.com")
+	stdout, stderr, code = invoke([]string{"dns", "list", "example.com"}, listFailure)
+	if code != 1 || stdout != "" || stderr != "opsctl: listing failed\n" {
+		t.Errorf("list failure: exit %d stdout %q stderr %q", code, stdout, stderr)
+	}
+}
+
+func TestDNSRejectedZonesMakeNoProviderCall(t *testing.T) {
+	// R-FL6D-7EY2
+	for _, subcommand := range []string{"add", "remove", "acme-auth", "acme-cleanup"} {
+		provider := &fakeDNSProvider{}
+		deps := configuredDNSDeps(t, provider, "example.com", "other.test")
+		deps.Getenv = func(key string) string {
+			if key == "CERTBOT_DOMAIN" {
+				return "outside.invalid"
+			}
+			return "token"
+		}
+		args := []string{"dns", subcommand}
+		name := "_acme-challenge.outside.invalid"
+		if subcommand == "add" || subcommand == "remove" {
+			args = append(args, "outside.invalid", "TXT", "token")
+			name = "outside.invalid"
+		}
+		stdout, stderr, code := invoke(args, deps)
+		want := "opsctl: no configured zone contains '" + name + "'\n\nconfigured zones: example.com,other.test\n"
+		if code != 2 || stdout != "" || stderr != want {
+			t.Errorf("%s: exit %d stdout %q stderr %q, want %q", subcommand, code, stdout, stderr, want)
+		}
+		if len(provider.adds) != 0 || len(provider.removes) != 0 || len(provider.recordCalls) != 0 {
+			t.Errorf("%s made provider calls: %#v %#v %#v", subcommand, provider.adds, provider.removes, provider.recordCalls)
+		}
+	}
+
+	provider := &fakeDNSProvider{}
+	deps := configuredDNSDeps(t, provider, "example.com", "other.test")
+	stdout, stderr, code := invoke([]string{"dns", "list", "outside.invalid"}, deps)
+	want := "opsctl: zone not configured: outside.invalid\n\nconfigured zones: example.com,other.test\n"
+	if code != 2 || stdout != "" || stderr != want || len(provider.recordCalls) != 0 {
+		t.Errorf("list: exit %d stdout %q stderr %q calls %v", code, stdout, stderr, provider.recordCalls)
+	}
+}
+
+func TestDNSMutationOutputAndInvalidInvocationPurity(t *testing.T) {
+	// R-FOU2-CQ65
+	provider := &fakeDNSProvider{}
+	deps := configuredDNSDeps(t, provider, "example.com")
+	deps.Getenv = func(key string) string {
+		if key == "CERTBOT_DOMAIN" {
+			return "example.com"
+		}
+		return "token"
+	}
+	for _, args := range [][]string{
+		{"dns", "add", "name.example.com", "TXT", "token"},
+		{"dns", "remove", "name.example.com", "TXT", "token"},
+		{"dns", "acme-auth"},
+		{"dns", "acme-cleanup"},
+	} {
+		stdout, stderr, code := invoke(args, deps)
+		if code != 0 || stdout != "" || stderr != "" {
+			t.Errorf("%q: exit %d stdout %q stderr %q", args, code, stdout, stderr)
+		}
+	}
+
+	for _, args := range [][]string{
+		{"dns"},
+		{"dns", "unknown"},
+		{"dns", "add", "missing", "arguments"},
+		{"dns", "acme-auth", "unexpected"},
+	} {
+		inert, assertNoAccess := inertDeps(t, 0)
+		stdout, stderr, code := invoke(args, inert)
+		assertNoAccess()
+		if code != 2 || stdout != "" || stderr == "" || !strings.HasSuffix(stderr, "\n") {
+			t.Errorf("%q: exit %d stdout %q stderr %q", args, code, stdout, stderr)
 		}
 	}
 }

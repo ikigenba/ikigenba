@@ -48,79 +48,97 @@ func runDNS(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 		return writeDNSUsageError(stderr, "no dns subcommand given")
 	}
 
-	subcommand, ok := dnsSubcommandFor(args[0])
-	if !ok {
-		return writeDNSUsageError(stderr, "unknown dns subcommand '"+diagnosticArg(subcommand.name)+"'")
+	invocation, code := prepareDNSInvocation(args[0], args[1:], stderr, deps)
+	if code != exitOK {
+		return code
 	}
 
 	store := config.Store{Root: deps.Root}
-	client, err := dns.Open(context.Background(), store, deps.DNS)
+	providerName := ""
+	dnsEnv := deps.DNS
+	if dnsEnv.Open != nil {
+		open := dnsEnv.Open
+		dnsEnv.Open = func(ctx context.Context, provider string) (dns.Provider, error) {
+			providerName = provider
+			return open(ctx, provider)
+		}
+	}
+	client, err := dns.Open(context.Background(), store, dnsEnv)
 	if err != nil {
 		return dnsOpenError(stderr, err)
 	}
 
-	command := dnsCommand{stdout: stdout, stderr: stderr, deps: deps, store: store, client: client}
-	return subcommand.run(args[1:], command)
+	switch invocation.name {
+	case "list":
+		return dnsList(invocation.args, stdout, stderr, client)
+	case "add":
+		if code := checkDNSZone(stderr, client, invocation.change.name); code != exitOK {
+			return code
+		}
+		return applyDNSChange(stderr, client, invocation.change, true)
+	case "remove":
+		if code := checkDNSZone(stderr, client, invocation.change.name); code != exitOK {
+			return code
+		}
+		return applyDNSChange(stderr, client, invocation.change, false)
+	case "check":
+		return dnsCheck(invocation.args, stdout, stderr, client, providerName)
+	case "acme-auth", "acme-cleanup":
+		if code := checkDNSZone(stderr, client, invocation.acme.name); code != exitOK {
+			return code
+		}
+		return applyDNSACME(stderr, client, invocation.acme, invocation.name == "acme-auth")
+	default:
+		panic("unreachable dns subcommand")
+	}
 }
 
-type dnsSubcommand struct {
-	name string
-	run  func(args []string, command dnsCommand) exitCode
+type dnsInvocation struct {
+	name   string
+	args   []string
+	change dnsChangeRequest
+	acme   dnsACMERequest
 }
 
-type dnsCommand struct {
-	stdout io.Writer
-	stderr io.Writer
-	deps   Deps
-	store  config.Store
-	client *dns.Client
-}
-
-func dnsSubcommandFor(name string) (dnsSubcommand, bool) {
+func prepareDNSInvocation(name string, args []string, stderr io.Writer, deps Deps) (dnsInvocation, exitCode) {
+	invocation := dnsInvocation{name: name, args: args}
 	switch name {
 	case "list":
-		return dnsSubcommand{name: name, run: runDNSList}, true
+		if len(args) != 1 {
+			return dnsInvocation{}, writeDNSUsageError(stderr, "dns list requires ZONE")
+		}
 	case "add":
-		return dnsSubcommand{name: name, run: runDNSAdd}, true
+		request, code := parseDNSChange(args, stderr, true)
+		if code != exitOK {
+			return dnsInvocation{}, code
+		}
+		invocation.change = request
 	case "remove":
-		return dnsSubcommand{name: name, run: runDNSRemove}, true
+		request, code := parseDNSChange(args, stderr, false)
+		if code != exitOK {
+			return dnsInvocation{}, code
+		}
+		invocation.change = request
 	case "check":
-		return dnsSubcommand{name: name, run: runDNSCheck}, true
+		if len(args) != 0 {
+			return dnsInvocation{}, writeDNSUsageError(stderr, "dns check takes no arguments")
+		}
 	case "acme-auth":
-		return dnsSubcommand{name: name, run: runDNSACMEAuth}, true
+		request, code := parseDNSACME(args, stderr, deps, true)
+		if code != exitOK {
+			return dnsInvocation{}, code
+		}
+		invocation.acme = request
 	case "acme-cleanup":
-		return dnsSubcommand{name: name, run: runDNSACMECleanup}, true
+		request, code := parseDNSACME(args, stderr, deps, false)
+		if code != exitOK {
+			return dnsInvocation{}, code
+		}
+		invocation.acme = request
 	default:
-		return dnsSubcommand{name: name}, false
+		return dnsInvocation{}, writeDNSUsageError(stderr, "unknown dns subcommand '"+diagnosticArg(name)+"'")
 	}
-}
-
-func runDNSList(args []string, command dnsCommand) exitCode {
-	return dnsList(args, command.stdout, command.stderr, command.client)
-}
-
-func runDNSAdd(args []string, command dnsCommand) exitCode {
-	return dnsChange(args, command.stderr, command.client, true)
-}
-
-func runDNSRemove(args []string, command dnsCommand) exitCode {
-	return dnsChange(args, command.stderr, command.client, false)
-}
-
-func runDNSCheck(args []string, command dnsCommand) exitCode {
-	provider, err := command.store.Get(dns.KeyProvider)
-	if err != nil {
-		return dnsError(command.stderr, err)
-	}
-	return dnsCheck(args, command.stdout, command.stderr, command.client, provider)
-}
-
-func runDNSACMEAuth(args []string, command dnsCommand) exitCode {
-	return dnsACME(args, command.stderr, command.client, command.deps, true)
-}
-
-func runDNSACMECleanup(args []string, command dnsCommand) exitCode {
-	return dnsACME(args, command.stderr, command.client, command.deps, false)
+	return invocation, exitOK
 }
 
 func writeDNSUsageError(stderr io.Writer, message string) exitCode {
@@ -250,17 +268,6 @@ type dnsChangeRequest struct {
 	timeout dnsTimeout
 }
 
-func dnsChange(args []string, stderr io.Writer, client *dns.Client, add bool) exitCode {
-	request, code := parseDNSChange(args, stderr, add)
-	if code != exitOK {
-		return code
-	}
-	if code := checkDNSZone(stderr, client, request.name); code != exitOK {
-		return code
-	}
-	return applyDNSChange(stderr, client, request, add)
-}
-
 func parseDNSChange(args []string, stderr io.Writer, add bool) (dnsChangeRequest, exitCode) {
 	name := "remove"
 	if add {
@@ -271,9 +278,7 @@ func parseDNSChange(args []string, stderr io.Writer, add bool) (dnsChangeRequest
 	timeout := dnsTimeout{duration: 2 * time.Minute, label: "2m"}
 	fs.Var(&timeout, "timeout", "")
 	ttl := 300
-	if add {
-		fs.IntVar(&ttl, "ttl", 300, "")
-	}
+	fs.IntVar(&ttl, "ttl", 300, "")
 	if err := fs.Parse(args); err != nil {
 		return dnsChangeRequest{}, writeDNSUsageError(stderr, "invalid dns "+name+" options")
 	}
@@ -338,10 +343,10 @@ func dnsCheck(args []string, stdout, stderr io.Writer, client *dns.Client, provi
 		}
 		switch {
 		case result.ZoneName != zone.Name:
-			_, _ = fmt.Fprintf(&output, "%s: failed: provider reports zone %s\n", zone.Name, result.ZoneName)
+			_, _ = fmt.Fprintf(&output, "%s: failed: provider zone name is %s\n", zone.Name, result.ZoneName)
 			allOK = false
 		case !result.Delegated:
-			_, _ = fmt.Fprintf(&output, "%s: failed: nameservers are not delegated\n", zone.Name)
+			_, _ = fmt.Fprintf(&output, "%s: failed: nameservers not delegated\n", zone.Name)
 			allOK = false
 		default:
 			_, _ = fmt.Fprintf(&output, "%s: ok (%s %s, %d nameservers delegated)\n",
@@ -355,17 +360,6 @@ func dnsCheck(args []string, stdout, stderr io.Writer, client *dns.Client, provi
 		return exitOK
 	}
 	return exitFail
-}
-
-func dnsACME(args []string, stderr io.Writer, client *dns.Client, deps Deps, auth bool) exitCode {
-	request, code := parseDNSACME(args, stderr, deps, auth)
-	if code != exitOK {
-		return code
-	}
-	if code := checkDNSZone(stderr, client, request.name); code != exitOK {
-		return code
-	}
-	return applyDNSACME(stderr, client, request, auth)
 }
 
 type dnsACMERequest struct {
@@ -385,8 +379,13 @@ func parseDNSACME(args []string, stderr io.Writer, deps Deps, auth bool) (dnsACM
 	fs.SetOutput(io.Discard)
 	timeout := dnsTimeout{duration: 2 * time.Minute, label: "2m"}
 	fs.Var(&timeout, "timeout", "")
+	ttl := 300
+	fs.IntVar(&ttl, "ttl", 300, "")
 	if err := fs.Parse(args); err != nil {
 		return dnsACMERequest{}, writeDNSUsageError(stderr, "invalid dns "+subcommand+" options")
+	}
+	if ttl <= 0 {
+		return dnsACMERequest{}, writeDNSUsageError(stderr, "--ttl must be a positive integer")
 	}
 	if len(fs.Args()) != 0 {
 		return dnsACMERequest{}, writeDNSUsageError(stderr, "dns "+subcommand+" takes no arguments")
