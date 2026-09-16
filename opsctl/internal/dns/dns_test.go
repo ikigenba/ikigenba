@@ -18,6 +18,7 @@ import (
 type fakeProvider struct {
 	records     []Record
 	recordsErr  error
+	recordsCtx  context.Context
 	recordsZone string
 	addArgs     []any
 	addErr      error
@@ -25,7 +26,8 @@ type fakeProvider struct {
 	removeErr   error
 }
 
-func (f *fakeProvider) Records(_ context.Context, zoneID string) ([]Record, error) {
+func (f *fakeProvider) Records(ctx context.Context, zoneID string) ([]Record, error) {
+	f.recordsCtx = ctx
 	f.recordsZone = zoneID
 	return f.records, f.recordsErr
 }
@@ -409,14 +411,18 @@ func TestClientRejectsUnconfiguredZoneBeforeProviderOrResolver(t *testing.T) {
 	}
 
 	wantRecords := []Record{{Name: "example.com", Type: "SOA"}}
-	records, err := client.Records(t.Context(), client.Zones[0])
-	if err != nil || !reflect.DeepEqual(records, wantRecords) || provider.recordsZone != "Z1" {
-		t.Fatalf("configured Records = %#v, %v; provider zone %q", records, err, provider.recordsZone)
+	type contextKey struct{}
+	ctx := context.WithValue(t.Context(), contextKey{}, "caller value")
+	records, err := client.Records(ctx, client.Zones[0])
+	if err != nil || !reflect.DeepEqual(records, wantRecords) || provider.recordsZone != "Z1" ||
+		provider.recordsCtx != ctx || provider.recordsCtx.Value(contextKey{}) != "caller value" {
+		t.Fatalf("configured Records = %#v, %v; provider zone %q, context %#v", records, err, provider.recordsZone, provider.recordsCtx)
 	}
 	sentinel := errors.New("records failed")
 	provider.recordsErr = sentinel
-	if _, err := client.Records(t.Context(), client.Zones[0]); !sameErrorInstance(err, sentinel) {
-		t.Fatalf("Records error = %v, want unchanged sentinel", err)
+	records, err = client.Records(ctx, client.Zones[0])
+	if !reflect.DeepEqual(records, wantRecords) || !sameErrorInstance(err, sentinel) {
+		t.Fatalf("Records = %#v, %v, want unchanged records and error", records, err)
 	}
 }
 
