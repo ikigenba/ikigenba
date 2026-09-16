@@ -2,6 +2,7 @@ package nginx_test
 
 import (
 	"context"
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -196,6 +197,286 @@ func TestRenderRejectsManifestFailuresAndConflictingDefaults(t *testing.T) {
 	}
 }
 
+// R-575I-X9KF
+// R-QC9K-4BIS
+func TestPublicationFunctionsHaveExportedContracts(t *testing.T) {
+	t.Parallel()
+	assertApplySignature(t, nginx.Apply)
+	assertApplySignature(t, nginx.Write)
+}
+
+// R-QDHG-I39H
+// R-QEPC-VV06
+func TestWritePublishesExactConfigurationWithoutCommands(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	configurationDirectory := filepath.Join(root, "etc", "nginx", "conf.d")
+	mkdir(t, configurationDirectory)
+	writeManifest(t, root, "service", "app = \"service\"\nport = 4100\n")
+	executions := 0
+	env := host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
+		executions++
+		return host.Result{}, nil
+	}}
+
+	want := []byte(baseWithoutDefault + serviceBlock("service", 4100, false))
+	if err := nginx.Write(context.Background(), env, "example.test"); err != nil {
+		t.Fatalf("Write call 1: %v", err)
+	}
+	assertPublishedConfiguration(t, configurationDirectory, want, 0o644)
+	firstFile, err := openPublishedConfiguration(configurationDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = firstFile.Close() })
+	first, err := firstFile.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := nginx.Write(context.Background(), env, "example.test"); err != nil {
+		t.Fatalf("Write call 2: %v", err)
+	}
+	assertPublishedConfiguration(t, configurationDirectory, want, 0o644)
+	second, err := os.Stat(filepath.Join(configurationDirectory, "ikigenba.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.SameFile(first, second) {
+		t.Fatal("equal configuration was not republished")
+	}
+	if executions != 0 {
+		t.Fatalf("Write executed %d commands", executions)
+	}
+}
+
+// R-QFX9-9MQV
+func TestWriteFailuresPreserveHostStateAndCleanTemporaryFiles(t *testing.T) {
+	t.Parallel()
+	t.Run("render failure", func(t *testing.T) {
+		root := t.TempDir()
+		configurationDirectory := filepath.Join(root, "etc", "nginx", "conf.d")
+		mkdir(t, configurationDirectory)
+		destination := filepath.Join(configurationDirectory, "ikigenba.conf")
+		if err := os.WriteFile(destination, []byte("previous"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		writeManifest(t, root, "broken", "port = [\n")
+		before := snapshotTree(t, root)
+		executions := 0
+		err := nginx.Write(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
+			executions++
+			return host.Result{}, nil
+		}}, "example.test")
+		if err == nil || !strings.Contains(err.Error(), "broken") {
+			t.Fatalf("Write error = %v, want malformed service", err)
+		}
+		if executions != 0 {
+			t.Fatalf("Write executed %d commands", executions)
+		}
+		if after := snapshotTree(t, root); !reflect.DeepEqual(after, before) {
+			t.Fatalf("Write changed host state\nbefore: %#v\nafter:  %#v", before, after)
+		}
+	})
+
+	t.Run("publication failure", func(t *testing.T) {
+		root := t.TempDir()
+		before := snapshotTree(t, root)
+		err := nginx.Write(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
+			t.Fatal("Write executed a command")
+			return host.Result{}, nil
+		}}, "example.test")
+		if err == nil || !strings.Contains(err.Error(), "publish nginx configuration") {
+			t.Fatalf("Write error = %v, want publication failure", err)
+		}
+		if after := snapshotTree(t, root); !reflect.DeepEqual(after, before) {
+			t.Fatalf("Write changed host state\nbefore: %#v\nafter:  %#v", before, after)
+		}
+	})
+
+	t.Run("discovery failure", func(t *testing.T) {
+		root := filepath.Join(t.TempDir(), "missing")
+		err := nginx.Write(context.Background(), host.Env{Root: root}, "example.test")
+		if err == nil || !strings.Contains(err.Error(), "discover services") {
+			t.Fatalf("Write error = %v, want discovery failure", err)
+		}
+		if _, statErr := os.Stat(root); !os.IsNotExist(statErr) {
+			t.Fatalf("Write changed missing root: %v", statErr)
+		}
+	})
+
+	t.Run("conflicting defaults", func(t *testing.T) {
+		root := t.TempDir()
+		configurationDirectory := filepath.Join(root, "etc", "nginx", "conf.d")
+		mkdir(t, configurationDirectory)
+		writeManifest(t, root, "alpha", "app = \"alpha\"\nport = 4100\ndefault = true\n")
+		writeManifest(t, root, "zeta", "app = \"zeta\"\nport = 9200\ndefault = true\n")
+		before := snapshotTree(t, root)
+		err := nginx.Write(context.Background(), host.Env{Root: root}, "example.test")
+		if err == nil || !strings.Contains(err.Error(), "conflicting default services") {
+			t.Fatalf("Write error = %v, want conflicting defaults", err)
+		}
+		if after := snapshotTree(t, root); !reflect.DeepEqual(after, before) {
+			t.Fatalf("Write changed host state\nbefore: %#v\nafter:  %#v", before, after)
+		}
+	})
+}
+
+// R-5I4M-D78O
+// R-5JCI-QYZD
+func TestApplyPublishesTestsAndReloadsOnEveryCall(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	configurationDirectory := filepath.Join(root, "etc", "nginx", "conf.d")
+	mkdir(t, configurationDirectory)
+	writeManifest(t, root, "service", "app = \"service\"\nport = 4100\n")
+	want := []byte(baseWithoutDefault + serviceBlock("service", 4100, false))
+	var commands []host.Command
+	var publicationFiles []*os.File
+	env := host.Env{Root: root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+		commands = append(commands, command)
+		assertPublishedConfiguration(t, configurationDirectory, want, 0o644)
+		if command.Name == "nginx" {
+			file, openErr := openPublishedConfiguration(configurationDirectory)
+			if openErr != nil {
+				t.Fatal(openErr)
+			}
+			publicationFiles = append(publicationFiles, file)
+		}
+		return host.Result{Stdout: []byte("successful stdout"), Stderr: []byte("successful stderr")}, nil
+	}}
+
+	for call := 1; call <= 2; call++ {
+		if err := nginx.Apply(context.Background(), env, "example.test"); err != nil {
+			t.Fatalf("Apply call %d: %v", call, err)
+		}
+	}
+	wantCommands := []host.Command{
+		{Name: "nginx", Args: []string{"-t"}},
+		{Name: "systemctl", Args: []string{"reload", "nginx"}},
+		{Name: "nginx", Args: []string{"-t"}},
+		{Name: "systemctl", Args: []string{"reload", "nginx"}},
+	}
+	if !reflect.DeepEqual(commands, wantCommands) {
+		t.Fatalf("commands = %#v, want %#v", commands, wantCommands)
+	}
+	if len(publicationFiles) != 2 {
+		t.Fatalf("publication count = %d, want 2", len(publicationFiles))
+	}
+	for _, file := range publicationFiles {
+		t.Cleanup(func() { _ = file.Close() })
+	}
+	firstPublication, err := publicationFiles[0].Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondPublication, err := publicationFiles[1].Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.SameFile(firstPublication, secondPublication) {
+		t.Fatal("equal configuration was not republished on every Apply")
+	}
+	assertPublishedConfiguration(t, configurationDirectory, want, 0o644)
+}
+
+// R-5KKF-4QQ2
+func TestApplyRestoresPreviousConfigurationWhenNginxTestFails(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name         string
+		previous     bool
+		executionErr error
+		exitCode     int
+	}{
+		{name: "previous file and nonzero status", previous: true, exitCode: 23},
+		{name: "previous absence and execution error", executionErr: errors.New("cannot execute")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			configurationDirectory := filepath.Join(root, "etc", "nginx", "conf.d")
+			mkdir(t, configurationDirectory)
+			destination := filepath.Join(configurationDirectory, "ikigenba.conf")
+			if test.previous {
+				if err := os.WriteFile(destination, []byte("previous bytes"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var commands []host.Command
+			env := host.Env{Root: root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+				commands = append(commands, command)
+				return host.Result{ExitCode: test.exitCode, Stdout: []byte("test output")}, test.executionErr
+			}}
+
+			err := nginx.Apply(context.Background(), env, "example.test")
+			if err == nil {
+				t.Fatal("Apply succeeded")
+			}
+			var commandErr *host.CommandError
+			if !errors.As(err, &commandErr) || commandErr.Label != "nginx -t" || commandErr.Result.ExitCode != test.exitCode || !errors.Is(commandErr.Err, test.executionErr) {
+				t.Fatalf("error = %#v, want preserved nginx CommandError", err)
+			}
+			if !reflect.DeepEqual(commands, []host.Command{{Name: "nginx", Args: []string{"-t"}}}) {
+				t.Fatalf("commands = %#v", commands)
+			}
+			if test.previous {
+				assertPublishedConfiguration(t, configurationDirectory, []byte("previous bytes"), 0o600)
+			} else if _, statErr := os.Stat(destination); !os.IsNotExist(statErr) {
+				t.Fatalf("destination after rollback: %v", statErr)
+			}
+			assertNoTemporaryConfigurations(t, configurationDirectory)
+		})
+	}
+}
+
+func TestApplyReturnsCommandErrorsAndReportsRestorationFailure(t *testing.T) {
+	t.Parallel()
+	t.Run("reload", func(t *testing.T) {
+		root := t.TempDir()
+		configurationDirectory := filepath.Join(root, "etc", "nginx", "conf.d")
+		mkdir(t, configurationDirectory)
+		cause := errors.New("reload unavailable")
+		err := nginx.Apply(context.Background(), host.Env{Root: root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+			if command.Name == "nginx" && reflect.DeepEqual(command.Args, []string{"-t"}) {
+				return host.Result{}, nil
+			}
+			if command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"reload", "nginx"}) {
+				return host.Result{Stdout: []byte("reload output"), ExitCode: 19}, cause
+			}
+			t.Fatalf("unexpected command: %#v", command)
+			return host.Result{}, nil
+		}}, "example.test")
+		var commandErr *host.CommandError
+		if !errors.As(err, &commandErr) {
+			t.Fatalf("error = %T %v, want CommandError", err, err)
+		}
+		if commandErr.Label != "systemctl reload nginx" || commandErr.Result.ExitCode != 19 || string(commandErr.Result.Stdout) != "reload output" || !errors.Is(commandErr.Err, cause) {
+			t.Fatalf("CommandError = %#v", commandErr)
+		}
+	})
+
+	t.Run("nginx test and restoration", func(t *testing.T) {
+		root := t.TempDir()
+		configurationDirectory := filepath.Join(root, "etc", "nginx", "conf.d")
+		mkdir(t, configurationDirectory)
+		err := nginx.Apply(context.Background(), host.Env{Root: root, Execute: func(_ context.Context, _ host.Command) (host.Result, error) {
+			if removeErr := os.RemoveAll(configurationDirectory); removeErr != nil {
+				t.Fatal(removeErr)
+			}
+			if writeErr := os.WriteFile(configurationDirectory, []byte("blocks restoration"), 0o600); writeErr != nil {
+				t.Fatal(writeErr)
+			}
+			return host.Result{ExitCode: 7, Stderr: []byte("invalid configuration")}, nil
+		}}, "example.test")
+		var commandErr *host.CommandError
+		if !errors.As(err, &commandErr) || commandErr.Label != "nginx -t" || commandErr.Result.ExitCode != 7 {
+			t.Fatalf("error = %#v, want nginx CommandError", err)
+		}
+		if !strings.Contains(err.Error(), "restore previous nginx configuration") {
+			t.Fatalf("error %q does not identify restoration failure", err)
+		}
+	})
+}
+
 func filesDeclareFunction(files []*ast.File, name string) bool {
 	for _, file := range files {
 		for _, declaration := range file.Decls {
@@ -210,6 +491,68 @@ func filesDeclareFunction(files []*ast.File, name string) bool {
 
 func assertRenderSignature(t *testing.T, _ func(context.Context, host.Env, string) ([]byte, error)) {
 	t.Helper()
+}
+
+func assertApplySignature(t *testing.T, _ func(context.Context, host.Env, string) error) {
+	t.Helper()
+}
+
+func assertPublishedConfiguration(t *testing.T, directory string, contents []byte, mode os.FileMode) {
+	t.Helper()
+	destination := filepath.Join(directory, "ikigenba.conf")
+	directoryFS, err := os.OpenRoot(directory)
+	if err != nil {
+		t.Fatalf("open configuration directory: %v", err)
+	}
+	got, err := directoryFS.ReadFile("ikigenba.conf")
+	closeErr := directoryFS.Close()
+	if err != nil {
+		t.Fatalf("read published configuration: %v", err)
+	}
+	if closeErr != nil {
+		t.Fatalf("close configuration directory: %v", closeErr)
+	}
+	if string(got) != string(contents) {
+		t.Fatalf("published configuration = %q, want %q", got, contents)
+	}
+	info, err := os.Stat(destination)
+	if err != nil {
+		t.Fatalf("stat published configuration: %v", err)
+	}
+	if info.Mode().Perm() != mode {
+		t.Fatalf("published mode = %04o, want %04o", info.Mode().Perm(), mode)
+	}
+	assertNoTemporaryConfigurations(t, directory)
+}
+
+func assertNoTemporaryConfigurations(t *testing.T, directory string) {
+	t.Helper()
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatalf("read configuration directory: %v", err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".ikigenba.conf-") {
+			t.Errorf("temporary configuration remains: %s", entry.Name())
+		}
+	}
+}
+
+func openPublishedConfiguration(directory string) (*os.File, error) {
+	directoryFS, err := os.OpenRoot(directory)
+	if err != nil {
+		return nil, err
+	}
+	file, openErr := directoryFS.Open("ikigenba.conf")
+	closeErr := directoryFS.Close()
+	if openErr != nil {
+		return nil, openErr
+	}
+	if closeErr != nil {
+		_ = file.Close()
+		return nil, closeErr
+	}
+	return file, nil
 }
 
 func serviceBlock(name string, port int, defaultService bool) string {
