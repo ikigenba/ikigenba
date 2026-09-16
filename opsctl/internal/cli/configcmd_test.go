@@ -292,37 +292,59 @@ func TestConfigFilesystemAccessFailures(t *testing.T) {
 	for _, tc := range []struct {
 		operation string
 		args      []string
+		failureOp string
+		failure   func(string) string
 	}{
-		{"get", []string{"config", "get", "key"}},
-		{"set", []string{"config", "set", "key=value"}},
-		{"del", []string{"config", "del", "key"}},
-		{"list", []string{"config", "list"}},
+		{"get", []string{"config", "get", "key"}, "open", func(path string) string { return path }},
+		{"set", []string{"config", "set", "key=value"}, "mkdir", filepath.Dir},
+		{"del", []string{"config", "del", "key"}, "stat", filepath.Dir},
+		{"list", []string{"config", "list"}, "open", func(path string) string { return path }},
 	} {
-		t.Run(tc.operation, func(t *testing.T) {
-			deps := depsAt(t, 0)
-			path := configFile(deps.Root)
-			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			blocked := filepath.Join(deps.Root, "etc")
-			if err := syscall.Chmod(blocked, 0); err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = syscall.Chmod(blocked, 0o700) })
-			stdout, stderr, code := invoke(tc.args, deps)
-			if code != 1 {
-				t.Errorf("exit = %d, want 1", code)
-			}
-			if stdout != "" {
-				t.Errorf("stdout = %q, want empty", stdout)
-			}
-			if !strings.HasPrefix(stderr, "opsctl: config "+tc.operation+" failed for "+strconv.Quote(path)+": ") {
-				t.Errorf("stderr = %q, want operation and resolved config path", stderr)
-			}
-		})
+		for _, rootCase := range []struct {
+			name   string
+			suffix string
+		}{
+			{name: "ordinary"},
+			{name: "escaped", suffix: "root\r\nline"},
+		} {
+			t.Run(tc.operation+"/"+rootCase.name, func(t *testing.T) {
+				deps := depsAt(t, 0)
+				if rootCase.suffix != "" {
+					deps.Root = filepath.Join(deps.Root, rootCase.suffix)
+				}
+				path := configFile(deps.Root)
+				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				blocked := filepath.Join(deps.Root, "etc")
+				if err := syscall.Chmod(blocked, 0); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = syscall.Chmod(blocked, 0o700) })
+
+				stdout, stderr, code := invoke(tc.args, deps)
+				if code != 1 {
+					t.Errorf("exit = %d, want 1", code)
+				}
+				if stdout != "" {
+					t.Errorf("stdout = %q, want empty", stdout)
+				}
+				failurePath := tc.failure(path)
+				want := "opsctl: config " + tc.operation + " failed for " + strconv.Quote(path) +
+					": " + tc.failureOp + " " + failurePath + ": permission denied\n"
+				if rootCase.suffix != "" {
+					want = "opsctl: config " + tc.operation + " failed for " + strconv.Quote(path) +
+						": " + tc.failureOp + " " + strings.NewReplacer("\r", `\r`, "\n", `\n`).Replace(failurePath) +
+						": permission denied\n"
+				}
+				if stderr != want {
+					t.Errorf("stderr = %q, want %q", stderr, want)
+				}
+			})
+		}
 	}
 }
 

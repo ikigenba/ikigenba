@@ -63,7 +63,7 @@ func configActionErr(stderr io.Writer, operation string, deps Deps, err error) e
 		writeDiagnostic(stderr, errors.New(diagnosticArg(path)+" is corrupt"))
 		return exitFail
 	}
-	writeDiagnostic(stderr, fmt.Errorf("config %s failed for %q: %w", operation, path, err))
+	writeDiagnostic(stderr, fmt.Errorf("config %s failed for %q: %s", operation, path, diagnosticArg(err.Error())))
 	return exitFail
 }
 
