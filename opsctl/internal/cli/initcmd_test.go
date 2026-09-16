@@ -169,9 +169,72 @@ func TestInitStoreReadFailuresRunNoWork(t *testing.T) {
 	before := treeState(t, deps.Root)
 
 	stdout, stderr, code := invoke([]string{"init"}, deps)
-	if code != 1 || stdout != "" || stderr != "opsctl: "+readErr.Error()+"\n" {
+	wantStderr := "opsctl: read " + path + ": is a directory\n"
+	if code != 1 || stdout != "" || stderr != wantStderr {
 		t.Errorf("exit %d stdout %q stderr %q, want exit 1, empty stdout, stderr %q",
-			code, stdout, stderr, "opsctl: "+readErr.Error()+"\n")
+			code, stdout, stderr, wantStderr)
+	}
+	if after := treeState(t, deps.Root); !reflect.DeepEqual(after, before) {
+		t.Errorf("Root changed:\nbefore %#v\nafter  %#v", before, after)
+	}
+}
+
+func TestInitStoreRereadFailureDiscardsPreflight(t *testing.T) {
+	// R-LYOS-MASG R-LZWP-02J5
+	deps := depsAt(t, 0)
+	configDir := filepath.Join(deps.Root, "etc", "ikigenba")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(target, []byte(`{"dns.provider":"route53","dns.zones":"example.com:ZONE","host.name":"example.com"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(configDir, "config.json")); err != nil {
+		t.Fatal(err)
+	}
+
+	deps.LookPath = foundInitTools
+	provider := &fakeDNSProvider{}
+	openCalls := 0
+	deps.DNS.Open = func(context.Context, string) (dns.Provider, error) {
+		openCalls++
+		if err := os.Chmod(target, 0); err != nil {
+			t.Fatal(err)
+		}
+		return provider, nil
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(target, 0o600); err != nil {
+			t.Error(err)
+		}
+	})
+	deps.DNS.LookupNS = func(context.Context, string) ([]string, error) {
+		t.Fatal("zone lookup invoked after store reread failure")
+		return nil, nil
+	}
+	deps.LookupHost = func(context.Context, string) ([]string, error) {
+		t.Fatal("host lookup invoked after store reread failure")
+		return nil, nil
+	}
+	deps.Execute = func(context.Context, host.Command) (host.Result, error) {
+		t.Fatal("setup invoked after store reread failure")
+		return host.Result{}, nil
+	}
+	before := treeState(t, deps.Root)
+
+	stdout, stderr, code := invoke([]string{"init"}, deps)
+	configPath := filepath.Join(configDir, "config.json")
+	wantStderr := "opsctl: open " + configPath + ": permission denied\n"
+	if code != 1 || stdout != "" || stderr != wantStderr {
+		t.Errorf("exit %d stdout %q stderr %q, want exit 1, empty stdout, stderr %q",
+			code, stdout, stderr, wantStderr)
+	}
+	if openCalls != 1 {
+		t.Errorf("provider opens = %d, want 1", openCalls)
+	}
+	if len(provider.recordCalls) != 0 {
+		t.Errorf("provider record calls = %v, want none", provider.recordCalls)
 	}
 	if after := treeState(t, deps.Root); !reflect.DeepEqual(after, before) {
 		t.Errorf("Root changed:\nbefore %#v\nafter  %#v", before, after)

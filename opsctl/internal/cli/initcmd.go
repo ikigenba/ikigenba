@@ -65,7 +65,7 @@ func runInit(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return initConfigErr(stderr, deps, err)
 	}
-	return runInitPreflight(stdout, deps, entries)
+	return runInitPreflight(stdout, stderr, deps, entries)
 }
 
 func initConfigErr(stderr io.Writer, deps Deps, err error) exitCode {
@@ -84,8 +84,8 @@ func writeInitUsageError(stderr io.Writer, message string) exitCode {
 
 // runInitPreflight is the boundary between command handling and the checks.
 // The preflight implementation consumes the configuration snapshot loaded
-// before any output, so a corrupt store can never produce partial stdout.
-func runInitPreflight(stdout io.Writer, deps Deps, entries []config.Entry) exitCode {
+// before any output, so a store read failure can never produce partial stdout.
+func runInitPreflight(stdout, stderr io.Writer, deps Deps, entries []config.Entry) exitCode {
 	preflight := initPreflight{
 		deps:   deps,
 		store:  config.Store{Root: deps.Root},
@@ -96,7 +96,9 @@ func runInitPreflight(stdout io.Writer, deps Deps, entries []config.Entry) exitC
 		preflight.values[entry.Key] = entry.Value
 	}
 	preflight.checkTools()
-	preflight.checkDNSConfig()
+	if err := preflight.checkDNSConfig(); err != nil {
+		return initConfigErr(stderr, deps, err)
+	}
 	preflight.checkHostConfig()
 	preflight.checkZones()
 	preflight.checkHostZone()
@@ -132,7 +134,7 @@ func (p *initPreflight) checkTools() {
 	}
 }
 
-func (p *initPreflight) checkDNSConfig() {
+func (p *initPreflight) checkDNSConfig() error {
 	p.provider = p.values[dns.KeyProvider]
 	zonesValue := p.values[dns.KeyZones]
 	providerSet := p.provider != ""
@@ -179,12 +181,10 @@ func (p *initPreflight) checkDNSConfig() {
 			LookupNS: p.deps.DNS.LookupNS,
 		})
 		if openErr != nil {
-			// The same snapshot was parsed above, so this can only be a store read failure.
-			p.client = nil
-			p.providerOK = false
-			p.allOK = false
+			return openErr
 		}
 	}
+	return nil
 }
 
 func (p *initPreflight) checkHostConfig() {
