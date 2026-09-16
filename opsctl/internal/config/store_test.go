@@ -15,39 +15,47 @@ import (
 )
 
 func TestConstants(t *testing.T) {
-	// R-NHVQ-SZF1
+	// R-W563-Q6GK
 	if config.Dir != "/etc/ikigenba" {
 		t.Errorf("Dir = %q, want /etc/ikigenba", config.Dir)
 	}
+	// R-W6E0-3Y79
 	if config.FileName != "config.json" {
 		t.Errorf("FileName = %q, want config.json", config.FileName)
 	}
+	// R-W7LW-HPXY
 	if config.LockName != "config.lock" {
 		t.Errorf("LockName = %q, want config.lock", config.LockName)
 	}
 }
 
 func TestErrorValues(t *testing.T) {
-	// R-NJ3N-6R5Q
-	want := map[error]string{
-		config.ErrNotSet:       "key not set",
-		config.ErrInvalidKey:   "invalid key",
-		config.ErrInvalidValue: "invalid value",
-		config.ErrCorrupt:      "config file is corrupt",
+	want := []struct {
+		err error
+		msg string
+	}{
+		// R-W8TS-VHON
+		{config.ErrNotSet, "key not set"},
+		// R-WA1P-99FC
+		{config.ErrInvalidKey, "invalid key"},
+		// R-WB9L-N161
+		{config.ErrInvalidValue, "invalid value"},
+		// R-WCHI-0SWQ
+		{config.ErrCorrupt, "config file is corrupt"},
 	}
-	for err, msg := range want {
-		if err == nil {
-			t.Errorf("error for %q is nil", msg)
+	for _, test := range want {
+		if test.err == nil {
+			t.Errorf("error for %q is nil", test.msg)
 			continue
 		}
-		if err.Error() != msg {
-			t.Errorf("error.Error() = %q, want %q", err.Error(), msg)
+		if test.err.Error() != test.msg {
+			t.Errorf("error.Error() = %q, want %q", test.err.Error(), test.msg)
 		}
 	}
 }
 
 func TestExportedAPI(t *testing.T) {
-	// R-NKBJ-KIWF
+	// R-ETPG-BBIJ
 	st := reflect.TypeOf(config.Store{})
 	if st.Kind() != reflect.Struct {
 		t.Fatalf("Store is %s, want struct", st.Kind())
@@ -60,6 +68,7 @@ func TestExportedAPI(t *testing.T) {
 		t.Errorf("Store field = %s %s, want Root string", root.Name, root.Type)
 	}
 
+	// R-EUXC-P398
 	et := reflect.TypeOf(config.Entry{})
 	if et.Kind() != reflect.Struct {
 		t.Fatalf("Entry is %s, want struct", et.Kind())
@@ -81,6 +90,7 @@ func TestExportedAPI(t *testing.T) {
 	errorType := reflect.TypeOf((*error)(nil)).Elem()
 	entrySlice := reflect.TypeOf([]config.Entry{})
 
+	// R-EW59-2UZX
 	vt := reflect.TypeOf(config.ValidKey)
 	if vt.Kind() != reflect.Func {
 		t.Fatalf("ValidKey is %s, want func", vt.Kind())
@@ -89,7 +99,9 @@ func TestExportedAPI(t *testing.T) {
 		t.Errorf("ValidKey signature = %s, want func(string) bool", vt)
 	}
 
+	// R-EXD5-GMQM
 	checkMethod(t, st, "Get", []reflect.Type{stringType}, []reflect.Type{stringType, errorType})
+	// R-EYL1-UEHB
 	checkMethod(t, st, "Set", []reflect.Type{stringType, stringType}, []reflect.Type{errorType})
 	checkMethod(t, st, "Del", []reflect.Type{stringType}, []reflect.Type{errorType})
 	checkMethod(t, st, "List", nil, []reflect.Type{entrySlice, errorType})
