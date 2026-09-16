@@ -51,6 +51,11 @@ func newStore(t *testing.T, values map[string]string) config.Store {
 	return store
 }
 
+func sameErrorInstance(got, want error) bool {
+	return reflect.TypeOf(got) == reflect.TypeOf(want) &&
+		reflect.ValueOf(got).Pointer() == reflect.ValueOf(want).Pointer()
+}
+
 // R-DDWW-CBQX R-DISH-VEPP R-DMG7-0PXS R-DQ3W-615V R-DTRL-BCDY
 func TestVocabulary(t *testing.T) {
 	const (
@@ -67,7 +72,8 @@ func TestVocabulary(t *testing.T) {
 	}
 }
 
-// R-DW7E-2VVC R-DYN6-UFCQ R-E12Z-LYU4 R-KVNV-XV2Y R-KWVS-BMTN R-KY3O-PEKC R-E9MA-AD0Z
+// R-DW7E-2VVC R-DYN6-UFCQ R-E12Z-LYU4 R-KVNV-XV2Y R-E9MA-AD0Z
+// R-E3IS-DIBI R-WIKZ-XNM7 R-EC23-1WID R-EEHV-TFZR R-EGXO-KZH5 R-EJDH-CIYJ R-ELTA-42FX
 func TestExportedShapesAndSignatures(t *testing.T) {
 	typesAndFields := []struct {
 		value any
@@ -82,14 +88,30 @@ func TestExportedShapesAndSignatures(t *testing.T) {
 	}
 	for _, item := range typesAndFields {
 		typ := reflect.TypeOf(item.value)
-		if typ.NumField() != len(item.names) {
-			t.Fatalf("%s has %d fields", typ.Name(), typ.NumField())
-		}
-		for i, name := range item.names {
-			field := typ.Field(i)
-			if field.Name != name || field.Type != item.types[i] {
-				t.Fatalf("%s field %d = %s %s", typ.Name(), i, field.Name, field.Type)
+		if typ.Name() != "Client" {
+			if typ.NumField() != len(item.names) {
+				t.Fatalf("%s has %d fields, want exactly %d", typ.Name(), typ.NumField(), len(item.names))
 			}
+			for i, name := range item.names {
+				field := typ.Field(i)
+				if field.Name != name || field.Type != item.types[i] {
+					t.Fatalf("%s field %d = %s %s", typ.Name(), i, field.Name, field.Type)
+				}
+			}
+			continue
+		}
+		exported := 0
+		for i := range typ.NumField() {
+			field := typ.Field(i)
+			if field.IsExported() {
+				if exported >= len(item.names) || field.Name != item.names[exported] || field.Type != item.types[exported] {
+					t.Fatalf("%s exported field %d = %s %s", typ.Name(), exported, field.Name, field.Type)
+				}
+				exported++
+			}
+		}
+		if exported != len(item.names) {
+			t.Fatalf("%s has %d exported fields, want %d", typ.Name(), exported, len(item.names))
 		}
 	}
 
@@ -273,7 +295,7 @@ func TestClientDelegatesNormalisedMutationsAndPreservesErrors(t *testing.T) {
 	}
 }
 
-// R-L5F3-010I
+// R-XTDA-HT2V
 func TestCheckFindsApexRecordsAndComparesDelegationAsSet(t *testing.T) {
 	apexNameservers := []string{"NS2.EXAMPLE.NET.", "ns1.example.net"}
 	provider := &fakeProvider{records: []Record{
@@ -286,11 +308,15 @@ func TestCheckFindsApexRecordsAndComparesDelegationAsSet(t *testing.T) {
 		KeyZones:    "example.com:Z1",
 	})
 	delegatedNameservers := []string{"ns1.example.net.", "ns2.example.net"}
+	var resolverErr error
 	client, err := Open(t.Context(), store, Env{
 		Open: func(context.Context, string) (Provider, error) { return provider, nil },
 		LookupNS: func(_ context.Context, zone string) ([]string, error) {
 			if zone != "example.com" {
 				t.Fatalf("lookup zone = %q", zone)
+			}
+			if resolverErr != nil {
+				return nil, resolverErr
 			}
 			return delegatedNameservers, nil
 		},
@@ -317,10 +343,121 @@ func TestCheckFindsApexRecordsAndComparesDelegationAsSet(t *testing.T) {
 	if result.Delegated {
 		t.Fatalf("Check reported delegation for different nameserver sets: %#v", result)
 	}
+	delegatedNameservers = []string{"ns1.example.net", "NS2.EXAMPLE.NET.", "ns2.example.net"}
+	result, err = client.Check(t.Context(), client.Zones[0])
+	if err != nil || !result.Delegated {
+		t.Fatalf("Check with duplicate resolver answer = %#v, %v; want delegated", result, err)
+	}
 
 	provider.records = []Record{{Name: "example.com", Type: "NS", Values: []string{"ns1.example.net"}}}
 	if _, err := client.Check(t.Context(), client.Zones[0]); err == nil {
 		t.Fatal("Check succeeded without SOA")
+	}
+
+	providerErr := errors.New("provider records failed")
+	provider.recordsErr = providerErr
+	if _, err := client.Check(t.Context(), client.Zones[0]); !sameErrorInstance(err, providerErr) {
+		t.Fatalf("Check provider error = %v, want unchanged sentinel", err)
+	}
+	provider.recordsErr = nil
+	provider.records = []Record{
+		{Name: "example.com", Type: "SOA"},
+		{Name: "example.com", Type: "NS", Values: []string{"ns.example.net"}},
+	}
+	resolverErr = errors.New("resolver failed")
+	if _, err := client.Check(t.Context(), client.Zones[0]); !sameErrorInstance(err, resolverErr) {
+		t.Fatalf("Check resolver error = %v, want unchanged sentinel", err)
+	}
+	resolverErr = nil
+	provider.records = []Record{{Name: "example.com", Type: "SOA"}}
+	delegatedNameservers = nil
+	result, err = client.Check(t.Context(), client.Zones[0])
+	if err != nil || result.Delegated {
+		t.Fatalf("Check with no nameservers = %#v, %v; want not delegated", result, err)
+	}
+}
+
+// R-FBF6-590I
+func TestClientRejectsUnconfiguredZoneBeforeProviderOrResolver(t *testing.T) {
+	provider := &fakeProvider{records: []Record{{Name: "example.com", Type: "SOA"}}}
+	resolverCalled := false
+	client := Client{
+		Provider: provider,
+		Zones:    []Zone{{Name: "example.com", ID: "Z1"}},
+		lookupNS: func(context.Context, string) ([]string, error) {
+			resolverCalled = true
+			return nil, nil
+		},
+	}
+	for _, zone := range []Zone{
+		{Name: "other.example.com", ID: "Z1"},
+		{Name: "example.com", ID: "Z2"},
+	} {
+		provider.recordsZone = ""
+		if records, err := client.Records(t.Context(), zone); records != nil || !errors.Is(err, ErrNoZone) {
+			t.Fatalf("Records(%#v) = %#v, %v, want nil ErrNoZone", zone, records, err)
+		}
+		if provider.recordsZone != "" {
+			t.Fatalf("Records(%#v) called provider for zone %q", zone, provider.recordsZone)
+		}
+		if result, err := client.Check(t.Context(), zone); !reflect.DeepEqual(result, CheckResult{}) || !errors.Is(err, ErrNoZone) {
+			t.Fatalf("Check(%#v) = %#v, %v, want zero ErrNoZone", zone, result, err)
+		}
+		if provider.recordsZone != "" || resolverCalled {
+			t.Fatalf("Check(%#v) called provider or resolver", zone)
+		}
+	}
+
+	wantRecords := []Record{{Name: "example.com", Type: "SOA"}}
+	records, err := client.Records(t.Context(), client.Zones[0])
+	if err != nil || !reflect.DeepEqual(records, wantRecords) || provider.recordsZone != "Z1" {
+		t.Fatalf("configured Records = %#v, %v; provider zone %q", records, err, provider.recordsZone)
+	}
+	sentinel := errors.New("records failed")
+	provider.recordsErr = sentinel
+	if _, err := client.Records(t.Context(), client.Zones[0]); !sameErrorInstance(err, sentinel) {
+		t.Fatalf("Records error = %v, want unchanged sentinel", err)
+	}
+}
+
+// R-WJSW-BFCW
+func TestOpenRetainsResolverPerClient(t *testing.T) {
+	provider := &fakeProvider{records: []Record{
+		{Name: "example.com", Type: "SOA"},
+		{Name: "example.com", Type: "NS", Values: []string{"ns.example.net"}},
+	}}
+	store := newStore(t, map[string]string{KeyProvider: "route53", KeyZones: "example.com:Z1"})
+	type lookup struct {
+		ctx  context.Context
+		zone string
+	}
+	lookups := make([]lookup, 2)
+	clients := make([]*Client, 2)
+	for i := range clients {
+		index := i
+		client, err := Open(t.Context(), store, Env{
+			Open: func(context.Context, string) (Provider, error) { return provider, nil },
+			LookupNS: func(ctx context.Context, zone string) ([]string, error) {
+				lookups[index] = lookup{ctx: ctx, zone: zone}
+				return []string{"ns.example.net"}, nil
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		clients[i] = client
+	}
+
+	type contextKey struct{}
+	for i := len(clients) - 1; i >= 0; i-- {
+		ctx := context.WithValue(t.Context(), contextKey{}, i)
+		result, err := clients[i].Check(ctx, clients[i].Zones[0])
+		if err != nil || !result.Delegated {
+			t.Fatalf("client %d Check = %#v, %v", i, result, err)
+		}
+		if lookups[i].ctx != ctx || lookups[i].zone != "example.com" {
+			t.Fatalf("client %d lookup = %#v", i, lookups[i])
+		}
 	}
 }
 

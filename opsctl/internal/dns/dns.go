@@ -59,6 +59,7 @@ type Env struct {
 type Client struct {
 	Provider Provider
 	Zones    []Zone
+	lookupNS func(context.Context, string) ([]string, error)
 }
 
 // CheckResult describes a zone's provider identity and public delegation.
@@ -66,11 +67,6 @@ type CheckResult struct {
 	ZoneName    string
 	Nameservers []string
 	Delegated   bool
-}
-
-type providerWithResolver struct {
-	Provider
-	lookupNS func(context.Context, string) ([]string, error)
 }
 
 // Open loads and validates DNS configuration before opening its provider.
@@ -104,8 +100,9 @@ func Open(ctx context.Context, store config.Store, env Env) (*Client, error) {
 		return nil, err
 	}
 	return &Client{
-		Provider: providerWithResolver{Provider: opened, lookupNS: env.LookupNS},
+		Provider: opened,
 		Zones:    zones,
+		lookupNS: env.LookupNS,
 	}, nil
 }
 
@@ -164,7 +161,19 @@ func (c *Client) ZoneFor(name string) (Zone, error) {
 
 // Records returns all records for zone.
 func (c *Client) Records(ctx context.Context, zone Zone) ([]Record, error) {
+	if !c.hasZone(zone) {
+		return nil, fmt.Errorf("%w: %q", ErrNoZone, zone.Name)
+	}
 	return c.Provider.Records(ctx, zone.ID)
+}
+
+func (c *Client) hasZone(want Zone) bool {
+	for _, zone := range c.Zones {
+		if zone == want {
+			return true
+		}
+	}
+	return false
 }
 
 // Add adds value to a DNS record set.
@@ -189,7 +198,7 @@ func (c *Client) Remove(ctx context.Context, name, typ, value string) error {
 
 // Check compares a zone's provider records with its public delegation.
 func (c *Client) Check(ctx context.Context, zone Zone) (CheckResult, error) {
-	records, err := c.Provider.Records(ctx, zone.ID)
+	records, err := c.Records(ctx, zone)
 	if err != nil {
 		return CheckResult{}, err
 	}
@@ -212,15 +221,15 @@ func (c *Client) Check(ctx context.Context, zone Zone) (CheckResult, error) {
 	}
 
 	var delegated []string
-	if wrapped, ok := c.Provider.(providerWithResolver); ok && wrapped.lookupNS != nil {
-		delegated, err = wrapped.lookupNS(ctx, zone.Name)
+	if c.lookupNS != nil {
+		delegated, err = c.lookupNS(ctx, zone.Name)
 	} else {
 		delegated, err = resolveDefaultNS(ctx, zone.Name)
 	}
 	if err != nil {
 		return CheckResult{}, err
 	}
-	result.Delegated = sameNames(result.Nameservers, delegated)
+	result.Delegated = len(result.Nameservers) > 0 && sameNames(result.Nameservers, delegated)
 	return result, nil
 }
 
