@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"flag"
 	"io"
 	"net"
 	"os/exec"
@@ -142,15 +141,31 @@ func run(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	return dispatch(rest[0], rest[1:], stdout, stderr, deps)
 }
 
+type topLevelOption int
+
+const (
+	topLevelUnknown topLevelOption = iota
+	topLevelHelp
+	topLevelVersion
+)
+
+func classifyTopLevelOption(arg string) topLevelOption {
+	switch arg {
+	case "-h", "--help":
+		return topLevelHelp
+	case "-V", "--version":
+		return topLevelVersion
+	default:
+		return topLevelUnknown
+	}
+}
+
 func unknownTopLevelOption(args []string) string {
 	for _, arg := range args {
 		if !strings.HasPrefix(arg, "-") {
 			break
 		}
-		switch arg {
-		case "-h", "--help", "-V", "--version":
-			continue
-		default:
+		if classifyTopLevelOption(arg) == topLevelUnknown {
 			return arg
 		}
 	}
@@ -159,23 +174,19 @@ func unknownTopLevelOption(args []string) string {
 
 func parseTopLevel(args []string) (help, showVersion bool, rest []string, err error) {
 	if option := unknownTopLevelOption(args); option != "" {
-		return false, false, nil, flag.ErrHelp
+		return false, false, nil, errors.New("unknown option")
 	}
-
-	fs := flag.NewFlagSet("opsctl", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	fs.Usage = func() {}
-	boolFlag(fs, "h", "help", &help)
-	boolFlag(fs, "V", "version", &showVersion)
-	if err = fs.Parse(args); err != nil {
-		return false, false, nil, err
+	for index, arg := range args {
+		switch classifyTopLevelOption(arg) {
+		case topLevelHelp:
+			help = true
+		case topLevelVersion:
+			showVersion = true
+		default:
+			return help, showVersion, args[index:], nil
+		}
 	}
-	return help, showVersion, fs.Args(), nil
-}
-
-func boolFlag(fs *flag.FlagSet, short, long string, dest *bool) {
-	fs.BoolVar(dest, short, false, "")
-	fs.BoolVar(dest, long, false, "")
+	return help, showVersion, nil, nil
 }
 
 func writeOut(w io.Writer, s string) exitCode {
@@ -201,8 +212,10 @@ func diagnosticArg(s string) string {
 
 func dispatch(name string, args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	switch name {
-	case "backup", "cert", "host", "install", "nginx", "restart", "restore", "retire", "status", "uninstall":
+	case "backup", "host", "install", "nginx", "restart", "restore", "retire", "status", "uninstall":
 		return runCommandFrame(name, args, stdout, stderr, deps)
+	case "cert":
+		return runCert(args, stdout, stderr, deps)
 	case "config":
 		return runConfig(args, stdout, stderr, deps)
 	case "dns":
@@ -237,7 +250,7 @@ func runCommandFrame(name string, args []string, stdout, stderr io.Writer, deps 
 	if code := requireRoot(deps, stderr); code != exitOK {
 		return code
 	}
-	writeDiagnostic(stderr, errors.New(name+": operation is not implemented"))
+	writeDiagnostic(stderr, errors.New(diagnosticArg(name)+": operation is not implemented"))
 	return exitFail
 }
 

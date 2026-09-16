@@ -133,7 +133,7 @@ func TestTopLevelGrammar(t *testing.T) {
 	user := depsAt(t, 1)
 	root := depsAt(t, 0)
 
-	if got, want := functionSwitchCases(t, "unknownTopLevelOption"), []string{"--help", "--version", "-V", "-h"}; !slices.Equal(got, want) {
+	if got, want := functionSwitchCases(t, "classifyTopLevelOption"), []string{"--help", "--version", "-V", "-h"}; !slices.Equal(got, want) {
 		t.Fatalf("accepted top-level option names = %q, want exactly %q", got, want)
 	}
 
