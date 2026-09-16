@@ -66,7 +66,11 @@ func TestNonVersionCommandsRefuseWithoutHostAccess(t *testing.T) {
 			}
 			t.Run(fmt.Sprintf("%s/%d", name, uid), func(t *testing.T) {
 				deps, assertNoAccess := inertDeps(t, uid)
-				stdout, stderr, code := invoke([]string{name}, deps)
+				args := []string{name}
+				if name == "install" {
+					args = append(args, "s3://bucket/key")
+				}
+				stdout, stderr, code := invoke(args, deps)
 				assertNoAccess()
 				if code != 3 || stdout != "" || stderr != "opsctl: must run as root\n" {
 					t.Fatalf("exit %d stdout %q stderr %q", code, stdout, stderr)
