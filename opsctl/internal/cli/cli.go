@@ -212,7 +212,7 @@ func diagnosticArg(s string) string {
 
 func dispatch(name string, args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	switch name {
-	case "backup", "host", "nginx", "restore", "retire":
+	case "backup", "host", "restore", "retire":
 		return runCommandFrame(name, args, stdout, stderr, deps)
 	case "cert":
 		return runCert(args, stdout, stderr, deps)
@@ -224,6 +224,8 @@ func dispatch(name string, args []string, stdout, stderr io.Writer, deps Deps) e
 		return runInit(args, stdout, stderr, deps)
 	case "install":
 		return runInstall(args, stdout, stderr, deps)
+	case "nginx":
+		return runNginx(args, stdout, stderr, deps)
 	case "restart", "uninstall":
 		return runLifecycleAction(name, args, stdout, stderr, deps)
 	case "status":

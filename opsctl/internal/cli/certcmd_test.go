@@ -62,7 +62,7 @@ func TestCertHelpIsExactAndInert(t *testing.T) {
 func TestCertGrammarAndRootCheckPrecedeHostAccess(t *testing.T) {
 	// R-YIO9-U6H2
 	root := t.TempDir()
-	writeCLIConfigFile(t, root, "not json\n")
+	writeCorruptCLIConfigFile(t, root)
 	before := treeState(t, root)
 	called := 0
 	deps := cli.Deps{Root: root, EUID: 0, Execute: func(context.Context, host.Command) (host.Result, error) {
@@ -134,7 +134,7 @@ func TestCertReadsRequiredConfigurationInOrder(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	writeCLIConfigFile(t, root, "not json\n")
+	writeCorruptCLIConfigFile(t, root)
 	stdout, stderr, code := invoke([]string{"cert", "show"}, cli.Deps{Root: root, EUID: 0})
 	wantPath := filepath.Join(root, "etc", "ikigenba", "config.json")
 	if code != 1 || stdout != "" || stderr != "opsctl: "+wantPath+" is corrupt\n" {
@@ -215,13 +215,13 @@ func setCertConfig(t *testing.T, root string, values map[string]string) {
 	}
 }
 
-func writeCLIConfigFile(t *testing.T, root, contents string) {
+func writeCorruptCLIConfigFile(t *testing.T, root string) {
 	t.Helper()
 	dir := filepath.Join(root, "etc", "ikigenba")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(contents), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte("not json\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
