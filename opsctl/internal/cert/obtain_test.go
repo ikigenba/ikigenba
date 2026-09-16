@@ -12,6 +12,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
+	"io/fs"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -98,7 +99,16 @@ func TestObtainRejectsMissingConfigurationBeforeExecution(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
-			env := host.Env{Root: t.TempDir(), Execute: func(context.Context, host.Command) (host.Result, error) {
+			root := t.TempDir()
+			statePath := filepath.Join(root, "var/lib/opsctl/state")
+			if err := os.MkdirAll(filepath.Dir(statePath), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(statePath, []byte("unchanged"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			before := snapshotTree(t, root)
+			env := host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
 				calls++
 				return host.Result{}, nil
 			}}
@@ -108,6 +118,9 @@ func TestObtainRejectsMissingConfigurationBeforeExecution(t *testing.T) {
 			}
 			if calls != 0 {
 				t.Fatalf("Execute calls = %d, want 0", calls)
+			}
+			if after := snapshotTree(t, root); !reflect.DeepEqual(after, before) {
+				t.Fatalf("host state changed: before %#v, after %#v", before, after)
 			}
 		})
 	}
@@ -119,7 +132,20 @@ func TestObtainExecutesExactCertbotCommand(t *testing.T) {
 	ctx := context.WithValue(context.Background(), contextKey{}, "marker")
 	var gotCtx context.Context
 	var got host.Command
+	calls := 0
+	dnsStatePath := filepath.Join(root, "var/lib/dns/records")
+	if err := os.MkdirAll(filepath.Dir(dnsStatePath), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dnsStatePath, []byte("existing TXT records"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotTree(t, root)
 	env := host.Env{Root: root, Execute: func(callCtx context.Context, command host.Command) (host.Result, error) {
+		calls++
+		if atExecution := snapshotTree(t, root); !reflect.DeepEqual(atExecution, before) {
+			t.Fatalf("Obtain wrote host or DNS state before Execute: before %#v, at Execute %#v", before, atExecution)
+		}
 		gotCtx, got = callCtx, command
 		return host.Result{}, nil
 	}}
@@ -141,8 +167,14 @@ func TestObtainExecutesExactCertbotCommand(t *testing.T) {
 	if gotCtx != ctx {
 		t.Fatal("Obtain did not pass the supplied context")
 	}
+	if calls != 1 {
+		t.Fatalf("Execute calls = %d, want exactly 1", calls)
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("command = %#v, want %#v", got, want)
+	}
+	if after := snapshotTree(t, root); !reflect.DeepEqual(after, before) {
+		t.Fatalf("Obtain wrote host or DNS state directly: before %#v, after %#v", before, after)
 	}
 }
 
@@ -224,6 +256,12 @@ func TestObtainLetsCertbotKeepNotDueCertificate(t *testing.T) {
 	if !reflect.DeepEqual(got, original) || len(fixture.challengeValues()) != 0 || len(fixture.systemctlCalls()) != 0 {
 		t.Fatalf("not-due result: certificate %q, challenges %v, systemctl %v", got, fixture.challengeValues(), fixture.systemctlCalls())
 	}
+	if calls := fixture.dnsCalls(); len(calls) != 0 {
+		t.Fatalf("not-due certificate invoked DNS hooks: %v", calls)
+	}
+	if fixture.caRequests != 0 {
+		t.Fatalf("not-due certificate requested CA issuance %d times", fixture.caRequests)
+	}
 	if fixture.calls != 1 {
 		t.Fatalf("certbot calls = %d, want 1", fixture.calls)
 	}
@@ -269,22 +307,38 @@ func TestObtainPreservesCertbotFailure(t *testing.T) {
 
 // R-YPZO-4SX8
 func TestObtainRefusalPreservesCertificateAndCleansChallenges(t *testing.T) {
-	original := []byte("known good certificate")
-	fixture := newCertbotFixture(t, refuseCertificate, original)
+	fixture := newCertbotFixture(t, refuseCertificate, nil)
+	originalCertificate, originalKey := makeCertificate(t)
+	fixture.seedServingLineage(originalCertificate, originalKey)
+	lineageBefore := snapshotTree(t, filepath.Join(fixture.root, "etc/letsencrypt"))
+	nginxBefore := snapshotTree(t, filepath.Join(fixture.root, "etc/nginx"))
+	fixture.assertNginxServes(t, originalCertificate, originalKey)
 	err := cert.Obtain(context.Background(), fixture.env(), "example.com", "admin@example.com")
 	var commandErr *host.CommandError
 	if !errors.As(err, &commandErr) {
 		t.Fatalf("error = %v, want certbot failure", err)
 	}
-	got, readErr := os.ReadFile(fixture.fullchain())
-	if readErr != nil {
-		t.Fatal(readErr)
+	if lineageAfter := snapshotTree(t, filepath.Join(fixture.root, "etc/letsencrypt")); !reflect.DeepEqual(lineageAfter, lineageBefore) {
+		t.Fatalf("certificate lineage or replacement artifacts changed: before %#v, after %#v", lineageBefore, lineageAfter)
 	}
-	if !reflect.DeepEqual(got, original) {
-		t.Fatalf("certificate = %q, want unchanged %q", got, original)
+	if nginxAfter := snapshotTree(t, filepath.Join(fixture.root, "etc/nginx")); !reflect.DeepEqual(nginxAfter, nginxBefore) {
+		t.Fatalf("nginx serving state changed: before %#v, after %#v", nginxBefore, nginxAfter)
 	}
+	fixture.assertNginxServes(t, originalCertificate, originalKey)
 	if challenges := fixture.challengeValues(); len(challenges) != 0 {
 		t.Fatalf("refusal left challenges %v", challenges)
+	}
+	wantDNSCalls := []string{
+		"dns acme-auth example.com apex-token",
+		"dns acme-auth *.example.com wildcard-token",
+		"dns acme-cleanup example.com apex-token",
+		"dns acme-cleanup *.example.com wildcard-token",
+	}
+	if calls := fixture.dnsCalls(); !reflect.DeepEqual(calls, wantDNSCalls) {
+		t.Fatalf("refusal DNS hook calls = %v, want %v", calls, wantDNSCalls)
+	}
+	if fixture.caRequests != 1 {
+		t.Fatalf("refusal CA issuance requests = %d, want 1", fixture.caRequests)
 	}
 	if calls := fixture.systemctlCalls(); len(calls) != 0 {
 		t.Fatalf("refusal invoked systemctl: %v", calls)
@@ -344,6 +398,7 @@ type certbotFixture struct {
 	nginxActive  bool
 	reloadFails  bool
 	calls        int
+	caRequests   int
 	binDir       string
 	challengeDir string
 	dnsLog       string
@@ -420,6 +475,7 @@ func (f *certbotFixture) env() host.Env {
 				return result, err
 			}
 		}
+		f.caRequests++
 		for _, challenge := range []struct{ domain, token string }{{"example.com", "apex-token"}, {"*.example.com", "wildcard-token"}} {
 			if result, err := f.runHook(ctx, cleanupHook, challenge.domain, challenge.token); err != nil || result.ExitCode != 0 {
 				return result, err
@@ -453,6 +509,95 @@ func (f *certbotFixture) env() host.Env {
 		}
 		return f.runHook(ctx, argumentValue(f.t, command.Args, "--deploy-hook"), "", "")
 	}}
+}
+
+func (f *certbotFixture) seedServingLineage(certificate, privateKey []byte) {
+	f.t.Helper()
+	archive := filepath.Join(f.root, "etc/letsencrypt/archive/example.com")
+	live := filepath.Dir(f.fullchain())
+	if err := os.MkdirAll(archive, 0o750); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := os.MkdirAll(live, 0o750); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(archive, "fullchain1.pem"), certificate, 0o600); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(archive, "privkey1.pem"), privateKey, 0o600); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := os.Symlink("../../archive/example.com/fullchain1.pem", f.fullchain()); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := os.Symlink("../../archive/example.com/privkey1.pem", filepath.Join(live, "privkey.pem")); err != nil {
+		f.t.Fatal(err)
+	}
+	renewalPath := filepath.Join(f.root, "etc/letsencrypt/renewal/example.com.conf")
+	if err := os.MkdirAll(filepath.Dir(renewalPath), 0o750); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := os.WriteFile(renewalPath, []byte("prior renewal configuration\n"), 0o600); err != nil {
+		f.t.Fatal(err)
+	}
+	nginxPath := filepath.Join(f.root, "etc/nginx/conf.d/certificate.conf")
+	if err := os.MkdirAll(filepath.Dir(nginxPath), 0o750); err != nil {
+		f.t.Fatal(err)
+	}
+	configuration := "ssl_certificate " + f.fullchain() + ";\nssl_certificate_key " + filepath.Join(live, "privkey.pem") + ";\n"
+	if err := os.WriteFile(nginxPath, []byte(configuration), 0o600); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+func (f *certbotFixture) assertNginxServes(t *testing.T, wantCertificate, wantPrivateKey []byte) {
+	t.Helper()
+	if !f.nginxActive {
+		t.Fatal("nginx is not active")
+	}
+	root, err := os.OpenRoot(f.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := root.Close(); err != nil {
+			t.Errorf("close fixture root: %v", err)
+		}
+	})
+	configuration, err := root.ReadFile("etc/nginx/conf.d/certificate.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateKeyPath := filepath.Join(filepath.Dir(f.fullchain()), "privkey.pem")
+	for _, path := range []string{f.fullchain(), privateKeyPath} {
+		if !strings.Contains(string(configuration), path) {
+			t.Fatalf("nginx configuration does not serve %s", path)
+		}
+	}
+	certificate, err := root.ReadFile("etc/letsencrypt/live/example.com/fullchain.pem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateKey, err := root.ReadFile("etc/letsencrypt/live/example.com/privkey.pem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(certificate, wantCertificate) || !bytes.Equal(privateKey, wantPrivateKey) {
+		t.Fatal("nginx lineage no longer resolves to the prior certificate and private key")
+	}
+	parsedCertificate := parseCertificate(t, certificate)
+	keyBlock, _ := pem.Decode(privateKey)
+	if keyBlock == nil || keyBlock.Type != "RSA PRIVATE KEY" {
+		t.Fatal("served private key is not an RSA PEM block")
+	}
+	parsedKey, err := x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicKey, ok := parsedCertificate.PublicKey.(*rsa.PublicKey)
+	if !ok || publicKey.N.Cmp(parsedKey.N) != 0 || publicKey.E != parsedKey.E {
+		t.Fatal("served certificate and private key do not match")
+	}
 }
 
 func (f *certbotFixture) runHook(ctx context.Context, hook, domain, validation string) (host.Result, error) {
@@ -654,4 +799,55 @@ func captureOutput(t *testing.T, fn func()) ([]byte, []byte) {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+type treeEntry struct {
+	Mode   fs.FileMode
+	Data   string
+	Target string
+}
+
+func snapshotTree(t *testing.T, root string) map[string]treeEntry {
+	t.Helper()
+	snapshot := make(map[string]treeEntry)
+	rootFS, err := os.OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := rootFS.Close(); err != nil {
+			t.Errorf("close snapshot root: %v", err)
+		}
+	}()
+	err = filepath.WalkDir(root, func(path string, _ fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		info, err := os.Lstat(path)
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		item := treeEntry{Mode: info.Mode()}
+		switch {
+		case info.Mode()&fs.ModeSymlink != 0:
+			item.Target, err = os.Readlink(path)
+		case info.Mode().IsRegular():
+			var content []byte
+			content, err = rootFS.ReadFile(relative)
+			item.Data = string(content)
+		}
+		if err != nil {
+			return err
+		}
+		snapshot[relative] = item
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return snapshot
 }
