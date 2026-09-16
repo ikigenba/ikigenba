@@ -344,20 +344,21 @@ func dnsCheck(stdout io.Writer, client *dns.Client, provider string) exitCode {
 	for _, zone := range client.Zones {
 		result, err := client.Check(context.Background(), zone)
 		if err != nil {
-			_, _ = fmt.Fprintf(&output, "%s: failed: %s\n", zone.Name, diagnosticArg(err.Error()))
+			_, _ = fmt.Fprintf(&output, "%s: failed: %s\n", diagnosticArg(zone.Name), diagnosticArg(err.Error()))
 			allOK = false
 			continue
 		}
 		switch {
 		case result.ZoneName != zone.Name:
-			_, _ = fmt.Fprintf(&output, "%s: failed: provider zone name is %s\n", zone.Name, diagnosticArg(result.ZoneName))
+			_, _ = fmt.Fprintf(&output, "%s: failed: provider zone name is %s\n",
+				diagnosticArg(zone.Name), diagnosticArg(result.ZoneName))
 			allOK = false
 		case !result.Delegated:
-			_, _ = fmt.Fprintf(&output, "%s: failed: nameservers not delegated\n", zone.Name)
+			_, _ = fmt.Fprintf(&output, "%s: failed: nameservers not delegated\n", diagnosticArg(zone.Name))
 			allOK = false
 		default:
 			_, _ = fmt.Fprintf(&output, "%s: ok (%s %s, %d nameservers delegated)\n",
-				zone.Name, provider, zone.ID, len(result.Nameservers))
+				diagnosticArg(zone.Name), diagnosticArg(provider), diagnosticArg(zone.ID), len(result.Nameservers))
 		}
 	}
 	if code := writeOut(stdout, output.String()); code != exitOK {
