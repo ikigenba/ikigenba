@@ -429,6 +429,28 @@ func TestDNSCheckOutputFailure(t *testing.T) {
 	}
 }
 
+func TestDNSCheckRendersOneLinePerZone(t *testing.T) {
+	// R-F6JK-M61Q
+	provider := &fakeDNSProvider{
+		records: map[string][]dns.Record{
+			"ZONE": {{Name: "provider\nname", Type: "SOA"}},
+		},
+		recordsErr: map[string]error{"ZONE2": errors.New("resolver\nfailed\rhard")},
+	}
+	deps := configuredDNSDeps(t, provider, "example.com", "other.test")
+	deps.DNS.LookupNS = func(context.Context, string) ([]string, error) { return nil, nil }
+
+	stdout, stderr, code := invoke([]string{"dns", "check"}, deps)
+	want := "example.com: failed: provider zone name is provider\\nname\n" +
+		"other.test: failed: resolver\\nfailed\\rhard\n"
+	if code != 1 || stdout != want || stderr != "" {
+		t.Errorf("check: exit %d stdout %q stderr %q, want %q", code, stdout, stderr, want)
+	}
+	if lines := strings.Count(stdout, "\n"); lines != 2 {
+		t.Errorf("check wrote %d lines for two zones: %q", lines, stdout)
+	}
+}
+
 func TestDNSACMEHooks(t *testing.T) {
 	// R-9T74-56HN
 	// R-LSL6-9O3P
@@ -486,6 +508,8 @@ func TestDNSSubcommandsRequireRoot(t *testing.T) {
 		{"dns", "check"},
 		{"dns", "acme-auth"},
 		{"dns", "acme-cleanup"},
+		{"dns", "--help", "extra"},
+		{"dns", "-h", "extra"},
 	} {
 		opened := false
 		deps := depsAt(t, 1)
@@ -496,6 +520,16 @@ func TestDNSSubcommandsRequireRoot(t *testing.T) {
 		stdout, stderr, code := invoke(args, deps)
 		if code != 3 || stdout != "" || stderr != "opsctl: must run as root\n" || opened {
 			t.Errorf("%v: exit %d stdout %q stderr %q opened %v", args, code, stdout, stderr, opened)
+		}
+	}
+
+	for _, help := range []string{"--help", "-h"} {
+		deps, assertNoAccess := inertDeps(t, 0)
+		stdout, stderr, code := invoke([]string{"dns", help, "extra"}, deps)
+		assertNoAccess()
+		want := "opsctl: unknown dns subcommand '" + help + "'\n\nsee 'opsctl dns --help' for usage\n"
+		if code != 2 || stdout != "" || stderr != want {
+			t.Errorf("%s extra as root: exit %d stdout %q stderr %q, want %q", help, code, stdout, stderr, want)
 		}
 	}
 }
