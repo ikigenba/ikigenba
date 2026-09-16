@@ -239,7 +239,7 @@ func dispatch(name string, args []string, stdout, stderr io.Writer, deps Deps) e
 }
 
 func isCommandHelp(args []string) bool {
-	return len(args) > 0 && (args[0] == "-h" || args[0] == "--help")
+	return len(args) > 0 && classifyTopLevelOption(args[0]) == topLevelHelp
 }
 
 func requireRoot(deps Deps, stderr io.Writer) exitCode {
@@ -266,8 +266,18 @@ func runCommandFrame(name string, args []string, stdout, stderr io.Writer, deps 
 func writeDiagnostic(stderr io.Writer, err error) {
 	message, detail, _ := strings.Cut(err.Error(), "\n")
 	_, _ = io.WriteString(stderr, "opsctl: "+diagnosticArg(message)+"\n")
-	var commandErr *host.CommandError
-	if errors.As(err, &commandErr) {
+	commandErrors := joinedCommandErrors(err)
+	if len(commandErrors) > 1 {
+		_, _ = io.WriteString(stderr, "\n")
+		for _, commandErr := range commandErrors {
+			_, _ = io.WriteString(stderr, diagnosticArg(commandErr.Error())+"\n")
+			quoteCapture(stderr, commandErr.Result.Stdout)
+			quoteCapture(stderr, commandErr.Result.Stderr)
+		}
+		return
+	}
+	if len(commandErrors) == 1 {
+		commandErr := commandErrors[0]
 		if len(commandErr.Result.Stdout)+len(commandErr.Result.Stderr) == 0 {
 			return
 		}
@@ -282,6 +292,33 @@ func writeDiagnostic(stderr io.Writer, err error) {
 			_, _ = io.WriteString(stderr, "\n")
 		}
 	}
+}
+
+// joinedCommandErrors returns the command failure from an ordinary error, or
+// one failure from each branch when an operation retained multiple failures.
+func joinedCommandErrors(err error) []*host.CommandError {
+	for current := err; current != nil; {
+		if joined, ok := current.(interface{ Unwrap() []error }); ok {
+			var commandErrors []*host.CommandError
+			for _, branch := range joined.Unwrap() {
+				var commandErr *host.CommandError
+				if errors.As(branch, &commandErr) {
+					commandErrors = append(commandErrors, commandErr)
+				}
+			}
+			return commandErrors
+		}
+		unwrapper, ok := current.(interface{ Unwrap() error })
+		if !ok {
+			break
+		}
+		current = unwrapper.Unwrap()
+	}
+	var commandErr *host.CommandError
+	if errors.As(err, &commandErr) {
+		return []*host.CommandError{commandErr}
+	}
+	return nil
 }
 
 func quoteCapture(stderr io.Writer, capture []byte) {

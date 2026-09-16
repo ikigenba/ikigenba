@@ -16,7 +16,7 @@ import (
 )
 
 func TestInstallPublishesAndEnablesRootedAppUnit(t *testing.T) {
-	// R-BGS4-B6XD
+	// R-BGS4-B6XD, R-P2TO-03TP
 	root := t.TempDir()
 	statePath := filepath.Join(root, "opt", "notes", "state", "db")
 	cachePath := filepath.Join(root, "opt", "notes", "cache", "item")
@@ -212,6 +212,7 @@ func TestInstallReportsUnitFailureBeforeConfiguration(t *testing.T) {
 }
 
 func TestInstallConfiguresOnceBeforeActivation(t *testing.T) {
+	// R-P0DV-8KCB
 	fixture := newCompletedInstallFixture(t, t.TempDir(), false)
 	configureAt := -1
 	fixture.configure = func(_ context.Context, manifest apps.Manifest) error {
@@ -268,6 +269,7 @@ func TestInstallStartsOrRestartsAndReportsBinaryVersion(t *testing.T) {
 }
 
 func TestInstallActivationFailureObtainsJournal(t *testing.T) {
+	// R-P8X5-WYJ6
 	startFailure := host.Result{ExitCode: 7, Stderr: []byte("start rejected\n")}
 	fixture := newCompletedInstallFixture(t, t.TempDir(), false)
 	fixture.startFailure = &startFailure

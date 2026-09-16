@@ -3,13 +3,17 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
+	"github.com/ikigenba/ikigenba/opsctl/internal/backup"
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
+	"github.com/ikigenba/ikigenba/opsctl/internal/nginx"
 )
 
 const installUsage = `Usage: opsctl install URI
@@ -52,18 +56,122 @@ func runInstall(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 		return code
 	}
 
-	err := apps.Install(context.Background(), host.Env{
+	env := host.Env{
 		Root: deps.Root, Getenv: deps.Getenv, Execute: deps.Execute, Now: deps.Now,
-	}, deps.Cloud, config.Store{Root: deps.Root}, args[0], apps.InstallHooks{})
+	}
+	store := config.Store{Root: deps.Root}
+	reported := false
+	report := func(step, detail string, success bool) error {
+		reported = true
+		return writeInstallReport(stdout, step, detail, success)
+	}
+	err := apps.Install(context.Background(), env, deps.Cloud, store, args[0], apps.InstallHooks{
+		Report: report,
+		Configure: func(ctx context.Context, manifest apps.Manifest) error {
+			return configureInstalledApp(ctx, env, store, manifest, report)
+		},
+	})
 	if err != nil {
-		writeDiagnostic(stderr, err)
 		var failure *apps.InstallError
 		if errors.As(err, &failure) {
+			message := failure.Message
+			if reported && message != "artifact download failed" {
+				message = "install failed"
+			}
+			writeDiagnostic(stderr, &apps.InstallError{Code: failure.Code, Message: message, Cause: failure.Cause})
 			return exitCode(failure.Code)
 		}
+		writeDiagnostic(stderr, err)
 		return exitFail
 	}
 	return exitOK
+}
+
+func writeInstallReport(output io.Writer, step, detail string, success bool) error {
+	detail = safeInstallReportDetail(detail)
+	if success {
+		_, err := fmt.Fprintf(output, "%s: ok (%s)\n", step, detail)
+		return err
+	}
+	_, err := fmt.Fprintf(output, "%s: failed: %s\n", step, detail)
+	return err
+}
+
+func safeInstallReportDetail(detail string) string {
+	detail = strings.NewReplacer("\r", `\r`, "\n", `\n`).Replace(detail)
+	if strings.TrimSpace(detail) == "" {
+		return strconv.Quote(detail)
+	}
+	for _, character := range detail {
+		if character < ' ' || character == '\u007f' {
+			return strconv.Quote(detail)
+		}
+	}
+	return detail
+}
+
+func configureInstalledApp(
+	ctx context.Context,
+	env host.Env,
+	store config.Store,
+	manifest apps.Manifest,
+	report func(string, string, bool) error,
+) error {
+	hostName, err := store.Get("host.name")
+	if err != nil {
+		return reportInstallConfigurationFailure(report, "nginx", err)
+	}
+	nginxDetail := manifest.App + "." + hostName
+	if manifest.Default {
+		nginxDetail += ", " + hostName
+	}
+	if err := nginx.Apply(ctx, env, hostName); err != nil {
+		return reportInstallConfigurationFailure(report, "nginx", err)
+	}
+	if err := report("nginx", nginxDetail, true); err != nil {
+		return err
+	}
+
+	changed, err := backup.Regenerate(ctx, env, store)
+	if err != nil {
+		return reportInstallConfigurationFailure(report, "litestream", err)
+	}
+	detail := "unchanged"
+	if changed {
+		detail = "updated"
+		if manifest.Database != nil {
+			detail = manifest.Database.Path
+		}
+		if err := executeInstallCLICommand(ctx, env, "restart litestream.service", "systemctl", "restart", "litestream.service"); err != nil {
+			return reportInstallConfigurationFailure(report, "litestream", err)
+		}
+	}
+	if err := report("litestream", detail, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+func reportInstallConfigurationFailure(report func(string, string, bool) error, step string, cause error) error {
+	if reportErr := report(step, cause.Error(), false); reportErr != nil {
+		return errors.Join(cause, reportErr)
+	}
+	return cause
+}
+
+func executeInstallCLICommand(ctx context.Context, env host.Env, label, name string, args ...string) error {
+	result, err := env.Execute(ctx, host.Command{Name: name, Args: args})
+	if err != nil {
+		var commandErr *host.CommandError
+		if errors.As(err, &commandErr) {
+			return err
+		}
+		return &host.CommandError{Label: label, Result: result, Err: err}
+	}
+	if result.ExitCode != 0 {
+		return &host.CommandError{Label: label, Result: result}
+	}
+	return nil
 }
 
 func validInstallURI(value string) bool {

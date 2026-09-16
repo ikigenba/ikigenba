@@ -105,7 +105,7 @@ func TestInstallValidatesInputsAndUsesConfiguredCloud(t *testing.T) {
 }
 
 func TestInstallFetchLifecycleAndOutcomes(t *testing.T) {
-	// R-EKWN-JXML
+	// R-EKWN-JXML, R-EOKC-P8UO
 	openFailure := errors.New("credentials unavailable")
 	getFailure := errors.New("download denied")
 	readFailure := errors.New("connection reset during read")
@@ -224,7 +224,7 @@ func TestInstallFetchSuccessReadsCompleteObjectBeforeReporting(t *testing.T) {
 }
 
 func TestInstallFetchReportFailuresPreserveCauses(t *testing.T) {
-	// R-EKWN-JXML
+	// R-EKWN-JXML, R-EM4J-XPDA
 	downloadErr := errors.New("download failed")
 	reportErr := errors.New("report failed")
 	store := installStore(t, map[string]string{"host.name": "host.example", "aws.region": "us-west-2"})

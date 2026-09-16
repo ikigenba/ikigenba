@@ -1,0 +1,33 @@
+package cli
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/ikigenba/ikigenba/opsctl/internal/host"
+)
+
+func TestInstallCLICommandPreservesTransportCauses(t *testing.T) {
+	// R-P0DV-8KCB, R-UBWT-KXSF
+	transportErr := errors.New("connection lost")
+	result := host.Result{Stderr: []byte("partial detail\n")}
+	env := host.Env{Execute: func(context.Context, host.Command) (host.Result, error) {
+		return result, transportErr
+	}}
+	err := executeInstallCLICommand(context.Background(), env, "restart litestream.service", "systemctl", "restart", "litestream.service")
+	var commandErr *host.CommandError
+	if !errors.Is(err, transportErr) || !errors.As(err, &commandErr) || commandErr.Label != "restart litestream.service" || commandErr.Result.Stderr == nil {
+		t.Fatalf("wrapped transport error = %#v", err)
+	}
+
+	preexisting := &host.CommandError{Label: "remote restart", Result: result, Err: transportErr}
+	env.Execute = func(context.Context, host.Command) (host.Result, error) {
+		return host.Result{}, preexisting
+	}
+	err = executeInstallCLICommand(context.Background(), env, "restart litestream.service", "systemctl", "restart", "litestream.service")
+	var returned *host.CommandError
+	if !errors.As(err, &returned) || returned != preexisting || !errors.Is(err, transportErr) {
+		t.Fatalf("preexisting command error = %#v, want same error %#v", err, preexisting)
+	}
+}

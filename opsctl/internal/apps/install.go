@@ -979,7 +979,7 @@ func appStartFailure(ctx context.Context, env host.Env, app, unit string, startE
 	}
 	if result.ExitCode != 0 {
 		journalFailure := &host.CommandError{Label: fmt.Sprintf("obtain %s journal", safeDiagnosticToken(unit)), Result: result}
-		return &stageFailure{code: 1, detail: detail, cause: errors.Join(journalFailure, startErr), message: detail}
+		return &stageFailure{code: 1, detail: detail, cause: errors.Join(startErr, journalFailure), message: detail}
 	}
 	cause := &host.CommandError{Label: "journal captured after service startup failure", Result: result, Err: startErr}
 	return &stageFailure{code: 1, detail: detail, cause: cause, message: detail}
