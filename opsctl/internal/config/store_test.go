@@ -16,16 +16,19 @@ import (
 
 func TestConstants(t *testing.T) {
 	// R-W563-Q6GK
-	if config.Dir != "/etc/ikigenba" {
-		t.Errorf("Dir = %q, want /etc/ikigenba", config.Dir)
+	const dir = config.Dir
+	if dir != "/etc/ikigenba" {
+		t.Errorf("Dir = %q, want /etc/ikigenba", dir)
 	}
 	// R-W6E0-3Y79
-	if config.FileName != "config.json" {
-		t.Errorf("FileName = %q, want config.json", config.FileName)
+	const fileName = config.FileName
+	if fileName != "config.json" {
+		t.Errorf("FileName = %q, want config.json", fileName)
 	}
 	// R-W7LW-HPXY
-	if config.LockName != "config.lock" {
-		t.Errorf("LockName = %q, want config.lock", config.LockName)
+	const lockName = config.LockName
+	if lockName != "config.lock" {
+		t.Errorf("LockName = %q, want config.lock", lockName)
 	}
 }
 
@@ -55,6 +58,8 @@ func TestErrorValues(t *testing.T) {
 }
 
 func TestExportedAPI(t *testing.T) {
+	stringType := reflect.TypeOf("")
+
 	// R-ETPG-BBIJ
 	st := reflect.TypeOf(config.Store{})
 	if st.Kind() != reflect.Struct {
@@ -64,7 +69,7 @@ func TestExportedAPI(t *testing.T) {
 		t.Fatalf("Store has %d fields, want 1", st.NumField())
 	}
 	root := st.Field(0)
-	if root.Name != "Root" || root.Type.Kind() != reflect.String {
+	if root.Name != "Root" || root.Type != stringType {
 		t.Errorf("Store field = %s %s, want Root string", root.Name, root.Type)
 	}
 
@@ -78,14 +83,13 @@ func TestExportedAPI(t *testing.T) {
 	}
 	key := et.Field(0)
 	value := et.Field(1)
-	if key.Name != "Key" || key.Type.Kind() != reflect.String {
+	if key.Name != "Key" || key.Type != stringType {
 		t.Errorf("Entry field 0 = %s %s, want Key string", key.Name, key.Type)
 	}
-	if value.Name != "Value" || value.Type.Kind() != reflect.String {
+	if value.Name != "Value" || value.Type != stringType {
 		t.Errorf("Entry field 1 = %s %s, want Value string", value.Name, value.Type)
 	}
 
-	stringType := reflect.TypeOf("")
 	boolType := reflect.TypeOf(false)
 	errorType := reflect.TypeOf((*error)(nil)).Elem()
 	entrySlice := reflect.TypeOf([]config.Entry{})
