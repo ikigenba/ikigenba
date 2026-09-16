@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 	"time"
 
@@ -53,8 +52,7 @@ func runCert(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 			return writeCertUsageError(stderr, "cert obtain takes no arguments")
 		}
 	default:
-		quoted := strconv.Quote(args[0])
-		return writeCertUsageError(stderr, "unknown cert subcommand '"+quoted[1:len(quoted)-1]+"'")
+		return writeCertUsageError(stderr, "unknown cert subcommand '"+diagnosticArg(args[0])+"'")
 	}
 
 	store := config.Store{Root: deps.Root}

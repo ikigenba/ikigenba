@@ -62,6 +62,7 @@ func TestCertHelpIsExactAndInert(t *testing.T) {
 func TestCertGrammarAndRootCheckPrecedeHostAccess(t *testing.T) {
 	// R-YIO9-U6H2
 	root := t.TempDir()
+	writeCLIConfigFile(t, root, "not json\n")
 	before := treeState(t, root)
 	called := 0
 	deps := cli.Deps{Root: root, EUID: 0, Execute: func(context.Context, host.Command) (host.Result, error) {
@@ -74,6 +75,8 @@ func TestCertGrammarAndRootCheckPrecedeHostAccess(t *testing.T) {
 	}{
 		{[]string{"cert"}, "opsctl: no cert subcommand given\n\nsee 'opsctl cert --help' for usage\n"},
 		{[]string{"cert", "renew"}, "opsctl: unknown cert subcommand 'renew'\n\nsee 'opsctl cert --help' for usage\n"},
+		{[]string{"cert", `back\slash`}, "opsctl: unknown cert subcommand 'back\\slash'\n\nsee 'opsctl cert --help' for usage\n"},
+		{[]string{"cert", "back\\slash\r\nnext"}, "opsctl: unknown cert subcommand 'back\\slash\\r\\nnext'\n\nsee 'opsctl cert --help' for usage\n"},
 		{[]string{"cert", "show", "extra"}, "opsctl: cert show takes no arguments\n\nsee 'opsctl cert --help' for usage\n"},
 		{[]string{"cert", "obtain", "--force"}, "opsctl: cert obtain takes no arguments\n\nsee 'opsctl cert --help' for usage\n"},
 	}
@@ -84,7 +87,7 @@ func TestCertGrammarAndRootCheckPrecedeHostAccess(t *testing.T) {
 		}
 	}
 
-	stdout, stderr, code := invoke([]string{"cert", "show"}, cli.Deps{Root: root, EUID: 1000, Execute: deps.Execute})
+	stdout, stderr, code := invoke([]string{"cert", "show", "extra"}, cli.Deps{Root: root, EUID: 1000, Execute: deps.Execute})
 	if code != 3 || stdout != "" || stderr != "opsctl: must run as root\n" {
 		t.Errorf("non-root: exit %d stdout %q stderr %q", code, stdout, stderr)
 	}
