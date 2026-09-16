@@ -118,6 +118,7 @@ func TestConfigSetUsageError(t *testing.T) {
 		want string
 	}{
 		{"missing equals", "noequals", "opsctl: config set needs KEY=VALUE\n\nsee 'opsctl config --help' for usage\n"},
+		{"invalid key without equals", "INVALID", "opsctl: config set needs KEY=VALUE\n\nsee 'opsctl config --help' for usage\n"},
 		{"invalid key", "INVALID=x", "opsctl: invalid key: INVALID\n\nsee 'opsctl config --help' for usage\n"},
 		{"invalid key before value", "INVALID=line\nfeed", "opsctl: invalid key: INVALID\n\nsee 'opsctl config --help' for usage\n"},
 		{"newline value", "ok=line\nfeed", "opsctl: invalid value: newline in value for 'ok'\n\nsee 'opsctl config --help' for usage\n"},
@@ -186,14 +187,22 @@ func TestConfigAcceptsOnlyDefinedForms(t *testing.T) {
 	}{
 		{[]string{"config"}, "opsctl: no config subcommand given\n\nsee 'opsctl config --help' for usage\n"},
 		{[]string{"config", "other"}, "opsctl: unknown config subcommand 'other'\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "Get", "key"}, "opsctl: unknown config subcommand 'Get'\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "delete", "key"}, "opsctl: unknown config subcommand 'delete'\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "ls"}, "opsctl: unknown config subcommand 'ls'\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "setx", "key=value"}, "opsctl: unknown config subcommand 'setx'\n\nsee 'opsctl config --help' for usage\n"},
 		{[]string{"config", "get"}, "opsctl: config get requires KEY\n\nsee 'opsctl config --help' for usage\n"},
 		{[]string{"config", "get", "a", "b"}, "opsctl: config get requires KEY\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "get", "a", "b", "c", "d"}, "opsctl: config get requires KEY\n\nsee 'opsctl config --help' for usage\n"},
 		{[]string{"config", "set"}, "opsctl: config set requires KEY=VALUE\n\nsee 'opsctl config --help' for usage\n"},
 		{[]string{"config", "set", "a=b", "c=d"}, "opsctl: config set requires KEY=VALUE\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "set", "a=b", "c=d", "e=f", "g=h"}, "opsctl: config set requires KEY=VALUE\n\nsee 'opsctl config --help' for usage\n"},
 		{[]string{"config", "set", "noequals"}, "opsctl: config set needs KEY=VALUE\n\nsee 'opsctl config --help' for usage\n"},
 		{[]string{"config", "del"}, "opsctl: config del requires KEY\n\nsee 'opsctl config --help' for usage\n"},
 		{[]string{"config", "del", "a", "b"}, "opsctl: config del requires KEY\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "del", "a", "b", "c", "d"}, "opsctl: config del requires KEY\n\nsee 'opsctl config --help' for usage\n"},
 		{[]string{"config", "list", "extra"}, "opsctl: config list takes no arguments\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "list", "a", "b", "c"}, "opsctl: config list takes no arguments\n\nsee 'opsctl config --help' for usage\n"},
 	}
 	for _, tc := range rejected {
 		deps := depsAt(t, 0)
@@ -251,19 +260,31 @@ func TestConfigValidationPrecedesStoreRead(t *testing.T) {
 			for _, tc := range invalid {
 				deps := depsAt(t, 0)
 				deps.Root = setup.root(t)
+				assertNoAccess := observeFilesystemAccess(t, deps.Root)
 				stdout, stderr, code := invoke(tc.args, deps)
+				assertNoAccess()
 				if code != 2 || stdout != "" || stderr != tc.want {
 					t.Errorf("%q: exit %d stdout %q stderr %q, want 2, empty stdout, stderr %q", tc.args, code, stdout, stderr, tc.want)
 				}
 			}
 
-			root := setup.root(t)
-			store := config.Store{Root: root}
-			if err := store.Set("BAD", "value"); !errors.Is(err, config.ErrInvalidKey) {
-				t.Errorf("Store.Set invalid key: err = %v, want ErrInvalidKey", err)
-			}
-			if err := store.Set("key", "line\nfeed"); !errors.Is(err, config.ErrInvalidValue) {
-				t.Errorf("Store.Set invalid value: err = %v, want ErrInvalidValue", err)
+			for _, tc := range []struct {
+				name       string
+				key, value string
+				want       error
+			}{
+				{"invalid key", "BAD", "value", config.ErrInvalidKey},
+				{"invalid value", "key", "line\nfeed", config.ErrInvalidValue},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					root := setup.root(t)
+					assertNoAccess := observeFilesystemAccess(t, root)
+					err := (config.Store{Root: root}).Set(tc.key, tc.value)
+					assertNoAccess()
+					if !errors.Is(err, tc.want) {
+						t.Errorf("Store.Set(%q, %q): err = %v, want %v", tc.key, tc.value, err, tc.want)
+					}
+				})
 			}
 		})
 	}
