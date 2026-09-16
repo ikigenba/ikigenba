@@ -226,7 +226,7 @@ func TestWritePublishesExactConfigurationWithoutCommands(t *testing.T) {
 	}}
 
 	want := []byte(baseWithoutDefault + serviceBlock("service", 4100, false))
-	createdTemporary := observeNextTemporaryConfiguration(t, configurationDirectory, false)
+	createdTemporary := observeNextTemporaryConfiguration(t, configurationDirectory, nil)
 	if err := nginx.Write(context.Background(), env, "example.test"); err != nil {
 		t.Fatalf("Write call 1: %v", err)
 	}
@@ -243,7 +243,7 @@ func TestWritePublishesExactConfigurationWithoutCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	createdTemporary = observeNextTemporaryConfiguration(t, configurationDirectory, false)
+	createdTemporary = observeNextTemporaryConfiguration(t, configurationDirectory, nil)
 	if err := nginx.Write(context.Background(), env, "example.test"); err != nil {
 		t.Fatalf("Write call 2: %v", err)
 	}
@@ -273,6 +273,7 @@ func TestWriteFailuresPreserveHostStateAndCleanTemporaryFiles(t *testing.T) {
 		root := t.TempDir()
 		configurationDirectory := filepath.Join(root, "etc", "nginx", "conf.d")
 		mkdir(t, configurationDirectory)
+		seedNginxSentinels(t, root)
 		destination := filepath.Join(configurationDirectory, "ikigenba.conf")
 		if err := os.WriteFile(destination, []byte("previous"), 0o600); err != nil {
 			t.Fatal(err)
@@ -295,31 +296,40 @@ func TestWriteFailuresPreserveHostStateAndCleanTemporaryFiles(t *testing.T) {
 		}
 	})
 
-	t.Run("publication failure", func(t *testing.T) {
+	t.Run("post-creation publication failure", func(t *testing.T) {
 		root := t.TempDir()
 		configurationDirectory := filepath.Join(root, "etc", "nginx", "conf.d")
 		mkdir(t, configurationDirectory)
 		seedNginxSentinels(t, root)
 		destination := filepath.Join(configurationDirectory, "ikigenba.conf")
-		if err := os.WriteFile(destination, []byte("previous"), 0o600); err != nil {
-			t.Fatal(err)
-		}
 		before := snapshotUnrelatedNginxFiles(t, root)
-		removedTemporary := observeNextTemporaryConfiguration(t, configurationDirectory, true)
+		injectedFailure := observeNextTemporaryConfiguration(t, configurationDirectory, func() error {
+			if err := os.Mkdir(destination, 0o750); err != nil {
+				return err
+			}
+			return os.WriteFile(filepath.Join(destination, "blocks-rename"), []byte("injected"), 0o600)
+		})
 		// A large rendered value keeps the temporary file open long enough for the
-		// watcher to remove its directory entry before the atomic rename.
+		// watcher to install a non-file destination before the atomic rename. The
+		// staged file remains in place for Write's cleanup path to remove.
 		hostName := strings.Repeat("h", 8<<20)
 		err := nginx.Write(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
 			t.Fatal("Write executed a command")
 			return host.Result{}, nil
 		}}, hostName)
-		if watchErr := <-removedTemporary; watchErr != nil {
-			t.Fatalf("remove created temporary configuration: %v", watchErr)
+		if injectErr := <-injectedFailure; injectErr != nil {
+			t.Fatalf("inject publication failure: %v", injectErr)
 		}
 		if err == nil || !strings.Contains(err.Error(), "publish nginx configuration") {
 			t.Fatalf("Write error = %v, want publication failure", err)
 		}
-		assertPublishedConfiguration(t, configurationDirectory, []byte("previous"), 0o600)
+		assertNoTemporaryConfigurations(t, configurationDirectory)
+		if removeErr := os.RemoveAll(destination); removeErr != nil {
+			t.Fatalf("remove injected destination: %v", removeErr)
+		}
+		if _, statErr := os.Stat(destination); !os.IsNotExist(statErr) {
+			t.Fatalf("destination after failed publication: %v", statErr)
+		}
 		if after := snapshotUnrelatedNginxFiles(t, root); !reflect.DeepEqual(after, before) {
 			t.Fatalf("failed Write changed unrelated files under /etc/nginx\nbefore: %#v\nafter:  %#v", before, after)
 		}
@@ -383,7 +393,7 @@ func TestApplyPublishesTestsAndReloadsOnEveryCall(t *testing.T) {
 	}}
 
 	for call := 1; call <= 2; call++ {
-		createdTemporary := observeNextTemporaryConfiguration(t, configurationDirectory, false)
+		createdTemporary := observeNextTemporaryConfiguration(t, configurationDirectory, nil)
 		if err := nginx.Apply(context.Background(), env, "example.test"); err != nil {
 			t.Fatalf("Apply call %d: %v", call, err)
 		}
@@ -665,7 +675,7 @@ func snapshotUnrelatedNginxFiles(t *testing.T, root string) map[string]treeEntry
 	return files
 }
 
-func observeNextTemporaryConfiguration(t *testing.T, directory string, remove bool) <-chan error {
+func observeNextTemporaryConfiguration(t *testing.T, directory string, inject func() error) <-chan error {
 	t.Helper()
 	fd, err := syscall.InotifyInit1(syscall.IN_CLOEXEC)
 	if err != nil {
@@ -694,11 +704,11 @@ func observeNextTemporaryConfiguration(t *testing.T, directory string, remove bo
 				}
 				name := strings.TrimRight(string(buffer[offset+syscall.SizeofInotifyEvent:eventEnd]), "\x00")
 				if strings.HasPrefix(name, temporaryConfigurationPrefix) {
-					if remove {
-						result <- os.Remove(filepath.Join(directory, name))
-					} else {
-						result <- nil
+					if inject != nil {
+						result <- inject()
+						return
 					}
+					result <- nil
 					return
 				}
 				offset = eventEnd
