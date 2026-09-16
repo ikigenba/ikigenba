@@ -66,13 +66,13 @@ func (s Store) Get(key string) (string, error) {
 	m, err := s.load()
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return "", fmt.Errorf("%w: %s", ErrNotSet, key)
+			return "", fmt.Errorf("%w: %q", ErrNotSet, key)
 		}
 		return "", err
 	}
 	value, ok := m[key]
 	if !ok {
-		return "", fmt.Errorf("%w: %s", ErrNotSet, key)
+		return "", fmt.Errorf("%w: %q", ErrNotSet, key)
 	}
 	return value, nil
 }
@@ -157,6 +157,9 @@ func (s Store) lockPath() string {
 
 func (s Store) withLock(fn func() error) error {
 	if err := os.MkdirAll(s.dirPath(), 0o700); err != nil {
+		return err
+	}
+	if err := syscall.Chmod(s.dirPath(), 0o700); err != nil {
 		return err
 	}
 	return s.holdLock(fn)
@@ -253,7 +256,7 @@ func decodeStore(data []byte) (map[string]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		return nil, fmt.Errorf("trailing token %v", tok)
+		return nil, fmt.Errorf("trailing token %q", tok)
 	}
 	m := make(map[string]string, len(raw))
 	for k, v := range raw {

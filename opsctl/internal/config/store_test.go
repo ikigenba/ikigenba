@@ -9,7 +9,9 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 )
@@ -107,7 +109,9 @@ func TestExportedAPI(t *testing.T) {
 	checkMethod(t, st, "Get", []reflect.Type{stringType}, []reflect.Type{stringType, errorType})
 	// R-EYL1-UEHB
 	checkMethod(t, st, "Set", []reflect.Type{stringType, stringType}, []reflect.Type{errorType})
+	// R-EZSY-8680
 	checkMethod(t, st, "Del", []reflect.Type{stringType}, []reflect.Type{errorType})
+	// R-F10U-LXYP
 	checkMethod(t, st, "List", nil, []reflect.Type{entrySlice, errorType})
 }
 
@@ -198,7 +202,7 @@ func TestSetRejectsInvalidKeyAndValue(t *testing.T) {
 }
 
 func TestSetCreatesDirAndFileModes(t *testing.T) {
-	// R-NNZ8-PU4I
+	// R-F28Q-ZPPE
 	s := newStore(t)
 	dir := storeDir(s)
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
@@ -227,6 +231,30 @@ func TestSetCreatesDirAndFileModes(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Errorf("file mode = %04o, want 0600", info.Mode().Perm())
+	}
+
+	if err := syscall.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Chmod(file, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set("dns.zones", "example.com"); err != nil {
+		t.Fatal(err)
+	}
+	info, err = os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Errorf("existing directory mode = %04o, want 0700", info.Mode().Perm())
+	}
+	info, err = os.Stat(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("existing file mode = %04o, want 0600", info.Mode().Perm())
 	}
 }
 
@@ -314,7 +342,7 @@ func TestGetAbsentKey(t *testing.T) {
 }
 
 func TestDel(t *testing.T) {
-	// R-NRMX-V5CL
+	// R-2ALD-C3F6
 	missing := newStore(t)
 	if err := missing.Del("any.key"); err != nil {
 		t.Errorf("Del on missing file: %v, want nil", err)
@@ -384,7 +412,7 @@ func TestList(t *testing.T) {
 }
 
 func TestCorruptFile(t *testing.T) {
-	// R-NU2Q-MOTZ
+	// R-WEXA-SCE4
 	cases := []struct {
 		name string
 		data string
@@ -440,13 +468,40 @@ func TestCorruptFile(t *testing.T) {
 }
 
 func TestAtomicRenameWrite(t *testing.T) {
-	// R-NVAN-0GKO
+	// R-F3GN-DHG3
 	s := newStore(t)
 	if err := s.Set("keep", "1"); err != nil {
 		t.Fatal(err)
 	}
+	beforeSet, err := os.Stat(storeFile(s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set("other", "2"); err != nil {
+		t.Fatal(err)
+	}
+	afterSet, err := os.Stat(storeFile(s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.SameFile(beforeSet, afterSet) {
+		t.Error("Set retained the config.json inode, want rename replacement")
+	}
+	if err := s.Del("other"); err != nil {
+		t.Fatal(err)
+	}
+	afterDel, err := os.Stat(storeFile(s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.SameFile(afterSet, afterDel) {
+		t.Error("Del retained the config.json inode, want rename replacement")
+	}
 
 	done := make(chan struct{})
+	started := make(chan struct{})
+	readOK := make(chan struct{}, 1)
+	var startOnce sync.Once
 	errCh := make(chan error, 1)
 	go func() {
 		for {
@@ -469,6 +524,11 @@ func TestAtomicRenameWrite(t *testing.T) {
 					errCh <- fmt.Errorf("partial config.json %q", data)
 					return
 				}
+				startOnce.Do(func() { close(started) })
+				select {
+				case readOK <- struct{}{}:
+				default:
+				}
 			}
 		}
 	}()
@@ -480,14 +540,23 @@ func TestAtomicRenameWrite(t *testing.T) {
 			<-errCh
 		}
 	})
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("reader did not complete its handshake read")
+	}
 
 	for i := 0; i < 40; i++ {
+		drainSignal(readOK)
 		if err := s.Set("k", fmt.Sprintf("v%d", i)); err != nil {
 			t.Fatal(err)
 		}
+		awaitRead(t, readOK)
+		drainSignal(readOK)
 		if err := s.Del("k"); err != nil {
 			t.Fatal(err)
 		}
+		awaitRead(t, readOK)
 	}
 	close(done)
 	if err := <-errCh; err != nil {
@@ -513,7 +582,31 @@ func TestAtomicRenameWrite(t *testing.T) {
 }
 
 func TestConcurrentSetAndDel(t *testing.T) {
-	// R-NWIJ-E8BD
+	// R-F4OJ-R96S
+	for _, tc := range []struct {
+		name   string
+		run    func(config.Store) error
+		source string
+		want   map[string]string
+	}{
+		{
+			name:   "Set",
+			run:    func(s config.Store) error { return s.Set("added", "2") },
+			source: `{"keep":"1"}`,
+			want:   map[string]string{"added": "2", "keep": "1"},
+		},
+		{
+			name:   "Del",
+			run:    func(s config.Store) error { return s.Del("drop") },
+			source: `{"drop":"2","keep":"1"}`,
+			want:   map[string]string{"keep": "1"},
+		},
+	} {
+		t.Run("holds flock through "+tc.name, func(t *testing.T) {
+			assertLockSpansReadModifyWrite(t, tc.run, tc.source, tc.want)
+		})
+	}
+
 	s := newStore(t)
 	const n = 20
 	errs := make([]error, n)
@@ -580,6 +673,84 @@ func TestConcurrentSetAndDel(t *testing.T) {
 	}
 }
 
+func TestOperationsPreserveUnrelatedState(t *testing.T) {
+	// R-F74C-ISO6
+	s := newStore(t)
+	if err := s.Set("keep", "original"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set("change", "before"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set("change", "after"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Get("keep"); err != nil || got != "original" {
+		t.Fatalf("Get(keep) after Set = %q, %v, want original, nil", got, err)
+	}
+	if err := s.Del("change"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Get("keep"); err != nil || got != "original" {
+		t.Fatalf("Get(keep) after Del = %q, %v, want original, nil", got, err)
+	}
+
+	before := snapshotStore(t, s)
+	if _, err := s.Get("absent"); !errors.Is(err, config.ErrNotSet) {
+		t.Fatalf("Get(absent) error = %v, want wrapping ErrNotSet", err)
+	}
+	if _, err := s.List(); err != nil {
+		t.Fatal(err)
+	}
+	after := snapshotStore(t, s)
+	if !reflect.DeepEqual(after, before) {
+		t.Errorf("Get/List changed store contents or metadata:\nbefore: %#v\nafter:  %#v", before, after)
+	}
+
+	missing := newStore(t)
+	if _, err := missing.Get("absent"); !errors.Is(err, config.ErrNotSet) {
+		t.Fatalf("missing Get error = %v, want wrapping ErrNotSet", err)
+	}
+	if _, err := missing.List(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(storeDir(missing)); !os.IsNotExist(err) {
+		t.Errorf("Get/List on missing store changed host state: %v", err)
+	}
+}
+
+func TestFilesystemAccessFailures(t *testing.T) {
+	// R-2BT9-PV5V
+	for _, operation := range []struct {
+		name string
+		run  func(config.Store) error
+	}{
+		{"Get", func(s config.Store) error { _, err := s.Get("key"); return err }},
+		{"Set", func(s config.Store) error { return s.Set("key", "value") }},
+		{"Del", func(s config.Store) error { return s.Del("key") }},
+		{"List", func(s config.Store) error { _, err := s.List(); return err }},
+	} {
+		t.Run(operation.name, func(t *testing.T) {
+			s := newStore(t)
+			if err := os.MkdirAll(storeDir(s), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(storeFile(s), []byte("{}\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			blocked := filepath.Dir(storeDir(s))
+			if err := syscall.Chmod(blocked, 0); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = syscall.Chmod(blocked, 0o700) })
+			err := operation.run(s)
+			if !errors.Is(err, os.ErrPermission) {
+				t.Errorf("error = %v, want wrapping os.ErrPermission", err)
+			}
+		})
+	}
+}
+
 func newStore(t *testing.T) config.Store {
 	t.Helper()
 	return config.Store{Root: t.TempDir()}
@@ -595,6 +766,207 @@ func storeFile(s config.Store) string {
 
 func storeLock(s config.Store) string {
 	return filepath.Join(storeDir(s), config.LockName)
+}
+
+func drainSignal(ch <-chan struct{}) {
+	select {
+	case <-ch:
+	default:
+	}
+}
+
+func awaitRead(t *testing.T, ch <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(2 * time.Second):
+		t.Fatal("reader did not successfully read between writes")
+	}
+}
+
+func assertLockSpansReadModifyWrite(
+	t *testing.T,
+	run func(config.Store) error,
+	source string,
+	want map[string]string,
+) {
+	t.Helper()
+	s := newStore(t)
+	if err := os.MkdirAll(storeDir(s), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(storeFile(s), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(storeLock(s), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	operationDone := make(chan error, 1)
+	go func() { operationDone <- run(s) }()
+	waitForHeldFlock(t, storeLock(s))
+
+	observed := make(chan struct {
+		data []byte
+		err  error
+	}, 1)
+	go func() {
+		lock, err := os.OpenFile(storeLock(s), os.O_RDWR, 0)
+		if err != nil {
+			observed <- struct {
+				data []byte
+				err  error
+			}{err: err}
+			return
+		}
+		defer func() { _ = lock.Close() }()
+		if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+			observed <- struct {
+				data []byte
+				err  error
+			}{err: err}
+			return
+		}
+		data, err := os.ReadFile(storeFile(s))
+		_ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+		observed <- struct {
+			data []byte
+			err  error
+		}{data: data, err: err}
+	}()
+
+	fifo, err := os.OpenFile(storeFile(s), os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fifo.WriteString(source); err != nil {
+		_ = fifo.Close()
+		t.Fatal(err)
+	}
+	if err := fifo.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-operationDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("write did not finish after FIFO source was supplied")
+	}
+
+	var result struct {
+		data []byte
+		err  error
+	}
+	select {
+	case result = <-observed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("competing flock did not acquire after write returned")
+	}
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	var got map[string]string
+	if err := json.Unmarshal(result.data, &got); err != nil {
+		t.Fatalf("config observed after competing flock acquired = %q: %v", result.data, err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("config when competing flock acquired = %#v, want %#v", got, want)
+	}
+}
+
+func waitForHeldFlock(t *testing.T, path string) {
+	t.Helper()
+	root, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		probe, err := root.OpenFile(filepath.Base(path), os.O_RDWR, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = syscall.Flock(int(probe.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			_ = probe.Close()
+			return
+		}
+		if err != nil {
+			_ = probe.Close()
+			t.Fatal(err)
+		}
+		_ = syscall.Flock(int(probe.Fd()), syscall.LOCK_UN)
+		_ = probe.Close()
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("write never acquired config.lock before reading config.json")
+}
+
+type storeSnapshotEntry struct {
+	Name     string
+	Metadata storeMetadata
+	Data     string
+}
+
+type storeMetadata struct {
+	Dev, Ino, Nlink uint64
+	Mode, UID, GID  uint32
+	Rdev            uint64
+	Size, Blocks    int64
+	Mtime, Ctime    syscall.Timespec
+}
+
+func persistentMetadata(stat *syscall.Stat_t) storeMetadata {
+	return storeMetadata{
+		Dev: stat.Dev, Ino: stat.Ino, Nlink: stat.Nlink,
+		Mode: stat.Mode, UID: stat.Uid, GID: stat.Gid,
+		Rdev: stat.Rdev, Size: stat.Size, Blocks: stat.Blocks,
+		Mtime: stat.Mtim, Ctime: stat.Ctim,
+	}
+}
+
+func snapshotStore(t *testing.T, s config.Store) []storeSnapshotEntry {
+	t.Helper()
+	root, err := os.OpenRoot(storeDir(s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	entries, err := os.ReadDir(storeDir(s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := make([]storeSnapshotEntry, 0, len(entries)+1)
+	for _, entry := range entries {
+		path := filepath.Join(storeDir(s), entry.Name())
+		data, err := root.ReadFile(entry.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		info, err := os.Lstat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok {
+			t.Fatalf("%s metadata type = %T, want *syscall.Stat_t", path, info.Sys())
+		}
+		snapshot = append(snapshot, storeSnapshotEntry{
+			Name: entry.Name(), Metadata: persistentMetadata(stat), Data: string(data),
+		})
+	}
+	info, err := os.Lstat(storeDir(s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Fatalf("%s metadata type = %T, want *syscall.Stat_t", storeDir(s), info.Sys())
+	}
+	return append(snapshot, storeSnapshotEntry{Name: ".", Metadata: persistentMetadata(stat)})
 }
 
 func checkMethod(t *testing.T, recv reflect.Type, name string, in, out []reflect.Type) {

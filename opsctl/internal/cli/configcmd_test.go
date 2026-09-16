@@ -3,7 +3,9 @@ package cli_test
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -282,6 +284,45 @@ func TestConfigCorrupt(t *testing.T) {
 		if string(after) != string(before) {
 			t.Errorf("%q: corrupt file changed: %q -> %q", args, before, after)
 		}
+	}
+}
+
+func TestConfigFilesystemAccessFailures(t *testing.T) {
+	// R-2BT9-PV5V
+	for _, tc := range []struct {
+		operation string
+		args      []string
+	}{
+		{"get", []string{"config", "get", "key"}},
+		{"set", []string{"config", "set", "key=value"}},
+		{"del", []string{"config", "del", "key"}},
+		{"list", []string{"config", "list"}},
+	} {
+		t.Run(tc.operation, func(t *testing.T) {
+			deps := depsAt(t, 0)
+			path := configFile(deps.Root)
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			blocked := filepath.Join(deps.Root, "etc")
+			if err := syscall.Chmod(blocked, 0); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = syscall.Chmod(blocked, 0o700) })
+			stdout, stderr, code := invoke(tc.args, deps)
+			if code != 1 {
+				t.Errorf("exit = %d, want 1", code)
+			}
+			if stdout != "" {
+				t.Errorf("stdout = %q, want empty", stdout)
+			}
+			if !strings.HasPrefix(stderr, "opsctl: config "+tc.operation+" failed for "+strconv.Quote(path)+": ") {
+				t.Errorf("stderr = %q, want operation and resolved config path", stderr)
+			}
+		})
 	}
 }
 

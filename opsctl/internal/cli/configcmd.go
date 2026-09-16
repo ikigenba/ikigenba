@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
@@ -56,6 +57,16 @@ func configErr(stderr io.Writer, err error) exitCode {
 	return exitFail
 }
 
+func configActionErr(stderr io.Writer, operation string, deps Deps, err error) exitCode {
+	path := filepath.Join(deps.Root, filepath.FromSlash(strings.TrimPrefix(config.Dir, "/")), config.FileName)
+	if errors.Is(err, config.ErrCorrupt) {
+		writeDiagnostic(stderr, errors.New(diagnosticArg(path)+" is corrupt"))
+		return exitFail
+	}
+	writeDiagnostic(stderr, fmt.Errorf("config %s failed for %q: %w", operation, path, err))
+	return exitFail
+}
+
 func configSet(args []string, stderr io.Writer, deps Deps) exitCode {
 	if len(args) != 1 {
 		return writeConfigUsageError(stderr, "config set requires KEY=VALUE")
@@ -74,7 +85,7 @@ func configSet(args []string, stderr io.Writer, deps Deps) exitCode {
 			_, _ = io.WriteString(stderr, "opsctl: invalid value\n")
 			return exitUsage
 		}
-		return configErr(stderr, err)
+		return configActionErr(stderr, "set", deps, err)
 	}
 	return exitOK
 }
@@ -89,7 +100,7 @@ func configGet(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 			_, _ = io.WriteString(stderr, "opsctl: key not set: "+diagnosticArg(args[0])+"\n")
 			return exitFail
 		}
-		return configErr(stderr, err)
+		return configActionErr(stderr, "get", deps, err)
 	}
 	if _, err := fmt.Fprintln(stdout, value); err != nil {
 		return exitFail
@@ -102,7 +113,7 @@ func configDel(args []string, stderr io.Writer, deps Deps) exitCode {
 		return writeConfigUsageError(stderr, "config del requires KEY")
 	}
 	if err := (config.Store{Root: deps.Root}).Del(args[0]); err != nil {
-		return configErr(stderr, err)
+		return configActionErr(stderr, "del", deps, err)
 	}
 	return exitOK
 }
@@ -113,7 +124,7 @@ func configList(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	}
 	entries, err := (config.Store{Root: deps.Root}).List()
 	if err != nil {
-		return configErr(stderr, err)
+		return configActionErr(stderr, "list", deps, err)
 	}
 	var b strings.Builder
 	for _, e := range entries {
