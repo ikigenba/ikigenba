@@ -68,29 +68,6 @@ Keys match ^[a-z0-9_.-]+$. Values may not contain newlines.
 
 const wantVersion = "v0.1.0"
 
-func assertEveryLinePrefixed(t *testing.T, name, stderr, prefix string) {
-	t.Helper()
-	if stderr == "" {
-		t.Errorf("%s: stderr is empty, want lines beginning with %q", name, prefix)
-		return
-	}
-	lines := strings.Split(stderr, "\n")
-	if lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
-	} else {
-		t.Errorf("%s: stderr is not newline-terminated: %q", name, stderr)
-	}
-	if len(lines) == 0 {
-		t.Errorf("%s: stderr has no lines", name)
-		return
-	}
-	for i, line := range lines {
-		if !strings.HasPrefix(line, prefix) {
-			t.Errorf("%s: stderr line %d = %q, want prefix %q", name, i, line, prefix)
-		}
-	}
-}
-
 func invoke(args []string, deps cli.Deps) (stdout, stderr string, code int) {
 	var outBuf, errBuf bytes.Buffer
 	code = cli.Run(args, strings.NewReader(""), &outBuf, &errBuf, deps)

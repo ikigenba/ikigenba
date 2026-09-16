@@ -1,30 +1,38 @@
 package cli_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 )
 
 func TestConfigHelp(t *testing.T) {
-	// R-NYYC-5RSR
-	user := depsAt(t, 1)
-	for _, args := range [][]string{
-		{"config", "--help"},
-		{"config", "-h"},
-	} {
-		stdout, stderr, code := invoke(args, user)
-		if code != 0 {
-			t.Errorf("%q: exit %d, want 0", args, code)
-		}
-		if stderr != "" {
-			t.Errorf("%q: stderr = %q, want empty", args, stderr)
-		}
-		if stdout != wantConfigUsage {
-			t.Errorf("%q: stdout = %q, want config usage", args, stdout)
+	// R-F5WG-50XH
+	for _, euid := range []int{0, 1} {
+		for _, args := range [][]string{
+			{"config", "--help"},
+			{"config", "-h"},
+		} {
+			deps := depsAt(t, euid)
+			writeCorrupt(t, deps.Root)
+			assertNoAccess := observeFilesystemAccess(t, deps.Root)
+			stdout, stderr, code := invoke(args, deps)
+			assertNoAccess()
+			if code != 0 {
+				t.Errorf("euid %d %q: exit %d, want 0", euid, args, code)
+			}
+			if stderr != "" {
+				t.Errorf("euid %d %q: stderr = %q, want empty", euid, args, stderr)
+			}
+			if stdout != wantConfigUsage {
+				t.Errorf("euid %d %q: stdout = %q, want config usage", euid, args, stdout)
+			}
 		}
 	}
 }
@@ -93,7 +101,7 @@ func TestConfigSet(t *testing.T) {
 }
 
 func TestConfigSetUsageError(t *testing.T) {
-	// R-O2M1-B30U
+	// R-8Q6R-PBF6
 	deps := depsAt(t, 0)
 	_, stderr, code := invoke([]string{"config", "set", "ok=1"}, deps)
 	if code != 0 {
@@ -109,9 +117,11 @@ func TestConfigSetUsageError(t *testing.T) {
 		arg  string
 		want string
 	}{
-		{"missing equals", "noequals", "opsctl: set requires KEY=VALUE\n"},
-		{"invalid key", "INVALID=x", "opsctl: invalid key: INVALID\n"},
-		{"newline value", "ok=line\nfeed", "opsctl: invalid value\n"},
+		{"missing equals", "noequals", "opsctl: config set needs KEY=VALUE\n\nsee 'opsctl config --help' for usage\n"},
+		{"invalid key", "INVALID=x", "opsctl: invalid key: INVALID\n\nsee 'opsctl config --help' for usage\n"},
+		{"invalid key before value", "INVALID=line\nfeed", "opsctl: invalid key: INVALID\n\nsee 'opsctl config --help' for usage\n"},
+		{"newline value", "ok=line\nfeed", "opsctl: invalid value: newline in value for 'ok'\n\nsee 'opsctl config --help' for usage\n"},
+		{"carriage return value", "ok=line\rfeed", "opsctl: invalid value: newline in value for 'ok'\n\nsee 'opsctl config --help' for usage\n"},
 	}
 	for _, tc := range cases {
 		stdout, stderr, code := invoke([]string{"config", "set", tc.arg}, deps)
@@ -141,11 +151,121 @@ func TestConfigSetUsageError(t *testing.T) {
 	if stdout != "" {
 		t.Errorf("missing store: stdout = %q, want empty", stdout)
 	}
-	if stderr != "opsctl: set requires KEY=VALUE\n" {
-		t.Errorf("missing store: stderr = %q, want set-requires diagnostic", stderr)
+	want := "opsctl: config set needs KEY=VALUE\n\nsee 'opsctl config --help' for usage\n"
+	if stderr != want {
+		t.Errorf("missing store: stderr = %q, want %q", stderr, want)
 	}
 	if _, err := os.Stat(configFile(empty.Root)); !os.IsNotExist(err) {
 		t.Errorf("usage error created the store file: %v", err)
+	}
+}
+
+func TestConfigAcceptsOnlyDefinedForms(t *testing.T) {
+	// R-F8C8-WKEV
+	accepted := depsAt(t, 0)
+	if _, stderr, code := invoke([]string{"config", "set", "key=value"}, accepted); code != 0 {
+		t.Fatalf("set accepted form: exit %d stderr %q", code, stderr)
+	}
+	for _, tc := range []struct {
+		args       []string
+		wantStdout string
+	}{
+		{[]string{"config", "get", "key"}, "value\n"},
+		{[]string{"config", "list"}, "key=value\n"},
+		{[]string{"config", "del", "key"}, ""},
+	} {
+		stdout, stderr, code := invoke(tc.args, accepted)
+		if code != 0 || stdout != tc.wantStdout || stderr != "" {
+			t.Errorf("accepted %q: exit %d stdout %q stderr %q, want 0, %q, empty stderr", tc.args, code, stdout, stderr, tc.wantStdout)
+		}
+	}
+
+	rejected := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"config"}, "opsctl: no config subcommand given\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "other"}, "opsctl: unknown config subcommand 'other'\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "get"}, "opsctl: config get requires KEY\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "get", "a", "b"}, "opsctl: config get requires KEY\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "set"}, "opsctl: config set requires KEY=VALUE\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "set", "a=b", "c=d"}, "opsctl: config set requires KEY=VALUE\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "set", "noequals"}, "opsctl: config set needs KEY=VALUE\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "del"}, "opsctl: config del requires KEY\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "del", "a", "b"}, "opsctl: config del requires KEY\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "list", "extra"}, "opsctl: config list takes no arguments\n\nsee 'opsctl config --help' for usage\n"},
+	}
+	for _, tc := range rejected {
+		deps := depsAt(t, 0)
+		writeCorrupt(t, deps.Root)
+		before, err := os.ReadFile(configFile(deps.Root))
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertNoAccess := observeFilesystemAccess(t, deps.Root)
+		stdout, stderr, code := invoke(tc.args, deps)
+		assertNoAccess()
+		if code != 2 || stdout != "" || stderr != tc.want {
+			t.Errorf("rejected %q: exit %d stdout %q stderr %q, want 2, empty stdout, stderr %q", tc.args, code, stdout, stderr, tc.want)
+		}
+		after, err := os.ReadFile(configFile(deps.Root))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(after) != string(before) {
+			t.Errorf("rejected %q changed store: %q -> %q", tc.args, before, after)
+		}
+	}
+}
+
+func TestConfigValidationPrecedesStoreRead(t *testing.T) {
+	// R-WHD3-JVVI
+	invalid := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"config", "other"}, "opsctl: unknown config subcommand 'other'\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "get"}, "opsctl: config get requires KEY\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "set", "noequals"}, "opsctl: config set needs KEY=VALUE\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "set", "BAD=value"}, "opsctl: invalid key: BAD\n\nsee 'opsctl config --help' for usage\n"},
+		{[]string{"config", "set", "key=line\nfeed"}, "opsctl: invalid value: newline in value for 'key'\n\nsee 'opsctl config --help' for usage\n"},
+	}
+	for _, setup := range []struct {
+		name string
+		root func(*testing.T) string
+	}{
+		{"corrupt", func(t *testing.T) string {
+			root := t.TempDir()
+			writeCorrupt(t, root)
+			return root
+		}},
+		{"inaccessible", func(t *testing.T) string {
+			path := filepath.Join(t.TempDir(), "not-a-directory")
+			if err := os.WriteFile(path, []byte("unchanged"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			return path
+		}},
+	} {
+		t.Run(setup.name, func(t *testing.T) {
+			for _, tc := range invalid {
+				deps := depsAt(t, 0)
+				deps.Root = setup.root(t)
+				stdout, stderr, code := invoke(tc.args, deps)
+				if code != 2 || stdout != "" || stderr != tc.want {
+					t.Errorf("%q: exit %d stdout %q stderr %q, want 2, empty stdout, stderr %q", tc.args, code, stdout, stderr, tc.want)
+				}
+			}
+
+			root := setup.root(t)
+			store := config.Store{Root: root}
+			if err := store.Set("BAD", "value"); !errors.Is(err, config.ErrInvalidKey) {
+				t.Errorf("Store.Set invalid key: err = %v, want ErrInvalidKey", err)
+			}
+			if err := store.Set("key", "line\nfeed"); !errors.Is(err, config.ErrInvalidValue) {
+				t.Errorf("Store.Set invalid value: err = %v, want ErrInvalidValue", err)
+			}
+		})
 	}
 }
 
@@ -252,7 +372,7 @@ func TestConfigMissingOrUnknownSubcommand(t *testing.T) {
 }
 
 func TestConfigCorrupt(t *testing.T) {
-	// R-O7HM-U5ZM
+	// R-WG57-644T
 	subcmds := [][]string{
 		{"config", "get", "a"},
 		{"config", "set", "a=b"},
@@ -273,9 +393,9 @@ func TestConfigCorrupt(t *testing.T) {
 		if stdout != "" {
 			t.Errorf("%q: stdout = %q, want empty", args, stdout)
 		}
-		assertEveryLinePrefixed(t, strings.Join(args, " "), stderr, "opsctl: ")
-		if !strings.Contains(stderr, "config.json") {
-			t.Errorf("%q: stderr = %q, want to name config.json", args, stderr)
+		want := "opsctl: " + configFile(deps.Root) + " is corrupt\n"
+		if stderr != want {
+			t.Errorf("%q: stderr = %q, want %q", args, stderr, want)
 		}
 		after, err := os.ReadFile(configFile(deps.Root))
 		if err != nil {

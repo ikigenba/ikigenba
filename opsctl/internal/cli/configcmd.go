@@ -73,18 +73,15 @@ func configSet(args []string, stderr io.Writer, deps Deps) exitCode {
 	}
 	key, value, found := strings.Cut(args[0], "=")
 	if !found {
-		_, _ = io.WriteString(stderr, "opsctl: set requires KEY=VALUE\n")
-		return exitUsage
+		return writeConfigUsageError(stderr, "config set needs KEY=VALUE")
+	}
+	if !config.ValidKey(key) {
+		return writeConfigUsageError(stderr, "invalid key: "+diagnosticArg(key))
+	}
+	if strings.ContainsAny(value, "\n\r") {
+		return writeConfigUsageError(stderr, "invalid value: newline in value for '"+diagnosticArg(key)+"'")
 	}
 	if err := (config.Store{Root: deps.Root}).Set(key, value); err != nil {
-		if errors.Is(err, config.ErrInvalidKey) {
-			_, _ = io.WriteString(stderr, "opsctl: invalid key: "+diagnosticArg(key)+"\n")
-			return exitUsage
-		}
-		if errors.Is(err, config.ErrInvalidValue) {
-			_, _ = io.WriteString(stderr, "opsctl: invalid value\n")
-			return exitUsage
-		}
 		return configActionErr(stderr, "set", deps, err)
 	}
 	return exitOK
