@@ -16,6 +16,8 @@ The specs describe the **current target**, not a commitment to earlier designs. 
 - `specs/issues/` — escalation channel; one markdown file per open issue, named `<slug>.md` (issues carry no minted id).
 - `AGENTS.md` — beside `specs/`; the project's ground (below). Human-authored.
 
+Those four entries are the whole of `specs/`. Nothing else is created under it: no review, evidence, ledger, or progress files. Working material a skill needs while it runs — a coverage ledger, verifier reports, gathered observations, alternatives under consideration — goes to an ephemeral scratch file outside the repository (the `handoff` skill's scratch-file convention), is reported to the user, and is never committed.
+
 ## Requirement ids
 
 Designs are never frozen. Any requirement can be replaced at any time, and a requirement is never a reason a design cannot change; only the build run and `audit-spec` treat the design as read-only. The one rule is about ids, not about the design: **an id names exactly one text**. New text means a new id.
@@ -68,7 +70,7 @@ A monorepo holds several projects below one git root; each is independent and st
 
 ## Filing an issue
 
-`specs/issues/` is the escalation channel for friction that cannot be resolved in-role — a wrong seam, contradictory requirements, a missing dependency, broken tooling. It is distinct from a gap a builder can close within the current contract.
+`specs/issues/` is the escalation channel for friction that cannot be resolved in-role — a wrong seam, contradictory requirements, a missing dependency, broken tooling. It is distinct from a gap a builder can close within the current contract. Only the unattended runs file issues: `build-spec` and `audit-spec`. An interactive skill such as `draft-spec` has the user present and asks instead.
 
 - One markdown file per issue, named `specs/issues/<slug>.md`. Issues carry no minted id; nothing outside `draft-spec` invokes `idgen`.
 - Contents: filing context, the requirement id(s) involved, the friction, why it is unresolvable in-role, evidence (conflicting ids, failing command output), and a suggested resolution.

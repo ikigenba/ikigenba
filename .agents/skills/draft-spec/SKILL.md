@@ -15,7 +15,7 @@ canonical; this skill supplies delegation and completion criteria.
 
 The goal is to finish all work that can be completed from the available
 inputs. A contradiction or unanswered question blocks only the decisions
-that depend on it, never the whole run. Carry unresolved issues through
+that depend on it, never the whole run. Carry open questions through
 the tree and report them together at the end. Do not inherit build-spec's
 stop-on-issue behavior.
 
@@ -39,16 +39,19 @@ not an obligation to preserve its shape. Do not read sibling internals.
 User-provided story sources outside the project may be read as inputs;
 they do not broaden the output boundary.
 
-Writes are limited to the selected project's design, the project ground
-needed to build it, and supporting review/evidence or issue files under
-its `specs/`. No source or test changes. Do not run `build-spec`, invoke
-the `check-spec` skill, or commit merely because
-drafting finished. These are separate, human-gated skills.
+Writes are limited to the selected project's design and the project
+ground needed to build it. Nothing else is written under `specs/` or
+anywhere in the repository: no review, evidence, ledger, or issue files.
+No source or test changes. Do not run `build-spec`, invoke the
+`check-spec` skill, or commit merely because drafting finished. These are
+separate, human-gated skills.
 
 ## The coverage ledger
 
-The root keeps `specs/draft-review.md` as a compact, non-normative review
-artifact. Record the input sources and versions when available, and give
+The root keeps a coverage ledger as a compact, non-normative working
+document in an ephemeral scratch file outside the repository, following
+the `handoff` skill's scratch-file convention. It is never written under
+`specs/` or committed. Record the input sources and versions when available, and give
 each story and acceptance criterion a stable source locator. Use existing
 story ids or local review labels; these are not requirement ids and are
 never minted with `idgen`. For stories without explicit acceptance
@@ -57,9 +60,10 @@ questions. Never silently invent user intent.
 
 Map each criterion to its owning design scope and, when authored, the
 requirements that satisfy it. Record unresolved decisions, dependency
-evidence, and canonical consumer usage here or in linked review files.
-Keep review material outside `specs/design/` so it cannot contaminate the
-canonical design-id grep.
+evidence, and canonical consumer usage here or in further scratch files.
+Review material stays outside the repository entirely: it is not part of
+the project's permanent record, and it cannot contaminate the canonical
+design-id grep. Report its path to the user at the end.
 
 Coverage is semantic: a requirement id beside a story does not establish
 that its outcome is designed. A criterion is closed only after an
@@ -125,7 +129,7 @@ shared interface changes, evidence locations, and unresolved decisions.
 
 Every author result, including partial work, goes to a fresh verifier.
 Correctable failures go to a fresh author with the evidence, then to
-another verifier. Unresolved input decisions enter the issue ledger;
+another verifier. Unresolved input decisions go up the tree to the root;
 re-delegating the same question without new evidence is not progress.
 Coordinators never accept authors' own coverage claims as verification.
 
@@ -157,36 +161,38 @@ If the design is already fully determined by its inputs, there is
 nothing to ask. Never mark an assumption as user-approved.
 
 Gather observations for external dependency claims within the user's
-authorized scope and record their provenance. Documentation may support
+authorized scope and record their provenance in the scratch material and
+the final report, never in the repository. Documentation may support
 a draft, but does not replace the observations the spec rules require
 before checking. Missing access or unproven claims remain explicit in the
 handoff. An external tool's contract — a sibling project's included — is
 established through its installed public interface, never its source,
 design files, or documentation alone.
 
-## Carry issues to the end
+## Carry open questions to the end
 
-Record each unresolved issue under `specs/issues/<slug>.md` per the `spec`
-skill's "Filing an issue", and link it from the coverage ledger. Include
-the source criteria, the contradiction
-or missing fact with evidence, affected decisions and dependent scopes,
-work already completed, and the question or observation needed to resume.
-Keep alternatives and provisional proposals in review material; do not
+This skill never files under `specs/issues/`; that channel belongs to the
+unattended build and audit runs. The user is present here, so an
+unresolved question is asked, not filed. Record each open question in the
+coverage ledger: the source criteria, the contradiction or missing fact
+with evidence, affected decisions and dependent scopes, work already
+completed, and the answer or observation needed to resume. Keep
+alternatives and provisional proposals in the scratch material; do not
 mint an arbitrary resolution into the normative contract.
 
 Authors finish the unaffected portion of their scope before returning
-issues. Coordinators collect and deduplicate issues, continue scheduling
-all unblocked work, and revisit dependencies when new results resolve an
-issue. An issue reported by a child is not an instruction to stop siblings
-or halt upward. Correct errors that available evidence resolves instead
-of treating them as questions for the user.
+questions. Coordinators collect and deduplicate questions, continue
+scheduling all unblocked work, and revisit dependencies when new results
+resolve one. A question reported by a child is not an instruction to stop
+siblings or halt upward. Correct errors that available evidence resolves
+instead of treating them as questions for the user.
 
 Before ending, every input criterion must have a verified result, an
-explicit user exclusion, or a specific unresolved issue. Finish all
+explicit user exclusion, or a specific open question. Finish all
 feasible authoring, correction, and verification, including integration
 checks on completed portions. Stop only when no remaining work can
 advance without an identified answer, evidence, or unavailable capability.
-Do not use issue reporting as a shortcut around difficult work, and do
+Do not use question reporting as a shortcut around difficult work, and do
 not repeatedly retry an unchanged blocker.
 
 ## What done looks like
@@ -218,9 +224,10 @@ build workflow, not something this skill closes. For a new project,
 report that implementation is absent; do not invent test results or run
 build gates against code that has not been authored.
 
-Finish with consumer usage first, then the design and review file paths,
-coverage counts, and a consolidated list of unresolved issues, their
-affected criteria, and what would unblock each. Distinguish completion of
+Finish with consumer usage first, then the design file paths and the
+scratch ledger path, coverage counts, and a consolidated list of open
+questions, their affected criteria, and what would unblock each — raised
+with the user through `grill-me` before the report if any remain. Distinguish completion of
 all feasible work from completeness of the design. If all
 stories are already adequately designed and independently verified,
 report that result without rewriting requirements. Label incomplete work

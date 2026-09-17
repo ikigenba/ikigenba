@@ -3,8 +3,7 @@
 Shared host setup is consumed by create and init. Release selection is data
 obtained at run time; configuration is nine derived keys plus optional ACME
 email. Only published release assets and installed host commands cross the
-opsctl boundary. Outstanding external observations are recorded alongside the
-designs.
+opsctl boundary.
 
 ## REQUIREMENTS
 
