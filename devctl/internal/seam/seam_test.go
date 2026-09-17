@@ -91,21 +91,53 @@ func TestExecErrorsAndExitStatus(t *testing.T) {
 		t.Fatalf("exit code = %d, want 23", result.ExitCode)
 	}
 
-	if _, err := Exec(context.Background(), Cmd{Dir: dir}); err == nil {
+	emptyPath, emptyPathMarker := markerCommand(t)
+	emptyPath.Path = ""
+	if _, err := Exec(context.Background(), emptyPath); err == nil {
 		t.Fatal("empty path returned nil error")
 	}
-	if _, err := Exec(context.Background(), Cmd{Path: name, Dir: ""}); err == nil {
+	assertNotStarted(t, emptyPathMarker)
+
+	emptyDir, emptyDirMarker := markerCommand(t)
+	emptyDir.Dir = ""
+	if _, err := Exec(context.Background(), emptyDir); err == nil {
 		t.Fatal("empty directory returned nil error")
 	}
+	assertNotStarted(t, emptyDirMarker)
+
 	if _, err := Exec(context.Background(), Cmd{Path: "not-a-real-seam-program", Dir: dir}); err == nil {
 		t.Fatal("startup failure returned nil error")
 	}
 
+	preCancelled, preCancelledMarker := markerCommand(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := Exec(ctx, command); !errors.Is(err, context.Canceled) {
+	if _, err := Exec(ctx, preCancelled); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled context error = %v, want context.Canceled", err)
 	}
+	assertNotStarted(t, preCancelledMarker)
+
+	ctx, cancel = context.WithCancel(context.Background())
+	pidDir := t.TempDir()
+	pidFile := filepath.Join(pidDir, "pid")
+	blocking := helperCommand(t, "block")
+	blocking.Env = append(blocking.Env, "SEAM_PID_FILE="+pidFile)
+	done := make(chan streamOutcome, 1)
+	go func() {
+		got, execErr := Exec(ctx, blocking)
+		done <- streamOutcome{result: got, err: execErr}
+	}()
+	pid := awaitHelperPID(t, pidDir)
+	cancel()
+	select {
+	case outcome := <-done:
+		if !errors.Is(outcome.err, context.Canceled) {
+			t.Fatalf("running cancellation error = %v, want context.Canceled", outcome.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Exec did not finish after cancellation")
+	}
+	assertProcessGone(t, pid)
 }
 
 func TestDepsDefaults(t *testing.T) {
@@ -209,9 +241,28 @@ func TestStreamCommandContract(t *testing.T) {
 		t.Fatalf("stderr = %q", result.Stderr)
 	}
 
-	if _, err := Stream(context.Background(), Cmd{Path: name, Dir: ""}, &stdout); err == nil {
+	emptyPath, emptyPathMarker := markerCommand(t)
+	emptyPath.Path = ""
+	if _, err := Stream(context.Background(), emptyPath, &stdout); err == nil {
+		t.Fatal("empty path returned nil error")
+	}
+	assertNotStarted(t, emptyPathMarker)
+
+	emptyDir, emptyDirMarker := markerCommand(t)
+	emptyDir.Dir = ""
+	if _, err := Stream(context.Background(), emptyDir, &stdout); err == nil {
 		t.Fatal("empty directory returned nil error")
 	}
+	assertNotStarted(t, emptyDirMarker)
+
+	preCancelled, preCancelledMarker := markerCommand(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := Stream(ctx, preCancelled, &stdout); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled context error = %v, want context.Canceled", err)
+	}
+	assertNotStarted(t, preCancelledMarker)
+
 	if _, err := Stream(context.Background(), Cmd{Path: "not-a-real-seam-program", Dir: dir}, &stdout); err == nil {
 		t.Fatal("startup failure returned nil error")
 	}
@@ -223,6 +274,9 @@ func TestStreamCancellationTerminatesAndReaps(t *testing.T) {
 	writer := &signalWriter{delivered: make(chan struct{})}
 	done := make(chan error, 1)
 	command := helperCommand(t, "block")
+	pidDir := t.TempDir()
+	pidFile := filepath.Join(pidDir, "pid")
+	command.Env = append(command.Env, "SEAM_PID_FILE="+pidFile)
 	go func() {
 		_, err := Stream(ctx, command, writer)
 		done <- err
@@ -234,6 +288,7 @@ func TestStreamCancellationTerminatesAndReaps(t *testing.T) {
 		cancel()
 		t.Fatal("helper did not start")
 	}
+	pid := awaitHelperPID(t, pidDir)
 	select {
 	case err := <-done:
 		if !errors.Is(err, context.Canceled) {
@@ -242,6 +297,7 @@ func TestStreamCancellationTerminatesAndReaps(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("Stream did not finish after cancellation")
 	}
+	assertProcessGone(t, pid)
 }
 
 func TestStreamWriterFailureStopsProcess(t *testing.T) {
@@ -249,10 +305,14 @@ func TestStreamWriterFailureStopsProcess(t *testing.T) {
 	wantErr := errors.New("writer failed")
 	done := make(chan error, 1)
 	command := helperCommand(t, "block")
+	pidDir := t.TempDir()
+	pidFile := filepath.Join(pidDir, "pid")
+	command.Env = append(command.Env, "SEAM_PID_FILE="+pidFile)
 	go func() {
 		_, err := Stream(context.Background(), command, errorWriter{err: wantErr})
 		done <- err
 	}()
+	pid := awaitHelperPID(t, pidDir)
 	select {
 	case err := <-done:
 		if !errors.Is(err, wantErr) {
@@ -261,6 +321,7 @@ func TestStreamWriterFailureStopsProcess(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("Stream did not stop after writer failure")
 	}
+	assertProcessGone(t, pid)
 }
 
 func TestHelperProcess(_ *testing.T) {
@@ -293,8 +354,17 @@ func TestHelperProcess(_ *testing.T) {
 		time.Sleep(300 * time.Millisecond)
 		fmt.Println("done")
 	case "block":
+		if pidFile := environment("SEAM_PID_FILE"); pidFile != "" {
+			if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o600); err != nil {
+				os.Exit(94)
+			}
+		}
 		fmt.Println("ready")
 		time.Sleep(30 * time.Second)
+	case "mark":
+		if err := os.WriteFile(environment("SEAM_MARKER"), []byte("started\n"), 0o600); err != nil {
+			os.Exit(93)
+		}
 	default:
 		os.Exit(95)
 	}
@@ -361,6 +431,58 @@ func helperCommand(t *testing.T, operation string) Cmd {
 		Args: []string{"-test.run=TestHelperProcess", "--", operation},
 		Dir:  t.TempDir(),
 		Env:  []string{"GO_WANT_SEAM_HELPER=1"},
+	}
+}
+
+func markerCommand(t *testing.T) (Cmd, string) {
+	t.Helper()
+	marker := filepath.Join(t.TempDir(), "started")
+	command := helperCommand(t, "mark")
+	command.Env = append(command.Env, "SEAM_MARKER="+marker)
+	return command, marker
+}
+
+func assertNotStarted(t *testing.T, marker string) {
+	t.Helper()
+	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("process start marker: %v, want not exist", err)
+	}
+}
+
+func awaitHelperPID(t *testing.T, dir string) int {
+	t.Helper()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatalf("open helper pid directory: %v", err)
+	}
+	defer func() {
+		if err := root.Close(); err != nil {
+			t.Errorf("close helper pid directory: %v", err)
+		}
+	}()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		data, err := root.ReadFile("pid")
+		if err == nil {
+			var pid int
+			if _, err := fmt.Sscanf(string(data), "%d", &pid); err != nil {
+				t.Fatalf("parse helper pid %q: %v", data, err)
+			}
+			return pid
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("read helper pid: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("helper did not record its pid")
+	return 0
+}
+
+func assertProcessGone(t *testing.T, pid int) {
+	t.Helper()
+	if err := syscall.Kill(pid, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("helper process %d still exists after return: %v", pid, err)
 	}
 }
 
