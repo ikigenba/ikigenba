@@ -40,7 +40,7 @@ runs it twice a day, ikigenba-renew-certificate.timer.
 `
 
 func TestCertHelpIsExactAndInert(t *testing.T) {
-	// R-YHGD-GEQD
+	// R-YHGD-GEQD R-YYIY-T743
 	for _, uid := range []int{0, 1000} {
 		for _, option := range []string{"-h", "--help"} {
 			called := false
@@ -60,7 +60,7 @@ func TestCertHelpIsExactAndInert(t *testing.T) {
 }
 
 func TestCertGrammarAndRootCheckPrecedeHostAccess(t *testing.T) {
-	// R-YIO9-U6H2
+	// R-YIO9-U6H2 R-YYIY-T743
 	root := t.TempDir()
 	writeCorruptCLIConfigFile(t, root)
 	before := treeState(t, root)

@@ -139,7 +139,7 @@ func TestHostBackupAPIConfigurationAndPreworkflow(t *testing.T) {
 }
 
 func TestHostBackupArchiveContentsAndBoundaries(t *testing.T) {
-	// R-YCP3-2YZF R-YDWZ-GQQ4 R-9TEE-6UL8
+	// R-YCP3-2YZF R-YDWZ-GQQ4 R-9TEE-6UL8 R-YYIY-T743
 	root := t.TempDir()
 	store := configuredHostStore(t, root)
 	writeFile(t, root, "etc/ikigenba/nested/settings", "host settings\n", 0o640)

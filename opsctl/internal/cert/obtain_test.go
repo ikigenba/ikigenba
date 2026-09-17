@@ -134,7 +134,7 @@ func TestObtainRejectsMissingExecutionDependency(t *testing.T) {
 	}
 }
 
-// R-GFIN-FMDJ R-AMEV-4J2G
+// R-GFIN-FMDJ R-AMEV-4J2G R-YYIY-T743
 func TestObtainExecutesExactCertbotCommand(t *testing.T) {
 	root := t.TempDir()
 	ctx := context.WithValue(context.Background(), contextKey{}, "marker")

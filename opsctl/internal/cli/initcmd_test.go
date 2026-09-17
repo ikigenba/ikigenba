@@ -276,6 +276,7 @@ func TestInitHealthyPreflight(t *testing.T) {
 	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL R-LRDE-BOCA
 	// R-LHM7-9IEQ R-LTT7-37TO R-A61A-1YZM
 	// R-JWO0-EHD7 R-5E43-77RM
+	// R-YYIY-T743
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZA": {
 			{Name: "example.com", Type: "SOA"},

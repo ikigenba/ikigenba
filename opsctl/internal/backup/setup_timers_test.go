@@ -25,7 +25,7 @@ var timerUnitNames = []string{
 }
 
 func TestSetupTimersPublishesRootOneshotServices(t *testing.T) {
-	// R-FJVO-5X9J R-FMBG-XGQX R-FPZ6-2RZ0
+	// R-FJVO-5X9J R-FMBG-XGQX R-FPZ6-2RZ0 R-YYIY-T743
 	requireSetupTimersAPI(backup.SetupTimers)
 	root := t.TempDir()
 	store := timerStore(t, root, "11", "22")
@@ -101,7 +101,7 @@ func TestSetupTimersPublishesRootOneshotServices(t *testing.T) {
 }
 
 func TestSetupTimersSchedulesBackupsAndRenewalIndependently(t *testing.T) {
-	// R-FNJD-B8HM R-FOR9-P08B R-FPZ6-2RZ0
+	// R-FNJD-B8HM R-FOR9-P08B R-FPZ6-2RZ0 R-YYIY-T743
 	root := t.TempDir()
 	store := timerStore(t, root, "17", "")
 	var commands []host.Command
@@ -310,7 +310,7 @@ func TestSetupTimersStopsAfterMidPublicationFailure(t *testing.T) {
 }
 
 func TestSetupTimersMasksPackageRenewalTimerOnlyWhenPresent(t *testing.T) {
-	// R-FR72-GJPP
+	// R-FR72-GJPP R-YYIY-T743
 	for _, test := range []struct {
 		name       string
 		vendorPath string
