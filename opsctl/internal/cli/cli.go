@@ -212,8 +212,10 @@ func diagnosticArg(s string) string {
 
 func dispatch(name string, args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	switch name {
-	case "restore", "retire":
+	case "restore":
 		return runCommandFrame(name, args, stdout, stderr, deps)
+	case "retire":
+		return runRetire(args, stdout, stderr, deps)
 	case "host":
 		return runHost(args, stdout, stderr, deps)
 	case "backup":

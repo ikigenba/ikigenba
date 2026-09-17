@@ -208,6 +208,7 @@ func TestHostRestoreCommandReportsCompletedAndFailedPhases(t *testing.T) {
 }
 
 func TestHostBackupAndRestorePreserveCertificateWithoutExternalActions(t *testing.T) {
+	// R-Z2AZ-45K0
 	root := configuredBackupRoot(t)
 	certificate := filepath.Join(root, "etc", "letsencrypt", "live", "site", "fullchain.pem")
 	if err := os.MkdirAll(filepath.Dir(certificate), 0o700); err != nil {
@@ -247,6 +248,7 @@ func TestHostBackupAndRestorePreserveCertificateWithoutExternalActions(t *testin
 }
 
 func TestHostActionsRejectInvalidGrammarBeforeHostAccess(t *testing.T) {
+	// R-YRBV-O7VR
 	tests := []struct {
 		args []string
 		want string
@@ -267,6 +269,7 @@ func TestHostActionsRejectInvalidGrammarBeforeHostAccess(t *testing.T) {
 }
 
 func TestHostActionsRefuseNonRootBeforeHostAccess(t *testing.T) {
+	// R-YRBV-O7VR
 	for _, action := range []string{"backup", "restore"} {
 		deps, assertInert := inertHostCommandDeps(t, 1000)
 		stdout, stderr, code := invokeBackupCLI([]string{"host", action}, deps)
