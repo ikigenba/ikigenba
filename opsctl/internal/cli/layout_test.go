@@ -30,6 +30,8 @@ func TestGoMod(t *testing.T) {
 		"github.com/aws/aws-sdk-go-v2",
 		"github.com/aws/aws-sdk-go-v2/config",
 		"github.com/aws/aws-sdk-go-v2/service/route53",
+		"github.com/aws/aws-sdk-go-v2/service/s3",
+		"github.com/aws/aws-sdk-go-v2/service/ssm",
 	}
 	got := mapKeys(directRequirements(text))
 	if !reflect.DeepEqual(got, want) {
@@ -42,13 +44,14 @@ func TestImportGraph(t *testing.T) {
 	const module = "github.com/ikigenba/ikigenba/opsctl"
 	moduleRoot := filepath.Join("..", "..")
 	rules := map[string]map[string]bool{
-		"cmd/opsctl":           importSet(module+"/internal/cli", module+"/internal/dns", module+"/internal/dns/route53", module+"/internal/host"),
+		"cmd/opsctl":           importSet(module+"/internal/cli", module+"/internal/dns", module+"/internal/dns/route53", module+"/internal/cloud", module+"/internal/cloud/aws", module+"/internal/host"),
 		"internal/cli":         importSet(module+"/internal/config", module+"/internal/dns", module+"/internal/host", module+"/internal/cloud", module+"/internal/apps", module+"/internal/nginx", module+"/internal/cert", module+"/internal/backup"),
 		"internal/config":      importSet(),
 		"internal/dns":         importSet(module + "/internal/config"),
 		"internal/dns/route53": importSet(module + "/internal/dns"),
 		"internal/host":        importSet(),
 		"internal/cloud":       importSet(),
+		"internal/cloud/aws":   importSet(module + "/internal/cloud"),
 		"internal/apps":        importSet(module+"/internal/config", module+"/internal/host", module+"/internal/cloud"),
 		"internal/nginx":       importSet(module+"/internal/config", module+"/internal/host", module+"/internal/apps"),
 		"internal/cert":        importSet(module+"/internal/config", module+"/internal/host"),
@@ -71,7 +74,7 @@ func TestImportGraph(t *testing.T) {
 					t.Errorf("%s imports forbidden module package %s", name, path)
 				}
 			case isExternalImport(path):
-				if name != "internal/dns/route53" || !isApprovedAWSImport(path) {
+				if !isApprovedAWSImport(name, path) {
 					t.Errorf("%s imports external package %s", name, path)
 				}
 			}
@@ -180,8 +183,12 @@ func isExternalImport(path string) bool {
 	return strings.Contains(first, ".")
 }
 
-func isApprovedAWSImport(path string) bool {
-	for _, approved := range []string{"github.com/aws/aws-sdk-go-v2/aws", "github.com/aws/aws-sdk-go-v2/config", "github.com/aws/aws-sdk-go-v2/service/route53"} {
+func isApprovedAWSImport(name, path string) bool {
+	approvedByPackage := map[string][]string{
+		"internal/dns/route53": {"github.com/aws/aws-sdk-go-v2/aws", "github.com/aws/aws-sdk-go-v2/config", "github.com/aws/aws-sdk-go-v2/service/route53"},
+		"internal/cloud/aws":   {"github.com/aws/aws-sdk-go-v2/aws", "github.com/aws/aws-sdk-go-v2/config", "github.com/aws/aws-sdk-go-v2/service/s3", "github.com/aws/aws-sdk-go-v2/service/ssm"},
+	}
+	for _, approved := range approvedByPackage[name] {
 		if path == approved || strings.HasPrefix(path, approved+"/") {
 			return true
 		}

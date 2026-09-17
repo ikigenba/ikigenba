@@ -21,7 +21,7 @@ import (
 var _ func(context.Context, host.Env, cloud.Env, config.Store) (backup.FileResult, error) = backup.HostBackup
 
 func TestHostBackupAPIConfigurationAndPreworkflow(t *testing.T) {
-	// R-Y5DO-SCJ9 R-YBH6-P78Q R-9TEE-6UL8
+	// R-Y5DO-SCJ9 R-YBH6-P78Q R-9TEE-6UL8 R-ANMR-IAT5
 	t.Run("prefix absent before region", func(t *testing.T) {
 		assertHostConfigurationError(t, config.Store{Root: t.TempDir()}, "backup.s3_uri not set")
 	})
@@ -104,10 +104,15 @@ func TestHostBackupAPIConfigurationAndPreworkflow(t *testing.T) {
 		}
 	})
 	t.Run("cloud dependency", func(t *testing.T) {
+		writeFile(t, root, "etc/letsencrypt/live/site/cert.pem", "unchanged", 0o600)
+		before := fileTreeSnapshot(t, root)
 		result, err := backup.HostBackup(context.Background(), host.Env{Root: root, Now: time.Now, Execute: unexpectedHostCommand(t)}, cloud.Env{}, store)
 		assertZeroHostResult(t, result)
 		if err == nil || !strings.Contains(err.Error(), "cloud access is not configured") {
 			t.Fatalf("HostBackup() error = %v", err)
+		}
+		if after := fileTreeSnapshot(t, root); !reflect.DeepEqual(after, before) {
+			t.Fatalf("missing cloud dependency changed filesystem:\nbefore %v\nafter  %v", before, after)
 		}
 	})
 	t.Run("cloud opening", func(t *testing.T) {

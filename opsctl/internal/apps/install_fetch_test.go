@@ -20,7 +20,7 @@ import (
 )
 
 func TestInstallValidatesInputsAndUsesConfiguredCloud(t *testing.T) {
-	// R-H3LD-O3WP
+	// R-H3LD-O3WP R-ANMR-IAT5
 	validHooks := apps.InstallHooks{
 		Report:    func(string, string, bool) error { return nil },
 		Configure: func(context.Context, apps.Manifest) error { return nil },
@@ -70,6 +70,21 @@ func TestInstallValidatesInputsAndUsesConfiguredCloud(t *testing.T) {
 		})
 	}
 
+	var missingOpenReports []installReport
+	err := apps.Install(t.Context(), host.Env{}, cloud.Env{}, configured, "s3://bucket/app.tar.xz", apps.InstallHooks{
+		Report: func(step, detail string, success bool) error {
+			missingOpenReports = append(missingOpenReports, installReport{step, detail, success})
+			return nil
+		},
+		Configure: func(context.Context, apps.Manifest) error { t.Fatal("Configure called"); return nil },
+	})
+	var missingOpenFailure *apps.InstallError
+	if !errors.As(err, &missingOpenFailure) || missingOpenFailure.Code != 1 ||
+		!strings.Contains(missingOpenFailure.Cause.Error(), "cloud open not configured") ||
+		!reflect.DeepEqual(missingOpenReports, []installReport{{"fetch", "cloud open not configured", false}}) {
+		t.Fatalf("missing Open = %#v, reports %#v", err, missingOpenReports)
+	}
+
 	var events []string
 	client := &installCloudClient{get: func(ctx context.Context, uri string) (io.ReadCloser, error) {
 		events = append(events, "get")
@@ -78,7 +93,7 @@ func TestInstallValidatesInputsAndUsesConfiguredCloud(t *testing.T) {
 		}
 		return &trackedReadCloser{Reader: strings.NewReader("artifact"), onClose: func() { events = append(events, "close") }}, nil
 	}}
-	err := apps.Install(t.Context(), host.Env{Execute: func(context.Context, host.Command) (host.Result, error) {
+	err = apps.Install(t.Context(), host.Env{Execute: func(context.Context, host.Command) (host.Result, error) {
 		events = append(events, "validate")
 		return host.Result{Stdout: emptyTar(t)}, nil
 	}}, cloud.Env{Open: func(ctx context.Context, region string) (cloud.Client, error) {
@@ -182,7 +197,7 @@ func TestInstallFetchLifecycleAndOutcomes(t *testing.T) {
 }
 
 func TestInstallFetchSuccessReadsCompleteObjectBeforeReporting(t *testing.T) {
-	// R-EKWN-JXML
+	// R-EKWN-JXML R-ANMR-IAT5
 	data := bytes.Repeat([]byte{'x'}, 1572864)
 	reader := &trackedReadCloser{Reader: bytes.NewReader(data)}
 	store := installStore(t, map[string]string{"host.name": "host.example", "aws.region": "ap-south-1"})

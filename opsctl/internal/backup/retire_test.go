@@ -116,7 +116,7 @@ func TestRetireAPIAndOrderedSuccessfulEffects(t *testing.T) {
 }
 
 func TestRetireStopsOnUnitFailuresWithoutArchiveOrRollback(t *testing.T) {
-	// R-GWME-QK2L
+	// R-GWME-QK2L R-ANMR-IAT5
 	// R-YSJS-1ZMG R-HYHD-SXRA
 	t.Run("discovery failure before unit operation", func(t *testing.T) {
 		root := t.TempDir()
@@ -143,6 +143,21 @@ func TestRetireStopsOnUnitFailuresWithoutArchiveOrRollback(t *testing.T) {
 		}}, store)
 		if err == nil || result.FailedStep != "" || result.ServicesStopped || result.LitestreamStopped || len(executor.commands) != 0 {
 			t.Fatalf("Retire() = %+v, %v; commands %v", result, err, executor.commands)
+		}
+	})
+
+	t.Run("missing cloud dependency is preworkflow", func(t *testing.T) {
+		root := t.TempDir()
+		store := configuredFileStore(t, root)
+		writeFile(t, root, "opt/alpha/state/value", "alpha", 0o600)
+		before := fileTreeSnapshot(t, root)
+		executor := newRetireExecutor(map[string]bool{"alpha": true})
+		result, err := backup.Retire(context.Background(), host.Env{Root: root, Now: time.Now, Execute: executor.execute}, cloud.Env{}, store)
+		if err == nil || !strings.Contains(err.Error(), "cloud access is not configured") || !reflect.DeepEqual(result, backup.RetireResult{}) {
+			t.Fatalf("Retire() = %+v, %v", result, err)
+		}
+		if len(executor.commands) != 0 || !reflect.DeepEqual(fileTreeSnapshot(t, root), before) {
+			t.Fatalf("missing cloud dependency effects: commands %v", executor.commands)
 		}
 	})
 

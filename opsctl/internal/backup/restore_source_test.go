@@ -53,7 +53,7 @@ func TestRestoreSourceContracts(t *testing.T) {
 }
 
 func TestRestoreSelectsSourceByArchiveTimestamp(t *testing.T) {
-	// R-FU12-UTIF R-GFZ9-QOUX
+	// R-FU12-UTIF R-GFZ9-QOUX R-ANMR-IAT5
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/etc/manifest.toml", "app = \"wrong-installed-app\"\n", 0o600)
@@ -130,7 +130,7 @@ func TestRestoreNewestSourceWhenAtIsNil(t *testing.T) {
 }
 
 func TestRestorePreworkflowValidationHasNoSourceStepOrEffects(t *testing.T) {
-	// R-FST6-H1RQ R-RX15-3IAF R-G7FZ-2AO2
+	// R-FST6-H1RQ R-RX15-3IAF R-G7FZ-2AO2 R-ANMR-IAT5
 	tests := []struct {
 		name    string
 		service string
@@ -184,6 +184,28 @@ func TestRestorePreworkflowValidationHasNoSourceStepOrEffects(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("missing cloud dependency", func(t *testing.T) {
+		root := t.TempDir()
+		store := configuredFileStore(t, root)
+		writeFile(t, root, "opt/notes/state/existing", "unchanged", 0o600)
+		before := fileTreeSnapshot(t, root)
+		executions := 0
+		nginxCalls := 0
+		report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
+			executions++
+			return host.Result{}, errors.New("unexpected host command")
+		}}, cloud.Env{}, store, "notes", nil, func(context.Context) error {
+			nginxCalls++
+			return nil
+		})
+		if err == nil || !strings.Contains(err.Error(), "cloud access is not configured") || len(report.Steps) != 0 {
+			t.Fatalf("Restore() = %+v, %v", report, err)
+		}
+		if executions != 0 || nginxCalls != 0 || !reflect.DeepEqual(fileTreeSnapshot(t, root), before) {
+			t.Fatalf("missing cloud dependency effects: executions %d, nginx calls %d", executions, nginxCalls)
+		}
+	})
 }
 
 func TestRestoreMissingSourceReportsOneFailedStepWithoutMutation(t *testing.T) {

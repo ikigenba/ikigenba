@@ -28,7 +28,7 @@ import (
 var _ func(context.Context, host.Env, cloud.Env, config.Store, string) ([]backup.FileResult, error) = backup.Files
 
 func TestFilesAPIAndConfigurationBoundary(t *testing.T) {
-	// R-D7XD-PK5R R-D95A-3BWG R-DAD6-H3N5
+	// R-D7XD-PK5R R-D95A-3BWG R-DAD6-H3N5 R-ANMR-IAT5
 	wantFields := []struct {
 		name string
 		typ  reflect.Type
@@ -85,6 +85,27 @@ func TestFilesAPIAndConfigurationBoundary(t *testing.T) {
 			t.Fatal(err)
 		}
 		assertPreworkflowError(t, store, "read backup.s3_uri")
+	})
+	t.Run("cloud dependency", func(t *testing.T) {
+		root := t.TempDir()
+		store := configuredFileStore(t, root)
+		writeFile(t, root, "opt/notes/state/value", "unchanged", 0o600)
+		before := fileTreeSnapshot(t, root)
+		executions := 0
+		results, err := backup.Files(context.Background(), host.Env{
+			Root: root,
+			Now:  func() time.Time { return time.Unix(1, 0) },
+			Execute: func(context.Context, host.Command) (host.Result, error) {
+				executions++
+				return host.Result{}, errors.New("unexpected host command")
+			},
+		}, cloud.Env{}, store, "notes")
+		if err == nil || !strings.Contains(err.Error(), "cloud access is not configured") || len(results) != 0 {
+			t.Fatalf("Files() = %+v, %v", results, err)
+		}
+		if executions != 0 || !reflect.DeepEqual(fileTreeSnapshot(t, root), before) {
+			t.Fatalf("missing cloud dependency effects: executions %d", executions)
+		}
 	})
 }
 

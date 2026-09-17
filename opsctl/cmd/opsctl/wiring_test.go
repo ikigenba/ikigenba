@@ -17,6 +17,7 @@ func TestProcessWiring(t *testing.T) {
  Root: "/", EUID: os.Geteuid(), Getenv: os.Getenv,
  DNS: dns.Env{Open: route53.Open}, LookPath: exec.LookPath,
  LookupHost: net.DefaultResolver.LookupHost, Execute: host.Exec, Now: time.Now,
+ Cloud: cloud.Env{Open: awscloud.Open},
  }))
  }`
 	actual, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, 0)

@@ -222,7 +222,7 @@ func TestHostRestoreReplacesTreesAndPreservesArchiveMetadata(t *testing.T) {
 }
 
 func TestHostRestorePhaseFailures(t *testing.T) {
-	// R-YGCS-8A7I R-HUTO-NMJ7
+	// R-YGCS-8A7I R-HUTO-NMJ7 R-ANMR-IAT5
 	t.Run("cancellation before source selection has no failed step", func(t *testing.T) {
 		root := t.TempDir()
 		store := configuredHostStore(t, root)
@@ -409,12 +409,21 @@ func TestHostRestorePhaseFailures(t *testing.T) {
 		}
 	})
 
-	t.Run("preworkflow dependency failure has no step", func(t *testing.T) {
+	t.Run("missing cloud dependency has no step or effects", func(t *testing.T) {
 		root := t.TempDir()
 		store := configuredHostStore(t, root)
-		result, err := backup.HostRestore(context.Background(), host.Env{Root: root}, cloud.Env{}, store)
-		if err == nil || result != (backup.HostRestoreResult{}) {
+		writeFile(t, root, "etc/ikigenba/existing", "unchanged", 0o600)
+		before := fileTreeSnapshot(t, root)
+		executions := 0
+		result, err := backup.HostRestore(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
+			executions++
+			return host.Result{}, errors.New("unexpected host command")
+		}}, cloud.Env{}, store)
+		if err == nil || !strings.Contains(err.Error(), "cloud access is not configured") || result != (backup.HostRestoreResult{}) {
 			t.Fatalf("HostRestore() = %+v, %v", result, err)
+		}
+		if executions != 0 || !reflect.DeepEqual(fileTreeSnapshot(t, root), before) {
+			t.Fatalf("missing cloud dependency effects: executions %d", executions)
 		}
 	})
 }

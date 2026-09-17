@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/cli"
+	"github.com/ikigenba/ikigenba/opsctl/internal/cloud"
+	awscloud "github.com/ikigenba/ikigenba/opsctl/internal/cloud/aws"
 	"github.com/ikigenba/ikigenba/opsctl/internal/dns"
 	"github.com/ikigenba/ikigenba/opsctl/internal/dns/route53"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
@@ -23,5 +25,6 @@ func main() {
 		LookupHost: net.DefaultResolver.LookupHost,
 		Execute:    host.Exec,
 		Now:        time.Now,
+		Cloud:      cloud.Env{Open: awscloud.Open},
 	}))
 }
