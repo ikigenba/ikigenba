@@ -15,8 +15,10 @@ the gates against; it is human-authored and read-only to the run.
 
 ## Host
 
-The live box for this project is `ikigenba.dev` (ssh alias `dev`, root over
-ssh). Any real-world verification — a live DNS round-trip, checking installed
+The live box for this project is the host answering at `ikigenba.dev`. The
+ssh alias `dev` reaches it by that name, so it follows the DNS record when the
+instance is replaced; the login is `ec2-user`, and `sudo` needs no password.
+Any real-world verification — a live DNS round-trip, checking installed
 prerequisites — runs there.
 
 ## Toolchain
