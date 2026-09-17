@@ -19,7 +19,6 @@ against; it is human-authored and read-only to the run.
 
 - Go 1.26 (`go version` must report 1.26+)
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
-- `llm-lint` on PATH, with its provider API key present in the environment
 
 ## Dependencies
 
@@ -61,15 +60,13 @@ skipped tests, no disabled linters laundering a failure.
 2. `go build ./...`
 3. `go test -race ./...`
 4. `golangci-lint run`
-5. `llm-lint cmd internal`
 
-llm-lint also loads this project's own rules from `lint-rules/` (wired via
-`.llm-lint.json`, found by ancestor walk). Rules are promoted individually:
-a promotion flips the rule file to `severity: error` and adds its id to the
-`enable` allowlist in `.llm-lint.json`. Un-promoted rules stay disabled — they
-make no LLM calls and print nothing — so every finding the gate reports fails
-it. The un-promoted backlog is the `severity: warning` files in `lint-rules/`;
-see `../docs/llm-lint-rule-candidates.md` for their provenance.
+llm-lint is **disabled for devctl for now**: it is not a gate and not part of
+the toolchain, so the run neither needs it on PATH nor a provider API key.
+The `make llm-lint` target, the rule files under `lint-rules/`, and
+`.llm-lint.json` are kept so it can be re-enabled later by adding
+`llm-lint cmd internal` back to this gate list and `llm-lint` back to the
+toolchain. See `../docs/llm-lint-rule-candidates.md` for the rules' provenance.
 
 ## Commit conventions
 
