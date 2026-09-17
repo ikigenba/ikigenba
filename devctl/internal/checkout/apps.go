@@ -12,6 +12,10 @@ import (
 
 // Apps discovers the runnable applications at the checkout root.
 func (checkout *Checkout) Apps() ([]App, error) {
+	return checkout.apps(readManifest)
+}
+
+func (checkout *Checkout) apps(read func(string) (Manifest, error)) ([]App, error) {
 	entries, err := os.ReadDir(checkout.Root)
 	if err != nil {
 		return nil, err
@@ -45,7 +49,7 @@ func (checkout *Checkout) Apps() ([]App, error) {
 			continue
 		}
 
-		manifest, err := readManifest(dir)
+		manifest, err := read(dir)
 		if err != nil {
 			return nil, manifestFailure(name, err)
 		}
@@ -65,7 +69,11 @@ func (checkout *Checkout) Apps() ([]App, error) {
 
 // App returns the named application from the checkout.
 func (checkout *Checkout) App(name string) (App, error) {
-	apps, err := checkout.Apps()
+	return checkout.app(name, checkout.Apps)
+}
+
+func (checkout *Checkout) app(name string, list func() ([]App, error)) (App, error) {
+	apps, err := list()
 	if err != nil {
 		return App{}, err
 	}

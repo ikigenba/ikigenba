@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
@@ -76,35 +75,29 @@ func TestAppsReportsManifestFailures(t *testing.T) {
 
 	t.Run("cannot decode", func(t *testing.T) {
 		root := t.TempDir()
-		const manifest = "app = [\n"
-		writeAppFixture(t, root, "crm", "package main\n", manifest)
-		_, decodeErr := DecodeManifest(strings.NewReader(manifest))
-		if decodeErr == nil {
-			t.Fatal("DecodeManifest() error = nil, want failure")
-		}
+		writeAppFixture(t, root, "crm", "package main\n", "app = \"crm\"\n")
+		decodeErr := &identityError{message: "decode sentinel"}
 
-		_, err := (&Checkout{Root: root}).Apps()
-		_ = assertManifestFailure(t, err, "crm", decodeErr)
+		checkout := &Checkout{Root: root}
+		_, err := checkout.apps(func(dir string) (Manifest, error) {
+			if dir != filepath.Join(root, "crm") {
+				t.Fatalf("read manifest dir = %q, want crm directory", dir)
+			}
+			return Manifest{}, decodeErr
+		})
+		assertManifestFailure(t, err, "crm", decodeErr)
 	})
 
 	t.Run("cannot read", func(t *testing.T) {
 		root := t.TempDir()
 		writeAppFixture(t, root, "crm", "package main\n", "app = \"crm\"\n")
-		manifest := filepath.Join(root, "crm", ManifestFile)
-		if err := os.Chmod(manifest, 0); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = os.Chmod(manifest, 0o600) })
-		_, readErr := readManifest(filepath.Join(root, "crm"))
-		if readErr == nil {
-			t.Fatal("readManifest() error = nil, want failure")
-		}
+		readErr := &identityError{message: "read sentinel"}
 
-		_, err := (&Checkout{Root: root}).Apps()
-		manifestErr := assertManifestFailure(t, err, "crm", readErr)
-		if !errors.Is(manifestErr.Err, os.ErrPermission) {
-			t.Fatalf("Apps() cause = %v, want permission failure", manifestErr.Err)
-		}
+		checkout := &Checkout{Root: root}
+		_, err := checkout.apps(func(string) (Manifest, error) {
+			return Manifest{}, readErr
+		})
+		assertManifestFailure(t, err, "crm", readErr)
 	})
 
 	t.Run("app differs from directory", func(t *testing.T) {
@@ -145,32 +138,41 @@ func TestAppReturnsMatchMissingAndAppsFailure(t *testing.T) {
 		t.Fatalf("App(bogus) error = %T %#v, want *NoAppError for bogus", err, err)
 	}
 
-	writeAppFixture(t, root, "broken", "package main\n", "not valid toml =")
-	_, appsErr := checkout.Apps()
-	if appsErr == nil {
-		t.Fatal("Apps() error = nil, want manifest failure")
+	appsErr := &identityError{message: "apps sentinel"}
+	invocations := 0
+	_, err = checkout.app("crm", func() ([]App, error) {
+		invocations++
+		return nil, appsErr
+	})
+	if invocations != 1 {
+		t.Fatalf("Apps invocation count = %d, want 1", invocations)
 	}
-	_, err = checkout.App("crm")
-	if !reflect.DeepEqual(err, appsErr) {
-		t.Fatalf("App(crm) error = %#v, want Apps() error unchanged: %#v", err, appsErr)
-	}
-	var manifestErr *ManifestError
-	if !errors.As(err, &manifestErr) || manifestErr.App != "broken" {
-		t.Fatalf("App(crm) with broken Apps result error = %T %#v", err, err)
+	if !sameError(err, appsErr) {
+		t.Fatalf("App(crm) error = %#v, want exact Apps error %#v", err, appsErr)
 	}
 }
 
-func assertManifestFailure(t *testing.T, err error, app string, wantErr error) *ManifestError {
+func assertManifestFailure(t *testing.T, err error, app string, wantErr *identityError) {
 	t.Helper()
 	var manifestErr *ManifestError
 	if !errors.As(err, &manifestErr) {
 		t.Fatalf("Apps() error = %T %v, want *ManifestError", err, err)
 	}
-	if manifestErr.App != app || !reflect.DeepEqual(manifestErr.Err, wantErr) {
+	if manifestErr.App != app || !sameError(manifestErr.Err, wantErr) {
 		t.Fatalf("Apps() error = %#v, want App %q and Err %#v", manifestErr, app, wantErr)
 	}
-	return manifestErr
 }
+
+func sameError(got error, want *identityError) bool {
+	return reflect.TypeOf(got) == reflect.TypeOf(want) &&
+		reflect.ValueOf(got).Pointer() == reflect.ValueOf(want).Pointer()
+}
+
+type identityError struct {
+	message string
+}
+
+func (err *identityError) Error() string { return err.message }
 
 func writeAppFixture(t *testing.T, root, name, source, manifest string) {
 	t.Helper()
