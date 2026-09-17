@@ -546,7 +546,7 @@ func TestWriteFailuresPreserveHostStateAndCleanTemporaryFiles(t *testing.T) {
 }
 
 // R-5I4M-D78O
-// R-5JCI-QYZD
+// R-2NUY-GTYW
 func TestApplyPublishesTestsAndReloadsOnEveryCall(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -585,9 +585,9 @@ func TestApplyPublishesTestsAndReloadsOnEveryCall(t *testing.T) {
 	}
 	wantCommands := []host.Command{
 		{Name: "nginx", Args: []string{"-t"}},
-		{Name: "systemctl", Args: []string{"reload", "nginx"}},
+		{Name: "systemctl", Args: []string{"reload-or-restart", "nginx"}},
 		{Name: "nginx", Args: []string{"-t"}},
-		{Name: "systemctl", Args: []string{"reload", "nginx"}},
+		{Name: "systemctl", Args: []string{"reload-or-restart", "nginx"}},
 	}
 	if !reflect.DeepEqual(commands, wantCommands) {
 		t.Fatalf("commands = %#v, want %#v", commands, wantCommands)
@@ -665,7 +665,7 @@ func TestApplyRestoresPreviousConfigurationWhenNginxTestFails(t *testing.T) {
 }
 
 func TestApplyReturnsCommandErrorsAndReportsRestorationFailure(t *testing.T) {
-	// R-W5Q7-VOVY R-GWME-QK2L
+	// R-2P2U-ULPL R-GWME-QK2L
 	t.Parallel()
 	t.Run("reload", func(t *testing.T) {
 		root := t.TempDir()
@@ -676,7 +676,7 @@ func TestApplyReturnsCommandErrorsAndReportsRestorationFailure(t *testing.T) {
 			if command.Name == "nginx" && reflect.DeepEqual(command.Args, []string{"-t"}) {
 				return host.Result{}, nil
 			}
-			if command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"reload", "nginx"}) {
+			if command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"reload-or-restart", "nginx"}) {
 				return host.Result{Stdout: []byte("reload output"), ExitCode: 19}, cause
 			}
 			t.Fatalf("unexpected command: %#v", command)
@@ -686,7 +686,7 @@ func TestApplyReturnsCommandErrorsAndReportsRestorationFailure(t *testing.T) {
 		if !errors.As(err, &commandErr) {
 			t.Fatalf("error = %T %v, want CommandError", err, err)
 		}
-		if commandErr.Label != "systemctl reload nginx" || commandErr.Result.ExitCode != 19 || string(commandErr.Result.Stdout) != "reload output" || !errors.Is(commandErr.Err, cause) {
+		if commandErr.Label != "systemctl reload-or-restart nginx" || commandErr.Result.ExitCode != 19 || string(commandErr.Result.Stdout) != "reload output" || !errors.Is(commandErr.Err, cause) {
 			t.Fatalf("CommandError = %#v", commandErr)
 		}
 	})

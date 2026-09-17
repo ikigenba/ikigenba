@@ -89,7 +89,7 @@ func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
 		{Name: "systemctl", Args: []string{"disable", "ikigenba-notes.service"}},
 		{Name: "systemctl", Args: []string{"daemon-reload"}},
 		{Name: "nginx", Args: []string{"-t"}},
-		{Name: "systemctl", Args: []string{"reload", "nginx"}},
+		{Name: "systemctl", Args: []string{"reload-or-restart", "nginx"}},
 		{Name: "systemctl", Args: []string{"restart", "litestream.service"}},
 	}
 	if !reflect.DeepEqual(commands, wantCommands) {
@@ -264,7 +264,7 @@ func TestLifecycleFailureReportsStageOnceAndRetainsCause(t *testing.T) {
 		t.Fatalf("failure = exit %d stdout %q stderr %q", code, stdout, stderr)
 	}
 	for _, command := range commands {
-		if reflect.DeepEqual(command.Args, []string{"reload", "nginx"}) || reflect.DeepEqual(command.Args, []string{"restart", "litestream.service"}) {
+		if reflect.DeepEqual(command.Args, []string{"reload-or-restart", "nginx"}) || reflect.DeepEqual(command.Args, []string{"restart", "litestream.service"}) {
 			t.Fatalf("later stage command ran: %#v", command)
 		}
 	}

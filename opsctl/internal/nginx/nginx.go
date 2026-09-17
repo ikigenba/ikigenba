@@ -63,7 +63,7 @@ func Apply(ctx context.Context, env host.Env, hostName string) error {
 		}
 		return err
 	}
-	if err := execute(ctx, env, "systemctl reload nginx", "systemctl", "reload", "nginx"); err != nil {
+	if err := execute(ctx, env, "systemctl reload-or-restart nginx", "systemctl", "reload-or-restart", "nginx"); err != nil {
 		return err
 	}
 	return nil

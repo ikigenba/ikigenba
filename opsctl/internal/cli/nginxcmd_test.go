@@ -220,7 +220,7 @@ func TestNginxApplyUsesHostEnvironmentAndSuppressesSuccessOutput(t *testing.T) {
 		commands = append(commands, command)
 		return host.Result{Stdout: []byte("success stdout\n"), Stderr: []byte("success stderr\n")}, nil
 	}})
-	wantCommands := []host.Command{{Name: "nginx", Args: []string{"-t"}}, {Name: "systemctl", Args: []string{"reload", "nginx"}}}
+	wantCommands := []host.Command{{Name: "nginx", Args: []string{"-t"}}, {Name: "systemctl", Args: []string{"reload-or-restart", "nginx"}}}
 	if code != 0 || stdout != "" || stderr != "" || !reflect.DeepEqual(commands, wantCommands) {
 		t.Fatalf("exit %d stdout %q stderr %q commands %#v", code, stdout, stderr, commands)
 	}
@@ -242,7 +242,7 @@ func TestNginxApplyUsesHostEnvironmentAndSuppressesSuccessOutput(t *testing.T) {
 }
 
 func TestNginxExternalFailuresUseCommandDiagnostics(t *testing.T) {
-	// R-W5Q7-VOVY
+	// R-2P2U-ULPL
 	// R-W6Y4-9GMN
 	for _, test := range []struct {
 		name        string
@@ -252,7 +252,7 @@ func TestNginxExternalFailuresUseCommandDiagnostics(t *testing.T) {
 		want        string
 	}{
 		{name: "test", failCommand: "nginx", result: host.Result{ExitCode: 23, Stdout: []byte("bad stdout\n"), Stderr: []byte("bad stderr")}, want: "opsctl: nginx -t: exit status 23\n\n> bad stdout\n> bad stderr\n"},
-		{name: "reload", failCommand: "systemctl", result: host.Result{Stdout: []byte("reload stdout"), Stderr: []byte("reload stderr\n")}, err: errors.New("cannot execute"), want: "opsctl: systemctl reload nginx: cannot execute\n\n> reload stdout\n> reload stderr\n"},
+		{name: "reload-or-restart", failCommand: "systemctl", result: host.Result{Stdout: []byte("reload stdout"), Stderr: []byte("reload stderr\n")}, err: errors.New("cannot execute"), want: "opsctl: systemctl reload-or-restart nginx: cannot execute\n\n> reload stdout\n> reload stderr\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := configuredNginxRoot(t)

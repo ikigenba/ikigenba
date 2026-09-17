@@ -378,7 +378,7 @@ func TestInitHealthyPreflight(t *testing.T) {
 	wantCommands := []string{
 		"certbot certonly --non-interactive --agree-tos --email admin@example.com --manual --preferred-challenges dns --manual-auth-hook opsctl dns acme-auth --manual-cleanup-hook opsctl dns acme-cleanup --deploy-hook systemctl try-reload-or-restart nginx --cert-name api.deep.example.com -d api.deep.example.com -d *.api.deep.example.com --keep-until-expiring --config-dir " + filepath.Join(deps.Root, "etc/letsencrypt") + " --work-dir " + filepath.Join(deps.Root, "var/lib/letsencrypt") + " --logs-dir " + filepath.Join(deps.Root, "var/log/letsencrypt"),
 		"nginx -t",
-		"systemctl reload nginx",
+		"systemctl reload-or-restart nginx",
 		"systemctl enable litestream.service",
 		"systemctl restart litestream.service",
 		"systemctl daemon-reload",
@@ -495,7 +495,7 @@ func TestInitStopsAtFirstSetupFailure(t *testing.T) {
 			allCommands := []string{
 				certbotCommand,
 				"nginx -t",
-				"systemctl reload nginx",
+				"systemctl reload-or-restart nginx",
 				"systemctl enable litestream.service",
 				"systemctl restart litestream.service",
 				"systemctl daemon-reload",
@@ -525,7 +525,7 @@ func TestInitStopsAtFirstSetupFailure(t *testing.T) {
 				switch invocation {
 				case certbotCommand:
 					marker = "certificate"
-				case "systemctl reload nginx":
+				case "systemctl reload-or-restart nginx":
 					marker = "nginx"
 				case "systemctl restart litestream.service":
 					marker = "litestream"

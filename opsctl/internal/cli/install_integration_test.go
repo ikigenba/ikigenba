@@ -76,7 +76,7 @@ func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
 		"systemctl daemon-reload",
 		"systemctl enable ikigenba-notes.service",
 		"nginx -t",
-		"systemctl reload nginx",
+		"systemctl reload-or-restart nginx",
 		"systemctl restart litestream.service",
 		"systemctl start ikigenba-notes.service",
 		"systemctl is-active ikigenba-notes.service",
@@ -344,7 +344,7 @@ func installCommandsThroughNginx(root string) []string {
 		"systemctl daemon-reload",
 		"systemctl enable ikigenba-notes.service",
 		"nginx -t",
-		"systemctl reload nginx",
+		"systemctl reload-or-restart nginx",
 	}
 }
 
