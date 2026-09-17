@@ -64,6 +64,7 @@ var accountRequired = map[string]struct{}{
 
 type topLevel struct {
 	account     string
+	accountSet  bool
 	command     string
 	arguments   []string
 	showHelp    bool
@@ -105,7 +106,7 @@ func Run(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.Writ
 			// Command-specific phases replace this with the command's help.
 			return 0
 		}
-		if invocation.account == "" {
+		if !invocation.accountSet {
 			return usageError(stderr, "--account is required", "devctl "+invocation.command+" --help")
 		}
 		_, _ = deps.Cloud(ctx, invocation.account, "")
@@ -140,12 +141,14 @@ func parseTopLevel(args []string) topLevel {
 			}
 			index++
 			result.account = args[index]
+			result.accountSet = true
 		case strings.HasPrefix(argument, "--account="):
 			result.account = strings.TrimPrefix(argument, "--account=")
 			if result.account == "" {
 				result.err = "option '--account' requires a value"
 				return result
 			}
+			result.accountSet = true
 		case strings.HasPrefix(argument, "-"):
 			result.err = "unknown option '" + argument + "'"
 			return result

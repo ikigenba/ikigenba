@@ -123,6 +123,7 @@ func TestAccountProfileReachesCloudUnchanged(t *testing.T) {
 		args []string
 		want string
 	}{
+		{args: []string{"--account", "", "space"}, want: ""},
 		{args: []string{"--account", " Work Profile ", "space"}, want: " Work Profile "},
 		{args: []string{"--account=MiXeD Profile", "space"}, want: "MiXeD Profile"},
 	} {
@@ -168,10 +169,12 @@ func TestAccountRequiresValue(t *testing.T) {
 	for _, args := range [][]string{
 		{"--account"},
 		{"--account", "--help"},
-		{"--account", "space"},
 		{"--account="},
 	} {
 		assertResult(t, invoke(args...), 2, "", want)
+	}
+	for command := range commandSet {
+		assertResult(t, invoke("--account", command), 2, "", want)
 	}
 }
 
