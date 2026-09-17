@@ -68,6 +68,8 @@ func TestNonVersionCommandsRefuseWithoutHostAccess(t *testing.T) {
 				deps, assertNoAccess := inertDeps(t, uid)
 				args := []string{name}
 				switch name {
+				case "host":
+					args = append(args, "backup")
 				case "install":
 					args = append(args, "s3://bucket/key")
 				case "restart", "uninstall":
