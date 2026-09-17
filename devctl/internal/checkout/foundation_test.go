@@ -3,6 +3,7 @@ package checkout_test
 import (
 	"context"
 	"errors"
+	"io"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -17,10 +18,14 @@ func TestFoundationPublicShapes(t *testing.T) {
 
 	// R-VGLU-EXV4
 	assertFields(t, checkout.Checkout{}, []field{{"Root", reflect.TypeFor[string]()}, {"Deps", reflect.TypeFor[seam.Deps]()}})
+	assertSignature[func(context.Context, seam.Deps) (*checkout.Checkout, error)](checkout.Open)
 	// R-VLHF-Y0TW
 	assertFields(t, checkout.App{}, []field{{"Name", reflect.TypeFor[string]()}, {"Dir", reflect.TypeFor[string]()}, {"Manifest", reflect.TypeFor[checkout.Manifest]()}})
 	// R-CM5K-S43M
 	assertFields(t, checkout.Manifest{}, []field{{"App", reflect.TypeFor[string]()}, {"Secrets", reflect.TypeFor[[]string]()}})
+	assertStructTags(t, checkout.Manifest{}, []string{`toml:"app"`, `toml:"secrets"`})
+	// R-VNX8-PKBA
+	assertSignature[func(io.Reader) (checkout.Manifest, error)](checkout.DecodeManifest)
 	// R-VQD1-H3SO
 	assertFields(t, checkout.NotInCheckoutError{}, []field{{"Dir", reflect.TypeFor[string]()}})
 	assertFields(t, checkout.NoAppError{}, []field{{"Name", reflect.TypeFor[string]()}})
@@ -34,20 +39,14 @@ func TestFoundationPublicShapes(t *testing.T) {
 	}
 
 	// R-VHTQ-SPLT
-	var checkoutMethods interface {
-		Path(elem ...string) string
-		Apps() ([]checkout.App, error)
-		App(name string) (checkout.App, error)
-	} = (*checkout.Checkout)(nil)
-	_ = checkoutMethods
+	assertSignature[func(*checkout.Checkout, ...string) string]((*checkout.Checkout).Path)
+	assertSignature[func(*checkout.Checkout) ([]checkout.App, error)]((*checkout.Checkout).Apps)
+	assertSignature[func(*checkout.Checkout, string) (checkout.App, error)]((*checkout.Checkout).App)
 
 	// R-CIHV-MSVJ
-	var gitMethods interface {
-		Head(context.Context) (string, error)
-		Clean(context.Context) (bool, error)
-		TagsAtHead(context.Context) ([]string, error)
-	} = (*checkout.Checkout)(nil)
-	_ = gitMethods
+	assertSignature[func(*checkout.Checkout, context.Context) (string, error)]((*checkout.Checkout).Head)
+	assertSignature[func(*checkout.Checkout, context.Context) (bool, error)]((*checkout.Checkout).Clean)
+	assertSignature[func(*checkout.Checkout, context.Context) ([]string, error)]((*checkout.Checkout).TagsAtHead)
 }
 
 func TestFoundationErrors(t *testing.T) {
@@ -61,11 +60,14 @@ func TestFoundationErrors(t *testing.T) {
 		t.Errorf("NoAppError.Error() = %q", got)
 	}
 
-	cause := errors.New("bad document")
+	cause := &manifestCause{}
 	manifestErr := &checkout.ManifestError{App: "crm", Detail: "cannot decode", Err: cause}
 	// R-VRKX-UVJD
 	if got := manifestErr.Error(); got != "crm: etc/manifest.toml: cannot decode" {
 		t.Errorf("ManifestError.Error() = %q", got)
+	}
+	if got := manifestErr.Unwrap(); reflect.TypeOf(got) != reflect.TypeOf(cause) || reflect.ValueOf(got).Pointer() != reflect.ValueOf(cause).Pointer() {
+		t.Errorf("ManifestError.Unwrap() = %#v, want exact Err %#v", got, cause)
 	}
 	if !errors.Is(manifestErr, cause) {
 		t.Error("ManifestError does not unwrap its cause")
@@ -202,6 +204,12 @@ type field struct {
 	typeOf reflect.Type
 }
 
+type manifestCause struct{}
+
+func (*manifestCause) Error() string { return "bad document" }
+
+func assertSignature[T any](T) {}
+
 func assertFields(t *testing.T, value any, want []field) {
 	t.Helper()
 	typeOf := reflect.TypeOf(value)
@@ -212,6 +220,19 @@ func assertFields(t *testing.T, value any, want []field) {
 		got := typeOf.Field(index)
 		if got.Name != wantField.name || got.Type != wantField.typeOf {
 			t.Errorf("%s field %d = %s %s, want %s %s", typeOf, index, got.Name, got.Type, wantField.name, wantField.typeOf)
+		}
+	}
+}
+
+func assertStructTags(t *testing.T, value any, want []string) {
+	t.Helper()
+	typeOf := reflect.TypeOf(value)
+	if typeOf.NumField() != len(want) {
+		t.Fatalf("%s has %d fields, want %d tags", typeOf, typeOf.NumField(), len(want))
+	}
+	for index, wantTag := range want {
+		if got := string(typeOf.Field(index).Tag); got != wantTag {
+			t.Errorf("%s field %d tag = %q, want %q", typeOf, index, got, wantTag)
 		}
 	}
 }
