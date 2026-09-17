@@ -10,7 +10,7 @@ are tracked outside this document in the release review and issue files.
 
 - R-IH58-0PHG: The opsctl release surface MUST consist of the tag `opsctl/<version>`, where `<version>` has the version-string shape declared in D02, and exactly three assets named `opsctl-<version>-linux-amd64`, `checksums.txt`, and `install.sh`, exposed at `https://github.com/ikigenba/ikigenba/releases/download/opsctl/<version>/<asset>`.
 - R-UL9F-YPQI: Tagging an opsctl release MUST publish its release assets.
-- R-UMHC-CHH7: The release's binary asset MUST be a statically linked Linux amd64 executable whose D02 version output equals the tag's `<version>`.
+- R-PSAO-ADAF: The release's binary asset MUST be a statically linked Linux amd64 executable whose D02 version output equals the tag's `<version>`; that value is learned only by running the binary, never by reading source.
 - R-IKSX-60PJ: The release's `checksums.txt` MUST contain exactly one entry for its binary asset, with that asset's SHA-256 digest represented as 64 hexadecimal digits followed by two spaces and the asset filename on one line, so the installer can select that binary unambiguously.
 - R-UNP8-Q97W: The project MUST own the shell entry point `install.sh`, invoked as `bash <script-path> <version>` with exactly one version operand and diagnostic program name `opsctl-install`.
 - R-UOX5-40YL: The release and installer surface MUST add no top-level opsctl command or option.
