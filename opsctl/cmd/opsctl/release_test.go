@@ -6,9 +6,6 @@ import (
 	"debug/elf"
 	"encoding/hex"
 	"errors"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,67 +18,30 @@ import (
 	"testing"
 )
 
-// declaredVersion returns the version string package internal/cli declares
-// in source (D02), found by scanning the package rather than naming a file,
-// so no test names a version; versions are data.
-func declaredVersion(t *testing.T, project string) string {
+// runtimeVersion returns the version reported by a freshly built opsctl.
+// Release tests learn this value only through the binary's public contract.
+func runtimeVersion(t *testing.T, project string) string {
 	t.Helper()
-	dir := filepath.Join(project, "internal", "cli")
-	entries, err := os.ReadDir(dir)
+	build := exec.Command("go", "build", "-trimpath", "-o", "opsctl-version-probe", "./cmd/opsctl")
+	build.Dir = project
+	build.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH=amd64", "GOPROXY=off")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build version probe: %v\n%s", err, output)
+	}
+	t.Cleanup(func() { _ = os.Remove(filepath.Join(project, "opsctl-version-probe")) })
+	report := exec.Command("./opsctl-version-probe", "version")
+	report.Dir = project
+	output, err := report.CombinedOutput()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("run version probe: %v\n%s", err, output)
 	}
-	var value string
-	found := false
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
-		}
-		path := filepath.Join(dir, entry.Name())
-		parsed, parseErr := parser.ParseFile(token.NewFileSet(), path, nil, 0)
-		if parseErr != nil {
-			t.Fatalf("parse %s: %v", path, parseErr)
-		}
-		for _, decl := range parsed.Decls {
-			gen, ok := decl.(*ast.GenDecl)
-			if !ok || gen.Tok != token.CONST {
-				continue
-			}
-			for _, spec := range gen.Specs {
-				vs := spec.(*ast.ValueSpec)
-				for i, name := range vs.Names {
-					if name.Name != "version" {
-						continue
-					}
-					if found {
-						t.Fatalf("%s: multiple package-level const version declarations", path)
-					}
-					if i >= len(vs.Values) {
-						t.Fatalf("%s: const version has no value", path)
-					}
-					lit, ok := vs.Values[i].(*ast.BasicLit)
-					if !ok || lit.Kind != token.STRING {
-						t.Fatalf("%s: const version value is not a string literal", path)
-					}
-					value, err = strconv.Unquote(lit.Value)
-					if err != nil {
-						t.Fatalf("unquote version in %s: %v", path, err)
-					}
-					found = true
-				}
-			}
-		}
-	}
-	if !found {
-		t.Fatalf("%s: package-level const version not found", dir)
-	}
-	return value
+	return strings.TrimSuffix(string(output), "\n")
 }
 
 func TestReleaseBuildsAndPublishesExactAssets(t *testing.T) {
-	// R-IH58-0PHG R-UL9F-YPQI R-UMHC-CHH7 R-IKSX-60PJ
+	// R-IH58-0PHG R-UL9F-YPQI R-PSAO-ADAF R-IKSX-60PJ
 	project := releaseProjectRoot(t)
-	version := declaredVersion(t, project)
+	version := runtimeVersion(t, project)
 	tag := "opsctl/" + version
 	binaryName := "opsctl-" + version + "-linux-amd64"
 	dist := t.TempDir()
@@ -92,7 +52,7 @@ set -euo pipefail
 printf '%s\0' "$@" > "$GH_CAPTURE"
 `)
 
-	command := exec.Command("bash", "release.sh", tag) //nolint:gosec // The tag is built from the version the source declares.
+	command := exec.Command("bash", "release.sh", tag) //nolint:gosec // The tag is built from the version reported by the probe binary.
 	command.Dir = project
 	command.Env = append(os.Environ(),
 		"PATH="+fixtureBin+":"+os.Getenv("PATH"),
@@ -120,7 +80,7 @@ printf '%s\0' "$@" > "$GH_CAPTURE"
 
 	binaryPath := filepath.Join(dist, binaryName)
 	assertLinuxAMD64Static(t, binaryPath)
-	report := exec.Command("./"+binaryName, "version") //nolint:gosec // The asset name is built from the version the source declares.
+	report := exec.Command("./"+binaryName, "version") //nolint:gosec // The asset name is built from the version reported by the probe binary.
 	report.Dir = dist
 	if output, err := report.CombinedOutput(); err != nil || string(output) != version+"\n" {
 		t.Fatalf("released version = %q, %v", output, err)
@@ -244,9 +204,9 @@ func TestOpsctlTagWorkflowPublishesThroughReleaseBuilder(t *testing.T) {
 }
 
 func TestReleaseRejectsTagsThatCannotNameTheRuntimeVersion(t *testing.T) {
-	// R-IH58-0PHG R-UMHC-CHH7
+	// R-IH58-0PHG R-PSAO-ADAF
 	project := releaseProjectRoot(t)
-	version := declaredVersion(t, project)
+	version := runtimeVersion(t, project)
 	dist := t.TempDir()
 	fixtureBin := t.TempDir()
 	called := filepath.Join(t.TempDir(), "gh-called")
@@ -271,9 +231,9 @@ func TestReleaseRejectsTagsThatCannotNameTheRuntimeVersion(t *testing.T) {
 }
 
 func TestReleasePropagatesBuildChecksumInstallAndPublishFailures(t *testing.T) {
-	// R-UL9F-YPQI R-UMHC-CHH7 R-IKSX-60PJ
+	// R-UL9F-YPQI R-IKSX-60PJ
 	project := releaseProjectRoot(t)
-	version := declaredVersion(t, project)
+	version := runtimeVersion(t, project)
 	binaryName := "opsctl-" + version + "-linux-amd64"
 	for _, test := range []struct {
 		name       string
