@@ -55,7 +55,7 @@ func TestRestartRejectsInvalidAndUninstalledAppsBeforeExecution(t *testing.T) {
 
 func TestRestartUsesInstalledUnitAndBinaryWithoutChangingHostFiles(t *testing.T) {
 	// R-MALP-NG35
-	// R-MBTM-17TU
+	// R-MBTM-17TU R-AMEV-4J2G
 	for _, initialState := range []string{"active", "inactive", "failed"} {
 		t.Run(initialState, func(t *testing.T) {
 			root := restartRoot(t)
@@ -207,6 +207,7 @@ func TestRestartFailureCapturesJournalAndLeavesFailedStateVisible(t *testing.T) 
 }
 
 func TestRestartFailurePreservesJournalQueryFailure(t *testing.T) {
+	// R-GWME-QK2L
 	// R-ME9E-SRB8
 	root := restartRoot(t)
 	restartFailure := errors.New("restart transport failed")

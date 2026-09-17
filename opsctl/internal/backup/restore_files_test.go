@@ -144,6 +144,7 @@ func TestRestoreAppGuardAndStopDetails(t *testing.T) {
 }
 
 func TestRestoreStopFailuresPreserveCauseStoppedUnitsAndTargets(t *testing.T) {
+	// R-GWME-QK2L
 	// R-DVW3-8CRI R-G7FZ-2AO2 R-RX15-3IAF
 	transport := errors.New("system bus unavailable")
 	for _, test := range []struct {

@@ -4,10 +4,12 @@ import (
 	"context"
 	"testing"
 
+	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 	"github.com/ikigenba/ikigenba/opsctl/internal/dns"
 )
 
 func TestRunPassesEnvironmentToDNSOperation(t *testing.T) {
+	// R-5E43-77RM
 	t.Setenv("CERTBOT_DOMAIN", "live.example")
 	t.Setenv("CERTBOT_VALIDATION", "live-secret")
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{"ZONE": {{Name: "example.com", Type: "SOA"}, {Name: "example.com", Type: "NS", Values: []string{"ns.example"}}}}}
@@ -37,5 +39,24 @@ func TestRunPassesEnvironmentToDNSOperation(t *testing.T) {
 	call := provider.adds[0]
 	if call.name != "_acme-challenge.example.com" || call.value != "injected-token" {
 		t.Fatalf("environment not passed to DNS: %v", call)
+	}
+}
+
+func TestRunNormalizesDefaultTimeBeforeDomainOperation(t *testing.T) {
+	// R-5E43-77RM
+	deps := depsAt(t, 0)
+	store := config.Store{Root: deps.Root}
+	for key, value := range map[string]string{
+		"backup.s3_uri": "s3://bucket/host/",
+		"aws.region":    "us-east-2",
+	} {
+		if err := store.Set(key, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	stdout, stderr, code := invoke([]string{"backup"}, deps)
+	if code != 0 || stdout != "" || stderr != "" {
+		t.Fatalf("exit %d stdout %q stderr %q", code, stdout, stderr)
 	}
 }

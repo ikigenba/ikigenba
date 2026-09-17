@@ -116,6 +116,7 @@ func TestRetireAPIAndOrderedSuccessfulEffects(t *testing.T) {
 }
 
 func TestRetireStopsOnUnitFailuresWithoutArchiveOrRollback(t *testing.T) {
+	// R-GWME-QK2L
 	// R-YSJS-1ZMG R-HYHD-SXRA
 	t.Run("discovery failure before unit operation", func(t *testing.T) {
 		root := t.TempDir()

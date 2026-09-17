@@ -44,6 +44,9 @@ func Render(_ context.Context, env host.Env, hostName string) ([]byte, error) {
 
 // Apply publishes and activates the generated nginx configuration.
 func Apply(ctx context.Context, env host.Env, hostName string) error {
+	if env.Execute == nil {
+		return errors.New("apply nginx configuration: host execution is not configured")
+	}
 	candidate, err := Render(ctx, env, hostName)
 	if err != nil {
 		return err
@@ -150,7 +153,14 @@ func replaceFile(path string, contents []byte, mode os.FileMode) (returnErr erro
 
 func execute(ctx context.Context, env host.Env, label, name string, args ...string) error {
 	result, err := env.Execute(ctx, host.Command{Name: name, Args: args})
-	if err != nil || result.ExitCode != 0 {
+	if err != nil {
+		var commandErr *host.CommandError
+		if errors.As(err, &commandErr) {
+			return err
+		}
+		return &host.CommandError{Label: label, Result: result, Err: err}
+	}
+	if result.ExitCode != 0 {
 		return &host.CommandError{Label: label, Result: result, Err: err}
 	}
 	return nil

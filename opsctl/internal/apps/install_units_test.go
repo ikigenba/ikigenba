@@ -16,7 +16,7 @@ import (
 )
 
 func TestInstallPublishesAndEnablesRootedAppUnit(t *testing.T) {
-	// R-BGS4-B6XD, R-P2TO-03TP
+	// R-BGS4-B6XD R-P2TO-03TP R-AMEV-4J2G
 	root := t.TempDir()
 	statePath := filepath.Join(root, "opt", "notes", "state", "db")
 	cachePath := filepath.Join(root, "opt", "notes", "cache", "item")
@@ -180,6 +180,7 @@ func TestInstallRejectsAppUnitSymlinkWithoutFollowingIt(t *testing.T) {
 }
 
 func TestInstallReportsUnitFailureBeforeConfiguration(t *testing.T) {
+	// R-GWME-QK2L
 	for _, action := range []string{"daemon-reload", "enable"} {
 		t.Run(action, func(t *testing.T) {
 			fixture := newCompletedInstallFixture(t, t.TempDir(), false)

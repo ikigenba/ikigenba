@@ -313,6 +313,23 @@ func TestApplyPropagatesRenderAndPublicationFailuresWithoutHostWork(t *testing.T
 	})
 }
 
+// R-AMEV-4J2G
+func TestApplyRejectsMissingExecutionDependencyWithoutPublishing(t *testing.T) {
+	root := t.TempDir()
+	configurationDirectory := filepath.Join(root, "etc", "nginx", "conf.d")
+	mkdir(t, configurationDirectory)
+	destination := filepath.Join(configurationDirectory, "ikigenba.conf")
+	if err := os.WriteFile(destination, []byte("previous\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := nginx.Apply(context.Background(), host.Env{Root: root}, "example.test")
+	if err == nil || err.Error() != "apply nginx configuration: host execution is not configured" {
+		t.Fatalf("Apply error = %v", err)
+	}
+	assertPublishedConfiguration(t, configurationDirectory, []byte("previous\n"), 0o600)
+}
+
 // R-575I-X9KF
 // R-QC9K-4BIS
 func TestPublicationFunctionsHaveExportedContracts(t *testing.T) {
@@ -648,7 +665,7 @@ func TestApplyRestoresPreviousConfigurationWhenNginxTestFails(t *testing.T) {
 }
 
 func TestApplyReturnsCommandErrorsAndReportsRestorationFailure(t *testing.T) {
-	// R-W5Q7-VOVY
+	// R-W5Q7-VOVY R-GWME-QK2L
 	t.Parallel()
 	t.Run("reload", func(t *testing.T) {
 		root := t.TempDir()
@@ -695,6 +712,32 @@ func TestApplyReturnsCommandErrorsAndReportsRestorationFailure(t *testing.T) {
 			t.Fatalf("error %q does not identify restoration failure", err)
 		}
 	})
+}
+
+// R-GWME-QK2L
+func TestApplyPreservesExistingCommandErrorIdentity(t *testing.T) {
+	existing := &host.CommandError{
+		Label:  "remote nginx test",
+		Result: host.Result{Stdout: []byte("captured output"), Stderr: []byte("captured detail"), ExitCode: 73},
+		Err:    errors.New("remote nginx failed"),
+	}
+	for _, returned := range []host.Result{
+		{},
+		{Stdout: []byte("different output"), Stderr: []byte("different detail"), ExitCode: 19},
+	} {
+		t.Run(strconv.Itoa(returned.ExitCode), func(t *testing.T) {
+			root := t.TempDir()
+			mkdir(t, filepath.Join(root, "etc", "nginx", "conf.d"))
+			env := host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
+				return returned, existing
+			}}
+			err := nginx.Apply(context.Background(), env, "example.test")
+			var got *host.CommandError
+			if !errors.As(err, &got) || got != existing {
+				t.Fatalf("error = %#v, want original CommandError %#v", err, existing)
+			}
+		})
+	}
 }
 
 func filesDeclareFunction(files []*ast.File, name string) bool {

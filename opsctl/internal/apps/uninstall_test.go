@@ -14,7 +14,7 @@ import (
 )
 
 func TestUninstallAPISignatureAndCompleteDomainWorkflow(t *testing.T) {
-	// R-LONI-RKQN
+	// R-LONI-RKQN R-AMEV-4J2G
 	want := reflect.TypeFor[func(context.Context, host.Env, string, apps.UninstallHooks) error]()
 	if got := reflect.TypeOf(apps.Uninstall); got != want {
 		t.Fatalf("Uninstall type = %v, want %v", got, want)
@@ -83,6 +83,7 @@ func TestUninstallRejectsEveryMissingPrerequisiteBeforeEffects(t *testing.T) {
 }
 
 func TestUninstallActionAndReportFailuresAreJoined(t *testing.T) {
+	// R-GWME-QK2L
 	// R-ETFY-8BTG R-EVVQ-ZVAU R-EX3N-DN1J
 	fixture := newUninstallFixture(t, "active")
 	actionErr := errors.New("stop transport failed")

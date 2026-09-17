@@ -79,8 +79,31 @@ func TestSetupReplicationStartsWhenConfigurationIsUnchanged(t *testing.T) {
 	}
 }
 
+func TestSetupReplicationRejectsMissingExecutionDependencyBeforeRegeneration(t *testing.T) {
+	// R-AMEV-4J2G
+	root, store := regenerationFixture(t)
+	writeService(t, root, "notes", "[database]\nengine = \"sqlite\"\npath = \"state/notes.db\"\n")
+	configurationPath := filepath.Join(root, "etc", "litestream.yml")
+	if err := os.MkdirAll(filepath.Dir(configurationPath), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	previous := []byte("previous configuration\n")
+	if err := os.WriteFile(configurationPath, previous, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := backup.SetupReplication(context.Background(), host.Env{Root: root}, store)
+	if err == nil || err.Error() != "setup replication: host execution is not configured" {
+		t.Fatalf("SetupReplication() error = %v", err)
+	}
+	after := readLitestream(t, root)
+	if after != string(previous) {
+		t.Fatalf("configuration changed before dependency validation: got %q, want %q", after, previous)
+	}
+}
+
 func TestSetupReplicationStopsAfterCommandFailuresWithoutRollback(t *testing.T) {
-	// R-JVG4-0PMI
+	// R-JVG4-0PMI R-GWME-QK2L
 	tests := []struct {
 		name         string
 		unchanged    bool

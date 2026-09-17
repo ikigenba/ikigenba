@@ -102,6 +102,7 @@ func TestDepsFields(t *testing.T) {
 }
 
 func TestNormalizeDeps(t *testing.T) {
+	// R-5E43-77RM
 	t.Setenv("OPSCTL_EMPTY_ENV", "live value")
 	got := normalizeDeps(Deps{})
 	if got.Getenv("OPSCTL_EMPTY_ENV") != "" {

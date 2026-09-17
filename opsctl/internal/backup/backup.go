@@ -62,12 +62,12 @@ func Regenerate(ctx context.Context, env host.Env, store config.Store) (bool, er
 // SetupReplication generates the shared Litestream configuration and enables
 // its service, restarting it only when the configuration changed.
 func SetupReplication(ctx context.Context, env host.Env, store config.Store) error {
+	if env.Execute == nil {
+		return errors.New("setup replication: host execution is not configured")
+	}
 	changed, err := Regenerate(ctx, env, store)
 	if err != nil {
 		return err
-	}
-	if env.Execute == nil {
-		return errors.New("setup replication: host execution is not configured")
 	}
 	if err := executeReplicationCommand(ctx, env, "enable litestream.service", "enable"); err != nil {
 		return err

@@ -111,6 +111,9 @@ func Obtain(ctx context.Context, env host.Env, hostName, email string) error {
 	if email == "" {
 		return errors.New("acme.email not set")
 	}
+	if env.Execute == nil {
+		return errors.New("obtain certificate: host execution is not configured")
+	}
 
 	rooted := func(path string) string {
 		return filepath.Join(env.Root, filepath.FromSlash(strings.TrimPrefix(path, "/")))
@@ -137,11 +140,21 @@ func Obtain(ctx context.Context, env host.Env, hostName, email string) error {
 		},
 	}
 	result, err := env.Execute(ctx, command)
-	if err != nil || result.ExitCode != 0 {
+	if err != nil {
+		var commandErr *host.CommandError
+		if errors.As(err, &commandErr) {
+			return err
+		}
 		return &host.CommandError{
 			Label:  "certbot certonly",
 			Result: result,
 			Err:    err,
+		}
+	}
+	if result.ExitCode != 0 {
+		return &host.CommandError{
+			Label:  "certbot certonly",
+			Result: result,
 		}
 	}
 	return nil

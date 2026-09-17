@@ -126,7 +126,15 @@ func TestObtainRejectsMissingConfigurationBeforeExecution(t *testing.T) {
 	}
 }
 
-// R-GFIN-FMDJ
+// R-AMEV-4J2G
+func TestObtainRejectsMissingExecutionDependency(t *testing.T) {
+	err := cert.Obtain(context.Background(), host.Env{Root: t.TempDir()}, "example.com", "admin@example.com")
+	if err == nil || err.Error() != "obtain certificate: host execution is not configured" {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+// R-GFIN-FMDJ R-AMEV-4J2G
 func TestObtainExecutesExactCertbotCommand(t *testing.T) {
 	root := t.TempDir()
 	ctx := context.WithValue(context.Background(), contextKey{}, "marker")
@@ -267,7 +275,7 @@ func TestObtainLetsCertbotKeepNotDueCertificate(t *testing.T) {
 	}
 }
 
-// R-YORR-R16J
+// R-YORR-R16J R-GWME-QK2L
 func TestObtainPreservesCertbotFailure(t *testing.T) {
 	cause := errors.New("cannot start")
 	wantResult := host.Result{Stdout: []byte("out"), Stderr: []byte("detail"), ExitCode: 17}
@@ -302,6 +310,31 @@ func TestObtainPreservesCertbotFailure(t *testing.T) {
 	env := host.Env{Execute: func(context.Context, host.Command) (host.Result, error) { return host.Result{}, nil }}
 	if err := cert.Obtain(context.Background(), env, "example.com", "admin@example.com"); err != nil {
 		t.Fatalf("successful execution returned %v", err)
+	}
+}
+
+// R-GWME-QK2L
+func TestObtainPreservesExistingCommandErrorIdentity(t *testing.T) {
+	cause := errors.New("remote certbot failed")
+	existing := &host.CommandError{
+		Label:  "remote certbot",
+		Result: host.Result{Stdout: []byte("captured output"), Stderr: []byte("captured detail"), ExitCode: 73},
+		Err:    cause,
+	}
+	for _, returned := range []host.Result{
+		{},
+		{Stdout: []byte("different output"), Stderr: []byte("different detail"), ExitCode: 19},
+	} {
+		t.Run(strconv.Itoa(returned.ExitCode), func(t *testing.T) {
+			env := host.Env{Execute: func(context.Context, host.Command) (host.Result, error) {
+				return returned, existing
+			}}
+			err := cert.Obtain(context.Background(), env, "example.com", "admin@example.com")
+			var got *host.CommandError
+			if !errors.As(err, &got) || got != existing {
+				t.Fatalf("error = %#v, want original CommandError %#v", err, existing)
+			}
+		})
 	}
 }
 

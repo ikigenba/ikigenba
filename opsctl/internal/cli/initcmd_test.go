@@ -274,7 +274,7 @@ func TestInitMissingConfigurationIsReportedAsFindings(t *testing.T) {
 func TestInitHealthyPreflight(t *testing.T) {
 	// R-LIU3-NA5F R-LK20-11W4 R-LMHS-SLDI R-ELKW-EVLN
 	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL R-LRDE-BOCA
-	// R-JWO0-EHD7
+	// R-JWO0-EHD7 R-5E43-77RM
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZA": {
 			{Name: "example.com", Type: "SOA"},

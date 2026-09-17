@@ -277,7 +277,7 @@ func TestFilesExplicitSelectionAndInvalidDiscoveredName(t *testing.T) {
 }
 
 func TestFilesServiceFailuresContinueWithoutPartialObjects(t *testing.T) {
-	// R-I3CZ-C0Q2
+	// R-I3CZ-C0Q2 R-GWME-QK2L
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/alpha/state/value", "alpha", 0o600)
@@ -421,7 +421,7 @@ func TestFilesServiceFailuresContinueWithoutPartialObjects(t *testing.T) {
 }
 
 func TestFilesTimestampSetsAndCreateOnlyCollision(t *testing.T) {
-	// R-ZMEX-3VL4
+	// R-ZMEX-3VL4 R-AMEV-4J2G
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/alpha/state/value", "alpha", 0o600)

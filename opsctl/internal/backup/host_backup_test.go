@@ -313,7 +313,7 @@ func TestHostBackupTimestampAndCreateOnlyCollision(t *testing.T) {
 }
 
 func TestHostBackupAttemptFailuresAndInterruptions(t *testing.T) {
-	// R-9TEE-6UL8
+	// R-9TEE-6UL8 R-GWME-QK2L
 	storeRoot := t.TempDir()
 	store := configuredHostStore(t, storeRoot)
 	t.Run("archive read", func(t *testing.T) {
