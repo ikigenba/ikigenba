@@ -4,6 +4,7 @@ package main
 import (
 	"bufio"
 	"go/ast"
+	"go/build"
 	"go/parser"
 	"go/token"
 	"os"
@@ -22,6 +23,7 @@ type sourceFile struct {
 	path       string
 	pkgPath    string
 	file       *ast.File
+	imports    []string
 	importPath map[string]string
 }
 
@@ -38,47 +40,70 @@ func moduleSources(t *testing.T) []sourceFile {
 	t.Helper()
 	root := moduleRoot(t)
 	files := make([]sourceFile, 0)
-	for _, top := range []string{"cmd", "internal"} {
-		err := filepath.WalkDir(filepath.Join(root, top), func(path string, entry os.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			if path == filepath.Join(root, "vendor") {
+				return filepath.SkipDir
 			}
-			if entry.IsDir() || !strings.HasSuffix(path, ".go") {
-				return nil
-			}
-			parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ParseComments)
-			if err != nil {
-				return err
-			}
-			relDir, err := filepath.Rel(root, filepath.Dir(path))
-			if err != nil {
-				return err
-			}
-			imports := make(map[string]string)
-			for _, spec := range parsed.Imports {
-				imported, err := strconv.Unquote(spec.Path.Value)
-				if err != nil {
+			if path != root {
+				if _, err := os.Stat(filepath.Join(path, "go.mod")); err == nil {
+					return filepath.SkipDir
+				} else if !os.IsNotExist(err) {
 					return err
 				}
-				name := filepath.Base(imported)
-				if spec.Name != nil {
-					name = spec.Name.Name
-				}
-				imports[name] = imported
 			}
-			files = append(files, sourceFile{
-				path:       path,
-				pkgPath:    modulePath + "/" + filepath.ToSlash(relDir),
-				file:       parsed,
-				importPath: imports,
-			})
 			return nil
-		})
-		if err != nil {
-			t.Fatalf("read %s sources: %v", top, err)
 		}
+		if !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ParseComments)
+		if err != nil {
+			return err
+		}
+		relDir, err := filepath.Rel(root, filepath.Dir(path))
+		if err != nil {
+			return err
+		}
+		pkgPath := modulePath
+		if relDir != "." {
+			pkgPath += "/" + filepath.ToSlash(relDir)
+		}
+		imports := make([]string, 0, len(parsed.Imports))
+		importPaths := make(map[string]string)
+		for _, spec := range parsed.Imports {
+			imported, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				return err
+			}
+			imports = append(imports, imported)
+			name := filepath.Base(imported)
+			if spec.Name != nil {
+				name = spec.Name.Name
+			}
+			importPaths[name] = imported
+		}
+		files = append(files, sourceFile{
+			path:       path,
+			pkgPath:    pkgPath,
+			file:       parsed,
+			imports:    imports,
+			importPath: importPaths,
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("read module sources: %v", err)
 	}
 	return files
+}
+
+func isStandardImport(path string) bool {
+	pkg, err := build.Default.Import(path, "", build.FindOnly)
+	return err == nil && pkg.Goroot
 }
 
 // R-DM8X-DRGU
@@ -186,10 +211,22 @@ func TestPackageImportBoundaries(t *testing.T) {
 		modulePath + "/internal/seam":         true,
 		modulePath + "/internal/cloud/awssdk": true,
 	}
+	approvedAWSModules := map[string]bool{
+		"github.com/aws/aws-sdk-go-v2":                 true,
+		"github.com/aws/aws-sdk-go-v2/config":          true,
+		"github.com/aws/aws-sdk-go-v2/service/ec2":     true,
+		"github.com/aws/aws-sdk-go-v2/service/iam":     true,
+		"github.com/aws/aws-sdk-go-v2/service/route53": true,
+		"github.com/aws/aws-sdk-go-v2/service/s3":      true,
+		"github.com/aws/aws-sdk-go-v2/service/ssm":     true,
+		"github.com/aws/aws-sdk-go-v2/service/sts":     true,
+		"github.com/aws/smithy-go":                     true,
+	}
+	requiredModules := readRequiredModulePaths(t)
 	for _, source := range moduleSources(t) {
-		for _, imported := range source.importPath {
+		for _, imported := range source.imports {
 			isModule := imported == modulePath || strings.HasPrefix(imported, modulePath+"/")
-			isExternal := strings.Contains(strings.Split(imported, "/")[0], ".") && !isModule
+			isExternal := !isModule && !isStandardImport(imported)
 			switch {
 			case source.pkgPath == modulePath+"/cmd/devctl" && isModule && !allowedMain[imported]:
 				t.Errorf("%s: cmd/devctl imports disallowed module package %q", source.path, imported)
@@ -203,7 +240,8 @@ func TestPackageImportBoundaries(t *testing.T) {
 			if !isExternal {
 				continue
 			}
-			allowedExternal := source.pkgPath == modulePath+"/internal/cloud/awssdk" && strings.HasPrefix(imported, "github.com/aws/")
+			owner := owningModule(imported, requiredModules)
+			allowedExternal := source.pkgPath == modulePath+"/internal/cloud/awssdk" && approvedAWSModules[owner]
 			allowedExternal = allowedExternal || source.pkgPath == modulePath+"/internal/checkout" && imported == "github.com/BurntSushi/toml"
 			if !allowedExternal {
 				t.Errorf("%s: package imports disallowed external dependency %q", source.path, imported)
@@ -212,16 +250,53 @@ func TestPackageImportBoundaries(t *testing.T) {
 	}
 }
 
+func readRequiredModulePaths(t *testing.T) []string {
+	t.Helper()
+	contents, err := os.ReadFile(filepath.Join(moduleRoot(t), "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var modules []string
+	inRequire := false
+	for _, raw := range strings.Split(string(contents), "\n") {
+		line := strings.TrimSpace(raw)
+		fields := strings.Fields(line)
+		switch {
+		case line == "require (":
+			inRequire = true
+		case inRequire && line == ")":
+			inRequire = false
+		case inRequire && len(fields) >= 2:
+			modules = append(modules, fields[0])
+		case !inRequire && len(fields) >= 3 && fields[0] == "require":
+			modules = append(modules, fields[1])
+		}
+	}
+	return modules
+}
+
+func owningModule(importPath string, modules []string) string {
+	owner := ""
+	for _, module := range modules {
+		if (importPath == module || strings.HasPrefix(importPath, module+"/")) && len(module) > len(owner) {
+			owner = module
+		}
+	}
+	return owner
+}
+
 // R-BVBS-D5SC
 func TestEnvironmentalOperationsStayAtRunSeam(t *testing.T) {
 	prohibitedOS := map[string]bool{"Getenv": true, "Getwd": true, "UserHomeDir": true, "Geteuid": true}
 	prohibitedTime := map[string]bool{"Now": true, "Since": true, "Sleep": true, "After": true, "Tick": true}
 	for _, source := range moduleSources(t) {
-		for alias, imported := range source.importPath {
+		for _, imported := range source.imports {
 			if imported == "os/exec" && source.pkgPath != modulePath+"/internal/seam" {
 				t.Errorf("%s: imports os/exec outside internal/seam", source.path)
 			}
-			if alias == "." && (imported == "os" || imported == "time") {
+		}
+		for _, spec := range source.file.Imports {
+			if spec.Name != nil && spec.Name.Name == "." && (spec.Path.Value == `"os"` || spec.Path.Value == `"time"`) {
 				t.Errorf("%s: dot-import prevents environmental boundary verification", source.path)
 			}
 		}
