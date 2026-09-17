@@ -3,12 +3,12 @@
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then
-  echo "usage: release.sh opsctl/vMAJOR.MINOR.PATCH" >&2
+  echo "usage: release.sh opsctl/v<semver>" >&2
   exit 2
 fi
 
 tag=$1
-if [[ $tag =~ ^opsctl/(v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$ ]]; then
+if [[ $tag =~ ^opsctl/(v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?)$ ]]; then
   version=${BASH_REMATCH[1]}
 else
   echo "invalid opsctl release tag: $tag" >&2
