@@ -14,6 +14,11 @@ changing it on its merits: "we decided X; keep it because..." or "change it
 because...". Changing a requirement's text costs one re-minted id and nothing
 else.
 
+Versions are data. No test, fixture, or requirement names a release version. A
+test that needs the current version reads the value the source declares,
+through the contract that declares it, and derives tags, asset names, and
+expected output from that value.
+
 Branches are never pushed to the remote except `main`. Work happens on local
 branches and worktrees; only `main` (and release tags) is published to origin.
 Never push a working or feature branch, and never create a remote branch other

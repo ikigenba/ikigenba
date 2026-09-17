@@ -6,6 +6,9 @@ import (
 	"debug/elf"
 	"encoding/hex"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,9 +21,69 @@ import (
 	"testing"
 )
 
+// declaredVersion returns the version string package internal/cli declares
+// in source (D02), found by scanning the package rather than naming a file,
+// so no test names a version; versions are data.
+func declaredVersion(t *testing.T, project string) string {
+	t.Helper()
+	dir := filepath.Join(project, "internal", "cli")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value string
+	found := false
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		parsed, parseErr := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+		if parseErr != nil {
+			t.Fatalf("parse %s: %v", path, parseErr)
+		}
+		for _, decl := range parsed.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || gen.Tok != token.VAR {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				vs := spec.(*ast.ValueSpec)
+				for i, name := range vs.Names {
+					if name.Name != "version" {
+						continue
+					}
+					if found {
+						t.Fatalf("%s: multiple package-level var version declarations", path)
+					}
+					if i >= len(vs.Values) {
+						t.Fatalf("%s: var version has no value", path)
+					}
+					lit, ok := vs.Values[i].(*ast.BasicLit)
+					if !ok || lit.Kind != token.STRING {
+						t.Fatalf("%s: var version value is not a string literal", path)
+					}
+					value, err = strconv.Unquote(lit.Value)
+					if err != nil {
+						t.Fatalf("unquote version in %s: %v", path, err)
+					}
+					found = true
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("%s: package-level var version not found", dir)
+	}
+	return value
+}
+
 func TestReleaseBuildsAndPublishesExactAssets(t *testing.T) {
 	// R-IH58-0PHG R-UL9F-YPQI R-UMHC-CHH7 R-IKSX-60PJ
 	project := releaseProjectRoot(t)
+	version := declaredVersion(t, project)
+	tag := "opsctl/" + version
+	binaryName := "opsctl-" + version + "-linux-amd64"
 	dist := t.TempDir()
 	capture := filepath.Join(t.TempDir(), "gh-arguments")
 	fixtureBin := t.TempDir()
@@ -29,7 +92,7 @@ set -euo pipefail
 printf '%s\0' "$@" > "$GH_CAPTURE"
 `)
 
-	command := exec.Command("bash", "release.sh", "opsctl/v0.1.0")
+	command := exec.Command("bash", "release.sh", tag) //nolint:gosec // The tag is built from the version the source declares.
 	command.Dir = project
 	command.Env = append(os.Environ(),
 		"PATH="+fixtureBin+":"+os.Getenv("PATH"),
@@ -41,7 +104,7 @@ printf '%s\0' "$@" > "$GH_CAPTURE"
 		t.Fatalf("release fixture: %v\n%s", err, output)
 	}
 
-	wantNames := []string{"checksums.txt", "install.sh", "opsctl-v0.1.0-linux-amd64"}
+	wantNames := []string{"checksums.txt", "install.sh", binaryName}
 	entries, err := os.ReadDir(dist)
 	if err != nil {
 		t.Fatal(err)
@@ -55,12 +118,11 @@ printf '%s\0' "$@" > "$GH_CAPTURE"
 		t.Fatalf("release assets = %q, want exactly %q", gotNames, wantNames)
 	}
 
-	binaryName := wantNames[2]
 	binaryPath := filepath.Join(dist, binaryName)
 	assertLinuxAMD64Static(t, binaryPath)
-	version := exec.Command("./opsctl-v0.1.0-linux-amd64", "version")
-	version.Dir = dist
-	if output, err := version.CombinedOutput(); err != nil || string(output) != "v0.1.0\n" {
+	report := exec.Command("./"+binaryName, "version") //nolint:gosec // The asset name is built from the version the source declares.
+	report.Dir = dist
+	if output, err := report.CombinedOutput(); err != nil || string(output) != version+"\n" {
 		t.Fatalf("released version = %q, %v", output, err)
 	}
 
@@ -79,7 +141,7 @@ printf '%s\0' "$@" > "$GH_CAPTURE"
 	if err != nil || string(checksum) != wantChecksum {
 		t.Fatalf("checksums.txt = %q, %v; want %q", checksum, err, wantChecksum)
 	}
-	if !regexp.MustCompile(`^[0-9a-f]{64}  opsctl-v0\.1\.0-linux-amd64\n$`).Match(checksum) {
+	if !regexp.MustCompile(`^[0-9a-f]{64}  ` + regexp.QuoteMeta(binaryName) + `\n$`).Match(checksum) {
 		t.Fatalf("checksum grammar = %q", checksum)
 	}
 	releasedInstaller, err := distRoot.ReadFile("install.sh")
@@ -110,8 +172,8 @@ printf '%s\0' "$@" > "$GH_CAPTURE"
 		t.Fatal(err)
 	}
 	wantArguments := []string{
-		"release", "create", "opsctl/v0.1.0",
-		"--title", "opsctl/v0.1.0", "--verify-tag", "--generate-notes",
+		"release", "create", tag,
+		"--title", tag, "--verify-tag", "--generate-notes",
 		binaryPath, filepath.Join(dist, "checksums.txt"), filepath.Join(dist, "install.sh"),
 	}
 	if got := splitNULArguments(arguments); !reflect.DeepEqual(got, wantArguments) {
@@ -184,6 +246,7 @@ func TestOpsctlTagWorkflowPublishesThroughReleaseBuilder(t *testing.T) {
 func TestReleaseRejectsTagsThatCannotNameTheRuntimeVersion(t *testing.T) {
 	// R-IH58-0PHG R-UMHC-CHH7
 	project := releaseProjectRoot(t)
+	version := declaredVersion(t, project)
 	dist := t.TempDir()
 	fixtureBin := t.TempDir()
 	called := filepath.Join(t.TempDir(), "gh-called")
@@ -192,7 +255,7 @@ func TestReleaseRejectsTagsThatCannotNameTheRuntimeVersion(t *testing.T) {
 	command.Dir = project
 	command.Env = append(os.Environ(), "PATH="+fixtureBin+":"+os.Getenv("PATH"), "GH_CALLED="+called, "GOPROXY=off", "OPSCTL_RELEASE_DIST="+dist)
 	output, err := command.CombinedOutput()
-	if exitCode(err) != 1 || string(output) != "tag opsctl/v9.8.7 names v9.8.7 but the binary reports v0.1.0\n" {
+	if exitCode(err) != 1 || string(output) != "tag opsctl/v9.8.7 names v9.8.7 but the binary reports "+version+"\n" {
 		t.Fatalf("runtime mismatch = exit %d, output %q", exitCode(err), output)
 	}
 	assertReleaseNotInvokedAndDistEmpty(t, called, dist)
@@ -210,6 +273,8 @@ func TestReleaseRejectsTagsThatCannotNameTheRuntimeVersion(t *testing.T) {
 func TestReleasePropagatesBuildChecksumInstallAndPublishFailures(t *testing.T) {
 	// R-UL9F-YPQI R-UMHC-CHH7 R-IKSX-60PJ
 	project := releaseProjectRoot(t)
+	version := declaredVersion(t, project)
+	binaryName := "opsctl-" + version + "-linux-amd64"
 	for _, test := range []struct {
 		name       string
 		tool       string
@@ -218,9 +283,9 @@ func TestReleasePropagatesBuildChecksumInstallAndPublishFailures(t *testing.T) {
 		wantGHCall bool
 	}{
 		{name: "build", tool: "go", exit: 41},
-		{name: "checksum", tool: "sha256sum", exit: 42, wantAssets: []string{"checksums.txt", "opsctl-v0.1.0-linux-amd64"}},
-		{name: "installer copy", tool: "install", exit: 43, wantAssets: []string{"checksums.txt", "opsctl-v0.1.0-linux-amd64"}},
-		{name: "GitHub release", tool: "gh", exit: 44, wantAssets: []string{"checksums.txt", "install.sh", "opsctl-v0.1.0-linux-amd64"}, wantGHCall: true},
+		{name: "checksum", tool: "sha256sum", exit: 42, wantAssets: []string{"checksums.txt", binaryName}},
+		{name: "installer copy", tool: "install", exit: 43, wantAssets: []string{"checksums.txt", binaryName}},
+		{name: "GitHub release", tool: "gh", exit: 44, wantAssets: []string{"checksums.txt", "install.sh", binaryName}, wantGHCall: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			dist := t.TempDir()
@@ -232,7 +297,7 @@ func TestReleasePropagatesBuildChecksumInstallAndPublishFailures(t *testing.T) {
 			} else {
 				writeExecutable(t, filepath.Join(fixtureBin, test.tool), "#!/usr/bin/env bash\nexit "+strconv.Itoa(test.exit)+"\n")
 			}
-			command := exec.Command("bash", "release.sh", "opsctl/v0.1.0")
+			command := exec.Command("bash", "release.sh", "opsctl/"+version) //nolint:gosec // The tag is built from the version the source declares.
 			command.Dir = project
 			command.Env = append(os.Environ(), "PATH="+fixtureBin+":"+os.Getenv("PATH"), "GH_CALLED="+called, "GOPROXY=off", "OPSCTL_RELEASE_DIST="+dist)
 			output, err := command.CombinedOutput()
