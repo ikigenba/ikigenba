@@ -6,6 +6,13 @@ keys. Accounts retaining backups restore the host before initialization and
 reapply explicit configuration. Failures leave completed work for destroy to
 clean up.
 
+The host's role writes TXT records under its own domain and nothing else in
+Route 53. That is what proving ownership for its certificate takes, and what an
+operator's `opsctl dns add`/`remove` probe of the seam takes. Create writes the
+space's A records itself, with the developer's identity, in the `records` step,
+so the host never needs an A-record write, and it never needs to enumerate
+zones, since opsctl carries the zone id in `dns.zones`.
+
 ## REQUIREMENTS
 
 - R-XOJ7-MRN8: Package `internal/spacecreate` MUST export `Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, profile string) error`, and `Run` MUST take no writer other than `stdout`.
@@ -92,4 +99,4 @@ clean up.
 
 - R-F3DQ-ZZV8: The policy produced from `PolicyTemplate` MUST grant `ssm:GetParameter` on `arn:aws:ssm:*:<account_id>:parameter/ikigenba/<domain>/*`, allowing the host to read each app's secrets object that create and secrets push write. It MUST grant no parameter reads outside that space prefix and no parameter writes.
 
-- R-F4LN-DRLX: The policy produced from `PolicyTemplate` MUST grant `route53:ListHostedZones` on `*`, `route53:GetChange` on `arn:aws:route53:::change/*`, and `route53:ChangeResourceRecordSets` on `arn:aws:route53:::hostedzone/<zone_id>`, with `ForAllValues:StringEquals` conditions requiring `route53:ChangeResourceRecordSetsRecordTypes` to equal `TXT` and `route53:ChangeResourceRecordSetsNormalizedRecordNames` to equal `_acme-challenge.<domain>`. Tests MUST inspect the substituted JSON policy and verify that the space's challenge TXT record is allowed and the space's ordinary A records are not granted host mutation access by this policy.
+- R-CAAK-IWJI: The policy produced from `PolicyTemplate` MUST grant exactly three Route 53 permissions and no other `route53:` action: `route53:ListResourceRecordSets` on `arn:aws:route53:::hostedzone/<zone_id>`, `route53:GetChange` on `arn:aws:route53:::change/*`, and `route53:ChangeResourceRecordSets` on `arn:aws:route53:::hostedzone/<zone_id>` under a `ForAllValues:StringEquals` condition requiring `route53:ChangeResourceRecordSetsRecordTypes` to equal `TXT` and a `ForAllValues:StringLike` condition requiring `route53:ChangeResourceRecordSetsNormalizedRecordNames` to match `<domain>` or `*.<domain>`. Tests MUST inspect the substituted JSON policy and verify that a TXT record at `_acme-challenge.<domain>` is writable, that the `<domain>` and `*.<domain>` A records are not, and that `route53:ListHostedZones` is absent.
