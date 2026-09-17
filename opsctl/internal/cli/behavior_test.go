@@ -72,7 +72,7 @@ func TestNonVersionCommandsRefuseWithoutHostAccess(t *testing.T) {
 					args = append(args, "backup")
 				case "install":
 					args = append(args, "s3://bucket/key")
-				case "restart", "uninstall":
+				case "restart", "restore", "uninstall":
 					args = append(args, "app")
 				}
 				stdout, stderr, code := invoke(args, deps)

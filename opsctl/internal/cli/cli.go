@@ -213,7 +213,7 @@ func diagnosticArg(s string) string {
 func dispatch(name string, args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	switch name {
 	case "restore":
-		return runCommandFrame(name, args, stdout, stderr, deps)
+		return runRestore(args, stdout, stderr, deps)
 	case "retire":
 		return runRetire(args, stdout, stderr, deps)
 	case "host":
@@ -254,18 +254,6 @@ func requireRoot(deps Deps, stderr io.Writer) exitCode {
 	}
 	_, _ = io.WriteString(stderr, "opsctl: must run as root\n")
 	return exitRefused
-}
-
-// runCommandFrame provides grammar for actions whose domain is not built yet.
-func runCommandFrame(name string, args []string, stdout, stderr io.Writer, deps Deps) exitCode {
-	if isCommandHelp(args) {
-		return writeOut(stdout, "Usage: opsctl "+name+" [arguments]\n")
-	}
-	if code := requireRoot(deps, stderr); code != exitOK {
-		return code
-	}
-	writeDiagnostic(stderr, errors.New(diagnosticArg(name)+": operation is not implemented"))
-	return exitFail
 }
 
 // writeDiagnostic keeps operation errors and captured process output on stderr.
