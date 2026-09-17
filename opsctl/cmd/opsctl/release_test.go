@@ -44,7 +44,7 @@ func declaredVersion(t *testing.T, project string) string {
 		}
 		for _, decl := range parsed.Decls {
 			gen, ok := decl.(*ast.GenDecl)
-			if !ok || gen.Tok != token.VAR {
+			if !ok || gen.Tok != token.CONST {
 				continue
 			}
 			for _, spec := range gen.Specs {
@@ -54,14 +54,14 @@ func declaredVersion(t *testing.T, project string) string {
 						continue
 					}
 					if found {
-						t.Fatalf("%s: multiple package-level var version declarations", path)
+						t.Fatalf("%s: multiple package-level const version declarations", path)
 					}
 					if i >= len(vs.Values) {
-						t.Fatalf("%s: var version has no value", path)
+						t.Fatalf("%s: const version has no value", path)
 					}
 					lit, ok := vs.Values[i].(*ast.BasicLit)
 					if !ok || lit.Kind != token.STRING {
-						t.Fatalf("%s: var version value is not a string literal", path)
+						t.Fatalf("%s: const version value is not a string literal", path)
 					}
 					value, err = strconv.Unquote(lit.Value)
 					if err != nil {
@@ -73,7 +73,7 @@ func declaredVersion(t *testing.T, project string) string {
 		}
 	}
 	if !found {
-		t.Fatalf("%s: package-level var version not found", dir)
+		t.Fatalf("%s: package-level const version not found", dir)
 	}
 	return value
 }

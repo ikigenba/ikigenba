@@ -353,16 +353,37 @@ func TestUnknownOption(t *testing.T) {
 	}
 }
 
-func TestVersionVar(t *testing.T) {
-	// R-EME2-0P2D
-	re := regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+func TestVersionFixedInSource(t *testing.T) {
+	// R-PPUV-ITT1
+	re := regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`)
 	value := versionLiteral(t)
 	if !re.MatchString(value) {
 		t.Errorf("version = %q, want to match %s", value, re.String())
 	}
-	stdout, stderr, code := invoke([]string{"version"}, depsAt(t, 1))
+
+	root := t.TempDir()
+	configDir := filepath.Join(root, "etc", "ikigenba")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "config.json"), []byte(`{"version":"v9.8.7"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	deps := cli.Deps{
+		Root: root,
+		EUID: 1,
+		Getenv: func(string) string {
+			return "v9.8.7"
+		},
+	}
+	stdout, stderr, code := invoke([]string{"version"}, deps)
 	if stdout != wantVersion(t)+"\n" || stderr != "" || code != 0 {
 		t.Errorf("runtime version: exit %d stdout %q stderr %q, want %q", code, stdout, stderr, wantVersion(t)+"\n")
+	}
+	stdout, stderr, code = invoke([]string{"--version=v9.8.7"}, deps)
+	wantErr := "opsctl: unknown option '--version=v9.8.7'\n\nsee 'opsctl --help' for usage\n"
+	if stdout != "" || stderr != wantErr || code != 2 {
+		t.Errorf("version override option: exit %d stdout %q stderr %q, want exit 2, empty stdout, stderr %q", code, stdout, stderr, wantErr)
 	}
 }
 
@@ -409,7 +430,7 @@ func versionLiteral(t *testing.T) string {
 		})
 		for _, decl := range parsed.Decls {
 			gen, ok := decl.(*ast.GenDecl)
-			if !ok || gen.Tok != token.VAR {
+			if !ok || gen.Tok != token.CONST {
 				continue
 			}
 			for _, spec := range gen.Specs {
@@ -419,21 +440,21 @@ func versionLiteral(t *testing.T) string {
 						continue
 					}
 					if found {
-						t.Fatalf("multiple package-level var version declarations")
+						t.Fatalf("multiple package-level const version declarations")
 					}
 					found = true
 					if vs.Type != nil {
 						ident, ok := vs.Type.(*ast.Ident)
 						if !ok || ident.Name != "string" {
-							t.Errorf("%s: var version type = %T, want string", path, vs.Type)
+							t.Errorf("%s: const version type = %T, want string", path, vs.Type)
 						}
 					}
 					if i >= len(vs.Values) {
-						t.Fatalf("%s: var version has no value", path)
+						t.Fatalf("%s: const version has no value", path)
 					}
 					lit, ok := vs.Values[i].(*ast.BasicLit)
 					if !ok || lit.Kind != token.STRING {
-						t.Fatalf("%s: var version value is not a string literal", path)
+						t.Fatalf("%s: const version value is not a string literal", path)
 					}
 					value, err = strconv.Unquote(lit.Value)
 					if err != nil {
@@ -444,14 +465,16 @@ func versionLiteral(t *testing.T) string {
 		}
 	}
 	if !found {
-		t.Fatal("package-level var version string not found")
+		t.Fatal("package-level const version string not found")
 	}
 	return value
 }
 
 func TestVersionOutput(t *testing.T) {
-	// R-NAKC-ICYV
+	// R-PR2R-WLJQ
 	user := depsAt(t, 1)
+	var want string
+	versionPattern := regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?\n$`)
 	for _, args := range [][]string{{"version"}, {"-V"}, {"--version"}} {
 		stdout, stderr, code := invoke(args, user)
 		if code != 0 {
@@ -460,8 +483,13 @@ func TestVersionOutput(t *testing.T) {
 		if stderr != "" {
 			t.Errorf("%q: stderr = %q, want empty", args, stderr)
 		}
-		if stdout != wantVersion(t)+"\n" {
-			t.Errorf("%q: stdout = %q, want %q", args, stdout, wantVersion(t)+"\n")
+		if !versionPattern.MatchString(stdout) {
+			t.Errorf("%q: stdout = %q, want exactly one semantic-version line", args, stdout)
+		}
+		if want == "" {
+			want = stdout
+		} else if stdout != want {
+			t.Errorf("%q: stdout = %q, want same version line as other forms %q", args, stdout, want)
 		}
 	}
 }
