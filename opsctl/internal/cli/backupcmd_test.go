@@ -130,12 +130,34 @@ func TestBackupCommandReportsResultsAndOperationalInterruptions(t *testing.T) {
 		if err != nil || allOK {
 			t.Fatalf("write failed result = allOK %v, error %v", allOK, err)
 		}
-		writeBackupOperationalError(&stderr, results, context.Canceled)
+		code := writeBackupOperationalError(&stderr, results, context.Canceled)
 		if got, want := stdout.String(), "alpha: failed: archive unavailable\n"; got != want {
 			t.Fatalf("between-attempt report = %q, want %q", got, want)
 		}
 		if got, want := stderr.String(), "opsctl: backup failed\n"; got != want {
 			t.Fatalf("between-attempt diagnostic = %q, want %q", got, want)
+		}
+		if code != 1 {
+			t.Fatalf("between-attempt exit = %d, want 1", code)
+		}
+	})
+
+	t.Run("interruption after successful attempt has no service suffix", func(t *testing.T) {
+		results := []backup.FileResult{{Service: "alpha", Object: "alpha.tar.zst", Size: 1048576}}
+		var stdout, stderr bytes.Buffer
+		allOK, err := writeBackupResults(&stdout, results)
+		if err != nil || !allOK {
+			t.Fatalf("write successful result = allOK %v, error %v", allOK, err)
+		}
+		code := writeBackupOperationalError(&stderr, results, context.Canceled)
+		if got, want := stdout.String(), "alpha: ok (alpha.tar.zst, 1.0 MiB)\n"; got != want {
+			t.Fatalf("between-attempt report = %q, want %q", got, want)
+		}
+		if got, want := stderr.String(), "opsctl: backup failed\n"; got != want {
+			t.Fatalf("between-attempt diagnostic = %q, want %q", got, want)
+		}
+		if code != 1 {
+			t.Fatalf("between-attempt exit = %d, want 1", code)
 		}
 	})
 }

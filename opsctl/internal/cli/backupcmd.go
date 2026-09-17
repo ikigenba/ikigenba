@@ -69,8 +69,7 @@ func executeBackup(service string, stdout, stderr io.Writer, deps Deps) exitCode
 		return exitFail
 	}
 	if runErr != nil {
-		writeBackupOperationalError(stderr, results, runErr)
-		return exitFail
+		return writeBackupOperationalError(stderr, results, runErr)
 	}
 	if !allOK {
 		return exitFail
@@ -78,10 +77,10 @@ func executeBackup(service string, stdout, stderr io.Writer, deps Deps) exitCode
 	return exitOK
 }
 
-func writeBackupOperationalError(stderr io.Writer, results []backup.FileResult, runErr error) {
+func writeBackupOperationalError(stderr io.Writer, results []backup.FileResult, runErr error) exitCode {
 	if len(results) == 0 {
 		writeDiagnostic(stderr, runErr)
-		return
+		return exitFail
 	}
 	message := "backup failed"
 	cause := runErr
@@ -90,6 +89,7 @@ func writeBackupOperationalError(stderr io.Writer, results []backup.FileResult, 
 		cause = results[len(results)-1].Err
 	}
 	writeDiagnostic(stderr, backupDiagnostic{message: message, cause: cause})
+	return exitFail
 }
 
 func writeBackupUsageError(stderr io.Writer, message string) exitCode {
