@@ -29,34 +29,62 @@ downloaded_binary=$scratch/$asset
 candidate=$scratch/opsctl
 checksums=$scratch/checksums.txt
 candidate_stderr=$scratch/candidate.stderr
+actual_checksum=$scratch/actual.sha256
+command_stderr=/tmp/.opsctl-install.$$.stderr
 downloaded_installer=$scratch/install.sh
 staged_binary=/usr/local/bin/.opsctl-install.$$
 staged_installer=/usr/local/share/ikigenba/.opsctl-install.$$
 
 cleanup() {
   rm -rf -- "$scratch"
+  rm -f -- "$command_stderr"
   rm -f -- "$staged_binary" "$staged_installer"
 }
 trap cleanup EXIT HUP INT TERM
 
-fail_install() {
+write_failure_outcome() {
   local reason=$1
   reason=${reason//$'\r'/\\r}
   reason=${reason//$'\n'/\\n}
-  printf 'install: failed: %s\n' "$reason"
-  printf '%s: installation failed\n' "$program" >&2
+  printf 'install: failed: %s\n' "$reason" 2>/dev/null
+}
+
+fail_install() {
+  local reason=$1
+  local detail=${2:-}
+  if ! write_failure_outcome "$reason"; then
+    printf '%s: installation failed\n' "$program" >&2 || true
+    exit 1
+  fi
+  printf '%s: installation failed\n' "$program" >&2 || exit 1
+  if [[ -n $detail && -s $detail ]]; then
+    printf '\n' >&2
+    while IFS= read -r line || [[ -n $line ]]; do
+      printf '> %s\n' "$line" >&2
+    done < "$detail"
+  fi
   exit 1
 }
 
-if ! install -d -m 0700 -- "$scratch"; then
-  fail_install 'could not create scratch directory'
+if ! install -d -m 0700 -- "$scratch" 2>"$command_stderr"; then
+  fail_install 'could not create scratch directory' "$command_stderr"
 fi
 
-if ! curl --fail --silent --show-error --location --output "$checksums" "$release_url/checksums.txt"; then
-  fail_install "could not download checksums for $version"
+checksum_url=$release_url/checksums.txt
+http_status=
+if ! http_status=$(curl --fail --silent --show-error --location --write-out '%{http_code}' --output "$checksums" "$checksum_url" 2>"$command_stderr"); then
+  if [[ $http_status == 404 ]]; then
+    if ! write_failure_outcome "no release for $version"; then
+      printf '%s: installation failed\n' "$program" >&2 || true
+      exit 1
+    fi
+    printf '%s: installation failed\n\n%s: 404\n' "$program" "$checksum_url" >&2
+    exit 1
+  fi
+  fail_install "could not download checksums for $version" "$command_stderr"
 fi
-if ! curl --fail --silent --show-error --location --output "$downloaded_binary" "$release_url/$asset"; then
-  fail_install "could not download $asset"
+if ! http_status=$(curl --fail --silent --show-error --location --write-out '%{http_code}' --output "$downloaded_binary" "$release_url/$asset" 2>"$command_stderr"); then
+  fail_install "could not download $asset" "$command_stderr"
 fi
 
 expected=
@@ -72,23 +100,34 @@ if [[ $matches -ne 1 ]]; then
 fi
 
 actual=
-read -r actual _ < <(sha256sum "$downloaded_binary")
+if ! sha256sum "$downloaded_binary" >"$actual_checksum" 2>"$command_stderr"; then
+  fail_install "could not checksum $asset" "$command_stderr"
+fi
+if ! read -r actual _ < "$actual_checksum"; then
+  fail_install "could not checksum $asset" "$command_stderr"
+fi
 actual=${actual,,}
 if [[ $actual != "$expected" ]]; then
-  printf 'install: failed: checksum mismatch for %s\n' "$asset"
+  if ! write_failure_outcome "checksum mismatch for $asset"; then
+    printf '%s: installation failed\n' "$program" >&2 || true
+    exit 1
+  fi
   printf '%s: installation failed\n\nexpected %s\n     got %s\n' "$program" "$expected" "$actual" >&2
   exit 1
 fi
 
-if ! install -m 0755 -- "$downloaded_binary" "$candidate"; then
-  fail_install "could not prepare $asset"
+if ! install -m 0755 -- "$downloaded_binary" "$candidate" 2>"$command_stderr"; then
+  fail_install "could not prepare $asset" "$command_stderr"
 fi
 reported=
 if ! reported=$("$candidate" version 2>"$candidate_stderr"); then
-  fail_install "$asset version command failed"
+  fail_install "$asset version command failed" "$candidate_stderr"
 fi
 if [[ $reported != "$version" ]]; then
-  printf 'install: failed: asked for %s but the binary reports %s\n' "$version" "$reported"
+  if ! write_failure_outcome "asked for $version but the binary reports $reported"; then
+    printf '%s: installation failed\n' "$program" >&2 || true
+    exit 1
+  fi
   printf '%s: installation failed\n' "$program" >&2
   exit 1
 fi
@@ -102,34 +141,37 @@ if [[ -f $installer_path ]]; then
   had_saved=1
 fi
 if [[ $had_saved -eq 1 && $installed_version != "$version" ]]; then
-  if ! curl --fail --silent --show-error --location --output "$downloaded_installer" "$release_url/install.sh"; then
-    fail_install "could not download install.sh for $version"
+  if ! http_status=$(curl --fail --silent --show-error --location --write-out '%{http_code}' --output "$downloaded_installer" "$release_url/install.sh" 2>"$command_stderr"); then
+    fail_install "could not download install.sh for $version" "$command_stderr"
   fi
 fi
 
-if ! install -d -m 0755 -- /usr/local/bin /usr/local/share/ikigenba; then
-  fail_install 'could not create installation directories'
+if ! install -d -m 0755 -- /usr/local/bin /usr/local/share/ikigenba 2>"$command_stderr"; then
+  fail_install 'could not create installation directories' "$command_stderr"
 fi
-if ! install -m 0755 -- "$candidate" "$staged_binary"; then
-  fail_install 'could not stage opsctl'
+if ! install -m 0755 -- "$candidate" "$staged_binary" 2>"$command_stderr"; then
+  fail_install 'could not stage opsctl' "$command_stderr"
 fi
 if [[ $had_saved -eq 0 ]]; then
-  if ! install -m 0755 -- "$0" "$staged_installer"; then
-    fail_install 'could not stage installer'
+  if ! install -m 0755 -- "$0" "$staged_installer" 2>"$command_stderr"; then
+    fail_install 'could not stage installer' "$command_stderr"
   fi
 elif [[ $installed_version != "$version" ]]; then
-  if ! install -m 0755 -- "$downloaded_installer" "$staged_installer"; then
-    fail_install 'could not stage installer'
+  if ! install -m 0755 -- "$downloaded_installer" "$staged_installer" 2>"$command_stderr"; then
+    fail_install 'could not stage installer' "$command_stderr"
   fi
 fi
 
-if ! mv -f -- "$staged_binary" "$binary_path"; then
-  fail_install 'could not publish opsctl'
+if ! mv -f -- "$staged_binary" "$binary_path" 2>"$command_stderr"; then
+  fail_install 'could not publish opsctl' "$command_stderr"
 fi
 if [[ -f $staged_installer ]]; then
-  if ! mv -f -- "$staged_installer" "$installer_path"; then
-    fail_install 'could not publish installer'
+  if ! mv -f -- "$staged_installer" "$installer_path" 2>"$command_stderr"; then
+    fail_install 'could not publish installer' "$command_stderr"
   fi
 fi
 
-printf 'install: ok (opsctl %s -> /usr/local/bin/opsctl)\n' "$version"
+if ! printf 'install: ok (opsctl %s -> /usr/local/bin/opsctl)\n' "$version" 2>/dev/null; then
+  printf '%s: installation failed\n' "$program" >&2 || true
+  exit 1
+fi

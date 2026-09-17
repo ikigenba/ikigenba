@@ -23,6 +23,7 @@ type sandbox struct {
 	usrLocal    string
 	etc         string
 	opt         string
+	tmp         string
 	events      string
 	installer   []byte
 	hostNetNS   string
@@ -64,11 +65,12 @@ func newSandbox(t *testing.T) *sandbox {
 		usrLocal:    filepath.Join(root, "deployment", "usr-local"),
 		etc:         filepath.Join(root, "deployment", "etc"),
 		opt:         filepath.Join(root, "deployment", "opt"),
+		tmp:         filepath.Join(root, "deployment", "tmp"),
 		events:      filepath.Join(root, "events"),
 		installer:   installer,
 		releaseData: make(map[string][]byte),
 	}
-	for _, dir := range []string{s.fixture, s.usrLocal, s.etc, s.opt, s.events} {
+	for _, dir := range []string{s.fixture, s.usrLocal, s.etc, s.opt, s.tmp, s.events} {
 		if err := os.MkdirAll(dir, 0o750); err != nil {
 			t.Fatal(err)
 		}
@@ -80,6 +82,8 @@ func newSandbox(t *testing.T) *sandbox {
 	s.hostNetNS = hostNetNS
 	s.writeFixture("install.sh", installer, 0o755)
 	s.writeCurlFixture()
+	s.writeChecksumFixture()
+	s.writeInstallFixture()
 	s.writeMoveFixture()
 	s.seedDeploymentState()
 
@@ -127,7 +131,7 @@ fi
 	s.releaseData[version+"/installer"] = releaseInstaller
 }
 
-func (s *sandbox) run(uid int, installer string, version string) commandResult {
+func (s *sandbox) run(uid int, installer string, arguments ...string) commandResult {
 	s.t.Helper()
 
 	args := []string{
@@ -141,15 +145,16 @@ func (s *sandbox) run(uid int, installer string, version string) commandResult {
 		"--symlink", "usr/bin", "/bin",
 		"--symlink", "usr/lib", "/lib",
 		"--symlink", "usr/lib64", "/lib64",
-		"--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp",
+		"--proc", "/proc", "--dev", "/dev", "--bind", s.tmp, "/tmp",
 		"--dir", "/fixture", "--ro-bind", s.fixture, "/fixture",
 		"--dir", "/events", "--bind", s.events, "/events",
 		"--dir", "/etc", "--bind", s.etc, "/etc",
 		"--dir", "/opt", "--bind", s.opt, "/opt",
 		"--bind", s.usrLocal, "/usr/local",
 		"--chdir", "/tmp",
-		"/bin/bash", "-c", boundaryCommand, "sandbox-boundary", fmt.Sprint(uid), installer, version,
+		"/bin/bash", "-c", boundaryCommand, "sandbox-boundary", fmt.Sprint(uid), installer,
 	}
+	args = append(args, arguments...)
 	cmd := exec.Command("bwrap", args...) //nolint:gosec // Arguments name only test-owned paths and fixed sandbox commands.
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -170,7 +175,7 @@ func (s *sandbox) run(uid int, installer string, version string) commandResult {
 const boundaryCommand = `
 expected_uid=$1
 installer=$2
-version=$3
+shift 2
 if [[ $EUID -ne $expected_uid ]]; then
   printf 'sandbox: effective uid mismatch\n' >&2
   exit 125
@@ -187,7 +192,10 @@ if [[ $(/usr/bin/readlink /proc/self/ns/net) == "$HOST_NET_NS" ]]; then
   printf 'sandbox: network namespace was not separated\n' >&2
   exit 125
 fi
-exec /bin/bash "$installer" "$version"
+if [[ -f /fixture/control/stdout-full ]]; then
+  exec /bin/bash "$installer" "$@" >/dev/full
+fi
+exec /bin/bash "$installer" "$@"
 `
 
 func (s *sandbox) assertRootOwnershipAndExecutableMode(path string) {
@@ -223,10 +231,12 @@ func (s *sandbox) writeCurlFixture() {
 set -u
 output=
 url=
+write_out=
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --fail|--location|--silent|--show-error) shift ;;
     --output) output=$2; shift 2 ;;
+    --write-out) write_out=$2; shift 2 ;;
     *) url=$1; shift ;;
   esac
 done
@@ -235,9 +245,48 @@ if [[ -z $output || $url != ` + releasePrefix + `* ]]; then
 fi
 relative=${url#` + releasePrefix + `}
 /usr/bin/printf '%s\n' "$url" >>"$INSTALL_TEST_EVENTS/curl"
-/usr/bin/cp "/fixture/releases/$relative" "$output"
+source=/fixture/releases/$relative
+if [[ ! -f $source ]]; then
+  /usr/bin/printf '404'
+  /usr/bin/printf 'curl: (22) The requested URL returned error: 404\n' >&2
+  exit 22
+fi
+/usr/bin/cp "$source" "$output"
+/usr/bin/printf '200'
 `)
 	s.writeFixture(filepath.Join("bin", "curl"), content, 0o755)
+}
+
+func (s *sandbox) writeChecksumFixture() {
+	s.t.Helper()
+	content := []byte(`#!/usr/bin/env bash
+set -u
+if [[ -f /fixture/control/sha256sum-fail ]]; then
+  /usr/bin/printf '0000000000000000000000000000000000000000000000000000000000000000  %s\n' "$1"
+  /usr/bin/printf 'checksum fixture failed\nsecond line\n' >&2
+  exit 71
+fi
+exec /usr/bin/sha256sum "$@"
+`)
+	s.writeFixture(filepath.Join("bin", "sha256sum"), content, 0o755)
+}
+
+func (s *sandbox) writeInstallFixture() {
+	s.t.Helper()
+	content := []byte(`#!/usr/bin/env bash
+set -u
+/usr/bin/printf 'install' >>"$INSTALL_TEST_EVENTS/install"
+for argument in "$@"; do
+  /usr/bin/printf ' %s' "$argument" >>"$INSTALL_TEST_EVENTS/install"
+done
+/usr/bin/printf '\n' >>"$INSTALL_TEST_EVENTS/install"
+if [[ -f /fixture/control/install-fail ]] && [[ "$*" == *"$(/usr/bin/cat /fixture/control/install-fail)"* ]]; then
+  /usr/bin/printf 'install fixture failed\nsecond line\n' >&2
+  exit 71
+fi
+exec /usr/bin/install "$@"
+`)
+	s.writeFixture(filepath.Join("bin", "install"), content, 0o755)
 }
 
 func (s *sandbox) writeMoveFixture() {
@@ -261,6 +310,19 @@ fi
 exec /usr/bin/mv "$@"
 `)
 	s.writeFixture(filepath.Join("bin", "mv"), content, 0o755)
+}
+
+func (s *sandbox) resetEvents() {
+	s.t.Helper()
+	entries, err := os.ReadDir(s.events)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if err := os.RemoveAll(filepath.Join(s.events, entry.Name())); err != nil {
+			s.t.Fatal(err)
+		}
+	}
 }
 
 func (s *sandbox) writeFixture(relative string, data []byte, mode fs.FileMode) {
