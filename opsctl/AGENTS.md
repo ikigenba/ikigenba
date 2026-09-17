@@ -23,7 +23,6 @@ prerequisites — runs there.
 
 - Go 1.26 (`go version` must report 1.26+)
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
-- `llm-lint` on PATH, with its provider API key present in the environment
 - Linux amd64 gate environment, Bash 5.2+, and bubblewrap (`bwrap`) 0.11+
   with working unprivileged user, mount, PID, and network namespaces. These
   support installer subprocess tests inside the Go suite; they are not Go
@@ -101,15 +100,11 @@ skipped tests, no disabled linters laundering a failure.
 2. `go build ./...`
 3. `go test -race ./...`
 4. `golangci-lint run`
-5. `llm-lint cmd internal`
 
-llm-lint also loads this project's own rules from `lint-rules/` (wired via
-`.llm-lint.json`, found by ancestor walk). Rules are promoted individually:
-a promotion flips the rule file to `severity: error` and adds its id to the
-`enable` allowlist in `.llm-lint.json`. Un-promoted rules stay disabled — they
-make no LLM calls and print nothing — so every finding the gate reports fails
-it. The un-promoted backlog is the `severity: warning` files in `lint-rules/`;
-see `../docs/llm-lint-rule-candidates.md` for their provenance.
+`llm-lint` is available as an optional manual check through `make llm-lint`,
+but it is not a quality gate. Its configuration and project rules remain in
+`.llm-lint.json` and `lint-rules/`. The rule-candidate backlog and provenance
+are documented in `../docs/llm-lint-rule-candidates.md`.
 
 ## Commit conventions
 
