@@ -274,6 +274,7 @@ func TestInitMissingConfigurationIsReportedAsFindings(t *testing.T) {
 func TestInitHealthyPreflight(t *testing.T) {
 	// R-LIU3-NA5F R-LK20-11W4 R-LMHS-SLDI R-ELKW-EVLN
 	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL R-LRDE-BOCA
+	// R-LHM7-9IEQ R-LTT7-37TO R-A61A-1YZM
 	// R-JWO0-EHD7 R-5E43-77RM
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZA": {
@@ -286,14 +287,25 @@ func TestInitHealthyPreflight(t *testing.T) {
 		},
 	}}
 	deps := initDeps(t, map[string]string{
-		dns.KeyProvider: "route53",
-		dns.KeyZones:    "example.com:ZA,deep.example.com:ZB",
-		"host.name":     "API.Deep.Example.Com.",
-		"acme.email":    "admin@example.com",
-		"aws.region":    "us-east-2",
-		"backup.s3_uri": "s3://bucket/host/",
+		dns.KeyProvider:                "route53",
+		dns.KeyZones:                   "example.com:ZA,deep.example.com:ZB",
+		"host.name":                    "API.Deep.Example.Com.",
+		"acme.email":                   "stale@example.com",
+		"aws.region":                   "us-east-2",
+		"backup.s3_uri":                "s3://bucket/host/",
+		"backup.host_files_seconds":    "17",
+		"backup.service_files_seconds": "0",
+		"backup.service_db_seconds":    "3600",
+		"backup.service_wal_seconds":   "5",
 	})
 	if err := os.MkdirAll(filepath.Join(deps.Root, "etc/nginx/conf.d"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(deps.Root, "opt", "notes", "etc", "manifest.toml")
+	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("app = \"notes\"\nport = 4000\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var lookedUp []string
@@ -319,6 +331,15 @@ func TestInitHealthyPreflight(t *testing.T) {
 	deps.LookupHost = func(_ context.Context, name string) ([]string, error) {
 		resolved = append(resolved, name)
 		if strings.HasPrefix(name, "_opsctl-preflight.") {
+			store := config.Store{Root: deps.Root}
+			if err := store.Set("acme.email", "admin@example.com"); err != nil {
+				t.Fatal(err)
+			}
+			manifest := "app = \"notes\"\nport = 4100\ndefault = true\n" +
+				"\n[database]\nengine = \"sqlite\"\npath = \"state/notes.db\"\n"
+			if err := os.WriteFile(manifestPath, []byte(manifest), 0o600); err != nil {
+				t.Fatal(err)
+			}
 			return []string{"192.0.2.2", "192.0.2.1"}, nil
 		}
 		return []string{"192.0.2.1", "192.0.2.2", "192.0.2.1"}, nil
@@ -360,8 +381,8 @@ func TestInitHealthyPreflight(t *testing.T) {
 		"systemctl enable litestream.service",
 		"systemctl restart litestream.service",
 		"systemctl daemon-reload",
-		"systemctl disable ikigenba-backup-host.timer",
-		"systemctl stop ikigenba-backup-host.timer",
+		"systemctl enable ikigenba-backup-host.timer",
+		"systemctl restart ikigenba-backup-host.timer",
 		"systemctl disable ikigenba-backup-services.timer",
 		"systemctl stop ikigenba-backup-services.timer",
 		"systemctl enable ikigenba-renew-certificate.timer",
@@ -370,10 +391,51 @@ func TestInitHealthyPreflight(t *testing.T) {
 	if !reflect.DeepEqual(commands, wantCommands) {
 		t.Fatalf("setup commands = %#v, want %#v", commands, wantCommands)
 	}
+	nginxConfiguration, err := os.ReadFile(filepath.Join(deps.Root, "etc", "nginx", "conf.d", "ikigenba.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, wantFragment := range []string{
+		"server_name         notes.api.deep.example.com api.deep.example.com;",
+		"/etc/letsencrypt/live/api.deep.example.com/fullchain.pem",
+		"/etc/letsencrypt/live/api.deep.example.com/privkey.pem",
+	} {
+		if !strings.Contains(string(nginxConfiguration), wantFragment) {
+			t.Errorf("nginx configuration does not contain %q:\n%s", wantFragment, nginxConfiguration)
+		}
+	}
+	litestreamConfiguration, err := os.ReadFile(filepath.Join(deps.Root, "etc", "litestream.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, wantFragment := range []string{
+		filepath.Join(deps.Root, "opt", "notes", "state", "notes.db"),
+		"s3://bucket/host/notes/",
+		"snapshot:\n  interval: 3600s",
+		"sync-interval: 5s",
+	} {
+		if !strings.Contains(string(litestreamConfiguration), wantFragment) {
+			t.Errorf("litestream configuration does not contain %q:\n%s", wantFragment, litestreamConfiguration)
+		}
+	}
+	hostTimer, err := os.ReadFile(filepath.Join(deps.Root, "etc", "systemd", "system", "ikigenba-backup-host.timer"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(hostTimer), "OnBootSec=17s\nOnUnitActiveSec=17s\n") {
+		t.Errorf("host timer does not carry current period:\n%s", hostTimer)
+	}
+	renewalTimer, err := os.ReadFile(filepath.Join(deps.Root, "etc", "systemd", "system", "ikigenba-renew-certificate.timer"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(renewalTimer), "OnCalendar=*-*-* 00,12:00:00\n") {
+		t.Errorf("renewal timer does not carry the fixed schedule:\n%s", renewalTimer)
+	}
 }
 
 func TestInitStopsAtFirstSetupFailure(t *testing.T) {
-	// R-JWO0-EHD7
+	// R-LXGW-8J1R R-JWO0-EHD7
 	wantStdout := "nginx: ok (/bin/nginx)\n" +
 		"certbot: ok (/bin/certbot)\n" +
 		"systemctl: ok (/bin/systemctl)\n" +
@@ -390,11 +452,12 @@ func TestInitStopsAtFirstSetupFailure(t *testing.T) {
 		failCommand string
 		label       string
 		cause       string
+		completed   []string
 	}{
 		{name: "certificate", failCommand: "certbot certonly", label: "certbot certonly", cause: "certificate transport failed"},
-		{name: "nginx", failCommand: "nginx -t", label: "nginx -t", cause: "nginx transport failed"},
-		{name: "replication", failCommand: "systemctl enable litestream.service", label: "enable litestream.service", cause: "replication transport failed"},
-		{name: "timers", failCommand: "systemctl daemon-reload", label: "reload systemd units", cause: "timer transport failed"},
+		{name: "nginx", failCommand: "nginx -t", label: "nginx -t", cause: "nginx transport failed", completed: []string{"certificate"}},
+		{name: "replication", failCommand: "systemctl enable litestream.service", label: "enable litestream.service", cause: "replication transport failed", completed: []string{"certificate", "nginx"}},
+		{name: "timers", failCommand: "systemctl daemon-reload", label: "reload systemd units", cause: "timer transport failed", completed: []string{"certificate", "nginx", "litestream"}},
 	}
 
 	for _, tc := range tests {
@@ -457,6 +520,24 @@ func TestInitStopsAtFirstSetupFailure(t *testing.T) {
 						Stderr: []byte(tc.name + " captured stderr\n"),
 					}, errors.New(tc.cause)
 				}
+				marker := ""
+				switch invocation {
+				case certbotCommand:
+					marker = "certificate"
+				case "systemctl reload nginx":
+					marker = "nginx"
+				case "systemctl restart litestream.service":
+					marker = "litestream"
+				}
+				if marker != "" {
+					markerDir := filepath.Join(deps.Root, "var", "lib", "init-completed")
+					if err := os.MkdirAll(markerDir, 0o700); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(filepath.Join(markerDir, marker), []byte("complete\n"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
 				return host.Result{}, nil
 			}
 
@@ -470,6 +551,19 @@ func TestInitStopsAtFirstSetupFailure(t *testing.T) {
 			wantCommands := allCommands[:failIndex+1]
 			if !reflect.DeepEqual(commands, wantCommands) {
 				t.Fatalf("setup commands = %#v, want first-error prefix %#v", commands, wantCommands)
+			}
+			for _, marker := range []string{"certificate", "nginx", "litestream"} {
+				_, statErr := os.Stat(filepath.Join(deps.Root, "var", "lib", "init-completed", marker))
+				wantPresent := false
+				for _, completed := range tc.completed {
+					wantPresent = wantPresent || marker == completed
+				}
+				if wantPresent && statErr != nil {
+					t.Errorf("earlier successful %s state was not preserved: %v", marker, statErr)
+				}
+				if !wantPresent && !errors.Is(statErr, os.ErrNotExist) {
+					t.Errorf("later %s operation left state: %v", marker, statErr)
+				}
 			}
 			for _, captured := range []string{tc.cause, tc.name + " captured stdout", tc.name + " captured stderr"} {
 				if count := strings.Count(stderr, captured); count != 1 {
@@ -901,7 +995,7 @@ func TestInitRejectsEmptyWildcardAddressSet(t *testing.T) {
 }
 
 func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
-	// R-JWO0-EHD7
+	// R-LW8Z-URB2 R-JWO0-EHD7
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZONE": {
 			{Name: "example.com", Type: "SOA"},
@@ -919,10 +1013,43 @@ func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
 	deps.DNS.Open = func(context.Context, string) (dns.Provider, error) { return provider, nil }
 	deps.DNS.LookupNS = func(context.Context, string) ([]string, error) { return []string{"ns1"}, nil }
 	deps.LookupHost = func(context.Context, string) ([]string, error) { return []string{"192.0.2.1"}, nil }
-	deps.Execute = func(context.Context, host.Command) (host.Result, error) { return host.Result{}, nil }
+	enabled := map[string]bool{}
+	active := map[string]bool{}
+	deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+		if command.Name == "certbot" {
+			lineage := filepath.Join(deps.Root, "etc", "letsencrypt", "live", "example.com")
+			if err := os.MkdirAll(lineage, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			certificate := filepath.Join(lineage, "fullchain.pem")
+			if _, err := os.Stat(certificate); errors.Is(err, os.ErrNotExist) {
+				if err := os.WriteFile(certificate, []byte("not-due-certificate\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			return host.Result{}, nil
+		}
+		if command.Name != "systemctl" || len(command.Args) < 2 {
+			return host.Result{}, nil
+		}
+		unit := command.Args[len(command.Args)-1]
+		switch command.Args[0] {
+		case "enable":
+			enabled[unit] = true
+		case "disable":
+			enabled[unit] = false
+		case "start", "restart":
+			active[unit] = true
+		case "stop":
+			active[unit] = false
+		}
+		return host.Result{}, nil
+	}
 
 	stdout1, stderr1, code1 := invoke([]string{"init"}, deps)
 	afterFirst := treeState(t, deps.Root)
+	enabledAfterFirst := cloneBoolMap(enabled)
+	activeAfterFirst := cloneBoolMap(active)
 	stdout2, stderr2, code2 := invoke([]string{"init"}, deps)
 	afterSecond := treeState(t, deps.Root)
 	want := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\nlitestream: ok (/bin/litestream)\n" +
@@ -938,6 +1065,27 @@ func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
 	if !reflect.DeepEqual(afterFirst, afterSecond) {
 		t.Errorf("second setup changed generated state:\nfirst  %#v\nsecond %#v", afterFirst, afterSecond)
 	}
+	if !reflect.DeepEqual(enabled, enabledAfterFirst) || !reflect.DeepEqual(active, activeAfterFirst) {
+		t.Errorf("second setup changed configured unit state: enabled %v -> %v, active %v -> %v",
+			enabledAfterFirst, enabled, activeAfterFirst, active)
+	}
+	for _, unit := range []string{"ikigenba-backup-host.timer", "ikigenba-backup-services.timer"} {
+		if enabled[unit] || active[unit] {
+			t.Errorf("zero-period %s state = enabled %t active %t, want disabled and stopped", unit, enabled[unit], active[unit])
+		}
+	}
+	const renewal = "ikigenba-renew-certificate.timer"
+	if !enabled[renewal] || !active[renewal] {
+		t.Errorf("renewal timer state = enabled %t active %t, want enabled and active", enabled[renewal], active[renewal])
+	}
+}
+
+func cloneBoolMap(source map[string]bool) map[string]bool {
+	clone := make(map[string]bool, len(source))
+	for key, value := range source {
+		clone[key] = value
+	}
+	return clone
 }
 
 func initDeps(t *testing.T, values map[string]string) cli.Deps {
