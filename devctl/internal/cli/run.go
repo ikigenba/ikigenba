@@ -5,9 +5,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
+
+var version = "v0.1.0"
 
 const usage = `Usage: devctl [options] <command> [arguments]
 
@@ -36,6 +39,30 @@ Exit codes:
 Run 'devctl <command> --help' for details on a command.
 `
 
+const versionUsage = `Usage: devctl version
+
+Print the version.
+`
+
+var commandSet = map[string]struct{}{
+	"version": {},
+	"space":   {},
+	"secrets": {},
+	"build":   {},
+	"deploy":  {},
+	"restore": {},
+	"remove":  {},
+}
+
+type topLevel struct {
+	account     string
+	command     string
+	arguments   []string
+	showHelp    bool
+	showVersion bool
+	err         string
+}
+
 // Run executes one devctl invocation and returns its process exit code.
 func Run(_ context.Context, args []string, _ io.Reader, stdout, stderr io.Writer, deps seam.Deps) int {
 	deps = deps.Defaults()
@@ -43,11 +70,87 @@ func Run(_ context.Context, args []string, _ io.Reader, stdout, stderr io.Writer
 		_, _ = fmt.Fprintln(stderr, "devctl: must not run as root")
 		return 3
 	}
-	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
+
+	invocation := parseTopLevel(args)
+	if invocation.err != "" {
+		return usageError(stderr, invocation.err, "devctl --help")
+	}
+	if invocation.showHelp {
 		_, _ = fmt.Fprint(stdout, usage)
 		return 0
 	}
+	if invocation.showVersion {
+		_, _ = fmt.Fprintln(stdout, version)
+		return 0
+	}
+	if invocation.command == "" {
+		return usageError(stderr, "no command given", "devctl --help")
+	}
+	if _, ok := commandSet[invocation.command]; !ok {
+		return usageError(stderr, "unknown command '"+invocation.command+"'", "devctl --help")
+	}
+	if invocation.command == "version" {
+		return runVersion(invocation.arguments, stdout, stderr)
+	}
 
-	_, _ = fmt.Fprintln(stderr, "devctl: a command is required")
+	// Command-specific phases replace this successful no-op with their dispatch.
+	return 0
+}
+
+func parseTopLevel(args []string) topLevel {
+	var result topLevel
+	for index := 0; index < len(args); index++ {
+		argument := args[index]
+		switch {
+		case argument == "-h" || argument == "--help":
+			result.showHelp = true
+		case argument == "-V" || argument == "--version":
+			result.showVersion = true
+		case argument == "--account":
+			if index+1 == len(args) || strings.HasPrefix(args[index+1], "-") || isCommand(args[index+1]) {
+				result.err = "option '--account' requires a value"
+				return result
+			}
+			index++
+			result.account = args[index]
+		case strings.HasPrefix(argument, "--account="):
+			result.account = strings.TrimPrefix(argument, "--account=")
+			if result.account == "" {
+				result.err = "option '--account' requires a value"
+				return result
+			}
+		case strings.HasPrefix(argument, "-"):
+			result.err = "unknown option '" + argument + "'"
+			return result
+		default:
+			result.command = argument
+			result.arguments = args[index+1:]
+			return result
+		}
+	}
+	return result
+}
+
+func isCommand(argument string) bool {
+	_, ok := commandSet[argument]
+	return ok
+}
+
+func runVersion(args []string, stdout, stderr io.Writer) int {
+	for _, argument := range args {
+		if argument == "--help" || argument == "-h" {
+			_, _ = fmt.Fprint(stdout, versionUsage)
+			return 0
+		}
+	}
+	if len(args) != 0 {
+		return usageError(stderr, "version takes no arguments", "devctl version --help")
+	}
+	_, _ = fmt.Fprintln(stdout, version)
+	return 0
+}
+
+func usageError(stderr io.Writer, message, helpCommand string) int {
+	_, _ = fmt.Fprintf(stderr, "devctl: %s\n\nsee '%s' for usage\n", message, helpCommand)
 	return 2
 }

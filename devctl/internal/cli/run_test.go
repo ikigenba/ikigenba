@@ -7,6 +7,10 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
+	"reflect"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -14,6 +18,33 @@ import (
 )
 
 var _ func(context.Context, []string, io.Reader, io.Writer, io.Writer, seam.Deps) int = Run
+
+const expectedUsage = `Usage: devctl [options] <command> [arguments]
+
+Manage the ikigenba platform from the developer's machine. Never run as root.
+
+Commands:
+  version   print the version
+  space     list, create, destroy, stop, start, initialise, and inspect spaces
+  secrets   push and list an app's secrets for a space
+  build     build one app into its deployable file
+  deploy    put a built app file on a space
+  remove    take an app off a space
+  restore   put a space's app back from its backups
+
+Options:
+  --help              print this help
+  --version           print the version
+  --account <name>    AWS shared-config profile to act in
+
+Exit codes:
+  0  success
+  1  the operation failed
+  2  usage error, or a preflight check failed
+  3  refused: devctl must not run as root
+
+Run 'devctl <command> --help' for details on a command.
+`
 
 func TestRunReturnsWithoutTerminatingCaller(t *testing.T) {
 	// R-U72C-BSYD
@@ -37,12 +68,171 @@ func TestRunReturnsWithoutTerminatingCaller(t *testing.T) {
 		return true
 	})
 
-	var stdout, stderr bytes.Buffer
-	code := Run(context.Background(), []string{"--help"}, strings.NewReader(""), &stdout, &stderr, seam.Deps{EUID: 1})
-	if code != 0 {
-		t.Fatalf("Run returned %d, want 0", code)
+	result := invoke("--help")
+	if result.code != 0 {
+		t.Fatalf("Run returned %d, want 0", result.code)
 	}
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr = %q, want empty", stderr.String())
+	if result.stderr != "" {
+		t.Fatalf("stderr = %q, want empty", result.stderr)
+	}
+}
+
+func TestTopLevelGrammar(t *testing.T) {
+	// R-D4F7-8UZB
+	for _, args := range [][]string{
+		{"version"}, {"-V"}, {"--version"}, {"-h"}, {"--help"},
+		{"--account", "work", "version"}, {"--account=work", "version"},
+	} {
+		if got := invoke(args...).code; got != 0 {
+			t.Errorf("Run(%q) = %d, want 0", args, got)
+		}
+	}
+	for _, option := range []string{"-x", "--verbose", "--", "-version"} {
+		result := invoke(option)
+		if result.code != 2 || !strings.HasPrefix(result.stderr, "devctl: unknown option '") {
+			t.Errorf("Run(%q) = (%d, %q), want unknown-option usage error", option, result.code, result.stderr)
+		}
+	}
+}
+
+func TestArgumentsAfterCommandAreCommandArguments(t *testing.T) {
+	// R-9T69-QTTI
+	assertResult(t, invoke("version", "--help"), 0, "Usage: devctl version\n\nPrint the version.\n", "")
+	assertResult(t, invoke("version", "--account", "work"), 2, "", "devctl: version takes no arguments\n\nsee 'devctl version --help' for usage\n")
+}
+
+func TestNoCommand(t *testing.T) {
+	// R-D82W-E67E
+	assertResult(t, invoke(), 2, "", "devctl: no command given\n\nsee 'devctl --help' for usage\n")
+}
+
+func TestUnknownCommand(t *testing.T) {
+	// R-D9AS-RXY3
+	assertResult(t, invoke("frobnicate"), 2, "", "devctl: unknown command 'frobnicate'\n\nsee 'devctl --help' for usage\n")
+}
+
+func TestUnknownTopLevelOption(t *testing.T) {
+	// R-DAIP-5POS
+	assertResult(t, invoke("--frobnicate"), 2, "", "devctl: unknown option '--frobnicate'\n\nsee 'devctl --help' for usage\n")
+}
+
+func TestVersionDeclaration(t *testing.T) {
+	// R-DFEA-OSNK
+	if !regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`).MatchString(version) {
+		t.Fatalf("version = %q, want a stable semantic version", version)
+	}
+	declaration := findVersionDeclaration(t)
+	if declaration == nil {
+		t.Fatal("run.go has no package-level var version")
+	}
+}
+
+func TestVersionOutput(t *testing.T) {
+	// R-DGM7-2KE9
+	for _, args := range [][]string{{"version"}, {"-V"}, {"--version"}} {
+		assertResult(t, invoke(args...), 0, version+"\n", "")
+	}
+}
+
+func TestVersionHelp(t *testing.T) {
+	// R-T9YB-VTNZ
+	for _, option := range []string{"--help", "-h"} {
+		assertResult(t, invoke("version", option), 0, "Usage: devctl version\n\nPrint the version.\n", "")
+	}
+}
+
+func TestVersionRejectsArguments(t *testing.T) {
+	// R-DJ1Z-U3VN
+	for _, args := range [][]string{{"extra"}, {"--account", "work"}, {"-V"}} {
+		assertResult(t, invoke(append([]string{"version"}, args...)...), 2, "", "devctl: version takes no arguments\n\nsee 'devctl version --help' for usage\n")
+	}
+}
+
+func TestTopLevelCommandSet(t *testing.T) {
+	// R-BYZH-IH0F
+	got := make([]string, 0, len(commandSet))
+	for command := range commandSet {
+		got = append(got, command)
+	}
+	sort.Strings(got)
+	want := []string{"build", "deploy", "remove", "restore", "secrets", "space", "version"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("top-level commands = %q, want %q", got, want)
+	}
+	for _, command := range got {
+		if result := invoke(command); strings.Contains(result.stderr, "unknown command") {
+			t.Errorf("Run(%q) rejected a command in the command set", command)
+		}
+	}
+}
+
+func TestTopLevelHelp(t *testing.T) {
+	// R-C3V3-1JZ7
+	for _, option := range []string{"--help", "-h"} {
+		assertResult(t, invoke(option), 0, expectedUsage, "")
+	}
+}
+
+func TestVersionIsInitializedInSource(t *testing.T) {
+	// R-GV4C-IOFR
+	declaration := findVersionDeclaration(t)
+	if declaration == nil || len(declaration.Values) != 1 {
+		t.Fatal("version has no source initializer")
+	}
+	literal, ok := declaration.Values[0].(*ast.BasicLit)
+	if !ok || literal.Kind != token.STRING {
+		t.Fatal("version is not initialized directly from source text")
+	}
+	sourceVersion, err := strconv.Unquote(literal.Value)
+	if err != nil {
+		t.Fatalf("parse version initializer: %v", err)
+	}
+	if version != sourceVersion {
+		t.Fatalf("built version = %q, source version = %q", version, sourceVersion)
+	}
+}
+
+func findVersionDeclaration(t *testing.T) *ast.ValueSpec {
+	t.Helper()
+	file, err := parser.ParseFile(token.NewFileSet(), "run.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, declaration := range file.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok != token.VAR {
+			continue
+		}
+		for _, specification := range general.Specs {
+			value := specification.(*ast.ValueSpec)
+			if len(value.Names) == 1 && value.Names[0].Name == "version" {
+				return value
+			}
+		}
+	}
+	return nil
+}
+
+type runResult struct {
+	code           int
+	stdout, stderr string
+}
+
+func invoke(args ...string) runResult {
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), args, strings.NewReader(""), &stdout, &stderr, seam.Deps{EUID: 1})
+	return runResult{code: code, stdout: stdout.String(), stderr: stderr.String()}
+}
+
+func assertResult(t *testing.T, got runResult, wantCode int, wantStdout, wantStderr string) {
+	t.Helper()
+	if got.code != wantCode {
+		t.Errorf("exit code = %d, want %d", got.code, wantCode)
+	}
+	if got.stdout != wantStdout {
+		t.Errorf("stdout = %q, want %q", got.stdout, wantStdout)
+	}
+	if got.stderr != wantStderr {
+		t.Errorf("stderr = %q, want %q", got.stderr, wantStderr)
 	}
 }
