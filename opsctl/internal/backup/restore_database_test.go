@@ -133,7 +133,7 @@ func TestRestoreDatabaseAtRejectsHistoryEntirelyAfterCutoff(t *testing.T) {
 }
 
 func TestRestoreDatabaseStartsLitestreamWhenConfigurationUnchanged(t *testing.T) {
-	// R-G2KD-J7PA
+	// R-G2KD-J7PA R-JWO0-EHD7
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	manifest := "app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n"

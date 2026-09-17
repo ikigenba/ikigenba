@@ -11,8 +11,12 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ikigenba/ikigenba/opsctl/internal/backup"
+	"github.com/ikigenba/ikigenba/opsctl/internal/cert"
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 	"github.com/ikigenba/ikigenba/opsctl/internal/dns"
+	"github.com/ikigenba/ikigenba/opsctl/internal/host"
+	"github.com/ikigenba/ikigenba/opsctl/internal/nginx"
 )
 
 const initUsage = `Usage: opsctl init
@@ -103,7 +107,7 @@ func runInitPreflight(stdout, stderr io.Writer, deps Deps, entries []config.Entr
 	preflight.checkZones()
 	preflight.checkHostZone()
 	preflight.checkWildcard()
-	return preflight.finish(stdout)
+	return preflight.finish(stdout, stderr)
 }
 
 type initPreflight struct {
@@ -272,12 +276,35 @@ func (p *initPreflight) compareWildcard(probe, left, right string) {
 	_, _ = fmt.Fprintf(&p.output, "wildcard %s: ok (%s)\n", hostName, left)
 }
 
-func (p *initPreflight) finish(stdout io.Writer) exitCode {
+func (p *initPreflight) finish(stdout, stderr io.Writer) exitCode {
 	if code := writeOut(stdout, p.output.String()); code != exitOK {
 		return code
 	}
 	if !p.allOK {
 		return exitUsage
+	}
+	ctx := context.Background()
+	env := host.Env{Root: p.deps.Root, Getenv: p.deps.Getenv, Execute: p.deps.Execute, Now: p.deps.Now}
+	email, err := p.store.Get("acme.email")
+	if errors.Is(err, config.ErrNotSet) {
+		email = ""
+		err = nil
+	}
+	if err == nil {
+		err = cert.Obtain(ctx, env, p.host, email)
+	}
+	if err == nil {
+		err = nginx.Apply(ctx, env, p.host)
+	}
+	if err == nil {
+		err = backup.SetupReplication(ctx, env, p.store)
+	}
+	if err == nil {
+		err = backup.SetupTimers(ctx, env, p.store)
+	}
+	if err != nil {
+		writeDiagnostic(stderr, err)
+		return exitFail
 	}
 	return exitOK
 }

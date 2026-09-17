@@ -22,7 +22,7 @@ import (
 )
 
 func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
-	// R-OJB9-VRYL
+	// R-OJB9-VRYL R-JWO0-EHD7
 	entries, err := os.ReadDir(filepath.Join("..", "apps"))
 	if err != nil {
 		t.Fatal(err)
@@ -301,8 +301,14 @@ func TestInstallCLIStartupFailureKeepsEffectsAndRetrySucceeds(t *testing.T) {
 		unitInfoAfter.Mode() != unitInfoBefore.Mode() || !unitInfoAfter.ModTime().Equal(unitInfoBefore.ModTime()) {
 		t.Fatal("retry changed the shared Litestream unit")
 	}
-	if fixture.commandCount("systemctl restart litestream.service") != 0 {
-		t.Fatalf("retry commands = %v; Litestream was restarted for unchanged configuration", fixture.commands)
+	for _, forbidden := range []string{
+		"systemctl restart litestream.service",
+		"systemctl enable litestream.service",
+		"systemctl disable litestream.service",
+	} {
+		if fixture.commandCount(forbidden) != 0 {
+			t.Fatalf("retry commands = %v; unexpected Litestream control %q", fixture.commands, forbidden)
+		}
 	}
 	stateContents, stateErr := rootFS.ReadFile("opt/notes/state/keep")
 	cacheContents, cacheErr := rootFS.ReadFile("opt/notes/cache/keep")

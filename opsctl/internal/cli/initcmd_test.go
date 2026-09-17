@@ -274,6 +274,7 @@ func TestInitMissingConfigurationIsReportedAsFindings(t *testing.T) {
 func TestInitHealthyPreflight(t *testing.T) {
 	// R-LIU3-NA5F R-LK20-11W4 R-LMHS-SLDI R-ELKW-EVLN
 	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL R-LRDE-BOCA
+	// R-JWO0-EHD7
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZA": {
 			{Name: "example.com", Type: "SOA"},
@@ -288,7 +289,13 @@ func TestInitHealthyPreflight(t *testing.T) {
 		dns.KeyProvider: "route53",
 		dns.KeyZones:    "example.com:ZA,deep.example.com:ZB",
 		"host.name":     "API.Deep.Example.Com.",
+		"acme.email":    "admin@example.com",
+		"aws.region":    "us-east-2",
+		"backup.s3_uri": "s3://bucket/host/",
 	})
+	if err := os.MkdirAll(filepath.Join(deps.Root, "etc/nginx/conf.d"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	var lookedUp []string
 	deps.LookPath = func(name string) (string, error) {
 		lookedUp = append(lookedUp, name)
@@ -316,6 +323,11 @@ func TestInitHealthyPreflight(t *testing.T) {
 		}
 		return []string{"192.0.2.1", "192.0.2.2", "192.0.2.1"}, nil
 	}
+	var commands []string
+	deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+		commands = append(commands, strings.Join(append([]string{command.Name}, command.Args...), " "))
+		return host.Result{}, nil
+	}
 
 	want := "nginx: ok (/bin/nginx)\n" +
 		"certbot: ok (/bin/certbot)\n" +
@@ -340,6 +352,131 @@ func TestInitHealthyPreflight(t *testing.T) {
 	}
 	if openCalls != 1 {
 		t.Errorf("provider open calls = %d, want 1", openCalls)
+	}
+	wantCommands := []string{
+		"certbot certonly --non-interactive --agree-tos --email admin@example.com --manual --preferred-challenges dns --manual-auth-hook opsctl dns acme-auth --manual-cleanup-hook opsctl dns acme-cleanup --deploy-hook if systemctl is-active --quiet nginx; then systemctl reload nginx; fi --cert-name api.deep.example.com -d api.deep.example.com -d *.api.deep.example.com --keep-until-expiring --config-dir " + filepath.Join(deps.Root, "etc/letsencrypt") + " --work-dir " + filepath.Join(deps.Root, "var/lib/letsencrypt") + " --logs-dir " + filepath.Join(deps.Root, "var/log/letsencrypt"),
+		"nginx -t",
+		"systemctl reload nginx",
+		"systemctl enable litestream.service",
+		"systemctl restart litestream.service",
+		"systemctl daemon-reload",
+		"systemctl disable ikigenba-backup-host.timer",
+		"systemctl stop ikigenba-backup-host.timer",
+		"systemctl disable ikigenba-backup-services.timer",
+		"systemctl stop ikigenba-backup-services.timer",
+		"systemctl enable ikigenba-renew-certificate.timer",
+		"systemctl restart ikigenba-renew-certificate.timer",
+	}
+	if !reflect.DeepEqual(commands, wantCommands) {
+		t.Fatalf("setup commands = %#v, want %#v", commands, wantCommands)
+	}
+}
+
+func TestInitStopsAtFirstSetupFailure(t *testing.T) {
+	// R-JWO0-EHD7
+	wantStdout := "nginx: ok (/bin/nginx)\n" +
+		"certbot: ok (/bin/certbot)\n" +
+		"systemctl: ok (/bin/systemctl)\n" +
+		"litestream: ok (/bin/litestream)\n" +
+		"dns.provider: ok (route53)\n" +
+		"dns.zones: ok (example.com)\n" +
+		"host.name: ok (api.example.com)\n" +
+		"zone example.com: ok (route53 ZA, 1 nameservers delegated)\n" +
+		"host api.example.com: ok (zone example.com)\n" +
+		"wildcard api.example.com: ok (192.0.2.10)\n"
+
+	tests := []struct {
+		name        string
+		failCommand string
+		label       string
+		cause       string
+	}{
+		{name: "certificate", failCommand: "certbot certonly", label: "certbot certonly", cause: "certificate transport failed"},
+		{name: "nginx", failCommand: "nginx -t", label: "nginx -t", cause: "nginx transport failed"},
+		{name: "replication", failCommand: "systemctl enable litestream.service", label: "enable litestream.service", cause: "replication transport failed"},
+		{name: "timers", failCommand: "systemctl daemon-reload", label: "reload systemd units", cause: "timer transport failed"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := &fakeDNSProvider{records: map[string][]dns.Record{
+				"ZA": {
+					{Name: "example.com", Type: "SOA"},
+					{Name: "example.com", Type: "NS", Values: []string{"ns1"}},
+				},
+			}}
+			deps := initDeps(t, map[string]string{
+				dns.KeyProvider: "route53",
+				dns.KeyZones:    "example.com:ZA",
+				"host.name":     "api.example.com",
+				"acme.email":    "admin@example.com",
+				"aws.region":    "us-east-2",
+				"backup.s3_uri": "s3://bucket/host/",
+			})
+			if err := os.MkdirAll(filepath.Join(deps.Root, "etc/nginx/conf.d"), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			deps.LookPath = foundInitTools
+			deps.DNS.Open = func(context.Context, string) (dns.Provider, error) {
+				return provider, nil
+			}
+			deps.DNS.LookupNS = func(context.Context, string) ([]string, error) {
+				return []string{"ns1"}, nil
+			}
+			deps.LookupHost = func(context.Context, string) ([]string, error) {
+				return []string{"192.0.2.10"}, nil
+			}
+
+			certbotCommand := "certbot certonly --non-interactive --agree-tos --email admin@example.com --manual --preferred-challenges dns --manual-auth-hook opsctl dns acme-auth --manual-cleanup-hook opsctl dns acme-cleanup --deploy-hook if systemctl is-active --quiet nginx; then systemctl reload nginx; fi --cert-name api.example.com -d api.example.com -d *.api.example.com --keep-until-expiring --config-dir " + filepath.Join(deps.Root, "etc/letsencrypt") + " --work-dir " + filepath.Join(deps.Root, "var/lib/letsencrypt") + " --logs-dir " + filepath.Join(deps.Root, "var/log/letsencrypt")
+			allCommands := []string{
+				certbotCommand,
+				"nginx -t",
+				"systemctl reload nginx",
+				"systemctl enable litestream.service",
+				"systemctl restart litestream.service",
+				"systemctl daemon-reload",
+			}
+			failIndex := -1
+			for i, command := range allCommands {
+				if command == tc.failCommand || strings.HasPrefix(command, tc.failCommand+" ") {
+					failIndex = i
+					break
+				}
+			}
+			if failIndex < 0 {
+				t.Fatalf("failure command %q absent from setup sequence", tc.failCommand)
+			}
+
+			var commands []string
+			deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+				invocation := strings.Join(append([]string{command.Name}, command.Args...), " ")
+				commands = append(commands, invocation)
+				if invocation == allCommands[failIndex] {
+					return host.Result{
+						Stdout: []byte(tc.name + " captured stdout\n"),
+						Stderr: []byte(tc.name + " captured stderr\n"),
+					}, errors.New(tc.cause)
+				}
+				return host.Result{}, nil
+			}
+
+			stdout, stderr, code := invoke([]string{"init"}, deps)
+			wantStderr := "opsctl: " + tc.label + ": " + tc.cause + "\n\n" +
+				"> " + tc.name + " captured stdout\n" +
+				"> " + tc.name + " captured stderr\n"
+			if code != 1 || stdout != wantStdout || stderr != wantStderr {
+				t.Fatalf("exit %d stdout %q stderr %q, want exit 1 stdout %q stderr %q", code, stdout, stderr, wantStdout, wantStderr)
+			}
+			wantCommands := allCommands[:failIndex+1]
+			if !reflect.DeepEqual(commands, wantCommands) {
+				t.Fatalf("setup commands = %#v, want first-error prefix %#v", commands, wantCommands)
+			}
+			for _, captured := range []string{tc.cause, tc.name + " captured stdout", tc.name + " captured stderr"} {
+				if count := strings.Count(stderr, captured); count != 1 {
+					t.Errorf("diagnostic contains %q %d times, want once: %q", captured, count, stderr)
+				}
+			}
+		})
 	}
 }
 
@@ -763,8 +900,8 @@ func TestInitRejectsEmptyWildcardAddressSet(t *testing.T) {
 	}
 }
 
-func TestInitIsReadOnlyAndRepeatable(t *testing.T) {
-	// R-LSLA-PG2Z
+func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
+	// R-JWO0-EHD7
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZONE": {
 			{Name: "example.com", Type: "SOA"},
@@ -773,20 +910,21 @@ func TestInitIsReadOnlyAndRepeatable(t *testing.T) {
 	}}
 	deps := initDeps(t, map[string]string{
 		dns.KeyProvider: "route53", dns.KeyZones: "example.com:ZONE", "host.name": "example.com",
+		"acme.email": "admin@example.com", "aws.region": "us-east-2", "backup.s3_uri": "s3://bucket/host/",
 	})
+	if err := os.MkdirAll(filepath.Join(deps.Root, "etc/nginx/conf.d"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	deps.LookPath = foundInitTools
 	deps.DNS.Open = func(context.Context, string) (dns.Provider, error) { return provider, nil }
 	deps.DNS.LookupNS = func(context.Context, string) ([]string, error) { return []string{"ns1"}, nil }
 	deps.LookupHost = func(context.Context, string) ([]string, error) { return []string{"192.0.2.1"}, nil }
-	deps.Execute = func(context.Context, host.Command) (host.Result, error) {
-		t.Fatal("setup process invoked during successful preflight")
-		return host.Result{}, nil
-	}
-	before := treeState(t, deps.Root)
+	deps.Execute = func(context.Context, host.Command) (host.Result, error) { return host.Result{}, nil }
 
 	stdout1, stderr1, code1 := invoke([]string{"init"}, deps)
+	afterFirst := treeState(t, deps.Root)
 	stdout2, stderr2, code2 := invoke([]string{"init"}, deps)
-	after := treeState(t, deps.Root)
+	afterSecond := treeState(t, deps.Root)
 	want := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\nlitestream: ok (/bin/litestream)\n" +
 		"dns.provider: ok (route53)\ndns.zones: ok (example.com)\nhost.name: ok (example.com)\n" +
 		"zone example.com: ok (route53 ZONE, 1 nameservers delegated)\n" +
@@ -797,8 +935,8 @@ func TestInitIsReadOnlyAndRepeatable(t *testing.T) {
 	if stdout1 != stdout2 || stderr1 != stderr2 || code1 != code2 {
 		t.Errorf("runs differ: (%q, %q, %d) then (%q, %q, %d)", stdout1, stderr1, code1, stdout2, stderr2, code2)
 	}
-	if !reflect.DeepEqual(before, after) {
-		t.Errorf("Root changed:\nbefore %#v\nafter  %#v", before, after)
+	if !reflect.DeepEqual(afterFirst, afterSecond) {
+		t.Errorf("second setup changed generated state:\nfirst  %#v\nsecond %#v", afterFirst, afterSecond)
 	}
 }
 
