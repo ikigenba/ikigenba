@@ -42,7 +42,7 @@ they do not broaden the output boundary.
 Writes are limited to the selected project's design, the project ground
 needed to build it, and supporting review/evidence or issue files under
 its `specs/`. No source or test changes. Do not run `build-spec`, invoke
-the `check-spec` skill and its baseline commit, or commit merely because
+the `check-spec` skill, or commit merely because
 drafting finished. These are separate, human-gated skills.
 
 ## The coverage ledger
@@ -226,5 +226,5 @@ stories are already adequately designed and independently verified,
 report that result without rewriting requirements. Label incomplete work
 as a partial draft. A complete draft has verified coverage, consistent
 contracts, concrete ground, and no unresolved design decisions; any
-pending external observation is explicitly identified as blocking
-`check-spec`. Never claim the baseline has been checked or built.
+pending external observation is explicitly identified so `check-spec`
+can report it. Never claim the design has been checked or built.

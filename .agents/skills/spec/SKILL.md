@@ -80,8 +80,8 @@ Each operation is a sibling skill. All five load this one for the shared rules a
 
 - `draft-stories` — turn the user's intent into stories under `specs/stories/`, new or updated, grilling the user for what the intent leaves open. The format is `references/story-format.md` in this skill.
 - `draft-spec` — author a design, and the `AGENTS.md` ground beside it, by recursive delegation from user stories, for one sub-project at a time. The design format and id rules it authors against are `references/design-format.md` in this skill.
-- `check-spec` — check the design is buildable, show the gap, and commit the baseline the run starts from.
+- `check-spec` — report whether the design is buildable and show the gap. Feedback only; it gates nothing and commits nothing.
 - `build-spec` — close the mechanical gap by recursive delegation.
 - `audit-spec` — audit adequacy of tests for ids already proved on both sides, by recursive delegation like `build-spec`.
 
-`check-spec`, `build-spec`, and `audit-spec` are human-gated: an agent never starts one on its own. Each commits, edits tests, or both.
+`check-spec`, `build-spec`, and `audit-spec` are human-gated: an agent never starts one on its own. `build-spec` and `audit-spec` commit, edit tests, or both; `check-spec` only reports.

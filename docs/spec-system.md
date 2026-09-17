@@ -65,11 +65,11 @@ The `spec` skill is the shared foundation — layout, ids, the gap, project grou
 
 - **`draft-stories`** — turn what the user wants into stories under `specs/stories/`, new or updated. It grills you (via `grill-me`), one question at a time, for whatever the intent leaves open — an output text, an exit code, a postcondition is never invented. Produces stories, not design.
 - **`draft-spec`** — turn `specs/stories/` into a design and the `AGENTS.md` ground beside it, for one sub-project, by recursive delegation with independent verification of story coverage and contract consistency. It asks you only for decisions the inputs cannot settle, after the available work is exhausted. This is the only operation that mints ids.
-- **`check-spec`** — confirm the design is buildable: the ground exists, every external fact is proven, no requirement reaches across the project boundary, the gap is shown, and the baseline is committed so the run starts from a known point.
+- **`check-spec`** — report whether the design is buildable: the ground exists, every external fact is proven, no requirement reaches across the project boundary, and the gap is shown. It is feedback only: it gates nothing and commits nothing.
 - **`build-spec`** — close the gap.
 - **`audit-spec`** — judge whether existing tests genuinely verify their requirements. Inadequate tests are un-tagged, once a fresh verifier confirms, so the next build run rebuilds them; requirements that turn out to be untestable or wrongly designed become issues.
 
-`check-spec`, `build-spec`, and `audit-spec` are human-gated: each commits, edits tests, or both, so an agent never starts one on its own.
+`check-spec`, `build-spec`, and `audit-spec` are human-gated: an agent never starts one on its own. `build-spec` and `audit-spec` commit, edit tests, or both; `check-spec` only reports.
 
 ## The build run
 
@@ -79,7 +79,7 @@ The `spec` skill is the shared foundation — layout, ids, the gap, project grou
 - A **leaf** holds one scope — one design document, or a cluster of ids within one — and implements the code and tagged tests. A scope that turns out too large is split, never pushed through.
 - A **verifier** holds one scope and tries to prove it is not closed: every tagged test must genuinely assert its requirement, every gate must exit 0, nothing skipped or suppressed. It never edits a file.
 
-No work is accepted on the word of the agent that did it. Every scope is verified by a fresh agent, and the coordinator reruns the greps and gates itself. Work lands in green phase commits per the project's commit convention, each naming its ids. Because "done" is derived from the committed tests, an interrupted run resumes simply by rerunning `build-spec` after `check-spec`.
+No work is accepted on the word of the agent that did it. Every scope is verified by a fresh agent, and the coordinator reruns the greps and gates itself. Work lands in green phase commits per the project's commit convention, each naming its ids. Because "done" is derived from the committed tests, an interrupted run resumes simply by rerunning `build-spec`.
 
 `draft-spec` and `audit-spec` use the same tree for the same reason — authors or auditors in place of leaves, every result checked by a fresh verifier.
 
