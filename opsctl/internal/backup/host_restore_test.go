@@ -488,6 +488,17 @@ func restoreHostEnv(t *testing.T, root string) host.Env {
 			if reflect.DeepEqual(command.Args, []string{"stop", "litestream.service"}) {
 				return host.Result{}, nil
 			}
+			if len(command.Args) == 2 && command.Args[0] == "start" {
+				return host.Result{}, nil
+			}
+		case "litestream":
+			if len(command.Args) == 5 && command.Args[0] == "ltx" {
+				return host.Result{Stdout: []byte(`[{"timestamp":"2026-09-16T11:00:00Z"}]`)}, nil
+			}
+			if len(command.Args) >= 4 && command.Args[0] == "restore" && command.Args[1] == "-o" {
+				writeRestoreSQLite(t, command.Args[2])
+				return host.Result{}, nil
+			}
 		case "getent":
 			if reflect.DeepEqual(command.Args, []string{"passwd", "ikigenba"}) {
 				return host.Result{Stdout: []byte(fmt.Sprintf("ikigenba:x:%d:%d::/nonexistent:/usr/sbin/nologin\n", os.Getuid(), os.Getgid()))}, nil

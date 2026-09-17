@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -156,7 +157,212 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 		Name:   "files",
 		Detail: fmt.Sprintf("/opt/%s/etc, /opt/%s/state, %d files", service, service, count),
 	})
+	stopped := restoreStoppedUnits(unit, unitActive, databaseIncoming)
+	if databaseIncoming {
+		database := *source.manifest.Database
+		recovered, restoreErr := restoreServiceDatabase(ctx, env, prefix, service, database, at)
+		if restoreErr != nil {
+			return failRestoreStep(report, service, "db", "litestream restore", restoreErr, stopped)
+		}
+		if walErr := setRestoredDatabaseWAL(env.Root, service, database.Path); walErr != nil {
+			return failRestoreStep(report, service, "db", "wal mode", walErr, stopped)
+		}
+		if ownershipErr := applyRestoredDatabaseOwnership(env.Root, service, database.Path, identity); ownershipErr != nil {
+			return failRestoreStep(report, service, "db", "database ownership", ownershipErr, stopped)
+		}
+		detail := "/opt/" + service + "/" + database.Path
+		if at == nil {
+			detail += ", newest " + recovered
+		} else {
+			detail += ", at " + at.Format(time.RFC3339Nano)
+		}
+		report.Steps = append(report.Steps, RestoreStep{Name: "db", Detail: detail})
+
+		changed, regenerateErr := Regenerate(ctx, env, store)
+		if regenerateErr != nil {
+			return failRestoreStep(report, service, "litestream", "litestream regeneration", regenerateErr, stopped)
+		}
+		regenerateDetail := "unchanged"
+		if changed {
+			regenerateDetail = database.Path
+		}
+		report.Steps = append(report.Steps, RestoreStep{Name: "litestream", Detail: regenerateDetail})
+	}
+	if err := regenerateNginx(ctx); err != nil {
+		return report, &RestoreError{Service: service, Stage: "nginx regeneration", Err: err, Stopped: stopped}
+	}
+	if databaseIncoming {
+		if err := runRestoreCommand(ctx, env, "start litestream.service", "systemctl", "start", "litestream.service"); err != nil {
+			return failRestoreStep(report, service, "start", "start", err, stopped)
+		}
+		stopped = restoreStoppedUnits(unit, unitActive, false)
+	}
+	startDetail := restoreStartDetail(unit, unitInstalled, unitActive, databaseIncoming)
+	if unitActive {
+		if err := runRestoreCommand(ctx, env, "start "+unit, "systemctl", "start", unit); err != nil {
+			return failRestoreStep(report, service, "start", "start", err, stopped)
+		}
+	}
+	report.Steps = append(report.Steps, RestoreStep{Name: "start", Detail: startDetail})
 	return report, nil
+}
+
+type restoreLTXFile struct {
+	Timestamp time.Time `json:"timestamp"`
+}
+
+func restoreServiceDatabase(ctx context.Context, env host.Env, prefix, service string, database apps.Database, at *time.Time) (string, error) {
+	if err := prepareRestoredDatabasePath(env.Root, service, database.Path); err != nil {
+		return "", err
+	}
+	replica := strings.TrimSuffix(prefix, "/") + "/" + service + "/"
+	result, err := env.Execute(ctx, host.Command{Name: "litestream", Args: []string{"ltx", "-level", "all", "-json", replica}})
+	if err != nil || result.ExitCode != 0 {
+		return "", restoreCommandError("list Litestream restore points", result, err)
+	}
+	var files []restoreLTXFile
+	if err := json.Unmarshal(result.Stdout, &files); err != nil {
+		return "", fmt.Errorf("list Litestream restore points: invalid JSON: %w", err)
+	}
+	var recovered time.Time
+	for _, file := range files {
+		if file.Timestamp.IsZero() || at != nil && file.Timestamp.After(*at) {
+			continue
+		}
+		if recovered.IsZero() || file.Timestamp.After(recovered) {
+			recovered = file.Timestamp
+		}
+	}
+	if recovered.IsZero() {
+		return "", errors.New("no snapshot under the prefix")
+	}
+	destination := filepath.Join(env.Root, filepath.FromSlash(path.Join("opt", service, database.Path)))
+	args := []string{"restore", "-o", destination}
+	if at != nil {
+		args = append(args, "-timestamp", at.Format(time.RFC3339Nano))
+	}
+	args = append(args, replica)
+	result, err = env.Execute(ctx, host.Command{Name: "litestream", Args: args})
+	if err != nil || result.ExitCode != 0 {
+		if bytes.Contains(result.Stderr, []byte("no matching backup files")) {
+			return "", errors.New("no snapshot under the prefix")
+		}
+		return "", restoreCommandError("restore database with Litestream", result, err)
+	}
+	if _, err := os.Lstat(destination); err != nil {
+		return "", fmt.Errorf("restore database with Litestream: %w", err)
+	}
+	return recovered.UTC().Format(time.RFC3339Nano), nil
+}
+
+func prepareRestoredDatabasePath(rootName, service, databasePath string) error {
+	filesystem, err := os.OpenRoot(rootName)
+	if err != nil {
+		return fmt.Errorf("open restore root: %w", err)
+	}
+	defer func() { _ = filesystem.Close() }()
+	relative := filepath.FromSlash(path.Join("opt", service, databasePath))
+	for parent := filepath.Dir(relative); parent != "."; parent = filepath.Dir(parent) {
+		info, statErr := filesystem.Lstat(parent)
+		if statErr != nil {
+			return fmt.Errorf("inspect database directory: %w", statErr)
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return fmt.Errorf("database directory %q is not a directory", parent)
+		}
+	}
+	for _, name := range []string{relative, relative + "-wal", relative + "-shm"} {
+		if err := filesystem.RemoveAll(name); err != nil {
+			return fmt.Errorf("remove prior database state: %w", err)
+		}
+	}
+	return nil
+}
+
+func setRestoredDatabaseWAL(rootName, service, databasePath string) error {
+	filesystem, err := os.OpenRoot(rootName)
+	if err != nil {
+		return fmt.Errorf("open restore root: %w", err)
+	}
+	defer func() { _ = filesystem.Close() }()
+	name := filepath.FromSlash(path.Join("opt", service, databasePath))
+	file, err := filesystem.OpenFile(name, os.O_RDWR, 0)
+	if err != nil {
+		return fmt.Errorf("open restored database: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+	header := make([]byte, 100)
+	if _, err := io.ReadFull(file, header); err != nil {
+		return fmt.Errorf("read restored database header: %w", err)
+	}
+	if !bytes.Equal(header[:16], []byte("SQLite format 3\x00")) {
+		return errors.New("restored database is not SQLite")
+	}
+	if header[18] != 2 || header[19] != 2 {
+		header[18], header[19] = 2, 2
+		if _, err := file.WriteAt(header[18:20], 18); err != nil {
+			return fmt.Errorf("set restored database WAL mode: %w", err)
+		}
+		if err := file.Sync(); err != nil {
+			return fmt.Errorf("sync restored database WAL mode: %w", err)
+		}
+	}
+	return nil
+}
+
+func applyRestoredDatabaseOwnership(rootName, service, databasePath string, identity restoreIdentity) error {
+	if !identity.needed {
+		return nil
+	}
+	filesystem, err := os.OpenRoot(rootName)
+	if err != nil {
+		return fmt.Errorf("open restore root: %w", err)
+	}
+	defer func() { _ = filesystem.Close() }()
+	base := filepath.FromSlash(path.Join("opt", service, databasePath))
+	for _, name := range []string{base, base + "-wal", base + "-shm"} {
+		info, err := filesystem.Lstat(name)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("database path %q is not a regular file", name)
+		}
+		if err := filesystem.Chmod(name, 0o600); err != nil {
+			return fmt.Errorf("set database mode: %w", err)
+		}
+		if err := filesystem.Chown(name, identity.uid, identity.gid); err != nil {
+			return fmt.Errorf("set database ownership: %w", err)
+		}
+	}
+	return nil
+}
+
+func restoreStartDetail(unit string, installed, active, database bool) string {
+	app := "no app unit"
+	if unit != "" {
+		switch {
+		case active:
+			app = unit
+		case installed:
+			app = unit + " left inactive"
+		default:
+			app = "no " + unit
+		}
+	}
+	if database {
+		if active {
+			return "litestream.service, " + app
+		}
+		if installed {
+			return "litestream.service, " + app
+		}
+		return "litestream.service"
+	}
+	return app
 }
 
 type restoreIdentity struct {

@@ -93,6 +93,9 @@ func TestRestoreSelectsSourceByArchiveTimestamp(t *testing.T) {
 		{Name: "source", Detail: wantDetail},
 		{Name: "stop", Detail: "litestream.service, no ikigenba-notes.service"},
 		{Name: "files", Detail: "/opt/notes/etc, /opt/notes/state, 2 files"},
+		{Name: "db", Detail: "/opt/notes/state/app.db, at 2026-09-16T12:00:00Z"},
+		{Name: "litestream", Detail: "state/app.db"},
+		{Name: "start", Detail: "litestream.service"},
 	}}
 	if !reflect.DeepEqual(report, wantReport) {
 		t.Fatalf("Restore() report = %+v, want %+v", report, wantReport)
@@ -100,7 +103,7 @@ func TestRestoreSelectsSourceByArchiveTimestamp(t *testing.T) {
 	if !reflect.DeepEqual(client.opened, []string{"us-east-2"}) || !reflect.DeepEqual(client.listed, []string{"s3://bucket/host/notes/"}) || !reflect.DeepEqual(client.got, []string{selectedURI}) {
 		t.Fatalf("cloud access = opened %v listed %v got %v", client.opened, client.listed, client.got)
 	}
-	if client.puts != 0 || nginxCalls != 0 || len(client.readers) != 1 || !client.readers[0].closed {
+	if client.puts != 0 || nginxCalls != 1 || len(client.readers) != 1 || !client.readers[0].closed {
 		t.Fatalf("unexpected effects: puts %d nginx %d readers %#v", client.puts, nginxCalls, client.readers)
 	}
 	if data := readHostRestoreFile(t, root, "opt/other/state/private"); string(data) != "do not read or report this secret" {
@@ -121,7 +124,7 @@ func TestRestoreNewestSourceWhenAtIsNil(t *testing.T) {
 	body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("new")})
 	client := &restoreCloud{objects: []cloud.Object{{URI: newURI}, {URI: oldURI}}, bodies: map[string][]byte{newURI: body}}
 	report, err := backup.Restore(context.Background(), restoreHostEnv(t, root), cloud.Env{Open: client.open}, store, "notes", nil, func(context.Context) error { return nil })
-	if err != nil || len(report.Steps) != 3 || !strings.HasPrefix(report.Steps[0].Detail, "notes/2026-09-17T00:00:00.25Z.tar.zst, ") || !reflect.DeepEqual(client.got, []string{newURI}) {
+	if err != nil || len(report.Steps) != 4 || !strings.HasPrefix(report.Steps[0].Detail, "notes/2026-09-17T00:00:00.25Z.tar.zst, ") || !reflect.DeepEqual(client.got, []string{newURI}) {
 		t.Fatalf("Restore() = %+v, %v; got %v", report, err, client.got)
 	}
 }
@@ -297,7 +300,7 @@ func TestRestoreUsesRootForRestoredTarget(t *testing.T) {
 	body := hostRestoreArchive(t, restoreMember{name: "etc/env", data: []byte("TOKEN=secret\n")})
 	client := &restoreCloud{objects: []cloud.Object{{URI: uri}}, bodies: map[string][]byte{uri: body}}
 	report, err := backup.Restore(context.Background(), restoreHostEnv(t, root), cloud.Env{Open: client.open}, store, "notes", nil, func(context.Context) error { return nil })
-	if err != nil || len(report.Steps) != 3 {
+	if err != nil || len(report.Steps) != 4 {
 		t.Fatalf("Restore() = %+v, %v", report, err)
 	}
 	if data := readHostRestoreFile(t, root, "opt/notes/etc/env"); string(data) != "TOKEN=secret\n" {

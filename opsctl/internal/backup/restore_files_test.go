@@ -49,6 +49,9 @@ func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
 		{Name: "source", Detail: fmt.Sprintf("notes/2026-09-16T00:00:00Z.tar.zst, %.1f MiB", float64(len(body))/1048576)},
 		{Name: "stop", Detail: "ikigenba-notes.service, litestream.service"},
 		{Name: "files", Detail: "/opt/notes/etc, /opt/notes/state, 4 files"},
+		{Name: "db", Detail: "/opt/notes/state/app.db, newest 2026-09-16T11:00:00Z"},
+		{Name: "litestream", Detail: "state/app.db"},
+		{Name: "start", Detail: "litestream.service, ikigenba-notes.service"},
 	}
 	if !reflect.DeepEqual(report.Steps, want) {
 		t.Fatalf("report = %+v, want %+v", report.Steps, want)
@@ -60,6 +63,10 @@ func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
 		"systemctl stop litestream.service",
 		"getent passwd ikigenba",
 		"usermod --home /nonexistent --shell /usr/sbin/nologin ikigenba",
+		"litestream ltx -level all -json s3://bucket/host/notes/",
+		"litestream restore -o " + filepath.Join(root, "opt/notes/state/app.db") + " s3://bucket/host/notes/",
+		"systemctl start litestream.service",
+		"systemctl start ikigenba-notes.service",
 	}
 	if !reflect.DeepEqual(executor.commands, wantCommands) {
 		t.Fatalf("commands = %v, want %v", executor.commands, wantCommands)
@@ -118,7 +125,7 @@ func TestRestoreAppGuardAndStopDetails(t *testing.T) {
 			client := restoreClientForService(t, body, test.service)
 			executor := &restoreStageExecutor{t: t, root: root, installed: test.installed, active: test.active}
 			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, test.service, nil, func(context.Context) error { return nil })
-			if err != nil || len(report.Steps) != 3 || report.Steps[1].Detail != test.wantStop {
+			if err != nil || len(report.Steps) != 6 || report.Steps[1].Detail != test.wantStop {
 				t.Fatalf("Restore() = %+v, %v, want stop %q", report, err, test.wantStop)
 			}
 			joined := strings.Join(executor.commands, "\n")
@@ -241,7 +248,7 @@ func TestRestoreCreatesMissingAccountWithNoLoginAndNoHome(t *testing.T) {
 	accountGID := restoreAlternateGID(t)
 	executor := &restoreStageExecutor{t: t, root: root, accountMissing: true, accountUID: os.Getuid(), accountGID: accountGID}
 	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, func(context.Context) error { return nil })
-	if err != nil || len(report.Steps) != 3 {
+	if err != nil || len(report.Steps) != 4 {
 		t.Fatalf("Restore() = %+v, %v", report, err)
 	}
 	joined := strings.Join(executor.commands, "\n")
@@ -306,7 +313,7 @@ func TestRestoreManifestAppAloneTriggersAccountPreparation(t *testing.T) {
 	client := restoreClientFor(t, body)
 	executor := &restoreStageExecutor{t: t, root: root, accountUID: os.Getuid(), accountGID: os.Getgid()}
 	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, func(context.Context) error { return nil })
-	if err != nil || len(report.Steps) != 3 {
+	if err != nil || len(report.Steps) != 4 {
 		t.Fatalf("Restore() = %+v, %v", report, err)
 	}
 	joined := strings.Join(executor.commands, "\n")
@@ -366,6 +373,17 @@ func (executor *restoreStageExecutor) execute(_ context.Context, command host.Co
 			}
 			return host.Result{}, nil
 		}
+		if len(command.Args) == 2 && command.Args[0] == "start" {
+			return host.Result{}, nil
+		}
+	case "litestream":
+		if len(command.Args) == 5 && command.Args[0] == "ltx" {
+			return host.Result{Stdout: []byte(`[{"timestamp":"2026-09-16T10:00:00Z"},{"timestamp":"2026-09-16T11:00:00Z"}]`)}, nil
+		}
+		if len(command.Args) >= 4 && command.Args[0] == "restore" && command.Args[1] == "-o" {
+			writeRestoreSQLite(executor.t, command.Args[2])
+			return host.Result{}, nil
+		}
 	case "getent":
 		if executor.accountLookupErr != nil {
 			return host.Result{}, executor.accountLookupErr
@@ -388,6 +406,22 @@ func (executor *restoreStageExecutor) execute(_ context.Context, command host.Co
 		return host.Result{}, nil
 	}
 	return host.Result{}, fmt.Errorf("unexpected command %q", text)
+}
+
+func writeRestoreSQLite(t *testing.T, name string) {
+	t.Helper()
+	data := make([]byte, 512)
+	copy(data, []byte("SQLite format 3\x00"))
+	data[18], data[19] = 1, 1
+	if err := os.MkdirAll(filepath.Dir(name), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(name, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Chmod(name, 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func restoreClientFor(t *testing.T, body []byte) *restoreCloud {
