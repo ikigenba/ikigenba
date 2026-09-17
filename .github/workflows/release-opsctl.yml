@@ -1,0 +1,25 @@
+name: Release opsctl
+
+on:
+  push:
+    tags: ["opsctl/v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+
+      - name: Build and publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: opsctl/release.sh "$GITHUB_REF_NAME"
