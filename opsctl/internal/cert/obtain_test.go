@@ -28,7 +28,7 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 )
 
-const wantDeployHook = "if systemctl is-active --quiet nginx; then systemctl reload nginx; fi"
+const wantDeployHook = "systemctl try-reload-or-restart nginx"
 
 // R-YBCV-JK0W R-YCKR-XBRL
 func TestObtainPackageBoundaryAndSignature(t *testing.T) {
@@ -134,7 +134,7 @@ func TestObtainRejectsMissingExecutionDependency(t *testing.T) {
 	}
 }
 
-// R-GFIN-FMDJ R-AMEV-4J2G R-YYIY-T743
+// R-K9Q8-1AET R-AMEV-4J2G R-YYIY-T743
 func TestObtainExecutesExactCertbotCommand(t *testing.T) {
 	root := t.TempDir()
 	ctx := context.WithValue(context.Background(), contextKey{}, "marker")
@@ -183,6 +183,51 @@ func TestObtainExecutesExactCertbotCommand(t *testing.T) {
 	}
 	if after := snapshotTree(t, root); !reflect.DeepEqual(after, before) {
 		t.Fatalf("Obtain wrote host or DNS state directly: before %#v, after %#v", before, after)
+	}
+}
+
+// R-KAY4-F25I
+func TestObtainHooksBeginWithPATHExecutables(t *testing.T) {
+	binDir := t.TempDir()
+	binRoot, err := os.OpenRoot(binDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := binRoot.Close(); err != nil {
+			t.Errorf("close fixture bin: %v", err)
+		}
+	})
+	for _, name := range []string{"opsctl", "systemctl"} {
+		if err := binRoot.WriteFile(name, []byte("#!/bin/sh\nexit 0\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := binRoot.Chmod(name, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var got host.Command
+	env := host.Env{Root: t.TempDir(), Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+		got = command
+		return host.Result{}, nil
+	}}
+	if err := cert.Obtain(context.Background(), env, "example.com", "admin@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	for _, option := range []string{"--manual-auth-hook", "--manual-cleanup-hook", "--deploy-hook"} {
+		hook := argumentValue(t, got.Args, option)
+		words := strings.Fields(hook)
+		if len(words) == 0 {
+			t.Fatalf("%s hook is empty", option)
+		}
+		first := words[0]
+		if first != filepath.Base(first) || strings.ContainsAny(first, ";|&(){}<>") {
+			t.Fatalf("%s hook first word %q is not a bare executable name", option, first)
+		}
+		info, err := os.Stat(filepath.Join(binDir, first))
+		if err != nil || info.Mode()&0o111 == 0 {
+			t.Fatalf("%s hook executable %q does not resolve on fixture PATH", option, first)
+		}
 	}
 }
 
@@ -245,7 +290,7 @@ func TestObtainEstablishesLineageAndRetainsHooks(t *testing.T) {
 	if calls := fixture.dnsCalls(); !reflect.DeepEqual(calls, wantDNSCalls) {
 		t.Fatalf("renewal DNS hook calls = %v, want %v", calls, wantDNSCalls)
 	}
-	if calls := fixture.systemctlCalls(); !reflect.DeepEqual(calls, []string{"is-active --quiet nginx", "reload nginx"}) {
+	if calls := fixture.systemctlCalls(); !reflect.DeepEqual(calls, []string{"try-reload-or-restart nginx"}) {
 		t.Fatalf("renewal systemctl calls = %v", calls)
 	}
 }
@@ -338,7 +383,7 @@ func TestObtainPreservesExistingCommandErrorIdentity(t *testing.T) {
 	}
 }
 
-// R-YPZO-4SX8
+// R-3Y2Q-E7IX
 func TestObtainRefusalPreservesCertificateAndCleansChallenges(t *testing.T) {
 	fixture := newCertbotFixture(t, refuseCertificate, nil)
 	originalCertificate, originalKey := makeCertificate(t)
@@ -386,9 +431,9 @@ func TestObtainDeployHookHonorsNginxStateAndFailure(t *testing.T) {
 		wantCalls   []string
 		wantError   bool
 	}{
-		{"active", true, false, []string{"is-active --quiet nginx", "reload nginx"}, false},
-		{"inactive", false, false, []string{"is-active --quiet nginx"}, false},
-		{"reload failure", true, true, []string{"is-active --quiet nginx", "reload nginx"}, true},
+		{"active", true, false, []string{"try-reload-or-restart nginx"}, false},
+		{"inactive", false, false, []string{"try-reload-or-restart nginx"}, false},
+		{"reload failure", true, true, []string{"try-reload-or-restart nginx"}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fixture := newCertbotFixture(t, issueCertificate, nil)
@@ -472,8 +517,11 @@ esac
 set -eu
 printf '%s\n' "$*" >> "$FIXTURE_SYSTEMCTL_LOG"
 case "$1" in
-  is-active) test "$FIXTURE_NGINX_ACTIVE" = 1 ;;
-  reload) test "$FIXTURE_RELOAD_FAIL" = 0 ;;
+  try-reload-or-restart)
+    if test "$FIXTURE_NGINX_ACTIVE" = 1; then
+      test "$FIXTURE_RELOAD_FAIL" = 0
+    fi
+    ;;
   *) exit 64 ;;
 esac
 `)

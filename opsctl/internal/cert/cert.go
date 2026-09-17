@@ -15,7 +15,7 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 )
 
-const deployHook = "if systemctl is-active --quiet nginx; then systemctl reload nginx; fi"
+const deployHook = "systemctl try-reload-or-restart nginx"
 
 // ErrNotFound identifies an absent certificate lineage.
 var ErrNotFound = errors.New("certificate not found")

@@ -376,7 +376,7 @@ func TestInitHealthyPreflight(t *testing.T) {
 		t.Errorf("provider open calls = %d, want 1", openCalls)
 	}
 	wantCommands := []string{
-		"certbot certonly --non-interactive --agree-tos --email admin@example.com --manual --preferred-challenges dns --manual-auth-hook opsctl dns acme-auth --manual-cleanup-hook opsctl dns acme-cleanup --deploy-hook if systemctl is-active --quiet nginx; then systemctl reload nginx; fi --cert-name api.deep.example.com -d api.deep.example.com -d *.api.deep.example.com --keep-until-expiring --config-dir " + filepath.Join(deps.Root, "etc/letsencrypt") + " --work-dir " + filepath.Join(deps.Root, "var/lib/letsencrypt") + " --logs-dir " + filepath.Join(deps.Root, "var/log/letsencrypt"),
+		"certbot certonly --non-interactive --agree-tos --email admin@example.com --manual --preferred-challenges dns --manual-auth-hook opsctl dns acme-auth --manual-cleanup-hook opsctl dns acme-cleanup --deploy-hook systemctl try-reload-or-restart nginx --cert-name api.deep.example.com -d api.deep.example.com -d *.api.deep.example.com --keep-until-expiring --config-dir " + filepath.Join(deps.Root, "etc/letsencrypt") + " --work-dir " + filepath.Join(deps.Root, "var/lib/letsencrypt") + " --logs-dir " + filepath.Join(deps.Root, "var/log/letsencrypt"),
 		"nginx -t",
 		"systemctl reload nginx",
 		"systemctl enable litestream.service",
@@ -491,7 +491,7 @@ func TestInitStopsAtFirstSetupFailure(t *testing.T) {
 				return []string{"192.0.2.10"}, nil
 			}
 
-			certbotCommand := "certbot certonly --non-interactive --agree-tos --email admin@example.com --manual --preferred-challenges dns --manual-auth-hook opsctl dns acme-auth --manual-cleanup-hook opsctl dns acme-cleanup --deploy-hook if systemctl is-active --quiet nginx; then systemctl reload nginx; fi --cert-name api.example.com -d api.example.com -d *.api.example.com --keep-until-expiring --config-dir " + filepath.Join(deps.Root, "etc/letsencrypt") + " --work-dir " + filepath.Join(deps.Root, "var/lib/letsencrypt") + " --logs-dir " + filepath.Join(deps.Root, "var/log/letsencrypt")
+			certbotCommand := "certbot certonly --non-interactive --agree-tos --email admin@example.com --manual --preferred-challenges dns --manual-auth-hook opsctl dns acme-auth --manual-cleanup-hook opsctl dns acme-cleanup --deploy-hook systemctl try-reload-or-restart nginx --cert-name api.example.com -d api.example.com -d *.api.example.com --keep-until-expiring --config-dir " + filepath.Join(deps.Root, "etc/letsencrypt") + " --work-dir " + filepath.Join(deps.Root, "var/lib/letsencrypt") + " --logs-dir " + filepath.Join(deps.Root, "var/log/letsencrypt")
 			allCommands := []string{
 				certbotCommand,
 				"nginx -t",
