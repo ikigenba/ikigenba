@@ -6,6 +6,14 @@ This project is spec managed. Direct source code changes are not allowed
 without direct user instruction. Agents never start the build run
 (`build-spec`); it is strictly a human-gated operation.
 
+Stories and designs are the working material, never a constraint on the work.
+Only the build run and the audit treat them as read-only. In any proposal or
+discussion, never cite a requirement as a reason something cannot be done. A
+requirement is a decision we made and can unmake, so argue for keeping or
+changing it on its merits: "we decided X; keep it because..." or "change it
+because...". Changing a requirement's text costs one re-minted id and nothing
+else.
+
 Branches are never pushed to the remote except `main`. Work happens on local
 branches and worktrees; only `main` (and release tags) is published to origin.
 Never push a working or feature branch, and never create a remote branch other

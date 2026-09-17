@@ -5,7 +5,7 @@ description: The specs/ system — layout, requirement ids, the canonical gap, p
 
 # specs/
 
-Spec-driven development: designs define the contract, a mechanical gap says what is unbuilt, and every requirement is tracked by a permanent id.
+Spec-driven development: designs define the contract, a mechanical gap says what is unbuilt, and every requirement is tracked by an id that names exactly one text.
 
 The specs describe the **current target**, not a commitment to earlier designs. A design iteration may replace names, boundaries, and behavior that earlier iterations established, and the code then realizes that replacement completely. Existing code, tests, and package layout are not compatibility obligations unless a current requirement states one. Superseded requirements are deleted from the design; git holds the history.
 
@@ -18,9 +18,11 @@ The specs describe the **current target**, not a commitment to earlier designs. 
 
 ## Requirement ids
 
+Designs are never frozen. Any requirement can be replaced at any time, and a requirement is never a reason a design cannot change; only the build run and `audit-spec` treat the design as read-only. The one rule is about ids, not about the design: **an id names exactly one text**. New text means a new id.
+
 - Mint every id with `idgen`; ids have the form `R-XXXX-XXXX`. `idgen` guarantees global uniqueness. Only `draft-spec` mints ids; the build run and `audit-spec` never invoke `idgen`, and it is not part of the toolchain `AGENTS.md` declares.
-- Never hand-author, edit, or reuse an id. An id is permanent once minted.
-- An id's **requirement text is equally permanent**. Changing it at all — including a pure rewording — means deleting that requirement and minting a new id. The gap is computed from id presence alone, so an edited requirement is invisible and never gets applied. See `references/design-format.md`.
+- Never hand-author or reuse an id. Once minted, an id is bound to the text it was minted for.
+- To change a requirement's text at all — including a pure rewording — delete that requirement and mint a new id for the new text. The gap is computed from id presence alone, so text edited beside an existing id is invisible and never gets applied. See `references/design-format.md`.
 
 ## Tagging and the gap (canonical)
 
