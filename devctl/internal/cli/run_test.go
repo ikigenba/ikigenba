@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
 
@@ -114,6 +115,159 @@ func TestUnknownCommand(t *testing.T) {
 func TestUnknownTopLevelOption(t *testing.T) {
 	// R-DAIP-5POS
 	assertResult(t, invoke("--frobnicate"), 2, "", "devctl: unknown option '--frobnicate'\n\nsee 'devctl --help' for usage\n")
+}
+
+func TestAccountProfileReachesCloudUnchanged(t *testing.T) {
+	// R-9UE6-4LK7
+	for _, test := range []struct {
+		args []string
+		want string
+	}{
+		{args: []string{"--account", " Work Profile ", "space"}, want: " Work Profile "},
+		{args: []string{"--account=MiXeD Profile", "space"}, want: "MiXeD Profile"},
+	} {
+		var profiles []string
+		result := invokeWithDeps(seam.Deps{
+			EUID: 1,
+			Cloud: func(_ context.Context, profile, _ string) (cloud.Clients, error) {
+				profiles = append(profiles, profile)
+				return cloud.Clients{}, nil
+			},
+		}, test.args...)
+		assertResult(t, result, 0, "", "")
+		if len(profiles) != 1 || profiles[0] != test.want {
+			t.Errorf("Run(%q) cloud profiles = %q, want [%q]", test.args, profiles, test.want)
+		}
+	}
+}
+
+func TestLastAccountOptionWins(t *testing.T) {
+	// R-9VM2-IDAW
+	for _, args := range [][]string{
+		{"--account", "first", "--account=second", "space"},
+		{"--account=first", "--account", "second", "space"},
+	} {
+		var profiles []string
+		result := invokeWithDeps(seam.Deps{
+			EUID: 1,
+			Cloud: func(_ context.Context, profile, _ string) (cloud.Clients, error) {
+				profiles = append(profiles, profile)
+				return cloud.Clients{}, nil
+			},
+		}, args...)
+		assertResult(t, result, 0, "", "")
+		if !reflect.DeepEqual(profiles, []string{"second"}) {
+			t.Fatalf("Run(%q) cloud profiles = %q, want [second]", args, profiles)
+		}
+	}
+}
+
+func TestAccountRequiresValue(t *testing.T) {
+	// R-9WTY-W51L
+	want := "devctl: option '--account' requires a value\n\nsee 'devctl --help' for usage\n"
+	for _, args := range [][]string{
+		{"--account"},
+		{"--account", "--help"},
+		{"--account", "space"},
+		{"--account="},
+	} {
+		assertResult(t, invoke(args...), 2, "", want)
+	}
+}
+
+func TestAccountDoesNotChangeVersion(t *testing.T) {
+	// R-DE6E-B0WV
+	want := invoke("version")
+	for _, args := range [][]string{
+		{"--account", "work", "version"},
+		{"--account=work", "version"},
+	} {
+		if got := invoke(args...); got != want {
+			t.Errorf("Run(%q) = %#v, want %#v", args, got, want)
+		}
+	}
+}
+
+func TestAccountVersionDoesNotOpenCloud(t *testing.T) {
+	// R-UYZW-0UKR
+	for _, args := range [][]string{
+		{"--account", "work", "version"},
+		{"--account=work", "version"},
+	} {
+		calls := 0
+		result := invokeWithDeps(seam.Deps{
+			EUID: 1,
+			Cloud: func(context.Context, string, string) (cloud.Clients, error) {
+				calls++
+				return cloud.Clients{}, nil
+			},
+		}, args...)
+		assertResult(t, result, 0, version+"\n", "")
+		if calls != 0 {
+			t.Errorf("Run(%q) opened cloud %d times, want 0", args, calls)
+		}
+	}
+}
+
+func TestRootRefusalPrecedesEveryInvocation(t *testing.T) {
+	// R-A1PK-F80D
+	invocations := [][]string{
+		nil,
+		{"--help"}, {"-h"}, {"--version"}, {"-V"}, {"version"},
+		{"unknown"}, {"--unknown"}, {"--account"},
+		{"version", "--help"},
+		{"space", "--help"},
+		{"secrets", "--help"},
+		{"build", "--help"},
+		{"deploy", "--help"},
+		{"restore", "--help"},
+		{"remove", "--help"},
+	}
+	for _, args := range invocations {
+		assertResult(t, invokeWithDeps(seam.Deps{EUID: 0}, args...), 3, "", "devctl: must not run as root\n")
+	}
+}
+
+func TestExactlyFiveCommandsRequireAccount(t *testing.T) {
+	// R-C1FA-A0HT
+	wantRequired := map[string]struct{}{
+		"space": {}, "secrets": {}, "deploy": {}, "restore": {}, "remove": {},
+	}
+	if !reflect.DeepEqual(accountRequired, wantRequired) {
+		t.Fatalf("account-required commands = %v, want %v", accountRequired, wantRequired)
+	}
+
+	wantBuild := invoke("build", "app")
+	for _, args := range [][]string{
+		{"--account", "work", "build", "app"},
+		{"--account=work", "build", "app"},
+	} {
+		if got := invoke(args...); got != wantBuild {
+			t.Errorf("Run(%q) = %#v, want %#v", args, got, wantBuild)
+		}
+	}
+}
+
+func TestAccountRequiredBeforeCommandArguments(t *testing.T) {
+	// R-3PTI-JABB
+	for _, command := range []string{"space", "secrets", "deploy", "restore", "remove"} {
+		for _, arguments := range [][]string{nil, {"--definitely-invalid"}} {
+			calls := 0
+			deps := seam.Deps{
+				EUID: 1,
+				Cloud: func(context.Context, string, string) (cloud.Clients, error) {
+					calls++
+					return cloud.Clients{}, nil
+				},
+			}
+			args := append([]string{command}, arguments...)
+			wantStderr := "devctl: --account is required\n\nsee 'devctl " + command + " --help' for usage\n"
+			assertResult(t, invokeWithDeps(deps, args...), 2, "", wantStderr)
+			if calls != 0 {
+				t.Errorf("Run(%q) opened cloud %d times, want 0", args, calls)
+			}
+		}
+	}
 }
 
 func TestVersionDeclaration(t *testing.T) {
@@ -219,8 +373,12 @@ type runResult struct {
 }
 
 func invoke(args ...string) runResult {
+	return invokeWithDeps(seam.Deps{EUID: 1}, args...)
+}
+
+func invokeWithDeps(deps seam.Deps, args ...string) runResult {
 	var stdout, stderr bytes.Buffer
-	code := Run(context.Background(), args, strings.NewReader(""), &stdout, &stderr, seam.Deps{EUID: 1})
+	code := Run(context.Background(), args, strings.NewReader(""), &stdout, &stderr, deps)
 	return runResult{code: code, stdout: stdout.String(), stderr: stderr.String()}
 }
 

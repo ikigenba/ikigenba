@@ -54,6 +54,14 @@ var commandSet = map[string]struct{}{
 	"remove":  {},
 }
 
+var accountRequired = map[string]struct{}{
+	"space":   {},
+	"secrets": {},
+	"deploy":  {},
+	"restore": {},
+	"remove":  {},
+}
+
 type topLevel struct {
 	account     string
 	command     string
@@ -64,7 +72,7 @@ type topLevel struct {
 }
 
 // Run executes one devctl invocation and returns its process exit code.
-func Run(_ context.Context, args []string, _ io.Reader, stdout, stderr io.Writer, deps seam.Deps) int {
+func Run(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.Writer, deps seam.Deps) int {
 	deps = deps.Defaults()
 	if deps.EUID == 0 {
 		_, _ = fmt.Fprintln(stderr, "devctl: must not run as root")
@@ -92,9 +100,28 @@ func Run(_ context.Context, args []string, _ io.Reader, stdout, stderr io.Writer
 	if invocation.command == "version" {
 		return runVersion(invocation.arguments, stdout, stderr)
 	}
+	if _, required := accountRequired[invocation.command]; required {
+		if hasHelp(invocation.arguments) {
+			// Command-specific phases replace this with the command's help.
+			return 0
+		}
+		if invocation.account == "" {
+			return usageError(stderr, "--account is required", "devctl "+invocation.command+" --help")
+		}
+		_, _ = deps.Cloud(ctx, invocation.account, "")
+	}
 
 	// Command-specific phases replace this successful no-op with their dispatch.
 	return 0
+}
+
+func hasHelp(arguments []string) bool {
+	for _, argument := range arguments {
+		if argument == "--help" || argument == "-h" {
+			return true
+		}
+	}
+	return false
 }
 
 func parseTopLevel(args []string) topLevel {
