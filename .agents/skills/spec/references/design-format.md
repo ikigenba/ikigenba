@@ -1,8 +1,6 @@
-# Authoring a design document (draft-spec)
+# Design document format
 
-See `../SKILL.md` for the layout and id rules.
-
-First establish what is already known by reading `specs/design/` and the codebase. Ask, every time, whether the current package layout still fits once this design is in it, and which package each new exported name belongs to; the answer is stated as a structural requirement (see Scope), so a new or split package is an ordinary re-mint of the layout requirement and travels through the gap like any other change. If open questions remain that only the user can answer, run the `grill-me` procedure (one question at a time, each with your recommendation) until resolved. If the design is already fully determined, skip straight to writing.
+See `../SKILL.md` for the layout and id rules. This file defines what a design document is: its scope, its shape, and the rules its requirements follow. It is read by whoever authors one — the `draft-spec` skill or a human — and by `check-spec`, the build run, and `audit-spec` when they judge a requirement against it. How a draft is produced is the `draft-spec` skill.
 
 A design document defines a feature or subsystem. It defines the public contract between modules and nothing about how modules are implemented internally.
 
@@ -35,11 +33,13 @@ Out of scope (implementation):
 - Internal ordering of steps, micro-optimizations, and caching, unless a specific guarantee is itself part of the contract.
 - How state is stored or how transition logic is coded.
 - Anything a consumer can neither see nor depend on.
-- Version numbers — a dependency's, a tool's, a sibling's release. A design names *what* it depends on; which release satisfies that is data and lives where the data belongs (`go.mod`, a lockfile, `AGENTS.md`'s toolchain). A requirement never states a version.
+- Version numbers — a dependency's, a tool's, a sibling project's release. A design names *what* it depends on; which release satisfies that is data and lives where the data belongs (`go.mod`, a lockfile, `AGENTS.md`'s toolchain). A requirement never states a version.
 
-## Depending on another project
+## Depending on an external tool
 
-Projects in one repository are independent, and a design keeps them that way (see `../SKILL.md`, "Project independence"). A sibling project is not a module of this one. It is reached only as an **installed external tool**, with exactly the standing of `ssh`, `git`, or a compiler.
+A tool this project shells out to — a compiler, `git`, any installed CLI — is reached only through its **published interface**, never its internals.
+
+A sibling project in the same repository is exactly such a tool (see `../SKILL.md`, "Project independence"). It is not a module of this one: it is reached only as an installed external tool, with the standing of `ssh`, `git`, or a compiler.
 
 Allowed — the tool's published interface:
 
@@ -52,12 +52,12 @@ Not allowed — anything that is not the published interface:
 - Naming a path inside another project: its source directory, its build output, its templates, its configuration files.
 - Building it, or invoking a compiler on it. The other project builds and releases itself.
 - Writing anything into another project's directory.
-- Encoding its internals: source layout, build arrangement, release archive naming, or the shape of its output.
-- Asserting what its output *says*. Bytes that cross the boundary are relayed or carried verbatim: a requirement may assert **that** the relaying happens and that nothing alters the bytes, never what the bytes are. A test fixture standing in for the other project emits arbitrary bytes — a fixture shaped like the real output encodes exactly the knowledge the requirement was forbidden to state.
+- Encoding its internals: where it is installed, its source layout, build arrangement, release archive naming, or the shape of its output beyond the documented grammar.
+- Asserting what its output *says* when the bytes are relayed or carried verbatim: a requirement may assert **that** the relaying happens and that nothing alters the bytes, never what the bytes are. A test fixture standing in for the tool emits arbitrary bytes — a fixture shaped like the real output encodes exactly the knowledge the requirement was forbidden to state.
 - Stating which release of it to use; that is data.
 - Parsing its output to learn something this design already decided.
 
-An installed sibling is an external dependency like any other, so "Never assume an external dependency" above applies to it in full: its grammar is proven by observing the real tool, never by reading its design documents.
+An external tool is an external dependency like any other, so "Never assume an external dependency" above applies to it in full: its grammar is proven by observing the real tool, never by reading its documentation alone — and for a sibling, never by reading its design documents.
 
 Direction is one-way and declared. If two projects would each have to know about the other, one of them is wrong. A behavior only the other project can supply is filed in `specs/issues/`; it is never designed around by reaching across the boundary.
 

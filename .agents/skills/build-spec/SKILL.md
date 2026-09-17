@@ -144,9 +144,9 @@ parent delegates that split instead.
 The design is never perfect. When an id cannot be satisfied as written,
 two ids contradict, a required fact about an external dependency is
 false, or the toolchain `AGENTS.md` requires is not available, the run
-stops. File the issue as `specs/issues/<slug>.md` with the evidence —
-the ids, the failing command and its output, the contradiction quoted —
-and report it upward. The run never mints anything: it never invokes
+stops. File the issue as `specs/issues/<slug>.md` per the `spec` skill's
+"Filing an issue", with the evidence — the ids, the failing command and
+its output, the contradiction quoted — and report it upward. The run never mints anything: it never invokes
 `idgen`, and `idgen` is never part of the toolchain it checks. Ids are
 minted only by `draft-spec`, by a human-driven session. A node that
 receives an issue from a child stops delegating and reports it upward

@@ -6,7 +6,12 @@ This directory is the canonical, repo-scoped home for Agent Skills
 Skills follow the [Agent Skills](https://agentskills.io) open standard.
 The format is specified at https://agentskills.io/specification.
 
-One skill per subdirectory: `spec`, `build-spec`, `grill-me`, `handoff`.
+One skill per subdirectory: `spec`, `draft-stories`, `draft-spec`,
+`check-spec`, `build-spec`, `audit-spec`, `grill-me`, `handoff`.
+
+`spec` is the shared foundation (layout, ids, the gap, issue filing, the
+story and design formats); `draft-stories` and the four `*-spec` verbs are
+the operations and each loads `spec` first.
 
 ## Who loads this path
 

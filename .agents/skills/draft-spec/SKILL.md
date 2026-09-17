@@ -9,8 +9,8 @@ The user's stories are the input; a coherent, testable public contract for
 one sub-project is the output. Use the same bounded agent tree as
 `build-spec`, with authors in place of implementers. This is the
 `draft-spec` authoring operation: load the sibling `spec` skill and its
-`references/draft.md` for the design format, permanent requirement ids,
-project independence, and consumer-usage review. Those rules remain
+`references/design-format.md` for the design format, permanent requirement ids,
+and consumer-usage review. Those rules remain
 canonical; this skill supplies delegation and completion criteria.
 
 The goal is to finish all work that can be completed from the available
@@ -29,8 +29,11 @@ Unlike a build run, authoring may create missing `specs/design/` and
 project ground. Never substitute the repository root's `AGENTS.md` for
 the sub-project's ground.
 
-Locate the user stories from the request and its referenced artifacts.
-Read them without modifying them. Establish the current target from
+The user stories are the sub-project's `specs/stories/` (see the `spec` skill's
+`references/story-format.md`); the request names which groups to design, or
+all of them, and may reference further artifacts. Read them without
+modifying them. A story that needs changing is a `draft-stories` matter,
+reported as an unresolved decision, never edited here. Establish the current target from
 existing design and relevant code; existing implementation is evidence,
 not an obligation to preserve its shape. Do not read sibling internals.
 User-provided story sources outside the project may be read as inputs;
@@ -39,8 +42,8 @@ they do not broaden the output boundary.
 Writes are limited to the selected project's design, the project ground
 needed to build it, and supporting review/evidence or issue files under
 its `specs/`. No source or test changes. Do not run `build-spec`, invoke
-`check-spec` and its baseline commit, or commit merely because drafting
-finished. These are separate operations.
+the `check-spec` skill and its baseline commit, or commit merely because
+drafting finished. These are separate, human-gated skills.
 
 ## The coverage ledger
 
@@ -88,6 +91,13 @@ guidance, the canonical authoring rules, its existing document, and the
 relevant source/API surface. Targeted lookups resolve adjacent contracts;
 it does not load the whole project. If the scope spans multiple seams,
 it returns a proposed split or becomes a coordinator before drafting.
+
+Before drafting, an author establishes what is already known from the
+existing design and code, and asks, every time, whether the current
+package layout still fits once this design is in it, and which package
+each new exported name belongs to. The answer is stated as a structural
+requirement, so a new or split package is an ordinary re-mint of the
+layout requirement and travels through the gap like any other change.
 
 Authors write structural and behavioral requirements, minting new ids
 with `idgen` as part of this draft-spec operation. Preserve existing
@@ -142,21 +152,23 @@ independent work, including unaffected parts of the same document. If a
 user answer arrives during the run, apply it and resume dependent work.
 Use the `grill-me` procedure for resolving remaining decisions with the
 user after the available work is exhausted, or when the user requests
-that interaction. This sequencing takes precedence over the authoring
-reference's instruction to resolve all questions before writing. Never
-mark an assumption as user-approved.
+that interaction — one question at a time, each with a recommendation.
+If the design is already fully determined by its inputs, there is
+nothing to ask. Never mark an assumption as user-approved.
 
 Gather observations for external dependency claims within the user's
 authorized scope and record their provenance. Documentation may support
 a draft, but does not replace the observations the spec rules require
 before checking. Missing access or unproven claims remain explicit in the
-handoff. A sibling's contract is established through its installed public
-interface, never its source or design files.
+handoff. An external tool's contract — a sibling project's included — is
+established through its installed public interface, never its source,
+design files, or documentation alone.
 
 ## Carry issues to the end
 
-Record each unresolved issue under `specs/issues/<slug>.md` and link it
-from the coverage ledger. Include the source criteria, the contradiction
+Record each unresolved issue under `specs/issues/<slug>.md` per the `spec`
+skill's "Filing an issue", and link it from the coverage ledger. Include
+the source criteria, the contradiction
 or missing fact with evidence, affected decisions and dependent scopes,
 work already completed, and the question or observation needed to resume.
 Keep alternatives and provisional proposals in review material; do not

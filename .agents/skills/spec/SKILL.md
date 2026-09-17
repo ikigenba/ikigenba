@@ -1,6 +1,6 @@
 ---
 name: spec
-description: The specs/ system — layout, requirement ids, the gap, and the draft-spec / check-spec / build-spec / audit-spec operations.
+description: The specs/ system — layout, requirement ids, the canonical gap, project ground, issue filing, and the story and design formats. Shared foundation for the draft-stories / draft-spec / check-spec / build-spec / audit-spec skills.
 ---
 
 # specs/
@@ -11,6 +11,7 @@ The specs describe the **current target**, not a commitment to earlier designs. 
 
 ## Layout
 
+- `specs/stories/` — user stories, one group per file (`S<int>-<slug>.md`). The intent the designs realise; written first, carry no ids. Format: `references/story-format.md`.
 - `specs/design/` — design documents (`D<int>-<slug>.md`). Human-authored.
 - `specs/issues/` — escalation channel; one markdown file per open issue, named `<slug>.md` (issues carry no minted id).
 - `AGENTS.md` — beside `specs/`; the project's ground (below). Human-authored.
@@ -19,7 +20,7 @@ The specs describe the **current target**, not a commitment to earlier designs. 
 
 - Mint every id with `idgen`; ids have the form `R-XXXX-XXXX`. `idgen` guarantees global uniqueness. Only `draft-spec` mints ids; the build run and `audit-spec` never invoke `idgen`, and it is not part of the toolchain `AGENTS.md` declares.
 - Never hand-author, edit, or reuse an id. An id is permanent once minted.
-- An id's **requirement text is equally permanent**. Changing it at all — including a pure rewording — means deleting that requirement and minting a new id. The gap is computed from id presence alone, so an edited requirement is invisible and never gets applied. See `references/draft.md`.
+- An id's **requirement text is equally permanent**. Changing it at all — including a pure rewording — means deleting that requirement and minting a new id. The gap is computed from id presence alone, so an edited requirement is invisible and never gets applied. See `references/design-format.md`.
 
 ## Tagging and the gap (canonical)
 
@@ -60,13 +61,27 @@ If a required tool or version is absent, a gate cannot run; that is an issue (an
 A monorepo holds several projects below one git root; each is independent and stays that way. A project's `specs/` govern that project's own directory and nothing else.
 
 - **Never reach into a sibling's tree.** No requirement names a path inside another project, builds or reads another project's source, or writes into another project's directory.
-- **A sibling is consumed only as an installed external tool**, with the same standing as `ssh`, `git`, or a compiler: its published interface, never its internals or which release of it to use. See `references/draft.md`, "Depending on another project".
+- **A sibling is consumed only as an installed external tool**, with the same standing as `ssh`, `git`, or a compiler: its published interface, never its internals or which release of it to use. See `references/design-format.md`, "Depending on an external tool".
 - **Dependencies point one way and are declared.** If two projects would each have to know about the other, one of them is wrong. A need only the other project can satisfy is filed in `specs/issues/` for a human to adjudicate, never designed around by reaching across the boundary.
+
+## Filing an issue
+
+`specs/issues/` is the escalation channel for friction that cannot be resolved in-role — a wrong seam, contradictory requirements, a missing dependency, broken tooling. It is distinct from a gap a builder can close within the current contract.
+
+- One markdown file per issue, named `specs/issues/<slug>.md`. Issues carry no minted id; nothing outside `draft-spec` invokes `idgen`.
+- Contents: filing context, the requirement id(s) involved, the friction, why it is unresolvable in-role, evidence (conflicting ids, failing command output), and a suggested resolution.
+- An issue must carry proof; a vague "cannot proceed" issue is invalid.
+- Resolve by deleting the file (git holds history). The gate is simply whether `specs/issues/` is empty.
+- Any open issue halts the build run.
 
 ## Operations
 
-- `draft-spec` — author a design, and the `AGENTS.md` ground beside it. Read `references/draft.md`. The sibling `draft-spec` skill supplies recursive delegation from user stories for one sub-project.
-- `check-spec` — check the design is buildable and commit the baseline the run starts from. Read `references/check.md`.
-- `audit-spec` — audit test adequacy, by recursive delegation like `build-spec`. Read `references/audit.md`.
+Each operation is a sibling skill. All five load this one for the shared rules above.
 
-Closing the gap is the `build-spec` skill. It is human-gated: an agent never starts it on its own.
+- `draft-stories` — turn the user's intent into stories under `specs/stories/`, new or updated, grilling the user for what the intent leaves open. The format is `references/story-format.md` in this skill.
+- `draft-spec` — author a design, and the `AGENTS.md` ground beside it, by recursive delegation from user stories, for one sub-project at a time. The design format and id rules it authors against are `references/design-format.md` in this skill.
+- `check-spec` — check the design is buildable, show the gap, and commit the baseline the run starts from.
+- `build-spec` — close the mechanical gap by recursive delegation.
+- `audit-spec` — audit adequacy of tests for ids already proved on both sides, by recursive delegation like `build-spec`.
+
+`check-spec`, `build-spec`, and `audit-spec` are human-gated: an agent never starts one on its own. Each commits, edits tests, or both.

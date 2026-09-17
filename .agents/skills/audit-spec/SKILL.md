@@ -1,11 +1,17 @@
-# Auditing test adequacy (audit-spec)
+---
+name: audit-spec
+description: Audit test adequacy for ids already proved on both sides of the gap, by recursive delegation like build-spec — strip tags from inadequate tests once a fresh verifier confirms, file issues for untestable requirements. Human-gated; never self-invoked, since a strip re-opens the gap.
+---
 
-See `../SKILL.md` for the id rules and the canonical tag/grep. Audit shares its
-shape with `build-spec`: it reads across the whole design and its tests, so it
-is run by delegation for the same reason — context is the scarce resource, and
-an audit that reads every requirement and every tagged test in one context has
-already lost the memory it needs to judge the next one. Load the `build-spec`
-skill for the roles; audit uses them the same way, on the same scopes.
+# audit test adequacy
+
+Load the sibling `spec` skill for the id rules, the canonical tag/grep, and the
+issue-filing rules. Audit shares its shape with `build-spec`: it reads across
+the whole design and its tests, so it is run by delegation for the same reason —
+context is the scarce resource, and an audit that reads every requirement and
+every tagged test in one context has already lost the memory it needs to judge
+the next one. Load the `build-spec` skill for the roles; audit uses them the
+same way, on the same scopes.
 
 The mechanical gap only checks id presence. Audit judges **adequacy**: for each
 requirement, read the test(s) tagged with its id and decide whether the test
@@ -54,15 +60,5 @@ Route each finding by the in-role/out-of-role line:
   auditor records what was stripped and why in its report (git holds the
   reversal).
 - **Out-of-role** (the requirement itself cannot really be tested, or the
-  design/seam is wrong): file an issue. It needs a design change, not another
-  build turn.
-
-## Filing an issue
-
-`specs/issues/` is the escalation channel for friction that cannot be resolved in-role — a wrong seam, contradictory requirements, a missing dependency, broken tooling. It is distinct from a gap a builder can close within the current contract.
-
-- One markdown file per issue, named `specs/issues/<slug>.md`. Issues carry no minted id; nothing outside `draft-spec` invokes `idgen`.
-- Contents: filing context, the requirement id(s) involved, the friction, why it is unresolvable in-role, evidence (conflicting ids, failing command output), and a suggested resolution.
-- An issue must carry proof; a vague "cannot proceed" issue is invalid.
-- Resolve by deleting the file (git holds history). The gate is simply whether `specs/issues/` is empty.
-- Any open issue halts the build run.
+  design/seam is wrong): file an issue under `specs/issues/` per the `spec`
+  skill's "Filing an issue". It needs a design change, not another build turn.
