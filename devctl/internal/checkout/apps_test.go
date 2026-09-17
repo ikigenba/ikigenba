@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
@@ -27,6 +28,11 @@ func TestAppsDiscoversOnlyRunnableRootDirectories(t *testing.T) {
 	writeFile(t, filepath.Join(root, "nested-only", "nested", "main.go"), "package main\n")
 	writeFile(t, filepath.Join(root, "no-manifest", "main.go"), "package main\n")
 	writeFile(t, filepath.Join(root, "plain-file"), "package main\n")
+	writeFile(t, filepath.Join(root, "symlink-source"), "package main\n")
+	writeFile(t, filepath.Join(root, "non-regular-go", ManifestFile), "app = \"non-regular-go\"\n")
+	if err := os.Symlink(filepath.Join(root, "symlink-source"), filepath.Join(root, "non-regular-go", "main.go")); err != nil {
+		t.Fatal(err)
+	}
 	writeFile(t, filepath.Join(root, "manifest-dir", "main.go"), "package main\n")
 	if err := os.MkdirAll(filepath.Join(root, "manifest-dir", ManifestFile), 0o700); err != nil {
 		t.Fatal(err)
@@ -70,10 +76,15 @@ func TestAppsReportsManifestFailures(t *testing.T) {
 
 	t.Run("cannot decode", func(t *testing.T) {
 		root := t.TempDir()
-		writeAppFixture(t, root, "crm", "package main\n", "app = [\n")
+		const manifest = "app = [\n"
+		writeAppFixture(t, root, "crm", "package main\n", manifest)
+		_, decodeErr := DecodeManifest(strings.NewReader(manifest))
+		if decodeErr == nil {
+			t.Fatal("DecodeManifest() error = nil, want failure")
+		}
 
 		_, err := (&Checkout{Root: root}).Apps()
-		_ = assertManifestFailure(t, err, "crm")
+		_ = assertManifestFailure(t, err, "crm", decodeErr)
 	})
 
 	t.Run("cannot read", func(t *testing.T) {
@@ -84,9 +95,13 @@ func TestAppsReportsManifestFailures(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = os.Chmod(manifest, 0o600) })
+		_, readErr := readManifest(filepath.Join(root, "crm"))
+		if readErr == nil {
+			t.Fatal("readManifest() error = nil, want failure")
+		}
 
 		_, err := (&Checkout{Root: root}).Apps()
-		manifestErr := assertManifestFailure(t, err, "crm")
+		manifestErr := assertManifestFailure(t, err, "crm", readErr)
 		if !errors.Is(manifestErr.Err, os.ErrPermission) {
 			t.Fatalf("Apps() cause = %v, want permission failure", manifestErr.Err)
 		}
@@ -131,21 +146,28 @@ func TestAppReturnsMatchMissingAndAppsFailure(t *testing.T) {
 	}
 
 	writeAppFixture(t, root, "broken", "package main\n", "not valid toml =")
+	_, appsErr := checkout.Apps()
+	if appsErr == nil {
+		t.Fatal("Apps() error = nil, want manifest failure")
+	}
 	_, err = checkout.App("crm")
+	if !reflect.DeepEqual(err, appsErr) {
+		t.Fatalf("App(crm) error = %#v, want Apps() error unchanged: %#v", err, appsErr)
+	}
 	var manifestErr *ManifestError
 	if !errors.As(err, &manifestErr) || manifestErr.App != "broken" {
 		t.Fatalf("App(crm) with broken Apps result error = %T %#v", err, err)
 	}
 }
 
-func assertManifestFailure(t *testing.T, err error, app string) *ManifestError {
+func assertManifestFailure(t *testing.T, err error, app string, wantErr error) *ManifestError {
 	t.Helper()
 	var manifestErr *ManifestError
 	if !errors.As(err, &manifestErr) {
 		t.Fatalf("Apps() error = %T %v, want *ManifestError", err, err)
 	}
-	if manifestErr.App != app || manifestErr.Err == nil {
-		t.Fatalf("Apps() error = %#v, want App %q and non-nil Err", manifestErr, app)
+	if manifestErr.App != app || !reflect.DeepEqual(manifestErr.Err, wantErr) {
+		t.Fatalf("Apps() error = %#v, want App %q and Err %#v", manifestErr, app, wantErr)
 	}
 	return manifestErr
 }
