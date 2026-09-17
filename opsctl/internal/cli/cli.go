@@ -61,7 +61,7 @@ Run 'opsctl <command> --help' for details on a command.
 `
 
 // version is the opsctl version (vMAJOR.MINOR.PATCH), set in source.
-var version = "v0.1.0"
+var version = "v0.1.1"
 
 // Deps carries what a command cannot be deterministic about.
 type Deps struct {

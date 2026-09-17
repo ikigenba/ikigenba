@@ -66,7 +66,12 @@ Subcommands:
 Keys match ^[a-z0-9_.-]+$. Values may not contain newlines.
 `
 
-const wantVersion = "v0.1.0"
+// wantVersion is the version the source declares; versions are data, so no
+// test names one.
+func wantVersion(t *testing.T) string {
+	t.Helper()
+	return versionLiteral(t)
+}
 
 func invoke(args []string, deps cli.Deps) (stdout, stderr string, code int) {
 	var outBuf, errBuf bytes.Buffer
@@ -148,13 +153,13 @@ func TestTopLevelGrammar(t *testing.T) {
 	}
 
 	stdout, stderr, code = invoke([]string{"-V"}, user)
-	if code != 0 || stderr != "" || stdout != wantVersion+"\n" {
-		t.Errorf("-V: exit %d stdout %q stderr %q, want %q", code, stdout, stderr, wantVersion+"\n")
+	if code != 0 || stderr != "" || stdout != wantVersion(t)+"\n" {
+		t.Errorf("-V: exit %d stdout %q stderr %q, want %q", code, stdout, stderr, wantVersion(t)+"\n")
 	}
 
 	stdout, stderr, code = invoke([]string{"--version"}, user)
-	if code != 0 || stderr != "" || stdout != wantVersion+"\n" {
-		t.Errorf("--version: exit %d stdout %q stderr %q, want %q", code, stdout, stderr, wantVersion+"\n")
+	if code != 0 || stderr != "" || stdout != wantVersion(t)+"\n" {
+		t.Errorf("--version: exit %d stdout %q stderr %q, want %q", code, stdout, stderr, wantVersion(t)+"\n")
 	}
 
 	stdout, stderr, code = invoke([]string{"config", "--help"}, user)
@@ -203,8 +208,8 @@ func TestCommandSet(t *testing.T) {
 	}
 
 	stdout, stderr, code = invoke([]string{"version"}, user)
-	if code != 0 || stderr != "" || stdout != wantVersion+"\n" {
-		t.Errorf("version: exit %d stdout %q stderr %q, want %q", code, stdout, stderr, wantVersion+"\n")
+	if code != 0 || stderr != "" || stdout != wantVersion(t)+"\n" {
+		t.Errorf("version: exit %d stdout %q stderr %q, want %q", code, stdout, stderr, wantVersion(t)+"\n")
 	}
 
 	stdout, stderr, code = invoke([]string{"dns"}, user)
@@ -356,8 +361,8 @@ func TestVersionVar(t *testing.T) {
 		t.Errorf("version = %q, want to match %s", value, re.String())
 	}
 	stdout, stderr, code := invoke([]string{"version"}, depsAt(t, 1))
-	if stdout != wantVersion+"\n" || stderr != "" || code != 0 {
-		t.Errorf("runtime version: exit %d stdout %q stderr %q, want %q", code, stdout, stderr, wantVersion+"\n")
+	if stdout != wantVersion(t)+"\n" || stderr != "" || code != 0 {
+		t.Errorf("runtime version: exit %d stdout %q stderr %q, want %q", code, stdout, stderr, wantVersion(t)+"\n")
 	}
 }
 
@@ -455,8 +460,8 @@ func TestVersionOutput(t *testing.T) {
 		if stderr != "" {
 			t.Errorf("%q: stderr = %q, want empty", args, stderr)
 		}
-		if stdout != wantVersion+"\n" {
-			t.Errorf("%q: stdout = %q, want %q", args, stdout, wantVersion+"\n")
+		if stdout != wantVersion(t)+"\n" {
+			t.Errorf("%q: stdout = %q, want %q", args, stdout, wantVersion(t)+"\n")
 		}
 	}
 }
@@ -504,10 +509,10 @@ func TestHelpAndVersionWithoutRoot(t *testing.T) {
 	}{
 		{[]string{"--help"}, wantUsage},
 		{[]string{"-h"}, wantUsage},
-		{[]string{"--version"}, wantVersion + "\n"},
-		{[]string{"-V"}, wantVersion + "\n"},
-		{[]string{"version"}, wantVersion + "\n"},
-		{[]string{"version", "--help"}, wantVersion + "\n"},
+		{[]string{"--version"}, wantVersion(t) + "\n"},
+		{[]string{"-V"}, wantVersion(t) + "\n"},
+		{[]string{"version"}, wantVersion(t) + "\n"},
+		{[]string{"version", "--help"}, wantVersion(t) + "\n"},
 		{[]string{"config", "--help"}, wantConfigUsage},
 	}
 	for _, tc := range cases {
@@ -582,7 +587,7 @@ func TestSuccessWritesNoStderr(t *testing.T) {
 		args       []string
 		wantStdout string
 	}{
-		{"version", []string{"version"}, wantVersion + "\n"},
+		{"version", []string{"version"}, wantVersion(t) + "\n"},
 		{"config set", []string{"config", "set", "test.key=value"}, ""},
 		{"config get", []string{"config", "get", "test.key"}, "value\n"},
 		{"config list", []string{"config", "list"}, "test.key=value\n"},
