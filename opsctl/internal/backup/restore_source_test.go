@@ -130,7 +130,7 @@ func TestRestoreNewestSourceWhenAtIsNil(t *testing.T) {
 }
 
 func TestRestorePreworkflowValidationHasNoSourceStepOrEffects(t *testing.T) {
-	// R-FST6-H1RQ
+	// R-FST6-H1RQ R-RX15-3IAF R-G7FZ-2AO2
 	tests := []struct {
 		name    string
 		service string
@@ -227,7 +227,7 @@ func TestRestoreMissingSourceReportsOneFailedStepWithoutMutation(t *testing.T) {
 }
 
 func TestRestoreRejectsInvalidSourceBeforeHostChanges(t *testing.T) {
-	// Source validation supports R-FU12-UTIF and R-GFZ9-QOUX.
+	// R-FWGV-MCZT R-FXOS-04QI R-G7FZ-2AO2 R-RX15-3IAF
 	tests := []struct {
 		name       string
 		members    []restoreMember

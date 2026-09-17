@@ -71,7 +71,7 @@ func TestRestoreRunsNginxOnceAfterPublicationAndBeforeStarts(t *testing.T) {
 }
 
 func TestRestoreNginxFailurePreservesCauseAndStopsWorkflow(t *testing.T) {
-	// R-1OPO-KTN9
+	// R-1OPO-KTN9 R-G7FZ-2AO2 R-RX15-3IAF
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("published"), uid: os.Getuid(), gid: os.Getgid()})

@@ -96,7 +96,9 @@ func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
 	if target, err := os.Readlink(filepath.Join(root, "opt/notes/state/current")); err != nil || target != "data" {
 		t.Fatalf("symlink target = %q, %v", target, err)
 	}
-	assertRestoreMarker(t, root, "notes")
+	if _, err := os.Stat(filepath.Join(root, "run/opsctl/restore/notes.active")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("successful restore retained activation marker: %v", err)
+	}
 }
 
 func TestRestoreAppGuardAndStopDetails(t *testing.T) {
@@ -142,7 +144,7 @@ func TestRestoreAppGuardAndStopDetails(t *testing.T) {
 }
 
 func TestRestoreStopFailuresPreserveCauseStoppedUnitsAndTargets(t *testing.T) {
-	// R-DVW3-8CRI
+	// R-DVW3-8CRI R-G7FZ-2AO2 R-RX15-3IAF
 	transport := errors.New("system bus unavailable")
 	for _, test := range []struct {
 		name         string
@@ -236,7 +238,7 @@ func TestRestoreCreatesAccountBeforePublishingAndRetainsMarkerOnFailure(t *testi
 	if _, statErr := os.Stat(filepath.Join(root, "opt/notes/state/value")); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("ownership failure published new tree: %v", statErr)
 	}
-	assertRestoreMarker(t, root, "notes")
+	assertRestoreMarker(t, root)
 }
 
 func TestRestoreCreatesMissingAccountWithNoLoginAndNoHome(t *testing.T) {
@@ -267,7 +269,7 @@ func TestRestoreCreatesMissingAccountWithNoLoginAndNoHome(t *testing.T) {
 }
 
 func TestRestoreOwnershipApplicationFailurePreservesPublishedTrees(t *testing.T) {
-	// R-RY91-HA14 R-G04K-RO7W
+	// R-RY91-HA14 R-G04K-RO7W R-G7FZ-2AO2 R-RX15-3IAF
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/etc/old", "old etc", 0o600)
@@ -446,10 +448,10 @@ func assertRestoreMetadata(t *testing.T, root, name string, mode os.FileMode, ui
 	}
 }
 
-func assertRestoreMarker(t *testing.T, root, service string) {
+func assertRestoreMarker(t *testing.T, root string) {
 	t.Helper()
 	for name, mode := range map[string]os.FileMode{
-		"run/opsctl": 0o700, "run/opsctl/restore": 0o700, "run/opsctl/restore/" + service + ".active": 0o600,
+		"run/opsctl": 0o700, "run/opsctl/restore": 0o700, "run/opsctl/restore/notes.active": 0o600,
 	} {
 		info, err := os.Stat(filepath.Join(root, name))
 		if err != nil || info.Mode().Perm() != mode {

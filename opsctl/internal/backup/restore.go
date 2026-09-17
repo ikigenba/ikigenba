@@ -99,13 +99,16 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 	}
 	client, err := cloudEnv.Open(ctx, region)
 	if err != nil {
-		return report, fmt.Errorf("open backup storage: %w", err)
+		err = fmt.Errorf("open backup storage: %w", err)
+		return failRestoreStep(report, service, "source", "source", err, nil)
 	}
 	if client == nil {
-		return report, errors.New("open backup storage: cloud client is not configured")
+		err = errors.New("open backup storage: cloud client is not configured")
+		return failRestoreStep(report, service, "source", "source", err, nil)
 	}
 	if err := ctx.Err(); err != nil {
-		return report, fmt.Errorf("restore %q: %w", service, err)
+		err = fmt.Errorf("restore %q: %w", service, err)
+		return failRestoreStep(report, service, "source", "source", err, nil)
 	}
 
 	source, err := loadServiceRestoreSource(ctx, env, client, prefix, service, at)
@@ -120,15 +123,23 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 	unit := ""
 	unitInstalled := false
 	unitActive := false
+	activationIntent := false
 	if apps.ValidateName(service) == nil {
 		unit = "ikigenba-" + service + ".service"
 		unitInstalled, unitActive, err = inspectRestoreUnit(ctx, env, unit)
 		if err != nil {
 			return failRestoreStep(report, service, "stop", "unit inspection", err, nil)
 		}
+		if unitInstalled {
+			activationIntent, err = hasRestoreActivationMarker(env.Root, service)
+			if err != nil {
+				return report, &RestoreError{Service: service, Stage: "activation marker", Err: err}
+			}
+			activationIntent = activationIntent || unitActive
+		}
 		if unitActive {
 			if err := publishRestoreActivationMarker(env.Root, service); err != nil {
-				return failRestoreStep(report, service, "stop", "activation marker", err, nil)
+				return report, &RestoreError{Service: service, Stage: "activation marker", Err: err}
 			}
 			if err := runRestoreCommand(ctx, env, "stop "+unit, "systemctl", "stop", unit); err != nil {
 				return failRestoreStep(report, service, "stop", "stop", err, nil)
@@ -139,7 +150,7 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 	databaseIncoming := source.manifest != nil && source.manifest.Database != nil
 	if databaseIncoming {
 		if err := runRestoreCommand(ctx, env, "stop litestream.service", "systemctl", "stop", "litestream.service"); err != nil {
-			stopped := restoreStoppedUnits(unit, unitActive, false)
+			stopped := restoreStoppedUnits(unit, activationIntent, false)
 			return failRestoreStep(report, service, "stop", "stop", err, stopped)
 		}
 	}
@@ -147,17 +158,17 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 
 	identity, err := prepareRestoreIdentity(ctx, env, service, source.entries, source.manifest)
 	if err != nil {
-		return failRestoreStep(report, service, "files", "ownership", err, restoreStoppedUnits(unit, unitActive, databaseIncoming))
+		return failRestoreStep(report, service, "files", "ownership", err, restoreStoppedUnits(unit, activationIntent, databaseIncoming))
 	}
 	count, err := replaceServiceRestoreTrees(ctx, env.Root, service, source.entries, identity)
 	if err != nil {
-		return failRestoreStep(report, service, "files", "files", err, restoreStoppedUnits(unit, unitActive, databaseIncoming))
+		return failRestoreStep(report, service, "files", "files", err, restoreStoppedUnits(unit, activationIntent, databaseIncoming))
 	}
 	report.Steps = append(report.Steps, RestoreStep{
 		Name:   "files",
 		Detail: fmt.Sprintf("/opt/%s/etc, /opt/%s/state, %d files", service, service, count),
 	})
-	stopped := restoreStoppedUnits(unit, unitActive, databaseIncoming)
+	stopped := restoreStoppedUnits(unit, activationIntent, databaseIncoming)
 	if databaseIncoming {
 		database := *source.manifest.Database
 		recovered, restoreErr := restoreServiceDatabase(ctx, env, prefix, service, database, at)
@@ -195,15 +206,20 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 		if err := runRestoreCommand(ctx, env, "start litestream.service", "systemctl", "start", "litestream.service"); err != nil {
 			return failRestoreStep(report, service, "start", "start", err, stopped)
 		}
-		stopped = restoreStoppedUnits(unit, unitActive, false)
+		stopped = restoreStoppedUnits(unit, activationIntent, false)
 	}
-	startDetail := restoreStartDetail(unit, unitInstalled, unitActive, databaseIncoming)
-	if unitActive {
+	startDetail := restoreStartDetail(unit, unitInstalled, activationIntent, databaseIncoming)
+	if activationIntent {
 		if err := runRestoreCommand(ctx, env, "start "+unit, "systemctl", "start", unit); err != nil {
 			return failRestoreStep(report, service, "start", "start", err, stopped)
 		}
 	}
 	report.Steps = append(report.Steps, RestoreStep{Name: "start", Detail: startDetail})
+	if activationIntent {
+		if err := removeRestoreActivationMarker(env.Root, service); err != nil {
+			return report, &RestoreError{Service: service, Stage: "activation marker", Err: err}
+		}
+	}
 	return report, nil
 }
 
@@ -633,6 +649,25 @@ func restoreMarkerName(service string) string {
 	return path.Join("run/opsctl/restore", service+".active")
 }
 
+func hasRestoreActivationMarker(rootName, service string) (bool, error) {
+	root, err := os.OpenRoot(rootName)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = root.Close() }()
+	info, err := root.Lstat(restoreMarkerName(service))
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !info.Mode().IsRegular() {
+		return false, errors.New("restore activation marker is not a regular file")
+	}
+	return true, nil
+}
+
 func publishRestoreActivationMarker(rootName, service string) error {
 	root, err := os.OpenRoot(rootName)
 	if err != nil {
@@ -657,6 +692,18 @@ func publishRestoreActivationMarker(rootName, service string) error {
 		return closeErr
 	}
 	return root.Chmod(restoreMarkerName(service), 0o600)
+}
+
+func removeRestoreActivationMarker(rootName, service string) error {
+	root, err := os.OpenRoot(rootName)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	if err := root.Remove(restoreMarkerName(service)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func prepareRestoreIdentity(ctx context.Context, env host.Env, service string, entries []serviceRestoreEntry, manifest *apps.Manifest) (restoreIdentity, error) {

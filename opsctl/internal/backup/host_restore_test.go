@@ -545,6 +545,7 @@ type restoreCloud struct {
 	readers  []*trackedRestoreReader
 	puts     int
 	getErr   error
+	listErr  error
 	listHook func(string)
 }
 
@@ -576,6 +577,9 @@ func (client *restoreCloud) ListObjects(_ context.Context, prefix string) ([]clo
 	client.listed = append(client.listed, prefix)
 	if client.listHook != nil {
 		client.listHook(prefix)
+	}
+	if client.listErr != nil {
+		return nil, client.listErr
 	}
 	return append([]cloud.Object(nil), client.objects...), nil
 }
