@@ -9,10 +9,20 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 )
+
+// QuoteOutput marks every line of external program output as quoted detail.
+func QuoteOutput(text string) string {
+	text = strings.TrimRight(text, "\n")
+	if text == "" {
+		return ""
+	}
+	return "> " + strings.ReplaceAll(text, "\n", "\n> ")
+}
 
 // Cmd describes a process invocation.
 type Cmd struct {

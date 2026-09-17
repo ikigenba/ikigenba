@@ -41,6 +41,27 @@ func TestSurface(t *testing.T) {
 	var _ StreamRunner = Stream
 }
 
+func TestQuoteOutput(t *testing.T) {
+	// R-C6AV-T3GL
+	for _, test := range []struct {
+		name string
+		text string
+		want string
+	}{
+		{name: "empty", text: "", want: ""},
+		{name: "one line", text: "failure", want: "> failure"},
+		{name: "trailing newlines", text: "failure\n\n", want: "> failure"},
+		{name: "internal blank and quoted lines", text: "outer\n\n> inner\n", want: "> outer\n> \n> > inner"},
+		{name: "preserves other bytes", text: "a\r\nb\t ", want: "> a\r\n> b\t "},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := QuoteOutput(test.text); got != test.want {
+				t.Fatalf("QuoteOutput(%q) = %q, want %q", test.text, got, test.want)
+			}
+		})
+	}
+}
+
 func TestExecContract(t *testing.T) {
 	// R-A2CH-8GDL
 	path, name := helperOnPath(t)

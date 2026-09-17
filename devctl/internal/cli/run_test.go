@@ -330,6 +330,45 @@ func TestTopLevelHelp(t *testing.T) {
 	}
 }
 
+func TestDiagnosticStreams(t *testing.T) {
+	// R-DMPO-ZF3Q
+	successes := [][]string{
+		{"--help"}, {"--version"}, {"version"}, {"version", "--help"}, {"build", "app"},
+	}
+	for _, args := range successes {
+		result := invoke(args...)
+		if result.code != 0 || result.stderr != "" {
+			t.Errorf("Run(%q) = code %d, stderr %q; want successful empty stderr", args, result.code, result.stderr)
+		}
+	}
+
+	failures := [][]string{
+		nil, {"unknown"}, {"--unknown"}, {"version", "argument"}, {"space"},
+	}
+	for _, args := range failures {
+		result := invoke(args...)
+		if !strings.HasPrefix(result.stderr, "devctl: ") {
+			t.Errorf("Run(%q) stderr = %q, want devctl prefix", args, result.stderr)
+		}
+		if strings.Contains(result.stderr, "Usage:") {
+			t.Errorf("Run(%q) wrote usage text to stderr: %q", args, result.stderr)
+		}
+		if result.stdout != "" {
+			t.Errorf("Run(%q) duplicated diagnostic as stdout %q", args, result.stdout)
+		}
+	}
+}
+
+func TestDiagnosticDetail(t *testing.T) {
+	// R-C52Z-FBPW
+	var stderr bytes.Buffer
+	writeDiagnostic(&stderr, "operation failed", "outer\n\n> inner\n\n", "retry with --force")
+	want := "devctl: operation failed\n\n> outer\n> \n> > inner\nretry with --force\n"
+	if got := stderr.String(); got != want {
+		t.Fatalf("diagnostic = %q, want %q", got, want)
+	}
+}
+
 func TestVersionIsInitializedInSource(t *testing.T) {
 	// R-GV4C-IOFR
 	declaration := findVersionDeclaration(t)
