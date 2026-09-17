@@ -41,6 +41,7 @@ func TestRegenerateRendersDiscoveredDatabases(t *testing.T) {
 	want := "region: 'us-west-2'\n" +
 		"snapshot:\n  interval: 3600s\n" +
 		"sync-interval: 5s\n" +
+		"socket:\n  enabled: true\n  path: '" + filepath.ToSlash(filepath.Join(root, "var/run/litestream.sock")) + "'\n  permissions: 0600\n" +
 		"retention:\n  enabled: false\n" +
 		"dbs:\n" +
 		"  - path: '" + filepath.ToSlash(filepath.Join(root, "opt/alpha/state/nested/alpha.db")) + "'\n" +
@@ -49,6 +50,10 @@ func TestRegenerateRendersDiscoveredDatabases(t *testing.T) {
 		"    replicas:\n      - url: 's3://backups/hosts/example/zeta/'\n"
 	if got := readLitestream(t, root); got != want {
 		t.Fatalf("litestream.yml =\n%s\nwant:\n%s", got, want)
+	}
+	info, err := os.Stat(filepath.Join(root, "etc/litestream.yml"))
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("litestream.yml mode = %v, %v, want 0600", info, err)
 	}
 }
 
@@ -61,6 +66,7 @@ func TestRegenerateEmptyDatabaseSequence(t *testing.T) {
 	want := "region: 'us-west-2'\n" +
 		"snapshot:\n  interval: 3600s\n" +
 		"sync-interval: 5s\n" +
+		"socket:\n  enabled: true\n  path: '" + filepath.ToSlash(filepath.Join(root, "var/run/litestream.sock")) + "'\n  permissions: 0600\n" +
 		"retention:\n  enabled: false\n" +
 		"dbs: []\n"
 	if got := readLitestream(t, root); got != want {
@@ -150,6 +156,7 @@ func TestRegenerateAcceptsBucketWithUserinfoOrPort(t *testing.T) {
 			want := "region: 'us-west-2'\n" +
 				"snapshot:\n  interval: 3600s\n" +
 				"sync-interval: 5s\n" +
+				"socket:\n  enabled: true\n  path: '" + filepath.ToSlash(filepath.Join(root, "var/run/litestream.sock")) + "'\n  permissions: 0600\n" +
 				"retention:\n  enabled: false\n" +
 				"dbs:\n" +
 				"  - path: '" + filepath.ToSlash(filepath.Join(root, "opt/notes/state/notes.db")) + "'\n" +
@@ -175,6 +182,7 @@ func TestRegenerateAcceptsPeriodLimitAndSafeDatabaseOnlyName(t *testing.T) {
 	want := "region: 'us-west-2'\n" +
 		"snapshot:\n  interval: 9223372036s\n" +
 		"sync-interval: 5s\n" +
+		"socket:\n  enabled: true\n  path: '" + filepath.ToSlash(filepath.Join(root, "var/run/litestream.sock")) + "'\n  permissions: 0600\n" +
 		"retention:\n  enabled: false\n" +
 		"dbs:\n" +
 		"  - path: '" + filepath.ToSlash(filepath.Join(root, "opt/bad_name/state/app.db")) + "'\n" +

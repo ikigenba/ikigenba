@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -112,6 +113,43 @@ func TestRetireRendersSynchronizedSuccessAndArchiveFindings(t *testing.T) {
 
 func TestRetireOperationalErrorsRetainOnlyCompletedReports(t *testing.T) {
 	// R-HZPA-6PHZ
+	t.Run("sync failure remains primary and both command captures render", func(t *testing.T) {
+		// R-YUZK-TJ3U
+		root := configuredBackupRoot(t)
+		manifest := filepath.Join(root, "opt/alpha/etc/manifest.toml")
+		if err := os.MkdirAll(filepath.Dir(manifest), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(manifest, []byte("app = \"alpha\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		execute := func(_ context.Context, command host.Command) (host.Result, error) {
+			text := strings.Join(append([]string{command.Name}, command.Args...), " ")
+			switch {
+			case text == "systemctl show --property=LoadState ikigenba-alpha.service":
+				return host.Result{Stdout: []byte("LoadState=not-found\n")}, nil
+			case command.Name == "litestream":
+				return host.Result{ExitCode: 9, Stdout: []byte("sync partial\n"), Stderr: []byte("sync rejected\n")}, nil
+			case text == "systemctl stop litestream.service":
+				return host.Result{ExitCode: 5, Stdout: []byte("stop partial\n"), Stderr: []byte("stop rejected\n")}, nil
+			default:
+				return host.Result{}, fmt.Errorf("unexpected command %q", text)
+			}
+		}
+		stdout, stderr, code := invokeBackupCLI([]string{"retire"}, hostCLIDeps(root, newHostCLICloud(), execute))
+		database := filepath.Join(root, "opt/alpha/state/app.db")
+		wantOut := "services: ok (none)\n" +
+			"litestream: failed: sync " + database + ": exit status 9\n"
+		wantErr := "opsctl: retire failed at litestream\n\n" +
+			"sync " + database + ": exit status 9\n" +
+			"> sync partial\n> sync rejected\n" +
+			"stop litestream.service: exit status 5\n" +
+			"> stop partial\n> stop rejected\n"
+		if code != int(exitFail) || stdout != wantOut || stderr != wantErr {
+			t.Fatalf("sync plus stop failure = exit %d stdout %q stderr %q", code, stdout, stderr)
+		}
+	})
+
 	t.Run("failed phase and subprocess detail", func(t *testing.T) {
 		root := configuredBackupRoot(t)
 		writeBackupServiceFile(t, root, "alpha", "state")

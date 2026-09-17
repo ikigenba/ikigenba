@@ -2,8 +2,10 @@ package backup_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -19,7 +21,7 @@ var _ func(context.Context, host.Env, cloud.Env, config.Store) (backup.RetireRes
 
 func TestRetireAPIAndOrderedSuccessfulEffects(t *testing.T) {
 	// R-Y91D-XNRC R-HR5Z-IBB4 R-YSJS-1ZMG R-HYHD-SXRA
-	// R-YW7H-7AUJ
+	// R-YW7H-7AUJ R-YUZK-TJ3U
 	wantFields := []struct {
 		name string
 		typ  reflect.Type
@@ -74,8 +76,8 @@ func TestRetireAPIAndOrderedSuccessfulEffects(t *testing.T) {
 	if !reflect.DeepEqual(result.Services, []string{"alpha"}) || !result.ServicesStopped || !result.LitestreamStopped || result.FailedStep != "" {
 		t.Fatalf("Retire() phases = %+v", result)
 	}
-	if len(result.SyncedDatabases) != 0 {
-		t.Fatalf("SyncedDatabases = %v; a successful stop alone is not final-sync proof", result.SyncedDatabases)
+	if !reflect.DeepEqual(result.SyncedDatabases, []string{"app.db"}) {
+		t.Fatalf("SyncedDatabases = %v, want positive proof for app.db", result.SyncedDatabases)
 	}
 	if got := resultNames(result.Files); !reflect.DeepEqual(got, []string{"alpha", "beta"}) {
 		t.Fatalf("file results = %v", got)
@@ -96,6 +98,10 @@ func TestRetireAPIAndOrderedSuccessfulEffects(t *testing.T) {
 		"systemctl stop litestream.service",
 	}) {
 		t.Fatalf("systemctl commands = %v", got)
+	}
+	wantSync := "litestream sync -wait -timeout 60 -socket " + filepath.Join(root, "var/run/litestream.sock") + " -json " + filepath.Join(root, "opt/alpha/state/app.db")
+	if len(executor.commands) < 5 || executor.commands[3] != wantSync || executor.commands[4] != "systemctl stop litestream.service" {
+		t.Fatalf("sync and stop commands = %v, want serial sync %q then stop", executor.commands, wantSync)
 	}
 	if executor.firstCompression < executor.litestreamStop {
 		t.Fatalf("archive began before Litestream stopped: commands %v", executor.commands)
@@ -219,6 +225,183 @@ func TestRetireStopsOnUnitFailuresWithoutArchiveOrRollback(t *testing.T) {
 			t.Fatalf("commands %v uploads %v", executor.commands, client.puts)
 		}
 	})
+}
+
+func TestRetireRejectsInvalidSynchronizationProofAndStops(t *testing.T) {
+	// R-YUZK-TJ3U
+	tests := []struct {
+		name   string
+		output func(string) []byte
+	}{
+		{name: "not an object", output: func(string) []byte { return []byte("[]") }},
+		{name: "second JSON value", output: func(database string) []byte {
+			return []byte(fmt.Sprintf(`{"db_path":%q,"txid":4,"replica_txid":4} {}`, database))
+		}},
+		{name: "trailing non-whitespace", output: func(database string) []byte {
+			return []byte(fmt.Sprintf(`{"db_path":%q,"txid":4,"replica_txid":4} trailing`, database))
+		}},
+		{name: "wrong database", output: func(string) []byte {
+			return []byte(`{"db_path":"/wrong.db","txid":4,"replica_txid":4}`)
+		}},
+		{name: "missing transaction", output: func(database string) []byte {
+			return []byte(fmt.Sprintf(`{"db_path":%q,"replica_txid":4}`, database))
+		}},
+		{name: "negative transaction", output: func(database string) []byte {
+			return []byte(fmt.Sprintf(`{"db_path":%q,"txid":-1,"replica_txid":-1}`, database))
+		}},
+		{name: "fractional transaction", output: func(database string) []byte {
+			return []byte(fmt.Sprintf(`{"db_path":%q,"txid":4.0,"replica_txid":4.0}`, database))
+		}},
+		{name: "overflowing transaction", output: func(database string) []byte {
+			return []byte(fmt.Sprintf(`{"db_path":%q,"txid":18446744073709551616,"replica_txid":18446744073709551616}`, database))
+		}},
+		{name: "string transaction", output: func(database string) []byte {
+			return []byte(fmt.Sprintf(`{"db_path":%q,"txid":"4","replica_txid":"4"}`, database))
+		}},
+		{name: "unequal transactions", output: func(database string) []byte {
+			return []byte(fmt.Sprintf(`{"db_path":%q,"txid":4,"replica_txid":3}`, database))
+		}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			store := configuredFileStore(t, root)
+			writeFile(t, root, "opt/alpha/etc/manifest.toml", "app = \"alpha\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o600)
+			client := newFileCloud()
+			executor := newRetireExecutor(map[string]bool{"alpha": false})
+			databasePath := filepath.Join(root, "opt/alpha/state/app.db")
+			executor.fail = func(command string) (host.Result, error, bool) {
+				if strings.HasPrefix(command, "litestream sync ") {
+					return host.Result{Stdout: test.output(databasePath)}, nil, true
+				}
+				return host.Result{}, nil, false
+			}
+
+			result, err := backup.Retire(context.Background(), host.Env{Root: root, Now: time.Now, Execute: executor.execute}, cloud.Env{Open: client.open}, store)
+			if err == nil || result.FailedStep != "litestream" || !result.ServicesStopped || !result.LitestreamStopped || len(result.SyncedDatabases) != 0 {
+				t.Fatalf("Retire() = %+v, %v", result, err)
+			}
+			if countCommands(executor.commands, "litestream sync ") != 1 || executor.commands[len(executor.commands)-1] != "systemctl stop litestream.service" {
+				t.Fatalf("commands = %v; want one sync followed by mandatory stop", executor.commands)
+			}
+			if len(client.puts) != 0 || executor.firstCompression != -1 {
+				t.Fatalf("invalid proof archived data: commands %v uploads %v", executor.commands, client.puts)
+			}
+		})
+	}
+}
+
+func TestRetireSyncCommandFailuresStopWithoutRetry(t *testing.T) {
+	// R-YUZK-TJ3U
+	transportErr := errors.New("control socket unavailable")
+	tests := []struct {
+		name    string
+		result  host.Result
+		err     error
+		wantErr error
+	}{
+		{name: "execution", result: host.Result{Stderr: []byte("socket missing\n")}, err: transportErr, wantErr: transportErr},
+		{name: "nonzero", result: host.Result{ExitCode: 8, Stdout: []byte("partial\n")}},
+		{name: "cancellation", err: context.Canceled, wantErr: context.Canceled},
+		{name: "timeout", err: context.DeadlineExceeded, wantErr: context.DeadlineExceeded},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			store := configuredFileStore(t, root)
+			writeFile(t, root, "opt/alpha/etc/manifest.toml", "app = \"alpha\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o600)
+			client := newFileCloud()
+			executor := newRetireExecutor(map[string]bool{"alpha": false})
+			executor.fail = func(command string) (host.Result, error, bool) {
+				if strings.HasPrefix(command, "litestream sync ") {
+					return test.result, test.err, true
+				}
+				return host.Result{}, nil, false
+			}
+			result, err := backup.Retire(context.Background(), host.Env{Root: root, Now: time.Now, Execute: executor.execute}, cloud.Env{Open: client.open}, store)
+			var commandErr *host.CommandError
+			if err == nil || !errors.As(err, &commandErr) || result.FailedStep != "litestream" || !result.LitestreamStopped {
+				t.Fatalf("Retire() = %+v, %T %v", result, err, err)
+			}
+			if test.wantErr != nil && !errors.Is(err, test.wantErr) {
+				t.Fatalf("Retire() error = %v, want %v", err, test.wantErr)
+			}
+			if countCommands(executor.commands, "litestream sync ") != 1 || len(client.puts) != 0 {
+				t.Fatalf("commands = %v uploads = %v", executor.commands, client.puts)
+			}
+		})
+	}
+}
+
+func TestRetireRetainsPartialProofAndOrderedStopError(t *testing.T) {
+	// R-YUZK-TJ3U
+	root := t.TempDir()
+	store := configuredFileStore(t, root)
+	for _, name := range []string{"alpha", "beta", "gamma"} {
+		writeFile(t, root, "opt/"+name+"/etc/manifest.toml", "app = \""+name+"\"\n[database]\nengine = \"sqlite\"\npath = \"state/"+name+".db\"\n", 0o600)
+	}
+	client := newFileCloud()
+	executor := newRetireExecutor(map[string]bool{"alpha": false, "beta": false, "gamma": false})
+	executor.fail = func(command string) (host.Result, error, bool) {
+		switch {
+		case strings.HasPrefix(command, "litestream sync ") && strings.HasSuffix(command, "/beta/state/beta.db"):
+			return host.Result{ExitCode: 9, Stderr: []byte("sync rejected\n")}, nil, true
+		case command == "systemctl stop litestream.service":
+			return host.Result{ExitCode: 5, Stderr: []byte("stop rejected\n")}, nil, true
+		default:
+			return host.Result{}, nil, false
+		}
+	}
+
+	result, err := backup.Retire(context.Background(), host.Env{Root: root, Now: time.Now, Execute: executor.execute}, cloud.Env{Open: client.open}, store)
+	if err == nil || result.FailedStep != "litestream" || result.LitestreamStopped || !reflect.DeepEqual(result.SyncedDatabases, []string{"alpha.db"}) {
+		t.Fatalf("Retire() = %+v, %v", result, err)
+	}
+	joined, ok := err.(interface{ Unwrap() []error })
+	if !ok || len(joined.Unwrap()) != 2 {
+		t.Fatalf("Retire() error = %T %v, want two joined causes", err, err)
+	}
+	var syncCommandErr, stopCommandErr *host.CommandError
+	causes := joined.Unwrap()
+	if !errors.As(causes[0], &syncCommandErr) || !strings.HasPrefix(syncCommandErr.Label, "sync ") || !errors.As(causes[1], &stopCommandErr) || stopCommandErr.Label != "stop litestream.service" {
+		t.Fatalf("joined causes = %#v, want sync then stop", causes)
+	}
+	if len(client.puts) != 0 || countCommands(executor.commands, "litestream sync ") != 2 || executor.commands[len(executor.commands)-1] != "systemctl stop litestream.service" {
+		t.Fatalf("commands = %v uploads = %v", executor.commands, client.puts)
+	}
+}
+
+func TestRetireSuccessfulProofStillRequiresLitestreamStop(t *testing.T) {
+	// R-YUZK-TJ3U
+	root := t.TempDir()
+	store := configuredFileStore(t, root)
+	writeFile(t, root, "opt/alpha/etc/manifest.toml", "app = \"alpha\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o600)
+	client := newFileCloud()
+	executor := newRetireExecutor(map[string]bool{"alpha": false})
+	executor.fail = func(command string) (host.Result, error, bool) {
+		if command == "systemctl stop litestream.service" {
+			return host.Result{ExitCode: 4, Stderr: []byte("busy\n")}, nil, true
+		}
+		return host.Result{}, nil, false
+	}
+	result, err := backup.Retire(context.Background(), host.Env{Root: root, Now: time.Now, Execute: executor.execute}, cloud.Env{Open: client.open}, store)
+	if err == nil || result.FailedStep != "litestream" || result.LitestreamStopped || !reflect.DeepEqual(result.SyncedDatabases, []string{"app.db"}) {
+		t.Fatalf("Retire() = %+v, %v", result, err)
+	}
+	if len(client.puts) != 0 || executor.firstCompression != -1 {
+		t.Fatalf("stop failure archived data: commands %v uploads %v", executor.commands, client.puts)
+	}
+}
+
+func countCommands(commands []string, prefix string) int {
+	count := 0
+	for _, command := range commands {
+		if strings.HasPrefix(command, prefix) {
+			count++
+		}
+	}
+	return count
 }
 
 func TestRetireTimestampCollisionDoesNotAdvance(t *testing.T) {
@@ -376,6 +559,17 @@ func (executor *retireExecutor) execute(ctx context.Context, command host.Comman
 			return host.Result{}, nil
 		}
 		return host.Result{}, fmt.Errorf("unexpected systemctl command %q", text)
+	}
+	if command.Name == "litestream" && len(command.Args) == 8 && command.Args[0] == "sync" && command.Args[6] == "-json" {
+		proof, err := json.Marshal(map[string]any{
+			"db_path":      command.Args[7],
+			"txid":         uint64(7),
+			"replica_txid": uint64(7),
+		})
+		if err != nil {
+			return host.Result{}, err
+		}
+		return host.Result{Stdout: append([]byte(" \n"), append(proof, '\n')...)}, nil
 	}
 	if command.Name == "zstd" && executor.firstCompression < 0 {
 		executor.firstCompression = len(executor.commands) - 1

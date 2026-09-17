@@ -255,6 +255,9 @@ func renderConfiguration(root string, settings replicationSettings, services []d
 		configuration.WriteString(settings.walInterval)
 		configuration.WriteByte('\n')
 	}
+	configuration.WriteString("socket:\n  enabled: true\n  path: ")
+	configuration.WriteString(yamlString(path.Join(root, "/var/run/litestream.sock")))
+	configuration.WriteString("\n  permissions: 0600\n")
 	configuration.WriteString("retention:\n  enabled: false\n")
 	if len(services) == 0 {
 		configuration.WriteString("dbs: []\n")

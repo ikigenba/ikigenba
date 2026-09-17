@@ -2,6 +2,7 @@ package backup_test
 
 import (
 	"context"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -47,6 +48,7 @@ func TestZeroPeriodsConfigureReplicationWithoutRunningBackups(t *testing.T) {
 				t.Fatalf("Regenerate() = %v, %v, want true, nil", changed, err)
 			}
 			wantConfiguration := "region: 'us-west-2'\n" +
+				"socket:\n  enabled: true\n  path: '" + filepath.ToSlash(filepath.Join(root, "var/run/litestream.sock")) + "'\n  permissions: 0600\n" +
 				"retention:\n  enabled: false\n" +
 				"dbs: []\n"
 			if got := readLitestream(t, root); got != wantConfiguration {

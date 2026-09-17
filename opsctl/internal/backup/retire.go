@@ -1,9 +1,14 @@
 package backup
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -89,11 +94,30 @@ func Retire(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config.
 	}
 	outcome.ServicesStopped = true
 
-	if err := retirementSystemctl(ctx, env, "stop litestream.service", "stop", "litestream.service"); err != nil {
-		outcome.FailedStep = "litestream"
-		return outcome, err
+	var syncErr error
+	for _, service := range services {
+		if service.Manifest == nil || service.Manifest.Database == nil {
+			continue
+		}
+		databasePath := path.Join(env.Root, "/opt", service.Name, service.Manifest.Database.Path)
+		if err := retirementSyncDatabase(ctx, env, databasePath); err != nil {
+			syncErr = err
+			break
+		}
+		outcome.SyncedDatabases = append(outcome.SyncedDatabases, path.Base(service.Manifest.Database.Path))
 	}
-	outcome.LitestreamStopped = true
+	stopErr := retirementSystemctl(ctx, env, "stop litestream.service", "stop", "litestream.service")
+	if stopErr == nil {
+		outcome.LitestreamStopped = true
+	}
+	if syncErr != nil {
+		outcome.FailedStep = "litestream"
+		return outcome, errors.Join(syncErr, stopErr)
+	}
+	if stopErr != nil {
+		outcome.FailedStep = "litestream"
+		return outcome, stopErr
+	}
 
 	outcome.Files, err = Files(ctx, fixedEnv, cachedCloud, store, "")
 	if err != nil {
@@ -111,6 +135,72 @@ func Retire(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config.
 		return outcome, err
 	}
 	return outcome, nil
+}
+
+func retirementSyncDatabase(ctx context.Context, env host.Env, databasePath string) error {
+	socketPath := path.Join(env.Root, "/var/run/litestream.sock")
+	result, err := env.Execute(ctx, host.Command{
+		Name: "litestream",
+		Args: []string{"sync", "-wait", "-timeout", "60", "-socket", socketPath, "-json", databasePath},
+	})
+	label := "sync " + databasePath
+	if err != nil {
+		return retirementCommandError(label, result, err)
+	}
+	if result.ExitCode != 0 {
+		return &host.CommandError{Label: label, Result: result}
+	}
+	if err := validateRetirementSyncProof(result.Stdout, databasePath); err != nil {
+		return fmt.Errorf("%s: %w", label, err)
+	}
+	return nil
+}
+
+func validateRetirementSyncProof(output []byte, databasePath string) error {
+	decoder := json.NewDecoder(bytes.NewReader(output))
+	var proof map[string]json.RawMessage
+	if err := decoder.Decode(&proof); err != nil || proof == nil {
+		if err == nil {
+			err = errors.New("proof is not a JSON object")
+		}
+		return fmt.Errorf("invalid synchronization proof: %w", err)
+	}
+	var extra json.RawMessage
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			err = errors.New("multiple JSON values")
+		}
+		return fmt.Errorf("invalid synchronization proof: %w", err)
+	}
+
+	var provedPath string
+	if raw, ok := proof["db_path"]; !ok || json.Unmarshal(raw, &provedPath) != nil || provedPath != databasePath {
+		return errors.New("invalid synchronization proof: db_path does not match")
+	}
+	txid, err := retirementProofUint(proof, "txid")
+	if err != nil {
+		return err
+	}
+	replicaTxid, err := retirementProofUint(proof, "replica_txid")
+	if err != nil {
+		return err
+	}
+	if txid != replicaTxid {
+		return errors.New("invalid synchronization proof: txid and replica_txid differ")
+	}
+	return nil
+}
+
+func retirementProofUint(proof map[string]json.RawMessage, field string) (uint64, error) {
+	raw, ok := proof[field]
+	if !ok {
+		return 0, fmt.Errorf("invalid synchronization proof: %s is missing", field)
+	}
+	value, err := strconv.ParseUint(string(raw), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid synchronization proof: %s is not an unsigned integer", field)
+	}
+	return value, nil
 }
 
 func retirementUnitExists(ctx context.Context, env host.Env, service string) (bool, error) {
