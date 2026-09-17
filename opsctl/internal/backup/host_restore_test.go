@@ -425,6 +425,10 @@ type restoreMember struct {
 	mode     int64
 	linkname string
 	data     []byte
+	uid      int
+	gid      int
+	uname    string
+	gname    string
 }
 
 func hostRestoreArchive(t *testing.T, members ...restoreMember) []byte {
@@ -440,7 +444,14 @@ func hostRestoreArchive(t *testing.T, members ...restoreMember) []byte {
 		if mode == 0 {
 			mode = 0o600
 		}
-		header := &tar.Header{Name: member.name, Typeflag: typeflag, Mode: mode, Linkname: member.linkname}
+		uid, gid := member.uid, member.gid
+		if uid == 0 && gid == 0 && member.uname == "" && member.gname == "" {
+			uid, gid = os.Getuid(), os.Getgid()
+		}
+		header := &tar.Header{
+			Name: member.name, Typeflag: typeflag, Mode: mode, Linkname: member.linkname,
+			Uid: uid, Gid: gid, Uname: member.uname, Gname: member.gname,
+		}
 		if typeflag == tar.TypeReg {
 			header.Size = int64(len(member.data))
 		}
@@ -460,14 +471,33 @@ func hostRestoreArchive(t *testing.T, members ...restoreMember) []byte {
 func restoreHostEnv(t *testing.T, root string) host.Env {
 	t.Helper()
 	return host.Env{Root: root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
-		if command.Name != "zstd" || !reflect.DeepEqual(command.Args, []string{"--quiet", "--decompress", "--stdout"}) {
-			return host.Result{}, fmt.Errorf("unexpected command %q %v", command.Name, command.Args)
+		switch command.Name {
+		case "zstd":
+			if !reflect.DeepEqual(command.Args, []string{"--quiet", "--decompress", "--stdout"}) {
+				return host.Result{}, fmt.Errorf("unexpected command %q %v", command.Name, command.Args)
+			}
+			compressed, err := io.ReadAll(command.Stdin)
+			if err != nil {
+				return host.Result{}, err
+			}
+			return host.Result{Stdout: decodeRawZstandardFrame(t, compressed)}, nil
+		case "systemctl":
+			if len(command.Args) == 4 && command.Args[0] == "show" {
+				return host.Result{Stdout: []byte("LoadState=not-found\nActiveState=inactive\n")}, nil
+			}
+			if reflect.DeepEqual(command.Args, []string{"stop", "litestream.service"}) {
+				return host.Result{}, nil
+			}
+		case "getent":
+			if reflect.DeepEqual(command.Args, []string{"passwd", "ikigenba"}) {
+				return host.Result{Stdout: []byte(fmt.Sprintf("ikigenba:x:%d:%d::/nonexistent:/usr/sbin/nologin\n", os.Getuid(), os.Getgid()))}, nil
+			}
+		case "usermod":
+			if reflect.DeepEqual(command.Args, []string{"--home", "/nonexistent", "--shell", "/usr/sbin/nologin", "ikigenba"}) {
+				return host.Result{}, nil
+			}
 		}
-		compressed, err := io.ReadAll(command.Stdin)
-		if err != nil {
-			return host.Result{}, err
-		}
-		return host.Result{Stdout: decodeRawZstandardFrame(t, compressed)}, nil
+		return host.Result{}, fmt.Errorf("unexpected command %q %v", command.Name, command.Args)
 	}}
 }
 

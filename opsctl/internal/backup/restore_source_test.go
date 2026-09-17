@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -59,7 +58,6 @@ func TestRestoreSelectsSourceByArchiveTimestamp(t *testing.T) {
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/etc/manifest.toml", "app = \"wrong-installed-app\"\n", 0o600)
 	writeFile(t, root, "opt/other/state/private", "do not read or report this secret", 0o600)
-	before := fileTreeSnapshot(t, root)
 
 	olderURI := "s3://bucket/host/notes/2026-09-15T23:00:00Z.tar.zst"
 	selectedURI := "s3://bucket/host/notes/2026-09-16T00:00:00Z.tar.zst"
@@ -91,7 +89,11 @@ func TestRestoreSelectsSourceByArchiveTimestamp(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantDetail := fmt.Sprintf("notes/2026-09-16T00:00:00Z.tar.zst, %.1f MiB", float64(len(body))/1048576)
-	wantReport := backup.RestoreReport{Steps: []backup.RestoreStep{{Name: "source", Detail: wantDetail}}}
+	wantReport := backup.RestoreReport{Steps: []backup.RestoreStep{
+		{Name: "source", Detail: wantDetail},
+		{Name: "stop", Detail: "litestream.service, no ikigenba-notes.service"},
+		{Name: "files", Detail: "/opt/notes/etc, /opt/notes/state, 2 files"},
+	}}
 	if !reflect.DeepEqual(report, wantReport) {
 		t.Fatalf("Restore() report = %+v, want %+v", report, wantReport)
 	}
@@ -101,8 +103,8 @@ func TestRestoreSelectsSourceByArchiveTimestamp(t *testing.T) {
 	if client.puts != 0 || nginxCalls != 0 || len(client.readers) != 1 || !client.readers[0].closed {
 		t.Fatalf("unexpected effects: puts %d nginx %d readers %#v", client.puts, nginxCalls, client.readers)
 	}
-	if after := fileTreeSnapshot(t, root); !reflect.DeepEqual(after, before) {
-		t.Fatalf("source validation changed rooted host state:\nbefore %v\nafter  %v", before, after)
+	if data := readHostRestoreFile(t, root, "opt/other/state/private"); string(data) != "do not read or report this secret" {
+		t.Fatalf("restore changed another service: %q", data)
 	}
 	joined := fmt.Sprint(report, err)
 	if strings.Contains(joined, root) || strings.Contains(joined, "do not read or report this secret") {
@@ -119,7 +121,7 @@ func TestRestoreNewestSourceWhenAtIsNil(t *testing.T) {
 	body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("new")})
 	client := &restoreCloud{objects: []cloud.Object{{URI: newURI}, {URI: oldURI}}, bodies: map[string][]byte{newURI: body}}
 	report, err := backup.Restore(context.Background(), restoreHostEnv(t, root), cloud.Env{Open: client.open}, store, "notes", nil, func(context.Context) error { return nil })
-	if err != nil || len(report.Steps) != 1 || !strings.HasPrefix(report.Steps[0].Detail, "notes/2026-09-17T00:00:00.25Z.tar.zst, ") || !reflect.DeepEqual(client.got, []string{newURI}) {
+	if err != nil || len(report.Steps) != 3 || !strings.HasPrefix(report.Steps[0].Detail, "notes/2026-09-17T00:00:00.25Z.tar.zst, ") || !reflect.DeepEqual(client.got, []string{newURI}) {
 		t.Fatalf("Restore() = %+v, %v; got %v", report, err, client.got)
 	}
 }
@@ -287,7 +289,7 @@ func assertRestoreFields(t *testing.T, typeOf reflect.Type, want []struct {
 
 func restoreTimePointer(value time.Time) *time.Time { return &value }
 
-func TestRestoreSourceUsesRootWithoutCreatingTarget(t *testing.T) {
+func TestRestoreUsesRootForRestoredTarget(t *testing.T) {
 	// R-GFZ9-QOUX
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
@@ -295,11 +297,11 @@ func TestRestoreSourceUsesRootWithoutCreatingTarget(t *testing.T) {
 	body := hostRestoreArchive(t, restoreMember{name: "etc/env", data: []byte("TOKEN=secret\n")})
 	client := &restoreCloud{objects: []cloud.Object{{URI: uri}}, bodies: map[string][]byte{uri: body}}
 	report, err := backup.Restore(context.Background(), restoreHostEnv(t, root), cloud.Env{Open: client.open}, store, "notes", nil, func(context.Context) error { return nil })
-	if err != nil || len(report.Steps) != 1 {
+	if err != nil || len(report.Steps) != 3 {
 		t.Fatalf("Restore() = %+v, %v", report, err)
 	}
-	if _, statErr := os.Lstat(root + "/opt/notes"); !errors.Is(statErr, os.ErrNotExist) {
-		t.Fatalf("source stage created target: %v", statErr)
+	if data := readHostRestoreFile(t, root, "opt/notes/etc/env"); string(data) != "TOKEN=secret\n" {
+		t.Fatalf("rooted restored target = %q", data)
 	}
 	if strings.Contains(fmt.Sprint(report), "TOKEN=secret") || strings.Contains(fmt.Sprint(report), root) {
 		t.Fatalf("source report exposed sensitive or rooted data: %+v", report)

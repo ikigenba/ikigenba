@@ -8,7 +8,11 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path"
+	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -56,11 +60,17 @@ type serviceRestoreEntry struct {
 	mode     fs.FileMode
 	linkname string
 	data     []byte
+	uid      int
+	gid      int
+	uname    string
+	gname    string
 }
 
 type serviceRestoreSource struct {
 	basename string
 	size     int64
+	entries  []serviceRestoreEntry
+	manifest *apps.Manifest
 }
 
 // Restore selects and validates the requested service backup before any host
@@ -106,7 +116,58 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 		Name:   "source",
 		Detail: fmt.Sprintf("%s/%s, %.1f MiB", service, source.basename, float64(source.size)/1048576),
 	})
+	unit := ""
+	unitInstalled := false
+	unitActive := false
+	if apps.ValidateName(service) == nil {
+		unit = "ikigenba-" + service + ".service"
+		unitInstalled, unitActive, err = inspectRestoreUnit(ctx, env, unit)
+		if err != nil {
+			return failRestoreStep(report, service, "stop", "unit inspection", err, nil)
+		}
+		if unitActive {
+			if err := publishRestoreActivationMarker(env.Root, service); err != nil {
+				return failRestoreStep(report, service, "stop", "activation marker", err, nil)
+			}
+			if err := runRestoreCommand(ctx, env, "stop "+unit, "systemctl", "stop", unit); err != nil {
+				return failRestoreStep(report, service, "stop", "stop", err, nil)
+			}
+		}
+	}
+
+	databaseIncoming := source.manifest != nil && source.manifest.Database != nil
+	if databaseIncoming {
+		if err := runRestoreCommand(ctx, env, "stop litestream.service", "systemctl", "stop", "litestream.service"); err != nil {
+			stopped := restoreStoppedUnits(unit, unitActive, false)
+			return failRestoreStep(report, service, "stop", "stop", err, stopped)
+		}
+	}
+	report.Steps = append(report.Steps, RestoreStep{Name: "stop", Detail: restoreStopDetail(unit, unitInstalled, unitActive, databaseIncoming)})
+
+	identity, err := prepareRestoreIdentity(ctx, env, service, source.entries, source.manifest)
+	if err != nil {
+		return failRestoreStep(report, service, "files", "ownership", err, restoreStoppedUnits(unit, unitActive, databaseIncoming))
+	}
+	count, err := replaceServiceRestoreTrees(ctx, env.Root, service, source.entries, identity)
+	if err != nil {
+		return failRestoreStep(report, service, "files", "files", err, restoreStoppedUnits(unit, unitActive, databaseIncoming))
+	}
+	report.Steps = append(report.Steps, RestoreStep{
+		Name:   "files",
+		Detail: fmt.Sprintf("/opt/%s/etc, /opt/%s/state, %d files", service, service, count),
+	})
 	return report, nil
+}
+
+type restoreIdentity struct {
+	needed bool
+	uid    int
+	gid    int
+}
+
+func failRestoreStep(report RestoreReport, service, step, stage string, err error, stopped []string) (RestoreReport, error) {
+	report.Steps = append(report.Steps, RestoreStep{Name: step, Err: err})
+	return report, &RestoreError{Service: service, Stage: stage, Err: err, Stopped: stopped}
 }
 
 func loadServiceRestoreSource(ctx context.Context, env host.Env, client cloud.Client, prefix, service string, at *time.Time) (serviceRestoreSource, error) {
@@ -149,7 +210,7 @@ func loadServiceRestoreSource(ctx context.Context, env host.Env, client cloud.Cl
 	if err != nil {
 		return serviceRestoreSource{}, err
 	}
-	_, _, err = validateServiceRestoreArchive(archive, service)
+	entries, manifest, err := validateServiceRestoreArchive(archive, service)
 	if err != nil {
 		return serviceRestoreSource{}, fmt.Errorf("validate %q: %w", selected.URI, err)
 	}
@@ -159,6 +220,8 @@ func loadServiceRestoreSource(ctx context.Context, env host.Env, client cloud.Cl
 	return serviceRestoreSource{
 		basename: strings.TrimPrefix(selected.URI, servicePrefix),
 		size:     int64(len(compressed)),
+		entries:  entries,
+		manifest: manifest,
 	}, nil
 }
 
@@ -239,7 +302,10 @@ func validateServiceRestoreArchive(archive []byte, service string) ([]serviceRes
 		if _, duplicate := byName[name]; duplicate {
 			return nil, nil, fmt.Errorf("duplicate archive entry %q", header.Name)
 		}
-		entry := serviceRestoreEntry{name: name, typeflag: header.Typeflag, mode: restoredFileMode(header.Mode), linkname: header.Linkname}
+		entry := serviceRestoreEntry{
+			name: name, typeflag: header.Typeflag, mode: restoredFileMode(header.Mode), linkname: header.Linkname,
+			uid: header.Uid, gid: header.Gid, uname: header.Uname, gname: header.Gname,
+		}
 		switch header.Typeflag {
 		case tar.TypeReg, byte(0):
 			entry.typeflag = tar.TypeReg
@@ -288,6 +354,281 @@ func validateServiceRestoreArchive(archive []byte, service string) ([]serviceRes
 		return nil, nil, fmt.Errorf("manifest app %q does not match service %q", manifest.App, service)
 	}
 	return entries, &manifest, nil
+}
+
+func inspectRestoreUnit(ctx context.Context, env host.Env, unit string) (bool, bool, error) {
+	result, err := env.Execute(ctx, host.Command{Name: "systemctl", Args: []string{"show", "--property=LoadState", "--property=ActiveState", unit}})
+	if err != nil || result.ExitCode != 0 {
+		return false, false, restoreCommandError("inspect "+unit, result, err)
+	}
+	values := map[string]string{}
+	for line := range strings.SplitSeq(strings.ReplaceAll(string(result.Stdout), "\r\n", "\n"), "\n") {
+		key, value, ok := strings.Cut(line, "=")
+		if ok {
+			values[key] = value
+		}
+	}
+	if values["LoadState"] == "" || values["ActiveState"] == "" {
+		return false, false, errors.New("inspect " + unit + ": response omitted unit state")
+	}
+	installed := values["LoadState"] != "not-found"
+	return installed, installed && values["ActiveState"] == "active", nil
+}
+
+func runRestoreCommand(ctx context.Context, env host.Env, label, name string, args ...string) error {
+	result, err := env.Execute(ctx, host.Command{Name: name, Args: args})
+	if err != nil || result.ExitCode != 0 {
+		return restoreCommandError(label, result, err)
+	}
+	return nil
+}
+
+func restoreCommandError(label string, result host.Result, err error) error {
+	var commandErr *host.CommandError
+	if errors.As(err, &commandErr) {
+		return err
+	}
+	return &host.CommandError{Label: label, Result: result, Err: err}
+}
+
+func restoreStopDetail(unit string, installed, active, database bool) string {
+	app := "no app unit"
+	if unit != "" {
+		switch {
+		case active:
+			app = unit
+		case installed:
+			app = unit + " already inactive"
+		default:
+			app = "no " + unit
+		}
+	}
+	if !database {
+		return app
+	}
+	if active {
+		return app + ", litestream.service"
+	}
+	return "litestream.service, " + app
+}
+
+func restoreStoppedUnits(unit string, appStopped, litestreamStopped bool) []string {
+	var stopped []string
+	if appStopped {
+		stopped = append(stopped, unit)
+	}
+	if litestreamStopped {
+		stopped = append(stopped, "litestream.service")
+	}
+	return stopped
+}
+
+func restoreMarkerName(service string) string {
+	return path.Join("run/opsctl/restore", service+".active")
+}
+
+func publishRestoreActivationMarker(rootName, service string) error {
+	root, err := os.OpenRoot(rootName)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	for _, directory := range []string{"run", "run/opsctl", "run/opsctl/restore"} {
+		if err := root.MkdirAll(directory, 0o700); err != nil {
+			return err
+		}
+		if directory != "run" {
+			if err := root.Chmod(directory, 0o700); err != nil {
+				return err
+			}
+		}
+	}
+	file, err := root.OpenFile(restoreMarkerName(service), os.O_WRONLY|os.O_CREATE, 0o600)
+	if err != nil {
+		return err
+	}
+	if closeErr := file.Close(); closeErr != nil {
+		return closeErr
+	}
+	return root.Chmod(restoreMarkerName(service), 0o600)
+}
+
+func prepareRestoreIdentity(ctx context.Context, env host.Env, service string, entries []serviceRestoreEntry, manifest *apps.Manifest) (restoreIdentity, error) {
+	needed := manifest != nil && manifest.App == service
+	for _, entry := range entries {
+		needed = needed || entry.uname == "ikigenba" || entry.gname == "ikigenba"
+	}
+	if !needed {
+		return restoreIdentity{}, nil
+	}
+	uid, gid, err := ensureRestoreAccount(ctx, env)
+	if err != nil {
+		return restoreIdentity{}, err
+	}
+	return restoreIdentity{needed: true, uid: uid, gid: gid}, nil
+}
+
+func ensureRestoreAccount(ctx context.Context, env host.Env) (int, int, error) {
+	lookup := func() (int, int, bool, error) {
+		result, err := env.Execute(ctx, host.Command{Name: "getent", Args: []string{"passwd", "ikigenba"}})
+		if err != nil {
+			return 0, 0, false, restoreCommandError("inspect ikigenba account", result, err)
+		}
+		if result.ExitCode == 2 {
+			return 0, 0, false, nil
+		}
+		if result.ExitCode != 0 {
+			return 0, 0, false, restoreCommandError("inspect ikigenba account", result, nil)
+		}
+		fields := strings.Split(strings.TrimSpace(string(result.Stdout)), ":")
+		if len(fields) < 7 || fields[0] != "ikigenba" {
+			return 0, 0, false, errors.New("inspect ikigenba account: invalid response")
+		}
+		uid, uidErr := strconv.Atoi(fields[2])
+		gid, gidErr := strconv.Atoi(fields[3])
+		if uidErr != nil || gidErr != nil || uid == 0 {
+			return 0, 0, false, errors.New("inspect ikigenba account: invalid non-root identity")
+		}
+		return uid, gid, true, nil
+	}
+	uid, gid, found, err := lookup()
+	if err != nil {
+		return 0, 0, err
+	}
+	if !found {
+		if err := runRestoreCommand(ctx, env, "create ikigenba account", "useradd", "--system", "--no-create-home", "--shell", "/usr/sbin/nologin", "ikigenba"); err != nil {
+			return 0, 0, err
+		}
+		uid, gid, found, err = lookup()
+		if err != nil || !found {
+			if err == nil {
+				err = errors.New("created ikigenba account is unavailable")
+			}
+			return 0, 0, err
+		}
+	}
+	if err := runRestoreCommand(ctx, env, "harden ikigenba account", "usermod", "--home", "/nonexistent", "--shell", "/usr/sbin/nologin", "ikigenba"); err != nil {
+		return 0, 0, err
+	}
+	return uid, gid, nil
+}
+
+func replaceServiceRestoreTrees(ctx context.Context, rootName, service string, entries []serviceRestoreEntry, identity restoreIdentity) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	root, err := os.OpenRoot(rootName)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = root.Close() }()
+	stageName, err := os.MkdirTemp(rootName, ".opsctl-service-restore-")
+	if err != nil {
+		return 0, err
+	}
+	stage := path.Base(stageName)
+	defer func() { _ = root.RemoveAll(stage) }()
+	if err := populateServiceRestoreStage(root, rootName, stage, entries, identity); err != nil {
+		return 0, err
+	}
+	if err := root.MkdirAll("opt", 0o755); err != nil {
+		return 0, err
+	}
+	serviceRoot := path.Join("opt", service)
+	if _, err := root.Lstat(serviceRoot); errors.Is(err, os.ErrNotExist) {
+		if err := root.Mkdir(serviceRoot, 0o755); err != nil {
+			return 0, err
+		}
+	} else if err != nil {
+		return 0, err
+	}
+	for _, tree := range []string{"etc", "state"} {
+		if err := root.RemoveAll(path.Join(serviceRoot, tree)); err != nil {
+			return 0, err
+		}
+		staged := path.Join(stage, tree)
+		if _, err := root.Lstat(staged); err == nil {
+			if err := root.Rename(staged, path.Join(serviceRoot, tree)); err != nil {
+				return 0, err
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return 0, err
+		}
+	}
+	count := 0
+	for _, entry := range entries {
+		if entry.typeflag != tar.TypeDir {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func populateServiceRestoreStage(root *os.Root, rootName, stage string, entries []serviceRestoreEntry, identity restoreIdentity) error {
+	ordered := append([]serviceRestoreEntry(nil), entries...)
+	sort.Slice(ordered, func(i, j int) bool {
+		di, dj := strings.Count(ordered[i].name, "/"), strings.Count(ordered[j].name, "/")
+		if di != dj {
+			return di < dj
+		}
+		if ordered[i].typeflag != ordered[j].typeflag {
+			return ordered[i].typeflag == tar.TypeDir
+		}
+		return ordered[i].name < ordered[j].name
+	})
+	var directories []serviceRestoreEntry
+	for _, entry := range ordered {
+		name := path.Join(stage, entry.name)
+		if err := root.MkdirAll(path.Dir(name), 0o700); err != nil {
+			return err
+		}
+		switch entry.typeflag {
+		case tar.TypeDir:
+			if err := root.MkdirAll(name, 0o700); err != nil {
+				return err
+			}
+			directories = append(directories, entry)
+		case tar.TypeReg:
+			file, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+			if err != nil {
+				return err
+			}
+			_, writeErr := file.Write(entry.data)
+			closeErr := file.Close()
+			if err := errors.Join(writeErr, closeErr); err != nil {
+				return err
+			}
+			if err := root.Chmod(name, entry.mode); err != nil {
+				return err
+			}
+		case tar.TypeSymlink:
+			if err := root.Symlink(entry.linkname, name); err != nil {
+				return err
+			}
+		}
+		uid, gid := mappedServiceRestoreOwnership(entry, identity)
+		if err := os.Lchown(filepath.Join(rootName, filepath.FromSlash(name)), uid, gid); err != nil {
+			return fmt.Errorf("set ownership on %q: %w", entry.name, err)
+		}
+	}
+	for i := len(directories) - 1; i >= 0; i-- {
+		entry := directories[i]
+		if err := root.Chmod(path.Join(stage, entry.name), entry.mode); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func mappedServiceRestoreOwnership(entry serviceRestoreEntry, identity restoreIdentity) (int, int) {
+	uid, gid := entry.uid, entry.gid
+	if identity.needed && entry.uname == "ikigenba" {
+		uid = identity.uid
+	}
+	if identity.needed && entry.gname == "ikigenba" {
+		gid = identity.gid
+	}
+	return uid, gid
 }
 
 func validServiceArchiveName(headerName string) (string, error) {
