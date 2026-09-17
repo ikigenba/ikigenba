@@ -15,6 +15,11 @@ Never use `git stash`. The stash stack is shared across all worktrees, so
 another session may pop or drop your entry. Set work aside with a temporary WIP
 commit, a dedicated local branch, or an isolated worktree instead.
 
+Every commit an agent makes ends with a `Co-Authored-By:` trailer naming the
+agent that made it, in whatever form that agent identifies itself. This is the
+only commit attribution rule in the repository; no sub-project AGENTS.md
+restates it or names a specific model.
+
 ## Command-line conventions
 
 Every command-line program in this repository behaves the same way.

@@ -114,8 +114,6 @@ are documented in `../docs/llm-lint-rule-candidates.md`.
 <optional: one or two lines on what changed and why>
 
 Requirements: R-XXXX-XXXX, R-YYYY-YYYY
-
-Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
 The `Requirements:` trailer lists the phase's ids so history stays greppable
