@@ -3,8 +3,16 @@ package cloud
 import (
 	"context"
 	"errors"
+	"go/ast"
+	"go/constant"
+	"go/importer"
+	"go/parser"
+	"go/token"
+	"go/types"
 	"io"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -65,7 +73,7 @@ func TestOpenerAndClientsContract(t *testing.T) {
 	// R-Y7GF-A1BT
 	wantOpener := reflect.TypeOf((func(context.Context, string, string) (Clients, error))(nil))
 	gotOpener := reflect.TypeOf(Opener(nil))
-	if gotOpener.Kind() != reflect.Func || !gotOpener.ConvertibleTo(wantOpener) {
+	if gotOpener.Name() != "Opener" || gotOpener.Kind() != reflect.Func || !gotOpener.ConvertibleTo(wantOpener) {
 		t.Fatalf("Opener has type %v, want underlying type %v", gotOpener, wantOpener)
 	}
 	assertStructFields(t, reflect.TypeOf(Clients{}), []field{
@@ -89,7 +97,8 @@ func TestErrorContract(t *testing.T) {
 	})
 	cause := errors.New("cause")
 	err := &Error{Err: cause}
-	if !errors.Is(err.Unwrap(), cause) {
+	gotCause := err.Unwrap()
+	if reflect.TypeOf(gotCause) != reflect.TypeOf(cause) || reflect.ValueOf(gotCause).Pointer() != reflect.ValueOf(cause).Pointer() {
 		t.Fatalf("Unwrap() = %v, want original error", err.Unwrap())
 	}
 	var _ error = err
@@ -105,6 +114,7 @@ func TestErrorFormatting(t *testing.T) {
 		{"subject and code", &Error{Service: "ssm", Operation: "GetParameter", Subject: "/ikigenba/account", Code: "ParameterNotFound"}, "ssm GetParameter /ikigenba/account: ParameterNotFound"},
 		{"no subject", &Error{Service: "ec2", Operation: "RunInstances", Code: "InsufficientInstanceCapacity"}, "ec2 RunInstances: InsufficientInstanceCapacity"},
 		{"wrapped message", &Error{Service: "route53", Operation: "ChangeResourceRecordSets", Err: errors.New("Throttling")}, "route53 ChangeResourceRecordSets: Throttling"},
+		{"code takes precedence", &Error{Service: "ssm", Operation: "GetParameter", Code: "ParameterNotFound", Err: errors.New("transport failure")}, "ssm GetParameter: ParameterNotFound"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -122,6 +132,14 @@ func TestEC2ValueContracts(t *testing.T) {
 	if !reflect.DeepEqual(states, wantStates) {
 		t.Fatalf("instance states = %v, want %v", states, wantStates)
 	}
+	assertExactStringConstants(t, "InstanceState", map[string]string{
+		"StatePending":      "pending",
+		"StateRunning":      "running",
+		"StateShuttingDown": "shutting-down",
+		"StateTerminated":   "terminated",
+		"StateStopping":     "stopping",
+		"StateStopped":      "stopped",
+	})
 	assertNamedString(t, reflect.TypeOf(InstanceState("")), "InstanceState")
 	assertStructFields(t, reflect.TypeOf(Instance{}), []field{{"ID", stringType()}, {"Space", stringType()}, {"State", reflect.TypeOf(InstanceState(""))}, {"Address", stringType()}})
 	assertStructFields(t, reflect.TypeOf(Address{}), []field{{"AllocationID", stringType()}, {"AssociationID", stringType()}, {"IP", stringType()}, {"Space", stringType()}})
@@ -152,6 +170,14 @@ func TestRoute53ValueContracts(t *testing.T) {
 	if ChangePending != "PENDING" || ChangeInsync != "INSYNC" {
 		t.Fatalf("change statuses = %q, %q", ChangePending, ChangeInsync)
 	}
+	assertExactStringConstants(t, "ChangeAction", map[string]string{
+		"ChangeUpsert": "UPSERT",
+		"ChangeDelete": "DELETE",
+	})
+	assertExactStringConstants(t, "ChangeStatus", map[string]string{
+		"ChangePending": "PENDING",
+		"ChangeInsync":  "INSYNC",
+	})
 }
 
 func TestRoute53InterfaceContract(t *testing.T) {
@@ -212,6 +238,37 @@ func assertNamedString(t *testing.T, got reflect.Type, name string) {
 	t.Helper()
 	if got.Name() != name || got.Kind() != reflect.String {
 		t.Fatalf("type = %s (kind %s), want named string %s", got.Name(), got.Kind(), name)
+	}
+}
+
+func assertExactStringConstants(t *testing.T, typeName string, want map[string]string) {
+	t.Helper()
+	_, testFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate cloud_test.go")
+	}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filepath.Join(filepath.Dir(testFile), "cloud.go"), nil, 0)
+	if err != nil {
+		t.Fatalf("parse cloud.go: %v", err)
+	}
+	info, err := (&types.Config{Importer: importer.Default()}).Check("cloud", fset, []*ast.File{file}, nil)
+	if err != nil {
+		t.Fatalf("type-check cloud.go: %v", err)
+	}
+	wantType := info.Scope().Lookup(typeName)
+	if wantType == nil {
+		t.Fatalf("type %s is not declared", typeName)
+	}
+	got := make(map[string]string)
+	for _, name := range info.Scope().Names() {
+		object, ok := info.Scope().Lookup(name).(*types.Const)
+		if ok && object.Exported() && types.Identical(object.Type(), wantType.Type()) {
+			got[name] = constant.StringVal(object.Val())
+		}
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("exported %s constants = %v, want exactly %v", typeName, got, want)
 	}
 }
 
