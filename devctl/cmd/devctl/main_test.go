@@ -106,6 +106,8 @@ func TestMainDeclaresAndWiresEveryDependency(t *testing.T) {
 		"cancel()":      true,
 		"os.Exit(code)": true,
 	}
+	getwdAssignedToDir := false
+	interruptContextAssignedToRunInputs := false
 	codeAssignedFromRun := false
 	var runPos, cancelPos, exitPos token.Pos
 	ast.Inspect(file, func(node ast.Node) bool {
@@ -123,7 +125,22 @@ func TestMainDeclaresAndWiresEveryDependency(t *testing.T) {
 			}
 		}
 		assignment, ok := node.(*ast.AssignStmt)
-		if ok && len(assignment.Lhs) == 1 && len(assignment.Rhs) == 1 &&
+		if !ok {
+			return true
+		}
+		if len(assignment.Lhs) == 2 && len(assignment.Rhs) == 1 {
+			lhs0 := expression(fset, assignment.Lhs[0])
+			lhs1 := expression(fset, assignment.Lhs[1])
+			rhs := expression(fset, assignment.Rhs[0])
+			if lhs0 == "dir" && lhs1 == "err" && rhs == "os.Getwd()" {
+				getwdAssignedToDir = true
+			}
+			if lhs0 == "ctx" && lhs1 == "cancel" &&
+				rhs == "signal.NotifyContext(context.Background(), os.Interrupt)" {
+				interruptContextAssignedToRunInputs = true
+			}
+		}
+		if len(assignment.Lhs) == 1 && len(assignment.Rhs) == 1 &&
 			expression(fset, assignment.Lhs[0]) == "code" &&
 			expression(fset, assignment.Rhs[0]) == "cli.Run(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr, deps)" {
 			codeAssignedFromRun = true
@@ -135,6 +152,12 @@ func TestMainDeclaresAndWiresEveryDependency(t *testing.T) {
 	}
 	if !codeAssignedFromRun {
 		t.Error("main.go does not pass cli.Run's result to os.Exit through code")
+	}
+	if !getwdAssignedToDir {
+		t.Error("main.go does not assign os.Getwd's result to the dir supplied as Deps.Dir")
+	}
+	if !interruptContextAssignedToRunInputs {
+		t.Error("main.go does not assign signal.NotifyContext's results to the ctx passed to cli.Run and its cancel function")
 	}
 	if runPos == token.NoPos || runPos >= cancelPos || cancelPos >= exitPos {
 		t.Error("main.go must call cli.Run, cancel its interrupt context, then call os.Exit")
