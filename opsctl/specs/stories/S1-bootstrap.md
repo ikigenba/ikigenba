@@ -3,11 +3,22 @@
 Running opsctl at all: help, version, exit codes, and the refusal to run as
 anyone but root. Every later group adds a command to this frame.
 
+opsctl is run on one host, as root, over ssh, by an operator at a terminal and
+by an agent — `devctl` from a developer's machine, or a systemd timer on the
+host itself. Every story names which. A host runs one complete deployment of
+the platform and knows nothing about any other host.
+
 opsctl is read by an agent over ssh far more often than by a person. stdout
 carries only the answer — a value, a list, a checklist line per step — with no
 decoration, colour, or progress output. Every diagnostic goes to stderr as
 `opsctl: <message>`, and any further detail follows after one blank line,
 unprefixed. The usage text is never written to stderr.
+
+Each group states the line it adds to the top-level usage text under
+`Commands:`; bootstrap carries the frame with `version` alone. Each also
+declares the configuration keys it introduces, and only those; a command's
+help text lists every key that command reads, including keys another group
+declared.
 
 ## An operator asks opsctl what it can do
 

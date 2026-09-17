@@ -52,14 +52,14 @@ path = "state/crm.db"
 ```
 
 A host may have no default app, in which case its own name answers 404 (see
-`nginx.md`); it may never have two.
+`S5-nginx.md`); it may never have two.
 
 `install` reads the app, the port, `default`, and `secrets`. The `[env]` table
 it writes out. The `[database]` table it reads for one purpose only: to
 regenerate `/etc/litestream.yml` from every manifest on the host, the way it
 regenerates nginx, so that a database arrives on the host and starts being
 replicated in the same command. What the table means, and what replication
-is, are `backup.md`'s. It is in the manifest rather than the store because it
+is, are `S8-backup.md`'s. It is in the manifest rather than the store because it
 is a fact about the app, which travels with the app.
 
 Secret *values* never travel in the file. devctl wrote them to the parameter
@@ -182,7 +182,7 @@ Postconditions:
   and now names `/opt/crm/state/crm.db`, replicating to `<backup.s3_uri>crm/`.
   Because the file changed, `litestream.service` was restarted; it is running.
   Every other declared database on the host paused for the restart and is
-  replicating again, the same window `backup.md` accepts for a restore.
+  replicating again, the same window `S8-backup.md` accepts for a restore.
 - The unit is `active`, and the binary reports `v0.1.0`.
 - No other app on the host has changed.
 

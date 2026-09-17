@@ -135,7 +135,7 @@ engine = "sqlite"
 path = "state/crm.db"
 ```
 
-This mirrors the split `nginx.md` already makes: a service is *discovered* by
+This mirrors the split `S5-nginx.md` already makes: a service is *discovered* by
 what is on disk, and gets more than the baseline only if its manifest asks for
 it. There, a manifest naming a `port` is what earns a server block. Here, a
 `[database]` table is what earns replication. A service with no manifest, or
@@ -146,14 +146,14 @@ and nothing else.
 writes `/etc/litestream.yml` from the declared databases and the two database
 periods and enables `litestream.service`, and `timers`, which writes the two
 service and timer pairs that run the two file backups at their periods. The
-same step writes the certificate renewal pair `certificates.md` describes; it
+same step writes the certificate renewal pair `S6-certificates.md` describes; it
 is a timer on the host, so it is written where the timers are, but it has no
 period key and is always enabled.
 
 `init` is not the only writer of `/etc/litestream.yml`. The file is a pure
 function of the manifests under `/opt` and the two periods, so whatever
 changes a manifest regenerates it: `opsctl install` does, in its own
-`litestream` step (see `apps.md`), and `opsctl restore` does before it starts
+`litestream` step (see `S7-apps.md`), and `opsctl restore` does before it starts
 litestream again. Both leave `litestream.service` alone when the regenerated
 file is byte for byte the old one. `init` alone enables the unit; the others
 assume it is enabled, because `init` ran before any app reached the host.

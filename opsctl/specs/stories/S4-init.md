@@ -19,8 +19,8 @@ and `*.<host.name>`, and the wildcard certificate, the nginx catch-all, and
 every app's own name all hang off it.
 
 The sequence is the setup commands that exist. It is empty until a group adds
-one to it, and each group that does says so; `certificates.md` adds
-`certificate`, `nginx.md` adds `nginx.conf`, and `backup.md` adds `litestream`
+one to it, and each group that does says so; `S6-certificates.md` adds
+`certificate`, `S5-nginx.md` adds `nginx.conf`, and `S8-backup.md` adds `litestream`
 and `timers`, in that order. Every setup command is idempotent, so `init` is
 too, and a step's inputs are read from the store every run — which is why
 changing a period or a zone is `config set` followed by `init`, and never an
@@ -29,7 +29,7 @@ edit to something `init` generated. From the developer's machine that pair is
 `create` runs it once and `space init` runs it on any later day. Two of the
 generated files also answer to
 what is under `/opt`, and `install` and `restore` regenerate those themselves
-when they change it (see `apps.md` and `backup.md`); `init` remains the only
+when they change it (see `S7-apps.md` and `S8-backup.md`); `init` remains the only
 command that enables the units behind them.
 
 Every check runs; none short-circuits another, so one run shows an agent

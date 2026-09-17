@@ -243,7 +243,7 @@ Preconditions:
 - `<domain>` ends in the account's `domain` property.
 - No instance is tagged `Space=<domain>` in the account.
 - Every app in the checkout has the values its manifest's `secrets` array
-  names in the developer's keyring (see `secrets.md`).
+  names in the developer's keyring (see `S3-secrets.md`).
 - opsctl has a published release, and the host can reach it over the network.
 - `--acme-email` names an address the CA will accept.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
@@ -265,7 +265,7 @@ Postconditions:
   with TTL 60 in the account's hosted zone whose name is the longest suffix
   of `<domain>`, point at the Elastic IP and the change is `INSYNC`.
 - Every app's secrets object is at `/ikigenba/<domain>/<app>` (see
-  `secrets.md`).
+  `S3-secrets.md`).
 - `opsctl` is installed on the host and on root's PATH, and its configuration
   store holds exactly the ten keys opsctl declares: `host.name=<domain>`,
   `dns.provider=route53`, `dns.zones=<zone name>:<zone id>`, `aws.region` and
@@ -331,7 +331,7 @@ Preconditions:
 - The account's `delete_backups_on_destroy` is false, and nothing is under
   `ikigenba.dev/host/` in the backup bucket.
 - Every app in the checkout has the values its manifest's `secrets` array
-  names in the developer's keyring (see `secrets.md`).
+  names in the developer's keyring (see `S3-secrets.md`).
 - opsctl has a published release, and the host can reach it over the network.
 - `--acme-email` names an address the CA will accept.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
@@ -353,7 +353,7 @@ Postconditions:
   with TTL 60 in the account's hosted zone whose name is the longest suffix
   of `<domain>`, point at the Elastic IP and the change is `INSYNC`.
 - Every app's secrets object is at `/ikigenba/<domain>/<app>` (see
-  `secrets.md`).
+  `S3-secrets.md`).
 - `opsctl` is installed on the host and on root's PATH, and its configuration
   store holds exactly the ten keys opsctl declares: `host.name=<domain>`,
   `dns.provider=route53`, `dns.zones=<zone name>:<zone id>`, `aws.region` and
@@ -397,7 +397,7 @@ why it is that order.
 
 Restore comes before deploy, not after. A deploy onto empty state starts the
 app, and an app that finds no database makes one, migrates it, and seeds it
-(see opsctl's `apps.md`); a restore after that has to stop the app and
+(see opsctl's `S7-apps.md`); a restore after that has to stop the app and
 replace what it made. A restore first has nothing to stop, and the deploy
 that follows is an ordinary deploy: the app finds its database, migrates it
 forward, and seeds nothing.
@@ -728,7 +728,7 @@ Preconditions:
 - `<domain>` ends in the account's `domain` property.
 - No instance is tagged `Space=<domain>` in the account.
 - Every app in the checkout has the values its manifest's `secrets` array
-  names in the developer's keyring (see `secrets.md`).
+  names in the developer's keyring (see `S3-secrets.md`).
 - opsctl has a published release, and the host can reach it over the network.
 - `--acme-email` names an address the CA will accept.
 - The developer's ssh configuration can reach a new instance as `ec2-user`
@@ -1571,7 +1571,7 @@ Over ssh, `opsctl restart` restarts the app's unit and reports it the way
 install's last line does; devctl reports opsctl's exit, the shape `restore`
 uses. A restart changes nothing on the host's disk. In particular it does not
 carry a pushed secret to the app: that is a deploy of the same file, and
-`secrets.md` says why.
+`S3-secrets.md` says why.
 
 Command:
 

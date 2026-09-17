@@ -1,7 +1,7 @@
 # Original-story fidelity: remote commands
 
-Reviewed D09–D13 against the original `deploy.md`, `restore.md`, and
-`space-lifecycle.md` stories, read in full from the preserved pre-review copy.
+Reviewed D09–D13 against the original `S5-deploy.md`, `S6-restore.md`, and
+`S2-space-lifecycle.md` stories, read in full from the preserved pre-review copy.
 The direction is stories to design. No story was edited for this review.
 
 ## Correction
