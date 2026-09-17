@@ -7,16 +7,6 @@ output "hosted_zone_name_servers" {
   value       = aws_route53_zone.env.name_servers
 }
 
-output "dev_public_ip" {
-  description = "Elastic IP for ikigenba.dev"
-  value       = aws_eip.dev.public_ip
-}
-
-output "dev_ssh" {
-  description = "SSH command for the dev server"
-  value       = "ssh -i ~/.ssh/id_ed25519_ikigenba_dev ec2-user@${aws_eip.dev.public_ip}"
-}
-
 output "launch_template_id" {
   description = "The ikigenba-space launch template every space host is launched from."
   value       = aws_launch_template.space.id
