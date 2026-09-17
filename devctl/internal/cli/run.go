@@ -76,7 +76,7 @@ type topLevel struct {
 func Run(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.Writer, deps seam.Deps) int {
 	deps = deps.Defaults()
 	if deps.EUID == 0 {
-		writeDiagnostic(stderr, "must not run as root", "", "")
+		writeDiagnostic(stderr, "must not run as root", "", "", false)
 		return 3
 	}
 
@@ -181,12 +181,15 @@ func runVersion(args []string, stdout, stderr io.Writer) int {
 }
 
 func usageError(stderr io.Writer, message, helpCommand string) int {
-	writeDiagnostic(stderr, message, "", "see '"+helpCommand+"' for usage")
+	writeDiagnostic(stderr, message, "", "see '"+helpCommand+"' for usage", false)
 	return 2
 }
 
-func writeDiagnostic(stderr io.Writer, message, detail, advice string) {
+func writeDiagnostic(stderr io.Writer, message, detail, advice string, detailReported bool) {
 	_, _ = fmt.Fprintf(stderr, "devctl: %s\n", message)
+	if detailReported {
+		detail = ""
+	}
 	quotedDetail := seam.QuoteOutput(detail)
 	if quotedDetail == "" && advice == "" {
 		return

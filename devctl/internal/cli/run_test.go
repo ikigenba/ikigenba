@@ -362,10 +362,23 @@ func TestDiagnosticStreams(t *testing.T) {
 func TestDiagnosticDetail(t *testing.T) {
 	// R-C52Z-FBPW
 	var stderr bytes.Buffer
-	writeDiagnostic(&stderr, "operation failed", "outer\n\n> inner\n\n", "retry with --force")
+	writeDiagnostic(&stderr, "operation failed", "outer\n\n> inner\n\n", "retry with --force", false)
 	want := "devctl: operation failed\n\n> outer\n> \n> > inner\nretry with --force\n"
 	if got := stderr.String(); got != want {
 		t.Fatalf("diagnostic = %q, want %q", got, want)
+	}
+
+	var stdout bytes.Buffer
+	stderr.Reset()
+	report := "completed items\nfailed items\n"
+	_, _ = io.WriteString(&stdout, report)
+	writeDiagnostic(&stderr, "some items failed", report, "retry the failed items", true)
+	if got := stdout.String(); got != report {
+		t.Fatalf("stdout = %q, want delivered report %q", got, report)
+	}
+	want = "devctl: some items failed\n\nretry the failed items\n"
+	if got := stderr.String(); got != want {
+		t.Fatalf("diagnostic after stdout report = %q, want %q", got, want)
 	}
 }
 
