@@ -39,6 +39,22 @@ func TestWaitState(t *testing.T) {
 		t.Fatalf("waits = %v", waits)
 	}
 
+	for _, state := range []cloud.InstanceState{cloud.StateStopped, cloud.StateTerminated} {
+		calls := 0
+		ec2.describe = func(_ context.Context, id string) (cloud.Instance, error) {
+			calls++
+			if id != "i-one" {
+				t.Fatalf("DescribeInstance id = %q", id)
+			}
+			return cloud.Instance{ID: id, State: state}, nil
+		}
+		waits = nil
+		got, err = WaitState(context.Background(), deps, helperAccount(ec2, nil, nil), "i-one", state)
+		if err != nil || got.State != state || got.Address != "" || calls != 1 || len(waits) != 0 {
+			t.Fatalf("WaitState(%s) = %#v, %v; calls=%d waits=%v", state, got, err, calls, waits)
+		}
+	}
+
 	calls := 0
 	ec2.describe = func(context.Context, string) (cloud.Instance, error) {
 		calls++
@@ -128,9 +144,11 @@ func TestPutRecords(t *testing.T) {
 	// R-SW1K-2Q16 R-TKFJ-Q4V2
 	var gotZone string
 	var gotChanges []cloud.RecordChange
+	changeRecordsCalls := 0
 	statuses := []cloud.ChangeStatus{cloud.ChangePending, cloud.ChangeInsync}
 	route53 := &helperRoute53{
 		changeRecords: func(_ context.Context, zone string, changes []cloud.RecordChange) (string, error) {
+			changeRecordsCalls++
 			gotZone, gotChanges = zone, changes
 			return "change-one", nil
 		},
@@ -149,8 +167,8 @@ func TestPutRecords(t *testing.T) {
 		{Action: cloud.ChangeUpsert, Record: cloud.Record{Name: "app.example", Type: "A", TTL: RecordTTL, Values: []string{"192.0.2.3"}}},
 		{Action: cloud.ChangeUpsert, Record: cloud.Record{Name: "*.app.example", Type: "A", TTL: RecordTTL, Values: []string{"192.0.2.3"}}},
 	}
-	if err != nil || gotZone != "zone-one" || !reflect.DeepEqual(gotChanges, wantChanges) || !reflect.DeepEqual(waits, []time.Duration{PollInterval}) {
-		t.Fatalf("PutRecords: zone=%q changes=%#v waits=%v err=%v", gotZone, gotChanges, waits, err)
+	if err != nil || changeRecordsCalls != 1 || gotZone != "zone-one" || !reflect.DeepEqual(gotChanges, wantChanges) || !reflect.DeepEqual(waits, []time.Duration{PollInterval}) {
+		t.Fatalf("PutRecords: ChangeRecords calls=%d zone=%q changes=%#v waits=%v err=%v", changeRecordsCalls, gotZone, gotChanges, waits, err)
 	}
 
 	calls := 0
@@ -161,8 +179,8 @@ func TestPutRecords(t *testing.T) {
 	if !errors.As(err, &waitErr) || waitErr.Subject != "change-one" || waitErr.Want != "reach INSYNC" {
 		t.Fatalf("timeout error = %#v", err)
 	}
-	if calls != PollAttempts || len(waits) != PollAttempts-1 {
-		t.Fatalf("calls, waits = %d, %d; want %d, %d", calls, len(waits), PollAttempts, PollAttempts-1)
+	if changeRecordsCalls != 2 || calls != PollAttempts || len(waits) != PollAttempts-1 {
+		t.Fatalf("ChangeRecords calls, status calls, waits = %d, %d, %d; want 2, %d, %d", changeRecordsCalls, calls, len(waits), PollAttempts, PollAttempts-1)
 	}
 }
 
@@ -171,6 +189,7 @@ func TestDeleteRecords(t *testing.T) {
 	records := []cloud.Record{
 		{Name: "app.example", Type: "A", TTL: 123, Values: []string{"192.0.2.4"}},
 		{Name: `\052.app.example`, Type: "A", TTL: 456, Values: []string{"192.0.2.5"}},
+		{Name: "*.app.example", Type: "A", TTL: 789, Values: []string{"192.0.2.6"}},
 		{Name: "app.example", Type: "TXT", TTL: 7, Values: []string{"ignore"}},
 		{Name: "elsewhere.example", Type: "A", TTL: 8, Values: []string{"ignore"}},
 	}
@@ -193,11 +212,11 @@ func TestDeleteRecords(t *testing.T) {
 		},
 	}
 	count, err := DeleteRecords(context.Background(), helperAccount(nil, route53, nil), cloud.Zone{ID: "zone-one"}, "app.example")
-	want := []cloud.RecordChange{{Action: cloud.ChangeDelete, Record: records[0]}, {Action: cloud.ChangeDelete, Record: records[1]}}
-	if err != nil || count != 2 || calls != 1 || !reflect.DeepEqual(got, want) {
+	want := []cloud.RecordChange{{Action: cloud.ChangeDelete, Record: records[0]}, {Action: cloud.ChangeDelete, Record: records[1]}, {Action: cloud.ChangeDelete, Record: records[2]}}
+	if err != nil || count != 3 || calls != 1 || !reflect.DeepEqual(got, want) {
 		t.Fatalf("DeleteRecords = %d, %v; calls=%d changes=%#v", count, err, calls, got)
 	}
-	records = records[2:]
+	records = records[3:]
 	count, err = DeleteRecords(context.Background(), helperAccount(nil, route53, nil), cloud.Zone{ID: "zone-one"}, "app.example")
 	if err != nil || count != 0 || calls != 1 {
 		t.Fatalf("empty DeleteRecords = %d, %v; ChangeRecords calls=%d", count, err, calls)
@@ -232,6 +251,36 @@ func TestDeleteRole(t *testing.T) {
 	want := []string{"exists " + name, "profile " + name, "policy " + name + " " + PolicyName, "remove " + name + " role-a", "remove " + name + " role-b", "delete-profile " + name, "delete-role " + name}
 	if err != nil || !deleted || !reflect.DeepEqual(calls, want) {
 		t.Fatalf("DeleteRole = %v, %v; calls=%v", deleted, err, calls)
+	}
+
+	calls = nil
+	iam.roleExists = func(_ context.Context, name string) (bool, error) {
+		calls = append(calls, "exists "+name)
+		return true, nil
+	}
+	iam.profileRoles = func(_ context.Context, name string) ([]string, bool, error) {
+		calls = append(calls, "profile "+name)
+		return nil, false, nil
+	}
+	deleted, err = DeleteRole(context.Background(), helperAccount(nil, nil, iam), "app.example")
+	want = []string{"exists " + name, "profile " + name, "policy " + name + " " + PolicyName, "delete-profile " + name, "delete-role " + name}
+	if err != nil || !deleted || !reflect.DeepEqual(calls, want) {
+		t.Fatalf("role-only DeleteRole = %v, %v; calls=%v", deleted, err, calls)
+	}
+
+	calls = nil
+	iam.roleExists = func(_ context.Context, name string) (bool, error) {
+		calls = append(calls, "exists "+name)
+		return false, nil
+	}
+	iam.profileRoles = func(_ context.Context, name string) ([]string, bool, error) {
+		calls = append(calls, "profile "+name)
+		return []string{"profile-role"}, true, nil
+	}
+	deleted, err = DeleteRole(context.Background(), helperAccount(nil, nil, iam), "app.example")
+	want = []string{"exists " + name, "profile " + name, "policy " + name + " " + PolicyName, "remove " + name + " profile-role", "delete-profile " + name, "delete-role " + name}
+	if err != nil || !deleted || !reflect.DeepEqual(calls, want) {
+		t.Fatalf("profile-only DeleteRole = %v, %v; calls=%v", deleted, err, calls)
 	}
 
 	calls = nil
