@@ -55,6 +55,9 @@ func TestRunRejectsExtraOperands(t *testing.T) {
 	t.Run("list", func(t *testing.T) {
 		assertRunUsageError(t, []string{"list", "operand"}, "space list takes no arguments")
 	})
+	t.Run("list operand before help", func(t *testing.T) {
+		assertRunUsageError(t, []string{"list", "operand", "--help"}, "space list takes no arguments")
+	})
 }
 
 func TestSpaceSubcommandGrammar(t *testing.T) {
@@ -100,9 +103,11 @@ func TestRunRejectsUnknownOptions(t *testing.T) {
 	cases := [][]string{
 		{"--wat"},
 		{"list", "--wat"},
+		{"list", "--wat", "--help"},
 		{"destroy", "foo.example", "--wat"},
 		{"destroy", "--no-backup=true", "foo.example"},
 		{"stop", "-x", "foo.example"},
+		{"stop", "foo.example", "--wat", "--help"},
 		{"start", "foo.example", "--wat"},
 		{"status", "--wat"},
 	}

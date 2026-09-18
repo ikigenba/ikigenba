@@ -58,14 +58,6 @@ func parseInvocation(args []string) (invocation, error) {
 	}
 	result := invocation{subcommand: subcommand}
 	arguments := args[1:]
-	for _, argument := range arguments {
-		if argument == "--help" || argument == "-h" {
-			if subcommand == "list" {
-				result.help = listUsage
-			}
-			return result, nil
-		}
-	}
 
 	// These subcommands own their grammars in their own packages. The CLI
 	// dispatcher normally routes them there without calling this package.
@@ -74,7 +66,12 @@ func parseInvocation(args []string) (invocation, error) {
 	}
 
 	operands := make([]string, 0, len(arguments))
+	help := false
 	for _, argument := range arguments {
+		if argument == "--help" || argument == "-h" {
+			help = true
+			continue
+		}
 		if subcommand == "destroy" && argument == "--no-backup" {
 			result.noBackup = true
 			continue
@@ -89,13 +86,19 @@ func parseInvocation(args []string) (invocation, error) {
 		if len(operands) != 0 {
 			return invocation{}, usage("space list takes no arguments")
 		}
+		if help {
+			result.help = listUsage
+		}
+		return result, nil
+	}
+	if len(operands) > 1 {
+		return invocation{}, usage("space " + subcommand + " takes only <domain>")
+	}
+	if help {
 		return result, nil
 	}
 	if len(operands) == 0 {
 		return invocation{}, usage("space " + subcommand + " needs <domain>")
-	}
-	if len(operands) > 1 {
-		return invocation{}, usage("space " + subcommand + " takes only <domain>")
 	}
 	result.domain = operands[0]
 	return result, nil
