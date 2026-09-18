@@ -82,6 +82,27 @@ func TestStagePreparedCompilesOnceAndRunsBinary(t *testing.T) {
 	}
 }
 
+func TestStagePreparedMapsCompilerNonzero(t *testing.T) {
+	// R-EVUU-EQS5
+	prepared := pipelinePrepared(t)
+	var commands []seam.Cmd
+	deps := pipelineDeps(t, &commands, seam.Result{ExitCode: 17, Stderr: []byte("compile failed\n")})
+
+	_, _, err := stagePrepared(context.Background(), prepared, deps)
+	var processError *ProcessError
+	if !errors.As(err, &processError) {
+		t.Fatalf("error = %T %v, want *ProcessError", err, err)
+	}
+	want := ProcessError{Label: "build crm", Status: 17, Stderr: "compile failed\n"}
+	if *processError != want {
+		t.Fatalf("ProcessError = %#v, want %#v", processError, want)
+	}
+	if len(commands) != 1 || commands[0].Path != "go" {
+		t.Fatalf("commands = %#v, want one go command", commands)
+	}
+	assertNoPipelineTemps(t, prepared.app.Dir)
+}
+
 func TestStagePreparedRejectsReportedVersionMismatch(t *testing.T) {
 	// R-EX2Q-SIIU
 	prepared := pipelinePrepared(t)
@@ -116,59 +137,55 @@ func TestStagePreparedRejectsReportedVersionMismatch(t *testing.T) {
 	assertNoPipelineTemps(t, prepared.app.Dir)
 }
 
-func TestStagePreparedMapsNonzeroResults(t *testing.T) {
-	tests := []struct {
-		name       string
-		results    []seam.Result
-		wantLabel  string
-		wantStatus int
-		wantStderr string
-	}{
-		{
-			name:       "compiler",
-			results:    []seam.Result{{ExitCode: 17, Stderr: []byte("compile failed\n")}},
-			wantLabel:  "build crm",
-			wantStatus: 17,
-			wantStderr: "compile failed\n",
-		},
-		{
-			name:       "version",
-			results:    []seam.Result{{}, {ExitCode: 18, Stderr: []byte("version failed\n")}},
-			wantLabel:  "crm --version",
-			wantStatus: 18,
-			wantStderr: "version failed\n",
-		},
-		{
-			name:       "manifest",
-			results:    []seam.Result{{}, {Stdout: []byte("v1.2.3\n")}, {ExitCode: 19, Stderr: []byte("manifest failed\n")}},
-			wantLabel:  "crm manifest",
-			wantStatus: 19,
-			wantStderr: "manifest failed\n",
-		},
+func TestStagePreparedMapsVersionNonzeroWithoutPublishing(t *testing.T) {
+	// R-EYAN-6A9J
+	prepared := pipelinePrepared(t)
+	assertArtifactUnchanged := seedEarlierArtifact(t, prepared)
+	var commands []seam.Cmd
+	deps := pipelineDeps(t, &commands,
+		seam.Result{},
+		seam.Result{ExitCode: 18, Stderr: []byte("version failed\n")},
+	)
+
+	_, _, err := stagePrepared(context.Background(), prepared, deps)
+	var processError *ProcessError
+	if !errors.As(err, &processError) {
+		t.Fatalf("error = %T %v, want *ProcessError", err, err)
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			// R-EYAN-6A9J
-			// R-F4E5-34Z0
-			prepared := pipelinePrepared(t)
-			var commands []seam.Cmd
-			deps := pipelineDeps(t, &commands, test.results...)
-			_, _, err := stagePrepared(context.Background(), prepared, deps)
-			var processError *ProcessError
-			if !errors.As(err, &processError) {
-				t.Fatalf("error = %T %v, want *ProcessError", err, err)
-			}
-			if *processError != (ProcessError{Label: test.wantLabel, Status: test.wantStatus, Stderr: test.wantStderr}) {
-				t.Fatalf("ProcessError = %#v", processError)
-			}
-			assertNoPipelineTemps(t, prepared.app.Dir)
-		})
+	want := ProcessError{Label: "crm --version", Status: 18, Stderr: "version failed\n"}
+	if *processError != want {
+		t.Fatalf("ProcessError = %#v, want %#v", processError, want)
 	}
+	if len(commands) != 2 || !reflect.DeepEqual(commands[1].Args, []string{"--version"}) {
+		t.Fatalf("commands = %#v, want compile then --version", commands)
+	}
+	assertArtifactUnchanged()
+}
+
+func TestStagePreparedMapsManifestNonzero(t *testing.T) {
+	// R-F4E5-34Z0
+	prepared := pipelinePrepared(t)
+	var commands []seam.Cmd
+	deps := pipelineDeps(t, &commands,
+		seam.Result{},
+		seam.Result{Stdout: []byte("v1.2.3\n")},
+		seam.Result{ExitCode: 19, Stderr: []byte("manifest failed\n")},
+	)
+
+	_, _, err := stagePrepared(context.Background(), prepared, deps)
+	var processError *ProcessError
+	if !errors.As(err, &processError) {
+		t.Fatalf("error = %T %v, want *ProcessError", err, err)
+	}
+	want := ProcessError{Label: "crm manifest", Status: 19, Stderr: "manifest failed\n"}
+	if *processError != want {
+		t.Fatalf("ProcessError = %#v, want %#v", processError, want)
+	}
+	assertNoPipelineTemps(t, prepared.app.Dir)
 }
 
 func TestCommandStartErrorsNamePathAndAreNotProcessErrors(t *testing.T) {
 	// R-70T2-JC34
-	// R-EYAN-6A9J
 	tests := []struct {
 		name   string
 		failAt int
@@ -225,6 +242,34 @@ func TestCommandStartErrorsNamePathAndAreNotProcessErrors(t *testing.T) {
 	})
 }
 
+func TestStagePreparedVersionStartErrorDoesNotPublish(t *testing.T) {
+	// R-EYAN-6A9J
+	prepared := pipelinePrepared(t)
+	assertArtifactUnchanged := seedEarlierArtifact(t, prepared)
+	startErr := errors.New("could not start")
+	var commands []seam.Cmd
+	deps := seam.Deps{Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
+		commands = append(commands, cloneCommand(command))
+		if len(commands) == 2 {
+			return seam.Result{}, startErr
+		}
+		return seam.Result{}, nil
+	}}
+
+	_, _, err := stagePrepared(context.Background(), prepared, deps)
+	var processError *ProcessError
+	if errors.As(err, &processError) {
+		t.Fatalf("error = %#v, unexpectedly matches *ProcessError", err)
+	}
+	if len(commands) != 2 || !reflect.DeepEqual(commands[1].Args, []string{"--version"}) {
+		t.Fatalf("commands = %#v, want compile then --version", commands)
+	}
+	if !strings.Contains(err.Error(), commands[1].Path) || !errors.Is(err, startErr) {
+		t.Fatalf("error = %v, want path %q wrapping start error", err, commands[1].Path)
+	}
+	assertArtifactUnchanged()
+}
+
 func pipelinePrepared(t *testing.T) preparedBuild {
 	t.Helper()
 	appDir := filepath.Join(t.TempDir(), "crm")
@@ -252,6 +297,45 @@ func cloneCommand(command seam.Cmd) seam.Cmd {
 	command.Args = append([]string(nil), command.Args...)
 	command.Env = append([]string(nil), command.Env...)
 	return command
+}
+
+func seedEarlierArtifact(t *testing.T, prepared preparedBuild) func() {
+	t.Helper()
+	dist := filepath.Join(prepared.app.Dir, "dist")
+	if err := os.MkdirAll(dist, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	artifact := filepath.Join(dist, prepared.app.Name+"-"+prepared.version+".tar.xz")
+	want := []byte("earlier artifact")
+	if err := os.WriteFile(artifact, want, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return func() {
+		t.Helper()
+		root, err := os.OpenRoot(dist)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if closeErr := root.Close(); closeErr != nil {
+				t.Errorf("close dist root: %v", closeErr)
+			}
+		}()
+		entries, err := os.ReadDir(dist)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 1 || entries[0].Name() != filepath.Base(artifact) {
+			t.Fatalf("dist entries = %#v, want only earlier artifact", entries)
+		}
+		got, err := root.ReadFile(filepath.Base(artifact))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("earlier artifact = %q, want %q", got, want)
+		}
+	}
 }
 
 func assertNoPipelineTemps(t *testing.T, appDir string) {
