@@ -2,7 +2,8 @@
 
 Checkout discovery and keyring lookup supply local inputs. Only app identity and
 secret names are decoded from manifests; host-specific settings remain opaque.
-The shared appref package defines the same usable-name and version grammar for
+An app's `main` package sits at `cmd/<name>/` under its directory, like every
+other binary in the repository. The shared appref package defines the same usable-name and version grammar for
 build and deploy. A checkout tag belongs to one app, independently of branch
 ancestry.
 
@@ -32,7 +33,7 @@ ancestry.
 
 - R-TI90-6NW4: `checkout.Open` consumers MUST resolve checkout app paths under `Checkout.Root`, even when `Deps.Dir` is a subdirectory. Deploy file operands MUST instead follow D9: relative to `Deps.Dir`, or unchanged when absolute, without checkout discovery. Every `seam.Cmd` that `internal/checkout` passes to `Deps.Exec` other than Open's MUST carry Dir equal to Root; tests MUST cover different Dir and Root values and a relative deploy operand.
 
-- R-W1C4-X1GX: `(*Checkout).Apps` MUST return one `App` for each entry of `Root` that is a directory, holds a regular file at `ManifestFile`, and holds at least one file directly in itself whose name ends in `.go` but not in `_test.go` and whose package clause is `main`, each carrying that directory's name as `Name`, `Path(Name)` as `Dir`, and the `Manifest` decoded from its `ManifestFile` as `Manifest`; MUST return them sorted ascending by `Name`; MUST return an empty result and a nil error when `Root` holds no such entry; and MUST pass no `seam.Cmd` to `Deps.Exec`.
+- R-L5YW-0VX6: `(*Checkout).Apps` MUST return one `App` for each entry of `Root` that is a directory, holds a regular file at `ManifestFile`, and holds at least one file directly in its `cmd/<name>` directory whose name ends in `.go` but not in `_test.go` and whose package clause is `main`, where `<name>` is that entry's name, so that such a file directly in the entry, in a `cmd/<other>` directory for any `<other>` that is not `<name>`, or in a subdirectory of `cmd/<name>` does not qualify the entry; each carrying that directory's name as `Name`, `Path(Name)` as `Dir`, and the `Manifest` decoded from its `ManifestFile` as `Manifest`; MUST return them sorted ascending by `Name`; MUST return an empty result and a nil error when `Root` holds no such entry; and MUST pass no `seam.Cmd` to `Deps.Exec`.
 
 - R-W2K1-AT7M: `(*Checkout).Apps` MUST return a `*ManifestError` whose `App` is the directory's name when that directory's `ManifestFile` cannot be read or `DecodeManifest` of its contents fails, with that failure's error as `Err`, and MUST return a `*ManifestError` whose `App` is the directory's name and whose `Detail` is `app is '<decoded app>', not '<directory name>'` when the decoded `Manifest.App` is not that directory's name.
 

@@ -350,8 +350,8 @@ Output:
 ```
 devctl: build dashboard: exit status 1
 
-> # github.com/ikigenba/ikigenba/dashboard
-> ./main.go:41:2: undefined: render
+> # github.com/ikigenba/ikigenba/dashboard/cmd/dashboard
+> cmd/dashboard/main.go:41:2: undefined: render
 ```
 
 Exits 1. The text is on stderr; stdout is empty.

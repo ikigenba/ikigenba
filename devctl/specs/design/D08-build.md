@@ -56,7 +56,7 @@ publishing preserves an earlier file on failure.
 
 - R-EUMY-0Z1G: Build MUST reject an app name for which `appref.ValidName` is false before compiling or writing dist, with a `UsageError` whose message is `'<app>' is not a usable app name` and whose help is empty, yielding exit 2.
 
-- R-EVUU-EQS5: Build MUST compile the selected app exactly once with Go for linux/amd64 with cgo disabled, into temporary output under that app’s dist directory, using the checkout app as the build working directory so its own module is used; it MUST not inject a version at build time. A compiler nonzero exit MUST become ProcessError labeled `build <app>` with its exit status and stderr.
+- R-J7ER-X23Q: Build MUST compile the selected app exactly once with Go for linux/amd64 with cgo disabled, into temporary output under that app’s dist directory, by passing to `deps.Exec` exactly one `seam.Cmd` whose `Path` is `go`, whose `Dir` is the app’s `Dir` so its own module is used, and whose `Args` name the package path `./cmd/<app>`, where `<app>` is the app’s `Name`, as the package to build; it MUST not inject a version at build time. A compiler nonzero exit MUST become ProcessError labeled `build <app>` with its exit status and stderr.
 
 - R-EX2Q-SIIU: After compilation and before publishing an archive, build MUST execute that same staged binary with `--version` through `Deps.Exec`, remove only trailing newlines from stdout, and compare it byte for byte with the selected version suffix; a mismatch MUST return `UsageError` with message `<app>: tagged <app>/<version> but the binary reports <reported>` and empty help, with no dist artifact changed.
 
