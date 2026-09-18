@@ -251,6 +251,44 @@ func use() { apps((((readManifest)))) }
 		}
 	})
 
+	t.Run("filesystem capability extracted from indexed composite", func(t *testing.T) {
+		files := parseArchitectureFixture(t, map[string]string{
+			"leak.go": `package sample
+import "os"
+var leakedRead = [...]func(string) ([]byte, error){nil, os.ReadFile}[1]
+type readFunc func(string) ([]byte, error)
+var leakedSlice = [...]readFunc{nil, os.ReadFile}[1:]
+var convertedRead = readFunc(os.ReadFile)
+var wrappedRead = func() readFunc { return os.ReadFile }()
+func use() {
+	_, _ = leakedRead(".")
+	_, _ = convertedRead(".")
+	_ = leakedSlice
+	_, _ = wrappedRead(".")
+}
+`,
+		})
+		source := files["leak.go"]
+		initializers := make(map[string]ast.Expr)
+		ast.Inspect(source.file, func(node ast.Node) bool {
+			specification, ok := node.(*ast.ValueSpec)
+			if ok && len(specification.Names) == 1 && len(specification.Values) == 1 {
+				initializers[specification.Names[0].Name] = specification.Values[0]
+			}
+			return true
+		})
+		for _, name := range []string{"leakedRead", "leakedSlice", "convertedRead", "wrappedRead"} {
+			initializer := initializers[name]
+			if initializer == nil {
+				t.Fatalf("%s initializer not found", name)
+			}
+			if !aliasesPathOrRunnerCapability(initializer, source) {
+				t.Errorf("%s did not preserve the embedded os.ReadFile capability", name)
+			}
+		}
+		findFixtureCall(t, source.file, "leakedRead")
+	})
+
 	t.Run("parenthesized cross-file command alias through new", func(t *testing.T) {
 		files := parseArchitectureFixture(t, map[string]string{
 			"alias.go": "package sample\nimport \"github.com/ikigenba/ikigenba/devctl/internal/seam\"\ntype hiddenCommand = seam.Cmd\n",
@@ -353,6 +391,122 @@ func unparenthesized(expr ast.Expr) ast.Expr {
 }
 
 func aliasesPathOrRunnerCapability(expr ast.Expr, source sourceFile) bool {
+	switch value := unparenthesized(expr).(type) {
+	case *ast.Ident:
+		return len(rootedHelperParameters(source.pkgPath, value.Name)) != 0 ||
+			source.pkgPath != modulePath+"/internal/seam" && functionIsRunner(value.Name, source)
+	case *ast.SelectorExpr:
+		if value.Sel.Name == "Exec" || value.Sel.Name == "Stream" {
+			return true
+		}
+		qualifier, ok := value.X.(*ast.Ident)
+		if ok && source.importPath[qualifier.Name] == "os" &&
+			(filesystemCalls[value.Sel.Name] || value.Sel.Name == "Getenv" || value.Sel.Name == "LookupEnv" || value.Sel.Name == "UserHomeDir") {
+			return true
+		}
+		return aliasesPathOrRunnerCapability(value.X, source)
+	case *ast.IndexExpr:
+		return aliasesPathOrRunnerCapability(value.X, source) || aliasesPathOrRunnerCapability(value.Index, source)
+	case *ast.IndexListExpr:
+		if aliasesPathOrRunnerCapability(value.X, source) {
+			return true
+		}
+		for _, index := range value.Indices {
+			if aliasesPathOrRunnerCapability(index, source) {
+				return true
+			}
+		}
+	case *ast.SliceExpr:
+		return aliasesPathOrRunnerCapability(value.X, source) ||
+			expressionListAliasesCapability([]ast.Expr{value.Low, value.High, value.Max}, source)
+	case *ast.CompositeLit:
+		// cmd/devctl is required to assemble the real dependency capabilities in
+		// one explicit seam.Deps literal. That wiring is not an alias escape.
+		if isNamedType(value.Type, modulePath+"/internal/seam", "Deps", source) {
+			return false
+		}
+		for _, element := range value.Elts {
+			switch element := element.(type) {
+			case *ast.KeyValueExpr:
+				if aliasesPathOrRunnerCapability(element.Key, source) || aliasesPathOrRunnerCapability(element.Value, source) {
+					return true
+				}
+			case ast.Expr:
+				if aliasesPathOrRunnerCapability(element, source) {
+					return true
+				}
+			}
+		}
+	case *ast.KeyValueExpr:
+		return aliasesPathOrRunnerCapability(value.Key, source) || aliasesPathOrRunnerCapability(value.Value, source)
+	case *ast.CallExpr:
+		// A direct capability call consumes the function value; its path is checked
+		// separately. Function-type conversions preserve their argument as a
+		// callable value; ordinary call arguments are checked at the call site.
+		if expressionIsFunctionType(value.Fun, source) &&
+			expressionListAliasesCapability(value.Args, source) {
+			return true
+		}
+		if !directPathOrRunnerCapability(value.Fun, source) {
+			return aliasesPathOrRunnerCapability(value.Fun, source)
+		}
+	case *ast.FuncLit:
+		found := false
+		ast.Inspect(value.Body, func(node ast.Node) bool {
+			returned, ok := node.(*ast.ReturnStmt)
+			if ok && expressionListAliasesCapability(returned.Results, source) {
+				found = true
+			}
+			return !found
+		})
+		return found
+	case *ast.TypeAssertExpr:
+		return aliasesPathOrRunnerCapability(value.X, source)
+	case *ast.StarExpr:
+		return aliasesPathOrRunnerCapability(value.X, source)
+	case *ast.UnaryExpr:
+		return aliasesPathOrRunnerCapability(value.X, source)
+	case *ast.BinaryExpr:
+		return aliasesPathOrRunnerCapability(value.X, source) || aliasesPathOrRunnerCapability(value.Y, source)
+	}
+	return false
+}
+
+func expressionListAliasesCapability(expressions []ast.Expr, source sourceFile) bool {
+	for _, expression := range expressions {
+		if expression != nil && aliasesPathOrRunnerCapability(expression, source) {
+			return true
+		}
+	}
+	return false
+}
+
+func expressionIsFunctionType(expr ast.Expr, source sourceFile) bool {
+	switch value := unparenthesized(expr).(type) {
+	case *ast.FuncType:
+		return true
+	case *ast.Ident:
+		for _, file := range source.packageFiles {
+			for _, declaration := range file.Decls {
+				generic, ok := declaration.(*ast.GenDecl)
+				if !ok || generic.Tok != token.TYPE {
+					continue
+				}
+				for _, specification := range generic.Specs {
+					typeSpec, ok := specification.(*ast.TypeSpec)
+					if ok && typeSpec.Name.Name == value.Name && typeSpec.Type != value {
+						return expressionIsFunctionType(typeSpec.Type, source)
+					}
+				}
+			}
+		}
+	case *ast.SelectorExpr:
+		return isRunnerType(value, source)
+	}
+	return false
+}
+
+func directPathOrRunnerCapability(expr ast.Expr, source sourceFile) bool {
 	switch value := unparenthesized(expr).(type) {
 	case *ast.Ident:
 		return len(rootedHelperParameters(source.pkgPath, value.Name)) != 0 ||
