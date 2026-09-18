@@ -84,7 +84,10 @@ func (f *fakeEC2) ReleaseAddress(context.Context, *ec2.ReleaseAddressInput, ...f
 
 func TestEC2SpaceFilteringAndMapping(t *testing.T) {
 	// R-YUMI-JOF0
-	wantFilters := spaceFilters()
+	wantFilters := []types.Filter{
+		{Name: aws.String("tag:Project"), Values: []string{"ikigenba"}},
+		{Name: aws.String("tag-key"), Values: []string{"Space"}},
+	}
 	page := 0
 	fake := &fakeEC2{}
 	fake.describeInstances = func(in *ec2.DescribeInstancesInput) (*ec2.DescribeInstancesOutput, error) {
@@ -167,7 +170,10 @@ func TestEC2CreationTagsAndRunMapping(t *testing.T) {
 		return &ec2.RunInstancesOutput{Instances: []types.Instance{{
 			InstanceId: aws.String("i-one"),
 			State:      &types.InstanceState{Name: types.InstanceStateNamePending},
-			Tags:       spaceTags("one.example"),
+			Tags: []types.Tag{
+				{Key: aws.String("Project"), Value: aws.String("ikigenba")},
+				{Key: aws.String("Space"), Value: aws.String("one.example")},
+			},
 		}}}, nil
 	}
 	fake.allocateAddress = func(in *ec2.AllocateAddressInput) (*ec2.AllocateAddressOutput, error) {
@@ -256,7 +262,10 @@ func assertTagSpecifications(t *testing.T, got []types.TagSpecification, resourc
 	if len(got) != len(resourceTypes) {
 		t.Fatalf("tag specifications = %#v, want %d", got, len(resourceTypes))
 	}
-	wantTags := spaceTags(space)
+	wantTags := []types.Tag{
+		{Key: aws.String("Project"), Value: aws.String("ikigenba")},
+		{Key: aws.String("Space"), Value: aws.String(space)},
+	}
 	for i, resourceType := range resourceTypes {
 		if got[i].ResourceType != resourceType || !reflect.DeepEqual(got[i].Tags, wantTags) {
 			t.Fatalf("tag specification %d = %#v, want %q %#v", i, got[i], resourceType, wantTags)
