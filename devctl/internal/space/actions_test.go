@@ -126,6 +126,12 @@ func TestRunStatusRequiresRunningSpace(t *testing.T) {
 	if !errors.As(err, &stateErr) || stateErr.Domain != "bar.sbx.ikigenba.dev" || stateErr.State != cloud.StateStopped {
 		t.Fatalf("error = %#v", err)
 	}
+	if reflect.TypeOf(err) != reflect.TypeOf(stateErr) {
+		t.Fatalf("error type = %T, want *NotRunningError", err)
+	}
+	if got, want := err.Error(), "'bar.sbx.ikigenba.dev' is stopped"; got != want {
+		t.Fatalf("error = %q, want %q", got, want)
+	}
 	if stdout.Len() != 0 || execCalls != 0 {
 		t.Fatalf("stdout = %q, Exec calls = %d", stdout.String(), execCalls)
 	}
@@ -133,7 +139,7 @@ func TestRunStatusRequiresRunningSpace(t *testing.T) {
 
 func TestRunLookupFailurePrecedesEffects(t *testing.T) {
 	// R-U55U-88GV
-	wantErr := errors.New("lookup failed")
+	wantErr := &actionLookupError{}
 	for _, command := range []string{"status", "stop"} {
 		t.Run(command, func(t *testing.T) {
 			ec2 := newActionEC2(t, nil)
@@ -145,11 +151,41 @@ func TestRunLookupFailurePrecedesEffects(t *testing.T) {
 			})
 			var stdout bytes.Buffer
 			err := Run(context.Background(), []string{command, "foo.sbx.ikigenba.dev"}, &stdout, deps, "sandbox")
-			if !errors.Is(err, wantErr) {
-				t.Fatalf("error = %v, want unchanged lookup error", err)
+			if reflect.ValueOf(err) != reflect.ValueOf(wantErr) {
+				t.Fatalf("error = %#v, want identical error %#v", err, wantErr)
 			}
 			if stdout.Len() != 0 || execCalls != 0 {
 				t.Fatalf("stdout = %q, Exec calls = %d", stdout.String(), execCalls)
+			}
+			if got := ec2.calls; !reflect.DeepEqual(got, []string{"ListSpaceInstances"}) {
+				t.Fatalf("EC2 calls = %v", got)
+			}
+		})
+	}
+}
+
+type actionLookupError struct{}
+
+func (*actionLookupError) Error() string { return "lookup failed" }
+
+func TestRunLookupUsesDomainOperand(t *testing.T) {
+	// R-U55U-88GV
+	const domain = "operand.sbx.ikigenba.dev"
+	for _, command := range []string{"status", "stop"} {
+		t.Run(command, func(t *testing.T) {
+			ec2 := newActionEC2(t, nil)
+			deps, _ := actionDeps(t, ec2, func(context.Context, seam.Cmd) (seam.Result, error) {
+				t.Fatal("lookup failure executed an external process")
+				return seam.Result{}, nil
+			})
+			var stdout bytes.Buffer
+			err := Run(context.Background(), []string{command, domain}, &stdout, deps, "sandbox")
+			var noSpaceErr *account.NoSpaceError
+			if !errors.As(err, &noSpaceErr) || noSpaceErr.Domain != domain {
+				t.Fatalf("error = %#v, want *account.NoSpaceError for operand %q", err, domain)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("stdout = %q, want empty", stdout.String())
 			}
 			if got := ec2.calls; !reflect.DeepEqual(got, []string{"ListSpaceInstances"}) {
 				t.Fatalf("EC2 calls = %v", got)
