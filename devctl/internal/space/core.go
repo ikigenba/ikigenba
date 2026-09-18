@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/ikigenba/ikigenba/devctl/internal/account"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
@@ -30,6 +31,20 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, p
 	if invocation.help != "" {
 		_, _ = fmt.Fprint(stdout, invocation.help)
 		return nil
+	}
+	if invocation.subcommand == "list" || invocation.subcommand == "status" || invocation.subcommand == "stop" {
+		acct, err := account.Open(ctx, deps, profile)
+		if err != nil {
+			return err
+		}
+		switch invocation.subcommand {
+		case "list":
+			return runList(ctx, stdout, acct)
+		case "status":
+			return runStatus(ctx, invocation.domain, stdout, deps, acct)
+		case "stop":
+			return runStop(ctx, stdout, deps, acct, invocation.domain)
+		}
 	}
 
 	return dispatch(ctx, invocation, stdout, deps, profile)
