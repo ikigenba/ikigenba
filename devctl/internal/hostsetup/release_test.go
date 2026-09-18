@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -14,8 +16,8 @@ import (
 func TestReleaseDiscoveryContract(t *testing.T) {
 	// R-FXNQ-9MRO
 	releaseType := reflect.TypeOf(Release{})
-	if releaseType.NumField() != 2 || releaseType.Field(0).Name != "Version" || releaseType.Field(0).Type.Kind() != reflect.String ||
-		releaseType.Field(1).Name != "InstallerURL" || releaseType.Field(1).Type.Kind() != reflect.String {
+	if releaseType.NumField() != 2 || releaseType.Field(0).Name != "Version" || releaseType.Field(0).Type != reflect.TypeFor[string]() ||
+		releaseType.Field(1).Name != "InstallerURL" || releaseType.Field(1).Type != reflect.TypeFor[string]() {
 		t.Fatalf("Release fields = %#v", reflect.VisibleFields(releaseType))
 	}
 
@@ -100,6 +102,33 @@ func TestLatestRejectsUnusableResponses(t *testing.T) {
 
 func TestLatestClassifiesCommandFailures(t *testing.T) {
 	// R-G9UQ-3C6M
+	t.Run("command stdout remains empty", func(t *testing.T) {
+		const workDir = "/release-work"
+		deps := seam.Deps{Dir: workDir, Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
+			if command.Dir != workDir {
+				t.Fatalf("command Dir = %q, want %q", command.Dir, workDir)
+			}
+			return seam.Result{Stdout: []byte(`[{"tag_name":"opsctl/v1.0.0","published_at":"2026-01-01T00:00:00Z","assets":[{"name":"install.sh","browser_download_url":"https://release.invalid/install"}]}]`)}, nil
+		}}
+
+		var (
+			release Release
+			err     error
+		)
+		stdout := captureStdout(t, func() {
+			release, err = Latest(context.Background(), deps)
+		})
+		if err != nil {
+			t.Fatalf("Latest(): %v", err)
+		}
+		if release.Version != "v1.0.0" {
+			t.Fatalf("Latest() release = %#v", release)
+		}
+		if stdout != "" {
+			t.Fatalf("command stdout = %q, want empty", stdout)
+		}
+	})
+
 	t.Run("nonzero exit", func(t *testing.T) {
 		deps := seam.Deps{Dir: "/release-work", Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
 			if command.Dir != "/release-work" {
@@ -142,13 +171,43 @@ func requireLatestSignature(func(context.Context, seam.Deps) (Release, error)) {
 func TestProcessErrorContract(t *testing.T) {
 	// R-GB2M-H3XB
 	typ := reflect.TypeOf(ProcessError{})
-	if typ.NumField() != 3 || typ.Field(0).Name != "Label" || typ.Field(0).Type.Kind() != reflect.String ||
-		typ.Field(1).Name != "Status" || typ.Field(1).Type.Kind() != reflect.Int ||
-		typ.Field(2).Name != "Stderr" || typ.Field(2).Type.Kind() != reflect.String {
+	if typ.NumField() != 3 || typ.Field(0).Name != "Label" || typ.Field(0).Type != reflect.TypeFor[string]() ||
+		typ.Field(1).Name != "Status" || typ.Field(1).Type != reflect.TypeFor[int]() ||
+		typ.Field(2).Name != "Stderr" || typ.Field(2).Type != reflect.TypeFor[string]() {
 		t.Fatalf("ProcessError fields = %#v", reflect.VisibleFields(typ))
 	}
 	err := &ProcessError{Label: "curl releases", Status: 7, Stderr: "first\nsecond\n"}
 	if err.Error() != "curl releases: exit status 7" || err.Detail() != "> first\n> second" || err.ExitCode() != 1 {
 		t.Fatalf("ProcessError methods = %q, %q, %d", err.Error(), err.Detail(), err.ExitCode())
 	}
+}
+
+func captureStdout(t *testing.T, run func()) string {
+	t.Helper()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe(): %v", err)
+	}
+	defer func() {
+		if err := reader.Close(); err != nil {
+			t.Errorf("close stdout reader: %v", err)
+		}
+	}()
+
+	saved := os.Stdout
+	os.Stdout = writer
+	defer func() {
+		os.Stdout = saved
+	}()
+
+	run()
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close stdout capture: %v", err)
+	}
+	stdout, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("read stdout capture: %v", err)
+	}
+	return string(stdout)
 }
