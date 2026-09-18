@@ -126,7 +126,7 @@ func TestModuleHasNoRequirements(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read go.mod: %v", err)
 	}
-	requireDirective := regexp.MustCompile(`(?m)^require(?:[[:space:]]|\()`)
+	requireDirective := regexp.MustCompile(`(?m)^[[:blank:]]*require(?:[[:space:]]|\()`)
 	if requireDirective.Match(contents) {
 		t.Errorf("go.mod contains a require directive:\n%s", contents)
 	}
