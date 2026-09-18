@@ -80,14 +80,14 @@ func Run(ctx context.Context, p Process) int {
 	}
 	ln, err := listen("tcp", net.JoinHostPort("127.0.0.1", port))
 	if err != nil {
-		writeDiagnostic(p.Stderr, fmt.Sprintf("dummy: listen: %v\n", err))
+		writeDiagnostic(p.Stderr, fmt.Sprintf("dummy: %v\n", err))
 		return ExitServerFailed
 	}
 	if p.Listening != nil {
 		p.Listening(ln.Addr())
 	}
 	if err = serve(ctx, ln, serverHandler()); err != nil {
-		writeDiagnostic(p.Stderr, fmt.Sprintf("dummy: serve: %v\n", err))
+		writeDiagnostic(p.Stderr, fmt.Sprintf("dummy: %v\n", err))
 		return ExitServerFailed
 	}
 	return ExitSuccess

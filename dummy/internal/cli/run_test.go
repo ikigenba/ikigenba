@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -569,6 +570,191 @@ func TestListeningCallback(t *testing.T) {
 	}
 }
 
+// R-ICZ1-6UGJ R-QQN7-AF03 R-8TZB-3NSI
+func TestRunBindsServesSilentlyAndDrainsOnCancellation(t *testing.T) {
+	originalHandler := serverHandler
+	t.Cleanup(func() { serverHandler = originalHandler })
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	tracked := &closeTrackingListener{Listener: listener, closed: make(chan struct{})}
+	t.Cleanup(func() { _ = tracked.Close() })
+	_, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatalf("split listener address: %v", err)
+	}
+
+	requestStarted := make(chan struct{})
+	finishResponse := make(chan struct{})
+	serverHandler = func() http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			close(requestStarted)
+			_, _ = io.WriteString(w, "start-")
+			w.(http.Flusher).Flush()
+			<-finishResponse
+			_, _ = io.WriteString(w, "finish")
+		})
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var stdout, stderr bytes.Buffer
+	listenCalls := 0
+	listening := make(chan net.Addr, 1)
+	exitResult := make(chan int, 1)
+	go func() {
+		exitResult <- Run(ctx, Process{
+			LookupEnv: mapLookup(map[string]string{"PORT": port}),
+			Stdout:    &stdout,
+			Stderr:    &stderr,
+			Listen: func(network, address string) (net.Listener, error) {
+				listenCalls++
+				if network != "tcp" || address != net.JoinHostPort("127.0.0.1", port) {
+					t.Errorf("Listen called with %q, %q", network, address)
+				}
+				return tracked, nil
+			},
+			Listening: func(address net.Addr) { listening <- address },
+		})
+	}()
+	if address := <-listening; address != tracked.Addr() {
+		t.Errorf("Listening address = %v, want listener Addr %v", address, tracked.Addr())
+	}
+
+	connection, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatalf("dial listener: %v", err)
+	}
+	if _, err = io.WriteString(connection, "GET / HTTP/1.1\r\nHost: dummy\r\nConnection: close\r\n\r\n"); err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+	responseResult := make(chan *http.Response, 1)
+	responseErrors := make(chan error, 1)
+	go func() {
+		response, readErr := http.ReadResponse(bufio.NewReader(connection), nil)
+		if readErr != nil {
+			responseErrors <- readErr
+			return
+		}
+		responseResult <- response
+	}()
+	<-requestStarted
+	cancel()
+	<-tracked.closed
+	select {
+	case exit := <-exitResult:
+		t.Fatalf("Run returned %d before accepted response completed", exit)
+	default:
+	}
+	close(finishResponse)
+
+	var response *http.Response
+	select {
+	case err = <-responseErrors:
+		t.Fatalf("read response: %v", err)
+	case response = <-responseResult:
+	}
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	_ = response.Body.Close()
+	_ = connection.Close()
+	if got := string(body); got != "start-finish" {
+		t.Errorf("response body = %q, want %q", got, "start-finish")
+	}
+	if exit := <-exitResult; exit != ExitSuccess {
+		t.Errorf("Run exit = %d, want ExitSuccess", exit)
+	}
+	if listenCalls != 1 {
+		t.Errorf("Listen calls = %d, want 1", listenCalls)
+	}
+	if stdout.Len() != 0 || stderr.Len() != 0 {
+		t.Errorf("stdout = %q, stderr = %q; want both empty", stdout.String(), stderr.String())
+	}
+}
+
+// R-QUAW-FQ86
+func TestRunReportsExactBindErrorAndLeavesHolderListening(t *testing.T) {
+	holder, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("hold port: %v", err)
+	}
+	t.Cleanup(func() { _ = holder.Close() })
+	_, port, err := net.SplitHostPort(holder.Addr().String())
+	if err != nil {
+		t.Fatalf("split holder address: %v", err)
+	}
+	probe, wantErr := net.Listen("tcp", net.JoinHostPort("127.0.0.1", port))
+	if wantErr == nil {
+		_ = probe.Close()
+		t.Fatal("second listen unexpectedly succeeded")
+	}
+
+	var stdout, stderr bytes.Buffer
+	exit := Run(context.Background(), Process{
+		LookupEnv: mapLookup(map[string]string{"PORT": port}),
+		Stdout:    &stdout,
+		Stderr:    &stderr,
+	})
+	if exit != ExitServerFailed {
+		t.Errorf("Run exit = %d, want ExitServerFailed", exit)
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout = %q, want empty", stdout.String())
+	}
+	if got, want := stderr.String(), "dummy: "+wantErr.Error()+"\n"; got != want {
+		t.Errorf("stderr = %q, want %q", got, want)
+	}
+
+	accepted := make(chan error, 1)
+	go func() {
+		connection, acceptErr := holder.Accept()
+		if acceptErr == nil {
+			_ = connection.Close()
+		}
+		accepted <- acceptErr
+	}()
+	connection, err := net.Dial("tcp", holder.Addr().String())
+	if err != nil {
+		t.Fatalf("dial holder after Run: %v", err)
+	}
+	_ = connection.Close()
+	if err = <-accepted; err != nil {
+		t.Errorf("holder accept after Run: %v", err)
+	}
+}
+
+// R-QVIS-THYV
+func TestRunReportsExactServeError(t *testing.T) {
+	originalServe, originalHandler := serve, serverHandler
+	t.Cleanup(func() { serve, serverHandler = originalServe, originalHandler })
+	wantErr := errors.New("server broke")
+	serve = func(context.Context, net.Listener, http.Handler) error { return wantErr }
+	serverHandler = http.NotFoundHandler
+	listener := newBlockingListener()
+	var stdout, stderr bytes.Buffer
+	exit := Run(context.Background(), Process{
+		LookupEnv: mapLookup(map[string]string{"PORT": "1"}),
+		Stdout:    &stdout,
+		Stderr:    &stderr,
+		Listen: func(string, string) (net.Listener, error) {
+			return listener, nil
+		},
+	})
+	_ = listener.Close()
+	if exit != ExitServerFailed {
+		t.Errorf("Run exit = %d, want ExitServerFailed", exit)
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout = %q, want empty", stdout.String())
+	}
+	if got, want := stderr.String(), "dummy: "+wantErr.Error()+"\n"; got != want {
+		t.Errorf("stderr = %q, want %q", got, want)
+	}
+}
+
 // R-N4IA-6LSH
 func TestPackagesDoNotReachPastProcessSeam(t *testing.T) {
 	t.Parallel()
@@ -661,6 +847,20 @@ func (l *failedListener) Addr() net.Addr            { return testAddr("127.0.0.1
 
 type blockingListener struct {
 	closed chan struct{}
+}
+
+type closeTrackingListener struct {
+	net.Listener
+	closed chan struct{}
+}
+
+func (l *closeTrackingListener) Close() error {
+	select {
+	case <-l.closed:
+	default:
+		close(l.closed)
+	}
+	return l.Listener.Close()
 }
 
 func newBlockingListener() *blockingListener {

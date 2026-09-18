@@ -27,19 +27,20 @@ func Serve(ctx context.Context, ln net.Listener, h http.Handler) error {
 		ErrorLog:          log.New(io.Discard, "", 0),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-	stopped := make(chan struct{})
+	serveResult := make(chan error, 1)
 	go func() {
-		select {
-		case <-ctx.Done():
-			_ = httpServer.Close()
-		case <-stopped:
-		}
+		serveResult <- httpServer.Serve(ln)
 	}()
 
-	err := httpServer.Serve(ln)
-	close(stopped)
-	if errors.Is(err, http.ErrServerClosed) && ctx.Err() != nil {
+	select {
+	case <-ctx.Done():
+		_ = httpServer.Shutdown(context.Background())
+		<-serveResult
 		return nil
+	case err := <-serveResult:
+		if errors.Is(err, http.ErrServerClosed) && ctx.Err() != nil {
+			return nil
+		}
+		return err
 	}
-	return err
 }
