@@ -91,6 +91,7 @@ type EC2 interface {
 	ListSpaceInstances(ctx context.Context) ([]Instance, error)
 	DescribeInstance(ctx context.Context, id string) (Instance, error)
 	RunInstance(ctx context.Context, spec LaunchSpec) (Instance, error)
+	LaunchReady(ctx context.Context, spec LaunchSpec) (bool, error)
 	StartInstance(ctx context.Context, id string) error
 	StopInstance(ctx context.Context, id string) error
 	TerminateInstance(ctx context.Context, id string) error

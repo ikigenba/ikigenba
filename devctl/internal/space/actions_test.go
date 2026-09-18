@@ -495,6 +495,10 @@ func (f *actionEC2) RunInstance(context.Context, cloud.LaunchSpec) (cloud.Instan
 	f.t.Fatal("unexpected EC2 mutation: RunInstance")
 	return cloud.Instance{}, nil
 }
+func (f *actionEC2) LaunchReady(context.Context, cloud.LaunchSpec) (bool, error) {
+	f.t.Fatal("unexpected EC2 operation: LaunchReady")
+	return false, nil
+}
 func (f *actionEC2) StartInstance(_ context.Context, id string) error {
 	f.calls = append(f.calls, "StartInstance "+id)
 	return f.startErr

@@ -3,6 +3,7 @@ package awssdk
 import (
 	"context"
 	"errors"
+	"strings"
 
 	aws "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -64,10 +65,38 @@ func (c *ec2Client) DescribeInstance(ctx context.Context, id string) (cloud.Inst
 }
 
 func (c *ec2Client) RunInstance(ctx context.Context, spec cloud.LaunchSpec) (cloud.Instance, error) {
+	output, err := c.sdk.RunInstances(ctx, runInstancesInput(spec, false))
+	if err != nil {
+		return cloud.Instance{}, ec2Error("RunInstances", err)
+	}
+	if len(output.Instances) == 0 {
+		return cloud.Instance{}, nil
+	}
+	return cloudInstance(output.Instances[0]), nil
+}
+
+func (c *ec2Client) LaunchReady(ctx context.Context, spec cloud.LaunchSpec) (bool, error) {
+	_, err := c.sdk.RunInstances(ctx, runInstancesInput(spec, true))
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.ErrorCode() {
+		case "DryRunOperation":
+			return true, nil
+		case "InvalidParameterValue":
+			if strings.Contains(apiErr.ErrorMessage(), "Invalid IAM Instance Profile name") {
+				return false, nil
+			}
+		}
+	}
+	return false, ec2Error("RunInstances", err)
+}
+
+func runInstancesInput(spec cloud.LaunchSpec, dryRun bool) *ec2.RunInstancesInput {
 	tags := spaceTags(spec.Space)
-	output, err := c.sdk.RunInstances(ctx, &ec2.RunInstancesInput{
+	return &ec2.RunInstancesInput{
 		MinCount: aws.Int32(1),
 		MaxCount: aws.Int32(1),
+		DryRun:   aws.Bool(dryRun),
 		LaunchTemplate: &types.LaunchTemplateSpecification{
 			LaunchTemplateId: aws.String(spec.LaunchTemplateID),
 		},
@@ -76,14 +105,7 @@ func (c *ec2Client) RunInstance(ctx context.Context, spec cloud.LaunchSpec) (clo
 			{ResourceType: types.ResourceTypeInstance, Tags: tags},
 			{ResourceType: types.ResourceTypeVolume, Tags: tags},
 		},
-	})
-	if err != nil {
-		return cloud.Instance{}, ec2Error("RunInstances", err)
 	}
-	if len(output.Instances) == 0 {
-		return cloud.Instance{}, nil
-	}
-	return cloudInstance(output.Instances[0]), nil
 }
 
 func (c *ec2Client) StartInstance(ctx context.Context, id string) error {

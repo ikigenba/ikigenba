@@ -229,6 +229,9 @@ func (removeEC2) DescribeInstance(context.Context, string) (cloud.Instance, erro
 func (removeEC2) RunInstance(context.Context, cloud.LaunchSpec) (cloud.Instance, error) {
 	panic("unexpected instance creation")
 }
+func (removeEC2) LaunchReady(context.Context, cloud.LaunchSpec) (bool, error) {
+	panic("unexpected launch readiness probe")
+}
 func (removeEC2) StartInstance(context.Context, string) error { panic("unexpected instance start") }
 func (removeEC2) StopInstance(context.Context, string) error  { panic("unexpected instance stop") }
 func (removeEC2) TerminateInstance(context.Context, string) error {

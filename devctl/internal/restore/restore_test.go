@@ -374,6 +374,9 @@ func (fakeEC2) DescribeInstance(context.Context, string) (cloud.Instance, error)
 func (fakeEC2) RunInstance(context.Context, cloud.LaunchSpec) (cloud.Instance, error) {
 	panic("unexpected EC2 run")
 }
+func (fakeEC2) LaunchReady(context.Context, cloud.LaunchSpec) (bool, error) {
+	panic("unexpected EC2 launch readiness probe")
+}
 func (fakeEC2) StartInstance(context.Context, string) error     { panic("unexpected EC2 start") }
 func (fakeEC2) StopInstance(context.Context, string) error      { panic("unexpected EC2 stop") }
 func (fakeEC2) TerminateInstance(context.Context, string) error { panic("unexpected EC2 terminate") }

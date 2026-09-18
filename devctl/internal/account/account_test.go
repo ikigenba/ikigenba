@@ -281,6 +281,7 @@ func (*fakeEC2) DescribeInstance(context.Context, string) (cloud.Instance, error
 func (*fakeEC2) RunInstance(context.Context, cloud.LaunchSpec) (cloud.Instance, error) {
 	return cloud.Instance{}, nil
 }
+func (*fakeEC2) LaunchReady(context.Context, cloud.LaunchSpec) (bool, error) { return false, nil }
 func (*fakeEC2) StartInstance(context.Context, string) error                 { return nil }
 func (*fakeEC2) StopInstance(context.Context, string) error                  { return nil }
 func (*fakeEC2) TerminateInstance(context.Context, string) error             { return nil }

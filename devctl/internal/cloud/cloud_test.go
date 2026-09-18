@@ -21,6 +21,7 @@ type expectedEC2 interface {
 	ListSpaceInstances(context.Context) ([]Instance, error)
 	DescribeInstance(context.Context, string) (Instance, error)
 	RunInstance(context.Context, LaunchSpec) (Instance, error)
+	LaunchReady(context.Context, LaunchSpec) (bool, error)
 	StartInstance(context.Context, string) error
 	StopInstance(context.Context, string) error
 	TerminateInstance(context.Context, string) error
@@ -147,7 +148,7 @@ func TestEC2ValueContracts(t *testing.T) {
 }
 
 func TestEC2InterfaceContract(t *testing.T) {
-	// R-YCC0-T4AL
+	// R-H1V3-BK07
 	assertInterface(t, reflect.TypeOf((*EC2)(nil)).Elem(), reflect.TypeOf((*expectedEC2)(nil)).Elem())
 }
 

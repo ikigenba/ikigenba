@@ -129,7 +129,7 @@ func TestWaitLaunchReady(t *testing.T) {
 		return false, wantErr
 	}
 	err = WaitLaunchReady(context.Background(), seam.Deps{After: instantAfter(&waits)}, helperAccount(ec2, nil, nil), spec)
-	if err != wantErr || calls != 1 || len(waits) != 0 {
+	if !errors.Is(err, wantErr) || reflect.ValueOf(err).Pointer() != reflect.ValueOf(wantErr).Pointer() || calls != 1 || len(waits) != 0 {
 		t.Fatalf("error WaitLaunchReady = %v; calls=%d waits=%v", err, calls, waits)
 	}
 

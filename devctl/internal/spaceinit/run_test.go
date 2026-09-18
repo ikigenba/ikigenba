@@ -439,6 +439,10 @@ func (f fixtureEC2) RunInstance(context.Context, cloud.LaunchSpec) (cloud.Instan
 	f.fixture.mutations++
 	return cloud.Instance{}, errors.New("unexpected RunInstance")
 }
+func (f fixtureEC2) LaunchReady(context.Context, cloud.LaunchSpec) (bool, error) {
+	f.fixture.mutations++
+	return false, errors.New("unexpected LaunchReady")
+}
 func (f fixtureEC2) StartInstance(context.Context, string) error { f.fixture.mutations++; return nil }
 func (f fixtureEC2) StopInstance(context.Context, string) error  { f.fixture.mutations++; return nil }
 func (f fixtureEC2) TerminateInstance(context.Context, string) error {

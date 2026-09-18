@@ -338,6 +338,7 @@ func (deployEC2) DescribeInstance(context.Context, string) (cloud.Instance, erro
 func (deployEC2) RunInstance(context.Context, cloud.LaunchSpec) (cloud.Instance, error) {
 	return cloud.Instance{}, nil
 }
+func (deployEC2) LaunchReady(context.Context, cloud.LaunchSpec) (bool, error) { return false, nil }
 func (deployEC2) StartInstance(context.Context, string) error                 { return nil }
 func (deployEC2) StopInstance(context.Context, string) error                  { return nil }
 func (deployEC2) TerminateInstance(context.Context, string) error             { return nil }

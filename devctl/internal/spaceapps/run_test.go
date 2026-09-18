@@ -553,6 +553,11 @@ func (f guardedEC2) RunInstance(context.Context, cloud.LaunchSpec) (cloud.Instan
 	return cloud.Instance{}, errors.New("unexpected cloud mutation")
 }
 
+func (f guardedEC2) LaunchReady(context.Context, cloud.LaunchSpec) (bool, error) {
+	*f.mutations++
+	return false, errors.New("unexpected cloud operation")
+}
+
 func (f guardedEC2) StartInstance(context.Context, string) error {
 	*f.mutations++
 	return errors.New("unexpected cloud mutation")

@@ -327,6 +327,9 @@ func (s *destroyState) DescribeInstance(_ context.Context, id string) (cloud.Ins
 func (s *destroyState) RunInstance(context.Context, cloud.LaunchSpec) (cloud.Instance, error) {
 	panic("unexpected RunInstance")
 }
+func (s *destroyState) LaunchReady(context.Context, cloud.LaunchSpec) (bool, error) {
+	panic("unexpected LaunchReady")
+}
 func (s *destroyState) StartInstance(context.Context, string) error {
 	panic("unexpected StartInstance")
 }

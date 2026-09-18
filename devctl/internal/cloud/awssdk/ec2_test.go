@@ -223,6 +223,60 @@ func TestEC2CreationTagsAndRunMapping(t *testing.T) {
 	}
 }
 
+func TestEC2LaunchReady(t *testing.T) {
+	// R-H32Z-PBQW
+	spec := cloud.LaunchSpec{LaunchTemplateID: "lt-one", InstanceProfile: "profile-one", Space: "one.example"}
+	tests := []struct {
+		name    string
+		err     error
+		want    bool
+		wantErr bool
+	}{
+		{"ready", &smithy.GenericAPIError{Code: "DryRunOperation", Message: "would succeed"}, true, false},
+		{"profile not ready", &smithy.GenericAPIError{Code: "InvalidParameterValue", Message: "Invalid IAM Instance Profile name profile-one"}, false, false},
+		{"other invalid parameter", &smithy.GenericAPIError{Code: "InvalidParameterValue", Message: "bad launch template"}, false, true},
+		{"other error", &smithy.GenericAPIError{Code: "UnauthorizedOperation", Message: "denied"}, false, true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fake := &fakeEC2{err: test.err}
+			got, err := (&ec2Client{sdk: fake}).LaunchReady(context.Background(), spec)
+			if got != test.want {
+				t.Fatalf("LaunchReady() = %v, want %v", got, test.want)
+			}
+			if test.wantErr {
+				var cloudErr *cloud.Error
+				if !errors.As(err, &cloudErr) || cloudErr.Service != "ec2" || cloudErr.Operation != "RunInstances" || !errors.Is(cloudErr, test.err) {
+					t.Fatalf("error = %#v, want ec2 RunInstances error wrapping %v", err, test.err)
+				}
+			} else if err != nil {
+				t.Fatalf("error = %v, want nil", err)
+			}
+			if want := []string{"RunInstances"}; !reflect.DeepEqual(fake.calls, want) {
+				t.Fatalf("SDK calls = %v, want exactly %v", fake.calls, want)
+			}
+		})
+	}
+
+	fake := &fakeEC2{runInstances: func(in *ec2.RunInstancesInput) (*ec2.RunInstancesOutput, error) {
+		if !aws.ToBool(in.DryRun) {
+			t.Fatal("dry-run = false, want true")
+		}
+		if aws.ToString(in.LaunchTemplate.LaunchTemplateId) != spec.LaunchTemplateID ||
+			aws.ToString(in.IamInstanceProfile.Name) != spec.InstanceProfile {
+			t.Fatalf("launch input = %#v, want template %q and profile %q", in, spec.LaunchTemplateID, spec.InstanceProfile)
+		}
+		if aws.ToInt32(in.MinCount) != 1 || aws.ToInt32(in.MaxCount) != 1 {
+			t.Fatalf("counts = %d, %d; want 1, 1", aws.ToInt32(in.MinCount), aws.ToInt32(in.MaxCount))
+		}
+		assertTagSpecifications(t, in.TagSpecifications, []types.ResourceType{types.ResourceTypeInstance, types.ResourceTypeVolume}, spec.Space)
+		return nil, &smithy.GenericAPIError{Code: "DryRunOperation", Message: "would succeed"}
+	}}
+	if ready, err := (&ec2Client{sdk: fake}).LaunchReady(context.Background(), spec); !ready || err != nil {
+		t.Fatalf("LaunchReady() = %v, %v; want true, nil", ready, err)
+	}
+}
+
 func TestEC2OperationMappingsAndChecks(t *testing.T) {
 	// R-YTEM-5WOB R-YOJ0-MTPJ R-YPQX-0LG8
 	boom := &smithy.GenericAPIError{Code: "RequestLimitExceeded", Message: "boom"}
