@@ -55,6 +55,10 @@ type invocation struct {
 	help   bool
 }
 
+type sudoer interface {
+	Sudo(context.Context, string, ...string) (host.Output, error)
+}
+
 // Run restores one app on a running space.
 func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, profile string) error {
 	parsed, err := parse(args)
@@ -82,7 +86,11 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, p
 	if parsed.at != "" {
 		command = append(command, "--at", parsed.at)
 	}
-	if _, err := (host.Host{Address: item.Address, Deps: deps}).Sudo(ctx, "restore", command...); err != nil {
+	return restoreOnHost(ctx, stdout, host.Host{Address: item.Address, Deps: deps}, command)
+}
+
+func restoreOnHost(ctx context.Context, stdout io.Writer, remote sudoer, command []string) error {
+	if _, err := remote.Sudo(ctx, "restore", command...); err != nil {
 		return err
 	}
 	space.Step(stdout, "restore", strings.Join(command, " "))

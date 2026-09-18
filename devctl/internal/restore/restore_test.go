@@ -32,6 +32,20 @@ const accountProperties = `{
   "backup_service_wal_seconds":4
 }`
 
+const expectedRestoreUsage = `Usage: devctl --account <name> restore <domain> <app> [--at <timestamp>]
+
+Have opsctl on <domain> put <app> back from <domain>'s own backups. The app's
+etc/ and state/ come from the newest tarball, and its database, when it
+declares one, from litestream. <app>'s unit is stopped for the restore and
+started again after it.
+
+Options:
+  --at <timestamp>   restore the app as it was at this RFC 3339 moment
+
+--at governs both halves: the files come from the newest tarball written at or
+before that moment, and the database is rebuilt to the moment itself.
+`
+
 func TestRestorePublicContract(t *testing.T) {
 	// R-FLGQ-FXCQ R-FMOM-TP3F
 	err := &UsageError{Message: "bad invocation", Help: "devctl restore --help"}
@@ -42,8 +56,11 @@ func TestRestorePublicContract(t *testing.T) {
 		t.Fatalf("empty-help Detail = %q, want empty", got)
 	}
 	value := reflect.TypeOf(UsageError{})
-	if value.NumField() != 2 || value.Field(0).Name != "Message" || value.Field(1).Name != "Help" {
-		t.Fatalf("UsageError fields = %v, want exactly Message and Help", value)
+	wantType := reflect.TypeFor[string]()
+	if value.NumField() != 2 ||
+		value.Field(0).Name != "Message" || value.Field(0).Type != wantType ||
+		value.Field(1).Name != "Help" || value.Field(1).Type != wantType {
+		t.Fatalf("UsageError fields = %v, want exactly Message string and Help string", value)
 	}
 }
 
@@ -69,8 +86,8 @@ func TestRestoreHelpPrecedesExternalAccess(t *testing.T) {
 		if err := Run(context.Background(), args, &stdout, deps, "work"); err != nil {
 			t.Fatalf("Run(%q): %v", args, err)
 		}
-		if stdout.String() != usage {
-			t.Errorf("Run(%q) stdout = %q, want usage", args, stdout.String())
+		if stdout.String() != expectedRestoreUsage {
+			t.Errorf("Run(%q) stdout = %q, want %q", args, stdout.String(), expectedRestoreUsage)
 		}
 		if access != 0 {
 			t.Errorf("Run(%q) external accesses = %d, want 0", args, access)
@@ -233,6 +250,41 @@ func TestRestoreInvokesOpsctlAndReportsSuccess(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Fatalf("failure stdout = %q, want empty", stdout.String())
 	}
+}
+
+func TestRestoreReturnsSudoErrorUnchanged(t *testing.T) {
+	// R-FV7X-I3AA
+	wantErr := &sudoSentinelError{}
+	remote := &recordingSudoer{err: wantErr}
+	var stdout bytes.Buffer
+	command := []string{"opsctl", "restore", "crm", "--at", "2026-09-17T18:33:54-05:00"}
+	err := restoreOnHost(context.Background(), &stdout, remote, command)
+	var gotErr *sudoSentinelError
+	if !errors.As(err, &gotErr) || gotErr != wantErr || errors.Unwrap(err) != nil {
+		t.Fatalf("error = %#v, want identical Sudo error %#v", err, wantErr)
+	}
+	if remote.step != "restore" || !reflect.DeepEqual(remote.args, command) {
+		t.Fatalf("Sudo call = (%q, %#v), want (%q, %#v)", remote.step, remote.args, "restore", command)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("failure stdout = %q, want empty", stdout.String())
+	}
+}
+
+type sudoSentinelError struct{}
+
+func (*sudoSentinelError) Error() string { return "sudo failed" }
+
+type recordingSudoer struct {
+	step string
+	args []string
+	err  error
+}
+
+func (remote *recordingSudoer) Sudo(_ context.Context, step string, args ...string) (host.Output, error) {
+	remote.step = step
+	remote.args = append([]string(nil), args...)
+	return host.Output{}, remote.err
 }
 
 func runSuccessfulRestore(t *testing.T, args []string) []seam.Cmd {
