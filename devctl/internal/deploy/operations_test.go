@@ -16,13 +16,15 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/deploy"
 	"github.com/ikigenba/ikigenba/devctl/internal/host"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
+	"github.com/ikigenba/ikigenba/devctl/internal/secrets"
 	"github.com/ikigenba/ikigenba/devctl/internal/space"
 )
 
 func TestDeployOperationsUseSelectedAccountAndPreserveVersion(t *testing.T) {
 	// R-ZGQ0-SX28 R-ZHXX-6OSX R-FAHM-ZZOH R-FGL4-WUDY R-FHT1-AM4N R-FJ0X-ODVC
 	h := newDeployHarness()
-	dir, operand, artifact := h.artifact(t, "crm-v1.2.3-rc.1+build.7.tar.xz")
+	dir, filename, artifact := h.artifact(t, "crm-v1.2.3-rc.1+build.7.tar.xz")
+	operand := filepath.Join(dir, filename)
 	h.manifest = "app = \"crm\"\nsecrets = [\"CRM_B\", \"CRM_A\", \"CRM_A\"]\n"
 	h.secretObject = `{"EXTRA":"x","CRM_A":"a","CRM_B":"b"}`
 	var stdout bytes.Buffer
@@ -32,7 +34,7 @@ func TestDeployOperationsUseSelectedAccountAndPreserveVersion(t *testing.T) {
 
 	wantOutput := "file: ok (crm v1.2.3-rc.1+build.7)\n" +
 		"secrets: ok (2 keys)\n" +
-		"upload: ok (-> backups/" + h.domain + "/deploy/" + operand + ")\n" +
+		"upload: ok (-> backups/" + h.domain + "/deploy/" + filename + ")\n" +
 		"install: ok (opsctl installed crm)\n"
 	if stdout.String() != wantOutput {
 		t.Fatalf("stdout = %q, want %q", stdout.String(), wantOutput)
@@ -43,7 +45,10 @@ func TestDeployOperationsUseSelectedAccountAndPreserveVersion(t *testing.T) {
 	if h.spaceCalls != 1 || h.secretCalls != 1 {
 		t.Fatalf("space/secret calls = %d/%d, want 1/1", h.spaceCalls, h.secretCalls)
 	}
-	wantKey := h.domain + "/deploy/" + operand
+	if got, want := h.secretParameters, []string{secrets.Parameter(h.domain, "crm")}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("secret parameters = %q, want %q", got, want)
+	}
+	wantKey := h.domain + "/deploy/" + filename
 	if h.putCalls != 1 || h.putBucket != "backups" || h.putKey != wantKey || h.putSize != int64(len(artifact)) || !bytes.Equal(h.putBody, artifact) {
 		t.Fatalf("put = calls %d bucket %q key %q size %d body %q", h.putCalls, h.putBucket, h.putKey, h.putSize, h.putBody)
 	}
@@ -72,6 +77,27 @@ func TestDeployMissingSecretsAreSortedAndStopWork(t *testing.T) {
 	if !errors.As(err, &missing) || missing.App != "crm" || missing.Domain != h.domain || missing.Profile != "ProfileOne" ||
 		!reflect.DeepEqual(missing.Names, []string{"A_FIRST", "Z_LAST"}) {
 		t.Fatalf("error = %T %#v", err, err)
+	}
+	if stdout.String() != "file: ok (crm v1.2.3)\n" || h.secretCalls != 1 || h.putCalls != 0 || h.installCalls != 0 {
+		t.Fatalf("stdout/calls = %q secrets %d put %d install %d", stdout.String(), h.secretCalls, h.putCalls, h.installCalls)
+	}
+	if got, want := h.secretParameters, []string{secrets.Parameter(h.domain, "crm")}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("secret parameters = %q, want %q", got, want)
+	}
+}
+
+func TestDeploySecretLookupFailureStopsBeforeUpload(t *testing.T) {
+	// R-ZHXX-6OSX R-FAHM-ZZOH
+	h := newDeployHarness()
+	h.secretErr = errors.New("secret lookup failed")
+	dir, operand, _ := h.artifact(t, "crm-v1.2.3.tar.xz")
+	var stdout bytes.Buffer
+	err := deploy.Run(context.Background(), []string{h.domain, operand}, &stdout, h.deps(dir), "selected")
+	if !errors.Is(err, h.secretErr) || reflect.ValueOf(err).Pointer() != reflect.ValueOf(h.secretErr).Pointer() {
+		t.Fatalf("error = %#v, want unchanged %#v", err, h.secretErr)
+	}
+	if got, want := h.secretParameters, []string{secrets.Parameter(h.domain, "crm")}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("secret parameters = %q, want %q", got, want)
 	}
 	if stdout.String() != "file: ok (crm v1.2.3)\n" || h.secretCalls != 1 || h.putCalls != 0 || h.installCalls != 0 {
 		t.Fatalf("stdout/calls = %q secrets %d put %d install %d", stdout.String(), h.secretCalls, h.putCalls, h.installCalls)
@@ -157,32 +183,54 @@ func TestDeployUploadAndInstallFailuresStopInOrder(t *testing.T) {
 			t.Fatalf("calls/stdout = put %d delete %d install %d %q", h.putCalls, h.deleteCalls, h.installCalls, stdout.String())
 		}
 	})
+
+	t.Run("install transport keeps upload", func(t *testing.T) {
+		h := newDeployHarness()
+		h.installErr = errors.New("install transport failed")
+		dir, operand, _ := h.artifact(t, "crm-v1.2.3.tar.xz")
+		var stdout bytes.Buffer
+		err := deploy.Run(context.Background(), []string{h.domain, operand}, &stdout, h.deps(dir), "selected")
+		if err == nil || err.Error() != "ssh: install transport failed" || !errors.Is(err, h.installErr) ||
+			reflect.ValueOf(errors.Unwrap(err)).Pointer() != reflect.ValueOf(h.installErr).Pointer() {
+			t.Fatalf("error = %T %#v, want host transport error with unchanged cause %#v", err, err, h.installErr)
+		}
+		var commandErr *host.CommandError
+		if errors.As(err, &commandErr) {
+			t.Fatalf("error = %T %#v, unexpectedly host command exit error", err, err)
+		}
+		if h.putCalls != 1 || h.deleteCalls != 0 || h.installCalls != 1 || !strings.Contains(stdout.String(), "upload: ok") || strings.Contains(stdout.String(), "install: ok") {
+			t.Fatalf("calls/stdout = put %d delete %d install %d %q", h.putCalls, h.deleteCalls, h.installCalls, stdout.String())
+		}
+	})
 }
 
 type cloudOpen struct{ profile, region string }
 
 type deployHarness struct {
-	domain        string
-	state         cloud.InstanceState
-	gone          bool
-	members       string
-	manifest      string
-	secretObject  string
-	cloudCalls    []cloudOpen
-	spaceCalls    int
-	spaceErr      error
-	secretCalls   int
-	commands      []seam.Cmd
-	operations    []string
-	putCalls      int
-	putBucket     string
-	putKey        string
-	putBody       []byte
-	putSize       int64
-	putErr        error
-	deleteCalls   int
-	installCalls  int
-	installStatus int
+	domain           string
+	state            cloud.InstanceState
+	gone             bool
+	members          string
+	manifest         string
+	secretObject     string
+	cloudCalls       []cloudOpen
+	spaceCalls       int
+	spaceErr         error
+	secretCalls      int
+	secretParameters []string
+	secretErr        error
+	commands         []seam.Cmd
+	operations       []string
+	putCalls         int
+	putBucket        string
+	putKey           string
+	putBody          []byte
+	putSize          int64
+	putErr           error
+	deleteCalls      int
+	installCalls     int
+	installStatus    int
+	installErr       error
 }
 
 func newDeployHarness() *deployHarness {
@@ -230,6 +278,9 @@ func (h *deployHarness) deps(dir string) seam.Deps {
 			case "ssh":
 				h.operations = append(h.operations, "install")
 				h.installCalls++
+				if h.installErr != nil {
+					return seam.Result{}, h.installErr
+				}
 				return seam.Result{ExitCode: h.installStatus, Stdout: []byte("discard me")}, nil
 			default:
 				return seam.Result{}, errors.New("unexpected command")
@@ -256,6 +307,10 @@ func (s deploySSM) GetParameter(_ context.Context, name string) (string, error) 
 	}
 	s.h.operations = append(s.h.operations, "secrets")
 	s.h.secretCalls++
+	s.h.secretParameters = append(s.h.secretParameters, name)
+	if s.h.secretErr != nil {
+		return "", s.h.secretErr
+	}
 	return s.h.secretObject, nil
 }
 func (deploySSM) PutSecureParameter(context.Context, string, string) error { return nil }
