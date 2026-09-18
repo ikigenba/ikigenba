@@ -127,6 +127,21 @@ func TestRunRejectsUnknownOptions(t *testing.T) {
 	}
 }
 
+func TestDestroyNoBackupGrammar(t *testing.T) {
+	// R-E1DC-UH8S
+	for _, args := range [][]string{
+		{"destroy", "--no-backup", "foo.example"},
+		{"destroy", "foo.example", "--no-backup"},
+		{"destroy", "--no-backup", "foo.example", "--no-backup"},
+	} {
+		got, err := parseInvocation(args)
+		if err != nil || got.domain != "foo.example" || !got.noBackup {
+			t.Fatalf("parseInvocation(%q) = %#v, %v", args, got, err)
+		}
+	}
+	assertRunUsageError(t, []string{"destroy", "--no-backup=true", "foo.example"}, "unknown option '--no-backup=true'")
+}
+
 func assertRunUsageError(t *testing.T, args []string, message string) {
 	t.Helper()
 	var stdout bytes.Buffer
