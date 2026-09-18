@@ -3,25 +3,8 @@
   "Statement": [
     {
       "Effect": "Allow",
-      "Action": [
-        "ssm:GetParameter",
-        "ssm:GetParameters",
-        "ssm:GetParametersByPath"
-      ],
-      "Resource": "arn:aws:ssm:us-east-2:<account_id>:parameter/ikigenba/<domain>/*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "kms:Decrypt",
-        "kms:GenerateDataKey"
-      ],
-      "Resource": "*",
-      "Condition": {
-        "StringEquals": {
-          "kms:ViaService": "ssm.us-east-2.amazonaws.com"
-        }
-      }
+      "Action": "ssm:GetParameter",
+      "Resource": "arn:aws:ssm:*:<account_id>:parameter/ikigenba/<domain>/*"
     },
     {
       "Effect": "Allow",
@@ -57,7 +40,6 @@
         },
         "ForAllValues:StringEquals": {
           "route53:ChangeResourceRecordSetsRecordTypes": [
-            "A",
             "TXT"
           ]
         }
