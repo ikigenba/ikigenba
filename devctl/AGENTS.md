@@ -68,6 +68,27 @@ The `make llm-lint` target, the rule files under `lint-rules/`, and
 `llm-lint cmd internal` back to this gate list and `llm-lint` back to the
 toolchain. See `../docs/llm-lint-rule-candidates.md` for the rules' provenance.
 
+## Operating defaults
+
+Conventions for running the built `devctl` against the real accounts, by a
+human or an agent. They are not devctl behaviour: devctl requires the values
+on the command line, and these say what to pass.
+
+- **Account from domain.** A space is asked for by its domain, and the
+  domain names the account: a space at or under `sbx.ikigenba.dev` is in the
+  sandbox account, `--account ikigenba-sandbox` (602773793009); any other
+  space at or under `ikigenba.dev` is in the prod account,
+  `--account ikigenba-prod` (295229566359). The longer suffix wins, so
+  `mg.sbx.ikigenba.dev` is sandbox and `staging.ikigenba.dev` is prod. Those
+  are the profile names in `~/.aws/config`; devctl passes the name through
+  to the AWS shared-config loader and derives nothing from it.
+
+- **ACME email.** The address given to `space create --acme-email` and
+  `space init --acme-email` is always `mgreenly+<account id>@gmail.com`,
+  where `<account id>` is the id of the account the space lives in. For any
+  `*.sbx.ikigenba.dev` space that is `mgreenly+602773793009@gmail.com`; for
+  any space under `ikigenba.dev` itself it is `mgreenly+295229566359@gmail.com`.
+
 ## Commit conventions
 
 ```
