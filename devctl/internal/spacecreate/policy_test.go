@@ -2,7 +2,7 @@ package spacecreate
 
 import (
 	"encoding/json"
-	"errors"
+	"io/fs"
 	"os"
 	"reflect"
 	"slices"
@@ -32,21 +32,16 @@ func TestAssumeRolePolicy(t *testing.T) {
 
 func TestPolicyTemplateIsEmbeddedAndUnpinned(t *testing.T) {
 	// R-E2L9-88ZH
-	if PolicyTemplate == "" {
-		t.Fatal("PolicyTemplate is empty")
+	template, err := os.ReadFile("templates/space-role-policy.json")
+	if err != nil {
+		t.Fatalf("read policy template: %v", err)
 	}
-	if !json.Valid([]byte(PolicyTemplate)) {
-		t.Fatal("PolicyTemplate is not valid JSON")
+	if PolicyTemplate != string(template) {
+		t.Fatal("PolicyTemplate does not contain templates/space-role-policy.json")
 	}
 
 	// R-EKVQ-YT3W
-	_, err := os.Stat("templates/opsctl-version")
-	if !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("templates/opsctl-version still exists: %v", err)
-	}
-	if strings.Contains(PolicyTemplate, "opsctl-version") {
-		t.Fatal("PolicyTemplate contains an opsctl version pin")
-	}
+	assertNoOpsctlVersionPin(t)
 }
 
 func TestPolicyDocumentSubstitutesOnlyPlaceholders(t *testing.T) {
@@ -81,6 +76,7 @@ func TestPolicyObjectAccessIsConfinedToSpace(t *testing.T) {
 	for _, stmt := range p.Statement {
 		for _, action := range actions(stmt) {
 			if strings.HasPrefix(action, "s3:") {
+				assertAllow(t, stmt, action)
 				s3Actions = append(s3Actions, action)
 			}
 		}
@@ -120,6 +116,7 @@ func TestPolicyParameterAccessIsReadOnlyAndConfined(t *testing.T) {
 	for _, stmt := range p.Statement {
 		for _, action := range actions(stmt) {
 			if strings.HasPrefix(action, "ssm:") {
+				assertAllow(t, stmt, action)
 				ssmActions = append(ssmActions, action)
 				if stmt.Resource != "arn:aws:ssm:*:123456789012:parameter/ikigenba/space.example.com/*" {
 					t.Fatalf("SSM resource = %q", stmt.Resource)
@@ -139,6 +136,7 @@ func TestPolicyRoute53AccessIsTXTOnly(t *testing.T) {
 	for _, stmt := range p.Statement {
 		for _, action := range actions(stmt) {
 			if strings.HasPrefix(action, "route53:") {
+				assertAllow(t, stmt, action)
 				routeActions = append(routeActions, action)
 			}
 		}
@@ -184,6 +182,43 @@ func parsePolicy(t *testing.T) policy {
 		t.Fatalf("parse policy: %v", err)
 	}
 	return p
+}
+
+func assertNoOpsctlVersionPin(t *testing.T) {
+	t.Helper()
+	target := os.DirFS("../..")
+	for _, tree := range []string{"cmd", "internal"} {
+		err := fs.WalkDir(target, tree, func(path string, entry fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.IsDir() || strings.HasSuffix(entry.Name(), "_test.go") {
+				return nil
+			}
+			if entry.Name() == "opsctl-version" {
+				t.Errorf("current target contains opsctl version pin file %s", path)
+				return nil
+			}
+			contents, err := fs.ReadFile(target, path)
+			if err != nil {
+				return err
+			}
+			if strings.Contains(string(contents), "opsctl-version") {
+				t.Errorf("current target contains opsctl version pin in %s", path)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("search current target for opsctl version pin: %v", err)
+		}
+	}
+}
+
+func assertAllow(t *testing.T, stmt statement, action string) {
+	t.Helper()
+	if stmt.Effect != "Allow" {
+		t.Errorf("%s effect = %q, want Allow", action, stmt.Effect)
+	}
 }
 
 func actions(stmt statement) []string {
