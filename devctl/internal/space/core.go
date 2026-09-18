@@ -32,7 +32,7 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, p
 		_, _ = fmt.Fprint(stdout, invocation.help)
 		return nil
 	}
-	if invocation.subcommand == "list" || invocation.subcommand == "status" || invocation.subcommand == "stop" {
+	if invocation.subcommand == "list" || invocation.subcommand == "status" || invocation.subcommand == "stop" || invocation.subcommand == "start" {
 		acct, err := account.Open(ctx, deps, profile)
 		if err != nil {
 			return err
@@ -44,6 +44,8 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, p
 			return runStatus(ctx, invocation.domain, stdout, deps, acct)
 		case "stop":
 			return runStop(ctx, stdout, deps, acct, invocation.domain)
+		case "start":
+			return runStart(ctx, stdout, deps, acct, invocation.domain)
 		}
 	}
 

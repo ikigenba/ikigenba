@@ -239,6 +239,161 @@ func TestRunStop(t *testing.T) {
 	}
 }
 
+func TestRunStart(t *testing.T) {
+	// R-UB9C-536C R-DP6D-0RTU R-B1XP-NI4K R-DRM5-SBB8
+	const (
+		domain  = "foo.sbx.ikigenba.dev"
+		id      = "i-0c9e94542d98846a8"
+		address = "3.145.72.19"
+	)
+	tests := []struct {
+		name      string
+		state     cloud.InstanceState
+		wantCalls []string
+	}{
+		{
+			name:  "stopped instance",
+			state: cloud.StateStopped,
+			wantCalls: []string{
+				"ListSpaceInstances", "StartInstance " + id, "DescribeInstance " + id,
+				"InstanceChecksPassed " + id,
+			},
+		},
+		{
+			name:      "already running instance repeats checks",
+			state:     cloud.StateRunning,
+			wantCalls: []string{"ListSpaceInstances", "InstanceChecksPassed " + id},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			instance := cloud.Instance{ID: id, Space: domain, State: test.state}
+			if test.state == cloud.StateRunning {
+				instance.Address = address
+			}
+			ec2 := newActionEC2(t, []cloud.Instance{instance})
+			ec2.described = cloud.Instance{ID: id, Space: domain, State: cloud.StateRunning, Address: address}
+			ec2.checksPassed = true
+			var commands []seam.Cmd
+			deps, assertCheckout := actionDeps(t, ec2, func(_ context.Context, cmd seam.Cmd) (seam.Result, error) {
+				commands = append(commands, cmd)
+				if len(commands) == 2 {
+					// A successful certbot exit is sufficient even when its output says
+					// that no certificate changed.
+					return seam.Result{Stdout: []byte("No renewals were attempted.\n")}, nil
+				}
+				return seam.Result{}, nil
+			})
+			var stdout bytes.Buffer
+			if err := Run(context.Background(), []string{"start", domain}, &stdout, deps, "sandbox"); err != nil {
+				t.Fatalf("Run(start) error = %v", err)
+			}
+			wantOutput := "instance: ok (" + id + " running, " + address + ")\n" +
+				"host: ok (status checks passed)\n" +
+				"certificate: ok (certbot renew)\n" +
+				domain + " " + address + "\n"
+			if got := stdout.String(); got != wantOutput {
+				t.Fatalf("stdout = %q, want %q", got, wantOutput)
+			}
+			if got := ec2.calls; !reflect.DeepEqual(got, test.wantCalls) {
+				t.Fatalf("EC2 calls = %v, want %v", got, test.wantCalls)
+			}
+			wantRemote := []string{"'true'", "'sudo' 'certbot' 'renew'"}
+			if len(commands) != len(wantRemote) {
+				t.Fatalf("host commands = %#v, want %d calls", commands, len(wantRemote))
+			}
+			for index, remote := range wantRemote {
+				if commands[index].Path != "ssh" || commands[index].Dir != deps.Dir ||
+					len(commands[index].Args) != 8 || commands[index].Args[6] != "ec2-user@"+address ||
+					commands[index].Args[7] != remote {
+					t.Fatalf("host command %d = %#v, want target %q and remote %q", index, commands[index], address, remote)
+				}
+			}
+			assertCheckout()
+		})
+	}
+}
+
+func TestRunStartFailuresPreserveOnlyCompletedSteps(t *testing.T) {
+	// R-B1XP-NI4K R-DRM5-SBB8
+	const (
+		domain  = "foo.sbx.ikigenba.dev"
+		id      = "i-0c9e94542d98846a8"
+		address = "3.145.72.19"
+	)
+	tests := []struct {
+		name       string
+		checksErr  error
+		waitErr    error
+		certStatus int
+		wantOutput string
+		wantExec   int
+	}{
+		{
+			name:       "status checks fail",
+			checksErr:  errors.New("checks unavailable"),
+			wantOutput: "instance: ok (" + id + " running, " + address + ")\n",
+		},
+		{
+			name:    "host wait fails",
+			waitErr: errors.New("ssh process failed to start"),
+			wantOutput: "instance: ok (" + id + " running, " + address + ")\n" +
+				"host: ok (status checks passed)\n",
+			wantExec: 1,
+		},
+		{
+			name:       "certificate command fails",
+			certStatus: 7,
+			wantOutput: "instance: ok (" + id + " running, " + address + ")\n" +
+				"host: ok (status checks passed)\n",
+			wantExec: 2,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ec2 := newActionEC2(t, []cloud.Instance{{
+				ID: id, Space: domain, State: cloud.StateRunning, Address: address,
+			}})
+			ec2.checksPassed = true
+			ec2.checksErr = test.checksErr
+			execCalls := 0
+			deps, _ := actionDeps(t, ec2, func(context.Context, seam.Cmd) (seam.Result, error) {
+				execCalls++
+				if execCalls == 1 && test.waitErr != nil {
+					return seam.Result{}, test.waitErr
+				}
+				if execCalls == 2 {
+					return seam.Result{ExitCode: test.certStatus, Stdout: []byte("unchanged output")}, nil
+				}
+				return seam.Result{}, nil
+			})
+			var stdout bytes.Buffer
+			err := Run(context.Background(), []string{"start", domain}, &stdout, deps, "sandbox")
+			if err == nil {
+				t.Fatal("Run(start) error = nil")
+			}
+			if test.checksErr != nil && !errors.Is(err, test.checksErr) {
+				t.Fatalf("error = %v, want unchanged %v", err, test.checksErr)
+			}
+			if test.waitErr != nil && !errors.Is(err, test.waitErr) {
+				t.Fatalf("error = %v, want host wait error wrapping %v", err, test.waitErr)
+			}
+			if test.certStatus != 0 {
+				var commandErr interface{ ExitCode() int }
+				if !errors.As(err, &commandErr) || commandErr.ExitCode() != 1 {
+					t.Fatalf("error = %#v, want host command error", err)
+				}
+			}
+			if got := stdout.String(); got != test.wantOutput {
+				t.Fatalf("stdout = %q, want preserved steps %q", got, test.wantOutput)
+			}
+			if execCalls != test.wantExec {
+				t.Fatalf("Exec calls = %d, want %d", execCalls, test.wantExec)
+			}
+		})
+	}
+}
+
 func actionDeps(t *testing.T, ec2 cloud.EC2, exec seam.Runner) (seam.Deps, func()) {
 	t.Helper()
 	directory := t.TempDir()
@@ -301,10 +456,14 @@ func guardedClients(t *testing.T, ec2 cloud.EC2) cloud.Clients {
 }
 
 type actionEC2 struct {
-	t         *testing.T
-	instances []cloud.Instance
-	listErr   error
-	calls     []string
+	t            *testing.T
+	instances    []cloud.Instance
+	listErr      error
+	described    cloud.Instance
+	startErr     error
+	checksPassed bool
+	checksErr    error
+	calls        []string
 }
 
 func newActionEC2(t *testing.T, instances []cloud.Instance) *actionEC2 {
@@ -317,6 +476,9 @@ func (f *actionEC2) ListSpaceInstances(context.Context) ([]cloud.Instance, error
 }
 func (f *actionEC2) DescribeInstance(_ context.Context, id string) (cloud.Instance, error) {
 	f.calls = append(f.calls, "DescribeInstance "+id)
+	if f.described.ID != "" {
+		return f.described, nil
+	}
 	return cloud.Instance{ID: id, State: cloud.StateStopped}, nil
 }
 func (f *actionEC2) StopInstance(_ context.Context, id string) error {
@@ -327,17 +489,17 @@ func (f *actionEC2) RunInstance(context.Context, cloud.LaunchSpec) (cloud.Instan
 	f.t.Fatal("unexpected EC2 mutation: RunInstance")
 	return cloud.Instance{}, nil
 }
-func (f *actionEC2) StartInstance(context.Context, string) error {
-	f.t.Fatal("unexpected EC2 mutation: StartInstance")
-	return nil
+func (f *actionEC2) StartInstance(_ context.Context, id string) error {
+	f.calls = append(f.calls, "StartInstance "+id)
+	return f.startErr
 }
 func (f *actionEC2) TerminateInstance(context.Context, string) error {
 	f.t.Fatal("unexpected EC2 mutation: TerminateInstance")
 	return nil
 }
-func (f *actionEC2) InstanceChecksPassed(context.Context, string) (bool, error) {
-	f.t.Fatal("unexpected EC2 read: InstanceChecksPassed")
-	return false, nil
+func (f *actionEC2) InstanceChecksPassed(_ context.Context, id string) (bool, error) {
+	f.calls = append(f.calls, "InstanceChecksPassed "+id)
+	return f.checksPassed, f.checksErr
 }
 func (f *actionEC2) ListSpaceAddresses(context.Context) ([]cloud.Address, error) {
 	f.t.Fatal("unexpected EC2 read: ListSpaceAddresses")

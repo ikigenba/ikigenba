@@ -75,3 +75,49 @@ func runStop(
 	Step(stdout, "instance", item.ID+" stopped")
 	return nil
 }
+
+func runStart(
+	ctx context.Context,
+	stdout io.Writer,
+	deps seam.Deps,
+	acct *account.Account,
+	domain string,
+) error {
+	item, err := acct.Space(ctx, domain)
+	if err != nil {
+		return err
+	}
+
+	running := cloud.Instance{
+		ID:      item.ID,
+		Space:   item.Domain,
+		State:   item.State,
+		Address: item.Address,
+	}
+	if item.State != cloud.StateRunning {
+		if err := acct.Clients.EC2.StartInstance(ctx, item.ID); err != nil {
+			return err
+		}
+		running, err = WaitState(ctx, deps, acct, item.ID, cloud.StateRunning)
+		if err != nil {
+			return err
+		}
+	}
+	Step(stdout, "instance", running.ID+" running, "+running.Address)
+
+	if err := WaitChecks(ctx, deps, acct, item.ID); err != nil {
+		return err
+	}
+	Step(stdout, "host", "status checks passed")
+
+	remote := host.Host{Address: running.Address, Deps: deps}
+	if err := remote.Wait(ctx); err != nil {
+		return err
+	}
+	if _, err := remote.Sudo(ctx, "certificate", "certbot", "renew"); err != nil {
+		return err
+	}
+	Step(stdout, "certificate", "certbot renew")
+	_, err = fmt.Fprintf(stdout, "%s %s\n", domain, running.Address)
+	return err
+}
