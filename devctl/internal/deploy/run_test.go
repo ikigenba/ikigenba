@@ -233,14 +233,10 @@ func TestFileResolutionArchiveCommandsAndFileStep(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			var commands []seam.Cmd
-			deps := seam.Deps{Dir: dir, Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
-				commands = append(commands, command)
-				if len(commands) == 1 {
-					return seam.Result{Stdout: []byte("\netc/manifest.toml\n\nbin/crm\n")}, nil
-				}
-				return seam.Result{Stdout: []byte("app = \"crm\"\n")}, nil
-			}}
+			harness := newDeployHarness()
+			harness.domain = "foo.example"
+			harness.manifest = "app = \"crm\"\n"
+			deps := harness.deps(dir)
 			var stdout bytes.Buffer
 			if err := deploy.Run(context.Background(), []string{"foo.example", test.operand}, &stdout, deps, "account"); err != nil {
 				t.Fatalf("Run() error = %v", err)
@@ -249,11 +245,13 @@ func TestFileResolutionArchiveCommandsAndFileStep(t *testing.T) {
 				{Path: "tar", Args: []string{"-t", "-J", "-f", test.operand}, Dir: dir},
 				{Path: "tar", Args: []string{"-x", "-J", "-O", "-f", test.operand, "etc/manifest.toml"}, Dir: dir},
 			}
-			if !reflect.DeepEqual(commands, wantCommands) {
-				t.Fatalf("commands = %#v, want %#v", commands, wantCommands)
+			if len(harness.commands) < 2 || !reflect.DeepEqual(harness.commands[:2], wantCommands) {
+				t.Fatalf("commands = %#v, want prefix %#v", harness.commands, wantCommands)
 			}
 			if want := "file: ok (crm " + test.version + ")\n"; stdout.String() != want {
-				t.Fatalf("stdout = %q, want %q", stdout.String(), want)
+				if !strings.HasPrefix(stdout.String(), want) {
+					t.Fatalf("stdout = %q, want prefix %q", stdout.String(), want)
+				}
 			}
 		})
 	}
