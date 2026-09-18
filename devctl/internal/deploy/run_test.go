@@ -219,10 +219,12 @@ func TestFileResolutionArchiveCommandsAndFileStep(t *testing.T) {
 	for _, test := range []struct {
 		name    string
 		operand string
+		app     string
 		version string
 	}{
-		{name: "relative", operand: relative, version: "v1.2.3"},
-		{name: "absolute", operand: absolute, version: "v2.3.4"},
+		{name: "relative crm", operand: relative, app: "crm", version: "v1.2.3"},
+		{name: "absolute crm", operand: absolute, app: "crm", version: "v2.3.4"},
+		{name: "relative gmail", operand: "gmail-v0.1.0.tar.xz", app: "gmail", version: "v0.1.0"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			path := test.operand
@@ -235,7 +237,8 @@ func TestFileResolutionArchiveCommandsAndFileStep(t *testing.T) {
 
 			harness := newDeployHarness()
 			harness.domain = "foo.example"
-			harness.manifest = "app = \"crm\"\n"
+			harness.members = "etc/manifest.toml\nbin/" + test.app + "\n"
+			harness.manifest = "app = \"" + test.app + "\"\n"
 			deps := harness.deps(dir)
 			var stdout bytes.Buffer
 			if err := deploy.Run(context.Background(), []string{"foo.example", test.operand}, &stdout, deps, "account"); err != nil {
@@ -248,7 +251,7 @@ func TestFileResolutionArchiveCommandsAndFileStep(t *testing.T) {
 			if len(harness.commands) < 2 || !reflect.DeepEqual(harness.commands[:2], wantCommands) {
 				t.Fatalf("commands = %#v, want prefix %#v", harness.commands, wantCommands)
 			}
-			if want := "file: ok (crm " + test.version + ")\n"; stdout.String() != want {
+			if want := "file: ok (" + test.app + " " + test.version + ")\n"; stdout.String() != want {
 				if !strings.HasPrefix(stdout.String(), want) {
 					t.Fatalf("stdout = %q, want prefix %q", stdout.String(), want)
 				}
@@ -279,24 +282,25 @@ func TestArchiveValidationErrorsStopBeforeCloud(t *testing.T) {
 	// R-ZAMI-W2CR R-FE5C-5AWK
 	tests := []struct {
 		name          string
+		operand       string
 		members       string
 		manifest      string
 		wantReason    string
 		wantExecCalls int
 	}{
-		{name: "missing manifest", members: "bin/crm\n", wantReason: "no etc/manifest.toml in the archive", wantExecCalls: 1},
-		{name: "invalid manifest", members: "etc/manifest.toml\nbin/crm\n", manifest: "app = [", wantReason: "etc/manifest.toml: toml: line 1", wantExecCalls: 2},
-		{name: "app mismatch", members: "etc/manifest.toml\nbin/gmail\n", manifest: "app = \"gmail\"\n", wantReason: "manifest app does not match file name", wantExecCalls: 2},
-		{name: "missing binary", members: "etc/manifest.toml\nbin/other\n", manifest: "app = \"crm\"\n", wantReason: "no bin/crm in the archive", wantExecCalls: 2},
+		{name: "gmail missing manifest", operand: "gmail-v0.1.0.tar.xz", members: "bin/gmail\n", wantReason: "no etc/manifest.toml in the archive", wantExecCalls: 1},
+		{name: "gmail invalid manifest", operand: "gmail-v0.1.0.tar.xz", members: "etc/manifest.toml\nbin/gmail\n", manifest: "app = [", wantReason: "etc/manifest.toml: toml: line 1", wantExecCalls: 2},
+		{name: "gmail app mismatch", operand: "gmail-v0.1.0.tar.xz", members: "etc/manifest.toml\nbin/crm\n", manifest: "app = \"crm\"\n", wantReason: "manifest app does not match file name", wantExecCalls: 2},
+		{name: "gmail missing binary", operand: "gmail-v0.1.0.tar.xz", members: "etc/manifest.toml\nbin/other\n", manifest: "app = \"gmail\"\n", wantReason: "no bin/gmail in the archive", wantExecCalls: 2},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if test.name == "invalid manifest" {
+			if strings.Contains(test.name, "invalid manifest") {
 				_, decodeErr := checkout.DecodeManifest(strings.NewReader(test.manifest))
 				test.wantReason = checkout.ManifestFile + ": " + decodeErr.Error()
 			}
 			dir := t.TempDir()
-			operand := "crm-v1.2.3.tar.xz"
+			operand := test.operand
 			if err := os.WriteFile(filepath.Join(dir, operand), []byte("artifact"), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -385,8 +389,18 @@ func TestArchiveProcessFailures(t *testing.T) {
 
 func TestObjectKey(t *testing.T) {
 	// R-FFD8-J2N9
-	if got, want := deploy.ObjectKey("foo.example", "crm-v1.2.3.tar.xz"), "foo.example/deploy/crm-v1.2.3.tar.xz"; got != want {
-		t.Fatalf("ObjectKey() = %q, want %q", got, want)
+	for _, test := range []struct {
+		domain   string
+		filename string
+		want     string
+	}{
+		{domain: "foo.example", filename: "crm-v1.2.3.tar.xz", want: "foo.example/deploy/crm-v1.2.3.tar.xz"},
+		{domain: "mail.sbx.ikigenba.dev", filename: "gmail-v0.1.0.tar.xz", want: "mail.sbx.ikigenba.dev/deploy/gmail-v0.1.0.tar.xz"},
+		{domain: "bar.example", filename: "worker-v9.8.7+build.4.tar.xz", want: "bar.example/deploy/worker-v9.8.7+build.4.tar.xz"},
+	} {
+		if got := deploy.ObjectKey(test.domain, test.filename); got != test.want {
+			t.Errorf("ObjectKey(%q, %q) = %q, want %q", test.domain, test.filename, got, test.want)
+		}
 	}
 }
 

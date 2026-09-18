@@ -165,6 +165,7 @@ type deployHarness struct {
 	domain        string
 	state         cloud.InstanceState
 	gone          bool
+	members       string
 	manifest      string
 	secretObject  string
 	cloudCalls    []cloudOpen
@@ -188,6 +189,7 @@ func newDeployHarness() *deployHarness {
 	return &deployHarness{
 		domain:       "foo.sbx.example",
 		state:        cloud.StateRunning,
+		members:      "etc/manifest.toml\nbin/crm\n",
 		manifest:     "app = \"crm\"\n",
 		secretObject: `{}`,
 	}
@@ -221,7 +223,7 @@ func (h *deployHarness) deps(dir string) seam.Deps {
 			case "tar":
 				if command.Args[0] == "-t" {
 					h.operations = append(h.operations, "tar-list")
-					return seam.Result{Stdout: []byte("etc/manifest.toml\nbin/crm\n")}, nil
+					return seam.Result{Stdout: []byte(h.members)}, nil
 				}
 				h.operations = append(h.operations, "tar-manifest")
 				return seam.Result{Stdout: []byte(h.manifest)}, nil

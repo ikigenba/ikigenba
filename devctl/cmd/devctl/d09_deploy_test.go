@@ -86,6 +86,20 @@ func TestDeployHelpAtCommandBoundary(t *testing.T) {
 	}
 }
 
+func TestDeployMissingArtifactAtCommandBoundary(t *testing.T) {
+	// R-08GB-YDTQ
+	code, stdout, stderr, cloudCalls, execCalls := invokeDeployBoundary(t,
+		"--account", "SelectedProfile", "deploy", "foo.sbx.ikigenba.dev", "crm/dist/crm-v0.2.0.tar.xz",
+	)
+	const wantStderr = "devctl: no such file 'crm/dist/crm-v0.2.0.tar.xz'\n"
+	if code != 2 || stdout != "" || stderr != wantStderr {
+		t.Fatalf("result = code %d, stdout %q, stderr %q; want 2, empty, %q", code, stdout, stderr, wantStderr)
+	}
+	if cloudCalls != 0 || execCalls != 0 {
+		t.Fatalf("external calls = cloud %d, exec %d; want none", cloudCalls, execCalls)
+	}
+}
+
 func invokeDeployBoundary(t *testing.T, args ...string) (int, string, string, int, int) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
