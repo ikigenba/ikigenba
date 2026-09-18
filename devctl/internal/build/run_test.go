@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/build"
+	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
 
@@ -86,8 +87,16 @@ func TestRunArgumentParsing(t *testing.T) {
 		})
 	}
 
-	if err := build.Run(context.Background(), []string{"crm"}, io.Discard, seam.Deps{}); err != nil {
-		t.Fatalf("Run with one operand error = %v", err)
+	root := t.TempDir()
+	err := build.Run(context.Background(), []string{"crm"}, io.Discard, seam.Deps{
+		Dir: root,
+		Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
+			return seam.Result{Stdout: []byte(root + "\n")}, nil
+		},
+	})
+	var noAppError *checkout.NoAppError
+	if !errors.As(err, &noAppError) {
+		t.Fatalf("Run with one operand error = %T %v, want *checkout.NoAppError", err, err)
 	}
 }
 
