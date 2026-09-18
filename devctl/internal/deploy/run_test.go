@@ -26,13 +26,50 @@ type runSignature func(context.Context, []string, io.Writer, seam.Deps, string) 
 
 var _ runSignature = deploy.Run
 
+type usageErrorContract interface {
+	Error() string
+	Detail() string
+	ExitCode() int
+}
+
+type exitErrorContract interface {
+	Error() string
+	ExitCode() int
+}
+
+type detailedExitErrorContract interface {
+	Error() string
+	Detail() string
+	ExitCode() int
+}
+
+var (
+	_ usageErrorContract        = (*deploy.UsageError)(nil)
+	_ exitErrorContract         = (*deploy.NoFileError)(nil)
+	_ detailedExitErrorContract = (*deploy.MissingSecretsError)(nil)
+	_ detailedExitErrorContract = (*deploy.ProcessError)(nil)
+	_ exitErrorContract         = (*deploy.FileError)(nil)
+)
+
+type fieldSpec struct {
+	name   string
+	typeOf reflect.Type
+}
+
 func TestRunSignatureAndErrorContracts(t *testing.T) {
 	// R-YOOC-0709 R-YR44-RQHN R-YSC1-5I8C R-YVZQ-ATGF R-F81U-8G73 R-FWFT-VV0Z
-	assertFields(t, deploy.UsageError{}, []string{"Message", "Help"})
-	assertFields(t, deploy.NoFileError{}, []string{"Path"})
-	assertFields(t, deploy.MissingSecretsError{}, []string{"App", "Domain", "Profile", "Names"})
-	assertFields(t, deploy.ProcessError{}, []string{"Label", "Status", "Stderr"})
-	assertFields(t, deploy.FileError{}, []string{"Path", "Reason"})
+	stringType := reflect.TypeFor[string]()
+	intType := reflect.TypeFor[int]()
+	stringsType := reflect.TypeFor[[]string]()
+	assertFields(t, deploy.UsageError{}, []fieldSpec{{"Message", stringType}, {"Help", stringType}})
+	assertFields(t, deploy.NoFileError{}, []fieldSpec{{"Path", stringType}})
+	assertFields(t, deploy.MissingSecretsError{}, []fieldSpec{
+		{"App", stringType}, {"Domain", stringType}, {"Profile", stringType}, {"Names", stringsType},
+	})
+	assertFields(t, deploy.ProcessError{}, []fieldSpec{
+		{"Label", stringType}, {"Status", intType}, {"Stderr", stringType},
+	})
+	assertFields(t, deploy.FileError{}, []fieldSpec{{"Path", stringType}, {"Reason", stringType}})
 
 	usage := &deploy.UsageError{Message: "bad", Help: "devctl deploy --help"}
 	if usage.Error() != "bad" || usage.Detail() != "see 'devctl deploy --help' for usage" || usage.ExitCode() != 2 {
@@ -143,13 +180,14 @@ func TestFileExistencePrecedesNameParsingAndExternalAccess(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "notes.tar.xz"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	err = deploy.Run(context.Background(), []string{"foo.example", "notes.tar.xz"}, io.Discard, deps, "account")
+	var stdout bytes.Buffer
+	err = deploy.Run(context.Background(), []string{"foo.example", "notes.tar.xz"}, &stdout, deps, "account")
 	var fileErr *deploy.FileError
 	if !errors.As(err, &fileErr) || fileErr.Path != "notes.tar.xz" || fileErr.Reason != "name is not <app>-v<semver>.tar.xz" {
 		t.Fatalf("existing invalid-name error = %T %#v, want exact FileError", err, err)
 	}
-	if cloudCalls != 0 || execCalls != 0 {
-		t.Fatalf("external calls = cloud %d, exec %d", cloudCalls, execCalls)
+	if stdout.Len() != 0 || cloudCalls != 0 || execCalls != 0 {
+		t.Fatalf("stdout/external = %q, cloud %d, exec %d", stdout.String(), cloudCalls, execCalls)
 	}
 }
 
@@ -171,12 +209,13 @@ func TestRelativeAndAbsoluteMissingFilesPreserveOperand(t *testing.T) {
 	}
 }
 
-func assertFields(t *testing.T, value any, want []string) {
+func assertFields(t *testing.T, value any, want []fieldSpec) {
 	t.Helper()
 	typeOf := reflect.TypeOf(value)
-	got := make([]string, typeOf.NumField())
-	for i := range typeOf.NumField() {
-		got[i] = typeOf.Field(i).Name
+	got := make([]fieldSpec, typeOf.NumField())
+	for index := range typeOf.NumField() {
+		field := typeOf.Field(index)
+		got[index] = fieldSpec{name: field.Name, typeOf: field.Type}
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("%s fields = %v, want %v", typeOf.Name(), got, want)
