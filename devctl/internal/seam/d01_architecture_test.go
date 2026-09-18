@@ -119,7 +119,7 @@ func TestCommandsUseExplicitRootsAndProcessDirectories(t *testing.T) {
 					}
 				}
 				for _, left := range value.Lhs {
-					selector, ok := left.(*ast.SelectorExpr)
+					selector, ok := unparenthesized(left).(*ast.SelectorExpr)
 					if ok && selector.Sel.Name == "Dir" && source.pkgPath != modulePath+"/internal/seam" {
 						t.Errorf("%s: command/path Dir fields must not be filled by later assignment", source.path)
 					}
@@ -154,10 +154,11 @@ func TestCommandsUseExplicitRootsAndProcessDirectories(t *testing.T) {
 				}
 			case *ast.CallExpr:
 				function := enclosingFunction(source.file, value)
-				if ident, ok := value.Fun.(*ast.Ident); ok && ident.Name == "new" && len(value.Args) == 1 && isCmdType(value.Args[0], source) {
+				callee := unparenthesized(value.Fun)
+				if ident, ok := callee.(*ast.Ident); ok && ident.Name == "new" && len(value.Args) == 1 && isCmdType(value.Args[0], source) {
 					t.Errorf("%s: seam.Cmd must not be created through new", source.path)
 				}
-				if ident, ok := value.Fun.(*ast.Ident); ok {
+				if ident, ok := callee.(*ast.Ident); ok {
 					for index, parameter := range rootedHelperParameters(source.pkgPath, ident.Name) {
 						if index >= len(value.Args) || !filesystemPathIsRooted(value.Args[index], source, function, map[*ast.Ident]bool{}) {
 							t.Errorf("%s: call to %s does not supply rooted path parameter %s", source.path, ident.Name, parameter)
@@ -169,16 +170,16 @@ func TestCommandsUseExplicitRootsAndProcessDirectories(t *testing.T) {
 						t.Errorf("%s: path helpers and process runners must not be passed through unchecked function parameters", source.path)
 					}
 				}
-				for index, parameter := range calledCmdParameters(value.Fun, source) {
+				for index, parameter := range calledCmdParameters(callee, source) {
 					if index >= len(value.Args) || !expressionIsCmd(value.Args[index], source, function, map[string]bool{}) {
 						t.Errorf("%s: call does not supply a statically checked seam.Cmd parameter %s", source.path, parameter)
 					}
 				}
-				if index, ok := runnerCallCmdIndex(value.Fun, function, source); ok &&
+				if index, ok := runnerCallCmdIndex(callee, function, source); ok &&
 					(index >= len(value.Args) || !expressionIsCmd(value.Args[index], source, function, map[string]bool{})) {
 					t.Errorf("%s: indirect process runner call does not receive a statically checked seam.Cmd", source.path)
 				}
-				selector, ok := value.Fun.(*ast.SelectorExpr)
+				selector, ok := callee.(*ast.SelectorExpr)
 				if !ok {
 					return true
 				}
@@ -214,9 +215,9 @@ func TestArchitectureAnalyzerRecognizesIndirectCapabilities(t *testing.T) {
 	t.Run("aliased os access", func(t *testing.T) {
 		source := sourceFile{importPath: map[string]string{"os": "os"}}
 		for _, name := range []string{"LookupEnv", "ReadFile", "UserHomeDir"} {
-			expression := &ast.SelectorExpr{X: ast.NewIdent("os"), Sel: ast.NewIdent(name)}
+			expression := nestedParentheses(&ast.SelectorExpr{X: ast.NewIdent("os"), Sel: ast.NewIdent(name)})
 			if !aliasesPathOrRunnerCapability(expression, source) {
-				t.Errorf("os.%s was not recognized as a path/home capability", name)
+				t.Errorf("parenthesized os.%s was not recognized as a path/home capability", name)
 			}
 		}
 	})
@@ -227,8 +228,8 @@ func TestArchitectureAnalyzerRecognizesIndirectCapabilities(t *testing.T) {
 			"use.go":   "package sample\nfunc use() { _ = new(hidden) }\n",
 		})
 		use := files["use.go"]
-		if !isCmdType(ast.NewIdent("hidden"), use) {
-			t.Fatal("cross-file seam.Cmd alias was not recognized")
+		if !isCmdType(nestedParentheses(ast.NewIdent("hidden")), use) {
+			t.Fatal("parenthesized cross-file seam.Cmd alias was not recognized")
 		}
 	})
 
@@ -237,13 +238,28 @@ func TestArchitectureAnalyzerRecognizesIndirectCapabilities(t *testing.T) {
 			"apps.go": `package checkout
 func readManifest(string) (int, error) { return 0, nil }
 func apps(read func(string) (int, error)) { _, _ = read(".") }
-func use() { apps(readManifest) }
+func use() { apps((((readManifest)))) }
 `,
 		})
 		source := files["apps.go"]
 		call := findFixtureCall(t, source.file, "apps")
+		if !aliasesPathOrRunnerCapability(call.Args[0], source) {
+			t.Fatal("parenthesized rooted helper callback was not recognized as a capability")
+		}
 		if capabilityArgumentIsSafelyConsumed(call, 0, source) {
 			t.Fatal("rooted helper passed to a callback invoked with a relative path was accepted")
+		}
+	})
+
+	t.Run("parenthesized cross-file command alias through new", func(t *testing.T) {
+		files := parseArchitectureFixture(t, map[string]string{
+			"alias.go": "package sample\nimport \"github.com/ikigenba/ikigenba/devctl/internal/seam\"\ntype hiddenCommand = seam.Cmd\n",
+			"use.go":   "package sample\nfunc use() { _ = new((((hiddenCommand)))) }\n",
+		})
+		use := files["use.go"]
+		call := findFixtureCall(t, use.file, "new")
+		if len(call.Args) != 1 || !isCmdType(call.Args[0], use) {
+			t.Fatal("parenthesized cross-file seam.Cmd alias passed to new was not recognized")
 		}
 	})
 
@@ -310,7 +326,7 @@ func findFixtureCall(t *testing.T, file *ast.File, name string) *ast.CallExpr {
 		if !ok {
 			return true
 		}
-		ident, ok := call.Fun.(*ast.Ident)
+		ident, ok := unparenthesized(call.Fun).(*ast.Ident)
 		if ok && ident.Name == name {
 			found = call
 		}
@@ -322,8 +338,22 @@ func findFixtureCall(t *testing.T, file *ast.File, name string) *ast.CallExpr {
 	return found
 }
 
+func nestedParentheses(expr ast.Expr) ast.Expr {
+	return &ast.ParenExpr{X: &ast.ParenExpr{X: &ast.ParenExpr{X: expr}}}
+}
+
+func unparenthesized(expr ast.Expr) ast.Expr {
+	for {
+		parenthesized, ok := expr.(*ast.ParenExpr)
+		if !ok {
+			return expr
+		}
+		expr = parenthesized.X
+	}
+}
+
 func aliasesPathOrRunnerCapability(expr ast.Expr, source sourceFile) bool {
-	switch value := expr.(type) {
+	switch value := unparenthesized(expr).(type) {
 	case *ast.Ident:
 		return len(rootedHelperParameters(source.pkgPath, value.Name)) != 0 ||
 			source.pkgPath != modulePath+"/internal/seam" && functionIsRunner(value.Name, source)
@@ -353,7 +383,7 @@ func packageFunctions(source sourceFile, name string) []*ast.FuncDecl {
 
 func calledFunction(expr ast.Expr, source sourceFile) []*ast.FuncDecl {
 	name := ""
-	switch value := expr.(type) {
+	switch value := unparenthesized(expr).(type) {
 	case *ast.Ident:
 		name = value.Name
 	case *ast.SelectorExpr:
@@ -406,7 +436,7 @@ func functionIsRunner(name string, source sourceFile) bool {
 }
 
 func runnerCallCmdIndex(expr ast.Expr, function *ast.FuncDecl, source sourceFile) (int, bool) {
-	ident, ok := expr.(*ast.Ident)
+	ident, ok := unparenthesized(expr).(*ast.Ident)
 	if !ok || function == nil {
 		return 0, false
 	}
@@ -443,7 +473,7 @@ func capabilityArgumentIsSafelyConsumed(call *ast.CallExpr, argumentIndex int, s
 			if !ok {
 				return true
 			}
-			ident, ok := invocation.Fun.(*ast.Ident)
+			ident, ok := unparenthesized(invocation.Fun).(*ast.Ident)
 			if !ok || ident.Name != name {
 				return true
 			}
@@ -459,11 +489,9 @@ func capabilityArgumentIsSafelyConsumed(call *ast.CallExpr, argumentIndex int, s
 }
 
 func expressionIsCmd(expr ast.Expr, source sourceFile, function *ast.FuncDecl, seen map[string]bool) bool {
-	switch value := expr.(type) {
+	switch value := unparenthesized(expr).(type) {
 	case *ast.CompositeLit:
 		return isCmdType(value.Type, source)
-	case *ast.ParenExpr:
-		return expressionIsCmd(value.X, source, function, seen)
 	case *ast.Ident:
 		if function == nil || seen[value.Name] {
 			return false
@@ -502,7 +530,7 @@ func expressionIsCmd(expr ast.Expr, source sourceFile, function *ast.FuncDecl, s
 		return checked
 	case *ast.CallExpr:
 		name := ""
-		switch called := value.Fun.(type) {
+		switch called := unparenthesized(value.Fun).(type) {
 		case *ast.Ident:
 			name = called.Name
 		case *ast.SelectorExpr:
@@ -531,15 +559,13 @@ func enclosingFunction(file *ast.File, target ast.Node) *ast.FuncDecl {
 }
 
 func filesystemPathIsRooted(expr ast.Expr, source sourceFile, function *ast.FuncDecl, seen map[*ast.Ident]bool) bool {
-	switch value := expr.(type) {
+	switch value := unparenthesized(expr).(type) {
 	case *ast.BasicLit:
 		if value.Kind != token.STRING {
 			return false
 		}
 		path, err := strconv.Unquote(value.Value)
 		return err == nil && filepath.IsAbs(path)
-	case *ast.ParenExpr:
-		return filesystemPathIsRooted(value.X, source, function, seen)
 	case *ast.SelectorExpr:
 		if value.Sel.Name == "Root" {
 			ident, ok := value.X.(*ast.Ident)
@@ -567,7 +593,7 @@ func filesystemPathIsRooted(expr ast.Expr, source sourceFile, function *ast.Func
 		}
 		return false
 	case *ast.CallExpr:
-		if selector, ok := value.Fun.(*ast.SelectorExpr); ok {
+		if selector, ok := unparenthesized(value.Fun).(*ast.SelectorExpr); ok {
 			if ident, ok := selector.X.(*ast.Ident); ok && source.importPath[ident.Name] == "os" {
 				switch selector.Sel.Name {
 				case "CreateTemp", "MkdirTemp":
@@ -657,7 +683,7 @@ func receiverHasNamedType(function *ast.FuncDecl, name, pkgPath, typeName string
 }
 
 func isNamedType(expr ast.Expr, pkgPath, typeName string, source sourceFile) bool {
-	switch value := expr.(type) {
+	switch value := unparenthesized(expr).(type) {
 	case *ast.Ident:
 		return value.Name == typeName && source.pkgPath == pkgPath
 	case *ast.SelectorExpr:
@@ -714,7 +740,7 @@ func functionHasLocalCheckoutApp(function *ast.FuncDecl, name string) bool {
 
 func selectorRootName(expr ast.Expr) string {
 	for {
-		switch value := expr.(type) {
+		switch value := unparenthesized(expr).(type) {
 		case *ast.Ident:
 			return value.Name
 		case *ast.SelectorExpr:
@@ -781,6 +807,7 @@ func deployPathResolutionIsExplicit(function *ast.FuncDecl) bool {
 }
 
 func isCmdType(expr ast.Expr, source sourceFile) bool {
+	expr = unparenthesized(expr)
 	if ident, ok := expr.(*ast.Ident); ok {
 		if ident.Name == "Cmd" && source.pkgPath == modulePath+"/internal/seam" {
 			return true
@@ -810,7 +837,7 @@ func isCmdType(expr ast.Expr, source sourceFile) bool {
 }
 
 func isRunnerType(expr ast.Expr, source sourceFile) bool {
-	switch value := expr.(type) {
+	switch value := unparenthesized(expr).(type) {
 	case *ast.Ident:
 		if (value.Name == "Runner" || value.Name == "StreamRunner") && source.pkgPath == modulePath+"/internal/seam" {
 			return true
