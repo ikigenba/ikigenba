@@ -71,6 +71,7 @@ func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
 		"xz --decompress --stdout",
 		"systemctl is-active ikigenba-notes.service",
 		"id --user ikigenba",
+		"getent passwd ikigenba",
 		"id --group --name ikigenba",
 		"chown ikigenba:ikigenba " + filepath.Join(fixture.root, "opt", "notes"),
 		"chown --recursive root:ikigenba " + filepath.Join(fixture.root, "opt", "notes", "bin") + " " + filepath.Join(fixture.root, "opt", "notes", "etc"),
@@ -103,6 +104,7 @@ func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
 		"xz --decompress --stdout",
 		"systemctl is-active ikigenba-notes.service",
 		"id --user ikigenba",
+		"getent passwd ikigenba",
 		"id --group --name ikigenba",
 		"chown ikigenba:ikigenba " + filepath.Join(fixture.root, "opt", "notes"),
 		"chown --recursive root:ikigenba " + filepath.Join(fixture.root, "opt", "notes", "bin") + " " + filepath.Join(fixture.root, "opt", "notes", "etc"),
@@ -341,6 +343,7 @@ func installCommandsThroughNginx(root string) []string {
 		"xz --decompress --stdout",
 		"systemctl is-active ikigenba-notes.service",
 		"id --user ikigenba",
+		"getent passwd ikigenba",
 		"id --group --name ikigenba",
 		"chown ikigenba:ikigenba " + filepath.Join(root, "opt", "notes"),
 		"chown --recursive root:ikigenba " + filepath.Join(root, "opt", "notes", "bin") + " " + filepath.Join(root, "opt", "notes", "etc"),
@@ -529,6 +532,8 @@ func (fixture *cliInstallFixture) execute(_ context.Context, command host.Comman
 		return host.Result{ExitCode: 3, Stdout: []byte("inactive\n")}, nil
 	case key == "id --user ikigenba":
 		return host.Result{Stdout: []byte("998\n")}, nil
+	case key == "getent passwd ikigenba":
+		return host.Result{Stdout: []byte("ikigenba:x:998:998::/nonexistent:/usr/sbin/nologin\n")}, nil
 	case key == "id --group --name ikigenba":
 		return host.Result{Stdout: []byte("ikigenba\n")}, nil
 	case key == "systemctl start ikigenba-notes.service" || key == "systemctl restart ikigenba-notes.service":

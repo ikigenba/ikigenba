@@ -154,9 +154,9 @@ func (workflow *installWorkflow) fetchSecrets(ctx context.Context) error {
 	return nil
 }
 
-func (workflow *installWorkflow) unpack(context.Context) error {
+func (workflow *installWorkflow) unpack(ctx context.Context) error {
 	environment := renderEnvironment(workflow.checked.manifest, workflow.secrets)
-	if failure := replaceInstalledFiles(workflow.env.Root, workflow.checked, environment); failure != nil {
+	if failure := replaceInstalledFiles(ctx, workflow.env, workflow.checked, environment); failure != nil {
 		return failInstallStage(workflow.hooks, "unpack", failure)
 	}
 	detail := fmt.Sprintf("/opt/%s", safeDiagnosticToken(workflow.checked.manifest.App))
@@ -645,8 +645,8 @@ func writeEnvironmentEntry(output *strings.Builder, name, value string) {
 	output.WriteString("\"\n")
 }
 
-func replaceInstalledFiles(root string, artifact *inspectedArtifact, environment []byte) *stageFailure {
-	filesystem, err := os.OpenRoot(root)
+func replaceInstalledFiles(ctx context.Context, env host.Env, artifact *inspectedArtifact, environment []byte) *stageFailure {
+	filesystem, err := os.OpenRoot(env.Root)
 	if err != nil {
 		return unpackFailure(err)
 	}
@@ -656,7 +656,8 @@ func replaceInstalledFiles(root string, artifact *inspectedArtifact, environment
 	if err := rejectDestinationSymlinks(filesystem, appRoot); err != nil {
 		return unpackFailure(err)
 	}
-	if err := ensureOptDirectory(filesystem); err != nil {
+	createdOpt, err := ensureOptDirectory(filesystem)
+	if err != nil {
 		return unpackFailure(err)
 	}
 	if err := filesystem.MkdirAll(appRoot, 0o750); err != nil {
@@ -710,19 +711,26 @@ func replaceInstalledFiles(root string, artifact *inspectedArtifact, environment
 	} else if err := filesystem.RemoveAll(path.Join(appRoot, "share")); err != nil {
 		return unpackFailure(err)
 	}
+	if createdOpt {
+		if err := executeInstallCommand(ctx, env, "set /opt ownership", host.Command{
+			Name: "chown", Args: []string{"root:root", rootedHostPath(env.Root, "opt")},
+		}); err != nil {
+			return unpackFailure(err)
+		}
+	}
 	return nil
 }
 
-func ensureOptDirectory(filesystem *os.Root) error {
+func ensureOptDirectory(filesystem *os.Root) (bool, error) {
 	if _, err := filesystem.Lstat("opt"); err == nil {
-		return nil
+		return false, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
+		return false, err
 	}
 	if err := filesystem.Mkdir("opt", 0o755); err != nil {
-		return err
+		return false, err
 	}
-	return filesystem.Chmod("opt", 0o755)
+	return true, filesystem.Chmod("opt", 0o755)
 }
 
 func rejectDestinationSymlinks(filesystem *os.Root, appRoot string) error {
@@ -827,6 +835,9 @@ func ensureServiceAccount(ctx context.Context, env host.Env) error {
 		if uid == 0 {
 			return errors.New("ikigenba account must not be root")
 		}
+		if err := requireServiceAccountShell(ctx, env); err != nil {
+			return err
+		}
 		return requireServiceAccountGroup(ctx, env)
 	}
 	var commandErr *host.CommandError
@@ -837,6 +848,25 @@ func ensureServiceAccount(ctx context.Context, env host.Env) error {
 		Name: "useradd", Args: []string{"--system", "--no-create-home", "--shell", "/usr/sbin/nologin", "--user-group", "ikigenba"},
 	}); err != nil {
 		return err
+	}
+	return nil
+}
+
+func requireServiceAccountShell(ctx context.Context, env host.Env) error {
+	result, err := env.Execute(ctx, host.Command{Name: "getent", Args: []string{"passwd", "ikigenba"}})
+	if err != nil {
+		return commandTransportError("inspect ikigenba login shell", err)
+	}
+	if result.ExitCode != 0 {
+		return &host.CommandError{Label: "inspect ikigenba login shell", Result: result}
+	}
+	fields := strings.Split(strings.TrimSpace(string(result.Stdout)), ":")
+	if len(fields) != 7 || fields[0] != "ikigenba" {
+		return errors.New("inspect ikigenba login shell: invalid passwd entry")
+	}
+	shell := fields[6]
+	if shell != "/usr/sbin/nologin" && shell != "/sbin/nologin" && shell != "/bin/false" {
+		return fmt.Errorf("ikigenba account has login shell %q", shell)
 	}
 	return nil
 }

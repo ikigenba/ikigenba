@@ -31,3 +31,24 @@ func TestInstallCLICommandPreservesTransportCauses(t *testing.T) {
 		t.Fatalf("preexisting command error = %#v, want same error %#v", err, preexisting)
 	}
 }
+
+func TestInstallCLIConfigurationFailuresPreserveActionAndReportCauses(t *testing.T) {
+	// R-AJZ2-XSUE
+	for _, step := range []string{"nginx", "litestream"} {
+		t.Run(step, func(t *testing.T) {
+			actionErr := errors.New(step + " action failed")
+			reportErr := errors.New(step + " report failed")
+			calls := 0
+			err := reportInstallConfigurationFailure(func(gotStep, detail string, success bool) error {
+				calls++
+				if gotStep != step || detail != actionErr.Error() || success {
+					t.Fatalf("report = %q, %q, %v", gotStep, detail, success)
+				}
+				return reportErr
+			}, step, actionErr)
+			if calls != 1 || !errors.Is(err, actionErr) || !errors.Is(err, reportErr) {
+				t.Fatalf("calls = %d, failure = %#v", calls, err)
+			}
+		})
+	}
+}
