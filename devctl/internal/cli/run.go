@@ -259,15 +259,23 @@ func operationError(stderr io.Writer, err error) int {
 		return 1
 	}
 	var notInCheckoutError *checkout.NotInCheckoutError
+	if errors.As(err, &notInCheckoutError) {
+		writeDiagnostic(stderr, notInCheckoutError.Error(), "", "", false)
+		return 2
+	}
 	var noAppError *checkout.NoAppError
+	if errors.As(err, &noAppError) {
+		writeDiagnostic(stderr, noAppError.Error(), "", "", false)
+		return 2
+	}
 	var manifestError *checkout.ManifestError
-	if errors.As(err, &notInCheckoutError) || errors.As(err, &noAppError) || errors.As(err, &manifestError) {
-		writeDiagnostic(stderr, err.Error(), "", "", false)
+	if errors.As(err, &manifestError) {
+		writeDiagnostic(stderr, manifestError.Error(), "", "", false)
 		return 2
 	}
 	var gitError *checkout.GitError
 	if errors.As(err, &gitError) {
-		writeDiagnostic(stderr, err.Error(), "", "", false)
+		writeDiagnostic(stderr, gitError.Error(), gitError.Stderr, "", false)
 		return 1
 	}
 	var noValueError *keyring.NoValueError
