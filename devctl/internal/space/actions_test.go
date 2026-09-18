@@ -12,6 +12,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/devctl/internal/account"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
+	"github.com/ikigenba/ikigenba/devctl/internal/host"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
 
@@ -379,9 +380,14 @@ func TestRunStartFailuresPreserveOnlyCompletedSteps(t *testing.T) {
 				t.Fatalf("error = %v, want host wait error wrapping %v", err, test.waitErr)
 			}
 			if test.certStatus != 0 {
-				var commandErr interface{ ExitCode() int }
-				if !errors.As(err, &commandErr) || commandErr.ExitCode() != 1 {
-					t.Fatalf("error = %#v, want host command error", err)
+				wantErr := &host.CommandError{
+					Step:    "certificate",
+					Command: []string{"ssh", "ec2-user@" + address, "sudo", "certbot", "renew"},
+					Status:  test.certStatus,
+					Stdout:  "unchanged output",
+				}
+				if !reflect.DeepEqual(err, wantErr) {
+					t.Fatalf("error = %#v, want unchanged %#v", err, wantErr)
 				}
 			}
 			if got := stdout.String(); got != test.wantOutput {
