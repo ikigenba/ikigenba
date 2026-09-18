@@ -1,6 +1,7 @@
 package build
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -187,7 +188,157 @@ func executeResult(ctx context.Context, deps seam.Deps, label string, command se
 	return result, nil
 }
 
-// archivePrepared is the handoff to archive construction and publication.
-func archivePrepared(_ context.Context, _ stagedBuild, _ io.Writer, _ seam.Deps) error {
-	return nil
+// archivePrepared constructs and publishes the archive for a validated build.
+func archivePrepared(ctx context.Context, staged stagedBuild, stdout io.Writer, deps seam.Deps) error {
+	app := staged.prepared.app
+	committedManifest, err := os.ReadFile(filepath.Join(app.Dir, checkout.ManifestFile))
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(staged.manifest, committedManifest) {
+		return &StaleManifestError{App: app.Name}
+	}
+
+	dist := filepath.Join(app.Dir, "dist")
+	archiveRoot, err := os.MkdirTemp(dist, ".devctl-archive-")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(archiveRoot) }()
+
+	members := make([]string, 0)
+	binaryMember := filepath.Join("bin", app.Name)
+	if err := copyArchiveFile(staged.binary, filepath.Join(archiveRoot, binaryMember), true); err != nil {
+		return err
+	}
+	members = append(members, filepath.ToSlash(binaryMember))
+
+	manifestMember := filepath.FromSlash(checkout.ManifestFile)
+	if err := writeArchiveFile(filepath.Join(archiveRoot, manifestMember), staged.manifest, 0o644); err != nil {
+		return err
+	}
+	members = append(members, filepath.ToSlash(manifestMember))
+
+	for _, directory := range []string{"etc", "share"} {
+		directoryMembers, walkErr := copyArchiveDirectory(app.Dir, archiveRoot, directory)
+		if walkErr != nil {
+			return walkErr
+		}
+		members = append(members, directoryMembers...)
+	}
+	sort.Strings(members)
+
+	temporary, err := os.CreateTemp(dist, ".devctl-artifact-*.tar.xz")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	if closeErr := temporary.Close(); closeErr != nil {
+		_ = os.Remove(temporaryPath)
+		return closeErr
+	}
+	if err := os.Remove(temporaryPath); err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(temporaryPath) }()
+
+	arguments := []string{"-cJf", temporaryPath, "-C", archiveRoot, "--"}
+	arguments = append(arguments, members...)
+	if err := execute(ctx, deps, "archive "+app.Name, seam.Cmd{
+		Path: "tar",
+		Args: arguments,
+		Dir:  app.Dir,
+	}); err != nil {
+		return err
+	}
+
+	finalRelative := File(app.Name, staged.prepared.version)
+	finalPath := filepath.Join(app.Dir, "dist", filepath.Base(finalRelative))
+	if err := os.Rename(temporaryPath, finalPath); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(stdout, finalRelative)
+	return err
+}
+
+func copyArchiveDirectory(appDir, archiveRoot, directory string) ([]string, error) {
+	sourceRoot := filepath.Join(appDir, directory)
+	if _, err := os.Stat(sourceRoot); err != nil {
+		if os.IsNotExist(err) && directory == "share" {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var members []string
+	err := filepath.WalkDir(sourceRoot, func(source string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || !entry.Type().IsRegular() {
+			return nil
+		}
+		relative, err := filepath.Rel(appDir, source)
+		if err != nil {
+			return err
+		}
+		if filepath.ToSlash(relative) == checkout.ManifestFile {
+			return nil
+		}
+		if err := copyArchiveFile(source, filepath.Join(archiveRoot, relative), false); err != nil {
+			return err
+		}
+		members = append(members, filepath.ToSlash(relative))
+		return nil
+	})
+	return members, err
+}
+
+func copyArchiveFile(source, destination string, executable bool) error {
+	sourceRoot, err := os.OpenRoot(filepath.Dir(source))
+	if err != nil {
+		return err
+	}
+	contents, err := sourceRoot.ReadFile(filepath.Base(source))
+	closeErr := sourceRoot.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	info, err := os.Stat(source)
+	if err != nil {
+		return err
+	}
+	mode := info.Mode().Perm()
+	if executable {
+		mode |= 0o111
+	}
+	return writeArchiveFile(destination, contents, mode)
+}
+
+func writeArchiveFile(path string, contents []byte, mode os.FileMode) error {
+	directory := filepath.Dir(path)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	file, err := root.OpenFile(filepath.Base(path), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	if _, err := file.Write(contents); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Chmod(mode); err != nil {
+		_ = file.Close()
+		return err
+	}
+	return file.Close()
 }
