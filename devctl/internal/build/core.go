@@ -257,8 +257,11 @@ func archivePrepared(ctx context.Context, staged stagedBuild, stdout io.Writer, 
 	if err := os.Rename(temporaryPath, finalPath); err != nil {
 		return err
 	}
-	_, err = fmt.Fprintln(stdout, finalRelative)
-	return err
+	// Publishing is the commit point. A writer failure cannot be reported after
+	// the artifact has replaced its predecessor, and writing before the rename
+	// could expose success output for a failed publication.
+	_, _ = fmt.Fprintln(stdout, finalRelative)
+	return nil
 }
 
 func copyArchiveDirectory(appDir, archiveRoot, directory string) ([]string, error) {

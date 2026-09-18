@@ -131,6 +131,27 @@ func TestArchivePreparedTarFailurePreservesPriorArtifact(t *testing.T) {
 	assertDistNames(t, staged.prepared.app.Dir, ".validated-stage", "crm-v1.2.3.tar.xz")
 }
 
+func TestArchivePreparedWriterFailureCannotUndoPublish(t *testing.T) {
+	// R-04SM-T2LN
+	// R-F0QF-XTQX
+	staged := archiveFixture(t, "v1.2.3")
+	finalPath := filepath.Join(staged.prepared.app.Dir, "dist", "crm-v1.2.3.tar.xz")
+	writeTestFile(t, finalPath, []byte("earlier artifact"), 0o600)
+	stdout := &partialErrorWriter{limit: len("crm/dist/crm-")}
+
+	err := archivePrepared(context.Background(), staged, stdout, realTarDeps(nil))
+	if err != nil {
+		t.Fatalf("archivePrepared error after publish = %v, want nil", err)
+	}
+	if got, want := stdout.String(), "crm/dist/crm-"; got != want {
+		t.Fatalf("partial stdout = %q, want %q", got, want)
+	}
+	if got := string(runTar(t, staged.prepared.app.Dir, "-xOJf", finalPath, "bin/crm")); got != "validated executable" {
+		t.Fatalf("published executable = %q, want validated executable", got)
+	}
+	assertDistNames(t, staged.prepared.app.Dir, ".validated-stage", "crm-v1.2.3.tar.xz")
+}
+
 func TestSelectedTagSuffixNamesArtifactAndOutput(t *testing.T) {
 	// R-EQZ8-VNTD
 	fixture := newPrerequisiteFixture(t, "", "zebra/v9.9.9\ncrm/v2.0.0\ncrm/v1.9.0+z\ncrm/v1.9.0+a\n")
@@ -186,6 +207,23 @@ func realTarDeps(commands *[]seam.Cmd) seam.Deps {
 		}
 		return seam.Exec(ctx, command)
 	}}
+}
+
+type partialErrorWriter struct {
+	bytes.Buffer
+	limit int
+}
+
+func (writer *partialErrorWriter) Write(data []byte) (int, error) {
+	remaining := writer.limit - writer.Len()
+	if remaining <= 0 {
+		return 0, errors.New("stdout failed")
+	}
+	if len(data) > remaining {
+		data = data[:remaining]
+	}
+	written, _ := writer.Buffer.Write(data)
+	return written, errors.New("stdout failed")
 }
 
 func runTar(t *testing.T, directory string, arguments ...string) []byte {
