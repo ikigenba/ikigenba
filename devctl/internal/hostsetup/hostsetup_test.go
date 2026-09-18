@@ -2,6 +2,7 @@ package hostsetup
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -61,5 +62,32 @@ func TestInstallLatestAndConfigureTenKeys(t *testing.T) {
 	}
 	if got := commands[1:]; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Configure commands = %#v, want %#v", got, want)
+	}
+}
+
+func TestInstallLatestPropagatesDownloadFailure(t *testing.T) {
+	// R-EDKC-O6NQ
+	var command string
+	target := host.Host{Address: "192.0.2.10", Deps: seam.Deps{Dir: ".", Exec: func(_ context.Context, cmd seam.Cmd) (seam.Result, error) {
+		command = cmd.Args[len(cmd.Args)-1]
+		return seam.Result{ExitCode: 22, Stdout: []byte("opsctl v1.0.0\n")}, nil
+	}}}
+
+	version, err := InstallLatest(context.Background(), target)
+	var commandErr *host.CommandError
+	if version != "" || !errors.As(err, &commandErr) || commandErr.Status != 22 {
+		t.Fatalf("InstallLatest() = %q, %#v", version, err)
+	}
+	for _, want := range []string{
+		"installer=$(mktemp)",
+		"--output \"$installer\" https://github.com/ikigenba/ikigenba/releases/latest/download/opsctl-install.sh",
+		"&& sh \"$installer\" && opsctl version",
+	} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("install command %q does not contain %q", command, want)
+		}
+	}
+	if strings.Contains(command, "| sh") {
+		t.Fatalf("install command can mask a download failure: %q", command)
 	}
 }

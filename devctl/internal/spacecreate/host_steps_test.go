@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -53,9 +54,55 @@ func TestRunHostStepsReadinessInstallAndEmptyRestore(t *testing.T) {
 	if countOperations(harness.operations, "'config' 'set'") != 10 {
 		t.Fatalf("configuration calls = %d, want 10", countOperations(harness.operations, "'config' 'set'"))
 	}
+	wantListing := "list account-backups " + hostStepDomain + "/host/"
+	if countOperations(harness.operations, "list ") != 1 || countExactOperations(harness.operations, wantListing) != 1 {
+		t.Fatalf("backup listings = %#v, want exactly one %q", harness.operations, wantListing)
+	}
+	listingAt := operationIndex(harness.operations, wantListing)
+	lastConfigAt := operationLastIndex(harness.operations, "'config' 'set'")
+	initAt := operationIndex(harness.operations, "'opsctl' 'init'")
+	if listingAt <= lastConfigAt || initAt <= listingAt {
+		t.Fatalf("backup listing order = %#v", harness.operations)
+	}
 	if countOperations(harness.operations, "'cloud-init' 'status' '--wait'") != 1 ||
 		countOperations(harness.operations, "ssh 'true'") != 1 {
 		t.Fatalf("host readiness operations = %#v", harness.operations)
+	}
+}
+
+func TestRunHostStepsReportsRestoreOnlyAfterRestoreAndReconfigure(t *testing.T) {
+	// R-93SF-DMH9
+	tests := []struct {
+		name            string
+		configureFailAt int
+		restoreFails    bool
+		wantConfigCalls int
+	}{
+		{name: "restore fails", restoreFails: true, wantConfigCalls: 10},
+		{name: "reconfigure fails", configureFailAt: 11, wantConfigCalls: 11},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			harness := newHostStepHarness(false, []cloud.Object{{Key: hostStepDomain + "/host/a.tar.zst"}})
+			harness.failRestore = test.restoreFails
+			harness.failConfigureAt = test.configureFailAt
+			var stdout bytes.Buffer
+			err := RunHostSteps(context.Background(), &stdout, harness.deps(), harness.account(), hostStepDomain,
+				hostStepAddress, hostStepID, cloud.Zone{ID: "ZONE1", Name: "sbx.ikigenba.dev"}, "ops@ikigenba.dev")
+			if err == nil {
+				t.Fatal("RunHostSteps() error = nil")
+			}
+			if strings.Contains(stdout.String(), "restore: ok") {
+				t.Fatalf("failed restore work was reported complete: %q", stdout.String())
+			}
+			if countOperations(harness.operations, "'opsctl' 'init'") != 0 {
+				t.Fatalf("init followed failed restore work: %#v", harness.operations)
+			}
+			if countOperations(harness.operations, "'opsctl' 'host' 'restore'") != 1 ||
+				harness.configureCalls != test.wantConfigCalls {
+				t.Fatalf("restore/configure calls = %#v", harness.operations)
+			}
+		})
 	}
 }
 
@@ -113,6 +160,9 @@ func TestRunHostStepsReturnsInitFailureWithoutReportingInit(t *testing.T) {
 	if !errors.As(err, &commandErr) || err.Error() != "init: ssh ec2-user@3.19.79.227 sudo opsctl init: exit status 2" {
 		t.Fatalf("RunHostSteps() error = %#v", err)
 	}
+	if reflect.ValueOf(err).Pointer() != reflect.ValueOf(commandErr).Pointer() {
+		t.Fatalf("RunHostSteps() wrapped init error: returned %#v, command error %#v", err, commandErr)
+	}
 	if strings.Contains(stdout.String(), "init: ok") {
 		t.Fatalf("failed init was reported complete: %q", stdout.String())
 	}
@@ -122,10 +172,13 @@ func TestRunHostStepsReturnsInitFailureWithoutReportingInit(t *testing.T) {
 }
 
 type hostStepHarness struct {
-	deleteBackups bool
-	objects       []cloud.Object
-	operations    []string
-	failInit      bool
+	deleteBackups   bool
+	objects         []cloud.Object
+	operations      []string
+	failInit        bool
+	failRestore     bool
+	failConfigureAt int
+	configureCalls  int
 }
 
 func newHostStepHarness(deleteBackups bool, objects []cloud.Object) *hostStepHarness {
@@ -139,7 +192,16 @@ func (h *hostStepHarness) deps() seam.Deps {
 		switch {
 		case strings.Contains(logical, "opsctl-install.sh"):
 			return seam.Result{Stdout: []byte("opsctl v9.8.7\n")}, nil
+		case strings.Contains(logical, "'config' 'set'"):
+			h.configureCalls++
+			if h.configureCalls == h.failConfigureAt {
+				return seam.Result{ExitCode: 4}, nil
+			}
+			return seam.Result{}, nil
 		case strings.Contains(logical, "'opsctl' 'host' 'restore'"):
+			if h.failRestore {
+				return seam.Result{ExitCode: 3}, nil
+			}
 			return seam.Result{Stdout: []byte(hostStepDomain + "/host/2026-09-12T14:22:51Z.tar.zst\n")}, nil
 		case h.failInit && strings.Contains(logical, "'opsctl' 'init'"):
 			return seam.Result{ExitCode: 2}, nil
@@ -203,6 +265,16 @@ func countOperations(operations []string, contains string) int {
 	count := 0
 	for _, operation := range operations {
 		if strings.Contains(operation, contains) {
+			count++
+		}
+	}
+	return count
+}
+
+func countExactOperations(operations []string, want string) int {
+	count := 0
+	for _, operation := range operations {
+		if operation == want {
 			count++
 		}
 	}

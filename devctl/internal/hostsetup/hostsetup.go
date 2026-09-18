@@ -9,7 +9,7 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/host"
 )
 
-const installLatestScript = "curl --fail --silent --show-error --location https://github.com/ikigenba/ikigenba/releases/latest/download/opsctl-install.sh | sh && opsctl version"
+const installLatestScript = `installer=$(mktemp) && trap 'rm -f "$installer"' EXIT && curl --fail --silent --show-error --location --output "$installer" https://github.com/ikigenba/ikigenba/releases/latest/download/opsctl-install.sh && sh "$installer" && opsctl version`
 
 // Config is the complete devctl-owned configuration of an opsctl host.
 type Config struct {
