@@ -151,7 +151,7 @@ func compile(ctx context.Context, app checkout.App, deps seam.Deps) (string, fun
 	stagedBinary := filepath.Join(stageDir, app.Name)
 	command := seam.Cmd{
 		Path: "go",
-		Args: []string{"build", "-o", stagedBinary, "."},
+		Args: []string{"build", "-o", stagedBinary, "./cmd/" + app.Name},
 		Dir:  app.Dir,
 		Env:  []string{"GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=0"},
 	}

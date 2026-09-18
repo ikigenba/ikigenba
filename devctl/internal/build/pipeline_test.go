@@ -15,7 +15,7 @@ import (
 )
 
 func TestStagePreparedCompilesOnceAndRunsBinary(t *testing.T) {
-	// R-EVUU-EQS5
+	// R-J7ER-X23Q
 	// R-F4E5-34Z0
 	prepared := pipelinePrepared(t)
 	manifest := []byte("app = \"crm\"\n")
@@ -47,7 +47,7 @@ func TestStagePreparedCompilesOnceAndRunsBinary(t *testing.T) {
 	if len(commands) != 3 {
 		t.Fatalf("commands = %d, want 3", len(commands))
 	}
-	wantGoArgs := []string{"build", "-o", commands[0].Args[2], "."}
+	wantGoArgs := []string{"build", "-o", commands[0].Args[2], "./cmd/crm"}
 	if commands[0].Path != "go" || !reflect.DeepEqual(commands[0].Args, wantGoArgs) {
 		t.Fatalf("compile command = %#v", commands[0])
 	}
@@ -83,7 +83,7 @@ func TestStagePreparedCompilesOnceAndRunsBinary(t *testing.T) {
 }
 
 func TestStagePreparedMapsCompilerNonzero(t *testing.T) {
-	// R-EVUU-EQS5
+	// R-J7ER-X23Q
 	prepared := pipelinePrepared(t)
 	var commands []seam.Cmd
 	deps := pipelineDeps(t, &commands, seam.Result{ExitCode: 17, Stderr: []byte("compile failed\n")})
