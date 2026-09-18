@@ -222,6 +222,7 @@ func TestIAMMappingInputsAndResults(t *testing.T) {
 }
 
 func TestIAMErrorMapping(t *testing.T) {
+	// R-YOJ0-MTPJ R-YPQX-0LG8
 	boom := &smithy.GenericAPIError{Code: "AccessDenied", Message: "denied"}
 	tests := []struct {
 		method    string
@@ -280,6 +281,7 @@ func TestIAMErrorMapping(t *testing.T) {
 }
 
 func TestIAMMissingEntitiesSucceedOnlyWhereRequired(t *testing.T) {
+	// R-YS6P-S4XM
 	missing := &smithy.GenericAPIError{Code: iamNoSuchEntity, Message: "missing"}
 
 	fake := &fakeIAM{err: missing}

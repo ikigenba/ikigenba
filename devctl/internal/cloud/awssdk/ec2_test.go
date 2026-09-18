@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/smithy-go"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 )
@@ -223,8 +224,8 @@ func TestEC2CreationTagsAndRunMapping(t *testing.T) {
 }
 
 func TestEC2OperationMappingsAndChecks(t *testing.T) {
-	// R-YTEM-5WOB
-	boom := errors.New("boom")
+	// R-YTEM-5WOB R-YOJ0-MTPJ R-YPQX-0LG8
+	boom := &smithy.GenericAPIError{Code: "RequestLimitExceeded", Message: "boom"}
 	tests := []struct {
 		method    string
 		operation string
@@ -265,8 +266,9 @@ func TestEC2OperationMappingsAndChecks(t *testing.T) {
 			if err := test.call(client); !errors.As(err, &got) {
 				t.Fatalf("error = %v, want *cloud.Error", err)
 			}
-			if got.Service != "ec2" || got.Operation != test.operation || got.Subject != "" || !errors.Is(got, boom) {
-				t.Fatalf("error = %#v, want ec2 %s with no subject wrapping boom", got, test.operation)
+			if got.Service != "ec2" || got.Operation != test.operation || got.Subject != "" ||
+				got.Code != boom.ErrorCode() || !errors.Is(got, boom) {
+				t.Fatalf("error = %#v, want ec2 %s with no subject and code %s wrapping boom", got, test.operation, boom.ErrorCode())
 			}
 			if want := []string{test.operation}; !reflect.DeepEqual(fake.calls, want) {
 				t.Fatalf("SDK calls = %v, want exactly %v", fake.calls, want)

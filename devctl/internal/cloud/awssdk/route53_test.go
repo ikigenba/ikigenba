@@ -226,6 +226,7 @@ func TestRoute53EscapedNameReadDeleteRoundTrip(t *testing.T) {
 }
 
 func TestRoute53ErrorMappingAndExactDispatch(t *testing.T) {
+	// R-YOJ0-MTPJ R-YPQX-0LG8
 	boom := &smithy.GenericAPIError{Code: "Throttling", Message: "slow down"}
 	tests := []struct {
 		name      string

@@ -141,6 +141,7 @@ func TestSSMMappingAndInputs(t *testing.T) {
 }
 
 func TestSSMErrorMapping(t *testing.T) {
+	// R-YOJ0-MTPJ R-YPQX-0LG8
 	const name = "/ikigenba/secret"
 	boom := &smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"}
 	tests := []struct {
@@ -181,6 +182,7 @@ func TestSSMErrorMapping(t *testing.T) {
 }
 
 func TestSSMDeleteMissingParameterSucceeds(t *testing.T) {
+	// R-YS6P-S4XM
 	fake := &fakeSSM{err: &smithy.GenericAPIError{Code: "ParameterNotFound", Message: "missing"}}
 	if err := (&ssmClient{sdk: fake}).DeleteParameter(context.Background(), "/missing"); err != nil {
 		t.Fatalf("DeleteParameter missing error = %v, want nil", err)
