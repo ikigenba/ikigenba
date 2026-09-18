@@ -22,8 +22,17 @@ const (
 )
 
 // Run executes a space command.
-func Run(context.Context, []string, io.Writer, seam.Deps, string) error {
-	return nil
+func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, profile string) error {
+	invocation, err := parseInvocation(args)
+	if err != nil {
+		return err
+	}
+	if invocation.help != "" {
+		_, _ = fmt.Fprint(stdout, invocation.help)
+		return nil
+	}
+
+	return dispatch(ctx, invocation, stdout, deps, profile)
 }
 
 // Step reports a completed command step.
