@@ -86,11 +86,29 @@ func TestCommandsUseExplicitRootsAndProcessDirectories(t *testing.T) {
 		}
 		ast.Inspect(source.file, func(node ast.Node) bool {
 			switch value := node.(type) {
+			case *ast.FuncDecl:
+				if value.Type.Results != nil {
+					for _, result := range value.Type.Results.List {
+						if len(result.Names) != 0 && isCmdType(result.Type, source) {
+							t.Errorf("%s: seam.Cmd must not be returned through a zero-valued named result", source.path)
+						}
+					}
+				}
 			case *ast.ValueSpec:
 				if value.Type != nil && isCmdType(value.Type, source) && len(value.Values) == 0 {
 					t.Errorf("%s: seam.Cmd must be created as a checked keyed literal, not a zero value", source.path)
 				}
+				for _, initializer := range value.Values {
+					if aliasesPathOrRunnerCapability(initializer, source) {
+						t.Errorf("%s: path helpers and process runners must not be hidden behind aliases", source.path)
+					}
+				}
 			case *ast.AssignStmt:
+				for _, right := range value.Rhs {
+					if aliasesPathOrRunnerCapability(right, source) {
+						t.Errorf("%s: path helpers and process runners must not be hidden behind aliases", source.path)
+					}
+				}
 				for _, left := range value.Lhs {
 					selector, ok := left.(*ast.SelectorExpr)
 					if ok && selector.Sel.Name == "Dir" && source.pkgPath != modulePath+"/internal/seam" {
@@ -120,6 +138,9 @@ func TestCommandsUseExplicitRootsAndProcessDirectories(t *testing.T) {
 					t.Errorf("%s: seam.Cmd does not explicitly supply Dir", source.path)
 				}
 			case *ast.CallExpr:
+				if ident, ok := value.Fun.(*ast.Ident); ok && ident.Name == "new" && len(value.Args) == 1 && isCmdType(value.Args[0], source) {
+					t.Errorf("%s: seam.Cmd must not be created through new", source.path)
+				}
 				if ident, ok := value.Fun.(*ast.Ident); ok {
 					for index, parameter := range rootedHelperParameters(source.pkgPath, ident.Name) {
 						if index >= len(value.Args) || !filesystemPathIsRooted(value.Args[index], source, enclosingFunction(source.file, value), map[*ast.Ident]bool{}) {
@@ -130,6 +151,10 @@ func TestCommandsUseExplicitRootsAndProcessDirectories(t *testing.T) {
 				selector, ok := value.Fun.(*ast.SelectorExpr)
 				if !ok {
 					return true
+				}
+				if (selector.Sel.Name == "Exec" || selector.Sel.Name == "Stream") &&
+					(len(value.Args) < 2 || !expressionIsCmd(value.Args[1], source, enclosingFunction(source.file, value), map[string]bool{})) {
+					t.Errorf("%s: process runner call does not receive a statically checked seam.Cmd", source.path)
 				}
 				ident, ok := selector.X.(*ast.Ident)
 				if !ok || source.importPath[ident.Name] != "os" {
@@ -147,7 +172,83 @@ func TestCommandsUseExplicitRootsAndProcessDirectories(t *testing.T) {
 			}
 			return true
 		})
+		for _, imported := range source.importPath {
+			if imported == "os/user" {
+				t.Errorf("%s: command source imports os/user and can discover the developer home directory", source.path)
+			}
+		}
 	}
+}
+
+func aliasesPathOrRunnerCapability(expr ast.Expr, source sourceFile) bool {
+	switch value := expr.(type) {
+	case *ast.Ident:
+		return len(rootedHelperParameters(source.pkgPath, value.Name)) != 0
+	case *ast.SelectorExpr:
+		return value.Sel.Name == "Exec" || value.Sel.Name == "Stream"
+	}
+	return false
+}
+
+func expressionIsCmd(expr ast.Expr, source sourceFile, function *ast.FuncDecl, seen map[string]bool) bool {
+	switch value := expr.(type) {
+	case *ast.CompositeLit:
+		return isCmdType(value.Type, source)
+	case *ast.ParenExpr:
+		return expressionIsCmd(value.X, source, function, seen)
+	case *ast.Ident:
+		if function == nil || seen[value.Name] {
+			return false
+		}
+		seen[value.Name] = true
+		defer delete(seen, value.Name)
+		if function.Type.Params != nil {
+			for _, field := range function.Type.Params.List {
+				for _, parameter := range field.Names {
+					if parameter.Name == value.Name {
+						return isCmdType(field.Type, source)
+					}
+				}
+			}
+		}
+		checked := false
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			switch statement := node.(type) {
+			case *ast.AssignStmt:
+				for index, left := range statement.Lhs {
+					ident, ok := left.(*ast.Ident)
+					if ok && ident.Name == value.Name && index < len(statement.Rhs) {
+						checked = checked || expressionIsCmd(statement.Rhs[index], source, function, seen)
+					}
+				}
+			case *ast.ValueSpec:
+				for index, name := range statement.Names {
+					if name.Name == value.Name {
+						checked = checked || statement.Type != nil && isCmdType(statement.Type, source) ||
+							index < len(statement.Values) && expressionIsCmd(statement.Values[index], source, function, seen)
+					}
+				}
+			}
+			return true
+		})
+		return checked
+	case *ast.CallExpr:
+		name := ""
+		switch called := value.Fun.(type) {
+		case *ast.Ident:
+			name = called.Name
+		case *ast.SelectorExpr:
+			name = called.Sel.Name
+		}
+		for _, declaration := range source.file.Decls {
+			candidate, ok := declaration.(*ast.FuncDecl)
+			if !ok || candidate.Name.Name != name || candidate.Type.Results == nil || len(candidate.Type.Results.List) == 0 {
+				continue
+			}
+			return isCmdType(candidate.Type.Results.List[0].Type, source)
+		}
+	}
+	return false
 }
 
 func enclosingFunction(file *ast.File, target ast.Node) *ast.FuncDecl {
@@ -173,20 +274,30 @@ func filesystemPathIsRooted(expr ast.Expr, source sourceFile, function *ast.Func
 		return filesystemPathIsRooted(value.X, source, function, seen)
 	case *ast.SelectorExpr:
 		if value.Sel.Name == "Root" {
-			return true
+			ident, ok := value.X.(*ast.Ident)
+			return ok && ident.Name == "checkout" && receiverHasNamedType(function, "checkout", modulePath+"/internal/checkout", "Checkout", source)
 		}
 		if value.Sel.Name == "Dir" {
 			if ident, ok := value.X.(*ast.Ident); ok {
-				return ident.Name == "deps" || ident.Name == "app"
+				return ident.Name == "deps" && functionHasParameterType(function, "deps", modulePath+"/internal/seam", "Deps", source) ||
+					ident.Name == "app" && appVariableComesFromCheckout(function, ident, source)
 			}
 			if parent, ok := value.X.(*ast.SelectorExpr); ok {
-				return parent.Sel.Name == "Deps"
+				base, baseOK := parent.X.(*ast.Ident)
+				return parent.Sel.Name == "Deps" && baseOK &&
+					(base.Name == "checkout" && receiverHasNamedType(function, "checkout", modulePath+"/internal/checkout", "Checkout", source) ||
+						base.Name == "h" && receiverHasNamedType(function, "h", modulePath+"/internal/host", "Host", source))
 			}
 		}
 		if source.pkgPath == modulePath+"/internal/deploy" && value.Sel.Name == "path" {
-			return true
+			ident, ok := value.X.(*ast.Ident)
+			return ok && ident.Name == "invocation"
 		}
-		return source.pkgPath == modulePath+"/internal/build" && value.Sel.Name == "binary"
+		if source.pkgPath == modulePath+"/internal/build" && value.Sel.Name == "binary" {
+			ident, ok := value.X.(*ast.Ident)
+			return ok && ident.Name == "staged"
+		}
+		return false
 	case *ast.CallExpr:
 		if selector, ok := value.Fun.(*ast.SelectorExpr); ok {
 			if ident, ok := selector.X.(*ast.Ident); ok && source.importPath[ident.Name] == "os" {
@@ -255,6 +366,97 @@ func filesystemPathIsRooted(expr ast.Expr, source sourceFile, function *ast.Func
 	return false
 }
 
+func functionHasParameterType(function *ast.FuncDecl, name, pkgPath, typeName string, source sourceFile) bool {
+	if function == nil || function.Type.Params == nil {
+		return false
+	}
+	for _, field := range function.Type.Params.List {
+		for _, parameter := range field.Names {
+			if parameter.Name == name && isNamedType(field.Type, pkgPath, typeName, source) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func receiverHasNamedType(function *ast.FuncDecl, name, pkgPath, typeName string, source sourceFile) bool {
+	if function == nil || function.Recv == nil || len(function.Recv.List) != 1 {
+		return false
+	}
+	field := function.Recv.List[0]
+	return len(field.Names) == 1 && field.Names[0].Name == name && isNamedType(field.Type, pkgPath, typeName, source)
+}
+
+func isNamedType(expr ast.Expr, pkgPath, typeName string, source sourceFile) bool {
+	switch value := expr.(type) {
+	case *ast.Ident:
+		return value.Name == typeName && source.pkgPath == pkgPath
+	case *ast.SelectorExpr:
+		qualifier, ok := value.X.(*ast.Ident)
+		return ok && value.Sel.Name == typeName && source.importPath[qualifier.Name] == pkgPath
+	case *ast.StarExpr:
+		return isNamedType(value.X, pkgPath, typeName, source)
+	}
+	return false
+}
+
+func appVariableComesFromCheckout(function *ast.FuncDecl, app *ast.Ident, source sourceFile) bool {
+	if function != nil && function.Type.Params != nil {
+		for _, field := range function.Type.Params.List {
+			for _, parameter := range field.Names {
+				if parameter.Name == app.Name && isNamedType(field.Type, modulePath+"/internal/checkout", "App", source) {
+					return true
+				}
+			}
+		}
+	}
+	if function == nil {
+		return false
+	}
+	// Locals named app are accepted only when assigned from the prepared/staged
+	// checkout-app fields whose construction is checked at their declaration.
+	if functionHasLocalCheckoutApp(function, app.Name) {
+		return true
+	}
+	return false
+}
+
+func functionHasLocalCheckoutApp(function *ast.FuncDecl, name string) bool {
+	found := false
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		assignment, ok := node.(*ast.AssignStmt)
+		if !ok {
+			return true
+		}
+		for index, left := range assignment.Lhs {
+			ident, ok := left.(*ast.Ident)
+			if !ok || ident.Name != name || index >= len(assignment.Rhs) {
+				continue
+			}
+			selector, ok := assignment.Rhs[index].(*ast.SelectorExpr)
+			if ok && selector.Sel.Name == "app" {
+				found = found || selectorRootName(selector.X) == "prepared" || selectorRootName(selector.X) == "staged"
+			}
+		}
+		return true
+	})
+	return found
+}
+
+func selectorRootName(expr ast.Expr) string {
+	for {
+		switch value := expr.(type) {
+		case *ast.Ident:
+			return value.Name
+		case *ast.SelectorExpr:
+			expr = value.X
+		default:
+			return ""
+		}
+	}
+}
+
 func rootedHelperParameters(pkgPath, function string) map[int]string {
 	contracts := map[string]map[int]string{
 		modulePath + "/internal/build.copyArchiveDirectory": {0: "appDir", 1: "archiveRoot"},
@@ -276,9 +478,16 @@ func parameterIsRooted(pkgPath, function, parameter string) bool {
 }
 
 func deployPathResolutionIsExplicit(function *ast.FuncDecl) bool {
-	calls, _ := functionEvidence(function)
+	checksAbsolute := false
 	joinedToDir := false
 	ast.Inspect(function.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if ok {
+			selector, selectorOK := call.Fun.(*ast.SelectorExpr)
+			if selectorOK && selector.Sel.Name == "IsAbs" {
+				checksAbsolute = true
+			}
+		}
 		assignment, ok := node.(*ast.AssignStmt)
 		if !ok {
 			return true
@@ -300,12 +509,27 @@ func deployPathResolutionIsExplicit(function *ast.FuncDecl) bool {
 		}
 		return true
 	})
-	return calls["IsAbs"] && joinedToDir
+	return checksAbsolute && joinedToDir
 }
 
 func isCmdType(expr ast.Expr, source sourceFile) bool {
 	if ident, ok := expr.(*ast.Ident); ok {
-		return ident.Name == "Cmd" && source.pkgPath == modulePath+"/internal/seam"
+		if ident.Name == "Cmd" && source.pkgPath == modulePath+"/internal/seam" {
+			return true
+		}
+		for _, declaration := range source.file.Decls {
+			generic, ok := declaration.(*ast.GenDecl)
+			if !ok || generic.Tok != token.TYPE {
+				continue
+			}
+			for _, specification := range generic.Specs {
+				typeSpec, ok := specification.(*ast.TypeSpec)
+				if ok && typeSpec.Name.Name == ident.Name && typeSpec.Type != ident && isCmdType(typeSpec.Type, source) {
+					return true
+				}
+			}
+		}
+		return false
 	}
 	selector, ok := expr.(*ast.SelectorExpr)
 	if !ok || selector.Sel.Name != "Cmd" {
@@ -331,12 +555,12 @@ func TestCommandAndSharedHelperOwnership(t *testing.T) {
 		modulePath + "/internal/appref":    true,
 		modulePath + "/internal/hostsetup": true,
 	}
-	ownedOperations := map[string]map[string]bool{
-		modulePath + "/internal/hostsetup": {"release-discovery": false, "install": false, "upgrade": false, "version": false, "configure": false},
-		modulePath + "/internal/spaceinit": {"space-init": false},
-		modulePath + "/internal/spaceapps": {"restart": false, "logs": false},
-		modulePath + "/internal/remove":    {"remove": false},
-		modulePath + "/internal/appref":    {"name": false, "version": false, "tag": false, "file": false},
+	ownedFunctions := map[string]map[string]bool{
+		modulePath + "/internal/hostsetup": {"Latest": false, "InstallLatest": false, "Upgrade": false, "Version": false, "Configure": false},
+		modulePath + "/internal/spaceinit": {"Run": false},
+		modulePath + "/internal/spaceapps": {"Run": false},
+		modulePath + "/internal/remove":    {"Run": false},
+		modulePath + "/internal/appref":    {"ValidName": false, "ValidVersion": false, "VersionForTag": false, "ParseFile": false},
 	}
 
 	for _, source := range moduleSources(t) {
@@ -355,67 +579,19 @@ func TestCommandAndSharedHelperOwnership(t *testing.T) {
 			if !ok || function.Recv != nil || function.Body == nil {
 				continue
 			}
-			calls, literals := functionEvidence(function)
-			switch source.pkgPath + "." + function.Name.Name {
-			case modulePath + "/internal/hostsetup.Latest":
-				ownedOperations[source.pkgPath]["release-discovery"] = calls["Exec"] && calls["Unmarshal"] && literals["curl"]
-			case modulePath + "/internal/hostsetup.InstallLatest":
-				ownedOperations[source.pkgPath]["install"] = calls["Latest"] && calls["Run"] && calls["Sudo"]
-			case modulePath + "/internal/hostsetup.Upgrade":
-				ownedOperations[source.pkgPath]["upgrade"] = calls["Sudo"] && literals["opsctl"]
-			case modulePath + "/internal/hostsetup.Version":
-				ownedOperations[source.pkgPath]["version"] = calls["Sudo"] && literals["version"] && literals["opsctl"]
-			case modulePath + "/internal/hostsetup.Configure":
-				ownedOperations[source.pkgPath]["configure"] = calls["Sudo"] && literals["config"] && literals["set"]
-			case modulePath + "/internal/spaceinit.Run":
-				ownedOperations[source.pkgPath]["space-init"] = calls["Configure"] && calls["Sudo"] && literals["init"] && literals["opsctl"]
-			case modulePath + "/internal/spaceapps.Run":
-				ownedOperations[source.pkgPath]["restart"] = calls["Sudo"] && literals["restart"] && literals["opsctl"]
-				ownedOperations[source.pkgPath]["logs"] = calls["StreamSudo"] && literals["logs"] && literals["journalctl"]
-			case modulePath + "/internal/remove.Run":
-				ownedOperations[source.pkgPath]["remove"] = calls["Sudo"] && literals["remove"] && literals["uninstall"]
-			case modulePath + "/internal/appref.ValidName":
-				ownedOperations[source.pkgPath]["name"] = calls["asciiLowerOrDigit"]
-			case modulePath + "/internal/appref.ValidVersion":
-				ownedOperations[source.pkgPath]["version"] = calls["validDecimal"] && calls["validIdentifiers"]
-			case modulePath + "/internal/appref.VersionForTag":
-				ownedOperations[source.pkgPath]["tag"] = calls["ValidName"] && calls["ValidVersion"] && calls["CutPrefix"]
-			case modulePath + "/internal/appref.ParseFile":
-				ownedOperations[source.pkgPath]["file"] = calls["ValidName"] && calls["ValidVersion"] && literals[".tar.xz"]
-			}
-		}
-	}
-
-	for pkg, operations := range ownedOperations {
-		for operation, found := range operations {
-			if !found {
-				t.Errorf("%s does not implement the %s operation in its executable function body", pkg, operation)
-			}
-		}
-	}
-}
-
-func functionEvidence(function *ast.FuncDecl) (map[string]bool, map[string]bool) {
-	calls := make(map[string]bool)
-	literals := make(map[string]bool)
-	ast.Inspect(function.Body, func(node ast.Node) bool {
-		switch value := node.(type) {
-		case *ast.CallExpr:
-			switch called := value.Fun.(type) {
-			case *ast.Ident:
-				calls[called.Name] = true
-			case *ast.SelectorExpr:
-				calls[called.Sel.Name] = true
-			}
-		case *ast.BasicLit:
-			if value.Kind == token.STRING {
-				text, err := strconv.Unquote(value.Value)
-				if err == nil {
-					literals[text] = true
+			if functions := ownedFunctions[source.pkgPath]; functions != nil {
+				if _, required := functions[function.Name.Name]; required {
+					functions[function.Name.Name] = true
 				}
 			}
 		}
-		return true
-	})
-	return calls, literals
+	}
+
+	for pkg, functions := range ownedFunctions {
+		for function, found := range functions {
+			if !found {
+				t.Errorf("%s does not declare required operation function %s", pkg, function)
+			}
+		}
+	}
 }

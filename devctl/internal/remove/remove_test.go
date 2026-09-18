@@ -134,6 +134,7 @@ func TestResolvesSelectedRunningSpaceBeforeSSH(t *testing.T) {
 }
 
 func TestInvokesOpsctlUninstallAndReportsSuccess(t *testing.T) {
+	// R-YHTO-8IAI
 	// R-GZGM-4IR7
 	profiles := []string{}
 	var commands []seam.Cmd

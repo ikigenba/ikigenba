@@ -20,7 +20,7 @@ var _ func(context.Context, host.Host, string) error = Upgrade
 var _ func(context.Context, host.Host) (string, error) = Version
 
 func TestInstallLatestUsesSelectedPublishedRelease(t *testing.T) {
-	// R-G3R8-6HH5
+	// R-G3R8-6HH5 R-YHTO-8IAI
 	var commands []seam.Cmd
 	deps := seam.Deps{Dir: "/work", Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
 		commands = append(commands, command)
@@ -94,7 +94,7 @@ func TestInstallLatestReturnsInstallerFailureAndStops(t *testing.T) {
 }
 
 func TestUpgradeAlwaysRunsSavedInstallerAndReturnsError(t *testing.T) {
-	// R-G4Z4-K97U
+	// R-G4Z4-K97U R-YHTO-8IAI
 	wantErr := errors.New("ssh start failed")
 	var commands []seam.Cmd
 	deps := seam.Deps{Dir: "/work", Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
@@ -126,7 +126,7 @@ func TestUpgradeHostFailureUsesOpsctlStep(t *testing.T) {
 }
 
 func TestVersionReturnsOpaqueTrimmedOutput(t *testing.T) {
-	// R-G670-Y0YJ
+	// R-G670-Y0YJ R-YHTO-8IAI
 	const reported = " \t unexpected installed text  build 7 \t "
 	var command seam.Cmd
 	deps := seam.Deps{Dir: "/work", Exec: func(_ context.Context, got seam.Cmd) (seam.Result, error) {

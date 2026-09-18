@@ -16,6 +16,7 @@ import (
 var _ func(context.Context, host.Host, account.Properties, cloud.Zone, string, *string) (int, error) = Configure
 
 func TestConfigureSetsNineKeysInOrder(t *testing.T) {
+	// R-YHTO-8IAI
 	// R-G7EX-BSP8
 	var commands []string
 	target := host.Host{Address: "192.0.2.10", Deps: seam.Deps{Dir: "/work", Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {

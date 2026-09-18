@@ -210,6 +210,7 @@ func TestRunKeepsVersionAndEmail(t *testing.T) {
 }
 
 func TestRunUpgradesSetsEmailAndInitializes(t *testing.T) {
+	// R-YHTO-8IAI
 	// R-GOHI-OL2Y R-GPPF-2CTN
 	fixture := newFixture(runningInstances(), hostedZones())
 	fixture.results = make([]seam.Result, 12)
