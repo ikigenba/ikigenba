@@ -52,6 +52,9 @@ func TestProvisionCreatesResourcesInOrderAndUsesElasticIP(t *testing.T) {
 	}) {
 		t.Fatalf("launch spec = %#v", h.launchSpec)
 	}
+	if !reflect.DeepEqual(h.describeInstanceIDs, []string{provisionID}) {
+		t.Fatalf("describe instance IDs = %v, want [%s]", h.describeInstanceIDs, provisionID)
+	}
 	if h.allocateSpace != provisionDomain || h.associateAllocation != "eipalloc-one" || h.associateInstance != provisionID {
 		t.Fatalf("address calls = allocate %q associate (%q, %q)", h.allocateSpace, h.associateAllocation, h.associateInstance)
 	}
@@ -99,18 +102,17 @@ func TestProvisionCreatesResourcesInOrderAndUsesElasticIP(t *testing.T) {
 	}
 }
 
-func TestProvisionAddressFailuresStopWithoutRollback(t *testing.T) {
+func TestProvisionFailuresStopWithoutRollback(t *testing.T) {
 	// R-E9WN-IVFN R-EIFY-79MI
-	for _, test := range []struct {
-		name   string
-		failAt string
-	}{
-		{name: "allocation", failAt: "allocate-address"},
-		{name: "association", failAt: "associate-address"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
+	stages := []string{
+		"create-role", "put-role-policy", "create-instance-profile", "add-role-to-profile",
+		"run-instance", "describe-instance", "allocate-address", "associate-address",
+		"change-records", "change-status", "checks", "ssh",
+	}
+	for failIndex, failAt := range stages {
+		t.Run(failAt, func(t *testing.T) {
 			h := newProvisionHarness()
-			h.failAt = test.failAt
+			h.failAt = failAt
 			var stdout bytes.Buffer
 			err := provision(context.Background(), &stdout, h.deps(), invocation{
 				domain: provisionDomain, acmeEmail: "ops@ikigenba.dev",
@@ -118,15 +120,15 @@ func TestProvisionAddressFailuresStopWithoutRollback(t *testing.T) {
 			if !errors.Is(err, errProvisionTest) {
 				t.Fatalf("provision() error = %v, want sentinel", err)
 			}
-			if h.recordCalls != 0 || h.sshTargets != 0 {
-				t.Fatalf("later work occurred: records=%d ssh=%d", h.recordCalls, h.sshTargets)
+			wantOperations := stages[:failIndex+1]
+			if !reflect.DeepEqual(h.operations, wantOperations) {
+				t.Fatalf("operations = %v, want %v", h.operations, wantOperations)
 			}
-			if h.rollbackCalls != 0 {
-				t.Fatalf("rollback calls = %d, want 0", h.rollbackCalls)
+			if len(h.cleanupCalls) != 0 {
+				t.Fatalf("cleanup calls = %v, want none", h.cleanupCalls)
 			}
-			if strings.Contains(stdout.String(), "address: ok") || strings.Contains(stdout.String(), "records: ok") ||
-				strings.Contains(stdout.String(), provisionDomain+" "+provisionAddress) {
-				t.Fatalf("failed or later work reported: %q", stdout.String())
+			if strings.Contains(stdout.String(), provisionDomain+" "+provisionAddress) {
+				t.Fatalf("final success reported: %q", stdout.String())
 			}
 		})
 	}
@@ -145,6 +147,7 @@ type provisionHarness struct {
 	addProfile          string
 	addRole             string
 	launchSpec          cloud.LaunchSpec
+	describeInstanceIDs []string
 	allocateSpace       string
 	associateAllocation string
 	associateInstance   string
@@ -153,7 +156,7 @@ type provisionHarness struct {
 	recordChanges       []cloud.RecordChange
 	sshTargets          int
 	wrongSSHTarget      bool
-	rollbackCalls       int
+	cleanupCalls        []string
 }
 
 func newProvisionHarness() *provisionHarness { return &provisionHarness{} }
@@ -168,8 +171,8 @@ func (h *provisionHarness) preflight() preflightResult {
 				LaunchTemplateID: "lt-123", PermissionsBoundaryARN: "arn:boundary", DeleteBackupsOnDestroy: true,
 			},
 			Clients: cloud.Clients{
-				EC2: provisionEC2{h}, SSM: provisionSSM{}, Route53: provisionRoute53{h},
-				S3: provisionS3{}, IAM: provisionIAM{h}, STS: provisionSTS{},
+				EC2: provisionEC2{h}, SSM: provisionSSM{h}, Route53: provisionRoute53{h},
+				S3: provisionS3{h}, IAM: provisionIAM{h}, STS: provisionSTS{},
 			},
 		},
 	}
@@ -177,10 +180,12 @@ func (h *provisionHarness) preflight() preflightResult {
 
 func (h *provisionHarness) deps() seam.Deps {
 	return seam.Deps{Dir: ".", Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
-		h.operations = append(h.operations, "ssh")
 		h.sshTargets++
 		if len(command.Args) < 7 || command.Args[6] != "ec2-user@"+provisionAddress {
 			h.wrongSSHTarget = true
+		}
+		if err := h.operation("ssh"); err != nil {
+			return seam.Result{}, err
 		}
 		logical := command.Args[len(command.Args)-1]
 		if strings.Contains(logical, "opsctl-install.sh") {
@@ -188,6 +193,11 @@ func (h *provisionHarness) deps() seam.Deps {
 		}
 		return seam.Result{}, nil
 	}}
+}
+
+func (h *provisionHarness) cleanup(name string) error {
+	h.cleanupCalls = append(h.cleanupCalls, name)
+	return nil
 }
 
 func (h *provisionHarness) operation(name string) error {
@@ -209,7 +219,9 @@ func (f provisionIAM) PutRolePolicy(_ context.Context, role, policy, document st
 	f.h.policyRole, f.h.policyName, f.h.policyDocument = role, policy, document
 	return f.h.operation("put-role-policy")
 }
-func (provisionIAM) DeleteRolePolicy(context.Context, string, string) error { return nil }
+func (f provisionIAM) DeleteRolePolicy(context.Context, string, string) error {
+	return f.h.cleanup("delete-role-policy")
+}
 func (provisionIAM) InstanceProfileRoles(context.Context, string) ([]string, bool, error) {
 	return nil, false, nil
 }
@@ -222,24 +234,25 @@ func (f provisionIAM) AddRoleToInstanceProfile(_ context.Context, profile, role 
 	return f.h.operation("add-role-to-profile")
 }
 func (f provisionIAM) RemoveRoleFromInstanceProfile(context.Context, string, string) error {
-	f.h.rollbackCalls++
-	return nil
+	return f.h.cleanup("remove-role-from-profile")
 }
 func (f provisionIAM) DeleteInstanceProfile(context.Context, string) error {
-	f.h.rollbackCalls++
-	return nil
+	return f.h.cleanup("delete-instance-profile")
 }
 func (f provisionIAM) DeleteRole(context.Context, string) error {
-	f.h.rollbackCalls++
-	return nil
+	return f.h.cleanup("delete-role")
 }
 
 type provisionEC2 struct{ h *provisionHarness }
 
 func (provisionEC2) ListSpaceInstances(context.Context) ([]cloud.Instance, error) { return nil, nil }
-func (f provisionEC2) DescribeInstance(context.Context, string) (cloud.Instance, error) {
+func (f provisionEC2) DescribeInstance(_ context.Context, id string) (cloud.Instance, error) {
+	f.h.describeInstanceIDs = append(f.h.describeInstanceIDs, id)
 	if err := f.h.operation("describe-instance"); err != nil {
 		return cloud.Instance{}, err
+	}
+	if id != provisionID {
+		return cloud.Instance{}, fmt.Errorf("unexpected instance ID %q", id)
 	}
 	return cloud.Instance{ID: provisionID, State: cloud.StateRunning, Address: "198.51.100.9"}, nil
 }
@@ -251,10 +264,11 @@ func (f provisionEC2) RunInstance(_ context.Context, spec cloud.LaunchSpec) (clo
 	return cloud.Instance{ID: provisionID, State: cloud.StatePending}, nil
 }
 func (provisionEC2) StartInstance(context.Context, string) error { return nil }
-func (provisionEC2) StopInstance(context.Context, string) error  { return nil }
+func (f provisionEC2) StopInstance(context.Context, string) error {
+	return f.h.cleanup("stop-instance")
+}
 func (f provisionEC2) TerminateInstance(context.Context, string) error {
-	f.h.rollbackCalls++
-	return nil
+	return f.h.cleanup("terminate-instance")
 }
 func (f provisionEC2) InstanceChecksPassed(context.Context, string) (bool, error) {
 	if err := f.h.operation("checks"); err != nil {
@@ -275,12 +289,10 @@ func (f provisionEC2) AssociateAddress(_ context.Context, allocationID, instance
 	return f.h.operation("associate-address")
 }
 func (f provisionEC2) DisassociateAddress(context.Context, string) error {
-	f.h.rollbackCalls++
-	return nil
+	return f.h.cleanup("disassociate-address")
 }
 func (f provisionEC2) ReleaseAddress(context.Context, string) error {
-	f.h.rollbackCalls++
-	return nil
+	return f.h.cleanup("release-address")
 }
 
 type provisionRoute53 struct{ h *provisionHarness }
@@ -290,6 +302,11 @@ func (provisionRoute53) ListRecords(context.Context, string) ([]cloud.Record, er
 	return nil, nil
 }
 func (f provisionRoute53) ChangeRecords(_ context.Context, zone string, changes []cloud.RecordChange) (string, error) {
+	for _, change := range changes {
+		if change.Action == cloud.ChangeDelete {
+			return "", f.h.cleanup("delete-records")
+		}
+	}
 	f.h.recordCalls++
 	f.h.recordZone = zone
 	f.h.recordChanges = append([]cloud.RecordChange(nil), changes...)
@@ -305,22 +322,26 @@ func (f provisionRoute53) ChangeStatus(context.Context, string) (cloud.ChangeSta
 	return cloud.ChangeInsync, nil
 }
 
-type provisionSSM struct{}
+type provisionSSM struct{ h *provisionHarness }
 
 func (provisionSSM) GetParameter(context.Context, string) (string, error)     { return "", nil }
 func (provisionSSM) PutSecureParameter(context.Context, string, string) error { return nil }
 func (provisionSSM) ListParameters(context.Context, string) ([]cloud.Parameter, error) {
 	return nil, nil
 }
-func (provisionSSM) DeleteParameter(context.Context, string) error { return nil }
+func (f provisionSSM) DeleteParameter(context.Context, string) error {
+	return f.h.cleanup("delete-parameter")
+}
 
-type provisionS3 struct{}
+type provisionS3 struct{ h *provisionHarness }
 
 func (provisionS3) ListObjects(context.Context, string, string) ([]cloud.Object, error) {
 	return nil, fmt.Errorf("unexpected ListObjects")
 }
 func (provisionS3) PutObject(context.Context, string, string, io.Reader, int64) error { return nil }
-func (provisionS3) DeleteObjects(context.Context, string, []string) error             { return nil }
+func (f provisionS3) DeleteObjects(context.Context, string, []string) error {
+	return f.h.cleanup("delete-objects")
+}
 
 type provisionSTS struct{}
 
