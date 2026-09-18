@@ -102,6 +102,8 @@ func TestRunRejectsUnknownOptions(t *testing.T) {
 	// R-DLIN-VGLR
 	cases := [][]string{
 		{"--wat"},
+		{"--help", "--wat"},
+		{"-h", "--wat"},
 		{"list", "--wat"},
 		{"list", "--wat", "--help"},
 		{"destroy", "foo.example", "--wat"},
@@ -115,7 +117,7 @@ func TestRunRejectsUnknownOptions(t *testing.T) {
 		t.Run(args[0], func(t *testing.T) {
 			option := "--wat"
 			for _, argument := range args {
-				if len(argument) > 0 && argument[0] == '-' {
+				if len(argument) > 0 && argument[0] == '-' && argument != "--help" && argument != "-h" {
 					option = argument
 					break
 				}

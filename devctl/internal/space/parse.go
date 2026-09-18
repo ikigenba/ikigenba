@@ -45,6 +45,11 @@ func parseInvocation(args []string) (invocation, error) {
 		return invocation{}, usage("space needs <subcommand>")
 	}
 	if args[0] == "--help" || args[0] == "-h" {
+		for _, argument := range args[1:] {
+			if strings.HasPrefix(argument, "-") && argument != "--help" && argument != "-h" {
+				return invocation{}, unknownOption(argument)
+			}
+		}
 		// The top-level space help is supplied with its own requirement.
 		return invocation{}, nil
 	}
