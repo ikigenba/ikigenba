@@ -337,6 +337,59 @@ func TestEC2MutationExactDispatchAfterSuccess(t *testing.T) {
 	}
 }
 
+func TestEC2ReadExactDispatchAfterSuccess(t *testing.T) {
+	// R-YPQX-0LG8
+	tests := []struct {
+		method    string
+		operation string
+		prepare   func(*fakeEC2)
+		call      func(*ec2Client) error
+	}{
+		{"ListSpaceInstances", "DescribeInstances", func(fake *fakeEC2) {
+			fake.describeInstances = func(*ec2.DescribeInstancesInput) (*ec2.DescribeInstancesOutput, error) {
+				return &ec2.DescribeInstancesOutput{}, nil
+			}
+		}, func(client *ec2Client) error {
+			_, err := client.ListSpaceInstances(context.Background())
+			return err
+		}},
+		{"ListSpaceAddresses", "DescribeAddresses", func(fake *fakeEC2) {
+			fake.describeAddresses = func(*ec2.DescribeAddressesInput) (*ec2.DescribeAddressesOutput, error) {
+				return &ec2.DescribeAddressesOutput{}, nil
+			}
+		}, func(client *ec2Client) error {
+			_, err := client.ListSpaceAddresses(context.Background())
+			return err
+		}},
+		{"DescribeInstance", "DescribeInstances", func(fake *fakeEC2) {
+			fake.describeInstances = func(*ec2.DescribeInstancesInput) (*ec2.DescribeInstancesOutput, error) {
+				return &ec2.DescribeInstancesOutput{}, nil
+			}
+		}, func(client *ec2Client) error {
+			_, err := client.DescribeInstance(context.Background(), "i-one")
+			return err
+		}},
+		{"InstanceChecksPassed", "DescribeInstanceStatus", func(fake *fakeEC2) {
+			fake.instanceStatus = &ec2.DescribeInstanceStatusOutput{}
+		}, func(client *ec2Client) error {
+			_, err := client.InstanceChecksPassed(context.Background(), "i-one")
+			return err
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.method, func(t *testing.T) {
+			fake := &fakeEC2{}
+			test.prepare(fake)
+			if err := test.call(&ec2Client{sdk: fake}); err != nil {
+				t.Fatalf("error = %v, want nil", err)
+			}
+			if want := []string{test.operation}; !reflect.DeepEqual(fake.calls, want) {
+				t.Fatalf("SDK calls = %v, want exactly %v", fake.calls, want)
+			}
+		})
+	}
+}
+
 func assertTagSpecifications(t *testing.T, got []types.TagSpecification, resourceTypes []types.ResourceType, space string) {
 	t.Helper()
 	if len(got) != len(resourceTypes) {
