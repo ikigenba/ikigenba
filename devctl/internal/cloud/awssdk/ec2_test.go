@@ -298,6 +298,45 @@ func TestEC2OperationMappingsAndChecks(t *testing.T) {
 	}
 }
 
+func TestEC2MutationExactDispatchAfterSuccess(t *testing.T) {
+	// R-YPQX-0LG8
+	tests := []struct {
+		method    string
+		operation string
+		call      func(*ec2Client) error
+	}{
+		{"StartInstance", "StartInstances", func(client *ec2Client) error {
+			return client.StartInstance(context.Background(), "i-one")
+		}},
+		{"StopInstance", "StopInstances", func(client *ec2Client) error {
+			return client.StopInstance(context.Background(), "i-one")
+		}},
+		{"TerminateInstance", "TerminateInstances", func(client *ec2Client) error {
+			return client.TerminateInstance(context.Background(), "i-one")
+		}},
+		{"AssociateAddress", "AssociateAddress", func(client *ec2Client) error {
+			return client.AssociateAddress(context.Background(), "allocation", "instance")
+		}},
+		{"DisassociateAddress", "DisassociateAddress", func(client *ec2Client) error {
+			return client.DisassociateAddress(context.Background(), "association")
+		}},
+		{"ReleaseAddress", "ReleaseAddress", func(client *ec2Client) error {
+			return client.ReleaseAddress(context.Background(), "allocation")
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.method, func(t *testing.T) {
+			fake := &fakeEC2{}
+			if err := test.call(&ec2Client{sdk: fake}); err != nil {
+				t.Fatalf("error = %v, want nil", err)
+			}
+			if want := []string{test.operation}; !reflect.DeepEqual(fake.calls, want) {
+				t.Fatalf("SDK calls = %v, want exactly %v", fake.calls, want)
+			}
+		})
+	}
+}
+
 func assertTagSpecifications(t *testing.T, got []types.TagSpecification, resourceTypes []types.ResourceType, space string) {
 	t.Helper()
 	if len(got) != len(resourceTypes) {

@@ -265,6 +265,7 @@ func TestRoute53ErrorMappingAndExactDispatch(t *testing.T) {
 }
 
 func TestRoute53NonAPIErrorHasEmptyCode(t *testing.T) {
+	// R-YOJ0-MTPJ
 	boom := errors.New("transport failed")
 	fake := &fakeRoute53{err: boom}
 	_, err := (&route53Client{sdk: fake}).ListZones(context.Background())
