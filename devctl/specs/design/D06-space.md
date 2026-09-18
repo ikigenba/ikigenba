@@ -4,6 +4,10 @@ Spaces are discovered from cloud tags and have an Elastic IP throughout their
 lifetime. Stop and start preserve records and the address. Destroy retires a
 host first when backups are retained, then removes resources resumably. Host
 execution handles quoting and diagnostics; status relays opaque host output.
+The wait helpers poll a cloud fact on the shared interval until it holds:
+`WaitState` and `WaitChecks` watch an instance, and `WaitLaunchReady` watches a
+launch spec become acceptable, so a caller can hold a step open until the
+resource it just made is genuinely usable.
 
 ## REQUIREMENTS
 
@@ -13,7 +17,7 @@ execution handles quoting and diagnostics; status relays opaque host output.
 
 - R-SSDU-XET3: Package `internal/space` MUST export `RoleName(domain string) string`, returning `ikigenba-space-` followed by `domain`; `PolicyName = "space"`; `BackupPrefix(domain string) string`, returning `domain` followed by `/`; `RecordNames(domain string) []string`, returning exactly `domain` and `*.` followed by `domain`, in that order; and `RecordTTL = 60`; verified at least by `RoleName("foo.sbx.ikigenba.dev")` being `ikigenba-space-foo.sbx.ikigenba.dev` and `BackupPrefix("foo.sbx.ikigenba.dev")` being `foo.sbx.ikigenba.dev/`.
 
-- R-STLR-B6JS: Package `internal/space` MUST export `WaitState(ctx context.Context, deps seam.Deps, acct *account.Account, id string, state cloud.InstanceState) (cloud.Instance, error)`, `WaitChecks(ctx context.Context, deps seam.Deps, acct *account.Account, id string) error`, `PollInterval = 5 * time.Second`, and `PollAttempts = 60`.
+- R-H4AW-33HL: Package `internal/space` MUST export `WaitState(ctx context.Context, deps seam.Deps, acct *account.Account, id string, state cloud.InstanceState) (cloud.Instance, error)`, `WaitChecks(ctx context.Context, deps seam.Deps, acct *account.Account, id string) error`, `WaitLaunchReady(ctx context.Context, deps seam.Deps, acct *account.Account, spec cloud.LaunchSpec) error`, `PollInterval = 5 * time.Second`, and `PollAttempts = 60`.
 
 - R-SUTN-OYAH: Package `internal/space` MUST export `ElasticIP(ctx context.Context, acct *account.Account, domain string) (cloud.Address, bool, error)` and `ReleaseElasticIP(ctx context.Context, acct *account.Account, addr cloud.Address) error`.
 
@@ -38,6 +42,8 @@ execution handles quoting and diagnostics; status relays opaque host output.
 - R-TEC1-TA5L: `space.WaitState` MUST call `acct.Clients.EC2.DescribeInstance` with `id` and return that `cloud.Instance` and a nil error as soon as its `State` equals `state` and — when `state` is `cloud.StateRunning` — its `Address` is not empty, MUST wait on `deps.After(PollInterval)` between consecutive calls, MUST make at most `PollAttempts` calls, and MUST return a `*WaitError` whose `Subject` is `id` and whose `Want` is `be ` followed by `state` when that many calls have not satisfied it; verified with a fake `Deps.After` that fires immediately.
 
 - R-TFJY-71WA: `space.WaitChecks` MUST call `acct.Clients.EC2.InstanceChecksPassed` with `id` and return a nil error as soon as it reports true, MUST wait on `deps.After(PollInterval)` between consecutive calls, MUST make at most `PollAttempts` calls, and MUST return a `*WaitError` whose `Subject` is `id` and whose `Want` is `pass its status checks` when that many calls have not reported true.
+
+- R-H5IS-GV8A: `space.WaitLaunchReady` MUST call `acct.Clients.EC2.LaunchReady` with `spec` and return a nil error as soon as it reports true, MUST return its error unchanged as soon as it returns a non-nil one, MUST wait on `deps.After(PollInterval)` between consecutive calls, MUST make at most `PollAttempts` calls, and MUST return a `*WaitError` whose `Subject` is `spec.InstanceProfile` and whose `Want` is `become usable for launch` when that many calls have not reported true.
 
 - R-THZQ-YLDO: `space.ElasticIP` MUST call `acct.Clients.EC2.ListSpaceAddresses` and return, with a true second result, the one `cloud.Address` whose `Space` equals `domain`; MUST return a false second result and a nil error when none does; and MUST return a non-nil error naming `domain` when two or more do.
 
