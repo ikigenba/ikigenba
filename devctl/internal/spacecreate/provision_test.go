@@ -111,7 +111,7 @@ func TestProvisionWaitsForLaunchReadinessBeforeReportingRole(t *testing.T) {
 	err := provision(context.Background(), &stdout, h.deps(), invocation{
 		domain: provisionDomain, acmeEmail: "ops@ikigenba.dev",
 	}, h.preflight())
-	if !errors.Is(err, errProvisionTest) {
+	if reflect.ValueOf(err) != reflect.ValueOf(errProvisionTest) {
 		t.Fatalf("provision() error = %v, want unchanged sentinel", err)
 	}
 	wantOperations := []string{
