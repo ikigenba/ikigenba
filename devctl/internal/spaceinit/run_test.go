@@ -28,6 +28,17 @@ const propertiesJSON = `{
   "backup_service_wal_seconds":44
 }`
 
+const expectedHelp = `Usage: devctl --account <name> space init <domain> [--opsctl <version>] [--acme-email <address>]
+
+Set the host's nine derived keys again and run opsctl init. Keep its installed
+opsctl and email unless an option names a replacement. Cloud resources and
+secrets are unchanged.
+
+Options:
+  --opsctl <version>      install this release using the host's saved installer
+  --acme-email <address>  replace the CA contact address
+`
+
 func TestRunSignature(_ *testing.T) {
 	// R-GH64-DYMS
 	acceptRunSignature(Run)
@@ -37,16 +48,31 @@ func acceptRunSignature(func(context.Context, []string, io.Writer, seam.Deps, st
 
 func TestParseInvocation(t *testing.T) {
 	// R-GIE0-RQDH
-	got, err := parseInvocation([]string{
-		"--opsctl", "v1", "one.example", "--acme-email=first@example", "--opsctl=v2", "--acme-email", "last@example",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	wantEmail := "last@example"
-	want := invocation{domain: "one.example", opsctl: "v2", acmeEmail: &wantEmail}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("parseInvocation = %#v, want %#v", got, want)
+	tests := []struct {
+		name string
+		args []string
+		want invocation
+	}{
+		{name: "exactly one domain", args: []string{"one.example"}, want: invocation{domain: "one.example"}},
+		{
+			name: "options on both sides and last values win",
+			args: []string{"--opsctl", "v1", "one.example", "--acme-email=first@example", "--opsctl=v2", "--acme-email", "last@example"},
+			want: invocation{domain: "one.example", opsctl: "v2", acmeEmail: &wantEmail},
+		},
+		{name: "long help without domain", args: []string{"--help"}, want: invocation{help: true}},
+		{name: "short help without domain", args: []string{"-h"}, want: invocation{help: true}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := parseInvocation(test.args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("parseInvocation = %#v, want %#v", got, test.want)
+			}
+		})
 	}
 }
 
@@ -61,20 +87,19 @@ func TestArgumentFailuresPrecedeDependencies(t *testing.T) {
 		{name: "extra", args: []string{"one.example", "two.example"}, want: "space init takes only <domain>"},
 		{name: "unknown", args: []string{"one.example", "--force"}, want: "unknown option '--force'"},
 		{name: "opsctl missing", args: []string{"one.example", "--opsctl"}, want: "option '--opsctl' requires a value"},
+		{name: "opsctl separated empty", args: []string{"one.example", "--opsctl", ""}, want: "option '--opsctl' requires a value"},
 		{name: "opsctl empty", args: []string{"--opsctl=", "one.example"}, want: "option '--opsctl' requires a value"},
 		{name: "email missing", args: []string{"one.example", "--acme-email"}, want: "option '--acme-email' requires a value"},
+		{name: "email separated empty", args: []string{"one.example", "--acme-email", ""}, want: "option '--acme-email' requires a value"},
 		{name: "email empty", args: []string{"one.example", "--acme-email="}, want: "option '--acme-email' requires a value"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			var stdout strings.Builder
-			err := Run(context.Background(), test.args, &stdout, seam.Deps{Cloud: func(context.Context, string, string) (cloud.Clients, error) {
-				t.Fatal("external dependency called")
-				return cloud.Clients{}, nil
-			}}, "sandbox")
-			var usageErr *space.UsageError
-			if !errors.As(err, &usageErr) || usageErr.Message != test.want || usageErr.Help != "devctl space --help" {
-				t.Fatalf("error = %#v, want UsageError{%q, %q}", err, test.want, "devctl space --help")
+			err := Run(context.Background(), test.args, &stdout, noCallDeps(t), "sandbox")
+			wantErr := &space.UsageError{Message: test.want, Help: "devctl space --help"}
+			if !reflect.DeepEqual(err, wantErr) {
+				t.Fatalf("error = %#v, want %#v", err, wantErr)
 			}
 			if stdout.String() != "" {
 				t.Fatalf("stdout = %q, want empty", stdout.String())
@@ -88,17 +113,53 @@ func TestHelpBeforeDependencies(t *testing.T) {
 	for _, option := range []string{"--help", "-h"} {
 		t.Run(option, func(t *testing.T) {
 			var stdout strings.Builder
-			err := Run(context.Background(), []string{option}, &stdout, seam.Deps{Cloud: func(context.Context, string, string) (cloud.Clients, error) {
-				t.Fatal("external dependency called")
-				return cloud.Clients{}, nil
-			}}, "")
+			err := Run(context.Background(), []string{option}, &stdout, noCallDeps(t), "")
 			if err != nil {
 				t.Fatal(err)
 			}
-			if stdout.String() != usageText {
-				t.Fatalf("help = %q, want %q", stdout.String(), usageText)
+			if stdout.String() != expectedHelp {
+				t.Fatalf("help = %q, want %q", stdout.String(), expectedHelp)
 			}
 		})
+	}
+}
+
+func noCallDeps(t *testing.T) seam.Deps {
+	t.Helper()
+	return seam.Deps{
+		Cloud: func(context.Context, string, string) (cloud.Clients, error) {
+			t.Fatal("cloud dependency called")
+			return cloud.Clients{}, nil
+		},
+		Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
+			t.Fatal("exec dependency called")
+			return seam.Result{}, nil
+		},
+		Stream: func(context.Context, seam.Cmd, io.Writer) (seam.Result, error) {
+			t.Fatal("stream dependency called")
+			return seam.Result{}, nil
+		},
+	}
+}
+
+func TestAccountFailurePrecedesOutputAndDownstreamWork(t *testing.T) {
+	// R-GN9M-ATC9
+	wantErr := errors.New("account lookup failed")
+	fixture := newFixture(runningInstances(), hostedZones())
+	fixture.ssmErr = wantErr
+	var stdout strings.Builder
+	err := Run(context.Background(), []string{"app.sbx.ikigenba.dev"}, &stdout, fixture.deps(t), "sandbox")
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("error = %v, want %v", err, wantErr)
+	}
+	if stdout.String() != "" {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	if !reflect.DeepEqual(fixture.cloudRegions, []string{""}) {
+		t.Fatalf("cloud regions = %v, want only account bootstrap", fixture.cloudRegions)
+	}
+	if len(fixture.commands) != 0 {
+		t.Fatalf("SSH commands = %v, want none", fixture.commands)
 	}
 }
 
@@ -162,33 +223,104 @@ func TestRunUpgradesSetsEmailAndInitializes(t *testing.T) {
 	if !strings.HasSuffix(stdout.String(), wantSuffix) {
 		t.Fatalf("stdout = %q, want suffix %q", stdout.String(), wantSuffix)
 	}
+	if strings.Contains(stdout.String(), "successful remote output") {
+		t.Fatalf("stdout leaked successful remote output: %q", stdout.String())
+	}
 	assertCommands(t, fixture.commands, true, true)
 }
 
 func TestRunStopsAtRemoteFailureWithoutOtherMutation(t *testing.T) {
-	// R-GQXB-G4KC
-	fixture := newFixture(runningInstances(), hostedZones())
-	fixture.results = []seam.Result{
-		{}, {}, {}, {},
-		{ExitCode: 17, Stdout: []byte("ignored stdout\n"), Stderr: []byte("first line\nsecond line\n")},
+	// R-GPPF-2CTN R-GQXB-G4KC
+	tests := []struct {
+		name         string
+		args         []string
+		failureIndex int
+		result       seam.Result
+		wantCommands int
+		wantStep     string
+		wantDetail   string
+		wantOpsctlOK bool
+		wantInitOK   bool
+		retainedKeys int
+	}{
+		{
+			name: "upgrade is first failure",
+			args: []string{"app.sbx.ikigenba.dev", "--opsctl=v9"}, failureIndex: 0,
+			result:       seam.Result{ExitCode: 11, Stderr: []byte("upgrade failed\nall details\n")},
+			wantCommands: 1, wantStep: "opsctl", wantDetail: "> upgrade failed\n> all details",
+		},
+		{
+			name: "version is first failure and stdout is fallback",
+			args: []string{"app.sbx.ikigenba.dev"}, failureIndex: 0,
+			result:       seam.Result{ExitCode: 12, Stdout: []byte("version failed on stdout\ncomplete output\n")},
+			wantCommands: 1, wantStep: "opsctl", wantDetail: "> version failed on stdout\n> complete output",
+		},
+		{
+			name: "configuration stops with earlier keys retained",
+			args: []string{"app.sbx.ikigenba.dev", "--opsctl=v9"}, failureIndex: 4,
+			result:       seam.Result{ExitCode: 17, Stdout: []byte("ignored stdout\n"), Stderr: []byte("first line\nsecond line\n")},
+			wantCommands: 5, wantStep: "opsctl", wantDetail: "> first line\n> second line", retainedKeys: 3,
+		},
+		{
+			name: "init is last attempted step",
+			args: []string{"app.sbx.ikigenba.dev"}, failureIndex: 10,
+			result:       seam.Result{ExitCode: 18, Stderr: []byte("init failed\ncomplete detail\n")},
+			wantCommands: 11, wantStep: "init", wantDetail: "> init failed\n> complete detail", wantOpsctlOK: true,
+		},
 	}
-	var stdout strings.Builder
-	err := Run(context.Background(), []string{"app.sbx.ikigenba.dev", "--opsctl=v9"}, &stdout, fixture.deps(t), "sandbox")
-	var commandErr *host.CommandError
-	if !errors.As(err, &commandErr) {
-		t.Fatalf("error = %T %v, want *host.CommandError", err, err)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newFixture(runningInstances(), hostedZones())
+			fixture.results = make([]seam.Result, test.failureIndex+1)
+			fixture.results[test.failureIndex] = test.result
+			var stdout strings.Builder
+			err := Run(context.Background(), test.args, &stdout, fixture.deps(t), "sandbox")
+			var commandErr *host.CommandError
+			if !errors.As(err, &commandErr) {
+				t.Fatalf("error = %T %v, want *host.CommandError", err, err)
+			}
+			if commandErr.Step != test.wantStep {
+				t.Fatalf("step = %q, want %q", commandErr.Step, test.wantStep)
+			}
+			if commandErr.Detail() != test.wantDetail {
+				t.Fatalf("detail = %q, want %q", commandErr.Detail(), test.wantDetail)
+			}
+			if len(fixture.commands) != test.wantCommands {
+				t.Fatalf("commands = %v; want %d attempts", fixture.commands, test.wantCommands)
+			}
+			if got := strings.Contains(stdout.String(), "opsctl: ok"); got != test.wantOpsctlOK {
+				t.Fatalf("opsctl success reported = %v, want %v; stdout = %q", got, test.wantOpsctlOK, stdout.String())
+			}
+			if got := strings.Contains(stdout.String(), "init: ok"); got != test.wantInitOK {
+				t.Fatalf("init success reported = %v, want %v; stdout = %q", got, test.wantInitOK, stdout.String())
+			}
+			if test.retainedKeys > 0 {
+				configured := 0
+				for _, command := range fixture.commands {
+					if strings.Contains(command, "'config' 'set'") {
+						configured++
+					}
+				}
+				if configured != test.retainedKeys+1 {
+					t.Fatalf("config attempts = %d, want %d successful plus failed attempt", configured, test.retainedKeys)
+				}
+			}
+			assertNoForbiddenCommands(t, fixture.commands)
+			if fixture.mutations != 0 {
+				t.Fatalf("cloud mutations = %d, want zero", fixture.mutations)
+			}
+		})
 	}
-	if commandErr.Detail() != "> first line\n> second line" {
-		t.Fatalf("detail = %q", commandErr.Detail())
-	}
-	if len(fixture.commands) != 5 {
-		t.Fatalf("commands = %v; want upgrade plus four retained config attempts", fixture.commands)
-	}
-	if strings.Contains(stdout.String(), "opsctl: ok") || strings.Contains(stdout.String(), "init: ok") {
-		t.Fatalf("stdout reports incomplete steps: %q", stdout.String())
-	}
-	if fixture.mutations != 0 {
-		t.Fatalf("cloud mutations = %d, want zero", fixture.mutations)
+}
+
+func assertNoForbiddenCommands(t *testing.T, commands []string) {
+	t.Helper()
+	for _, command := range commands {
+		for _, forbidden := range []string{"checkout", "deploy", "restore", "restart"} {
+			if strings.Contains(command, forbidden) {
+				t.Fatalf("forbidden %s command attempted: %q", forbidden, command)
+			}
+		}
 	}
 }
 
@@ -230,11 +362,13 @@ func assertCommands(t *testing.T, commands []string, upgraded, email bool) {
 }
 
 type fixture struct {
-	instances []cloud.Instance
-	zones     []cloud.Zone
-	commands  []string
-	results   []seam.Result
-	mutations int
+	instances    []cloud.Instance
+	zones        []cloud.Zone
+	commands     []string
+	results      []seam.Result
+	cloudRegions []string
+	ssmErr       error
+	mutations    int
 }
 
 func newFixture(instances []cloud.Instance, zones []cloud.Zone) *fixture {
@@ -246,11 +380,12 @@ func (f *fixture) deps(t *testing.T) seam.Deps {
 	return seam.Deps{
 		Dir: ".",
 		Cloud: func(_ context.Context, profile, region string) (cloud.Clients, error) {
+			f.cloudRegions = append(f.cloudRegions, region)
 			if profile != "sandbox" {
 				t.Fatalf("profile = %q", profile)
 			}
 			if region == "" {
-				return cloud.Clients{SSM: fixtureSSM{}}, nil
+				return cloud.Clients{SSM: fixtureSSM{fixture: f}}, nil
 			}
 			if region != "us-east-2" {
 				t.Fatalf("region = %q", region)
@@ -271,16 +406,23 @@ func (f *fixture) deps(t *testing.T) seam.Deps {
 	}
 }
 
-type fixtureSSM struct{}
+type fixtureSSM struct{ fixture *fixture }
 
-func (fixtureSSM) GetParameter(context.Context, string) (string, error) { return propertiesJSON, nil }
-func (fixtureSSM) PutSecureParameter(context.Context, string, string) error {
+func (f fixtureSSM) GetParameter(context.Context, string) (string, error) {
+	if f.fixture.ssmErr != nil {
+		return "", f.fixture.ssmErr
+	}
+	return propertiesJSON, nil
+}
+func (f fixtureSSM) PutSecureParameter(context.Context, string, string) error {
+	f.fixture.mutations++
 	return errors.New("unexpected PutSecureParameter")
 }
 func (fixtureSSM) ListParameters(context.Context, string) ([]cloud.Parameter, error) {
 	return nil, errors.New("unexpected ListParameters")
 }
-func (fixtureSSM) DeleteParameter(context.Context, string) error {
+func (f fixtureSSM) DeleteParameter(context.Context, string) error {
+	f.fixture.mutations++
 	return errors.New("unexpected DeleteParameter")
 }
 
