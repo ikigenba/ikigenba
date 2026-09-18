@@ -110,6 +110,19 @@ call as the consumer writes it, `Output:` is what it returns or the error it
 surfaces, and the exit line is replaced by a sentence naming the return.
 Preconditions and postconditions are unchanged.
 
+## For a web app
+
+A project whose consumer is an HTTP client keeps the same sections with the
+interaction as a request. `Command:` becomes `Request:`, one fenced block per
+form, each a `$ curl -si` line so the verb, path, and any header the story
+depends on are explicit and the line can be run as written. `Output:` becomes
+`Response:`, a fenced block holding the status line and only the headers the
+story fixes. The exit line becomes a status line: `Status 200.` followed by
+what the body must satisfy, stated as a fact (`The body is an HTML page whose
+visible text is ...`), never quoted whole. A header or body the story does not
+mention is not fixed. Preconditions and postconditions are unchanged; a
+read-only request says `Nothing has changed.`
+
 ## Example
 
 `specs/stories/S01-bootstrap.md`:
