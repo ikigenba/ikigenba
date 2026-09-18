@@ -19,6 +19,11 @@ import (
 func TestProcessShapeAndDefaultListener(t *testing.T) {
 	t.Parallel()
 
+	wantRunType := reflect.TypeOf((func(context.Context, Process) int)(nil))
+	if got := reflect.TypeOf(Run); got != wantRunType {
+		t.Fatalf("Run type = %v, want %v", got, wantRunType)
+	}
+
 	typeOfWriter := reflect.TypeOf((*io.Writer)(nil)).Elem()
 	typeOfListenerFactory := reflect.TypeOf((func(string, string) (net.Listener, error))(nil))
 	typeOfListening := reflect.TypeOf((func(net.Addr))(nil))
@@ -159,7 +164,13 @@ func TestListeningCallback(t *testing.T) {
 	}
 
 	for name, process := range map[string]Process{
-		"usage": {Args: []string{"bogus"}, Stderr: io.Discard},
+		"version":      {Args: []string{"--version"}, Stdout: io.Discard},
+		"usage":        {Args: []string{"bogus"}, Stderr: io.Discard},
+		"missing PORT": {Stderr: io.Discard},
+		"invalid PORT": {
+			LookupEnv: mapLookup(map[string]string{"PORT": "not-a-port"}),
+			Stderr:    io.Discard,
+		},
 		"bind failure": {
 			LookupEnv: mapLookup(map[string]string{"PORT": "3000"}),
 			Stderr:    io.Discard,
