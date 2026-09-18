@@ -68,7 +68,7 @@ func TestRestoreDatabaseLifecycleUsesIndependentHistoryAndOrdersStarts(t *testin
 		"systemctl stop ikigenba-notes.service",
 		"systemctl stop litestream.service",
 		"getent passwd ikigenba",
-		"usermod --home /nonexistent --shell /usr/sbin/nologin ikigenba",
+		"id --group --name ikigenba",
 		"litestream ltx -level all -json " + replica,
 		"litestream restore -o " + destination + " " + replica,
 		"nginx",
@@ -152,7 +152,7 @@ func TestRestoreDatabaseStartsLitestreamWhenConfigurationUnchanged(t *testing.T)
 		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.service",
 		"systemctl stop litestream.service",
 		"getent passwd ikigenba",
-		"usermod --home /nonexistent --shell /usr/sbin/nologin ikigenba",
+		"id --group --name ikigenba",
 		"litestream ltx -level all -json s3://bucket/host/notes/",
 		"litestream restore -o " + filepath.Join(root, "opt/notes/state/app.db") + " s3://bucket/host/notes/",
 		"nginx",
@@ -316,8 +316,10 @@ func (executor *databaseRestoreExecutor) execute(_ context.Context, command host
 			gid = os.Getgid()
 		}
 		return host.Result{Stdout: []byte(fmt.Sprintf("ikigenba:x:%d:%d::/nonexistent:/usr/sbin/nologin\n", uid, gid))}, nil
-	case "usermod":
-		return host.Result{}, nil
+	case "id":
+		if reflect.DeepEqual(command.Args, []string{"--group", "--name", "ikigenba"}) {
+			return host.Result{Stdout: []byte("ikigenba\n")}, nil
+		}
 	case "litestream":
 		if len(command.Args) == 5 && command.Args[0] == "ltx" {
 			return host.Result{Stdout: []byte(executor.ltx)}, nil

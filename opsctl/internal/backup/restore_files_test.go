@@ -19,7 +19,7 @@ import (
 )
 
 func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
-	// R-DVW3-8CRI R-G04K-RO7W R-RY91-HA14
+	// R-DVW3-8CRI R-G04K-RO7W R-OPIE-CD52
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/etc/stale", "remove", 0o600)
@@ -62,7 +62,7 @@ func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
 		"systemctl stop ikigenba-notes.service",
 		"systemctl stop litestream.service",
 		"getent passwd ikigenba",
-		"usermod --home /nonexistent --shell /usr/sbin/nologin ikigenba",
+		"id --group --name ikigenba",
 		"litestream ltx -level all -json s3://bucket/host/notes/",
 		"litestream restore -o " + filepath.Join(root, "opt/notes/state/app.db") + " s3://bucket/host/notes/",
 		"systemctl start litestream.service",
@@ -218,7 +218,7 @@ func TestRestoreStopFailuresPreserveCauseStoppedUnitsAndTargets(t *testing.T) {
 }
 
 func TestRestoreCreatesAccountBeforePublishingAndRetainsMarkerOnFailure(t *testing.T) {
-	// R-RY91-HA14
+	// R-OPIE-CD52
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/state/existing", "unchanged", 0o600)
@@ -243,7 +243,7 @@ func TestRestoreCreatesAccountBeforePublishingAndRetainsMarkerOnFailure(t *testi
 }
 
 func TestRestoreCreatesMissingAccountWithNoLoginAndNoHome(t *testing.T) {
-	// R-RY91-HA14
+	// R-OPIE-CD52
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("new"), uname: "ikigenba", gname: "ikigenba"})
@@ -254,14 +254,16 @@ func TestRestoreCreatesMissingAccountWithNoLoginAndNoHome(t *testing.T) {
 	if err != nil || len(report.Steps) != 4 {
 		t.Fatalf("Restore() = %+v, %v", report, err)
 	}
-	joined := strings.Join(executor.commands, "\n")
-	for _, want := range []string{
+	wantCommands := []string{
+		"zstd --quiet --decompress --stdout",
+		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.service",
+		"getent passwd ikigenba",
 		"useradd --system --no-create-home --shell /usr/sbin/nologin ikigenba",
-		"usermod --home /nonexistent --shell /usr/sbin/nologin ikigenba",
-	} {
-		if !strings.Contains(joined, want) {
-			t.Fatalf("commands %v omitted %q", executor.commands, want)
-		}
+		"getent passwd ikigenba",
+		"id --group --name ikigenba",
+	}
+	if !reflect.DeepEqual(executor.commands, wantCommands) {
+		t.Fatalf("commands = %v, want %v", executor.commands, wantCommands)
 	}
 	assertRestoreMetadata(t, root, "opt/notes/state/value", 0o600, os.Getuid(), accountGID)
 	if info, statErr := os.Stat(filepath.Join(root, "opt/notes")); statErr != nil || info.Mode().Perm() != 0o755 {
@@ -270,7 +272,7 @@ func TestRestoreCreatesMissingAccountWithNoLoginAndNoHome(t *testing.T) {
 }
 
 func TestRestoreOwnershipApplicationFailurePreservesPublishedTrees(t *testing.T) {
-	// R-RY91-HA14 R-G04K-RO7W R-G7FZ-2AO2 R-RX15-3IAF
+	// R-OPIE-CD52 R-G04K-RO7W R-G7FZ-2AO2 R-RX15-3IAF
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/etc/old", "old etc", 0o600)
@@ -306,7 +308,7 @@ func TestRestoreOwnershipApplicationFailurePreservesPublishedTrees(t *testing.T)
 }
 
 func TestRestoreManifestAppAloneTriggersAccountPreparation(t *testing.T) {
-	// R-RY91-HA14
+	// R-OPIE-CD52
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	body := hostRestoreArchive(t,
@@ -320,25 +322,53 @@ func TestRestoreManifestAppAloneTriggersAccountPreparation(t *testing.T) {
 		t.Fatalf("Restore() = %+v, %v", report, err)
 	}
 	joined := strings.Join(executor.commands, "\n")
-	if !strings.Contains(joined, "getent passwd ikigenba") || !strings.Contains(joined, "usermod --home /nonexistent --shell /usr/sbin/nologin ikigenba") {
+	if !strings.Contains(joined, "getent passwd ikigenba") || !strings.Contains(joined, "id --group --name ikigenba") {
 		t.Fatalf("manifest app did not trigger account preparation: %v", executor.commands)
 	}
 }
 
+func TestRestoreRejectsWrongAccountPrimaryGroupBeforePublishing(t *testing.T) {
+	// R-OPIE-CD52
+	root := t.TempDir()
+	store := configuredFileStore(t, root)
+	writeFile(t, root, "opt/notes/state/existing", "unchanged", 0o600)
+	body := hostRestoreArchive(t,
+		restoreMember{name: "state/value", data: []byte("new"), gname: "ikigenba"},
+	)
+	client := restoreClientFor(t, body)
+	executor := &restoreStageExecutor{t: t, root: root, accountUID: os.Getuid(), accountGID: os.Getgid(), accountPrimaryGroup: "users"}
+
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, func(context.Context) error { return nil })
+	var restoreErr *backup.RestoreError
+	if err == nil || !errors.As(err, &restoreErr) || restoreErr.Stage != "ownership" {
+		t.Fatalf("Restore() = %+v, %#v, want ownership failure", report, err)
+	}
+	if len(report.Steps) != 3 || report.Steps[0].Name != "source" || report.Steps[2].Name != "files" || report.Steps[2].Err == nil {
+		t.Fatalf("report = %+v, want source retained and failed files step", report)
+	}
+	if got := string(readHostRestoreFile(t, root, "opt/notes/state/existing")); got != "unchanged" {
+		t.Fatalf("existing target = %q, want unchanged", got)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "opt/notes/state/value")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("group failure published new tree: %v", statErr)
+	}
+}
+
 type restoreStageExecutor struct {
-	t                *testing.T
-	root             string
-	installed        bool
-	active           bool
-	accountMissing   bool
-	accountCreated   bool
-	accountLookupErr error
-	accountUID       int
-	accountGID       int
-	failCommand      string
-	failResult       host.Result
-	failErr          error
-	commands         []string
+	t                   *testing.T
+	root                string
+	installed           bool
+	active              bool
+	accountMissing      bool
+	accountCreated      bool
+	accountLookupErr    error
+	accountUID          int
+	accountGID          int
+	accountPrimaryGroup string
+	failCommand         string
+	failResult          host.Result
+	failErr             error
+	commands            []string
 }
 
 func (executor *restoreStageExecutor) execute(_ context.Context, command host.Command) (host.Result, error) {
@@ -405,8 +435,12 @@ func (executor *restoreStageExecutor) execute(_ context.Context, command host.Co
 	case "useradd":
 		executor.accountCreated = true
 		return host.Result{}, nil
-	case "usermod":
-		return host.Result{}, nil
+	case "id":
+		group := executor.accountPrimaryGroup
+		if group == "" {
+			group = "ikigenba"
+		}
+		return host.Result{Stdout: []byte(group + "\n")}, nil
 	}
 	return host.Result{}, fmt.Errorf("unexpected command %q", text)
 }

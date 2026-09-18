@@ -760,8 +760,12 @@ func ensureRestoreAccount(ctx context.Context, env host.Env) (int, int, error) {
 			return 0, 0, err
 		}
 	}
-	if err := runRestoreCommand(ctx, env, "harden ikigenba account", "usermod", "--home", "/nonexistent", "--shell", "/usr/sbin/nologin", "ikigenba"); err != nil {
-		return 0, 0, err
+	result, err := env.Execute(ctx, host.Command{Name: "id", Args: []string{"--group", "--name", "ikigenba"}})
+	if err != nil || result.ExitCode != 0 {
+		return 0, 0, restoreCommandError("inspect ikigenba primary group", result, err)
+	}
+	if strings.TrimSpace(string(result.Stdout)) != "ikigenba" {
+		return 0, 0, errors.New("ikigenba primary group must be ikigenba")
 	}
 	return uid, gid, nil
 }

@@ -512,9 +512,9 @@ func restoreHostEnv(t *testing.T, root string) host.Env {
 			if reflect.DeepEqual(command.Args, []string{"passwd", "ikigenba"}) {
 				return host.Result{Stdout: []byte(fmt.Sprintf("ikigenba:x:%d:%d::/nonexistent:/usr/sbin/nologin\n", os.Getuid(), os.Getgid()))}, nil
 			}
-		case "usermod":
-			if reflect.DeepEqual(command.Args, []string{"--home", "/nonexistent", "--shell", "/usr/sbin/nologin", "ikigenba"}) {
-				return host.Result{}, nil
+		case "id":
+			if reflect.DeepEqual(command.Args, []string{"--group", "--name", "ikigenba"}) {
+				return host.Result{Stdout: []byte("ikigenba\n")}, nil
 			}
 		}
 		return host.Result{}, fmt.Errorf("unexpected command %q %v", command.Name, command.Args)
