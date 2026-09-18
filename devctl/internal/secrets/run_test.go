@@ -107,7 +107,6 @@ func TestRunHelp(t *testing.T) {
 			}
 		})
 	}
-	// R-TB68-9LEO R-TCE4-ND5D R-W1MO-Y7YK
 }
 
 func TestSecretsSubcommandGrammar(t *testing.T) {
@@ -141,24 +140,20 @@ func TestSecretsSubcommandGrammar(t *testing.T) {
 }
 
 func TestSecretsNeedsSubcommand(t *testing.T) {
-	// R-G3VN-MQ7S
 	assertRunUsageError(t, nil, "secrets needs <subcommand>")
 }
 
 func TestSecretsRejectsUnknownSubcommand(t *testing.T) {
-	// R-G53K-0HYH
 	assertRunUsageError(t, []string{"frobnicate"}, "unknown subcommand 'frobnicate'")
 }
 
 func TestSecretsSubcommandsNeedDomain(t *testing.T) {
-	// R-G6BG-E9P6
 	for _, subcommand := range []string{"push", "list"} {
 		assertRunUsageError(t, []string{subcommand}, "secrets "+subcommand+" needs <domain>")
 	}
 }
 
 func TestSecretsSubcommandsRejectExtraOperands(t *testing.T) {
-	// R-G8R9-5T6K
 	for _, subcommand := range []string{"push", "list"} {
 		assertRunUsageError(t, []string{subcommand, "example.test", "crm", "extra"},
 			"secrets "+subcommand+" takes at most <domain> and <app>")
@@ -166,7 +161,6 @@ func TestSecretsSubcommandsRejectExtraOperands(t *testing.T) {
 }
 
 func TestSecretsRejectsUnknownOptions(t *testing.T) {
-	// R-G9Z5-JKX9
 	for _, args := range [][]string{
 		{"--verbose"},
 		{"push", "--verbose"},

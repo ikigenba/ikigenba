@@ -48,6 +48,49 @@ Exit codes:
 Run 'devctl <command> --help' for details on a command.
 `
 
+const expectedD05Usage = `Usage: devctl --account <name> secrets <subcommand> <domain> [<app>]
+
+Push the values an app's manifest names from this machine's keyring to the
+space's Parameter Store entry, or list which names a space holds. Values are
+never printed.
+
+Subcommands:
+  push <domain> [<app>]   write /ikigenba/<domain>/<app> for one app, or every app
+  list <domain> [<app>]   print the key names held for one app, or every app
+
+Every subcommand needs --account. Run 'devctl secrets <subcommand> --help' for details.
+`
+
+const expectedD05PushUsage = `Usage: devctl --account <name> secrets push <domain> [<app>]
+
+Write the space's Parameter Store entry for an app from this machine's keyring:
+a SecureString at /ikigenba/<domain>/<app> holding a JSON object whose keys are
+the names the app's manifest declares. Each value comes from the environment
+variable of that name, or from the login keyring. Values are never printed.
+
+With <app> omitted, every app in the checkout is written, in name order. Every
+value is gathered before anything is written, so one missing value leaves every
+app's entry as it was.
+
+Arguments:
+  <domain>   the space to write the entry in
+  <app>      one app of the checkout; omitted, every app
+`
+
+const expectedD05ListUsage = `Usage: devctl --account <name> secrets list <domain> [<app>]
+
+Print the key names the space's Parameter Store entry holds for an app: the
+app, then its names sorted and comma-separated, or - when the entry is empty.
+Only names are printed; a value never is.
+
+With <app> omitted, every entry under /ikigenba/<domain>/ is printed, in app
+order, and a space that holds none prints nothing.
+
+Arguments:
+  <domain>   the space to read the entries of
+  <app>      one app the space holds an entry for; omitted, every app
+`
+
 func TestRunReturnsWithoutTerminatingCaller(t *testing.T) {
 	// R-U72C-BSYD
 	file, err := parser.ParseFile(token.NewFileSet(), "run.go", nil, 0)
@@ -214,7 +257,6 @@ func TestCommandsReportMissingSpace(t *testing.T) {
 		{"space", "stop", domain},
 		{"space", "start", domain},
 		{"space", "status", domain},
-		{"secrets", "push", domain},
 		{"deploy", domain},
 		{"restore", domain},
 	} {
@@ -399,6 +441,57 @@ func TestTopLevelHelp(t *testing.T) {
 	for _, option := range []string{"--help", "-h"} {
 		assertResult(t, invoke(option), 0, expectedUsage, "")
 	}
+}
+
+func TestSecretsHelpThroughCLI(t *testing.T) {
+	for _, args := range [][]string{{"secrets", "--help"}, {"secrets", "-h"}} {
+		assertResult(t, invoke(args...), 0, expectedD05Usage, "")
+	}
+	// R-TB68-9LEO
+
+	for _, option := range []string{"--help", "-h"} {
+		assertResult(t, invoke("--account", "work", "secrets", "push", option), 0, expectedD05PushUsage, "")
+	}
+	// R-TCE4-ND5D
+
+	for _, option := range []string{"--help", "-h"} {
+		assertResult(t, invoke("--account", "work", "secrets", "list", option), 0, expectedD05ListUsage, "")
+	}
+	// R-W1MO-Y7YK
+}
+
+func TestSecretsUsageErrorsThroughCLI(t *testing.T) {
+	want := func(message string) string {
+		return "devctl: " + message + "\n\nsee 'devctl secrets --help' for usage\n"
+	}
+
+	assertResult(t, invoke("--account", "work", "secrets"), 2, "", want("secrets needs <subcommand>"))
+	// R-G3VN-MQ7S
+
+	assertResult(t, invoke("--account", "work", "secrets", "frobnicate"), 2, "", want("unknown subcommand 'frobnicate'"))
+	// R-G53K-0HYH
+
+	for _, subcommand := range []string{"push", "list"} {
+		assertResult(t, invoke("--account", "work", "secrets", subcommand), 2, "", want("secrets "+subcommand+" needs <domain>"))
+	}
+	// R-G6BG-E9P6
+
+	for _, subcommand := range []string{"push", "list"} {
+		assertResult(t, invoke("--account", "work", "secrets", subcommand, "example.test", "crm", "extra"), 2, "", want("secrets "+subcommand+" takes at most <domain> and <app>"))
+	}
+	// R-G8R9-5T6K
+
+	for _, args := range [][]string{
+		{"secrets", "--verbose"},
+		{"secrets", "push", "--verbose"},
+		{"secrets", "push", "example.test", "--verbose"},
+		{"secrets", "list", "example.test", "crm", "--verbose"},
+		{"secrets", "push", "--help", "--verbose"},
+	} {
+		fullArgs := append([]string{"--account", "work"}, args...)
+		assertResult(t, invoke(fullArgs...), 2, "", want("unknown option '--verbose'"))
+	}
+	// R-G9Z5-JKX9
 }
 
 func TestDiagnosticStreams(t *testing.T) {

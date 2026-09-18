@@ -11,6 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/account"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
+	"github.com/ikigenba/ikigenba/devctl/internal/secrets"
 )
 
 var version = "v0.1.0"
@@ -104,6 +105,12 @@ func Run(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.Writ
 	if invocation.command == "version" {
 		return runVersion(invocation.arguments, stdout, stderr)
 	}
+	if invocation.command == "secrets" {
+		if !invocation.accountSet && !hasHelp(invocation.arguments) {
+			return usageError(stderr, "--account is required", "devctl secrets --help")
+		}
+		return operationError(stderr, secrets.Run(ctx, invocation.arguments, stdout, deps, invocation.account))
+	}
 	if _, required := accountRequired[invocation.command]; required {
 		if hasHelp(invocation.arguments) {
 			// Command-specific phases replace this with the command's help.
@@ -146,6 +153,19 @@ func spaceDomain(command string, arguments []string) (string, bool) {
 }
 
 func operationError(stderr io.Writer, err error) int {
+	if err == nil {
+		return 0
+	}
+	var coded interface{ ExitCode() int }
+	if errors.As(err, &coded) {
+		detail := ""
+		var detailed interface{ Detail() string }
+		if errors.As(err, &detailed) {
+			detail = detailed.Detail()
+		}
+		writeDiagnostic(stderr, err.Error(), "", detail, false)
+		return coded.ExitCode()
+	}
 	var cloudError *cloud.Error
 	if errors.As(err, &cloudError) {
 		writeDiagnostic(stderr, cloudError.Error(), "", "", false)
