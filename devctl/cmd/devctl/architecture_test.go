@@ -250,6 +250,41 @@ func TestPackageImportBoundaries(t *testing.T) {
 	}
 }
 
+// R-GTHJ-NWSD
+func TestSecretWritesHaveOneOwner(t *testing.T) {
+	secretWrites := make(map[string]int)
+	spaceCreatePushes := 0
+	for _, source := range moduleSources(t) {
+		if strings.HasSuffix(source.path, "_test.go") {
+			continue
+		}
+		ast.Inspect(source.file, func(node ast.Node) bool {
+			selector, ok := node.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			if selector.Sel.Name == "PutSecureParameter" {
+				secretWrites[source.pkgPath]++
+			}
+			if selector.Sel.Name != "Push" || source.pkgPath != modulePath+"/internal/spacecreate" {
+				return true
+			}
+			identifier, ok := selector.X.(*ast.Ident)
+			if ok && source.importPath[identifier.Name] == modulePath+"/internal/secrets" {
+				spaceCreatePushes++
+			}
+			return true
+		})
+	}
+
+	if !reflect.DeepEqual(secretWrites, map[string]int{modulePath + "/internal/secrets": 1}) {
+		t.Fatalf("non-test PutSecureParameter selectors by package = %v, want only internal/secrets", secretWrites)
+	}
+	if spaceCreatePushes != 1 {
+		t.Fatalf("spacecreate calls to secrets.Push = %d, want exactly one", spaceCreatePushes)
+	}
+}
+
 func readRequiredModulePaths(t *testing.T) []string {
 	t.Helper()
 	contents, err := os.ReadFile(filepath.Join(moduleRoot(t), "go.mod"))
