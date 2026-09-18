@@ -266,3 +266,203 @@ func openValue(t *testing.T, value string) (*Account, error) {
 	}
 	return account, err
 }
+
+type fakeEC2 struct {
+	instances []cloud.Instance
+	err       error
+}
+
+func (f *fakeEC2) ListSpaceInstances(context.Context) ([]cloud.Instance, error) {
+	return f.instances, f.err
+}
+func (*fakeEC2) DescribeInstance(context.Context, string) (cloud.Instance, error) {
+	return cloud.Instance{}, nil
+}
+func (*fakeEC2) RunInstance(context.Context, cloud.LaunchSpec) (cloud.Instance, error) {
+	return cloud.Instance{}, nil
+}
+func (*fakeEC2) StartInstance(context.Context, string) error                 { return nil }
+func (*fakeEC2) StopInstance(context.Context, string) error                  { return nil }
+func (*fakeEC2) TerminateInstance(context.Context, string) error             { return nil }
+func (*fakeEC2) InstanceChecksPassed(context.Context, string) (bool, error)  { return false, nil }
+func (*fakeEC2) ListSpaceAddresses(context.Context) ([]cloud.Address, error) { return nil, nil }
+func (*fakeEC2) AllocateAddress(context.Context, string) (cloud.Address, error) {
+	return cloud.Address{}, nil
+}
+func (*fakeEC2) AssociateAddress(context.Context, string, string) error { return nil }
+func (*fakeEC2) DisassociateAddress(context.Context, string) error      { return nil }
+func (*fakeEC2) ReleaseAddress(context.Context, string) error           { return nil }
+
+type fakeRoute53 struct {
+	zones      []cloud.Zone
+	records    []cloud.Record
+	err        error
+	recordZone string
+}
+
+func (f *fakeRoute53) ListZones(context.Context) ([]cloud.Zone, error) { return f.zones, f.err }
+func (f *fakeRoute53) ListRecords(_ context.Context, zoneID string) ([]cloud.Record, error) {
+	f.recordZone = zoneID
+	return f.records, f.err
+}
+func (*fakeRoute53) ChangeRecords(context.Context, string, []cloud.RecordChange) (string, error) {
+	return "", nil
+}
+func (*fakeRoute53) ChangeStatus(context.Context, string) (cloud.ChangeStatus, error) {
+	return "", nil
+}
+
+type fakeSTS struct {
+	id  string
+	err error
+}
+
+func (f *fakeSTS) CallerAccountID(context.Context) (string, error) { return f.id, f.err }
+
+func TestAccountShapeAndCallerAccountID(t *testing.T) {
+	// R-Z6TI-DDTY
+	assertFields(t, reflect.TypeOf(Account{}), []fieldSpec{
+		{"Profile", reflect.TypeFor[string]()},
+		{"Properties", reflect.TypeFor[Properties]()},
+		{"Clients", reflect.TypeFor[cloud.Clients]()},
+	})
+	var _ interface {
+		CallerAccountID(context.Context) (string, error)
+		Zone(context.Context, string) (cloud.Zone, error)
+		Delegation(context.Context, cloud.Zone, string) (string, error)
+		Spaces(context.Context) ([]Space, error)
+		Space(context.Context, string) (Space, error)
+	} = (*Account)(nil)
+
+	// R-ZK8E-KUZL
+	wantErr := errors.New("identity failed")
+	for _, tc := range []struct {
+		name string
+		sts  *fakeSTS
+	}{
+		{"success", &fakeSTS{id: "123456789012"}},
+		{"error", &fakeSTS{err: wantErr}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := (&Account{Clients: cloud.Clients{STS: tc.sts}}).CallerAccountID(context.Background())
+			if got != tc.sts.id || !errors.Is(err, tc.sts.err) {
+				t.Fatalf("CallerAccountID = %q, %v", got, err)
+			}
+		})
+	}
+}
+
+func TestSpaces(t *testing.T) {
+	// R-TH13-SW5F
+	ec2 := &fakeEC2{instances: []cloud.Instance{
+		{ID: "i-z", Space: "z.example", State: cloud.StateStopped, Address: "192.0.2.2"},
+		{ID: "i-dead", Space: "a.example", State: cloud.StateTerminated},
+		{ID: "i-a", Space: "a.example", State: cloud.StateRunning, Address: "192.0.2.1"},
+	}}
+	account := &Account{Clients: cloud.Clients{EC2: ec2}}
+	got, err := account.Spaces(context.Background())
+	want := []Space{
+		{Domain: "a.example", ID: "i-a", State: cloud.StateRunning, Address: "192.0.2.1"},
+		{Domain: "z.example", ID: "i-z", State: cloud.StateStopped, Address: "192.0.2.2"},
+	}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("Spaces = %#v, %v; want %#v", got, err, want)
+	}
+
+	ec2.instances = nil
+	got, err = account.Spaces(context.Background())
+	if err != nil || len(got) != 0 {
+		t.Fatalf("empty Spaces = %#v, %v", got, err)
+	}
+
+	ec2.instances = []cloud.Instance{
+		{ID: "i-1", Space: "duplicate.example", State: cloud.StateRunning},
+		{ID: "i-2", Space: "duplicate.example", State: cloud.StateStopped},
+	}
+	if _, err = account.Spaces(context.Background()); err == nil || !strings.Contains(err.Error(), "duplicate.example") {
+		t.Fatalf("duplicate Spaces error = %v", err)
+	}
+
+	ec2.err = errors.New("list failed")
+	if _, err = account.Spaces(context.Background()); !errors.Is(err, ec2.err) {
+		t.Fatalf("Spaces error = %v", err)
+	}
+}
+
+func TestSpace(t *testing.T) {
+	// R-ZFCT-1S0T
+	ec2 := &fakeEC2{instances: []cloud.Instance{{ID: "i-1", Space: "app.example", State: cloud.StateRunning}}}
+	account := &Account{Clients: cloud.Clients{EC2: ec2}}
+	got, err := account.Space(context.Background(), "app.example")
+	if err != nil || got.ID != "i-1" {
+		t.Fatalf("Space = %#v, %v", got, err)
+	}
+
+	_, err = account.Space(context.Background(), "missing.example")
+	var noSpace *NoSpaceError
+	if !errors.As(err, &noSpace) || noSpace.Domain != "missing.example" {
+		t.Fatalf("missing Space error = %#v", err)
+	}
+
+	ec2.instances = append(ec2.instances, cloud.Instance{ID: "i-2", Space: "app.example", State: cloud.StateStopped})
+	if _, err = account.Space(context.Background(), "app.example"); err == nil || !strings.Contains(err.Error(), "app.example") {
+		t.Fatalf("duplicate Space error = %v", err)
+	}
+}
+
+func TestZone(t *testing.T) {
+	// R-ZGKP-FJRI
+	route53 := &fakeRoute53{zones: []cloud.Zone{
+		{ID: "broad", Name: "example"},
+		{ID: "wrong-boundary", Name: "ample.example"},
+		{ID: "specific", Name: "dev.example"},
+	}}
+	account := &Account{Clients: cloud.Clients{Route53: route53}}
+	got, err := account.Zone(context.Background(), "api.dev.example")
+	if err != nil || got.ID != "specific" {
+		t.Fatalf("Zone = %#v, %v", got, err)
+	}
+
+	got, err = account.Zone(context.Background(), "dev.example")
+	if err != nil || got.ID != "specific" {
+		t.Fatalf("exact Zone = %#v, %v", got, err)
+	}
+
+	_, err = account.Zone(context.Background(), "notexample")
+	var noZone *NoZoneError
+	if !errors.As(err, &noZone) || noZone.Domain != "notexample" {
+		t.Fatalf("missing Zone error = %#v", err)
+	}
+
+	route53.err = errors.New("zones failed")
+	if _, err = account.Zone(context.Background(), "dev.example"); !errors.Is(err, route53.err) {
+		t.Fatalf("Zone error = %v", err)
+	}
+}
+
+func TestDelegation(t *testing.T) {
+	// R-ZJ0I-738W
+	route53 := &fakeRoute53{records: []cloud.Record{
+		{Name: "example", Type: "NS"},
+		{Name: "dev.example", Type: "A"},
+		{Name: "dev.example", Type: "NS"},
+		{Name: "api.dev.example", Type: "NS"},
+		{Name: "notapi.dev.example", Type: "NS"},
+	}}
+	account := &Account{Clients: cloud.Clients{Route53: route53}}
+	zone := cloud.Zone{ID: "Z123", Name: "example"}
+	got, err := account.Delegation(context.Background(), zone, "host.api.dev.example")
+	if err != nil || got != "api.dev.example" || route53.recordZone != "Z123" {
+		t.Fatalf("Delegation = %q, %v; zone = %q", got, err, route53.recordZone)
+	}
+
+	got, err = account.Delegation(context.Background(), zone, "other.example")
+	if err != nil || got != "" {
+		t.Fatalf("empty Delegation = %q, %v", got, err)
+	}
+
+	route53.err = errors.New("records failed")
+	if _, err = account.Delegation(context.Background(), zone, "host.api.dev.example"); !errors.Is(err, route53.err) {
+		t.Fatalf("Delegation error = %v", err)
+	}
+}
