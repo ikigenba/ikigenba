@@ -9,6 +9,7 @@ import (
 	"go/token"
 	"io"
 	"net"
+	"net/http"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -188,8 +189,28 @@ func TestRunPortNumberGrammar(t *testing.T) {
 
 	valid := []string{"1", "9", "10", "3000", "9999", "10000", "65535"}
 	for _, port := range valid {
-		if !isPortNumber(port) {
-			t.Errorf("isPortNumber(%q) = false, want true", port)
+		var stdout bytes.Buffer
+		var stderr recordingWriter
+		listenCalls := 0
+		var network, address string
+		exit := Run(context.Background(), Process{
+			LookupEnv: mapLookup(map[string]string{"PORT": port}),
+			Stdout:    &stdout,
+			Stderr:    &stderr,
+			Listen: func(gotNetwork, gotAddress string) (net.Listener, error) {
+				listenCalls++
+				network, address = gotNetwork, gotAddress
+				return nil, errors.New("observed accepted port")
+			},
+		})
+		if exit != ExitServerFailed {
+			t.Errorf("PORT %q: Run exit = %d, want ExitServerFailed after bind attempt", port, exit)
+		}
+		if listenCalls != 1 || network != "tcp" || address != net.JoinHostPort("127.0.0.1", port) {
+			t.Errorf("PORT %q: Listen calls = %d with %q, %q; want one TCP bind attempt", port, listenCalls, network, address)
+		}
+		if stdout.Len() != 0 {
+			t.Errorf("PORT %q: stdout = %q, want empty", port, stdout.String())
 		}
 	}
 
@@ -198,13 +219,6 @@ func TestRunPortNumberGrammar(t *testing.T) {
 		"+1", "-1", " 1", "1 ", "1\n", "1.0", "1a", "１２",
 	}
 	for _, port := range invalid {
-		if isPortNumber(port) {
-			t.Errorf("isPortNumber(%q) = true, want false", port)
-		}
-		if port == "" {
-			continue
-		}
-
 		var stdout bytes.Buffer
 		var stderr recordingWriter
 		listenCalls := 0
@@ -224,6 +238,9 @@ func TestRunPortNumberGrammar(t *testing.T) {
 			t.Errorf("PORT %q: stdout = %q, want empty", port, stdout.String())
 		}
 		want := "dummy: PORT is '" + port + "', not a port number\n"
+		if port == "" {
+			want = "dummy: PORT is not set\n"
+		}
 		if stderr.String() != want {
 			t.Errorf("PORT %q: stderr = %q, want %q", port, stderr.String(), want)
 		}
@@ -238,13 +255,31 @@ func TestRunPortNumberGrammar(t *testing.T) {
 
 // R-ZQ4M-PJ7J
 func TestRunHandsValidPortToServer(t *testing.T) {
-	t.Parallel()
+	originalServe, originalHandler := serve, serverHandler
+	t.Cleanup(func() {
+		serve, serverHandler = originalServe, originalHandler
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	t.Cleanup(cancel)
 	listener := newBlockingListener()
 	listenCalls := 0
 	var network, address string
+	handler := http.NewServeMux()
+	handlerCalls := 0
+	serverHandler = func() http.Handler {
+		handlerCalls++
+		return handler
+	}
+	serveCalls := 0
+	var gotCtx context.Context
+	var gotListener net.Listener
+	var gotHandler http.Handler
+	serve = func(callCtx context.Context, callListener net.Listener, callHandler http.Handler) error {
+		serveCalls++
+		gotCtx, gotListener, gotHandler = callCtx, callListener, callHandler
+		return callListener.Close()
+	}
 	var stdout, stderr bytes.Buffer
 	exit := Run(ctx, Process{
 		LookupEnv: mapLookup(map[string]string{"PORT": "65535"}),
@@ -262,37 +297,57 @@ func TestRunHandsValidPortToServer(t *testing.T) {
 	if listenCalls != 1 || network != "tcp" || address != "127.0.0.1:65535" {
 		t.Errorf("Listen calls = %d with %q, %q; want one with tcp, 127.0.0.1:65535", listenCalls, network, address)
 	}
+	if serveCalls != 1 {
+		t.Errorf("Serve calls = %d, want 1", serveCalls)
+	}
+	if gotCtx != ctx {
+		t.Error("Serve did not receive Run's context")
+	}
+	if gotListener != listener {
+		t.Error("Serve did not receive the listener returned by Listen")
+	}
+	if handlerCalls != 1 || gotHandler != handler {
+		t.Errorf("Handler calls = %d and Serve handler = %T; want one call and its returned handler", handlerCalls, gotHandler)
+	}
 	if stdout.Len() != 0 || stderr.Len() != 0 {
 		t.Errorf("stdout = %q, stderr = %q; want both empty", stdout.String(), stderr.String())
 	}
 
-	path := filepath.Join(projectRoot(t), "internal", "cli", "run.go")
-	parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("parse %s: %v", path, err)
+		t.Fatalf("probe free port: %v", err)
 	}
-	serveCalls := 0
-	ast.Inspect(parsed, func(node ast.Node) bool {
-		call, ok := node.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		selector, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		packageName, packageOK := selector.X.(*ast.Ident)
-		if !packageOK || packageName.Name != "server" || selector.Sel.Name != "Serve" {
-			return true
-		}
-		serveCalls++
-		if len(call.Args) != 3 || !isIdentifier(call.Args[0], "ctx") || !isIdentifier(call.Args[1], "ln") || !isServerHandlerCall(call.Args[2]) {
-			t.Errorf("server.Serve must be called as server.Serve(ctx, ln, server.Handler())")
-		}
-		return true
+	port := strconv.Itoa(probe.Addr().(*net.TCPAddr).Port)
+	if err = probe.Close(); err != nil {
+		t.Fatalf("close port probe: %v", err)
+	}
+	serveCalls, handlerCalls = 0, 0
+	gotCtx, gotListener, gotHandler = nil, nil, nil
+	var listeningAddr net.Addr
+	exit = Run(ctx, Process{
+		LookupEnv: mapLookup(map[string]string{"PORT": port}),
+		Stdout:    &stdout,
+		Stderr:    &stderr,
+		Listening: func(addr net.Addr) { listeningAddr = addr },
 	})
-	if serveCalls != 1 {
-		t.Errorf("server.Serve calls in Run implementation = %d, want 1", serveCalls)
+	if exit != ExitSuccess {
+		t.Fatalf("Run with nil Listen exit = %d, want ExitSuccess", exit)
+	}
+	if serveCalls != 1 || handlerCalls != 1 || gotCtx != ctx || gotListener == nil || gotHandler != handler {
+		t.Errorf("nil Listen path called Serve %d and Handler %d times with context match %t, listener %v, handler match %t", serveCalls, handlerCalls, gotCtx == ctx, gotListener, gotHandler == handler)
+	}
+	if _, ok := gotListener.(*net.TCPListener); !ok {
+		t.Errorf("nil Listen produced listener %T, want *net.TCPListener from net.Listen", gotListener)
+	}
+	if listeningAddr == nil {
+		t.Fatal("nil Listen path did not report its bound address")
+	}
+	_, gotPort, splitErr := net.SplitHostPort(listeningAddr.String())
+	if splitErr != nil {
+		t.Fatalf("split listening address: %v", splitErr)
+	}
+	if gotPort != port {
+		t.Errorf("nil Listen bound port = %s, want %s", gotPort, port)
 	}
 }
 
@@ -579,24 +634,6 @@ func mapLookup(environment map[string]string) func(string) (string, bool) {
 		value, ok := environment[key]
 		return value, ok
 	}
-}
-
-func isIdentifier(expression ast.Expr, name string) bool {
-	identifier, ok := expression.(*ast.Ident)
-	return ok && identifier.Name == name
-}
-
-func isServerHandlerCall(expression ast.Expr) bool {
-	call, ok := expression.(*ast.CallExpr)
-	if !ok || len(call.Args) != 0 {
-		return false
-	}
-	selector, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok || selector.Sel.Name != "Handler" {
-		return false
-	}
-	packageName, ok := selector.X.(*ast.Ident)
-	return ok && packageName.Name == "server"
 }
 
 type recordingWriter struct {
