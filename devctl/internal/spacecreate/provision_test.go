@@ -180,16 +180,15 @@ func (h *provisionHarness) preflight() preflightResult {
 
 func (h *provisionHarness) deps() seam.Deps {
 	return seam.Deps{Dir: ".", Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
+		if command.Path == "curl" {
+			return seam.Result{Stdout: []byte(`[{"tag_name":"opsctl/v9.8.7","published_at":"2026-09-17T00:00:00Z","assets":[{"name":"install.sh","browser_download_url":"https://downloads.example/opsctl-install.sh"}]}]`)}, nil
+		}
 		h.sshTargets++
 		if len(command.Args) < 7 || command.Args[6] != "ec2-user@"+provisionAddress {
 			h.wrongSSHTarget = true
 		}
 		if err := h.operation("ssh"); err != nil {
 			return seam.Result{}, err
-		}
-		logical := command.Args[len(command.Args)-1]
-		if strings.Contains(logical, "opsctl-install.sh") {
-			return seam.Result{Stdout: []byte("opsctl v9.8.7\n")}, nil
 		}
 		return seam.Result{}, nil
 	}}

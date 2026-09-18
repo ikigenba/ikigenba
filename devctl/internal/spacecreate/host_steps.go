@@ -43,11 +43,11 @@ func RunHostSteps(
 	if err != nil {
 		return err
 	}
-	config := hostConfig(acct, domain, zone, acmeEmail)
-	if err := hostsetup.Configure(ctx, target, config); err != nil {
+	configured, err := hostsetup.Configure(ctx, target, acct.Properties, zone, domain, &acmeEmail)
+	if err != nil {
 		return err
 	}
-	space.Step(stdout, "opsctl", version+" installed, 10 keys set")
+	space.Step(stdout, "opsctl", fmt.Sprintf("%s installed, %d keys set", version, configured))
 
 	if !acct.Properties.DeleteBackupsOnDestroy {
 		prefix := domain + "/host/"
@@ -66,10 +66,11 @@ func RunHostSteps(
 			if err != nil {
 				return err
 			}
-			if err := hostsetup.Configure(ctx, target, config); err != nil {
+			configured, err := hostsetup.Configure(ctx, target, acct.Properties, zone, domain, &acmeEmail)
+			if err != nil {
 				return err
 			}
-			space.Step(stdout, "restore", selected+", 10 keys set again")
+			space.Step(stdout, "restore", fmt.Sprintf("%s, %d keys set again", selected, configured))
 		}
 	}
 
@@ -78,21 +79,6 @@ func RunHostSteps(
 	}
 	space.Step(stdout, "init", "")
 	return nil
-}
-
-func hostConfig(acct *account.Account, domain string, zone cloud.Zone, acmeEmail string) hostsetup.Config {
-	return hostsetup.Config{
-		Domain:                    domain,
-		ZoneName:                  zone.Name,
-		ZoneID:                    zone.ID,
-		Region:                    acct.Properties.Region,
-		BackupBucket:              acct.Properties.BackupBucket,
-		ACMEEmail:                 acmeEmail,
-		BackupHostFilesSeconds:    acct.Properties.BackupHostFilesSeconds,
-		BackupServiceFilesSeconds: acct.Properties.BackupServiceFilesSeconds,
-		BackupServiceDBSeconds:    acct.Properties.BackupServiceDBSeconds,
-		BackupServiceWALSeconds:   acct.Properties.BackupServiceWALSeconds,
-	}
 }
 
 func selectedBackup(output, domain string) (string, error) {

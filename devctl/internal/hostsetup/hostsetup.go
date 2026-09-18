@@ -2,64 +2,75 @@ package hostsetup
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"strings"
 
+	"github.com/ikigenba/ikigenba/devctl/internal/account"
+	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/host"
 )
 
-const installLatestScript = `installer=$(mktemp) && trap 'rm -f "$installer"' EXIT && curl --fail --silent --show-error --location --output "$installer" https://github.com/ikigenba/ikigenba/releases/latest/download/opsctl-install.sh && sh "$installer" && opsctl version`
-
-// Config is the complete devctl-owned configuration of an opsctl host.
-type Config struct {
-	Domain                    string
-	ZoneName                  string
-	ZoneID                    string
-	Region                    string
-	BackupBucket              string
-	ACMEEmail                 string
-	BackupHostFilesSeconds    int
-	BackupServiceFilesSeconds int
-	BackupServiceDBSeconds    int
-	BackupServiceWALSeconds   int
-}
-
-// InstallLatest installs the release selected by the published latest-release
-// interface and returns the version reported by the installed binary.
+// InstallLatest discovers and installs the newest published opsctl release.
 func InstallLatest(ctx context.Context, target host.Host) (string, error) {
-	output, err := target.Sudo(ctx, "opsctl", "sh", "-c", installLatestScript)
+	release, err := Latest(ctx, target.Deps)
 	if err != nil {
 		return "", err
 	}
-	fields := strings.Fields(output.Stdout)
-	if len(fields) == 0 {
-		return "", fmt.Errorf("opsctl install returned no version")
+	if _, err := target.Run(ctx, "opsctl", "curl", "-fsSL", "-o", InstallerPath, release.InstallerURL); err != nil {
+		return "", err
 	}
-	return fields[len(fields)-1], nil
+	if _, err := target.Sudo(ctx, "opsctl", "bash", InstallerPath, release.Version); err != nil {
+		return "", err
+	}
+	return release.Version, nil
 }
 
-// Configure sets the ten keys devctl owns, preserving every other host key.
-func Configure(ctx context.Context, target host.Host, config Config) error {
-	values := []struct {
+// Upgrade installs the requested opsctl release using the saved installer.
+func Upgrade(ctx context.Context, target host.Host, version string) error {
+	_, err := target.Sudo(ctx, "opsctl", "bash", SavedInstaller, version)
+	return err
+}
+
+// Version returns the version text reported by the installed opsctl binary.
+func Version(ctx context.Context, target host.Host) (string, error) {
+	output, err := target.Sudo(ctx, "opsctl", "opsctl", "version")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(output.Stdout, "\r\n"), nil
+}
+
+// Configure sets the host keys devctl owns, preserving every other host key.
+func Configure(
+	ctx context.Context,
+	target host.Host,
+	props account.Properties,
+	zone cloud.Zone,
+	domain string,
+	email *string,
+) (int, error) {
+	type setting struct {
 		key   string
 		value string
-	}{
-		{"host.name", config.Domain},
-		{"dns.provider", "route53"},
-		{"dns.zones", config.ZoneName + ":" + config.ZoneID},
-		{"aws.region", config.Region},
-		{"backup.s3_uri", "s3://" + config.BackupBucket + "/" + config.Domain + "/"},
-		{"acme.email", config.ACMEEmail},
-		{"backup.host_files_seconds", strconv.Itoa(config.BackupHostFilesSeconds)},
-		{"backup.service_files_seconds", strconv.Itoa(config.BackupServiceFilesSeconds)},
-		{"backup.service_db_seconds", strconv.Itoa(config.BackupServiceDBSeconds)},
-		{"backup.service_wal_seconds", strconv.Itoa(config.BackupServiceWALSeconds)},
 	}
-	for _, item := range values {
+	values := []setting{
+		{"host.name", domain},
+		{"dns.provider", DNSProvider},
+		{"dns.zones", zone.Name + ":" + zone.ID},
+		{"aws.region", props.Region},
+		{"backup.s3_uri", "s3://" + props.BackupBucket + "/" + domain + "/"},
+		{"backup.host_files_seconds", strconv.Itoa(props.BackupHostFilesSeconds)},
+		{"backup.service_files_seconds", strconv.Itoa(props.BackupServiceFilesSeconds)},
+		{"backup.service_db_seconds", strconv.Itoa(props.BackupServiceDBSeconds)},
+		{"backup.service_wal_seconds", strconv.Itoa(props.BackupServiceWALSeconds)},
+	}
+	if email != nil {
+		values = append(values, setting{"acme.email", *email})
+	}
+	for i, item := range values {
 		if _, err := target.Sudo(ctx, "opsctl", "opsctl", "config", "set", item.key, item.value); err != nil {
-			return err
+			return i, err
 		}
 	}
-	return nil
+	return len(values), nil
 }

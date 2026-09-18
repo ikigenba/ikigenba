@@ -43,7 +43,9 @@ func TestRunHostStepsReadinessInstallAndEmptyRestore(t *testing.T) {
 		"checks " + hostStepID,
 		"ssh 'true'",
 		"ssh 'sudo' 'cloud-init' 'status' '--wait'",
-		"ssh 'sudo' 'sh' '-c'",
+		"curl releases",
+		"ssh 'curl' '-fsSL' '-o' '/tmp/opsctl-install' 'https://downloads.example/opsctl-install.sh'",
+		"ssh 'sudo' 'bash' '/tmp/opsctl-install' 'v9.8.7'",
 		"list account-backups " + hostStepDomain + "/host/",
 		"ssh 'sudo' 'opsctl' 'init'",
 	} {
@@ -193,11 +195,13 @@ func newHostStepHarness(deleteBackups bool, objects []cloud.Object) *hostStepHar
 
 func (h *hostStepHarness) deps() seam.Deps {
 	return seam.Deps{Dir: ".", Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
+		if command.Path == "curl" {
+			h.operations = append(h.operations, "curl releases")
+			return seam.Result{Stdout: []byte(`[{"tag_name":"opsctl/v9.8.7","published_at":"2026-09-17T00:00:00Z","assets":[{"name":"install.sh","browser_download_url":"https://downloads.example/opsctl-install.sh"}]}]`)}, nil
+		}
 		logical := command.Args[len(command.Args)-1]
 		h.operations = append(h.operations, "ssh "+logical)
 		switch {
-		case strings.Contains(logical, "opsctl-install.sh"):
-			return seam.Result{Stdout: []byte("opsctl v9.8.7\n")}, nil
 		case strings.Contains(logical, "'config' 'set'"):
 			h.configureCalls++
 			if h.configureCalls == h.failConfigureAt {
