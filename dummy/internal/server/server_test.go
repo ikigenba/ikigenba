@@ -27,7 +27,11 @@ func TestServeSignature(t *testing.T) {
 // R-QLRL-RC1B R-QMZI-53S0
 func TestServeAnswersHTTPAndDrainsAcceptedRequests(t *testing.T) {
 	listener := listenLoopback(t)
-	tracked := &trackingListener{Listener: listener, closed: make(chan struct{})}
+	tracked := &trackingListener{
+		Listener: listener,
+		accepted: make(chan struct{}, 2),
+		closed:   make(chan struct{}),
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	requestStarted := make(chan struct{})
 	finishResponse := make(chan struct{})
@@ -57,6 +61,7 @@ func TestServeAnswersHTTPAndDrainsAcceptedRequests(t *testing.T) {
 		responseResult <- response
 	}()
 	<-requestStarted
+	<-tracked.accepted
 
 	select {
 	case err := <-serveResult:
@@ -65,20 +70,13 @@ func TestServeAnswersHTTPAndDrainsAcceptedRequests(t *testing.T) {
 	}
 
 	idleConn := dialListener(t, listener)
+	<-tracked.accepted
 	cancel()
 	<-tracked.closed
 	if connection, err := net.Dial("tcp", listener.Addr().String()); err == nil {
 		_ = connection.Close()
 		t.Error("listener accepted a new connection after cancellation")
 	}
-	if err := idleConn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
-		t.Fatalf("set idle connection deadline: %v", err)
-	}
-	buffer := make([]byte, 1)
-	if _, err := idleConn.Read(buffer); err == nil {
-		t.Error("idle connection remained open after cancellation")
-	}
-	_ = idleConn.Close()
 	select {
 	case err := <-serveResult:
 		t.Fatalf("Serve returned before accepted response completed: %v", err)
@@ -104,6 +102,17 @@ func TestServeAnswersHTTPAndDrainsAcceptedRequests(t *testing.T) {
 	if err = <-serveResult; err != nil {
 		t.Errorf("Serve after cancellation = %v, want nil", err)
 	}
+	if err = idleConn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatalf("set idle connection deadline: %v", err)
+	}
+	buffer := make([]byte, 1)
+	var netErr net.Error
+	if _, err = idleConn.Read(buffer); err == nil {
+		t.Error("idle connection remained open after Serve returned")
+	} else if errors.As(err, &netErr) && netErr.Timeout() {
+		t.Error("Serve returned before closing the idle connection")
+	}
+	_ = idleConn.Close()
 }
 
 // R-QO7E-IVIP
@@ -170,7 +179,16 @@ func dialListener(t *testing.T, listener net.Listener) net.Conn {
 
 type trackingListener struct {
 	net.Listener
-	closed chan struct{}
+	accepted chan struct{}
+	closed   chan struct{}
+}
+
+func (l *trackingListener) Accept() (net.Conn, error) {
+	connection, err := l.Listener.Accept()
+	if err == nil {
+		l.accepted <- struct{}{}
+	}
+	return connection, err
 }
 
 func (l *trackingListener) Close() error {

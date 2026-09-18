@@ -675,6 +675,54 @@ func TestRunBindsServesSilentlyAndDrainsOnCancellation(t *testing.T) {
 	}
 }
 
+// R-ICZ1-6UGJ
+func TestRunUsesNetListenWhenFactoryIsNil(t *testing.T) {
+	originalServe, originalHandler := serve, serverHandler
+	t.Cleanup(func() {
+		serve, serverHandler = originalServe, originalHandler
+	})
+
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("probe free port: %v", err)
+	}
+	port := strconv.Itoa(probe.Addr().(*net.TCPAddr).Port)
+	if err = probe.Close(); err != nil {
+		t.Fatalf("close port probe: %v", err)
+	}
+
+	wantHandler := http.NewServeMux()
+	serverHandler = func() http.Handler { return wantHandler }
+	var servedListener net.Listener
+	serve = func(_ context.Context, listener net.Listener, handler http.Handler) error {
+		servedListener = listener
+		if handler != wantHandler {
+			t.Errorf("Serve handler = %T, want configured handler", handler)
+		}
+		return listener.Close()
+	}
+	var listeningAddr net.Addr
+	exit := Run(context.Background(), Process{
+		LookupEnv: mapLookup(map[string]string{"PORT": port}),
+		Stdout:    io.Discard,
+		Stderr:    io.Discard,
+		Listening: func(addr net.Addr) { listeningAddr = addr },
+	})
+	if exit != ExitSuccess {
+		t.Fatalf("Run exit = %d, want ExitSuccess", exit)
+	}
+	if _, ok := servedListener.(*net.TCPListener); !ok {
+		t.Fatalf("listener = %T, want *net.TCPListener from net.Listen", servedListener)
+	}
+	wantAddress := net.JoinHostPort("127.0.0.1", port)
+	if got := servedListener.Addr().String(); got != wantAddress {
+		t.Errorf("bound address = %q, want %q", got, wantAddress)
+	}
+	if listeningAddr != servedListener.Addr() {
+		t.Errorf("Listening address = %v, want listener Addr %v", listeningAddr, servedListener.Addr())
+	}
+}
+
 // R-QUAW-FQ86
 func TestRunReportsExactBindErrorAndLeavesHolderListening(t *testing.T) {
 	holder, err := net.Listen("tcp", "127.0.0.1:0")
