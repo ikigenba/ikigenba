@@ -23,7 +23,7 @@ const (
 )
 
 func TestProvisionCreatesResourcesInOrderAndUsesElasticIP(t *testing.T) {
-	// R-YGKW-FHP7 R-YHSS-T9FW R-E9WN-IVFN R-EB4J-WN6C R-ECCG-AEX1 R-EIFY-79MI R-YTZS-MYUU
+	// R-H6QO-UMYZ R-YHSS-T9FW R-E9WN-IVFN R-EB4J-WN6C R-ECCG-AEX1 R-EIFY-79MI R-YTZS-MYUU
 	h := newProvisionHarness()
 	var stdout bytes.Buffer
 	err := beginProvisioning(context.Background(), &stdout, h.deps(), invocation{
@@ -47,10 +47,11 @@ func TestProvisionCreatesResourcesInOrderAndUsesElasticIP(t *testing.T) {
 	if h.profileName != roleName || h.addProfile != roleName || h.addRole != roleName {
 		t.Fatalf("profile calls = create %q add (%q, %q)", h.profileName, h.addProfile, h.addRole)
 	}
-	if h.launchSpec != (cloud.LaunchSpec{
+	wantLaunchSpec := cloud.LaunchSpec{
 		LaunchTemplateID: "lt-123", InstanceProfile: roleName, Space: provisionDomain,
-	}) {
-		t.Fatalf("launch spec = %#v", h.launchSpec)
+	}
+	if h.launchReadySpec != wantLaunchSpec || h.launchSpec != wantLaunchSpec {
+		t.Fatalf("launch-ready spec = %#v, run spec = %#v, want %#v", h.launchReadySpec, h.launchSpec, wantLaunchSpec)
 	}
 	if !reflect.DeepEqual(h.describeInstanceIDs, []string{provisionID}) {
 		t.Fatalf("describe instance IDs = %v, want [%s]", h.describeInstanceIDs, provisionID)
@@ -71,13 +72,13 @@ func TestProvisionCreatesResourcesInOrderAndUsesElasticIP(t *testing.T) {
 
 	wantPrefix := []string{
 		"create-role", "put-role-policy", "create-instance-profile", "add-role-to-profile",
-		"run-instance", "describe-instance", "allocate-address", "associate-address", "change-records", "change-status",
+		"launch-ready", "run-instance", "describe-instance", "allocate-address", "associate-address", "change-records", "change-status",
 		"checks", "ssh",
 	}
 	if len(h.operations) < len(wantPrefix) || !reflect.DeepEqual(h.operations[:len(wantPrefix)], wantPrefix) {
 		t.Fatalf("operation prefix = %v, want %v", h.operations, wantPrefix)
 	}
-	for _, operation := range []string{"create-role", "put-role-policy", "create-instance-profile", "add-role-to-profile", "run-instance", "allocate-address", "associate-address", "change-records"} {
+	for _, operation := range []string{"create-role", "put-role-policy", "create-instance-profile", "add-role-to-profile", "launch-ready", "run-instance", "allocate-address", "associate-address", "change-records"} {
 		if countProvisionOperations(h.operations, operation) != 1 {
 			t.Errorf("%s calls = %d, want 1", operation, countProvisionOperations(h.operations, operation))
 		}
@@ -102,11 +103,33 @@ func TestProvisionCreatesResourcesInOrderAndUsesElasticIP(t *testing.T) {
 	}
 }
 
+func TestProvisionWaitsForLaunchReadinessBeforeReportingRole(t *testing.T) {
+	// R-H6QO-UMYZ
+	h := newProvisionHarness()
+	h.failAt = "launch-ready"
+	var stdout bytes.Buffer
+	err := provision(context.Background(), &stdout, h.deps(), invocation{
+		domain: provisionDomain, acmeEmail: "ops@ikigenba.dev",
+	}, h.preflight())
+	if !errors.Is(err, errProvisionTest) {
+		t.Fatalf("provision() error = %v, want unchanged sentinel", err)
+	}
+	wantOperations := []string{
+		"create-role", "put-role-policy", "create-instance-profile", "add-role-to-profile", "launch-ready",
+	}
+	if !reflect.DeepEqual(h.operations, wantOperations) {
+		t.Fatalf("operations = %v, want %v", h.operations, wantOperations)
+	}
+	if strings.Contains(stdout.String(), "role: ok") {
+		t.Fatalf("stdout = %q, must not report role before launch readiness", stdout.String())
+	}
+}
+
 func TestProvisionFailuresStopWithoutRollback(t *testing.T) {
 	// R-E9WN-IVFN R-EIFY-79MI
 	stages := []string{
 		"create-role", "put-role-policy", "create-instance-profile", "add-role-to-profile",
-		"run-instance", "describe-instance", "allocate-address", "associate-address",
+		"launch-ready", "run-instance", "describe-instance", "allocate-address", "associate-address",
 		"change-records", "change-status", "checks", "ssh",
 	}
 	for failIndex, failAt := range stages {
@@ -146,6 +169,7 @@ type provisionHarness struct {
 	profileName         string
 	addProfile          string
 	addRole             string
+	launchReadySpec     cloud.LaunchSpec
 	launchSpec          cloud.LaunchSpec
 	describeInstanceIDs []string
 	allocateSpace       string
@@ -245,6 +269,13 @@ func (f provisionIAM) DeleteRole(context.Context, string) error {
 type provisionEC2 struct{ h *provisionHarness }
 
 func (provisionEC2) ListSpaceInstances(context.Context) ([]cloud.Instance, error) { return nil, nil }
+func (f provisionEC2) LaunchReady(_ context.Context, spec cloud.LaunchSpec) (bool, error) {
+	f.h.launchReadySpec = spec
+	if err := f.h.operation("launch-ready"); err != nil {
+		return false, err
+	}
+	return true, nil
+}
 func (f provisionEC2) DescribeInstance(_ context.Context, id string) (cloud.Instance, error) {
 	f.h.describeInstanceIDs = append(f.h.describeInstanceIDs, id)
 	if err := f.h.operation("describe-instance"); err != nil {

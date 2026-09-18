@@ -39,13 +39,17 @@ func provision(
 	if err := acct.Clients.IAM.AddRoleToInstanceProfile(ctx, roleName, roleName); err != nil {
 		return err
 	}
-	space.Step(stdout, "role", roleName)
-
-	launched, err := acct.Clients.EC2.RunInstance(ctx, cloud.LaunchSpec{
+	launchSpec := cloud.LaunchSpec{
 		LaunchTemplateID: acct.Properties.LaunchTemplateID,
 		InstanceProfile:  roleName,
 		Space:            domain,
-	})
+	}
+	if err := space.WaitLaunchReady(ctx, deps, acct, launchSpec); err != nil {
+		return err
+	}
+	space.Step(stdout, "role", roleName)
+
+	launched, err := acct.Clients.EC2.RunInstance(ctx, launchSpec)
 	if err != nil {
 		return err
 	}

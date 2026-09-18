@@ -249,6 +249,9 @@ func (hostStepEC2) DescribeInstance(context.Context, string) (cloud.Instance, er
 func (hostStepEC2) RunInstance(context.Context, cloud.LaunchSpec) (cloud.Instance, error) {
 	return cloud.Instance{}, nil
 }
+func (hostStepEC2) LaunchReady(context.Context, cloud.LaunchSpec) (bool, error) {
+	return true, nil
+}
 func (hostStepEC2) StartInstance(context.Context, string) error                 { return nil }
 func (hostStepEC2) StopInstance(context.Context, string) error                  { return nil }
 func (hostStepEC2) TerminateInstance(context.Context, string) error             { return nil }

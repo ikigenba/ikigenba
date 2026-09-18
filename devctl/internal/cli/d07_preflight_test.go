@@ -45,7 +45,7 @@ func TestCreateCommandOpensCheckoutAndAppsBeforeCloud(t *testing.T) {
 }
 
 func TestCreateCommandCompletesReadOnlyPreflightBeforeEffects(t *testing.T) {
-	// R-VVFF-8UQ5
+	// R-H7YL-8EPO
 	wantPrefix := []string{
 		"exec:git", "cloud:", "ssm:get", "cloud:us-east-2", "route53:zones",
 		"route53:records", "ec2:spaces", "iam:role", "iam:profile", "sts:caller",
@@ -428,6 +428,11 @@ func (f harnessEC2) ListSpaceInstances(context.Context) ([]cloud.Instance, error
 		return nil, err
 	}
 	return f.h.instances, nil
+}
+
+func (f harnessEC2) LaunchReady(context.Context, cloud.LaunchSpec) (bool, error) {
+	f.h.mutations = append(f.h.mutations, "ec2:launch-ready")
+	return true, nil
 }
 
 type harnessIAM struct {
