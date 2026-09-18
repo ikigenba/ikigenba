@@ -172,24 +172,38 @@ func TestLastAccountOptionWins(t *testing.T) {
 
 func TestCloudErrorsAreSingleLineOperationFailures(t *testing.T) {
 	// R-ZLGA-YMQA
-	for _, want := range []string{
-		"ssm GetParameter /ikigenba/account: ParameterNotFound",
-		"ec2 RunInstances: InsufficientInstanceCapacity",
-		"route53 ChangeResourceRecordSets: Throttling",
+	for _, test := range []struct {
+		cloudError *cloud.Error
+		want       string
+	}{
+		{
+			cloudError: &cloud.Error{Service: "ssm", Operation: "GetParameter", Subject: "/ikigenba/account", Code: "ParameterNotFound"},
+			want:       "ssm GetParameter /ikigenba/account: ParameterNotFound",
+		},
+		{
+			cloudError: &cloud.Error{Service: "ec2", Operation: "RunInstances", Code: "InsufficientInstanceCapacity"},
+			want:       "ec2 RunInstances: InsufficientInstanceCapacity",
+		},
+		{
+			cloudError: &cloud.Error{Service: "route53", Operation: "ChangeResourceRecordSets", Code: "Throttling"},
+			want:       "route53 ChangeResourceRecordSets: Throttling",
+		},
 	} {
-		parts := strings.Split(want, ": ")
-		operation := strings.Fields(parts[0])
-		cloudErr := &cloud.Error{Service: operation[0], Operation: operation[1], Code: parts[1]}
-		if len(operation) == 3 {
-			cloudErr.Subject = operation[2]
-		}
+		var opens []string
 		deps := seam.Deps{
 			EUID: 1,
-			Cloud: func(context.Context, string, string) (cloud.Clients, error) {
-				return cloud.Clients{SSM: &cliSSM{err: fmt.Errorf("read properties: %w", cloudErr)}}, nil
+			Cloud: func(_ context.Context, _ string, region string) (cloud.Clients, error) {
+				opens = append(opens, region)
+				if len(opens) == 1 {
+					return cloud.Clients{SSM: &cliSSM{value: cliPropertiesJSON}}, nil
+				}
+				return cloud.Clients{EC2: &cliEC2{err: fmt.Errorf("command failed: %w", test.cloudError)}}, nil
 			},
 		}
-		assertResult(t, invokeWithDeps(deps, "--account", "work", "space"), 1, "", "devctl: "+want+"\n")
+		assertResult(t, invokeWithDeps(deps, "--account", "work", "space", "status", "example.test"), 1, "", "devctl: "+test.want+"\n")
+		if !reflect.DeepEqual(opens, []string{"", "us-test-1"}) {
+			t.Errorf("cloud regions = %q, want bootstrap and configured regions", opens)
+		}
 	}
 }
 
@@ -508,10 +522,13 @@ func (fake *cliSSM) GetParameter(context.Context, string) (string, error) {
 	return fake.value, fake.err
 }
 
-type cliEC2 struct{ cloud.EC2 }
+type cliEC2 struct {
+	cloud.EC2
+	err error
+}
 
-func (*cliEC2) ListSpaceInstances(context.Context) ([]cloud.Instance, error) {
-	return nil, nil
+func (fake *cliEC2) ListSpaceInstances(context.Context) ([]cloud.Instance, error) {
+	return nil, fake.err
 }
 
 func invoke(args ...string) runResult {
