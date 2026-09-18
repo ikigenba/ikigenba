@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/account"
+	"github.com/ikigenba/ikigenba/devctl/internal/build"
 	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/keyring"
@@ -110,6 +111,9 @@ func Run(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.Writ
 	}
 	if invocation.command == "version" {
 		return runVersion(invocation.arguments, stdout, stderr)
+	}
+	if invocation.command == "build" {
+		return operationError(stderr, build.Run(ctx, invocation.arguments, stdout, deps))
 	}
 	if invocation.command == "secrets" {
 		if !invocation.accountSet && !hasHelp(invocation.arguments) {

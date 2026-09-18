@@ -735,7 +735,7 @@ func secretSentinelDeps(root, value string, regional cloud.SSM) seam.Deps {
 func TestDiagnosticStreams(t *testing.T) {
 	// R-DMPO-ZF3Q
 	successes := [][]string{
-		{"--help"}, {"--version"}, {"version"}, {"version", "--help"}, {"build", "app"},
+		{"--help"}, {"--version"}, {"version"}, {"version", "--help"}, {"build", "--help"},
 	}
 	for _, args := range successes {
 		result := invoke(args...)
