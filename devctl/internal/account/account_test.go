@@ -319,8 +319,11 @@ type fakeSTS struct {
 
 func (f *fakeSTS) CallerAccountID(context.Context) (string, error) { return f.id, f.err }
 
+func assertOpenType(func(context.Context, seam.Deps, string) (*Account, error)) {}
+
 func TestAccountShapeAndCallerAccountID(t *testing.T) {
 	// R-Z6TI-DDTY
+	assertOpenType(Open)
 	assertFields(t, reflect.TypeOf(Account{}), []fieldSpec{
 		{"Profile", reflect.TypeFor[string]()},
 		{"Properties", reflect.TypeFor[Properties]()},
@@ -391,11 +394,14 @@ func TestSpaces(t *testing.T) {
 
 func TestSpace(t *testing.T) {
 	// R-ZFCT-1S0T
-	ec2 := &fakeEC2{instances: []cloud.Instance{{ID: "i-1", Space: "app.example", State: cloud.StateRunning}}}
+	ec2 := &fakeEC2{instances: []cloud.Instance{{
+		ID: "i-1", Space: "app.example", State: cloud.StateRunning, Address: "192.0.2.1",
+	}}}
 	account := &Account{Clients: cloud.Clients{EC2: ec2}}
 	got, err := account.Space(context.Background(), "app.example")
-	if err != nil || got.ID != "i-1" {
-		t.Fatalf("Space = %#v, %v", got, err)
+	want := Space{Domain: "app.example", ID: "i-1", State: cloud.StateRunning, Address: "192.0.2.1"}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("Space = %#v, %v; want %#v", got, err, want)
 	}
 
 	_, err = account.Space(context.Background(), "missing.example")
@@ -419,13 +425,14 @@ func TestZone(t *testing.T) {
 	}}
 	account := &Account{Clients: cloud.Clients{Route53: route53}}
 	got, err := account.Zone(context.Background(), "api.dev.example")
-	if err != nil || got.ID != "specific" {
-		t.Fatalf("Zone = %#v, %v", got, err)
+	want := cloud.Zone{ID: "specific", Name: "dev.example"}
+	if err != nil || got != want {
+		t.Fatalf("Zone = %#v, %v; want %#v", got, err, want)
 	}
 
 	got, err = account.Zone(context.Background(), "dev.example")
-	if err != nil || got.ID != "specific" {
-		t.Fatalf("exact Zone = %#v, %v", got, err)
+	if err != nil || got != want {
+		t.Fatalf("exact Zone = %#v, %v; want %#v", got, err, want)
 	}
 
 	_, err = account.Zone(context.Background(), "notexample")
@@ -444,9 +451,9 @@ func TestDelegation(t *testing.T) {
 	// R-ZJ0I-738W
 	route53 := &fakeRoute53{records: []cloud.Record{
 		{Name: "example", Type: "NS"},
-		{Name: "dev.example", Type: "A"},
 		{Name: "dev.example", Type: "NS"},
 		{Name: "api.dev.example", Type: "NS"},
+		{Name: "host.api.dev.example", Type: "A"},
 		{Name: "notapi.dev.example", Type: "NS"},
 	}}
 	account := &Account{Clients: cloud.Clients{Route53: route53}}
