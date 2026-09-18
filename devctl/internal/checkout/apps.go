@@ -41,7 +41,7 @@ func (checkout *Checkout) apps(read func(string) (Manifest, error)) ([]App, erro
 			continue
 		}
 
-		main, err := hasMainPackage(dir)
+		main, err := hasMainPackage(dir, name)
 		if err != nil {
 			return nil, err
 		}
@@ -85,8 +85,20 @@ func (checkout *Checkout) app(name string, list func() ([]App, error)) (App, err
 	return App{}, &NoAppError{Name: name}
 }
 
-func hasMainPackage(dir string) (bool, error) {
-	entries, err := os.ReadDir(dir)
+func hasMainPackage(dir, name string) (bool, error) {
+	mainDir := filepath.Join(dir, "cmd", name)
+	info, err := os.Stat(mainDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	if !info.IsDir() {
+		return false, nil
+	}
+
+	entries, err := os.ReadDir(mainDir)
 	if err != nil {
 		return false, err
 	}
@@ -102,7 +114,7 @@ func hasMainPackage(dir string) (bool, error) {
 		if !info.Mode().IsRegular() {
 			continue
 		}
-		parsed, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, name), nil, parser.PackageClauseOnly)
+		parsed, err := parser.ParseFile(token.NewFileSet(), filepath.Join(mainDir, name), nil, parser.PackageClauseOnly)
 		if err == nil && parsed.Name.Name == "main" {
 			return true, nil
 		}

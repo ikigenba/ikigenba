@@ -88,7 +88,7 @@ func TestMissingManifestSecretHasContextualCLIDiagnostic(t *testing.T) {
 func writeD04SecretApp(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	writeD05CLIFile(t, filepath.Join(root, "crm", "main.go"), "package main\n")
+	writeD05CLIFile(t, filepath.Join(root, "crm", "cmd", "crm", "main.go"), "package main\n")
 	writeD05CLIFile(t, filepath.Join(root, "crm", "etc", "manifest.toml"),
 		"app = \"crm\"\nsecrets = [\"CRM_API_KEY\"]\n")
 	return root

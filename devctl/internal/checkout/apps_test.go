@@ -11,7 +11,7 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
 
-// R-W1C4-X1GX
+// R-L5YW-0VX6
 func TestAppsDiscoversOnlyRunnableRootDirectories(t *testing.T) {
 	t.Parallel()
 
@@ -20,22 +20,37 @@ func TestAppsDiscoversOnlyRunnableRootDirectories(t *testing.T) {
 	writeAppFixture(t, root, "alpha", "package main\n", "app = \"alpha\"\n")
 	writeAppFixture(t, root, "library", "package library\n", "app = \"library\"\n")
 	writeAppFixture(t, root, "test-only", "package main\n", "app = \"test-only\"\n")
-	if err := os.Rename(filepath.Join(root, "test-only", "main.go"), filepath.Join(root, "test-only", "main_test.go")); err != nil {
+	if err := os.Rename(
+		filepath.Join(root, "test-only", "cmd", "test-only", "main.go"),
+		filepath.Join(root, "test-only", "cmd", "test-only", "main_test.go"),
+	); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(root, "nested-only", ManifestFile), "app = \"nested-only\"\n")
-	writeFile(t, filepath.Join(root, "nested-only", "nested", "main.go"), "package main\n")
-	writeFile(t, filepath.Join(root, "no-manifest", "main.go"), "package main\n")
+	writeFile(t, filepath.Join(root, "nested-only", "cmd", "nested-only", "nested", "main.go"), "package main\n")
+	writeFile(t, filepath.Join(root, "root-only", ManifestFile), "app = \"root-only\"\n")
+	writeFile(t, filepath.Join(root, "root-only", "main.go"), "package main\n")
+	writeFile(t, filepath.Join(root, "other-only", ManifestFile), "app = \"other-only\"\n")
+	writeFile(t, filepath.Join(root, "other-only", "cmd", "another-app", "main.go"), "package main\n")
+	writeFile(t, filepath.Join(root, "no-manifest", "cmd", "no-manifest", "main.go"), "package main\n")
 	writeFile(t, filepath.Join(root, "plain-file"), "package main\n")
 	writeFile(t, filepath.Join(root, "symlink-source"), "package main\n")
 	writeFile(t, filepath.Join(root, "non-regular-go", ManifestFile), "app = \"non-regular-go\"\n")
-	if err := os.Symlink(filepath.Join(root, "symlink-source"), filepath.Join(root, "non-regular-go", "main.go")); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "non-regular-go", "cmd", "non-regular-go"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(root, "manifest-dir", "main.go"), "package main\n")
+	if err := os.Symlink(
+		filepath.Join(root, "symlink-source"),
+		filepath.Join(root, "non-regular-go", "cmd", "non-regular-go", "main.go"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(root, "manifest-dir", "cmd", "manifest-dir", "main.go"), "package main\n")
 	if err := os.MkdirAll(filepath.Join(root, "manifest-dir", ManifestFile), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	writeFile(t, filepath.Join(root, "cmd-path-is-file", ManifestFile), "app = \"cmd-path-is-file\"\n")
+	writeFile(t, filepath.Join(root, "cmd-path-is-file", "cmd", "cmd-path-is-file"), "package main\n")
 
 	checkout := &Checkout{
 		Root: root,
@@ -176,7 +191,7 @@ func (err *identityError) Error() string { return err.message }
 
 func writeAppFixture(t *testing.T, root, name, source, manifest string) {
 	t.Helper()
-	writeFile(t, filepath.Join(root, name, "main.go"), source)
+	writeFile(t, filepath.Join(root, name, "cmd", name, "main.go"), source)
 	writeFile(t, filepath.Join(root, name, ManifestFile), manifest)
 }
 

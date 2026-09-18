@@ -50,7 +50,7 @@ func TestCLIDispatchesSecretsWithProfileDepsAndStdout(t *testing.T) {
 func TestSecretsPushResolvesCheckoutAppBeforeCloud(t *testing.T) {
 	// R-GB71-XCNY
 	root := t.TempDir()
-	writeD05CLIFile(t, filepath.Join(root, "crm", "main.go"), "package main\n")
+	writeD05CLIFile(t, filepath.Join(root, "crm", "cmd", "crm", "main.go"), "package main\n")
 	writeD05CLIFile(t, filepath.Join(root, "crm", "etc", "manifest.toml"), "app = \"crm\"\n")
 
 	cloudCalls := 0
@@ -79,7 +79,7 @@ func TestRotatedSecretsRequireDeployWithoutPushDeploying(t *testing.T) {
 	const domain = "foo.sbx.ikigenba.dev"
 	t.Run("push does no host operation or deployment", func(t *testing.T) {
 		root := t.TempDir()
-		writeD05CLIFile(t, filepath.Join(root, "crm", "main.go"), "package main\n")
+		writeD05CLIFile(t, filepath.Join(root, "crm", "cmd", "crm", "main.go"), "package main\n")
 		writeD05CLIFile(t, filepath.Join(root, "crm", "etc", "manifest.toml"), "app = \"crm\"\n")
 
 		regional := &d05PushBoundarySSM{}

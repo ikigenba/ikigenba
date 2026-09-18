@@ -298,7 +298,10 @@ func (h *commandHarness) addAppWithSecrets(name string, secrets ...string) {
 	if err := os.MkdirAll(filepath.Join(dir, "etc"), 0o750); err != nil {
 		h.t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n"), 0o600); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "cmd", name), 0o750); err != nil {
+		h.t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cmd", name, "main.go"), []byte("package main\n"), 0o600); err != nil {
 		h.t.Fatal(err)
 	}
 	manifest := "app = \"" + name + "\"\n"

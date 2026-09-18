@@ -145,7 +145,10 @@ func writeD04CLIApp(t *testing.T) string {
 	if err := os.MkdirAll(filepath.Join(appDir, "etc"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(appDir, "main.go"), []byte("package main\n"), 0o600); err != nil {
+	if err := os.MkdirAll(filepath.Join(appDir, "cmd", "crm"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "cmd", "crm", "main.go"), []byte("package main\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(appDir, checkout.ManifestFile), []byte("app = \"crm\"\n"), 0o600); err != nil {

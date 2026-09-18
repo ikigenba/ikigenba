@@ -133,7 +133,10 @@ func newCLIBuildFixture(t *testing.T) *cliBuildFixture {
 	if err := os.MkdirAll(filepath.Join(appDir, "etc"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(appDir, "main.go"), []byte("package main\n"), 0o600); err != nil {
+	if err := os.MkdirAll(filepath.Join(appDir, "cmd", "crm"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "cmd", "crm", "main.go"), []byte("package main\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(appDir, "etc", "manifest.toml"), manifest, 0o600); err != nil {
