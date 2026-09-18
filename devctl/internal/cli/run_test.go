@@ -323,8 +323,6 @@ func TestCommandsReportMissingSpace(t *testing.T) {
 		{"space", "stop", domain},
 		{"space", "start", domain},
 		{"space", "status", domain},
-		{"deploy", domain},
-		{"restore", domain},
 	} {
 		calls := 0
 		deps := seam.Deps{

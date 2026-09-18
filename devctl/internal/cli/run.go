@@ -12,7 +12,9 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/build"
 	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
+	"github.com/ikigenba/ikigenba/devctl/internal/deploy"
 	"github.com/ikigenba/ikigenba/devctl/internal/keyring"
+	"github.com/ikigenba/ikigenba/devctl/internal/restore"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 	"github.com/ikigenba/ikigenba/devctl/internal/secrets"
 	"github.com/ikigenba/ikigenba/devctl/internal/space"
@@ -114,6 +116,18 @@ func Run(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.Writ
 	}
 	if invocation.command == "build" {
 		return operationError(stderr, build.Run(ctx, invocation.arguments, stdout, deps))
+	}
+	if invocation.command == "deploy" {
+		if !invocation.accountSet && !hasHelp(invocation.arguments) {
+			return usageError(stderr, "--account is required", "devctl deploy --help")
+		}
+		return operationError(stderr, deploy.Run(ctx, invocation.arguments, stdout, deps, invocation.account))
+	}
+	if invocation.command == "restore" {
+		if !invocation.accountSet && !hasHelp(invocation.arguments) {
+			return usageError(stderr, "--account is required", "devctl restore --help")
+		}
+		return operationError(stderr, restore.Run(ctx, invocation.arguments, stdout, deps, invocation.account))
 	}
 	if invocation.command == "secrets" {
 		if !invocation.accountSet && !hasHelp(invocation.arguments) {
