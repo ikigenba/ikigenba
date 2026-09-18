@@ -10,6 +10,11 @@ import (
 	"time"
 )
 
+// Handler returns the HTTP handler served by dummy.
+func Handler() http.Handler {
+	return http.NotFoundHandler()
+}
+
 // Serve serves h on ln until ctx is cancelled or the server fails.
 func Serve(ctx context.Context, ln net.Listener, h http.Handler) error {
 	if ctx.Err() != nil {

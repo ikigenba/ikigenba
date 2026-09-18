@@ -45,7 +45,8 @@ func TestRunCommands(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			var stdout, stderr bytes.Buffer
+			var stdout bytes.Buffer
+			var stderr recordingWriter
 			lookupCalls := 0
 			listenCalls := 0
 			exit := Run(context.Background(), Process{
@@ -98,7 +99,8 @@ func TestRunRejectsInvalidArgumentsBeforeEnvironment(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			var stdout, stderr bytes.Buffer
+			var stdout bytes.Buffer
+			var stderr recordingWriter
 			lookupCalls := 0
 			listenCalls := 0
 			exit := Run(context.Background(), Process{
@@ -123,8 +125,215 @@ func TestRunRejectsInvalidArgumentsBeforeEnvironment(t *testing.T) {
 			if stderr.String() != test.want {
 				t.Errorf("stderr = %q, want %q", stderr.String(), test.want)
 			}
+			if stderr.calls != 1 {
+				t.Errorf("stderr Write calls = %d, want 1", stderr.calls)
+			}
 			if lookupCalls != 0 || listenCalls != 0 {
 				t.Errorf("LookupEnv calls = %d, Listen calls = %d; want both zero", lookupCalls, listenCalls)
+			}
+		})
+	}
+}
+
+// R-MUUD-Z6X1 R-N0XV-W1MI
+func TestRunRejectsMissingPort(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		lookup func(string) (string, bool)
+	}{
+		{name: "nil lookup"},
+		{name: "unset", lookup: func(string) (string, bool) { return "ignored", false }},
+		{name: "empty", lookup: func(string) (string, bool) { return "", true }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			var stdout bytes.Buffer
+			var stderr recordingWriter
+			listenCalls := 0
+			exit := Run(context.Background(), Process{
+				LookupEnv: test.lookup,
+				Stdout:    &stdout,
+				Stderr:    &stderr,
+				Listen: func(string, string) (net.Listener, error) {
+					listenCalls++
+					return nil, errors.New("unexpected listen")
+				},
+			})
+			if exit != ExitUsage {
+				t.Errorf("Run exit = %d, want ExitUsage", exit)
+			}
+			if stdout.Len() != 0 {
+				t.Errorf("stdout = %q, want empty", stdout.String())
+			}
+			if got, want := stderr.String(), "dummy: PORT is not set\n"; got != want {
+				t.Errorf("stderr = %q, want %q", got, want)
+			}
+			if stderr.calls != 1 {
+				t.Errorf("stderr Write calls = %d, want 1", stderr.calls)
+			}
+			if listenCalls != 0 {
+				t.Errorf("Listen calls = %d, want 0", listenCalls)
+			}
+		})
+	}
+}
+
+// R-MW2A-CYNQ R-ZOWQ-BRGU
+func TestRunPortNumberGrammar(t *testing.T) {
+	t.Parallel()
+
+	valid := []string{"1", "9", "10", "3000", "9999", "10000", "65535"}
+	for _, port := range valid {
+		if !isPortNumber(port) {
+			t.Errorf("isPortNumber(%q) = false, want true", port)
+		}
+	}
+
+	invalid := []string{
+		"", "0", "00", "01", "00001", "65536", "99999", "100000",
+		"+1", "-1", " 1", "1 ", "1\n", "1.0", "1a", "１２",
+	}
+	for _, port := range invalid {
+		if isPortNumber(port) {
+			t.Errorf("isPortNumber(%q) = true, want false", port)
+		}
+		if port == "" {
+			continue
+		}
+
+		var stdout bytes.Buffer
+		var stderr recordingWriter
+		listenCalls := 0
+		exit := Run(context.Background(), Process{
+			LookupEnv: mapLookup(map[string]string{"PORT": port}),
+			Stdout:    &stdout,
+			Stderr:    &stderr,
+			Listen: func(string, string) (net.Listener, error) {
+				listenCalls++
+				return nil, errors.New("unexpected listen")
+			},
+		})
+		if exit != ExitUsage {
+			t.Errorf("PORT %q: Run exit = %d, want ExitUsage", port, exit)
+		}
+		if stdout.Len() != 0 {
+			t.Errorf("PORT %q: stdout = %q, want empty", port, stdout.String())
+		}
+		want := "dummy: PORT is '" + port + "', not a port number\n"
+		if stderr.String() != want {
+			t.Errorf("PORT %q: stderr = %q, want %q", port, stderr.String(), want)
+		}
+		if stderr.calls != 1 {
+			t.Errorf("PORT %q: stderr Write calls = %d, want 1", port, stderr.calls)
+		}
+		if listenCalls != 0 {
+			t.Errorf("PORT %q: Listen calls = %d, want 0", port, listenCalls)
+		}
+	}
+}
+
+// R-ZQ4M-PJ7J
+func TestRunHandsValidPortToServer(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	listener := newBlockingListener()
+	listenCalls := 0
+	var network, address string
+	var stdout, stderr bytes.Buffer
+	exit := Run(ctx, Process{
+		LookupEnv: mapLookup(map[string]string{"PORT": "65535"}),
+		Stdout:    &stdout,
+		Stderr:    &stderr,
+		Listen: func(gotNetwork, gotAddress string) (net.Listener, error) {
+			listenCalls++
+			network, address = gotNetwork, gotAddress
+			return listener, nil
+		},
+	})
+	if exit != ExitSuccess {
+		t.Errorf("Run exit = %d, want ExitSuccess", exit)
+	}
+	if listenCalls != 1 || network != "tcp" || address != "127.0.0.1:65535" {
+		t.Errorf("Listen calls = %d with %q, %q; want one with tcp, 127.0.0.1:65535", listenCalls, network, address)
+	}
+	if stdout.Len() != 0 || stderr.Len() != 0 {
+		t.Errorf("stdout = %q, stderr = %q; want both empty", stdout.String(), stderr.String())
+	}
+
+	path := filepath.Join(projectRoot(t), "internal", "cli", "run.go")
+	parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	if err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	serveCalls := 0
+	ast.Inspect(parsed, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		packageName, packageOK := selector.X.(*ast.Ident)
+		if !packageOK || packageName.Name != "server" || selector.Sel.Name != "Serve" {
+			return true
+		}
+		serveCalls++
+		if len(call.Args) != 3 || !isIdentifier(call.Args[0], "ctx") || !isIdentifier(call.Args[1], "ln") || !isServerHandlerCall(call.Args[2]) {
+			t.Errorf("server.Serve must be called as server.Serve(ctx, ln, server.Handler())")
+		}
+		return true
+	})
+	if serveCalls != 1 {
+		t.Errorf("server.Serve calls in Run implementation = %d, want 1", serveCalls)
+	}
+}
+
+// R-N0XV-W1MI
+func TestRunServerFailuresKeepStdoutEmptyAndWriteOneDiagnostic(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		listen func(string, string) (net.Listener, error)
+	}{
+		{name: "bind", listen: func(string, string) (net.Listener, error) {
+			return nil, errors.New("bind failed")
+		}},
+		{name: "serve", listen: func(string, string) (net.Listener, error) {
+			return &failedListener{err: errors.New("accept failed")}, nil
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			var stdout bytes.Buffer
+			var stderr recordingWriter
+			exit := Run(context.Background(), Process{
+				LookupEnv: mapLookup(map[string]string{"PORT": "3000"}),
+				Stdout:    &stdout,
+				Stderr:    &stderr,
+				Listen:    test.listen,
+			})
+			if exit == ExitSuccess {
+				t.Error("Run exit = ExitSuccess, want failure")
+			}
+			if stdout.Len() != 0 {
+				t.Errorf("stdout = %q, want empty", stdout.String())
+			}
+			if stderr.calls != 1 {
+				t.Errorf("stderr Write calls = %d, want 1", stderr.calls)
+			}
+			if !strings.HasPrefix(stderr.String(), "dummy: ") {
+				t.Errorf("stderr = %q, want first line to begin dummy: ", stderr.String())
 			}
 		})
 	}
@@ -370,6 +579,34 @@ func mapLookup(environment map[string]string) func(string) (string, bool) {
 		value, ok := environment[key]
 		return value, ok
 	}
+}
+
+func isIdentifier(expression ast.Expr, name string) bool {
+	identifier, ok := expression.(*ast.Ident)
+	return ok && identifier.Name == name
+}
+
+func isServerHandlerCall(expression ast.Expr) bool {
+	call, ok := expression.(*ast.CallExpr)
+	if !ok || len(call.Args) != 0 {
+		return false
+	}
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != "Handler" {
+		return false
+	}
+	packageName, ok := selector.X.(*ast.Ident)
+	return ok && packageName.Name == "server"
+}
+
+type recordingWriter struct {
+	bytes.Buffer
+	calls int
+}
+
+func (w *recordingWriter) Write(p []byte) (int, error) {
+	w.calls++
+	return w.Buffer.Write(p)
 }
 
 type testAddr string

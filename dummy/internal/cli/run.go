@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strconv"
 	"strings"
 
 	"github.com/ikigenba/ikigenba/dummy/internal/server"
@@ -56,13 +55,17 @@ func Run(ctx context.Context, p Process) int {
 		if strings.HasPrefix(arg, "-") {
 			kind = "option"
 		}
-		_, _ = io.WriteString(p.Stderr, "dummy: unknown "+kind+" '"+arg+"'\n\nsee 'dummy --help' for usage\n")
+		writeDiagnostic(p.Stderr, "dummy: unknown "+kind+" '"+arg+"'\n\nsee 'dummy --help' for usage\n")
 		return ExitUsage
 	}
 
 	port, ok := lookupPort(p.LookupEnv)
 	if !ok {
-		_, _ = fmt.Fprintln(p.Stderr, "PORT must be an integer from 1 through 65535")
+		if port == "" {
+			writeDiagnostic(p.Stderr, "dummy: PORT is not set\n")
+		} else {
+			writeDiagnostic(p.Stderr, "dummy: PORT is '"+port+"', not a port number\n")
+		}
 		return ExitUsage
 	}
 
@@ -72,14 +75,14 @@ func Run(ctx context.Context, p Process) int {
 	}
 	ln, err := listen("tcp", net.JoinHostPort("127.0.0.1", port))
 	if err != nil {
-		_, _ = fmt.Fprintf(p.Stderr, "listen: %v\n", err)
+		writeDiagnostic(p.Stderr, fmt.Sprintf("dummy: listen: %v\n", err))
 		return ExitServerFailed
 	}
 	if p.Listening != nil {
 		p.Listening(ln.Addr())
 	}
-	if err = server.Serve(ctx, ln, nil); err != nil {
-		_, _ = fmt.Fprintf(p.Stderr, "serve: %v\n", err)
+	if err = server.Serve(ctx, ln, server.Handler()); err != nil {
+		writeDiagnostic(p.Stderr, fmt.Sprintf("dummy: serve: %v\n", err))
 		return ExitServerFailed
 	}
 	return ExitSuccess
@@ -90,12 +93,29 @@ func lookupPort(lookupEnv func(string) (string, bool)) (string, bool) {
 		return "", false
 	}
 	port, ok := lookupEnv("PORT")
-	if !ok {
+	if !ok || port == "" {
 		return "", false
 	}
-	number, err := strconv.Atoi(port)
-	if err != nil || number < 1 || number > 65535 {
-		return "", false
+	if !isPortNumber(port) {
+		return port, false
 	}
 	return port, true
+}
+
+func isPortNumber(port string) bool {
+	if len(port) < 1 || len(port) > 5 || port[0] == '0' {
+		return false
+	}
+	number := 0
+	for index := range len(port) {
+		if port[index] < '0' || port[index] > '9' {
+			return false
+		}
+		number = number*10 + int(port[index]-'0')
+	}
+	return number <= 65535
+}
+
+func writeDiagnostic(stderr io.Writer, message string) {
+	_, _ = stderr.Write([]byte(message))
 }
