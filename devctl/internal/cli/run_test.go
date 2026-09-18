@@ -8,6 +8,8 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
+	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"sort"
@@ -15,8 +17,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ikigenba/ikigenba/devctl/internal/account"
+	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
+	"github.com/ikigenba/ikigenba/devctl/internal/secrets"
 )
 
 var _ func(context.Context, []string, io.Reader, io.Writer, io.Writer, seam.Deps) int = Run
@@ -492,6 +497,105 @@ func TestSecretsUsageErrorsThroughCLI(t *testing.T) {
 		assertResult(t, invoke(fullArgs...), 2, "", want("unknown option '--verbose'"))
 	}
 	// R-G9Z5-JKX9
+}
+
+type sentinelSSM struct {
+	cloud.SSM
+	getValue   string
+	parameters []cloud.Parameter
+}
+
+func (ssm *sentinelSSM) GetParameter(context.Context, string) (string, error) {
+	return ssm.getValue, nil
+}
+
+func (*sentinelSSM) PutSecureParameter(context.Context, string, string) error { return nil }
+
+func (ssm *sentinelSSM) ListParameters(context.Context, string) ([]cloud.Parameter, error) {
+	return ssm.parameters, nil
+}
+
+type sentinelEC2 struct{ cloud.EC2 }
+
+func (*sentinelEC2) ListSpaceInstances(context.Context) ([]cloud.Instance, error) {
+	return []cloud.Instance{{Space: "foo.sbx.ikigenba.dev", State: cloud.StateRunning}}, nil
+}
+
+func TestSecretsNeverExposeValuesThroughCLIOrExports(t *testing.T) {
+	// R-GS9N-A51O
+	const (
+		pushSentinel  = "push-value-sentinel-7fdf"
+		listSentinel  = "list-value-sentinel-a9c2"
+		namesSentinel = "names-value-sentinel-e431"
+	)
+	root := t.TempDir()
+	appDir := filepath.Join(root, "crm")
+	if err := os.MkdirAll(filepath.Join(appDir, "etc"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "main.go"), []byte("package main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "etc", "manifest.toml"), []byte("app = 'crm'\nsecrets = ['CRM_TOKEN']\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	regional := &sentinelSSM{
+		getValue: namesObject(namesSentinel),
+		parameters: []cloud.Parameter{{
+			Name:  secrets.Parameter("foo.sbx.ikigenba.dev", "crm"),
+			Value: namesObject(listSentinel),
+		}},
+	}
+	deps := secretSentinelDeps(root, pushSentinel, regional)
+	pushResult := invokeWithDeps(deps, "--account", "work", "secrets", "push", "foo.sbx.ikigenba.dev", "crm")
+	assertResult(t, pushResult, 0, "crm: ok (1 keys)\n", "")
+	listResult := invokeWithDeps(deps, "--account", "work", "secrets", "list", "foo.sbx.ikigenba.dev")
+	assertResult(t, listResult, 0, "crm CRM_TOKEN\n", "")
+
+	acct := &account.Account{Clients: cloud.Clients{SSM: regional}}
+	entries, err := secrets.Push(context.Background(), deps, acct, "foo.sbx.ikigenba.dev", []checkout.App{{
+		Name: "crm", Manifest: checkout.Manifest{Secrets: []string{"CRM_TOKEN"}},
+	}})
+	if err != nil {
+		t.Fatalf("Push returned error: %v", err)
+	}
+	listed, err := secrets.List(context.Background(), acct, "foo.sbx.ikigenba.dev")
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	names, err := secrets.Names(context.Background(), acct, "foo.sbx.ikigenba.dev", "crm")
+	if err != nil {
+		t.Fatalf("Names returned error: %v", err)
+	}
+
+	visible := pushResult.stdout + pushResult.stderr + listResult.stdout + listResult.stderr + fmt.Sprint(entries, listed, names)
+	for _, sentinel := range []string{pushSentinel, listSentinel, namesSentinel} {
+		if strings.Contains(visible, sentinel) {
+			t.Fatalf("secret sentinel %q exposed in %q", sentinel, visible)
+		}
+	}
+}
+
+func namesObject(value string) string { return `{"CRM_TOKEN":"` + value + `"}` }
+
+func secretSentinelDeps(root, value string, regional cloud.SSM) seam.Deps {
+	opens := 0
+	return seam.Deps{
+		EUID:   1,
+		Dir:    root,
+		Getenv: func(string) string { return value },
+		Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
+			return seam.Result{Stdout: []byte(root + "\n")}, nil
+		},
+		Cloud: func(context.Context, string, string) (cloud.Clients, error) {
+			opens++
+			if opens%2 == 1 {
+				return cloud.Clients{SSM: &cliSSM{value: cliPropertiesJSON}}, nil
+			}
+			return cloud.Clients{SSM: regional, EC2: &sentinelEC2{}}, nil
+		},
+	}
 }
 
 func TestDiagnosticStreams(t *testing.T) {

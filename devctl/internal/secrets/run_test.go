@@ -5,9 +5,12 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
+	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
 
@@ -171,6 +174,130 @@ func TestSecretsRejectsUnknownOptions(t *testing.T) {
 		assertRunUsageError(t, args, "unknown option '--verbose'")
 	}
 }
+
+type resolutionSSM struct {
+	cloud.SSM
+	value      string
+	parameters []cloud.Parameter
+	writes     int
+}
+
+func (ssm *resolutionSSM) GetParameter(context.Context, string) (string, error) {
+	return ssm.value, nil
+}
+
+func (ssm *resolutionSSM) PutSecureParameter(context.Context, string, string) error {
+	ssm.writes++
+	return nil
+}
+
+func (ssm *resolutionSSM) ListParameters(context.Context, string) ([]cloud.Parameter, error) {
+	return ssm.parameters, nil
+}
+
+type resolutionEC2 struct {
+	cloud.EC2
+	err   error
+	calls int
+}
+
+func (ec2 *resolutionEC2) ListSpaceInstances(context.Context) ([]cloud.Instance, error) {
+	ec2.calls++
+	return nil, ec2.err
+}
+
+func TestPushResolvesSpaceBeforeReadingOrWritingSecrets(t *testing.T) {
+	// R-D209-R4QN
+	root := t.TempDir()
+	appDir := filepath.Join(root, "crm")
+	if err := os.MkdirAll(filepath.Join(appDir, "etc"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "main.go"), []byte("package main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "etc", "manifest.toml"), []byte("app = 'crm'\nsecrets = ['CRM_TOKEN']\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	spaceErr := errors.New("space lookup failed")
+	bootstrap := &resolutionSSM{value: testAccountProperties}
+	regional := &resolutionSSM{}
+	cloudCalls := 0
+	lookups := 0
+	deps := seam.Deps{
+		Dir: root,
+		Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
+			return seam.Result{Stdout: []byte(root + "\n")}, nil
+		},
+		Getenv: func(string) string {
+			lookups++
+			return "must-not-be-read"
+		},
+		Cloud: func(context.Context, string, string) (cloud.Clients, error) {
+			cloudCalls++
+			if cloudCalls == 1 {
+				return cloud.Clients{SSM: bootstrap}, nil
+			}
+			return cloud.Clients{SSM: regional, EC2: &resolutionEC2{err: spaceErr}}, nil
+		},
+	}
+
+	err := Run(context.Background(), []string{"push", "foo.sbx.ikigenba.dev", "crm"}, io.Discard, deps, "work")
+	if err == nil || reflect.ValueOf(err).Pointer() != reflect.ValueOf(spaceErr).Pointer() {
+		t.Fatalf("Run error = %T %v, want original space lookup error", err, err)
+	}
+	if lookups != 0 {
+		t.Fatalf("keyring lookups = %d, want 0 before space resolution", lookups)
+	}
+	if regional.writes != 0 {
+		t.Fatalf("parameter writes = %d, want 0 before space resolution", regional.writes)
+	}
+}
+
+func TestListReadsRetainedParametersWithoutResolvingAnInstance(t *testing.T) {
+	// R-D209-R4QN
+	const domain = "destroyed.sbx.ikigenba.dev"
+	bootstrap := &resolutionSSM{value: testAccountProperties}
+	regional := &resolutionSSM{parameters: []cloud.Parameter{{
+		Name:  Parameter(domain, "crm"),
+		Value: `{"CRM_TOKEN":"retained-secret"}`,
+	}}}
+	ec2 := &resolutionEC2{err: errors.New("instance lookup must not occur")}
+	cloudCalls := 0
+	deps := seam.Deps{Cloud: func(context.Context, string, string) (cloud.Clients, error) {
+		cloudCalls++
+		if cloudCalls == 1 {
+			return cloud.Clients{SSM: bootstrap}, nil
+		}
+		return cloud.Clients{SSM: regional, EC2: ec2}, nil
+	}}
+
+	var stdout bytes.Buffer
+	if err := Run(context.Background(), []string{"list", domain}, &stdout, deps, "work"); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if got, want := stdout.String(), "crm CRM_TOKEN\n"; got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
+	}
+	if ec2.calls != 0 {
+		t.Fatalf("instance lookups = %d, want 0", ec2.calls)
+	}
+}
+
+const testAccountProperties = `{
+  "domain":"example.test",
+  "backup_bucket":"backups",
+  "launch_template_id":"lt-1",
+  "permissions_boundary_arn":"arn:test",
+  "region":"us-test-1",
+  "delete_secrets_on_destroy":true,
+  "delete_backups_on_destroy":false,
+  "backup_host_files_seconds":1,
+  "backup_service_files_seconds":2,
+  "backup_service_db_seconds":3,
+  "backup_service_wal_seconds":4
+}`
 
 func assertRunUsageError(t *testing.T, args []string, message string) {
 	t.Helper()
