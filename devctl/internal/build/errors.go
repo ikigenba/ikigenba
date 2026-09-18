@@ -1,6 +1,10 @@
 package build
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/ikigenba/ikigenba/devctl/internal/seam"
+)
 
 // UsageError reports invalid build command syntax or state.
 type UsageError struct {
@@ -34,3 +38,21 @@ func (e *StaleManifestError) Error() string {
 
 // ExitCode returns the command-line usage exit status.
 func (e *StaleManifestError) ExitCode() int { return 2 }
+
+// ProcessError reports a command that ran and returned a nonzero status.
+type ProcessError struct {
+	Label  string
+	Status int
+	Stderr string
+}
+
+// Error returns the command label and exit status.
+func (e *ProcessError) Error() string {
+	return fmt.Sprintf("%s: exit status %d", e.Label, e.Status)
+}
+
+// Detail returns the command's standard error as quoted diagnostic detail.
+func (e *ProcessError) Detail() string { return seam.QuoteOutput(e.Stderr) }
+
+// ExitCode returns the ordinary command failure status.
+func (e *ProcessError) ExitCode() int { return 1 }

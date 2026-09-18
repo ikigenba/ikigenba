@@ -7,6 +7,27 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/build"
 )
 
+func TestProcessError(t *testing.T) {
+	// R-EM3N-CKUL
+	wantFields := []reflect.StructField{
+		{Name: "Label", Type: reflect.TypeFor[string]()},
+		{Name: "Status", Type: reflect.TypeFor[int]()},
+		{Name: "Stderr", Type: reflect.TypeFor[string]()},
+	}
+	assertExactFields(t, reflect.TypeFor[build.ProcessError](), wantFields)
+
+	err := &build.ProcessError{Label: "build crm", Status: 23, Stderr: "first\nsecond\n"}
+	if got := err.Error(); got != "build crm: exit status 23" {
+		t.Fatalf("Error() = %q", got)
+	}
+	if got := err.Detail(); got != "> first\n> second" {
+		t.Fatalf("Detail() = %q", got)
+	}
+	if got := err.ExitCode(); got != 1 {
+		t.Fatalf("ExitCode() = %d, want 1", got)
+	}
+}
+
 func TestUsageError(t *testing.T) {
 	// R-67JH-CUAG
 	wantFields := []reflect.StructField{
