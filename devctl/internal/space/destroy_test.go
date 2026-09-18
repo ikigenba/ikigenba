@@ -176,13 +176,31 @@ func TestDestroyRetireFailurePreventsCloudMutation(t *testing.T) {
 
 func TestDestroyRetireSuccessIgnoresOutput(t *testing.T) {
 	// R-JCCP-CNWX
-	for _, report := range []string{`{"backed_up":["host"],"unknown":true}`, `{"backed_up":["crm"]}`, `not-json`, ""} {
-		t.Run(report, func(t *testing.T) {
+	outputs := []struct {
+		name   string
+		stdout string
+		stderr string
+	}{
+		{name: "opaque streams", stdout: `{"backed_up":["host"],"unknown":true}`, stderr: "warning: arbitrary stderr\n"},
+		{name: "misleading report", stdout: `{"backed_up":["crm"]}`, stderr: `{"error":"not an error"}`},
+		{name: "non-json streams", stdout: "not-json", stderr: "also not-json"},
+		{name: "empty streams"},
+	}
+	for _, output := range outputs {
+		t.Run(output.name, func(t *testing.T) {
 			state := newDestroyState(t, false, false)
 			state.instances = []cloud.Instance{{ID: "i-one", Space: destroyDomain, State: cloud.StateRunning, Address: "18.220.10.5"}}
-			state.execStdout = report
+			state.execStdout = output.stdout
+			state.execStderr = output.stderr
 			stdout, err := runDestroyTest(t, state, []string{"destroy", destroyDomain})
-			if err != nil || !strings.HasPrefix(stdout, "retire: ok (opsctl retire)\n") {
+			want := "retire: ok (opsctl retire)\n" +
+				"instance: ok (i-one terminated)\n" +
+				"address: ok (no elastic ip)\n" +
+				"records: ok (already gone)\n" +
+				"secrets: ok (kept, delete_secrets_on_destroy=false)\n" +
+				"backups: ok (kept, delete_backups_on_destroy=false)\n" +
+				"role: ok (already gone)\n"
+			if err != nil || stdout != want {
 				t.Fatalf("stdout=%q error=%v", stdout, err)
 			}
 			for _, operation := range state.ops {
