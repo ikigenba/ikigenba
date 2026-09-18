@@ -17,9 +17,19 @@ const prerequisiteHead = "0123456789abcdef"
 
 func TestBuildRejectsInvalidAppBeforeCheckout(t *testing.T) {
 	// R-EUMY-0Z1G
+	// R-EOJG-44BZ
+	root := t.TempDir()
+	seedAdversarialTree(t, filepath.Join(root, "crm", "dist"))
+	before := snapshotTree(t, root)
 	execCalls := 0
+	cloudCalls := 0
 	var stdout bytes.Buffer
 	err := Run(context.Background(), []string{"Bad/App"}, &stdout, seam.Deps{
+		Dir: root,
+		Cloud: func(context.Context, string, string) (cloud.Clients, error) {
+			cloudCalls++
+			return cloud.Clients{}, errors.New("unexpected Cloud call")
+		},
 		Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
 			execCalls++
 			return seam.Result{}, errors.New("unexpected execution")
@@ -33,13 +43,19 @@ func TestBuildRejectsInvalidAppBeforeCheckout(t *testing.T) {
 	if execCalls != 0 {
 		t.Fatalf("Exec calls = %d, want 0", execCalls)
 	}
+	if cloudCalls != 0 {
+		t.Fatalf("Cloud calls = %d, want 0", cloudCalls)
+	}
+	if after := snapshotTree(t, root); !reflect.DeepEqual(after, before) {
+		t.Fatalf("filesystem changed on invalid-name refusal\nbefore: %#v\nafter:  %#v", before, after)
+	}
 }
 
 func TestBuildRefusesDirtyCheckoutBeforeHeadOrTags(t *testing.T) {
 	// R-6M69-Y36S
 	// R-EOJG-44BZ
 	fixture := newPrerequisiteFixture(t, " M crm/main.go\n", "")
-	sentinel := fixture.writeDistSentinel(t)
+	before := fixture.seedAndSnapshotDist(t)
 	var stdout bytes.Buffer
 
 	err := Run(context.Background(), []string{"crm"}, &stdout, fixture.deps())
@@ -55,14 +71,16 @@ func TestBuildRefusesDirtyCheckoutBeforeHeadOrTags(t *testing.T) {
 	if !reflect.DeepEqual(fixture.gitArgs, wantCommands) {
 		t.Fatalf("git arguments = %#v, want %#v", fixture.gitArgs, wantCommands)
 	}
-	if got := readFixtureFile(t, fixture.root, sentinel); string(got) != "existing artifact" {
-		t.Fatalf("dist sentinel = %q, want %q", got, "existing artifact")
+	if after := fixture.snapshotDist(t); !reflect.DeepEqual(after, before) {
+		t.Fatalf("dist changed on dirty-tree refusal\nbefore: %#v\nafter:  %#v", before, after)
 	}
 }
 
 func TestBuildRequiresMatchingAppTagAtHead(t *testing.T) {
 	// R-EPRC-HW2O
+	// R-EOJG-44BZ
 	fixture := newPrerequisiteFixture(t, "", "other/v1.2.3\ncrm/not-semver\n")
+	before := fixture.seedAndSnapshotDist(t)
 	var stdout bytes.Buffer
 
 	err := Run(context.Background(), []string{"crm"}, &stdout, fixture.deps())
@@ -72,10 +90,12 @@ func TestBuildRequiresMatchingAppTagAtHead(t *testing.T) {
 		t.Fatalf("stdout = %q, want empty", stdout.String())
 	}
 	fixture.assertAllPrerequisiteCommands(t)
+	if after := fixture.snapshotDist(t); !reflect.DeepEqual(after, before) {
+		t.Fatalf("dist changed on no-tag refusal\nbefore: %#v\nafter:  %#v", before, after)
+	}
 }
 
 func TestPrepareBuildSelectsLexicographicallyFirstCompleteAppTag(t *testing.T) {
-	// R-EQZ8-VNTD
 	fixture := newPrerequisiteFixture(t, "", "zebra/v9.9.9\ncrm/v2.0.0\ncrm/v1.9.0+z\ncrm/v1.9.0+a\n")
 
 	prepared, err := prepareBuild(context.Background(), "crm", fixture.deps())
@@ -190,20 +210,40 @@ func (fixture *prerequisiteFixture) assertAllPrerequisiteCommands(t *testing.T) 
 	}
 }
 
-func (fixture *prerequisiteFixture) writeDistSentinel(t *testing.T) string {
+func (fixture *prerequisiteFixture) seedAndSnapshotDist(t *testing.T) map[string]treeEntry {
 	t.Helper()
 	dist := filepath.Join(fixture.root, fixture.app, "dist")
-	if err := os.MkdirAll(dist, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dist, "existing.tar.xz")
-	if err := os.WriteFile(path, []byte("existing artifact"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return filepath.Join(fixture.app, "dist", filepath.Base(path))
+	seedAdversarialTree(t, dist)
+	return snapshotTree(t, dist)
 }
 
-func readFixtureFile(t *testing.T, root, name string) []byte {
+func (fixture *prerequisiteFixture) snapshotDist(t *testing.T) map[string]treeEntry {
+	t.Helper()
+	return snapshotTree(t, filepath.Join(fixture.root, fixture.app, "dist"))
+}
+
+type treeEntry struct {
+	Mode    os.FileMode
+	Content string
+}
+
+func seedAdversarialTree(t *testing.T, root string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(root, "nested", "empty"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"existing.tar.xz":          "existing artifact",
+		"nested/partial-build.tmp": "partial bytes",
+	}
+	for name, contents := range files {
+		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(name)), []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func snapshotTree(t *testing.T, root string) map[string]treeEntry {
 	t.Helper()
 	opened, err := os.OpenRoot(root)
 	if err != nil {
@@ -211,12 +251,35 @@ func readFixtureFile(t *testing.T, root, name string) []byte {
 	}
 	defer func() {
 		if err := opened.Close(); err != nil {
-			t.Errorf("close fixture root: %v", err)
+			t.Errorf("close snapshot root: %v", err)
 		}
 	}()
-	contents, err := opened.ReadFile(name)
+	snapshot := make(map[string]treeEntry)
+	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		captured := treeEntry{Mode: info.Mode()}
+		if info.Mode().IsRegular() {
+			contents, err := opened.ReadFile(relative)
+			if err != nil {
+				return err
+			}
+			captured.Content = string(contents)
+		}
+		snapshot[relative] = captured
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return contents
+	return snapshot
 }
