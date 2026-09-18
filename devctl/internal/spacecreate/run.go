@@ -36,5 +36,8 @@ func runCreate(ctx context.Context, stdout io.Writer, deps seam.Deps, profile st
 // steps continue from this single handoff after secrets have been pushed.
 func beginProvisioning(ctx context.Context, stdout io.Writer, deps seam.Deps, invocation invocation, result preflightResult) error {
 	_, err := pushSecretsAndReport(ctx, deps, invocation.domain, result, stdout)
-	return err
+	if err != nil {
+		return err
+	}
+	return provision(ctx, stdout, deps, invocation, result)
 }
