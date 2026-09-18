@@ -835,7 +835,7 @@ func ensureServiceAccount(ctx context.Context, env host.Env) error {
 		if uid == 0 {
 			return errors.New("ikigenba account must not be root")
 		}
-		if err := requireServiceAccountShell(ctx, env); err != nil {
+		if err := ensureServiceAccountShell(ctx, env); err != nil {
 			return err
 		}
 		return requireServiceAccountGroup(ctx, env)
@@ -852,7 +852,7 @@ func ensureServiceAccount(ctx context.Context, env host.Env) error {
 	return nil
 }
 
-func requireServiceAccountShell(ctx context.Context, env host.Env) error {
+func ensureServiceAccountShell(ctx context.Context, env host.Env) error {
 	result, err := env.Execute(ctx, host.Command{Name: "getent", Args: []string{"passwd", "ikigenba"}})
 	if err != nil {
 		return commandTransportError("inspect ikigenba login shell", err)
@@ -865,10 +865,12 @@ func requireServiceAccountShell(ctx context.Context, env host.Env) error {
 		return errors.New("inspect ikigenba login shell: invalid passwd entry")
 	}
 	shell := fields[6]
-	if shell != "/usr/sbin/nologin" && shell != "/sbin/nologin" && shell != "/bin/false" {
-		return fmt.Errorf("ikigenba account has login shell %q", shell)
+	if shell == "/usr/sbin/nologin" || shell == "/sbin/nologin" || shell == "/bin/false" {
+		return nil
 	}
-	return nil
+	return executeInstallCommand(ctx, env, "disable ikigenba login", host.Command{
+		Name: "usermod", Args: []string{"--shell", "/usr/sbin/nologin", "ikigenba"},
+	})
 }
 
 func requireServiceAccountGroup(ctx context.Context, env host.Env) error {

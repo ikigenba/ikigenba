@@ -100,11 +100,18 @@ func TestInstallRequiresExpectedExistingAccountGroup(t *testing.T) {
 	loginShell := newCompletedInstallFixture(t, t.TempDir(), false)
 	loginShell.accountShell = "/bin/bash"
 	err = loginShell.run()
-	if !errors.As(err, &failure) || !strings.Contains(failure.Cause.Error(), "login shell") {
-		t.Fatalf("login-shell failure = %#v", err)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := loginShell.reports[len(loginShell.reports)-1]; got.step != "unit" || got.success || loginShell.configureCalls != 0 {
-		t.Fatalf("reports = %#v, Configure calls = %d", loginShell.reports, loginShell.configureCalls)
+	if loginShell.accountShell != "/usr/sbin/nologin" {
+		t.Fatalf("account shell = %q, want /usr/sbin/nologin", loginShell.accountShell)
+	}
+	wantLoginCommands := completedInstallCommands(loginShell.root, false)
+	wantLoginCommands = append(wantLoginCommands[:5], append([]commandCall{
+		{"usermod", []string{"--shell", "/usr/sbin/nologin", "ikigenba"}},
+	}, wantLoginCommands[5:]...)...)
+	if !reflect.DeepEqual(loginShell.commands, wantLoginCommands) {
+		t.Fatalf("commands = %#v, want %#v", loginShell.commands, wantLoginCommands)
 	}
 }
 
@@ -292,6 +299,7 @@ func TestInstallStageActionAndReportFailuresStopInOrder(t *testing.T) {
 			fixture.secretsFailure = cause
 		}},
 		{"unpack", func(fixture *completedInstallFixture, cause error) { fixture.optOwnershipFailure = cause }},
+		{"unit", func(fixture *completedInstallFixture, cause error) { fixture.ownershipFailure = cause }},
 		{"service", func(fixture *completedInstallFixture, cause error) { fixture.serviceFailure = cause }},
 	}
 	for _, stage := range stages {
@@ -665,6 +673,12 @@ func (fixture *completedInstallFixture) execute(_ context.Context, command host.
 		return host.Result{Stdout: []byte(fixture.accountUID + "\n")}, nil
 	case "getent":
 		return host.Result{Stdout: []byte("ikigenba:x:" + fixture.accountUID + ":998::/nonexistent:" + fixture.accountShell + "\n")}, nil
+	case "usermod":
+		if !reflect.DeepEqual(command.Args, []string{"--shell", "/usr/sbin/nologin", "ikigenba"}) {
+			fixture.t.Fatalf("usermod args = %#v", command.Args)
+		}
+		fixture.accountShell = "/usr/sbin/nologin"
+		return host.Result{}, nil
 	case "systemctl":
 		switch command.Args[0] {
 		case "is-active":
