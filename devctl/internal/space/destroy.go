@@ -2,11 +2,9 @@ package space
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/account"
@@ -15,10 +13,6 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 	"github.com/ikigenba/ikigenba/devctl/internal/secrets"
 )
-
-type retireReport struct {
-	BackedUp []string `json:"backed_up"`
-}
 
 func runDestroy(
 	ctx context.Context,
@@ -44,15 +38,11 @@ func runDestroy(
 			if item.State != cloud.StateRunning {
 				return &RetireStateError{ID: item.ID, State: item.State, Domain: domain, Profile: profile}
 			}
-			output, err := (host.Host{Address: item.Address, Deps: deps}).Sudo(ctx, "retire", "opsctl", "retire")
+			_, err := (host.Host{Address: item.Address, Deps: deps}).Sudo(ctx, "retire", "opsctl", "retire")
 			if err != nil {
 				return err
 			}
-			names, err := parseRetireReport(output.Stdout)
-			if err != nil {
-				return err
-			}
-			Step(stdout, "retire", "opsctl backed up "+strings.Join(names, ", "))
+			Step(stdout, "retire", "opsctl retire")
 		}
 	}
 
@@ -116,40 +106,6 @@ func destroySpace(ctx context.Context, acct *account.Account, domain string) (ac
 		return account.Space{}, false, nil
 	}
 	return account.Space{}, false, err
-}
-
-func parseRetireReport(text string) ([]string, error) {
-	var report retireReport
-	decoder := json.NewDecoder(strings.NewReader(text))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&report); err != nil {
-		return nil, fmt.Errorf("retire: invalid opsctl report: %w", err)
-	}
-	if decoder.Decode(&struct{}{}) != io.EOF {
-		return nil, fmt.Errorf("retire: invalid opsctl report: trailing data")
-	}
-	seen := make(map[string]struct{}, len(report.BackedUp))
-	apps := make([]string, 0, len(report.BackedUp))
-	hostBackedUp := false
-	for _, name := range report.BackedUp {
-		if name == "" {
-			return nil, fmt.Errorf("retire: invalid opsctl report: empty backup name")
-		}
-		if _, duplicate := seen[name]; duplicate {
-			return nil, fmt.Errorf("retire: invalid opsctl report: duplicate backup %q", name)
-		}
-		seen[name] = struct{}{}
-		if name == "host" {
-			hostBackedUp = true
-		} else {
-			apps = append(apps, name)
-		}
-	}
-	if !hostBackedUp {
-		return nil, fmt.Errorf("retire: invalid opsctl report: host backup missing")
-	}
-	sort.Strings(apps)
-	return append(apps, "host"), nil
 }
 
 func destroyRecords(ctx context.Context, stdout io.Writer, acct *account.Account, domain string) error {

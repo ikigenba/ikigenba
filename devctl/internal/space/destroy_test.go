@@ -20,7 +20,7 @@ import (
 const destroyDomain = "foo.sbx.ikigenba.dev"
 
 func TestDestroyExistingSpaceInOrder(t *testing.T) {
-	// R-UIKQ-FPMI R-UL0J-793W R-UPW4-QC2O R-DSU2-631X R-DU1Y-JUSM R-3KXX-07CJ R-92KI-ZUQK
+	// R-UIKQ-FPMI R-UL0J-793W R-UPW4-QC2O R-DSU2-631X R-DU1Y-JUSM R-3KXX-07CJ R-JCCP-CNWX
 	state := newDestroyState(t, false, false)
 	state.instances = []cloud.Instance{{ID: "i-one", Space: destroyDomain, State: cloud.StateRunning, Address: "18.220.10.5"}}
 	state.addresses = []cloud.Address{{AllocationID: "eipalloc-one", AssociationID: "eipassoc-one", IP: "18.220.10.5", Space: destroyDomain}}
@@ -31,13 +31,13 @@ func TestDestroyExistingSpaceInOrder(t *testing.T) {
 		{Name: destroyDomain, Type: "TXT", Values: []string{"keep"}},
 	}
 	state.roleExists = true
-	state.execStdout = `{"backed_up":["dashboard","host","crm"]}`
+	state.execStdout = "arbitrary output that devctl must ignore\n"
 
 	stdout, err := runDestroyTest(t, state, []string{"destroy", destroyDomain})
 	if err != nil {
 		t.Fatalf("Run(destroy) error = %v", err)
 	}
-	want := "retire: ok (opsctl backed up crm, dashboard, host)\n" +
+	want := "retire: ok (opsctl retire)\n" +
 		"instance: ok (i-one terminated)\n" +
 		"address: ok (elastic ip 18.220.10.5 released)\n" +
 		"records: ok (deleted " + destroyDomain + ", *." + destroyDomain + ")\n" +
@@ -174,19 +174,21 @@ func TestDestroyRetireFailurePreventsCloudMutation(t *testing.T) {
 	}
 }
 
-func TestDestroyRejectsUnknownRetireReport(t *testing.T) {
-	// R-92KI-ZUQK
-	for _, report := range []string{`{"backed_up":["host"],"unknown":true}`, `{"backed_up":["crm"]}`, `not-json`} {
+func TestDestroyRetireSuccessIgnoresOutput(t *testing.T) {
+	// R-JCCP-CNWX
+	for _, report := range []string{`{"backed_up":["host"],"unknown":true}`, `{"backed_up":["crm"]}`, `not-json`, ""} {
 		t.Run(report, func(t *testing.T) {
 			state := newDestroyState(t, false, false)
 			state.instances = []cloud.Instance{{ID: "i-one", Space: destroyDomain, State: cloud.StateRunning, Address: "18.220.10.5"}}
 			state.execStdout = report
 			stdout, err := runDestroyTest(t, state, []string{"destroy", destroyDomain})
-			if err == nil || stdout != "" || !strings.Contains(err.Error(), "invalid opsctl report") {
+			if err != nil || !strings.HasPrefix(stdout, "retire: ok (opsctl retire)\n") {
 				t.Fatalf("stdout=%q error=%v", stdout, err)
 			}
-			if got := state.ops; !reflect.DeepEqual(got, []string{"ListSpaceInstances", "ssh sudo opsctl retire"}) {
-				t.Fatalf("operations = %v", got)
+			for _, operation := range state.ops {
+				if strings.HasPrefix(operation, "ListObjects ") {
+					t.Fatalf("retire success read backup bucket: %v", state.ops)
+				}
 			}
 		})
 	}
