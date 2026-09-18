@@ -14,6 +14,7 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/deploy"
 	"github.com/ikigenba/ikigenba/devctl/internal/keyring"
+	"github.com/ikigenba/ikigenba/devctl/internal/remove"
 	"github.com/ikigenba/ikigenba/devctl/internal/restore"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 	"github.com/ikigenba/ikigenba/devctl/internal/secrets"
@@ -128,6 +129,12 @@ func Run(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.Writ
 			return usageError(stderr, "--account is required", "devctl restore --help")
 		}
 		return operationError(stderr, restore.Run(ctx, invocation.arguments, stdout, deps, invocation.account))
+	}
+	if invocation.command == "remove" {
+		if !invocation.accountSet && !hasHelp(invocation.arguments) {
+			return usageError(stderr, "--account is required", "devctl remove --help")
+		}
+		return operationError(stderr, remove.Run(ctx, invocation.arguments, stdout, deps, invocation.account))
 	}
 	if invocation.command == "secrets" {
 		if !invocation.accountSet && !hasHelp(invocation.arguments) {
