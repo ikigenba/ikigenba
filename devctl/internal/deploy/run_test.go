@@ -212,7 +212,7 @@ func TestRelativeAndAbsoluteMissingFilesPreserveOperand(t *testing.T) {
 }
 
 func TestFileResolutionArchiveCommandsAndFileStep(t *testing.T) {
-	// R-08GB-YDTQ R-Z9EM-IAM2 R-FE5C-5AWK
+	// R-08GB-YDTQ R-Z9EM-IAM2 R-FE5C-5AWK R-BU3V-ZE1N
 	dir := t.TempDir()
 	relative := "crm-v1.2.3.tar.xz"
 	absolute := filepath.Join(t.TempDir(), "crm-v2.3.4.tar.xz")
