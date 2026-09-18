@@ -1,6 +1,7 @@
 package deploy
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -9,7 +10,9 @@ import (
 	"strings"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/appref"
+	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
+	"github.com/ikigenba/ikigenba/devctl/internal/space"
 )
 
 const (
@@ -42,12 +45,21 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, p
 		_, _ = fmt.Fprint(stdout, helpText)
 		return nil
 	}
-	_, err = validateFile(invocation, deps.Dir)
+	invocation, err = validateFile(invocation, deps.Dir)
 	if err != nil {
 		return err
 	}
+	if err := inspectArchive(ctx, invocation, deps.Defaults()); err != nil {
+		return err
+	}
+	space.Step(stdout, "file", invocation.app+" "+invocation.version)
 
 	return nil
+}
+
+// ObjectKey returns the deploy object key for an artifact basename.
+func ObjectKey(domain, filename string) string {
+	return domain + "/deploy/" + filename
 }
 
 func parseInvocation(args []string) (invocation, bool, error) {
@@ -90,6 +102,60 @@ func validateFile(value invocation, dir string) (invocation, error) {
 	value.app = app
 	value.version = version
 	return value, nil
+}
+
+func inspectArchive(ctx context.Context, value invocation, deps seam.Deps) error {
+	list := seam.Cmd{
+		Path: "tar",
+		Args: []string{"-t", "-J", "-f", value.file},
+		Dir:  deps.Dir,
+	}
+	result, err := runArchiveCommand(ctx, deps, list)
+	if err != nil {
+		return err
+	}
+	members := make(map[string]struct{})
+	for line := range strings.SplitSeq(string(result.Stdout), "\n") {
+		if line != "" {
+			members[line] = struct{}{}
+		}
+	}
+	if _, ok := members[checkout.ManifestFile]; !ok {
+		return &FileError{Path: value.file, Reason: "no " + checkout.ManifestFile + " in the archive"}
+	}
+
+	extract := seam.Cmd{
+		Path: "tar",
+		Args: []string{"-x", "-J", "-O", "-f", value.file, checkout.ManifestFile},
+		Dir:  deps.Dir,
+	}
+	result, err = runArchiveCommand(ctx, deps, extract)
+	if err != nil {
+		return err
+	}
+	manifest, err := checkout.DecodeManifest(bytes.NewReader(result.Stdout))
+	if err != nil {
+		return &FileError{Path: value.file, Reason: checkout.ManifestFile + ": " + err.Error()}
+	}
+	if manifest.App != value.app {
+		return &FileError{Path: value.file, Reason: "manifest app does not match file name"}
+	}
+	if _, ok := members["bin/"+manifest.App]; !ok {
+		return &FileError{Path: value.file, Reason: "no bin/" + manifest.App + " in the archive"}
+	}
+	return nil
+}
+
+func runArchiveCommand(ctx context.Context, deps seam.Deps, command seam.Cmd) (seam.Result, error) {
+	result, err := deps.Exec(ctx, command)
+	if err != nil {
+		return seam.Result{}, fmt.Errorf("%s: %w", command.Path, err)
+	}
+	if result.ExitCode != 0 {
+		label := strings.Join(append([]string{command.Path}, command.Args...), " ")
+		return seam.Result{}, &ProcessError{Label: label, Status: result.ExitCode, Stderr: string(result.Stderr)}
+	}
+	return result, nil
 }
 
 func usage(message string) *UsageError {
