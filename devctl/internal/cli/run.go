@@ -58,6 +58,22 @@ const versionUsage = `Usage: devctl version
 Print the version.
 `
 
+const spaceRestartUsage = `Usage: devctl --account <name> space restart <domain> <app>
+
+Have opsctl restart one app's service. Deploy the existing file to apply pushed
+secrets; a restart uses the environment already installed on the host.
+`
+
+const spaceLogsUsage = `Usage: devctl --account <name> space logs <domain> <app> [--since <when>] [--follow]
+
+Print the last 100 journal lines for an installed app. With --since, print all
+lines from that moment using journalctl's time syntax.
+
+Options:
+  --since <when>   read from this moment; passed unchanged to journalctl
+  --follow         stream new lines until interrupted
+`
+
 var commandSet = map[string]struct{}{
 	"version": {},
 	"space":   {},
@@ -178,7 +194,17 @@ func runSpace(ctx context.Context, args []string, stdout io.Writer, deps seam.De
 			return spacecreate.Run(ctx, args[1:], stdout, deps, profile)
 		case "init":
 			return spaceinit.Run(ctx, args[1:], stdout, deps, profile)
-		case "restart", "logs":
+		case "restart":
+			if len(args) == 2 && (args[1] == "--help" || args[1] == "-h") {
+				_, _ = fmt.Fprint(stdout, spaceRestartUsage)
+				return nil
+			}
+			return spaceapps.Run(ctx, args, stdout, deps, profile)
+		case "logs":
+			if len(args) == 2 && (args[1] == "--help" || args[1] == "-h") {
+				_, _ = fmt.Fprint(stdout, spaceLogsUsage)
+				return nil
+			}
 			return spaceapps.Run(ctx, args, stdout, deps, profile)
 		}
 	}
