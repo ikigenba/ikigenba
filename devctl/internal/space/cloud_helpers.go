@@ -58,6 +58,32 @@ func WaitChecks(ctx context.Context, deps seam.Deps, acct *account.Account, id s
 	return &WaitError{Subject: id, Want: "pass its status checks"}
 }
 
+// WaitLaunchReady waits until EC2 accepts a launch spec.
+func WaitLaunchReady(
+	ctx context.Context,
+	deps seam.Deps,
+	acct *account.Account,
+	spec cloud.LaunchSpec,
+) error {
+	for attempt := 0; attempt < PollAttempts; attempt++ {
+		ready, err := acct.Clients.EC2.LaunchReady(ctx, spec)
+		if err != nil {
+			return err
+		}
+		if ready {
+			return nil
+		}
+		if attempt+1 < PollAttempts {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-deps.After(PollInterval):
+			}
+		}
+	}
+	return &WaitError{Subject: spec.InstanceProfile, Want: "become usable for launch"}
+}
+
 // ElasticIP finds the address allocated to domain.
 func ElasticIP(ctx context.Context, acct *account.Account, domain string) (cloud.Address, bool, error) {
 	addresses, err := acct.Clients.EC2.ListSpaceAddresses(ctx)

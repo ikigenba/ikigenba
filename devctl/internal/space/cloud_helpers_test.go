@@ -100,6 +100,55 @@ func TestWaitChecks(t *testing.T) {
 	}
 }
 
+func TestWaitLaunchReady(t *testing.T) {
+	// R-H5IS-GV8A
+	spec := cloud.LaunchSpec{
+		LaunchTemplateID: "lt-one",
+		InstanceProfile:  "profile-one",
+		Space:            "app.example",
+	}
+	calls := 0
+	ec2 := &helperEC2{launchReady: func(_ context.Context, got cloud.LaunchSpec) (bool, error) {
+		calls++
+		if !reflect.DeepEqual(got, spec) {
+			t.Fatalf("LaunchReady spec = %#v, want %#v", got, spec)
+		}
+		return calls == 3, nil
+	}}
+	var waits []time.Duration
+	err := WaitLaunchReady(context.Background(), seam.Deps{After: instantAfter(&waits)}, helperAccount(ec2, nil, nil), spec)
+	if err != nil || calls != 3 || !reflect.DeepEqual(waits, []time.Duration{PollInterval, PollInterval}) {
+		t.Fatalf("WaitLaunchReady = %v; calls=%d waits=%v", err, calls, waits)
+	}
+
+	wantErr := errors.New("launch probe failed")
+	calls = 0
+	waits = nil
+	ec2.launchReady = func(context.Context, cloud.LaunchSpec) (bool, error) {
+		calls++
+		return false, wantErr
+	}
+	err = WaitLaunchReady(context.Background(), seam.Deps{After: instantAfter(&waits)}, helperAccount(ec2, nil, nil), spec)
+	if err != wantErr || calls != 1 || len(waits) != 0 {
+		t.Fatalf("error WaitLaunchReady = %v; calls=%d waits=%v", err, calls, waits)
+	}
+
+	calls = 0
+	waits = nil
+	ec2.launchReady = func(context.Context, cloud.LaunchSpec) (bool, error) {
+		calls++
+		return false, nil
+	}
+	err = WaitLaunchReady(context.Background(), seam.Deps{After: instantAfter(&waits)}, helperAccount(ec2, nil, nil), spec)
+	var waitErr *WaitError
+	if !errors.As(err, &waitErr) || waitErr.Subject != spec.InstanceProfile || waitErr.Want != "become usable for launch" {
+		t.Fatalf("timeout error = %#v", err)
+	}
+	if calls != PollAttempts || len(waits) != PollAttempts-1 {
+		t.Fatalf("calls, waits = %d, %d; want %d, %d", calls, len(waits), PollAttempts, PollAttempts-1)
+	}
+}
+
 func TestElasticIP(t *testing.T) {
 	// R-SUTN-OYAH R-THZQ-YLDO
 	addresses := []cloud.Address{
@@ -314,6 +363,7 @@ func helperAccount(ec2 cloud.EC2, route53 cloud.Route53, iam cloud.IAM) *account
 type helperEC2 struct {
 	describe     func(context.Context, string) (cloud.Instance, error)
 	checks       func(context.Context, string) (bool, error)
+	launchReady  func(context.Context, cloud.LaunchSpec) (bool, error)
 	addresses    func(context.Context) ([]cloud.Address, error)
 	disassociate func(context.Context, string) error
 	release      func(context.Context, string) error
@@ -325,6 +375,9 @@ func (f *helperEC2) DescribeInstance(ctx context.Context, id string) (cloud.Inst
 }
 func (*helperEC2) RunInstance(context.Context, cloud.LaunchSpec) (cloud.Instance, error) {
 	return cloud.Instance{}, nil
+}
+func (f *helperEC2) LaunchReady(ctx context.Context, spec cloud.LaunchSpec) (bool, error) {
+	return f.launchReady(ctx, spec)
 }
 func (*helperEC2) StartInstance(context.Context, string) error     { return nil }
 func (*helperEC2) StopInstance(context.Context, string) error      { return nil }

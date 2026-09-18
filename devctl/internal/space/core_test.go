@@ -77,12 +77,14 @@ func TestNamesAndConstants(t *testing.T) {
 }
 
 func TestWaitDeclarations(t *testing.T) {
-	// R-STLR-B6JS
+	// R-H4AW-33HL
 	acceptWaitState := func(func(context.Context, seam.Deps, *account.Account, string, cloud.InstanceState) (cloud.Instance, error)) {
 	}
 	acceptWaitChecks := func(func(context.Context, seam.Deps, *account.Account, string) error) {}
+	acceptWaitLaunchReady := func(func(context.Context, seam.Deps, *account.Account, cloud.LaunchSpec) error) {}
 	acceptWaitState(WaitState)
 	acceptWaitChecks(WaitChecks)
+	acceptWaitLaunchReady(WaitLaunchReady)
 	if PollInterval != 5*time.Second {
 		t.Errorf("PollInterval = %s, want 5s", PollInterval)
 	}
