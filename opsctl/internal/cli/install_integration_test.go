@@ -71,8 +71,9 @@ func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
 		"xz --decompress --stdout",
 		"systemctl is-active ikigenba-notes.service",
 		"id --user ikigenba",
-		"usermod --shell /usr/sbin/nologin ikigenba",
-		"chown ikigenba " + filepath.Join(fixture.root, "opt", "notes"),
+		"id --group --name ikigenba",
+		"chown ikigenba:ikigenba " + filepath.Join(fixture.root, "opt", "notes"),
+		"chown --recursive root:ikigenba " + filepath.Join(fixture.root, "opt", "notes", "bin") + " " + filepath.Join(fixture.root, "opt", "notes", "etc"),
 		"systemctl daemon-reload",
 		"systemctl enable ikigenba-notes.service",
 		"nginx -t",
@@ -85,7 +86,7 @@ func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
 }
 
 func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
-	// R-P0DV-8KCB, R-P2TO-03TP, R-EM4J-XPDA, R-EOKC-P8UO, R-UBWT-KXSF
+	// R-P0DV-8KCB, R-P2TO-03TP, R-EM4J-XPDA, R-EOKC-P8UO, R-AJZ2-XSUE
 	fixture := newCLIInstallFixture(t)
 	fixture.failCommand = "nginx -t"
 	stdout, stderr, code := fixture.invoke()
@@ -102,8 +103,9 @@ func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
 		"xz --decompress --stdout",
 		"systemctl is-active ikigenba-notes.service",
 		"id --user ikigenba",
-		"usermod --shell /usr/sbin/nologin ikigenba",
-		"chown ikigenba " + filepath.Join(fixture.root, "opt", "notes"),
+		"id --group --name ikigenba",
+		"chown ikigenba:ikigenba " + filepath.Join(fixture.root, "opt", "notes"),
+		"chown --recursive root:ikigenba " + filepath.Join(fixture.root, "opt", "notes", "bin") + " " + filepath.Join(fixture.root, "opt", "notes", "etc"),
 		"systemctl daemon-reload",
 		"systemctl enable ikigenba-notes.service",
 		"nginx -t",
@@ -114,7 +116,7 @@ func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRegenerationFails(t *testing.T) {
-	// R-P0DV-8KCB, R-UBWT-KXSF
+	// R-P0DV-8KCB, R-AJZ2-XSUE
 	fixture := newCLIInstallFixture(t)
 	store := config.Store{Root: fixture.root}
 	if err := store.Set("backup.s3_uri", "not-an-s3-uri"); err != nil {
@@ -136,7 +138,7 @@ func TestInstallCLIStopsWhenLitestreamRegenerationFails(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRestartFails(t *testing.T) {
-	// R-P0DV-8KCB, R-UBWT-KXSF
+	// R-P0DV-8KCB, R-AJZ2-XSUE
 	fixture := newCLIInstallFixture(t)
 	fixture.failCommand = "systemctl restart litestream.service"
 
@@ -156,7 +158,7 @@ func TestInstallCLIStopsWhenLitestreamRestartFails(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRestartTransportFails(t *testing.T) {
-	// R-P0DV-8KCB, R-UBWT-KXSF
+	// R-P0DV-8KCB, R-AJZ2-XSUE
 	for _, test := range []struct {
 		name       string
 		failure    error
@@ -339,8 +341,9 @@ func installCommandsThroughNginx(root string) []string {
 		"xz --decompress --stdout",
 		"systemctl is-active ikigenba-notes.service",
 		"id --user ikigenba",
-		"usermod --shell /usr/sbin/nologin ikigenba",
-		"chown ikigenba " + filepath.Join(root, "opt", "notes"),
+		"id --group --name ikigenba",
+		"chown ikigenba:ikigenba " + filepath.Join(root, "opt", "notes"),
+		"chown --recursive root:ikigenba " + filepath.Join(root, "opt", "notes", "bin") + " " + filepath.Join(root, "opt", "notes", "etc"),
 		"systemctl daemon-reload",
 		"systemctl enable ikigenba-notes.service",
 		"nginx -t",
@@ -526,6 +529,8 @@ func (fixture *cliInstallFixture) execute(_ context.Context, command host.Comman
 		return host.Result{ExitCode: 3, Stdout: []byte("inactive\n")}, nil
 	case key == "id --user ikigenba":
 		return host.Result{Stdout: []byte("998\n")}, nil
+	case key == "id --group --name ikigenba":
+		return host.Result{Stdout: []byte("ikigenba\n")}, nil
 	case key == "systemctl start ikigenba-notes.service" || key == "systemctl restart ikigenba-notes.service":
 		if fixture.failStart {
 			return host.Result{ExitCode: 9, Stderr: []byte("start rejected\n")}, nil

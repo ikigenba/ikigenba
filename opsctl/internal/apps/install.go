@@ -167,7 +167,7 @@ func (workflow *installWorkflow) unpack(context.Context) error {
 }
 
 func (workflow *installWorkflow) publishUnit(ctx context.Context) error {
-	if failure := publishAppUnit(ctx, workflow.env, workflow.checked.manifest); failure != nil {
+	if failure := publishAppUnit(ctx, workflow.env, workflow.checked); failure != nil {
 		return failInstallStage(workflow.hooks, "unit", failure)
 	}
 	unit := appUnitName(workflow.checked.manifest.App)
@@ -656,7 +656,7 @@ func replaceInstalledFiles(root string, artifact *inspectedArtifact, environment
 	if err := rejectDestinationSymlinks(filesystem, appRoot); err != nil {
 		return unpackFailure(err)
 	}
-	if err := filesystem.MkdirAll("opt", 0o750); err != nil {
+	if err := ensureOptDirectory(filesystem); err != nil {
 		return unpackFailure(err)
 	}
 	if err := filesystem.MkdirAll(appRoot, 0o750); err != nil {
@@ -711,6 +711,18 @@ func replaceInstalledFiles(root string, artifact *inspectedArtifact, environment
 		return unpackFailure(err)
 	}
 	return nil
+}
+
+func ensureOptDirectory(filesystem *os.Root) error {
+	if _, err := filesystem.Lstat("opt"); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := filesystem.Mkdir("opt", 0o755); err != nil {
+		return err
+	}
+	return filesystem.Chmod("opt", 0o755)
 }
 
 func rejectDestinationSymlinks(filesystem *os.Root, appRoot string) error {
@@ -771,7 +783,8 @@ func unpackFailure(err error) *stageFailure {
 	return &stageFailure{code: 1, detail: err.Error(), cause: err}
 }
 
-func publishAppUnit(ctx context.Context, env host.Env, manifest Manifest) *stageFailure {
+func publishAppUnit(ctx context.Context, env host.Env, artifact *inspectedArtifact) *stageFailure {
+	manifest := artifact.manifest
 	if err := ensureServiceAccount(ctx, env); err != nil {
 		return operationalFailure(err)
 	}
@@ -781,8 +794,14 @@ func publishAppUnit(ctx context.Context, env host.Env, manifest Manifest) *stage
 		return operationalFailure(err)
 	}
 	if err := executeInstallCommand(ctx, env, fmt.Sprintf("make %s writable", safeDiagnosticToken(manifest.App)), host.Command{
-		Name: "chown", Args: []string{"ikigenba", appRoot},
+		Name: "chown", Args: []string{"ikigenba:ikigenba", appRoot},
 	}); err != nil {
+		return operationalFailure(err)
+	}
+	if err := applyInstalledTreeOwnership(ctx, env, manifest.App); err != nil {
+		return operationalFailure(err)
+	}
+	if err := applyInstalledTreeModes(env.Root, artifact); err != nil {
 		return operationalFailure(err)
 	}
 	unitName := appUnitName(manifest.App)
@@ -808,25 +827,110 @@ func ensureServiceAccount(ctx context.Context, env host.Env) error {
 		if uid == 0 {
 			return errors.New("ikigenba account must not be root")
 		}
-		return executeInstallCommand(ctx, env, "disable ikigenba login", host.Command{
-			Name: "usermod", Args: []string{"--shell", "/usr/sbin/nologin", "ikigenba"},
-		})
+		return requireServiceAccountGroup(ctx, env)
 	}
 	var commandErr *host.CommandError
 	if !errors.As(err, &commandErr) || commandErr.Result.ExitCode != 1 {
 		return err
 	}
 	if err := executeInstallCommand(ctx, env, "create ikigenba account", host.Command{
-		Name: "useradd", Args: []string{"--system", "--no-create-home", "--shell", "/usr/sbin/nologin", "ikigenba"},
+		Name: "useradd", Args: []string{"--system", "--no-create-home", "--shell", "/usr/sbin/nologin", "--user-group", "ikigenba"},
 	}); err != nil {
 		return err
 	}
-	uid, err = inspectServiceAccount(ctx, env)
+	return nil
+}
+
+func requireServiceAccountGroup(ctx context.Context, env host.Env) error {
+	result, err := env.Execute(ctx, host.Command{Name: "id", Args: []string{"--group", "--name", "ikigenba"}})
+	if err != nil {
+		return commandTransportError("inspect ikigenba primary group", err)
+	}
+	if result.ExitCode != 0 {
+		return &host.CommandError{Label: "inspect ikigenba primary group", Result: result}
+	}
+	group := strings.TrimSpace(string(result.Stdout))
+	if group != "ikigenba" {
+		return fmt.Errorf("ikigenba account primary group is %q, want ikigenba", group)
+	}
+	return nil
+}
+
+func applyInstalledTreeOwnership(ctx context.Context, env host.Env, app string) error {
+	args := []string{"--recursive", "root:ikigenba"}
+	for _, tree := range []string{"bin", "etc", "share"} {
+		name := rootedHostPath(env.Root, "opt", app, tree)
+		if _, err := os.Lstat(name); err == nil {
+			args = append(args, name)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return executeInstallCommand(ctx, env, fmt.Sprintf("set %s installed-tree ownership", safeDiagnosticToken(app)), host.Command{
+		Name: "chown", Args: args,
+	})
+}
+
+func applyInstalledTreeModes(root string, artifact *inspectedArtifact) error {
+	app := artifact.manifest.App
+	executable := make(map[string]bool, len(artifact.entries))
+	for _, entry := range artifact.entries {
+		if !entry.dir && entry.mode.Perm()&0o111 != 0 {
+			executable[filepath.FromSlash(entry.name)] = true
+		}
+	}
+	filesystem, err := os.OpenRoot(root)
 	if err != nil {
 		return err
 	}
-	if uid == 0 {
-		return errors.New("ikigenba account must not be root")
+	defer func() { _ = filesystem.Close() }()
+	appRoot := path.Join("opt", app)
+	for _, tree := range []string{"bin", "etc", "share"} {
+		base := path.Join(appRoot, tree)
+		if _, err := filesystem.Lstat(base); errors.Is(err, os.ErrNotExist) {
+			continue
+		} else if err != nil {
+			return err
+		}
+		if err := applyInstalledPathModes(filesystem, base, appRoot, executable); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func applyInstalledPathModes(filesystem *os.Root, name, appRoot string, executable map[string]bool) error {
+	info, err := filesystem.Lstat(name)
+	if err != nil {
+		return err
+	}
+	mode := fs.FileMode(0o640)
+	relative := filepath.FromSlash(strings.TrimPrefix(name, appRoot+"/"))
+	if info.IsDir() || executable[relative] {
+		mode = 0o750
+	}
+	if name == path.Join(appRoot, "etc", "env") {
+		mode = 0o600
+	}
+	if err := filesystem.Chmod(name, mode); err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return nil
+	}
+	directory, err := filesystem.Open(name)
+	if err != nil {
+		return err
+	}
+	entries, readErr := directory.ReadDir(-1)
+	closeErr := directory.Close()
+	if readErr != nil || closeErr != nil {
+		return errors.Join(readErr, closeErr)
+	}
+	for _, entry := range entries {
+		if err := applyInstalledPathModes(filesystem, path.Join(name, entry.Name()), appRoot, executable); err != nil {
+			return err
+		}
 	}
 	return nil
 }
