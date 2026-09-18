@@ -211,7 +211,7 @@ execution handles quoting and diagnostics; status relays opaque host output.
 
 - R-DYXK-2XRE: Retained-backup destroy without `--no-backup` MUST refuse an existing non-running instance with `RetireStateError`, empty stdout and no mutations or SSH.
 
-- R-92KI-ZUQK: After a successful retire, destroy MUST report `retire: ok (opsctl backed up <names>)`, where names are the backed-up apps in ascending order followed by `host`, joined with comma-space; obtaining those names MUST depend only on a published opsctl interface, and unknown report data MUST fail before termination rather than invent a successful backup summary; verified at least by reproducing `retire: ok (opsctl backed up crm, dashboard, host)` for a retire that backed up those two apps and the host.
+- R-JCCP-CNWX: After `sudo opsctl retire` exits 0, destroy MUST report `retire: ok (opsctl retire)`; a zero exit is the whole of the step's success, and devctl MUST NOT parse opsctl's output or read the backup bucket to describe what was backed up. Verified by reproducing `retire: ok (opsctl retire)`.
 
 - R-E1DC-UH8S: Destroy MUST accept `--no-backup` on either side of its domain operand, with repeated occurrences having the same effect as one; value-bearing forms such as `--no-backup=true` MUST be unknown options.
 

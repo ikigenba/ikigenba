@@ -418,7 +418,7 @@ Output, with the create's lines before `opsctl` and the deploys' lines
 before `install` as in their own stories:
 
 ```
-retire: ok (opsctl backed up crm, dashboard, host)
+retire: ok (opsctl retire)
 instance: ok (i-0f1e2d3c4b5a69788 terminated)
 address: ok (elastic ip 18.117.42.9 released)
 records: ok (deleted ikigenba.dev, *.ikigenba.dev)
@@ -1063,8 +1063,8 @@ own schedule: service files daily, the host weekly, committed database
 changes every fifteen minutes. So before the instance goes, devctl has the
 host take its final backup with `sudo opsctl retire` over ssh, which stops
 every service, lets litestream ship what it holds, and writes the service
-and host backups one last time. The `retire` line summarises what opsctl
-backed up; what retire does on the host is opsctl's.
+and host backups one last time. A zero exit from retire is the whole of the
+step's success; what retire does on the host, and what it backs up, is opsctl's.
 
 Command:
 
@@ -1075,7 +1075,7 @@ $ devctl --account 295229566359 space destroy staging.ikigenba.dev
 Output:
 
 ```
-retire: ok (opsctl backed up crm, dashboard, host)
+retire: ok (opsctl retire)
 instance: ok (i-0a1b2c3d4e5f60718 terminated)
 address: ok (elastic ip 18.220.10.5 released)
 records: ok (deleted staging.ikigenba.dev, *.staging.ikigenba.dev)
