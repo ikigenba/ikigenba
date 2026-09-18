@@ -212,7 +212,7 @@ func TestRelativeAndAbsoluteMissingFilesPreserveOperand(t *testing.T) {
 }
 
 func TestFileResolutionArchiveCommandsAndFileStep(t *testing.T) {
-	// R-08GB-YDTQ R-Z9EM-IAM2 R-ZFI4-F5BJ R-FE5C-5AWK
+	// R-08GB-YDTQ R-Z9EM-IAM2 R-FE5C-5AWK
 	dir := t.TempDir()
 	relative := "crm-v1.2.3.tar.xz"
 	absolute := filepath.Join(t.TempDir(), "crm-v2.3.4.tar.xz")
@@ -257,6 +257,40 @@ func TestFileResolutionArchiveCommandsAndFileStep(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestFileStepReportsCRMVersion010(t *testing.T) {
+	// R-ZFI4-F5BJ
+	dir := t.TempDir()
+	operand := "crm-v0.1.0.tar.xz"
+	if err := os.WriteFile(filepath.Join(dir, operand), []byte("artifact"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	accountErr := errors.New("stop after file step")
+	call := 0
+	deps := seam.Deps{
+		Dir: dir,
+		Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
+			call++
+			if call == 1 {
+				return seam.Result{Stdout: []byte("etc/manifest.toml\nbin/crm\n")}, nil
+			}
+			return seam.Result{Stdout: []byte("app = \"crm\"\n")}, nil
+		},
+		Cloud: func(context.Context, string, string) (cloud.Clients, error) {
+			return cloud.Clients{}, accountErr
+		},
+	}
+
+	var stdout bytes.Buffer
+	err := deploy.Run(context.Background(), []string{"foo.example", operand}, &stdout, deps, "account")
+	if !errors.Is(err, accountErr) {
+		t.Fatalf("Run() error = %v, want %v", err, accountErr)
+	}
+	if want := "file: ok (crm v0.1.0)\n"; stdout.String() != want {
+		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
 	}
 }
 
