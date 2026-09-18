@@ -131,6 +131,11 @@ func Run(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.Writ
 	if invocation.command == "version" {
 		return runVersion(invocation.arguments, stdout, stderr)
 	}
+	if hasHelp(invocation.arguments) {
+		invocation.arguments = helpArguments(invocation.command, invocation.arguments)
+	} else if message, helpCommand := missingCommandOptionValue(invocation.command, invocation.arguments); message != "" {
+		return usageError(stderr, message, helpCommand)
+	}
 	if invocation.command == "build" {
 		return operationError(stderr, build.Run(ctx, invocation.arguments, stdout, deps))
 	}
@@ -185,6 +190,58 @@ func Run(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.Writ
 
 	// Command-specific phases replace this successful no-op with their dispatch.
 	return 0
+}
+
+func helpArguments(command string, arguments []string) []string {
+	if len(arguments) != 0 {
+		switch command {
+		case "space":
+			if _, ok := map[string]struct{}{
+				"list": {}, "create": {}, "destroy": {}, "stop": {}, "start": {},
+				"init": {}, "status": {}, "restart": {}, "logs": {},
+			}[arguments[0]]; ok {
+				return []string{arguments[0], "--help"}
+			}
+		case "secrets":
+			if arguments[0] == "push" || arguments[0] == "list" {
+				return []string{arguments[0], "--help"}
+			}
+		}
+	}
+	return []string{"--help"}
+}
+
+func missingCommandOptionValue(command string, arguments []string) (string, string) {
+	options := map[string]struct{}{}
+	helpCommand := ""
+	switch {
+	case command == "space" && len(arguments) != 0 && arguments[0] == "create":
+		options["--acme-email"] = struct{}{}
+		helpCommand = "devctl space --help"
+	case command == "space" && len(arguments) != 0 && arguments[0] == "init":
+		options["--opsctl"] = struct{}{}
+		options["--acme-email"] = struct{}{}
+		helpCommand = "devctl space --help"
+	case command == "restore":
+		options["--at"] = struct{}{}
+		helpCommand = "devctl restore --help"
+	default:
+		return "", ""
+	}
+
+	for index, argument := range arguments {
+		if _, ok := options[argument]; ok {
+			if index+1 == len(arguments) || arguments[index+1] == "" || strings.HasPrefix(arguments[index+1], "-") {
+				return "option '" + argument + "' requires a value", helpCommand
+			}
+		}
+		if equal := strings.IndexByte(argument, '='); equal >= 0 {
+			if _, ok := options[argument[:equal]]; ok && argument[equal+1:] == "" {
+				return "option '" + argument[:equal] + "' requires a value", helpCommand
+			}
+		}
+	}
+	return "", ""
 }
 
 func runSpace(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, profile string) error {

@@ -623,7 +623,6 @@ func TestSecretsUsageErrorsThroughCLI(t *testing.T) {
 		{"secrets", "push", "--verbose"},
 		{"secrets", "push", "example.test", "--verbose"},
 		{"secrets", "list", "example.test", "crm", "--verbose"},
-		{"secrets", "push", "--help", "--verbose"},
 	} {
 		fullArgs := append([]string{"--account", "work"}, args...)
 		assertResult(t, invoke(fullArgs...), 2, "", want("unknown option '--verbose'"))
