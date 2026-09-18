@@ -17,7 +17,6 @@ import (
 )
 
 func TestPreflightOpensCheckoutBeforeCloud(t *testing.T) {
-	// R-Y4DW-LSA9
 	for _, test := range []struct {
 		name       string
 		execResult seam.Result
@@ -49,7 +48,6 @@ func TestPreflightOpensCheckoutBeforeCloud(t *testing.T) {
 }
 
 func TestPreflightCompletesReadOnlyChecksInOrder(t *testing.T) {
-	// R-VVFF-8UQ5
 	env := newPreflightEnv(t)
 	got, err := preflight(context.Background(), env.deps(), "sandbox", "foo.sbx.ikigenba.dev")
 	if err != nil {
@@ -72,7 +70,6 @@ func TestPreflightCompletesReadOnlyChecksInOrder(t *testing.T) {
 }
 
 func TestPreflightAccountDomain(t *testing.T) {
-	// R-Y6TP-DBRN
 	env := newPreflightEnv(t)
 	_, err := preflight(context.Background(), env.deps(), "development", "foo.example.com")
 	assertRefusal(t, err, "'foo.example.com' does not end in the account domain 'sbx.ikigenba.dev'")
@@ -89,7 +86,6 @@ func TestPreflightAccountDomain(t *testing.T) {
 }
 
 func TestPreflightRejectsDelegatedDomains(t *testing.T) {
-	// R-Y81L-R3IC
 	for _, domain := range []string{"foo.sbx.ikigenba.dev", "sbx.ikigenba.dev"} {
 		t.Run(domain, func(t *testing.T) {
 			env := newPreflightEnv(t)
@@ -105,7 +101,6 @@ func TestPreflightRejectsDelegatedDomains(t *testing.T) {
 }
 
 func TestPreflightRejectsExistingSpace(t *testing.T) {
-	// R-Y99I-4V91
 	env := newPreflightEnv(t)
 	env.instances = []cloud.Instance{{ID: "i-0c9e94542d98846a8", Space: "foo.sbx.ikigenba.dev", State: cloud.StateRunning}}
 	_, err := preflight(context.Background(), env.deps(), "sandbox", "foo.sbx.ikigenba.dev")
@@ -116,7 +111,6 @@ func TestPreflightRejectsExistingSpace(t *testing.T) {
 }
 
 func TestValidateSpacesRejectsOnlyLabelBoundedNesting(t *testing.T) {
-	// R-3NDP-RQTX
 	tests := []struct {
 		name          string
 		domain        string
@@ -167,7 +161,6 @@ func TestValidateSpacesRejectsOnlyLabelBoundedNesting(t *testing.T) {
 }
 
 func TestPreflightRejectsExistingRoleOrProfile(t *testing.T) {
-	// R-YBPA-WEQF
 	for _, test := range []struct {
 		name          string
 		roleExists    bool
@@ -191,7 +184,6 @@ func TestPreflightRejectsExistingRoleOrProfile(t *testing.T) {
 }
 
 func TestPushSecretsAndReportUsesSecretsBarrier(t *testing.T) {
-	// R-YFD0-1PYI
 	t.Run("success", func(t *testing.T) {
 		env := newPreflightEnv(t)
 		acct := env.account()
