@@ -95,6 +95,8 @@ func TestGrammarRejectsBeforeExternalAccess(t *testing.T) {
 		{args: []string{"restart", "foo.example", "crm", "extra"}, message: "space restart takes only <domain> and <app>"},
 		{args: []string{"logs", "foo.example", "crm", "extra"}, message: "space logs takes only <domain> and <app>"},
 		{args: []string{"restart", "--follow", "foo.example", "crm"}, message: "unknown option '--follow'"},
+		{args: []string{"restart", "--since", "yesterday", "foo.example", "crm"}, message: "unknown option '--since'"},
+		{args: []string{"restart", "--since=yesterday", "foo.example", "crm"}, message: "unknown option '--since=yesterday'"},
 		{args: []string{"logs", "--wat", "foo.example", "crm"}, message: "unknown option '--wat'"},
 		{args: []string{"logs", "foo.example", "crm", "--since"}, message: "option '--since' requires a value"},
 		{args: []string{"logs", "--since", "", "foo.example", "crm"}, message: "option '--since' requires a value"},
@@ -397,27 +399,45 @@ func TestLogsStreamsOutputAndReportsFailure(t *testing.T) {
 
 func TestLogsTreatsCancellationAsCleanInterrupt(t *testing.T) {
 	// R-HE3E-PRNJ
-	ctx, cancel := context.WithCancel(context.Background())
-	profiles := []string{}
-	deps := operationDeps(runningInstance(), &profiles)
-	deps.Exec = loadedUnit
-	deps.Stream = func(_ context.Context, _ seam.Cmd, stdout io.Writer) (seam.Result, error) {
-		_, _ = io.WriteString(stdout, "delivered\n")
-		cancel()
-		return seam.Result{}, context.Canceled
-	}
-	var stdout bytes.Buffer
-	if err := Run(ctx, []string{"logs", "foo.example", "crm", "--follow"}, &stdout, deps, "work"); err != nil {
-		t.Fatalf("Run() = %v, want nil", err)
-	}
-	if stdout.String() != "delivered\n" {
-		t.Fatalf("stdout = %q", stdout.String())
+	for _, hostFailure := range []bool{false, true} {
+		name := map[bool]string{false: "cancellation only", true: "independent host failure"}[hostFailure]
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			profiles := []string{}
+			deps := operationDeps(runningInstance(), &profiles)
+			deps.Exec = loadedUnit
+			deps.Stream = func(_ context.Context, _ seam.Cmd, stdout io.Writer) (seam.Result, error) {
+				_, _ = io.WriteString(stdout, "delivered\n")
+				cancel()
+				if hostFailure {
+					return seam.Result{ExitCode: 12, Stderr: []byte("journal failed independently\n")}, nil
+				}
+				return seam.Result{}, context.Canceled
+			}
+			var stdout bytes.Buffer
+			err := Run(ctx, []string{"logs", "foo.example", "crm", "--follow"}, &stdout, deps, "work")
+			if hostFailure {
+				var commandErr *host.CommandError
+				if !errors.As(err, &commandErr) || commandErr.Step != "logs" || commandErr.ExitCode() != 1 ||
+					commandErr.Detail() != "> journal failed independently" {
+					t.Fatalf("error = %#v, want independent logs host failure", err)
+				}
+			} else if err != nil {
+				t.Fatalf("Run() = %v, want nil", err)
+			}
+			if stdout.String() != "delivered\n" {
+				t.Fatalf("stdout = %q", stdout.String())
+			}
+		})
 	}
 }
 
 func TestLogsRejectsInvalidAppBeforeExternalAccess(t *testing.T) {
 	// R-HFBB-3JE8
-	apps := []string{"", "Bad/App", "host", "crm-", "crm_api", "crm.api", strings.Repeat("a", 64)}
+	apps := []string{
+		"host", "deploy", "backup-host", "backup-services", "renew-certificate",
+		"", "Bad/App", "crm-", "crm_api", "crm.api", strings.Repeat("a", 64),
+	}
 	for _, app := range apps {
 		if appref.ValidName(app) {
 			t.Fatalf("test case %q unexpectedly valid", app)
