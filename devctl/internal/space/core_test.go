@@ -68,7 +68,10 @@ func TestWaitDeclarations(t *testing.T) {
 func TestUsageError(t *testing.T) {
 	// R-SZP9-8199
 	err := &UsageError{Message: "bad option", Help: "devctl space --help"}
-	assertFields(t, err, []string{"Message", "Help"})
+	assertFields(t, err, struct {
+		Message string
+		Help    string
+	}{})
 	if got, want := err.Error(), "bad option"; got != want {
 		t.Errorf("Error() = %q, want %q", got, want)
 	}
@@ -83,7 +86,10 @@ func TestUsageError(t *testing.T) {
 func TestNotRunningError(t *testing.T) {
 	// R-T0X5-LSZY
 	err := &NotRunningError{Domain: "bar.sbx.ikigenba.dev", State: cloud.StateStopped}
-	assertFields(t, err, []string{"Domain", "State"})
+	assertFields(t, err, struct {
+		Domain string
+		State  cloud.InstanceState
+	}{})
 	if got, want := err.Error(), "'bar.sbx.ikigenba.dev' is stopped"; got != want {
 		t.Errorf("Error() = %q, want %q", got, want)
 	}
@@ -92,7 +98,10 @@ func TestNotRunningError(t *testing.T) {
 func TestWaitError(t *testing.T) {
 	// R-T251-ZKQN
 	err := &WaitError{Subject: "i-0c9e94542d98846a8", Want: "be running"}
-	assertFields(t, err, []string{"Subject", "Want"})
+	assertFields(t, err, struct {
+		Subject string
+		Want    string
+	}{})
 	if got, want := err.Error(), "timed out waiting for i-0c9e94542d98846a8 to be running"; got != want {
 		t.Errorf("Error() = %q, want %q", got, want)
 	}
@@ -106,7 +115,12 @@ func TestRetireStateError(t *testing.T) {
 		Domain:  "foo.sbx.ikigenba.dev",
 		Profile: "sandbox",
 	}
-	assertFields(t, err, []string{"ID", "State", "Domain", "Profile"})
+	assertFields(t, err, struct {
+		ID      string
+		State   cloud.InstanceState
+		Domain  string
+		Profile string
+	}{})
 	if got, want := err.Error(), "retire: instance i-0c9e94542d98846a8 is stopped"; got != want {
 		t.Errorf("Error() = %q, want %q", got, want)
 	}
@@ -119,18 +133,22 @@ func TestRetireStateError(t *testing.T) {
 	}
 }
 
-func assertFields(t *testing.T, value any, want []string) {
+func assertFields(t *testing.T, value, want any) {
 	t.Helper()
 	typeOf := reflect.TypeOf(value)
 	if typeOf.Kind() == reflect.Pointer {
 		typeOf = typeOf.Elem()
 	}
-	if typeOf.NumField() != len(want) {
-		t.Fatalf("%s has %d fields, want %d", typeOf.Name(), typeOf.NumField(), len(want))
+	wantType := reflect.TypeOf(want)
+	if typeOf.NumField() != wantType.NumField() {
+		t.Fatalf("%s has %d fields, want %d", typeOf.Name(), typeOf.NumField(), wantType.NumField())
 	}
-	for index, name := range want {
-		if got := typeOf.Field(index).Name; got != name {
-			t.Errorf("field %d = %s, want %s", index, got, name)
+	for index := range wantType.NumField() {
+		gotField := typeOf.Field(index)
+		wantField := wantType.Field(index)
+		if gotField.Name != wantField.Name || gotField.Type != wantField.Type {
+			t.Errorf("field %d = %s %s, want %s %s", index,
+				gotField.Name, gotField.Type, wantField.Name, wantField.Type)
 		}
 	}
 }
