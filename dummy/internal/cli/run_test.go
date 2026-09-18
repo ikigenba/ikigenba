@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"go/ast"
@@ -14,6 +15,120 @@ import (
 	"strings"
 	"testing"
 )
+
+// R-ML36-X0ZH
+func TestUsageConstant(t *testing.T) {
+	t.Parallel()
+
+	const want = "Usage: dummy [command]\n\nServe the Dummy page at 127.0.0.1:$PORT. With no command, serve.\n\nCommands:\n  manifest   print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  the server failed\n  2  usage error\n"
+	if Usage != want {
+		t.Errorf("Usage = %q, want %q", Usage, want)
+	}
+}
+
+func TestRunCommands(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		arg  string
+		want string
+	}{
+		// R-MMB3-ASQ6
+		{name: "version", arg: "--version", want: Version + "\n"},
+		// R-MNIZ-OKGV
+		{name: "manifest", arg: "manifest", want: Manifest},
+		// R-MOQW-2C7K
+		{name: "help", arg: "--help", want: Usage},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			var stdout, stderr bytes.Buffer
+			lookupCalls := 0
+			listenCalls := 0
+			exit := Run(context.Background(), Process{
+				Args: []string{test.arg},
+				LookupEnv: func(string) (string, bool) {
+					lookupCalls++
+					return "3000", true
+				},
+				Stdout: &stdout,
+				Stderr: &stderr,
+				Listen: func(string, string) (net.Listener, error) {
+					listenCalls++
+					return nil, errors.New("unexpected listen")
+				},
+			})
+			if exit != ExitSuccess {
+				t.Errorf("Run exit = %d, want ExitSuccess", exit)
+			}
+			if stdout.String() != test.want {
+				t.Errorf("stdout = %q, want %q", stdout.String(), test.want)
+			}
+			if stderr.Len() != 0 {
+				t.Errorf("stderr = %q, want empty", stderr.String())
+			}
+			if lookupCalls != 0 || listenCalls != 0 {
+				t.Errorf("LookupEnv calls = %d, Listen calls = %d; want both zero", lookupCalls, listenCalls)
+			}
+		})
+	}
+}
+
+// R-MPYS-G3Y9 R-MR6O-TVOY R-MSEL-7NFN R-MTMH-LF6C
+func TestRunRejectsInvalidArgumentsBeforeEnvironment(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown command", args: []string{"bogus"}, want: "dummy: unknown command 'bogus'\n\nsee 'dummy --help' for usage\n"},
+		{name: "unknown option", args: []string{"--bogus"}, want: "dummy: unknown option '--bogus'\n\nsee 'dummy --help' for usage\n"},
+		{name: "empty command", args: []string{""}, want: "dummy: unknown command ''\n\nsee 'dummy --help' for usage\n"},
+		{name: "surplus after version", args: []string{"--version", "extra"}, want: "dummy: unknown command 'extra'\n\nsee 'dummy --help' for usage\n"},
+		{name: "surplus option after manifest", args: []string{"manifest", "-x"}, want: "dummy: unknown option '-x'\n\nsee 'dummy --help' for usage\n"},
+		{name: "first unknown wins", args: []string{"bogus", "--later"}, want: "dummy: unknown command 'bogus'\n\nsee 'dummy --help' for usage\n"},
+		{name: "second surplus wins", args: []string{"--help", "second", "third"}, want: "dummy: unknown command 'second'\n\nsee 'dummy --help' for usage\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			var stdout, stderr bytes.Buffer
+			lookupCalls := 0
+			listenCalls := 0
+			exit := Run(context.Background(), Process{
+				Args: test.args,
+				LookupEnv: func(string) (string, bool) {
+					lookupCalls++
+					return "3000", true
+				},
+				Stdout: &stdout,
+				Stderr: &stderr,
+				Listen: func(string, string) (net.Listener, error) {
+					listenCalls++
+					return nil, errors.New("unexpected listen")
+				},
+			})
+			if exit != ExitUsage {
+				t.Errorf("Run exit = %d, want ExitUsage", exit)
+			}
+			if stdout.Len() != 0 {
+				t.Errorf("stdout = %q, want empty", stdout.String())
+			}
+			if stderr.String() != test.want {
+				t.Errorf("stderr = %q, want %q", stderr.String(), test.want)
+			}
+			if lookupCalls != 0 || listenCalls != 0 {
+				t.Errorf("LookupEnv calls = %d, Listen calls = %d; want both zero", lookupCalls, listenCalls)
+			}
+		})
+	}
+}
 
 // R-STSK-D18S
 func TestProcessShapeAndDefaultListener(t *testing.T) {

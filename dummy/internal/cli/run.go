@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"strings"
 
 	"github.com/ikigenba/ikigenba/dummy/internal/server"
 )
@@ -27,14 +28,35 @@ const (
 	ExitUsage        = 2
 )
 
+// Usage describes the dummy command line.
+const Usage = "Usage: dummy [command]\n\nServe the Dummy page at 127.0.0.1:$PORT. With no command, serve.\n\nCommands:\n  manifest   print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  the server failed\n  2  usage error\n"
+
 // Run runs the dummy command and returns its process exit code.
 func Run(ctx context.Context, p Process) int {
-	if len(p.Args) == 1 && p.Args[0] == "--version" {
-		_, _ = fmt.Fprintln(p.Stdout, Version)
-		return ExitSuccess
-	}
-	if len(p.Args) != 0 {
-		_, _ = fmt.Fprintln(p.Stderr, "usage: dummy [--version]")
+	if len(p.Args) > 0 {
+		if len(p.Args) == 1 {
+			switch p.Args[0] {
+			case "--version":
+				_, _ = io.WriteString(p.Stdout, Version+"\n")
+				return ExitSuccess
+			case "manifest":
+				_, _ = io.WriteString(p.Stdout, Manifest)
+				return ExitSuccess
+			case "--help":
+				_, _ = io.WriteString(p.Stdout, Usage)
+				return ExitSuccess
+			}
+		}
+
+		arg := p.Args[0]
+		if arg == "--version" || arg == "manifest" || arg == "--help" {
+			arg = p.Args[1]
+		}
+		kind := "command"
+		if strings.HasPrefix(arg, "-") {
+			kind = "option"
+		}
+		_, _ = io.WriteString(p.Stderr, "dummy: unknown "+kind+" '"+arg+"'\n\nsee 'dummy --help' for usage\n")
 		return ExitUsage
 	}
 
