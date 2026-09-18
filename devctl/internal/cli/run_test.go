@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -434,6 +435,10 @@ func invoke(args ...string) runResult {
 func invokeWithDeps(deps seam.Deps, args ...string) runResult {
 	var stdout, stderr bytes.Buffer
 	code := Run(context.Background(), args, strings.NewReader(""), &stdout, &stderr, deps)
+	// R-A2XG-SZR2
+	if code < 0 || code > 3 {
+		panic(fmt.Sprintf("Run(%q) returned invalid exit code %d", args, code))
+	}
 	return runResult{code: code, stdout: stdout.String(), stderr: stderr.String()}
 }
 
