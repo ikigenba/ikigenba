@@ -15,7 +15,7 @@ import (
 )
 
 func TestCLIDispatchesDeployArgumentsAndStdout(t *testing.T) {
-	// R-Z4J0-Z7NA
+	// R-Z4J0-Z7NA R-TI90-6NW4
 	const profile = "SelectedProfile"
 	const domain = "deploy.example.test"
 	const artifactName = "crm-v1.2.3.tar.xz"

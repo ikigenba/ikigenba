@@ -73,7 +73,7 @@ func TestBuildHelpThroughCLIHasNoExternalOperation(t *testing.T) {
 }
 
 func TestBuildDispatchesArgumentsStdoutAndDeps(t *testing.T) {
-	// R-6JQH-6JPE
+	// R-6JQH-6JPE R-TI90-6NW4
 	for _, prefix := range [][]string{nil, {"--account", "unused"}} {
 		t.Run(strings.Join(prefix, "_"), func(t *testing.T) {
 			fixture := newCLIBuildFixture(t)
@@ -114,6 +114,7 @@ func TestBuildStartFailuresThroughCLI(t *testing.T) {
 type cliBuildFixture struct {
 	t          *testing.T
 	root       string
+	workDir    string
 	manifest   []byte
 	failPath   string
 	cloudCalls int
@@ -123,6 +124,10 @@ type cliBuildFixture struct {
 func newCLIBuildFixture(t *testing.T) *cliBuildFixture {
 	t.Helper()
 	root := t.TempDir()
+	workDir := filepath.Join(root, "some", "subdirectory")
+	if err := os.MkdirAll(workDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	manifest := []byte("app = \"crm\"\n")
 	appDir := filepath.Join(root, "crm")
 	if err := os.MkdirAll(filepath.Join(appDir, "etc"), 0o700); err != nil {
@@ -134,12 +139,12 @@ func newCLIBuildFixture(t *testing.T) *cliBuildFixture {
 	if err := os.WriteFile(filepath.Join(appDir, "etc", "manifest.toml"), manifest, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return &cliBuildFixture{t: t, root: root, manifest: manifest}
+	return &cliBuildFixture{t: t, root: root, workDir: workDir, manifest: manifest}
 }
 
 func (fixture *cliBuildFixture) deps() seam.Deps {
 	return seam.Deps{
-		Dir:  fixture.root,
+		Dir:  fixture.workDir,
 		EUID: 1,
 		Cloud: func(context.Context, string, string) (cloud.Clients, error) {
 			fixture.cloudCalls++
@@ -184,12 +189,24 @@ func (fixture *cliBuildFixture) exec(ctx context.Context, command seam.Cmd) (sea
 func (fixture *cliBuildFixture) git(command seam.Cmd) (seam.Result, error) {
 	switch {
 	case reflect.DeepEqual(command.Args, []string{"rev-parse", "--show-toplevel"}):
+		if command.Dir != fixture.workDir {
+			fixture.t.Fatalf("checkout discovery Dir = %q, want %q", command.Dir, fixture.workDir)
+		}
 		return seam.Result{Stdout: []byte(fixture.root + "\n")}, nil
 	case reflect.DeepEqual(command.Args, []string{"status", "--porcelain"}):
+		if command.Dir != fixture.root {
+			fixture.t.Fatalf("git status Dir = %q, want checkout root %q", command.Dir, fixture.root)
+		}
 		return seam.Result{}, nil
 	case reflect.DeepEqual(command.Args, []string{"rev-parse", "HEAD"}):
+		if command.Dir != fixture.root {
+			fixture.t.Fatalf("git rev-parse HEAD Dir = %q, want checkout root %q", command.Dir, fixture.root)
+		}
 		return seam.Result{Stdout: []byte("0123456789abcdef\n")}, nil
 	case reflect.DeepEqual(command.Args, []string{"tag", "--points-at", "HEAD"}):
+		if command.Dir != fixture.root {
+			fixture.t.Fatalf("git tag Dir = %q, want checkout root %q", command.Dir, fixture.root)
+		}
 		return seam.Result{Stdout: []byte("crm/v1.2.3\n")}, nil
 	default:
 		return seam.Result{}, errors.New("unexpected git arguments")
