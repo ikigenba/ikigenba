@@ -65,6 +65,34 @@ func TestInstallLatestStopsAfterHostFailure(t *testing.T) {
 	}
 }
 
+func TestInstallLatestReturnsInstallerFailureAndStops(t *testing.T) {
+	// R-G3R8-6HH5
+	var commands []seam.Cmd
+	deps := seam.Deps{Dir: "/work", Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
+		commands = append(commands, command)
+		switch len(commands) {
+		case 1:
+			return seam.Result{Stdout: []byte(`[{"tag_name":"opsctl/v2.3.4","published_at":"2026-09-17T00:00:00Z","assets":[{"name":"install.sh","browser_download_url":"https://downloads.example/install.sh"}]}]`)}, nil
+		case 2:
+			return seam.Result{}, nil
+		case 3:
+			return seam.Result{ExitCode: 23, Stderr: []byte("installer failed\n")}, nil
+		default:
+			t.Fatalf("unexpected command after installer failure: %#v", command)
+			return seam.Result{}, nil
+		}
+	}}
+
+	got, err := InstallLatest(context.Background(), host.Host{Address: "192.0.2.10", Deps: deps})
+	var commandErr *host.CommandError
+	if got != "" || !errors.As(err, &commandErr) || commandErr.Step != "opsctl" || commandErr.Status != 23 || commandErr.Stderr != "installer failed\n" {
+		t.Fatalf("InstallLatest() = %q, %#v", got, err)
+	}
+	if len(commands) != 3 || commands[2].Args[len(commands[2].Args)-1] != "'sudo' 'bash' '/tmp/opsctl-install' 'v2.3.4'" {
+		t.Fatalf("InstallLatest commands = %#v", commands)
+	}
+}
+
 func TestUpgradeAlwaysRunsSavedInstallerAndReturnsError(t *testing.T) {
 	// R-G4Z4-K97U
 	wantErr := errors.New("ssh start failed")
@@ -75,7 +103,8 @@ func TestUpgradeAlwaysRunsSavedInstallerAndReturnsError(t *testing.T) {
 	}}
 
 	err := Upgrade(context.Background(), host.Host{Address: "192.0.2.10", Deps: deps}, "v2.3.4")
-	if !errors.Is(err, wantErr) || err.Error() != "ssh: ssh start failed" {
+	unwrapped := errors.Unwrap(err)
+	if unwrapped == nil || reflect.ValueOf(unwrapped).Pointer() != reflect.ValueOf(wantErr).Pointer() || errors.Unwrap(unwrapped) != nil || err.Error() != "ssh: ssh start failed" {
 		t.Fatalf("Upgrade() error = %#v, want host error unchanged", err)
 	}
 	if len(commands) != 1 || commands[0].Args[len(commands[0].Args)-1] != "'sudo' 'bash' '/usr/local/share/ikigenba/opsctl-install.sh' 'v2.3.4'" {
@@ -98,7 +127,7 @@ func TestUpgradeHostFailureUsesOpsctlStep(t *testing.T) {
 
 func TestVersionReturnsOpaqueTrimmedOutput(t *testing.T) {
 	// R-G670-Y0YJ
-	const reported = "unexpected installed text  build 7"
+	const reported = " \t unexpected installed text  build 7 \t "
 	var command seam.Cmd
 	deps := seam.Deps{Dir: "/work", Exec: func(_ context.Context, got seam.Cmd) (seam.Result, error) {
 		command = got
@@ -123,6 +152,20 @@ func TestVersionReturnsHostErrorUnchanged(t *testing.T) {
 	got, err := Version(context.Background(), host.Host{Address: "192.0.2.10", Deps: deps})
 	var commandErr *host.CommandError
 	if got != "" || reflect.TypeOf(err) != reflect.TypeOf(commandErr) || !errors.As(err, &commandErr) || commandErr.Step != "opsctl" || commandErr.Status != 17 {
+		t.Fatalf("Version() = %q, %#v", got, err)
+	}
+}
+
+func TestVersionReturnsProcessStartErrorUnchanged(t *testing.T) {
+	// R-G670-Y0YJ
+	wantErr := errors.New("ssh start failed")
+	deps := seam.Deps{Dir: "/work", Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
+		return seam.Result{}, wantErr
+	}}
+
+	got, err := Version(context.Background(), host.Host{Address: "192.0.2.10", Deps: deps})
+	unwrapped := errors.Unwrap(err)
+	if got != "" || unwrapped == nil || reflect.ValueOf(unwrapped).Pointer() != reflect.ValueOf(wantErr).Pointer() || errors.Unwrap(unwrapped) != nil {
 		t.Fatalf("Version() = %q, %#v", got, err)
 	}
 }
