@@ -54,6 +54,9 @@ func TestRunHostStepsReadinessInstallAndEmptyRestore(t *testing.T) {
 	if countOperations(harness.operations, "'config' 'set'") != 10 {
 		t.Fatalf("configuration calls = %d, want 10", countOperations(harness.operations, "'config' 'set'"))
 	}
+	if countOperations(harness.operations, "'opsctl' 'host' 'restore'") != 0 {
+		t.Fatalf("restore calls = %#v, want none", harness.operations)
+	}
 	wantListing := "list account-backups " + hostStepDomain + "/host/"
 	if countOperations(harness.operations, "list ") != 1 || countExactOperations(harness.operations, wantListing) != 1 {
 		t.Fatalf("backup listings = %#v, want exactly one %q", harness.operations, wantListing)
@@ -165,6 +168,9 @@ func TestRunHostStepsReturnsInitFailureWithoutReportingInit(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), "init: ok") {
 		t.Fatalf("failed init was reported complete: %q", stdout.String())
+	}
+	if countOperations(harness.operations, "'opsctl' 'init'") != 1 {
+		t.Fatalf("init calls = %#v, want exactly one", harness.operations)
 	}
 	if operationLastIndex(harness.operations, "'opsctl' 'init'") != len(harness.operations)-1 {
 		t.Fatalf("init was not the final operation: %#v", harness.operations)
