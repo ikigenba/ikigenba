@@ -9,7 +9,9 @@ import (
 	"strings"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/account"
+	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
+	"github.com/ikigenba/ikigenba/devctl/internal/keyring"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 	"github.com/ikigenba/ikigenba/devctl/internal/secrets"
 )
@@ -176,7 +178,29 @@ func operationError(stderr io.Writer, err error) int {
 		writeDiagnostic(stderr, noSpaceError.Error(), "", "", false)
 		return 1
 	}
-	writeDiagnostic(stderr, "operation failed", err.Error(), "", false)
+	var noZoneError *account.NoZoneError
+	if errors.As(err, &noZoneError) {
+		writeDiagnostic(stderr, noZoneError.Error(), "", "", false)
+		return 1
+	}
+	var notInCheckoutError *checkout.NotInCheckoutError
+	var noAppError *checkout.NoAppError
+	var manifestError *checkout.ManifestError
+	if errors.As(err, &notInCheckoutError) || errors.As(err, &noAppError) || errors.As(err, &manifestError) {
+		writeDiagnostic(stderr, err.Error(), "", "", false)
+		return 2
+	}
+	var gitError *checkout.GitError
+	if errors.As(err, &gitError) {
+		writeDiagnostic(stderr, err.Error(), "", "", false)
+		return 1
+	}
+	var noValueError *keyring.NoValueError
+	if errors.As(err, &noValueError) {
+		writeDiagnostic(stderr, err.Error(), "", "", false)
+		return 2
+	}
+	writeDiagnostic(stderr, err.Error(), "", "", false)
 	return 1
 }
 
