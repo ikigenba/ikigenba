@@ -133,12 +133,15 @@ func TestAccountProfileReachesCloudUnchanged(t *testing.T) {
 			EUID: 1,
 			Cloud: func(_ context.Context, profile, _ string) (cloud.Clients, error) {
 				profiles = append(profiles, profile)
+				if len(profiles) == 1 {
+					return cloud.Clients{SSM: &cliSSM{value: cliPropertiesJSON}}, nil
+				}
 				return cloud.Clients{}, nil
 			},
 		}, test.args...)
 		assertResult(t, result, 0, "", "")
-		if len(profiles) != 1 || profiles[0] != test.want {
-			t.Errorf("Run(%q) cloud profiles = %q, want [%q]", test.args, profiles, test.want)
+		if !reflect.DeepEqual(profiles, []string{test.want, test.want}) {
+			t.Errorf("Run(%q) cloud profiles = %q, want [%q %q]", test.args, profiles, test.want, test.want)
 		}
 	}
 }
@@ -154,13 +157,66 @@ func TestLastAccountOptionWins(t *testing.T) {
 			EUID: 1,
 			Cloud: func(_ context.Context, profile, _ string) (cloud.Clients, error) {
 				profiles = append(profiles, profile)
+				if len(profiles) == 1 {
+					return cloud.Clients{SSM: &cliSSM{value: cliPropertiesJSON}}, nil
+				}
 				return cloud.Clients{}, nil
 			},
 		}, args...)
 		assertResult(t, result, 0, "", "")
-		if !reflect.DeepEqual(profiles, []string{"second"}) {
-			t.Fatalf("Run(%q) cloud profiles = %q, want [second]", args, profiles)
+		if !reflect.DeepEqual(profiles, []string{"second", "second"}) {
+			t.Fatalf("Run(%q) cloud profiles = %q, want [second second]", args, profiles)
 		}
+	}
+}
+
+func TestCloudErrorsAreSingleLineOperationFailures(t *testing.T) {
+	// R-ZLGA-YMQA
+	for _, want := range []string{
+		"ssm GetParameter /ikigenba/account: ParameterNotFound",
+		"ec2 RunInstances: InsufficientInstanceCapacity",
+		"route53 ChangeResourceRecordSets: Throttling",
+	} {
+		parts := strings.Split(want, ": ")
+		operation := strings.Fields(parts[0])
+		cloudErr := &cloud.Error{Service: operation[0], Operation: operation[1], Code: parts[1]}
+		if len(operation) == 3 {
+			cloudErr.Subject = operation[2]
+		}
+		deps := seam.Deps{
+			EUID: 1,
+			Cloud: func(context.Context, string, string) (cloud.Clients, error) {
+				return cloud.Clients{SSM: &cliSSM{err: fmt.Errorf("read properties: %w", cloudErr)}}, nil
+			},
+		}
+		assertResult(t, invokeWithDeps(deps, "--account", "work", "space"), 1, "", "devctl: "+want+"\n")
+	}
+}
+
+func TestCommandsReportMissingSpace(t *testing.T) {
+	// R-ZMO7-CEGZ
+	domain := "missing.example.test"
+	for _, args := range [][]string{
+		{"space", "stop", domain},
+		{"space", "start", domain},
+		{"space", "status", domain},
+		{"secrets", "push", domain},
+		{"deploy", domain},
+		{"restore", domain},
+	} {
+		calls := 0
+		deps := seam.Deps{
+			EUID: 1,
+			Cloud: func(context.Context, string, string) (cloud.Clients, error) {
+				calls++
+				if calls == 1 {
+					return cloud.Clients{SSM: &cliSSM{value: cliPropertiesJSON}}, nil
+				}
+				return cloud.Clients{EC2: &cliEC2{}}, nil
+			},
+		}
+		want := "devctl: no space at '" + domain + "'\n"
+		assertResult(t, invokeWithDeps(deps, append([]string{"--account", "work"}, args...)...), 1, "", want)
 	}
 }
 
@@ -426,6 +482,36 @@ func findVersionDeclaration(t *testing.T) *ast.ValueSpec {
 type runResult struct {
 	code           int
 	stdout, stderr string
+}
+
+const cliPropertiesJSON = `{
+	"domain":"example.test",
+	"backup_bucket":"backups",
+	"launch_template_id":"lt-123",
+	"permissions_boundary_arn":"arn:boundary",
+	"region":"us-test-1",
+	"delete_secrets_on_destroy":true,
+	"delete_backups_on_destroy":false,
+	"backup_host_files_seconds":1,
+	"backup_service_files_seconds":2,
+	"backup_service_db_seconds":3,
+	"backup_service_wal_seconds":4
+}`
+
+type cliSSM struct {
+	cloud.SSM
+	value string
+	err   error
+}
+
+func (fake *cliSSM) GetParameter(context.Context, string) (string, error) {
+	return fake.value, fake.err
+}
+
+type cliEC2 struct{ cloud.EC2 }
+
+func (*cliEC2) ListSpaceInstances(context.Context) ([]cloud.Instance, error) {
+	return nil, nil
 }
 
 func invoke(args ...string) runResult {

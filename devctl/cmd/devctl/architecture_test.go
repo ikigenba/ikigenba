@@ -329,3 +329,42 @@ func TestEnvironmentalOperationsStayAtRunSeam(t *testing.T) {
 		})
 	}
 }
+
+func TestCloudDependencyIsOpenedOnlyAtOwnedBoundaries(t *testing.T) {
+	// R-ZCX0-A8JF
+	allowed := map[string]bool{
+		modulePath + "/cmd/devctl":       true,
+		modulePath + "/internal/account": true,
+	}
+	for _, source := range moduleSources(t) {
+		if strings.HasSuffix(source.path, "_test.go") || allowed[source.pkgPath] {
+			continue
+		}
+		ast.Inspect(source.file, func(node ast.Node) bool {
+			selector, ok := node.(*ast.SelectorExpr)
+			if ok && selector.Sel.Name == "Cloud" {
+				t.Errorf("%s: references the Cloud field outside internal/account or cmd/devctl", source.path)
+			}
+			literal, ok := node.(*ast.CompositeLit)
+			if !ok {
+				return true
+			}
+			typeSelector, ok := literal.Type.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			qualifier, qualified := typeSelector.X.(*ast.Ident)
+			if !qualified || typeSelector.Sel.Name != "Deps" || source.importPath[qualifier.Name] != modulePath+"/internal/seam" {
+				return true
+			}
+			for _, element := range literal.Elts {
+				entry, keyed := element.(*ast.KeyValueExpr)
+				key, named := entry.Key.(*ast.Ident)
+				if keyed && named && key.Name == "Cloud" {
+					t.Errorf("%s: initializes the Cloud field outside internal/account or cmd/devctl", source.path)
+				}
+			}
+			return true
+		})
+	}
+}

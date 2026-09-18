@@ -3,10 +3,13 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 
+	"github.com/ikigenba/ikigenba/devctl/internal/account"
+	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
 
@@ -109,11 +112,52 @@ func Run(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.Writ
 		if !invocation.accountSet {
 			return usageError(stderr, "--account is required", "devctl "+invocation.command+" --help")
 		}
-		_, _ = deps.Cloud(ctx, invocation.account, "")
+		acct, err := account.Open(ctx, deps, invocation.account)
+		if err != nil {
+			return operationError(stderr, err)
+		}
+		if domain, ok := spaceDomain(invocation.command, invocation.arguments); ok {
+			if _, err := acct.Space(ctx, domain); err != nil {
+				return operationError(stderr, err)
+			}
+		}
 	}
 
 	// Command-specific phases replace this successful no-op with their dispatch.
 	return 0
+}
+
+func spaceDomain(command string, arguments []string) (string, bool) {
+	switch command {
+	case "space":
+		if len(arguments) >= 2 && (arguments[0] == "stop" || arguments[0] == "start" || arguments[0] == "status") {
+			return arguments[1], true
+		}
+	case "secrets":
+		if len(arguments) >= 2 && arguments[0] == "push" {
+			return arguments[1], true
+		}
+	case "deploy", "restore":
+		if len(arguments) >= 1 {
+			return arguments[0], true
+		}
+	}
+	return "", false
+}
+
+func operationError(stderr io.Writer, err error) int {
+	var cloudError *cloud.Error
+	if errors.As(err, &cloudError) {
+		writeDiagnostic(stderr, cloudError.Error(), "", "", false)
+		return 1
+	}
+	var noSpaceError *account.NoSpaceError
+	if errors.As(err, &noSpaceError) {
+		writeDiagnostic(stderr, noSpaceError.Error(), "", "", false)
+		return 1
+	}
+	writeDiagnostic(stderr, "operation failed", err.Error(), "", false)
+	return 1
 }
 
 func hasHelp(arguments []string) bool {
