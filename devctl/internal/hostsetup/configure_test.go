@@ -37,15 +37,15 @@ func TestConfigureSetsNineKeysInOrder(t *testing.T) {
 		t.Fatalf("Configure() = %d, %v", count, err)
 	}
 	want := []string{
-		"'sudo' 'opsctl' 'config' 'set' 'host.name' 'foo.sbx.ikigenba.dev'",
-		"'sudo' 'opsctl' 'config' 'set' 'dns.provider' 'route53'",
-		"'sudo' 'opsctl' 'config' 'set' 'dns.zones' 'sbx.ikigenba.dev:ZONE1'",
-		"'sudo' 'opsctl' 'config' 'set' 'aws.region' 'us-east-2'",
-		"'sudo' 'opsctl' 'config' 'set' 'backup.s3_uri' 's3://account-backups/foo.sbx.ikigenba.dev/'",
-		"'sudo' 'opsctl' 'config' 'set' 'backup.host_files_seconds' '11'",
-		"'sudo' 'opsctl' 'config' 'set' 'backup.service_files_seconds' '22'",
-		"'sudo' 'opsctl' 'config' 'set' 'backup.service_db_seconds' '33'",
-		"'sudo' 'opsctl' 'config' 'set' 'backup.service_wal_seconds' '44'",
+		"'sudo' 'opsctl' 'config' 'set' 'host.name=foo.sbx.ikigenba.dev'",
+		"'sudo' 'opsctl' 'config' 'set' 'dns.provider=route53'",
+		"'sudo' 'opsctl' 'config' 'set' 'dns.zones=sbx.ikigenba.dev:ZONE1'",
+		"'sudo' 'opsctl' 'config' 'set' 'aws.region=us-east-2'",
+		"'sudo' 'opsctl' 'config' 'set' 'backup.s3_uri=s3://account-backups/foo.sbx.ikigenba.dev/'",
+		"'sudo' 'opsctl' 'config' 'set' 'backup.host_files_seconds=11'",
+		"'sudo' 'opsctl' 'config' 'set' 'backup.service_files_seconds=22'",
+		"'sudo' 'opsctl' 'config' 'set' 'backup.service_db_seconds=33'",
+		"'sudo' 'opsctl' 'config' 'set' 'backup.service_wal_seconds=44'",
 	}
 	if !reflect.DeepEqual(commands, want) {
 		t.Fatalf("Configure commands = %#v, want %#v", commands, want)
@@ -75,7 +75,7 @@ func TestConfigureOptionalEmailAndFirstFailure(t *testing.T) {
 		if err != nil || count != 10 {
 			t.Fatalf("Configure() = %d, %v", count, err)
 		}
-		if len(commands) != 10 || commands[9] != "'sudo' 'opsctl' 'config' 'set' 'acme.email' 'ops@example.com'" {
+		if len(commands) != 10 || commands[9] != "'sudo' 'opsctl' 'config' 'set' 'acme.email=ops@example.com'" {
 			t.Fatalf("Configure commands = %#v", commands)
 		}
 	})

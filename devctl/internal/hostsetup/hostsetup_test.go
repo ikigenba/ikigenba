@@ -53,16 +53,16 @@ func TestInstallLatestAndConfigureTenKeys(t *testing.T) {
 		t.Fatalf("Configure() = %d, %v", count, err)
 	}
 	want := []string{
-		"'sudo' 'opsctl' 'config' 'set' 'host.name' 'foo.sbx.ikigenba.dev'",
-		"'sudo' 'opsctl' 'config' 'set' 'dns.provider' 'route53'",
-		"'sudo' 'opsctl' 'config' 'set' 'dns.zones' 'sbx.ikigenba.dev:ZONE1'",
-		"'sudo' 'opsctl' 'config' 'set' 'aws.region' 'us-east-2'",
-		"'sudo' 'opsctl' 'config' 'set' 'backup.s3_uri' 's3://account-backups/foo.sbx.ikigenba.dev/'",
-		"'sudo' 'opsctl' 'config' 'set' 'backup.host_files_seconds' '11'",
-		"'sudo' 'opsctl' 'config' 'set' 'backup.service_files_seconds' '22'",
-		"'sudo' 'opsctl' 'config' 'set' 'backup.service_db_seconds' '33'",
-		"'sudo' 'opsctl' 'config' 'set' 'backup.service_wal_seconds' '44'",
-		"'sudo' 'opsctl' 'config' 'set' 'acme.email' 'ops@ikigenba.dev'",
+		"'sudo' 'opsctl' 'config' 'set' 'host.name=foo.sbx.ikigenba.dev'",
+		"'sudo' 'opsctl' 'config' 'set' 'dns.provider=route53'",
+		"'sudo' 'opsctl' 'config' 'set' 'dns.zones=sbx.ikigenba.dev:ZONE1'",
+		"'sudo' 'opsctl' 'config' 'set' 'aws.region=us-east-2'",
+		"'sudo' 'opsctl' 'config' 'set' 'backup.s3_uri=s3://account-backups/foo.sbx.ikigenba.dev/'",
+		"'sudo' 'opsctl' 'config' 'set' 'backup.host_files_seconds=11'",
+		"'sudo' 'opsctl' 'config' 'set' 'backup.service_files_seconds=22'",
+		"'sudo' 'opsctl' 'config' 'set' 'backup.service_db_seconds=33'",
+		"'sudo' 'opsctl' 'config' 'set' 'backup.service_wal_seconds=44'",
+		"'sudo' 'opsctl' 'config' 'set' 'acme.email=ops@ikigenba.dev'",
 	}
 	if got := commands[2:]; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Configure commands = %#v, want %#v", got, want)

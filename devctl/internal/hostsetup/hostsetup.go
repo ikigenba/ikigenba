@@ -68,7 +68,7 @@ func Configure(
 		values = append(values, setting{"acme.email", *email})
 	}
 	for i, item := range values {
-		if _, err := target.Sudo(ctx, "opsctl", "opsctl", "config", "set", item.key, item.value); err != nil {
+		if _, err := target.Sudo(ctx, "opsctl", "opsctl", "config", "set", item.key+"="+item.value); err != nil {
 			return i, err
 		}
 	}
