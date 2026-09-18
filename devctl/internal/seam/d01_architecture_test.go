@@ -15,10 +15,18 @@ import (
 const modulePath = "github.com/ikigenba/ikigenba/devctl"
 
 type sourceFile struct {
-	path       string
-	pkgPath    string
-	file       *ast.File
-	importPath map[string]string
+	path         string
+	pkgPath      string
+	file         *ast.File
+	importPath   map[string]string
+	packageFiles []*ast.File
+}
+
+var filesystemCalls = map[string]bool{
+	"Create": true, "CreateTemp": true, "DirFS": true, "Mkdir": true, "MkdirAll": true, "MkdirTemp": true,
+	"Open": true, "OpenFile": true, "OpenRoot": true, "ReadDir": true,
+	"ReadFile": true, "Readlink": true, "Remove": true, "RemoveAll": true,
+	"Rename": true, "Stat": true, "WriteFile": true,
 }
 
 func moduleSources(t *testing.T) []sourceFile {
@@ -69,17 +77,18 @@ func moduleSources(t *testing.T) []sourceFile {
 			t.Fatalf("read %s sources: %v", top, err)
 		}
 	}
+	packages := make(map[string][]*ast.File)
+	for _, source := range files {
+		packages[source.pkgPath] = append(packages[source.pkgPath], source.file)
+	}
+	for index := range files {
+		files[index].packageFiles = packages[files[index].pkgPath]
+	}
 	return files
 }
 
 // R-BU3V-ZE1N
 func TestCommandsUseExplicitRootsAndProcessDirectories(t *testing.T) {
-	filesystemCalls := map[string]bool{
-		"Create": true, "CreateTemp": true, "DirFS": true, "Mkdir": true, "MkdirAll": true, "MkdirTemp": true,
-		"Open": true, "OpenFile": true, "OpenRoot": true, "ReadDir": true,
-		"ReadFile": true, "Readlink": true, "Remove": true, "RemoveAll": true,
-		"Rename": true, "Stat": true, "WriteFile": true,
-	}
 	for _, source := range moduleSources(t) {
 		if strings.HasSuffix(source.path, "_test.go") {
 			continue
@@ -115,6 +124,12 @@ func TestCommandsUseExplicitRootsAndProcessDirectories(t *testing.T) {
 						t.Errorf("%s: command/path Dir fields must not be filled by later assignment", source.path)
 					}
 				}
+			case *ast.ReturnStmt:
+				for _, result := range value.Results {
+					if aliasesPathOrRunnerCapability(result, source) {
+						t.Errorf("%s: path helpers and process runners must not be returned as aliases", source.path)
+					}
+				}
 			case *ast.CompositeLit:
 				if !isCmdType(value.Type, source) {
 					return true
@@ -138,22 +153,37 @@ func TestCommandsUseExplicitRootsAndProcessDirectories(t *testing.T) {
 					t.Errorf("%s: seam.Cmd does not explicitly supply Dir", source.path)
 				}
 			case *ast.CallExpr:
+				function := enclosingFunction(source.file, value)
 				if ident, ok := value.Fun.(*ast.Ident); ok && ident.Name == "new" && len(value.Args) == 1 && isCmdType(value.Args[0], source) {
 					t.Errorf("%s: seam.Cmd must not be created through new", source.path)
 				}
 				if ident, ok := value.Fun.(*ast.Ident); ok {
 					for index, parameter := range rootedHelperParameters(source.pkgPath, ident.Name) {
-						if index >= len(value.Args) || !filesystemPathIsRooted(value.Args[index], source, enclosingFunction(source.file, value), map[*ast.Ident]bool{}) {
+						if index >= len(value.Args) || !filesystemPathIsRooted(value.Args[index], source, function, map[*ast.Ident]bool{}) {
 							t.Errorf("%s: call to %s does not supply rooted path parameter %s", source.path, ident.Name, parameter)
 						}
 					}
+				}
+				for index, argument := range value.Args {
+					if aliasesPathOrRunnerCapability(argument, source) && !capabilityArgumentIsSafelyConsumed(value, index, source) {
+						t.Errorf("%s: path helpers and process runners must not be passed through unchecked function parameters", source.path)
+					}
+				}
+				for index, parameter := range calledCmdParameters(value.Fun, source) {
+					if index >= len(value.Args) || !expressionIsCmd(value.Args[index], source, function, map[string]bool{}) {
+						t.Errorf("%s: call does not supply a statically checked seam.Cmd parameter %s", source.path, parameter)
+					}
+				}
+				if index, ok := runnerCallCmdIndex(value.Fun, function, source); ok &&
+					(index >= len(value.Args) || !expressionIsCmd(value.Args[index], source, function, map[string]bool{})) {
+					t.Errorf("%s: indirect process runner call does not receive a statically checked seam.Cmd", source.path)
 				}
 				selector, ok := value.Fun.(*ast.SelectorExpr)
 				if !ok {
 					return true
 				}
 				if (selector.Sel.Name == "Exec" || selector.Sel.Name == "Stream") &&
-					(len(value.Args) < 2 || !expressionIsCmd(value.Args[1], source, enclosingFunction(source.file, value), map[string]bool{})) {
+					(len(value.Args) < 2 || !expressionIsCmd(value.Args[1], source, function, map[string]bool{})) {
 					t.Errorf("%s: process runner call does not receive a statically checked seam.Cmd", source.path)
 				}
 				ident, ok := selector.X.(*ast.Ident)
@@ -180,12 +210,250 @@ func TestCommandsUseExplicitRootsAndProcessDirectories(t *testing.T) {
 	}
 }
 
+func TestArchitectureAnalyzerRecognizesIndirectCapabilities(t *testing.T) {
+	t.Run("aliased os access", func(t *testing.T) {
+		source := sourceFile{importPath: map[string]string{"os": "os"}}
+		for _, name := range []string{"LookupEnv", "ReadFile", "UserHomeDir"} {
+			expression := &ast.SelectorExpr{X: ast.NewIdent("os"), Sel: ast.NewIdent(name)}
+			if !aliasesPathOrRunnerCapability(expression, source) {
+				t.Errorf("os.%s was not recognized as a path/home capability", name)
+			}
+		}
+	})
+
+	t.Run("cross-file command alias", func(t *testing.T) {
+		files := parseArchitectureFixture(t, map[string]string{
+			"alias.go": "package sample\nimport \"github.com/ikigenba/ikigenba/devctl/internal/seam\"\ntype hidden = seam.Cmd\n",
+			"use.go":   "package sample\nfunc use() { _ = new(hidden) }\n",
+		})
+		use := files["use.go"]
+		if !isCmdType(ast.NewIdent("hidden"), use) {
+			t.Fatal("cross-file seam.Cmd alias was not recognized")
+		}
+	})
+
+	t.Run("rooted helper passed to unsafe callback", func(t *testing.T) {
+		files := parseArchitectureFixture(t, map[string]string{
+			"apps.go": `package checkout
+func readManifest(string) (int, error) { return 0, nil }
+func apps(read func(string) (int, error)) { _, _ = read(".") }
+func use() { apps(readManifest) }
+`,
+		})
+		source := files["apps.go"]
+		call := findFixtureCall(t, source.file, "apps")
+		if capabilityArgumentIsSafelyConsumed(call, 0, source) {
+			t.Fatal("rooted helper passed to a callback invoked with a relative path was accepted")
+		}
+	})
+
+	t.Run("indirect runner", func(t *testing.T) {
+		files := parseArchitectureFixture(t, map[string]string{
+			"runner.go": `package sample
+import (
+	"context"
+	"github.com/ikigenba/ikigenba/devctl/internal/seam"
+)
+func invoke(run seam.Runner, ctx context.Context, command seam.Cmd) { _, _ = run(ctx, command) }
+`,
+		})
+		source := files["runner.go"]
+		call := findFixtureCall(t, source.file, "run")
+		function := enclosingFunction(source.file, call)
+		index, ok := runnerCallCmdIndex(call.Fun, function, source)
+		if !ok || index != 1 {
+			t.Fatalf("indirect runner command index = %d, %t; want 1, true", index, ok)
+		}
+	})
+}
+
+func parseArchitectureFixture(t *testing.T, contents map[string]string) map[string]sourceFile {
+	t.Helper()
+	parsed := make(map[string]*ast.File)
+	for name, content := range contents {
+		file, err := parser.ParseFile(token.NewFileSet(), name, content, parser.ParseComments)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		parsed[name] = file
+	}
+	packageFiles := make([]*ast.File, 0, len(parsed))
+	for _, file := range parsed {
+		packageFiles = append(packageFiles, file)
+	}
+	files := make(map[string]sourceFile)
+	for name, file := range parsed {
+		imports := make(map[string]string)
+		for _, specification := range file.Imports {
+			path, err := strconv.Unquote(specification.Path.Value)
+			if err != nil {
+				t.Fatalf("unquote %s import: %v", name, err)
+			}
+			imports[filepath.Base(path)] = path
+		}
+		files[name] = sourceFile{
+			path:         name,
+			pkgPath:      modulePath + "/internal/" + file.Name.Name,
+			file:         file,
+			importPath:   imports,
+			packageFiles: packageFiles,
+		}
+	}
+	return files
+}
+
+func findFixtureCall(t *testing.T, file *ast.File, name string) *ast.CallExpr {
+	t.Helper()
+	var found *ast.CallExpr
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		ident, ok := call.Fun.(*ast.Ident)
+		if ok && ident.Name == name {
+			found = call
+		}
+		return true
+	})
+	if found == nil {
+		t.Fatalf("fixture call %s not found", name)
+	}
+	return found
+}
+
 func aliasesPathOrRunnerCapability(expr ast.Expr, source sourceFile) bool {
 	switch value := expr.(type) {
 	case *ast.Ident:
-		return len(rootedHelperParameters(source.pkgPath, value.Name)) != 0
+		return len(rootedHelperParameters(source.pkgPath, value.Name)) != 0 ||
+			source.pkgPath != modulePath+"/internal/seam" && functionIsRunner(value.Name, source)
 	case *ast.SelectorExpr:
-		return value.Sel.Name == "Exec" || value.Sel.Name == "Stream"
+		if value.Sel.Name == "Exec" || value.Sel.Name == "Stream" {
+			return true
+		}
+		qualifier, ok := value.X.(*ast.Ident)
+		return ok && source.importPath[qualifier.Name] == "os" &&
+			(filesystemCalls[value.Sel.Name] || value.Sel.Name == "Getenv" || value.Sel.Name == "LookupEnv" || value.Sel.Name == "UserHomeDir")
+	}
+	return false
+}
+
+func packageFunctions(source sourceFile, name string) []*ast.FuncDecl {
+	var functions []*ast.FuncDecl
+	for _, file := range source.packageFiles {
+		for _, declaration := range file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if ok && function.Name.Name == name {
+				functions = append(functions, function)
+			}
+		}
+	}
+	return functions
+}
+
+func calledFunction(expr ast.Expr, source sourceFile) []*ast.FuncDecl {
+	name := ""
+	switch value := expr.(type) {
+	case *ast.Ident:
+		name = value.Name
+	case *ast.SelectorExpr:
+		if qualifier, ok := value.X.(*ast.Ident); ok && source.importPath[qualifier.Name] != "" {
+			return nil
+		}
+		name = value.Sel.Name
+	}
+	return packageFunctions(source, name)
+}
+
+type namedParameter struct {
+	name     string
+	typeExpr ast.Expr
+}
+
+func fieldParameters(fields *ast.FieldList) []namedParameter {
+	var parameters []namedParameter
+	if fields == nil {
+		return parameters
+	}
+	for _, field := range fields.List {
+		for _, name := range field.Names {
+			parameters = append(parameters, namedParameter{name: name.Name, typeExpr: field.Type})
+		}
+	}
+	return parameters
+}
+
+func calledCmdParameters(expr ast.Expr, source sourceFile) map[int]string {
+	parameters := make(map[int]string)
+	for _, function := range calledFunction(expr, source) {
+		for index, parameter := range fieldParameters(function.Type.Params) {
+			if isCmdType(parameter.typeExpr, source) {
+				parameters[index] = parameter.name
+			}
+		}
+	}
+	return parameters
+}
+
+func functionIsRunner(name string, source sourceFile) bool {
+	for _, function := range packageFunctions(source, name) {
+		parameters := fieldParameters(function.Type.Params)
+		if len(parameters) >= 2 && isCmdType(parameters[1].typeExpr, source) {
+			return true
+		}
+	}
+	return false
+}
+
+func runnerCallCmdIndex(expr ast.Expr, function *ast.FuncDecl, source sourceFile) (int, bool) {
+	ident, ok := expr.(*ast.Ident)
+	if !ok || function == nil {
+		return 0, false
+	}
+	for _, parameter := range fieldParameters(function.Type.Params) {
+		if parameter.name == ident.Name && isRunnerType(parameter.typeExpr, source) {
+			return 1, true
+		}
+	}
+	found := false
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		specification, ok := node.(*ast.ValueSpec)
+		if !ok || specification.Type == nil || !isRunnerType(specification.Type, source) {
+			return true
+		}
+		for _, name := range specification.Names {
+			found = found || name.Name == ident.Name
+		}
+		return true
+	})
+	return 1, found
+}
+
+func capabilityArgumentIsSafelyConsumed(call *ast.CallExpr, argumentIndex int, source sourceFile) bool {
+	for _, function := range calledFunction(call.Fun, source) {
+		parameters := fieldParameters(function.Type.Params)
+		if argumentIndex >= len(parameters) || function.Body == nil {
+			continue
+		}
+		name := parameters[argumentIndex].name
+		called := false
+		safe := true
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			invocation, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			ident, ok := invocation.Fun.(*ast.Ident)
+			if !ok || ident.Name != name {
+				return true
+			}
+			called = true
+			safe = safe && len(invocation.Args) != 0 && filesystemPathIsRooted(invocation.Args[0], source, function, map[*ast.Ident]bool{})
+			return true
+		})
+		if called && safe {
+			return true
+		}
 	}
 	return false
 }
@@ -394,7 +662,7 @@ func isNamedType(expr ast.Expr, pkgPath, typeName string, source sourceFile) boo
 		return value.Name == typeName && source.pkgPath == pkgPath
 	case *ast.SelectorExpr:
 		qualifier, ok := value.X.(*ast.Ident)
-		return ok && value.Sel.Name == typeName && source.importPath[qualifier.Name] == pkgPath
+		return ok && value.Sel.Name == typeName && importedPath(source, qualifier.Name) == pkgPath
 	case *ast.StarExpr:
 		return isNamedType(value.X, pkgPath, typeName, source)
 	}
@@ -517,15 +785,17 @@ func isCmdType(expr ast.Expr, source sourceFile) bool {
 		if ident.Name == "Cmd" && source.pkgPath == modulePath+"/internal/seam" {
 			return true
 		}
-		for _, declaration := range source.file.Decls {
-			generic, ok := declaration.(*ast.GenDecl)
-			if !ok || generic.Tok != token.TYPE {
-				continue
-			}
-			for _, specification := range generic.Specs {
-				typeSpec, ok := specification.(*ast.TypeSpec)
-				if ok && typeSpec.Name.Name == ident.Name && typeSpec.Type != ident && isCmdType(typeSpec.Type, source) {
-					return true
+		for _, file := range source.packageFiles {
+			for _, declaration := range file.Decls {
+				generic, ok := declaration.(*ast.GenDecl)
+				if !ok || generic.Tok != token.TYPE {
+					continue
+				}
+				for _, specification := range generic.Specs {
+					typeSpec, ok := specification.(*ast.TypeSpec)
+					if ok && typeSpec.Name.Name == ident.Name && typeSpec.Type != ident && isCmdType(typeSpec.Type, source) {
+						return true
+					}
 				}
 			}
 		}
@@ -536,7 +806,57 @@ func isCmdType(expr ast.Expr, source sourceFile) bool {
 		return false
 	}
 	ident, ok := selector.X.(*ast.Ident)
-	return ok && source.importPath[ident.Name] == modulePath+"/internal/seam"
+	return ok && importedPath(source, ident.Name) == modulePath+"/internal/seam"
+}
+
+func isRunnerType(expr ast.Expr, source sourceFile) bool {
+	switch value := expr.(type) {
+	case *ast.Ident:
+		if (value.Name == "Runner" || value.Name == "StreamRunner") && source.pkgPath == modulePath+"/internal/seam" {
+			return true
+		}
+		for _, file := range source.packageFiles {
+			for _, declaration := range file.Decls {
+				generic, ok := declaration.(*ast.GenDecl)
+				if !ok || generic.Tok != token.TYPE {
+					continue
+				}
+				for _, specification := range generic.Specs {
+					typeSpec, ok := specification.(*ast.TypeSpec)
+					if ok && typeSpec.Name.Name == value.Name && typeSpec.Type != value && isRunnerType(typeSpec.Type, source) {
+						return true
+					}
+				}
+			}
+		}
+	case *ast.SelectorExpr:
+		qualifier, ok := value.X.(*ast.Ident)
+		return ok && (value.Sel.Name == "Runner" || value.Sel.Name == "StreamRunner") &&
+			importedPath(source, qualifier.Name) == modulePath+"/internal/seam"
+	}
+	return false
+}
+
+func importedPath(source sourceFile, qualifier string) string {
+	if path := source.importPath[qualifier]; path != "" {
+		return path
+	}
+	for _, file := range source.packageFiles {
+		for _, specification := range file.Imports {
+			path, err := strconv.Unquote(specification.Path.Value)
+			if err != nil {
+				continue
+			}
+			name := filepath.Base(path)
+			if specification.Name != nil {
+				name = specification.Name.Name
+			}
+			if name == qualifier {
+				return path
+			}
+		}
+	}
+	return ""
 }
 
 // R-YHTO-8IAI
