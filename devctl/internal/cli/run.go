@@ -24,7 +24,7 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/spaceinit"
 )
 
-var version = "v0.1.0"
+var version = "v0.1.1"
 
 const usage = `Usage: devctl [options] <command> [arguments]
 
