@@ -14,6 +14,10 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/keyring"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 	"github.com/ikigenba/ikigenba/devctl/internal/secrets"
+	"github.com/ikigenba/ikigenba/devctl/internal/space"
+	"github.com/ikigenba/ikigenba/devctl/internal/spaceapps"
+	"github.com/ikigenba/ikigenba/devctl/internal/spacecreate"
+	"github.com/ikigenba/ikigenba/devctl/internal/spaceinit"
 )
 
 var version = "v0.1.0"
@@ -113,6 +117,12 @@ func Run(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.Writ
 		}
 		return operationError(stderr, secrets.Run(ctx, invocation.arguments, stdout, deps, invocation.account))
 	}
+	if invocation.command == "space" {
+		if !invocation.accountSet && !hasHelp(invocation.arguments) {
+			return usageError(stderr, "--account is required", "devctl space --help")
+		}
+		return operationError(stderr, runSpace(ctx, invocation.arguments, stdout, deps, invocation.account))
+	}
 	if _, required := accountRequired[invocation.command]; required {
 		if hasHelp(invocation.arguments) {
 			// Command-specific phases replace this with the command's help.
@@ -134,6 +144,20 @@ func Run(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.Writ
 
 	// Command-specific phases replace this successful no-op with their dispatch.
 	return 0
+}
+
+func runSpace(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, profile string) error {
+	if len(args) != 0 {
+		switch args[0] {
+		case "create":
+			return spacecreate.Run(ctx, args[1:], stdout, deps, profile)
+		case "init":
+			return spaceinit.Run(ctx, args[1:], stdout, deps, profile)
+		case "restart", "logs":
+			return spaceapps.Run(ctx, args, stdout, deps, profile)
+		}
+	}
+	return space.Run(ctx, args, stdout, deps, profile)
 }
 
 func spaceDomain(command string, arguments []string) (string, bool) {

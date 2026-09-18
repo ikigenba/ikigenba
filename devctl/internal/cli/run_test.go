@@ -172,9 +172,9 @@ func TestAccountProfileReachesCloudUnchanged(t *testing.T) {
 		args []string
 		want string
 	}{
-		{args: []string{"--account", "", "space"}, want: ""},
-		{args: []string{"--account", " Work Profile ", "space"}, want: " Work Profile "},
-		{args: []string{"--account=MiXeD Profile", "space"}, want: "MiXeD Profile"},
+		{args: []string{"--account", "", "space", "list"}, want: ""},
+		{args: []string{"--account", " Work Profile ", "space", "list"}, want: " Work Profile "},
+		{args: []string{"--account=MiXeD Profile", "space", "list"}, want: "MiXeD Profile"},
 	} {
 		var profiles []string
 		result := invokeWithDeps(seam.Deps{
@@ -184,7 +184,7 @@ func TestAccountProfileReachesCloudUnchanged(t *testing.T) {
 				if len(profiles) == 1 {
 					return cloud.Clients{SSM: &cliSSM{value: cliPropertiesJSON}}, nil
 				}
-				return cloud.Clients{}, nil
+				return cloud.Clients{EC2: &cliEC2{}}, nil
 			},
 		}, test.args...)
 		assertResult(t, result, 0, "", "")
@@ -197,8 +197,8 @@ func TestAccountProfileReachesCloudUnchanged(t *testing.T) {
 func TestLastAccountOptionWins(t *testing.T) {
 	// R-9VM2-IDAW
 	for _, args := range [][]string{
-		{"--account", "first", "--account=second", "space"},
-		{"--account=first", "--account", "second", "space"},
+		{"--account", "first", "--account=second", "space", "list"},
+		{"--account=first", "--account", "second", "space", "list"},
 	} {
 		var profiles []string
 		result := invokeWithDeps(seam.Deps{
@@ -208,7 +208,7 @@ func TestLastAccountOptionWins(t *testing.T) {
 				if len(profiles) == 1 {
 					return cloud.Clients{SSM: &cliSSM{value: cliPropertiesJSON}}, nil
 				}
-				return cloud.Clients{}, nil
+				return cloud.Clients{EC2: &cliEC2{}}, nil
 			},
 		}, args...)
 		assertResult(t, result, 0, "", "")
@@ -463,6 +463,69 @@ func TestSecretsHelpThroughCLI(t *testing.T) {
 		assertResult(t, invoke("--account", "work", "secrets", "list", option), 0, expectedD05ListUsage, "")
 	}
 	// R-W1MO-Y7YK
+}
+
+func TestSpaceHelpThroughCLIWithoutAccount(t *testing.T) {
+	// R-8WFQ-8ZI4 R-DCZD-72EW R-DE79-KU5L R-DFF5-YLWA R-DGN2-CDMZ
+	for _, args := range [][]string{
+		{"space", "--help"}, {"space", "-h"},
+		{"space", "destroy", "--help"}, {"space", "destroy", "-h"},
+		{"space", "stop", "--help"}, {"space", "stop", "-h"},
+		{"space", "start", "--help"}, {"space", "start", "-h"},
+		{"space", "status", "--help"}, {"space", "status", "-h"},
+	} {
+		calls := 0
+		result := invokeWithDeps(seam.Deps{
+			EUID: 1,
+			Cloud: func(context.Context, string, string) (cloud.Clients, error) {
+				calls++
+				return cloud.Clients{}, nil
+			},
+		}, args...)
+		if result.code != 0 || result.stdout == "" || result.stderr != "" {
+			t.Fatalf("Run(%q) = %#v, want help success", args, result)
+		}
+		if calls != 0 {
+			t.Fatalf("Run(%q) opened cloud %d times", args, calls)
+		}
+	}
+}
+
+func TestSpaceDispatchShape(t *testing.T) {
+	// R-DHUY-Q5DO
+	contents, err := os.ReadFile("run.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(contents)
+	for _, call := range []string{
+		"spacecreate.Run(ctx, args[1:], stdout, deps, profile)",
+		"spaceinit.Run(ctx, args[1:], stdout, deps, profile)",
+		"spaceapps.Run(ctx, args, stdout, deps, profile)",
+		"space.Run(ctx, args, stdout, deps, profile)",
+	} {
+		if !strings.Contains(source, call) {
+			t.Errorf("CLI dispatch lacks %s", call)
+		}
+	}
+	for _, args := range [][]string{{"space", "create"}, {"space", "init"}, {"space", "restart"}, {"space", "logs"}} {
+		result := invokeWithDeps(seam.Deps{EUID: 1}, args...)
+		if result.code != 2 || !strings.Contains(result.stderr, "--account is required") {
+			t.Fatalf("Run(%q) = %#v", args, result)
+		}
+	}
+}
+
+func TestNoZoneErrorIsSingleLineOperationFailure(t *testing.T) {
+	// R-TO38-VG35
+	var stderr bytes.Buffer
+	err := fmt.Errorf("wrapped: %w", &account.NoZoneError{Domain: "foo.example"})
+	if got := operationError(&stderr, err); got != 1 {
+		t.Fatalf("operationError exit = %d, want 1", got)
+	}
+	if got, want := stderr.String(), "devctl: no hosted zone for 'foo.example'\n"; got != want {
+		t.Fatalf("stderr = %q, want %q", got, want)
+	}
 }
 
 func TestSecretsUsageErrorsThroughCLI(t *testing.T) {

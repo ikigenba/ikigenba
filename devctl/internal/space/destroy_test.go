@@ -195,7 +195,7 @@ func TestDestroyRetireSuccessIgnoresOutput(t *testing.T) {
 }
 
 func TestDestroyStopsAtFirstFailure(t *testing.T) {
-	// R-DSU2-631X
+	// R-DSU2-631X R-TPB5-97TU
 	state := newDestroyState(t, true, true)
 	state.instances = []cloud.Instance{{ID: "i-one", Space: destroyDomain, State: cloud.StateRunning}}
 	state.addresses = []cloud.Address{{AllocationID: "alloc", IP: "18.220.10.5", Space: destroyDomain}}

@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"io/fs"
+	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,6 +30,29 @@ func TestStep(t *testing.T) {
 	const want = "instance: ok (i-0c9e94542d98846a8 terminated)\ninit: ok\n"
 	if output.String() != want {
 		t.Fatalf("Step output = %q, want %q", output.String(), want)
+	}
+}
+
+func TestCompletedStepLinesUseSpaceStep(t *testing.T) {
+	// R-TPB5-97TU
+	for _, directory := range []string{".", "../spacecreate", "../deploy", "../restore"} {
+		directoryFS := os.DirFS(directory)
+		entries, err := fs.ReadDir(directoryFS, ".")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+				continue
+			}
+			contents, err := fs.ReadFile(directoryFS, entry.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if directory != "." && strings.Contains(string(contents), ": ok (") {
+				t.Errorf("%s/%s writes a completed step instead of calling space.Step", directory, entry.Name())
+			}
+		}
 	}
 }
 

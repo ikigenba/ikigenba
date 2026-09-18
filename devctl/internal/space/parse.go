@@ -19,6 +19,67 @@ Project=ikigenba with a Space tag naming its domain. What a space is running is
 'devctl space status'.
 `
 
+const usageText = `Usage: devctl --account <name> space <subcommand> [arguments]
+
+List, create, destroy, stop, start, initialise, and inspect spaces in one
+account, and restart or read the journal of one app on one. A space is one
+instance named by its full domain; the cloud's tags are the only registry.
+
+Subcommands:
+  list                       one line per space in the account
+  create <domain> [options]  create the space at <domain>
+  destroy <domain> [options] remove the space and everything it owned
+  stop <domain>              stop the instance; state is kept
+  start <domain>             start the instance; its address is unchanged
+  init <domain> [options]    set the host's keys again and run opsctl init
+  status <domain>            one line per app: version, service state, database journal mode
+  restart <domain> <app>     restart one app's service on the host
+  logs <domain> <app>        print one app's journal from the host
+
+Options (create):
+  --acme-email <address>  where the CA sends the space's expiry warnings; required
+
+Options (destroy):
+  --no-backup             skip the final backup an account that keeps backups takes
+
+Options (init):
+  --opsctl <version>      move the host to this opsctl release first
+  --acme-email <address>  change where the CA sends the space's expiry warnings
+
+Options (logs):
+  --follow                keep printing as the app writes, until interrupted
+  --since <when>          start at this moment, as journalctl reads it: -1h, yesterday, 2026-09-11 18:00:00
+
+Every subcommand needs --account. Run 'devctl space <subcommand> --help' for details.
+`
+
+const destroyUsage = `Usage: devctl --account <name> space destroy <domain> [--no-backup]
+
+Retire the host first when the account keeps backups, then remove the instance,
+Elastic IP, records and role. Account retention settings decide whether secrets
+and backups are deleted. Run again to finish a partial destroy.
+
+Options:
+  --no-backup   skip the final backup
+`
+
+const stopUsage = `Usage: devctl --account <name> space stop <domain>
+
+Stop the instance and keep its disk, Elastic IP, records, secrets and backups.
+`
+
+const startUsage = `Usage: devctl --account <name> space start <domain>
+
+Start the instance at its existing Elastic IP, wait for status checks and SSH,
+then run certbot renew. Records are unchanged; the last line is domain and address.
+`
+
+const statusUsage = `Usage: devctl --account <name> space status <domain>
+
+Relay opsctl status from the running host: app, version, service state and
+database journal mode. A host with no apps prints nothing.
+`
+
 const spaceHelp = "devctl space --help"
 
 type invocation struct {
@@ -50,8 +111,7 @@ func parseInvocation(args []string) (invocation, error) {
 				return invocation{}, unknownOption(argument)
 			}
 		}
-		// The top-level space help is supplied with its own requirement.
-		return invocation{}, nil
+		return invocation{help: usageText}, nil
 	}
 	if strings.HasPrefix(args[0], "-") {
 		return invocation{}, unknownOption(args[0])
@@ -100,6 +160,16 @@ func parseInvocation(args []string) (invocation, error) {
 		return invocation{}, usage("space " + subcommand + " takes only <domain>")
 	}
 	if help {
+		switch subcommand {
+		case "destroy":
+			result.help = destroyUsage
+		case "stop":
+			result.help = stopUsage
+		case "start":
+			result.help = startUsage
+		case "status":
+			result.help = statusUsage
+		}
 		return result, nil
 	}
 	if len(operands) == 0 {
