@@ -25,43 +25,6 @@ func TestRunListHelp(t *testing.T) {
 	}
 }
 
-func TestRunSpaceHelp(t *testing.T) {
-	// R-8WFQ-8ZI4
-	assertHelp(t, []string{"--help"}, usageText)
-	assertHelp(t, []string{"-h"}, usageText)
-}
-
-func TestRunDomainSubcommandHelp(t *testing.T) {
-	tests := []struct {
-		id      string
-		command string
-		want    string
-	}{
-		{id: "R-DCZD-72EW", command: "destroy", want: destroyUsage},
-		{id: "R-DE79-KU5L", command: "stop", want: stopUsage},
-		{id: "R-DFF5-YLWA", command: "start", want: startUsage},
-		{id: "R-DGN2-CDMZ", command: "status", want: statusUsage},
-	}
-	for _, test := range tests {
-		t.Run(test.id, func(t *testing.T) {
-			for _, option := range []string{"--help", "-h"} {
-				assertHelp(t, []string{test.command, option}, test.want)
-			}
-		})
-	}
-}
-
-func assertHelp(t *testing.T, args []string, want string) {
-	t.Helper()
-	var stdout bytes.Buffer
-	if err := Run(context.Background(), args, &stdout, seam.Deps{}, ""); err != nil {
-		t.Fatalf("Run(%q) error = %v", args, err)
-	}
-	if got := stdout.String(); got != want {
-		t.Fatalf("Run(%q) stdout = %q, want %q", args, got, want)
-	}
-}
-
 func TestRunNeedsSubcommand(t *testing.T) {
 	// R-TVEN-62JB
 	assertRunUsageError(t, nil, "space needs <subcommand>")

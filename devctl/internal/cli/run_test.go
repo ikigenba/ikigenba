@@ -96,6 +96,67 @@ Arguments:
   <app>      one app the space holds an entry for; omitted, every app
 `
 
+const expectedD06Usage = `Usage: devctl --account <name> space <subcommand> [arguments]
+
+List, create, destroy, stop, start, initialise, and inspect spaces in one
+account, and restart or read the journal of one app on one. A space is one
+instance named by its full domain; the cloud's tags are the only registry.
+
+Subcommands:
+  list                       one line per space in the account
+  create <domain> [options]  create the space at <domain>
+  destroy <domain> [options] remove the space and everything it owned
+  stop <domain>              stop the instance; state is kept
+  start <domain>             start the instance; its address is unchanged
+  init <domain> [options]    set the host's keys again and run opsctl init
+  status <domain>            one line per app: version, service state, database journal mode
+  restart <domain> <app>     restart one app's service on the host
+  logs <domain> <app>        print one app's journal from the host
+
+Options (create):
+  --acme-email <address>  where the CA sends the space's expiry warnings; required
+
+Options (destroy):
+  --no-backup             skip the final backup an account that keeps backups takes
+
+Options (init):
+  --opsctl <version>      move the host to this opsctl release first
+  --acme-email <address>  change where the CA sends the space's expiry warnings
+
+Options (logs):
+  --follow                keep printing as the app writes, until interrupted
+  --since <when>          start at this moment, as journalctl reads it: -1h, yesterday, 2026-09-11 18:00:00
+
+Every subcommand needs --account. Run 'devctl space <subcommand> --help' for details.
+`
+
+const expectedD06DestroyUsage = `Usage: devctl --account <name> space destroy <domain> [--no-backup]
+
+Retire the host first when the account keeps backups, then remove the instance,
+Elastic IP, records and role. Account retention settings decide whether secrets
+and backups are deleted. Run again to finish a partial destroy.
+
+Options:
+  --no-backup   skip the final backup
+`
+
+const expectedD06StopUsage = `Usage: devctl --account <name> space stop <domain>
+
+Stop the instance and keep its disk, Elastic IP, records, secrets and backups.
+`
+
+const expectedD06StartUsage = `Usage: devctl --account <name> space start <domain>
+
+Start the instance at its existing Elastic IP, wait for status checks and SSH,
+then run certbot renew. Records are unchanged; the last line is domain and address.
+`
+
+const expectedD06StatusUsage = `Usage: devctl --account <name> space status <domain>
+
+Relay opsctl status from the running host: app, version, service state and
+database journal mode. A host with no apps prints nothing.
+`
+
 func TestRunReturnsWithoutTerminatingCaller(t *testing.T) {
 	// R-U72C-BSYD
 	file, err := parser.ParseFile(token.NewFileSet(), "run.go", nil, 0)
@@ -467,27 +528,37 @@ func TestSecretsHelpThroughCLI(t *testing.T) {
 
 func TestSpaceHelpThroughCLIWithoutAccount(t *testing.T) {
 	// R-8WFQ-8ZI4 R-DCZD-72EW R-DE79-KU5L R-DFF5-YLWA R-DGN2-CDMZ
-	for _, args := range [][]string{
-		{"space", "--help"}, {"space", "-h"},
-		{"space", "destroy", "--help"}, {"space", "destroy", "-h"},
-		{"space", "stop", "--help"}, {"space", "stop", "-h"},
-		{"space", "start", "--help"}, {"space", "start", "-h"},
-		{"space", "status", "--help"}, {"space", "status", "-h"},
-	} {
-		calls := 0
-		result := invokeWithDeps(seam.Deps{
-			EUID: 1,
-			Cloud: func(context.Context, string, string) (cloud.Clients, error) {
-				calls++
-				return cloud.Clients{}, nil
-			},
-		}, args...)
-		if result.code != 0 || result.stdout == "" || result.stderr != "" {
-			t.Fatalf("Run(%q) = %#v, want help success", args, result)
-		}
-		if calls != 0 {
-			t.Fatalf("Run(%q) opened cloud %d times", args, calls)
-		}
+	tests := []struct {
+		name    string
+		command []string
+		want    string
+	}{
+		{name: "space", command: []string{"space"}, want: expectedD06Usage},
+		{name: "destroy", command: []string{"space", "destroy"}, want: expectedD06DestroyUsage},
+		{name: "stop", command: []string{"space", "stop"}, want: expectedD06StopUsage},
+		{name: "start", command: []string{"space", "start"}, want: expectedD06StartUsage},
+		{name: "status", command: []string{"space", "status"}, want: expectedD06StatusUsage},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for _, option := range []string{"--help", "-h"} {
+				t.Run(option, func(t *testing.T) {
+					calls := 0
+					args := append(append([]string{}, test.command...), option)
+					result := invokeWithDeps(seam.Deps{
+						EUID: 1,
+						Cloud: func(context.Context, string, string) (cloud.Clients, error) {
+							calls++
+							return cloud.Clients{}, nil
+						},
+					}, args...)
+					assertResult(t, result, 0, test.want, "")
+					if calls != 0 {
+						t.Fatalf("Run(%q) opened cloud %d times", args, calls)
+					}
+				})
+			}
+		})
 	}
 }
 
