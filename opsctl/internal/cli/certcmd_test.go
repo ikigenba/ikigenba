@@ -24,15 +24,18 @@ import (
 const wantCertUsage = `Usage: opsctl cert <subcommand>
 
 Obtain and inspect the one certificate this host serves: host.name and
-*.host.name, proved over DNS-01 through 'opsctl dns acme-auth'.
+*.host.name, plus the parent of host.name when host.apex is set, proved over
+DNS-01 through 'opsctl dns acme-auth'.
 
 Subcommands:
   show    print the certificate's names, issuer, and expiry
-  obtain  obtain the certificate, or renew it if it is due
+  obtain  obtain the certificate, renew it if it is due, or reissue it when
+          the names it should carry have changed
 
 Configuration keys:
   acme.email  the address the CA sends expiry warnings to
   host.name   the fully-qualified name this host answers at
+  host.apex   the app that answers at the parent of host.name; unset means none
 
 Renewal is certbot's: 'certbot renew' re-runs the same hooks and reloads
 nginx, with no further configuration. 'opsctl init' writes the timer that
@@ -40,12 +43,15 @@ runs it twice a day, ikigenba-renew-certificate.timer.
 `
 
 func TestCertHelpIsExactAndInert(t *testing.T) {
-	// R-YHGD-GEQD R-YYIY-T743
+	// R-2YGQ-1A5Q R-YYIY-T743
 	for _, uid := range []int{0, 1000} {
 		for _, option := range []string{"-h", "--help"} {
+			root := t.TempDir()
+			writeCorruptCLIConfigFile(t, root)
+			before := treeState(t, root)
 			called := false
 			deps := cli.Deps{
-				Root: filepath.Join(t.TempDir(), "absent"), EUID: uid,
+				Root: root, EUID: uid,
 				Execute: func(context.Context, host.Command) (host.Result, error) {
 					called = true
 					return host.Result{}, errors.New("unexpected execution")
@@ -54,6 +60,9 @@ func TestCertHelpIsExactAndInert(t *testing.T) {
 			stdout, stderr, code := invoke([]string{"cert", option}, deps)
 			if code != 0 || stdout != wantCertUsage || stderr != "" || called {
 				t.Fatalf("uid %d %s: exit %d stdout %q stderr %q executed %t", uid, option, code, stdout, stderr, called)
+			}
+			if after := treeState(t, root); !reflect.DeepEqual(after, before) {
+				t.Fatalf("uid %d %s changed state: before %#v after %#v", uid, option, before, after)
 			}
 		}
 	}
@@ -97,7 +106,7 @@ func TestCertGrammarAndRootCheckPrecedeHostAccess(t *testing.T) {
 }
 
 func TestCertReadsRequiredConfigurationInOrder(t *testing.T) {
-	// R-YJW6-7Y7R
+	// R-O6Q6-LMAB
 	cases := []struct {
 		name   string
 		args   []string
@@ -106,6 +115,7 @@ func TestCertReadsRequiredConfigurationInOrder(t *testing.T) {
 	}{
 		{"show missing host", []string{"cert", "show"}, nil, "opsctl: host.name not set\n"},
 		{"obtain checks host first", []string{"cert", "obtain"}, map[string]string{"host.name": "", "acme.email": "admin@example.com"}, "opsctl: host.name not set\n"},
+		{"normalized host is empty", []string{"cert", "obtain"}, map[string]string{"host.name": ".", "acme.email": "admin@example.com"}, "opsctl: host.name not set\n"},
 		{"obtain missing email", []string{"cert", "obtain"}, map[string]string{"host.name": "example.com"}, "opsctl: acme.email not set\n"},
 		{"obtain empty email", []string{"cert", "obtain"}, map[string]string{"host.name": "example.com", "acme.email": ""}, "opsctl: acme.email not set\n"},
 	}
@@ -140,12 +150,50 @@ func TestCertReadsRequiredConfigurationInOrder(t *testing.T) {
 	if code != 1 || stdout != "" || stderr != "opsctl: "+wantPath+" is corrupt\n" {
 		t.Fatalf("corrupt store: exit %d stdout %q stderr %q", code, stdout, stderr)
 	}
+
+	for _, tc := range []struct {
+		name    string
+		setApex bool
+	}{
+		{name: "unset apex"},
+		{name: "empty apex", setApex: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			values := map[string]string{"host.name": "HOST.EXAMPLE.COM.", "acme.email": "admin@example.com"}
+			if tc.setApex {
+				values["host.apex"] = ""
+			}
+			setCertConfig(t, root, values)
+			var command host.Command
+			stdout, stderr, code := invoke([]string{"cert", "obtain"}, cli.Deps{
+				Root: root, EUID: 0,
+				Execute: func(_ context.Context, got host.Command) (host.Result, error) {
+					command = got
+					return host.Result{}, nil
+				},
+			})
+			if code != 0 || stdout != "" || stderr != "" {
+				t.Fatalf("exit %d stdout %q stderr %q", code, stdout, stderr)
+			}
+			var domains []string
+			for i, arg := range command.Args {
+				if arg == "-d" && i+1 < len(command.Args) {
+					domains = append(domains, command.Args[i+1])
+				}
+			}
+			wantDomains := []string{"host.example.com", "*.host.example.com"}
+			if !reflect.DeepEqual(domains, wantDomains) {
+				t.Fatalf("domains = %v, want %v", domains, wantDomains)
+			}
+		})
+	}
 }
 
 func TestCertShowPrintsInspectedCertificate(t *testing.T) {
-	// R-YTND-A45B
+	// R-O95Z-D5RP
 	root := t.TempDir()
-	setCertConfig(t, root, map[string]string{"host.name": "example.com"})
+	setCertConfig(t, root, map[string]string{"host.name": "EXAMPLE.COM."})
 	expires := time.Date(2035, time.June, 7, 8, 9, 10, 987654321, time.FixedZone("offset", -6*60*60))
 	writeCertificate(t, root, "example.com", []string{"example.com", "*.example.com"}, "Test Issuer", expires)
 
@@ -157,9 +205,9 @@ func TestCertShowPrintsInspectedCertificate(t *testing.T) {
 }
 
 func TestCertShowFailureIsDiagnosticAndReadOnly(t *testing.T) {
-	// R-YUV9-NVW0
+	// R-OADV-QXIE
 	root := t.TempDir()
-	setCertConfig(t, root, map[string]string{"host.name": "ikigenba.dev"})
+	setCertConfig(t, root, map[string]string{"host.name": "IKIGENBA.DEV."})
 	before := treeState(t, root)
 	stdout, stderr, code := invoke([]string{"cert", "show"}, cli.Deps{Root: root, EUID: 0})
 	if code != 1 || stdout != "" || stderr != "opsctl: no certificate for ikigenba.dev\n" {
@@ -171,9 +219,9 @@ func TestCertShowFailureIsDiagnosticAndReadOnly(t *testing.T) {
 }
 
 func TestCertObtainUsesConfigurationAndFormatsFailure(t *testing.T) {
-	// R-YXB2-FFDE
+	// R-O7Y2-ZE10
 	root := t.TempDir()
-	setCertConfig(t, root, map[string]string{"host.name": "example.com", "acme.email": "admin@example.com"})
+	setCertConfig(t, root, map[string]string{"host.name": "HOST.EXAMPLE.COM.", "acme.email": "admin@example.com", "host.apex": "notes"})
 	var commands []host.Command
 	deps := cli.Deps{Root: root, EUID: 0, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
 		commands = append(commands, command)
@@ -185,7 +233,8 @@ func TestCertObtainUsesConfigurationAndFormatsFailure(t *testing.T) {
 	}
 	wantParts := [][2]string{
 		{"--email", "admin@example.com"},
-		{"--cert-name", "example.com"},
+		{"--cert-name", "host.example.com"},
+		{"-d", "example.com"},
 		{"--config-dir", filepath.Join(root, "etc", "letsencrypt")},
 	}
 	joined := strings.Join(commands[0].Args, "\x00")
@@ -202,6 +251,27 @@ func TestCertObtainUsesConfigurationAndFormatsFailure(t *testing.T) {
 	want := "opsctl: certbot certonly: exit status 1\n\n> challenge failed\n> CA refused\n"
 	if code != 1 || stdout != "" || stderr != want {
 		t.Fatalf("failure: exit %d stdout %q stderr %q, want %q", code, stdout, stderr, want)
+	}
+
+	refusalRoot := t.TempDir()
+	setCertConfig(t, refusalRoot, map[string]string{
+		"host.name": "LOCALHOST.", "acme.email": "admin@example.com", "host.apex": "notes",
+	})
+	before := treeState(t, refusalRoot)
+	executed := false
+	stdout, stderr, code = invoke([]string{"cert", "obtain"}, cli.Deps{
+		Root: refusalRoot, EUID: 0,
+		Execute: func(context.Context, host.Command) (host.Result, error) {
+			executed = true
+			return host.Result{}, nil
+		},
+	})
+	want = "opsctl: host.apex is set but host.name 'localhost' has no parent domain\n"
+	if code != 1 || stdout != "" || stderr != want || executed {
+		t.Fatalf("apex refusal: exit %d stdout %q stderr %q executed %t, want %q", code, stdout, stderr, executed, want)
+	}
+	if after := treeState(t, refusalRoot); !reflect.DeepEqual(after, before) {
+		t.Fatalf("apex refusal changed state: before %#v after %#v", before, after)
 	}
 }
 

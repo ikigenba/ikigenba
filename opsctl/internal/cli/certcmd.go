@@ -16,15 +16,18 @@ import (
 const certUsage = `Usage: opsctl cert <subcommand>
 
 Obtain and inspect the one certificate this host serves: host.name and
-*.host.name, proved over DNS-01 through 'opsctl dns acme-auth'.
+*.host.name, plus the parent of host.name when host.apex is set, proved over
+DNS-01 through 'opsctl dns acme-auth'.
 
 Subcommands:
   show    print the certificate's names, issuer, and expiry
-  obtain  obtain the certificate, or renew it if it is due
+  obtain  obtain the certificate, renew it if it is due, or reissue it when
+          the names it should carry have changed
 
 Configuration keys:
   acme.email  the address the CA sends expiry warnings to
   host.name   the fully-qualified name this host answers at
+  host.apex   the app that answers at the parent of host.name; unset means none
 
 Renewal is certbot's: 'certbot renew' re-runs the same hooks and reloads
 nginx, with no further configuration. 'opsctl init' writes the timer that
@@ -60,6 +63,11 @@ func runCert(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	if code != exitOK {
 		return code
 	}
+	hostName = host.NormalizeName(hostName)
+	if hostName == "" {
+		_, _ = io.WriteString(stderr, "opsctl: host.name not set\n")
+		return exitFail
+	}
 	env := host.Env{Root: deps.Root, Getenv: deps.Getenv, Execute: deps.Execute, Now: deps.Now}
 	if args[0] == "show" {
 		return runCertShow(stdout, stderr, env, hostName)
@@ -81,7 +89,11 @@ func runCertObtain(stderr io.Writer, store config.Store, deps Deps, env host.Env
 	if code != exitOK {
 		return code
 	}
-	if err := cert.Obtain(context.Background(), env, hostName, email, false); err != nil {
+	apexApp, err := store.Get("host.apex")
+	if err != nil && !errors.Is(err, config.ErrNotSet) {
+		return configActionErr(stderr, "get", deps, err)
+	}
+	if err := cert.Obtain(context.Background(), env, hostName, email, apexApp != ""); err != nil {
 		return certOperationErr(stderr, err)
 	}
 	return exitOK
