@@ -43,15 +43,6 @@ Sequence:
 
 Configuration keys:
   host.name  the fully-qualified name this host answers at, at or under a configured zone
-  dns.provider  the active provider; only 'route53' is supported
-  dns.zones  comma-separated NAME:ID pairs of the zones opsctl owns
-  acme.email  the address the CA sends expiry warnings to
-  aws.region  the region the backup bucket lives in
-  backup.s3_uri  the prefix this host backs up to
-  backup.host_files_seconds  how often the host configuration is copied; 0 or unset means never
-  backup.service_files_seconds  how often service files are copied; 0 or unset means never
-  backup.service_db_seconds  how often a declared database is snapshotted whole
-  backup.service_wal_seconds  how often a declared database's committed changes are shipped
 `
 
 func runInit(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
@@ -290,11 +281,19 @@ func (p *initPreflight) finish(stdout, stderr io.Writer) exitCode {
 		email = ""
 		err = nil
 	}
+	apexApp := ""
 	if err == nil {
-		err = cert.Obtain(ctx, env, p.host, email)
+		apexApp, err = p.store.Get("host.apex")
+		if errors.Is(err, config.ErrNotSet) {
+			apexApp = ""
+			err = nil
+		}
 	}
 	if err == nil {
-		err = nginx.Apply(ctx, env, p.host)
+		err = cert.Obtain(ctx, env, p.host, email, apexApp != "")
+	}
+	if err == nil {
+		err = nginx.Apply(ctx, env, p.host, apexApp)
 	}
 	if err == nil {
 		err = backup.SetupReplication(ctx, env, p.store)

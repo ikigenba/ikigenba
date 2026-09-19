@@ -40,19 +40,10 @@ Sequence:
 
 Configuration keys:
   host.name  the fully-qualified name this host answers at, at or under a configured zone
-  dns.provider  the active provider; only 'route53' is supported
-  dns.zones  comma-separated NAME:ID pairs of the zones opsctl owns
-  acme.email  the address the CA sends expiry warnings to
-  aws.region  the region the backup bucket lives in
-  backup.s3_uri  the prefix this host backs up to
-  backup.host_files_seconds  how often the host configuration is copied; 0 or unset means never
-  backup.service_files_seconds  how often service files are copied; 0 or unset means never
-  backup.service_db_seconds  how often a declared database is snapshotted whole
-  backup.service_wal_seconds  how often a declared database's committed changes are shipped
 `
 
 func TestInitHelp(t *testing.T) {
-	// R-ZYRQ-L5HW
+	// R-ZH35-EQDB
 	for _, uid := range []int{0, 1000} {
 		for _, args := range [][]string{{"init", "--help"}, {"init", "-h"}} {
 			deps, assertNoAccess := inertDeps(t, uid)
@@ -274,7 +265,7 @@ func TestInitMissingConfigurationIsReportedAsFindings(t *testing.T) {
 func TestInitHealthyPreflight(t *testing.T) {
 	// R-LIU3-NA5F R-LK20-11W4 R-LMHS-SLDI R-ELKW-EVLN
 	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL R-LRDE-BOCA
-	// R-LHM7-9IEQ R-LTT7-37TO R-A61A-1YZM
+	// R-LHM7-9IEQ R-LTT7-37TO R-ZIB1-SI40
 	// R-JWO0-EHD7 R-5E43-77RM
 	// R-YYIY-T743
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
@@ -336,6 +327,9 @@ func TestInitHealthyPreflight(t *testing.T) {
 			if err := store.Set("acme.email", "admin@example.com"); err != nil {
 				t.Fatal(err)
 			}
+			if err := store.Set("host.apex", "notes"); err != nil {
+				t.Fatal(err)
+			}
 			manifest := "app = \"notes\"\nport = 4100\ndefault = true\n" +
 				"\n[database]\nengine = \"sqlite\"\npath = \"state/notes.db\"\n"
 			if err := os.WriteFile(manifestPath, []byte(manifest), 0o600); err != nil {
@@ -376,7 +370,7 @@ func TestInitHealthyPreflight(t *testing.T) {
 		t.Errorf("provider open calls = %d, want 1", openCalls)
 	}
 	wantCommands := []string{
-		"certbot certonly --non-interactive --agree-tos --email admin@example.com --manual --preferred-challenges dns --manual-auth-hook opsctl dns acme-auth --manual-cleanup-hook opsctl dns acme-cleanup --deploy-hook systemctl try-reload-or-restart nginx --cert-name api.deep.example.com -d api.deep.example.com -d *.api.deep.example.com --keep-until-expiring --config-dir " + filepath.Join(deps.Root, "etc/letsencrypt") + " --work-dir " + filepath.Join(deps.Root, "var/lib/letsencrypt") + " --logs-dir " + filepath.Join(deps.Root, "var/log/letsencrypt"),
+		"certbot certonly --non-interactive --agree-tos --email admin@example.com --manual --preferred-challenges dns --manual-auth-hook opsctl dns acme-auth --manual-cleanup-hook opsctl dns acme-cleanup --deploy-hook systemctl try-reload-or-restart nginx --cert-name api.deep.example.com -d api.deep.example.com -d *.api.deep.example.com -d deep.example.com --keep-until-expiring --config-dir " + filepath.Join(deps.Root, "etc/letsencrypt") + " --work-dir " + filepath.Join(deps.Root, "var/lib/letsencrypt") + " --logs-dir " + filepath.Join(deps.Root, "var/log/letsencrypt"),
 		"nginx -t",
 		"systemctl reload-or-restart nginx",
 		"systemctl enable litestream.service",
@@ -397,7 +391,7 @@ func TestInitHealthyPreflight(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, wantFragment := range []string{
-		"server_name         notes.api.deep.example.com api.deep.example.com;",
+		"server_name         notes.api.deep.example.com api.deep.example.com deep.example.com;",
 		"/etc/letsencrypt/live/api.deep.example.com/fullchain.pem",
 		"/etc/letsencrypt/live/api.deep.example.com/privkey.pem",
 	} {
@@ -729,6 +723,96 @@ func TestInitFailedPreflightRunsNoSetupAndChangesNoState(t *testing.T) {
 		t.Errorf("exit %d stdout %q stderr %q", code, stdout, stderr)
 	}
 	if !reflect.DeepEqual(before, after) {
+		t.Errorf("Root changed:\nbefore %#v\nafter  %#v", before, after)
+	}
+}
+
+func TestInitPreflightIgnoresHostApex(t *testing.T) {
+	// R-ZKQU-K1LE
+	var wantStdout string
+	for _, tc := range []struct {
+		name string
+		set  bool
+		apex string
+	}{
+		{name: "unset"},
+		{name: "empty", set: true},
+		{name: "set to invalid apex request", set: true, apex: "site"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			values := map[string]string{"host.name": "localhost"}
+			if tc.set {
+				values["host.apex"] = tc.apex
+			}
+			deps := initDeps(t, values)
+			deps.LookPath = foundInitTools
+			var lookedUp []string
+			deps.LookupHost = func(_ context.Context, name string) ([]string, error) {
+				lookedUp = append(lookedUp, name)
+				return []string{"192.0.2.1"}, nil
+			}
+			deps.Execute = func(context.Context, host.Command) (host.Result, error) {
+				t.Fatal("setup invoked after failed preflight")
+				return host.Result{}, nil
+			}
+
+			stdout, stderr, code := invoke([]string{"init"}, deps)
+			if code != 2 || stderr != "" {
+				t.Fatalf("exit %d stderr %q, want exit 2 and empty stderr", code, stderr)
+			}
+			if wantStdout == "" {
+				wantStdout = stdout
+			} else if stdout != wantStdout {
+				t.Errorf("stdout = %q, want byte-identical report %q", stdout, wantStdout)
+			}
+			wantLookups := []string{"localhost", "_opsctl-preflight.localhost"}
+			if !reflect.DeepEqual(lookedUp, wantLookups) {
+				t.Errorf("host lookups = %v, want %v", lookedUp, wantLookups)
+			}
+		})
+	}
+}
+
+func TestInitInvalidApexFailsAtCertificate(t *testing.T) {
+	// R-ZKQU-K1LE R-ZLYQ-XTC3
+	provider := &fakeDNSProvider{records: map[string][]dns.Record{
+		"ZONE": {
+			{Name: "localhost", Type: "SOA"},
+			{Name: "localhost", Type: "NS", Values: []string{"ns1"}},
+		},
+	}}
+	deps := initDeps(t, map[string]string{
+		dns.KeyProvider: "route53",
+		dns.KeyZones:    "localhost:ZONE",
+		"host.name":     "LOCALHOST.",
+		"host.apex":     "site",
+		"acme.email":    "admin@example.com",
+	})
+	deps.LookPath = foundInitTools
+	deps.DNS.Open = func(context.Context, string) (dns.Provider, error) { return provider, nil }
+	deps.DNS.LookupNS = func(context.Context, string) ([]string, error) { return []string{"ns1"}, nil }
+	deps.LookupHost = func(context.Context, string) ([]string, error) { return []string{"192.0.2.1"}, nil }
+	deps.Execute = func(context.Context, host.Command) (host.Result, error) {
+		t.Fatal("host execution invoked for invalid apex request")
+		return host.Result{}, nil
+	}
+	before := treeState(t, deps.Root)
+
+	wantStdout := "nginx: ok (/bin/nginx)\n" +
+		"certbot: ok (/bin/certbot)\n" +
+		"systemctl: ok (/bin/systemctl)\n" +
+		"litestream: ok (/bin/litestream)\n" +
+		"dns.provider: ok (route53)\n" +
+		"dns.zones: ok (localhost)\n" +
+		"host.name: ok (localhost)\n" +
+		"zone localhost: ok (route53 ZONE, 1 nameservers delegated)\n" +
+		"host localhost: ok (zone localhost)\n" +
+		"wildcard localhost: ok (192.0.2.1)\n"
+	stdout, stderr, code := invoke([]string{"init"}, deps)
+	if code != 1 || stdout != wantStdout || stderr != "opsctl: host.apex is set but host.name 'localhost' has no parent domain\n" {
+		t.Errorf("exit %d stdout %q stderr %q, want exit 1 stdout %q and apex diagnostic", code, stdout, stderr, wantStdout)
+	}
+	if after := treeState(t, deps.Root); !reflect.DeepEqual(after, before) {
 		t.Errorf("Root changed:\nbefore %#v\nafter  %#v", before, after)
 	}
 }
