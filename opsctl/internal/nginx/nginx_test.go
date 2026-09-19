@@ -121,6 +121,27 @@ func TestRenderExactBaseConfigurationWithoutDefault(t *testing.T) {
 	}
 }
 
+// R-NOIY-DDHQ
+func TestRenderAppendsUnroutedApexTo404WithRoutedDefault(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	hostName := "space.example.test"
+	writeManifest(t, root, "alpha", "app = \"alpha\"\nport = 4100\ndefault = true\n")
+
+	got, err := nginx.Render(context.Background(), host.Env{Root: root}, hostName, "missing")
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	want := strings.ReplaceAll(baseWithoutDefault, "example.test", hostName)
+	want = strings.Replace(want,
+		"server_name         space.example.test *.space.example.test;",
+		"server_name         *.space.example.test example.test;", 1)
+	want += serviceBlock("alpha", 4100, true, hostName, "")
+	if string(got) != want {
+		t.Fatalf("configuration with routed default and unrouted apex mismatch\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}
+
 // R-NNB1-ZLR1
 // R-NOIY-DDHQ
 // R-NPQU-R58F
@@ -139,7 +160,7 @@ func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 		return host.Result{}, nil
 	}}
 
-	got, err := nginx.Render(context.Background(), env, hostName, "alpha")
+	got, err := nginx.Render(context.Background(), env, hostName, "zeta")
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -152,7 +173,7 @@ func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 
 	want := strings.ReplaceAll(baseWithoutDefault, "example.test", hostName)
 	want = strings.Replace(want, "server_name         space.example.test *.space.example.test;", "server_name         *.space.example.test;", 1) +
-		serviceBlock("alpha", 4100, true, hostName, "example.test") + serviceBlock("zeta", 9200, false, hostName, "")
+		serviceBlock("alpha", 4100, true, hostName, "") + serviceBlock("zeta", 9200, false, hostName, "example.test")
 	if string(got) != want {
 		t.Fatalf("configuration mismatch\ngot:\n%s\nwant:\n%s", got, want)
 	}
