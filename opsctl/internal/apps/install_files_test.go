@@ -105,7 +105,7 @@ func TestInstallDiscoversDefaultsBeforeSecretsOrMutation(t *testing.T) {
 }
 
 func TestInstallReadsDistinctSecretsAndReportsMissingInOrder(t *testing.T) {
-	// R-OVI9-PHDJ
+	// R-WY7U-IS2M
 	// R-5RIZ-EOX9
 	archive := validInstallTar(t, "app = \"notes\"\nport = 4100\nsecrets = [\"FIRST\", \"SECOND\", \"FIRST\"]\n")
 	root := t.TempDir()
@@ -114,10 +114,10 @@ func TestInstallReadsDistinctSecretsAndReportsMissingInOrder(t *testing.T) {
 		parameters = append(parameters, parameter)
 		return map[string]string{"UNREQUESTED": "omit", "SECOND": "present"}, nil
 	}, nil)
-	if err == nil || len(parameters) != 1 || parameters[0] != "/ikigenba/host.example/notes" {
+	if err == nil || len(parameters) != 1 || parameters[0] != "/host.example/notes" {
 		t.Fatalf("error = %v, parameters = %v", err, parameters)
 	}
-	want := "notes: no value for 'FIRST' in /ikigenba/host.example/notes"
+	want := "notes: no value for 'FIRST' in /host.example/notes"
 	if got := reports[len(reports)-1]; got != (installReport{"secrets", want, false}) {
 		t.Fatalf("last report = %#v", got)
 	}
@@ -197,7 +197,7 @@ func TestInstallValidatesEnvironmentWithoutExposingValues(t *testing.T) {
 func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) {
 	// R-OT2G-XXW5
 	// R-OUAD-BPMU
-	// R-OVI9-PHDJ
+	// R-WY7U-IS2M
 	// R-OWQ6-3948
 	// R-OXY2-H0UX
 	root := t.TempDir()
@@ -219,7 +219,7 @@ func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) 
 	})
 	phase4 := errors.New("phase 4 account lookup stopped")
 	reports, commands, err := runInstallArchive(t, root, archive, func(_ context.Context, parameter string) (map[string]string, error) {
-		if parameter != "/ikigenba/host.example/notes" {
+		if parameter != "/host.example/notes" {
 			t.Fatalf("parameter = %q", parameter)
 		}
 		return map[string]string{"TOKEN": "a value", "EMPTY": "", "EXTRA": "omit"}, nil
@@ -324,7 +324,7 @@ func runInstallArchive(
 	afterXZ func(host.Command) (host.Result, error),
 ) ([]installReport, []host.Command, error) {
 	t.Helper()
-	store := installStoreAt(t, root, map[string]string{"host.name": "host.example", "aws.region": "us-east-1"})
+	store := installStoreAt(t, root, map[string]string{"host.name": "HOST.EXAMPLE.", "aws.region": "us-east-1"})
 	client := &installCloudClient{
 		get: func(context.Context, string) (io.ReadCloser, error) {
 			return &trackedReadCloser{Reader: strings.NewReader("compressed")}, nil

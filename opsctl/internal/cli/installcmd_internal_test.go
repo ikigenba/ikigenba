@@ -9,7 +9,7 @@ import (
 )
 
 func TestInstallCLICommandPreservesTransportCauses(t *testing.T) {
-	// R-P0DV-8KCB, R-AJZ2-XSUE
+	// R-X0NN-ABK0, R-AJZ2-XSUE
 	transportErr := errors.New("connection lost")
 	result := host.Result{Stderr: []byte("partial detail\n")}
 	env := host.Env{Execute: func(context.Context, host.Command) (host.Result, error) {

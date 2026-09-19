@@ -86,8 +86,40 @@ func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
 	})
 }
 
+func TestInstallCLIUsesNormalizedHostAndConfiguredApex(t *testing.T) {
+	// R-X0NN-ABK0 R-X33G-1V1E
+	fixture := newCLIInstallFixture(t)
+	store := config.Store{Root: fixture.root}
+	if err := store.Set("host.name", "SBX.Example.Test."); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("host.apex", "notes"); err != nil {
+		t.Fatal(err)
+	}
+	fixture.secretParameter = "/sbx.example.test/notes"
+
+	stdout, stderr, code := fixture.invoke()
+	wantOutput := "fetch: ok (notes-v1.tar.xz, 0.0 MiB)\n" +
+		"file: ok (notes, port 4100, default)\n" +
+		"secrets: ok (1 keys)\n" +
+		"unpack: ok (/opt/notes)\n" +
+		"unit: ok (ikigenba-notes.service)\n" +
+		"nginx: ok (notes.sbx.example.test, sbx.example.test, example.test)\n" +
+		"litestream: ok (state/notes.db)\n" +
+		"service: ok (notes v1.2.3 active)\n"
+	if code != 0 || stdout != wantOutput || stderr != "" {
+		t.Fatalf("install = exit %d stdout %q stderr %q", code, stdout, stderr)
+	}
+	if hostName, err := store.Get("host.name"); err != nil || hostName != "SBX.Example.Test." {
+		t.Fatalf("host.name after install = %q, %v", hostName, err)
+	}
+	if apexApp, err := store.Get("host.apex"); err != nil || apexApp != "notes" {
+		t.Fatalf("host.apex after install = %q, %v", apexApp, err)
+	}
+}
+
 func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
-	// R-P0DV-8KCB, R-P2TO-03TP, R-EM4J-XPDA, R-EOKC-P8UO, R-AJZ2-XSUE
+	// R-X0NN-ABK0, R-X33G-1V1E, R-EM4J-XPDA, R-EOKC-P8UO, R-AJZ2-XSUE
 	fixture := newCLIInstallFixture(t)
 	fixture.failCommand = "nginx -t"
 	stdout, stderr, code := fixture.invoke()
@@ -118,7 +150,7 @@ func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRegenerationFails(t *testing.T) {
-	// R-P0DV-8KCB, R-AJZ2-XSUE
+	// R-X0NN-ABK0, R-AJZ2-XSUE
 	fixture := newCLIInstallFixture(t)
 	store := config.Store{Root: fixture.root}
 	if err := store.Set("backup.s3_uri", "not-an-s3-uri"); err != nil {
@@ -140,7 +172,7 @@ func TestInstallCLIStopsWhenLitestreamRegenerationFails(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRestartFails(t *testing.T) {
-	// R-P0DV-8KCB, R-AJZ2-XSUE
+	// R-X0NN-ABK0, R-AJZ2-XSUE
 	fixture := newCLIInstallFixture(t)
 	fixture.failCommand = "systemctl restart litestream.service"
 
@@ -160,7 +192,7 @@ func TestInstallCLIStopsWhenLitestreamRestartFails(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRestartTransportFails(t *testing.T) {
-	// R-P0DV-8KCB, R-AJZ2-XSUE
+	// R-X0NN-ABK0, R-AJZ2-XSUE
 	for _, test := range []struct {
 		name       string
 		failure    error
@@ -207,7 +239,7 @@ func TestInstallCLIStopsWhenLitestreamRestartTransportFails(t *testing.T) {
 }
 
 func TestInstallCLIDatabaseRemovalReportsUpdatedLitestream(t *testing.T) {
-	// R-P2TO-03TP
+	// R-X33G-1V1E
 	fixture := newCLIInstallFixture(t)
 	if stdout, stderr, code := fixture.invoke(); code != 0 || stderr != "" || stdout != installReportPrefix("state/notes.db")+"service: ok (notes v1.2.3 active)\n" {
 		t.Fatalf("initial install = exit %d stdout %q stderr %q", code, stdout, stderr)
@@ -436,22 +468,23 @@ func TestInstallCLIIdentifiesStartupAndJournalFailures(t *testing.T) {
 }
 
 type cliInstallFixture struct {
-	t              *testing.T
-	root           string
-	manifest       string
-	secretValue    string
-	plainValue     string
-	commands       []host.Command
-	active         bool
-	failStart      bool
-	failCommand    string
-	commandFailure error
-	failureResult  host.Result
-	journalFailure error
-	journalResult  *host.Result
-	journalOutput  []byte
-	openFailure    error
-	cloud          *cliInstallCloud
+	t               *testing.T
+	root            string
+	manifest        string
+	secretValue     string
+	plainValue      string
+	commands        []host.Command
+	active          bool
+	failStart       bool
+	failCommand     string
+	commandFailure  error
+	failureResult   host.Result
+	journalFailure  error
+	journalResult   *host.Result
+	journalOutput   []byte
+	openFailure     error
+	cloud           *cliInstallCloud
+	secretParameter string
 }
 
 func newCLIInstallFixture(t *testing.T) *cliInstallFixture {
@@ -482,7 +515,7 @@ func newCLIInstallFixture(t *testing.T) *cliInstallFixture {
 	manifest += "[database]\nengine = \"sqlite\"\npath = \"state/notes.db\"\n"
 	fixture := &cliInstallFixture{
 		t: t, root: root, manifest: manifest,
-		secretValue: "secret", plainValue: "PLAIN_VALUE",
+		secretValue: "secret", plainValue: "PLAIN_VALUE", secretParameter: "/host.example/notes",
 	}
 	fixture.cloud = &cliInstallCloud{fixture: fixture}
 	return fixture
@@ -601,7 +634,7 @@ func (*cliInstallCloud) PutObject(context.Context, string, io.Reader) error { re
 func (*cliInstallCloud) ListObjects(context.Context, string) ([]cloud.Object, error) { return nil, nil }
 
 func (client *cliInstallCloud) ReadSecrets(_ context.Context, parameter string) (map[string]string, error) {
-	if parameter != "/ikigenba/host.example/notes" {
+	if parameter != client.fixture.secretParameter {
 		return nil, errors.New("wrong secret parameter")
 	}
 	return map[string]string{"TOKEN": client.fixture.secretValue, "UNREQUESTED": "not installed"}, nil

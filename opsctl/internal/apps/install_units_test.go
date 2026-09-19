@@ -20,7 +20,7 @@ import (
 )
 
 func TestInstallPublishesAndEnablesRootedAppUnit(t *testing.T) {
-	// R-EKSI-SOZD R-EN8B-K8GR R-P2TO-03TP R-AMEV-4J2G
+	// R-EKSI-SOZD R-EN8B-K8GR R-X33G-1V1E R-AMEV-4J2G
 	root := t.TempDir()
 	statePath := filepath.Join(root, "opt", "notes", "state", "db")
 	cachePath := filepath.Join(root, "opt", "notes", "cache", "item")
@@ -465,7 +465,7 @@ func TestInstallReportsUnitFailureBeforeConfiguration(t *testing.T) {
 }
 
 func TestInstallConfiguresOnceBeforeActivation(t *testing.T) {
-	// R-P0DV-8KCB
+	// R-X0NN-ABK0
 	fixture := newCompletedInstallFixture(t, t.TempDir(), false)
 	configureAt := -1
 	fixture.configure = func(_ context.Context, manifest apps.Manifest) error {

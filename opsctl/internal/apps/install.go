@@ -80,6 +80,10 @@ func prepareInstall(env host.Env, remote cloud.Env, store config.Store, uri stri
 	if err != nil {
 		return nil, installInputError(1, message, err)
 	}
+	hostName = host.NormalizeName(hostName)
+	if hostName == "" {
+		return nil, installInputError(1, "host.name not set", errors.New("configuration value is empty after normalization"))
+	}
 	region, message, err := installConfig(store, "aws.region")
 	if err != nil {
 		return nil, installInputError(1, message, err)
@@ -529,7 +533,7 @@ func manifestDetail(manifest Manifest) string {
 
 func obtainSecrets(ctx context.Context, client cloud.Client, hostName string, manifest Manifest) (map[string]string, *stageFailure) {
 	names := distinctNames(manifest.Secrets)
-	parameter := "/ikigenba/" + hostName + "/" + manifest.App
+	parameter := "/" + hostName + "/" + manifest.App
 	values := map[string]string{}
 	if len(names) > 0 {
 		var err error

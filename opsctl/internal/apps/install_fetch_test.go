@@ -20,12 +20,12 @@ import (
 )
 
 func TestInstallValidatesInputsAndUsesConfiguredCloud(t *testing.T) {
-	// R-H3LD-O3WP R-DK7F-CAV0
+	// R-WWZY-50BX R-DK7F-CAV0
 	validHooks := apps.InstallHooks{
 		Report:    func(string, string, bool) error { return nil },
 		Configure: func(context.Context, apps.Manifest) error { return nil },
 	}
-	configured := installStore(t, map[string]string{"host.name": "host.example", "aws.region": "us-east-2"})
+	configured := installStore(t, map[string]string{"host.name": "HOST.EXAMPLE.", "aws.region": "us-east-2"})
 
 	for _, test := range []struct {
 		name  string
@@ -43,6 +43,7 @@ func TestInstallValidatesInputsAndUsesConfiguredCloud(t *testing.T) {
 		{"nil configure", "s3://bucket/app.tar.xz", apps.InstallHooks{Report: validHooks.Report}, configured, "install configure hook not set"},
 		{"missing host", "s3://bucket/app.tar.xz", validHooks, installStore(t, map[string]string{"aws.region": "us-east-2"}), "host.name not set"},
 		{"empty host", "s3://bucket/app.tar.xz", validHooks, installStore(t, map[string]string{"host.name": "", "aws.region": "us-east-2"}), "host.name not set"},
+		{"normalized empty host", "s3://bucket/app.tar.xz", validHooks, installStore(t, map[string]string{"host.name": ".", "aws.region": "us-east-2"}), "host.name not set"},
 		{"missing region", "s3://bucket/app.tar.xz", validHooks, installStore(t, map[string]string{"host.name": "host.example"}), "aws.region not set"},
 		{"empty region", "s3://bucket/app.tar.xz", validHooks, installStore(t, map[string]string{"host.name": "host.example", "aws.region": ""}), "aws.region not set"},
 	} {

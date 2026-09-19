@@ -21,7 +21,7 @@ const installUsage = `Usage: opsctl install URI
 Install the app at URI, an s3:// object holding an <app>-<tag>.tar.xz built by
 devctl. The app name, its port, and the secrets it needs are read from
 etc/manifest.toml inside it; the secret values are read from the parameter
-/ikigenba/<host.name>/<app>.
+/<host.name>/<app>.
 
 Nothing under /opt/<app>/state/ or /opt/<app>/cache/ is touched, so installing
 over a running app keeps its data. Safe to re-run.
@@ -34,9 +34,6 @@ configuration changed.
 Configuration keys:
   aws.region  the region this host's parameters and artifacts live in
   host.name   the fully-qualified name this host answers at
-  backup.s3_uri  the prefix this host backs up to
-  backup.service_db_seconds  how often a declared database is snapshotted whole
-  backup.service_wal_seconds  how often a declared database's committed changes are shipped
 `
 
 func runInstall(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
@@ -60,15 +57,35 @@ func runInstall(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 		Root: deps.Root, Getenv: deps.Getenv, Execute: deps.Execute, Now: deps.Now,
 	}
 	store := config.Store{Root: deps.Root}
+	hostName, err := store.Get("host.name")
+	if err == nil {
+		hostName = host.NormalizeName(hostName)
+	} else if !errors.Is(err, config.ErrNotSet) {
+		writeDiagnostic(stderr, err)
+		return exitFail
+	}
+	apexApp, err := store.Get("host.apex")
+	if errors.Is(err, config.ErrNotSet) {
+		apexApp = ""
+	} else if err != nil {
+		writeDiagnostic(stderr, err)
+		return exitFail
+	}
+	if hostName != "" && apexApp != "" {
+		if _, err := host.Apex(hostName); err != nil {
+			writeDiagnostic(stderr, err)
+			return exitFail
+		}
+	}
 	reported := false
 	report := func(step, detail string, success bool) error {
 		reported = true
 		return writeInstallReport(stdout, step, detail, success)
 	}
-	err := apps.Install(context.Background(), env, deps.Cloud, store, args[0], apps.InstallHooks{
+	err = apps.Install(context.Background(), env, deps.Cloud, store, args[0], apps.InstallHooks{
 		Report: report,
 		Configure: func(ctx context.Context, manifest apps.Manifest) error {
-			return configureInstalledApp(ctx, env, store, manifest, report)
+			return configureInstalledApp(ctx, env, store, hostName, apexApp, manifest, report)
 		},
 	})
 	if err != nil {
@@ -114,18 +131,23 @@ func configureInstalledApp(
 	ctx context.Context,
 	env host.Env,
 	store config.Store,
+	hostName string,
+	apexApp string,
 	manifest apps.Manifest,
 	report func(string, string, bool) error,
 ) error {
-	hostName, err := store.Get("host.name")
-	if err != nil {
-		return reportInstallConfigurationFailure(report, "nginx", err)
-	}
 	nginxDetail := manifest.App + "." + hostName
 	if manifest.Default {
 		nginxDetail += ", " + hostName
 	}
-	if err := nginx.Apply(ctx, env, hostName); err != nil {
+	if manifest.App == apexApp {
+		apex, err := host.Apex(hostName)
+		if err != nil {
+			return reportInstallConfigurationFailure(report, "nginx", err)
+		}
+		nginxDetail += ", " + apex
+	}
+	if err := nginx.Apply(ctx, env, hostName, apexApp); err != nil {
 		return reportInstallConfigurationFailure(report, "nginx", err)
 	}
 	if err := report("nginx", nginxDetail, true); err != nil {

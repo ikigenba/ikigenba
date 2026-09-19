@@ -1,8 +1,14 @@
 package cli_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
+
+	"github.com/ikigenba/ikigenba/opsctl/internal/cli"
+	"github.com/ikigenba/ikigenba/opsctl/internal/cloud"
+	"github.com/ikigenba/ikigenba/opsctl/internal/config"
+	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 )
 
 const wantInstallUsage = `Usage: opsctl install URI
@@ -10,7 +16,7 @@ const wantInstallUsage = `Usage: opsctl install URI
 Install the app at URI, an s3:// object holding an <app>-<tag>.tar.xz built by
 devctl. The app name, its port, and the secrets it needs are read from
 etc/manifest.toml inside it; the secret values are read from the parameter
-/ikigenba/<host.name>/<app>.
+/<host.name>/<app>.
 
 Nothing under /opt/<app>/state/ or /opt/<app>/cache/ is touched, so installing
 over a running app keeps its data. Safe to re-run.
@@ -23,13 +29,10 @@ configuration changed.
 Configuration keys:
   aws.region  the region this host's parameters and artifacts live in
   host.name   the fully-qualified name this host answers at
-  backup.s3_uri  the prefix this host backs up to
-  backup.service_db_seconds  how often a declared database is snapshotted whole
-  backup.service_wal_seconds  how often a declared database's committed changes are shipped
 `
 
 func TestInstallHelpIsInert(t *testing.T) {
-	// R-ZZZM-YX8L
+	// R-8H64-P8QR
 	for _, uid := range []int{0, 1, -1, 1000} {
 		for _, option := range []string{"-h", "--help"} {
 			t.Run(fmt.Sprintf("%s/%d", option, uid), func(t *testing.T) {
@@ -80,5 +83,56 @@ func TestInstallGrammarBeforeHostAccess(t *testing.T) {
 	assertNoAccess()
 	if code != 3 || stdout != "" || stderr != "opsctl: must run as root\n" {
 		t.Fatalf("valid grammar root check: exit %d stdout %q stderr %q", code, stdout, stderr)
+	}
+}
+
+func TestInstallReadsApexConfigurationBeforeWorkflow(t *testing.T) {
+	// R-WZFQ-WJTB
+	for _, test := range []struct {
+		name     string
+		hostName string
+		want     string
+	}{
+		{
+			name:     "configured apex needs a parent domain",
+			hostName: "LOCALHOST.",
+			want:     "opsctl: host.apex is set but host.name 'localhost' has no parent domain\n",
+		},
+		{
+			name:     "normalized empty host is left to Install",
+			hostName: ".",
+			want:     "opsctl: host.name not set\n",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			store := config.Store{Root: root}
+			for key, value := range map[string]string{
+				"host.name":  test.hostName,
+				"host.apex":  "notes",
+				"aws.region": "us-east-2",
+			} {
+				if err := store.Set(key, value); err != nil {
+					t.Fatal(err)
+				}
+			}
+			called := false
+			deps := cli.Deps{
+				Root: root,
+				EUID: 0,
+				Execute: func(context.Context, host.Command) (host.Result, error) {
+					called = true
+					return host.Result{}, nil
+				},
+				Cloud: cloud.Env{Open: func(context.Context, string) (cloud.Client, error) {
+					called = true
+					return nil, nil
+				}},
+			}
+			stdout, stderr, code := invoke([]string{"install", "s3://bucket/app.tar.xz"}, deps)
+			if code != 1 || stdout != "" || stderr != test.want || called {
+				t.Fatalf("exit %d stdout %q stderr %q called = %v", code, stdout, stderr, called)
+			}
+		})
 	}
 }
