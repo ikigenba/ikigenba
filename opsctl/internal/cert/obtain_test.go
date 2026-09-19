@@ -314,67 +314,90 @@ func TestObtainHooksBeginWithPATHExecutables(t *testing.T) {
 
 // R-34K7-Y4V7
 func TestObtainEstablishesLineageAndRetainsHooks(t *testing.T) {
-	fixture := newCertbotFixtureForHost(t, issueCertificate, nil, "app.example.com")
-	if err := cert.Obtain(context.Background(), fixture.env(), "app.example.com", "admin@example.com", true); err != nil {
-		t.Fatal(err)
-	}
-	lineage := filepath.Join(fixture.root, "etc/letsencrypt/live/app.example.com")
-	lineageRoot, err := os.OpenRoot(lineage)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := lineageRoot.Close(); err != nil {
-			t.Errorf("close lineage: %v", err)
-		}
-	})
-	certificatePEM, err := lineageRoot.ReadFile("fullchain.pem")
-	if err != nil {
-		t.Fatal(err)
-	}
-	certificate := parseCertificate(t, certificatePEM)
-	if want := []string{"app.example.com", "*.app.example.com", "example.com"}; !reflect.DeepEqual(certificate.DNSNames, want) {
-		t.Fatalf("certificate names = %v, want %v", certificate.DNSNames, want)
-	}
-	keyPEM, err := lineageRoot.ReadFile("privkey.pem")
-	if err != nil {
-		t.Fatal(err)
-	}
-	keyBlock, _ := pem.Decode(keyPEM)
-	if keyBlock == nil || keyBlock.Type != "RSA PRIVATE KEY" {
-		t.Fatalf("private key is not an RSA PEM block")
-	}
-	privateKey, err := x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
-	if err != nil {
-		t.Fatalf("parse private key: %v", err)
-	}
-	publicKey, ok := certificate.PublicKey.(*rsa.PublicKey)
-	if !ok || publicKey.N.Cmp(privateKey.N) != 0 || publicKey.E != privateKey.E {
-		t.Fatal("certificate and private key do not match")
-	}
-	if challenges := fixture.challengeValues(); len(challenges) != 0 {
-		t.Fatalf("challenge values left behind: %v", challenges)
-	}
-	fixture.resetHookLogs()
-	if err := fixture.renew(context.Background()); err != nil {
-		t.Fatalf("renew with retained hooks: %v", err)
-	}
-	if challenges := fixture.challengeValues(); len(challenges) != 0 {
-		t.Fatalf("renewal challenge values left behind: %v", challenges)
-	}
-	wantDNSCalls := []string{
-		"dns acme-auth app.example.com renewal-apex-token",
-		"dns acme-auth *.app.example.com renewal-wildcard-token",
-		"dns acme-auth example.com renewal-parent-token",
-		"dns acme-cleanup app.example.com renewal-apex-token",
-		"dns acme-cleanup *.app.example.com renewal-wildcard-token",
-		"dns acme-cleanup example.com renewal-parent-token",
-	}
-	if calls := fixture.dnsCalls(); !reflect.DeepEqual(calls, wantDNSCalls) {
-		t.Fatalf("renewal DNS hook calls = %v, want %v", calls, wantDNSCalls)
-	}
-	if calls := fixture.systemctlCalls(); !reflect.DeepEqual(calls, []string{"try-reload-or-restart nginx"}) {
-		t.Fatalf("renewal systemctl calls = %v", calls)
+	for _, tc := range []struct {
+		name string
+		due  bool
+	}{
+		{name: "absent"},
+		{name: "existing due", due: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newCertbotFixtureForHost(t, reconcileCertificate, nil, "app.example.com")
+			var priorCertificate []byte
+			if tc.due {
+				var priorKey []byte
+				priorCertificate, priorKey = makeCertificateForNames(t, []string{"app.example.com", "*.app.example.com", "example.com"})
+				fixture.seedServingLineage(priorCertificate, priorKey)
+				fixture.certificateDue = true
+			}
+			if err := cert.Obtain(context.Background(), fixture.env(), "app.example.com", "admin@example.com", true); err != nil {
+				t.Fatal(err)
+			}
+			fixtureRoot, err := os.OpenRoot(fixture.root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := fixtureRoot.Close(); err != nil {
+					t.Errorf("close fixture root: %v", err)
+				}
+			})
+			lineage := filepath.Join("etc", "letsencrypt", "live", "app.example.com")
+			certificatePEM, err := fixtureRoot.ReadFile(filepath.Join(lineage, "fullchain.pem"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.due && bytes.Equal(certificatePEM, priorCertificate) {
+				t.Fatal("due certificate was not renewed")
+			}
+			certificate := parseCertificate(t, certificatePEM)
+			if want := []string{"app.example.com", "*.app.example.com", "example.com"}; !reflect.DeepEqual(certificate.DNSNames, want) {
+				t.Fatalf("certificate names = %v, want %v", certificate.DNSNames, want)
+			}
+			keyPEM, err := fixtureRoot.ReadFile(filepath.Join(lineage, "privkey.pem"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			keyBlock, _ := pem.Decode(keyPEM)
+			if keyBlock == nil || keyBlock.Type != "RSA PRIVATE KEY" {
+				t.Fatalf("private key is not an RSA PEM block")
+			}
+			privateKey, err := x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
+			if err != nil {
+				t.Fatalf("parse private key: %v", err)
+			}
+			publicKey, ok := certificate.PublicKey.(*rsa.PublicKey)
+			if !ok || publicKey.N.Cmp(privateKey.N) != 0 || publicKey.E != privateKey.E {
+				t.Fatal("certificate and private key do not match")
+			}
+			if fixture.caRequests != 1 {
+				t.Fatalf("CA issuance requests = %d, want 1", fixture.caRequests)
+			}
+			if challenges := fixture.challengeValues(); len(challenges) != 0 {
+				t.Fatalf("challenge values left behind: %v", challenges)
+			}
+			fixture.resetHookLogs()
+			if err := fixture.renew(context.Background()); err != nil {
+				t.Fatalf("renew with retained hooks: %v", err)
+			}
+			if challenges := fixture.challengeValues(); len(challenges) != 0 {
+				t.Fatalf("renewal challenge values left behind: %v", challenges)
+			}
+			wantDNSCalls := []string{
+				"dns acme-auth app.example.com renewal-apex-token",
+				"dns acme-auth *.app.example.com renewal-wildcard-token",
+				"dns acme-auth example.com renewal-parent-token",
+				"dns acme-cleanup app.example.com renewal-apex-token",
+				"dns acme-cleanup *.app.example.com renewal-wildcard-token",
+				"dns acme-cleanup example.com renewal-parent-token",
+			}
+			if calls := fixture.dnsCalls(); !reflect.DeepEqual(calls, wantDNSCalls) {
+				t.Fatalf("renewal DNS hook calls = %v, want %v", calls, wantDNSCalls)
+			}
+			if calls := fixture.systemctlCalls(); !reflect.DeepEqual(calls, []string{"try-reload-or-restart nginx"}) {
+				t.Fatalf("renewal systemctl calls = %v", calls)
+			}
+		})
 	}
 }
 
@@ -408,27 +431,60 @@ func TestObtainReissuesMismatchedLineageAndThenKeepsIt(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
 		apex          bool
+		due           bool
 		existingNames []string
 		wantNames     []string
 	}{
 		{
-			name:          "add parent",
+			name:          "add parent not due",
 			apex:          true,
 			existingNames: []string{"app.example.com", "*.app.example.com"},
 			wantNames:     []string{"app.example.com", "*.app.example.com", "example.com"},
 		},
 		{
-			name:          "remove parent",
+			name:          "add parent due",
+			apex:          true,
+			due:           true,
+			existingNames: []string{"app.example.com", "*.app.example.com"},
+			wantNames:     []string{"app.example.com", "*.app.example.com", "example.com"},
+		},
+		{
+			name:          "remove parent not due",
 			apex:          false,
+			existingNames: []string{"app.example.com", "*.app.example.com", "example.com"},
+			wantNames:     []string{"app.example.com", "*.app.example.com"},
+		},
+		{
+			name:          "remove parent due",
+			apex:          false,
+			due:           true,
 			existingNames: []string{"app.example.com", "*.app.example.com", "example.com"},
 			wantNames:     []string{"app.example.com", "*.app.example.com"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			existingCertificate, _ := makeCertificateForNames(t, tc.existingNames)
-			fixture := newCertbotFixtureForHost(t, reconcileCertificate, existingCertificate, "app.example.com")
+			existingCertificate, existingKey := makeCertificateForNames(t, tc.existingNames)
+			fixture := newCertbotFixtureForHost(t, reconcileCertificate, nil, "app.example.com")
+			fixture.seedServingLineage(existingCertificate, existingKey)
+			fixture.certificateDue = tc.due
+			lineagePath := filepath.Join(fixture.root, "etc/letsencrypt/live/app.example.com")
+			lineageBefore := snapshotTree(t, lineagePath)
+			lineageInfoBefore, err := os.Stat(lineagePath)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if err := cert.Obtain(context.Background(), fixture.env(), "app.example.com", "admin@example.com", tc.apex); err != nil {
 				t.Fatal(err)
+			}
+			lineageInfoAfter, err := os.Stat(lineagePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !os.SameFile(lineageInfoBefore, lineageInfoAfter) {
+				t.Fatal("mismatch reconciliation deleted and recreated the lineage directory")
+			}
+			if lineageAfter := snapshotTree(t, lineagePath); !reflect.DeepEqual(lineageAfter, lineageBefore) {
+				t.Fatalf("mismatch reconciliation replaced the existing lineage: before %#v, after %#v", lineageBefore, lineageAfter)
 			}
 			certificateContent, err := os.ReadFile(fixture.fullchain())
 			if err != nil {
@@ -437,12 +493,12 @@ func TestObtainReissuesMismatchedLineageAndThenKeepsIt(t *testing.T) {
 			if got := parseCertificate(t, certificateContent).DNSNames; !reflect.DeepEqual(got, tc.wantNames) {
 				t.Fatalf("certificate names = %v, want %v", got, tc.wantNames)
 			}
-			lineagePath := filepath.Join(fixture.root, "etc/letsencrypt")
-			settled := snapshotTree(t, lineagePath)
+			letsencryptPath := filepath.Join(fixture.root, "etc/letsencrypt")
+			settled := snapshotTree(t, letsencryptPath)
 			if err := cert.Obtain(context.Background(), fixture.env(), "app.example.com", "admin@example.com", tc.apex); err != nil {
 				t.Fatal(err)
 			}
-			if got := snapshotTree(t, lineagePath); !reflect.DeepEqual(got, settled) {
+			if got := snapshotTree(t, letsencryptPath); !reflect.DeepEqual(got, settled) {
 				t.Fatalf("matching second obtain changed lineage: before %#v, after %#v", settled, got)
 			}
 			if fixture.caRequests != 1 {
@@ -651,19 +707,20 @@ func fixtureChallenges(hostName string, domains []string, renewal bool) []struct
 }
 
 type certbotFixture struct {
-	t            *testing.T
-	root         string
-	hostName     string
-	scenario     certbotScenario
-	nginxActive  bool
-	reloadFails  bool
-	calls        int
-	caRequests   int
-	commands     []host.Command
-	binDir       string
-	challengeDir string
-	dnsLog       string
-	systemctlLog string
+	t              *testing.T
+	root           string
+	hostName       string
+	scenario       certbotScenario
+	certificateDue bool
+	nginxActive    bool
+	reloadFails    bool
+	calls          int
+	caRequests     int
+	commands       []host.Command
+	binDir         string
+	challengeDir   string
+	dnsLog         string
+	systemctlLog   string
 }
 
 type certbotScenario int
@@ -747,7 +804,7 @@ func (f *certbotFixture) env() host.Env {
 			if err != nil {
 				f.t.Fatal(err)
 			}
-			if reflect.DeepEqual(parseCertificate(f.t, content).DNSNames, domains) {
+			if reflect.DeepEqual(parseCertificate(f.t, content).DNSNames, domains) && !f.certificateDue {
 				return host.Result{}, nil
 			}
 		}
@@ -790,7 +847,11 @@ func (f *certbotFixture) env() host.Env {
 		if err := os.WriteFile(renewalPath, []byte(renewal), 0o600); err != nil {
 			f.t.Fatal(err)
 		}
-		return f.runHook(ctx, argumentValue(f.t, command.Args, "--deploy-hook"), "", "")
+		result, err := f.runHook(ctx, argumentValue(f.t, command.Args, "--deploy-hook"), "", "")
+		if err == nil && result.ExitCode == 0 {
+			f.certificateDue = false
+		}
+		return result, err
 	}}
 }
 
