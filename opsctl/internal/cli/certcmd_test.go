@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -188,6 +190,105 @@ func TestCertReadsRequiredConfigurationInOrder(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("obtain reads host then email then apex", func(t *testing.T) {
+		root := t.TempDir()
+		stopStore := serveCertStoreReads(t, root,
+			`{"host.name":"HOST.EXAMPLE.COM."}`,
+			`{"acme.email":"admin@example.com"}`,
+			`{"host.apex":"notes"}`,
+		)
+		var command host.Command
+		stdout, stderr, code := invoke([]string{"cert", "obtain"}, cli.Deps{
+			Root: root, EUID: 0,
+			Execute: func(_ context.Context, got host.Command) (host.Result, error) {
+				command = got
+				return host.Result{}, nil
+			},
+		})
+		reads := stopStore()
+		if code != 0 || stdout != "" || stderr != "" {
+			t.Fatalf("exit %d stdout %q stderr %q", code, stdout, stderr)
+		}
+		if reads != 3 {
+			t.Fatalf("configuration reads = %d, want 3", reads)
+		}
+		joined := strings.Join(command.Args, "\x00")
+		for _, pair := range [][2]string{
+			{"--email", "admin@example.com"},
+			{"--cert-name", "host.example.com"},
+			{"-d", "example.com"},
+		} {
+			if !strings.Contains(joined, pair[0]+"\x00"+pair[1]) {
+				t.Errorf("command args %q do not contain %q followed by %q", command.Args, pair[0], pair[1])
+			}
+		}
+	})
+
+	t.Run("show never reads apex", func(t *testing.T) {
+		root := t.TempDir()
+		expires := time.Date(2035, time.June, 7, 8, 9, 10, 0, time.UTC)
+		writeCertificate(t, root, "example.com", []string{"example.com"}, "Test Issuer", expires)
+		stopStore := serveCertStoreReads(t, root,
+			`{"host.name":"EXAMPLE.COM."}`,
+			`not json`,
+		)
+		stdout, stderr, code := invoke([]string{"cert", "show"}, cli.Deps{Root: root, EUID: 0})
+		reads := stopStore()
+		want := "names: example.com\nissuer: Test Issuer\nexpires: 2035-06-07T08:09:10Z\n"
+		if code != 0 || stdout != want || stderr != "" {
+			t.Fatalf("exit %d stdout %q stderr %q, want stdout %q", code, stdout, stderr, want)
+		}
+		if reads != 1 {
+			t.Fatalf("configuration reads = %d, want only host.name", reads)
+		}
+	})
+}
+
+func TestCertObtainStoreErrorsStopBeforeOperation(t *testing.T) {
+	// R-O6Q6-LMAB
+	cases := []struct {
+		name      string
+		snapshots []string
+	}{
+		{name: "host.name", snapshots: []string{`not json`}},
+		{name: "acme.email", snapshots: []string{
+			`{"host.name":"host.example.com"}`,
+			`not json`,
+		}},
+		{name: "host.apex", snapshots: []string{
+			`{"host.name":"host.example.com"}`,
+			`{"acme.email":"admin@example.com"}`,
+			`not json`,
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			stopStore := serveCertStoreReads(t, root, tc.snapshots...)
+			before := treeState(t, root)
+			executed := false
+			stdout, stderr, code := invoke([]string{"cert", "obtain"}, cli.Deps{
+				Root: root, EUID: 0,
+				Execute: func(context.Context, host.Command) (host.Result, error) {
+					executed = true
+					return host.Result{}, nil
+				},
+			})
+			reads := stopStore()
+			wantPath := filepath.Join(root, "etc", "ikigenba", "config.json")
+			wantStderr := "opsctl: " + wantPath + " is corrupt\n"
+			if code != 1 || stdout != "" || stderr != wantStderr || executed {
+				t.Fatalf("exit %d stdout %q stderr %q executed %t", code, stdout, stderr, executed)
+			}
+			if reads != len(tc.snapshots) {
+				t.Fatalf("configuration reads = %d, want %d", reads, len(tc.snapshots))
+			}
+			if after := treeState(t, root); !reflect.DeepEqual(after, before) {
+				t.Fatalf("store error changed state: before %#v after %#v", before, after)
+			}
+		})
+	}
 }
 
 func TestCertShowPrintsInspectedCertificate(t *testing.T) {
@@ -294,6 +395,78 @@ func writeCorruptCLIConfigFile(t *testing.T, root string) {
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte("not json\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func serveCertStoreReads(t *testing.T, root string, snapshots ...string) func() int {
+	t.Helper()
+	dir := filepath.Join(root, "etc", "ikigenba")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "config.json")
+	if err := syscall.Mkfifo(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	type result struct {
+		reads int
+		err   error
+	}
+	done := make(chan struct{})
+	finished := make(chan result, 1)
+	go func() {
+		reads := 0
+		for _, snapshot := range snapshots {
+			for {
+				select {
+				case <-done:
+					finished <- result{reads: reads}
+					return
+				default:
+				}
+				fd, err := syscall.Open(path, syscall.O_WRONLY|syscall.O_NONBLOCK, 0)
+				if errors.Is(err, syscall.ENXIO) {
+					time.Sleep(time.Millisecond)
+					continue
+				}
+				if err != nil {
+					finished <- result{reads: reads, err: err}
+					return
+				}
+				file := os.NewFile(uintptr(fd), path)
+				_, writeErr := file.WriteString(snapshot)
+				closeErr := file.Close()
+				if writeErr != nil {
+					finished <- result{reads: reads, err: writeErr}
+					return
+				}
+				if closeErr != nil {
+					finished <- result{reads: reads, err: closeErr}
+					return
+				}
+				reads++
+				time.Sleep(5 * time.Millisecond)
+				break
+			}
+		}
+		<-done
+		finished <- result{reads: reads}
+	}()
+
+	var once sync.Once
+	var got result
+	stop := func() int {
+		once.Do(func() {
+			close(done)
+			got = <-finished
+		})
+		if got.err != nil {
+			t.Fatalf("serve configuration reads: %v", got.err)
+		}
+		return got.reads
+	}
+	t.Cleanup(func() { stop() })
+	return stop
 }
 
 func writeCertificate(t *testing.T, root, hostName string, names []string, issuer string, expires time.Time) {
