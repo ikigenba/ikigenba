@@ -23,6 +23,25 @@ app's file is included first, so a longer prefix in it — static files out of
 `share/`, say — wins over the proxy; the glob makes the include harmless when
 there is no such file.
 
+One host in the account also answers at the root domain's apex,
+`ikigenba.dev`. Which host that is, and which app answers there, is a
+decision made from the developer's machine (`devctl apex set`), and it
+reaches the host as one configuration key:
+
+| key | value |
+|---|---|
+| `host.apex` | the name of the app that answers at the apex, e.g. `crm`; unset or empty means this host does not hold the apex |
+
+The apex hostname itself is never stored: it is `host.name` with its first
+label removed, `ikigenba.dev` for a host named `sbx.ikigenba.dev`. A host name
+with fewer than three labels has no parent to answer at, and a `host.apex`
+set on one is refused by everything that reads it. The apex app is chosen
+independently of the manifest's `default`: one app may answer at the space's
+name and another at the apex, or the same app at both. When the named app is
+not routed — not installed, or installed without a port — the apex answers
+404 under the host's certificate until it is, so the name never falls to the
+handshake-rejecting default block once the certificate carries it.
+
 ## An operator asks what `nginx` can do
 
 Command:
@@ -50,11 +69,14 @@ Subcommands:
 
 Configuration keys:
   host.name  the fully-qualified name this host answers at
+  host.apex  the app that answers at the parent of host.name; unset means none
 
 A service is any /opt/<name>/ with an etc/ or state/ directory. One with an
 etc/manifest.toml naming a port answers at <name>.<host.name>, and the one
 whose manifest sets default answers at <host.name> as well. Its own
-etc/nginx.conf, if it ships one, is included in its server block.
+etc/nginx.conf, if it ships one, is included in its server block. The app
+host.apex names also answers at the parent of host.name; until that app is
+routed, the parent answers 404.
 ```
 
 Exits 0. The text is on stdout; stderr is empty. It prints for any user.
@@ -100,9 +122,9 @@ server {
 
 server {
     listen              443 ssl;
-    server_name         ikigenba.dev *.ikigenba.dev;
-    ssl_certificate     /etc/letsencrypt/live/ikigenba.dev/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/ikigenba.dev/privkey.pem;
+    server_name         sbx.ikigenba.dev *.sbx.ikigenba.dev;
+    ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
     return              404;
 }
 ```
@@ -111,7 +133,7 @@ Exits 0. The text is on stdout; stderr is empty.
 
 Preconditions:
 
-- `host.name` is `ikigenba.dev`.
+- `host.name` is `sbx.ikigenba.dev` and `host.apex` is not set.
 - No directory under `/opt/` holds an `etc/` or a `state/`.
 
 Postconditions:
@@ -121,8 +143,8 @@ Postconditions:
 ## An operator reads the configuration of a host running apps
 
 Each routed service gains one block, in name order, at its own name under the
-host's wildcard certificate. `crm` is the default app, so the apex answers
-from it and leaves the 404 block holding the wildcard alone.
+host's wildcard certificate. `crm` is the default app, so the space's name
+answers from it and leaves the 404 block holding the wildcard alone.
 
 Command:
 
@@ -150,17 +172,17 @@ server {
 
 server {
     listen              443 ssl;
-    server_name         *.ikigenba.dev;
-    ssl_certificate     /etc/letsencrypt/live/ikigenba.dev/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/ikigenba.dev/privkey.pem;
+    server_name         *.sbx.ikigenba.dev;
+    ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
     return              404;
 }
 
 server {
     listen              443 ssl;
-    server_name         crm.ikigenba.dev ikigenba.dev;
-    ssl_certificate     /etc/letsencrypt/live/ikigenba.dev/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/ikigenba.dev/privkey.pem;
+    server_name         crm.sbx.ikigenba.dev sbx.ikigenba.dev;
+    ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
 
     include /opt/crm/etc/nginx.conf*;
 
@@ -175,9 +197,9 @@ server {
 
 server {
     listen              443 ssl;
-    server_name         dashboard.ikigenba.dev;
-    ssl_certificate     /etc/letsencrypt/live/ikigenba.dev/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/ikigenba.dev/privkey.pem;
+    server_name         dashboard.sbx.ikigenba.dev;
+    ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
 
     include /opt/dashboard/etc/nginx.conf*;
 
@@ -195,7 +217,7 @@ Exits 0. The text is on stdout; stderr is empty.
 
 Preconditions:
 
-- `host.name` is `ikigenba.dev`.
+- `host.name` is `sbx.ikigenba.dev` and `host.apex` is not set.
 - `/opt/crm/etc/manifest.toml` names `port = 3100` and `default = true`.
 - `/opt/dashboard/etc/manifest.toml` names `port = 3200` and no `default`, or
   `default = false`.
@@ -207,6 +229,113 @@ Postconditions:
 
 - Nothing has changed. `gmail` has no block: it is a service the host will
   back up, and not one nginx can route.
+
+## An operator reads the configuration of the host that holds the apex
+
+`devctl apex set dashboard.sbx` has named `dashboard` the apex app on this
+host, so `ikigenba.dev` answers from `dashboard`'s block. `crm` is still the
+default app and still answers at the space's name: the two choices are
+independent, and here they name different apps. The file is the previous
+story's with one line changed.
+
+Command:
+
+```
+$ sudo opsctl nginx show
+```
+
+Output: the previous story's text, with `dashboard`'s block reading
+
+```
+server {
+    listen              443 ssl;
+    server_name         dashboard.sbx.ikigenba.dev ikigenba.dev;
+    ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
+
+    include /opt/dashboard/etc/nginx.conf*;
+
+    location / {
+        proxy_pass       http://127.0.0.1:3200;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Exits 0. The text is on stdout; stderr is empty.
+
+Preconditions:
+
+- As for the previous story, and `host.apex` is `dashboard`.
+- The host's certificate covers `ikigenba.dev` as well (see
+  `S6-certificates.md`); `show` does not check, since it writes nothing.
+
+Postconditions:
+
+- Nothing has changed. Had `crm` been named instead, its block's line would
+  read `crm.sbx.ikigenba.dev sbx.ikigenba.dev ikigenba.dev` and `dashboard`'s
+  would be as in the previous story: an app that is both default and apex
+  answers at all three names.
+
+## An operator reads the configuration when the apex app is not routed
+
+`host.apex` names an app that is not installed — not yet deployed, or taken
+off with `uninstall`, or restored from backup with no binary. The apex still
+belongs to this host, so its name goes on the 404 block beside the space's
+name and wildcard, and answers 404 under the host's certificate rather than
+having its handshake rejected. The next `install` of that app moves the name
+to the app's block.
+
+Command:
+
+```
+$ sudo opsctl nginx show
+```
+
+Output:
+
+```
+# Generated by opsctl. Do not edit; run 'opsctl nginx apply'.
+
+server {
+    listen      80 default_server;
+    listen      [::]:80 default_server;
+    server_name _;
+    return      301 https://$host$request_uri;
+}
+
+server {
+    listen              443 ssl default_server;
+    listen              [::]:443 ssl default_server;
+    ssl_reject_handshake on;
+}
+
+server {
+    listen              443 ssl;
+    server_name         sbx.ikigenba.dev *.sbx.ikigenba.dev ikigenba.dev;
+    ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
+    return              404;
+}
+```
+
+Exits 0. The text is on stdout; stderr is empty.
+
+Preconditions:
+
+- `host.name` is `sbx.ikigenba.dev` and `host.apex` is `crm`.
+- No directory under `/opt/` holds an `etc/` or a `state/`; or `/opt/crm/`
+  holds a `state/` and no manifest naming a port.
+
+Postconditions:
+
+- Nothing has changed. With routed apps on the host, the 404 block's line
+  would read `*.sbx.ikigenba.dev ikigenba.dev` when one of them is the
+  default, and `sbx.ikigenba.dev *.sbx.ikigenba.dev ikigenba.dev` when none
+  is.
 
 ## An operator applies the configuration
 
@@ -260,7 +389,7 @@ Output:
 ```
 opsctl: nginx -t: exit status 1
 
-nginx: [emerg] cannot load certificate "/etc/letsencrypt/live/ikigenba.dev/fullchain.pem": BIO_new_file() failed
+nginx: [emerg] cannot load certificate "/etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem": BIO_new_file() failed
 nginx: configuration file /etc/nginx/nginx.conf test failed
 ```
 
@@ -268,9 +397,9 @@ Exits 1. The text is on stderr; stdout is empty.
 
 Preconditions:
 
-- `host.name` is `ikigenba.dev`.
-- `/etc/letsencrypt/live/ikigenba.dev/` does not exist; `opsctl cert obtain`
-  has not been run.
+- `host.name` is `sbx.ikigenba.dev`.
+- `/etc/letsencrypt/live/sbx.ikigenba.dev/` does not exist; `opsctl cert
+  obtain` has not been run.
 
 Postconditions:
 
@@ -305,6 +434,39 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
+
+## An agent applies with an apex the host name cannot carry
+
+A `host.apex` on a host whose name has no parent domain describes something
+that cannot exist, so both subcommands refuse before rendering anything. The
+store is the agent's to fix: either the key was set on the wrong host, or the
+host's name is wrong.
+
+Command:
+
+```
+$ sudo opsctl nginx show
+```
+
+```
+$ sudo opsctl nginx apply
+```
+
+Output:
+
+```
+opsctl: host.apex is set but host.name 'ikigenba.dev' has no parent domain
+```
+
+Exits 1. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- `host.name` is `ikigenba.dev` and `host.apex` is `crm`.
+
+Postconditions:
+
+- Nothing has changed. No file was written and nginx was not reloaded.
 
 ## An operator runs `nginx` with no subcommand, or one that does not exist
 

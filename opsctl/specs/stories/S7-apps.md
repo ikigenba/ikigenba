@@ -52,7 +52,10 @@ path = "state/crm.db"
 ```
 
 A host may have no default app, in which case its own name answers 404 (see
-`S5-nginx.md`); it may never have two.
+`S5-nginx.md`); it may never have two. The root domain's apex is a separate
+choice, made in the store rather than the manifest (`host.apex`, see
+`S5-nginx.md`): the app it names answers at `ikigenba.dev` as well, and
+`install` and `uninstall` report that name the way they report the space's.
 
 `install` reads the app, the port, `default`, and `secrets`. The `[env]` table
 it writes out. The `[database]` table it reads for one purpose only: to
@@ -63,8 +66,9 @@ is, are `S8-backup.md`'s. It is in the manifest rather than the store because it
 is a fact about the app, which travels with the app.
 
 Secret *values* never travel in the file. devctl wrote them to the parameter
-`/ikigenba/<host.name>/<app>` before the deploy, and the host's own role is
-what reads them back; a host can read no other space's parameters.
+`/<host.name>/<app>` before the deploy — `/sbx.ikigenba.dev/crm` for `crm`
+on the space `sbx` — and the host's own role is what reads them back; a host
+can read no other space's parameters.
 
 An app owns its schema, and the file carries what that takes: at every start
 the app creates the database its manifest declares if none is there, runs its
@@ -73,8 +77,8 @@ itself. opsctl never runs a migration and knows nothing about seeds. What the
 host promises is the order: a restore lands `etc/`, `state/`, and the database
 before the app's unit ever starts, and an install over a running app leaves
 `state/` alone, so an app that is restored or upgraded migrates forward over
-real data and never seeds over it. A space whose account backs nothing up
-holds what its apps seeded and what has been typed into them since.
+real data and never seeds over it. A space that backs nothing up holds what
+its apps seeded and what has been typed into them since.
 
 ## An operator asks what `install` can do
 
@@ -96,7 +100,7 @@ Usage: opsctl install URI
 Install the app at URI, an s3:// object holding an <app>-<tag>.tar.xz built by
 devctl. The app name, its port, and the secrets it needs are read from
 etc/manifest.toml inside it; the secret values are read from the parameter
-/ikigenba/<host.name>/<app>.
+/<host.name>/<app>.
 
 Nothing under /opt/<app>/state/ or /opt/<app>/cache/ is touched, so installing
 over a running app keeps its data. Safe to re-run.
@@ -135,7 +139,7 @@ place before the app writes its first row.
 Command:
 
 ```
-$ sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/crm-v0.1.0.tar.xz
+$ sudo opsctl install s3://ikigenba.dev/sbx/deploy/crm-v0.1.0.tar.xz
 ```
 
 Output:
@@ -146,7 +150,7 @@ file: ok (crm, port 3100)
 secrets: ok (3 keys)
 unpack: ok (/opt/crm)
 unit: ok (ikigenba-crm.service)
-nginx: ok (crm.ikigenba.dev)
+nginx: ok (crm.sbx.ikigenba.dev)
 litestream: ok (state/crm.db)
 service: ok (crm v0.1.0 active)
 ```
@@ -158,7 +162,7 @@ Preconditions:
 - `host.name` and `aws.region` are set, and `init` reported the host ready.
 - The object holds `bin/crm` and `etc/manifest.toml`, and the host's role can
   read it.
-- `/ikigenba/<host.name>/crm` holds every name the manifest's `secrets`
+- `/<host.name>/crm` holds every name the manifest's `secrets`
   array lists.
 - `crm` has never been installed on this host.
 
@@ -177,7 +181,7 @@ Postconditions:
   environment file, as a non-root user, restarting on failure, wanted by
   `multi-user.target`. systemd has been reloaded and the unit is enabled.
 - `/etc/nginx/conf.d/ikigenba.conf` has been regenerated and nginx reloaded,
-  so `https://crm.ikigenba.dev` reaches `127.0.0.1:3100`.
+  so `https://crm.sbx.ikigenba.dev` reaches `127.0.0.1:3100`.
 - `/etc/litestream.yml` has been regenerated from every manifest under `/opt`
   and now names `/opt/crm/state/crm.db`, replicating to `<backup.s3_uri>crm/`.
   Because the file changed, `litestream.service` was restarted; it is running.
@@ -197,7 +201,7 @@ interrupt the replication of any.
 Command:
 
 ```
-$ sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/crm-v0.2.0.tar.xz
+$ sudo opsctl install s3://ikigenba.dev/sbx/deploy/crm-v0.2.0.tar.xz
 ```
 
 Output:
@@ -208,7 +212,7 @@ file: ok (crm, port 3100)
 secrets: ok (4 keys)
 unpack: ok (/opt/crm)
 unit: ok (ikigenba-crm.service)
-nginx: ok (crm.ikigenba.dev)
+nginx: ok (crm.sbx.ikigenba.dev)
 litestream: ok (unchanged)
 service: ok (crm v0.2.0 active)
 ```
@@ -240,7 +244,7 @@ regenerated `/etc/litestream.yml` is what it was.
 Command:
 
 ```
-$ sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/dashboard-v0.0.9.tar.xz
+$ sudo opsctl install s3://ikigenba.dev/sbx/deploy/dashboard-v0.0.9.tar.xz
 ```
 
 Output:
@@ -251,7 +255,7 @@ file: ok (dashboard, port 3200, default)
 secrets: ok (0 keys)
 unpack: ok (/opt/dashboard)
 unit: ok (ikigenba-dashboard.service)
-nginx: ok (dashboard.ikigenba.dev, ikigenba.dev)
+nginx: ok (dashboard.sbx.ikigenba.dev, sbx.ikigenba.dev)
 litestream: ok (unchanged)
 service: ok (dashboard v0.0.9 active)
 ```
@@ -265,10 +269,55 @@ Preconditions:
 
 Postconditions:
 
-- `https://ikigenba.dev` and `https://dashboard.ikigenba.dev` both reach
-  `127.0.0.1:3200`; every other name under the host still answers 404.
+- `https://sbx.ikigenba.dev` and `https://dashboard.sbx.ikigenba.dev` both
+  reach `127.0.0.1:3200`; every other name under the host still answers 404.
 - `/etc/litestream.yml` is byte for byte as it was and `litestream.service`
   was not restarted.
+
+## An agent installs the apex app
+
+`devctl apex set crm.sbx` named `crm` the apex app before `crm` was ever
+deployed here, so `ikigenba.dev` has been answering 404 from the host's
+catch-all. This deploy moves the name to `crm`'s block, and the nginx step
+says so. `crm` is not the default app, so the space's own name is not in the
+line.
+
+Command:
+
+```
+$ sudo opsctl install s3://ikigenba.dev/sbx/deploy/crm-v0.1.0.tar.xz
+```
+
+Output:
+
+```
+fetch: ok (crm-v0.1.0.tar.xz, 8.4 MiB)
+file: ok (crm, port 3100)
+secrets: ok (3 keys)
+unpack: ok (/opt/crm)
+unit: ok (ikigenba-crm.service)
+nginx: ok (crm.sbx.ikigenba.dev, ikigenba.dev)
+litestream: ok (state/crm.db)
+service: ok (crm v0.1.0 active)
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- `host.name` is `sbx.ikigenba.dev` and `host.apex` is `crm`.
+- The host's certificate covers `ikigenba.dev` and the apex record points
+  here: both are `devctl apex set`'s doing, before this deploy.
+- `crm`'s manifest names `port = 3100` and does not set `default = true`.
+
+Postconditions:
+
+- Everything the first install's postconditions say, and
+  `https://ikigenba.dev` reaches `127.0.0.1:3100`.
+- An app that is both default and apex reports all three names:
+  `nginx: ok (crm.sbx.ikigenba.dev, sbx.ikigenba.dev, ikigenba.dev)`.
+- Installing any other app on this host leaves the apex where it is; only
+  `host.apex` names the apex app, and `install` never sets it.
 
 ## An operator installs a second default app
 
@@ -280,7 +329,7 @@ only another app claiming the apex is.
 Command:
 
 ```
-$ sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/dashboard-v0.0.9.tar.xz
+$ sudo opsctl install s3://ikigenba.dev/sbx/deploy/dashboard-v0.0.9.tar.xz
 ```
 
 Output:
@@ -313,7 +362,7 @@ secret refuses the install rather than half-doing it.
 Command:
 
 ```
-$ sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/gmail-v0.1.0.tar.xz
+$ sudo opsctl install s3://ikigenba.dev/sbx/deploy/gmail-v0.1.0.tar.xz
 ```
 
 Output:
@@ -321,7 +370,7 @@ Output:
 ```
 fetch: ok (gmail-v0.1.0.tar.xz, 6.1 MiB)
 file: ok (gmail, port 3300)
-secrets: failed: gmail: no value for 'GMAIL_CLIENT_SECRET' in /ikigenba/ikigenba.dev/gmail
+secrets: failed: gmail: no value for 'GMAIL_CLIENT_SECRET' in /sbx.ikigenba.dev/gmail
 opsctl: install failed
 ```
 
@@ -342,7 +391,7 @@ Postconditions:
 Command:
 
 ```
-$ sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/notes.tar.xz
+$ sudo opsctl install s3://ikigenba.dev/sbx/deploy/notes.tar.xz
 ```
 
 Output:
@@ -374,7 +423,7 @@ Postconditions:
 Command:
 
 ```
-$ sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/host-v0.1.0.tar.xz
+$ sudo opsctl install s3://ikigenba.dev/sbx/deploy/host-v0.1.0.tar.xz
 ```
 
 Output:
@@ -406,7 +455,7 @@ developer reading devctl's relayed output has the journal in front of them.
 Command:
 
 ```
-$ sudo opsctl install s3://ikigenba-dev-295229566359/ikigenba.dev/deploy/gmail-v0.1.0.tar.xz
+$ sudo opsctl install s3://ikigenba.dev/sbx/deploy/gmail-v0.1.0.tar.xz
 ```
 
 Output:
@@ -417,7 +466,7 @@ file: ok (gmail, port 3300)
 secrets: ok (2 keys)
 unpack: ok (/opt/gmail)
 unit: ok (ikigenba-gmail.service)
-nginx: ok (gmail.ikigenba.dev)
+nginx: ok (gmail.sbx.ikigenba.dev)
 litestream: ok (unchanged)
 service: failed: gmail: service failed to start
 opsctl: install failed
@@ -500,7 +549,7 @@ The nginx configuration and /etc/litestream.yml are regenerated from every app
 left on the host, so APP's name stops answering, and a database APP declared
 stops being replicated once litestream has shipped what it holds.
 
-The parameter /ikigenba/<host.name>/APP is not touched: it is devctl's.
+The parameter /<host.name>/APP is not touched: it is devctl's.
 
 Configuration keys:
   host.name  the fully-qualified name this host answers at
@@ -538,7 +587,7 @@ Output:
 stop: ok (ikigenba-crm.service stopped, disabled)
 unit: ok (removed ikigenba-crm.service)
 files: ok (removed /opt/crm/bin, etc, share, cache; kept state)
-nginx: ok (crm.ikigenba.dev removed)
+nginx: ok (crm.sbx.ikigenba.dev removed)
 litestream: ok (state/crm.db removed)
 ```
 
@@ -560,9 +609,12 @@ Postconditions:
   read or written: the database, its `-wal` and `-shm`, and litestream's
   metadata directory are as the service left them.
 - `/etc/nginx/conf.d/ikigenba.conf` has been regenerated and nginx reloaded:
-  `crm.ikigenba.dev` answers 404 under the host's wildcard block. Had `crm`
-  been the default app, the line would have read `crm.ikigenba.dev,
-  ikigenba.dev removed` and the apex would answer 404 again.
+  `crm.sbx.ikigenba.dev` answers 404 under the host's wildcard block. Had `crm`
+  been the default app, the line would have read `crm.sbx.ikigenba.dev,
+  sbx.ikigenba.dev removed` and the space's name would answer 404 again. Had
+  it been the apex app, the line would have read `crm.sbx.ikigenba.dev,
+  ikigenba.dev removed`: `host.apex` is not touched, so `ikigenba.dev` moves
+  to the 404 block and answers from there until `crm` is installed again.
 - `/etc/litestream.yml` has been regenerated from the manifests left under
   `/opt` and no longer names `/opt/crm/state/crm.db`. Because the file
   changed, `litestream.service` was restarted. It was stopped after the
@@ -573,7 +625,7 @@ Postconditions:
 - `status` shows `crm - - -`: a service with a `state/` and no manifest, the
   shape a restore into a fresh host leaves. `opsctl backup` now tars the whole
   of `state/`, the quiet database included, because no manifest declares it.
-- `/ikigenba/<host.name>/crm` and the object under `<backup.s3_uri>deploy/`
+- `/<host.name>/crm` and the object under `<backup.s3_uri>deploy/`
   are untouched. Installing `crm` again lands over its `state/` exactly as a
   deploy over a restore does.
 - No other app on the host has changed.
@@ -596,7 +648,7 @@ Output:
 stop: ok (ikigenba-dashboard.service stopped, disabled)
 unit: ok (removed ikigenba-dashboard.service)
 files: ok (removed /opt/dashboard/bin, etc, share, cache; kept state)
-nginx: ok (dashboard.ikigenba.dev, ikigenba.dev removed)
+nginx: ok (dashboard.sbx.ikigenba.dev, sbx.ikigenba.dev removed)
 litestream: ok (unchanged)
 ```
 
@@ -609,8 +661,8 @@ Preconditions:
 
 Postconditions:
 
-- `https://ikigenba.dev` and `https://dashboard.ikigenba.dev` both answer
-  404. The host has no default app until an install brings one.
+- `https://sbx.ikigenba.dev` and `https://dashboard.sbx.ikigenba.dev` both
+  answer 404. The host has no default app until an install brings one.
 - `/etc/litestream.yml` is byte for byte as it was and `litestream.service`
   was not restarted.
 - `/opt/dashboard/` holds `state/` and nothing else.

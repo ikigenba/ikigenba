@@ -4,11 +4,10 @@ The host keeps its configuration and certificate separately from service data.
 The backup package owns archive and retirement operations; the CLI renders their
 results. Its existing D11 package boundary remains sufficient.
 
-Retirement proves final database synchronization through Litestream 0.5.17's
-enabled control socket before stopping `litestream.service`. The proof and its
-failure policy are part of R-YUZK-TJ3U; a service-stop result alone is never
-synchronization proof. External observations and the cloud adapter remain
-separately tracked pre-check dependencies.
+Retirement proves final database synchronization through Litestream's enabled
+control socket before stopping `litestream.service`. The proof and its failure
+policy are part of R-YUZK-TJ3U; a service-stop result alone is never
+synchronization proof.
 
 ## REQUIREMENTS
 

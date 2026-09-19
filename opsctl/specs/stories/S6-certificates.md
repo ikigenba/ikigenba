@@ -7,6 +7,16 @@ DNS records, so certbot proves the challenge through opsctl's own hooks. The
 certificate lives where certbot puts it, `/etc/letsencrypt/live/<host.name>/`,
 and that directory is backed up.
 
+The one host that holds the root domain's apex (see `S5-nginx.md`) answers at
+`ikigenba.dev` as well, and the same certificate covers that name too: when
+`host.apex` is set, `obtain` asks for three names instead of two, and the
+third is proved at `_acme-challenge.ikigenba.dev`, a record outside the
+host's own subtree that the host's role allows only while it holds the apex.
+Setting or clearing `host.apex` changes the names the certificate should
+carry, and `obtain` is how the change lands: certbot reissues a certificate
+whose requested names differ from the ones it holds, whether or not it is due.
+There is one lineage, named after `host.name`, whatever it covers.
+
 The top-level usage gains the line `  cert      obtain and inspect the host's
 certificate` under `Commands:`, and `init`'s sequence gains the step
 `certificate`, before `nginx.conf` — every nginx server block names the
@@ -17,12 +27,13 @@ Renewal has an owner, and it is opsctl. `init`'s `timers` step writes
 `ikigenba-renew-certificate.timer`, which fires it twice a day at a random
 offset and is `Persistent=true`, so a host that was off when a firing was due
 runs it at boot. The timer has no period key and is always enabled: a host
-that holds a certificate has to renew it, and there is nothing for an account
+that holds a certificate has to renew it, and there is nothing for a space
 to opt out of. The same step masks the certbot package's own
 `certbot-renew.timer` when the package ships one, so exactly one thing on the
 host renews and the answer to "who renews" does not depend on packaging.
 What renewal does is still certbot's: the hooks `obtain` recorded re-prove
-the challenge through opsctl and reload nginx.
+the challenge through opsctl and reload nginx, for every name the lineage
+holds.
 
 One configuration key:
 
@@ -48,15 +59,18 @@ Output:
 Usage: opsctl cert <subcommand>
 
 Obtain and inspect the one certificate this host serves: host.name and
-*.host.name, proved over DNS-01 through 'opsctl dns acme-auth'.
+*.host.name, plus the parent of host.name when host.apex is set, proved over
+DNS-01 through 'opsctl dns acme-auth'.
 
 Subcommands:
   show    print the certificate's names, issuer, and expiry
-  obtain  obtain the certificate, or renew it if it is due
+  obtain  obtain the certificate, renew it if it is due, or reissue it when
+          the names it should carry have changed
 
 Configuration keys:
   acme.email  the address the CA sends expiry warnings to
   host.name   the fully-qualified name this host answers at
+  host.apex   the app that answers at the parent of host.name; unset means none
 
 Renewal is certbot's: 'certbot renew' re-runs the same hooks and reloads
 nginx, with no further configuration. 'opsctl init' writes the timer that
@@ -95,14 +109,15 @@ Exits 0. Nothing is on stdout or stderr.
 
 Preconditions:
 
-- `host.name` and `acme.email` are set, and `certbot` is on the PATH.
+- `host.name` is `sbx.ikigenba.dev`, `acme.email` is set, `host.apex` is not
+  set, and `certbot` is on the PATH.
 - `opsctl dns check` reports the zone holding `host.name` as ok.
 - The host can reach the CA.
 
 Postconditions:
 
-- `/etc/letsencrypt/live/<host.name>/fullchain.pem` and `privkey.pem` exist,
-  covering `<host.name>` and `*.<host.name>`.
+- `/etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem` and `privkey.pem`
+  exist, covering `sbx.ikigenba.dev` and `*.sbx.ikigenba.dev`.
 - certbot's renewal configuration for that certificate records the same
   hooks, so `certbot renew` run by anyone re-proves the challenge through
   opsctl and reloads nginx afterwards, with nothing further to configure. The
@@ -136,12 +151,59 @@ Exits 0. Nothing is on stdout or stderr.
 
 Preconditions:
 
-- The certificate exists and is not yet due for renewal.
+- The certificate exists, covers exactly the names the store asks for, and
+  is not yet due for renewal.
 
 Postconditions:
 
 - Nothing has changed. The certificate on disk is the one that was there, no
   DNS record was written, and the CA was not asked for anything.
+
+## An operator obtains the certificate after the apex changed
+
+`devctl apex set` has just set `host.apex` on this host, regenerated the
+host's role so it may write `_acme-challenge.ikigenba.dev`, and now runs
+this over ssh before it points the apex record here — the certificate has to
+carry the name before the name resolves to this host, or the first visitor
+sees a handshake for the wrong names. The certificate on disk is current,
+but it covers two names and the store asks for three, so certbot reissues it
+rather than keeping it. Three challenges run instead of two, the third at the
+apex's own record name.
+
+The reverse is the same command: after `devctl apex clear` has removed the
+key, `obtain` reissues with two names, so the lineage stops carrying a name
+the host's narrowed role can no longer prove and the next `certbot renew`
+does not fail on it.
+
+Command:
+
+```
+$ sudo opsctl cert obtain
+```
+
+Output:
+
+```
+```
+
+Exits 0. Nothing is on stdout or stderr.
+
+Preconditions:
+
+- `host.name` is `sbx.ikigenba.dev`, `acme.email` is set, and `host.apex` is
+  `crm`.
+- The certificate exists, covers `sbx.ikigenba.dev` and `*.sbx.ikigenba.dev`,
+  and is not due for renewal.
+- The host's role may write `_acme-challenge.ikigenba.dev`.
+
+Postconditions:
+
+- `/etc/letsencrypt/live/sbx.ikigenba.dev/` holds a new certificate covering
+  `sbx.ikigenba.dev`, `*.sbx.ikigenba.dev`, and `ikigenba.dev`, under the same
+  lineage name and with the same recorded hooks.
+- `cert show` lists the three names. `certbot renew` renews all three.
+- No challenge record is left behind at either record name.
+- Running `obtain` again changes nothing: the names now match.
 
 ## An operator reads the certificate the host is serving
 
@@ -154,7 +216,7 @@ $ sudo opsctl cert show
 Output:
 
 ```
-names: ikigenba.dev, *.ikigenba.dev
+names: sbx.ikigenba.dev, *.sbx.ikigenba.dev
 issuer: R11
 expires: 2026-12-11T14:02:55Z
 ```
@@ -163,11 +225,15 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- `host.name` is `ikigenba.dev` and the certificate exists.
+- `host.name` is `sbx.ikigenba.dev` and the certificate exists, covering the
+  two names.
 
 Postconditions:
 
-- Nothing has changed.
+- Nothing has changed. On the host that holds the apex, the first line reads
+  `names: sbx.ikigenba.dev, *.sbx.ikigenba.dev, ikigenba.dev`. The names are
+  read from the certificate, not from the store, so a store that has changed
+  since the last `obtain` is visible here as a mismatch.
 
 ## An operator reads the certificate on a host that has none
 
@@ -180,15 +246,15 @@ $ sudo opsctl cert show
 Output:
 
 ```
-opsctl: no certificate for ikigenba.dev
+opsctl: no certificate for sbx.ikigenba.dev
 ```
 
 Exits 1. The line is on stderr; stdout is empty.
 
 Preconditions:
 
-- `host.name` is `ikigenba.dev`.
-- `/etc/letsencrypt/live/ikigenba.dev/` does not exist.
+- `host.name` is `sbx.ikigenba.dev`.
+- `/etc/letsencrypt/live/sbx.ikigenba.dev/` does not exist.
 
 Postconditions:
 
@@ -212,7 +278,7 @@ Output:
 opsctl: certbot certonly: exit status 1
 
 > Some challenges have failed.
-> Detail: DNS problem: NXDOMAIN looking up TXT for _acme-challenge.ikigenba.dev
+> Detail: DNS problem: NXDOMAIN looking up TXT for _acme-challenge.sbx.ikigenba.dev
 ```
 
 Exits 1. The text is on stderr; stdout is empty.
@@ -221,6 +287,9 @@ Preconditions:
 
 - `host.name` and `acme.email` are set, and `certbot` is on the PATH.
 - The CA could not see the challenge record, or refused for any other reason.
+  On a host whose `host.apex` is set but whose role was not widened to the
+  apex's challenge record, the auth hook itself fails at that record, and
+  certbot's quoted output says so.
 
 Postconditions:
 
@@ -252,6 +321,35 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. certbot was not run.
+
+## An agent obtains with an apex the host name cannot carry
+
+The same refusal `nginx` makes, for the same reason: a `host.apex` on a host
+whose name has no parent domain asks for a name that does not exist, and the
+CA is not asked for it.
+
+Command:
+
+```
+$ sudo opsctl cert obtain
+```
+
+Output:
+
+```
+opsctl: host.apex is set but host.name 'ikigenba.dev' has no parent domain
+```
+
+Exits 1. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- `host.name` is `ikigenba.dev`, `acme.email` is set, and `host.apex` is
+  `crm`.
+
+Postconditions:
+
+- Nothing has changed. certbot was not run and no DNS record was written.
 
 ## An operator runs `cert` with no subcommand, or one that does not exist
 

@@ -18,7 +18,10 @@ The zone id is the provider's and a person supplies it; opsctl never reads it
 from anywhere but the store, and never from a bootstrap's own files such as
 `/etc/ikigenba/env`. A record name is mapped to a zone by the longest of the
 configured names that matches it on a label boundary, so a caller that has
-only a domain — certbot, above all — needs no zone argument.
+only a domain — certbot, above all — needs no zone argument. The zone is the
+root domain, `ikigenba.dev`, shared by every space; which names inside it this
+host may write is the host's role's business, not opsctl's, and a name is
+never refused for lying outside `host.name`.
 
 The verbs are `add` and `remove`, never an overwrite. A wildcard certificate's
 DNS-01 challenge puts two TXT values at one name at the same time, and an
@@ -120,7 +123,7 @@ Output:
 
 ```
 ikigenba.dev: ok (route53 Z09565073GHK8BYWQ1A78, 4 nameservers delegated)
-sbx.ikigenba.dev: failed: nameservers not delegated
+ikigenba.net: failed: nameservers not delegated
 exit 1
 ```
 
@@ -151,11 +154,12 @@ $ sudo opsctl dns list ikigenba.dev
 Output:
 
 ```
-*.ikigenba.dev A 60 77.112.106.79
+*.sbx.ikigenba.dev A 60 77.112.106.79
 ikigenba.dev A 60 77.112.106.79
 ikigenba.dev NS 172800 ns-132.awsdns-16.com
 ikigenba.dev NS 172800 ns-1653.awsdns-14.co.uk
 ikigenba.dev SOA 900 ns-132.awsdns-16.com. awsdns-hostmaster.amazon.com. 1 7200 900 1209600 86400
+sbx.ikigenba.dev A 60 77.112.106.79
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -163,6 +167,10 @@ Exits 0. The lines are on stdout; stderr is empty.
 Preconditions:
 
 - `ikigenba.dev` is a configured zone the host's credentials can read.
+- The zone holds one space, `sbx`, whose two records `devctl space create`
+  wrote, and the apex record `devctl apex set` pointed at the same address.
+  The whole zone is listed, every space's records included: reading it is
+  not limited to this host's own names.
 
 Postconditions:
 
@@ -270,10 +278,15 @@ not replace it. The TTL is 60 seconds so the record expires quickly after the
 challenge. The hook waits for the value to be live before it returns, because
 certbot asks the CA to look the moment it comes back.
 
+When the host holds the apex (see `S6-certificates.md`), certbot runs the hook
+a third time with `CERTBOT_DOMAIN=ikigenba.dev`, and the record goes to
+`_acme-challenge.ikigenba.dev`: a name outside the host's own subtree, mapped
+to the same zone by the same suffix rule, and written with the same verb.
+
 Command:
 
 ```
-$ CERTBOT_DOMAIN=ikigenba.dev CERTBOT_VALIDATION=6ukiLNXA opsctl dns acme-auth
+$ CERTBOT_DOMAIN=sbx.ikigenba.dev CERTBOT_VALIDATION=6ukiLNXA opsctl dns acme-auth
 ```
 
 Output:
@@ -290,8 +303,9 @@ Preconditions:
 
 Postconditions:
 
-- `_acme-challenge.ikigenba.dev TXT` holds `6ukiLNXA` with a 60 second TTL,
-  beside any value already there, and the change is live at the provider.
+- `_acme-challenge.sbx.ikigenba.dev TXT` holds `6ukiLNXA` with a 60 second
+  TTL, beside any value already there, and the change is live at the
+  provider.
 - Nothing else in the zone has changed.
 
 ## certbot cleans a challenge record up
@@ -303,7 +317,7 @@ half of the wildcard's pair, mid-flight — alone.
 Command:
 
 ```
-$ CERTBOT_DOMAIN=ikigenba.dev CERTBOT_VALIDATION=6ukiLNXA opsctl dns acme-cleanup
+$ CERTBOT_DOMAIN=sbx.ikigenba.dev CERTBOT_VALIDATION=6ukiLNXA opsctl dns acme-cleanup
 ```
 
 Output:
@@ -319,8 +333,8 @@ Preconditions:
 
 Postconditions:
 
-- `6ukiLNXA` is no longer a value of `_acme-challenge.ikigenba.dev TXT`. If it
-  was the last value, the record set is gone; if not, the rest remain.
+- `6ukiLNXA` is no longer a value of `_acme-challenge.sbx.ikigenba.dev TXT`.
+  If it was the last value, the record set is gone; if not, the rest remain.
 - Cleanup of a value that is already gone changes nothing and exits 0.
 
 ## An operator runs a certbot hook by hand

@@ -3,7 +3,12 @@
 A host is disposable; what it holds is not. Everything worth keeping goes to
 one S3 prefix that belongs to this host and no other, and comes back from
 there. Nothing else on the host reads or writes that prefix, and the host's
-own role can reach no other space's.
+own role can reach no other space's. The bucket is the one the account has,
+named after the root domain, and the prefix is the space's label:
+`s3://ikigenba.dev/sbx/` for the space `sbx`. A bucket name with dots in it
+cannot be addressed as a hostname over TLS, so everything on the host that
+reaches it — opsctl itself and litestream through the file opsctl generates —
+addresses it path-style.
 
 Two different things are kept, so there are two pairs of commands. A
 **service** is what lives under `/opt/<name>/`; the **host** is the machine's
@@ -29,7 +34,7 @@ Configuration keys:
 | key | value |
 |---|---|
 | `aws.region` | the region the backup bucket lives in, e.g. `us-east-2` |
-| `backup.s3_uri` | the prefix this host backs up to, e.g. `s3://sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/` |
+| `backup.s3_uri` | the prefix this host backs up to, e.g. `s3://ikigenba.dev/sbx/` |
 | `backup.host_files_seconds` | how often the host's own configuration is copied; `0` or unset means never |
 | `backup.service_files_seconds` | how often every service's files are copied; `0` or unset means never |
 | `backup.service_db_seconds` | how often a declared database is snapshotted whole |
@@ -56,8 +61,8 @@ are folded back. A one-shot run has no mark to hold and would lose
 transactions between invocations.
 
 `litestream` is on the host the way `nginx` and `certbot` are: it comes with
-the account's launch template, and `init` checks for it on PATH rather than
-installing it. opsctl drives it and never fetches it.
+the launch template, and `init` checks for it on PATH rather than installing
+it. opsctl drives it and never fetches it.
 
 The two mechanisms therefore do not overlap. For a service that declares a
 database, `opsctl backup` **excludes** the database file, its `-wal` and
@@ -164,10 +169,12 @@ from it, and litestream's retention deletes: left on, every retention pass
 would be refused and logged for the life of the host. Off, litestream never
 attempts a delete, and the bucket's expiry is the only retention there is.
 The consequence is that every snapshot and every change file stays until it
-expires, so `restore --at` can name any instant inside the account's expiry
+expires, so `restore --at` can name any instant inside the bucket's expiry
 window, not only the last day. Verified against litestream 0.5.17, the
 version first boot installs, where the key guards every path that deletes
-from a replica.
+from a replica. The same file tells litestream to address the bucket
+path-style (`force-path-style: true` on every replica), because the bucket's
+name has dots in it.
 
 ## An operator asks what `backup` can do
 
@@ -489,8 +496,9 @@ Postconditions:
 
 ## An operator asks for a period of zero
 
-A period of `0` — or a key that was never set — is how an account says it
-wants no backups of that kind. The unit pair is still written, so an operator
+A period of `0` — or a key that was never set — is how a space says it
+wants no backups of that kind; the periods are opsctl keys `devctl space
+create` sets from its own defaults. The unit pair is still written, so an operator
 can run one by hand with `systemctl start`, but the timer is left disabled and
 stopped and fires nothing.
 
@@ -576,8 +584,7 @@ Postconditions:
 
 ## An operator takes a host's final backup
 
-`devctl space destroy` runs this over ssh before it terminates a space whose
-account keeps backups. Each line is one step; the backup lines are the same
+`devctl space destroy` runs this over ssh before it terminates a space. Each line is one step; the backup lines are the same
 lines `opsctl backup` and `opsctl host backup` print, and every object of
 the run carries one timestamp.
 
@@ -947,7 +954,7 @@ $ sudo opsctl restore gmail
 Output:
 
 ```
-source: failed: no backups for gmail under s3://sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/
+source: failed: no backups for gmail under s3://ikigenba.dev/sbx/
 opsctl: restore gmail failed at source
 ```
 

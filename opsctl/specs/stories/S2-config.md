@@ -58,19 +58,21 @@ per key over ssh; `devctl space init` drives the same sets again on a live
 host whenever what a key came from has changed. Nothing is printed: the answer
 to "did it work" is the exit code.
 
-These ten are every key opsctl's own groups declare, and between them they are
-what `init` needs to bring the host to the state the store describes. A host
-that has them all and nothing else is a configured host.
+These ten are what `init` needs to bring the host to the state the store
+describes, and a host that has them all and nothing else is a configured host.
+The one other key opsctl's groups declare, `host.apex`, is set later by
+`devctl apex set` on the one space that holds the root domain's apex and is
+absent everywhere else (see `S5-nginx.md`).
 
 Command:
 
 ```
-$ sudo opsctl config set host.name=foo.sbx.ikigenba.dev
+$ sudo opsctl config set host.name=sbx.ikigenba.dev
 $ sudo opsctl config set aws.region=us-east-2
 $ sudo opsctl config set acme.email=ops@ikigenba.dev
 $ sudo opsctl config set dns.provider=route53
-$ sudo opsctl config set dns.zones=sbx.ikigenba.dev:Z02587302QXWONVKW632
-$ sudo opsctl config set backup.s3_uri=s3://sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/
+$ sudo opsctl config set dns.zones=ikigenba.dev:Z09565073GHK8BYWQ1A78
+$ sudo opsctl config set backup.s3_uri=s3://ikigenba.dev/sbx/
 $ sudo opsctl config set backup.host_files_seconds=86400
 $ sudo opsctl config set backup.service_files_seconds=86400
 $ sudo opsctl config set backup.service_db_seconds=86400
@@ -110,7 +112,7 @@ $ sudo opsctl config get dns.zones
 Output:
 
 ```
-sbx.ikigenba.dev:Z02587302QXWONVKW632
+ikigenba.dev:Z09565073GHK8BYWQ1A78
 ```
 
 Exits 0. The line is on stdout; stderr is empty.
@@ -166,8 +168,8 @@ Output:
 ```
 acme.email=ops@ikigenba.dev
 dns.provider=route53
-dns.zones=sbx.ikigenba.dev:Z02587302QXWONVKW632
-host.name=foo.sbx.ikigenba.dev
+dns.zones=ikigenba.dev:Z09565073GHK8BYWQ1A78
+host.name=sbx.ikigenba.dev
 ```
 
 Exits 0. The lines are on stdout; stderr is empty. An empty store prints
@@ -219,7 +221,7 @@ more as it likes — an S3 URI with a query, a base64 value with padding.
 Command:
 
 ```
-$ sudo opsctl config set backup.s3_uri=s3://sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/
+$ sudo opsctl config set backup.s3_uri=s3://ikigenba.dev/sbx/
 $ sudo opsctl config set app.flags=--verbose=true
 $ sudo opsctl config get app.flags
 ```

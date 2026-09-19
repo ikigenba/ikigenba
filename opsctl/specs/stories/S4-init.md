@@ -12,11 +12,15 @@ One configuration key:
 
 | key | value |
 |---|---|
-| `host.name` | the fully-qualified name this host answers at, at or under a configured zone, e.g. `ikigenba.dev` |
+| `host.name` | the fully-qualified name this host answers at, at or under a configured zone, e.g. `sbx.ikigenba.dev` |
 
-A host answers at one name. The records a bootstrap created are `<host.name>`
-and `*.<host.name>`, and the wildcard certificate, the nginx catch-all, and
-every app's own name all hang off it.
+A host answers at one name: the space's, one label under the root domain.
+The records a bootstrap created are `<host.name>` and `*.<host.name>`, and
+the wildcard certificate, the nginx catch-all, and every app's own name all
+hang off it. The one host that also answers at the root's apex says so with
+`host.apex` (see `S5-nginx.md`); the preflight does not look at that key, and
+a value the host cannot carry is refused by the `certificate` step, which is
+the first step that reads it.
 
 The sequence is the setup commands that exist. It is empty until a group adds
 one to it, and each group that does says so; `S6-certificates.md` adds
@@ -111,10 +115,10 @@ systemctl: ok (/usr/bin/systemctl)
 litestream: ok (/usr/bin/litestream)
 dns.provider: ok (route53)
 dns.zones: ok (ikigenba.dev)
-host.name: ok (ikigenba.dev)
+host.name: ok (sbx.ikigenba.dev)
 zone ikigenba.dev: ok (route53 Z09565073GHK8BYWQ1A78, 4 nameservers delegated)
-host ikigenba.dev: ok (zone ikigenba.dev)
-wildcard ikigenba.dev: ok (77.112.106.79)
+host sbx.ikigenba.dev: ok (zone ikigenba.dev)
+wildcard sbx.ikigenba.dev: ok (77.112.106.79)
 exit 0
 ```
 
@@ -125,8 +129,8 @@ Preconditions:
 - `nginx`, `certbot`, `systemctl`, and `litestream` are on the host's PATH.
 - `dns.provider`, `dns.zones`, and `host.name` are set, and the host's
   credentials can read the configured zone.
-- Public DNS delegates the zone, and `ikigenba.dev` and
-  `_opsctl-preflight.ikigenba.dev` resolve to the same address.
+- Public DNS delegates the zone, and `sbx.ikigenba.dev` and
+  `_opsctl-preflight.sbx.ikigenba.dev` resolve to the same address.
 
 Postconditions:
 
@@ -138,13 +142,13 @@ Postconditions:
 - Every setup command is idempotent, so a host that was already set up is
   unchanged by the run.
 
-The wildcard line is the bootstrap's own done-condition — the apex and the
-wildcard both point at this host — checked from the host. It resolves a fixed
-probe label rather than a literal `*`, because a resolver will refuse a
-literal `*.ikigenba.dev` while `_opsctl-preflight.ikigenba.dev` resolves to
-the apex address. Whether that address is *this* host's cannot be known
-without asking the cloud, which opsctl never does; that the two lookups agree
-is the check.
+The wildcard line is the bootstrap's own done-condition — the space's name
+and its wildcard both point at this host — checked from the host. It resolves
+a fixed probe label rather than a literal `*`, because a resolver will refuse
+a literal `*.sbx.ikigenba.dev` while `_opsctl-preflight.sbx.ikigenba.dev`
+resolves to the space's address. Whether that address is *this* host's cannot
+be known without asking the cloud, which opsctl never does; that the two
+lookups agree is the check.
 
 ## An agent initialises a host that is not ready
 
@@ -195,7 +199,7 @@ Command:
 
 ```
 $ sudo dnf install -y certbot
-$ sudo opsctl config set host.name=ikigenba.dev
+$ sudo opsctl config set host.name=sbx.ikigenba.dev
 $ sudo opsctl init; echo "exit $?"
 ```
 
@@ -219,7 +223,7 @@ operator expected a different command.
 Command:
 
 ```
-$ sudo opsctl init ikigenba.dev
+$ sudo opsctl init sbx.ikigenba.dev
 ```
 
 ```

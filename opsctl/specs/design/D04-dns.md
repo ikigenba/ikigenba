@@ -3,6 +3,9 @@
 Package `internal/dns` owns configured-zone selection, DNS records, and the
 provider interface. `internal/dns/route53` supplies the sole production
 provider. Additive mutations support certbot's overlapping DNS-01 tokens.
+The configured zone is the shared root domain, and record names are never
+scoped to `host.name`: which names inside the zone this host may write is
+its role's business, so zone selection reads only `dns.zones` and the name.
 
 ## REQUIREMENTS
 
@@ -61,4 +64,5 @@ provider. Additive mutations support certbot's overlapping DNS-01 tokens.
 - R-FW5G-NCMB: `dns list` MUST require exactly one zone argument and `dns check` MUST accept no positional arguments or mutation options; invalid grammar MUST exit 2 with a diagnostic and without provider calls, and a provider-opening error or a `list` provider error MUST exit 1 with empty stdout and stderr `opsctl: <error>\n`.
 
 - R-WJSW-BFCW: Each `Client` returned by `Open` MUST retain the `Env.LookupNS` supplied to that call for every subsequent `Check` on that client; `Check` MUST pass its context and the configured zone name to that resolver, using `net.DefaultResolver` only when that client's supplied resolver is nil, independently of any other client opened before or afterward.
+- R-TM8I-II7H: For every `dns` operation, the zone `ZoneFor` selects and the only zone refusal (`no configured zone contains`) MUST depend solely on the configured `dns.zones` entries and the record name; `host.name` and every other store key MUST NOT influence zone selection or refusal, so a name outside the host's own subtree, such as `_acme-challenge.ikigenba.dev` or another space's name on a host whose `host.name` is `sbx.ikigenba.dev`, MUST be mapped to its configured zone and passed to the provider exactly as any other name in that zone.
 - R-XUL6-VKTK: At the `Provider` boundary, `Record.Name` MUST be lowercase with no trailing dot and literal `*` rather than a provider wildcard escape, `Record.Type` MUST be uppercase, TXT `Record.Values` MUST contain the logical unquoted values, and NS `Record.Values` MUST have no trailing dot; `Provider.Add` and `Provider.Remove` MUST accept the same name, type, and value representations returned by `Provider.Records`, so listing a value and adding or removing it does not require caller knowledge of provider encoding.
