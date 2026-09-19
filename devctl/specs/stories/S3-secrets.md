@@ -1,12 +1,14 @@
 # Stories — secrets
 
 An app's secrets are one Parameter Store SecureString per app per space,
-`/ikigenba/<domain>/<app>`, holding a flat JSON object whose keys are the names
+`/<space domain>/<app>`, holding a flat JSON object whose keys are the names
 the app's manifest declares. The developer's machine is the only source
 of the values and devctl is the only writer. The host reads the object through
 its instance role when an app is installed, and writes the values into the
 app's environment file; a value pushed after that reaches the app at its next
-deploy and at no other moment.
+deploy and at no other moment. `<space>` is the space's label or its full
+domain, as everywhere (see `S2-space-lifecycle.md`); the parameter path always
+uses the full domain.
 
 ## A developer asks what `secrets` can do
 
@@ -22,17 +24,17 @@ $ devctl secrets --help
 Output:
 
 ```
-Usage: devctl --account <name> secrets <subcommand> <domain> [<app>]
+Usage: devctl secrets <subcommand> <space> [<app>]
 
 Push the values an app's manifest names from this machine's keyring to the
 space's Parameter Store entry, or list which names a space holds. Values are
 never printed.
 
 Subcommands:
-  push <domain> [<app>]   write /ikigenba/<domain>/<app> for one app, or every app
-  list <domain> [<app>]   print the key names held for one app, or every app
+  push <space> [<app>]   write /<space domain>/<app> for one app, or every app
+  list <space> [<app>]   print the key names held for one app, or every app
 
-Every subcommand needs --account. Run 'devctl secrets <subcommand> --help' for details.
+Run 'devctl secrets <subcommand> --help' for details.
 ```
 
 Exits 0. The text is on stdout; stderr is empty.
@@ -55,7 +57,7 @@ An app is a sub-project of the checkout that has a `main` package and a
 committed `etc/manifest.toml`; its name is the directory name. The manifest's
 `secrets` array lists the names the app needs, and that array is all devctl
 reads from it here — the port, the default flag, the `[env]` table, and the
-`[database]` table an app with one declares are all the host's business:
+`[database]` table are the host's business, not the developer's machine's:
 
 ```toml
 app = "crm"
@@ -80,7 +82,7 @@ line.
 Command:
 
 ```
-$ devctl --account 602773793009 secrets push foo.sbx.ikigenba.dev crm
+$ devctl secrets push sbx1 crm
 ```
 
 Output:
@@ -93,17 +95,18 @@ Exits 0. The line is on stdout; stderr is empty.
 
 Preconditions:
 
-- A live SSO session for the profile named by `--account`.
-- The space exists in the account (an instance tagged `Space=<domain>`).
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- The space exists (an instance tagged `Space=sbx1.ikigenba.dev`).
 - `crm/etc/manifest.toml` is in the checkout.
 - Every name in its `secrets` array has a value in the keyring or the
   environment.
 
 Postconditions:
 
-- `/ikigenba/foo.sbx.ikigenba.dev/crm` is a SecureString whose value is a
-  JSON object with exactly the `secrets` names as keys and the keyring values
-  as values, overwriting whatever was there.
+- `/sbx1.ikigenba.dev/crm` is a SecureString whose value is a JSON object
+  with exactly the `secrets` names as keys and the keyring values as values,
+  overwriting whatever was there.
 - No other parameter has changed.
 
 ## A developer pushes every app's secrets to a space
@@ -114,7 +117,7 @@ app whose `secrets` array is empty or absent gets the object `{}`.
 Command:
 
 ```
-$ devctl --account 602773793009 secrets push foo.sbx.ikigenba.dev
+$ devctl secrets push sbx1
 ```
 
 Output:
@@ -129,22 +132,23 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- A live SSO session for the profile named by `--account`.
-- The space exists in the account.
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- The space exists.
 - Every name in every app's `secrets` array has a value in the keyring or
   the environment.
 
 Postconditions:
 
-- `/ikigenba/foo.sbx.ikigenba.dev/<app>` is written for every app, as above.
-  An app with no `secret` lines gets `{}`.
+- `/sbx1.ikigenba.dev/<app>` is written for every app, as above. An app
+  with no `secret` lines gets `{}`.
 
 ## A developer pushes with a value missing from the keyring
 
 Command:
 
 ```
-$ devctl --account 602773793009 secrets push foo.sbx.ikigenba.dev
+$ devctl secrets push sbx1
 ```
 
 Output:
@@ -157,8 +161,9 @@ Exits 2. The line is on stderr; stdout is empty.
 
 Preconditions:
 
-- A live SSO session for the profile named by `--account`.
-- The space exists in the account.
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- The space exists.
 - `crm/etc/manifest.toml` lists `CRM_API_KEY` in `secrets` and neither the
   keyring nor the environment has it.
 
@@ -172,7 +177,7 @@ Postconditions:
 Command:
 
 ```
-$ devctl --account 602773793009 secrets push foo.sbx.ikigenba.dev bogus
+$ devctl secrets push sbx1 bogus
 ```
 
 Output:
@@ -201,21 +206,22 @@ before the instance exists, and it is about to launch it.
 Command:
 
 ```
-$ devctl --account 602773793009 secrets push gone.sbx.ikigenba.dev
+$ devctl secrets push gone
 ```
 
 Output:
 
 ```
-devctl: no space at 'gone.sbx.ikigenba.dev'
+devctl: no space at 'gone.ikigenba.dev'
 ```
 
 Exits 1. The line is on stderr; stdout is empty.
 
 Preconditions:
 
-- A live SSO session for the profile named by `--account`.
-- No instance in the account is tagged `Space=gone.sbx.ikigenba.dev`.
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- No instance is tagged `Space=gone.ikigenba.dev`.
 
 Postconditions:
 
@@ -236,8 +242,8 @@ do it: a restart re-reads the environment file, which only an install writes.
 Command:
 
 ```
-$ devctl --account 602773793009 secrets push foo.sbx.ikigenba.dev crm
-$ devctl --account 602773793009 deploy foo.sbx.ikigenba.dev crm/dist/crm-v0.1.0.tar.xz
+$ devctl secrets push sbx1 crm
+$ devctl deploy sbx1 crm/dist/crm-v0.1.0.tar.xz
 ```
 
 Output:
@@ -246,7 +252,7 @@ Output:
 crm: ok (3 keys)
 file: ok (crm v0.1.0)
 secrets: ok (3 keys)
-upload: ok (-> sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/deploy/crm-v0.1.0.tar.xz)
+upload: ok (-> ikigenba.dev/sbx1/deploy/crm-v0.1.0.tar.xz)
 install: ok (opsctl installed crm)
 ```
 
@@ -254,7 +260,8 @@ Each command exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- A live SSO session for the profile named by `--account`.
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
 - The space exists, its instance is `running`, and `crm` at `v0.1.0` is
   deployed on it.
 - The keyring or the environment holds the new value for `CRM_API_KEY`, and
@@ -263,8 +270,8 @@ Preconditions:
 
 Postconditions:
 
-- `/ikigenba/foo.sbx.ikigenba.dev/crm` holds the new value under
-  `CRM_API_KEY`; the other keys were written over with themselves.
+- `/sbx1.ikigenba.dev/crm` holds the new value under `CRM_API_KEY`; the
+  other keys were written over with themselves.
 - `/opt/crm/etc/env` on the host holds the new value, and
   `ikigenba-crm.service` has been restarted under it. The old value is nowhere
   on the host.
@@ -276,14 +283,14 @@ Postconditions:
 
 ## A developer asks which secret names a space holds
 
-One line per object under `/ikigenba/<domain>/`, in app order: the app, then
+One line per object under `/<space domain>/`, in app order: the app, then
 its keys sorted and comma-separated, or `-` for an empty object. Values never
 appear.
 
 Command:
 
 ```
-$ devctl --account 602773793009 secrets list foo.sbx.ikigenba.dev
+$ devctl secrets list sbx1
 ```
 
 Output:
@@ -298,8 +305,9 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- A live SSO session for the profile named by `--account`.
-- Three objects exist under `/ikigenba/foo.sbx.ikigenba.dev/`.
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- Three objects exist under `/sbx1.ikigenba.dev/`.
 
 Postconditions:
 
@@ -310,7 +318,7 @@ Postconditions:
 Command:
 
 ```
-$ devctl --account 602773793009 secrets list foo.sbx.ikigenba.dev crm
+$ devctl secrets list sbx1 crm
 ```
 
 Output:
@@ -323,8 +331,9 @@ Exits 0. The line is on stdout; stderr is empty.
 
 Preconditions:
 
-- A live SSO session for the profile named by `--account`.
-- `/ikigenba/foo.sbx.ikigenba.dev/crm` exists.
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- `/sbx1.ikigenba.dev/crm` exists.
 
 Postconditions:
 
@@ -335,7 +344,7 @@ Postconditions:
 Command:
 
 ```
-$ devctl --account 602773793009 secrets list empty.sbx.ikigenba.dev
+$ devctl secrets list empty
 ```
 
 Output:
@@ -347,8 +356,9 @@ Exits 0. Nothing is on stdout; stderr is empty.
 
 Preconditions:
 
-- A live SSO session for the profile named by `--account`.
-- No parameter exists under `/ikigenba/empty.sbx.ikigenba.dev/`.
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- No parameter exists under `/empty.ikigenba.dev/`.
 
 Postconditions:
 

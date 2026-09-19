@@ -1,11 +1,13 @@
 # Stories — restore
 
 A space's backups belong to that space. `opsctl` on the host writes them to
-the space's own prefix in the account's backup bucket and reads them back from
-there, and nothing else ever reads or writes that prefix. `devctl restore`
-drives that from the developer's machine: it runs `opsctl restore` on the
-space over ssh and reports its exit, exactly as `deploy` runs `opsctl install`.
-No object moves, and nothing travels over the ssh connection.
+the space's own prefix in the bucket, `s3://ikigenba.dev/<label>/`, and reads
+them back from there, and nothing else ever reads or writes that prefix.
+`devctl restore` drives that from the developer's machine: it runs `opsctl
+restore` on the space over ssh and reports its exit, exactly as `deploy` runs
+`opsctl install`. No object moves, and nothing travels over the ssh
+connection. `<space>` is the space's label or its full domain, as everywhere
+(see `S2-space-lifecycle.md`).
 
 A restore is per app. What it puts back is the app's `etc/` and `state/` from
 the newest tarball and, when the app declares a `[database]`, that database
@@ -26,10 +28,10 @@ $ devctl restore --help
 Output:
 
 ```
-Usage: devctl --account <name> restore <domain> <app> [--at <timestamp>]
+Usage: devctl restore <space> <app> [--at <timestamp>]
 
-Have opsctl on <domain> put <app> back from <domain>'s own backups. The app's
-etc/ and state/ come from the newest tarball, and its database, when it
+Have opsctl on the space put <app> back from the space's own backups. The
+app's etc/ and state/ come from the newest tarball, and its database, when it
 declares one, from litestream. <app>'s unit is stopped for the restore and
 started again after it.
 
@@ -58,7 +60,7 @@ step it runs on the host. What opsctl printed is not relayed: it succeeded.
 Command:
 
 ```
-$ devctl --account 602773793009 restore foo.sbx.ikigenba.dev crm
+$ devctl restore sbx1 crm
 ```
 
 Output:
@@ -71,7 +73,8 @@ Exits 0. The line is on stdout; stderr is empty.
 
 Preconditions:
 
-- A live SSO session for the profile named by `--account`.
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
 - The space exists, its instance is `running`, and `opsctl` is installed on
   it.
 - The developer's ssh configuration can reach the instance as `ec2-user`.
@@ -90,7 +93,7 @@ Postconditions:
 Command:
 
 ```
-$ devctl --account 602773793009 restore foo.sbx.ikigenba.dev crm --at 2026-09-11T18:00:00Z
+$ devctl restore sbx1 crm --at 2026-09-11T18:00:00Z
 ```
 
 Output:
@@ -103,7 +106,8 @@ Exits 0. The line is on stdout; stderr is empty.
 
 Preconditions:
 
-- A live SSO session for the profile named by `--account`.
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
 - The space exists, its instance is `running`, and `opsctl` is installed on
   it.
 - The developer's ssh configuration can reach the instance as `ec2-user`.
@@ -120,38 +124,39 @@ Postconditions:
 Command:
 
 ```
-$ devctl --account 602773793009 restore gone.sbx.ikigenba.dev crm
+$ devctl restore gone crm
 ```
 
 Output:
 
 ```
-devctl: no space at 'gone.sbx.ikigenba.dev'
+devctl: no space at 'gone.ikigenba.dev'
 ```
 
 Exits 1. The line is on stderr; stdout is empty.
 
 Preconditions:
 
-- A live SSO session for the profile named by `--account`.
-- No instance in the account is tagged `Space=gone.sbx.ikigenba.dev`.
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- No instance is tagged `Space=gone.ikigenba.dev`.
 
 Postconditions:
 
 - Nothing has changed. No ssh connection was opened.
 
-## A developer runs `restore` without a domain or an app
+## A developer runs `restore` without a space or an app
 
 Command:
 
 ```
-$ devctl --account 602773793009 restore foo.sbx.ikigenba.dev
+$ devctl restore sbx1
 ```
 
 Output:
 
 ```
-devctl: restore needs <domain> and <app>
+devctl: restore needs <space> and <app>
 
 see 'devctl restore --help' for usage
 ```
@@ -175,22 +180,23 @@ plainly the other program's and not devctl's.
 Command:
 
 ```
-$ devctl --account 602773793009 restore foo.sbx.ikigenba.dev crm
+$ devctl restore sbx1 crm
 ```
 
 Output:
 
 ```
-devctl: restore: ssh ec2-user@3.19.79.227 sudo opsctl restore crm: exit status 1
+devctl: restore: ssh ec2-user@18.118.7.42 sudo opsctl restore crm: exit status 1
 
-> opsctl: no backups for crm under s3://sbx-ikigenba-dev-602773793009/foo.sbx.ikigenba.dev/
+> opsctl: no backups for crm under s3://ikigenba.dev/sbx1/
 ```
 
 Exits 1. The text is on stderr; stdout is empty.
 
 Preconditions:
 
-- A live SSO session for the profile named by `--account`.
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
 - The space exists, its instance is `running`, and `opsctl` is installed on
   it.
 - The developer's ssh configuration can reach the instance as `ec2-user`.

@@ -1,7 +1,28 @@
 # Stories — bootstrap
 
-Running devctl at all: help, version, the account option, exit codes, and the
-refusal to run as root. Every later group adds a command to this frame.
+Running devctl at all: help, version, exit codes, the refusal to run as root,
+and the one file every cloud command reads. Every later group adds a command
+to this frame.
+
+devctl has no configuration of its own. The platform has one root domain in
+one AWS account, and the checkout states it once, in
+`infra/terraform.tfvars.json`, the same file Terraform reads:
+
+```json
+{
+  "domain": "ikigenba.dev",
+  "region": "us-east-2"
+}
+```
+
+Every command that touches AWS or a host finds the checkout it is run inside,
+reads that file, and takes everything from it: `domain` is the root under
+which every space lives and the name of the AWS shared-config profile devctl
+acts through, and `region` is where everything is. No profile name and no
+account id is written anywhere in devctl; the account is whatever that profile
+reaches, and devctl learns its id by asking. `help`, `version`, and `build`
+do not read the file. Nothing is kept on the developer's machine between
+runs; the checkout and the cloud are the only state.
 
 ## A developer asks devctl what it can do
 
@@ -21,7 +42,7 @@ Output:
 ```
 Usage: devctl [options] <command> [arguments]
 
-Manage the ikigenba platform from the developer's machine. Never run as root.
+Manage the platform from the developer's machine. Never run as root.
 
 Commands:
   version   print the version
@@ -29,7 +50,6 @@ Commands:
 Options:
   --help              print this help
   --version           print the version
-  --account <name>    AWS shared-config profile to act in
 
 Exit codes:
   0  success
@@ -73,69 +93,6 @@ v0.1.0
 ```
 
 Exits 0. The line is on stdout; stderr is empty.
-
-Preconditions:
-
-- `bin/devctl` exists.
-
-Postconditions:
-
-- Nothing has changed.
-
-## A developer names the account a command acts in
-
-Every command that touches AWS acts in exactly one account. The developer
-names it with `--account <name>`, where `<name>` is an AWS shared-config
-profile; for this project that is the account id, `602773793009` or
-`295229566359`. Nothing is derived from the name; devctl hands it to the AWS
-SDK's shared-config loader and nothing more. This group declares and parses
-the option; the commands in later groups read it. Here it is given to
-`version`, which ignores it.
-
-Command:
-
-```
-$ devctl --account 602773793009 version
-```
-
-Output:
-
-```
-v0.1.0
-```
-
-Exits 0. The line is on stdout; stderr is empty.
-
-Preconditions:
-
-- `bin/devctl` exists.
-
-Postconditions:
-
-- Nothing has changed. No AWS call was made; the profile name was accepted,
-  not checked.
-
-## A developer gives the account option no value
-
-Command:
-
-```
-$ devctl --account version
-```
-
-```
-$ devctl --account= version
-```
-
-Output:
-
-```
-devctl: option '--account' requires a value
-
-see 'devctl --help' for usage
-```
-
-Exits 2. The text is on stderr; stdout is empty.
 
 Preconditions:
 
@@ -265,3 +222,90 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
+
+## A developer runs a cloud command outside the checkout
+
+Every command that touches AWS needs the root, and the root is in the
+checkout. Outside one there is nothing to read, so the command stops before
+it opens a connection to anything. `space list` stands here for every such
+command; the refusal is the same for all of them.
+
+Command:
+
+```
+$ cd /home/me && devctl space list
+```
+
+Output:
+
+```
+devctl: '/home/me' is not inside a git checkout
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- `bin/devctl` exists.
+- `/home/me` is not inside a git working tree.
+
+Postconditions:
+
+- Nothing has changed. No AWS call was made.
+
+## A developer runs a cloud command in a checkout that has no root file
+
+Command:
+
+```
+$ devctl space list
+```
+
+Output:
+
+```
+devctl: no infra/terraform.tfvars.json in the checkout
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The working directory is inside a git checkout, and
+  `infra/terraform.tfvars.json` does not exist at that checkout's top level.
+
+Postconditions:
+
+- Nothing has changed. No AWS call was made.
+
+## A developer runs a cloud command when the root file is malformed
+
+The file is Terraform's and a hand edit can break it. A file that is not a
+JSON object, or one missing either of its two keys, or one whose value is not
+a string, is refused with what is wrong.
+
+Command:
+
+```
+$ devctl space list
+```
+
+Output:
+
+```
+devctl: infra/terraform.tfvars.json: missing 'region'
+```
+
+Exits 2. The line is on stderr; stdout is empty. A file that is not JSON says
+`devctl: infra/terraform.tfvars.json: not a JSON object`, and a key of the
+wrong type says `devctl: infra/terraform.tfvars.json: 'domain' is not a
+string`, also exit 2.
+
+Preconditions:
+
+- The working directory is inside a git checkout whose
+  `infra/terraform.tfvars.json` is `{"domain": "ikigenba.dev"}`.
+
+Postconditions:
+
+- Nothing has changed. No AWS call was made.
