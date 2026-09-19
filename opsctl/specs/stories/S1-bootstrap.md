@@ -11,8 +11,11 @@ the platform and knows nothing about any other host.
 opsctl is read by an agent over ssh far more often than by a person. stdout
 carries only the answer — a value, a list, a checklist line per step — with no
 decoration, colour, or progress output. Every diagnostic goes to stderr as
-`opsctl: <message>`, and any further detail follows after one blank line,
-unprefixed. The usage text is never written to stderr.
+`opsctl: <message>`, and any further detail follows after exactly one blank
+line. Another program's output is quoted there with every line prefixed `> `,
+so a reader can see at a glance which program is speaking; detail opsctl
+writes itself, such as the next command to run, is unprefixed. The usage text
+is never written to stderr.
 
 Each group states the line it adds to the top-level usage text under
 `Commands:`; bootstrap carries the frame with `version` alone. Each also

@@ -703,8 +703,9 @@ share/ is touched.
 
 SERVICE's unit is stopped for the restore and started again after it, and so is
 litestream.service, because the files step deletes the database both of them
-hold open. A restore is a brief outage. A unit that was already stopped is left
-stopped, and a failed restore leaves both stopped.
+hold open. A restore is a brief outage. An app already stopped is left stopped,
+unless an earlier failed restore stopped it: a successful retry on the same
+running host starts it again. A failed restore leaves both stopped.
 
 Before litestream.service comes back, /etc/litestream.yml is regenerated from
 the manifest the restore put in place, so a database restored into a host that
@@ -721,6 +722,9 @@ database is replicated continuously.
 Configuration keys:
   aws.region      the region the backup bucket lives in
   backup.s3_uri   the prefix this host backs up to
+  host.name       the fully-qualified name this host answers at
+  backup.service_db_seconds  how often a declared database is snapshotted whole
+  backup.service_wal_seconds  how often a declared database's committed changes are shipped
 ```
 
 Exits 0. The text is on stdout; stderr is empty. It prints for any user.
@@ -942,6 +946,54 @@ Postconditions:
   inactive and was never started. `litestream.service` is running again.
 - No unit was enabled or disabled. Whether `crm` comes up at the next boot is
   what it was before the restore.
+
+## An operator retries a restore that failed
+
+`crm` was running when the operator first ran the restore. That attempt stopped
+it and litestream, put the files in place, and then failed at `db` — no
+snapshot under the prefix, the shape the "files but no database" story below
+shows — and left both units stopped. The operator puts the cause right, or the
+replica appears, and runs the same command again on the same running host. The
+retry finds `ikigenba-crm.service` inactive, but the operator did not stop it:
+the earlier failed restore did, so once the restore succeeds the retry starts it
+again and the outage the first attempt began ends here.
+
+Command:
+
+```
+$ sudo opsctl restore crm
+```
+
+Output:
+
+```
+source: ok (crm/2026-09-12T03:00:04Z.tar.zst, 1.2 MiB)
+stop: ok (litestream.service, ikigenba-crm.service already inactive)
+files: ok (/opt/crm/etc, /opt/crm/state, 12 files)
+db: ok (/opt/crm/state/crm.db, newest 2026-09-12T09:07:11Z)
+litestream: ok (unchanged)
+start: ok (litestream.service, ikigenba-crm.service)
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- The previous restore of `crm` on this boot failed after stopping
+  `ikigenba-crm.service`, which was active before it. Nothing has restarted
+  the host since.
+- Whatever made it fail has been put right: litestream's objects for `crm`
+  are now under `<backup.s3_uri>crm/`.
+
+Postconditions:
+
+- Everything the ordinary restore's postconditions say: `crm` is active again
+  and `litestream.service` is running, replicating the restored database.
+- A unit the operator had stopped on purpose before the first attempt would
+  instead have been left inactive, as in the previous story: the retry starts
+  only what a restore stopped.
+- No unit was enabled or disabled. After a reboot the enabled unit comes up on
+  its own, so a retry then finds it active and treats it as the ordinary case.
 
 ## An operator restores a service with no backups
 

@@ -376,7 +376,7 @@ Postconditions:
 
 Every 443 block names the host's certificate, so a host with none has a
 configuration nginx will refuse. The refusal is nginx's, and its output
-follows the diagnostic.
+follows the diagnostic, quoted line by line.
 
 Command:
 
@@ -389,8 +389,8 @@ Output:
 ```
 opsctl: nginx -t: exit status 1
 
-nginx: [emerg] cannot load certificate "/etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem": BIO_new_file() failed
-nginx: configuration file /etc/nginx/nginx.conf test failed
+> nginx: [emerg] cannot load certificate "/etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem": BIO_new_file() failed
+> nginx: configuration file /etc/nginx/nginx.conf test failed
 ```
 
 Exits 1. The text is on stderr; stdout is empty.
