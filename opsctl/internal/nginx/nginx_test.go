@@ -87,33 +87,47 @@ func TestNginxPackageOwnsRenderingWithOnlyApprovedInternalDependencies(t *testin
 	}
 }
 
-// R-55XM-JHTQ
 func TestRenderHasExportedContract(t *testing.T) {
 	t.Parallel()
 	assertRenderSignature(t, nginx.Render)
 }
 
-// R-5D90-U49W
+// R-NOIY-DDHQ
 func TestRenderExactBaseConfigurationWithoutDefault(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	mkdir(t, filepath.Join(root, "opt", "state-only", "state"))
 	writeManifest(t, root, "disabled", "app = \"disabled\"\n")
 
-	got, err := nginx.Render(context.Background(), host.Env{Root: root}, "example.test")
+	got, err := nginx.Render(context.Background(), host.Env{Root: root}, "example.test", "")
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
 	if string(got) != baseWithoutDefault {
 		t.Fatalf("configuration mismatch\ngot:\n%s\nwant:\n%s", got, baseWithoutDefault)
 	}
+
+	apexHostName := "space.example.test"
+	got, err = nginx.Render(context.Background(), host.Env{Root: root}, apexHostName, "missing")
+	if err != nil {
+		t.Fatalf("Render with unrouted apex: %v", err)
+	}
+	want := strings.ReplaceAll(baseWithoutDefault, "example.test", apexHostName)
+	want = strings.Replace(want,
+		"server_name         space.example.test *.space.example.test;",
+		"server_name         space.example.test *.space.example.test example.test;", 1)
+	if string(got) != want {
+		t.Fatalf("configuration with unrouted apex mismatch\ngot:\n%s\nwant:\n%s", got, want)
+	}
 }
 
-// R-5C14-GCJ7
-// R-5EGX-7W0L
+// R-NNB1-ZLR1
+// R-NOIY-DDHQ
+// R-NPQU-R58F
 func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
+	hostName := "space.example.test"
 	writeManifest(t, root, "zeta", "app = \"zeta\"\nport = 9200\n")
 	writeManifest(t, root, "alpha", "app = \"alpha\"\nport = 4100\ndefault = true\n")
 	writeManifest(t, root, "ignored", "app = \"ignored\"\n")
@@ -125,7 +139,7 @@ func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 		return host.Result{}, nil
 	}}
 
-	got, err := nginx.Render(context.Background(), env, "example.test")
+	got, err := nginx.Render(context.Background(), env, hostName, "alpha")
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -136,8 +150,9 @@ func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 		t.Fatalf("Render changed files under root\nbefore: %#v\nafter:  %#v", before, after)
 	}
 
-	want := strings.Replace(baseWithoutDefault, "server_name         example.test *.example.test;", "server_name         *.example.test;", 1) +
-		serviceBlock("alpha", 4100, true) + serviceBlock("zeta", 9200, false)
+	want := strings.ReplaceAll(baseWithoutDefault, "example.test", hostName)
+	want = strings.Replace(want, "server_name         space.example.test *.space.example.test;", "server_name         *.space.example.test;", 1) +
+		serviceBlock("alpha", 4100, true, hostName, "example.test") + serviceBlock("zeta", 9200, false, hostName, "")
 	if string(got) != want {
 		t.Fatalf("configuration mismatch\ngot:\n%s\nwant:\n%s", got, want)
 	}
@@ -148,11 +163,47 @@ func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 	}
 }
 
+// R-NVUC-NZXW
+func TestRenderingOperationsRejectInvalidApexBeforeHostWork(t *testing.T) {
+	t.Parallel()
+	hostName := "localhost"
+	apexApp := "alpha"
+	_, apexErr := host.Apex(hostName)
+	if apexErr == nil {
+		t.Fatalf("host.Apex(%q) succeeded", hostName)
+	}
+
+	missingRoot := filepath.Join(t.TempDir(), "missing")
+	executions := 0
+	env := host.Env{Root: missingRoot, Execute: func(context.Context, host.Command) (host.Result, error) {
+		executions++
+		return host.Result{}, nil
+	}}
+	candidate, err := nginx.Render(context.Background(), env, hostName, apexApp)
+	if candidate != nil || err == nil || err.Error() != apexErr.Error() {
+		t.Fatalf("Render = (%q, %v), want (nil, %q)", candidate, err, apexErr)
+	}
+	for name, operation := range map[string]func() error{
+		"Apply": func() error { return nginx.Apply(context.Background(), env, hostName, apexApp) },
+		"Write": func() error { return nginx.Write(context.Background(), env, hostName, apexApp) },
+	} {
+		if err := operation(); err == nil || err.Error() != apexErr.Error() {
+			t.Errorf("%s error = %v, want %q", name, err, apexErr)
+		}
+	}
+	if executions != 0 {
+		t.Fatalf("invalid apex executed %d commands", executions)
+	}
+	if _, err := os.Stat(missingRoot); !os.IsNotExist(err) {
+		t.Fatalf("invalid apex changed host state: %v", err)
+	}
+}
+
 func TestRenderReturnsNoCandidateOnDiscoveryFailure(t *testing.T) {
 	// R-G0B8-HTXJ
 	t.Parallel()
 	missingRoot := filepath.Join(t.TempDir(), "missing")
-	got, err := nginx.Render(context.Background(), host.Env{Root: missingRoot}, "example.test")
+	got, err := nginx.Render(context.Background(), host.Env{Root: missingRoot}, "example.test", "")
 	if err == nil || !strings.Contains(err.Error(), "discover services") {
 		t.Fatalf("Render error = %v, want discovery failure", err)
 	}
@@ -185,7 +236,7 @@ func TestRenderRejectsManifestFailuresAndConflictingDefaults(t *testing.T) {
 			got, err := nginx.Render(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
 				executions++
 				return host.Result{}, nil
-			}}, "example.test")
+			}}, "example.test", "")
 			if err == nil {
 				t.Fatal("Render succeeded")
 			}
@@ -239,7 +290,7 @@ func TestApplyPropagatesRenderAndPublicationFailuresWithoutHostWork(t *testing.T
 			err := nginx.Apply(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
 				executions++
 				return host.Result{}, nil
-			}}, "example.test")
+			}}, "example.test", "")
 			if err == nil {
 				t.Fatal("Apply succeeded")
 			}
@@ -263,7 +314,7 @@ func TestApplyPropagatesRenderAndPublicationFailuresWithoutHostWork(t *testing.T
 		err := nginx.Apply(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
 			executions++
 			return host.Result{}, nil
-		}}, "example.test")
+		}}, "example.test", "")
 		if err == nil || !strings.Contains(err.Error(), "discover services") || executions != 0 {
 			t.Fatalf("Apply error = %v, executions = %d", err, executions)
 		}
@@ -279,7 +330,7 @@ func TestApplyPropagatesRenderAndPublicationFailuresWithoutHostWork(t *testing.T
 		err := nginx.Apply(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
 			executions++
 			return host.Result{}, nil
-		}}, "example.test")
+		}}, "example.test", "")
 		if err == nil || !strings.Contains(err.Error(), "publish nginx configuration") || executions != 0 {
 			t.Fatalf("Apply error = %v, executions = %d", err, executions)
 		}
@@ -302,7 +353,7 @@ func TestApplyPropagatesRenderAndPublicationFailuresWithoutHostWork(t *testing.T
 		err := nginx.Apply(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
 			executions++
 			return host.Result{}, nil
-		}}, strings.Repeat("h", 8<<20))
+		}}, strings.Repeat("h", 8<<20), "")
 		if injectErr := <-injectedFailure; injectErr != nil {
 			t.Fatalf("inject publication failure: %v", injectErr)
 		}
@@ -323,7 +374,7 @@ func TestApplyRejectsMissingExecutionDependencyWithoutPublishing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := nginx.Apply(context.Background(), host.Env{Root: root}, "example.test")
+	err := nginx.Apply(context.Background(), host.Env{Root: root}, "example.test", "")
 	if err == nil || err.Error() != "apply nginx configuration: host execution is not configured" {
 		t.Fatalf("Apply error = %v", err)
 	}
@@ -354,9 +405,9 @@ func TestWritePublishesExactConfigurationWithoutCommands(t *testing.T) {
 		return host.Result{}, nil
 	}}
 
-	want := []byte(baseWithoutDefault + serviceBlock("service", 4100, false))
+	want := []byte(baseWithoutDefault + serviceBlock("service", 4100, false, "example.test", ""))
 	createdTemporary := observeNextTemporaryConfiguration(t, configurationDirectory, nil)
-	if err := nginx.Write(context.Background(), env, "example.test"); err != nil {
+	if err := nginx.Write(context.Background(), env, "example.test", ""); err != nil {
 		t.Fatalf("Write call 1: %v", err)
 	}
 	if err := <-createdTemporary; err != nil {
@@ -373,7 +424,7 @@ func TestWritePublishesExactConfigurationWithoutCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	createdTemporary = observeNextTemporaryConfiguration(t, configurationDirectory, nil)
-	if err := nginx.Write(context.Background(), env, "example.test"); err != nil {
+	if err := nginx.Write(context.Background(), env, "example.test", ""); err != nil {
 		t.Fatalf("Write call 2: %v", err)
 	}
 	if err := <-createdTemporary; err != nil {
@@ -413,7 +464,7 @@ func TestWriteFailuresPreserveHostStateAndCleanTemporaryFiles(t *testing.T) {
 		err := nginx.Write(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
 			executions++
 			return host.Result{}, nil
-		}}, "example.test")
+		}}, "example.test", "")
 		if err == nil || !strings.Contains(err.Error(), "broken") {
 			t.Fatalf("Write error = %v, want malformed service", err)
 		}
@@ -445,7 +496,7 @@ func TestWriteFailuresPreserveHostStateAndCleanTemporaryFiles(t *testing.T) {
 		err := nginx.Write(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
 			t.Fatal("Write executed a command")
 			return host.Result{}, nil
-		}}, hostName)
+		}}, hostName, "")
 		if injectErr := <-injectedFailure; injectErr != nil {
 			t.Fatalf("inject publication failure: %v", injectErr)
 		}
@@ -504,7 +555,7 @@ func TestWriteFailuresPreserveHostStateAndCleanTemporaryFiles(t *testing.T) {
 		err := nginx.Write(context.Background(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
 			t.Fatal("Write executed a command")
 			return host.Result{}, nil
-		}}, hostName)
+		}}, hostName, "")
 		if injectErr := <-injectedFailure; injectErr != nil {
 			t.Fatalf("inject publication failure: %v", injectErr)
 		}
@@ -519,7 +570,7 @@ func TestWriteFailuresPreserveHostStateAndCleanTemporaryFiles(t *testing.T) {
 
 	t.Run("discovery failure", func(t *testing.T) {
 		root := filepath.Join(t.TempDir(), "missing")
-		err := nginx.Write(context.Background(), host.Env{Root: root}, "example.test")
+		err := nginx.Write(context.Background(), host.Env{Root: root}, "example.test", "")
 		if err == nil || !strings.Contains(err.Error(), "discover services") {
 			t.Fatalf("Write error = %v, want discovery failure", err)
 		}
@@ -535,7 +586,7 @@ func TestWriteFailuresPreserveHostStateAndCleanTemporaryFiles(t *testing.T) {
 		writeManifest(t, root, "alpha", "app = \"alpha\"\nport = 4100\ndefault = true\n")
 		writeManifest(t, root, "zeta", "app = \"zeta\"\nport = 9200\ndefault = true\n")
 		before := snapshotTree(t, root)
-		err := nginx.Write(context.Background(), host.Env{Root: root}, "example.test")
+		err := nginx.Write(context.Background(), host.Env{Root: root}, "example.test", "")
 		if err == nil || !strings.Contains(err.Error(), "conflicting default services") {
 			t.Fatalf("Write error = %v, want conflicting defaults", err)
 		}
@@ -555,7 +606,7 @@ func TestApplyPublishesTestsAndReloadsOnEveryCall(t *testing.T) {
 	seedNginxSentinels(t, root)
 	writeManifest(t, root, "service", "app = \"service\"\nport = 4100\n")
 	before := snapshotUnrelatedNginxFiles(t, root)
-	want := []byte(baseWithoutDefault + serviceBlock("service", 4100, false))
+	want := []byte(baseWithoutDefault + serviceBlock("service", 4100, false, "example.test", ""))
 	var commands []host.Command
 	var publicationFiles []*os.File
 	env := host.Env{Root: root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
@@ -576,7 +627,7 @@ func TestApplyPublishesTestsAndReloadsOnEveryCall(t *testing.T) {
 
 	for call := 1; call <= 2; call++ {
 		createdTemporary := observeNextTemporaryConfiguration(t, configurationDirectory, nil)
-		if err := nginx.Apply(context.Background(), env, "example.test"); err != nil {
+		if err := nginx.Apply(context.Background(), env, "example.test", ""); err != nil {
 			t.Fatalf("Apply call %d: %v", call, err)
 		}
 		if err := <-createdTemporary; err != nil {
@@ -643,7 +694,7 @@ func TestApplyRestoresPreviousConfigurationWhenNginxTestFails(t *testing.T) {
 				return host.Result{ExitCode: test.exitCode, Stdout: []byte("test output")}, test.executionErr
 			}}
 
-			err := nginx.Apply(context.Background(), env, "example.test")
+			err := nginx.Apply(context.Background(), env, "example.test", "")
 			if err == nil {
 				t.Fatal("Apply succeeded")
 			}
@@ -681,7 +732,7 @@ func TestApplyReturnsCommandErrorsAndReportsRestorationFailure(t *testing.T) {
 			}
 			t.Fatalf("unexpected command: %#v", command)
 			return host.Result{}, nil
-		}}, "example.test")
+		}}, "example.test", "")
 		var commandErr *host.CommandError
 		if !errors.As(err, &commandErr) {
 			t.Fatalf("error = %T %v, want CommandError", err, err)
@@ -703,7 +754,7 @@ func TestApplyReturnsCommandErrorsAndReportsRestorationFailure(t *testing.T) {
 				t.Fatal(writeErr)
 			}
 			return host.Result{ExitCode: 7, Stderr: []byte("invalid configuration")}, nil
-		}}, "example.test")
+		}}, "example.test", "")
 		var commandErr *host.CommandError
 		if !errors.As(err, &commandErr) || commandErr.Label != "nginx -t" || commandErr.Result.ExitCode != 7 {
 			t.Fatalf("error = %#v, want nginx CommandError", err)
@@ -731,7 +782,7 @@ func TestApplyPreservesExistingCommandErrorIdentity(t *testing.T) {
 			env := host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
 				return returned, existing
 			}}
-			err := nginx.Apply(context.Background(), env, "example.test")
+			err := nginx.Apply(context.Background(), env, "example.test", "")
 			var got *host.CommandError
 			if !errors.As(err, &got) || got != existing {
 				t.Fatalf("error = %#v, want original CommandError %#v", err, existing)
@@ -752,11 +803,11 @@ func filesDeclareFunction(files []*ast.File, name string) bool {
 	return false
 }
 
-func assertRenderSignature(t *testing.T, _ func(context.Context, host.Env, string) ([]byte, error)) {
+func assertRenderSignature(t *testing.T, _ func(context.Context, host.Env, string, string) ([]byte, error)) {
 	t.Helper()
 }
 
-func assertApplySignature(t *testing.T, _ func(context.Context, host.Env, string) error) {
+func assertApplySignature(t *testing.T, _ func(context.Context, host.Env, string, string) error) {
 	t.Helper()
 }
 
@@ -818,16 +869,19 @@ func openPublishedConfiguration(directory string) (*os.File, error) {
 	return file, nil
 }
 
-func serviceBlock(name string, port int, defaultService bool) string {
-	serverNames := name + ".example.test"
+func serviceBlock(name string, port int, defaultService bool, hostName, apexName string) string {
+	serverNames := name + "." + hostName
 	if defaultService {
-		serverNames += " example.test"
+		serverNames += " " + hostName
+	}
+	if apexName != "" {
+		serverNames += " " + apexName
 	}
 	return "\nserver {\n" +
 		"    listen              443 ssl;\n" +
 		"    server_name         " + serverNames + ";\n" +
-		"    ssl_certificate     /etc/letsencrypt/live/example.test/fullchain.pem;\n" +
-		"    ssl_certificate_key /etc/letsencrypt/live/example.test/privkey.pem;\n\n" +
+		"    ssl_certificate     /etc/letsencrypt/live/" + hostName + "/fullchain.pem;\n" +
+		"    ssl_certificate_key /etc/letsencrypt/live/" + hostName + "/privkey.pem;\n\n" +
 		"    include /opt/" + name + "/etc/nginx.conf*;\n\n" +
 		"    location / {\n" +
 		"        proxy_pass       http://127.0.0.1:" + strconv.Itoa(port) + ";\n" +

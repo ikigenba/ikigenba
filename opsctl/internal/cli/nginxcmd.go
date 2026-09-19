@@ -69,7 +69,7 @@ func parseNginxInvocation(args []string, stdout, stderr io.Writer, deps Deps) ng
 
 func executeNginx(subcommand string, stdout, stderr io.Writer, env host.Env, hostName string) exitCode {
 	if subcommand == "show" {
-		candidate, err := nginx.Render(context.Background(), env, hostName)
+		candidate, err := nginx.Render(context.Background(), env, hostName, "")
 		if err != nil {
 			writeDiagnostic(stderr, err)
 			return exitFail
@@ -79,7 +79,7 @@ func executeNginx(subcommand string, stdout, stderr io.Writer, env host.Env, hos
 		}
 		return exitOK
 	}
-	if err := nginx.Apply(context.Background(), env, hostName); err != nil {
+	if err := nginx.Apply(context.Background(), env, hostName, ""); err != nil {
 		writeDiagnostic(stderr, err)
 		return exitFail
 	}
