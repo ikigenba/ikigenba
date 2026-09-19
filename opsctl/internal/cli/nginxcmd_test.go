@@ -202,6 +202,8 @@ func TestNginxConfigurationReadFailureIsDiagnosticAndReadOnly(t *testing.T) {
 }
 
 func TestNginxShowPrintsRenderedConfiguration(t *testing.T) {
+	// R-5H6Q-PYQB
+	// R-O1UL-2JBJ
 	// R-O32H-GB28
 	root := configuredNginxRoot(t)
 	writeNginxManifest(t, root, "api", "app = \"api\"\nport = 8123\ndefault = true\n")
@@ -220,6 +222,7 @@ func TestNginxShowPrintsRenderedConfiguration(t *testing.T) {
 }
 
 func TestNginxApplyUsesHostEnvironmentAndSuppressesSuccessOutput(t *testing.T) {
+	// R-O1UL-2JBJ
 	// R-O4AD-U2SX
 	root := t.TempDir()
 	store := config.Store{Root: root}
@@ -338,6 +341,7 @@ func TestNginxRejectsApexWithoutParentBeforeDomainWork(t *testing.T) {
 
 func TestNginxExternalFailuresUseCommandDiagnostics(t *testing.T) {
 	// R-2P2U-ULPL
+	// R-O4AD-U2SX
 	for _, test := range []struct {
 		name        string
 		failCommand string
@@ -369,6 +373,8 @@ func TestNginxExternalFailuresUseCommandDiagnostics(t *testing.T) {
 func TestNginxStandaloneRenderAndApplyFailures(t *testing.T) {
 	// R-G0B8-HTXJ
 	// R-G1J4-VLO8
+	// R-O32H-GB28
+	// R-O4AD-U2SX
 	tests := []struct {
 		name    string
 		command string
