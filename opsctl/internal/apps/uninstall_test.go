@@ -82,6 +82,32 @@ func TestUninstallRejectsEveryMissingPrerequisiteBeforeEffects(t *testing.T) {
 	}
 }
 
+func TestUninstallRejectsUnreadableManifestBeforeEffects(t *testing.T) {
+	// R-X4BC-FMS3
+	fixture := newUninstallFixture(t, "active")
+	manifest := filepath.Join(fixture.root, "opt/notes/etc/manifest.toml")
+	if err := os.Chmod(manifest, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(manifest, 0o600) })
+
+	err := fixture.uninstall()
+	var failure *apps.LifecycleError
+	if !errors.As(err, &failure) || len(fixture.commands) != 0 ||
+		!reflect.DeepEqual(fixture.reports, []uninstallReport{{"stop", "read installed manifest failed", false}}) ||
+		fixture.configureCalls != 0 {
+		t.Fatalf("Uninstall = %#v, commands = %#v, reports = %#v, configure calls = %d", err, fixture.commands, fixture.reports, fixture.configureCalls)
+	}
+	if info, statErr := os.Stat(manifest); statErr != nil || info.Mode().Perm() != 0 {
+		t.Fatalf("manifest mode after rejection = %v, %v", info, statErr)
+	}
+	for _, name := range []string{"opt/notes/bin/notes", "opt/notes/share/asset", "opt/notes/cache/item", "etc/systemd/system/ikigenba-notes.service"} {
+		if _, statErr := os.Lstat(filepath.Join(fixture.root, filepath.FromSlash(name))); statErr != nil {
+			t.Errorf("prerequisite rejection changed %s: %v", name, statErr)
+		}
+	}
+}
+
 func TestUninstallActionAndReportFailuresAreJoined(t *testing.T) {
 	// R-GWME-QK2L
 	// R-ETFY-8BTG R-EVVQ-ZVAU R-EX3N-DN1J

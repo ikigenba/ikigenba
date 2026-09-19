@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
@@ -238,6 +239,75 @@ func TestUninstallValidationPrecedesOwnedStopStage(t *testing.T) {
 	}})
 	if code != 0 || stdout != "service: ok (notes v2.3.4 active)\n" || stderr != "" || len(restartCommands) != 3 {
 		t.Fatalf("restart workflow = exit %d stdout %q stderr %q commands %#v", code, stdout, stderr, restartCommands)
+	}
+}
+
+func TestUninstallRejectsHostNameThatNormalizesEmpty(t *testing.T) {
+	// R-X4BC-FMS3
+	root := uninstallCommandRoot(t, true)
+	if err := (config.Store{Root: root}).Set("host.name", "."); err != nil {
+		t.Fatal(err)
+	}
+	executed := false
+	stdout, stderr, code := invoke([]string{"uninstall", "notes"}, cli.Deps{Root: root, EUID: 0, Execute: func(context.Context, host.Command) (host.Result, error) {
+		executed = true
+		return host.Result{}, nil
+	}})
+	if code != 1 || stdout != "" || stderr != "opsctl: host.name not set\n" || executed {
+		t.Fatalf("uninstall = exit %d stdout %q stderr %q executed %t", code, stdout, stderr, executed)
+	}
+}
+
+func TestUninstallRejectsApexReadFailureBeforeEffects(t *testing.T) {
+	// R-X4BC-FMS3
+	root := uninstallCommandRoot(t, true)
+	configFile := filepath.Join(root, "etc/ikigenba/config.json")
+	if err := os.Remove(configFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(configFile, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	filesystem, err := os.OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = filesystem.Close() })
+	writeDone := make(chan error, 1)
+	go func() {
+		for _, contents := range []string{`{"host.name":"example.test"}`, `{`} {
+			file, err := filesystem.OpenFile("etc/ikigenba/config.json", os.O_WRONLY, 0)
+			if err == nil {
+				_, err = file.WriteString(contents)
+				closeErr := file.Close()
+				if err == nil {
+					err = closeErr
+				}
+			}
+			if err != nil {
+				writeDone <- err
+				return
+			}
+		}
+		writeDone <- nil
+	}()
+
+	before := snapshotUninstallPaths(t, root, "opt/notes", "etc/systemd/system/ikigenba-notes.service", "etc/nginx/conf.d/ikigenba.conf", "etc/litestream.yml")
+	executed := false
+	stdout, stderr, code := invoke([]string{"uninstall", "notes"}, cli.Deps{Root: root, EUID: 0, Execute: func(context.Context, host.Command) (host.Result, error) {
+		executed = true
+		return host.Result{}, nil
+	}})
+	if err := <-writeDone; err != nil {
+		t.Fatal(err)
+	}
+	wantStderr := "opsctl: " + configFile + " is corrupt\n"
+	if code != 1 || stdout != "" || stderr != wantStderr || executed {
+		t.Fatalf("uninstall = exit %d stdout %q stderr %q executed %t", code, stdout, stderr, executed)
+	}
+	after := snapshotUninstallPaths(t, root, "opt/notes", "etc/systemd/system/ikigenba-notes.service", "etc/nginx/conf.d/ikigenba.conf", "etc/litestream.yml")
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("host state changed:\nbefore %#v\nafter  %#v", before, after)
 	}
 }
 
