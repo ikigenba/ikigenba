@@ -12,6 +12,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
 	"github.com/ikigenba/ikigenba/opsctl/internal/backup"
@@ -168,6 +169,62 @@ func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
 	}
 }
 
+func TestUninstallReportsAllLitestreamConfigurationOutcomes(t *testing.T) {
+	// R-X6R5-769H
+	for _, test := range []struct {
+		name        string
+		prepare     func(*testing.T, string)
+		wantDetail  string
+		wantRestart int
+	}{
+		{
+			name: "changed configuration without removed database",
+			prepare: func(t *testing.T, root string) {
+				writeUninstallFile(t, root, "opt/notes/etc/manifest.toml", "app = \"notes\"\nport = 8080\ndefault = true\n")
+			},
+			wantDetail:  "updated",
+			wantRestart: 1,
+		},
+		{
+			name: "unchanged configuration",
+			prepare: func(t *testing.T, root string) {
+				manifest := readUninstallFile(t, root, "opt/notes/etc/manifest.toml")
+				if err := os.Remove(filepath.Join(root, "opt/notes/etc/manifest.toml")); err != nil {
+					t.Fatal(err)
+				}
+				changed, err := backup.Regenerate(context.Background(), host.Env{Root: root}, config.Store{Root: root})
+				if err != nil || !changed {
+					t.Fatalf("prepare remaining Litestream configuration = %t, %v, want changed success", changed, err)
+				}
+				writeUninstallFile(t, root, "opt/notes/etc/manifest.toml", manifest)
+			},
+			wantDetail: "unchanged",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := uninstallCommandRoot(t, true)
+			test.prepare(t, root)
+			restarts := 0
+			stdout, stderr, code := invoke([]string{"uninstall", "notes"}, cli.Deps{Root: root, EUID: 0, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+				switch {
+				case reflect.DeepEqual(command.Args, []string{"is-active", "ikigenba-notes.service"}):
+					return host.Result{Stdout: []byte("inactive\n"), ExitCode: 3}, nil
+				case reflect.DeepEqual(command.Args, []string{"restart", "litestream.service"}):
+					restarts++
+				}
+				return host.Result{}, nil
+			}})
+			wantOutcome := "litestream: ok (" + test.wantDetail + ")\n"
+			if code != 0 || stderr != "" || !strings.HasSuffix(stdout, wantOutcome) {
+				t.Fatalf("uninstall = exit %d stdout %q stderr %q, want final outcome %q", code, stdout, stderr, wantOutcome)
+			}
+			if restarts != test.wantRestart {
+				t.Fatalf("Litestream restarts = %d, want %d", restarts, test.wantRestart)
+			}
+		})
+	}
+}
+
 func TestUninstallValidationPrecedesOwnedStopStage(t *testing.T) {
 	// R-LZMM-7IEW R-EX3N-DN1J R-X4BC-FMS3
 	for _, test := range []struct {
@@ -275,7 +332,7 @@ func TestUninstallRejectsApexReadFailureBeforeEffects(t *testing.T) {
 	t.Cleanup(func() { _ = filesystem.Close() })
 	writeDone := make(chan error, 1)
 	go func() {
-		for _, contents := range []string{`{"host.name":"example.test"}`, `{`} {
+		for index, contents := range []string{`{"host.name":"example.test"}`, `{`} {
 			file, err := filesystem.OpenFile("etc/ikigenba/config.json", os.O_WRONLY, 0)
 			if err == nil {
 				_, err = file.WriteString(contents)
@@ -287,6 +344,12 @@ func TestUninstallRejectsApexReadFailureBeforeEffects(t *testing.T) {
 			if err != nil {
 				writeDone <- err
 				return
+			}
+			if index == 0 {
+				if err := waitForUninstallConfigReaderClose(configFile); err != nil {
+					writeDone <- err
+					return
+				}
 			}
 		}
 		writeDone <- nil
@@ -309,6 +372,33 @@ func TestUninstallRejectsApexReadFailureBeforeEffects(t *testing.T) {
 	if !reflect.DeepEqual(after, before) {
 		t.Fatalf("host state changed:\nbefore %#v\nafter  %#v", before, after)
 	}
+}
+
+func waitForUninstallConfigReaderClose(name string) error {
+	target, err := os.Stat(name)
+	if err != nil {
+		return err
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		entries, err := os.ReadDir("/proc/self/fd")
+		if err != nil {
+			return err
+		}
+		open := false
+		for _, entry := range entries {
+			info, err := os.Stat(filepath.Join("/proc/self/fd", entry.Name()))
+			if err == nil && os.SameFile(target, info) {
+				open = true
+				break
+			}
+		}
+		if !open {
+			return nil
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return errors.New("timed out waiting for first config read to finish")
 }
 
 func TestUninstallNormalizesHostAndPreservesApexConfiguration(t *testing.T) {
