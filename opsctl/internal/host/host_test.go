@@ -58,6 +58,50 @@ func TestCommandError(t *testing.T) {
 	}
 }
 
+func TestApex(t *testing.T) {
+	// R-DGJQ-6ZMX R-DHRM-KRDM R-O0MO-ORKU
+	for _, test := range []struct {
+		name string
+		want string
+	}{
+		{name: "sbx.ikigenba.dev", want: "ikigenba.dev"},
+		{name: "a.b.c.d", want: "b.c.d"},
+		{name: "SBX.Ikigenba.dev", want: "Ikigenba.dev"},
+	} {
+		got, err := host.Apex(test.name)
+		if err != nil || got != test.want {
+			t.Errorf("Apex(%q) = %q, %v; want %q, nil", test.name, got, err, test.want)
+		}
+	}
+
+	for _, name := range []string{"", "localhost", "ikigenba.dev", ".a.b", "a..b", "a.b."} {
+		got, err := host.Apex(name)
+		wantErr := "host.apex is set but host.name '" + name + "' has no parent domain"
+		if got != "" || err == nil || err.Error() != wantErr {
+			t.Errorf("Apex(%q) = %q, %v; want empty result and %q", name, got, err, wantErr)
+		}
+	}
+}
+
+func TestNormalizeName(t *testing.T) {
+	// R-NWYZ-JGCR R-NY6V-X83G
+	for _, test := range []struct {
+		name string
+		want string
+	}{
+		{name: "SBX.Ikigenba.dev.", want: "sbx.ikigenba.dev"},
+		{name: "a.b..", want: "a.b."},
+		{name: "", want: ""},
+		{name: " A.B. ", want: " a.b. "},
+		{name: ".A..B", want: ".a..b"},
+		{name: "\u00c4.\u0130.\uff21.", want: "\u00c4.\u0130.\uff21"},
+	} {
+		if got := host.NormalizeName(test.name); got != test.want {
+			t.Errorf("NormalizeName(%q) = %q, want %q", test.name, got, test.want)
+		}
+	}
+}
+
 func TestExecDirectProcess(t *testing.T) {
 	// R-5LFH-HU7S
 	executable, err := os.Executable()
