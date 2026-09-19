@@ -25,8 +25,17 @@ func TestDatabaseFiles(t *testing.T) {
 }
 
 func TestRegenerateRendersDiscoveredDatabases(t *testing.T) {
-	// R-JKH0-KRY9 R-JPCM-3UX1 R-MKUD-39PW
+	// R-JKH0-KRY9 R-JPCM-3UX1 R-LEL8-NRBG
 	root, store := regenerationFixture(t)
+	for key, value := range map[string]string{
+		"backup.s3_uri":              "s3://backups.example/hosts/example/",
+		"backup.service_db_seconds":  "1",
+		"backup.service_wal_seconds": "1",
+	} {
+		if err := store.Set(key, value); err != nil {
+			t.Fatalf("Set(%q): %v", key, err)
+		}
+	}
 	writeService(t, root, "zeta", "app = \"zeta\"\nport = 9000\n[database]\nengine = \"sqlite\"\npath = \"state/zeta.db\"\n")
 	writeService(t, root, "empty", "app = \"empty\"\n")
 	writeService(t, root, "alpha", "[database]\nengine = \"sqlite\"\npath = \"state/nested/alpha.db\"\n")
@@ -39,15 +48,15 @@ func TestRegenerateRendersDiscoveredDatabases(t *testing.T) {
 		t.Fatalf("Regenerate() = %v, %v, want true, nil", changed, err)
 	}
 	want := "region: 'us-west-2'\n" +
-		"snapshot:\n  interval: 3600s\n" +
-		"sync-interval: 5s\n" +
+		"snapshot:\n  interval: 1s\n" +
+		"sync-interval: 1s\n" +
 		"socket:\n  enabled: true\n  path: '" + filepath.ToSlash(filepath.Join(root, "var/run/litestream.sock")) + "'\n  permissions: 0600\n" +
 		"retention:\n  enabled: false\n" +
 		"dbs:\n" +
 		"  - path: '" + filepath.ToSlash(filepath.Join(root, "opt/alpha/state/nested/alpha.db")) + "'\n" +
-		"    replicas:\n      - url: 's3://backups/hosts/example/alpha/'\n" +
+		"    replicas:\n      - url: 's3://backups.example/hosts/example/alpha/'\n        force-path-style: true\n" +
 		"  - path: '" + filepath.ToSlash(filepath.Join(root, "opt/zeta/state/zeta.db")) + "'\n" +
-		"    replicas:\n      - url: 's3://backups/hosts/example/zeta/'\n"
+		"    replicas:\n      - url: 's3://backups.example/hosts/example/zeta/'\n        force-path-style: true\n"
 	if got := readLitestream(t, root); got != want {
 		t.Fatalf("litestream.yml =\n%s\nwant:\n%s", got, want)
 	}
@@ -58,6 +67,7 @@ func TestRegenerateRendersDiscoveredDatabases(t *testing.T) {
 }
 
 func TestRegenerateEmptyDatabaseSequence(t *testing.T) {
+	// R-LEL8-NRBG
 	root, store := regenerationFixture(t)
 	writeService(t, root, "notes", "app = \"notes\"\n")
 	if _, err := backup.Regenerate(context.Background(), host.Env{Root: root}, store); err != nil {
@@ -160,7 +170,7 @@ func TestRegenerateAcceptsBucketWithUserinfoOrPort(t *testing.T) {
 				"retention:\n  enabled: false\n" +
 				"dbs:\n" +
 				"  - path: '" + filepath.ToSlash(filepath.Join(root, "opt/notes/state/notes.db")) + "'\n" +
-				"    replicas:\n      - url: '" + prefix + "notes/'\n"
+				"    replicas:\n      - url: '" + prefix + "notes/'\n        force-path-style: true\n"
 			if got := readLitestream(t, root); got != want {
 				t.Fatalf("litestream.yml = %q, want %q", got, want)
 			}
@@ -169,10 +179,12 @@ func TestRegenerateAcceptsBucketWithUserinfoOrPort(t *testing.T) {
 }
 
 func TestRegenerateAcceptsPeriodLimitAndSafeDatabaseOnlyName(t *testing.T) {
-	// R-RSC3-99UG
+	// R-LEL8-NRBG R-RSC3-99UG
 	root, store := regenerationFixture(t)
-	if err := store.Set("backup.service_db_seconds", "9223372036"); err != nil {
-		t.Fatal(err)
+	for _, key := range []string{"backup.service_db_seconds", "backup.service_wal_seconds"} {
+		if err := store.Set(key, "9223372036"); err != nil {
+			t.Fatal(err)
+		}
 	}
 	writeService(t, root, "bad_name", "[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n")
 	changed, err := backup.Regenerate(context.Background(), host.Env{Root: root}, store)
@@ -181,12 +193,12 @@ func TestRegenerateAcceptsPeriodLimitAndSafeDatabaseOnlyName(t *testing.T) {
 	}
 	want := "region: 'us-west-2'\n" +
 		"snapshot:\n  interval: 9223372036s\n" +
-		"sync-interval: 5s\n" +
+		"sync-interval: 9223372036s\n" +
 		"socket:\n  enabled: true\n  path: '" + filepath.ToSlash(filepath.Join(root, "var/run/litestream.sock")) + "'\n  permissions: 0600\n" +
 		"retention:\n  enabled: false\n" +
 		"dbs:\n" +
 		"  - path: '" + filepath.ToSlash(filepath.Join(root, "opt/bad_name/state/app.db")) + "'\n" +
-		"    replicas:\n      - url: 's3://backups/hosts/example/bad_name/'\n"
+		"    replicas:\n      - url: 's3://backups/hosts/example/bad_name/'\n        force-path-style: true\n"
 	if got := readLitestream(t, root); got != want {
 		t.Fatalf("litestream.yml = %q, want %q", got, want)
 	}

@@ -273,7 +273,7 @@ func renderConfiguration(root string, settings replicationSettings, services []d
 		configuration.WriteString(yamlString(databasePath))
 		configuration.WriteString("\n    replicas:\n      - url: ")
 		configuration.WriteString(yamlString(strings.TrimSuffix(settings.prefix, "/") + "/" + service.name + "/"))
-		configuration.WriteByte('\n')
+		configuration.WriteString("\n        force-path-style: true\n")
 	}
 	return []byte(configuration.String())
 }
