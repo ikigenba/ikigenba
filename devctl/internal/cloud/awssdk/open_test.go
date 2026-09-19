@@ -1,6 +1,7 @@
 package awssdk
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -20,6 +21,54 @@ import (
 
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 )
+
+type pathStyleTransport struct{ requests []*http.Request }
+
+func (p *pathStyleTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	p.requests = append(p.requests, request.Clone(request.Context()))
+	body := ""
+	switch request.Method {
+	case http.MethodGet:
+		body = `<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><IsTruncated>false</IsTruncated></ListBucketResult>`
+	case http.MethodPost:
+		body = `<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"/>`
+	}
+	return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: request}, nil
+}
+
+func TestOpenWithLoaderUsesPathStyleS3(t *testing.T) {
+	// R-QIQ0-MU5V
+	transport := &pathStyleTransport{}
+	clients, err := OpenWithLoader(context.Background(), "profile", "region", func(context.Context, string, string) (aws.Config, error) {
+		return aws.Config{Region: "us-test-1", Credentials: aws.CredentialsProviderFunc(func(context.Context) (aws.Credentials, error) {
+			return aws.Credentials{AccessKeyID: "fake", SecretAccessKey: "fake"}, nil
+		}), HTTPClient: &http.Client{Transport: transport}}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const bucket = "bucket.with.dots"
+	if _, err := clients.S3.ListObjects(context.Background(), bucket, "prefix/"); err != nil {
+		t.Fatal(err)
+	}
+	if err := clients.S3.PutObject(context.Background(), bucket, "key", bytes.NewReader([]byte("x")), 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := clients.S3.DeleteObjects(context.Background(), bucket, []string{"key"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(transport.requests) != 3 {
+		t.Fatalf("requests = %d, want 3", len(transport.requests))
+	}
+	for _, request := range transport.requests {
+		if strings.HasPrefix(request.URL.Hostname(), bucket+".") {
+			t.Errorf("virtual-hosted request: %s", request.URL)
+		}
+		if request.URL.Path != "/"+bucket && !strings.HasPrefix(request.URL.Path, "/"+bucket+"/") {
+			t.Errorf("path = %q, want bucket path", request.URL.Path)
+		}
+	}
+}
 
 func TestOpenWithLoaderUsesOnlySuppliedConfiguration(t *testing.T) {
 	// R-CG22-V9E5 R-CH9Z-914U
@@ -165,7 +214,7 @@ func exerciseClients(t *testing.T, clients cloud.Clients) {
 	if _, err := clients.SSM.GetParameter(ctx, "/test"); err != nil {
 		t.Errorf("SSM: %v", err)
 	}
-	if _, err := clients.Route53.ListZones(ctx); err != nil {
+	if _, err := clients.Route53.Zone(ctx, "example.com"); err != nil {
 		t.Errorf("Route53: %v", err)
 	}
 	if _, err := clients.S3.ListObjects(ctx, "bucket", "prefix"); err != nil {
@@ -206,7 +255,7 @@ func responseBody(request *http.Request) string {
 	case strings.HasPrefix(host, "ssm."):
 		return `{"Parameter":{"Name":"/test","Type":"SecureString","Value":"value"}}`
 	case strings.HasPrefix(host, "route53."):
-		return `<ListHostedZonesResponse xmlns="https://route53.amazonaws.com/doc/2013-04-01/"><HostedZones/><IsTruncated>false</IsTruncated><MaxItems>100</MaxItems></ListHostedZonesResponse>`
+		return `<ListHostedZonesByNameResponse xmlns="https://route53.amazonaws.com/doc/2013-04-01/"><HostedZones><HostedZone><Id>/hostedzone/Z1</Id><Name>example.com.</Name><CallerReference>x</CallerReference></HostedZone></HostedZones><IsTruncated>false</IsTruncated><MaxItems>100</MaxItems></ListHostedZonesByNameResponse>`
 	case strings.HasPrefix(host, "s3.") || strings.HasPrefix(host, "bucket.s3."):
 		return `<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><IsTruncated>false</IsTruncated></ListBucketResult>`
 	case strings.HasPrefix(host, "iam."):

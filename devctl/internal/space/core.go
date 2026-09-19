@@ -6,9 +6,10 @@ import (
 	"io"
 	"time"
 
-	"github.com/ikigenba/ikigenba/devctl/internal/account"
+	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
+	"github.com/ikigenba/ikigenba/devctl/internal/spaceref"
 )
 
 const (
@@ -23,7 +24,7 @@ const (
 )
 
 // Run executes a space command.
-func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, profile string) error {
+func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) error {
 	invocation, err := parseInvocation(args)
 	if err != nil {
 		return err
@@ -33,25 +34,38 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, p
 		return nil
 	}
 	if invocation.subcommand == "list" || invocation.subcommand == "status" || invocation.subcommand == "stop" || invocation.subcommand == "start" || invocation.subcommand == "destroy" {
-		acct, err := account.Open(ctx, deps, profile)
+		root, err := checkout.ReadRootFile(ctx, deps)
+		if err != nil {
+			return err
+		}
+		var sp spaceref.Space
+		if invocation.subcommand != "list" {
+			sp, err = spaceref.Parse(invocation.domain, root.Domain)
+			if err != nil {
+				return err
+			}
+		}
+		session, err := cloud.Connect(ctx, deps.Cloud, root.Domain, root.Region)
 		if err != nil {
 			return err
 		}
 		switch invocation.subcommand {
 		case "list":
-			return runList(ctx, stdout, acct)
+			return runList(ctx, stdout, session.Clients, root.Domain)
 		case "status":
-			return runStatus(ctx, invocation.domain, stdout, deps, acct)
+			return runStatus(ctx, stdout, deps, session.Clients, root.Domain, sp)
 		case "stop":
-			return runStop(ctx, stdout, deps, acct, invocation.domain)
+			return runStop(ctx, stdout, deps, session.Clients, root.Domain, sp)
 		case "start":
-			return runStart(ctx, stdout, deps, acct, invocation.domain)
+			return runStart(ctx, stdout, deps, session.Clients, root.Domain, sp)
 		case "destroy":
-			return runDestroy(ctx, stdout, deps, acct, invocation.domain, invocation.noBackup, profile)
+			return runDestroy(ctx, stdout, deps, session.Clients, root.Domain, sp, destroyOptions{
+				noBackup: invocation.noBackup, deleteSecrets: invocation.deleteSecrets, deleteBackups: invocation.deleteBackups,
+			})
 		}
 	}
 
-	return dispatch(ctx, invocation, stdout, deps, profile)
+	return dispatch(ctx, invocation, stdout, deps)
 }
 
 // Step reports a completed command step.
@@ -64,10 +78,10 @@ func Step(w io.Writer, name, detail string) {
 }
 
 // RoleName returns the IAM role name for a space.
-func RoleName(domain string) string { return "ikigenba-space-" + domain }
+func RoleName(domain string) string { return domain }
 
 // BackupPrefix returns the object-key prefix for a space's backups.
-func BackupPrefix(domain string) string { return domain + "/" }
+func BackupPrefix(label string) string { return label + "/" }
 
 // RecordNames returns the apex and wildcard DNS names for a space.
 func RecordNames(domain string) []string { return []string{domain, "*." + domain} }
@@ -111,10 +125,9 @@ func (e *WaitError) Error() string {
 
 // RetireStateError reports an instance state that prevents retirement.
 type RetireStateError struct {
-	ID      string
-	State   cloud.InstanceState
-	Domain  string
-	Profile string
+	ID    string
+	State cloud.InstanceState
+	Label string
 }
 
 // Error returns the retirement state diagnostic.
@@ -127,9 +140,5 @@ func (e *RetireStateError) ExitCode() int { return 1 }
 
 // Detail returns instructions for making retirement safe.
 func (e *RetireStateError) Detail() string {
-	return fmt.Sprintf(
-		"run 'devctl --account %s space start %s' first, or pass --no-backup",
-		e.Profile,
-		e.Domain,
-	)
+	return fmt.Sprintf("run 'devctl space start %s' first, or pass --no-backup", e.Label)
 }

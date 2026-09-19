@@ -2,9 +2,12 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"testing"
+
+	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 )
 
 type d05CodedError struct {
@@ -17,15 +20,14 @@ func (err *d05CodedError) ExitCode() int  { return err.code }
 func (err *d05CodedError) Detail() string { return err.detail }
 
 func TestOperationErrorReportsUnknownErrorDirectly(t *testing.T) {
-	// R-CAGK-A9JL
-	var stderr bytes.Buffer
+	// R-0D99-FN33
+	root := t.TempDir()
+	writeD05CLIRootFile(t, root)
 	err := fmt.Errorf("outer: %w", errors.New("specific failure"))
-	if got := operationError(&stderr, err); got != 1 {
-		t.Fatalf("operationError exit code = %d, want 1", got)
-	}
-	if got, want := stderr.String(), "devctl: outer: specific failure\n"; got != want {
-		t.Fatalf("stderr = %q, want %q", got, want)
-	}
+	deps := d05CLIDeps(root, func(context.Context, string, string) (cloud.Clients, error) {
+		return cloud.Clients{}, err
+	})
+	assertResult(t, invokeWithDeps(deps, "secrets", "list", "sbx1"), 1, "", "devctl: outer: specific failure\n")
 }
 
 func TestOperationErrorUsesCodedErrorAndDetail(t *testing.T) {

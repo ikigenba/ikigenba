@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ikigenba/ikigenba/devctl/internal/account"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 )
 
@@ -34,11 +33,7 @@ func (ssm *listSSM) ListParameters(_ context.Context, prefix string) ([]cloud.Pa
 
 func (*listSSM) DeleteParameter(context.Context, string) error { return nil }
 
-func listAccount(ssm cloud.SSM) *account.Account {
-	return &account.Account{Clients: cloud.Clients{SSM: ssm}}
-}
-
-// R-GM65-DAC7
+// R-0QO5-N48Q
 func TestListSelectsDirectParametersAndSortsEntriesAndKeys(t *testing.T) {
 	t.Parallel()
 
@@ -54,7 +49,7 @@ func TestListSelectsDirectParametersAndSortsEntriesAndKeys(t *testing.T) {
 		{Name: prefix + "/crm", Value: `{"CRM_ORG":"org","CRM_API_KEY":"key"}`},
 	}}
 
-	got, err := List(context.Background(), listAccount(ssm), domain)
+	got, err := List(context.Background(), ssm, domain)
 	if err != nil {
 		t.Fatalf("List returned error: %v", err)
 	}
@@ -71,7 +66,7 @@ func TestListSelectsDirectParametersAndSortsEntriesAndKeys(t *testing.T) {
 	}
 }
 
-// R-GM65-DAC7
+// R-0QO5-N48Q
 func TestListReturnsEmptyWhenNoDirectParameterExists(t *testing.T) {
 	t.Parallel()
 
@@ -80,7 +75,7 @@ func TestListReturnsEmptyWhenNoDirectParameterExists(t *testing.T) {
 		Name:  Prefix(domain) + "/nested/app",
 		Value: `{"KEY":"value"}`,
 	}}}
-	got, err := List(context.Background(), listAccount(ssm), domain)
+	got, err := List(context.Background(), ssm, domain)
 	if err != nil {
 		t.Fatalf("List returned error: %v", err)
 	}
@@ -89,16 +84,16 @@ func TestListReturnsEmptyWhenNoDirectParameterExists(t *testing.T) {
 	}
 }
 
-// R-GNE1-R22W
+// R-0T3Y-ENQ4
 func TestNamesReadsExactParameterAndSortsKeys(t *testing.T) {
 	t.Parallel()
 
 	ssm := &listSSM{value: `{"ZED":"z","ALPHA":"a"}`}
-	got, err := Names(context.Background(), listAccount(ssm), "foo.sbx.ikigenba.dev", "crm")
+	got, err := Names(context.Background(), ssm, "foo.sbx.ikigenba.dev", "crm")
 	if err != nil {
 		t.Fatalf("Names returned error: %v", err)
 	}
-	wantName := "/ikigenba/foo.sbx.ikigenba.dev/crm"
+	wantName := "/foo.sbx.ikigenba.dev/crm"
 	if ssm.gotName != wantName {
 		t.Fatalf("GetParameter name = %q, want %q", ssm.gotName, wantName)
 	}
@@ -107,13 +102,13 @@ func TestNamesReadsExactParameterAndSortsKeys(t *testing.T) {
 	}
 }
 
-// R-GNE1-R22W
+// R-0T3Y-ENQ4
 func TestNamesTreatsWrappedParameterNotFoundAsEmpty(t *testing.T) {
 	t.Parallel()
 
 	notFound := &cloud.Error{Service: "ssm", Operation: "GetParameter", Code: "ParameterNotFound"}
 	ssm := &listSSM{getErr: errors.Join(errors.New("read failed"), notFound)}
-	got, err := Names(context.Background(), listAccount(ssm), "foo.sbx.ikigenba.dev", "crm")
+	got, err := Names(context.Background(), ssm, "foo.sbx.ikigenba.dev", "crm")
 	if err != nil {
 		t.Fatalf("Names returned error: %v", err)
 	}
@@ -122,7 +117,7 @@ func TestNamesTreatsWrappedParameterNotFoundAsEmpty(t *testing.T) {
 	}
 }
 
-// R-GNE1-R22W
+// R-0T3Y-ENQ4
 func TestNamesReturnsOtherErrorsUnchanged(t *testing.T) {
 	t.Parallel()
 
@@ -146,7 +141,7 @@ func TestNamesReturnsOtherErrorsUnchanged(t *testing.T) {
 			t.Parallel()
 
 			ssm := &listSSM{getErr: test.err}
-			got, err := Names(context.Background(), listAccount(ssm), "foo.sbx.ikigenba.dev", "crm")
+			got, err := Names(context.Background(), ssm, "foo.sbx.ikigenba.dev", "crm")
 			if err == nil || reflect.ValueOf(err).Pointer() != reflect.ValueOf(test.err).Pointer() {
 				t.Fatalf("Names error = %T %v, want original error %T %v", err, err, test.err, test.err)
 			}
@@ -157,7 +152,6 @@ func TestNamesReturnsOtherErrorsUnchanged(t *testing.T) {
 	}
 }
 
-// R-GOLY-4TTL
 func TestListAndNamesRejectAnythingButJSONObjectOfStrings(t *testing.T) {
 	t.Parallel()
 
@@ -194,7 +188,7 @@ func TestListAndNamesRejectAnythingButJSONObjectOfStrings(t *testing.T) {
 func objectErrorFromList(t *testing.T, domain, name, value string) *ObjectError {
 	t.Helper()
 	ssm := &listSSM{parameters: []cloud.Parameter{{Name: name, Value: value}}}
-	_, err := List(context.Background(), listAccount(ssm), domain)
+	_, err := List(context.Background(), ssm, domain)
 	if reflect.TypeOf(err) != reflect.TypeOf((*ObjectError)(nil)) {
 		t.Fatalf("List error = %T %v, want direct *ObjectError", err, err)
 	}
@@ -208,7 +202,7 @@ func objectErrorFromList(t *testing.T, domain, name, value string) *ObjectError 
 func objectErrorFromNames(t *testing.T, domain, value string) *ObjectError {
 	t.Helper()
 	ssm := &listSSM{value: value}
-	_, err := Names(context.Background(), listAccount(ssm), domain, "crm")
+	_, err := Names(context.Background(), ssm, domain, "crm")
 	if reflect.TypeOf(err) != reflect.TypeOf((*ObjectError)(nil)) {
 		t.Fatalf("Names error = %T %v, want direct *ObjectError", err, err)
 	}
@@ -230,11 +224,11 @@ func TestListAndNamesNeverYieldSecretValues(t *testing.T) {
 		parameters: []cloud.Parameter{{Name: name, Value: `{"CRM_TOKEN":"` + listSentinel + `"}`}},
 		value:      `{"API_SECRET":"` + namesSentinel + `"}`,
 	}
-	entries, err := List(context.Background(), listAccount(ssm), domain)
+	entries, err := List(context.Background(), ssm, domain)
 	if err != nil {
 		t.Fatalf("List returned error: %v", err)
 	}
-	names, err := Names(context.Background(), listAccount(ssm), domain, "crm")
+	names, err := Names(context.Background(), ssm, domain, "crm")
 	if err != nil {
 		t.Fatalf("Names returned error: %v", err)
 	}

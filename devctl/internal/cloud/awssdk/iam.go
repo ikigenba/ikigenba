@@ -2,11 +2,10 @@ package awssdk
 
 import (
 	"context"
-	"errors"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
-	"github.com/aws/smithy-go"
+	"github.com/aws/aws-sdk-go-v2/service/iam/types"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 )
@@ -14,6 +13,7 @@ import (
 const iamNoSuchEntity = "NoSuchEntity"
 
 type iamAPI interface {
+	ListPolicies(context.Context, *iam.ListPoliciesInput, ...func(*iam.Options)) (*iam.ListPoliciesOutput, error)
 	GetRole(context.Context, *iam.GetRoleInput, ...func(*iam.Options)) (*iam.GetRoleOutput, error)
 	CreateRole(context.Context, *iam.CreateRoleInput, ...func(*iam.Options)) (*iam.CreateRoleOutput, error)
 	PutRolePolicy(context.Context, *iam.PutRolePolicyInput, ...func(*iam.Options)) (*iam.PutRolePolicyOutput, error)
@@ -31,6 +31,25 @@ type iamClient struct {
 }
 
 var _ cloud.IAM = (*iamClient)(nil)
+
+func (c *iamClient) PermissionsBoundary(ctx context.Context, name string) (string, error) {
+	input := &iam.ListPoliciesInput{Scope: types.PolicyScopeTypeLocal}
+	for {
+		output, err := c.sdk.ListPolicies(ctx, input)
+		if err != nil {
+			return "", iamError("ListPolicies", err)
+		}
+		for _, policy := range output.Policies {
+			if aws.ToString(policy.PolicyName) == name {
+				return aws.ToString(policy.Arn), nil
+			}
+		}
+		if !output.IsTruncated || output.Marker == nil || aws.ToString(output.Marker) == "" {
+			return "", &cloud.NotFoundError{Kind: "permissions boundary", Name: name}
+		}
+		input.Marker = output.Marker
+	}
+}
 
 func (c *iamClient) RoleExists(ctx context.Context, name string) (bool, error) {
 	_, err := c.sdk.GetRole(ctx, &iam.GetRoleInput{RoleName: aws.String(name)})
@@ -140,18 +159,9 @@ func wrapIAMDelete(operation string, err error) error {
 }
 
 func iamError(operation string, err error) *cloud.Error {
-	return &cloud.Error{
-		Service:   "iam",
-		Operation: operation,
-		Code:      iamAPIErrorCode(err),
-		Err:       err,
-	}
+	return sdkError("iam", operation, "", err)
 }
 
 func iamAPIErrorCode(err error) string {
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
-		return apiErr.ErrorCode()
-	}
-	return ""
+	return apiErrorCode(err)
 }

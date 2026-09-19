@@ -1,7 +1,5 @@
 package secrets
 
-const parameterRoot = "/ikigenba/"
-
 // Parameter returns the Parameter Store name for an app's secrets object.
 func Parameter(domain, app string) string {
 	return Prefix(domain) + "/" + app
@@ -9,5 +7,5 @@ func Parameter(domain, app string) string {
 
 // Prefix returns the Parameter Store prefix for a space's secrets objects.
 func Prefix(domain string) string {
-	return parameterRoot + domain
+	return "/" + domain
 }

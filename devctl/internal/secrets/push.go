@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/ikigenba/ikigenba/devctl/internal/account"
 	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
+	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/keyring"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
 
 // Push gathers and writes the secret object for each app.
-func Push(ctx context.Context, deps seam.Deps, acct *account.Account, domain string, apps []checkout.App) ([]Entry, error) {
+func Push(ctx context.Context, deps seam.Deps, ssm cloud.SSM, domain string, apps []checkout.App) ([]Entry, error) {
 	type object struct {
 		app    string
 		keys   []string
@@ -45,7 +45,7 @@ func Push(ctx context.Context, deps seam.Deps, acct *account.Account, domain str
 		if err != nil {
 			return entries, fmt.Errorf("%s: encode secrets: %w", object.app, err)
 		}
-		if err := acct.Clients.SSM.PutSecureParameter(ctx, Parameter(domain, object.app), string(value)); err != nil {
+		if err := ssm.PutSecureParameter(ctx, Parameter(domain, object.app), string(value)); err != nil {
 			return entries, err
 		}
 		entries = append(entries, Entry{App: object.app, Keys: object.keys})

@@ -18,7 +18,7 @@ import (
 )
 
 func TestListMethodsPaginateThroughFakeEndpoint(t *testing.T) {
-	// R-YQYT-ED6X
+	// R-QL5T-EDN9
 	transport := &paginationTransport{calls: make(map[string]int)}
 	clients, err := OpenWithLoader(context.Background(), "profile", "region", func(
 		context.Context, string, string,
@@ -35,7 +35,7 @@ func TestListMethodsPaginateThroughFakeEndpoint(t *testing.T) {
 		t.Fatalf("OpenWithLoader: %v", err)
 	}
 
-	instances, err := clients.EC2.ListSpaceInstances(context.Background())
+	instances, err := clients.EC2.ListSpaceInstances(context.Background(), "root.example")
 	if err != nil || !reflect.DeepEqual(instanceIDs(instances), []string{"i-one", "i-two"}) {
 		t.Fatalf("ListSpaceInstances = %#v, %v; want both endpoint pages", instances, err)
 	}
@@ -47,16 +47,17 @@ func TestListMethodsPaginateThroughFakeEndpoint(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(objectKeys(objects), []string{"prefix/one", "prefix/two"}) {
 		t.Fatalf("ListObjects = %#v, %v; want both endpoint pages", objects, err)
 	}
-	zones, err := clients.Route53.ListZones(context.Background())
-	if err != nil || !reflect.DeepEqual(zones, []cloud.Zone{{ID: "Z1", Name: "one.example"}, {ID: "Z2", Name: "two.example"}}) {
-		t.Fatalf("ListZones = %#v, %v; want both endpoint pages", zones, err)
-	}
 	records, err := clients.Route53.ListRecords(context.Background(), "Z1")
 	if err != nil || !reflect.DeepEqual(recordNames(records), []string{"one.example", "two.example"}) {
 		t.Fatalf("ListRecords = %#v, %v; want both endpoint pages", records, err)
 	}
 
-	for _, operation := range []string{"DescribeInstances", "GetParametersByPath", "ListObjectsV2", "ListHostedZones", "ListResourceRecordSets"} {
+	boundary, err := clients.IAM.PermissionsBoundary(context.Background(), "target")
+	if err != nil || boundary != "arn:target" {
+		t.Fatalf("PermissionsBoundary = %q, %v; want arn:target, nil", boundary, err)
+	}
+
+	for _, operation := range []string{"DescribeInstances", "GetParametersByPath", "ListObjectsV2", "ListResourceRecordSets", "ListPolicies"} {
 		if transport.calls[operation] != 2 {
 			t.Errorf("%s endpoint calls = %d; want 2", operation, transport.calls[operation])
 		}
@@ -144,17 +145,18 @@ func (p *paginationTransport) response(request *http.Request, body string) (stri
 		}
 		return "GetParametersByPath", `{"Parameters":[{"Name":"/spaces/two","Value":"two"}]}`
 	}
-	if strings.Contains(host, ".s3.") {
+	if strings.HasPrefix(host, "s3.") || strings.Contains(host, ".s3.") {
 		if request.URL.Query().Get("continuation-token") == "" {
 			return "ListObjectsV2", `<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><IsTruncated>true</IsTruncated><NextContinuationToken>s3-next</NextContinuationToken><Contents><Key>prefix/one</Key><Size>1</Size><LastModified>2026-01-01T00:00:00Z</LastModified></Contents></ListBucketResult>`
 		}
 		return "ListObjectsV2", `<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><IsTruncated>false</IsTruncated><Contents><Key>prefix/two</Key><Size>2</Size><LastModified>2026-01-02T00:00:00Z</LastModified></Contents></ListBucketResult>`
 	}
-	if strings.HasSuffix(request.URL.Path, "/hostedzone") {
-		if request.URL.Query().Get("marker") == "" {
-			return "ListHostedZones", `<ListHostedZonesResponse xmlns="https://route53.amazonaws.com/doc/2013-04-01/"><HostedZones><HostedZone><Id>/hostedzone/Z1</Id><Name>one.example.</Name><CallerReference>one</CallerReference></HostedZone></HostedZones><IsTruncated>true</IsTruncated><NextMarker>zone-next</NextMarker><MaxItems>1</MaxItems></ListHostedZonesResponse>`
+	if strings.HasPrefix(host, "iam.") {
+		values, _ := url.ParseQuery(body)
+		if values.Get("Marker") == "" {
+			return "ListPolicies", `<ListPoliciesResponse xmlns="https://iam.amazonaws.com/doc/2010-05-08/"><ListPoliciesResult><Policies><member><PolicyName>other</PolicyName><Arn>arn:other</Arn></member></Policies><IsTruncated>true</IsTruncated><Marker>iam-next</Marker></ListPoliciesResult></ListPoliciesResponse>`
 		}
-		return "ListHostedZones", `<ListHostedZonesResponse xmlns="https://route53.amazonaws.com/doc/2013-04-01/"><HostedZones><HostedZone><Id>/hostedzone/Z2</Id><Name>two.example.</Name><CallerReference>two</CallerReference></HostedZone></HostedZones><IsTruncated>false</IsTruncated><MaxItems>1</MaxItems></ListHostedZonesResponse>`
+		return "ListPolicies", `<ListPoliciesResponse xmlns="https://iam.amazonaws.com/doc/2010-05-08/"><ListPoliciesResult><Policies><member><PolicyName>target</PolicyName><Arn>arn:target</Arn></member></Policies><IsTruncated>false</IsTruncated></ListPoliciesResult></ListPoliciesResponse>`
 	}
 	if strings.HasSuffix(request.URL.Path, "/rrset") {
 		if request.URL.Query().Get("name") == "" {

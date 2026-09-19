@@ -8,20 +8,20 @@ import (
 
 const (
 	helpCommand = "devctl space --help"
-	usageText   = `Usage: devctl --account <name> space create <domain> --acme-email <address>
+	usageText   = `Usage: devctl space create <space> --acme-email <address>
 
-Create the space with secrets, a role, an instance, an Elastic IP and DNS records.
-Install the newest published opsctl, set its host configuration and run init.
-When the account keeps backups, restore its own host backup before init.
-Completed steps remain on failure; use space destroy to clean up.
+Create the space: push its secrets, make its role, launch its instance with an
+Elastic IP, write its records, install the newest published opsctl, set its
+ten host keys, restore its own host backup when the bucket holds one, and run
+opsctl init. Completed steps remain on failure; use space destroy to clean up.
 
 Options:
-  --acme-email <address>   ACME contact address stored on the host; required
+  --acme-email <address>  where the CA sends the space's expiry warnings; required
 `
 )
 
 type invocation struct {
-	domain    string
+	operand   string
 	acmeEmail string
 	help      bool
 }
@@ -29,6 +29,7 @@ type invocation struct {
 func parseInvocation(args []string) (invocation, error) {
 	result := invocation{}
 	operands := make([]string, 0, len(args))
+	missingACMEEmailValue := false
 
 	for index := 0; index < len(args); index++ {
 		argument := args[index]
@@ -36,16 +37,17 @@ func parseInvocation(args []string) (invocation, error) {
 		case argument == "--help" || argument == "-h":
 			result.help = true
 		case argument == "--acme-email":
-			if index+1 == len(args) || args[index+1] == "" {
-				return invocation{}, usage("option '--acme-email' requires a value")
+			value, ok := following(args[index:])
+			if !ok || value == "" {
+				missingACMEEmailValue = true
+				continue
 			}
 			index++
-			result.acmeEmail = args[index]
+			result.acmeEmail = value
+			missingACMEEmailValue = false
 		case strings.HasPrefix(argument, "--acme-email="):
 			result.acmeEmail = strings.TrimPrefix(argument, "--acme-email=")
-			if result.acmeEmail == "" {
-				return invocation{}, usage("option '--acme-email' requires a value")
-			}
+			missingACMEEmailValue = result.acmeEmail == ""
 		case strings.HasPrefix(argument, "-"):
 			return invocation{}, usage("unknown option '" + argument + "'")
 		default:
@@ -57,16 +59,26 @@ func parseInvocation(args []string) (invocation, error) {
 		return result, nil
 	}
 	if len(operands) == 0 {
-		return invocation{}, usage("space create needs <domain>")
+		return invocation{}, usage("space create needs <space>")
 	}
 	if len(operands) > 1 {
-		return invocation{}, usage("space create takes only <domain>")
+		return invocation{}, usage("space create takes only <space>")
+	}
+	if missingACMEEmailValue {
+		return invocation{}, usage("option '--acme-email' requires a value")
 	}
 	if result.acmeEmail == "" {
 		return invocation{}, usage("space create needs --acme-email <address>")
 	}
-	result.domain = operands[0]
+	result.operand = operands[0]
 	return result, nil
+}
+
+func following(arguments []string) (string, bool) {
+	if len(arguments) < 2 {
+		return "", false
+	}
+	return arguments[1], true
 }
 
 func usage(message string) *space.UsageError {

@@ -28,6 +28,15 @@ type fakeIAM struct {
 	removeRoleFromInstanceProfile func(*iam.RemoveRoleFromInstanceProfileInput) (*iam.RemoveRoleFromInstanceProfileOutput, error)
 	deleteInstanceProfile         func(*iam.DeleteInstanceProfileInput) (*iam.DeleteInstanceProfileOutput, error)
 	deleteRole                    func(*iam.DeleteRoleInput) (*iam.DeleteRoleOutput, error)
+	listPolicies                  func(*iam.ListPoliciesInput) (*iam.ListPoliciesOutput, error)
+}
+
+func (f *fakeIAM) ListPolicies(_ context.Context, input *iam.ListPoliciesInput, _ ...func(*iam.Options)) (*iam.ListPoliciesOutput, error) {
+	f.calls = append(f.calls, "ListPolicies")
+	if f.listPolicies != nil {
+		return f.listPolicies(input)
+	}
+	return nil, f.err
 }
 
 func (f *fakeIAM) GetRole(_ context.Context, input *iam.GetRoleInput, _ ...func(*iam.Options)) (*iam.GetRoleOutput, error) {
@@ -110,8 +119,43 @@ func (f *fakeIAM) DeleteRole(_ context.Context, input *iam.DeleteRoleInput, _ ..
 	return nil, f.err
 }
 
+func TestIAMPermissionsBoundary(t *testing.T) {
+	// R-QW4W-UBBI R-QXCT-8327 R-QL5T-EDN9
+	page := 0
+	fake := &fakeIAM{listPolicies: func(in *iam.ListPoliciesInput) (*iam.ListPoliciesOutput, error) {
+		if in.Scope != types.PolicyScopeTypeLocal {
+			t.Fatalf("scope = %q, want Local", in.Scope)
+		}
+		page++
+		if page == 1 {
+			if in.Marker != nil {
+				t.Fatalf("first marker = %q", aws.ToString(in.Marker))
+			}
+			return &iam.ListPoliciesOutput{Policies: []types.Policy{{PolicyName: aws.String("other")}}, IsTruncated: true, Marker: aws.String("next")}, nil
+		}
+		if aws.ToString(in.Marker) != "next" {
+			t.Fatalf("second marker = %q", aws.ToString(in.Marker))
+		}
+		return &iam.ListPoliciesOutput{Policies: []types.Policy{{PolicyName: aws.String("boundary"), Arn: aws.String("arn:boundary")}}}, nil
+	}}
+	arn, err := (&iamClient{sdk: fake}).PermissionsBoundary(context.Background(), "boundary")
+	if err != nil || arn != "arn:boundary" {
+		t.Fatalf("PermissionsBoundary = %q, %v", arn, err)
+	}
+	if want := []string{"ListPolicies", "ListPolicies"}; !reflect.DeepEqual(fake.calls, want) {
+		t.Fatalf("calls = %v, want %v", fake.calls, want)
+	}
+
+	missing := &fakeIAM{listPolicies: func(*iam.ListPoliciesInput) (*iam.ListPoliciesOutput, error) { return &iam.ListPoliciesOutput{}, nil }}
+	_, err = (&iamClient{sdk: missing}).PermissionsBoundary(context.Background(), "missing")
+	var notFound *cloud.NotFoundError
+	if !errors.As(err, &notFound) || notFound.Kind != "permissions boundary" || notFound.Name != "missing" {
+		t.Fatalf("missing error = %#v", err)
+	}
+}
+
 func TestIAMMappingInputsAndResults(t *testing.T) {
-	// R-YK9H-01RW
+	// R-QW4W-UBBI
 	const (
 		role     = "ikigenba-role"
 		profile  = "ikigenba-profile"
@@ -222,13 +266,17 @@ func TestIAMMappingInputsAndResults(t *testing.T) {
 }
 
 func TestIAMErrorMapping(t *testing.T) {
-	// R-YOJ0-MTPJ R-YPQX-0LG8
+	// R-QW4W-UBBI R-VV8S-ZVE7 R-YPQX-0LG8
 	boom := &smithy.GenericAPIError{Code: "AccessDenied", Message: "denied"}
 	tests := []struct {
 		method    string
 		operation string
 		call      func(*iamClient) error
 	}{
+		{"PermissionsBoundary", "ListPolicies", func(client *iamClient) error {
+			_, err := client.PermissionsBoundary(context.Background(), "boundary")
+			return err
+		}},
 		{"RoleExists", "GetRole", func(client *iamClient) error {
 			_, err := client.RoleExists(context.Background(), "role")
 			return err

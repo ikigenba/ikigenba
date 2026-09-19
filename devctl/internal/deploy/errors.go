@@ -40,10 +40,9 @@ func (e *NoFileError) ExitCode() int { return 2 }
 
 // MissingSecretsError reports manifest secrets absent from the target space.
 type MissingSecretsError struct {
-	App     string
-	Domain  string
-	Profile string
-	Names   []string
+	App   string
+	Space string
+	Names []string
 }
 
 // Error returns the missing-secret names.
@@ -53,7 +52,7 @@ func (e *MissingSecretsError) Error() string {
 
 // Detail returns the command that can push the missing secrets.
 func (e *MissingSecretsError) Detail() string {
-	return fmt.Sprintf("run 'devctl --account %s secrets push %s %s'", e.Profile, e.Domain, e.App)
+	return fmt.Sprintf("run 'devctl secrets push %s %s'", e.Space, e.App)
 }
 
 // ExitCode returns the command-line usage status.

@@ -17,7 +17,7 @@ import (
 
 const wantTopLevelUsage = `Usage: devctl [options] <command> [arguments]
 
-Manage the ikigenba platform from the developer's machine. Never run as root.
+Manage the platform from the developer's machine. Never run as root.
 
 Commands:
   version   print the version
@@ -27,11 +27,11 @@ Commands:
   deploy    put a built app file on a space
   remove    take an app off a space
   restore   put a space's app back from its backups
+  apex      point the root domain at one app on one space
 
 Options:
   --help              print this help
   --version           print the version
-  --account <name>    AWS shared-config profile to act in
 
 Exit codes:
   0  success

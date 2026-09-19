@@ -4,21 +4,16 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"io/fs"
-	"os"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/ikigenba/ikigenba/devctl/internal/account"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
 
 func TestRunSignature(_ *testing.T) {
-	// R-SPY2-5VBP
-	accept := func(func(context.Context, []string, io.Writer, seam.Deps, string) error) {}
+	accept := func(func(context.Context, []string, io.Writer, seam.Deps) error) {}
 	accept(Run)
 }
 
@@ -33,36 +28,13 @@ func TestStep(t *testing.T) {
 	}
 }
 
-func TestCompletedStepLinesUseSpaceStep(t *testing.T) {
-	// R-TPB5-97TU
-	for _, directory := range []string{".", "../spacecreate", "../deploy", "../restore"} {
-		directoryFS := os.DirFS(directory)
-		entries, err := fs.ReadDir(directoryFS, ".")
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
-				continue
-			}
-			contents, err := fs.ReadFile(directoryFS, entry.Name())
-			if err != nil {
-				t.Fatal(err)
-			}
-			if directory != "." && strings.Contains(string(contents), ": ok (") {
-				t.Errorf("%s/%s writes a completed step instead of calling space.Step", directory, entry.Name())
-			}
-		}
-	}
-}
-
 func TestNamesAndConstants(t *testing.T) {
-	// R-SSDU-XET3
-	const domain = "foo.sbx.ikigenba.dev"
-	if got, want := RoleName(domain), "ikigenba-space-foo.sbx.ikigenba.dev"; got != want {
+	// R-U273-JQ19
+	const domain = "sbx1.ikigenba.dev"
+	if got, want := RoleName(domain), domain; got != want {
 		t.Errorf("RoleName() = %q, want %q", got, want)
 	}
-	if got, want := BackupPrefix(domain), "foo.sbx.ikigenba.dev/"; got != want {
+	if got, want := BackupPrefix("sbx1"), "sbx1/"; got != want {
 		t.Errorf("BackupPrefix() = %q, want %q", got, want)
 	}
 	if got, want := RecordNames(domain), []string{domain, "*." + domain}; !reflect.DeepEqual(got, want) {
@@ -77,14 +49,16 @@ func TestNamesAndConstants(t *testing.T) {
 }
 
 func TestWaitDeclarations(t *testing.T) {
-	// R-H4AW-33HL
-	acceptWaitState := func(func(context.Context, seam.Deps, *account.Account, string, cloud.InstanceState) (cloud.Instance, error)) {
+	// R-U3EZ-XHRY
+	acceptWaitState := func(func(context.Context, seam.Deps, cloud.EC2, string, cloud.InstanceState) (cloud.Instance, error)) {
 	}
-	acceptWaitChecks := func(func(context.Context, seam.Deps, *account.Account, string) error) {}
-	acceptWaitLaunchReady := func(func(context.Context, seam.Deps, *account.Account, cloud.LaunchSpec) error) {}
+	acceptWaitChecks := func(func(context.Context, seam.Deps, cloud.EC2, string) error) {}
+	acceptWaitLaunchReady := func(func(context.Context, seam.Deps, cloud.EC2, cloud.LaunchSpec) error) {}
+	acceptWaitInsync := func(func(context.Context, seam.Deps, cloud.Route53, string) error) {}
 	acceptWaitState(WaitState)
 	acceptWaitChecks(WaitChecks)
 	acceptWaitLaunchReady(WaitLaunchReady)
+	acceptWaitInsync(WaitInsync)
 	if PollInterval != 5*time.Second {
 		t.Errorf("PollInterval = %s, want 5s", PollInterval)
 	}
@@ -112,13 +86,13 @@ func TestUsageError(t *testing.T) {
 }
 
 func TestNotRunningError(t *testing.T) {
-	// R-T0X5-LSZY
-	err := &NotRunningError{Domain: "bar.sbx.ikigenba.dev", State: cloud.StateStopped}
+	// R-XQOJ-QF8R
+	err := &NotRunningError{Domain: "sbx2.ikigenba.dev", State: cloud.StateStopped}
 	assertFields(t, err, struct {
 		Domain string
 		State  cloud.InstanceState
 	}{})
-	if got, want := err.Error(), "'bar.sbx.ikigenba.dev' is stopped"; got != want {
+	if got, want := err.Error(), "'sbx2.ikigenba.dev' is stopped"; got != want {
 		t.Errorf("Error() = %q, want %q", got, want)
 	}
 }
@@ -136,18 +110,16 @@ func TestWaitError(t *testing.T) {
 }
 
 func TestRetireStateError(t *testing.T) {
-	// R-DXPN-P60P
+	// R-U9IH-UCHF
 	err := &RetireStateError{
-		ID:      "i-0c9e94542d98846a8",
-		State:   cloud.StateStopped,
-		Domain:  "foo.sbx.ikigenba.dev",
-		Profile: "sandbox",
+		ID:    "i-0c9e94542d98846a8",
+		State: cloud.StateStopped,
+		Label: "staging",
 	}
 	assertFields(t, err, struct {
-		ID      string
-		State   cloud.InstanceState
-		Domain  string
-		Profile string
+		ID    string
+		State cloud.InstanceState
+		Label string
 	}{})
 	if got, want := err.Error(), "retire: instance i-0c9e94542d98846a8 is stopped"; got != want {
 		t.Errorf("Error() = %q, want %q", got, want)
@@ -155,7 +127,7 @@ func TestRetireStateError(t *testing.T) {
 	if got := err.ExitCode(); got != 1 {
 		t.Errorf("ExitCode() = %d, want 1", got)
 	}
-	const wantDetail = "run 'devctl --account sandbox space start foo.sbx.ikigenba.dev' first, or pass --no-backup"
+	const wantDetail = "run 'devctl space start staging' first, or pass --no-backup"
 	if got := err.Detail(); got != wantDetail {
 		t.Errorf("Detail() = %q, want %q", got, wantDetail)
 	}

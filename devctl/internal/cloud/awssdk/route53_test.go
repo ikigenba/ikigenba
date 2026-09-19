@@ -15,262 +15,201 @@ import (
 )
 
 type fakeRoute53 struct {
-	calls []string
-	err   error
-
-	listHostedZones         func(*route53.ListHostedZonesInput) (*route53.ListHostedZonesOutput, error)
-	listResourceRecordSets  func(*route53.ListResourceRecordSetsInput) (*route53.ListResourceRecordSetsOutput, error)
-	changeResourceRecordSet func(*route53.ChangeResourceRecordSetsInput) (*route53.ChangeResourceRecordSetsOutput, error)
-	getChange               func(*route53.GetChangeInput) (*route53.GetChangeOutput, error)
+	calls       []string
+	err         error
+	listZones   func(*route53.ListHostedZonesByNameInput) (*route53.ListHostedZonesByNameOutput, error)
+	listRecords func(*route53.ListResourceRecordSetsInput) (*route53.ListResourceRecordSetsOutput, error)
+	change      func(*route53.ChangeResourceRecordSetsInput) (*route53.ChangeResourceRecordSetsOutput, error)
+	getChange   func(*route53.GetChangeInput) (*route53.GetChangeOutput, error)
 }
 
-func (f *fakeRoute53) ListHostedZones(_ context.Context, input *route53.ListHostedZonesInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesOutput, error) {
-	f.calls = append(f.calls, "ListHostedZones")
-	if f.listHostedZones != nil {
-		return f.listHostedZones(input)
+func (f *fakeRoute53) ListHostedZonesByName(_ context.Context, in *route53.ListHostedZonesByNameInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesByNameOutput, error) {
+	f.calls = append(f.calls, "ListHostedZonesByName")
+	if f.listZones != nil {
+		return f.listZones(in)
 	}
 	return nil, f.err
 }
-
-func (f *fakeRoute53) ListResourceRecordSets(_ context.Context, input *route53.ListResourceRecordSetsInput, _ ...func(*route53.Options)) (*route53.ListResourceRecordSetsOutput, error) {
+func (f *fakeRoute53) ListResourceRecordSets(_ context.Context, in *route53.ListResourceRecordSetsInput, _ ...func(*route53.Options)) (*route53.ListResourceRecordSetsOutput, error) {
 	f.calls = append(f.calls, "ListResourceRecordSets")
-	if f.listResourceRecordSets != nil {
-		return f.listResourceRecordSets(input)
+	if f.listRecords != nil {
+		return f.listRecords(in)
 	}
 	return nil, f.err
 }
-
-func (f *fakeRoute53) ChangeResourceRecordSets(_ context.Context, input *route53.ChangeResourceRecordSetsInput, _ ...func(*route53.Options)) (*route53.ChangeResourceRecordSetsOutput, error) {
+func (f *fakeRoute53) ChangeResourceRecordSets(_ context.Context, in *route53.ChangeResourceRecordSetsInput, _ ...func(*route53.Options)) (*route53.ChangeResourceRecordSetsOutput, error) {
 	f.calls = append(f.calls, "ChangeResourceRecordSets")
-	if f.changeResourceRecordSet != nil {
-		return f.changeResourceRecordSet(input)
+	if f.change != nil {
+		return f.change(in)
 	}
 	return nil, f.err
 }
-
-func (f *fakeRoute53) GetChange(_ context.Context, input *route53.GetChangeInput, _ ...func(*route53.Options)) (*route53.GetChangeOutput, error) {
+func (f *fakeRoute53) GetChange(_ context.Context, in *route53.GetChangeInput, _ ...func(*route53.Options)) (*route53.GetChangeOutput, error) {
 	f.calls = append(f.calls, "GetChange")
 	if f.getChange != nil {
-		return f.getChange(input)
+		return f.getChange(in)
 	}
 	return nil, f.err
 }
 
-func TestRoute53MappingsPaginationAndNormalization(t *testing.T) {
-	// R-YX2B-B7WE
-	// R-YYA7-OZN3
-	const zoneID = "Z123"
-	fake := &fakeRoute53{}
-	zonePage := 0
-	fake.listHostedZones = func(input *route53.ListHostedZonesInput) (*route53.ListHostedZonesOutput, error) {
-		zonePage++
-		switch zonePage {
-		case 1:
-			if input.Marker != nil {
-				t.Fatalf("first zone marker = %q, want nil", aws.ToString(input.Marker))
-			}
-			return &route53.ListHostedZonesOutput{
-				HostedZones: []types.HostedZone{{Id: aws.String("/hostedzone/" + zoneID), Name: aws.String("example.com.")}},
-				IsTruncated: true,
-				NextMarker:  aws.String("second-zone-page"),
-			}, nil
-		case 2:
-			if aws.ToString(input.Marker) != "second-zone-page" {
-				t.Fatalf("second zone marker = %q, want second-zone-page", aws.ToString(input.Marker))
-			}
-			return &route53.ListHostedZonesOutput{
-				HostedZones: []types.HostedZone{{Id: aws.String("Z456"), Name: aws.String("other.example.")}},
-			}, nil
-		default:
-			t.Fatalf("unexpected zone page %d", zonePage)
-			return nil, nil
-		}
-	}
-
-	recordPage := 0
-	fake.listResourceRecordSets = func(input *route53.ListResourceRecordSetsInput) (*route53.ListResourceRecordSetsOutput, error) {
-		if aws.ToString(input.HostedZoneId) != zoneID {
-			t.Fatalf("record zone = %q, want %q", aws.ToString(input.HostedZoneId), zoneID)
-		}
-		recordPage++
-		switch recordPage {
-		case 1:
-			if input.StartRecordName != nil || input.StartRecordType != "" || input.StartRecordIdentifier != nil {
-				t.Fatalf("first record cursor = %#v/%q/%#v, want empty", input.StartRecordName, input.StartRecordType, input.StartRecordIdentifier)
-			}
-			return &route53.ListResourceRecordSetsOutput{
-				ResourceRecordSets: []types.ResourceRecordSet{{
-					Name: aws.String(`\052.api.example.com.`), Type: types.RRTypeA, TTL: aws.Int64(60),
-					ResourceRecords: []types.ResourceRecord{{Value: aws.String("192.0.2.1")}},
-				}},
-				IsTruncated:          true,
-				NextRecordName:       aws.String("mail.example.com."),
-				NextRecordType:       types.RRTypeMx,
-				NextRecordIdentifier: aws.String("weighted-two"),
-			}, nil
-		case 2:
-			if aws.ToString(input.StartRecordName) != "mail.example.com." || input.StartRecordType != types.RRTypeMx || aws.ToString(input.StartRecordIdentifier) != "weighted-two" {
-				t.Fatalf("second record cursor = %q/%q/%q, want API continuation", aws.ToString(input.StartRecordName), input.StartRecordType, aws.ToString(input.StartRecordIdentifier))
-			}
-			return &route53.ListResourceRecordSetsOutput{
-				ResourceRecordSets: []types.ResourceRecordSet{{
-					Name: aws.String("mail.example.com."), Type: types.RRTypeMx, TTL: aws.Int64(300),
-					ResourceRecords: []types.ResourceRecord{{Value: aws.String("10 mx1.example.com.")}, {Value: aws.String("20 mx2.example.com.")}},
-				}},
-			}, nil
-		default:
-			t.Fatalf("unexpected record page %d", recordPage)
-			return nil, nil
-		}
-	}
-
-	zones, err := (&route53Client{sdk: fake}).ListZones(context.Background())
-	if err != nil {
-		t.Fatalf("ListZones: %v", err)
-	}
-	wantZones := []cloud.Zone{{ID: zoneID, Name: "example.com"}, {ID: "Z456", Name: "other.example"}}
-	if !reflect.DeepEqual(zones, wantZones) {
-		t.Fatalf("zones = %#v, want %#v", zones, wantZones)
-	}
-	records, err := (&route53Client{sdk: fake}).ListRecords(context.Background(), zoneID)
-	if err != nil {
-		t.Fatalf("ListRecords: %v", err)
-	}
-	wantRecords := []cloud.Record{
-		{Name: `\052.api.example.com`, Type: "A", TTL: 60, Values: []string{"192.0.2.1"}},
-		{Name: "mail.example.com", Type: "MX", TTL: 300, Values: []string{"10 mx1.example.com.", "20 mx2.example.com."}},
-	}
-	if !reflect.DeepEqual(records, wantRecords) {
-		t.Fatalf("records = %#v, want %#v", records, wantRecords)
-	}
-	wantCalls := []string{"ListHostedZones", "ListHostedZones", "ListResourceRecordSets", "ListResourceRecordSets"}
-	if !reflect.DeepEqual(fake.calls, wantCalls) {
-		t.Fatalf("SDK calls = %v, want exactly %v", fake.calls, wantCalls)
-	}
-}
-
-func TestRoute53ChangeBatchAndStatusRoundTrip(t *testing.T) {
-	const (
-		zoneID   = "Z123"
-		changeID = "/change/C456"
-	)
+func TestRoute53ChangeBatchAndStatus(t *testing.T) {
+	// R-QR9B-B8CQ
 	changes := []cloud.RecordChange{
-		{Action: cloud.ChangeDelete, Record: cloud.Record{Name: `\052.api.example.com`, Type: "A", TTL: 60, Values: []string{"192.0.2.1"}}},
-		{Action: cloud.ChangeUpsert, Record: cloud.Record{Name: "www.example.com", Type: "AAAA", TTL: 120, Values: []string{"2001:db8::1", "2001:db8::2"}}},
+		{Action: cloud.ChangeDelete, Record: cloud.Record{Name: `\052.api.root.example`, Type: "A", TTL: 60, Values: []string{"192.0.2.1"}}},
+		{Action: cloud.ChangeUpsert, Record: cloud.Record{Name: "www.root.example", Type: "AAAA", TTL: 300, Values: []string{"2001:db8::1", "2001:db8::2"}}},
+	}
+	wantChanges := []types.Change{
+		{Action: types.ChangeActionDelete, ResourceRecordSet: &types.ResourceRecordSet{Name: aws.String(`\052.api.root.example`), Type: types.RRTypeA, TTL: aws.Int64(60), ResourceRecords: []types.ResourceRecord{{Value: aws.String("192.0.2.1")}}}},
+		{Action: types.ChangeActionUpsert, ResourceRecordSet: &types.ResourceRecordSet{Name: aws.String("www.root.example"), Type: types.RRTypeAaaa, TTL: aws.Int64(300), ResourceRecords: []types.ResourceRecord{{Value: aws.String("2001:db8::1")}, {Value: aws.String("2001:db8::2")}}}},
 	}
 	fake := &fakeRoute53{}
-	fake.changeResourceRecordSet = func(input *route53.ChangeResourceRecordSetsInput) (*route53.ChangeResourceRecordSetsOutput, error) {
-		if aws.ToString(input.HostedZoneId) != zoneID {
-			t.Fatalf("change zone = %q, want %q", aws.ToString(input.HostedZoneId), zoneID)
+	fake.change = func(in *route53.ChangeResourceRecordSetsInput) (*route53.ChangeResourceRecordSetsOutput, error) {
+		if aws.ToString(in.HostedZoneId) != "Z123" {
+			t.Fatalf("HostedZoneId = %q, want Z123", aws.ToString(in.HostedZoneId))
 		}
-		want := []types.Change{
-			{Action: types.ChangeActionDelete, ResourceRecordSet: &types.ResourceRecordSet{Name: aws.String(`\052.api.example.com`), Type: types.RRTypeA, TTL: aws.Int64(60), ResourceRecords: []types.ResourceRecord{{Value: aws.String("192.0.2.1")}}}},
-			{Action: types.ChangeActionUpsert, ResourceRecordSet: &types.ResourceRecordSet{Name: aws.String("www.example.com"), Type: types.RRTypeAaaa, TTL: aws.Int64(120), ResourceRecords: []types.ResourceRecord{{Value: aws.String("2001:db8::1")}, {Value: aws.String("2001:db8::2")}}}},
+		if in.ChangeBatch == nil || !reflect.DeepEqual(in.ChangeBatch.Changes, wantChanges) {
+			t.Fatalf("change batch = %#v, want %#v", in.ChangeBatch, wantChanges)
 		}
-		if input.ChangeBatch == nil || !reflect.DeepEqual(input.ChangeBatch.Changes, want) {
-			t.Fatalf("change batch = %#v, want one batch %#v", input.ChangeBatch, want)
-		}
-		return &route53.ChangeResourceRecordSetsOutput{ChangeInfo: &types.ChangeInfo{Id: aws.String(changeID), Status: types.ChangeStatusPending}}, nil
+		return &route53.ChangeResourceRecordSetsOutput{ChangeInfo: &types.ChangeInfo{Id: aws.String("/change/C456")}}, nil
 	}
-	fake.getChange = func(input *route53.GetChangeInput) (*route53.GetChangeOutput, error) {
-		if aws.ToString(input.Id) != changeID {
-			t.Fatalf("change id = %q, want unchanged %q", aws.ToString(input.Id), changeID)
+	fake.getChange = func(in *route53.GetChangeInput) (*route53.GetChangeOutput, error) {
+		if aws.ToString(in.Id) != "/change/C456" {
+			t.Fatalf("change id = %q, want /change/C456", aws.ToString(in.Id))
 		}
-		return &route53.GetChangeOutput{ChangeInfo: &types.ChangeInfo{Id: aws.String(changeID), Status: types.ChangeStatusInsync}}, nil
+		return &route53.GetChangeOutput{ChangeInfo: &types.ChangeInfo{Status: types.ChangeStatusInsync}}, nil
 	}
 
 	client := &route53Client{sdk: fake}
-	gotID, err := client.ChangeRecords(context.Background(), zoneID, changes)
-	if err != nil || gotID != changeID {
-		t.Fatalf("ChangeRecords = %q, %v; want %q, nil", gotID, err, changeID)
+	changeID, err := client.ChangeRecords(context.Background(), "Z123", changes)
+	if err != nil || changeID != "/change/C456" {
+		t.Fatalf("ChangeRecords = %q, %v; want /change/C456, nil", changeID, err)
 	}
-	status, err := client.ChangeStatus(context.Background(), gotID)
+	status, err := client.ChangeStatus(context.Background(), changeID)
 	if err != nil || status != cloud.ChangeInsync {
 		t.Fatalf("ChangeStatus = %q, %v; want %q, nil", status, err, cloud.ChangeInsync)
 	}
-	wantCalls := []string{"ChangeResourceRecordSets", "GetChange"}
-	if !reflect.DeepEqual(fake.calls, wantCalls) {
-		t.Fatalf("SDK calls = %v, want exactly %v", fake.calls, wantCalls)
+	if want := []string{"ChangeResourceRecordSets", "GetChange"}; !reflect.DeepEqual(fake.calls, want) {
+		t.Fatalf("calls = %v, want exactly %v", fake.calls, want)
 	}
 }
 
-func TestRoute53EscapedNameReadDeleteRoundTrip(t *testing.T) {
-	const escapedName = `\052.api.example.com`
+func TestRoute53EscapedListDeleteRoundTrip(t *testing.T) {
+	// R-QUX0-GJKT
+	const escapedName = `\052.api.root.example`
+	wantRecord := cloud.Record{Name: escapedName, Type: "A", TTL: 60, Values: []string{"192.0.2.1", "192.0.2.2"}}
 	fake := &fakeRoute53{}
-	fake.listResourceRecordSets = func(_ *route53.ListResourceRecordSetsInput) (*route53.ListResourceRecordSetsOutput, error) {
+	fake.listRecords = func(in *route53.ListResourceRecordSetsInput) (*route53.ListResourceRecordSetsOutput, error) {
+		if aws.ToString(in.HostedZoneId) != "Z1" {
+			t.Fatalf("HostedZoneId = %q, want Z1", aws.ToString(in.HostedZoneId))
+		}
 		return &route53.ListResourceRecordSetsOutput{ResourceRecordSets: []types.ResourceRecordSet{{
 			Name: aws.String(escapedName + "."), Type: types.RRTypeA, TTL: aws.Int64(60),
-			ResourceRecords: []types.ResourceRecord{{Value: aws.String("192.0.2.1")}},
+			ResourceRecords: []types.ResourceRecord{{Value: aws.String("192.0.2.1")}, {Value: aws.String("192.0.2.2")}},
 		}}}, nil
 	}
-	fake.changeResourceRecordSet = func(input *route53.ChangeResourceRecordSetsInput) (*route53.ChangeResourceRecordSetsOutput, error) {
-		got := input.ChangeBatch.Changes[0].ResourceRecordSet
-		if aws.ToString(got.Name) != escapedName {
-			t.Fatalf("delete name = %q, want escaped name unchanged %q", aws.ToString(got.Name), escapedName)
+	fake.change = func(in *route53.ChangeResourceRecordSetsInput) (*route53.ChangeResourceRecordSetsOutput, error) {
+		want := []types.Change{{
+			Action: types.ChangeActionDelete,
+			ResourceRecordSet: &types.ResourceRecordSet{
+				Name: aws.String(escapedName), Type: types.RRTypeA, TTL: aws.Int64(60),
+				ResourceRecords: []types.ResourceRecord{{Value: aws.String("192.0.2.1")}, {Value: aws.String("192.0.2.2")}},
+			},
+		}}
+		if aws.ToString(in.HostedZoneId) != "Z1" || in.ChangeBatch == nil || !reflect.DeepEqual(in.ChangeBatch.Changes, want) {
+			t.Fatalf("delete input = %#v, want zone Z1 and change %#v", in, want)
 		}
 		return &route53.ChangeResourceRecordSetsOutput{ChangeInfo: &types.ChangeInfo{Id: aws.String("C1")}}, nil
 	}
 
 	client := &route53Client{sdk: fake}
 	records, err := client.ListRecords(context.Background(), "Z1")
-	if err != nil || len(records) != 1 {
-		t.Fatalf("ListRecords = %#v, %v; want one record, nil", records, err)
+	if err != nil || !reflect.DeepEqual(records, []cloud.Record{wantRecord}) {
+		t.Fatalf("ListRecords = %#v, %v; want %#v, nil", records, err, []cloud.Record{wantRecord})
 	}
-	_, err = client.ChangeRecords(context.Background(), "Z1", []cloud.RecordChange{{Action: cloud.ChangeDelete, Record: records[0]}})
-	if err != nil {
+	if _, err := client.ChangeRecords(context.Background(), "Z1", []cloud.RecordChange{{Action: cloud.ChangeDelete, Record: records[0]}}); err != nil {
 		t.Fatalf("ChangeRecords: %v", err)
 	}
 	if want := []string{"ListResourceRecordSets", "ChangeResourceRecordSets"}; !reflect.DeepEqual(fake.calls, want) {
-		t.Fatalf("SDK calls = %v, want exactly %v", fake.calls, want)
+		t.Fatalf("calls = %v, want exactly %v", fake.calls, want)
 	}
 }
 
-func TestRoute53ErrorMappingAndExactDispatch(t *testing.T) {
-	// R-YOJ0-MTPJ R-YPQX-0LG8
-	boom := &smithy.GenericAPIError{Code: "Throttling", Message: "slow down"}
+func TestRoute53ZoneSelectionAbsenceAndError(t *testing.T) {
+	// R-QSH7-P03F
+	t.Run("first matching zone after nonmatches", func(t *testing.T) {
+		fake := &fakeRoute53{listZones: func(in *route53.ListHostedZonesByNameInput) (*route53.ListHostedZonesByNameOutput, error) {
+			if aws.ToString(in.DNSName) != "root.example" {
+				t.Fatalf("DNSName = %q, want root.example", aws.ToString(in.DNSName))
+			}
+			return &route53.ListHostedZonesByNameOutput{HostedZones: []types.HostedZone{
+				{Id: aws.String("/hostedzone/Z0"), Name: aws.String("other.example.")},
+				{Id: aws.String("/hostedzone/Z1"), Name: aws.String("root.example.")},
+				{Id: aws.String("/hostedzone/Z2"), Name: aws.String("root.example.")},
+			}}, nil
+		}}
+		zone, err := (&route53Client{sdk: fake}).Zone(context.Background(), "root.example")
+		if err != nil || zone != (cloud.Zone{ID: "Z1", Name: "root.example"}) {
+			t.Fatalf("Zone = %#v, %v; want first matching zone, nil", zone, err)
+		}
+	})
+
+	t.Run("absence", func(t *testing.T) {
+		fake := &fakeRoute53{listZones: func(*route53.ListHostedZonesByNameInput) (*route53.ListHostedZonesByNameOutput, error) {
+			return &route53.ListHostedZonesByNameOutput{HostedZones: []types.HostedZone{{Id: aws.String("Z0"), Name: aws.String("other.example.")}}}, nil
+		}}
+		_, err := (&route53Client{sdk: fake}).Zone(context.Background(), "missing.example")
+		var missing *cloud.NotFoundError
+		if !errors.As(err, &missing) || missing.Kind != "hosted zone" || missing.Name != "missing.example" {
+			t.Fatalf("Zone error = %#v", err)
+		}
+	})
+
+	t.Run("SDK error", func(t *testing.T) {
+		boom := &smithy.GenericAPIError{Code: "Throttling", Message: "slow"}
+		_, err := (&route53Client{sdk: &fakeRoute53{err: boom}}).Zone(context.Background(), "root.example")
+		var cloudErr *cloud.Error
+		if !errors.As(err, &cloudErr) || cloudErr.Service != "route53" || cloudErr.Operation != "ListHostedZonesByName" || cloudErr.Subject != "" || cloudErr.Code != "Throttling" || !errors.Is(cloudErr, boom) {
+			t.Fatalf("Zone error = %#v", err)
+		}
+	})
+}
+
+func TestRoute53FindRecordMatchMissesAndError(t *testing.T) {
+	// R-QTP4-2RU4
+	const escapedName = `\052.api.root.example`
+	wantRecord := cloud.Record{Name: escapedName, Type: "A", TTL: 60, Values: []string{"192.0.2.1"}}
 	tests := []struct {
-		name      string
-		operation string
-		call      func(*route53Client) error
+		name   string
+		output *route53.ListResourceRecordSetsOutput
+		err    error
+		want   cloud.Record
+		found  bool
 	}{
-		{"ListZones", "ListHostedZones", func(client *route53Client) error { _, err := client.ListZones(context.Background()); return err }},
-		{"ListRecords", "ListResourceRecordSets", func(client *route53Client) error {
-			_, err := client.ListRecords(context.Background(), "Z1")
-			return err
-		}},
-		{"ChangeRecords", "ChangeResourceRecordSets", func(client *route53Client) error {
-			_, err := client.ChangeRecords(context.Background(), "Z1", nil)
-			return err
-		}},
-		{"ChangeStatus", "GetChange", func(client *route53Client) error {
-			_, err := client.ChangeStatus(context.Background(), "C1")
-			return err
-		}},
+		{name: "match", output: &route53.ListResourceRecordSetsOutput{ResourceRecordSets: []types.ResourceRecordSet{{Name: aws.String(escapedName + "."), Type: types.RRTypeA, TTL: aws.Int64(60), ResourceRecords: []types.ResourceRecord{{Value: aws.String("192.0.2.1")}}}}}, want: wantRecord, found: true},
+		{name: "empty", output: &route53.ListResourceRecordSetsOutput{}},
+		{name: "nonempty name mismatch", output: &route53.ListResourceRecordSetsOutput{ResourceRecordSets: []types.ResourceRecordSet{{Name: aws.String("other.root.example."), Type: types.RRTypeA, TTL: aws.Int64(60)}}}},
+		{name: "type mismatch", output: &route53.ListResourceRecordSetsOutput{ResourceRecordSets: []types.ResourceRecordSet{{Name: aws.String(escapedName + "."), Type: types.RRTypeAaaa, TTL: aws.Int64(60)}}}},
+		{name: "SDK error", err: &smithy.GenericAPIError{Code: "Throttling", Message: "slow"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			fake := &fakeRoute53{err: boom}
-			var got *cloud.Error
-			if err := test.call(&route53Client{sdk: fake}); !errors.As(err, &got) {
-				t.Fatalf("error = %v, want *cloud.Error", err)
+			fake := &fakeRoute53{listRecords: func(in *route53.ListResourceRecordSetsInput) (*route53.ListResourceRecordSetsOutput, error) {
+				if aws.ToString(in.HostedZoneId) != "Z1" || aws.ToString(in.StartRecordName) != "*.api.root.example" || in.StartRecordType != types.RRTypeA || aws.ToInt32(in.MaxItems) != 1 {
+					t.Fatalf("find input = %#v", in)
+				}
+				return test.output, test.err
+			}}
+			got, found, err := (&route53Client{sdk: fake}).FindRecord(context.Background(), "Z1", "*.api.root.example", "A")
+			if test.err != nil {
+				var cloudErr *cloud.Error
+				if !errors.As(err, &cloudErr) || cloudErr.Service != "route53" || cloudErr.Operation != "ListResourceRecordSets" || cloudErr.Subject != "" || cloudErr.Code != "Throttling" || !errors.Is(cloudErr, test.err) {
+					t.Fatalf("FindRecord error = %#v", err)
+				}
+				return
 			}
-			if got.Service != "route53" || got.Operation != test.operation || got.Subject != "" || got.Code != boom.ErrorCode() || !errors.Is(got, boom) {
-				t.Fatalf("error = %#v, want route53 %s with no subject and code %s wrapping SDK error", got, test.operation, boom.ErrorCode())
-			}
-			if want := []string{test.operation}; !reflect.DeepEqual(fake.calls, want) {
-				t.Fatalf("SDK calls = %v, want exactly %v", fake.calls, want)
+			if err != nil || found != test.found || !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("FindRecord = %#v, %v, %v; want %#v, %v, nil", got, found, err, test.want, test.found)
 			}
 		})
-	}
-}
-
-func TestRoute53NonAPIErrorHasEmptyCode(t *testing.T) {
-	// R-YOJ0-MTPJ
-	boom := errors.New("transport failed")
-	fake := &fakeRoute53{err: boom}
-	_, err := (&route53Client{sdk: fake}).ListZones(context.Background())
-	var got *cloud.Error
-	if !errors.As(err, &got) || got.Code != "" || !errors.Is(got, boom) {
-		t.Fatalf("error = %#v, want code-empty *cloud.Error wrapping transport error", err)
 	}
 }

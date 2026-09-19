@@ -6,16 +6,17 @@ import (
 	"io"
 	"strings"
 
-	"github.com/ikigenba/ikigenba/devctl/internal/account"
+	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/host"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 	"github.com/ikigenba/ikigenba/devctl/internal/space"
+	"github.com/ikigenba/ikigenba/devctl/internal/spaceref"
 )
 
-const helpText = `Usage: devctl --account <name> remove <domain> <app>
+const helpText = `Usage: devctl remove <space> <app>
 
-Have opsctl on <domain> take <app> off the space: stop and remove its service,
+Have opsctl on the space take <app> off it: stop and remove its service,
 remove its binary and configuration, and stop routing its name. Its state/ is
 kept on the host and its secrets are kept in the account, so a later deploy of
 <app> lands over its data. What remove does on the host is opsctl's.
@@ -37,13 +38,13 @@ func (e *UsageError) ExitCode() int { return 2 }
 func (e *UsageError) Detail() string { return fmt.Sprintf("see '%s' for usage", e.Help) }
 
 type invocation struct {
-	domain string
-	app    string
-	help   bool
+	space string
+	app   string
+	help  bool
 }
 
 // Run removes one app from a running space through opsctl.
-func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, profile string) error {
+func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) error {
 	parsed, err := parse(args)
 	if err != nil {
 		return err
@@ -53,16 +54,24 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, p
 		return err
 	}
 
-	acct, err := account.Open(ctx, deps, profile)
+	root, err := checkout.ReadRootFile(ctx, deps)
 	if err != nil {
 		return err
 	}
-	target, err := acct.Space(ctx, parsed.domain)
+	targetRef, err := spaceref.Parse(parsed.space, root.Domain)
+	if err != nil {
+		return err
+	}
+	session, err := cloud.Connect(ctx, deps.Cloud, root.Domain, root.Region)
+	if err != nil {
+		return err
+	}
+	target, err := cloud.LookupSpace(ctx, session.Clients.EC2, root.Domain, targetRef.Domain)
 	if err != nil {
 		return err
 	}
 	if target.State != cloud.StateRunning {
-		return &space.NotRunningError{Domain: parsed.domain, State: target.State}
+		return &space.NotRunningError{Domain: targetRef.Domain, State: target.State}
 	}
 
 	if _, err := (host.Host{Address: target.Address, Deps: deps}).Sudo(ctx, "remove", "opsctl", "uninstall", parsed.app); err != nil {
@@ -84,12 +93,12 @@ func parse(args []string) (invocation, error) {
 		}
 	}
 	if len(args) < 2 {
-		return invocation{}, usage("remove needs <domain> and <app>")
+		return invocation{}, usage("remove needs <space> and <app>")
 	}
 	if len(args) > 2 {
-		return invocation{}, usage("remove takes only <domain> and <app>")
+		return invocation{}, usage("remove takes only <space> and <app>")
 	}
-	return invocation{domain: args[0], app: args[1]}, nil
+	return invocation{space: args[0], app: args[1]}, nil
 }
 
 func usage(message string) *UsageError {

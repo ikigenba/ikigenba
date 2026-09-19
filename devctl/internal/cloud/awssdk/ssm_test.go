@@ -141,7 +141,7 @@ func TestSSMMappingAndInputs(t *testing.T) {
 }
 
 func TestSSMErrorMapping(t *testing.T) {
-	// R-YOJ0-MTPJ R-YPQX-0LG8
+	// R-VV8S-ZVE7 R-YPQX-0LG8
 	const name = "/ikigenba/secret"
 	boom := &smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"}
 	tests := []struct {

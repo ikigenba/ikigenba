@@ -23,6 +23,24 @@ func (err *NoAppError) Error() string {
 	return fmt.Sprintf("no app '%s' in the checkout", err.Name)
 }
 
+// NoRootFileError reports that a checkout has no platform root file.
+type NoRootFileError struct {
+	Checkout string
+}
+
+func (err *NoRootFileError) Error() string {
+	return "no " + RootFilePath + " in the checkout"
+}
+
+// RootFileError reports malformed platform root-file contents.
+type RootFileError struct {
+	Detail string
+}
+
+func (err *RootFileError) Error() string {
+	return RootFilePath + ": " + err.Detail
+}
+
 // ManifestError reports an application manifest failure.
 type ManifestError struct {
 	App    string

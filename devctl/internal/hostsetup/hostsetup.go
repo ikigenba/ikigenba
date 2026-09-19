@@ -2,13 +2,64 @@ package hostsetup
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 
-	"github.com/ikigenba/ikigenba/devctl/internal/account"
-	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/host"
+	"github.com/ikigenba/ikigenba/devctl/internal/spaceref"
 )
+
+// Configuration keys name the values in the opsctl configuration store.
+const (
+	KeyHostName                  = "host.name"
+	KeyHostApex                  = "host.apex"
+	KeyACMEEmail                 = "acme.email"
+	KeyAWSRegion                 = "aws.region"
+	KeyBackupS3URI               = "backup.s3_uri"
+	KeyBackupServiceFilesSeconds = "backup.service_files_seconds"
+	KeyBackupHostFilesSeconds    = "backup.host_files_seconds"
+	KeyBackupServiceDBSeconds    = "backup.service_db_seconds"
+	KeyBackupServiceWALSeconds   = "backup.service_wal_seconds"
+	KeyDNSProvider               = "dns.provider"
+	KeyDNSZones                  = "dns.zones"
+)
+
+// DefaultHostFilesSeconds and the other defaults apply to newly configured hosts.
+const (
+	DefaultHostFilesSeconds    = 86400
+	DefaultServiceFilesSeconds = 86400
+	DefaultServiceDBSeconds    = 86400
+	DefaultServiceWALSeconds   = 300
+)
+
+// BackupPeriods contains the four opsctl backup intervals.
+type BackupPeriods struct {
+	HostFilesSeconds    int
+	ServiceFilesSeconds int
+	ServiceDBSeconds    int
+	ServiceWALSeconds   int
+}
+
+// DefaultBackupPeriods returns the backup intervals used for new spaces.
+func DefaultBackupPeriods() BackupPeriods {
+	return BackupPeriods{
+		HostFilesSeconds:    DefaultHostFilesSeconds,
+		ServiceFilesSeconds: DefaultServiceFilesSeconds,
+		ServiceDBSeconds:    DefaultServiceDBSeconds,
+		ServiceWALSeconds:   DefaultServiceWALSeconds,
+	}
+}
+
+// Config contains the plain values Configure writes to a host.
+type Config struct {
+	Root    string
+	Region  string
+	ZoneID  string
+	Space   spaceref.Space
+	Email   string
+	Periods *BackupPeriods
+}
 
 // InstallLatest discovers and installs the newest published opsctl release.
 func InstallLatest(ctx context.Context, target host.Host) (string, error) {
@@ -44,33 +95,60 @@ func Version(ctx context.Context, target host.Host) (string, error) {
 func Configure(
 	ctx context.Context,
 	target host.Host,
-	props account.Properties,
-	zone cloud.Zone,
-	domain string,
-	email *string,
+	step string,
+	cfg Config,
 ) (int, error) {
 	type setting struct {
 		key   string
 		value string
 	}
 	values := []setting{
-		{"host.name", domain},
-		{"dns.provider", DNSProvider},
-		{"dns.zones", zone.Name + ":" + zone.ID},
-		{"aws.region", props.Region},
-		{"backup.s3_uri", "s3://" + props.BackupBucket + "/" + domain + "/"},
-		{"backup.host_files_seconds", strconv.Itoa(props.BackupHostFilesSeconds)},
-		{"backup.service_files_seconds", strconv.Itoa(props.BackupServiceFilesSeconds)},
-		{"backup.service_db_seconds", strconv.Itoa(props.BackupServiceDBSeconds)},
-		{"backup.service_wal_seconds", strconv.Itoa(props.BackupServiceWALSeconds)},
+		{KeyHostName, cfg.Space.Domain},
+		{KeyDNSProvider, DNSProvider},
+		{KeyDNSZones, cfg.Root + ":" + cfg.ZoneID},
+		{KeyAWSRegion, cfg.Region},
+		{KeyBackupS3URI, "s3://" + cfg.Root + "/" + cfg.Space.Label + "/"},
 	}
-	if email != nil {
-		values = append(values, setting{"acme.email", *email})
+	if cfg.Periods != nil {
+		values = append(values,
+			setting{KeyBackupHostFilesSeconds, strconv.Itoa(cfg.Periods.HostFilesSeconds)},
+			setting{KeyBackupServiceFilesSeconds, strconv.Itoa(cfg.Periods.ServiceFilesSeconds)},
+			setting{KeyBackupServiceDBSeconds, strconv.Itoa(cfg.Periods.ServiceDBSeconds)},
+			setting{KeyBackupServiceWALSeconds, strconv.Itoa(cfg.Periods.ServiceWALSeconds)},
+		)
+	}
+	if cfg.Email != "" {
+		values = append(values, setting{KeyACMEEmail, cfg.Email})
 	}
 	for i, item := range values {
-		if _, err := target.Sudo(ctx, "opsctl", "opsctl", "config", "set", item.key+"="+item.value); err != nil {
+		if err := SetKey(ctx, target, step, item.key, item.value); err != nil {
 			return i, err
 		}
 	}
 	return len(values), nil
+}
+
+// SetKey sets one opsctl configuration key.
+func SetKey(ctx context.Context, target host.Host, step, key, value string) error {
+	_, err := target.Sudo(ctx, step, "opsctl", "config", "set", key+"="+value)
+	return err
+}
+
+// DelKey removes one opsctl configuration key.
+func DelKey(ctx context.Context, target host.Host, step, key string) error {
+	_, err := target.Sudo(ctx, step, "opsctl", "config", "del", key)
+	return err
+}
+
+// GetKey returns one opsctl configuration value and whether it is set.
+func GetKey(ctx context.Context, target host.Host, step, key string) (string, bool, error) {
+	output, err := target.Sudo(ctx, step, "opsctl", "config", "get", key)
+	if err == nil {
+		return strings.TrimRight(output.Stdout, "\r\n"), true, nil
+	}
+	var commandErr *host.CommandError
+	if errors.As(err, &commandErr) && commandErr.Status == 1 {
+		return "", false, nil
+	}
+	return "", false, err
 }

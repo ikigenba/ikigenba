@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ikigenba/ikigenba/devctl/internal/account"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
@@ -14,12 +13,12 @@ import (
 func WaitState(
 	ctx context.Context,
 	deps seam.Deps,
-	acct *account.Account,
+	ec2 cloud.EC2,
 	id string,
 	state cloud.InstanceState,
 ) (cloud.Instance, error) {
 	for attempt := 0; attempt < PollAttempts; attempt++ {
-		instance, err := acct.Clients.EC2.DescribeInstance(ctx, id)
+		instance, err := ec2.DescribeInstance(ctx, id)
 		if err != nil {
 			return cloud.Instance{}, err
 		}
@@ -38,9 +37,9 @@ func WaitState(
 }
 
 // WaitChecks waits until both instance status checks pass.
-func WaitChecks(ctx context.Context, deps seam.Deps, acct *account.Account, id string) error {
+func WaitChecks(ctx context.Context, deps seam.Deps, ec2 cloud.EC2, id string) error {
 	for attempt := 0; attempt < PollAttempts; attempt++ {
-		passed, err := acct.Clients.EC2.InstanceChecksPassed(ctx, id)
+		passed, err := ec2.InstanceChecksPassed(ctx, id)
 		if err != nil {
 			return err
 		}
@@ -62,11 +61,11 @@ func WaitChecks(ctx context.Context, deps seam.Deps, acct *account.Account, id s
 func WaitLaunchReady(
 	ctx context.Context,
 	deps seam.Deps,
-	acct *account.Account,
+	ec2 cloud.EC2,
 	spec cloud.LaunchSpec,
 ) error {
 	for attempt := 0; attempt < PollAttempts; attempt++ {
-		ready, err := acct.Clients.EC2.LaunchReady(ctx, spec)
+		ready, err := ec2.LaunchReady(ctx, spec)
 		if err != nil {
 			return err
 		}
@@ -84,9 +83,30 @@ func WaitLaunchReady(
 	return &WaitError{Subject: spec.InstanceProfile, Want: "become usable for launch"}
 }
 
+// WaitInsync waits until a Route 53 change has propagated.
+func WaitInsync(ctx context.Context, deps seam.Deps, route53 cloud.Route53, changeID string) error {
+	for attempt := 0; attempt < PollAttempts; attempt++ {
+		status, err := route53.ChangeStatus(ctx, changeID)
+		if err != nil {
+			return err
+		}
+		if status == cloud.ChangeInsync {
+			return nil
+		}
+		if attempt+1 < PollAttempts {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-deps.After(PollInterval):
+			}
+		}
+	}
+	return &WaitError{Subject: changeID, Want: "reach INSYNC"}
+}
+
 // ElasticIP finds the address allocated to domain.
-func ElasticIP(ctx context.Context, acct *account.Account, domain string) (cloud.Address, bool, error) {
-	addresses, err := acct.Clients.EC2.ListSpaceAddresses(ctx)
+func ElasticIP(ctx context.Context, ec2 cloud.EC2, root, domain string) (cloud.Address, bool, error) {
+	addresses, err := ec2.ListSpaceAddresses(ctx, root)
 	if err != nil {
 		return cloud.Address{}, false, err
 	}
@@ -106,20 +126,20 @@ func ElasticIP(ctx context.Context, acct *account.Account, domain string) (cloud
 }
 
 // ReleaseElasticIP disassociates addr when necessary, then releases it.
-func ReleaseElasticIP(ctx context.Context, acct *account.Account, addr cloud.Address) error {
+func ReleaseElasticIP(ctx context.Context, ec2 cloud.EC2, addr cloud.Address) error {
 	if addr.AssociationID != "" {
-		if err := acct.Clients.EC2.DisassociateAddress(ctx, addr.AssociationID); err != nil {
+		if err := ec2.DisassociateAddress(ctx, addr.AssociationID); err != nil {
 			return err
 		}
 	}
-	return acct.Clients.EC2.ReleaseAddress(ctx, addr.AllocationID)
+	return ec2.ReleaseAddress(ctx, addr.AllocationID)
 }
 
 // PutRecords upserts the apex and wildcard A records and waits for propagation.
 func PutRecords(
 	ctx context.Context,
 	deps seam.Deps,
-	acct *account.Account,
+	route53 cloud.Route53,
 	zone cloud.Zone,
 	domain string,
 	address string,
@@ -132,81 +152,113 @@ func PutRecords(
 			Record: cloud.Record{Name: name, Type: "A", TTL: RecordTTL, Values: []string{address}},
 		})
 	}
-	changeID, err := acct.Clients.Route53.ChangeRecords(ctx, zone.ID, changes)
+	changeID, err := route53.ChangeRecords(ctx, zone.ID, changes)
 	if err != nil {
 		return err
 	}
-	for attempt := 0; attempt < PollAttempts; attempt++ {
-		status, err := acct.Clients.Route53.ChangeStatus(ctx, changeID)
-		if err != nil {
-			return err
-		}
-		if status == cloud.ChangeInsync {
-			return nil
-		}
-		if attempt+1 < PollAttempts {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-deps.After(PollInterval):
-			}
-		}
-	}
-	return &WaitError{Subject: changeID, Want: "reach INSYNC"}
+	return WaitInsync(ctx, deps, route53, changeID)
 }
 
 // DeleteRecords deletes the returned apex and wildcard A record sets exactly
 // as the provider represented them.
-func DeleteRecords(ctx context.Context, acct *account.Account, zone cloud.Zone, domain string) (int, error) {
-	records, err := acct.Clients.Route53.ListRecords(ctx, zone.ID)
+func DeleteRecords(ctx context.Context, route53 cloud.Route53, zone cloud.Zone, domain string) ([]string, error) {
+	records, err := route53.ListRecords(ctx, zone.ID)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	wildcard := "*." + domain
 	escapedWildcard := `\052.` + domain
 	changes := make([]cloud.RecordChange, 0, 2)
+	bareFound := false
+	wildcardFound := false
 	for _, record := range records {
 		if record.Type == "A" && (record.Name == domain || record.Name == wildcard || record.Name == escapedWildcard) {
 			changes = append(changes, cloud.RecordChange{Action: cloud.ChangeDelete, Record: record})
+			bareFound = bareFound || record.Name == domain
+			wildcardFound = wildcardFound || record.Name == wildcard || record.Name == escapedWildcard
 		}
 	}
 	if len(changes) == 0 {
-		return 0, nil
+		return []string{}, nil
 	}
-	if _, err := acct.Clients.Route53.ChangeRecords(ctx, zone.ID, changes); err != nil {
-		return 0, err
+	if _, err := route53.ChangeRecords(ctx, zone.ID, changes); err != nil {
+		return nil, err
 	}
-	return len(changes), nil
+	deleted := make([]string, 0, 2)
+	if bareFound {
+		deleted = append(deleted, domain)
+	}
+	if wildcardFound {
+		deleted = append(deleted, wildcard)
+	}
+	return deleted, nil
 }
 
 // DeleteRole deletes the role and same-named instance profile when either
 // exists. It reports whether there was anything to delete.
-func DeleteRole(ctx context.Context, acct *account.Account, domain string) (bool, error) {
+func DeleteRole(ctx context.Context, iam cloud.IAM, domain string) (bool, error) {
 	name := RoleName(domain)
-	roleExists, err := acct.Clients.IAM.RoleExists(ctx, name)
+	roleExists, err := iam.RoleExists(ctx, name)
 	if err != nil {
 		return false, err
 	}
-	roles, profileExists, err := acct.Clients.IAM.InstanceProfileRoles(ctx, name)
+	roles, profileExists, err := iam.InstanceProfileRoles(ctx, name)
 	if err != nil {
 		return false, err
 	}
 	if !roleExists && !profileExists {
 		return false, nil
 	}
-	if err := acct.Clients.IAM.DeleteRolePolicy(ctx, name, PolicyName); err != nil {
+	if err := iam.DeleteRolePolicy(ctx, name, PolicyName); err != nil {
 		return false, err
 	}
 	for _, role := range roles {
-		if err := acct.Clients.IAM.RemoveRoleFromInstanceProfile(ctx, name, role); err != nil {
+		if err := iam.RemoveRoleFromInstanceProfile(ctx, name, role); err != nil {
 			return false, err
 		}
 	}
-	if err := acct.Clients.IAM.DeleteInstanceProfile(ctx, name); err != nil {
+	if err := iam.DeleteInstanceProfile(ctx, name); err != nil {
 		return false, err
 	}
-	if err := acct.Clients.IAM.DeleteRole(ctx, name); err != nil {
+	if err := iam.DeleteRole(ctx, name); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// ApexRecord is the root A record and the space whose address it names.
+type ApexRecord struct {
+	Record cloud.Record
+	Found  bool
+	Holder string
+}
+
+// FindApex finds the root A record and identifies its address holder.
+func FindApex(ctx context.Context, route53 cloud.Route53, ec2 cloud.EC2, zoneID, root string) (ApexRecord, error) {
+	record, found, err := route53.FindRecord(ctx, zoneID, root, "A")
+	if err != nil {
+		return ApexRecord{}, err
+	}
+	if !found {
+		return ApexRecord{}, nil
+	}
+	addresses, err := ec2.ListSpaceAddresses(ctx, root)
+	if err != nil {
+		return ApexRecord{}, err
+	}
+	result := ApexRecord{Record: record, Found: true}
+	matches := 0
+	for _, address := range addresses {
+		for _, value := range record.Values {
+			if address.IP == value {
+				matches++
+				result.Holder = address.Space
+				break
+			}
+		}
+	}
+	if matches > 1 {
+		return ApexRecord{}, fmt.Errorf("multiple elastic IPs match apex for %s", root)
+	}
+	return result, nil
 }

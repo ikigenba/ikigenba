@@ -6,29 +6,30 @@ import (
 	"io"
 	"strings"
 
-	"github.com/ikigenba/ikigenba/devctl/internal/account"
 	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
+	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
+	"github.com/ikigenba/ikigenba/devctl/internal/spaceref"
 )
 
 const (
 	helpCommand = "devctl secrets --help"
-	usageText   = `Usage: devctl --account <name> secrets <subcommand> <domain> [<app>]
+	usageText   = `Usage: devctl secrets <subcommand> <space> [<app>]
 
 Push the values an app's manifest names from this machine's keyring to the
 space's Parameter Store entry, or list which names a space holds. Values are
 never printed.
 
 Subcommands:
-  push <domain> [<app>]   write /ikigenba/<domain>/<app> for one app, or every app
-  list <domain> [<app>]   print the key names held for one app, or every app
+  push <space> [<app>]   write /<space domain>/<app> for one app, or every app
+  list <space> [<app>]   print the key names held for one app, or every app
 
-Every subcommand needs --account. Run 'devctl secrets <subcommand> --help' for details.
+Run 'devctl secrets <subcommand> --help' for details.
 `
-	pushUsage = `Usage: devctl --account <name> secrets push <domain> [<app>]
+	pushUsage = `Usage: devctl secrets push <space> [<app>]
 
 Write the space's Parameter Store entry for an app from this machine's keyring:
-a SecureString at /ikigenba/<domain>/<app> holding a JSON object whose keys are
+a SecureString at /<space domain>/<app> holding a JSON object whose keys are
 the names the app's manifest declares. Each value comes from the environment
 variable of that name, or from the login keyring. Values are never printed.
 
@@ -37,33 +38,33 @@ value is gathered before anything is written, so one missing value leaves every
 app's entry as it was.
 
 Arguments:
-  <domain>   the space to write the entry in
+  <space>    the space to write the entry in, by label or full domain
   <app>      one app of the checkout; omitted, every app
 `
-	listUsage = `Usage: devctl --account <name> secrets list <domain> [<app>]
+	listUsage = `Usage: devctl secrets list <space> [<app>]
 
 Print the key names the space's Parameter Store entry holds for an app: the
 app, then its names sorted and comma-separated, or - when the entry is empty.
 Only names are printed; a value never is.
 
-With <app> omitted, every entry under /ikigenba/<domain>/ is printed, in app
+With <app> omitted, every entry under /<space domain>/ is printed, in app
 order, and a space that holds none prints nothing.
 
 Arguments:
-  <domain>   the space to read the entries of
+  <space>    the space to read the entries of, by label or full domain
   <app>      one app the space holds an entry for; omitted, every app
 `
 )
 
 type invocation struct {
 	subcommand string
-	domain     string
+	space      string
 	app        string
 	help       string
 }
 
 // Run executes a secrets command.
-func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, profile string) error {
+func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) error {
 	invocation, err := parseInvocation(args)
 	if err != nil {
 		return err
@@ -72,7 +73,7 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, p
 		_, _ = fmt.Fprint(stdout, invocation.help)
 		return nil
 	}
-	return dispatch(ctx, invocation, stdout, deps, profile)
+	return dispatch(ctx, invocation, stdout, deps)
 }
 
 func parseInvocation(args []string) (invocation, error) {
@@ -107,12 +108,12 @@ func parseInvocation(args []string) (invocation, error) {
 
 	operands := append([]string(nil), arguments...)
 	if len(operands) == 0 {
-		return invocation{}, usage("secrets " + subcommand + " needs <domain>")
+		return invocation{}, usage("secrets " + subcommand + " needs <space>")
 	}
 	if len(operands) > 2 {
-		return invocation{}, usage("secrets " + subcommand + " takes at most <domain> and <app>")
+		return invocation{}, usage("secrets " + subcommand + " takes at most <space> and <app>")
 	}
-	result.domain = operands[0]
+	result.space = operands[0]
 	if len(operands) == 2 {
 		result.app = operands[1]
 	}
@@ -127,7 +128,7 @@ func unknownOption(option string) *UsageError {
 	return usage("unknown option '" + option + "'")
 }
 
-func dispatch(ctx context.Context, invocation invocation, stdout io.Writer, deps seam.Deps, profile string) error {
+func dispatch(ctx context.Context, invocation invocation, stdout io.Writer, deps seam.Deps) error {
 	if invocation.subcommand == "push" {
 		checkoutRoot, err := checkout.Open(ctx, deps)
 		if err != nil {
@@ -145,31 +146,47 @@ func dispatch(ctx context.Context, invocation invocation, stdout io.Writer, deps
 			return err
 		}
 
-		acct, err := account.Open(ctx, deps, profile)
+		rootFile, err := checkoutRoot.ReadRootFile()
 		if err != nil {
 			return err
 		}
-		if _, err := acct.Space(ctx, invocation.domain); err != nil {
+		space, err := spaceref.Parse(invocation.space, rootFile.Domain)
+		if err != nil {
 			return err
 		}
-		entries, err := Push(ctx, deps, acct, invocation.domain, apps)
+		session, err := cloud.Connect(ctx, deps.Cloud, rootFile.Domain, rootFile.Region)
+		if err != nil {
+			return err
+		}
+		if _, err := cloud.LookupSpace(ctx, session.Clients.EC2, rootFile.Domain, space.Domain); err != nil {
+			return err
+		}
+		entries, err := Push(ctx, deps, session.Clients.SSM, space.Domain, apps)
 		writeEntries(stdout, entries, true)
 		return err
 	}
 
-	acct, err := account.Open(ctx, deps, profile)
+	rootFile, err := checkout.ReadRootFile(ctx, deps)
+	if err != nil {
+		return err
+	}
+	space, err := spaceref.Parse(invocation.space, rootFile.Domain)
+	if err != nil {
+		return err
+	}
+	session, err := cloud.Connect(ctx, deps.Cloud, rootFile.Domain, rootFile.Region)
 	if err != nil {
 		return err
 	}
 	if invocation.app != "" {
-		keys, err := Names(ctx, acct, invocation.domain, invocation.app)
+		keys, err := Names(ctx, session.Clients.SSM, space.Domain, invocation.app)
 		if err != nil {
 			return err
 		}
 		writeListEntry(stdout, Entry{App: invocation.app, Keys: keys})
 		return nil
 	}
-	entries, err := List(ctx, acct, invocation.domain)
+	entries, err := List(ctx, session.Clients.SSM, space.Domain)
 	if err != nil {
 		return err
 	}

@@ -3,8 +3,6 @@ package cli
 import (
 	"bytes"
 	"context"
-	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -16,76 +14,64 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
 
-func TestCheckoutUsageErrorsAreSingleLine(t *testing.T) {
-	// R-WIEQ-9TUN
-	tests := []struct {
-		name string
-		err  error
-		want string
-	}{
-		{
-			name: "not in checkout",
-			err:  fmt.Errorf("outer context: %w", &checkout.NotInCheckoutError{Dir: "/work"}),
-			want: "devctl: '/work' is not inside a git checkout\n",
-		},
-		{
-			name: "no app",
-			err:  fmt.Errorf("outer context: %w", &checkout.NoAppError{Name: "bogus"}),
-			want: "devctl: no app 'bogus' in the checkout\n",
-		},
-		{
-			name: "manifest",
-			err: fmt.Errorf("outer context: %w", &checkout.ManifestError{
-				App: "crm", Detail: "invalid manifest", Err: errors.New("decode failure"),
-			}),
-			want: "devctl: crm: etc/manifest.toml: invalid manifest\n",
-		},
-	}
+func TestCheckoutErrorsThroughCLI(t *testing.T) {
+	// R-QEXY-821P
+	t.Run("no app", func(t *testing.T) {
+		root := writeD04CLIApp(t)
+		deps := d04CheckoutDeps(t, root)
+		want := "devctl: no app 'bogus' in the checkout\n"
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			var stderr bytes.Buffer
-			if got := operationError(&stderr, test.err); got != 2 {
-				t.Fatalf("operationError exit code = %d, want 2", got)
-			}
-			if got := stderr.String(); got != test.want {
-				t.Fatalf("stderr = %q, want %q", got, test.want)
-			}
-		})
-	}
-}
+		for _, args := range [][]string{
+			{"build", "bogus"},
+			{"secrets", "push", "sbx1", "bogus"},
+		} {
+			t.Run(strings.Join(args, "_"), func(t *testing.T) {
+				assertResult(t, invokeWithDeps(deps, args...), 2, "", want)
+			})
+		}
+	})
 
-func TestBogusCheckoutAppsThroughCLI(t *testing.T) {
-	// R-WIEQ-9TUN
-	root := writeD04CLIApp(t)
-	cloudCalls := 0
-	deps := seam.Deps{
-		Dir:  root,
-		EUID: 1,
-		Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
+	t.Run("manifest", func(t *testing.T) {
+		root := writeD04CLIApp(t)
+		manifest := filepath.Join(root, "crm", checkout.ManifestFile)
+		if err := os.WriteFile(manifest, []byte("app = \"other\"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		assertResult(t, invokeWithDeps(d04CheckoutDeps(t, root), "build", "crm"), 2, "",
+			"devctl: crm: etc/manifest.toml: app is 'other', not 'crm'\n")
+	})
+
+	t.Run("not in checkout", func(t *testing.T) {
+		const dir = "/work"
+		deps := d04CheckoutDeps(t, dir)
+		deps.Exec = func(_ context.Context, command seam.Cmd) (seam.Result, error) {
 			if command.Path != "git" || !reflect.DeepEqual(command.Args, []string{"rev-parse", "--show-toplevel"}) {
 				t.Fatalf("checkout command = %#v", command)
 			}
-			return seam.Result{Stdout: []byte(root + "\n")}, nil
-		},
-		Cloud: func(context.Context, string, string) (cloud.Clients, error) {
-			cloudCalls++
-			return cloud.Clients{}, errors.New("unexpected cloud call")
-		},
-	}
-	want := "devctl: no app 'bogus' in the checkout\n"
+			return seam.Result{ExitCode: 128}, nil
+		}
+		assertResult(t, invokeWithDeps(deps, "space", "list"), 2, "",
+			"devctl: '/work' is not inside a git checkout\n")
+	})
 
-	for _, args := range [][]string{
-		{"build", "bogus"},
-		{"--account", "work", "secrets", "push", "foo.sbx.ikigenba.dev", "bogus"},
-	} {
-		t.Run(strings.Join(args, "_"), func(t *testing.T) {
-			assertResult(t, invokeWithDeps(deps, args...), 2, "", want)
-		})
-	}
-	if cloudCalls != 0 {
-		t.Fatalf("Deps.Cloud calls = %d, want none", cloudCalls)
-	}
+	t.Run("no root file", func(t *testing.T) {
+		root := t.TempDir()
+		assertResult(t, invokeWithDeps(d04CheckoutDeps(t, root), "space", "list"), 2, "",
+			"devctl: no infra/terraform.tfvars.json in the checkout\n")
+	})
+
+	t.Run("invalid root file", func(t *testing.T) {
+		root := t.TempDir()
+		path := filepath.Join(root, checkout.RootFilePath)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(`{"domain": "ikigenba.dev"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		assertResult(t, invokeWithDeps(d04CheckoutDeps(t, root), "space", "list"), 2, "",
+			"devctl: infra/terraform.tfvars.json: missing 'region'\n")
+	})
 }
 
 func TestCheckoutGitErrorsThroughCLI(t *testing.T) {
@@ -155,4 +141,22 @@ func writeD04CLIApp(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return root
+}
+
+func d04CheckoutDeps(t *testing.T, root string) seam.Deps {
+	t.Helper()
+	return seam.Deps{
+		Dir:  root,
+		EUID: 1,
+		Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
+			if command.Path != "git" || !reflect.DeepEqual(command.Args, []string{"rev-parse", "--show-toplevel"}) {
+				t.Fatalf("checkout command = %#v", command)
+			}
+			return seam.Result{Stdout: []byte(root + "\n")}, nil
+		},
+		Cloud: func(context.Context, string, string) (cloud.Clients, error) {
+			t.Fatal("unexpected cloud call")
+			return cloud.Clients{}, nil
+		},
+	}
 }

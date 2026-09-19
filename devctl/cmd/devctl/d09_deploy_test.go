@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -12,15 +14,15 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
 
-const wantDeployUsage = `Usage: devctl --account <name> deploy <domain> <file>
+const wantDeployUsage = `Usage: devctl deploy <space> <file>
 
 Upload <file>, an <app>/dist/<app>-<tag>.tar.xz written by build, to the
-deploy/ prefix of <domain>'s backup bucket and have opsctl on <domain> install
-it from there. The app and tag (v<semver>) are read from the file name.
+space's deploy/ prefix in the bucket and have opsctl on the space install it
+from there. The app and tag (v<semver>) are read from the file name.
 `
 
 func TestDeployUsageDiagnosticsAtCommandBoundary(t *testing.T) {
-	// R-V2NL-65SU R-Z3B4-LFWL
+	// R-O6OH-FJO8 R-O7WD-TBEX
 	tests := []struct {
 		name    string
 		args    []string
@@ -28,27 +30,27 @@ func TestDeployUsageDiagnosticsAtCommandBoundary(t *testing.T) {
 	}{
 		{
 			name:    "no operands",
-			args:    []string{"--account", "SelectedProfile", "deploy"},
-			message: "deploy needs <domain> and <file>",
+			args:    []string{"deploy"},
+			message: "deploy needs <space> and <file>",
 		},
 		{
 			name:    "one operand",
-			args:    []string{"--account", "SelectedProfile", "deploy", "foo.example"},
-			message: "deploy needs <domain> and <file>",
+			args:    []string{"deploy", "sbx1"},
+			message: "deploy needs <space> and <file>",
 		},
 		{
 			name:    "extra operand",
-			args:    []string{"--account", "SelectedProfile", "deploy", "foo.example", "crm-v0.1.0.tar.xz", "extra"},
-			message: "deploy takes only <domain> and <file>",
+			args:    []string{"deploy", "sbx1", "crm-v0.1.0.tar.xz", "extra"},
+			message: "deploy takes only <space> and <file>",
 		},
 		{
 			name:    "unknown option first",
-			args:    []string{"--account", "SelectedProfile", "deploy", "--unknown", "foo.example", "crm-v0.1.0.tar.xz"},
+			args:    []string{"deploy", "--unknown", "sbx1", "crm-v0.1.0.tar.xz"},
 			message: "unknown option '--unknown'",
 		},
 		{
 			name:    "unknown option later",
-			args:    []string{"--account", "SelectedProfile", "deploy", "foo.example", "--unknown"},
+			args:    []string{"deploy", "sbx1", "--unknown"},
 			message: "unknown option '--unknown'",
 		},
 	}
@@ -67,12 +69,12 @@ func TestDeployUsageDiagnosticsAtCommandBoundary(t *testing.T) {
 }
 
 func TestDeployHelpAtCommandBoundary(t *testing.T) {
-	// R-F99Q-M7XS
+	// R-O48O-O06U R-OAC6-KUWB
 	for _, args := range [][]string{
 		{"deploy", "--help"},
 		{"deploy", "-h"},
-		{"--account", "SelectedProfile", "deploy", "foo.example", "crm-v0.1.0.tar.xz", "--help"},
-		{"--account", "SelectedProfile", "deploy", "foo.example", "crm-v0.1.0.tar.xz", "-h"},
+		{"deploy", "sbx1", "crm-v0.1.0.tar.xz", "--help"},
+		{"deploy", "sbx1", "crm-v0.1.0.tar.xz", "-h"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			code, stdout, stderr, cloudCalls, execCalls := invokeDeployBoundary(t, args...)
@@ -87,9 +89,9 @@ func TestDeployHelpAtCommandBoundary(t *testing.T) {
 }
 
 func TestDeployMissingArtifactAtCommandBoundary(t *testing.T) {
-	// R-08GB-YDTQ
+	// R-08GB-YDTQ R-OBK2-YMN0
 	code, stdout, stderr, cloudCalls, execCalls := invokeDeployBoundary(t,
-		"--account", "SelectedProfile", "deploy", "foo.sbx.ikigenba.dev", "crm/dist/crm-v0.2.0.tar.xz",
+		"deploy", "sbx1", "crm/dist/crm-v0.2.0.tar.xz",
 	)
 	const wantStderr = "devctl: no such file 'crm/dist/crm-v0.2.0.tar.xz'\n"
 	if code != 2 || stdout != "" || stderr != wantStderr {
@@ -100,12 +102,36 @@ func TestDeployMissingArtifactAtCommandBoundary(t *testing.T) {
 	}
 }
 
+func TestDeployInvalidArtifactNameAtCommandBoundary(t *testing.T) {
+	// R-FBPJ-DRF6 R-OBK2-YMN0
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "notes.tar.xz"), []byte("artifact"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr, cloudCalls, execCalls := invokeDeployBoundaryAt(t, dir,
+		"deploy", "sbx1", "notes.tar.xz",
+	)
+	const wantStderr = "devctl: 'notes.tar.xz' is not a file build wrote: name is not <app>-v<semver>.tar.xz\n"
+	if code != 2 || stdout != "" || stderr != wantStderr {
+		t.Fatalf("result = code %d, stdout %q, stderr %q; want 2, empty, %q", code, stdout, stderr, wantStderr)
+	}
+	if cloudCalls != 0 || execCalls != 0 {
+		t.Fatalf("external calls = cloud %d, exec %d; want none", cloudCalls, execCalls)
+	}
+}
+
 func invokeDeployBoundary(t *testing.T, args ...string) (int, string, string, int, int) {
+	t.Helper()
+	return invokeDeployBoundaryAt(t, t.TempDir(), args...)
+}
+
+func invokeDeployBoundaryAt(t *testing.T, dir string, args ...string) (int, string, string, int, int) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	cloudCalls, execCalls := 0, 0
 	deps := seam.Deps{
 		EUID: 1,
+		Dir:  dir,
 		Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
 			execCalls++
 			return seam.Result{}, errors.New("unexpected process access")

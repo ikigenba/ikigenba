@@ -7,15 +7,33 @@ import (
 	"io"
 	"strings"
 
-	"github.com/ikigenba/ikigenba/devctl/internal/account"
 	"github.com/ikigenba/ikigenba/devctl/internal/appref"
+	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/host"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 	"github.com/ikigenba/ikigenba/devctl/internal/space"
+	"github.com/ikigenba/ikigenba/devctl/internal/spaceref"
 )
 
 const helpCommand = "devctl space --help"
+
+const restartHelp = `Usage: devctl space restart <space> <app>
+
+Have opsctl restart one app's service. Deploy the existing file to apply pushed
+secrets; a restart uses the environment already installed on the host.
+`
+
+const logsHelp = `Usage: devctl space logs <space> <app> [--follow] [--since <when>]
+
+Print the last 100 journal lines of one app's service on the space's host. With
+--since, print every line from that moment instead; with --follow, keep printing
+until interrupted. The two combine.
+
+Options:
+  --follow         keep printing as the app writes, until interrupted
+  --since <when>   start at this moment, as journalctl reads it: -1h, yesterday, 2026-09-11 18:00:00
+`
 
 // NoAppError reports that an app has no installed service on a space.
 type NoAppError struct {
@@ -30,7 +48,7 @@ func (e *NoAppError) Error() string {
 
 type invocation struct {
 	subcommand string
-	domain     string
+	space      string
 	app        string
 	follow     bool
 	since      string
@@ -38,28 +56,41 @@ type invocation struct {
 }
 
 // Run executes a space restart or logs command.
-func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, profile string) error {
+func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) error {
 	parsed, err := parse(args)
 	if err != nil {
 		return err
 	}
 	if parsed.help {
-		return nil
+		if parsed.subcommand == "restart" {
+			_, err = io.WriteString(stdout, restartHelp)
+		} else {
+			_, err = io.WriteString(stdout, logsHelp)
+		}
+		return err
 	}
 	if parsed.subcommand == "logs" && !appref.ValidName(parsed.app) {
 		return usage(fmt.Sprintf("'%s' is not a usable app name", parsed.app))
 	}
 
-	acct, err := account.Open(ctx, deps, profile)
+	root, err := checkout.ReadRootFile(ctx, deps)
 	if err != nil {
 		return err
 	}
-	target, err := acct.Space(ctx, parsed.domain)
+	targetRef, err := spaceref.Parse(parsed.space, root.Domain)
+	if err != nil {
+		return err
+	}
+	session, err := cloud.Connect(ctx, deps.Cloud, root.Domain, root.Region)
+	if err != nil {
+		return err
+	}
+	target, err := cloud.LookupSpace(ctx, session.Clients.EC2, root.Domain, targetRef.Domain)
 	if err != nil {
 		return err
 	}
 	if target.State != cloud.StateRunning {
-		return &space.NotRunningError{Domain: parsed.domain, State: target.State}
+		return &space.NotRunningError{Domain: targetRef.Domain, State: target.State}
 	}
 
 	remote := host.Host{Address: target.Address, Deps: deps}
@@ -77,7 +108,7 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, p
 		return err
 	}
 	if strings.TrimSpace(state.Stdout) == "not-found" {
-		return &NoAppError{App: parsed.app, Domain: parsed.domain}
+		return &NoAppError{App: parsed.app, Domain: targetRef.Domain}
 	}
 
 	journalArgs := []string{"journalctl", "-u", unit}
@@ -148,12 +179,12 @@ func parse(args []string) (invocation, error) {
 		return result, nil
 	}
 	if len(operands) < 2 {
-		return invocation{}, usage("space " + result.subcommand + " needs <domain> and <app>")
+		return invocation{}, usage("space " + result.subcommand + " needs <space> and <app>")
 	}
 	if len(operands) > 2 {
-		return invocation{}, usage("space " + result.subcommand + " takes only <domain> and <app>")
+		return invocation{}, usage("space " + result.subcommand + " takes only <space> and <app>")
 	}
-	result.domain, result.app = operands[0], operands[1]
+	result.space, result.app = operands[0], operands[1]
 	return result, nil
 }
 

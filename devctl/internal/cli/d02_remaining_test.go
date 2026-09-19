@@ -10,17 +10,17 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
 
-const expectedDeployUsage = `Usage: devctl --account <name> deploy <domain> <file>
+const expectedDeployUsage = `Usage: devctl deploy <space> <file>
 
 Upload <file>, an <app>/dist/<app>-<tag>.tar.xz written by build, to the
-deploy/ prefix of <domain>'s backup bucket and have opsctl on <domain> install
-it from there. The app and tag (v<semver>) are read from the file name.
+space's deploy/ prefix in the bucket and have opsctl on the space install it
+from there. The app and tag (v<semver>) are read from the file name.
 `
 
-const expectedRestoreUsage = `Usage: devctl --account <name> restore <domain> <app> [--at <timestamp>]
+const expectedRestoreUsage = `Usage: devctl restore <space> <app> [--at <timestamp>]
 
-Have opsctl on <domain> put <app> back from <domain>'s own backups. The app's
-etc/ and state/ come from the newest tarball, and its database, when it
+Have opsctl on the space put <app> back from the space's own backups. The
+app's etc/ and state/ come from the newest tarball, and its database, when it
 declares one, from litestream. <app>'s unit is stopped for the restore and
 started again after it.
 
@@ -31,8 +31,22 @@ Options:
 before that moment, and the database is rebuilt to the moment itself.
 `
 
+const expectedApexUsage = `Usage: devctl apex <subcommand> [arguments]
+
+Point the root domain at one app on one space, say where it points, or take
+it away. The root is an A record at the space's address; the space's host
+carries the root in its certificate and routes it to the app.
+
+Subcommands:
+  set <app>.<space>   make <app> on <space> answer at the root
+  show                print the app and address the root points at
+  clear               remove the root's record and the holder's apex configuration
+
+Run 'devctl apex <subcommand> --help' for details.
+`
+
 func TestEveryCommandHelpIsExact(t *testing.T) {
-	// R-C07D-W8R4
+	// R-OLKP-QGCW
 	tests := []struct {
 		command string
 		want    string
@@ -43,6 +57,7 @@ func TestEveryCommandHelpIsExact(t *testing.T) {
 		{command: "deploy", want: expectedDeployUsage},
 		{command: "restore", want: expectedRestoreUsage},
 		{command: "remove", want: wantRemoveUsage},
+		{command: "apex", want: expectedApexUsage},
 	}
 	for _, test := range tests {
 		t.Run(test.command, func(t *testing.T) {
@@ -60,16 +75,7 @@ func TestCommandHelpPrecedesValidationAndExternalAccess(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "space", args: []string{"space", "create", "--acme-email", "--bad", "--help"}, want: `Usage: devctl --account <name> space create <domain> --acme-email <address>
-
-Create the space with secrets, a role, an instance, an Elastic IP and DNS records.
-Install the newest published opsctl, set its host configuration and run init.
-When the account keeps backups, restore its own host backup before init.
-Completed steps remain on failure; use space destroy to clean up.
-
-Options:
-  --acme-email <address>   ACME contact address stored on the host; required
-`},
+		{name: "space", args: []string{"space", "create", "--acme-email", "--bad", "--help"}, want: expectedCreateUsage},
 		{name: "secrets", args: []string{"secrets", "push", "--bad", "--help"}, want: expectedD05PushUsage},
 		{name: "build", args: []string{"build", "--bad", "--help"}, want: expectedBuildUsage},
 		{name: "deploy", args: []string{"deploy", "--bad", "--help"}, want: expectedDeployUsage},
@@ -100,15 +106,14 @@ func TestCommandOptionValuesFailBeforeExternalAccess(t *testing.T) {
 		option string
 		help   string
 	}{
-		{name: "create missing", args: []string{"--account", "work", "space", "create", "domain", "--acme-email"}, option: "--acme-email", help: "devctl space --help"},
-		{name: "create empty", args: []string{"--account", "work", "space", "create", "domain", "--acme-email="}, option: "--acme-email", help: "devctl space --help"},
-		{name: "create option-like", args: []string{"--account", "work", "space", "create", "domain", "--acme-email", "--bad"}, option: "--acme-email", help: "devctl space --help"},
-		{name: "init opsctl missing", args: []string{"--account", "work", "space", "init", "domain", "--opsctl"}, option: "--opsctl", help: "devctl space --help"},
-		{name: "init opsctl empty", args: []string{"--account", "work", "space", "init", "domain", "--opsctl="}, option: "--opsctl", help: "devctl space --help"},
-		{name: "init email option-like", args: []string{"--account", "work", "space", "init", "domain", "--acme-email", "--bad"}, option: "--acme-email", help: "devctl space --help"},
-		{name: "restore missing", args: []string{"--account", "work", "restore", "domain", "app", "--at"}, option: "--at", help: "devctl restore --help"},
-		{name: "restore empty", args: []string{"--account", "work", "restore", "domain", "app", "--at="}, option: "--at", help: "devctl restore --help"},
-		{name: "restore option-like", args: []string{"--account", "work", "restore", "domain", "app", "--at", "--bad"}, option: "--at", help: "devctl restore --help"},
+		{name: "create missing", args: []string{"space", "create", "sbx1", "--acme-email"}, option: "--acme-email", help: "devctl space --help"},
+		{name: "create empty", args: []string{"space", "create", "sbx1", "--acme-email="}, option: "--acme-email", help: "devctl space --help"},
+		{name: "init opsctl missing", args: []string{"space", "init", "sbx1", "--opsctl"}, option: "--opsctl", help: "devctl space --help"},
+		{name: "init opsctl empty", args: []string{"space", "init", "sbx1", "--opsctl="}, option: "--opsctl", help: "devctl space --help"},
+		{name: "init email option-like", args: []string{"space", "init", "sbx1", "--acme-email", "--bad"}, option: "--acme-email", help: "devctl space --help"},
+		{name: "restore missing", args: []string{"restore", "sbx1", "app", "--at"}, option: "--at", help: "devctl restore --help"},
+		{name: "restore empty", args: []string{"restore", "sbx1", "app", "--at="}, option: "--at", help: "devctl restore --help"},
+		{name: "restore option-like", args: []string{"restore", "sbx1", "app", "--at", "--bad"}, option: "--at", help: "devctl restore --help"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -123,13 +128,13 @@ func TestCommandOptionValuesFailBeforeExternalAccess(t *testing.T) {
 	}
 
 	cloudCalls := 0
-	result := invokeWithDeps(seam.Deps{
-		EUID: 1,
-		Cloud: func(context.Context, string, string) (cloud.Clients, error) {
-			cloudCalls++
-			return cloud.Clients{}, errors.New("reached cloud")
-		},
-	}, "--account", "work", "space", "logs", "domain", "app", "--since", "-1h")
+	deps := checkoutDeps(t, `{"domain":"ikigenba.dev","region":"us-east-2"}`)
+	deps.Cloud = func(context.Context, string, string) (cloud.Clients, error) {
+		cloudCalls++
+		return cloud.Clients{}, errors.New("reached cloud")
+	}
+	result := invokeWithDeps(deps,
+		"space", "logs", "sbx1", "app", "--since", "-1h")
 	assertResult(t, result, 1, "", "devctl: reached cloud\n")
 	if cloudCalls != 1 {
 		t.Fatalf("logs --since cloud calls = %d, want one after accepting -1h", cloudCalls)

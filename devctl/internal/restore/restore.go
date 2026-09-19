@@ -7,17 +7,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ikigenba/ikigenba/devctl/internal/account"
+	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/host"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 	"github.com/ikigenba/ikigenba/devctl/internal/space"
+	"github.com/ikigenba/ikigenba/devctl/internal/spaceref"
 )
 
-const usage = `Usage: devctl --account <name> restore <domain> <app> [--at <timestamp>]
+const usage = `Usage: devctl restore <space> <app> [--at <timestamp>]
 
-Have opsctl on <domain> put <app> back from <domain>'s own backups. The app's
-etc/ and state/ come from the newest tarball, and its database, when it
+Have opsctl on the space put <app> back from the space's own backups. The
+app's etc/ and state/ come from the newest tarball, and its database, when it
 declares one, from litestream. <app>'s unit is stopped for the restore and
 started again after it.
 
@@ -49,10 +50,10 @@ func (e *UsageError) Detail() string {
 }
 
 type invocation struct {
-	domain string
-	app    string
-	at     string
-	help   bool
+	space string
+	app   string
+	at    string
+	help  bool
 }
 
 type sudoer interface {
@@ -60,7 +61,7 @@ type sudoer interface {
 }
 
 // Run restores one app on a running space.
-func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, profile string) error {
+func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) error {
 	parsed, err := parse(args)
 	if err != nil {
 		return err
@@ -70,16 +71,24 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, p
 		return err
 	}
 
-	acct, err := account.Open(ctx, deps, profile)
+	root, err := checkout.ReadRootFile(ctx, deps.Defaults())
 	if err != nil {
 		return err
 	}
-	item, err := acct.Space(ctx, parsed.domain)
+	spaceRef, err := spaceref.Parse(parsed.space, root.Domain)
+	if err != nil {
+		return err
+	}
+	session, err := cloud.Connect(ctx, deps.Cloud, root.Domain, root.Region)
+	if err != nil {
+		return err
+	}
+	item, err := cloud.LookupSpace(ctx, session.Clients.EC2, root.Domain, spaceRef.Domain)
 	if err != nil {
 		return err
 	}
 	if item.State != cloud.StateRunning {
-		return &space.NotRunningError{Domain: parsed.domain, State: item.State}
+		return &space.NotRunningError{Domain: spaceRef.Domain, State: item.State}
 	}
 
 	command := []string{"opsctl", "restore", parsed.app}
@@ -110,11 +119,15 @@ func parse(args []string) (invocation, error) {
 		arg := args[i]
 		switch {
 		case arg == "--at":
-			if i+1 >= len(args) || args[i+1] == "" || strings.HasPrefix(args[i+1], "-") {
+			value, ok := followingArgument(args, i)
+			if !ok {
+				return invocation{}, usageError("option '--at' requires a value", "devctl restore --help")
+			}
+			if value == "" || strings.HasPrefix(value, "-") {
 				return invocation{}, usageError("option '--at' requires a value", "devctl restore --help")
 			}
 			i++
-			result.at = args[i]
+			result.at = value
 		case strings.HasPrefix(arg, "--at="):
 			result.at = strings.TrimPrefix(arg, "--at=")
 			if result.at == "" {
@@ -128,19 +141,27 @@ func parse(args []string) (invocation, error) {
 	}
 
 	if len(operands) < 2 {
-		return invocation{}, usageError("restore needs <domain> and <app>", "devctl restore --help")
+		return invocation{}, usageError("restore needs <space> and <app>", "devctl restore --help")
 	}
 	if len(operands) > 2 {
-		return invocation{}, usageError("restore takes only <domain> and <app>", "devctl restore --help")
+		return invocation{}, usageError("restore takes only <space> and <app>", "devctl restore --help")
 	}
 	if result.at != "" {
 		if _, err := time.Parse(time.RFC3339, result.at); err != nil {
 			return invocation{}, usageError("--at takes an RFC 3339 timestamp", "")
 		}
 	}
-	result.domain = operands[0]
+	result.space = operands[0]
 	result.app = operands[1]
 	return result, nil
+}
+
+func followingArgument(args []string, index int) (string, bool) {
+	next := index + 1
+	if next >= len(args) {
+		return "", false
+	}
+	return args[next], true
 }
 
 func usageError(message, help string) *UsageError {

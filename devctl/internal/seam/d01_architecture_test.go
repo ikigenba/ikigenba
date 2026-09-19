@@ -1040,9 +1040,10 @@ func importedPath(source sourceFile, qualifier string) string {
 	return ""
 }
 
-// R-YHTO-8IAI
+// R-Q1J2-0KW2
 func TestCommandAndSharedHelperOwnership(t *testing.T) {
 	commandPackages := map[string]bool{
+		modulePath + "/internal/apex":        true,
 		modulePath + "/internal/build":       true,
 		modulePath + "/internal/deploy":      true,
 		modulePath + "/internal/remove":      true,
@@ -1054,14 +1055,19 @@ func TestCommandAndSharedHelperOwnership(t *testing.T) {
 	}
 	helperPackages := map[string]bool{
 		modulePath + "/internal/appref":    true,
+		modulePath + "/internal/checkout":  true,
 		modulePath + "/internal/hostsetup": true,
+		modulePath + "/internal/spaceref":  true,
 	}
 	ownedFunctions := map[string]map[string]bool{
+		modulePath + "/internal/apex":      {"Run": false},
 		modulePath + "/internal/hostsetup": {"Latest": false, "InstallLatest": false, "Upgrade": false, "Version": false, "Configure": false},
 		modulePath + "/internal/spaceinit": {"Run": false},
 		modulePath + "/internal/spaceapps": {"Run": false},
 		modulePath + "/internal/remove":    {"Run": false},
 		modulePath + "/internal/appref":    {"ValidName": false, "ValidVersion": false, "VersionForTag": false, "ParseFile": false},
+		modulePath + "/internal/spaceref":  {"Parse": false, "ParseApp": false},
+		modulePath + "/internal/checkout":  {"Open": false, "ReadRootFile": false},
 	}
 
 	for _, source := range moduleSources(t) {

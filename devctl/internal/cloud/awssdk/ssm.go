@@ -2,12 +2,10 @@ package awssdk
 
 import (
 	"context"
-	"errors"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
-	"github.com/aws/smithy-go"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 )
@@ -88,19 +86,9 @@ func wrapSSM(operation, subject string, err error) error {
 }
 
 func ssmError(operation, subject string, err error) *cloud.Error {
-	return &cloud.Error{
-		Service:   "ssm",
-		Operation: operation,
-		Subject:   subject,
-		Code:      ssmAPIErrorCode(err),
-		Err:       err,
-	}
+	return sdkError("ssm", operation, subject, err)
 }
 
 func ssmAPIErrorCode(err error) string {
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
-		return apiErr.ErrorCode()
-	}
-	return ""
+	return apiErrorCode(err)
 }

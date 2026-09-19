@@ -2,11 +2,9 @@ package awssdk
 
 import (
 	"context"
-	"errors"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/aws/smithy-go"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 )
@@ -31,15 +29,5 @@ func (c *stsClient) CallerAccountID(ctx context.Context) (string, error) {
 }
 
 func stsError(err error) *cloud.Error {
-	var apiErr smithy.APIError
-	code := ""
-	if errors.As(err, &apiErr) {
-		code = apiErr.ErrorCode()
-	}
-	return &cloud.Error{
-		Service:   "sts",
-		Operation: "GetCallerIdentity",
-		Code:      code,
-		Err:       err,
-	}
+	return sdkError("sts", "GetCallerIdentity", "", err)
 }

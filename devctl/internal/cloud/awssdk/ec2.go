@@ -2,18 +2,17 @@ package awssdk
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	aws "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	"github.com/aws/smithy-go"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 )
 
 type ec2API interface {
+	DescribeLaunchTemplates(context.Context, *ec2.DescribeLaunchTemplatesInput, ...func(*ec2.Options)) (*ec2.DescribeLaunchTemplatesOutput, error)
 	DescribeInstances(context.Context, *ec2.DescribeInstancesInput, ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
 	RunInstances(context.Context, *ec2.RunInstancesInput, ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error)
 	StartInstances(context.Context, *ec2.StartInstancesInput, ...func(*ec2.Options)) (*ec2.StartInstancesOutput, error)
@@ -31,8 +30,23 @@ type ec2Client struct {
 	sdk ec2API
 }
 
-func (c *ec2Client) ListSpaceInstances(ctx context.Context) ([]cloud.Instance, error) {
-	input := &ec2.DescribeInstancesInput{Filters: spaceFilters()}
+var _ cloud.EC2 = (*ec2Client)(nil)
+
+func (c *ec2Client) LaunchTemplate(ctx context.Context, name string) (string, error) {
+	output, err := c.sdk.DescribeLaunchTemplates(ctx, &ec2.DescribeLaunchTemplatesInput{Filters: []types.Filter{{
+		Name: aws.String("launch-template-name"), Values: []string{name},
+	}}})
+	if err != nil {
+		return "", ec2Error("DescribeLaunchTemplates", err)
+	}
+	if len(output.LaunchTemplates) == 0 {
+		return "", &cloud.NotFoundError{Kind: "launch template", Name: name}
+	}
+	return aws.ToString(output.LaunchTemplates[0].LaunchTemplateId), nil
+}
+
+func (c *ec2Client) ListSpaceInstances(ctx context.Context, domain string) ([]cloud.Instance, error) {
+	input := &ec2.DescribeInstancesInput{Filters: spaceFilters(domain)}
 	var instances []cloud.Instance
 	for {
 		output, err := c.sdk.DescribeInstances(ctx, input)
@@ -77,8 +91,7 @@ func (c *ec2Client) RunInstance(ctx context.Context, spec cloud.LaunchSpec) (clo
 
 func (c *ec2Client) LaunchReady(ctx context.Context, spec cloud.LaunchSpec) (bool, error) {
 	_, err := c.sdk.RunInstances(ctx, runInstancesInput(spec, true))
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
+	if apiErr := boundedAPIError(err); apiErr != nil {
 		switch apiErr.ErrorCode() {
 		case "DryRunOperation":
 			return true, nil
@@ -92,7 +105,7 @@ func (c *ec2Client) LaunchReady(ctx context.Context, spec cloud.LaunchSpec) (boo
 }
 
 func runInstancesInput(spec cloud.LaunchSpec, dryRun bool) *ec2.RunInstancesInput {
-	tags := spaceTags(spec.Space)
+	tags := spaceTags(spec.Domain, spec.Space)
 	return &ec2.RunInstancesInput{
 		MinCount: aws.Int32(1),
 		MaxCount: aws.Int32(1),
@@ -136,8 +149,8 @@ func (c *ec2Client) InstanceChecksPassed(ctx context.Context, id string) (bool, 
 		status.SystemStatus != nil && status.SystemStatus.Status == types.SummaryStatusOk, nil
 }
 
-func (c *ec2Client) ListSpaceAddresses(ctx context.Context) ([]cloud.Address, error) {
-	output, err := c.sdk.DescribeAddresses(ctx, &ec2.DescribeAddressesInput{Filters: spaceFilters()})
+func (c *ec2Client) ListSpaceAddresses(ctx context.Context, domain string) ([]cloud.Address, error) {
+	output, err := c.sdk.DescribeAddresses(ctx, &ec2.DescribeAddressesInput{Filters: spaceFilters(domain)})
 	if err != nil {
 		return nil, ec2Error("DescribeAddresses", err)
 	}
@@ -148,12 +161,12 @@ func (c *ec2Client) ListSpaceAddresses(ctx context.Context) ([]cloud.Address, er
 	return addresses, nil
 }
 
-func (c *ec2Client) AllocateAddress(ctx context.Context, space string) (cloud.Address, error) {
+func (c *ec2Client) AllocateAddress(ctx context.Context, domain, space string) (cloud.Address, error) {
 	output, err := c.sdk.AllocateAddress(ctx, &ec2.AllocateAddressInput{
 		Domain: types.DomainTypeVpc,
 		TagSpecifications: []types.TagSpecification{{
 			ResourceType: types.ResourceTypeElasticIp,
-			Tags:         spaceTags(space),
+			Tags:         spaceTags(domain, space),
 		}},
 	})
 	if err != nil {
@@ -186,16 +199,16 @@ func (c *ec2Client) ReleaseAddress(ctx context.Context, allocationID string) err
 	return wrapEC2("ReleaseAddress", err)
 }
 
-func spaceFilters() []types.Filter {
+func spaceFilters(domain string) []types.Filter {
 	return []types.Filter{
-		{Name: aws.String("tag:Project"), Values: []string{"ikigenba"}},
+		{Name: aws.String("tag:Domain"), Values: []string{domain}},
 		{Name: aws.String("tag-key"), Values: []string{"Space"}},
 	}
 }
 
-func spaceTags(space string) []types.Tag {
+func spaceTags(domain, space string) []types.Tag {
 	return []types.Tag{
-		{Key: aws.String("Project"), Value: aws.String("ikigenba")},
+		{Key: aws.String("Domain"), Value: aws.String(domain)},
 		{Key: aws.String("Space"), Value: aws.String(space)},
 	}
 }
@@ -235,13 +248,9 @@ func wrapEC2(operation string, err error) error {
 }
 
 func ec2Error(operation string, err error) *cloud.Error {
-	return &cloud.Error{Service: "ec2", Operation: operation, Code: ec2APIErrorCode(err), Err: err}
+	return sdkError("ec2", operation, "", err)
 }
 
 func ec2APIErrorCode(err error) string {
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
-		return apiErr.ErrorCode()
-	}
-	return ""
+	return apiErrorCode(err)
 }

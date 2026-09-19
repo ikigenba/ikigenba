@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -17,7 +18,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ikigenba/ikigenba/devctl/internal/account"
 	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
@@ -28,7 +28,7 @@ var _ func(context.Context, []string, io.Reader, io.Writer, io.Writer, seam.Deps
 
 const expectedUsage = `Usage: devctl [options] <command> [arguments]
 
-Manage the ikigenba platform from the developer's machine. Never run as root.
+Manage the platform from the developer's machine. Never run as root.
 
 Commands:
   version   print the version
@@ -38,11 +38,11 @@ Commands:
   deploy    put a built app file on a space
   remove    take an app off a space
   restore   put a space's app back from its backups
+  apex      point the root domain at one app on one space
 
 Options:
   --help              print this help
   --version           print the version
-  --account <name>    AWS shared-config profile to act in
 
 Exit codes:
   0  success
@@ -53,23 +53,23 @@ Exit codes:
 Run 'devctl <command> --help' for details on a command.
 `
 
-const expectedD05Usage = `Usage: devctl --account <name> secrets <subcommand> <domain> [<app>]
+const expectedD05Usage = `Usage: devctl secrets <subcommand> <space> [<app>]
 
 Push the values an app's manifest names from this machine's keyring to the
 space's Parameter Store entry, or list which names a space holds. Values are
 never printed.
 
 Subcommands:
-  push <domain> [<app>]   write /ikigenba/<domain>/<app> for one app, or every app
-  list <domain> [<app>]   print the key names held for one app, or every app
+  push <space> [<app>]   write /<space domain>/<app> for one app, or every app
+  list <space> [<app>]   print the key names held for one app, or every app
 
-Every subcommand needs --account. Run 'devctl secrets <subcommand> --help' for details.
+Run 'devctl secrets <subcommand> --help' for details.
 `
 
-const expectedD05PushUsage = `Usage: devctl --account <name> secrets push <domain> [<app>]
+const expectedD05PushUsage = `Usage: devctl secrets push <space> [<app>]
 
 Write the space's Parameter Store entry for an app from this machine's keyring:
-a SecureString at /ikigenba/<domain>/<app> holding a JSON object whose keys are
+a SecureString at /<space domain>/<app> holding a JSON object whose keys are
 the names the app's manifest declares. Each value comes from the environment
 variable of that name, or from the login keyring. Values are never printed.
 
@@ -78,46 +78,49 @@ value is gathered before anything is written, so one missing value leaves every
 app's entry as it was.
 
 Arguments:
-  <domain>   the space to write the entry in
+  <space>    the space to write the entry in, by label or full domain
   <app>      one app of the checkout; omitted, every app
 `
 
-const expectedD05ListUsage = `Usage: devctl --account <name> secrets list <domain> [<app>]
+const expectedD05ListUsage = `Usage: devctl secrets list <space> [<app>]
 
 Print the key names the space's Parameter Store entry holds for an app: the
 app, then its names sorted and comma-separated, or - when the entry is empty.
 Only names are printed; a value never is.
 
-With <app> omitted, every entry under /ikigenba/<domain>/ is printed, in app
+With <app> omitted, every entry under /<space domain>/ is printed, in app
 order, and a space that holds none prints nothing.
 
 Arguments:
-  <domain>   the space to read the entries of
+  <space>    the space to read the entries of, by label or full domain
   <app>      one app the space holds an entry for; omitted, every app
 `
 
-const expectedD06Usage = `Usage: devctl --account <name> space <subcommand> [arguments]
+const expectedD06Usage = `Usage: devctl space <subcommand> [arguments]
 
-List, create, destroy, stop, start, initialise, and inspect spaces in one
-account, and restart or read the journal of one app on one. A space is one
-instance named by its full domain; the cloud's tags are the only registry.
+List, create, destroy, stop, start, initialise, and inspect spaces, and
+restart or read the journal of one app on one. A space is one label under the
+root domain; <space> is that label or the full domain. The cloud's tags are
+the only registry.
 
 Subcommands:
-  list                       one line per space in the account
-  create <domain> [options]  create the space at <domain>
-  destroy <domain> [options] remove the space and everything it owned
-  stop <domain>              stop the instance; state is kept
-  start <domain>             start the instance; its address is unchanged
-  init <domain> [options]    set the host's keys again and run opsctl init
-  status <domain>            one line per app: version, service state, database journal mode
-  restart <domain> <app>     restart one app's service on the host
-  logs <domain> <app>        print one app's journal from the host
+  list                       one line per space
+  create <space> [options]   create the space
+  destroy <space> [options]  remove the space and everything it owned
+  stop <space>               stop the instance; state is kept
+  start <space>              start the instance; its address is unchanged
+  init <space> [options]     set the host's keys again and run opsctl init
+  status <space>             one line per app: version, service state, database journal mode
+  restart <space> <app>      restart one app's service on the host
+  logs <space> <app>         print one app's journal from the host
 
 Options (create):
   --acme-email <address>  where the CA sends the space's expiry warnings; required
 
 Options (destroy):
-  --no-backup             skip the final backup an account that keeps backups takes
+  --no-backup             skip the final backup the host takes before it goes
+  --delete-secrets        delete the space's secrets; they are kept otherwise
+  --delete-backups        delete the space's backups; they are kept otherwise
 
 Options (init):
   --opsctl <version>      move the host to this opsctl release first
@@ -127,31 +130,47 @@ Options (logs):
   --follow                keep printing as the app writes, until interrupted
   --since <when>          start at this moment, as journalctl reads it: -1h, yesterday, 2026-09-11 18:00:00
 
-Every subcommand needs --account. Run 'devctl space <subcommand> --help' for details.
+Run 'devctl space <subcommand> --help' for details.
 `
 
-const expectedD06DestroyUsage = `Usage: devctl --account <name> space destroy <domain> [--no-backup]
+const expectedD06ListUsage = `Usage: devctl space list
 
-Retire the host first when the account keeps backups, then remove the instance,
-Elastic IP, records and role. Account retention settings decide whether secrets
-and backups are deleted. Run again to finish a partial destroy.
+Print one line per space: the domain, the instance state, the public address
+or - when it has none, and apex on the one space that holds the root domain or
+- on every other. The lines are sorted by domain, and no spaces prints nothing.
+
+The cloud's tags are the only registry: a space is an instance tagged with the
+root domain and a Space tag naming its own. The holder of the root domain is
+the space whose Elastic IP the root's A record points at; no host is asked.
+What a space is running is 'devctl space status'.
+`
+
+const expectedD06DestroyUsage = `Usage: devctl space destroy <space> [--no-backup] [--delete-secrets] [--delete-backups]
+
+Delete the root domain's record first when this space holds it, have the host
+take its final backup with opsctl retire, then remove the instance, Elastic IP,
+records and role. Secrets and backups are kept unless an option says otherwise.
+Run again to finish a partial destroy.
 
 Options:
-  --no-backup   skip the final backup
+  --no-backup        skip the final backup the host takes before it goes
+  --delete-secrets   delete the space's secrets; they are kept otherwise
+  --delete-backups   delete the space's backups; they are kept otherwise
 `
 
-const expectedD06StopUsage = `Usage: devctl --account <name> space stop <domain>
+const expectedD06StopUsage = `Usage: devctl space stop <space>
 
 Stop the instance and keep its disk, Elastic IP, records, secrets and backups.
+If the space holds the root domain, the root keeps pointing at it.
 `
 
-const expectedD06StartUsage = `Usage: devctl --account <name> space start <domain>
+const expectedD06StartUsage = `Usage: devctl space start <space>
 
 Start the instance at its existing Elastic IP, wait for status checks and SSH,
 then run certbot renew. Records are unchanged; the last line is domain and address.
 `
 
-const expectedD06StatusUsage = `Usage: devctl --account <name> space status <domain>
+const expectedD06StatusUsage = `Usage: devctl space status <space>
 
 Relay opsctl status from the running host: app, version, service state and
 database journal mode. A host with no apps prints nothing.
@@ -189,27 +208,27 @@ func TestRunReturnsWithoutTerminatingCaller(t *testing.T) {
 }
 
 func TestTopLevelGrammar(t *testing.T) {
-	// R-D4F7-8UZB
+	// R-OFH7-TLNF
 	for _, args := range [][]string{
 		{"version"}, {"-V"}, {"--version"}, {"-h"}, {"--help"},
-		{"--account", "work", "version"}, {"--account=work", "version"},
 	} {
 		if got := invoke(args...).code; got != 0 {
 			t.Errorf("Run(%q) = %d, want 0", args, got)
 		}
 	}
-	for _, option := range []string{"-x", "--verbose", "--", "-version"} {
+	for _, option := range []string{"-x", "--verbose", "--", "-version", "--account"} {
 		result := invoke(option)
 		if result.code != 2 || !strings.HasPrefix(result.stderr, "devctl: unknown option '") {
 			t.Errorf("Run(%q) = (%d, %q), want unknown-option usage error", option, result.code, result.stderr)
 		}
 	}
+	assertResult(t, invoke("--account", "ikigenba.dev", "version"), 2, "", "devctl: unknown option '--account'\n\nsee 'devctl --help' for usage\n")
 }
 
 func TestArgumentsAfterCommandAreCommandArguments(t *testing.T) {
-	// R-9T69-QTTI
+	// R-OHX0-L54T
 	assertResult(t, invoke("version", "--help"), 0, "Usage: devctl version\n\nPrint the version.\n", "")
-	assertResult(t, invoke("version", "--account", "work"), 2, "", "devctl: version takes no arguments\n\nsee 'devctl version --help' for usage\n")
+	assertResult(t, invoke("version", "--bogus"), 2, "", "devctl: version takes no arguments\n\nsee 'devctl version --help' for usage\n")
 }
 
 func TestNoCommand(t *testing.T) {
@@ -227,170 +246,282 @@ func TestUnknownTopLevelOption(t *testing.T) {
 	assertResult(t, invoke("--frobnicate"), 2, "", "devctl: unknown option '--frobnicate'\n\nsee 'devctl --help' for usage\n")
 }
 
-func TestAccountProfileReachesCloudUnchanged(t *testing.T) {
-	// R-9UE6-4LK7
-	for _, test := range []struct {
-		args []string
-		want string
+func TestRootFileSelectsCloudProfileAndRegion(t *testing.T) {
+	// R-OO0I-HZUA R-N1LD-IX1I
+	tests := []struct {
+		name    string
+		args    []string
+		prepare func(*testing.T, seam.Deps) seam.Deps
 	}{
-		{args: []string{"--account", "", "space", "list"}, want: ""},
-		{args: []string{"--account", " Work Profile ", "space", "list"}, want: " Work Profile "},
-		{args: []string{"--account=MiXeD Profile", "space", "list"}, want: "MiXeD Profile"},
-	} {
-		var profiles []string
-		result := invokeWithDeps(seam.Deps{
-			EUID: 1,
-			Cloud: func(_ context.Context, profile, _ string) (cloud.Clients, error) {
-				profiles = append(profiles, profile)
-				if len(profiles) == 1 {
-					return cloud.Clients{SSM: &cliSSM{value: cliPropertiesJSON}}, nil
+		{name: "space", args: []string{"space", "list"}},
+		{name: "secrets", args: []string{"secrets", "list", "sbx1"}},
+		{name: "deploy", args: []string{"deploy", "sbx1", "crm-v1.2.3.tar.xz"}, prepare: prepareCLIArchive},
+		{name: "restore", args: []string{"restore", "sbx1", "crm"}},
+		{name: "remove", args: []string{"remove", "sbx1", "crm"}},
+		{name: "apex", args: []string{"apex", "show"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			deps := checkoutDeps(t, `{"domain":"example.test","region":"eu-west-1"}`)
+			if test.prepare != nil {
+				deps = test.prepare(t, deps)
+			}
+			var calls []cloudOpenCall
+			deps.Cloud = func(_ context.Context, profile, region string) (cloud.Clients, error) {
+				calls = append(calls, cloudOpenCall{profile: profile, region: region})
+				return cliClients(&cliEC2{}, &cliRoute53{err: errors.New("cloud progress complete")}), nil
+			}
+			result := invokeWithDeps(deps, test.args...)
+			if result.code != 1 {
+				t.Fatalf("Run(%q) = %#v, want operation failure after cloud connection", test.args, result)
+			}
+			if len(calls) != 1 || calls[0] != (cloudOpenCall{profile: "example.test", region: "eu-west-1"}) {
+				t.Fatalf("cloud calls = %#v, want one root-file profile and region", calls)
+			}
+		})
+	}
+
+	failures := []struct {
+		name       string
+		args       []string
+		prepare    func(*testing.T, seam.Deps) seam.Deps
+		rootFile   string
+		wantStdout string
+		wantStderr string
+	}{
+		{name: "space missing", args: []string{"space", "list"}, wantStderr: "devctl: no infra/terraform.tfvars.json in the checkout\n"},
+		{name: "space invalid", args: []string{"space", "list"}, rootFile: `{}`, wantStderr: "devctl: infra/terraform.tfvars.json: missing 'domain'\n"},
+		{name: "secrets missing", args: []string{"secrets", "list", "sbx1"}, wantStderr: "devctl: no infra/terraform.tfvars.json in the checkout\n"},
+		{name: "secrets invalid", args: []string{"secrets", "list", "sbx1"}, rootFile: `{}`, wantStderr: "devctl: infra/terraform.tfvars.json: missing 'domain'\n"},
+		{name: "deploy missing", args: []string{"deploy", "sbx1", "crm-v1.2.3.tar.xz"}, prepare: prepareCLIArchive, wantStdout: "file: ok (crm v1.2.3)\n", wantStderr: "devctl: no infra/terraform.tfvars.json in the checkout\n"},
+		{name: "deploy invalid", args: []string{"deploy", "sbx1", "crm-v1.2.3.tar.xz"}, prepare: prepareCLIArchive, rootFile: `{}`, wantStdout: "file: ok (crm v1.2.3)\n", wantStderr: "devctl: infra/terraform.tfvars.json: missing 'domain'\n"},
+		{name: "restore missing", args: []string{"restore", "sbx1", "crm"}, wantStderr: "devctl: no infra/terraform.tfvars.json in the checkout\n"},
+		{name: "restore invalid", args: []string{"restore", "sbx1", "crm"}, rootFile: `{}`, wantStderr: "devctl: infra/terraform.tfvars.json: missing 'domain'\n"},
+		{name: "remove missing", args: []string{"remove", "sbx1", "crm"}, wantStderr: "devctl: no infra/terraform.tfvars.json in the checkout\n"},
+		{name: "remove invalid", args: []string{"remove", "sbx1", "crm"}, rootFile: `{}`, wantStderr: "devctl: infra/terraform.tfvars.json: missing 'domain'\n"},
+		{name: "apex missing", args: []string{"apex", "show"}, wantStderr: "devctl: no infra/terraform.tfvars.json in the checkout\n"},
+		{name: "apex invalid", args: []string{"apex", "show"}, rootFile: `{}`, wantStderr: "devctl: infra/terraform.tfvars.json: missing 'domain'\n"},
+	}
+	for _, test := range failures {
+		t.Run(test.name, func(t *testing.T) {
+			var deps seam.Deps
+			if test.rootFile == "" {
+				root := t.TempDir()
+				if err := os.MkdirAll(filepath.Join(root, "work"), 0o700); err != nil {
+					t.Fatal(err)
 				}
-				return cloud.Clients{EC2: &cliEC2{}}, nil
-			},
-		}, test.args...)
-		assertResult(t, result, 0, "", "")
-		if !reflect.DeepEqual(profiles, []string{test.want, test.want}) {
-			t.Errorf("Run(%q) cloud profiles = %q, want [%q %q]", test.args, profiles, test.want, test.want)
-		}
+				deps = checkoutDepsAt(root)
+			} else {
+				deps = checkoutDeps(t, test.rootFile)
+			}
+			if test.prepare != nil {
+				deps = test.prepare(t, deps)
+			}
+			cloudCalls := 0
+			deps.Cloud = func(context.Context, string, string) (cloud.Clients, error) {
+				cloudCalls++
+				return cloud.Clients{}, errors.New("unexpected cloud call")
+			}
+			assertResult(t, invokeWithDeps(deps, test.args...), 2, test.wantStdout, test.wantStderr)
+			if cloudCalls != 0 {
+				t.Fatalf("root-file failure made %d cloud calls", cloudCalls)
+			}
+		})
 	}
 }
 
-func TestLastAccountOptionWins(t *testing.T) {
-	// R-9VM2-IDAW
-	for _, args := range [][]string{
-		{"--account", "first", "--account=second", "space", "list"},
-		{"--account=first", "--account", "second", "space", "list"},
-	} {
-		var profiles []string
-		result := invokeWithDeps(seam.Deps{
-			EUID: 1,
-			Cloud: func(_ context.Context, profile, _ string) (cloud.Clients, error) {
-				profiles = append(profiles, profile)
-				if len(profiles) == 1 {
-					return cloud.Clients{SSM: &cliSSM{value: cliPropertiesJSON}}, nil
-				}
-				return cloud.Clients{EC2: &cliEC2{}}, nil
-			},
-		}, args...)
-		assertResult(t, result, 0, "", "")
-		if !reflect.DeepEqual(profiles, []string{"second", "second"}) {
-			t.Fatalf("Run(%q) cloud profiles = %q, want [second second]", args, profiles)
-		}
+func TestEveryCloudCommandStopsAtMissingRootFile(t *testing.T) {
+	// R-N1LD-IX1I
+	tests := []struct {
+		name    string
+		args    []string
+		prepare func(*testing.T, seam.Deps) seam.Deps
+	}{
+		{name: "space list", args: []string{"space", "list"}},
+		{name: "space create", args: []string{"space", "create", "sbx1", "--acme-email", "ops@example.test"}},
+		{name: "space destroy", args: []string{"space", "destroy", "sbx1"}},
+		{name: "space stop", args: []string{"space", "stop", "sbx1"}},
+		{name: "space start", args: []string{"space", "start", "sbx1"}},
+		{name: "space init", args: []string{"space", "init", "sbx1"}},
+		{name: "space status", args: []string{"space", "status", "sbx1"}},
+		{name: "space restart", args: []string{"space", "restart", "sbx1", "crm"}},
+		{name: "space logs", args: []string{"space", "logs", "sbx1", "crm"}},
+		{name: "secrets push", args: []string{"secrets", "push", "sbx1"}},
+		{name: "secrets list", args: []string{"secrets", "list", "sbx1"}},
+		{name: "deploy", args: []string{"deploy", "sbx1", "crm-v1.2.3.tar.xz"}, prepare: prepareCLIArchive},
+		{name: "restore", args: []string{"restore", "sbx1", "crm"}},
+		{name: "remove", args: []string{"remove", "sbx1", "crm"}},
+		{name: "apex set", args: []string{"apex", "set", "crm.sbx1"}},
+		{name: "apex show", args: []string{"apex", "show"}},
+		{name: "apex clear", args: []string{"apex", "clear"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(root, "work"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			deps := checkoutDepsAt(root)
+			if test.prepare != nil {
+				deps = test.prepare(t, deps)
+			}
+			cloudCalls := 0
+			deps.Cloud = func(context.Context, string, string) (cloud.Clients, error) {
+				cloudCalls++
+				return cloud.Clients{}, errors.New("unexpected cloud call")
+			}
+			result := invokeWithDeps(deps, test.args...)
+			if result.code != 2 || !strings.Contains(result.stderr, "no infra/terraform.tfvars.json in the checkout") || cloudCalls != 0 {
+				t.Fatalf("Run(%q) = %#v, cloud calls %d", test.args, result, cloudCalls)
+			}
+		})
+	}
+}
+
+func TestEverySpaceOperandUsesSharedGrammarBeforeCloud(t *testing.T) {
+	// R-QW0J-KUFF
+	tests := []struct {
+		name    string
+		args    []string
+		prepare func(*testing.T, seam.Deps) seam.Deps
+	}{
+		{name: "space create", args: []string{"space", "create", "crm.sbx1", "--acme-email", "ops@example.test"}},
+		{name: "space destroy", args: []string{"space", "destroy", "crm.sbx1"}},
+		{name: "space stop", args: []string{"space", "stop", "crm.sbx1"}},
+		{name: "space start", args: []string{"space", "start", "crm.sbx1"}},
+		{name: "space init", args: []string{"space", "init", "crm.sbx1"}},
+		{name: "space status", args: []string{"space", "status", "crm.sbx1"}},
+		{name: "space restart", args: []string{"space", "restart", "crm.sbx1", "crm"}},
+		{name: "space logs", args: []string{"space", "logs", "crm.sbx1", "crm"}},
+		{name: "secrets push", args: []string{"secrets", "push", "crm.sbx1"}},
+		{name: "secrets list", args: []string{"secrets", "list", "crm.sbx1"}},
+		{name: "deploy", args: []string{"deploy", "crm.sbx1", "crm-v1.2.3.tar.xz"}, prepare: prepareCLIArchive},
+		{name: "restore", args: []string{"restore", "crm.sbx1", "crm"}},
+		{name: "remove", args: []string{"remove", "crm.sbx1", "crm"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			deps := checkoutDeps(t, `{"domain":"ikigenba.dev","region":"us-east-2"}`)
+			if test.prepare != nil {
+				deps = test.prepare(t, deps)
+			}
+			cloudCalls := 0
+			deps.Cloud = func(context.Context, string, string) (cloud.Clients, error) {
+				cloudCalls++
+				return cloud.Clients{}, errors.New("unexpected cloud call")
+			}
+			result := invokeWithDeps(deps, test.args...)
+			want := "devctl: 'crm.sbx1' is not a space: a space is one label under 'ikigenba.dev'\n"
+			wantStdout := ""
+			if test.name == "deploy" {
+				wantStdout = "file: ok (crm v1.2.3)\n"
+			}
+			if result.code != 2 || result.stdout != wantStdout || result.stderr != want || cloudCalls != 0 {
+				t.Fatalf("Run(%q) = %#v, cloud calls %d", test.args, result, cloudCalls)
+			}
+		})
 	}
 }
 
 func TestCloudErrorsAreSingleLineOperationFailures(t *testing.T) {
-	// R-ZLGA-YMQA
-	for _, test := range []struct {
-		cloudError *cloud.Error
-		want       string
+	// R-QZSL-ZMJL
+	tests := []struct {
+		name       string
+		args       []string
+		clients    cloud.Clients
+		wantStdout string
+		wantStderr string
 	}{
 		{
-			cloudError: &cloud.Error{Service: "ssm", Operation: "GetParameter", Subject: "/ikigenba/account", Code: "ParameterNotFound"},
-			want:       "ssm GetParameter /ikigenba/account: ParameterNotFound",
+			name: "STS Connect", args: []string{"space", "list"},
+			clients: cliClientsWithSTS(&cliSTS{err: &cloud.Error{
+				Service: "sts", Operation: "GetCallerIdentity", Err: errors.New("<m>"),
+			}}),
+			wantStderr: "devctl: sts GetCallerIdentity: <m>\n",
 		},
 		{
-			cloudError: &cloud.Error{Service: "ec2", Operation: "RunInstances", Code: "InsufficientInstanceCapacity"},
-			want:       "ec2 RunInstances: InsufficientInstanceCapacity",
+			name: "EC2 RunInstances", args: []string{"space", "create", "sbx1", "--acme-email", "ops@ikigenba.dev"},
+			clients: createCLIClients(&cliEC2{runErr: &cloud.Error{
+				Service: "ec2", Operation: "RunInstances", Code: "InsufficientInstanceCapacity",
+			}}, &cliRoute53{}),
+			wantStdout: "account: ok (ikigenba.dev, us-east-2, 123456789012)\n" +
+				"domain: ok (zone ikigenba.dev ZROOT)\n" +
+				"secrets: ok (0 apps)\n" +
+				"role: ok (sbx1.ikigenba.dev)\n",
+			wantStderr: "devctl: ec2 RunInstances: InsufficientInstanceCapacity\n",
 		},
 		{
-			cloudError: &cloud.Error{Service: "route53", Operation: "ChangeResourceRecordSets", Code: "Throttling"},
-			want:       "route53 ChangeResourceRecordSets: Throttling",
+			name: "Route53 ChangeResourceRecordSets", args: []string{"apex", "set", "crm.sbx1"},
+			clients: cliClients(
+				&cliEC2{instances: []cloud.Instance{{ID: "i-one", Space: "sbx1.ikigenba.dev", State: cloud.StateRunning, Address: "192.0.2.10"}}},
+				&cliRoute53{changeErr: &cloud.Error{Service: "route53", Operation: "ChangeResourceRecordSets", Code: "Throttling"}},
+			),
+			wantStdout: "space: ok (sbx1.ikigenba.dev running, 192.0.2.10)\n" +
+				"role: ok (sbx1.ikigenba.dev may prove ikigenba.dev)\n" +
+				"host: ok (host.apex=crm, certificate obtained, nginx applied)\n",
+			wantStderr: "devctl: route53 ChangeResourceRecordSets: Throttling\n",
 		},
-	} {
-		var opens []string
-		deps := seam.Deps{
-			EUID: 1,
-			Cloud: func(_ context.Context, _ string, region string) (cloud.Clients, error) {
-				opens = append(opens, region)
-				if len(opens) == 1 {
-					return cloud.Clients{SSM: &cliSSM{value: cliPropertiesJSON}}, nil
-				}
-				return cloud.Clients{EC2: &cliEC2{err: fmt.Errorf("command failed: %w", test.cloudError)}}, nil
-			},
-		}
-		assertResult(t, invokeWithDeps(deps, "--account", "work", "space", "status", "example.test"), 1, "", "devctl: "+test.want+"\n")
-		if !reflect.DeepEqual(opens, []string{"", "us-test-1"}) {
-			t.Errorf("cloud regions = %q, want bootstrap and configured regions", opens)
-		}
+		{
+			name: "launch template NotFound", args: []string{"space", "create", "sbx1", "--acme-email", "ops@ikigenba.dev"},
+			clients: createCLIClients(&cliEC2{launchErr: &cloud.NotFoundError{
+				Kind: "launch template", Name: "ikigenba.dev",
+			}}, &cliRoute53{}),
+			wantStderr: "devctl: no launch template 'ikigenba.dev'\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			deps := checkoutDeps(t, `{"domain":"ikigenba.dev","region":"us-east-2"}`)
+			deps.Exec = cliCheckoutAndHostExec(t, deps.Exec)
+			deps.Cloud = func(context.Context, string, string) (cloud.Clients, error) { return test.clients, nil }
+			assertResult(t, invokeWithDeps(deps, test.args...), 1, test.wantStdout, test.wantStderr)
+		})
 	}
 }
 
 func TestCommandsReportMissingSpace(t *testing.T) {
-	// R-ZMO7-CEGZ
-	domain := "missing.example.test"
-	for _, args := range [][]string{
-		{"space", "stop", domain},
-		{"space", "start", domain},
-		{"space", "status", domain},
-	} {
-		calls := 0
-		deps := seam.Deps{
-			EUID: 1,
-			Cloud: func(context.Context, string, string) (cloud.Clients, error) {
-				calls++
-				if calls == 1 {
-					return cloud.Clients{SSM: &cliSSM{value: cliPropertiesJSON}}, nil
-				}
-				return cloud.Clients{EC2: &cliEC2{}}, nil
-			},
-		}
-		want := "devctl: no space at '" + domain + "'\n"
-		assertResult(t, invokeWithDeps(deps, append([]string{"--account", "work"}, args...)...), 1, "", want)
+	// R-R10I-DEAA
+	tests := []struct {
+		name    string
+		args    []string
+		prepare func(*testing.T, seam.Deps) seam.Deps
+	}{
+		{name: "space stop", args: []string{"space", "stop", "gone"}},
+		{name: "space start", args: []string{"space", "start", "gone"}},
+		{name: "space status", args: []string{"space", "status", "gone"}},
+		{name: "space init", args: []string{"space", "init", "gone"}},
+		{name: "space restart", args: []string{"space", "restart", "gone", "crm"}},
+		{name: "space logs", args: []string{"space", "logs", "gone", "crm"}},
+		{name: "secrets push", args: []string{"secrets", "push", "gone", "crm"}, prepare: prepareCLIApp},
+		{name: "deploy", args: []string{"deploy", "gone", "crm-v1.2.3.tar.xz"}, prepare: prepareCLIArchive},
+		{name: "remove", args: []string{"remove", "gone", "crm"}},
+		{name: "restore", args: []string{"restore", "gone", "crm"}},
+		{name: "apex set", args: []string{"apex", "set", "crm.gone"}},
 	}
-}
-
-func TestAccountRequiresValue(t *testing.T) {
-	// R-9WTY-W51L
-	want := "devctl: option '--account' requires a value\n\nsee 'devctl --help' for usage\n"
-	for _, args := range [][]string{
-		{"--account"},
-		{"--account", "--help"},
-		{"--account="},
-	} {
-		assertResult(t, invoke(args...), 2, "", want)
-	}
-	for command := range commandSet {
-		assertResult(t, invoke("--account", command), 2, "", want)
-	}
-}
-
-func TestAccountDoesNotChangeVersion(t *testing.T) {
-	// R-DE6E-B0WV
-	want := invoke("version")
-	for _, args := range [][]string{
-		{"--account", "work", "version"},
-		{"--account=work", "version"},
-	} {
-		if got := invoke(args...); got != want {
-			t.Errorf("Run(%q) = %#v, want %#v", args, got, want)
-		}
-	}
-}
-
-func TestAccountVersionDoesNotOpenCloud(t *testing.T) {
-	// R-UYZW-0UKR
-	for _, args := range [][]string{
-		{"--account", "work", "version"},
-		{"--account=work", "version"},
-	} {
-		calls := 0
-		result := invokeWithDeps(seam.Deps{
-			EUID: 1,
-			Cloud: func(context.Context, string, string) (cloud.Clients, error) {
-				calls++
-				return cloud.Clients{}, nil
-			},
-		}, args...)
-		assertResult(t, result, 0, version+"\n", "")
-		if calls != 0 {
-			t.Errorf("Run(%q) opened cloud %d times, want 0", args, calls)
-		}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			deps := checkoutDeps(t, `{"domain":"example.test","region":"eu-west-1"}`)
+			if test.prepare != nil {
+				deps = test.prepare(t, deps)
+			}
+			ec2 := &cliEC2{}
+			deps.Cloud = func(context.Context, string, string) (cloud.Clients, error) {
+				return cliClients(ec2, &cliRoute53{}), nil
+			}
+			wantStdout := ""
+			if test.name == "deploy" {
+				wantStdout = "file: ok (crm v1.2.3)\n"
+			}
+			assertResult(t, invokeWithDeps(deps, test.args...), 1, wantStdout, "devctl: no space at 'gone.example.test'\n")
+			if !reflect.DeepEqual(ec2.listDomains, []string{"example.test"}) {
+				t.Fatalf("EC2 ListSpaceInstances domains = %q, want LookupSpace through example.test", ec2.listDomains)
+			}
+		})
 	}
 }
 
 func TestRootRefusalPrecedesEveryInvocation(t *testing.T) {
-	// R-A1PK-F80D
+	// R-OJ4W-YWVI
 	invocations := [][]string{
 		nil,
 		{"--help"}, {"-h"}, {"--version"}, {"-V"}, {"version"},
@@ -402,50 +533,40 @@ func TestRootRefusalPrecedesEveryInvocation(t *testing.T) {
 		{"deploy", "--help"},
 		{"restore", "--help"},
 		{"remove", "--help"},
+		{"apex", "--help"},
+		{"space", "list"},
+		{"secrets", "list", "sbx1"},
+		{"build", "crm"},
+		{"deploy", "sbx1", "crm/dist/crm-v1.0.0.tar.xz"},
+		{"restore", "sbx1", "crm"},
+		{"remove", "sbx1", "crm"},
+		{"apex", "show"},
 	}
 	for _, args := range invocations {
-		assertResult(t, invokeWithDeps(seam.Deps{EUID: 0}, args...), 3, "", "devctl: must not run as root\n")
-	}
-}
-
-func TestExactlyFiveCommandsRequireAccount(t *testing.T) {
-	// R-C1FA-A0HT
-	wantRequired := map[string]struct{}{
-		"space": {}, "secrets": {}, "deploy": {}, "restore": {}, "remove": {},
-	}
-	if !reflect.DeepEqual(accountRequired, wantRequired) {
-		t.Fatalf("account-required commands = %v, want %v", accountRequired, wantRequired)
-	}
-
-	wantBuild := invoke("build", "app")
-	for _, args := range [][]string{
-		{"--account", "work", "build", "app"},
-		{"--account=work", "build", "app"},
-	} {
-		if got := invoke(args...); got != wantBuild {
-			t.Errorf("Run(%q) = %#v, want %#v", args, got, wantBuild)
+		external := 0
+		deps := noExternalDeps(&external)
+		deps.EUID = 0
+		deps.Dir = filepath.Join(t.TempDir(), "outside")
+		assertResult(t, invokeWithDeps(deps, args...), 3, "", "devctl: must not run as root\n")
+		if external != 0 {
+			t.Errorf("Run(%q) made %d external calls", args, external)
 		}
 	}
 }
 
-func TestAccountRequiredBeforeCommandArguments(t *testing.T) {
-	// R-3PTI-JABB
-	for _, command := range []string{"space", "secrets", "deploy", "restore", "remove"} {
-		for _, arguments := range [][]string{nil, {"--definitely-invalid"}} {
-			calls := 0
-			deps := seam.Deps{
-				EUID: 1,
-				Cloud: func(context.Context, string, string) (cloud.Clients, error) {
-					calls++
-					return cloud.Clients{}, nil
-				},
-			}
-			args := append([]string{command}, arguments...)
-			wantStderr := "devctl: --account is required\n\nsee 'devctl " + command + " --help' for usage\n"
-			assertResult(t, invokeWithDeps(deps, args...), 2, "", wantStderr)
-			if calls != 0 {
-				t.Errorf("Run(%q) opened cloud %d times, want 0", args, calls)
-			}
+func TestTopLevelNonCommandsDoNotTouchExternalDependencies(t *testing.T) {
+	// R-OP8E-VRKZ
+	invocations := [][]string{
+		{"--help"}, {"-h"}, {"--version"}, {"-V"}, {"version"},
+		nil, {"unknown"}, {"--unknown"},
+	}
+	for _, args := range invocations {
+		external := 0
+		deps := noExternalDeps(&external)
+		deps.Dir = filepath.Join(t.TempDir(), "outside")
+		_ = invokeWithDeps(deps, args...)
+		if external != 0 {
+			t.Errorf("Run(%q) made %d external calls", args, external)
 		}
 	}
 }
@@ -483,13 +604,13 @@ func TestVersionRejectsArguments(t *testing.T) {
 }
 
 func TestTopLevelCommandSet(t *testing.T) {
-	// R-BYZH-IH0F
+	// R-OKCT-COM7
 	got := make([]string, 0, len(commandSet))
 	for command := range commandSet {
 		got = append(got, command)
 	}
 	sort.Strings(got)
-	want := []string{"build", "deploy", "remove", "restore", "secrets", "space", "version"}
+	want := []string{"apex", "build", "deploy", "remove", "restore", "secrets", "space", "version"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("top-level commands = %q, want %q", got, want)
 	}
@@ -501,7 +622,7 @@ func TestTopLevelCommandSet(t *testing.T) {
 }
 
 func TestTopLevelHelp(t *testing.T) {
-	// R-C3V3-1JZ7
+	// R-OMSM-483L
 	for _, option := range []string{"--help", "-h"} {
 		assertResult(t, invoke(option), 0, expectedUsage, "")
 	}
@@ -511,48 +632,60 @@ func TestSecretsHelpThroughCLI(t *testing.T) {
 	for _, args := range [][]string{{"secrets", "--help"}, {"secrets", "-h"}} {
 		assertResult(t, invoke(args...), 0, expectedD05Usage, "")
 	}
-	// R-TB68-9LEO
+	// R-0EH5-TETS
 
 	for _, option := range []string{"--help", "-h"} {
-		assertResult(t, invoke("--account", "work", "secrets", "push", option), 0, expectedD05PushUsage, "")
+		assertResult(t, invoke("secrets", "push", option), 0, expectedD05PushUsage, "")
 	}
-	// R-TCE4-ND5D
+	// R-0FP2-76KH
 
 	for _, option := range []string{"--help", "-h"} {
-		assertResult(t, invoke("--account", "work", "secrets", "list", option), 0, expectedD05ListUsage, "")
+		assertResult(t, invoke("secrets", "list", option), 0, expectedD05ListUsage, "")
 	}
-	// R-W1MO-Y7YK
+	// R-0GWY-KYB6
 }
 
-func TestSpaceHelpThroughCLIWithoutAccount(t *testing.T) {
-	// R-8WFQ-8ZI4 R-DCZD-72EW R-DE79-KU5L R-DFF5-YLWA R-DGN2-CDMZ
+func TestSpaceHelpThroughCLIWithoutCheckoutOrEffects(t *testing.T) {
 	tests := []struct {
 		name    string
 		command []string
 		want    string
 	}{
+		// R-UO5A-FLDR
 		{name: "space", command: []string{"space"}, want: expectedD06Usage},
+		// R-UPD6-TD4G
+		{name: "list", command: []string{"space", "list"}, want: expectedD06ListUsage},
+		// R-UQL3-74V5
 		{name: "destroy", command: []string{"space", "destroy"}, want: expectedD06DestroyUsage},
+		// R-URSZ-KWLU
 		{name: "stop", command: []string{"space", "stop"}, want: expectedD06StopUsage},
+		// R-UT0V-YOCJ
 		{name: "start", command: []string{"space", "start"}, want: expectedD06StartUsage},
+		// R-UU8S-CG38
 		{name: "status", command: []string{"space", "status"}, want: expectedD06StatusUsage},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			for _, option := range []string{"--help", "-h"} {
 				t.Run(option, func(t *testing.T) {
-					calls := 0
+					cloudCalls := 0
+					execCalls := 0
 					args := append(append([]string{}, test.command...), option)
 					result := invokeWithDeps(seam.Deps{
 						EUID: 1,
+						Dir:  filepath.Join(t.TempDir(), "outside-checkout"),
 						Cloud: func(context.Context, string, string) (cloud.Clients, error) {
-							calls++
+							cloudCalls++
 							return cloud.Clients{}, nil
+						},
+						Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
+							execCalls++
+							return seam.Result{}, errors.New("unexpected exec")
 						},
 					}, args...)
 					assertResult(t, result, 0, test.want, "")
-					if calls != 0 {
-						t.Fatalf("Run(%q) opened cloud %d times", args, calls)
+					if cloudCalls != 0 || execCalls != 0 {
+						t.Fatalf("Run(%q) effects: Cloud=%d Exec=%d", args, cloudCalls, execCalls)
 					}
 				})
 			}
@@ -560,39 +693,84 @@ func TestSpaceHelpThroughCLIWithoutAccount(t *testing.T) {
 	}
 }
 
-func TestSpaceDispatchShape(t *testing.T) {
-	// R-DHUY-Q5DO
-	contents, err := os.ReadFile("run.go")
-	if err != nil {
-		t.Fatal(err)
+func TestSpaceNeedsSubcommandBeforeEffects(t *testing.T) {
+	// R-UVGO-Q7TX
+	assertSpaceUsageBeforeEffects(t, []string{"space"}, "space needs <subcommand>")
+}
+
+func TestSpaceCommandsNeedSpaceBeforeEffects(t *testing.T) {
+	// R-UWOL-3ZKM
+	for _, subcommand := range []string{"destroy", "stop", "start", "status"} {
+		t.Run(subcommand, func(t *testing.T) {
+			assertSpaceUsageBeforeEffects(t, []string{"space", subcommand}, "space "+subcommand+" needs <space>")
+		})
 	}
-	source := string(contents)
-	for _, call := range []string{
-		"spacecreate.Run(ctx, args[1:], stdout, deps, profile)",
-		"spaceinit.Run(ctx, args[1:], stdout, deps, profile)",
-		"spaceapps.Run(ctx, args, stdout, deps, profile)",
-		"space.Run(ctx, args, stdout, deps, profile)",
-	} {
-		if !strings.Contains(source, call) {
-			t.Errorf("CLI dispatch lacks %s", call)
-		}
+}
+
+func TestSpaceRejectsExtraOperandsBeforeEffects(t *testing.T) {
+	// R-UZ4D-VJ20
+	for _, subcommand := range []string{"destroy", "stop", "start", "status"} {
+		t.Run(subcommand, func(t *testing.T) {
+			assertSpaceUsageBeforeEffects(t, []string{"space", subcommand, "sbx1", "extra"}, "space "+subcommand+" takes only <space>")
+		})
 	}
-	for _, args := range [][]string{{"space", "create"}, {"space", "init"}, {"space", "restart"}, {"space", "logs"}} {
-		result := invokeWithDeps(seam.Deps{EUID: 1}, args...)
-		if result.code != 2 || !strings.Contains(result.stderr, "--account is required") {
-			t.Fatalf("Run(%q) = %#v", args, result)
+	assertSpaceUsageBeforeEffects(t, []string{"space", "list", "extra"}, "space list takes no arguments")
+}
+
+func TestSpaceRejectsUnknownOptionsBeforeEffects(t *testing.T) {
+	// R-V2S3-0UA3
+	tests := [][]string{
+		{"space", "--wat"},
+		{"space", "--help", "--wat"},
+		{"space", "list", "--wat"},
+		{"space", "stop", "sbx1", "--no-backup"},
+		{"space", "stop", "sbx1", "--no-backup", "--help"},
+		{"space", "destroy", "sbx1", "--no-backup=true"},
+		{"space", "destroy", "--delete-secrets=yes", "sbx1"},
+	}
+	for _, args := range tests {
+		option := args[len(args)-1]
+		for _, argument := range args {
+			if strings.HasPrefix(argument, "-") && argument != "--help" && argument != "-h" {
+				option = argument
+				break
+			}
 		}
+		t.Run(strings.Join(args[1:], "_"), func(t *testing.T) {
+			assertSpaceUsageBeforeEffects(t, args, "unknown option '"+option+"'")
+		})
+	}
+}
+
+func assertSpaceUsageBeforeEffects(t *testing.T, args []string, message string) {
+	t.Helper()
+	cloudCalls := 0
+	execCalls := 0
+	deps := seam.Deps{
+		EUID: 1,
+		Cloud: func(context.Context, string, string) (cloud.Clients, error) {
+			cloudCalls++
+			return cloud.Clients{}, nil
+		},
+		Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
+			execCalls++
+			return seam.Result{}, errors.New("unexpected exec")
+		},
+	}
+	wantStderr := "devctl: " + message + "\n\nsee 'devctl space --help' for usage\n"
+	assertResult(t, invokeWithDeps(deps, args...), 2, "", wantStderr)
+	if cloudCalls != 0 || execCalls != 0 {
+		t.Fatalf("Run(%q) effects: Cloud=%d Exec=%d", args, cloudCalls, execCalls)
 	}
 }
 
 func TestNoZoneErrorIsSingleLineOperationFailure(t *testing.T) {
-	// R-TO38-VG35
 	var stderr bytes.Buffer
-	err := fmt.Errorf("wrapped: %w", &account.NoZoneError{Domain: "foo.example"})
+	err := fmt.Errorf("wrapped: %w", &cloud.NotFoundError{Kind: "hosted zone", Name: "foo.example"})
 	if got := operationError(&stderr, err); got != 1 {
 		t.Fatalf("operationError exit = %d, want 1", got)
 	}
-	if got, want := stderr.String(), "devctl: no hosted zone for 'foo.example'\n"; got != want {
+	if got, want := stderr.String(), "devctl: no hosted zone 'foo.example'\n"; got != want {
 		t.Fatalf("stderr = %q, want %q", got, want)
 	}
 }
@@ -602,21 +780,21 @@ func TestSecretsUsageErrorsThroughCLI(t *testing.T) {
 		return "devctl: " + message + "\n\nsee 'devctl secrets --help' for usage\n"
 	}
 
-	assertResult(t, invoke("--account", "work", "secrets"), 2, "", want("secrets needs <subcommand>"))
-	// R-G3VN-MQ7S
+	assertResult(t, invoke("secrets"), 2, "", want("secrets needs <subcommand>"))
+	// R-0JCR-CHSK
 
-	assertResult(t, invoke("--account", "work", "secrets", "frobnicate"), 2, "", want("unknown subcommand 'frobnicate'"))
+	assertResult(t, invoke("secrets", "frobnicate"), 2, "", want("unknown subcommand 'frobnicate'"))
 	// R-G53K-0HYH
 
 	for _, subcommand := range []string{"push", "list"} {
-		assertResult(t, invoke("--account", "work", "secrets", subcommand), 2, "", want("secrets "+subcommand+" needs <domain>"))
+		assertResult(t, invoke("secrets", subcommand), 2, "", want("secrets "+subcommand+" needs <space>"))
 	}
-	// R-G6BG-E9P6
+	// R-0KKN-Q9J9
 
 	for _, subcommand := range []string{"push", "list"} {
-		assertResult(t, invoke("--account", "work", "secrets", subcommand, "example.test", "crm", "extra"), 2, "", want("secrets "+subcommand+" takes at most <domain> and <app>"))
+		assertResult(t, invoke("secrets", subcommand, "sbx1", "crm", "extra"), 2, "", want("secrets "+subcommand+" takes at most <space> and <app>"))
 	}
-	// R-G8R9-5T6K
+	// R-0LSK-419Y
 
 	for _, args := range [][]string{
 		{"secrets", "--verbose"},
@@ -624,8 +802,7 @@ func TestSecretsUsageErrorsThroughCLI(t *testing.T) {
 		{"secrets", "push", "example.test", "--verbose"},
 		{"secrets", "list", "example.test", "crm", "--verbose"},
 	} {
-		fullArgs := append([]string{"--account", "work"}, args...)
-		assertResult(t, invoke(fullArgs...), 2, "", want("unknown option '--verbose'"))
+		assertResult(t, invoke(args...), 2, "", want("unknown option '--verbose'"))
 	}
 	// R-G9Z5-JKX9
 }
@@ -648,8 +825,20 @@ func (ssm *sentinelSSM) ListParameters(context.Context, string) ([]cloud.Paramet
 
 type sentinelEC2 struct{ cloud.EC2 }
 
-func (*sentinelEC2) ListSpaceInstances(context.Context) ([]cloud.Instance, error) {
-	return []cloud.Instance{{Space: "foo.sbx.ikigenba.dev", State: cloud.StateRunning}}, nil
+func (*sentinelEC2) ListSpaceInstances(context.Context, string) ([]cloud.Instance, error) {
+	return []cloud.Instance{
+		{Space: "foo.sbx.ikigenba.dev", State: cloud.StateRunning},
+		{Space: "sbx1.ikigenba.dev", State: cloud.StateRunning},
+	}, nil
+}
+
+type cliSTS struct {
+	cloud.STS
+	err error
+}
+
+func (fake *cliSTS) CallerAccountID(context.Context) (string, error) {
+	return "123456789012", fake.err
 }
 
 func TestSecretsNeverExposeValuesThroughCLIOrExports(t *testing.T) {
@@ -673,6 +862,12 @@ func TestSecretsNeverExposeValuesThroughCLIOrExports(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(appDir, "etc", "manifest.toml"), []byte("app = 'crm'\nsecrets = ['CRM_TOKEN']\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(root, "infra"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, checkout.RootFilePath), []byte(`{"domain":"sbx.ikigenba.dev","region":"us-test-1"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	regional := &sentinelSSM{
 		getValue: namesObject(namesSentinel),
@@ -682,28 +877,12 @@ func TestSecretsNeverExposeValuesThroughCLIOrExports(t *testing.T) {
 		}},
 	}
 	deps := secretSentinelDeps(root, pushSentinel, regional)
-	pushResult := invokeWithDeps(deps, "--account", "work", "secrets", "push", "foo.sbx.ikigenba.dev", "crm")
+	pushResult := invokeWithDeps(deps, "secrets", "push", "foo", "crm")
 	assertResult(t, pushResult, 0, "crm: ok (1 keys)\n", "")
-	listResult := invokeWithDeps(deps, "--account", "work", "secrets", "list", "foo.sbx.ikigenba.dev")
+	listResult := invokeWithDeps(deps, "secrets", "list", "foo")
 	assertResult(t, listResult, 0, "crm CRM_TOKEN\n", "")
 
-	acct := &account.Account{Clients: cloud.Clients{SSM: regional}}
-	entries, err := secrets.Push(context.Background(), deps, acct, "foo.sbx.ikigenba.dev", []checkout.App{{
-		Name: "crm", Manifest: checkout.Manifest{Secrets: []string{"CRM_TOKEN"}},
-	}})
-	if err != nil {
-		t.Fatalf("Push returned error: %v", err)
-	}
-	listed, err := secrets.List(context.Background(), acct, "foo.sbx.ikigenba.dev")
-	if err != nil {
-		t.Fatalf("List returned error: %v", err)
-	}
-	names, err := secrets.Names(context.Background(), acct, "foo.sbx.ikigenba.dev", "crm")
-	if err != nil {
-		t.Fatalf("Names returned error: %v", err)
-	}
-
-	visible := pushResult.stdout + pushResult.stderr + listResult.stdout + listResult.stderr + fmt.Sprint(entries, listed, names)
+	visible := pushResult.stdout + pushResult.stderr + listResult.stdout + listResult.stderr
 	for _, sentinel := range []string{pushSentinel, listSentinel, namesSentinel} {
 		if strings.Contains(visible, sentinel) {
 			t.Fatalf("secret sentinel %q exposed in %q", sentinel, visible)
@@ -714,7 +893,6 @@ func TestSecretsNeverExposeValuesThroughCLIOrExports(t *testing.T) {
 func namesObject(value string) string { return `{"CRM_TOKEN":"` + value + `"}` }
 
 func secretSentinelDeps(root, value string, regional cloud.SSM) seam.Deps {
-	opens := 0
 	return seam.Deps{
 		EUID:   1,
 		Dir:    root,
@@ -723,11 +901,7 @@ func secretSentinelDeps(root, value string, regional cloud.SSM) seam.Deps {
 			return seam.Result{Stdout: []byte(root + "\n")}, nil
 		},
 		Cloud: func(context.Context, string, string) (cloud.Clients, error) {
-			opens++
-			if opens%2 == 1 {
-				return cloud.Clients{SSM: &cliSSM{value: cliPropertiesJSON}}, nil
-			}
-			return cloud.Clients{SSM: regional, EC2: &sentinelEC2{}}, nil
+			return cloud.Clients{STS: &cliSTS{}, SSM: regional, EC2: &sentinelEC2{}}, nil
 		},
 	}
 }
@@ -759,6 +933,74 @@ func TestDiagnosticStreams(t *testing.T) {
 			t.Errorf("Run(%q) duplicated diagnostic as stdout %q", args, result.stdout)
 		}
 	}
+}
+
+func TestCLIAloneWritesCheckoutDiagnostics(t *testing.T) {
+	// R-OQGB-9JBO
+	for _, commandPackage := range []string{
+		"space", "spacecreate", "spaceinit", "spaceapps", "secrets",
+		"build", "deploy", "restore", "remove", "apex",
+	} {
+		directory := filepath.Join("..", commandPackage)
+		entries, err := os.ReadDir(directory)
+		if err != nil {
+			t.Fatalf("read internal/%s: %v", commandPackage, err)
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+				continue
+			}
+			file, err := parser.ParseFile(token.NewFileSet(), filepath.Join(directory, entry.Name()), nil, 0)
+			if err != nil {
+				t.Fatalf("parse internal/%s/%s: %v", commandPackage, entry.Name(), err)
+			}
+			for _, declaration := range file.Decls {
+				function, ok := declaration.(*ast.FuncDecl)
+				if !ok || function.Recv != nil || function.Name.Name != "Run" {
+					continue
+				}
+				writers := 0
+				for _, field := range function.Type.Params.List {
+					selector, ok := field.Type.(*ast.SelectorExpr)
+					if !ok {
+						continue
+					}
+					qualifier, qualified := selector.X.(*ast.Ident)
+					if !qualified || qualifier.Name != "io" || selector.Sel.Name != "Writer" {
+						continue
+					}
+					writers += len(field.Names)
+					if len(field.Names) != 1 || field.Names[0].Name != "stdout" {
+						t.Errorf("internal/%s.Run writer parameter is not exactly stdout", commandPackage)
+					}
+				}
+				if writers != 1 {
+					t.Errorf("internal/%s.Run has %d io.Writer parameters, want 1", commandPackage, writers)
+				}
+			}
+		}
+	}
+
+	outside := filepath.Join(t.TempDir(), "outside")
+	assertResult(t, invokeWithDeps(seam.Deps{
+		EUID: 1,
+		Dir:  outside,
+		Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
+			return seam.Result{ExitCode: 128}, nil
+		},
+	}, "space", "list"), 2, "", "devctl: '"+outside+"' is not inside a git checkout\n")
+
+	missingRoot := t.TempDir()
+	assertResult(t, invokeWithDeps(checkoutDepsAt(missingRoot), "space", "list"), 2, "", "devctl: no infra/terraform.tfvars.json in the checkout\n")
+
+	malformed := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(malformed, "infra"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(malformed, checkout.RootFilePath), []byte(`{"domain":"ikigenba.dev"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	assertResult(t, invokeWithDeps(checkoutDepsAt(malformed), "space", "list"), 2, "", "devctl: infra/terraform.tfvars.json: missing 'region'\n")
 }
 
 func TestDiagnosticDetail(t *testing.T) {
@@ -829,20 +1071,6 @@ type runResult struct {
 	stdout, stderr string
 }
 
-const cliPropertiesJSON = `{
-	"domain":"example.test",
-	"backup_bucket":"backups",
-	"launch_template_id":"lt-123",
-	"permissions_boundary_arn":"arn:boundary",
-	"region":"us-test-1",
-	"delete_secrets_on_destroy":true,
-	"delete_backups_on_destroy":false,
-	"backup_host_files_seconds":1,
-	"backup_service_files_seconds":2,
-	"backup_service_db_seconds":3,
-	"backup_service_wal_seconds":4
-}`
-
 type cliSSM struct {
 	cloud.SSM
 	value string
@@ -853,13 +1081,86 @@ func (fake *cliSSM) GetParameter(context.Context, string) (string, error) {
 	return fake.value, fake.err
 }
 
-type cliEC2 struct {
-	cloud.EC2
-	err error
+func (fake *cliSSM) ListParameters(context.Context, string) ([]cloud.Parameter, error) {
+	return nil, fake.err
 }
 
-func (fake *cliEC2) ListSpaceInstances(context.Context) ([]cloud.Instance, error) {
-	return nil, fake.err
+type cliEC2 struct {
+	cloud.EC2
+	instances   []cloud.Instance
+	listDomains []string
+	err         error
+	launchErr   error
+	runErr      error
+}
+
+func (fake *cliEC2) ListSpaceInstances(_ context.Context, domain string) ([]cloud.Instance, error) {
+	fake.listDomains = append(fake.listDomains, domain)
+	return fake.instances, fake.err
+}
+
+func (fake *cliEC2) LaunchTemplate(context.Context, string) (string, error) {
+	return "lt-root", fake.launchErr
+}
+
+func (*cliEC2) LaunchReady(context.Context, cloud.LaunchSpec) (bool, error) { return true, nil }
+
+func (fake *cliEC2) RunInstance(context.Context, cloud.LaunchSpec) (cloud.Instance, error) {
+	return cloud.Instance{}, fake.runErr
+}
+
+type cliRoute53 struct {
+	cloud.Route53
+	err       error
+	changeErr error
+}
+
+func (fake *cliRoute53) Zone(context.Context, string) (cloud.Zone, error) {
+	return cloud.Zone{ID: "ZROOT", Name: "ikigenba.dev"}, fake.err
+}
+
+func (*cliRoute53) FindRecord(context.Context, string, string, string) (cloud.Record, bool, error) {
+	return cloud.Record{}, false, nil
+}
+
+func (fake *cliRoute53) ChangeRecords(context.Context, string, []cloud.RecordChange) (string, error) {
+	return "", fake.changeErr
+}
+
+type cliIAM struct{ cloud.IAM }
+
+func (*cliIAM) PermissionsBoundary(context.Context, string) (string, error) {
+	return "arn:boundary", nil
+}
+func (*cliIAM) RoleExists(context.Context, string) (bool, error) { return false, nil }
+func (*cliIAM) InstanceProfileRoles(context.Context, string) ([]string, bool, error) {
+	return nil, false, nil
+}
+func (*cliIAM) CreateRole(context.Context, cloud.RoleSpec) error               { return nil }
+func (*cliIAM) PutRolePolicy(context.Context, string, string, string) error    { return nil }
+func (*cliIAM) CreateInstanceProfile(context.Context, string) error            { return nil }
+func (*cliIAM) AddRoleToInstanceProfile(context.Context, string, string) error { return nil }
+
+type cloudOpenCall struct {
+	profile string
+	region  string
+}
+
+func cliClients(ec2 cloud.EC2, route53 cloud.Route53) cloud.Clients {
+	return cloud.Clients{
+		EC2: ec2, SSM: &cliSSM{err: errors.New("cloud progress complete")}, Route53: route53,
+		S3: nil, IAM: &cliIAM{}, STS: &cliSTS{},
+	}
+}
+
+func cliClientsWithSTS(sts cloud.STS) cloud.Clients {
+	clients := cliClients(&cliEC2{}, &cliRoute53{})
+	clients.STS = sts
+	return clients
+}
+
+func createCLIClients(ec2 *cliEC2, route53 *cliRoute53) cloud.Clients {
+	return cliClients(ec2, route53)
 }
 
 func invoke(args ...string) runResult {
@@ -886,5 +1187,81 @@ func assertResult(t *testing.T, got runResult, wantCode int, wantStdout, wantStd
 	}
 	if got.stderr != wantStderr {
 		t.Errorf("stderr = %q, want %q", got.stderr, wantStderr)
+	}
+}
+
+func checkoutDeps(t *testing.T, rootFile string) seam.Deps {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "infra"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, checkout.RootFilePath), []byte(rootFile), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "work"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return checkoutDepsAt(root)
+}
+
+func checkoutDepsAt(root string) seam.Deps {
+	return seam.Deps{
+		EUID: 1,
+		Dir:  filepath.Join(root, "work"),
+		Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
+			if command.Path != "git" || !reflect.DeepEqual(command.Args, []string{"rev-parse", "--show-toplevel"}) {
+				return seam.Result{}, fmt.Errorf("unexpected command: %#v", command)
+			}
+			return seam.Result{Stdout: []byte(root + "\n")}, nil
+		},
+	}
+}
+
+func prepareCLIApp(t *testing.T, deps seam.Deps) seam.Deps {
+	t.Helper()
+	root := filepath.Dir(deps.Dir)
+	app := filepath.Join(root, "crm")
+	if err := os.MkdirAll(filepath.Join(app, "cmd", "crm"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(app, "etc"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app, "cmd", "crm", "main.go"), []byte("package main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app, checkout.ManifestFile), []byte("app = \"crm\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return deps
+}
+
+func prepareCLIArchive(t *testing.T, deps seam.Deps) seam.Deps {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(deps.Dir, "crm-v1.2.3.tar.xz"), []byte("archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	deps.Exec = cliCheckoutAndHostExec(t, deps.Exec)
+	return deps
+}
+
+func cliCheckoutAndHostExec(t *testing.T, checkoutExec seam.Runner) seam.Runner {
+	t.Helper()
+	return func(ctx context.Context, command seam.Cmd) (seam.Result, error) {
+		switch command.Path {
+		case "git":
+			return checkoutExec(ctx, command)
+		case "tar":
+			if len(command.Args) != 0 && command.Args[0] == "-t" {
+				return seam.Result{Stdout: []byte("etc/manifest.toml\nbin/crm\n")}, nil
+			}
+			return seam.Result{Stdout: []byte("app = \"crm\"\n")}, nil
+		case "ssh":
+			return seam.Result{}, nil
+		default:
+			t.Fatalf("unexpected command: %#v", command)
+			return seam.Result{}, errors.New("unexpected command")
+		}
 	}
 }

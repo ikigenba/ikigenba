@@ -111,8 +111,8 @@ func TestPrepareBuildSelectsLexicographicallyFirstCompleteAppTag(t *testing.T) {
 	fixture.assertAllPrerequisiteCommands(t)
 }
 
-func TestPrepareBuildAcceptsFullSemverWithoutBranchPolicy(t *testing.T) {
-	// R-ETF1-N7AR
+func TestPrepareBuildAcceptsFullSemverAtAnyHead(t *testing.T) {
+	// R-RAEX-IPN4
 	for _, version := range []string{"v1.2.3", "v1.2.3-rc.1", "v1.2.3+build.7", "v1.2.3-rc.1+build.7"} {
 		t.Run(version, func(t *testing.T) {
 			fixture := newPrerequisiteFixture(t, "", "crm/"+version+"\n")

@@ -8,13 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ikigenba/ikigenba/devctl/internal/account"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
 
 func TestWaitState(t *testing.T) {
-	// R-TEC1-TA5L
+	// R-UAQE-8484
 	responses := []cloud.Instance{
 		{ID: "i-one", State: cloud.StatePending},
 		{ID: "i-one", State: cloud.StateRunning},
@@ -31,7 +30,7 @@ func TestWaitState(t *testing.T) {
 	var waits []time.Duration
 	deps := seam.Deps{After: instantAfter(&waits)}
 	want := cloud.Instance{ID: "i-one", State: cloud.StateRunning, Address: "192.0.2.1"}
-	got, err := WaitState(context.Background(), deps, helperAccount(ec2, nil, nil), "i-one", cloud.StateRunning)
+	got, err := WaitState(context.Background(), deps, ec2, "i-one", cloud.StateRunning)
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("WaitState = %#v, %v; want %#v, nil", got, err, want)
 	}
@@ -49,7 +48,7 @@ func TestWaitState(t *testing.T) {
 			return cloud.Instance{ID: id, State: state}, nil
 		}
 		waits = nil
-		got, err = WaitState(context.Background(), deps, helperAccount(ec2, nil, nil), "i-one", state)
+		got, err = WaitState(context.Background(), deps, ec2, "i-one", state)
 		if err != nil || got.State != state || got.Address != "" || calls != 1 || len(waits) != 0 {
 			t.Fatalf("WaitState(%s) = %#v, %v; calls=%d waits=%v", state, got, err, calls, waits)
 		}
@@ -61,7 +60,7 @@ func TestWaitState(t *testing.T) {
 		return cloud.Instance{State: cloud.StatePending}, nil
 	}
 	waits = nil
-	_, err = WaitState(context.Background(), deps, helperAccount(ec2, nil, nil), "i-timeout", cloud.StateRunning)
+	_, err = WaitState(context.Background(), deps, ec2, "i-timeout", cloud.StateRunning)
 	var waitErr *WaitError
 	if !errors.As(err, &waitErr) || waitErr.Subject != "i-timeout" || waitErr.Want != "be running" {
 		t.Fatalf("timeout error = %#v", err)
@@ -72,7 +71,7 @@ func TestWaitState(t *testing.T) {
 }
 
 func TestWaitChecks(t *testing.T) {
-	// R-TFJY-71WA
+	// R-UBYA-LVYT
 	calls := 0
 	ec2 := &helperEC2{checks: func(_ context.Context, id string) (bool, error) {
 		calls++
@@ -82,7 +81,7 @@ func TestWaitChecks(t *testing.T) {
 		return calls == 3, nil
 	}}
 	var waits []time.Duration
-	err := WaitChecks(context.Background(), seam.Deps{After: instantAfter(&waits)}, helperAccount(ec2, nil, nil), "i-one")
+	err := WaitChecks(context.Background(), seam.Deps{After: instantAfter(&waits)}, ec2, "i-one")
 	if err != nil || calls != 3 || !reflect.DeepEqual(waits, []time.Duration{PollInterval, PollInterval}) {
 		t.Fatalf("WaitChecks = %v; calls=%d waits=%v", err, calls, waits)
 	}
@@ -90,7 +89,7 @@ func TestWaitChecks(t *testing.T) {
 	calls = 0
 	ec2.checks = func(context.Context, string) (bool, error) { calls++; return false, nil }
 	waits = nil
-	err = WaitChecks(context.Background(), seam.Deps{After: instantAfter(&waits)}, helperAccount(ec2, nil, nil), "i-timeout")
+	err = WaitChecks(context.Background(), seam.Deps{After: instantAfter(&waits)}, ec2, "i-timeout")
 	var waitErr *WaitError
 	if !errors.As(err, &waitErr) || waitErr.Subject != "i-timeout" || waitErr.Want != "pass its status checks" {
 		t.Fatalf("timeout error = %#v", err)
@@ -101,7 +100,7 @@ func TestWaitChecks(t *testing.T) {
 }
 
 func TestWaitLaunchReady(t *testing.T) {
-	// R-H5IS-GV8A
+	// R-UD66-ZNPI
 	spec := cloud.LaunchSpec{
 		LaunchTemplateID: "lt-one",
 		InstanceProfile:  "profile-one",
@@ -116,7 +115,7 @@ func TestWaitLaunchReady(t *testing.T) {
 		return calls == 3, nil
 	}}
 	var waits []time.Duration
-	err := WaitLaunchReady(context.Background(), seam.Deps{After: instantAfter(&waits)}, helperAccount(ec2, nil, nil), spec)
+	err := WaitLaunchReady(context.Background(), seam.Deps{After: instantAfter(&waits)}, ec2, spec)
 	if err != nil || calls != 3 || !reflect.DeepEqual(waits, []time.Duration{PollInterval, PollInterval}) {
 		t.Fatalf("WaitLaunchReady = %v; calls=%d waits=%v", err, calls, waits)
 	}
@@ -128,7 +127,7 @@ func TestWaitLaunchReady(t *testing.T) {
 		calls++
 		return false, wantErr
 	}
-	err = WaitLaunchReady(context.Background(), seam.Deps{After: instantAfter(&waits)}, helperAccount(ec2, nil, nil), spec)
+	err = WaitLaunchReady(context.Background(), seam.Deps{After: instantAfter(&waits)}, ec2, spec)
 	if !errors.Is(err, wantErr) || reflect.ValueOf(err).Pointer() != reflect.ValueOf(wantErr).Pointer() || calls != 1 || len(waits) != 0 {
 		t.Fatalf("error WaitLaunchReady = %v; calls=%d waits=%v", err, calls, waits)
 	}
@@ -139,7 +138,7 @@ func TestWaitLaunchReady(t *testing.T) {
 		calls++
 		return false, nil
 	}
-	err = WaitLaunchReady(context.Background(), seam.Deps{After: instantAfter(&waits)}, helperAccount(ec2, nil, nil), spec)
+	err = WaitLaunchReady(context.Background(), seam.Deps{After: instantAfter(&waits)}, ec2, spec)
 	var waitErr *WaitError
 	if !errors.As(err, &waitErr) || waitErr.Subject != spec.InstanceProfile || waitErr.Want != "become usable for launch" {
 		t.Fatalf("timeout error = %#v", err)
@@ -149,48 +148,95 @@ func TestWaitLaunchReady(t *testing.T) {
 	}
 }
 
+func TestWaitInsync(t *testing.T) {
+	// R-UFLZ-R76W
+	statuses := []cloud.ChangeStatus{cloud.ChangePending, cloud.ChangeInsync}
+	var ids []string
+	route53 := &helperRoute53{changeStatus: func(_ context.Context, id string) (cloud.ChangeStatus, error) {
+		ids = append(ids, id)
+		status := statuses[0]
+		statuses = statuses[1:]
+		return status, nil
+	}}
+	var waits []time.Duration
+	if err := WaitInsync(context.Background(), seam.Deps{After: instantAfter(&waits)}, route53, "change-one"); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(ids, []string{"change-one", "change-one"}) || !reflect.DeepEqual(waits, []time.Duration{PollInterval}) {
+		t.Fatalf("ids=%v waits=%v", ids, waits)
+	}
+
+	wantErr := errors.New("status failed")
+	route53.changeStatus = func(context.Context, string) (cloud.ChangeStatus, error) { return "", wantErr }
+	if err := WaitInsync(context.Background(), seam.Deps{}, route53, "change-error"); err == nil || reflect.ValueOf(err).Pointer() != reflect.ValueOf(wantErr).Pointer() {
+		t.Fatalf("error = %v, want unchanged %v", err, wantErr)
+	}
+
+	calls := 0
+	waits = nil
+	route53.changeStatus = func(context.Context, string) (cloud.ChangeStatus, error) {
+		calls++
+		return cloud.ChangePending, nil
+	}
+	err := WaitInsync(context.Background(), seam.Deps{After: instantAfter(&waits)}, route53, "change-timeout")
+	var waitErr *WaitError
+	if !errors.As(err, &waitErr) || waitErr.Subject != "change-timeout" || waitErr.Want != "reach INSYNC" {
+		t.Fatalf("timeout error = %#v", err)
+	}
+	if calls != PollAttempts || len(waits) != PollAttempts-1 {
+		t.Fatalf("calls=%d waits=%d", calls, len(waits))
+	}
+}
+
 func TestElasticIP(t *testing.T) {
-	// R-SUTN-OYAH R-THZQ-YLDO
+	// R-U4MW-B9IN R-UGTW-4YXL
 	addresses := []cloud.Address{
 		{AllocationID: "other", Space: "other.example"},
 		{AllocationID: "wanted", IP: "192.0.2.2", Space: "app.example"},
 	}
-	ec2 := &helperEC2{addresses: func(context.Context) ([]cloud.Address, error) { return addresses, nil }}
-	got, found, err := ElasticIP(context.Background(), helperAccount(ec2, nil, nil), "app.example")
+	var roots []string
+	ec2 := &helperEC2{addresses: func(_ context.Context, root string) ([]cloud.Address, error) {
+		roots = append(roots, root)
+		return addresses, nil
+	}}
+	got, found, err := ElasticIP(context.Background(), ec2, "example", "app.example")
 	if err != nil || !found || !reflect.DeepEqual(got, addresses[1]) {
 		t.Fatalf("ElasticIP = %#v, %v, %v", got, found, err)
 	}
-	_, found, err = ElasticIP(context.Background(), helperAccount(ec2, nil, nil), "missing.example")
+	_, found, err = ElasticIP(context.Background(), ec2, "example", "missing.example")
 	if err != nil || found {
 		t.Fatalf("missing ElasticIP found=%v err=%v", found, err)
 	}
 	addresses = append(addresses, cloud.Address{AllocationID: "duplicate", Space: "app.example"})
-	_, _, err = ElasticIP(context.Background(), helperAccount(ec2, nil, nil), "app.example")
+	_, _, err = ElasticIP(context.Background(), ec2, "example", "app.example")
 	if err == nil || !strings.Contains(err.Error(), "app.example") {
 		t.Fatalf("duplicate error = %v", err)
+	}
+	if !reflect.DeepEqual(roots, []string{"example", "example", "example"}) {
+		t.Fatalf("ListSpaceAddresses roots = %v", roots)
 	}
 }
 
 func TestReleaseElasticIP(t *testing.T) {
-	// R-TJ7N-CD4D
+	// R-UI1S-IQOA
 	var calls []string
 	ec2 := &helperEC2{
 		disassociate: func(_ context.Context, id string) error { calls = append(calls, "disassociate "+id); return nil },
 		release:      func(_ context.Context, id string) error { calls = append(calls, "release "+id); return nil },
 	}
-	err := ReleaseElasticIP(context.Background(), helperAccount(ec2, nil, nil), cloud.Address{AssociationID: "assoc", AllocationID: "alloc"})
+	err := ReleaseElasticIP(context.Background(), ec2, cloud.Address{AssociationID: "assoc", AllocationID: "alloc"})
 	if err != nil || !reflect.DeepEqual(calls, []string{"disassociate assoc", "release alloc"}) {
 		t.Fatalf("associated release: calls=%v err=%v", calls, err)
 	}
 	calls = nil
-	err = ReleaseElasticIP(context.Background(), helperAccount(ec2, nil, nil), cloud.Address{AllocationID: "alloc2"})
+	err = ReleaseElasticIP(context.Background(), ec2, cloud.Address{AllocationID: "alloc2"})
 	if err != nil || !reflect.DeepEqual(calls, []string{"release alloc2"}) {
 		t.Fatalf("unassociated release: calls=%v err=%v", calls, err)
 	}
 }
 
 func TestPutRecords(t *testing.T) {
-	// R-SW1K-2Q16 R-TKFJ-Q4V2
+	// R-U5US-P19C R-UJ9O-WIEZ
 	var gotZone string
 	var gotChanges []cloud.RecordChange
 	changeRecordsCalls := 0
@@ -211,7 +257,7 @@ func TestPutRecords(t *testing.T) {
 		},
 	}
 	var waits []time.Duration
-	err := PutRecords(context.Background(), seam.Deps{After: instantAfter(&waits)}, helperAccount(nil, route53, nil), cloud.Zone{ID: "zone-one"}, "app.example", "192.0.2.3")
+	err := PutRecords(context.Background(), seam.Deps{After: instantAfter(&waits)}, route53, cloud.Zone{ID: "zone-one"}, "app.example", "192.0.2.3")
 	wantChanges := []cloud.RecordChange{
 		{Action: cloud.ChangeUpsert, Record: cloud.Record{Name: "app.example", Type: "A", TTL: RecordTTL, Values: []string{"192.0.2.3"}}},
 		{Action: cloud.ChangeUpsert, Record: cloud.Record{Name: "*.app.example", Type: "A", TTL: RecordTTL, Values: []string{"192.0.2.3"}}},
@@ -223,7 +269,7 @@ func TestPutRecords(t *testing.T) {
 	calls := 0
 	route53.changeStatus = func(context.Context, string) (cloud.ChangeStatus, error) { calls++; return cloud.ChangePending, nil }
 	waits = nil
-	err = PutRecords(context.Background(), seam.Deps{After: instantAfter(&waits)}, helperAccount(nil, route53, nil), cloud.Zone{ID: "zone-one"}, "app.example", "192.0.2.3")
+	err = PutRecords(context.Background(), seam.Deps{After: instantAfter(&waits)}, route53, cloud.Zone{ID: "zone-one"}, "app.example", "192.0.2.3")
 	var waitErr *WaitError
 	if !errors.As(err, &waitErr) || waitErr.Subject != "change-one" || waitErr.Want != "reach INSYNC" {
 		t.Fatalf("timeout error = %#v", err)
@@ -234,7 +280,7 @@ func TestPutRecords(t *testing.T) {
 }
 
 func TestDeleteRecords(t *testing.T) {
-	// R-TLNG-3WLR
+	// R-UKHL-AA5O
 	records := []cloud.Record{
 		{Name: "app.example", Type: "A", TTL: 123, Values: []string{"192.0.2.4"}},
 		{Name: `\052.app.example`, Type: "A", TTL: 456, Values: []string{"192.0.2.5"}},
@@ -260,20 +306,20 @@ func TestDeleteRecords(t *testing.T) {
 			return "change-one", nil
 		},
 	}
-	count, err := DeleteRecords(context.Background(), helperAccount(nil, route53, nil), cloud.Zone{ID: "zone-one"}, "app.example")
+	deleted, err := DeleteRecords(context.Background(), route53, cloud.Zone{ID: "zone-one"}, "app.example")
 	want := []cloud.RecordChange{{Action: cloud.ChangeDelete, Record: records[0]}, {Action: cloud.ChangeDelete, Record: records[1]}, {Action: cloud.ChangeDelete, Record: records[2]}}
-	if err != nil || count != 3 || calls != 1 || !reflect.DeepEqual(got, want) {
-		t.Fatalf("DeleteRecords = %d, %v; calls=%d changes=%#v", count, err, calls, got)
+	if wantNames := []string{"app.example", "*.app.example"}; err != nil || !reflect.DeepEqual(deleted, wantNames) || calls != 1 || !reflect.DeepEqual(got, want) {
+		t.Fatalf("DeleteRecords = %v, %v; calls=%d changes=%#v", deleted, err, calls, got)
 	}
 	records = records[3:]
-	count, err = DeleteRecords(context.Background(), helperAccount(nil, route53, nil), cloud.Zone{ID: "zone-one"}, "app.example")
-	if err != nil || count != 0 || calls != 1 {
-		t.Fatalf("empty DeleteRecords = %d, %v; ChangeRecords calls=%d", count, err, calls)
+	deleted, err = DeleteRecords(context.Background(), route53, cloud.Zone{ID: "zone-one"}, "app.example")
+	if err != nil || len(deleted) != 0 || deleted == nil || calls != 1 {
+		t.Fatalf("empty DeleteRecords = %v, %v; ChangeRecords calls=%d", deleted, err, calls)
 	}
 }
 
 func TestDeleteRole(t *testing.T) {
-	// R-SX9G-GHRV R-TMVC-HOCG
+	// R-U72P-2T01 R-ULPH-O1WD
 	var calls []string
 	iam := &helperIAM{
 		roleExists: func(_ context.Context, name string) (bool, error) {
@@ -295,7 +341,7 @@ func TestDeleteRole(t *testing.T) {
 		deleteProfile: func(_ context.Context, name string) error { calls = append(calls, "delete-profile "+name); return nil },
 		deleteRole:    func(_ context.Context, name string) error { calls = append(calls, "delete-role "+name); return nil },
 	}
-	deleted, err := DeleteRole(context.Background(), helperAccount(nil, nil, iam), "app.example")
+	deleted, err := DeleteRole(context.Background(), iam, "app.example")
 	name := RoleName("app.example")
 	want := []string{"exists " + name, "profile " + name, "policy " + name + " " + PolicyName, "remove " + name + " role-a", "remove " + name + " role-b", "delete-profile " + name, "delete-role " + name}
 	if err != nil || !deleted || !reflect.DeepEqual(calls, want) {
@@ -311,7 +357,7 @@ func TestDeleteRole(t *testing.T) {
 		calls = append(calls, "profile "+name)
 		return nil, false, nil
 	}
-	deleted, err = DeleteRole(context.Background(), helperAccount(nil, nil, iam), "app.example")
+	deleted, err = DeleteRole(context.Background(), iam, "app.example")
 	want = []string{"exists " + name, "profile " + name, "policy " + name + " " + PolicyName, "delete-profile " + name, "delete-role " + name}
 	if err != nil || !deleted || !reflect.DeepEqual(calls, want) {
 		t.Fatalf("role-only DeleteRole = %v, %v; calls=%v", deleted, err, calls)
@@ -326,7 +372,7 @@ func TestDeleteRole(t *testing.T) {
 		calls = append(calls, "profile "+name)
 		return []string{"profile-role"}, true, nil
 	}
-	deleted, err = DeleteRole(context.Background(), helperAccount(nil, nil, iam), "app.example")
+	deleted, err = DeleteRole(context.Background(), iam, "app.example")
 	want = []string{"exists " + name, "profile " + name, "policy " + name + " " + PolicyName, "remove " + name + " profile-role", "delete-profile " + name, "delete-role " + name}
 	if err != nil || !deleted || !reflect.DeepEqual(calls, want) {
 		t.Fatalf("profile-only DeleteRole = %v, %v; calls=%v", deleted, err, calls)
@@ -341,9 +387,65 @@ func TestDeleteRole(t *testing.T) {
 		calls = append(calls, "profile "+name)
 		return nil, false, nil
 	}
-	deleted, err = DeleteRole(context.Background(), helperAccount(nil, nil, iam), "app.example")
+	deleted, err = DeleteRole(context.Background(), iam, "app.example")
 	if err != nil || deleted || !reflect.DeepEqual(calls, []string{"exists " + name, "profile " + name}) {
 		t.Fatalf("absent DeleteRole = %v, %v; calls=%v", deleted, err, calls)
+	}
+}
+
+func TestFindApex(t *testing.T) {
+	// R-U8AL-GKQQ R-UMXE-1TN2
+	assertFields(t, ApexRecord{}, struct {
+		Record cloud.Record
+		Found  bool
+		Holder string
+	}{})
+	accept := func(func(context.Context, cloud.Route53, cloud.EC2, string, string) (ApexRecord, error)) {}
+	accept(FindApex)
+
+	record := cloud.Record{Name: "ikigenba.dev", Type: "A", TTL: 60, Values: []string{"18.118.7.42"}}
+	var findArgs []string
+	found := true
+	route53 := &helperRoute53{findRecord: func(_ context.Context, zoneID, name, recordType string) (cloud.Record, bool, error) {
+		findArgs = []string{zoneID, name, recordType}
+		return record, found, nil
+	}}
+	addressCalls := 0
+	addresses := []cloud.Address{{IP: "18.118.7.42", Space: "sbx1.ikigenba.dev"}}
+	ec2 := &helperEC2{addresses: func(_ context.Context, root string) ([]cloud.Address, error) {
+		addressCalls++
+		if root != "ikigenba.dev" {
+			t.Fatalf("root = %q", root)
+		}
+		return addresses, nil
+	}}
+	got, err := FindApex(context.Background(), route53, ec2, "ZONE1", "ikigenba.dev")
+	if err != nil || !reflect.DeepEqual(got, ApexRecord{Record: record, Found: true, Holder: "sbx1.ikigenba.dev"}) {
+		t.Fatalf("FindApex = %#v, %v", got, err)
+	}
+	if !reflect.DeepEqual(findArgs, []string{"ZONE1", "ikigenba.dev", "A"}) || addressCalls != 1 {
+		t.Fatalf("find args=%v address calls=%d", findArgs, addressCalls)
+	}
+
+	record.Values = []string{"203.0.113.9"}
+	got, err = FindApex(context.Background(), route53, ec2, "ZONE1", "ikigenba.dev")
+	if err != nil || !got.Found || got.Holder != "" || !reflect.DeepEqual(got.Record, record) {
+		t.Fatalf("unheld FindApex = %#v, %v", got, err)
+	}
+
+	found = false
+	addressCalls = 0
+	got, err = FindApex(context.Background(), route53, ec2, "ZONE1", "ikigenba.dev")
+	if err != nil || !reflect.DeepEqual(got, ApexRecord{}) || addressCalls != 0 {
+		t.Fatalf("absent FindApex = %#v, %v; address calls=%d", got, err, addressCalls)
+	}
+
+	found = true
+	record.Values = []string{"18.118.7.42"}
+	addresses = append(addresses, cloud.Address{IP: "18.118.7.42", Space: "sbx2.ikigenba.dev"})
+	_, err = FindApex(context.Background(), route53, ec2, "ZONE1", "ikigenba.dev")
+	if err == nil || !strings.Contains(err.Error(), "ikigenba.dev") {
+		t.Fatalf("duplicate error = %v", err)
 	}
 }
 
@@ -356,20 +458,19 @@ func instantAfter(waits *[]time.Duration) func(time.Duration) <-chan time.Time {
 	}
 }
 
-func helperAccount(ec2 cloud.EC2, route53 cloud.Route53, iam cloud.IAM) *account.Account {
-	return &account.Account{Clients: cloud.Clients{EC2: ec2, Route53: route53, IAM: iam}}
-}
-
 type helperEC2 struct {
 	describe     func(context.Context, string) (cloud.Instance, error)
 	checks       func(context.Context, string) (bool, error)
 	launchReady  func(context.Context, cloud.LaunchSpec) (bool, error)
-	addresses    func(context.Context) ([]cloud.Address, error)
+	addresses    func(context.Context, string) ([]cloud.Address, error)
 	disassociate func(context.Context, string) error
 	release      func(context.Context, string) error
 }
 
-func (*helperEC2) ListSpaceInstances(context.Context) ([]cloud.Instance, error) { return nil, nil }
+func (*helperEC2) LaunchTemplate(context.Context, string) (string, error) { return "", nil }
+func (*helperEC2) ListSpaceInstances(context.Context, string) ([]cloud.Instance, error) {
+	return nil, nil
+}
 func (f *helperEC2) DescribeInstance(ctx context.Context, id string) (cloud.Instance, error) {
 	return f.describe(ctx, id)
 }
@@ -385,10 +486,10 @@ func (*helperEC2) TerminateInstance(context.Context, string) error { return nil 
 func (f *helperEC2) InstanceChecksPassed(ctx context.Context, id string) (bool, error) {
 	return f.checks(ctx, id)
 }
-func (f *helperEC2) ListSpaceAddresses(ctx context.Context) ([]cloud.Address, error) {
-	return f.addresses(ctx)
+func (f *helperEC2) ListSpaceAddresses(ctx context.Context, root string) ([]cloud.Address, error) {
+	return f.addresses(ctx, root)
 }
-func (*helperEC2) AllocateAddress(context.Context, string) (cloud.Address, error) {
+func (*helperEC2) AllocateAddress(context.Context, string, string) (cloud.Address, error) {
 	return cloud.Address{}, nil
 }
 func (*helperEC2) AssociateAddress(context.Context, string, string) error { return nil }
@@ -399,11 +500,18 @@ func (f *helperEC2) ReleaseAddress(ctx context.Context, id string) error { retur
 
 type helperRoute53 struct {
 	listRecords   func(context.Context, string) ([]cloud.Record, error)
+	findRecord    func(context.Context, string, string, string) (cloud.Record, bool, error)
 	changeRecords func(context.Context, string, []cloud.RecordChange) (string, error)
 	changeStatus  func(context.Context, string) (cloud.ChangeStatus, error)
 }
 
-func (*helperRoute53) ListZones(context.Context) ([]cloud.Zone, error) { return nil, nil }
+func (*helperRoute53) Zone(context.Context, string) (cloud.Zone, error) { return cloud.Zone{}, nil }
+func (f *helperRoute53) FindRecord(ctx context.Context, zoneID, name, recordType string) (cloud.Record, bool, error) {
+	if f.findRecord == nil {
+		return cloud.Record{}, false, nil
+	}
+	return f.findRecord(ctx, zoneID, name, recordType)
+}
 func (f *helperRoute53) ListRecords(ctx context.Context, zone string) ([]cloud.Record, error) {
 	return f.listRecords(ctx, zone)
 }
@@ -426,6 +534,7 @@ type helperIAM struct {
 func (f *helperIAM) RoleExists(ctx context.Context, name string) (bool, error) {
 	return f.roleExists(ctx, name)
 }
+func (*helperIAM) PermissionsBoundary(context.Context, string) (string, error) { return "", nil }
 func (*helperIAM) CreateRole(context.Context, cloud.RoleSpec) error            { return nil }
 func (*helperIAM) PutRolePolicy(context.Context, string, string, string) error { return nil }
 func (f *helperIAM) DeleteRolePolicy(ctx context.Context, role, policy string) error {

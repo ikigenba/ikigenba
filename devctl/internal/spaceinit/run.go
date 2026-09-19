@@ -6,34 +6,35 @@ import (
 	"io"
 	"strings"
 
-	"github.com/ikigenba/ikigenba/devctl/internal/account"
+	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/host"
 	"github.com/ikigenba/ikigenba/devctl/internal/hostsetup"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 	"github.com/ikigenba/ikigenba/devctl/internal/space"
+	"github.com/ikigenba/ikigenba/devctl/internal/spaceref"
 )
 
-const usageText = `Usage: devctl --account <name> space init <domain> [--opsctl <version>] [--acme-email <address>]
+const usageText = `Usage: devctl space init <space> [--opsctl <version>] [--acme-email <address>]
 
-Set the host's nine derived keys again and run opsctl init. Keep its installed
-opsctl and email unless an option names a replacement. Cloud resources and
-secrets are unchanged.
+Set the host's five derived keys again and run opsctl init. Keep its installed
+opsctl, its CA address, and its backup periods unless an option names a
+replacement. Cloud resources, records, and secrets are unchanged.
 
 Options:
-  --opsctl <version>      install this release using the host's saved installer
-  --acme-email <address>  replace the CA contact address
+  --opsctl <version>      move the host to this opsctl release first
+  --acme-email <address>  change where the CA sends the space's expiry warnings
 `
 
 type invocation struct {
-	domain    string
+	space     string
 	opsctl    string
-	acmeEmail *string
+	acmeEmail string
 	help      bool
 }
 
 // Run executes a space init command.
-func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, profile string) error {
+func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) error {
 	invocation, err := parseInvocation(args)
 	if err != nil {
 		return err
@@ -43,23 +44,31 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, p
 		return err
 	}
 
-	acct, err := account.Open(ctx, deps, profile)
+	root, err := checkout.ReadRootFile(ctx, deps)
 	if err != nil {
 		return err
 	}
-	instance, err := acct.Space(ctx, invocation.domain)
+	sp, err := spaceref.Parse(invocation.space, root.Domain)
+	if err != nil {
+		return err
+	}
+	session, err := cloud.Connect(ctx, deps.Cloud, root.Domain, root.Region)
+	if err != nil {
+		return err
+	}
+	instance, err := cloud.LookupSpace(ctx, session.Clients.EC2, root.Domain, sp.Domain)
 	if err != nil {
 		return err
 	}
 	if instance.State != cloud.StateRunning {
-		return &space.NotRunningError{Domain: invocation.domain, State: instance.State}
+		return &space.NotRunningError{Domain: instance.Domain, State: instance.State}
 	}
-	zone, err := acct.Zone(ctx, invocation.domain)
+	zone, err := session.Clients.Route53.Zone(ctx, root.Domain)
 	if err != nil {
 		return err
 	}
 
-	space.Step(stdout, "account", fmt.Sprintf("%s, %s", acct.Properties.Domain, acct.Properties.Region))
+	space.Step(stdout, "account", fmt.Sprintf("%s, %s, %s", root.Domain, root.Region, session.AccountID))
 	space.Step(stdout, "domain", fmt.Sprintf("zone %s %s", zone.Name, zone.ID))
 	space.Step(stdout, "instance", fmt.Sprintf("%s running, %s", instance.ID, instance.Address))
 
@@ -77,7 +86,14 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, p
 			return err
 		}
 	}
-	configured, err := hostsetup.Configure(ctx, target, acct.Properties, zone, invocation.domain, invocation.acmeEmail)
+	configured, err := hostsetup.Configure(ctx, target, "opsctl", hostsetup.Config{
+		Root:    root.Domain,
+		Region:  root.Region,
+		ZoneID:  zone.ID,
+		Space:   sp,
+		Email:   invocation.acmeEmail,
+		Periods: nil,
+	})
 	if err != nil {
 		return err
 	}
@@ -101,7 +117,7 @@ func parseInvocation(args []string) (invocation, error) {
 		case argument == "--opsctl" || argument == "--acme-email":
 			index++
 			value, found := argumentAt(args, index)
-			if !found || value == "" {
+			if !found || value == "" || strings.HasPrefix(value, "-") {
 				return invocation{}, usage("option '" + argument + "' requires a value")
 			}
 			setOption(&result, argument, value)
@@ -116,7 +132,7 @@ func parseInvocation(args []string) (invocation, error) {
 			if value == "" {
 				return invocation{}, usage("option '--acme-email' requires a value")
 			}
-			result.acmeEmail = &value
+			result.acmeEmail = value
 		case strings.HasPrefix(argument, "-"):
 			return invocation{}, usage("unknown option '" + argument + "'")
 		default:
@@ -127,12 +143,12 @@ func parseInvocation(args []string) (invocation, error) {
 		return result, nil
 	}
 	if len(operands) == 0 {
-		return invocation{}, usage("space init needs <domain>")
+		return invocation{}, usage("space init needs <space>")
 	}
 	if len(operands) > 1 {
-		return invocation{}, usage("space init takes only <domain>")
+		return invocation{}, usage("space init takes only <space>")
 	}
-	result.domain = operands[0]
+	result.space = operands[0]
 	return result, nil
 }
 
@@ -150,7 +166,7 @@ func setOption(result *invocation, option, value string) {
 		result.opsctl = value
 		return
 	}
-	result.acmeEmail = &value
+	result.acmeEmail = value
 }
 
 func usage(message string) *space.UsageError {

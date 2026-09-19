@@ -2,13 +2,11 @@ package awssdk
 
 import (
 	"context"
-	"errors"
 	"io"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/aws/smithy-go"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 )
@@ -86,19 +84,5 @@ func wrapS3(operation, subject string, err error) error {
 }
 
 func s3Error(operation, subject string, err error) *cloud.Error {
-	return &cloud.Error{
-		Service:   "s3",
-		Operation: operation,
-		Subject:   subject,
-		Code:      s3APIErrorCode(err),
-		Err:       err,
-	}
-}
-
-func s3APIErrorCode(err error) string {
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
-		return apiErr.ErrorCode()
-	}
-	return ""
+	return sdkError("s3", operation, subject, err)
 }

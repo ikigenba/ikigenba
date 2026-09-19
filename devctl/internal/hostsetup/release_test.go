@@ -33,7 +33,7 @@ func TestReleaseDiscoveryContract(t *testing.T) {
 }
 
 func TestLatestPaginatesAndSelectsNewestPublishedRelease(t *testing.T) {
-	// R-YJ1K-MA17 R-YHTO-8IAI
+	// R-YJ1K-MA17
 	firstPage := make([]githubRelease, 100)
 	for i := range firstPage {
 		firstPage[i] = githubRelease{TagName: "opsctl/v1.0.0", Draft: true}

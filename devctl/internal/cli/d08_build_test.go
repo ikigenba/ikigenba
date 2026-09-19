@@ -44,7 +44,7 @@ func TestBuildUsageDiagnosticsThroughCLI(t *testing.T) {
 
 func TestBuildHelpThroughCLIHasNoExternalOperation(t *testing.T) {
 	// R-6DMZ-9OZX
-	// R-GSOJ-R4YD
+	// R-HGAQ-5Q0J
 	for _, args := range [][]string{
 		{"build", "--help"},
 		{"build", "-h"},
@@ -73,18 +73,57 @@ func TestBuildHelpThroughCLIHasNoExternalOperation(t *testing.T) {
 }
 
 func TestBuildDispatchesArgumentsStdoutAndDeps(t *testing.T) {
-	// R-6JQH-6JPE R-TI90-6NW4
-	for _, prefix := range [][]string{nil, {"--account", "unused"}} {
-		t.Run(strings.Join(prefix, "_"), func(t *testing.T) {
-			fixture := newCLIBuildFixture(t)
-			args := append(append([]string(nil), prefix...), "build", "crm")
-			result := invokeWithDeps(fixture.deps(), args...)
-			assertResult(t, result, 0, "crm/dist/crm-v1.2.3.tar.xz\n", "")
-			if fixture.cloudCalls != 0 {
-				t.Fatalf("Cloud calls = %d, want zero", fixture.cloudCalls)
-			}
-			if !reflect.DeepEqual(fixture.binaryArgs, [][]string{{"--version"}, {"manifest"}}) {
-				t.Fatalf("binary arguments = %#v, want forwarded build of crm", fixture.binaryArgs)
+	// R-R7Z4-R65Q
+	fixture := newCLIBuildFixture(t)
+	result := invokeWithDeps(fixture.deps(), "build", "crm")
+	assertResult(t, result, 0, "crm/dist/crm-v1.2.3.tar.xz\n", "")
+	if fixture.cloudCalls != 0 {
+		t.Fatalf("Cloud calls = %d, want zero", fixture.cloudCalls)
+	}
+	if !reflect.DeepEqual(fixture.binaryArgs, [][]string{{"--version"}, {"manifest"}}) {
+		t.Fatalf("binary arguments = %#v, want forwarded build of crm", fixture.binaryArgs)
+	}
+}
+
+func TestBuildIgnoresRootFile(t *testing.T) {
+	// R-RBMT-WHDT
+	rootFiles := []struct {
+		name     string
+		contents string
+	}{
+		{name: "absent"},
+		{name: "malformed", contents: "{"},
+		{name: "well-formed", contents: `{"domain":"ikigenba.dev","region":"us-east-2"}`},
+	}
+	invocations := []struct {
+		name string
+		args []string
+		want runResult
+	}{
+		{name: "help", args: []string{"build", "--help"}, want: runResult{code: 0, stdout: expectedBuildUsage}},
+		{name: "build", args: []string{"build", "crm"}, want: runResult{code: 0, stdout: "crm/dist/crm-v1.2.3.tar.xz\n"}},
+	}
+
+	for _, invocation := range invocations {
+		t.Run(invocation.name, func(t *testing.T) {
+			for _, rootFile := range rootFiles {
+				t.Run(rootFile.name, func(t *testing.T) {
+					fixture := newCLIBuildFixture(t)
+					if rootFile.contents != "" {
+						path := filepath.Join(fixture.root, "infra", "terraform.tfvars.json")
+						if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+							t.Fatal(err)
+						}
+						if err := os.WriteFile(path, []byte(rootFile.contents), 0o600); err != nil {
+							t.Fatal(err)
+						}
+					}
+
+					got := invokeWithDeps(fixture.deps(), invocation.args...)
+					if !reflect.DeepEqual(got, invocation.want) {
+						t.Fatalf("Run = %#v, want %#v", got, invocation.want)
+					}
+				})
 			}
 		})
 	}

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ikigenba/ikigenba/devctl/internal/account"
 	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/keyring"
@@ -59,9 +58,8 @@ func TestPushGathersEveryValueBeforeWriting(t *testing.T) {
 		},
 	}
 	ssm := &pushSSM{}
-	acct := &account.Account{Clients: cloud.Clients{SSM: ssm}}
 
-	entries, err := Push(context.Background(), deps, acct, "foo.sbx.ikigenba.dev", apps)
+	entries, err := Push(context.Background(), deps, ssm, "foo.sbx.ikigenba.dev", apps)
 	if err == nil {
 		t.Fatal("Push returned nil error")
 	}
@@ -93,19 +91,18 @@ func TestPushWritesOneExactJSONObjectPerApp(t *testing.T) {
 	}
 	deps := seam.Deps{Getenv: func(name string) string { return values[name] }}
 	ssm := &pushSSM{}
-	acct := &account.Account{Clients: cloud.Clients{SSM: ssm}}
 	apps := []checkout.App{
 		{Name: "crm", Manifest: checkout.Manifest{Secrets: []string{"OMEGA", "ALPHA", "ALPHA"}}},
 		{Name: "dashboard", Manifest: checkout.Manifest{}},
 	}
 
-	_, err := Push(context.Background(), deps, acct, "foo.sbx.ikigenba.dev", apps)
+	_, err := Push(context.Background(), deps, ssm, "foo.sbx.ikigenba.dev", apps)
 	if err != nil {
 		t.Fatalf("Push returned error: %v", err)
 	}
 	wantNames := []string{
-		"/ikigenba/foo.sbx.ikigenba.dev/crm",
-		"/ikigenba/foo.sbx.ikigenba.dev/dashboard",
+		"/foo.sbx.ikigenba.dev/crm",
+		"/foo.sbx.ikigenba.dev/dashboard",
 	}
 	if len(ssm.writes) != len(wantNames) {
 		t.Fatalf("PutSecureParameter call count = %d, want %d", len(ssm.writes), len(wantNames))

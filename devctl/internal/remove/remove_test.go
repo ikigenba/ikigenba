@@ -5,40 +5,27 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
-	"github.com/ikigenba/ikigenba/devctl/internal/account"
+	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/host"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 	"github.com/ikigenba/ikigenba/devctl/internal/space"
 )
 
-const testAccountProperties = `{
-  "domain":"sbx.ikigenba.dev",
-  "backup_bucket":"backups",
-  "launch_template_id":"lt-1",
-  "permissions_boundary_arn":"arn:boundary",
-  "region":"us-test-1",
-  "delete_secrets_on_destroy":false,
-  "delete_backups_on_destroy":false,
-  "backup_host_files_seconds":1,
-  "backup_service_files_seconds":2,
-  "backup_service_db_seconds":3,
-  "backup_service_wal_seconds":4
-}`
-
-type runSignature func(context.Context, []string, io.Writer, seam.Deps, string) error
+type runSignature func(context.Context, []string, io.Writer, seam.Deps) error
 
 var _ runSignature = Run
 
 func TestPublicContract(t *testing.T) {
-	// R-GS57-TWB1 R-GTD4-7O1Q
+	// R-8AJV-4VEY R-GTD4-7O1Q
 	wantString := reflect.TypeFor[string]()
 	typeOf := reflect.TypeOf(UsageError{})
-	if typeOf.NumField() != 2 ||
-		typeOf.Field(0).Name != "Message" || typeOf.Field(0).Type != wantString ||
+	if typeOf.NumField() != 2 || typeOf.Field(0).Name != "Message" || typeOf.Field(0).Type != wantString ||
 		typeOf.Field(1).Name != "Help" || typeOf.Field(1).Type != wantString {
 		t.Fatalf("UsageError fields = %v, want exactly Message string and Help string", typeOf)
 	}
@@ -48,210 +35,200 @@ func TestPublicContract(t *testing.T) {
 	}
 }
 
-func TestArgumentGrammarStopsBeforeExternalAccess(t *testing.T) {
-	// R-GVSW-Z7J4
-	tests := []struct {
-		name    string
-		args    []string
-		message string
-	}{
-		{name: "none", message: "remove needs <domain> and <app>"},
-		{name: "one", args: []string{"foo.example"}, message: "remove needs <domain> and <app>"},
-		{name: "extra", args: []string{"foo.example", "crm", "extra"}, message: "remove takes only <domain> and <app>"},
-		{name: "unknown first", args: []string{"--force", "foo.example", "crm"}, message: "unknown option '--force'"},
-		{name: "unknown later", args: []string{"foo.example", "-x"}, message: "unknown option '-x'"},
+func TestHelpAndGrammarStopBeforeExternalAccess(t *testing.T) {
+	// R-HPEE-9HCL R-HRU7-10TZ
+	for _, args := range [][]string{{"--help"}, {"sbx1", "crm", "-h"}} {
+		var stdout bytes.Buffer
+		calls := 0
+		if err := Run(context.Background(), args, &stdout, forbiddenDeps(&calls)); err != nil {
+			t.Fatalf("Run(%q): %v", args, err)
+		}
+		if stdout.String() != helpText || calls != 0 {
+			t.Fatalf("Run(%q) stdout/calls = %q/%d", args, stdout.String(), calls)
+		}
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			external := 0
-			deps := seam.Deps{
-				Cloud: func(context.Context, string, string) (cloud.Clients, error) {
-					external++
-					return cloud.Clients{}, errors.New("unexpected cloud call")
-				},
-				Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
-					external++
-					return seam.Result{}, errors.New("unexpected command")
-				},
-			}
-			var stdout bytes.Buffer
-			err := Run(context.Background(), test.args, &stdout, deps, "selected")
-			var usageErr *UsageError
-			if !errors.As(err, &usageErr) {
-				t.Fatalf("Run(%q) error = %T %v, want *UsageError", test.args, err, err)
-			}
-			if usageErr.Message != test.message || usageErr.Help != "devctl remove --help" ||
-				usageErr.Detail() != "see 'devctl remove --help' for usage" || usageErr.ExitCode() != 2 {
-				t.Errorf("Run(%q) error = %#v, detail %q, code %d", test.args, usageErr, usageErr.Detail(), usageErr.ExitCode())
-			}
-			if stdout.Len() != 0 || external != 0 {
-				t.Errorf("Run(%q) stdout/external = %q/%d, want empty/0", test.args, stdout.String(), external)
-			}
-		})
+
+	tests := []struct {
+		args []string
+		want string
+	}{
+		{nil, "remove needs <space> and <app>"},
+		{[]string{"sbx1"}, "remove needs <space> and <app>"},
+		{[]string{"sbx1", "crm", "extra"}, "remove takes only <space> and <app>"},
+		{[]string{"--force", "sbx1", "crm"}, "unknown option '--force'"},
+	}
+	for _, tc := range tests {
+		calls := 0
+		var stdout bytes.Buffer
+		err := Run(context.Background(), tc.args, &stdout, forbiddenDeps(&calls))
+		var usageErr *UsageError
+		if !errors.As(err, &usageErr) || usageErr.Message != tc.want || usageErr.Help != "devctl remove --help" {
+			t.Errorf("Run(%q) = %#v, want usage %q", tc.args, err, tc.want)
+		}
+		if calls != 0 || stdout.Len() != 0 {
+			t.Errorf("Run(%q) calls/stdout = %d/%q", tc.args, calls, stdout.String())
+		}
 	}
 }
 
-func TestResolvesSelectedRunningSpaceBeforeSSH(t *testing.T) {
-	// R-3TH7-OLJE
-	tests := []struct {
+func TestResolutionFailuresStopBeforeSSH(t *testing.T) {
+	// R-HU9Z-SKBD
+	for _, tc := range []struct {
 		name      string
 		instances []cloud.Instance
-		want      any
+		stopped   bool
+		want      string
 	}{
-		{name: "missing", want: (*account.NoSpaceError)(nil)},
-		{name: "stopped", instances: []cloud.Instance{{ID: "i-1", Space: "foo.example", State: cloud.StateStopped, Address: "192.0.2.8"}}, want: (*space.NotRunningError)(nil)},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			profiles := []string{}
-			commands := 0
-			deps := removeDeps(test.instances, &profiles, func(context.Context, seam.Cmd) (seam.Result, error) {
-				commands++
-				return seam.Result{}, errors.New("unexpected SSH")
-			})
+		{name: "missing", want: "no space at 'gone.ikigenba.dev'"},
+		{name: "stopped", instances: []cloud.Instance{{Space: "gone.ikigenba.dev", State: cloud.StateStopped}}, stopped: true, want: "'gone.ikigenba.dev' is stopped"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newFixture(t, tc.instances)
 			var stdout bytes.Buffer
-			err := Run(context.Background(), []string{"foo.example", "crm"}, &stdout, deps, "Selected Profile")
-			switch test.want.(type) {
-			case *account.NoSpaceError:
-				var wanted *account.NoSpaceError
-				if !errors.As(err, &wanted) {
-					t.Fatalf("error = %T %v, want *account.NoSpaceError", err, err)
+			err := Run(context.Background(), []string{"gone", "crm"}, &stdout, fixture.deps())
+			if err == nil || err.Error() != tc.want {
+				t.Fatalf("error = %T %v, want %q", err, err, tc.want)
+			}
+			if tc.stopped {
+				var target *space.NotRunningError
+				if !errors.As(err, &target) {
+					t.Fatalf("error = %T, want *space.NotRunningError", err)
 				}
-			case *space.NotRunningError:
-				var wanted *space.NotRunningError
-				if !errors.As(err, &wanted) {
-					t.Fatalf("error = %T %v, want *space.NotRunningError", err, err)
+			} else {
+				var target *cloud.NoSpaceError
+				if !errors.As(err, &target) {
+					t.Fatalf("error = %T, want *cloud.NoSpaceError", err)
 				}
 			}
-			if !reflect.DeepEqual(profiles, []string{"Selected Profile", "Selected Profile"}) {
-				t.Errorf("profiles = %q, want selected profile twice", profiles)
+			if stdout.Len() != 0 || fixture.sshCalls != 0 {
+				t.Fatalf("stdout/ssh = %q/%d", stdout.String(), fixture.sshCalls)
 			}
-			if stdout.Len() != 0 || commands != 0 {
-				t.Errorf("stdout/commands = %q/%d, want empty/0", stdout.String(), commands)
-			}
+			fixture.assertResolution(t)
 		})
 	}
 }
 
-func TestInvokesOpsctlUninstallAndReportsSuccess(t *testing.T) {
-	// R-YHTO-8IAI
+func TestRemoveUsesOnlyRootLookupAndOneHostCommand(t *testing.T) {
+	// R-MTKM-W619 R-HWPS-K3SR R-HXXO-XVJG
 	// R-GZGM-4IR7
-	profiles := []string{}
-	var commands []seam.Cmd
-	deps := removeDeps(runningRemoveInstance(), &profiles, func(_ context.Context, command seam.Cmd) (seam.Result, error) {
-		commands = append(commands, command)
-		return seam.Result{Stdout: []byte("remote output must be discarded\n")}, nil
-	})
+	fixture := newFixture(t, []cloud.Instance{{ID: "i-1", Space: "sbx1.ikigenba.dev", State: cloud.StateRunning, Address: "18.118.7.42"}})
+	fixture.sshResult = seam.Result{Stdout: []byte("discarded\n")}
 	var stdout bytes.Buffer
-	if err := Run(context.Background(), []string{"foo.example", "crm"}, &stdout, deps, "work"); err != nil {
-		t.Fatalf("Run(): %v", err)
-	}
-	wantCommand := seam.Cmd{
-		Path: "ssh",
-		Args: []string{
-			"-o", "BatchMode=yes",
-			"-o", "ConnectTimeout=10",
-			"-o", "StrictHostKeyChecking=accept-new",
-			"ec2-user@192.0.2.8",
-			"'sudo' 'opsctl' 'uninstall' 'crm'",
-		},
-		Dir: "/work",
-	}
-	if !reflect.DeepEqual(commands, []seam.Cmd{wantCommand}) {
-		t.Errorf("commands = %#v, want %#v", commands, []seam.Cmd{wantCommand})
+	if err := Run(context.Background(), []string{"sbx1", "crm"}, &stdout, fixture.deps()); err != nil {
+		t.Fatal(err)
 	}
 	if stdout.String() != "remove: ok (opsctl uninstalled crm)\n" {
-		t.Errorf("stdout = %q", stdout.String())
+		t.Fatalf("stdout = %q", stdout.String())
 	}
+	want := sshCommand(fixture.work, "18.118.7.42", "'sudo' 'opsctl' 'uninstall' 'crm'")
+	if !reflect.DeepEqual(fixture.ssh, []seam.Cmd{want}) {
+		t.Fatalf("ssh = %#v, want %#v", fixture.ssh, []seam.Cmd{want})
+	}
+	fixture.assertResolution(t)
 }
 
-func TestHostFailureIsReturnedWithoutSuccess(t *testing.T) {
-	// R-GZGM-4IR7
-	profiles := []string{}
-	deps := removeDeps(runningRemoveInstance(), &profiles, func(context.Context, seam.Cmd) (seam.Result, error) {
-		return seam.Result{ExitCode: 7, Stdout: []byte("partial\n"), Stderr: []byte("failed\n")}, nil
-	})
+func TestRemoveReturnsHostFailureWithoutSuccess(t *testing.T) {
+	// R-HWPS-K3SR R-HXXO-XVJG R-GZGM-4IR7
+	fixture := newFixture(t, []cloud.Instance{{Space: "sbx1.ikigenba.dev", State: cloud.StateRunning, Address: "18.118.7.42"}})
+	fixture.sshResult = seam.Result{ExitCode: 7, Stderr: []byte("one\ntwo\n")}
 	var stdout bytes.Buffer
-	err := Run(context.Background(), []string{"foo.example", "crm"}, &stdout, deps, "work")
+	err := Run(context.Background(), []string{"sbx1", "gmail"}, &stdout, fixture.deps())
 	var commandErr *host.CommandError
-	if !errors.As(err, &commandErr) {
-		t.Fatalf("error = %T %v, want *host.CommandError", err, err)
-	}
-	if commandErr.Step != "remove" || !reflect.DeepEqual(commandErr.Command, []string{"ssh", "ec2-user@192.0.2.8", "sudo", "opsctl", "uninstall", "crm"}) {
-		t.Errorf("host error = %#v", commandErr)
+	if !errors.As(err, &commandErr) || commandErr.Error() != "remove: ssh ec2-user@18.118.7.42 sudo opsctl uninstall gmail: exit status 7" || commandErr.Detail() != "> one\n> two" {
+		t.Fatalf("error = %#v", err)
 	}
 	if stdout.Len() != 0 {
-		t.Errorf("failure stdout = %q, want empty", stdout.String())
+		t.Fatalf("stdout = %q", stdout.String())
 	}
+	fixture.assertResolution(t)
 }
 
-func runningRemoveInstance() []cloud.Instance {
-	return []cloud.Instance{{ID: "i-1", Space: "foo.example", State: cloud.StateRunning, Address: "192.0.2.8"}}
-}
-
-func removeDeps(instances []cloud.Instance, profiles *[]string, exec seam.Runner) seam.Deps {
-	return seam.Deps{
-		Dir:  "/work",
-		Exec: exec,
-		Cloud: func(_ context.Context, profile, region string) (cloud.Clients, error) {
-			*profiles = append(*profiles, profile)
-			if region == "" {
-				return cloud.Clients{SSM: removeSSM{}}, nil
-			}
-			return cloud.Clients{EC2: removeEC2{instances: instances}}, nil
+func forbiddenDeps(calls *int) seam.Deps {
+	return seam.Deps{Dir: "/outside-checkout",
+		Cloud: func(context.Context, string, string) (cloud.Clients, error) {
+			(*calls)++
+			return cloud.Clients{}, errors.New("unexpected cloud")
+		},
+		Exec: func(context.Context, seam.Cmd) (seam.Result, error) {
+			(*calls)++
+			return seam.Result{}, errors.New("unexpected exec")
 		},
 	}
 }
 
-type removeSSM struct{}
-
-func (removeSSM) GetParameter(context.Context, string) (string, error) {
-	return testAccountProperties, nil
-}
-func (removeSSM) PutSecureParameter(context.Context, string, string) error {
-	panic("unexpected secret mutation")
-}
-func (removeSSM) ListParameters(context.Context, string) ([]cloud.Parameter, error) {
-	panic("unexpected secret read")
-}
-func (removeSSM) DeleteParameter(context.Context, string) error {
-	panic("unexpected secret deletion")
+type fixture struct {
+	root      string
+	work      string
+	instances []cloud.Instance
+	events    []string
+	ssh       []seam.Cmd
+	sshCalls  int
+	sshResult seam.Result
 }
 
-type removeEC2 struct{ instances []cloud.Instance }
+func newFixture(t *testing.T, instances []cloud.Instance) *fixture {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "infra"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, checkout.RootFilePath), []byte(`{"domain":"ikigenba.dev","region":"us-east-2"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	work := filepath.Join(root, "work")
+	if err := os.Mkdir(work, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return &fixture{root: root, work: work, instances: instances}
+}
 
-func (f removeEC2) ListSpaceInstances(context.Context) ([]cloud.Instance, error) {
+func (f *fixture) deps() seam.Deps {
+	return seam.Deps{Dir: f.work,
+		Cloud: func(_ context.Context, profile, region string) (cloud.Clients, error) {
+			f.events = append(f.events, "cloud "+profile+" "+region)
+			return cloud.Clients{STS: fixtureSTS{events: &f.events}, EC2: fixtureEC2{events: &f.events, instances: f.instances}}, nil
+		},
+		Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
+			if command.Path == "git" {
+				f.events = append(f.events, "git")
+				return seam.Result{Stdout: []byte(f.root + "\n")}, nil
+			}
+			f.sshCalls++
+			f.ssh = append(f.ssh, command)
+			return f.sshResult, nil
+		},
+	}
+}
+
+func (f *fixture) assertResolution(t *testing.T) {
+	t.Helper()
+	want := []string{"git", "cloud ikigenba.dev us-east-2", "sts", "list ikigenba.dev"}
+	if !reflect.DeepEqual(f.events, want) {
+		t.Fatalf("events = %#v, want %#v", f.events, want)
+	}
+}
+
+type fixtureSTS struct {
+	cloud.STS
+	events *[]string
+}
+
+func (f fixtureSTS) CallerAccountID(context.Context) (string, error) {
+	*f.events = append(*f.events, "sts")
+	return "123", nil
+}
+
+type fixtureEC2 struct {
+	cloud.EC2
+	events    *[]string
+	instances []cloud.Instance
+}
+
+func (f fixtureEC2) ListSpaceInstances(_ context.Context, domain string) ([]cloud.Instance, error) {
+	*f.events = append(*f.events, "list "+domain)
 	return append([]cloud.Instance(nil), f.instances...), nil
 }
-func (removeEC2) DescribeInstance(context.Context, string) (cloud.Instance, error) {
-	panic("unexpected instance describe")
-}
-func (removeEC2) RunInstance(context.Context, cloud.LaunchSpec) (cloud.Instance, error) {
-	panic("unexpected instance creation")
-}
-func (removeEC2) LaunchReady(context.Context, cloud.LaunchSpec) (bool, error) {
-	panic("unexpected launch readiness probe")
-}
-func (removeEC2) StartInstance(context.Context, string) error { panic("unexpected instance start") }
-func (removeEC2) StopInstance(context.Context, string) error  { panic("unexpected instance stop") }
-func (removeEC2) TerminateInstance(context.Context, string) error {
-	panic("unexpected instance termination")
-}
-func (removeEC2) InstanceChecksPassed(context.Context, string) (bool, error) {
-	panic("unexpected instance checks")
-}
-func (removeEC2) ListSpaceAddresses(context.Context) ([]cloud.Address, error) {
-	panic("unexpected address read")
-}
-func (removeEC2) AllocateAddress(context.Context, string) (cloud.Address, error) {
-	panic("unexpected address allocation")
-}
-func (removeEC2) AssociateAddress(context.Context, string, string) error {
-	panic("unexpected address association")
-}
-func (removeEC2) DisassociateAddress(context.Context, string) error {
-	panic("unexpected address disassociation")
-}
-func (removeEC2) ReleaseAddress(context.Context, string) error {
-	panic("unexpected address release")
+
+func sshCommand(dir, address, remote string) seam.Cmd {
+	return seam.Cmd{Path: "ssh", Args: []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", "ec2-user@" + address, remote}, Dir: dir}
 }

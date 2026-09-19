@@ -23,8 +23,7 @@ func TestSecretValuesNeverReachCLIStreamsOrCommands(t *testing.T) {
 		var commands []seam.Cmd
 		deps = recordD04Commands(deps, &commands)
 
-		result := invokeWithDeps(deps,
-			"--account", "work", "secrets", "push", testDomain, "crm")
+		result := invokeWithDeps(deps, "secrets", "push", testDomain, "crm")
 		assertResult(t, result, 0, "crm: ok (1 keys)\n", "")
 		assertD04SecretAbsent(t, sentinel, result, commands)
 	})
@@ -43,7 +42,7 @@ func TestSecretValuesNeverReachCLIStreamsOrCommands(t *testing.T) {
 		var commands []seam.Cmd
 		deps = recordD04Commands(deps, &commands)
 
-		result := invokeWithDeps(deps, "--account", "sandbox", "space", "create",
+		result := invokeWithDeps(deps, "space", "create",
 			testDomain, "--acme-email", "admin@example.com")
 		if result.code != 1 || !reflect.DeepEqual(h.mutations, []string{"ssm:put:crm", "iam:create-role"}) {
 			t.Fatalf("result = %#v, mutations = %v; want stop after crm write", result, h.mutations)
@@ -73,14 +72,14 @@ func TestMissingManifestSecretHasContextualCLIDiagnostic(t *testing.T) {
 		}
 
 		assertResult(t, invokeWithDeps(deps,
-			"--account", "work", "secrets", "push", testDomain, "crm"), 2, "", want)
+			"secrets", "push", testDomain, "crm"), 2, "", want)
 	})
 
 	t.Run("space create", func(t *testing.T) {
 		h := newCommandHarness(t)
 		h.addAppWithSecrets("crm", "CRM_API_KEY")
 		assertResult(t, invokeWithDeps(h.deps(),
-			"--account", "sandbox", "space", "create", testDomain,
+			"space", "create", testDomain,
 			"--acme-email", "admin@example.com"), 2, "", want)
 	})
 }
@@ -88,6 +87,8 @@ func TestMissingManifestSecretHasContextualCLIDiagnostic(t *testing.T) {
 func writeD04SecretApp(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
+	writeD05CLIFile(t, filepath.Join(root, "infra", "terraform.tfvars.json"),
+		`{"domain":"ikigenba.dev","region":"us-east-2"}`)
 	writeD05CLIFile(t, filepath.Join(root, "crm", "cmd", "crm", "main.go"), "package main\n")
 	writeD05CLIFile(t, filepath.Join(root, "crm", "etc", "manifest.toml"),
 		"app = \"crm\"\nsecrets = [\"CRM_API_KEY\"]\n")

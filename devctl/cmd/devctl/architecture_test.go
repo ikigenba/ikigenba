@@ -166,44 +166,6 @@ func TestModuleAndApprovedDirectRequirements(t *testing.T) {
 	}
 }
 
-// R-BLKL-AZUS
-func TestModuleContainsExactlyDesignedPackages(t *testing.T) {
-	want := []string{
-		"cmd/devctl",
-		"internal/account",
-		"internal/appref",
-		"internal/build",
-		"internal/checkout",
-		"internal/cli",
-		"internal/cloud",
-		"internal/cloud/awssdk",
-		"internal/deploy",
-		"internal/host",
-		"internal/hostsetup",
-		"internal/keyring",
-		"internal/remove",
-		"internal/restore",
-		"internal/seam",
-		"internal/secrets",
-		"internal/space",
-		"internal/spaceapps",
-		"internal/spacecreate",
-		"internal/spaceinit",
-	}
-	seen := make(map[string]bool)
-	for _, source := range moduleSources(t) {
-		seen[strings.TrimPrefix(source.pkgPath, modulePath+"/")] = true
-	}
-	got := make([]string, 0, len(seen))
-	for pkg := range seen {
-		got = append(got, pkg)
-	}
-	sort.Strings(got)
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("module packages = %v, want %v", got, want)
-	}
-}
-
 // R-A4S9-ZZUZ
 func TestPackageImportBoundaries(t *testing.T) {
 	allowedMain := map[string]bool{
@@ -245,6 +207,73 @@ func TestPackageImportBoundaries(t *testing.T) {
 			allowedExternal = allowedExternal || source.pkgPath == modulePath+"/internal/checkout" && imported == "github.com/BurntSushi/toml"
 			if !allowedExternal {
 				t.Errorf("%s: package imports disallowed external dependency %q", source.path, imported)
+			}
+		}
+	}
+}
+
+// R-RPMB-0WA0
+func TestModuleContainsExactlyDeclaredPackages(t *testing.T) {
+	want := []string{
+		modulePath + "/cmd/devctl",
+		modulePath + "/internal/apex",
+		modulePath + "/internal/appref",
+		modulePath + "/internal/build",
+		modulePath + "/internal/checkout",
+		modulePath + "/internal/cli",
+		modulePath + "/internal/cloud",
+		modulePath + "/internal/cloud/awssdk",
+		modulePath + "/internal/deploy",
+		modulePath + "/internal/host",
+		modulePath + "/internal/hostsetup",
+		modulePath + "/internal/keyring",
+		modulePath + "/internal/remove",
+		modulePath + "/internal/restore",
+		modulePath + "/internal/seam",
+		modulePath + "/internal/secrets",
+		modulePath + "/internal/space",
+		modulePath + "/internal/spaceapps",
+		modulePath + "/internal/spacecreate",
+		modulePath + "/internal/spaceinit",
+		modulePath + "/internal/spaceref",
+	}
+	packages := make(map[string]bool)
+	for _, source := range moduleSources(t) {
+		packages[source.pkgPath] = true
+	}
+	got := make([]string, 0, len(packages))
+	for pkg := range packages {
+		got = append(got, pkg)
+	}
+	sort.Strings(got)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("module packages = %v, want %v", got, want)
+	}
+}
+
+// R-VVU4-SN6J
+func TestApexImportBoundary(t *testing.T) {
+	apexPath := modulePath + "/internal/apex"
+	allowed := map[string]bool{
+		modulePath + "/internal/seam":      true,
+		modulePath + "/internal/cloud":     true,
+		modulePath + "/internal/checkout":  true,
+		modulePath + "/internal/spaceref":  true,
+		modulePath + "/internal/space":     true,
+		modulePath + "/internal/host":      true,
+		modulePath + "/internal/hostsetup": true,
+	}
+	for _, source := range moduleSources(t) {
+		if strings.HasSuffix(source.path, "_test.go") {
+			continue
+		}
+		for _, imported := range source.imports {
+			isModule := imported == modulePath || strings.HasPrefix(imported, modulePath+"/")
+			if source.pkgPath == apexPath && isModule && !allowed[imported] {
+				t.Errorf("%s: apex imports disallowed module package %q", source.path, imported)
+			}
+			if imported == apexPath && source.pkgPath != modulePath+"/internal/cli" {
+				t.Errorf("%s: apex imported outside internal/cli", source.path)
 			}
 		}
 	}
@@ -359,45 +388,6 @@ func TestEnvironmentalOperationsStayAtRunSeam(t *testing.T) {
 			}
 			if imported == "time" && prohibitedTime[selector.Sel.Name] && source.pkgPath != modulePath+"/cmd/devctl" && source.pkgPath != modulePath+"/internal/seam" {
 				t.Errorf("%s: references time.%s outside cmd/devctl or internal/seam", source.path, selector.Sel.Name)
-			}
-			return true
-		})
-	}
-}
-
-func TestCloudDependencyIsOpenedOnlyAtOwnedBoundaries(t *testing.T) {
-	// R-ZCX0-A8JF
-	allowed := map[string]bool{
-		modulePath + "/cmd/devctl":       true,
-		modulePath + "/internal/account": true,
-	}
-	for _, source := range moduleSources(t) {
-		if strings.HasSuffix(source.path, "_test.go") || allowed[source.pkgPath] {
-			continue
-		}
-		ast.Inspect(source.file, func(node ast.Node) bool {
-			selector, ok := node.(*ast.SelectorExpr)
-			if ok && selector.Sel.Name == "Cloud" {
-				t.Errorf("%s: references the Cloud field outside internal/account or cmd/devctl", source.path)
-			}
-			literal, ok := node.(*ast.CompositeLit)
-			if !ok {
-				return true
-			}
-			typeSelector, ok := literal.Type.(*ast.SelectorExpr)
-			if !ok {
-				return true
-			}
-			qualifier, qualified := typeSelector.X.(*ast.Ident)
-			if !qualified || typeSelector.Sel.Name != "Deps" || source.importPath[qualifier.Name] != modulePath+"/internal/seam" {
-				return true
-			}
-			for _, element := range literal.Elts {
-				entry, keyed := element.(*ast.KeyValueExpr)
-				key, named := entry.Key.(*ast.Ident)
-				if keyed && named && key.Name == "Cloud" {
-					t.Errorf("%s: initializes the Cloud field outside internal/account or cmd/devctl", source.path)
-				}
 			}
 			return true
 		})

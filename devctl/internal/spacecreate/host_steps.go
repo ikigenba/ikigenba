@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
-	"github.com/ikigenba/ikigenba/devctl/internal/account"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/host"
 	"github.com/ikigenba/ikigenba/devctl/internal/hostsetup"
@@ -14,20 +14,8 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/space"
 )
 
-// RunHostSteps waits for a newly created host, installs and configures opsctl,
-// restores retained host data when present, and initializes the deployment.
-func RunHostSteps(
-	ctx context.Context,
-	stdout io.Writer,
-	deps seam.Deps,
-	acct *account.Account,
-	domain string,
-	address string,
-	instanceID string,
-	zone cloud.Zone,
-	acmeEmail string,
-) error {
-	if err := space.WaitChecks(ctx, deps, acct, instanceID); err != nil {
+func runHostSteps(ctx context.Context, stdout io.Writer, deps seam.Deps, result preflightResult, address, instanceID, acmeEmail string) error {
+	if err := space.WaitChecks(ctx, deps, result.session.Clients.EC2, instanceID); err != nil {
 		return err
 	}
 	target := host.Host{Address: address, Deps: deps}
@@ -43,35 +31,34 @@ func RunHostSteps(
 	if err != nil {
 		return err
 	}
-	configured, err := hostsetup.Configure(ctx, target, acct.Properties, zone, domain, &acmeEmail)
+	periods := hostsetup.DefaultBackupPeriods()
+	cfg := hostsetup.Config{Root: result.root.Domain, Region: result.root.Region, ZoneID: result.zone.ID, Space: result.sp, Email: acmeEmail, Periods: &periods}
+	configured, err := hostsetup.Configure(ctx, target, "opsctl", cfg)
 	if err != nil {
 		return err
 	}
 	space.Step(stdout, "opsctl", fmt.Sprintf("%s installed, %d keys set", version, configured))
 
-	if !acct.Properties.DeleteBackupsOnDestroy {
-		prefix := domain + "/host/"
-		objects, err := acct.Clients.S3.ListObjects(ctx, acct.Properties.BackupBucket, prefix)
+	prefix := space.BackupPrefix(result.sp.Label) + "host/"
+	objects, err := result.session.Clients.S3.ListObjects(ctx, result.root.Domain, prefix)
+	if err != nil {
+		return err
+	}
+	if len(objects) == 0 {
+		space.Step(stdout, "restore", "no host backup")
+	} else {
+		selected := newestObject(objects)
+		if _, err := target.Sudo(ctx, "restore", "opsctl", "host", "restore"); err != nil {
+			return err
+		}
+		configured, err = hostsetup.Configure(ctx, target, "restore", cfg)
 		if err != nil {
 			return err
 		}
-		if len(objects) == 0 {
-			space.Step(stdout, "restore", "no host backup")
-		} else {
-			output, err := target.Sudo(ctx, "restore", "opsctl", "host", "restore")
-			if err != nil {
-				return err
-			}
-			selected, err := selectedBackup(output.Stdout, domain)
-			if err != nil {
-				return err
-			}
-			configured, err := hostsetup.Configure(ctx, target, acct.Properties, zone, domain, &acmeEmail)
-			if err != nil {
-				return err
-			}
-			space.Step(stdout, "restore", fmt.Sprintf("%s, %d keys set again", selected, configured))
+		if err := hostsetup.DelKey(ctx, target, "restore", hostsetup.KeyHostApex); err != nil {
+			return err
 		}
+		space.Step(stdout, "restore", fmt.Sprintf("%s, %d keys set again", strings.TrimPrefix(selected.Key, space.BackupPrefix(result.sp.Label)), configured))
 	}
 
 	if _, err := target.Sudo(ctx, "init", "opsctl", "init"); err != nil {
@@ -81,15 +68,13 @@ func RunHostSteps(
 	return nil
 }
 
-func selectedBackup(output, domain string) (string, error) {
-	lines := strings.Split(strings.TrimSpace(output), "\n")
-	for index := len(lines) - 1; index >= 0; index-- {
-		selected := strings.TrimSpace(lines[index])
-		if selected == "" {
-			continue
+func newestObject(objects []cloud.Object) cloud.Object {
+	copyOf := append([]cloud.Object(nil), objects...)
+	sort.Slice(copyOf, func(i, j int) bool {
+		if copyOf[i].Modified.Equal(copyOf[j].Modified) {
+			return copyOf[i].Key > copyOf[j].Key
 		}
-		selected = strings.TrimPrefix(selected, domain+"/")
-		return selected, nil
-	}
-	return "", fmt.Errorf("opsctl host restore returned no backup key")
+		return copyOf[i].Modified.After(copyOf[j].Modified)
+	})
+	return copyOf[0]
 }

@@ -9,16 +9,15 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ikigenba/ikigenba/devctl/internal/account"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 )
 
 const invalidObjectReason = "not a JSON object of strings"
 
 // List returns the secret names held by each direct app parameter for domain.
-func List(ctx context.Context, acct *account.Account, domain string) ([]Entry, error) {
+func List(ctx context.Context, ssm cloud.SSM, domain string) ([]Entry, error) {
 	prefix := Prefix(domain)
-	parameters, err := acct.Clients.SSM.ListParameters(ctx, prefix)
+	parameters, err := ssm.ListParameters(ctx, prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -41,9 +40,9 @@ func List(ctx context.Context, acct *account.Account, domain string) ([]Entry, e
 }
 
 // Names returns the sorted secret names held by one app parameter.
-func Names(ctx context.Context, acct *account.Account, domain, app string) ([]string, error) {
+func Names(ctx context.Context, ssm cloud.SSM, domain, app string) ([]string, error) {
 	name := Parameter(domain, app)
-	value, err := acct.Clients.SSM.GetParameter(ctx, name)
+	value, err := ssm.GetParameter(ctx, name)
 	if err != nil {
 		var cloudError *cloud.Error
 		if errors.As(err, &cloudError) && cloudError.Code == "ParameterNotFound" {

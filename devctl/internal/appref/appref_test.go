@@ -10,7 +10,7 @@ import (
 func TestValidName(t *testing.T) {
 	t.Parallel()
 
-	// R-CVWR-UA16 R-CR16-B72E R-YHTO-8IAI
+	// R-CVWR-UA16 R-CR16-B72E
 	valid := []string{"a", "0", "crm", "crm-api", "a--9", strings.Repeat("a", 63)}
 	for _, name := range valid {
 		if !appref.ValidName(name) {
@@ -31,7 +31,7 @@ func TestValidName(t *testing.T) {
 func TestValidVersion(t *testing.T) {
 	t.Parallel()
 
-	// R-CX4O-81RV R-CS92-OYT3 R-YHTO-8IAI
+	// R-CX4O-81RV R-CS92-OYT3
 	valid := []string{
 		"v0.0.0", "v1.2.3", "v10.200.3000", "v1.2.3-alpha", "v1.2.3-alpha.1",
 		"v1.2.3-0A-9", "v1.2.3+001", "v1.2.3-alpha+build.001-X",
@@ -56,7 +56,7 @@ func TestValidVersion(t *testing.T) {
 func TestVersionForTag(t *testing.T) {
 	t.Parallel()
 
-	// R-CZKG-ZL99 R-CTGZ-2QJS R-YHTO-8IAI
+	// R-CZKG-ZL99 R-CTGZ-2QJS
 	for _, tc := range []struct {
 		app     string
 		tag     string
@@ -80,7 +80,7 @@ func TestVersionForTag(t *testing.T) {
 func TestParseFile(t *testing.T) {
 	t.Parallel()
 
-	// R-D0SD-DCZY R-CUOV-GIAH R-YHTO-8IAI
+	// R-D0SD-DCZY R-CUOV-GIAH
 	for _, tc := range []struct {
 		name    string
 		app     string

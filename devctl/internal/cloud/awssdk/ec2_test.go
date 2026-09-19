@@ -19,11 +19,20 @@ type fakeEC2 struct {
 
 	calls []string
 
-	describeInstances func(*ec2.DescribeInstancesInput) (*ec2.DescribeInstancesOutput, error)
-	describeAddresses func(*ec2.DescribeAddressesInput) (*ec2.DescribeAddressesOutput, error)
-	runInstances      func(*ec2.RunInstancesInput) (*ec2.RunInstancesOutput, error)
-	allocateAddress   func(*ec2.AllocateAddressInput) (*ec2.AllocateAddressOutput, error)
-	instanceStatus    *ec2.DescribeInstanceStatusOutput
+	describeInstances       func(*ec2.DescribeInstancesInput) (*ec2.DescribeInstancesOutput, error)
+	describeAddresses       func(*ec2.DescribeAddressesInput) (*ec2.DescribeAddressesOutput, error)
+	runInstances            func(*ec2.RunInstancesInput) (*ec2.RunInstancesOutput, error)
+	allocateAddress         func(*ec2.AllocateAddressInput) (*ec2.AllocateAddressOutput, error)
+	instanceStatus          *ec2.DescribeInstanceStatusOutput
+	describeLaunchTemplates func(*ec2.DescribeLaunchTemplatesInput) (*ec2.DescribeLaunchTemplatesOutput, error)
+}
+
+func (f *fakeEC2) DescribeLaunchTemplates(_ context.Context, in *ec2.DescribeLaunchTemplatesInput, _ ...func(*ec2.Options)) (*ec2.DescribeLaunchTemplatesOutput, error) {
+	f.calls = append(f.calls, "DescribeLaunchTemplates")
+	if f.describeLaunchTemplates != nil {
+		return f.describeLaunchTemplates(in)
+	}
+	return nil, f.err
 }
 
 func (f *fakeEC2) DescribeInstances(_ context.Context, in *ec2.DescribeInstancesInput, _ ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
@@ -96,10 +105,37 @@ func (f *fakeEC2) ReleaseAddress(context.Context, *ec2.ReleaseAddressInput, ...f
 	return nil, f.err
 }
 
+func TestEC2LaunchTemplateLookup(t *testing.T) {
+	// R-QOTI-JOVC R-QMDP-S5DY
+	fake := &fakeEC2{describeLaunchTemplates: func(in *ec2.DescribeLaunchTemplatesInput) (*ec2.DescribeLaunchTemplatesOutput, error) {
+		want := []types.Filter{{Name: aws.String("launch-template-name"), Values: []string{"root.example"}}}
+		if !reflect.DeepEqual(in.Filters, want) {
+			t.Fatalf("filters = %#v, want %#v", in.Filters, want)
+		}
+		return &ec2.DescribeLaunchTemplatesOutput{LaunchTemplates: []types.LaunchTemplate{{LaunchTemplateId: aws.String("lt-123")}}}, nil
+	}}
+	id, err := (&ec2Client{sdk: fake}).LaunchTemplate(context.Background(), "root.example")
+	if err != nil || id != "lt-123" {
+		t.Fatalf("LaunchTemplate = %q, %v; want lt-123, nil", id, err)
+	}
+	if want := []string{"DescribeLaunchTemplates"}; !reflect.DeepEqual(fake.calls, want) {
+		t.Fatalf("calls = %v, want %v", fake.calls, want)
+	}
+
+	missing := &fakeEC2{describeLaunchTemplates: func(*ec2.DescribeLaunchTemplatesInput) (*ec2.DescribeLaunchTemplatesOutput, error) {
+		return &ec2.DescribeLaunchTemplatesOutput{}, nil
+	}}
+	_, err = (&ec2Client{sdk: missing}).LaunchTemplate(context.Background(), "missing")
+	var notFound *cloud.NotFoundError
+	if !errors.As(err, &notFound) || notFound.Kind != "launch template" || notFound.Name != "missing" {
+		t.Fatalf("missing error = %#v", err)
+	}
+}
+
 func TestEC2SpaceFilteringAndMapping(t *testing.T) {
-	// R-YTEM-5WOB R-YUMI-JOF0
+	// R-QMDP-S5DY R-QQ1E-XGM1
 	wantFilters := []types.Filter{
-		{Name: aws.String("tag:Project"), Values: []string{"ikigenba"}},
+		{Name: aws.String("tag:Domain"), Values: []string{"root.example"}},
 		{Name: aws.String("tag-key"), Values: []string{"Space"}},
 	}
 	page := 0
@@ -146,7 +182,7 @@ func TestEC2SpaceFilteringAndMapping(t *testing.T) {
 	}
 
 	client := &ec2Client{sdk: fake}
-	instances, err := client.ListSpaceInstances(context.Background())
+	instances, err := client.ListSpaceInstances(context.Background(), "root.example")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +193,7 @@ func TestEC2SpaceFilteringAndMapping(t *testing.T) {
 	if !reflect.DeepEqual(instances, wantInstances) {
 		t.Fatalf("instances = %#v, want %#v", instances, wantInstances)
 	}
-	addresses, err := client.ListSpaceAddresses(context.Background())
+	addresses, err := client.ListSpaceAddresses(context.Background(), "root.example")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +204,7 @@ func TestEC2SpaceFilteringAndMapping(t *testing.T) {
 }
 
 func TestEC2CreationTagsAndRunMapping(t *testing.T) {
-	// R-YTEM-5WOB R-YUMI-JOF0
+	// R-QMDP-S5DY R-QQ1E-XGM1
 	fake := &fakeEC2{}
 	fake.runInstances = func(in *ec2.RunInstancesInput) (*ec2.RunInstancesOutput, error) {
 		if aws.ToInt32(in.MinCount) != 1 || aws.ToInt32(in.MaxCount) != 1 {
@@ -180,12 +216,12 @@ func TestEC2CreationTagsAndRunMapping(t *testing.T) {
 		if got := aws.ToString(in.IamInstanceProfile.Name); got != "profile-one" {
 			t.Fatalf("instance profile = %q, want profile-one", got)
 		}
-		assertTagSpecifications(t, in.TagSpecifications, []types.ResourceType{types.ResourceTypeInstance, types.ResourceTypeVolume}, "one.example")
+		assertTagSpecifications(t, in.TagSpecifications, []types.ResourceType{types.ResourceTypeInstance, types.ResourceTypeVolume}, "root.example", "one.example")
 		return &ec2.RunInstancesOutput{Instances: []types.Instance{{
 			InstanceId: aws.String("i-one"),
 			State:      &types.InstanceState{Name: types.InstanceStateNamePending},
 			Tags: []types.Tag{
-				{Key: aws.String("Project"), Value: aws.String("ikigenba")},
+				{Key: aws.String("Domain"), Value: aws.String("root.example")},
 				{Key: aws.String("Space"), Value: aws.String("one.example")},
 			},
 		}}}, nil
@@ -194,12 +230,12 @@ func TestEC2CreationTagsAndRunMapping(t *testing.T) {
 		if in.Domain != types.DomainTypeVpc {
 			t.Fatalf("domain = %q, want vpc", in.Domain)
 		}
-		assertTagSpecifications(t, in.TagSpecifications, []types.ResourceType{types.ResourceTypeElasticIp}, "one.example")
+		assertTagSpecifications(t, in.TagSpecifications, []types.ResourceType{types.ResourceTypeElasticIp}, "root.example", "one.example")
 		return &ec2.AllocateAddressOutput{AllocationId: aws.String("eipalloc-one"), PublicIp: aws.String("192.0.2.1")}, nil
 	}
 	client := &ec2Client{sdk: fake}
 	instance, err := client.RunInstance(context.Background(), cloud.LaunchSpec{
-		LaunchTemplateID: "lt-one", InstanceProfile: "profile-one", Space: "one.example",
+		LaunchTemplateID: "lt-one", InstanceProfile: "profile-one", Domain: "root.example", Space: "one.example",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -211,7 +247,7 @@ func TestEC2CreationTagsAndRunMapping(t *testing.T) {
 		t.Fatalf("SDK calls after RunInstance = %v, want %v", fake.calls, want)
 	}
 	fake.calls = nil
-	address, err := client.AllocateAddress(context.Background(), "one.example")
+	address, err := client.AllocateAddress(context.Background(), "root.example", "one.example")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +305,7 @@ func TestEC2LaunchReady(t *testing.T) {
 		if aws.ToInt32(in.MinCount) != 1 || aws.ToInt32(in.MaxCount) != 1 {
 			t.Fatalf("counts = %d, %d; want 1, 1", aws.ToInt32(in.MinCount), aws.ToInt32(in.MaxCount))
 		}
-		assertTagSpecifications(t, in.TagSpecifications, []types.ResourceType{types.ResourceTypeInstance, types.ResourceTypeVolume}, spec.Space)
+		assertTagSpecifications(t, in.TagSpecifications, []types.ResourceType{types.ResourceTypeInstance, types.ResourceTypeVolume}, spec.Domain, spec.Space)
 		return nil, &smithy.GenericAPIError{Code: "DryRunOperation", Message: "would succeed"}
 	}}
 	if ready, err := (&ec2Client{sdk: fake}).LaunchReady(context.Background(), spec); !ready || err != nil {
@@ -278,14 +314,21 @@ func TestEC2LaunchReady(t *testing.T) {
 }
 
 func TestEC2OperationMappingsAndChecks(t *testing.T) {
-	// R-YTEM-5WOB R-YOJ0-MTPJ R-YPQX-0LG8
+	// R-QMDP-S5DY R-VV8S-ZVE7 R-YPQX-0LG8
 	boom := &smithy.GenericAPIError{Code: "RequestLimitExceeded", Message: "boom"}
 	tests := []struct {
 		method    string
 		operation string
 		call      func(*ec2Client) error
 	}{
-		{"ListSpaceInstances", "DescribeInstances", func(client *ec2Client) error { _, err := client.ListSpaceInstances(context.Background()); return err }},
+		{"LaunchTemplate", "DescribeLaunchTemplates", func(client *ec2Client) error {
+			_, err := client.LaunchTemplate(context.Background(), "name")
+			return err
+		}},
+		{"ListSpaceInstances", "DescribeInstances", func(client *ec2Client) error {
+			_, err := client.ListSpaceInstances(context.Background(), "domain")
+			return err
+		}},
 		{"DescribeInstance", "DescribeInstances", func(client *ec2Client) error {
 			_, err := client.DescribeInstance(context.Background(), "i-one")
 			return err
@@ -301,9 +344,12 @@ func TestEC2OperationMappingsAndChecks(t *testing.T) {
 			_, err := client.InstanceChecksPassed(context.Background(), "i-one")
 			return err
 		}},
-		{"ListSpaceAddresses", "DescribeAddresses", func(client *ec2Client) error { _, err := client.ListSpaceAddresses(context.Background()); return err }},
+		{"ListSpaceAddresses", "DescribeAddresses", func(client *ec2Client) error {
+			_, err := client.ListSpaceAddresses(context.Background(), "domain")
+			return err
+		}},
 		{"AllocateAddress", "AllocateAddress", func(client *ec2Client) error {
-			_, err := client.AllocateAddress(context.Background(), "space")
+			_, err := client.AllocateAddress(context.Background(), "domain", "space")
 			return err
 		}},
 		{"AssociateAddress", "AssociateAddress", func(client *ec2Client) error {
@@ -404,7 +450,7 @@ func TestEC2ReadExactDispatchAfterSuccess(t *testing.T) {
 				return &ec2.DescribeInstancesOutput{}, nil
 			}
 		}, func(client *ec2Client) error {
-			_, err := client.ListSpaceInstances(context.Background())
+			_, err := client.ListSpaceInstances(context.Background(), "domain")
 			return err
 		}},
 		{"ListSpaceAddresses", "DescribeAddresses", func(fake *fakeEC2) {
@@ -412,7 +458,7 @@ func TestEC2ReadExactDispatchAfterSuccess(t *testing.T) {
 				return &ec2.DescribeAddressesOutput{}, nil
 			}
 		}, func(client *ec2Client) error {
-			_, err := client.ListSpaceAddresses(context.Background())
+			_, err := client.ListSpaceAddresses(context.Background(), "domain")
 			return err
 		}},
 		{"DescribeInstance", "DescribeInstances", func(fake *fakeEC2) {
@@ -444,13 +490,13 @@ func TestEC2ReadExactDispatchAfterSuccess(t *testing.T) {
 	}
 }
 
-func assertTagSpecifications(t *testing.T, got []types.TagSpecification, resourceTypes []types.ResourceType, space string) {
+func assertTagSpecifications(t *testing.T, got []types.TagSpecification, resourceTypes []types.ResourceType, domain, space string) {
 	t.Helper()
 	if len(got) != len(resourceTypes) {
 		t.Fatalf("tag specifications = %#v, want %d", got, len(resourceTypes))
 	}
 	wantTags := []types.Tag{
-		{Key: aws.String("Project"), Value: aws.String("ikigenba")},
+		{Key: aws.String("Domain"), Value: aws.String(domain)},
 		{Key: aws.String("Space"), Value: aws.String(space)},
 	}
 	for i, resourceType := range resourceTypes {

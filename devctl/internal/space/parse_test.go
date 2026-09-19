@@ -10,11 +10,10 @@ import (
 )
 
 func TestRunListHelp(t *testing.T) {
-	// R-TG1T-SODG
 	for _, option := range []string{"--help", "-h"} {
 		t.Run(option, func(t *testing.T) {
 			var stdout bytes.Buffer
-			err := Run(context.Background(), []string{"list", option}, &stdout, seam.Deps{}, "sandbox")
+			err := Run(context.Background(), []string{"list", option}, &stdout, seam.Deps{})
 			if err != nil {
 				t.Fatalf("Run() error = %v", err)
 			}
@@ -26,7 +25,6 @@ func TestRunListHelp(t *testing.T) {
 }
 
 func TestRunNeedsSubcommand(t *testing.T) {
-	// R-TVEN-62JB
 	assertRunUsageError(t, nil, "space needs <subcommand>")
 }
 
@@ -36,20 +34,18 @@ func TestRunRejectsUnknownSubcommand(t *testing.T) {
 }
 
 func TestRunDomainSubcommandsNeedDomain(t *testing.T) {
-	// R-TXUF-XM0P
 	for _, subcommand := range []string{"destroy", "stop", "start", "status"} {
 		t.Run(subcommand, func(t *testing.T) {
-			assertRunUsageError(t, []string{subcommand}, "space "+subcommand+" needs <domain>")
+			assertRunUsageError(t, []string{subcommand}, "space "+subcommand+" needs <space>")
 		})
 	}
 }
 
 func TestRunRejectsExtraOperands(t *testing.T) {
-	// R-U0A8-P5I3
 	for _, subcommand := range []string{"destroy", "stop", "start", "status"} {
 		t.Run(subcommand, func(t *testing.T) {
 			assertRunUsageError(t, []string{subcommand, "one.example", "two.example"},
-				"space "+subcommand+" takes only <domain>")
+				"space "+subcommand+" takes only <space>")
 		})
 	}
 	t.Run("list", func(t *testing.T) {
@@ -61,7 +57,7 @@ func TestRunRejectsExtraOperands(t *testing.T) {
 }
 
 func TestSpaceSubcommandGrammar(t *testing.T) {
-	// R-DJ2V-3X4D
+	// R-V1K6-N2JE
 	want := []string{"list", "create", "destroy", "stop", "start", "init", "status", "restart", "logs"}
 	if len(subcommands) != len(want) {
 		t.Fatalf("subcommand count = %d, want %d", len(subcommands), len(want))
@@ -73,15 +69,18 @@ func TestSpaceSubcommandGrammar(t *testing.T) {
 	}
 
 	cases := []struct {
-		args       []string
-		domain     string
-		noBackup   bool
-		wantErrMsg string
+		args          []string
+		domain        string
+		noBackup      bool
+		deleteSecrets bool
+		deleteBackups bool
 	}{
 		{args: []string{"list"}},
 		{args: []string{"destroy", "foo.example"}, domain: "foo.example"},
 		{args: []string{"destroy", "--no-backup", "foo.example"}, domain: "foo.example", noBackup: true},
 		{args: []string{"destroy", "foo.example", "--no-backup"}, domain: "foo.example", noBackup: true},
+		{args: []string{"destroy", "--delete-secrets", "foo.example"}, domain: "foo.example", deleteSecrets: true},
+		{args: []string{"destroy", "foo.example", "--delete-backups"}, domain: "foo.example", deleteBackups: true},
 		{args: []string{"stop", "foo.example"}, domain: "foo.example"},
 		{args: []string{"start", "foo.example"}, domain: "foo.example"},
 		{args: []string{"status", "foo.example"}, domain: "foo.example"},
@@ -92,14 +91,14 @@ func TestSpaceSubcommandGrammar(t *testing.T) {
 			t.Errorf("parseInvocation(%q) error = %v", test.args, err)
 			continue
 		}
-		if got.domain != test.domain || got.noBackup != test.noBackup {
-			t.Errorf("parseInvocation(%q) = domain %q, noBackup %t", test.args, got.domain, got.noBackup)
+		if got.domain != test.domain || got.noBackup != test.noBackup ||
+			got.deleteSecrets != test.deleteSecrets || got.deleteBackups != test.deleteBackups {
+			t.Errorf("parseInvocation(%q) = %#v", test.args, got)
 		}
 	}
 }
 
 func TestRunRejectsUnknownOptions(t *testing.T) {
-	// R-DLIN-VGLR
 	cases := [][]string{
 		{"--wat"},
 		{"--help", "--wat"},
@@ -108,6 +107,9 @@ func TestRunRejectsUnknownOptions(t *testing.T) {
 		{"list", "--wat", "--help"},
 		{"destroy", "foo.example", "--wat"},
 		{"destroy", "--no-backup=true", "foo.example"},
+		{"destroy", "--delete-secrets=yes", "foo.example"},
+		{"destroy", "--delete-backups=1", "foo.example"},
+		{"stop", "foo.example", "--no-backup"},
 		{"stop", "-x", "foo.example"},
 		{"stop", "foo.example", "--wat", "--help"},
 		{"start", "foo.example", "--wat"},
@@ -127,25 +129,47 @@ func TestRunRejectsUnknownOptions(t *testing.T) {
 	}
 }
 
-func TestDestroyNoBackupGrammar(t *testing.T) {
-	// R-E1DC-UH8S
+func TestDestroyOptionsGrammar(t *testing.T) {
+	// R-V3ZZ-EM0S
 	for _, args := range [][]string{
-		{"destroy", "--no-backup", "foo.example"},
-		{"destroy", "foo.example", "--no-backup"},
-		{"destroy", "--no-backup", "foo.example", "--no-backup"},
+		{"destroy", "--no-backup", "--delete-secrets", "--delete-backups", "foo.example"},
+		{"destroy", "foo.example", "--delete-backups", "--no-backup", "--delete-secrets"},
+		{"destroy", "--delete-secrets", "--no-backup", "foo.example", "--delete-backups", "--no-backup", "--delete-secrets", "--delete-backups"},
 	} {
 		got, err := parseInvocation(args)
-		if err != nil || got.domain != "foo.example" || !got.noBackup {
+		if err != nil || got.domain != "foo.example" || !got.noBackup || !got.deleteSecrets || !got.deleteBackups {
 			t.Fatalf("parseInvocation(%q) = %#v, %v", args, got, err)
 		}
 	}
-	assertRunUsageError(t, []string{"destroy", "--no-backup=true", "foo.example"}, "unknown option '--no-backup=true'")
+	for _, test := range []struct {
+		option                                 string
+		noBackup, deleteSecrets, deleteBackups bool
+	}{
+		{option: "--no-backup", noBackup: true},
+		{option: "--delete-secrets", deleteSecrets: true},
+		{option: "--delete-backups", deleteBackups: true},
+	} {
+		for _, args := range [][]string{
+			{"destroy", test.option, "foo.example"},
+			{"destroy", "foo.example", test.option},
+			{"destroy", test.option, "foo.example", test.option},
+		} {
+			got, err := parseInvocation(args)
+			if err != nil || got.domain != "foo.example" || got.noBackup != test.noBackup ||
+				got.deleteSecrets != test.deleteSecrets || got.deleteBackups != test.deleteBackups {
+				t.Fatalf("parseInvocation(%q) = %#v, %v", args, got, err)
+			}
+		}
+	}
+	for _, option := range []string{"--no-backup=true", "--delete-secrets=yes", "--delete-backups=1"} {
+		assertRunUsageError(t, []string{"destroy", option, "foo.example"}, "unknown option '"+option+"'")
+	}
 }
 
 func assertRunUsageError(t *testing.T, args []string, message string) {
 	t.Helper()
 	var stdout bytes.Buffer
-	err := Run(context.Background(), args, &stdout, seam.Deps{}, "sandbox")
+	err := Run(context.Background(), args, &stdout, seam.Deps{})
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout = %q, want empty", stdout.String())
 	}

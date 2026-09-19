@@ -31,7 +31,6 @@ func TestRunPublicSignature(t *testing.T) {
 
 func TestRunHelpAnywhereHasNoExternalOperation(t *testing.T) {
 	// R-6DMZ-9OZX
-	// R-GSOJ-R4YD
 	for _, args := range [][]string{
 		{"--help"},
 		{"-h"},

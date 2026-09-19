@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ikigenba/ikigenba/devctl/internal/account"
 	"github.com/ikigenba/ikigenba/devctl/internal/appref"
 	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
@@ -18,20 +17,21 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 	"github.com/ikigenba/ikigenba/devctl/internal/secrets"
 	"github.com/ikigenba/ikigenba/devctl/internal/space"
+	"github.com/ikigenba/ikigenba/devctl/internal/spaceref"
 )
 
 const (
 	helpCommand = "devctl deploy --help"
-	helpText    = `Usage: devctl --account <name> deploy <domain> <file>
+	helpText    = `Usage: devctl deploy <space> <file>
 
 Upload <file>, an <app>/dist/<app>-<tag>.tar.xz written by build, to the
-deploy/ prefix of <domain>'s backup bucket and have opsctl on <domain> install
-it from there. The app and tag (v<semver>) are read from the file name.
+space's deploy/ prefix in the bucket and have opsctl on the space install it
+from there. The app and tag (v<semver>) are read from the file name.
 `
 )
 
 type invocation struct {
-	domain  string
+	space   string
 	file    string
 	app     string
 	version string
@@ -39,7 +39,7 @@ type invocation struct {
 }
 
 // Run executes a deploy command.
-func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, profile string) error {
+func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) error {
 	invocation, help, err := parseInvocation(args)
 	if err != nil {
 		return err
@@ -58,19 +58,27 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, p
 	}
 	space.Step(stdout, "file", invocation.app+" "+invocation.version)
 
-	acct, err := account.Open(ctx, deps, profile)
+	root, err := checkout.ReadRootFile(ctx, deps.Defaults())
 	if err != nil {
 		return err
 	}
-	targetSpace, err := acct.Space(ctx, invocation.domain)
+	spaceRef, err := spaceref.Parse(invocation.space, root.Domain)
+	if err != nil {
+		return err
+	}
+	session, err := cloud.Connect(ctx, deps.Cloud, root.Domain, root.Region)
+	if err != nil {
+		return err
+	}
+	targetSpace, err := cloud.LookupSpace(ctx, session.Clients.EC2, root.Domain, spaceRef.Domain)
 	if err != nil {
 		return err
 	}
 	if targetSpace.State != cloud.StateRunning {
-		return &space.NotRunningError{Domain: invocation.domain, State: targetSpace.State}
+		return &space.NotRunningError{Domain: spaceRef.Domain, State: targetSpace.State}
 	}
 
-	held, err := secrets.Names(ctx, acct, invocation.domain, invocation.app)
+	held, err := secrets.Names(ctx, session.Clients.SSM, spaceRef.Domain, invocation.app)
 	if err != nil {
 		return err
 	}
@@ -90,7 +98,7 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, p
 	}
 	if len(missing) != 0 {
 		sort.Strings(missing)
-		return &MissingSecretsError{App: invocation.app, Domain: invocation.domain, Profile: profile, Names: missing}
+		return &MissingSecretsError{App: invocation.app, Space: spaceRef.Label, Names: missing}
 	}
 	space.Step(stdout, "secrets", fmt.Sprintf("%d keys", len(required)))
 
@@ -99,9 +107,9 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, p
 		return err
 	}
 	filename := filepath.Base(invocation.file)
-	key := ObjectKey(invocation.domain, filename)
-	bucket := acct.Properties.BackupBucket
-	if err := acct.Clients.S3.PutObject(ctx, bucket, key, bytes.NewReader(artifact), int64(len(artifact))); err != nil {
+	key := ObjectKey(spaceRef.Label, filename)
+	bucket := root.Domain
+	if err := session.Clients.S3.PutObject(ctx, bucket, key, bytes.NewReader(artifact), int64(len(artifact))); err != nil {
 		return err
 	}
 	space.Step(stdout, "upload", "-> "+bucket+"/"+key)
@@ -115,8 +123,8 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, p
 }
 
 // ObjectKey returns the deploy object key for an artifact basename.
-func ObjectKey(domain, filename string) string {
-	return domain + "/deploy/" + filename
+func ObjectKey(label, filename string) string {
+	return label + "/deploy/" + filename
 }
 
 func parseInvocation(args []string) (invocation, bool, error) {
@@ -131,12 +139,12 @@ func parseInvocation(args []string) (invocation, bool, error) {
 		}
 	}
 	if len(args) < 2 {
-		return invocation{}, false, usage("deploy needs <domain> and <file>")
+		return invocation{}, false, usage("deploy needs <space> and <file>")
 	}
 	if len(args) > 2 {
-		return invocation{}, false, usage("deploy takes only <domain> and <file>")
+		return invocation{}, false, usage("deploy takes only <space> and <file>")
 	}
-	return invocation{domain: args[0], file: args[1]}, false, nil
+	return invocation{space: args[0], file: args[1]}, false, nil
 }
 
 func validateFile(value invocation, dir string) (invocation, error) {

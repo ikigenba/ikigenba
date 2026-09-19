@@ -8,7 +8,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/ikigenba/ikigenba/devctl/internal/account"
+	"github.com/ikigenba/ikigenba/devctl/internal/apex"
 	"github.com/ikigenba/ikigenba/devctl/internal/build"
 	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
@@ -28,7 +28,7 @@ var version = "v0.1.2"
 
 const usage = `Usage: devctl [options] <command> [arguments]
 
-Manage the ikigenba platform from the developer's machine. Never run as root.
+Manage the platform from the developer's machine. Never run as root.
 
 Commands:
   version   print the version
@@ -38,11 +38,11 @@ Commands:
   deploy    put a built app file on a space
   remove    take an app off a space
   restore   put a space's app back from its backups
+  apex      point the root domain at one app on one space
 
 Options:
   --help              print this help
   --version           print the version
-  --account <name>    AWS shared-config profile to act in
 
 Exit codes:
   0  success
@@ -58,22 +58,6 @@ const versionUsage = `Usage: devctl version
 Print the version.
 `
 
-const spaceRestartUsage = `Usage: devctl --account <name> space restart <domain> <app>
-
-Have opsctl restart one app's service. Deploy the existing file to apply pushed
-secrets; a restart uses the environment already installed on the host.
-`
-
-const spaceLogsUsage = `Usage: devctl --account <name> space logs <domain> <app> [--since <when>] [--follow]
-
-Print the last 100 journal lines for an installed app. With --since, print all
-lines from that moment using journalctl's time syntax.
-
-Options:
-  --since <when>   read from this moment; passed unchanged to journalctl
-  --follow         stream new lines until interrupted
-`
-
 var commandSet = map[string]struct{}{
 	"version": {},
 	"space":   {},
@@ -82,19 +66,10 @@ var commandSet = map[string]struct{}{
 	"deploy":  {},
 	"restore": {},
 	"remove":  {},
-}
-
-var accountRequired = map[string]struct{}{
-	"space":   {},
-	"secrets": {},
-	"deploy":  {},
-	"restore": {},
-	"remove":  {},
+	"apex":    {},
 }
 
 type topLevel struct {
-	account     string
-	accountSet  bool
 	command     string
 	arguments   []string
 	showHelp    bool
@@ -131,8 +106,13 @@ func Run(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.Writ
 	if invocation.command == "version" {
 		return runVersion(invocation.arguments, stdout, stderr)
 	}
+	if invocation.command == "apex" {
+		return operationError(stderr, apex.Run(ctx, invocation.arguments, stdout, deps))
+	}
 	if hasHelp(invocation.arguments) {
-		invocation.arguments = helpArguments(invocation.command, invocation.arguments)
+		if invocation.command != "space" {
+			invocation.arguments = helpArguments(invocation.command, invocation.arguments)
+		}
 	} else if message, helpCommand := missingCommandOptionValue(invocation.command, invocation.arguments); message != "" {
 		return usageError(stderr, message, helpCommand)
 	}
@@ -140,56 +120,21 @@ func Run(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.Writ
 		return operationError(stderr, build.Run(ctx, invocation.arguments, stdout, deps))
 	}
 	if invocation.command == "deploy" {
-		if !invocation.accountSet && !hasHelp(invocation.arguments) {
-			return usageError(stderr, "--account is required", "devctl deploy --help")
-		}
-		return operationError(stderr, deploy.Run(ctx, invocation.arguments, stdout, deps, invocation.account))
+		return operationError(stderr, deploy.Run(ctx, invocation.arguments, stdout, deps))
 	}
 	if invocation.command == "restore" {
-		if !invocation.accountSet && !hasHelp(invocation.arguments) {
-			return usageError(stderr, "--account is required", "devctl restore --help")
-		}
-		return operationError(stderr, restore.Run(ctx, invocation.arguments, stdout, deps, invocation.account))
+		return operationError(stderr, restore.Run(ctx, invocation.arguments, stdout, deps))
 	}
 	if invocation.command == "remove" {
-		if !invocation.accountSet && !hasHelp(invocation.arguments) {
-			return usageError(stderr, "--account is required", "devctl remove --help")
-		}
-		return operationError(stderr, remove.Run(ctx, invocation.arguments, stdout, deps, invocation.account))
+		return operationError(stderr, remove.Run(ctx, invocation.arguments, stdout, deps))
 	}
 	if invocation.command == "secrets" {
-		if !invocation.accountSet && !hasHelp(invocation.arguments) {
-			return usageError(stderr, "--account is required", "devctl secrets --help")
-		}
-		return operationError(stderr, secrets.Run(ctx, invocation.arguments, stdout, deps, invocation.account))
+		return operationError(stderr, secrets.Run(ctx, invocation.arguments, stdout, deps))
 	}
 	if invocation.command == "space" {
-		if !invocation.accountSet && !hasHelp(invocation.arguments) {
-			return usageError(stderr, "--account is required", "devctl space --help")
-		}
-		return operationError(stderr, runSpace(ctx, invocation.arguments, stdout, deps, invocation.account))
+		return operationError(stderr, runSpace(ctx, invocation.arguments, stdout, deps))
 	}
-	if _, required := accountRequired[invocation.command]; required {
-		if hasHelp(invocation.arguments) {
-			// Command-specific phases replace this with the command's help.
-			return 0
-		}
-		if !invocation.accountSet {
-			return usageError(stderr, "--account is required", "devctl "+invocation.command+" --help")
-		}
-		acct, err := account.Open(ctx, deps, invocation.account)
-		if err != nil {
-			return operationError(stderr, err)
-		}
-		if domain, ok := spaceDomain(invocation.command, invocation.arguments); ok {
-			if _, err := acct.Space(ctx, domain); err != nil {
-				return operationError(stderr, err)
-			}
-		}
-	}
-
-	// Command-specific phases replace this successful no-op with their dispatch.
-	return 0
+	panic("unreachable command dispatch")
 }
 
 func helpArguments(command string, arguments []string) []string {
@@ -215,9 +160,6 @@ func missingCommandOptionValue(command string, arguments []string) (string, stri
 	options := map[string]struct{}{}
 	helpCommand := ""
 	switch {
-	case command == "space" && len(arguments) != 0 && arguments[0] == "create":
-		options["--acme-email"] = struct{}{}
-		helpCommand = "devctl space --help"
 	case command == "space" && len(arguments) != 0 && arguments[0] == "init":
 		options["--opsctl"] = struct{}{}
 		options["--acme-email"] = struct{}{}
@@ -244,46 +186,20 @@ func missingCommandOptionValue(command string, arguments []string) (string, stri
 	return "", ""
 }
 
-func runSpace(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps, profile string) error {
+func runSpace(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) error {
 	if len(args) != 0 {
 		switch args[0] {
 		case "create":
-			return spacecreate.Run(ctx, args[1:], stdout, deps, profile)
+			return spacecreate.Run(ctx, args[1:], stdout, deps)
 		case "init":
-			return spaceinit.Run(ctx, args[1:], stdout, deps, profile)
+			return spaceinit.Run(ctx, args[1:], stdout, deps)
 		case "restart":
-			if len(args) == 2 && (args[1] == "--help" || args[1] == "-h") {
-				_, _ = fmt.Fprint(stdout, spaceRestartUsage)
-				return nil
-			}
-			return spaceapps.Run(ctx, args, stdout, deps, profile)
+			return spaceapps.Run(ctx, args, stdout, deps)
 		case "logs":
-			if len(args) == 2 && (args[1] == "--help" || args[1] == "-h") {
-				_, _ = fmt.Fprint(stdout, spaceLogsUsage)
-				return nil
-			}
-			return spaceapps.Run(ctx, args, stdout, deps, profile)
+			return spaceapps.Run(ctx, args, stdout, deps)
 		}
 	}
-	return space.Run(ctx, args, stdout, deps, profile)
-}
-
-func spaceDomain(command string, arguments []string) (string, bool) {
-	switch command {
-	case "space":
-		if len(arguments) >= 2 && (arguments[0] == "stop" || arguments[0] == "start" || arguments[0] == "status") {
-			return arguments[1], true
-		}
-	case "secrets":
-		if len(arguments) >= 2 && arguments[0] == "push" {
-			return arguments[1], true
-		}
-	case "deploy", "restore":
-		if len(arguments) >= 1 {
-			return arguments[0], true
-		}
-	}
-	return "", false
+	return space.Run(ctx, args, stdout, deps)
 }
 
 func operationError(stderr io.Writer, err error) int {
@@ -305,19 +221,29 @@ func operationError(stderr io.Writer, err error) int {
 		writeDiagnostic(stderr, cloudError.Error(), "", "", false)
 		return 1
 	}
-	var noSpaceError *account.NoSpaceError
-	if errors.As(err, &noSpaceError) {
-		writeDiagnostic(stderr, noSpaceError.Error(), "", "", false)
+	var notFoundError *cloud.NotFoundError
+	if errors.As(err, &notFoundError) {
+		writeDiagnostic(stderr, notFoundError.Error(), "", "", false)
 		return 1
 	}
-	var noZoneError *account.NoZoneError
-	if errors.As(err, &noZoneError) {
-		writeDiagnostic(stderr, noZoneError.Error(), "", "", false)
+	var noSpaceError *cloud.NoSpaceError
+	if errors.As(err, &noSpaceError) {
+		writeDiagnostic(stderr, noSpaceError.Error(), "", "", false)
 		return 1
 	}
 	var notInCheckoutError *checkout.NotInCheckoutError
 	if errors.As(err, &notInCheckoutError) {
 		writeDiagnostic(stderr, notInCheckoutError.Error(), "", "", false)
+		return 2
+	}
+	var noRootFileError *checkout.NoRootFileError
+	if errors.As(err, &noRootFileError) {
+		writeDiagnostic(stderr, noRootFileError.Error(), "", "", false)
+		return 2
+	}
+	var rootFileError *checkout.RootFileError
+	if errors.As(err, &rootFileError) {
+		writeDiagnostic(stderr, rootFileError.Error(), "", "", false)
 		return 2
 	}
 	var noAppError *checkout.NoAppError
@@ -362,21 +288,6 @@ func parseTopLevel(args []string) topLevel {
 			result.showHelp = true
 		case argument == "-V" || argument == "--version":
 			result.showVersion = true
-		case argument == "--account":
-			if index+1 == len(args) || strings.HasPrefix(args[index+1], "-") || isCommand(args[index+1]) {
-				result.err = "option '--account' requires a value"
-				return result
-			}
-			index++
-			result.account = args[index]
-			result.accountSet = true
-		case strings.HasPrefix(argument, "--account="):
-			result.account = strings.TrimPrefix(argument, "--account=")
-			if result.account == "" {
-				result.err = "option '--account' requires a value"
-				return result
-			}
-			result.accountSet = true
 		case strings.HasPrefix(argument, "-"):
 			result.err = "unknown option '" + argument + "'"
 			return result
@@ -387,11 +298,6 @@ func parseTopLevel(args []string) topLevel {
 		}
 	}
 	return result
-}
-
-func isCommand(argument string) bool {
-	_, ok := commandSet[argument]
-	return ok
 }
 
 func runVersion(args []string, stdout, stderr io.Writer) int {

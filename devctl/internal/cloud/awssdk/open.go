@@ -41,7 +41,7 @@ func OpenWithLoader(
 		EC2:     &ec2Client{sdk: ec2.NewFromConfig(cfg)},
 		SSM:     &ssmClient{sdk: ssm.NewFromConfig(cfg)},
 		Route53: &route53Client{sdk: route53.NewFromConfig(cfg)},
-		S3:      &s3Client{sdk: s3.NewFromConfig(cfg)},
+		S3:      &s3Client{sdk: s3.NewFromConfig(cfg, func(options *s3.Options) { options.UsePathStyle = true })},
 		IAM:     &iamClient{sdk: iam.NewFromConfig(cfg)},
 		STS:     &stsClient{sdk: sts.NewFromConfig(cfg)},
 	}, nil

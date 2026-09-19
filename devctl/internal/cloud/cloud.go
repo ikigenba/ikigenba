@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"time"
 )
 
@@ -19,6 +20,27 @@ type Clients struct {
 	S3      S3
 	IAM     IAM
 	STS     STS
+}
+
+// Session is an authenticated set of cloud clients and its caller identity.
+type Session struct {
+	AccountID string
+	Clients   Clients
+}
+
+// Connect opens cloud clients and establishes the caller's account identity.
+func Connect(ctx context.Context, open Opener, profile, region string) (Session, error) {
+	clients, err := open(ctx, profile, region)
+	if err != nil {
+		return Session{}, err
+	}
+
+	accountID, err := clients.STS.CallerAccountID(ctx)
+	if err != nil {
+		return Session{}, err
+	}
+
+	return Session{AccountID: accountID, Clients: clients}, nil
 }
 
 // Error describes a failed cloud service operation.
@@ -44,6 +66,17 @@ func (e *Error) Error() string {
 
 // Unwrap returns the underlying provider error.
 func (e *Error) Unwrap() error { return e.Err }
+
+// NotFoundError reports that a named cloud resource does not exist.
+type NotFoundError struct {
+	Kind string
+	Name string
+}
+
+// Error describes the missing resource.
+func (e *NotFoundError) Error() string {
+	return fmt.Sprintf("no %s '%s'", e.Kind, e.Name)
+}
 
 // InstanceState is the lifecycle state of a compute instance.
 type InstanceState string
@@ -83,12 +116,14 @@ type Address struct {
 type LaunchSpec struct {
 	LaunchTemplateID string
 	InstanceProfile  string
+	Domain           string
 	Space            string
 }
 
 // EC2 is the compute service boundary.
 type EC2 interface {
-	ListSpaceInstances(ctx context.Context) ([]Instance, error)
+	LaunchTemplate(ctx context.Context, name string) (string, error)
+	ListSpaceInstances(ctx context.Context, domain string) ([]Instance, error)
 	DescribeInstance(ctx context.Context, id string) (Instance, error)
 	RunInstance(ctx context.Context, spec LaunchSpec) (Instance, error)
 	LaunchReady(ctx context.Context, spec LaunchSpec) (bool, error)
@@ -96,8 +131,8 @@ type EC2 interface {
 	StopInstance(ctx context.Context, id string) error
 	TerminateInstance(ctx context.Context, id string) error
 	InstanceChecksPassed(ctx context.Context, id string) (bool, error)
-	ListSpaceAddresses(ctx context.Context) ([]Address, error)
-	AllocateAddress(ctx context.Context, space string) (Address, error)
+	ListSpaceAddresses(ctx context.Context, domain string) ([]Address, error)
+	AllocateAddress(ctx context.Context, domain, space string) (Address, error)
 	AssociateAddress(ctx context.Context, allocationID, instanceID string) error
 	DisassociateAddress(ctx context.Context, associationID string) error
 	ReleaseAddress(ctx context.Context, allocationID string) error
@@ -159,8 +194,9 @@ const (
 
 // Route53 is the DNS service boundary.
 type Route53 interface {
-	ListZones(ctx context.Context) ([]Zone, error)
+	Zone(ctx context.Context, name string) (Zone, error)
 	ListRecords(ctx context.Context, zoneID string) ([]Record, error)
+	FindRecord(ctx context.Context, zoneID, name, recordType string) (Record, bool, error)
 	ChangeRecords(ctx context.Context, zoneID string, changes []RecordChange) (string, error)
 	ChangeStatus(ctx context.Context, changeID string) (ChangeStatus, error)
 }
@@ -188,6 +224,7 @@ type RoleSpec struct {
 
 // IAM is the identity service boundary.
 type IAM interface {
+	PermissionsBoundary(ctx context.Context, name string) (string, error)
 	RoleExists(ctx context.Context, name string) (bool, error)
 	CreateRole(ctx context.Context, spec RoleSpec) error
 	PutRolePolicy(ctx context.Context, role, policy, document string) error
@@ -203,4 +240,65 @@ type IAM interface {
 // STS is the caller identity service boundary.
 type STS interface {
 	CallerAccountID(ctx context.Context) (string, error)
+}
+
+// Space describes the instance registered for a space domain.
+type Space struct {
+	Domain  string
+	ID      string
+	State   InstanceState
+	Address string
+}
+
+// NoSpaceError reports that a space has no registered instance.
+type NoSpaceError struct {
+	Domain string
+}
+
+// Error describes the absent space.
+func (e *NoSpaceError) Error() string {
+	return fmt.Sprintf("no space at '%s'", e.Domain)
+}
+
+// Spaces lists the non-terminated instances registered as spaces.
+func Spaces(ctx context.Context, ec2 EC2, domain string) ([]Space, error) {
+	instances, err := ec2.ListSpaceInstances(ctx, domain)
+	if err != nil {
+		return nil, err
+	}
+
+	spaces := make([]Space, 0, len(instances))
+	seen := make(map[string]struct{}, len(instances))
+	for _, instance := range instances {
+		if instance.State == StateTerminated {
+			continue
+		}
+		if _, exists := seen[instance.Space]; exists {
+			return nil, fmt.Errorf("duplicate space '%s'", instance.Space)
+		}
+		seen[instance.Space] = struct{}{}
+		spaces = append(spaces, Space{
+			Domain:  instance.Space,
+			ID:      instance.ID,
+			State:   instance.State,
+			Address: instance.Address,
+		})
+	}
+
+	sort.Slice(spaces, func(i, j int) bool { return spaces[i].Domain < spaces[j].Domain })
+	return spaces, nil
+}
+
+// LookupSpace finds one space in the domain's instance registry.
+func LookupSpace(ctx context.Context, ec2 EC2, domain, space string) (Space, error) {
+	spaces, err := Spaces(ctx, ec2, domain)
+	if err != nil {
+		return Space{}, err
+	}
+	for _, candidate := range spaces {
+		if candidate.Domain == space {
+			return candidate, nil
+		}
+	}
+	return Space{}, &NoSpaceError{Domain: space}
 }

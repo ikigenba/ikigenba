@@ -1,162 +1,180 @@
 package cli
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
 
-func TestCLIDispatchesDeployArgumentsAndStdout(t *testing.T) {
-	// R-Z4J0-Z7NA R-TI90-6NW4
-	const profile = "SelectedProfile"
-	const domain = "deploy.example.test"
-	const artifactName = "crm-v1.2.3.tar.xz"
-	artifact := []byte("injected artifact bytes")
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, artifactName), artifact, 0o600); err != nil {
+const d09RestoreHelp = `Usage: devctl restore <space> <app> [--at <timestamp>]
+
+Have opsctl on the space put <app> back from the space's own backups. The
+app's etc/ and state/ come from the newest tarball, and its database, when it
+declares one, from litestream. <app>'s unit is stopped for the restore and
+started again after it.
+
+Options:
+  --at <timestamp>   restore the app as it was at this RFC 3339 moment
+
+--at governs both halves: the files come from the newest tarball written at or
+before that moment, and the database is rebuilt to the moment itself.
+`
+
+func TestCLIDispatchesDeployAndFormatsHostFailure(t *testing.T) {
+	// R-O94A-735M R-OLBA-0SKK
+	root := d09Root(t)
+	name := "gmail-v0.1.0.tar.xz"
+	if err := os.WriteFile(filepath.Join(root, name), []byte("artifact"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	deps := d09Deps(t, root, 0, "")
+	result := invokeWithDeps(deps, "deploy", "sbx1", name)
+	wantOut := "file: ok (gmail v0.1.0)\nsecrets: ok (2 keys)\nupload: ok (-> ikigenba.dev/sbx1/deploy/gmail-v0.1.0.tar.xz)\ninstall: ok (opsctl installed gmail)\n"
+	assertResult(t, result, 0, wantOut, "")
 
-	var profiles []string
-	var commands []seam.Cmd
-	upload := &d09S3{}
-	deps := seam.Deps{
-		EUID: 1,
-		Dir:  dir,
-		Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
-			commands = append(commands, command)
-			switch command.Path {
-			case "tar":
-				if command.Args[0] == "-t" {
-					return seam.Result{Stdout: []byte("etc/manifest.toml\nbin/crm\n")}, nil
-				}
-				return seam.Result{Stdout: []byte("app = \"crm\"\n")}, nil
-			case "ssh":
-				return seam.Result{}, nil
-			default:
-				t.Fatalf("unexpected command %#v", command)
-				return seam.Result{}, errors.New("unreachable")
+	deps = d09Deps(t, root, 1, "install failed\nmore\n")
+	result = invokeWithDeps(deps, "deploy", "sbx1", name)
+	wantOut = "file: ok (gmail v0.1.0)\nsecrets: ok (2 keys)\nupload: ok (-> ikigenba.dev/sbx1/deploy/gmail-v0.1.0.tar.xz)\n"
+	wantErr := "devctl: install: ssh ec2-user@18.118.7.42 sudo opsctl install s3://ikigenba.dev/sbx1/deploy/gmail-v0.1.0.tar.xz: exit status 1\n\n> install failed\n> more\n"
+	assertResult(t, result, 1, wantOut, wantErr)
+}
+
+func TestCLIDispatchesRestoreAndFormatsHostFailure(t *testing.T) {
+	// R-OSMO-BF0Q R-OXI9-UHZI
+	root := d09Root(t)
+	deps := d09Deps(t, root, 1, "restore failed\n")
+	result := invokeWithDeps(deps, "restore", "sbx1", "crm")
+	wantErr := "devctl: restore: ssh ec2-user@18.118.7.42 sudo opsctl restore crm: exit status 1\n\n> restore failed\n"
+	assertResult(t, result, 1, "", wantErr)
+
+	deps = d09Deps(t, root, 0, "")
+	result = invokeWithDeps(deps, "restore", "sbx1", "crm", "--at", "2026-09-11T18:00:00Z")
+	assertResult(t, result, 0, "restore: ok (opsctl restore crm --at 2026-09-11T18:00:00Z)\n", "")
+}
+
+func TestD09CommandBoundaryEarlyResultsOutsideCheckout(t *testing.T) {
+	// R-OBK2-YMN0 R-OOYZ-63SN R-ORER-XNA1
+	outside := t.TempDir()
+	for _, option := range []string{"--help", "-h"} {
+		result := invokeWithDeps(seam.Deps{EUID: 1, Dir: outside, Exec: d09FailExec(t), Cloud: d09FailCloud(t)}, "restore", option)
+		assertResult(t, result, 0, d09RestoreHelp, "")
+	}
+
+	result := invokeWithDeps(seam.Deps{EUID: 1, Dir: outside, Exec: d09FailExec(t), Cloud: d09FailCloud(t)}, "restore", "sbx1")
+	assertResult(t, result, 2, "", "devctl: restore needs <space> and <app>\n\nsee 'devctl restore --help' for usage\n")
+
+	result = invokeWithDeps(seam.Deps{EUID: 1, Dir: outside, Exec: d09FailExec(t), Cloud: d09FailCloud(t)}, "deploy", "sbx1", "crm/dist/crm-v0.2.0.tar.xz")
+	assertResult(t, result, 2, "", "devctl: no such file 'crm/dist/crm-v0.2.0.tar.xz'\n")
+
+	if err := os.WriteFile(filepath.Join(outside, "notes.tar.xz"), []byte("artifact"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result = invokeWithDeps(seam.Deps{EUID: 1, Dir: outside, Exec: d09FailExec(t), Cloud: d09FailCloud(t)}, "deploy", "sbx1", "notes.tar.xz")
+	assertResult(t, result, 2, "", "devctl: 'notes.tar.xz' is not a file build wrote: name is not <app>-v<semver>.tar.xz\n")
+}
+
+func TestD09CommandBoundaryMissingAndStoppedSpaces(t *testing.T) {
+	// R-OCRZ-CEDP R-OTUK-P6RF
+	root := d09Root(t)
+	name := "gmail-v0.1.0.tar.xz"
+	if err := os.WriteFile(filepath.Join(root, name), []byte("artifact"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name, operand, diagnostic string
+		instances                 []cloud.Instance
+	}{
+		{name: "missing", operand: "gone", diagnostic: "devctl: no space at 'gone.ikigenba.dev'\n", instances: []cloud.Instance{}},
+		{name: "stopped", operand: "sbx2", diagnostic: "devctl: 'sbx2.ikigenba.dev' is stopped\n", instances: []cloud.Instance{{ID: "i-2", Space: "sbx2.ikigenba.dev", State: cloud.StateStopped}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			deps := d09DepsWithInstances(t, root, test.instances, 0, "")
+			assertResult(t, invokeWithDeps(deps, "deploy", test.operand, name), 1, "file: ok (gmail v0.1.0)\n", test.diagnostic)
+			assertResult(t, invokeWithDeps(deps, "restore", test.operand, "crm"), 1, "", test.diagnostic)
+		})
+	}
+}
+
+func d09Root(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "infra"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "infra", "terraform.tfvars.json"), []byte(`{"domain":"ikigenba.dev","region":"us-east-2"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func d09Deps(t *testing.T, root string, sshStatus int, sshStderr string) seam.Deps {
+	return d09DepsWithInstances(t, root, nil, sshStatus, sshStderr)
+}
+
+func d09DepsWithInstances(t *testing.T, root string, instances []cloud.Instance, sshStatus int, sshStderr string) seam.Deps {
+	t.Helper()
+	return seam.Deps{EUID: 1, Dir: root, Exec: func(_ context.Context, cmd seam.Cmd) (seam.Result, error) {
+		switch cmd.Path {
+		case "tar":
+			if cmd.Args[0] == "-t" {
+				return seam.Result{Stdout: []byte("etc/manifest.toml\nbin/gmail\n")}, nil
 			}
-		},
-		Cloud: func(_ context.Context, gotProfile, region string) (cloud.Clients, error) {
-			profiles = append(profiles, gotProfile)
-			switch region {
-			case "":
-				return cloud.Clients{SSM: &cliSSM{value: cliPropertiesJSON}}, nil
-			case "us-test-1":
-				return cloud.Clients{
-					EC2: &d09EC2{instances: []cloud.Instance{{
-						ID:      "i-deploy",
-						Space:   domain,
-						State:   cloud.StateRunning,
-						Address: "192.0.2.45",
-					}}},
-					SSM: &cliSSM{value: `{}`},
-					S3:  upload,
-				}, nil
-			default:
-				t.Fatalf("unexpected region %q", region)
-				return cloud.Clients{}, errors.New("unreachable")
-			}
-		},
-	}
-
-	result := invokeWithDeps(deps, "--account", profile, "deploy", domain, artifactName)
-	wantStdout := "file: ok (crm v1.2.3)\n" +
-		"secrets: ok (0 keys)\n" +
-		"upload: ok (-> backups/" + domain + "/deploy/" + artifactName + ")\n" +
-		"install: ok (opsctl installed crm)\n"
-	assertResult(t, result, 0, wantStdout, "")
-	if want := []string{profile, profile}; !reflect.DeepEqual(profiles, want) {
-		t.Fatalf("Cloud profiles = %#v, want %#v", profiles, want)
-	}
-	wantCommands := []seam.Cmd{
-		{Path: "tar", Args: []string{"-t", "-J", "-f", artifactName}, Dir: dir},
-		{Path: "tar", Args: []string{"-x", "-J", "-O", "-f", artifactName, "etc/manifest.toml"}, Dir: dir},
-		{Path: "ssh", Args: []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", "ec2-user@192.0.2.45", "'sudo' 'opsctl' 'install' 's3://backups/" + domain + "/deploy/" + artifactName + "'"}, Dir: dir},
-	}
-	if !reflect.DeepEqual(commands, wantCommands) {
-		t.Fatalf("commands = %#v, want %#v", commands, wantCommands)
-	}
-	if upload.bucket != "backups" || upload.key != domain+"/deploy/"+artifactName ||
-		upload.size != int64(len(artifact)) || !bytes.Equal(upload.body, artifact) {
-		t.Fatalf("upload = bucket %q key %q size %d body %q", upload.bucket, upload.key, upload.size, upload.body)
-	}
+			return seam.Result{Stdout: []byte("app = \"gmail\"\nsecrets = [\"A\", \"B\"]\n")}, nil
+		case "git":
+			return seam.Result{Stdout: []byte(root + "\n")}, nil
+		case "ssh":
+			return seam.Result{ExitCode: sshStatus, Stderr: []byte(sshStderr)}, nil
+		default:
+			t.Fatalf("unexpected command %#v", cmd)
+			return seam.Result{}, nil
+		}
+	}, Cloud: func(context.Context, string, string) (cloud.Clients, error) {
+		return cloud.Clients{STS: d09STS{}, EC2: d09EC2{instances: instances}, SSM: d09SSM{}, S3: d09S3{}}, nil
+	}}
 }
 
-type d09S3 struct {
-	cloud.S3
-	bucket string
-	key    string
-	body   []byte
-	size   int64
-}
+type d09STS struct{ cloud.STS }
 
-func (fake *d09S3) PutObject(_ context.Context, bucket, key string, body io.Reader, size int64) error {
-	contents, err := io.ReadAll(body)
-	if err != nil {
-		return err
-	}
-	fake.bucket, fake.key, fake.size = bucket, key, size
-	fake.body = contents
-	return nil
-}
+func (d09STS) CallerAccountID(context.Context) (string, error) { return "123456789012", nil }
 
 type d09EC2 struct {
 	cloud.EC2
 	instances []cloud.Instance
 }
 
-func (fake *d09EC2) ListSpaceInstances(context.Context) ([]cloud.Instance, error) {
-	return fake.instances, nil
+func (f d09EC2) ListSpaceInstances(context.Context, string) ([]cloud.Instance, error) {
+	if f.instances != nil {
+		return f.instances, nil
+	}
+	return []cloud.Instance{{ID: "i-1", Space: "sbx1.ikigenba.dev", State: cloud.StateRunning, Address: "18.118.7.42"}}, nil
 }
 
-func TestCLIDispatchesRestoreWithProfileDepsAndStdout(t *testing.T) {
-	// R-FSS4-QJSW
-	const profile = "SelectedProfile"
-	const domain = "restore.example.test"
-	var profiles []string
-	var commands []seam.Cmd
-	deps := seam.Deps{
-		EUID: 1,
-		Dir:  t.TempDir(),
-		Cloud: func(_ context.Context, gotProfile, region string) (cloud.Clients, error) {
-			profiles = append(profiles, gotProfile)
-			switch region {
-			case "":
-				return cloud.Clients{SSM: &cliSSM{value: cliPropertiesJSON}}, nil
-			case "us-test-1":
-				return cloud.Clients{EC2: &d09EC2{instances: []cloud.Instance{{
-					ID:      "i-restore",
-					Space:   domain,
-					State:   cloud.StateRunning,
-					Address: "192.0.2.44",
-				}}}}, nil
-			default:
-				t.Fatalf("unexpected region %q", region)
-				return cloud.Clients{}, errors.New("unreachable")
-			}
-		},
-		Exec: func(_ context.Context, command seam.Cmd) (seam.Result, error) {
-			commands = append(commands, command)
-			return seam.Result{}, nil
-		},
-	}
+type d09SSM struct{ cloud.SSM }
 
-	result := invokeWithDeps(deps, "--account", profile, "restore", domain, "crm")
-	assertResult(t, result, 0, "restore: ok (opsctl restore crm)\n", "")
-	if !reflect.DeepEqual(profiles, []string{profile, profile}) {
-		t.Fatalf("Cloud profiles = %#v, want selected profile twice", profiles)
+func (d09SSM) GetParameter(context.Context, string) (string, error) { return `{"A":"a","B":"b"}`, nil }
+
+type d09S3 struct{ cloud.S3 }
+
+func (d09S3) PutObject(context.Context, string, string, io.Reader, int64) error { return nil }
+
+func d09FailExec(t *testing.T) seam.Runner {
+	t.Helper()
+	return func(context.Context, seam.Cmd) (seam.Result, error) {
+		t.Fatal("unexpected process access")
+		return seam.Result{}, errors.New("unexpected process access")
 	}
-	if len(commands) != 1 || commands[0].Path != "ssh" {
-		t.Fatalf("commands = %#v, want one ssh command", commands)
+}
+
+func d09FailCloud(t *testing.T) cloud.Opener {
+	t.Helper()
+	return func(context.Context, string, string) (cloud.Clients, error) {
+		t.Fatal("unexpected cloud access")
+		return cloud.Clients{}, errors.New("unexpected cloud access")
 	}
 }
