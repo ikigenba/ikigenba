@@ -1,0 +1,38 @@
+version: 2
+
+project_name: opsctl
+
+# opsctl is an installation boundary, not a downloadable dev tool: hosts fetch a
+# single static linux/amd64 binary and verify it against checksums.txt, then run
+# install.sh. So, unlike the sibling tools, the release ships the bare binary
+# (no tar.gz) named opsctl-<tag>-linux-amd64, and the workflow publishes
+# install.sh alongside it. The version string is source-carried in internal/cli,
+# so there is no -X stamp: a released binary and a dev build report the same
+# value, learned by running the binary rather than read from source.
+
+builds:
+  - id: opsctl
+    main: ./cmd/opsctl
+    binary: opsctl
+    env:
+      - CGO_ENABLED=0
+    goos: [linux]
+    goarch: [amd64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+
+archives:
+  - id: opsctl
+    formats: [binary]
+    name_template: "opsctl-{{ .Tag }}-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+# The workflow publishes the release itself (gh release create --generate-notes)
+# on the real monorepo tag, adding install.sh to the assets goreleaser built;
+# goreleaser only builds and checksums.
+changelog:
+  disable: true
