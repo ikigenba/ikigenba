@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"reflect"
 	"slices"
@@ -24,7 +25,7 @@ import (
 
 var _ cloud.Client = (*client)(nil)
 
-// R-ANMR-IAT5
+// R-DLFB-Q2LP
 func TestInjectedProviderInterfacesContainOnlyOperationalMethods(t *testing.T) {
 	s3Interface := reflect.TypeFor[s3API]()
 	ssmInterface := reflect.TypeFor[ssmAPI]()
@@ -93,7 +94,7 @@ func (body *trackedBody) Close() error {
 	return nil
 }
 
-// R-ANMR-IAT5
+// R-DLFB-Q2LP R-DMN8-3UCE
 func TestOpenUsesRegionAndConcreteClients(t *testing.T) {
 	t.Setenv("AWS_ACCESS_KEY_ID", "test-access")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "test-secret")
@@ -111,8 +112,8 @@ func TestOpenUsesRegionAndConcreteClients(t *testing.T) {
 		t.Fatalf("Open returned %T", opened)
 	}
 	s3Client, ok := actual.s3.(*awss3.Client)
-	if !ok || s3Client.Options().Region != "eu-north-1" {
-		t.Fatalf("S3 client = %T region %q", actual.s3, s3Client.Options().Region)
+	if !ok || s3Client.Options().Region != "eu-north-1" || !s3Client.Options().UsePathStyle {
+		t.Fatalf("S3 client = %T options %#v", actual.s3, s3Client.Options())
 	}
 	ssmClient, ok := actual.ssm.(*awsssm.Client)
 	if !ok || ssmClient.Options().Region != "eu-north-1" {
@@ -120,7 +121,56 @@ func TestOpenUsesRegionAndConcreteClients(t *testing.T) {
 	}
 }
 
-// R-ANMR-IAT5
+// R-DMN8-3UCE R-DP30-VDTS
+func TestOpenPreservesEndpointConfigurationAndUsesPathStyle(t *testing.T) {
+	listener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &http.Server{ReadHeaderTimeout: time.Second}
+	t.Cleanup(func() {
+		_ = server.Close()
+	})
+	requests := make(chan *http.Request, 1)
+	server.Handler = http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests <- request.Clone(request.Context())
+		_, _ = writer.Write([]byte("object body"))
+	})
+	go func() {
+		_ = server.Serve(listener)
+	}()
+
+	port := listener.Addr().(*net.TCPAddr).Port
+	endpoint := "http://localhost:" + strconv.Itoa(port)
+	t.Setenv("AWS_ENDPOINT_URL_S3", endpoint)
+	t.Setenv("AWS_ACCESS_KEY_ID", "test-access")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "test-secret")
+	t.Setenv("AWS_SESSION_TOKEN", "")
+	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+	opened, err := Open(t.Context(), "us-east-2")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	body, err := opened.GetObject(t.Context(), "s3://bucket.with.dots/a%20key")
+	if err != nil {
+		t.Fatalf("GetObject: %v", err)
+	}
+	data, readErr := io.ReadAll(body)
+	closeErr := body.Close()
+	if readErr != nil || closeErr != nil || string(data) != "object body" {
+		t.Fatalf("response body = %q, read %v, close %v", data, readErr, closeErr)
+	}
+	select {
+	case request := <-requests:
+		if request.Host != "localhost:"+strconv.Itoa(port) || request.URL.EscapedPath() != "/bucket.with.dots/a%20key" {
+			t.Fatalf("request host/path = %q %q", request.Host, request.URL.EscapedPath())
+		}
+	case <-t.Context().Done():
+		t.Fatal("fake endpoint received no request")
+	}
+}
+
+// R-DQAX-95KH R-DRIT-MXB6 R-DV6I-S8J9
 func TestGetObjectURIResponseAndNotFound(t *testing.T) {
 	body := &trackedBody{Reader: strings.NewReader("object bytes")}
 	calls := 0
@@ -163,7 +213,7 @@ func TestGetObjectURIResponseAndNotFound(t *testing.T) {
 	}
 }
 
-// R-ANMR-IAT5
+// R-DQAX-95KH
 func TestObjectURIsRejectInvalidFormsBeforeProviderCalls(t *testing.T) {
 	var calls int
 	s3Client := &fakeS3{
@@ -221,7 +271,7 @@ func TestObjectURIsRejectInvalidFormsBeforeProviderCalls(t *testing.T) {
 	}
 }
 
-// R-ANMR-IAT5
+// R-DSQQ-0P1V
 func TestListObjectsPaginatesValidatesAndCanonicalizes(t *testing.T) {
 	firstTime := time.Date(2026, 9, 17, 1, 2, 3, 0, time.UTC)
 	secondTime := firstTime.Add(time.Minute)
@@ -267,7 +317,7 @@ func TestListObjectsPaginatesValidatesAndCanonicalizes(t *testing.T) {
 	}
 }
 
-// R-ANMR-IAT5
+// R-DSQQ-0P1V R-DV6I-S8J9
 func TestListObjectsRejectsMalformedAndPartialResponses(t *testing.T) {
 	now := time.Now()
 	valid := s3types.Object{Key: awssdk.String("key"), Size: awssdk.Int64(1), LastModified: &now}
@@ -307,7 +357,7 @@ func TestListObjectsRejectsMalformedAndPartialResponses(t *testing.T) {
 	}
 }
 
-// R-ANMR-IAT5
+// R-DTYM-EGSK R-DV6I-S8J9
 func TestReadSecretsStrictJSONMappingAndSecrecy(t *testing.T) {
 	parameter := "/ikigenba/host/notes"
 	var source string

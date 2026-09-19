@@ -57,7 +57,10 @@ func Open(ctx context.Context, region string) (cloud.Client, error) {
 	if err != nil {
 		return nil, &operationError{operation: "load AWS configuration", cause: err}
 	}
-	return newClient(awss3.NewFromConfig(cfg), awsssm.NewFromConfig(cfg)), nil
+	s3Client := awss3.NewFromConfig(cfg, func(options *awss3.Options) {
+		options.UsePathStyle = true
+	})
+	return newClient(s3Client, awsssm.NewFromConfig(cfg)), nil
 }
 
 func newClient(s3Client s3API, ssmClient ssmAPI) cloud.Client {

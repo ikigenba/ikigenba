@@ -222,7 +222,7 @@ func TestHostRestoreReplacesTreesAndPreservesArchiveMetadata(t *testing.T) {
 }
 
 func TestHostRestorePhaseFailures(t *testing.T) {
-	// R-YGCS-8A7I R-HUTO-NMJ7 R-ANMR-IAT5
+	// R-YGCS-8A7I R-HUTO-NMJ7 R-DK7F-CAV0
 	t.Run("cancellation before source selection has no failed step", func(t *testing.T) {
 		root := t.TempDir()
 		store := configuredHostStore(t, root)

@@ -21,7 +21,7 @@ import (
 var _ func(context.Context, host.Env, cloud.Env, config.Store) (backup.FileResult, error) = backup.HostBackup
 
 func TestHostBackupAPIConfigurationAndPreworkflow(t *testing.T) {
-	// R-Y5DO-SCJ9 R-YBH6-P78Q R-9TEE-6UL8 R-ANMR-IAT5
+	// R-Y5DO-SCJ9 R-YBH6-P78Q R-9TEE-6UL8 R-DK7F-CAV0
 	t.Run("prefix absent before region", func(t *testing.T) {
 		assertHostConfigurationError(t, config.Store{Root: t.TempDir()}, "backup.s3_uri not set")
 	})

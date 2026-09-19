@@ -20,7 +20,7 @@ import (
 )
 
 func TestInstallValidatesInputsAndUsesConfiguredCloud(t *testing.T) {
-	// R-H3LD-O3WP R-ANMR-IAT5
+	// R-H3LD-O3WP R-DK7F-CAV0
 	validHooks := apps.InstallHooks{
 		Report:    func(string, string, bool) error { return nil },
 		Configure: func(context.Context, apps.Manifest) error { return nil },
@@ -197,7 +197,7 @@ func TestInstallFetchLifecycleAndOutcomes(t *testing.T) {
 }
 
 func TestInstallFetchSuccessReadsCompleteObjectBeforeReporting(t *testing.T) {
-	// R-EKWN-JXML R-ANMR-IAT5
+	// R-EKWN-JXML R-DK7F-CAV0
 	data := bytes.Repeat([]byte{'x'}, 1572864)
 	reader := &trackedReadCloser{Reader: bytes.NewReader(data)}
 	store := installStore(t, map[string]string{"host.name": "host.example", "aws.region": "ap-south-1"})

@@ -53,7 +53,7 @@ func TestRestoreSourceContracts(t *testing.T) {
 }
 
 func TestRestoreSelectsSourceByArchiveTimestamp(t *testing.T) {
-	// R-FU12-UTIF R-GFZ9-QOUX R-ANMR-IAT5
+	// R-FU12-UTIF R-GFZ9-QOUX R-DK7F-CAV0
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/etc/manifest.toml", "app = \"wrong-installed-app\"\n", 0o600)
@@ -130,7 +130,7 @@ func TestRestoreNewestSourceWhenAtIsNil(t *testing.T) {
 }
 
 func TestRestorePreworkflowValidationHasNoSourceStepOrEffects(t *testing.T) {
-	// R-FST6-H1RQ R-RX15-3IAF R-G7FZ-2AO2 R-ANMR-IAT5
+	// R-FST6-H1RQ R-RX15-3IAF R-G7FZ-2AO2 R-DK7F-CAV0
 	tests := []struct {
 		name    string
 		service string

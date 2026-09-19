@@ -28,7 +28,7 @@ import (
 var _ func(context.Context, host.Env, cloud.Env, config.Store, string) ([]backup.FileResult, error) = backup.Files
 
 func TestFilesAPIAndConfigurationBoundary(t *testing.T) {
-	// R-D7XD-PK5R R-D95A-3BWG R-DAD6-H3N5 R-ANMR-IAT5
+	// R-D7XD-PK5R R-D95A-3BWG R-DAD6-H3N5 R-DK7F-CAV0
 	wantFields := []struct {
 		name string
 		typ  reflect.Type
