@@ -86,6 +86,11 @@ Each operation is a sibling skill. All five load this one for the shared rules a
 - `draft-spec` — author a design, and the `AGENTS.md` ground beside it, by recursive delegation from user stories, for one sub-project at a time. The design format and id rules it authors against are `references/design-format.md` in this skill.
 - `check-spec` — report whether the design is buildable and show the gap. Feedback only; it gates nothing and commits nothing.
 - `build-spec` — close the mechanical gap by recursive delegation.
-- `audit-spec` — audit adequacy of tests for ids already proved on both sides, by recursive delegation like `build-spec`.
+- `audit-spec` — audit adequacy of tests for ids already proved on both sides.
+
+`draft-stories`, `draft-spec`, `build-spec`, and `audit-spec` each load
+`fanout` for delegation and independent verification. Invoke the desired
+operation directly; naming `fanout` separately is unnecessary. Each operation
+supplies its own goal, completion criteria, authority, and reporting channel.
 
 `check-spec`, `build-spec`, and `audit-spec` are human-gated: an agent never starts one on its own. `build-spec` and `audit-spec` commit, edit tests, or both; `check-spec` only reports.

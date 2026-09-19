@@ -1,64 +1,93 @@
 ---
 name: audit-spec
-description: Audit test adequacy for ids already proved on both sides of the gap, by recursive delegation like build-spec — strip tags from inadequate tests once a fresh verifier confirms, file issues for untestable requirements. Human-gated; never self-invoked, since a strip re-opens the gap.
+description: Audit test adequacy for matched requirement ids using fanout. Verify findings, remove inadequate coverage tags, and file issues for untestable requirements. Human-gated; never self-invoked.
 ---
 
-# audit test adequacy
+# Audit test adequacy
 
-Load the sibling `spec` skill for the id rules, the canonical tag/grep, and the
-issue-filing rules. Audit shares its shape with `build-spec`: it reads across
-the whole design and its tests, so it is run by delegation for the same reason —
-context is the scarce resource, and an audit that reads every requirement and
-every tagged test in one context has already lost the memory it needs to judge
-the next one. Load the `build-spec` skill for the roles; audit uses them the
-same way, on the same scopes.
+Only the user starts this operation. Invoke it directly; load
+[fanout](../fanout/SKILL.md) for execution and verification and
+[spec](../spec/SKILL.md) for ids, the canonical gap, project ground, and issues.
+The root is a fanout coordinator. This skill supplies the goal below; fanout
+owns the agent roles, decomposition, ownership, verification, capacity
+handling, and repairs. It does not authorize starting `build-spec`.
 
-The mechanical gap only checks id presence. Audit judges **adequacy**: for each
-requirement, read the test(s) tagged with its id and decide whether the test
-genuinely verifies the requirement — no bare literals, no skips laundering a
-failure, assertions that actually exercise the behavior.
+## Goal and authority
 
-## Delegation
+Establish whether tests genuinely verify each id present in both design and
+the declared test-file set at the start of the audit. The mechanical gap
+establishes presence only; audit establishes adequacy.
 
-The audit is partitioned the way the build is, and for the same reason.
+Resolve the selected sub-project and confirm its absolute directory holds
+`specs/` and project ground in `AGENTS.md`; ask if the project is unidentified.
+Read applicable ancestor guidance. Supply that directory, this skill, the
+audit scope, and completion criteria to the fanout assignments. Never
+substitute repository-wide guidance for project ground.
 
-A **coordinator** holds the design set, partitions it into scopes — one design
-document, or a cluster of ids within one document whose tests overlap — and
-delegates each scope to a fresh **auditor** (never a fork; a fork inherits the
-context being protected). It holds about six children; a design with more scopes
-than that is split among sub-coordinators, so no single context accumulates a
-dozen scopes' worth of requirements and tests. The coordinator never reads a
-test itself.
+Design and ground are read-only. Writes are limited to removing inadequate
+test tags or tests and filing evidenced issues under `specs/issues/`.
+No implementation changes, replacement tests, requirement edits, or minted
+ids. Preserve unrelated test assertions and coverage tags. Evidence and
+working inventories belong in external scratch material under the
+[handoff convention](../handoff/SKILL.md#scratch-file-convention).
 
-An **auditor** holds one scope. It reads that scope's requirements and the
-test(s) tagged with their ids, and nothing more — a fact about another seam
-comes from a targeted grep, not from reading its document. For each id it judges
-adequacy and routes the finding (below). It returns a short report and nothing
-else: ids audited, ids it proposes to strip and why, and issues filed by path.
+## Audit work
 
-A strip is destructive and judgement-based, so — as in `build-spec`, where no
-work is accepted on the word of the agent that did it — every proposed strip is
-confirmed by a fresh **verifier** before it lands. The verifier reads the same
-requirement and test the auditor did and tries to prove the test is in fact
-adequate; it returns keep or strip with evidence. Only a strip that survives
-this is applied. An "adequate" verdict needs no such check — nothing destructive
-follows from it. A confirmed strip is applied within the scope that owns the
-test (the auditor's scope), never by the coordinator.
+Delegate inventory of the initial matched ids and canonical gap, identifying
+the artifact state. Partition adequacy work by requirements and overlapping
+tests, with explicit ownership of shared files. Existing unmatched ids remain
+build work; do not widen the audit to implement them.
 
-Because a strip re-opens an id, the coordinator reruns the canonical gap greps
-after its children return, so its report shows the audit's net effect on the
-gap. The next `build-spec` run rebuilds every re-opened id.
+For each assigned id, inspect its requirement, all tagged tests contributing
+to its coverage, and relevant existing implementation or fixtures needed to
+judge their assertions. Determine whether tests exercise and assert the
+required behavior, rather than relying on bare literals, irrelevant assertions,
+or skips that conceal failure. Assess their combined coverage: several tests
+may together prove a requirement even when no single test proves it all.
+Report the evidence for each finding.
 
-## Routing a finding
+Every audit result receives fresh independent verification, including an
+"adequate" verdict. For a proposed removal the verifier challenges the
+finding by trying to establish that the existing test is adequate. No removal
+lands before that finding passes verification.
 
-Route each finding by the in-role/out-of-role line:
+Route verified findings:
 
-- **In-role** (test inadequate, but the requirement is fine and testable): strip
-  the id tag from (or delete) the inadequate test — once a fresh verifier
-  confirms it. That re-opens the id in the next gap, so the next `build-spec`
-  run rebuilds it. Because stripping is destructive and judgement-based, the
-  auditor records what was stripped and why in its report (git holds the
-  reversal).
-- **Out-of-role** (the requirement itself cannot really be tested, or the
-  design/seam is wrong): file an issue under `specs/issues/` per the `spec`
-  skill's "Filing an issue". It needs a design change, not another build turn.
+- **Coverage incomplete, requirement testable:** an owning leaf removes that
+  requirement's tags from the declared test set so the id reopens. Preserve
+  useful partial assertions and other ids for the subsequent build to use.
+- **Coverage complete, but a tag is irrelevant:** remove only the unsupported
+  tag; retain tags contributing to the verified complete coverage.
+- **Requirement untestable or contract cannot be satisfied:** file an evidenced
+  issue under spec's rules. Validate it as a blocker and use fanout's halt
+  behavior; the audit cannot redesign the contract.
+- **Test adequate:** retain it and record the verified evidence.
+
+Do not repair tests here. Delete a test only when doing so loses no useful
+assertions or other coverage. Verify every applied removal against its
+confirmed finding. Removing an irrelevant tag does not reopen an id still
+adequately covered elsewhere; report the actual net gap change.
+
+## Completion criteria
+
+Verification must establish:
+
+- Every initially matched id has a supported adequacy verdict, or a specific
+  evidenced blocker explaining why the audit is incomplete.
+- Adequate verdicts and proposed removals were independently challenged.
+- Applied removals match confirmed findings and preserve unrelated assertions
+  and adequate coverage; tests were not silently repaired.
+- Design, ground, and implementation remain unchanged.
+- A final canonical gap measurement reports the actual net effect of edits
+  against an identified artifact state.
+
+Delegate final gap measurement and any checks needed for the applied removals
+as bounded assignments. The root accepts verified evidence; it does not
+inspect all tests or repeat the audit. If no ids are matched, report the
+verified inventory without mutations.
+
+Report audited and retained ids, removed tags/tests and reasons, newly opened
+ids, the remaining gap, evidence locations, and issues. A confirmed blocker
+halts delegation and active descendants under fanout; report completed and
+remaining work without claiming a complete audit. The user may next invoke
+`build-spec` to close reopened ids; do not invoke it automatically.

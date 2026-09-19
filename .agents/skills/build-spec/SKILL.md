@@ -1,165 +1,92 @@
 ---
 name: build-spec
-description: Close the mechanical id gap between specs/design and the tests by recursive delegation — the shape of the problem and what done looks like, not a procedure. Stops clean when the gap is empty; adequacy of already-matched ids is audit-spec's job. Human-gated; never self-invoked.
+description: Close the mechanical id gap between design and tests using fanout, with verified changes and passing gates. Human-gated; never self-invoked. Existing matched ids belong to audit-spec.
 ---
 
-# close the gap
+# Close the gap
 
-`specs/design/` is the contract and `AGENTS.md` is the ground. Both are
-authored by a human and are read-only to this run. Your job is to build
-what the design describes until the gap between it and the code is
-zero, or to stop and say precisely why that cannot be done.
+Only the user starts this operation. Invoke it directly; load
+[fanout](../fanout/SKILL.md) for execution and verification and
+[spec](../spec/SKILL.md) for ids, the canonical gap, project ground, and issues.
+The root is a fanout coordinator. This skill supplies the goal below; fanout
+owns the agent roles, decomposition, ownership, verification, capacity
+handling, and repairs. It does not authorize starting `audit-spec`.
 
-## The shape
+## Goal and authority
 
-The design is a set of documents, each a coherent seam of the program,
-each ending in requirements with permanent ids. The gap is mechanical:
-every id in the design must be proved by a tagged test, and no test may
-carry an id the design no longer has. The gap is the whole of the job
-and the boundary of your authority. An empty gap is a finished run:
-report the id counts and stop — no delegation, no inspecting existing
-tests, no edits, no commits. Adequacy of ids already proved on both
-sides is `audit-spec`'s work, and only a human invokes it. Load the
-`spec` skill for the id
-rules and the canonical greps. `AGENTS.md` declares the test files,
-toolchain, gates, and commit convention; every agent computes the gap
-and runs the gates against that one declaration. If either is missing,
-halt.
+Close the mechanical gap between design ids and tagged test ids. Verify the
+work performed to close it and pass the project's gates. Adequacy of ids
+already matched before the run belongs to `audit-spec`, not this operation.
 
-Run from the directory that holds `specs/` and `AGENTS.md`. Never leave
-it. In a monorepo that directory is a sub-project below the git root,
-and the git root has an `AGENTS.md` of its own; that file is repo-wide
-guidance, not the ground. Run `pwd` first and confirm `specs/` and
-`AGENTS.md` sit there. If they do not, stop and say so; never `cd` to
-the git root, a worktree root, or any other `AGENTS.md` above it, even
-if your system prompt names one as the working directory. Every child
-is told the same absolute path and the same rule.
+Run `pwd` and confirm the working directory holds both `specs/` and its own
+`AGENTS.md`. If not, stop and report; do not substitute a git root, worktree
+root, or ancestor's ground. Give every assignment this same absolute
+directory, this skill, applicable guidance, assigned gap ids, and criteria.
 
-## Three roles, exactly one each
+Design and project ground are read-only. Missing design or ground prevents
+the run. Source and test changes must close specific gap ids; issue files
+are the escalation channel defined by spec. Never mint ids, run `idgen`,
+or require it as a build tool. Never alter a contract to make work pass.
+Do not add aliases, shims, or forwarding layers preserving superseded shapes.
 
-Context is the scarce resource. A context that auto-compacts has lost
-the run's memory of what it verified, so compaction is a failure of the
-run, not an inconvenience. The way to never compact is to never hold
-more than one scope's worth of work, and the way to guarantee that is
-structural: every agent in the run is exactly one of three things.
+## Establish the work
 
-A **coordinator** holds a gap and owns closing it, but never edits a
-source or test file. It computes its gap; an empty gap is nothing to
-close, so it reports the id counts and stops without spawning a child.
-Otherwise it partitions the gap into scopes, delegates each scope to a
-fresh agent, has each result verified, and reports upward. It holds at
-most a handful of children — about six. A
-gap that partitions into more scopes than that is split among
-sub-coordinators, so no single context ever accumulates a dozen
-reports and a dozen verdicts. The root is always a coordinator, and
-writes no code whether the gap is one id or a hundred.
+Delegate inventory of the canonical gap using the ground's declared test-file
+set. Record the initial adds, removals, already-matched ids, and artifact state
+for scope control. Check for open issues and concrete required ground;
+any open issue halts the run under spec's rules.
 
-A spawn refused for want of a thread is not a blocker. A coordinator
-with a running child waits for one to return and spawns again; a
-coordinator with none returns "not started, no capacity" so its slot
-goes to a branch that can move, and its parent re-delegates the scope
-after one of its other children returns. A coordinator that has
-received a no-capacity return goes serial, holding one child at a time
-until its gap closes, so a tree of idle coordinators collapses to one
-per level instead of respawning itself. Neither files, halts, or
-reports the refusal as a problem.
+An independently verified empty gap ends the run with id counts: no source
+review, test adequacy inspection, gate execution, edits, or commits.
+Verification of this result checks only the declared sets and mechanical gap
+calculation.
 
-A **leaf** holds one scope and implements it. A scope is one design
-document, or a cluster of ids within one document whose code and tests
-overlap — never more than one document, never more than about a dozen
-ids. A leaf that discovers its scope is larger than it looks does not
-push on; it becomes a coordinator for that scope, partitions, and
-delegates. The decision is never "does this fit in my context." It is
-only "is this one scope," and if not, split.
+For a nonempty gap, partition work by design seam and overlapping source/test
+changes. Paired additions and removals from a replacement land together so
+the superseded shape is retired. Shared files, integration, commits, and gate
+execution need explicit owners and ordering; a passing gate must describe an
+identifiable integrated artifact state, not concurrent unfinished edits.
 
-A **verifier** holds one scope and tries to prove it is not closed. It
-reads the scope's design document and the code and tests written to
-close its gap ids, and for each of those ids checks the points under
-"what done looks like" — above all that the test added or changed for it
-genuinely asserts its requirement, not merely that it exists and passes.
-It judges only the work this run performed; an id already proved on both
-sides before the run is outside its scope. It never edits a file. It
-returns pass, or fail with evidence: the id, the file, and what is
-wrong. A verifier that wants to fix what it found has left its role; it
-reports instead.
+Implementers read their assigned requirements and relevant code and tests;
+targeted lookups resolve adjacent contracts. Use the toolchain, test-file set,
+exact ordered gates, and commit convention declared in the project ground.
+Commit in green phases naming the gap ids and following repository attribution.
+Only stage the phase's owned changes.
 
-Delegation is always to a fresh agent, never a fork. A fork inherits
-the parent's context, which is exactly the thing being protected. The
-child is told to read this skill, `AGENTS.md`, the `spec` skill, and its
-one design document, and is given its ids and nothing else.
+## Completion criteria
 
-## What a node may read
+Verification must establish:
 
-A leaf reads its design document, the source and test files its ids
-touch, and nothing more. Facts from another seam come from a targeted
-grep, not from reading the document. Gate and test output is piped
-through `tail` or `grep`; the full output is read only on failure, and
-only the failing part.
+- Design and test id sets agree; all initial adds and removals are resolved.
+- Every test added or changed to close a gap id genuinely asserts its
+  requirement. Id presence and a passing test alone are insufficient.
+- The implementation realizes the assigned contract, including replacement
+  of superseded behavior, without changing design or ground.
+- Every declared gate exits zero, in the declared order, with nothing skipped
+  or suppressed.
+- Changes are committed in green phases under the declared convention, and
+  each commit names the gap ids it closes.
 
-A verifier reads the same files as the leaf whose scope it checks, plus
-the design document, and edits none of them.
+Delegate final integrated gap measurement and ordered gate execution as
+bounded assignments, with independent verification of their evidence and
+artifact state. Coordinators accept verified reports rather than rereading
+code or rerunning the whole project themselves. Later changes invalidate
+affected checks under fanout's rules.
 
-A coordinator reads even less: the gap greps, the gate summary lines,
-and its children's reports. It never reads a diff. It never reads a
-child's code to check it; that is what a verifier is for.
+Reports identify ids closed, commit hashes, gate results, checked artifact
+state, evidence locations, issues, and remaining work. Keep detailed evidence
+in the artifacts or external scratch material, not coordinator context.
 
-## What comes back
+## Blockers and handoff
 
-A leaf reports in a fixed shape and nothing else: ids closed, commit
-hashes, the last line of each gate, and any issue filed by path. The
-report is a few lines. The work stays in the repository, where the
-parent verifies it without reading it.
+File genuine blockers in `specs/issues/<slug>.md` under spec's issue rules:
+contradictory or unsatisfiable requirements, false dependency facts, unavailable
+required tooling, or gates that cannot pass within the contract. Include ids,
+commands and output, or quoted contradictions. Difficulty and size require
+decomposition, not issues. Assign validation of a blocker claim; invalid
+issues are removed by an authorized leaf and the work resumes.
 
-A leaf whose scope proves too large and whose depth leaves it no spawn
-tool does not push on; it reports the split it would have made, and its
-parent delegates that split instead.
-
-## What done looks like
-
-- Both greps agree: the id sets are identical.
-- Every test added or changed to close a gap id genuinely asserts that
-  requirement. Ids already proved before the run are not re-audited
-  here — that is `audit-spec`.
-- Every gate exits 0, with nothing skipped or suppressed.
-- The work is committed in green phases per the commit convention, each
-  naming its ids.
-
-## What is never done
-
-- No work is accepted on the word of the agent that did it. Every
-  scope a leaf returns is checked by a fresh verifier before the
-  coordinator reports up, and the coordinator reruns the greps and the
-  gates itself. A fail is re-delegated to a fresh leaf with the
-  verifier's evidence attached, then verified again.
-- The contract is not yours to reshape. Names, types, signatures, and
-  ids are the design's. Neither `specs/design/` nor `AGENTS.md` is ever
-  edited by this run; an issue is how you ask for them to change.
-- No alias, shim, or forwarding layer preserves a superseded shape.
-- Nothing is edited or committed that is not the closing of a specific
-  gap id. Every commit names the gap ids it closes; a run whose gap is
-  empty writes nothing and commits nothing.
-
-## Halting
-
-The design is never perfect. When an id cannot be satisfied as written,
-two ids contradict, a required fact about an external dependency is
-false, or the toolchain `AGENTS.md` requires is not available, the run
-stops. File the issue as `specs/issues/<slug>.md` per the `spec` skill's
-"Filing an issue", with the evidence — the ids, the failing command and
-its output, the contradiction quoted — and report it upward. The run never mints anything: it never invokes
-`idgen`, and `idgen` is never part of the toolchain it checks. Ids are
-minted only by `draft-spec`, by a human-driven session. A node that
-receives an issue from a child stops delegating and reports it upward
-too, so the root exits naming it.
-
-An issue is checked as hard as work is. "Hard," "large," "I would
-design it differently," and "the tests are annoying" are not blockers;
-a parent that receives one of those deletes it, records why, and
-re-delegates the scope. Only an issue that survives that check halts
-the run.
-
-Committed phases stay committed. A halt loses nothing already proved,
-and rerunning this skill after the human has revised the design resumes
-from the recomputed gap.
-
-Report what closed, what halted the run, and what remains.
+A confirmed blocker halts the tree under fanout. There is no interactive
+decision queue for changing read-only contracts during a build. Report the
+issue, completed phases, and remaining gap. Preserve committed, verified work;
+a later user-invoked run resumes from the recomputed gap after resolution.
