@@ -88,6 +88,7 @@ func TestNginxPackageOwnsRenderingWithOnlyApprovedInternalDependencies(t *testin
 }
 
 func TestRenderHasExportedContract(t *testing.T) {
+	// R-NH7K-2R1K
 	t.Parallel()
 	assertRenderSignature(t, nginx.Render)
 }
@@ -402,8 +403,8 @@ func TestApplyRejectsMissingExecutionDependencyWithoutPublishing(t *testing.T) {
 	assertPublishedConfiguration(t, configurationDirectory, []byte("previous\n"), 0o600)
 }
 
-// R-575I-X9KF
-// R-QC9K-4BIS
+// R-NIFG-GIS9
+// R-NJNC-UAIY
 func TestPublicationFunctionsHaveExportedContracts(t *testing.T) {
 	t.Parallel()
 	assertApplySignature(t, nginx.Apply)
