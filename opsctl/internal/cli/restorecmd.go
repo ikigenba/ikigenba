@@ -52,7 +52,15 @@ type restoreInvocation struct {
 	at      *time.Time
 }
 
+type restoreStore interface {
+	Get(string) (string, error)
+}
+
 func runRestore(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
+	return runRestoreWithStore(args, stdout, stderr, deps, config.Store{Root: deps.Root})
+}
+
+func runRestoreWithStore(args []string, stdout, stderr io.Writer, deps Deps, store restoreStore) exitCode {
 	if len(args) == 1 && isCommandHelp(args) {
 		return writeOut(stdout, restoreUsage)
 	}
@@ -64,7 +72,6 @@ func runRestore(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 		return code
 	}
 
-	store := config.Store{Root: deps.Root}
 	hostName, err := store.Get("host.name")
 	hostName = host.NormalizeName(hostName)
 	if err != nil || hostName == "" {
@@ -88,7 +95,7 @@ func runRestore(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	}
 	env := host.Env{Root: deps.Root, Getenv: deps.Getenv, Execute: deps.Execute, Now: deps.Now}
 	report, runErr := backup.Restore(
-		context.Background(), env, deps.Cloud, store, invocation.service, invocation.at,
+		context.Background(), env, deps.Cloud, config.Store{Root: deps.Root}, invocation.service, invocation.at,
 		func(ctx context.Context) error { return nginx.Write(ctx, env, hostName, apexApp) },
 	)
 	return renderRestoreOutcome(stdout, stderr, invocation.service, report, runErr)

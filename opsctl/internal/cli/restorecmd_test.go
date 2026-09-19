@@ -366,6 +366,41 @@ func TestRestoreCommandRequiresHostNameBeforeDomainAccess(t *testing.T) {
 	}
 }
 
+func TestRestoreCommandReportsHostApexReadFailure(t *testing.T) {
+	// R-X7Z1-KY06
+	root := t.TempDir()
+	var keys []string
+	store := restoreStoreFunc(func(key string) (string, error) {
+		keys = append(keys, key)
+		if key == "host.name" {
+			return "host.example.test", nil
+		}
+		return "", errors.New("apex read failed")
+	})
+	used := false
+	deps := Deps{
+		Root: root,
+		EUID: 0,
+		Execute: func(context.Context, host.Command) (host.Result, error) {
+			used = true
+			return host.Result{}, errors.New("unexpected process access")
+		},
+		Cloud: cloud.Env{Open: func(context.Context, string) (cloud.Client, error) {
+			used = true
+			return nil, errors.New("unexpected cloud access")
+		}},
+	}
+	var stdout, stderr bytes.Buffer
+	code := runRestoreWithStore([]string{"notes"}, &stdout, &stderr, deps, store)
+	wantErr := "opsctl: config get failed for \"" + filepath.Join(root, "etc/ikigenba/config.json") + "\": apex read failed\n"
+	if code != exitFail || stdout.String() != "" || stderr.String() != wantErr || used {
+		t.Fatalf("host.apex read failure = exit %d stdout %q stderr %q used %v", code, stdout.String(), stderr.String(), used)
+	}
+	if !reflect.DeepEqual(keys, []string{"host.name", "host.apex"}) {
+		t.Fatalf("configuration reads = %v, want host.name then host.apex", keys)
+	}
+}
+
 func TestRestoreCommandRejectsApexWithoutParentBeforeRestore(t *testing.T) {
 	// R-X7Z1-KY06
 	root := configuredBackupRoot(t)
@@ -450,6 +485,10 @@ func TestRestoreReportWriteFailureIsOperational(t *testing.T) {
 type failingRestoreWriter struct{}
 
 func (failingRestoreWriter) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
+
+type restoreStoreFunc func(string) (string, error)
+
+func (f restoreStoreFunc) Get(key string) (string, error) { return f(key) }
 
 func makeRestoreCLITar(t *testing.T, name, content string) []byte {
 	return makeRestoreCLIArchive(t, map[string]string{name: content})
