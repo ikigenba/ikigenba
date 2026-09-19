@@ -195,6 +195,79 @@ func TestDNSCommandsOpenConfiguredStore(t *testing.T) {
 	}
 }
 
+func TestDNSOperationsIgnoreHostNameForZoneSelection(t *testing.T) {
+	// R-TM8I-II7H
+	provider := &fakeDNSProvider{records: map[string][]dns.Record{
+		"ZONE": {
+			{Name: "ikigenba.dev", Type: "SOA"},
+			{Name: "ikigenba.dev", Type: "NS", TTL: 300, Values: []string{"ns.ikigenba.dev"}},
+		},
+	}}
+	deps := configuredDNSDeps(t, provider, "ikigenba.dev")
+	store := config.Store{Root: deps.Root}
+	if err := store.Set("host.name", "sbx.ikigenba.dev"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("other.zone", "outside.invalid"); err != nil {
+		t.Fatal(err)
+	}
+	deps.DNS.LookupNS = func(_ context.Context, zone string) ([]string, error) {
+		if zone != "ikigenba.dev" {
+			t.Fatalf("resolver zone = %q, want configured zone", zone)
+		}
+		return []string{"ns.ikigenba.dev"}, nil
+	}
+	deps.Getenv = func(key string) string {
+		if key == "CERTBOT_DOMAIN" {
+			return "ikigenba.dev"
+		}
+		return "hook-token"
+	}
+
+	cases := []struct {
+		args       []string
+		wantStdout string
+	}{
+		{[]string{"dns", "list", "ikigenba.dev"}, "ikigenba.dev NS 300 ns.ikigenba.dev\n"},
+		{[]string{"dns", "add", "other-space.ikigenba.dev", "TXT", "add-token"}, ""},
+		{[]string{"dns", "remove", "other-space.ikigenba.dev", "TXT", "remove-token"}, ""},
+		{[]string{"dns", "check"}, "ikigenba.dev: ok (route53 ZONE, 1 nameservers delegated)\n"},
+		{[]string{"dns", "acme-auth"}, ""},
+		{[]string{"dns", "acme-cleanup"}, ""},
+	}
+	for _, tc := range cases {
+		stdout, stderr, code := invoke(tc.args, deps)
+		if code != 0 || stdout != tc.wantStdout || stderr != "" {
+			t.Errorf("%q: exit %d stdout %q stderr %q, want stdout %q", tc.args, code, stdout, stderr, tc.wantStdout)
+		}
+	}
+
+	if len(provider.adds) != 2 || provider.adds[0].zoneID != "ZONE" ||
+		provider.adds[0].name != "other-space.ikigenba.dev" || provider.adds[1].zoneID != "ZONE" ||
+		provider.adds[1].name != "_acme-challenge.ikigenba.dev" {
+		t.Errorf("adds = %#v, want both names in configured root zone", provider.adds)
+	}
+	if len(provider.removes) != 2 || provider.removes[0].zoneID != "ZONE" ||
+		provider.removes[0].name != "other-space.ikigenba.dev" || provider.removes[1].zoneID != "ZONE" ||
+		provider.removes[1].name != "_acme-challenge.ikigenba.dev" {
+		t.Errorf("removes = %#v, want both names in configured root zone", provider.removes)
+	}
+
+	rejectedProvider := &fakeDNSProvider{}
+	rejectedDeps := configuredDNSDeps(t, rejectedProvider, "other.test")
+	if err := (config.Store{Root: rejectedDeps.Root}).Set("host.name", "sbx.ikigenba.dev"); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, code := invoke(
+		[]string{"dns", "add", "_acme-challenge.ikigenba.dev", "TXT", "token"},
+		rejectedDeps,
+	)
+	wantErr := "opsctl: no configured zone contains '_acme-challenge.ikigenba.dev'\n\nconfigured zones: other.test\n"
+	if code != 2 || stdout != "" || stderr != wantErr || len(rejectedProvider.adds) != 0 {
+		t.Errorf("host-only zone: exit %d stdout %q stderr %q calls %#v", code, stdout, stderr, rejectedProvider.adds)
+	}
+}
+
 func TestDNSList(t *testing.T) {
 	// R-LL9R-Z1NJ
 	// R-FME9-L6OR
