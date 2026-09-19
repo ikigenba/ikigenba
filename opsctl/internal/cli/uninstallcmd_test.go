@@ -312,7 +312,7 @@ func TestUninstallRejectsApexReadFailureBeforeEffects(t *testing.T) {
 }
 
 func TestUninstallNormalizesHostAndPreservesApexConfiguration(t *testing.T) {
-	// R-X4BC-FMS3 R-X6R5-769H
+	// R-X4BC-FMS3 R-X6R5-769H R-JE5P-1F05
 	root := uninstallCommandRoot(t, true)
 	store := config.Store{Root: root}
 	if err := store.Set("host.name", "SBX.Example.Test."); err != nil {
