@@ -34,14 +34,10 @@ The nginx configuration and /etc/litestream.yml are regenerated from every app
 left on the host, so APP's name stops answering, and a database APP declared
 stops being replicated once litestream has shipped what it holds.
 
-The parameter /ikigenba/<host.name>/APP is not touched: it is devctl's.
+The parameter /<host.name>/APP is not touched: it is devctl's.
 
 Configuration keys:
   host.name  the fully-qualified name this host answers at
-  aws.region  the region the backup bucket lives in
-  backup.s3_uri  the prefix this host backs up to
-  backup.service_db_seconds  how often a declared database is snapshotted whole
-  backup.service_wal_seconds  how often a declared database's committed changes are shipped
 `
 
 func runLifecycleAction(name string, args []string, stdout, stderr io.Writer, deps Deps) exitCode {
@@ -78,12 +74,25 @@ func runUninstall(app string, stdout, stderr io.Writer, deps Deps) exitCode {
 
 	store := config.Store{Root: deps.Root}
 	hostName, err := store.Get("host.name")
+	hostName = host.NormalizeName(hostName)
 	if err != nil || hostName == "" {
 		if err == nil || errors.Is(err, config.ErrNotSet) {
 			writeDiagnostic(stderr, errors.New("host.name not set"))
 			return exitFail
 		}
 		return configActionErr(stderr, "get", deps, err)
+	}
+	apexApp, err := store.Get("host.apex")
+	if errors.Is(err, config.ErrNotSet) {
+		apexApp = ""
+	} else if err != nil {
+		return configActionErr(stderr, "get", deps, err)
+	}
+	if apexApp != "" {
+		if _, err := host.Apex(hostName); err != nil {
+			writeDiagnostic(stderr, fmt.Errorf("host.apex is set but host.name '%s' has no parent domain", hostName))
+			return exitFail
+		}
 	}
 
 	env := host.Env{Root: deps.Root, Getenv: deps.Getenv, Execute: deps.Execute, Now: deps.Now}
@@ -95,7 +104,7 @@ func runUninstall(app string, stdout, stderr io.Writer, deps Deps) exitCode {
 	err = apps.Uninstall(context.Background(), env, app, apps.UninstallHooks{
 		Report: report,
 		Configure: func(ctx context.Context, manifest apps.Manifest) error {
-			return configureUninstalledApp(ctx, env, store, hostName, manifest, report)
+			return configureUninstalledApp(ctx, env, store, hostName, apexApp, manifest, report)
 		},
 	})
 	if err == nil {
@@ -120,17 +129,25 @@ func configureUninstalledApp(
 	env host.Env,
 	store config.Store,
 	hostName string,
+	apexApp string,
 	manifest apps.Manifest,
 	report func(string, string, bool) error,
 ) error {
-	nginxDetail := manifest.App + "." + hostName + " removed"
+	names := manifest.App + "." + hostName
 	if manifest.Default {
-		nginxDetail = manifest.App + "." + hostName + ", " + hostName + " removed"
+		names += ", " + hostName
 	}
-	if err := nginx.Apply(ctx, env, hostName); err != nil {
+	if manifest.App == apexApp {
+		apexName, err := host.Apex(hostName)
+		if err != nil {
+			return reportLifecycleConfigurationFailure(report, "nginx", err)
+		}
+		names += ", " + apexName
+	}
+	if err := nginx.Apply(ctx, env, hostName, apexApp); err != nil {
 		return reportLifecycleConfigurationFailure(report, "nginx", err)
 	}
-	if err := report("nginx", nginxDetail, true); err != nil {
+	if err := report("nginx", names+" removed", true); err != nil {
 		return err
 	}
 

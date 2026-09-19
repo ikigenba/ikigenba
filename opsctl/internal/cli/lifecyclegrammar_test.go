@@ -21,14 +21,10 @@ The nginx configuration and /etc/litestream.yml are regenerated from every app
 left on the host, so APP's name stops answering, and a database APP declared
 stops being replicated once litestream has shipped what it holds.
 
-The parameter /ikigenba/<host.name>/APP is not touched: it is devctl's.
+The parameter /<host.name>/APP is not touched: it is devctl's.
 
 Configuration keys:
   host.name  the fully-qualified name this host answers at
-  aws.region  the region the backup bucket lives in
-  backup.s3_uri  the prefix this host backs up to
-  backup.service_db_seconds  how often a declared database is snapshotted whole
-  backup.service_wal_seconds  how often a declared database's committed changes are shipped
 `
 
 const wantRestartUsage = `Usage: opsctl restart APP
@@ -56,7 +52,7 @@ database are facts about the host, not failures of this command.
 `
 
 func TestUninstallHelpIsExactAndHostIndependent(t *testing.T) {
-	// R-017J-COZA
+	// R-J9A3-IC1D
 	assertLifecycleHelp(t, "uninstall", wantUninstallUsage)
 }
 

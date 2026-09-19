@@ -14,7 +14,7 @@ import (
 )
 
 func TestUninstallAPISignatureAndCompleteDomainWorkflow(t *testing.T) {
-	// R-LONI-RKQN R-AMEV-4J2G
+	// R-LONI-RKQN R-X6R5-769H
 	want := reflect.TypeFor[func(context.Context, host.Env, string, apps.UninstallHooks) error]()
 	if got := reflect.TypeOf(apps.Uninstall); got != want {
 		t.Fatalf("Uninstall type = %v, want %v", got, want)
@@ -41,7 +41,7 @@ func TestUninstallAPISignatureAndCompleteDomainWorkflow(t *testing.T) {
 }
 
 func TestUninstallRejectsEveryMissingPrerequisiteBeforeEffects(t *testing.T) {
-	// R-M0UI-LA5L
+	// R-X4BC-FMS3
 	for _, test := range []struct {
 		name   string
 		mutate func(*testing.T, *uninstallFixture)

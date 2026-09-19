@@ -47,7 +47,7 @@ func TestLifecyclePackageOwnership(t *testing.T) {
 }
 
 func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
-	// R-LM7Q-0199 R-M5Q4-4D4D R-M6Y0-I4V2 R-IKX4-P2D6
+	// R-LM7Q-0199 R-M6Y0-I4V2 R-JE5P-1F05 R-X6R5-769H
 	root := uninstallCommandRoot(t, true)
 	var commands []host.Command
 	otherBefore := snapshotUninstallPaths(t, root, "opt/tasks", "etc/systemd/system/ikigenba-tasks.service")
@@ -168,7 +168,7 @@ func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
 }
 
 func TestUninstallValidationPrecedesOwnedStopStage(t *testing.T) {
-	// R-LZMM-7IEW R-EX3N-DN1J
+	// R-LZMM-7IEW R-EX3N-DN1J R-X4BC-FMS3
 	for _, test := range []struct {
 		name       string
 		app        string
@@ -238,6 +238,69 @@ func TestUninstallValidationPrecedesOwnedStopStage(t *testing.T) {
 	}})
 	if code != 0 || stdout != "service: ok (notes v2.3.4 active)\n" || stderr != "" || len(restartCommands) != 3 {
 		t.Fatalf("restart workflow = exit %d stdout %q stderr %q commands %#v", code, stdout, stderr, restartCommands)
+	}
+}
+
+func TestUninstallNormalizesHostAndPreservesApexConfiguration(t *testing.T) {
+	// R-X4BC-FMS3 R-X6R5-769H
+	root := uninstallCommandRoot(t, true)
+	store := config.Store{Root: root}
+	if err := store.Set("host.name", "SBX.Example.Test."); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("host.apex", "notes"); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr, code := invoke([]string{"uninstall", "notes"}, cli.Deps{Root: root, EUID: 0, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+		if reflect.DeepEqual(command.Args, []string{"is-active", "ikigenba-notes.service"}) {
+			return host.Result{Stdout: []byte("inactive\n"), ExitCode: 3}, nil
+		}
+		return host.Result{}, nil
+	}})
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "nginx: ok (notes.sbx.example.test, sbx.example.test, example.test removed)\n") {
+		t.Fatalf("uninstall = exit %d stdout %q stderr %q", code, stdout, stderr)
+	}
+	if got, err := store.Get("host.apex"); err != nil || got != "notes" {
+		t.Fatalf("host.apex = %q, %v", got, err)
+	}
+	configuration := readUninstallFile(t, root, "etc/nginx/conf.d/ikigenba.conf")
+	apexFallback := false
+	for _, block := range strings.Split(configuration, "server {") {
+		if strings.Contains(block, "example.test;") && strings.Contains(block, "return              404;") {
+			apexFallback = true
+		}
+	}
+	if !apexFallback {
+		t.Fatalf("apex fallback was not rendered: %q", configuration)
+	}
+}
+
+func TestUninstallRejectsConfiguredApexWithoutParentBeforeEffects(t *testing.T) {
+	// R-X5J8-TEIS
+	root := uninstallCommandRoot(t, true)
+	store := config.Store{Root: root}
+	if err := store.Set("host.name", "EXAMPLE.TEST."); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("host.apex", "notes"); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotUninstallPaths(t, root, "opt/notes", "etc/systemd/system/ikigenba-notes.service", "etc/nginx/conf.d/ikigenba.conf", "etc/litestream.yml")
+	executed := false
+	stdout, stderr, code := invoke([]string{"uninstall", "notes"}, cli.Deps{Root: root, EUID: 0, Execute: func(context.Context, host.Command) (host.Result, error) {
+		executed = true
+		return host.Result{}, nil
+	}})
+	if code != 1 || stdout != "" || stderr != "opsctl: host.apex is set but host.name 'example.test' has no parent domain\n" || executed {
+		t.Fatalf("uninstall = exit %d stdout %q stderr %q executed %t", code, stdout, stderr, executed)
+	}
+	after := snapshotUninstallPaths(t, root, "opt/notes", "etc/systemd/system/ikigenba-notes.service", "etc/nginx/conf.d/ikigenba.conf", "etc/litestream.yml")
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("host state changed:\nbefore %#v\nafter  %#v", before, after)
+	}
+	if got, err := store.Get("host.apex"); err != nil || got != "notes" {
+		t.Fatalf("host.apex = %q, %v", got, err)
 	}
 }
 
@@ -399,7 +462,7 @@ func assertNoLifecycleCommandsAfter(t *testing.T, stage string, commands []host.
 }
 
 func TestUninstallWithoutStateDoesNotCreateDiscoverableService(t *testing.T) {
-	// R-IKX4-P2D6
+	// R-JE5P-1F05
 	root := uninstallCommandRoot(t, false)
 	stdout, stderr, code := invoke([]string{"uninstall", "notes"}, cli.Deps{Root: root, EUID: 0, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
 		if reflect.DeepEqual(command.Args, []string{"is-active", "ikigenba-notes.service"}) {
