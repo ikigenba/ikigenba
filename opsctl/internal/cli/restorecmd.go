@@ -65,14 +65,31 @@ func runRestore(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	}
 
 	store := config.Store{Root: deps.Root}
-	hostName, code := certConfigValue(store, "host.name", stderr, deps)
-	if code != exitOK {
-		return code
+	hostName, err := store.Get("host.name")
+	hostName = host.NormalizeName(hostName)
+	if err != nil || hostName == "" {
+		if err == nil || errors.Is(err, config.ErrNotSet) {
+			writeDiagnostic(stderr, errors.New("host.name not set"))
+			return exitFail
+		}
+		return configActionErr(stderr, "get", deps, err)
+	}
+	apexApp, err := store.Get("host.apex")
+	if errors.Is(err, config.ErrNotSet) {
+		apexApp = ""
+	} else if err != nil {
+		return configActionErr(stderr, "get", deps, err)
+	}
+	if apexApp != "" {
+		if _, err := host.Apex(hostName); err != nil {
+			writeDiagnostic(stderr, fmt.Errorf("host.apex is set but host.name '%s' has no parent domain", hostName))
+			return exitFail
+		}
 	}
 	env := host.Env{Root: deps.Root, Getenv: deps.Getenv, Execute: deps.Execute, Now: deps.Now}
 	report, runErr := backup.Restore(
 		context.Background(), env, deps.Cloud, store, invocation.service, invocation.at,
-		func(ctx context.Context) error { return nginx.Write(ctx, env, hostName) },
+		func(ctx context.Context) error { return nginx.Write(ctx, env, hostName, apexApp) },
 	)
 	return renderRestoreOutcome(stdout, stderr, invocation.service, report, runErr)
 }

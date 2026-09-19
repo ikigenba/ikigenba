@@ -155,10 +155,13 @@ func TestRestoreInvalidNonRootInvocationReportsGrammarBeforeRefusal(t *testing.T
 }
 
 func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
-	// R-Y6DK-8M4L
+	// R-X7Z1-KY06
 	root := configuredBackupRoot(t)
 	store := config.Store{Root: root}
-	if err := store.Set("host.name", "host.example.test"); err != nil {
+	if err := store.Set("host.name", "HOST.Example.Test."); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("host.apex", "notes"); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(root, "etc/nginx/conf.d"), 0o750); err != nil {
@@ -167,7 +170,10 @@ func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
 	client := newHostCLICloud()
 	stamp := "2026-09-16T10:00:00Z"
 	uri := "s3://backups.example/host/notes/" + stamp + ".tar.zst"
-	archive := makeRestoreCLITar(t, "state/value", "restored")
+	archive := makeRestoreCLIArchive(t, map[string]string{
+		"etc/manifest.toml": "port = 4100\n",
+		"state/value":       "restored",
+	})
 	client.objects[uri] = append([]byte{0x28, 0xb5, 0x2f, 0xfd}, archive...)
 	var commands []string
 	executeZstd := roundTripZstdExecute(nil)
@@ -184,7 +190,7 @@ func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
 	stdout, stderr, code := invokeBackupCLI([]string{"restore", "--at", "2026-09-16T10:30:00Z", "notes"}, hostCLIDeps(root, client, execute))
 	want := "source: ok (notes/" + stamp + ".tar.zst, 0.0 MiB)\n" +
 		"stop: ok (no ikigenba-notes.service)\n" +
-		"files: ok (/opt/notes/etc, /opt/notes/state, 1 files)\n" +
+		"files: ok (/opt/notes/etc, /opt/notes/state, 2 files)\n" +
 		"start: ok (no ikigenba-notes.service)\n"
 	if code != 0 || stdout != want || stderr != "" {
 		t.Fatalf("restore command = exit %d stdout %q stderr %q", code, stdout, stderr)
@@ -195,7 +201,7 @@ func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = rootFS.Close() })
 	configuration, err := rootFS.ReadFile("etc/nginx/conf.d/ikigenba.conf")
-	if err != nil || !bytes.Contains(configuration, []byte("host.example.test")) {
+	if err != nil || !bytes.Contains(configuration, []byte("server_name         notes.host.example.test example.test;")) || bytes.Contains(configuration, []byte("HOST.Example.Test.")) {
 		t.Fatalf("nginx.Write output = %q, %v", configuration, err)
 	}
 	if len(commands) != 2 || !strings.HasPrefix(commands[0], "zstd ") || !strings.HasPrefix(commands[1], "systemctl show ") {
@@ -204,7 +210,7 @@ func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
 }
 
 func TestRestoreCommandAtReachesDomainSelectionInEitherPosition(t *testing.T) {
-	// R-GCBK-LDMU R-Y6DK-8M4L
+	// R-GCBK-LDMU R-X7Z1-KY06
 	const (
 		older  = "2026-09-16T10:00:00Z"
 		later  = "2026-09-16T11:00:00Z"
@@ -264,7 +270,7 @@ func TestRestoreCommandAtReachesDomainSelectionInEitherPosition(t *testing.T) {
 }
 
 func TestRestoreCommandRetainsDomainStopFailureEndToEnd(t *testing.T) {
-	// R-Y6DK-8M4L
+	// R-X7Z1-KY06
 	root := configuredBackupRoot(t)
 	store := config.Store{Root: root}
 	if err := store.Set("host.name", "host.example.test"); err != nil {
@@ -321,7 +327,7 @@ func TestRestoreCommandRetainsDomainStopFailureEndToEnd(t *testing.T) {
 }
 
 func TestRestoreCommandRequiresHostNameBeforeDomainAccess(t *testing.T) {
-	// R-Y6DK-8M4L
+	// R-X7Z1-KY06
 	for _, test := range []struct {
 		name  string
 		setup func(*testing.T, string)
@@ -330,6 +336,11 @@ func TestRestoreCommandRequiresHostNameBeforeDomainAccess(t *testing.T) {
 		{name: "missing", setup: func(*testing.T, string) {}, want: "opsctl: host.name not set\n"},
 		{name: "empty", setup: func(t *testing.T, root string) {
 			if err := (config.Store{Root: root}).Set("host.name", ""); err != nil {
+				t.Fatal(err)
+			}
+		}, want: "opsctl: host.name not set\n"},
+		{name: "empty after normalization", setup: func(t *testing.T, root string) {
+			if err := (config.Store{Root: root}).Set("host.name", "."); err != nil {
 				t.Fatal(err)
 			}
 		}, want: "opsctl: host.name not set\n"},
@@ -355,8 +366,42 @@ func TestRestoreCommandRequiresHostNameBeforeDomainAccess(t *testing.T) {
 	}
 }
 
+func TestRestoreCommandRejectsApexWithoutParentBeforeRestore(t *testing.T) {
+	// R-X7Z1-KY06
+	root := configuredBackupRoot(t)
+	store := config.Store{Root: root}
+	if err := store.Set("host.name", "LOCALHOST."); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("host.apex", "notes"); err != nil {
+		t.Fatal(err)
+	}
+	used := false
+	deps := Deps{
+		Root: root,
+		EUID: 0,
+		Execute: func(context.Context, host.Command) (host.Result, error) {
+			used = true
+			return host.Result{}, errors.New("unexpected process access")
+		},
+		Cloud: cloud.Env{Open: func(context.Context, string) (cloud.Client, error) {
+			used = true
+			return nil, errors.New("unexpected cloud access")
+		}},
+	}
+	stdout, stderr, code := invokeBackupCLI([]string{"restore", "notes"}, deps)
+	if code != 1 || stdout != "" || stderr != "opsctl: host.apex is set but host.name 'localhost' has no parent domain\n" || used {
+		t.Fatalf("invalid restore apex = exit %d stdout %q stderr %q used %v", code, stdout, stderr, used)
+	}
+	for _, name := range []string{"opt/notes", "run/opsctl/restore/notes.active", "etc/nginx/conf.d/ikigenba.conf"} {
+		if _, err := os.Lstat(filepath.Join(root, filepath.FromSlash(name))); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("invalid restore apex changed %s: %v", name, err)
+		}
+	}
+}
+
 func TestRestoreOutcomePreservesReportsStoppedUnitsAndCommandDetail(t *testing.T) {
-	// R-Y6DK-8M4L
+	// R-X7Z1-KY06
 	commandErr := &host.CommandError{Label: "stop litestream.service", Result: host.Result{ExitCode: 1, Stdout: []byte("partial\n"), Stderr: []byte("secret\r\n")}}
 	report := backup.RestoreReport{Steps: []backup.RestoreStep{
 		{Name: "source", Detail: "notes/stamp.tar.zst, 1.0 MiB"},
@@ -393,7 +438,7 @@ func TestRestoreOutcomePreservesReportsStoppedUnitsAndCommandDetail(t *testing.T
 }
 
 func TestRestoreReportWriteFailureIsOperational(t *testing.T) {
-	// R-Y6DK-8M4L
+	// R-X7Z1-KY06
 	report := backup.RestoreReport{Steps: []backup.RestoreStep{{Name: "source", Detail: "ready"}}}
 	var stderr bytes.Buffer
 	code := renderRestoreOutcome(failingRestoreWriter{}, &stderr, "notes", report, nil)
