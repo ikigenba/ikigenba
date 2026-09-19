@@ -81,7 +81,7 @@ func runCertObtain(stderr io.Writer, store config.Store, deps Deps, env host.Env
 	if code != exitOK {
 		return code
 	}
-	if err := cert.Obtain(context.Background(), env, hostName, email); err != nil {
+	if err := cert.Obtain(context.Background(), env, hostName, email, false); err != nil {
 		return certOperationErr(stderr, err)
 	}
 	return exitOK

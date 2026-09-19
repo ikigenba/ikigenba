@@ -30,7 +30,7 @@ import (
 
 const wantDeployHook = "systemctl try-reload-or-restart nginx"
 
-// R-YBCV-JK0W R-YCKR-XBRL
+// R-YBCV-JK0W R-2X8T-NIF1
 func TestObtainPackageBoundaryAndSignature(t *testing.T) {
 	acceptObtainSignature(cert.Obtain)
 
@@ -86,7 +86,7 @@ func TestObtainPackageBoundaryAndSignature(t *testing.T) {
 	}
 }
 
-func acceptObtainSignature(func(context.Context, host.Env, string, string) error) {}
+func acceptObtainSignature(func(context.Context, host.Env, string, string, bool) error) {}
 
 // R-FRFQ-VNTM
 func TestObtainRejectsMissingConfigurationBeforeExecution(t *testing.T) {
@@ -112,7 +112,7 @@ func TestObtainRejectsMissingConfigurationBeforeExecution(t *testing.T) {
 				calls++
 				return host.Result{}, nil
 			}}
-			err := cert.Obtain(context.Background(), env, tc.hostName, tc.email)
+			err := cert.Obtain(context.Background(), env, tc.hostName, tc.email, false)
 			if err == nil || err.Error() != tc.want {
 				t.Fatalf("error = %v, want %q", err, tc.want)
 			}
@@ -126,15 +126,58 @@ func TestObtainRejectsMissingConfigurationBeforeExecution(t *testing.T) {
 	}
 }
 
+// R-324F-6LDT
+func TestObtainValidatesApexBeforeExecution(t *testing.T) {
+	for _, tc := range []struct {
+		name, hostName string
+		apex           bool
+		wantError      string
+		wantCalls      int
+	}{
+		{"apex without parent", "example.com", true, "host.apex is set but host.name 'example.com' has no parent domain", 0},
+		{"non-apex without parent", "example.com", false, "", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			statePath := filepath.Join(root, "var/lib/opsctl/state")
+			if err := os.MkdirAll(filepath.Dir(statePath), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(statePath, []byte("unchanged"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			before := snapshotTree(t, root)
+			calls := 0
+			env := host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
+				calls++
+				return host.Result{}, nil
+			}}
+			err := cert.Obtain(context.Background(), env, tc.hostName, "admin@example.com", tc.apex)
+			if tc.wantError == "" && err != nil {
+				t.Fatalf("error = %v, want nil", err)
+			}
+			if tc.wantError != "" && (err == nil || err.Error() != tc.wantError) {
+				t.Fatalf("error = %v, want %q", err, tc.wantError)
+			}
+			if calls != tc.wantCalls {
+				t.Fatalf("Execute calls = %d, want %d", calls, tc.wantCalls)
+			}
+			if after := snapshotTree(t, root); !reflect.DeepEqual(after, before) {
+				t.Fatalf("host state changed: before %#v, after %#v", before, after)
+			}
+		})
+	}
+}
+
 // R-AMEV-4J2G
 func TestObtainRejectsMissingExecutionDependency(t *testing.T) {
-	err := cert.Obtain(context.Background(), host.Env{Root: t.TempDir()}, "example.com", "admin@example.com")
+	err := cert.Obtain(context.Background(), host.Env{Root: t.TempDir()}, "example.com", "admin@example.com", false)
 	if err == nil || err.Error() != "obtain certificate: host execution is not configured" {
 		t.Fatalf("error = %v", err)
 	}
 }
 
-// R-K9Q8-1AET R-AMEV-4J2G R-YYIY-T743
+// R-33CB-KD4I R-AMEV-4J2G R-YYIY-T743
 func TestObtainExecutesExactCertbotCommand(t *testing.T) {
 	root := t.TempDir()
 	ctx := context.WithValue(context.Background(), contextKey{}, "marker")
@@ -157,7 +200,7 @@ func TestObtainExecutesExactCertbotCommand(t *testing.T) {
 		gotCtx, got = callCtx, command
 		return host.Result{}, nil
 	}}
-	if err := cert.Obtain(ctx, env, "example.com", "admin@example.com"); err != nil {
+	if err := cert.Obtain(ctx, env, "example.com", "admin@example.com", false); err != nil {
 		t.Fatal(err)
 	}
 	want := host.Command{Name: "certbot", Args: []string{
@@ -186,6 +229,44 @@ func TestObtainExecutesExactCertbotCommand(t *testing.T) {
 	}
 }
 
+// R-33CB-KD4I
+func TestObtainExecutesExactCertbotCommandWithApex(t *testing.T) {
+	root := t.TempDir()
+	ctx := context.WithValue(context.Background(), contextKey{}, "apex-marker")
+	var gotCtx context.Context
+	var got host.Command
+	calls := 0
+	env := host.Env{Root: root, Execute: func(callCtx context.Context, command host.Command) (host.Result, error) {
+		calls++
+		gotCtx, got = callCtx, command
+		return host.Result{}, nil
+	}}
+	if err := cert.Obtain(ctx, env, "app.example.com", "admin@example.com", true); err != nil {
+		t.Fatal(err)
+	}
+	want := host.Command{Name: "certbot", Args: []string{
+		"certonly", "--non-interactive", "--agree-tos", "--email", "admin@example.com",
+		"--manual", "--preferred-challenges", "dns",
+		"--manual-auth-hook", "opsctl dns acme-auth",
+		"--manual-cleanup-hook", "opsctl dns acme-cleanup",
+		"--deploy-hook", wantDeployHook,
+		"--cert-name", "app.example.com", "-d", "app.example.com", "-d", "*.app.example.com", "-d", "example.com",
+		"--keep-until-expiring",
+		"--config-dir", filepath.Join(root, "etc/letsencrypt"),
+		"--work-dir", filepath.Join(root, "var/lib/letsencrypt"),
+		"--logs-dir", filepath.Join(root, "var/log/letsencrypt"),
+	}}
+	if gotCtx != ctx {
+		t.Fatal("Obtain did not pass the supplied context")
+	}
+	if calls != 1 {
+		t.Fatalf("Execute calls = %d, want exactly 1", calls)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("command = %#v, want %#v", got, want)
+	}
+}
+
 // R-KAY4-F25I
 func TestObtainHooksBeginWithPATHExecutables(t *testing.T) {
 	binDir := t.TempDir()
@@ -211,7 +292,7 @@ func TestObtainHooksBeginWithPATHExecutables(t *testing.T) {
 		got = command
 		return host.Result{}, nil
 	}}
-	if err := cert.Obtain(context.Background(), env, "example.com", "admin@example.com"); err != nil {
+	if err := cert.Obtain(context.Background(), env, "example.com", "admin@example.com", false); err != nil {
 		t.Fatal(err)
 	}
 	for _, option := range []string{"--manual-auth-hook", "--manual-cleanup-hook", "--deploy-hook"} {
@@ -231,13 +312,13 @@ func TestObtainHooksBeginWithPATHExecutables(t *testing.T) {
 	}
 }
 
-// R-YMBY-ZHP5
+// R-34K7-Y4V7
 func TestObtainEstablishesLineageAndRetainsHooks(t *testing.T) {
-	fixture := newCertbotFixture(t, issueCertificate, nil)
-	if err := cert.Obtain(context.Background(), fixture.env(), "example.com", "admin@example.com"); err != nil {
+	fixture := newCertbotFixtureForHost(t, issueCertificate, nil, "app.example.com")
+	if err := cert.Obtain(context.Background(), fixture.env(), "app.example.com", "admin@example.com", true); err != nil {
 		t.Fatal(err)
 	}
-	lineage := filepath.Join(fixture.root, "etc/letsencrypt/live/example.com")
+	lineage := filepath.Join(fixture.root, "etc/letsencrypt/live/app.example.com")
 	lineageRoot, err := os.OpenRoot(lineage)
 	if err != nil {
 		t.Fatal(err)
@@ -252,7 +333,7 @@ func TestObtainEstablishesLineageAndRetainsHooks(t *testing.T) {
 		t.Fatal(err)
 	}
 	certificate := parseCertificate(t, certificatePEM)
-	if want := []string{"example.com", "*.example.com"}; !reflect.DeepEqual(certificate.DNSNames, want) {
+	if want := []string{"app.example.com", "*.app.example.com", "example.com"}; !reflect.DeepEqual(certificate.DNSNames, want) {
 		t.Fatalf("certificate names = %v, want %v", certificate.DNSNames, want)
 	}
 	keyPEM, err := lineageRoot.ReadFile("privkey.pem")
@@ -282,10 +363,12 @@ func TestObtainEstablishesLineageAndRetainsHooks(t *testing.T) {
 		t.Fatalf("renewal challenge values left behind: %v", challenges)
 	}
 	wantDNSCalls := []string{
-		"dns acme-auth example.com renewal-apex-token",
-		"dns acme-auth *.example.com renewal-wildcard-token",
-		"dns acme-cleanup example.com renewal-apex-token",
-		"dns acme-cleanup *.example.com renewal-wildcard-token",
+		"dns acme-auth app.example.com renewal-apex-token",
+		"dns acme-auth *.app.example.com renewal-wildcard-token",
+		"dns acme-auth example.com renewal-parent-token",
+		"dns acme-cleanup app.example.com renewal-apex-token",
+		"dns acme-cleanup *.app.example.com renewal-wildcard-token",
+		"dns acme-cleanup example.com renewal-parent-token",
 	}
 	if calls := fixture.dnsCalls(); !reflect.DeepEqual(calls, wantDNSCalls) {
 		t.Fatalf("renewal DNS hook calls = %v, want %v", calls, wantDNSCalls)
@@ -295,11 +378,11 @@ func TestObtainEstablishesLineageAndRetainsHooks(t *testing.T) {
 	}
 }
 
-// R-YNJV-D9FU
+// R-35S4-BWLW
 func TestObtainLetsCertbotKeepNotDueCertificate(t *testing.T) {
-	original := []byte("existing certificate")
+	original, _ := makeCertificateForNames(t, []string{"example.com", "*.example.com"})
 	fixture := newCertbotFixture(t, keepCertificate, original)
-	if err := cert.Obtain(context.Background(), fixture.env(), "example.com", "admin@example.com"); err != nil {
+	if err := cert.Obtain(context.Background(), fixture.env(), "example.com", "admin@example.com", false); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(fixture.fullchain())
@@ -317,6 +400,74 @@ func TestObtainLetsCertbotKeepNotDueCertificate(t *testing.T) {
 	}
 	if fixture.calls != 1 {
 		t.Fatalf("certbot calls = %d, want 1", fixture.calls)
+	}
+}
+
+// R-3700-POCL
+func TestObtainReissuesMismatchedLineageAndThenKeepsIt(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		apex          bool
+		existingNames []string
+		wantNames     []string
+	}{
+		{
+			name:          "add parent",
+			apex:          true,
+			existingNames: []string{"app.example.com", "*.app.example.com"},
+			wantNames:     []string{"app.example.com", "*.app.example.com", "example.com"},
+		},
+		{
+			name:          "remove parent",
+			apex:          false,
+			existingNames: []string{"app.example.com", "*.app.example.com", "example.com"},
+			wantNames:     []string{"app.example.com", "*.app.example.com"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			existingCertificate, _ := makeCertificateForNames(t, tc.existingNames)
+			fixture := newCertbotFixtureForHost(t, reconcileCertificate, existingCertificate, "app.example.com")
+			if err := cert.Obtain(context.Background(), fixture.env(), "app.example.com", "admin@example.com", tc.apex); err != nil {
+				t.Fatal(err)
+			}
+			certificateContent, err := os.ReadFile(fixture.fullchain())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := parseCertificate(t, certificateContent).DNSNames; !reflect.DeepEqual(got, tc.wantNames) {
+				t.Fatalf("certificate names = %v, want %v", got, tc.wantNames)
+			}
+			lineagePath := filepath.Join(fixture.root, "etc/letsencrypt")
+			settled := snapshotTree(t, lineagePath)
+			if err := cert.Obtain(context.Background(), fixture.env(), "app.example.com", "admin@example.com", tc.apex); err != nil {
+				t.Fatal(err)
+			}
+			if got := snapshotTree(t, lineagePath); !reflect.DeepEqual(got, settled) {
+				t.Fatalf("matching second obtain changed lineage: before %#v, after %#v", settled, got)
+			}
+			if fixture.caRequests != 1 {
+				t.Fatalf("CA issuance requests = %d, want 1", fixture.caRequests)
+			}
+			if challenges := fixture.challengeValues(); len(challenges) != 0 {
+				t.Fatalf("challenge values left behind: %v", challenges)
+			}
+			if fixture.calls != 2 {
+				t.Fatalf("certbot calls = %d, want 2", fixture.calls)
+			}
+			for _, command := range fixture.commands {
+				if slices.Contains(command.Args, "--force-renewal") || slices.Contains(command.Args, "--force-renew") {
+					t.Fatalf("Obtain requested forced renewal: %v", command.Args)
+				}
+			}
+			renewal, err := os.ReadFile(filepath.Join(fixture.root, "etc/letsencrypt/renewal/app.example.com.conf"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantHooks := "opsctl dns acme-auth\nopsctl dns acme-cleanup\n" + wantDeployHook
+			if got := strings.TrimSpace(string(renewal)); got != wantHooks {
+				t.Fatalf("recorded hooks = %q, want %q", got, wantHooks)
+			}
+		})
 	}
 }
 
@@ -338,7 +489,7 @@ func TestObtainPreservesCertbotFailure(t *testing.T) {
 			}}
 			var err error
 			stdout, stderr := captureOutput(t, func() {
-				err = cert.Obtain(context.Background(), env, "example.com", "admin@example.com")
+				err = cert.Obtain(context.Background(), env, "example.com", "admin@example.com", false)
 			})
 			if len(stdout) != 0 || len(stderr) != 0 {
 				t.Fatalf("Obtain printed stdout %q, stderr %q", stdout, stderr)
@@ -353,7 +504,7 @@ func TestObtainPreservesCertbotFailure(t *testing.T) {
 		})
 	}
 	env := host.Env{Execute: func(context.Context, host.Command) (host.Result, error) { return host.Result{}, nil }}
-	if err := cert.Obtain(context.Background(), env, "example.com", "admin@example.com"); err != nil {
+	if err := cert.Obtain(context.Background(), env, "example.com", "admin@example.com", false); err != nil {
 		t.Fatalf("successful execution returned %v", err)
 	}
 }
@@ -374,7 +525,7 @@ func TestObtainPreservesExistingCommandErrorIdentity(t *testing.T) {
 			env := host.Env{Execute: func(context.Context, host.Command) (host.Result, error) {
 				return returned, existing
 			}}
-			err := cert.Obtain(context.Background(), env, "example.com", "admin@example.com")
+			err := cert.Obtain(context.Background(), env, "example.com", "admin@example.com", false)
 			var got *host.CommandError
 			if !errors.As(err, &got) || got != existing {
 				t.Fatalf("error = %#v, want original CommandError %#v", err, existing)
@@ -391,7 +542,7 @@ func TestObtainRefusalPreservesCertificateAndCleansChallenges(t *testing.T) {
 	lineageBefore := snapshotTree(t, filepath.Join(fixture.root, "etc/letsencrypt"))
 	nginxBefore := snapshotTree(t, filepath.Join(fixture.root, "etc/nginx"))
 	fixture.assertNginxServes(t, originalCertificate, originalKey)
-	err := cert.Obtain(context.Background(), fixture.env(), "example.com", "admin@example.com")
+	err := cert.Obtain(context.Background(), fixture.env(), "example.com", "admin@example.com", false)
 	var commandErr *host.CommandError
 	if !errors.As(err, &commandErr) {
 		t.Fatalf("error = %v, want certbot failure", err)
@@ -439,7 +590,7 @@ func TestObtainDeployHookHonorsNginxStateAndFailure(t *testing.T) {
 			fixture := newCertbotFixture(t, issueCertificate, nil)
 			fixture.nginxActive = tc.active
 			fixture.reloadFails = tc.reloadFails
-			err := cert.Obtain(context.Background(), fixture.env(), "example.com", "admin@example.com")
+			err := cert.Obtain(context.Background(), fixture.env(), "example.com", "admin@example.com", false)
 			if (err != nil) != tc.wantError {
 				t.Fatalf("Obtain error = %v, want error %v", err, tc.wantError)
 			}
@@ -469,14 +620,46 @@ func argumentValue(t *testing.T, args []string, name string) string {
 	return ""
 }
 
+func argumentValues(args []string, name string) []string {
+	var values []string
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == name {
+			values = append(values, args[i+1])
+			i++
+		}
+	}
+	return values
+}
+
+func fixtureChallenges(hostName string, domains []string, renewal bool) []struct{ domain, token string } {
+	prefix := ""
+	if renewal {
+		prefix = "renewal-"
+	}
+	challenges := make([]struct{ domain, token string }, 0, len(domains))
+	for _, domain := range domains {
+		token := "parent-token"
+		switch domain {
+		case hostName:
+			token = "apex-token"
+		case "*." + hostName:
+			token = "wildcard-token"
+		}
+		challenges = append(challenges, struct{ domain, token string }{domain, prefix + token})
+	}
+	return challenges
+}
+
 type certbotFixture struct {
 	t            *testing.T
 	root         string
+	hostName     string
 	scenario     certbotScenario
 	nginxActive  bool
 	reloadFails  bool
 	calls        int
 	caRequests   int
+	commands     []host.Command
 	binDir       string
 	challengeDir string
 	dnsLog       string
@@ -489,13 +672,18 @@ const (
 	issueCertificate certbotScenario = iota
 	keepCertificate
 	refuseCertificate
+	reconcileCertificate
 )
 
 func newCertbotFixture(t *testing.T, scenario certbotScenario, certificate []byte) *certbotFixture {
+	return newCertbotFixtureForHost(t, scenario, certificate, "example.com")
+}
+
+func newCertbotFixtureForHost(t *testing.T, scenario certbotScenario, certificate []byte, hostName string) *certbotFixture {
 	t.Helper()
 	root := t.TempDir()
 	fixture := &certbotFixture{
-		t: t, root: root, scenario: scenario, nginxActive: true,
+		t: t, root: root, hostName: hostName, scenario: scenario, nginxActive: true,
 		binDir: filepath.Join(root, "bin"), challengeDir: filepath.Join(root, "challenges"),
 		dnsLog:       filepath.Join(root, "dns.log"),
 		systemctlLog: filepath.Join(root, "systemctl.log"),
@@ -537,27 +725,41 @@ esac
 }
 
 func (f *certbotFixture) fullchain() string {
-	return filepath.Join(f.root, "etc/letsencrypt/live/example.com/fullchain.pem")
+	return filepath.Join(f.root, "etc/letsencrypt/live", f.hostName, "fullchain.pem")
 }
 
 func (f *certbotFixture) env() host.Env {
 	return host.Env{Root: f.root, Execute: func(ctx context.Context, command host.Command) (host.Result, error) {
 		f.calls++
+		f.commands = append(f.commands, command)
 		if command.Name != "certbot" || len(command.Args) == 0 || command.Args[0] != "certonly" {
 			f.t.Fatalf("unexpected command: %#v", command)
 		}
+		if got := argumentValue(f.t, command.Args, "--cert-name"); got != f.hostName {
+			f.t.Fatalf("certificate name = %q, want %q", got, f.hostName)
+		}
+		domains := argumentValues(command.Args, "-d")
 		if f.scenario == keepCertificate && fileExists(f.fullchain()) {
 			return host.Result{}, nil
 		}
+		if f.scenario == reconcileCertificate && fileExists(f.fullchain()) {
+			content, err := os.ReadFile(f.fullchain())
+			if err != nil {
+				f.t.Fatal(err)
+			}
+			if reflect.DeepEqual(parseCertificate(f.t, content).DNSNames, domains) {
+				return host.Result{}, nil
+			}
+		}
 		authHook := argumentValue(f.t, command.Args, "--manual-auth-hook")
 		cleanupHook := argumentValue(f.t, command.Args, "--manual-cleanup-hook")
-		for _, challenge := range []struct{ domain, token string }{{"example.com", "apex-token"}, {"*.example.com", "wildcard-token"}} {
+		for _, challenge := range fixtureChallenges(f.hostName, domains, false) {
 			if result, err := f.runHook(ctx, authHook, challenge.domain, challenge.token); err != nil || result.ExitCode != 0 {
 				return result, err
 			}
 		}
 		f.caRequests++
-		for _, challenge := range []struct{ domain, token string }{{"example.com", "apex-token"}, {"*.example.com", "wildcard-token"}} {
+		for _, challenge := range fixtureChallenges(f.hostName, domains, false) {
 			if result, err := f.runHook(ctx, cleanupHook, challenge.domain, challenge.token); err != nil || result.ExitCode != 0 {
 				return result, err
 			}
@@ -569,14 +771,14 @@ func (f *certbotFixture) env() host.Env {
 		if err := os.MkdirAll(lineage, 0o750); err != nil {
 			f.t.Fatal(err)
 		}
-		certificatePEM, privateKeyPEM := makeCertificate(f.t)
+		certificatePEM, privateKeyPEM := makeCertificateForNames(f.t, domains)
 		if err := os.WriteFile(f.fullchain(), certificatePEM, 0o600); err != nil {
 			f.t.Fatal(err)
 		}
 		if err := os.WriteFile(filepath.Join(lineage, "privkey.pem"), privateKeyPEM, 0o600); err != nil {
 			f.t.Fatal(err)
 		}
-		renewalPath := filepath.Join(f.root, "etc/letsencrypt/renewal/example.com.conf")
+		renewalPath := filepath.Join(f.root, "etc/letsencrypt/renewal", f.hostName+".conf")
 		if err := os.MkdirAll(filepath.Dir(renewalPath), 0o750); err != nil {
 			f.t.Fatal(err)
 		}
@@ -594,7 +796,7 @@ func (f *certbotFixture) env() host.Env {
 
 func (f *certbotFixture) seedServingLineage(certificate, privateKey []byte) {
 	f.t.Helper()
-	archive := filepath.Join(f.root, "etc/letsencrypt/archive/example.com")
+	archive := filepath.Join(f.root, "etc/letsencrypt/archive", f.hostName)
 	live := filepath.Dir(f.fullchain())
 	if err := os.MkdirAll(archive, 0o750); err != nil {
 		f.t.Fatal(err)
@@ -608,13 +810,13 @@ func (f *certbotFixture) seedServingLineage(certificate, privateKey []byte) {
 	if err := os.WriteFile(filepath.Join(archive, "privkey1.pem"), privateKey, 0o600); err != nil {
 		f.t.Fatal(err)
 	}
-	if err := os.Symlink("../../archive/example.com/fullchain1.pem", f.fullchain()); err != nil {
+	if err := os.Symlink("../../archive/"+f.hostName+"/fullchain1.pem", f.fullchain()); err != nil {
 		f.t.Fatal(err)
 	}
-	if err := os.Symlink("../../archive/example.com/privkey1.pem", filepath.Join(live, "privkey.pem")); err != nil {
+	if err := os.Symlink("../../archive/"+f.hostName+"/privkey1.pem", filepath.Join(live, "privkey.pem")); err != nil {
 		f.t.Fatal(err)
 	}
-	renewalPath := filepath.Join(f.root, "etc/letsencrypt/renewal/example.com.conf")
+	renewalPath := filepath.Join(f.root, "etc/letsencrypt/renewal", f.hostName+".conf")
 	if err := os.MkdirAll(filepath.Dir(renewalPath), 0o750); err != nil {
 		f.t.Fatal(err)
 	}
@@ -712,7 +914,7 @@ func (f *certbotFixture) renew(ctx context.Context) error {
 			f.t.Errorf("close fixture root: %v", err)
 		}
 	}()
-	content, err := root.ReadFile("etc/letsencrypt/renewal/example.com.conf")
+	content, err := root.ReadFile(filepath.Join("etc/letsencrypt/renewal", f.hostName+".conf"))
 	if err != nil {
 		return err
 	}
@@ -720,10 +922,11 @@ func (f *certbotFixture) renew(ctx context.Context) error {
 	if len(hooks) != 3 {
 		return errors.New("invalid renewal hook configuration")
 	}
-	challenges := []struct{ domain, token string }{
-		{"example.com", "renewal-apex-token"},
-		{"*.example.com", "renewal-wildcard-token"},
+	certificateContent, err := root.ReadFile(filepath.Join("etc/letsencrypt/live", f.hostName, "fullchain.pem"))
+	if err != nil {
+		return err
 	}
+	challenges := fixtureChallenges(f.hostName, parseCertificate(f.t, certificateContent).DNSNames, true)
 	for _, challenge := range challenges {
 		if result, err := f.runHook(ctx, hooks[0], challenge.domain, challenge.token); err != nil || result.ExitCode != 0 {
 			return errors.New("renewal authentication hook failed")
@@ -809,15 +1012,19 @@ func (f *certbotFixture) dnsCalls() []string {
 }
 
 func makeCertificate(t *testing.T) ([]byte, []byte) {
+	return makeCertificateForNames(t, []string{"example.com", "*.example.com"})
+}
+
+func makeCertificateForNames(t *testing.T, names []string) ([]byte, []byte) {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
 	}
 	template := x509.Certificate{
-		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "example.com"},
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: names[0]},
 		NotBefore: time.Unix(1_700_000_000, 0), NotAfter: time.Unix(1_800_000_000, 0),
-		DNSNames: []string{"example.com", "*.example.com"},
+		DNSNames: names,
 		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
 	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)

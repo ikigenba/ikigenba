@@ -102,14 +102,22 @@ func diagnosticHostName(hostName string) string {
 	}, hostName)
 }
 
-// Obtain obtains the apex and wildcard certificate for hostName, or renews it
-// when certbot considers it due.
-func Obtain(ctx context.Context, env host.Env, hostName, email string) error {
+// Obtain obtains the host and wildcard certificate, plus the parent domain
+// when apex is set, or renews it when certbot considers it due.
+func Obtain(ctx context.Context, env host.Env, hostName, email string, apex bool) error {
 	if hostName == "" {
 		return errors.New("host.name not set")
 	}
 	if email == "" {
 		return errors.New("acme.email not set")
+	}
+	var apexName string
+	if apex {
+		var err error
+		apexName, err = host.Apex(hostName)
+		if err != nil {
+			return err
+		}
 	}
 	if env.Execute == nil {
 		return errors.New("obtain certificate: host execution is not configured")
@@ -118,26 +126,32 @@ func Obtain(ctx context.Context, env host.Env, hostName, email string) error {
 	rooted := func(path string) string {
 		return filepath.Join(env.Root, filepath.FromSlash(strings.TrimPrefix(path, "/")))
 	}
+	args := []string{
+		"certonly",
+		"--non-interactive",
+		"--agree-tos",
+		"--email", email,
+		"--manual",
+		"--preferred-challenges", "dns",
+		"--manual-auth-hook", "opsctl dns acme-auth",
+		"--manual-cleanup-hook", "opsctl dns acme-cleanup",
+		"--deploy-hook", deployHook,
+		"--cert-name", hostName,
+		"-d", hostName,
+		"-d", "*." + hostName,
+	}
+	if apex {
+		args = append(args, "-d", apexName)
+	}
+	args = append(args,
+		"--keep-until-expiring",
+		"--config-dir", rooted("/etc/letsencrypt"),
+		"--work-dir", rooted("/var/lib/letsencrypt"),
+		"--logs-dir", rooted("/var/log/letsencrypt"),
+	)
 	command := host.Command{
 		Name: "certbot",
-		Args: []string{
-			"certonly",
-			"--non-interactive",
-			"--agree-tos",
-			"--email", email,
-			"--manual",
-			"--preferred-challenges", "dns",
-			"--manual-auth-hook", "opsctl dns acme-auth",
-			"--manual-cleanup-hook", "opsctl dns acme-cleanup",
-			"--deploy-hook", deployHook,
-			"--cert-name", hostName,
-			"-d", hostName,
-			"-d", "*." + hostName,
-			"--keep-until-expiring",
-			"--config-dir", rooted("/etc/letsencrypt"),
-			"--work-dir", rooted("/var/lib/letsencrypt"),
-			"--logs-dir", rooted("/var/log/letsencrypt"),
-		},
+		Args: args,
 	}
 	result, err := env.Execute(ctx, command)
 	if err != nil {
