@@ -25,12 +25,6 @@ prerequisites — runs there.
 
 - Go 1.26 (`go version` must report 1.26+)
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
-- Linux amd64 gate environment, Bash 5.2+, and bubblewrap (`bwrap`) 0.11+
-  with working unprivileged user, mount, PID, and network namespaces. These
-  support installer subprocess tests inside the Go suite; they are not Go
-  module dependencies or additional installed-host prerequisites. An absent
-  tool or unavailable namespace is an environment failure, never a skipped
-  test.
 
 Production host tools such as nginx, certbot, systemctl, Litestream, and
 archive utilities are observed on `dev`, not invoked against the gate host.
@@ -47,6 +41,19 @@ module paths in `go.mod` against it. Which release of each satisfies them is
 data, and it lives in `go.mod`. Transitive modules are whatever
 `go mod tidy` resolves for that set. The run never adds a direct module; a
 phase that appears to need one files an issue for a human to adjudicate.
+
+## Out of scope
+
+The spec owns local development. The design covers the Go code under `cmd/`
+and `internal/` and its `go.mod`; the `Makefile`, the lint configuration, and
+the gates are the ground that builds and tests it here. Release publication
+and installation of the `opsctl` binary onto a host are maintained by hand
+and are not part of the design or the gap. `install.sh` and `.goreleaser.yaml`
+in this directory, and the release workflow at
+`.github/workflows/release-opsctl.yml` under the repository root, are
+hand-maintained files: the build run never reads, edits, tests, or deletes
+them, and no requirement describes them. Gate tests never publish a release
+or push a tag.
 
 ## Test files
 
@@ -69,28 +76,6 @@ temporary root, explicit effective uid, process and cloud fixtures, DNS
 fixtures, and deterministic time. They never depend on the gate process's
 real effective uid or call real cloud, DNS, service, or certificate systems.
 The gates run as an ordinary user.
-
-D15's standalone Bash installer does not use `cli.Deps`. Its behavior tests
-also live in `cmd/` or `internal/` as `*_test.go` and execute the unmodified
-installer in a bubblewrap sandbox. The harness supplies a fresh filesystem
-view: writable deployment paths (`/usr/local`, `/etc`, `/opt`) and scratch
-paths belong solely to temporary fixtures; host tool executables and their
-runtime libraries may be mounted read-only. No live deployment tree,
-credentials, home directory, or host communication socket is exposed. A
-separate network namespace excludes external networking. Fixtures supply
-release downloads and candidate responses, while namespace effective uid
-is explicitly 0 or nonzero for the case under test, independent of the
-parent's uid. Root ownership assertions refer to uid 0 inside that namespace.
-
-A PATH wrapper alone is insufficient: shell redirects and absolute command
-paths bypass it, and Bash's builtin `EUID` cannot be overridden through the
-environment. Isolation must cover the shell and every descendant, including
-candidate execution. The harness must establish that boundary before
-executing installer code and fail if it cannot. There is no test-only
-installer option or public root override. Test assets and harness support
-files carry no requirement tags; the Go tests remain the sole test-id set.
-Release artifact inspection and publication fixtures run locally in that
-suite; gate tests never publish a release or push a tag.
 
 ## Gates
 

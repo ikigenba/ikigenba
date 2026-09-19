@@ -8,8 +8,9 @@ remote agents and host timers invoke its installed binary. The configuration
 store describes that host, while service discovery reads what is on its disk.
 
 The designs cover command conventions and configuration, DNS and preflight,
-nginx and certificates, app lifecycle, service and host backups, restore and
-retirement, and distribution of the installed CLI. Setup composes certificate,
+nginx and certificates, app lifecycle, service and host backups, and restore
+and retirement. Release publication and the installer that puts the binary on
+a host are maintained outside these designs. Setup composes certificate,
 nginx, replication and timer operations. Generated files are reconstructed from
 configuration and service declarations; application state outlives installation.
 

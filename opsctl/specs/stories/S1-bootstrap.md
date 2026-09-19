@@ -74,7 +74,7 @@ Postconditions:
 
 The version is a `var` in the source with a `v<major>.<minor>.<patch>` shape,
 never injected at build time, so a developer's build and a release report the
-same string. It is the string the installer was asked for.
+same string.
 
 Command:
 
