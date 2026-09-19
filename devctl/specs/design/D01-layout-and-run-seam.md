@@ -2,9 +2,16 @@
 
 The module remains a Go CLI with isolated cloud and process boundaries. Command
 packages own their grammar and application behavior. Shared host setup, app-
-name/version grammar, and streamed process execution have explicit boundaries so
-the expanded lifecycle stays manageable. All environmental dependencies enter
-through the run seam; offline tests supply fakes. Existing direct module
+name/version grammar, space-operand grammar, checkout discovery with the root
+file, and streamed process execution have explicit boundaries so the expanded
+lifecycle stays manageable. The platform is one root domain in one account:
+there is no account package and no account record; the checkout's root file
+(D04) is the only configuration, and the `apex` command has its own package
+(D14). All environmental dependencies enter through the run seam; offline
+tests supply fakes. The seam already carries everything the single-root
+platform needs: the working directory that checkout discovery starts from, the
+effective uid, the environment, the cloud opener that takes the root as the
+profile name, the process runners, and the clock. Existing direct module
 approvals remain unchanged.
 
 ## REQUIREMENTS
@@ -25,7 +32,7 @@ approvals remain unchanged.
 
 - R-F59F-A9GW: The binary built from `./cmd/devctl`, run with the single argument `--help` as a non-root user, MUST print the top-level usage text of D2 to stdout, write nothing to stderr, and exit 0.
 
-- R-BLKL-AZUS: The module MUST contain no package other than `cmd/devctl`, `internal/seam`, `internal/cli`, `internal/cloud`, `internal/cloud/awssdk`, `internal/account`, `internal/checkout`, `internal/keyring`, `internal/secrets`, `internal/space`, `internal/spacecreate`, `internal/host`, `internal/build`, `internal/deploy`, `internal/restore`, `internal/hostsetup`, `internal/spaceinit`, `internal/spaceapps`, `internal/remove`, and `internal/appref`, verified by a test that lists the module's packages.
+- R-RPMB-0WA0: The module MUST contain no package other than `cmd/devctl`, `internal/seam`, `internal/cli`, `internal/cloud`, `internal/cloud/awssdk`, `internal/checkout`, `internal/spaceref`, `internal/keyring`, `internal/secrets`, `internal/space`, `internal/spacecreate`, `internal/host`, `internal/build`, `internal/deploy`, `internal/restore`, `internal/hostsetup`, `internal/spaceinit`, `internal/spaceapps`, `internal/remove`, `internal/appref`, and `internal/apex`, verified by a test that lists the module's packages.
 
 - R-BMSH-ORLH: Package `internal/seam` MUST export a `Deps` struct whose fields are exactly `Dir string`, `EUID int`, `Getenv func(key string) string`, `Cloud cloud.Opener`, `Exec Runner`, `Stream StreamRunner`, `Now func() time.Time`, and `After func(d time.Duration) <-chan time.Time`; a nil `Getenv` MUST read as an empty environment, a nil `Exec` MUST read as `seam.Exec`, a nil `Now` MUST read as `time.Now`, and a nil `After` MUST read as `time.After`.
 
@@ -43,4 +50,4 @@ approvals remain unchanged.
 
 - R-BWJO-QXJ1: `cmd/devctl` MUST supply `seam.Exec`, `seam.Stream`, `awssdk.Open`, `os.Getwd`, `os.Geteuid`, `os.Getenv`, `time.Now`, and `time.After` as the corresponding real dependencies, wire the process streams and arguments to `cli.Run`, and cancel its run context on an interrupt so a following log command can exit.
 
-- R-YHTO-8IAI: `internal/hostsetup` MUST own release discovery, opsctl installation and configuration; `internal/spaceinit` MUST own `space init`; `internal/spaceapps` MUST own `space restart` and `space logs`; `internal/remove` MUST own `remove`; `internal/appref` MUST own usable app names and version/file-name grammar. The shared helper packages `internal/hostsetup` and `internal/appref` MUST NOT import command packages or `internal/cli`; command packages MAY depend on those helpers and on the shared space operations.
+- R-Q1J2-0KW2: `internal/hostsetup` MUST own release discovery, opsctl installation and configuration; `internal/spaceinit` MUST own `space init`; `internal/spaceapps` MUST own `space restart` and `space logs`; `internal/remove` MUST own `remove`; `internal/apex` MUST own `apex`; `internal/appref` MUST own usable app names and version/file-name grammar; `internal/spaceref` MUST own the `<space>` and `<app>.<space>` operand grammar; `internal/checkout` MUST own checkout discovery and the root file. The shared helper packages `internal/hostsetup`, `internal/appref`, `internal/spaceref`, and `internal/checkout` MUST NOT import command packages or `internal/cli`; command packages MAY depend on those helpers and on the shared space operations.

@@ -23,7 +23,9 @@ publishing preserves an earlier file on failure.
 
 - R-6IIK-SRYP: An argument of `build` that begins with `-` and is neither `--help` nor `-h` MUST cause exactly the three lines `devctl: unknown option '<option>'`, an empty line, and `see 'devctl build --help' for usage` to be written to stderr, nothing to stdout, and exit 2.
 
-- R-6JQH-6JPE: `cli.Run` MUST dispatch the command `build` to `build.Run`, passing the arguments that follow `build`, the `stdout` writer `cli.Run` was given, and `deps`, MUST return 0 when `build.Run` returns a nil error, and `build` MUST call `deps.Cloud` not at all, verified with a recording fake `Deps.Cloud` that is left with no call by `devctl build crm` and by `devctl --account <name> build crm`.
+- R-R7Z4-R65Q: `cli.Run` MUST dispatch the command `build` to `build.Run`, passing the arguments that follow `build`, the `stdout` writer `cli.Run` was given, and `deps`, MUST return 0 when `build.Run` returns a nil error, and `build` MUST call `deps.Cloud` not at all, verified with a recording fake `Deps.Cloud` that is left with no call by `devctl build crm`.
+
+- R-RBMT-WHDT: `build` MUST NOT read the root file `infra/terraform.tfvars.json`, verified at least by `devctl build --help` and `devctl build crm` each producing the same stdout, stderr, and exit code in a checkout whose root file is absent, in one whose root file is malformed, and in one whose root file is well-formed.
 
 - R-6M69-Y36S: When `(*Checkout).Clean` returns false, `build` MUST return a `*UsageError` whose `Message` is `the working tree has uncommitted changes; commit them first` and whose `Help` is empty, so that `devctl build crm` writes that message as the single stderr line `devctl: the working tree has uncommitted changes; commit them first`, writes nothing to stdout, and exits 2.
 
@@ -35,7 +37,7 @@ publishing preserves an earlier file on failure.
 
 - R-EM3N-CKUL: Package `internal/build` MUST export a `ProcessError` struct whose fields are exactly `Label string`, `Status int`, and `Stderr string`, with the methods `Error() string`, returning `<Label>: exit status <Status>`, `Detail() string`, returning `seam.QuoteOutput(Stderr)`, and `ExitCode() int`, returning 1.
 
-- R-GSOJ-R4YD: `devctl build --help` and `devctl build -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the root refusal, help MUST work without an account and before any external operation:
+- R-HGAQ-5Q0J: `devctl build --help` and `devctl build -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work without reading the root file and before any external operation:
 
   ```
   Usage: devctl build <app>
@@ -52,7 +54,7 @@ publishing preserves an earlier file on failure.
 
 - R-EQZ8-VNTD: When multiple matching app tags name HEAD, build MUST select the lexicographically first complete tag and use only its version suffix in `File` and stdout; unrelated tags MUST not affect selection.
 
-- R-ETF1-N7AR: Build MUST accept matching release, prerelease and metadata tags on any branch or detached HEAD and MUST NOT test reachability from `origin/main` or consult account policy.
+- R-RAEX-IPN4: Build MUST accept matching release, prerelease and metadata tags on any branch or detached HEAD and MUST NOT test reachability from `origin/main`.
 
 - R-EUMY-0Z1G: Build MUST reject an app name for which `appref.ValidName` is false before compiling or writing dist, with a `UsageError` whose message is `'<app>' is not a usable app name` and whose help is empty, yielding exit 2.
 

@@ -2,32 +2,36 @@
 
 The developer's CLI for the Ikigenba platform: a Go binary built and run on
 the developer's own machine, as an ordinary user, under the developer's own
-AWS identity. It creates and manages the platform's deployments, each one
-complete on one Linux host, and the hosts they run on. It talks to AWS APIs
-and, over ssh, to those hosts. It never runs as root and holds no host-side
-secrets. `opsctl`, the sibling sub-project, is the host-side counterpart that
-runs as root on a host. Module path `github.com/ikigenba/ikigenba/devctl`.
+AWS identity. The platform is one root domain in one AWS account; devctl has
+no configuration of its own and takes the root and its region from
+`infra/terraform.tfvars.json` at the top of the checkout it is run inside,
+the same file Terraform reads. It creates and manages the platform's spaces,
+each one complete on one Linux host, and the hosts they run on. It talks to
+AWS APIs and, over ssh, to those hosts. It never runs as root and holds no
+host-side secrets. `opsctl`, the sibling sub-project, is the host-side
+counterpart that runs as root on a host; devctl reaches it only as an
+installed tool through its published interface. Module path
+`github.com/ikigenba/ikigenba/devctl`.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
-build run writes the code (`cmd/` and `internal/` are absent until it does;
-`go.mod` exists but carries no requirements until D1 names them). See the
-`spec` and `build-spec` skills and `docs/spec-system.md` at the repo root.
-Everything below is the ground the run computes the gap and runs the gates
-against; it is human-authored and read-only to the run.
+build run writes the code under `cmd/` and `internal/`. See the `spec` and
+`build-spec` skills and `docs/spec-system.md` at the repo root. Everything
+below is the ground the run computes the gap and runs the gates against; it
+is human-authored and read-only to the run.
 
 ## Toolchain
 
 - Go 1.26 (`go version` must report 1.26+)
-- `golangci-lint` v2 (config: `.golangci.yml` in this directory)
+- `golangci-lint` v2 (config: `.golangci.yml` in this directory, `version: "2"`)
 
 ## Dependencies
 
 Every direct dependency is approved by a human, and the approval is recorded
-in the design: D1 names the exact set of direct requirements with pinned
-versions, and a gate test compares `go.mod` against it. Transitive modules
-are whatever `go mod tidy` resolves for that set. The run never adds a direct
-module; a phase that appears to need one files an issue for a human to
-adjudicate. Until D1 exists, `go.mod` has no requirements.
+in the design: D01 names the exact set of direct requirements with pinned
+versions, `go.mod` carries exactly that set, and a gate test compares the two.
+Transitive modules are whatever `go mod tidy` resolves for that set. The run
+never adds a direct module; a phase that appears to need one files an issue
+for a human to adjudicate.
 
 ## Test files
 
@@ -44,11 +48,17 @@ requirement tag.
 
 **No network and no real identity in the gates.** Tests never make a network
 call, never load the AWS SDK's default credential chain, and never read
-`~/.aws`, the developer's home directory, or the developer's environment.
-Every cloud client, the process environment, and the home directory come in
-through the run seam that design D1 defines, and tests inject fakes. A test
-that reaches a real AWS endpoint, or whose result depends on the developer's
-credentials or machine, is a bug. The gates run offline as an ordinary user.
+`~/.aws`, the developer's home directory, the developer's environment, the
+developer's keyring or ssh configuration, or the developer's own checkout:
+in particular they never read the real `infra/terraform.tfvars.json` or
+discover the real git checkout. The working directory, the effective uid,
+the environment, the clock, every cloud client, and every process runner come
+in through the run seam that design D01 defines (`seam.Deps`), and tests
+inject fakes. A test that needs a checkout builds a temporary one under a
+temporary directory, with its own root file, and passes a directory inside it
+as the working directory. A test that reaches a real AWS
+endpoint, or whose result depends on the developer's credentials, checkout,
+or machine, is a bug. The gates run offline as an ordinary user.
 
 ## Gates
 
@@ -70,24 +80,28 @@ toolchain. See `../docs/llm-lint-rule-candidates.md` for the rules' provenance.
 
 ## Operating defaults
 
-Conventions for running the built `devctl` against the real accounts, by a
-human or an agent. They are not devctl behaviour: devctl requires the values
-on the command line, and these say what to pass.
+Conventions for running the built `devctl` against the real platform, by a
+human or an agent. They are not devctl behaviour: they say what the operator
+supplies. What devctl itself does with the root file, the profile, and the
+operands is the stories' and design's business and is not restated here.
 
-- **Account from domain.** A space is asked for by its domain, and the
-  domain names the account: a space at or under `sbx.ikigenba.dev` is in the
-  sandbox account, `--account ikigenba-sandbox` (602773793009); any other
-  space at or under `ikigenba.dev` is in the prod account,
-  `--account ikigenba-prod` (295229566359). The longer suffix wins, so
-  `mg.sbx.ikigenba.dev` is sandbox and `staging.ikigenba.dev` is prod. Those
-  are the profile names in `~/.aws/config`; devctl passes the name through
-  to the AWS shared-config loader and derives nothing from it.
+- **Run from inside the checkout.** Every command that touches AWS or a host
+  is run from a directory inside this repository's checkout; the checkout's
+  `infra/terraform.tfvars.json` is the only statement of the root domain and
+  region.
 
-- **ACME email.** The address given to `space create --acme-email` and
-  `space init --acme-email` is always `mgreenly+<account id>@gmail.com`,
-  where `<account id>` is the id of the account the space lives in. For any
-  `*.sbx.ikigenba.dev` space that is `mgreenly+602773793009@gmail.com`; for
-  any space under `ikigenba.dev` itself it is `mgreenly+295229566359@gmail.com`.
+- **One AWS profile, named after the root.** `~/.aws/config` holds a profile
+  whose name is the root domain exactly as the root file spells it
+  (`ikigenba.dev`), and that profile has a live SSO session before any cloud
+  command is run (`aws sso login --profile ikigenba.dev`). No account id is
+  configured anywhere; the account is whatever that profile reaches.
+
+- **ACME email.** The address given to `space create --acme-email` and, when
+  changing it, `space init --acme-email` is `ops@ikigenba.dev`, the address the
+  stories use. It must be one the CA will accept.
+
+- **ssh.** The developer's ssh configuration reaches a space's instance as
+  `ec2-user` with the platform's key pair, which is named after the root.
 
 ## Commit conventions
 

@@ -1,31 +1,46 @@
 # D02-cli-conventions
 
-The CLI owns argument dispatch, help, exit codes and diagnostics. The command
-set now includes remove. Root refusal still precedes every argument, including
-help. Command products stay on stdout; external diagnostic detail is visibly
-quoted, including nested quotes and empty lines.
+The CLI owns argument dispatch, help, exit codes and diagnostics. devctl has
+no configuration and no top-level option beyond help and version: the platform
+is one root domain in one account, and every command that touches the cloud
+learns the root and its region from the checkout's root file (D04,
+`internal/checkout`), never from an option, the environment, or the developer's
+machine. The command set now includes `apex`.
+
+The superuser refusal — the check that devctl is not running with effective
+uid 0 — precedes every argument, help and version included. Older requirement
+texts in other designs call this check "the root refusal"; since "root" now
+names the root domain, the same check is called the superuser refusal
+everywhere it is re-minted, and D02 is where the term is defined.
+
+Layering. `cli.Run` parses the top-level grammar, applies the superuser
+refusal, dispatches to the command package, and is the only writer of stderr.
+A command package returns errors; it never prints a diagnostic. The root file
+is read by the command, not by `cli.Run`, so that the command's own usage
+errors come first and the read precedes the operand parse and the first cloud
+call — that ordering is D04's rule (R-N1LD-IX1I, and R-QW0J-KUFF for the
+operand) and is not restated here. What `cli.Run` prints for a returned error
+is likewise stated once: the checkout and root-file errors map to a single
+`devctl: <message>` line and exit 2 under D04 R-QEXY-821P, and every error
+carrying `ExitCode()` (and optionally `Detail()`) under D05 R-D4G2-IO81. D02
+states which commands read the file, that help, version and top-level usage
+errors touch nothing, and that `cli.Run` alone speaks on stderr. `build` does
+not read the root file; that is D08's rule (R-RBMT-WHDT).
+
+Command products stay on stdout; external diagnostic detail is visibly quoted,
+including nested quotes and empty lines.
 
 ## REQUIREMENTS
 
-- R-D4F7-8UZB: The top-level grammar MUST be `devctl [options] <command> [arguments]`, accepting exactly the options `-h`/`--help`, `-V`/`--version`, and `--account <name>`/`--account=<name>` before the command and no other top-level options.
+- R-OFH7-TLNF: The top-level grammar MUST be `devctl [options] <command> [arguments]`, accepting exactly the options `-h`/`--help` and `-V`/`--version` before the command and no other top-level options, verified at least by `devctl --account ikigenba.dev version` writing exactly the three lines `devctl: unknown option '--account'`, an empty line, and `see 'devctl --help' for usage` to stderr, nothing to stdout, and exiting 2.
 
-- R-9T69-QTTI: An argument beginning with `-` that appears after the command MUST be passed to the command and MUST NOT be parsed as a top-level option, verified at least by `devctl version --help` printing the `version` usage text and exiting 0 and by `devctl version --account <name>` being a usage error.
+- R-OHX0-L54T: An argument beginning with `-` that appears after the command MUST be passed to the command and MUST NOT be parsed as a top-level option, verified at least by `devctl version --help` printing the `version` usage text and exiting 0 and by `devctl version --bogus` being a usage error.
 
 - R-D82W-E67E: An invocation with no command MUST write exactly the three lines `devctl: no command given`, an empty line, and `see 'devctl --help' for usage` to stderr, nothing to stdout, and exit 2.
 
 - R-D9AS-RXY3: An unknown command MUST write exactly the three lines `devctl: unknown command '<name>'`, an empty line, and `see 'devctl --help' for usage` to stderr, nothing to stdout, and exit 2.
 
 - R-DAIP-5POS: An unknown top-level option MUST write exactly the three lines `devctl: unknown option '<option>'`, an empty line, and `see 'devctl --help' for usage` to stderr, nothing to stdout, and exit 2.
-
-- R-9UE6-4LK7: `--account <name>` MUST take the following argument as the profile name whenever that argument neither begins with `-` nor names a command of the top-level command set, `--account=<name>` MUST take the text after the `=`, and the profile name MUST reach `Deps.Cloud` byte for byte with no trimming, case change, or other normalisation, verified with a fake `Deps.Cloud` that records the profile it is asked for.
-
-- R-9VM2-IDAW: When `--account` appears more than once before the command, the last occurrence MUST be the profile name the command acts in, verified with a fake `Deps.Cloud` that records the profile it is asked for.
-
-- R-9WTY-W51L: `--account` as the last argument, `--account` followed by an argument that begins with `-` or that names a command of the top-level command set, and `--account=` with an empty value MUST each write exactly the three lines `devctl: option '--account' requires a value`, an empty line, and `see 'devctl --help' for usage` to stderr, nothing to stdout, and exit 2.
-
-- R-DE6E-B0WV: `devctl --account <name> version` and `devctl --account=<name> version` MUST each produce the same stdout, stderr, and exit code as `devctl version`.
-
-- R-UYZW-0UKR: `devctl --account <name> version` and `devctl --account=<name> version` MUST call `Deps.Cloud` not at all, verified with a recording fake `Deps.Cloud` that is left with no call.
 
 - R-DFEA-OSNK: Package `internal/cli` MUST declare a package-level `var version string` whose value matches `^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`.
 
@@ -41,26 +56,28 @@ quoted, including nested quotes and empty lines.
 
 - R-DJ1Z-U3VN: `devctl version` with any argument other than `--help` or `-h` MUST write exactly the three lines `devctl: version takes no arguments`, an empty line, and `see 'devctl version --help' for usage` to stderr, nothing to stdout, and exit 2.
 
-- R-A1PK-F80D: With `Deps.EUID` equal to 0, every invocation MUST write the single line `devctl: must not run as root` to stderr, write nothing to stdout, and exit 3 whatever its arguments are, verified at least for no arguments, `--help`, `-h`, `--version`, `-V`, `version`, an unknown command, an unknown top-level option, `--account` without a value, and a well-formed invocation of each command of the top-level command set.
+- R-OJ4W-YWVI: The superuser refusal: with `Deps.EUID` equal to 0, every invocation MUST write the single line `devctl: must not run as root` to stderr, write nothing to stdout, call `Deps.Cloud` not at all, pass no `seam.Cmd` to `Deps.Exec` or `Deps.Stream`, and exit 3 whatever its arguments are, verified at least for no arguments, `--help`, `-h`, `--version`, `-V`, `version`, an unknown command, an unknown top-level option, `space list` with `Deps.Dir` outside any git checkout, and a well-formed invocation of each command of the top-level command set.
 
 - R-A2XG-SZR2: `cli.Run` MUST return only `0` — success, including help and version — `1` — the command was well-formed but could not do what it was asked — `2` — a usage error, or a preflight check failed — or `3` — refused because `Deps.EUID` is 0 — verified by asserting of every `cli.Run` call in the test suite that its return value is one of those four.
 
 - R-DMPO-ZF3Q: The first line of every diagnostic `devctl` writes to stderr MUST begin with `devctl: `, the usage text MUST never be written to stderr, and on success a command MUST write nothing to stderr.
 
-- R-BYZH-IH0F: The top-level command set MUST be exactly `version`, `space`, `secrets`, `build`, `deploy`, `restore`, and `remove`.
+- R-OKCT-COM7: The top-level command set MUST be exactly `version`, `space`, `secrets`, `build`, `deploy`, `restore`, `remove`, and `apex`.
 
-- R-C07D-W8R4: For each of `space`, `secrets`, `build`, `deploy`, `restore`, and `remove`, `devctl <command> --help` and `devctl <command> -h` MUST print the usage text that command's own design declares, byte for byte, to stdout, write nothing to stderr, and exit 0.
+- R-OLKP-QGCW: For each of `space`, `secrets`, `build`, `deploy`, `restore`, `remove`, and `apex`, `devctl <command> --help` and `devctl <command> -h` MUST print the usage text that command's own design declares, byte for byte, to stdout, write nothing to stderr, and exit 0.
 
-- R-C1FA-A0HT: The commands that require `--account` MUST be exactly `space`, `secrets`, `deploy`, `restore`, and `remove`, and `devctl --account <name> build <app>` MUST produce the same stdout, stderr, and exit code as `devctl build <app>`.
+- R-OO0I-HZUA: The commands that read the root file MUST be exactly `space`, `secrets`, `deploy`, `restore`, `remove`, and `apex`, and each of them MUST make every call to `Deps.Cloud` with the `Domain` of the `checkout.RootFile` it read as the profile and that file's `Region` as the region, taking neither value from anywhere else, verified with a recording fake `Deps.Cloud` by a well-formed invocation of each of the six in a temporary checkout whose root file holds `{"domain": "example.test", "region": "eu-west-1"}` leaving the fake with calls whose profile is exactly `example.test` and whose region is exactly `eu-west-1`.
 
-- R-3PTI-JABB: `space`, `secrets`, `deploy`, `restore`, and `remove`, invoked without `--account` and without `--help` or `-h` among the command's own arguments, MUST each write exactly the three lines `devctl: --account is required`, an empty line, and `see 'devctl <command> --help' for usage` — where `<command>` is the invoked command's own name — to stderr, write nothing to stdout, call `Deps.Cloud` not at all, and exit 2, and this check MUST precede every other check of the command's own arguments, verified at least by invoking each of the five with no further arguments and with arguments that are themselves invalid.
+- R-OP8E-VRKZ: `devctl --help`, `devctl -h`, `devctl --version`, `devctl -V`, `devctl version`, and every invocation that fails with a top-level usage error — no command, an unknown command, or an unknown top-level option — MUST call `Deps.Cloud` not at all and MUST pass no `seam.Cmd` to `Deps.Exec` or `Deps.Stream`, so that none of them finds a checkout or reads the root file, verified with recording fakes left with no call and `Deps.Dir` set to a directory that is not inside a git checkout.
 
-- R-C3V3-1JZ7: `devctl --help` and `devctl -h` MUST print exactly this text, once, to stdout, write nothing to stderr, and exit 0:
+- R-OQGB-9JBO: `cli.Run` MUST be the only writer of the `stderr` writer it was given: no command package's `Run` MUST take an `io.Writer` parameter other than the one `stdout` `cli.Run` passes it, and every diagnostic for a command that failed MUST be written by `cli.Run` from the error that `Run` returned, verified at least by `devctl space list` with `Deps.Dir` outside any git checkout, in a temporary checkout that has no root file, and in one whose root file holds `{"domain": "ikigenba.dev"}` each writing exactly one line to stderr and nothing to stdout.
+
+- R-OMSM-483L: `devctl --help` and `devctl -h` MUST print exactly this text, once, to stdout, write nothing to stderr, and exit 0:
 
   ```
   Usage: devctl [options] <command> [arguments]
 
-  Manage the ikigenba platform from the developer's machine. Never run as root.
+  Manage the platform from the developer's machine. Never run as root.
 
   Commands:
     version   print the version
@@ -70,11 +87,11 @@ quoted, including nested quotes and empty lines.
     deploy    put a built app file on a space
     remove    take an app off a space
     restore   put a space's app back from its backups
+    apex      point the root domain at one app on one space
 
   Options:
     --help              print this help
     --version           print the version
-    --account <name>    AWS shared-config profile to act in
 
   Exit codes:
     0  success
