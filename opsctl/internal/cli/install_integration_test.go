@@ -116,6 +116,40 @@ func TestInstallCLIUsesNormalizedHostAndConfiguredApex(t *testing.T) {
 	if apexApp, err := store.Get("host.apex"); err != nil || apexApp != "notes" {
 		t.Fatalf("host.apex after install = %q, %v", apexApp, err)
 	}
+	configuration, err := os.ReadFile(filepath.Join(fixture.root, "etc", "nginx", "conf.d", "ikigenba.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(configuration), "server_name         notes.sbx.example.test sbx.example.test example.test;") {
+		t.Fatalf("nginx configuration does not route the configured apex: %q", configuration)
+	}
+}
+
+func TestInstallCLIReportsNoApexForDifferentConfiguredApp(t *testing.T) {
+	// R-X33G-1V1E
+	fixture := newCLIInstallFixture(t)
+	store := config.Store{Root: fixture.root}
+	if err := store.Set("host.name", "sbx.example.test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("host.apex", "tasks"); err != nil {
+		t.Fatal(err)
+	}
+	fixture.secretParameter = "/sbx.example.test/notes"
+	writeCLIInstallFile(t, filepath.Join(fixture.root, "opt", "tasks", "etc", "manifest.toml"), "app = \"tasks\"\nport = 4200\n")
+
+	stdout, stderr, code := fixture.invoke()
+	wantOutput := "fetch: ok (notes-v1.tar.xz, 0.0 MiB)\n" +
+		"file: ok (notes, port 4100, default)\n" +
+		"secrets: ok (1 keys)\n" +
+		"unpack: ok (/opt/notes)\n" +
+		"unit: ok (ikigenba-notes.service)\n" +
+		"nginx: ok (notes.sbx.example.test, sbx.example.test)\n" +
+		"litestream: ok (state/notes.db)\n" +
+		"service: ok (notes v1.2.3 active)\n"
+	if code != 0 || stdout != wantOutput || stderr != "" {
+		t.Fatalf("install = exit %d stdout %q stderr %q", code, stdout, stderr)
+	}
 }
 
 func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
