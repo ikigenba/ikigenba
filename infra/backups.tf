@@ -1,5 +1,10 @@
+# One bucket for every space, keyed <space label>/<app>/... . The name has
+# dots, so clients address it path-style. force_destroy: the bucket holds
+# nothing that outlives the spaces, and `space destroy --delete-backups` is
+# the normal way its keys go.
 resource "aws_s3_bucket" "backups" {
-  bucket = "sbx-ikigenba-dev-602773793009"
+  bucket        = var.domain
+  force_destroy = true
 }
 
 resource "aws_s3_bucket_public_access_block" "backups" {

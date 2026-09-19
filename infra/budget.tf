@@ -1,5 +1,5 @@
 resource "aws_budgets_budget" "monthly" {
-  name         = "ikigenba-monthly"
+  name         = var.domain
   budget_type  = "COST"
   time_unit    = "MONTHLY"
   limit_amount = tostring(local.budget_monthly_usd)

@@ -1,7 +1,12 @@
-# The default-VPC lookups (data.aws_vpc.default, data.aws_subnets.default)
-# are declared in shared.tf and shared with the dev host.
+data "aws_vpc" "default" {
+  default = true
+}
+
+# name_prefix rather than name: create_before_destroy would otherwise collide
+# with itself on replacement. devctl reaches the group through the launch
+# template, never by name.
 resource "aws_security_group" "space" {
-  name_prefix = "ikigenba-space-"
+  name_prefix = "${var.domain}-"
   description = "space hosts: public HTTP/HTTPS, admin-only SSH"
   vpc_id      = data.aws_vpc.default.id
 

@@ -1,7 +1,7 @@
-# The instance profile is deliberately absent: the operator-side tool passes
-# the per-space profile at launch time.
+# The instance profile is deliberately absent: devctl passes the per-space
+# profile at launch time. devctl finds this template by name.
 resource "aws_launch_template" "space" {
-  name                   = "ikigenba-space"
+  name                   = var.domain
   image_id               = local.ami
   instance_type          = local.instance_type
   key_name               = aws_key_pair.space.key_name
@@ -26,5 +26,5 @@ resource "aws_launch_template" "space" {
     http_tokens = "required"
   }
 
-  user_data = base64encode(file("${path.module}/../templates/space-first-boot.sh"))
+  user_data = base64encode(file("${path.module}/templates/space-first-boot.sh"))
 }

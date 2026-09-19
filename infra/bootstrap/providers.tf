@@ -10,13 +10,12 @@ terraform {
 }
 
 provider "aws" {
-  profile = "ikigenba-prod"
-  region  = "us-east-2"
+  profile = var.domain
+  region  = var.region
 
   default_tags {
     tags = {
-      Project   = "metaspot"
-      Account   = "295229566359"
+      Domain    = var.domain
       ManagedBy = "terraform"
       Component = "bootstrap"
     }

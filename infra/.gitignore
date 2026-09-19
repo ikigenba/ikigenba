@@ -1,14 +1,16 @@
 **/.terraform/*
 # Bootstrap state is local and committed: it is the only record that
-# terraform owns the state buckets. Everything else is in S3. The .backup
+# terraform owns the state bucket. Everything else is in S3. The .backup
 # snapshots churn on every apply and are not committed.
 *.tfstate.backup
-!bootstrap/295229566359/terraform.tfstate
-!bootstrap/602773793009/terraform.tfstate
+!bootstrap/terraform.tfstate
 crash.log
 crash.*.log
+# terraform.tfvars.json is the one committed var file: the single statement
+# of the root domain and region, read by Terraform and by devctl.
 *.tfvars
 *.tfvars.json
+!terraform.tfvars.json
 override.tf
 override.tf.json
 *_override.tf

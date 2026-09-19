@@ -1,5 +1,6 @@
+# devctl finds this policy by name and attaches it to every per-space role.
 resource "aws_iam_policy" "space_boundary" {
-  name        = "ikigenba-space-boundary"
+  name        = var.domain
   description = "Permissions boundary for per-space instance roles; the ceiling any space role can hold."
   policy = jsonencode({
     Version = "2012-10-17"
@@ -11,12 +12,11 @@ resource "aws_iam_policy" "space_boundary" {
           "ssm:GetParameters",
           "ssm:GetParametersByPath",
         ]
-        # `*` matches `/`, so parameter/ikigenba/*/* covers every path under
-        # /ikigenba/ that has at least two more segments — every space's
-        # /ikigenba/<domain>/<app> — and excludes only /ikigenba/account (one
-        # segment). Read-only: the operator-side tool is the only writer of
-        # secrets.
-        Resource = "arn:aws:ssm:us-east-2:602773793009:parameter/ikigenba/*/*"
+        # A space's secrets live at /<space domain>/<app>, and every space
+        # domain is one label under the root, so `*.<domain>/*` covers every
+        # space's every app and nothing else. Read-only: devctl is the only
+        # writer of secrets.
+        Resource = "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/*.${var.domain}/*"
       },
       {
         Effect = "Allow"
@@ -27,7 +27,7 @@ resource "aws_iam_policy" "space_boundary" {
         Resource = "*"
         Condition = {
           StringEquals = {
-            "kms:ViaService" = "ssm.us-east-2.amazonaws.com"
+            "kms:ViaService" = "ssm.${var.region}.amazonaws.com"
           }
         }
       },
@@ -47,12 +47,12 @@ resource "aws_iam_policy" "space_boundary" {
       {
         Effect = "Allow"
         Action = "route53:ChangeResourceRecordSets"
-        # Any hosted zone in the account: a space's domain may sit in the sbx
-        # zone or in any other zone this account owns, and the per-space inline
-        # policy narrows to the one zone that space's domain resolves to.
-        # Record types A and TXT only: no space role can rewrite an NS
-        # delegation.
-        Resource = "arn:aws:route53:::hostedzone/*"
+        # The one zone. Record types A and TXT only: a space writes its own
+        # <space> and *.<space> A records and its ACME challenge TXT records,
+        # and the apex holder also writes the TXT at _acme-challenge.<domain>.
+        # The per-space inline policy narrows to those names; no space role
+        # can write an NS record.
+        Resource = aws_route53_zone.root.arn
         Condition = {
           "ForAllValues:StringEquals" = {
             "route53:ChangeResourceRecordSetsRecordTypes" = ["A", "TXT"]
@@ -62,7 +62,7 @@ resource "aws_iam_policy" "space_boundary" {
       {
         Effect   = "Allow"
         Action   = "route53:ListResourceRecordSets"
-        Resource = "arn:aws:route53:::hostedzone/*"
+        Resource = aws_route53_zone.root.arn
       },
       {
         Effect   = "Allow"
