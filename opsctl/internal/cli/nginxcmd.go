@@ -22,11 +22,14 @@ Subcommands:
 
 Configuration keys:
   host.name  the fully-qualified name this host answers at
+  host.apex  the app that answers at the parent of host.name; unset means none
 
 A service is any /opt/<name>/ with an etc/ or state/ directory. One with an
 etc/manifest.toml naming a port answers at <name>.<host.name>, and the one
 whose manifest sets default answers at <host.name> as well. Its own
-etc/nginx.conf, if it ships one, is included in its server block.
+etc/nginx.conf, if it ships one, is included in its server block. The app
+host.apex names also answers at the parent of host.name; until that app is
+routed, the parent answers 404.
 `
 
 func runNginx(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
@@ -34,12 +37,12 @@ func runNginx(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 	if invocation.done {
 		return invocation.code
 	}
-	hostName, code := nginxHostName(config.Store{Root: deps.Root}, stderr, deps)
+	hostName, apexApp, code := nginxConfig(config.Store{Root: deps.Root}, stderr, deps)
 	if code != exitOK {
 		return code
 	}
 	env := host.Env{Root: deps.Root, Getenv: deps.Getenv, Execute: deps.Execute, Now: deps.Now}
-	return executeNginx(invocation.subcommand, stdout, stderr, env, hostName)
+	return executeNginx(invocation.subcommand, stdout, stderr, env, hostName, apexApp)
 }
 
 type nginxInvocation struct {
@@ -67,9 +70,9 @@ func parseNginxInvocation(args []string, stdout, stderr io.Writer, deps Deps) ng
 	return nginxInvocation{subcommand: args[0]}
 }
 
-func executeNginx(subcommand string, stdout, stderr io.Writer, env host.Env, hostName string) exitCode {
+func executeNginx(subcommand string, stdout, stderr io.Writer, env host.Env, hostName, apexApp string) exitCode {
 	if subcommand == "show" {
-		candidate, err := nginx.Render(context.Background(), env, hostName, "")
+		candidate, err := nginx.Render(context.Background(), env, hostName, apexApp)
 		if err != nil {
 			writeDiagnostic(stderr, err)
 			return exitFail
@@ -79,23 +82,40 @@ func executeNginx(subcommand string, stdout, stderr io.Writer, env host.Env, hos
 		}
 		return exitOK
 	}
-	if err := nginx.Apply(context.Background(), env, hostName, ""); err != nil {
+	if err := nginx.Apply(context.Background(), env, hostName, apexApp); err != nil {
 		writeDiagnostic(stderr, err)
 		return exitFail
 	}
 	return exitOK
 }
 
-func nginxHostName(store config.Store, stderr io.Writer, deps Deps) (string, exitCode) {
-	value, err := store.Get("host.name")
-	if err == nil && value != "" {
-		return value, exitOK
-	}
-	if err == nil || errors.Is(err, config.ErrNotSet) {
+type nginxConfigReader interface {
+	Get(string) (string, error)
+}
+
+func nginxConfig(store nginxConfigReader, stderr io.Writer, deps Deps) (string, string, exitCode) {
+	hostName, err := store.Get("host.name")
+	hostName = host.NormalizeName(hostName)
+	if (err == nil || errors.Is(err, config.ErrNotSet)) && hostName == "" {
 		_, _ = io.WriteString(stderr, "opsctl: host.name not set\n")
-		return "", exitFail
+		return "", "", exitFail
 	}
-	return "", configActionErr(stderr, "get", deps, err)
+	if err != nil {
+		return "", "", configActionErr(stderr, "get", deps, err)
+	}
+	apexApp, err := store.Get("host.apex")
+	if errors.Is(err, config.ErrNotSet) {
+		apexApp = ""
+	} else if err != nil {
+		return "", "", configActionErr(stderr, "get", deps, err)
+	}
+	if apexApp != "" {
+		if _, err := host.Apex(hostName); err != nil {
+			writeDiagnostic(stderr, err)
+			return "", "", exitFail
+		}
+	}
+	return hostName, apexApp, exitOK
 }
 
 func writeNginxUsageError(stderr io.Writer, message string) exitCode {
