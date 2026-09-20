@@ -182,6 +182,10 @@ Postconditions:
   `multi-user.target`. systemd has been reloaded and the unit is enabled.
 - `/etc/nginx/conf.d/ikigenba.conf` has been regenerated and nginx reloaded,
   so `https://crm.sbx.ikigenba.dev` reaches `127.0.0.1:3100`.
+- Were the installed app named `auth`, the same regeneration would wire every
+  other app's server block to the authenticator's `/check` (`S5-nginx.md`), so
+  each begins requiring a valid session. The `nginx:` line still reports only
+  the installed app's own name.
 - `/etc/litestream.yml` has been regenerated from every manifest under `/opt`
   and now names `/opt/crm/state/crm.db`, replicating to `<backup.s3_uri>crm/`.
   Because the file changed, `litestream.service` was restarted; it is running.
@@ -615,6 +619,10 @@ Postconditions:
   it been the apex app, the line would have read `crm.sbx.ikigenba.dev,
   ikigenba.dev removed`: `host.apex` is not touched, so `ikigenba.dev` moves
   to the 404 block and answers from there until `crm` is installed again.
+- Were the uninstalled app named `auth`, the same regeneration would strip the
+  authenticator wiring from every other app's server block (`S5-nginx.md`), so
+  each returns to fail-open. The `nginx:` line still reports only the
+  uninstalled app's own name.
 - `/etc/litestream.yml` has been regenerated from the manifests left under
   `/opt` and no longer names `/opt/crm/state/crm.db`. Because the file
   changed, `litestream.service` was restarted. It was stopped after the
