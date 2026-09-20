@@ -2,9 +2,12 @@ At the start of every session, before acting on the first request, enumerate
 the project skills by printing the `name` and `description` front matter of
 every `.agents/skills/*/SKILL.md` file. 
 
-This project is spec managed. Direct source code changes are not allowed
-without direct user instruction. Agents never start the build run
-(`build-spec`); it is strictly a human-gated operation.
+This project is spec managed: a sub-project's code is derived from its
+`specs/`, so a hand-written file desynchronizes the tree from the design.
+Agents write no file under a sub-project's tree without direct user
+instruction — tests and throwaway diagnostics included. A probe that must sit
+in the tree goes in a worktree that is removed afterwards. Agents never start
+the build run (`build-spec`); it is strictly a human-gated operation.
 
 Stories and designs are the working material, never a constraint on the work.
 Only the build run and the audit treat them as read-only. In any proposal or
@@ -27,6 +30,13 @@ than `main`.
 Never use `git stash`. The stash stack is shared across all worktrees, so
 another session may pop or drop your entry. Set work aside with a temporary WIP
 commit, a dedicated local branch, or an isolated worktree instead.
+
+Investigate outside the working tree. A reproduction, probe, or scratch script
+belongs in a temporary directory outside the repository; when it must import
+the code to run, it belongs in a throwaway worktree (`git worktree add`)
+removed afterwards. Reach for the cheapest instrument that answers the
+question first — a shell command, or asking the user what state something was
+in, usually beats writing a program.
 
 Every commit an agent makes ends with a `Co-Authored-By:` trailer naming the
 agent that made it, in whatever form that agent identifies itself. This is the
