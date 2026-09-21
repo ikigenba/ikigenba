@@ -35,17 +35,26 @@ port is taken, the listener's own error is relayed, prefixed with `auth: `, and
 has accepted, closes the listener, and returns 0 (D01 fixes `cli.Run` to 0 on
 both signals).
 
-The HTTP server is built in `internal/server` by a constructor that takes the
-store, the Google client (its surface is D05's), a clock, and the handler
-configuration, and exposes a lifecycle to serve on the loopback listener and to
-shut down gracefully. The constructor's parameters are the whole of what the
-handlers need; D05/D06/D07 attach observable HTTP behavior to this server, not
-new construction parameters.
+The HTTP server is built in `internal/server` by a one-argument constructor
+that takes a single construction struct, `server.Config`, and exposes a
+lifecycle to serve on the loopback listener and to shut down gracefully. The
+struct carries every process dependency the handlers need: the opened store,
+the Google client (its surface is D05's), the clock, the random source from
+which handlers mint values such as the PKCE verifier, the diagnostic stream to
+which handlers write errors such as a failed token exchange, and the workspace
+domain. The Google credentials are not repeated here; the Google client already
+holds them. `cli.Run` fills the struct from the `Process` it was given, so a
+test that drives the server directly can hand it a deterministic reader and a
+buffer and observe exactly what the handlers drew and wrote. The server side
+names the random source and diagnostic stream by their `io` interfaces, never
+by `cli.Process`, so D01's one-way import direction holds. That struct is the
+whole of what the handlers need; D05/D06/D07 attach observable HTTP behavior to
+this server, not new construction parameters.
 
 ## REQUIREMENTS
 
-- R-IC3H-0QTX: The `internal/server` package MUST export `type Config struct { ClientID string; ClientSecret string; WorkspaceDomain string }`.
-- R-IDBD-EIKM: The `internal/server` package MUST export `type Server` and `func New(st *store.Store, gc *google.Client, now func() time.Time, cfg Config) *Server`.
+- R-KTXG-XSI4: The `internal/server` package MUST export `type Config struct { Store *store.Store; Google *google.Client; Now func() time.Time; Rand io.Reader; Stderr io.Writer; WorkspaceDomain string }`.
+- R-KWD9-PBZI: The `internal/server` package MUST export `type Server` and `func New(cfg Config) *Server`.
 - R-IEJ9-SABB: `*server.Server` MUST export `func (*Server) Serve(addr string) error` and `func (*Server) Shutdown(ctx context.Context) error`.
 - R-IFR6-6220: `cli.Run` MUST read exactly `PORT`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `WORKSPACE_DOMAIN` from the environment through `Process.Getenv`, and MUST validate `PORT` before the three Google settings.
 - R-IGZ2-JTSP: When `PORT` is unset or empty, `cli.Run` MUST write the single line `auth: PORT is not set` to `Process.Stderr`, write nothing to `Process.Stdout`, open no store, listen on no address, and return 2.
@@ -55,8 +64,9 @@ new construction parameters.
 - R-ILUO-2WRH: When `store.Open` returns without error, `cli.Run` MUST proceed to serve identically whether or not the database source pre-existed, relying on D04's `store.Open` to have created the schema when the source was absent, and MUST write nothing to `Process.Stdout` or `Process.Stderr` on this path.
 - R-IN2K-GOI6: When `store.Open` returns an error, `cli.Run` MUST write the single line `auth: cannot open database <source>: <reason>` to `Process.Stderr` (where `<source>` is `Process.DBSource` and `<reason>` is the `store.Open` error text), write nothing to `Process.Stdout`, listen on no address, and return 1.
 - R-IOAG-UG8V: A healthy `auth` MUST listen on `127.0.0.1:<PORT>` (the configured port) and on no other address, serving the HTTP server built by `server.New`.
-- R-IPID-87ZK: While serving with a whole configuration and an opened store, `cli.Run` MUST write nothing to `Process.Stdout` or `Process.Stderr` and MUST NOT return until it receives `SIGINT` or `SIGTERM`.
+- R-KXL6-33Q7: While serving with a whole configuration and an opened store, `cli.Run` itself MUST write nothing to `Process.Stdout` or `Process.Stderr`, so that in the absence of any request whose D05 contract writes a diagnostic both streams stay empty for as long as the server runs, and `cli.Run` MUST NOT return until it receives `SIGINT` or `SIGTERM`.
 - R-IRY5-ZRGY: When the loopback bind fails because the configured port is already in use, `cli.Run` MUST write the single line `auth: listen tcp 127.0.0.1:<PORT>: bind: address already in use` (the configured port) to `Process.Stderr`, write nothing to `Process.Stdout`, leave the process already holding the port undisturbed, and return 1.
 - R-IT62-DJ7N: On `SIGTERM` and on `SIGINT`, `cli.Run` MUST behave identically: let requests already accepted receive their full response, close the listener via `Server.Shutdown`, leave nothing listening on `127.0.0.1:<PORT>` afterward, and return 0.
-- R-IZ3Q-JNCG: `cli.Run` MUST construct the Google client via `google.NewClient` passing `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `WORKSPACE_DOMAIN`, and `Process.OIDCIssuer`, and when `google.NewClient` returns an error MUST write an `auth: `-prefixed diagnostic to `Process.Stderr`, listen on nothing, and return 1; otherwise it MUST construct the server with `server.New` passing the opened `*store.Store`, that Google client, `Process.Now` as the clock, and a `server.Config` carrying `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `WORKSPACE_DOMAIN`, then run it via `Server.Serve` on the address `127.0.0.1:<PORT>` and stop it via `Server.Shutdown`.
+- R-KYT2-GVGW: `cli.Run` MUST construct the Google client via `google.NewClient` passing `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `WORKSPACE_DOMAIN`, and `Process.OIDCIssuer`, and when `google.NewClient` returns an error MUST write an `auth: `-prefixed diagnostic to `Process.Stderr`, listen on nothing, and return 1; otherwise it MUST construct the server via `server.New` with a `server.Config` whose `Store` is the opened `*store.Store`, `Google` is that Google client, `Now` is `Process.Now`, `Rand` is `Process.Rand`, `Stderr` is `Process.Stderr`, and `WorkspaceDomain` is `WORKSPACE_DOMAIN`, then run it via `Server.Serve` on the address `127.0.0.1:<PORT>` and stop it via `Server.Shutdown`.
 - R-IVLV-52P1: The `*server.Server` returned by `server.New` MUST serve the HTTP routes whose contracts D05, D06, and D07 define.
+- R-UR0L-ZVDJ: The `*Server` returned by `New` MUST mint every random value the `*Server` mints itself (including the PKCE verifier D05 requires of `GET /login/google`) by reading `cfg.Rand`, MUST write every diagnostic its handlers emit (including the token-exchange error D05 requires of `GET /login/google/callback`) to `cfg.Stderr`, and MUST NOT read a global random source or write to a global output stream; given a `Config` whose `Rand` is a deterministic reader and whose `Stderr` is an in-memory buffer, the values minted are a function of the bytes that reader yields and every such diagnostic appears in that buffer.
