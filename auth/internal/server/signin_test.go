@@ -28,10 +28,6 @@ import (
 
 var signInNow = time.Date(2026, 9, 20, 16, 0, 0, 0, time.UTC)
 
-// idBytesForState is the number of random bytes CreateLoginState reads when
-// minting a login-state id, so a deterministic cfg.Rand can also feed the store.
-const idBytesForState = 16
-
 type signInRand struct{ next byte }
 
 func (r *signInRand) Read(p []byte) (int, error) {
@@ -222,22 +218,21 @@ func TestSignInConstantsHostRulesAndAnonymousRoot(t *testing.T) {
 
 func TestLoginStartMintsVerifierFromRandAndRedirects(t *testing.T) {
 	issuer := newSignInIssuer(t)
-	// One reader feeds both the PKCE verifier and the login-state id, so the
-	// recorded values are a function of cfg.Rand alone.
-	randBytes := bytes.Repeat([]byte{0x2a}, pkceVerifierBytes+idBytesForState)
-	var serverRand bytes.Reader
-	serverRand.Reset(randBytes)
-	st, err := store.Open(t.TempDir()+"/auth.db", &serverRand)
+	// The store has its own reader. The server's reader is distinct, so the
+	// recorded verifier can only come from the bytes that reader yields.
+	st, err := store.Open(t.TempDir()+"/auth.db", &signInRand{next: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	gc := googleclient.NewClient("client-id", "client-secret", "green.example", issuer.server.URL)
+	verifierBytes := bytes.Repeat([]byte{0x2a}, pkceVerifierBytes)
+	serverRand := bytes.NewReader(append([]byte(nil), verifierBytes...))
 	s := New(Config{
 		Store:           st,
 		Google:          gc,
 		Now:             func() time.Time { return signInNow },
-		Rand:            &serverRand,
+		Rand:            serverRand,
 		Stderr:          io.Discard,
 		WorkspaceDomain: "green.example",
 	})
@@ -258,7 +253,7 @@ func TestLoginStartMintsVerifierFromRandAndRedirects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("login state named by Location was not recorded: %v", err)
 	}
-	wantVerifier := idcodec.Encode(bytes.Repeat([]byte{0x2a}, pkceVerifierBytes))
+	wantVerifier := idcodec.Encode(verifierBytes)
 	if recorded.Verifier != wantVerifier || recorded.ReturnURL != returnURL {
 		t.Fatalf("recorded login state = %#v, want verifier %s return %s", recorded, wantVerifier, returnURL)
 	}
@@ -269,11 +264,14 @@ func TestLoginStartMintsVerifierFromRandAndRedirects(t *testing.T) {
 	if location.Query().Get("code_challenge") != base64.RawURLEncoding.EncodeToString(wantChallenge[:]) {
 		t.Fatalf("code_challenge = %q", location.Query().Get("code_challenge"))
 	}
+	if serverRand.Len() != 0 {
+		t.Fatalf("server Rand unread bytes = %d, want 0", serverRand.Len())
+	}
 
-	// R-UR0L-ZVDJ: the minted verifier is a function of cfg.Rand, not a global source.
-	var again bytes.Reader
-	again.Reset(append([]byte(nil), randBytes...))
-	secondStore, err := store.Open(t.TempDir()+"/auth.db", &again)
+	// R-UR0L-ZVDJ: the minted verifier is a function of cfg.Rand, not of the
+	// store's reader and not of a global source.
+	otherBytes := bytes.Repeat([]byte{0x5c}, pkceVerifierBytes)
+	secondStore, err := store.Open(t.TempDir()+"/auth.db", &signInRand{next: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +280,7 @@ func TestLoginStartMintsVerifierFromRandAndRedirects(t *testing.T) {
 		Store:           secondStore,
 		Google:          gc,
 		Now:             func() time.Time { return signInNow },
-		Rand:            &again,
+		Rand:            bytes.NewReader(otherBytes),
 		Stderr:          io.Discard,
 		WorkspaceDomain: "green.example",
 	})
@@ -292,8 +290,9 @@ func TestLoginStartMintsVerifierFromRandAndRedirects(t *testing.T) {
 		t.Fatal(err)
 	}
 	againState, err := secondStore.ConsumeLoginState(againLocation.Query().Get("state"))
-	if err != nil || againState.Verifier != wantVerifier || againState.State != recorded.State {
-		t.Fatalf("repeated Rand did not mint the same login state: %#v %v, want state %s", againState, err, recorded.State)
+	wantOther := idcodec.Encode(otherBytes)
+	if err != nil || againState.Verifier != wantOther || againState.Verifier == recorded.Verifier {
+		t.Fatalf("different Rand did not mint a different verifier: %#v %v, want %s", againState, err, wantOther)
 	}
 }
 
@@ -358,7 +357,14 @@ func TestCallbackRejectsMissingUnknownAndExchangeFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
-	s.stderr = &stderr
+	s = New(Config{
+		Store:           st,
+		Google:          googleclient.NewClient("client-id", "client-secret", "green.example", issuer.server.URL),
+		Now:             func() time.Time { return signInNow },
+		Rand:            &signInRand{next: 1},
+		Stderr:          &stderr,
+		WorkspaceDomain: "green.example",
+	})
 	w := serveSignIn(s, http.MethodGet, "/login/google/callback?state="+state.State+"&code=rejected", "auth.green.example", nil, "")
 	// R-J2JU-FY8K: a failed exchange is a single-line 502, the underlying error
 	// on cfg.Stderr, and no user, session, or cookie.
@@ -368,7 +374,28 @@ func TestCallbackRejectsMissingUnknownAndExchangeFailure(t *testing.T) {
 	if !strings.Contains(stderr.String(), "exchange rejected") {
 		t.Fatalf("stderr diagnostic = %q", stderr.String())
 	}
-	// R-UR0L-ZVDJ: the exchange diagnostic is written to cfg.Stderr, not a global stream.
+	// R-UR0L-ZVDJ: the exchange diagnostic is a function of the writer given to
+	// New, not of a global stream or a writer assigned after construction.
+	otherState, err := st.CreateLoginState("verifier", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var otherStderr bytes.Buffer
+	other := New(Config{
+		Store:           st,
+		Google:          googleclient.NewClient("client-id", "client-secret", "green.example", issuer.server.URL),
+		Now:             func() time.Time { return signInNow },
+		Rand:            &signInRand{next: 1},
+		Stderr:          &otherStderr,
+		WorkspaceDomain: "green.example",
+	})
+	otherResponse := serveSignIn(other, http.MethodGet, "/login/google/callback?state="+otherState.State+"&code=rejected", "auth.green.example", nil, "")
+	if otherResponse.Code != http.StatusBadGateway {
+		t.Fatalf("second exchange failure = %d", otherResponse.Code)
+	}
+	if !strings.Contains(otherStderr.String(), "exchange rejected") || strings.Count(stderr.String(), "exchange rejected") != 1 {
+		t.Fatalf("diagnostics leaked across writers: first %q second %q", stderr.String(), otherStderr.String())
+	}
 	assertEmptySignInTables(t, st)
 	if user, err := st.UpsertUserOnLogin("https://accounts.google.com", "subject-rejected", "rejected@green.example", signInNow); err != nil || user.Email != "rejected@green.example" {
 		t.Fatalf("probing for a created user failed: %#v %v", user, err)
