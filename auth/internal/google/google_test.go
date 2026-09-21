@@ -56,6 +56,7 @@ type fakeIssuer struct {
 	key           *rsa.PrivateKey
 	mu            sync.Mutex
 	discoveryHits int
+	failDiscovery bool
 	forms         []url.Values
 	tokens        map[string]string
 }
@@ -94,7 +95,12 @@ func (f *fakeIssuer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/.well-known/openid-configuration":
 		f.mu.Lock()
 		f.discoveryHits++
+		fail := f.failDiscovery
 		f.mu.Unlock()
+		if fail {
+			http.Error(w, "discovery unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		writeJSON(f.t, w, map[string]any{
 			"issuer":                                f.server.URL,
 			"authorization_endpoint":                f.server.URL + "/authorize",
@@ -195,6 +201,12 @@ func (f *fakeIssuer) discoveryRequests() int {
 	return f.discoveryHits
 }
 
+func (f *fakeIssuer) setDiscoveryFailure(fail bool) {
+	f.mu.Lock()
+	f.failDiscovery = fail
+	f.mu.Unlock()
+}
+
 func writeJSON(t *testing.T, w http.ResponseWriter, value any) {
 	t.Helper()
 	w.Header().Set("Content-Type", "application/json")
@@ -239,27 +251,31 @@ func TestExportedAPIAndAuthorizationURL(t *testing.T) {
 		}
 	}
 
-	// R-FUMO-82E5
-	_ = (func(string, string, string, string) (*googleclient.Client, error))(googleclient.NewClient)
-	// R-FVUK-LU4U
-	_ = (func(*googleclient.Client, string, string, string) string)((*googleclient.Client).AuthCodeURL)
+	// R-KUGP-2ZZD
+	_ = (func(string, string, string, string) *googleclient.Client)(googleclient.NewClient)
+	// R-KVOL-GRQ2
+	_ = (func(*googleclient.Client, string, string, string) (string, error))((*googleclient.Client).AuthCodeURL)
 	// R-FX2G-ZLVJ
 	_ = (func(*googleclient.Client, context.Context, string, string, string) (googleclient.Claims, error))((*googleclient.Client).Exchange)
 
 	fake := newFakeIssuer(t)
-	client, err := googleclient.NewClient("client-id", "client-secret", "example.test", fake.server.URL)
-	if err != nil {
-		t.Fatalf("NewClient: %v", err)
-	}
+	client := googleclient.NewClient("client-id", "client-secret", "example.test", fake.server.URL)
 
-	// R-FYAD-DDM8
-	if fake.discoveryRequests() != 1 {
-		t.Fatalf("discovery requests = %d, want 1", fake.discoveryRequests())
+	// R-KWWH-UJGR
+	if fake.discoveryRequests() != 0 {
+		t.Fatalf("discovery requests at construction = %d, want 0", fake.discoveryRequests())
 	}
 
 	verifier := "fixed-pkce-verifier"
 	redirectURI := "https://auth.example.test/login/google/callback"
-	authURL, err := url.Parse(client.AuthCodeURL("login-state", verifier, redirectURI))
+	rawURL, err := client.AuthCodeURL("login-state", verifier, redirectURI)
+	if err != nil {
+		t.Fatalf("AuthCodeURL: %v", err)
+	}
+	if fake.discoveryRequests() != 1 {
+		t.Fatalf("discovery requests after AuthCodeURL = %d, want 1", fake.discoveryRequests())
+	}
+	authURL, err := url.Parse(rawURL)
 	if err != nil {
 		t.Fatalf("parse authorization URL: %v", err)
 	}
@@ -281,18 +297,21 @@ func TestExportedAPIAndAuthorizationURL(t *testing.T) {
 			t.Errorf("authorization query %s = %q, want %q", key, got, want)
 		}
 	}
-	second := client.AuthCodeURL("other-state", "other-verifier", "https://auth.other.test/callback")
+	second, err := client.AuthCodeURL("other-state", "other-verifier", "https://auth.other.test/callback")
+	if err != nil {
+		t.Fatalf("second AuthCodeURL: %v", err)
+	}
 	if !strings.Contains(second, url.QueryEscape("https://auth.other.test/callback")) || strings.Contains(second, url.QueryEscape(redirectURI)) {
 		t.Errorf("second authorization URL did not use its per-call redirect URI: %s", second)
+	}
+	if fake.discoveryRequests() != 1 {
+		t.Errorf("discovery requests after second AuthCodeURL = %d, want 1", fake.discoveryRequests())
 	}
 }
 
 func TestExchangeVerifiesAndReturnsClaims(t *testing.T) {
 	fake := newFakeIssuer(t)
-	client, err := googleclient.NewClient("client-id", "client-secret", "example.test", fake.server.URL)
-	if err != nil {
-		t.Fatalf("NewClient: %v", err)
-	}
+	client := googleclient.NewClient("client-id", "client-secret", "example.test", fake.server.URL)
 
 	// R-IFDR-6B5D
 	// R-G0Q6-4X3M
@@ -347,10 +366,7 @@ func TestExchangeVerifiesAndReturnsClaims(t *testing.T) {
 
 func TestExchangeRejectsEndpointAndVerificationFailures(t *testing.T) {
 	fake := newFakeIssuer(t)
-	client, err := googleclient.NewClient("client-id", "client-secret", "example.test", fake.server.URL)
-	if err != nil {
-		t.Fatalf("NewClient: %v", err)
-	}
+	client := googleclient.NewClient("client-id", "client-secret", "example.test", fake.server.URL)
 
 	tests := []struct {
 		name  string
@@ -397,17 +413,15 @@ func TestExchangeRejectsEndpointAndVerificationFailures(t *testing.T) {
 	}
 
 	unreachable := newFakeIssuer(t)
-	unreachableClient, err := googleclient.NewClient("client-id", "client-secret", "example.test", unreachable.server.URL)
-	if err != nil {
-		t.Fatalf("NewClient for unreachable test: %v", err)
-	}
+	unreachableClient := googleclient.NewClient("client-id", "client-secret", "example.test", unreachable.server.URL)
 	unreachable.server.Close()
 	if _, err := unreachableClient.Exchange(context.Background(), "code", "verifier", "https://auth.example.test/callback"); err == nil {
 		t.Fatal("Exchange with unreachable token endpoint returned nil error")
 	}
 }
 
-func TestNewClientReportsDiscoveryFailure(t *testing.T) {
+func TestAuthCodeURLDiscoveryFailureIsRetried(t *testing.T) {
+	// R-KZCA-M2Y5
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
@@ -416,8 +430,54 @@ func TestNewClientReportsDiscoveryFailure(t *testing.T) {
 	if err := listener.Close(); err != nil {
 		t.Fatalf("close listener: %v", err)
 	}
-	if _, err := googleclient.NewClient("client-id", "client-secret", "example.test", issuer); err == nil {
-		t.Fatal("NewClient with unreachable discovery endpoint returned nil error")
+
+	client := googleclient.NewClient("client-id", "client-secret", "example.test", issuer)
+	if client == nil {
+		t.Fatal("NewClient returned nil")
+	}
+	got, err := client.AuthCodeURL("login-state", "verifier", "https://auth.example.test/callback")
+	if err == nil {
+		t.Fatal("AuthCodeURL with unreachable issuer returned nil error")
+	}
+	if got != "" {
+		t.Fatalf("AuthCodeURL URL = %q, want empty", got)
+	}
+
+	// R-KWWH-UJGR
+	fake := newFakeIssuer(t)
+	retrying := googleclient.NewClient("client-id", "client-secret", "example.test", fake.server.URL)
+	if fake.discoveryRequests() != 0 {
+		t.Fatalf("discovery requests at construction = %d, want 0", fake.discoveryRequests())
+	}
+	fake.setDiscoveryFailure(true)
+	failedURL, err := retrying.AuthCodeURL("login-state", "verifier", "https://auth.example.test/callback")
+	if err == nil {
+		t.Fatal("AuthCodeURL against failing discovery returned nil error")
+	}
+	if failedURL != "" {
+		t.Fatalf("AuthCodeURL URL = %q, want empty", failedURL)
+	}
+	if fake.discoveryRequests() != 1 {
+		t.Fatalf("discovery requests after failed AuthCodeURL = %d, want 1", fake.discoveryRequests())
+	}
+
+	if _, err := retrying.Exchange(context.Background(), "code", "verifier", "https://auth.example.test/callback"); err == nil {
+		t.Fatal("Exchange reused a failed discovery instead of retrying")
+	}
+	if fake.discoveryRequests() != 2 {
+		t.Fatalf("discovery requests after failed Exchange = %d, want 2", fake.discoveryRequests())
+	}
+
+	fake.setDiscoveryFailure(false)
+	rawURL, err := retrying.AuthCodeURL("state-2", "verifier", "https://auth.example.test/callback")
+	if err != nil {
+		t.Fatalf("AuthCodeURL after discovery recovery: %v", err)
+	}
+	if rawURL == "" {
+		t.Fatal("AuthCodeURL after discovery recovery returned an empty URL")
+	}
+	if fake.discoveryRequests() != 3 {
+		t.Fatalf("discovery requests after recovery = %d, want 3", fake.discoveryRequests())
 	}
 }
 

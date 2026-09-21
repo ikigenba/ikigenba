@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
@@ -25,50 +26,49 @@ type Claims struct {
 
 // Client provides the Google OAuth 2.0 and OIDC operations used by auth.
 type Client struct {
-	oauth2Config oauth2.Config
-	verifier     *oidc.IDTokenVerifier
+	clientID     string
+	clientSecret string
 	workspace    string
+	issuer       string
+
+	mu       sync.Mutex
+	provider *oidc.Provider
 }
 
-// NewClient discovers the provider at issuer and constructs a Google client.
-func NewClient(clientID, clientSecret, workspaceDomain, issuer string) (*Client, error) {
-	provider, err := oidc.NewProvider(context.Background(), issuer)
-	if err != nil {
-		return nil, fmt.Errorf("discover OIDC provider: %w", err)
-	}
-
+// NewClient records Google configuration without contacting the issuer.
+func NewClient(clientID, clientSecret, workspaceDomain, issuer string) *Client {
 	return &Client{
-		oauth2Config: oauth2.Config{
-			ClientID:     clientID,
-			ClientSecret: clientSecret,
-			Endpoint:     provider.Endpoint(),
-			Scopes:       []string{oidc.ScopeOpenID, "email", "profile"},
-		},
-		verifier: provider.Verifier(&oidc.Config{
-			ClientID:             clientID,
-			SkipIssuerCheck:      true,
-			SupportedSigningAlgs: []string{oidc.RS256},
-		}),
-		workspace: workspaceDomain,
-	}, nil
+		clientID:     clientID,
+		clientSecret: clientSecret,
+		workspace:    workspaceDomain,
+		issuer:       issuer,
+	}
 }
 
 // AuthCodeURL builds an authorization URL using request-specific callback data.
-func (c *Client) AuthCodeURL(state, verifier, redirectURI string) string {
-	config := c.oauth2Config
-	config.RedirectURL = redirectURI
+// Discovery of the issuer happens here, not at construction, and a failed
+// discovery is not remembered.
+func (c *Client) AuthCodeURL(state, verifier, redirectURI string) (string, error) {
+	config, err := c.oauthConfig(context.Background(), redirectURI)
+	if err != nil {
+		return "", err
+	}
 
 	return config.AuthCodeURL(
 		state,
 		oauth2.SetAuthURLParam("hd", c.workspace),
 		oauth2.S256ChallengeOption(verifier),
-	)
+	), nil
 }
 
 // Exchange exchanges a code and verifies the returned Google ID token.
+// Discovery of the issuer happens here, not at construction, and a failed
+// discovery is not remembered.
 func (c *Client) Exchange(ctx context.Context, code, verifier, redirectURI string) (Claims, error) {
-	config := c.oauth2Config
-	config.RedirectURL = redirectURI
+	config, err := c.oauthConfig(ctx, redirectURI)
+	if err != nil {
+		return Claims{}, err
+	}
 
 	token, err := config.Exchange(ctx, code, oauth2.VerifierOption(verifier))
 	if err != nil {
@@ -80,7 +80,15 @@ func (c *Client) Exchange(ctx context.Context, code, verifier, redirectURI strin
 		return Claims{}, errors.New("exchange authorization code: response has no ID token")
 	}
 
-	idToken, err := c.verifier.Verify(ctx, rawIDToken)
+	provider, err := c.discovered(ctx)
+	if err != nil {
+		return Claims{}, err
+	}
+	idToken, err := provider.Verifier(&oidc.Config{
+		ClientID:             c.clientID,
+		SkipIssuerCheck:      true,
+		SupportedSigningAlgs: []string{oidc.RS256},
+	}).Verify(ctx, rawIDToken)
 	if err != nil {
 		return Claims{}, fmt.Errorf("verify ID token: %w", err)
 	}
@@ -106,4 +114,37 @@ func (c *Client) Exchange(ctx context.Context, code, verifier, redirectURI strin
 		EmailVerified: claims.EmailVerified,
 		HostedDomain:  claims.HostedDomain,
 	}, nil
+}
+
+// oauthConfig discovers the issuer's endpoints on demand and returns an
+// oauth2 config whose redirect URL is the one for this request.
+func (c *Client) oauthConfig(ctx context.Context, redirectURI string) (oauth2.Config, error) {
+	provider, err := c.discovered(ctx)
+	if err != nil {
+		return oauth2.Config{}, err
+	}
+	return oauth2.Config{
+		ClientID:     c.clientID,
+		ClientSecret: c.clientSecret,
+		Endpoint:     provider.Endpoint(),
+		RedirectURL:  redirectURI,
+		Scopes:       []string{oidc.ScopeOpenID, "email", "profile"},
+	}, nil
+}
+
+// discovered returns the issuer's OpenID provider, fetching it when none is
+// cached. A failed fetch is not stored, so the next sign-in retries it.
+func (c *Client) discovered(ctx context.Context) (*oidc.Provider, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.provider != nil {
+		return c.provider, nil
+	}
+	provider, err := oidc.NewProvider(ctx, c.issuer)
+	if err != nil {
+		return nil, fmt.Errorf("discover OIDC provider: %w", err)
+	}
+	c.provider = provider
+	return provider, nil
 }
