@@ -15,7 +15,10 @@ Configuration comes from the environment, read through the run seam's
 present. A configuration fault is a usage error: `cli.Run` writes one
 `auth: `-prefixed line to `Process.Stderr`, leaves stdout empty, opens nothing,
 listens nowhere, and returns exit code 2. Only after the environment is whole
-does `auth` touch the disk or the network.
+does `auth` touch the disk; it touches no network at startup — the Google
+client is built without contacting Google, and discovery is deferred to the
+first sign-in (D05), so `auth` starts and serves even while Google is
+unreachable.
 
 `auth` then opens its store at the source `Process.DBSource` (the host sets it
 to `state/auth.db`, relative to the working directory `/opt/auth`) via
@@ -39,7 +42,8 @@ The HTTP server is built in `internal/server` by a one-argument constructor
 that takes a single construction struct, `server.Config`, and exposes a
 lifecycle to serve on the loopback listener and to shut down gracefully. The
 struct carries every process dependency the handlers need: the opened store,
-the Google client (its surface is D05's), the clock, the random source from
+the Google client (its surface is D05's; `google.NewClient` does no I/O and
+cannot fail, so building it has no failure path), the clock, the random source from
 which handlers mint values such as the PKCE verifier, the diagnostic stream to
 which handlers write errors such as a failed token exchange, and the workspace
 domain. The Google credentials are not repeated here; the Google client already
@@ -67,6 +71,6 @@ this server, not new construction parameters.
 - R-KXL6-33Q7: While serving with a whole configuration and an opened store, `cli.Run` itself MUST write nothing to `Process.Stdout` or `Process.Stderr`, so that in the absence of any request whose D05 contract writes a diagnostic both streams stay empty for as long as the server runs, and `cli.Run` MUST NOT return until it receives `SIGINT` or `SIGTERM`.
 - R-IRY5-ZRGY: When the loopback bind fails because the configured port is already in use, `cli.Run` MUST write the single line `auth: listen tcp 127.0.0.1:<PORT>: bind: address already in use` (the configured port) to `Process.Stderr`, write nothing to `Process.Stdout`, leave the process already holding the port undisturbed, and return 1.
 - R-IT62-DJ7N: On `SIGTERM` and on `SIGINT`, `cli.Run` MUST behave identically: let requests already accepted receive their full response, close the listener via `Server.Shutdown`, leave nothing listening on `127.0.0.1:<PORT>` afterward, and return 0.
-- R-KYT2-GVGW: `cli.Run` MUST construct the Google client via `google.NewClient` passing `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `WORKSPACE_DOMAIN`, and `Process.OIDCIssuer`, and when `google.NewClient` returns an error MUST write an `auth: `-prefixed diagnostic to `Process.Stderr`, listen on nothing, and return 1; otherwise it MUST construct the server via `server.New` with a `server.Config` whose `Store` is the opened `*store.Store`, `Google` is that Google client, `Now` is `Process.Now`, `Rand` is `Process.Rand`, `Stderr` is `Process.Stderr`, and `WorkspaceDomain` is `WORKSPACE_DOMAIN`, then run it via `Server.Serve` on the address `127.0.0.1:<PORT>` and stop it via `Server.Shutdown`.
+- R-L1S3-DMFJ: `cli.Run` MUST construct the Google client via `google.NewClient` passing `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `WORKSPACE_DOMAIN`, and `Process.OIDCIssuer` — a construction that performs no I/O and has no failure path — then construct the server via `server.New` with a `server.Config` whose `Store` is the opened `*store.Store`, `Google` is that Google client, `Now` is `Process.Now`, `Rand` is `Process.Rand`, `Stderr` is `Process.Stderr`, and `WorkspaceDomain` is `WORKSPACE_DOMAIN`, then run it via `Server.Serve` on the address `127.0.0.1:<PORT>` and stop it via `Server.Shutdown`; `cli.Run` MUST make no network call before it listens.
 - R-IVLV-52P1: The `*server.Server` returned by `server.New` MUST serve the HTTP routes whose contracts D05, D06, and D07 define.
 - R-UR0L-ZVDJ: The `*Server` returned by `New` MUST mint every random value the `*Server` mints itself (including the PKCE verifier D05 requires of `GET /login/google`) by reading `cfg.Rand`, MUST write every diagnostic its handlers emit (including the token-exchange error D05 requires of `GET /login/google/callback`) to `cfg.Stderr`, and MUST NOT read a global random source or write to a global output stream; given a `Config` whose `Rand` is a deterministic reader and whose `Stderr` is an in-memory buffer, the values minted are a function of the bytes that reader yields and every such diagnostic appears in that buffer.

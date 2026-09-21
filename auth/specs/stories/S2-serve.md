@@ -9,7 +9,12 @@ stories is the host, whether that is systemd or a developer at a terminal
 standing in for it. The environment auth reads is `PORT`, the two Google
 secrets `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and `WORKSPACE_DOMAIN`;
 it opens a SQLite database at `state/auth.db`, relative to its working
-directory `/opt/auth`.
+directory `/opt/auth`. Starting touches no network. auth reads its
+environment, opens the database, and listens; it does not contact Google.
+The Google settings are read and required at startup — a missing one refuses
+the start (below) — but Google itself is reached only when a human signs in
+(`S3-sign-in.md`). So auth serves even while Google is unreachable, and
+`/check` and `/me` keep answering from the local database (`S4-check.md`).
 
 ## The host starts auth
 
@@ -37,6 +42,8 @@ Postconditions:
 - auth is listening on `127.0.0.1:3001` and on no other address.
 - It keeps running until it is signalled.
 - `state/auth.db` is the database it opened; it existed already.
+- No network call to Google was made; the Google settings were read from the
+  environment, not checked against Google.
 
 ## The host starts auth for the first time
 

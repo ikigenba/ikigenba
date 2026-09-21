@@ -104,6 +104,41 @@ Postconditions:
   `Location`, carrying the PKCE verifier and, if the sign-in page passed one,
   the return URL. No user and no session exist yet.
 
+## Google does not answer at sign-in start
+
+Starting a sign-in depends on Google: auth must reach Google before it can
+redirect the browser. When Google is unreachable it cannot, so it reports that
+the sign-in provider could not be reached and records no login state. This is
+the start-time twin of the callback's `Google does not answer`, in the same
+shape.
+
+Request:
+
+```
+$ curl -si http://127.0.0.1:3001/login/google
+```
+
+Response:
+
+```
+HTTP/1.1 502 Bad Gateway
+Content-Type: text/plain; charset=utf-8
+```
+
+Status 502. The body is one line of plain text saying the sign-in provider
+could not be reached. The underlying error — the unreachable host or Google's
+failure to answer — is written to auth's stderr.
+
+Preconditions:
+
+- auth is running with `PORT=3001` and its Google settings.
+- Google is unreachable, so auth cannot reach it to start the sign-in.
+
+Postconditions:
+
+- No login state is recorded. No user, no session, and no cookie are created.
+  Nothing has changed.
+
 ## Google returns a member for the first time
 
 The callback matches a recorded login state, so auth exchanges the code for

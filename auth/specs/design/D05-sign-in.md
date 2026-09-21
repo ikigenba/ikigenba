@@ -12,17 +12,26 @@ declares.
 behind a small client this project constructs once from configuration. The
 client does two things: it builds the authorization redirect URL that sends the
 browser to Google, and it exchanges an authorization code plus its PKCE verifier
-for a verified set of ID-token claims. The `redirect_uri` is not fixed at
-construction — auth has no startup config for its space host, and OAuth needs
-the same `redirect_uri` at authorization and exchange — so it is derived per
-request from the `Host` and threaded into both `AuthCodeURL` and `Exchange`.
-Because the client is constructed with an issuer taken from `Process.OIDCIssuer`,
-a loopback fake Google can stand in for tests while production points at Google
-itself. Every Google fact stated as a
-requirement below is proven by the evidence gathered for this design
-(`/tmp/scratch.aYV818.md`: a live fetch of Google's discovery document plus
-Google's published OpenID-Connect docs); no requirement asserts Google bytes
-beyond what that evidence documents.
+for a verified set of ID-token claims. Construction touches no network: it takes
+the configuration, records the issuer, and returns — it cannot fail, so it
+surfaces no error. The client learns Google's OAuth 2.0 / OIDC endpoints and JWKS
+by discovering them from the issuer's OpenID configuration on demand, the first
+time a sign-in needs them, not at startup; a discovery that fails is not
+remembered, so the next sign-in tries again. Because discovery is deferred, auth
+starts and serves without reaching Google, and only a sign-in depends on Google
+being reachable — so both `AuthCodeURL` (starting a sign-in) and `Exchange`
+(finishing one) can fail when Google cannot be reached, and each surfaces that as
+an error. The `redirect_uri` is not fixed at construction — auth has no startup
+config for its space host, and OAuth needs the same `redirect_uri` at
+authorization and exchange — so it is derived per request from the `Host` and
+threaded into both `AuthCodeURL` and `Exchange`. Because the client is
+constructed with an issuer taken from `Process.OIDCIssuer`, a loopback fake
+Google can stand in for tests while production points at Google itself. Every
+Google fact stated as a requirement below is proven by the evidence gathered for
+this design (a live fetch of Google's discovery document plus Google's published
+OpenID-Connect docs); no requirement asserts Google bytes beyond what that
+evidence documents. Deferring discovery is auth's own timing decision, not a
+claim about Google's bytes, so it needs no new observation.
 
 The session is carried by a cookie named `ikigenba_session`. auth learns its own
 place in the world from each request's `Host`: the *space* is that host with a
@@ -46,11 +55,12 @@ owns is that auth answers its own host's `/` with the sign-in page.
 ## REQUIREMENTS
 
 - R-I82C-VOP7: `internal/google` MUST export `type Claims struct { Issuer string; Subject string; Email string; EmailVerified bool; HostedDomain string }`, carrying the verified ID token's `iss`, `sub`, `email`, `email_verified`, and `hd` claims (`HostedDomain` empty when the `hd` claim is absent).
-- R-FUMO-82E5: `internal/google` MUST export `func NewClient(clientID, clientSecret, workspaceDomain, issuer string) (*Client, error)` returning a `*Client`, the exported type through which this project reaches Google.
-- R-FVUK-LU4U: `*Client` MUST export `func (*Client) AuthCodeURL(state, verifier, redirectURI string) string`, returning the Google authorization redirect URL for the given login state, PKCE code verifier, and per-request `redirectURI`.
+- R-KUGP-2ZZD: `internal/google` MUST export `func NewClient(clientID, clientSecret, workspaceDomain, issuer string) *Client` returning a `*Client`, the exported type through which this project reaches Google; `NewClient` MUST NOT return an error.
+- R-KVOL-GRQ2: `*Client` MUST export `func (*Client) AuthCodeURL(state, verifier, redirectURI string) (string, error)`, returning the Google authorization redirect URL for the given login state, PKCE code verifier, and per-request `redirectURI`, or a non-nil error when it cannot be built.
 - R-FX2G-ZLVJ: `*Client` MUST export `func (*Client) Exchange(ctx context.Context, code, verifier, redirectURI string) (Claims, error)`, exchanging an authorization code, its PKCE verifier, and the per-request `redirectURI`, and returning verified ID-token `Claims` or an error.
 - R-ICXY-ERNZ: `internal/server` MUST export `const SessionCookieName = "ikigenba_session"`, the name of the session cookie; other designs reference this name rather than re-declaring it.
-- R-FYAD-DDM8: `NewClient` MUST build the client from `GOOGLE_CLIENT_ID` (as `clientID`), `GOOGLE_CLIENT_SECRET` (as `clientSecret`), `WORKSPACE_DOMAIN` (as `workspaceDomain`), and `Process.OIDCIssuer` (as `issuer`), and MUST discover the Google OAuth 2.0 / OIDC endpoints and JWKS from that `issuer`'s OpenID configuration, so that a loopback fake standing in as `Process.OIDCIssuer` fully replaces Google in tests; the `redirect_uri` MUST NOT be fixed at construction — it is derived per request and passed to `AuthCodeURL` and `Exchange`.
+- R-KWWH-UJGR: `NewClient` MUST build the client from `GOOGLE_CLIENT_ID` (as `clientID`), `GOOGLE_CLIENT_SECRET` (as `clientSecret`), `WORKSPACE_DOMAIN` (as `workspaceDomain`), and `Process.OIDCIssuer` (as `issuer`) without performing any I/O, and MUST NOT contact the `issuer` at construction; the client MUST discover the Google OAuth 2.0 / OIDC endpoints and JWKS from that `issuer`'s OpenID configuration on demand when a sign-in needs them (in `AuthCodeURL` and `Exchange`), so that a loopback fake standing in as `Process.OIDCIssuer` fully replaces Google in tests; a discovery that fails MUST NOT be remembered — a later sign-in retries it; the `redirect_uri` MUST NOT be fixed at construction — it is derived per request and passed to `AuthCodeURL` and `Exchange`.
+- R-KZCA-M2Y5: When the client cannot discover the `issuer`'s endpoints (the `issuer` is unreachable or its OpenID configuration cannot be fetched), `AuthCodeURL` MUST return a non-nil error and an empty URL string.
 - R-IFDR-6B5D: `internal/google` MUST implement its OAuth 2.0 exchange and OIDC verification using `golang.org/x/oauth2` and `github.com/coreos/go-oidc/v3` (named by import path; no version is stated).
 - R-IGLN-K2W2: `AuthCodeURL` MUST return a URL addressed to the `authorization_endpoint` discovered from the client's issuer (for Google's issuer this is `https://accounts.google.com/o/oauth2/v2/auth` per `/tmp/scratch.aYV818.md`), whose query carries the OAuth client id (from `GOOGLE_CLIENT_ID`), `hd` set to `WORKSPACE_DOMAIN`, the `redirect_uri`, the given `state`, a `code_challenge` that is the S256 hash of the given `verifier`, and `code_challenge_method=S256`.
 - R-G0Q6-4X3M: `Exchange` MUST POST the code, PKCE `verifier`, and the given `redirectURI` to the `token_endpoint` discovered from the client's issuer (for Google's issuer this is `https://oauth2.googleapis.com/token` per `/tmp/scratch.aYV818.md`), MUST send to that endpoint the same `redirect_uri` value it was given (matching the one used at authorization), MUST verify the returned ID token's RS256 signature against the discovered JWKS, MUST accept an issuer claim of either `accounts.google.com` or `https://accounts.google.com` (per `/tmp/scratch.aYV818.md`), and MUST return `Claims` populated from the verified token; a failed exchange, unreachable endpoint, or failed verification MUST return a non-nil error.
@@ -62,7 +72,8 @@ owns is that auth answers its own host's `/` with the sign-in page.
 - R-IQCU-M8TM: A return URL MUST be treated as in-space if and only if its host is the space or a subdomain of the space; any other return URL MUST be treated as out-of-space.
 - R-IRKR-00KB: `GET /` with no live session MUST respond `200` with `Content-Type: text/html; charset=utf-8` and a body containing a link whose target is `/login/google`; a `?return=<url>` on the request MUST be carried to the login start and MUST NOT be persisted.
 - R-ISSN-DSB0: `GET /` with a live session MUST respond `200` with `Content-Type: text/html; charset=utf-8` and a body containing a form that POSTs to `/logout` and a form that POSTs to `/tokens` with fields `name` and `expires`; it MUST resolve the identity via `LookupSessionIdentity` (no touch), MUST ignore any `?return`, and MUST NOT change any state.
-- R-FZI9-R5CX: `GET /login/google` MUST mint a PKCE verifier from `Process.Rand`, record a login state via `CreateLoginState` carrying that verifier and any return URL carried from the sign-in page, derive the `redirect_uri` from the request `Host`, and respond `302` whose `Location` is `AuthCodeURL(state, verifier, redirectURI)` for the recorded login state's `State` and that derived `redirectURI`, so that the `state` value in `Location` names that login state.
+- R-KY4E-8B7G: `GET /login/google` MUST mint a PKCE verifier from `Process.Rand`, derive the `redirect_uri` from the request `Host`, record a login state via `CreateLoginState` carrying that verifier and any return URL carried from the sign-in page, and obtain the authorization redirect URL via `AuthCodeURL(state, verifier, redirectURI)` for the recorded login state's `State` and that derived `redirectURI`; when `AuthCodeURL` returns a nil error it MUST respond `302` whose `Location` is that URL, so that the `state` value in `Location` names that login state.
+- R-L0K6-ZUOU: When `AuthCodeURL` returns a non-nil error during `GET /login/google` (the `issuer`'s endpoints could not be discovered), auth MUST respond `502` with `Content-Type: text/plain; charset=utf-8` and a single line of body, MUST write the underlying error to `Process.Stderr`, MUST create no user, session, or cookie, and MUST leave no login state recorded — removing via `ConsumeLoginState` any login state it created for the request.
 - R-IV8G-5BSE: `GET /login/google/callback` whose `state` matches no recorded login state, including a request with no `state`, MUST respond `400` with `Content-Type: text/plain; charset=utf-8` and a single line of body, and MUST create no user, session, or cookie.
 - R-G1Y2-IOUB: `GET /login/google/callback` carrying `error=access_denied` MUST respond `200` with `Content-Type: text/html; charset=utf-8` and a body containing a link whose target is `/login/google`, MUST send no `Set-Cookie`, MUST consume the login state named by `state` if one exists, and MUST create no user or session; this `error=access_denied` response takes precedence over the unknown/missing-state `400` case (R-IV8G-5BSE), so when `error=access_denied` is present the response is `200` regardless of whether `state` matches a recorded login state.
 - R-IXO8-WV9S: `GET /login/google/callback` with a matched login state and a member result MUST exchange the code and verifier via `Exchange`, call `UpsertUserOnLogin`, call `CreateSession`, set the session cookie, consume the login state via `ConsumeLoginState`, and respond `302`.
