@@ -3,13 +3,19 @@ package cli
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -17,10 +23,14 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/auth/internal/idcodec"
+	"github.com/ikigenba/ikigenba/auth/internal/store"
 	"github.com/ikigenba/ikigenba/auth/internal/version"
 )
 
@@ -208,6 +218,108 @@ func TestOpenFailureDoesNotListen(t *testing.T) {
 	}
 }
 
+func TestStoreOpenBeforeListen(t *testing.T) {
+	// R-4KCJ-48RH
+	// Ordering is source order, not a race against store.Open: Serve is reached only after Open returns.
+	assertOpenCallPrecedesServe(t)
+
+	port := freePort(t)
+	source := filepath.Join(t.TempDir(), "missing", "auth.db")
+	addr := net.JoinHostPort("127.0.0.1", port)
+	var accepts atomic.Int32
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			conn, err := (&net.Dialer{}).DialContext(t.Context(), "tcp", addr)
+			if err != nil {
+				continue
+			}
+			accepts.Add(1)
+			_ = conn.Close()
+		}
+	}()
+	defer func() {
+		select {
+		case <-stop:
+		default:
+			close(stop)
+		}
+		wg.Wait()
+	}()
+
+	stdout, stderr, code := run(t, serveProcess(t, port, source))
+	close(stop)
+	wg.Wait()
+	wantPrefix := "auth: cannot open database " + source + ": "
+	if code != 1 || stdout != "" || !strings.HasPrefix(stderr, wantPrefix) || strings.Count(stderr, "\n") != 1 {
+		t.Fatalf("rejected source code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if accepts.Load() != 0 || canDial(t, addr) {
+		t.Fatalf("rejected source accepted %d connections on %s", accepts.Load(), addr)
+	}
+
+	got := serveLogin(t)
+	if !got.dbReadyAtAccept {
+		t.Fatal("listener accepted a connection before store.Open finished")
+	}
+	if got.status != http.StatusFound || got.location == nil {
+		t.Fatalf("opened store was not served: status %d", got.status)
+	}
+	state := got.location.Query().Get("state")
+	verifier, ok := verifierFromRand(got.consumed, state, got.location.Query().Get("code_challenge"))
+	if !ok {
+		t.Fatalf("served login is not derived from Process.Rand (consumed %d bytes, query %s)", len(got.consumed), got.location.RawQuery)
+	}
+	opened, err := store.Open(got.source, bytes.NewReader(nil))
+	if err != nil {
+		t.Fatalf("reopen %s: %v", got.source, err)
+	}
+	t.Cleanup(func() { _ = opened.Close() })
+	recorded, err := opened.ConsumeLoginState(state)
+	if err != nil || recorded.State != state || recorded.Verifier != verifier {
+		t.Fatalf("opened store login state = %#v, %v; want state %s verifier %s", recorded, err, state, verifier)
+	}
+}
+
+func TestServedLoginUsesInjectedIssuerAndRand(t *testing.T) {
+	// R-4O08-9JZK
+	got := serveLogin(t)
+	if got.hitsBefore != 0 {
+		t.Fatalf("discovery hits before listen = %d, want 0", got.hitsBefore)
+	}
+	if got.status != http.StatusFound || got.location == nil {
+		t.Fatalf("GET /login/google = %d, want 302", got.status)
+	}
+	endpoint, err := url.Parse(got.authEndpoint)
+	if err != nil {
+		t.Fatalf("authorization endpoint: %v", err)
+	}
+	if got.location.Scheme != endpoint.Scheme || got.location.Host != endpoint.Host || got.location.Path != endpoint.Path {
+		t.Fatalf("Location = %s, want authorization endpoint %s", got.location, got.authEndpoint)
+	}
+	query := got.location.Query()
+	if _, ok := verifierFromRand(got.consumed, query.Get("state"), query.Get("code_challenge")); !ok || query.Get("code_challenge_method") != "S256" {
+		t.Fatalf("Location query = %s, not derived from Process.Rand (%d bytes)", got.location.RawQuery, len(got.consumed))
+	}
+	if query.Get("client_id") != got.clientID || query.Get("hd") != got.workspace {
+		t.Fatalf("Location client_id=%q hd=%q, want %q %q", query.Get("client_id"), query.Get("hd"), got.clientID, got.workspace)
+	}
+	if got.hitsAfter < 1 {
+		t.Fatal("GET /login/google did not discover Process.OIDCIssuer")
+	}
+	if got.exitCode != 0 || got.stdout != "" || got.stderr != "" || got.stillListening {
+		t.Fatalf("shutdown code=%d stdout=%q stderr=%q listening=%v", got.exitCode, got.stdout, got.stderr, got.stillListening)
+	}
+}
+
 func TestPortInUse(t *testing.T) {
 	// R-IRY5-ZRGY
 	held := hold(t)
@@ -226,11 +338,9 @@ func TestPortInUse(t *testing.T) {
 func TestServeExistingAndAbsentThenShutdown(t *testing.T) {
 	signal.Reset(syscall.SIGINT, syscall.SIGTERM)
 	t.Cleanup(func() { signal.Reset(syscall.SIGINT, syscall.SIGTERM) })
-	// R-IKMR-P50S
 	// R-ILUO-2WRH
 	// R-IOAG-UG8V
 	// R-KXL6-33Q7
-	// R-L1S3-DMFJ
 	// R-OYUS-DBTQ
 	// R-3XVE-I7OD
 	absent := filepath.Join(t.TempDir(), "state", "auth.db")
@@ -719,6 +829,233 @@ func canDial(t *testing.T, addr string) bool {
 	}
 	_ = conn.Close()
 	return true
+}
+
+type serveLoginResult struct {
+	hitsBefore      int32
+	hitsAfter       int32
+	status          int
+	location        *url.URL
+	consumed        []byte
+	clientID        string
+	workspace       string
+	authEndpoint    string
+	source          string
+	exitCode        int
+	stdout          string
+	stderr          string
+	stillListening  bool
+	dbReadyAtAccept bool
+}
+
+func serveLogin(t *testing.T) serveLoginResult {
+	t.Helper()
+	signal.Reset(syscall.SIGINT, syscall.SIGTERM)
+	t.Cleanup(func() { signal.Reset(syscall.SIGINT, syscall.SIGTERM) })
+
+	issuer, authEndpoint, hits := loopbackIssuer(t)
+	raw := make([]byte, 64)
+	for i := range raw {
+		raw[i] = byte(i + 1)
+	}
+	reader := &recordingReader{data: raw}
+	source := freshDB(t)
+	port := freePort(t)
+	const clientID = "client-id"
+	const workspace = "example.test"
+	var stdout, stderr bytes.Buffer
+	fixed := time.Date(2026, 9, 21, 15, 4, 5, 0, time.UTC)
+	p := Process{
+		Getenv: mapGetenv(map[string]string{
+			"PORT":                 port,
+			"GOOGLE_CLIENT_ID":     clientID,
+			"GOOGLE_CLIENT_SECRET": "client-secret",
+			"WORKSPACE_DOMAIN":     workspace,
+		}),
+		Stdout:     &stdout,
+		Stderr:     &stderr,
+		Now:        func() time.Time { return fixed },
+		Rand:       reader,
+		OIDCIssuer: issuer,
+		DBSource:   source,
+	}
+	done := make(chan int, 1)
+	go func() { done <- Run(p) }()
+	conn := waitConn(t, net.JoinHostPort("127.0.0.1", port))
+	_ = conn.Close()
+	_, statErr := os.Stat(source)
+	hitsBefore := hits.Load()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+net.JoinHostPort("127.0.0.1", port)+"/login/google", nil)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	httpClient := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /login/google: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	got := serveLoginResult{
+		hitsBefore:      hitsBefore,
+		hitsAfter:       hits.Load(),
+		status:          resp.StatusCode,
+		consumed:        append([]byte(nil), reader.consumed()...),
+		clientID:        clientID,
+		workspace:       workspace,
+		authEndpoint:    authEndpoint,
+		source:          source,
+		dbReadyAtAccept: statErr == nil,
+	}
+	if loc, err := resp.Location(); err == nil {
+		got.location = loc
+	}
+	if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
+		t.Fatalf("signal: %v", err)
+	}
+	select {
+	case got.exitCode = <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after SIGTERM")
+	}
+	got.stdout = stdout.String()
+	got.stderr = stderr.String()
+	got.stillListening = canDial(t, net.JoinHostPort("127.0.0.1", port))
+	return got
+}
+
+func loopbackIssuer(t *testing.T) (issuerURL, authorizationEndpoint string, hits *atomic.Int32) {
+	t.Helper()
+	var counted atomic.Int32
+	var srv *httptest.Server
+	srv = httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/.well-known/openid-configuration" {
+			http.NotFound(w, r)
+			return
+		}
+		counted.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"issuer":                                srv.URL,
+			"authorization_endpoint":                srv.URL + "/authorize",
+			"token_endpoint":                        srv.URL + "/token",
+			"jwks_uri":                              srv.URL + "/jwks",
+			"id_token_signing_alg_values_supported": []string{"RS256"},
+		}); err != nil {
+			t.Errorf("discovery document: %v", err)
+		}
+	}))
+	srv.Start()
+	t.Cleanup(srv.Close)
+	return srv.URL, srv.URL + "/authorize", &counted
+}
+
+func verifierFromRand(consumed []byte, state, challenge string) (string, bool) {
+	for i := 0; i+32 <= len(consumed); i++ {
+		verifier := idcodec.Encode(consumed[i : i+32])
+		sum := sha256.Sum256([]byte(verifier))
+		if base64.RawURLEncoding.EncodeToString(sum[:]) != challenge {
+			continue
+		}
+		for j := 0; j+16 <= len(consumed); j++ {
+			if idcodec.Encode(consumed[j:j+16]) == state {
+				return verifier, true
+			}
+		}
+	}
+	return "", false
+}
+
+func assertOpenCallPrecedesServe(t *testing.T) {
+	t.Helper()
+	path := filepath.Join(moduleRoot(t), "internal", "cli", "cli.go")
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, nil, 0)
+	if err != nil {
+		t.Fatalf("parse cli.go: %v", err)
+	}
+	var fn *ast.FuncDecl
+	for _, decl := range file.Decls {
+		f, ok := decl.(*ast.FuncDecl)
+		if ok && f.Name.Name == "serve" && f.Body != nil {
+			fn = f
+			break
+		}
+	}
+	if fn == nil {
+		t.Fatal("func serve is missing")
+	}
+	var openAt token.Pos
+	var openArgs []ast.Expr
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		name := sel.Sel.Name
+		if name == "Serve" || name == "Listen" || name == "ListenAndServe" {
+			if openAt == 0 || call.Pos() < openAt {
+				t.Fatal("loopback listener starts before store.Open returns")
+			}
+		}
+		pkg, ok := sel.X.(*ast.Ident)
+		if ok && pkg.Name == "store" && name == "Open" {
+			if openAt != 0 {
+				t.Fatal("serve calls store.Open more than once")
+			}
+			openAt = call.Pos()
+			openArgs = call.Args
+		}
+		return true
+	})
+	if openAt == 0 {
+		t.Fatal("serve does not call store.Open")
+	}
+	if len(openArgs) != 2 || !sameProcessFields(openArgs[0], openArgs[1], "DBSource", "Rand") {
+		t.Fatal("store.Open must be called with Process.DBSource and Process.Rand")
+	}
+}
+
+func sameProcessFields(source, rand ast.Expr, sourceField, randField string) bool {
+	src, srcOK := selectorRecv(source)
+	rnd, rndOK := selectorRecv(rand)
+	return srcOK && rndOK && src.recv == rnd.recv && src.field == sourceField && rnd.field == randField
+}
+
+type selectorRef struct{ recv, field string }
+
+func selectorRecv(e ast.Expr) (selectorRef, bool) {
+	sel, ok := e.(*ast.SelectorExpr)
+	if !ok {
+		return selectorRef{}, false
+	}
+	id, ok := sel.X.(*ast.Ident)
+	if !ok {
+		return selectorRef{}, false
+	}
+	return selectorRef{recv: id.Name, field: sel.Sel.Name}, true
+}
+
+type recordingReader struct {
+	data []byte
+	n    int
+}
+
+func (r *recordingReader) Read(p []byte) (int, error) {
+	if r.n >= len(r.data) {
+		return 0, io.EOF
+	}
+	n := copy(p, r.data[r.n:])
+	r.n += n
+	return n, nil
+}
+
+func (r *recordingReader) consumed() []byte {
+	return r.data[:r.n]
 }
 
 type readCounter struct{ n *int }
