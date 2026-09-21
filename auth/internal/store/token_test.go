@@ -2,9 +2,11 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -95,7 +97,7 @@ func TestCreateTokenExactValuesExpiryAndHashPersistence(t *testing.T) {
 			if err := reopened.Close(); err != nil {
 				t.Fatalf("close reopened store: %v", err)
 			}
-			databaseBytes, err := os.ReadFile(path)
+			databaseBytes, err := fs.ReadFile(os.DirFS(filepath.Dir(path)), filepath.Base(path))
 			if err != nil {
 				t.Fatalf("ReadFile(database) error = %v", err)
 			}
@@ -346,7 +348,8 @@ func openTokenTestStoreAt(t *testing.T, path string, random io.Reader) *Store {
 
 func insertTokenUser(t *testing.T, st *Store, id, email string, lastGoogleLogin time.Time) {
 	t.Helper()
-	if _, err := st.db.Exec(
+	if _, err := st.db.ExecContext(
+		context.Background(),
 		`INSERT INTO users (id, issuer, subject, email, last_google_login) VALUES (?, ?, ?, ?, ?)`,
 		id,
 		"issuer-"+id,
@@ -360,7 +363,8 @@ func insertTokenUser(t *testing.T, st *Store, id, email string, lastGoogleLogin 
 
 func insertToken(t *testing.T, st *Store, token Token) {
 	t.Helper()
-	if _, err := st.db.Exec(
+	if _, err := st.db.ExecContext(
+		context.Background(),
 		`INSERT INTO tokens (id, user_id, name, hash, enabled, created_at, expires_at, last_used_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		token.ID,
@@ -378,7 +382,8 @@ func insertToken(t *testing.T, st *Store, token Token) {
 
 func readToken(t *testing.T, st *Store, id string) Token {
 	t.Helper()
-	token, err := scanToken(st.db.QueryRow(
+	token, err := scanToken(st.db.QueryRowContext(
+		context.Background(),
 		`SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at FROM tokens WHERE id = ?`,
 		id,
 	))
@@ -390,7 +395,8 @@ func readToken(t *testing.T, st *Store, id string) Token {
 
 func allTokenStates(t *testing.T, st *Store) []Token {
 	t.Helper()
-	rows, err := st.db.Query(
+	rows, err := st.db.QueryContext(
+		context.Background(),
 		`SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at FROM tokens ORDER BY id`,
 	)
 	if err != nil {
@@ -414,14 +420,14 @@ func allTokenStates(t *testing.T, st *Store) []Token {
 func tokenLastUsed(t *testing.T, st *Store, id string) (sql.NullInt64, error) {
 	t.Helper()
 	var lastUsed sql.NullInt64
-	err := st.db.QueryRow(`SELECT last_used_at FROM tokens WHERE id = ?`, id).Scan(&lastUsed)
+	err := st.db.QueryRowContext(context.Background(), `SELECT last_used_at FROM tokens WHERE id = ?`, id).Scan(&lastUsed)
 	return lastUsed, err
 }
 
 func assertTokenCount(t *testing.T, st *Store, want int) {
 	t.Helper()
 	var got int
-	if err := st.db.QueryRow(`SELECT COUNT(*) FROM tokens`).Scan(&got); err != nil {
+	if err := st.db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM tokens`).Scan(&got); err != nil {
 		t.Fatalf("count tokens: %v", err)
 	}
 	if got != want {

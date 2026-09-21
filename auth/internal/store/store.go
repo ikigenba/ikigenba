@@ -1,21 +1,27 @@
+// Package store persists users, sessions, login states, and tokens in SQLite.
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"io"
 
+	// Register the pure-Go sqlite driver opened by name "sqlite".
 	_ "modernc.org/sqlite"
 )
 
+// ErrNotFound is returned when a row lookup or mutation matches nothing.
 var ErrNotFound = errors.New("store: not found")
 
+// Store is the SQLite database and the randomness used to mint ids and secrets.
 type Store struct {
 	db   *sql.DB
 	rand io.Reader
 }
 
+// Open opens source, enables foreign keys, and creates the schema.
 func Open(source string, rand io.Reader) (*Store, error) {
 	db, err := sql.Open("sqlite", source)
 	if err != nil {
@@ -26,7 +32,7 @@ func Open(source string, rand io.Reader) (*Store, error) {
 	// also makes :memory: sources behave as one database for the store's life.
 	db.SetMaxOpenConns(1)
 
-	if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
+	if _, err := db.ExecContext(context.Background(), `PRAGMA foreign_keys = ON`); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("configure sqlite database: %w", err)
 	}
@@ -38,6 +44,7 @@ func Open(source string, rand io.Reader) (*Store, error) {
 	return &Store{db: db, rand: rand}, nil
 }
 
+// Close closes the database.
 func (s *Store) Close() error {
 	return s.db.Close()
 }
@@ -81,7 +88,7 @@ CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS tokens_user_id_idx ON tokens(user_id);
 `
 
-	if _, err := db.Exec(schema); err != nil {
+	if _, err := db.ExecContext(context.Background(), schema); err != nil {
 		return fmt.Errorf("create sqlite schema: %w", err)
 	}
 

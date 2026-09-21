@@ -79,7 +79,7 @@ func newFakeIssuer(t *testing.T) *fakeIssuer {
 
 	fake := &fakeIssuer{t: t, key: key, tokens: make(map[string]string)}
 	fake.server = httptest.NewUnstartedServer(http.HandlerFunc(fake.serveHTTP))
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen for fake issuer: %v", err)
 	}
@@ -252,11 +252,12 @@ func TestExportedAPIAndAuthorizationURL(t *testing.T) {
 	}
 
 	// R-KUGP-2ZZD
-	_ = (func(string, string, string, string) *googleclient.Client)(googleclient.NewClient)
+	(func(func(string, string, string, string) *googleclient.Client) {})(googleclient.NewClient)
 	// R-KVOL-GRQ2
-	_ = (func(*googleclient.Client, string, string, string) (string, error))((*googleclient.Client).AuthCodeURL)
+	(func(func(*googleclient.Client, string, string, string) (string, error)) {})((*googleclient.Client).AuthCodeURL)
 	// R-FX2G-ZLVJ
-	_ = (func(*googleclient.Client, context.Context, string, string, string) (googleclient.Claims, error))((*googleclient.Client).Exchange)
+	(func(func(*googleclient.Client, context.Context, string, string, string) (googleclient.Claims, error)) {
+	})((*googleclient.Client).Exchange)
 
 	fake := newFakeIssuer(t)
 	client := googleclient.NewClient("client-id", "client-secret", "example.test", fake.server.URL)
@@ -422,7 +423,7 @@ func TestExchangeRejectsEndpointAndVerificationFailures(t *testing.T) {
 
 func TestAuthCodeURLDiscoveryFailureIsRetried(t *testing.T) {
 	// R-KZCA-M2Y5
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}

@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -10,7 +11,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"math/rand"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -29,6 +29,17 @@ import (
 var signInNow = time.Date(2026, 9, 20, 16, 0, 0, 0, time.UTC)
 
 type signInRand struct{ next byte }
+
+// signInKeyRand is a fixed byte source so the issuer RSA key is reproducible
+// without math/rand.
+type signInKeyRand struct{}
+
+func (signInKeyRand) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 42
+	}
+	return len(p), nil
+}
 
 func (r *signInRand) Read(p []byte) (int, error) {
 	for i := range p {
@@ -70,13 +81,13 @@ type signInIssuer struct {
 
 func newSignInIssuer(t *testing.T) *signInIssuer {
 	t.Helper()
-	key, err := rsa.GenerateKey(rand.New(rand.NewSource(42)), 2048)
+	key, err := rsa.GenerateKey(signInKeyRand{}, 2048)
 	if err != nil {
 		t.Fatalf("generate deterministic issuer key: %v", err)
 	}
 	f := &signInIssuer{t: t, key: key, tokens: make(map[string]string)}
 	f.server = httptest.NewUnstartedServer(http.HandlerFunc(f.serveHTTP))
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +179,7 @@ func signInServer(t *testing.T, st *store.Store, issuer *signInIssuer, now func(
 }
 
 func serveSignIn(s *Server, method, target, host string, cookie *http.Cookie, origin string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, target, nil)
+	req := httptest.NewRequestWithContext(context.Background(), method, target, nil)
 	req.Host = host
 	if cookie != nil {
 		req.AddCookie(cookie)
@@ -490,7 +501,7 @@ func TestProfileUsesLookupIgnoresReturnAndRendersFormsAndTokens(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := New(Config{Store: st, Now: func() time.Time { return signInNow.Add(10 * time.Minute) }})
-	w := serveSignIn(s, http.MethodGet, "/?return=https%3A%2F%2Fevil.example", "auth.green.example", &http.Cookie{Name: SessionCookieName, Value: session.ID}, "")
+	w := serveSignIn(s, http.MethodGet, "/?return=https%3A%2F%2Fevil.example", "auth.green.example", &http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}, "")
 	// R-ISSN-DSB0: profile lookup is read-only, ignores return, embeds logout/create forms, and integrates D07 token rows.
 	body := w.Body.String()
 	for _, fragment := range []string{`<form method="post" action="/logout">`, `<form method="post" action="/tokens">`, `name="name"`, `name="expires"`, "profile token"} {
@@ -526,7 +537,7 @@ func TestLogoutOriginDeletionAndCookieAttributes(t *testing.T) {
 				t.Fatal(err)
 			}
 			s := New(Config{Store: st, Now: func() time.Time { return signInNow }})
-			cookie := &http.Cookie{Name: SessionCookieName, Value: session.ID}
+			cookie := &http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}
 
 			bad := serveSignIn(s, http.MethodPost, "/logout", tc.host, cookie, "https://attacker.example")
 			// R-J4ZN-7HPY: wrong Origin is a cookie-free 403 and leaves the session live.
@@ -572,7 +583,7 @@ func assertEmptySignInTables(t *testing.T, st *store.Store) {
 	t.Cleanup(func() { _ = db.Close() })
 	for _, table := range []string{"users", "sessions", "login_states"} {
 		var n int
-		if err := db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&n); err != nil {
+		if err := db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM "+table).Scan(&n); err != nil {
 			t.Fatal(err)
 		}
 		if n != 0 {

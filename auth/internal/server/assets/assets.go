@@ -1,3 +1,4 @@
+// Package assets embeds the HTML, JavaScript, and CSS served by auth.
 package assets
 
 import "embed"

@@ -12,7 +12,7 @@ import (
 	"github.com/ikigenba/ikigenba/auth/internal/store"
 )
 
-const tokenHTMLContentType = "text/html; charset=utf-8"
+const htmlDocumentContentType = "text/html; charset=utf-8"
 
 func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 	if !tokenOriginAllowed(r) {
@@ -43,7 +43,7 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", tokenHTMLContentType)
+	w.Header().Set("Content-Type", htmlDocumentContentType)
 	w.WriteHeader(http.StatusOK)
 	_, _ = fmt.Fprintf(w, `<!doctype html><html><body><p>Token created.</p><code id="token-secret">%s</code><button type="button" onclick="navigator.clipboard.writeText(document.getElementById('token-secret').textContent)">Copy</button><a href="/">Back to profile</a></body></html>`, html.EscapeString(secret))
 }
@@ -147,7 +147,7 @@ func tokenOriginAllowed(r *http.Request) bool {
 }
 
 func writeTokenCreateForm(w http.ResponseWriter, status int) {
-	w.Header().Set("Content-Type", tokenHTMLContentType)
+	w.Header().Set("Content-Type", htmlDocumentContentType)
 	w.WriteHeader(status)
 	_, _ = io.WriteString(w, `<!doctype html><html><body><form method="post" action="/tokens"><input name="name"><select name="expires"><option value="never">never</option><option value="30d">30d</option><option value="90d">90d</option><option value="365d">365d</option></select><button type="submit">Create token</button></form></body></html>`)
 }

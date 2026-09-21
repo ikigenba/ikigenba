@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -9,22 +10,25 @@ import (
 	"github.com/ikigenba/ikigenba/auth/internal/idcodec"
 )
 
+// UpsertUserOnLogin updates the matching user, or inserts one, and returns it.
 func (s *Store) UpsertUserOnLogin(issuer, subject, email string, now time.Time) (User, error) {
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(context.Background(), nil)
 	if err != nil {
 		return User{}, fmt.Errorf("begin user upsert: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	var id string
-	err = tx.QueryRow(
+	err = tx.QueryRowContext(
+		context.Background(),
 		`SELECT id FROM users WHERE issuer = ? AND subject = ?`,
 		issuer,
 		subject,
 	).Scan(&id)
 	switch {
 	case err == nil:
-		if _, err := tx.Exec(
+		if _, err := tx.ExecContext(
+			context.Background(),
 			`UPDATE users SET email = ?, last_google_login = ? WHERE id = ?`,
 			email,
 			now.UnixNano(),
@@ -37,7 +41,8 @@ func (s *Store) UpsertUserOnLogin(issuer, subject, email string, now time.Time) 
 		if err != nil {
 			return User{}, fmt.Errorf("create user id: %w", err)
 		}
-		if _, err := tx.Exec(
+		if _, err := tx.ExecContext(
+			context.Background(),
 			`INSERT INTO users (id, issuer, subject, email, last_google_login) VALUES (?, ?, ?, ?, ?)`,
 			id,
 			issuer,
@@ -64,6 +69,7 @@ func (s *Store) UpsertUserOnLogin(issuer, subject, email string, now time.Time) 
 	}, nil
 }
 
+// CreateSession stores a session for the user and returns it.
 func (s *Store) CreateSession(userID string, now time.Time) (Session, error) {
 	id, err := idcodec.NewID(s.rand)
 	if err != nil {
@@ -76,7 +82,8 @@ func (s *Store) CreateSession(userID string, now time.Time) (Session, error) {
 		LoginAt:    now,
 		LastUsedAt: now,
 	}
-	if _, err := s.db.Exec(
+	if _, err := s.db.ExecContext(
+		context.Background(),
 		`INSERT INTO sessions (id, user_id, login_at, last_used_at) VALUES (?, ?, ?, ?)`,
 		session.ID,
 		session.UserID,
@@ -89,9 +96,11 @@ func (s *Store) CreateSession(userID string, now time.Time) (Session, error) {
 	return session, nil
 }
 
+// LookupSessionIdentity returns the session's user when it is still within idle and max age.
 func (s *Store) LookupSessionIdentity(sessionID string, now time.Time) (Identity, error) {
 	var identity Identity
-	err := s.db.QueryRow(
+	err := s.db.QueryRowContext(
+		context.Background(),
 		`SELECT users.id, users.email
 		 FROM sessions
 		 JOIN users ON users.id = sessions.user_id
@@ -112,15 +121,17 @@ func (s *Store) LookupSessionIdentity(sessionID string, now time.Time) (Identity
 	return identity, nil
 }
 
+// TouchSession records last use and returns the session's user when it is still within idle and max age.
 func (s *Store) TouchSession(sessionID string, now time.Time) (Identity, error) {
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(context.Background(), nil)
 	if err != nil {
 		return Identity{}, fmt.Errorf("begin session touch: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	var userID string
-	err = tx.QueryRow(
+	err = tx.QueryRowContext(
+		context.Background(),
 		`UPDATE sessions
 		 SET last_used_at = ?
 		 WHERE id = ?
@@ -140,7 +151,8 @@ func (s *Store) TouchSession(sessionID string, now time.Time) (Identity, error) 
 	}
 
 	var identity Identity
-	if err := tx.QueryRow(
+	if err := tx.QueryRowContext(
+		context.Background(),
 		`SELECT id, email FROM users WHERE id = ?`,
 		userID,
 	).Scan(&identity.UserID, &identity.Email); err != nil {
@@ -153,8 +165,9 @@ func (s *Store) TouchSession(sessionID string, now time.Time) (Identity, error) 
 	return identity, nil
 }
 
+// DeleteSession deletes the session. A missing session is not an error.
 func (s *Store) DeleteSession(sessionID string) error {
-	if _, err := s.db.Exec(`DELETE FROM sessions WHERE id = ?`, sessionID); err != nil {
+	if _, err := s.db.ExecContext(context.Background(), `DELETE FROM sessions WHERE id = ?`, sessionID); err != nil {
 		return fmt.Errorf("delete session: %w", err)
 	}
 

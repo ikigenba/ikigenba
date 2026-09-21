@@ -2,6 +2,7 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -112,7 +113,7 @@ func TestOpenCreatesSchemaAndUsableStore(t *testing.T) {
 	if err := st.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
-	if err := st.db.Ping(); err == nil {
+	if err := st.db.PingContext(context.Background()); err == nil {
 		t.Fatal("database remains usable after Close")
 	}
 }
@@ -137,7 +138,7 @@ func TestOpenExistingDatabasePreservesRows(t *testing.T) {
 
 	for table, want := range map[string]int{"users": 1, "sessions": 1, "login_states": 1, "tokens": 1} {
 		var got int
-		if err := second.db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&got); err != nil {
+		if err := second.db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM "+table).Scan(&got); err != nil {
 			t.Fatalf("count %s: %v", table, err)
 		}
 		if got != want {
@@ -194,7 +195,7 @@ func insertFoundationRows(t *testing.T, st *Store) {
 		`INSERT INTO tokens (id, user_id, name, hash, enabled, created_at, expires_at, last_used_at) VALUES ('token', 'user', 'deploy', '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', 1, 100, NULL, NULL)`,
 	}
 	for _, statement := range statements {
-		if _, err := st.db.Exec(statement); err != nil {
+		if _, err := st.db.ExecContext(context.Background(), statement); err != nil {
 			t.Fatalf("schema insert error = %v", err)
 		}
 	}
@@ -202,7 +203,7 @@ func insertFoundationRows(t *testing.T, st *Store) {
 
 func assertNoPlaintextSecretColumn(t *testing.T, st *Store) {
 	t.Helper()
-	rows, err := st.db.Query(`PRAGMA table_info(tokens)`)
+	rows, err := st.db.QueryContext(context.Background(), `PRAGMA table_info(tokens)`)
 	if err != nil {
 		t.Fatalf("token schema query error = %v", err)
 	}

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"github.com/ikigenba/ikigenba/auth/internal/idcodec"
 )
 
+// CreateToken stores an enabled token and returns it with its plaintext secret.
 func (s *Store) CreateToken(userID, name string, expiry Expiry, now time.Time) (Token, string, error) {
 	expiresAt, err := tokenExpiry(expiry, now)
 	if err != nil {
@@ -33,7 +35,8 @@ func (s *Store) CreateToken(userID, name string, expiry Expiry, now time.Time) (
 		CreatedAt: now,
 		ExpiresAt: expiresAt,
 	}
-	if _, err := s.db.Exec(
+	if _, err := s.db.ExecContext(
+		context.Background(),
 		`INSERT INTO tokens (id, user_id, name, hash, enabled, created_at, expires_at, last_used_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`,
 		token.ID,
@@ -50,8 +53,10 @@ func (s *Store) CreateToken(userID, name string, expiry Expiry, now time.Time) (
 	return token, secret, nil
 }
 
+// ListTokens returns the user's tokens, newest created_at first, then id.
 func (s *Store) ListTokens(userID string) ([]Token, error) {
-	rows, err := s.db.Query(
+	rows, err := s.db.QueryContext(
+		context.Background(),
 		`SELECT id, user_id, name, hash, enabled, created_at, expires_at, last_used_at
 		 FROM tokens
 		 WHERE user_id = ?
@@ -78,8 +83,10 @@ func (s *Store) ListTokens(userID string) ([]Token, error) {
 	return tokens, nil
 }
 
+// SetTokenEnabled sets enabled on the user's token, or returns ErrNotFound.
 func (s *Store) SetTokenEnabled(userID, tokenID string, enabled bool) error {
-	result, err := s.db.Exec(
+	result, err := s.db.ExecContext(
+		context.Background(),
 		`UPDATE tokens SET enabled = ? WHERE id = ? AND user_id = ?`,
 		enabled,
 		tokenID,
@@ -91,17 +98,20 @@ func (s *Store) SetTokenEnabled(userID, tokenID string, enabled bool) error {
 	return requireChangedRow(result, "set token enabled")
 }
 
+// DeleteToken deletes the user's token, or returns ErrNotFound.
 func (s *Store) DeleteToken(userID, tokenID string) error {
-	result, err := s.db.Exec(`DELETE FROM tokens WHERE id = ? AND user_id = ?`, tokenID, userID)
+	result, err := s.db.ExecContext(context.Background(), `DELETE FROM tokens WHERE id = ? AND user_id = ?`, tokenID, userID)
 	if err != nil {
 		return fmt.Errorf("delete token: %w", err)
 	}
 	return requireChangedRow(result, "delete token")
 }
 
+// LookupTokenIdentity returns the token's user when the secret is usable at now.
 func (s *Store) LookupTokenIdentity(secret string, now time.Time) (Identity, error) {
 	var identity Identity
-	err := s.db.QueryRow(
+	err := s.db.QueryRowContext(
+		context.Background(),
 		`SELECT users.id, users.email
 		 FROM tokens
 		 JOIN users ON users.id = tokens.user_id
@@ -123,15 +133,17 @@ func (s *Store) LookupTokenIdentity(secret string, now time.Time) (Identity, err
 	return identity, nil
 }
 
+// TouchTokenIdentity records last use and returns the token's user when the secret is usable at now.
 func (s *Store) TouchTokenIdentity(secret string, now time.Time) (Identity, error) {
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(context.Background(), nil)
 	if err != nil {
 		return Identity{}, fmt.Errorf("begin token touch: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	var userID string
-	err = tx.QueryRow(
+	err = tx.QueryRowContext(
+		context.Background(),
 		`UPDATE tokens
 		 SET last_used_at = ?
 		 WHERE hash = ?
@@ -156,7 +168,7 @@ func (s *Store) TouchTokenIdentity(secret string, now time.Time) (Identity, erro
 	}
 
 	var identity Identity
-	if err := tx.QueryRow(`SELECT id, email FROM users WHERE id = ?`, userID).Scan(
+	if err := tx.QueryRowContext(context.Background(), `SELECT id, email FROM users WHERE id = ?`, userID).Scan(
 		&identity.UserID,
 		&identity.Email,
 	); err != nil {

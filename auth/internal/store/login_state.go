@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"github.com/ikigenba/ikigenba/auth/internal/idcodec"
 )
 
+// CreateLoginState stores a login state under a new id and returns it.
 func (s *Store) CreateLoginState(verifier, returnURL string) (LoginState, error) {
 	state, err := idcodec.NewID(s.rand)
 	if err != nil {
@@ -19,7 +21,8 @@ func (s *Store) CreateLoginState(verifier, returnURL string) (LoginState, error)
 		Verifier:  verifier,
 		ReturnURL: returnURL,
 	}
-	if _, err := s.db.Exec(
+	if _, err := s.db.ExecContext(
+		context.Background(),
 		`INSERT INTO login_states (state, verifier, return_url) VALUES (?, ?, ?)`,
 		loginState.State,
 		loginState.Verifier,
@@ -31,9 +34,11 @@ func (s *Store) CreateLoginState(verifier, returnURL string) (LoginState, error)
 	return loginState, nil
 }
 
+// ConsumeLoginState deletes the login state and returns it, or ErrNotFound.
 func (s *Store) ConsumeLoginState(state string) (LoginState, error) {
 	var loginState LoginState
-	err := s.db.QueryRow(
+	err := s.db.QueryRowContext(
+		context.Background(),
 		`DELETE FROM login_states WHERE state = ? RETURNING state, verifier, return_url`,
 		state,
 	).Scan(&loginState.State, &loginState.Verifier, &loginState.ReturnURL)

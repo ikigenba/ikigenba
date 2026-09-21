@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
@@ -104,15 +105,21 @@ func (f identityFixture) exec(t *testing.T, query string, args ...any) {
 		t.Fatalf("sql.Open() error = %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	if _, err := db.Exec(query, args...); err != nil {
+	if _, err := db.ExecContext(context.Background(), query, args...); err != nil {
 		t.Fatalf("database fixture update: %v", err)
 	}
 }
 
 func identityRequest(target, sessionID, bearer string) *http.Request {
-	req := httptest.NewRequest(http.MethodGet, target, nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, target, nil)
 	if sessionID != "" {
-		req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: sessionID})
+		req.AddCookie(&http.Cookie{
+			Name:     SessionCookieName,
+			Value:    sessionID,
+			Secure:   true,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+		})
 	}
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
@@ -509,7 +516,7 @@ func (f identityFixture) snapshot(t *testing.T) identitySnapshot {
 
 func readRows(t *testing.T, db *sql.DB, query string, scan func(*sql.Rows) error) {
 	t.Helper()
-	rows, err := db.Query(query)
+	rows, err := db.QueryContext(context.Background(), query)
 	if err != nil {
 		t.Fatalf("snapshot query: %v", err)
 	}

@@ -2,6 +2,7 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"path/filepath"
@@ -53,7 +54,8 @@ func TestCreateLoginStatePersistsInjectedIDAndExactValues(t *testing.T) {
 			}
 
 			var stored LoginState
-			if err := st.db.QueryRow(
+			if err := st.db.QueryRowContext(
+				context.Background(),
 				`SELECT state, verifier, return_url FROM login_states WHERE state = ?`,
 				got.State,
 			).Scan(&stored.State, &stored.Verifier, &stored.ReturnURL); err != nil {
@@ -78,7 +80,7 @@ func TestCreateLoginStateRandomFailurePersistsNothing(t *testing.T) {
 	}
 
 	var count int
-	if err := st.db.QueryRow(`SELECT COUNT(*) FROM login_states`).Scan(&count); err != nil {
+	if err := st.db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM login_states`).Scan(&count); err != nil {
 		t.Fatalf("count login states: %v", err)
 	}
 	if count != 0 {

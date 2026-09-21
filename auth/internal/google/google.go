@@ -1,3 +1,4 @@
+// Package google owns the Google OIDC client.
 package google
 
 import (

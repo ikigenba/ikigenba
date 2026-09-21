@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -63,23 +64,29 @@ func tokenTestServer(st *store.Store) *Server {
 	return New(Config{Store: st, Now: func() time.Time { return tokenTestNow }})
 }
 
-func tokenRequest(method, target, sessionID string, form url.Values) *http.Request {
+func tokenRequest(target, sessionID string, form url.Values) *http.Request {
 	var body io.Reader
 	if form != nil {
 		body = strings.NewReader(form.Encode())
 	}
-	req := httptest.NewRequest(method, target, body)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, target, body)
 	if form != nil {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 	req.Host = "127.0.0.1:3001"
 	req.Header.Set("Origin", "http://127.0.0.1:3001")
-	req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: sessionID})
+	req.AddCookie(&http.Cookie{
+		Name:     SessionCookieName,
+		Value:    sessionID,
+		Secure:   true,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
 	return req
 }
 
 func tokenActionRequest(sessionID, tokenID, action string) *http.Request {
-	req := tokenRequest(http.MethodPost, "/tokens/"+tokenID+"/"+action, sessionID, nil)
+	req := tokenRequest("/tokens/"+tokenID+"/"+action, sessionID, nil)
 	req.SetPathValue("id", tokenID)
 	req.SetPathValue("action", action)
 	return req
@@ -101,7 +108,7 @@ func TestCreateTokenAcceptsTrimmedNameAndEveryExpiry(t *testing.T) {
 			st := openTokenTestStore(t)
 			user, session := tokenTestIdentity(t, st, "member-"+tt.value)
 			srv := tokenTestServer(st)
-			req := tokenRequest(http.MethodPost, "/tokens", session.ID, url.Values{
+			req := tokenRequest("/tokens", session.ID, url.Values{
 				"name":    {"  deploy token  "},
 				"expires": {tt.value},
 			})
@@ -110,7 +117,7 @@ func TestCreateTokenAcceptsTrimmedNameAndEveryExpiry(t *testing.T) {
 			srv.handleCreateToken(response, req)
 
 			// R-N5RR-K5GT: creation accepts all four expiry values and uses the trimmed name.
-			if response.Code != http.StatusOK || response.Header().Get("Content-Type") != tokenHTMLContentType {
+			if response.Code != http.StatusOK || response.Header().Get("Content-Type") != htmlDocumentContentType {
 				t.Fatalf("response = %d %q, want 200 HTML", response.Code, response.Header().Get("Content-Type"))
 			}
 			tokens, err := st.ListTokens(user.ID)
@@ -153,7 +160,7 @@ func TestCreateTokenRejectsInvalidNameAndExpiryWithoutMutation(t *testing.T) {
 			st := openTokenTestStore(t)
 			user, session := tokenTestIdentity(t, st, "invalid")
 			srv := tokenTestServer(st)
-			req := tokenRequest(http.MethodPost, "/tokens", session.ID, url.Values{
+			req := tokenRequest("/tokens", session.ID, url.Values{
 				"name": {tt.name}, "expires": {tt.expires},
 			})
 			response := httptest.NewRecorder()
@@ -161,7 +168,7 @@ func TestCreateTokenRejectsInvalidNameAndExpiryWithoutMutation(t *testing.T) {
 			srv.handleCreateToken(response, req)
 
 			// R-N87K-BOY7 and R-G35Y-WGL0: invalid names/expiries return the complete form and create nothing.
-			if response.Code != http.StatusBadRequest || response.Header().Get("Content-Type") != tokenHTMLContentType {
+			if response.Code != http.StatusBadRequest || response.Header().Get("Content-Type") != htmlDocumentContentType {
 				t.Fatalf("response = %d %q, want 400 HTML", response.Code, response.Header().Get("Content-Type"))
 			}
 			body := response.Body.String()
@@ -340,7 +347,7 @@ func TestTokenMutationsRejectBadOrMissingOriginWithoutMutation(t *testing.T) {
 				before, _ := st.ListTokens(owner.ID)
 				var req *http.Request
 				if action == "create" {
-					req = tokenRequest(http.MethodPost, "/tokens", session.ID, url.Values{"name": {"new"}, "expires": {"30d"}})
+					req = tokenRequest("/tokens", session.ID, url.Values{"name": {"new"}, "expires": {"30d"}})
 				} else {
 					req = tokenActionRequest(session.ID, token.ID, action)
 				}

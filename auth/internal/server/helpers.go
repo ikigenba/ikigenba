@@ -11,8 +11,9 @@ const (
 	// SessionCookieName carries the opaque browser session identifier.
 	SessionCookieName = "ikigenba_session"
 
-	// HeaderUserID and HeaderUserEmail convey an authenticated identity to nginx.
-	HeaderUserID    = "X-User-Id"
+	// HeaderUserID conveys the authenticated user id to nginx.
+	HeaderUserID = "X-User-Id"
+	// HeaderUserEmail conveys the authenticated user email to nginx.
 	HeaderUserEmail = "X-User-Email"
 )
 
@@ -57,7 +58,7 @@ func ownOrigin(host string) string {
 	return "https://auth." + space(host)
 }
 
-func cookieForHost(host, value string, clear bool) *http.Cookie {
+func cookieForHost(host, value string, expire bool) *http.Cookie {
 	cookie := &http.Cookie{
 		Name:     SessionCookieName,
 		Value:    value,
@@ -68,7 +69,7 @@ func cookieForHost(host, value string, clear bool) *http.Cookie {
 	if !isLocalRequest(host) {
 		cookie.Domain = space(host)
 	}
-	if clear {
+	if expire {
 		cookie.MaxAge = -1
 	}
 	return cookie

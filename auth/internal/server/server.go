@@ -59,7 +59,7 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("POST /tokens/{id}/{action}", s.handleTokenAction)
 	mux.HandleFunc("GET /assets/{name}", s.handleAsset)
 
-	s.httpServer = &http.Server{Handler: mux}
+	s.httpServer = &http.Server{Handler: mux, ReadHeaderTimeout: 0}
 	return s
 }
 
@@ -89,7 +89,7 @@ func (s *Server) handleAsset(w http.ResponseWriter, r *http.Request) {
 
 // Serve listens on addr and runs the service until Shutdown closes it.
 func (s *Server) Serve(addr string) error {
-	listener, err := net.Listen("tcp", addr)
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", addr)
 	if err != nil {
 		return err
 	}

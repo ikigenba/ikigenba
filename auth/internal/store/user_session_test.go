@@ -2,6 +2,7 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"path/filepath"
@@ -66,7 +67,8 @@ func TestUpsertUserOnLoginCreatesThenRefreshesOnePersistentUser(t *testing.T) {
 	}
 
 	var count int
-	if err := st.db.QueryRow(
+	if err := st.db.QueryRowContext(
+		context.Background(),
 		`SELECT COUNT(*) FROM users WHERE issuer = ? AND subject = ?`,
 		first.Issuer,
 		first.Subject,
@@ -87,7 +89,8 @@ func TestUpsertUserOnLoginCreatesThenRefreshesOnePersistentUser(t *testing.T) {
 	defer func() { _ = reopened.Close() }()
 	var stored User
 	var storedLogin int64
-	if err := reopened.db.QueryRow(
+	if err := reopened.db.QueryRowContext(
+		context.Background(),
 		`SELECT id, issuer, subject, email, last_google_login FROM users`,
 	).Scan(&stored.ID, &stored.Issuer, &stored.Subject, &stored.Email, &storedLogin); err != nil {
 		t.Fatalf("read reopened user: %v", err)
@@ -284,7 +287,8 @@ func openUserSessionTestStore(t *testing.T, random io.Reader) *Store {
 
 func insertSessionFixture(t *testing.T, st *Store, id, userID string, loginAt, lastUsedAt time.Time) {
 	t.Helper()
-	if _, err := st.db.Exec(
+	if _, err := st.db.ExecContext(
+		context.Background(),
 		`INSERT INTO sessions (id, user_id, login_at, last_used_at) VALUES (?, ?, ?, ?)`,
 		id,
 		userID,
@@ -299,7 +303,8 @@ func assertStoredSession(t *testing.T, st *Store, id, wantUserID string, wantLog
 	t.Helper()
 	var gotUserID string
 	var gotLoginAt, gotLastUsedAt int64
-	if err := st.db.QueryRow(
+	if err := st.db.QueryRowContext(
+		context.Background(),
 		`SELECT user_id, login_at, last_used_at FROM sessions WHERE id = ?`,
 		id,
 	).Scan(&gotUserID, &gotLoginAt, &gotLastUsedAt); err != nil {
@@ -323,7 +328,8 @@ func assertStoredUser(t *testing.T, st *Store, want User) {
 	t.Helper()
 	var got User
 	var lastGoogleLogin int64
-	if err := st.db.QueryRow(
+	if err := st.db.QueryRowContext(
+		context.Background(),
 		`SELECT id, issuer, subject, email, last_google_login FROM users WHERE id = ?`,
 		want.ID,
 	).Scan(&got.ID, &got.Issuer, &got.Subject, &got.Email, &lastGoogleLogin); err != nil {
@@ -338,7 +344,7 @@ func assertStoredUser(t *testing.T, st *Store, want User) {
 func assertTableCount(t *testing.T, st *Store, table string, want int) {
 	t.Helper()
 	var got int
-	if err := st.db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&got); err != nil {
+	if err := st.db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM `+table).Scan(&got); err != nil {
 		t.Fatalf("count %s: %v", table, err)
 	}
 	if got != want {

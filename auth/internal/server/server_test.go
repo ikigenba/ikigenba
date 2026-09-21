@@ -41,7 +41,7 @@ func TestConfigAndNew(t *testing.T) {
 	}
 
 	// R-KWD9-PBZI: New takes only Config and returns a routed *Server.
-	var constructor func(Config) *Server = New
+	constructor := New
 	now := func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
 	gc := google.NewClient("client", "secret", "space.example", "http://127.0.0.1:1")
 	var stderr bytes.Buffer
@@ -80,7 +80,7 @@ func TestServeAndShutdown(t *testing.T) {
 	if err := <-served; err != nil {
 		t.Fatalf("Serve() error = %v", err)
 	}
-	if conn, err := net.Dial("tcp", addr); err == nil {
+	if conn, err := (&net.Dialer{}).DialContext(context.Background(), "tcp", addr); err == nil {
 		_ = conn.Close()
 		t.Fatal("address is still listening after Shutdown")
 	}
@@ -106,14 +106,14 @@ func TestRouterRegistersContractRoutesAndEmbeddedAssets(t *testing.T) {
 	} {
 		t.Run(target.method+" "+target.path, func(t *testing.T) {
 			response := httptest.NewRecorder()
-			s.httpServer.Handler.ServeHTTP(response, httptest.NewRequest(target.method, target.path, nil))
+			s.httpServer.Handler.ServeHTTP(response, httptest.NewRequestWithContext(context.Background(), target.method, target.path, nil))
 			if response.Code != http.StatusMethodNotAllowed {
 				t.Fatalf("status = %d, want %d", response.Code, http.StatusMethodNotAllowed)
 			}
 		})
 	}
 	missing := httptest.NewRecorder()
-	s.httpServer.Handler.ServeHTTP(missing, httptest.NewRequest(http.MethodGet, "/not-a-route", nil))
+	s.httpServer.Handler.ServeHTTP(missing, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/not-a-route", nil))
 	if missing.Code != http.StatusNotFound {
 		t.Fatalf("missing route status = %d, want %d", missing.Code, http.StatusNotFound)
 	}
@@ -121,7 +121,7 @@ func TestRouterRegistersContractRoutesAndEmbeddedAssets(t *testing.T) {
 	for _, asset := range []string{"/assets/index.html", "/assets/app.js", "/assets/style.css"} {
 		t.Run(asset, func(t *testing.T) {
 			response := httptest.NewRecorder()
-			s.httpServer.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, asset, nil))
+			s.httpServer.Handler.ServeHTTP(response, httptest.NewRequestWithContext(context.Background(), http.MethodGet, asset, nil))
 			if response.Code != http.StatusOK || response.Body.Len() == 0 {
 				t.Fatalf("asset response = status %d, %d bytes", response.Code, response.Body.Len())
 			}
@@ -136,7 +136,7 @@ func TestRouterRegistersContractRoutesAndEmbeddedAssets(t *testing.T) {
 			t.Fatalf("embedded %s: %v", name, err)
 		}
 		response := httptest.NewRecorder()
-		s.httpServer.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/assets/"+name, nil))
+		s.httpServer.Handler.ServeHTTP(response, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/assets/"+name, nil))
 		if response.Body.String() != string(embedded) {
 			t.Fatalf("served %s differs from the embedded asset", name)
 		}
@@ -145,7 +145,7 @@ func TestRouterRegistersContractRoutesAndEmbeddedAssets(t *testing.T) {
 
 func freeLoopbackAddress(t *testing.T) string {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("reserve loopback port: %v", err)
 	}
@@ -159,7 +159,7 @@ func freeLoopbackAddress(t *testing.T) string {
 func waitForLoopback(t *testing.T, addr string) net.Conn {
 	t.Helper()
 	for attempt := 0; attempt < 10000; attempt++ {
-		conn, err := net.Dial("tcp", addr)
+		conn, err := (&net.Dialer{}).DialContext(context.Background(), "tcp", addr)
 		if err == nil {
 			return conn
 		}
