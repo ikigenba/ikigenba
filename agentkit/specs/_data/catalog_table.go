@@ -322,8 +322,8 @@ var catalogTable = []CatalogEntry{
 			effortSpec(noneToXHigh, EffortNone, true)),
 	}},
 	{Model: "gpt-5.4-mini", Offerings: []Offering{
-		codex(offer(OfferingOpenAIResponses, "gpt-5.4-mini", 400_000,
-			rates(tier(0, 750, 75, 0, 0, 4500)), effortSpec(noneToXHigh, EffortNone, true))),
+		offer(OfferingOpenAIResponses, "gpt-5.4-mini", 400_000,
+			rates(tier(0, 750, 75, 0, 0, 4500)), effortSpec(noneToXHigh, EffortNone, true)),
 		offer(OfferingOpenAIChat, "gpt-5.4-mini", 400_000,
 			rates(tier(0, 750, 75, 0, 0, 4500)), effortSpec(noneToXHigh, EffortNone, true)),
 		offer(OfferingOpenRouterChat, "openai/gpt-5.4-mini", 400_000,
