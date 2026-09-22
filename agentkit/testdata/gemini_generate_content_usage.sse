@@ -1,0 +1,2 @@
+data: {"candidates":[{"content":{"role":"model","parts":[{"text":"done"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":29,"cachedContentTokenCount":5,"candidatesTokenCount":17,"thoughtsTokenCount":6}}
+

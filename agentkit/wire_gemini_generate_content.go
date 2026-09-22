@@ -575,6 +575,9 @@ func newGeminiDecoder() frameDecoder {
 		if hasUsage {
 			usage := response.Usage
 			fragment = normalizer.update(usage.PromptTokens, usage.CachedTokens, nil, nil, usage.CandidateTokens, usage.ThoughtsTokens)
+			// Gemini reports candidate and thought counts as separate absolute
+			// fields rather than a combined output count.
+			fragment.OutputTokens = normalizer.output
 		}
 		if finished {
 			message := Message{Role: RoleAssistant, Blocks: blocks}

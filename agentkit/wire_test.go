@@ -788,9 +788,9 @@ func TestGeminiCacheLifecycleCostExcludesStorageRent(t *testing.T) {
 	}
 
 	wantRoundUsage := Usage{
-		InputTokens: 400, CachedTokens: 100, OutputTokens: 15, ReasoningTokens: 5,
+		InputTokens: 400, CachedTokens: 100, OutputTokens: 20, ReasoningTokens: 5,
 	}
-	const wantRoundCost = 173000
+	const wantRoundCost = 185500
 
 	records := decodeLogRecords(t, logOutput.Bytes())
 	usageRecords, turnEndRecords := 0, 0
@@ -817,7 +817,7 @@ func TestGeminiCacheLifecycleCostExcludesStorageRent(t *testing.T) {
 	if usageRecords != 2 || turnEndRecords != 2 {
 		t.Fatalf("usage/turn_end records = %d/%d, want 2/2 (one per Send)", usageRecords, turnEndRecords)
 	}
-	const wantSummaryCost = 346000
+	const wantSummaryCost = 371000
 	if summary == nil || summary.Cost == nil || *summary.Cost != wantSummaryCost {
 		t.Fatalf("summary cost = %v, want exactly %d (sum of the two turns' Usage-derived cost, no cache storage rent)", summary, wantSummaryCost)
 	}
@@ -1775,7 +1775,7 @@ func TestWireOwnsOnlyBodyGrammar(t *testing.T) {
 		{"anthropic", newAnthropicMessagesWire(nil), json.RawMessage(`{"type":"thinking","thinking":"replayed","signature":"sig"}`), "messages", []string{`"thinking":"replayed"`, `"signature":"sig"`, `"type":"tool_use"`, `"type":"tool_result"`, `"is_error":true`}, []string{`"name":"lookup"`, `"input_schema":`}, Usage{InputTokens: 10, CachedTokens: 2, CacheWrite5mTokens: 3, CacheWrite1hTokens: 5, OutputTokens: 4}},
 		{"responses", newOpenAIResponsesWire(nil), json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"replayed"}]}`), "input", []string{`"type":"reasoning"`, `"id":"rs_1"`, `"text":"replayed"`, `"arguments":"{\"q\":\"value\"}"`}, []string{`"type":"function"`, `"name":"lookup"`, `"parameters":`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}},
 		{"chat", newOpenAIChatWire(nil), json.RawMessage(`{"reasoning_content":"replayed"}`), "messages", []string{`"reasoning_content":"replayed"`, `"tool_calls"`, `"arguments":"{\"q\":\"value\"}"`, `"tool_call_id":"call_1"`}, []string{`"type":"function"`, `"function":{"name":"lookup"`, `"parameters":`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}},
-		{"gemini", newGeminiGenerateContentWire(nil), json.RawMessage(`{"text":"replayed","thought":true,"thoughtSignature":"sig"}`), "contents", []string{`"text":"replayed"`, `"thought":true`, `"thoughtSignature":"sig"`, `"functionCall"`, `"args":{"q":"value"}`, `"functionResponse"`, `"isError":true`}, []string{`"functionDeclarations":`, `"name":"lookup"`, `"parameters":`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 4, ReasoningTokens: 3}},
+		{"gemini", newGeminiGenerateContentWire(nil), json.RawMessage(`{"text":"replayed","thought":true,"thoughtSignature":"sig"}`), "contents", []string{`"text":"replayed"`, `"thought":true`, `"thoughtSignature":"sig"`, `"functionCall"`, `"args":{"q":"value"}`, `"functionResponse"`, `"isError":true`}, []string{`"functionDeclarations":`, `"name":"lookup"`, `"parameters":`}, Usage{InputTokens: 10, CachedTokens: 2, OutputTokens: 7, ReasoningTokens: 3}},
 	}
 	for _, test := range tests {
 		wire := test.wire
@@ -2337,6 +2337,26 @@ func TestAnthropicMessageDeltaUsageIsReadFromEventTopLevel(t *testing.T) {
 	want := Usage{InputTokens: 17, OutputTokens: 6}
 	if wire.lastUsage != want {
 		t.Fatalf("usage = %+v, want top-level message_delta usage %+v", wire.lastUsage, want)
+	}
+}
+
+// R-SPQ8-AYZN
+func TestGeminiUsageMapsCandidateAndThoughtCountsDirectly(t *testing.T) {
+	response, err := os.Open("testdata/gemini_generate_content_usage.sse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = response.Close() }()
+
+	wire := newGeminiGenerateContentWire(nil).(*geminiGenerateContentWire)
+	for _, decodeErr := range wire.DecodeStream(SSEFrames(response)) {
+		if decodeErr != nil {
+			t.Fatal(decodeErr)
+		}
+	}
+	want := Usage{InputTokens: 24, CachedTokens: 5, OutputTokens: 17, ReasoningTokens: 6}
+	if wire.lastUsage != want {
+		t.Fatalf("usage = %+v, want direct candidate and thought counts %+v", wire.lastUsage, want)
 	}
 }
 
