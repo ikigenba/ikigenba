@@ -65,10 +65,7 @@ func readXAIAccessToken(t *testing.T, path string) string {
 
 func buildXAIReissueConversation(t *testing.T, path string) *Conversation {
 	t.Helper()
-	offering, err := Lookup("grok-4.3", HostXAI, WireResponses)
-	if err != nil {
-		t.Fatalf("look up xAI responses offering: %v", err)
-	}
+	model, offering := firstXAIReissueOffering(t)
 	rotator := OAuthRotator(xAIReissueTokenStore{path: path})
 	auth, err := offering.Authenticator(rotator)
 	if err != nil {
@@ -78,11 +75,33 @@ func buildXAIReissueConversation(t *testing.T, path string) *Conversation {
 	if err != nil {
 		t.Fatalf("build xAI endpoint: %v", err)
 	}
-	conversation, err := New(offering.WireFormat, endpoint, "grok-4.3", Config{})
+	conversation, err := New(offering.WireFormat, endpoint, model, Config{})
 	if err != nil {
 		t.Fatalf("build xAI conversation: %v", err)
 	}
 	return conversation
+}
+
+func firstXAIReissueOffering(t *testing.T) (string, Offering) {
+	t.Helper()
+	var selectedModel string
+	var selectedOffering Offering
+	for _, entry := range Catalog() {
+		for _, offering := range entry.Offerings {
+			if offering.Host != HostXAI || offering.ID != OfferingXAIResponses || offering.WireName != WireResponses {
+				continue
+			}
+			for _, endpoint := range offering.Endpoints {
+				if endpoint.AuthMode == AuthModeOAuth && (selectedModel == "" || entry.Model < selectedModel) {
+					selectedModel, selectedOffering = entry.Model, offering
+				}
+			}
+		}
+	}
+	if selectedModel == "" {
+		t.Fatal("catalog has no xAI responses offering with OAuth")
+	}
+	return selectedModel, selectedOffering
 }
 
 func assertXAIReissueTextTurn(t *testing.T, conversation *Conversation) {

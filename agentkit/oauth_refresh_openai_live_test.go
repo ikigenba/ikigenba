@@ -26,14 +26,7 @@ func TestLiveOAuthRefreshOpenAI(t *testing.T) {
 		t.Fatalf("decode OpenAI OAuth file before rotation: %v", err)
 	}
 
-	offering, err := Lookup("gpt-5.4-mini", HostOpenAI, WireResponses)
-	if err != nil {
-		t.Fatalf("look up OpenAI responses offering: %v", err)
-	}
-	spec, ok := offering.endpointForAuthMode(AuthModeOAuth)
-	if !ok {
-		t.Fatal("OpenAI responses offering has no oauth endpoint spec")
-	}
+	_, _, spec := firstOpenAIOAuthResponsesOffering(t)
 
 	rotator := OAuthRotator(FileTokenStore(path))
 	if _, err := rotator.Rotate(context.Background(), spec.Rotation); err != nil {
@@ -53,4 +46,27 @@ func TestLiveOAuthRefreshOpenAI(t *testing.T) {
 	if afterToken.AccessToken == beforeToken.AccessToken {
 		t.Fatal("OpenAI access_token did not change after rotation")
 	}
+}
+
+func firstOpenAIOAuthResponsesOffering(t *testing.T) (string, Offering, EndpointSpec) {
+	t.Helper()
+	var selectedModel string
+	var selectedOffering Offering
+	var selectedEndpoint EndpointSpec
+	for _, entry := range Catalog() {
+		for _, offering := range entry.Offerings {
+			if offering.Host != HostOpenAI || offering.ID != OfferingOpenAIResponses || offering.WireName != WireResponses {
+				continue
+			}
+			for _, endpoint := range offering.Endpoints {
+				if endpoint.AuthMode == AuthModeOAuth && (selectedModel == "" || entry.Model < selectedModel) {
+					selectedModel, selectedOffering, selectedEndpoint = entry.Model, offering, endpoint
+				}
+			}
+		}
+	}
+	if selectedModel == "" {
+		t.Fatal("catalog has no OpenAI responses offering with OAuth")
+	}
+	return selectedModel, selectedOffering, selectedEndpoint
 }

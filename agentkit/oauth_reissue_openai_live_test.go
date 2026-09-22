@@ -65,10 +65,7 @@ func readOpenAIAccessToken(t *testing.T, path string) string {
 
 func buildOpenAIReissueConversation(t *testing.T, path string) *Conversation {
 	t.Helper()
-	offering, err := Lookup("gpt-5.4-mini", HostOpenAI, WireResponses)
-	if err != nil {
-		t.Fatalf("look up OpenAI responses offering: %v", err)
-	}
+	model, offering := firstOpenAIReissueOffering(t)
 	rotator := OAuthRotator(openAIReissueTokenStore{path: path})
 	auth, err := offering.Authenticator(rotator)
 	if err != nil {
@@ -78,11 +75,33 @@ func buildOpenAIReissueConversation(t *testing.T, path string) *Conversation {
 	if err != nil {
 		t.Fatalf("build OpenAI endpoint: %v", err)
 	}
-	conversation, err := New(offering.WireFormat, endpoint, "gpt-5.4-mini", Config{})
+	conversation, err := New(offering.WireFormat, endpoint, model, Config{})
 	if err != nil {
 		t.Fatalf("build OpenAI conversation: %v", err)
 	}
 	return conversation
+}
+
+func firstOpenAIReissueOffering(t *testing.T) (string, Offering) {
+	t.Helper()
+	var selectedModel string
+	var selectedOffering Offering
+	for _, entry := range Catalog() {
+		for _, offering := range entry.Offerings {
+			if offering.Host != HostOpenAI || offering.ID != OfferingOpenAIResponses || offering.WireName != WireResponses {
+				continue
+			}
+			for _, endpoint := range offering.Endpoints {
+				if endpoint.AuthMode == AuthModeOAuth && (selectedModel == "" || entry.Model < selectedModel) {
+					selectedModel, selectedOffering = entry.Model, offering
+				}
+			}
+		}
+	}
+	if selectedModel == "" {
+		t.Fatal("catalog has no OpenAI responses offering with OAuth")
+	}
+	return selectedModel, selectedOffering
 }
 
 func assertOpenAIReissueTextTurn(t *testing.T, conversation *Conversation) {

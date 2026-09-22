@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -48,16 +49,64 @@ func assertNeverSkips(t *testing.T, label, text string) {
 	}
 }
 
-// R-L023-R1CS
+func assertCatalogOAuthRepresentativeSelector(t *testing.T, filename, functionName string, host Host, offering OfferingID) {
+	t.Helper()
+	hostName := map[Host]string{HostOpenAI: "HostOpenAI", HostXAI: "HostXAI"}[host]
+	offeringName := map[OfferingID]string{
+		OfferingOpenAIResponses: "OfferingOpenAIResponses",
+		OfferingXAIResponses:    "OfferingXAIResponses",
+	}[offering]
+	function := renderedNode(t, declaredFunction(t, filename, functionName))
+	for _, fragment := range []string{
+		"for _, entry := range Catalog()",
+		"for _, offering := range entry.Offerings",
+		"for _, endpoint := range offering.Endpoints",
+		"offering.Host != " + hostName,
+		"offering.ID != " + offeringName,
+		"offering.WireName != WireResponses",
+		`endpoint.AuthMode == AuthModeOAuth && (selectedModel == "" || entry.Model < selectedModel)`,
+		"selectedModel, selectedOffering",
+	} {
+		if !strings.Contains(function, fragment) {
+			t.Fatalf("%s AST does not contain %q", functionName, fragment)
+		}
+	}
+}
+
+func assertNoCatalogModelLiteral(t *testing.T, filename string, contents []byte) {
+	t.Helper()
+	models := make(map[string]bool)
+	for _, entry := range Catalog() {
+		models[entry.Model] = true
+	}
+	parsed, err := parser.ParseFile(token.NewFileSet(), filename, contents, 0)
+	if err != nil {
+		t.Fatalf("parse %s: %v", filename, err)
+	}
+	ast.Inspect(parsed, func(node ast.Node) bool {
+		literal, ok := node.(*ast.BasicLit)
+		if !ok || literal.Kind != token.STRING {
+			return true
+		}
+		value, unquoteErr := strconv.Unquote(literal.Value)
+		if unquoteErr == nil && models[value] {
+			t.Errorf("%s contains catalog model literal %q", filename, value)
+		}
+		return true
+	})
+}
+
+// R-GUUB-2B7L
 func TestLiveOAuthRefreshFixturesExistWithLiveTag(t *testing.T) {
 	fixtures := []struct {
 		name                string
 		environmentVariable string
-		model               string
-		host                string
+		selector            string
+		host                Host
+		offering            OfferingID
 	}{
-		{"oauth_refresh_openai_live_test.go", "AGENTKIT_OPENAI_OAUTH_FILE", "gpt-5.4-mini", "HostOpenAI"},
-		{"oauth_refresh_xai_live_test.go", "AGENTKIT_XAI_OAUTH_FILE", "grok-4.3", "HostXAI"},
+		{"oauth_refresh_openai_live_test.go", "AGENTKIT_OPENAI_OAUTH_FILE", "firstOpenAIOAuthResponsesOffering", HostOpenAI, OfferingOpenAIResponses},
+		{"oauth_refresh_xai_live_test.go", "AGENTKIT_XAI_OAUTH_FILE", "firstXAIOAuthResponsesOffering", HostXAI, OfferingXAIResponses},
 	}
 	for _, fixture := range fixtures {
 		t.Run(fixture.name, func(t *testing.T) {
@@ -70,17 +119,19 @@ func TestLiveOAuthRefreshFixturesExistWithLiveTag(t *testing.T) {
 			assertNeverSkips(t, "live OAuth fixture", text)
 			for _, fragment := range []string{
 				"func Test", fixture.environmentVariable, "OAuthRotator", "FileTokenStore",
-				".Rotate(", fixture.model, fixture.host, "WireResponses", "access_token",
+				".Rotate(", "WireResponses", "access_token",
 			} {
 				if !strings.Contains(text, fragment) {
 					t.Fatalf("live OAuth fixture does not contain %q", fragment)
 				}
 			}
+			assertCatalogOAuthRepresentativeSelector(t, fixture.name, fixture.selector, fixture.host, fixture.offering)
+			assertNoCatalogModelLiteral(t, fixture.name, contents)
 		})
 	}
 }
 
-// R-DEM1-KXMP
+// R-BCKD-INQL
 func TestSerialToolCallsLiveFixtureExists(t *testing.T) {
 	contents, err := os.ReadFile("serial_tool_calls_live_test.go")
 	if err != nil {
@@ -94,18 +145,30 @@ func TestSerialToolCallsLiveFixtureExists(t *testing.T) {
 			t.Fatalf("serial tool calls live fixture does not contain %q", fragment)
 		}
 	}
+	testFunction := renderedNode(t, declaredFunction(t, "serial_tool_calls_live_test.go", "TestLiveSerialToolCalls"))
+	for _, fragment := range []string{
+		"for _, cell := range liveMatrixCells",
+		"if cell.offering == OfferingGeminiGenerateContent",
+		"runLiveSerialToolCallsCell(t, cell)",
+	} {
+		if !strings.Contains(testFunction, fragment) {
+			t.Fatalf("TestLiveSerialToolCalls AST does not contain %q", fragment)
+		}
+	}
+	assertNoCatalogModelLiteral(t, "serial_tool_calls_live_test.go", contents)
 }
 
-// R-ED2W-P9IU
+// R-GTME-OJGW
 func TestLiveOAuthReissueFixturesExistWithLiveTag(t *testing.T) {
 	fixtures := []struct {
 		name                string
 		environmentVariable string
-		model               string
-		host                string
+		selector            string
+		host                Host
+		offering            OfferingID
 	}{
-		{"oauth_reissue_openai_live_test.go", "AGENTKIT_OPENAI_OAUTH_FILE", "gpt-5.4-mini", "HostOpenAI"},
-		{"oauth_reissue_xai_live_test.go", "AGENTKIT_XAI_OAUTH_FILE", "grok-4.3", "HostXAI"},
+		{"oauth_reissue_openai_live_test.go", "AGENTKIT_OPENAI_OAUTH_FILE", "firstOpenAIReissueOffering", HostOpenAI, OfferingOpenAIResponses},
+		{"oauth_reissue_xai_live_test.go", "AGENTKIT_XAI_OAUTH_FILE", "firstXAIReissueOffering", HostXAI, OfferingXAIResponses},
 	}
 	for _, fixture := range fixtures {
 		t.Run(fixture.name, func(t *testing.T) {
@@ -118,7 +181,7 @@ func TestLiveOAuthReissueFixturesExistWithLiveTag(t *testing.T) {
 			assertNeverSkips(t, "live OAuth reissue fixture", text)
 			for _, fragment := range []string{
 				"func TestLive", fixture.environmentVariable, "OAuthRotator", "NewEndpoint",
-				".Send(", fixture.model, fixture.host, "WireResponses", "access_token",
+				".Send(", "WireResponses", "access_token",
 				"MessageDone", "stream.Err()",
 			} {
 				if !strings.Contains(text, fragment) {
@@ -143,6 +206,8 @@ func TestLiveOAuthReissueFixturesExistWithLiveTag(t *testing.T) {
 			if testCount != 1 {
 				t.Fatalf("live OAuth reissue fixture declares %d TestLive functions, want 1", testCount)
 			}
+			assertCatalogOAuthRepresentativeSelector(t, fixture.name, fixture.selector, fixture.host, fixture.offering)
+			assertNoCatalogModelLiteral(t, fixture.name, contents)
 		})
 	}
 }
@@ -275,7 +340,7 @@ func TestMakefileDeclaresLiveTargetExclusively(t *testing.T) {
 	}
 }
 
-// R-WUQW-COI5
+// R-B7OR-ZKRT
 func TestLiveMatrixFixtureNamesOneSubtestPerCell(t *testing.T) {
 	contents, err := os.ReadFile("live_matrix_test.go")
 	if err != nil {
@@ -286,50 +351,47 @@ func TestLiveMatrixFixtureNamesOneSubtestPerCell(t *testing.T) {
 	if !strings.Contains(text, "func TestLiveMatrix(") {
 		t.Fatal("live matrix fixture does not declare TestLiveMatrix")
 	}
+	function := renderedNode(t, declaredFunction(t, "live_matrix_test.go", "TestLiveMatrix"))
 	for _, fragment := range []string{
 		"for _, cell := range liveMatrixCells",
-		`t.Run(string(cell.offering)+"/"+string(cell.authMode)+"/"+cell.model`,
+		`t.Run(fmt.Sprintf("%s/%s/1", cell.offering, cell.authMode)`,
 	} {
-		if !strings.Contains(text, fragment) {
-			t.Fatalf("live matrix fixture does not contain %q", fragment)
+		if !strings.Contains(function, fragment) {
+			t.Fatalf("TestLiveMatrix AST does not contain %q", fragment)
 		}
 	}
-	if rows := liveMatrixCellRows(t, contents); len(rows) != 12 {
-		t.Fatalf("live matrix cell count = %d, want 12", len(rows))
+	if strings.Contains(function, `fmt.Sprintf("%s/%s/1", cell.offering, cell.authMode, cell.model)`) {
+		t.Fatal("TestLiveMatrix subtest name contains a model release")
 	}
 }
 
-// R-WVYS-QG8U
-func TestLiveMatrixRunsExactModelHostWireCells(t *testing.T) {
+// R-B8WO-DCII
+func TestLiveMatrixDerivesOneFirstModelPerOfferingAuthPair(t *testing.T) {
 	contents, err := os.ReadFile("live_matrix_test.go")
 	if err != nil {
 		t.Fatalf("read live matrix fixture: %v", err)
 	}
-	text := string(contents)
-	if !strings.Contains(text, "Lookup(") {
-		t.Fatal("live matrix fixture does not resolve cells with Lookup")
+	function := renderedNode(t, declaredFunction(t, "live_matrix_test.go", "liveMatrixRepresentativeCells"))
+	for _, fragment := range []string{
+		"representatives := make(map[pair]liveMatrixCell)",
+		"for _, entry := range Catalog()",
+		"for _, offering := range entry.Offerings",
+		"for _, endpoint := range offering.Endpoints",
+		"key := pair{offering: offering.ID, authMode: endpoint.AuthMode}",
+		"if !found || entry.Model < cell.model",
+		"representatives[key] = liveMatrixCell{",
+		"model: entry.Model",
+		"cells := make([]liveMatrixCell, 0, len(representatives))",
+		"for _, cell := range representatives",
+	} {
+		if !strings.Contains(function, fragment) {
+			t.Fatalf("liveMatrixRepresentativeCells AST does not contain %q", fragment)
+		}
 	}
-	want := []string{
-		`{OfferingAnthropicMessages, AuthModeAPIKey, HostAnthropic, WireMessages, "claude-haiku-4-5"}`,
-		`{OfferingAnthropicMessages, AuthModeAPIKey, HostAnthropic, WireMessages, "claude-opus-5"}`,
-		`{OfferingOpenAIResponses, AuthModeAPIKey, HostOpenAI, WireResponses, "gpt-5.4-nano"}`,
-		`{OfferingOpenAIResponses, AuthModeOAuth, HostOpenAI, WireResponses, "gpt-5.4-mini"}`,
-		`{OfferingOpenAIChat, AuthModeAPIKey, HostOpenAI, WireChat, "gpt-5.4-nano"}`,
-		`{OfferingGeminiGenerateContent, AuthModeAPIKey, HostGemini, WireGenerateContent, "gemini-3.1-flash-lite"}`,
-		`{OfferingXAIResponses, AuthModeAPIKey, HostXAI, WireResponses, "grok-4.3"}`,
-		`{OfferingXAIResponses, AuthModeOAuth, HostXAI, WireResponses, "grok-4.3"}`,
-		`{OfferingXAIChat, AuthModeAPIKey, HostXAI, WireChat, "grok-4.3"}`,
-		`{OfferingXAIChat, AuthModeOAuth, HostXAI, WireChat, "grok-4.3"}`,
-		`{OfferingOpenRouterChat, AuthModeAPIKey, HostOpenRouter, WireChat, "gpt-5.4-nano"}`,
-		`{OfferingOpenRouterResponses, AuthModeAPIKey, HostOpenRouter, WireResponses, "gpt-5.4-nano"}`,
-	}
-	got := liveMatrixCellRows(t, contents)
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("live matrix cells = %#v, want %#v", got, want)
-	}
+	assertNoCatalogModelLiteral(t, "live_matrix_test.go", contents)
 }
 
-// R-WX6P-47ZJ
+// R-0GAK-O3DO
 func TestLiveMatrixRunsTextToolAndSystemSequences(t *testing.T) {
 	contents, err := os.ReadFile("live_matrix_test.go")
 	if err != nil {
@@ -345,10 +407,8 @@ func TestLiveMatrixRunsTextToolAndSystemSequences(t *testing.T) {
 		"New(offering.WireFormat, endpoint", "Config{Log:", "stream.Err()",
 		"MessageDone", "RecordUsage", "InputTokens", "OutputTokens",
 		"ToolCall", `event.Use.Name == "echo"`, "ToolReturn",
-		"conversation.AddSystem", "first.Err()", "second.Err()",
+		"conversation.AddSystem", `assertLiveMatrixStreamOK(t, "first system", first)`, `assertLiveMatrixStreamOK(t, "second system", second)`,
 		"strings.Contains(text.Text, firstToken)", "strings.Contains(text.Text, secondToken)",
-		"OfferingAnthropicMessages", "AuthModeAPIKey", `cell.model == "claude-haiku-4-5"`,
-		"errors.As(streamErr, &vendorError)", "vendorError.Status != 400",
 	} {
 		if !strings.Contains(text, fragment) {
 			t.Fatalf("live matrix fixture does not contain %q", fragment)
@@ -360,41 +420,15 @@ func TestLiveMatrixRunsTextToolAndSystemSequences(t *testing.T) {
 	if strings.Contains(text, "WithBaseURL") {
 		t.Fatal("live matrix fixture must use vendor default base URLs")
 	}
-}
-
-func liveMatrixCellRows(t *testing.T, contents []byte) []string {
-	t.Helper()
-	parsed, err := parser.ParseFile(token.NewFileSet(), "live_matrix_test.go", contents, 0)
-	if err != nil {
-		t.Fatalf("parse live matrix fixture: %v", err)
-	}
-	for _, declaration := range parsed.Decls {
-		general, ok := declaration.(*ast.GenDecl)
-		if !ok || general.Tok != token.VAR {
-			continue
-		}
-		for _, specification := range general.Specs {
-			value, ok := specification.(*ast.ValueSpec)
-			if !ok || len(value.Names) != 1 || value.Names[0].Name != "liveMatrixCells" || len(value.Values) != 1 {
-				continue
-			}
-			literal, ok := value.Values[0].(*ast.CompositeLit)
-			if !ok {
-				t.Fatal("liveMatrixCells is not a composite literal")
-			}
-			rows := make([]string, 0, len(literal.Elts))
-			for _, element := range literal.Elts {
-				var formatted bytes.Buffer
-				if err := format.Node(&formatted, token.NewFileSet(), element); err != nil {
-					t.Fatalf("format live matrix cell: %v", err)
-				}
-				rows = append(rows, formatted.String())
-			}
-			return rows
+	for _, name := range []string{"assertLiveMatrixTextTurn", "assertLiveMatrixToolTurn", "assertLiveMatrixSystemSequence"} {
+		function := renderedNode(t, declaredFunction(t, "live_matrix_test.go", name))
+		if !strings.Contains(function, "New(offering.WireFormat, endpoint") || !strings.Contains(function, "Log: NewLog(") {
+			t.Fatalf("%s AST does not build a fresh logged conversation", name)
 		}
 	}
-	t.Fatal("live matrix fixture does not declare liveMatrixCells")
-	return nil
+	if strings.Contains(text, "Reasoning") || strings.Contains(text, "Settings{") || strings.Contains(text, "Options{") {
+		t.Fatal("live matrix fixture contains a model-specific or reasoning exception")
+	}
 }
 
 // R-L2HW-IKU6

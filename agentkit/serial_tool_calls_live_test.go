@@ -12,7 +12,7 @@ func TestLiveSerialToolCalls(t *testing.T) {
 		if cell.offering == OfferingGeminiGenerateContent {
 			continue
 		}
-		t.Run(string(cell.offering)+"/"+string(cell.authMode)+"/"+cell.model, func(t *testing.T) {
+		t.Run(string(cell.offering)+"/"+string(cell.authMode)+"/1", func(t *testing.T) {
 			runLiveSerialToolCallsCell(t, cell)
 		})
 	}

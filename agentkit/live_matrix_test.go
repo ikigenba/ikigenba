@@ -7,15 +7,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 )
 
-// liveMatrixCell is one row of the live matrix (D23): an offering id and
-// auth mode, the host and wire that resolve it, and the fixed cheap model
-// the cell runs on.
+// liveMatrixCell is one representative row of the live matrix (D23).
 type liveMatrixCell struct {
 	offering OfferingID
 	authMode AuthMode
@@ -24,25 +24,47 @@ type liveMatrixCell struct {
 	model    string
 }
 
-// liveMatrixCells is the exact cell table D23 specifies.
-var liveMatrixCells = []liveMatrixCell{
-	{OfferingAnthropicMessages, AuthModeAPIKey, HostAnthropic, WireMessages, "claude-haiku-4-5"},              // anthropic-messages/api_key
-	{OfferingAnthropicMessages, AuthModeAPIKey, HostAnthropic, WireMessages, "claude-opus-5"},                 // anthropic-messages/api_key
-	{OfferingOpenAIResponses, AuthModeAPIKey, HostOpenAI, WireResponses, "gpt-5.4-nano"},                      // openai-responses/api_key
-	{OfferingOpenAIResponses, AuthModeOAuth, HostOpenAI, WireResponses, "gpt-5.4-mini"},                       // openai-responses/oauth
-	{OfferingOpenAIChat, AuthModeAPIKey, HostOpenAI, WireChat, "gpt-5.4-nano"},                                // openai-chat/api_key
-	{OfferingGeminiGenerateContent, AuthModeAPIKey, HostGemini, WireGenerateContent, "gemini-3.1-flash-lite"}, // gemini-generate-content/api_key
-	{OfferingXAIResponses, AuthModeAPIKey, HostXAI, WireResponses, "grok-4.3"},                                // xai-responses/api_key
-	{OfferingXAIResponses, AuthModeOAuth, HostXAI, WireResponses, "grok-4.3"},                                 // xai-responses/oauth
-	{OfferingXAIChat, AuthModeAPIKey, HostXAI, WireChat, "grok-4.3"},                                          // xai-chat/api_key
-	{OfferingXAIChat, AuthModeOAuth, HostXAI, WireChat, "grok-4.3"},                                           // xai-chat/oauth
-	{OfferingOpenRouterChat, AuthModeAPIKey, HostOpenRouter, WireChat, "gpt-5.4-nano"},                        // openrouter-chat/api_key
-	{OfferingOpenRouterResponses, AuthModeAPIKey, HostOpenRouter, WireResponses, "gpt-5.4-nano"},              // openrouter-responses/api_key
+var liveMatrixCells = liveMatrixRepresentativeCells()
+
+func liveMatrixRepresentativeCells() []liveMatrixCell {
+	type pair struct {
+		offering OfferingID
+		authMode AuthMode
+	}
+	representatives := make(map[pair]liveMatrixCell)
+	for _, entry := range Catalog() {
+		for _, offering := range entry.Offerings {
+			for _, endpoint := range offering.Endpoints {
+				key := pair{offering: offering.ID, authMode: endpoint.AuthMode}
+				cell, found := representatives[key]
+				if !found || entry.Model < cell.model {
+					representatives[key] = liveMatrixCell{
+						offering: offering.ID,
+						authMode: endpoint.AuthMode,
+						host:     offering.Host,
+						wire:     offering.WireName,
+						model:    entry.Model,
+					}
+				}
+			}
+		}
+	}
+	cells := make([]liveMatrixCell, 0, len(representatives))
+	for _, cell := range representatives {
+		cells = append(cells, cell)
+	}
+	sort.Slice(cells, func(i, j int) bool {
+		if cells[i].offering != cells[j].offering {
+			return cells[i].offering < cells[j].offering
+		}
+		return cells[i].authMode < cells[j].authMode
+	})
+	return cells
 }
 
 func TestLiveMatrix(t *testing.T) {
 	for _, cell := range liveMatrixCells {
-		t.Run(string(cell.offering)+"/"+string(cell.authMode)+"/"+cell.model, func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s/%s/1", cell.offering, cell.authMode), func(t *testing.T) {
 			credential := requireLiveMatrixCredential(t, cell)
 
 			offering, err := Lookup(cell.model, cell.host, cell.wire)
@@ -93,9 +115,7 @@ func assertLiveMatrixTextTurn(t *testing.T, offering Offering, endpoint Endpoint
 			hasText = hasText || ok && text.Text != ""
 		}
 	}
-	if err := stream.Err(); err != nil {
-		t.Fatalf("text stream: %v", err)
-	}
+	assertLiveMatrixStreamOK(t, "text", stream)
 	if !hasText {
 		t.Fatal("text turn had no MessageDone with a non-empty Text block")
 	}
@@ -152,9 +172,7 @@ func assertLiveMatrixToolTurn(t *testing.T, offering Offering, endpoint Endpoint
 			}
 		}
 	}
-	if err := stream.Err(); err != nil {
-		t.Fatalf("tool stream: %v", err)
-	}
+	assertLiveMatrixStreamOK(t, "tool", stream)
 	if sequence != 3 {
 		t.Fatalf("tool event sequence reached step %d, want ToolCall(echo), ToolReturn, MessageDone", sequence)
 	}
@@ -166,11 +184,7 @@ func assertLiveMatrixSystemSequence(t *testing.T, offering Offering, endpoint En
 	const secondToken = "zqsecond4m2"
 
 	var log bytes.Buffer
-	config := Config{Log: NewLog(&log, time.Now, "")}
-	if cell.model == "claude-opus-5" {
-		config.Settings = Settings{Options: Options{"effort": "low"}}
-	}
-	conversation, err := New(offering.WireFormat, endpoint, cell.model, config)
+	conversation, err := New(offering.WireFormat, endpoint, cell.model, Config{Log: NewLog(&log, time.Now, "")})
 	if err != nil {
 		t.Fatalf("build system conversation: %v", err)
 	}
@@ -189,9 +203,7 @@ func assertLiveMatrixSystemSequence(t *testing.T, offering Offering, endpoint En
 			firstHasToken = firstHasToken || ok && strings.Contains(text.Text, firstToken)
 		}
 	}
-	if err := first.Err(); err != nil {
-		t.Fatalf("first system stream: %v", err)
-	}
+	assertLiveMatrixStreamOK(t, "first system", first)
 	if !firstHasToken {
 		t.Fatalf("first system turn had no MessageDone Text containing %q", firstToken)
 	}
@@ -215,28 +227,23 @@ func assertLiveMatrixSystemSequence(t *testing.T, offering Offering, endpoint En
 			}
 		}
 	}
-	streamErr := second.Err()
-	isHaikuRejection := cell.offering == OfferingAnthropicMessages &&
-		cell.authMode == AuthModeAPIKey && cell.model == "claude-haiku-4-5"
-	if isHaikuRejection {
-		if streamErr == nil {
-			t.Fatal("interleaved system stream succeeded, want vendor 400")
-		}
-		var vendorError *Error
-		if !errors.As(streamErr, &vendorError) {
-			t.Fatalf("interleaved system stream error = %T, want *Error", streamErr)
-		}
-		if vendorError.Status != 400 {
-			t.Fatalf("interleaved system stream status = %d, want 400", vendorError.Status)
-		}
-		return
-	}
-	if streamErr != nil {
-		t.Fatalf("second system stream: %v", streamErr)
-	}
+	assertLiveMatrixStreamOK(t, "second system", second)
 	if !secondHasToken {
 		t.Fatalf("second system turn had no MessageDone Text containing %q; texts: %q", secondToken, secondTexts)
 	}
+}
+
+func assertLiveMatrixStreamOK(t *testing.T, label string, stream *Stream) {
+	t.Helper()
+	err := stream.Err()
+	if err == nil {
+		return
+	}
+	var providerError *Error
+	if errors.As(err, &providerError) && (providerError.Category == CategoryTransport || providerError.Category == CategoryTimeout) {
+		t.Fatalf("%s stream was truncated by transport: %v", label, err)
+	}
+	t.Fatalf("%s stream returned a response error: %v", label, err)
 }
 
 // requireLiveMatrixCredential fails the subtest, never skips it, when the
