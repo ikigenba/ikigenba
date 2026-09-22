@@ -10,9 +10,9 @@ and nothing about auth that the earlier groups do not already say. devctl and
 opsctl are named only by their published commands. The routing of other apps
 through `/check` is a property of the space, not of auth: it is added by
 opsctl's nginx generation (a separate sub-project) and is named here only by
-its observable effect, the way dummy's `S5-on-a-space.md` names devctl and
+its observable effect, the way dummy's `S7-on-a-space.md` names devctl and
 opsctl only by their published commands. `dummy` is the example protected app,
-deployed on the same space through its own `S5-on-a-space.md` chain.
+deployed on the same space through its own `S7-on-a-space.md` chain.
 
 ## A visitor reaches auth on a space
 
@@ -23,7 +23,7 @@ answers this request itself.
 Request:
 
 ```
-$ curl -si https://auth.mg1.sbx.ikigenba.dev/
+$ curl -si https://auth.sbx.ikigenba.dev/
 ```
 
 Response:
@@ -37,13 +37,13 @@ Status 200. The body is an HTML page containing a link to `/login/google`.
 
 Preconditions:
 
-- The space `mg1.sbx.ikigenba.dev` exists in account `602773793009`, its
+- The space `sbx.ikigenba.dev` exists in account `602773793009`, its
   instance is `running`, and `opsctl` is installed on it.
 - A tag `auth/v<semver>` points at the commit `devctl build auth` was run at,
   and it wrote `auth/dist/auth-v<semver>.tar.xz`.
-- `devctl --account 602773793009 deploy mg1.sbx.ikigenba.dev auth/dist/auth-v<semver>.tar.xz`
+- `devctl --account 602773793009 deploy sbx.ikigenba.dev auth/dist/auth-v<semver>.tar.xz`
   exited 0.
-- `devctl --account 602773793009 space status mg1.sbx.ikigenba.dev` shows
+- `devctl --account 602773793009 space status sbx.ikigenba.dev` shows
   `auth v<semver> active -`.
 - The request carries no `ikigenba_session` cookie and no `Authorization`
   header.
@@ -63,14 +63,14 @@ and the space's nginx executes the redirect.
 Request:
 
 ```
-$ curl -si https://dummy.mg1.sbx.ikigenba.dev/
+$ curl -si https://dummy.sbx.ikigenba.dev/
 ```
 
 Response:
 
 ```
 HTTP/2 302
-location: https://auth.mg1.sbx.ikigenba.dev/?return=https://dummy.mg1.sbx.ikigenba.dev/
+location: https://auth.sbx.ikigenba.dev/?return=https://dummy.sbx.ikigenba.dev/
 ```
 
 Status 302. The visitor is sent to auth's sign-in page with the original URL as
@@ -84,11 +84,11 @@ Preconditions:
   `devctl deploy` of auth exited 0, and `space status` shows `auth v<semver>
   active -`.
 - `dummy` is deployed and active on the same space through its own
-  `S5-on-a-space.md` chain, so `space status` also shows `dummy v<semver>
+  `S7-on-a-space.md` chain, so `space status` also shows `dummy v<semver>
   active -`.
 - The host's nginx routes every app other than auth through auth's `/check`
   before serving it: a request with no accepted credential is answered by a
-  redirect to `https://auth.mg1.sbx.ikigenba.dev/?return=<original URL>`. This
+  redirect to `https://auth.sbx.ikigenba.dev/?return=<original URL>`. This
   routing is a property of the space, added by opsctl's nginx generation (a
   separate sub-project); a space without it serves apps unauthenticated.
 - The request carries no `ikigenba_session` cookie and no `Authorization`
@@ -111,7 +111,7 @@ own behavior, not auth's.
 Request:
 
 ```
-$ curl -si -H 'Authorization: Bearer ikp_<token>' https://dummy.mg1.sbx.ikigenba.dev/
+$ curl -si -H 'Authorization: Bearer ikp_<token>' https://dummy.sbx.ikigenba.dev/widgets
 ```
 
 Response:
@@ -121,16 +121,18 @@ HTTP/2 200
 content-type: text/html; charset=utf-8
 ```
 
-Status 200. The app answered its own page (for `dummy`, the index of
-`S3-pages.md`); the request reached it with `X-User-Id` and `X-User-Email` set
-from auth's answer. Had the agent set its own `X-User-Id` or `X-User-Email` on
-the request, the space would have stripped it before the app saw it, so the
-identity the app reads is always auth's.
+Status 200. The app answered its own page (for `dummy`, the panel of
+`S3-panel.md`): an HTML document whose visible text carries the caller's email
+address and the widgets that exist. The request reached it with `X-User-Id` and
+`X-User-Email` set from auth's answer, so the email the page shows is the one
+auth sent — the token's owner. Had the agent set its own `X-User-Id` or
+`X-User-Email` on the request, the space would have stripped it before the app
+saw it, so the identity the app reads is always auth's.
 
 Preconditions:
 
 - The auth deploy chain above holds, and `dummy` is deployed and active on the
-  same space through its own `S5-on-a-space.md` chain.
+  same space through its own `S7-on-a-space.md` chain.
 - The host's nginx routes every app other than auth through auth's `/check`
   before serving it: a request that `/check` approves is forwarded to the app
   with `X-User-Id` and `X-User-Email` set from auth's answer and any
@@ -155,11 +157,11 @@ because `/check` is singled out there.
 Request:
 
 ```
-$ curl -si https://auth.mg1.sbx.ikigenba.dev/check
+$ curl -si https://auth.sbx.ikigenba.dev/check
 ```
 
 ```
-$ curl -si https://mg1.sbx.ikigenba.dev/check
+$ curl -si https://sbx.ikigenba.dev/check
 ```
 
 Response:
@@ -180,7 +182,7 @@ Preconditions:
   deployed and active.
 - No app deployed on this space is the default: `auth` and `dummy` both declare
   `default = false`, so nothing answers at the bare space name
-  `mg1.sbx.ikigenba.dev`, and it answers 404 to every path.
+  `sbx.ikigenba.dev`, and it answers 404 to every path.
 - The space's nginx keeps `/check` off the public side: auth's own server block
   answers a public `/check` with 404, and on any other app's host `/check` is
   not a public endpoint — it is treated like any other path and taken through
