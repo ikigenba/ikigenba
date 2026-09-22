@@ -415,6 +415,20 @@ var catalogTable = []CatalogEntry{
 			rates(tier(0, 2000, 500, 0, 0, 6000), tier(200_001, 4000, 1000, 0, 0, 12000)),
 			effortSpec(lowToXHigh, EffortHigh, false)),
 	}},
+	{Model: "grok-4.7", Offerings: []Offering{
+		offer(OfferingXAIResponses, "grok-4.7", 500_000,
+			rates(tier(0, 2000, 500, 0, 0, 6000), tier(200_000, 4000, 1000, 0, 0, 12000)),
+			effortSpec(lowToXHigh, EffortHigh, false)),
+		offer(OfferingXAIChat, "grok-4.7", 500_000,
+			rates(tier(0, 2000, 500, 0, 0, 6000), tier(200_000, 4000, 1000, 0, 0, 12000)),
+			effortSpec(lowToXHigh, EffortHigh, false)),
+		offer(OfferingOpenRouterChat, "x-ai/grok-4.7", 500_000,
+			rates(tier(0, 1600, 400, 0, 0, 4800), tier(200_000, 3200, 800, 0, 0, 9600)),
+			effortSpec(lowToXHigh, EffortHigh, false)),
+		offer(OfferingOpenRouterResponses, "x-ai/grok-4.7", 500_000,
+			rates(tier(0, 1600, 400, 0, 0, 4800), tier(200_000, 3200, 800, 0, 0, 9600)),
+			effortSpec(lowToXHigh, EffortHigh, false)),
+	}},
 	{Model: "grok-4.3", Offerings: []Offering{
 		offer(OfferingXAIResponses, "grok-4.3", 1_000_000,
 			rates(tier(0, 1250, 200, 0, 0, 2500), tier(200_001, 2500, 400, 0, 0, 5000)),
@@ -462,6 +476,12 @@ var catalogTable = []CatalogEntry{
 			rates(tier(0, 300, 30, 0, 0, 1200)), toggleSpec(true, true, vendorDefault)),
 		offer(OfferingOpenRouterResponses, "deepseek/deepseek-v4-flash", 128_000,
 			rates(tier(0, 300, 30, 0, 0, 1200)), toggleSpec(true, true, vendorDefault)),
+	}},
+	{Model: "deepseek-v4.1-flash", Offerings: []Offering{
+		offer(OfferingOpenRouterChat, "deepseek/deepseek-v4.1-flash", 1_048_576,
+			rates(tier(0, 150, 3, 0, 0, 600)), effortSpec([]Effort{EffortLow, EffortHigh, EffortMax}, EffortHigh, true)),
+		offer(OfferingOpenRouterResponses, "deepseek/deepseek-v4.1-flash", 1_048_576,
+			rates(tier(0, 150, 3, 0, 0, 600)), effortSpec([]Effort{EffortLow, EffortHigh, EffortMax}, EffortHigh, true)),
 	}},
 	{Model: "deepseek-v4-pro", Offerings: []Offering{
 		offer(OfferingOpenRouterChat, "deepseek/deepseek-v4-pro", 128_000,
@@ -542,6 +562,12 @@ var catalogTable = []CatalogEntry{
 			rates(tier(0, 150, 30, 0, 0, 500)), effortSpec(lowHighMax, EffortMax, false)),
 		offer(OfferingOpenRouterResponses, "z-ai/glm-5.3-flash", 1_310_720,
 			rates(tier(0, 150, 30, 0, 0, 500)), effortSpec(lowHighMax, EffortMax, false)),
+	}},
+	{Model: "glm-5.3-flashx", Offerings: []Offering{
+		offer(OfferingOpenRouterChat, "z-ai/glm-5.3-flashx", 1_048_576,
+			rates(tier(0, 370, 75, 0, 0, 1250)), effortSpec([]Effort{EffortLow, EffortHigh, EffortMax}, EffortMax, false)),
+		offer(OfferingOpenRouterResponses, "z-ai/glm-5.3-flashx", 1_048_576,
+			rates(tier(0, 370, 75, 0, 0, 1250)), effortSpec([]Effort{EffortLow, EffortHigh, EffortMax}, EffortMax, false)),
 	}},
 	{Model: "qwen3.8-flash", Offerings: []Offering{
 		offer(OfferingOpenRouterChat, "qwen/qwen3.8-flash", 1_000_000,

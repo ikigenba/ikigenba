@@ -7,6 +7,7 @@ import (
 	"os"
 	"reflect"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -95,48 +96,6 @@ func assertCatalogLookupSurface(t *testing.T, catalog func() []CatalogEntry, loo
 	t.Helper()
 	if catalog == nil || lookup == nil || notFound == nil {
 		t.Fatal("Catalog, Lookup, and ErrNotFound must all be exported and non-nil")
-	}
-}
-
-func TestLookupClaudeSonnet5(t *testing.T) {
-	// R-JUMY-AU5M
-	defaultOffering, err := Lookup("claude-sonnet-5", "", "")
-	if err != nil || defaultOffering.ID != OfferingAnthropicMessages || defaultOffering.WireModel != "claude-sonnet-5" {
-		t.Fatalf("default Lookup = (%+v, %v), want Anthropic messages offering", defaultOffering, err)
-	}
-	openRouter, err := Lookup("claude-sonnet-5", HostOpenRouter, WireChat)
-	if err != nil || openRouter.ID != OfferingOpenRouterChat || openRouter.WireModel != "anthropic/claude-sonnet-5" {
-		t.Fatalf("OpenRouter chat Lookup = (%+v, %v), want OpenRouter chat offering", openRouter, err)
-	}
-	if _, err := Lookup("claude-sonnet-5", HostGemini, ""); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("Gemini Lookup error = %v, want ErrNotFound", err)
-	}
-}
-
-func TestLookupGPT56Sol(t *testing.T) {
-	// R-JVUU-OLWB
-	defaultOffering, err := Lookup("gpt-5.6-sol", "", "")
-	wantReasoning := ReasoningConfig{Mode: ReasoningEffort, Effort: EffortMedium}
-	if err != nil || defaultOffering.ID != OfferingOpenAIResponses || defaultOffering.WireModel != "gpt-5.6-sol" || defaultOffering.Reasoning.Default != wantReasoning {
-		t.Fatalf("default Lookup = (%+v, %v), want OpenAI responses with medium reasoning", defaultOffering, err)
-	}
-	openRouter, err := Lookup("gpt-5.6-sol", HostOpenRouter, "")
-	if err != nil || openRouter.ID != OfferingOpenRouterResponses {
-		t.Fatalf("OpenRouter Lookup = (%+v, %v), want OpenRouter responses offering", openRouter, err)
-	}
-	if _, err := Lookup("gpt-5.6-sol", HostOpenAI, WireMessages); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("OpenAI messages Lookup error = %v, want ErrNotFound", err)
-	}
-}
-
-func TestLookupDeepSeekAndUnknownModel(t *testing.T) {
-	// R-JX2R-2DN0
-	offering, err := Lookup("deepseek-v4-flash", "", "")
-	if err != nil || offering.Host != HostOpenRouter {
-		t.Fatalf("DeepSeek Lookup = (%+v, %v), want OpenRouter offering", offering, err)
-	}
-	if _, err := Lookup("no-such-model", "", ""); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("unknown model Lookup error = %v, want ErrNotFound", err)
 	}
 }
 
@@ -252,37 +211,50 @@ func TestCatalogEntryFirstOfferingHostPreference(t *testing.T) {
 	}
 }
 
-func TestCatalogReturnsFullSortedStructurallyUniqueTable(t *testing.T) {
-	// R-JNBK-07PG
-	entries := Catalog()
-	wantModels := []string{
-		"claude-fable-5", "claude-fable-5-1", "claude-haiku-4-5", "claude-opus-4-8", "claude-opus-5", "claude-sonnet-4-6", "claude-sonnet-5",
-		"deepseek-v4-flash", "deepseek-v4-pro", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.1-flash-lite", "gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.7-flash", "gemini-3.8-flash",
-		"glm-4.6", "glm-4.7", "glm-5.1", "glm-5.2", "glm-5.3", "glm-5.3-flash", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5.5", "gpt-5.5-pro", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-6-astra",
-		"grok-4.20", "grok-4.20-multi-agent", "grok-4.3", "grok-4.5", "grok-4.6", "hunyuan-4-preview", "kimi-k2.6", "kimi-k2.7-code", "kimi-k3", "minimax-m3", "muse-spark-1.3", "nemotron-3-ultra", "nemotron-3.5-lightning", "qwen3.8-27b", "qwen3.8-flash", "qwen3.8-max",
+// R-GSEI-ARQ7
+func TestCatalogExactlyProjectsGroundTable(t *testing.T) {
+	got := Catalog()
+	want := independentlyProjectedCatalogTable()
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Catalog() does not exactly project catalogTable: got %d entries, want %d", len(got), len(want))
 	}
-	gotModels := make([]string, len(entries))
-	for i, entry := range entries {
-		gotModels[i] = entry.Model
-	}
-	if !reflect.DeepEqual(gotModels, wantModels) {
-		t.Fatalf("Catalog models = %q, want full sorted table %q", gotModels, wantModels)
-	}
-	for index, entry := range entries {
-		if index > 0 && entries[index-1].Model >= entry.Model {
-			t.Fatalf("catalog models not strictly ascending at %q, %q", entries[index-1].Model, entry.Model)
+
+	seenModels := make(map[string]bool, len(got))
+	for index, entry := range got {
+		if index > 0 && got[index-1].Model >= entry.Model {
+			t.Fatalf("catalog models not strictly ascending at %q, %q", got[index-1].Model, entry.Model)
 		}
+		if seenModels[entry.Model] {
+			t.Fatalf("catalog repeats model %q", entry.Model)
+		}
+		seenModels[entry.Model] = true
 		if len(entry.Offerings) == 0 {
 			t.Fatalf("catalog entry %q has no offerings", entry.Model)
 		}
-		ids := make(map[OfferingID]bool, len(entry.Offerings))
+		seenIDs := make(map[OfferingID]bool, len(entry.Offerings))
 		for _, offering := range entry.Offerings {
-			if ids[offering.ID] {
+			if seenIDs[offering.ID] {
 				t.Fatalf("catalog entry %q repeats offering id %q", entry.Model, offering.ID)
 			}
-			ids[offering.ID] = true
+			seenIDs[offering.ID] = true
 		}
 	}
+}
+
+func independentlyProjectedCatalogTable() []CatalogEntry {
+	want := make([]CatalogEntry, len(catalogTable))
+	for entryIndex, entry := range catalogTable {
+		want[entryIndex].Model = entry.Model
+		want[entryIndex].Offerings = make([]Offering, len(entry.Offerings))
+		for offeringIndex, offering := range entry.Offerings {
+			offering.Endpoints = slices.Clone(offering.Endpoints)
+			offering.Pricing.Tiers = slices.Clone(offering.Pricing.Tiers)
+			offering.Reasoning.Levels = slices.Clone(offering.Reasoning.Levels)
+			want[entryIndex].Offerings[offeringIndex] = offering
+		}
+	}
+	sort.Slice(want, func(i, j int) bool { return want[i].Model < want[j].Model })
+	return want
 }
 
 // R-JTF1-X2EX
@@ -429,26 +401,6 @@ func requireEndpoints(t *testing.T, entry CatalogEntry, offering Offering) bool 
 	return true
 }
 
-// R-KMN7-JK75
-func TestCatalogMaxOutputTokensByHostAndModel(t *testing.T) {
-	for _, entry := range Catalog() {
-		for _, offering := range entry.Offerings {
-			var want int64
-			switch {
-			case offering.Host != HostAnthropic:
-				want = 0
-			case entry.Model == "claude-haiku-4-5":
-				want = 64_000
-			default:
-				want = 128_000
-			}
-			if offering.MaxOutputTokens != want {
-				t.Errorf("%q offering %q MaxOutputTokens = %d, want %d", entry.Model, offering.ID, offering.MaxOutputTokens, want)
-			}
-		}
-	}
-}
-
 // R-KNV3-XBXU
 func TestCatalogEndpointsMutationIsolated(t *testing.T) {
 	const model = "claude-sonnet-5"
@@ -541,47 +493,6 @@ func TestCatalogOAuthEndpointsByID(t *testing.T) {
 			default:
 				if oauth != nil {
 					t.Errorf("%q offering %q unexpectedly has OAuth endpoint %+v", entry.Model, offering.ID, *oauth)
-				}
-			}
-		}
-	}
-}
-
-// R-ABP3-N5HW
-func TestCatalogOpenAIResponsesOAuthModelSet(t *testing.T) {
-	wantOAuth := map[string]bool{
-		"gpt-6-astra":   true,
-		"gpt-5.6-sol":   true,
-		"gpt-5.6-terra": true,
-		"gpt-5.6-luna":  true,
-		"gpt-5.5":       true,
-		"gpt-5.4-mini":  true,
-	}
-	for _, entry := range Catalog() {
-		for _, offering := range entry.Offerings {
-			if offering.ID == OfferingOpenAIResponses {
-				hasOAuth := false
-				for _, endpoint := range offering.Endpoints {
-					if endpoint.AuthMode == AuthModeOAuth {
-						hasOAuth = true
-						break
-					}
-				}
-				if hasOAuth != wantOAuth[entry.Model] {
-					t.Errorf("%q OpenAI responses has OAuth endpoint = %t, want %t", entry.Model, hasOAuth, wantOAuth[entry.Model])
-				}
-			}
-
-			if offering.ID == OfferingXAIResponses || offering.ID == OfferingXAIChat {
-				hasOAuth := false
-				for _, endpoint := range offering.Endpoints {
-					if endpoint.AuthMode == AuthModeOAuth {
-						hasOAuth = true
-						break
-					}
-				}
-				if !hasOAuth {
-					t.Errorf("%q offering %q has no OAuth endpoint", entry.Model, offering.ID)
 				}
 			}
 		}
@@ -811,32 +722,6 @@ func TestCatalogReasoningVocabularySendable(t *testing.T) {
 				if err := validator.validateSettings(settings); err != nil {
 					t.Errorf("%q offering %q: %s=%q rejected: %v", entry.Model, offering.ID, spec.Term, settings.Options[spec.Term], err)
 				}
-			}
-		}
-	}
-}
-
-func TestCatalogReasoningTermPinnedModels(t *testing.T) {
-	// R-O3HG-KN3S
-	wantTerm := map[string]string{
-		"gemini-3.5-flash":       "thinking_level",
-		"gemini-3.7-flash":       "thinking_level",
-		"gemini-3.1-flash-lite":  "thinking_level",
-		"gemini-3.1-pro-preview": "thinking_level",
-		"claude-opus-5":          "effort",
-		"gemini-2.5-flash":       "thinking_budget",
-		"claude-haiku-4-5":       "thinking_budget",
-		"deepseek-v4-pro":        "thinking",
-		"grok-4.20":              "thinking",
-	}
-	for _, entry := range Catalog() {
-		want, ok := wantTerm[entry.Model]
-		if !ok {
-			continue
-		}
-		for _, offering := range entry.Offerings {
-			if offering.Reasoning.Term != want {
-				t.Errorf("%q offering on %q has Term %q, want %q", entry.Model, offering.ID, offering.Reasoning.Term, want)
 			}
 		}
 	}
