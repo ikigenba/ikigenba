@@ -2,9 +2,9 @@
 
 Scope preamble for agentkit. This document carries no requirements and mints no
 ids — it fixes the boundary the numbered design docs (D1–D17) are authored
-inside. Its job is to keep the in/out line and the pending sibling projects from
-being lost. Anything an in-scope seam exists *for the sake of* a sibling is noted
-here so the obligation survives even before that sibling is built.
+inside. Its job is to keep the in/out line and the pending sibling sub-projects
+from being lost. Anything an in-scope seam exists *for the sake of* a sibling is
+noted here so the obligation survives even before that sibling is built.
 
 ## In agentkit
 

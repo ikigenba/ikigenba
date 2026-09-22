@@ -12,7 +12,7 @@ So this sub-project is two things at once:
 
 1. **A small, useful CLI:** clone the monorepo, run `make build`, get a
    working binary.
-2. **A demonstration of spec-first construction:** a project fully specified
+2. **A demonstration of spec-first construction:** a sub-project fully specified
    up front, then generated from that spec. See
    [how the spec system works](../docs/spec-system.md).
 

@@ -9,7 +9,7 @@ service is described entirely by flags. Module path
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run writes the code (`cmd/`, `internal/` are absent until it does). See
 the `spec` and `build-spec` skills and `docs/spec-system.md` at the repo root.
-Everything below is the ground the run computes the gap and runs the gates
+Everything below is what the build run computes the gap and runs the gates
 against; it is human-authored and read-only to the run.
 
 ## Toolchain
@@ -20,7 +20,7 @@ against; it is human-authored and read-only to the run.
 
 ## Test files
 
-The project's tests are all `*_test.go` files under `cmd/` and `internal/`.
+The sub-project's tests are all `*_test.go` files under `cmd/` and `internal/`.
 This is the file set the canonical gap greps for requirement ids:
 
 ```
@@ -62,15 +62,15 @@ use `go vet` rather than `go build` precisely because vet type-checks the test
 files too. Deliberately **not** run per-platform: `golangci-lint`, whose extra
 linters would fire on code paths nobody builds for diminishing returns.
 
-llm-lint loads this project's own rules from `lint-rules/` (wired via
-`.llm-lint.json`, found by ancestor walk — a sibling project's config is not on
-that path, so this directory carries its own). Rules are promoted individually:
-a promotion flips the rule file to `severity: error` and adds its id to the
-`enable` allowlist in `.llm-lint.json`. Un-promoted rules stay disabled — they
-make no LLM calls and print nothing — so every finding the gate reports fails
-it. The rule set and its allowlist are currently a verbatim copy of idgen's,
-all promoted to `severity: error`; consolidating the two copies into one shared
-directory is deferred, not forgotten.
+llm-lint loads this sub-project's own rules from `lint-rules/` (wired via
+`.llm-lint.json`, found by ancestor walk — a sibling sub-project's config is not
+on that path, so this directory carries its own). Rules are promoted
+individually: a promotion flips the rule file to `severity: error` and adds its
+id to the `enable` allowlist in `.llm-lint.json`. Un-promoted rules stay
+disabled — they make no LLM calls and print nothing — so every finding the gate
+reports fails it. The rule set and its allowlist are currently a verbatim copy
+of idgen's, all promoted to `severity: error`; consolidating the two copies into
+one shared directory is deferred, not forgotten.
 
 ## Commit conventions
 

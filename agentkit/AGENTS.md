@@ -10,7 +10,7 @@ This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run writes the code (the root package, `retry/`, and `go.mod`'s
 dependency graph fill in as it does). See the `spec` and
 `build-spec` skills and `docs/spec-system.md` at the repo root. Everything below
-is the ground the run computes the gap and runs the gates against; it is
+is what the build run computes the gap and runs the gates against; it is
 human-authored and read-only to the run.
 
 ## Catalog data ground
@@ -40,12 +40,12 @@ byte-identity requirement.
 
 ## Test files
 
-The project's spec tests are all `*_test.go` files under this module, **excluding**
-the live tests named `*_live_test.go` (which are guarded by a `//go:build live`
-tag and carry no requirement ids — they prove the vendor facts the designs
-record, and an offline architecture test carries the id that pins each live
-file's existence and shape). This is the file set the canonical gap greps for
-requirement ids:
+The sub-project's spec tests are all `*_test.go` files under this module,
+**excluding** the live tests named `*_live_test.go` (which are guarded by a
+`//go:build live` tag and carry no requirement ids — they prove the vendor facts
+the designs record, and an offline architecture test carries the id that pins
+each live file's existence and shape). This is the file set the canonical gap
+greps for requirement ids:
 
 ```
 grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' --exclude='*_live_test.go' . | sort -u
@@ -78,7 +78,7 @@ skipped tests, no disabled linters laundering a failure.
    When it applies and a credential from the toolchain list is absent, that is
    a missing tool: file an issue, do not pass or skip.
 
-llm-lint also loads this project's own rules from `lint-rules/` (wired via
+llm-lint also loads this sub-project's own rules from `lint-rules/` (wired via
 `.llm-lint.json`, found by ancestor walk) and recurses the module from the root.
 Rules are promoted individually: a promotion flips the rule file to
 `severity: error` and adds its id to the `enable` allowlist in `.llm-lint.json`.

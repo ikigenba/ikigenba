@@ -16,7 +16,7 @@ installed tool through its published interface. Module path
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run writes the code under `cmd/` and `internal/`. See the `spec` and
 `build-spec` skills and `docs/spec-system.md` at the repo root. Everything
-below is the ground the run computes the gap and runs the gates against; it
+below is what the build run computes the gap and runs the gates against; it
 is human-authored and read-only to the run.
 
 ## Deploy
@@ -54,7 +54,7 @@ for a human to adjudicate.
 
 ## Test files
 
-The project's tests are all `*_test.go` files under `cmd/` and `internal/`.
+The sub-project's tests are all `*_test.go` files under `cmd/` and `internal/`.
 This is the file set the canonical gap greps for requirement ids:
 
 ```

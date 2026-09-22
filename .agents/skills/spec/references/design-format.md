@@ -33,13 +33,13 @@ Out of scope (implementation):
 - Internal ordering of steps, micro-optimizations, and caching, unless a specific guarantee is itself part of the contract.
 - How state is stored or how transition logic is coded.
 - Anything a consumer can neither see nor depend on.
-- Version numbers — a dependency's, a tool's, a sibling project's release. A design names *what* it depends on; which release satisfies that is data and lives where the data belongs (`go.mod`, a lockfile, `AGENTS.md`'s toolchain). A requirement never states a version.
+- Version numbers — a dependency's, a tool's, a sibling sub-project's release. A design names *what* it depends on; which release satisfies that is data and lives where the data belongs (`go.mod`, a lockfile, `AGENTS.md`'s toolchain). A requirement never states a version.
 
 ## Depending on an external tool
 
-A tool this project shells out to — a compiler, `git`, any installed CLI — is reached only through its **published interface**, never its internals.
+A tool this sub-project shells out to — a compiler, `git`, any installed CLI — is reached only through its **published interface**, never its internals.
 
-A sibling project in the same repository is exactly such a tool (see `../SKILL.md`, "Project independence"). It is not a module of this one: it is reached only as an installed external tool, with the standing of `ssh`, `git`, or a compiler.
+A sibling sub-project in the same repository is exactly such a tool (see `../SKILL.md`, "Sub-project independence"). It is not a module of this one: it is reached only as an installed external tool, with the standing of `ssh`, `git`, or a compiler.
 
 Allowed — the tool's published interface:
 
@@ -49,9 +49,9 @@ Allowed — the tool's published interface:
 
 Not allowed — anything that is not the published interface:
 
-- Naming a path inside another project: its source directory, its build output, its templates, its configuration files.
-- Building it, or invoking a compiler on it. The other project builds and releases itself.
-- Writing anything into another project's directory.
+- Naming a path inside another sub-project: its source directory, its build output, its templates, its configuration files.
+- Building it, or invoking a compiler on it. The other sub-project builds and releases itself.
+- Writing anything into another sub-project's directory.
 - Encoding its internals: where it is installed, its source layout, build arrangement, release archive naming, or the shape of its output beyond the documented grammar.
 - Asserting what its output *says* when the bytes are relayed or carried verbatim: a requirement may assert **that** the relaying happens and that nothing alters the bytes, never what the bytes are. A test fixture standing in for the tool emits arbitrary bytes — a fixture shaped like the real output encodes exactly the knowledge the requirement was forbidden to state.
 - Stating which release of it to use; that is data.
@@ -59,7 +59,7 @@ Not allowed — anything that is not the published interface:
 
 An external tool is an external dependency like any other, so "Never assume an external dependency" above applies to it: a well-known tool's published documentation — its manual page, reference, or release notes — is proof of the behavior it documents, and only behavior the documentation does not state must be proven by observing the real tool. A sibling is proven by its published interface and its own documentation, never by reading its design documents.
 
-Direction is one-way and declared. If two projects would each have to know about the other, one of them is wrong. A behavior only the other project can supply is filed in `specs/issues/`; it is never designed around by reaching across the boundary.
+Direction is one-way and declared. If two sub-projects would each have to know about the other, one of them is wrong. A behavior only the other sub-project can supply is filed in `specs/issues/`; it is never designed around by reaching across the boundary.
 
 ## Filename
 

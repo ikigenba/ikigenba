@@ -7,10 +7,11 @@ description: Audit test adequacy for matched requirement ids using fanout. Verif
 
 Only the user starts this operation. Invoke it directly; load
 [fanout](../fanout/SKILL.md) for execution and verification and
-[spec](../spec/SKILL.md) for ids, the canonical gap, project ground, and issues.
-The root is a fanout coordinator. This skill supplies the goal below; fanout
-owns the agent roles, decomposition, ownership, verification, capacity
-handling, and repairs. It does not authorize starting `build-spec`.
+[spec](../spec/SKILL.md) for ids, the canonical gap, the sub-project's
+`AGENTS.md`, and issues. The root is a fanout coordinator. This skill supplies
+the goal below; fanout owns the agent roles, decomposition, ownership,
+verification, capacity handling, and repairs. It does not authorize starting
+`build-spec`.
 
 ## Goal and authority
 
@@ -19,16 +20,16 @@ the declared test-file set at the start of the audit. The mechanical gap
 establishes presence only; audit establishes adequacy.
 
 Resolve the selected sub-project and confirm its absolute directory holds
-`specs/` and project ground in `AGENTS.md`; ask if the project is unidentified.
-Read applicable ancestor guidance. Supply that directory, this skill, the
-audit scope, and completion criteria to the fanout assignments. Never
-substitute repository-wide guidance for project ground.
+`specs/` and the sub-project's `AGENTS.md`; ask if the sub-project is
+unidentified. Read applicable ancestor guidance. Supply that directory, this
+skill, the audit scope, and completion criteria to the fanout assignments.
+Never use the repository root's `AGENTS.md` in its place.
 
-Design and ground are read-only. Writes are limited to removing inadequate
-test tags or tests and filing evidenced issues under `specs/issues/`.
-No implementation changes, replacement tests, requirement edits, or minted
-ids. Preserve unrelated test assertions and coverage tags. Evidence and
-working inventories belong in external scratch material under the
+Design and the sub-project's `AGENTS.md` are read-only. Writes are limited to
+removing inadequate test tags or tests and filing evidenced issues under
+`specs/issues/`. No implementation changes, replacement tests, requirement
+edits, or minted ids. Preserve unrelated test assertions and coverage tags.
+Evidence and working inventories belong in external scratch material under the
 [handoff convention](../handoff/SKILL.md#scratch-file-convention).
 
 ## Audit work
@@ -77,7 +78,7 @@ Verification must establish:
 - Adequate verdicts and proposed removals were independently challenged.
 - Applied removals match confirmed findings and preserve unrelated assertions
   and adequate coverage; tests were not silently repaired.
-- Design, ground, and implementation remain unchanged.
+- Design, the sub-project's `AGENTS.md`, and implementation remain unchanged.
 - A final canonical gap measurement reports the actual net effect of edits
   against an identified artifact state.
 

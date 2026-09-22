@@ -9,7 +9,7 @@ speaks to Google through `internal/google`, whose exported surface this design
 declares.
 
 `internal/google` wraps `golang.org/x/oauth2` and `github.com/coreos/go-oidc/v3`
-behind a small client this project constructs once from configuration. The
+behind a small client this sub-project constructs once from configuration. The
 client does two things: it builds the authorization redirect URL that sends the
 browser to Google, and it exchanges an authorization code plus its PKCE verifier
 for a verified set of ID-token claims. Construction touches no network: it takes

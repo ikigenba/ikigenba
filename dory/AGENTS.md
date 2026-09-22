@@ -9,7 +9,7 @@ plus a cost line at the end. Module path `github.com/ikigenba/ikigenba/dory`.
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run writes the code (`cmd/`, `internal/`, `go.mod` are absent until it
 does). See the `spec` and `build-spec` skills and `docs/spec-system.md` at the
-repo root. Everything below is the ground the run computes the gap and runs
+repo root. Everything below is what the build run computes the gap and runs
 the gates against; it is human-authored and read-only to the run.
 
 ## Toolchain
@@ -33,7 +33,7 @@ the newer release.
 
 ## Test files
 
-The project's tests are all `*_test.go` files under `cmd/` and `internal/`.
+The sub-project's tests are all `*_test.go` files under `cmd/` and `internal/`.
 This is the file set the canonical gap greps for requirement ids:
 
 ```
@@ -64,8 +64,8 @@ skipped tests, no disabled linters laundering a failure.
 4. `golangci-lint run`
 5. `llm-lint cmd internal`
 
-llm-lint loads this project's own rules from `lint-rules/` (wired via
-`.llm-lint.json`, found by ancestor walk — a sibling project's config is not
+llm-lint loads this sub-project's own rules from `lint-rules/` (wired via
+`.llm-lint.json`, found by ancestor walk — a sibling sub-project's config is not
 on that path, so this directory carries its own). Rules are promoted
 individually: a promotion flips the rule file to `severity: error` and adds
 its id to the `enable` allowlist in `.llm-lint.json`. Un-promoted rules stay

@@ -103,8 +103,9 @@ same tension in its D1, whose binary smoke ("the built binary prints an id")
 depends on its D2–D4; this is that situation, stated here so the plan does not
 have to rediscover it. That sibling requirement is deliberately described rather
 than cited by id: the gap is computed by grepping every id-shaped literal in
-`specs/design/`, so quoting another project's id here would enter this project's
-gap and send the run hunting for a test that does not belong to it.
+`specs/design/`, so quoting another sub-project's id here would enter this
+sub-project's gap and send the run hunting for a test that does not belong to
+it.
 
 ## REQUIREMENTS
 

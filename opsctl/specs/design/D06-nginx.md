@@ -32,7 +32,7 @@ passes through. The authenticator's own block stays unwired and answers its
 public `/check` with 404, so the real check is reachable only as that
 subrequest. With no routed `auth` on the host, every block is the plain proxy —
 fail-open by honest absence, not a per-app choice. The authenticator is another
-project, reached only as an external tool through the published interface it
+sub-project, reached only as an external tool through the published interface it
 exposes; this design encodes only that observed grammar, never its internals.
 
 Apply brings nginx to the generated configuration with

@@ -3,12 +3,12 @@
 See `../SKILL.md` for the layout. Stories live in `specs/stories/`; they are
 the input to `specs/design/` and the `draft-stories` skill authors them.
 
-A story is the intent the project is built to serve, written before any
+A story is the intent the sub-project is built to serve, written before any
 design. It says who wants what, the preconditions in the system, the exact
 interaction, what each option does, and the postconditions once the
 interaction has run. It is concrete: literal command lines, literal output,
 literal exit codes. A reader who has only the story can sit at a terminal and
-check whether the project does what it says.
+check whether the sub-project does what it says.
 
 Stories carry no requirement ids. A design realises a group of stories and
 mints the ids there. Stories are never deleted, designed or not, and when a
@@ -103,7 +103,7 @@ a resource's identifier scheme.
 
 ## For a package
 
-The format above assumes a CLI. A project whose
+The format above assumes a CLI. A sub-project whose
 consumer is another program, not a person at a terminal, keeps the same
 sections with the interaction as consumer code: the `Command:` block is the
 call as the consumer writes it, `Output:` is what it returns or the error it
@@ -112,9 +112,9 @@ Preconditions and postconditions are unchanged.
 
 ## For a web app
 
-A project whose consumer is an HTTP client keeps the same sections with the
-interaction as a request. `Command:` becomes `Request:`, one fenced block per
-form, each a `$ curl -si` line so the verb, path, and any header the story
+A sub-project whose consumer is an HTTP client keeps the same sections with
+the interaction as a request. `Command:` becomes `Request:`, one fenced block
+per form, each a `$ curl -si` line so the verb, path, and any header the story
 depends on are explicit and the line can be run as written. `Output:` becomes
 `Response:`, a fenced block holding the status line and only the headers the
 story fixes. The exit line becomes a status line: `Status 200.` followed by

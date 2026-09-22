@@ -1,6 +1,8 @@
-At the start of every session, before acting on the first request, enumerate
-the project skills by printing the `name` and `description` front matter of
-every `.agents/skills/*/SKILL.md` file. 
+The **project** is this git repository. A **sub-project** is a directory in it
+that holds `specs/` beside its own `AGENTS.md`; that `AGENTS.md` declares the
+sub-project's toolchain, test files, gates, and commit conventions. This file
+is guidance for the whole project and never stands in for a sub-project's
+`AGENTS.md`.
 
 This project is spec managed: a sub-project's code is derived from its
 `specs/`, so a hand-written file desynchronizes the tree from the design.

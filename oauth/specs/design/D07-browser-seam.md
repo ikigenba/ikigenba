@@ -1,8 +1,8 @@
 # D07-browser-seam
 
 Package `internal/browser` opens the authorize URL in the user's browser. It is
-the smallest seam in the project and exists almost entirely so that the rest of
-the program can be tested without a browser ever appearing.
+the smallest seam in the sub-project and exists almost entirely so that the rest
+of the program can be tested without a browser ever appearing.
 
 ```go
 package browser
@@ -58,8 +58,8 @@ user would be told nothing, no browser would open, and the process would wait
 out its full timeout on a callback that could never arrive. GoReleaser builds
 only linux and darwin (see `AGENTS.md`), so the `!linux && !darwin` file is
 never shipped — it is kept so the package still compiles and type-checks
-everywhere, and the project's gates cross-compile-vet it (`GOOS=windows go vet
-./...`) precisely so an unshipped file cannot rot unnoticed.
+everywhere, and the sub-project's gates cross-compile-vet it (`GOOS=windows go
+vet ./...`) precisely so an unshipped file cannot rot unnoticed.
 
 **A note on how thoroughly the platform requirements are proven.** The linux
 and darwin assertions below live in build-tagged test files and therefore run
@@ -67,7 +67,7 @@ only on their own platform; on a linux build host the darwin requirement is
 compiled and type-checked by the `GOOS=darwin go vet ./...` gate but not
 executed. That is a weaker standard of proof than the rest of this spec enjoys,
 and it is accepted here because the assertion is a single command name — the
-narrowest claim in the project, and one the gates still keep honest against
+narrowest claim in the sub-project, and one the gates still keep honest against
 compilation rot.
 
 ## REQUIREMENTS

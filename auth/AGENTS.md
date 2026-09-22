@@ -11,7 +11,7 @@ restate them.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run writes the source, the tests, `go.mod`, and `etc/manifest.toml`. See
-the `spec` and `build-spec` skills. Everything below is the ground the run
+the `spec` and `build-spec` skills. Everything below is what the build run
 computes the gap and runs the gates against; it is human-authored and read-only
 to the run.
 
@@ -70,7 +70,7 @@ in a new direct dependency on its own.
 
 ## Test files
 
-The project's tests are all `*_test.go` files in the module: `cmd/auth` and
+The sub-project's tests are all `*_test.go` files in the module: `cmd/auth` and
 everything under `internal/`. This is the file set the canonical gap greps for
 requirement ids:
 

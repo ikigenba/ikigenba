@@ -28,8 +28,8 @@ D03 and D04 a fixed-value comparison rather than a shape check.
 bytes for the state**, each rendered with `base64.RawURLEncoding` — base64url
 with no `=` padding. Those byte counts and that order are contract, not
 implementation: they are directly observable through the injected reader, and
-every fixed-entropy test in this project depends on knowing which region of the
-reader's stream becomes which secret. Rendered, they are an 86-character
+every fixed-entropy test in this sub-project depends on knowing which region of
+the reader's stream becomes which secret. Rendered, they are an 86-character
 verifier and a 43-character state.
 
 **The verifier grammar is RFC 7636 §4.1**, quoted verbatim:

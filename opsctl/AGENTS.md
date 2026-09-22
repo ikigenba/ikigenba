@@ -10,7 +10,7 @@ the one it runs on. Module path `github.com/ikigenba/ikigenba/opsctl`.
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run brings the existing `cmd/`, `internal/`, and `go.mod` into
 agreement with that target. See the `spec` and `build-spec` skills and `docs/spec-system.md` at the
-repo root. Everything below is the ground the run computes the gap and runs
+repo root. Everything below is what the build run computes the gap and runs
 the gates against; it is human-authored and read-only to the run.
 
 ## Host
@@ -63,7 +63,7 @@ phase that appears to need one files an issue for a human to adjudicate.
 
 The spec owns local development. The design covers the Go code under `cmd/`
 and `internal/` and its `go.mod`; the `Makefile`, the lint configuration, and
-the gates are the ground that builds and tests it here. Release publication
+the gates are what builds and tests it here. Release publication
 and installation of the `opsctl` binary onto a host are maintained by hand
 and are not part of the design or the gap. `install.sh` and `.goreleaser.yaml`
 in this directory, and the release workflow at
@@ -74,7 +74,7 @@ or push a tag.
 
 ## Test files
 
-The project's tests are all `*_test.go` files under `cmd/` and `internal/`.
+The sub-project's tests are all `*_test.go` files under `cmd/` and `internal/`.
 This is the file set the canonical gap greps for requirement ids:
 
 ```
@@ -106,7 +106,7 @@ skipped tests, no disabled linters laundering a failure.
 4. `golangci-lint run`
 
 `llm-lint` is available as an optional manual check through `make llm-lint`,
-but it is not a quality gate. Its configuration and project rules remain in
+but it is not a quality gate. Its configuration and sub-project rules remain in
 `.llm-lint.json` and `lint-rules/`. The rule-candidate backlog and provenance
 are documented in `../docs/llm-lint-rule-candidates.md`.
 

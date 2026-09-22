@@ -14,18 +14,18 @@ decomposition, ownership, verification, capacity handling, and repairs.
 
 ## Goal and authority
 
-Make the selected project's `specs/stories/` express the user's current
+Make the selected sub-project's `specs/stories/` express the user's current
 intent, with every settled interaction in the canonical format and no
 contradictory stories. Drafting includes updating existing stories.
 
-Resolve the selected sub-project to an absolute directory holding `specs/`
-and its own `AGENTS.md`; ask if the project is not identified by context.
-Read applicable ancestor guidance and project ground. Supply that directory,
-the user's request and settled decisions, this skill, and the completion
-criteria to the fanout assignments.
+Resolve the selected sub-project to an absolute directory holding `specs/` and
+its own `AGENTS.md`; ask if the sub-project is not identified by context.
+Read applicable ancestor guidance and the sub-project's `AGENTS.md`. Supply
+that directory, the user's request and settled decisions, this skill, and the
+completion criteria to the fanout assignments.
 
-Repository writes are limited to stories. No design, source, test, ground,
-or issue-file changes; no requirement ids or commits. Do not start
+Repository writes are limited to stories. No design, source, test,
+`AGENTS.md`, or issue-file changes; no requirement ids or commits. Do not start
 `draft-design`. Working inventories, proposals, and evidence belong in
 ephemeral scratch files outside the repository using the
 [handoff scratch convention](../handoff/SKILL.md#scratch-file-convention).
@@ -60,8 +60,8 @@ The root uses [grill-me](../grill-me/SKILL.md) for unsettled intent: one
 question at a time, with a recommendation and reasoning. Children return
 questions with evidence and affected stories; they do not question the user
 independently. Available inputs may already settle a point; report that basis
-instead of asking again. Neither sibling agents nor another project's stories
-are authority for the user's intent.
+instead of asking again. Neither sibling agents nor another sub-project's
+stories are authority for the user's intent.
 
 Settle all substance the format requires: grammar, option behavior, literal
 or variable output, return/exit behavior and streams, preconditions, and

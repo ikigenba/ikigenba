@@ -12,7 +12,7 @@ So this sub-project is two things at once:
 
 1. **A small, useful CLI:** clone the monorepo, run `make build`, get a
    working binary.
-2. **A demonstration of spec-first construction:** a project fully specified
+2. **A demonstration of spec-first construction:** a sub-project fully specified
    up front, then generated from that spec. See
    [how the spec system works](../docs/spec-system.md).
 
@@ -32,9 +32,10 @@ curl -fsSL https://raw.githubusercontent.com/ikigenba/ikigenba/main/idgen/instal
 
 ## What idgen is (the end product)
 
-Some projects, including the ikigenba projects, embed stable, traceable IDs in
-their requirements, comments, and test names. Those IDs only need to be unique
-within the project, not globally, so they can be much shorter than a UUID.
+Some projects, including the ikigenba sub-projects, embed stable, traceable IDs
+in their requirements, comments, and test names. Those IDs only need to be
+unique within the project, not globally, so they can be much shorter than a
+UUID.
 
 `idgen` is a small CLI that mints those IDs in the form `PREFIX-XXXX-XXXX`
 (default prefix `R`). Each ID encodes the number of milliseconds from a

@@ -6,8 +6,9 @@ without an installed executable. Its manifest contributes routing and database
 declarations independently of whether its service can run.
 
 The artifact and manifest inputs described here come from the supplied opsctl
-stories. They do not assert the behavior or internal layout of another project.
-Command execution and lifecycle ordering belong to the consuming designs.
+stories. They do not assert the behavior or internal layout of another
+sub-project. Command execution and lifecycle ordering belong to the consuming
+designs.
 
 ## REQUIREMENTS
 

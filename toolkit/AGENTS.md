@@ -8,7 +8,7 @@ directory. Module path `github.com/ikigenba/ikigenba/toolkit`.
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run writes the code (the `toolkit` package and `go.mod`'s dependency
 graph fill in as it does). See the `spec` and `build-spec` skills and
-`docs/spec-system.md` at the repo root. Everything below is the ground the run
+`docs/spec-system.md` at the repo root. Everything below is what the build run
 computes the gap and runs the gates against; it is human-authored and
 read-only to the run.
 
@@ -21,7 +21,7 @@ read-only to the run.
 
 ## Test files
 
-The project's tests are all `*_test.go` files under this module. This is the
+The sub-project's tests are all `*_test.go` files under this module. This is the
 file set the canonical gap greps for requirement ids:
 
 ```
@@ -45,7 +45,7 @@ skipped tests, no disabled linters laundering a failure.
 4. `golangci-lint run`
 5. `llm-lint --concurrency 16 --verbose .` (doubles the default in-flight calls of 8; `--verbose` prints per-pair progress)
 
-llm-lint also loads this project's own rules from `lint-rules/` (wired via
+llm-lint also loads this sub-project's own rules from `lint-rules/` (wired via
 `.llm-lint.json`, found by ancestor walk) and recurses the module from the root.
 Rules are promoted individually: a promotion flips the rule file to
 `severity: error` and adds its id to the `enable` allowlist in `.llm-lint.json`.
