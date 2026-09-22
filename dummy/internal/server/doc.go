@@ -1,2 +1,2 @@
-// Package server serves the dummy application.
+// Package server owns the HTTP listener lifecycle.
 package server

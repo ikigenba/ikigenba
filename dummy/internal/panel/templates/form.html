@@ -1,0 +1,16 @@
+{{define "form"}}
+<form method="post" action="/widgets" enctype="application/x-www-form-urlencoded">
+<label for="widget-name">Name</label>
+<input id="widget-name" type="text" name="name" {{attr "value" .Submission.Name}}{{if .Errors.Name}} aria-describedby="name-error"{{end}}>
+{{if .Errors.Name}}<span id="name-error">{{esc .Errors.Name}}</span>{{end}}
+<label for="widget-count">Count</label>
+<input id="widget-count" type="text" name="count" {{attr "value" .Submission.Count}}{{if .Errors.Count}} aria-describedby="count-error"{{end}}>
+{{if .Errors.Count}}<span id="count-error">{{esc .Errors.Count}}</span>{{end}}
+<label for="widget-status">Status</label>
+<select id="widget-status" name="status"{{if .Errors.Status}} aria-describedby="status-error"{{end}}>
+{{range .Statuses}}<option {{attr "value" (printf "%s" .)}}{{if eq (printf "%s" .) $.SelectedStatus}} selected="selected"{{end}}>{{esc .}}</option>{{end}}
+</select>
+{{if .Errors.Status}}<span id="status-error">{{esc .Errors.Status}}</span>{{end}}
+<button type="submit">Add widget</button>
+</form>
+{{end}}

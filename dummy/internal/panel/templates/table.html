@@ -1,0 +1,6 @@
+{{define "table"}}<table id="widgets-table">
+<thead><tr><th>Name</th><th>Count</th><th>Status</th></tr></thead>
+<tbody>{{range .}}
+<tr><td>{{esc .Name}}</td><td>{{esc .Count}}</td><td>{{esc .Status}}</td></tr>{{end}}
+</tbody>
+</table>{{end}}

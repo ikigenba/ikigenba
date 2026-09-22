@@ -1,0 +1,27 @@
+{{define "script"}}<script>
+(() => {
+  let etag = "";
+  let refreshing = false;
+  async function refreshTable() {
+    if (refreshing) return;
+    refreshing = true;
+    try {
+      const headers = etag ? {"If-None-Match": etag} : {};
+      const response = await fetch("/widgets/table", {headers});
+      if (response.status === 304) return;
+      if (!response.ok) return;
+      const markup = await response.text();
+      const current = document.getElementById("widgets-table");
+      if (current) {
+        current.outerHTML = markup;
+        etag = response.headers.get("ETag") || "";
+      }
+    } catch {
+      // A later poll retries a failed request.
+    } finally {
+      refreshing = false;
+    }
+  }
+  setInterval(refreshTable, 5000);
+})();
+</script>{{end}}

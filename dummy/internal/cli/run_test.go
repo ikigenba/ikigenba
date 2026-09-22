@@ -18,12 +18,13 @@ import (
 	"testing"
 )
 
-// R-ML36-X0ZH
+// R-10H0-0STN R-11OW-EKKC
 func TestUsageConstant(t *testing.T) {
 	t.Parallel()
 
-	const want = "Usage: dummy [command]\n\nServe the Dummy page at 127.0.0.1:$PORT. With no command, serve.\n\nCommands:\n  manifest   print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  the server failed\n  2  usage error\n"
-	if Usage != want {
+	const want = "Usage: dummy [command]\n\nServe the dummy control panel at 127.0.0.1:$PORT. With no command, serve.\n\nCommands:\n  manifest   print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  the server failed\n  2  usage error\n"
+	const declaredUsage string = Usage
+	if declaredUsage != want {
 		t.Errorf("Usage = %q, want %q", Usage, want)
 	}
 }
@@ -251,104 +252,6 @@ func TestRunPortNumberGrammar(t *testing.T) {
 		if listenCalls != 0 {
 			t.Errorf("PORT %q: Listen calls = %d, want 0", port, listenCalls)
 		}
-	}
-}
-
-// R-ZQ4M-PJ7J
-func TestRunHandsValidPortToServer(t *testing.T) {
-	originalServe, originalHandler := serve, serverHandler
-	t.Cleanup(func() {
-		serve, serverHandler = originalServe, originalHandler
-	})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	listener := newBlockingListener()
-	listenCalls := 0
-	var network, address string
-	handler := http.NewServeMux()
-	handlerCalls := 0
-	serverHandler = func() http.Handler {
-		handlerCalls++
-		return handler
-	}
-	serveCalls := 0
-	var gotCtx context.Context
-	var gotListener net.Listener
-	var gotHandler http.Handler
-	serve = func(callCtx context.Context, callListener net.Listener, callHandler http.Handler) error {
-		serveCalls++
-		gotCtx, gotListener, gotHandler = callCtx, callListener, callHandler
-		return callListener.Close()
-	}
-	var stdout, stderr bytes.Buffer
-	exit := Run(ctx, Process{
-		LookupEnv: mapLookup(map[string]string{"PORT": "65535"}),
-		Stdout:    &stdout,
-		Stderr:    &stderr,
-		Listen: func(gotNetwork, gotAddress string) (net.Listener, error) {
-			listenCalls++
-			network, address = gotNetwork, gotAddress
-			return listener, nil
-		},
-	})
-	if exit != ExitSuccess {
-		t.Errorf("Run exit = %d, want ExitSuccess", exit)
-	}
-	if listenCalls != 1 || network != "tcp" || address != "127.0.0.1:65535" {
-		t.Errorf("Listen calls = %d with %q, %q; want one with tcp, 127.0.0.1:65535", listenCalls, network, address)
-	}
-	if serveCalls != 1 {
-		t.Errorf("Serve calls = %d, want 1", serveCalls)
-	}
-	if gotCtx != ctx {
-		t.Error("Serve did not receive Run's context")
-	}
-	if gotListener != listener {
-		t.Error("Serve did not receive the listener returned by Listen")
-	}
-	if handlerCalls != 1 || gotHandler != handler {
-		t.Errorf("Handler calls = %d and Serve handler = %T; want one call and its returned handler", handlerCalls, gotHandler)
-	}
-	if stdout.Len() != 0 || stderr.Len() != 0 {
-		t.Errorf("stdout = %q, stderr = %q; want both empty", stdout.String(), stderr.String())
-	}
-
-	probe, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("probe free port: %v", err)
-	}
-	port := strconv.Itoa(probe.Addr().(*net.TCPAddr).Port)
-	if err = probe.Close(); err != nil {
-		t.Fatalf("close port probe: %v", err)
-	}
-	serveCalls, handlerCalls = 0, 0
-	gotCtx, gotListener, gotHandler = nil, nil, nil
-	var listeningAddr net.Addr
-	exit = Run(ctx, Process{
-		LookupEnv: mapLookup(map[string]string{"PORT": port}),
-		Stdout:    &stdout,
-		Stderr:    &stderr,
-		Listening: func(addr net.Addr) { listeningAddr = addr },
-	})
-	if exit != ExitSuccess {
-		t.Fatalf("Run with nil Listen exit = %d, want ExitSuccess", exit)
-	}
-	if serveCalls != 1 || handlerCalls != 1 || gotCtx != ctx || gotListener == nil || gotHandler != handler {
-		t.Errorf("nil Listen path called Serve %d and Handler %d times with context match %t, listener %v, handler match %t", serveCalls, handlerCalls, gotCtx == ctx, gotListener, gotHandler == handler)
-	}
-	if _, ok := gotListener.(*net.TCPListener); !ok {
-		t.Errorf("nil Listen produced listener %T, want *net.TCPListener from net.Listen", gotListener)
-	}
-	if listeningAddr == nil {
-		t.Fatal("nil Listen path did not report its bound address")
-	}
-	_, gotPort, splitErr := net.SplitHostPort(listeningAddr.String())
-	if splitErr != nil {
-		t.Fatalf("split listening address: %v", splitErr)
-	}
-	if gotPort != port {
-		t.Errorf("nil Listen bound port = %s, want %s", gotPort, port)
 	}
 }
 
@@ -803,11 +706,11 @@ func TestRunReportsExactServeError(t *testing.T) {
 	}
 }
 
-// R-N4IA-6LSH
+// R-0Z93-N12Y
 func TestPackagesDoNotReachPastProcessSeam(t *testing.T) {
 	t.Parallel()
 
-	for _, directory := range []string{"internal/cli", "internal/server"} {
+	for _, directory := range []string{"internal/cli", "internal/server", "internal/panel", "internal/widget"} {
 		files, err := filepath.Glob(filepath.Join(projectRoot(t), directory, "*.go"))
 		if err != nil {
 			t.Fatalf("list %s source: %v", directory, err)

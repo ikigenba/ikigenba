@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"strings"
 
+	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 	"github.com/ikigenba/ikigenba/dummy/internal/server"
+	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
 // Process describes the process state used by Run.
@@ -28,11 +31,14 @@ const (
 )
 
 // Usage describes the dummy command line.
-const Usage = "Usage: dummy [command]\n\nServe the Dummy page at 127.0.0.1:$PORT. With no command, serve.\n\nCommands:\n  manifest   print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  the server failed\n  2  usage error\n"
+const Usage = "Usage: dummy [command]\n\nServe the dummy control panel at 127.0.0.1:$PORT. With no command, serve.\n\nCommands:\n  manifest   print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  the server failed\n  2  usage error\n"
 
 var (
-	serve         = server.Serve
-	serverHandler = server.Handler
+	serve        = server.Serve
+	newStore     = widget.NewStore
+	panelHandler = panel.Handler
+	// serverHandler optionally substitutes a handler in listener lifecycle tests.
+	serverHandler func() http.Handler
 )
 
 // Run runs the dummy command and returns its process exit code.
@@ -86,7 +92,12 @@ func Run(ctx context.Context, p Process) int {
 	if p.Listening != nil {
 		p.Listening(ln.Addr())
 	}
-	if err = serve(ctx, ln, serverHandler()); err != nil {
+	store := newStore()
+	handler := panelHandler(store)
+	if serverHandler != nil {
+		handler = serverHandler()
+	}
+	if err = serve(ctx, ln, handler); err != nil {
 		writeDiagnostic(p.Stderr, fmt.Sprintf("dummy: %v\n", err))
 		return ExitServerFailed
 	}

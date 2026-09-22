@@ -40,7 +40,7 @@ func projectFS(t *testing.T) *os.Root {
 	return root
 }
 
-// R-DJO3-6OQP
+// R-0Y17-99C9
 func TestModulePackageLayoutAndImports(t *testing.T) {
 	t.Parallel()
 
@@ -57,6 +57,8 @@ func TestModulePackageLayoutAndImports(t *testing.T) {
 		"cmd/dummy":       "main",
 		"internal/cli":    "cli",
 		"internal/server": "server",
+		"internal/panel":  "panel",
+		"internal/widget": "widget",
 	}
 	gotPackages := make(map[string]string)
 	imports := make(map[string]map[string]bool)
@@ -107,14 +109,23 @@ func TestModulePackageLayoutAndImports(t *testing.T) {
 	}
 
 	const module = "github.com/ikigenba/ikigenba/dummy/"
-	if !imports["cmd/dummy"][module+"internal/cli"] {
-		t.Error("cmd/dummy does not import internal/cli")
+	wantImports := map[string]map[string]bool{
+		"cmd/dummy":       {module + "internal/cli": true},
+		"internal/cli":    {module + "internal/server": true, module + "internal/panel": true, module + "internal/widget": true},
+		"internal/panel":  {module + "internal/widget": true},
+		"internal/server": {},
+		"internal/widget": {},
 	}
-	if !imports["internal/cli"][module+"internal/server"] {
-		t.Error("internal/cli does not import internal/server")
-	}
-	if imports["internal/server"][module+"internal/cli"] {
-		t.Error("internal/server imports internal/cli")
+	for directory, packageImports := range imports {
+		local := make(map[string]bool)
+		for imported := range packageImports {
+			if strings.HasPrefix(imported, module) {
+				local[imported] = true
+			}
+		}
+		if !reflect.DeepEqual(local, wantImports[directory]) {
+			t.Errorf("%s module imports = %v, want %v", directory, local, wantImports[directory])
+		}
 	}
 }
 

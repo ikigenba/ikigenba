@@ -1,0 +1,19 @@
+{{define "page"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>{{esc .ServiceName}}</title></head>
+<body>
+{{template "chrome" .}}
+<main>
+{{if .Panel}}
+<h1>Widgets</h1>
+{{template "table" .Widgets}}
+{{template "form" .Form}}
+{{else}}
+<p>{{esc .Message}}</p>
+<a href="/widgets">Back to widgets</a>
+{{end}}
+</main>
+{{if .Panel}}{{template "script" .}}{{end}}
+</body>
+</html>
+{{end}}

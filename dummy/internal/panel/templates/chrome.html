@@ -1,0 +1,5 @@
+{{define "chrome"}}<header>
+<strong>{{esc .ServiceName}}</strong>
+<span>{{esc .Email}}</span>
+<a {{attr "href" .SignOutURL}}>{{esc .SignOutText}}</a>
+</header>{{end}}
