@@ -473,7 +473,7 @@ func TestListeningCallback(t *testing.T) {
 	}
 }
 
-// R-ICZ1-6UGJ R-QQN7-AF03 R-8TZB-3NSI
+// R-QQN7-AF03 R-ICZ1-6UGJ R-8TZB-3NSI
 func TestRunBindsServesSilentlyAndDrainsOnCancellation(t *testing.T) {
 	originalHandler := serverHandler
 	t.Cleanup(func() { serverHandler = originalHandler })

@@ -115,7 +115,7 @@ func pageTestFormRequest(sub widget.Submission) *http.Request {
 	return r
 }
 
-// R-KDGH-2SDG R-KEOD-GK45 R-KFW9-UBUU R-KH46-83LJ R-KIC2-LVC8
+// R-KDGH-2SDG R-KFW9-UBUU R-KH46-83LJ R-KIC2-LVC8
 // R-KLZR-R6KB R-RMP2-ZITR
 func TestPageTextProcedures(t *testing.T) {
 	if got := pageTestTags("<tr><th>x</th></tr>", "tr", false); len(got) != 1 || got[0] != [2]int{0, 4} {
@@ -358,7 +358,6 @@ func pageTestDocuments() []*http.Request {
 }
 
 // R-IWKC-JVY4 R-KKRV-DETM R-KPNG-WHSE R-KQVD-A9J3 R-KTB6-1T0H
-// R-KEOD-GK45
 func TestPageDocumentChromeAndAttributes(t *testing.T) {
 	for _, r := range pageTestDocuments() {
 		r.Header.Set("X-User-Email", "reader &lt; <b>\" &\t \n other@example.test")
@@ -403,19 +402,161 @@ func TestPageDocumentChromeAndAttributes(t *testing.T) {
 
 func pageTestAttributeInvariants(t *testing.T, body string) {
 	t.Helper()
-	for _, tag := range regexp.MustCompile(`<[^>]*>`).FindAllString(pageTestStrip(body), -1) {
-		for _, name := range []string{"href", "id", "method", "action", "enctype", "name", "type", "value", "selected", "aria-describedby", "formaction", "formmethod", "formenctype", "src"} {
-			re := regexp.MustCompile(`(?i)[\t\n\v\f\r ]` + name + `=`)
-			matches := re.FindAllStringIndex(tag, -1)
-			if len(matches) > 1 {
-				t.Fatalf("duplicate %s occurrence: %s", name, tag)
+	tags := regexp.MustCompile(`<[^>]*>`).FindAllString(pageTestStrip(body), -1)
+	for _, span := range pageTestTags(body, "script", false) {
+		tags = append(tags, body[span[0]:span[1]])
+	}
+	for _, tag := range tags {
+		if reason := pageTestNamedAttributeError(tag); reason != "" {
+			t.Fatalf("%s: %s", reason, tag)
+		}
+	}
+}
+
+func pageTestNamedAttributeError(tag string) string {
+	if len(tag) < 3 || tag[0] != '<' || tag[1] == '/' || tag[1] == '!' {
+		return ""
+	}
+	named := map[string]bool{"href": true, "id": true, "method": true, "action": true, "enctype": true, "name": true, "type": true, "value": true, "selected": true, "aria-describedby": true, "formaction": true, "formmethod": true, "formenctype": true, "src": true}
+	seen := make(map[string]bool)
+	i := 1
+	for i < len(tag) && !strings.ContainsRune(" \t\n\v\f\r/>", rune(tag[i])) {
+		i++
+	}
+	for i < len(tag) {
+		for i < len(tag) && strings.ContainsRune(" \t\n\v\f\r/", rune(tag[i])) {
+			i++
+		}
+		if i >= len(tag) || tag[i] == '>' {
+			break
+		}
+		start := i
+		for i < len(tag) && !strings.ContainsRune(" \t\n\v\f\r/=><", rune(tag[i])) {
+			i++
+		}
+		if i == start {
+			i++
+			continue
+		}
+		name := strings.ToLower(tag[start:i])
+		if named[name] {
+			if seen[name] {
+				return "duplicate " + name
 			}
-			if len(matches) == 1 {
-				end := matches[0][1]
-				if end >= len(tag) || tag[end] != '"' || !strings.Contains(tag[end+1:], `"`) {
-					t.Fatalf("attribute not double quoted: %s", tag)
+			seen[name] = true
+			if i+1 >= len(tag) || tag[i] != '=' || tag[i+1] != '"' {
+				return "unquoted or bare " + name
+			}
+		}
+		for i < len(tag) && strings.ContainsRune(" \t\n\v\f\r", rune(tag[i])) {
+			i++
+		}
+		if i < len(tag) && tag[i] == '=' {
+			i++
+			for i < len(tag) && strings.ContainsRune(" \t\n\v\f\r", rune(tag[i])) {
+				i++
+			}
+			if i < len(tag) && (tag[i] == '"' || tag[i] == '\'') {
+				quote := tag[i]
+				i++
+				end := strings.IndexByte(tag[i:], quote)
+				if end < 0 {
+					return "unterminated attribute " + name
+				}
+				i += end + 1
+			} else {
+				for i < len(tag) && !strings.ContainsRune(" \t\n\v\f\r>", rune(tag[i])) {
+					i++
 				}
 			}
+		}
+	}
+	return ""
+}
+
+// R-KEOD-GK45
+func TestPageNamedAttributesHaveOneQuotedOccurrence(t *testing.T) {
+	for _, malformed := range []string{`<option selected>`, `<option selected='selected'>`, `<input value ="x">`, `<input value="x" value="y">`} {
+		if pageTestNamedAttributeError(malformed) == "" {
+			t.Fatalf("attribute checker accepted %s", malformed)
+		}
+	}
+	if reason := pageTestNamedAttributeError(`<input value="inside selected bare and name=words">`); reason != "" {
+		t.Fatalf("attribute checker misread quoted text: %s", reason)
+	}
+	attack := "x\" value=\"second\"\tname=\"other\"\nid=\"name-error\" > <script>"
+	for _, request := range []*http.Request{
+		pageTestRequest(http.MethodGet, "/widgets"),
+		pageTestRequest(http.MethodGet, "/missing"),
+		pageTestFormRequest(widget.Submission{Name: attack, Count: attack, Status: "archived"}),
+	} {
+		request.Header.Set("X-User-Email", attack)
+		request.Host = "dummy." + attack
+		request.Header.Set("X-Forwarded-Proto", attack)
+		response := pageTestResponse(Handler(widget.NewStore()), request)
+		if response.Body.Len() == 0 || response.Header().Get("Content-Type") != "text/html; charset=utf-8" {
+			t.Fatalf("expected HTML document: %d", response.Code)
+		}
+		pageTestAttributeInvariants(t, response.Body.String())
+		if response.Code == http.StatusUnprocessableEntity {
+			controls := formControls(t, formSpan(t, response.Body.String()))
+			for _, field := range []string{"name", "count"} {
+				value, ok := pageTestAttribute(controls[field], "value")
+				if !ok || value != attack {
+					t.Errorf("%s value = %q, present=%v", field, value, ok)
+				}
+			}
+		}
+	}
+	fragment := pageTestResponse(Handler(widget.NewStore()), pageTestRequest(http.MethodGet, "/widgets/table"))
+	if fragment.Code != http.StatusOK || fragment.Body.Len() == 0 {
+		t.Fatalf("expected table fragment: %d", fragment.Code)
+	}
+	pageTestAttributeInvariants(t, fragment.Body.String())
+}
+
+// R-RP4V-R2B5
+func TestPageRequestValuesPreserveDocumentStructure(t *testing.T) {
+	base := widget.Submission{Name: strings.Repeat("n", widget.MaxNameRunes+1), Count: "bad", Status: "archived"}
+	attack := `"><form><script>bad</script></form>`
+	for _, field := range []string{"email", "host", "proto", "name", "count", "status"} {
+		variant := base
+		first, second := pageTestFormRequest(base), pageTestFormRequest(variant)
+		switch field {
+		case "email":
+			second.Header.Set("X-User-Email", attack)
+		case "host":
+			second.Host = "dummy." + attack
+		case "proto":
+			second.Header.Set("X-Forwarded-Proto", attack)
+		case "name":
+			variant.Name = attack + base.Name
+			second = pageTestFormRequest(variant)
+		case "count":
+			variant.Count = attack + base.Count
+			second = pageTestFormRequest(variant)
+		case "status":
+			variant.Status = attack + base.Status
+			second = pageTestFormRequest(variant)
+		}
+		oracle := widget.NewStore()
+		_, firstErrors := oracle.Create(base)
+		_, secondErrors := oracle.Create(variant)
+		if firstErrors != secondErrors {
+			t.Fatalf("%s: unequal validation errors", field)
+		}
+		store := widget.NewStore()
+		before := store.All()
+		h := Handler(store)
+		a, b := pageTestResponse(h, first), pageTestResponse(h, second)
+		if a.Code != b.Code || a.Code != http.StatusUnprocessableEntity || !reflect.DeepEqual(before, store.All()) {
+			t.Fatalf("%s: comparison preconditions failed", field)
+		}
+		if !reflect.DeepEqual(pageTestTagSequence(a.Body.String()), pageTestTagSequence(b.Body.String())) {
+			t.Errorf("%s changed tag-name sequence", field)
+		}
+		if strings.Count(a.Body.String(), ">") != strings.Count(b.Body.String(), ">") {
+			t.Errorf("%s changed greater-than count", field)
 		}
 	}
 }
@@ -489,7 +630,6 @@ func pageTestTagSequence(s string) []string {
 	return result
 }
 
-// R-RP4V-R2B5 R-KEOD-GK45
 func TestPageCallerBytesCannotChangeMarkup(t *testing.T) {
 	attacks := []string{`<table id="evil"></table><body><form>`, `</script><script>alert(1)</script>`, `><img src=x>`, `&lt;script&gt;`, `x" value="zzz`, "x\"\tname=\"zzz", "x\"\nid=\"name-error", "x\"\rtype=\"image", "x\"\faria-describedby=\"count-error"}
 	for _, field := range []string{"email", "host", "proto", "name", "count", "status"} {

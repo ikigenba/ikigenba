@@ -16,7 +16,7 @@ import (
 	"github.com/ikigenba/ikigenba/dummy/internal/cli"
 )
 
-// R-DM3V-Y883
+// R-DM3V-Y883 R-AOZE-83CM
 func TestMainWiring(t *testing.T) {
 	root := mainProjectRoot(t)
 	binary := filepath.Join(t.TempDir(), "dummy")

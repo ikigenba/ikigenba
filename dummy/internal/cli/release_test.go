@@ -143,7 +143,7 @@ func TestModuleHasNoRequirements(t *testing.T) {
 	}
 }
 
-// R-AMJL-GJV8 R-AOZE-83CM
+// R-AMJL-GJV8
 func TestVersionIsAnInitializedStringVariable(t *testing.T) {
 	t.Parallel()
 
@@ -194,6 +194,50 @@ func TestVersionIsAnInitializedStringVariable(t *testing.T) {
 	if !found {
 		t.Fatal("Version variable declaration not found")
 	}
+}
+
+// R-AOZE-83CM
+func TestVersionComesFromDeclarationInitializer(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(projectRoot(t), "internal", "cli", "release.go")
+	parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	if err != nil {
+		t.Fatalf("parse release source: %v", err)
+	}
+	for _, declaration := range parsed.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok != token.VAR {
+			continue
+		}
+		for _, specification := range general.Specs {
+			value, ok := specification.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			for index, name := range value.Names {
+				if name.Name != "Version" {
+					continue
+				}
+				if index >= len(value.Values) {
+					t.Fatal("Version has no declaration initializer")
+				}
+				literal, ok := value.Values[index].(*ast.BasicLit)
+				if !ok || literal.Kind != token.STRING {
+					t.Fatalf("Version initializer is %T, want a string literal", value.Values[index])
+				}
+				declared, unquoteErr := strconv.Unquote(literal.Value)
+				if unquoteErr != nil {
+					t.Fatalf("unquote Version initializer: %v", unquoteErr)
+				}
+				if Version != declared {
+					t.Errorf("Version = %q, declaration initializes %q", Version, declared)
+				}
+				return
+			}
+		}
+	}
+	t.Fatal("Version declaration not found")
 }
 
 // R-ANRH-UBLX

@@ -75,7 +75,7 @@ func formControls(t *testing.T, body string) map[string]string {
 	return controls
 }
 
-// R-K67P-4EUD R-K7FL-I6L2 R-K8NH-VYBR R-K9VE-9Q2G R-UC44-S8EO R-M49S-JQ63
+// R-K67P-4EUD R-K7FL-I6L2 R-K8NH-VYBR R-UC44-S8EO R-M49S-JQ63
 func assertFormMarkup(t *testing.T, body string) map[string]string {
 	t.Helper()
 	form := formSpan(t, body)
@@ -126,6 +126,81 @@ func assertFormMarkup(t *testing.T, body string) map[string]string {
 		t.Fatal("no submit control")
 	}
 	return controls
+}
+
+// R-K9VE-9Q2G
+func TestFormStatusOptionsFollowStatuses(t *testing.T) {
+	for _, sub := range []widget.Submission{{}, {Name: "", Count: "bad", Status: "paused"}} {
+		method := http.MethodGet
+		body := ""
+		if sub.Count != "" {
+			method = http.MethodPost
+			body = formBody(sub)
+		}
+		response := formRequest(Handler(widget.NewStore()), method, "/widgets", "application/x-www-form-urlencoded", body)
+		form := formSpan(t, response.Body.String())
+		var statusSelect string
+		for _, span := range pageTestTags(form, "select", false) {
+			start := form[span[0]:span[1]]
+			name, _ := pageTestAttribute(start, "name")
+			if name != "status" {
+				continue
+			}
+			if statusSelect != "" {
+				t.Fatal("multiple status selects")
+			}
+			end := pageTestTags(form[span[1]:], "select", true)
+			if len(end) == 0 {
+				t.Fatal("status select has no end tag")
+			}
+			statusSelect = form[span[0] : span[1]+end[0][1]]
+		}
+		if statusSelect == "" {
+			t.Fatal("status select missing")
+		}
+		options, statuses := formTags(statusSelect, "option"), widget.Statuses()
+		if len(options) != 3 || len(statuses) != 3 {
+			t.Fatalf("status options = %d, statuses = %d", len(options), len(statuses))
+		}
+		for i, option := range options {
+			value, ok := pageTestAttribute(option, "value")
+			if !ok || value != string(statuses[i]) {
+				t.Errorf("option %d value = %q, want %q", i, value, statuses[i])
+			}
+		}
+	}
+}
+
+// R-4NOW-M9YH
+func TestFormRejectedStatusSelection(t *testing.T) {
+	for _, status := range []string{"active", " paused ", "retired", "archived", "", "PAUSED"} {
+		sub := widget.Submission{Name: "", Count: "1", Status: status}
+		response := formRequest(Handler(widget.NewStore()), http.MethodPost, "/widgets", "application/x-www-form-urlencoded", formBody(sub))
+		if response.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("status %q: response = %d", status, response.Code)
+		}
+		selectedCount := 0
+		for _, option := range formTags(formSpan(t, response.Body.String()), "option") {
+			value, _ := pageTestAttribute(option, "value")
+			_, selected := pageTestAttribute(option, "selected")
+			wantSelected := value == strings.TrimSpace(status)
+			if selected != wantSelected {
+				t.Errorf("status %q: option %q selected=%v, want %v", status, value, selected, wantSelected)
+			}
+			if selected {
+				selectedCount++
+			}
+		}
+		wantCount := 0
+		for _, allowed := range widget.Statuses() {
+			if string(allowed) == strings.TrimSpace(status) {
+				wantCount = 1
+			}
+		}
+		if selectedCount != wantCount {
+			t.Errorf("status %q: selected options = %d, want %d", status, selectedCount, wantCount)
+		}
+	}
 }
 
 // R-XE11-R0UN R-W2WT-9FY8 R-KEQZ-ST18 R-KFYW-6KRX
@@ -198,7 +273,7 @@ func TestFormFreshPagesAndFailures(t *testing.T) {
 	}
 }
 
-// R-XBL8-ZHD9 R-4NOW-M9YH R-GUU9-JB3W R-KIEO-Y49B R-NV2J-W5BV
+// R-XBL8-ZHD9 R-GUU9-JB3W R-KIEO-Y49B R-NV2J-W5BV
 func TestFormRejections(t *testing.T) {
 	cases := []widget.Submission{
 		{Name: "", Count: "2", Status: "active"},

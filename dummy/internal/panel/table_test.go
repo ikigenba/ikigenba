@@ -150,7 +150,7 @@ func TestTableMarkupAndPageIdentity(t *testing.T) {
 }
 
 func TestTableValidatorsTrackRenderedContent(t *testing.T) {
-	// R-KY5J-IWZO R-MC2I-FB6N R-MDAE-T2XC
+	// R-KY5J-IWZO R-0NC2-JFTW R-MDAE-T2XC
 	store := widget.NewStore()
 	h := Handler(store)
 	first := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "")
