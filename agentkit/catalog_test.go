@@ -92,6 +92,63 @@ func TestCatalogLookupSurface(t *testing.T) {
 	assertCatalogLookupSurface(t, Catalog, Lookup, ErrNotFound)
 }
 
+// R-65WJ-UJNI
+func TestCatalogOfferingsAcceptExactlyTheirEndpointAuthModes(t *testing.T) {
+	for _, entry := range Catalog() {
+		for _, offering := range entry.Offerings {
+			name := entry.Model + "/" + string(offering.ID)
+			t.Run("Catalog/"+name, func(t *testing.T) {
+				assertOfferingAuthenticatorModes(t, offering)
+			})
+
+			lookedUp, err := Lookup(entry.Model, offering.Host, offering.WireName)
+			if err != nil {
+				t.Fatalf("Lookup(%q, %q, %q): %v", entry.Model, offering.Host, offering.WireName, err)
+			}
+			t.Run("Lookup/"+name, func(t *testing.T) {
+				assertOfferingAuthenticatorModes(t, lookedUp)
+			})
+		}
+	}
+}
+
+func assertOfferingAuthenticatorModes(t *testing.T, offering Offering) {
+	t.Helper()
+
+	modes := []AuthMode{AuthModeAPIKey, AuthModeOAuth}
+	for _, endpoint := range offering.Endpoints {
+		if !slices.Contains(modes, endpoint.AuthMode) {
+			modes = append(modes, endpoint.AuthMode)
+		}
+	}
+	missingMode := AuthMode("catalog-test-unsupported")
+	for slices.ContainsFunc(offering.Endpoints, func(endpoint EndpointSpec) bool {
+		return endpoint.AuthMode == missingMode
+	}) {
+		missingMode += "-x"
+	}
+	modes = append(modes, missingMode)
+
+	for _, mode := range modes {
+		mode := mode
+		t.Run(string(mode), func(t *testing.T) {
+			accepted := slices.ContainsFunc(offering.Endpoints, func(endpoint EndpointSpec) bool {
+				return endpoint.AuthMode == mode
+			})
+			authenticator, err := offering.Authenticator(&rotatorStub{mode: mode})
+			if accepted {
+				if err != nil || authenticator == nil {
+					t.Fatalf("Authenticator(%q) = (%T, %v), want non-nil authenticator and nil error", mode, authenticator, err)
+				}
+				return
+			}
+			if !errors.Is(err, ErrInvalidConfig) {
+				t.Fatalf("Authenticator(%q) error = %v, want ErrInvalidConfig", mode, err)
+			}
+		})
+	}
+}
+
 func assertCatalogLookupSurface(t *testing.T, catalog func() []CatalogEntry, lookup func(string, Host, WireName) (Offering, error), notFound error) {
 	t.Helper()
 	if catalog == nil || lookup == nil || notFound == nil {
