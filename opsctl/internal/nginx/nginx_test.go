@@ -145,7 +145,8 @@ func TestRenderAppendsUnroutedApexTo404WithRoutedDefault(t *testing.T) {
 
 // R-NNB1-ZLR1
 // R-NOIY-DDHQ
-// R-NPQU-R58F
+// R-MRGM-9L4N
+// R-MTWF-14M1
 func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -183,6 +184,338 @@ func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 			t.Fatalf("unrouted service %q was rendered", unrouted)
 		}
 	}
+}
+
+// R-MRGM-9L4N
+// R-MTWF-14M1
+func TestRenderKeepsPlainBlocksWhenAuthIsNotRouted(t *testing.T) {
+	t.Parallel()
+	hostName := "space.example.test"
+	apexName := "example.test"
+	services := []struct {
+		name string
+		port int
+		def  bool
+		apex string
+	}{
+		{name: "beta", port: 5200},
+		{name: "notes", port: 8100, def: true},
+		{name: "web", port: 9100, apex: apexName},
+	}
+	want := baseForHost(hostName, true)
+	for _, service := range services {
+		want += serviceBlock(service.name, service.port, service.def, hostName, service.apex)
+	}
+
+	for _, test := range []struct {
+		name  string
+		setup func(*testing.T, string)
+	}{
+		{name: "state directory", setup: func(t *testing.T, root string) {
+			t.Helper()
+			mkdir(t, filepath.Join(root, "opt", "auth", "state"))
+		}},
+		{name: "manifest without port", setup: func(t *testing.T, root string) {
+			t.Helper()
+			writeManifest(t, root, "auth", "app = \"auth\"\n")
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			withAuth := t.TempDir()
+			withoutAuth := t.TempDir()
+			for _, root := range []string{withAuth, withoutAuth} {
+				for _, service := range services {
+					manifest := "app = \"" + service.name + "\"\nport = " + strconv.Itoa(service.port) + "\n"
+					if service.def {
+						manifest += "default = true\n"
+					}
+					writeManifest(t, root, service.name, manifest)
+					fragment := filepath.Join(root, "opt", service.name, "etc", "nginx.conf")
+					if _, err := os.Stat(fragment); !os.IsNotExist(err) {
+						t.Fatalf("fixture nginx fragment for %s: %v", service.name, err)
+					}
+				}
+			}
+			test.setup(t, withAuth)
+
+			gotWith, err := nginx.Render(context.Background(), host.Env{Root: withAuth}, hostName, "web")
+			if err != nil {
+				t.Fatalf("Render with unrouted auth: %v", err)
+			}
+			gotWithout, err := nginx.Render(context.Background(), host.Env{Root: withoutAuth}, hostName, "web")
+			if err != nil {
+				t.Fatalf("Render without auth: %v", err)
+			}
+			if string(gotWith) != string(gotWithout) {
+				t.Fatalf("unrouted auth changed plain configuration\nwith:\n%s\nwithout:\n%s", gotWith, gotWithout)
+			}
+			if string(gotWith) != want {
+				t.Fatalf("plain configuration mismatch\ngot:\n%s\nwant:\n%s", gotWith, want)
+			}
+			if strings.Contains(string(gotWith), "auth") {
+				t.Fatalf("unrouted auth was treated as the authenticator:\n%s", gotWith)
+			}
+		})
+	}
+}
+
+// R-MRGM-9L4N
+// R-MV4B-EWCQ
+// R-MWC7-SO3F
+func TestRenderUsesUnwiredAuthenticatorAndWiredServices(t *testing.T) {
+	t.Parallel()
+	hostName := "space.example.test"
+	apexName := "example.test"
+
+	t.Run("default and apex do not opt out", func(t *testing.T) {
+		got := renderAuthenticatedServices(t, hostName, "web", false, 4401)
+		for _, name := range []string{"auth", "beta", "notes", "web"} {
+			if strings.Count(got, "include /opt/"+name+"/etc/nginx.conf*;") != 1 {
+				t.Fatalf("missing unconditional include for %s\n%s", name, got)
+			}
+		}
+		want := baseForHost(hostName, true) +
+			unwiredServiceBlock("auth", 4401, false, hostName, "") +
+			wiredServiceBlock("beta", 5200, false, hostName, "", 4401) +
+			wiredServiceBlock("notes", 8100, true, hostName, "", 4401) +
+			wiredServiceBlock("web", 9100, false, hostName, apexName, 4401)
+		if got != want {
+			t.Fatalf("configuration mismatch\ngot:\n%s\nwant:\n%s", got, want)
+		}
+		authBlock := serverBlockFor(t, got, "auth."+hostName)
+		for _, forbidden := range []string{"auth_request", "/_ikigenba/check", "@auth_redirect", "X-User-Id", "X-User-Email"} {
+			if strings.Contains(authBlock, forbidden) {
+				t.Fatalf("unwired authenticator block contains %q:\n%s", forbidden, authBlock)
+			}
+		}
+		if !strings.Contains(authBlock, "    location = /check {\n        return 404;\n    }\n") {
+			t.Fatalf("authenticator block missing public /check 404:\n%s", authBlock)
+		}
+		for _, name := range []string{"beta." + hostName, "notes." + hostName, "web." + hostName} {
+			block := serverBlockFor(t, got, name)
+			if !strings.Contains(block, "auth_request     /_ikigenba/check;") || strings.Contains(block, "location = /check {") {
+				t.Fatalf("%s was not the wired block:\n%s", name, block)
+			}
+		}
+	})
+
+	t.Run("authenticator may be default and apex", func(t *testing.T) {
+		got := renderAuthenticatedServices(t, hostName, "auth", true, 3307)
+		want := baseForHost(hostName, true) +
+			unwiredServiceBlock("auth", 3307, true, hostName, apexName) +
+			wiredServiceBlock("beta", 5200, false, hostName, "", 3307)
+		if got != want {
+			t.Fatalf("configuration mismatch\ngot:\n%s\nwant:\n%s", got, want)
+		}
+	})
+
+	t.Run("authenticator alone stays unwired", func(t *testing.T) {
+		root := t.TempDir()
+		writeManifest(t, root, "auth", "app = \"auth\"\nport = 4401\n")
+		got, err := nginx.Render(context.Background(), host.Env{Root: root}, hostName, "")
+		if err != nil {
+			t.Fatalf("Render: %v", err)
+		}
+		want := baseForHost(hostName, false) + unwiredServiceBlock("auth", 4401, false, hostName, "")
+		if string(got) != want {
+			t.Fatalf("configuration mismatch\ngot:\n%s\nwant:\n%s", got, want)
+		}
+	})
+}
+
+// R-MSOI-NCVC
+func TestRenderNamesAuthenticatorHostAndCheckEndpoint(t *testing.T) {
+	t.Parallel()
+	hostName := "space.example.test"
+	authPort := 4401
+	got := renderAuthenticatedServices(t, hostName, "web", false, 4401)
+	publicHost := "auth." + hostName
+	endpoint := "http://127.0.0.1:" + strconv.Itoa(authPort) + "/check"
+	wiredServices := 3
+	redirect := "return 302 https://" + publicHost + "/?return=$scheme://$host$request_uri;"
+	if strings.Count(got, redirect) != wiredServices {
+		t.Fatalf("public host redirects = %d, want %d\n%s", strings.Count(got, redirect), wiredServices, got)
+	}
+	if strings.Count(got, "proxy_pass              "+endpoint+";") != wiredServices {
+		t.Fatalf("check endpoint proxies = %d, want %d\n%s", strings.Count(got, "proxy_pass              "+endpoint+";"), wiredServices, got)
+	}
+
+	occurrences := 0
+	searchFrom := 0
+	for {
+		rel := strings.Index(got[searchFrom:], "auth.")
+		if rel < 0 {
+			break
+		}
+		at := searchFrom + rel
+		if !strings.HasPrefix(got[at:], publicHost) {
+			end := min(at+len(publicHost)+12, len(got))
+			t.Fatalf("authenticator public host %q, want %q", got[at:end], publicHost)
+		}
+		boundary := at + len(publicHost)
+		if boundary < len(got) {
+			switch got[boundary] {
+			case ' ', ';', '/', '\n':
+			default:
+				end := min(boundary+12, len(got))
+				t.Fatalf("authenticator public host extended by %q", got[boundary:end])
+			}
+		}
+		occurrences++
+		searchFrom = boundary
+	}
+	if occurrences != wiredServices+1 {
+		t.Fatalf("public host occurrences = %d, want %d", occurrences, wiredServices+1)
+	}
+
+	endpointCount := 0
+	searchFrom = 0
+	needle := "http://127.0.0.1:" + strconv.Itoa(authPort)
+	for {
+		rel := strings.Index(got[searchFrom:], needle)
+		if rel < 0 {
+			break
+		}
+		at := searchFrom + rel
+		rest := got[at+len(needle):]
+		switch {
+		case strings.HasPrefix(rest, "/check;"):
+			endpointCount++
+		case strings.HasPrefix(rest, ";"):
+		default:
+			end := min(at+len(needle)+16, len(got))
+			t.Fatalf("loopback check endpoint spelled %q", got[at:end])
+		}
+		searchFrom = at + len(needle)
+	}
+	if endpointCount != wiredServices {
+		t.Fatalf("check endpoint occurrences = %d, want %d", endpointCount, wiredServices)
+	}
+}
+
+// R-MXK4-6FU4
+func TestRenderWiredBlockSubrequestsAndBlanksClientIdentity(t *testing.T) {
+	t.Parallel()
+	hostName := "space.example.test"
+	got := renderAuthenticatedServices(t, hostName, "web", false, 4401)
+	for _, port := range []int{5200, 8100, 9100} {
+		proxy := "        proxy_pass       http://127.0.0.1:" + strconv.Itoa(port) + ";\n"
+		proxyAt := strings.Index(got, proxy)
+		if proxyAt < 0 {
+			t.Fatalf("missing upstream proxy for port %d\n%s", port, got)
+		}
+		locationAt := strings.LastIndex(got[:proxyAt], "    location / {\n")
+		closeRel := strings.Index(got[proxyAt:], "\n    }\n")
+		if locationAt < 0 || closeRel < 0 {
+			t.Fatalf("port %d proxy is not inside location /", port)
+		}
+		location := got[locationAt : proxyAt+closeRel+1]
+		if !strings.Contains(location, "        auth_request     /_ikigenba/check;\n") {
+			t.Fatalf("location / for port %d does not subrequest /_ikigenba/check before proxying:\n%s", port, location)
+		}
+		if strings.Count(location, "error_page") != 1 || !strings.Contains(location, "        error_page       401 = @auth_redirect;\n") {
+			t.Fatalf("location / for port %d does not map only 401 to @auth_redirect:\n%s", port, location)
+		}
+		if strings.Contains(location, "403") || strings.Contains(location, "error_page 401") {
+			t.Fatalf("location / for port %d intercepts a status other than the 401 redirect:\n%s", port, location)
+		}
+		for _, want := range []string{
+			"        auth_request_set $auth_user_id    $upstream_http_x_user_id;\n",
+			"        auth_request_set $auth_user_email $upstream_http_x_user_email;\n",
+			"        proxy_set_header X-User-Id         $auth_user_id;\n",
+			"        proxy_set_header X-User-Email      $auth_user_email;\n",
+		} {
+			if !strings.Contains(location, want) {
+				t.Fatalf("location / for port %d missing %q:\n%s", port, want, location)
+			}
+		}
+		if strings.Contains(location, "$http_x_user_id") || strings.Contains(location, "$http_x_user_email") {
+			t.Fatalf("location / for port %d relays a client identity header:\n%s", port, location)
+		}
+		if strings.Count(location, "proxy_set_header X-User-Id") != 1 || strings.Count(location, "proxy_set_header X-User-Email") != 1 {
+			t.Fatalf("location / for port %d does not set identity solely from the subrequest:\n%s", port, location)
+		}
+
+		checkAt := strings.LastIndex(got[:locationAt], "    location = /_ikigenba/check {\n")
+		redirectAt := strings.LastIndex(got[:locationAt], "    location @auth_redirect {\n")
+		if checkAt < 0 || redirectAt < checkAt {
+			t.Fatalf("port %d is missing the internal check or redirect", port)
+		}
+		check := got[checkAt:redirectAt]
+		endpoint := "http://127.0.0.1:4401/check"
+		for _, want := range []string{
+			"        internal;\n",
+			"        proxy_pass              " + endpoint + ";\n",
+			"        proxy_pass_request_body off;\n",
+			"        proxy_set_header        Content-Length \"\";\n",
+			"        proxy_set_header        X-User-Id    \"\";\n",
+			"        proxy_set_header        X-User-Email \"\";\n",
+		} {
+			if !strings.Contains(check, want) {
+				t.Fatalf("check subrequest for port %d missing %q:\n%s", port, want, check)
+			}
+		}
+		if strings.Contains(check, "$auth_user_id") || strings.Contains(check, "$http_x_user_id") || strings.Contains(check, "$auth_user_email") || strings.Contains(check, "$http_x_user_email") {
+			t.Fatalf("check subrequest for port %d forwards client identity:\n%s", port, check)
+		}
+	}
+}
+
+func renderAuthenticatedServices(t *testing.T, hostName, apexApp string, authDefault bool, authPort int) string {
+	t.Helper()
+	root := t.TempDir()
+	authManifest := "app = \"auth\"\nport = " + strconv.Itoa(authPort) + "\n"
+	if authDefault {
+		authManifest += "default = true\n"
+	}
+	writeManifest(t, root, "auth", authManifest)
+	writeManifest(t, root, "beta", "app = \"beta\"\nport = 5200\n")
+	names := []string{"auth", "beta"}
+	if !authDefault {
+		writeManifest(t, root, "notes", "app = \"notes\"\nport = 8100\ndefault = true\n")
+		writeManifest(t, root, "web", "app = \"web\"\nport = 9100\n")
+		names = append(names, "notes", "web")
+	}
+	for _, name := range names {
+		fragment := filepath.Join(root, "opt", name, "etc", "nginx.conf")
+		if _, err := os.Stat(fragment); !os.IsNotExist(err) {
+			t.Fatalf("fixture nginx fragment for %s: %v", name, err)
+		}
+	}
+	got, err := nginx.Render(context.Background(), host.Env{Root: root}, hostName, apexApp)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	return string(got)
+}
+
+func baseForHost(hostName string, defaultRouted bool) string {
+	want := strings.ReplaceAll(baseWithoutDefault, "example.test", hostName)
+	if !defaultRouted {
+		return want
+	}
+	return strings.Replace(want,
+		"server_name         "+hostName+" *."+hostName+";",
+		"server_name         *."+hostName+";",
+		1)
+}
+
+func serverBlockFor(t *testing.T, config, serverNamePrefix string) string {
+	t.Helper()
+	needle := "    server_name         " + serverNamePrefix
+	nameAt := strings.Index(config, needle)
+	if nameAt < 0 {
+		t.Fatalf("missing server_name %q\n%s", serverNamePrefix, config)
+	}
+	start := strings.LastIndex(config[:nameAt], "server {")
+	if start < 0 {
+		t.Fatalf("missing server block for %q", serverNamePrefix)
+	}
+	endRel := strings.Index(config[start:], "\n}\n")
+	if endRel < 0 {
+		t.Fatalf("unterminated server block for %q", serverNamePrefix)
+	}
+	return config[start : start+endRel+3]
 }
 
 // R-NVUC-NZXW
@@ -892,6 +1225,48 @@ func openPublishedConfiguration(directory string) (*os.File, error) {
 }
 
 func serviceBlock(name string, port int, defaultService bool, hostName, apexName string) string {
+	return serverBlockPrefix(name, defaultService, hostName, apexName) + proxyLocation(port) + "}\n"
+}
+
+func unwiredServiceBlock(name string, port int, defaultService bool, hostName, apexName string) string {
+	return serverBlockPrefix(name, defaultService, hostName, apexName) +
+		"    location = /check {\n" +
+		"        return 404;\n" +
+		"    }\n\n" +
+		proxyLocation(port) +
+		"}\n"
+}
+
+func wiredServiceBlock(name string, port int, defaultService bool, hostName, apexName string, authPort int) string {
+	return serverBlockPrefix(name, defaultService, hostName, apexName) +
+		"    location = /_ikigenba/check {\n" +
+		"        internal;\n" +
+		"        proxy_pass              http://127.0.0.1:" + strconv.Itoa(authPort) + "/check;\n" +
+		"        proxy_pass_request_body off;\n" +
+		"        proxy_set_header        Content-Length \"\";\n" +
+		"        proxy_set_header        X-User-Id    \"\";\n" +
+		"        proxy_set_header        X-User-Email \"\";\n" +
+		"    }\n\n" +
+		"    location @auth_redirect {\n" +
+		"        return 302 https://auth." + hostName + "/?return=$scheme://$host$request_uri;\n" +
+		"    }\n\n" +
+		"    location / {\n" +
+		"        auth_request     /_ikigenba/check;\n" +
+		"        auth_request_set $auth_user_id    $upstream_http_x_user_id;\n" +
+		"        auth_request_set $auth_user_email $upstream_http_x_user_email;\n" +
+		"        error_page       401 = @auth_redirect;\n\n" +
+		"        proxy_pass       http://127.0.0.1:" + strconv.Itoa(port) + ";\n" +
+		"        proxy_set_header Host              $host;\n" +
+		"        proxy_set_header X-Real-IP         $remote_addr;\n" +
+		"        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;\n" +
+		"        proxy_set_header X-Forwarded-Proto $scheme;\n" +
+		"        proxy_set_header X-User-Id         $auth_user_id;\n" +
+		"        proxy_set_header X-User-Email      $auth_user_email;\n" +
+		"    }\n" +
+		"}\n"
+}
+
+func serverBlockPrefix(name string, defaultService bool, hostName, apexName string) string {
 	serverNames := name + "." + hostName
 	if defaultService {
 		serverNames += " " + hostName
@@ -904,15 +1279,17 @@ func serviceBlock(name string, port int, defaultService bool, hostName, apexName
 		"    server_name         " + serverNames + ";\n" +
 		"    ssl_certificate     /etc/letsencrypt/live/" + hostName + "/fullchain.pem;\n" +
 		"    ssl_certificate_key /etc/letsencrypt/live/" + hostName + "/privkey.pem;\n\n" +
-		"    include /opt/" + name + "/etc/nginx.conf*;\n\n" +
-		"    location / {\n" +
+		"    include /opt/" + name + "/etc/nginx.conf*;\n\n"
+}
+
+func proxyLocation(port int) string {
+	return "    location / {\n" +
 		"        proxy_pass       http://127.0.0.1:" + strconv.Itoa(port) + ";\n" +
 		"        proxy_set_header Host              $host;\n" +
 		"        proxy_set_header X-Real-IP         $remote_addr;\n" +
 		"        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;\n" +
 		"        proxy_set_header X-Forwarded-Proto $scheme;\n" +
-		"    }\n" +
-		"}\n"
+		"    }\n"
 }
 
 func writeManifest(t *testing.T, root, name, contents string) {
