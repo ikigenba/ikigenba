@@ -13,11 +13,21 @@ dependency graph fill in as it does). See the `spec` and
 is the ground the run computes the gap and runs the gates against; it is
 human-authored and read-only to the run.
 
+## Catalog data ground
+
+`specs/_data/catalog_table.go` is the user-authorized authoritative project
+ground for versioned catalog records. The design contract projects this data
+without repeating release values in requirements, tests, or fixtures; the
+build run installs it as the root package's `catalog_table.go` under D21's
+byte-identity requirement.
+
 ## Toolchain
 
 - Go 1.26 (`go version` must report 1.26+)
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
-- `llm-lint` on PATH, with its provider API key present in the environment
+- GNU Make 4.4.1
+- `llm-lint` v0.6.0 on PATH, with its provider API key present in the environment
+- `secret-tool` from Debian `libsecret-tools` 0.21.7-1
 - For the conditional live gate (below): `GEMINI_API_KEY`, `XAI_API_KEY`, and
   `OPENROUTER_API_KEY` in the environment; `ANTHROPIC_API_KEY` and
   `OPENAI_API_KEY` resolved by the `live` Makefile target itself from the
@@ -61,12 +71,12 @@ skipped tests, no disabled linters laundering a failure.
 5. `llm-lint --concurrency 16 --verbose .` (doubles the default in-flight calls of 8; `--verbose` prints per-pair progress)
 6. `make live` — **conditional**: run only when the phase's diff (the working
    tree against the last phase commit) adds or modifies a `*_live_test.go`
-   file; otherwise it is not run and not counted. It drives every catalog
-   offering and credential kind against the real vendor host (D23), so the
-   phase that creates or extends a live test must pass it live, and later
-   phases do not pay for it. When it applies and a credential from the
-   toolchain list is absent, that is a missing tool: file an issue, do not
-   pass or skip.
+   file; otherwise it is not run and not counted. It drives one
+   lexicographically selected catalog offering for every offering-id/auth-mode
+   pair against the real vendor host (D23), so the phase that creates or
+   extends a live test must pass it live, and later phases do not pay for it.
+   When it applies and a credential from the toolchain list is absent, that is
+   a missing tool: file an issue, do not pass or skip.
 
 llm-lint also loads this project's own rules from `lint-rules/` (wired via
 `.llm-lint.json`, found by ancestor walk) and recurses the module from the root.

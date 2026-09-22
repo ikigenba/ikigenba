@@ -1,13 +1,9 @@
 # D23-live-matrix
 
-Every fact agentkit holds about a vendor is an external dependency: which
-host honors which credential, which body fields a protocol demands, where
-usage sits in a stream. None of it can be assumed. Each such fact is proven
-by a real request before it is written into a requirement, and the proof is
-kept as a test so the builder has something to meet and a later change that
-breaks the wire is caught. This design is that test: a **live matrix** with
-one cell per catalog offering and credential kind, each cell driving a real
-conversation end to end and asserting on substance, never on "no error".
+Vendor transport behavior is an external dependency. The live matrix retains
+one end-to-end regression for every distinct offering-id/authentication-mode
+pair in the authoritative catalog, with each cell asserting on substantive
+results rather than merely the absence of an error.
 
 The matrix exists because its absence let three defects ship. No wire sent
 `"stream":true`, so every API-key call returned unary JSON that the SSE
@@ -30,27 +26,11 @@ vendor's conventional variable and OAuth tokens from the file
 the cell when it is absent. `make live` sets the two file variables to the
 files under `~/.agentkit`, where the `oauth` CLI writes them.
 
-**Cells.** One per offering id and per `AuthMode` its endpoint specs list,
-each on one fixed cheap model. The Codex cell uses a model Codex serves,
-since the Codex backend rejects the platform's nano model. Anthropic has a
-second cell on `claude-opus-5` because its cheap model rejects the in-band
-system message (D24) that the system sequence exercises; the `claude-haiku-4-5`
-cell proves the rejection surfaces, the Opus cell proves the acceptance. A subtest
-is named `<offering id>/<auth mode>/<model>` so the two Anthropic cells stay
-distinct.
-
-| Offering | Auth | Model |
-|---|---|---|
-| `anthropic-messages` | api_key | `claude-haiku-4-5` |
-| `anthropic-messages` | api_key | `claude-opus-5` |
-| `openai-responses` | api_key | `gpt-5.4-nano` |
-| `openai-responses` | oauth | `gpt-5.4-mini` |
-| `openai-chat` | api_key | `gpt-5.4-nano` |
-| `gemini-generate-content` | api_key | `gemini-3.1-flash-lite` |
-| `xai-responses` | api_key, oauth | `grok-4.3` |
-| `xai-chat` | api_key, oauth | `grok-4.3` |
-| `openrouter-chat` | api_key | `gpt-5.4-nano` |
-| `openrouter-responses` | api_key | `gpt-5.4-nano` |
+**Cells.** For each offering-id/authentication-mode pair present in
+`Catalog()`, the matrix selects the lexicographically first catalog model that
+carries the pair. Selection is derived at runtime, so requirements and
+fixtures contain no release list. The ordinal in each subtest name keeps the
+naming scheme stable if the representative count changes later.
 
 **What a cell proves.** It builds the conversation exactly as a consumer
 does, `Lookup`, `Authenticator`, `NewEndpoint(auth)`, `New`, with a `Log`
@@ -68,15 +48,13 @@ writer so usage is observable, and runs three sequences.
    replay on every wire.
 3. A system sequence, on a third fresh conversation: `AddSystem` with an
    instruction to end every reply with a fixed token, then a turn; the reply
-   contains the token. Then `AddSystem` naming a second token and a second
-   turn. Every cell but Anthropic on `claude-haiku-4-5` sees the second token in the reply,
-   proving both the leading and the interleaved rendering of D24 on every wire.
-   The `claude-haiku-4-5` cell asserts the vendor's `400`, which is the
-   no-gating behavior D24 chooses. The expectation is pinned to that exact
-   model id, not to the Haiku line: a later Haiku is a new model string and,
-   if it supports the in-band form, a new cell asserting success. If Anthropic
-   extends support to `claude-haiku-4-5` itself, that cell fails, which is the
-   matrix doing its job: a vendor fact changed.
+   contains the token. Then `AddSystem` names a second token and a second turn
+   must contain it, proving both the leading and interleaved rendering of D24.
+
+This representative matrix proves transport and authentication integration.
+Targeted, dated observations outside the repository establish model-specific
+availability and reasoning data before `check-spec`; the paid regression does
+not sweep every catalog record or probe reasoning vocabularies.
 
 **When it runs.** It is a gate, but a conditional one, declared in
 AGENTS.md: verify runs `make live` for a phase whose diff adds or changes a
@@ -87,8 +65,8 @@ wanted.
 
 ## REQUIREMENTS
 
-- R-WUQW-COI5: The module MUST contain the file `live_matrix_test.go`, beginning with the build constraint `//go:build live`, containing a test named `TestLiveMatrix` that runs one subtest per row of R-WVYS-QG8U named `<offering id>/<auth mode>/<model>`.
+- R-B7OR-ZKRT: The module MUST contain `live_matrix_test.go`, starting `//go:build live`, with `TestLiveMatrix` iterating the cells derived under R-B8WO-DCII and naming every subtest `<offering-id>/<auth-mode>/<ordinal>`, where `ordinal` is the one-based position among representatives for that pair (and therefore `1` while R-B8WO-DCII selects exactly one). A subtest name MUST NOT contain a model release.
 - R-L2HW-IKU6: Every `TestLiveMatrix` subtest MUST read its credential from the environment, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, or `OPENROUTER_API_KEY` for `api_key` by the offering's `Host`, and the file named by `AGENTKIT_OPENAI_OAUTH_FILE` or `AGENTKIT_XAI_OAUTH_FILE` for `oauth` by the offering's `Host`, and MUST fail (never `t.Skip`) when the variable is unset or the file is unreadable.
-- R-WVYS-QG8U: `TestLiveMatrix` MUST run exactly these cells, each resolved with `Lookup(model, host, wire)`: `anthropic-messages`/`api_key` on `claude-haiku-4-5` and on `claude-opus-5`; `openai-responses`/`api_key` on `gpt-5.4-nano`; `openai-responses`/`oauth` on `gpt-5.4-mini`; `openai-chat`/`api_key` on `gpt-5.4-nano`; `gemini-generate-content`/`api_key` on `gemini-3.1-flash-lite`; `xai-responses`/`api_key` and `/oauth` on `grok-4.3`; `xai-chat`/`api_key` and `/oauth` on `grok-4.3`; `openrouter-chat`/`api_key` and `openrouter-responses`/`api_key` on `gpt-5.4-nano`.
-- R-WX6P-47ZJ: Every `TestLiveMatrix` subtest MUST build its conversations from `Offering.Authenticator` with `APIKeyRotator` or `OAuthRotator(FileTokenStore(path))`, `NewEndpoint(auth)` with no `WithBaseURL`, and `New` with a `Log`; MUST run a text turn asserting `Stream.Err()` is nil, a `MessageDone` holds a non-empty `Text` block, and a `usage` log record has `InputTokens` and `OutputTokens` greater than zero; MUST run a tool turn on a second conversation advertising one tool named `echo`, asserting `Stream.Err()` is nil and the events include, in order, a `ToolCall` whose `Use.Name` is `echo`, a `ToolReturn`, and a `MessageDone`; and MUST run a system sequence on a third conversation: `AddSystem` with an instruction to end every reply with a fixed token, then a `Send`, asserting `Stream.Err()` is nil and a `MessageDone` `Text` block contains that token; then `AddSystem` with an instruction naming a second, different token, then a second `Send`, asserting on every cell except `anthropic-messages`/`api_key` on `claude-haiku-4-5` that `Stream.Err()` is nil and a `MessageDone` `Text` block contains the second token, and on that cell that `Stream.Err()` unwraps to an `*Error` whose `Status` is `400`.
+- R-B8WO-DCII: `TestLiveMatrix` MUST derive exactly one representative cell for every distinct `(Offering.ID, EndpointSpec.AuthMode)` pair present in `Catalog()`, selecting the lexicographically first `CatalogEntry.Model` among matching offerings. This is one transport/auth representative per pair—not one paid call per catalog row—and contains no model literal.
+- R-0GAK-O3DO: Every representative `TestLiveMatrix` cell MUST build three fresh conversations from its selected `Offering` through `Offering.Authenticator` with `APIKeyRotator` or `OAuthRotator(FileTokenStore(path))`, `NewEndpoint(auth)` without `WithBaseURL`, and `New` with a `Log`: the first MUST send `Reply with the single word: pong` and require nil `Stream.Err()`, a `MessageDone` with a non-empty `Text` block, and a `usage` log record with positive `InputTokens` and `OutputTokens`; the second MUST advertise one tool named `echo` whose handler returns its argument, send `Call the echo tool with {"text":"pong"}, then answer with the single word: done`, and require nil `Stream.Err()` plus, in order, a `ToolCall` whose `Use.Name` is `echo`, a `ToolReturn`, and a `MessageDone`; the third MUST call `AddSystem("Append " + firstToken + " to every reply.")`, send `Say hello.`, and require nil `Stream.Err()` and a `MessageDone` `Text` block containing `firstToken`, then call `AddSystem("Append " + secondToken + " to every reply.")` with a different `secondToken`, send `Say goodbye.`, and require nil `Stream.Err()` and a `MessageDone` `Text` block containing `secondToken`. No model-specific exception or reasoning probe may occur; reasoning observations belong only to the pre-`check-spec` evidence work.
 - R-L65L-NW29: The module's `Makefile` MUST declare a `live` target that sets `AGENTKIT_OPENAI_OAUTH_FILE` to `$(HOME)/.agentkit/openai-auth.json` and `AGENTKIT_XAI_OAUTH_FILE` to `$(HOME)/.agentkit/x-ai-auth.json` and runs `go test -tags live -count=1 -run '^TestLive' ./...`, MUST NOT declare a `live-oauth` target, and no other target MUST pass `-tags live` or `-tags integration`.

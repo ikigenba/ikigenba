@@ -27,14 +27,11 @@ below, not a convention:
 
 - **The default host.** An entry's offerings are ordered and the first names
   the default host: the model's own vendor when the catalog has that host, else
-  OpenRouter. `Lookup(model, "", "")` resolves to it. A user who says only
-  `claude-sonnet-5` gets Anthropic; one who says only `deepseek-v4-flash` gets
-  OpenRouter.
+  OpenRouter. `Lookup(model, "", "")` resolves to it.
 - **The default wire format.** When a user names no wire format, the newest
   and most capable one the host offers for that model is chosen. The rank is
-  fixed in code, not in table order: `responses` outranks `chat`. So
-  `Lookup("gpt-5.6-sol", "openrouter", "")` is the responses offering even
-  though the table may list chat first.
+  fixed in code, not in table order: `responses` outranks `chat`, even when the
+  table lists chat first.
 - **Cost.** It is the *only* rate table — a turn is priced from the wire's own
   figure, else from the catalog offering matching the conversation, else zero
   (D3). That is why the catalog lives in the root package rather than a
@@ -45,132 +42,13 @@ What it is **not** is a gate. A model absent from the table still reaches the
 vendor verbatim (D1), and a cataloged model may be sent to a host the table
 does not list; such a turn simply has no default to offer and prices to zero.
 
-The shape:
-
-```go
-package agentkit
-
-// OfferingID is the catalog's key for one host/wire-format pair, spelled
-// "<host>-<wire format>". A conversation built from the offering reports it
-// as Identity.Endpoint (D1, D7); cost matches on it (D3). Users never type it.
-type OfferingID string
-
-const (
-	OfferingAnthropicMessages     OfferingID = "anthropic-messages"
-	OfferingOpenAIResponses       OfferingID = "openai-responses"
-	OfferingOpenAIChat            OfferingID = "openai-chat"
-	OfferingGeminiGenerateContent OfferingID = "gemini-generate-content"
-	OfferingXAIResponses          OfferingID = "xai-responses"
-	OfferingXAIChat               OfferingID = "xai-chat"
-	OfferingOpenRouterChat        OfferingID = "openrouter-chat"
-	OfferingOpenRouterResponses   OfferingID = "openrouter-responses"
-)
-
-// Host names who serves an offering. It is the second Lookup argument.
-type Host string
-
-const (
-	HostAnthropic  Host = "anthropic"
-	HostOpenAI     Host = "openai"
-	HostGemini     Host = "gemini"
-	HostXAI        Host = "xai"
-	HostOpenRouter Host = "openrouter"
-)
-
-// WireName names the wire format an offering speaks. It is the third Lookup
-// argument. Two constructors may share a name (D5): ChatWire and
-// OpenAIChatWire are both "chat"; the offering says which codec applies.
-type WireName string
-
-const (
-	WireMessages        WireName = "messages"
-	WireGenerateContent WireName = "generate-content"
-	WireChat            WireName = "chat"
-	WireResponses       WireName = "responses"
-)
-
-// ReasoningKind is the shape of an offering's native reasoning control.
-type ReasoningKind int
-
-const (
-	ReasoningKindNone   ReasoningKind = iota // no reasoning control at all
-	ReasoningKindEffort                      // an enumerated effort level
-	ReasoningKindBudget                      // an integer token budget
-	ReasoningKindToggle                      // bare on/off
-)
-
-// ReasoningSpec is one offering's reasoning vocabulary in the neutral D8
-// model. Term is the vendor's own word for the knob — "effort",
-// "thinking_level", "thinking_budget", or "thinking" — which an application
-// prints as the option's name and accepts as the key a user types; it is a
-// model datum, so a Gemini 3.x model keeps "thinking_level" on its OpenRouter
-// offerings too. Levels is read for the effort kind, MinBudget/MaxBudget for
-// the budget kind, CanEnable for the toggle kind, CanDisable for any kind.
-// Default is the request an application should make when the user has not
-// chosen; ReasoningDefault as the Default means the vendor's own dynamic
-// behavior. Accepts reports whether a request is inside the vocabulary.
-type ReasoningSpec struct {
-	Kind       ReasoningKind
-	Term       string
-	Levels     []Effort
-	MinBudget  int
-	MaxBudget  int
-	CanEnable  bool
-	CanDisable bool
-	Default    ReasoningConfig
-}
-
-func (s ReasoningSpec) Accepts(r ReasoningConfig) bool
-
-// Rotation is what an OAuth rotation needs beyond the stored token: where
-// the refresh request is sent and the app id it must present (D22). It is
-// zero on every EndpointSpec whose AuthMode is api_key.
-type Rotation struct {
-	RefreshURL string
-	ClientID   string
-}
-
-// EndpointSpec is one way to reach an offering: the credential kind, where
-// requests go under it, and how that credential is rotated. An offering has
-// one spec per credential kind it accepts; the URL belongs here, not on the
-// offering, because it can differ by credential kind (OpenAI's platform API
-// takes an API key; only the Codex backend honors a ChatGPT OAuth token).
-type EndpointSpec struct {
-	AuthMode AuthMode
-	BaseURL  string   // where chat requests are sent, model-in-path baked in
-	Rotation Rotation // how to get a fresh token; zero for api_key
-}
-
-// Offering is one model as served by one host over one wire format:
-// everything New needs.
-type Offering struct {
-	ID              OfferingID
-	Host            Host
-	WireName        WireName
-	WireFormat      WireFormat     // the codec to pass to New
-	Endpoints       []EndpointSpec // one per credential kind, api_key first
-	WireModel       string         // the exact model string sent on the wire
-	Context         int64          // context window in tokens
-	MaxOutputTokens int64          // the vendor's output cap; zero when unknown
-	Pricing         Pricing        // full price schedule (D3); never empty
-	Reasoning       ReasoningSpec
-}
-
-func (o Offering) Authenticator(r Rotator) (Authenticator, error)  // D7
-
-// CatalogEntry is everything the catalog knows about one model name. The
-// first offering is the default host.
-type CatalogEntry struct {
-	Model     string
-	Offerings []Offering
-}
-
-// ErrNotFound is what Lookup wraps when no offering matches.
-var ErrNotFound = errors.New("agentkit: catalog entry not found")
-
-func Catalog() []CatalogEntry                                           // every entry, sorted by Model
-func Lookup(model string, host Host, wire WireName) (Offering, error)   // "" for host or wire means the default
-```
+The public shape keeps vocabulary, transport metadata, pricing, and reasoning
+together. `OfferingID`, `Host`, and `WireName` provide the lookup vocabulary;
+`EndpointSpec` and `Rotation` describe credential-specific endpoints;
+`Offering` carries everything needed to construct and price a conversation;
+and `CatalogEntry` groups the offerings for one model. `Catalog` enumerates
+those entries, while `Lookup` applies the defaulting rules below. The exact
+declarations belong to the structural requirements rather than this overview.
 
 `Lookup` is the shorthand. The model is an exact match. The host, when given,
 is an exact match; when empty it is the entry's default host. The wire name,
@@ -178,19 +56,11 @@ when given, is an exact match; when empty it is the highest-ranked wire format
 the chosen host offers for that model. Anything that fails to match wraps
 `ErrNotFound` with a message naming the argument that missed.
 
-```go
-offering, _ := agentkit.Lookup("claude-sonnet-5", "", "")
-auth, _     := offering.Authenticator(agentkit.APIKeyRotator(key))
-ep, _       := agentkit.NewEndpoint(auth)
-conv, _     := agentkit.New(offering.WireFormat, ep, offering.WireModel, cfg)
-```
-
-`Lookup("claude-sonnet-5", "openrouter", "chat")` yields a different offering
-entirely: the generic chat wire, the OpenRouter URL, send
-`anthropic/claude-sonnet-5`. The host changes the wire format, the endpoint
-specs, the wire model, the price schedule, and the reasoning vocabulary; the
-application reads all of them from the one `Offering` and hands two of them
-straight to `New`.
+An application selects a model name from `Catalog()`, passes it to `Lookup`,
+builds authentication from the returned offering, and gives that offering's
+wire format and wire model to `New`. Selecting another host or wire can return
+a different endpoint, wire model, price schedule, and reasoning vocabulary;
+the application reads the complete choice from the one `Offering`.
 
 Every offering id's transport, host, wire name, codec, and the `api_key`
 endpoint URL, is fixed per id, and a host's alternate protocol is simply
@@ -210,9 +80,11 @@ on either protocol, and the Codex backend serves only a subset of the models
 the platform API serves. So `openai-responses` lists an `oauth` spec at the
 Codex URL only on the models Codex serves, `openai-chat` never lists one, and
 the xAI offerings list an `oauth` spec at the same URL as their `api_key`
-spec, since `api.x.ai` accepts an xAI OAuth bearer on both protocols. Every
-such fact is an external dependency and is re-proven by the live matrix (D23)
-whenever the matrix is built.
+spec, since `api.x.ai` accepts an xAI OAuth bearer on both protocols. The
+representative live matrix (D23) proves each distinct offering-id and
+authentication-mode transport path. Model-specific endpoint membership stays
+in the authoritative catalog data and is supported by targeted observations
+before that data is checked.
 
 `MaxOutputTokens` is the vendor's cap on one response's output, the value the
 Anthropic wire sends as `max_tokens` when the caller sets no
@@ -234,12 +106,13 @@ credential goes (D5, D7); the application knows which credentials it holds.
 Grouping for display is a walk over `Catalog()` by `Offering.Host`; there is
 no separate vendor label.
 
-The table itself is data, not contract: entries are added, repriced, and
-retired without touching this document. What the contract fixes is the shape
-above and a set of invariants every entry must satisfy — the table is complete
-on cost, every default is inside its own vocabulary, wire names are non-empty,
-every reasoning term matches its kind — so the table can grow freely while
-staying trustworthy. A few pinned entries anchor resolution with real fixtures.
+The table's records are project ground, not requirement text: entries are
+added, repriced, and retired by editing the authoritative data source without
+embedding releases in requirements or test fixtures. The contract fixes the
+projection and invariants every record must satisfy — the table is complete on
+cost, every default is inside its own vocabulary, wire names are non-empty,
+and every reasoning term matches its kind — so the data can grow freely while
+staying trustworthy.
 
 One invariant reaches across to the wire seam: **everything the catalog says an
 offering accepts, the offering's wire must be able to send.** The vocabulary a
@@ -259,67 +132,28 @@ what the wires happened to express.
 The reasoning term follows the kind, and its spelling is fixed so an
 application's help text and a user's typed key agree across every model:
 
-| `Kind` | `Term` | Models |
+| `Kind` | `Term` | Use |
 |---|---|---|
-| effort | `effort` | Anthropic, OpenAI, xAI, GLM 5.2/5.3, Qwen 3.8 Max/27B, Muse Spark |
-| effort | `thinking_level` | Gemini 3.x |
-| budget | `thinking_budget` | Gemini 2.5, Claude Haiku 4.5 |
-| toggle | `thinking` | DeepSeek, Kimi, GLM 4.x/5.1, Nemotron, Qwen 3.8 Flash, Hunyuan, MiniMax, Grok toggles |
-| none | `""` | — |
+| effort | `effort` | enumerated effort controls |
+| effort | `thinking_level` | level controls using that vendor term |
+| budget | `thinking_budget` | integer token budgets |
+| toggle | `thinking` | bare reasoning toggles |
+| none | `""` | no reasoning control |
 
 The table has exactly one source: `specs/_data/catalog_table.go`, authored by
 hand (a directory Go tooling ignores), and installed verbatim as the root
 package's `catalog_table.go`. That identity is a requirement, so the run
-installs the seed and a drift between the two files fails a gate. Repricing
-or adding a model is an edit to the seed, then a copy into the root package,
-and nothing else: no requirement pins a row's numbers, and no test may
-hardcode the model list — a test that needs the rows reads `Catalog()`. What
-the requirements do pin is the shape, the invariants above, the vendor facts
-proven live (the `oauth` set, the output caps), and a few resolution
-fixtures on rows that must therefore keep existing. A row is proven live
-before it is added — every level in its vocabulary, its disable form, and
-its default sent to every host the row lists and answered with a completion,
-every value the row excludes sent and rejected — so a row records
-observation, not documentation.
+installs the seed and a drift between the two files fails a gate. Repricing or
+adding a model changes only that source data; requirements and tests project
+and validate it without repeating its release-bearing values.
 
-### The September 2026 additions
-
-Eleven models entered the seed in one revision, from live probes on
-2026-09-06: `claude-fable-5-1`, `gpt-6-astra`, `gemini-3.8-flash`,
-`gemini-3.5-flash-lite`, `glm-5.3`, `glm-5.3-flash`, `qwen3.8-flash`,
-`hunyuan-4-preview`, `minimax-m3`, `nemotron-3-ultra`, and `muse-spark-1.3`.
-The facts those probes settled, where they differ from the vendors' pages:
-
-- **Output caps stay zero off Anthropic.** OpenRouter reports a
-  `max_completion_tokens` for every routed model, but the cap is only
-  recorded where the vendor's own rejection proved it (see `MaxOutputTokens`
-  above), so every non-Anthropic offering keeps `0`. Anthropic rejected
-  `max_tokens: 128001` on `claude-fable-5-1` naming `128000`, which the
-  existing cap rule already requires.
-- **Disable is per host.** `gemini-3.8-flash` accepts `thinkingBudget: 0` on
-  Google's own host and answers with no thought tokens, but OpenRouter rejects
-  reasoning `none` for it ("Reasoning is mandatory for this endpoint"); so
-  `CanDisable` is true on `gemini-generate-content` and false on both
-  OpenRouter offerings — the mirror image of `gemini-3.1-flash-lite`.
-  `gemini-3.5-flash-lite` rejects the disable form on every host.
-- **OpenRouter widens GLM's levels.** Z.ai documents `low`/`high`/`max` for
-  GLM 5.3, but OpenRouter (the only host the catalog lists for it) completes
-  `medium` too, so the vocabulary is `low`/`medium`/`high`/`max` with `max`
-  the default. `reasoning: none` is rejected.
-- **No `none` on Muse Spark or GPT-6 Astra.** Both enumerate their levels in
-  the rejection: Muse Spark takes `minimal` through `max`; GPT-6 Astra takes
-  `low` through `max` ("Supported values are: 'low', 'medium', 'high',
-  'xhigh', and 'max'"). Neither vendor names a default, so the catalog's
-  `medium` is agentkit's choice.
-- **The Codex backend serves `gpt-6-astra`** under a ChatGPT OAuth token, so
-  its `openai-responses` offering joins the `oauth` set.
-- **Toggles round-trip both ways.** Qwen 3.8 Flash, Hunyuan 4 preview,
-  MiniMax M3, and Nemotron 3 Ultra each completed with reasoning enabled and
-  with reasoning `none` on both OpenRouter wires.
-- **Prices are vendor list, in nano-USD.** Hunyuan's is a fixed conversion of
-  Tencent's RMB price; Nemotron 3 Ultra has no NVIDIA per-token price, so its
-  row carries OpenRouter's. Gemini 3.8 Flash uses the standard price, not the
-  introductory one.
+A row's reasoning vocabulary is the curated set agentkit advertises, not a
+claim that the host rejects every omitted alias. Before `check-spec`, targeted
+observations for a new row exercise its default and every advertised control
+on every listed host and wire. Those model-specific observations remain
+external evidence. D23 separately retains a bounded live regression for one
+lexicographically selected representative of every offering-id/auth-mode pair;
+it does not turn the paid live gate into a request for every catalog row.
 
 ## REQUIREMENTS
 
@@ -336,14 +170,12 @@ The facts those probes settled, where they differ from the vendors' pages:
 - R-HD89-D6MW: Every offering in the table MUST carry the `Host` and `WireName` fixed for its `ID`, a `WireFormat` whose dynamic type is the struct type fixed for the root constructor named for its `ID` (per R-HC0C-ZEW7), and its `Endpoints` MUST begin with an `EndpointSpec` whose `AuthMode` is `AuthModeAPIKey` and whose `BaseURL` is fixed for its `ID`: `anthropic-messages` → `anthropic`, `messages`, `AnthropicMessagesWire()`, `https://api.anthropic.com/v1/messages`; `openai-responses` → `openai`, `responses`, `OpenAIResponsesWire()`, `https://api.openai.com/v1/responses`; `openai-chat` → `openai`, `chat`, `OpenAIChatWire()`, `https://api.openai.com/v1/chat/completions`; `gemini-generate-content` → `gemini`, `generate-content`, `GeminiGenerateContentWire()`, `https://generativelanguage.googleapis.com/v1beta/models/<WireModel>:streamGenerateContent?alt=sse` with `<WireModel>` path-escaped; `xai-responses` → `xai`, `responses`, `XAIResponsesWire()`, `https://api.x.ai/v1/responses`; `xai-chat` → `xai`, `chat`, `XAIChatWire()`, `https://api.x.ai/v1/chat/completions`; `openrouter-chat` → `openrouter`, `chat`, `ChatWire()`, `https://openrouter.ai/api/v1/chat/completions`; `openrouter-responses` → `openrouter`, `responses`, `ResponsesWire()`, `https://openrouter.ai/api/v1/responses`.
 - R-KIZI-E8Z2: Every `EndpointSpec` in the table whose `AuthMode` is `AuthModeOAuth` MUST be, by its offering's `ID`: for `openai-responses`, `BaseURL` `https://chatgpt.com/backend-api/codex/responses` and `Rotation` `{RefreshURL: "https://auth.openai.com/oauth/token", ClientID: "app_EMoamEEZ73f0CkXaXp7hrann"}`; for `xai-responses`, `BaseURL` `https://api.x.ai/v1/responses` and `Rotation` `{RefreshURL: "https://auth.x.ai/oauth2/token", ClientID: "b1a00492-073a-47ea-816f-4c329264a828"}`; for `xai-chat`, `BaseURL` `https://api.x.ai/v1/chat/completions` and that same xAI `Rotation`; and no offering with any other `ID` MUST carry an `oauth` spec.
 - R-KK7E-S0PR: For every offering in the table, `Endpoints` MUST be non-empty, MUST hold at most one spec per `AuthMode`, every spec's `BaseURL` MUST be an absolute HTTP(S) URL, and a spec's `Rotation` MUST be non-zero in both fields if and only if its `AuthMode` is `AuthModeOAuth`.
-- R-ABP3-N5HW: The `openai-responses` offerings of exactly the models `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, and `gpt-5.4-mini` MUST carry an `oauth` `EndpointSpec`, and the `openai-responses` offering of every other model MUST NOT; every `xai-responses` and `xai-chat` offering MUST carry one.
-- R-KMN7-JK75: `MaxOutputTokens` MUST be `64000` on the `anthropic-messages` offering of `claude-haiku-4-5`, `128000` on every other `anthropic-messages` offering, and `0` on every offering whose `Host` is not `HostAnthropic`.
 - R-KNV3-XBXU: Mutating a returned `Offering`'s `Endpoints` slice or any element of it MUST have no effect on any later catalog call.
 - R-JIFY-H4QO: For every entry, an offering with `ID` `OfferingOpenAIResponses` MUST be paired with one with `OfferingOpenAIChat`, one with `OfferingXAIResponses` with one with `OfferingXAIChat`, and one with `OfferingOpenRouterChat` with one with `OfferingOpenRouterResponses`, each pair sharing `WireModel`, `Context`, `Pricing`, and `Reasoning`.
 - R-JJNU-UWHD: For every entry holding an offering whose `Host` is not `HostOpenRouter`, the entry's first offering MUST NOT have `Host` `HostOpenRouter`.
 - R-JKVR-8O82: `agentkit` MUST export `type CatalogEntry struct { Model string; Offerings []Offering }` with exactly those fields.
 - R-JM3N-MFYR: `agentkit` MUST export `var ErrNotFound error`, `func Catalog() []CatalogEntry`, and `func Lookup(model string, host Host, wire WireName) (Offering, error)`.
-- R-JNBK-07PG: `Catalog()` MUST return every entry sorted ascending by `Model`, with no two entries sharing a `Model`, every entry holding at least one offering, and no two offerings of one entry sharing an `ID`.
+- R-GSEI-ARQ7: `Catalog()` MUST return exactly one `CatalogEntry` for every record declared by the user-authorized project-ground data source `specs/_data/catalog_table.go` and no other entry, preserving every observable field of every declared `CatalogEntry`, `Offering`, `EndpointSpec`, `Pricing`, and `ReasoningSpec`; the result MUST be sorted ascending by `Model`, no two entries may share a `Model`, every entry MUST hold at least one offering, and no two offerings of one entry may share an `ID`.
 - R-JOJG-DZG5: `Lookup(model, host, wire)` MUST consider only the entry whose `Model` equals `model` exactly; among its offerings only those whose `Host` equals `host` when `host` is non-empty, and only those whose `Host` equals the entry's first offering's `Host` when `host` is empty; and among those only the one whose `WireName` equals `wire` when `wire` is non-empty.
 - R-JQZ9-5IXJ: When `wire` is empty, `Lookup` MUST choose, among the offerings that survive the model and host selection, the one whose `WireName` ranks highest under the fixed order `responses` above `chat`, independent of the offerings' order in the table.
 - R-JS75-JAO8: When no offering survives `Lookup`'s selection, `Lookup` MUST return a non-nil error for which `errors.Is(err, ErrNotFound)` holds and whose message names the argument that failed to match.
@@ -352,11 +184,7 @@ The facts those probes settled, where they differ from the vendors' pages:
 - R-OKXA-07GT: `ReasoningSpec.Accepts` MUST return true for `ReasoningDefault` always; for `ReasoningOff` iff `CanDisable`; for `ReasoningOn` iff `Kind` is `ReasoningKindToggle` and `CanEnable`; for `ReasoningEffort` iff `Kind` is `ReasoningKindEffort` and the level is in `Levels`; for `ReasoningBudget` iff `Kind` is `ReasoningKindBudget` and `MinBudget <= Budget <= MaxBudget`; and false otherwise.
 - R-OM56-DZ7I: Every offering's `Reasoning.Default` MUST be accepted by its own `Reasoning`; an effort-kind spec MUST have non-empty `Levels` with no duplicates; a budget-kind spec MUST have `MinBudget` less than `MaxBudget`; a none-kind spec MUST have `CanEnable` and `CanDisable` false and empty `Levels`.
 - R-O29K-6VD3: Every offering's `Reasoning.Term` MUST be `"effort"` or `"thinking_level"` when `Kind` is `ReasoningKindEffort`, `"thinking_budget"` when `Kind` is `ReasoningKindBudget`, `"thinking"` when `Kind` is `ReasoningKindToggle`, and `""` when `Kind` is `ReasoningKindNone`.
-- R-O3HG-KN3S: Every offering of `gemini-3.5-flash`, `gemini-3.7-flash`, `gemini-3.1-flash-lite`, and `gemini-3.1-pro-preview` MUST have `Reasoning.Term` `"thinking_level"`; every offering of `claude-opus-5` MUST have `"effort"`; every offering of `gemini-2.5-flash` and `claude-haiku-4-5` MUST have `"thinking_budget"`; and every offering of `deepseek-v4-pro` and `grok-4.20` MUST have `"thinking"`.
 - R-W8QS-PJR3: For every offering, each request `c` in its reasoning vocabulary — `ReasoningConfig{Mode: ReasoningOff}` when `CanDisable`; `ReasoningConfig{Mode: ReasoningOn}` when `Kind` is `ReasoningKindToggle` and `CanEnable`; `ReasoningConfig{Mode: ReasoningEffort, Effort: level}` for each level in `Levels`; `ReasoningConfig{Mode: ReasoningBudget, Budget: b}` for `b` equal to `MinBudget` and to `MaxBudget`; and `Reasoning.Default` — MUST, as `Settings{Options: Options{Term: c.String()}}`, pass the `Send`-time settings validation of the offering's `WireFormat` (D8), so that no vocabulary value can fail `Send` with `ErrInvalidConfig`.
-- R-JUMY-AU5M: `Lookup("claude-sonnet-5", "", "")` MUST return an offering with `ID` `OfferingAnthropicMessages` and `WireModel` `"claude-sonnet-5"`; `Lookup("claude-sonnet-5", "openrouter", "chat")` MUST return an offering with `ID` `OfferingOpenRouterChat` and `WireModel` `"anthropic/claude-sonnet-5"`; and `Lookup("claude-sonnet-5", "gemini", "")` MUST return an error wrapping `ErrNotFound`.
-- R-JVUU-OLWB: `Lookup("gpt-5.6-sol", "", "")` MUST return an offering with `ID` `OfferingOpenAIResponses`, `WireModel` `"gpt-5.6-sol"`, and a `Reasoning.Default` of `ReasoningConfig{Mode: ReasoningEffort, Effort: EffortMedium}`; `Lookup("gpt-5.6-sol", "openrouter", "")` MUST return an offering with `ID` `OfferingOpenRouterResponses`; and `Lookup("gpt-5.6-sol", "openai", "messages")` MUST return an error wrapping `ErrNotFound`.
-- R-JX2R-2DN0: `Lookup("deepseek-v4-flash", "", "")` MUST return an offering with `Host` `HostOpenRouter`, and `Lookup("no-such-model", "", "")` MUST return an error wrapping `ErrNotFound`.
 - R-JYAN-G5DP: The catalog MUST NOT gate construction or `Send`: a conversation for a model or host/model pair that `Lookup` reports `ErrNotFound` for MUST construct and send exactly as a cataloged one does, differing only in pricing to zero (D3).
 - R-JZIJ-TX4E: For each of the five `Host` constants, `Catalog()` MUST contain at least one offering whose `Host` is that constant.
 - R-59J0-X9Y5: The root package file `catalog_table.go` MUST be byte-identical to `specs/_data/catalog_table.go`.

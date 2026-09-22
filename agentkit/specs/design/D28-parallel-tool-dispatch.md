@@ -7,51 +7,15 @@ time wherever that is safe**, and the tool author is the one who says what safe
 means, because only the tool knows what it touches.
 
 The whole consumer-facing surface is one extra argument to each tool
-constructor and one field on `Settings`.
+constructor and one field on `Settings`. An opaque `Access` value describes
+whether a call blocks nothing, overlapping paths, or every other call. The
+three constructors make that choice explicit without exposing scheduler
+state; their exact declarations belong to the requirements below.
 
-```go
-package agentkit
-
-// Access is what one tool call blocks. It is built only through the three
-// constructors below; its fields are unexported and the scheduler is the only
-// reader. Listed from least to most restrictive.
-type Access struct{ /* unexported */ }
-
-// BlocksNone: the call blocks no other call and is blocked by nothing but a
-// BlocksAll call. A tool that only reads.
-func BlocksNone() Access
-
-// BlocksPaths: the call blocks any other call whose paths overlap these, for as
-// long as it runs. Two paths overlap when, after filepath.Clean, one equals the
-// other or is an ancestor directory of it. A tool that writes one file names
-// that file; a tool that walks a tree names the tree's root. Zero paths is
-// BlocksNone.
-func BlocksPaths(paths ...string) Access
-
-// BlocksAll: the call blocks every other call and waits for every call before
-// it. A shell.
-func BlocksAll() Access
-```
-
-The tool declares its access as a function of its input, beside the call
-function, and both are required (D9):
-
-```go
-type writeInput struct {
-	FilePath string `json:"file_path" jsonschema:"required"`
-	Content  string `json:"content"   jsonschema:"required"`
-}
-
-func writeCall(ctx context.Context, in writeInput) (string, error) {
-	return "ok", os.WriteFile(in.FilePath, []byte(in.Content), 0o644)
-}
-
-func writeAccess(in writeInput) agentkit.Access {
-	return agentkit.BlocksPaths(in.FilePath)
-}
-
-write, err := agentkit.NewTool("Write", "Write a file", writeCall, writeAccess)
-```
+The tool declares access as a function of its validated input beside its call
+function, and both are required (D9). A file-writing tool, for example, can
+return path-scoped access for the requested destination while its call writes
+that destination; the constructor receives both functions.
 
 **Scheduling is by the model's call order.** When a round-trip requests
 several calls, the orchestrator validates each call's arguments (D11), asks
@@ -91,16 +55,7 @@ request advertises tools — Anthropic inside `tool_choice` as
 `parallel_tool_calls: false` — and the Gemini wire, whose grammar has no such
 control, fails at `Send` with `ErrInvalidConfig` rather than silently ignoring
 it (D8). Each vendor's acceptance of the rendered field is proved live (D23).
-
-```go
-package agentkit
-
-type Settings struct {
-	Options         Options
-	ToolChoice      ToolChoice
-	SerialToolCalls bool // ask the model for at most one tool call per round-trip
-}
-```
+The structural requirement below owns the `Settings` field shape.
 
 ## REQUIREMENTS
 
@@ -115,5 +70,5 @@ type Settings struct {
 - R-D9QG-1UNX: When `Settings.SerialToolCalls` is `true` and the request advertises at least one tool, `ChatWire()`, `OpenAIChatWire()`, `XAIChatWire()`, `ResponsesWire()`, `OpenAIResponsesWire()`, and `XAIResponsesWire()` MUST each render the top-level field `"parallel_tool_calls":false`, pinned by a golden fixture.
 - R-DAYC-FMEM: A `Send` on a conversation whose wire is `GeminiGenerateContentWire()` with `Settings.SerialToolCalls` `true` MUST fail with `ErrInvalidConfig`, making no provider call and leaving `History` unchanged.
 - R-DDE5-75W0: When `Settings.SerialToolCalls` is `false`, or when the request advertises no tool, no shipped wire MUST emit `disable_parallel_tool_use` or `parallel_tool_calls` in the request body.
-- R-DEM1-KXMP: The module MUST contain the file `serial_tool_calls_live_test.go`, beginning with the build constraint `//go:build live`, containing a test named `TestLiveSerialToolCalls` that, for every R-WVYS-QG8U cell except `gemini-generate-content`, runs a tool turn with `Settings.SerialToolCalls` `true` on a conversation advertising two tools and asserts that `Stream.Err()` is nil and that no assistant `MessageDone` carries more than one `ToolUse` block.
+- R-BCKD-INQL: `TestLiveSerialToolCalls` MUST iterate every representative D23 cell except the one whose `Offering.ID` is `OfferingGeminiGenerateContent`, run a tool turn with `Settings.SerialToolCalls=true` and two advertised tools, and require nil `Stream.Err()` and at most one `ToolUse` block in each assistant `MessageDone`; it MUST derive models from the D23 cells and contain no model literal.
 - R-DFTX-YPDE: The `Access` returned by a tool built with `NewTool`, `MustTool`, or `NewToolFromSchema` MUST be the value the constructor's `access` argument returns for the call's validated arguments, decoded into `In` for the generic constructors and passed raw for `NewToolFromSchema`.

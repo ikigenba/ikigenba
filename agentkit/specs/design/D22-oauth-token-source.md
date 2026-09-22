@@ -8,11 +8,7 @@ database writes their own two-method store, and that is the only intended
 extension point. The library never persists anything on its own.
 
 The bytes a store holds are **opaque to the store** and are, by convention, the
-verbatim token-endpoint response the `oauth` CLI writes:
-
-```sh
-oauth --auth-url ... --token-url ... --client-id ... > ~/.agentkit/x-ai-auth.json
-```
+verbatim token-endpoint response written by the `oauth` CLI.
 
 The rotator is what understands them: it reads `access_token` and
 `refresh_token` from the stored JSON object, and after a rotation writes the
@@ -26,31 +22,18 @@ client id, is per-provider knowledge, so it lives on the catalog offering
 does not know the offering; the authenticator hands it the `Rotation` when it
 asks for a rotation:
 
-```go
-offering, _ := agentkit.Lookup("grok-4.5", "xai", "")
-auth, _     := offering.Authenticator(agentkit.OAuthRotator(agentkit.FileTokenStore(path)))
-ep, _       := agentkit.NewEndpoint(auth)
-conv, _     := agentkit.New(offering.WireFormat, ep, offering.WireModel, cfg)
-```
+Consumers obtain the model and OAuth-capable endpoint from `Catalog()`, then
+pass the selected offering's rotation metadata to the rotator through
+`Offering.Authenticator`. Live fixtures use the lexicographically first
+eligible catalog record for each host rather than pinning a release.
 
 Only OpenAI's responses protocol and xAI accept OAuth; Anthropic's terms do not
 permit it, so its offerings list an `api_key` spec alone (D7, D21).
 
-```go
-package agentkit
-
-// TokenStore is where an OAuthRotator keeps its bytes. The bytes are opaque
-// to the store. This is the sole intended extension point of the OAuth path.
-type TokenStore interface {
-	Read(ctx context.Context) ([]byte, error)
-	Write(ctx context.Context, data []byte) error
-}
-
-// FileTokenStore is a TokenStore over one file. Read passes the OS error
-// through unchanged, so a consumer can detect "not logged in yet" with
-// errors.Is(err, fs.ErrNotExist). Write is atomic and creates the file 0600.
-func FileTokenStore(path string) TokenStore
-```
+`TokenStore` is the OAuth path's storage extension point, with reads and
+writes of opaque bytes. `FileTokenStore` supplies the built-in file-backed
+implementation, preserving operating-system read errors and replacing stored
+bytes atomically. Their exact public shapes and behavior are stated below.
 
 **Token reads lazily and caches.** `OAuthRotator(store)` touches nothing at
 construction. The first `Token` call reads the store once and keeps the parsed
@@ -168,5 +151,5 @@ architecture tests that prove the files exist with the build tag.
 - R-J6FV-1PBM: `agentkit` MUST export the constant `OAuthRefreshWindow time.Duration = 5 * time.Minute`.
 - R-J7NR-FH2B: The authenticator from `o.Authenticator(r)` where `r.AuthMode()` is `AuthModeOAuth` MUST, on every request, when the `Token` returned by `r.Token(ctx)` has a non-zero `ExpiresAt` that is not after `time.Now().Add(OAuthRefreshWindow)`, call `r.Rotate(ctx, rotation)` exactly once with the `Rotation` of the `EndpointSpec` in `o.Endpoints` whose `AuthMode` is `AuthModeOAuth` before the request is sent and transmit the `Bearer` (and, where the wire places it, `AccountID`) of the token `Rotate` returned; and MUST NOT call `r.Rotate` when `ExpiresAt` is zero or is after that instant.
 - R-EBV0-BHS5: When the `r.Rotate` call made before a request because `Token.ExpiresAt` fell within `OAuthRefreshWindow` fails, `Authenticate` on the authenticator from `o.Authenticator(r)` MUST return that error unchanged, the `Conversation` MUST send no request, and `Send` MUST surface the error such that `errors.As` finds the `*Error` that `Rotate` returned.
-- R-ED2W-P9IU: The module MUST contain the files `oauth_reissue_openai_live_test.go` and `oauth_reissue_xai_live_test.go`, each beginning with the build constraint `//go:build live`, each containing a test whose name begins with `TestLive` that fails (never skips) unless `AGENTKIT_OPENAI_OAUTH_FILE` (respectively `AGENTKIT_XAI_OAUTH_FILE`) names a readable file, and otherwise builds a `Conversation` for the `openai`/`responses` offering of `gpt-5.4-mini` (respectively the `xai`/`responses` offering of `grok-4.3`) from `Offering.Authenticator` with `OAuthRotator` over a `TokenStore` whose `Read` returns the file's bytes with the last four characters of the `access_token`'s JWT signature segment replaced by different base64url characters and whose `Write` writes to the file, `NewEndpoint(auth)` with no `WithBaseURL`, and `New`; runs a text turn; and asserts `Stream.Err()` is nil, a `MessageDone` holds a non-empty `Text` block, and the file's `access_token` differs from its value before the turn.
-- R-L023-R1CS: The module MUST contain the files `oauth_refresh_openai_live_test.go` and `oauth_refresh_xai_live_test.go`, each beginning with the build constraint `//go:build live`, each containing a test that fails (never skips) unless `AGENTKIT_OPENAI_OAUTH_FILE` (respectively `AGENTKIT_XAI_OAUTH_FILE`) names a readable file, and otherwise builds `OAuthRotator` over `FileTokenStore` of that path, calls `Rotate` with the `Rotation` of the oauth `EndpointSpec` of the `openai`/`responses` offering of `gpt-5.4-mini` (respectively the `xai`/`responses` offering of `grok-4.3`), and asserts the file's `access_token` differs from its value before the call.
+- R-GTME-OJGW: The module MUST contain `oauth_reissue_openai_live_test.go` and `oauth_reissue_xai_live_test.go`, each beginning with `//go:build live` and containing a test whose name begins with `TestLive`; the OpenAI file MUST use `AGENTKIT_OPENAI_OAUTH_FILE` and the `HostOpenAI` responses offering, the xAI file MUST use `AGENTKIT_XAI_OAUTH_FILE` and the `HostXAI` responses offering, and each test MUST fail rather than skip unless its environment variable names a readable file, derive from `Catalog()` the lexicographically first model carrying the assigned host's responses offering with an OAuth `EndpointSpec`, build a `Conversation` from `Offering.Authenticator` with `OAuthRotator` over a `TokenStore` whose `Read` returns the file's bytes with the last four characters of the stored `access_token` JWT signature segment replaced by different base64url characters and whose `Write` writes the file, use `NewEndpoint(auth)` without `WithBaseURL` and `New`, run a text turn, and assert nil `Stream.Err()`, a `MessageDone` with a non-empty `Text` block, and a persisted `access_token` different from its value before the turn; neither file may contain a model literal.
+- R-GUUB-2B7L: The module MUST contain `oauth_refresh_openai_live_test.go` and `oauth_refresh_xai_live_test.go`, each beginning with `//go:build live` and containing a test whose name begins with `TestLive`; the OpenAI file MUST use `AGENTKIT_OPENAI_OAUTH_FILE` and the `HostOpenAI` responses offering, the xAI file MUST use `AGENTKIT_XAI_OAUTH_FILE` and the `HostXAI` responses offering, and each test MUST fail rather than skip unless its environment variable names a readable file, derive from `Catalog()` the lexicographically first model carrying the assigned host's responses offering with an OAuth `EndpointSpec`, build `OAuthRotator(FileTokenStore(path))`, call `Rotate` with that `EndpointSpec.Rotation`, and assert the file's persisted `access_token` differs from its value before the call; neither file may contain a model literal.
