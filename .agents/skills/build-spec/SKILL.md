@@ -86,7 +86,9 @@ commands and output, or quoted contradictions. Difficulty and size require
 decomposition, not issues. Assign validation of a blocker claim; invalid
 issues are removed by an authorized leaf and the work resumes.
 
-A confirmed blocker halts the tree under fanout. There is no interactive
-decision queue for changing read-only contracts during a build. Report the
-issue, completed phases, and remaining gap. Preserve committed, verified work;
-a later user-invoked run resumes from the recomputed gap after resolution.
+On a confirmed blocker, immediately report the issue, completed phases, and
+remaining gap. Pause work that depends on resolving the blocker, and let
+independent tasks finish and verify their results under fanout. There is no
+interactive decision queue for changing read-only contracts during a build.
+Preserve committed, verified work; a later user-invoked run resumes from the
+recomputed gap after resolution.
