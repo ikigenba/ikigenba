@@ -40,7 +40,6 @@ func TestConfigAndNew(t *testing.T) {
 		}
 	}
 
-	// R-KWD9-PBZI: New takes only Config and returns a routed *Server.
 	constructor := New
 	now := func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
 	gc := google.NewClient("client", "secret", "space.example", "http://127.0.0.1:1")
@@ -87,9 +86,6 @@ func TestServeAndShutdown(t *testing.T) {
 }
 
 func TestRouterRegistersContractRoutesAndEmbeddedAssets(t *testing.T) {
-	// R-IVLV-52P1: all D05/D06/D07 method/path shapes reach this server's
-	// router. Wrong methods must receive mux's 405 rather than the 404 reserved
-	// for no matching route, proving method dispatch before any handler runs.
 	s := New(Config{Now: fixedNow})
 	for _, target := range []struct {
 		method string
@@ -128,8 +124,6 @@ func TestRouterRegistersContractRoutesAndEmbeddedAssets(t *testing.T) {
 		})
 	}
 
-	// R-YNFB-36HN: HTML, JavaScript, and CSS are served from the embedded
-	// filesystem, the same bytes the binary compiled in, with no asset path read.
 	for _, name := range []string{"index.html", "app.js", "style.css"} {
 		embedded, err := assets.Files.ReadFile(name)
 		if err != nil {

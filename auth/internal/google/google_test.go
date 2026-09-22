@@ -229,7 +229,6 @@ func validClaims(issuer string) map[string]any {
 }
 
 func TestExportedAPIAndAuthorizationURL(t *testing.T) {
-	// R-I82C-VOP7
 	claimsType := reflect.TypeFor[googleclient.Claims]()
 	wantFields := []struct {
 		name string
@@ -253,16 +252,13 @@ func TestExportedAPIAndAuthorizationURL(t *testing.T) {
 
 	// R-KUGP-2ZZD
 	(func(func(string, string, string, string) *googleclient.Client) {})(googleclient.NewClient)
-	// R-KVOL-GRQ2
 	(func(func(*googleclient.Client, string, string, string) (string, error)) {})((*googleclient.Client).AuthCodeURL)
-	// R-FX2G-ZLVJ
 	(func(func(*googleclient.Client, context.Context, string, string, string) (googleclient.Claims, error)) {
 	})((*googleclient.Client).Exchange)
 
 	fake := newFakeIssuer(t)
 	client := googleclient.NewClient("client-id", "client-secret", "example.test", fake.server.URL)
 
-	// R-KWWH-UJGR
 	if fake.discoveryRequests() != 0 {
 		t.Fatalf("discovery requests at construction = %d, want 0", fake.discoveryRequests())
 	}
@@ -314,8 +310,6 @@ func TestExchangeVerifiesAndReturnsClaims(t *testing.T) {
 	fake := newFakeIssuer(t)
 	client := googleclient.NewClient("client-id", "client-secret", "example.test", fake.server.URL)
 
-	// R-IFDR-6B5D
-	// R-G0Q6-4X3M
 	tests := []struct {
 		name         string
 		issuer       string
@@ -444,7 +438,6 @@ func TestAuthCodeURLDiscoveryFailureIsRetried(t *testing.T) {
 		t.Fatalf("AuthCodeURL URL = %q, want empty", got)
 	}
 
-	// R-KWWH-UJGR
 	fake := newFakeIssuer(t)
 	retrying := googleclient.NewClient("client-id", "client-secret", "example.test", fake.server.URL)
 	if fake.discoveryRequests() != 0 {

@@ -131,7 +131,6 @@ func TestCreateTokenAcceptsTrimmedNameAndEveryExpiry(t *testing.T) {
 				t.Errorf("created token = %#v, want trimmed name and expiry %v", tokens[0], tt.want)
 			}
 
-			// R-N6ZN-XX7I: the one-time page contains one secret, once, a copy button, and a profile link.
 			body := response.Body.String()
 			secret := regexp.MustCompile(`ikp_[0-9A-HJKMNP-TV-Z]{52}`).FindString(body)
 			if secret == "" || strings.Count(body, secret) != 1 {
@@ -167,7 +166,7 @@ func TestCreateTokenRejectsInvalidNameAndExpiryWithoutMutation(t *testing.T) {
 
 			srv.handleCreateToken(response, req)
 
-			// R-N87K-BOY7 and R-G35Y-WGL0: invalid names/expiries return the complete form and create nothing.
+			// R-N87K-BOY7: invalid names/expiries return the complete form and create nothing.
 			if response.Code != http.StatusBadRequest || response.Header().Get("Content-Type") != htmlDocumentContentType {
 				t.Fatalf("response = %d %q, want 400 HTML", response.Code, response.Header().Get("Content-Type"))
 			}
@@ -215,7 +214,6 @@ func TestRenderTokenRowsShowsMetadataActionsAndNoSecrets(t *testing.T) {
 	}
 	htmlBody := body.String()
 
-	// R-N9FG-PGOW: every owned row exposes name, created, last-used, expiry, and enabled state.
 	for _, fragment := range []string{
 		"enabled &lt;token&gt;", "disabled token",
 		enabled.CreatedAt.Format(time.RFC3339Nano), disabled.CreatedAt.Format(time.RFC3339Nano),
@@ -230,7 +228,6 @@ func TestRenderTokenRowsShowsMetadataActionsAndNoSecrets(t *testing.T) {
 		t.Errorf("profile rows contain another user's token: %s", htmlBody)
 	}
 
-	// R-NAND-38FL: action forms use Token.ID and reflect enabled state.
 	for _, action := range []string{
 		`action="/tokens/` + enabled.ID + `/disable"`,
 		`action="/tokens/` + enabled.ID + `/delete"`,
@@ -242,7 +239,6 @@ func TestRenderTokenRowsShowsMetadataActionsAndNoSecrets(t *testing.T) {
 		}
 	}
 
-	// R-NBV9-H06A: no owner's or foreign token plaintext is rendered later.
 	for _, secret := range []string{enabledSecret, disabledSecret, foreignSecret} {
 		if strings.Contains(htmlBody, secret) {
 			t.Errorf("profile rows leaked plaintext secret %q", secret)
@@ -359,7 +355,6 @@ func TestTokenMutationsRejectBadOrMissingOriginWithoutMutation(t *testing.T) {
 					tokenTestServer(st).handleTokenAction(response, req)
 				}
 
-				// R-NHYR-DUVR: every mutation rejects missing or foreign Origin before changing state.
 				if response.Code != http.StatusForbidden || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
 					t.Fatalf("response = %d %q, want 403 plain text", response.Code, response.Header().Get("Content-Type"))
 				}

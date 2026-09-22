@@ -217,7 +217,7 @@ func TestSignInConstantsHostRulesAndAnonymousRoot(t *testing.T) {
 	st := openSignInStore(t)
 	s := New(Config{Store: st, Now: func() time.Time { return signInNow }})
 	w := serveSignIn(s, http.MethodGet, "/?return=https%3A%2F%2Fapp.green.example%2Fwork", "auth.green.example", nil, "")
-	// R-IRKR-00KB and R-J67J-L9GN: auth's own anonymous root is HTML and carries return only in the link.
+	// R-J67J-L9GN: auth's own anonymous root is HTML and carries return only in the link.
 	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != signInHTMLContentType || !strings.Contains(w.Body.String(), `href="/login/google?return=`) {
 		t.Fatalf("anonymous root = %d %q %s", w.Code, w.Header().Get("Content-Type"), w.Body.String())
 	}
@@ -342,7 +342,7 @@ func TestCallbackAccessDeniedPrecedesStateValidation(t *testing.T) {
 	}
 	for _, stateValue := range []string{state.State, "unknown", ""} {
 		w := serveSignIn(s, http.MethodGet, "/login/google/callback?error=access_denied&state="+url.QueryEscape(stateValue), "auth.green.example", nil, "")
-		// R-G1Y2-IOUB: denial wins over absent/unknown state, returns sign-in HTML, and sets no cookie.
+		// denial wins over absent/unknown state, returns sign-in HTML, and sets no cookie.
 		if w.Code != http.StatusOK || w.Header().Get("Content-Type") != signInHTMLContentType || !strings.Contains(w.Body.String(), `href="/login/google"`) || len(w.Result().Cookies()) != 0 {
 			t.Fatalf("access_denied(%q) = %d %q %s", stateValue, w.Code, w.Header().Get("Content-Type"), w.Body.String())
 		}
@@ -432,7 +432,7 @@ func TestMemberCallbackCreatesIdentitySessionCookieAndSafeRedirect(t *testing.T)
 				t.Fatal(err)
 			}
 			w := serveSignIn(s, http.MethodGet, "/login/google/callback?state="+state.State+"&code=member-code", tc.host, nil, "")
-			// R-IXO8-WV9S, R-J041-OER6: a member callback exchanges, provisions, creates a session, and applies exact in-space redirect rules.
+			// R-J041-OER6: a member callback exchanges, provisions, creates a session, and applies exact in-space redirect rules.
 			if w.Code != http.StatusFound || w.Header().Get("Location") != tc.wantLocation {
 				t.Fatalf("callback = %d location %q", w.Code, w.Header().Get("Location"))
 			}
@@ -476,7 +476,7 @@ func TestNonMemberCallbackConsumesStateWithoutCookie(t *testing.T) {
 				t.Fatal(err)
 			}
 			w := serveSignIn(s, http.MethodGet, "/login/google/callback?state="+state.State+"&code=nonmember", "auth.green.example", nil, "")
-			// R-J1BY-26HV: membership requires both matching hd and verified email; rejection consumes state and sends no cookie.
+			// membership requires both matching hd and verified email; rejection consumes state and sends no cookie.
 			if w.Code != http.StatusForbidden || w.Header().Get("Content-Type") != signInHTMLContentType || len(w.Result().Cookies()) != 0 {
 				t.Fatalf("nonmember response = %d %#v", w.Code, w.Header())
 			}

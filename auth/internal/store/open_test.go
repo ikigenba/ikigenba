@@ -60,7 +60,6 @@ func TestFoundationContract(t *testing.T) {
 		{"Email", reflect.TypeFor[string]()},
 	})
 
-	// R-4EXZ-V023
 	if ExpiryNever != "never" || Expiry30d != "30d" || Expiry90d != "90d" || Expiry365d != "365d" {
 		t.Fatalf("expiry constants = %q, %q, %q, %q", ExpiryNever, Expiry30d, Expiry90d, Expiry365d)
 	}
@@ -78,7 +77,6 @@ func TestFoundationContract(t *testing.T) {
 		t.Fatalf("TokenLoginWindow = %v", TokenLoginWindow)
 	}
 
-	// R-4HDS-MJJH
 	if ErrNotFound == nil || !errors.Is(ErrNotFound, ErrNotFound) || !errors.Is(errors.Join(errors.New("context"), ErrNotFound), ErrNotFound) {
 		t.Fatalf("ErrNotFound is not a usable errors.Is sentinel")
 	}
@@ -148,7 +146,6 @@ func TestOpenExistingDatabasePreservesRows(t *testing.T) {
 }
 
 func TestOpenRejectsExistingInvalidDatabase(t *testing.T) {
-	// R-59FH-F9LG
 	path := filepath.Join(t.TempDir(), "auth.db")
 	if err := os.WriteFile(path, []byte("this is not sqlite"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)

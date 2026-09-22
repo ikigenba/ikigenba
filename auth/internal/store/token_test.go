@@ -18,7 +18,6 @@ import (
 )
 
 var (
-	// R-4SCW-2H7Q
 	_ func(*Store, string, string, Expiry, time.Time) (Token, string, error) = (*Store).CreateToken
 	// R-4TKS-G8YF
 	_ func(*Store, string) ([]Token, error) = (*Store).ListTokens

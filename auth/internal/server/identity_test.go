@@ -184,9 +184,6 @@ func TestCheckSessionOutcomes(t *testing.T) {
 		assertCheckRefusal(t, response, http.StatusUnauthorized)
 		assertSnapshotEqual(t, fixture.snapshot(t), before)
 	})
-
-	// R-FI9L-N9X8: every /check assertion above observes identity only in the
-	// two headers; the response body's unspecified content is never inspected.
 }
 
 func TestCheckBearerWinsAndTouchesOnlyToken(t *testing.T) {
@@ -201,9 +198,6 @@ func TestCheckBearerWinsAndTouchesOnlyToken(t *testing.T) {
 
 	response := serveIdentity(fixture.server().handleCheck, identityRequest("/check", session.ID, secret))
 
-	// R-F62L-TKIA: the complete ikp_-prefixed bearer suffix, including its
-	// trailing space, is accepted because exactly that value is hashed in the
-	// real store; trimming or normalizing it would make authentication fail.
 	// R-FDE0-46YG: an honored bearer emits its identity and records request-time use.
 	// R-FH1P-9I6J: the honored bearer wins over a different live session, which is untouched.
 	// R-F7AI-7C8Z: token resolution is exclusive whenever the Bearer scheme is present.
@@ -249,10 +243,7 @@ func TestCheckRefusedBearersAreIdenticalAndDoNotMutate(t *testing.T) {
 			before := fixture.snapshot(t)
 			response := serveIdentity(fixture.server().handleCheck, identityRequest("/check", session.ID, secret))
 
-			// R-FFTS-VQFU: every refusal cause has identical contracted status and
-			// headers, no identity disclosure, and no database mutation.
 			// R-F7AI-7C8Z: even a refused bearer prevents fallback to the live cookie.
-			// R-2W27-FZGG: a refused bearer is 403, never the session-path 401.
 			assertCheckRefusal(t, response, http.StatusForbidden)
 			assertSnapshotEqual(t, fixture.snapshot(t), before)
 			got := result{code: response.Code, header: response.Header().Clone()}
@@ -349,9 +340,6 @@ func TestMeHonoredCredentialsReturnCompactJSONWithoutMutation(t *testing.T) {
 			}
 			// R-FJHI-11NX: an honored token yields exact compact token-owner JSON.
 			// R-FKPE-ETEM: a live session yields exact compact session-owner JSON.
-			// R-F62L-TKIA: the bearer case succeeds only if its trailing-space
-			// suffix reaches the store unmodified; the session case likewise uses
-			// the exact opaque cookie value minted by the store.
 			// R-F7AI-7C8Z: in the bearer case, the token owner wins over the cookie owner.
 			// R-2UUB-27PR: successful /me paths do not change any stored row.
 			wantBody := fmt.Sprintf(`{"id":%q,"email":%q}`, wantUser.ID, wantUser.Email)
@@ -371,7 +359,6 @@ func TestMeMissingAndDeadSessionsArePlain401WithoutMutation(t *testing.T) {
 			response := serveIdentity(fixture.server().handleMe, identityRequest("/me", sessionID, ""))
 
 			// R-GAHD-7316: absent and non-live sessions return a single plain-text line, not JSON.
-			// R-2W27-FZGG: a failed session path is 401, never bearer-path 403.
 			// R-2UUB-27PR: unsuccessful session /me paths perform no write.
 			assertPlainRefusal(t, response, http.StatusUnauthorized, "sign in required\n")
 			assertSnapshotEqual(t, fixture.snapshot(t), before)
@@ -417,7 +404,6 @@ func TestMeRefusedBearersAreIdenticalAndDoNotMutate(t *testing.T) {
 
 			// R-2TME-OFZ2: all refusal causes yield the same single-line token-refused response.
 			// R-F7AI-7C8Z: a refused bearer does not fall back to a live session.
-			// R-2W27-FZGG: a refused bearer is 403, never session-path 401.
 			// R-2UUB-27PR: refused /me paths do not change any stored row.
 			assertPlainRefusal(t, response, http.StatusForbidden, "token refused\n")
 			assertSnapshotEqual(t, fixture.snapshot(t), before)

@@ -75,7 +75,6 @@ func TestVersionHelpAndManifest(t *testing.T) {
 	}
 
 	// R-P1AL-4VB4
-	// R-OWEZ-LSCC
 	stdout, stderr, code = run(t, Process{Args: []string{"--help"}})
 	if code != 0 || stderr != "" || stdout != usageText {
 		t.Fatalf("--help code=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -85,7 +84,6 @@ func TestVersionHelpAndManifest(t *testing.T) {
 	}
 
 	// R-P2IH-IN1T
-	// R-OXMV-ZK31
 	stdout, stderr, code = run(t, Process{Args: []string{"manifest"}})
 	if code != 0 || stderr != "" || stdout != manifestText {
 		t.Fatalf("manifest code=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -108,7 +106,6 @@ func TestVersionHelpAndManifest(t *testing.T) {
 func TestUnknownCommandAndOption(t *testing.T) {
 	// R-P666-NY9W
 	// R-P8LZ-FHRA
-	// R-OV73-80LN
 	stdout, stderr, code := run(t, Process{Args: []string{"bogus"}})
 	want := "auth: unknown command 'bogus'\n\nsee 'auth --help' for usage\n"
 	if code != 2 || stdout != "" || stderr != want {
@@ -137,8 +134,6 @@ func TestConfigFaultsOpenNothing(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "missing", "auth.db")
 
-	// R-IGZ2-JTSP
-	// R-IFR6-6220: PORT is read and rejected before any Google setting.
 	var looked []string
 	stdout, stderr, code := run(t, Process{
 		Getenv: func(name string) string {
@@ -158,7 +153,6 @@ func TestConfigFaultsOpenNothing(t *testing.T) {
 		t.Fatalf("store opened on unset PORT: %v", err)
 	}
 
-	// R-II6Y-XLJE
 	for _, value := range []string{"0", "65536", "-1", "80a", " 80", "1.5", "0x10"} {
 		stdout, stderr, code = run(t, Process{
 			Getenv:   mapGetenv(map[string]string{"PORT": value, "GOOGLE_CLIENT_ID": "id"}),
@@ -170,7 +164,6 @@ func TestConfigFaultsOpenNothing(t *testing.T) {
 		}
 	}
 
-	// R-IJEV-BDA3
 	cases := []struct {
 		env  map[string]string
 		name string
@@ -203,8 +196,6 @@ func TestConfigFaultsOpenNothing(t *testing.T) {
 }
 
 func TestOpenFailureDoesNotListen(t *testing.T) {
-	// R-IN2K-GOI6
-	// R-3XVE-I7OD
 	source := filepath.Join(t.TempDir(), "missing", "auth.db")
 	held := hold(t)
 	port := portOf(t, held)
@@ -339,10 +330,8 @@ func TestServeExistingAndAbsentThenShutdown(t *testing.T) {
 	signal.Reset(syscall.SIGINT, syscall.SIGTERM)
 	t.Cleanup(func() { signal.Reset(syscall.SIGINT, syscall.SIGTERM) })
 	// R-ILUO-2WRH
-	// R-IOAG-UG8V
 	// R-KXL6-33Q7
 	// R-OYUS-DBTQ
-	// R-3XVE-I7OD
 	absent := filepath.Join(t.TempDir(), "state", "auth.db")
 	if err := os.Mkdir(filepath.Dir(absent), 0o700); err != nil {
 		t.Fatalf("Mkdir: %v", err)
@@ -358,7 +347,6 @@ func TestServeExistingAndAbsentThenShutdown(t *testing.T) {
 
 func TestSignalsAreIdentical(t *testing.T) {
 	// R-3Z3A-VZF2
-	// R-IT62-DJ7N
 	signal.Reset(syscall.SIGINT, syscall.SIGTERM)
 	t.Cleanup(func() { signal.Reset(syscall.SIGINT, syscall.SIGTERM) })
 	var codes []int
@@ -405,7 +393,6 @@ func TestSignalsAreIdentical(t *testing.T) {
 }
 
 func TestRunUsesOnlyProcess(t *testing.T) {
-	// R-40B7-9R5R
 	signal.Reset(syscall.SIGINT, syscall.SIGTERM)
 	t.Cleanup(func() { signal.Reset(syscall.SIGINT, syscall.SIGTERM) })
 	t.Setenv("PORT", "9999")
@@ -513,9 +500,6 @@ func TestLayoutOwnership(t *testing.T) {
 		t.Fatalf("module path = %q", firstLine(mod))
 	}
 
-	// R-3GST-5FAN
-	// R-3VFL-QO6Z
-	// R-3WNI-4FXO
 	mainSrc := readFile(t, filepath.Join(root, "cmd", "auth", "main.go"))
 	if !bytes.Contains(mainSrc, []byte("package main")) || !bytes.Contains(mainSrc, []byte("func main()")) {
 		t.Fatal("cmd/auth/main.go does not own func main")
@@ -541,13 +525,11 @@ func TestLayoutOwnership(t *testing.T) {
 		t.Fatal("main contains logic beyond wiring")
 	}
 
-	// R-3I0P-J71C
 	cliSrc := readFile(t, filepath.Join(root, "internal", "cli", "cli.go"))
 	if bytes.Contains(cliSrc, []byte("func handle")) || bytes.Contains(cliSrc, []byte("http.NewServeMux")) || bytes.Contains(cliSrc, []byte("CREATE TABLE")) {
 		t.Fatal("cli owns a concern that belongs to another package")
 	}
 
-	// R-3J8L-WYS1: HTTP handler names live in internal/server, not cli.
 	serverFiles := goFiles(t, filepath.Join(root, "internal", "server"))
 	if !bytes.Contains(bytes.Join(serverFiles, nil), []byte("http.NewServeMux")) {
 		t.Fatal("internal/server does not own the HTTP router")
@@ -556,13 +538,11 @@ func TestLayoutOwnership(t *testing.T) {
 		t.Fatal("cli owns an HTTP handler")
 	}
 
-	// R-3KGI-AQIQ
 	storeSrc := readFile(t, filepath.Join(root, "internal", "store", "store.go"))
 	if !bytes.Contains(storeSrc, []byte("func Open")) || !bytes.Contains(storeSrc, []byte("CREATE TABLE")) {
 		t.Fatal("internal/store does not own persistence")
 	}
 
-	// R-3LOE-OI9F
 	googleSrc := readFile(t, filepath.Join(root, "internal", "google", "google.go"))
 	for _, name := range []string{"func NewClient", "func (c *Client) AuthCodeURL", "func (c *Client) Exchange"} {
 		if !bytes.Contains(googleSrc, []byte(name)) {
@@ -570,7 +550,6 @@ func TestLayoutOwnership(t *testing.T) {
 		}
 	}
 
-	// R-3MWB-2A04
 	idSrc := readFile(t, filepath.Join(root, "internal", "idcodec", "idcodec.go"))
 	for _, name := range []string{"func Encode", "func NewID", "func NewSecret", "func HashSecret"} {
 		if !bytes.Contains(idSrc, []byte(name)) {
@@ -583,11 +562,6 @@ func TestLayoutOwnership(t *testing.T) {
 }
 
 func TestSelfContainedServeOpensOnlyTheDatabase(t *testing.T) {
-	// R-YNFB-36HN: HTML, JavaScript, and CSS are served from embedded assets
-	// by internal/server. This clause is the file half: a serve opens the
-	// SQLite database and no other file. The release build is cgo-free, so
-	// the binary depends on no shared library; that is proven by building
-	// with CGO_ENABLED=0 in the release gate, not by a second process here.
 	signal.Reset(syscall.SIGINT, syscall.SIGTERM)
 	t.Cleanup(func() { signal.Reset(syscall.SIGINT, syscall.SIGTERM) })
 

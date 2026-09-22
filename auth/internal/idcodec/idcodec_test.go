@@ -17,7 +17,6 @@ var (
 )
 
 func TestConstants(t *testing.T) {
-	// R-41J3-NIWG
 	if Alphabet != "0123456789ABCDEFGHJKMNPQRSTVWXYZ" {
 		t.Fatalf("Alphabet = %q", Alphabet)
 	}
@@ -27,7 +26,6 @@ func TestConstants(t *testing.T) {
 }
 
 func TestEncodeReferenceVectors(t *testing.T) {
-	// R-42R0-1AN5
 	// R-5243-4N5A
 	tests := []struct {
 		name string
@@ -89,8 +87,6 @@ func TestEncodeLengthAndAlphabetForEveryRemainder(t *testing.T) {
 }
 
 func TestNewIDReadsExactlySixteenBytes(t *testing.T) {
-	// R-43YW-F2DU
-	// R-53BZ-IEVZ
 	rand := &oneByteReader{data: sequentialBytes(16)}
 	got, err := NewID(rand)
 	if err != nil {
@@ -132,8 +128,6 @@ func TestNewIDReadErrors(t *testing.T) {
 }
 
 func TestNewSecretReadsExactlyThirtyTwoBytes(t *testing.T) {
-	// R-456S-SU4J
-	// R-54JV-W6MO
 	rand := &oneByteReader{data: sequentialBytes(32)}
 	got, err := NewSecret(rand)
 	if err != nil {
@@ -179,7 +173,6 @@ func TestNewSecretReadErrors(t *testing.T) {
 }
 
 func TestHashSecret(t *testing.T) {
-	// R-46EP-6LV8
 	// R-G99G-TBAH (HashSecret behavior only; persistence is owned by internal/store.)
 	tests := []struct {
 		secret string

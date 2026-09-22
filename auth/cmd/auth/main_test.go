@@ -16,9 +16,6 @@ import (
 )
 
 func TestMainWiring(t *testing.T) {
-	// R-3GST-5FAN
-	// R-3VFL-QO6Z
-	// R-3WNI-4FXO
 	// R-3Z3A-VZF2
 	// R-P02O-R3KF
 	// R-P2IH-IN1T

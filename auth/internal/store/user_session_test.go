@@ -27,7 +27,6 @@ var (
 )
 
 func TestUpsertUserOnLoginCreatesThenRefreshesOnePersistentUser(t *testing.T) {
-	// R-5AND-T1C5
 	// R-5BVA-6T2U
 	random := sequentialStoreBytes(16)
 	path := filepath.Join(t.TempDir(), "auth.db")
