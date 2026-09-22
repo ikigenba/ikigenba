@@ -36,5 +36,5 @@ The full verification gates are declared in [`AGENTS.md`](AGENTS.md).
 - `AGENTS.md` — the toolchain, test-file set, gates, and commit conventions
   the build run verifies against.
 
-To change devctl, change the spec — `draft-spec`, then `check-spec`, then
+To change devctl, change the spec — `draft-design`, then `check-spec`, then
 `build-spec` — rather than editing the code directly.

@@ -64,7 +64,7 @@ Presence alone defines the gap. Whether a test is *adequate* is judged separatel
 The `spec` skill is the shared foundation — layout, ids, the gap, project ground, issue filing, and the story and design formats. Five operation skills load it first:
 
 - **`draft-stories`** — turn what the user wants into stories under `specs/stories/`, new or updated. It grills you (via `grill-me`), one question at a time, for whatever the intent leaves open — an output text, an exit code, a postcondition is never invented. Produces stories, not design.
-- **`draft-spec`** — turn `specs/stories/` into a design and the `AGENTS.md` ground beside it, for one sub-project, by recursive delegation with independent verification of story coverage and contract consistency. It asks you only for decisions the inputs cannot settle, after the available work is exhausted. This is the only operation that mints ids.
+- **`draft-design`** — turn `specs/stories/` into a design and the `AGENTS.md` ground beside it, for one sub-project, by recursive delegation with independent verification of story coverage and contract consistency. It asks you only for decisions the inputs cannot settle, after the available work is exhausted. This is the only operation that mints ids.
 - **`check-spec`** — report whether the design is buildable: the ground exists, every external fact is proven, no requirement reaches across the project boundary, and the gap is shown. It is feedback only: it gates nothing and commits nothing.
 - **`build-spec`** — close the gap.
 - **`audit-spec`** — judge whether existing tests genuinely verify their requirements. Inadequate tests are un-tagged, once a fresh verifier confirms, so the next build run rebuilds them; requirements that turn out to be untestable or wrongly designed become issues.
@@ -81,7 +81,7 @@ The `spec` skill is the shared foundation — layout, ids, the gap, project grou
 
 No work is accepted on the word of the agent that did it. Every scope is verified by a fresh agent, and the coordinator reruns the greps and gates itself. Work lands in green phase commits per the project's commit convention, each naming its ids. Because "done" is derived from the committed tests, an interrupted run resumes simply by rerunning `build-spec`.
 
-`draft-spec` and `audit-spec` use the same tree for the same reason — authors or auditors in place of leaves, every result checked by a fresh verifier.
+`draft-design` and `audit-spec` use the same tree for the same reason — authors or auditors in place of leaves, every result checked by a fresh verifier.
 
 ## Gates
 

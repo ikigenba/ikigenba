@@ -1,6 +1,6 @@
 ---
 name: spec
-description: The specs/ system — layout, requirement ids, the canonical gap, project ground, issue filing, and the story and design formats. Shared foundation for the draft-stories / draft-spec / check-spec / build-spec / audit-spec skills.
+description: The specs/ system — layout, requirement ids, the canonical gap, project ground, issue filing, and the story and design formats. Shared foundation for the draft-stories / draft-design / check-spec / build-spec / audit-spec skills.
 ---
 
 # specs/
@@ -22,7 +22,7 @@ Those four entries are the whole of `specs/`. Nothing else is created under it: 
 
 Designs are never frozen. Any requirement can be replaced at any time, and a requirement is never a reason a design cannot change; only the build run and `audit-spec` treat the design as read-only. The one rule is about ids, not about the design: **an id names exactly one text**. New text means a new id.
 
-- Mint every id with `idgen`; ids have the form `R-XXXX-XXXX`. `idgen` guarantees global uniqueness. Only `draft-spec` mints ids; the build run and `audit-spec` never invoke `idgen`, and it is not part of the toolchain `AGENTS.md` declares.
+- Mint every id with `idgen`; ids have the form `R-XXXX-XXXX`. `idgen` guarantees global uniqueness. Only `draft-design` mints ids; the build run and `audit-spec` never invoke `idgen`, and it is not part of the toolchain `AGENTS.md` declares.
 - Never hand-author or reuse an id. Once minted, an id is bound to the text it was minted for.
 - To change a requirement's text at all — including a pure rewording — delete that requirement and mint a new id for the new text. The gap is computed from id presence alone, so text edited beside an existing id is invisible and never gets applied. See `references/design-format.md`.
 
@@ -70,9 +70,9 @@ A monorepo holds several projects below one git root; each is independent and st
 
 ## Filing an issue
 
-`specs/issues/` is the escalation channel for friction that cannot be resolved in-role — a wrong seam, contradictory requirements, a missing dependency, broken tooling. It is distinct from a gap a builder can close within the current contract. Only the unattended runs file issues: `build-spec` and `audit-spec`. An interactive skill such as `draft-spec` has the user present and asks instead.
+`specs/issues/` is the escalation channel for friction that cannot be resolved in-role — a wrong seam, contradictory requirements, a missing dependency, broken tooling. It is distinct from a gap a builder can close within the current contract. Only the unattended runs file issues: `build-spec` and `audit-spec`. An interactive skill such as `draft-design` has the user present and asks instead.
 
-- One markdown file per issue, named `specs/issues/<slug>.md`. Issues carry no minted id; nothing outside `draft-spec` invokes `idgen`.
+- One markdown file per issue, named `specs/issues/<slug>.md`. Issues carry no minted id; nothing outside `draft-design` invokes `idgen`.
 - Contents: filing context, the requirement id(s) involved, the friction, why it is unresolvable in-role, evidence (conflicting ids, failing command output), and a suggested resolution.
 - An issue must carry proof; a vague "cannot proceed" issue is invalid.
 - Resolve by deleting the file (git holds history). The gate is simply whether `specs/issues/` is empty.
@@ -83,12 +83,12 @@ A monorepo holds several projects below one git root; each is independent and st
 Each operation is a sibling skill. All five load this one for the shared rules above.
 
 - `draft-stories` — turn the user's intent into stories under `specs/stories/`, new or updated, grilling the user for what the intent leaves open. The format is `references/story-format.md` in this skill.
-- `draft-spec` — author a design, and the `AGENTS.md` ground beside it, by recursive delegation from user stories, for one sub-project at a time. The design format and id rules it authors against are `references/design-format.md` in this skill.
+- `draft-design` — author a design, and the `AGENTS.md` ground beside it, by recursive delegation from user stories, for one sub-project at a time. The design format and id rules it authors against are `references/design-format.md` in this skill.
 - `check-spec` — report whether the design is buildable and show the gap. Feedback only; it gates nothing and commits nothing.
 - `build-spec` — close the mechanical gap by recursive delegation.
 - `audit-spec` — audit adequacy of tests for ids already proved on both sides.
 
-`draft-stories`, `draft-spec`, `build-spec`, and `audit-spec` each load
+`draft-stories`, `draft-design`, `build-spec`, and `audit-spec` each load
 `fanout` for delegation and independent verification. Invoke the desired
 operation directly; naming `fanout` separately is unnecessary. Each operation
 supplies its own goal, completion criteria, authority, and reporting channel.

@@ -26,7 +26,7 @@ criteria to the fanout assignments.
 
 Repository writes are limited to stories. No design, source, test, ground,
 or issue-file changes; no requirement ids or commits. Do not start
-`draft-spec`. Working inventories, proposals, and evidence belong in
+`draft-design`. Working inventories, proposals, and evidence belong in
 ephemeral scratch files outside the repository using the
 [handoff scratch convention](../handoff/SKILL.md#scratch-file-convention).
 Report blockers and unresolved decisions to the user, not `specs/issues/`.
@@ -89,7 +89,7 @@ Verification must establish:
 
 Report added and changed stories by heading and file, consistency changes,
 scratch evidence locations, and unresolved questions with affected work.
-Identify designs that now diverge and name `draft-spec` as the next step
+Identify designs that now diverge and name `draft-design` as the next step
 without starting it. Label unresolved work as a partial draft. If existing
 stories already satisfy the request, report that verified result without
 rewriting them.

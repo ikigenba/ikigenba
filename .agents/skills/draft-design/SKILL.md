@@ -1,5 +1,5 @@
 ---
-name: draft-spec
+name: draft-design
 description: Turn user stories into design and project ground using fanout, with verified story coverage and contract consistency. Produces design, not implementation.
 ---
 

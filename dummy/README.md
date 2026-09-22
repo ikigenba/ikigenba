@@ -43,5 +43,5 @@ written by `devctl build dummy`, which builds `cmd/dummy` itself for
 - `AGENTS.md` — the toolchain, test-file set, gates, and commit conventions
   the build run verifies against.
 
-To change dummy, change the spec — `draft-spec`, then `check-spec`, then
+To change dummy, change the spec — `draft-design`, then `check-spec`, then
 `build-spec` — rather than editing the code directly.
