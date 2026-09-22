@@ -15,6 +15,30 @@ the `spec` and `build-spec` skills. Everything below is the ground the run
 computes the gap and runs the gates against; it is human-authored and read-only
 to the run.
 
+## Deploy
+
+auth is an app, not a self-installing CLI: it is built into a release tarball
+and pushed to a space's host by `devctl`, which drives `opsctl install` there
+(`docs/architecture.md`).
+
+1. Set the release version D01 declares (`internal/version/version.go`) to
+   `vX.Y.Z`. It is a source literal the binary reports verbatim — no linker
+   injection — and `devctl build` refuses a tarball whose `--version` disagrees
+   with the tag or whose `manifest` disagrees with the committed
+   `etc/manifest.toml`.
+2. Commit that on `main` and push `main`.
+3. Tag that commit `auth/vX.Y.Z` and push the tag.
+4. `devctl build auth` at that tag writes `auth/dist/auth-vX.Y.Z.tar.xz`,
+   holding `bin/auth` and `etc/`, with no version recorded anywhere inside.
+5. `devctl deploy <space> auth/dist/auth-vX.Y.Z.tar.xz` uploads the tarball to
+   the space's `deploy/` prefix and runs `opsctl install` over ssh; the host
+   fetches it, writes `etc/env`, replaces the release, publishes
+   `ikigenba-auth.service`, regenerates the host's nginx and litestream
+   configuration, and restarts the service.
+
+`auth --version` (and `space status`) then report `vX.Y.Z`; the binary is the
+only place the version is recorded.
+
 ## Toolchain
 
 - Go 1.26 (`go version` must report 1.26+)
