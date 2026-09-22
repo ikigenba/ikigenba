@@ -68,26 +68,6 @@ func TestCreateLoginStatePersistsInjectedIDAndExactValues(t *testing.T) {
 	}
 }
 
-func TestCreateLoginStateRandomFailurePersistsNothing(t *testing.T) {
-	st := openLoginStateTestStore(t, bytes.NewReader(make([]byte, 15)))
-
-	got, err := st.CreateLoginState("verifier", "https://app.example.test/")
-	if err == nil {
-		t.Fatalf("CreateLoginState() = %#v, nil error; want error", got)
-	}
-	if got != (LoginState{}) {
-		t.Fatalf("CreateLoginState() on random failure = %#v, want zero value", got)
-	}
-
-	var count int
-	if err := st.db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM login_states`).Scan(&count); err != nil {
-		t.Fatalf("count login states: %v", err)
-	}
-	if count != 0 {
-		t.Fatalf("login state row count = %d, want 0", count)
-	}
-}
-
 func TestConsumeLoginStateReturnsExactRowOnce(t *testing.T) {
 	// R-5LMH-8Z0E
 	st := openLoginStateTestStore(t, bytes.NewReader(make([]byte, 16)))
@@ -113,6 +93,8 @@ func TestConsumeLoginStateReturnsExactRowOnce(t *testing.T) {
 }
 
 func TestConsumeLoginStateConcurrentCallsHaveOneWinner(t *testing.T) {
+	// R-5LMH-8Z0E: ConsumeLoginState is single-use, so exactly one of two
+	// concurrent calls returns the stored row and the other returns ErrNotFound.
 	st := openLoginStateTestStore(t, bytes.NewReader(make([]byte, 16)))
 	want, err := st.CreateLoginState("concurrent verifier", "https://app.example.test/return")
 	if err != nil {

@@ -81,6 +81,8 @@ func TestEncodeReferenceVectors(t *testing.T) {
 }
 
 func TestEncodeLengthAndAlphabetForEveryRemainder(t *testing.T) {
+	// R-5243-4N5A: Encode is deterministic, uses only Alphabet, and its length
+	// is ceil(8*len(b)/5), including the empty input.
 	for size := 0; size <= 64; size++ {
 		in := sequentialBytes(size)
 		got := Encode(in)
@@ -96,6 +98,7 @@ func TestEncodeLengthAndAlphabetForEveryRemainder(t *testing.T) {
 }
 
 func TestNewIDReadsExactlySixteenBytes(t *testing.T) {
+	// R-53BZ-IEVZ: NewID reads exactly 16 bytes and returns their Encode.
 	rand := &oneByteReader{data: sequentialBytes(16)}
 	got, err := NewID(rand)
 	if err != nil {
@@ -111,6 +114,7 @@ func TestNewIDReadsExactlySixteenBytes(t *testing.T) {
 }
 
 func TestNewIDReadErrors(t *testing.T) {
+	// R-53BZ-IEVZ: a failed read returns a non-nil error and no id.
 	t.Run("short input", func(t *testing.T) {
 		got, err := NewID(bytes.NewReader(make([]byte, 15)))
 		if err == nil || got != "" {
@@ -195,6 +199,8 @@ func TestNewIDReadEncodeAndReadFailure(t *testing.T) {
 }
 
 func TestNewSecretReadsExactlyThirtyTwoBytes(t *testing.T) {
+	// R-54JV-W6MO: NewSecret reads exactly 32 bytes and returns SecretPrefix
+	// followed by their Encode.
 	rand := &oneByteReader{data: sequentialBytes(32)}
 	got, err := NewSecret(rand)
 	if err != nil {
@@ -214,6 +220,7 @@ func TestNewSecretReadsExactlyThirtyTwoBytes(t *testing.T) {
 }
 
 func TestNewSecretReadErrors(t *testing.T) {
+	// R-54JV-W6MO: a failed read returns a non-nil error and no secret.
 	t.Run("short input", func(t *testing.T) {
 		got, err := NewSecret(bytes.NewReader(make([]byte, 31)))
 		if err == nil || got != "" {

@@ -146,6 +146,8 @@ func TestOpenExistingDatabasePreservesRows(t *testing.T) {
 }
 
 func TestOpenRejectsExistingInvalidDatabase(t *testing.T) {
+	// R-59FH-F9LG: a file that exists but is not this store's database returns
+	// a non-nil error and no usable store.
 	path := filepath.Join(t.TempDir(), "auth.db")
 	if err := os.WriteFile(path, []byte("this is not sqlite"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)

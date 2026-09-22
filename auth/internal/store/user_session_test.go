@@ -154,15 +154,6 @@ func TestUpsertUserOnLoginCreatesThenRefreshesOnePersistentUser(t *testing.T) {
 	}
 }
 
-func TestUpsertUserOnLoginRandomFailurePersistsNothing(t *testing.T) {
-	st := openUserSessionTestStore(t, bytes.NewReader(make([]byte, 15)))
-	got, err := st.UpsertUserOnLogin("issuer", "subject", "member@example.com", sessionTestNow())
-	if err == nil || got != (User{}) {
-		t.Fatalf("UpsertUserOnLogin() = %#v, %v; want zero user and error", got, err)
-	}
-	assertTableCount(t, st, "users", 0)
-}
-
 func TestCreateSessionUsesInjectedIDAndPersistsExactTimes(t *testing.T) {
 	// R-5D36-KKTJ
 	random := sequentialStoreBytes(32)

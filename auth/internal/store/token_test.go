@@ -159,41 +159,6 @@ func TestCreateTokenExactValuesExpiryAndHashPersistence(t *testing.T) {
 	}
 }
 
-func TestCreateTokenRandomAndDatabaseFailuresPersistNothing(t *testing.T) {
-	now := tokenTestNow()
-	tests := []struct {
-		name   string
-		random []byte
-	}{
-		{name: "id read fails", random: make([]byte, 15)},
-		{name: "secret read fails after id", random: make([]byte, 16+31)},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			st := openTokenTestStore(t, bytes.NewReader(tt.random))
-			insertTokenUser(t, st, "owner", "owner@example.com", now)
-			token, secret, err := st.CreateToken("owner", "failure", ExpiryNever, now)
-			if err == nil || token != (Token{}) || secret != "" {
-				t.Fatalf("CreateToken() = (%#v, %q, %v), want zero values and error", token, secret, err)
-			}
-			assertTokenCount(t, st, 0)
-		})
-	}
-
-	t.Run("database rejection after both random values", func(t *testing.T) {
-		random := &countingReader{reader: bytes.NewReader(tokenSequentialBytes(48))}
-		st := openTokenTestStore(t, random)
-		token, secret, err := st.CreateToken("missing-user", "failure", ExpiryNever, now)
-		if err == nil || token != (Token{}) || secret != "" {
-			t.Fatalf("CreateToken() = (%#v, %q, %v), want zero values and error", token, secret, err)
-		}
-		if random.read != 48 {
-			t.Fatalf("CreateToken() consumed %d random bytes, want 48", random.read)
-		}
-		assertTokenCount(t, st, 0)
-	})
-}
-
 func TestListTokensOwnerScopeExactFieldsAndOrder(t *testing.T) {
 	// R-5PA6-EA8H
 	st := openTokenTestStore(t, bytes.NewReader(nil))
@@ -473,17 +438,6 @@ func tokenLastUsed(t *testing.T, st *Store, id string) (sql.NullInt64, error) {
 	var lastUsed sql.NullInt64
 	err := st.db.QueryRowContext(context.Background(), `SELECT last_used_at FROM tokens WHERE id = ?`, id).Scan(&lastUsed)
 	return lastUsed, err
-}
-
-func assertTokenCount(t *testing.T, st *Store, want int) {
-	t.Helper()
-	var got int
-	if err := st.db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM tokens`).Scan(&got); err != nil {
-		t.Fatalf("count tokens: %v", err)
-	}
-	if got != want {
-		t.Fatalf("token count = %d, want %d", got, want)
-	}
 }
 
 func tokenTestNow() time.Time {

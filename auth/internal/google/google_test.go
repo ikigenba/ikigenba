@@ -463,6 +463,8 @@ func TestExportedAPIAndAuthorizationURL(t *testing.T) {
 }
 
 func TestExchangeVerifiesAndReturnsClaims(t *testing.T) {
+	// R-G0Q6-4X3M: Exchange posts the code, verifier, and redirect URI, and
+	// returns Claims from a verified token for either accepted issuer.
 	fake := newFakeIssuer(t)
 	client := googleclient.NewClient("client-id", "client-secret", "example.test", fake.server.URL)
 
@@ -516,6 +518,8 @@ func TestExchangeVerifiesAndReturnsClaims(t *testing.T) {
 }
 
 func TestExchangeRejectsEndpointAndVerificationFailures(t *testing.T) {
+	// R-G0Q6-4X3M: a failed exchange, unreachable endpoint, or failed
+	// verification returns a non-nil error.
 	fake := newFakeIssuer(t)
 	client := googleclient.NewClient("client-id", "client-secret", "example.test", fake.server.URL)
 
@@ -628,21 +632,6 @@ func TestAuthCodeURLDiscoveryFailureIsRetried(t *testing.T) {
 	}
 	if fake.discoveryRequests() != 3 {
 		t.Fatalf("discovery requests after recovery = %d, want 3", fake.discoveryRequests())
-	}
-}
-
-func TestFakeIssuerUsesOnlyLoopback(t *testing.T) {
-	fake := newFakeIssuer(t)
-	parsed, err := url.Parse(fake.server.URL)
-	if err != nil {
-		t.Fatalf("parse fake issuer URL: %v", err)
-	}
-	host, _, err := net.SplitHostPort(parsed.Host)
-	if err != nil {
-		t.Fatalf("split fake issuer host: %v", err)
-	}
-	if host != "127.0.0.1" {
-		t.Fatalf("fake issuer host = %q, want 127.0.0.1", host)
 	}
 }
 

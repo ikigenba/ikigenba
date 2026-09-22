@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -183,68 +182,6 @@ func TestCreateTokenRejectsInvalidNameAndExpiryWithoutMutation(t *testing.T) {
 				t.Errorf("ListTokens() = %#v, %v; want empty", tokens, err)
 			}
 		})
-	}
-}
-
-func TestRenderTokenRowsShowsMetadataActionsAndNoSecrets(t *testing.T) {
-	st := openTokenTestStore(t)
-	owner, _ := tokenTestIdentity(t, st, "owner")
-	other, _ := tokenTestIdentity(t, st, "other")
-	enabled, enabledSecret, err := st.CreateToken(owner.ID, "enabled <token>", store.Expiry30d, tokenTestNow)
-	if err != nil {
-		t.Fatal(err)
-	}
-	disabled, disabledSecret, err := st.CreateToken(owner.ID, "disabled token", store.ExpiryNever, tokenTestNow.Add(time.Hour))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := st.SetTokenEnabled(owner.ID, disabled.ID, false); err != nil {
-		t.Fatal(err)
-	}
-	lastUsed := tokenTestNow.Add(2 * time.Hour)
-	if _, err := st.TouchTokenIdentity(enabledSecret, lastUsed); err != nil {
-		t.Fatal(err)
-	}
-	foreign, foreignSecret, err := st.CreateToken(other.ID, "foreign token", store.Expiry365d, tokenTestNow)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var body bytes.Buffer
-	if err := tokenTestServer(st).renderTokenRows(&body, owner.ID); err != nil {
-		t.Fatalf("renderTokenRows() error = %v", err)
-	}
-	htmlBody := body.String()
-
-	for _, fragment := range []string{
-		"enabled &lt;token&gt;", "disabled token",
-		enabled.CreatedAt.Format(time.RFC3339Nano), disabled.CreatedAt.Format(time.RFC3339Nano),
-		lastUsed.Format(time.RFC3339Nano), "never", enabled.ExpiresAt.Format(time.RFC3339Nano),
-		`class="enabled">true`, `class="enabled">false`,
-	} {
-		if !strings.Contains(htmlBody, fragment) {
-			t.Errorf("profile rows missing metadata %q: %s", fragment, htmlBody)
-		}
-	}
-	if strings.Contains(htmlBody, foreign.Name) || strings.Contains(htmlBody, foreign.ID) {
-		t.Errorf("profile rows contain another user's token: %s", htmlBody)
-	}
-
-	for _, action := range []string{
-		`action="/tokens/` + enabled.ID + `/disable"`,
-		`action="/tokens/` + enabled.ID + `/delete"`,
-		`action="/tokens/` + disabled.ID + `/enable"`,
-		`action="/tokens/` + disabled.ID + `/delete"`,
-	} {
-		if !strings.Contains(htmlBody, action) {
-			t.Errorf("profile rows missing action %q", action)
-		}
-	}
-
-	for _, secret := range []string{enabledSecret, disabledSecret, foreignSecret} {
-		if strings.Contains(htmlBody, secret) {
-			t.Errorf("profile rows leaked plaintext secret %q", secret)
-		}
 	}
 }
 

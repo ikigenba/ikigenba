@@ -6,6 +6,11 @@ import (
 )
 
 func TestHostDerivedValues(t *testing.T) {
+	// R-ILH9-35UU: the space is the host with one leading auth. label removed.
+	// R-IMP5-GXLJ: the callback redirect_uri is https on a space and the local
+	// http URL on localhost.
+	// R-INX1-UPC8: auth's own origin is https on a space and the local http
+	// origin on 127.0.0.1.
 	if got := space("auth.green.example:443"); got != "green.example" {
 		t.Fatalf("space() = %q, want green.example", got)
 	}
@@ -24,6 +29,12 @@ func TestHostDerivedValues(t *testing.T) {
 }
 
 func TestCookieAndReturnURLHelpers(t *testing.T) {
+	// R-IQCU-M8TM: a return URL is in-space only when its host is the space
+	// or a subdomain of the space.
+	// R-IJ1G-BMDG: the session cookie is Secure, HttpOnly, and SameSite=Lax,
+	// and sets Domain to the space.
+	// R-IK9C-PE45: clearing the cookie on a local host sets no Domain and
+	// MaxAge below zero, which is Max-Age=0 on the wire.
 	for _, test := range []struct {
 		name, returnURL string
 		want            bool
