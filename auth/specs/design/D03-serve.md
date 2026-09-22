@@ -22,12 +22,12 @@ unreachable.
 
 `auth` then opens its store at the source `Process.DBSource` (the host sets it
 to `state/auth.db`, relative to the working directory `/opt/auth`) via
-`store.Open`. When the file is absent the store creates it and its schema, then
-serving proceeds; this is the only difference between a first start and an
-ordinary one, and it is D04's `store.Open` that creates the schema — this
-design only requires that serving proceeds identically once `store.Open`
-succeeds. When the file exists but cannot be opened, `auth` writes a diagnostic
-naming the database source and the underlying reason, and returns exit code 1.
+`store.Open`. When the file is absent the store creates any missing parent
+directories, the file, and its schema, then serving proceeds. D04 owns that
+filesystem preparation; this design requires that serving proceeds identically
+once `store.Open` succeeds. When directory creation or database opening fails,
+`auth` writes a diagnostic naming the database source and the underlying
+reason, and returns exit code 1.
 
 A healthy server listens on `127.0.0.1:$PORT` and nowhere else — nginx on the
 host terminates TLS and proxies to loopback — prints nothing on either stream,

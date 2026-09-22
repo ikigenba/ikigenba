@@ -72,7 +72,8 @@ mistaken for a requirement tag.
 as an ordinary user. Every input reaches the code through the run seam
 (`cli.Process`, design D01) — `Args`, `Getenv`, `Stdout`, `Stderr`, `Now`,
 `Rand`, `OIDCIssuer`, `DBSource` — and tests supply each one; a test never reads
-the real environment, clock, randomness, filesystem, or network. A test whose
+the real environment, clock, or randomness, or accesses filesystem or network
+state outside the isolated fixtures described below. A test whose
 result depends on the developer's machine, wall-clock, environment, or a port
 already in use is a bug.
 
@@ -80,8 +81,12 @@ already in use is a bug.
   through `Process.OIDCIssuer`. Tests stand up a loopback OIDC issuer (its
   discovery document, keys, and token endpoint on `127.0.0.1:0`) and inject its
   URL through `Process.OIDCIssuer`, so no test reaches `accounts.google.com`.
-- **The database is a fake source.** Tests pass a temp-file or in-memory sqlite
-  DSN through `Process.DBSource`; nothing touches `/opt/auth` or a shared file.
+- **The database is an isolated source.** Tests pass a database path or
+  file-backed sqlite DSN confined to a test-owned temporary directory, or an
+  in-memory sqlite DSN, through
+  `Process.DBSource`. They may create and inspect filesystem fixtures within
+  that temporary tree, including an absent database parent or a regular file
+  obstructing that parent; nothing touches `/opt/auth` or a shared file.
 - **The clock is injected.** `Process.Now` supplies every timestamp. Time-based
   behaviour — session idle (15m) and cap (18h), the 30d token login window,
   token expiry (30d/90d/365d) — is tested by advancing the value `Now` returns,
@@ -110,7 +115,8 @@ port, and stops it with `SIGINT`, asserting the same exit 0 and the same
 silence on both streams, because `main` promises both signals return 0. It
 learns readiness by connecting to that port, retrying connects until one
 succeeds, never by a fixed sleep, and it asserts the child's streams and exit
-codes. The child's environment is one the test composes, never the developer's,
+codes. The child runs in a test-owned temporary working directory. Its
+environment is one the test composes, never the developer's,
 and it runs offline like everything else — its serve case needs no Google, since
 readiness is a successful connect, not a completed login. Any other test that
 builds, execs, waits on, or signals a process is a bug.

@@ -28,10 +28,15 @@ the literal prefix `ikp_` followed by the 52-character encoding of 32 random
 bytes; only its SHA-256 hash is persisted, so a secret cannot be recovered from
 the database.
 
-Opening the store at `state/auth.db` creates the schema when the file is
-absent, opens the existing database when the file is present, and fails when the
-file is present but cannot be opened; a missing file is never that failure. The
-operations cover provisioning a user on login, minting and ending sessions,
+Opening the store at `state/auth.db` creates missing parent directories and
+the database with its schema, or opens the existing database. Directory
+creation belongs to the store, so both a fresh deployment and a local first
+start work without advance preparation. Newly created directories are private
+to the service user; existing directory permissions stay as they are. A
+filesystem or database failure returns through the same open-error boundary.
+SQLite's special sources keep their driver semantics; automatic directory
+creation applies to ordinary filesystem paths only. The operations cover
+provisioning a user on login, minting and ending sessions,
 recording and consuming login state, and creating, listing, scoping, and
 authenticating tokens. Two reads deliberately do not mutate — the identity
 lookups behind `/me` and the profile — while their touching counterparts behind
@@ -80,9 +85,11 @@ may also have no expiry, which never expires.
 - R-53BZ-IEVZ: `NewID` MUST read exactly 16 bytes from `rand`, MUST return their `Encode` (26 characters from `Alphabet`), and MUST return a non-nil error and no id if the read fails.
 - R-54JV-W6MO: `NewSecret` MUST read exactly 32 bytes from `rand`, MUST return `SecretPrefix` followed by their `Encode` (`ikp_` then 52 characters from `Alphabet`), and MUST return a non-nil error and no secret if the read fails.
 - R-G99G-TBAH: `HashSecret` MUST return the lowercase-hex SHA-256 of its input (64 hex characters) and MUST be deterministic; the only persisted representation of a token secret MUST be its `HashSecret` value (lowercase-hex SHA-256, 64 characters), and the plaintext secret MUST NOT be persisted.
-- R-56ZO-NQ42: When `source` names a file that does not exist, `Open` MUST create that file, MUST create the schema in it, and MUST return a usable `*Store`.
+- R-CEVY-E877: `Open` MUST retain the `modernc.org/sqlite` source semantics of the empty string, `:memory:`, and `file:`-prefixed SQLite URIs, including URI query parameters, without creating parent directories for those source forms; an in-memory source MUST create no filesystem file or directory. Every other nonempty `source` is an ordinary filesystem path for the directory-creation requirements below, with relative paths resolved against the process working directory.
+- R-CG3U-RZXW: When `source` is an ordinary filesystem path to an absent database and the filesystem permits the necessary directory and database creation, `Open` MUST create any missing parent directories, create the database file and its schema, and return a usable `*Store`; this MUST succeed both when the parent directory is absent and when it already exists.
+- R-CIJN-JJFA: For an ordinary filesystem path, directories `Open` creates MUST have creation permission bits `0700` before the process umask is applied; `Open` MUST NOT change permissions on existing directories.
 - R-587L-1HUR: When `source` names an existing, openable database, `Open` MUST open it and return a usable `*Store` without recreating or discarding its existing rows.
-- R-59FH-F9LG: When `source` names a file that exists but cannot be opened as this store's database, `Open` MUST return a non-nil error and no usable store; a `source` whose file is merely absent MUST NOT be treated as this failure.
+- R-CHBR-5ROL: When required parent-directory creation, database opening, or schema creation fails, `Open` MUST return a nil `*Store` and a non-nil error whose text includes the underlying failure; when an existing regular file occupies a required directory path, `Open` MUST leave that file unchanged and MUST NOT create a database.
 - R-5AND-T1C5: On the first `UpsertUserOnLogin` for an `(issuer, subject)` pair, the store MUST create a `User` with a freshly minted opaque `ID` (via `NewID`), the given `Email`, and `LastGoogleLogin` equal to `now`, and MUST return that `User`.
 - R-5BVA-6T2U: On a later `UpsertUserOnLogin` for an `(issuer, subject)` pair that already has a user, the store MUST keep the existing `ID`, MUST set `Email` to the given value and `LastGoogleLogin` to `now`, MUST NOT create a second row for that pair, and MUST return the updated `User`.
 - R-5D36-KKTJ: `CreateSession` MUST create a `Session` with a freshly minted opaque `ID` (via `NewID`), `UserID` equal to the argument, and `LoginAt` and `LastUsedAt` both equal to `now`, and MUST return it.

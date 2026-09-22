@@ -47,9 +47,12 @@ Postconditions:
 
 ## The host starts auth for the first time
 
-The database file does not yet exist. auth creates `state/auth.db` and its
-schema on this first start, then serves. This is the one difference from the
-ordinary start, where the database already exists and is only opened.
+The database file does not yet exist. auth creates the `state/` directory if
+it is absent, then creates `state/auth.db` and its schema and serves. The same
+start succeeds when `state/` already exists and only the database is absent.
+Neither a fresh deployment nor a developer's first local run needs the
+directory created beforehand. The paths are relative to auth's working
+directory.
 
 Command:
 
@@ -69,12 +72,46 @@ Preconditions:
 - `bin/auth` exists.
 - Nothing is listening on `127.0.0.1:3001`.
 - `state/auth.db` does not exist.
+- Either `state/` is absent and auth can create it in its working directory,
+  or `state/` is an existing directory in which auth can create the database.
 
 Postconditions:
 
+- `state/` exists, created by auth if it was absent.
 - `state/auth.db` now exists, with its schema, created by this start.
 - auth is listening on `127.0.0.1:3001` and on no other address.
 - It keeps running until it is signalled.
+
+## The host starts auth where its state directory cannot be created
+
+A regular file named `state` occupies the path where auth needs its state
+directory. auth reports the database setup failure and refuses to start.
+
+Command:
+
+```
+$ PORT=3001 GOOGLE_CLIENT_ID=<client-id> GOOGLE_CLIENT_SECRET=<client-secret> WORKSPACE_DOMAIN=michaelgreenly.dev auth
+```
+
+Output:
+
+```
+auth: cannot open database state/auth.db: <reason>
+```
+
+Exits 1. The line is on stderr; stdout is empty. `<reason>` is the underlying
+directory-creation failure.
+
+Preconditions:
+
+- `bin/auth` exists.
+- Nothing is listening on `127.0.0.1:3001`.
+- `state` is an existing regular file in auth's working directory.
+
+Postconditions:
+
+- The existing `state` file is unchanged.
+- No database was created. Nothing is listening.
 
 ## The host stops auth
 

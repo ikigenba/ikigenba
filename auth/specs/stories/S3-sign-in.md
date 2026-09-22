@@ -8,9 +8,11 @@ hostname — the callback `redirect_uri`, the session cookie's `Domain`, and
 which return URLs count as being under the space — are stated in prose, because
 a real space carries them and `S7-on-a-space.md` proves the whole path there.
 
-The session cookie is named `ikigenba_session`; it is `Secure`, `HttpOnly`, and
-`SameSite=Lax`, and on a space it also carries `Domain=<space>` (the space host
-and every subdomain). Run locally the cookie has no `Domain` and is still
+The session cookie is named `ikigenba_session`; it carries `Path=/`, `Secure`,
+`HttpOnly`, and `SameSite=Lax`, and on a space it also carries `Domain=<space>`
+(the space host and every subdomain). Its path covers every path on those hosts,
+including auth's `/`, `/tokens`, and `/logout`, and other apps' paths. Run
+locally the cookie has no `Domain` and is still
 `Secure`, so the response blocks below show it without one. A login records the
 user's last-Google-login time, which `S4-check.md` reads when it decides a
 token.
@@ -157,7 +159,7 @@ Response:
 ```
 HTTP/1.1 302 Found
 Location: /
-Set-Cookie: ikigenba_session=<opaque>; Secure; HttpOnly; SameSite=Lax
+Set-Cookie: ikigenba_session=<opaque>; Path=/; Secure; HttpOnly; SameSite=Lax
 ```
 
 Status 302. Redirects to `/`. On a space the cookie also carries
@@ -177,6 +179,9 @@ Postconditions:
 - A new user row exists, keyed by `(issuer, subject)`, with a freshly minted
   opaque `X-User-Id` and the account's email.
 - A session exists server-side, named by the `ikigenba_session` cookie.
+- On a space, the browser stores the cookie and sends it when following the
+  redirect to `/` over HTTPS, so the user sees the profile without signing in
+  again.
 - The user's last-Google-login time is set.
 - The in-flight login state is consumed.
 
@@ -197,7 +202,7 @@ Response:
 ```
 HTTP/1.1 302 Found
 Location: /
-Set-Cookie: ikigenba_session=<opaque>; Secure; HttpOnly; SameSite=Lax
+Set-Cookie: ikigenba_session=<opaque>; Path=/; Secure; HttpOnly; SameSite=Lax
 ```
 
 Status 302. Redirects to `/`. The cookie carries the same attributes as in the
@@ -215,6 +220,8 @@ Postconditions:
 - No new user row is created and the `X-User-Id` is unchanged; the existing
   user's email is refreshed to the ID token's value.
 - A new session exists server-side, named by the cookie.
+- On a space, the browser stores the new cookie and sends it when following the
+  redirect to `/` over HTTPS, so the user sees the profile.
 - The user's last-Google-login time is updated.
 - The in-flight login state is consumed. No duplicate user exists.
 
@@ -234,7 +241,7 @@ Response:
 ```
 HTTP/1.1 302 Found
 Location: <return>
-Set-Cookie: ikigenba_session=<opaque>; Secure; HttpOnly; SameSite=Lax
+Set-Cookie: ikigenba_session=<opaque>; Path=/; Secure; HttpOnly; SameSite=Lax
 ```
 
 Status 302. Redirects to the return URL `<return>` the login state carried. Its
@@ -254,6 +261,10 @@ Postconditions:
 
 - The user is provisioned or refreshed as in the member stories, a session
   exists, and the user's last-Google-login time is updated.
+- For an HTTPS return URL on a space, the browser sends the new cookie to the
+  returned path. When the URL belongs to another app routed through `/check`
+  as in `S7-on-a-space.md`, that app's request authenticates with the session
+  without another sign-in.
 - The in-flight login state is consumed.
 
 ## Google returns a member with a return URL outside the space
@@ -273,7 +284,7 @@ Response:
 ```
 HTTP/1.1 302 Found
 Location: /
-Set-Cookie: ikigenba_session=<opaque>; Secure; HttpOnly; SameSite=Lax
+Set-Cookie: ikigenba_session=<opaque>; Path=/; Secure; HttpOnly; SameSite=Lax
 ```
 
 Status 302. The return URL's host is not the space nor a subdomain of it, so it
@@ -292,6 +303,8 @@ Postconditions:
 - The user is provisioned or refreshed as in the member stories, a session
   exists, and the user's last-Google-login time is updated.
 - The in-flight login state is consumed. The return URL was not used.
+- On a space, the browser sends the new cookie when following the fallback
+  redirect to `/` over HTTPS, so the user sees the profile.
 
 ## Google returns a callback with an unknown state
 
@@ -424,7 +437,9 @@ Postconditions:
 
 With a live session the index is the profile, described here only by the forms
 and links it contains. A `?return=<url>` is ignored because the visitor is
-already signed in.
+already signed in. On a space, a browser that has just completed sign-in sends
+the received cookie automatically on this HTTPS path and sees this profile;
+the session is not limited to the login callback's path.
 
 Request:
 
@@ -473,12 +488,13 @@ Response:
 ```
 HTTP/1.1 302 Found
 Location: /
-Set-Cookie: ikigenba_session=; Max-Age=0; Secure; HttpOnly; SameSite=Lax
+Set-Cookie: ikigenba_session=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax
 ```
 
 Status 302. Redirects to `/`. The `Set-Cookie` clears `ikigenba_session` (empty
-value, `Max-Age=0`). On a space the clearing cookie also carries
-`Domain=<space>`; run locally it has none.
+value, `Max-Age=0`) with the same `Path=/` and domain scope as the login cookie.
+On a space the clearing cookie also carries `Domain=<space>`; run locally it
+has none.
 
 Preconditions:
 
@@ -490,6 +506,9 @@ Preconditions:
 Postconditions:
 
 - The session is deleted server-side; the cookie no longer names any session.
+- The browser removes the cookie for that domain and `Path=/`; it no longer
+  sends that cookie to auth or the space's other apps. Following the redirect
+  shows the sign-in page.
 - The user row and the user's tokens are untouched.
 
 ## A user signs out from another site
