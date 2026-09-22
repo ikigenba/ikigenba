@@ -120,9 +120,11 @@ sound. The contract fixes the *relation* — equal content yields an equal tag,
 and the tag changes when a widget is created — and never the value; no story
 fixes the value, and a requirement that did would be fixing an implementation.
 It is carried by the 200 and the 304 and by nothing else. S4's preamble says
-"Every response carries an `ETag`", and S4's own response blocks contradict
-it: the missing-identity 500 says in as many words that no `ETag` is sent, and
-the 405 block shows none. The blocks win.
+"Every response carries an `ETag`", but its missing-identity 500 explicitly
+says no `ETag` is sent. S4 does not fix whether the 405 carries one: its
+response block omits the header, and omitted headers are unspecified there.
+This design leaves the 405 without a validator because it does not represent
+table content for a caller to validate.
 
 The conditional read follows RFC 9110 §13.1.1 (`If-None-Match`, HTTP Semantics,
 RFC 9110, June 2022): the field carries a list, the condition succeeds when any
@@ -169,7 +171,7 @@ This document declares no exported name. `internal/panel` owns them and
 - R-3BJE-1H7W: For one and the same widget set, the table span of a panel page (`D04-panel`) and the body of a 200 response to a `GET` request whose path is `/widgets/table` MUST be identical apart from leading and trailing whitespace.
 - R-62UX-379I: A `GET` request carrying a non-empty `X-User-Id` header, whose path is `/widgets/table`, and which carries no `If-None-Match` field whose condition succeeds, MUST be answered with status 200 and the header `Content-Type: text/html; charset=utf-8`.
 - R-KY5J-IWZO: A 200 response to a request whose path is `/widgets/table` MUST carry an `ETag` header whose value is a strong validator: a `"`, then at least one character, none of which is a `"`, a comma or an ASCII whitespace character, then a `"`, with no `W/` prefix and nothing before or after the quoted string.
-- R-MC2I-FB6N: Two 200 responses to requests whose path is `/widgets/table` whose bodies are byte-identical MUST carry `ETag` values that are byte-identical.
+- R-0NC2-JFTW: Two 200 responses to `GET` requests whose path is `/widgets/table` whose bodies are byte-identical MUST carry `ETag` values that are byte-identical.
 - R-MDAE-T2XC: A 200 response to a request whose path is `/widgets/table` sent after a widget has been created MUST carry an `ETag` value differing from the `ETag` value carried by the last such response sent before that creation.
 - R-WIGA-XCYS: For a `HEAD` request whose path is `/widgets/table` and the otherwise identical `GET` request, immediately before each of which the slice `D05-widgets`'s `Store.All` returns is equal element for element and in the same order, the `HEAD` request MUST be answered with the status, the `ETag` value and every other header the `GET` request is answered with, and with an empty body.
 - R-642T-GZ07: A `GET` or `HEAD` request carrying a non-empty `X-User-Id` header, whose path is `/widgets/table`, and which carries an `If-None-Match` field at least one of whose entries — the field value split on commas, each entry trimmed of leading and trailing whitespace — is byte-identical to the `ETag` the same request would be answered with were the field absent, or is exactly `*`, MUST be answered with status 304, that same `ETag` value, and an empty body.
