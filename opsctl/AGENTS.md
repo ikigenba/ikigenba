@@ -21,6 +21,23 @@ instance is replaced; the login is `ec2-user`, and `sudo` needs no password.
 Any real-world verification — a live DNS round-trip, checking installed
 prerequisites — runs there.
 
+## Deploy
+
+1. Set `version` in `internal/cli/cli.go` to `vX.Y.Z`. The binary reports that
+   string, and the release refuses a tag that does not match it.
+2. Commit that on `main` and push `main`.
+3. Tag that commit `opsctl/vX.Y.Z` and push the tag.
+   `.github/workflows/release-opsctl.yml` builds with GoReleaser and publishes
+   `opsctl-vX.Y.Z-linux-amd64`, `checksums.txt`, and `install.sh`.
+4. On the host, as root, run that release's installer with the same version:
+
+```
+curl -fsSL -o /tmp/opsctl-install.sh https://github.com/ikigenba/ikigenba/releases/download/opsctl/vX.Y.Z/install.sh
+sudo bash /tmp/opsctl-install.sh vX.Y.Z
+```
+
+`opsctl version` then prints `vX.Y.Z`.
+
 ## Toolchain
 
 - Go 1.26 (`go version` must report 1.26+)
