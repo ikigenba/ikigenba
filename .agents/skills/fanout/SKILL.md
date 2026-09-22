@@ -23,7 +23,7 @@ Before delegating, establish:
 - Compatibility: dependencies, shared changes, and integration have owners and an execution order where needed.
 - Sufficiency: completing the delegated tasks satisfies the coordinator’s assignment, including relationships between tasks.
 
-Explain in each assignment how the delegated tasks together satisfy the goal. Delegate discovery when needed. Revise the task breakdown when evidence shows it is incomplete or incorrect. Successful tasks cannot satisfy a goal they do not fully address.
+Explain in each assignment how the delegated tasks together satisfy the goal. Delegate discovery when needed. Revise the task breakdown when evidence shows it is incomplete or incorrect. Successful tasks cannot satisfy a goal they do not fully address. Plan within the twelve-sub-agent limit, leaving room for verifiers and repairs.
 
 Give each sub-agent its scope, completion criteria, dependencies, and exclusive write authority. Coordinators divide that authority among their sub-agents. Transfer authority between subtrees only after the previous subtree relinquishes it. Delegate integration and checks of relationships between tasks as bounded tasks, splitting them further when necessary.
 
@@ -45,7 +45,7 @@ Every leaf result requires a fresh verifier. Later changes affecting a passed ch
 
 ## Context
 
-Spawn fresh agents without inherited conversation. Keep assignments, reading, command output, and reports bounded. Reports name outcomes, evidence, artifact locations, and unresolved work. Keep at most six direct sub-agents; use sub-coordinators for more.
+Spawn fresh agents without inherited conversation. Keep assignments, reading, command output, and reports bounded. Reports name outcomes, evidence, artifact locations, and unresolved work. A coordinator spawns at most twelve sub-agents over its whole life, counting every leaf, verifier, sub-coordinator, and replacement. The limit protects the coordinator's context, which every report consumes; it is not a limit on how many run at once. When a task needs more, delegate parts of it to sub-coordinators.
 
 On capacity refusal, wait only for sub-agents that can progress without spawning. Otherwise, return evidence and pending work upward and exit. Exiting must release capacity. Coordinators reduce concurrency or delegation depth before retrying.
 
