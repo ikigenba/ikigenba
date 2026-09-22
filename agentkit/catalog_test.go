@@ -7,7 +7,6 @@ import (
 	"os"
 	"reflect"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 )
@@ -270,8 +269,40 @@ func TestCatalogEntryFirstOfferingHostPreference(t *testing.T) {
 
 // R-GSEI-ARQ7
 func TestCatalogExactlyProjectsGroundTable(t *testing.T) {
+	original := catalogTable
+	t.Cleanup(func() { catalogTable = original })
+
+	wire := ChatWire()
+	want := []CatalogEntry{
+		{
+			Model: "a-model",
+			Offerings: []Offering{{
+				ID: OfferingOpenRouterChat, Host: HostOpenRouter, WireName: WireChat, WireFormat: wire,
+				Endpoints:       []EndpointSpec{{AuthMode: AuthModeOAuth, BaseURL: "https://example.com/a", Rotation: Rotation{RefreshURL: "https://example.com/refresh", ClientID: "client-a"}}},
+				WireModel:       "vendor/a-model",
+				Context:         123,
+				MaxOutputTokens: 45,
+				Pricing:         Pricing{Tiers: []RateTier{{MinInputTokens: 1, InputUncached: 2, CacheReadInput: 3, CacheWrite5m: 4, CacheWrite1h: 5, Output: 6}}},
+				Reasoning:       ReasoningSpec{Kind: ReasoningKindEffort, Term: "fixture-term", Levels: []Effort{EffortLow, EffortHigh}, MinBudget: 7, MaxBudget: 8, CanEnable: true, CanDisable: true, Default: ReasoningConfig{Mode: ReasoningEffort, Effort: EffortHigh}},
+			}},
+		},
+		{
+			Model: "z-model",
+			Offerings: []Offering{{
+				ID: OfferingAnthropicMessages, Host: HostAnthropic, WireName: WireMessages, WireFormat: wire,
+				Endpoints: []EndpointSpec{{AuthMode: AuthModeAPIKey, BaseURL: "https://example.com/z"}},
+				WireModel: "z-model", Context: 901, MaxOutputTokens: 234,
+				Pricing:   Pricing{Tiers: []RateTier{{MinInputTokens: 10, InputUncached: 20, CacheReadInput: 30, CacheWrite5m: 40, CacheWrite1h: 50, Output: 60}}},
+				Reasoning: ReasoningSpec{Kind: ReasoningKindBudget, Term: "another-fixture-term", MinBudget: 70, MaxBudget: 80, Default: ReasoningConfig{Mode: ReasoningBudget, Budget: 75}},
+			}},
+		},
+	}
+	// The byte-identity test above independently anchors the installed table to
+	// project ground. This fixture checks Catalog's projection of every field
+	// without deriving the expected value from the production table.
+	catalogTable = []CatalogEntry{want[1], want[0]}
+
 	got := Catalog()
-	want := independentlyProjectedCatalogTable()
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Catalog() does not exactly project catalogTable: got %d entries, want %d", len(got), len(want))
 	}
@@ -296,22 +327,6 @@ func TestCatalogExactlyProjectsGroundTable(t *testing.T) {
 			seenIDs[offering.ID] = true
 		}
 	}
-}
-
-func independentlyProjectedCatalogTable() []CatalogEntry {
-	want := make([]CatalogEntry, len(catalogTable))
-	for entryIndex, entry := range catalogTable {
-		want[entryIndex].Model = entry.Model
-		want[entryIndex].Offerings = make([]Offering, len(entry.Offerings))
-		for offeringIndex, offering := range entry.Offerings {
-			offering.Endpoints = slices.Clone(offering.Endpoints)
-			offering.Pricing.Tiers = slices.Clone(offering.Pricing.Tiers)
-			offering.Reasoning.Levels = slices.Clone(offering.Reasoning.Levels)
-			want[entryIndex].Offerings[offeringIndex] = offering
-		}
-	}
-	sort.Slice(want, func(i, j int) bool { return want[i].Model < want[j].Model })
-	return want
 }
 
 // R-JTF1-X2EX
