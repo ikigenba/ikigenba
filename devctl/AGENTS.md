@@ -19,6 +19,25 @@ build run writes the code under `cmd/` and `internal/`. See the `spec` and
 below is the ground the run computes the gap and runs the gates against; it
 is human-authored and read-only to the run.
 
+## Deploy
+
+devctl installs on the developer's own machine, as an ordinary user; there is
+no host and no root step.
+
+1. Set `version` in `internal/cli/run.go` to `vX.Y.Z`. The binary reports that
+   string, and the release refuses a tag that does not match it.
+2. Commit that on `main` and push `main`.
+3. Tag that commit `devctl/vX.Y.Z` and push the tag.
+   `.github/workflows/release-devctl.yml` builds with GoReleaser and publishes
+   `devctl_<os>_<arch>.tar.gz` (linux and darwin, amd64 and arm64) and
+   `checksums.txt`.
+4. Install it locally, either way:
+   - from a checkout at that tag, `make install` (`go install ./cmd/devctl`);
+   - or download that release's archive for your platform and put the `devctl`
+     binary on your `PATH`.
+
+`devctl version` then prints `vX.Y.Z`.
+
 ## Toolchain
 
 - Go 1.26 (`go version` must report 1.26+)
