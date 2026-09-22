@@ -7,6 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 
 	// Register the pure-Go sqlite driver opened by name "sqlite".
 	_ "modernc.org/sqlite"
@@ -22,7 +25,16 @@ type Store struct {
 }
 
 // Open opens source, enables foreign keys, and creates the schema.
+// An ordinary filesystem path gets any missing parent directories at mode
+// 0700 before the process umask. The empty string, ":memory:", and a
+// file: URI are passed to the sqlite driver unchanged.
 func Open(source string, rand io.Reader) (*Store, error) {
+	if ordinaryDatabasePath(source) {
+		if err := os.MkdirAll(filepath.Dir(source), 0o700); err != nil {
+			return nil, fmt.Errorf("create database directory: %w", err)
+		}
+	}
+
 	db, err := sql.Open("sqlite", source)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite database: %w", err)
@@ -47,6 +59,12 @@ func Open(source string, rand io.Reader) (*Store, error) {
 // Close closes the database.
 func (s *Store) Close() error {
 	return s.db.Close()
+}
+
+// ordinaryDatabasePath reports whether source is a filesystem path whose
+// missing parents Open creates. Driver sources keep sqlite's own meaning.
+func ordinaryDatabasePath(source string) bool {
+	return source != "" && source != ":memory:" && !strings.HasPrefix(source, "file:")
 }
 
 func createSchema(db *sql.DB) error {

@@ -581,9 +581,12 @@ func TestMemberCallbackCreatesIdentitySessionCookieAndSafeRedirect(t *testing.T)
 				t.Fatalf("cookies = %#v", cookies)
 			}
 			cookie := cookies[0]
-			// R-IJ1G-BMDG: login cookie has its opaque session id and exact security/domain attributes.
-			if cookie.Name != SessionCookieName || cookie.Value == "" || !cookie.Secure || !cookie.HttpOnly || cookie.SameSite != http.SameSiteLaxMode || cookie.Domain != tc.wantDomain {
-				t.Fatalf("cookie = %#v", cookie)
+			// R-YQS0-XIQ4: the login cookie is the created session id with
+			// Path=/, Secure, HttpOnly, and SameSite=Lax. Domain is the space
+			// on a space and is absent when run locally.
+			header := w.Header().Get("Set-Cookie")
+			if cookie.Name != SessionCookieName || cookie.Value == "" || cookie.Path != "/" || !setCookieAttr(header, "Path=/") || !cookie.Secure || !setCookieAttr(header, "Secure") || !cookie.HttpOnly || !setCookieAttr(header, "HttpOnly") || cookie.SameSite != http.SameSiteLaxMode || !setCookieAttr(header, "SameSite=Lax") || cookie.Domain != tc.wantDomain || setCookieHasDomain(header) != (tc.wantDomain != "") {
+				t.Fatalf("cookie = %#v header %q", cookie, header)
 			}
 			identity, err := st.LookupSessionIdentity(cookie.Value, signInNow)
 			if err != nil || identity.Email != "fresh@green.example" {
@@ -884,9 +887,12 @@ func TestLogoutOriginDeletionAndCookieAttributes(t *testing.T) {
 				t.Fatalf("logout changed token/user: %#v %v", tokens, err)
 			}
 			cleared := good.Result().Cookies()[0]
-			// R-IK9C-PE45: deletion cookie matches login security/domain attributes and serializes Max-Age=0.
-			if cleared.Name != SessionCookieName || cleared.Value != "" || cleared.MaxAge != -1 || !cleared.Secure || !cleared.HttpOnly || cleared.SameSite != http.SameSiteLaxMode || cleared.Domain != tc.domain || !strings.Contains(good.Header().Get("Set-Cookie"), "Max-Age=0") {
-				t.Fatalf("cleared cookie = %#v header=%q", cleared, good.Header().Get("Set-Cookie"))
+			// R-YRZX-BAGT: logout clears the session cookie with an empty
+			// value, Max-Age=0, Path=/, Secure, HttpOnly, and SameSite=Lax.
+			// Domain is the space on a space and is absent when run locally.
+			header := good.Header().Get("Set-Cookie")
+			if cleared.Name != SessionCookieName || cleared.Value != "" || cleared.Path != "/" || !setCookieAttr(header, "Path=/") || cleared.MaxAge != -1 || !setCookieAttr(header, "Max-Age=0") || !cleared.Secure || !setCookieAttr(header, "Secure") || !cleared.HttpOnly || !setCookieAttr(header, "HttpOnly") || cleared.SameSite != http.SameSiteLaxMode || !setCookieAttr(header, "SameSite=Lax") || cleared.Domain != tc.domain || setCookieHasDomain(header) != (tc.domain != "") {
+				t.Fatalf("cleared cookie = %#v header=%q", cleared, header)
 			}
 		})
 	}
@@ -929,6 +935,24 @@ func requireLoginReturnLink(t *testing.T, body, returnURL string) string {
 	}
 	t.Fatalf("no /login/google link carries %q in %s (links %#v)", returnURL, body, signInLinkHrefs(body))
 	return ""
+}
+
+func setCookieAttr(header, attr string) bool {
+	for _, part := range strings.Split(header, ";") {
+		if strings.TrimSpace(part) == attr {
+			return true
+		}
+	}
+	return false
+}
+
+func setCookieHasDomain(header string) bool {
+	for _, part := range strings.Split(header, ";") {
+		if strings.HasPrefix(strings.TrimSpace(part), "Domain=") {
+			return true
+		}
+	}
+	return false
 }
 
 func assertHTMLStatus(t *testing.T, w *httptest.ResponseRecorder, status int) {

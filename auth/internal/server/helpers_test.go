@@ -31,10 +31,6 @@ func TestHostDerivedValues(t *testing.T) {
 func TestCookieAndReturnURLHelpers(t *testing.T) {
 	// R-IQCU-M8TM: a return URL is in-space only when its host is the space
 	// or a subdomain of the space.
-	// R-IJ1G-BMDG: the session cookie is Secure, HttpOnly, and SameSite=Lax,
-	// and sets Domain to the space.
-	// R-IK9C-PE45: clearing the cookie on a local host sets no Domain and
-	// MaxAge below zero, which is Max-Age=0 on the wire.
 	for _, test := range []struct {
 		name, returnURL string
 		want            bool
@@ -52,11 +48,11 @@ func TestCookieAndReturnURLHelpers(t *testing.T) {
 	}
 
 	cookie := cookieForHost("auth.green.example", "session", false)
-	if cookie.Name != SessionCookieName || cookie.Domain != "green.example" || !cookie.Secure || !cookie.HttpOnly || cookie.SameSite != http.SameSiteLaxMode {
+	if cookie.Name != SessionCookieName || cookie.Path != "/" || cookie.Domain != "green.example" || !cookie.Secure || !cookie.HttpOnly || cookie.SameSite != http.SameSiteLaxMode {
 		t.Fatalf("space cookie = %#v", cookie)
 	}
 	cleared := cookieForHost("localhost:3001", "", true)
-	if cleared.Domain != "" || cleared.MaxAge != -1 {
+	if cleared.Value != "" || cleared.Domain != "" || cleared.Path != "/" || cleared.MaxAge != -1 || !cleared.Secure || !cleared.HttpOnly || cleared.SameSite != http.SameSiteLaxMode {
 		t.Fatalf("local cleared cookie = %#v", cleared)
 	}
 }

@@ -229,10 +229,10 @@ func TestConfigFaultsOpenNothing(t *testing.T) {
 
 func TestOpenFailureDoesNotListen(t *testing.T) {
 	// R-IN2K-GOI6
-	source := filepath.Join(t.TempDir(), "missing", "auth.db")
+	source := rejectedDB(t)
 	_, openErr := store.Open(source, bytes.NewReader(nil))
 	if openErr == nil {
-		t.Fatal("store.Open succeeded on a missing parent")
+		t.Fatal("store.Open succeeded on a non-database file")
 	}
 	held := hold(t)
 	port := portOf(t, held)
@@ -256,7 +256,7 @@ func TestStoreOpenBeforeListen(t *testing.T) {
 	assertOpenCallPrecedesServe(t)
 
 	port := freePort(t)
-	source := filepath.Join(t.TempDir(), "missing", "auth.db")
+	source := rejectedDB(t)
 	addr := net.JoinHostPort("127.0.0.1", port)
 	var accepts atomic.Int32
 	stop := make(chan struct{})
@@ -932,6 +932,15 @@ func freshDB(t *testing.T) string {
 	return filepath.Join(t.TempDir(), "auth.db")
 }
 
+func rejectedDB(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "auth.db")
+	if err := os.WriteFile(path, []byte("this is not sqlite"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	return path
+}
+
 func freePort(t *testing.T) string {
 	t.Helper()
 	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
@@ -1415,7 +1424,7 @@ func TestRunExitClasses(t *testing.T) {
 		t.Fatalf("config usage code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 
-	source := filepath.Join(t.TempDir(), "missing", "auth.db")
+	source := rejectedDB(t)
 	stdout, stderr, code = run(t, serveProcess(t, freePort(t), source))
 	if code != 1 || stdout != "" || !strings.HasPrefix(stderr, "auth: cannot open database "+source+": ") {
 		t.Fatalf("open failure code=%d stdout=%q stderr=%q", code, stdout, stderr)

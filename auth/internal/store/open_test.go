@@ -3,11 +3,15 @@ package store
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
+	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -84,7 +88,6 @@ func TestFoundationContract(t *testing.T) {
 
 func TestOpenCreatesSchemaAndUsableStore(t *testing.T) {
 	// R-4ILP-0BA6
-	// R-56ZO-NQ42
 	path := filepath.Join(t.TempDir(), "state", "auth.db")
 	if err := os.Mkdir(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("Mkdir() error = %v", err)
@@ -145,27 +148,6 @@ func TestOpenExistingDatabasePreservesRows(t *testing.T) {
 	}
 }
 
-func TestOpenRejectsExistingInvalidDatabase(t *testing.T) {
-	// R-59FH-F9LG: a file that exists but is not this store's database returns
-	// a non-nil error and no usable store.
-	path := filepath.Join(t.TempDir(), "auth.db")
-	if err := os.WriteFile(path, []byte("this is not sqlite"), 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-
-	st, err := Open(path, bytes.NewReader(nil))
-	if err == nil {
-		if st != nil {
-			_ = st.Close()
-		}
-		t.Fatal("Open() error = nil")
-	}
-	if st != nil {
-		_ = st.Close()
-		t.Fatalf("Open() returned usable store on error: %#v", st)
-	}
-}
-
 func TestExpiryIsDefinedStringTypeWithTypedConstants(t *testing.T) {
 	// R-4EXZ-V023
 	const (
@@ -203,50 +185,332 @@ func TestExpiryIsDefinedStringTypeWithTypedConstants(t *testing.T) {
 	}
 }
 
-func TestOpenAbsentFileSucceedsAndExistingNonDatabaseDoesNot(t *testing.T) {
-	// R-59FH-F9LG
-	dir := t.TempDir()
-	absent := filepath.Join(dir, "missing.db")
-	if _, err := os.Stat(absent); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("absent path Stat() error = %v, want not exist", err)
+func TestOpenRetainsSpecialSourceSemantics(t *testing.T) {
+	// R-CEVY-E877
+	work := t.TempDir()
+	t.Chdir(work)
+	before := dirNames(t, work)
+
+	// modernc.org/sqlite v1.59.0: "" is journal_mode=delete; :memory: is memory.
+	journalMode := func(st *Store) string {
+		t.Helper()
+		var mode string
+		if err := st.db.QueryRowContext(context.Background(), `PRAGMA journal_mode`).Scan(&mode); err != nil {
+			t.Fatalf("PRAGMA journal_mode: %v", err)
+		}
+		return mode
+	}
+	empty := mustOpenUsable(t, "")
+	if got := journalMode(empty); got != "delete" {
+		t.Fatalf("empty source journal_mode = %q, want delete; :memory: reports memory", got)
+	}
+	if err := empty.Close(); err != nil {
+		t.Fatalf("Close(empty) error = %v", err)
+	}
+	reopened, err := Open("", bytes.NewReader(nil))
+	if err != nil || reopened == nil {
+		t.Fatalf("second Open(empty) = (%v, %v)", reopened, err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	var persisted int
+	if err := reopened.db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM users`).Scan(&persisted); err != nil {
+		t.Fatalf("count users in second empty source: %v", err)
+	}
+	if persisted != 0 {
+		t.Fatalf("empty source persisted %d users; driver temporary database was not retained", persisted)
+	}
+	if err := reopened.Close(); err != nil {
+		t.Fatalf("Close(second empty) error = %v", err)
 	}
 
-	st, err := Open(absent, bytes.NewReader(nil))
-	if err != nil || st == nil {
-		t.Fatalf("Open(absent) = (%v, %v); a missing file must not be the unopenable-database failure", st, err)
+	memory := mustOpenUsable(t, ":memory:")
+	if got := journalMode(memory); got != "memory" {
+		t.Fatalf(":memory: journal_mode = %q, want memory", got)
 	}
-	insertFoundationRows(t, st)
+	if err := memory.Close(); err != nil {
+		t.Fatalf("Close(:memory:) error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(work, ":memory:")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf(":memory: created a filesystem entry: %v", err)
+	}
+
+	shared := mustOpenUsable(t, "file::memory:?cache=shared")
+	if err := shared.Close(); err != nil {
+		t.Fatalf("Close(file::memory:) error = %v", err)
+	}
+
+	relativeMemory := mustOpenUsable(t, "file:mem.db?mode=memory")
+	if _, err := os.Stat(filepath.Join(work, "mem.db")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("file:mem.db?mode=memory created %v", err)
+	}
+	if err := relativeMemory.Close(); err != nil {
+		t.Fatalf("Close(mode=memory) error = %v", err)
+	}
+
+	missingMemory := filepath.Join(t.TempDir(), "missing", "name.db")
+	memoryURI := mustOpenUsable(t, "file:"+missingMemory+"?mode=memory")
+	if _, err := os.Stat(filepath.Dir(missingMemory)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("in-memory URI created parent %s: %v", filepath.Dir(missingMemory), err)
+	}
+	if err := memoryURI.Close(); err != nil {
+		t.Fatalf("Close(memory URI) error = %v", err)
+	}
+
+	if got := dirNames(t, work); !reflect.DeepEqual(got, before) {
+		t.Fatalf("special sources changed %s entries from %v to %v", work, before, got)
+	}
+
+	path := filepath.Join(t.TempDir(), "ok.db")
+	created := mustOpenUsable(t, path)
+	if err := created.Close(); err != nil {
+		t.Fatalf("Close(ok.db) error = %v", err)
+	}
+	readonly, err := Open("file:"+path+"?mode=ro", bytes.NewReader(nil))
+	if err != nil || readonly == nil {
+		t.Fatalf("Open(mode=ro) = (%v, %v)", readonly, err)
+	}
+	t.Cleanup(func() { _ = readonly.Close() })
 	var users int
-	if err := st.db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM users`).Scan(&users); err != nil {
-		t.Fatalf("count users in absent-file store: %v", err)
+	if err := readonly.db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM users`).Scan(&users); err != nil {
+		t.Fatalf("mode=ro count: %v", err)
 	}
 	if users != 1 {
-		t.Fatalf("absent-file store user count = %d, want 1", users)
+		t.Fatalf("mode=ro users = %d, want the database written without the query", users)
 	}
-	if err := st.Close(); err != nil {
-		t.Fatalf("Close(absent) error = %v", err)
+	if _, err := readonly.db.ExecContext(context.Background(), `INSERT INTO users (id, issuer, subject, email, last_google_login) VALUES ('u2', 'i', 's', 'e', 1)`); err == nil || !strings.Contains(err.Error(), "readonly") {
+		t.Fatalf("mode=ro insert error = %v, want the URI query to keep the database readonly", err)
 	}
 
-	bad := filepath.Join(dir, "bad.db")
-	payload := []byte("this is not sqlite")
-	if err := os.WriteFile(bad, payload, 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-	for attempt := 1; attempt <= 2; attempt++ {
-		st, err = Open(bad, bytes.NewReader(nil))
-		if err == nil || st != nil {
-			if st != nil {
-				_ = st.Close()
-			}
-			t.Fatalf("Open(existing non-database) attempt %d = (%v, %v); want error and no store", attempt, st, err)
+	blocked := filepath.Join(t.TempDir(), "nope", "a.db")
+	st, err := Open("file:"+blocked+"?mode=rwc", bytes.NewReader(nil))
+	if err == nil || st != nil {
+		if st != nil {
+			_ = st.Close()
 		}
+		t.Fatalf("Open(file URI with missing parent) = (%v, %v), want the driver error and no created parent", st, err)
 	}
-	got, err := os.ReadFile(filepath.Clean(bad))
+	if _, err := os.Stat(filepath.Dir(blocked)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("file: URI created parent directory %s", filepath.Dir(blocked))
+	}
+
+	querylessParent := filepath.Join(t.TempDir(), "noquery")
+	querylessPath := filepath.Join(querylessParent, "a.db")
+	queryless := "file:" + querylessPath
+	if strings.Contains(queryless, "?") {
+		t.Fatalf("query-less file URI fixture contains a query: %s", queryless)
+	}
+	if _, err := os.Stat(querylessParent); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("query-less file URI parent exists before Open: %v", err)
+	}
+	st, err = Open(queryless, bytes.NewReader(nil))
+	if st != nil {
+		_ = st.Close()
+	}
+	if err == nil || !strings.Contains(err.Error(), "unable to open database file") {
+		t.Fatalf("Open(%s) = (%v, %v), want the driver rejection of a missing file and no created parent", queryless, st, err)
+	}
+	if _, err := os.Stat(querylessParent); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("query-less file: URI created parent directory %s", querylessParent)
+	}
+	if _, err := os.Stat(querylessPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("query-less file: URI created database file %s", querylessPath)
+	}
+	if got := dirNames(t, work); !reflect.DeepEqual(got, before) {
+		t.Fatalf("query-less file: URI changed %s entries from %v to %v", work, before, got)
+	}
+
+	relative := mustOpenUsable(t, filepath.Join("state", "auth.db"))
+	if _, err := os.Stat(filepath.Join(work, "state", "auth.db")); err != nil {
+		t.Fatalf("relative ordinary path was not created in the working directory: %v", err)
+	}
+	if err := relative.Close(); err != nil {
+		t.Fatalf("Close(relative) error = %v", err)
+	}
+}
+
+func TestOpenCreatesDatabaseForOrdinaryPaths(t *testing.T) {
+	// R-CG3U-RZXW
+	base := t.TempDir()
+	absentParent := filepath.Join(base, "missing", "nested", "auth.db")
+	if _, err := os.Stat(filepath.Join(base, "missing")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("parent exists before Open: %v", err)
+	}
+	absent := mustOpenUsable(t, absentParent)
+	if _, err := os.Stat(absentParent); err != nil {
+		t.Fatalf("database created with a missing parent Stat() = %v", err)
+	}
+	if err := absent.Close(); err != nil {
+		t.Fatalf("Close(absent parent) error = %v", err)
+	}
+
+	parent := filepath.Join(base, "present")
+	if err := os.Mkdir(parent, 0o700); err != nil {
+		t.Fatalf("Mkdir(parent) error = %v", err)
+	}
+	presentPath := filepath.Join(parent, "auth.db")
+	if _, err := os.Stat(presentPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("database exists before Open: %v", err)
+	}
+	present := mustOpenUsable(t, presentPath)
+	if _, err := os.Stat(presentPath); err != nil {
+		t.Fatalf("database created with an existing parent Stat() = %v", err)
+	}
+	if err := present.Close(); err != nil {
+		t.Fatalf("Close(existing parent) error = %v", err)
+	}
+
+	work := t.TempDir()
+	t.Chdir(work)
+	relativeAbsent := filepath.Join("rel", "absent", "auth.db")
+	opened := mustOpenUsable(t, relativeAbsent)
+	if _, err := os.Stat(filepath.Join(work, relativeAbsent)); err != nil {
+		t.Fatalf("relative path with a missing parent was not created in the working directory: %v", err)
+	}
+	if err := opened.Close(); err != nil {
+		t.Fatalf("Close(relative absent) error = %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(work, "have"), 0o700); err != nil {
+		t.Fatalf("Mkdir(have) error = %v", err)
+	}
+	relativePresent := filepath.Join("have", "auth.db")
+	opened = mustOpenUsable(t, relativePresent)
+	if _, err := os.Stat(filepath.Join(work, relativePresent)); err != nil {
+		t.Fatalf("relative path with an existing parent was not created in the working directory: %v", err)
+	}
+	if err := opened.Close(); err != nil {
+		t.Fatalf("Close(relative present) error = %v", err)
+	}
+}
+
+func TestOpenDirectoryModes(t *testing.T) {
+	// R-CIJN-JJFA
+	// Umask 0 makes the stored mode equal the mode passed to mkdir, so 0700
+	// is distinguishable from a looser creation mode such as 0777.
+	base := t.TempDir()
+	old := syscall.Umask(0)
+	t.Cleanup(func() { syscall.Umask(old) })
+
+	existing := filepath.Join(base, "existing")
+	if err := os.Mkdir(existing, 0o750); err != nil {
+		t.Fatalf("Mkdir(existing) error = %v", err)
+	}
+	created := filepath.Join(existing, "new1", "new2", "auth.db")
+	st := mustOpenUsable(t, created)
+	if got := dirPerm(t, existing); got != 0o750 {
+		t.Fatalf("existing directory mode = %#o, want unchanged 0750", got)
+	}
+	if got := dirPerm(t, filepath.Join(existing, "new1")); got != 0o700 {
+		t.Fatalf("created directory new1 mode = %#o, want 0700", got)
+	}
+	if got := dirPerm(t, filepath.Join(existing, "new1", "new2")); got != 0o700 {
+		t.Fatalf("created directory new2 mode = %#o, want 0700", got)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	direct := filepath.Join(base, "direct")
+	if err := os.Mkdir(direct, 0o740); err != nil {
+		t.Fatalf("Mkdir(direct) error = %v", err)
+	}
+	directDB := mustOpenUsable(t, filepath.Join(direct, "auth.db"))
+	if got := dirPerm(t, direct); got != 0o740 {
+		t.Fatalf("existing parent mode = %#o, want unchanged 0740", got)
+	}
+	if err := directDB.Close(); err != nil {
+		t.Fatalf("Close(direct) error = %v", err)
+	}
+}
+
+func TestOpenReportsCreationAndDatabaseFailures(t *testing.T) {
+	// R-CHBR-5ROL
+	base := t.TempDir()
+	blocker := filepath.Join(base, "not-a-dir")
+	payload := []byte("leave me")
+	if err := os.WriteFile(blocker, payload, 0o600); err != nil {
+		t.Fatalf("WriteFile(blocker) error = %v", err)
+	}
+	beforeInfo, err := os.Stat(blocker)
+	if err != nil {
+		t.Fatalf("Stat(blocker) error = %v", err)
+	}
+	beforeFiles := filesUnder(t, base)
+	st, err := Open(filepath.Join(blocker, "nested", "auth.db"), bytes.NewReader(nil))
+	if err == nil || st != nil || !strings.Contains(err.Error(), "not a directory") {
+		if st != nil {
+			_ = st.Close()
+		}
+		t.Fatalf("Open(file occupying directory) = (%v, %v), want nil store and an error containing the directory failure", st, err)
+	}
+	got, err := os.ReadFile(filepath.Clean(blocker))
+	if err != nil {
+		t.Fatalf("ReadFile(blocker) error = %v", err)
+	}
+	afterInfo, err := os.Stat(blocker)
+	if err != nil {
+		t.Fatalf("Stat(blocker) after Open error = %v", err)
+	}
+	if !bytes.Equal(got, payload) || !afterInfo.Mode().IsRegular() || afterInfo.Mode() != beforeInfo.Mode() || afterInfo.Size() != beforeInfo.Size() {
+		t.Fatalf("blocker changed: bytes %q mode %v size %d", got, afterInfo.Mode(), afterInfo.Size())
+	}
+	if after := filesUnder(t, base); !reflect.DeepEqual(after, beforeFiles) {
+		t.Fatalf("Open created a database despite the blocking file: before %v after %v", beforeFiles, after)
+	}
+
+	asDir := filepath.Join(base, "directory.db")
+	if err := os.Mkdir(asDir, 0o700); err != nil {
+		t.Fatalf("Mkdir(directory) error = %v", err)
+	}
+	st, err = Open(asDir, bytes.NewReader(nil))
+	if err == nil || st != nil || !strings.Contains(err.Error(), "unable to open database file") {
+		if st != nil {
+			_ = st.Close()
+		}
+		t.Fatalf("Open(directory) = (%v, %v), want nil store and the driver open failure", st, err)
+	}
+	if names := dirNames(t, asDir); len(names) != 0 {
+		t.Fatalf("Open(directory) created %v", names)
+	}
+
+	readonlyPath := filepath.Join(base, "readonly.db")
+	createBareSQLite(t, readonlyPath)
+	readonlyBefore, err := os.Stat(readonlyPath)
+	if err != nil {
+		t.Fatalf("Stat(readonly) error = %v", err)
+	}
+	st, err = Open("file:"+readonlyPath+"?mode=ro", bytes.NewReader(nil))
+	if err == nil || st != nil || !strings.Contains(err.Error(), "attempt to write a readonly database") {
+		if st != nil {
+			_ = st.Close()
+		}
+		t.Fatalf("Open(readonly database) = (%v, %v), want nil store and the schema failure", st, err)
+	}
+	readonlyAfter, err := os.Stat(readonlyPath)
+	if err != nil {
+		t.Fatalf("Stat(readonly) after Open error = %v", err)
+	}
+	if readonlyAfter.Size() != readonlyBefore.Size() || readonlyAfter.Mode() != readonlyBefore.Mode() {
+		t.Fatalf("readonly database changed size %d->%d mode %v->%v", readonlyBefore.Size(), readonlyAfter.Size(), readonlyBefore.Mode(), readonlyAfter.Mode())
+	}
+
+	bad := filepath.Join(base, "bad.db")
+	badPayload := []byte("this is not sqlite")
+	if err := os.WriteFile(bad, badPayload, 0o600); err != nil {
+		t.Fatalf("WriteFile(bad) error = %v", err)
+	}
+	st, err = Open(bad, bytes.NewReader(nil))
+	if err == nil || st != nil || !strings.Contains(err.Error(), "file is not a database") {
+		if st != nil {
+			_ = st.Close()
+		}
+		t.Fatalf("Open(non-database) = (%v, %v), want nil store and the driver failure", st, err)
+	}
+	got, err = os.ReadFile(filepath.Clean(bad))
 	if err != nil {
 		t.Fatalf("ReadFile(bad) error = %v", err)
 	}
-	if !bytes.Equal(got, payload) {
-		t.Fatalf("unopenable database bytes = %q, want unchanged %q", got, payload)
+	if !bytes.Equal(got, badPayload) {
+		t.Fatalf("non-database bytes = %q, want unchanged %q", got, badPayload)
 	}
 }
 
@@ -335,6 +599,82 @@ func assertStructFields(t *testing.T, value any, want []fieldSpec) {
 			t.Fatalf("%s field %d = %s %v (exported %v), want %s %v", typ, i, got.Name, got.Type, got.IsExported(), field.name, field.typ)
 		}
 	}
+}
+
+func mustOpenUsable(t *testing.T, source string) *Store {
+	t.Helper()
+	st, err := Open(source, bytes.NewReader(nil))
+	if err != nil || st == nil {
+		t.Fatalf("Open(%q) = (%v, %v)", source, st, err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	insertFoundationRows(t, st)
+	var users int
+	if err := st.db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM users`).Scan(&users); err != nil {
+		t.Fatalf("Open(%q) count users: %v", source, err)
+	}
+	if users != 1 {
+		t.Fatalf("Open(%q) users = %d, want 1", source, users)
+	}
+	return st
+}
+
+func createBareSQLite(t *testing.T, path string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open(%s) error = %v", path, err)
+	}
+	defer func() { _ = db.Close() }()
+	db.SetMaxOpenConns(1)
+	if _, err := db.ExecContext(context.Background(), `PRAGMA user_version = 1`); err != nil {
+		t.Fatalf("create bare sqlite database: %v", err)
+	}
+}
+
+func dirNames(t *testing.T, path string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		t.Fatalf("ReadDir(%s) error = %v", path, err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	sort.Strings(names)
+	return names
+}
+
+func dirPerm(t *testing.T, path string) os.FileMode {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat(%s) error = %v", path, err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("%s is not a directory", path)
+	}
+	return info.Mode().Perm()
+}
+
+func filesUnder(t *testing.T, root string) []string {
+	t.Helper()
+	var found []string
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() {
+			found = append(found, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", root, err)
+	}
+	sort.Strings(found)
+	return found
 }
 
 func insertFoundationRows(t *testing.T, st *Store) {

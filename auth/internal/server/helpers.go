@@ -62,6 +62,7 @@ func cookieForHost(host, value string, expire bool) *http.Cookie {
 	cookie := &http.Cookie{
 		Name:     SessionCookieName,
 		Value:    value,
+		Path:     "/",
 		Secure:   true,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
