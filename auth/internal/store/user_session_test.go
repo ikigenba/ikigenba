@@ -26,6 +26,60 @@ var (
 	_ func(*Store, string) error = (*Store).DeleteSession
 )
 
+func TestFirstUpsertUserOnLoginPersistsMintedUser(t *testing.T) {
+	// R-5AND-T1C5
+	random := sequentialStoreBytes(16)
+	reader := &countingReader{reader: bytes.NewReader(random)}
+	path := filepath.Join(t.TempDir(), "auth.db")
+	st, err := Open(path, reader)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	now := time.Date(2026, time.January, 15, 8, 9, 10, 11, time.UTC)
+	got, err := st.UpsertUserOnLogin("https://accounts.google.com", "google-subject", "member@example.com", now)
+	if err != nil {
+		t.Fatalf("UpsertUserOnLogin() error = %v", err)
+	}
+	if reader.read != 16 {
+		t.Fatalf("UpsertUserOnLogin() read %d random bytes, want 16", reader.read)
+	}
+	want := User{
+		ID:              idcodec.Encode(random),
+		Issuer:          "https://accounts.google.com",
+		Subject:         "google-subject",
+		Email:           "member@example.com",
+		LastGoogleLogin: now,
+	}
+	if got.ID == want.Subject || got.ID == want.Email || !reflect.DeepEqual(got, want) {
+		t.Fatalf("UpsertUserOnLogin() = %#v, want %#v", got, want)
+	}
+	assertStoredUser(t, st, want)
+	assertTableCount(t, st, "users", 1)
+	var storedLogin int64
+	if err := st.db.QueryRowContext(
+		context.Background(),
+		`SELECT last_google_login FROM users WHERE issuer = ? AND subject = ?`,
+		want.Issuer,
+		want.Subject,
+	).Scan(&storedLogin); err != nil {
+		t.Fatalf("read stored login instant: %v", err)
+	}
+	if storedLogin != now.UnixNano() {
+		t.Fatalf("stored last_google_login = %d, want %d", storedLogin, now.UnixNano())
+	}
+	if err := st.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	reopened, err := Open(path, bytes.NewReader(nil))
+	if err != nil {
+		t.Fatalf("reopen store: %v", err)
+	}
+	defer func() { _ = reopened.Close() }()
+	assertStoredUser(t, reopened, want)
+	assertTableCount(t, reopened, "users", 1)
+}
+
 func TestUpsertUserOnLoginCreatesThenRefreshesOnePersistentUser(t *testing.T) {
 	// R-5BVA-6T2U
 	random := sequentialStoreBytes(16)

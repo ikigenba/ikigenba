@@ -164,6 +164,158 @@ func TestOpenRejectsExistingInvalidDatabase(t *testing.T) {
 	}
 }
 
+func TestExpiryIsDefinedStringTypeWithTypedConstants(t *testing.T) {
+	// R-4EXZ-V023
+	const (
+		_ = ExpiryNever
+		_ = Expiry30d
+		_ = Expiry90d
+		_ = Expiry365d
+	)
+
+	expiryType := reflect.TypeFor[Expiry]()
+	if expiryType.Kind() != reflect.String || expiryType.Name() != "Expiry" || expiryType.PkgPath() != "github.com/ikigenba/ikigenba/auth/internal/store" {
+		t.Fatalf("Expiry type = %s kind %s pkg %q", expiryType, expiryType.Kind(), expiryType.PkgPath())
+	}
+
+	constants := []struct {
+		name string
+		typ  reflect.Type
+		got  string
+		want string
+	}{
+		{name: "ExpiryNever", typ: reflect.TypeOf(ExpiryNever), got: string(ExpiryNever), want: "never"},
+		{name: "Expiry30d", typ: reflect.TypeOf(Expiry30d), got: string(Expiry30d), want: "30d"},
+		{name: "Expiry90d", typ: reflect.TypeOf(Expiry90d), got: string(Expiry90d), want: "90d"},
+		{name: "Expiry365d", typ: reflect.TypeOf(Expiry365d), got: string(Expiry365d), want: "365d"},
+	}
+	seen := make(map[string]string, len(constants))
+	for _, constant := range constants {
+		if constant.typ != expiryType || constant.got != constant.want {
+			t.Errorf("%s = %q type %s, want Expiry %q", constant.name, constant.got, constant.typ, constant.want)
+		}
+		if previous, ok := seen[constant.got]; ok {
+			t.Errorf("%s duplicates %s value %q", constant.name, previous, constant.got)
+		}
+		seen[constant.got] = constant.name
+	}
+}
+
+func TestOpenAbsentFileSucceedsAndExistingNonDatabaseDoesNot(t *testing.T) {
+	// R-59FH-F9LG
+	dir := t.TempDir()
+	absent := filepath.Join(dir, "missing.db")
+	if _, err := os.Stat(absent); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("absent path Stat() error = %v, want not exist", err)
+	}
+
+	st, err := Open(absent, bytes.NewReader(nil))
+	if err != nil || st == nil {
+		t.Fatalf("Open(absent) = (%v, %v); a missing file must not be the unopenable-database failure", st, err)
+	}
+	insertFoundationRows(t, st)
+	var users int
+	if err := st.db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM users`).Scan(&users); err != nil {
+		t.Fatalf("count users in absent-file store: %v", err)
+	}
+	if users != 1 {
+		t.Fatalf("absent-file store user count = %d, want 1", users)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatalf("Close(absent) error = %v", err)
+	}
+
+	bad := filepath.Join(dir, "bad.db")
+	payload := []byte("this is not sqlite")
+	if err := os.WriteFile(bad, payload, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	for attempt := 1; attempt <= 2; attempt++ {
+		st, err = Open(bad, bytes.NewReader(nil))
+		if err == nil || st != nil {
+			if st != nil {
+				_ = st.Close()
+			}
+			t.Fatalf("Open(existing non-database) attempt %d = (%v, %v); want error and no store", attempt, st, err)
+		}
+	}
+	got, err := os.ReadFile(filepath.Clean(bad))
+	if err != nil {
+		t.Fatalf("ReadFile(bad) error = %v", err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Fatalf("unopenable database bytes = %q, want unchanged %q", got, payload)
+	}
+}
+
+func TestErrNotFoundForMissingAndOtherOwnerRows(t *testing.T) {
+	// R-4HDS-MJJH
+	st := openTokenTestStore(t, bytes.NewReader(nil))
+	now := tokenTestNow()
+	insertTokenUser(t, st, "owner", "owner@example.com", now)
+	insertTokenUser(t, st, "other", "other@example.com", now)
+	insertToken(t, st, Token{
+		ID:        "owned",
+		UserID:    "owner",
+		Name:      "owned",
+		Hash:      "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		Enabled:   true,
+		CreatedAt: now,
+	})
+	insertSessionFixture(t, st, "kept-session", "owner", now, now)
+	if _, err := st.db.ExecContext(
+		context.Background(),
+		`INSERT INTO login_states (state, verifier, return_url) VALUES (?, ?, ?)`,
+		"kept-state",
+		"verifier",
+		"/return",
+	); err != nil {
+		t.Fatalf("insert login state: %v", err)
+	}
+	beforeTokens := allTokenStates(t, st)
+
+	if got, err := st.LookupSessionIdentity("missing-session", now); err == nil || !errors.Is(err, ErrNotFound) || got != (Identity{}) {
+		t.Errorf("LookupSessionIdentity(missing) = %#v, %v; want zero identity and ErrNotFound", got, err)
+	}
+	if got, err := st.TouchSession("missing-session", now); err == nil || !errors.Is(err, ErrNotFound) || got != (Identity{}) {
+		t.Errorf("TouchSession(missing) = %#v, %v; want zero identity and ErrNotFound", got, err)
+	}
+	if got, err := st.ConsumeLoginState("missing-state"); err == nil || !errors.Is(err, ErrNotFound) || got != (LoginState{}) {
+		t.Errorf("ConsumeLoginState(missing) = %#v, %v; want zero login state and ErrNotFound", got, err)
+	}
+	if got, err := st.LookupTokenIdentity("missing-secret", now); err == nil || !errors.Is(err, ErrNotFound) || got != (Identity{}) {
+		t.Errorf("LookupTokenIdentity(missing) = %#v, %v; want zero identity and ErrNotFound", got, err)
+	}
+	if got, err := st.TouchTokenIdentity("missing-secret", now); err == nil || !errors.Is(err, ErrNotFound) || got != (Identity{}) {
+		t.Errorf("TouchTokenIdentity(missing) = %#v, %v; want zero identity and ErrNotFound", got, err)
+	}
+	if err := st.SetTokenEnabled("owner", "missing-token", false); err == nil || !errors.Is(err, ErrNotFound) {
+		t.Errorf("SetTokenEnabled(missing) error = %v, want ErrNotFound", err)
+	}
+	if err := st.SetTokenEnabled("other", "owned", false); err == nil || !errors.Is(err, ErrNotFound) {
+		t.Errorf("SetTokenEnabled(other owner) error = %v, want ErrNotFound", err)
+	}
+	if err := st.DeleteToken("owner", "missing-token"); err == nil || !errors.Is(err, ErrNotFound) {
+		t.Errorf("DeleteToken(missing) error = %v, want ErrNotFound", err)
+	}
+	if err := st.DeleteToken("other", "owned"); err == nil || !errors.Is(err, ErrNotFound) {
+		t.Errorf("DeleteToken(other owner) error = %v, want ErrNotFound", err)
+	}
+
+	if after := allTokenStates(t, st); !reflect.DeepEqual(after, beforeTokens) {
+		t.Errorf("missing and other-owner calls changed tokens: before %#v, after %#v", beforeTokens, after)
+	}
+	assertStoredSession(t, st, "kept-session", "owner", now.UnixNano(), now.UnixNano())
+	var verifier, returnURL string
+	if err := st.db.QueryRowContext(
+		context.Background(),
+		`SELECT verifier, return_url FROM login_states WHERE state = ?`,
+		"kept-state",
+	).Scan(&verifier, &returnURL); err != nil || verifier != "verifier" || returnURL != "/return" {
+		t.Errorf("kept login state = (%q, %q, %v), want verifier and /return", verifier, returnURL, err)
+	}
+}
+
 type fieldSpec struct {
 	name string
 	typ  reflect.Type

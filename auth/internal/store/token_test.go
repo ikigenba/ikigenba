@@ -31,6 +31,58 @@ var (
 	_ func(*Store, string, time.Time) (Identity, error) = (*Store).TouchTokenIdentity
 )
 
+func TestCreateTokenSecondResultIsPlaintextSecret(t *testing.T) {
+	// R-4SCW-2H7Q
+	withCreateToken(t, (*Store).CreateToken)
+}
+
+func withCreateToken(t *testing.T, create func(*Store, string, string, Expiry, time.Time) (Token, string, error)) {
+	t.Helper()
+	random := tokenSequentialBytes(48)
+	path := filepath.Join(t.TempDir(), "auth.db")
+	st := openTokenTestStoreAt(t, path, bytes.NewReader(random))
+	now := tokenTestNow()
+	insertTokenUser(t, st, "owner", "owner@example.com", now)
+
+	token, secret, err := create(st, "owner", "deploy token", ExpiryNever, now)
+	if err != nil {
+		t.Fatalf("CreateToken() error = %v", err)
+	}
+	wantSecret := idcodec.SecretPrefix + idcodec.Encode(random[16:])
+	if secret != wantSecret || secret == token.Hash || token.Hash != idcodec.HashSecret(secret) {
+		t.Fatalf("CreateToken() = (%#v, %q), want plaintext %q with stored hash %q", token, secret, wantSecret, idcodec.HashSecret(wantSecret))
+	}
+
+	got, err := st.LookupTokenIdentity(secret, now)
+	wantIdentity := Identity{UserID: "owner", Email: "owner@example.com"}
+	if err != nil || got != wantIdentity {
+		t.Fatalf("LookupTokenIdentity(plaintext) = %#v, %v; want %#v", got, err, wantIdentity)
+	}
+	if _, err := st.LookupTokenIdentity(token.Hash, now); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("LookupTokenIdentity(stored hash) error = %v, want ErrNotFound", err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	databaseBytes, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		t.Fatalf("ReadFile(database) error = %v", err)
+	}
+	if bytes.Contains(databaseBytes, []byte(secret)) {
+		t.Fatalf("database contains plaintext secret %q", secret)
+	}
+	reopened, err := Open(path, bytes.NewReader(nil))
+	if err != nil {
+		t.Fatalf("reopen store: %v", err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	stored := readToken(t, reopened, token.ID)
+	if stored.Hash != idcodec.HashSecret(wantSecret) || stored.Name != "deploy token" || stored.UserID != "owner" {
+		t.Fatalf("stored token = %#v, want hash of plaintext secret", stored)
+	}
+}
+
 func TestCreateTokenExactValuesExpiryAndHashPersistence(t *testing.T) {
 	// R-5MUD-MQR3
 	// R-5O2A-0IHS

@@ -10,18 +10,27 @@ import (
 )
 
 var (
-	_ func([]byte) string             = Encode
+	// R-42R0-1AN5
+	_ func([]byte) string = Encode
+	// R-43YW-F2DU
 	_ func(io.Reader) (string, error) = NewID
+	// R-456S-SU4J
 	_ func(io.Reader) (string, error) = NewSecret
-	_ func(string) string             = HashSecret
+	// R-46EP-6LV8
+	_ func(string) string = HashSecret
 )
 
 func TestConstants(t *testing.T) {
-	if Alphabet != "0123456789ABCDEFGHJKMNPQRSTVWXYZ" {
-		t.Fatalf("Alphabet = %q", Alphabet)
+	// R-41J3-NIWG
+	const (
+		alphabet = Alphabet
+		prefix   = SecretPrefix
+	)
+	if alphabet != "0123456789ABCDEFGHJKMNPQRSTVWXYZ" {
+		t.Fatalf("Alphabet = %q", alphabet)
 	}
-	if SecretPrefix != "ikp_" {
-		t.Fatalf("SecretPrefix = %q", SecretPrefix)
+	if prefix != "ikp_" {
+		t.Fatalf("SecretPrefix = %q", prefix)
 	}
 }
 
@@ -127,6 +136,64 @@ func TestNewIDReadErrors(t *testing.T) {
 	})
 }
 
+func TestNewIDReadEncodeAndReadFailure(t *testing.T) {
+	// R-53BZ-IEVZ
+	t.Run("reads exactly 16 and returns their Encode", func(t *testing.T) {
+		payloads := [][]byte{
+			append(sequentialBytes(16), 0xaa, 0xbb, 0xcc, 0xdd),
+			append(bytes.Repeat([]byte{0xff}, 16), 0x10, 0x20),
+		}
+		var previous string
+		for _, payload := range payloads {
+			rand := &oneByteReader{data: append([]byte(nil), payload...)}
+			got, err := NewID(rand)
+			if err != nil {
+				t.Fatalf("NewID() error = %v", err)
+			}
+			if rand.read != 16 {
+				t.Fatalf("NewID() read %d bytes, want 16", rand.read)
+			}
+			want := Encode(payload[:16])
+			if got != want {
+				t.Fatalf("NewID() = %q, want Encode = %q", got, want)
+			}
+			assertEncodedShape(t, got, 26)
+			if previous != "" && got == previous {
+				t.Fatalf("NewID() = %q for two different 16-byte inputs", got)
+			}
+			previous = got
+		}
+	})
+
+	t.Run("bytes delivered with a trailing error are still encoded", func(t *testing.T) {
+		data := sequentialBytes(16)
+		got, err := NewID(&terminalErrorReader{data: append([]byte(nil), data...)})
+		if err != nil {
+			t.Fatalf("NewID() error = %v", err)
+		}
+		if got != Encode(data) {
+			t.Fatalf("NewID() = %q, want %q", got, Encode(data))
+		}
+		assertEncodedShape(t, got, 26)
+	})
+
+	for _, tt := range []struct {
+		name string
+		rand io.Reader
+	}{
+		{name: "short read", rand: bytes.NewReader(sequentialBytes(15))},
+		{name: "error before any byte", rand: failReader{}},
+		{name: "error after a partial read", rand: &partialErrorReader{data: sequentialBytes(15)}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NewID(tt.rand)
+			if err == nil || got != "" {
+				t.Fatalf("NewID() = %q, %v; want no id and an error", got, err)
+			}
+		})
+	}
+}
+
 func TestNewSecretReadsExactlyThirtyTwoBytes(t *testing.T) {
 	rand := &oneByteReader{data: sequentialBytes(32)}
 	got, err := NewSecret(rand)
@@ -170,6 +237,76 @@ func TestNewSecretReadErrors(t *testing.T) {
 			t.Fatalf("NewSecret() = %q", got)
 		}
 	})
+}
+
+func TestNewSecretReadEncodeAndReadFailure(t *testing.T) {
+	// R-54JV-W6MO
+	t.Run("reads exactly 32 and returns SecretPrefix plus Encode", func(t *testing.T) {
+		payloads := [][]byte{
+			append(sequentialBytes(32), 0xaa, 0xbb),
+			append(bytes.Repeat([]byte{0x5a}, 32), 0x01),
+		}
+		var previous string
+		for _, payload := range payloads {
+			rand := &oneByteReader{data: append([]byte(nil), payload...)}
+			got, err := NewSecret(rand)
+			if err != nil {
+				t.Fatalf("NewSecret() error = %v", err)
+			}
+			if rand.read != 32 {
+				t.Fatalf("NewSecret() read %d bytes, want 32", rand.read)
+			}
+			encoded := Encode(payload[:32])
+			want := SecretPrefix + encoded
+			if got != want {
+				t.Fatalf("NewSecret() = %q, want %q", got, want)
+			}
+			if !strings.HasPrefix(got, "ikp_") {
+				t.Fatalf("NewSecret() = %q, want ikp_ prefix", got)
+			}
+			body := strings.TrimPrefix(got, "ikp_")
+			if body != encoded {
+				t.Fatalf("NewSecret() body = %q, want %q", body, encoded)
+			}
+			assertEncodedShape(t, body, 52)
+			if len(got) != len("ikp_")+52 {
+				t.Fatalf("len(NewSecret()) = %d, want %d", len(got), len("ikp_")+52)
+			}
+			if previous != "" && got == previous {
+				t.Fatalf("NewSecret() = %q for two different 32-byte inputs", got)
+			}
+			previous = got
+		}
+	})
+
+	t.Run("bytes delivered with a trailing error are still encoded", func(t *testing.T) {
+		data := sequentialBytes(32)
+		got, err := NewSecret(&terminalErrorReader{data: append([]byte(nil), data...)})
+		if err != nil {
+			t.Fatalf("NewSecret() error = %v", err)
+		}
+		want := "ikp_" + Encode(data)
+		if got != want {
+			t.Fatalf("NewSecret() = %q, want %q", got, want)
+		}
+		assertEncodedShape(t, strings.TrimPrefix(got, "ikp_"), 52)
+	})
+
+	for _, tt := range []struct {
+		name string
+		rand io.Reader
+	}{
+		{name: "short read", rand: bytes.NewReader(sequentialBytes(31))},
+		{name: "error before any byte", rand: failReader{}},
+		{name: "error after a partial read", rand: &partialErrorReader{data: sequentialBytes(31)}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NewSecret(tt.rand)
+			if err == nil || got != "" {
+				t.Fatalf("NewSecret() = %q, %v; want no secret and an error", got, err)
+			}
+		})
+	}
 }
 
 func TestHashSecret(t *testing.T) {
@@ -249,6 +386,12 @@ func (r *terminalErrorReader) Read(p []byte) (int, error) {
 	r.data = r.data[n:]
 
 	return n, errors.New("terminal error")
+}
+
+type failReader struct{}
+
+func (failReader) Read([]byte) (int, error) {
+	return 0, errors.New("read failed")
 }
 
 type partialErrorReader struct {

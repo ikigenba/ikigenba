@@ -212,6 +212,7 @@ func TestCheckRefusedBearersAreIdenticalAndDoNotMutate(t *testing.T) {
 	type result struct {
 		code   int
 		header http.Header
+		body   string
 	}
 	var want *result
 	for _, cause := range []string{"unknown", "disabled", "expired", "stale-owner"} {
@@ -243,14 +244,17 @@ func TestCheckRefusedBearersAreIdenticalAndDoNotMutate(t *testing.T) {
 			before := fixture.snapshot(t)
 			response := serveIdentity(fixture.server().handleCheck, identityRequest("/check", session.ID, secret))
 
+			// R-FFTS-VQFU: every refusal cause is 403 with neither identity header,
+			// changes no stored session or token, and is the same response bytes —
+			// status, headers, and body — without pinning what the body says.
 			// R-F7AI-7C8Z: even a refused bearer prevents fallback to the live cookie.
 			assertCheckRefusal(t, response, http.StatusForbidden)
 			assertSnapshotEqual(t, fixture.snapshot(t), before)
-			got := result{code: response.Code, header: response.Header().Clone()}
+			got := result{code: response.Code, header: response.Header().Clone(), body: response.Body.String()}
 			if want == nil {
 				want = &got
 			} else if !reflect.DeepEqual(got, *want) {
-				t.Fatalf("response = %#v, want byte-identical %#v", got, *want)
+				t.Fatalf("response = status %d headers %#v body %q, want byte-identical status %d headers %#v body %q", got.code, got.header, got.body, want.code, want.header, want.body)
 			}
 		})
 	}
@@ -414,6 +418,239 @@ func TestMeRefusedBearersAreIdenticalAndDoNotMutate(t *testing.T) {
 				t.Fatalf("response = %#v, want byte-identical %#v", got, *want)
 			}
 		})
+	}
+}
+
+func TestCheckAndMePassUnmodifiedBearerAndSession(t *testing.T) {
+	fixture := openIdentityFixture(t)
+	decoyUser := fixture.user(t, "decoy", "decoy@example.com", identityNow)
+	decoy := fixture.session(t, decoyUser.ID, identityNow.Add(-time.Hour), identityNow.Add(-time.Minute))
+	sessionUser := fixture.user(t, "session-owner", "session-owner@example.com", identityNow)
+	session := fixture.session(t, sessionUser.ID, identityNow.Add(-time.Hour), identityNow.Add(-time.Minute))
+	const exactSessionID = "KeepCase+id%2E"
+	fixture.exec(t, `UPDATE sessions SET id = ? WHERE id = ?`, exactSessionID, session.ID)
+	tokenUser := fixture.user(t, "token-owner", "token-owner@example.com", identityNow)
+	token, _ := fixture.token(t, tokenUser.ID, "deploy", store.ExpiryNever, identityNow.Add(-time.Hour))
+	// Internal space plus a trailing space: trimming, field-splitting, or
+	// lowercasing this suffix yields a different hash than the one stored.
+	const exactSuffix = "ikp_AbC secret "
+	fixture.setTokenSecret(t, token.ID, exactSuffix)
+	srv := fixture.server()
+
+	cookies := []*http.Cookie{
+		{Name: "session", Value: decoy.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode},
+		{Name: "ikigenba_session", Value: exactSessionID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode},
+	}
+	for _, endpoint := range []struct {
+		name    string
+		handler func(http.ResponseWriter, *http.Request)
+	}{
+		{name: "/check", handler: srv.handleCheck},
+		{name: "/me", handler: srv.handleMe},
+	} {
+		t.Run(endpoint.name+"/bearer", func(t *testing.T) {
+			before := fixture.snapshot(t)
+			response := serveIdentity(endpoint.handler, credentialRequest(endpoint.name, cookies, "Bearer "+exactSuffix))
+
+			// R-F62L-TKIA: both handlers hash the entire Bearer suffix, spaces included.
+			if endpoint.name == "/check" {
+				if response.Code != http.StatusOK || response.Header().Get(HeaderUserID) != tokenUser.ID || response.Header().Get(HeaderUserEmail) != tokenUser.Email {
+					t.Fatalf("response = %d, headers %#v", response.Code, response.Header())
+				}
+				assertOnlyTokenTouch(t, before, fixture.snapshot(t), token.ID, identityNow)
+				return
+			}
+			wantBody := fmt.Sprintf(`{"id":%q,"email":%q}`, tokenUser.ID, tokenUser.Email)
+			if response.Code != http.StatusOK || response.Body.String() != wantBody {
+				t.Fatalf("response = %d %q, want token owner", response.Code, response.Body.String())
+			}
+			assertSnapshotEqual(t, fixture.snapshot(t), before)
+		})
+
+		t.Run(endpoint.name+"/session", func(t *testing.T) {
+			before := fixture.snapshot(t)
+			response := serveIdentity(endpoint.handler, credentialRequest(endpoint.name, cookies, ""))
+
+			// R-F62L-TKIA: both handlers pass the ikigenba_session value, not a
+			// differently named cookie and not a normalized form of the id.
+			if endpoint.name == "/check" {
+				if response.Code != http.StatusOK || response.Header().Get(HeaderUserID) != sessionUser.ID || response.Header().Get(HeaderUserEmail) != sessionUser.Email {
+					t.Fatalf("response = %d, headers %#v", response.Code, response.Header())
+				}
+				assertOnlySessionTouch(t, before, fixture.snapshot(t), exactSessionID, identityNow)
+				return
+			}
+			wantBody := fmt.Sprintf(`{"id":%q,"email":%q}`, sessionUser.ID, sessionUser.Email)
+			if response.Code != http.StatusOK || response.Body.String() != wantBody {
+				t.Fatalf("response = %d %q, want session owner", response.Code, response.Body.String())
+			}
+			assertSnapshotEqual(t, fixture.snapshot(t), before)
+		})
+	}
+}
+
+func TestCheckIdentityIsOnlyTheTwoHeaders(t *testing.T) {
+	fixture := openIdentityFixture(t)
+	user := fixture.user(t, "header-user", "header-user@example.com", identityNow)
+	live := fixture.session(t, user.ID, identityNow.Add(-time.Hour), identityNow.Add(-time.Minute))
+	idle := fixture.session(t, user.ID, identityNow.Add(-time.Hour), identityNow.Add(-20*time.Minute))
+	tokenUser := fixture.user(t, "header-token", "header-token@example.com", identityNow)
+	_, secret := fixture.token(t, tokenUser.ID, "header", store.ExpiryNever, identityNow.Add(-time.Hour))
+	srv := fixture.server()
+
+	cases := []struct {
+		name         string
+		sessionID    string
+		bearer       string
+		status       int
+		identityUser store.User
+		hiddenEmails []string
+		hiddenIDs    []string
+	}{
+		{name: "live session", sessionID: live.ID, status: http.StatusOK, identityUser: user},
+		{name: "idle session", sessionID: idle.ID, status: http.StatusUnauthorized, hiddenEmails: []string{user.Email}, hiddenIDs: []string{user.ID}},
+		{name: "no cookie", status: http.StatusUnauthorized, hiddenEmails: []string{user.Email}, hiddenIDs: []string{user.ID}},
+		{name: "honored bearer", sessionID: live.ID, bearer: secret, status: http.StatusOK, identityUser: tokenUser, hiddenEmails: []string{user.Email}, hiddenIDs: []string{user.ID}},
+		{name: "refused bearer", sessionID: live.ID, bearer: "ikp_unknown", status: http.StatusForbidden, hiddenEmails: []string{user.Email, tokenUser.Email}, hiddenIDs: []string{user.ID, tokenUser.ID}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			response := serveIdentity(srv.handleCheck, identityRequest("/check", tc.sessionID, tc.bearer))
+			if response.Code != tc.status {
+				t.Fatalf("status = %d, want %d", response.Code, tc.status)
+			}
+			header := response.Header()
+			if tc.status == http.StatusOK {
+				// R-FI9L-N9X8: a /check success names the user only in the two
+				// identity headers. The body is not part of the contract and is not read.
+				assertHeaderCarriesOnly(t, header, HeaderUserID, tc.identityUser.ID)
+				assertHeaderCarriesOnly(t, header, HeaderUserEmail, tc.identityUser.Email)
+			} else if header.Get(HeaderUserID) != "" || header.Get(HeaderUserEmail) != "" {
+				t.Fatalf("identity headers = %q %q, want empty", header.Get(HeaderUserID), header.Get(HeaderUserEmail))
+			}
+			for _, id := range tc.hiddenIDs {
+				assertHeaderOmits(t, header, id)
+			}
+			for _, email := range tc.hiddenEmails {
+				assertHeaderOmits(t, header, email)
+			}
+			if tc.status == http.StatusOK {
+				assertHeaderOmits(t, header, tc.identityUser.Email, HeaderUserEmail)
+				assertHeaderOmits(t, header, tc.identityUser.ID, HeaderUserID)
+			}
+		})
+	}
+}
+
+func TestCheckAndMeStatusFollowsCredentialKind(t *testing.T) {
+	fixture := openIdentityFixture(t)
+	user := fixture.user(t, "status-user", "status-user@example.com", identityNow)
+	live := fixture.session(t, user.ID, identityNow.Add(-time.Hour), identityNow.Add(-time.Minute))
+	idle := fixture.session(t, user.ID, identityNow.Add(-3*time.Hour), identityNow.Add(-20*time.Minute))
+	capped := fixture.session(t, user.ID, identityNow.Add(-18*time.Hour-30*time.Minute), identityNow.Add(-time.Minute))
+	disabledOwner := fixture.user(t, "disabled-owner", "disabled@example.com", identityNow)
+	disabledToken, disabledSecret := fixture.token(t, disabledOwner.ID, "disabled", store.ExpiryNever, identityNow.Add(-time.Hour))
+	if err := fixture.store.SetTokenEnabled(disabledOwner.ID, disabledToken.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	expiredOwner := fixture.user(t, "expired-owner", "expired@example.com", identityNow)
+	_, expiredSecret := fixture.token(t, expiredOwner.ID, "expired", store.Expiry30d, identityNow.Add(-31*24*time.Hour))
+	staleOwner := fixture.user(t, "stale-owner", "stale@example.com", identityNow.Add(-store.TokenLoginWindow-time.Second))
+	_, staleSecret := fixture.token(t, staleOwner.ID, "stale", store.ExpiryNever, identityNow.Add(-time.Hour))
+	srv := fixture.server()
+
+	handlers := []struct {
+		name    string
+		handler func(http.ResponseWriter, *http.Request)
+	}{
+		{name: "/check", handler: srv.handleCheck},
+		{name: "/me", handler: srv.handleMe},
+	}
+	sessionCases := []struct{ name, sessionID string }{
+		{name: "absent", sessionID: ""},
+		{name: "unknown", sessionID: "unknown-session"},
+		{name: "idle", sessionID: idle.ID},
+		{name: "capped", sessionID: capped.ID},
+	}
+	bearerCases := []struct{ name, secret string }{
+		{name: "unknown", secret: "ikp_unknown"},
+		{name: "disabled", secret: disabledSecret},
+		{name: "expired", secret: expiredSecret},
+		{name: "stale-owner", secret: staleSecret},
+	}
+	for _, handler := range handlers {
+		for _, tc := range sessionCases {
+			t.Run(handler.name+"/session/"+tc.name, func(t *testing.T) {
+				response := serveIdentity(handler.handler, identityRequest(handler.name, tc.sessionID, ""))
+				// R-2W27-FZGG: a missing or dead session, with no bearer, is 401 on both routes.
+				if response.Code != http.StatusUnauthorized {
+					t.Fatalf("status = %d, want 401, not a bearer-style 403", response.Code)
+				}
+			})
+			t.Run(handler.name+"/basic/"+tc.name, func(t *testing.T) {
+				req := identityRequest(handler.name, tc.sessionID, "")
+				req.Header.Set("Authorization", "Basic x")
+				response := serveIdentity(handler.handler, req)
+				// R-2W27-FZGG: a non-bearer Authorization header is not a token refusal.
+				if response.Code != http.StatusUnauthorized {
+					t.Fatalf("status = %d, want 401", response.Code)
+				}
+			})
+		}
+		for _, tc := range bearerCases {
+			for _, cookie := range []string{"", live.ID} {
+				name := handler.name + "/bearer/" + tc.name
+				if cookie == "" {
+					name += "/no-cookie"
+				} else {
+					name += "/live-cookie"
+				}
+				t.Run(name, func(t *testing.T) {
+					response := serveIdentity(handler.handler, identityRequest(handler.name, cookie, tc.secret))
+					// R-2W27-FZGG: a bearer the store will not honor is 403, including
+					// when no live session exists to fall back on.
+					if response.Code != http.StatusForbidden {
+						t.Fatalf("status = %d, want 403, not a session-style 401", response.Code)
+					}
+				})
+			}
+		}
+	}
+}
+
+func credentialRequest(target string, cookies []*http.Cookie, authorization string) *http.Request {
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, target, nil)
+	for _, cookie := range cookies {
+		req.AddCookie(cookie)
+	}
+	if authorization != "" {
+		req.Header.Set("Authorization", authorization)
+	}
+	return req
+}
+
+func assertHeaderCarriesOnly(t *testing.T, header http.Header, name, value string) {
+	t.Helper()
+	if header.Get(name) != value {
+		t.Fatalf("header %s = %q, want %q", name, header.Get(name), value)
+	}
+}
+
+func assertHeaderOmits(t *testing.T, header http.Header, value string, allowed ...string) {
+	t.Helper()
+	allow := map[string]bool{}
+	for _, name := range allowed {
+		allow[name] = true
+	}
+	for name, values := range header {
+		if allow[name] {
+			continue
+		}
+		for _, got := range values {
+			if value != "" && strings.Contains(got, value) {
+				t.Fatalf("header %s conveys %q", name, value)
+			}
+		}
 	}
 }
 
