@@ -5,11 +5,15 @@
 
 `dummy` is an app of the Ikigenba platform. Ikigenba is a PaaS for running
 internal apps; each deployment of it is complete on one Linux host. `dummy`
-is the smallest app that exercises the whole path: one Go binary that serves
-one page at `127.0.0.1:$PORT` behind the host's nginx. On a host it runs as
-`/opt/dummy/bin/dummy`; a developer runs the same binary from the checkout.
-Its version is a `var` in the source, so a developer's build and a deployed
-binary report the same string.
+exercises the whole path with a small server-rendered control panel: one Go
+binary serving at `127.0.0.1:$PORT` behind the host's nginx. The panel is a
+chrome-framed page listing widgets, an HTML table fragment the page re-fetches
+with a conditional GET, and a form that creates a widget with per-field
+validation. Widgets live in memory and are lost when the process exits. On a
+host it runs as `/opt/dummy/bin/dummy`, with its environment read from
+`/opt/dummy/etc/env`; a developer runs the same binary from the checkout. Its
+version is a `var` in the source, so a developer's build and a deployed binary
+report the same string.
 
 Built spec-first: `specs/design/` is the contract, `AGENTS.md` the gates. No
 code or tests are written by hand; the build run derives them from the
@@ -43,5 +47,5 @@ written by `devctl build dummy`, which builds `cmd/dummy` itself for
 - `AGENTS.md` — the toolchain, test-file set, gates, and commit conventions
   the build run verifies against.
 
-To change dummy, change the spec — `draft-design`, then `check-spec`, then
-`build-spec` — rather than editing the code directly.
+To change dummy, change the spec — `draft-stories`, `draft-design`,
+`check-spec`, then `build-spec` — rather than editing the code directly.

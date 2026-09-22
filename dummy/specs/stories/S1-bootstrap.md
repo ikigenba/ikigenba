@@ -1,11 +1,11 @@
 # Stories — bootstrap
 
 Running dummy at all: help, version, the manifest, exit codes. dummy is an
-app of the platform: one Go binary that serves one page. On a host it runs as
-`/opt/dummy/bin/dummy` with `/opt/dummy` as its working directory and its
-environment read from `/opt/dummy/etc/env`; a developer runs the same binary
-from the checkout. With no command it serves (`S2-serve.md`); the commands
-here are what the build asks of it.
+app of the platform: one Go binary that serves a control panel. On a host it
+runs as `/opt/dummy/bin/dummy` with `/opt/dummy` as its working directory and
+its environment read from `/opt/dummy/etc/env`; a developer runs the same
+binary from the checkout. With no command it serves (`S2-serve.md`); the
+commands here are what the build asks of it.
 
 ## A developer asks which version they have
 
@@ -83,7 +83,7 @@ Output:
 ```
 Usage: dummy [command]
 
-Serve the Dummy page at 127.0.0.1:$PORT. With no command, serve.
+Serve the dummy control panel at 127.0.0.1:$PORT. With no command, serve.
 
 Commands:
   manifest   print the app manifest

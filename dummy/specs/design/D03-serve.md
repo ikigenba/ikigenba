@@ -4,26 +4,36 @@ The listener's life: what happens between `cli.Run` binding `127.0.0.1:$PORT`
 and the process being gone. `D01-layout-and-run-seam` declares the names this
 design behaves through: `cli.Process`, `cli.Run`, the `Listen` factory, the
 `Listening` hook, the exit codes, and `server.Serve`. `D02-cli` decides when
-`PORT` is valid and that a valid one leads `Run` to bind and call `Serve`;
-`D04-pages` decides what the handler answers. This design decides nothing new
-structurally. It says how `Serve` treats the listener it is handed and how
-`Run` behaves from the bind until it returns, in the three shapes the serve
-stories show: a clean run that ends on a signal, a port that is already
-taken, and a server that dies.
+`PORT` is valid and that a valid one leads `Run` to bind, make the process's
+widget store, and call `Serve` with the panel's handler; `D04-panel` decides
+what that handler answers. This design decides nothing new structurally. It
+says how `Serve` treats the listener it is handed and how `Run` behaves from
+the bind until it returns, in the three shapes the serve stories show: a clean
+run that ends on a signal, a port that is already taken, and a server that
+dies.
 
 `Serve` owns `ln` from the call. It serves HTTP/1.1 with `h` and blocks:
 plain HTTP/1.1, no h2c, no TLS. `net/http` answers an HTTP/1.0 request with
 an HTTP/1.0 status line, and the HTTP/1.1 requirement does not forbid that;
 it says which protocol the server speaks, not how it answers an older
-client. When `ctx` is done, which is how `SIGTERM` reaches it through
-`main`, it closes the listener so nothing new is accepted, lets every
-request it already accepted finish and receive its whole response, drops
-connections that carry no request, and returns nil. There is no drain timeout. The story's promise is
-unconditional, the handler serves one small static page that cannot block on
-anything of its own, and the host already bounds a stop that hangs: systemd
-sends `SIGKILL` when its stop timeout expires. A timeout constant here would
-be a second, weaker promise stacked on the first. `Serve` returns a non-nil
-error only when serving fails for some reason other than cancellation.
+client. On a space the visitor's HTTP/2 and TLS are nginx's, terminated
+before dummy is reached, so nothing here changes when dummy runs behind one.
+When `ctx` is done, which is how `SIGTERM` reaches it through `main`, it
+closes the listener so nothing new is accepted, lets every request it already
+accepted finish and receive its whole response, drops connections that carry
+no request, and returns nil.
+
+There is no drain timeout, and that is still right now that the handler is a
+whole control panel rather than one static page. The story's promise is
+unconditional. What the handler does is bounded by the process itself: it
+renders from templates carried inside the binary, reads no file at request
+time and reaches nothing off the host, and the widget set it consults is in
+memory (`D04-panel`, `D05-widgets`), so a request in flight waits on this
+process's own work and on nothing else. And the host already bounds a stop
+that hangs: systemd sends `SIGKILL` when its stop timeout expires. A timeout
+constant here would be a second, weaker promise stacked on the first. `Serve`
+returns a non-nil error only when serving fails for some reason other than
+cancellation.
 
 `Serve` is also silent in its own right. Go's `net/http` server has a sink
 of its own: `net/http` documents at `Server.ErrorLog` that, when that field
@@ -31,18 +41,21 @@ is nil, errors accepting connections and unexpected behaviour from handlers
 are logged through the `log` package's standard logger, which writes to the
 real standard error and never passes through `Process.Stderr`. Its source
 shows what arrives there: an `Accept` error the server retries, a handler
-that panics, a handler that calls `WriteHeader` twice. A client can provoke
-none of these against `D04-pages`'s handler, but the sink is open whatever
-the handler does, and `D01`'s rule that nothing below `main` reaches the
-real streams except through `Process` is exactly the promise it would break.
-So `Serve` gives the server an `ErrorLog` that goes nowhere, and the
-server's own diagnostics are discarded, because the host's journal holds
-only trouble the process itself reports. Either `log.New(io.Discard, "", 0)`
-or `slog.NewLogLogger(slog.DiscardHandler, slog.LevelError)` satisfies that;
-the silence requirement fixes the outcome, not the constructor. It is
-tested as `D01` tests its stream rule: a test points the `log` package at a
-buffer, drives `Serve` with a listener whose first `Accept` returns a
-temporary error and a handler that panics, and finds the buffer empty.
+that panics, a handler that calls `WriteHeader` twice. This design makes no
+claim about whether a client can provoke any of them: the handler it is
+handed renders templates, parses a submitted form and holds a store, and in
+any case `Serve` is a function of the handler it is given, not of the one
+`D04-panel` happens to define today. The sink is open whatever the handler
+does, and `D01`'s rule that nothing below `main` reaches the real streams
+except through `Process` is exactly the promise it would break. So `Serve`
+gives the server an `ErrorLog` that goes nowhere, and the server's own
+diagnostics are discarded, because the host's journal holds only trouble the
+process itself reports. Either `log.New(io.Discard, "", 0)` or
+`slog.NewLogLogger(slog.DiscardHandler, slog.LevelError)` satisfies that; the
+silence requirement fixes the outcome, not the constructor. It is tested as
+`D01` tests its stream rule: a test points the `log` package at a buffer,
+drives `Serve` with a listener whose first `Accept` returns a temporary error
+and a handler that panics, and finds the buffer empty.
 
 `Run` is the observable surface. With a valid `PORT` it asks the listen
 factory for exactly one listener, `tcp` on `127.0.0.1:<port>`, and never
@@ -55,9 +68,11 @@ the bound address from `Listening`; a test that wants a failure injects a
 factory that returns an error, or one that returns a listener whose `Accept`
 fails, and never contends for a port. A healthy run is silent from start to
 finish: no startup banner, no request log, nothing on either stream when it
-stops, so that under systemd the journal holds only trouble. When `ctx` is
-done it returns `ExitSuccess`, and by then the listener is closed and every
-accepted request has been answered.
+stops, so that under systemd the journal holds only trouble. That silence is
+about dummy's own streams and says nothing about what it answers a client;
+every response the panel sends is `D04-panel`'s business, not this design's.
+When `ctx` is done it returns `ExitSuccess`, and by then the listener is
+closed and every accepted request has been answered.
 
 Trouble is one line on stderr, in the repository's diagnostic shape: the
 program name, a colon, a space, and the reason. For a port already in use the
@@ -77,14 +92,17 @@ whose listener's `Accept` returns an error the server does not retry. Both
 exit `ExitServerFailed`.
 
 No read, write, or idle timeouts are contract. The stories fix none, the
-only client is the host's proxy, and nothing about the page needs them. The
-build is nonetheless expected to set `ReadHeaderTimeout`: the lint gate's
-gosec `G112` demands it and suppression is forbidden, and it affects only a
-connection that has not yet delivered a request header, which is exactly a
-connection that carries no request. The build must not set a write timeout
-that could cut short the drain the shutdown requirement promises: a response
-accepted before `ctx` was done is delivered whole, however long that takes,
-and a `WriteTimeout` would put a second, weaker promise under the first.
+only client is the host's proxy, and nothing the panel does needs them: the
+panel page carries a script that polls a fragment, but a poll is an ordinary
+short request like any other, and an idle timeout would cut the connection it
+arrives on rather than help. The build is nonetheless expected to set
+`ReadHeaderTimeout`: the lint gate's gosec `G112` demands it and suppression
+is forbidden, and it affects only a connection that has not yet delivered a
+request header, which is exactly a connection that carries no request. The
+build must not set a write timeout that could cut short the drain the
+shutdown requirement promises: a response accepted before `ctx` was done is
+delivered whole, however long that takes, and a `WriteTimeout` would put a
+second, weaker promise under the first.
 
 ## REQUIREMENTS
 
