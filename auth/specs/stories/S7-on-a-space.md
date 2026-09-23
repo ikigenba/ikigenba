@@ -2,9 +2,11 @@
 
 auth reached through a space: the file `S6-package.md` describes, deployed with
 `devctl deploy`, installed by `opsctl`, and answered by nginx at `auth.<space>`
-over TLS. Deployed like any app, auth is also the authenticator: once it is
-installed, the host's nginx routes every other app through auth's `/check`
-before serving it. These stories prove the whole path from checkout to browser
+over TLS, which nginx proxies to auth's socket, `/run/ikigenba/auth.sock`
+(`S2-serve.md`). Deployed like any app, auth is also the authenticator: once
+it is installed, the host's nginx routes every other app through auth's
+`/check`, a subrequest to that same socket, before serving it. opsctl refuses
+to disable auth, so the authenticator is never switched off on a space. These stories prove the whole path from checkout to browser
 — auth serving its own sign-in page, and auth deciding another app's requests —
 and nothing about auth that the earlier groups do not already say. devctl and
 opsctl are named only by their published commands. The routing of other apps
@@ -44,7 +46,7 @@ Preconditions:
 - `devctl --account 602773793009 deploy sbx.ikigenba.dev auth/dist/auth-v<semver>.tar.xz`
   exited 0.
 - `devctl --account 602773793009 space status sbx.ikigenba.dev` shows
-  `auth v<semver> active -`.
+  `auth v<semver> active active -`.
 - The request carries no `ikigenba_session` cookie and no `Authorization`
   header.
 
@@ -82,10 +84,10 @@ Preconditions:
   `602773793009`, its instance is `running`, `opsctl` is installed, the
   `auth/v<semver>` tag and `auth/dist/auth-v<semver>.tar.xz` exist, the
   `devctl deploy` of auth exited 0, and `space status` shows `auth v<semver>
-  active -`.
+  active active -`.
 - `dummy` is deployed and active on the same space through its own
   `S7-on-a-space.md` chain, so `space status` also shows `dummy v<semver>
-  active -`.
+  active active -`.
 - The host's nginx routes every app other than auth through auth's `/check`
   before serving it: a request with no accepted credential is answered by a
   redirect to `https://auth.sbx.ikigenba.dev/?return=<original URL>`. This
@@ -148,7 +150,7 @@ Postconditions:
 
 ## A visitor asks a space for the check endpoint
 
-`/check` is meant only for nginx's internal subrequest to auth's loopback port.
+`/check` is meant only for nginx's internal subrequest to auth's socket.
 auth's own hostname answers a public `/check` with 404 by design. The space's
 own host answers 404 too on this space, but because no app answers at the bare
 space name here — so this path falls to the catch-all like any other — not
@@ -173,7 +175,7 @@ HTTP/2 404
 Status 404. Both forms answer 404, for different reasons: auth's own host holds
 `/check` behind a 404 by design, while the bare space host answers 404 to every
 path because no app answers at that name on this space. Neither reaches the
-internal subrequest nginx makes to auth's loopback port. The body is not fixed.
+internal subrequest nginx makes to auth's socket. The body is not fixed.
 
 Preconditions:
 
@@ -187,9 +189,9 @@ Preconditions:
   answers a public `/check` with 404, and on any other app's host `/check` is
   not a public endpoint — it is treated like any other path and taken through
   the space's normal auth flow, never the internal subrequest nginx makes to
-  auth's loopback port. This is a property of the space's nginx (opsctl's
+  auth's socket. This is a property of the space's nginx (opsctl's
   generation, a separate sub-project), named here only by its observable effect;
-  it is not something auth can do alone, because from auth's loopback port a
+  it is not something auth can do alone, because on auth's socket a
   public `/check` and an nginx subrequest `/check` are indistinguishable.
 
 Postconditions:

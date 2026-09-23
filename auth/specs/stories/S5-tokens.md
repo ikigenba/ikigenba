@@ -1,7 +1,9 @@
 # Stories — tokens
 
 The token actions a signed-in user drives from their profile. Every request
-here is a curl against `http://127.0.0.1:3001` carrying a valid
+here is a curl against auth a developer serves with
+`systemd-socket-activate -l 127.0.0.1:3001 auth` (`S2-serve.md`), at
+`http://127.0.0.1:3001`, carrying a valid
 `ikigenba_session` cookie, and every state-changing request is a POST that also
 carries an `Origin` header matching the service's own origin (in development
 that is the local origin, here `http://127.0.0.1:3001`; on a space it is

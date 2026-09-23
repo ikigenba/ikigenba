@@ -2,8 +2,10 @@
 
 The browser sign-in flow: the sign-in page and profile at `/`, the start of a
 Google sign-in at `/login/google`, the callback at `/login/google/callback`,
-and sign-out at `/logout`. Every request here runs against auth on the loopback
-address `http://127.0.0.1:3001`; the facts that depend on the space's own
+and sign-out at `/logout`. Every request here runs against auth a developer
+serves with `systemd-socket-activate -l 127.0.0.1:3001 auth` (`S2-serve.md`),
+at `http://127.0.0.1:3001`; on a space nginx proxies auth's hostname to auth's
+socket instead. The facts that depend on the space's own
 hostname — the callback `redirect_uri`, the session cookie's `Domain`, and
 which return URLs count as being under the space — are stated in prose, because
 a real space carries them and `S7-on-a-space.md` proves the whole path there.
@@ -58,7 +60,7 @@ carried to the login start, not persisted.
 
 Preconditions:
 
-- auth is running with `PORT=3001` and `GOOGLE_CLIENT_ID`,
+- auth is serving on `127.0.0.1:3001` with `GOOGLE_CLIENT_ID`,
   `GOOGLE_CLIENT_SECRET`, and `WORKSPACE_DOMAIN` set.
 - The request carries no `ikigenba_session` cookie, or one that names no live
   session.
@@ -98,7 +100,7 @@ same OAuth client for development.
 
 Preconditions:
 
-- auth is running with `PORT=3001` and its Google settings.
+- auth is serving on `127.0.0.1:3001` with its Google settings.
 
 Postconditions:
 
@@ -128,12 +130,14 @@ Content-Type: text/plain; charset=utf-8
 ```
 
 Status 502. The body is one line of plain text saying the sign-in provider
-could not be reached. The underlying error — the unreachable host or Google's
-failure to answer — is written to auth's stderr.
+could not be reached. auth writes one line to stderr,
+`auth: request <id>: <reason>`, where `<reason>` is the underlying error — the
+unreachable host or Google's failure to answer — and `<id>` is the request's
+`X-Request-Id`, or `-` when it carries none, as here (`S2-serve.md`).
 
 Preconditions:
 
-- auth is running with `PORT=3001` and its Google settings.
+- auth is serving on `127.0.0.1:3001` with its Google settings.
 - Google is unreachable, so auth cannot reach it to start the sign-in.
 
 Postconditions:
@@ -168,7 +172,7 @@ Status 302. Redirects to `/`. On a space the cookie also carries
 
 Preconditions:
 
-- auth is running with its Google settings.
+- auth is serving on `127.0.0.1:3001` with its Google settings.
 - An in-flight login state exists named by `<state>`, and `<code>` is a valid
   Google authorization code for that login.
 - The account is in the `michaelgreenly.dev` Workspace and has never signed in
@@ -210,7 +214,7 @@ first-login story.
 
 Preconditions:
 
-- auth is running with its Google settings.
+- auth is serving on `127.0.0.1:3001` with its Google settings.
 - An in-flight login state exists named by `<state>`; the account is a
   `michaelgreenly.dev` member and already has a user row for its
   `(issuer, subject)`.
@@ -252,7 +256,7 @@ the first-login story.
 
 Preconditions:
 
-- auth is running with its Google settings.
+- auth is serving on `127.0.0.1:3001` with its Google settings.
 - An in-flight login state exists named by `<state>`, carrying a return URL
   `<return>` whose host is the space or a subdomain of it.
 - The account is a `michaelgreenly.dev` member.
@@ -293,7 +297,7 @@ first-login story.
 
 Preconditions:
 
-- auth is running with its Google settings.
+- auth is serving on `127.0.0.1:3001` with its Google settings.
 - An in-flight login state exists named by `<state>`, carrying a return URL
   `<return>` whose host is neither the space nor a subdomain of it.
 - The account is a `michaelgreenly.dev` member.
@@ -329,7 +333,7 @@ verified. A callback with no `state` at all is refused the same way.
 
 Preconditions:
 
-- auth is running with its Google settings.
+- auth is serving on `127.0.0.1:3001` with its Google settings.
 - No in-flight login state matches `<state>`.
 
 Postconditions:
@@ -359,7 +363,7 @@ sign-in page again. No `Set-Cookie` is sent.
 
 Preconditions:
 
-- auth is running with its Google settings.
+- auth is serving on `127.0.0.1:3001` with its Google settings.
 - The callback carries `error=access_denied`. An in-flight login state named by
   `<state>` may exist from the start of the sign-in.
 
@@ -391,7 +395,7 @@ Status 403. The body is an HTML page. No `Set-Cookie` is sent.
 
 Preconditions:
 
-- auth is running with its Google settings.
+- auth is serving on `127.0.0.1:3001` with its Google settings.
 - An in-flight login state exists named by `<state>`; the code exchanges
   successfully, but the account's `hd` is not `michaelgreenly.dev` or its email
   is not verified.
@@ -420,12 +424,14 @@ Content-Type: text/plain; charset=utf-8
 ```
 
 Status 502. The body is one line of plain text saying the sign-in provider
-could not be reached. The underlying error — the failed token exchange or the
-unreachable host — is written to auth's stderr.
+could not be reached. auth writes one line to stderr,
+`auth: request <id>: <reason>`, where `<reason>` is the underlying error — the
+failed token exchange or the unreachable host — and `<id>` is the request's
+`X-Request-Id`, or `-` when it carries none, as here (`S2-serve.md`).
 
 Preconditions:
 
-- auth is running with its Google settings.
+- auth is serving on `127.0.0.1:3001` with its Google settings.
 - An in-flight login state exists named by `<state>`; the token exchange with
   Google fails or Google is unreachable.
 
@@ -463,7 +469,7 @@ ignored.
 
 Preconditions:
 
-- auth is running with its Google settings.
+- auth is serving on `127.0.0.1:3001` with its Google settings.
 - The request carries an `ikigenba_session` cookie naming a live session for a
   provisioned user; that user holds zero or more tokens.
 
@@ -498,7 +504,7 @@ has none.
 
 Preconditions:
 
-- auth is running with its Google settings.
+- auth is serving on `127.0.0.1:3001` with its Google settings.
 - The request carries an `ikigenba_session` cookie naming a live session, and
   its `Origin` is auth's own origin (locally `http://127.0.0.1:3001`, on a space
   `https://auth.<space>`).
@@ -534,7 +540,7 @@ Status 403. The body is one line of plain text. No `Set-Cookie` is sent.
 
 Preconditions:
 
-- auth is running with its Google settings.
+- auth is serving on `127.0.0.1:3001` with its Google settings.
 - The request carries an `ikigenba_session` cookie naming a live session, and
   its `Origin` is not auth's own origin.
 

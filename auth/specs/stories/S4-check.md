@@ -1,14 +1,16 @@
 # Stories — check
 
-The two endpoints auth serves on its loopback port for deciding who a request
-belongs to. `GET /check` is the subrequest endpoint nginx calls for every
-routed app: nginx forwards the original request's `Cookie` and `Authorization`
-headers with no body, and acts on the status auth returns — 200 means copy the
-identity headers onto the upstream request, 401 means redirect the browser to
-sign in, 403 means pass the refusal through. `GET /me` is the public "who am I"
-endpoint an agent or a signed-in user can call directly. Every story here is a
-`curl` request against `http://127.0.0.1:3001`, the loopback address auth
-listens on.
+The two endpoints auth serves on its socket for deciding who a request belongs
+to. `GET /check` is the subrequest endpoint nginx calls for every routed app,
+at `http://unix:/run/ikigenba/auth.sock:/check`: nginx forwards the original
+request's `Cookie` and `Authorization` headers with no body and with its own
+`X-Request-Id` for the request, and acts on the status auth returns — 200
+means copy the identity headers onto the upstream request, 401 means redirect
+the browser to sign in, 403 means pass the refusal through. `GET /me` is the
+public "who am I" endpoint an agent or a signed-in user can call directly.
+Every story here is a `curl` request against auth a developer serves with
+`systemd-socket-activate -l 127.0.0.1:3001 auth` (`S2-serve.md`), at
+`http://127.0.0.1:3001`, standing in for nginx or for the caller.
 
 A credential reaches these endpoints one of two ways: the session cookie
 `ikigenba_session=<session-id>`, or `Authorization: Bearer ikp_<token>`. Both
@@ -22,7 +24,7 @@ token is honored only while its owner has logged in through Google within the
 last 30 days. The last-use time of a session and the last-used time of a token
 are updated in `/check` and nowhere else; `/me` never mutates anything.
 
-`/check` is only meant to be called by nginx as a loopback subrequest; it is not
+`/check` is only meant to be called by nginx as a subrequest to auth's socket; it is not
 reachable from the public side of a space, and that unreachability (a request to
 `https://<space>/check` gets 404) is proven in `S7-on-a-space.md`, not here.
 
@@ -393,3 +395,46 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
+
+## nginx checks a request while auth cannot use its database
+
+auth decides every request from its database, so when the database fails the
+read or write a request needs, auth cannot decide it and answers 500: the
+fault is auth's, not the caller's. nginx treats any answer from `/check` other
+than 200, 401, and 403 as its own failure, so the visitor sees an error and
+the app is never reached. auth writes one line naming the request by the
+`X-Request-Id` nginx gave the subrequest, so the operator reading the journal
+can find the same request in nginx's log (`S2-serve.md`). The developer here
+stands in for nginx by sending the id by hand. `/me`, and every route of
+`S3-sign-in.md` and `S5-tokens.md`, answers a database failure the same way,
+with the same line.
+
+Request:
+
+```
+$ curl -si -H 'X-Request-Id: 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59' -H 'Cookie: ikigenba_session=<session-id>' http://127.0.0.1:3001/check
+```
+
+Response:
+
+```
+HTTP/1.1 500 Internal Server Error
+Content-Type: text/plain; charset=utf-8
+```
+
+Status 500. The response sets no `X-User-Id` or `X-User-Email`. The body is
+one line of plain text saying the server failed.
+
+Preconditions:
+
+- auth is serving on `127.0.0.1:3001`.
+- The request carries `X-Request-Id` and a credential.
+- auth's database fails the read the request needs.
+
+Postconditions:
+
+- Nothing has changed. No session or token was touched.
+- auth wrote one line to stderr,
+  `auth: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: <reason>`, where
+  `<reason>` is the database's failure. A request that carries no
+  `X-Request-Id` is named `-`: `auth: request -: <reason>`.

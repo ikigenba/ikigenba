@@ -41,8 +41,10 @@ Postconditions:
 The manifest is a fact about the binary, so the binary emits it. The committed
 `etc/manifest.toml` is a copy kept so the checkout can be read without a build;
 the two are byte-identical, and `devctl build` refuses an app where they
-differ. auth declares its name, its port, that it is not the host's default
-app, the secrets it needs, its Workspace domain, and its SQLite database.
+differ. auth declares its name, that it is not the host's default app, the
+secrets it needs, its Workspace domain, and its SQLite database. It declares
+no port: auth serves on the socket the host passes it (`S2-serve.md`), and a
+manifest carrying `port` is refused by `devctl build` and by opsctl.
 
 Command:
 
@@ -54,7 +56,6 @@ Output:
 
 ```
 app = "auth"
-port = 3001
 default = false
 secrets = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]
 
@@ -90,7 +91,8 @@ Output:
 ```
 Usage: auth [command]
 
-Serve the auth service at 127.0.0.1:$PORT. With no command, serve.
+Serve the auth service on the socket systemd passes in. With no command,
+serve.
 
 Commands:
   manifest   print the app manifest

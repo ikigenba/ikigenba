@@ -53,7 +53,6 @@ Output:
 ```
 v<semver>
 app = "auth"
-port = 3001
 default = false
 secrets = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]
 

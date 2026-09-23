@@ -45,7 +45,7 @@ Preconditions:
 - `devctl --account 602773793009 deploy sbx.ikigenba.dev dummy/dist/dummy-v<semver>.tar.xz`
   exited 0.
 - `devctl --account 602773793009 space status sbx.ikigenba.dev` shows
-  `dummy v<semver> active -`.
+  `dummy v<semver> active active -`.
 - The space routes `dummy.sbx.ikigenba.dev` through its authenticating gate:
   the gate admits the request and sets `X-User-Id` and `X-User-Email` on what
   it passes to dummy, and refuses a request it cannot authenticate before
