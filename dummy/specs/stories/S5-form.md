@@ -27,7 +27,8 @@ values to carry. Nothing is created when a submission is rejected either
 way: the fixture set is left as it was, down to its order.
 
 An nginx gate in front of dummy sets `X-User-Id` and `X-User-Email` on every
-upstream request, so there is no unauthenticated case and a request without
+upstream request, and a sibling app forwards the ones it received (`S2`), so
+there is no unauthenticated case and a request without
 `X-User-Id` is answered 500, the same rule the panel page and the fragment
 follow. The curl lines below therefore carry both headers explicitly, and only
 the missing-header story carries neither.
@@ -66,7 +67,7 @@ Status 303. The body is empty.
 
 Preconditions:
 
-- dummy is running with `PORT=3000`.
+- dummy is serving on `127.0.0.1:3000`.
 - The widgets are the fixture set as the process started it, so no widget is
   named `delta`.
 
@@ -104,7 +105,7 @@ name is required. No error sits beside the count or the status field.
 
 Preconditions:
 
-- dummy is running with `PORT=3000`.
+- dummy is serving on `127.0.0.1:3000`.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -141,7 +142,7 @@ name field saying that name is already taken.
 
 Preconditions:
 
-- dummy is running with `PORT=3000`.
+- dummy is serving on `127.0.0.1:3000`.
 - The widgets are the fixture set as the process started it, so a widget named
   `alpha` exists.
 
@@ -179,7 +180,7 @@ long.
 
 Preconditions:
 
-- dummy is running with `PORT=3000`.
+- dummy is serving on `127.0.0.1:3000`.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -215,7 +216,7 @@ be a whole number.
 
 Preconditions:
 
-- dummy is running with `PORT=3000`.
+- dummy is serving on `127.0.0.1:3000`.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -251,7 +252,7 @@ count field saying the count cannot be negative.
 
 Preconditions:
 
-- dummy is running with `PORT=3000`.
+- dummy is serving on `127.0.0.1:3000`.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -291,7 +292,7 @@ message sits beside the status field saying the status must be one of
 
 Preconditions:
 
-- dummy is running with `PORT=3000`.
+- dummy is serving on `127.0.0.1:3000`.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -330,7 +331,7 @@ saying what is wrong with that field.
 
 Preconditions:
 
-- dummy is running with `PORT=3000`.
+- dummy is serving on `127.0.0.1:3000`.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -377,7 +378,7 @@ there being no submitted values to show.
 
 Preconditions:
 
-- dummy is running with `PORT=3000`.
+- dummy is serving on `127.0.0.1:3000`.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -388,9 +389,10 @@ Postconditions:
 
 ## A request to create a widget arrives without the identity headers
 
-The gate sets `X-User-Id` on every request it forwards, and nothing but the
-gate can reach dummy's socket, so a request without it says the gate is
-misconfigured or has been bypassed. That is dummy's fault to report rather
+The gate sets `X-User-Id` on every request it forwards, a sibling app
+forwards the one it received, and nothing but nginx and the suite's apps can
+reach dummy's socket, so a request without it says the gate or a sibling is
+misconfigured. That is dummy's fault to report rather
 than the caller's to correct, so it is a 500 and not a 400 or a 401. There is
 no identity to draw the chrome from, so the answer is bare text rather than a
 page, as it is on every route. The identity check runs before dummy looks at
@@ -416,7 +418,7 @@ missing.
 
 Preconditions:
 
-- dummy is running with `PORT=3000`.
+- dummy is serving on `127.0.0.1:3000`.
 - The request carries no `X-User-Id` header.
 - The widgets are the fixture set as the process started it.
 
@@ -424,3 +426,5 @@ Postconditions:
 
 - Nothing has changed. No widget was created, and the fixture set is
   unchanged.
+- dummy wrote one line to stderr, `dummy: request -: X-User-Id is missing`,
+  as it does for every request it answers with a 500 (`S3`).

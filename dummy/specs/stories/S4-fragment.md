@@ -18,8 +18,9 @@ fixed by any story here; what these stories fix is the endpoint's HTTP
 behavior.
 
 Every request reaching dummy comes through the host's nginx gate, which sets
-`X-User-Id` and `X-User-Email` on each upstream request, so there is no
-unauthenticated case; the identity the fragment requires is `X-User-Id`, and a
+`X-User-Id` and `X-User-Email` on each upstream request, or from a sibling app
+that forwards the ones it received (`S2`), so there is no unauthenticated
+case; the identity the fragment requires is `X-User-Id`, and a
 request without it is answered 500, the same rule the panel page follows. The
 curl lines below therefore carry both headers explicitly.
 
@@ -72,7 +73,7 @@ word in its own column.
 
 Preconditions:
 
-- dummy is running with `PORT=3000`.
+- dummy is serving on `127.0.0.1:3000`.
 - No widget has been created since dummy started, so the fixture set holds
   the three widgets it holds at process start.
 
@@ -106,7 +107,7 @@ table returns.
 
 Preconditions:
 
-- dummy is running with `PORT=3000`.
+- dummy is serving on `127.0.0.1:3000`.
 - No widget has been created since dummy started.
 
 Postconditions:
@@ -140,7 +141,7 @@ quoted, so the page keeps polling with it.
 
 Preconditions:
 
-- dummy is running with `PORT=3000`.
+- dummy is serving on `127.0.0.1:3000`.
 - `"<etag>"` is the `ETag` from the response the page is currently showing.
 - Nothing has been created since that response, so the table's content is
   unchanged.
@@ -181,7 +182,7 @@ the content differs.
 
 Preconditions:
 
-- dummy is running with `PORT=3000`.
+- dummy is serving on `127.0.0.1:3000`.
 - `"<etag>"` is the `ETag` from the response the page is currently showing.
 - A widget named `delta` was created by a POST to `/widgets` after that
   response was sent.
@@ -194,8 +195,9 @@ Postconditions:
 
 ## A request for the fragment arrives without the identity headers
 
-The nginx gate sets `X-User-Id` on every upstream request, so a request
-without it did not come through the gate and dummy cannot say who is asking.
+The nginx gate sets `X-User-Id` on every upstream request, and a sibling app
+forwards the one it received, so a request without it came from neither as
+it should and dummy cannot say who is asking.
 That is a fault on dummy's side of the boundary, not a request the caller can
 correct, so it is answered 500 rather than 400 or 401 — the same rule the
 panel page follows.
@@ -218,12 +220,14 @@ missing. No table markup and no `ETag` are sent.
 
 Preconditions:
 
-- dummy is running with `PORT=3000`.
+- dummy is serving on `127.0.0.1:3000`.
 - The request carries no `X-User-Id` header.
 
 Postconditions:
 
 - Nothing has changed.
+- dummy wrote one line to stderr, `dummy: request -: X-User-Id is missing`,
+  as it does for every request it answers with a 500 (`S3`).
 
 ## A caller sends the fragment a method it does not take
 
@@ -252,7 +256,7 @@ allowed. `PUT`, `DELETE`, and `PATCH` are refused the same way.
 
 Preconditions:
 
-- dummy is running with `PORT=3000`.
+- dummy is serving on `127.0.0.1:3000`.
 
 Postconditions:
 

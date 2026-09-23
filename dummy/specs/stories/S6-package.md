@@ -51,7 +51,6 @@ Output:
 ```
 v<semver>
 app = "dummy"
-port = 3000
 default = false
 secrets = []
 ```

@@ -41,8 +41,10 @@ Postconditions:
 The manifest is a fact about the binary, so the binary emits it. The
 committed `etc/manifest.toml` is a copy kept so the checkout can be read
 without a build; the two are byte-identical, and `devctl build` refuses an
-app where they differ. dummy declares its name, its port, that it is not the
-host's default app, and no secrets.
+app where they differ. dummy declares its name, that it is not the host's
+default app, and no secrets. It declares no port: dummy serves on the socket
+the host passes it (`S2-serve.md`), and a manifest carrying `port` is refused
+by `devctl build` and by opsctl.
 
 Command:
 
@@ -54,7 +56,6 @@ Output:
 
 ```
 app = "dummy"
-port = 3000
 default = false
 secrets = []
 ```
@@ -83,7 +84,8 @@ Output:
 ```
 Usage: dummy [command]
 
-Serve the dummy control panel at 127.0.0.1:$PORT. With no command, serve.
+Serve the dummy control panel on the socket systemd passes in. With no
+command, serve.
 
 Commands:
   manifest   print the app manifest

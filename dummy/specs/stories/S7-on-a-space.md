@@ -4,8 +4,10 @@ The panel reached through a space: the file `S6-package.md` describes,
 deployed with `devctl deploy`, installed by `opsctl`, and answered by nginx at
 `dummy.<space>` over TLS. A space is one label under the root domain and an
 app is `<app>.<space>`, so dummy on the space `sbx.ikigenba.dev` answers at
-`dummy.sbx.ikigenba.dev`. The space authenticates every request before it
-reaches dummy and passes the caller on in `X-User-Id` and `X-User-Email`;
+`dummy.sbx.ikigenba.dev`. nginx on the space proxies to dummy's socket,
+`/run/ikigenba/dummy.sock` (`S2`). The space authenticates every request
+before it reaches dummy and passes the caller on in `X-User-Id` and
+`X-User-Email`, with the request's id in `X-Request-Id`;
 dummy itself has no unauthenticated case, so a request that arrives at all is
 one of a known caller. The story proves the whole path from checkout to
 browser and nothing about dummy that the earlier groups do not already say.

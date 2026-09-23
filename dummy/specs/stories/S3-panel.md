@@ -5,13 +5,16 @@ every page it serves is drawn in. dummy is the platform's UI reference
 implementation, so every page is server-rendered HTML — the whole of a page's
 content arrives in the response body, and nothing is assembled afterwards by
 JavaScript. An nginx gate in front of dummy authenticates every request and
-sets `X-User-Id` and `X-User-Email` on the request it passes upstream; dummy
-trusts those two headers absolutely and has no unauthenticated case, so there
-is no sign-in page and no signed-out chrome. Only the gate can reach dummy's
-socket, so a request that arrives without `X-User-Id` means the gate is
-misconfigured — a server fault, not a bad request. On a developer's laptop
-there is no gate, so the headers are passed by hand, and every request below
-that needs identity shows them.
+sets `X-User-Id` and `X-User-Email` on the request it passes upstream; a
+sibling app calling dummy forwards the ones it received (`S2`). dummy trusts
+those two headers absolutely and has no unauthenticated case, so there is no
+sign-in page and no signed-out chrome. Only nginx and the suite's own apps can
+reach dummy's socket, so a request that arrives without `X-User-Id` means the
+gate or a sibling is misconfigured — a server fault, not a bad request. On a
+developer's laptop there is no gate, so the headers are passed by hand, and
+every request below that needs identity shows them. The requests go to a
+dummy the developer serves with `systemd-socket-activate -l 127.0.0.1:3000
+dummy` (`S2`).
 
 The demo resource is widgets. A widget has a `name`, an integer `count`, and
 a `status` that is one of `active`, `paused`, or `retired`. The widgets are an
@@ -27,6 +30,11 @@ leaves dummy. Because the caller's identity is what the chrome is drawn from,
 a failure on a page that dummy can name to an identified caller is itself a
 page in that same chrome, and only the missing-header fault, where there is no
 identity to draw with, is bare text.
+
+dummy writes one line to stderr for each request it answers with a 500, in
+the form `S2` fixes, `dummy: request <id>: <reason>`, and nothing for any
+other answer: a 404, a 405, a 415, or a 422 is the caller's mistake, not
+trouble, and a healthy dummy stays silent.
 
 The routes are `GET /`, which sends the caller to the panel; `GET /widgets`,
 the panel page; `GET /widgets/table`, the table fragment (`S4`); and
@@ -64,7 +72,7 @@ each of a widget's three fields.
 
 Preconditions:
 
-- dummy is running with `PORT=3000`.
+- dummy is serving on `127.0.0.1:3000`.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -93,7 +101,7 @@ Status 303. The body is empty.
 
 Preconditions:
 
-- dummy is running with `PORT=3000`.
+- dummy is serving on `127.0.0.1:3000`.
 
 Postconditions:
 
@@ -122,7 +130,7 @@ Status 200. The body is empty.
 
 Preconditions:
 
-- dummy is running with `PORT=3000`.
+- dummy is serving on `127.0.0.1:3000`.
 
 Postconditions:
 
@@ -131,9 +139,9 @@ Postconditions:
 ## A request arrives without the identity headers
 
 In production this cannot happen from outside: the gate sets the headers on
-every request it forwards, and nothing but the gate can reach dummy's socket.
-So a request without `X-User-Id` says the gate is misconfigured or has been
-bypassed, which is dummy's fault to report, not the caller's to fix — hence a
+every request it forwards, a sibling app forwards the ones it received, and
+nothing but nginx and the suite's apps can reach dummy's socket. So a request
+without `X-User-Id` says the gate or a sibling is misconfigured, which is dummy's fault to report, not the caller's to fix — hence a
 500 and not a 400 or a 401. There is no identity to draw the chrome from, so
 this one answer is bare text. A developer meets it by forgetting the headers,
 as here.
@@ -158,12 +166,49 @@ with no headers is never a 303, a 404, or a 405.
 
 Preconditions:
 
-- dummy is running with `PORT=3000`.
+- dummy is serving on `127.0.0.1:3000`.
 - The request carries no `X-User-Id` header.
 
 Postconditions:
 
 - Nothing has changed. No widget was read and none was created.
+- dummy wrote one line to stderr, `dummy: request -: X-User-Id is missing`,
+  naming the request `-` because it carried no `X-Request-Id`.
+
+## A request from nginx arrives without the identity headers
+
+nginx sets `X-Request-Id` on every request it forwards, so when the gate is
+misconfigured and forwards a request without `X-User-Id`, the line dummy
+writes names the request by the id nginx gave it, and the operator reading the
+journal can find the same request in nginx's log. The developer here stands in
+for such an nginx by sending the id by hand.
+
+Request:
+
+```
+$ curl -si -H 'X-Request-Id: 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59' http://127.0.0.1:3000/widgets
+```
+
+Response:
+
+```
+HTTP/1.1 500 Internal Server Error
+Content-Type: text/plain; charset=utf-8
+```
+
+Status 500. The body is the same one line of plain text saying the identity
+header is missing.
+
+Preconditions:
+
+- dummy is serving on `127.0.0.1:3000`.
+- The request carries `X-Request-Id` and no `X-User-Id` header.
+
+Postconditions:
+
+- Nothing has changed. No widget was read and none was created.
+- dummy wrote one line to stderr,
+  `dummy: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: X-User-Id is missing`.
 
 ## A caller asks for a path that does not exist
 
@@ -189,7 +234,7 @@ says the page was not found and carries a link to `/widgets`.
 
 Preconditions:
 
-- dummy is running with `PORT=3000`.
+- dummy is serving on `127.0.0.1:3000`.
 
 Postconditions:
 
@@ -220,7 +265,7 @@ whose visible text says the method is not allowed and carries a link to
 
 Preconditions:
 
-- dummy is running with `PORT=3000`.
+- dummy is serving on `127.0.0.1:3000`.
 
 Postconditions:
 
