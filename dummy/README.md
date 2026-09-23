@@ -17,7 +17,7 @@ report the same string.
 
 Built spec-first: `specs/design/` is the contract, `AGENTS.md` the gates. No
 code or tests are written by hand; the build run derives them from the
-design. See `docs/spec-system.md` at the repo root.
+design. See the `spec` skill (`.agents/skills/spec/SKILL.md` at the repo root).
 
 ## Building it
 

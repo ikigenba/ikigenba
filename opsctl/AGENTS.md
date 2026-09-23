@@ -8,10 +8,10 @@ time, each created and torn down independently; `opsctl` reasons only about
 the one it runs on. Module path `github.com/ikigenba/ikigenba/opsctl`.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
-build run brings the existing `cmd/`, `internal/`, and `go.mod` into
-agreement with that target. See the `spec` and `build-spec` skills and `docs/spec-system.md` at the
-repo root. Everything below is what the build run computes the gap and runs
-the gates against; it is human-authored and read-only to the run.
+build run brings the existing `cmd/`, `internal/`, and `go.mod` into agreement
+with that target. See the `spec` and `build-spec` skills. Everything below is
+what the build run computes the gap and runs the gates against; it is
+human-authored and read-only to the run.
 
 ## Host
 
@@ -107,8 +107,7 @@ skipped tests, no disabled linters laundering a failure.
 
 `llm-lint` is available as an optional manual check through `make llm-lint`,
 but it is not a quality gate. Its configuration and sub-project rules remain in
-`.llm-lint.json` and `lint-rules/`. The rule-candidate backlog and provenance
-are documented in `../docs/llm-lint-rule-candidates.md`.
+`.llm-lint.json` and `lint-rules/`.
 
 ## Commit conventions
 

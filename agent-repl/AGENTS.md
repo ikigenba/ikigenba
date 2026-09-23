@@ -7,9 +7,9 @@ catalog. Module path `github.com/ikigenba/ikigenba/agent-repl`.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run writes the code (`cmd/`, `internal/`, `go.mod` are absent until it
-does). See the `spec` and `build-spec` skills and `docs/spec-system.md` at the
-repo root. Everything below is what the build run computes the gap and runs
-the gates against; it is human-authored and read-only to the run.
+does). See the `spec` and `build-spec` skills. Everything below is what the
+build run computes the gap and runs the gates against; it is human-authored and
+read-only to the run.
 
 ## Toolchain
 

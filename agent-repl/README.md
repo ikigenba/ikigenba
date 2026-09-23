@@ -7,7 +7,7 @@
 `specs/design/` define the contract, and an agent-driven build run writes the
 code, tests it, and proves it against the spec. Every behavior traces to a
 requirement id, and every requirement id to a test. See
-[how the spec system works](../docs/spec-system.md).
+[how the spec system works](../.agents/skills/spec/SKILL.md).
 
 ## Installing it
 

@@ -16,10 +16,9 @@ panel, the widgets, the table and the form — is the other documents in
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run writes the source, including the templates it embeds, the tests, and
-`etc/manifest.toml`. See the `spec` and `build-spec` skills and
-`docs/spec-system.md` at the repo root. Everything below is what the build run
-computes the gap and runs the gates against; it is human-authored and
-read-only to the run.
+`etc/manifest.toml`. See the `spec` and `build-spec` skills. Everything below
+is what the build run computes the gap and runs the gates against; it is
+human-authored and read-only to the run.
 
 ## Toolchain
 
@@ -38,8 +37,7 @@ an issue for a human to adjudicate.
 ## Deploy
 
 dummy is an app, not a self-installing CLI: it is built into a release tarball
-and pushed to a space's host by `devctl`, which drives `opsctl install` there
-(`docs/architecture.md`).
+and pushed to a space's host by `devctl`, which drives `opsctl install` there.
 
 1. Set the release version D01 declares (`Version` in `internal/cli`) to
    `vX.Y.Z`. It is a source literal the binary reports verbatim — no linker

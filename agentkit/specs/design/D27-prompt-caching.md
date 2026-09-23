@@ -116,9 +116,7 @@ proves is the breakpoint on a `system` block — the shape a consumer that loads
 its corpus as system content depends on. A probe against the real host showed
 that placement written (`cache_creation_input_tokens: 6702`) and read back
 exactly on the next two requests, with no message preceding the `system`
-array and an uncached `tools` array ahead of it. The raw request and response
-bodies of that probe, and of the Gemini probes behind the error shapes above,
-are kept in `docs/probes/prompt-caching.md`.
+array and an uncached `tools` array ahead of it.
 
 ## REQUIREMENTS
 

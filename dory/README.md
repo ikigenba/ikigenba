@@ -19,4 +19,4 @@ next pass in the same session. Every agent starts empty; the store
 filesystem are the only memory.
 
 Built spec-first: `specs/design/` is the contract, `AGENTS.md` the gates.
-See `docs/spec-system.md` at the repo root.
+See the `spec` skill (`.agents/skills/spec/SKILL.md` at the repo root).

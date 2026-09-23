@@ -14,7 +14,7 @@ So this sub-project is two things at once:
    loop, behind one small public surface.
 2. **A demonstration of spec-first construction:** a library fully specified up
    front, then generated from that spec. See
-   [how the spec system works](../docs/spec-system.md).
+   [how the spec system works](../.agents/skills/spec/SKILL.md).
 
 ## What agentkit is (the end product)
 

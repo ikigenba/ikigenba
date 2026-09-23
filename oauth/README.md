@@ -14,7 +14,7 @@ So this sub-project is two things at once:
    working binary.
 2. **A demonstration of spec-first construction:** a sub-project fully specified
    up front, then generated from that spec. See
-   [how the spec system works](../docs/spec-system.md).
+   [how the spec system works](../.agents/skills/spec/SKILL.md).
 
 > **Status:** the spec is written; the code is not. `cmd/` and `internal/` are
 > absent until the build run creates them.

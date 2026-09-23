@@ -18,8 +18,7 @@ to the run.
 ## Deploy
 
 auth is an app, not a self-installing CLI: it is built into a release tarball
-and pushed to a space's host by `devctl`, which drives `opsctl install` there
-(`docs/architecture.md`).
+and pushed to a space's host by `devctl`, which drives `opsctl install` there.
 
 1. Set the release version D01 declares (`internal/version/version.go`) to
    `vX.Y.Z`. It is a source literal the binary reports verbatim — no linker

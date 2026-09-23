@@ -15,7 +15,7 @@ installed tool through its published interface. Module path
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run writes the code under `cmd/` and `internal/`. See the `spec` and
-`build-spec` skills and `docs/spec-system.md` at the repo root. Everything
+`build-spec` skills. Everything
 below is what the build run computes the gap and runs the gates against; it
 is human-authored and read-only to the run.
 
@@ -95,7 +95,7 @@ the toolchain, so the run neither needs it on PATH nor a provider API key.
 The `make llm-lint` target, the rule files under `lint-rules/`, and
 `.llm-lint.json` are kept so it can be re-enabled later by adding
 `llm-lint cmd internal` back to this gate list and `llm-lint` back to the
-toolchain. See `../docs/llm-lint-rule-candidates.md` for the rules' provenance.
+toolchain.
 
 ## Operating defaults
 
