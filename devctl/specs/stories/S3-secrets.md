@@ -56,12 +56,11 @@ keyring and pushes that one app, named by its directory.
 An app is a sub-project of the checkout that has a `main` package and a
 committed `etc/manifest.toml`; its name is the directory name. The manifest's
 `secrets` array lists the names the app needs, and that array is all devctl
-reads from it here — the port, the default flag, the `[env]` table, and the
+reads from it here — the default flag, the `[env]` table, and the
 `[database]` table are the host's business, not the developer's machine's:
 
 ```toml
 app = "crm"
-port = 3100
 default = false
 secrets = ["CRM_API_KEY", "CRM_API_SECRET", "CRM_ORG"]
 
@@ -263,7 +262,7 @@ Preconditions:
 - The working directory is inside the checkout, and a live SSO session for
   the profile `ikigenba.dev`.
 - The space exists, its instance is `running`, and `crm` at `v0.1.0` is
-  deployed on it.
+  deployed on it and not disabled.
 - The keyring or the environment holds the new value for `CRM_API_KEY`, and
   values for every other name in `crm`'s `secrets` array.
 - `crm/dist/crm-v0.1.0.tar.xz` exists, written by `build`.

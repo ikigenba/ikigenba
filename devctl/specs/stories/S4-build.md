@@ -228,6 +228,46 @@ Postconditions:
 
 - Nothing under `crm/dist/` has changed.
 
+## A developer builds an app whose manifest names a port
+
+No app listens on a port: the host hands each app its socket, and opsctl
+refuses to install a file whose manifest carries a `port`. Build refuses it
+first, so such a file is never written, and says so from the committed
+manifest before it compiles anything. The key is refused whatever its value.
+
+```toml
+app = "crm"
+port = 3100
+default = false
+secrets = ["CRM_API_KEY", "CRM_API_SECRET", "CRM_ORG"]
+```
+
+Command:
+
+```
+$ devctl build crm
+```
+
+Output:
+
+```
+devctl: crm: etc/manifest.toml: 'port' is not allowed; the host gives the app its socket
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- `crm/` is a sub-project with a `main` package, and the committed
+  `crm/etc/manifest.toml` is the one above.
+- The working tree is clean and a `crm/v<semver>` tag points at `HEAD`.
+
+Postconditions:
+
+- Nothing has changed. Nothing was compiled, and nothing under `crm/dist/`
+  was written; an earlier `crm/dist/crm-<version>.tar.xz`, if any, is as it
+  was.
+
 ## A developer builds an app whose version string is stale
 
 The tag's version names the file; the binary carries its own. A file whose

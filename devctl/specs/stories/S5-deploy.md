@@ -86,6 +86,7 @@ Preconditions:
 - `crm/dist/crm-v0.1.0.tar.xz` exists, written by `build`.
 - `/sbx1.ikigenba.dev/crm` holds every name the file's manifest lists in
   `secrets`.
+- `crm` is not disabled on the space.
 
 Postconditions:
 
@@ -130,6 +131,7 @@ Preconditions:
   `v0.1.0`.
 - `/staging.ikigenba.dev/crm` holds every name the file's manifest lists in
   `secrets`.
+- `crm` is not disabled on the space.
 
 Postconditions:
 
@@ -173,6 +175,7 @@ Preconditions:
   tagged `v0.2.0-rc.1`.
 - `/sbx1.ikigenba.dev/crm` holds every name the file's manifest lists in
   `secrets`.
+- `crm` is not disabled on the space.
 
 Postconditions:
 
@@ -180,6 +183,50 @@ Postconditions:
   `opsctl install` of it has exited 0, so `crm.sbx1.ikigenba.dev` answers
   from the new binary. `crm`'s `state/` is untouched.
 - `space status sbx1` shows `crm` at `v0.2.0-rc.1`.
+
+## A developer deploys to a space where the app is disabled
+
+The app was taken offline with `space disable`, and a deploy does not undo
+that: opsctl puts the new release in place and starts nothing, and the app
+stays disabled until `space enable`. devctl's lines are those of any deploy;
+the install step reports opsctl's exit, and opsctl succeeded.
+
+Command:
+
+```
+$ devctl deploy sbx1 crm/dist/crm-v0.2.0-rc.1.tar.xz
+```
+
+Output:
+
+```
+file: ok (crm v0.2.0-rc.1)
+secrets: ok (3 keys)
+upload: ok (-> ikigenba.dev/sbx1/deploy/crm-v0.2.0-rc.1.tar.xz)
+install: ok (opsctl installed crm)
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- The space exists and its instance is `running`; `opsctl` is installed on
+  it.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
+- `crm` is installed on the space and disabled.
+- `crm/dist/crm-v0.2.0-rc.1.tar.xz` exists, written by `build`, and
+  `/sbx1.ikigenba.dev/crm` holds every name its manifest lists in `secrets`.
+
+Postconditions:
+
+- `ikigenba.dev/sbx1/deploy/crm-v0.2.0-rc.1.tar.xz` holds the file and
+  `opsctl install` of it has exited 0. `crm`'s `state/` is untouched.
+- `crm` is still disabled: nothing of it was started, its names still answer
+  `503`, and `space status sbx1` shows `crm v0.2.0-rc.1 inactive disabled
+  wal`. Whether the release starts is known once `space enable sbx1 crm`
+  starts it.
 
 ## A developer deploys while the space lacks a secret the app declares
 
@@ -323,8 +370,9 @@ Postconditions:
 
 ## A developer's deploy fails on the host
 
-`opsctl`'s output follows the error line, each line quoted with `> ` so it is
-plainly the other program's and not devctl's.
+`opsctl`'s output follows the error line — what it wrote to its stdout, then
+what it wrote to its stderr — each line quoted with `> ` so it is plainly the
+other program's and not devctl's.
 
 Command:
 
@@ -340,10 +388,18 @@ secrets: ok (2 keys)
 upload: ok (-> ikigenba.dev/sbx1/deploy/gmail-v0.1.0.tar.xz)
 devctl: install: ssh ec2-user@18.118.7.42 sudo opsctl install s3://ikigenba.dev/sbx1/deploy/gmail-v0.1.0.tar.xz: exit status 1
 
-> opsctl: gmail: service failed to start
+> fetch: ok (gmail-v0.1.0.tar.xz, 6.1 MiB)
+> file: ok (gmail)
+> secrets: ok (2 keys)
+> unpack: ok (/opt/gmail)
+> unit: ok (ikigenba-gmail.socket, ikigenba-gmail.service)
+> nginx: ok (gmail.sbx1.ikigenba.dev)
+> litestream: ok (unchanged)
+> service: failed: gmail: service failed to start
+> opsctl: install failed
 > 
 > > ikigenba-gmail.service: Main process exited, code=exited, status=1/FAILURE
-> > gmail: listen tcp 127.0.0.1:3300: bind: address already in use
+> > gmail: open /opt/gmail/etc/labels.json: no such file or directory
 ```
 
 Exits 1. The `ok` lines are on stdout; the rest is on stderr.
@@ -381,10 +437,10 @@ Output:
 ```
 Usage: devctl remove <space> <app>
 
-Have opsctl on the space take <app> off it: stop and remove its service,
-remove its binary and configuration, and stop routing its name. Its state/ is
-kept on the host and its secrets are kept in the account, so a later deploy of
-<app> lands over its data. What remove does on the host is opsctl's.
+Have opsctl on the space take <app> off it: stop and remove its socket and
+service, remove its binary and configuration, and stop routing its name. Its
+state/ is kept on the host and its secrets are kept in the account, so a later
+deploy of <app> lands over its data. What remove does on the host is opsctl's.
 ```
 
 Exits 0. The text is on stdout; stderr is empty.
@@ -438,7 +494,7 @@ Postconditions:
   deployed again; the apex itself is not moved (see `S7-apex.md`).
 - `/sbx1.ikigenba.dev/crm` and every object under the space's prefix in the
   bucket are untouched, `deploy/crm-v0.1.0.tar.xz` included.
-- `space status sbx1` shows `crm - - -`. Deploying
+- `space status sbx1` shows `crm - - - -`. Deploying
   `crm/dist/crm-v0.1.0.tar.xz` again puts `crm` back over its data.
 - No other app on the space has changed.
 
@@ -458,12 +514,13 @@ Output:
 ```
 devctl: remove: ssh ec2-user@18.118.7.42 sudo opsctl uninstall gmail: exit status 1
 
-> opsctl: no service 'gmail'
+> stop: failed: no service 'gmail'
+> opsctl: uninstall failed
 ```
 
 Exits 1. The text is on stderr; stdout is empty. An app the host holds data
 for but never installed is refused the same way, with
-`> opsctl: gmail is not installed`.
+`> stop: failed: gmail is not installed` and the same last line.
 
 Preconditions:
 

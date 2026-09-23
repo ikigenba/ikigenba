@@ -32,8 +32,8 @@ Usage: devctl restore <space> <app> [--at <timestamp>]
 
 Have opsctl on the space put <app> back from the space's own backups. The
 app's etc/ and state/ come from the newest tarball, and its database, when it
-declares one, from litestream. <app>'s unit is stopped for the restore and
-started again after it.
+declares one, from litestream. <app>'s socket and service are stopped for the
+restore and started again after it, unless <app> is disabled.
 
 Options:
   --at <timestamp>   restore the app as it was at this RFC 3339 moment
@@ -174,8 +174,9 @@ Postconditions:
 
 ## A developer's restore fails on the host
 
-`opsctl`'s output follows the error line, each line quoted with `> ` so it is
-plainly the other program's and not devctl's.
+`opsctl`'s output follows the error line — what it wrote to its stdout, then
+what it wrote to its stderr — each line quoted with `> ` so it is plainly the
+other program's and not devctl's.
 
 Command:
 
@@ -188,7 +189,8 @@ Output:
 ```
 devctl: restore: ssh ec2-user@18.118.7.42 sudo opsctl restore crm: exit status 1
 
-> opsctl: no backups for crm under s3://ikigenba.dev/sbx1/
+> source: failed: no backups for crm under s3://ikigenba.dev/sbx1/
+> opsctl: restore crm failed at source
 ```
 
 Exits 1. The text is on stderr; stdout is empty.

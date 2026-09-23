@@ -7,8 +7,9 @@ is an app on it. There is no nesting, no grouping, and no space at the root
 itself; the root is an A record `apex` points at one app on one space (see
 `S7-apex.md`). `space` is the command that lists, creates, destroys, stops,
 and starts spaces, sets one's host up again, asks one what it is running,
-restarts one of its apps, and reads that app's journal. Nothing is kept on
-the developer's machine; the cloud is the registry.
+restarts, disables, or enables one of its apps, and reads that app's
+journal. Nothing is kept on the developer's machine; the cloud is the
+registry.
 
 Every command here takes `<space>`, which is the space's label or its full
 domain: `sbx1` and `sbx1.ikigenba.dev` name the same space. The root suffix
@@ -42,9 +43,9 @@ Output:
 Usage: devctl space <subcommand> [arguments]
 
 List, create, destroy, stop, start, initialise, and inspect spaces, and
-restart or read the journal of one app on one. A space is one label under the
-root domain; <space> is that label or the full domain. The cloud's tags are
-the only registry.
+restart, disable, enable, or read the journal of one app on one. A space is
+one label under the root domain; <space> is that label or the full domain.
+The cloud's tags are the only registry.
 
 Subcommands:
   list                       one line per space
@@ -53,8 +54,10 @@ Subcommands:
   stop <space>               stop the instance; state is kept
   start <space>              start the instance; its address is unchanged
   init <space> [options]     set the host's keys again and run opsctl init
-  status <space>             one line per app: version, service state, database journal mode
+  status <space>             one line per app: version, service state, socket state, database journal mode
   restart <space> <app>      restart one app's service on the host
+  disable <space> <app>      stop one app and keep it from starting until enabled
+  enable <space> <app>       let a disabled app start again, and start it
   logs <space> <app>         print one app's journal from the host
 
 Options (create):
@@ -353,6 +356,12 @@ replace what it made. A restore first has nothing to stop, and the deploy
 that follows is an ordinary deploy: the app finds its database, migrates it
 forward, and seeds nothing.
 
+A rebuilt space brings every app back enabled, including one that was
+disabled on the old host. Whether an app is disabled lives only in the
+host's own units, which no backup holds, just as a `remove` ends the
+disabled state. An app that should stay offline is disabled again with
+`space disable` after its deploy.
+
 If the space held the apex, the destroy removed the root's record, and the
 new host answers only at its own names until `apex set` points the root at
 it again (see `S7-apex.md`). The backup's store carries the old host's
@@ -395,8 +404,8 @@ restore: ok (opsctl restore dashboard)
 install: ok (opsctl installed crm)
 ...
 install: ok (opsctl installed dashboard)
-crm v0.1.0 active wal
-dashboard v0.0.9 active -
+crm v0.1.0 active active wal
+dashboard v0.0.9 active active -
 ```
 
 Each command exits 0. The lines are on stdout; stderr is empty.
@@ -886,6 +895,7 @@ devctl: init: ssh ec2-user@18.118.7.42 sudo opsctl init: exit status 2
 > dns.provider: ok (route53)
 > dns.zones: ok (ikigenba.dev)
 > host.name: ok (sbx1.ikigenba.dev)
+> timeouts: ok (drain 5s, stop 10s)
 > zone ikigenba.dev: ok (route53 Z09565073GHK8BYWQ1A78, 4 nameservers delegated)
 > host sbx1.ikigenba.dev: ok (zone ikigenba.dev)
 > wildcard sbx1.ikigenba.dev: ok (18.118.7.42)
@@ -1439,12 +1449,14 @@ Postconditions:
 ## A developer asks what a space is running
 
 The answer comes from the host, never from a record kept elsewhere: over ssh,
-`opsctl` lists the installed apps, asks each app's binary its version, reads
-each app's systemd unit state, and reads the journal mode of the database each
-app declares. `space status` copies that output byte for byte. One line per app,
-in name order: the app, the version, the unit state, and the database journal
-mode (`-` for an app that declares no database). A mode other than `wal` means
-that database is no longer reaching S3.
+`opsctl status` lists the installed apps, asks each app's binary its version,
+reads the state of each app's service unit and of its socket unit, and reads
+the journal mode of the database each app declares. `space status` copies that
+output byte for byte. One line per app, in name order: the app, the version,
+the service state, the socket state, and the database journal mode (`-` for an
+app that declares no database). A service that is `inactive` behind an
+`active` socket is idle, not down: the next request starts it. A mode other
+than `wal` means that database is no longer reaching S3.
 
 Command:
 
@@ -1455,9 +1467,9 @@ $ devctl space status sbx1
 Output:
 
 ```
-crm v0.1.0 active wal
-dashboard v0.0.9 active -
-gmail v0.1.0 failed -
+crm v0.1.0 active active wal
+dashboard v0.0.9 active active -
+gmail v0.1.0 failed active -
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -1468,11 +1480,47 @@ Preconditions:
   the profile `ikigenba.dev`.
 - The space's instance exists and is `running`; `opsctl` is installed on it.
 - The developer's ssh configuration can reach the instance as `ec2-user`.
-- Three apps are installed on the host.
+- Three apps are installed on the host, and every socket is listening.
 
 Postconditions:
 
 - Nothing has changed.
+
+## A developer asks what a space with a disabled app is running
+
+A disabled app's socket field reads `disabled`, whatever the socket unit's
+state, so the line says why its service is not running: the app was taken
+offline with `space disable`, not stopped by hand or failed. devctl copies the
+line as opsctl wrote it, like every other.
+
+Command:
+
+```
+$ devctl space status sbx1
+```
+
+Output:
+
+```
+crm v0.1.0 inactive disabled wal
+dashboard v0.0.9 active active -
+```
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- The space's instance exists and is `running`; `opsctl` is installed on it.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
+- `crm` is installed and disabled; `dashboard` is installed and enabled, and
+  its service is `active`.
+
+Postconditions:
+
+- Nothing has changed. A disabled app is a fact about the host, reported in
+  its line with exit 0, as a failed unit is.
 
 ## A developer asks what a space with no apps is running
 
@@ -1502,8 +1550,8 @@ Postconditions:
 
 ## A developer asks what a stopped space is running
 
-`space restart` and `space logs` need the same host and refuse a stopped
-space with the same line.
+`space restart`, `space disable`, `space enable`, and `space logs` need the
+same host and refuse a stopped space with the same line.
 
 Command:
 
@@ -1547,6 +1595,14 @@ $ devctl space status gone
 
 ```
 $ devctl space restart gone crm
+```
+
+```
+$ devctl space disable gone crm
+```
+
+```
+$ devctl space enable gone crm
 ```
 
 ```
@@ -1605,7 +1661,7 @@ Postconditions:
 
 ## A developer restarts an app on a space
 
-Over ssh, `opsctl restart` restarts the app's unit and reports it the way
+Over ssh, `opsctl restart` restarts the app's service and reports it the way
 install's last line does; devctl reports opsctl's exit, the shape `restore`
 uses. A restart changes nothing on the host's disk. In particular it does not
 carry a pushed secret to the app: that is a deploy of the same file, and
@@ -1631,21 +1687,58 @@ Preconditions:
   the profile `ikigenba.dev`.
 - The space's instance exists and is `running`; `opsctl` is installed on it.
 - The developer's ssh configuration can reach the instance as `ec2-user`.
-- `crm` is installed on the host. Its unit may be `active`, `inactive`, or
-  `failed`.
+- `crm` is installed on the host and enabled. Its service may be `active`,
+  `inactive`, or `failed`.
 
 Postconditions:
 
 - `sudo opsctl restart crm` has been run on the host over ssh and exited 0,
   so `ikigenba-crm.service` is `active` under a new process. What restart
-  does on the host is opsctl's.
+  does on the host is opsctl's; its socket kept listening throughout.
 - Nothing on the host's disk changed, and no other app on the space has
   changed.
 
+## A developer restarts a disabled app on a space
+
+A disabled app stays disabled through everything but `space enable`, so
+opsctl starts nothing and succeeds: the host is in the state the developer
+chose. devctl reports opsctl's exit, as for any restart; what opsctl printed
+is not relayed, because it succeeded. `space status` shows the app as it is.
+
+Command:
+
+```
+$ devctl space restart sbx1 crm
+```
+
+Output:
+
+```
+restart: ok (opsctl restarted crm)
+```
+
+Exits 0. The line is on stdout; stderr is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- The space's instance exists and is `running`; `opsctl` is installed on it.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
+- `crm` is installed on the host and disabled.
+
+Postconditions:
+
+- `sudo opsctl restart crm` has been run on the host over ssh and exited 0.
+  Nothing has changed: neither of `crm`'s units was started or enabled, its
+  names still answer `503`, and `space status` still shows
+  `crm v0.1.0 inactive disabled wal`.
+
 ## A developer's restart fails on the host
 
-`opsctl`'s output follows the error line, each line quoted with `> `, so the
-journal the host relayed is in front of the developer.
+`opsctl`'s output follows the error line: what it wrote to its stdout, then
+what it wrote to its stderr, each line quoted with `> `, so the step that
+failed and the journal the host relayed are in front of the developer.
 
 Command:
 
@@ -1658,15 +1751,17 @@ Output:
 ```
 devctl: restart: ssh ec2-user@18.118.7.42 sudo opsctl restart crm: exit status 1
 
-> opsctl: crm: service failed to start
+> service: failed: crm: service failed to start
+> opsctl: restart failed
 > 
 > > ikigenba-crm.service: Main process exited, code=exited, status=1/FAILURE
 > > crm: open /opt/crm/state/crm.db: permission denied
 ```
 
 Exits 1. The text is on stderr; stdout is empty. An app that is not on the
-host is refused the same way, with `> opsctl: no service 'gmail'`, or
-`> opsctl: gmail is not installed` for one the host holds data for but never
+host is refused the same way, with `> service: failed: no service 'gmail'`
+and `> opsctl: restart failed`, or `> service: failed: gmail is not
+installed` and the same last line for one the host holds data for but never
 installed.
 
 Preconditions:
@@ -1680,8 +1775,269 @@ Preconditions:
 Postconditions:
 
 - `crm` on the host is whatever `opsctl` left; `space status` reports it,
-  here `crm v0.1.0 failed wal`.
+  here `crm v0.1.0 failed active wal`.
 - No other app on the space has changed.
+
+## A developer takes an app on a space offline
+
+A developer wants an app to stop answering without taking it off the space:
+its release, its data, and its units stay, and deploying it again later is
+not needed to bring it back. Over ssh, `opsctl disable` stops the app's
+socket and service and disables both, so neither starts at boot or on a
+request, and regenerates nginx so the app's names answer `503`. devctl
+reports opsctl's exit, the shape `restart` uses; what opsctl printed is not
+relayed, because it succeeded.
+
+The app stays disabled through `deploy`, `restore`, `space init`, and
+`space restart`; only `space enable` brings it back. `remove` takes it off the
+space altogether, and a later deploy installs it enabled.
+
+Command:
+
+```
+$ devctl space disable sbx1 crm
+```
+
+Output:
+
+```
+disable: ok (opsctl disabled crm)
+```
+
+Exits 0. The line is on stdout; stderr is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- The space's instance exists and is `running`; `opsctl` is installed on it.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
+- `crm` is installed on the host and enabled.
+
+Postconditions:
+
+- `sudo opsctl disable crm` has been run on the host over ssh and exited 0.
+  What disable does on the host is opsctl's: `crm`'s socket and service are
+  stopped and disabled, and `https://crm.sbx1.ikigenba.dev` answers `503`.
+- `space status sbx1` shows `crm v0.1.0 inactive disabled wal`.
+- Nothing under `/opt/crm/` changed, and no other app on the space has
+  changed.
+
+## A developer brings a disabled app back
+
+Over ssh, `opsctl enable` enables and starts the app's socket, regenerates
+nginx so the app's names reach it again, and starts its service. devctl
+reports opsctl's exit, the shape `restart` uses.
+
+Command:
+
+```
+$ devctl space enable sbx1 crm
+```
+
+Output:
+
+```
+enable: ok (opsctl enabled crm)
+```
+
+Exits 0. The line is on stdout; stderr is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- The space's instance exists and is `running`; `opsctl` is installed on it.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
+- `crm` is installed on the host and disabled.
+
+Postconditions:
+
+- `sudo opsctl enable crm` has been run on the host over ssh and exited 0.
+  What enable does on the host is opsctl's: both of `crm`'s units are enabled
+  and started, and `https://crm.sbx1.ikigenba.dev` reaches `crm` again.
+- `space status sbx1` shows `crm v0.1.0 active active wal`.
+- Nothing under `/opt/crm/` changed, and no other app on the space has
+  changed.
+
+## A developer's enable fails on the host
+
+The app is enabled, but its service will not come up. opsctl's output follows
+the error line, quoted with `> ` as a failed restart's is.
+
+Command:
+
+```
+$ devctl space enable sbx1 crm
+```
+
+Output:
+
+```
+devctl: enable: ssh ec2-user@18.118.7.42 sudo opsctl enable crm: exit status 1
+
+> enable: ok (ikigenba-crm.socket, ikigenba-crm.service)
+> nginx: ok (crm.sbx1.ikigenba.dev)
+> service: failed: crm: service failed to start
+> opsctl: enable failed
+> 
+> > ikigenba-crm.service: Main process exited, code=exited, status=1/FAILURE
+> > crm: open /opt/crm/state/crm.db: permission denied
+```
+
+Exits 1. The text is on stderr; stdout is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- The space's instance exists and is `running`; `opsctl` is installed on it.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
+- `crm` is installed on the host and disabled, and its binary exits at start.
+
+Postconditions:
+
+- `crm` is enabled: both its units are enabled, its socket is listening, and
+  nginx routes its names to it. Its service is `failed`, and `space status`
+  shows `crm v0.1.0 failed active wal`. Nothing was rolled back.
+- No other app on the space has changed.
+
+## A developer disables an app that is already disabled, or enables one that is already enabled
+
+Both commands ask for the state the app is in afterwards, so opsctl succeeds
+and changes nothing when the app is already in it. devctl's line is the same
+as for any success: it reports opsctl's exit and does not relay opsctl's own
+report of what was already so.
+
+Command:
+
+```
+$ devctl space disable sbx1 crm
+```
+
+Output:
+
+```
+disable: ok (opsctl disabled crm)
+```
+
+Command:
+
+```
+$ devctl space enable sbx1 dashboard
+```
+
+Output:
+
+```
+enable: ok (opsctl enabled dashboard)
+```
+
+Each exits 0. The line is on stdout; stderr is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- The space's instance exists and is `running`; `opsctl` is installed on it.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
+- `crm` is installed and already disabled; `dashboard` is installed, already
+  enabled, and its service is `active`.
+
+Postconditions:
+
+- `sudo opsctl disable crm` and `sudo opsctl enable dashboard` have been run
+  on the host over ssh and each exited 0.
+- Nothing has changed: no unit was enabled, disabled, started, or stopped,
+  and nginx was not reloaded.
+
+## A developer tries to take the authenticator offline
+
+`auth` is the app every other app's requests are checked against, and opsctl
+never disables it, whatever else is on the space. Its refusal follows the
+error line, quoted with `> ` as a failed restart's is.
+
+Command:
+
+```
+$ devctl space disable sbx1 auth
+```
+
+Output:
+
+```
+devctl: disable: ssh ec2-user@18.118.7.42 sudo opsctl disable auth: exit status 1
+
+> stop: failed: auth is the authenticator and cannot be disabled
+> opsctl: disable failed
+```
+
+Exits 1. The text is on stderr; stdout is empty.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- The space's instance exists and is `running`; `opsctl` is installed on it.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
+- `auth` is installed on the host.
+
+Postconditions:
+
+- Nothing has changed. `auth` answers as it did, and every other app is still
+  checked against it. `remove` remains the only way to take the
+  authenticator off the space.
+
+## A developer disables or enables an app that is not on the space
+
+opsctl's refusal follows the error line, quoted with `> ` as a failed
+restart's is.
+
+Command:
+
+```
+$ devctl space disable sbx1 gmail
+```
+
+Output:
+
+```
+devctl: disable: ssh ec2-user@18.118.7.42 sudo opsctl disable gmail: exit status 1
+
+> stop: failed: no service 'gmail'
+> opsctl: disable failed
+```
+
+Command:
+
+```
+$ devctl space enable sbx1 gmail
+```
+
+Output:
+
+```
+devctl: enable: ssh ec2-user@18.118.7.42 sudo opsctl enable gmail: exit status 1
+
+> enable: failed: no service 'gmail'
+> opsctl: enable failed
+```
+
+Each exits 1. The text is on stderr; stdout is empty. An app the host holds
+data for but never installed is refused the same way, with `failed: gmail is
+not installed` in place of `failed: no service 'gmail'`.
+
+Preconditions:
+
+- The working directory is inside the checkout, and a live SSO session for
+  the profile `ikigenba.dev`.
+- The space's instance exists and is `running`; `opsctl` is installed on it.
+- The developer's ssh configuration can reach the instance as `ec2-user`.
+- Nothing under `/opt/gmail/` on the host.
+
+Postconditions:
+
+- Nothing has changed.
 
 ## A developer reads an app's journal
 
@@ -1700,9 +2056,9 @@ $ devctl space logs sbx1 crm
 Output:
 
 ```
+Sep 12 09:07:11 ip-10-0-1-23 systemd[1]: Starting ikigenba-crm.service...
 Sep 12 09:07:11 ip-10-0-1-23 systemd[1]: Started ikigenba-crm.service.
-Sep 12 09:07:11 ip-10-0-1-23 crm[1842]: crm v0.1.0 listening on 127.0.0.1:3100
-Sep 12 09:07:40 ip-10-0-1-23 crm[1842]: GET /contacts 200 12ms
+Sep 12 09:07:40 ip-10-0-1-23 crm[1842]: crm: request 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59: open /opt/crm/state/crm.db: database is locked
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
@@ -1789,7 +2145,7 @@ Postconditions:
 
 - Nothing has changed.
 
-## A developer runs `space restart` or `space logs` without a space or an app
+## A developer runs `space restart`, `space disable`, `space enable`, or `space logs` without a space or an app
 
 Command:
 
@@ -1805,9 +2161,11 @@ devctl: space restart needs <space> and <app>
 see 'devctl space --help' for usage
 ```
 
-Exits 2. The text is on stderr; stdout is empty. `space logs` says `devctl:
-space logs needs <space> and <app>`, and a `--since` with no value gives
-`devctl: option '--since' requires a value`, also exit 2.
+Exits 2. The text is on stderr; stdout is empty. `space disable`, `space
+enable`, and `space logs` say the same with their own names: `devctl: space
+disable needs <space> and <app>`, `devctl: space enable needs <space> and
+<app>`, and `devctl: space logs needs <space> and <app>`. A `--since` with no
+value gives `devctl: option '--since' requires a value`, also exit 2.
 
 Preconditions:
 
