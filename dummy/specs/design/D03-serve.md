@@ -50,8 +50,10 @@ closed system: an app trusts `X-User-Id`, `X-User-Email` and `X-Request-Id`
 as nginx sets them, and trusts a sibling to have forwarded them. An app that
 calls a sibling while serving a request calls the sibling's socket directly
 and copies those three headers from the request it is serving. A healthy app
-writes nothing; a 500 is trouble and gets one line on stderr naming the
-request by its `X-Request-Id` (`D04-panel` states dummy's). Work no live
+writes nothing; a 5xx, any status from 500 through 599, is trouble and gets
+one line on stderr naming the request by its `X-Request-Id`, and a 4xx is the
+caller's to fix and writes nothing (`D04-panel` states dummy's, whose only 5xx
+is a 500). Work no live
 request started is outside these terms. dummy calls no sibling.
 
 ## Taking the socket

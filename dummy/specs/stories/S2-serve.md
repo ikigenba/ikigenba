@@ -23,7 +23,9 @@ terms. A healthy dummy prints nothing, so under systemd the journal holds only
 trouble. A diagnostic dummy writes about a request names that request by its
 `X-Request-Id`, as `dummy: request <id>: <reason>` on stderr, so a line in the
 journal can be matched to nginx's log of the same request; a request that
-carries no `X-Request-Id` is named `-`. The actor in these stories is the host, whether that is systemd or a
+carries no `X-Request-Id` is named `-`. An app writes one such line for each
+request it answers with a 5xx, any status from 500 through 599, and nothing
+for any other answer: a 4xx is the caller's to fix, not trouble. The actor in these stories is the host, whether that is systemd or a
 developer at a terminal standing in for it.
 
 These are the terms every app of the platform serves on, and a new app copies

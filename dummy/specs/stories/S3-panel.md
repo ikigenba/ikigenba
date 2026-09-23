@@ -31,9 +31,9 @@ a failure on a page that dummy can name to an identified caller is itself a
 page in that same chrome, and only the missing-header fault, where there is no
 identity to draw with, is bare text.
 
-dummy writes one line to stderr for each request it answers with a 500, in
-the form `S2` fixes, `dummy: request <id>: <reason>`, and nothing for any
-other answer: a 404, a 405, a 415, or a 422 is the caller's mistake, not
+dummy writes one line to stderr for each request it answers with a 5xx, in
+the form `S2` fixes, `dummy: request <id>: <reason>` — its only 5xx is the
+missing-header 500 below — and nothing for any other answer: a 404, a 405, a 415, or a 422 is the caller's mistake, not
 trouble, and a healthy dummy stays silent.
 
 The routes are `GET /`, which sends the caller to the panel; `GET /widgets`,

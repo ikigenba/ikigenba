@@ -125,7 +125,7 @@ dies with the process" at the one place that happens, keeps a start that
 fails from building anything, and keeps `--version` from building a store it
 will never use; it also lets a test build a handler over a store it has
 already filled. The handler is also handed the writer its per-request
-diagnostic goes to, because a 500 is the one answer that is trouble and the
+diagnostic goes to, because a 5xx is the one answer that is trouble and the
 handler is the one that knows which request it was. `Serve` owns the listener
 from then on and returns when the drain after the context is cancelled has
 ended or the server fails; when the drain deadline passes with requests still

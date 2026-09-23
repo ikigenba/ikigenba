@@ -188,9 +188,10 @@ log, nothing on either stream when it stops, so that under systemd the
 journal holds only trouble. The one thing that reaches `Stderr` while auth
 serves is the server's line for a request that is trouble, written through
 the `Config.Stderr` writer `Run` hands the server. A request is trouble when
-auth answers it with a 500 — its own database failed the read or write the
-request needs, or auth otherwise could not do its part — or with a 502, when
-Google fails a sign-in (D05). Each such request gets exactly one line,
+auth answers it with a 5xx, any status from 500 through 599. auth's own are a
+500 — its own database failed the read or write the request needs, or auth
+otherwise could not do its part — and a 502, when Google fails a sign-in (D05).
+Each such request gets exactly one line,
 `auth: request <id>: <reason>`, where `<id>` is the request's `X-Request-Id`
 so that a line in the journal can be matched to nginx's log of the same
 request, `-` when the request carries none, and `<reason>` is the underlying
@@ -247,6 +248,6 @@ a `bytes.Buffer` that the race detector watches.
 - R-NB6S-Q8EQ: When `Inherit` is nil and file descriptor 3 is a listening Unix-domain stream socket bound to a filesystem path, `Run` MUST leave that path in place and MUST NOT shut the socket down, so that after `Run` returns the socket still accepts connections into its queue for another process that holds it.
 - R-IVLV-52P1: The `*server.Server` returned by `server.New` MUST serve the HTTP routes whose contracts D05, D06, and D07 define.
 - R-UR0L-ZVDJ: The `*Server` returned by `New` MUST mint every random value the `*Server` mints itself (including the PKCE verifier D05 requires of `GET /login/google`) by reading `cfg.Rand`, MUST write every diagnostic its handlers emit (including the token-exchange error D05 requires of `GET /login/google/callback`) to `cfg.Stderr`, and MUST NOT read a global random source or write to a global output stream; given a `Config` whose `Rand` is a deterministic reader and whose `Stderr` is an in-memory buffer, the values minted are a function of the bytes that reader yields and every such diagnostic appears in that buffer.
-- R-NCEP-405F: When a store operation the `*Server` calls while handling a request on any route D05, D06, or D07 defines returns an error that does not satisfy `errors.Is(err, store.ErrNotFound)`, the `*Server` MUST answer that request with status `500`, `Content-Type: text/plain; charset=utf-8`, a body that is a single line of plain text, and neither `HeaderUserID` nor `HeaderUserEmail` set, whatever response another requirement states for that request, except that a `GET /login/google` already being answered `502` under R-NG2E-9BDI stays `502` when the `ConsumeLoginState` it makes to discard its login state fails.
-- R-NDML-HRW4: For every request the `*Server` answers with status `500` or `502`, it MUST write exactly `"auth: request " + id + ": " + reason + "\n"` to `cfg.Stderr` in a single call to `cfg.Stderr.Write`, where `id` is the value `r.Header.Get("X-Request-Id")` returns when that value is non-empty and `-` when it is empty, and `reason` is the `Error()` text of the error that caused that status.
-- R-NEUH-VJMT: The `*Server` MUST write nothing to `cfg.Stderr` for a request it answers with any status other than `500` or `502`, and MUST write exactly one line to `cfg.Stderr` for each request it answers with status `500` or `502`.
+- R-CCQE-EHNR: When a store operation the `*Server` calls while handling a request on any route D05, D06, or D07 defines returns an error that does not satisfy `errors.Is(err, store.ErrNotFound)`, the `*Server` MUST answer that request with status `500`, `Content-Type: text/plain; charset=utf-8`, a body that is a single line of plain text, and neither `HeaderUserID` nor `HeaderUserEmail` set, whatever response another requirement states for that request, except that a `GET /login/google` already being answered `502` under R-XXPJ-ZJU1 stays `502` when the `ConsumeLoginState` it makes to discard its login state fails.
+- R-XV9R-80CN: For every request the `*Server` answers with a status from `500` through `599`, it MUST write exactly `"auth: request " + id + ": " + reason + "\n"` to `cfg.Stderr` in a single call to `cfg.Stderr.Write`, where `id` is the value `r.Header.Get("X-Request-Id")` returns when that value is non-empty and `-` when it is empty, and `reason` is the `Error()` text of the error that caused that status.
+- R-XWHN-LS3C: The `*Server` MUST write nothing to `cfg.Stderr` for a request it answers with a status outside `500` through `599`, and MUST write exactly one line to `cfg.Stderr` for each request it answers with a status from `500` through `599`.

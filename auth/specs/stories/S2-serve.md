@@ -44,9 +44,10 @@ trouble. A diagnostic auth writes about a request names that request by its
 `X-Request-Id`, as `auth: request <id>: <reason>` on stderr, so a line in the
 journal can be matched to nginx's log of the same request; a request that
 carries no `X-Request-Id` is named `-`. auth writes one such line for each
-request it answers with a 500, when its own database fails the request, and
-for each it answers with a 502, when Google fails a sign-in (`S3-sign-in.md`),
-and nothing for any other answer: a 4xx is the caller's to fix, not trouble.
+request it answers with a 5xx, any status from 500 through 599 — its own are a
+500, when its own database fails the request, and a 502, when Google fails a
+sign-in (`S3-sign-in.md`) — and nothing for any other answer: a 4xx is the
+caller's to fix, not trouble.
 
 auth serves on the terms every app of the platform serves on. The socket is
 its only way in. Every app runs as the one `ikigenba` user, so any app can

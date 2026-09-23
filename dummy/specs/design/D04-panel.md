@@ -42,8 +42,9 @@ a 401. `X-User-Id` alone gates the request: a present-but-empty value counts
 as missing. `X-User-Email` is not a precondition at all; the chrome renders
 whatever arrived, which may be nothing.
 
-That 500 is trouble, and it is the one answer dummy reports on stderr: one
-line, `dummy: request <id>: X-User-Id is missing`, naming the request by its
+That 500 is trouble — every 5xx is, and it is dummy's only one — and it is
+the one answer dummy reports on stderr: one line,
+`dummy: request <id>: X-User-Id is missing`, naming the request by its
 `X-Request-Id` so an operator can find the same request in nginx's log, and
 `-` when the request carries none (a developer's hand-made request). An empty
 `X-Request-Id` is read as none, the same reading `X-User-Id` gets. The id is
@@ -441,5 +442,5 @@ back out of a rendered page.
 - R-KYH9-HKGM: A request whose `X-User-Id` header is present with an empty value, whatever its path and method, a `POST /widgets` request carrying a form-encoded submission (`D07-form`) whose values for `name`, `count` and `status` `Store.Create` (`D05-widgets`) would accept on `s` — a `Submission` of those values for which `Create` on `s` would return a `FieldErrors` whose `Any` is false — included, MUST leave the store `s` that `Handler` was built over unchanged, whatever widgets `s` holds: the slice `s.All()` returns before the request and the slice it returns after the request MUST be equal element for element and in the same order.
 - R-JKLR-YCYB: The response `Handler` produces for a request MUST NOT depend on the process's working directory or on any file outside the binary: for two identical requests, one answered by a handler driven with the working directory set to an empty temporary directory and one answered by a handler driven with the working directory set to the checkout, and immediately before each of which the slice `s.All()` returns for that handler's own store is equal element for element and in the same order, the two answers MUST have the same status, the same value for every header `Handler` sets, and the same body.
 - R-MM92-HZAL: For every request `Handler` answers with status 500 because its `X-User-Id` header is absent or empty, `Handler` MUST write exactly `"dummy: request " + id + ": X-User-Id is missing\n"` to `stderr` in a single call to `stderr.Write`, where `id` is the value `r.Header.Get("X-Request-Id")` returns when that value is non-empty and `-` when it is empty.
-- R-MNGY-VR1A: `Handler` MUST write nothing to `stderr` for a request it answers with any status other than 500, and MUST write exactly one line to `stderr` for each request it answers with status 500.
+- R-Y1D9-4V24: `Handler` MUST write nothing to `stderr` for a request it answers with a status outside 500 through 599, and MUST write exactly one line to `stderr` for each request it answers with a status from 500 through 599.
 - R-MOOV-9IRZ: `Handler` MUST NOT let two calls to `stderr.Write` be in progress at the same time, whatever requests it is handling concurrently.
