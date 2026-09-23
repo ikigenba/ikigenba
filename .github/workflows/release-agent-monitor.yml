@@ -1,0 +1,94 @@
+name: Release agent-monitor
+
+# Monorepo release: tag agent-monitor/v<semver>, a prerelease part allowed
+# (agent-monitor/v1.2.0-rc.1), build metadata (+...) never. GoReleaser OSS
+# wants a plain semver tag, so we lay a local v<semver> tag on the commit,
+# build/archive with publishing skipped, and publish the GitHub release
+# ourselves on the real monorepo tag -- as a GitHub prerelease when the tag
+# has a prerelease part.
+
+on:
+  push:
+    tags: ["agent-monitor/v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: agent-monitor/go.mod
+
+      - name: Derive version from tag
+        id: v
+        run: |
+          version=${GITHUB_REF_NAME#agent-monitor/}
+          # v<semver> without build metadata: a release tag never carries +...
+          if ! printf '%s\n' "$version" | grep -qE '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$'; then
+            echo "release: tag $GITHUB_REF_NAME is not agent-monitor/v<semver> without build metadata" >&2
+            exit 1
+          fi
+          case "$version" in
+            *-*) prerelease=true ;;
+            *) prerelease=false ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag matches the binary's reported version
+        working-directory: agent-monitor
+        env:
+          WANT: ${{ steps.v.outputs.version }}
+        run: |
+          # Observable check: build the binary and compare what --version
+          # prints against the tag, rather than scraping the source.
+          if ! out=$(go build -o bin/agent-monitor ./cmd/agent-monitor 2>&1); then
+            printf 'release: cannot build agent-monitor\n\n%s\n' "$(printf '%s\n' "$out" | sed 's/^/> /')" >&2
+            exit 1
+          fi
+          # The x sentinel keeps trailing newlines, so the output must be
+          # exactly the version plus one newline.
+          if ! got=$(bin/agent-monitor --version 2>&1; rc=$?; echo x; exit $rc); then
+            printf 'release: agent-monitor --version failed\n\n%s\n' "$(printf '%s' "${got%x}" | sed 's/^/> /')" >&2
+            exit 1
+          fi
+          got=${got%x}
+          if [ "$got" != "$WANT"$'\n' ]; then
+            printf 'release: tag %s (=> %s) != agent-monitor --version\n\n%s\n' \
+              "$GITHUB_REF_NAME" "$WANT" "$(printf '%s' "$got" | sed 's/^/> /')" >&2
+            exit 1
+          fi
+
+      - name: Lay a local semver tag for GoReleaser
+        run: git tag -f "${{ steps.v.outputs.version }}"
+
+      - name: Build and archive with GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: latest
+          workdir: agent-monitor
+          args: release --clean --skip=publish,announce,validate
+        env:
+          GORELEASER_CURRENT_TAG: ${{ steps.v.outputs.version }}
+
+      - name: Publish GitHub release on the monorepo tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ steps.v.outputs.prerelease }}
+        run: |
+          set -- --title "$GITHUB_REF_NAME" --verify-tag --generate-notes
+          if [ "$PRERELEASE" = true ]; then
+            set -- "$@" --prerelease
+          fi
+          gh release create "$GITHUB_REF_NAME" "$@" \
+            agent-monitor/dist/*.tar.gz agent-monitor/dist/checksums.txt
