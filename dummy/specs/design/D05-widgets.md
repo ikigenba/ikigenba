@@ -34,7 +34,7 @@ Creating is where the rules live. A caller submits three strings exactly as
 they arrived, and `Submission` holds them raw — untrimmed, unshortened —
 because the rejection re-display `D07-form` owns has to echo back what the
 caller actually typed. `Create` does the trimming itself, on all three values,
-before it judges any of them (ledger D-18). One trimming rule for every field
+before it judges any of them. One trimming rule for every field
 is simpler to state and never answers "the count must be a whole number" to a
 value that is plainly a number with a space in front of it.
 
@@ -42,13 +42,13 @@ Then: the name is required and is at most forty runes, counted in runes and
 not in bytes, because it is a field a person typed and a person who typed
 forty accented letters typed forty characters. A whitespace-only name is the
 required-field rejection, not a widget with a blank name. Uniqueness is exact
-and case-sensitive on the trimmed value (ledger D-3), so `alpha` and `Alpha`
+and case-sensitive on the trimmed value, so `alpha` and `Alpha`
 are two widgets; it is also the one rule that cannot be decided from the
 submission alone, which is why creating is a method on the store rather than a
 free function — asking the set and appending to it must be one step. The count
 follows Go's `strconv.Atoi` grammar, and the not-a-whole-number message is
-keyed on `Atoi` returning a non-nil error rather than on "does not parse"
-(ledger D-29): `Atoi` returns both an error and a clamped value for a number
+keyed on `Atoi` returning a non-nil error rather than on "does not parse":
+`Atoi` returns both an error and a clamped value for a number
 too large to hold, and a huge negative number must not be routed to the
 negative-count message by accident. Zero is a fine count; below zero is not.
 The status must be one of the three words exactly, checked rather than trusted,
@@ -67,8 +67,8 @@ as it was, order included.
 
 The store is used concurrently. The panel page polls the table fragment while
 a submission is being created, so two goroutines reach one store at once, and
-the design says so as an invariant rather than leaving it to be discovered
-(ledger D-12). Gate 4 runs the race detector, which is what proves it, and two
+the design says so as an invariant rather than leaving it to be discovered.
+Gate 4 runs the race detector, which is what proves it, and two
 further requirements cover the half a race detector cannot see: concurrent
 accepted creations all survive, none is lost to the other, and no two widgets
 in the set ever carry the same name however many creations race. That second
