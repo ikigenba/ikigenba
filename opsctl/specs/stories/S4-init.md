@@ -268,6 +268,7 @@ Preconditions:
 - The host is ready, and `crm`, `dashboard`, and `notes` are installed with
   `DRAIN_SECONDS=5` and a stop timeout of `10` seconds. `notes` was disabled
   with `opsctl disable notes`.
+- `crm`'s and `dashboard`'s sockets are listening, and neither is disabled.
 - `/opt/gmail/` holds a `state/` and no `bin/gmail`: it is a service, not an
   installed app.
 
