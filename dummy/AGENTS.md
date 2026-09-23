@@ -1,7 +1,8 @@
 # dummy
 
-An app of the Ikigenba platform: one Go binary that serves a control panel at
-`127.0.0.1:$PORT`, behind the host's nginx. The panel is a chrome-framed page
+An app of the Ikigenba platform: one Go binary that serves a control panel on
+the socket systemd passes it (`/run/ikigenba/dummy.sock` on a host), behind the
+host's nginx. The panel is a chrome-framed page
 listing widgets, an HTML table fragment the page re-fetches and that answers a
 conditional GET, and a form that creates a widget. The widgets live in an
 in-memory set built at process start and dying with the process: dummy's
@@ -27,6 +28,8 @@ human-authored and read-only to the run.
   without one gate 4 fails with `go: -race requires cgo`. The release build
   itself is cgo-free, which gate 3 proves.
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
+- a POSIX shell at `/bin/sh`: the one exec'ing test starts the binary through
+  it (see Test files)
 
 ## Dependencies
 
@@ -66,29 +69,45 @@ an expected body. This is an obligation on the test author, not a property of
 the program, and it does not lapse because dummy's own output alphabet is
 narrow.
 
-**No fixed ports, no real environment, no sleeping in the gates.** Tests bind
-only loopback addresses, never a fixed port such as 3000. A `server.Serve`-level
-test takes a listener, so it binds `127.0.0.1:0` and lets the kernel choose. A
-`cli.Run`-level test of the happy path cannot: `PORT=0` is a usage error (D02)
-and the bound port must equal `PORT` (D03). It picks a free loopback port by
-binding `127.0.0.1:0`, reading the port, closing that listener, and passing
-the number as `PORT`, then confirms the address `Listening` reports carries
-that port. Failure paths (bind refused, `Accept` failing) inject
-`Process.Listen` with a failing factory or a failing listener rather than
-occupying a real port. Tests never read the real environment: arguments,
-environment lookup, and the output streams come in through the run seam
-(`cli.Process`, design D01), and tests inject buffers and a map. A test never
-sleeps to wait for the server; for in-process tests `Listening` reports the
-bound address, and that is how a test learns the server is up. A test whose
+**No fixed ports, no real environment, no sleeping in the gates.** dummy
+binds nothing itself; it serves on the listener it is passed (D01, D03). A
+test that needs a listener makes its own: a loopback TCP listener on
+`127.0.0.1:0`, where the kernel chooses the port, or a Unix socket in a
+temporary directory — never a fixed port such as 3000. A `cli.Run`-level test
+of the serve path hands `Run` that listener through `Process.Inherit`, sets
+`LISTEN_PID` to the `Process.Pid` it chose and `LISTEN_FDS` to `1` in the
+environment map it passes, and records `Unsetenv` calls with a function of its
+own; it never leaves `Inherit` nil, since that would take the test process's
+real descriptor 3. Failure paths (a descriptor that is not a listener, an
+`Accept` that fails) inject an `Inherit` that returns an error or a listener
+whose `Accept` fails. Tests never read or change the real environment:
+arguments, environment lookup and removal, the pid, and the output streams
+come in through the run seam (`cli.Process`, design D01), and tests inject
+buffers, a map and a recorder. A test never sleeps to wait for the server. It
+learns that `Run` is serving the way systemd does: it binds a Unix datagram
+socket in a short temporary directory (`os.MkdirTemp("", ...)`, since a Unix
+socket path is limited to 108 bytes and `t.TempDir()` can exceed it), names it
+in `NOTIFY_SOCKET` in the environment map, and waits for the `READY=1`
+datagram, with a deadline that fails the test rather than a sleep that hopes.
+The drain tests are the one place a test waits on the clock, because the
+drain deadline is the behavior: a `Serve`-level test passes a drain of a few
+milliseconds and a handler that blocks on a channel, and the one `Run`-level
+overrun test sets `DRAIN_SECONDS=1` and holds a `POST /widgets` open by
+sending fewer body bytes than its `Content-Length` declares. It learns that
+the handler has begun, without sleeping, by sending `Expect: 100-continue`, with `X-User-Id` and
+`Content-Type: application/x-www-form-urlencoded` so the handler reads the
+body at all, and
+waiting for the `100 Continue` that `net/http` sends only when the handler
+first reads the body; only then does it cancel the context. A test whose
 result depends on the developer's machine, environment, or a port already in
-use is a bug. The gates run offline as an ordinary user.
+use is a bug. The gates run offline as an ordinary user, with no systemd.
 
-**The handler is built over a store the test owns.** There is no no-argument
-`server.Handler()` to call any more: `internal/cli` creates the widget set
-once the bind succeeds and hands it to the panel's handler (D01, D02). A
-handler-level test therefore creates its own store, seeds it with whatever
-widgets the case needs, and drives the handler in process; it needs no
-listener and no port at all. Every such test builds a fresh store. No test
+**The handler is built over a store the test owns.** `internal/cli` creates
+the widget set once it has taken the socket and hands it to the panel's
+handler (D01, D03). A handler-level test therefore creates its own store,
+seeds it with whatever widgets the case needs, hands the handler a buffer for
+its diagnostics, and drives it in process; it needs no listener and no port at
+all. Every such test builds a fresh store. No test
 depends on a widget another test created, on the order the tests run in, or on
 a package-level set — there is none. The set is shared mutable state that
 concurrent requests touch, which is what gate 4's race detector is there to
@@ -105,18 +124,24 @@ with it. Nothing in the gates waits on a timer for a poll to come round.
 real process; the run seam exists so they need not. The wiring in `cmd/dummy`
 (D01's `main` requirement) can be proved no other way, so exactly one kind of
 test that execs the binary is admissible, and it lives in `cmd/dummy`. It
-builds the binary into a temporary directory, runs it with `--version`, runs
-it with `bogus`, and runs it with a runtime-chosen loopback `PORT` (picked by
-the probe-and-release technique above) and then sends it `SIGTERM`. It then
-runs the serve case a second time, with a freshly picked port, and stops it
-with `SIGINT`, asserting the same exit 0 and the same silence on both streams,
-because `main` promises both signals. It learns readiness by connecting to
-that port, retrying connects until one succeeds, never by a fixed sleep, and
-it asserts the child's streams and exit codes. The child's environment is one the test composes, never the developer's, and it
-runs offline like everything else. It makes no HTTP request of the child: what
-dummy answers is decided in process against a handler the test built, and the
-exec'ing test exists only to prove the wiring. Any other test that builds,
-execs, waits on, or signals a process is a bug.
+builds the binary into a temporary directory and runs it with `--version`, with
+`bogus`, and bare with no socket passed in (exit 2). For the serve case it
+stands in for systemd without systemd: it makes a Unix socket in a short
+temporary directory, passes it to the child as `exec.Cmd.ExtraFiles[0]`, which
+the child receives as descriptor 3, and starts the child through
+`/bin/sh -c 'LISTEN_PID=$$ LISTEN_FDS=1 exec "$0"' <binary>`, because
+`LISTEN_PID` must be the child's own pid and `exec` keeps the shell's. It sets
+`NOTIFY_SOCKET` to a datagram socket it bound and waits for `READY=1`, never a
+fixed sleep; then it sends `SIGTERM` and asserts exit 0 and silence on both
+streams, and that the socket's path still exists and still accepts a
+connection into its queue after the child has exited. It runs the serve case a
+second time, with a fresh socket, and stops it with `SIGINT`, asserting the
+same, because `main` promises both signals. The child's environment is one the
+test composes, never the developer's, and it runs offline like everything
+else. It makes no HTTP request of the child: what dummy answers is decided in
+process against a handler the test built, and the exec'ing test exists only to
+prove the wiring. Any other test that builds, execs, waits on, or signals a
+process is a bug.
 
 ## Gates
 
@@ -170,9 +195,16 @@ and pushed to a space's host by `devctl`, which drives `opsctl install` there.
    holding `bin/dummy` and `etc/`, with no version recorded anywhere inside.
 5. `devctl deploy <space> dummy/dist/dummy-vX.Y.Z.tar.xz` uploads the tarball
    to the space's `deploy/` prefix and runs `opsctl install` over ssh; the host
-   fetches it, writes `etc/env`, replaces the release, publishes
-   `ikigenba-dummy.service`, regenerates the host's nginx configuration, and
-   restarts the service.
+   fetches it, writes `etc/env` (with the space's `DRAIN_SECONDS`), replaces
+   the release, publishes `ikigenba-dummy.socket` (the Unix socket
+   `/run/ikigenba/dummy.sock`) and the `Type=notify` `ikigenba-dummy.service`,
+   regenerates the host's nginx configuration, and restarts the service alone;
+   the socket stays up, so requests queue on it across the restart.
 
 `dummy --version` (and `space status`) then report `vX.Y.Z`; the binary is the
 only place the version is recorded.
+
+A developer serves the checkout's binary with
+`systemd-socket-activate -l 127.0.0.1:3000 bin/dummy`, which passes a socket
+on the same terms systemd does (`D03-serve`). Run bare, dummy refuses to start:
+it never opens a socket of its own.

@@ -4,10 +4,11 @@ What a visitor gets from a running dummy. dummy's whole HTTP surface lives in
 one package, `internal/panel`: the one `http.Handler` the process serves, the
 identity precondition every request passes through, routing, the chrome every
 page is drawn in, the two failure shapes, and the panel page itself.
-`internal/cli` builds the widget store, hands it to `panel.Handler`, and gives
-the result to `server.Serve` (`D01-layout-and-run-seam`, `D02-cli`,
-`D03-serve`). This design says nothing about the listener, the port, nginx,
-TLS or the host's name, because none of those reach the handler.
+`internal/cli` builds the widget store, hands it to `panel.Handler` together
+with the writer the handler's diagnostics go to, and gives the result to
+`server.Serve` (`D01-layout-and-run-seam`, `D03-serve`). This design says
+nothing about the socket, nginx, TLS or the host's name, because none of those
+reach the handler.
 
 Three sibling designs finish the surface. `D05-widgets` owns the domain — the
 widget, the store, and the rules a submission is judged by. `D06-table` owns
@@ -32,13 +33,27 @@ the behavior that names each of those three is stated by `D06-table` or by
 ## Identity comes first
 
 An nginx gate in front of dummy authenticates every request and sets
-`X-User-Id` and `X-User-Email` on what it passes upstream, and only the gate
-can reach dummy's socket. So a request arriving without `X-User-Id` says the
-gate is misconfigured or bypassed — dummy's fault to report, not the caller's
-to fix, hence a 500 and not a 400 or a 401. `X-User-Id` alone gates the
-request: a present-but-empty value counts as missing, the same reading
-`D02-cli` gives `PORT`. `X-User-Email` is not a precondition at all; the
-chrome renders whatever arrived, which may be nothing.
+`X-User-Id` and `X-User-Email` on what it passes upstream, and a sibling app
+that calls dummy forwards the ones it received (`D03-serve` states the terms).
+Only nginx and the suite's own apps can reach dummy's socket. So a request
+arriving without `X-User-Id` says the gate or a sibling is misconfigured —
+dummy's fault to report, not the caller's to fix, hence a 500 and not a 400 or
+a 401. `X-User-Id` alone gates the request: a present-but-empty value counts
+as missing. `X-User-Email` is not a precondition at all; the chrome renders
+whatever arrived, which may be nothing.
+
+That 500 is trouble, and it is the one answer dummy reports on stderr: one
+line, `dummy: request <id>: X-User-Id is missing`, naming the request by its
+`X-Request-Id` so an operator can find the same request in nginx's log, and
+`-` when the request carries none (a developer's hand-made request). An empty
+`X-Request-Id` is read as none, the same reading `X-User-Id` gets. The id is
+written as it arrived: nginx sets it, overwriting whatever a client sent, and
+dummy trusts the suite. Every other answer — a 303, a 404, a 405, a 415, a
+422 — is the caller's business or a success and writes nothing, so a healthy
+dummy stays silent. The handler writes its line through the `io.Writer` it was
+built with, never a real stream, one `Write` per line, and never from two
+requests at once, so a writer that is not safe for concurrent use, such as a
+test's buffer, is safe to hand it.
 
 The check runs **before** dummy looks at the path or the method, so a request
 without identity is never a 303, a 404, a 405 or a 415, on any route — the
@@ -376,7 +391,7 @@ back out of a rendered page.
 
 ## REQUIREMENTS
 
-- R-L9C7-MT7L: The `internal/panel` package MUST export `func Handler(s *widget.Store) http.Handler`.
+- R-ML16-47JW: The `internal/panel` package MUST export `func Handler(s *widget.Store, stderr io.Writer) http.Handler`.
 - R-LAK4-0KYA: The `internal/panel` package MUST export `const ServiceName = "Dummy"`.
 - R-LBS0-ECOZ: The `internal/panel` package MUST export `const MissingIdentityBody = "identity header missing\n"` and `const MethodNotAllowedBody = "method not allowed\n"`.
 - R-LCZW-S4FO: The `internal/panel` package MUST export `const NotFoundMessage = "That page was not found."`, `const MethodNotAllowedMessage = "That method is not allowed here."` and `const UnsupportedMediaTypeMessage = "That media type is not supported."`.
@@ -425,3 +440,6 @@ back out of a rendered page.
 - R-KX9D-3SPX: A request that carries no `X-User-Id` header, whatever its path and method, a `POST /widgets` request carrying a form-encoded submission (`D07-form`) whose values for `name`, `count` and `status` `Store.Create` (`D05-widgets`) would accept on `s` — a `Submission` of those values for which `Create` on `s` would return a `FieldErrors` whose `Any` is false — included, MUST leave the store `s` that `Handler` was built over unchanged, whatever widgets `s` holds: the slice `s.All()` returns before the request and the slice it returns after the request MUST be equal element for element and in the same order.
 - R-KYH9-HKGM: A request whose `X-User-Id` header is present with an empty value, whatever its path and method, a `POST /widgets` request carrying a form-encoded submission (`D07-form`) whose values for `name`, `count` and `status` `Store.Create` (`D05-widgets`) would accept on `s` — a `Submission` of those values for which `Create` on `s` would return a `FieldErrors` whose `Any` is false — included, MUST leave the store `s` that `Handler` was built over unchanged, whatever widgets `s` holds: the slice `s.All()` returns before the request and the slice it returns after the request MUST be equal element for element and in the same order.
 - R-JKLR-YCYB: The response `Handler` produces for a request MUST NOT depend on the process's working directory or on any file outside the binary: for two identical requests, one answered by a handler driven with the working directory set to an empty temporary directory and one answered by a handler driven with the working directory set to the checkout, and immediately before each of which the slice `s.All()` returns for that handler's own store is equal element for element and in the same order, the two answers MUST have the same status, the same value for every header `Handler` sets, and the same body.
+- R-MM92-HZAL: For every request `Handler` answers with status 500 because its `X-User-Id` header is absent or empty, `Handler` MUST write exactly `"dummy: request " + id + ": X-User-Id is missing\n"` to `stderr` in a single call to `stderr.Write`, where `id` is the value `r.Header.Get("X-Request-Id")` returns when that value is non-empty and `-` when it is empty.
+- R-MNGY-VR1A: `Handler` MUST write nothing to `stderr` for a request it answers with any status other than 500, and MUST write exactly one line to `stderr` for each request it answers with status 500.
+- R-MOOV-9IRZ: `Handler` MUST NOT let two calls to `stderr.Write` be in progress at the same time, whatever requests it is handling concurrently.
