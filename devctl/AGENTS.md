@@ -24,6 +24,15 @@ is human-authored and read-only to the run.
 - Go 1.26 (`go version` must report 1.26+)
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory, `version: "2"`)
 
+The gates fake every external process, so they need nothing beyond the two
+tools above. Running the built `devctl` needs these on `PATH` as well:
+
+- `git` (finds the checkout: `git rev-parse`)
+- `ssh` (reaches a space's host as `ec2-user`)
+- `tar` with `xz` support (`build` writes and `deploy` reads `.tar.xz` archives, `tar -J`)
+- `secret-tool` (libsecret; reads the developer's keyring)
+- `curl` (fetches opsctl's published releases)
+
 ## Dependencies
 
 Every direct dependency is approved by a human, and the approval is recorded
