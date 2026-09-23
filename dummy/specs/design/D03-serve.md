@@ -121,7 +121,7 @@ begun and not returned; a connection still sending its request headers is not
 a request yet, and is closed at once like an idle one — `http.Server.Shutdown`
 alone leaves a new connection open for several seconds, so the build tracks
 connection state itself. `Run` reports that error like any other `Serve` failure:
-`dummy: stopped with <n> requests unfinished`, exit 1. The drain is bounded
+`dummy: stopped with <n> requests unfinished` (`1 request` when `<n>` is 1), exit 1. The drain is bounded
 so that dummy always exits before the service unit's stop timeout and is
 never killed by systemd mid-write; keeping `DRAIN_SECONDS` below that timeout
 is opsctl's to enforce. `Run` never passes a drain that is not positive, and
@@ -164,7 +164,7 @@ could cut a response short inside the drain.
 - R-LSZH-BHHX: When `ctx` is done, `Serve` MUST stop accepting connections and close `ln`, and MUST close every connection that carries no request.
 - R-LU7D-P98M: When `ctx` is done, `Serve` MUST let every call to `h.ServeHTTP` already in progress continue and MUST deliver the complete response of every such call that returns within `drain` after `ctx` was done; when every such call has returned and its response has been delivered before `drain` has elapsed, `Serve` MUST return nil without waiting for `drain` to elapse.
 - R-LVFA-30ZB: When `n` calls to `h.ServeHTTP`, `n` at least 1, are still in progress once `drain` has elapsed after `ctx` was done, `Serve` MUST close the connections those requests arrived on without writing the rest of their responses and MUST return a `*DrainError` whose `Unfinished` is `n`, without waiting for those calls to return.
-- R-LWN6-GSQ0: `(*DrainError).Error` MUST return exactly `"stopped with " + strconv.Itoa(e.Unfinished) + " requests unfinished"`.
+- R-LURX-UT17: `(*DrainError).Error` MUST return exactly `"stopped with 1 request unfinished"` when `e.Unfinished` is 1, and exactly `"stopped with " + strconv.Itoa(e.Unfinished) + " requests unfinished"` for every other value of `e.Unfinished`.
 - R-QO7E-IVIP: When serving fails while `ctx` is not done, `Serve` MUST return a non-nil error, and `Serve` MUST NOT return nil for any reason other than `ctx` being done.
 - R-IBR4-T2PU: `Serve` MUST write nothing to the `log` package's default logger and nothing to any process stream, whatever `ln` and `h` do: the diagnostics `net/http`'s server writes through its `ErrorLog`, such as an `Accept` error it retries or a handler that panics, MUST be discarded, so that a test which points the `log` package's output at a buffer and drives `Serve` with a listener whose `Accept` returns a temporary error and a handler that panics finds the buffer empty when `Serve` returns.
 - R-LXV2-UKGP: When `Args` is empty, `Run` MUST decide whether `DRAIN_SECONDS` is acceptable before it calls `LookupEnv` for `LISTEN_PID` or `LISTEN_FDS`, so that when `DRAIN_SECONDS` is not acceptable and no socket was passed in, the `DRAIN_SECONDS` diagnostic is the one `Run` writes.

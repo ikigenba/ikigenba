@@ -180,7 +180,8 @@ dummy: stopped with <n> requests unfinished
 ```
 
 dummy exits 1, 5 seconds after the signal. The line is on stderr; stdout is
-empty. `<n>` is the number of requests still running at the deadline.
+empty. `<n>` is the number of requests still running at the deadline. When
+`<n>` is 1 the line reads `dummy: stopped with 1 request unfinished`.
 
 Preconditions:
 
