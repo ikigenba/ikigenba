@@ -13,7 +13,10 @@ the app it names answers at the root as well as under the host's own name.
 
 The designs cover command conventions and configuration, DNS and preflight,
 nginx and certificates, app lifecycle, service and host backups, and restore
-and retirement. Release publication and the installer that puts the binary on
+and retirement. Every app runs behind a systemd socket unit that holds its
+Unix socket, which nginx proxies to, so no app listens on a TCP port and an
+upgrade refuses no request; an operator can disable an app, which then stays
+disabled through every operation until it is enabled. Release publication and the installer that puts the binary on
 a host are maintained outside these designs. Setup composes certificate,
 nginx, replication and timer operations. Generated files are reconstructed from
 configuration and service declarations; application state outlives installation.
