@@ -14,6 +14,9 @@ One configuration key:
 |---|---|
 | `host.name` | the fully-qualified name this host answers at, at or under a configured zone, e.g. `sbx.ikigenba.dev` |
 
+Its preflight and its `apps` step also read `apps.drain_seconds` and
+`apps.stop_seconds`, the two app timing keys `S7-apps.md` declares.
+
 A host answers at one name: the space's, one label under the root domain.
 The records a bootstrap created are `<host.name>` and `*.<host.name>`, and
 the wildcard certificate, the nginx catch-all, and every app's own name all
@@ -24,16 +27,18 @@ the first step that reads it.
 
 The sequence is the setup commands that exist. It is empty until a group adds
 one to it, and each group that does says so; `S6-certificates.md` adds
-`certificate`, `S5-nginx.md` adds `nginx.conf`, and `S8-backup.md` adds `litestream`
-and `timers`, in that order. Every setup command is idempotent, so `init` is
+`certificate`, `S5-nginx.md` adds `nginx.conf`, `S8-backup.md` adds `litestream`
+and `timers`, and `S7-apps.md` adds `apps`, in that order. Every setup command is idempotent, so `init` is
 too, and a step's inputs are read from the store every run — which is why
 changing a period or a zone is `config set` followed by `init`, and never an
 edit to something `init` generated. From the developer's machine that pair is
 `devctl space init`, which sets the keys `create` set and runs `init` again;
 `create` runs it once and `space init` runs it on any later day. Two of the
 generated files also answer to
-what is under `/opt`, and `install` and `restore` regenerate those themselves
-when they change it (see `S7-apps.md` and `S8-backup.md`); `init` remains the only
+what is under `/opt`, and the nginx file to which apps are disabled as well;
+`install`, `uninstall`, `restore`, `disable`, and `enable` regenerate those
+themselves when they change what they answer to (see `S7-apps.md` and
+`S8-backup.md`); `init` remains the only
 command that enables the units behind them.
 
 Every check runs; none short-circuits another, so one run shows an agent
@@ -69,6 +74,8 @@ Checks, in order:
   litestream                 found on PATH
   dns.provider, dns.zones    set, and the provider opens (see 'opsctl dns --help')
   host.name                  set
+  timeouts                   apps.drain_seconds and apps.stop_seconds are positive
+                             whole seconds, stop greater than drain
   zone NAME                  every configured zone is reachable and delegated
   host NAME                  host.name lies at or under a configured zone
   wildcard NAME              host.name and _opsctl-preflight.host.name resolve alike
@@ -79,9 +86,14 @@ Sequence:
   litestream   generate /etc/litestream.yml and enable litestream.service
   timers       write the backup and renewal units, enabling each backup timer
                whose period is set and the renewal timer always
+  apps         write the drain and stop settings into every installed app,
+               restarting each enabled app whose settings changed; a
+               disabled app is rewritten and left disabled
 
 Configuration keys:
-  host.name  the fully-qualified name this host answers at, at or under a configured zone
+  host.name           the fully-qualified name this host answers at, at or under a configured zone
+  apps.drain_seconds  how long an app may drain when stopped (default 5)
+  apps.stop_seconds   how long systemd waits for an app to stop (default 10)
 ```
 
 Exits 0. The text is on stdout; stderr is empty. It prints for any user.
@@ -116,6 +128,7 @@ litestream: ok (/usr/bin/litestream)
 dns.provider: ok (route53)
 dns.zones: ok (ikigenba.dev)
 host.name: ok (sbx.ikigenba.dev)
+timeouts: ok (drain 5s, stop 10s)
 zone ikigenba.dev: ok (route53 Z09565073GHK8BYWQ1A78, 4 nameservers delegated)
 host sbx.ikigenba.dev: ok (zone ikigenba.dev)
 wildcard sbx.ikigenba.dev: ok (77.112.106.79)
@@ -129,6 +142,8 @@ Preconditions:
 - `nginx`, `certbot`, `systemctl`, and `litestream` are on the host's PATH.
 - `dns.provider`, `dns.zones`, and `host.name` are set, and the host's
   credentials can read the configured zone.
+- `apps.drain_seconds` and `apps.stop_seconds` are unset, so the defaults
+  apply.
 - Public DNS delegates the zone, and `sbx.ikigenba.dev` and
   `_opsctl-preflight.sbx.ikigenba.dev` resolve to the same address.
 
@@ -139,6 +154,9 @@ Postconditions:
   naming every declared database with `litestream.service` enabled, the two
   backup unit pairs with each timer enabled whose period the store gives as
   non-zero, and the certificate renewal pair with its timer enabled.
+- Every installed app's `etc/env` holds `DRAIN_SECONDS=5` and its service
+  unit a stop timeout of `10` seconds. An app that already held those values
+  was not restarted.
 - Every setup command is idempotent, so a host that was already set up is
   unchanged by the run.
 
@@ -173,6 +191,7 @@ litestream: ok (/usr/bin/litestream)
 dns.provider: ok (route53)
 dns.zones: ok (ikigenba.dev)
 host.name: failed: not set
+timeouts: ok (drain 5s, stop 10s)
 zone ikigenba.dev: ok (route53 Z09565073GHK8BYWQ1A78, 4 nameservers delegated)
 exit 2
 ```
@@ -203,7 +222,9 @@ $ sudo opsctl config set host.name=sbx.ikigenba.dev
 $ sudo opsctl init; echo "exit $?"
 ```
 
-Output: the ten `ok` lines of the ready host, and `exit 0`.
+Output: the eleven `ok` lines of the ready host, and `exit 0`.
+
+Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
@@ -214,6 +235,92 @@ Postconditions:
 - The setup sequence has run. Running `init` a third time produces byte for
   byte the same output and the same exit code: the whole command is
   idempotent, and a preflight that passes writes nothing of its own.
+
+## An operator changes how long apps may drain
+
+The two timing settings are store inputs like any other, so a change is
+`config set` followed by `init`. The `apps` step writes the new values into
+every installed app and restarts only the apps whose values changed. A
+restart refuses no request, because each app's socket keeps listening while
+its service restarts (`S7-apps.md`).
+
+Command:
+
+```
+$ sudo opsctl config set apps.drain_seconds=20
+$ sudo opsctl config set apps.stop_seconds=30
+$ sudo opsctl init; echo "exit $?"
+```
+
+Output: the eleven `ok` lines of the ready host, with the `timeouts` line
+reading
+
+```
+timeouts: ok (drain 20s, stop 30s)
+```
+
+and `exit 0`.
+
+Exits 0. The lines are on stdout; stderr is empty.
+
+Preconditions:
+
+- The host is ready, and `crm`, `dashboard`, and `notes` are installed with
+  `DRAIN_SECONDS=5` and a stop timeout of `10` seconds. `notes` was disabled
+  with `opsctl disable notes`.
+- `/opt/gmail/` holds a `state/` and no `bin/gmail`: it is a service, not an
+  installed app.
+
+Postconditions:
+
+- `/opt/crm/etc/env`, `/opt/dashboard/etc/env`, and `/opt/notes/etc/env`
+  hold `DRAIN_SECONDS=20`; every other line in them is as it was. All three
+  service units stop with a timeout of `30` seconds. systemd has been
+  reloaded.
+- `ikigenba-crm.service` and `ikigenba-dashboard.service` were restarted,
+  so each now runs with the new values. Their sockets were not restarted.
+- `notes` was not started, restarted, or enabled: both its units are still
+  disabled and inactive and its names still answer `503`. When it is enabled
+  it starts with the new values.
+- `/opt/gmail/` was not touched and no unit was written for it.
+- Running `init` again writes the same values, restarts no app, and prints
+  the same lines.
+
+## An operator sets a stop timeout no longer than the drain deadline
+
+A stop timeout that is not greater than the drain deadline would let systemd
+kill an app still draining, so the preflight refuses it like any other fact
+about the host that is wrong, and nothing in the sequence runs.
+
+Command:
+
+```
+$ sudo opsctl config set apps.drain_seconds=30
+$ sudo opsctl init; echo "exit $?"
+```
+
+Output: the lines of the ready host, with the `timeouts` line reading
+
+```
+timeouts: failed: apps.stop_seconds (10) is not greater than apps.drain_seconds (30)
+```
+
+and `exit 2`.
+
+Exits 2. The lines are on stdout; stderr is empty. A value that is not a
+positive whole number — `0`, `-1`, `2.5`, `ten` — gives
+`timeouts: failed: apps.drain_seconds is not a positive whole number of
+seconds: '2.5'`, naming whichever key holds it.
+
+Preconditions:
+
+- `apps.stop_seconds` is unset, so its default `10` applies, and every other
+  check passes.
+
+Postconditions:
+
+- Nothing has changed. No setup command ran, no app's `etc/env` or unit was
+  rewritten, and no app was restarted.
 
 ## An operator gives init an argument
 

@@ -2,8 +2,8 @@
 
 Every request to the host arrives at nginx, and opsctl owns exactly one file
 under `/etc/nginx`: `/etc/nginx/conf.d/ikigenba.conf`. That file is a pure
-function of the configuration store and of what is on disk under `/opt`, so it
-is generated rather than edited, and it is never backed up — a restored host
+function of the configuration store, of what is on disk under `/opt`, and of
+which apps systemd reports disabled, so it is generated rather than edited, and it is never backed up — a restored host
 regenerates it.
 
 The top-level usage gains the line `  nginx     generate the platform's nginx
@@ -12,16 +12,36 @@ configuration` under `Commands:`, and `init`'s sequence gains the step
 
 A service is discovered, never registered: any `/opt/<name>/` holding an
 `etc/` or a `state/` directory is one. A service is *routed* when it also has
-an `etc/manifest.toml` naming a `port`; one without is known to the host but
-gets no server block, which is what a service restored from backup but never
-installed looks like, and what one that was uninstalled looks like. Routed services answer at `<name>.<host.name>`, and the
+an `etc/manifest.toml` naming its `app`; one without is known to the host but
+gets no server block, which is what a service holding only `state/` looks
+like, and what one that was uninstalled looks like. Routed services answer at `<name>.<host.name>`, and the
 one whose manifest says `default = true` also answers at `<host.name>`.
 
+A routed app is *disabled* when systemd reports its socket unit,
+`ikigenba-<name>.socket`, disabled — the state `opsctl disable` leaves it in
+(`S7-apps.md`). Nothing else records it: nginx asks systemd, the way `status`
+does. A disabled app keeps its block and every name it answers at, but the
+block answers `503` to every request and neither includes the app's own
+`etc/nginx.conf` nor proxies anywhere, so a disabled app reads as unavailable
+rather than as missing. A routed service with no units at all — a restore
+that brought a manifest and no binary — is not disabled; it is routed as any
+other.
+
 A service's block carries the TLS frame, the app's own `etc/nginx.conf` if it
-ships one, and a `location /` that proxies to the port its manifest names. The
-app's file is included first, so a longer prefix in it — static files out of
-`share/`, say — wins over the proxy; the glob makes the include harmless when
-there is no such file.
+ships one, and a `location /` that proxies to the app's Unix socket,
+`/run/ikigenba/<name>.sock`. No app listens on a TCP port: the socket is held
+by the app's socket unit (`S7-apps.md`), readable and writable by nginx and by
+no process outside the platform, so nginx is the only way in from the network.
+The app's file is included first, so a longer prefix in it — static files out
+of `share/`, say — wins over the proxy; the glob makes the include harmless
+when there is no such file.
+
+Every request gets one id. nginx sets `X-Request-Id` to its own `$request_id`
+on every request it proxies to an app, and on the subrequest to `auth`'s
+`/check`, always overwriting whatever the client sent, so the id an app sees
+is nginx's and never the client's. The same id ends every line nginx writes
+to its access log, in the `ikigenba` format the file declares, so an app's
+diagnostic naming a request and the access-log line for it can be matched.
 
 One routed app is set apart by its name. A routed app named `auth` is the
 platform's authenticator, and its presence rewrites every other routed app's
@@ -32,8 +52,8 @@ never reach the app; nginx sets them from `auth`'s answer instead, turns a 401
 into a redirect to `auth`, and passes a 403 through. `auth`'s own block is left
 *unwired*, and its `/check` answers 404 to any public request — it is reachable
 only as that internal subrequest. Recognition is by a routed manifest, not the
-name alone: an `/opt/auth/` with no `etc/manifest.toml` naming a port is not
-the authenticator, and with no routed `auth` on the host every block is unwired
+name alone: an `/opt/auth/` with no `etc/manifest.toml` naming its `app` is
+not the authenticator, and with no routed `auth` on the host every block is unwired
 — the fail-open frame, which is what these stories show unless one says a
 routed `auth` is present.
 
@@ -52,7 +72,7 @@ with fewer than three labels has no parent to answer at, and a `host.apex`
 set on one is refused by everything that reads it. The apex app is chosen
 independently of the manifest's `default`: one app may answer at the space's
 name and another at the apex, or the same app at both. When the named app is
-not routed — not installed, or installed without a port — the apex answers
+not routed — not installed, or restored with no manifest — the apex answers
 404 under the host's certificate until it is, so the name never falls to the
 handshake-rejecting default block once the certificate carries it.
 
@@ -73,8 +93,8 @@ Output:
 ```
 Usage: opsctl nginx <subcommand>
 
-Generate /etc/nginx/conf.d/ikigenba.conf from the configuration store and the
-services under /opt. The file is generated, never edited; opsctl writes no
+Generate /etc/nginx/conf.d/ikigenba.conf from the configuration store, the
+services under /opt, and which apps systemd reports disabled. The file is generated, never edited; opsctl writes no
 other file under /etc/nginx.
 
 Subcommands:
@@ -86,9 +106,13 @@ Configuration keys:
   host.apex  the app that answers at the parent of host.name; unset means none
 
 A service is any /opt/<name>/ with an etc/ or state/ directory. One with an
-etc/manifest.toml naming a port answers at <name>.<host.name>, and the one
-whose manifest sets default answers at <host.name> as well. Its own
-etc/nginx.conf, if it ships one, is included in its server block. The app
+etc/manifest.toml naming its app answers at <name>.<host.name>, proxied to
+its socket /run/ikigenba/<name>.sock, and the one whose manifest sets default
+answers at <host.name> as well. Its own etc/nginx.conf, if it ships one, is
+included in its server block. An app whose socket unit systemd reports
+disabled keeps its names, and its block answers 503. Every proxied request
+carries X-Request-Id set to nginx's own request id, which also ends its
+access-log line. The app
 host.apex names also answers at the parent of host.name; until that app is
 routed, the parent answers 404. A routed app named auth is the authenticator:
 every other app's block then requires a valid session, checked against auth's
@@ -110,7 +134,9 @@ Postconditions:
 Before any app is installed, the file is the frame: port 80 redirects
 everything to 443, an unknown name has its TLS handshake rejected outright
 rather than being answered with someone else's certificate, and the host's own
-name and its wildcard answer 404 under the host's certificate.
+name and its wildcard answer 404 under the host's certificate. The
+`ikigenba` log format comes first, and every block that answers a request
+logs in it; the handshake-rejecting block answers none.
 
 Command:
 
@@ -123,10 +149,15 @@ Output:
 ```
 # Generated by opsctl. Do not edit; run 'opsctl nginx apply'.
 
+log_format ikigenba '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" $request_id';
+
 server {
     listen      80 default_server;
     listen      [::]:80 default_server;
     server_name _;
+    access_log  /var/log/nginx/access.log ikigenba;
     return      301 https://$host$request_uri;
 }
 
@@ -141,6 +172,7 @@ server {
     server_name         sbx.ikigenba.dev *.sbx.ikigenba.dev;
     ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
+    access_log          /var/log/nginx/access.log ikigenba;
     return              404;
 }
 ```
@@ -179,10 +211,15 @@ Output:
 ```
 # Generated by opsctl. Do not edit; run 'opsctl nginx apply'.
 
+log_format ikigenba '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" $request_id';
+
 server {
     listen      80 default_server;
     listen      [::]:80 default_server;
     server_name _;
+    access_log  /var/log/nginx/access.log ikigenba;
     return      301 https://$host$request_uri;
 }
 
@@ -197,6 +234,7 @@ server {
     server_name         *.sbx.ikigenba.dev;
     ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
+    access_log          /var/log/nginx/access.log ikigenba;
     return              404;
 }
 
@@ -205,15 +243,17 @@ server {
     server_name         crm.sbx.ikigenba.dev sbx.ikigenba.dev;
     ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
+    access_log          /var/log/nginx/access.log ikigenba;
 
     include /opt/crm/etc/nginx.conf*;
 
     location / {
-        proxy_pass       http://127.0.0.1:3100;
+        proxy_pass       http://unix:/run/ikigenba/crm.sock:;
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
     }
 }
 
@@ -222,15 +262,17 @@ server {
     server_name         dashboard.sbx.ikigenba.dev;
     ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
+    access_log          /var/log/nginx/access.log ikigenba;
 
     include /opt/dashboard/etc/nginx.conf*;
 
     location / {
-        proxy_pass       http://127.0.0.1:3200;
+        proxy_pass       http://unix:/run/ikigenba/dashboard.sock:;
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
     }
 }
 ```
@@ -240,19 +282,25 @@ Exits 0. The text is on stdout; stderr is empty.
 Preconditions:
 
 - `host.name` is `sbx.ikigenba.dev` and `host.apex` is not set.
-- `/opt/crm/etc/manifest.toml` names `port = 3100` and `default = true`.
-- `/opt/dashboard/etc/manifest.toml` names `port = 3200` and no `default`, or
+- `/opt/crm/etc/manifest.toml` names `app = "crm"` and `default = true`.
+- `/opt/dashboard/etc/manifest.toml` names `app = "dashboard"` and no `default`, or
   `default = false`.
 - Neither app ships an `etc/nginx.conf`; the include matches nothing and
   nginx accepts it.
 - `/opt/gmail/` holds a `state/` and no `etc/manifest.toml`.
 - No app named `auth` is routed — there is no `/opt/auth/` with a manifest
-  naming a port — so no block carries `auth_request` and the host is fail-open.
+  naming its `app` — so no block carries `auth_request` and the host is fail-open.
 
 Postconditions:
 
 - Nothing has changed. `gmail` has no block: it is a service the host will
   back up, and not one nginx can route.
+- Once applied, a request to `https://crm.sbx.ikigenba.dev` reaches `crm`
+  through `/run/ikigenba/crm.sock` carrying an `X-Request-Id` that nginx
+  generated, whatever `X-Request-Id` the client sent, and the access-log line
+  for that request ends with the same id.
+- `show` reads no socket: a block proxies to `/run/ikigenba/<name>.sock`
+  whether or not that socket exists.
 
 ## An operator reads the configuration of the host that holds the apex
 
@@ -276,15 +324,17 @@ server {
     server_name         dashboard.sbx.ikigenba.dev ikigenba.dev;
     ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
+    access_log          /var/log/nginx/access.log ikigenba;
 
     include /opt/dashboard/etc/nginx.conf*;
 
     location / {
-        proxy_pass       http://127.0.0.1:3200;
+        proxy_pass       http://unix:/run/ikigenba/dashboard.sock:;
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
     }
 }
 ```
@@ -309,6 +359,48 @@ Postconditions:
   non-auth app — would carry the wiring like any other block; holding the apex
   exempts a block from nothing.
 
+## An operator reads the configuration while an app is disabled
+
+`crm` has been disabled with `opsctl disable crm`. Its block keeps both of its
+names, so the space's name and `crm.sbx.ikigenba.dev` answer `503` under the
+host's certificate instead of falling to the 404 block. `dashboard` is
+unaffected.
+
+Command:
+
+```
+$ sudo opsctl nginx show
+```
+
+Output: the `host running apps` story's file, with `crm`'s block reading
+
+```
+server {
+    listen              443 ssl;
+    server_name         crm.sbx.ikigenba.dev sbx.ikigenba.dev;
+    ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
+    access_log          /var/log/nginx/access.log ikigenba;
+    return              503;
+}
+```
+
+Exits 0. The text is on stdout; stderr is empty.
+
+Preconditions:
+
+- As for the `host running apps` story, and systemd reports
+  `ikigenba-crm.socket` disabled.
+
+Postconditions:
+
+- Nothing has changed. `show` asked systemd whether each routed app's socket
+  unit is enabled and changed nothing there.
+- Once applied, every request to `crm`'s names is answered `503` by nginx,
+  and nothing reaches `/run/ikigenba/crm.sock`, which does not exist while
+  `crm` is disabled. Had `crm` also held the apex, `ikigenba.dev` would answer
+  `503` from the same block.
+
 ## An operator reads the configuration when the apex app is not routed
 
 `host.apex` names an app that is not installed — not yet deployed, or taken
@@ -329,10 +421,15 @@ Output:
 ```
 # Generated by opsctl. Do not edit; run 'opsctl nginx apply'.
 
+log_format ikigenba '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" $request_id';
+
 server {
     listen      80 default_server;
     listen      [::]:80 default_server;
     server_name _;
+    access_log  /var/log/nginx/access.log ikigenba;
     return      301 https://$host$request_uri;
 }
 
@@ -347,6 +444,7 @@ server {
     server_name         sbx.ikigenba.dev *.sbx.ikigenba.dev ikigenba.dev;
     ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
+    access_log          /var/log/nginx/access.log ikigenba;
     return              404;
 }
 ```
@@ -357,7 +455,7 @@ Preconditions:
 
 - `host.name` is `sbx.ikigenba.dev` and `host.apex` is `crm`.
 - No directory under `/opt/` holds an `etc/` or a `state/`; or `/opt/crm/`
-  holds a `state/` and no manifest naming a port.
+  holds a `state/` and no manifest.
 - No routed `auth` is present; nothing is wired, and the 404 frame is
   unchanged.
 
@@ -371,9 +469,9 @@ Postconditions:
 ## An operator reads the configuration of a host running apps behind the authenticator
 
 A routed app named `auth` is on the host, so every other app's block is wired
-to it. `auth` (port 3001) is not the default, so it answers only at
-`auth.sbx.ikigenba.dev`; `crm` (port 3100) is still the default and still
-answers at the space's name; `dashboard` (port 3200) answers at its own name.
+to it. `auth` is not the default, so it answers only at
+`auth.sbx.ikigenba.dev`; `crm` is still the default and still answers at the
+space's name; `dashboard` answers at its own name.
 The blocks come in ascending name order — `auth`, `crm`, `dashboard` — and
 `auth`'s own is the one left unwired: its `/check` answers 404 to any direct
 request and is reached only as the other blocks' internal subrequest. In each
@@ -394,10 +492,15 @@ Output:
 ```
 # Generated by opsctl. Do not edit; run 'opsctl nginx apply'.
 
+log_format ikigenba '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" $request_id';
+
 server {
     listen      80 default_server;
     listen      [::]:80 default_server;
     server_name _;
+    access_log  /var/log/nginx/access.log ikigenba;
     return      301 https://$host$request_uri;
 }
 
@@ -412,6 +515,7 @@ server {
     server_name         *.sbx.ikigenba.dev;
     ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
+    access_log          /var/log/nginx/access.log ikigenba;
     return              404;
 }
 
@@ -420,6 +524,7 @@ server {
     server_name         auth.sbx.ikigenba.dev;
     ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
+    access_log          /var/log/nginx/access.log ikigenba;
 
     include /opt/auth/etc/nginx.conf*;
 
@@ -428,11 +533,12 @@ server {
     }
 
     location / {
-        proxy_pass       http://127.0.0.1:3001;
+        proxy_pass       http://unix:/run/ikigenba/auth.sock:;
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
     }
 }
 
@@ -441,16 +547,18 @@ server {
     server_name         crm.sbx.ikigenba.dev sbx.ikigenba.dev;
     ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
+    access_log          /var/log/nginx/access.log ikigenba;
 
     include /opt/crm/etc/nginx.conf*;
 
     location = /_ikigenba/check {
         internal;
-        proxy_pass              http://127.0.0.1:3001/check;
+        proxy_pass              http://unix:/run/ikigenba/auth.sock:/check;
         proxy_pass_request_body off;
         proxy_set_header        Content-Length "";
         proxy_set_header        X-User-Id    "";
         proxy_set_header        X-User-Email "";
+        proxy_set_header        X-Request-Id $request_id;
     }
 
     location @auth_redirect {
@@ -463,11 +571,12 @@ server {
         auth_request_set $auth_user_email $upstream_http_x_user_email;
         error_page       401 = @auth_redirect;
 
-        proxy_pass       http://127.0.0.1:3100;
+        proxy_pass       http://unix:/run/ikigenba/crm.sock:;
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -478,16 +587,18 @@ server {
     server_name         dashboard.sbx.ikigenba.dev;
     ssl_certificate     /etc/letsencrypt/live/sbx.ikigenba.dev/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/sbx.ikigenba.dev/privkey.pem;
+    access_log          /var/log/nginx/access.log ikigenba;
 
     include /opt/dashboard/etc/nginx.conf*;
 
     location = /_ikigenba/check {
         internal;
-        proxy_pass              http://127.0.0.1:3001/check;
+        proxy_pass              http://unix:/run/ikigenba/auth.sock:/check;
         proxy_pass_request_body off;
         proxy_set_header        Content-Length "";
         proxy_set_header        X-User-Id    "";
         proxy_set_header        X-User-Email "";
+        proxy_set_header        X-Request-Id $request_id;
     }
 
     location @auth_redirect {
@@ -500,11 +611,12 @@ server {
         auth_request_set $auth_user_email $upstream_http_x_user_email;
         error_page       401 = @auth_redirect;
 
-        proxy_pass       http://127.0.0.1:3200;
+        proxy_pass       http://unix:/run/ikigenba/dashboard.sock:;
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
         proxy_set_header X-User-Id         $auth_user_id;
         proxy_set_header X-User-Email      $auth_user_email;
     }
@@ -516,10 +628,10 @@ Exits 0. The text is on stdout; stderr is empty.
 Preconditions:
 
 - `host.name` is `sbx.ikigenba.dev` and `host.apex` is not set.
-- `/opt/auth/etc/manifest.toml` names `port = 3001` and no `default`, or
+- `/opt/auth/etc/manifest.toml` names `app = "auth"` and no `default`, or
   `default = false`.
-- `/opt/crm/etc/manifest.toml` names `port = 3100` and `default = true`.
-- `/opt/dashboard/etc/manifest.toml` names `port = 3200` and no `default`, or
+- `/opt/crm/etc/manifest.toml` names `app = "crm"` and `default = true`.
+- `/opt/dashboard/etc/manifest.toml` names `app = "dashboard"` and no `default`, or
   `default = false`.
 - No app ships an `etc/nginx.conf`; each include matches nothing and nginx
   accepts it.
@@ -530,10 +642,13 @@ Postconditions:
 - `auth` alone carries no `auth_request`; every other routed app carries it,
   purely because a routed `auth` is present — there is no per-app opt-in or
   opt-out.
+- Once applied, the subrequest to `/check` and the request it admits carry the
+  same `X-Request-Id`: nginx's id for the client's request, never the
+  client's own value.
 
 ## An operator reads the configuration where auth is present but not routed
 
-An `/opt/auth/` is on disk, but it has no `etc/manifest.toml` naming a port — a
+An `/opt/auth/` is on disk, but it has no `etc/manifest.toml` naming its app — a
 `state/` restored from backup, say, or an `etc/` that ships no manifest. It is
 a known service but not a routed one, so it is not the authenticator: there is
 nowhere to send a subrequest. Recognition takes a routed manifest, not the
@@ -555,17 +670,18 @@ Exits 0. The text is on stdout; stderr is empty.
 Preconditions:
 
 - `host.name` is `sbx.ikigenba.dev` and `host.apex` is not set.
-- `/opt/crm/etc/manifest.toml` names `port = 3100` and `default = true`;
-  `/opt/dashboard/etc/manifest.toml` names `port = 3200` and no `default`.
-- `/opt/auth/` holds a `state/`, or an `etc/` with no `manifest.toml` naming a
-  `port`.
+- `/opt/crm/etc/manifest.toml` names `app = "crm"` and `default = true`;
+  `/opt/dashboard/etc/manifest.toml` names `app = "dashboard"` and no
+  `default`.
+- `/opt/auth/` holds a `state/`, or an `etc/` with no `manifest.toml` naming
+  its `app`.
 
 Postconditions:
 
 - Nothing has changed.
 - `auth` has no block: unrouted, it is a service the host will back up and one
   nginx cannot route, and it is not the authenticator. No block is wired; the
-  host stays fail-open until a routed `auth` manifest names a port.
+  host stays fail-open until an `auth` manifest naming its app is in place.
 
 ## An operator applies the configuration
 
