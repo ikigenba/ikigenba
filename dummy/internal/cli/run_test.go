@@ -364,7 +364,6 @@ func TestProcessShapeAndDefaultListener(t *testing.T) {
 	}
 }
 
-// R-AWAS-IPSS
 func TestExitCodeConstants(t *testing.T) {
 	t.Parallel()
 

@@ -216,7 +216,7 @@ func TestPageSignOutURL(t *testing.T) {
 	}
 }
 
-// R-LXQ7-A81H R-LYY3-NZS6 R-LU2I-4WTE R-IZ05-BFFI
+// R-LXQ7-A81H R-LYY3-NZS6 R-LU2I-4WTE
 func TestPageIdentityBeforeRouting(t *testing.T) {
 	for _, path := range []string{"/", "/widgets", "/widgets/table", "/widgets/", "/unknown"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "OPTIONS"} {
@@ -245,7 +245,7 @@ func TestPageIdentityBeforeRouting(t *testing.T) {
 }
 
 // R-ISWN-EKQ1 R-M3TP-72QY R-M51L-KUHN R-M69H-YM8C R-M8PA-Q5PQ
-// R-M9X7-3XGF R-MB53-HP74 R-KS39-O19S R-IZ05-BFFI
+// R-M9X7-3XGF R-MB53-HP74 R-KS39-O19S
 func TestPageRoutes(t *testing.T) {
 	cases := []struct {
 		method, path   string
