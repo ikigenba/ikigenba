@@ -1,10 +1,11 @@
 # auth
 
-An app of the Ikigenba platform: one Go binary that serves the auth service at
-`127.0.0.1:$PORT`, behind the host's nginx. On a host it runs as
-`/opt/auth/bin/auth` with `/opt/auth` as its working directory and its
-environment from `/opt/auth/etc/env`; a developer runs the same binary from the
-checkout. The module path is `github.com/ikigenba/ikigenba/auth`. Its package
+An app of the Ikigenba platform: one Go binary that serves the auth service on
+the socket systemd passes it (`/run/ikigenba/auth.sock` on a host), behind the
+host's nginx, which also sends it the identity subrequest for every other app.
+On a host it runs as `/opt/auth/bin/auth` with `/opt/auth` as its working
+directory and its environment from `/opt/auth/etc/env`; a developer runs the
+same binary from the checkout under `systemd-socket-activate`. The module path is `github.com/ikigenba/ikigenba/auth`. Its package
 layout, import direction, version and manifest declarations, and run seam are
 design D01 (`specs/design/D01-layout-and-run-seam.md`); this file does not
 restate them.
@@ -22,6 +23,8 @@ to the run.
   without one gate 4 fails with `go: -race requires cgo`. The release build
   itself is cgo-free, which gate 3 proves.
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
+- a POSIX shell at `/bin/sh`: the one exec'ing test starts the binary through
+  it (see Test discipline)
 
 The toolchain names the tools the gates need; it pins no Go library. Library
 release selection is `go.mod`'s job, and the build run writes it.
@@ -69,13 +72,14 @@ mistaken for a requirement tag.
 ## Test discipline
 
 **Offline, deterministic, no fixed ports, no sleeping.** The gates run offline
-as an ordinary user. Every input reaches the code through the run seam
-(`cli.Process`, design D01) — `Args`, `Getenv`, `Stdout`, `Stderr`, `Now`,
-`Rand`, `OIDCIssuer`, `DBSource` — and tests supply each one; a test never reads
-the real environment, clock, or randomness, or accesses filesystem or network
-state outside the isolated fixtures described below. A test whose
-result depends on the developer's machine, wall-clock, environment, or a port
-already in use is a bug.
+as an ordinary user, with no systemd. Every input reaches the code through the
+run seam (`cli.Process`, design D01) — `Args`, `LookupEnv`, `Unsetenv`, `Pid`,
+`Stdout`, `Stderr`, `Inherit`, `Now`, `Rand`, `OIDCIssuer`, `DBSource` — and
+tests supply each one; a test never reads or changes the real environment,
+clock, or randomness, or accesses filesystem or network state outside the
+isolated fixtures described below. A test whose result depends on the
+developer's machine, wall-clock, environment, or a port already in use is a
+bug.
 
 - **Google is faked, never called.** auth talks to Google's OIDC issuer only
   through `Process.OIDCIssuer`. Tests stand up a loopback OIDC issuer (its
@@ -85,8 +89,14 @@ already in use is a bug.
   file-backed sqlite DSN confined to a test-owned temporary directory, or an
   in-memory sqlite DSN, through
   `Process.DBSource`. They may create and inspect filesystem fixtures within
-  that temporary tree, including an absent database parent or a regular file
-  obstructing that parent; nothing touches `/opt/auth` or a shared file.
+  that temporary tree, including an absent database parent, a regular file
+  obstructing that parent, a file at the database path that is not a SQLite
+  database, and a database file whose write permission the test removed (the
+  gates run as an ordinary user, so the permission holds); nothing touches `/opt/auth` or a shared file. A
+  database failure mid-request (the `500` of D03) is produced the same way,
+  by making the test's own database fail after the server has it — for
+  example by closing the `*store.Store` a server-level test handed
+  `server.New`.
 - **The clock is injected.** `Process.Now` supplies every timestamp. Time-based
   behaviour — session idle (15m) and cap (18h), the 30d token login window,
   token expiry (30d/90d/365d) — is tested by advancing the value `Now` returns,
@@ -95,31 +105,61 @@ already in use is a bug.
   mints ids and secrets from, so id and secret values under test are
   reproducible.
 
-Tests bind only loopback addresses, never a fixed port such as 3000. A
-`server`-level test that needs a live listener binds `127.0.0.1:0` and lets the
-kernel choose. The `cli.Run` happy path cannot do that directly — `PORT=0` is a
-usage error and the bound port must equal `PORT` (D02/D03) — so it picks a free
-loopback port by binding `127.0.0.1:0`, reading the port, closing that
-listener, and passing the number as `PORT`, then learns the server is up from
-what the server reports, never from a fixed sleep.
+**auth binds nothing; a test makes its listener.** auth serves on the listener
+it is passed (D01, D03). A test that needs a listener makes its own: a
+loopback TCP listener on `127.0.0.1:0`, where the kernel chooses the port, or
+a Unix socket in a temporary directory — never a fixed port such as 3001. A
+`cli.Run`-level test of the serve path hands `Run` that listener through
+`Process.Inherit`, sets `LISTEN_PID` to the `Process.Pid` it chose and
+`LISTEN_FDS` to `1` in the environment map it passes, alongside the three
+Google settings, and records `Unsetenv` calls with a function of its own; it
+never leaves `Inherit` nil, since that would take the test process's real
+descriptor 3. Failure paths (a descriptor that is not a listener, an `Accept`
+that fails) inject an `Inherit` that returns an error or a listener whose
+`Accept` fails. A test never sleeps to wait for the server. It learns that
+`Run` is serving the way systemd does: it binds a Unix datagram socket in a
+short temporary directory (`os.MkdirTemp("", ...)`, since a Unix socket path is
+limited to 108 bytes and `t.TempDir()` can exceed it), names it in
+`NOTIFY_SOCKET` in the environment map, and waits for the `READY=1` datagram,
+with a deadline that fails the test rather than a sleep that hopes. It stops
+`Run` by cancelling the context it passed, never by a signal.
+
+**The drain tests wait on the clock, and only they do**, because the drain
+deadline is the behavior. A `Serve`-level test passes a drain of a few
+milliseconds and a handler that blocks on a channel. The one `Run`-level
+overrun test sets `DRAIN_SECONDS=1` and holds a sign-in callback open inside
+the fake Google: it starts a sign-in with `GET /login/google`, reads the
+`state` from the `Location`, and requests `/login/google/callback` with that
+`state` while the fake issuer's token endpoint blocks. It learns that the
+handler has begun, without sleeping, when the fake token endpoint receives the
+exchange; only then does it cancel the context, and it releases the fake
+endpoint after `Run` has returned.
 
 **One exec'ing test, and only one.** Tests under `internal/` never start a real
 process; the run seam exists so they need not. The wiring in `cmd/auth` (D01's
 `main` requirement) can be proved no other way, so exactly one kind of test that
-execs the binary is admissible, and it lives in `cmd/auth`. It builds the binary
-into a temporary directory, runs it with `--version`, runs it with `manifest`,
-runs it with a bogus command, and runs a serve case with a runtime-chosen
-loopback `PORT` (picked by the probe-and-release technique above) that it stops
-with `SIGTERM`. It then runs the serve case a second time, with a freshly picked
-port, and stops it with `SIGINT`, asserting the same exit 0 and the same
-silence on both streams, because `main` promises both signals return 0. It
-learns readiness by connecting to that port, retrying connects until one
-succeeds, never by a fixed sleep, and it asserts the child's streams and exit
-codes. The child runs in a test-owned temporary working directory. Its
-environment is one the test composes, never the developer's,
-and it runs offline like everything else — its serve case needs no Google, since
-readiness is a successful connect, not a completed login. Any other test that
-builds, execs, waits on, or signals a process is a bug.
+execs the binary is admissible, and it lives in `cmd/auth`. It builds the
+binary into a temporary directory and runs it with `--version`, with
+`manifest`, with a bogus command, and bare with the three Google settings set
+and no socket passed in (exit 2). For the serve case it stands in for systemd
+without systemd: it makes a Unix socket in a short temporary directory, passes
+it to the child as `exec.Cmd.ExtraFiles[0]`, which the child receives as
+descriptor 3, and starts the child through
+`/bin/sh -c 'LISTEN_PID=$$ LISTEN_FDS=1 exec "$0"' <binary>`, because
+`LISTEN_PID` must be the child's own pid and `exec` keeps the shell's. It sets
+`NOTIFY_SOCKET` to a datagram socket it bound and waits for `READY=1`, never a
+fixed sleep; then it sends `SIGTERM` and asserts exit 0 and silence on both
+streams, and that the socket's path still exists and still accepts a
+connection into its queue after the child has exited. It runs the serve case a
+second time, with a fresh socket, and stops it with `SIGINT`, asserting the
+same, because `main` promises both signals. The child runs in a test-owned
+temporary working directory, where it creates `state/auth.db`. Its environment
+is one the test composes, never the developer's — the three Google settings
+set to placeholder values — and it runs offline like everything else: its
+serve case needs no Google, since readiness is the datagram, not a completed
+login. It makes no HTTP request of the child: what auth answers is decided in
+process, and the exec'ing test exists only to prove the wiring. Any other test
+that builds, execs, waits on, or signals a process is a bug.
 
 ## Gates
 
@@ -137,6 +177,9 @@ filed as an issue.
    which is why the SQLite driver must be pure Go
 4. `go test -race ./...`
 5. `golangci-lint run`
+
+Gate 5 flags an `http.Server` without `ReadHeaderTimeout` (`gosec` G112); it
+is fixed in code, never suppressed.
 
 ## Commit conventions
 
@@ -170,9 +213,18 @@ and pushed to a space's host by `devctl`, which drives `opsctl install` there.
    holding `bin/auth` and `etc/`, with no version recorded anywhere inside.
 5. `devctl deploy <space> auth/dist/auth-vX.Y.Z.tar.xz` uploads the tarball to
    the space's `deploy/` prefix and runs `opsctl install` over ssh; the host
-   fetches it, writes `etc/env`, replaces the release, publishes
-   `ikigenba-auth.service`, regenerates the host's nginx and litestream
-   configuration, and restarts the service.
+   fetches it, writes `etc/env` (with the space's `DRAIN_SECONDS`), replaces
+   the release, publishes `ikigenba-auth.socket` (the Unix socket
+   `/run/ikigenba/auth.sock`) and the `Type=notify` `ikigenba-auth.service`,
+   regenerates the host's nginx and litestream configuration, and restarts the
+   service alone; the socket stays up, so requests — `/check` subrequests for
+   every other app among them — queue on it across the restart.
 
 `auth --version` (and `space status`) then report `vX.Y.Z`; the binary is the
 only place the version is recorded.
+
+A developer serves the checkout's binary with
+`systemd-socket-activate -l 127.0.0.1:3001 auth`, which passes a socket on the
+same terms systemd does (`D03-serve`), with `GOOGLE_CLIENT_ID`,
+`GOOGLE_CLIENT_SECRET`, and `WORKSPACE_DOMAIN` exported. Run bare, auth refuses
+to start: it never opens a socket of its own.

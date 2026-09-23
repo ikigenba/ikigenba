@@ -33,7 +33,9 @@ the database with its schema, or opens the existing database. Directory
 creation belongs to the store, so both a fresh deployment and a local first
 start work without advance preparation. Newly created directories are private
 to the service user; existing directory permissions stay as they are. A
-filesystem or database failure returns through the same open-error boundary.
+filesystem or database failure returns through the same open-error boundary,
+and so does a database the service user cannot write: `Open` never settles for
+a read-only database that would fail the first request that writes.
 SQLite's special sources keep their driver semantics; automatic directory
 creation applies to ordinary filesystem paths only. The operations cover
 provisioning a user on login, minting and ending sessions,
@@ -90,6 +92,7 @@ may also have no expiry, which never expires.
 - R-CIJN-JJFA: For an ordinary filesystem path, directories `Open` creates MUST have creation permission bits `0700` before the process umask is applied; `Open` MUST NOT change permissions on existing directories.
 - R-587L-1HUR: When `source` names an existing, openable database, `Open` MUST open it and return a usable `*Store` without recreating or discarding its existing rows.
 - R-CHBR-5ROL: When required parent-directory creation, database opening, or schema creation fails, `Open` MUST return a nil `*Store` and a non-nil error whose text includes the underlying failure; when an existing regular file occupies a required directory path, `Open` MUST leave that file unchanged and MUST NOT create a database.
+- R-W4JF-EHDQ: When `source` is an ordinary filesystem path naming an existing database that the process cannot write, `Open` MUST return a nil `*Store` and a non-nil error whose text includes the underlying failure, rather than opening the database read-only.
 - R-5AND-T1C5: On the first `UpsertUserOnLogin` for an `(issuer, subject)` pair, the store MUST create a `User` with a freshly minted opaque `ID` (via `NewID`), the given `Email`, and `LastGoogleLogin` equal to `now`, and MUST return that `User`.
 - R-5BVA-6T2U: On a later `UpsertUserOnLogin` for an `(issuer, subject)` pair that already has a user, the store MUST keep the existing `ID`, MUST set `Email` to the given value and `LastGoogleLogin` to `now`, MUST NOT create a second row for that pair, and MUST return the updated `User`.
 - R-5D36-KKTJ: `CreateSession` MUST create a `Session` with a freshly minted opaque `ID` (via `NewID`), `UserID` equal to the argument, and `LoginAt` and `LastUsedAt` both equal to `now`, and MUST return it.

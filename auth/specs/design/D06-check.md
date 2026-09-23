@@ -1,12 +1,14 @@
 # D06-check
 
-The two identity endpoints auth serves on its loopback port, `GET /check` and
+The two identity endpoints auth serves on its socket, `GET /check` and
 `GET /me`, both attached in `internal/server`. `/check` is the subrequest nginx
-issues for every routed app: nginx forwards the original request's `Cookie` and
-`Authorization` headers with no body and acts on the status auth returns — 200
-means copy the identity headers onto the upstream request, 401 means redirect
-the browser to sign in, 403 means pass the refusal through. `/me` is the public
-"who am I" endpoint an agent or a signed-in user calls directly.
+issues for every routed app, at `http://unix:/run/ikigenba/auth.sock:/check`:
+nginx forwards the original request's `Cookie` and `Authorization` headers with
+no body and with its own `X-Request-Id` for the request, and acts on the status
+auth returns — 200 means copy the identity headers onto the upstream request,
+401 means redirect the browser to sign in, 403 means pass the refusal through.
+`/me` is the public "who am I" endpoint an agent or a signed-in user calls
+directly.
 
 A credential reaches either endpoint one of two ways: the session cookie named
 by D05 (`ikigenba_session=<session-id>`), or an `Authorization: Bearer
@@ -29,6 +31,15 @@ A token, when present, wins outright — the session cookie is never consulted �
 so the two never disagree. Unknown, disabled, expired, and stale-owner tokens
 are one indistinguishable `ErrNotFound` from D04, so all four refuse
 identically with no hint of which applied.
+
+Both endpoints decide every request from the database, so when the database
+fails the read or write a request needs, auth cannot decide it: that is auth's
+fault, not the caller's, and D03 answers it `500` with no identity header and
+one line on auth's diagnostic stream naming the request by the `X-Request-Id`
+nginx gave the subrequest. nginx treats any `/check` answer other than 200,
+401 and 403 as its own failure, so the visitor sees an error and the app is
+never reached. None of the answers this design states — 200, 401, 403 —
+writes anything.
 
 ## REQUIREMENTS
 
