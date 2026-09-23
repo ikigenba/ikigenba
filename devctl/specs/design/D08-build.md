@@ -3,7 +3,9 @@
 Build produces one linux/amd64 artifact from a clean commit named by that app’s
 own version tag. The binary’s reported version and emitted manifest must match
 the tag and committed manifest. Branch ancestry imposes no restriction. Artifact
-publishing preserves an earlier file on failure.
+publishing preserves an earlier file on failure. A committed manifest that
+still names a `port` is refused when the app is resolved, before anything is
+compiled (D04 R-J90Z-RU8G), so no file opsctl would refuse is ever written.
 
 ## REQUIREMENTS
 

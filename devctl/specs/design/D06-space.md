@@ -38,14 +38,17 @@ the resource it just made is genuinely usable. Every helper takes the one
 client interface it needs, as D03's `Spaces` and D05's `Push` do; no session
 or checkout type crosses into a helper.
 
-Host execution lives in `internal/host` and is unchanged: `Host{Address,
-Deps}` runs a command over ssh with every argument preserved as one literal
-word, `Sudo` returns the captured `Output{Stdout, Stderr}` so a caller can use
-stdout (`opsctl status` relays it; D10's `GetKey` reads it), and a non-zero
-exit is a `*CommandError` whose `Detail()` quotes stderr, or stdout when
-stderr is blank, each line prefixed `> `, which is how `opsctl init`'s
-preflight report and `opsctl retire`'s report reach the developer. D07, D09,
-D10, D11, D12, D13, and D14 issue every host command through this one shape.
+Host execution lives in `internal/host`: `Host{Address, Deps}` runs a command
+over ssh with every argument preserved as one literal word, `Sudo` returns the
+captured `Output{Stdout, Stderr}` so a caller can use stdout (`opsctl status`
+relays it; D10's `GetKey` reads it), and a non-zero exit is a `*CommandError`
+whose `Detail()` quotes what the remote program wrote to stdout and then what
+it wrote to stderr, each line prefixed `> `. A command's product is on its
+stdout and its diagnostic on its stderr (the repository's command-line
+convention), so a failing opsctl's report comes first and its reason after it;
+neither is dropped because the other is present. devctl never asserts what
+those bytes say. D07, D09, D10, D11, D12, D13,
+and D14 issue every host command through this one shape.
 
 ## REQUIREMENTS
 
@@ -111,7 +114,7 @@ D10, D11, D12, D13, and D14 issue every host command through this one shape.
 
 - R-UMXE-1TN2: `space.FindApex` MUST call `route53.FindRecord(ctx, zoneID, root, "A")` and, when it reports no record, return an `ApexRecord` whose `Found` is false and whose `Holder` is empty without calling `ec2`; otherwise it MUST call `ec2.ListSpaceAddresses(ctx, root)` and return an `ApexRecord` whose `Record` is the record `FindRecord` returned unchanged, whose `Found` is true, and whose `Holder` is the `Space` of the one `cloud.Address` whose `IP` is an element of that record's `Values`, or empty when no address's `IP` is; and it MUST return a non-nil error naming `root` when two or more addresses match; verified at least by `Holder` being `sbx1.ikigenba.dev` for a record holding `18.118.7.42` and an address with that `IP` and that `Space`, by `Holder` being empty for a record holding `203.0.113.9` that no address carries, and by `Found` being false with no `ListSpaceAddresses` call when the record is absent.
 
-- R-D5NY-WFYQ: Package `internal/host` MUST export `CommandError` with exactly `Step string`, `Command []string`, `Status int`, `Stdout string`, and `Stderr string`; `Error() string` MUST return the space-joined command followed by `: exit status <Status>`, preceded by `<Step>: ` when nonempty; `Detail() string` MUST return `seam.QuoteOutput(Stderr)` when stderr contains non-whitespace and otherwise `seam.QuoteOutput(Stdout)`; `ExitCode() int` MUST return 1.
+- R-JA8W-5LZ5: Package `internal/host` MUST export `CommandError` with exactly `Step string`, `Command []string`, `Status int`, `Stdout string`, and `Stderr string`; `Error() string` MUST return the space-joined command followed by `: exit status <Status>`, preceded by `<Step>: ` when nonempty; `Detail() string` MUST return `seam.QuoteOutput(Stdout)` followed by `seam.QuoteOutput(Stderr)`, each included only when that stream contains non-whitespace, the two separated by exactly one newline when both are included, and the empty string when neither is, so that what the remote program reported on its standard output precedes what it wrote to its standard error; `ExitCode() int` MUST return 1; verified at least by a `CommandError` whose `Stdout` is `a\nb\n` and whose `Stderr` is `c\n\n> d\n` giving a `Detail()` of exactly the five lines `> a`, `> b`, `> c`, `> `, and `> > d`, by one whose `Stderr` is empty and one whose `Stderr` is only whitespace each giving `seam.QuoteOutput(Stdout)` alone, and by one whose `Stdout` is empty giving `seam.QuoteOutput(Stderr)` alone.
 
 - R-D6VV-A7PF: Package `internal/host` MUST export `Output` with exactly `Stdout string` and `Stderr string`, and methods `Run(ctx context.Context, step string, args ...string) (Output, error)`, `Sudo(ctx context.Context, step string, args ...string) (Output, error)`, `StreamSudo(ctx context.Context, stdout io.Writer, step string, args ...string) error`, and `Wait(ctx context.Context) error` on `Host`.
 
@@ -123,15 +126,15 @@ D10, D11, D12, D13, and D14 issue every host command through this one shape.
 
 - R-VSDZ-20UO: Every line that `internal/space`, `internal/spacecreate`, `internal/spaceinit`, `internal/spaceapps`, `internal/deploy`, `internal/restore`, `internal/remove`, and `internal/apex` write to stdout to report a completed step MUST be written by `space.Step`, verified by a test over those packages' source that no non-test file of a package other than `internal/space` contains the string `: ok (`; and a command MUST write no step line for a step that did not complete.
 
-- R-UO5A-FLDR: `devctl space --help` and `devctl space -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work outside a checkout and before any external operation:
+- R-JBGS-JDPU: `devctl space --help` and `devctl space -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work outside a checkout and before any external operation:
 
   ```
   Usage: devctl space <subcommand> [arguments]
 
   List, create, destroy, stop, start, initialise, and inspect spaces, and
-  restart or read the journal of one app on one. A space is one label under the
-  root domain; <space> is that label or the full domain. The cloud's tags are
-  the only registry.
+  restart, disable, enable, or read the journal of one app on one. A space is
+  one label under the root domain; <space> is that label or the full domain.
+  The cloud's tags are the only registry.
 
   Subcommands:
     list                       one line per space
@@ -140,8 +143,10 @@ D10, D11, D12, D13, and D14 issue every host command through this one shape.
     stop <space>               stop the instance; state is kept
     start <space>              start the instance; its address is unchanged
     init <space> [options]     set the host's keys again and run opsctl init
-    status <space>             one line per app: version, service state, database journal mode
+    status <space>             one line per app: version, service state, socket state, database journal mode
     restart <space> <app>      restart one app's service on the host
+    disable <space> <app>      stop one app and keep it from starting until enabled
+    enable <space> <app>       let a disabled app start again, and start it
     logs <space> <app>         print one app's journal from the host
 
   Options (create):
@@ -212,13 +217,13 @@ D10, D11, D12, D13, and D14 issue every host command through this one shape.
   then run certbot renew. Records are unchanged; the last line is domain and address.
   ```
 
-- R-UU8S-CG38: `devctl space status --help` and `devctl space status -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work outside a checkout and before any external operation:
+- R-JCOO-X5GJ: `devctl space status --help` and `devctl space status -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work outside a checkout and before any external operation:
 
   ```
   Usage: devctl space status <space>
 
-  Relay opsctl status from the running host: app, version, service state and
-  database journal mode. A host with no apps prints nothing.
+  Relay opsctl status from the running host: app, version, service state, socket
+  state and database journal mode. A host with no apps prints nothing.
   ```
 
 - R-UVGO-Q7TX: `devctl space` MUST write exactly the three lines `devctl: space needs <subcommand>`, an empty line, and `see 'devctl space --help' for usage` to stderr, write nothing to stdout, call `Deps.Cloud` not at all, pass no `seam.Cmd` to `Deps.Exec`, and exit 2.
@@ -229,11 +234,11 @@ D10, D11, D12, D13, and D14 issue every host command through this one shape.
 
 - R-UZ4D-VJ20: `space destroy`, `space stop`, `space start`, and `space status` invoked with more than one operand MUST each write `devctl: space <subcommand> takes only <space>`, and `space list` invoked with any operand MUST write `devctl: space list takes no arguments`, as the first of exactly three lines followed by an empty line and `see 'devctl space --help' for usage` on stderr, write nothing to stdout, call `Deps.Cloud` not at all, pass no `seam.Cmd` to `Deps.Exec`, and exit 2.
 
-- R-V0CA-9ASP: `cli.Run` MUST dispatch `space create` to `spacecreate.Run`, `space init` to `spaceinit.Run`, `space restart` and `space logs` to `spaceapps.Run`, and every other `space` invocation to `space.Run`; create and init receive the arguments after their subcommand, spaceapps receives the subcommand and the arguments after it, and every dispatch receives `cli.Run`'s own `ctx`, `stdout`, and `deps` and nothing else, and returns 0 on a nil error.
+- R-JDWL-AX78: `cli.Run` MUST dispatch `space create` to `spacecreate.Run`, `space init` to `spaceinit.Run`, `space restart`, `space disable`, `space enable`, and `space logs` to `spaceapps.Run`, and every other `space` invocation to `space.Run`; create and init receive the arguments after their subcommand, spaceapps receives the subcommand and the arguments after it, and every dispatch receives `cli.Run`'s own `ctx`, `stdout`, and `deps` and nothing else, and returns 0 on a nil error.
 
-- R-V1K6-N2JE: The `space` subcommands MUST be exactly `list`, `create`, `destroy`, `stop`, `start`, `init`, `status`, `restart`, and `logs`; `list` takes no operand, `destroy`, `stop`, `start`, and `status` take exactly one `<space>` operand, and `destroy` alone among those five accepts options, exactly `--no-backup`, `--delete-secrets`, and `--delete-backups`, in addition to help; the grammars of `create`, `init`, `restart`, and `logs` MUST be those their owning packages declare.
+- R-JF4H-OOXX: The `space` subcommands MUST be exactly `list`, `create`, `destroy`, `stop`, `start`, `init`, `status`, `restart`, `disable`, `enable`, and `logs`; `list` takes no operand, `destroy`, `stop`, `start`, and `status` take exactly one `<space>` operand, and `destroy` alone among those five accepts options, exactly `--no-backup`, `--delete-secrets`, and `--delete-backups`, in addition to help; the grammars of `create`, `init`, `restart`, `disable`, `enable`, and `logs` MUST be those their owning packages declare.
 
-- R-V2S3-0UA3: An argument of `space` or of one of its subcommands other than `create`, `init`, `restart`, and `logs` that begins with `-` and is none of `--help`, `-h`, and — for `destroy` only — `--no-backup`, `--delete-secrets`, and `--delete-backups` MUST cause exactly the three lines `devctl: unknown option '<option>'`, an empty line, and `see 'devctl space --help' for usage` to be written to stderr, nothing to stdout, and exit 2, with `Deps.Cloud` not called and no `seam.Cmd` passed to `Deps.Exec`; verified at least by `devctl space stop sbx1 --no-backup` and `devctl space destroy sbx1 --no-backup=true`.
+- R-JHKA-G8FB: An argument of `space` or of one of its subcommands other than `create`, `init`, `restart`, `disable`, `enable`, and `logs` that begins with `-` and is none of `--help`, `-h`, and — for `destroy` only — `--no-backup`, `--delete-secrets`, and `--delete-backups` MUST cause exactly the three lines `devctl: unknown option '<option>'`, an empty line, and `see 'devctl space --help' for usage` to be written to stderr, nothing to stdout, and exit 2, with `Deps.Cloud` not called and no `seam.Cmd` passed to `Deps.Exec`; verified at least by `devctl space stop sbx1 --no-backup` and `devctl space destroy sbx1 --no-backup=true`.
 
 - R-V3ZZ-EM0S: `space destroy` MUST accept each of `--no-backup`, `--delete-secrets`, and `--delete-backups` on either side of its `<space>` operand and in any order, with repeated occurrences of one option having the same effect as one, and each option MUST govern only its own step — `--no-backup` the `retire` step, `--delete-secrets` the `secrets` step, and `--delete-backups` the `backups` step; a value-bearing form such as `--no-backup=true` or `--delete-secrets=yes` MUST be an unknown option.
 

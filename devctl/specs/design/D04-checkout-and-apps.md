@@ -2,6 +2,11 @@
 
 Checkout discovery and keyring lookup supply local inputs. Only app identity and
 secret names are decoded from manifests; host-specific settings remain opaque.
+The one exception is `port`: no app listens on a port any more, because the
+host hands each app its socket, so a manifest that still names one is refused
+where it is decoded. `build` therefore refuses it before compiling anything,
+and every command that reads the checkout's apps refuses the same way, as it
+already does for any other broken manifest.
 An app's `main` package sits at `cmd/<name>/` under its directory, like every
 other binary in the repository. The shared appref package defines the same usable-name and version grammar for
 build and deploy. A checkout tag belongs to one app, independently of branch
@@ -98,7 +103,9 @@ looked up.
 
 - R-CM5K-S43M: Package `internal/checkout` MUST export `Manifest` with exactly `App string` and `Secrets []string`, decoded from the TOML keys `app` and `secrets`.
 
-- R-CNDH-5VUB: `checkout.DecodeManifest` MUST decode `app` and `secrets`, treat an absent `secrets` key as an empty list, and ignore all other valid TOML fields, including `port`, `default`, `[env]`, and `[database]`; those fields MUST NOT be validated or interpreted by devctl.
+- R-J7T3-E2HR: `checkout.DecodeManifest` MUST decode `app` and `secrets`, treat an absent `secrets` key as an empty list, and ignore every other valid TOML key, including `default`, `[env]`, and `[database]`, which devctl MUST NOT validate or interpret; the one other key it acts on is a top-level `port`, which R-J90Z-RU8G refuses.
+
+- R-J90Z-RU8G: `checkout.DecodeManifest` MUST return an error whose message is exactly `'port' is not allowed; the host gives the app its socket` when its input is valid TOML holding a top-level key `port`, whatever that key's value or type, and MUST NOT refuse a `port` key inside a table such as `[env]`; `(*Checkout).Apps` MUST carry that message unchanged as the `Detail` of the `*ManifestError` it returns for that directory; verified at least through `cli.Run` by `devctl build crm`, in a temporary checkout with a clean working tree and the tag `crm/v0.1.0` at HEAD whose committed `crm/etc/manifest.toml` holds `app = "crm"`, `port = 3100`, `default = false`, and `secrets = ["CRM_API_KEY", "CRM_API_SECRET", "CRM_ORG"]`, writing the single stderr line `devctl: crm: etc/manifest.toml: 'port' is not allowed; the host gives the app its socket`, nothing to stdout, and exit 2, passing no `seam.Cmd` whose `Path` is `go` or `tar` to `deps.Exec`, and leaving `crm/dist/` as it was; and by the same line for `port = "3100"`.
 
 - R-COLD-JNL0: `checkout.DecodeManifest` MUST reject invalid TOML, an absent or empty string `app`, a non-string `app`, and a present `secrets` value that is not an array of strings.
 

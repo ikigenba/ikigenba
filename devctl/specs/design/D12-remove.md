@@ -28,7 +28,8 @@ business (S7, D14); remove neither moves nor clears the apex.
 The command reports opsctl's exit the way `restore` does: success is one
 `space.Step` line, `remove: ok (opsctl uninstalled <app>)`; failure is the
 `*host.CommandError` returned unchanged, which `cli.Run` prints as one
-diagnostic line with opsctl's standard error quoted under it. devctl never
+diagnostic line with opsctl's standard output and then its standard error
+quoted under it (D06). devctl never
 asserts what those quoted bytes say — a missing service and an app the host
 holds data for but never installed are both simply whatever opsctl wrote.
 
@@ -41,7 +42,7 @@ carrying `ExitCode()` and `Detail()`, D05's (R-D4G2-IO81); of everything else,
 D05's fallback (R-0D99-FN33), which is how a `*space.NotRunningError` becomes
 `devctl: '<domain>' is stopped`, exit 1. The host runner is D06's
 `internal/host`: `host.Host{Address, Deps}`, `(host.Host).Sudo`, and
-`*host.CommandError` (R-T3CY-DCHC, R-D6VV-A7PF, R-D5NY-WFYQ, R-D9BO-1R6T).
+`*host.CommandError` (R-T3CY-DCHC, R-D6VV-A7PF, R-JA8W-5LZ5, R-D9BO-1R6T).
 
 ## REQUIREMENTS
 
@@ -49,15 +50,15 @@ D05's fallback (R-0D99-FN33), which is how a `*space.NotRunningError` becomes
 
 - R-GTD4-7O1Q: Package `internal/remove` MUST export `UsageError` with exactly `Message string` and `Help string`, methods `Error() string` returning Message, `ExitCode() int` returning 2, and `Detail() string` returning `see '<Help>' for usage`.
 
-- R-HPEE-9HCL: `devctl remove --help` and `devctl remove -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0, whenever `--help` or `-h` appears anywhere among the arguments; subject to the superuser refusal, help MUST call `deps.Cloud` not at all and pass no `seam.Cmd` to `deps.Exec`, so that it neither finds a checkout nor reads the root file, verified at least by `devctl remove --help` and `devctl remove sbx1 crm --help` each printing that text with `Deps.Dir` set to a directory that is not inside a git checkout:
+- R-JZUS-6SJQ: `devctl remove --help` and `devctl remove -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0, whenever `--help` or `-h` appears anywhere among the arguments; subject to the superuser refusal, help MUST call `deps.Cloud` not at all and pass no `seam.Cmd` to `deps.Exec`, so that it neither finds a checkout nor reads the root file, verified at least by `devctl remove --help` and `devctl remove sbx1 crm --help` each printing that text with `Deps.Dir` set to a directory that is not inside a git checkout:
 
   ```
   Usage: devctl remove <space> <app>
 
-  Have opsctl on the space take <app> off it: stop and remove its service,
-  remove its binary and configuration, and stop routing its name. Its state/ is
-  kept on the host and its secrets are kept in the account, so a later deploy of
-  <app> lands over its data. What remove does on the host is opsctl's.
+  Have opsctl on the space take <app> off it: stop and remove its socket and
+  service, remove its binary and configuration, and stop routing its name. Its
+  state/ is kept on the host and its secrets are kept in the account, so a later
+  deploy of <app> lands over its data. What remove does on the host is opsctl's.
   ```
 
 - R-HRU7-10TZ: `remove` MUST take exactly two operands, `<space>` then `<app>`, in that order, and MUST accept no option other than `--help` and `-h`; fewer than two operands MUST return a `*UsageError` whose `Message` is `remove needs <space> and <app>`, more than two operands one whose `Message` is `remove takes only <space> and <app>`, and an argument that begins with `-` and is neither `--help` nor `-h` one whose `Message` is `unknown option '<option>'`, each with `Help` equal to `devctl remove --help`; these refusals MUST call `deps.Cloud` not at all and pass no `seam.Cmd` to `deps.Exec`, so that no checkout is found, no root file is read, and no ssh connection is opened; verified at least by `devctl remove sbx1` writing exactly the three lines `devctl: remove needs <space> and <app>`, an empty line, and `see 'devctl remove --help' for usage` to stderr with empty stdout and exit 2 with `Deps.Dir` set to a directory that is not inside a git checkout.
@@ -72,4 +73,4 @@ D05's fallback (R-0D99-FN33), which is how a `*space.NotRunningError` becomes
 
 - R-GZGM-4IR7: Remove MUST invoke `Host.Sudo` with step `remove` and arguments `opsctl`, `uninstall`, and app; success MUST discard remote output and report exactly `remove: ok (opsctl uninstalled <app>)`, while failure MUST return the host error with no success line. Host-side data retention MUST remain the installed tool’s responsibility.
 
-- R-HXXO-XVJG: The `remove` step MUST run on a `host.Host` whose `Address` is the found `cloud.Space`'s `Address` and whose `Deps` is `deps`, its success line MUST be written with `space.Step`, and when its process exits non-zero `cli.Run` MUST write nothing to stdout and write to stderr `devctl: remove: ssh ec2-user@<address> sudo opsctl uninstall <app>: exit status <status>`, an empty line, and that process's standard error with every line prefixed `> `, and return 1; verified at least through `cli.Run` by `devctl remove sbx1 crm` reproducing the single stdout line `remove: ok (opsctl uninstalled crm)` with empty stderr and exit 0 for a fake `ssh` process that exits 0 with arbitrary output and a recorded remote argument vector of exactly `sudo`, `opsctl`, `uninstall`, and `crm`, and by `devctl remove sbx1 gmail` reproducing the stderr first line `devctl: remove: ssh ec2-user@18.118.7.42 sudo opsctl uninstall gmail: exit status 1` for a space at `18.118.7.42` and a fake `ssh` process that exits 1 with arbitrary multi-line standard error, each of whose lines appears once on stderr with one `> ` prefix added.
+- R-JXEZ-F92C: The `remove` step MUST run on a `host.Host` whose `Address` is the found `cloud.Space`'s `Address` and whose `Deps` is `deps`, its success line MUST be written with `space.Step`, and when its process exits non-zero `cli.Run` MUST write nothing to stdout and write to stderr `devctl: remove: ssh ec2-user@<address> sudo opsctl uninstall <app>: exit status <status>`, an empty line, and that process's standard output followed by its standard error, quoted as `(*host.CommandError).Detail` quotes them, and return 1; verified at least through `cli.Run` by `devctl remove sbx1 crm` reproducing the single stdout line `remove: ok (opsctl uninstalled crm)` with empty stderr and exit 0 for a fake `ssh` process that exits 0 with arbitrary output and a recorded remote argument vector of exactly `sudo`, `opsctl`, `uninstall`, and `crm`, and by `devctl remove sbx1 gmail` reproducing the stderr first line `devctl: remove: ssh ec2-user@18.118.7.42 sudo opsctl uninstall gmail: exit status 1` for a space at `18.118.7.42` and a fake `ssh` process that exits 1 with arbitrary multi-line standard output and arbitrary multi-line standard error, each of whose lines appears once on stderr with one `> ` prefix added, every standard output line before every standard error line.

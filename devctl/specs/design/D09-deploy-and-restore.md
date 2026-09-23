@@ -101,21 +101,21 @@ carrying `ExitCode()`, D05's (R-D4G2-IO81).
 
 - R-FHT1-AM4N: After upload, deploy MUST invoke `Host.Sudo` with step `install` and arguments `opsctl`, `install`, and `s3://<bucket>/<key>`; success MUST report `install: ok (opsctl installed <app>)`, discard successful remote output, and exit 0; failure MUST return the host error unchanged.
 
-- R-OLBA-0SKK: The `install` step MUST run on a `host.Host` whose `Address` is the found `cloud.Space`'s `Address` and whose `Deps` is `deps`, and when its process exits non-zero `cli.Run` MUST leave the `file`, `secrets`, and `upload` lines on stdout and write to stderr `devctl: install: ssh ec2-user@<address> sudo opsctl install s3://<bucket>/<key>: exit status <status>`, an empty line, and that process's standard error with every line prefixed `> `, and return 1; verified at least through `cli.Run` by reproducing the stdout lines `file: ok (gmail v0.1.0)`, `secrets: ok (2 keys)`, and `upload: ok (-> ikigenba.dev/sbx1/deploy/gmail-v0.1.0.tar.xz)` and the stderr first line `devctl: install: ssh ec2-user@18.118.7.42 sudo opsctl install s3://ikigenba.dev/sbx1/deploy/gmail-v0.1.0.tar.xz: exit status 1` for a space at `18.118.7.42` and a fake `ssh` process that exits 1 with arbitrary multi-line standard error, each of whose lines appears once on stderr with one `> ` prefix added.
+- R-JTRA-9XU9: The `install` step MUST run on a `host.Host` whose `Address` is the found `cloud.Space`'s `Address` and whose `Deps` is `deps`, and when its process exits non-zero `cli.Run` MUST leave the `file`, `secrets`, and `upload` lines on stdout and write to stderr `devctl: install: ssh ec2-user@<address> sudo opsctl install s3://<bucket>/<key>: exit status <status>`, an empty line, and that process's standard output followed by its standard error, quoted as `(*host.CommandError).Detail` quotes them, and return 1; verified at least through `cli.Run` by reproducing the stdout lines `file: ok (gmail v0.1.0)`, `secrets: ok (2 keys)`, and `upload: ok (-> ikigenba.dev/sbx1/deploy/gmail-v0.1.0.tar.xz)` and the stderr first line `devctl: install: ssh ec2-user@18.118.7.42 sudo opsctl install s3://ikigenba.dev/sbx1/deploy/gmail-v0.1.0.tar.xz: exit status 1` for a space at `18.118.7.42` and a fake `ssh` process that exits 1 with arbitrary multi-line standard output and arbitrary multi-line standard error, each of whose lines appears once on stderr with one `> ` prefix added, every standard output line before every standard error line.
 
 - R-ONR2-SC1Y: Package `internal/restore` MUST export `Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) error`, and `Run` MUST take no writer other than `stdout`.
 
 - R-FMOM-TP3F: Package `internal/restore` MUST export `UsageError` with exactly `Message string` and `Help string`, and methods `Error() string` returning Message, `ExitCode() int` returning 2, and `Detail() string` returning `see '<Help>' for usage` when Help is nonempty and an empty string otherwise.
 
-- R-OOYZ-63SN: `devctl restore --help` and `devctl restore -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work outside a checkout and before any external operation:
+- R-JW73-1HBN: `devctl restore --help` and `devctl restore -h` MUST write exactly the following text with a final newline to stdout, with empty stderr and exit 0; subject to the superuser refusal, help MUST work outside a checkout and before any external operation:
 
   ```
   Usage: devctl restore <space> <app> [--at <timestamp>]
 
   Have opsctl on the space put <app> back from the space's own backups. The
   app's etc/ and state/ come from the newest tarball, and its database, when it
-  declares one, from litestream. <app>'s unit is stopped for the restore and
-  started again after it.
+  declares one, from litestream. <app>'s socket and service are stopped for the
+  restore and started again after it, unless <app> is disabled.
 
   Options:
     --at <timestamp>   restore the app as it was at this RFC 3339 moment
@@ -140,6 +140,6 @@ carrying `ExitCode()`, D05's (R-D4G2-IO81).
 
 - R-OWAD-GQ8T: The `restore` step MUST run on a `host.Host` whose `Address` is the found `cloud.Space`'s `Address` and whose `Deps` is `deps`, and its line MUST be written with `space.Step`; verified at least by `devctl restore sbx1 crm` reproducing the single stdout line `restore: ok (opsctl restore crm)` with a fake `ssh` process that exits 0, and by `devctl restore sbx1 crm --at 2026-09-11T18:00:00Z` reproducing `restore: ok (opsctl restore crm --at 2026-09-11T18:00:00Z)` with a recorded remote argument vector of exactly `sudo`, `opsctl`, `restore`, `crm`, `--at`, and `2026-09-11T18:00:00Z`, each with empty stderr and exit 0.
 
-- R-OXI9-UHZI: When the `restore` step's process exits non-zero, `cli.Run` MUST write nothing to stdout and write to stderr `devctl: restore: ssh ec2-user@<address> sudo opsctl restore <app>[ --at <value>]: exit status <status>`, an empty line, and that process's standard error with every line prefixed `> `, and return 1; verified at least through `cli.Run` by reproducing the stderr first line `devctl: restore: ssh ec2-user@18.118.7.42 sudo opsctl restore crm: exit status 1` for a space at `18.118.7.42` and a fake `ssh` process that exits 1 with arbitrary standard error, each of whose lines appears once on stderr with one `> ` prefix added.
+- R-JUZ6-NPKY: When the `restore` step's process exits non-zero, `cli.Run` MUST write nothing to stdout and write to stderr `devctl: restore: ssh ec2-user@<address> sudo opsctl restore <app>[ --at <value>]: exit status <status>`, an empty line, and that process's standard output followed by its standard error, quoted as `(*host.CommandError).Detail` quotes them, and return 1; verified at least through `cli.Run` by reproducing the stderr first line `devctl: restore: ssh ec2-user@18.118.7.42 sudo opsctl restore crm: exit status 1` for a space at `18.118.7.42` and a fake `ssh` process that exits 1 with arbitrary standard output and arbitrary standard error, each of whose lines appears once on stderr with one `> ` prefix added, every standard output line before every standard error line.
 
 - R-FWFT-VV0Z: Package `internal/deploy` MUST export a `FileError` struct whose fields are exactly `Path string` and `Reason string`, with the methods `Error() string`, returning `'<Path>' is not a file build wrote: <Reason>`, and `ExitCode() int`, returning 2, verified at least by reproducing `'notes.tar.xz' is not a file build wrote: name is not <app>-v<semver>.tar.xz`.

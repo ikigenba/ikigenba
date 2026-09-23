@@ -31,8 +31,8 @@ set` and `apex clear`, and by create when it clears a restored store.
 Three single-key operations expose the store's `set`, `del`, and `get` for
 those callers. `get` distinguishes an unset key, which opsctl reports with
 exit 1, from a value. Every other opsctl command a devctl command runs on a
-host — `init`, `status`, `restart`, `retire`, `host restore`, `cert obtain`,
-`nginx apply` — is not configuration and is issued directly through
+host — `init`, `status`, `restart`, `disable`, `enable`, `retire`, `host
+restore`, `cert obtain`, `nginx apply` — is not configuration and is issued directly through
 `(host.Host).Sudo` by the design that owns the step, as D06, D07, and D13
 already do; only `host.Host` and this package cross the opsctl boundary.
 Failures of every operation here are the `*host.CommandError` D06 defines,
