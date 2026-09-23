@@ -1662,8 +1662,10 @@ Postconditions:
 ## A developer restarts an app on a space
 
 Over ssh, `opsctl restart` restarts the app's service and reports it the way
-install's last line does; devctl reports opsctl's exit, the shape `restore`
-uses. A restart changes nothing on the host's disk. In particular it does not
+install's last line does. devctl relays that report as opsctl wrote it, byte
+for byte, the way `space status` relays opsctl's answer: opsctl's own line
+says what state the app is in, which a fixed line of devctl's could not. A
+restart changes nothing on the host's disk. In particular it does not
 carry a pushed secret to the app: that is a deploy of the same file, and
 `S3-secrets.md` says why.
 
@@ -1676,7 +1678,7 @@ $ devctl space restart sbx1 crm
 Output:
 
 ```
-restart: ok (opsctl restarted crm)
+service: ok (crm v0.1.0 active)
 ```
 
 Exits 0. The line is on stdout; stderr is empty.
@@ -1702,8 +1704,8 @@ Postconditions:
 
 A disabled app stays disabled through everything but `space enable`, so
 opsctl starts nothing and succeeds: the host is in the state the developer
-chose. devctl reports opsctl's exit, as for any restart; what opsctl printed
-is not relayed, because it succeeded. `space status` shows the app as it is.
+chose. devctl relays opsctl's line, as for any restart, and that line says the
+app is disabled rather than reporting a restart that did not happen.
 
 Command:
 
@@ -1714,7 +1716,7 @@ $ devctl space restart sbx1 crm
 Output:
 
 ```
-restart: ok (opsctl restarted crm)
+service: ok (crm v0.1.0 disabled)
 ```
 
 Exits 0. The line is on stdout; stderr is empty.
@@ -1785,8 +1787,9 @@ its release, its data, and its units stay, and deploying it again later is
 not needed to bring it back. Over ssh, `opsctl disable` stops the app's
 socket and service and disables both, so neither starts at boot or on a
 request, and regenerates nginx so the app's names answer `503`. devctl
-reports opsctl's exit, the shape `restart` uses; what opsctl printed is not
-relayed, because it succeeded.
+relays opsctl's report byte for byte, as `space restart` does: the `stop`
+line names the units it stopped and the `nginx` line every name the app
+answers at.
 
 The app stays disabled through `deploy`, `restore`, `space init`, and
 `space restart`; only `space enable` brings it back. `remove` takes it off the
@@ -1801,10 +1804,11 @@ $ devctl space disable sbx1 crm
 Output:
 
 ```
-disable: ok (opsctl disabled crm)
+stop: ok (ikigenba-crm.socket, ikigenba-crm.service stopped, disabled)
+nginx: ok (crm.sbx1.ikigenba.dev disabled)
 ```
 
-Exits 0. The line is on stdout; stderr is empty.
+Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
@@ -1827,7 +1831,7 @@ Postconditions:
 
 Over ssh, `opsctl enable` enables and starts the app's socket, regenerates
 nginx so the app's names reach it again, and starts its service. devctl
-reports opsctl's exit, the shape `restart` uses.
+relays opsctl's report byte for byte, as `space restart` does.
 
 Command:
 
@@ -1838,10 +1842,12 @@ $ devctl space enable sbx1 crm
 Output:
 
 ```
-enable: ok (opsctl enabled crm)
+enable: ok (ikigenba-crm.socket, ikigenba-crm.service)
+nginx: ok (crm.sbx1.ikigenba.dev)
+service: ok (crm v0.1.0 active)
 ```
 
-Exits 0. The line is on stdout; stderr is empty.
+Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
@@ -1905,9 +1911,8 @@ Postconditions:
 ## A developer disables an app that is already disabled, or enables one that is already enabled
 
 Both commands ask for the state the app is in afterwards, so opsctl succeeds
-and changes nothing when the app is already in it. devctl's line is the same
-as for any success: it reports opsctl's exit and does not relay opsctl's own
-report of what was already so.
+and changes nothing when the app is already in it. devctl relays opsctl's
+report as for any success, so the lines say what was already so.
 
 Command:
 
@@ -1918,7 +1923,8 @@ $ devctl space disable sbx1 crm
 Output:
 
 ```
-disable: ok (opsctl disabled crm)
+stop: ok (ikigenba-crm.socket, ikigenba-crm.service already inactive, disabled)
+nginx: ok (unchanged)
 ```
 
 Command:
@@ -1930,10 +1936,12 @@ $ devctl space enable sbx1 dashboard
 Output:
 
 ```
-enable: ok (opsctl enabled dashboard)
+enable: ok (ikigenba-dashboard.socket, ikigenba-dashboard.service already enabled)
+nginx: ok (unchanged)
+service: ok (dashboard v0.0.9 active)
 ```
 
-Each exits 0. The line is on stdout; stderr is empty.
+Each exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
