@@ -10,7 +10,7 @@ the browser to sign in, 403 means pass the refusal through. `GET /me` is the
 public "who am I" endpoint an agent or a signed-in user can call directly.
 Every story here is a `curl` request against auth a developer serves with
 `systemd-socket-activate -l 127.0.0.1:3001 auth` (`S2-serve.md`), at
-`http://127.0.0.1:3001`, standing in for nginx or for the caller.
+`http://localhost:3001`, standing in for nginx or for the caller.
 
 A credential reaches these endpoints one of two ways: the session cookie
 `ikigenba_session=<session-id>`, or `Authorization: Bearer ikp_<token>`. Both
@@ -37,7 +37,7 @@ request as use of the session.
 Request:
 
 ```
-$ curl -si -H 'Cookie: ikigenba_session=<session-id>' http://127.0.0.1:3001/check
+$ curl -si -H 'Cookie: ikigenba_session=<session-id>' http://localhost:3001/check
 ```
 
 Response:
@@ -68,7 +68,7 @@ Postconditions:
 Request:
 
 ```
-$ curl -si http://127.0.0.1:3001/check
+$ curl -si http://localhost:3001/check
 ```
 
 Response:
@@ -97,7 +97,7 @@ though the 18-hour cap has not been reached.
 Request:
 
 ```
-$ curl -si -H 'Cookie: ikigenba_session=<session-id>' http://127.0.0.1:3001/check
+$ curl -si -H 'Cookie: ikigenba_session=<session-id>' http://localhost:3001/check
 ```
 
 Response:
@@ -128,7 +128,7 @@ was used. Recent use cannot extend it past the cap.
 Request:
 
 ```
-$ curl -si -H 'Cookie: ikigenba_session=<session-id>' http://127.0.0.1:3001/check
+$ curl -si -H 'Cookie: ikigenba_session=<session-id>' http://localhost:3001/check
 ```
 
 Response:
@@ -157,7 +157,7 @@ A request may carry a personal access token instead of a cookie. auth answers
 Request:
 
 ```
-$ curl -si -H 'Authorization: Bearer ikp_<token>' http://127.0.0.1:3001/check
+$ curl -si -H 'Authorization: Bearer ikp_<token>' http://localhost:3001/check
 ```
 
 Response:
@@ -194,7 +194,7 @@ identity headers, and no hint of which case applied.
 Request:
 
 ```
-$ curl -si -H 'Authorization: Bearer ikp_<token>' http://127.0.0.1:3001/check
+$ curl -si -H 'Authorization: Bearer ikp_<token>' http://localhost:3001/check
 ```
 
 Response:
@@ -226,7 +226,7 @@ enabled and unexpired.
 Request:
 
 ```
-$ curl -si -H 'Authorization: Bearer ikp_<token>' http://127.0.0.1:3001/check
+$ curl -si -H 'Authorization: Bearer ikp_<token>' http://localhost:3001/check
 ```
 
 Response:
@@ -258,7 +258,7 @@ use.
 Request:
 
 ```
-$ curl -si -H 'Cookie: ikigenba_session=<session-id>' -H 'Authorization: Bearer ikp_<token>' http://127.0.0.1:3001/check
+$ curl -si -H 'Cookie: ikigenba_session=<session-id>' -H 'Authorization: Bearer ikp_<token>' http://localhost:3001/check
 ```
 
 Response:
@@ -295,7 +295,7 @@ without going through a routed app. `/me` reports it and changes nothing.
 Request:
 
 ```
-$ curl -si -H 'Authorization: Bearer ikp_<token>' http://127.0.0.1:3001/me
+$ curl -si -H 'Authorization: Bearer ikp_<token>' http://localhost:3001/me
 ```
 
 Response:
@@ -327,7 +327,7 @@ same question and gets the same shape of answer.
 Request:
 
 ```
-$ curl -si -H 'Cookie: ikigenba_session=<session-id>' http://127.0.0.1:3001/me
+$ curl -si -H 'Cookie: ikigenba_session=<session-id>' http://localhost:3001/me
 ```
 
 Response:
@@ -361,11 +361,11 @@ line of plain text saying why, mirroring how the service answers a missing page
 Request:
 
 ```
-$ curl -si http://127.0.0.1:3001/me
+$ curl -si http://localhost:3001/me
 ```
 
 ```
-$ curl -si -H 'Authorization: Bearer ikp_<token>' http://127.0.0.1:3001/me
+$ curl -si -H 'Authorization: Bearer ikp_<token>' http://localhost:3001/me
 ```
 
 Response:
@@ -412,7 +412,7 @@ with the same line.
 Request:
 
 ```
-$ curl -si -H 'X-Request-Id: 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59' -H 'Cookie: ikigenba_session=<session-id>' http://127.0.0.1:3001/check
+$ curl -si -H 'X-Request-Id: 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59' -H 'Cookie: ikigenba_session=<session-id>' http://localhost:3001/check
 ```
 
 Response:

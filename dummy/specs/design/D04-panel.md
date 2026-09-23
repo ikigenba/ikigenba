@@ -77,9 +77,11 @@ trailing port if there is one, then strip a single leading `dummy.` label; what
 remains is the space, and the link is the scheme, `://auth.`, the space, and a
 slash. When `Host` carries no `dummy.` label to strip — a developer on
 `127.0.0.1:3000` — the whole link is auth's documented local origin instead.
-That value, `http://127.0.0.1:3001/`, is a fact about a sibling project taken
-from the settled decision recorded in this operation's ledger, not from
-reading auth's tree; nothing here names a path inside auth, builds auth, or
+That value, `http://localhost:3001/`, is a fact about a sibling project taken
+from auth's documented local command — auth, run bare, names
+`systemd-socket-activate -l 127.0.0.1:3001 auth` as the way to serve it
+locally, and signs in locally at `http://localhost:3001` — not from reading
+auth's tree; nothing here names a path inside auth, builds auth, or
 parses auth's output.
 
 The scheme reading is deliberately strict and stays strict. It is
@@ -397,7 +399,7 @@ back out of a rendered page.
 - R-LBS0-ECOZ: The `internal/panel` package MUST export `const MissingIdentityBody = "identity header missing\n"` and `const MethodNotAllowedBody = "method not allowed\n"`.
 - R-LCZW-S4FO: The `internal/panel` package MUST export `const NotFoundMessage = "That page was not found."`, `const MethodNotAllowedMessage = "That method is not allowed here."` and `const UnsupportedMediaTypeMessage = "That media type is not supported."`.
 - R-LE7T-5W6D: The `internal/panel` package MUST export `const SignOutText = "Sign out"`.
-- R-LFFP-JNX2: The `internal/panel` package MUST export `const LocalSignOutURL = "http://127.0.0.1:3001/"`.
+- R-ULUZ-4YJX: The `internal/panel` package MUST export `const LocalSignOutURL = "http://localhost:3001/"`.
 - R-LGNL-XFNR: The `internal/panel` package MUST export `func SignOutURL(host, forwardedProto string) string`.
 - R-KVQY-TCHV: `SignOutURL` MUST return, for arguments `host` and `forwardedProto`: let `h` be `host` when `host` contains no `:`, and otherwise `host` with its last `:` and every character following that `:` removed; when `h` begins with the six characters `dummy.` and at least one character follows them, the result is `<scheme>` then `://auth.` then those following characters then `/`; otherwise the result is exactly `LocalSignOutURL`; where `<scheme>` is `forwardedProto` when `forwardedProto` is exactly `http` or exactly `https`, and is `https` in every other case, the empty string included.
 - R-KDGH-2SDG: dummy's design defines, for an element name `x` and a string `s`, an **`x` start tag** in `s` — written `<x` start tag where that reads better, and meaning the same span — as a span beginning with a `<`, then `x` compared case-insensitively, then a character that is neither an ASCII letter nor an ASCII digit, and running through the first `>` that follows that `<`; and an **`</x>` end tag** in `s` as a span beginning with a `<`, then a `/`, then `x` compared case-insensitively, then a character that is neither an ASCII letter nor an ASCII digit, and running through the first `>` that follows that `<`; a `<` that no `>` follows begins neither; and every requirement in dummy's design that names a start tag or an end tag of an element MUST denote such a span.

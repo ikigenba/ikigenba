@@ -120,9 +120,7 @@ returns nil as soon as they have. If some are still being handled when
 responses and returns a `*DrainError` counting them, without waiting for the
 handlers themselves to return. The count is of calls to `h.ServeHTTP` that had
 begun and not returned; a connection still sending its request headers is not
-a request yet, and is closed at once like an idle one — `http.Server.Shutdown`
-alone leaves a new connection open for several seconds, so the build tracks
-connection state itself. `Run` reports that error like any other `Serve` failure:
+a request yet, and is closed at once like an idle one. `Run` reports that error like any other `Serve` failure:
 `dummy: stopped with <n> requests unfinished` (`1 request` when `<n>` is 1), exit 1. The drain is bounded
 so that dummy always exits before the service unit's stop timeout and is
 never killed by systemd mid-write; keeping `DRAIN_SECONDS` below that timeout

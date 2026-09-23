@@ -4,8 +4,10 @@ The browser sign-in flow: the sign-in page and profile at `/`, the start of a
 Google sign-in at `/login/google`, the callback at `/login/google/callback`,
 and sign-out at `/logout`. Every request here runs against auth a developer
 serves with `systemd-socket-activate -l 127.0.0.1:3001 auth` (`S2-serve.md`),
-at `http://127.0.0.1:3001`; on a space nginx proxies auth's hostname to auth's
-socket instead. The facts that depend on the space's own
+at `http://localhost:3001`; on a space nginx proxies auth's hostname to auth's
+socket instead. A request whose `Host` is `localhost:3001` is a local one and
+takes the fixed development forms stated below; every other request is on a
+space. The facts that depend on the space's own
 hostname — the callback `redirect_uri`, the session cookie's `Domain`, and
 which return URLs count as being under the space — are stated in prose, because
 a real space carries them and `S7-on-a-space.md` proves the whole path there.
@@ -40,11 +42,11 @@ follows the link.
 Request:
 
 ```
-$ curl -si http://127.0.0.1:3001/
+$ curl -si http://localhost:3001/
 ```
 
 ```
-$ curl -si 'http://127.0.0.1:3001/?return=<url>'
+$ curl -si 'http://localhost:3001/?return=<url>'
 ```
 
 Response:
@@ -79,7 +81,7 @@ callback against a forged request.
 Request:
 
 ```
-$ curl -si http://127.0.0.1:3001/login/google
+$ curl -si http://localhost:3001/login/google
 ```
 
 Response:
@@ -119,7 +121,7 @@ shape.
 Request:
 
 ```
-$ curl -si http://127.0.0.1:3001/login/google
+$ curl -si http://localhost:3001/login/google
 ```
 
 Response:
@@ -155,7 +157,7 @@ in before, so it is provisioned.
 Request:
 
 ```
-$ curl -si 'http://127.0.0.1:3001/login/google/callback?code=<code>&state=<state>'
+$ curl -si 'http://localhost:3001/login/google/callback?code=<code>&state=<state>'
 ```
 
 Response:
@@ -198,7 +200,7 @@ made.
 Request:
 
 ```
-$ curl -si 'http://127.0.0.1:3001/login/google/callback?code=<code>&state=<state>'
+$ curl -si 'http://localhost:3001/login/google/callback?code=<code>&state=<state>'
 ```
 
 Response:
@@ -237,7 +239,7 @@ it, so a successful sign-in ends at that URL instead of `/`.
 Request:
 
 ```
-$ curl -si 'http://127.0.0.1:3001/login/google/callback?code=<code>&state=<state>'
+$ curl -si 'http://localhost:3001/login/google/callback?code=<code>&state=<state>'
 ```
 
 Response:
@@ -280,7 +282,7 @@ back to `/`.
 Request:
 
 ```
-$ curl -si 'http://127.0.0.1:3001/login/google/callback?code=<code>&state=<state>'
+$ curl -si 'http://localhost:3001/login/google/callback?code=<code>&state=<state>'
 ```
 
 Response:
@@ -318,7 +320,7 @@ forged — so the request is rejected before any token exchange.
 Request:
 
 ```
-$ curl -si 'http://127.0.0.1:3001/login/google/callback?code=<code>&state=<state>'
+$ curl -si 'http://localhost:3001/login/google/callback?code=<code>&state=<state>'
 ```
 
 Response:
@@ -348,7 +350,7 @@ instead of a code. auth returns the sign-in page again.
 Request:
 
 ```
-$ curl -si 'http://127.0.0.1:3001/login/google/callback?error=access_denied&state=<state>'
+$ curl -si 'http://localhost:3001/login/google/callback?error=access_denied&state=<state>'
 ```
 
 Response:
@@ -381,7 +383,7 @@ account is provisioned.
 Request:
 
 ```
-$ curl -si 'http://127.0.0.1:3001/login/google/callback?code=<code>&state=<state>'
+$ curl -si 'http://localhost:3001/login/google/callback?code=<code>&state=<state>'
 ```
 
 Response:
@@ -413,7 +415,7 @@ unreachable, so auth cannot complete the sign-in.
 Request:
 
 ```
-$ curl -si 'http://127.0.0.1:3001/login/google/callback?code=<code>&state=<state>'
+$ curl -si 'http://localhost:3001/login/google/callback?code=<code>&state=<state>'
 ```
 
 Response:
@@ -450,7 +452,7 @@ the session is not limited to the login callback's path.
 Request:
 
 ```
-$ curl -si --cookie 'ikigenba_session=<opaque>' http://127.0.0.1:3001/
+$ curl -si --cookie 'ikigenba_session=<opaque>' http://localhost:3001/
 ```
 
 Response:
@@ -486,7 +488,7 @@ request's `Origin` is auth's own origin.
 Request:
 
 ```
-$ curl -si -X POST -H 'Origin: http://127.0.0.1:3001' --cookie 'ikigenba_session=<opaque>' http://127.0.0.1:3001/logout
+$ curl -si -X POST -H 'Origin: http://localhost:3001' --cookie 'ikigenba_session=<opaque>' http://localhost:3001/logout
 ```
 
 Response:
@@ -506,7 +508,7 @@ Preconditions:
 
 - auth is serving on `127.0.0.1:3001` with its Google settings.
 - The request carries an `ikigenba_session` cookie naming a live session, and
-  its `Origin` is auth's own origin (locally `http://127.0.0.1:3001`, on a space
+  its `Origin` is auth's own origin (locally `http://localhost:3001`, on a space
   `https://auth.<space>`).
 
 Postconditions:
@@ -526,7 +528,7 @@ refuses the request.
 Request:
 
 ```
-$ curl -si -X POST -H 'Origin: https://evil.example' --cookie 'ikigenba_session=<opaque>' http://127.0.0.1:3001/logout
+$ curl -si -X POST -H 'Origin: https://evil.example' --cookie 'ikigenba_session=<opaque>' http://localhost:3001/logout
 ```
 
 Response:

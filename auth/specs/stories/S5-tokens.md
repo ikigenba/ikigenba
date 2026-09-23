@@ -3,10 +3,10 @@
 The token actions a signed-in user drives from their profile. Every request
 here is a curl against auth a developer serves with
 `systemd-socket-activate -l 127.0.0.1:3001 auth` (`S2-serve.md`), at
-`http://127.0.0.1:3001`, carrying a valid
+`http://localhost:3001`, carrying a valid
 `ikigenba_session` cookie, and every state-changing request is a POST that also
 carries an `Origin` header matching the service's own origin (in development
-that is the local origin, here `http://127.0.0.1:3001`; on a space it is
+that is the local origin, here `http://localhost:3001`; on a space it is
 `https://auth.<space>`). A user may hold many tokens. A token's secret has the
 form `ikp_` followed by 52 Crockford base32 characters (`0`-`9` and `A`-`Z`
 without `I`, `L`, `O`, `U`), the encoding of 32 random bytes; it is shown once
@@ -29,9 +29,9 @@ and is never retrievable afterward; the server keeps only its hash.
 Request:
 
 ```
-$ curl -si -X POST http://127.0.0.1:3001/tokens \
+$ curl -si -X POST http://localhost:3001/tokens \
     -H 'Cookie: ikigenba_session=<id>' \
-    -H 'Origin: http://127.0.0.1:3001' \
+    -H 'Origin: http://localhost:3001' \
     --data 'name=<name>' \
     --data 'expires=<never|30d|90d|365d>'
 ```
@@ -68,9 +68,9 @@ created and the create form is returned for the user to try again.
 Request:
 
 ```
-$ curl -si -X POST http://127.0.0.1:3001/tokens \
+$ curl -si -X POST http://localhost:3001/tokens \
     -H 'Cookie: ikigenba_session=<id>' \
-    -H 'Origin: http://127.0.0.1:3001' \
+    -H 'Origin: http://localhost:3001' \
     --data-urlencode 'name=   ' \
     --data 'expires=never'
 ```
@@ -104,7 +104,7 @@ S3's story.
 Request:
 
 ```
-$ curl -si http://127.0.0.1:3001/ \
+$ curl -si http://localhost:3001/ \
     -H 'Cookie: ikigenba_session=<id>'
 ```
 
@@ -142,15 +142,15 @@ the check endpoint is S4's story; it is not re-proven here.
 Request:
 
 ```
-$ curl -si -X POST http://127.0.0.1:3001/tokens/<id>/disable \
+$ curl -si -X POST http://localhost:3001/tokens/<id>/disable \
     -H 'Cookie: ikigenba_session=<id>' \
-    -H 'Origin: http://127.0.0.1:3001'
+    -H 'Origin: http://localhost:3001'
 ```
 
 ```
-$ curl -si -X POST http://127.0.0.1:3001/tokens/<id>/enable \
+$ curl -si -X POST http://localhost:3001/tokens/<id>/enable \
     -H 'Cookie: ikigenba_session=<id>' \
-    -H 'Origin: http://127.0.0.1:3001'
+    -H 'Origin: http://localhost:3001'
 ```
 
 Response (each):
@@ -185,9 +185,9 @@ authenticate.
 Request:
 
 ```
-$ curl -si -X POST http://127.0.0.1:3001/tokens/<id>/delete \
+$ curl -si -X POST http://localhost:3001/tokens/<id>/delete \
     -H 'Cookie: ikigenba_session=<id>' \
-    -H 'Origin: http://127.0.0.1:3001'
+    -H 'Origin: http://localhost:3001'
 ```
 
 Response:
@@ -218,9 +218,9 @@ the user's to act on. All three actions behave the same way.
 Request:
 
 ```
-$ curl -si -X POST http://127.0.0.1:3001/tokens/<id>/disable \
+$ curl -si -X POST http://localhost:3001/tokens/<id>/disable \
     -H 'Cookie: ikigenba_session=<id>' \
-    -H 'Origin: http://127.0.0.1:3001'
+    -H 'Origin: http://localhost:3001'
 ```
 
 Response:
@@ -253,7 +253,7 @@ outright. This applies to `/tokens` and to every token action URL.
 Request:
 
 ```
-$ curl -si -X POST http://127.0.0.1:3001/tokens \
+$ curl -si -X POST http://localhost:3001/tokens \
     -H 'Cookie: ikigenba_session=<id>' \
     -H 'Origin: https://evil.example' \
     --data 'name=<name>' \

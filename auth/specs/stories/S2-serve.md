@@ -110,7 +110,7 @@ Postconditions:
 A laptop has no `ikigenba-auth.socket`, so the developer lets
 `systemd-socket-activate` hold a socket and pass it to auth exactly as
 systemd would. A TCP socket on loopback serves a browser and `curl` alike,
-and the later groups' requests go to `http://127.0.0.1:3001`, the origin
+and the later groups' requests go to `http://localhost:3001`, the origin
 whose callback is registered on the OAuth client for development
 (`S3-sign-in.md`). The three lines are `systemd-socket-activate`'s own: it
 announces the socket, and it starts auth only when the first connection
