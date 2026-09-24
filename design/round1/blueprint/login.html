@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="theme.css">
+<title>Sign in · acme</title>
+</head>
+<body class="auth">
+<main>
+<div class="panel">
+<a class="mark" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.25" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><path d="M12 1v22M1 12h22"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></svg>Ikigenba</a>
+<hgroup>
+<p>auth.acme.ikigenba.com</p>
+<h1>Sign in to acme</h1>
+</hgroup>
+<p>Access is limited to Google accounts on <code>@acme.dev</code>.</p>
+<a class="button" href="/login/google">Continue with Google <span aria-hidden="true">→</span></a>
+<dl class="titleblock">
+<div><dt>Space</dt><dd>acme.ikigenba.com</dd></div>
+<div><dt>Provider</dt><dd>Google OIDC</dd></div>
+</dl>
+</div>
+
+<section>
+<h2>Sign-in failed</h2>
+<div class="panel">
+<div class="alert" data-kind="fault" role="alert"><strong>Fault</strong><p>Sign-in failed.</p></div>
+<h3>That account can't sign in here</h3>
+<p>The account <code>ada@gmail.com</code> is not in the <code>acme.dev</code> workspace. Sign in with your <code>@acme.dev</code> account instead.</p>
+<a class="button" href="/login/google">Try another account <span aria-hidden="true">→</span></a>
+</div>
+</section>
+
+<section>
+<h2>Signed in</h2>
+<div class="panel">
+<h3>ada@acme.dev</h3>
+<dl>
+<dt>Email</dt><dd>ada@acme.dev</dd>
+<dt>Signed in via</dt><dd>Google</dd>
+<dt>Last sign-in</dt><dd>2026-09-24 14:02 UTC</dd>
+<dt>Session</dt><dd>expires in 11h 58m</dd>
+</dl>
+<form method="post" action="/logout">
+<button type="submit" class="secondary">Sign out</button>
+</form>
+</div>
+</section>
+</main>
+<script src="../lab.js"></script>
+</body>
+</html>

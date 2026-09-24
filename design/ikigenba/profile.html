@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your account · acme</title>
+<link rel="stylesheet" href="theme.css">
+</head>
+<body>
+<header>
+  <a class="mark" data-service="auth" href="/">ikigenba</a>
+  <span>ada@acme.dev</span>
+  <form class="inline" method="post" action="/logout"><button class="secondary small" type="submit"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg>Sign out</button></form>
+</header>
+
+<main>
+  <h1>Your account</h1>
+  <p>You're signed in to the acme space at acme.ikigenba.com.</p>
+
+  <nav class="tabs" aria-label="Account sections">
+    <a href="#account" aria-current="page">Account</a>
+    <a href="#sessions">Sessions</a>
+    <a href="#tokens">API tokens</a>
+  </nav>
+
+  <section class="card" id="account" aria-labelledby="account-title">
+    <header>
+      <h2 id="account-title">Account</h2>
+      <p>Details come from your Google account and refresh each time you sign in.</p>
+    </header>
+    <div class="identity">
+      <span class="avatar" aria-hidden="true">AL</span>
+      <div><strong>Ada Lovelace</strong><span class="secondary-text">ada@acme.dev</span></div>
+    </div>
+    <dl class="kv">
+      <dt>Email</dt><dd>ada@acme.dev</dd>
+      <dt>Name</dt><dd>Ada Lovelace</dd>
+      <dt>Workspace</dt><dd>acme.dev</dd>
+      <dt>Signed in via</dt><dd>Google</dd>
+      <dt>Last sign-in</dt><dd><time datetime="2026-09-24T14:02Z">2026-09-24 14:02 UTC</time></dd>
+      <dt>Session expires</dt><dd>in 11h 58m</dd>
+    </dl>
+  </section>
+
+  <section class="card flush" id="sessions" aria-labelledby="sessions-title">
+    <header>
+      <div>
+        <h2 id="sessions-title">Sessions</h2>
+        <p>Browsers signed in to acme with your account.</p>
+      </div>
+    </header>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Browser</th><th>Address</th><th>Signed in</th><th>Last active</th><th></th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Firefox on Linux <span class="badge" data-kind="accent">This browser</span></td>
+            <td class="muted">203.0.113.24</td>
+            <td><time datetime="2026-09-24T14:02Z">2026-09-24 14:02</time></td>
+            <td>Now</td>
+            <td class="row-actions"></td>
+          </tr>
+          <tr>
+            <td>Chrome on macOS</td>
+            <td class="muted">198.51.100.7</td>
+            <td><time datetime="2026-09-23T09:15Z">2026-09-23 09:15</time></td>
+            <td>3 hours ago</td>
+            <td class="row-actions"><form class="inline" method="post" action="#"><button class="ghost small" type="submit">Sign out</button></form></td>
+          </tr>
+          <tr>
+            <td>Safari on iOS</td>
+            <td class="muted">192.0.2.140</td>
+            <td><time datetime="2026-09-22T19:48Z">2026-09-22 19:48</time></td>
+            <td>Yesterday</td>
+            <td class="row-actions"><form class="inline" method="post" action="#"><button class="ghost small" type="submit">Sign out</button></form></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card flush" id="tokens" aria-labelledby="tokens-title">
+    <header>
+      <div>
+        <h2 id="tokens-title">API tokens</h2>
+        <p>Personal access tokens let scripts and tools act as you. Send one as a bearer token.</p>
+      </div>
+      <div class="actions"><a class="button small" href="#new-token"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M12 5l0 14"/><path d="M5 12l14 0"/></svg>Create token</a></div>
+    </header>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Name</th><th>Created</th><th>Last used</th><th>Expires</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          <tr>
+            <td>ci-deploy</td>
+            <td><time datetime="2026-08-02">2026-08-02</time></td>
+            <td>2 hours ago</td>
+            <td><time datetime="2026-10-31">2026-10-31</time></td>
+            <td><span class="badge" data-kind="ok">Enabled</span></td>
+            <td class="row-actions">
+              <form class="inline" method="post" action="/tokens/7Q2M9XK4TD/disable"><button class="ghost small" type="submit">Disable</button></form>
+              <form class="inline" method="post" action="/tokens/7Q2M9XK4TD/delete"><button class="ghost small" type="submit">Delete</button></form>
+            </td>
+          </tr>
+          <tr>
+            <td>laptop-cli</td>
+            <td><time datetime="2026-06-11">2026-06-11</time></td>
+            <td><time datetime="2026-09-24T13:40Z">2026-09-24 13:40</time></td>
+            <td class="muted">Never</td>
+            <td><span class="badge" data-kind="ok">Enabled</span></td>
+            <td class="row-actions">
+              <form class="inline" method="post" action="/tokens/3HVZ8R1CWN/disable"><button class="ghost small" type="submit">Disable</button></form>
+              <form class="inline" method="post" action="/tokens/3HVZ8R1CWN/delete"><button class="ghost small" type="submit">Delete</button></form>
+            </td>
+          </tr>
+          <tr>
+            <td>old-backup</td>
+            <td><time datetime="2025-10-01">2025-10-01</time></td>
+            <td><time datetime="2026-01-14">2026-01-14</time></td>
+            <td><time datetime="2026-10-01">2026-10-01</time> <span class="badge" data-kind="warn">7 days</span></td>
+            <td><span class="badge">Disabled</span></td>
+            <td class="row-actions">
+              <form class="inline" method="post" action="/tokens/9BKE0SJ6FA/enable"><button class="ghost small" type="submit">Enable</button></form>
+              <form class="inline" method="post" action="/tokens/9BKE0SJ6FA/delete"><button class="ghost small" type="submit">Delete</button></form>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="split">
+    <section class="card" id="new-token" aria-labelledby="new-token-title">
+      <header><h2 id="new-token-title">Create a token</h2></header>
+      <form method="post" action="/tokens">
+        <label for="token-name">Name</label>
+        <input id="token-name" type="text" name="name" placeholder="e.g. ci-deploy" maxlength="64">
+        <span class="hint">Something that tells you where it's used.</span>
+        <label for="token-expires">Expires</label>
+        <select id="token-expires" name="expires">
+          <option value="30d">In 30 days</option>
+          <option value="90d" selected>In 90 days</option>
+          <option value="365d">In 365 days</option>
+          <option value="never">Never</option>
+        </select>
+        <button type="submit"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M12 5l0 14"/><path d="M5 12l14 0"/></svg>Create token</button>
+      </form>
+    </section>
+
+    <section class="card" aria-labelledby="created-title">
+      <header><h2 id="created-title">Token created</h2><span class="badge" data-kind="accent">state: after create</span></header>
+      <div class="alert quiet" data-kind="warn">
+        <strong>Copy it now</strong>
+        <p>This is the only time the token is shown. Only its hash is stored.</p>
+      </div>
+      <div class="secret">
+        <code>ikp_M9S346Q3D25VT4F5V37E3S3E28JT97KB6CQ643DZVMXXQKFBF5KZ</code>
+        <button class="secondary" type="button"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666"/><path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1"/></svg>Copy</button>
+      </div>
+      <p><a href="#tokens">Back to your tokens</a></p>
+    </section>
+  </div>
+
+  <section class="card danger" aria-labelledby="danger-title">
+    <header><h2 id="danger-title">Danger zone</h2></header>
+    <div class="row">
+      <p><strong>Sign out everywhere</strong>Ends every session on every browser, including this one. API tokens keep working.</p>
+      <form class="inline" method="post" action="/logout"><button class="danger" type="submit"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg>Sign out everywhere</button></form>
+    </div>
+  </section>
+</main>
+<script src="lab.js"></script>
+</body>
+</html>

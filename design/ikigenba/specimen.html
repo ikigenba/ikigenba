@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="theme.css">
+<title>Ikigenba specimen</title>
+</head>
+<body>
+<header>
+<strong class="mark">ikigenba</strong>
+<nav aria-label="Specimen sections">
+  <a href="#color" aria-current="true">Color</a>
+  <a href="#type">Type</a>
+  <a href="#controls">Controls</a>
+  <a href="#data">Data</a>
+  <a href="#feedback">Feedback</a>
+</nav>
+<span>ada@acme.dev</span>
+<a href="#">Sign out</a>
+</header>
+<main>
+<p class="eyebrow">Design system</p>
+<h1>Specimen</h1>
+<p>Every part of the Ikigenba style in one place.</p>
+
+<section id="color">
+<div class="section-head"><div><h2>Color</h2><p>Tokens on <code>:root</code>.</p></div></div>
+<div class="swatches">
+  <div class="swatch" data-token="bg"><i></i><b>bg</b><code></code></div>
+  <div class="swatch" data-token="surface"><i></i><b>surface</b><code></code></div>
+  <div class="swatch" data-token="subtle"><i></i><b>subtle</b><code></code></div>
+  <div class="swatch" data-token="line-soft"><i></i><b>line-soft</b><code></code></div>
+  <div class="swatch" data-token="line"><i></i><b>line</b><code></code></div>
+  <div class="swatch" data-token="faint"><i></i><b>faint</b><code></code></div>
+  <div class="swatch" data-token="muted"><i></i><b>muted</b><code></code></div>
+  <div class="swatch" data-token="fg"><i></i><b>fg</b><code></code></div>
+  <div class="swatch" data-token="accent"><i></i><b>accent</b><code></code></div>
+  <div class="swatch" data-token="accent-hover"><i></i><b>accent-hover</b><code></code></div>
+  <div class="swatch" data-token="link"><i></i><b>link</b><code></code></div>
+  <div class="swatch" data-token="ok"><i></i><b>ok</b><code></code></div>
+  <div class="swatch" data-token="warn"><i></i><b>warn</b><code></code></div>
+  <div class="swatch" data-token="err"><i></i><b>err</b><code></code></div>
+</div>
+</section>
+
+<section id="type">
+<div class="section-head"><div><h2>Type</h2><p>Inter throughout, variable weight and optical size. JetBrains Mono for code.</p></div></div>
+<div class="type-scale">
+  <div><small>display · clamp 40–64 · 700</small><p class="display">Run the systems you build.</p></div>
+  <div><small>h1 · 30 · 650</small><h1>Widgets</h1></div>
+  <div><small>h2 · 24 · 650</small><h2>Active sessions</h2></div>
+  <div><small>h3 · 18 · 650</small><h3>API tokens</h3></div>
+  <div><small>h4 · 15 · 600</small><h4>Signed in via Google</h4></div>
+  <div><small>lg · 17 · 400</small><p class="text-lg">Every service in your space, one sign-in, one place to watch it all.</p></div>
+  <div><small>md · 15 · 400</small><p class="text-md">Every service in your space, one sign-in, one place to watch it all.</p></div>
+  <div><small>body · 14 · 400</small><p>Every service in your space, one sign-in, one place to watch it all.</p></div>
+  <div><small>sm · 13 · 400</small><p class="small">Last sign-in 2026-09-24 14:02 UTC</p></div>
+  <div><small>xs · 12 · 550</small><p class="text-xs">COUNT · STATUS · 1024</p></div>
+  <div><small>mono · JetBrains Mono · 400</small><p><samp>GET /widgets/table 304 Not Modified</samp></p></div>
+</div>
+
+<div class="split">
+  <div class="stack">
+    <h3 class="text-md">Running text</h3>
+    <p>Sign in once at <a href="#">auth.acme.ikigenba.com</a> and every service in the space trusts the <code>ikigenba_session</code> cookie. Press <kbd>Ctrl</kbd> <kbd>K</kbd> to jump between services. <strong>Strong text</strong> carries weight without a color change.</p>
+  </div>
+  <div class="stack">
+    <h3 class="text-md">Code block</h3>
+<pre><code>$ curl -si https://auth.acme.ikigenba.com/check \
+    -H 'Cookie: ikigenba_session=…'
+HTTP/2 200
+x-ikigenba-user: ada@acme.dev</code></pre>
+  </div>
+</div>
+</section>
+
+<section id="controls">
+<div class="section-head"><div><h2>Controls</h2><p>A bare <code>&lt;button&gt;</code> is the primary action.</p></div></div>
+<div class="stack">
+  <div class="cluster">
+    <button type="button">Add widget</button>
+    <button type="button" class="secondary">Cancel</button>
+    <button type="button" class="ghost">Dismiss</button>
+    <button type="button" class="danger">Revoke token</button>
+    <button type="button" disabled>Disabled</button>
+  </div>
+  <div class="cluster">
+    <a class="button large" href="#">Get started</a>
+    <a class="button secondary large" href="#">Read the docs</a>
+  </div>
+</div>
+
+<div class="split">
+  <form onsubmit="return false">
+    <label for="s-name">Name</label>
+    <input id="s-name" type="text" placeholder="e.g. sensor-array">
+    <label for="s-email">Email</label>
+    <input id="s-email" type="email" value="ada@acme.dev">
+    <span class="hint">Only @acme.dev accounts can sign in.</span>
+    <label for="s-status">Status</label>
+    <select id="s-status"><option>active</option><option>paused</option><option>retired</option></select>
+    <label for="s-notes">Notes</label>
+    <textarea id="s-notes" placeholder="Anything the next operator should know"></textarea>
+  </form>
+  <form onsubmit="return false">
+    <label for="s-bad">Name</label>
+    <input id="s-bad" type="text" value="alpha" aria-describedby="s-bad-error">
+    <span id="s-bad-error">that name is already taken</span>
+    <label for="s-off">Workspace</label>
+    <input id="s-off" type="text" value="acme.dev" disabled>
+    <label><input type="checkbox" checked> Email me when a widget is retired</label>
+    <label><input type="checkbox"> Weekly summary</label>
+    <label><input type="radio" name="s-r" checked> Poll every 5 seconds</label>
+    <label><input type="radio" name="s-r"> Poll every minute</label>
+  </form>
+</div>
+</section>
+
+<section id="data">
+<div class="section-head"><div><h2>Data</h2><p>Tables, status, badges, key/value, cards, tabs.</p></div></div>
+<div class="table-scroll">
+<table>
+<thead><tr><th>Name</th><th class="num">Count</th><th>Status</th><th>Owner</th></tr></thead>
+<tbody>
+<tr><td>alpha</td><td class="num">3</td><td><span class="status" data-status="active">active</span></td><td class="muted">ada@acme.dev</td></tr>
+<tr><td>beta</td><td class="num">0</td><td><span class="status" data-status="paused">paused</span></td><td class="muted">lin@acme.dev</td></tr>
+<tr><td>gamma</td><td class="num">12</td><td><span class="status" data-status="retired">retired</span></td><td class="muted">ada@acme.dev</td></tr>
+<tr><td>zeta</td><td class="num">1024</td><td><span class="status" data-status="active">active</span></td><td class="muted">sam@acme.dev</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="cluster">
+  <span class="badge">default</span>
+  <span class="badge" data-kind="info">beta</span>
+  <span class="badge" data-kind="ok">healthy</span>
+  <span class="badge" data-kind="warn">degraded</span>
+  <span class="badge" data-kind="err">down</span>
+</div>
+<div class="cluster">
+  <span class="badge strong">default</span>
+  <span class="badge strong" data-kind="info">beta</span>
+  <span class="badge strong" data-kind="ok">healthy</span>
+  <span class="badge strong" data-kind="warn">degraded</span>
+  <span class="badge strong" data-kind="err">down</span>
+</div>
+<div class="cluster">
+  <span class="status">default</span>
+  <span class="status" data-kind="info">beta</span>
+  <span class="status" data-kind="ok">healthy</span>
+  <span class="status" data-kind="warn">degraded</span>
+  <span class="status" data-kind="err">down</span>
+</div>
+
+<div class="split">
+  <div class="card">
+    <header><h3 class="text-md">Session</h3><p>Google</p></header>
+    <dl class="kv">
+      <dt>Email</dt><dd>ada@acme.dev</dd>
+      <dt>Signed in via</dt><dd>Google</dd>
+      <dt>Last sign-in</dt><dd>2026-09-24 14:02 UTC</dd>
+      <dt>Expires in</dt><dd>11h 58m</dd>
+    </dl>
+  </div>
+  <div class="card">
+    <header><h3 class="text-md">Card</h3><p>with header</p></header>
+    <p>A card is a surface with a hairline border. Its header sits on its own rule; the body follows with even spacing.</p>
+    <div class="actions"><button type="button">Save</button><button type="button" class="secondary">Cancel</button></div>
+  </div>
+</div>
+
+<nav class="tabs" aria-label="Example tabs">
+  <a href="#" aria-current="page">Profile</a>
+  <a href="#">Sessions</a>
+  <a href="#">API tokens</a>
+  <a href="#">Audit log</a>
+</nav>
+</section>
+
+<section>
+<div class="section-head"><div><h2>Icons</h2><p>Tabler (<code>@tabler/icons</code> 3.48.0, MIT), outline, 2px stroke on a 24px grid. Vendored in <code>icons/tabler/</code>; filled variants mark status.</p></div></div>
+<div class="icon-grid"><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M12 9v4"/><path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0"/><path d="M12 16h.01"/></svg><figcaption>alert-triangle</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M10 5a2 2 0 1 1 4 0a7 7 0 0 1 4 6v3a4 4 0 0 0 2 3h-16a4 4 0 0 0 2 -3v-3a7 7 0 0 1 4 -6"/><path d="M9 17v1a3 3 0 0 0 6 0v-1"/></svg><figcaption>bell</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M5 12l5 5l10 -10"/></svg><figcaption>check</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M6 9l6 6l6 -6"/></svg><figcaption>chevron-down</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/></svg><figcaption>circle</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 12l2 2l4 -4"/></svg><figcaption>circle-check</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M10 10l4 4m0 -4l-4 4"/></svg><figcaption>circle-x</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"/><path d="M12 7v5l3 3"/></svg><figcaption>clock</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666"/><path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1"/></svg><figcaption>copy</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M4 6a8 3 0 1 0 16 0a8 3 0 1 0 -16 0"/><path d="M4 6v6a8 3 0 0 0 16 0v-6"/><path d="M4 12v6a8 3 0 0 0 16 0v-6"/></svg><figcaption>database</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg><figcaption>download</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M12 6h-6a2 2 0 0 0 -2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-6"/><path d="M11 13l9 -9"/><path d="M15 4h5v5"/></svg><figcaption>external-link</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M5 12l-2 0l9 -9l9 9l-2 0"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7"/><path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6"/></svg><figcaption>home</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"/><path d="M12 9h.01"/><path d="M11 12h1v4h1"/></svg><figcaption>info-circle</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M16.555 3.843l3.602 3.602a2.877 2.877 0 0 1 0 4.069l-2.643 2.643a2.877 2.877 0 0 1 -4.069 0l-.301 -.301l-6.558 6.558a2 2 0 0 1 -1.239 .578l-.175 .008h-1.172a1 1 0 0 1 -.993 -.883l-.007 -.117v-1.172a2 2 0 0 1 .467 -1.284l.119 -.13l.414 -.414h2v-2h2v-2l2.144 -2.144l-.301 -.301a2.877 2.877 0 0 1 0 -4.069l2.643 -2.643a2.877 2.877 0 0 1 4.069 0"/><path d="M15 9h.01"/></svg><figcaption>key</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M5 13a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v6a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-6"/><path d="M11 16a1 1 0 1 0 2 0a1 1 0 0 0 -2 0"/><path d="M8 11v-4a4 4 0 1 1 8 0v4"/></svg><figcaption>lock</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg><figcaption>logout</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M4 6l16 0"/><path d="M4 12l16 0"/><path d="M4 18l16 0"/></svg><figcaption>menu-2</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M12 5l0 14"/><path d="M5 12l14 0"/></svg><figcaption>plus</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg><figcaption>refresh</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3.06 13a9 9 0 1 0 .49 -4.087"/><path d="M3 4.001v5h5"/><path d="M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/></svg><figcaption>restore</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/></svg><figcaption>search</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 7a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3v-2"/><path d="M3 15a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3l0 -2"/><path d="M7 8l0 .01"/><path d="M7 16l0 .01"/></svg><figcaption>server</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg><figcaption>settings</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M11.46 20.846a12 12 0 0 1 -7.96 -14.846a12 12 0 0 0 8.5 -3a12 12 0 0 0 8.5 3a12 12 0 0 1 -.09 7.06"/><path d="M15 19l2 2l4 -4"/></svg><figcaption>shield-check</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M8 9l3 3l-3 3"/><path d="M13 15l3 0"/><path d="M3 6a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2l0 -12"/></svg><figcaption>terminal-2</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M4 7l16 0"/><path d="M10 11l0 6"/><path d="M14 11l0 6"/><path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12"/><path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3"/></svg><figcaption>trash</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0"/><path d="M6 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2"/></svg><figcaption>user</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0"/><path d="M6 21v-2a4 4 0 0 1 4 -4h4"/><path d="M15 19l2 2l4 -4"/></svg><figcaption>user-check</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"/><path d="M3.6 9h16.8"/><path d="M3.6 15h16.8"/><path d="M11.5 3a17 17 0 0 0 0 18"/><path d="M12.5 3a17 17 0 0 1 0 18"/></svg><figcaption>world</figcaption></figure><figure><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg><figcaption>x</figcaption></figure></div>
+<div class="cluster">
+  <button type="button"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M12 5l0 14"/><path d="M5 12l14 0"/></svg>Create token</button>
+  <button type="button" class="secondary"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666"/><path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1"/></svg>Copy</button>
+  <button type="button" class="secondary"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg>Refresh</button>
+  <button type="button" class="danger"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M4 7l16 0"/><path d="M10 11l0 6"/><path d="M14 11l0 6"/><path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12"/><path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3"/></svg>Delete</button>
+  <a href="#">Read the docs <svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M12 6h-6a2 2 0 0 0 -2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-6"/><path d="M11 13l9 -9"/><path d="M15 4h5v5"/></svg></a>
+</div>
+</section>
+
+<section id="feedback">
+<div class="section-head"><div><h2>Feedback</h2><p>Alerts carry an icon and a title, never color alone.</p></div></div>
+<div class="stack">
+  <div class="alert"><strong>New sign-in method</strong><p>Passkeys are coming to acme.ikigenba.com next month.</p></div>
+  <div class="alert" data-kind="ok"><strong>Widget created</strong><p>delta is active and reporting.</p></div>
+  <div class="alert" data-kind="warn"><strong>Session expires soon</strong><p>You will be asked to sign in again in 10 minutes.</p></div>
+  <div class="alert" data-kind="err"><strong>Sign-in failed</strong><p>ada@gmail.com is not in the acme.dev workspace.</p></div>
+  <div class="alert callout" data-kind="warn"><strong>Callout</strong><p>A colored left edge, for docs and page-level notes.</p></div>
+  <div class="alert quiet" data-kind="info"><strong>Quiet note</strong><p>Grey, for a note that sits inside a card.</p></div>
+</div>
+<div class="empty">
+  <h3 class="text-md">No widgets yet</h3>
+  <p>Widgets you add show up here and refresh every five seconds.</p>
+  <a class="button" href="#">Add widget</a>
+</div>
+</section>
+</main>
+<script>
+  // Fill each swatch with the active palette's computed value.
+  (() => {
+    const fill = () => {
+      const cs = getComputedStyle(document.documentElement);
+      document.querySelectorAll(".swatch").forEach((s) => {
+        s.querySelector("code").textContent = cs.getPropertyValue("--" + s.dataset.token).trim();
+      });
+    };
+    new MutationObserver(fill).observe(document.documentElement, { attributes: true, attributeFilter: ["data-palette"] });
+    fill();
+  })();
+</script>
+<script src="lab.js"></script>
+</body>
+</html>

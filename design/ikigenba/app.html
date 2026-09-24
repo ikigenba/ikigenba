@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="theme.css">
+<title>dummy</title>
+</head>
+<body>
+<header>
+<strong class="mark" data-service="dummy">ikigenba</strong>
+<span>ada@acme.dev</span>
+<a href="#">Sign out</a>
+</header>
+<main>
+<div class="section-head">
+  <div>
+    <h1>Widgets</h1>
+    <p>6 widgets · refreshes every 5 seconds</p>
+  </div>
+</div>
+
+<div class="panel">
+<table id="widgets-table">
+<thead><tr><th>Name</th><th class="num">Count</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td>alpha</td><td class="num">3</td><td><span class="status" data-status="active">active</span></td></tr>
+<tr><td>beta</td><td class="num">0</td><td><span class="status" data-status="paused">paused</span></td></tr>
+<tr><td>gamma</td><td class="num">12</td><td><span class="status" data-status="retired">retired</span></td></tr>
+<tr><td>delta</td><td class="num">128</td><td><span class="status" data-status="active">active</span></td></tr>
+<tr><td>epsilon</td><td class="num">7</td><td><span class="status" data-status="paused">paused</span></td></tr>
+<tr><td>zeta</td><td class="num">1024</td><td><span class="status" data-status="active">active</span></td></tr>
+</tbody>
+</table>
+
+<section class="card">
+<header><h2 class="text-md">Add widget</h2></header>
+<form method="post" action="/widgets" enctype="application/x-www-form-urlencoded">
+<label for="widget-name">Name</label>
+<input id="widget-name" type="text" name="name" value="alpha" aria-describedby="name-error">
+<span id="name-error">that name is already taken</span>
+<label for="widget-count">Count</label>
+<input id="widget-count" type="text" name="count" value="-2" aria-describedby="count-error">
+<span id="count-error">the count cannot be negative</span>
+<label for="widget-status">Status</label>
+<select id="widget-status" name="status">
+<option value="active" selected="selected">active</option><option value="paused">paused</option><option value="retired">retired</option>
+</select>
+<button type="submit"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M12 5l0 14"/><path d="M5 12l14 0"/></svg>Add widget</button>
+</form>
+</section>
+</div>
+
+<section>
+<div class="section-head">
+  <div>
+    <h2>States</h2>
+    <p>The other shapes this panel takes.</p>
+  </div>
+</div>
+<div class="split">
+  <div class="stack">
+    <h3 class="text-md">No widgets</h3>
+    <table>
+    <thead><tr><th>Name</th><th class="num">Count</th><th>Status</th></tr></thead>
+    <tbody></tbody>
+    </table>
+  </div>
+  <div class="stack">
+    <h3 class="text-md">Message page</h3>
+    <div class="card">
+      <p>Widget created.</p>
+      <a href="#">Back to widgets</a>
+    </div>
+  </div>
+</div>
+</section>
+</main>
+<script src="lab.js"></script>
+</body>
+</html>

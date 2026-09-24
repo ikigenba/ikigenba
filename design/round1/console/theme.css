@@ -1,0 +1,707 @@
+/* console — the operator's terminal.
+ *
+ * Monospace-led, dense, one warm amber accent. Designed dark-first; light is
+ * a warm paper variant of the same system.
+ *
+ * Font this theme would self-host: JetBrains Mono (400, 500, 700), with
+ * contextual alternates off. Round one uses the system monospace stack.
+ */
+
+/* ── tokens ─────────────────────────────────────────────────────────── */
+
+:root {
+  color-scheme: light;
+
+  --bg: #f5f3ec;
+  --bg-raised: #fbfaf6;
+  --bg-sunk: #ebe8de;
+  --line: #dcd8ca;
+  --line-strong: #b8b3a2;
+  --fg: #1b1a15;
+  --fg-muted: #5d5a4f;
+  --fg-faint: #8f8b7c;
+  --accent: #a15c00;
+  --on-accent: #fff8ec;
+  --ok: #2e6f31;
+  --info: #1d5d91;
+  --warn: #7a5a00;
+  --danger: #b02a20;
+
+  --font: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  --fs-xs: 11px;
+  --fs-s: 12px;
+  --fs: 13px;
+  --fs-m: 14px;
+  --fs-l: 17px;
+  --fs-xl: 24px;
+
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+
+  --radius: 2px;
+  --control-h: 34px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0e0f0b;
+    --bg-raised: #16170f;
+    --bg-sunk: #090a07;
+    --line: #282a21;
+    --line-strong: #3f4236;
+    --fg: #e8e4d4;
+    --fg-muted: #9d9988;
+    --fg-faint: #6a675b;
+    --accent: #f3ab3c;
+    --on-accent: #1b1204;
+    --ok: #93d17f;
+    --info: #86b9e6;
+    --warn: #e9cd5b;
+    --danger: #f2786d;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0e0f0b;
+  --bg-raised: #16170f;
+  --bg-sunk: #090a07;
+  --line: #282a21;
+  --line-strong: #3f4236;
+  --fg: #e8e4d4;
+  --fg-muted: #9d9988;
+  --fg-faint: #6a675b;
+  --accent: #f3ab3c;
+  --on-accent: #1b1204;
+  --ok: #93d17f;
+  --info: #86b9e6;
+  --warn: #e9cd5b;
+  --danger: #f2786d;
+}
+
+/* ── base ───────────────────────────────────────────────────────────── */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  background: var(--bg);
+  color: var(--fg);
+  font: var(--fs-m)/1.6 var(--font);
+  font-variant-numeric: tabular-nums;
+  font-variant-ligatures: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+::selection { background: var(--accent); color: var(--on-accent); }
+
+a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+a:hover { text-decoration-thickness: 2px; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── chrome ─────────────────────────────────────────────────────────── */
+
+body > header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  min-height: 44px;
+  padding: var(--s2) var(--s4);
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-s);
+  white-space: nowrap;
+}
+
+body > header strong { font-weight: 500; }
+body > header strong::before {
+  content: "/";
+  color: var(--fg-faint);
+  margin-right: var(--s3);
+}
+
+body > header span {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg-muted);
+}
+
+body > header > a:not(.mark) {
+  flex: none;
+  padding: 2px var(--s2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--fg-muted);
+  text-decoration: none;
+}
+body > header > a:not(.mark):hover { color: var(--fg); border-color: var(--fg-muted); }
+
+/* The product mark: the name, then a block cursor. */
+.mark {
+  flex: none;
+  color: var(--fg);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+.mark::after {
+  content: "";
+  display: inline-block;
+  width: 0.6em;
+  height: 1.1em;
+  margin-left: 2px;
+  vertical-align: -0.22em;
+  background: var(--accent);
+}
+
+/* A status line along the bottom of an app page. */
+body > footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--s4);
+  padding: 0 var(--s4) 0 0;
+  background: var(--bg-raised);
+  border-top: 1px solid var(--line);
+  font-size: var(--fs-xs);
+  line-height: 24px;
+  color: var(--fg-muted);
+}
+body > footer strong {
+  padding: 0 var(--s3);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+body > footer span:last-child { margin-left: auto; }
+@media (max-width: 560px) {
+  body > footer { flex-wrap: nowrap; white-space: nowrap; }
+  body > footer span:not(:first-of-type) { display: none; }
+}
+
+/* ── layout ─────────────────────────────────────────────────────────── */
+
+main {
+  flex: 1;
+  width: 100%;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: var(--s6) var(--s4) var(--s7);
+}
+
+section { margin: 0 0 var(--s6); }
+
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+
+.grid {
+  display: grid;
+  gap: var(--s4);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  align-items: start;
+  margin: var(--s5) 0;
+  row-gap: var(--s6);
+}
+.grid > .panel { margin: 0; }
+
+/* A centred page with a single window in it: sign-in and friends. */
+.solo main { max-width: 880px; }
+.solo main > .window {
+  max-width: 460px;
+  margin: 8vh auto var(--s7);
+}
+
+/* ── type ───────────────────────────────────────────────────────────── */
+
+h1, h2, h3, h4 { line-height: 1.25; color: var(--fg); }
+
+h1 {
+  margin: 0 0 var(--s2);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+h1::before { content: "#"; margin-right: 0.6ch; color: var(--accent); font-weight: 400; }
+
+h2 {
+  margin: var(--s6) 0 var(--s3);
+  font-size: var(--fs-l);
+  font-weight: 600;
+}
+h2::before { content: "##"; margin-right: 0.6ch; color: var(--fg-faint); font-weight: 400; }
+
+h3 {
+  margin: var(--s5) 0 var(--s2);
+  font-size: var(--fs-m);
+  font-weight: 600;
+}
+h3::before { content: "###"; margin-right: 0.6ch; color: var(--fg-faint); font-weight: 400; }
+
+h4 {
+  margin: var(--s4) 0 var(--s2);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--fg-muted);
+}
+
+p { margin: 0 0 var(--s3); max-width: 72ch; }
+
+.lead { color: var(--fg-muted); margin-bottom: var(--s5); }
+
+small { font-size: var(--fs-s); color: var(--fg-muted); }
+
+code {
+  padding: 0 0.35em;
+  font: inherit;
+  font-size: 0.93em;
+  background: var(--bg-sunk);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+pre {
+  margin: 0 0 var(--s4);
+  padding: var(--s3) var(--s4);
+  overflow-x: auto;
+  font-size: var(--fs);
+  line-height: 1.65;
+  background: var(--bg-sunk);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+}
+pre code { padding: 0; background: none; border: 0; font-size: inherit; }
+pre .p { color: var(--accent); user-select: none; }
+pre .c { color: var(--fg-muted); font-style: italic; }
+pre .o { color: var(--fg-muted); }
+
+kbd {
+  display: inline-block;
+  padding: 0 5px;
+  font: inherit;
+  font-size: var(--fs-xs);
+  line-height: 18px;
+  color: var(--fg-muted);
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+/* ── panels ─────────────────────────────────────────────────────────── */
+
+/* A box with its title set into the top rule, like a TUI frame. */
+.panel,
+.window {
+  position: relative;
+  margin: var(--s5) 0;
+  padding: var(--s5) var(--s4) var(--s4);
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
+.panel > :is(h2, h3):first-child,
+.window > :is(h2, h3):first-child,
+.panel > .meta,
+.window > .meta {
+  position: absolute;
+  top: 0;
+  transform: translateY(-50%);
+  margin: 0;
+  padding: 0 var(--s2);
+  font-size: var(--fs-s);
+  line-height: 1.5;
+  background: linear-gradient(var(--bg) 50%, var(--bg-raised) 50%);
+}
+
+.panel > :is(h2, h3):first-child,
+.window > :is(h2, h3):first-child {
+  left: var(--s3);
+  font-weight: 500;
+  color: var(--fg);
+}
+.panel > :is(h2, h3):first-child::before,
+.window > :is(h2, h3):first-child::before {
+  content: "▸";
+  margin-right: 0.8ch;
+  color: var(--accent);
+}
+
+.panel > .meta,
+.window > .meta {
+  right: var(--s3);
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+}
+
+.window > :last-child,
+.panel > :last-child { margin-bottom: 0; }
+
+/* A table set flush into a panel. */
+.panel > table {
+  width: calc(100% + 2 * var(--s4));
+  margin: calc(-1 * var(--s2)) calc(-1 * var(--s4)) calc(-1 * var(--s4));
+}
+.panel > table :is(th, td):first-child { padding-left: var(--s4); }
+.panel > table :is(th, td):last-child { padding-right: var(--s4); }
+.panel > table tbody tr:last-child td { border-bottom: 0; }
+.panel > table:last-child { margin-bottom: calc(-1 * var(--s4)); }
+
+/* ── tables ─────────────────────────────────────────────────────────── */
+
+.scroll { overflow-x: auto; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs);
+}
+
+thead th {
+  padding: var(--s2) var(--s3);
+  text-align: left;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-muted);
+  border-bottom: 1px solid var(--line-strong);
+  white-space: nowrap;
+}
+
+tbody td {
+  padding: 7px var(--s3);
+  border-bottom: 1px solid var(--line);
+}
+tbody td:first-child { font-weight: 500; }
+tbody tr:hover { background: color-mix(in oklab, var(--accent) 6%, transparent); }
+tbody tr:hover td:first-child { box-shadow: inset 2px 0 var(--accent); }
+
+.num { text-align: right; }
+
+/* ── status ─────────────────────────────────────────────────────────── */
+
+/* Each status has its own glyph, so it never rests on colour alone. */
+.status { white-space: nowrap; }
+.status::before { display: inline-block; width: 1.6ch; }
+.status[data-status="active"] { color: var(--ok); }
+.status[data-status="active"]::before { content: "●"; }
+.status[data-status="paused"] { color: var(--warn); }
+.status[data-status="paused"]::before { content: "‖"; font-weight: 700; }
+.status[data-status="retired"] { color: var(--fg-muted); }
+.status[data-status="retired"]::before { content: "○"; }
+
+/* ── forms ──────────────────────────────────────────────────────────── */
+
+/* Flat label / control / error siblings, laid out as a two-column grid. */
+form {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 26rem);
+  gap: var(--s2) var(--s4);
+  align-items: start;
+}
+
+form > label:not(.check) {
+  grid-column: 1;
+  padding-top: 7px;
+  font-size: var(--fs-s);
+  color: var(--fg-muted);
+}
+form > label:not(.check)::after { content: ":"; color: var(--fg-faint); }
+
+form > :is(input, select, textarea, span, button, .check) { grid-column: 2; }
+
+form > span[id$="-error"] {
+  margin-top: calc(-1 * var(--s1));
+  font-size: var(--fs-s);
+  color: var(--danger);
+}
+form > span[id$="-error"]::before { content: "✗ "; font-weight: 700; }
+
+form > button { justify-self: start; margin-top: var(--s2); }
+
+/* A form that is only a button (sign out) sits inline. */
+form:not(:has(> label)) { display: block; }
+
+input:not([type="checkbox"], [type="radio"]),
+select,
+textarea {
+  width: 100%;
+  min-height: var(--control-h);
+  padding: 6px 10px;
+  font: inherit;
+  font-size: var(--fs);
+  color: var(--fg);
+  background: var(--bg-sunk);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  caret-color: var(--accent);
+}
+:is(input, select, textarea):hover:not(:disabled) { border-color: var(--fg-faint); }
+:is(input, select, textarea):focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+::placeholder { color: var(--fg-faint); }
+
+:is(input, select, textarea):is([aria-invalid="true"], [aria-describedby$="-error"]) {
+  border-color: var(--danger);
+}
+:is(input, select, textarea):is([aria-invalid="true"], [aria-describedby$="-error"]):focus {
+  box-shadow: 0 0 0 1px var(--danger);
+}
+
+:is(input, select, textarea):disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+select {
+  appearance: none;
+  padding-right: 30px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--fg-muted) 50%),
+    linear-gradient(135deg, var(--fg-muted) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 55%, calc(100% - 10px) 55%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+
+input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--fs);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+@media (max-width: 560px) {
+  form { grid-template-columns: minmax(0, 1fr); }
+  form > * { grid-column: 1 !important; }
+  form > label:not(.check) { padding-top: var(--s2); }
+}
+
+/* ── buttons ────────────────────────────────────────────────────────── */
+
+/* A bare button is the primary action; that is what the services emit. */
+button,
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  min-height: var(--control-h);
+  padding: 6px 14px;
+  font: inherit;
+  font-size: var(--fs);
+  font-weight: 700;
+  color: var(--on-accent);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+:is(button, .button):hover:not(:disabled) {
+  background: color-mix(in oklab, var(--accent) 84%, var(--fg));
+  border-color: color-mix(in oklab, var(--accent) 84%, var(--fg));
+  text-decoration: none;
+}
+:is(button, .button):active:not(:disabled) { transform: translateY(1px); }
+
+:is(button, .button).secondary {
+  color: var(--fg);
+  background: transparent;
+  border-color: var(--line-strong);
+  font-weight: 500;
+}
+:is(button, .button).secondary:hover:not(:disabled) {
+  background: var(--bg-sunk);
+  border-color: var(--fg-muted);
+}
+
+:is(button, .button).danger {
+  color: var(--danger);
+  background: transparent;
+  border-color: color-mix(in oklab, var(--danger) 55%, transparent);
+}
+:is(button, .button).danger:hover:not(:disabled) {
+  color: var(--bg);
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+:is(button, .button) kbd {
+  color: inherit;
+  background: transparent;
+  border-color: currentColor;
+  opacity: 0.65;
+}
+
+/* ── alerts ─────────────────────────────────────────────────────────── */
+
+/* A bracketed tag, then a title and a line of detail. */
+.alert {
+  --tone: var(--info);
+  --tag: "[INFO]";
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px var(--s3);
+  margin: 0 0 var(--s3);
+  padding: var(--s3) var(--s4);
+  font-size: var(--fs);
+  background: color-mix(in oklab, var(--tone) 8%, var(--bg-raised));
+  border: 1px solid color-mix(in oklab, var(--tone) 35%, transparent);
+  border-left: 3px solid var(--tone);
+  border-radius: var(--radius);
+}
+.alert::before {
+  content: var(--tag);
+  grid-row: 1 / span 2;
+  font-weight: 700;
+  color: var(--tone);
+  white-space: pre;
+}
+.alert > * { grid-column: 2; margin: 0; }
+.alert > strong { font-weight: 600; }
+.alert > p { color: var(--fg-muted); }
+.alert > .row { margin-top: var(--s2); }
+
+.alert[data-kind="ok"] { --tone: var(--ok); --tag: "[ OK ]"; }
+.alert[data-kind="warn"] { --tone: var(--warn); --tag: "[WARN]"; }
+.alert[data-kind="error"] { --tone: var(--danger); --tag: "[FAIL]"; }
+
+/* ── key / value ────────────────────────────────────────────────────── */
+
+/* Keys run a dotted leader to their values, like a man page. */
+dl.kv {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 0;
+  margin: 0 0 var(--s4);
+  font-size: var(--fs);
+}
+dl.kv dt {
+  display: flex;
+  color: var(--fg-muted);
+}
+dl.kv dt::after {
+  content: "";
+  flex: 1;
+  min-width: 3ch;
+  margin: 0 1ch 0.45em;
+  border-bottom: 1px dotted var(--line-strong);
+}
+dl.kv dd { margin: 0; overflow-wrap: anywhere; }
+
+/* ── empty state ────────────────────────────────────────────────────── */
+
+.empty {
+  padding: var(--s6) var(--s4);
+  text-align: center;
+  color: var(--fg-muted);
+}
+.empty::before {
+  content: "∅";
+  display: block;
+  margin-bottom: var(--s1);
+  font-size: 22px;
+  line-height: 1;
+  color: var(--fg-faint);
+}
+tbody tr:hover:has(> .empty) { background: none; }
+tbody tr:hover > .empty { box-shadow: none; }
+
+/* ── specimen ───────────────────────────────────────────────────────── */
+
+.swatches {
+  display: grid;
+  gap: var(--s3);
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+.swatch { margin: 0; font-size: var(--fs-s); }
+.swatch i {
+  display: block;
+  height: 44px;
+  margin-bottom: var(--s1);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+.swatch figcaption { display: grid; }
+.swatch figcaption code { justify-self: start; padding: 0; background: none; border: 0; }
+.swatch figcaption small { font-size: var(--fs-xs); }
+
+.swatch[data-t="bg"] i { background: var(--bg); }
+.swatch[data-t="bg-raised"] i { background: var(--bg-raised); }
+.swatch[data-t="bg-sunk"] i { background: var(--bg-sunk); }
+.swatch[data-t="line"] i { background: var(--line); }
+.swatch[data-t="line-strong"] i { background: var(--line-strong); }
+.swatch[data-t="fg"] i { background: var(--fg); }
+.swatch[data-t="fg-muted"] i { background: var(--fg-muted); }
+.swatch[data-t="fg-faint"] i { background: var(--fg-faint); }
+.swatch[data-t="accent"] i { background: var(--accent); }
+.swatch[data-t="on-accent"] i { background: var(--on-accent); }
+.swatch[data-t="ok"] i { background: var(--ok); }
+.swatch[data-t="info"] i { background: var(--info); }
+.swatch[data-t="warn"] i { background: var(--warn); }
+.swatch[data-t="danger"] i { background: var(--danger); }
+
+.scale { display: grid; grid-template-columns: 11ch minmax(0, 1fr); gap: var(--s3) var(--s4); align-items: baseline; }
+.scale > * { margin: 0; }
+.scale > small { color: var(--fg-faint); font-size: var(--fs-xs); }
+
+@media (max-width: 560px) {
+  .scale { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .scale > small { margin-top: var(--s3); }
+}

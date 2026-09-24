@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="theme.css">
+<title>Blueprint specimen</title>
+</head>
+<body>
+<header>
+<a class="mark" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.25" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><path d="M12 1v22M1 12h22"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></svg>Ikigenba</a>
+<strong data-label="Service">design</strong>
+<span data-label="Operator">ada@acme.dev</span>
+<a href="/logout" data-label="Session">Sign out</a>
+</header>
+<main>
+<hgroup>
+<p>blueprint · specimen</p>
+<h1>Specimen</h1>
+</hgroup>
+<p>Every part the theme draws, on one sheet. Cool ink on drafting paper by day; a cyanotype by night.</p>
+
+<section>
+<h2>Color</h2>
+<div class="swatches">
+<div class="swatch" data-token="paper"><i></i><b>paper</b><output></output></div>
+<div class="swatch" data-token="sheet"><i></i><b>sheet</b><output></output></div>
+<div class="swatch" data-token="ink"><i></i><b>ink</b><output></output></div>
+<div class="swatch" data-token="ink-2"><i></i><b>ink-2</b><output></output></div>
+<div class="swatch" data-token="ink-3"><i></i><b>ink-3</b><output></output></div>
+<div class="swatch" data-token="line"><i></i><b>line</b><output></output></div>
+<div class="swatch" data-token="line-2"><i></i><b>line-2</b><output></output></div>
+<div class="swatch" data-token="accent"><i></i><b>accent</b><output></output></div>
+<div class="swatch" data-token="ok"><i></i><b>ok</b><output></output></div>
+<div class="swatch" data-token="warn"><i></i><b>warn</b><output></output></div>
+<div class="swatch" data-token="fault"><i></i><b>fault</b><output></output></div>
+<div class="swatch" data-token="off"><i></i><b>off</b><output></output></div>
+</div>
+</section>
+
+<section>
+<h2>Type</h2>
+<div class="scale">
+<div><span>h1 · sans 300 · 52/1.08</span><h1>Control plane</h1></div>
+<div><span>h2 · sans 600 · 24/1.25</span><h2>Deployments</h2></div>
+<div><span>h3 · sans 600 · 18/1.3</span><h3>Rolling restart</h3></div>
+<div><span>h4 · mono 500 · 11 caps</span><h4>Build metadata</h4></div>
+<div><span>body · sans 400 · 15/1.55</span><p>Each service runs as one binary behind the host's nginx, on the socket systemd hands it.</p></div>
+<div><span>small · sans 400 · 13</span><p><small>Last deployed 4 minutes ago by ada@acme.dev</small></p></div>
+<div><span>mono · 400 · 13.5/1.55</span><p class="mono">/run/ikigenba/dummy.sock</p></div>
+</div>
+</section>
+
+<section>
+<h2>Text</h2>
+<p>Tokens are minted per user and scoped to a space. Read <a href="#">the token reference</a> before rotating one; revoking a token takes effect on the next <code>GET /check</code>, within one second. Press <kbd>⌘</kbd> <kbd>K</kbd> to open the command palette.</p>
+<hr>
+<pre data-label="Shell"><code>$ curl -si https://auth.acme.ikigenba.com/check \
+    -H "Authorization: Bearer $IKIGENBA_TOKEN"
+HTTP/1.1 204 No Content
+X-Ikigenba-User: ada@acme.dev</code></pre>
+</section>
+
+<section>
+<h2>Buttons</h2>
+<div class="row">
+<button type="button">Deploy</button>
+<button type="button" class="secondary">Cancel</button>
+<button type="button" class="danger">Revoke token</button>
+<button type="button" disabled>Deploying</button>
+<a class="button secondary" href="#">Open logs <span aria-hidden="true">→</span></a>
+</div>
+</section>
+
+<section>
+<h2>Inputs</h2>
+<div class="grid">
+<form>
+<label for="s-host">Hostname</label>
+<input id="s-host" type="text" placeholder="api.acme.dev">
+<label for="s-region">Region</label>
+<select id="s-region"><option>us-east-1</option><option>eu-west-2</option><option>ap-south-1</option></select>
+<label for="s-port">Port</label>
+<input id="s-port" type="text" value="80800" aria-describedby="s-port-error">
+<span id="s-port-error">the port must be between 1 and 65535</span>
+</form>
+<div class="row">
+<label class="check"><input type="checkbox" checked> Restart on failure</label>
+<label class="check"><input type="checkbox"> Keep logs for 30 days</label>
+</div>
+</div>
+</section>
+
+<section>
+<h2>Table</h2>
+<div class="frame">
+<table>
+<thead><tr><th>Service</th><th>Host</th><th class="num">p50 ms</th><th class="num">Requests</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td>auth</td><td>auth.acme.ikigenba.com</td><td class="num">4.2</td><td class="num">1,284,019</td><td><span data-status="active">active</span></td></tr>
+<tr><td>dummy</td><td>dummy.acme.ikigenba.com</td><td class="num">1.8</td><td class="num">40,112</td><td><span data-status="paused">paused</span></td></tr>
+<tr><td>legacy-api</td><td>old.acme.ikigenba.com</td><td class="num">—</td><td class="num">0</td><td><span data-status="retired">retired</span></td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section>
+<h2>Status</h2>
+<div class="row">
+<span data-status="active">active</span>
+<span data-status="paused">paused</span>
+<span data-status="retired">retired</span>
+</div>
+<p class="note">Filled, half, struck: the symbol states the status without its color.</p>
+</section>
+
+<section>
+<h2>Alerts</h2>
+<div class="grid">
+<div class="alert" role="status"><strong>Note</strong><p>Tokens rotate every 90 days.</p></div>
+<div class="alert" data-kind="ok" role="status"><strong>OK</strong><p>Widget created.</p></div>
+<div class="alert" data-kind="warn" role="status"><strong>Caution</strong><p>This session expires in 5 minutes.</p></div>
+<div class="alert" data-kind="fault" role="alert"><strong>Fault</strong><p>Google could not be reached. Try again.</p></div>
+</div>
+</section>
+
+<section>
+<h2>Key / value</h2>
+<dl>
+<dt>Binary</dt><dd><code>/opt/dummy/bin/dummy</code></dd>
+<dt>Socket</dt><dd><code>/run/ikigenba/dummy.sock</code></dd>
+<dt>Started</dt><dd>2026-09-24 09:14 UTC</dd>
+<dt>Uptime</dt><dd>4h 48m</dd>
+</dl>
+</section>
+
+<section>
+<h2>Panel</h2>
+<div class="grid">
+<div class="panel">
+<h3>auth</h3>
+<p>Signs people in with Google and answers <code>/check</code> for every other service in the space.</p>
+<dl class="titleblock">
+<div><dt>Host</dt><dd>auth.acme.ikigenba.com</dd></div>
+<div><dt>Status</dt><dd>active</dd></div>
+</dl>
+</div>
+<div class="panel">
+<h3>Rolling restart</h3>
+<p>Restarts each service in turn, waiting for its socket to answer before moving on.</p>
+<div class="row"><button type="button">Restart</button><button type="button" class="secondary">Dry run</button></div>
+</div>
+</div>
+</section>
+
+<section>
+<h2>Empty state</h2>
+<div class="empty">
+<h3>No tokens yet</h3>
+<p>Tokens let scripts call services in this space as you.</p>
+<button type="button">Create token</button>
+</div>
+</section>
+</main>
+<script>
+(() => {
+  const root = document.documentElement;
+  const fill = () => document.querySelectorAll(".swatch").forEach((s) => {
+    s.querySelector("output").textContent =
+      getComputedStyle(root).getPropertyValue("--" + s.dataset.token).trim();
+  });
+  fill();
+  new MutationObserver(fill).observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", fill);
+})();
+</script>
+<script src="../lab.js"></script>
+</body>
+</html>

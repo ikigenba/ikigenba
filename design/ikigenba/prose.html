@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How sign-in works across your space — Ikigenba docs</title>
+<link rel="stylesheet" href="theme.css">
+</head>
+<body class="site">
+<header>
+  <strong>ikigenba</strong>
+  <nav aria-label="Site">
+    <a href="landing.html#product">Product</a>
+    <a href="prose.html" aria-current="page">Docs</a>
+    <a href="landing.html#pricing">Pricing</a>
+  </nav>
+  <a class="button secondary" href="login.html">Sign in</a>
+</header>
+
+<main class="doc">
+  <aside class="toc" aria-label="On this page">
+    <h4>On this page</h4>
+    <ol>
+      <li><a href="#space">The space is the boundary</a></li>
+      <li><a href="#flow">A browser signs in</a></li>
+      <li><a href="#headers">What a service receives</a></li>
+      <li><a href="#tokens">Scripts and agents</a></li>
+      <li><a href="#failure">When sign-in fails</a></li>
+    </ol>
+  </aside>
+
+  <article class="prose">
+    <p class="eyebrow">Docs · Identity</p>
+    <h1>How sign-in works across your space</h1>
+    <p class="lede">Every service in a space shares one sign-in. None of them handle passwords, sessions, or Google; they read two headers and trust them. This page explains why that is safe and what happens on the way.</p>
+    <p class="meta">Updated 24 September 2026 · 6 min read</p>
+
+    <h2 id="space">The space is the boundary</h2>
+    <p>A <em>space</em> is one deployment of the platform on one host, named by its domain — say <code>acme.ikigenba.com</code>. The auth service lives at <code>auth.acme.ikigenba.com</code> and works out the space from its own <code>Host</code>: it drops the leading <code>auth.</code> label and uses what remains for the session cookie's domain, the Google callback, and which return URLs it will honor.</p>
+    <p>Because the space is derived per request rather than configured, the same auth binary runs unchanged on every host. There is nothing to keep in sync when you <a href="landing.html#start">create a new space</a>.</p>
+
+    <h2 id="flow">A browser signs in</h2>
+    <p>The first time someone opens a service, the host's nginx asks auth whether the request is signed in. It is not, so the browser is sent to sign in:</p>
+    <ol>
+      <li>auth redirects to Google with a random <code>state</code> that also carries a PKCE verifier and the page to return to.</li>
+      <li>Google authenticates the person and sends them back to <code>/login/google/callback</code>.</li>
+      <li>auth exchanges the code, verifies the ID token, and checks the account belongs to your Workspace domain.</li>
+      <li>It sets the <code>ikigenba_session</code> cookie for the whole space and returns the browser to where it started.</li>
+    </ol>
+    <p>From then on, every service in the space sees the same session. Signing out anywhere signs out everywhere.</p>
+
+    <blockquote>auth talks to Google only when someone is actually signing in. It starts, serves, and answers identity checks with Google unreachable.</blockquote>
+
+    <h3>Discovery is lazy on purpose</h3>
+    <p>auth learns Google's endpoints from its OpenID configuration the first time a sign-in needs them, not at startup. A failed discovery is not remembered, so the next attempt simply tries again. The cost is one extra round trip on the first sign-in after a restart.</p>
+
+    <h2 id="headers">What a service receives</h2>
+    <p>For every routed request, nginx makes a subrequest to auth's <code>/check</code> and acts on the status:</p>
+    <table>
+      <thead><tr><th>Status</th><th>Meaning</th><th>nginx does</th></tr></thead>
+      <tbody>
+        <tr><td><code>200</code></td><td>Signed in</td><td>Copies the identity headers onto the upstream request</td></tr>
+        <tr><td><code>401</code></td><td>No valid credential</td><td>Redirects the browser to sign in</td></tr>
+        <tr><td><code>403</code></td><td>Known, but refused</td><td>Passes the refusal through</td></tr>
+      </tbody>
+    </table>
+    <p>On a <code>200</code>, your service receives exactly two headers it can rely on:</p>
+    <pre><code>X-User-Id: u_7Q2M4K9P
+X-User-Email: ada@acme.dev</code></pre>
+    <p>nginx strips any copies a client sends, so a service never has to wonder whether a header was forged. Treat the id as the stable key; emails can change.</p>
+
+    <div class="alert callout" data-kind="warn">
+      <strong>Only trust these headers behind nginx.</strong>
+      <p>A service listening on anything other than its socket in <code>/run/ikigenba</code> is reachable without the check. Don't expose it.</p>
+    </div>
+
+    <h2 id="tokens">Scripts and agents</h2>
+    <p>Anything that isn't a browser uses a personal access token. Create one from your <a href="profile.html">profile</a>; the secret starts with <code>ikp_</code> and is shown exactly once. Press <kbd>Ctrl</kbd> <kbd>C</kbd> before you close the page — only its hash is stored.</p>
+    <pre><code>curl -H "Authorization: Bearer $IKP_TOKEN" \
+  https://auth.acme.ikigenba.com/me</code></pre>
+    <p>A token acts as you, with your identity, against every service in the space. Give each script its own token so you can disable one without breaking the rest.</p>
+    <ul>
+      <li><strong>30 days</strong> for anything you're trying out.</li>
+      <li><strong>90 days</strong> for a scheduled job you'll revisit each quarter.</li>
+      <li><strong>No expiry</strong> only for something you'd notice breaking.</li>
+    </ul>
+
+    <figure>
+      <pre><code>$ curl -s -o /dev/null -w '%{http_code}\n' \
+    -H "Authorization: Bearer ikp_revoked…" https://dummy.acme.ikigenba.com/
+401</code></pre>
+      <figcaption>A disabled token is refused like no token at all.</figcaption>
+    </figure>
+
+    <h2 id="failure">When sign-in fails</h2>
+    <p>The most common failure is signing in with the wrong Google account — a personal <code>@gmail.com</code> rather than the Workspace one. auth refuses it and offers to try another account. If Google itself can't be reached, the sign-in page says so; services that already have a session keep working.</p>
+    <p>Still stuck? Check the host with <code>opsctl</code>, or read the rest of the <a href="#space">docs</a>.</p>
+  </article>
+</main>
+
+<footer>
+  <div class="footer-grid">
+    <div>
+      <strong class="mark">ikigenba</strong>
+      <p>Small services, one sign-in, a host you own.</p>
+    </div>
+    <nav aria-label="Docs">
+      <h4>Docs</h4>
+      <a href="#flow">Sign-in flow</a>
+      <a href="#headers">Identity headers</a>
+      <a href="#tokens">Access tokens</a>
+    </nav>
+  </div>
+  <p class="footer-legal">© 2026 Ikigenba</p>
+</footer>
+<script src="lab.js"></script>
+</body>
+</html>

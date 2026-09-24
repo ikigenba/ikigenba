@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · acme</title>
+<link rel="stylesheet" href="theme.css">
+</head>
+<body>
+<main class="auth-page">
+
+  <p class="state-note">state: signed out</p>
+  <section class="card" aria-labelledby="signin-title">
+    <span class="mark">ikigenba</span>
+    <h1 id="signin-title">Sign in to acme</h1>
+    <p>Access is limited to Google accounts in the <strong>acme.dev</strong> workspace.</p>
+    <a class="button secondary large google" href="/login/google">Continue with Google</a>
+    <footer>You're signing in at <strong>auth.acme.ikigenba.com</strong>. One sign-in covers every service in this space.</footer>
+  </section>
+
+  <p class="state-note">state: sign-in failed</p>
+  <section class="card" aria-labelledby="failed-title">
+    <span class="mark">ikigenba</span>
+    <h1 id="failed-title">Sign in to acme</h1>
+    <div class="alert" data-kind="err" role="alert">
+      <strong>Sign-in failed</strong>
+      <p><strong>ada@gmail.com</strong> isn't in the acme.dev workspace. Sign in with your @acme.dev account instead.</p>
+    </div>
+    <a class="button secondary large google" href="/login/google">Try another account</a>
+    <footer>Think you should have access? Ask an acme.dev workspace admin to add you.</footer>
+  </section>
+
+</main>
+<script src="lab.js"></script>
+</body>
+</html>

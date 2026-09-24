@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="theme.css">
+<title>Sign in — acme</title>
+</head>
+<body>
+<main class="auth">
+<div class="auth-brand">
+<a class="mark" href="#">Ikigenba</a>
+<p class="giant">acme</p>
+<span class="label">auth.acme.ikigenba.com</span>
+</div>
+<div class="auth-panel">
+<span class="label">Workspace · acme.dev</span>
+<h1>Sign in to acme</h1>
+<p>Access is limited to <strong>@acme.dev</strong> Google accounts.</p>
+<a class="button primary google arrow" href="/login/google">Continue with Google</a>
+<small>You'll return here once Google confirms who you are.</small>
+</div>
+</main>
+
+<div class="states">
+<div class="grid">
+<article class="card">
+<header><span class="label">State · Error</span><span class="status" data-status="retired">rejected</span></header>
+<div class="stack">
+<h3>Sign-in failed</h3>
+<div class="alert" data-kind="error" role="alert">
+<strong>Error</strong>
+<p>The account <code>ada@gmail.com</code> is not in the <code>acme.dev</code> workspace.</p>
+</div>
+</div>
+<footer><a class="button primary arrow" href="/login/google">Try another account</a></footer>
+</article>
+
+<article class="card">
+<header><span class="label">State · Signed in</span><span class="status" data-status="active">session live</span></header>
+<div class="stack">
+<h3>ada@acme.dev</h3>
+<dl>
+<dt>Signed in via</dt><dd>Google</dd>
+<dt>Last sign-in</dt><dd>2026-09-24 14:02 UTC</dd>
+<dt>Session expires</dt><dd>in 11h 58m</dd>
+</dl>
+</div>
+<footer>
+<form method="post" action="/logout"><button type="button">Sign out</button></form>
+</footer>
+</article>
+</div>
+</div>
+<script src="../lab.js"></script>
+</body>
+</html>

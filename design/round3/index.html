@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ikigenba color study</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,100..900&amp;family=Geist:wght@100..900&amp;family=Sora:wght@100..800&amp;display=swap">
+<style>
+  /* ---------- page chrome (not a design under study) ---------- */
+  :root { --pg-bg: #ececee; --pg-fg: #16161a; --pg-muted: #62626b; --pg-line: #d4d4d9; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 32px 16px 64px; background: var(--pg-bg); color: var(--pg-fg);
+    font: 15px/1.5 Inter, system-ui, sans-serif; font-synthesis: none; }
+  .page { max-width: 1320px; margin: 0 auto; }
+  .page > h1 { font-size: 20px; font-weight: 650; letter-spacing: -0.01em; margin: 0 0 4px; }
+  .page > p { color: var(--pg-muted); margin: 0 0 20px; max-width: 76ch; }
+  .page > p a { color: inherit; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; margin: 0 0 32px; }
+  .controls fieldset { border: 0; padding: 0; margin: 0; display: flex; align-items: center; gap: 8px; }
+  .controls legend { float: left; font-size: 13px; color: var(--pg-muted); margin-right: 4px; }
+  .seg { display: inline-flex; border: 1px solid var(--pg-line); border-radius: 8px; background: #fff; padding: 2px; }
+  .seg label { font-size: 13px; padding: 5px 12px; border-radius: 6px; cursor: pointer; }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg input:checked + span { font-weight: 600; }
+  .seg label:has(input:checked) { background: var(--pg-fg); color: #fff; }
+  .seg label:has(input:focus-visible) { outline: 2px solid #2952e3; outline-offset: 1px; }
+  .grid { display: grid; gap: 36px 28px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr)); }
+  figure { margin: 0; display: grid; gap: 10px; align-content: start; }
+  figcaption { font-size: 13px; color: var(--pg-muted); }
+  figcaption b { color: var(--pg-fg); font-size: 15px; font-weight: 600; margin-right: 6px; }
+
+  /* ---------- the fixed structure: every tile is identical except its palette ---------- */
+  body { --font: Inter, system-ui, sans-serif; }
+  body[data-font="geist"] { --font: Geist, system-ui, sans-serif; }
+  body[data-font="sora"]  { --font: Sora, system-ui, sans-serif; }
+
+  .t {
+    --ok: #16804a; --warn: #a86400; --err: #c42b2b;
+    --accent-fg: #fff; --ink-fg: #f4f5f7; --link: var(--accent); --glow: none;
+    --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+    --ink-muted: color-mix(in srgb, var(--ink-fg) 62%, var(--ink));
+    background: var(--glow), var(--bg); color: var(--fg); font-family: var(--font); font-size: 14px; line-height: 1.5;
+    border-radius: 12px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 10px 30px rgba(0,0,0,.07);
+  }
+  .t .bar { display: flex; gap: 14px; align-items: center; padding: 12px 20px; font-size: 13px;
+    background: var(--ink); color: var(--ink-fg); }
+  .t .bar .svc, .t .bar .who { color: var(--ink-muted); }
+  body[data-bar="light"] .t .bar { background: var(--surface); color: var(--fg); border-bottom: 1px solid var(--line); }
+  body[data-bar="light"] .t .bar .svc, body[data-bar="light"] .t .bar .who { color: var(--muted); }
+  .t .mark { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; font-size: 14px; letter-spacing: -0.01em; }
+  .t .mark::before { content: ""; width: 12px; height: 12px; border-radius: 3px; background: var(--accent); }
+  .t .who { margin-left: auto; }
+  body[data-bar="dark"] .p-ink .mark::before { background: var(--ink-fg); }
+  .t .bar a { color: inherit; text-underline-offset: 3px; }
+  .t .body { padding: 26px 20px 22px; display: grid; gap: 18px; }
+  .t h2 { font-size: 26px; font-weight: 650; line-height: 1.15; letter-spacing: -0.025em; margin: 0 0 8px; text-wrap: balance; }
+  .t .pitch p { margin: 0; color: var(--muted); font-size: 15px; }
+  .t .pitch a { color: var(--link); font-weight: 550; text-decoration: none; white-space: nowrap; }
+  .t .pitch a:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .t .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .t .card-head { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .t h3 { font-size: 14px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+  .t .card-head span { font-size: 12px; color: var(--muted); }
+  .t table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .t th { text-align: left; font-size: 12px; font-weight: 500; color: var(--muted); padding: 8px 14px;
+    background: var(--th-bg); border-bottom: 1px solid var(--line); }
+  .t td { padding: 9px 14px; border-bottom: 1px solid var(--line-soft); }
+  .t tr:last-child td { border-bottom: 0; }
+  .t tbody tr:hover td { background: var(--accent-soft); }
+  .t .num { text-align: right; }
+  .t .st { display: inline-flex; align-items: center; gap: 7px; }
+  .t .st::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--dot); }
+  .t .st.active { --dot: var(--ok); } .t .st.paused { --dot: var(--warn); } .t .st.retired { --dot: color-mix(in srgb, var(--muted) 55%, transparent); }
+  .t .st.retired { color: var(--muted); }
+  .t form { display: grid; gap: 6px; padding: 14px; }
+  .t label { font-size: 13px; font-weight: 550; }
+  .t input { font: inherit; padding: 8px 11px; color: var(--fg); background: var(--surface);
+    border: 1px solid var(--err); border-radius: 7px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--err) 14%, transparent); outline: none; }
+  .t .err { color: var(--err); font-size: 13px; font-weight: 500; display: flex; gap: 6px; align-items: center; }
+  .t .err::before { content: "!"; display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%;
+    background: var(--err); color: #fff; font-size: 10px; font-weight: 800; }
+  .t .actions { display: flex; gap: 8px; margin-top: 10px; }
+  .t button, .t .btn2 { font: inherit; font-weight: 550; padding: 7px 14px; border-radius: 7px; cursor: pointer;
+    border: 1px solid transparent; text-decoration: none; }
+  .t button { background: var(--accent); color: var(--accent-fg); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+  .t button:hover { background: color-mix(in srgb, var(--accent) 88%, #000); }
+  .t .btn2 { background: var(--surface); color: var(--fg); border-color: var(--line); }
+  .t .chips { display: flex; gap: 6px; flex-wrap: wrap; padding-top: 4px; }
+  .t .chips i { width: 22px; height: 22px; border-radius: 5px; border: 1px solid rgba(0,0,0,.08); background: var(--c); }
+
+  /* ---------- palettes (light grounds only) ---------- */
+  .p-cobalt  { --bg: #f5f6f8; --surface: #fff; --fg: #111827; --muted: #5b6472; --line: #dfe3e8; --line-soft: #edf0f3; --th-bg: #f9fafb; --accent: #2952e3; --ink: #111827; }
+  .p-indigo  { --bg: #f4f5fa; --surface: #fff; --fg: #1b1d2e; --muted: #5f6380; --line: #dcdeea; --line-soft: #ecedf5; --th-bg: #f8f8fc; --accent: #4b4fd6; --ink: #1b1d2e; }
+  .p-emerald { --bg: #f4f4f5; --surface: #fff; --fg: #18181b; --muted: #5f5f68; --line: #e0e0e4; --line-soft: #ededf0; --th-bg: #fafafa; --accent: #0b7a55; --ink: #18181b; --ok: #0b7a55; }
+  .p-rust    { --bg: #f6f4f1; --surface: #fffdfb; --fg: #1f1b17; --muted: #6b635b; --line: #e4ded6; --line-soft: #efeae4; --th-bg: #faf8f5; --accent: #b4471f; --ink: #26201b; --err: #b3232e; --warn: #9a6a00; }
+  .p-teal    { --bg: #eef3f5; --surface: #fff; --fg: #122027; --muted: #56666e; --line: #d3dee3; --line-soft: #e6edf0; --th-bg: #f6f9fa; --accent: #0e7480; --ink: #122027; }
+  .p-ink     { --bg: #fafafa; --surface: #fff; --fg: #0a0a0a; --muted: #666; --line: #e6e6e6; --line-soft: #f0f0f0; --th-bg: #fafafa; --accent: #0a0a0a; --ink: #0a0a0a; --link: #0060f0; }
+  .p-dawn    { --bg: #f6f7fd; --surface: #fff; --fg: #151a33; --muted: #5c6385; --line: #dfe2f3; --line-soft: #ecedf8; --th-bg: #f9f9fe; --accent: #4c5fe0; --ink: #151a33;
+               --glow: radial-gradient(90% 70% at 100% 0%, #dfe3ff 0%, transparent 60%), radial-gradient(70% 50% at 0% 30%, #efe3fb 0%, transparent 60%); }
+  .p-navy    { --bg: #f7f5f0; --surface: #fff; --fg: #1a2233; --muted: #636a78; --line: #e3dfd5; --line-soft: #eeebe4; --th-bg: #fbfaf7; --accent: #1f3a64; --ink: #1f3a64; }
+  .p-violet  { --bg: #f6f5f9; --surface: #fff; --fg: #1e1a2b; --muted: #645e78; --line: #e2dfea; --line-soft: #efedf4; --th-bg: #faf9fc; --accent: #6a3fd1; --ink: #1e1a2b; }
+  .p-azure   { --bg: #f3f6fa; --surface: #fff; --fg: #0f1b2b; --muted: #57657a; --line: #d9e1eb; --line-soft: #eaeff5; --th-bg: #f8fafc; --accent: #0b6bcb; --ink: #0f1b2b; }
+  .p-pine    { --bg: #f3f5f2; --surface: #fff; --fg: #172019; --muted: #5d6a60; --line: #dbe2dc; --line-soft: #eaeeea; --th-bg: #f8faf8; --accent: #2f6b4f; --ink: #172019; --ok: #2f7d4f; }
+  .p-crimson { --bg: #f7f7f7; --surface: #fff; --fg: #111; --muted: #626262; --line: #e2e2e2; --line-soft: #efefef; --th-bg: #fafafa; --accent: #c8102e; --ink: #111; --err: #b0122a; }
+</style>
+</head>
+<body data-font="inter" data-bar="dark">
+<div class="page">
+<h1>Round three: color study (archived)</h1>
+<p>What you liked in round two (Nordic, Minimal, Midnight) is fixed here as one structure: crisp sans, quiet lines, a top bar, light grounds. The only thing that changes between tiles is color. Use the switches to try each face and a dark or light top bar across all twelve. <a href="../index.html">← Current work</a> · <a href="../round2/index.html">round two</a> · <a href="../round1/index.html">round one</a></p>
+
+<form class="controls" onsubmit="return false">
+  <fieldset><legend>Font</legend><div class="seg">
+    <label><input type="radio" name="font" value="inter" checked><span>Inter</span></label>
+    <label><input type="radio" name="font" value="geist"><span>Geist</span></label>
+    <label><input type="radio" name="font" value="sora"><span>Sora</span></label>
+  </div></fieldset>
+  <fieldset><legend>Top bar</legend><div class="seg">
+    <label><input type="radio" name="bar" value="dark" checked><span>Dark</span></label>
+    <label><input type="radio" name="bar" value="light"><span>Light</span></label>
+  </div></fieldset>
+</form>
+
+<div class="grid">
+<template id="tile">
+  <header class="bar"><span class="mark">ikigenba</span><span class="svc">dummy</span><span class="who">ada@acme.dev</span><a href="#">Sign out</a></header>
+  <div class="body">
+    <div class="pitch">
+      <h2>Run the systems you build.</h2>
+      <p>Every service in your space, one sign-in, one place to watch it all. <a href="#">Read the docs →</a></p>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>Widgets</h3><span>3 widgets</span></div>
+      <table>
+        <thead><tr><th>Name</th><th class="num">Count</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>alpha</td><td class="num">3</td><td><span class="st active">active</span></td></tr>
+          <tr><td>beta</td><td class="num">0</td><td><span class="st paused">paused</span></td></tr>
+          <tr><td>gamma</td><td class="num">12</td><td><span class="st retired">retired</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <form onsubmit="return false">
+        <label>Name</label>
+        <input type="text" value="alpha" aria-invalid="true">
+        <span class="err">that name is already taken</span>
+        <div class="actions"><button type="submit">Add widget</button><a class="btn2" href="#">Cancel</a></div>
+      </form>
+    </div>
+    <div class="chips"></div>
+  </div>
+</template>
+
+<figure><figcaption><b>01 cobalt</b>Cool neutral grey, strong clear blue.</figcaption><section class="t p-cobalt"></section></figure>
+<figure><figcaption><b>02 indigo</b>Slate with a blue-violet cast.</figcaption><section class="t p-indigo"></section></figure>
+<figure><figcaption><b>03 emerald</b>True neutral zinc, deep green.</figcaption><section class="t p-emerald"></section></figure>
+<figure><figcaption><b>04 rust</b>Warm stone, burnt orange-red.</figcaption><section class="t p-rust"></section></figure>
+<figure><figcaption><b>05 teal</b>Blue-grey mist, deep teal.</figcaption><section class="t p-teal"></section></figure>
+<figure><figcaption><b>06 ink</b>No hue at all; black is the accent, blue only for links.</figcaption><section class="t p-ink"></section></figure>
+<figure><figcaption><b>07 dawn</b>Midnight made light: periwinkle, soft color glow.</figcaption><section class="t p-dawn"></section></figure>
+<figure><figcaption><b>08 navy</b>Warm sand ground, deep navy for bar and action.</figcaption><section class="t p-navy"></section></figure>
+<figure><figcaption><b>09 violet</b>Lilac-grey, saturated violet.</figcaption><section class="t p-violet"></section></figure>
+<figure><figcaption><b>10 azure</b>Pale sky ground, mid blue.</figcaption><section class="t p-azure"></section></figure>
+<figure><figcaption><b>11 pine</b>Sage-grey, muted forest green.</figcaption><section class="t p-pine"></section></figure>
+<figure><figcaption><b>12 crimson</b>Neutral grey, one sharp red.</figcaption><section class="t p-crimson"></section></figure>
+</div>
+</div>
+<script>
+  const tpl = document.getElementById("tile");
+  const chipVars = ["--bg", "--surface", "--line", "--muted", "--fg", "--ink", "--accent"];
+  document.querySelectorAll(".t").forEach((t) => {
+    t.appendChild(tpl.content.cloneNode(true));
+    const cs = getComputedStyle(t);
+    t.querySelector(".chips").innerHTML = chipVars
+      .map((v) => { const c = cs.getPropertyValue(v).trim(); return `<i style="--c:${c}" title="${v.slice(2)} ${c}"></i>`; })
+      .join("");
+  });
+  const body = document.body;
+  const set = (k, v) => { body.dataset[k] = v; try { localStorage.setItem("r3-" + k, v); } catch {} };
+  for (const k of ["font", "bar"]) {
+    let v = null; try { v = localStorage.getItem("r3-" + k); } catch {}
+    if (v) { body.dataset[k] = v; const r = document.querySelector(`input[name=${k}][value=${v}]`); if (r) r.checked = true; }
+    document.querySelectorAll(`input[name=${k}]`).forEach((r) => r.addEventListener("change", () => set(k, r.value)));
+  }
+</script>
+</body>
+</html>

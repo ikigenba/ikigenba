@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ikigenba — small services, one sign-in, one host</title>
+<link rel="stylesheet" href="theme.css">
+</head>
+<body class="site">
+<header>
+  <strong>ikigenba</strong>
+  <nav aria-label="Site">
+    <a href="#product" aria-current="page">Product</a>
+    <a href="prose.html">Docs</a>
+    <a href="#pricing">Pricing</a>
+  </nav>
+  <a class="button secondary" href="login.html">Sign in</a>
+</header>
+
+<main>
+  <section class="hero">
+    <p class="eyebrow">Self-hosted internal tools</p>
+    <h1>Your team's tools, on a host you own.</h1>
+    <p>Ikigenba runs small, single-purpose services on one Linux host per space. Your people sign in once with their Google Workspace account; every service behind the space knows who they are without writing a line of auth code.</p>
+    <div class="actions">
+      <a class="button large" href="#start">Create a space</a>
+      <a class="button large secondary" href="prose.html">Read how sign-in works</a>
+    </div>
+  </section>
+
+  <figure class="showcase" aria-label="A service running on a space">
+    <div class="showcase-bar">
+      <span class="mark" data-service="dummy">ikigenba</span>
+      <span class="showcase-url">dummy.acme.ikigenba.com</span>
+      <span class="showcase-user">ada@acme.dev</span>
+    </div>
+    <div class="showcase-body">
+      <div class="section-head">
+        <div>
+          <h3>Widgets</h3>
+          <p>Refreshes every 5 seconds; unchanged tables cost a 304.</p>
+        </div>
+        <button class="secondary" type="button"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M12 5l0 14"/><path d="M5 12l14 0"/></svg>Add widget</button>
+      </div>
+      <table>
+        <thead><tr><th>Name</th><th class="num">Count</th><th>Status</th><th>Updated</th></tr></thead>
+        <tbody>
+          <tr><td>alpha</td><td class="num">3</td><td><span class="status" data-status="active">active</span></td><td class="muted">2 min ago</td></tr>
+          <tr><td>beta</td><td class="num">0</td><td><span class="status" data-status="paused">paused</span></td><td class="muted">1 h ago</td></tr>
+          <tr><td>gamma</td><td class="num">12</td><td><span class="status" data-status="retired">retired</span></td><td class="muted">yesterday</td></tr>
+          <tr><td>delta</td><td class="num">128</td><td><span class="status" data-status="active">active</span></td><td class="muted">just now</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </figure>
+
+  <section id="product" class="band">
+    <div class="band-head">
+      <p class="eyebrow">What you get</p>
+      <h2>Boring infrastructure, on purpose.</h2>
+      <p>Each piece does one job and says exactly what it did. No agents to babysit, no control plane you can't read.</p>
+    </div>
+    <div class="features">
+      <article>
+        <span class="icon" aria-hidden="true"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M5 13a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v6a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-6"/><path d="M11 16a1 1 0 1 0 2 0a1 1 0 0 0 -2 0"/><path d="M8 11v-4a4 4 0 1 1 8 0v4"/></svg></span>
+        <h3>One sign-in for the space</h3>
+        <p>Google Workspace accounts on your domain, and nobody else. nginx asks <code>auth</code> about every request, so services never see an anonymous one.</p>
+      </article>
+      <article>
+        <span class="icon" aria-hidden="true"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0"/><path d="M6 21v-2a4 4 0 0 1 4 -4h4"/><path d="M15 19l2 2l4 -4"/></svg></span>
+        <h3>Identity as two headers</h3>
+        <p>Every upstream request carries <code>X-User-Id</code> and <code>X-User-Email</code>. That is the whole integration.</p>
+      </article>
+      <article>
+        <span class="icon" aria-hidden="true"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M16.555 3.843l3.602 3.602a2.877 2.877 0 0 1 0 4.069l-2.643 2.643a2.877 2.877 0 0 1 -4.069 0l-.301 -.301l-6.558 6.558a2 2 0 0 1 -1.239 .578l-.175 .008h-1.172a1 1 0 0 1 -.993 -.883l-.007 -.117v-1.172a2 2 0 0 1 .467 -1.284l.119 -.13l.414 -.414h2v-2h2v-2l2.144 -2.144l-.301 -.301a2.877 2.877 0 0 1 0 -4.069l2.643 -2.643a2.877 2.877 0 0 1 4.069 0"/><path d="M15 9h.01"/></svg></span>
+        <h3>Tokens for scripts and agents</h3>
+        <p>Personal access tokens from your profile, shown once, stored only as a hash, with 30-day, 90-day, or no expiry.</p>
+      </article>
+      <article>
+        <span class="icon" aria-hidden="true"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3 7a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3v-2"/><path d="M3 15a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3l0 -2"/><path d="M7 8l0 .01"/><path d="M7 16l0 .01"/></svg></span>
+        <h3>One host per space</h3>
+        <p>A whole deployment lives on a single Linux box: systemd units, sockets under <code>/run/ikigenba</code>, nginx in front. Easy to reason about, easy to replace.</p>
+      </article>
+      <article>
+        <span class="icon" aria-hidden="true"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M3.06 13a9 9 0 1 0 .49 -4.087"/><path d="M3 4.001v5h5"/><path d="M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/></svg></span>
+        <h3>Backups that restore</h3>
+        <p>SQLite state streams continuously with Litestream. <code>opsctl restore</code> rebuilds a host from it, and that path gets exercised, not just documented.</p>
+      </article>
+      <article>
+        <span class="icon" aria-hidden="true"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" >  <path d="M8 9l3 3l-3 3"/><path d="M13 15l3 0"/><path d="M3 6a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2l0 -12"/></svg></span>
+        <h3>Two CLIs, clear edges</h3>
+        <p><code>devctl</code> runs on your machine and manages spaces in AWS. <code>opsctl</code> runs as root on the host. Neither pretends to be the other.</p>
+      </article>
+    </div>
+  </section>
+
+  <section id="start" class="band">
+    <div class="band-head">
+      <p class="eyebrow">How it works</p>
+      <h2>Three commands to a signed-in service.</h2>
+    </div>
+    <ol class="steps">
+      <li>
+        <div>
+          <h3>Create the space</h3>
+          <p>From your checkout, with your own AWS credentials. devctl reads the root domain and region from <code>infra/terraform.tfvars.json</code>; it keeps no config of its own.</p>
+        </div>
+        <pre><code><span class="prompt">$</span> devctl space create acme
+<span class="out">space acme: host i-0c41… running, dns acme.ikigenba.com ready</span></code></pre>
+      </li>
+      <li>
+        <div>
+          <h3>Install a service on the host</h3>
+          <p>opsctl lays the release down under <code>/opt</code>, wires its socket and nginx route, and starts it behind the identity check.</p>
+        </div>
+        <pre><code><span class="prompt">$</span> ssh acme.ikigenba.com sudo opsctl install dummy
+<span class="prompt">$</span> ssh acme.ikigenba.com sudo opsctl enable dummy</code></pre>
+      </li>
+      <li>
+        <div>
+          <h3>Call it as yourself</h3>
+          <p>In a browser you just sign in. From a script, use a personal access token from your profile.</p>
+        </div>
+        <pre><code><span class="prompt">$</span> curl -H "Authorization: Bearer $IKP_TOKEN" \
+    https://auth.acme.ikigenba.com/me
+<span class="out">{"id":"u_7Q2M…","email":"ada@acme.dev"}</span></code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="pricing" class="cta">
+    <div>
+      <h2>Run it on your own AWS account.</h2>
+      <p>The platform is source you build and run yourself. You pay AWS for one small host per space, and nothing else.</p>
+    </div>
+    <div class="actions">
+      <a class="button large" href="#start">Create a space</a>
+      <a class="button large secondary" href="prose.html">Read the docs</a>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="footer-grid">
+    <div>
+      <strong class="mark">ikigenba</strong>
+      <p>Small services, one sign-in, a host you own.</p>
+    </div>
+    <nav aria-label="Product">
+      <h4>Product</h4>
+      <a href="#product">Overview</a>
+      <a href="#start">How it works</a>
+      <a href="#pricing">Pricing</a>
+    </nav>
+    <nav aria-label="Docs">
+      <h4>Docs</h4>
+      <a href="prose.html">Sign-in across a space</a>
+      <a href="prose.html#tokens">Access tokens</a>
+      <a href="prose.html#headers">Identity headers</a>
+    </nav>
+    <nav aria-label="Tools">
+      <h4>Tools</h4>
+      <a href="#start">devctl</a>
+      <a href="#start">opsctl</a>
+      <a href="login.html">Sign in</a>
+    </nav>
+  </div>
+  <p class="footer-legal">© 2026 Ikigenba</p>
+</footer>
+<script src="lab.js"></script>
+</body>
+</html>
