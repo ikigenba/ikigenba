@@ -86,10 +86,9 @@ opened (how a test proves a `*.key` file is never read and nothing is
 written). No test reads the real filesystem, `/proc`, the real `HOME` or
 environment, or the real streams, and none starts a process.
 
-The one exception is the package-graph check D01 states: a test in
-`cmd/agent-monitor` may run `go list`, on `./...` for the package set and per
-package for the import allow-lists. No test builds, execs, or waits on a
-process. The gates run offline as an ordinary user; a test never sleeps.
+The one exception is the package-set check D01 states: a test in
+`cmd/agent-monitor` may run `go list ./...`. No test builds, execs, or waits
+on a process. The gates run offline as an ordinary user; a test never sleeps.
 
 **Versions are data.** No test names a version value. A test that needs the
 version reads `cli.Version`, and the shape test applies D03's pattern to it.

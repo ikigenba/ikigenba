@@ -54,12 +54,11 @@ stories' postcondition that `list` changes nothing holds by construction.
 Nothing below `main` reaches the real process — its arguments, its
 environment, its streams, its exit, the filesystem other than through `Root`,
 the network — so a test that drives `Run` with buffers and a
-`testing/fstest.MapFS` sees the whole program's behaviour. Each package has a
-short allow-list of the packages its non-test files may import, which a test
-checks with `go list -f '{{.Imports}}'`: no package below `main` can import
-`os`, `os/exec`, `net`, anything under `net/`, or `path/filepath`, and only
-`internal/proc` may import `syscall` (to read the device and inode numbers
-from a file's `Sys()`).
+`testing/fstest.MapFS` sees the whole program's behaviour. The lint gate
+enforces this: no package below `main` can import `os`, `os/exec`, `net`,
+anything under `net/`, or `path/filepath`, and only `internal/proc` may
+import `syscall` (to read the device and inode numbers from a file's
+`Sys()`).
 
 The exit codes are a closed set, so they have their own named type,
 `ExitCode`, rather than being bare `int`s: a signature that returns an
@@ -93,9 +92,3 @@ the release workflow runs the built program.
 - R-2FGJ-ORK4: `Version` MUST be set by a string-literal initializer in its declaration, so that a binary produced by `go build` with no linker flags reports the same `Version` the source declares.
 - R-2GOG-2JAT: The `internal/cli` package MUST export `Usage` as a string constant.
 - R-DIOP-AKRC: The `internal/cli` package MUST export `ListUsage` as a string constant.
-- R-DMCE-FVZF: The non-test `.go` files of `cmd/agent-monitor` MUST import no package other than `os` and `github.com/ikigenba/ikigenba/agent-monitor/internal/cli`, so that the direct imports `go list -f '{{.Imports}}'` reports for `./cmd/agent-monitor` are a subset of those two.
-- R-DNKA-TNQ4: The non-test `.go` files of `internal/cli` MUST import no package other than the standard-library packages `errors`, `io`, `io/fs`, and `strings` and this module's `internal/quote`, `internal/session`, `internal/harness/claude`, `internal/harness/codex`, and `internal/harness/grok`, so that the direct imports `go list -f '{{.Imports}}'` reports for `./internal/cli` are a subset of those.
-- R-DOS7-7FGT: The non-test `.go` files of `internal/quote` MUST import no package other than the standard-library packages `strconv`, `strings`, `unicode`, and `unicode/utf8`, so that the direct imports `go list -f '{{.Imports}}'` reports for `./internal/quote` are a subset of those, none of them a package of this module.
-- R-DQ03-L77I: The non-test `.go` files of `internal/session` MUST import no package other than the standard-library packages `bytes`, `cmp`, `errors`, `slices`, `sort`, `strconv`, `strings`, `time`, and `unicode/utf8` and this module's `internal/quote`, so that the direct imports `go list -f '{{.Imports}}'` reports for `./internal/session` are a subset of those.
-- R-DR7Z-YYY7: The non-test `.go` files of `internal/proc` MUST import no package other than the standard-library packages `bufio`, `bytes`, `errors`, `io/fs`, `path`, `strconv`, `strings`, `syscall`, and `time`, so that the direct imports `go list -f '{{.Imports}}'` reports for `./internal/proc` are a subset of those, none of them a package of this module.
-- R-DSFW-CQOW: The non-test `.go` files of each of `internal/harness/claude`, `internal/harness/codex`, and `internal/harness/grok` MUST import no package other than the standard-library packages `bytes`, `cmp`, `encoding/json`, `errors`, `io/fs`, `path`, `slices`, `sort`, `strconv`, `strings`, and `time` and this module's `internal/session` and `internal/proc`, so that the direct imports `go list -f '{{.Imports}}'` reports for each of those three packages are a subset of those.

@@ -5,6 +5,7 @@ linters:
   # plus a curated strict layer.
   default: standard
   enable:
+    - depguard
     - errorlint
     - forbidigo
     - gocritic
@@ -14,6 +15,24 @@ linters:
     - unconvert
     - unparam
   settings:
+    depguard:
+      # Nothing below main reaches the real process (D01); only proc reads
+      # device and inode numbers through syscall.
+      rules:
+        below-main:
+          files: ["!**/cmd/**", "!**/*_test.go"]
+          deny:
+            - pkg: os
+              desc: only main touches the process
+            - pkg: net
+              desc: only main touches the process
+            - pkg: path/filepath
+              desc: paths are fs.FS names
+        no-syscall:
+          files: ["!**/internal/proc/**", "!**/cmd/**", "!**/*_test.go"]
+          deny:
+            - pkg: syscall
+              desc: only proc reads Stat_t
     forbidigo:
       # Output goes through the io.Writer the run seam is given, never the
       # builtins, which write to the process's standard error.
