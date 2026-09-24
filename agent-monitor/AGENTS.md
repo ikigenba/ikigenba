@@ -20,13 +20,12 @@ gates against; it is human-authored and read-only to the run.
 
 Several files this document relies on are hand-authored infrastructure outside
 the spec system, not code the build run derives: in this directory the
-`Makefile`, `.golangci.yml`, `.llm-lint.json`, `lint-rules/`, `install.sh`, and
-`.goreleaser.yaml`, and at the repo root
-`.github/workflows/release-agent-monitor.yml`. They are written by hand under
-direct user instruction and must exist before the first build run. The build
-run never creates, edits, or deletes any of them; one that is missing, or that
-a gate needs in a form it lacks, is an environment blocker the run files as an
-issue. The sections below describe what each one does.
+`Makefile`, `.golangci.yml`, `install.sh`, and `.goreleaser.yaml`, and at the
+repo root `.github/workflows/release-agent-monitor.yml`. They are written by
+hand under direct user instruction and must exist before the first build run.
+The build run never creates, edits, or deletes any of them; one that is
+missing, or that a gate needs in a form it lacks, is an environment blocker
+the run files as an issue. The sections below describe what each one does.
 
 ## Toolchain
 
@@ -118,16 +117,10 @@ Run from this directory (`agent-monitor/`), in order; every command must exit
    `/dev/full` one among them
 4. `golangci-lint run`
 
-llm-lint is **disabled for agent-monitor for now**: it is not a gate and not
-part of the toolchain, so the run neither needs it on PATH nor a provider API
-key. The `make llm-lint` target, the rule files under `lint-rules/`, and
-`.llm-lint.json` are kept so it can be re-enabled later by adding
-`llm-lint cmd internal` back to this gate list and `llm-lint` back to the
-toolchain.
-
 A per-finding `//nolint` comment for golangci-lint counts as a disabled
-linter. The run never adds one to make a gate pass; a finding it cannot fix below the contract seam, or believes is
-wrong, is filed as an issue for a human to adjudicate.
+linter. The run never adds one to make a gate pass; a finding it cannot fix
+below the contract seam, or believes is wrong, is filed as an issue for a
+human to adjudicate.
 
 ## Commit conventions
 

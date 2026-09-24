@@ -9,9 +9,6 @@ test:
 lint:
 	golangci-lint run
 
-llm-lint:
-	llm-lint cmd internal
-
 fmt:
 	gofmt -w .
 
@@ -21,4 +18,4 @@ clean:
 install:
 	go install ./cmd/agent-monitor
 
-.PHONY: build test lint llm-lint fmt clean install
+.PHONY: build test lint fmt clean install
