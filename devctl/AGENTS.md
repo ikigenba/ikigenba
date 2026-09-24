@@ -23,9 +23,11 @@ is human-authored and read-only to the run.
 
 - Go 1.26 (`go version` must report 1.26+)
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory, `version: "2"`)
+- GNU `make`: the developer targets in the `Makefile` (`make install`,
+  `make fmt`, `make llm-lint`); no gate runs through it
 
-The gates fake every external process, so they need nothing beyond the two
-tools above. Running the built `devctl` needs these on `PATH` as well:
+The gates fake every external process, so they need nothing beyond Go and
+`golangci-lint`. Running the built `devctl` needs these on `PATH` as well:
 
 - `git` (finds the checkout: `git rev-parse`)
 - `ssh` (reaches a space's host as `ec2-user`)
