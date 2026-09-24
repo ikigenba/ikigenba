@@ -2,68 +2,113 @@
 
 agent-monitor is one Go binary a developer builds from the checkout and runs
 on their own machine. This design is the structural ground the other designs
-stand on: where the code lives, which package exports which name, how the
-version and the usage text are declared, and the seam through which the
-program is run so that every behaviour can be tested in-process, without a
-real process or real streams.
+stand on: which packages exist, which package owns which exported names, which
+way the imports point, how the version and the two help texts are declared,
+and the seam through which the program is run so that every behaviour can be
+tested in-process, without a real process, real streams, or the real
+filesystem.
 
 The module is `github.com/ikigenba/ikigenba/agent-monitor`, rooted at the
 sub-project directory with `go.mod` beside `specs/`. The standard library is
-enough; the module requires no other module. There are two packages, not
-counting the external `_test` packages tests may add.
-`cmd/agent-monitor` is wiring only: it hands the process arguments (without
-the program name) and the process's standard output and standard error to the
-run seam, and exits with the seam's exit code converted to `int`, the one
-place the underlying integer is needed. `internal/cli` owns the
-program as a command: the run seam, argument reading, the usage text, the exit
-codes, and the version. Dependencies point one way: `cmd/agent-monitor`
-imports `internal/cli`, and `internal/cli` imports nothing of this module.
+enough; the module requires no other module. There are eight packages, not
+counting the external `_test` packages tests may add, each one concern:
 
-The run seam is `cli.Run`. It takes the arguments and the two output streams
-and returns the exit code as an `ExitCode`; it never terminates the calling program. Nothing
-below `main` reaches the real process — its arguments, its streams, its exit,
-the filesystem, the network — so a test that drives `Run` with buffers sees
-the whole program's behaviour. `internal/cli` may import only `io`,
-`strings`, `unicode`, and `unicode/utf8` from the standard library — the
-last two because a diagnostic escapes the argument it echoes — a short
-allow-list a test can check
-with `go list`, so it has no package through which to reach the process, the
-filesystem, or the network, and the stories' postcondition that nothing has
-changed holds by construction. The seam is deliberately minimal: the
-program reads nothing and waits on nothing yet. When a later design needs a
-context or injected dependencies, the `Run` declaration is re-minted then.
+- `cmd/agent-monitor` is wiring only. It reads the process arguments (without
+  the program name), the value of `HOME`, and the machine's filesystem rooted
+  at `/`, hands them and the process's standard output and standard error to
+  the run seam, and exits with the seam's exit code converted to `int`, the
+  one place the underlying integer is needed.
+- `internal/cli` owns the program as a command: the run seam `Run`, the
+  machine it runs against (`System`), the exit codes (`ExitCode` and its
+  constants), the two help texts (`Usage`, `ListUsage`), the version
+  (`Version`), the argument grammar of the top level and of `list`, the
+  dispatch of `list` to a harness package, and every diagnostic. `D02` and
+  `D03` fix its behaviour.
+- `internal/quote` owns the escaped forms text is printed in so it can forge
+  no output: `Arg` for an argument echoed in a diagnostic, `Field` for a table
+  field or a path. `D02` defines both.
+- `internal/session` owns the vocabulary shared by every harness: a session,
+  its status, the table `list` prints, the error that means a harness's data
+  could not be read, and the complete lines of a log. `D04` declares its
+  names.
+- `internal/proc` owns the facts about processes read from `/proc`: when a
+  process started, where it works, and which process holds a lock on which
+  file. `D05` declares its names.
+- `internal/harness/claude`, `internal/harness/codex`, and
+  `internal/harness/grok` each own one harness's on-disk registry and logs and
+  turn them into sessions. `D06`, `D07`, and `D08` declare their names.
+
+Imports point one way: `cmd/agent-monitor` imports `internal/cli`;
+`internal/cli` imports `internal/quote`, `internal/session`, and the three
+harness packages; each harness package imports `internal/session` and
+`internal/proc`; `internal/session` imports `internal/quote`; `internal/proc`
+and `internal/quote` import nothing of this module.
+
+The run seam is `cli.Run`. It takes the arguments, a `System`, and the two
+output streams, and returns the exit code as an `ExitCode`; it never
+terminates the calling program. A `System` is everything of the machine the
+program may see: `Home`, the value of `HOME` (empty when unset or empty), and
+`Root`, the machine's filesystem rooted at `/` as an `fs.FS`, so the file at
+`/proc/locks` is the name `proc/locks`. An `fs.FS` can only be read, so the
+stories' postcondition that `list` changes nothing holds by construction.
+Nothing below `main` reaches the real process — its arguments, its
+environment, its streams, its exit, the filesystem other than through `Root`,
+the network — so a test that drives `Run` with buffers and a
+`testing/fstest.MapFS` sees the whole program's behaviour. Each package has a
+short allow-list of the packages its non-test files may import, which a test
+checks with `go list -f '{{.Imports}}'`: no package below `main` can import
+`os`, `os/exec`, `net`, anything under `net/`, or `path/filepath`, and only
+`internal/proc` may import `syscall` (to read the device and inode numbers
+from a file's `Sys()`).
 
 The exit codes are a closed set, so they have their own named type,
 `ExitCode`, rather than being bare `int`s: a signature that returns an
 `ExitCode` cannot silently return a count or an index. There is one typed
 constant per outcome the help text lists: success, output that could not be
-written, and a usage error. `D02` fixes when each is returned.
+written, a usage error, and session data that could not be read. `D02` fixes
+when each is returned.
 
 The version is a `var` initialised in its own declaration, the only
-declaration in `internal/cli/version.go`, and never injected by the linker, so a developer's
-`go build` and a release build report the same string, and a release check
-can read the string from that one file. Its value is data: requirements fix
-the name, the file, that it is a source-initialised `var`, and its shape
-(`D03`), never the value. The usage text is a constant in the same package,
-declared here so every exported name of `internal/cli` is declared in one
-place; `D03` fixes its value byte for byte.
+declaration in `internal/cli/version.go`, and never injected by the linker, so
+a developer's `go build` and a release build report the same string, and a
+release check can read the string from that one file. Its value is data:
+requirements fix the name, the file, that it is a source-initialised `var`,
+and its shape (`D03`), never the value. The two help texts are constants in
+the same package; `D03` fixes their values byte for byte.
 
-Two requirements drive the built binary rather than `Run`: the bare run, and
-the story's literal write-failure case of standard output on `/dev/full`.
-They prove that `main` wires the real streams and the real exit code through
-the seam.
+A few requirements drive the built binary rather than `Run`: the bare run,
+the story's literal write-failure case of standard output on `/dev/full`, and
+`list` against a temporary, empty `HOME` and with `HOME` unset or empty. They
+prove that `main` wires the real streams, the real environment, the real
+filesystem, and the real exit code through the seam. Each compares against
+the declared value — `cli.Usage`, `session.Table` of no sessions — never a
+restatement of the text.
 
 ## REQUIREMENTS
 
-- R-N69Q-W7X1: The Go module MUST be `github.com/ikigenba/ikigenba/agent-monitor` with its `go.mod` at the sub-project root, and MUST contain exactly two non-test packages, `package main` with import path `github.com/ikigenba/ikigenba/agent-monitor/cmd/agent-monitor` and `package cli` with import path `github.com/ikigenba/ikigenba/agent-monitor/internal/cli`; external test packages (a `_test` package declared in `_test.go` files) MAY exist beside them; `cmd/agent-monitor` MUST import `internal/cli`, and the non-test files of `internal/cli` MUST import no package of this module.
+- R-DCL7-DQ1V: The Go module MUST be `github.com/ikigenba/ikigenba/agent-monitor` with its `go.mod` at the sub-project root, and MUST contain exactly eight non-test packages, with these import paths relative to the module path and these package names: `cmd/agent-monitor` (`package main`), `internal/cli` (`package cli`), `internal/quote` (`package quote`), `internal/session` (`package session`), `internal/proc` (`package proc`), `internal/harness/claude` (`package claude`), `internal/harness/codex` (`package codex`), and `internal/harness/grok` (`package grok`); external test packages (a `_test` package declared in `_test.go` files) MAY exist beside them.
 - R-29D1-RWUN: The module MUST require no other module; `go.mod` MUST contain no `require` directive.
-- R-2L9P-PJL7: The `internal/cli` package MUST export `func Run(args []string, stdout, stderr io.Writer) ExitCode`, where `args` excludes the program name, and a call to `Run` MUST return its exit code to the caller without terminating the calling program.
-- R-2MHM-3BBW: The `package main` at `cmd/agent-monitor` MUST call `cli.Run` exactly once with the process arguments after the program name, `os.Stdout`, and `os.Stderr`, MUST exit the process by calling `os.Exit` with `int(code)`, where `code` is the `ExitCode` `Run` returned, and MUST write nothing to standard output or standard error except through that call.
+- R-XK3U-55KN: The `internal/cli` package MUST export `func Run(args []string, sys System, stdout, stderr io.Writer) ExitCode`.
+- R-XLBQ-IXBC: `Run` MUST treat `args` as the program's arguments excluding the program name, and a call to `Run` MUST return its exit code to the caller without terminating the calling program.
+- R-DF10-59J9: The `internal/cli` package MUST export the struct type `type System struct { Home string; Root fs.FS }`, with exactly those two fields, where `fs` is the standard library's `io/fs`.
+- R-DG8W-J19Y: The `package main` at `cmd/agent-monitor` MUST call `cli.Run` exactly once, with the process arguments after the program name, a `cli.System` whose `Home` is `os.Getenv("HOME")` and whose `Root` is `os.DirFS("/")`, `os.Stdout`, and `os.Stderr`; MUST exit the process by calling `os.Exit` with `int(code)`, where `code` is the `ExitCode` `Run` returned; and MUST write nothing to standard output or standard error except through that call.
 - R-2ITW-Y03T: The `internal/cli` package MUST export the named type `type ExitCode int`.
 - R-2K1T-BRUI: The `internal/cli` package MUST export the constants `ExitSuccess ExitCode = 0`, `ExitWriteFailed ExitCode = 1`, and `ExitUsage ExitCode = 2`, each declared with the type `ExitCode`.
+- R-DHGS-WT0N: The `internal/cli` package MUST export the constant `ExitDataUnreadable ExitCode = 3`, declared with the type `ExitCode`.
 - R-67Z3-IN6V: The `internal/cli` package MUST export `var Version string`, declared with its value set in source in the file `internal/cli/version.go`, and that file MUST contain only the package clause, that one declaration, and comments — no other declaration and no import.
 - R-2FGJ-ORK4: `Version` MUST be set by a string-literal initializer in its declaration, so that a binary produced by `go build` with no linker flags reports the same `Version` the source declares.
 - R-2GOG-2JAT: The `internal/cli` package MUST export `Usage` as a string constant.
-- R-HFHC-NLE5: The non-test `.go` files of `internal/cli` MUST import no package other than the standard-library packages `io`, `strings`, `unicode`, and `unicode/utf8`, so that the direct imports `go list -f '{{.Imports}}'` reports for `./internal/cli` are a subset of `[io strings unicode unicode/utf8]`, and MUST NOT call the builtins `print` or `println`.
-- R-2KC5-7UIW: The binary built from `./cmd/agent-monitor`, executed with no arguments, MUST write exactly `"hello, world\n"` to its standard output, write nothing to its standard error, and exit with status 0.
+- R-DIOP-AKRC: The `internal/cli` package MUST export `ListUsage` as a string constant.
+- R-DJWL-OCI1: The exported package-level names of `internal/cli` MUST be exactly `Run`, `System`, `ExitCode`, `ExitSuccess`, `ExitWriteFailed`, `ExitUsage`, `ExitDataUnreadable`, `Usage`, `ListUsage`, and `Version`.
+- R-DL4I-248Q: The exported package-level names of `internal/quote` MUST be exactly `Arg` and `Field`.
+- R-DMCE-FVZF: The non-test `.go` files of `cmd/agent-monitor` MUST import no package other than `os` and `github.com/ikigenba/ikigenba/agent-monitor/internal/cli`, so that the direct imports `go list -f '{{.Imports}}'` reports for `./cmd/agent-monitor` are a subset of those two.
+- R-DNKA-TNQ4: The non-test `.go` files of `internal/cli` MUST import no package other than the standard-library packages `errors`, `io`, `io/fs`, and `strings` and this module's `internal/quote`, `internal/session`, `internal/harness/claude`, `internal/harness/codex`, and `internal/harness/grok`, so that the direct imports `go list -f '{{.Imports}}'` reports for `./internal/cli` are a subset of those.
+- R-DOS7-7FGT: The non-test `.go` files of `internal/quote` MUST import no package other than the standard-library packages `strconv`, `strings`, `unicode`, and `unicode/utf8`, so that the direct imports `go list -f '{{.Imports}}'` reports for `./internal/quote` are a subset of those, none of them a package of this module.
+- R-DQ03-L77I: The non-test `.go` files of `internal/session` MUST import no package other than the standard-library packages `bytes`, `cmp`, `errors`, `slices`, `sort`, `strconv`, `strings`, `time`, and `unicode/utf8` and this module's `internal/quote`, so that the direct imports `go list -f '{{.Imports}}'` reports for `./internal/session` are a subset of those.
+- R-DR7Z-YYY7: The non-test `.go` files of `internal/proc` MUST import no package other than the standard-library packages `bufio`, `bytes`, `errors`, `io/fs`, `path`, `strconv`, `strings`, `syscall`, and `time`, so that the direct imports `go list -f '{{.Imports}}'` reports for `./internal/proc` are a subset of those, none of them a package of this module.
+- R-DSFW-CQOW: The non-test `.go` files of each of `internal/harness/claude`, `internal/harness/codex`, and `internal/harness/grok` MUST import no package other than the standard-library packages `bytes`, `cmp`, `encoding/json`, `errors`, `io/fs`, `path`, `slices`, `sort`, `strconv`, `strings`, and `time` and this module's `internal/session` and `internal/proc`, so that the direct imports `go list -f '{{.Imports}}'` reports for each of those three packages are a subset of those.
+- R-DTNS-QIFL: The non-test `.go` files of every package of this module MUST NOT call the builtins `print` or `println`.
+- R-DW3L-I1WZ: The binary built from `./cmd/agent-monitor`, executed with no arguments, MUST write exactly `cli.Usage` to its standard output, write nothing to its standard error, and exit with status 0.
 - R-2LK1-LM9L: The binary built from `./cmd/agent-monitor`, executed with no arguments and with its standard output opened on `/dev/full`, MUST write to its standard error exactly one line that begins `agent-monitor: write error: ` and ends in a single `"\n"`, and MUST exit with status 1.
+- R-DXBH-VTNO: The binary built from `./cmd/agent-monitor`, executed with the arguments `list` and `h` for each `h` of `claude`, `codex`, and `grok`, with the environment variable `HOME` set to the path of an existing empty directory, MUST write exactly `session.Table` of an empty slice to its standard output, write nothing to its standard error, exit with status 0, and leave that directory empty.
+- R-DYJE-9LED: The binary built from `./cmd/agent-monitor`, executed with the arguments `list` and `claude` once with `HOME` absent from its environment and once with `HOME` set to the empty string, MUST each time write exactly `"agent-monitor: cannot find the home directory: HOME is not set\n"` to its standard error, write nothing to its standard output, and exit with status 3.

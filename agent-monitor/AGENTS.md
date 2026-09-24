@@ -4,15 +4,17 @@ A local development tool: one Go binary a developer builds from the checkout
 and runs on their own machine to observe the coding agents there through their
 logs and hooks. It is never deployed to a space. The module path is
 `github.com/ikigenba/ikigenba/agent-monitor`. Its package layout, import
-direction, version and usage declarations, and run seam are design D01
-(`specs/design/D01-layout-and-run-seam.md`); the command line is D02 and the
-help and version output are D03. This file restates none of them.
+direction, declarations, and run seam are design D01
+(`specs/design/D01-layout-and-run-seam.md`); the command line is D02, the help
+and version output D03, sessions and the `list` table D04, process facts read
+from `/proc` D05, and the Claude, Codex, and Grok harnesses D06, D07, and D08.
+This file restates none of them.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
-build run writes the code (`cmd/`, `internal/`, `go.mod` are absent until it
-does). See the `spec` and `build-spec` skills. Everything below is what the
-build run computes the gap and runs the gates against; it is human-authored and
-read-only to the run.
+build run writes the code (`cmd/`, `internal/`, and `go.mod`); a hand edit
+there desynchronizes the tree from the design. See the `spec` and `build-spec`
+skills. Everything below is what the build run computes the gap and runs the
+gates against; it is human-authored and read-only to the run.
 
 ## Infrastructure
 
@@ -28,10 +30,13 @@ issue. The sections below describe what each one does.
 
 ## Toolchain
 
-- Linux. One gate test writes the built binary's standard output to
-  `/dev/full` (D01), which exists only there; on any other system gate 3
-  cannot run, which is an environment blocker, never a skip.
-- Go 1.26 (`go version` must report 1.26+; verified with go1.26.5)
+- Linux. The program reads `/proc` (D05), and one gate test writes the built
+  binary's standard output to `/dev/full` (D01), which exists only there; on
+  any other system gate 3 cannot run, which is an environment blocker, never a
+  skip. No test reads `/proc` itself.
+- Go 1.26 (`go version` must report 1.26+; verified with go1.26.5). The seam
+  needs `fs.ReadLink`/`fs.ReadLinkFS` and `fstest.MapFS` link support, which
+  arrived in Go 1.25.
 - a C compiler `cgo` can use (`gcc`, say): `go test -race` needs it, and
   without one gate 3 fails with `go: -race requires cgo`
 - `golangci-lint` v2 (verified with 2.12.2; config: `.golangci.yml` in this
@@ -62,33 +67,43 @@ This is the file set the canonical gap greps for requirement ids:
 grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' cmd internal | sort -u
 ```
 
-While `cmd/` or `internal/` does not exist, grep reports the missing directory
-on stderr and exits non-zero; that error means no test ids there, not a
-failure of the gap. Before the first build run both are absent, so the test-id
-set is empty and every design id is in the add set.
+Should `cmd/` or `internal/` not exist, grep reports the missing directory on
+stderr and exits non-zero; that error means no test ids there, not a failure
+of the gap.
 
 **No id-shaped literal in a fixture.** The grep cannot tell a requirement tag
 from any other string of that shape: a literal matching the pattern anywhere in
-a `*_test.go` file is counted as a covered id. agent-monitor names an unknown
-option or command back in D02's escaped form, which leaves an id-shaped
-argument unchanged, so a test that passes one lands a matching literal in the
-test file. No test argument, expected
-diagnostic, or other fixture carries one.
+a `*_test.go` file is counted as a covered id. agent-monitor names an offending
+argument back in its escaped form, and prints session ids, paths, and titles
+in theirs; both leave an id-shaped string unchanged, so a test that feeds one
+in lands a matching literal in the test file. No test argument, expected
+diagnostic, fixture file name or content, or other literal carries one.
 
-**Tests run in process, through the seam.** Tests under `internal/` drive
-`cli.Run` with buffers and injected writers (a writer that fails is how the
-write-error paths are exercised); they never start a process, read the real
-environment, or touch the real streams. The exceptions are the checks D01
-states against the built program and its package graph. The tests in
-`cmd/agent-monitor` may build the binary into a temporary directory and exec
-it to verify `main`'s wiring: the bare run, the bare run with standard output
-opened on `/dev/full`, argument pass-through (for example, an unknown command
-reaching standard error), which stream each output lands on, and the exit
-code. The package-graph checks may run `go list`: on `./internal/cli` for the
-import allow-list, and on `./...` for the package set (exactly two non-test
-packages, `cmd/agent-monitor` and `internal/cli`). No other test builds,
-execs, or waits on a process. The gates run offline as an
-ordinary user; a test never sleeps.
+**Tests run in process, through the seam.** The machine reaches the program
+only through `cli.System` (D01): tests drive `cli.Run` with buffers, injected
+writers (a writer that fails is how the write-error paths are exercised), and
+a `System` whose `Root` is a `testing/fstest.MapFS` and whose `Home` is a
+fixture path. `MapFS` implements `fs.ReadLinkFS`, so `proc/<pid>/cwd` is a
+symlink entry, and a `MapFile.Sys` may carry a `*syscall.Stat_t` for
+`proc.FileIDOf`. The package tests of `internal/session`, `internal/proc`, and
+`internal/harness/*` work the same way, with wrapper filesystems over a
+`MapFS` that inject errors (permission denied, say) or record the names
+opened (how a test proves a `*.key` file is never read and nothing is
+written). No test reads the real filesystem, `/proc`, the real `HOME` or
+environment, or the real streams, and none starts a process.
+
+The exceptions are the checks D01 states against the built program and its
+package graph. The tests in `cmd/agent-monitor` may build the binary into a
+temporary directory and exec it to verify `main`'s wiring: the bare run, the
+bare run with standard output opened on `/dev/full`, argument pass-through
+(for example, an unknown command reaching standard error), which stream each
+output lands on, the exit code, and `list` wiring with `HOME` set to an empty
+temporary directory holding no harness directories, with `HOME` set to the
+empty string, and with `HOME` unset. Such a test sets the child's environment
+explicitly and never mutates its own. The package-graph checks may run `go
+list`: on `./...` for the package set and per package for the import
+allow-lists, both as D01 states them. No other test builds, execs, or waits on
+a process. The gates run offline as an ordinary user; a test never sleeps.
 
 **Versions are data.** No test names a version value. A test that needs the
 version reads `cli.Version`, and the shape test applies D03's pattern to it.
