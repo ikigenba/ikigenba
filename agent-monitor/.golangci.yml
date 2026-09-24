@@ -38,6 +38,13 @@ linters:
       # builtins, which write to the process's standard error.
       forbid:
         - pattern: ^(print|println)$
+  exclusions:
+    rules:
+      # main asks whether stdout is a terminal with the TCGETS ioctl, which
+      # needs unsafe.Pointer; nothing below main may use unsafe.
+      - path: ^cmd/
+        linters: [gosec]
+        text: G103
 
 formatters:
   enable:
