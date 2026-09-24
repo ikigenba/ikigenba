@@ -3,12 +3,15 @@
 A local development tool: one Go binary a developer builds from the checkout
 and runs on their own machine to observe the coding agents there through their
 logs and hooks. It is never deployed to a space. The module path is
-`github.com/ikigenba/ikigenba/agent-monitor`. Its package layout, import
-direction, declarations, and run seam are design D01
-(`specs/design/D01-layout-and-run-seam.md`); the command line is D02, the help
-and version output D03, sessions and the `list` table D04, process facts read
-from `/proc` D05, and the Claude, Codex, and Grok harnesses D06, D07, and D08.
-This file restates none of them.
+`github.com/ikigenba/ikigenba/agent-monitor`. Its nine packages, import
+direction, declarations, exit codes, and run seam are design D01
+(`specs/design/D01-layout-and-run-seam.md`); the command line of `list` and
+`tree`, their diagnostics, and when each exit code (0 to 4) is returned are
+D02, the help texts (`Usage`, `ListUsage`, `TreeUsage`) and version output D03,
+sessions, the `list` table, and the incremental log reader `session.Log` D04,
+process facts read from `/proc` D05, the Claude, Codex, and Grok harnesses,
+each with its `List` and its `Tree`, D06, D07, and D08, and the subagent tree
+`tree` draws (`internal/tree`) D09. This file restates none of them.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run writes the code (`cmd/`, `internal/`, and `go.mod`); a hand edit
@@ -68,10 +71,11 @@ of the gap.
 **No id-shaped literal in a fixture.** The grep cannot tell a requirement tag
 from any other string of that shape: a literal matching the pattern anywhere in
 a `*_test.go` file is counted as a covered id. agent-monitor names an offending
-argument back in its escaped form, and prints session ids, paths, and titles
-in theirs; both leave an id-shaped string unchanged, so a test that feeds one
-in lands a matching literal in the test file. No test argument, expected
-diagnostic, fixture file name or content, or other literal carries one.
+argument back in its escaped form, and prints session ids, paths, titles, and
+subagent labels in theirs; both leave an id-shaped string unchanged, so a test
+that feeds one in lands a matching literal in the test file. No test argument,
+expected diagnostic, fixture file name or content, or other literal carries
+one.
 
 **Tests run in process, through the seam.** The machine reaches the program
 only through `cli.System` (D01): tests drive `cli.Run` with buffers, injected
@@ -83,12 +87,44 @@ symlink entry, and a `MapFile.Sys` may carry a `*syscall.Stat_t` for
 `internal/harness/*` work the same way, with wrapper filesystems over a
 `MapFS` that inject errors (permission denied, say) or record the names
 opened (how a test proves a `*.key` file is never read and nothing is
-written). No test reads the real filesystem, `/proc`, the real `HOME` or
-environment, or the real streams, and none starts a process.
+written). The package tests of `internal/tree` reach no filesystem at all:
+they call `Draw` on `Tree` values they build. No test reads the real
+filesystem, `/proc`, the real `HOME` or environment, or the real streams, and
+none starts a process.
 
-The one exception is the package-set check D01 states: a test in
-`cmd/agent-monitor` may run `go list ./...`. No test builds, execs, or waits
-on a process. The gates run offline as an ordinary user; a test never sleeps.
+**Two kinds of recording wrapper.** A wrapper never embeds the `MapFS`,
+which implements every optional `fs` interface; it declares exactly the
+methods its kind names. Either kind's opened file passes `Read`, `Stat`,
+`ReadAt`, `ReadDir`, and `Close` through to the `MapFS` file and records each
+call: a `session.Log` pass fails on a file with no `ReadAt` (D04), so a
+wrapper that drops it breaks every `Tree`. Dropping `ReadAt` on purpose is
+how that failure is tested, and a `MapFile.Sys` with or without a
+`*syscall.Stat_t` is how a file's identity is known or not; a log grows or is
+replaced between passes by changing the `MapFS` between them.
+
+- An *open-only* wrapper implements `fs.FS` alone, not `fs.ReadFileFS`,
+  `fs.StatFS`, `fs.ReadDirFS`, or `fs.ReadLinkFS`, so every access, through
+  `fs.ReadFile` and `fs.Stat` included, arrives as an `Open` and shows on the
+  opened file. It proves D04's pass rules: one `Open`, reads only within
+  [offset, size) through `ReadAt`, no `Read`; and that a `Tree` takes each
+  log from one such pass and reads it no other way.
+- A *method-recording* wrapper also implements `fs.ReadFileFS`, `fs.StatFS`,
+  `fs.ReadDirFS`, and `fs.ReadLinkFS` (`ReadLink` and `Lstat`), delegating
+  each to the `MapFS` and recording the method and name. It proves a file is
+  read with exactly one `fs.ReadFile` call and not otherwise opened (Claude's
+  registrations and meta files, D06; Grok's index, `summary.json`, and
+  `meta.json`, D08), and what a harness does when `root` implements
+  `fs.StatFS` (D07's lock rules).
+
+The exceptions are the structure checks D01 states. A test in
+`cmd/agent-monitor` may run `go list -f <template> ./...` from this directory
+to read each package's import path, name, module, and non-test imports
+(`.Imports`, never `.TestImports`), which is how the package set and the
+import direction are checked; and a test may read this module's own `go.mod`
+and `internal/cli/version.go` to check that no module is required and how
+`Version` is declared. Beyond that one `go list`, no test builds, execs, or
+waits on a process. The gates run offline as an ordinary user; a test never
+sleeps.
 
 **Versions are data.** No test names a version value. A test that needs the
 version reads `cli.Version`, and the shape test applies D03's pattern to it.
