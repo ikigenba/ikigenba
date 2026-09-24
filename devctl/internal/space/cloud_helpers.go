@@ -2,6 +2,7 @@ package space
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
@@ -34,6 +35,28 @@ func WaitState(
 		}
 	}
 	return cloud.Instance{}, &WaitError{Subject: id, Want: "be " + string(state)}
+}
+
+// WaitAssociate waits until an allocation can be associated with an instance.
+func WaitAssociate(ctx context.Context, deps seam.Deps, ec2 cloud.EC2, allocationID, instanceID string) error {
+	for attempt := 0; attempt < PollAttempts; attempt++ {
+		err := ec2.AssociateAddress(ctx, allocationID, instanceID)
+		if err == nil {
+			return nil
+		}
+		var cloudErr *cloud.Error
+		if !errors.As(err, &cloudErr) || cloudErr.Code != "InvalidAllocationID.NotFound" {
+			return err
+		}
+		if attempt+1 < PollAttempts {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-deps.After(PollInterval):
+			}
+		}
+	}
+	return &WaitError{Subject: allocationID, Want: "become associable"}
 }
 
 // WaitChecks waits until both instance status checks pass.

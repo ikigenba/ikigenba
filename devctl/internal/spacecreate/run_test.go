@@ -84,7 +84,7 @@ func TestRunHelpIsExactAndDependencyFree(t *testing.T) {
 }
 
 func TestRunSuccessfulCreateUsesCurrentContracts(t *testing.T) {
-	// R-8ZOV-L4SC R-924O-CO9Q R-9709-VR8I R-VTEC-13P5 R-9GRG-XX62 R-9HZD-BOWR
+	// R-8ZOV-L4SC R-924O-CO9Q R-9709-VR8I R-VTEC-13P5 R-9GRG-XX62
 	// R-EB4J-WN6C R-9J79-PGNG R-YMOE-CCEO R-VUM8-EVFU R-EKVQ-YT3W R-9LN2-H04U R-YSRW-9745 R-9MUY-URVJ
 	f := newCreateFake(t)
 	f.objects = []cloud.Object{

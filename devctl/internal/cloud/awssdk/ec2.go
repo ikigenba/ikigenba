@@ -67,6 +67,9 @@ func (c *ec2Client) ListSpaceInstances(ctx context.Context, domain string) ([]cl
 
 func (c *ec2Client) DescribeInstance(ctx context.Context, id string) (cloud.Instance, error) {
 	output, err := c.sdk.DescribeInstances(ctx, &ec2.DescribeInstancesInput{InstanceIds: []string{id}})
+	if apiErrorCode(err) == "InvalidInstanceID.NotFound" {
+		return cloud.Instance{}, nil
+	}
 	if err != nil {
 		return cloud.Instance{}, ec2Error("DescribeInstances", err)
 	}

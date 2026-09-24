@@ -490,6 +490,56 @@ func TestEC2ReadExactDispatchAfterSuccess(t *testing.T) {
 	}
 }
 
+func TestDescribeInstanceNotYetVisible(t *testing.T) {
+	// R-5LKS-2NVC
+	const id = "i-absent"
+	wantInput := &ec2.DescribeInstancesInput{InstanceIds: []string{id}}
+	clientFor := func(t *testing.T, respond func() (*ec2.DescribeInstancesOutput, error)) *ec2Client {
+		t.Helper()
+		fake := &fakeEC2{describeInstances: func(in *ec2.DescribeInstancesInput) (*ec2.DescribeInstancesOutput, error) {
+			if !reflect.DeepEqual(in, wantInput) {
+				t.Fatalf("request = %#v, want %#v", in, wantInput)
+			}
+			return respond()
+		}}
+		return &ec2Client{sdk: fake}
+	}
+
+	t.Run("no instance", func(t *testing.T) {
+		got, err := clientFor(t, func() (*ec2.DescribeInstancesOutput, error) {
+			return &ec2.DescribeInstancesOutput{}, nil
+		}).DescribeInstance(context.Background(), id)
+		if err != nil || got != (cloud.Instance{}) {
+			t.Fatalf("DescribeInstance = %#v, %v; want zero, nil", got, err)
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		notFound := &smithy.GenericAPIError{Code: "InvalidInstanceID.NotFound", Message: "missing"}
+		var api smithy.APIError = notFound
+		if api.ErrorCode() != "InvalidInstanceID.NotFound" {
+			t.Fatalf("ErrorCode = %q", api.ErrorCode())
+		}
+		got, err := clientFor(t, func() (*ec2.DescribeInstancesOutput, error) {
+			return nil, notFound
+		}).DescribeInstance(context.Background(), id)
+		if err != nil || got != (cloud.Instance{}) {
+			t.Fatalf("DescribeInstance = %#v, %v; want zero, nil", got, err)
+		}
+	})
+
+	t.Run("other error", func(t *testing.T) {
+		denied := &smithy.GenericAPIError{Code: "UnauthorizedOperation", Message: "denied"}
+		_, err := clientFor(t, func() (*ec2.DescribeInstancesOutput, error) {
+			return nil, denied
+		}).DescribeInstance(context.Background(), id)
+		var cloudErr *cloud.Error
+		if !errors.As(err, &cloudErr) || cloudErr.Operation != "DescribeInstances" || cloudErr.Code != "UnauthorizedOperation" {
+			t.Fatalf("error = %#v, want *cloud.Error DescribeInstances UnauthorizedOperation", err)
+		}
+	})
+}
+
 func assertTagSpecifications(t *testing.T, got []types.TagSpecification, resourceTypes []types.ResourceType, domain, space string) {
 	t.Helper()
 	if len(got) != len(resourceTypes) {

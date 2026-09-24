@@ -70,6 +70,113 @@ func TestWaitState(t *testing.T) {
 	}
 }
 
+func TestWaitStateTreatsZeroInstanceAsUnreached(t *testing.T) {
+	// R-3N3S-I439
+	const id = "i-one"
+	running := cloud.Instance{ID: id, State: cloud.StateRunning, Address: "192.0.2.8"}
+	responses := []cloud.Instance{{}, {}, running}
+	calls := 0
+	ec2 := &helperEC2{describe: func(_ context.Context, gotID string) (cloud.Instance, error) {
+		calls++
+		if gotID != id {
+			t.Fatalf("DescribeInstance id = %q", gotID)
+		}
+		result := responses[0]
+		responses = responses[1:]
+		return result, nil
+	}}
+	var waits []time.Duration
+	deps := seam.Deps{After: instantAfter(&waits)}
+	got, err := WaitState(context.Background(), deps, ec2, id, cloud.StateRunning)
+	if err != nil || !reflect.DeepEqual(got, running) || calls != 3 || !reflect.DeepEqual(waits, []time.Duration{PollInterval, PollInterval}) {
+		t.Fatalf("WaitState = %#v, %v; calls=%d waits=%v", got, err, calls, waits)
+	}
+
+	calls = 0
+	waits = nil
+	ec2.describe = func(_ context.Context, gotID string) (cloud.Instance, error) {
+		calls++
+		if gotID != id {
+			t.Fatalf("DescribeInstance id = %q", gotID)
+		}
+		return cloud.Instance{}, nil
+	}
+	_, err = WaitState(context.Background(), deps, ec2, id, cloud.StateRunning)
+	var waitErr *WaitError
+	if !errors.As(err, &waitErr) || waitErr.Subject != id || waitErr.Want != "be running" || calls != PollAttempts {
+		t.Fatalf("timeout = %#v; calls=%d", err, calls)
+	}
+	if len(waits) != PollAttempts-1 {
+		t.Fatalf("waits = %d, want %d", len(waits), PollAttempts-1)
+	}
+	for _, wait := range waits {
+		if wait != PollInterval {
+			t.Fatalf("wait = %s, want %s", wait, PollInterval)
+		}
+	}
+}
+
+func TestWaitAssociate(t *testing.T) {
+	// R-RUIM-IAS8
+	const allocationID = "eipalloc-1"
+	const instanceID = "i-one"
+	notFound := &cloud.Error{Code: "InvalidAllocationID.NotFound"}
+	calls := 0
+	ec2 := &associateEC2{associate: func(_ context.Context, gotAllocation, gotInstance string) error {
+		calls++
+		if gotAllocation != allocationID || gotInstance != instanceID {
+			t.Fatalf("AssociateAddress(%q, %q)", gotAllocation, gotInstance)
+		}
+		if calls < 3 {
+			return notFound
+		}
+		return nil
+	}}
+	var waits []time.Duration
+	deps := seam.Deps{After: instantAfter(&waits)}
+	if err := WaitAssociate(context.Background(), deps, ec2, allocationID, instanceID); err != nil || calls != 3 || !reflect.DeepEqual(waits, []time.Duration{PollInterval, PollInterval}) {
+		t.Fatalf("WaitAssociate = %v; calls=%d waits=%v", err, calls, waits)
+	}
+
+	calls = 0
+	waits = nil
+	ec2.associate = func(_ context.Context, gotAllocation, gotInstance string) error {
+		calls++
+		if gotAllocation != allocationID || gotInstance != instanceID {
+			t.Fatalf("AssociateAddress(%q, %q)", gotAllocation, gotInstance)
+		}
+		return notFound
+	}
+	err := WaitAssociate(context.Background(), deps, ec2, allocationID, instanceID)
+	var waitErr *WaitError
+	if !errors.As(err, &waitErr) || waitErr.Subject != allocationID || waitErr.Want != "become associable" || calls != PollAttempts {
+		t.Fatalf("timeout = %#v; calls=%d", err, calls)
+	}
+	if len(waits) != PollAttempts-1 {
+		t.Fatalf("waits = %d, want %d", len(waits), PollAttempts-1)
+	}
+	for _, wait := range waits {
+		if wait != PollInterval {
+			t.Fatalf("wait = %s, want %s", wait, PollInterval)
+		}
+	}
+
+	other := &cloud.Error{Code: "Gateway.NotAttached"}
+	calls = 0
+	waits = nil
+	ec2.associate = func(_ context.Context, gotAllocation, gotInstance string) error {
+		calls++
+		if gotAllocation != allocationID || gotInstance != instanceID {
+			t.Fatalf("AssociateAddress(%q, %q)", gotAllocation, gotInstance)
+		}
+		return other
+	}
+	err = WaitAssociate(context.Background(), deps, ec2, allocationID, instanceID)
+	if !errors.Is(err, other) || reflect.ValueOf(err).Pointer() != reflect.ValueOf(other).Pointer() || calls != 1 || len(waits) != 0 {
+		t.Fatalf("other error = %v; calls=%d waits=%v", err, calls, waits)
+	}
+}
+
 func TestWaitChecks(t *testing.T) {
 	// R-UBYA-LVYT
 	calls := 0
@@ -456,6 +563,15 @@ func instantAfter(waits *[]time.Duration) func(time.Duration) <-chan time.Time {
 		ready <- time.Time{}
 		return ready
 	}
+}
+
+type associateEC2 struct {
+	helperEC2
+	associate func(context.Context, string, string) error
+}
+
+func (f *associateEC2) AssociateAddress(ctx context.Context, allocationID, instanceID string) error {
+	return f.associate(ctx, allocationID, instanceID)
 }
 
 type helperEC2 struct {

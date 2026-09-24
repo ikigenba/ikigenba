@@ -47,7 +47,7 @@ func provision(ctx context.Context, stdout io.Writer, deps seam.Deps, invocation
 	if err != nil {
 		return err
 	}
-	if err := clients.EC2.AssociateAddress(ctx, address.AllocationID, running.ID); err != nil {
+	if err := space.WaitAssociate(ctx, deps, clients.EC2, address.AllocationID, running.ID); err != nil {
 		return err
 	}
 	space.Step(stdout, "address", "elastic ip "+address.IP+" associated")

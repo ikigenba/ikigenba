@@ -48,6 +48,12 @@ func TestNamesAndConstants(t *testing.T) {
 	}
 }
 
+func TestWaitAssociateSignature(_ *testing.T) {
+	// R-TRRP-P2TM
+	accept := func(func(context.Context, seam.Deps, cloud.EC2, string, string) error) {}
+	accept(WaitAssociate)
+}
+
 func TestWaitDeclarations(t *testing.T) {
 	// R-U3EZ-XHRY
 	acceptWaitState := func(func(context.Context, seam.Deps, cloud.EC2, string, cloud.InstanceState) (cloud.Instance, error)) {
