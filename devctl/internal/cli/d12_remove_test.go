@@ -15,17 +15,17 @@ import (
 
 const wantRemoveUsage = `Usage: devctl remove <space> <app>
 
-Have opsctl on the space take <app> off it: stop and remove its service,
-remove its binary and configuration, and stop routing its name. Its state/ is
-kept on the host and its secrets are kept in the account, so a later deploy of
-<app> lands over its data. What remove does on the host is opsctl's.
+Have opsctl on the space take <app> off it: stop and remove its socket and
+service, remove its binary and configuration, and stop routing its name. Its
+state/ is kept on the host and its secrets are kept in the account, so a later
+deploy of <app> lands over its data. What remove does on the host is opsctl's.
 `
 
 func TestRemoveHelpAndSyntaxThroughCLI(t *testing.T) {
-	// R-HPEE-9HCL R-HRU7-10TZ
-	for _, args := range [][]string{{"remove", "--help"}, {"remove", "sbx1", "crm", "--help"}} {
+	// R-JZUS-6SJQ R-HRU7-10TZ
+	for _, args := range [][]string{{"remove", "--help"}, {"remove", "-h"}, {"remove", "sbx1", "crm", "--help"}} {
 		calls := 0
-		deps := seam.Deps{EUID: 1, Dir: "/outside",
+		deps := seam.Deps{EUID: 1, Dir: t.TempDir(),
 			Cloud: func(context.Context, string, string) (cloud.Clients, error) {
 				calls++
 				return cloud.Clients{}, errors.New("unexpected")
@@ -59,9 +59,10 @@ func TestCLIDispatchesRemoveAndMapsResolution(t *testing.T) {
 }
 
 func TestCLIRemoveSuccessAndHostFailure(t *testing.T) {
-	// R-HWPS-K3SR R-HXXO-XVJG
+	// R-HWPS-K3SR R-JXEZ-F92C
 	instances := []cloud.Instance{{Space: "sbx1.ikigenba.dev", State: cloud.StateRunning, Address: "18.118.7.42"}}
 	success := newD12Fixture(t, instances)
+	success.result = seam.Result{Stdout: []byte("removed\n"), Stderr: []byte("notice\n")}
 	assertResult(t, invokeWithDeps(success.deps(), "remove", "sbx1", "crm"), 0, "remove: ok (opsctl uninstalled crm)\n", "")
 	want := d12SSH(success.work, "'sudo' 'opsctl' 'uninstall' 'crm'")
 	if !reflect.DeepEqual(success.ssh, []seam.Cmd{want}) {
@@ -69,8 +70,8 @@ func TestCLIRemoveSuccessAndHostFailure(t *testing.T) {
 	}
 
 	failure := newD12Fixture(t, instances)
-	failure.result = seam.Result{ExitCode: 1, Stderr: []byte("not installed\nmore\n")}
-	assertResult(t, invokeWithDeps(failure.deps(), "remove", "sbx1", "gmail"), 1, "", "devctl: remove: ssh ec2-user@18.118.7.42 sudo opsctl uninstall gmail: exit status 1\n\n> not installed\n> more\n")
+	failure.result = seam.Result{ExitCode: 1, Stdout: []byte("not installed\nmore output\n"), Stderr: []byte("uninstall failed\nmore error\n")}
+	assertResult(t, invokeWithDeps(failure.deps(), "remove", "sbx1", "gmail"), 1, "", "devctl: remove: ssh ec2-user@18.118.7.42 sudo opsctl uninstall gmail: exit status 1\n\n> not installed\n> more output\n> uninstall failed\n> more error\n")
 }
 
 type d12Fixture struct {

@@ -148,7 +148,7 @@ func TestResolutionAndOutputOrder(t *testing.T) {
 }
 
 func TestResolutionFailuresStopBeforeOutputAndSSH(t *testing.T) {
-	// R-OR9K-LL65 R-OXD2-IFVM
+	// R-OR9K-LL65 R-ZIF9-2HC7
 	t.Run("root file", func(t *testing.T) {
 		f := newFixture(t)
 		if err := os.Remove(filepath.Join(f.root, checkout.RootFilePath)); err != nil {
@@ -216,13 +216,15 @@ func TestUpgradeOrVersionThenFiveKeyConfiguration(t *testing.T) {
 
 	t.Run("upgrade and set email", func(t *testing.T) {
 		f := newFixture(t)
-		f.sshResults = make([]seam.Result, 8)
-		f.sshResults[7].Stdout = []byte("successful init output is discarded\n")
+		f.sshResults = make([]seam.Result, 9)
+		f.sshResults[8].Stdout = []byte("successful init output is discarded\n")
 		stdout, err := f.run("--acme-email", "alerts@ikigenba.dev", "sbx1", "--opsctl=v8.7.6")
 		if err != nil || !strings.Contains(stdout, "opsctl: ok (v8.7.6 installed, 6 keys set)\ninit: ok\n") || strings.Contains(stdout, "successful init output") {
 			t.Fatalf("stdout=%q err=%v", stdout, err)
 		}
-		if f.remote[0] != "'sudo' 'bash' '"+hostsetup.SavedInstaller+"' 'v8.7.6'" || f.remote[6] != "'sudo' 'opsctl' 'config' 'set' 'acme.email=alerts@ikigenba.dev'" {
+		if f.remote[0] != "'curl' '-fsSL' '-o' '"+hostsetup.InstallerPath+"' '"+hostsetup.DownloadURL+"/opsctl/v8.7.6/install.sh'" ||
+			f.remote[1] != "'sudo' 'bash' '"+hostsetup.InstallerPath+"' 'v8.7.6'" ||
+			f.remote[7] != "'sudo' 'opsctl' 'config' 'set' 'acme.email=alerts@ikigenba.dev'" {
 			t.Fatalf("remote commands = %#v", f.remote)
 		}
 		joined := strings.Join(f.remote, "\n")
@@ -235,7 +237,7 @@ func TestUpgradeOrVersionThenFiveKeyConfiguration(t *testing.T) {
 }
 
 func TestRemoteFailureStopsAtFirstCommand(t *testing.T) {
-	// R-U320-UM5O R-OUX9-QWE8 R-OW56-4O4X R-OXD2-IFVM
+	// R-U320-UM5O R-OUX9-QWE8 R-OW56-4O4X R-ZIF9-2HC7
 	tests := []struct {
 		name        string
 		args        []string
@@ -245,8 +247,9 @@ func TestRemoteFailureStopsAtFirstCommand(t *testing.T) {
 		wantCommand string
 	}{
 		{"version", []string{"sbx1"}, 0, "opsctl", false, "sudo opsctl version"},
-		{"upgrade", []string{"sbx1", "--opsctl=v9"}, 0, "opsctl", false, "sudo bash " + hostsetup.SavedInstaller + " v9"},
-		{"configuration", []string{"sbx1", "--opsctl=v9"}, 3, "opsctl", false, "sudo opsctl config set dns.zones=ikigenba.dev:Z09565073GHK8BYWQ1A78"},
+		{"upgrade fetch", []string{"sbx1", "--opsctl=v9"}, 0, "opsctl", false, "curl -fsSL -o " + hostsetup.InstallerPath + " " + hostsetup.DownloadURL + "/opsctl/v9/install.sh"},
+		{"upgrade install", []string{"sbx1", "--opsctl=v9"}, 1, "opsctl", false, "sudo bash " + hostsetup.InstallerPath + " v9"},
+		{"configuration", []string{"sbx1", "--opsctl=v9"}, 4, "opsctl", false, "sudo opsctl config set dns.zones=ikigenba.dev:Z09565073GHK8BYWQ1A78"},
 		{"init", []string{"sbx1"}, 6, "init", true, "sudo opsctl init"},
 	}
 	for _, test := range tests {
@@ -264,6 +267,53 @@ func TestRemoteFailureStopsAtFirstCommand(t *testing.T) {
 			}
 			if got := strings.Contains(stdout, "opsctl: ok"); got != test.wantOpsctl || strings.Contains(stdout, "init: ok") {
 				t.Fatalf("stdout=%q", stdout)
+			}
+		})
+	}
+}
+
+func TestInitUsesOnlyAllowedOperationsAndPreservesWrittenKeys(t *testing.T) {
+	// R-ZIF9-2HC7
+	const version = "v4.5.6"
+	allowed := []string{
+		"'curl' '-fsSL' '-o' '" + hostsetup.InstallerPath + "' '" + hostsetup.DownloadURL + "/opsctl/" + version + "/install.sh'",
+		"'sudo' 'bash' '" + hostsetup.InstallerPath + "' '" + version + "'",
+		"'sudo' 'opsctl' 'config' 'set' 'host.name=sbx1.ikigenba.dev'",
+		"'sudo' 'opsctl' 'config' 'set' 'dns.provider=route53'",
+		"'sudo' 'opsctl' 'config' 'set' 'dns.zones=ikigenba.dev:Z09565073GHK8BYWQ1A78'",
+		"'sudo' 'opsctl' 'config' 'set' 'aws.region=us-east-2'",
+		"'sudo' 'opsctl' 'config' 'set' 'backup.s3_uri=s3://ikigenba.dev/sbx1/'",
+		"'sudo' 'opsctl' 'init'",
+	}
+	for _, test := range []struct {
+		name   string
+		failAt int
+		want   []string
+	}{
+		{name: "success", failAt: -1, want: allowed},
+		{name: "failed config set", failAt: 4, want: allowed[:5]},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newFixture(t)
+			if test.failAt >= 0 {
+				f.sshResults = make([]seam.Result, test.failAt+1)
+				f.sshResults[test.failAt].ExitCode = 3
+			}
+			_, err := f.run("sbx1", "--opsctl="+version)
+			if (err != nil) != (test.failAt >= 0) {
+				t.Fatalf("error = %v", err)
+			}
+			if !reflect.DeepEqual(f.remote, test.want) || f.sshCalls != len(test.want) || f.streamCalls != 0 {
+				t.Fatalf("remote=%#v, ssh=%d, stream=%d; want %#v", f.remote, f.sshCalls, f.streamCalls, test.want)
+			}
+			wantOps := []string{"git", "open ikigenba.dev us-east-2", "sts", "spaces ikigenba.dev", "zone ikigenba.dev"}
+			if !reflect.DeepEqual(f.ops[:5], wantOps) || len(f.ops) != len(wantOps)+len(test.want) {
+				t.Fatalf("operations = %#v", f.ops)
+			}
+			for _, op := range f.ops[5:] {
+				if !strings.HasPrefix(op, "ssh ") {
+					t.Fatalf("unexpected operation %q", op)
+				}
 			}
 		})
 	}

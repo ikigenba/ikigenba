@@ -23,9 +23,9 @@ What a space is running is 'devctl space status'.
 const usageText = `Usage: devctl space <subcommand> [arguments]
 
 List, create, destroy, stop, start, initialise, and inspect spaces, and
-restart or read the journal of one app on one. A space is one label under the
-root domain; <space> is that label or the full domain. The cloud's tags are
-the only registry.
+restart, disable, enable, or read the journal of one app on one. A space is
+one label under the root domain; <space> is that label or the full domain.
+The cloud's tags are the only registry.
 
 Subcommands:
   list                       one line per space
@@ -34,8 +34,10 @@ Subcommands:
   stop <space>               stop the instance; state is kept
   start <space>              start the instance; its address is unchanged
   init <space> [options]     set the host's keys again and run opsctl init
-  status <space>             one line per app: version, service state, database journal mode
+  status <space>             one line per app: version, service state, socket state, database journal mode
   restart <space> <app>      restart one app's service on the host
+  disable <space> <app>      stop one app and keep it from starting until enabled
+  enable <space> <app>       let a disabled app start again, and start it
   logs <space> <app>         print one app's journal from the host
 
 Options (create):
@@ -84,8 +86,8 @@ then run certbot renew. Records are unchanged; the last line is domain and addre
 
 const statusUsage = `Usage: devctl space status <space>
 
-Relay opsctl status from the running host: app, version, service state and
-database journal mode. A host with no apps prints nothing.
+Relay opsctl status from the running host: app, version, service state, socket
+state and database journal mode. A host with no apps prints nothing.
 `
 
 const spaceHelp = "devctl space --help"
@@ -108,6 +110,8 @@ var subcommands = map[string]struct{}{
 	"init":    {},
 	"status":  {},
 	"restart": {},
+	"disable": {},
+	"enable":  {},
 	"logs":    {},
 }
 
@@ -136,7 +140,7 @@ func parseInvocation(args []string) (invocation, error) {
 
 	// These subcommands own their grammars in their own packages. The CLI
 	// dispatcher normally routes them there without calling this package.
-	if subcommand == "create" || subcommand == "init" || subcommand == "restart" || subcommand == "logs" {
+	if subcommand == "create" || subcommand == "init" || subcommand == "restart" || subcommand == "disable" || subcommand == "enable" || subcommand == "logs" {
 		return result, nil
 	}
 

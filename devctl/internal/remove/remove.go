@@ -16,10 +16,10 @@ import (
 
 const helpText = `Usage: devctl remove <space> <app>
 
-Have opsctl on the space take <app> off it: stop and remove its service,
-remove its binary and configuration, and stop routing its name. Its state/ is
-kept on the host and its secrets are kept in the account, so a later deploy of
-<app> lands over its data. What remove does on the host is opsctl's.
+Have opsctl on the space take <app> off it: stop and remove its socket and
+service, remove its binary and configuration, and stop routing its name. Its
+state/ is kept on the host and its secrets are kept in the account, so a later
+deploy of <app> lands over its data. What remove does on the host is opsctl's.
 `
 
 // UsageError reports invalid remove command syntax.

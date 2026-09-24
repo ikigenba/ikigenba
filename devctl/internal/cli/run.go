@@ -195,6 +195,10 @@ func runSpace(ctx context.Context, args []string, stdout io.Writer, deps seam.De
 			return spaceinit.Run(ctx, args[1:], stdout, deps)
 		case "restart":
 			return spaceapps.Run(ctx, args, stdout, deps)
+		case "disable":
+			return spaceapps.Run(ctx, args, stdout, deps)
+		case "enable":
+			return spaceapps.Run(ctx, args, stdout, deps)
 		case "logs":
 			return spaceapps.Run(ctx, args, stdout, deps)
 		}

@@ -22,8 +22,8 @@ const wantRestoreHelp = `Usage: devctl restore <space> <app> [--at <timestamp>]
 
 Have opsctl on the space put <app> back from the space's own backups. The
 app's etc/ and state/ come from the newest tarball, and its database, when it
-declares one, from litestream. <app>'s unit is stopped for the restore and
-started again after it.
+declares one, from litestream. <app>'s socket and service are stopped for the
+restore and started again after it, unless <app> is disabled.
 
 Options:
   --at <timestamp>   restore the app as it was at this RFC 3339 moment
@@ -37,7 +37,7 @@ type restoreSignature func(context.Context, []string, io.Writer, seam.Deps) erro
 var _ restoreSignature = Run
 
 func TestRestorePublicContractAndGrammar(t *testing.T) {
-	// R-ONR2-SC1Y R-FMOM-TP3F R-OOYZ-63SN R-OQ6V-JVJC R-ORER-XNA1 R-FRK8-CS27
+	// R-ONR2-SC1Y R-FMOM-TP3F R-JW73-1HBN R-OQ6V-JVJC R-ORER-XNA1 R-FRK8-CS27
 	errValue := &UsageError{Message: "bad", Help: "devctl restore --help"}
 	if errValue.Error() != "bad" || errValue.ExitCode() != 2 || errValue.Detail() != "see 'devctl restore --help' for usage" || (&UsageError{}).Detail() != "" {
 		t.Fatalf("UsageError = %#v", errValue)
@@ -118,7 +118,7 @@ func TestRestoreReturnsRootParseConnectAndLookupFailuresUnchanged(t *testing.T) 
 }
 
 func TestRestoreUsesOnlyRootSessionAndOneHostCommand(t *testing.T) {
-	// R-OTUK-P6RF R-9R4L-UV1E R-FV7X-I3AA R-OWAD-GQ8T R-OXI9-UHZI
+	// R-OTUK-P6RF R-9R4L-UV1E R-FV7X-I3AA R-OWAD-GQ8T
 	h := newRestoreHarness(t)
 	var stdout bytes.Buffer
 	stamp := "2026-09-11T18:00:00.25-05:00"

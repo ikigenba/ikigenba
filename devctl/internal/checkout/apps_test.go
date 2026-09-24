@@ -130,6 +130,23 @@ func TestAppsReportsManifestFailures(t *testing.T) {
 	})
 }
 
+// R-NM90-RHFN
+func TestAppsPreservesTopLevelPortError(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeAppFixture(t, root, "crm", "package main\n", "app = 'crm'\nport = 3100\n")
+
+	_, err := (&Checkout{Root: root}).Apps()
+	var manifestErr *ManifestError
+	if !errors.As(err, &manifestErr) {
+		t.Fatalf("Apps() error = %T %v, want *ManifestError", err, err)
+	}
+	const wantDetail = "'port' is not allowed; the host gives the app its socket"
+	if manifestErr.App != "crm" || manifestErr.Detail != wantDetail {
+		t.Fatalf("Apps() error = %#v, want crm with unchanged detail %q", manifestErr, wantDetail)
+	}
+}
+
 // R-W3RX-OKYB
 func TestAppReturnsMatchMissingAndAppsFailure(t *testing.T) {
 	t.Parallel()

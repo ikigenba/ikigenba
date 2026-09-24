@@ -95,7 +95,7 @@ func TestGrammarAndHelpAreSideEffectFree(t *testing.T) {
 
 func TestSetRunsPreflightAndOrderedSteps(t *testing.T) {
 	// R-4D75-ZO9I R-4FMY-R7QW R-4GUV-4ZHL R-4I2R-IR8A R-VX21-6EX8
-	// R-4KIK-AAPO R-4LQG-O2GD R-VY9X-K6NX R-4O69-FLXR
+	// R-SNXG-N0VB R-4LQG-O2GD R-VY9X-K6NX R-4O69-FLXR
 	f := successfulFake()
 	deps := testDeps(t, f)
 	var stdout bytes.Buffer
@@ -274,7 +274,7 @@ func TestAcceptedInvocationFailureOrderAndPropagation(t *testing.T) {
 }
 
 func TestSetFailureBoundariesAndExactCalls(t *testing.T) {
-	// R-4GUV-4ZHL R-VX21-6EX8 R-4KIK-AAPO R-4LQG-O2GD R-VY9X-K6NX R-4O69-FLXR
+	// R-4GUV-4ZHL R-VX21-6EX8 R-SNXG-N0VB R-4LQG-O2GD R-VY9X-K6NX R-4O69-FLXR
 	const spaceLine = "space: ok (sbx1.ikigenba.dev running, 18.118.7.42)\n"
 	const roleLine = "role: ok (sbx1.ikigenba.dev may prove ikigenba.dev)\n"
 	const hostLine = "host: ok (host.apex=crm, certificate obtained, nginx applied)\n"
@@ -443,7 +443,7 @@ func TestSetFailureBoundariesAndExactCalls(t *testing.T) {
 
 func TestShowAndClear(t *testing.T) {
 	// R-4PE5-TDOG R-4QM2-75F5 R-4RTY-KX5U R-4T1U-YOWJ R-4U9R-CGN8
-	// R-4VHN-Q8DX R-VZHT-XYEM R-4XXG-HRVB R-50D9-9BCP
+	// R-4VHN-Q8DX R-VZHT-XYEM R-SRL5-SC3E R-50D9-9BCP
 	t.Run("show", func(t *testing.T) {
 		f := successfulFake()
 		f.getValue = "crm\n"
@@ -586,7 +586,7 @@ func TestShowExactHostReadAndFailureBoundaries(t *testing.T) {
 }
 
 func TestClearExactSequenceAndFailureBoundaries(t *testing.T) {
-	// R-4T1U-YOWJ R-4U9R-CGN8 R-VZHT-XYEM R-4XXG-HRVB R-50D9-9BCP
+	// R-4T1U-YOWJ R-4U9R-CGN8 R-VZHT-XYEM R-SRL5-SC3E R-50D9-9BCP
 	const spaceLine = "space: ok (sbx2.ikigenba.dev running, 18.220.10.5)\n"
 	const recordLine = "record: ok (ikigenba.dev deleted)\n"
 	const roleLine = "role: ok (sbx2.ikigenba.dev may no longer prove ikigenba.dev)\n"

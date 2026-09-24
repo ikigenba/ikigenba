@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
+	"github.com/ikigenba/ikigenba/devctl/internal/host"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 	"github.com/ikigenba/ikigenba/devctl/internal/secrets"
 )
@@ -261,7 +262,7 @@ func TestRunPrerequisiteFailuresStopUnchanged(t *testing.T) {
 }
 
 func TestDestroyOrderedOptionsAndCleanup(t *testing.T) {
-	// R-VIMR-ZUX4 R-VJUO-DMNT R-JCCP-CNWX R-VMAH-5657 R-UL0J-793W R-VNID-IXVW R-S80S-JF87 R-S98O-X6YW R-VR62-O93Z
+	// R-VIMR-ZUX4 R-JCCP-CNWX R-VMAH-5657 R-UL0J-793W R-VNID-IXVW R-S80S-JF87 R-S98O-X6YW R-VR62-O93Z
 	f := newOperationFake(t)
 	f.instances = []cloud.Instance{{ID: "i-one", Space: testDomain, State: cloud.StateRunning, Address: "18.118.7.42"}}
 	f.described = cloud.Instance{ID: "i-one", State: cloud.StateTerminated}
@@ -330,6 +331,62 @@ func TestDestroyOrderedOptionsAndCleanup(t *testing.T) {
 	}
 	if strings.Contains(stdout, "account:") || strings.Contains(stdout, "domain:") {
 		t.Fatalf("obsolete step in %q", stdout)
+	}
+}
+
+func TestDestroyRetireSudo(t *testing.T) {
+	// R-DDFT-AXS8
+	for _, failed := range []bool{false, true} {
+		name := "success"
+		if failed {
+			name = "failure"
+		}
+		t.Run(name, func(t *testing.T) {
+			f := newOperationFake(t)
+			f.instances = []cloud.Instance{{ID: "i-one", Space: testDomain, State: cloud.StateRunning, Address: "18.220.10.5"}}
+			f.described = cloud.Instance{ID: "i-one", State: cloud.StateTerminated}
+			if failed {
+				f.execStatus = 1
+			}
+			_, err := runOperation(t, f, "destroy", "sbx1")
+			if failed {
+				var commandErr *host.CommandError
+				if !errors.As(err, &commandErr) || reflect.ValueOf(err).Pointer() != reflect.ValueOf(commandErr).Pointer() {
+					t.Fatalf("error = %#v, want unchanged Sudo error", err)
+				}
+				if commandErr.Step != "retire" {
+					t.Fatalf("Sudo step = %q, want retire", commandErr.Step)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+
+			wantHost := hostCommand(f.root, "18.220.10.5", "'sudo' 'opsctl' 'retire'")
+			wantExec := []seam.Cmd{checkoutCommand(f.root), wantHost}
+			if !reflect.DeepEqual(f.execCalls, wantExec) {
+				t.Fatalf("Exec calls = %#v, want %#v", f.execCalls, wantExec)
+			}
+			retireAt := -1
+			for i, op := range f.ops {
+				if op == "ssh 'sudo' 'opsctl' 'retire'" {
+					retireAt = i
+					break
+				}
+			}
+			if retireAt < 0 {
+				t.Fatalf("retire Sudo absent from operations: %#v", f.ops)
+			}
+			for _, op := range f.ops[:retireAt] {
+				for _, prefix := range []string{"start ", "stop ", "terminate ", "release ", "disassociate ", "change records", "delete ", "remove role "} {
+					if strings.HasPrefix(op, prefix) {
+						t.Fatalf("mutation %q preceded retire Sudo: %#v", op, f.ops)
+					}
+				}
+			}
+			if failed && len(f.ops) != retireAt+1 {
+				t.Fatalf("operations after failed retire Sudo: %#v", f.ops[retireAt+1:])
+			}
+		})
 	}
 }
 
@@ -615,6 +672,7 @@ type operationFake struct {
 	checks       bool
 	checksErr    error
 	execOutput   string
+	execStderr   string
 	execStatus   int
 	execErr      error
 	execCalls    []seam.Cmd
@@ -662,7 +720,7 @@ func (f *operationFake) deps(dir string) seam.Deps {
 				return seam.Result{Stdout: []byte(f.root + "\n")}, nil
 			}
 			f.ops = append(f.ops, "ssh "+cmd.Args[len(cmd.Args)-1])
-			return seam.Result{Stdout: []byte(f.execOutput), ExitCode: f.execStatus}, f.execErr
+			return seam.Result{Stdout: []byte(f.execOutput), Stderr: []byte(f.execStderr), ExitCode: f.execStatus}, f.execErr
 		},
 		Stream: func(context.Context, seam.Cmd, io.Writer) (seam.Result, error) {
 			f.streamCalls++

@@ -24,6 +24,19 @@ Have opsctl restart one app's service. Deploy the existing file to apply pushed
 secrets; a restart uses the environment already installed on the host.
 `
 
+const disableHelp = `Usage: devctl space disable <space> <app>
+
+Have opsctl take one app offline: stop its socket and service and keep both
+from starting until 'devctl space enable'. Its release, data and units stay
+on the host, and deploy, restore, init and restart leave it disabled.
+`
+
+const enableHelp = `Usage: devctl space enable <space> <app>
+
+Have opsctl bring a disabled app back: enable and start its socket and
+service. Enabling an app that is already enabled changes nothing.
+`
+
 const logsHelp = `Usage: devctl space logs <space> <app> [--follow] [--since <when>]
 
 Print the last 100 journal lines of one app's service on the space's host. With
@@ -55,18 +68,25 @@ type invocation struct {
 	help       bool
 }
 
-// Run executes a space restart or logs command.
+// Run executes a space app operation.
 func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) error {
 	parsed, err := parse(args)
 	if err != nil {
 		return err
 	}
 	if parsed.help {
-		if parsed.subcommand == "restart" {
-			_, err = io.WriteString(stdout, restartHelp)
-		} else {
-			_, err = io.WriteString(stdout, logsHelp)
+		var help string
+		switch parsed.subcommand {
+		case "restart":
+			help = restartHelp
+		case "disable":
+			help = disableHelp
+		case "enable":
+			help = enableHelp
+		case "logs":
+			help = logsHelp
 		}
+		_, err = io.WriteString(stdout, help)
 		return err
 	}
 	if parsed.subcommand == "logs" && !appref.ValidName(parsed.app) {
@@ -94,12 +114,13 @@ func Run(ctx context.Context, args []string, stdout io.Writer, deps seam.Deps) e
 	}
 
 	remote := host.Host{Address: target.Address, Deps: deps}
-	if parsed.subcommand == "restart" {
-		if _, err := remote.Sudo(ctx, "restart", "opsctl", "restart", parsed.app); err != nil {
+	if parsed.subcommand != "logs" {
+		output, err := remote.Sudo(ctx, parsed.subcommand, "opsctl", parsed.subcommand, parsed.app)
+		if err != nil {
 			return err
 		}
-		space.Step(stdout, "restart", "opsctl restarted "+parsed.app)
-		return nil
+		_, err = io.WriteString(stdout, output.Stdout)
+		return err
 	}
 
 	unit := "ikigenba-" + parsed.app + ".service"
@@ -134,7 +155,7 @@ func parse(args []string) (invocation, error) {
 	if len(args) == 0 {
 		return invocation{}, usage("space needs <subcommand>")
 	}
-	if args[0] != "restart" && args[0] != "logs" {
+	if args[0] != "restart" && args[0] != "disable" && args[0] != "enable" && args[0] != "logs" {
 		if strings.HasPrefix(args[0], "-") {
 			return invocation{}, unknownOption(args[0])
 		}

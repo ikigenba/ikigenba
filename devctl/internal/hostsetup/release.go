@@ -12,10 +12,10 @@ import (
 const (
 	// ReleasesURL is the published GitHub releases endpoint.
 	ReleasesURL = "https://api.github.com/repos/ikigenba/ikigenba/releases"
+	// DownloadURL is the published GitHub release asset base.
+	DownloadURL = "https://github.com/ikigenba/ikigenba/releases/download"
 	// InstallerPath is the temporary installer location on a host.
 	InstallerPath = "/tmp/opsctl-install"
-	// SavedInstaller is the installer retained by opsctl on a host.
-	SavedInstaller = "/usr/local/share/ikigenba/opsctl-install.sh"
 	// DNSProvider is the opsctl provider name for Route 53.
 	DNSProvider = "route53"
 )

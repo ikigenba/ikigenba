@@ -16,8 +16,8 @@ const d09RestoreHelp = `Usage: devctl restore <space> <app> [--at <timestamp>]
 
 Have opsctl on the space put <app> back from the space's own backups. The
 app's etc/ and state/ come from the newest tarball, and its database, when it
-declares one, from litestream. <app>'s unit is stopped for the restore and
-started again after it.
+declares one, from litestream. <app>'s socket and service are stopped for the
+restore and started again after it, unless <app> is disabled.
 
 Options:
   --at <timestamp>   restore the app as it was at this RFC 3339 moment
@@ -27,44 +27,71 @@ before that moment, and the database is rebuilt to the moment itself.
 `
 
 func TestCLIDispatchesDeployAndFormatsHostFailure(t *testing.T) {
-	// R-O94A-735M R-OLBA-0SKK
+	// R-O94A-735M
 	root := d09Root(t)
 	name := "gmail-v0.1.0.tar.xz"
 	if err := os.WriteFile(filepath.Join(root, name), []byte("artifact"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	deps := d09Deps(t, root, 0, "")
+	deps := d09Deps(t, root, 0)
+	var ssh []seam.Cmd
+	baseExec := deps.Exec
+	deps.Exec = func(ctx context.Context, cmd seam.Cmd) (seam.Result, error) {
+		if cmd.Path == "ssh" {
+			ssh = append(ssh, cmd)
+			return seam.Result{Stdout: []byte("installed\n"), Stderr: []byte("notice\n")}, nil
+		}
+		return baseExec(ctx, cmd)
+	}
 	result := invokeWithDeps(deps, "deploy", "sbx1", name)
 	wantOut := "file: ok (gmail v0.1.0)\nsecrets: ok (2 keys)\nupload: ok (-> ikigenba.dev/sbx1/deploy/gmail-v0.1.0.tar.xz)\ninstall: ok (opsctl installed gmail)\n"
 	assertResult(t, result, 0, wantOut, "")
+	if len(ssh) != 1 || ssh[0].Path != "ssh" || ssh[0].Args[6] != "ec2-user@18.118.7.42" || ssh[0].Args[7] != "'sudo' 'opsctl' 'install' 's3://ikigenba.dev/sbx1/deploy/gmail-v0.1.0.tar.xz'" {
+		t.Fatalf("install command = %#v", ssh)
+	}
 
-	deps = d09Deps(t, root, 1, "install failed\nmore\n")
+	deps = d09Deps(t, root, 1)
+	baseExec = deps.Exec
+	deps.Exec = func(ctx context.Context, cmd seam.Cmd) (seam.Result, error) {
+		if cmd.Path == "ssh" {
+			return seam.Result{ExitCode: 1, Stdout: []byte("install failed\nmore output\n"), Stderr: []byte("permission denied\nmore error\n")}, nil
+		}
+		return baseExec(ctx, cmd)
+	}
 	result = invokeWithDeps(deps, "deploy", "sbx1", name)
 	wantOut = "file: ok (gmail v0.1.0)\nsecrets: ok (2 keys)\nupload: ok (-> ikigenba.dev/sbx1/deploy/gmail-v0.1.0.tar.xz)\n"
-	wantErr := "devctl: install: ssh ec2-user@18.118.7.42 sudo opsctl install s3://ikigenba.dev/sbx1/deploy/gmail-v0.1.0.tar.xz: exit status 1\n\n> install failed\n> more\n"
+	wantErr := "devctl: install: ssh ec2-user@18.118.7.42 sudo opsctl install s3://ikigenba.dev/sbx1/deploy/gmail-v0.1.0.tar.xz: exit status 1\n\n> install failed\n> more output\n> permission denied\n> more error\n"
 	assertResult(t, result, 1, wantOut, wantErr)
 }
 
 func TestCLIDispatchesRestoreAndFormatsHostFailure(t *testing.T) {
-	// R-OSMO-BF0Q R-OXI9-UHZI
+	// R-OSMO-BF0Q
 	root := d09Root(t)
-	deps := d09Deps(t, root, 1, "restore failed\n")
+	deps := d09Deps(t, root, 1)
+	baseExec := deps.Exec
+	deps.Exec = func(ctx context.Context, cmd seam.Cmd) (seam.Result, error) {
+		if cmd.Path == "ssh" {
+			return seam.Result{ExitCode: 1, Stdout: []byte("restore failed\nmore output\n"), Stderr: []byte("backup missing\nmore error\n")}, nil
+		}
+		return baseExec(ctx, cmd)
+	}
 	result := invokeWithDeps(deps, "restore", "sbx1", "crm")
-	wantErr := "devctl: restore: ssh ec2-user@18.118.7.42 sudo opsctl restore crm: exit status 1\n\n> restore failed\n"
+	wantErr := "devctl: restore: ssh ec2-user@18.118.7.42 sudo opsctl restore crm: exit status 1\n\n> restore failed\n> more output\n> backup missing\n> more error\n"
 	assertResult(t, result, 1, "", wantErr)
 
-	deps = d09Deps(t, root, 0, "")
+	deps = d09Deps(t, root, 0)
 	result = invokeWithDeps(deps, "restore", "sbx1", "crm", "--at", "2026-09-11T18:00:00Z")
 	assertResult(t, result, 0, "restore: ok (opsctl restore crm --at 2026-09-11T18:00:00Z)\n", "")
 }
 
 func TestD09CommandBoundaryEarlyResultsOutsideCheckout(t *testing.T) {
-	// R-OBK2-YMN0 R-OOYZ-63SN R-ORER-XNA1
+	// R-OBK2-YMN0 R-JW73-1HBN R-ORER-XNA1
 	outside := t.TempDir()
 	for _, option := range []string{"--help", "-h"} {
 		result := invokeWithDeps(seam.Deps{EUID: 1, Dir: outside, Exec: d09FailExec(t), Cloud: d09FailCloud(t)}, "restore", option)
 		assertResult(t, result, 0, d09RestoreHelp, "")
 	}
+	assertResult(t, invokeWithDeps(seam.Deps{EUID: 1, Dir: outside, Exec: d09FailExec(t), Cloud: d09FailCloud(t)}, "restore", "sbx1", "crm", "--help"), 0, d09RestoreHelp, "")
 
 	result := invokeWithDeps(seam.Deps{EUID: 1, Dir: outside, Exec: d09FailExec(t), Cloud: d09FailCloud(t)}, "restore", "sbx1")
 	assertResult(t, result, 2, "", "devctl: restore needs <space> and <app>\n\nsee 'devctl restore --help' for usage\n")
@@ -94,7 +121,7 @@ func TestD09CommandBoundaryMissingAndStoppedSpaces(t *testing.T) {
 		{name: "stopped", operand: "sbx2", diagnostic: "devctl: 'sbx2.ikigenba.dev' is stopped\n", instances: []cloud.Instance{{ID: "i-2", Space: "sbx2.ikigenba.dev", State: cloud.StateStopped}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			deps := d09DepsWithInstances(t, root, test.instances, 0, "")
+			deps := d09DepsWithInstances(t, root, test.instances, 0)
 			assertResult(t, invokeWithDeps(deps, "deploy", test.operand, name), 1, "file: ok (gmail v0.1.0)\n", test.diagnostic)
 			assertResult(t, invokeWithDeps(deps, "restore", test.operand, "crm"), 1, "", test.diagnostic)
 		})
@@ -113,11 +140,11 @@ func d09Root(t *testing.T) string {
 	return root
 }
 
-func d09Deps(t *testing.T, root string, sshStatus int, sshStderr string) seam.Deps {
-	return d09DepsWithInstances(t, root, nil, sshStatus, sshStderr)
+func d09Deps(t *testing.T, root string, sshStatus int) seam.Deps {
+	return d09DepsWithInstances(t, root, nil, sshStatus)
 }
 
-func d09DepsWithInstances(t *testing.T, root string, instances []cloud.Instance, sshStatus int, sshStderr string) seam.Deps {
+func d09DepsWithInstances(t *testing.T, root string, instances []cloud.Instance, sshStatus int) seam.Deps {
 	t.Helper()
 	return seam.Deps{EUID: 1, Dir: root, Exec: func(_ context.Context, cmd seam.Cmd) (seam.Result, error) {
 		switch cmd.Path {
@@ -129,7 +156,7 @@ func d09DepsWithInstances(t *testing.T, root string, instances []cloud.Instance,
 		case "git":
 			return seam.Result{Stdout: []byte(root + "\n")}, nil
 		case "ssh":
-			return seam.Result{ExitCode: sshStatus, Stderr: []byte(sshStderr)}, nil
+			return seam.Result{ExitCode: sshStatus}, nil
 		default:
 			t.Fatalf("unexpected command %#v", cmd)
 			return seam.Result{}, nil

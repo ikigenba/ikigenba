@@ -162,7 +162,7 @@ func TestPolicyDocumentHasOneArgumentOnlyOwner(t *testing.T) {
 }
 
 func TestSpaceDispatchShape(t *testing.T) {
-	// R-V0CA-9ASP
+	// R-JDWL-AX78
 	source := parseEmbeddedSource(t, "cli/run.go")
 	var runSpace *ast.FuncDecl
 	for _, declaration := range source.file.Decls {
@@ -185,6 +185,8 @@ func TestSpaceDispatchShape(t *testing.T) {
 		"create":  {qualifier: "spacecreate", tail: true},
 		"init":    {qualifier: "spaceinit", tail: true},
 		"restart": {qualifier: "spaceapps"},
+		"disable": {qualifier: "spaceapps"},
+		"enable":  {qualifier: "spaceapps"},
 		"logs":    {qualifier: "spaceapps"},
 	}
 	seen := make(map[string]bool, len(wantCases))
@@ -221,7 +223,7 @@ func TestSpaceDispatchShape(t *testing.T) {
 		}
 	}
 	if len(seen) != len(wantCases) {
-		t.Fatalf("runSpace dispatches = %v, want create, init, restart, and logs", seen)
+		t.Fatalf("runSpace dispatches = %v, want create, init, restart, disable, enable, and logs", seen)
 	}
 	if len(runSpace.Body.List) == 0 {
 		t.Fatal("runSpace has no fallback")

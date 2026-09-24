@@ -19,8 +19,8 @@ const usage = `Usage: devctl restore <space> <app> [--at <timestamp>]
 
 Have opsctl on the space put <app> back from the space's own backups. The
 app's etc/ and state/ come from the newest tarball, and its database, when it
-declares one, from litestream. <app>'s unit is stopped for the restore and
-started again after it.
+declares one, from litestream. <app>'s socket and service are stopped for the
+restore and started again after it, unless <app> is disabled.
 
 Options:
   --at <timestamp>   restore the app as it was at this RFC 3339 moment

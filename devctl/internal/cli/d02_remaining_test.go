@@ -21,8 +21,8 @@ const expectedRestoreUsage = `Usage: devctl restore <space> <app> [--at <timesta
 
 Have opsctl on the space put <app> back from the space's own backups. The
 app's etc/ and state/ come from the newest tarball, and its database, when it
-declares one, from litestream. <app>'s unit is stopped for the restore and
-started again after it.
+declares one, from litestream. <app>'s socket and service are stopped for the
+restore and started again after it, unless <app> is disabled.
 
 Options:
   --at <timestamp>   restore the app as it was at this RFC 3339 moment
@@ -46,7 +46,7 @@ Run 'devctl apex <subcommand> --help' for details.
 `
 
 func TestEveryCommandHelpIsExact(t *testing.T) {
-	// R-OLKP-QGCW
+	// R-1K7C-3SPK
 	tests := []struct {
 		command string
 		want    string
@@ -69,7 +69,7 @@ func TestEveryCommandHelpIsExact(t *testing.T) {
 }
 
 func TestCommandHelpPrecedesValidationAndExternalAccess(t *testing.T) {
-	// R-C7IS-6V7A
+	// R-1MN4-VC6Y
 	tests := []struct {
 		name string
 		args []string
@@ -81,6 +81,7 @@ func TestCommandHelpPrecedesValidationAndExternalAccess(t *testing.T) {
 		{name: "deploy", args: []string{"deploy", "--bad", "--help"}, want: expectedDeployUsage},
 		{name: "restore", args: []string{"restore", "--at", "--bad", "--help"}, want: expectedRestoreUsage},
 		{name: "remove", args: []string{"remove", "--bad", "--help"}, want: wantRemoveUsage},
+		{name: "apex", args: []string{"apex", "set", "--bad", "--help"}, want: expectedApexUsage},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

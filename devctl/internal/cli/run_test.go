@@ -20,6 +20,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
+	"github.com/ikigenba/ikigenba/devctl/internal/host"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 	"github.com/ikigenba/ikigenba/devctl/internal/secrets"
 )
@@ -99,9 +100,9 @@ Arguments:
 const expectedD06Usage = `Usage: devctl space <subcommand> [arguments]
 
 List, create, destroy, stop, start, initialise, and inspect spaces, and
-restart or read the journal of one app on one. A space is one label under the
-root domain; <space> is that label or the full domain. The cloud's tags are
-the only registry.
+restart, disable, enable, or read the journal of one app on one. A space is
+one label under the root domain; <space> is that label or the full domain.
+The cloud's tags are the only registry.
 
 Subcommands:
   list                       one line per space
@@ -110,8 +111,10 @@ Subcommands:
   stop <space>               stop the instance; state is kept
   start <space>              start the instance; its address is unchanged
   init <space> [options]     set the host's keys again and run opsctl init
-  status <space>             one line per app: version, service state, database journal mode
+  status <space>             one line per app: version, service state, socket state, database journal mode
   restart <space> <app>      restart one app's service on the host
+  disable <space> <app>      stop one app and keep it from starting until enabled
+  enable <space> <app>       let a disabled app start again, and start it
   logs <space> <app>         print one app's journal from the host
 
 Options (create):
@@ -172,8 +175,8 @@ then run certbot renew. Records are unchanged; the last line is domain and addre
 
 const expectedD06StatusUsage = `Usage: devctl space status <space>
 
-Relay opsctl status from the running host: app, version, service state and
-database journal mode. A host with no apps prints nothing.
+Relay opsctl status from the running host: app, version, service state, socket
+state and database journal mode. A host with no apps prints nothing.
 `
 
 func TestRunReturnsWithoutTerminatingCaller(t *testing.T) {
@@ -651,7 +654,7 @@ func TestSpaceHelpThroughCLIWithoutCheckoutOrEffects(t *testing.T) {
 		command []string
 		want    string
 	}{
-		// R-UO5A-FLDR
+		// R-JBGS-JDPU
 		{name: "space", command: []string{"space"}, want: expectedD06Usage},
 		// R-UPD6-TD4G
 		{name: "list", command: []string{"space", "list"}, want: expectedD06ListUsage},
@@ -661,7 +664,7 @@ func TestSpaceHelpThroughCLIWithoutCheckoutOrEffects(t *testing.T) {
 		{name: "stop", command: []string{"space", "stop"}, want: expectedD06StopUsage},
 		// R-UT0V-YOCJ
 		{name: "start", command: []string{"space", "start"}, want: expectedD06StartUsage},
-		// R-UU8S-CG38
+		// R-JCOO-X5GJ
 		{name: "status", command: []string{"space", "status"}, want: expectedD06StatusUsage},
 	}
 	for _, test := range tests {
@@ -718,7 +721,7 @@ func TestSpaceRejectsExtraOperandsBeforeEffects(t *testing.T) {
 }
 
 func TestSpaceRejectsUnknownOptionsBeforeEffects(t *testing.T) {
-	// R-V2S3-0UA3
+	// R-JHKA-G8FB
 	tests := [][]string{
 		{"space", "--wat"},
 		{"space", "--help", "--wat"},
@@ -1023,6 +1026,21 @@ func TestDiagnosticDetail(t *testing.T) {
 	want = "devctl: some items failed\n\nretry the failed items\n"
 	if got := stderr.String(); got != want {
 		t.Fatalf("diagnostic after stdout report = %q, want %q", got, want)
+	}
+}
+
+func TestHostCommandDetailIsNotQuotedAgain(t *testing.T) {
+	var stderr bytes.Buffer
+	err := &host.CommandError{
+		Step: "retire", Command: []string{"ssh", "ec2-user@18.220.10.5", "sudo", "opsctl", "retire"},
+		Status: 1, Stdout: "a\nb\n", Stderr: "c\n",
+	}
+	if got := operationError(&stderr, err); got != 1 {
+		t.Fatalf("operationError exit = %d, want 1", got)
+	}
+	want := "devctl: retire: ssh ec2-user@18.220.10.5 sudo opsctl retire: exit status 1\n\n> a\n> b\n> c\n"
+	if got := stderr.String(); got != want {
+		t.Fatalf("stderr = %q, want %q", got, want)
 	}
 }
 

@@ -273,7 +273,7 @@ func TestDeployFileValidationAndArchiveContract(t *testing.T) {
 }
 
 func TestDeployUsesRootSessionSpaceSecretsUploadAndHost(t *testing.T) {
-	// R-OCRZ-CEDP R-9PWP-H3AP R-OF7S-3XV3 R-0HFK-QF61 R-OHNK-VHCH R-OK3D-N0TV R-FAHM-ZZOH R-FHT1-AM4N R-OLBA-0SKK
+	// R-OCRZ-CEDP R-9PWP-H3AP R-OF7S-3XV3 R-0HFK-QF61 R-OHNK-VHCH R-OK3D-N0TV R-FAHM-ZZOH R-FHT1-AM4N
 	h := newHarness(t, "crm-v0.2.0-rc.1.tar.xz", "app = \"crm\"\nsecrets = [\"B\", \"A\", \"C\"]\n")
 	h.secretNames = []string{"A", "B", "C", "EXTRA"}
 	var stdout bytes.Buffer
@@ -316,6 +316,32 @@ func TestDeployUsesRootSessionSpaceSecretsUploadAndHost(t *testing.T) {
 	var commandErr *host.CommandError
 	if !errors.As(err, &commandErr) || commandErr.Step != "install" || commandErr.Status != 7 || commandErr.Detail() != "> first\n> second" {
 		t.Fatalf("host error = %#v", err)
+	}
+}
+
+func TestDeployInstallHostUsesFoundAddressAndDeps(t *testing.T) {
+	// R-ELEZ-QEF2
+	h := newHarness(t, "crm-v0.1.0.tar.xz", "app = \"crm\"\n")
+	h.instances = []cloud.Instance{{ID: "i-target", Space: "sbx1.ikigenba.dev", State: cloud.StateRunning, Address: "203.0.113.77"}}
+	deps := h.deps()
+	baseExec := deps.Exec
+	installErr := errors.New("install reached supplied runner")
+	var installCmd seam.Cmd
+	installCalls := 0
+	deps.Exec = func(ctx context.Context, cmd seam.Cmd) (seam.Result, error) {
+		if cmd.Path == "ssh" {
+			installCalls++
+			installCmd = cmd
+			return seam.Result{}, installErr
+		}
+		return baseExec(ctx, cmd)
+	}
+	err := deploy.Run(context.Background(), []string{"sbx1", h.operand}, io.Discard, deps)
+	if !errors.Is(err, installErr) || installCalls != 1 {
+		t.Fatalf("install error = %v, calls = %d", err, installCalls)
+	}
+	if installCmd.Dir != deps.Dir || len(installCmd.Args) != 8 || installCmd.Args[6] != "ec2-user@203.0.113.77" {
+		t.Fatalf("install command = %#v, deps dir = %q", installCmd, deps.Dir)
 	}
 }
 

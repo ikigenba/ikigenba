@@ -45,7 +45,7 @@ func TestHostPublicContract(t *testing.T) {
 }
 
 func TestCommandErrorContract(t *testing.T) {
-	// R-D5NY-WFYQ
+	// R-JA8W-5LZ5
 	assertFields(t, CommandError{}, []field{
 		{"Step", reflect.TypeFor[string]()},
 		{"Command", reflect.TypeFor[[]string]()},
@@ -68,11 +68,26 @@ func TestCommandErrorContract(t *testing.T) {
 			}
 		})
 	}
-	if got, want := (&CommandError{Stderr: "bad\nline\n", Stdout: "ignored"}).Detail(), "> bad\n> line"; got != want {
-		t.Fatalf("stderr Detail() = %q, want %q", got, want)
+	detailCases := []struct {
+		name   string
+		stdout string
+		stderr string
+		want   string
+	}{
+		{"both streams", "a\nb\n", "c\n\n> d\n", "> a\n> b\n> c\n> \n> > d"},
+		{"empty stderr", "report\n", "", "> report"},
+		{"whitespace stderr", "report\n", " \n\t", "> report"},
+		{"empty stdout", "", "failure\n", "> failure"},
+		{"whitespace stdout", " \n\t", "failure\n", "> failure"},
+		{"neither stream", "", " \n\t", ""},
 	}
-	if got, want := (&CommandError{Stderr: " \n\t", Stdout: "report\n"}).Detail(), "> report"; got != want {
-		t.Fatalf("stdout Detail() = %q, want %q", got, want)
+	for _, test := range detailCases {
+		t.Run(test.name, func(t *testing.T) {
+			got := (&CommandError{Stdout: test.stdout, Stderr: test.stderr}).Detail()
+			if got != test.want {
+				t.Fatalf("Detail() = %q, want %q", got, test.want)
+			}
+		})
 	}
 	if got := (&CommandError{}).ExitCode(); got != 1 {
 		t.Fatalf("ExitCode() = %d", got)

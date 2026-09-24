@@ -21,11 +21,12 @@ func TestReleaseDiscoveryContract(t *testing.T) {
 		t.Fatalf("Release fields = %#v", reflect.VisibleFields(releaseType))
 	}
 
-	// R-G1BF-EXZR
+	// R-L6YF-GLM5
 	if ReleasesURL != "https://api.github.com/repos/ikigenba/ikigenba/releases" ||
+		DownloadURL != "https://github.com/ikigenba/ikigenba/releases/download" ||
 		InstallerPath != "/tmp/opsctl-install" ||
-		SavedInstaller != "/usr/local/share/ikigenba/opsctl-install.sh" || DNSProvider != "route53" {
-		t.Fatalf("release constants = %q, %q, %q, %q", ReleasesURL, InstallerPath, SavedInstaller, DNSProvider)
+		DNSProvider != "route53" {
+		t.Fatalf("release constants = %q, %q, %q, %q", ReleasesURL, DownloadURL, InstallerPath, DNSProvider)
 	}
 
 	// R-GCAI-UVO0

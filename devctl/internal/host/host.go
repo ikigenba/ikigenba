@@ -50,12 +50,16 @@ func (e *CommandError) Error() string {
 	return prefix + strings.Join(e.Command, " ") + ": exit status " + strconv.Itoa(e.Status)
 }
 
-// Detail returns the command's diagnostic output, preferring stderr.
+// Detail returns quoted command output in the order the streams are presented.
 func (e *CommandError) Detail() string {
-	if strings.TrimSpace(e.Stderr) != "" {
-		return seam.QuoteOutput(e.Stderr)
+	var detail []string
+	if strings.TrimSpace(e.Stdout) != "" {
+		detail = append(detail, seam.QuoteOutput(e.Stdout))
 	}
-	return seam.QuoteOutput(e.Stdout)
+	if strings.TrimSpace(e.Stderr) != "" {
+		detail = append(detail, seam.QuoteOutput(e.Stderr))
+	}
+	return strings.Join(detail, "\n")
 }
 
 // ExitCode returns the devctl exit status for a failed remote command.

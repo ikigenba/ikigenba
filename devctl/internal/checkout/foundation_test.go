@@ -165,31 +165,18 @@ func TestDecodeManifest(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		doc     string
-		want    checkout.Manifest
-		wantErr bool
+		name string
+		doc  string
+		want checkout.Manifest
 	}{
 		{name: "minimal", doc: "app = 'crm'", want: checkout.Manifest{App: "crm", Secrets: []string{}}},
 		{name: "secrets", doc: "app = 'crm'\nsecrets = ['CRM_KEY', 'MAP_KEY']", want: checkout.Manifest{App: "crm", Secrets: []string{"CRM_KEY", "MAP_KEY"}}},
-		{name: "opaque fields", doc: "app = 'crm'\nport = 8080\ndefault = true\n[env]\nMODE = 'prod'\n[database]\nengine = 'postgres'", want: checkout.Manifest{App: "crm", Secrets: []string{}}},
-		{name: "invalid toml", doc: "app = [", wantErr: true},
-		{name: "absent app", doc: "secrets = []", wantErr: true},
-		{name: "empty app", doc: "app = ''", wantErr: true},
-		{name: "non-string app", doc: "app = 2", wantErr: true},
-		{name: "non-array secrets", doc: "app = 'crm'\nsecrets = 'KEY'", wantErr: true},
-		{name: "non-string secret", doc: "app = 'crm'\nsecrets = [1]", wantErr: true},
+		{name: "opaque fields", doc: "app = 'crm'\ndefault = true\n[env]\nMODE = 'prod'\n[database]\nengine = 'postgres'", want: checkout.Manifest{App: "crm", Secrets: []string{}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			// R-VNX8-PKBA R-CNDH-5VUB R-COLD-JNL0
+			// R-NG5I-UMQ6
 			got, err := checkout.DecodeManifest(strings.NewReader(test.doc))
-			if test.wantErr {
-				if err == nil {
-					t.Fatalf("DecodeManifest() = %#v, nil", got)
-				}
-				return
-			}
 			if err != nil {
 				t.Fatalf("DecodeManifest() error = %v", err)
 			}
@@ -197,6 +184,44 @@ func TestDecodeManifest(t *testing.T) {
 				t.Errorf("DecodeManifest() = %#v, want %#v", got, test.want)
 			}
 		})
+	}
+}
+
+func TestDecodeManifestRejectsInvalidFields(t *testing.T) {
+	t.Parallel()
+	for _, doc := range []string{
+		"app = [",
+		"secrets = []",
+		"app = ''",
+		"app = 2",
+		"app = 'crm'\nsecrets = 'KEY'",
+		"app = 'crm'\nsecrets = [1]",
+	} {
+		// R-COLD-JNL0
+		if got, err := checkout.DecodeManifest(strings.NewReader(doc)); err == nil {
+			t.Errorf("DecodeManifest(%q) = %#v, nil error", doc, got)
+		}
+	}
+}
+
+func TestDecodeManifestPortScope(t *testing.T) {
+	t.Parallel()
+	const wantMessage = "'port' is not allowed; the host gives the app its socket"
+	for _, doc := range []string{
+		"app = 'crm'\nport = 3100",
+		"app = 'crm'\nport = '3100'",
+		"app = 'crm'\nport = false",
+		"app = 'crm'\n[port]\nnumber = 3100",
+	} {
+		// R-NM90-RHFN
+		if _, err := checkout.DecodeManifest(strings.NewReader(doc)); err == nil || err.Error() != wantMessage {
+			t.Errorf("DecodeManifest(%q) error = %v, want %q", doc, err, wantMessage)
+		}
+	}
+	// R-NM90-RHFN
+	got, err := checkout.DecodeManifest(strings.NewReader("app = 'crm'\n[env]\nport = '3100'"))
+	if err != nil || !reflect.DeepEqual(got, checkout.Manifest{App: "crm", Secrets: []string{}}) {
+		t.Errorf("DecodeManifest with env.port = %#v, %v", got, err)
 	}
 }
 

@@ -36,7 +36,7 @@ func TestPublicContract(t *testing.T) {
 }
 
 func TestHelpAndGrammarStopBeforeExternalAccess(t *testing.T) {
-	// R-HPEE-9HCL R-HRU7-10TZ
+	// R-JZUS-6SJQ R-HRU7-10TZ
 	for _, args := range [][]string{{"--help"}, {"sbx1", "crm", "-h"}} {
 		var stdout bytes.Buffer
 		calls := 0
@@ -109,7 +109,7 @@ func TestResolutionFailuresStopBeforeSSH(t *testing.T) {
 }
 
 func TestRemoveUsesOnlyRootLookupAndOneHostCommand(t *testing.T) {
-	// R-MTKM-W619 R-HWPS-K3SR R-HXXO-XVJG
+	// R-MTKM-W619 R-HWPS-K3SR
 	// R-GZGM-4IR7
 	fixture := newFixture(t, []cloud.Instance{{ID: "i-1", Space: "sbx1.ikigenba.dev", State: cloud.StateRunning, Address: "18.118.7.42"}})
 	fixture.sshResult = seam.Result{Stdout: []byte("discarded\n")}
@@ -128,7 +128,7 @@ func TestRemoveUsesOnlyRootLookupAndOneHostCommand(t *testing.T) {
 }
 
 func TestRemoveReturnsHostFailureWithoutSuccess(t *testing.T) {
-	// R-HWPS-K3SR R-HXXO-XVJG R-GZGM-4IR7
+	// R-HWPS-K3SR R-GZGM-4IR7
 	fixture := newFixture(t, []cloud.Instance{{Space: "sbx1.ikigenba.dev", State: cloud.StateRunning, Address: "18.118.7.42"}})
 	fixture.sshResult = seam.Result{ExitCode: 7, Stderr: []byte("one\ntwo\n")}
 	var stdout bytes.Buffer

@@ -76,9 +76,13 @@ func InstallLatest(ctx context.Context, target host.Host) (string, error) {
 	return release.Version, nil
 }
 
-// Upgrade installs the requested opsctl release using the saved installer.
+// Upgrade fetches and installs the requested opsctl release.
 func Upgrade(ctx context.Context, target host.Host, version string) error {
-	_, err := target.Sudo(ctx, "opsctl", "bash", SavedInstaller, version)
+	url := DownloadURL + "/opsctl/" + version + "/install.sh"
+	if _, err := target.Run(ctx, "opsctl", "curl", "-fsSL", "-o", InstallerPath, url); err != nil {
+		return err
+	}
+	_, err := target.Sudo(ctx, "opsctl", "bash", InstallerPath, version)
 	return err
 }
 

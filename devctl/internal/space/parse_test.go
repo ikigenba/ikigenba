@@ -57,8 +57,8 @@ func TestRunRejectsExtraOperands(t *testing.T) {
 }
 
 func TestSpaceSubcommandGrammar(t *testing.T) {
-	// R-V1K6-N2JE
-	want := []string{"list", "create", "destroy", "stop", "start", "init", "status", "restart", "logs"}
+	// R-JF4H-OOXX
+	want := []string{"list", "create", "destroy", "stop", "start", "init", "status", "restart", "disable", "enable", "logs"}
 	if len(subcommands) != len(want) {
 		t.Fatalf("subcommand count = %d, want %d", len(subcommands), len(want))
 	}

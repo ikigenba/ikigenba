@@ -23,7 +23,7 @@ type runContract func(context.Context, []string, io.Writer, seam.Deps) error
 var _ runContract = Run
 
 func TestPublicContract(t *testing.T) {
-	// R-0O97-MDUA R-H1WE-W28L
+	// R-JIS6-U060 R-H1WE-W28L
 	typeOf := reflect.TypeFor[NoAppError]()
 	if typeOf.NumField() != 2 || typeOf.Field(0).Name != "App" || typeOf.Field(1).Name != "Domain" {
 		t.Fatalf("NoAppError fields = %v", typeOf)
@@ -34,12 +34,14 @@ func TestPublicContract(t *testing.T) {
 }
 
 func TestHelpAndSyntaxBeforeExternalAccess(t *testing.T) {
-	// R-0PH4-05KZ R-0QP0-DXBO R-0RWW-RP2D R-H34B-9TZA
+	// R-JK03-7RWP R-JL7Z-LJNE R-0QP0-DXBO R-0RWW-RP2D R-JRBH-IECV R-JSJD-W63K
 	for _, tc := range []struct {
 		args []string
 		want string
 	}{
 		{[]string{"restart", "--help"}, restartHelp}, {[]string{"restart", "sbx1", "crm", "-h"}, restartHelp},
+		{[]string{"disable", "--help"}, disableHelp}, {[]string{"disable", "sbx1", "crm", "-h"}, disableHelp},
+		{[]string{"enable", "--help"}, enableHelp}, {[]string{"enable", "sbx1", "crm", "-h"}, enableHelp},
 		{[]string{"logs", "--help"}, logsHelp}, {[]string{"logs", "sbx1", "crm", "-h"}, logsHelp},
 	} {
 		calls := 0
@@ -57,8 +59,12 @@ func TestHelpAndSyntaxBeforeExternalAccess(t *testing.T) {
 		want string
 	}{
 		{[]string{"restart"}, "space restart needs <space> and <app>"},
+		{[]string{"disable", "sbx1"}, "space disable needs <space> and <app>"},
+		{[]string{"enable", "sbx1"}, "space enable needs <space> and <app>"},
 		{[]string{"logs", "sbx1"}, "space logs needs <space> and <app>"},
 		{[]string{"restart", "sbx1", "crm", "extra"}, "space restart takes only <space> and <app>"},
+		{[]string{"disable", "sbx1", "crm", "extra"}, "space disable takes only <space> and <app>"},
+		{[]string{"enable", "sbx1", "crm", "--now"}, "unknown option '--now'"},
 		{[]string{"logs", "--wat", "sbx1", "crm"}, "unknown option '--wat'"},
 		{[]string{"logs", "sbx1", "crm", "--since"}, "option '--since' requires a value"},
 		{[]string{"logs", "--since", "--follow", "sbx1", "crm"}, "option '--since' requires a value"},
@@ -77,8 +83,8 @@ func TestHelpAndSyntaxBeforeExternalAccess(t *testing.T) {
 }
 
 func TestResolutionFailuresStopBeforeHostAccess(t *testing.T) {
-	// R-0T4T-5GT2
-	for _, subcommand := range []string{"restart", "logs"} {
+	// R-JMFV-ZBE3
+	for _, subcommand := range []string{"restart", "disable", "enable", "logs"} {
 		for _, tc := range []struct {
 			name      string
 			instances []cloud.Instance
@@ -104,14 +110,14 @@ func TestResolutionFailuresStopBeforeHostAccess(t *testing.T) {
 }
 
 func TestRestartUsesRootLookupAndOpsctl(t *testing.T) {
-	// R-0UCP-J8JR R-HAFP-KGFG
+	// R-JNNS-D34S R-SBQG-TBGD
 	f := runningFixture(t)
-	f.execResults = []seam.Result{{Stdout: []byte("discard me\n")}}
+	f.execResults = []seam.Result{{Stdout: []byte("a\n"), Stderr: []byte("b\n")}}
 	var stdout bytes.Buffer
 	if err := Run(context.Background(), []string{"restart", "sbx1", "crm"}, &stdout, f.deps()); err != nil {
 		t.Fatal(err)
 	}
-	if stdout.String() != "restart: ok (opsctl restarted crm)\n" {
+	if stdout.String() != "a\n" {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 	want := f.ssh("'sudo' 'opsctl' 'restart' 'crm'")
@@ -122,7 +128,7 @@ func TestRestartUsesRootLookupAndOpsctl(t *testing.T) {
 }
 
 func TestRestartFailureHasNoSuccessLine(t *testing.T) {
-	// R-HAFP-KGFG
+	// R-SBQG-TBGD
 	f := runningFixture(t)
 	f.execResults = []seam.Result{{ExitCode: 6, Stderr: []byte("failed\n")}}
 	var stdout bytes.Buffer
@@ -130,6 +136,46 @@ func TestRestartFailureHasNoSuccessLine(t *testing.T) {
 	var commandErr *host.CommandError
 	if !errors.As(err, &commandErr) || commandErr.Step != "restart" || stdout.Len() != 0 {
 		t.Fatalf("error/stdout = %#v/%q", err, stdout.String())
+	}
+}
+
+func TestOpsctlOperationsRelayOnlySuccessfulStdout(t *testing.T) {
+	// R-SBQG-TBGD R-SGM2-CEF5 R-SK9R-HPN8 R-JNNS-D34S
+	for _, command := range []string{"restart", "disable", "enable"} {
+		for _, tc := range []struct {
+			name   string
+			result seam.Result
+			want   string
+		}{
+			{"lines", seam.Result{Stdout: []byte("a\nb\n"), Stderr: []byte("ignored\n")}, "a\nb\n"},
+			{"no newline", seam.Result{Stdout: []byte("a"), Stderr: []byte("ignored\n")}, "a"},
+			{"failure", seam.Result{ExitCode: 1, Stdout: []byte("failure output\nsecond line\n"), Stderr: []byte("failure error\nsecond line\n")}, ""},
+		} {
+			t.Run(command+"/"+tc.name, func(t *testing.T) {
+				f := runningFixture(t)
+				f.execResults = []seam.Result{tc.result}
+				var stdout bytes.Buffer
+				err := Run(context.Background(), []string{command, "sbx1", "Odd/App"}, &stdout, f.deps())
+				if stdout.String() != tc.want {
+					t.Fatalf("stdout = %q, want %q", stdout.String(), tc.want)
+				}
+				if tc.result.ExitCode == 0 && err != nil {
+					t.Fatal(err)
+				}
+				if tc.result.ExitCode != 0 {
+					var commandErr *host.CommandError
+					if !errors.As(err, &commandErr) || commandErr.Step != command || commandErr.Status != 1 ||
+						commandErr.Stdout != string(tc.result.Stdout) || commandErr.Stderr != string(tc.result.Stderr) {
+						t.Fatalf("error = %#v", err)
+					}
+				}
+				want := f.ssh("'sudo' 'opsctl' '" + command + "' 'Odd/App'")
+				if !reflect.DeepEqual(f.execs, []seam.Cmd{want}) || len(f.streams) != 0 {
+					t.Fatalf("exec/stream = %#v/%#v", f.execs, f.streams)
+				}
+				f.assertResolution(t)
+			})
+		}
 	}
 }
 
@@ -166,7 +212,7 @@ func TestLogsChecksUnitBeforeJournal(t *testing.T) {
 }
 
 func TestLogsOptionsAndStreaming(t *testing.T) {
-	// R-H34B-9TZA R-HCVI-BZWU R-HE3E-PRNJ R-0UCP-J8JR
+	// R-JK03-7RWP R-JNNS-D34S R-HCVI-BZWU R-HE3E-PRNJ
 	for _, tc := range []struct {
 		name    string
 		args    []string
