@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"syscall"
 	"testing"
 	"time"
@@ -16,7 +15,7 @@ import (
 	"github.com/ikigenba/ikigenba/dummy/internal/cli"
 )
 
-// R-DM3V-Y883 R-AOZE-83CM
+// R-LGSH-HS2Z R-AOZE-83CM
 func TestMainWiring(t *testing.T) {
 	root := mainProjectRoot(t)
 	binary := filepath.Join(t.TempDir(), "dummy")
@@ -27,36 +26,29 @@ func TestMainWiring(t *testing.T) {
 		t.Fatalf("build dummy: %v\n%s", err, output)
 	}
 
-	stdout, stderr, exit := runBinary(t, binary, []string{"--version"}, nil)
-	if exit != cli.ExitSuccess || stdout != cli.Version+"\n" || stderr != "" {
-		t.Errorf("--version: exit=%d stdout=%q stderr=%q", exit, stdout, stderr)
+	for _, test := range []struct {
+		name   string
+		args   []string
+		exit   int
+		stdout string
+		stderr string
+	}{
+		{name: "version", args: []string{"--version"}, exit: cli.ExitSuccess, stdout: cli.Version + "\n"},
+		{name: "invalid command", args: []string{"bogus"}, exit: cli.ExitUsage, stderr: "dummy: unknown command 'bogus'\n\nsee 'dummy --help' for usage\n"},
+		{name: "bare without socket", exit: cli.ExitUsage, stderr: "dummy: no socket was passed in\n\nrun it under systemd, or locally with 'systemd-socket-activate -l 127.0.0.1:3000 dummy'\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			stdout, stderr, exit := runBinary(t, binary, test.args)
+			if exit != test.exit || stdout != test.stdout || stderr != test.stderr {
+				t.Errorf("exit=%d stdout=%q stderr=%q; want exit=%d stdout=%q stderr=%q", exit, stdout, stderr, test.exit, test.stdout, test.stderr)
+			}
+		})
 	}
 
-	stdout, stderr, exit = runBinary(t, binary, []string{"bogus"}, nil)
-	if exit != cli.ExitUsage || stdout != "" || stderr == "" {
-		t.Errorf("bogus: exit=%d stdout=%q stderr=%q", exit, stdout, stderr)
-	}
-
-	for _, signal := range []os.Signal{syscall.SIGTERM, os.Interrupt} {
-		port := freePort(t)
-		command := binaryCommand(binary, nil)
-		command.Env = []string{"PORT=" + port}
-		var commandStdout, commandStderr bytes.Buffer
-		command.Stdout = &commandStdout
-		command.Stderr = &commandStderr
-		if err := command.Start(); err != nil {
-			t.Fatalf("start serve case for %v: %v", signal, err)
-		}
-		waitUntilListening(t, port)
-		if err := command.Process.Signal(signal); err != nil {
-			t.Fatalf("send %v: %v", signal, err)
-		}
-		if err := command.Wait(); err != nil {
-			t.Errorf("serve case for %v exited with error: %v", signal, err)
-		}
-		if commandStdout.Len() != 0 || commandStderr.Len() != 0 {
-			t.Errorf("serve case for %v: stdout=%q stderr=%q", signal, commandStdout.String(), commandStderr.String())
-		}
+	for _, sig := range []os.Signal{syscall.SIGTERM, os.Interrupt} {
+		t.Run(sig.String(), func(t *testing.T) {
+			serveAndSignal(t, binary, sig)
+		})
 	}
 }
 
@@ -69,10 +61,11 @@ func mainProjectRoot(t *testing.T) string {
 	return filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
 }
 
-func runBinary(t *testing.T, binary string, args, environment []string) (string, string, int) {
+func runBinary(t *testing.T, binary string, args []string) (string, string, int) {
 	t.Helper()
-	command := binaryCommand(binary, args)
-	command.Env = environment
+	commandArgs := append([]string{binary}, args...)
+	command := &exec.Cmd{Path: binary, Args: commandArgs}
+	command.Env = []string{}
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
 	command.Stderr = &stderr
@@ -87,38 +80,113 @@ func runBinary(t *testing.T, binary string, args, environment []string) (string,
 	return stdout.String(), stderr.String(), exitError.ExitCode()
 }
 
-func binaryCommand(binary string, args []string) *exec.Cmd {
-	commandArgs := make([]string, 1, len(args)+1)
-	commandArgs[0] = binary
-	commandArgs = append(commandArgs, args...)
-	return &exec.Cmd{Path: binary, Args: commandArgs}
-}
-
-func freePort(t *testing.T) string {
+// R-M7M9-WQE9 R-MJT9-QFT7
+func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	directory, err := os.MkdirTemp("", "dummy-exec-")
 	if err != nil {
-		t.Fatalf("probe free port: %v", err)
+		t.Fatalf("create short socket directory: %v", err)
 	}
-	port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
-	if err = listener.Close(); err != nil {
-		t.Fatalf("close port probe: %v", err)
-	}
-	return port
-}
+	t.Cleanup(func() { _ = os.RemoveAll(directory) })
 
-func waitUntilListening(t *testing.T, port string) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	address := net.JoinHostPort("127.0.0.1", port)
-	for time.Now().Before(deadline) {
-		connection, err := net.DialTimeout("tcp", address, 50*time.Millisecond)
-		if err == nil {
-			if closeErr := connection.Close(); closeErr != nil {
-				t.Errorf("close readiness connection: %v", closeErr)
-			}
-			return
-		}
+	socketPath := filepath.Join(directory, "serve.sock")
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socketPath, Net: "unix"})
+	if err != nil {
+		t.Fatalf("listen on Unix socket: %v", err)
 	}
-	t.Fatalf("dummy did not listen on %s", address)
+	defer func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("close parent listener: %v", err)
+		}
+	}()
+	listener.SetUnlinkOnClose(false)
+	passedFile, err := listener.File()
+	if err != nil {
+		t.Fatalf("duplicate socket for child: %v", err)
+	}
+	defer func() {
+		if err := passedFile.Close(); err != nil {
+			t.Errorf("close passed socket file: %v", err)
+		}
+	}()
+	decoyFile, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatalf("open non-listener for descriptor 4: %v", err)
+	}
+	defer func() {
+		if err := decoyFile.Close(); err != nil {
+			t.Errorf("close descriptor 4: %v", err)
+		}
+	}()
+
+	notifyPath := filepath.Join(directory, "notify.sock")
+	notify, err := net.ListenUnixgram("unixgram", &net.UnixAddr{Name: notifyPath, Net: "unixgram"})
+	if err != nil {
+		t.Fatalf("listen for readiness: %v", err)
+	}
+	defer func() {
+		if err := notify.Close(); err != nil {
+			t.Errorf("close readiness listener: %v", err)
+		}
+	}()
+	if err := notify.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		t.Fatalf("set readiness deadline: %v", err)
+	}
+
+	command := exec.Command("/bin/sh")
+	command.Args = []string{"/bin/sh", "-c", `LISTEN_PID=$$ LISTEN_FDS=1 exec "$0"`, binary}
+	command.Env = []string{"NOTIFY_SOCKET=" + notifyPath}
+	// Only descriptor 3 is a listener. Readiness proves the child took it.
+	command.ExtraFiles = []*os.File{passedFile, decoyFile}
+	var stdout, stderr bytes.Buffer
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+	if err := command.Start(); err != nil {
+		t.Fatalf("start serve case: %v", err)
+	}
+	finished := false
+	defer func() {
+		if !finished {
+			_ = command.Process.Kill()
+			_ = command.Wait()
+		}
+	}()
+
+	var datagram [32]byte
+	n, _, err := notify.ReadFromUnix(datagram[:])
+	if err != nil {
+		t.Fatalf("wait for readiness: %v", err)
+	}
+	if got := string(datagram[:n]); got != "READY=1" {
+		t.Fatalf("readiness = %q, want READY=1", got)
+	}
+	if err := command.Process.Signal(sig); err != nil {
+		t.Fatalf("send %v: %v", sig, err)
+	}
+	waited := make(chan error, 1)
+	go func() { waited <- command.Wait() }()
+	select {
+	case err = <-waited:
+	case <-time.After(10 * time.Second):
+		_ = command.Process.Kill()
+		err = <-waited
+		finished = true
+		t.Fatalf("serve case for %v did not exit after signal: %v", sig, err)
+	}
+	finished = true
+	if err != nil {
+		t.Errorf("serve case for %v exited with error: %v", sig, err)
+	}
+	if stdout.Len() != 0 || stderr.Len() != 0 {
+		t.Errorf("serve case for %v: stdout=%q stderr=%q", sig, stdout.String(), stderr.String())
+	}
+	if _, err := os.Stat(socketPath); err != nil {
+		t.Errorf("socket path after child exit: %v", err)
+	}
+	connection, err := net.DialTimeout("unix", socketPath, time.Second)
+	if err != nil {
+		t.Errorf("socket no longer accepts queued connections: %v", err)
+	} else if err := connection.Close(); err != nil {
+		t.Errorf("close queued connection: %v", err)
+	}
 }

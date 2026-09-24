@@ -10,4 +10,4 @@ import (
 var Version = "v0.2.0"
 
 // Manifest describes dummy to the Ikigenba host.
-const Manifest = "app = \"dummy\"\nport = 3000\ndefault = false\nsecrets = []\n"
+const Manifest = "app = \"dummy\"\ndefault = false\nsecrets = []\n"

@@ -2,6 +2,7 @@ package panel
 
 import (
 	"html"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -170,11 +171,13 @@ func TestPageTextProcedures(t *testing.T) {
 	}
 }
 
-// R-L9C7-MT7L R-LAK4-0KYA R-LBS0-ECOZ R-LCZW-S4FO R-LE7T-5W6D
-// R-LFFP-JNX2 R-LGNL-XFNR R-M1DW-FJ9K
+// R-ML16-47JW R-LAK4-0KYA R-LBS0-ECOZ R-LCZW-S4FO R-LE7T-5W6D
+// R-ULUZ-4YJX R-LGNL-XFNR R-M1DW-FJ9K
 func TestPagePublicDeclarations(t *testing.T) {
-	constructor := Handler
-	if constructor(widget.NewStore()) == nil {
+	construct := func(f func(*widget.Store, io.Writer) http.Handler) http.Handler {
+		return f(widget.NewStore(), io.Discard)
+	}
+	if construct(Handler) == nil {
 		t.Fatal("nil handler")
 	}
 	derive := SignOutURL
@@ -183,7 +186,7 @@ func TestPagePublicDeclarations(t *testing.T) {
 	}
 	const service, missing, method, notFound, notAllowed, unsupported, signOut, local = ServiceName, MissingIdentityBody, MethodNotAllowedBody, NotFoundMessage, MethodNotAllowedMessage, UnsupportedMediaTypeMessage, SignOutText, LocalSignOutURL
 	got := []string{service, missing, method, notFound, notAllowed, unsupported, signOut, local}
-	want := []string{"Dummy", "identity header missing\n", "method not allowed\n", "That page was not found.", "That method is not allowed here.", "That media type is not supported.", "Sign out", "http://127.0.0.1:3001/"}
+	want := []string{"Dummy", "identity header missing\n", "method not allowed\n", "That page was not found.", "That method is not allowed here.", "That media type is not supported.", "Sign out", "http://localhost:3001/"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("constants: %#v", got)
 	}
@@ -228,7 +231,7 @@ func TestPageIdentityBeforeRouting(t *testing.T) {
 				if present {
 					r.Header["X-User-Id"] = []string{""}
 				}
-				w := pageTestResponse(Handler(s), r)
+				w := pageTestResponse(Handler(s, io.Discard), r)
 				want := MissingIdentityBody
 				if method == "HEAD" {
 					want = ""
@@ -272,7 +275,7 @@ func TestPageRoutes(t *testing.T) {
 			r.Host = "unrelated.test"
 			r.Header.Set("Accept", "application/json")
 			r.Header.Set("X-Original-URI", "/different")
-			w := pageTestResponse(Handler(s), r)
+			w := pageTestResponse(Handler(s, io.Discard), r)
 			if w.Code != tc.status || w.Header().Get("Allow") != tc.allow {
 				t.Fatalf("route: %d %v", w.Code, w.Header())
 			}
@@ -322,7 +325,7 @@ func pageTestFailure(t *testing.T, w *httptest.ResponseRecorder, r *http.Request
 func TestPageHeadAndOptionalEmail(t *testing.T) {
 	for _, path := range []string{"/", "/widgets", "/widgets/table", "/unknown", "/widgets/", "/widgets/table/"} {
 		for _, identity := range []bool{false, true} {
-			h := Handler(widget.NewStore())
+			h := Handler(widget.NewStore(), io.Discard)
 			get := pageTestRequest("GET", path)
 			if !identity {
 				get.Header.Del("X-User-Id")
@@ -334,7 +337,7 @@ func TestPageHeadAndOptionalEmail(t *testing.T) {
 				t.Fatalf("HEAD %s identity=%v: %d/%d %v/%v", path, identity, a.Code, b.Code, a.Header(), b.Header())
 			}
 		}
-		h := Handler(widget.NewStore())
+		h := Handler(widget.NewStore(), io.Discard)
 		absent := pageTestRequest("GET", path)
 		absent.Header.Del("X-User-Email")
 		empty := absent.Clone(absent.Context())
@@ -363,7 +366,7 @@ func TestPageDocumentChromeAndAttributes(t *testing.T) {
 		r.Header.Set("X-User-Email", "reader &lt; <b>\" &\t \n other@example.test")
 		r.Host = "dummy.a\" id=\"count-error<>&\t href=\"other:8443"
 		r.Header.Set("X-Forwarded-Proto", "HTTPS")
-		w := pageTestResponse(Handler(widget.NewStore()), r)
+		w := pageTestResponse(Handler(widget.NewStore(), io.Discard), r)
 		body := w.Body.String()
 		if w.Header().Get("Content-Type") != "text/html; charset=utf-8" || body == "" || r.URL.Path == "/widgets/table" {
 			t.Fatalf("expected HTML document: %d %q", w.Code, body)
@@ -393,7 +396,7 @@ func TestPageDocumentChromeAndAttributes(t *testing.T) {
 	}
 	// The fragment and bare faults do not belong to the HTML-document class.
 	for _, r := range []*http.Request{pageTestRequest("GET", "/widgets/table"), pageTestRequest("GET", "/")} {
-		w := pageTestResponse(Handler(widget.NewStore()), r)
+		w := pageTestResponse(Handler(widget.NewStore(), io.Discard), r)
 		if w.Body.Len() > 0 && w.Header().Get("Content-Type") == "text/html; charset=utf-8" && r.URL.Path != "/widgets/table" {
 			t.Fatal("non-document misclassified")
 		}
@@ -493,7 +496,7 @@ func TestPageNamedAttributesHaveOneQuotedOccurrence(t *testing.T) {
 		request.Header.Set("X-User-Email", attack)
 		request.Host = "dummy." + attack
 		request.Header.Set("X-Forwarded-Proto", attack)
-		response := pageTestResponse(Handler(widget.NewStore()), request)
+		response := pageTestResponse(Handler(widget.NewStore(), io.Discard), request)
 		if response.Body.Len() == 0 || response.Header().Get("Content-Type") != "text/html; charset=utf-8" {
 			t.Fatalf("expected HTML document: %d", response.Code)
 		}
@@ -508,7 +511,7 @@ func TestPageNamedAttributesHaveOneQuotedOccurrence(t *testing.T) {
 			}
 		}
 	}
-	fragment := pageTestResponse(Handler(widget.NewStore()), pageTestRequest(http.MethodGet, "/widgets/table"))
+	fragment := pageTestResponse(Handler(widget.NewStore(), io.Discard), pageTestRequest(http.MethodGet, "/widgets/table"))
 	if fragment.Code != http.StatusOK || fragment.Body.Len() == 0 {
 		t.Fatalf("expected table fragment: %d", fragment.Code)
 	}
@@ -547,7 +550,7 @@ func TestPageRequestValuesPreserveDocumentStructure(t *testing.T) {
 		}
 		store := widget.NewStore()
 		before := store.All()
-		h := Handler(store)
+		h := Handler(store, io.Discard)
 		a, b := pageTestResponse(h, first), pageTestResponse(h, second)
 		if a.Code != b.Code || a.Code != http.StatusUnprocessableEntity || !reflect.DeepEqual(before, store.All()) {
 			t.Fatalf("%s: comparison preconditions failed", field)
@@ -568,7 +571,7 @@ func TestPageScriptAndDocumentOrder(t *testing.T) {
 	missing.Header.Del("X-User-Id")
 	requests = append(requests, missing)
 	for _, r := range requests {
-		w := pageTestResponse(Handler(widget.NewStore()), r)
+		w := pageTestResponse(Handler(widget.NewStore(), io.Discard), r)
 		body := w.Body.String()
 		stripped := pageTestStrip(body)
 		if len(pageTestTags(body, "style", false)) != 0 || len(pageTestTags(stripped, "script", false)) != 0 || len(pageTestTags(stripped, "style", false)) != 0 || pageTestStrip(stripped) != stripped {
@@ -660,7 +663,7 @@ func TestPageCallerBytesCannotChangeMarkup(t *testing.T) {
 			case "proto":
 				b.Header.Set("X-Forwarded-Proto", attack)
 			}
-			h := Handler(s)
+			h := Handler(s, io.Discard)
 			first := pageTestResponse(h, a)
 			second := pageTestResponse(h, b)
 			if first.Code != 422 || second.Code != 422 {
@@ -688,7 +691,7 @@ func TestPageResponsesIndependentOfWorkingDirectory(t *testing.T) {
 	secondRequests := pageTestDocuments()
 	for i, request := range pageTestDocuments() {
 		t.Chdir(checkout)
-		first := pageTestResponse(Handler(widget.NewStore()), request.Clone(request.Context()))
+		first := pageTestResponse(Handler(widget.NewStore(), io.Discard), request.Clone(request.Context()))
 		t.Chdir(empty)
 		secondRequest := secondRequests[i]
 		if request.GetBody != nil {
@@ -697,7 +700,7 @@ func TestPageResponsesIndependentOfWorkingDirectory(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		second := pageTestResponse(Handler(widget.NewStore()), secondRequest)
+		second := pageTestResponse(Handler(widget.NewStore(), io.Discard), secondRequest)
 		if first.Code != second.Code || !reflect.DeepEqual(first.Header(), second.Header()) || first.Body.String() != second.Body.String() {
 			t.Fatalf("directory-dependent response for %s %s", request.Method, request.URL.Path)
 		}

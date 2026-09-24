@@ -15,6 +15,8 @@ func main() {
 	exit := cli.Run(ctx, cli.Process{
 		Args:      os.Args[1:],
 		LookupEnv: os.LookupEnv,
+		Unsetenv:  os.Unsetenv,
+		Pid:       os.Getpid(),
 		Stdout:    os.Stdout,
 		Stderr:    os.Stderr,
 	})

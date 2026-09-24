@@ -1,6 +1,7 @@
 package panel
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -50,7 +51,7 @@ func assertPanelStoreInvariant(t *testing.T, method, path, identity string, pres
 		request.Header["X-User-Id"] = []string{identity}
 	}
 	response := httptest.NewRecorder()
-	Handler(store).ServeHTTP(response, request)
+	Handler(store, io.Discard).ServeHTTP(response, request)
 	if response.Code != wantStatus {
 		t.Errorf("%s %s status = %d, want %d", method, path, response.Code, wantStatus)
 	}

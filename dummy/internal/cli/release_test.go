@@ -250,12 +250,12 @@ func TestVersionIsSemanticVersion(t *testing.T) {
 	}
 }
 
-// R-ARF6-ZMU0
+// R-LI0D-VJTO
 func TestManifestConstant(t *testing.T) {
 	t.Parallel()
 
 	const compiledAsConstant = Manifest
-	const want = "app = \"dummy\"\nport = 3000\ndefault = false\nsecrets = []\n"
+	const want = "app = \"dummy\"\ndefault = false\nsecrets = []\n"
 	if compiledAsConstant != want {
 		t.Errorf("Manifest = %q, want %q", compiledAsConstant, want)
 	}

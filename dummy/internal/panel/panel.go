@@ -5,9 +5,11 @@ import (
 	"embed"
 	"fmt"
 	"html"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"text/template"
 
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
@@ -35,19 +37,21 @@ const UnsupportedMediaTypeMessage = "That media type is not supported."
 const SignOutText = "Sign out"
 
 // LocalSignOutURL is auth's local development origin.
-const LocalSignOutURL = "http://127.0.0.1:3001/"
+const LocalSignOutURL = "http://localhost:3001/"
 
 //go:embed templates/*.html
 var templateFiles embed.FS
 
 type handler struct {
 	store     *widget.Store
+	stderr    io.Writer
+	stderrMu  sync.Mutex
 	templates *template.Template
 }
 
 // Handler constructs a panel whose requests share s.
-func Handler(s *widget.Store) http.Handler {
-	return &handler{store: s, templates: template.Must(template.New("panel").Funcs(template.FuncMap{"attr": safeAttribute, "esc": escapeText}).ParseFS(templateFiles, "templates/*.html"))}
+func Handler(s *widget.Store, stderr io.Writer) http.Handler {
+	return &handler{store: s, stderr: stderr, templates: template.Must(template.New("panel").Funcs(template.FuncMap{"attr": safeAttribute, "esc": escapeText}).ParseFS(templateFiles, "templates/*.html"))}
 }
 
 // SignOutURL derives auth's root from the request host and strict proxy scheme.
@@ -75,6 +79,13 @@ func safeAttribute(name string, value any) string {
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("X-User-Id") == "" {
 		plainFailure(w, r, http.StatusInternalServerError, MissingIdentityBody)
+		id := r.Header.Get("X-Request-Id")
+		if id == "" {
+			id = "-"
+		}
+		h.stderrMu.Lock()
+		_, _ = h.stderr.Write([]byte("dummy: request " + id + ": X-User-Id is missing\n"))
+		h.stderrMu.Unlock()
 		return
 	}
 	switch r.URL.Path {

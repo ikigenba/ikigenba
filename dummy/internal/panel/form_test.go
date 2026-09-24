@@ -137,7 +137,7 @@ func TestFormStatusOptionsFollowStatuses(t *testing.T) {
 			method = http.MethodPost
 			body = formBody(sub)
 		}
-		response := formRequest(Handler(widget.NewStore()), method, "/widgets", "application/x-www-form-urlencoded", body)
+		response := formRequest(Handler(widget.NewStore(), io.Discard), method, "/widgets", "application/x-www-form-urlencoded", body)
 		form := formSpan(t, response.Body.String())
 		var statusSelect string
 		for _, span := range pageTestTags(form, "select", false) {
@@ -175,7 +175,7 @@ func TestFormStatusOptionsFollowStatuses(t *testing.T) {
 func TestFormRejectedStatusSelection(t *testing.T) {
 	for _, status := range []string{"active", " paused ", "retired", "archived", "", "PAUSED"} {
 		sub := widget.Submission{Name: "", Count: "1", Status: status}
-		response := formRequest(Handler(widget.NewStore()), http.MethodPost, "/widgets", "application/x-www-form-urlencoded", formBody(sub))
+		response := formRequest(Handler(widget.NewStore(), io.Discard), http.MethodPost, "/widgets", "application/x-www-form-urlencoded", formBody(sub))
 		if response.Code != http.StatusUnprocessableEntity {
 			t.Fatalf("status %q: response = %d", status, response.Code)
 		}
@@ -245,7 +245,7 @@ func TestFormFreshPagesAndFailures(t *testing.T) {
 		{http.MethodPost, "/widgets", "application/json"},
 	} {
 		t.Run(tc.method+tc.path+tc.contentType, func(t *testing.T) {
-			w := formRequest(Handler(widget.NewStore()), tc.method, tc.path, tc.contentType, "")
+			w := formRequest(Handler(widget.NewStore(), io.Discard), tc.method, tc.path, tc.contentType, "")
 			body := w.Body.String()
 			controls := make(map[string]string)
 			if w.Code == http.StatusOK {
@@ -298,7 +298,7 @@ func TestFormRejections(t *testing.T) {
 			if !errs.Any() {
 				t.Fatal("rejection fixture unexpectedly valid")
 			}
-			h := Handler(store)
+			h := Handler(store, io.Discard)
 			w := formRequest(h, http.MethodPost, "/widgets", "application/x-www-form-urlencoded", formBody(sub))
 			if w.Code != http.StatusUnprocessableEntity || w.Header().Get("Content-Type") != "text/html; charset=utf-8" {
 				t.Fatalf("rejection = %d %v", w.Code, w.Header())
@@ -392,7 +392,7 @@ func TestFormAcceptedSubmission(t *testing.T) {
 			}
 			// Duplicates and URL query fields must not replace the first body values.
 			body := formBody(sub) + "&name=wrong&count=-9&status=archived&extra=ignored"
-			h := Handler(store)
+			h := Handler(store, io.Discard)
 			w := formRequest(h, http.MethodPost, "/widgets?name=query&count=-1&status=archived", mediaType, body)
 			if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/widgets" || w.Body.Len() != 0 {
 				t.Fatalf("accepted answer = %d %v %q", w.Code, w.Header(), w.Body.String())
@@ -420,7 +420,7 @@ func TestFormMissingAndRepeatedFields(t *testing.T) {
 		{"name=+first+&name=later&count=+bad+&count=1&status=+paused+&status=active", widget.Submission{Name: " first ", Count: " bad ", Status: " paused "}},
 	} {
 		t.Run(tc.body, func(t *testing.T) {
-			w := formRequest(Handler(widget.NewStore()), http.MethodPost, "/widgets?name=query&count=9&status=active", "application/x-www-form-urlencoded", tc.body)
+			w := formRequest(Handler(widget.NewStore(), io.Discard), http.MethodPost, "/widgets?name=query&count=9&status=active", "application/x-www-form-urlencoded", tc.body)
 			if w.Code != http.StatusUnprocessableEntity {
 				t.Fatalf("status = %d", w.Code)
 			}
@@ -506,7 +506,7 @@ func TestFormUnsupportedMediaNeverReads(t *testing.T) {
 				r.Header.Set("Content-Type", mediaType)
 			}
 			w := httptest.NewRecorder()
-			Handler(store).ServeHTTP(w, r)
+			Handler(store, io.Discard).ServeHTTP(w, r)
 			if w.Code != http.StatusUnsupportedMediaType || w.Header().Get("Content-Type") != "text/html; charset=utf-8" {
 				t.Fatalf("unsupported answer = %d %v", w.Code, w.Header())
 			}
@@ -547,7 +547,7 @@ func TestFormMissingIdentityNeverReads(t *testing.T) {
 			t.Run(mediaType+identity, func(t *testing.T) {
 				store := widget.NewStore()
 				before := store.All()
-				h := Handler(store)
+				h := Handler(store, io.Discard)
 				var previous *httptest.ResponseRecorder
 				for _, content := range []string{"name=new&count=1&status=active", "name=&count=wrong&status=archived"} {
 					body := &formObservedBody{reader: strings.NewReader(content)}
@@ -603,7 +603,7 @@ func TestFormAnswerSetAndAcceptIndependence(t *testing.T) {
 					r.Header.Set("Accept", accept)
 				}
 				w := httptest.NewRecorder()
-				Handler(widget.NewStore()).ServeHTTP(w, r)
+				Handler(widget.NewStore(), io.Discard).ServeHTTP(w, r)
 				if w.Code != tc.want {
 					t.Errorf("status=%d, want=%d", w.Code, tc.want)
 				}
