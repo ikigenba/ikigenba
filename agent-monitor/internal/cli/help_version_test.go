@@ -16,8 +16,8 @@ import (
 func TestUsageDeclaration(t *testing.T) {
 	// R-2GOG-2JAT: this assignment compiles only while Usage is a string constant.
 	const actual string = cli.Usage
-	// R-EVGO-LEF4
-	const want = "Usage: agent-monitor [options]\n       agent-monitor list <harness>\n\nObserve the coding agents on this machine through their logs and hooks.\n\nCommands:\n  list <harness>  list the live root sessions of claude, codex, or grok\n\nsee 'agent-monitor <command> --help' for command options\n\nOptions:\n  -h, --help      print this help\n  -V, --version   print the version\n\nExit codes:\n  0  success\n  1  the output could not be written\n  2  usage error\n  3  the harness's session data could not be read\n"
+	// R-QCVS-17QG
+	const want = "Usage: agent-monitor [options]\n       agent-monitor list <harness>\n       agent-monitor tree <harness> <session-id>\n\nObserve the coding agents on this machine through their logs and hooks.\n\nCommands:\n  list <harness>               list the live root sessions of claude, codex, or grok\n  tree <harness> <session-id>  draw the subagent tree of one session\n\nsee 'agent-monitor <command> --help' for command options\n\nOptions:\n  -h, --help      print this help\n  -V, --version   print the version\n\nExit codes:\n  0  success\n  1  the output could not be written\n  2  usage error\n  3  the harness's session data could not be read\n  4  the session was not found\n"
 	if actual != want {
 		t.Errorf("Usage = %q, want %q", actual, want)
 	}
@@ -128,6 +128,26 @@ func TestListHelpWins(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		code := cli.Run(args, cli.System{}, &stdout, &stderr)
 		if code != cli.ExitSuccess || stdout.String() != cli.ListUsage || stderr.Len() != 0 {
+			t.Errorf("Run(%q) = (%q, %q, %d)", args, stdout.String(), stderr.String(), code)
+		}
+	}
+}
+
+func TestTreeUsageText(t *testing.T) {
+	// R-QFBK-SR7U
+	const actual string = cli.TreeUsage
+	const want = "Usage: agent-monitor tree <harness> <session-id>\n\nDraw the subagent tree of one session.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  -h, --help  print this help\n"
+	if actual != want {
+		t.Errorf("TreeUsage = %q, want %q", actual, want)
+	}
+}
+
+func TestTreeHelpWins(t *testing.T) {
+	// R-QGJH-6IYJ
+	for _, args := range [][]string{{"tree", "--help"}, {"tree", "-h"}, {"tree", "claude", "sample", "--help"}, {"tree", "bogus", "extra", "more", "--bogus", "-h"}} {
+		var stdout, stderr bytes.Buffer
+		code := cli.Run(args, cli.System{}, &stdout, &stderr)
+		if code != cli.ExitSuccess || stdout.String() != cli.TreeUsage || stderr.Len() != 0 {
 			t.Errorf("Run(%q) = (%q, %q, %d)", args, stdout.String(), stderr.String(), code)
 		}
 	}

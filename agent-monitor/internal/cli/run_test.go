@@ -45,18 +45,18 @@ func TestBareRunReturnsUsage(t *testing.T) {
 	assertRun(t, nil, System{}, ExitSuccess, Usage, "")
 }
 
-// R-E0Z7-14VR R-2VB8-NS75 R-EBYA-H2K0 R-ED66-UUAP
+// R-PN9W-015V R-2VB8-NS75 R-EBYA-H2K0 R-ED66-UUAP
 func TestTopLevelClassification(t *testing.T) {
 	for _, arg := range []string{"-", "--", "-hV", "-Vh", "--help=x", "--version=x", "--HELP", "-H"} {
 		assertRun(t, []string{arg}, System{}, ExitUsage, "", "agent-monitor: unknown option '"+arg+"'"+usageHint)
 	}
-	for _, arg := range []string{"", "List", "status"} {
+	for _, arg := range []string{"", "List", "Tree", "status"} {
 		assertRun(t, []string{arg}, System{}, ExitUsage, "", "agent-monitor: unknown command '"+arg+"'"+usageHint)
 	}
 	assertRun(t, []string{"--", "--help"}, System{}, ExitUsage, "", "agent-monitor: unknown option '--'"+usageHint)
 }
 
-// R-E273-EWMG
+// R-POHS-DSWK
 func TestTopLevelFirstArgumentWins(t *testing.T) {
 	for _, first := range []string{"--help", "-h", "--version", "-V", "--", "bogus", ""} {
 		base, outBase, errBase := runRecorded([]string{first}, System{}, nil, nil)
@@ -91,7 +91,7 @@ func TestListGrammar(t *testing.T) {
 	}
 }
 
-// R-EJ9O-RP06 R-EKHL-5GQV
+// R-PZGV-TQKT R-Q0OS-7IBI
 func TestNonlistingOutcomesIgnoreSystem(t *testing.T) {
 	a := System{}
 	b := System{Home: "/elsewhere", Root: panicFS{}}
@@ -121,7 +121,7 @@ func TestMissingHome(t *testing.T) {
 	}
 }
 
-// R-EMXD-X089 R-EO5A-ARYY R-DZRA-ND52
+// R-EMXD-X089 R-EO5A-ARYY
 func TestListEmptyHarnessData(t *testing.T) {
 	for _, h := range []string{"claude", "codex", "grok"} {
 		code, out, diag := runRecorded([]string{"list", h}, System{Home: "/home/dev", Root: fstest.MapFS{}}, nil, nil)
@@ -141,7 +141,7 @@ func TestListNonemptyHarnessData(t *testing.T) {
 	assertRun(t, []string{"list", "claude"}, System{Home: "/home/dev", Root: root}, ExitSuccess, want, "")
 }
 
-// R-2WJ5-1JXU R-2XR1-FBOJ R-2YYX-T3F8 R-31EQ-KMWM R-EQL3-2BGC R-EU8S-7MOF
+// R-2WJ5-1JXU R-2XR1-FBOJ R-2YYX-T3F8 R-31EQ-KMWM
 func TestWriteFailuresAndOneWrite(t *testing.T) {
 	for _, args := range [][]string{nil, {"--help"}, {"--version"}, {"list", "--help"}} {
 		code, out, diag := runRecorded(args, System{}, errors.New("disk full"), errors.New("closed"))

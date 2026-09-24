@@ -10,6 +10,7 @@ import (
 	"github.com/ikigenba/ikigenba/agent-monitor/internal/harness/grok"
 	"github.com/ikigenba/ikigenba/agent-monitor/internal/quote"
 	"github.com/ikigenba/ikigenba/agent-monitor/internal/session"
+	"github.com/ikigenba/ikigenba/agent-monitor/internal/tree"
 )
 
 const usageHint = "\n\nsee 'agent-monitor --help' for usage\n"
@@ -26,6 +27,8 @@ func Run(args []string, sys System, stdout, stderr io.Writer) ExitCode {
 		return writeProduct(stdout, stderr, Version+"\n")
 	case "list":
 		return runList(args[1:], sys, stdout, stderr)
+	case "tree":
+		return runTree(args[1:], sys, stdout, stderr)
 	default:
 		kind := "unknown command"
 		if strings.HasPrefix(args[0], "-") {
@@ -33,6 +36,71 @@ func Run(args []string, sys System, stdout, stderr io.Writer) ExitCode {
 		}
 		return usageError(stderr, kind, args[0])
 	}
+}
+
+func runTree(args []string, sys System, stdout, stderr io.Writer) ExitCode {
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			return writeProduct(stdout, stderr, TreeUsage)
+		}
+	}
+	if len(args) == 0 {
+		writeDiagnostic(stderr, "agent-monitor: missing harness"+usageHint)
+		return ExitUsage
+	}
+	var harness, id string
+	place := 0
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			return usageError(stderr, "unknown option", arg)
+		}
+		switch place {
+		case 0:
+			switch arg {
+			case "claude", "codex", "grok":
+				harness = arg
+			default:
+				return usageError(stderr, "unknown harness", arg)
+			}
+		case 1:
+			id = arg
+		default:
+			return usageError(stderr, "unexpected argument", arg)
+		}
+		place++
+	}
+	if place == 1 {
+		writeDiagnostic(stderr, "agent-monitor: missing session id"+usageHint)
+		return ExitUsage
+	}
+	if sys.Home == "" {
+		writeDiagnostic(stderr, "agent-monitor: cannot find the home directory: HOME is not set\n")
+		return ExitDataUnreadable
+	}
+	var result tree.Tree
+	var err error
+	switch harness {
+	case "claude":
+		result, err = claude.Tree(sys.Root, sys.Home, id)
+	case "codex":
+		result, err = codex.Tree(sys.Root, sys.Home, id)
+	case "grok":
+		result, err = grok.Tree(sys.Root, sys.Home, id)
+	}
+	if err != nil {
+		if errors.Is(err, tree.ErrNotFound) {
+			writeDiagnostic(stderr, "agent-monitor: no "+harness+" session '"+quote.Arg(id)+"'\n")
+			return ExitSessionNotFound
+		}
+		var readErr *session.ReadError
+		if errors.As(err, &readErr) {
+			writeDiagnostic(stderr, "agent-monitor: cannot read "+quote.Field(readErr.Path)+": "+readErr.Err.Error()+"\n")
+			return ExitDataUnreadable
+		}
+		writeDiagnostic(stderr, "agent-monitor: cannot read session data: "+err.Error()+"\n")
+		return ExitDataUnreadable
+	}
+	return writeProduct(stdout, stderr, tree.Draw(result))
 }
 
 func runList(args []string, sys System, stdout, stderr io.Writer) ExitCode {

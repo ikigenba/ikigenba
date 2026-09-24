@@ -2,6 +2,7 @@ package grok_test
 
 import (
 	"errors"
+	"io"
 	"io/fs"
 	"reflect"
 	"strings"
@@ -41,11 +42,16 @@ func mustList(t *testing.T, root fs.FS) []session.Session {
 }
 
 type observed struct {
-	fstest.MapFS
-	opened []string
-	listed []string
-	writes []string
-	fail   map[string]error
+	files       fstest.MapFS
+	opened      []string
+	actualOpens []string
+	readFiles   []string
+	listed      []string
+	statted     []string
+	readLinked  []string
+	fileCalls   []string
+	writes      []string
+	fail        map[string]error
 }
 
 func (o *observed) forbidden(name string) error {
@@ -76,24 +82,85 @@ func (o *observed) Unlock() error                { return o.forbidden("Unlock") 
 
 func (o *observed) Open(name string) (fs.File, error) {
 	o.opened = append(o.opened, name)
+	o.actualOpens = append(o.actualOpens, name)
 	if err := o.fail[name]; err != nil {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: err}
 	}
-	return o.MapFS.Open(name)
+	f, err := o.files.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	return &observedFile{File: f, owner: o, name: name}, nil
 }
 func (o *observed) ReadFile(name string) ([]byte, error) {
 	o.opened = append(o.opened, name)
+	o.readFiles = append(o.readFiles, name)
 	if err := o.fail[name]; err != nil {
 		return nil, &fs.PathError{Op: "read", Path: name, Err: err}
 	}
-	return fs.ReadFile(o.MapFS, name)
+	return fs.ReadFile(o.files, name)
 }
 func (o *observed) ReadDir(name string) ([]fs.DirEntry, error) {
 	o.listed = append(o.listed, name)
 	if err := o.fail[name]; err != nil {
 		return nil, &fs.PathError{Op: "readdir", Path: name, Err: err}
 	}
-	return fs.ReadDir(o.MapFS, name)
+	return fs.ReadDir(o.files, name)
+}
+
+func (o *observed) Stat(name string) (fs.FileInfo, error) {
+	o.statted = append(o.statted, name)
+	if err := o.fail[name]; err != nil {
+		return nil, &fs.PathError{Op: "stat", Path: name, Err: err}
+	}
+	return fs.Stat(o.files, name)
+}
+
+func (o *observed) Lstat(name string) (fs.FileInfo, error) {
+	o.statted = append(o.statted, name)
+	if err := o.fail[name]; err != nil {
+		return nil, &fs.PathError{Op: "lstat", Path: name, Err: err}
+	}
+	return fs.Lstat(o.files, name)
+}
+
+func (o *observed) ReadLink(name string) (string, error) {
+	o.readLinked = append(o.readLinked, name)
+	if err := o.fail[name]; err != nil {
+		return "", &fs.PathError{Op: "readlink", Path: name, Err: err}
+	}
+	return fs.ReadLink(o.files, name)
+}
+
+type observedFile struct {
+	fs.File
+	owner *observed
+	name  string
+}
+
+func (f *observedFile) call(method string) {
+	f.owner.fileCalls = append(f.owner.fileCalls, method+" "+f.name)
+}
+
+func (f *observedFile) Read(p []byte) (int, error) {
+	f.call("Read")
+	return f.File.Read(p)
+}
+func (f *observedFile) ReadAt(p []byte, off int64) (int, error) {
+	f.call("ReadAt")
+	return f.File.(io.ReaderAt).ReadAt(p, off)
+}
+func (f *observedFile) Stat() (fs.FileInfo, error) {
+	f.call("Stat")
+	return f.File.Stat()
+}
+func (f *observedFile) ReadDir(n int) ([]fs.DirEntry, error) {
+	f.call("ReadDir")
+	return f.File.(fs.ReadDirFile).ReadDir(n)
+}
+func (f *observedFile) Close() error {
+	f.call("Close")
+	return f.File.Close()
 }
 
 // R-AN0B-XFZ4 R-AO88-B7PT R-3CCD-3GI4 R-H0PS-DNFS R-3KVN-RUOZ
@@ -101,7 +168,7 @@ func TestIndexPathsAndErrors(t *testing.T) {
 	if got := mustList(t, fstest.MapFS{}); len(got) != 0 {
 		t.Fatalf("missing index = %+v", got)
 	}
-	o := &observed{MapFS: root("[]"), fail: map[string]error{base + "active_sessions.json": fs.ErrPermission}}
+	o := &observed{files: root("[]"), fail: map[string]error{base + "active_sessions.json": fs.ErrPermission}}
 	got, err := grok.List(o, "/home/dev")
 	if got != nil {
 		t.Fatalf("error returned sessions: %+v", got)
@@ -176,7 +243,7 @@ func TestDirectorySearchAndForbiddenIDs(t *testing.T) {
 	r[base+"sessions/a/a/events.jsonl"] = file("{\"type\":\"turn_started\"}\n")
 	r[base+"sessions/link"] = &fstest.MapFile{Mode: fs.ModeSymlink, Data: []byte("a")}
 	r[base+"sessions/a/a/secret.lock"] = file("do not read")
-	o := &observed{MapFS: r, fail: map[string]error{base + "sessions/blocked": fs.ErrPermission}}
+	o := &observed{files: r, fail: map[string]error{base + "sessions/blocked": fs.ErrPermission}}
 	got := mustList(t, o)
 	byID := make(map[string]session.Session)
 	for _, s := range got {
@@ -208,7 +275,7 @@ func TestUnreadableEncodedDirectory(t *testing.T) {
 	r := root("[" + entry + "]")
 	r[base+"sessions/a/a/summary.json"] = file(`{"generated_title":"blocked"}`)
 	r[base+"sessions/b/a/summary.json"] = file(`{"generated_title":"found"}`)
-	o := &observed{MapFS: r, fail: map[string]error{base + "sessions/a": fs.ErrPermission}}
+	o := &observed{files: r, fail: map[string]error{base + "sessions/a": fs.ErrPermission}}
 	got := mustList(t, o)
 	if len(got) != 1 || got[0].Title != "found" {
 		t.Fatalf("sessions = %+v", got)
@@ -236,7 +303,7 @@ func TestIndependentFallbacks(t *testing.T) {
 		r := root("[" + entry + "]")
 		r[base+"sessions/x/a/summary.json"] = file(tc.summary)
 		r[base+"sessions/x/a/events.jsonl"] = file(tc.events)
-		o := &observed{MapFS: r, fail: map[string]error{base + "sessions/x/a/summary.json": tc.summaryErr, base + "sessions/x/a/events.jsonl": tc.eventsErr}}
+		o := &observed{files: r, fail: map[string]error{base + "sessions/x/a/summary.json": tc.summaryErr, base + "sessions/x/a/events.jsonl": tc.eventsErr}}
 		got := mustList(t, o)
 		if len(got) != 1 || got[0].Title != tc.title || got[0].Status != tc.status || got[0].CWD != "/work" || got[0].HasLastActive != (tc.when != "") {
 			t.Errorf("got %+v, want title %q status %s", got, tc.title, tc.status)
@@ -291,7 +358,7 @@ func TestOnlyReadsAllowedFiles(t *testing.T) {
 	r[base+"sessions/x/a/summary.json"] = file(`{"generated_title":"title"}`)
 	r[base+"sessions/x/a/events.jsonl"] = file("{\"type\":\"turn_ended\"}\n")
 	r[base+"sessions/x/a/state.lock"] = file("secret")
-	o := &observed{MapFS: r, fail: map[string]error{}}
+	o := &observed{files: r, fail: map[string]error{}}
 	got := mustList(t, o)
 	if len(got) != 1 || got[0].Title != "title" || got[0].Status != session.StatusIdle {
 		t.Fatalf("got %+v", got)
