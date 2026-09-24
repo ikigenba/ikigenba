@@ -37,6 +37,26 @@ D01 allows the standard library only, so `go.mod` carries no `require`
 directive. The run never adds one; a phase that appears to need a module files
 an issue for a human to adjudicate.
 
+## Assets
+
+`assets/` holds the files that give the panel the platform's visual style:
+the stylesheet, the font files, and their licence. They are copied by hand
+from the repository's `design/`, where the style is defined, and are not
+derived from `specs/`. The directory is hand-maintained and read-only to the
+run: the run never creates, edits, renames, or deletes anything in it, and
+writes no other file into it. The designs state how dummy embeds and serves
+these files, never what they contain, and the tests compare what dummy serves
+against the embedded files rather than restating their contents. A phase that
+needs an asset that is absent, or that has a different name or content,
+files an issue for a human to adjudicate.
+
+A human refreshes `assets/` by copying the current files from `design/`. The
+copied stylesheet loads its fonts through `@font-face` rules that name the
+files beside it, in place of the design lab's font import, and its header
+comment names the `design/` commit it was copied from. A restyle that changes
+only these files touches no spec. A change to the markup the stylesheet
+expects goes through the stories and designs like any other change.
+
 ## Build
 
 `make` builds `bin/dummy` from the checkout (`make build`, the `Makefile` in
