@@ -11,7 +11,9 @@ Release selection is data obtained at run time. The newest published release
 is found from the public releases listing, its installer is fetched onto the
 host and run, and the version it names is what the `opsctl` step line
 reports. No version is pinned anywhere in devctl; `space init --opsctl`
-re-runs the copy of the installer the host keeps.
+fetches the named release's installer from opsctl's documented release
+download and runs it the same way. devctl never relies on anything the
+installer leaves on the host besides the installed `opsctl`.
 
 Configuration is the eleven keys the installed opsctl declares, and nothing
 else. Five derive from the root, the zone, and the space: `host.name` is the
@@ -42,13 +44,13 @@ returned unchanged, so the diagnostic relay is the one D06 states.
 
 - R-FXNQ-9MRO: Package `internal/hostsetup` MUST export `Release` with exactly `Version string` and `InstallerURL string`.
 
-- R-G1BF-EXZR: Package `internal/hostsetup` MUST export `ReleasesURL = "https://api.github.com/repos/ikigenba/ikigenba/releases"`, `InstallerPath = "/tmp/opsctl-install"`, `SavedInstaller = "/usr/local/share/ikigenba/opsctl-install.sh"`, and `DNSProvider = "route53"`.
+- R-ZB3U-RUW1: Package `internal/hostsetup` MUST export `ReleasesURL = "https://api.github.com/repos/ikigenba/ikigenba/releases"`, `DownloadURL = "https://github.com/ikigenba/ikigenba/releases/download"`, `InstallerPath = "/tmp/opsctl-install"`, and `DNSProvider = "route53"`, and MUST export no `SavedInstaller`.
 
 - R-YJ1K-MA17: `Latest` MUST obtain published releases through `Deps.Exec` running `curl -fsSL` against ReleasesURL with `per_page=100` and successive `page` values starting at 1, stopping at a page with fewer than 100 entries; it MUST select the non-draft, non-prerelease `opsctl/<valid version>` release with newest `published_at` (lexicographically first tag breaks a tie), and obtain its installer URL from the asset named `install.sh`. An absent matching release, missing installer asset, malformed response or request failure MUST cause an error; Latest MUST NOT fall back to an embedded pin.
 
 - R-G3R8-6HH5: `InstallLatest` MUST select a release with `Latest`, fetch its InstallerURL on the host with `curl -fsSL -o InstallerPath`, run `sudo bash InstallerPath <version>`, and return that selected version on success; any failure MUST stop further work and use step `opsctl`. It MUST never inspect another project’s source or compile opsctl.
 
-- R-G4Z4-K97U: `Upgrade` MUST invoke `sudo bash SavedInstaller <version>` through the host with step `opsctl`, even if the requested version equals the installed version, and MUST return its error unchanged; it MUST not discover a newer version or set configuration on installer failure.
+- R-ZERJ-X644: `Upgrade` MUST fetch `<DownloadURL>/opsctl/<version>/install.sh` on the host with `curl -fsSL -o InstallerPath <that URL>` through `(host.Host).Run` with step `opsctl`, then run `sudo bash InstallerPath <version>` through `(host.Host).Sudo` with step `opsctl`, even if the requested version equals the installed version; the first failure MUST stop further work and be returned unchanged. It MUST not consult the releases listing, discover a newer version, set configuration, or run any file the installer left on the host.
 
 - R-G670-Y0YJ: `Version` MUST invoke installed `sudo opsctl version` with step `opsctl` and carry its stdout, with trailing newlines removed, into the kept-version display; it MUST not validate, interpret or use that text to choose behavior or a release, and MUST return host execution errors unchanged.
 

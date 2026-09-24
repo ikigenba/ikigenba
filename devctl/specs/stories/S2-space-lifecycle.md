@@ -229,8 +229,8 @@ missing keyring value leaves nothing in the account.
 The opsctl it installs is the newest release opsctl has published. The host
 then stays on that version until someone explicitly moves it: `create` chooses
 the first version, and `space init --opsctl` is the only later devctl command
-that changes it. The host holds its own copy of the installer, which is what
-`space init` runs.
+that changes it, by fetching that release's installer and running it, just
+as `create` does.
 
 Backups are kept when a space is destroyed unless the developer says
 otherwise, so a space may have lived before, and its certificate and store
@@ -768,7 +768,7 @@ Postconditions:
   the root, the zone, and the space give now: `host.name`, `dns.provider`,
   `dns.zones`, `aws.region`, and `backup.s3_uri`. `acme.email`, the four
   backup periods, `host.apex`, and every other key are as they were.
-- `/usr/local/bin/opsctl` is the version it was; the saved installer was not
+- `/usr/local/bin/opsctl` is the version it was; no installer was fetched or
   run.
 - `sudo opsctl init` has exited 0 on the host, so the host holds its
   certificate, its generated nginx configuration, its litestream configuration
@@ -781,8 +781,9 @@ Postconditions:
 
 ## A developer moves a space to a newer opsctl
 
-`--opsctl` names a release, and the host's own saved copy of the installer is
-run with that version as its operand before the keys are set and `init` runs.
+`--opsctl` names a release, and that release's installer is fetched onto the
+host and run with that version as its operand before the keys are set and
+`init` runs.
 Installing the binary changes nothing on the host by itself: what a new
 version changes is `init`'s to do, which is why the two are one command.
 
@@ -809,14 +810,13 @@ Preconditions:
 - The working directory is inside the checkout, and a live SSO session for
   the profile `ikigenba.dev`.
 - The space exists, its instance is `running`, and `opsctl` is installed on
-  it with its saved installer at
-  `/usr/local/share/ikigenba/opsctl-install.sh`.
+  it.
 - The release `opsctl/v0.3.0` exists and the host can reach it.
 - The developer's ssh configuration can reach the instance as `ec2-user`.
 
 Postconditions:
 
-- `/usr/local/bin/opsctl` is `v0.3.0` and the saved installer is `v0.3.0`'s.
+- `/usr/local/bin/opsctl` is `v0.3.0`.
 - Everything the plain re-initialisation's postconditions say. `init` was
   the new version's, so whatever `v0.3.0` generates differently is on the
   host.
