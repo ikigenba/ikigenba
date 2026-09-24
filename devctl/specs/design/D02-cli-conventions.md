@@ -64,7 +64,7 @@ including nested quotes and empty lines.
 
 - R-OKCT-COM7: The top-level command set MUST be exactly `version`, `space`, `secrets`, `build`, `deploy`, `restore`, `remove`, and `apex`.
 
-- R-OLKP-QGCW: For each of `space`, `secrets`, `build`, `deploy`, `restore`, `remove`, and `apex`, `devctl <command> --help` and `devctl <command> -h` MUST print the usage text that command's own design declares, byte for byte, to stdout, write nothing to stderr, and exit 0.
+- R-1K7C-3SPK: For each of `space`, `secrets`, `build`, `deploy`, `restore`, `remove`, and `apex`, `devctl <command> --help` and `devctl <command> -h` MUST print the usage text that command's own design declares, byte for byte, to stdout, write nothing to stderr, and exit 0.
 
 - R-OO0I-HZUA: The commands that read the root file MUST be exactly `space`, `secrets`, `deploy`, `restore`, `remove`, and `apex`, and each of them MUST make every call to `Deps.Cloud` with the `Domain` of the `checkout.RootFile` it read as the profile and that file's `Region` as the region, taking neither value from anywhere else, verified with a recording fake `Deps.Cloud` by a well-formed invocation of each of the six in a temporary checkout whose root file holds `{"domain": "example.test", "region": "eu-west-1"}` leaving the fake with calls whose profile is exactly `example.test` and whose region is exactly `eu-west-1`.
 
@@ -106,7 +106,7 @@ including nested quotes and empty lines.
 
 - R-C6AV-T3GL: Package `internal/seam` MUST export `QuoteOutput(text string) string`, returning an empty string for empty input and otherwise prefixing each line with `> ` after removing trailing newline characters; internal blank lines and all other bytes MUST be preserved.
 
-- R-C7IS-6V7A: Command help MUST take precedence over command-local argument validation when `--help` or `-h` appears among that command’s arguments, subject to the root refusal; it MUST invoke neither cloud nor process runners, including the streaming runner.
+- R-1MN4-VC6Y: Command help MUST take precedence over command-local argument validation when `--help` or `-h` appears among that command’s arguments, subject to the root refusal; it MUST invoke neither cloud nor process runners, including the streaming runner.
 
 - R-C8QO-KMXZ: Missing or empty option values for create, init and restore MUST be diagnosed before external access; a following argument beginning with `-` MUST not be consumed as such a value. Logs’ `--since` exception MUST follow its own declared grammar.
 
