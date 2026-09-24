@@ -26,9 +26,7 @@ completion criteria to the fanout assignments.
 
 Repository writes are limited to stories. No design, source, test,
 `AGENTS.md`, or issue-file changes; no requirement ids or commits. Do not start
-`draft-design`. Working inventories, proposals, and evidence belong in
-ephemeral scratch files outside the repository using the
-[handoff scratch convention](../handoff/SKILL.md#scratch-file-convention).
+`draft-design`.
 Report blockers and unresolved decisions to the user, not `specs/issues/`.
 
 ## Domain work
@@ -52,7 +50,7 @@ do not authorize inventing product behavior.
 Authors write the settled portions and report decisions they cannot settle.
 Do not silently delete existing stories. Rewrite a changed interaction to
 express the new intent; if the interaction is gone, ask the user how to
-retire it. Identify existing designs affected by story changes for the handoff.
+retire it.
 
 ## User decisions
 
@@ -66,11 +64,11 @@ stories are authority for the user's intent.
 Settle all substance the format requires: grammar, option behavior, literal
 or variable output, return/exit behavior and streams, preconditions, and
 postconditions. Do not invent any of these or treat a proposal as approved.
-Record settled decisions and their source so fresh agents can use them.
+Pass settled decisions and their source to fresh agents in their assignments.
 
 Pending decisions pause only dependent work, following fanout. Continue
-authoring and verifying independent portions. Keep unresolved alternatives in
-scratch material rather than writing guesses into stories. A genuine blocker
+authoring and verifying independent portions. Do not write guesses into
+stories. A genuine blocker
 uses fanout's stop-and-report behavior through the user channel above.
 
 ## Completion criteria
@@ -88,7 +86,7 @@ Verification must establish:
   or a specific pending decision. Only the first two permit completion.
 
 Report added and changed stories by heading and file, consistency changes,
-scratch evidence locations, and unresolved questions with affected work.
+and unresolved questions with affected work.
 Identify designs that now diverge and name `draft-design` as the next step
 without starting it. Label unresolved work as a partial draft. If existing
 stories already satisfy the request, report that verified result without

@@ -86,11 +86,11 @@ One bullet per requirement:
 - `<requirement text>` uses a modal verb (MUST/SHOULD/MAY) and states one testable assertion.
 - A requirement must be testable: there must be a finite, deterministic procedure that decides whether it holds, and running that procedure must be efficient. Do not write requirements whose only test would be to exhaustively check an infinite or intractable set of cases.
 - Never assume an external dependency. What counts as proof depends on what the fact is about:
-  - A fact about a vendor service or about state only a live system holds — a vendor host, an API's response shape, a protocol's required fields, a credential a host honors, a quota or limit, what a specific account or host is configured with — must be proven by observing the real thing (a live request, a real response) before the design is checked. Prior art and memory are not proof.
+  - A fact about a vendor service or about state only a live system holds — a vendor host, an API's response shape, a protocol's required fields, a credential a host honors, a quota or limit, what a specific account or host is configured with — must be proven by observing the real thing (a live request, a real response) before the requirement that states it is written. Prior art and memory are not proof.
   - A fact about a well-known tool with published documentation — `systemctl`, `git`, `ssh`, `curl`, a POSIX shell, a coreutil, a compiler, any versioned tool with a manual — is proven by that documentation. Cite where the behavior is documented; observation is required only for behavior the documentation does not state, or when the documented behavior is contradicted by a real run.
   - A tool the design depends on that is not declared in `AGENTS.md`'s toolchain, or whose documentation cannot be found for the behavior relied on, is an unproven dependency.
 
-  The proof does not gate the writing: a requirement may be drafted from documentation and research, and an observation may be gathered at any point before `check-spec` — a probe run while designing, an existing live test, a recorded real response. Verification done earlier in the work counts and is not repeated at check time; `check-spec` only checks that it exists. Observations are working material: they are reported to the user and kept in scratch files outside the repository, never written under `specs/`.
+  The proof comes before the writing: a fact is proven while the requirement that states it is drafted — by a probe run while designing, an existing live test, or a real response already in hand. Only new and changed requirements are proven; a requirement already in the design is not proven again.
 
 Requirements come in two forms, and a design needs both:
 

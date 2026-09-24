@@ -29,8 +29,6 @@ Design and the sub-project's `AGENTS.md` are read-only. Writes are limited to
 removing inadequate test tags or tests and filing evidenced issues under
 `specs/issues/`. No implementation changes, replacement tests, requirement
 edits, or minted ids. Preserve unrelated test assertions and coverage tags.
-Evidence and working inventories belong in external scratch material under the
-[handoff convention](../handoff/SKILL.md#scratch-file-convention).
 
 ## Audit work
 
@@ -88,7 +86,7 @@ inspect all tests or repeat the audit. If no ids are matched, report the
 verified inventory without mutations.
 
 Report audited and retained ids, removed tags/tests and reasons, newly opened
-ids, the remaining gap, evidence locations, and issues. A confirmed blocker
+ids, the remaining gap, and issues. A confirmed blocker
 halts delegation and active descendants under fanout; report completed and
 remaining work without claiming a complete audit. The user may next invoke
 `build-spec` to close reopened ids; do not invoke it automatically.

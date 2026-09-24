@@ -60,4 +60,4 @@ Have one sub-agent measure the final gap and another run the gates in the declar
 
 A run halted by a confirmed blocker cannot meet these criteria and does not claim to. It ends as a partial result: committed, verified work is kept, and the issue stays open for the user.
 
-The root's final report to the user names the ids closed, the commit hashes, the gate results and the commit they ran against, any issues, and the gap ids still open. Detailed evidence stays in commit messages, test output, and scratch files under the [handoff convention](../handoff/SKILL.md#scratch-file-convention), not in coordinator context.
+The root's final report to the user names the ids closed, the commit hashes, the gate results and the commit they ran against, any issues, and the gap ids still open. Detailed evidence stays in commit messages and test output, not in coordinator context.

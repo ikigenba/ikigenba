@@ -16,7 +16,7 @@ The specs describe the **current target**, not a commitment to earlier designs. 
 - `specs/issues/` — escalation channel; one markdown file per open issue, named `<slug>.md` (issues carry no minted id).
 - `AGENTS.md` — beside `specs/`; declares the sub-project's toolchain, test files, gates, and commit conventions (below). Human-authored.
 
-Those four entries are the whole of `specs/`. Nothing else is created under it: no review, evidence, ledger, or progress files. Working material a skill needs while it runs — a coverage ledger, verifier reports, gathered observations, alternatives under consideration — goes to an ephemeral scratch file outside the repository (the `handoff` skill's scratch-file convention), is reported to the user, and is never committed.
+Those four entries are the whole of `specs/`. Nothing else is created under it: no review, evidence, ledger, or progress files.
 
 ## Requirement ids
 
@@ -41,7 +41,7 @@ The gap is the diff: an id in design but not tests must be **added**; an id in t
 
 ## The sub-project's AGENTS.md
 
-Each sub-project has an `AGENTS.md` beside `specs/` that declares how the sub-project is built and tested: its toolchain, its test files (the file set the gap is computed against), its gates, and its commit conventions. That directory — the parent of `specs/` — is the sub-project's working directory: every gate command and path is relative to it, and a monorepo may hold several such sub-projects below one git root. The git root's own `AGENTS.md` is repo-wide guidance and never stands in for a sub-project's `AGENTS.md`; the sub-project's `AGENTS.md` is always the one that sits beside `specs/`. It is authored with the design, by a human, and is read-only to the run. It must declare:
+Each sub-project has an `AGENTS.md` beside `specs/` that declares how the sub-project is built and tested: its toolchain, its test files (the file set the gap is computed against), its gates, and its commit conventions. That directory — the parent of `specs/` — is the sub-project's working directory: every gate command and path is relative to it, and a monorepo may hold several such sub-projects below one git root. The git root's own `AGENTS.md` is repo-wide guidance and never stands in for a sub-project's `AGENTS.md`; the sub-project's `AGENTS.md` is always the one that sits beside `specs/`. It is read-only to the run. It must declare:
 
 - **Toolchain**: the tools and versions the gates need. `idgen` is never listed here; it is an authoring tool, not a build tool.
 - **Test files**: where the sub-project's tests live (the file set the canonical gap greps for ids).
@@ -83,7 +83,7 @@ A monorepo holds several sub-projects below one git root; each is independent an
 Each operation is a sibling skill. All five load this one for the shared rules above.
 
 - `draft-stories` — turn the user's intent into stories under `specs/stories/`, new or updated, grilling the user for what the intent leaves open. The format is `references/story-format.md` in this skill.
-- `draft-design` — author a design, and the sub-project's `AGENTS.md` beside it, by recursive delegation from user stories, for one sub-project at a time. The design format and id rules it authors against are `references/design-format.md` in this skill.
+- `draft-design` — author a design by recursive delegation from user stories, for one sub-project at a time. The design format and id rules it authors against are `references/design-format.md` in this skill.
 - `check-spec` — report whether the design is buildable and show the gap. Feedback only; it gates nothing and commits nothing.
 - `build-spec` — close the mechanical gap by recursive delegation.
 - `audit-spec` — audit adequacy of tests for ids already proved on both sides.
