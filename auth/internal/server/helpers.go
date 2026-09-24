@@ -17,10 +17,7 @@ const (
 	HeaderUserEmail = "X-User-Email"
 )
 
-const (
-	localHost       = "localhost:3001"
-	localOriginHost = "127.0.0.1:3001"
-)
+const localHost = "localhost:3001"
 
 // space returns the space a request host belongs to. A request to an auth
 // subdomain removes exactly its leading auth. label; a local request has no
@@ -41,7 +38,7 @@ func hostWithoutPort(host string) string {
 }
 
 func isLocalRequest(host string) bool {
-	return host == localHost || host == localOriginHost || hostWithoutPort(host) == "localhost" || hostWithoutPort(host) == "127.0.0.1"
+	return host == localHost
 }
 
 func redirectURI(host string) string {
@@ -53,7 +50,7 @@ func redirectURI(host string) string {
 
 func ownOrigin(host string) string {
 	if isLocalRequest(host) {
-		return "http://" + localOriginHost
+		return "http://" + localHost
 	}
 	return "https://auth." + space(host)
 }

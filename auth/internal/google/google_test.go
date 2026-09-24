@@ -413,6 +413,7 @@ func TestExportedAPIAndAuthorizationURL(t *testing.T) {
 	})((*googleclient.Client).Exchange)
 
 	fake := newFakeIssuer(t)
+	fake.setPaths("/custom-authorization", "/token", "/jwks")
 	client := googleclient.NewClient("client-id", "client-secret", "example.test", fake.server.URL)
 
 	if fake.discoveryRequests() != 0 {
@@ -432,9 +433,9 @@ func TestExportedAPIAndAuthorizationURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse authorization URL: %v", err)
 	}
-	// R-IGLN-K2W2
-	if authURL.Scheme+"://"+authURL.Host+authURL.Path != fake.server.URL+"/authorize" {
-		t.Errorf("authorization endpoint = %q, want %q", authURL.String(), fake.server.URL+"/authorize")
+	// R-TTTA-C8HY
+	if authURL.Scheme+"://"+authURL.Host+authURL.Path != fake.server.URL+"/custom-authorization" {
+		t.Errorf("authorization endpoint = %q, want %q", authURL.String(), fake.server.URL+"/custom-authorization")
 	}
 	wantChallenge := sha256.Sum256([]byte(verifier))
 	wantQuery := map[string]string{
@@ -463,7 +464,7 @@ func TestExportedAPIAndAuthorizationURL(t *testing.T) {
 }
 
 func TestExchangeVerifiesAndReturnsClaims(t *testing.T) {
-	// R-G0Q6-4X3M: Exchange posts the code, verifier, and redirect URI, and
+	// R-TXGZ-HJQ1: Exchange posts the code, verifier, and redirect URI, and
 	// returns Claims from a verified token for either accepted issuer.
 	fake := newFakeIssuer(t)
 	client := googleclient.NewClient("client-id", "client-secret", "example.test", fake.server.URL)
@@ -518,7 +519,7 @@ func TestExchangeVerifiesAndReturnsClaims(t *testing.T) {
 }
 
 func TestExchangeRejectsEndpointAndVerificationFailures(t *testing.T) {
-	// R-G0Q6-4X3M: a failed exchange, unreachable endpoint, or failed
+	// R-TXGZ-HJQ1: a failed exchange, unreachable endpoint, or failed
 	// verification returns a non-nil error.
 	fake := newFakeIssuer(t)
 	client := googleclient.NewClient("client-id", "client-secret", "example.test", fake.server.URL)
@@ -986,7 +987,7 @@ func TestExchangeUsesOAuth2AndOIDCLibraries(t *testing.T) {
 }
 
 func TestExchangePostsToDiscoveredTokenEndpointAndVerifiesRS256(t *testing.T) {
-	// R-G0Q6-4X3M
+	// R-TXGZ-HJQ1
 	const (
 		clientID  = "client-g0q6"
 		secret    = "secret-g0q6"

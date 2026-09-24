@@ -148,6 +148,43 @@ func TestOpenExistingDatabasePreservesRows(t *testing.T) {
 	}
 }
 
+func TestOpenRejectsUnwritableExistingOrdinaryDatabase(t *testing.T) {
+	// R-W4JF-EHDQ
+	dir := t.TempDir()
+	path := filepath.Join(dir, "auth.db")
+	writable := mustOpenUsable(t, path)
+	if err := writable.Close(); err != nil {
+		t.Fatalf("Close(writable) error = %v", err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatalf("OpenRoot(database directory) error = %v", err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
+	before, err := root.ReadFile("auth.db")
+	if err != nil {
+		t.Fatalf("ReadFile(database) error = %v", err)
+	}
+	if err := os.Chmod(path, 0o400); err != nil {
+		t.Fatalf("Chmod(database) error = %v", err)
+	}
+
+	st, err := Open(path, bytes.NewReader(nil))
+	if st != nil {
+		_ = st.Close()
+	}
+	if st != nil || err == nil || !strings.Contains(err.Error(), "attempt to write a readonly database") {
+		t.Fatalf("Open(unwritable database) = (%v, %v), want nil store and underlying readonly error", st, err)
+	}
+	after, err := root.ReadFile("auth.db")
+	if err != nil {
+		t.Fatalf("ReadFile(database after Open) error = %v", err)
+	}
+	if !bytes.Equal(after, before) {
+		t.Fatal("Open changed the unwritable database")
+	}
+}
+
 func TestExpiryIsDefinedStringTypeWithTypedConstants(t *testing.T) {
 	// R-4EXZ-V023
 	const (

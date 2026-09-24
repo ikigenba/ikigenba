@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"html"
@@ -74,8 +75,8 @@ func tokenRequest(target, sessionID string, form url.Values) *http.Request {
 	if form != nil {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
-	req.Host = "127.0.0.1:3001"
-	req.Header.Set("Origin", "http://127.0.0.1:3001")
+	req.Host = "localhost:3001"
+	req.Header.Set("Origin", "http://localhost:3001")
 	req.AddCookie(&http.Cookie{
 		Name:     SessionCookieName,
 		Value:    sessionID,
@@ -91,6 +92,130 @@ func tokenActionRequest(sessionID, tokenID, action string) *http.Request {
 	req.SetPathValue("id", tokenID)
 	req.SetPathValue("action", action)
 	return req
+}
+
+func TestTokenRoutesReportClosedStoreOnce(t *testing.T) {
+	st := openTokenTestStore(t)
+	_, session := tokenTestIdentity(t, st, "closed")
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_, reason := st.LookupSessionIdentity(session.ID, tokenTestNow)
+	if reason == nil {
+		t.Fatal("closed store unexpectedly succeeded")
+	}
+	for _, tc := range []struct {
+		name string
+		req  *http.Request
+	}{
+		{name: "create", req: tokenRequest("/tokens", session.ID, url.Values{"name": {"new"}, "expires": {"never"}})},
+		{name: "action", req: tokenActionRequest(session.ID, "missing", "delete")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var stderr identityDiagnosticWrites
+			srv := New(Config{Store: st, Now: func() time.Time { return tokenTestNow }, Stderr: &stderr})
+			tc.req.Header.Set("X-Request-Id", "token-42")
+			response := httptest.NewRecorder()
+			srv.ServeHTTP(response, tc.req)
+
+			// R-CCQE-EHNR: a failed store lookup is 500 plain text with no identity headers.
+			if response.Code != http.StatusInternalServerError || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" || response.Body.String() != "internal server error\n" {
+				t.Fatalf("response = %d %q %q", response.Code, response.Header().Get("Content-Type"), response.Body.String())
+			}
+			if response.Header().Get(HeaderUserID) != "" || response.Header().Get(HeaderUserEmail) != "" {
+				t.Fatalf("identity headers on 500: %v", response.Header())
+			}
+			want := "auth: request token-42: " + reason.Error() + "\n"
+			// R-XV9R-80CN: the request id and underlying error are written together.
+			// R-XWHN-LS3C: one 5xx request produces one diagnostic Write call.
+			if len(stderr.writes) != 1 || string(stderr.writes[0]) != want {
+				t.Fatalf("stderr writes = %q, want one %q", stderr.writes, want)
+			}
+		})
+	}
+}
+
+func TestTokenMutationStoreFailuresReport500(t *testing.T) {
+	path := t.TempDir() + "/auth.db"
+	st, err := store.Open(path, &tokenTestRand{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	user, session := tokenTestIdentity(t, st, "mutations")
+	token, _, err := st.CreateToken(user.ID, "existing", store.ExpiryNever, tokenTestNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	for _, trigger := range []string{
+		`CREATE TRIGGER fail_token_insert BEFORE INSERT ON tokens BEGIN SELECT RAISE(FAIL, 'injected token insert failure'); END`,
+		`CREATE TRIGGER fail_token_update BEFORE UPDATE ON tokens BEGIN SELECT RAISE(FAIL, 'injected token update failure'); END`,
+		`CREATE TRIGGER fail_token_delete BEFORE DELETE ON tokens BEGIN SELECT RAISE(FAIL, 'injected token delete failure'); END`,
+	} {
+		if _, err := db.ExecContext(context.Background(), trigger); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		name string
+		req  *http.Request
+		err  error
+	}{
+		{name: "create", req: tokenRequest("/tokens", session.ID, url.Values{"name": {"new"}, "expires": {"never"}}), err: func() error { _, _, err := st.CreateToken(user.ID, "new", store.ExpiryNever, tokenTestNow); return err }()},
+		{name: "enable", req: tokenActionRequest(session.ID, token.ID, "enable"), err: st.SetTokenEnabled(user.ID, token.ID, true)},
+		{name: "disable", req: tokenActionRequest(session.ID, token.ID, "disable"), err: st.SetTokenEnabled(user.ID, token.ID, false)},
+		{name: "delete", req: tokenActionRequest(session.ID, token.ID, "delete"), err: st.DeleteToken(user.ID, token.ID)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.err == nil {
+				t.Fatal("trigger did not fail store operation")
+			}
+			var stderr identityDiagnosticWrites
+			srv := New(Config{Store: st, Now: func() time.Time { return tokenTestNow }, Stderr: &stderr})
+			response := httptest.NewRecorder()
+			srv.ServeHTTP(response, tc.req)
+
+			// R-CCQE-EHNR: token write failures return one plain-text line.
+			if response.Code != http.StatusInternalServerError || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" || response.Body.String() != "internal server error\n" {
+				t.Fatalf("response = %d %q %q", response.Code, response.Header().Get("Content-Type"), response.Body.String())
+			}
+			// R-XV9R-80CN: the actual SQLite failure is retained in the diagnostic.
+			// R-XWHN-LS3C: the response causes exactly one Write call.
+			want := "auth: request -: " + tc.err.Error() + "\n"
+			if len(stderr.writes) != 1 || string(stderr.writes[0]) != want {
+				t.Fatalf("stderr writes = %q, want one %q", stderr.writes, want)
+			}
+		})
+	}
+}
+
+func TestTokenRefusalsWriteNoDiagnostic(t *testing.T) {
+	st := openTokenTestStore(t)
+	_, session := tokenTestIdentity(t, st, "refused")
+	var stderr identityDiagnosticWrites
+	srv := New(Config{Store: st, Now: func() time.Time { return tokenTestNow }, Stderr: &stderr})
+	missing := tokenActionRequest(session.ID, "missing", "delete")
+	badOrigin := tokenRequest("/tokens", session.ID, url.Values{"name": {"new"}, "expires": {"never"}})
+	badOrigin.Header.Set("Origin", "https://foreign.example")
+	for _, tc := range []struct {
+		req    *http.Request
+		status int
+	}{{missing, http.StatusNotFound}, {badOrigin, http.StatusForbidden}} {
+		response := httptest.NewRecorder()
+		srv.ServeHTTP(response, tc.req)
+		if response.Code != tc.status {
+			t.Fatalf("status = %d, want %d", response.Code, tc.status)
+		}
+	}
+	// R-XWHN-LS3C: 403 and 404 responses write nothing to cfg.Stderr.
+	if len(stderr.writes) != 0 {
+		t.Fatalf("stderr writes for refusals = %q", stderr.writes)
+	}
 }
 
 func TestCreateTokenAcceptsTrimmedNameAndEveryExpiry(t *testing.T) {
@@ -273,8 +398,8 @@ func TestTokenMutationsRejectBadOrMissingOriginWithoutMutation(t *testing.T) {
 	origins := []struct{ name, value string }{
 		{name: "missing", value: ""},
 		{name: "foreign", value: "https://evil.example"},
-		{name: "scheme", value: "https://127.0.0.1:3001"},
-		{name: "prefix", value: "http://127.0.0.1:3001.evil"},
+		{name: "scheme", value: "https://localhost:3001"},
+		{name: "prefix", value: "http://localhost:3001.evil"},
 	}
 	for _, action := range []string{"create", "enable", "disable", "delete"} {
 		for _, origin := range origins {
@@ -370,7 +495,7 @@ func TestCreateTokenShowsStoredSecretOnceThenNeverAgain(t *testing.T) {
 
 	later := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
-	req.Host = "127.0.0.1:3001"
+	req.Host = "localhost:3001"
 	req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 	srv.httpServer.Handler.ServeHTTP(later, req)
 	laterBody := later.Body.String()

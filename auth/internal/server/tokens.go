@@ -20,9 +20,13 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	identity, ok := s.tokenSessionIdentity(r)
-	if !ok {
+	identity, err := s.tokenSessionIdentity(r)
+	if errors.Is(err, store.ErrNotFound) {
 		writeTokenError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if err != nil {
+		s.writeServerError(w, r, err)
 		return
 	}
 
@@ -39,7 +43,7 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 
 	_, secret, err := s.st.CreateToken(identity.UserID, name, expiry, s.now())
 	if err != nil {
-		writeTokenError(w, http.StatusInternalServerError, "internal server error")
+		s.writeServerError(w, r, err)
 		return
 	}
 
@@ -54,13 +58,16 @@ func (s *Server) handleTokenAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	identity, ok := s.tokenSessionIdentity(r)
-	if !ok {
+	identity, err := s.tokenSessionIdentity(r)
+	if errors.Is(err, store.ErrNotFound) {
 		writeTokenError(w, http.StatusNotFound, "not found")
 		return
 	}
+	if err != nil {
+		s.writeServerError(w, r, err)
+		return
+	}
 
-	var err error
 	switch r.PathValue("action") {
 	case "enable":
 		err = s.st.SetTokenEnabled(identity.UserID, r.PathValue("id"), true)
@@ -77,7 +84,7 @@ func (s *Server) handleTokenAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeTokenError(w, http.StatusInternalServerError, "internal server error")
+		s.writeServerError(w, r, err)
 		return
 	}
 
@@ -123,13 +130,12 @@ func (s *Server) renderTokenRows(w io.Writer, userID string) error {
 	return nil
 }
 
-func (s *Server) tokenSessionIdentity(r *http.Request) (store.Identity, bool) {
+func (s *Server) tokenSessionIdentity(r *http.Request) (store.Identity, error) {
 	cookie, err := r.Cookie(SessionCookieName)
 	if err != nil {
-		return store.Identity{}, false
+		return store.Identity{}, store.ErrNotFound
 	}
-	identity, err := s.st.LookupSessionIdentity(cookie.Value, s.now())
-	return identity, err == nil
+	return s.st.LookupSessionIdentity(cookie.Value, s.now())
 }
 
 func tokenExpiry(value string) (store.Expiry, bool) {

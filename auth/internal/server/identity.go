@@ -12,7 +12,7 @@ import (
 func (s *Server) handleCheck(w http.ResponseWriter, r *http.Request) {
 	identity, bearer, err := s.identity(r, true)
 	if err != nil {
-		writeIdentityError(w, bearer, err)
+		s.writeIdentityError(w, r, bearer, err)
 		return
 	}
 
@@ -24,7 +24,7 @@ func (s *Server) handleCheck(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	identity, bearer, err := s.identity(r, false)
 	if err != nil {
-		writeIdentityError(w, bearer, err)
+		s.writeIdentityError(w, r, bearer, err)
 		return
 	}
 
@@ -33,7 +33,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		Email string `json:"email"`
 	}{ID: identity.UserID, Email: identity.Email})
 	if err != nil {
-		writePlainError(w, http.StatusInternalServerError, "internal server error")
+		s.writeServerError(w, r, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -64,9 +64,9 @@ func (s *Server) identity(r *http.Request, touch bool) (store.Identity, bool, er
 	return identity, false, err
 }
 
-func writeIdentityError(w http.ResponseWriter, bearer bool, err error) {
+func (s *Server) writeIdentityError(w http.ResponseWriter, r *http.Request, bearer bool, err error) {
 	if !errors.Is(err, store.ErrNotFound) {
-		writePlainError(w, http.StatusInternalServerError, "internal server error")
+		s.writeServerError(w, r, err)
 		return
 	}
 	if bearer {

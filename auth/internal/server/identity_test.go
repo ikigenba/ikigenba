@@ -31,6 +31,13 @@ var (
 
 type identityRand struct{ next byte }
 
+type identityDiagnosticWrites struct{ writes [][]byte }
+
+func (d *identityDiagnosticWrites) Write(p []byte) (int, error) {
+	d.writes = append(d.writes, append([]byte(nil), p...))
+	return len(p), nil
+}
+
 func (r *identityRand) Read(p []byte) (int, error) {
 	r.next++
 	for i := range p {
@@ -131,6 +138,81 @@ func serveIdentity(handler func(http.ResponseWriter, *http.Request), req *http.R
 	response := httptest.NewRecorder()
 	handler(response, req)
 	return response
+}
+
+func TestIdentityStoreFailureReturns500AndOneDiagnostic(t *testing.T) {
+	fixture := openIdentityFixture(t)
+	user := fixture.user(t, "failure-owner", "failure@example.com", identityNow)
+	session := fixture.session(t, user.ID, identityNow, identityNow)
+	_, secret := fixture.token(t, user.ID, "failure", store.ExpiryNever, identityNow)
+	if err := fixture.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name      string
+		path      string
+		sessionID string
+		bearer    string
+		reason    error
+		requestID string
+	}{
+		{name: "check/session", path: "/check", sessionID: session.ID, reason: func() error { _, err := fixture.store.TouchSession(session.ID, identityNow); return err }(), requestID: "trace-17"},
+		{name: "me/session", path: "/me", sessionID: session.ID, reason: func() error { _, err := fixture.store.LookupSessionIdentity(session.ID, identityNow); return err }()},
+		{name: "check/bearer", path: "/check", bearer: secret, reason: func() error { _, err := fixture.store.TouchTokenIdentity(secret, identityNow); return err }()},
+		{name: "me/bearer", path: "/me", bearer: secret, reason: func() error { _, err := fixture.store.LookupTokenIdentity(secret, identityNow); return err }()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.reason == nil {
+				t.Fatal("closed store unexpectedly succeeded")
+			}
+			var stderr identityDiagnosticWrites
+			srv := New(Config{Store: fixture.store, Now: func() time.Time { return identityNow }, Stderr: &stderr})
+			req := identityRequest(tc.path, tc.sessionID, tc.bearer)
+			req.Header.Set("X-Request-Id", tc.requestID)
+			response := serveIdentity(srv.ServeHTTP, req)
+
+			// R-CCQE-EHNR: a store failure overrides credential refusals on both routes.
+			if response.Code != http.StatusInternalServerError || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" || response.Body.String() != "internal server error\n" {
+				t.Fatalf("response = %d %q %q", response.Code, response.Header().Get("Content-Type"), response.Body.String())
+			}
+			if response.Header().Get(HeaderUserID) != "" || response.Header().Get(HeaderUserEmail) != "" {
+				t.Fatalf("identity headers on 500: %v", response.Header())
+			}
+			id := tc.requestID
+			if id == "" {
+				id = "-"
+			}
+			want := "auth: request " + id + ": " + tc.reason.Error() + "\n"
+			// R-XV9R-80CN: the exact reason and request id go in one Write call.
+			// R-XWHN-LS3C: a 5xx emits exactly one line.
+			if len(stderr.writes) != 1 || string(stderr.writes[0]) != want {
+				t.Fatalf("stderr writes = %q, want one %q", stderr.writes, want)
+			}
+		})
+	}
+}
+
+func TestIdentityRefusalsWriteNoDiagnostic(t *testing.T) {
+	fixture := openIdentityFixture(t)
+	var stderr identityDiagnosticWrites
+	srv := New(Config{Store: fixture.store, Now: func() time.Time { return identityNow }, Stderr: &stderr})
+	for _, tc := range []struct {
+		path, bearer string
+		status       int
+	}{
+		{path: "/check", status: http.StatusUnauthorized},
+		{path: "/me", bearer: "ikp_unknown", status: http.StatusForbidden},
+	} {
+		response := serveIdentity(srv.ServeHTTP, identityRequest(tc.path, "", tc.bearer))
+		if response.Code != tc.status {
+			t.Fatalf("%s response = %d, want %d", tc.path, response.Code, tc.status)
+		}
+	}
+	// R-XWHN-LS3C: ordinary refusals emit no diagnostics.
+	if len(stderr.writes) != 0 {
+		t.Fatalf("stderr writes for refusals = %q", stderr.writes)
+	}
 }
 
 func TestIdentityHeaderConstants(t *testing.T) {

@@ -3,15 +3,13 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
-	"syscall"
+	"sync"
 	"time"
 
 	"github.com/ikigenba/ikigenba/auth/internal/google"
@@ -20,12 +18,15 @@ import (
 	"github.com/ikigenba/ikigenba/auth/internal/version"
 )
 
-// Process carries every input Run would otherwise read from the ambient world.
+// Process carries the invocation and its external inputs.
 type Process struct {
 	Args       []string
-	Getenv     func(string) string
+	LookupEnv  func(key string) (string, bool)
+	Unsetenv   func(key string) error
+	Pid        int
 	Stdout     io.Writer
 	Stderr     io.Writer
+	Inherit    func(fd uintptr) (net.Listener, error)
 	Now        func() time.Time
 	Rand       io.Reader
 	OIDCIssuer string
@@ -34,7 +35,8 @@ type Process struct {
 
 const usageText = `Usage: auth [command]
 
-Serve the auth service at 127.0.0.1:$PORT. With no command, serve.
+Serve the auth service on the socket systemd passes in. With no command,
+serve.
 
 Commands:
   manifest   print the app manifest
@@ -50,7 +52,6 @@ Exit codes:
 `
 
 const manifestText = `app = "auth"
-port = 3001
 default = false
 secrets = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]
 
@@ -62,126 +63,162 @@ engine = "sqlite"
 path = "state/auth.db"
 `
 
-// Run executes one invocation and returns the process exit status.
-func Run(p Process) int {
-	args := p.Args
-	if len(args) > 0 {
+const socketHint = "\n\nrun it under systemd, or locally with 'systemd-socket-activate -l 127.0.0.1:3001 auth'\n"
+
+type lockedWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (w *lockedWriter) Write(b []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.w.Write(b)
+}
+
+// Run executes one invocation and returns its exit status.
+func Run(ctx context.Context, p Process) int {
+	stderr := &lockedWriter{w: p.Stderr}
+	if len(p.Args) != 0 {
+		args := p.Args
 		switch args[0] {
-		case "--version":
-			if len(args) != 1 {
-				return usageError(p, "unknown command", args[1])
+		case "--version", "--help", "manifest":
+			if len(args) == 1 {
+				switch args[0] {
+				case "--version":
+					_, _ = fmt.Fprintln(p.Stdout, version.Version)
+				case "--help":
+					_, _ = io.WriteString(p.Stdout, usageText)
+				case "manifest":
+					_, _ = io.WriteString(p.Stdout, manifestText)
+				}
+				return 0
 			}
-			_, _ = fmt.Fprintln(p.Stdout, version.Version)
-			return 0
-		case "--help":
-			if len(args) != 1 {
-				return usageError(p, "unknown command", args[1])
-			}
-			_, _ = io.WriteString(p.Stdout, usageText)
-			return 0
-		case "manifest":
-			if len(args) != 1 {
-				return usageError(p, "unknown command", args[1])
-			}
-			_, _ = io.WriteString(p.Stdout, manifestText)
-			return 0
-		default:
-			if strings.HasPrefix(args[0], "--") {
-				return usageError(p, "unknown option", args[0])
-			}
-			return usageError(p, "unknown command", args[0])
+			args = args[1:]
+		}
+		kind := "unknown command"
+		if strings.HasPrefix(args[0], "--") {
+			kind = "unknown option"
+		}
+		_, _ = fmt.Fprintf(stderr, "auth: %s '%s'\n\nsee 'auth --help' for usage\n", kind, args[0])
+		return 2
+	}
+	return serve(ctx, p, stderr)
+}
+
+func serve(ctx context.Context, p Process, stderr io.Writer) int {
+	lookup := p.LookupEnv
+	if lookup == nil {
+		lookup = func(string) (string, bool) { return "", false }
+	}
+	settings := [3]string{"GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "WORKSPACE_DOMAIN"}
+	values := [3]string{}
+	for i, key := range settings {
+		v, ok := lookup(key)
+		if !ok || v == "" {
+			_, _ = fmt.Fprintf(stderr, "auth: %s is not set\n", key)
+			return 2
+		}
+		values[i] = v
+	}
+	drain := 5 * time.Second
+	if v, ok := lookup("DRAIN_SECONDS"); ok && v != "" {
+		if !positiveDecimal(v) {
+			_, _ = fmt.Fprintf(stderr, "auth: DRAIN_SECONDS is '%s', not a positive whole number of seconds\n", v)
+			return 2
+		}
+		drain = drainDuration(v)
+	}
+	pid, pidOK := lookup("LISTEN_PID")
+	fds, fdsOK := lookup("LISTEN_FDS")
+	if !pidOK || pid != strconv.Itoa(p.Pid) || !fdsOK || !decimal(fds) || strings.TrimLeft(fds, "0") == "" {
+		_, _ = io.WriteString(stderr, "auth: no socket was passed in"+socketHint)
+		return 2
+	}
+	if strings.TrimLeft(fds, "0") != "1" {
+		_, _ = fmt.Fprintf(stderr, "auth: %s sockets were passed in, expected 1%s", fds, socketHint)
+		return 2
+	}
+	if p.Unsetenv != nil {
+		for _, key := range []string{"LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES"} {
+			_ = p.Unsetenv(key)
 		}
 	}
-	return serve(p)
-}
-
-func usageError(p Process, kind, value string) int {
-	_, _ = fmt.Fprintf(p.Stderr, "auth: %s '%s'\n\nsee 'auth --help' for usage\n", kind, value)
-	return 2
-}
-
-func serve(p Process) int {
-	getenv := p.Getenv
-	if getenv == nil {
-		getenv = func(string) string { return "" }
+	ln, err := inherit(p)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "auth: %s\n", err)
+		return 1
 	}
-	port, code, ok := readConfig(p, getenv)
-	if !ok {
-		return code
-	}
+	defer func() { _ = ln.Close() }()
 	st, err := store.Open(p.DBSource, p.Rand)
 	if err != nil {
-		_, _ = fmt.Fprintf(p.Stderr, "auth: cannot open database %s: %s\n", p.DBSource, err.Error())
+		_, _ = fmt.Fprintf(stderr, "auth: cannot open database %s: %s\n", p.DBSource, err)
 		return 1
 	}
 	defer func() { _ = st.Close() }()
-
-	client := google.NewClient(
-		getenv("GOOGLE_CLIENT_ID"),
-		getenv("GOOGLE_CLIENT_SECRET"),
-		getenv("WORKSPACE_DOMAIN"),
-		p.OIDCIssuer,
-	)
-	srv := server.New(server.Config{
-		Store:           st,
-		Google:          client,
-		Now:             p.Now,
-		Rand:            p.Rand,
-		Stderr:          p.Stderr,
-		WorkspaceDomain: getenv("WORKSPACE_DOMAIN"),
-	})
-
-	addr := net.JoinHostPort("127.0.0.1", port)
-	errc := make(chan error, 1)
-	go func() {
-		errc <- srv.Serve(addr)
-	}()
-
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(signals)
-
-	select {
-	case err := <-errc:
-		if err == nil {
-			return 0
-		}
-		var op *net.OpError
-		if errors.As(err, &op) && op.Op == "listen" && isAddrInUse(err) {
-			_, _ = fmt.Fprintf(p.Stderr, "auth: listen tcp %s: bind: address already in use\n", addr)
+	client := google.NewClient(values[0], values[1], values[2], p.OIDCIssuer)
+	h := server.New(server.Config{Store: st, Google: client, Now: p.Now, Rand: p.Rand, Stderr: stderr, WorkspaceDomain: values[2]})
+	if addr, ok := lookup("NOTIFY_SOCKET"); ok && addr != "" {
+		if err := notify(addr); err != nil {
+			_, _ = fmt.Fprintf(stderr, "auth: %s\n", err)
 			return 1
 		}
-		_, _ = fmt.Fprintf(p.Stderr, "auth: %s\n", err.Error())
-		return 1
-	case <-signals:
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(ctx)
-		<-errc
-		return 0
 	}
+	if err := server.Serve(ctx, ln, h, drain); err != nil {
+		_, _ = fmt.Fprintf(stderr, "auth: %s\n", err)
+		return 1
+	}
+	return 0
 }
 
-func readConfig(p Process, getenv func(string) string) (string, int, bool) {
-	port := getenv("PORT")
-	if port == "" {
-		_, _ = io.WriteString(p.Stderr, "auth: PORT is not set\n")
-		return "", 2, false
+func positiveDecimal(v string) bool {
+	return len(v) > 0 && v[0] >= '1' && v[0] <= '9' && decimal(v)
+}
+
+func drainDuration(v string) time.Duration {
+	const maxSeconds = int64(^uint64(0)>>1) / int64(time.Second)
+	maxText := strconv.FormatInt(maxSeconds, 10)
+	if len(v) > len(maxText) || len(v) == len(maxText) && v > maxText {
+		return time.Duration(1<<63 - 1)
 	}
-	n, err := strconv.Atoi(port)
-	if err != nil || n < 1 || n > 65535 || strconv.Itoa(n) != port {
-		_, _ = fmt.Fprintf(p.Stderr, "auth: PORT is '%s', not a port number\n", port)
-		return "", 2, false
+	n, _ := strconv.ParseInt(v, 10, 64)
+	return time.Duration(n) * time.Second
+}
+
+func decimal(v string) bool {
+	if v == "" {
+		return false
 	}
-	for _, name := range []string{"GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "WORKSPACE_DOMAIN"} {
-		if getenv(name) == "" {
-			_, _ = fmt.Fprintf(p.Stderr, "auth: %s is not set\n", name)
-			return "", 2, false
+	for i := range len(v) {
+		if v[i] < '0' || v[i] > '9' {
+			return false
 		}
 	}
-	return port, 0, true
+	return true
 }
 
-func isAddrInUse(err error) bool {
-	return errors.Is(err, syscall.EADDRINUSE)
+func inherit(p Process) (net.Listener, error) {
+	if p.Inherit != nil {
+		return p.Inherit(3)
+	}
+	file := os.NewFile(3, "systemd socket")
+	if file == nil {
+		return nil, fmt.Errorf("file descriptor 3 is unavailable")
+	}
+	ln, err := net.FileListener(file)
+	_ = file.Close()
+	if unix, ok := ln.(*net.UnixListener); ok {
+		unix.SetUnlinkOnClose(false)
+	}
+	return ln, err
+}
+
+func notify(addr string) error {
+	conn, err := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: addr, Net: "unixgram"})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
+	_, err = conn.Write([]byte("READY=1"))
+	return err
 }

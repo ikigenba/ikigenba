@@ -7,10 +7,9 @@ import (
 
 func TestHostDerivedValues(t *testing.T) {
 	// R-ILH9-35UU: the space is the host with one leading auth. label removed.
-	// R-IMP5-GXLJ: the callback redirect_uri is https on a space and the local
-	// http URL on localhost.
-	// R-INX1-UPC8: auth's own origin is https on a space and the local http
-	// origin on 127.0.0.1.
+	// R-U4SD-S667: only the exact localhost:3001 host is local.
+	// R-U8G2-XHEA: callback redirect_uri follows the exact host classification.
+	// R-UC3S-2SMD: own origin follows the same host classification.
 	if got := space("auth.green.example:443"); got != "green.example" {
 		t.Fatalf("space() = %q, want green.example", got)
 	}
@@ -23,8 +22,25 @@ func TestHostDerivedValues(t *testing.T) {
 	if got := redirectURI("localhost:3001"); got != "http://localhost:3001/login/google/callback" {
 		t.Fatalf("local redirectURI() = %q", got)
 	}
-	if got := ownOrigin("127.0.0.1:3001"); got != "http://127.0.0.1:3001" {
+	if got := ownOrigin("localhost:3001"); got != "http://localhost:3001" {
 		t.Fatalf("local ownOrigin() = %q", got)
+	}
+	for _, host := range []string{"localhost", "localhost:3002", "127.0.0.1:3001", "127.0.0.1", "LOCALHOST:3001"} {
+		if isLocalRequest(host) {
+			t.Fatalf("host %q was treated as local", host)
+		}
+		if got := redirectURI(host); got != "https://auth."+space(host)+"/login/google/callback" {
+			t.Fatalf("redirectURI(%q) = %q", host, got)
+		}
+		if got := ownOrigin(host); got != "https://auth."+space(host) {
+			t.Fatalf("ownOrigin(%q) = %q", host, got)
+		}
+		if got := cookieForHost(host, "session", false).Domain; got != space(host) {
+			t.Fatalf("cookie domain for %q = %q", host, got)
+		}
+	}
+	if !isLocalRequest("localhost:3001") {
+		t.Fatal("localhost:3001 was not treated as local")
 	}
 }
 

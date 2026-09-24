@@ -5,8 +5,12 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log"
 	"net"
 	"net/http"
+	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ikigenba/ikigenba/auth/internal/google"
@@ -59,8 +63,33 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("POST /tokens/{id}/{action}", s.handleTokenAction)
 	mux.HandleFunc("GET /assets/{name}", s.handleAsset)
 
-	s.httpServer = &http.Server{Handler: mux, ReadHeaderTimeout: 0}
+	s.httpServer = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	return s
+}
+
+// ServeHTTP routes one request through the service.
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.httpServer.Handler.ServeHTTP(w, r)
+}
+
+// writeServerError answers a failed operation without exposing identity or
+// implementation details to the client.
+func (s *Server) writeServerError(w http.ResponseWriter, r *http.Request, err error) {
+	w.Header().Del(HeaderUserID)
+	w.Header().Del(HeaderUserEmail)
+	s.writeDiagnostic(r, err)
+	writePlainError(w, http.StatusInternalServerError, "internal server error")
+}
+
+func (s *Server) writeDiagnostic(r *http.Request, err error) {
+	if s.stderr == nil || err == nil {
+		return
+	}
+	id := r.Header.Get("X-Request-Id")
+	if id == "" {
+		id = "-"
+	}
+	_, _ = s.stderr.Write([]byte("auth: request " + id + ": " + err.Error() + "\n"))
 }
 
 func (s *Server) handleAsset(w http.ResponseWriter, r *http.Request) {
@@ -87,20 +116,100 @@ func (s *Server) handleAsset(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-// Serve listens on addr and runs the service until Shutdown closes it.
-func (s *Server) Serve(addr string) error {
-	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", addr)
-	if err != nil {
-		return err
+// DrainError reports requests still in progress after the drain deadline.
+type DrainError struct{ Unfinished int }
+
+func (e *DrainError) Error() string {
+	if e.Unfinished == 1 {
+		return "stopped with 1 request unfinished"
 	}
-	err = s.httpServer.Serve(listener)
-	if errors.Is(err, http.ErrServerClosed) {
-		return nil
-	}
-	return err
+	return "stopped with " + strconv.Itoa(e.Unfinished) + " requests unfinished"
 }
 
-// Shutdown gracefully finishes active requests and closes the listener.
-func (s *Server) Shutdown(ctx context.Context) error {
-	return s.httpServer.Shutdown(ctx)
+// Serve handles HTTP/1.1 on the supplied listener until cancellation or failure.
+func Serve(ctx context.Context, ln net.Listener, h http.Handler, drain time.Duration) error {
+	if ctx.Err() != nil {
+		_ = ln.Close()
+		return nil
+	}
+	var active atomic.Int64
+	var connections sync.Mutex
+	pending := make(map[net.Conn]struct{})
+	httpServer := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			active.Add(1)
+			defer active.Add(-1)
+			h.ServeHTTP(w, r)
+		}),
+		ReadHeaderTimeout: 10 * time.Second,
+		ErrorLog:          log.New(io.Discard, "", 0),
+		ConnState: func(conn net.Conn, state http.ConnState) {
+			connections.Lock()
+			if state == http.StateNew {
+				pending[conn] = struct{}{}
+			} else {
+				delete(pending, conn)
+			}
+			connections.Unlock()
+			if state == http.StateNew && ctx.Err() != nil {
+				_ = conn.Close()
+			}
+		},
+	}
+	// Accept begins only after net/http has registered the listener for Shutdown.
+	accepting := make(chan struct{})
+	serveResult := make(chan error, 1)
+	go func() { serveResult <- httpServer.Serve(&readyListener{Listener: ln, accepting: accepting}) }()
+	select {
+	case err := <-serveResult:
+		if ctx.Err() != nil {
+			return nil
+		}
+		if err == nil {
+			return errors.New("http server stopped before cancellation")
+		}
+		return err
+	case <-ctx.Done():
+	}
+	deadline, cancel := context.WithTimeout(context.Background(), drain)
+	defer cancel()
+	select {
+	case <-accepting:
+	case <-serveResult:
+		_ = ln.Close()
+		return nil
+	}
+	_ = ln.Close()
+	connections.Lock()
+	toClose := make([]net.Conn, 0, len(pending))
+	for conn := range pending {
+		toClose = append(toClose, conn)
+	}
+	connections.Unlock()
+	for _, conn := range toClose {
+		_ = conn.Close()
+	}
+	err := httpServer.Shutdown(deadline)
+	if err == nil {
+		return nil
+	}
+	unfinished := int(active.Load())
+	_ = httpServer.Close()
+	if unfinished > 0 {
+		return &DrainError{Unfinished: unfinished}
+	}
+	return nil
+}
+
+type readyListener struct {
+	net.Listener
+	accepting chan struct{}
+	started   atomic.Bool
+}
+
+func (l *readyListener) Accept() (net.Conn, error) {
+	if l.started.CompareAndSwap(false, true) {
+		close(l.accepting)
+	}
+	return l.Listener.Accept()
 }

@@ -1,16 +1,20 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -79,27 +83,267 @@ func pinNew(newFn func(Config) *Server) func(Config) *Server { return newFn }
 
 func pinServer(s *Server) *Server { return s }
 
-func TestServeAndShutdown(t *testing.T) {
-	// R-IEJ9-SABB: Serve binds the requested loopback address and Shutdown
-	// gracefully closes that listener, making Serve return without ErrServerClosed.
-	s := New(Config{Now: fixedNow})
-	addr := freeLoopbackAddress(t)
-	served := make(chan error, 1)
-	go func() { served <- s.Serve(addr) }()
+func TestServeSignatureAndHandler(t *testing.T) {
+	// R-M22I-KPZ1: Serve exposes the listener, handler, context and drain seam.
+	want := reflect.TypeOf(func(context.Context, net.Listener, http.Handler, time.Duration) error { return nil })
+	if got := reflect.TypeOf(Serve); got != want {
+		t.Fatalf("Serve type = %s, want %s", got, want)
+	}
+	// R-M4IB-C9GF: *Server itself handles requests through its router.
+	var handler http.Handler = New(Config{Now: fixedNow})
+	r := httptest.NewRecorder()
+	handler.ServeHTTP(r, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil))
+	if r.Code != http.StatusOK || !strings.Contains(r.Body.String(), "Sign in with Google") {
+		t.Fatalf("ServeHTTP returned %d %q", r.Code, r.Body.String())
+	}
+}
 
-	conn := waitForLoopback(t, addr)
-	if err := conn.Close(); err != nil {
-		t.Fatalf("close readiness connection: %v", err)
+func TestServeRequestsAndStop(t *testing.T) {
+	// R-MALT-945W: Serve answers HTTP/1.1 on the supplied listener and stays up.
+	// R-MBTP-MVWL: cancellation closes the listener and idle connections.
+	ln := &observedListener{Listener: loopbackListener(t), accepted: make(chan struct{}, 2)}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	h := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "served") })
+	go func() { done <- Serve(ctx, ln, h, time.Second) }()
+	conn, err := (&net.Dialer{}).DialContext(context.Background(), "tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := s.Shutdown(context.Background()); err != nil {
-		t.Fatalf("Shutdown() error = %v", err)
+	defer func() { _ = conn.Close() }()
+	<-ln.accepted
+	if _, err := io.WriteString(conn, "GET / HTTP/1.1\r\nHost: example.test\r\n\r\n"); err != nil {
+		t.Fatal(err)
 	}
-	if err := <-served; err != nil {
-		t.Fatalf("Serve() error = %v", err)
+	if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
 	}
-	if conn, err := (&net.Dialer{}).DialContext(context.Background(), "tcp", addr); err == nil {
+	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil || resp.Proto != "HTTP/1.1" || string(body) != "served" {
+		t.Fatalf("response proto=%s body=%q err=%v", resp.Proto, body, err)
+	}
+	select {
+	case err := <-done:
+		t.Fatalf("Serve returned before cancellation: %v", err)
+	default:
+	}
+	idle, err := (&net.Dialer{}).DialContext(context.Background(), "tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = idle.Close() }()
+	// The socket has reached Serve's Accept, so closing it tests shutdown
+	// of a connection carrying no request rather than a queued TCP dial.
+	<-ln.accepted
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("Serve returned %v", err)
+	}
+	if conn, err := (&net.Dialer{}).DialContext(context.Background(), "tcp", ln.Addr().String()); err == nil {
 		_ = conn.Close()
-		t.Fatal("address is still listening after Shutdown")
+		t.Fatal("listener still accepts after cancellation")
+	}
+	_ = idle.SetReadDeadline(time.Now().Add(time.Second))
+	var one [1]byte
+	if n, err := idle.Read(one[:]); n != 0 || !errors.Is(err, io.EOF) {
+		t.Fatalf("idle connection read = %d, %v, want EOF", n, err)
+	}
+}
+
+func TestServeDrainsAndOverruns(t *testing.T) {
+	// R-MD1M-0NNA: a running handler completes and Serve returns promptly.
+	ln := loopbackListener(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- Serve(ctx, ln, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			close(started)
+			<-release
+			_, _ = io.WriteString(w, "complete")
+		}), 2*time.Second)
+	}()
+	response := make(chan string, 1)
+	go func() {
+		client := &http.Client{Timeout: 2 * time.Second}
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://"+ln.Addr().String(), nil)
+		if err != nil {
+			response <- err.Error()
+			return
+		}
+		r, err := client.Do(req)
+		if err != nil {
+			response <- err.Error()
+			return
+		}
+		defer func() { _ = r.Body.Close() }()
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			response <- err.Error()
+			return
+		}
+		response <- string(body)
+	}()
+	<-started
+	cancel()
+	close(release)
+	if got := <-response; got != "complete" {
+		t.Fatalf("drained response = %q", got)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("drained Serve returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Serve waited toward the 2s drain deadline after response delivery")
+	}
+
+	// R-ME9I-EFDZ: the deadline counts active handlers, closes their sockets,
+	// and returns without waiting for those handlers to finish.
+	ln = loopbackListener(t)
+	ctx, cancel = context.WithCancel(context.Background())
+	entered := make(chan struct{}, 2)
+	unblock := make(chan struct{})
+	defer close(unblock)
+	done = make(chan error, 1)
+	go func() {
+		done <- Serve(ctx, ln, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			entered <- struct{}{}
+			<-unblock
+			_, _ = io.WriteString(w, "too late")
+		}), 10*time.Millisecond)
+	}()
+	conns := make([]net.Conn, 2)
+	for i := range conns {
+		var err error
+		conns[i], err = (&net.Dialer{}).DialContext(context.Background(), "tcp", ln.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func(conn net.Conn) { _ = conn.Close() }(conns[i])
+		if _, err := io.WriteString(conns[i], "GET / HTTP/1.1\r\nHost: example.test\r\n\r\n"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	<-entered
+	<-entered
+	cancel()
+	var drainErr *DrainError
+	if err := <-done; !errors.As(err, &drainErr) || drainErr.Unfinished != 2 {
+		t.Fatalf("overrun error = %v, want two unfinished", err)
+	}
+	for _, conn := range conns {
+		_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+		var b [1]byte
+		if n, err := conn.Read(b[:]); n != 0 || !errors.Is(err, io.EOF) {
+			t.Fatalf("overrun connection read = %d, %v, want EOF", n, err)
+		}
+	}
+}
+
+func TestDrainErrorText(t *testing.T) {
+	// R-M3AE-YHPQ: DrainError exposes the exact unfinished count.
+	// R-MFHE-S74O: singular and every other count use the specified text.
+	for _, tc := range []struct {
+		n    int
+		want string
+	}{
+		{1, "stopped with 1 request unfinished"},
+		{0, "stopped with 0 requests unfinished"},
+		{3, "stopped with 3 requests unfinished"},
+	} {
+		if got := (&DrainError{Unfinished: tc.n}).Error(); got != tc.want {
+			t.Fatalf("count %d: %q, want %q", tc.n, got, tc.want)
+		}
+	}
+}
+
+func TestServeFailureAndSilence(t *testing.T) {
+	// R-MGPB-5YVD: a listener failure before cancellation is an error.
+	ln := loopbackListener(t)
+	_ = ln.Close()
+	if err := Serve(context.Background(), ln, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), time.Second); err == nil {
+		t.Fatal("Serve returned nil for a failed listener")
+	}
+
+	// R-MJ53-XICR: net/http's temporary Accept and panic diagnostics stay silent.
+	acceptFailed := make(chan struct{})
+	ln = &temporaryErrorListener{Listener: loopbackListener(t), failedSignal: acceptFailed}
+	logger := log.Default()
+	old := logger.Writer()
+	var output bytes.Buffer
+	logger.SetOutput(&output)
+	defer logger.SetOutput(old)
+	stdoutRead, stdoutWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stderrRead, stderrWrite, err := os.Pipe()
+	if err != nil {
+		_ = stdoutRead.Close()
+		_ = stdoutWrite.Close()
+		t.Fatal(err)
+	}
+	oldStdout, oldStderr := os.Stdout, os.Stderr
+	os.Stdout, os.Stderr = stdoutWrite, stderrWrite
+	defer func() {
+		os.Stdout, os.Stderr = oldStdout, oldStderr
+		_ = stdoutRead.Close()
+		_ = stdoutWrite.Close()
+		_ = stderrRead.Close()
+		_ = stderrWrite.Close()
+	}()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	panicked := make(chan struct{})
+	go func() {
+		done <- Serve(ctx, ln, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			close(panicked)
+			panic("expected panic")
+		}), time.Second)
+	}()
+	client := &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: time.Second}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://"+ln.Addr().String(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.Do(req)
+	if err == nil {
+		_ = resp.Body.Close()
+	}
+	select {
+	case <-acceptFailed:
+	case <-time.After(time.Second):
+		t.Fatal("temporary Accept error was not exercised")
+	}
+	select {
+	case <-panicked:
+	case <-time.After(time.Second):
+		t.Fatal("panic handler was not exercised")
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("Serve returned %v", err)
+	}
+	if output.Len() != 0 {
+		t.Fatalf("default logger received %q", output.String())
+	}
+	os.Stdout, os.Stderr = oldStdout, oldStderr
+	_ = stdoutWrite.Close()
+	_ = stderrWrite.Close()
+	stdoutBytes, stdoutErr := io.ReadAll(stdoutRead)
+	stderrBytes, stderrErr := io.ReadAll(stderrRead)
+	if stdoutErr != nil || stderrErr != nil || len(stdoutBytes) != 0 || len(stderrBytes) != 0 {
+		t.Fatalf("process streams stdout=%q stderr=%q read errors=%v, %v", stdoutBytes, stderrBytes, stdoutErr, stderrErr)
 	}
 }
 
@@ -146,8 +390,8 @@ func TestRouterRegistersContractRoutesAndEmbeddedAssets(t *testing.T) {
 		})
 	}
 
-	// R-YNFB-36HN: HTML, JavaScript, and CSS bytes are the embedded filesystem's,
-	// still served when the process working directory has no asset files.
+	// HTML, JavaScript, and CSS bytes are the embedded filesystem's, still
+	// served when the process working directory has no asset files.
 	embedded := map[string]string{}
 	for _, name := range []string{"index.html", "app.js", "style.css"} {
 		body, err := assets.Files.ReadFile(name)
@@ -246,6 +490,94 @@ func TestContractRoutesServed(t *testing.T) {
 	}
 }
 
+type diagnosticWrites struct{ calls []string }
+
+func (w *diagnosticWrites) Write(p []byte) (int, error) {
+	w.calls = append(w.calls, string(p))
+	return len(p), nil
+}
+
+func TestCrossRouteFailureDiagnostics(t *testing.T) {
+	// R-CCQE-EHNR: failed store operations on D05, D06, and D07 routes
+	// produce the same plain 500 without identity headers.
+	// R-XV9R-80CN: each 500's diagnostic carries the request id (or "-")
+	// and the exact underlying error in one Write call.
+	// R-XWHN-LS3C: requests outside the 5xx range leave Stderr untouched.
+	st, err := store.Open(filepath.Join(t.TempDir(), "auth.db"), bytes.NewReader(bytes.Repeat([]byte{1}, 128)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name, method, target, cookie, origin, id, reason string
+	}{
+		{"root", http.MethodGet, "/", "session", "", "root-id", "lookup session identity: sql: database is closed"},
+		{"login start", http.MethodGet, "/login/google", "", "", "", "insert login state: sql: database is closed"},
+		{"callback", http.MethodGet, "/login/google/callback?state=recorded", "", "", "callback-id", "consume login state: sql: database is closed"},
+		{"denied callback", http.MethodGet, "/login/google/callback?error=access_denied&state=recorded", "", "", "denied-id", "consume login state: sql: database is closed"},
+		{"logout", http.MethodPost, "/logout", "session", "http://localhost:3001", "logout-id", "delete session: sql: database is closed"},
+		{"check", http.MethodGet, "/check", "session", "", "check-id", "begin session touch: sql: database is closed"},
+		{"me", http.MethodGet, "/me", "session", "", "me-id", "lookup session identity: sql: database is closed"},
+		{"token create", http.MethodPost, "/tokens", "session", "http://localhost:3001", "create-id", "lookup session identity: sql: database is closed"},
+		{"token action", http.MethodPost, "/tokens/a/enable", "session", "http://localhost:3001", "action-id", "lookup session identity: sql: database is closed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var writes diagnosticWrites
+			s := New(Config{Store: st, Now: fixedNow, Rand: bytes.NewReader(bytes.Repeat([]byte{2}, 128)), Stderr: &writes})
+			r := httptest.NewRequestWithContext(context.Background(), tc.method, tc.target, nil)
+			r.Host = "localhost:3001"
+			if tc.cookie != "" {
+				r.AddCookie(&http.Cookie{Name: SessionCookieName, Value: tc.cookie, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+			}
+			if tc.origin != "" {
+				r.Header.Set("Origin", tc.origin)
+			}
+			if tc.id != "" {
+				r.Header.Set("X-Request-Id", tc.id)
+			}
+			response := httptest.NewRecorder()
+			response.Header().Set(HeaderUserID, "stale-user")
+			response.Header().Set(HeaderUserEmail, "stale@example.test")
+			s.ServeHTTP(response, r)
+			if response.Code != http.StatusInternalServerError || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" || response.Body.String() != "internal server error\n" {
+				t.Fatalf("response = %d %q %q", response.Code, response.Header().Get("Content-Type"), response.Body.String())
+			}
+			if response.Header().Get(HeaderUserID) != "" || response.Header().Get(HeaderUserEmail) != "" {
+				t.Fatalf("identity headers leaked: %v", response.Header())
+			}
+			id := tc.id
+			if id == "" {
+				id = "-"
+			}
+			want := "auth: request " + id + ": " + tc.reason + "\n"
+			if len(writes.calls) != 1 || writes.calls[0] != want {
+				t.Fatalf("diagnostic writes = %q, want one %q", writes.calls, want)
+			}
+		})
+	}
+
+	var writes diagnosticWrites
+	s := New(Config{Store: st, Now: fixedNow, Stderr: &writes})
+	for _, tc := range []struct{ method, target, origin string }{
+		{http.MethodGet, "/", ""},
+		{http.MethodGet, "/check", ""},
+		{http.MethodPost, "/logout", "https://wrong.example"},
+		{http.MethodGet, "/missing", ""},
+	} {
+		r := httptest.NewRequestWithContext(context.Background(), tc.method, tc.target, nil)
+		r.Host = "localhost:3001"
+		r.Header.Set("Origin", tc.origin)
+		response := httptest.NewRecorder()
+		s.ServeHTTP(response, r)
+		if response.Code >= 500 || len(writes.calls) != 0 {
+			t.Fatalf("%s %s: status %d, writes %q", tc.method, tc.target, response.Code, writes.calls)
+		}
+	}
+}
+
 func serveRoute(s *Server, method, target string, headers map[string]string) *httptest.ResponseRecorder {
 	request := httptest.NewRequestWithContext(context.Background(), method, target, nil)
 	for name, value := range headers {
@@ -256,29 +588,47 @@ func serveRoute(s *Server, method, target string, headers map[string]string) *ht
 	return response
 }
 
-func freeLoopbackAddress(t *testing.T) string {
+func loopbackListener(t *testing.T) net.Listener {
 	t.Helper()
 	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("reserve loopback port: %v", err)
+		t.Fatalf("listen on loopback: %v", err)
 	}
-	addr := listener.Addr().String()
-	if err := listener.Close(); err != nil {
-		t.Fatalf("release loopback port: %v", err)
-	}
-	return addr
+	return listener
 }
 
-func waitForLoopback(t *testing.T, addr string) net.Conn {
-	t.Helper()
-	for attempt := 0; attempt < 10000; attempt++ {
-		conn, err := (&net.Dialer{}).DialContext(context.Background(), "tcp", addr)
-		if err == nil {
-			return conn
-		}
+type temporaryErrorListener struct {
+	net.Listener
+	failed       bool
+	failedSignal chan struct{}
+}
+
+func (l *temporaryErrorListener) Accept() (net.Conn, error) {
+	if !l.failed {
+		l.failed = true
+		close(l.failedSignal)
+		return nil, temporaryAcceptError{}
 	}
-	t.Fatalf("server did not listen on %s", addr)
-	return nil
+	return l.Listener.Accept()
+}
+
+type temporaryAcceptError struct{}
+
+func (temporaryAcceptError) Error() string   { return "temporary accept failure" }
+func (temporaryAcceptError) Temporary() bool { return true }
+func (temporaryAcceptError) Timeout() bool   { return false }
+
+type observedListener struct {
+	net.Listener
+	accepted chan struct{}
+}
+
+func (l *observedListener) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
+	if err == nil {
+		l.accepted <- struct{}{}
+	}
+	return conn, err
 }
 
 func fixedNow() time.Time {

@@ -52,6 +52,16 @@ func Open(source string, rand io.Reader) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	if ordinaryDatabasePath(source) {
+		// SQLite can silently fall back to a read-only connection for an
+		// existing database. Schema creation alone will not detect that when
+		// every table already exists. A zero-row update requires write access
+		// without changing any persisted rows.
+		if _, err := db.ExecContext(context.Background(), `UPDATE users SET id = id WHERE 0`); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("verify sqlite database is writable: %w", err)
+		}
+	}
 
 	return &Store{db: db, rand: rand}, nil
 }
