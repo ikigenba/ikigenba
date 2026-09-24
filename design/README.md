@@ -1,7 +1,7 @@
 # design
 
 The signature visual style for every Ikigenba app, service, and page. This is
-not a sub-project: nothing here is spec-managed or built. Open `index.html` in
+a reference that sits beside the spec-managed sub-projects. Open `index.html` in
 a browser.
 
 ## Layout

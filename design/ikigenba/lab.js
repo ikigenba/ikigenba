@@ -1,5 +1,5 @@
 // Design-lab toolbar for the ikigenba theme: switch page.
-// Lives in a shadow root so the theme's CSS never reaches it.
+// Lives in a shadow root, isolated from the theme's CSS.
 (() => {
   const PAGES = ["specimen", "app", "login", "profile", "landing", "prose"];
   const page = (location.pathname.split("/").pop() || "").replace(/\.html$/, "");

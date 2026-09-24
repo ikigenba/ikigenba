@@ -184,7 +184,7 @@ button:disabled, .button[aria-disabled="true"] {
 }
 
 /* ----------------------------------------------------------------- forms */
-/* Works on dummy's flat label / input / error-span sequence without wrappers. */
+/* Styles dummy's flat label / input / error-span sequence directly. */
 form { display: grid; gap: var(--s2); max-width: 420px; }
 form > label:not(:first-child), form > .field:not(:first-child) { margin-top: var(--s3); }
 form > button, form > .actions { margin-top: var(--s4); justify-self: start; }
@@ -215,7 +215,7 @@ label:has(> input[type="checkbox"]), label:has(> input[type="radio"]) {
   display: inline-flex; align-items: center; gap: var(--s2); font-weight: 450; font-size: var(--text);
 }
 
-/* Error state: the input itself is left unchanged; the message beneath it carries
+/* Error state: the input keeps its normal border; the message beneath it carries
    the error. The service wires aria-describedby="<field>-error" to that message. */
 [id$="-error"], .error {
   display: flex; align-items: flex-start; gap: 6px;
@@ -227,7 +227,7 @@ label:has(> input[type="checkbox"]), label:has(> input[type="radio"]) {
 }
 
 /* ---------------------------------------------------------------- tables */
-/* A bare <table> is a finished card; no wrapper needed. */
+/* A bare <table> is a finished card. */
 table {
   width: 100%; border-collapse: separate; border-spacing: 0;
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
@@ -415,7 +415,7 @@ dl.kv > :nth-last-child(-n+2) { border-bottom: 0; }
 }
 
 /* ============================================================ page additions
-   Each page's builder appends only under its own marker below. */
+   Page-specific rules, grouped by page. */
 /* == specimen / app == */
 /* general-purpose helpers */
 .cluster { display: flex; flex-wrap: wrap; gap: var(--s3); align-items: center; }
@@ -513,7 +513,7 @@ td time, td .muted { white-space: nowrap; }
 
 .table-scroll td { white-space: nowrap; }
 
-/* Cards used as page sections sit at the normal rhythm, not a band gap. */
+/* Cards used as page sections sit at the normal section rhythm. */
 main > section.card { margin-top: var(--s5); }
 .card > .identity + dl.kv { margin-top: var(--s5); }
 
