@@ -80,7 +80,7 @@ Verification must establish:
 - Every requested interaction and settled decision is represented faithfully,
   with no unsupported product behavior.
 - Each completed story follows the canonical format and describes observable
-  behavior rather than implementation.
+  behavior rather than implementation or testing.
 - Existing and changed groups agree on shared behavior. Assign cross-group
   consistency and coverage as bounded work, including unaffected groups that
   share a changed contract.

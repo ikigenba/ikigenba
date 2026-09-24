@@ -95,7 +95,7 @@ One bullet per requirement:
 Requirements come in two forms, and a design needs both:
 
 - **Structural** — declares a public name and its shape: a module and what it exports, a type and its exact fields, an operation's signature, an enumeration's members, a contract constant's name and value. Structural requirements are testable by construction: code referencing the declared shape compiles (or a reflection/introspection check passes). Write one requirement per declaration — the type with its field list in one requirement, not one per field — so a rename or reshape re-mints exactly one id.
-- **Behavioral** — declares an observable behavior or invariant at the boundary, referring to public things by the names the structural requirements declare. A behavioral requirement mentions names; it never re-declares shapes. This keeps the blast radius of a structural change small: the reshaped declaration's id is deleted and re-minted, while behavioral requirements that merely mention the name are re-minted only if their own text must change.
+- **Behavioral** — a claim about what a declared symbol does. It names the symbol and nothing more: the signature, fields, or value live in the structural requirement that declares it. So a reshaped declaration re-mints one structural id, and the behavioral requirements that mention it keep theirs unless their own text changes.
 
 If every structural requirement were deleted, the design should no longer name anything; if that is not true, some of the contract is squatting in prose.
 

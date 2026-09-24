@@ -51,7 +51,7 @@ That coordinator then reports the blocker to its own coordinator with the issue,
 Verification must establish:
 
 - Every gap id recorded at the start of the run is resolved: each id to add is tagged in a test, and each id to remove is gone from the tests.
-- Every test added or changed to close a gap id genuinely asserts its requirement. Id presence and a passing test alone are insufficient.
+- Every test added or changed asserts its requirement, no less and no more. A passing test with the id in it is not enough; neither is a test that proves things the requirement does not say.
 - The implementation realizes the requirements behind the gap ids, including replacement of superseded behavior, without changing design or the sub-project's `AGENTS.md`.
 - Every declared gate exits zero, in the declared order, with nothing skipped or suppressed.
 - Every commit follows the declared convention, names the gap ids it closes, and was made with every declared gate passing.

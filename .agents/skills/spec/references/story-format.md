@@ -97,7 +97,7 @@ Under the heading, in this order:
 
 A story states the interaction from the outside only. It never names a
 package, a function, a file the code is in, or how the behavior is
-implemented; those belong to the design. It does name the things the actor
+implemented or tested; those belong to the design. It does name the things the actor
 can see: paths on disk the command reads or writes, environment it consults,
 a resource's identifier scheme.
 
