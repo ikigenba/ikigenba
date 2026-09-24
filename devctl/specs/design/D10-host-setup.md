@@ -44,7 +44,7 @@ returned unchanged, so the diagnostic relay is the one D06 states.
 
 - R-FXNQ-9MRO: Package `internal/hostsetup` MUST export `Release` with exactly `Version string` and `InstallerURL string`.
 
-- R-ZB3U-RUW1: Package `internal/hostsetup` MUST export `ReleasesURL = "https://api.github.com/repos/ikigenba/ikigenba/releases"`, `DownloadURL = "https://github.com/ikigenba/ikigenba/releases/download"`, `InstallerPath = "/tmp/opsctl-install"`, and `DNSProvider = "route53"`, and MUST export no `SavedInstaller`.
+- R-L6YF-GLM5: Package `internal/hostsetup` MUST export `ReleasesURL = "https://api.github.com/repos/ikigenba/ikigenba/releases"`, `DownloadURL = "https://github.com/ikigenba/ikigenba/releases/download"`, `InstallerPath = "/tmp/opsctl-install"`, and `DNSProvider = "route53"`.
 
 - R-YJ1K-MA17: `Latest` MUST obtain published releases through `Deps.Exec` running `curl -fsSL` against ReleasesURL with `per_page=100` and successive `page` values starting at 1, stopping at a page with fewer than 100 entries; it MUST select the non-draft, non-prerelease `opsctl/<valid version>` release with newest `published_at` (lexicographically first tag breaks a tie), and obtain its installer URL from the asset named `install.sh`. An absent matching release, missing installer asset, malformed response or request failure MUST cause an error; Latest MUST NOT fall back to an embedded pin.
 
