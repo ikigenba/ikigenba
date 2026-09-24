@@ -8,7 +8,7 @@ How `list claude` finds the live root sessions of Claude Code, and how
 registrations are still live. The command (`internal/cli`) calls `List` with
 the machine's filesystem and the home directory and prints `session.Table` of
 the result, or calls `Tree` with the same two and a session id and prints
-`tree.Draw` of the result; it turns a returned `*session.ReadError` into the
+`tree.Draw` of the result and its colour decision; it turns a returned `*session.ReadError` into the
 `cannot read` diagnostic and `tree.ErrNotFound` into the not-found one.
 
 Claude Code registers every running root session in a file of its own under

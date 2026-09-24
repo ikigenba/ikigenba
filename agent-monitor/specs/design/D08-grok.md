@@ -38,7 +38,7 @@ and can neither write nor lock anything.
 
 `agent-monitor tree grok <session-id>` calls `Tree` with the same filesystem
 and home directory and the id as given, and hands the `tree.Tree` it returns
-to `tree.Draw` (`D09-tree`). `D09` already fixes the errors: the locating
+to `tree.Draw` (`D09-tree`) with the command's colour decision. `D09` already fixes the errors: the locating
 directory is `~/.grok/sessions`, only a failure to check or list it is a
 `*session.ReadError`, and `tree.ErrNotFound` means no readable place that
 records Grok's root sessions holds one with the id. This design says what
@@ -58,7 +58,7 @@ even before its session directory exists, and a stale entry records nothing.
 An id that is empty, holds a `/`, or is `.` or `..` names no session.
 
 The root's line is the `list` row's: the label is `list`'s title
-(`generated_title`, which `tree.Draw` replaces by the id when empty), and the
+(`generated_title`; when that is empty the line has no label), and the
 status is `list`'s STATUS when the root is live and `ended` when it is not. A
 headless `grok -p` session is never in the index, so it is always drawn
 `ended`. When the index cannot be read, or is not a JSON array of objects,

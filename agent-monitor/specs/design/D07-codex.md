@@ -58,7 +58,7 @@ does not mark it as a subagent the way `list` tells one; a subagent's own
 thread id therefore names no session, exactly as an id that names nothing. A
 thread that is live but has not written its rollout yet is found, and is drawn
 as its root line alone. The root's label is its `list` TITLE, from the index;
-when that is empty the tree prints the id. Liveness is `list`'s, but asked of
+when that is empty the root's line has no label. Liveness is `list`'s, but asked of
 the one lock file `thread-writer-locks/<id>.lock`: a lock file that does not
 exist or that no process holds means the thread has ended — `codex exec`
 removes its lock files when it exits — and a lock that cannot be checked

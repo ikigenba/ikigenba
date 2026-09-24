@@ -26,12 +26,14 @@ It does not repeat the exit codes. `--help` or `-h` anywhere after `list`
 prints it and wins over every other argument after `list`, an error among
 them; it needs no `HOME` and reads nothing.
 
-The help of `tree` is built the same way: it names its two arguments, says
-what it draws, lists the same three harnesses, and lists its one option,
-without the exit codes. `--help` or `-h` anywhere after `tree` prints it and
-wins over every other argument after `tree` — a missing, unknown, or extra
-argument or an unknown option among them; it needs no `HOME` and reads
-nothing.
+The help of `tree` is built the same way: its usage line shows
+`[--no-color]` and its two arguments, it says what it draws, lists the same
+three harnesses, and lists its two options, `--no-color` and help, without
+the exit codes. The top-level usage line for `tree` does not show
+`--no-color`; the top-level help points at a command's own help for its
+options. `--help` or `-h` anywhere after `tree` prints it and wins over
+every other argument after `tree` — a missing, unknown, or extra argument
+or an unknown option among them; it needs no `HOME` and reads nothing.
 
 The version is a `v` followed by a semantic version as semver.org defines
 it, prerelease and build metadata allowed. The requirement fixes the shape
@@ -44,7 +46,7 @@ standard output. After `list` or `tree` it is an unknown option (`D02`).
 
 - R-QCVS-17QG: `Usage` MUST be exactly `"Usage: agent-monitor [options]\n       agent-monitor list <harness>\n       agent-monitor tree <harness> <session-id>\n\nObserve the coding agents on this machine through their logs and hooks.\n\nCommands:\n  list <harness>               list the live root sessions of claude, codex, or grok\n  tree <harness> <session-id>  draw the subagent tree of one session\n\nsee 'agent-monitor <command> --help' for command options\n\nOptions:\n  -h, --help      print this help\n  -V, --version   print the version\n\nExit codes:\n  0  success\n  1  the output could not be written\n  2  usage error\n  3  the harness's session data could not be read\n  4  the session was not found\n"`.
 - R-EWOK-Z65T: `ListUsage` MUST be exactly `"Usage: agent-monitor list <harness>\n\nList the live root sessions of one harness, newest activity first.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  -h, --help  print this help\n"`.
-- R-QFBK-SR7U: `TreeUsage` MUST be exactly `"Usage: agent-monitor tree <harness> <session-id>\n\nDraw the subagent tree of one session.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  -h, --help  print this help\n"`.
+- R-6NCQ-DKH0: `TreeUsage` MUST be exactly `"Usage: agent-monitor tree [--no-color] <harness> <session-id>\n\nDraw the subagent tree of one session.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  --no-color  print without colour\n  -h, --help  print this help\n"`.
 - R-EZ4D-QPN7: When `args` is empty, `Run` MUST write exactly `Usage` to `stdout`, write nothing to `stderr`, and return `ExitSuccess`.
 - R-352F-PY4P: When `args[0]` is `--help` or `-h`, `Run` MUST write exactly `Usage` to `stdout`, write nothing to `stderr`, and return `ExitSuccess`.
 - R-F0CA-4HDW: When `args[0]` is `list` and at least one element of `args[1:]` is byte-for-byte equal to `--help` or `-h`, `Run` MUST write exactly `ListUsage` to `stdout`, write nothing to `stderr`, and return `ExitSuccess`, whatever the other elements of `args[1:]` are, so that `["list", "--help"]`, `["list", "-h"]`, `["list", "claude", "--help"]`, and `["list", "bogus", "extra", "--bogus", "-h"]` all write `ListUsage`.

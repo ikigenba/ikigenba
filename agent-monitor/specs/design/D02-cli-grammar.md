@@ -40,7 +40,7 @@ that is not an option is the harness, which must be exactly `claude`,
 `codex`, or `grok`; any later argument that is not an option is unexpected.
 With no argument after `list` at all, the harness is missing. The only
 arguments that list sessions are therefore exactly `list` and one known
-harness.
+harness. The `--no-color` that `tree` takes is an unknown option here.
 
 The arguments are checked before the environment: a usage error, the help,
 and the version are the same whatever the `System` is, and none of them, nor
@@ -57,20 +57,28 @@ standard error, with exit 3.
 
 ## tree
 
-`tree` reads its own arguments the way `list` does, with one more place.
-If any of them is exactly `--help` or `-h`, wherever it stands, the help of
-`tree` wins over everything else (`D03`). Otherwise they are read left to
-right and the first error wins: an argument beginning with `-` is an unknown
-option (`tree`, too, takes no option but help); the first argument that is
-not an option is the harness, which must be exactly `claude`, `codex`, or
-`grok`; the second is the session id, taken as given, whatever its bytes;
-any later argument that is not an option is unexpected. Only when no
-argument is in error does a missing place count: with nothing after `tree`
-the harness is missing, and with only a known harness the session id is
-missing. So `agent-monitor tree claud` reports the unknown harness, not the
-missing session id, and `agent-monitor tree claude --bogus` reports the
-unknown option. The only arguments that draw a tree are therefore exactly
-`tree`, one known harness, and one session id that does not begin with `-`.
+`tree` reads its own arguments the way `list` does, with one more place
+and one option. If any of them is exactly `--help` or `-h`, wherever it
+stands, the help of `tree` wins over everything else (`D03`). Otherwise they
+are read left to right and the first error wins. An argument exactly
+`--no-color` is the no-colour option: it may stand anywhere after `tree`, as
+often as the developer likes, and it is never in error and never fills a
+place, so it is skipped when the places are counted. Any other argument
+beginning with `-` is an unknown option — `--no-color=x`, `--no-colour`, and
+`--No-Color` included, since there is no `--name=value` form and spelling is
+exact. The first argument that is not an option is the harness, which must
+be exactly `claude`, `codex`, or `grok`; the second is the session id, taken
+as given, whatever its bytes; any later argument that is not an option is
+unexpected. Only when no argument is in error does a missing place count:
+with nothing after `tree` but `--no-color`, if that, the harness is missing,
+and with only a known harness the session id is missing. So
+`agent-monitor tree claud` and `agent-monitor tree --no-color claud` report
+the unknown harness, not the missing session id, and
+`agent-monitor tree claude --bogus` reports the unknown option. The
+arguments that draw a tree — the *drawing arguments* — are therefore `tree`,
+one known harness, and one session id that does not begin with `-`, with
+any number of `--no-color` among or after them. `--no-color` is an option of
+`tree` only: before `tree` it is a top-level unknown option.
 
 The arguments are all checked before the environment and before any session
 is looked for, exactly as for `list`: an empty `Home` fails with exit 3 and
@@ -80,7 +88,13 @@ reads nothing. Otherwise `tree` calls the chosen harness package's `Tree`
 harness. `D09-tree` closes what `Tree` may return: a tree and no error, the
 error `tree.ErrNotFound`, or a `*session.ReadError`, and the two errors are
 told apart without knowing the harness. On success `tree` prints
-`tree.Draw` of the tree as its one product. When the session does not exist
+`tree.Draw` of the tree as its one product, in colour or not (`D09` fixes
+what each looks like). The choice is made here, from the arguments and the
+`System` alone: colour is on only when `System.Terminal` says standard
+output is a terminal, `System.NoColor` is empty, `System.Term` is not exactly
+`dumb`, and no `--no-color` was given. A `NO_COLOR` set to the empty string
+leaves colour on, and a `TERM` that is unset, or anything but `dumb` byte
+for byte, does not by itself turn it off. When the session does not exist
 it prints nothing on standard output and says so on standard error in one
 line, naming the harness and echoing the id as an argument is echoed, with
 exit 4, the one outcome only `tree` has. When the harness's locating
@@ -138,24 +152,26 @@ the one the outcome already chose — 1, 2, 3, or 4 — and nothing is retried.
 - R-EFLZ-MDS3: When `args[0]` is `list` and the element of `args[1:]` that decides the outcome is an unknown harness `arg`, `Run` MUST write exactly the unknown-harness diagnostic `"agent-monitor: unknown harness '" + quote.Arg(arg) + "'\n\nsee 'agent-monitor --help' for usage\n"` to `stderr`, write nothing to `stdout`, and return `ExitUsage`.
 - R-EGTW-05IS: When `args[0]` is `list` and the element of `args[1:]` that decides the outcome is an unexpected argument `arg`, `Run` MUST write exactly the unexpected-argument diagnostic `"agent-monitor: unexpected argument '" + quote.Arg(arg) + "'\n\nsee 'agent-monitor --help' for usage\n"` to `stderr`, write nothing to `stdout`, and return `ExitUsage`.
 - R-EI1S-DX9H: When `args` is exactly `["list"]`, `Run` MUST write exactly the missing-harness diagnostic `"agent-monitor: missing harness\n\nsee 'agent-monitor --help' for usage\n"` to `stderr`, write nothing to `stdout`, and return `ExitUsage`.
-- R-PPPO-RKN9: When `args[0]` is `tree` and no element of `args[1:]` is `--help` or `-h`, `Run` MUST classify each element of `args[1:]` as follows: an element that begins with `-` is an unknown option, `--version`, `-V`, `-`, and `--` included; the first element that does not begin with `-` is the harness argument, a known harness if and only if it is byte-for-byte equal to one of `claude`, `codex`, or `grok`, and otherwise an unknown harness, the empty string and `Claude` included; the second element that does not begin with `-` is the session-id argument, whatever its bytes, the empty string included; and every later element that does not begin with `-` is an unexpected argument.
+- R-69XU-63BD: `args` MUST be *drawing arguments*, with harness argument `h` and session-id argument `id`, if and only if `args[0]` is `tree` and the elements of `args[1:]` that are not byte-for-byte equal to `--no-color`, taken in order, are exactly `[h, id]` with `h` one of `claude`, `codex`, or `grok` and `id` a string that does not begin with `-`, so that `["tree", "claude", "7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93"]`, `["tree", "--no-color", "claude", "7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93"]`, `["tree", "claude", "--no-color", "7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93", "--no-color"]`, and `["tree", "claude", "7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93", "--no-color"]` are drawing arguments with `h` `claude` and `id` `7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93`, while `["tree", "claude"]`, `["tree", "--no-color=x", "claude", "7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93"]`, and `["tree", "claude", "7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93", "extra"]` are not.
+- R-6B5Q-JV22: When `args[0]` is `tree` and no element of `args[1:]` is `--help` or `-h`, `Run` MUST classify each element of `args[1:]` as follows: an element byte-for-byte equal to `--no-color` is the no-colour option, which is never an unknown option, a harness argument, a session-id argument, or an unexpected argument, however many times and wherever it appears; every other element that begins with `-` is an unknown option, `--no-color=x`, `--no-colour`, `--No-Color`, `--version`, `-V`, `-`, and `--` included; the first element that does not begin with `-` is the harness argument, a known harness if and only if it is byte-for-byte equal to one of `claude`, `codex`, or `grok`, and otherwise an unknown harness, the empty string and `Claude` included; the second element that does not begin with `-` is the session-id argument, whatever its bytes, the empty string included; and every later element that does not begin with `-` is an unexpected argument.
 - R-PQXL-5CDY: When `args[0]` is `tree`, no element of `args[1:]` is `--help` or `-h`, and some element of `args[1:]` is an unknown option, an unknown harness, or an unexpected argument, the first such element in order MUST decide the outcome and the elements after it MUST NOT affect it, so that `["tree", "claud"]`, `["tree", "claud", "--bogus"]`, and `["tree", "claud", "7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93", "extra"]` report unknown harness `claud`, `["tree", "--bogus", "claud"]`, `["tree", "claude", "--bogus"]`, and `["tree", "claude", "7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93", "--bogus", "extra"]` report unknown option `--bogus`, and `["tree", "claude", "7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93", "extra", "--bogus"]` and `["tree", "claude", "7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93", "extra", "more"]` report unexpected argument `extra`.
 - R-PS5H-J44N: When `args[0]` is `tree` and the element of `args[1:]` that decides the outcome is an unknown option `arg`, `Run` MUST write exactly the unknown-option diagnostic `"agent-monitor: unknown option '" + quote.Arg(arg) + "'\n\nsee 'agent-monitor --help' for usage\n"` to `stderr`, write nothing to `stdout`, and return `ExitUsage`.
 - R-PULA-ANM1: When `args[0]` is `tree` and the element of `args[1:]` that decides the outcome is an unknown harness `arg`, `Run` MUST write exactly the unknown-harness diagnostic `"agent-monitor: unknown harness '" + quote.Arg(arg) + "'\n\nsee 'agent-monitor --help' for usage\n"` to `stderr`, write nothing to `stdout`, and return `ExitUsage`.
 - R-PVT6-OFCQ: When `args[0]` is `tree` and the element of `args[1:]` that decides the outcome is an unexpected argument `arg`, `Run` MUST write exactly the unexpected-argument diagnostic `"agent-monitor: unexpected argument '" + quote.Arg(arg) + "'\n\nsee 'agent-monitor --help' for usage\n"` to `stderr`, write nothing to `stdout`, and return `ExitUsage`.
-- R-PX13-273F: When `args` is exactly `["tree"]`, `Run` MUST write exactly the missing-harness diagnostic `"agent-monitor: missing harness\n\nsee 'agent-monitor --help' for usage\n"` to `stderr`, write nothing to `stdout`, and return `ExitUsage`.
-- R-PY8Z-FYU4: When `args` is exactly `["tree", h]` with `h` one of `claude`, `codex`, or `grok`, `Run` MUST write exactly the missing-session-id diagnostic `"agent-monitor: missing session id\n\nsee 'agent-monitor --help' for usage\n"` to `stderr`, write nothing to `stdout`, and return `ExitUsage`.
-- R-PZGV-TQKT: Whenever `args` is neither exactly `["list", h]` with `h` one of `claude`, `codex`, or `grok` nor exactly `["tree", h, id]` with `h` one of `claude`, `codex`, or `grok` and `id` a string that does not begin with `-`, the bytes `Run` writes to each stream and the value it returns MUST be the same for every `sys`, so that every usage error, the three help texts, and the version are reported identically when `sys.Home` is empty.
-- R-Q0OS-7IBI: `Run` MUST make no call to any method of `sys.Root` unless `sys.Home` is not the empty string and `args` is either exactly `["list", h]` with `h` one of `claude`, `codex`, or `grok` or exactly `["tree", h, id]` with `h` one of `claude`, `codex`, or `grok` and `id` a string that does not begin with `-`.
+- R-6CDM-XMSR: When `args[0]` is `tree` and every element of `args[1:]` is byte-for-byte equal to `--no-color`, there being zero or more of them, `Run` MUST write exactly the missing-harness diagnostic `"agent-monitor: missing harness\n\nsee 'agent-monitor --help' for usage\n"` to `stderr`, write nothing to `stdout`, and return `ExitUsage`, so that `["tree"]`, `["tree", "--no-color"]`, and `["tree", "--no-color", "--no-color"]` each write it.
+- R-6DLJ-BEJG: When `args[0]` is `tree` and the elements of `args[1:]` that are not byte-for-byte equal to `--no-color` are exactly `[h]` with `h` one of `claude`, `codex`, or `grok`, `Run` MUST write exactly the missing-session-id diagnostic `"agent-monitor: missing session id\n\nsee 'agent-monitor --help' for usage\n"` to `stderr`, write nothing to `stdout`, and return `ExitUsage`, so that `["tree", "claude"]` and `["tree", "--no-color", "grok", "--no-color"]` each write it.
+- R-6ETF-P6A5: Whenever `args` is neither exactly `["list", h]` with `h` one of `claude`, `codex`, or `grok` nor drawing arguments, the bytes `Run` writes to each stream and the value it returns MUST be the same for every `sys`, so that every usage error, the three help texts, and the version are reported identically when `sys.Home` is empty and whatever `sys.NoColor`, `sys.Term`, and `sys.Terminal` are.
+- R-6G1C-2Y0U: `Run` MUST make no call to any method of `sys.Root` unless `sys.Home` is not the empty string and `args` is either exactly `["list", h]` with `h` one of `claude`, `codex`, or `grok` or drawing arguments.
 - R-ELPH-J8HK: When `args` is exactly `["list", h]` with `h` one of `claude`, `codex`, or `grok` and `sys.Home` is the empty string, `Run` MUST write exactly the home-directory diagnostic `"agent-monitor: cannot find the home directory: HOME is not set\n"` to `stderr`, write nothing to `stdout`, and return `ExitDataUnreadable`.
 - R-EMXD-X089: When `args` is exactly `["list", h]` with `h` one of `claude`, `codex`, or `grok` and `sys.Home` is not the empty string, `Run` MUST call the `List` function of the package `internal/harness/<h>` — `claude.List` for `claude`, `codex.List` for `codex`, `grok.List` for `grok` — exactly once, passing `sys.Root` and `sys.Home`, and MUST call the `List` function of no other harness package.
 - R-EO5A-ARYY: When the harness `List` call `Run` makes returns sessions `s` and a nil error, `Run` MUST write exactly `session.Table(s)` to `stdout`, and, unless that write returns an error, MUST write nothing to `stderr` and return `ExitSuccess`.
 - R-EPD6-OJPN: When the harness `List` call `Run` makes returns a non-nil error `err` such that `errors.As(err, &e)` holds for a variable `e` of type `*session.ReadError`, `Run` MUST write exactly the cannot-read diagnostic `"agent-monitor: cannot read " + quote.Field(e.Path) + ": " + e.Err.Error() + "\n"` to `stderr`, write nothing to `stdout`, and return `ExitDataUnreadable`, so that, for example, a `Path` of `/home/dev/.claude/sessions` with a cause whose text is `permission denied` writes `agent-monitor: cannot read /home/dev/.claude/sessions: permission denied`.
-- R-Q1WO-LA27: When `args` is exactly `["tree", h, id]` with `h` one of `claude`, `codex`, or `grok` and `id` a string that does not begin with `-`, and `sys.Home` is the empty string, `Run` MUST write exactly the home-directory diagnostic `"agent-monitor: cannot find the home directory: HOME is not set\n"` to `stderr`, write nothing to `stdout`, and return `ExitDataUnreadable`.
-- R-Q34K-Z1SW: When `args` is exactly `["tree", h, id]` with `h` one of `claude`, `codex`, or `grok` and `id` a string that does not begin with `-`, and `sys.Home` is not the empty string, `Run` MUST call the `Tree` function of the package `internal/harness/<h>` — `claude.Tree` for `claude`, `codex.Tree` for `codex`, `grok.Tree` for `grok` — exactly once, passing `sys.Root`, `sys.Home`, and `id`, and MUST call the `Tree` function of no other harness package and the `List` function of no harness package.
-- R-Q4CH-CTJL: When the harness `Tree` call `Run` makes returns a tree `t` and a nil error, `Run` MUST write exactly `tree.Draw(t)` to `stdout`, and, unless that write returns an error, MUST write nothing to `stderr` and return `ExitSuccess`.
+- R-6H98-GPRJ: When `args` is drawing arguments and `sys.Home` is the empty string, `Run` MUST write exactly the home-directory diagnostic `"agent-monitor: cannot find the home directory: HOME is not set\n"` to `stderr`, write nothing to `stdout`, and return `ExitDataUnreadable`.
+- R-6IH4-UHI8: When `args` is drawing arguments with harness argument `h` and session-id argument `id`, and `sys.Home` is not the empty string, `Run` MUST call the `Tree` function of the package `internal/harness/<h>` — `claude.Tree` for `claude`, `codex.Tree` for `codex`, `grok.Tree` for `grok` — exactly once, passing `sys.Root`, `sys.Home`, and `id`, and MUST call the `Tree` function of no other harness package and the `List` function of no harness package.
+- R-6JP1-898X: When the harness `Tree` call `Run` makes returns a tree `t` and a nil error, `Run` MUST write exactly `tree.Draw(t, c)` to `stdout`, where `c` is the colour decision for `args` and `sys`, and, unless that write returns an error, MUST write nothing to `stderr` and return `ExitSuccess`.
+- R-6KWX-M0ZM: The colour decision for drawing arguments `args` and a `System` `sys` MUST be true if and only if `sys.Terminal` is true, `sys.NoColor` is the empty string, `sys.Term` is not byte-for-byte equal to `dumb`, and no element of `args[1:]` is byte-for-byte equal to `--no-color`, so that it is true for `Terminal` true, `NoColor` `""`, and each of `Term` `""`, `"xterm-256color"`, `"Dumb"`, and `"dumb "` with no `--no-color`, and false when, the rest being so, `Terminal` is false, or `NoColor` is `"1"` or `"0"`, or `Term` is `"dumb"`, or `args[1:]` holds `--no-color` once or more.
 - R-Q5KD-QLAA: When the harness `Tree` call `Run` makes returns a non-nil error `err` such that `errors.As(err, &e)` holds for a variable `e` of type `*session.ReadError`, `Run` MUST write exactly the cannot-read diagnostic `"agent-monitor: cannot read " + quote.Field(e.Path) + ": " + e.Err.Error() + "\n"` to `stderr`, write nothing to `stdout`, and return `ExitDataUnreadable`, so that, for example, a `Path` of `/home/dev/.codex/sessions` with a cause whose text is `permission denied` writes `agent-monitor: cannot read /home/dev/.codex/sessions: permission denied`.
-- R-Q6SA-4D0Z: When the harness `Tree` call `Run` makes for `args` `["tree", h, id]` returns a non-nil error `err` for which `errors.Is(err, tree.ErrNotFound)` holds, `Run` MUST write exactly the session-not-found diagnostic `"agent-monitor: no " + h + " session '" + quote.Arg(id) + "'\n"` to `stderr`, write nothing to `stdout`, and return `ExitSessionNotFound`, so that `["tree", "claude", "bogus"]` naming no Claude Code session writes exactly `agent-monitor: no claude session 'bogus'` and a newline.
+- R-6M4T-ZSQB: When the harness `Tree` call `Run` makes for drawing arguments with harness argument `h` and session-id argument `id` returns a non-nil error `err` for which `errors.Is(err, tree.ErrNotFound)` holds, `Run` MUST write exactly the session-not-found diagnostic `"agent-monitor: no " + h + " session '" + quote.Arg(id) + "'\n"` to `stderr`, write nothing to `stdout`, and return `ExitSessionNotFound`, so that `["tree", "claude", "bogus"]` and `["tree", "--no-color", "claude", "bogus"]` naming no Claude Code session each write exactly `agent-monitor: no claude session 'bogus'` and a newline.
 - R-2WJ5-1JXU: `Run` MUST deliver each product it writes to `stdout` as exactly one call to `stdout.Write`, and each diagnostic it writes to `stderr` as exactly one call to `stderr.Write`.
 - R-2XR1-FBOJ: When the call `Run` makes to `stdout.Write` returns a non-nil error `err`, whichever product was being written, `Run` MUST make no further call to `stdout.Write`, MUST write exactly `"agent-monitor: write error: " + err.Error() + "\n"` to `stderr`, and MUST return `ExitWriteFailed`.
 - R-2YYX-T3F8: When `Run` is writing the write-error diagnostic and that call to `stderr.Write` returns a non-nil error, `Run` MUST make no further write to either stream and MUST return `ExitWriteFailed`.
