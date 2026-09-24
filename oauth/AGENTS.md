@@ -16,7 +16,6 @@ against; it is human-authored and read-only to the run.
 
 - Go 1.26 (`go version` must report 1.26+)
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
-- `llm-lint` on PATH, with its provider API key present in the environment
 
 ## Test files
 
@@ -53,7 +52,6 @@ skipped tests, no disabled linters laundering a failure.
    the `!linux && !darwin` fallback
 5. `go test -race ./...`
 6. `golangci-lint run`
-7. `llm-lint cmd internal`
 
 Gates 3 and 4 exist because `go build ./...` never compiles `_test.go` files
 and `golangci-lint` analyzes only the default build configuration, so the
@@ -62,15 +60,10 @@ use `go vet` rather than `go build` precisely because vet type-checks the test
 files too. Deliberately **not** run per-platform: `golangci-lint`, whose extra
 linters would fire on code paths nobody builds for diminishing returns.
 
-llm-lint loads this sub-project's own rules from `lint-rules/` (wired via
-`.llm-lint.json`, found by ancestor walk — a sibling sub-project's config is not
-on that path, so this directory carries its own). Rules are promoted
-individually: a promotion flips the rule file to `severity: error` and adds its
-id to the `enable` allowlist in `.llm-lint.json`. Un-promoted rules stay
-disabled — they make no LLM calls and print nothing — so every finding the gate
-reports fails it. The rule set and its allowlist are currently a verbatim copy
-of idgen's, all promoted to `severity: error`; consolidating the two copies into
-one shared directory is deferred, not forgotten.
+llm-lint is **disabled for now**: it is not a gate and not part of the
+toolchain, so the run needs neither it on PATH nor a provider API key.
+`.llm-lint.json`, the rules under `lint-rules/`, and the `make llm-lint` target
+are kept so it can be re-enabled.
 
 ## Commit conventions
 
@@ -85,21 +78,20 @@ Requirements: R-XXXX-XXXX, R-YYYY-YYYY
 The `Requirements:` trailer lists the phase's ids so history stays greppable
 by id.
 
-## Releasing (infrastructure — outside the spec system)
+## Releasing
 
-Releases are cut from this monorepo by tag. The release machinery is
-hand-maintained infrastructure, not spec-governed code:
+Release machinery — the version bump, tags, `.goreleaser.yaml`, and
+`.github/workflows/release-oauth.yml` (repo root) — is hand-maintained
+infrastructure outside the spec system: the build run never reads, edits, or
+tests it.
 
-- Tag `oauth/vMAJOR.MINOR.PATCH` on `main`; the latest is
-  `git tag --list 'oauth/v*' --sort=-v:refname | head -1`.
-- Pushing the tag triggers `.github/workflows/release-oauth.yml` (repo root),
-  which verifies the tag's version equals the in-source version string in
-  `internal/cli/version.go` (a mismatched tag fails the release), then runs
-  GoReleaser from this directory using `.goreleaser.yaml` — linux/darwin ×
-  amd64/arm64, tar.gz archives, checksums, a GitHub release on the tag.
-- The version string is source-carried (see
-  `specs/design/D10-help-and-version.md`), never ldflags-injected. Its *value*
-  is release data, not spec-governed: edit `internal/cli/version.go` directly to
-  the new `vMAJOR.MINOR.PATCH` (the spec fixes only its shape), keep it valid
-  against the gates, merge, then tag to match. No build run is needed to
-  bump it.
+1. Set the version in `internal/cli/version.go` (D10) to `vX.Y.Z`. It is
+   source-carried, never ldflags-injected; the spec fixes only its shape, so no
+   build run is needed to bump it.
+2. Commit that on `main` and push `main`.
+3. Tag that commit `oauth/vX.Y.Z` and push the tag. The workflow verifies the
+   tag matches the in-source version (a mismatch fails the release), then runs
+   GoReleaser from this directory: linux/darwin × amd64/arm64 tar.gz archives,
+   checksums, and a GitHub release on the tag.
+
+The latest release is `git tag --list 'oauth/v*' --sort=-v:refname | head -1`.

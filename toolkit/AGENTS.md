@@ -16,7 +16,6 @@ human-authored and read-only to the run.
 - Go 1.26 (`go version` must report 1.26+)
 - `bash` on PATH (the `Bash` tool shells out to it; its tests run real commands)
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
-- `llm-lint` on PATH, with its provider API key present in the environment
 
 ## Test files
 
@@ -42,22 +41,17 @@ skipped tests, no disabled linters laundering a failure.
 2. `go build ./...`
 3. `go test -race ./...`
 4. `golangci-lint run`
-5. `llm-lint --concurrency 16 --verbose .` (doubles the default in-flight calls of 8; `--verbose` prints per-pair progress)
 
-llm-lint also loads this sub-project's own rules from `lint-rules/` (wired via
-`.llm-lint.json`, found by ancestor walk) and recurses the module from the root.
-Rules are promoted individually: a promotion flips the rule file to
-`severity: error` and adds its id to the `enable` allowlist in `.llm-lint.json`.
-Un-promoted rules stay disabled — they make no LLM calls and print nothing — so
-every finding the gate reports fails it.
+llm-lint is **disabled for now**: it is not a gate and not part of the
+toolchain, so the run needs neither it on PATH nor a provider API key.
+`.llm-lint.json`, the rules under `lint-rules/`, and the `make llm-lint` target
+are kept so it can be re-enabled.
 
-A per-finding `llm-lint:ignore` directive (and likewise a `//nolint` comment for
-golangci-lint) counts as a disabled linter. Never add one to make a gate pass.
-A finding is fixed by applying the rule's recommendation below the contract
-seam; if that cannot be done without changing an exported name, signature, or
-observable behavior, or if the finding is wrong, file an issue under
-`specs/issues/` so a human can adjudicate — restructure the code, sharpen the
-rule in `lint-rules/`, or amend the design.
+A per-finding `//nolint` comment counts as a disabled linter. Never add one
+to make a gate pass. A finding that cannot be fixed below the contract
+seam without changing an exported name, signature, or observable behavior, or
+that is wrong, is filed as an issue under `specs/issues/` so a human can
+adjudicate — restructure the code or amend the design.
 
 ## Commit conventions
 
@@ -72,18 +66,17 @@ Requirements: R-XXXX-XXXX, R-YYYY-YYYY
 The `Requirements:` trailer lists the phase's ids so history stays greppable
 by id.
 
-## Releasing (infrastructure — outside the spec system)
+## Releasing
 
-toolkit is a library, consumed by module path; there is no binary to ship. It
-is versioned by tag from the monorepo:
+Releasing is hand-maintained infrastructure outside the spec system: the build
+run never tags or publishes. toolkit is a library consumed by module path;
+there is no binary to ship. The spec fixes its shape, never its version number.
 
-- Tag `toolkit/vMAJOR.MINOR.PATCH` on `main`; the latest is
-  `git tag --list 'toolkit/v*' --sort=-v:refname | head -1`.
-- A consumer pins a version with an ordinary `require
-  github.com/ikigenba/ikigenba/toolkit vMAJOR.MINOR.PATCH` in its own `go.mod`.
-- toolkit pins agentkit the same way (`agentkit/v*` tags). The pinned version
-  lives only in `go.mod`, never in a design document: `specs/design/D1` names
-  the module, and the build run moves the pin to whatever release carries the
-  surface the current designs use.
-- The version is release data, not spec-governed: the spec fixes the library's
-  shape, never its version number. Cut a release by tagging a green `main`.
+1. Tag a green `main` `toolkit/vX.Y.Z` and push the tag. The latest is
+   `git tag --list 'toolkit/v*' --sort=-v:refname | head -1`.
+2. A consumer pins it with an ordinary `require
+   github.com/ikigenba/ikigenba/toolkit vX.Y.Z` in its own `go.mod`.
+3. toolkit pins agentkit the same way (`agentkit/v*` tags). The pin lives
+   only in `go.mod`, never in a design document: D1 names the module, and the
+   build run moves the pin to whatever release carries the surface the current
+   designs use.

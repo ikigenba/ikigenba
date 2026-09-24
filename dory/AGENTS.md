@@ -16,7 +16,6 @@ read-only to the run.
 
 - Go 1.26 (`go version` must report 1.26+)
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
-- `llm-lint` on PATH, with its provider API key present in the environment
 - Network access to the Go module proxy for `agentkit` and `toolkit`, both
   published from this monorepo under `agentkit/v*` and `toolkit/v*` tags, and
   for `github.com/google/uuid` and `modernc.org/sqlite`.
@@ -62,20 +61,14 @@ skipped tests, no disabled linters laundering a failure.
 2. `go build ./...`
 3. `go test -race ./...`
 4. `golangci-lint run`
-5. `llm-lint cmd internal`
 
-llm-lint loads this sub-project's own rules from `lint-rules/` (wired via
-`.llm-lint.json`, found by ancestor walk — a sibling sub-project's config is not
-on that path, so this directory carries its own). Rules are promoted
-individually: a promotion flips the rule file to `severity: error` and adds
-its id to the `enable` allowlist in `.llm-lint.json`. Un-promoted rules stay
-disabled — they make no LLM calls and print nothing — so every finding the
-gate reports fails it. The rule set and its allowlist are a verbatim copy of
-agent-repl's.
+llm-lint is **disabled for now**: it is not a gate and not part of the
+toolchain, so the run needs neither it on PATH nor a provider API key.
+`.llm-lint.json`, the rules under `lint-rules/`, and the `make llm-lint` target
+are kept so it can be re-enabled.
 
-A per-finding `llm-lint:ignore` directive (and likewise a `//nolint` comment
-for golangci-lint) counts as a disabled linter. Never add one to make a gate
-pass.
+A per-finding `//nolint` comment counts as a disabled linter. Never add one
+to make a gate pass.
 
 ## Commit conventions
 
@@ -90,9 +83,13 @@ Requirements: R-XXXX-XXXX, R-YYYY-YYYY
 The `Requirements:` trailer lists the phase's ids so history stays greppable
 by id.
 
-## Releasing (infrastructure — outside the spec system)
+## Releasing
 
-Releases are cut from this monorepo by tag, following agent-repl: tag
-`dory/vMAJOR.MINOR.PATCH` on `main`; the version string is source-carried in
-`internal/cli` (design D1) and edited directly to match the tag. Release
-workflow and GoReleaser config are added when the first release is cut.
+Release machinery — the version bump, tags, and (once added) `.goreleaser.yaml`
+and `.github/workflows/release-dory.yml` — is hand-maintained infrastructure
+outside the spec system: the build run never reads, edits, or tests it.
+
+No release has been cut yet. The first one adds the GoReleaser config and
+release workflow, following agent-repl. The version is source-carried in
+`internal/cli/cli.go` (D1) and is edited directly to match the tag
+`dory/vX.Y.Z`.

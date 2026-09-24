@@ -26,7 +26,6 @@ byte-identity requirement.
 - Go 1.26 (`go version` must report 1.26+)
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - GNU Make 4.4.1
-- `llm-lint` v0.6.0 on PATH, with its provider API key present in the environment
 - `secret-tool` from Debian `libsecret-tools` 0.21.7-1
 - For the conditional live gate (below): `GEMINI_API_KEY`, `XAI_API_KEY`, and
   `OPENROUTER_API_KEY` in the environment; `ANTHROPIC_API_KEY` and
@@ -68,8 +67,7 @@ skipped tests, no disabled linters laundering a failure.
 2. `go build ./...`
 3. `go test -race ./...`
 4. `golangci-lint run`
-5. `llm-lint --concurrency 16 --verbose .` (doubles the default in-flight calls of 8; `--verbose` prints per-pair progress)
-6. `make live` — **conditional**: run only when the phase's diff (the working
+5. `make live` — **conditional**: run only when the phase's diff (the working
    tree against the last phase commit) adds or modifies a `*_live_test.go`
    file; otherwise it is not run and not counted. It drives one
    lexicographically selected catalog offering for every offering-id/auth-mode
@@ -78,20 +76,16 @@ skipped tests, no disabled linters laundering a failure.
    When it applies and a credential from the toolchain list is absent, that is
    a missing tool: file an issue, do not pass or skip.
 
-llm-lint also loads this sub-project's own rules from `lint-rules/` (wired via
-`.llm-lint.json`, found by ancestor walk) and recurses the module from the root.
-Rules are promoted individually: a promotion flips the rule file to
-`severity: error` and adds its id to the `enable` allowlist in `.llm-lint.json`.
-Un-promoted rules stay disabled — they make no LLM calls and print nothing — so
-every finding the gate reports fails it.
+llm-lint is **disabled for now**: it is not a gate and not part of the
+toolchain, so the run needs neither it on PATH nor a provider API key.
+`.llm-lint.json`, the rules under `lint-rules/`, and the `make llm-lint` target
+are kept so it can be re-enabled.
 
-A per-finding `llm-lint:ignore` directive (and likewise a `//nolint` comment for
-golangci-lint) counts as a disabled linter. Never add one to make a gate pass.
-A finding is fixed by applying the rule's recommendation below the contract
-seam; if that cannot be done without changing an exported name, signature, or
-observable behavior, or if the finding is wrong, file an issue under
-`specs/issues/` so a human can adjudicate — restructure the code, sharpen the
-rule in `lint-rules/`, or amend the design.
+A per-finding `//nolint` comment counts as a disabled linter. Never add one
+to make a gate pass. A finding that cannot be fixed below the contract
+seam without changing an exported name, signature, or observable behavior, or
+that is wrong, is filed as an issue under `specs/issues/` so a human can
+adjudicate — restructure the code or amend the design.
 
 ## Commit conventions
 
@@ -106,15 +100,13 @@ Requirements: R-XXXX-XXXX, R-YYYY-YYYY
 The `Requirements:` trailer lists the phase's ids so history stays greppable
 by id.
 
-## Releasing (infrastructure — outside the spec system)
+## Releasing
 
-agentkit is a library, consumed by sibling sub-projects in this monorepo by
-module path; there is no binary to ship. It is versioned by tag from the
-monorepo:
+Releasing is hand-maintained infrastructure outside the spec system: the build
+run never tags or publishes. agentkit is a library consumed by module path;
+there is no binary to ship. The spec fixes its shape, never its version number.
 
-- Tag `agentkit/vMAJOR.MINOR.PATCH` on `main`; the latest is
-  `git tag --list 'agentkit/v*' --sort=-v:refname | head -1`.
-- A consumer pins a version with an ordinary `require
-  github.com/ikigenba/ikigenba/agentkit vMAJOR.MINOR.PATCH` in its own `go.mod`.
-- The version is release data, not spec-governed: the spec fixes the library's
-  shape, never its version number. Cut a release by tagging a green `main`.
+1. Tag a green `main` `agentkit/vX.Y.Z` and push the tag. The latest is
+   `git tag --list 'agentkit/v*' --sort=-v:refname | head -1`.
+2. A consumer pins it with an ordinary `require
+   github.com/ikigenba/ikigenba/agentkit vX.Y.Z` in its own `go.mod`.

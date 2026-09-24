@@ -19,25 +19,6 @@ build run writes the code under `cmd/` and `internal/`. See the `spec` and
 below is what the build run computes the gap and runs the gates against; it
 is human-authored and read-only to the run.
 
-## Deploy
-
-devctl installs on the developer's own machine, as an ordinary user; there is
-no host and no root step.
-
-1. Set `version` in `internal/cli/run.go` to `vX.Y.Z`. The binary reports that
-   string, and the release refuses a tag that does not match it.
-2. Commit that on `main` and push `main`.
-3. Tag that commit `devctl/vX.Y.Z` and push the tag.
-   `.github/workflows/release-devctl.yml` builds with GoReleaser and publishes
-   `devctl_<os>_<arch>.tar.gz` (linux and darwin, amd64 and arm64) and
-   `checksums.txt`.
-4. Install it locally, either way:
-   - from a checkout at that tag, `make install` (`go install ./cmd/devctl`);
-   - or download that release's archive for your platform and put the `devctl`
-     binary on your `PATH`.
-
-`devctl version` then prints `vX.Y.Z`.
-
 ## Toolchain
 
 - Go 1.26 (`go version` must report 1.26+)
@@ -90,12 +71,47 @@ skipped tests, no disabled linters laundering a failure.
 3. `go test -race ./...`
 4. `golangci-lint run`
 
-llm-lint is **disabled for devctl for now**: it is not a gate and not part of
-the toolchain, so the run neither needs it on PATH nor a provider API key.
-The `make llm-lint` target, the rule files under `lint-rules/`, and
-`.llm-lint.json` are kept so it can be re-enabled later by adding
-`llm-lint cmd internal` back to this gate list and `llm-lint` back to the
-toolchain.
+llm-lint is **disabled for now**: it is not a gate and not part of the
+toolchain, so the run needs neither it on PATH nor a provider API key.
+`.llm-lint.json`, the rules under `lint-rules/`, and the `make llm-lint` target
+are kept so it can be re-enabled.
+
+## Commit conventions
+
+```
+<imperative summary of the phase, <=50 chars>
+
+<optional: one or two lines on what changed and why>
+
+Requirements: R-XXXX-XXXX, R-YYYY-YYYY
+```
+
+The `Requirements:` trailer lists the phase's ids so history stays greppable
+by id.
+
+## Deploy
+
+Release machinery — the version bump, tags, `.goreleaser.yaml`, and
+`.github/workflows/release-devctl.yml` (repo root) — is hand-maintained
+infrastructure outside the spec system: the build run never reads, edits, or
+tests it.
+
+devctl installs on the developer's own machine, as an ordinary user; there is
+no host and no root step.
+
+1. Set the version in `internal/cli/run.go` (D02) to `vX.Y.Z`. The binary
+   reports that string, and the release refuses a tag that does not match it.
+2. Commit that on `main` and push `main`.
+3. Tag that commit `devctl/vX.Y.Z` and push the tag.
+   `.github/workflows/release-devctl.yml` builds with GoReleaser and publishes
+   `devctl_<os>_<arch>.tar.gz` (linux and darwin, amd64 and arm64) and
+   `checksums.txt`.
+4. Install it locally, either way:
+   - from a checkout at that tag, `make install` (`go install ./cmd/devctl`);
+   - or download that release's archive for your platform and put the `devctl`
+     binary on your `PATH`.
+
+`devctl version` then prints `vX.Y.Z`.
 
 ## Operating defaults
 
@@ -121,16 +137,3 @@ operands is the stories' and design's business and is not restated here.
 
 - **ssh.** The developer's ssh configuration reaches a space's instance as
   `ec2-user` with the platform's key pair, which is named after the root.
-
-## Commit conventions
-
-```
-<imperative summary of the phase, <=50 chars>
-
-<optional: one or two lines on what changed and why>
-
-Requirements: R-XXXX-XXXX, R-YYYY-YYYY
-```
-
-The `Requirements:` trailer lists the phase's ids so history stays greppable
-by id.

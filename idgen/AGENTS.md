@@ -14,7 +14,6 @@ read-only to the run.
 
 - Go 1.26 (`go version` must report 1.26+)
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
-- `llm-lint` on PATH, with its provider API key present in the environment
 
 ## Test files
 
@@ -40,14 +39,11 @@ skipped tests, no disabled linters laundering a failure.
 2. `go build ./...`
 3. `go test -race ./...`
 4. `golangci-lint run`
-5. `llm-lint cmd internal`
 
-llm-lint also loads this sub-project's own rules from `lint-rules/` (wired via
-`.llm-lint.json`, found by ancestor walk). Rules are promoted individually:
-a promotion flips the rule file to `severity: error` and adds its id to the
-`enable` allowlist in `.llm-lint.json`. Un-promoted rules stay disabled — they
-make no LLM calls and print nothing — so every finding the gate reports fails
-it. The un-promoted backlog is the `severity: warning` files in `lint-rules/`.
+llm-lint is **disabled for now**: it is not a gate and not part of the
+toolchain, so the run needs neither it on PATH nor a provider API key.
+`.llm-lint.json`, the rules under `lint-rules/`, and the `make llm-lint` target
+are kept so it can be re-enabled.
 
 ## Commit conventions
 
@@ -62,20 +58,20 @@ Requirements: R-XXXX-XXXX, R-YYYY-YYYY
 The `Requirements:` trailer lists the phase's ids so history stays greppable
 by id.
 
-## Releasing (infrastructure — outside the spec system)
+## Releasing
 
-Releases are cut from this monorepo by tag. The release machinery is
-hand-maintained infrastructure, not spec-governed code:
+Release machinery — the version bump, tags, `.goreleaser.yaml`, and
+`.github/workflows/release-idgen.yml` (repo root) — is hand-maintained
+infrastructure outside the spec system: the build run never reads, edits, or
+tests it.
 
-- Tag `idgen/vMAJOR.MINOR.PATCH` on `main`; the latest is
-  `git tag --list 'idgen/v*' --sort=-v:refname | head -1`.
-- Pushing the tag triggers `.github/workflows/release-idgen.yml` (repo root),
-  which verifies the tag's version equals the in-source version string in
-  `internal/cli/version.go` (a mismatched tag fails the release), then runs
-  GoReleaser from this directory using `.goreleaser.yaml` — linux/darwin ×
-  amd64/arm64, tar.gz archives, checksums, a GitHub release on the tag.
-- The version string is source-carried (see `specs/design/D6-help-and-version.md`),
-  never ldflags-injected. Its *value* is release data, not spec-governed: edit
-  `internal/cli/version.go` directly to the new `vMAJOR.MINOR.PATCH` (the spec
-  fixes only its shape), keep it valid against the gates, merge, then tag to
-  match. No build run is needed to bump it.
+1. Set the version in `internal/cli/version.go` (D6) to `vX.Y.Z`. It is
+   source-carried, never ldflags-injected; the spec fixes only its shape, so no
+   build run is needed to bump it.
+2. Commit that on `main` and push `main`.
+3. Tag that commit `idgen/vX.Y.Z` and push the tag. The workflow verifies the
+   tag matches the in-source version (a mismatch fails the release), then runs
+   GoReleaser from this directory: linux/darwin × amd64/arm64 tar.gz archives,
+   checksums, and a GitHub release on the tag.
+
+The latest release is `git tag --list 'idgen/v*' --sort=-v:refname | head -1`.

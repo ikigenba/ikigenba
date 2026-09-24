@@ -13,31 +13,6 @@ with that target. See the `spec` and `build-spec` skills. Everything below is
 what the build run computes the gap and runs the gates against; it is
 human-authored and read-only to the run.
 
-## Host
-
-The live box for this project is the host answering at `ikigenba.dev`. The
-ssh alias `dev` reaches it by that name, so it follows the DNS record when the
-instance is replaced; the login is `ec2-user`, and `sudo` needs no password.
-Any real-world verification — a live DNS round-trip, checking installed
-prerequisites — runs there.
-
-## Deploy
-
-1. Set `version` in `internal/cli/cli.go` to `vX.Y.Z`. The binary reports that
-   string, and the release refuses a tag that does not match it.
-2. Commit that on `main` and push `main`.
-3. Tag that commit `opsctl/vX.Y.Z` and push the tag.
-   `.github/workflows/release-opsctl.yml` builds with GoReleaser and publishes
-   `opsctl-vX.Y.Z-linux-amd64`, `checksums.txt`, and `install.sh`.
-4. On the host, as root, run that release's installer with the same version:
-
-```
-curl -fsSL -o /tmp/opsctl-install.sh https://github.com/ikigenba/ikigenba/releases/download/opsctl/vX.Y.Z/install.sh
-sudo bash /tmp/opsctl-install.sh vX.Y.Z
-```
-
-`opsctl version` then prints `vX.Y.Z`.
-
 ## Toolchain
 
 - Go 1.26 (`go version` must report 1.26+)
@@ -58,19 +33,6 @@ module paths in `go.mod` against it. Which release of each satisfies them is
 data, and it lives in `go.mod`. Transitive modules are whatever
 `go mod tidy` resolves for that set. The run never adds a direct module; a
 phase that appears to need one files an issue for a human to adjudicate.
-
-## Out of scope
-
-The spec owns local development. The design covers the Go code under `cmd/`
-and `internal/` and its `go.mod`; the `Makefile`, the lint configuration, and
-the gates are what builds and tests it here. Release publication
-and installation of the `opsctl` binary onto a host are maintained by hand
-and are not part of the design or the gap. `install.sh` and `.goreleaser.yaml`
-in this directory, and the release workflow at
-`.github/workflows/release-opsctl.yml` under the repository root, are
-hand-maintained files: the build run never reads, edits, tests, or deletes
-them, and no requirement describes them. Gate tests never publish a release
-or push a tag.
 
 ## Test files
 
@@ -105,9 +67,10 @@ skipped tests, no disabled linters laundering a failure.
 3. `go test -race ./...`
 4. `golangci-lint run`
 
-`llm-lint` is available as an optional manual check through `make llm-lint`,
-but it is not a quality gate. Its configuration and sub-project rules remain in
-`.llm-lint.json` and `lint-rules/`.
+llm-lint is **disabled for now**: it is not a gate and not part of the
+toolchain, so the run needs neither it on PATH nor a provider API key.
+`.llm-lint.json`, the rules under `lint-rules/`, and the `make llm-lint` target
+are kept so it can be re-enabled.
 
 ## Commit conventions
 
@@ -121,3 +84,33 @@ Requirements: R-XXXX-XXXX, R-YYYY-YYYY
 
 The `Requirements:` trailer lists the phase's ids so history stays greppable
 by id.
+
+## Deploy
+
+Release machinery — the version bump, tags, `install.sh`, `.goreleaser.yaml`,
+and `.github/workflows/release-opsctl.yml` (repo root) — is hand-maintained
+infrastructure outside the spec system: the build run never reads, edits, or
+tests it.
+
+1. Set the version in `internal/cli/cli.go` (D02) to `vX.Y.Z`. The binary
+   reports that string, and the release refuses a tag that does not match it.
+2. Commit that on `main` and push `main`.
+3. Tag that commit `opsctl/vX.Y.Z` and push the tag.
+   `.github/workflows/release-opsctl.yml` builds with GoReleaser and publishes
+   `opsctl-vX.Y.Z-linux-amd64`, `checksums.txt`, and `install.sh`.
+4. On the host, as root, run that release's installer with the same version:
+
+```
+curl -fsSL -o /tmp/opsctl-install.sh https://github.com/ikigenba/ikigenba/releases/download/opsctl/vX.Y.Z/install.sh
+sudo bash /tmp/opsctl-install.sh vX.Y.Z
+```
+
+`opsctl version` then prints `vX.Y.Z`.
+
+## Host
+
+The live box for this project is the host answering at `ikigenba.dev`. The
+ssh alias `dev` reaches it by that name, so it follows the DNS record when the
+instance is replaced; the login is `ec2-user`, and `sudo` needs no password.
+Any real-world verification — a live DNS round-trip, checking installed
+prerequisites — runs there.
