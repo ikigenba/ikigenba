@@ -4,7 +4,7 @@ Running agent-monitor at all: the bare run, help, version, the exit codes,
 and the usage errors. agent-monitor is a local development tool, one binary a
 developer runs on their own machine; it is never deployed to a space. The
 binary is built from the checkout. Its commands are added to this frame by
-later groups; the one it has is `list`.
+later groups; the ones it has are `list` and `tree`.
 
 ## A developer runs agent-monitor
 
@@ -22,11 +22,13 @@ Output:
 ```
 Usage: agent-monitor [options]
        agent-monitor list <harness>
+       agent-monitor tree <harness> <session-id>
 
 Observe the coding agents on this machine through their logs and hooks.
 
 Commands:
-  list <harness>  list the live root sessions of claude, codex, or grok
+  list <harness>               list the live root sessions of claude, codex, or grok
+  tree <harness> <session-id>  draw the subagent tree of one session
 
 see 'agent-monitor <command> --help' for command options
 
@@ -39,6 +41,7 @@ Exit codes:
   1  the output could not be written
   2  usage error
   3  the harness's session data could not be read
+  4  the session was not found
 ```
 
 Exits 0. The text is on stdout; stderr is empty.
@@ -54,7 +57,7 @@ Postconditions:
 ## A developer asks what agent-monitor can do
 
 The description names what the tool is for. The help lists the commands
-and the exit codes every command shares; a command's own help is
+and the exit codes they use; a command's own help is
 `agent-monitor <command> --help`.
 
 Command:
@@ -76,11 +79,13 @@ Output:
 ```
 Usage: agent-monitor [options]
        agent-monitor list <harness>
+       agent-monitor tree <harness> <session-id>
 
 Observe the coding agents on this machine through their logs and hooks.
 
 Commands:
-  list <harness>  list the live root sessions of claude, codex, or grok
+  list <harness>               list the live root sessions of claude, codex, or grok
+  tree <harness> <session-id>  draw the subagent tree of one session
 
 see 'agent-monitor <command> --help' for command options
 
@@ -93,6 +98,7 @@ Exit codes:
   1  the output could not be written
   2  usage error
   3  the harness's session data could not be read
+  4  the session was not found
 ```
 
 Exits 0. The text is on stdout; stderr is empty.
@@ -148,7 +154,7 @@ decides the outcome wins; nothing after it is looked at. `--help` or `-h`
 prints the help text and exits 0; `--version` or `-V` prints the version and
 exits 0; an unknown option fails as an unknown option; an argument that is
 not an option and not a command fails as an unknown command; a command,
-`list`, hands the rest of the arguments to that command, which reads them by
+`list` or `tree`, hands the rest of the arguments to that command, which reads them by
 its own rules. So when help comes first, any argument after it, known or
 not, a command included, is ignored: `agent-monitor --help list` prints
 this help, not the help of `list`. When the version option comes
@@ -181,11 +187,13 @@ Output:
 ```
 Usage: agent-monitor [options]
        agent-monitor list <harness>
+       agent-monitor tree <harness> <session-id>
 
 Observe the coding agents on this machine through their logs and hooks.
 
 Commands:
-  list <harness>  list the live root sessions of claude, codex, or grok
+  list <harness>               list the live root sessions of claude, codex, or grok
+  tree <harness> <session-id>  draw the subagent tree of one session
 
 see 'agent-monitor <command> --help' for command options
 
@@ -198,6 +206,7 @@ Exit codes:
   1  the output could not be written
   2  usage error
   3  the harness's session data could not be read
+  4  the session was not found
 ```
 
 Exits 0. The text is on stdout; stderr is empty.
@@ -215,7 +224,8 @@ Postconditions:
 When agent-monitor cannot write its output, it says so on stderr and fails.
 `<reason>` is the system's description of the failure and varies. The same
 holds for any output agent-monitor writes: the help text, the version, or
-the sessions `agent-monitor list <harness>` prints.
+the sessions `agent-monitor list <harness>` prints, or the tree
+`agent-monitor tree <harness> <session-id>` draws.
 
 Command:
 
@@ -242,8 +252,8 @@ Postconditions:
 
 ## A developer mistypes a command
 
-agent-monitor's one command is `list`, so any other argument that is not an
-option is an unknown command. Arguments are read left to right, so it fails at
+agent-monitor's commands are `list` and `tree`, so any other argument that is
+not an option is an unknown command. Arguments are read left to right, so it fails at
 the first argument that is not an option even when a help, version, or unknown
 option follows it: `agent-monitor bogus --help` and
 `agent-monitor bogus --bogus` both fail with unknown command 'bogus'.
