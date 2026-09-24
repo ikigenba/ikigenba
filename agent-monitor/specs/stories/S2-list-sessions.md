@@ -463,7 +463,10 @@ The only option `list` takes is `--help` or `-h`; any other option after
 named and echoed exactly as a top-level unknown option is. Read left to
 right, an unknown option before the harness fails here, and an unknown
 option after a valid harness fails here too: `agent-monitor list claude
---bogus` fails with `agent-monitor: unknown option '--bogus'`.
+--bogus` fails with `agent-monitor: unknown option '--bogus'`. The
+`--no-color` that `tree` takes is unknown to `list` too: `agent-monitor list
+--no-color claude` fails the same way, with `agent-monitor: unknown option
+'--no-color'`.
 
 Command:
 
