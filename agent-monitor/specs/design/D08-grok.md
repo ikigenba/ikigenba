@@ -35,7 +35,7 @@ and can neither write nor lock anything.
 
 ## REQUIREMENTS
 
-- R-AJCM-S4R1: The package `internal/harness/grok` (import path `github.com/ikigenba/ikigenba/agent-monitor/internal/harness/grok`) MUST export exactly one identifier, the function `List(root fs.FS, home string) ([]session.Session, error)`, where `session` is `internal/session` (`D04-sessions-and-table`).
+- R-UGJD-UOYO: The package `internal/harness/grok` (import path `github.com/ikigenba/ikigenba/agent-monitor/internal/harness/grok`) MUST export the function `List(root fs.FS, home string) ([]session.Session, error)`, where `session` is `internal/session` (`D04-sessions-and-table`).
 - R-AN0B-XFZ4: `List` MUST treat the index as the absolute path `path.Join("/", home, ".grok", "active_sessions.json")` and the sessions directory as `path.Join("/", home, ".grok", "sessions")`, and MUST name each of them, and every path below the sessions directory, to `root` as that absolute path without its leading `/` (for `home` `/home/dev`, the names `home/dev/.grok/active_sessions.json` and `home/dev/.grok/sessions`).
 - R-AO88-B7PT: When reading the index through `root` fails with an error satisfying `errors.Is(err, fs.ErrNotExist)`, `List` MUST return a slice of length zero and a nil error.
 - R-3CCD-3GI4: When reading the index through `root` fails with any error not satisfying `errors.Is(err, fs.ErrNotExist)`, `List` MUST return a nil slice and an error whose dynamic type is `*session.ReadError` and whose `Path` is the index's absolute path (for `home` `/home/dev`, `/home/dev/.grok/active_sessions.json`), its `Err` being as `R-H0PS-DNFS` (`D04-sessions-and-table`) requires.

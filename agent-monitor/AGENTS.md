@@ -41,8 +41,6 @@ issue. The sections below describe what each one does.
   without one gate 3 fails with `go: -race requires cgo`
 - `golangci-lint` v2 (verified with 2.12.2; config: `.golangci.yml` in this
   directory)
-- `llm-lint` on PATH (verified with v0.6.0), with its provider API key present
-  in the environment
 
 ## Dependencies
 
@@ -119,21 +117,16 @@ Run from this directory (`agent-monitor/`), in order; every command must exit
 3. `go test -race ./...` — includes the built-binary tests of D01, the
    `/dev/full` one among them
 4. `golangci-lint run`
-5. `llm-lint cmd internal`
 
-llm-lint loads this sub-project's own rules from `lint-rules/` (wired via
-`.llm-lint.json`, found by ancestor walk, so this directory carries its own).
-A rule runs only when its id is listed in the `enable` allowlist in
-`.llm-lint.json`; a rule not listed there is disabled — it makes no LLM calls
-and prints nothing — whatever severity its file carries. Rules are promoted
-individually: a promotion sets the rule file to `severity: error` and adds its
-id to `enable`. A rule may be parked — its file at `severity: error` but its id
-kept out of `enable`, with the file saying why. Every enabled rule is at error
-severity, so every finding the gate reports fails it.
+llm-lint is **disabled for agent-monitor for now**: it is not a gate and not
+part of the toolchain, so the run neither needs it on PATH nor a provider API
+key. The `make llm-lint` target, the rule files under `lint-rules/`, and
+`.llm-lint.json` are kept so it can be re-enabled later by adding
+`llm-lint cmd internal` back to this gate list and `llm-lint` back to the
+toolchain.
 
-A per-finding `llm-lint:ignore` directive (and likewise a `//nolint` comment
-for golangci-lint) counts as a disabled linter. The run never adds one to make
-a gate pass; a finding it cannot fix below the contract seam, or believes is
+A per-finding `//nolint` comment for golangci-lint counts as a disabled
+linter. The run never adds one to make a gate pass; a finding it cannot fix below the contract seam, or believes is
 wrong, is filed as an issue for a human to adjudicate.
 
 ## Commit conventions

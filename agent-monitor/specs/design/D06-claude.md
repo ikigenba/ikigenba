@@ -40,7 +40,7 @@ given, and it can neither write nor lock anything.
 
 ## REQUIREMENTS
 
-- R-9OV5-7V7O: The package `internal/harness/claude` (import path `github.com/ikigenba/ikigenba/agent-monitor/internal/harness/claude`) MUST export exactly one identifier, the function `List(root fs.FS, home string) ([]session.Session, error)`, where `session` is `internal/session` (`D04-sessions-and-table`).
+- R-U803-6ART: The package `internal/harness/claude` (import path `github.com/ikigenba/ikigenba/agent-monitor/internal/harness/claude`) MUST export the function `List(root fs.FS, home string) ([]session.Session, error)`, where `session` is `internal/session` (`D04-sessions-and-table`).
 - R-9RAX-ZEP2: `List` MUST treat the registry directory as the absolute path `path.Join("/", home, ".claude", "sessions")` and the projects directory as `path.Join("/", home, ".claude", "projects")`, and MUST name each of them, and every path below them, to `root` as that absolute path without its leading `/` (for `home` `/home/dev`, the names `home/dev/.claude/sessions` and `home/dev/.claude/projects`).
 - R-9SIU-D6FR: When listing the registry directory through `root` fails with an error satisfying `errors.Is(err, fs.ErrNotExist)`, `List` MUST return a slice of length zero and a nil error.
 - R-32L6-1AKK: When listing the registry directory through `root` fails with any error not satisfying `errors.Is(err, fs.ErrNotExist)`, `List` MUST return a nil slice and an error whose dynamic type is `*session.ReadError` and whose `Path` is the registry directory's absolute path (for `home` `/home/dev`, `/home/dev/.claude/sessions`), its `Err` being as `R-H0PS-DNFS` (`D04-sessions-and-table`) requires.

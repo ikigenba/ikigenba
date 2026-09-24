@@ -6,12 +6,19 @@ linters:
   default: standard
   enable:
     - errorlint
+    - forbidigo
     - gocritic
     - gosec
     - misspell
     - revive
     - unconvert
     - unparam
+  settings:
+    forbidigo:
+      # Output goes through the io.Writer the run seam is given, never the
+      # builtins, which write to the process's standard error.
+      forbid:
+        - pattern: ^(print|println)$
 
 formatters:
   enable:
