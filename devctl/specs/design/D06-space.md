@@ -34,7 +34,14 @@ may do. The wait helpers poll a cloud fact on
 the shared interval until it holds: `WaitState` and `WaitChecks` watch an
 instance, `WaitLaunchReady` watches a launch spec become acceptable, and
 `WaitInsync` watches a Route 53 change, so a caller can hold a step open until
-the resource it just made is genuinely usable. Every helper takes the one
+the resource it just made is genuinely usable. An instance not yet visible to
+EC2 is one that has not reached the state yet, not a failure: `WaitState`
+keeps polling through the zero `Instance` D03's `DescribeInstance` returns for
+an id EC2 does not know yet. `WaitAssociate` is the same wait for an Elastic IP:
+a new allocation id can briefly be unknown to `AssociateAddress`, which EC2
+reports as the error code `InvalidAllocationID.NotFound`, so `WaitAssociate`
+retries the association while that is the answer and relays any other error
+at once. Every helper takes the one
 client interface it needs, as D03's `Spaces` and D05's `Push` do; no session
 or checkout type crosses into a helper.
 
@@ -95,6 +102,12 @@ and D14 issue every host command through this one shape.
 - R-TD45-FIEW: `(host.Host).Wait` MUST pass to `Deps.Exec` the `seam.Cmd` that `Run` passes for the single argument `true`, MUST return a nil error as soon as one of those processes exits 0, MUST wait on `Deps.After(ProbeInterval)` between consecutive ones, MUST pass at most `ProbeAttempts` of them, and MUST return an `*UnreachableError` whose `Address` is `Address` when that many have not exited 0; verified with a fake `Deps.After` that fires immediately.
 
 - R-UAQE-8484: `space.WaitState` MUST call `ec2.DescribeInstance` with `id` and return that `cloud.Instance` and a nil error as soon as its `State` equals `state` and — when `state` is `cloud.StateRunning` — its `Address` is not empty, MUST wait on `deps.After(PollInterval)` between consecutive calls, MUST make at most `PollAttempts` calls, and MUST return a `*WaitError` whose `Subject` is `id` and whose `Want` is `be ` followed by `state` when that many calls have not satisfied it; verified with a fake `Deps.After` that fires immediately.
+
+- R-3N3S-I439: `space.WaitState` MUST treat a zero `cloud.Instance` returned by `ec2.DescribeInstance` with a nil error as an instance that has not yet reached `state`, waiting and calling again within the same `PollAttempts` bound; verified with a fake `Deps.After` that fires immediately, at least by a fake `EC2` whose `DescribeInstance` returns the zero `cloud.Instance` on its first two calls and then a `running` instance with an `Address` making `WaitState` for `cloud.StateRunning` return that instance and a nil error after exactly three calls, and by one that returns the zero `cloud.Instance` on every call making it return a `*WaitError` whose `Subject` is `id` and whose `Want` is `be running` after exactly `PollAttempts` calls.
+
+- R-TRRP-P2TM: Package `internal/space` MUST export `WaitAssociate(ctx context.Context, deps seam.Deps, ec2 cloud.EC2, allocationID, instanceID string) error`.
+
+- R-RUIM-IAS8: `space.WaitAssociate` MUST call `ec2.AssociateAddress` with `allocationID` and `instanceID` and return a nil error as soon as it returns a nil error; while it returns an error that `errors.As` matches to a `*cloud.Error` whose `Code` is `InvalidAllocationID.NotFound` it MUST wait on `deps.After(PollInterval)` and call again, making at most `PollAttempts` calls, and MUST return a `*WaitError` whose `Subject` is `allocationID` and whose `Want` is `become associable` when that many calls have all returned that error; any other non-nil error MUST be returned unchanged at once with no further call; verified with a fake `Deps.After` that fires immediately, at least by a fake `EC2` whose `AssociateAddress` fails with that code on its first two calls and then succeeds giving a nil error after exactly three calls, by one that always fails with that code giving that `*WaitError` after exactly `PollAttempts` calls, and by one whose first call fails with a `*cloud.Error` whose `Code` is `Gateway.NotAttached` giving that error unchanged after exactly one call.
 
 - R-UBYA-LVYT: `space.WaitChecks` MUST call `ec2.InstanceChecksPassed` with `id` and return a nil error as soon as it reports true, MUST wait on `deps.After(PollInterval)` between consecutive calls, MUST make at most `PollAttempts` calls, and MUST return a `*WaitError` whose `Subject` is `id` and whose `Want` is `pass its status checks` when that many calls have not reported true.
 

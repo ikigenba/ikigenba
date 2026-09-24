@@ -32,7 +32,13 @@ the same `ChangeRecords` and `ChangeStatus` the space's own two records use.
 `_acme-challenge.<root>` permission. `LaunchReady` is a side-effect-free
 probe: it asks EC2 whether a launch spec would be accepted, which is how a
 caller confirms a just-created instance profile has become usable before it
-commits to a real launch.
+commits to a real launch. `DescribeInstance` answers the same kind of lag the
+same way: EC2's API is eventually consistent, so an instance id `RunInstances`
+has just returned can be unknown to `DescribeInstances` for a moment, which
+reports it as the error code `InvalidInstanceID.NotFound`. That is not a
+failure but an instance not yet visible, so `DescribeInstance` returns the
+zero `Instance`, exactly as it does for a response that carries no instance,
+and a caller polling for a state keeps polling.
 
 ## REQUIREMENTS
 
@@ -95,6 +101,8 @@ commits to a real launch.
 - R-QOTI-JOVC: In `awssdk`, `LaunchTemplate` MUST request only launch templates matching the filter `launch-template-name=<name>`, MUST return the id of the launch template the response carries, and MUST return a `*cloud.NotFoundError` whose `Kind` is `launch template` and whose `Name` is `name` when the response carries none.
 
 - R-H32Z-PBQW: In `awssdk`, `LaunchReady` MUST call the service `ec2` operation `RunInstances` with the launch template `spec.LaunchTemplateID` and the instance profile named by `spec.InstanceProfile`, exactly as `RunInstance` does but with its dry-run flag set so that no instance is created; it MUST return `true` and a nil error when that call reports the request would have succeeded (error code `DryRunOperation`), MUST return `false` and a nil error when that call reports the instance profile is not yet usable (error code `InvalidParameterValue` whose message contains `Invalid IAM Instance Profile name`), and MUST return a `*cloud.Error` for operation `RunInstances` for any other error.
+
+- R-5LKS-2NVC: In `awssdk`, `DescribeInstance` MUST request only the instance `id`; it MUST return the zero `cloud.Instance` and a nil error both when the call fails with an error whose code, found as R-VV8S-ZVE7 finds `Code`, is `InvalidInstanceID.NotFound` and when the response carries no instance, and MUST return a `*cloud.Error` for operation `DescribeInstances` for any other error; verified at least with a fake SDK client that records a request whose `InstanceIds` is exactly `[id]`, one whose `DescribeInstances` fails with an error satisfying `smithy.APIError` whose `ErrorCode()` is `InvalidInstanceID.NotFound`, and one whose `ErrorCode()` is `UnauthorizedOperation` giving a `*cloud.Error` whose `Code` is `UnauthorizedOperation`.
 
 - R-QQ1E-XGM1: In `awssdk`, `ListSpaceInstances` MUST request only instances matching both the filter `tag:Domain=<domain>` and the filter `tag-key=Space` and MUST set each returned `Instance.Space` to the value of that instance's `Space` tag; `ListSpaceAddresses` MUST request only addresses matching both of those filters and MUST set each returned `Address.Space` likewise; and `RunInstance` and `AllocateAddress` MUST apply the tags `Domain=<domain>` and `Space=<space>` — from `spec.Domain` and `spec.Space` to the instance and the instance's volumes on `RunInstance`, and from `domain` and `space` to the address on `AllocateAddress` — in the same request that creates the resource.
 
