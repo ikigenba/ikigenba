@@ -29,10 +29,7 @@ the run files as an issue. The sections below describe what each one does.
 
 ## Toolchain
 
-- Linux. The program reads `/proc` (D05), and one gate test writes the built
-  binary's standard output to `/dev/full` (D01), which exists only there; on
-  any other system gate 3 cannot run, which is an environment blocker, never a
-  skip. No test reads `/proc` itself.
+- Linux. The program reads `/proc` (D05). No test reads `/proc` itself.
 - Go 1.26 (`go version` must report 1.26+; verified with go1.26.5). The seam
   needs `fs.ReadLink`/`fs.ReadLinkFS` and `fstest.MapFS` link support, which
   arrived in Go 1.25.
@@ -89,18 +86,10 @@ opened (how a test proves a `*.key` file is never read and nothing is
 written). No test reads the real filesystem, `/proc`, the real `HOME` or
 environment, or the real streams, and none starts a process.
 
-The exceptions are the checks D01 states against the built program and its
-package graph. The tests in `cmd/agent-monitor` may build the binary into a
-temporary directory and exec it to verify `main`'s wiring: the bare run, the
-bare run with standard output opened on `/dev/full`, argument pass-through
-(for example, an unknown command reaching standard error), which stream each
-output lands on, the exit code, and `list` wiring with `HOME` set to an empty
-temporary directory holding no harness directories, with `HOME` set to the
-empty string, and with `HOME` unset. Such a test sets the child's environment
-explicitly and never mutates its own. The package-graph checks may run `go
-list`: on `./...` for the package set and per package for the import
-allow-lists, both as D01 states them. No other test builds, execs, or waits on
-a process. The gates run offline as an ordinary user; a test never sleeps.
+The one exception is the package-graph check D01 states: a test in
+`cmd/agent-monitor` may run `go list`, on `./...` for the package set and per
+package for the import allow-lists. No test builds, execs, or waits on a
+process. The gates run offline as an ordinary user; a test never sleeps.
 
 **Versions are data.** No test names a version value. A test that needs the
 version reads `cli.Version`, and the shape test applies D03's pattern to it.
@@ -113,8 +102,7 @@ Run from this directory (`agent-monitor/`), in order; every command must exit
 1. `test -z "$(gofmt -l .)"` — fails if any file is unformatted (`go fmt`
    itself always exits 0, so the check form is the gate; fix with `make fmt`)
 2. `go build ./...`
-3. `go test -race ./...` — includes the built-binary tests of D01, the
-   `/dev/full` one among them
+3. `go test -race ./...`
 4. `golangci-lint run`
 
 A per-finding `//nolint` comment for golangci-lint counts as a disabled

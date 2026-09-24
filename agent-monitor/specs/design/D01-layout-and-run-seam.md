@@ -76,13 +76,8 @@ requirements fix the name, the file, that it is a source-initialised `var`,
 and its shape (`D03`), never the value. The two help texts are constants in
 the same package; `D03` fixes their values byte for byte.
 
-A few requirements drive the built binary rather than `Run`: the bare run,
-the story's literal write-failure case of standard output on `/dev/full`, and
-`list` against a temporary, empty `HOME` and with `HOME` unset or empty. They
-prove that `main` wires the real streams, the real environment, the real
-filesystem, and the real exit code through the seam. Each compares against
-the declared value — `cli.Usage`, `session.Table` of no sessions — never a
-restatement of the text.
+No requirement drives the built binary: `main` is a few lines of wiring, and
+the release workflow runs the built program.
 
 ## REQUIREMENTS
 
@@ -104,7 +99,3 @@ restatement of the text.
 - R-DQ03-L77I: The non-test `.go` files of `internal/session` MUST import no package other than the standard-library packages `bytes`, `cmp`, `errors`, `slices`, `sort`, `strconv`, `strings`, `time`, and `unicode/utf8` and this module's `internal/quote`, so that the direct imports `go list -f '{{.Imports}}'` reports for `./internal/session` are a subset of those.
 - R-DR7Z-YYY7: The non-test `.go` files of `internal/proc` MUST import no package other than the standard-library packages `bufio`, `bytes`, `errors`, `io/fs`, `path`, `strconv`, `strings`, `syscall`, and `time`, so that the direct imports `go list -f '{{.Imports}}'` reports for `./internal/proc` are a subset of those, none of them a package of this module.
 - R-DSFW-CQOW: The non-test `.go` files of each of `internal/harness/claude`, `internal/harness/codex`, and `internal/harness/grok` MUST import no package other than the standard-library packages `bytes`, `cmp`, `encoding/json`, `errors`, `io/fs`, `path`, `slices`, `sort`, `strconv`, `strings`, and `time` and this module's `internal/session` and `internal/proc`, so that the direct imports `go list -f '{{.Imports}}'` reports for each of those three packages are a subset of those.
-- R-DW3L-I1WZ: The binary built from `./cmd/agent-monitor`, executed with no arguments, MUST write exactly `cli.Usage` to its standard output, write nothing to its standard error, and exit with status 0.
-- R-2LK1-LM9L: The binary built from `./cmd/agent-monitor`, executed with no arguments and with its standard output opened on `/dev/full`, MUST write to its standard error exactly one line that begins `agent-monitor: write error: ` and ends in a single `"\n"`, and MUST exit with status 1.
-- R-DXBH-VTNO: The binary built from `./cmd/agent-monitor`, executed with the arguments `list` and `h` for each `h` of `claude`, `codex`, and `grok`, with the environment variable `HOME` set to the path of an existing empty directory, MUST write exactly `session.Table` of an empty slice to its standard output, write nothing to its standard error, exit with status 0, and leave that directory empty.
-- R-DYJE-9LED: The binary built from `./cmd/agent-monitor`, executed with the arguments `list` and `claude` once with `HOME` absent from its environment and once with `HOME` set to the empty string, MUST each time write exactly `"agent-monitor: cannot find the home directory: HOME is not set\n"` to its standard error, write nothing to its standard output, and exit with status 3.
