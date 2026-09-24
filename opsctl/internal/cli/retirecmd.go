@@ -13,13 +13,15 @@ import (
 
 const retireUsage = `Usage: opsctl retire
 
-Take a host's final backup before it is discarded. Stop every service, then
+Take a host's final backup before it is discarded. Stop every app's socket and
+service, sockets first so no request starts a service again, then
 litestream.service so it ships every committed change it holds, then copy
 every service's files and the host's own configuration to backup.s3_uri
 exactly as 'opsctl backup' and 'opsctl host backup' would.
 
-Nothing is deleted or disabled. The units are left stopped; a host kept after
-all comes back with 'systemctl start' or a reboot.
+Nothing is deleted or disabled. The units are left stopped; on a host kept
+after all, a reboot or 'opsctl restart APP' brings every enabled app back, and
+a disabled app stays down until 'opsctl enable'.
 
 Configuration keys:
   aws.region      the region the backup bucket lives in
@@ -54,11 +56,7 @@ func writeRetireUsageError(stderr io.Writer, message string) exitCode {
 func renderRetireOutcome(stdout, stderr io.Writer, result backup.RetireResult, runErr error) exitCode {
 	var report strings.Builder
 	if result.ServicesStopped {
-		stopped := "none"
-		if len(result.Services) > 0 {
-			stopped = strings.Join(result.Services, ", ") + " stopped"
-		}
-		_, _ = fmt.Fprintf(&report, "services: ok (%s)\n", stopped)
+		_, _ = fmt.Fprintf(&report, "services: ok (%s)\n", retireServiceSegments(result.Services, result.Disabled))
 	}
 	if result.LitestreamStopped {
 		status := "stopped"
@@ -106,6 +104,34 @@ func renderRetireOutcome(stdout, stderr io.Writer, result backup.RetireResult, r
 		return exitFail
 	}
 	return exitOK
+}
+
+func retireServiceSegments(services, disabled []string) string {
+	if len(services) == 0 {
+		return "none"
+	}
+	disabledNames := make(map[string]bool, len(disabled))
+	for _, name := range disabled {
+		disabledNames[name] = true
+	}
+	var segments []string
+	var stopped []string
+	flushStopped := func() {
+		if len(stopped) > 0 {
+			segments = append(segments, strings.Join(stopped, ", ")+" stopped")
+			stopped = nil
+		}
+	}
+	for _, name := range services {
+		if disabledNames[name] {
+			flushStopped()
+			segments = append(segments, name+" already inactive, disabled")
+		} else {
+			stopped = append(stopped, name)
+		}
+	}
+	flushStopped()
+	return strings.Join(segments, "; ")
 }
 
 func retireDiagnosticCause(result backup.RetireResult, runErr error) error {

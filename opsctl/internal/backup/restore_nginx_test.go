@@ -79,7 +79,7 @@ func TestRestoreNginxFailurePreservesCauseAndStopsWorkflow(t *testing.T) {
 	cause := errors.New("nginx publication unavailable")
 	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, func(context.Context) error { return cause })
 	var failure *backup.RestoreError
-	if err == nil || !errors.Is(err, cause) || !errors.As(err, &failure) || failure.Stage != "nginx regeneration" || !reflect.DeepEqual(failure.Stopped, []string{"ikigenba-notes.service"}) {
+	if err == nil || !errors.Is(err, cause) || !errors.As(err, &failure) || failure.Stage != "nginx regeneration" || !reflect.DeepEqual(failure.Stopped, []string{"ikigenba-notes.socket", "ikigenba-notes.service"}) {
 		t.Fatalf("Restore() error = %#v", err)
 	}
 	if len(report.Steps) != 3 || report.Steps[0].Name != "source" || report.Steps[1].Name != "stop" || report.Steps[2].Name != "files" {

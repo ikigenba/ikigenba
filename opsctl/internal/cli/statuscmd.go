@@ -38,10 +38,15 @@ func runStatus(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
 const statusUsage = `Usage: opsctl status
 
 Print one line per service on this host, in name order: its name, the version
-its own binary reports, the state of its systemd unit, and the journal mode of
-the database its manifest declares. A service is any /opt/<name>/ with an etc/
-or state/ directory; '-' means opsctl could not ask, or there was nothing to
-ask.
+its own binary reports, the state of its service unit, the state of its socket
+unit, and the journal mode of the database its manifest declares. A service is
+any /opt/<name>/ with an etc/ or state/ directory; '-' means opsctl could not
+ask, or there was nothing to ask.
+
+A service that is inactive behind an active socket is idle, not down: its
+socket starts it again when the next request arrives. The socket's field reads
+'disabled' when its unit is disabled, as 'opsctl disable' leaves it: neither
+unit starts until 'opsctl enable'.
 
 A declared database must stay in WAL mode: litestream cannot replicate one in
 any other mode, so a service reporting anything but 'wal' is a service whose
@@ -54,7 +59,7 @@ database are facts about the host, not failures of this command.
 func writeStatusRows(output io.Writer, rows []apps.StatusRow) error {
 	var report strings.Builder
 	for _, row := range rows {
-		_, _ = fmt.Fprintf(&report, "%s %s %s %s\n", row.Name, row.Version, row.State, row.JournalMode)
+		_, _ = fmt.Fprintf(&report, "%s %s %s %s %s\n", row.Name, row.Version, row.State, row.Socket, row.JournalMode)
 	}
 	_, err := io.WriteString(output, report.String())
 	return err

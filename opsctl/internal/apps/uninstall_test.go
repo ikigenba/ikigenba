@@ -30,18 +30,20 @@ func TestUninstallAPISignatureAndCompleteDomainWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantCommands := []host.Command{
+		{Name: "systemctl", Args: []string{"is-active", "ikigenba-notes.socket"}},
 		{Name: "systemctl", Args: []string{"is-active", "ikigenba-notes.service"}},
+		{Name: "systemctl", Args: []string{"stop", "ikigenba-notes.socket"}},
 		{Name: "systemctl", Args: []string{"stop", "ikigenba-notes.service"}},
-		{Name: "systemctl", Args: []string{"disable", "ikigenba-notes.service"}},
+		{Name: "systemctl", Args: []string{"disable", "ikigenba-notes.socket", "ikigenba-notes.service"}},
 		{Name: "systemctl", Args: []string{"daemon-reload"}},
 	}
-	if !reflect.DeepEqual(fixture.commands, wantCommands) || len(configured) != 1 || configured[0].App != "notes" || configured[0].Port != 8080 {
+	if !reflect.DeepEqual(fixture.commands, wantCommands) || len(configured) != 1 || configured[0].App != "notes" {
 		t.Fatalf("commands = %#v, configured = %#v", fixture.commands, configured)
 	}
 }
 
 func TestUninstallRejectsEveryMissingPrerequisiteBeforeEffects(t *testing.T) {
-	// R-X4BC-FMS3
+	// R-XRPS-FLUE
 	for _, test := range []struct {
 		name   string
 		mutate func(*testing.T, *uninstallFixture)
@@ -55,7 +57,7 @@ func TestUninstallRejectsEveryMissingPrerequisiteBeforeEffects(t *testing.T) {
 			writeFixturePath(t, fixture.root, "opt/notes/etc/manifest.toml", "app = [\n")
 		}},
 		{name: "mismatched manifest", mutate: func(t *testing.T, fixture *uninstallFixture) {
-			writeFixturePath(t, fixture.root, "opt/notes/etc/manifest.toml", "app = \"other\"\nport = 8080\n")
+			writeFixturePath(t, fixture.root, "opt/notes/etc/manifest.toml", "app = \"other\"\n")
 		}},
 		{name: "missing unit", mutate: func(t *testing.T, fixture *uninstallFixture) {
 			removeFixturePath(t, fixture.root, "etc/systemd/system/ikigenba-notes.service")
@@ -83,7 +85,7 @@ func TestUninstallRejectsEveryMissingPrerequisiteBeforeEffects(t *testing.T) {
 }
 
 func TestUninstallRejectsUnreadableManifestBeforeEffects(t *testing.T) {
-	// R-X4BC-FMS3
+	// R-XRPS-FLUE
 	fixture := newUninstallFixture(t, "active")
 	manifest := filepath.Join(fixture.root, "opt/notes/etc/manifest.toml")
 	if err := os.Chmod(manifest, 0); err != nil {
@@ -110,7 +112,7 @@ func TestUninstallRejectsUnreadableManifestBeforeEffects(t *testing.T) {
 
 func TestUninstallActionAndReportFailuresAreJoined(t *testing.T) {
 	// R-GWME-QK2L
-	// R-ETFY-8BTG R-EVVQ-ZVAU R-EX3N-DN1J
+	// R-ETFY-8BTG R-VSZM-8WU4 R-VGSM-F7F6
 	fixture := newUninstallFixture(t, "active")
 	actionErr := errors.New("stop transport failed")
 	reportErr := errors.New("report write failed")
@@ -121,10 +123,10 @@ func TestUninstallActionAndReportFailuresAreJoined(t *testing.T) {
 		return reportErr
 	}
 	err := apps.Uninstall(context.Background(), host.Env{Root: fixture.root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
-		if reflect.DeepEqual(command.Args, []string{"is-active", "ikigenba-notes.service"}) {
+		if reflect.DeepEqual(command.Args, []string{"is-active", "ikigenba-notes.service"}) || reflect.DeepEqual(command.Args, []string{"is-active", "ikigenba-notes.socket"}) {
 			return host.Result{Stdout: []byte("active\n")}, nil
 		}
-		if reflect.DeepEqual(command.Args, []string{"stop", "ikigenba-notes.service"}) {
+		if reflect.DeepEqual(command.Args, []string{"stop", "ikigenba-notes.socket"}) {
 			return host.Result{}, actionErr
 		}
 		t.Fatalf("unexpected command %#v", command)
@@ -132,13 +134,13 @@ func TestUninstallActionAndReportFailuresAreJoined(t *testing.T) {
 	}}, "notes", apps.UninstallHooks{Report: fixture.report, Configure: fixture.configure})
 	var commandErr *host.CommandError
 	if !errors.Is(err, actionErr) || !errors.Is(err, reportErr) || !errors.As(err, &commandErr) ||
-		commandErr.Label != "stop ikigenba-notes.service" {
+		commandErr.Label != "stop ikigenba-notes.socket" {
 		t.Fatalf("Uninstall error = %#v, command error = %#v", err, commandErr)
 	}
 }
 
 func TestUninstallStopsOnlyActiveUnitsAndAlwaysDisables(t *testing.T) {
-	// R-M22E-Z1WA
+	// R-VI0I-SZ5V
 	for _, state := range []string{"active", "inactive", "failed"} {
 		t.Run(state, func(t *testing.T) {
 			fixture := newUninstallFixture(t, state)
@@ -155,14 +157,18 @@ func TestUninstallStopsOnlyActiveUnitsAndAlwaysDisables(t *testing.T) {
 			if err := fixture.uninstall(); err != nil {
 				t.Fatal(err)
 			}
-			wantCommands := []host.Command{{Name: "systemctl", Args: []string{"is-active", "ikigenba-notes.service"}}}
-			wantDetail := "ikigenba-notes.service already inactive, disabled"
+			wantCommands := []host.Command{
+				{Name: "systemctl", Args: []string{"is-active", "ikigenba-notes.socket"}},
+				{Name: "systemctl", Args: []string{"is-active", "ikigenba-notes.service"}},
+				{Name: "systemctl", Args: []string{"stop", "ikigenba-notes.socket"}},
+				{Name: "systemctl", Args: []string{"stop", "ikigenba-notes.service"}},
+			}
+			wantDetail := "ikigenba-notes.socket, ikigenba-notes.service already inactive, disabled"
 			if state == "active" {
-				wantCommands = append(wantCommands, host.Command{Name: "systemctl", Args: []string{"stop", "ikigenba-notes.service"}})
-				wantDetail = "ikigenba-notes.service stopped, disabled"
+				wantDetail = "ikigenba-notes.socket, ikigenba-notes.service stopped, disabled"
 			}
 			wantCommands = append(wantCommands,
-				host.Command{Name: "systemctl", Args: []string{"disable", "ikigenba-notes.service"}},
+				host.Command{Name: "systemctl", Args: []string{"disable", "ikigenba-notes.socket", "ikigenba-notes.service"}},
 				host.Command{Name: "systemctl", Args: []string{"daemon-reload"}},
 			)
 			if !reflect.DeepEqual(fixture.commands, wantCommands) || fixture.reports[0] != (uninstallReport{"stop", wantDetail, true}) {
@@ -173,7 +179,7 @@ func TestUninstallStopsOnlyActiveUnitsAndAlwaysDisables(t *testing.T) {
 }
 
 func TestUninstallRemovesUnitSymlinkThenReloads(t *testing.T) {
-	// R-M3AB-CTMZ
+	// R-VJ8F-6QWK
 	fixture := newUninstallFixture(t, "inactive")
 	unit := filepath.Join(fixture.root, "etc/systemd/system/ikigenba-notes.service")
 	outside := filepath.Join(t.TempDir(), "outside.service")
@@ -202,7 +208,7 @@ func TestUninstallRemovesUnitSymlinkThenReloads(t *testing.T) {
 	if err != nil || string(data) != "outside unchanged" {
 		t.Fatalf("outside unit changed: %q, %v", data, err)
 	}
-	wantReport := uninstallReport{"unit", "removed ikigenba-notes.service", true}
+	wantReport := uninstallReport{"unit", "removed ikigenba-notes.socket, ikigenba-notes.service", true}
 	if fixture.reports[1] != wantReport || !reflect.DeepEqual(fixture.commands[len(fixture.commands)-1], host.Command{Name: "systemctl", Args: []string{"daemon-reload"}}) {
 		t.Fatalf("commands = %#v, reports = %#v", fixture.commands, fixture.reports)
 	}
@@ -277,10 +283,11 @@ func newUninstallFixture(t *testing.T, state string) *uninstallFixture {
 	t.Helper()
 	root := t.TempDir()
 	writeFixturePath(t, root, "opt/notes/bin/notes", "binary")
-	writeFixturePath(t, root, "opt/notes/etc/manifest.toml", "app = \"notes\"\nport = 8080\n")
+	writeFixturePath(t, root, "opt/notes/etc/manifest.toml", "app = \"notes\"\n")
 	writeFixturePath(t, root, "opt/notes/share/asset", "asset")
 	writeFixturePath(t, root, "opt/notes/cache/item", "cache")
 	writeFixturePath(t, root, "etc/systemd/system/ikigenba-notes.service", "unit")
+	writeFixturePath(t, root, "etc/systemd/system/ikigenba-notes.socket", "unit")
 	fixture := &uninstallFixture{root: root, state: state}
 	fixture.report = func(step, detail string, success bool) error {
 		fixture.reports = append(fixture.reports, uninstallReport{step, detail, success})
@@ -303,7 +310,7 @@ func (fixture *uninstallFixture) uninstall() error {
 		if fixture.observe != nil {
 			fixture.observe(command)
 		}
-		if reflect.DeepEqual(command.Args, []string{"is-active", "ikigenba-notes.service"}) {
+		if reflect.DeepEqual(command.Args, []string{"is-active", "ikigenba-notes.service"}) || reflect.DeepEqual(command.Args, []string{"is-active", "ikigenba-notes.socket"}) {
 			exitCode := 3
 			if fixture.state == "active" {
 				exitCode = 0

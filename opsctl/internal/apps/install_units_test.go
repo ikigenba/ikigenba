@@ -20,7 +20,7 @@ import (
 )
 
 func TestInstallPublishesAndEnablesRootedAppUnit(t *testing.T) {
-	// R-EKSI-SOZD R-EN8B-K8GR R-X33G-1V1E R-AMEV-4J2G
+	// R-UL38-H654 R-EN8B-K8GR R-UJVC-3EEF R-UMB4-UXVT
 	root := t.TempDir()
 	statePath := filepath.Join(root, "opt", "notes", "state", "db")
 	cachePath := filepath.Join(root, "opt", "notes", "cache", "item")
@@ -35,30 +35,38 @@ func TestInstallPublishesAndEnablesRootedAppUnit(t *testing.T) {
 	}
 
 	appRoot := filepath.Join(root, "opt", "notes")
-	wantUnit := "[Unit]\nDescription=Ikigenba notes app\n\n" +
-		"[Service]\n" +
+	wantSocket := "[Unit]\nDescription=Ikigenba notes socket\n\n" +
+		"[Socket]\nListenStream=" + filepath.Join(root, "run", "ikigenba", "notes.sock") + "\n" +
+		"SocketUser=ikigenba\nSocketGroup=nginx\nSocketMode=0660\nRemoveOnStop=yes\nBacklog=4096\n\n" +
+		"[Install]\nWantedBy=sockets.target\n"
+	wantUnit := "[Unit]\nDescription=Ikigenba notes app\nRequires=ikigenba-notes.socket\nAfter=ikigenba-notes.socket\n\n" +
+		"[Service]\nType=notify\n" +
 		"ExecStart=" + filepath.Join(appRoot, "bin", "notes") + "\n" +
 		"WorkingDirectory=" + appRoot + "\n" +
 		"EnvironmentFile=" + filepath.Join(appRoot, "etc", "env") + "\n" +
-		"User=ikigenba\nRestart=on-failure\n\n" +
+		"User=ikigenba\nRestart=on-failure\nTimeoutStopSec=10\n\n" +
 		"[Install]\nWantedBy=multi-user.target\n"
+	assertFile(t, filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.socket"), wantSocket)
 	assertFile(t, filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.service"), wantUnit)
 	assertFile(t, statePath, "state")
 	assertFile(t, cachePath, "cache")
 	assertMode(t, appRoot, 0o750)
 	assertMode(t, filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.service"), 0o644)
+	assertMode(t, filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.socket"), 0o644)
 	assertMode(t, statePath, 0o600)
 	assertMode(t, cachePath, 0o600)
 
 	wantCommands := []commandCall{
 		{"xz", []string{"--decompress", "--stdout"}},
 		{"systemctl", []string{"is-active", "ikigenba-notes.service"}},
+		{"systemctl", []string{"show", "--property=LoadState", "--property=UnitFileState", "ikigenba-notes.socket"}},
 		{"id", []string{"--user", "ikigenba"}},
 		{"useradd", []string{"--system", "--no-create-home", "--shell", "/usr/sbin/nologin", "--user-group", "ikigenba"}},
 		{"chown", []string{"ikigenba:ikigenba", appRoot}},
 		{"chown", []string{"--recursive", "root:ikigenba", filepath.Join(appRoot, "bin"), filepath.Join(appRoot, "etc")}},
 		{"systemctl", []string{"daemon-reload"}},
 		{"systemctl", []string{"enable", "ikigenba-notes.service"}},
+		{"systemctl", []string{"enable", "--now", "ikigenba-notes.socket"}},
 		{"systemctl", []string{"start", "ikigenba-notes.service"}},
 		{"systemctl", []string{"is-active", "ikigenba-notes.service"}},
 		{filepath.Join(appRoot, "bin", "notes"), []string{"--version"}},
@@ -76,7 +84,7 @@ func TestInstallPublishesAndEnablesRootedAppUnit(t *testing.T) {
 }
 
 func TestInstallRequiresExpectedExistingAccountGroup(t *testing.T) {
-	// R-EKSI-SOZD
+	// R-UL38-H654
 	fixture := newCompletedInstallFixture(t, t.TempDir(), false)
 	if err := fixture.run(); err != nil {
 		t.Fatal(err)
@@ -107,16 +115,16 @@ func TestInstallRequiresExpectedExistingAccountGroup(t *testing.T) {
 		t.Fatalf("account shell = %q, want /usr/sbin/nologin", loginShell.accountShell)
 	}
 	wantLoginCommands := completedInstallCommands(loginShell.root, false)
-	wantLoginCommands = append(wantLoginCommands[:5], append([]commandCall{
+	wantLoginCommands = append(wantLoginCommands[:6], append([]commandCall{
 		{"usermod", []string{"--shell", "/usr/sbin/nologin", "ikigenba"}},
-	}, wantLoginCommands[5:]...)...)
+	}, wantLoginCommands[6:]...)...)
 	if !reflect.DeepEqual(loginShell.commands, wantLoginCommands) {
 		t.Fatalf("commands = %#v, want %#v", loginShell.commands, wantLoginCommands)
 	}
 }
 
 func TestInstallRejectsRootServiceAccount(t *testing.T) {
-	// R-EKSI-SOZD
+	// R-UL38-H654
 	fixture := newCompletedInstallFixture(t, t.TempDir(), false)
 	fixture.accountUID = "0"
 	err := fixture.run()
@@ -126,7 +134,7 @@ func TestInstallRejectsRootServiceAccount(t *testing.T) {
 	}
 	wantReports := []installReport{
 		{"fetch", "notes-from-uri-v0.tar.xz, 0.0 MiB", true},
-		{"file", "notes, port 4100", true},
+		{"file", "notes", true},
 		{"secrets", "0 keys", true},
 		{"unpack", "/opt/notes", true},
 		{"unit", "ikigenba account must not be root", false},
@@ -179,7 +187,7 @@ func TestInstallAppliesInstalledTreeOwnershipAndModes(t *testing.T) {
 	writeFixture(t, state, []byte("state"), 0o400)
 	writeFixture(t, cache, []byte("cache"), 0o500)
 	archive := tarEntries(t, []installTarEntry{
-		regularEntry("etc/manifest.toml", []byte("app = \"notes\"\nport = 4100\n"), 0o666),
+		regularEntry("etc/manifest.toml", []byte("app = \"notes\"\n"), 0o666),
 		regularEntry("etc/config", []byte("config"), 0o777),
 		regularEntry("bin/notes", []byte("binary"), 0o711),
 		regularEntry("bin/data", []byte("data"), 0o666),
@@ -242,7 +250,7 @@ func TestInstallAppliesInstalledTreeOwnershipAndModes(t *testing.T) {
 }
 
 func TestInstallReportsInstalledTreeShapingFailures(t *testing.T) {
-	// R-EOG7-Y07G R-AJZ2-XSUE
+	// R-EOG7-Y07G R-XLMA-IR4X
 	ownershipFailure := errors.New("ownership failed")
 	for _, test := range []struct {
 		name      string
@@ -287,7 +295,7 @@ func TestInstallReportsInstalledTreeShapingFailures(t *testing.T) {
 }
 
 func TestInstallStageActionAndReportFailuresStopInOrder(t *testing.T) {
-	// R-AJZ2-XSUE
+	// R-XLMA-IR4X
 	stages := []struct {
 		name      string
 		configure func(*completedInstallFixture, error)
@@ -295,7 +303,7 @@ func TestInstallStageActionAndReportFailuresStopInOrder(t *testing.T) {
 		{"fetch", func(fixture *completedInstallFixture, cause error) { fixture.downloadFailure = cause }},
 		{"file", func(fixture *completedInstallFixture, cause error) { fixture.fileFailure = cause }},
 		{"secrets", func(fixture *completedInstallFixture, cause error) {
-			fixture.archive = validInstallTar(fixture.t, "app = \"notes\"\nport = 4100\nsecrets = [\"TOKEN\"]\n")
+			fixture.archive = validInstallTar(fixture.t, "app = \"notes\"\nsecrets = [\"TOKEN\"]\n")
 			fixture.secretsFailure = cause
 		}},
 		{"unpack", func(fixture *completedInstallFixture, cause error) { fixture.optOwnershipFailure = cause }},
@@ -350,7 +358,7 @@ func assertLastAndOnlyStageReport(t *testing.T, reports []installReport, stage s
 }
 
 func TestInstallRejectsAppUnitSymlinkWithoutFollowingIt(t *testing.T) {
-	// R-EKSI-SOZD, R-OXY2-H0UX
+	// R-UJVC-3EEF, R-OXY2-H0UX
 	tests := []struct {
 		name       string
 		target     string
@@ -377,7 +385,7 @@ func TestInstallRejectsAppUnitSymlinkWithoutFollowingIt(t *testing.T) {
 			writeFixture(t, target, []byte(test.contents), 0o600)
 			if test.name == "another service" {
 				writeFixture(t, filepath.Join(root, "opt", "other", "etc", "manifest.toml"),
-					[]byte("app = \"other\"\nport = 4200\n"), 0o600)
+					[]byte("app = \"other\"\n"), 0o600)
 			}
 			unitPath := filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.service")
 			if err := os.MkdirAll(filepath.Dir(unitPath), 0o750); err != nil {
@@ -397,7 +405,7 @@ func TestInstallRejectsAppUnitSymlinkWithoutFollowingIt(t *testing.T) {
 			}
 			wantReports := []installReport{
 				{"fetch", "notes-from-uri-v0.tar.xz, 0.0 MiB", true},
-				{"file", "notes, port 4100", true},
+				{"file", "notes", true},
 				{"secrets", "0 keys", true},
 				{"unpack", "/opt/notes", true},
 				{"unit", failureDetail, false},
@@ -407,9 +415,9 @@ func TestInstallRejectsAppUnitSymlinkWithoutFollowingIt(t *testing.T) {
 			}
 			wantCommands := completedInstallCommands(root, false)
 			if test.name == "another service" {
-				wantCommands = append(wantCommands[:2], wantCommands[3:]...)
+				wantCommands = append(wantCommands[:3], wantCommands[4:]...)
 			}
-			wantCommands = wantCommands[:len(wantCommands)-5]
+			wantCommands = wantCommands[:len(wantCommands)-6]
 			if !reflect.DeepEqual(fixture.commands, wantCommands) {
 				t.Fatalf("commands = %#v, want %#v", fixture.commands, wantCommands)
 			}
@@ -443,17 +451,7 @@ func TestInstallReportsUnitFailureBeforeConfiguration(t *testing.T) {
 			if got := fixture.reports[len(fixture.reports)-1]; got.step != "unit" || got.success {
 				t.Fatalf("reports = %#v", fixture.reports)
 			}
-			wantCommands := []commandCall{
-				{"xz", []string{"--decompress", "--stdout"}},
-				{"systemctl", []string{"is-active", "ikigenba-notes.service"}},
-				{"chown", []string{"root:root", filepath.Join(fixture.root, "opt")}},
-				{"id", []string{"--user", "ikigenba"}},
-				{"getent", []string{"passwd", "ikigenba"}},
-				{"id", []string{"--group", "--name", "ikigenba"}},
-				{"chown", []string{"ikigenba:ikigenba", filepath.Join(fixture.root, "opt", "notes")}},
-				{"chown", []string{"--recursive", "root:ikigenba", filepath.Join(fixture.root, "opt", "notes", "bin"), filepath.Join(fixture.root, "opt", "notes", "etc")}},
-				{"systemctl", []string{"daemon-reload"}},
-			}
+			wantCommands := completedInstallCommands(fixture.root, false)[:10]
 			if action == "enable" {
 				wantCommands = append(wantCommands, commandCall{"systemctl", []string{"enable", "ikigenba-notes.service"}})
 			}
@@ -465,12 +463,12 @@ func TestInstallReportsUnitFailureBeforeConfiguration(t *testing.T) {
 }
 
 func TestInstallConfiguresOnceBeforeActivation(t *testing.T) {
-	// R-X0NN-ABK0
+	// R-XMU6-WIVM
 	fixture := newCompletedInstallFixture(t, t.TempDir(), false)
 	configureAt := -1
 	fixture.configure = func(_ context.Context, manifest apps.Manifest) error {
 		configureAt = len(fixture.commands)
-		if manifest.App != "notes" || manifest.Port != 4100 {
+		if manifest.App != "notes" {
 			t.Fatalf("configured manifest = %#v", manifest)
 		}
 		return nil
@@ -481,7 +479,7 @@ func TestInstallConfiguresOnceBeforeActivation(t *testing.T) {
 	if fixture.configureCalls != 1 {
 		t.Fatalf("Configure calls = %d, want 1", fixture.configureCalls)
 	}
-	if configureAt < 1 || !reflect.DeepEqual(fixture.commands[configureAt-1], commandCall{"systemctl", []string{"enable", "ikigenba-notes.service"}}) {
+	if configureAt < 1 || !reflect.DeepEqual(fixture.commands[configureAt-1], commandCall{"systemctl", []string{"enable", "--now", "ikigenba-notes.socket"}}) {
 		t.Fatalf("Configure at command %d in %#v", configureAt, fixture.commands)
 	}
 	if !reflect.DeepEqual(fixture.commands[configureAt], commandCall{"systemctl", []string{"start", "ikigenba-notes.service"}}) {
@@ -495,14 +493,14 @@ func TestInstallConfiguresOnceBeforeActivation(t *testing.T) {
 	if !errors.Is(err, stop) || failed.configureCalls != 1 {
 		t.Fatalf("error = %v, Configure calls = %d", err, failed.configureCalls)
 	}
-	wantFailedCommands := completedInstallCommands(failed.root, false)[:10]
+	wantFailedCommands := completedInstallCommands(failed.root, false)[:12]
 	if !reflect.DeepEqual(failed.commands, wantFailedCommands) {
 		t.Fatalf("commands = %#v, want %#v", failed.commands, wantFailedCommands)
 	}
 }
 
 func TestInstallStartsOrRestartsAndReportsBinaryVersion(t *testing.T) {
-	// R-P1LR-MC30
+	// R-UNJ1-8PMI
 	for _, active := range []bool{false, true} {
 		t.Run(map[bool]string{false: "inactive", true: "active"}[active], func(t *testing.T) {
 			fixture := newCompletedInstallFixture(t, t.TempDir(), active)
@@ -518,6 +516,41 @@ func TestInstallStartsOrRestartsAndReportsBinaryVersion(t *testing.T) {
 				t.Fatalf("reports = %#v, want %#v", fixture.reports, wantReports)
 			}
 		})
+	}
+}
+
+func TestInstallReplacesDisabledUnitsWithoutActivation(t *testing.T) {
+	// R-UJVC-3EEF R-UMB4-UXVT R-UNJ1-8PMI
+	root := t.TempDir()
+	servicePath := filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.service")
+	socketPath := filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.socket")
+	writeFixture(t, servicePath, []byte("old service\n"), 0o644)
+	writeFixture(t, socketPath, []byte("old socket\n"), 0o644)
+	fixture := newCompletedInstallFixture(t, root, false)
+	fixture.disabled = true
+	if err := fixture.run(); err != nil {
+		t.Fatal(err)
+	}
+	appRoot := filepath.Join(root, "opt", "notes")
+	wantSocket := "[Unit]\nDescription=Ikigenba notes socket\n\n" +
+		"[Socket]\nListenStream=" + filepath.Join(root, "run", "ikigenba", "notes.sock") + "\n" +
+		"SocketUser=ikigenba\nSocketGroup=nginx\nSocketMode=0660\nRemoveOnStop=yes\nBacklog=4096\n\n" +
+		"[Install]\nWantedBy=sockets.target\n"
+	wantService := "[Unit]\nDescription=Ikigenba notes app\nRequires=ikigenba-notes.socket\nAfter=ikigenba-notes.socket\n\n" +
+		"[Service]\nType=notify\nExecStart=" + filepath.Join(appRoot, "bin", "notes") + "\n" +
+		"WorkingDirectory=" + appRoot + "\n" +
+		"EnvironmentFile=" + filepath.Join(appRoot, "etc", "env") + "\n" +
+		"User=ikigenba\nRestart=on-failure\nTimeoutStopSec=10\n\n" +
+		"[Install]\nWantedBy=multi-user.target\n"
+	assertFile(t, socketPath, wantSocket)
+	assertFile(t, servicePath, wantService)
+	wantCommands := completedInstallCommands(root, false)[:10]
+	wantCommands = append(wantCommands, commandCall{filepath.Join(appRoot, "bin", "notes"), []string{"--version"}})
+	if !reflect.DeepEqual(fixture.commands, wantCommands) {
+		t.Fatalf("commands = %#v, want %#v", fixture.commands, wantCommands)
+	}
+	if fixture.configureCalls != 1 || !reflect.DeepEqual(fixture.reports, completedInstallReports("notes v9.8.7 disabled")) {
+		t.Fatalf("configure calls = %d, reports = %#v", fixture.configureCalls, fixture.reports)
 	}
 }
 
@@ -538,7 +571,7 @@ func TestInstallActivationFailureObtainsJournal(t *testing.T) {
 	if !reflect.DeepEqual(fixture.reports, wantReports) {
 		t.Fatalf("reports = %#v, want %#v", fixture.reports, wantReports)
 	}
-	wantStartFailureCommands := completedInstallCommands(fixture.root, false)[:11]
+	wantStartFailureCommands := completedInstallCommands(fixture.root, false)[:13]
 	wantStartFailureCommands = append(wantStartFailureCommands,
 		commandCall{"journalctl", []string{"--unit", "ikigenba-notes.service", "--no-pager", "--lines", "50"}})
 	if !reflect.DeepEqual(fixture.commands, wantStartFailureCommands) {
@@ -548,7 +581,7 @@ func TestInstallActivationFailureObtainsJournal(t *testing.T) {
 	fixture = newCompletedInstallFixture(t, t.TempDir(), false)
 	fixture.resultingInactive = true
 	err = fixture.run()
-	wantInactiveCommands := completedInstallCommands(fixture.root, false)[:12]
+	wantInactiveCommands := completedInstallCommands(fixture.root, false)[:14]
 	wantInactiveCommands = append(wantInactiveCommands,
 		commandCall{"journalctl", []string{"--unit", "ikigenba-notes.service", "--no-pager", "--lines", "50"}})
 	if !errors.As(err, &failure) || failure.Message != "notes: service failed to start" ||
@@ -603,6 +636,7 @@ type completedInstallFixture struct {
 	activated                bool
 	unitEnabled              bool
 	unitReportedAfterEnable  bool
+	disabled                 bool
 }
 
 func newCompletedInstallFixture(t *testing.T, root string, active bool) *completedInstallFixture {
@@ -659,7 +693,7 @@ func (fixture *completedInstallFixture) execute(_ context.Context, command host.
 		}
 		archive := fixture.archive
 		if archive == nil {
-			archive = validInstallTar(fixture.t, "app = \"notes\"\nport = 4100\n")
+			archive = validInstallTar(fixture.t, "app = \"notes\"\n")
 		}
 		return host.Result{Stdout: archive}, nil
 	case "id":
@@ -681,6 +715,11 @@ func (fixture *completedInstallFixture) execute(_ context.Context, command host.
 		return host.Result{}, nil
 	case "systemctl":
 		switch command.Args[0] {
+		case "show":
+			if fixture.disabled {
+				return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=disabled\n")}, nil
+			}
+			return host.Result{Stdout: []byte("LoadState=not-found\nUnitFileState=disabled\n")}, nil
 		case "is-active":
 			if !fixture.activated && !fixture.initiallyActive {
 				return host.Result{ExitCode: 3, Stdout: []byte("inactive\n")}, nil
@@ -693,7 +732,7 @@ func (fixture *completedInstallFixture) execute(_ context.Context, command host.
 			if command.Args[0] == fixture.unitFailureAction {
 				return host.Result{ExitCode: 9, Stderr: []byte("unit failure\n")}, nil
 			}
-			if command.Args[0] == "enable" {
+			if command.Args[0] == "enable" && len(command.Args) > 2 {
 				fixture.unitEnabled = true
 			}
 		case "start", "restart":
@@ -797,10 +836,10 @@ func chownFixtureTree(name string, uid, gid int) error {
 func completedInstallReports(serviceDetail string) []installReport {
 	return []installReport{
 		{"fetch", "notes-from-uri-v0.tar.xz, 0.0 MiB", true},
-		{"file", "notes, port 4100", true},
+		{"file", "notes", true},
 		{"secrets", "0 keys", true},
 		{"unpack", "/opt/notes", true},
-		{"unit", "ikigenba-notes.service", true},
+		{"unit", "ikigenba-notes.socket, ikigenba-notes.service", true},
 		{"service", serviceDetail, true},
 	}
 }
@@ -814,6 +853,7 @@ func completedInstallCommands(root string, initiallyActive bool) []commandCall {
 	return []commandCall{
 		{"xz", []string{"--decompress", "--stdout"}},
 		{"systemctl", []string{"is-active", "ikigenba-notes.service"}},
+		{"systemctl", []string{"show", "--property=LoadState", "--property=UnitFileState", "ikigenba-notes.socket"}},
 		{"chown", []string{"root:root", filepath.Join(root, "opt")}},
 		{"id", []string{"--user", "ikigenba"}},
 		{"getent", []string{"passwd", "ikigenba"}},
@@ -822,6 +862,7 @@ func completedInstallCommands(root string, initiallyActive bool) []commandCall {
 		{"chown", []string{"--recursive", "root:ikigenba", filepath.Join(appRoot, "bin"), filepath.Join(appRoot, "etc")}},
 		{"systemctl", []string{"daemon-reload"}},
 		{"systemctl", []string{"enable", "ikigenba-notes.service"}},
+		{"systemctl", []string{"enable", "--now", "ikigenba-notes.socket"}},
 		{"systemctl", []string{action, "ikigenba-notes.service"}},
 		{"systemctl", []string{"is-active", "ikigenba-notes.service"}},
 		{filepath.Join(appRoot, "bin", "notes"), []string{"--version"}},

@@ -26,10 +26,9 @@ func TestAppsOwnsHostLocalModelConsumedAcrossOperations(t *testing.T) {
 	if err := validateName("ledger"); err != nil {
 		t.Fatalf("ValidateName: %v", err)
 	}
-	manifestData := []byte("app = \"ledger\"\nport = 4100\n[database]\nengine = \"sqlite\"\npath = \"state/ledger.db\"\n")
+	manifestData := []byte("app = \"ledger\"\n[database]\nengine = \"sqlite\"\npath = \"state/ledger.db\"\n")
 	wantManifest := apps.Manifest{
 		App:     "ledger",
-		Port:    4100,
 		Secrets: []string{},
 		Env:     map[string]string{},
 		Database: &apps.Database{

@@ -97,7 +97,7 @@ func TestDiscoverSelectsImmediateServiceDirectoriesInBytewiseOrder(t *testing.T)
 // R-XYJC-7S5D
 func TestDiscoverKeepsManifestFailuresPerService(t *testing.T) {
 	root := t.TempDir()
-	writeManifest(t, root, "good", "app = \"good\"\nport = 4100\n")
+	writeManifest(t, root, "good", "app = \"good\"\n")
 	writeManifest(t, root, "capabilities", "default = true\n")
 	mkdirAll(t, filepath.Join(root, "opt", "missing", "etc"))
 	writeManifest(t, root, "malformed", "port = [\n")
@@ -111,7 +111,7 @@ func TestDiscoverKeepsManifestFailuresPerService(t *testing.T) {
 	if len(byName) != 5 {
 		t.Fatalf("Discover returned %d services: %#v", len(byName), services)
 	}
-	if got := byName["good"]; got.Manifest == nil || got.Manifest.App != "good" || got.Manifest.Port != 4100 || got.ManifestError != nil {
+	if got := byName["good"]; got.Manifest == nil || got.Manifest.App != "good" || got.ManifestError != nil {
 		t.Errorf("good service = %#v", got)
 	}
 	if got := byName["capabilities"]; got.Manifest == nil || !got.Manifest.Default || got.ManifestError != nil {
@@ -151,10 +151,9 @@ func TestDiscoverUsesDirectoryIdentityAndRetainsStateOnlyServices(t *testing.T) 
 
 func TestServiceModelUsesHostLocalInputs(t *testing.T) {
 	root := t.TempDir()
-	manifestData := []byte("app = \"notes\"\nport = 3200\n[database]\nengine = \"sqlite\"\npath = \"state/notes.db\"\n")
+	manifestData := []byte("app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/notes.db\"\n")
 	wantManifest := apps.Manifest{
 		App:      "notes",
-		Port:     3200,
 		Secrets:  []string{},
 		Env:      map[string]string{},
 		Database: &apps.Database{Engine: "sqlite", Path: "state/notes.db"},

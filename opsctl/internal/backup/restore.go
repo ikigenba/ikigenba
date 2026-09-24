@@ -120,13 +120,21 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 		Name:   "source",
 		Detail: fmt.Sprintf("%s/%s, %.1f MiB", service, source.basename, float64(source.size)/1048576),
 	})
-	unit := ""
+	socket := ""
+	serviceUnit := ""
 	unitInstalled := false
 	unitActive := false
+	unitDisabled := false
 	activationIntent := false
 	if apps.ValidateName(service) == nil {
-		unit = "ikigenba-" + service + ".service"
-		unitInstalled, unitActive, err = inspectRestoreUnit(ctx, env, unit)
+		socket = "ikigenba-" + service + ".socket"
+		serviceUnit = "ikigenba-" + service + ".service"
+		unitInstalled, unitActive, err = inspectRestoreUnit(ctx, env, socket)
+		if err != nil {
+			return failRestoreStep(report, service, "stop", "unit inspection", err, nil)
+		}
+		unitActive = unitInstalled && unitActive
+		unitDisabled, err = apps.Disabled(ctx, env, service)
 		if err != nil {
 			return failRestoreStep(report, service, "stop", "unit inspection", err, nil)
 		}
@@ -135,40 +143,54 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 			if err != nil {
 				return report, &RestoreError{Service: service, Stage: "activation marker", Err: err}
 			}
-			activationIntent = activationIntent || unitActive
+			activationIntent = !unitDisabled && (activationIntent || unitActive)
 		}
-		if unitActive {
+		if unitActive && !unitDisabled {
 			if err := publishRestoreActivationMarker(env.Root, service); err != nil {
 				return report, &RestoreError{Service: service, Stage: "activation marker", Err: err}
 			}
-			if err := runRestoreCommand(ctx, env, "stop "+unit, "systemctl", "stop", unit); err != nil {
+		}
+		if unitInstalled {
+			if err := runRestoreCommand(ctx, env, "stop "+socket, "systemctl", "stop", socket); err != nil {
 				return failRestoreStep(report, service, "stop", "stop", err, nil)
+			}
+			if err := runRestoreCommand(ctx, env, "stop "+serviceUnit, "systemctl", "stop", serviceUnit); err != nil {
+				var stopped []string
+				if activationIntent {
+					stopped = []string{socket}
+				}
+				return failRestoreStep(report, service, "stop", "stop", err, stopped)
 			}
 		}
 	}
 
 	databaseIncoming := source.manifest != nil && source.manifest.Database != nil
+	litestreamActive := false
 	if databaseIncoming {
+		_, litestreamActive, err = inspectRestoreUnit(ctx, env, "litestream.service")
+		if err != nil {
+			return failRestoreStep(report, service, "stop", "unit inspection", err, restoreStoppedUnits(socket, serviceUnit, activationIntent, false))
+		}
 		if err := runRestoreCommand(ctx, env, "stop litestream.service", "systemctl", "stop", "litestream.service"); err != nil {
-			stopped := restoreStoppedUnits(unit, activationIntent, false)
+			stopped := restoreStoppedUnits(socket, serviceUnit, activationIntent, false)
 			return failRestoreStep(report, service, "stop", "stop", err, stopped)
 		}
 	}
-	report.Steps = append(report.Steps, RestoreStep{Name: "stop", Detail: restoreStopDetail(unit, unitInstalled, unitActive, databaseIncoming)})
+	report.Steps = append(report.Steps, RestoreStep{Name: "stop", Detail: restoreStopDetail(socket, serviceUnit, unitInstalled, unitActive, unitDisabled, databaseIncoming)})
+	stopped := restoreStoppedUnits(socket, serviceUnit, activationIntent, litestreamActive)
 
 	identity, err := prepareRestoreIdentity(ctx, env, service, source.entries, source.manifest)
 	if err != nil {
-		return failRestoreStep(report, service, "files", "ownership", err, restoreStoppedUnits(unit, activationIntent, databaseIncoming))
+		return failRestoreStep(report, service, "files", "ownership", err, stopped)
 	}
 	count, err := replaceServiceRestoreTrees(ctx, env.Root, service, source.entries, identity)
 	if err != nil {
-		return failRestoreStep(report, service, "files", "files", err, restoreStoppedUnits(unit, activationIntent, databaseIncoming))
+		return failRestoreStep(report, service, "files", "files", err, stopped)
 	}
 	report.Steps = append(report.Steps, RestoreStep{
 		Name:   "files",
 		Detail: fmt.Sprintf("/opt/%s/etc, /opt/%s/state, %d files", service, service, count),
 	})
-	stopped := restoreStoppedUnits(unit, activationIntent, databaseIncoming)
 	if databaseIncoming {
 		database := *source.manifest.Database
 		recovered, restoreErr := restoreServiceDatabase(ctx, env, prefix, service, database, at)
@@ -206,16 +228,20 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 		if err := runRestoreCommand(ctx, env, "start litestream.service", "systemctl", "start", "litestream.service"); err != nil {
 			return failRestoreStep(report, service, "start", "start", err, stopped)
 		}
-		stopped = restoreStoppedUnits(unit, activationIntent, false)
+		stopped = removeStoppedUnit(stopped, "litestream.service")
 	}
-	startDetail := restoreStartDetail(unit, unitInstalled, activationIntent, databaseIncoming)
+	startDetail := restoreStartDetail(socket, serviceUnit, unitInstalled, unitDisabled, activationIntent, databaseIncoming)
 	if activationIntent {
-		if err := runRestoreCommand(ctx, env, "start "+unit, "systemctl", "start", unit); err != nil {
+		if err := runRestoreCommand(ctx, env, "start "+socket, "systemctl", "start", socket); err != nil {
+			return failRestoreStep(report, service, "start", "start", err, stopped)
+		}
+		stopped = removeStoppedUnit(stopped, socket)
+		if err := runRestoreCommand(ctx, env, "start "+serviceUnit, "systemctl", "start", serviceUnit); err != nil {
 			return failRestoreStep(report, service, "start", "start", err, stopped)
 		}
 	}
 	report.Steps = append(report.Steps, RestoreStep{Name: "start", Detail: startDetail})
-	if activationIntent {
+	if activationIntent || unitDisabled {
 		if err := removeRestoreActivationMarker(env.Root, service); err != nil {
 			return report, &RestoreError{Service: service, Stage: "activation marker", Err: err}
 		}
@@ -357,16 +383,19 @@ func applyRestoredDatabaseOwnership(rootName, service, databasePath string, iden
 	return nil
 }
 
-func restoreStartDetail(unit string, installed, active, database bool) string {
+func restoreStartDetail(socket, service string, installed, disabled, active, database bool) string {
 	app := "no app unit"
-	if unit != "" {
+	if socket != "" {
+		units := socket + ", " + service
 		switch {
+		case installed && disabled:
+			app = units + " left disabled"
 		case active:
-			app = unit
+			app = units
 		case installed:
-			app = unit + " left inactive"
+			app = units + " left inactive"
 		default:
-			app = "no " + unit
+			app = "no " + socket
 		}
 	}
 	if database {
@@ -374,7 +403,7 @@ func restoreStartDetail(unit string, installed, active, database bool) string {
 			return "litestream.service, " + app
 		}
 		if installed {
-			return "litestream.service, " + app
+			return "litestream.service; " + app
 		}
 		return "litestream.service"
 	}
@@ -593,8 +622,8 @@ func inspectRestoreUnit(ctx context.Context, env host.Env, unit string) (bool, b
 	if values["LoadState"] == "" || values["ActiveState"] == "" {
 		return false, false, errors.New("inspect " + unit + ": response omitted unit state")
 	}
-	installed := values["LoadState"] != "not-found"
-	return installed, installed && values["ActiveState"] == "active", nil
+	installed := values["LoadState"] == "loaded"
+	return installed, values["ActiveState"] == "active", nil
 }
 
 func runRestoreCommand(ctx context.Context, env host.Env, label, name string, args ...string) error {
@@ -613,16 +642,20 @@ func restoreCommandError(label string, result host.Result, err error) error {
 	return &host.CommandError{Label: label, Result: result, Err: err}
 }
 
-func restoreStopDetail(unit string, installed, active, database bool) string {
+func restoreStopDetail(socket, service string, installed, active, disabled, database bool) string {
 	app := "no app unit"
-	if unit != "" {
+	if socket != "" {
+		units := socket + ", " + service
 		switch {
 		case active:
-			app = unit
+			app = units
 		case installed:
-			app = unit + " already inactive"
+			app = units + " already inactive"
+			if disabled {
+				app += ", disabled"
+			}
 		default:
-			app = "no " + unit
+			app = "no " + socket
 		}
 	}
 	if !database {
@@ -631,16 +664,28 @@ func restoreStopDetail(unit string, installed, active, database bool) string {
 	if active {
 		return app + ", litestream.service"
 	}
+	if installed {
+		return "litestream.service; " + app
+	}
 	return "litestream.service, " + app
 }
 
-func restoreStoppedUnits(unit string, appStopped, litestreamStopped bool) []string {
+func restoreStoppedUnits(socket, service string, appStopped, litestreamStopped bool) []string {
 	var stopped []string
 	if appStopped {
-		stopped = append(stopped, unit)
+		stopped = append(stopped, socket, service)
 	}
 	if litestreamStopped {
 		stopped = append(stopped, "litestream.service")
+	}
+	return stopped
+}
+
+func removeStoppedUnit(stopped []string, unit string) []string {
+	for index, name := range stopped {
+		if name == unit {
+			return append(stopped[:index:index], stopped[index+1:]...)
+		}
 	}
 	return stopped
 }

@@ -18,17 +18,19 @@ import (
 )
 
 func TestInstallValidatesCompleteArchiveLayout(t *testing.T) {
-	// R-OT2G-XXW5
-	manifest := []byte("app = \"notes\"\nport = 4100\n")
+	// R-UG7M-Y36C
+	manifest := []byte("app = \"notes\"\n")
 	tests := []struct {
 		name    string
 		entries []installTarEntry
 		want    string
 	}{
-		{"missing port", []installTarEntry{regularEntry("etc/manifest.toml", []byte("app = \"notes\"\n"), 0o644), regularEntry("bin/notes", []byte("app"), 0o755)}, "manifest port is not set"},
 		{"non executable app", []installTarEntry{regularEntry("etc/manifest.toml", manifest, 0o644), regularEntry("bin/notes", []byte("app"), 0o644)}, "no executable bin/notes"},
 		{"outside top level", []installTarEntry{regularEntry("etc/manifest.toml", manifest, 0o644), regularEntry("bin/notes", []byte("app"), 0o755), regularEntry("state/data", nil, 0o600)}, "outside bin, etc, and share"},
 		{"duplicate", []installTarEntry{regularEntry("etc/manifest.toml", manifest, 0o644), regularEntry("bin/notes", []byte("one"), 0o755), regularEntry("bin/notes", []byte("two"), 0o755)}, "duplicate archive path bin/notes"},
+		{"file ancestor", []installTarEntry{regularEntry("etc/manifest.toml", manifest, 0o644), regularEntry("bin/notes", []byte("app"), 0o755), regularEntry("share/item", []byte("file"), 0o644), regularEntry("share/item/child", []byte("child"), 0o644)}, "file ancestor"},
+		{"file descendant before ancestor", []installTarEntry{regularEntry("etc/manifest.toml", manifest, 0o644), regularEntry("bin/notes", []byte("app"), 0o755), regularEntry("share/item/child", []byte("child"), 0o644), regularEntry("share/item", []byte("file"), 0o644)}, "file ancestor"},
+		{"generated environment", []installTarEntry{regularEntry("etc/manifest.toml", manifest, 0o644), regularEntry("bin/notes", []byte("app"), 0o755), regularEntry("etc/env", []byte("TOKEN=evil"), 0o644)}, "etc/env is reserved"},
 		{"absolute", []installTarEntry{regularEntry("etc/manifest.toml", manifest, 0o644), regularEntry("/bin/notes", nil, 0o755)}, "invalid archive path"},
 		{"dot component", []installTarEntry{regularEntry("etc/manifest.toml", manifest, 0o644), regularEntry("bin/./notes", nil, 0o755)}, "invalid archive path"},
 		{"dotdot component", []installTarEntry{regularEntry("etc/manifest.toml", manifest, 0o644), regularEntry("bin/../notes", nil, 0o755)}, "invalid archive path"},
@@ -54,10 +56,10 @@ func TestInstallValidatesCompleteArchiveLayout(t *testing.T) {
 }
 
 func TestInstallAcceptsOptionalShareAndAdditionalFiles(t *testing.T) {
-	// R-OT2G-XXW5
+	// R-UG7M-Y36C
 	root := t.TempDir()
 	archive := tarEntries(t, []installTarEntry{
-		regularEntry("etc/manifest.toml", []byte("app = \"notes\"\nport = 4100\n"), 0o644),
+		regularEntry("etc/manifest.toml", []byte("app = \"notes\"\n"), 0o644),
 		regularEntry("etc/extra.conf", []byte("configuration"), 0o640),
 		regularEntry("bin/notes", []byte("binary"), 0o755),
 		regularEntry("bin/helper", []byte("helper"), 0o750),
@@ -71,14 +73,14 @@ func TestInstallAcceptsOptionalShareAndAdditionalFiles(t *testing.T) {
 
 func TestInstallDiscoversDefaultsBeforeSecretsOrMutation(t *testing.T) {
 	// R-OUAD-BPMU
-	archive := validInstallTar(t, "app = \"notes\"\nport = 4100\ndefault = true\n")
+	archive := validInstallTar(t, "app = \"notes\"\ndefault = true\n")
 	for _, test := range []struct {
 		name     string
 		service  string
 		manifest string
 		want     string
 	}{
-		{"competing default", "web", "app = \"web\"\nport = 4200\ndefault = true\n", "notes: web is already the default app"},
+		{"competing default", "web", "app = \"web\"\ndefault = true\n", "notes: web is already the default app"},
 		{"bad service manifest", "web", "app = [\n", "web:"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -107,7 +109,7 @@ func TestInstallDiscoversDefaultsBeforeSecretsOrMutation(t *testing.T) {
 func TestInstallReadsDistinctSecretsAndReportsMissingInOrder(t *testing.T) {
 	// R-WY7U-IS2M
 	// R-5RIZ-EOX9
-	archive := validInstallTar(t, "app = \"notes\"\nport = 4100\nsecrets = [\"FIRST\", \"SECOND\", \"FIRST\"]\n")
+	archive := validInstallTar(t, "app = \"notes\"\nsecrets = [\"FIRST\", \"SECOND\", \"FIRST\"]\n")
 	root := t.TempDir()
 	var parameters []string
 	reports, _, err := runInstallArchive(t, root, archive, func(_ context.Context, parameter string) (map[string]string, error) {
@@ -142,7 +144,7 @@ func TestInstallReadsDistinctSecretsAndReportsMissingInOrder(t *testing.T) {
 		}
 	}
 
-	emptyArchive := validInstallTar(t, "app = \"notes\"\nport = 4100\n")
+	emptyArchive := validInstallTar(t, "app = \"notes\"\n")
 	root = t.TempDir()
 	reports, _, _ = runInstallArchive(t, root, emptyArchive, func(context.Context, string) (map[string]string, error) {
 		t.Fatal("empty secret list called ReadSecrets")
@@ -154,7 +156,7 @@ func TestInstallReadsDistinctSecretsAndReportsMissingInOrder(t *testing.T) {
 }
 
 func TestInstallValidatesEnvironmentWithoutExposingValues(t *testing.T) {
-	// R-OWQ6-3948
+	// R-UINF-PMNQ
 	secretValue := "top-secret\nsecond-line"
 	tests := []struct {
 		name     string
@@ -164,8 +166,8 @@ func TestInstallValidatesEnvironmentWithoutExposingValues(t *testing.T) {
 		{"invalid secret name", "secrets = [\"BAD-NAME\"]\n", map[string]string{"BAD-NAME": "x"}},
 		{"invalid secret start", "secrets = [\"9BAD\"]\n", map[string]string{"9BAD": "x"}},
 		{"invalid setting name", "[env]\n\"BAD-NAME\" = \"x\"\n", nil},
-		{"secret port", "secrets = [\"PORT\"]\n", map[string]string{"PORT": "x"}},
-		{"setting port", "[env]\nPORT = \"x\"\n", nil},
+		{"secret drain", "secrets = [\"DRAIN_SECONDS\"]\n", map[string]string{"DRAIN_SECONDS": "x"}},
+		{"setting drain", "[env]\nDRAIN_SECONDS = \"x\"\n", nil},
 		{"overlap", "secrets = [\"TOKEN\"]\n[env]\nTOKEN = \"plain\"\n", map[string]string{"TOKEN": "value-not-for-diagnostics"}},
 		{"secret newline", "secrets = [\"TOKEN\"]\n", map[string]string{"TOKEN": secretValue}},
 		{"secret nul", "secrets = [\"TOKEN\"]\n", map[string]string{"TOKEN": "bad\x00value"}},
@@ -174,7 +176,7 @@ func TestInstallValidatesEnvironmentWithoutExposingValues(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
-			archive := validInstallTar(t, "app = \"notes\"\nport = 4100\n"+test.manifest)
+			archive := validInstallTar(t, "app = \"notes\"\n"+test.manifest)
 			reports, _, err := runInstallArchive(t, root, archive, func(context.Context, string) (map[string]string, error) {
 				return test.secrets, nil
 			}, nil)
@@ -195,22 +197,22 @@ func TestInstallValidatesEnvironmentWithoutExposingValues(t *testing.T) {
 }
 
 func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) {
-	// R-OT2G-XXW5
+	// R-UG7M-Y36C
 	// R-OUAD-BPMU
 	// R-WY7U-IS2M
-	// R-OWQ6-3948
+	// R-UINF-PMNQ
 	// R-OXY2-H0UX
 	root := t.TempDir()
 	writeFixture(t, filepath.Join(root, "opt", "notes", "bin", "stale"), []byte("old"), 0o700)
 	writeFixture(t, filepath.Join(root, "opt", "notes", "etc", "stale"), []byte("old"), 0o600)
-	writeFixture(t, filepath.Join(root, "opt", "notes", "etc", "manifest.toml"), []byte("app = \"notes\"\nport = 4000\ndefault = true\n"), 0o600)
+	writeFixture(t, filepath.Join(root, "opt", "notes", "etc", "manifest.toml"), []byte("app = \"notes\"\ndefault = true\n"), 0o600)
 	writeFixture(t, filepath.Join(root, "opt", "notes", "share", "stale"), []byte("old"), 0o600)
 	writeFixture(t, filepath.Join(root, "opt", "notes", "state", "db"), []byte("state"), 0o600)
 	writeFixture(t, filepath.Join(root, "opt", "notes", "cache", "item"), []byte("cache"), 0o600)
-	writeFixture(t, filepath.Join(root, "opt", "other", "etc", "manifest.toml"), []byte("app = \"other\"\nport = 4200\n"), 0o600)
+	writeFixture(t, filepath.Join(root, "opt", "other", "etc", "manifest.toml"), []byte("app = \"other\"\n"), 0o600)
 	writeFixture(t, filepath.Join(root, "etc", "systemd", "system", "ikigenba-other.service"), []byte("other unit"), 0o600)
 
-	manifest := "app = \"notes\"\nport = 4100\ndefault = true\nsecrets = [\"TOKEN\", \"EMPTY\", \"TOKEN\"]\n[env]\nMODE = \"production\"\nQUOTED = \"a\\\"b\\\\c\"\n"
+	manifest := "app = \"notes\"\ndefault = true\nsecrets = [\"TOKEN\", \"EMPTY\", \"TOKEN\"]\n[env]\nMODE = \"production\"\nQUOTED = \"a\\\"b\\\\c\"\n"
 	archive := tarEntries(t, []installTarEntry{
 		regularEntry("etc/manifest.toml", []byte(manifest), 0o644),
 		regularEntry("etc/config", []byte("new config"), 0o640),
@@ -227,6 +229,9 @@ func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) 
 		if command.Name == "id" {
 			return host.Result{}, phase4
 		}
+		if command.Name == "systemctl" && len(command.Args) > 0 && command.Args[0] == "show" {
+			return host.Result{Stdout: []byte("LoadState=not-found\nUnitFileState=\n")}, nil
+		}
 		return host.Result{ExitCode: 3}, nil
 	})
 	if !errors.Is(err, phase4) {
@@ -234,14 +239,14 @@ func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) 
 	}
 	wantPrefix := []installReport{
 		{"fetch", "bundle.tar.xz, 0.0 MiB", true},
-		{"file", "notes, port 4100, default", true},
+		{"file", "notes, default", true},
 		{"secrets", "2 keys", true},
 		{"unpack", "/opt/notes", true},
 	}
 	if !reflect.DeepEqual(reports[:len(wantPrefix)], wantPrefix) {
 		t.Fatalf("reports = %#v, want prefix %#v", reports, wantPrefix)
 	}
-	if len(commands) != 3 || commands[1].Name != "systemctl" || !reflect.DeepEqual(commands[1].Args, []string{"is-active", "ikigenba-notes.service"}) || commands[2].Name != "id" {
+	if len(commands) != 4 || commands[1].Name != "systemctl" || !reflect.DeepEqual(commands[1].Args, []string{"is-active", "ikigenba-notes.service"}) || commands[2].Name != "systemctl" || commands[3].Name != "id" {
 		t.Fatalf("commands = %#v", commands)
 	}
 	assertFile(t, filepath.Join(root, "opt", "notes", "bin", "notes"), "new binary")
@@ -256,7 +261,7 @@ func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) 
 		}
 	}
 	envPath := filepath.Join(root, "opt", "notes", "etc", "env")
-	assertFile(t, envPath, "TOKEN=\"a value\"\nEMPTY=\"\"\nMODE=\"production\"\nQUOTED=\"a\\\"b\\\\c\"\nPORT=\"4100\"\n")
+	assertFile(t, envPath, "TOKEN=\"a value\"\nEMPTY=\"\"\nMODE=\"production\"\nQUOTED=\"a\\\"b\\\\c\"\nDRAIN_SECONDS=5\n")
 	info, statErr := os.Stat(envPath)
 	if statErr != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("env mode = %v, error = %v", info.Mode().Perm(), statErr)
@@ -264,7 +269,7 @@ func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) 
 }
 
 func TestInstallRejectsDestinationSymlinkWithoutFollowingIt(t *testing.T) {
-	// R-OT2G-XXW5
+	// R-UG7M-Y36C
 	root := t.TempDir()
 	outside := t.TempDir()
 	writeFixture(t, filepath.Join(outside, "marker"), []byte("unchanged"), 0o600)
@@ -274,7 +279,7 @@ func TestInstallRejectsDestinationSymlinkWithoutFollowingIt(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(root, "opt", "notes")); err != nil {
 		t.Fatal(err)
 	}
-	reports, _, err := runInstallArchive(t, root, validInstallTar(t, "app = \"notes\"\nport = 4100\n"), nil, nil)
+	reports, _, err := runInstallArchive(t, root, validInstallTar(t, "app = \"notes\"\n"), nil, nil)
 	if err == nil || reports[len(reports)-1].step != "unpack" || !strings.Contains(reports[len(reports)-1].detail, "symbolic link") {
 		t.Fatalf("error = %v, reports = %#v", err, reports)
 	}
@@ -342,6 +347,9 @@ func runInstallArchive(
 			return afterXZ(command)
 		}
 		if command.Name == "systemctl" {
+			if len(command.Args) > 0 && command.Args[0] == "show" {
+				return host.Result{Stdout: []byte("LoadState=not-found\nUnitFileState=\n")}, nil
+			}
 			return host.Result{ExitCode: 3}, nil
 		}
 		return host.Result{}, errors.New("phase 4 account lookup stopped")

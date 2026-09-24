@@ -35,7 +35,9 @@ Commands:
   backup    back up a service's files to S3
   cert      obtain and inspect the host's certificate
   config    read and write the host configuration store
+  disable   stop an installed app and keep it from starting
   dns       manage DNS records in the zones opsctl owns
+  enable    let a disabled app start again, and start it
   host      back up and restore the host's own configuration
   init      run the setup sequence behind one preflight
   install   install an app from a built file
@@ -232,7 +234,7 @@ func dispatch(name string, args []string, stdout, stderr io.Writer, deps Deps) e
 		return runInstall(args, stdout, stderr, deps)
 	case "nginx":
 		return runNginx(args, stdout, stderr, deps)
-	case "restart", "uninstall":
+	case "restart", "uninstall", "disable", "enable":
 		return runLifecycleAction(name, args, stdout, stderr, deps)
 	case "status":
 		return runStatus(args, stdout, stderr, deps)

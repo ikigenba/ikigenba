@@ -28,7 +28,9 @@ Commands:
   backup    back up a service's files to S3
   cert      obtain and inspect the host's certificate
   config    read and write the host configuration store
+  disable   stop an installed app and keep it from starting
   dns       manage DNS records in the zones opsctl owns
+  enable    let a disabled app start again, and start it
   host      back up and restore the host's own configuration
   init      run the setup sequence behind one preflight
   install   install an app from a built file
@@ -195,11 +197,18 @@ func TestTopLevelGrammar(t *testing.T) {
 }
 
 func TestCommandSet(t *testing.T) {
-	// R-EJY9-95KZ
+	// R-U1KU-CUA0
 	user := depsAt(t, 1)
 
-	if got, want := functionSwitchCases(t, "dispatch"), allCommands; !slices.Equal(got, want) {
-		t.Fatalf("top-level dispatch cases = %q, want exactly %q", got, want)
+	wantCommands := []string{"backup", "cert", "config", "disable", "dns", "enable", "host", "init", "install", "nginx", "restart", "restore", "retire", "status", "uninstall", "version"}
+	if got := functionSwitchCases(t, "dispatch"); !slices.Equal(got, wantCommands) {
+		t.Fatalf("top-level dispatch cases = %q, want exactly %q", got, wantCommands)
+	}
+	for _, name := range []string{"disable", "enable"} {
+		stdout, stderr, code := invoke([]string{name, "app"}, user)
+		if code != 3 || stdout != "" || stderr != "opsctl: must run as root\n" {
+			t.Errorf("%s: exit %d stdout %q stderr %q, want recognized action refused as non-root", name, code, stdout, stderr)
+		}
 	}
 
 	stdout, stderr, code := invoke([]string{"config", "--help"}, user)
@@ -278,7 +287,7 @@ func functionSwitchCases(t *testing.T, function string) []string {
 }
 
 func TestTopLevelHelp(t *testing.T) {
-	// R-EL65-MXBO
+	// R-U2SQ-QM0P
 	user := depsAt(t, 1)
 	for _, args := range [][]string{{"--help"}, {"-h"}} {
 		stdout, stderr, code := invoke(args, user)

@@ -27,6 +27,8 @@ Checks, in order:
   litestream                 found on PATH
   dns.provider, dns.zones    set, and the provider opens (see 'opsctl dns --help')
   host.name                  set
+  timeouts                   apps.drain_seconds and apps.stop_seconds are positive
+                             whole seconds, stop greater than drain
   zone NAME                  every configured zone is reachable and delegated
   host NAME                  host.name lies at or under a configured zone
   wildcard NAME              host.name and _opsctl-preflight.host.name resolve alike
@@ -37,13 +39,18 @@ Sequence:
   litestream   generate /etc/litestream.yml and enable litestream.service
   timers       write the backup and renewal units, enabling each backup timer
                whose period is set and the renewal timer always
+  apps         write the drain and stop settings into every installed app,
+               restarting each enabled app whose settings changed; a
+               disabled app is rewritten and left disabled
 
 Configuration keys:
-  host.name  the fully-qualified name this host answers at, at or under a configured zone
+  host.name           the fully-qualified name this host answers at, at or under a configured zone
+  apps.drain_seconds  how long an app may drain when stopped (default 5)
+  apps.stop_seconds   how long systemd waits for an app to stop (default 10)
 `
 
 func TestInitHelp(t *testing.T) {
-	// R-ZH35-EQDB
+	// R-X0W0-0NJ4
 	for _, uid := range []int{0, 1000} {
 		for _, args := range [][]string{{"init", "--help"}, {"init", "-h"}} {
 			deps, assertNoAccess := inertDeps(t, uid)
@@ -251,7 +258,7 @@ func TestInitMissingConfigurationIsReportedAsFindings(t *testing.T) {
 			before := treeState(t, deps.Root)
 
 			stdout, stderr, code := invoke([]string{"init"}, deps)
-			want := "dns.provider: failed: not set\ndns.zones: failed: not set\nhost.name: failed: not set\n"
+			want := "dns.provider: failed: not set\ndns.zones: failed: not set\nhost.name: failed: not set\ntimeouts: ok (drain 5s, stop 10s)\n"
 			if code != 2 || stderr != "" || !strings.Contains(stdout, want) {
 				t.Errorf("exit %d stdout %q stderr %q, want findings %q", code, stdout, stderr, want)
 			}
@@ -262,10 +269,65 @@ func TestInitMissingConfigurationIsReportedAsFindings(t *testing.T) {
 	}
 }
 
+func TestInitTimingFindingIsIndependentAndStopsSetup(t *testing.T) {
+	// R-X23W-EF9T R-X4JP-5YR7
+	for _, tc := range []struct {
+		name, drain, stop, finding string
+	}{
+		{"invalid drain", "0", "30", "apps.drain_seconds is not a positive whole number of seconds: '0'"},
+		{"invalid stop", "7", "wrong", "apps.stop_seconds is not a positive whole number of seconds: 'wrong'"},
+		{"inconsistent", "30", "7", "apps.stop_seconds (7) is not greater than apps.drain_seconds (30)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			deps := initDeps(t, map[string]string{
+				"apps.drain_seconds": tc.drain,
+				"apps.stop_seconds":  tc.stop,
+				"host.name":          "Example.COM.",
+			})
+			deps.LookPath = func(name string) (string, error) {
+				if name == "certbot" {
+					return "", errors.New("missing")
+				}
+				return "/bin/" + name, nil
+			}
+			var lookedUp []string
+			deps.LookupHost = func(_ context.Context, name string) ([]string, error) {
+				lookedUp = append(lookedUp, name)
+				return []string{"192.0.2.1"}, nil
+			}
+			deps.Execute = func(context.Context, host.Command) (host.Result, error) {
+				t.Fatal("setup ran after a timing finding")
+				return host.Result{}, nil
+			}
+			before := treeState(t, deps.Root)
+			stdout, stderr, code := invoke([]string{"init"}, deps)
+			want := "nginx: ok (/bin/nginx)\n" +
+				"certbot: failed: not found on PATH\n" +
+				"systemctl: ok (/bin/systemctl)\n" +
+				"litestream: ok (/bin/litestream)\n" +
+				"dns.provider: failed: not set\n" +
+				"dns.zones: failed: not set\n" +
+				"host.name: ok (example.com)\n" +
+				"timeouts: failed: " + tc.finding + "\n" +
+				"wildcard example.com: ok (192.0.2.1)\n"
+			if code != 2 || stdout != want || stderr != "" {
+				t.Errorf("exit %d stdout %q stderr %q, want exit 2 stdout %q", code, stdout, stderr, want)
+			}
+			if !reflect.DeepEqual(lookedUp, []string{"example.com", "_opsctl-preflight.example.com"}) {
+				t.Errorf("host lookups = %v", lookedUp)
+			}
+			if after := treeState(t, deps.Root); !reflect.DeepEqual(after, before) {
+				t.Errorf("preflight changed host state: before %#v, after %#v", before, after)
+			}
+		})
+	}
+}
+
 func TestInitHealthyPreflight(t *testing.T) {
+	// R-X4JP-5YR7 R-X23W-EF9T R-X3BS-S70I
 	// R-LIU3-NA5F R-LK20-11W4 R-LMHS-SLDI R-ELKW-EVLN
-	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL R-LRDE-BOCA
-	// R-LHM7-9IEQ R-LTT7-37TO R-ZIB1-SI40
+	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL
+	// R-LHM7-9IEQ R-ZIB1-SI40
 	// R-JWO0-EHD7 R-5E43-77RM
 	// R-YYIY-T743
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
@@ -289,6 +351,8 @@ func TestInitHealthyPreflight(t *testing.T) {
 		"backup.service_files_seconds": "0",
 		"backup.service_db_seconds":    "3600",
 		"backup.service_wal_seconds":   "5",
+		"apps.drain_seconds":           "7",
+		"apps.stop_seconds":            "19",
 	})
 	if err := os.MkdirAll(filepath.Join(deps.Root, "etc/nginx/conf.d"), 0o750); err != nil {
 		t.Fatal(err)
@@ -297,7 +361,7 @@ func TestInitHealthyPreflight(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(manifestPath, []byte("app = \"notes\"\nport = 4000\n"), 0o600); err != nil {
+	if err := os.WriteFile(manifestPath, []byte("app = \"notes\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var lookedUp []string
@@ -330,7 +394,7 @@ func TestInitHealthyPreflight(t *testing.T) {
 			if err := store.Set("host.apex", "notes"); err != nil {
 				t.Fatal(err)
 			}
-			manifest := "app = \"notes\"\nport = 4100\ndefault = true\n" +
+			manifest := "app = \"notes\"\ndefault = true\n" +
 				"\n[database]\nengine = \"sqlite\"\npath = \"state/notes.db\"\n"
 			if err := os.WriteFile(manifestPath, []byte(manifest), 0o600); err != nil {
 				t.Fatal(err)
@@ -342,6 +406,9 @@ func TestInitHealthyPreflight(t *testing.T) {
 	var commands []string
 	deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
 		commands = append(commands, strings.Join(append([]string{command.Name}, command.Args...), " "))
+		if command.Name == "systemctl" && len(command.Args) > 0 && command.Args[0] == "show" {
+			return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=enabled\n")}, nil
+		}
 		return host.Result{}, nil
 	}
 
@@ -351,7 +418,7 @@ func TestInitHealthyPreflight(t *testing.T) {
 		"litestream: ok (/bin/litestream)\n" +
 		"dns.provider: ok (route53)\n" +
 		"dns.zones: ok (example.com,deep.example.com)\n" +
-		"host.name: ok (api.deep.example.com)\n" +
+		"host.name: ok (api.deep.example.com)\ntimeouts: ok (drain 7s, stop 19s)\n" +
 		"zone example.com: ok (route53 ZA, 2 nameservers delegated)\n" +
 		"zone deep.example.com: ok (route53 ZB, 1 nameservers delegated)\n" +
 		"host api.deep.example.com: ok (zone deep.example.com)\n" +
@@ -371,6 +438,7 @@ func TestInitHealthyPreflight(t *testing.T) {
 	}
 	wantCommands := []string{
 		"certbot certonly --non-interactive --agree-tos --email admin@example.com --manual --preferred-challenges dns --manual-auth-hook opsctl dns acme-auth --manual-cleanup-hook opsctl dns acme-cleanup --deploy-hook systemctl try-reload-or-restart nginx --cert-name api.deep.example.com -d api.deep.example.com -d *.api.deep.example.com -d deep.example.com --keep-until-expiring --config-dir " + filepath.Join(deps.Root, "etc/letsencrypt") + " --work-dir " + filepath.Join(deps.Root, "var/lib/letsencrypt") + " --logs-dir " + filepath.Join(deps.Root, "var/log/letsencrypt"),
+		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		"nginx -t",
 		"systemctl reload-or-restart nginx",
 		"systemctl enable litestream.service",
@@ -437,7 +505,7 @@ func TestInitStopsAtFirstSetupFailure(t *testing.T) {
 		"litestream: ok (/bin/litestream)\n" +
 		"dns.provider: ok (route53)\n" +
 		"dns.zones: ok (example.com)\n" +
-		"host.name: ok (api.example.com)\n" +
+		"host.name: ok (api.example.com)\ntimeouts: ok (drain 5s, stop 10s)\n" +
 		"zone example.com: ok (route53 ZA, 1 nameservers delegated)\n" +
 		"host api.example.com: ok (zone example.com)\n" +
 		"wildcard api.example.com: ok (192.0.2.10)\n"
@@ -804,7 +872,7 @@ func TestInitInvalidApexFailsAtCertificate(t *testing.T) {
 		"litestream: ok (/bin/litestream)\n" +
 		"dns.provider: ok (route53)\n" +
 		"dns.zones: ok (localhost)\n" +
-		"host.name: ok (localhost)\n" +
+		"host.name: ok (localhost)\ntimeouts: ok (drain 5s, stop 10s)\n" +
 		"zone localhost: ok (route53 ZONE, 1 nameservers delegated)\n" +
 		"host localhost: ok (zone localhost)\n" +
 		"wildcard localhost: ok (192.0.2.1)\n"
@@ -841,7 +909,7 @@ func TestInitAggregatesIndependentFailures(t *testing.T) {
 		"litestream: ok (/usr/bin/litestream)\n" +
 		"dns.provider: failed: not set\n" +
 		"dns.zones: ok (example.com)\n" +
-		"host.name: failed: not set\n"
+		"host.name: failed: not set\ntimeouts: ok (drain 5s, stop 10s)\n"
 	stdout, stderr, code := invoke([]string{"init"}, deps)
 	if code != 2 || stdout != want || stderr != "" {
 		t.Fatalf("exit %d stdout %q stderr %q, want exit 2 stdout %q", code, stdout, stderr, want)
@@ -871,7 +939,7 @@ func TestInitClassifiesDNSOpenFailures(t *testing.T) {
 			}
 			stdout, stderr, code := invoke([]string{"init"}, deps)
 			want := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\nlitestream: ok (/bin/litestream)\n" +
-				tc.wantDNS + "host.name: failed: not set\n"
+				tc.wantDNS + "host.name: failed: not set\ntimeouts: ok (drain 5s, stop 10s)\n"
 			if code != 2 || stderr != "" || stdout != want {
 				t.Errorf("exit %d stdout %q stderr %q, want exit 2 stdout %q", code, stdout, stderr, want)
 			}
@@ -912,7 +980,7 @@ func TestInitReportsZoneHostAndWildcardFailures(t *testing.T) {
 
 	prefix := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\nlitestream: ok (/bin/litestream)\n" +
 		"dns.provider: ok (route53)\ndns.zones: ok (wrong.test,undelegated.test,error.test)\n" +
-		"host.name: ok (outside.example)\n" +
+		"host.name: ok (outside.example)\ntimeouts: ok (drain 5s, stop 10s)\n" +
 		"zone wrong.test: failed: provider zone name is provider.test\n" +
 		"zone undelegated.test: failed: nameservers not delegated\n" +
 		"zone error.test: failed: unreachable\n" +
@@ -948,7 +1016,7 @@ func TestInitReportsZoneHostAndWildcardFailures(t *testing.T) {
 }
 
 func TestInitReportEscapesExternalLineBreaks(t *testing.T) {
-	// R-ZAOK-6AFV R-LRDE-BOCA
+	// R-ZAOK-6AFV
 	provider := &fakeDNSProvider{
 		recordsErr: map[string]error{"ZONE": errors.New("zone\nfailed\rhard")},
 	}
@@ -974,7 +1042,7 @@ func TestInitReportEscapesExternalLineBreaks(t *testing.T) {
 		"litestream: ok (/tools/litestream\\nspoof\\rline)\n" +
 		"dns.provider: ok (route53)\n" +
 		"dns.zones: ok (example.com)\n" +
-		"host.name: ok (example.com)\n" +
+		"host.name: ok (example.com)\ntimeouts: ok (drain 5s, stop 10s)\n" +
 		"zone example.com: failed: zone\\nfailed\\rhard\n" +
 		"host example.com: ok (zone example.com)\n" +
 		"wildcard example.com: failed: probe\\nfailed\\rhard\n"
@@ -982,13 +1050,13 @@ func TestInitReportEscapesExternalLineBreaks(t *testing.T) {
 	if code != 2 || stdout != want || stderr != "" {
 		t.Errorf("exit %d stdout %q stderr %q, want exit 2 stdout %q", code, stdout, stderr, want)
 	}
-	if lines := strings.Count(stdout, "\n"); lines != 10 {
-		t.Errorf("init wrote %d lines for ten eligible checks: %q", lines, stdout)
+	if lines := strings.Count(stdout, "\n"); lines != 11 {
+		t.Errorf("init wrote %d lines for eleven eligible checks: %q", lines, stdout)
 	}
 }
 
 func TestInitReportEscapesRereadZoneConfiguration(t *testing.T) {
-	// R-ZAOK-6AFV R-LRDE-BOCA
+	// R-ZAOK-6AFV
 	const (
 		providerName = "route\n53"
 		zoneName     = "exa\nmple.com"
@@ -1023,19 +1091,19 @@ func TestInitReportEscapesRereadZoneConfiguration(t *testing.T) {
 		"litestream: ok (/bin/litestream)\n" +
 		"dns.provider: ok (route\\n53)\n" +
 		"dns.zones: ok (exa\\nmple.com)\n" +
-		"host.name: failed: not set\n" +
+		"host.name: failed: not set\ntimeouts: ok (drain 5s, stop 10s)\n" +
 		"zone exa\\nmple.com: ok (route\\n53 ZONE\\rID, 1 nameservers delegated)\n"
 	stdout, stderr, code := invoke([]string{"init"}, deps)
 	if code != 2 || stdout != want || stderr != "" {
 		t.Errorf("exit %d stdout %q stderr %q, want exit 2 stdout %q", code, stdout, stderr, want)
 	}
-	if lines := strings.Count(stdout, "\n"); lines != 8 {
-		t.Errorf("init wrote %d lines for eight eligible checks: %q", lines, stdout)
+	if lines := strings.Count(stdout, "\n"); lines != 9 {
+		t.Errorf("init wrote %d lines for nine eligible checks: %q", lines, stdout)
 	}
 }
 
 func TestInitReportEscapesProviderAndHostLookupErrors(t *testing.T) {
-	// R-LRDE-BOCA
+	//
 	deps := initDeps(t, map[string]string{
 		dns.KeyProvider: "route53",
 		"host.name":     "example.com",
@@ -1054,14 +1122,14 @@ func TestInitReportEscapesProviderAndHostLookupErrors(t *testing.T) {
 		"litestream: ok (/bin/litestream)\n" +
 		"dns.provider: failed: provider\\nfailed\\rhard\n" +
 		"dns.zones: failed: not set\n" +
-		"host.name: ok (example.com)\n" +
+		"host.name: ok (example.com)\ntimeouts: ok (drain 5s, stop 10s)\n" +
 		"wildcard example.com: failed: host\\nfailed\\rhard\n"
 	stdout, stderr, code := invoke([]string{"init"}, deps)
 	if code != 2 || stdout != want || stderr != "" {
 		t.Errorf("exit %d stdout %q stderr %q, want exit 2 stdout %q", code, stdout, stderr, want)
 	}
-	if lines := strings.Count(stdout, "\n"); lines != 8 {
-		t.Errorf("init wrote %d lines for eight eligible checks: %q", lines, stdout)
+	if lines := strings.Count(stdout, "\n"); lines != 9 {
+		t.Errorf("init wrote %d lines for nine eligible checks: %q", lines, stdout)
 	}
 }
 
@@ -1071,7 +1139,7 @@ func TestInitRejectsEmptyWildcardAddressSet(t *testing.T) {
 	deps.LookupHost = func(context.Context, string) ([]string, error) { return nil, nil }
 
 	want := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\nlitestream: ok (/bin/litestream)\n" +
-		"dns.provider: failed: not set\ndns.zones: failed: not set\nhost.name: ok (example.com)\n" +
+		"dns.provider: failed: not set\ndns.zones: failed: not set\nhost.name: ok (example.com)\ntimeouts: ok (drain 5s, stop 10s)\n" +
 		"wildcard example.com: failed: example.com resolves to  but _opsctl-preflight.example.com resolves to \n"
 	stdout, stderr, code := invoke([]string{"init"}, deps)
 	if code != 2 || stdout != want || stderr != "" {
@@ -1080,7 +1148,7 @@ func TestInitRejectsEmptyWildcardAddressSet(t *testing.T) {
 }
 
 func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
-	// R-LW8Z-URB2 R-JWO0-EHD7
+	// R-LW8Z-URB2 R-JWO0-EHD7 R-Y3WS-9B9C R-X3BS-S70I
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZONE": {
 			{Name: "example.com", Type: "SOA"},
@@ -1090,9 +1158,25 @@ func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
 	deps := initDeps(t, map[string]string{
 		dns.KeyProvider: "route53", dns.KeyZones: "example.com:ZONE", "host.name": "example.com",
 		"acme.email": "admin@example.com", "aws.region": "us-east-2", "backup.s3_uri": "s3://bucket/host/",
+		"apps.drain_seconds": "7", "apps.stop_seconds": "19",
 	})
 	if err := os.MkdirAll(filepath.Join(deps.Root, "etc/nginx/conf.d"), 0o750); err != nil {
 		t.Fatal(err)
+	}
+	appDir := filepath.Join(deps.Root, "opt", "notes")
+	for _, dir := range []string{filepath.Join(appDir, "bin"), filepath.Join(appDir, "etc"), filepath.Join(deps.Root, "etc", "systemd", "system")} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for path, data := range map[string]string{
+		filepath.Join(appDir, "bin", "notes"):                                          "installed binary\n",
+		filepath.Join(appDir, "etc", "env"):                                            "OTHER=keep\nDRAIN_SECONDS=5\n",
+		filepath.Join(deps.Root, "etc", "systemd", "system", "ikigenba-notes.service"): "old service\n",
+	} {
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	deps.LookPath = foundInitTools
 	deps.DNS.Open = func(context.Context, string) (dns.Provider, error) { return provider, nil }
@@ -1100,7 +1184,17 @@ func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
 	deps.LookupHost = func(context.Context, string) ([]string, error) { return []string{"192.0.2.1"}, nil }
 	enabled := map[string]bool{}
 	active := map[string]bool{}
+	var appCommands []string
 	deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+		appCommands = append(appCommands, strings.Join(append([]string{command.Name}, command.Args...), " "))
+		if command.Name == "systemctl" && len(command.Args) > 0 {
+			switch command.Args[0] {
+			case "show":
+				return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=enabled\n")}, nil
+			case "is-active":
+				return host.Result{Stdout: []byte("active\n")}, nil
+			}
+		}
 		if command.Name == "certbot" {
 			lineage := filepath.Join(deps.Root, "etc", "letsencrypt", "live", "example.com")
 			if err := os.MkdirAll(lineage, 0o700); err != nil {
@@ -1132,13 +1226,15 @@ func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
 	}
 
 	stdout1, stderr1, code1 := invoke([]string{"init"}, deps)
+	firstCommands := append([]string(nil), appCommands...)
 	afterFirst := treeState(t, deps.Root)
 	enabledAfterFirst := cloneBoolMap(enabled)
 	activeAfterFirst := cloneBoolMap(active)
 	stdout2, stderr2, code2 := invoke([]string{"init"}, deps)
+	secondCommands := append([]string(nil), appCommands[len(firstCommands):]...)
 	afterSecond := treeState(t, deps.Root)
 	want := "nginx: ok (/bin/nginx)\ncertbot: ok (/bin/certbot)\nsystemctl: ok (/bin/systemctl)\nlitestream: ok (/bin/litestream)\n" +
-		"dns.provider: ok (route53)\ndns.zones: ok (example.com)\nhost.name: ok (example.com)\n" +
+		"dns.provider: ok (route53)\ndns.zones: ok (example.com)\nhost.name: ok (example.com)\ntimeouts: ok (drain 7s, stop 19s)\n" +
 		"zone example.com: ok (route53 ZONE, 1 nameservers delegated)\n" +
 		"host example.com: ok (zone example.com)\nwildcard example.com: ok (192.0.2.1)\n"
 	if stdout1 != want || stderr1 != "" || code1 != 0 {
@@ -1149,6 +1245,31 @@ func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
 	}
 	if !reflect.DeepEqual(afterFirst, afterSecond) {
 		t.Errorf("second setup changed generated state:\nfirst  %#v\nsecond %#v", afterFirst, afterSecond)
+	}
+	appEnv, err := os.ReadFile(filepath.Join(deps.Root, "opt", "notes", "etc", "env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(appEnv) != "OTHER=keep\nDRAIN_SECONDS=7\n" {
+		t.Errorf("app env = %q, want current drain setting", appEnv)
+	}
+	service, err := os.ReadFile(filepath.Join(deps.Root, "etc", "systemd", "system", "ikigenba-notes.service"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(service), "TimeoutStopSec=19\n") {
+		t.Errorf("app service does not contain current stop setting: %q", service)
+	}
+	firstJoined := strings.Join(firstCommands, "\n")
+	if strings.Count(firstJoined, "systemctl restart ikigenba-notes.service") != 1 ||
+		strings.Index(firstJoined, "systemctl restart ikigenba-notes.service") < strings.Index(firstJoined, "systemctl restart ikigenba-renew-certificate.timer") {
+		t.Errorf("app restart did not follow timers exactly once: %v", firstCommands)
+	}
+	for _, command := range secondCommands {
+		if command == "systemctl restart ikigenba-notes.service" {
+			t.Errorf("unchanged app settings caused mutation on rerun: %v", secondCommands)
+			break
+		}
 	}
 	if !reflect.DeepEqual(enabled, enabledAfterFirst) || !reflect.DeepEqual(active, activeAfterFirst) {
 		t.Errorf("second setup changed configured unit state: enabled %v -> %v, active %v -> %v",

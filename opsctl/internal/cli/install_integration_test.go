@@ -57,10 +57,10 @@ func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
 		t.Fatalf("install = exit %d, stderr %q", code, stderr)
 	}
 	wantOutput := "fetch: ok (notes-v1.tar.xz, 0.0 MiB)\n" +
-		"file: ok (notes, port 4100, default)\n" +
+		"file: ok (notes, default)\n" +
 		"secrets: ok (1 keys)\n" +
 		"unpack: ok (/opt/notes)\n" +
-		"unit: ok (ikigenba-notes.service)\n" +
+		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: ok (notes.host.example, host.example)\n" +
 		"litestream: ok (state/notes.db)\n" +
 		"service: ok (notes v1.2.3 active)\n"
@@ -70,6 +70,7 @@ func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
 	fixture.assertOrderedCommands(t, []string{
 		"xz --decompress --stdout",
 		"systemctl is-active ikigenba-notes.service",
+		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		"id --user ikigenba",
 		"getent passwd ikigenba",
 		"id --group --name ikigenba",
@@ -77,8 +78,11 @@ func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
 		"chown --recursive root:ikigenba " + filepath.Join(fixture.root, "opt", "notes", "bin") + " " + filepath.Join(fixture.root, "opt", "notes", "etc"),
 		"systemctl daemon-reload",
 		"systemctl enable ikigenba-notes.service",
+		"systemctl enable --now ikigenba-notes.socket",
+		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		"nginx -t",
 		"systemctl reload-or-restart nginx",
+		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		"systemctl restart litestream.service",
 		"systemctl start ikigenba-notes.service",
 		"systemctl is-active ikigenba-notes.service",
@@ -87,7 +91,7 @@ func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
 }
 
 func TestInstallCLIUsesNormalizedHostAndConfiguredApex(t *testing.T) {
-	// R-X0NN-ABK0 R-X33G-1V1E
+	// R-XMU6-WIVM R-UOQX-MHD7
 	fixture := newCLIInstallFixture(t)
 	store := config.Store{Root: fixture.root}
 	if err := store.Set("host.name", "SBX.Example.Test."); err != nil {
@@ -100,10 +104,10 @@ func TestInstallCLIUsesNormalizedHostAndConfiguredApex(t *testing.T) {
 
 	stdout, stderr, code := fixture.invoke()
 	wantOutput := "fetch: ok (notes-v1.tar.xz, 0.0 MiB)\n" +
-		"file: ok (notes, port 4100, default)\n" +
+		"file: ok (notes, default)\n" +
 		"secrets: ok (1 keys)\n" +
 		"unpack: ok (/opt/notes)\n" +
-		"unit: ok (ikigenba-notes.service)\n" +
+		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: ok (notes.sbx.example.test, sbx.example.test, example.test)\n" +
 		"litestream: ok (state/notes.db)\n" +
 		"service: ok (notes v1.2.3 active)\n"
@@ -126,7 +130,7 @@ func TestInstallCLIUsesNormalizedHostAndConfiguredApex(t *testing.T) {
 }
 
 func TestInstallCLIReportsNoApexForDifferentConfiguredApp(t *testing.T) {
-	// R-X33G-1V1E
+	// R-UOQX-MHD7
 	fixture := newCLIInstallFixture(t)
 	store := config.Store{Root: fixture.root}
 	if err := store.Set("host.name", "sbx.example.test"); err != nil {
@@ -136,14 +140,14 @@ func TestInstallCLIReportsNoApexForDifferentConfiguredApp(t *testing.T) {
 		t.Fatal(err)
 	}
 	fixture.secretParameter = "/sbx.example.test/notes"
-	writeCLIInstallFile(t, filepath.Join(fixture.root, "opt", "tasks", "etc", "manifest.toml"), "app = \"tasks\"\nport = 4200\n")
+	writeCLIInstallFile(t, filepath.Join(fixture.root, "opt", "tasks", "etc", "manifest.toml"), "app = \"tasks\"\n")
 
 	stdout, stderr, code := fixture.invoke()
 	wantOutput := "fetch: ok (notes-v1.tar.xz, 0.0 MiB)\n" +
-		"file: ok (notes, port 4100, default)\n" +
+		"file: ok (notes, default)\n" +
 		"secrets: ok (1 keys)\n" +
 		"unpack: ok (/opt/notes)\n" +
-		"unit: ok (ikigenba-notes.service)\n" +
+		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: ok (notes.sbx.example.test, sbx.example.test)\n" +
 		"litestream: ok (state/notes.db)\n" +
 		"service: ok (notes v1.2.3 active)\n"
@@ -153,15 +157,15 @@ func TestInstallCLIReportsNoApexForDifferentConfiguredApp(t *testing.T) {
 }
 
 func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
-	// R-X0NN-ABK0, R-X33G-1V1E, R-EM4J-XPDA, R-EOKC-P8UO, R-AJZ2-XSUE
+	// R-XMU6-WIVM, R-UOQX-MHD7, R-XLMA-IR4X, R-EOKC-P8UO
 	fixture := newCLIInstallFixture(t)
 	fixture.failCommand = "nginx -t"
 	stdout, stderr, code := fixture.invoke()
 	wantOutput := "fetch: ok (notes-v1.tar.xz, 0.0 MiB)\n" +
-		"file: ok (notes, port 4100, default)\n" +
+		"file: ok (notes, default)\n" +
 		"secrets: ok (1 keys)\n" +
 		"unpack: ok (/opt/notes)\n" +
-		"unit: ok (ikigenba-notes.service)\n" +
+		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: failed: nginx -t: exit status 7\n"
 	if code != 1 || stdout != wantOutput || stderr != "opsctl: install failed\n\n> nginx stdout\n> nginx stderr\n" {
 		t.Fatalf("install failure = exit %d stdout %q stderr %q", code, stdout, stderr)
@@ -169,6 +173,7 @@ func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
 	fixture.assertOrderedCommands(t, []string{
 		"xz --decompress --stdout",
 		"systemctl is-active ikigenba-notes.service",
+		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		"id --user ikigenba",
 		"getent passwd ikigenba",
 		"id --group --name ikigenba",
@@ -176,6 +181,8 @@ func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
 		"chown --recursive root:ikigenba " + filepath.Join(fixture.root, "opt", "notes", "bin") + " " + filepath.Join(fixture.root, "opt", "notes", "etc"),
 		"systemctl daemon-reload",
 		"systemctl enable ikigenba-notes.service",
+		"systemctl enable --now ikigenba-notes.socket",
+		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		"nginx -t",
 	})
 	if _, err := os.Stat(filepath.Join(fixture.root, "etc", "litestream.yml")); !errors.Is(err, os.ErrNotExist) {
@@ -184,7 +191,7 @@ func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRegenerationFails(t *testing.T) {
-	// R-X0NN-ABK0, R-AJZ2-XSUE
+	// R-XMU6-WIVM, R-XLMA-IR4X
 	fixture := newCLIInstallFixture(t)
 	store := config.Store{Root: fixture.root}
 	if err := store.Set("backup.s3_uri", "not-an-s3-uri"); err != nil {
@@ -193,10 +200,10 @@ func TestInstallCLIStopsWhenLitestreamRegenerationFails(t *testing.T) {
 
 	stdout, stderr, code := fixture.invoke()
 	wantOutput := "fetch: ok (notes-v1.tar.xz, 0.0 MiB)\n" +
-		"file: ok (notes, port 4100, default)\n" +
+		"file: ok (notes, default)\n" +
 		"secrets: ok (1 keys)\n" +
 		"unpack: ok (/opt/notes)\n" +
-		"unit: ok (ikigenba-notes.service)\n" +
+		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: ok (notes.host.example, host.example)\n" +
 		"litestream: failed: backup.s3_uri: must be an absolute s3:// URI with a nonempty bucket and no query or fragment\n"
 	if code != 1 || stdout != wantOutput || stderr != "opsctl: install failed\n" {
@@ -206,16 +213,16 @@ func TestInstallCLIStopsWhenLitestreamRegenerationFails(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRestartFails(t *testing.T) {
-	// R-X0NN-ABK0, R-AJZ2-XSUE
+	// R-XMU6-WIVM, R-XLMA-IR4X
 	fixture := newCLIInstallFixture(t)
 	fixture.failCommand = "systemctl restart litestream.service"
 
 	stdout, stderr, code := fixture.invoke()
 	wantOutput := "fetch: ok (notes-v1.tar.xz, 0.0 MiB)\n" +
-		"file: ok (notes, port 4100, default)\n" +
+		"file: ok (notes, default)\n" +
 		"secrets: ok (1 keys)\n" +
 		"unpack: ok (/opt/notes)\n" +
-		"unit: ok (ikigenba-notes.service)\n" +
+		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: ok (notes.host.example, host.example)\n" +
 		"litestream: failed: restart litestream.service: exit status 7\n"
 	if code != 1 || stdout != wantOutput || stderr != "opsctl: install failed\n\n> command rejected\n" {
@@ -226,7 +233,7 @@ func TestInstallCLIStopsWhenLitestreamRestartFails(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRestartTransportFails(t *testing.T) {
-	// R-X0NN-ABK0, R-AJZ2-XSUE
+	// R-XMU6-WIVM, R-XLMA-IR4X
 	for _, test := range []struct {
 		name       string
 		failure    error
@@ -273,7 +280,7 @@ func TestInstallCLIStopsWhenLitestreamRestartTransportFails(t *testing.T) {
 }
 
 func TestInstallCLIDatabaseRemovalReportsUpdatedLitestream(t *testing.T) {
-	// R-X33G-1V1E
+	// R-UOQX-MHD7
 	fixture := newCLIInstallFixture(t)
 	if stdout, stderr, code := fixture.invoke(); code != 0 || stderr != "" || stdout != installReportPrefix("state/notes.db")+"service: ok (notes v1.2.3 active)\n" {
 		t.Fatalf("initial install = exit %d stdout %q stderr %q", code, stdout, stderr)
@@ -291,18 +298,50 @@ func TestInstallCLIDatabaseRemovalReportsUpdatedLitestream(t *testing.T) {
 	}
 }
 
-func TestInstallCLIQuotesUnsafeReportDetail(t *testing.T) {
-	// R-EM4J-XPDA
+func TestInstallCLIRejectsInvalidAppTimeoutsBeforeFetch(t *testing.T) {
+	// R-UTMJ-5KBZ
 	fixture := newCLIInstallFixture(t)
-	fixture.openFailure = errors.New("\x1b[31m")
+	store := config.Store{Root: fixture.root}
+	if err := store.Set("apps.drain_seconds", "nope"); err != nil {
+		t.Fatal(err)
+	}
 	stdout, stderr, code := fixture.invoke()
-	if code != 1 || stdout != "fetch: failed: \"\\x1b[31m\"\n" || stderr != "opsctl: artifact download failed\n" {
-		t.Fatalf("unsafe detail = exit %d stdout %q stderr %q", code, stdout, stderr)
+	if code != 1 || stdout != "" || stderr != "opsctl: apps.drain_seconds is not a positive whole number of seconds: 'nope'\n" {
+		t.Fatalf("timeout failure = exit %d stdout %q stderr %q", code, stdout, stderr)
+	}
+	if len(fixture.commands) != 0 {
+		t.Fatalf("commands before timing validation: %#v", fixture.commands)
+	}
+}
+
+func TestInstallCLILeavesDisabledAppStopped(t *testing.T) {
+	// R-XMU6-WIVM, R-UOQX-MHD7, R-XLMA-IR4X
+	fixture := newCLIInstallFixture(t)
+	fixture.disabled = true
+	stdout, stderr, code := fixture.invoke()
+	want := "fetch: ok (notes-v1.tar.xz, 0.0 MiB)\n" +
+		"file: ok (notes, default)\n" +
+		"secrets: ok (1 keys)\n" +
+		"unpack: ok (/opt/notes)\n" +
+		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
+		"nginx: ok (notes.host.example, host.example disabled)\n" +
+		"litestream: ok (state/notes.db)\n" +
+		"service: ok (notes v1.2.3 disabled)\n"
+	if code != 0 || stdout != want || stderr != "" {
+		t.Fatalf("disabled install = exit %d stdout %q stderr %q", code, stdout, stderr)
+	}
+	for _, command := range fixture.commands {
+		if command.Name != "systemctl" {
+			continue
+		}
+		if len(command.Args) > 0 && (command.Args[0] == "enable" || command.Args[0] == "start" || command.Args[0] == "restart" && strings.Contains(strings.Join(command.Args, " "), "ikigenba-notes")) {
+			t.Fatalf("disabled app unit was enabled or started: %#v", command)
+		}
 	}
 }
 
 func TestInstallCLIStartupFailureKeepsEffectsAndRetrySucceeds(t *testing.T) {
-	// R-P8X5-WYJ6, R-PA52-AQ9V
+	// R-P8X5-WYJ6, R-XP9Z-O2D0
 	fixture := newCLIInstallFixture(t)
 	const litestreamUnitPath = "etc/systemd/system/litestream.service"
 	litestreamUnit := filepath.Join(fixture.root, filepath.FromSlash(litestreamUnitPath))
@@ -397,10 +436,10 @@ func installReportPrefix(litestreamDetail string) string {
 
 func installReportThroughNginx() string {
 	return "fetch: ok (notes-v1.tar.xz, 0.0 MiB)\n" +
-		"file: ok (notes, port 4100, default)\n" +
+		"file: ok (notes, default)\n" +
 		"secrets: ok (1 keys)\n" +
 		"unpack: ok (/opt/notes)\n" +
-		"unit: ok (ikigenba-notes.service)\n" +
+		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: ok (notes.host.example, host.example)\n"
 }
 
@@ -408,6 +447,7 @@ func installCommandsThroughNginx(root string) []string {
 	return []string{
 		"xz --decompress --stdout",
 		"systemctl is-active ikigenba-notes.service",
+		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		"id --user ikigenba",
 		"getent passwd ikigenba",
 		"id --group --name ikigenba",
@@ -415,13 +455,16 @@ func installCommandsThroughNginx(root string) []string {
 		"chown --recursive root:ikigenba " + filepath.Join(root, "opt", "notes", "bin") + " " + filepath.Join(root, "opt", "notes", "etc"),
 		"systemctl daemon-reload",
 		"systemctl enable ikigenba-notes.service",
+		"systemctl enable --now ikigenba-notes.socket",
+		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		"nginx -t",
 		"systemctl reload-or-restart nginx",
+		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 	}
 }
 
 func TestInstallCLINeverSerializesEnvironmentValues(t *testing.T) {
-	// R-OL1Q-ZER1
+	// R-XQHW-1U3P
 	fixture := newCLIInstallFixture(t)
 	fixture.secretValue = "secret-value-never-report"
 	fixture.plainValue = "plain-value-never-report"
@@ -447,7 +490,7 @@ func TestInstallCLINeverSerializesEnvironmentValues(t *testing.T) {
 }
 
 func TestInstallCLIQuotesJournalEnvironmentValuesWithoutRedaction(t *testing.T) {
-	// R-OL1Q-ZER1, R-P8X5-WYJ6
+	// R-XQHW-1U3P, R-P8X5-WYJ6
 	fixture := newCLIInstallFixture(t)
 	fixture.secretValue = "actual-secret-value"
 	fixture.plainValue = "actual-plain-value"
@@ -509,6 +552,7 @@ type cliInstallFixture struct {
 	plainValue      string
 	commands        []host.Command
 	active          bool
+	disabled        bool
 	failStart       bool
 	failCommand     string
 	commandFailure  error
@@ -545,7 +589,7 @@ func newCLIInstallFixture(t *testing.T) *cliInstallFixture {
 			t.Fatal(err)
 		}
 	}
-	manifest := "app = \"notes\"\nport = 4100\ndefault = true\nsecrets = [\"TOKEN\"]\n[env]\nPLAIN = \"PLAIN_VALUE\"\n"
+	manifest := "app = \"notes\"\ndefault = true\nsecrets = [\"TOKEN\"]\n[env]\nPLAIN = \"PLAIN_VALUE\"\n"
 	manifest += "[database]\nengine = \"sqlite\"\npath = \"state/notes.db\"\n"
 	fixture := &cliInstallFixture{
 		t: t, root: root, manifest: manifest,
@@ -597,6 +641,11 @@ func (fixture *cliInstallFixture) execute(_ context.Context, command host.Comman
 			return host.Result{Stdout: []byte("active\n")}, nil
 		}
 		return host.Result{ExitCode: 3, Stdout: []byte("inactive\n")}, nil
+	case key == "systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket":
+		if fixture.disabled {
+			return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=disabled\n")}, nil
+		}
+		return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=enabled\n")}, nil
 	case key == "id --user ikigenba":
 		return host.Result{Stdout: []byte("998\n")}, nil
 	case key == "getent passwd ikigenba":

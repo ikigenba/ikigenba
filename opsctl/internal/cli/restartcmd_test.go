@@ -14,7 +14,7 @@ import (
 )
 
 func TestRestartCommandReportsResultingServiceState(t *testing.T) {
-	// R-EUNU-M3K5
+	// R-VO40-PTVC
 	for _, test := range []struct {
 		state      string
 		wantCode   int
@@ -32,6 +32,8 @@ func TestRestartCommandReportsResultingServiceState(t *testing.T) {
 			execute := func(_ context.Context, command host.Command) (host.Result, error) {
 				commands = append(commands, command)
 				switch {
+				case command.Name == "systemctl" && command.Args[0] == "show":
+					return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=enabled\n")}, nil
 				case command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"restart", "ikigenba-notes.service"}):
 					state = test.state
 					return host.Result{}, nil
@@ -55,6 +57,7 @@ func TestRestartCommandReportsResultingServiceState(t *testing.T) {
 				t.Fatalf("restart = exit %d stdout %q stderr %q", code, stdout, stderr)
 			}
 			wantCommands := []host.Command{
+				{Name: "systemctl", Args: []string{"show", "--property=LoadState", "--property=UnitFileState", "ikigenba-notes.socket"}},
 				{Name: "systemctl", Args: []string{"restart", "ikigenba-notes.service"}},
 				{Name: "systemctl", Args: []string{"is-active", "ikigenba-notes.service"}},
 			}
@@ -74,11 +77,14 @@ func TestRestartCommandReportsResultingServiceState(t *testing.T) {
 }
 
 func TestRestartCommandReportsFailureOnceWithStartupJournal(t *testing.T) {
-	// R-EUNU-M3K5
+	// R-VO40-PTVC
 	root := cliRestartRoot(t)
 	var commands []host.Command
 	execute := func(_ context.Context, command host.Command) (host.Result, error) {
 		commands = append(commands, command)
+		if command.Name == "systemctl" && command.Args[0] == "show" {
+			return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=enabled\n")}, nil
+		}
 		if command.Name == "journalctl" {
 			return host.Result{Stdout: []byte("line one\nline two\n")}, nil
 		}
@@ -90,11 +96,33 @@ func TestRestartCommandReportsFailureOnceWithStartupJournal(t *testing.T) {
 		t.Fatalf("restart failure = exit %d stdout %q stderr %q", code, stdout, stderr)
 	}
 	want := []host.Command{
+		{Name: "systemctl", Args: []string{"show", "--property=LoadState", "--property=UnitFileState", "ikigenba-notes.socket"}},
 		{Name: "systemctl", Args: []string{"restart", "ikigenba-notes.service"}},
 		{Name: "journalctl", Args: []string{"--unit", "ikigenba-notes.service", "--no-pager", "--lines", "50"}},
 	}
 	if !reflect.DeepEqual(commands, want) {
 		t.Fatalf("commands = %#v, want %#v", commands, want)
+	}
+}
+
+func TestRestartReportsDisabledServiceWithoutStartingIt(t *testing.T) {
+	// R-VO40-PTVC
+	root := cliRestartRoot(t)
+	var commands []host.Command
+	stdout, stderr, code := invoke([]string{"restart", "notes"}, cli.Deps{Root: root, EUID: 0,
+		Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+			commands = append(commands, command)
+			if command.Name == "systemctl" && command.Args[0] == "show" {
+				return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=disabled\n")}, nil
+			}
+			if command.Name == filepath.Join(root, "opt/notes/bin/notes") {
+				return host.Result{Stdout: []byte("v7.8.9\n")}, nil
+			}
+			t.Fatalf("unexpected command: %#v", command)
+			return host.Result{}, nil
+		}})
+	if code != 0 || stdout != "service: ok (notes v7.8.9 disabled)\n" || stderr != "" || len(commands) != 2 {
+		t.Fatalf("disabled restart = exit %d stdout %q stderr %q commands %#v", code, stdout, stderr, commands)
 	}
 }
 
@@ -107,14 +135,14 @@ func TestRestartCommandValidationPrecedesServiceStage(t *testing.T) {
 		code int
 	}{
 		{name: "invalid", app: "bad/name", root: func(t *testing.T) string { return filepath.Join(t.TempDir(), "missing") }, want: "opsctl: 'bad/name' is not a usable app name\n", code: 2},
-		{name: "missing", app: "notes", root: func(t *testing.T) string { return t.TempDir() }, want: "service: failed: no service 'notes'\n", code: 1},
+		{name: "missing", app: "notes", root: func(t *testing.T) string { return t.TempDir() }, want: "opsctl: no service 'notes'\n", code: 1},
 		{name: "binary missing", app: "notes", root: func(t *testing.T) string {
 			root := t.TempDir()
 			if err := os.MkdirAll(filepath.Join(root, "opt/notes/etc"), 0o750); err != nil {
 				t.Fatal(err)
 			}
 			return root
-		}, want: "service: failed: notes is not installed\n", code: 1},
+		}, want: "opsctl: notes is not installed\n", code: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			executed := false
@@ -123,9 +151,6 @@ func TestRestartCommandValidationPrecedesServiceStage(t *testing.T) {
 				return host.Result{}, nil
 			}})
 			wantStdout, wantStderr := "", test.want
-			if test.name != "invalid" {
-				wantStdout, wantStderr = test.want, "opsctl: restart failed\n"
-			}
 			if code != test.code || stdout != wantStdout || stderr != wantStderr || executed {
 				t.Fatalf("preflight = exit %d stdout %q stderr %q executed %t", code, stdout, stderr, executed)
 			}
@@ -134,13 +159,15 @@ func TestRestartCommandValidationPrecedesServiceStage(t *testing.T) {
 }
 
 func TestRestartCommandDoesNotRetryFailedOutcomeWrite(t *testing.T) {
-	// R-EUNU-M3K5
+	// R-VO40-PTVC
 	root := cliRestartRoot(t)
 	writeFailure := errors.New("service output unavailable")
 	output := &countingFailWriter{err: writeFailure}
 	var diagnostic bytes.Buffer
 	execute := func(_ context.Context, command host.Command) (host.Result, error) {
 		switch {
+		case command.Name == "systemctl" && command.Args[0] == "show":
+			return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=enabled\n")}, nil
 		case command.Name == "systemctl" && command.Args[0] == "restart":
 			return host.Result{}, nil
 		case command.Name == "systemctl":

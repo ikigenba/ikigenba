@@ -23,7 +23,21 @@ type StatusRow struct {
 	Name        string
 	Version     string
 	State       string
+	Socket      string
 	JournalMode string
+}
+
+// ServiceReport is the result of a service start or restart.
+type ServiceReport struct {
+	Name    string
+	Version string
+	State   string
+}
+
+// LifecycleHooks connects enable and disable to reporting and routing.
+type LifecycleHooks struct {
+	Report    func(step, detail string, success bool) error
+	Configure func(context.Context, Manifest) error
 }
 
 // LifecycleError describes an app lifecycle failure and its process exit code.
@@ -50,7 +64,8 @@ func Uninstall(ctx context.Context, env host.Env, app string, hooks UninstallHoo
 type uninstallWorkflow struct {
 	env      host.Env
 	app      string
-	unit     string
+	service  string
+	socket   string
 	hooks    UninstallHooks
 	manifest Manifest
 }
@@ -72,57 +87,60 @@ func prepareUninstall(env host.Env, app string, hooks UninstallHooks) (*uninstal
 	return &uninstallWorkflow{env: env, app: app, hooks: hooks}, nil
 }
 
-func uninstallFiles(root, app string) (Manifest, string, error) {
+func uninstallFiles(root, app string) (Manifest, error) {
 	filesystem, err := os.OpenRoot(root)
 	if err != nil {
-		return Manifest{}, "", &LifecycleError{Code: 1, Message: "inspect service failed", Cause: err}
+		return Manifest{}, &LifecycleError{Code: 1, Message: "inspect service failed", Cause: err}
 	}
 	defer func() { _ = filesystem.Close() }()
 
 	appPath := path.Join("opt", app)
 	if err := requireAppDirectory(filesystem, app); err != nil {
-		return Manifest{}, "", err
+		return Manifest{}, err
 	}
 	if err := requireInstalledBinary(filesystem, app); err != nil {
-		return Manifest{}, "", err
+		return Manifest{}, err
 	}
 	info, err := filesystem.Lstat(path.Join(appPath, "etc"))
 	if err != nil {
-		return Manifest{}, "", &LifecycleError{Code: 1, Message: "read installed manifest failed", Cause: err}
+		return Manifest{}, &LifecycleError{Code: 1, Message: "read installed manifest failed", Cause: err}
 	}
 	if !info.IsDir() {
 		err = errors.New("installed manifest parent is not a directory")
-		return Manifest{}, "", &LifecycleError{Code: 1, Message: "uninstall prerequisites failed", Cause: err}
+		return Manifest{}, &LifecycleError{Code: 1, Message: "uninstall prerequisites failed", Cause: err}
 	}
 	info, err = filesystem.Lstat(path.Join(appPath, "etc", "manifest.toml"))
 	if err != nil {
-		return Manifest{}, "", &LifecycleError{Code: 1, Message: "read installed manifest failed", Cause: err}
+		return Manifest{}, &LifecycleError{Code: 1, Message: "read installed manifest failed", Cause: err}
 	}
 	if !info.Mode().IsRegular() {
 		err = errors.New("installed manifest is not a regular file")
-		return Manifest{}, "", &LifecycleError{Code: 1, Message: "uninstall prerequisites failed", Cause: err}
+		return Manifest{}, &LifecycleError{Code: 1, Message: "uninstall prerequisites failed", Cause: err}
 	}
 	manifestData, err := filesystem.ReadFile(path.Join(appPath, "etc", "manifest.toml"))
 	if err != nil {
-		return Manifest{}, "", &LifecycleError{Code: 1, Message: "read installed manifest failed", Cause: err}
+		return Manifest{}, &LifecycleError{Code: 1, Message: "read installed manifest failed", Cause: err}
 	}
 	manifest, err := ParseManifest(manifestData)
 	if err != nil {
-		return Manifest{}, "", &LifecycleError{Code: 1, Message: "installed manifest is invalid", Cause: err}
+		return Manifest{}, &LifecycleError{Code: 1, Message: "installed manifest is invalid", Cause: err}
 	}
 	if manifest.App != app {
 		err = fmt.Errorf("manifest app %q does not match service directory %q", manifest.App, app)
-		return Manifest{}, "", &LifecycleError{Code: 1, Message: "uninstall prerequisites failed", Cause: err}
+		return Manifest{}, &LifecycleError{Code: 1, Message: "uninstall prerequisites failed", Cause: err}
 	}
-	unit := appUnitName(app)
-	if _, err := filesystem.Lstat(path.Join("etc", "systemd", "system", unit)); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return Manifest{}, "", &LifecycleError{Code: 1, Message: safeDiagnosticToken(unit) + " is not installed", Cause: err}
+	for _, unit := range []string{socketUnitName(app), appUnitName(app)} {
+		if _, err := filesystem.Lstat(path.Join("etc", "systemd", "system", unit)); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return Manifest{}, &LifecycleError{Code: 1, Message: safeDiagnosticToken(app) + " is not installed", Cause: err}
+			}
+			return Manifest{}, &LifecycleError{Code: 1, Message: "inspect installed unit failed", Cause: err}
 		}
-		return Manifest{}, "", &LifecycleError{Code: 1, Message: "inspect installed unit failed", Cause: err}
 	}
-	return manifest, unit, nil
+	return manifest, nil
 }
+
+func socketUnitName(app string) string { return "ikigenba-" + app + ".socket" }
 
 func uninstallUnitActive(ctx context.Context, env host.Env, unit string) (bool, error) {
 	result, err := env.Execute(ctx, host.Command{Name: "systemctl", Args: []string{"is-active", unit}})
@@ -158,41 +176,57 @@ func (workflow *uninstallWorkflow) run(ctx context.Context) error {
 }
 
 func (workflow *uninstallWorkflow) stop(ctx context.Context) error {
-	manifest, unit, err := uninstallFiles(workflow.env.Root, workflow.app)
+	manifest, err := uninstallFiles(workflow.env.Root, workflow.app)
 	if err != nil {
-		return workflow.fail("stop", err)
+		return workflow.failPrerequisite(err)
 	}
 	workflow.manifest = manifest
-	workflow.unit = unit
-	active, err := uninstallUnitActive(ctx, workflow.env, unit)
+	workflow.service, workflow.socket = appUnitName(workflow.app), socketUnitName(workflow.app)
+	socketActive, err := uninstallUnitActive(ctx, workflow.env, workflow.socket)
 	if err != nil {
 		return workflow.fail("stop", err)
 	}
-
-	safeUnit := safeDiagnosticToken(workflow.unit)
-	if active {
-		if err := executeInstallCommand(ctx, workflow.env, "stop "+safeUnit, host.Command{
-			Name: "systemctl", Args: []string{"stop", workflow.unit},
-		}); err != nil {
+	serviceActive, err := uninstallUnitActive(ctx, workflow.env, workflow.service)
+	if err != nil {
+		return workflow.fail("stop", err)
+	}
+	for _, unit := range []string{workflow.socket, workflow.service} {
+		if err := executeInstallCommand(ctx, workflow.env, "stop "+safeDiagnosticToken(unit), host.Command{Name: "systemctl", Args: []string{"stop", unit}}); err != nil {
 			return workflow.fail("stop", err)
 		}
 	}
-	if err := executeInstallCommand(ctx, workflow.env, "disable "+safeUnit, host.Command{
-		Name: "systemctl", Args: []string{"disable", workflow.unit},
+	if err := executeInstallCommand(ctx, workflow.env, "disable app units", host.Command{
+		Name: "systemctl", Args: []string{"disable", workflow.socket, workflow.service},
 	}); err != nil {
 		return workflow.fail("stop", err)
 	}
-	detail := safeUnit + " already inactive, disabled"
-	if active {
-		detail = safeUnit + " stopped, disabled"
+	detail := safeDiagnosticToken(workflow.socket) + ", " + safeDiagnosticToken(workflow.service) + " already inactive, disabled"
+	if socketActive || serviceActive {
+		detail = safeDiagnosticToken(workflow.socket) + ", " + safeDiagnosticToken(workflow.service) + " stopped, disabled"
 	}
 	return workflow.report("stop", detail)
+}
+
+func (workflow *uninstallWorkflow) failPrerequisite(err error) error {
+	var failure *LifecycleError
+	message := err.Error()
+	if errors.As(err, &failure) {
+		message = failure.Message
+	}
+	if reportErr := workflow.hooks.Report("stop", message, false); reportErr != nil {
+		return &LifecycleError{Code: 1, Message: message, Cause: errors.Join(err, reportErr)}
+	}
+	return err
 }
 
 func (workflow *uninstallWorkflow) removeUnit(ctx context.Context) error {
 	filesystem, err := os.OpenRoot(workflow.env.Root)
 	if err == nil {
-		err = filesystem.Remove(path.Join("etc", "systemd", "system", workflow.unit))
+		for _, unit := range []string{workflow.socket, workflow.service} {
+			if err = filesystem.Remove(path.Join("etc", "systemd", "system", unit)); err != nil {
+				break
+			}
+		}
 		err = errors.Join(err, filesystem.Close())
 	}
 	if err != nil {
@@ -203,7 +237,7 @@ func (workflow *uninstallWorkflow) removeUnit(ctx context.Context) error {
 	}); err != nil {
 		return workflow.fail("unit", err)
 	}
-	return workflow.report("unit", "removed "+safeDiagnosticToken(workflow.unit))
+	return workflow.report("unit", "removed "+safeDiagnosticToken(workflow.socket)+", "+safeDiagnosticToken(workflow.service))
 }
 
 func (workflow *uninstallWorkflow) removeFiles() error {
@@ -238,31 +272,222 @@ func (workflow *uninstallWorkflow) fail(step string, cause error) error {
 	return &LifecycleError{Code: 1, Message: "uninstall failed", Cause: cause}
 }
 
-// Restart restarts an installed app and reports its resulting service state.
-func Restart(ctx context.Context, env host.Env, app string) (StatusRow, error) {
-	if err := ValidateName(app); err != nil {
-		return StatusRow{}, &LifecycleError{Code: 2, Message: fmt.Sprintf("'%s' is not a usable app name", safeDiagnosticToken(app)), Cause: err}
+func unitProperties(ctx context.Context, env host.Env, unit string, names ...string) (map[string]string, error) {
+	args := []string{"show"}
+	for _, name := range names {
+		args = append(args, "--property="+name)
 	}
+	args = append(args, unit)
 	if env.Execute == nil {
-		err := errors.New("host execution is not configured")
-		return StatusRow{}, &LifecycleError{Code: 1, Message: "restart failed", Cause: err}
+		return nil, commandTransportError("inspect "+unit, errors.New("host execution is not configured"))
 	}
+	result, err := env.Execute(ctx, host.Command{Name: "systemctl", Args: args})
+	if err != nil {
+		return nil, commandTransportError("inspect "+unit, err)
+	}
+	if result.ExitCode != 0 {
+		return nil, &host.CommandError{Label: "inspect " + unit, Result: result}
+	}
+	properties := make(map[string]string, len(names))
+	for _, line := range strings.Split(string(result.Stdout), "\n") {
+		key, value, ok := strings.Cut(strings.TrimSuffix(line, "\r"), "=")
+		if ok {
+			properties[key] = value
+		}
+	}
+	return properties, nil
+}
 
-	if err := restartServiceStage(ctx, env, app); err != nil {
-		return StatusRow{}, err
+// Disabled observes only the socket unit's enablement.
+func Disabled(ctx context.Context, env host.Env, app string) (bool, error) {
+	if err := ValidateName(app); err != nil {
+		return false, &LifecycleError{Code: 2, Message: fmt.Sprintf("'%s' is not a usable app name", safeDiagnosticToken(app)), Cause: err}
+	}
+	properties, err := unitProperties(ctx, env, socketUnitName(app), "LoadState", "UnitFileState")
+	if err != nil {
+		return false, err
+	}
+	return properties["LoadState"] == "loaded" && properties["UnitFileState"] == "disabled", nil
+}
+
+func lifecyclePrerequisites(root, app string) (Manifest, error) { return uninstallFiles(root, app) }
+
+func lifecycleHookError(action string) error {
+	return &LifecycleError{Code: 1, Message: action + " hooks not set", Cause: errors.New("callback is nil")}
+}
+
+func lifecycleOutcome(hooks LifecycleHooks, step, detail string, success bool, cause error) error {
+	reportErr := hooks.Report(step, detail, success)
+	if reportErr != nil {
+		cause = errors.Join(cause, reportErr)
+	}
+	if cause != nil {
+		return &LifecycleError{Code: 1, Message: detail, Cause: cause}
+	}
+	return nil
+}
+
+func lifecycleFail(hooks LifecycleHooks, step string, err error) error {
+	var failure *LifecycleError
+	message := err.Error()
+	if errors.As(err, &failure) {
+		message = failure.Message
+	}
+	return lifecycleOutcome(hooks, step, message, false, err)
+}
+
+func lifecycleUnitStates(ctx context.Context, env host.Env, app string) ([2]map[string]string, error) {
+	var states [2]map[string]string
+	for i, unit := range []string{socketUnitName(app), appUnitName(app)} {
+		properties, err := unitProperties(ctx, env, unit, "ActiveState", "UnitFileState")
+		if err != nil {
+			return states, err
+		}
+		states[i] = properties
+	}
+	return states, nil
+}
+
+func lifecycleCommand(ctx context.Context, env host.Env, args ...string) error {
+	return executeInstallCommand(ctx, env, strings.Join(args, " "), host.Command{Name: "systemctl", Args: args})
+}
+
+// Disable stops and disables both units before routing is reconfigured.
+func Disable(ctx context.Context, env host.Env, app string, hooks LifecycleHooks) error {
+	if err := ValidateName(app); err != nil {
+		return &LifecycleError{Code: 2, Message: fmt.Sprintf("'%s' is not a usable app name", safeDiagnosticToken(app)), Cause: err}
+	}
+	if app == "auth" {
+		message := "auth is the authenticator and cannot be disabled"
+		if hooks.Report == nil {
+			return &LifecycleError{Code: 1, Message: message, Cause: errors.New("report callback is nil")}
+		}
+		return lifecycleOutcome(hooks, "stop", message, false, errors.New(message))
+	}
+	if hooks.Report == nil || hooks.Configure == nil {
+		return lifecycleHookError("disable")
+	}
+	manifest, err := lifecyclePrerequisites(env.Root, app)
+	if err != nil {
+		return lifecycleFail(hooks, "stop", err)
+	}
+	states, err := lifecycleUnitStates(ctx, env, app)
+	if err != nil {
+		return lifecycleFail(hooks, "stop", err)
+	}
+	socket, service := socketUnitName(app), appUnitName(app)
+	active := states[0]["ActiveState"] == "active" || states[1]["ActiveState"] == "active"
+	already := !active && states[0]["UnitFileState"] == "disabled" && states[1]["UnitFileState"] == "disabled"
+	if !already {
+		for _, unit := range []string{socket, service} {
+			if err := lifecycleCommand(ctx, env, "stop", unit); err != nil {
+				return lifecycleFail(hooks, "stop", err)
+			}
+		}
+		if err := lifecycleCommand(ctx, env, "disable", socket, service); err != nil {
+			return lifecycleFail(hooks, "stop", err)
+		}
+	}
+	detail := socket + ", " + service + " already inactive, disabled"
+	if active {
+		detail = socket + ", " + service + " stopped, disabled"
+	}
+	if err := lifecycleOutcome(hooks, "stop", detail, true, nil); err != nil {
+		return err
+	}
+	if err := hooks.Configure(ctx, manifest); err != nil {
+		return &LifecycleError{Code: 1, Message: "disable failed", Cause: err}
+	}
+	return nil
+}
+
+// Enable enables both units, starts the socket, reconfigures routing, and starts the service.
+func Enable(ctx context.Context, env host.Env, app string, hooks LifecycleHooks) error {
+	if err := ValidateName(app); err != nil {
+		return &LifecycleError{Code: 2, Message: fmt.Sprintf("'%s' is not a usable app name", safeDiagnosticToken(app)), Cause: err}
+	}
+	if hooks.Report == nil || hooks.Configure == nil {
+		return lifecycleHookError("enable")
+	}
+	manifest, err := lifecyclePrerequisites(env.Root, app)
+	if err != nil {
+		return lifecycleFail(hooks, "enable", err)
+	}
+	states, err := lifecycleUnitStates(ctx, env, app)
+	if err != nil {
+		return lifecycleFail(hooks, "enable", err)
+	}
+	socket, service := socketUnitName(app), appUnitName(app)
+	already := states[0]["UnitFileState"] == "enabled" && states[1]["UnitFileState"] == "enabled"
+	if !already {
+		if err := lifecycleCommand(ctx, env, "enable", socket, service); err != nil {
+			return lifecycleFail(hooks, "enable", err)
+		}
+	}
+	if states[0]["ActiveState"] != "active" {
+		if err := lifecycleCommand(ctx, env, "start", socket); err != nil {
+			return lifecycleFail(hooks, "enable", err)
+		}
+	}
+	detail := socket + ", " + service
+	if already {
+		detail += " already enabled"
+	}
+	if err := lifecycleOutcome(hooks, "enable", detail, true, nil); err != nil {
+		return err
+	}
+	if err := hooks.Configure(ctx, manifest); err != nil {
+		return &LifecycleError{Code: 1, Message: "enable failed", Cause: err}
+	}
+	if states[1]["ActiveState"] != "active" {
+		if err := lifecycleCommand(ctx, env, "start", service); err != nil {
+			return lifecycleFail(hooks, "service", restartStartFailure(ctx, env, app, service, err))
+		}
+	}
+	result, err := env.Execute(ctx, host.Command{Name: "systemctl", Args: []string{"is-active", service}})
+	if err != nil {
+		return lifecycleFail(hooks, "service", restartStartFailure(ctx, env, app, service, commandTransportError("inspect "+service, err)))
+	}
+	if result.ExitCode != 0 || strings.TrimSpace(string(result.Stdout)) != "active" {
+		return lifecycleFail(hooks, "service", restartStartFailure(ctx, env, app, service, &host.CommandError{Label: "inspect " + service, Result: result}))
 	}
 	version, err := restartVersion(ctx, env, app)
 	if err != nil {
-		return StatusRow{}, err
+		return lifecycleFail(hooks, "service", err)
 	}
-	return StatusRow{Name: app, Version: version, State: "active", JournalMode: "-"}, nil
+	return lifecycleOutcome(hooks, "service", app+" "+version+" active", true, nil)
 }
 
-func restartServiceStage(ctx context.Context, env host.Env, app string) error {
-	if err := restartPrerequisites(env.Root, app); err != nil {
-		return err
+// Restart restarts an installed app and reports its resulting service state.
+func Restart(ctx context.Context, env host.Env, app string) (ServiceReport, error) {
+	if err := ValidateName(app); err != nil {
+		return ServiceReport{}, &LifecycleError{Code: 2, Message: fmt.Sprintf("'%s' is not a usable app name", safeDiagnosticToken(app)), Cause: err}
 	}
-	return restartInstalledUnit(ctx, env, app)
+	if env.Execute == nil {
+		err := errors.New("host execution is not configured")
+		return ServiceReport{}, &LifecycleError{Code: 1, Message: "restart failed", Cause: err}
+	}
+	if err := restartPrerequisites(env.Root, app); err != nil {
+		return ServiceReport{}, err
+	}
+	disabled, err := Disabled(ctx, env, app)
+	if err != nil {
+		return ServiceReport{}, &LifecycleError{Code: 1, Message: "inspect app enablement failed", Cause: err}
+	}
+	if !disabled {
+		if err := restartInstalledUnit(ctx, env, app); err != nil {
+			return ServiceReport{}, err
+		}
+	}
+	version, err := restartVersion(ctx, env, app)
+	if err != nil {
+		return ServiceReport{}, err
+	}
+	state := "active"
+	if disabled {
+		state = "disabled"
+	}
+	return ServiceReport{Name: app, Version: version, State: state}, nil
 }
 
 func restartInstalledUnit(ctx context.Context, env host.Env, app string) error {
@@ -383,6 +608,7 @@ func Status(ctx context.Context, env host.Env) ([]StatusRow, error) {
 			Name:        service.Name,
 			Version:     serviceVersion(ctx, env, service.Name),
 			State:       serviceState(ctx, env, service.Name),
+			Socket:      socketState(ctx, env, service.Name),
 			JournalMode: serviceJournalMode(env.Root, service),
 		}
 		rows = append(rows, row)
@@ -417,23 +643,23 @@ func serviceState(ctx context.Context, env host.Env, name string) string {
 	if ValidateName(name) != nil || env.Execute == nil {
 		return "-"
 	}
-	result, err := env.Execute(ctx, host.Command{
-		Name: "systemctl",
-		Args: []string{"show", "--property=LoadState", "--property=ActiveState", appUnitName(name)},
-	})
-	if err != nil || result.ExitCode != 0 {
+	properties, err := unitProperties(ctx, env, appUnitName(name), "LoadState", "ActiveState")
+	if err != nil || properties["LoadState"] != "loaded" || properties["ActiveState"] == "" {
 		return "-"
 	}
+	return properties["ActiveState"]
+}
 
-	properties := make(map[string]string, 2)
-	for _, line := range strings.Split(string(result.Stdout), "\n") {
-		key, value, found := strings.Cut(strings.TrimSuffix(line, "\r"), "=")
-		if found {
-			properties[key] = value
-		}
-	}
-	if properties["LoadState"] != "loaded" {
+func socketState(ctx context.Context, env host.Env, name string) string {
+	if ValidateName(name) != nil || env.Execute == nil {
 		return "-"
+	}
+	properties, err := unitProperties(ctx, env, socketUnitName(name), "LoadState", "ActiveState", "UnitFileState")
+	if err != nil || properties["LoadState"] != "loaded" {
+		return "-"
+	}
+	if properties["UnitFileState"] == "disabled" {
+		return "disabled"
 	}
 	if properties["ActiveState"] == "" {
 		return "-"

@@ -91,7 +91,7 @@ func TestRestoreSelectsSourceByArchiveTimestamp(t *testing.T) {
 	wantDetail := fmt.Sprintf("notes/2026-09-16T00:00:00Z.tar.zst, %.1f MiB", float64(len(body))/1048576)
 	wantReport := backup.RestoreReport{Steps: []backup.RestoreStep{
 		{Name: "source", Detail: wantDetail},
-		{Name: "stop", Detail: "litestream.service, no ikigenba-notes.service"},
+		{Name: "stop", Detail: "litestream.service, no ikigenba-notes.socket"},
 		{Name: "files", Detail: "/opt/notes/etc, /opt/notes/state, 2 files"},
 		{Name: "db", Detail: "/opt/notes/state/app.db, at 2026-09-16T12:00:00Z"},
 		{Name: "litestream", Detail: "state/app.db"},

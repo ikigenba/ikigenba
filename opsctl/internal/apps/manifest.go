@@ -1,6 +1,7 @@
 package apps
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -36,16 +37,23 @@ type tomlValue struct {
 }
 
 type manifestDecoder struct {
-	data     []byte
-	position int
-	table    []string
-	seen     map[string]struct{}
-	tables   map[string]tomlKind
-	result   Manifest
+	data       []byte
+	position   int
+	table      []string
+	seen       map[string]struct{}
+	tables     map[string]tomlKind
+	result     Manifest
+	portSeen   bool
+	firstError error
 }
+
+const portError = "'port' is not allowed; the host gives the app its socket"
 
 // ParseManifest decodes and validates an app manifest.
 func ParseManifest(data []byte) (Manifest, error) {
+	if hasTopLevelPort(data) {
+		return Manifest{}, errors.New(portError)
+	}
 	if !utf8.Valid(data) {
 		return Manifest{}, fmt.Errorf("invalid manifest: input is not UTF-8")
 	}
@@ -53,6 +61,73 @@ func ParseManifest(data []byte) (Manifest, error) {
 		return Manifest{}, fmt.Errorf("invalid manifest: %w", err)
 	}
 	return newManifestDecoder(data).manifest()
+}
+
+// hasTopLevelPort finds the forbidden key even when an earlier invalid value
+// prevents the full TOML decoder from reaching it.
+func hasTopLevelPort(data []byte) bool {
+	inRoot := true
+	var quote byte
+	var multiline bool
+	for _, line := range strings.Split(string(data), "\n") {
+		if quote == 0 {
+			probe := &manifestDecoder{data: []byte(line)}
+			probe.skipHorizontalSpace()
+			if probe.position < len(probe.data) {
+				if probe.data[probe.position] == '[' {
+					probe.position++
+					arrayTable := probe.consume('[')
+					probe.skipHorizontalSpace()
+					if _, err := probe.decodeKeyPath(); err == nil {
+						probe.skipHorizontalSpace()
+						if probe.consume(']') && (!arrayTable || probe.consume(']')) {
+							inRoot = false
+						}
+					}
+				} else if inRoot {
+					if keys, err := probe.decodeKeyPath(); err == nil && len(keys) == 1 && keys[0] == "port" {
+						probe.skipHorizontalSpace()
+						if probe.consume('=') {
+							return true
+						}
+					}
+				}
+			}
+		}
+		for i := 0; i < len(line); i++ {
+			character := line[i]
+			if quote == 0 {
+				if character == '#' {
+					break
+				}
+				if character == '"' || character == '\'' {
+					quote = character
+					multiline = i+2 < len(line) && line[i+1] == quote && line[i+2] == quote
+					if multiline {
+						i += 2
+					}
+				}
+				continue
+			}
+			if quote == '"' && character == '\\' {
+				i++
+				continue
+			}
+			if character == quote {
+				if !multiline {
+					quote = 0
+				} else if i+2 < len(line) && line[i+1] == quote && line[i+2] == quote {
+					quote = 0
+					multiline = false
+					i += 2
+				}
+			}
+		}
+		if !multiline {
+			quote = 0
+		}
+	}
+	return false
 }
 
 func newManifestDecoder(data []byte) *manifestDecoder {
@@ -69,7 +144,16 @@ func newManifestDecoder(data []byte) *manifestDecoder {
 
 func (decoder *manifestDecoder) manifest() (Manifest, error) {
 	if err := decoder.decode(); err != nil {
+		if decoder.portSeen {
+			return Manifest{}, errors.New(portError)
+		}
 		return Manifest{}, fmt.Errorf("invalid manifest: %w", err)
+	}
+	if decoder.portSeen {
+		return Manifest{}, errors.New(portError)
+	}
+	if decoder.firstError != nil {
+		return Manifest{}, fmt.Errorf("invalid manifest: %w", decoder.firstError)
 	}
 	if decoder.result.Database != nil {
 		if err := validateDatabase(decoder.result.Database); err != nil {
@@ -165,6 +249,9 @@ func (decoder *manifestDecoder) decodeAssignment() error {
 	if err != nil {
 		return err
 	}
+	if len(decoder.table) == 0 && len(keys) == 1 && keys[0] == "port" {
+		decoder.portSeen = true
+	}
 	decoder.skipHorizontalSpace()
 	if !decoder.consume('=') {
 		return decoder.errorf("expected '='")
@@ -181,18 +268,22 @@ func (decoder *manifestDecoder) decodeAssignment() error {
 	fullPath := append(append([]string{}, decoder.table...), keys...)
 	identity := keyIdentity(fullPath)
 	if _, duplicate := decoder.seen[identity]; duplicate {
-		return decoder.errorf("duplicate key %q", strings.Join(fullPath, "."))
+		decoder.rememberError(decoder.errorf("duplicate key %q", strings.Join(fullPath, ".")))
+		return nil
 	}
 	if _, declaredTable := decoder.tables[identity]; declaredTable {
-		return decoder.errorf("key %q conflicts with an existing table", strings.Join(fullPath, "."))
+		decoder.rememberError(decoder.errorf("key %q conflicts with an existing table", strings.Join(fullPath, ".")))
+		return nil
 	}
 	if decoder.pathHasValuePrefix(fullPath) || decoder.pathHasDescendant(fullPath) {
-		return decoder.errorf("key %q conflicts with an existing value", strings.Join(fullPath, "."))
+		decoder.rememberError(decoder.errorf("key %q conflicts with an existing value", strings.Join(fullPath, ".")))
+		return nil
 	}
 	for length := len(decoder.table) + 1; length < len(fullPath); length++ {
 		kind, exists := decoder.tables[keyIdentity(fullPath[:length])]
 		if exists && (kind == tomlTable || kind == tomlArray) {
-			return decoder.errorf("dotted key %q extends an explicitly declared table", strings.Join(fullPath[:length], "."))
+			decoder.rememberError(decoder.errorf("dotted key %q extends an explicitly declared table", strings.Join(fullPath[:length], ".")))
+			return nil
 		}
 	}
 	decoder.seen[identity] = struct{}{}
@@ -202,7 +293,14 @@ func (decoder *manifestDecoder) decodeAssignment() error {
 			decoder.tables[prefix] = tomlOther
 		}
 	}
-	return decoder.apply(fullPath, value)
+	decoder.rememberError(decoder.apply(fullPath, value))
+	return nil
+}
+
+func (decoder *manifestDecoder) rememberError(err error) {
+	if err != nil && decoder.firstError == nil {
+		decoder.firstError = err
+	}
 }
 
 func (decoder *manifestDecoder) apply(path []string, value tomlValue) error {
@@ -229,11 +327,6 @@ func (decoder *manifestDecoder) apply(path []string, value tomlValue) error {
 				return err
 			}
 			decoder.result.App = value.text
-		case "port":
-			if value.kind != tomlInteger || value.integer < 1 || value.integer > 65535 {
-				return decoder.errorf("port must be an integer from 1 through 65535")
-			}
-			decoder.result.Port = int(value.integer)
 		case "default":
 			if value.kind != tomlBoolean {
 				return decoder.errorf("default must be a Boolean")

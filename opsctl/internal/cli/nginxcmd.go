@@ -12,8 +12,8 @@ import (
 
 const nginxUsage = `Usage: opsctl nginx <subcommand>
 
-Generate /etc/nginx/conf.d/ikigenba.conf from the configuration store and the
-services under /opt. The file is generated, never edited; opsctl writes no
+Generate /etc/nginx/conf.d/ikigenba.conf from the configuration store, the
+services under /opt, and which apps systemd reports disabled. The file is generated, never edited; opsctl writes no
 other file under /etc/nginx.
 
 Subcommands:
@@ -25,11 +25,17 @@ Configuration keys:
   host.apex  the app that answers at the parent of host.name; unset means none
 
 A service is any /opt/<name>/ with an etc/ or state/ directory. One with an
-etc/manifest.toml naming a port answers at <name>.<host.name>, and the one
-whose manifest sets default answers at <host.name> as well. Its own
-etc/nginx.conf, if it ships one, is included in its server block. The app
+etc/manifest.toml naming its app answers at <name>.<host.name>, proxied to
+its socket /run/ikigenba/<name>.sock, and the one whose manifest sets default
+answers at <host.name> as well. Its own etc/nginx.conf, if it ships one, is
+included in its server block. An app whose socket unit systemd reports
+disabled keeps its names, and its block answers 503. Every proxied request
+carries X-Request-Id set to nginx's own request id, which also ends its
+access-log line. The app
 host.apex names also answers at the parent of host.name; until that app is
-routed, the parent answers 404.
+routed, the parent answers 404. A routed app named auth is the authenticator:
+every other app's block then requires a valid session, checked against auth's
+/check, while auth's own name is not gated.
 `
 
 func runNginx(args []string, stdout, stderr io.Writer, deps Deps) exitCode {

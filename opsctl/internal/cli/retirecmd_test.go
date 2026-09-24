@@ -18,13 +18,15 @@ import (
 
 const wantRetireUsage = `Usage: opsctl retire
 
-Take a host's final backup before it is discarded. Stop every service, then
+Take a host's final backup before it is discarded. Stop every app's socket and
+service, sockets first so no request starts a service again, then
 litestream.service so it ships every committed change it holds, then copy
 every service's files and the host's own configuration to backup.s3_uri
 exactly as 'opsctl backup' and 'opsctl host backup' would.
 
-Nothing is deleted or disabled. The units are left stopped; a host kept after
-all comes back with 'systemctl start' or a reboot.
+Nothing is deleted or disabled. The units are left stopped; on a host kept
+after all, a reboot or 'opsctl restart APP' brings every enabled app back, and
+a disabled app stays down until 'opsctl enable'.
 
 Configuration keys:
   aws.region      the region the backup bucket lives in
@@ -32,7 +34,7 @@ Configuration keys:
 `
 
 func TestRetireHelpIsExactAndHostIndependent(t *testing.T) {
-	// R-YZV6-CM2M
+	// R-XD2Z-UCY2
 	for _, euid := range []int{0, 1000} {
 		for _, option := range []string{"--help", "-h"} {
 			deps, assertInert := inertHostCommandDeps(t, euid)
@@ -75,39 +77,81 @@ func TestRetireGrammarAndRootRefusalPrecedeHostAccess(t *testing.T) {
 }
 
 func TestRetireRendersSynchronizedSuccessAndArchiveFindings(t *testing.T) {
-	// R-DVWL-5VNA
+	// R-XBV3-GL7D
 	result := backup.RetireResult{
-		Services:          []string{"alpha", "zeta"},
+		Services:          []string{"alpha", "beta", "crm", "dashboard", "epsilon", "zeta"},
+		Disabled:          []string{"crm", "zeta"},
 		ServicesStopped:   true,
 		LitestreamStopped: true,
 		SyncedDatabases:   []string{"app.db", "main.db"},
 		Files: []backup.FileResult{
 			{Service: "alpha", Object: "stamp.tar.zst", Size: 1024 * 1024},
+			{Service: "beta", Object: "stamp.tar.zst", Size: 1024 * 1024},
+			{Service: "crm", Object: "stamp.tar.zst", Size: 1024 * 1024},
+			{Service: "dashboard", Object: "stamp.tar.zst", Size: 1024 * 1024},
+			{Service: "epsilon", Object: "stamp.tar.zst", Size: 1024 * 1024},
 			{Service: "zeta", Err: errors.New("upload rejected")},
 		},
 		Host: backup.FileResult{Service: "host", Object: "stamp.tar.zst", Size: 1536},
 	}
 	var stdout, stderr bytes.Buffer
 	code := renderRetireOutcome(&stdout, &stderr, result, nil)
-	want := "services: ok (alpha, zeta stopped)\n" +
+	want := "services: ok (alpha, beta stopped; crm already inactive, disabled; dashboard, epsilon stopped; zeta already inactive, disabled)\n" +
 		"litestream: ok (stopped, app.db, main.db synced)\n" +
 		"alpha: ok (stamp.tar.zst, 1.0 MiB)\n" +
+		"beta: ok (stamp.tar.zst, 1.0 MiB)\n" +
+		"crm: ok (stamp.tar.zst, 1.0 MiB)\n" +
+		"dashboard: ok (stamp.tar.zst, 1.0 MiB)\n" +
+		"epsilon: ok (stamp.tar.zst, 1.0 MiB)\n" +
 		"zeta: failed: upload rejected\n" +
 		"host: ok (stamp.tar.zst, 1.5 KiB)\n"
 	if code != exitFail || stdout.String() != want || stderr.String() != "" {
 		t.Fatalf("renderRetireOutcome = exit %d stdout %q stderr %q", code, stdout.String(), stderr.String())
 	}
 
-	result.Files[1] = backup.FileResult{Service: "zeta", Object: "stamp.tar.zst", Size: 2 * 1024 * 1024}
+	result.Files[5] = backup.FileResult{Service: "zeta", Object: "stamp.tar.zst", Size: 2 * 1024 * 1024}
 	stdout.Reset()
 	code = renderRetireOutcome(&stdout, &stderr, result, nil)
-	want = "services: ok (alpha, zeta stopped)\n" +
+	want = "services: ok (alpha, beta stopped; crm already inactive, disabled; dashboard, epsilon stopped; zeta already inactive, disabled)\n" +
 		"litestream: ok (stopped, app.db, main.db synced)\n" +
 		"alpha: ok (stamp.tar.zst, 1.0 MiB)\n" +
+		"beta: ok (stamp.tar.zst, 1.0 MiB)\n" +
+		"crm: ok (stamp.tar.zst, 1.0 MiB)\n" +
+		"dashboard: ok (stamp.tar.zst, 1.0 MiB)\n" +
+		"epsilon: ok (stamp.tar.zst, 1.0 MiB)\n" +
 		"zeta: ok (stamp.tar.zst, 2.0 MiB)\n" +
 		"host: ok (stamp.tar.zst, 1.5 KiB)\n"
 	if code != exitOK || stdout.String() != want || stderr.Len() != 0 {
 		t.Fatalf("successful render = exit %d stdout %q stderr %q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestRetireServiceReportKeepsAdjacentDisabledAppsSeparate(t *testing.T) {
+	// R-XBV3-GL7D
+	result := backup.RetireResult{
+		Services:          []string{"alpha", "beta", "gamma", "delta"},
+		Disabled:          []string{"alpha", "beta"},
+		ServicesStopped:   true,
+		LitestreamStopped: true,
+		Files: []backup.FileResult{
+			{Service: "alpha", Object: "stamp.tar.zst", Size: 1024 * 1024},
+			{Service: "beta", Object: "stamp.tar.zst", Size: 1024 * 1024},
+			{Service: "gamma", Object: "stamp.tar.zst", Size: 1024 * 1024},
+			{Service: "delta", Object: "stamp.tar.zst", Size: 1024 * 1024},
+		},
+		Host: backup.FileResult{Service: "host", Object: "stamp.tar.zst", Size: 1024},
+	}
+	var stdout, stderr bytes.Buffer
+	code := renderRetireOutcome(&stdout, &stderr, result, nil)
+	want := "services: ok (alpha already inactive, disabled; beta already inactive, disabled; gamma, delta stopped)\n" +
+		"litestream: ok (stopped)\n" +
+		"alpha: ok (stamp.tar.zst, 1.0 MiB)\n" +
+		"beta: ok (stamp.tar.zst, 1.0 MiB)\n" +
+		"delta: ok (stamp.tar.zst, 1.0 MiB)\n" +
+		"gamma: ok (stamp.tar.zst, 1.0 MiB)\n" +
+		"host: ok (stamp.tar.zst, 1.0 KiB)\n"
+	if code != exitOK || stdout.String() != want || stderr.Len() != 0 {
+		t.Fatalf("adjacent disabled services = exit %d stdout %q stderr %q", code, stdout.String(), stderr.String())
 	}
 }
 
@@ -126,8 +170,11 @@ func TestRetireOperationalErrorsRetainOnlyCompletedReports(t *testing.T) {
 		execute := func(_ context.Context, command host.Command) (host.Result, error) {
 			text := strings.Join(append([]string{command.Name}, command.Args...), " ")
 			switch {
-			case text == "systemctl show --property=LoadState ikigenba-alpha.service":
-				return host.Result{Stdout: []byte("LoadState=not-found\n")}, nil
+			case text == "systemctl show --property=LoadState --property=ActiveState ikigenba-alpha.socket",
+				text == "systemctl show --property=LoadState --property=ActiveState ikigenba-alpha.service":
+				return host.Result{Stdout: []byte("LoadState=not-found\nActiveState=inactive\n")}, nil
+			case text == "systemctl show --property=LoadState --property=UnitFileState ikigenba-alpha.socket":
+				return host.Result{Stdout: []byte("LoadState=not-found\nUnitFileState=disabled\n")}, nil
 			case command.Name == "litestream":
 				return host.Result{ExitCode: 9, Stdout: []byte("sync partial\n"), Stderr: []byte("sync rejected\n")}, nil
 			case text == "systemctl stop litestream.service":
@@ -154,12 +201,21 @@ func TestRetireOperationalErrorsRetainOnlyCompletedReports(t *testing.T) {
 		root := configuredBackupRoot(t)
 		writeBackupServiceFile(t, root, "alpha", "state")
 		client := newHostCLICloud()
+		serviceStopped := false
 		execute := func(_ context.Context, command host.Command) (host.Result, error) {
 			text := strings.Join(append([]string{command.Name}, command.Args...), " ")
 			switch text {
-			case "systemctl show --property=LoadState ikigenba-alpha.service":
-				return host.Result{Stdout: []byte("LoadState=loaded\n")}, nil
+			case "systemctl show --property=LoadState --property=ActiveState ikigenba-alpha.socket":
+				return host.Result{Stdout: []byte("LoadState=not-found\nActiveState=inactive\n")}, nil
+			case "systemctl show --property=LoadState --property=ActiveState ikigenba-alpha.service":
+				if serviceStopped {
+					return host.Result{Stdout: []byte("LoadState=loaded\nActiveState=inactive\n")}, nil
+				}
+				return host.Result{Stdout: []byte("LoadState=loaded\nActiveState=active\n")}, nil
+			case "systemctl show --property=LoadState --property=UnitFileState ikigenba-alpha.socket":
+				return host.Result{Stdout: []byte("LoadState=not-found\nUnitFileState=disabled\n")}, nil
 			case "systemctl stop ikigenba-alpha.service":
+				serviceStopped = true
 				return host.Result{}, nil
 			case "systemctl stop litestream.service":
 				return host.Result{ExitCode: 1, Stdout: []byte("partial\n"), Stderr: []byte("bus failed")}, nil
@@ -179,13 +235,26 @@ func TestRetireOperationalErrorsRetainOnlyCompletedReports(t *testing.T) {
 		root := configuredBackupRoot(t)
 		writeBackupServiceFile(t, root, "alpha", "state")
 		client := newHostCLICloud()
+		serviceStopped := false
 		execute := func(_ context.Context, command host.Command) (host.Result, error) {
 			text := strings.Join(append([]string{command.Name}, command.Args...), " ")
 			switch {
-			case text == "systemctl show --property=LoadState ikigenba-alpha.service":
-				return host.Result{Stdout: []byte("LoadState=loaded\n")}, nil
-			case text == "systemctl stop ikigenba-alpha.service", text == "systemctl stop litestream.service":
+			case text == "systemctl show --property=LoadState --property=ActiveState ikigenba-alpha.socket":
+				return host.Result{Stdout: []byte("LoadState=not-found\nActiveState=inactive\n")}, nil
+			case text == "systemctl show --property=LoadState --property=ActiveState ikigenba-alpha.service":
+				if serviceStopped {
+					return host.Result{Stdout: []byte("LoadState=loaded\nActiveState=inactive\n")}, nil
+				}
+				return host.Result{Stdout: []byte("LoadState=loaded\nActiveState=active\n")}, nil
+			case text == "systemctl show --property=LoadState --property=UnitFileState ikigenba-alpha.socket":
+				return host.Result{Stdout: []byte("LoadState=not-found\nUnitFileState=disabled\n")}, nil
+			case text == "systemctl stop ikigenba-alpha.service":
+				serviceStopped = true
 				return host.Result{}, nil
+			case text == "systemctl stop litestream.service":
+				return host.Result{}, nil
+			case text == "systemctl show --property=LoadState --property=ActiveState litestream.service":
+				return host.Result{Stdout: []byte("LoadState=loaded\nActiveState=inactive\n")}, nil
 			case command.Name == "getent":
 				return host.Result{ExitCode: 2}, nil
 			case command.Name == "zstd":
@@ -210,6 +279,8 @@ func TestRetireOperationalErrorsRetainOnlyCompletedReports(t *testing.T) {
 			switch {
 			case text == "systemctl stop litestream.service":
 				return host.Result{}, nil
+			case text == "systemctl show --property=LoadState --property=ActiveState litestream.service":
+				return host.Result{Stdout: []byte("LoadState=loaded\nActiveState=inactive\n")}, nil
 			case command.Name == "zstd":
 				return host.Result{Stdout: []byte("partial archive")}, context.Canceled
 			default:
@@ -269,6 +340,8 @@ func TestRetireWithoutServicesArchivesOnlyHostAndRunsNoOtherProject(t *testing.T
 		switch {
 		case reflect.DeepEqual(command.Args, []string{"stop", "litestream.service"}) && command.Name == "systemctl":
 			return host.Result{}, nil
+		case text == "systemctl show --property=LoadState --property=ActiveState litestream.service":
+			return host.Result{Stdout: []byte("LoadState=loaded\nActiveState=inactive\n")}, nil
 		case command.Name == "zstd":
 			return fixedSizeZstdExecute(1536)(ctx, command)
 		default:
@@ -280,7 +353,7 @@ func TestRetireWithoutServicesArchivesOnlyHostAndRunsNoOtherProject(t *testing.T
 	if code != 0 || stdout != want || stderr != "" {
 		t.Fatalf("retire empty host = exit %d stdout %q stderr %q", code, stdout, stderr)
 	}
-	if wantCommands := []string{"systemctl stop litestream.service", "zstd --quiet --stdout"}; !reflect.DeepEqual(commands, wantCommands) {
+	if wantCommands := []string{"systemctl stop litestream.service", "systemctl show --property=LoadState --property=ActiveState litestream.service", "zstd --quiet --stdout"}; !reflect.DeepEqual(commands, wantCommands) {
 		t.Fatalf("commands = %v, want %v; retirement must not terminate the machine or run another project", commands, wantCommands)
 	}
 	if len(client.objects) != 1 {

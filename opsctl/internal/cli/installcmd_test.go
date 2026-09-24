@@ -14,12 +14,14 @@ import (
 const wantInstallUsage = `Usage: opsctl install URI
 
 Install the app at URI, an s3:// object holding an <app>-<tag>.tar.xz built by
-devctl. The app name, its port, and the secrets it needs are read from
+devctl. The app name and the secrets it needs are read from
 etc/manifest.toml inside it; the secret values are read from the parameter
 /<host.name>/<app>.
 
 Nothing under /opt/<app>/state/ or /opt/<app>/cache/ is touched, so installing
-over a running app keeps its data. Safe to re-run.
+over a running app keeps its data. Safe to re-run. An app that is disabled
+stays disabled: its files and units are replaced, but neither unit is enabled
+or started until 'opsctl enable'.
 
 The nginx configuration and /etc/litestream.yml are regenerated from every app
 on the host, so an app that declares a [database] is replicated from the
@@ -27,12 +29,14 @@ moment it is installed. litestream.service is restarted only when its
 configuration changed.
 
 Configuration keys:
-  aws.region  the region this host's parameters and artifacts live in
-  host.name   the fully-qualified name this host answers at
+  aws.region          the region this host's parameters and artifacts live in
+  host.name           the fully-qualified name this host answers at
+  apps.drain_seconds  how long the app may drain when stopped (default 5)
+  apps.stop_seconds   how long systemd waits for it to stop (default 10)
 `
 
 func TestInstallHelpIsInert(t *testing.T) {
-	// R-8H64-P8QR
+	// R-UEZQ-KBFN
 	for _, uid := range []int{0, 1, -1, 1000} {
 		for _, option := range []string{"-h", "--help"} {
 			t.Run(fmt.Sprintf("%s/%d", option, uid), func(t *testing.T) {

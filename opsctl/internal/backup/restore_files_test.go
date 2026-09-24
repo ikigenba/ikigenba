@@ -19,7 +19,7 @@ import (
 )
 
 func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
-	// R-DVW3-8CRI R-G04K-RO7W R-OPIE-CD52
+	// R-XEAW-84OR R-G04K-RO7W R-OPIE-CD52
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/etc/stale", "remove", 0o600)
@@ -47,26 +47,26 @@ func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
 	}
 	want := []backup.RestoreStep{
 		{Name: "source", Detail: fmt.Sprintf("notes/2026-09-16T00:00:00Z.tar.zst, %.1f MiB", float64(len(body))/1048576)},
-		{Name: "stop", Detail: "ikigenba-notes.service, litestream.service"},
+		{Name: "stop", Detail: "ikigenba-notes.socket, ikigenba-notes.service, litestream.service"},
 		{Name: "files", Detail: "/opt/notes/etc, /opt/notes/state, 4 files"},
 		{Name: "db", Detail: "/opt/notes/state/app.db, newest 2026-09-16T11:00:00Z"},
 		{Name: "litestream", Detail: "state/app.db"},
-		{Name: "start", Detail: "litestream.service, ikigenba-notes.service"},
+		{Name: "start", Detail: "litestream.service, ikigenba-notes.socket, ikigenba-notes.service"},
 	}
 	if !reflect.DeepEqual(report.Steps, want) {
 		t.Fatalf("report = %+v, want %+v", report.Steps, want)
 	}
 	wantCommands := []string{
 		"zstd --quiet --decompress --stdout",
-		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.service",
-		"systemctl stop ikigenba-notes.service",
-		"systemctl stop litestream.service",
+		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket", "systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
+		"systemctl stop ikigenba-notes.socket", "systemctl stop ikigenba-notes.service",
+		"systemctl show --property=LoadState --property=ActiveState litestream.service", "systemctl stop litestream.service",
 		"getent passwd ikigenba",
 		"id --group --name ikigenba",
 		"litestream ltx -level all -json s3://bucket/host/notes/",
 		"litestream restore -o " + filepath.Join(root, "opt/notes/state/app.db") + " s3://bucket/host/notes/",
 		"systemctl start litestream.service",
-		"systemctl start ikigenba-notes.service",
+		"systemctl start ikigenba-notes.socket", "systemctl start ikigenba-notes.service",
 	}
 	if !reflect.DeepEqual(executor.commands, wantCommands) {
 		t.Fatalf("commands = %v, want %v", executor.commands, wantCommands)
@@ -102,7 +102,7 @@ func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
 }
 
 func TestRestoreAppGuardAndStopDetails(t *testing.T) {
-	// R-DVW3-8CRI R-1PXK-YLDY
+	// R-XEAW-84OR R-1PXK-YLDY
 	for _, test := range []struct {
 		name      string
 		service   string
@@ -110,8 +110,8 @@ func TestRestoreAppGuardAndStopDetails(t *testing.T) {
 		active    bool
 		wantStop  string
 	}{
-		{name: "inactive", service: "notes", installed: true, wantStop: "litestream.service, ikigenba-notes.service already inactive"},
-		{name: "absent", service: "notes", wantStop: "litestream.service, no ikigenba-notes.service"},
+		{name: "inactive", service: "notes", installed: true, wantStop: "litestream.service; ikigenba-notes.socket, ikigenba-notes.service already inactive"},
+		{name: "absent", service: "notes", wantStop: "litestream.service, no ikigenba-notes.socket"},
 		{name: "reserved data only", service: "backup-host", wantStop: "litestream.service, no app unit"},
 		{name: "reserved service timer", service: "backup-services", wantStop: "litestream.service, no app unit"},
 		{name: "reserved renewal", service: "renew-certificate", wantStop: "litestream.service, no app unit"},
@@ -145,7 +145,7 @@ func TestRestoreAppGuardAndStopDetails(t *testing.T) {
 
 func TestRestoreStopFailuresPreserveCauseStoppedUnitsAndTargets(t *testing.T) {
 	// R-GWME-QK2L
-	// R-DVW3-8CRI R-G7FZ-2AO2 R-RX15-3IAF
+	// R-XEAW-84OR R-G7FZ-2AO2 R-RX15-3IAF
 	transport := errors.New("system bus unavailable")
 	for _, test := range []struct {
 		name         string
@@ -156,20 +156,21 @@ func TestRestoreStopFailuresPreserveCauseStoppedUnitsAndTargets(t *testing.T) {
 		wantCommands []string
 	}{
 		{
-			name: "unit inspection", failCommand: "systemctl show --property=LoadState --property=ActiveState ikigenba-notes.service",
+			name: "unit inspection", failCommand: "systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket",
 			failResult: host.Result{Stdout: []byte("partial state\n")}, wantStage: "unit inspection",
-			wantCommands: []string{"zstd --quiet --decompress --stdout", "systemctl show --property=LoadState --property=ActiveState ikigenba-notes.service"},
+			wantCommands: []string{"zstd --quiet --decompress --stdout", "systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket"},
 		},
 		{
 			name: "active app stop", failCommand: "systemctl stop ikigenba-notes.service",
 			failResult: host.Result{Stderr: []byte("app refused stop\n")}, wantStage: "stop",
-			wantCommands: []string{"zstd --quiet --decompress --stdout", "systemctl show --property=LoadState --property=ActiveState ikigenba-notes.service", "systemctl stop ikigenba-notes.service"},
+			wantStopped:  []string{"ikigenba-notes.socket"},
+			wantCommands: []string{"zstd --quiet --decompress --stdout", "systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket", "systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket", "systemctl stop ikigenba-notes.socket", "systemctl stop ikigenba-notes.service"},
 		},
 		{
 			name: "litestream stop", failCommand: "systemctl stop litestream.service",
 			failResult: host.Result{Stderr: []byte("replicator refused stop\n")}, wantStage: "stop",
-			wantStopped:  []string{"ikigenba-notes.service"},
-			wantCommands: []string{"zstd --quiet --decompress --stdout", "systemctl show --property=LoadState --property=ActiveState ikigenba-notes.service", "systemctl stop ikigenba-notes.service", "systemctl stop litestream.service"},
+			wantStopped:  []string{"ikigenba-notes.socket", "ikigenba-notes.service"},
+			wantCommands: []string{"zstd --quiet --decompress --stdout", "systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket", "systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket", "systemctl stop ikigenba-notes.socket", "systemctl stop ikigenba-notes.service", "systemctl show --property=LoadState --property=ActiveState litestream.service", "systemctl stop litestream.service"},
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -256,7 +257,7 @@ func TestRestoreCreatesMissingAccountWithNoLoginAndNoHome(t *testing.T) {
 	}
 	wantCommands := []string{
 		"zstd --quiet --decompress --stdout",
-		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.service",
+		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket", "systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		"getent passwd ikigenba",
 		"useradd --system --no-create-home --shell /usr/sbin/nologin ikigenba",
 		"getent passwd ikigenba",
@@ -386,11 +387,18 @@ func (executor *restoreStageExecutor) execute(_ context.Context, command host.Co
 		return host.Result{Stdout: decodeRawZstandardFrame(executor.t, compressed)}, nil
 	case "systemctl":
 		if len(command.Args) == 4 && command.Args[0] == "show" {
+			if command.Args[2] == "--property=UnitFileState" {
+				load := "not-found"
+				if executor.installed {
+					load = "loaded"
+				}
+				return host.Result{Stdout: []byte("LoadState=" + load + "\nUnitFileState=enabled\n")}, nil
+			}
 			load, active := "not-found", "inactive"
-			if executor.installed {
+			if executor.installed || command.Args[3] == "litestream.service" {
 				load = "loaded"
 			}
-			if executor.active {
+			if executor.active || command.Args[3] == "litestream.service" {
 				active = "active"
 			}
 			return host.Result{Stdout: []byte("LoadState=" + load + "\nActiveState=" + active + "\n")}, nil
@@ -399,7 +407,7 @@ func (executor *restoreStageExecutor) execute(_ context.Context, command host.Co
 			if _, err := os.Stat(filepath.Join(executor.root, "opt/notes/state/value")); !errors.Is(err, os.ErrNotExist) {
 				executor.t.Fatalf("target was replaced before %q: %v", text, err)
 			}
-			if command.Args[1] == "ikigenba-notes.service" {
+			if command.Args[1] == "ikigenba-notes.socket" && executor.active {
 				if info, err := os.Stat(filepath.Join(executor.root, "run/opsctl/restore/notes.active")); err != nil || info.Mode().Perm() != 0o600 {
 					executor.t.Fatalf("activation marker was not published before app stop: %v, %v", info, err)
 				}

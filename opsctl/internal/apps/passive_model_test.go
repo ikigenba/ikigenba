@@ -56,13 +56,14 @@ func TestServiceModelIsPassiveAndStatusOwnsVersionQuery(t *testing.T) {
 
 	rows, err := apps.Status(context.Background(), host.Env{Root: root, Execute: execute})
 	if err != nil || !reflect.DeepEqual(rows, []apps.StatusRow{{
-		Name: "ledger", Version: "executable-version", State: "active", JournalMode: "-",
+		Name: "ledger", Version: "executable-version", State: "active", Socket: "active", JournalMode: "-",
 	}}) {
 		t.Fatalf("Status = (%#v, %v), want executable version", rows, err)
 	}
 	wantCommands := []host.Command{
 		{Name: filepath.Join(root, "opt", "ledger", "bin", "ledger"), Args: []string{"--version"}},
 		{Name: "systemctl", Args: []string{"show", "--property=LoadState", "--property=ActiveState", "ikigenba-ledger.service"}},
+		{Name: "systemctl", Args: []string{"show", "--property=LoadState", "--property=ActiveState", "--property=UnitFileState", "ikigenba-ledger.socket"}},
 	}
 	if !reflect.DeepEqual(commands, wantCommands) {
 		t.Fatalf("Status commands = %#v, want %#v", commands, wantCommands)

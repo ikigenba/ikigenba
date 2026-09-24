@@ -36,7 +36,7 @@ func TestRegenerateRendersDiscoveredDatabases(t *testing.T) {
 			t.Fatalf("Set(%q): %v", key, err)
 		}
 	}
-	writeService(t, root, "zeta", "app = \"zeta\"\nport = 9000\n[database]\nengine = \"sqlite\"\npath = \"state/zeta.db\"\n")
+	writeService(t, root, "zeta", "app = \"zeta\"\n[database]\nengine = \"sqlite\"\npath = \"state/zeta.db\"\n")
 	writeService(t, root, "empty", "app = \"empty\"\n")
 	writeService(t, root, "alpha", "[database]\nengine = \"sqlite\"\npath = \"state/nested/alpha.db\"\n")
 	if err := os.MkdirAll(filepath.Join(root, "opt", "state-only", "state"), 0o750); err != nil {
@@ -87,13 +87,13 @@ func TestRegenerateEmptyDatabaseSequence(t *testing.T) {
 func TestRegenerateIsDeterministicAndNoOpWhenIdentical(t *testing.T) {
 	// R-JT0B-9654
 	root, store := regenerationFixture(t)
-	manifest := "app = \"notes\"\nport = 3000\n[database]\nengine = \"sqlite\"\npath = \"state/notes.db\"\n"
+	manifest := "app = \"notes\"\n[database]\nengine = \"sqlite\"\npath = \"state/notes.db\"\n"
 	writeService(t, root, "notes", manifest)
 	if changed, err := backup.Regenerate(context.Background(), host.Env{Root: root}, store); err != nil || !changed {
 		t.Fatalf("first Regenerate() = %v, %v", changed, err)
 	}
 	before := readLitestream(t, root)
-	writeService(t, root, "notes", strings.Replace(manifest, "port = 3000", "port = 4000\ndefault = true", 1))
+	writeService(t, root, "notes", strings.Replace(manifest, "app = \"notes\"\n", "app = \"notes\"\ndefault = true\n", 1))
 	changed, err := backup.Regenerate(context.Background(), host.Env{Root: root}, store)
 	if err != nil || changed {
 		t.Fatalf("second Regenerate() = %v, %v, want false, nil", changed, err)

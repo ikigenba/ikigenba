@@ -10,7 +10,7 @@ import (
 
 func TestBinaryHelp(t *testing.T) {
 	// R-N0T5-G71B
-	// R-EJY9-95KZ
+	// R-U2SQ-QM0P
 	t.Cleanup(func() { _ = os.Remove("opsctl.help.test") })
 	build := exec.Command("go", "build", "-o", "opsctl.help.test", ".")
 	if out, err := build.CombinedOutput(); err != nil {
@@ -45,7 +45,9 @@ Commands:
   backup    back up a service's files to S3
   cert      obtain and inspect the host's certificate
   config    read and write the host configuration store
+  disable   stop an installed app and keep it from starting
   dns       manage DNS records in the zones opsctl owns
+  enable    let a disabled app start again, and start it
   host      back up and restore the host's own configuration
   init      run the setup sequence behind one preflight
   install   install an app from a built file

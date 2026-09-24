@@ -16,10 +16,10 @@ import (
 )
 
 func TestInstallCompletesFileStageBeforeSecretsOrMutation(t *testing.T) {
-	// R-UAOX-761Q
+	// R-UPYU-093W
 	t.Run("success is reported after every file check", func(t *testing.T) {
 		root := t.TempDir()
-		archive := validInstallTar(t, "app = \"notes\"\nport = 4100\nsecrets = [\"TOKEN\"]\n")
+		archive := validInstallTar(t, "app = \"notes\"\nsecrets = [\"TOKEN\"]\n")
 		var reports []installReport
 		var commands []commandCall
 		stop := errors.New("stop after file-stage boundary")
@@ -30,7 +30,7 @@ func TestInstallCompletesFileStageBeforeSecretsOrMutation(t *testing.T) {
 			readSecrets: func(context.Context, string) (map[string]string, error) {
 				want := []installReport{
 					{"fetch", "bundle.tar.xz, 0.0 MiB", true},
-					{"file", "notes, port 4100", true},
+					{"file", "notes", true},
 				}
 				if !reflect.DeepEqual(reports, want) {
 					t.Fatalf("reports at secret read = %#v, want %#v", reports, want)
@@ -38,6 +38,7 @@ func TestInstallCompletesFileStageBeforeSecretsOrMutation(t *testing.T) {
 				if !reflect.DeepEqual(commands, []commandCall{
 					{"xz", []string{"--decompress", "--stdout"}},
 					{"systemctl", []string{"is-active", "ikigenba-notes.service"}},
+					{"systemctl", []string{"show", "--property=LoadState", "--property=UnitFileState", "ikigenba-notes.socket"}},
 				}) {
 					t.Fatalf("commands at secret read = %#v", commands)
 				}
@@ -53,6 +54,9 @@ func TestInstallCompletesFileStageBeforeSecretsOrMutation(t *testing.T) {
 			case "xz":
 				return host.Result{Stdout: archive}, nil
 			case "systemctl":
+				if len(command.Args) > 0 && command.Args[0] == "show" {
+					return host.Result{Stdout: []byte("LoadState=not-found\nUnitFileState=\n")}, nil
+				}
 				return host.Result{ExitCode: 3}, nil
 			default:
 				return host.Result{}, stop
@@ -86,21 +90,21 @@ func TestInstallCompletesFileStageBeforeSecretsOrMutation(t *testing.T) {
 			},
 			{
 				name:    "installed manifest discovery",
-				archive: func(t *testing.T) []byte { return validInstallTar(t, "app = \"notes\"\nport = 4100\n") },
+				archive: func(t *testing.T) []byte { return validInstallTar(t, "app = \"notes\"\n") },
 				setup: func(t *testing.T, root string) {
 					writeFixture(t, filepath.Join(root, "opt", "other", "etc", "manifest.toml"), []byte("app = [\n"), 0o600)
 				},
 			},
 			{
 				name:    "competing default validation",
-				archive: func(t *testing.T) []byte { return validInstallTar(t, "app = \"notes\"\nport = 4100\ndefault = true\n") },
+				archive: func(t *testing.T) []byte { return validInstallTar(t, "app = \"notes\"\ndefault = true\n") },
 				setup: func(t *testing.T, root string) {
-					writeFixture(t, filepath.Join(root, "opt", "other", "etc", "manifest.toml"), []byte("app = \"other\"\nport = 4200\ndefault = true\n"), 0o600)
+					writeFixture(t, filepath.Join(root, "opt", "other", "etc", "manifest.toml"), []byte("app = \"other\"\ndefault = true\n"), 0o600)
 				},
 			},
 			{
 				name:    "initial unit state observation",
-				archive: func(t *testing.T) []byte { return validInstallTar(t, "app = \"notes\"\nport = 4100\n") },
+				archive: func(t *testing.T) []byte { return validInstallTar(t, "app = \"notes\"\n") },
 				execute: func(command host.Command) (host.Result, error) {
 					if command.Name == "systemctl" {
 						return host.Result{}, observationFailure
@@ -132,6 +136,9 @@ func TestInstallCompletesFileStageBeforeSecretsOrMutation(t *testing.T) {
 					}
 					if test.execute != nil {
 						return test.execute(command)
+					}
+					if command.Name == "systemctl" && len(command.Args) > 0 && command.Args[0] == "show" {
+						return host.Result{Stdout: []byte("LoadState=not-found\nUnitFileState=\n")}, nil
 					}
 					return host.Result{ExitCode: 3}, nil
 				}}, cloud.Env{Open: func(context.Context, string) (cloud.Client, error) { return client, nil }},
@@ -176,10 +183,13 @@ func TestInstallCompletesFileStageBeforeSecretsOrMutation(t *testing.T) {
 				}
 				err := apps.Install(t.Context(), host.Env{Root: root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
 					if command.Name == "xz" {
-						return host.Result{Stdout: validInstallTar(t, "app = \"notes\"\nport = 4100\nsecrets = [\"TOKEN\"]\n")}, nil
+						return host.Result{Stdout: validInstallTar(t, "app = \"notes\"\nsecrets = [\"TOKEN\"]\n")}, nil
 					}
 					if actionFails {
 						return host.Result{}, actionFailure
+					}
+					if command.Name == "systemctl" && len(command.Args) > 0 && command.Args[0] == "show" {
+						return host.Result{Stdout: []byte("LoadState=not-found\nUnitFileState=\n")}, nil
 					}
 					return host.Result{ExitCode: 3}, nil
 				}}, cloud.Env{Open: func(context.Context, string) (cloud.Client, error) { return client, nil }},
@@ -205,6 +215,93 @@ func TestInstallCompletesFileStageBeforeSecretsOrMutation(t *testing.T) {
 					t.Fatalf("file reports = %d, secret reads = %d", fileReports, secretReads)
 				}
 			})
+		}
+	})
+}
+
+func TestInstallRunsStagesInOrderAndStopsAtConfigurationFailure(t *testing.T) {
+	// R-USEM-RSLA
+	for _, failAt := range []string{"", "nginx", "litestream"} {
+		name := failAt
+		if name == "" {
+			name = "success"
+		}
+		t.Run(name, func(t *testing.T) {
+			fixture := newCompletedInstallFixture(t, t.TempDir(), false)
+			fixture.archive = validInstallTar(t, "app = \"notes\"\nsecrets = [\"TOKEN\"]\n")
+			cause := errors.New("configuration failed")
+			fixture.configure = func(_ context.Context, manifest apps.Manifest) error {
+				if manifest.App != "notes" {
+					t.Fatalf("configured manifest = %#v", manifest)
+				}
+				for _, stage := range []string{"nginx", "litestream"} {
+					if stage == failAt {
+						fixture.reports = append(fixture.reports, installReport{stage, cause.Error(), false})
+						return cause
+					}
+					fixture.reports = append(fixture.reports, installReport{stage, "configured", true})
+				}
+				return nil
+			}
+			err := fixture.run()
+			wantSteps := []string{"fetch", "file", "secrets", "unpack", "unit", "nginx", "litestream", "service"}
+			if failAt != "" {
+				var failure *apps.InstallError
+				if !errors.As(err, &failure) || failure.Code != 1 || !errors.Is(failure.Cause, cause) {
+					t.Fatalf("failure = %#v; want callback cause", err)
+				}
+				if failAt == "nginx" {
+					wantSteps = wantSteps[:6]
+				} else {
+					wantSteps = wantSteps[:7]
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			gotSteps := make([]string, 0, len(fixture.reports))
+			for _, report := range fixture.reports {
+				gotSteps = append(gotSteps, report.step)
+			}
+			if !reflect.DeepEqual(gotSteps, wantSteps) {
+				t.Fatalf("stage order = %#v, want %#v; reports = %#v", gotSteps, wantSteps, fixture.reports)
+			}
+			if failAt != "" {
+				last := fixture.reports[len(fixture.reports)-1]
+				if last.step != failAt || last.success || last.detail != cause.Error() {
+					t.Fatalf("failed stage outcome = %#v", last)
+				}
+			}
+			if fixture.configureCalls != 1 {
+				t.Fatalf("Configure calls = %d", fixture.configureCalls)
+			}
+			for _, command := range fixture.commands {
+				if failAt != "" && command.name == "systemctl" && len(command.args) > 0 &&
+					(command.args[0] == "start" || command.args[0] == "restart") {
+					t.Fatalf("service started after %s failure: %#v", failAt, fixture.commands)
+				}
+			}
+		})
+	}
+	t.Run("domain failure", func(t *testing.T) {
+		fixture := newCompletedInstallFixture(t, t.TempDir(), false)
+		fixture.archive = validInstallTar(t, "app = \"notes\"\nsecrets = [\"TOKEN\"]\n")
+		cause := errors.New("parameter unavailable")
+		fixture.secretsFailure = cause
+		err := fixture.run()
+		var failure *apps.InstallError
+		if !errors.As(err, &failure) || !errors.Is(failure.Cause, cause) {
+			t.Fatalf("failure = %#v; want parameter cause", err)
+		}
+		want := []string{"fetch", "file", "secrets"}
+		var got []string
+		for _, report := range fixture.reports {
+			got = append(got, report.step)
+		}
+		if !reflect.DeepEqual(got, want) || fixture.reports[2].success || fixture.reports[2].detail != cause.Error() || fixture.configureCalls != 0 {
+			t.Fatalf("reports = %#v, Configure calls = %d", fixture.reports, fixture.configureCalls)
+		}
+		if _, statErr := os.Stat(filepath.Join(fixture.root, "opt", "notes")); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("host mutated after secret failure: %v", statErr)
 		}
 	})
 }

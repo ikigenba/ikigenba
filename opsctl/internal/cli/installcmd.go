@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
@@ -19,12 +18,14 @@ import (
 const installUsage = `Usage: opsctl install URI
 
 Install the app at URI, an s3:// object holding an <app>-<tag>.tar.xz built by
-devctl. The app name, its port, and the secrets it needs are read from
+devctl. The app name and the secrets it needs are read from
 etc/manifest.toml inside it; the secret values are read from the parameter
 /<host.name>/<app>.
 
 Nothing under /opt/<app>/state/ or /opt/<app>/cache/ is touched, so installing
-over a running app keeps its data. Safe to re-run.
+over a running app keeps its data. Safe to re-run. An app that is disabled
+stays disabled: its files and units are replaced, but neither unit is enabled
+or started until 'opsctl enable'.
 
 The nginx configuration and /etc/litestream.yml are regenerated from every app
 on the host, so an app that declares a [database] is replicated from the
@@ -32,8 +33,10 @@ moment it is installed. litestream.service is restarted only when its
 configuration changed.
 
 Configuration keys:
-  aws.region  the region this host's parameters and artifacts live in
-  host.name   the fully-qualified name this host answers at
+  aws.region          the region this host's parameters and artifacts live in
+  host.name           the fully-qualified name this host answers at
+  apps.drain_seconds  how long the app may drain when stopped (default 5)
+  apps.stop_seconds   how long systemd waits for it to stop (default 10)
 `
 
 func runInstall(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
@@ -115,16 +118,7 @@ func writeInstallReport(output io.Writer, step, detail string, success bool) err
 }
 
 func safeInstallReportDetail(detail string) string {
-	detail = strings.NewReplacer("\r", `\r`, "\n", `\n`).Replace(detail)
-	if strings.TrimSpace(detail) == "" {
-		return strconv.Quote(detail)
-	}
-	for _, character := range detail {
-		if character < ' ' || character == '\u007f' {
-			return strconv.Quote(detail)
-		}
-	}
-	return detail
+	return strings.NewReplacer("\r", `\r`, "\n", `\n`).Replace(detail)
 }
 
 func configureInstalledApp(
@@ -149,6 +143,13 @@ func configureInstalledApp(
 	}
 	if err := nginx.Apply(ctx, env, hostName, apexApp); err != nil {
 		return reportInstallConfigurationFailure(report, "nginx", err)
+	}
+	disabled, err := apps.Disabled(ctx, env, manifest.App)
+	if err != nil {
+		return reportInstallConfigurationFailure(report, "nginx", err)
+	}
+	if disabled {
+		nginxDetail += " disabled"
 	}
 	if err := report("nginx", nginxDetail, true); err != nil {
 		return err

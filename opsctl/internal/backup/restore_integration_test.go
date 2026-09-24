@@ -65,7 +65,7 @@ func TestRestoreAtControlsArchiveAndDatabaseTogether(t *testing.T) {
 			}
 			wantReport := []backup.RestoreStep{
 				{Name: "source", Detail: fmt.Sprintf("notes/%s.tar.zst, %.1f MiB", test.wantArchive, float64(len(selectedBody))/1048576)},
-				{Name: "stop", Detail: "litestream.service, no ikigenba-notes.service"},
+				{Name: "stop", Detail: "litestream.service, no ikigenba-notes.socket"},
 				{Name: "files", Detail: "/opt/notes/etc, /opt/notes/state, 2 files"},
 				{Name: "db", Detail: test.wantDB},
 				{Name: "litestream", Detail: "state/app.db"},
@@ -86,7 +86,7 @@ func TestRestoreAtControlsArchiveAndDatabaseTogether(t *testing.T) {
 }
 
 func TestRestoreValidArchiveIgnoresInstalledDatabaseAndOtherServices(t *testing.T) {
-	// R-FWGV-MCZT R-FXOS-04QI R-AV1F-PY7S R-1JU3-1QOH
+	// R-FWGV-MCZT R-FXOS-04QI R-XGQO-ZO65 R-1JU3-1QOH
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/etc/manifest.toml", "[database]\nengine = \"sqlite\"\npath = \"state/installed.db\"\n", 0o600)
@@ -112,16 +112,17 @@ func TestRestoreValidArchiveIgnoresInstalledDatabaseAndOtherServices(t *testing.
 	}
 	wantReport := []backup.RestoreStep{
 		{Name: "source", Detail: fmt.Sprintf("notes/2026-09-16T00:00:00Z.tar.zst, %.1f MiB", float64(len(body))/1048576)},
-		{Name: "stop", Detail: "ikigenba-notes.service already inactive"},
+		{Name: "stop", Detail: "ikigenba-notes.socket, ikigenba-notes.service already inactive"},
 		{Name: "files", Detail: "/opt/notes/etc, /opt/notes/state, 3 files"},
-		{Name: "start", Detail: "ikigenba-notes.service left inactive"},
+		{Name: "start", Detail: "ikigenba-notes.socket, ikigenba-notes.service left inactive"},
 	}
 	if !reflect.DeepEqual(report.Steps, wantReport) {
 		t.Fatalf("report = %+v, want %+v", report.Steps, wantReport)
 	}
 	wantEvents := []string{
 		"zstd --quiet --decompress --stdout",
-		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.service",
+		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket", "systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
+		"systemctl stop ikigenba-notes.socket", "systemctl stop ikigenba-notes.service",
 		"nginx",
 	}
 	if !reflect.DeepEqual(executor.events, wantEvents) {
@@ -151,7 +152,7 @@ func TestRestoreValidArchiveIgnoresInstalledDatabaseAndOtherServices(t *testing.
 }
 
 func TestRestoreDatabaseRetryUsesDurableActivationIntent(t *testing.T) {
-	// R-D4R8-7TVQ R-Y3XR-H2N7 R-G7FZ-2AO2 R-RX15-3IAF
+	// R-D4R8-7TVQ R-XFIS-LWFG R-G7FZ-2AO2 R-RX15-3IAF
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	body := restoreIntegrationDatabaseArchive(t, "published before database failure")
@@ -162,7 +163,7 @@ func TestRestoreDatabaseRetryUsesDurableActivationIntent(t *testing.T) {
 		return nil
 	})
 	var failure *backup.RestoreError
-	if err == nil || !errors.As(err, &failure) || failure.Stage != "litestream restore" || !reflect.DeepEqual(failure.Stopped, []string{"ikigenba-notes.service", "litestream.service"}) {
+	if err == nil || !errors.As(err, &failure) || failure.Stage != "litestream restore" || !reflect.DeepEqual(failure.Stopped, []string{"ikigenba-notes.socket", "ikigenba-notes.service", "litestream.service"}) {
 		t.Fatalf("first Restore() error = %#v", err)
 	}
 	if len(report.Steps) != 4 || report.Steps[3].Name != "db" || report.Steps[3].Detail != "" || report.Steps[3].Err == nil || containsEventFragment(executor.events, "systemctl start") || containsString(executor.events, "unexpected nginx") {
@@ -191,10 +192,10 @@ func TestRestoreDatabaseRetryUsesDurableActivationIntent(t *testing.T) {
 			t.Fatalf("retry report = %+v", report.Steps)
 		}
 	}
-	if report.Steps[1].Detail != "litestream.service, ikigenba-notes.service already inactive" || report.Steps[4].Detail != "unchanged" || report.Steps[5].Detail != "litestream.service, ikigenba-notes.service" {
+	if report.Steps[1].Detail != "litestream.service; ikigenba-notes.socket, ikigenba-notes.service already inactive" || report.Steps[4].Detail != "unchanged" || report.Steps[5].Detail != "litestream.service, ikigenba-notes.socket, ikigenba-notes.service" {
 		t.Fatalf("retry report details = %+v", report.Steps)
 	}
-	wantTail := []string{"nginx", "systemctl start litestream.service", "systemctl start ikigenba-notes.service"}
+	wantTail := []string{"nginx", "systemctl start litestream.service", "systemctl start ikigenba-notes.socket", "systemctl start ikigenba-notes.service"}
 	if len(executor.events) < len(wantTail) || !reflect.DeepEqual(executor.events[len(executor.events)-len(wantTail):], wantTail) {
 		t.Fatalf("retry events = %v, want tail %v", executor.events, wantTail)
 	}
@@ -207,7 +208,7 @@ func TestRestoreDatabaseRetryUsesDurableActivationIntent(t *testing.T) {
 }
 
 func TestRestoreNoDatabaseRetryUsesMarkerWithoutLitestream(t *testing.T) {
-	// R-D4R8-7TVQ R-AV1F-PY7S
+	// R-D4R8-7TVQ R-XGQO-ZO65
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("restored")})
@@ -216,7 +217,7 @@ func TestRestoreNoDatabaseRetryUsesMarkerWithoutLitestream(t *testing.T) {
 	cause := errors.New("nginx failed")
 	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: client.open}, store, "notes", nil, func(context.Context) error { return cause })
 	var failure *backup.RestoreError
-	if !errors.Is(err, cause) || !errors.As(err, &failure) || failure.Stage != "nginx regeneration" || !reflect.DeepEqual(failure.Stopped, []string{"ikigenba-notes.service"}) || len(report.Steps) != 3 {
+	if !errors.Is(err, cause) || !errors.As(err, &failure) || failure.Stage != "nginx regeneration" || !reflect.DeepEqual(failure.Stopped, []string{"ikigenba-notes.socket", "ikigenba-notes.service"}) || len(report.Steps) != 3 {
 		t.Fatalf("first Restore() = %+v, %#v", report.Steps, err)
 	}
 	assertRestoreMarker(t, root)
@@ -230,15 +231,16 @@ func TestRestoreNoDatabaseRetryUsesMarkerWithoutLitestream(t *testing.T) {
 	}
 	want := []backup.RestoreStep{
 		{Name: "source", Detail: fmt.Sprintf("notes/2026-09-16T00:00:00Z.tar.zst, %.1f MiB", float64(len(body))/1048576)},
-		{Name: "stop", Detail: "ikigenba-notes.service already inactive"},
+		{Name: "stop", Detail: "ikigenba-notes.socket, ikigenba-notes.service already inactive"},
 		{Name: "files", Detail: "/opt/notes/etc, /opt/notes/state, 1 files"},
-		{Name: "start", Detail: "ikigenba-notes.service"},
+		{Name: "start", Detail: "ikigenba-notes.socket, ikigenba-notes.service"},
 	}
 	if !reflect.DeepEqual(report.Steps, want) || !reflect.DeepEqual(executor.events, []string{
 		"zstd --quiet --decompress --stdout",
-		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.service",
+		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket", "systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
+		"systemctl stop ikigenba-notes.socket", "systemctl stop ikigenba-notes.service",
 		"nginx",
-		"systemctl start ikigenba-notes.service",
+		"systemctl start ikigenba-notes.socket", "systemctl start ikigenba-notes.service",
 	}) {
 		t.Fatalf("retry = %+v, events %v", report.Steps, executor.events)
 	}
@@ -248,24 +250,30 @@ func TestRestoreNoDatabaseRetryUsesMarkerWithoutLitestream(t *testing.T) {
 }
 
 func TestRestoreWithoutDatabaseHonorsEveryUnitState(t *testing.T) {
-	// R-AV1F-PY7S
+	// R-XEAW-84OR R-XGQO-ZO65
 	for _, test := range []struct {
 		name         string
 		service      string
 		installed    bool
 		active       bool
+		loadState    string
 		wantStop     string
 		wantStart    string
 		wantCommands []string
 	}{
 		{
 			name: "active app", service: "notes", installed: true, active: true,
-			wantStop: "ikigenba-notes.service", wantStart: "ikigenba-notes.service",
-			wantCommands: []string{"zstd --quiet --decompress --stdout", "systemctl show --property=LoadState --property=ActiveState ikigenba-notes.service", "systemctl stop ikigenba-notes.service", "nginx", "systemctl start ikigenba-notes.service"},
+			wantStop: "ikigenba-notes.socket, ikigenba-notes.service", wantStart: "ikigenba-notes.socket, ikigenba-notes.service",
+			wantCommands: []string{"zstd --quiet --decompress --stdout", "systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket", "systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket", "systemctl stop ikigenba-notes.socket", "systemctl stop ikigenba-notes.service", "nginx", "systemctl start ikigenba-notes.socket", "systemctl start ikigenba-notes.service"},
 		},
 		{
-			name: "absent app", service: "notes", wantStop: "no ikigenba-notes.service", wantStart: "no ikigenba-notes.service",
-			wantCommands: []string{"zstd --quiet --decompress --stdout", "systemctl show --property=LoadState --property=ActiveState ikigenba-notes.service", "nginx"},
+			name: "absent app", service: "notes", wantStop: "no ikigenba-notes.socket", wantStart: "no ikigenba-notes.socket",
+			wantCommands: []string{"zstd --quiet --decompress --stdout", "systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket", "systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket", "nginx"},
+		},
+		{
+			name: "masked active socket", service: "notes", loadState: "masked", active: true,
+			wantStop: "no ikigenba-notes.socket", wantStart: "no ikigenba-notes.socket",
+			wantCommands: []string{"zstd --quiet --decompress --stdout", "systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket", "systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket", "nginx"},
 		},
 		{
 			name: "data only", service: "backup-host", wantStop: "no app unit", wantStart: "no app unit",
@@ -276,7 +284,7 @@ func TestRestoreWithoutDatabaseHonorsEveryUnitState(t *testing.T) {
 			root := t.TempDir()
 			store := configuredFileStore(t, root)
 			body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("restored")})
-			executor := &restoreIntegrationExecutor{t: t, root: root, installed: test.installed, active: test.active}
+			executor := &restoreIntegrationExecutor{t: t, root: root, installed: test.installed, active: test.active, socketLoadState: test.loadState}
 			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientForService(t, body, test.service).open}, store, test.service, nil, func(context.Context) error {
 				executor.events = append(executor.events, "nginx")
 				return nil
@@ -298,15 +306,15 @@ func TestRestoreWithoutDatabaseHonorsEveryUnitState(t *testing.T) {
 }
 
 func TestRestoreStartFailuresRetainOnlyUnitsStillStopped(t *testing.T) {
-	// R-Y3XR-H2N7 R-G7FZ-2AO2 R-RX15-3IAF
+	// R-XFIS-LWFG R-G7FZ-2AO2 R-RX15-3IAF
 	for _, test := range []struct {
 		name        string
 		failCommand string
 		wantStopped []string
 		forbid      string
 	}{
-		{name: "litestream start", failCommand: "systemctl start litestream.service", wantStopped: []string{"ikigenba-notes.service", "litestream.service"}, forbid: "systemctl start ikigenba-notes.service"},
-		{name: "app start after litestream", failCommand: "systemctl start ikigenba-notes.service", wantStopped: []string{"ikigenba-notes.service"}},
+		{name: "litestream start", failCommand: "systemctl start litestream.service", wantStopped: []string{"ikigenba-notes.socket", "ikigenba-notes.service", "litestream.service"}, forbid: "systemctl start ikigenba-notes.socket"},
+		{name: "app start after litestream", failCommand: "systemctl start ikigenba-notes.socket", wantStopped: []string{"ikigenba-notes.socket", "ikigenba-notes.service"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -392,7 +400,7 @@ func TestRestoreCloudAndCancellationFailuresStopTheirStages(t *testing.T) {
 			return nil
 		})
 		var failure *backup.RestoreError
-		if !errors.Is(err, context.Canceled) || !errors.As(err, &failure) || failure.Stage != "litestream restore" || !reflect.DeepEqual(failure.Stopped, []string{"ikigenba-notes.service", "litestream.service"}) {
+		if !errors.Is(err, context.Canceled) || !errors.As(err, &failure) || failure.Stage != "litestream restore" || !reflect.DeepEqual(failure.Stopped, []string{"ikigenba-notes.socket", "ikigenba-notes.service", "litestream.service"}) {
 			t.Fatalf("Restore() error = %#v", err)
 		}
 		if len(report.Steps) != 4 || report.Steps[3].Name != "db" || report.Steps[3].Detail != "" || report.Steps[3].Err == nil || containsEventFragment(executor.events, "systemctl start") || containsString(executor.events, "unexpected nginx") {
@@ -426,7 +434,7 @@ func TestRestoreActivationMarkerFailuresPreserveIntentWithoutReportRows(t *testi
 		}
 		if !reflect.DeepEqual(executor.events, []string{
 			"zstd --quiet --decompress --stdout",
-			"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.service",
+			"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket", "systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		}) {
 			t.Fatalf("events = %v", executor.events)
 		}
@@ -458,7 +466,7 @@ func TestRestoreActivationMarkerFailuresPreserveIntentWithoutReportRows(t *testi
 		}
 		if !reflect.DeepEqual(executor.events, []string{
 			"zstd --quiet --decompress --stdout",
-			"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.service",
+			"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket", "systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		}) {
 			t.Fatalf("events = %v", executor.events)
 		}
@@ -495,11 +503,11 @@ func TestRestoreActivationMarkerFailuresPreserveIntentWithoutReportRows(t *testi
 			return nil
 		})
 		assertActivationMarkerFailure(t, report, err, nil)
-		if len(report.Steps) != 6 || report.Steps[5] != (backup.RestoreStep{Name: "start", Detail: "litestream.service, ikigenba-notes.service"}) {
+		if len(report.Steps) != 6 || report.Steps[5] != (backup.RestoreStep{Name: "start", Detail: "litestream.service, ikigenba-notes.socket, ikigenba-notes.service"}) {
 			t.Fatalf("report = %+v", report.Steps)
 		}
-		if !executor.active || !reflect.DeepEqual(executor.events[len(executor.events)-3:], []string{
-			"nginx", "systemctl start litestream.service", "systemctl start ikigenba-notes.service",
+		if !executor.active || !reflect.DeepEqual(executor.events[len(executor.events)-4:], []string{
+			"nginx", "systemctl start litestream.service", "systemctl start ikigenba-notes.socket", "systemctl start ikigenba-notes.service",
 		}) {
 			t.Fatalf("active = %v, events = %v", executor.active, executor.events)
 		}
@@ -510,7 +518,7 @@ func TestRestoreActivationMarkerFailuresPreserveIntentWithoutReportRows(t *testi
 }
 
 func TestRestoreDatabaseLeavesInitiallyInactiveAppInactive(t *testing.T) {
-	// R-Y3XR-H2N7
+	// R-XFIS-LWFG
 	root := t.TempDir()
 	body := restoreIntegrationDatabaseArchive(t, "restored while inactive")
 	executor := &restoreIntegrationExecutor{t: t, root: root, installed: true, ltx: `[{"timestamp":"2026-09-16T11:00:00Z"}]`}
@@ -521,13 +529,14 @@ func TestRestoreDatabaseLeavesInitiallyInactiveAppInactive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Steps) != 6 || report.Steps[5] != (backup.RestoreStep{Name: "start", Detail: "litestream.service, ikigenba-notes.service left inactive"}) {
+	if len(report.Steps) != 6 || report.Steps[5] != (backup.RestoreStep{Name: "start", Detail: "litestream.service; ikigenba-notes.socket, ikigenba-notes.service left inactive"}) {
 		t.Fatalf("report = %+v", report.Steps)
 	}
 	wantEvents := []string{
 		"zstd --quiet --decompress --stdout",
-		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.service",
-		"systemctl stop litestream.service",
+		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket", "systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
+		"systemctl stop ikigenba-notes.socket", "systemctl stop ikigenba-notes.service",
+		"systemctl show --property=LoadState --property=ActiveState litestream.service", "systemctl stop litestream.service",
 		"litestream ltx -level all -json s3://bucket/host/notes/",
 		"litestream restore -o " + filepath.Join(root, "opt/notes/state/app.db") + " s3://bucket/host/notes/",
 		"nginx",
@@ -538,6 +547,78 @@ func TestRestoreDatabaseLeavesInitiallyInactiveAppInactive(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(root, "run/opsctl/restore/notes.active")); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("inactive restore created marker: %v", statErr)
+	}
+}
+
+func TestRestoreDisabledAppNeverRestartsAndClearsMarker(t *testing.T) {
+	// R-XEAW-84OR R-XFIS-LWFG R-XGQO-ZO65 R-XKEE-4ZE8
+	for _, test := range []struct {
+		name, manifest, wantStop, wantStart string
+		wantSteps                           int
+	}{
+		{
+			name:      "without database",
+			wantStop:  "ikigenba-notes.socket, ikigenba-notes.service",
+			wantStart: "ikigenba-notes.socket, ikigenba-notes.service left disabled",
+			wantSteps: 4,
+		},
+		{
+			name:      "with database",
+			manifest:  "[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n",
+			wantStop:  "ikigenba-notes.socket, ikigenba-notes.service, litestream.service",
+			wantStart: "litestream.service; ikigenba-notes.socket, ikigenba-notes.service left disabled",
+			wantSteps: 6,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			entries := []restoreMember{{name: "state/value", data: []byte("restored")}}
+			if test.manifest != "" {
+				entries = append(entries, restoreMember{name: "etc/manifest.toml", data: []byte(test.manifest)})
+			}
+			body := hostRestoreArchive(t, entries...)
+			writeFile(t, root, "run/opsctl/restore/notes.active", "", 0o600)
+			executor := &restoreIntegrationExecutor{t: t, root: root, installed: true, active: true, disabled: true, ltx: `[{"timestamp":"2026-09-16T11:00:00Z"}]`}
+			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, configuredFileStore(t, root), "notes", nil, func(context.Context) error { return nil })
+			if err != nil || len(report.Steps) != test.wantSteps || report.Steps[1].Detail != test.wantStop || report.Steps[len(report.Steps)-1].Detail != test.wantStart {
+				t.Fatalf("Restore() = %+v, %v", report, err)
+			}
+			if containsString(executor.events, "systemctl start ikigenba-notes.socket") || containsString(executor.events, "systemctl start ikigenba-notes.service") || containsEventFragment(executor.events, "systemctl enable") || containsEventFragment(executor.events, "systemctl disable") {
+				t.Fatalf("disabled app unit changed: %v", executor.events)
+			}
+			if !containsString(executor.events, "systemctl stop ikigenba-notes.socket") || !containsString(executor.events, "systemctl stop ikigenba-notes.service") {
+				t.Fatalf("disabled app units were not stopped: %v", executor.events)
+			}
+			if _, statErr := os.Stat(filepath.Join(root, "run/opsctl/restore/notes.active")); !errors.Is(statErr, os.ErrNotExist) {
+				t.Fatalf("disabled app retained activation marker: %v", statErr)
+			}
+		})
+	}
+}
+
+func TestRestoreStoppedListsOnlyActiveUnitsWithIntent(t *testing.T) {
+	// R-Y093-4019 R-XKEE-4ZE8
+	for _, test := range []struct {
+		name                                 string
+		active, disabled, litestreamInactive bool
+		litestreamLoadState                  string
+		wantStopped                          []string
+	}{
+		{name: "active app inactive litestream", active: true, litestreamInactive: true, wantStopped: []string{"ikigenba-notes.socket", "ikigenba-notes.service"}},
+		{name: "disabled app active litestream", active: true, disabled: true, wantStopped: []string{"litestream.service"}},
+		{name: "inactive app active litestream", wantStopped: []string{"litestream.service"}},
+		{name: "inactive app masked active litestream", litestreamLoadState: "masked", wantStopped: []string{"litestream.service"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			body := restoreIntegrationDatabaseArchive(t, "restored")
+			executor := &restoreIntegrationExecutor{t: t, root: root, installed: true, active: test.active, disabled: test.disabled, litestreamInactive: test.litestreamInactive, litestreamLoadState: test.litestreamLoadState, ltx: `[]`}
+			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, configuredFileStore(t, root), "notes", nil, func(context.Context) error { return nil })
+			var failure *backup.RestoreError
+			if !errors.As(err, &failure) || failure.Stage != "litestream restore" || !reflect.DeepEqual(failure.Stopped, test.wantStopped) || len(report.Steps) != 4 || report.Steps[3].Name != "db" {
+				t.Fatalf("Restore() = %+v, %#v; stopped %v", report, err, test.wantStopped)
+			}
+		})
 	}
 }
 
@@ -561,7 +642,7 @@ func TestRestoreDatabaseDoesNotTouchOtherServiceOrCloud(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Steps) != 6 || report.Steps[1].Detail != "litestream.service, no ikigenba-notes.service" || report.Steps[5].Detail != "litestream.service" {
+	if len(report.Steps) != 6 || report.Steps[1].Detail != "litestream.service, no ikigenba-notes.socket" || report.Steps[5].Detail != "litestream.service" {
 		t.Fatalf("report = %+v", report.Steps)
 	}
 	if got := string(readHostRestoreFile(t, root, "opt/other/etc/manifest.toml")); got != otherManifest {
@@ -575,8 +656,8 @@ func TestRestoreDatabaseDoesNotTouchOtherServiceOrCloud(t *testing.T) {
 	}
 	wantEvents := []string{
 		"zstd --quiet --decompress --stdout",
-		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.service",
-		"systemctl stop litestream.service",
+		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket", "systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
+		"systemctl show --property=LoadState --property=ActiveState litestream.service", "systemctl stop litestream.service",
 		"litestream ltx -level all -json s3://bucket/host/notes/",
 		"litestream restore -o " + filepath.Join(root, "opt/notes/state/app.db") + " s3://bucket/host/notes/",
 		"nginx",
@@ -604,13 +685,17 @@ func assertActivationMarkerFailure(t *testing.T, report backup.RestoreReport, er
 }
 
 type restoreIntegrationExecutor struct {
-	t           *testing.T
-	root        string
-	installed   bool
-	active      bool
-	ltx         string
-	failCommand string
-	events      []string
+	t                   *testing.T
+	root                string
+	installed           bool
+	active              bool
+	socketLoadState     string
+	disabled            bool
+	litestreamInactive  bool
+	litestreamLoadState string
+	ltx                 string
+	failCommand         string
+	events              []string
 }
 
 func (executor *restoreIntegrationExecutor) execute(_ context.Context, command host.Command) (host.Result, error) {
@@ -628,23 +713,42 @@ func (executor *restoreIntegrationExecutor) execute(_ context.Context, command h
 		return host.Result{Stdout: decodeRawZstandardFrame(executor.t, compressed)}, nil
 	case "systemctl":
 		if len(command.Args) == 4 && command.Args[0] == "show" {
+			if command.Args[2] == "--property=UnitFileState" {
+				load, state := "not-found", "disabled"
+				if executor.installed {
+					load = "loaded"
+				}
+				if executor.socketLoadState != "" {
+					load = executor.socketLoadState
+				}
+				if !executor.disabled {
+					state = "enabled"
+				}
+				return host.Result{Stdout: []byte("LoadState=" + load + "\nUnitFileState=" + state + "\n")}, nil
+			}
 			load, active := "not-found", "inactive"
-			if executor.installed {
+			if executor.installed || command.Args[3] == "litestream.service" {
 				load = "loaded"
 			}
-			if executor.active {
+			if executor.socketLoadState != "" && command.Args[3] != "litestream.service" {
+				load = executor.socketLoadState
+			}
+			if executor.litestreamLoadState != "" && command.Args[3] == "litestream.service" {
+				load = executor.litestreamLoadState
+			}
+			if executor.active && command.Args[3] != "litestream.service" || command.Args[3] == "litestream.service" && !executor.litestreamInactive {
 				active = "active"
 			}
 			return host.Result{Stdout: []byte("LoadState=" + load + "\nActiveState=" + active + "\n")}, nil
 		}
 		if len(command.Args) == 2 && command.Args[0] == "stop" {
-			if command.Args[1] == "ikigenba-notes.service" {
+			if command.Args[1] == "ikigenba-notes.socket" {
 				executor.active = false
 			}
 			return host.Result{}, nil
 		}
 		if len(command.Args) == 2 && command.Args[0] == "start" {
-			if command.Args[1] == "ikigenba-notes.service" {
+			if command.Args[1] == "ikigenba-notes.socket" {
 				executor.active = true
 			}
 			return host.Result{}, nil

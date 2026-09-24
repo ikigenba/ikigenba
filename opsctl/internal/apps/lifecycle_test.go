@@ -16,7 +16,7 @@ import (
 
 func TestLifecycleAPITypes(t *testing.T) {
 	// R-ES81-UK2R
-	// R-LR3B-J481
+	// R-V4LM-LI08 R-V3DQ-7Q9J R-V5TI-Z9QX
 	// R-LTJ4-ANPF
 	typeFieldsExactly(t, reflect.TypeFor[apps.UninstallHooks](), []fieldShape{
 		{"Report", reflect.TypeFor[func(string, string, bool) error]()},
@@ -26,7 +26,17 @@ func TestLifecycleAPITypes(t *testing.T) {
 		{"Name", reflect.TypeFor[string]()},
 		{"Version", reflect.TypeFor[string]()},
 		{"State", reflect.TypeFor[string]()},
+		{"Socket", reflect.TypeFor[string]()},
 		{"JournalMode", reflect.TypeFor[string]()},
+	})
+	typeFieldsExactly(t, reflect.TypeFor[apps.ServiceReport](), []fieldShape{
+		{"Name", reflect.TypeFor[string]()},
+		{"Version", reflect.TypeFor[string]()},
+		{"State", reflect.TypeFor[string]()},
+	})
+	typeFieldsExactly(t, reflect.TypeFor[apps.LifecycleHooks](), []fieldShape{
+		{"Report", reflect.TypeFor[func(string, string, bool) error]()},
+		{"Configure", reflect.TypeFor[func(context.Context, apps.Manifest) error]()},
 	})
 	typeFieldsExactly(t, reflect.TypeFor[apps.LifecycleError](), []fieldShape{
 		{"Code", reflect.TypeFor[int]()},
@@ -76,7 +86,7 @@ func TestStatusEmptyAndDiscoveryFailure(t *testing.T) {
 
 func TestStatusReportsIndependentCurrentFactsInNameOrder(t *testing.T) {
 	// R-MFHB-6J1X
-	// R-IJP8-BAMH
+	// R-VPBX-3LM1
 	root := t.TempDir()
 	writeStatusService(t, root, "zeta", "app = \"zeta\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 1)
 	writeStatusService(t, root, "alpha", "app = \"alpha\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 2)
@@ -116,10 +126,10 @@ func TestStatusReportsIndependentCurrentFactsInNameOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []apps.StatusRow{
-		{Name: "alpha", Version: "v1.2.3", State: "active", JournalMode: "wal"},
-		{Name: "bad_name", Version: "odd-version", State: "-", JournalMode: "delete"},
-		{Name: "broken", Version: "-", State: "-", JournalMode: "-"},
-		{Name: "zeta", Version: "v9\nkept", State: "failed", JournalMode: "delete"},
+		{Name: "alpha", Version: "v1.2.3", State: "active", Socket: "-", JournalMode: "wal"},
+		{Name: "bad_name", Version: "odd-version", State: "-", Socket: "-", JournalMode: "delete"},
+		{Name: "broken", Version: "-", State: "-", Socket: "-", JournalMode: "-"},
+		{Name: "zeta", Version: "v9\nkept", State: "failed", Socket: "-", JournalMode: "delete"},
 	}
 	if !reflect.DeepEqual(rows, want) {
 		t.Fatalf("Status rows = %#v, want %#v", rows, want)
@@ -152,7 +162,7 @@ func TestStatusIsReadOnlyAndKeepsManifestFailuresIndependent(t *testing.T) {
 		}
 		return host.Result{Stdout: []byte("v4\n")}, nil
 	}})
-	if err != nil || !reflect.DeepEqual(rows, []apps.StatusRow{{Name: "notes", Version: "v4", State: "inactive", JournalMode: "-"}}) {
+	if err != nil || !reflect.DeepEqual(rows, []apps.StatusRow{{Name: "notes", Version: "v4", State: "inactive", Socket: "inactive", JournalMode: "-"}}) {
 		t.Fatalf("Status = (%#v, %v)", rows, err)
 	}
 	after, err := rootFS.ReadFile("opt/notes/etc/manifest.toml")

@@ -22,7 +22,7 @@ import (
 )
 
 func TestLifecyclePackageOwnership(t *testing.T) {
-	// R-LM7Q-0199
+	// R-V0XX-G6S5
 	appsDirectory := filepath.Join("..", "apps")
 	err := filepath.WalkDir(appsDirectory, func(name string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -49,7 +49,7 @@ func TestLifecyclePackageOwnership(t *testing.T) {
 }
 
 func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
-	// R-LM7Q-0199 R-M6Y0-I4V2 R-JE5P-1F05 R-X6R5-769H
+	// R-V0XX-G6S5 R-M6Y0-I4V2 R-VLO7-YADY R-X6R5-769H
 	root := uninstallCommandRoot(t, true)
 	var commands []host.Command
 	otherBefore := snapshotUninstallPaths(t, root, "opt/tasks", "etc/systemd/system/ikigenba-tasks.service")
@@ -76,8 +76,8 @@ func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
 	}
 
 	stdout, stderr, code := invoke([]string{"uninstall", "notes"}, cli.Deps{Root: root, EUID: 0, Execute: execute})
-	wantOutput := "stop: ok (ikigenba-notes.service stopped, disabled)\n" +
-		"unit: ok (removed ikigenba-notes.service)\n" +
+	wantOutput := "stop: ok (ikigenba-notes.socket, ikigenba-notes.service stopped, disabled)\n" +
+		"unit: ok (removed ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"files: ok (removed /opt/notes/bin, etc, share, cache; kept state)\n" +
 		"nginx: ok (notes.example.test, example.test removed)\n" +
 		"litestream: ok (state/notes.db removed)\n"
@@ -86,10 +86,13 @@ func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
 	}
 
 	wantCommands := []host.Command{
+		{Name: "systemctl", Args: []string{"is-active", "ikigenba-notes.socket"}},
 		{Name: "systemctl", Args: []string{"is-active", "ikigenba-notes.service"}},
+		{Name: "systemctl", Args: []string{"stop", "ikigenba-notes.socket"}},
 		{Name: "systemctl", Args: []string{"stop", "ikigenba-notes.service"}},
-		{Name: "systemctl", Args: []string{"disable", "ikigenba-notes.service"}},
+		{Name: "systemctl", Args: []string{"disable", "ikigenba-notes.socket", "ikigenba-notes.service"}},
 		{Name: "systemctl", Args: []string{"daemon-reload"}},
+		{Name: "systemctl", Args: []string{"show", "--property=LoadState", "--property=UnitFileState", "ikigenba-tasks.socket"}},
 		{Name: "nginx", Args: []string{"-t"}},
 		{Name: "systemctl", Args: []string{"reload-or-restart", "nginx"}},
 		{Name: "systemctl", Args: []string{"restart", "litestream.service"}},
@@ -164,7 +167,7 @@ func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
 			notes = row
 		}
 	}
-	if notes != (apps.StatusRow{Name: "notes", Version: "-", State: "-", JournalMode: "-"}) {
+	if notes != (apps.StatusRow{Name: "notes", Version: "-", State: "-", Socket: "-", JournalMode: "-"}) {
 		t.Fatalf("retained state service row = %#v", notes)
 	}
 }
@@ -180,7 +183,7 @@ func TestUninstallReportsAllLitestreamConfigurationOutcomes(t *testing.T) {
 		{
 			name: "changed configuration without removed database",
 			prepare: func(t *testing.T, root string) {
-				writeUninstallFile(t, root, "opt/notes/etc/manifest.toml", "app = \"notes\"\nport = 8080\ndefault = true\n")
+				writeUninstallFile(t, root, "opt/notes/etc/manifest.toml", "app = \"notes\"\ndefault = true\n")
 			},
 			wantDetail:  "updated",
 			wantRestart: 1,
@@ -226,7 +229,7 @@ func TestUninstallReportsAllLitestreamConfigurationOutcomes(t *testing.T) {
 }
 
 func TestUninstallValidationPrecedesOwnedStopStage(t *testing.T) {
-	// R-LZMM-7IEW R-EX3N-DN1J R-X4BC-FMS3
+	// R-VSZM-8WU4 R-VSZM-8WU4 R-XRPS-FLUE
 	for _, test := range []struct {
 		name       string
 		app        string
@@ -274,7 +277,7 @@ func TestUninstallValidationPrecedesOwnedStopStage(t *testing.T) {
 		}
 		wantStdout := ""
 		if args[1] == "notes" {
-			wantStdout = "service: failed: no service 'notes'\n"
+			wantStdout = ""
 		}
 		if code != wantCode || stdout != wantStdout || stderr == "" || executed {
 			t.Fatalf("restart preflight %q = exit %d stdout %q stderr %q executed %t", args[1], code, stdout, stderr, executed)
@@ -286,6 +289,8 @@ func TestUninstallValidationPrecedesOwnedStopStage(t *testing.T) {
 	stdout, stderr, code := invoke([]string{"restart", "notes"}, cli.Deps{Root: root, EUID: 0, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
 		restartCommands = append(restartCommands, command)
 		switch {
+		case command.Name == "systemctl" && len(command.Args) > 0 && command.Args[0] == "show":
+			return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=enabled\n")}, nil
 		case reflect.DeepEqual(command, host.Command{Name: "systemctl", Args: []string{"restart", "ikigenba-notes.service"}}):
 			return host.Result{}, nil
 		case reflect.DeepEqual(command, host.Command{Name: "systemctl", Args: []string{"is-active", "ikigenba-notes.service"}}):
@@ -294,13 +299,13 @@ func TestUninstallValidationPrecedesOwnedStopStage(t *testing.T) {
 			return host.Result{Stdout: []byte("v2.3.4\n")}, nil
 		}
 	}})
-	if code != 0 || stdout != "service: ok (notes v2.3.4 active)\n" || stderr != "" || len(restartCommands) != 3 {
+	if code != 0 || stdout != "service: ok (notes v2.3.4 active)\n" || stderr != "" || len(restartCommands) != 4 {
 		t.Fatalf("restart workflow = exit %d stdout %q stderr %q commands %#v", code, stdout, stderr, restartCommands)
 	}
 }
 
 func TestUninstallRejectsHostNameThatNormalizesEmpty(t *testing.T) {
-	// R-X4BC-FMS3
+	// R-XRPS-FLUE
 	root := uninstallCommandRoot(t, true)
 	if err := (config.Store{Root: root}).Set("host.name", "."); err != nil {
 		t.Fatal(err)
@@ -316,7 +321,7 @@ func TestUninstallRejectsHostNameThatNormalizesEmpty(t *testing.T) {
 }
 
 func TestUninstallRejectsApexReadFailureBeforeEffects(t *testing.T) {
-	// R-X4BC-FMS3
+	// R-XRPS-FLUE
 	root := uninstallCommandRoot(t, true)
 	configFile := filepath.Join(root, "etc/ikigenba/config.json")
 	if err := os.Remove(configFile); err != nil {
@@ -402,7 +407,7 @@ func waitForUninstallConfigReaderClose(name string) error {
 }
 
 func TestUninstallNormalizesHostAndPreservesApexConfiguration(t *testing.T) {
-	// R-X4BC-FMS3 R-X6R5-769H R-JE5P-1F05
+	// R-XRPS-FLUE R-X6R5-769H R-VLO7-YADY
 	root := uninstallCommandRoot(t, true)
 	store := config.Store{Root: root}
 	if err := store.Set("host.name", "SBX.Example.Test."); err != nil {
@@ -465,7 +470,7 @@ func TestUninstallRejectsConfiguredApexWithoutParentBeforeEffects(t *testing.T) 
 }
 
 func TestLifecycleFailureReportsStageOnceAndRetainsCause(t *testing.T) {
-	// R-ETFY-8BTG R-EVVQ-ZVAU
+	// R-ETFY-8BTG R-VRRP-V53F
 	root := uninstallCommandRoot(t, true)
 	var commands []host.Command
 	execute := func(_ context.Context, command host.Command) (host.Result, error) {
@@ -479,8 +484,8 @@ func TestLifecycleFailureReportsStageOnceAndRetainsCause(t *testing.T) {
 		return host.Result{}, nil
 	}
 	stdout, stderr, code := invoke([]string{"uninstall", "notes"}, cli.Deps{Root: root, EUID: 0, Execute: execute})
-	wantOutput := "stop: ok (ikigenba-notes.service stopped, disabled)\n" +
-		"unit: ok (removed ikigenba-notes.service)\n" +
+	wantOutput := "stop: ok (ikigenba-notes.socket, ikigenba-notes.service stopped, disabled)\n" +
+		"unit: ok (removed ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"files: ok (removed /opt/notes/bin, etc, share, cache; kept state)\n" +
 		"nginx: failed: nginx -t: exit status 7\n"
 	if code != 1 || stdout != wantOutput || stderr != "opsctl: uninstall failed\n\n> bad line one\n> bad line two\n" {
@@ -494,6 +499,9 @@ func TestLifecycleFailureReportsStageOnceAndRetainsCause(t *testing.T) {
 
 	restartRoot := cliRestartRoot(t)
 	restartOut, restartErr, restartCode := invoke([]string{"restart", "notes"}, cli.Deps{Root: restartRoot, EUID: 0, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+		if command.Name == "systemctl" && len(command.Args) > 0 && command.Args[0] == "show" {
+			return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=enabled\n")}, nil
+		}
 		if command.Name == "journalctl" {
 			return host.Result{Stdout: []byte("startup detail\n")}, nil
 		}
@@ -506,7 +514,7 @@ func TestLifecycleFailureReportsStageOnceAndRetainsCause(t *testing.T) {
 }
 
 func TestUninstallActionFailuresStopAtOwningStage(t *testing.T) {
-	// R-ETFY-8BTG R-EVVQ-ZVAU R-EX3N-DN1J
+	// R-ETFY-8BTG R-VRRP-V53F R-VSZM-8WU4
 	tests := []struct {
 		stage     string
 		wantSteps []string
@@ -566,7 +574,7 @@ func TestUninstallActionFailuresStopAtOwningStage(t *testing.T) {
 }
 
 func TestUninstallReportWriteFailuresAreNotRetried(t *testing.T) {
-	// R-ETFY-8BTG R-EVVQ-ZVAU
+	// R-ETFY-8BTG R-VRRP-V53F
 	for _, stage := range []string{"stop", "unit", "files", "nginx", "litestream"} {
 		t.Run(stage, func(t *testing.T) {
 			root := uninstallCommandRoot(t, true)
@@ -622,7 +630,7 @@ func assertNoLifecycleCommandsAfter(t *testing.T, stage string, commands []host.
 }
 
 func TestUninstallWithoutStateDoesNotCreateDiscoverableService(t *testing.T) {
-	// R-JE5P-1F05
+	// R-VLO7-YADY
 	root := uninstallCommandRoot(t, false)
 	stdout, stderr, code := invoke([]string{"uninstall", "notes"}, cli.Deps{Root: root, EUID: 0, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
 		if reflect.DeepEqual(command.Args, []string{"is-active", "ikigenba-notes.service"}) {
@@ -651,13 +659,14 @@ func uninstallCommandRoot(t *testing.T, state bool) string {
 	t.Helper()
 	root := t.TempDir()
 	setUninstallConfig(t, root)
-	notesManifest := "app = \"notes\"\nport = 8080\ndefault = true\n[database]\nengine = \"sqlite\"\npath = \"state/notes.db\"\n"
-	tasksManifest := "app = \"tasks\"\nport = 9090\n[database]\nengine = \"sqlite\"\npath = \"state/tasks.db\"\n"
+	notesManifest := "app = \"notes\"\ndefault = true\n[database]\nengine = \"sqlite\"\npath = \"state/notes.db\"\n"
+	tasksManifest := "app = \"tasks\"\n[database]\nengine = \"sqlite\"\npath = \"state/tasks.db\"\n"
 	writeUninstallFile(t, root, "opt/notes/bin/notes", "notes binary")
 	writeUninstallFile(t, root, "opt/notes/etc/manifest.toml", notesManifest)
 	writeUninstallFile(t, root, "opt/notes/share/asset", "notes asset")
 	writeUninstallFile(t, root, "opt/notes/cache/item", "notes cache")
 	writeUninstallFile(t, root, "etc/systemd/system/ikigenba-notes.service", "notes unit")
+	writeUninstallFile(t, root, "etc/systemd/system/ikigenba-notes.socket", "notes socket")
 	if state {
 		writeUninstallFile(t, root, "opt/notes/state/notes.db", "last committed transaction")
 		writeUninstallFile(t, root, "opt/notes/state/notes.db-wal", "wal")
@@ -669,6 +678,7 @@ func uninstallCommandRoot(t *testing.T, state bool) string {
 	writeUninstallFile(t, root, "opt/tasks/etc/manifest.toml", tasksManifest)
 	writeUninstallFile(t, root, "opt/tasks/state/tasks.db", "other database")
 	writeUninstallFile(t, root, "etc/systemd/system/ikigenba-tasks.service", "other unit")
+	writeUninstallFile(t, root, "etc/systemd/system/ikigenba-tasks.socket", "other socket")
 	writeUninstallFile(t, root, "etc/nginx/conf.d/ikigenba.conf", "old nginx\n")
 	writeUninstallFile(t, root, "etc/litestream.yml", "old litestream\n")
 	writeUninstallFile(t, root, "remote/parameters/notes", "owned by devctl")

@@ -120,6 +120,31 @@ func TestInstallValidatesInputsAndUsesConfiguredCloud(t *testing.T) {
 	}
 }
 
+func TestInstallRejectsInvalidTimeoutsBeforeFetch(t *testing.T) {
+	// R-UTMJ-5KBZ
+	root := t.TempDir()
+	store := installStoreAt(t, root, map[string]string{
+		"host.name": "HOST.EXAMPLE.", "aws.region": "us-east-1",
+		"apps.drain_seconds": "0", "apps.stop_seconds": "10",
+	})
+	called := false
+	err := apps.Install(t.Context(), host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
+		called = true
+		return host.Result{}, nil
+	}}, cloud.Env{Open: func(context.Context, string) (cloud.Client, error) {
+		called = true
+		return nil, nil
+	}}, store, "s3://bucket/app.tar.xz", apps.InstallHooks{
+		Report:    func(string, string, bool) error { called = true; return nil },
+		Configure: func(context.Context, apps.Manifest) error { called = true; return nil },
+	})
+	var failure *apps.InstallError
+	if !errors.As(err, &failure) || failure.Code != 1 ||
+		failure.Message != "apps.drain_seconds is not a positive whole number of seconds: '0'" || called {
+		t.Fatalf("failure = %#v, side effect = %v", err, called)
+	}
+}
+
 func TestInstallFetchLifecycleAndOutcomes(t *testing.T) {
 	// R-EKWN-JXML, R-EOKC-P8UO
 	openFailure := errors.New("credentials unavailable")
@@ -240,7 +265,7 @@ func TestInstallFetchSuccessReadsCompleteObjectBeforeReporting(t *testing.T) {
 }
 
 func TestInstallFetchReportFailuresPreserveCauses(t *testing.T) {
-	// R-EKWN-JXML, R-EM4J-XPDA
+	// R-EKWN-JXML
 	downloadErr := errors.New("download failed")
 	reportErr := errors.New("report failed")
 	store := installStore(t, map[string]string{"host.name": "host.example", "aws.region": "us-west-2"})
@@ -274,8 +299,8 @@ func TestInstallFetchReportFailuresPreserveCauses(t *testing.T) {
 }
 
 func TestInstallReportsSpecifiedManifestFailures(t *testing.T) {
-	// R-ENCG-BH3Z
-	malformed := []byte("app = \"notes\"\nport = [\n")
+	// R-XO23-AAMB
+	malformed := []byte("app = \"notes\"\n[env]\nBAD = [\n")
 	tests := []struct {
 		name      string
 		archive   []byte
@@ -283,8 +308,9 @@ func TestInstallReportsSpecifiedManifestFailures(t *testing.T) {
 		wantCause string
 	}{
 		{"missing", emptyTar(t), "bundle.tar.xz: no etc/manifest.toml in the file", "no etc/manifest.toml in the file"},
-		{"malformed", tarWithManifest(t, malformed), "bundle.tar.xz: etc/manifest.toml: invalid manifest: line 3: missing value", "invalid manifest: line 3: missing value"},
-		{"unusable name", tarWithManifest(t, []byte("app = \"bad/name\"\nport = 3000\n")), "'bad/name' is not a usable app name", "invalid manifest: unusable app name \"bad/name\""},
+		{"malformed", tarWithManifest(t, malformed), "bundle.tar.xz: etc/manifest.toml: invalid manifest: line 4: missing value", "invalid manifest: line 4: missing value"},
+		{"port refused", tarWithManifest(t, []byte("app = \"notes\"\nport = 3000\n")), "bundle.tar.xz: etc/manifest.toml: 'port' is not allowed; the host gives the app its socket", "'port' is not allowed; the host gives the app its socket"},
+		{"unusable name", tarWithManifest(t, []byte("app = \"bad/name\"\n")), "'bad/name' is not a usable app name", "invalid manifest: unusable app name \"bad/name\""},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -328,7 +354,7 @@ func TestInstallContinuesFileStageAfterManifestInspection(t *testing.T) {
 	root := t.TempDir()
 	store := installStoreAt(t, root, map[string]string{"host.name": "host.example", "aws.region": "us-east-1"})
 	before := treeSnapshot(t, root)
-	archive := tarWithManifest(t, []byte("app = \"notes\"\nport = 3000\n"))
+	archive := tarWithManifest(t, []byte("app = \"notes\"\n"))
 	var reports []installReport
 	configured := false
 

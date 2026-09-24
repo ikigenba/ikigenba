@@ -21,6 +21,7 @@ import (
 // RetireResult records the completed effects of a host retirement.
 type RetireResult struct {
 	Services          []string
+	Disabled          []string
 	ServicesStopped   bool
 	LitestreamStopped bool
 	SyncedDatabases   []string
@@ -71,27 +72,104 @@ func Retire(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config.
 			return outcome, fmt.Errorf("validate retirement service %q: %w", service.Name, err)
 		}
 	}
+	// Capture every unit's initial state before the first stop. This also
+	// prevents a socket stop from changing the state used for disabled reporting.
+	type appUnits struct {
+		name            string
+		socket, service retirementUnitState
+		disabled        bool
+	}
+	units := make([]appUnits, 0, len(services))
+	for _, discovered := range services {
+		socket, inspectErr := retirementInspectUnit(ctx, env, "ikigenba-"+discovered.Name+".socket")
+		if inspectErr != nil {
+			outcome.FailedStep = "services"
+			return outcome, inspectErr
+		}
+		service, inspectErr := retirementInspectUnit(ctx, env, "ikigenba-"+discovered.Name+".service")
+		if inspectErr != nil {
+			outcome.FailedStep = "services"
+			return outcome, inspectErr
+		}
+		disabled, inspectErr := apps.Disabled(ctx, env, discovered.Name)
+		if inspectErr != nil {
+			outcome.FailedStep = "services"
+			return outcome, fmt.Errorf("inspect disabled app %q: %w", discovered.Name, inspectErr)
+		}
+		units = append(units, appUnits{name: discovered.Name, socket: socket, service: service, disabled: disabled})
+	}
+	stoppedSockets := make(map[string]bool, len(units))
+	stoppedServices := make(map[string]bool, len(units))
+	verified := make(map[string]bool, len(units))
+	postStopInspection := false
+	recordStopped := func() {
+		for _, unit := range units {
+			if (!unit.socket.exists || stoppedSockets[unit.name]) && (!unit.service.exists || stoppedServices[unit.name]) && (unit.socket.exists || unit.service.exists) && (!postStopInspection || verified[unit.name]) {
+				outcome.Services = append(outcome.Services, unit.name)
+				if unit.disabled && unit.socket.activeState == "inactive" && unit.service.activeState == "inactive" {
+					outcome.Disabled = append(outcome.Disabled, unit.name)
+				}
+			}
+		}
+	}
 
 	fixed := env.Now()
 	fixedEnv := env
 	fixedEnv.Now = func() time.Time { return fixed }
 	cachedCloud := cloud.Env{Open: func(context.Context, string) (cloud.Client, error) { return client, nil }}
 
-	for _, service := range services {
-		exists, inspectErr := retirementUnitExists(ctx, env, service.Name)
-		if inspectErr != nil {
-			outcome.FailedStep = "services"
-			return outcome, inspectErr
-		}
-		if !exists {
+	for _, unit := range units {
+		if !unit.socket.exists {
 			continue
 		}
-		if stopErr := retirementSystemctl(ctx, env, "stop "+service.Name+" service", "stop", "ikigenba-"+service.Name+".service"); stopErr != nil {
+		name := "ikigenba-" + unit.name + ".socket"
+		if stopErr := retirementSystemctl(ctx, env, "stop "+name, "stop", name); stopErr != nil {
 			outcome.FailedStep = "services"
+			recordStopped()
 			return outcome, stopErr
 		}
-		outcome.Services = append(outcome.Services, service.Name)
+		stoppedSockets[unit.name] = true
 	}
+	for _, unit := range units {
+		if !unit.service.exists {
+			continue
+		}
+		name := "ikigenba-" + unit.name + ".service"
+		if stopErr := retirementSystemctl(ctx, env, "stop "+name, "stop", name); stopErr != nil {
+			outcome.FailedStep = "services"
+			recordStopped()
+			return outcome, stopErr
+		}
+		stoppedServices[unit.name] = true
+	}
+	postStopInspection = true
+	for _, unit := range units {
+		if !unit.socket.exists && !unit.service.exists {
+			continue
+		}
+		for _, entry := range []struct {
+			exists bool
+			suffix string
+		}{{unit.socket.exists, ".socket"}, {unit.service.exists, ".service"}} {
+			if !entry.exists {
+				continue
+			}
+			name := "ikigenba-" + unit.name + entry.suffix
+			state, inspectErr := retirementInspectUnit(ctx, env, name)
+			if inspectErr != nil {
+				outcome.FailedStep = "services"
+				recordStopped()
+				return outcome, inspectErr
+			}
+			if state.activeState != "inactive" {
+				outcome.FailedStep = "services"
+				recordStopped()
+				return outcome, fmt.Errorf("%s is %s after stop", name, state.activeState)
+			}
+		}
+		verified[unit.name] = true
+	}
+	recordStopped()
 	outcome.ServicesStopped = true
 
 	var syncErr error
@@ -107,6 +185,13 @@ func Retire(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config.
 		outcome.SyncedDatabases = append(outcome.SyncedDatabases, path.Base(service.Manifest.Database.Path))
 	}
 	stopErr := retirementSystemctl(ctx, env, "stop litestream.service", "stop", "litestream.service")
+	if stopErr == nil {
+		var state retirementUnitState
+		state, stopErr = retirementInspectUnit(ctx, env, "litestream.service")
+		if stopErr == nil && state.activeState != "inactive" {
+			stopErr = fmt.Errorf("litestream.service is %s after stop", state.activeState)
+		}
+	}
 	if stopErr == nil {
 		outcome.LitestreamStopped = true
 	}
@@ -203,30 +288,39 @@ func retirementProofUint(proof map[string]json.RawMessage, field string) (uint64
 	return value, nil
 }
 
-func retirementUnitExists(ctx context.Context, env host.Env, service string) (bool, error) {
-	unit := "ikigenba-" + service + ".service"
+type retirementUnitState struct {
+	exists      bool
+	activeState string
+}
+
+func retirementInspectUnit(ctx context.Context, env host.Env, unit string) (retirementUnitState, error) {
 	result, err := env.Execute(ctx, host.Command{
 		Name: "systemctl",
-		Args: []string{"show", "--property=LoadState", unit},
+		Args: []string{"show", "--property=LoadState", "--property=ActiveState", unit},
 	})
 	label := "inspect " + unit
 	if err != nil {
-		return false, retirementCommandError(label, result, err)
+		return retirementUnitState{}, retirementCommandError(label, result, err)
 	}
 	if result.ExitCode != 0 {
-		return false, &host.CommandError{Label: label, Result: result}
+		return retirementUnitState{}, &host.CommandError{Label: label, Result: result}
 	}
-	loadState := ""
+	loadState, activeState := "", ""
 	for line := range strings.SplitSeq(strings.ReplaceAll(string(result.Stdout), "\r\n", "\n"), "\n") {
 		key, value, found := strings.Cut(line, "=")
-		if found && key == "LoadState" {
-			loadState = value
+		if found {
+			switch key {
+			case "LoadState":
+				loadState = value
+			case "ActiveState":
+				activeState = value
+			}
 		}
 	}
-	if loadState == "" {
-		return false, fmt.Errorf("%s: response omitted LoadState", label)
+	if loadState == "" || activeState == "" {
+		return retirementUnitState{}, fmt.Errorf("%s: response omitted unit state", label)
 	}
-	return loadState != "not-found", nil
+	return retirementUnitState{exists: loadState != "not-found", activeState: activeState}, nil
 }
 
 func retirementSystemctl(ctx context.Context, env host.Env, label string, args ...string) error {

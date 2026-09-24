@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"testing"
@@ -9,7 +10,7 @@ import (
 )
 
 func TestInstallCLICommandPreservesTransportCauses(t *testing.T) {
-	// R-X0NN-ABK0, R-AJZ2-XSUE
+	// R-XLMA-IR4X
 	transportErr := errors.New("connection lost")
 	result := host.Result{Stderr: []byte("partial detail\n")}
 	env := host.Env{Execute: func(context.Context, host.Command) (host.Result, error) {
@@ -32,8 +33,19 @@ func TestInstallCLICommandPreservesTransportCauses(t *testing.T) {
 	}
 }
 
+func TestInstallReportEscapesFailureLineBreaks(t *testing.T) {
+	// R-XLMA-IR4X
+	var output bytes.Buffer
+	if err := writeInstallReport(&output, "nginx", "first\rsecond\nthird", false); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := output.String(), `nginx: failed: first\rsecond\nthird`+"\n"; got != want {
+		t.Fatalf("report = %q, want %q", got, want)
+	}
+}
+
 func TestInstallCLIConfigurationFailuresPreserveActionAndReportCauses(t *testing.T) {
-	// R-AJZ2-XSUE
+	// R-XLMA-IR4X
 	for _, step := range []string{"nginx", "litestream"} {
 		t.Run(step, func(t *testing.T) {
 			actionErr := errors.New(step + " action failed")

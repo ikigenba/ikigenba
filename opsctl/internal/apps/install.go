@@ -63,6 +63,7 @@ type installWorkflow struct {
 	artifact []byte
 	checked  *inspectedArtifact
 	secrets  map[string]string
+	timeouts Timeouts
 }
 
 func prepareInstall(env host.Env, remote cloud.Env, store config.Store, uri string, hooks InstallHooks) (*installWorkflow, error) {
@@ -88,9 +89,13 @@ func prepareInstall(env host.Env, remote cloud.Env, store config.Store, uri stri
 	if err != nil {
 		return nil, installInputError(1, message, err)
 	}
+	timeouts, err := ReadTimeouts(store)
+	if err != nil {
+		return nil, installInputError(1, err.Error(), err)
+	}
 	return &installWorkflow{
 		env: env, remote: remote, uri: uri, hooks: hooks,
-		hostName: hostName, region: region, basename: path.Base(parsed.Path),
+		hostName: hostName, region: region, basename: path.Base(parsed.Path), timeouts: timeouts,
 	}, nil
 }
 
@@ -159,7 +164,7 @@ func (workflow *installWorkflow) fetchSecrets(ctx context.Context) error {
 }
 
 func (workflow *installWorkflow) unpack(ctx context.Context) error {
-	environment := renderEnvironment(workflow.checked.manifest, workflow.secrets)
+	environment := renderEnvironment(workflow.checked.manifest, workflow.secrets, workflow.timeouts.DrainSeconds)
 	if failure := replaceInstalledFiles(ctx, workflow.env, workflow.checked, environment); failure != nil {
 		return failInstallStage(workflow.hooks, "unpack", failure)
 	}
@@ -171,11 +176,11 @@ func (workflow *installWorkflow) unpack(ctx context.Context) error {
 }
 
 func (workflow *installWorkflow) publishUnit(ctx context.Context) error {
-	if failure := publishAppUnit(ctx, workflow.env, workflow.checked); failure != nil {
+	if failure := publishAppUnit(ctx, workflow.env, workflow.checked, workflow.timeouts.StopSeconds); failure != nil {
 		return failInstallStage(workflow.hooks, "unit", failure)
 	}
-	unit := appUnitName(workflow.checked.manifest.App)
-	if err := workflow.hooks.Report("unit", safeDiagnosticToken(unit), true); err != nil {
+	app := workflow.checked.manifest.App
+	if err := workflow.hooks.Report("unit", socketUnitName(app)+", "+appUnitName(app), true); err != nil {
 		return &InstallError{Code: 1, Message: "install failed", Cause: err}
 	}
 	return nil
@@ -211,6 +216,7 @@ type inspectedArtifact struct {
 	manifest Manifest
 	entries  []archiveEntry
 	active   bool
+	disabled bool
 }
 
 func (artifact *inspectedArtifact) hasTopLevel(name string) bool {
@@ -250,7 +256,7 @@ func installInputError(code int, message string, cause error) error {
 
 func parseArtifactURI(value string) (*url.URL, error) {
 	parsed, err := url.Parse(value)
-	if err != nil || parsed.Scheme != "s3" || parsed.Host == "" ||
+	if err != nil || parsed.Scheme != "s3" || parsed.Hostname() == "" || parsed.Host != parsed.Hostname() ||
 		strings.TrimPrefix(parsed.EscapedPath(), "/") == "" || parsed.RawQuery != "" || parsed.ForceQuery ||
 		parsed.Fragment != "" || strings.Contains(value, "#") || parsed.User != nil || parsed.OmitHost || parsed.Opaque != "" {
 		return nil, errors.New("URI is not an absolute S3 object location")
@@ -406,11 +412,6 @@ func inspectInstallManifest(manifestData []byte, basename string) (Manifest, *st
 		err = &unusableAppNameError{name: ""}
 		return Manifest{}, &stageFailure{code: 2, detail: "'' is not a usable app name", cause: err}
 	}
-	if manifest.Port == 0 {
-		err = errors.New("manifest port is not set")
-		detail := fmt.Sprintf("%s: %s", safeDiagnosticToken(basename), safeDiagnosticText(err.Error()))
-		return Manifest{}, &stageFailure{code: 2, detail: detail, cause: err}
-	}
 	return manifest, nil
 }
 
@@ -428,7 +429,7 @@ func requireAppExecutable(entries []archiveEntry, manifest Manifest, basename st
 
 func validateArchive(data []byte) ([]archiveEntry, []byte, error) {
 	reader := tar.NewReader(bytes.NewReader(data))
-	seen := make(map[string]struct{})
+	seen := make(map[string]bool)
 	var entries []archiveEntry
 	var manifest []byte
 	for {
@@ -446,7 +447,9 @@ func validateArchive(data []byte) ([]archiveEntry, []byte, error) {
 		if _, duplicate := seen[name]; duplicate {
 			return nil, nil, fmt.Errorf("duplicate archive path %s", safeDiagnosticToken(name))
 		}
-		seen[name] = struct{}{}
+		if name == "etc/env" {
+			return nil, nil, errors.New("archive path etc/env is reserved for generated environment")
+		}
 		entry := archiveEntry{name: name, mode: header.FileInfo().Mode()}
 		switch header.Typeflag {
 		case tar.TypeDir:
@@ -459,6 +462,7 @@ func validateArchive(data []byte) ([]archiveEntry, []byte, error) {
 		default:
 			return nil, nil, fmt.Errorf("archive path %s is not a regular file or directory", safeDiagnosticToken(name))
 		}
+		seen[name] = entry.dir
 		if !strings.Contains(name, "/") && !entry.dir {
 			return nil, nil, fmt.Errorf("archive path %s is not a top-level directory", safeDiagnosticToken(name))
 		}
@@ -469,6 +473,16 @@ func validateArchive(data []byte) ([]archiveEntry, []byte, error) {
 			manifest = append([]byte(nil), entry.data...)
 		}
 		entries = append(entries, entry)
+	}
+	for name, directory := range seen {
+		if directory {
+			continue
+		}
+		for other := range seen {
+			if strings.HasPrefix(other, name+"/") {
+				return nil, nil, fmt.Errorf("archive path %s is a file ancestor of %s", safeDiagnosticToken(name), safeDiagnosticToken(other))
+			}
+		}
 	}
 	return entries, manifest, nil
 }
@@ -520,11 +534,15 @@ func completeFileStage(ctx context.Context, env host.Env, artifact *inspectedArt
 		err = &host.CommandError{Label: fmt.Sprintf("inspect %s", safeDiagnosticToken(unit)), Result: result}
 		return &stageFailure{code: 1, detail: err.Error(), cause: err}
 	}
+	artifact.disabled, err = Disabled(ctx, env, artifact.manifest.App)
+	if err != nil {
+		return operationalFailure(err)
+	}
 	return nil
 }
 
 func manifestDetail(manifest Manifest) string {
-	detail := fmt.Sprintf("%s, port %d", safeDiagnosticToken(manifest.App), manifest.Port)
+	detail := safeDiagnosticToken(manifest.App)
 	if manifest.Default {
 		detail += ", default"
 	}
@@ -579,8 +597,8 @@ func validateEnvironment(manifest Manifest, secrets map[string]string) error {
 		if !validEnvironmentName(name) {
 			return fmt.Errorf("%s: invalid secret name %q", safeDiagnosticToken(manifest.App), name)
 		}
-		if name == "PORT" {
-			return fmt.Errorf("%s: secret name PORT is reserved", safeDiagnosticToken(manifest.App))
+		if name == "DRAIN_SECONDS" || name == "PORT" {
+			return fmt.Errorf("%s: secret name %s is reserved", safeDiagnosticToken(manifest.App), name)
 		}
 		secretSet[name] = struct{}{}
 		if invalidEnvironmentValue(secrets[name]) {
@@ -591,8 +609,8 @@ func validateEnvironment(manifest Manifest, secrets map[string]string) error {
 		if !validEnvironmentName(name) {
 			return fmt.Errorf("%s: invalid setting name %q", safeDiagnosticToken(manifest.App), name)
 		}
-		if name == "PORT" {
-			return fmt.Errorf("%s: setting name PORT is reserved", safeDiagnosticToken(manifest.App))
+		if name == "DRAIN_SECONDS" || name == "PORT" {
+			return fmt.Errorf("%s: setting name %s is reserved", safeDiagnosticToken(manifest.App), name)
 		}
 		if _, overlap := secretSet[name]; overlap {
 			return fmt.Errorf("%s: %q is both a secret and a plain setting", safeDiagnosticToken(manifest.App), name)
@@ -625,7 +643,7 @@ func invalidEnvironmentValue(value string) bool {
 }
 
 // renderEnvironment receives the manifest and values accepted by obtainSecrets.
-func renderEnvironment(manifest Manifest, secrets map[string]string) []byte {
+func renderEnvironment(manifest Manifest, secrets map[string]string, drainSeconds int64) []byte {
 	var output strings.Builder
 	for _, name := range distinctNames(manifest.Secrets) {
 		writeEnvironmentEntry(&output, name, secrets[name])
@@ -638,7 +656,9 @@ func renderEnvironment(manifest Manifest, secrets map[string]string) []byte {
 	for _, name := range names {
 		writeEnvironmentEntry(&output, name, manifest.Env[name])
 	}
-	writeEnvironmentEntry(&output, "PORT", strconv.Itoa(manifest.Port))
+	output.WriteString("DRAIN_SECONDS=")
+	output.WriteString(strconv.FormatInt(drainSeconds, 10))
+	output.WriteByte('\n')
 	return []byte(output.String())
 }
 
@@ -795,7 +815,7 @@ func unpackFailure(err error) *stageFailure {
 	return &stageFailure{code: 1, detail: err.Error(), cause: err}
 }
 
-func publishAppUnit(ctx context.Context, env host.Env, artifact *inspectedArtifact) *stageFailure {
+func publishAppUnit(ctx context.Context, env host.Env, artifact *inspectedArtifact, stopSeconds int64) *stageFailure {
 	manifest := artifact.manifest
 	if err := ensureServiceAccount(ctx, env); err != nil {
 		return operationalFailure(err)
@@ -817,7 +837,7 @@ func publishAppUnit(ctx context.Context, env host.Env, artifact *inspectedArtifa
 		return operationalFailure(err)
 	}
 	unitName := appUnitName(manifest.App)
-	if err := writeAppUnit(env.Root, unitName, manifest.App); err != nil {
+	if err := writeAppUnit(env.Root, manifest.App, stopSeconds); err != nil {
 		return operationalFailure(err)
 	}
 	if err := executeInstallCommand(ctx, env, "reload systemd units", host.Command{
@@ -825,10 +845,17 @@ func publishAppUnit(ctx context.Context, env host.Env, artifact *inspectedArtifa
 	}); err != nil {
 		return operationalFailure(err)
 	}
-	if err := executeInstallCommand(ctx, env, fmt.Sprintf("enable %s", safeDiagnosticToken(unitName)), host.Command{
-		Name: "systemctl", Args: []string{"enable", unitName},
-	}); err != nil {
-		return operationalFailure(err)
+	if !artifact.disabled {
+		if err := executeInstallCommand(ctx, env, fmt.Sprintf("enable %s", safeDiagnosticToken(unitName)), host.Command{
+			Name: "systemctl", Args: []string{"enable", unitName},
+		}); err != nil {
+			return operationalFailure(err)
+		}
+		if err := executeInstallCommand(ctx, env, fmt.Sprintf("enable %s", socketUnitName(manifest.App)), host.Command{
+			Name: "systemctl", Args: []string{"enable", "--now", socketUnitName(manifest.App)},
+		}); err != nil {
+			return operationalFailure(err)
+		}
 	}
 	return nil
 }
@@ -996,7 +1023,7 @@ func inspectServiceAccount(ctx context.Context, env host.Env) (uint64, error) {
 	return uid, nil
 }
 
-func writeAppUnit(root, unitName, app string) error {
+func writeAppUnit(root, app string, stopSeconds int64) error {
 	filesystem, err := os.OpenRoot(root)
 	if err != nil {
 		return err
@@ -1006,27 +1033,47 @@ func writeAppUnit(root, unitName, app string) error {
 	if err := filesystem.MkdirAll(unitDirectory, 0o755); err != nil {
 		return err
 	}
-	unitPath := path.Join(unitDirectory, unitName)
-	if info, statErr := filesystem.Lstat(unitPath); statErr == nil {
-		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("unit %s is a symbolic link", safeDiagnosticToken("/"+unitPath))
+	for _, unit := range []struct {
+		name string
+		data []byte
+	}{
+		{socketUnitName(app), socketUnitBytes(root, app)},
+		{appUnitName(app), serviceUnitBytes(root, app, stopSeconds)},
+	} {
+		unitPath := path.Join(unitDirectory, unit.name)
+		if info, statErr := filesystem.Lstat(unitPath); statErr == nil {
+			if info.Mode()&os.ModeSymlink != 0 {
+				return fmt.Errorf("unit %s is a symbolic link", safeDiagnosticToken("/"+unitPath))
+			}
+			if !info.Mode().IsRegular() {
+				return fmt.Errorf("unit %s is not a regular file", safeDiagnosticToken("/"+unitPath))
+			}
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return statErr
 		}
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("unit %s is not a regular file", safeDiagnosticToken("/"+unitPath))
+		if err := publishAtomicFile(filesystem, unitDirectory, unitPath, unit.data, 0o644); err != nil {
+			return err
 		}
-	} else if !errors.Is(statErr, os.ErrNotExist) {
-		return statErr
 	}
+	return nil
+}
+
+func socketUnitBytes(root, app string) []byte {
+	socket := rootedHostPath(root, "run", "ikigenba", app+".sock")
+	return []byte("[Unit]\nDescription=Ikigenba " + app + " socket\n\n" +
+		"[Socket]\nListenStream=" + socket + "\nSocketUser=ikigenba\nSocketGroup=nginx\n" +
+		"SocketMode=0660\nRemoveOnStop=yes\nBacklog=4096\n\n" +
+		"[Install]\nWantedBy=sockets.target\n")
+}
+
+func serviceUnitBytes(root, app string, stopSeconds int64) []byte {
 	appRoot := rootedHostPath(root, "opt", app)
-	unit := "[Unit]\nDescription=Ikigenba " + app + " app\n\n" +
-		"[Service]\n" +
-		"ExecStart=" + filepath.Join(appRoot, "bin", app) + "\n" +
-		"WorkingDirectory=" + appRoot + "\n" +
-		"EnvironmentFile=" + filepath.Join(appRoot, "etc", "env") + "\n" +
-		"User=ikigenba\n" +
-		"Restart=on-failure\n\n" +
-		"[Install]\nWantedBy=multi-user.target\n"
-	return publishAtomicFile(filesystem, unitDirectory, unitPath, []byte(unit), 0o644)
+	socket := socketUnitName(app)
+	return []byte("[Unit]\nDescription=Ikigenba " + app + " app\nRequires=" + socket + "\nAfter=" + socket + "\n\n" +
+		"[Service]\nType=notify\nExecStart=" + filepath.Join(appRoot, "bin", app) + "\n" +
+		"WorkingDirectory=" + appRoot + "\nEnvironmentFile=" + filepath.Join(appRoot, "etc", "env") + "\n" +
+		"User=ikigenba\nRestart=on-failure\nTimeoutStopSec=" + strconv.FormatInt(stopSeconds, 10) + "\n\n" +
+		"[Install]\nWantedBy=multi-user.target\n")
 }
 
 func publishAtomicFile(filesystem *os.Root, directory, destination string, contents []byte, mode fs.FileMode) error {
@@ -1074,27 +1121,29 @@ func appUnitName(app string) string {
 
 func activateInstalledApp(ctx context.Context, env host.Env, artifact *inspectedArtifact) (string, *stageFailure) {
 	unit := appUnitName(artifact.manifest.App)
-	action := "start"
-	if artifact.active {
-		action = "restart"
-	}
-	if err := executeInstallCommand(ctx, env, fmt.Sprintf("%s %s", action, safeDiagnosticToken(unit)), host.Command{
-		Name: "systemctl", Args: []string{action, unit},
-	}); err != nil {
-		return "", appStartFailure(ctx, env, artifact.manifest.App, unit, err)
-	}
-	result, err := env.Execute(ctx, host.Command{Name: "systemctl", Args: []string{"is-active", unit}})
-	if err != nil {
-		return "", appStartFailure(ctx, env, artifact.manifest.App, unit,
-			commandTransportError(fmt.Sprintf("inspect %s", safeDiagnosticToken(unit)), err))
-	}
-	if result.ExitCode != 0 || strings.TrimSpace(string(result.Stdout)) != "active" {
-		stateErr := &host.CommandError{Label: fmt.Sprintf("inspect %s", safeDiagnosticToken(unit)), Result: result}
-		return "", appStartFailure(ctx, env, artifact.manifest.App, unit, stateErr)
+	if !artifact.disabled {
+		action := "start"
+		if artifact.active {
+			action = "restart"
+		}
+		if err := executeInstallCommand(ctx, env, fmt.Sprintf("%s %s", action, safeDiagnosticToken(unit)), host.Command{
+			Name: "systemctl", Args: []string{action, unit},
+		}); err != nil {
+			return "", appStartFailure(ctx, env, artifact.manifest.App, unit, err)
+		}
+		result, err := env.Execute(ctx, host.Command{Name: "systemctl", Args: []string{"is-active", unit}})
+		if err != nil {
+			return "", appStartFailure(ctx, env, artifact.manifest.App, unit,
+				commandTransportError(fmt.Sprintf("inspect %s", safeDiagnosticToken(unit)), err))
+		}
+		if result.ExitCode != 0 || strings.TrimSpace(string(result.Stdout)) != "active" {
+			stateErr := &host.CommandError{Label: fmt.Sprintf("inspect %s", safeDiagnosticToken(unit)), Result: result}
+			return "", appStartFailure(ctx, env, artifact.manifest.App, unit, stateErr)
+		}
 	}
 
 	binary := rootedHostPath(env.Root, "opt", artifact.manifest.App, "bin", artifact.manifest.App)
-	result, err = env.Execute(ctx, host.Command{Name: binary, Args: []string{"--version"}})
+	result, err := env.Execute(ctx, host.Command{Name: binary, Args: []string{"--version"}})
 	if err != nil {
 		return "", operationalFailure(commandTransportError(
 			fmt.Sprintf("read %s version", safeDiagnosticToken(artifact.manifest.App)), err))
@@ -1104,7 +1153,11 @@ func activateInstalledApp(ctx context.Context, env host.Env, artifact *inspected
 		return "", operationalFailure(err)
 	}
 	version := safeDiagnosticToken(strings.TrimRight(string(result.Stdout), "\r\n"))
-	return fmt.Sprintf("%s %s active", safeDiagnosticToken(artifact.manifest.App), version), nil
+	state := "active"
+	if artifact.disabled {
+		state = "disabled"
+	}
+	return fmt.Sprintf("%s %s %s", safeDiagnosticToken(artifact.manifest.App), version, state), nil
 }
 
 func appStartFailure(ctx context.Context, env host.Env, app, unit string, startErr error) *stageFailure {
@@ -1146,4 +1199,192 @@ func commandTransportError(label string, err error) error {
 
 func operationalFailure(err error) *stageFailure {
 	return &stageFailure{code: 1, detail: err.Error(), cause: err}
+}
+
+// SetupTimeouts updates installed apps with the current stop and drain settings.
+func SetupTimeouts(ctx context.Context, env host.Env, store config.Store) error {
+	timeouts, err := ReadTimeouts(store)
+	if err != nil {
+		return err
+	}
+	services, err := Discover(env.Root)
+	if err != nil {
+		return err
+	}
+	type changedApp struct {
+		name string
+	}
+	var changed []changedApp
+	unitChanged := false
+	for _, service := range services {
+		if ValidateName(service.Name) != nil {
+			continue
+		}
+		binary := rootedHostPath(env.Root, "opt", service.Name, "bin", service.Name)
+		info, statErr := lstatTimeoutPath(env.Root, binary)
+		if errors.Is(statErr, os.ErrNotExist) {
+			continue
+		}
+		if statErr != nil {
+			return statErr
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		envPath := rootedHostPath(env.Root, "opt", service.Name, "etc", "env")
+		current, readErr := readTimeoutFile(env.Root, envPath)
+		if readErr != nil {
+			return fmt.Errorf("%s: read etc/env: %w", service.Name, readErr)
+		}
+		updated := updateDrainEntry(current, timeouts.DrainSeconds)
+		appChanged := !bytes.Equal(current, updated)
+		if appChanged {
+			if err := writeTimeoutFile(env.Root, envPath, updated, 0o600); err != nil {
+				return fmt.Errorf("%s: update etc/env: %w", service.Name, err)
+			}
+		} else if envInfo, statErr := lstatTimeoutPath(env.Root, envPath); statErr != nil {
+			return fmt.Errorf("%s: inspect etc/env: %w", service.Name, statErr)
+		} else if envInfo.Mode().Perm() != 0o600 {
+			if err := chmodTimeoutPath(env.Root, envPath, 0o600); err != nil {
+				return fmt.Errorf("%s: set etc/env mode: %w", service.Name, err)
+			}
+		}
+		unitPath := rootedHostPath(env.Root, "etc", "systemd", "system", appUnitName(service.Name))
+		unit := serviceUnitBytes(env.Root, service.Name, timeouts.StopSeconds)
+		oldUnit, readErr := readTimeoutFile(env.Root, unitPath)
+		if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+			return readErr
+		}
+		if !bytes.Equal(oldUnit, unit) {
+			if err := writeTimeoutFile(env.Root, unitPath, unit, 0o644); err != nil {
+				return err
+			}
+			unitChanged, appChanged = true, true
+		}
+		if appChanged {
+			changed = append(changed, changedApp{name: service.Name})
+		}
+	}
+	if unitChanged {
+		if err := executeInstallCommand(ctx, env, "reload systemd units", host.Command{Name: "systemctl", Args: []string{"daemon-reload"}}); err != nil {
+			return err
+		}
+	}
+	for _, app := range changed {
+		disabled, err := Disabled(ctx, env, app.name)
+		if err != nil {
+			return err
+		}
+		if disabled {
+			continue
+		}
+		socket := socketUnitName(app.name)
+		result, err := env.Execute(ctx, host.Command{Name: "systemctl", Args: []string{"is-active", socket}})
+		if err != nil {
+			return commandTransportError("inspect "+socket, err)
+		}
+		if result.ExitCode == 3 || result.ExitCode == 4 {
+			continue
+		}
+		if result.ExitCode != 0 {
+			return &host.CommandError{Label: "inspect " + socket, Result: result}
+		}
+		if strings.TrimSpace(string(result.Stdout)) != "active" {
+			continue
+		}
+		if err := executeInstallCommand(ctx, env, "restart "+appUnitName(app.name), host.Command{Name: "systemctl", Args: []string{"restart", appUnitName(app.name)}}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func updateDrainEntry(contents []byte, drain int64) []byte {
+	replacement := []byte("DRAIN_SECONDS=" + strconv.FormatInt(drain, 10))
+	lines := bytes.SplitAfter(contents, []byte("\n"))
+	var output []byte
+	found := false
+	for _, line := range lines {
+		bare := bytes.TrimSuffix(line, []byte("\n"))
+		if bytes.HasPrefix(bare, []byte("DRAIN_SECONDS=")) {
+			if !found {
+				output = append(output, replacement...)
+				if len(line) > len(bare) {
+					output = append(output, '\n')
+				}
+				found = true
+			}
+			continue
+		}
+		output = append(output, line...)
+	}
+	if found {
+		return output
+	}
+	if len(output) > 0 && output[len(output)-1] != '\n' {
+		output = append(output, '\n')
+	}
+	return append(append(output, replacement...), '\n')
+}
+
+func writeTimeoutFile(root, destination string, data []byte, mode fs.FileMode) error {
+	filesystem, err := os.OpenRoot(root)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = filesystem.Close() }()
+	relative, err := filepath.Rel(root, destination)
+	if err != nil {
+		return err
+	}
+	if err := filesystem.MkdirAll(path.Dir(relative), 0o755); err != nil {
+		return err
+	}
+	return publishAtomicFile(filesystem, path.Dir(relative), relative, data, mode)
+}
+
+func readTimeoutFile(root, destination string) ([]byte, error) {
+	filesystem, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = filesystem.Close() }()
+	relative, err := filepath.Rel(root, destination)
+	if err != nil {
+		return nil, err
+	}
+	info, err := filesystem.Lstat(relative)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file", relative)
+	}
+	return filesystem.ReadFile(relative)
+}
+
+func lstatTimeoutPath(root, destination string) (fs.FileInfo, error) {
+	filesystem, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = filesystem.Close() }()
+	relative, err := filepath.Rel(root, destination)
+	if err != nil {
+		return nil, err
+	}
+	return filesystem.Lstat(relative)
+}
+
+func chmodTimeoutPath(root, destination string, mode fs.FileMode) error {
+	filesystem, err := os.OpenRoot(root)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = filesystem.Close() }()
+	relative, err := filepath.Rel(root, destination)
+	if err != nil {
+		return err
+	}
+	return filesystem.Chmod(relative, mode)
 }

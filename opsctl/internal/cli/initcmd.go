@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
 	"github.com/ikigenba/ikigenba/opsctl/internal/backup"
 	"github.com/ikigenba/ikigenba/opsctl/internal/cert"
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
@@ -30,6 +31,8 @@ Checks, in order:
   litestream                 found on PATH
   dns.provider, dns.zones    set, and the provider opens (see 'opsctl dns --help')
   host.name                  set
+  timeouts                   apps.drain_seconds and apps.stop_seconds are positive
+                             whole seconds, stop greater than drain
   zone NAME                  every configured zone is reachable and delegated
   host NAME                  host.name lies at or under a configured zone
   wildcard NAME              host.name and _opsctl-preflight.host.name resolve alike
@@ -40,9 +43,14 @@ Sequence:
   litestream   generate /etc/litestream.yml and enable litestream.service
   timers       write the backup and renewal units, enabling each backup timer
                whose period is set and the renewal timer always
+  apps         write the drain and stop settings into every installed app,
+               restarting each enabled app whose settings changed; a
+               disabled app is rewritten and left disabled
 
 Configuration keys:
-  host.name  the fully-qualified name this host answers at, at or under a configured zone
+  host.name           the fully-qualified name this host answers at, at or under a configured zone
+  apps.drain_seconds  how long an app may drain when stopped (default 5)
+  apps.stop_seconds   how long systemd waits for an app to stop (default 10)
 `
 
 func runInit(args []string, stdout, stderr io.Writer, deps Deps) exitCode {
@@ -95,6 +103,9 @@ func runInitPreflight(stdout, stderr io.Writer, deps Deps, entries []config.Entr
 		return initConfigErr(stderr, deps, err)
 	}
 	preflight.checkHostConfig()
+	if err := preflight.checkTimeouts(); err != nil {
+		return initConfigErr(stderr, deps, err)
+	}
 	preflight.checkZones()
 	preflight.checkHostZone()
 	preflight.checkWildcard()
@@ -192,6 +203,21 @@ func (p *initPreflight) checkHostConfig() {
 	} else {
 		_, _ = fmt.Fprintf(&p.output, "host.name: ok (%s)\n", diagnosticArg(p.host))
 	}
+}
+
+func (p *initPreflight) checkTimeouts() error {
+	timeouts, err := apps.ReadTimeouts(p.store)
+	if err != nil {
+		var pathErr *os.PathError
+		if errors.Is(err, config.ErrCorrupt) || errors.As(err, &pathErr) {
+			return err
+		}
+		_, _ = fmt.Fprintf(&p.output, "timeouts: failed: %s\n", diagnosticArg(err.Error()))
+		p.allOK = false
+		return nil
+	}
+	_, _ = fmt.Fprintf(&p.output, "timeouts: ok (drain %ds, stop %ds)\n", timeouts.DrainSeconds, timeouts.StopSeconds)
+	return nil
 }
 
 func (p *initPreflight) checkZones() {
@@ -300,6 +326,9 @@ func (p *initPreflight) finish(stdout, stderr io.Writer) exitCode {
 	}
 	if err == nil {
 		err = backup.SetupTimers(ctx, env, p.store)
+	}
+	if err == nil {
+		err = apps.SetupTimeouts(ctx, env, p.store)
 	}
 	if err != nil {
 		writeDiagnostic(stderr, err)

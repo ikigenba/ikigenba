@@ -51,11 +51,11 @@ func TestRestoreDatabaseLifecycleUsesIndependentHistoryAndOrdersStarts(t *testin
 	}
 	want := []backup.RestoreStep{
 		{Name: "source", Detail: fmt.Sprintf("notes/2026-09-16T00:00:00Z.tar.zst, %.1f MiB", float64(len(body))/1048576)},
-		{Name: "stop", Detail: "ikigenba-notes.service, litestream.service"},
+		{Name: "stop", Detail: "ikigenba-notes.socket, ikigenba-notes.service, litestream.service"},
 		{Name: "files", Detail: "/opt/notes/etc, /opt/notes/state, 2 files"},
 		{Name: "db", Detail: "/opt/notes/state/nested/app.db, newest 2026-09-16T11:00:00Z"},
 		{Name: "litestream", Detail: "state/nested/app.db"},
-		{Name: "start", Detail: "litestream.service, ikigenba-notes.service"},
+		{Name: "start", Detail: "litestream.service, ikigenba-notes.socket, ikigenba-notes.service"},
 	}
 	if !reflect.DeepEqual(report.Steps, want) || nginxCalls != 1 {
 		t.Fatalf("Restore() = %+v, %v; nginx calls %d", report, err, nginxCalls)
@@ -64,16 +64,16 @@ func TestRestoreDatabaseLifecycleUsesIndependentHistoryAndOrdersStarts(t *testin
 	destination := filepath.Join(root, "opt/notes/state/nested/app.db")
 	wantEvents := []string{
 		"zstd --quiet --decompress --stdout",
-		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.service",
-		"systemctl stop ikigenba-notes.service",
-		"systemctl stop litestream.service",
+		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket", "systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
+		"systemctl stop ikigenba-notes.socket", "systemctl stop ikigenba-notes.service",
+		"systemctl show --property=LoadState --property=ActiveState litestream.service", "systemctl stop litestream.service",
 		"getent passwd ikigenba",
 		"id --group --name ikigenba",
 		"litestream ltx -level all -json " + replica,
 		"litestream restore -o " + destination + " " + replica,
 		"nginx",
 		"systemctl start litestream.service",
-		"systemctl start ikigenba-notes.service",
+		"systemctl start ikigenba-notes.socket", "systemctl start ikigenba-notes.service",
 	}
 	if !reflect.DeepEqual(executor.events, wantEvents) {
 		t.Fatalf("events = %v, want %v", executor.events, wantEvents)
@@ -114,7 +114,7 @@ func TestRestoreDatabaseAtRejectsHistoryEntirelyAfterCutoff(t *testing.T) {
 	}
 	wantReport := []backup.RestoreStep{
 		{Name: "source", Detail: fmt.Sprintf("notes/2026-09-16T00:00:00Z.tar.zst, %.1f MiB", float64(len(body))/1048576)},
-		{Name: "stop", Detail: "litestream.service, no ikigenba-notes.service"},
+		{Name: "stop", Detail: "litestream.service, no ikigenba-notes.socket"},
 		{Name: "files", Detail: "/opt/notes/etc, /opt/notes/state, 2 files"},
 		{Name: "db", Err: errors.New("no snapshot under the prefix")},
 	}
@@ -123,8 +123,8 @@ func TestRestoreDatabaseAtRejectsHistoryEntirelyAfterCutoff(t *testing.T) {
 	}
 	wantEvents := []string{
 		"zstd --quiet --decompress --stdout",
-		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.service",
-		"systemctl stop litestream.service",
+		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket", "systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
+		"systemctl show --property=LoadState --property=ActiveState litestream.service", "systemctl stop litestream.service",
 		"litestream ltx -level all -json s3://bucket/host/notes/",
 	}
 	if !reflect.DeepEqual(executor.events, wantEvents) {
@@ -149,8 +149,9 @@ func TestRestoreDatabaseStartsLitestreamWhenConfigurationUnchanged(t *testing.T)
 	})
 	wantEvents := []string{
 		"zstd --quiet --decompress --stdout",
-		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.service",
-		"systemctl stop litestream.service",
+		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket", "systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
+		"systemctl stop ikigenba-notes.socket", "systemctl stop ikigenba-notes.service",
+		"systemctl show --property=LoadState --property=ActiveState litestream.service", "systemctl stop litestream.service",
 		"getent passwd ikigenba",
 		"id --group --name ikigenba",
 		"litestream ltx -level all -json s3://bucket/host/notes/",
@@ -203,7 +204,7 @@ func TestRestoreDatabaseMissingSnapshotStopsAtFailedDatabaseStep(t *testing.T) {
 		return nil
 	})
 	var restoreErr *backup.RestoreError
-	if err == nil || !errors.As(err, &restoreErr) || restoreErr.Service != "notes" || restoreErr.Stage != "litestream restore" || restoreErr.Err.Error() != "no snapshot under the prefix" || !reflect.DeepEqual(restoreErr.Stopped, []string{"ikigenba-notes.service", "litestream.service"}) {
+	if err == nil || !errors.As(err, &restoreErr) || restoreErr.Service != "notes" || restoreErr.Stage != "litestream restore" || restoreErr.Err.Error() != "no snapshot under the prefix" || !reflect.DeepEqual(restoreErr.Stopped, []string{"ikigenba-notes.socket", "ikigenba-notes.service", "litestream.service"}) {
 		t.Fatalf("Restore() error = %#v", err)
 	}
 	if len(report.Steps) != 4 || report.Steps[0].Name != "source" || report.Steps[1].Name != "stop" || report.Steps[2].Name != "files" || report.Steps[3].Name != "db" || report.Steps[3].Detail != "" || report.Steps[3].Err == nil || report.Steps[3].Err.Error() != "no snapshot under the prefix" {
@@ -295,11 +296,18 @@ func (executor *databaseRestoreExecutor) execute(_ context.Context, command host
 		return host.Result{Stdout: decodeRawZstandardFrame(executor.t, compressed)}, nil
 	case "systemctl":
 		if len(command.Args) == 4 && command.Args[0] == "show" {
+			if command.Args[2] == "--property=UnitFileState" {
+				load := "not-found"
+				if executor.installed {
+					load = "loaded"
+				}
+				return host.Result{Stdout: []byte("LoadState=" + load + "\nUnitFileState=enabled\n")}, nil
+			}
 			load, active := "not-found", "inactive"
-			if executor.installed {
+			if executor.installed || command.Args[3] == "litestream.service" {
 				load = "loaded"
 			}
-			if executor.active {
+			if executor.active || command.Args[3] == "litestream.service" {
 				active = "active"
 			}
 			return host.Result{Stdout: []byte("LoadState=" + load + "\nActiveState=" + active + "\n")}, nil

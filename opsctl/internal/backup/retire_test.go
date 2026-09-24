@@ -20,13 +20,14 @@ import (
 var _ func(context.Context, host.Env, cloud.Env, config.Store) (backup.RetireResult, error) = backup.Retire
 
 func TestRetireAPIAndOrderedSuccessfulEffects(t *testing.T) {
-	// R-Y91D-XNRC R-HR5Z-IBB4 R-YSJS-1ZMG R-HYHD-SXRA
+	// R-Y91D-XNRC R-X6ZH-XI8L R-X9FA-P1PZ R-XAN7-2TGO
 	// R-YW7H-7AUJ R-YUZK-TJ3U
 	wantFields := []struct {
 		name string
 		typ  reflect.Type
 	}{
 		{"Services", reflect.TypeFor[[]string]()},
+		{"Disabled", reflect.TypeFor[[]string]()},
 		{"ServicesStopped", reflect.TypeFor[bool]()},
 		{"LitestreamStopped", reflect.TypeFor[bool]()},
 		{"SyncedDatabases", reflect.TypeFor[[]string]()},
@@ -91,16 +92,11 @@ func TestRetireAPIAndOrderedSuccessfulEffects(t *testing.T) {
 			t.Fatalf("archive result = %+v, want common object %q", archive, wantObject)
 		}
 	}
-	if got := executor.systemctlCommands(); !reflect.DeepEqual(got, []string{
-		"systemctl show --property=LoadState ikigenba-alpha.service",
-		"systemctl stop ikigenba-alpha.service",
-		"systemctl show --property=LoadState ikigenba-beta.service",
-		"systemctl stop litestream.service",
-	}) {
-		t.Fatalf("systemctl commands = %v", got)
+	if !retirementStopsOrdered(executor.commands, []string{"ikigenba-alpha.socket", "ikigenba-alpha.service", "litestream.service"}) {
+		t.Fatalf("stop order = %v", executor.commands)
 	}
 	wantSync := "litestream sync -wait -timeout 60 -socket " + filepath.Join(root, "var/run/litestream.sock") + " -json " + filepath.Join(root, "opt/alpha/state/app.db")
-	if len(executor.commands) < 5 || executor.commands[3] != wantSync || executor.commands[4] != "systemctl stop litestream.service" {
+	if len(executor.commands) < 5 || executor.commands[executor.litestreamStop-1] != wantSync || executor.commands[executor.litestreamStop] != "systemctl stop litestream.service" {
 		t.Fatalf("sync and stop commands = %v, want serial sync %q then stop", executor.commands, wantSync)
 	}
 	if executor.firstCompression < executor.litestreamStop {
@@ -117,7 +113,7 @@ func TestRetireAPIAndOrderedSuccessfulEffects(t *testing.T) {
 
 func TestRetireStopsOnUnitFailuresWithoutArchiveOrRollback(t *testing.T) {
 	// R-GWME-QK2L R-DK7F-CAV0
-	// R-YSJS-1ZMG R-HYHD-SXRA
+	// R-X9FA-P1PZ R-XAN7-2TGO
 	t.Run("discovery failure before unit operation", func(t *testing.T) {
 		root := t.TempDir()
 		store := configuredFileStore(t, root)
@@ -173,7 +169,7 @@ func TestRetireStopsOnUnitFailuresWithoutArchiveOrRollback(t *testing.T) {
 		}
 	})
 
-	t.Run("later service inspection preserves earlier stop", func(t *testing.T) {
+	t.Run("later service inspection prevents all stops", func(t *testing.T) {
 		root := t.TempDir()
 		store := configuredFileStore(t, root)
 		writeFile(t, root, "opt/alpha/state/value", "alpha", 0o600)
@@ -182,17 +178,17 @@ func TestRetireStopsOnUnitFailuresWithoutArchiveOrRollback(t *testing.T) {
 		transport := errors.New("system bus unavailable")
 		executor := newRetireExecutor(map[string]bool{"alpha": true, "zeta": true})
 		executor.fail = func(command string) (host.Result, error, bool) {
-			if command == "systemctl show --property=LoadState ikigenba-zeta.service" {
+			if command == "systemctl show --property=LoadState --property=ActiveState ikigenba-zeta.service" {
 				return host.Result{Stderr: []byte("bus lost\n")}, transport, true
 			}
 			return host.Result{}, nil, false
 		}
 		result, err := backup.Retire(context.Background(), host.Env{Root: root, Now: time.Now, Execute: executor.execute}, cloud.Env{Open: client.open}, store)
 		var commandErr *host.CommandError
-		if !errors.As(err, &commandErr) || !errors.Is(err, transport) || result.FailedStep != "services" || result.ServicesStopped || !reflect.DeepEqual(result.Services, []string{"alpha"}) {
+		if !errors.As(err, &commandErr) || !errors.Is(err, transport) || result.FailedStep != "services" || result.ServicesStopped || len(result.Services) != 0 {
 			t.Fatalf("Retire() = %+v, %T %v", result, err, err)
 		}
-		if len(client.puts) != 0 || containsRetireAction(executor.commands, "start") || containsRetireAction(executor.commands, "restart") {
+		if len(client.puts) != 0 || countCommands(executor.commands, "systemctl stop ") != 0 {
 			t.Fatalf("failure effects: commands %v uploads %v", executor.commands, client.puts)
 		}
 	})
@@ -237,10 +233,140 @@ func TestRetireStopsOnUnitFailuresWithoutArchiveOrRollback(t *testing.T) {
 		if !errors.As(err, &commandErr) || !errors.Is(err, transport) || result.FailedStep != "services" || len(result.Services) != 0 || result.ServicesStopped {
 			t.Fatalf("Retire() = %+v, %T %v", result, err, err)
 		}
-		if len(client.puts) != 0 || len(executor.commands) != 2 {
+		if len(client.puts) != 0 || !retirementStopsOrdered(executor.commands, []string{"ikigenba-alpha.socket", "ikigenba-alpha.service"}) {
 			t.Fatalf("commands %v uploads %v", executor.commands, client.puts)
 		}
 	})
+}
+
+func TestRetireSocketFirstAndDisabledClassification(t *testing.T) {
+	// R-X9FA-P1PZ R-XAN7-2TGO
+	root := t.TempDir()
+	store := configuredFileStore(t, root)
+	for _, name := range []string{"alpha", "beta", "gamma", "delta"} {
+		writeFile(t, root, "opt/"+name+"/state/value", name, 0o600)
+	}
+	client := newFileCloud()
+	executor := newRetireExecutor(map[string]bool{"alpha": true, "beta": true, "delta": true})
+	executor.sockets = map[string]bool{"alpha": true, "beta": true, "gamma": true}
+	executor.disabled = map[string]bool{"alpha": true, "beta": true, "gamma": true}
+	executor.inactive["ikigenba-alpha.socket"] = true
+	executor.inactive["ikigenba-alpha.service"] = true
+	executor.inactive["ikigenba-beta.socket"] = true
+	result, err := backup.Retire(context.Background(), host.Env{Root: root, Now: time.Now, Execute: executor.execute}, cloud.Env{Open: client.open}, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(result.Services, []string{"alpha", "beta", "delta", "gamma"}) ||
+		!reflect.DeepEqual(result.Disabled, []string{"alpha"}) || !result.ServicesStopped {
+		t.Fatalf("Retire() = %+v", result)
+	}
+	if !retirementStopsOrdered(executor.commands, []string{
+		"ikigenba-alpha.socket", "ikigenba-beta.socket", "ikigenba-gamma.socket",
+		"ikigenba-alpha.service", "ikigenba-beta.service", "ikigenba-delta.service",
+		"litestream.service",
+	}) {
+		t.Fatalf("stop order = %v", executor.commands)
+	}
+	if got := resultNames(result.Files); !reflect.DeepEqual(got, []string{"alpha", "beta", "delta", "gamma"}) {
+		t.Fatalf("archive services = %v", got)
+	}
+}
+
+func TestRetireDisabledInspectionFailurePreventsStops(t *testing.T) {
+	// R-XAN7-2TGO
+	root := t.TempDir()
+	store := configuredFileStore(t, root)
+	writeFile(t, root, "opt/alpha/state/value", "alpha", 0o600)
+	client := newFileCloud()
+	executor := newRetireExecutor(map[string]bool{"alpha": true})
+	executor.fail = func(command string) (host.Result, error, bool) {
+		if command == "systemctl show --property=LoadState --property=UnitFileState ikigenba-alpha.socket" {
+			return host.Result{ExitCode: 7, Stderr: []byte("unit query failed\n")}, nil, true
+		}
+		return host.Result{}, nil, false
+	}
+	result, err := backup.Retire(context.Background(), host.Env{Root: root, Now: time.Now, Execute: executor.execute}, cloud.Env{Open: client.open}, store)
+	var commandErr *host.CommandError
+	if !errors.As(err, &commandErr) || result.FailedStep != "services" || result.ServicesStopped || len(result.Services) != 0 {
+		t.Fatalf("Retire() = %+v, %v", result, err)
+	}
+	if countCommands(executor.commands, "systemctl stop ") != 0 || len(client.puts) != 0 {
+		t.Fatalf("effects = %v, %v", executor.commands, client.puts)
+	}
+}
+
+func TestRetireDisabledRequiresInitiallyInactiveUnits(t *testing.T) {
+	// R-XAN7-2TGO
+	for _, initialState := range []string{"failed", "activating", "deactivating", "reloading"} {
+		t.Run(initialState, func(t *testing.T) {
+			root := t.TempDir()
+			store := configuredFileStore(t, root)
+			writeFile(t, root, "opt/alpha/state/value", "alpha", 0o600)
+			client := newFileCloud()
+			executor := newRetireExecutor(map[string]bool{"alpha": true})
+			executor.disabled["alpha"] = true
+			executor.inactive["ikigenba-alpha.socket"] = true
+			executor.fail = func(command string) (host.Result, error, bool) {
+				if command == "systemctl show --property=LoadState --property=ActiveState ikigenba-alpha.service" &&
+					!containsRetireCommand(executor.commands, "systemctl stop ikigenba-alpha.service") {
+					return host.Result{Stdout: []byte("LoadState=loaded\nActiveState=" + initialState + "\n")}, nil, true
+				}
+				return host.Result{}, nil, false
+			}
+			result, err := backup.Retire(context.Background(), host.Env{Root: root, Now: time.Now, Execute: executor.execute}, cloud.Env{Open: client.open}, store)
+			if err != nil || !result.ServicesStopped || !reflect.DeepEqual(result.Services, []string{"alpha"}) || len(result.Disabled) != 0 {
+				t.Fatalf("Retire() = %+v, %v", result, err)
+			}
+		})
+	}
+}
+
+func TestRetirePostStopRequiresInactiveState(t *testing.T) {
+	// R-XAN7-2TGO
+	for _, test := range []struct {
+		name     string
+		unit     string
+		state    string
+		failed   string
+		appPhase bool
+	}{
+		{"socket activating", "ikigenba-alpha.socket", "activating", "services", true},
+		{"service failed", "ikigenba-alpha.service", "failed", "services", true},
+		{"service deactivating", "ikigenba-alpha.service", "deactivating", "services", true},
+		{"litestream reloading", "litestream.service", "reloading", "litestream", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			store := configuredFileStore(t, root)
+			writeFile(t, root, "opt/alpha/state/value", "alpha", 0o600)
+			client := newFileCloud()
+			executor := newRetireExecutor(map[string]bool{"alpha": true})
+			executor.fail = func(command string) (host.Result, error, bool) {
+				if command == "systemctl show --property=LoadState --property=ActiveState "+test.unit &&
+					containsRetireCommand(executor.commands, "systemctl stop "+test.unit) {
+					return host.Result{Stdout: []byte("LoadState=loaded\nActiveState=" + test.state + "\n")}, nil, true
+				}
+				return host.Result{}, nil, false
+			}
+			result, err := backup.Retire(context.Background(), host.Env{Root: root, Now: time.Now, Execute: executor.execute}, cloud.Env{Open: client.open}, store)
+			if err == nil || result.FailedStep != test.failed || result.LitestreamStopped || len(client.puts) != 0 {
+				t.Fatalf("Retire() = %+v, %v; uploads %v", result, err, client.puts)
+			}
+			if result.ServicesStopped == test.appPhase {
+				t.Fatalf("ServicesStopped = %v, want %v", result.ServicesStopped, !test.appPhase)
+			}
+		})
+	}
+}
+
+func containsRetireCommand(commands []string, want string) bool {
+	for _, command := range commands {
+		if command == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestRetireRejectsInvalidSynchronizationProofAndStops(t *testing.T) {
@@ -298,7 +424,10 @@ func TestRetireRejectsInvalidSynchronizationProofAndStops(t *testing.T) {
 			if err == nil || result.FailedStep != "litestream" || !result.ServicesStopped || !result.LitestreamStopped || len(result.SyncedDatabases) != 0 {
 				t.Fatalf("Retire() = %+v, %v", result, err)
 			}
-			if countCommands(executor.commands, "litestream sync ") != 1 || executor.commands[len(executor.commands)-1] != "systemctl stop litestream.service" {
+			if countCommands(executor.commands, "litestream sync ") != 1 || executor.litestreamStop < 1 ||
+				!strings.HasPrefix(executor.commands[executor.litestreamStop-1], "litestream sync ") ||
+				executor.commands[executor.litestreamStop] != "systemctl stop litestream.service" ||
+				executor.commands[len(executor.commands)-1] != "systemctl show --property=LoadState --property=ActiveState litestream.service" {
 				t.Fatalf("commands = %v; want one sync followed by mandatory stop", executor.commands)
 			}
 			if len(client.puts) != 0 || executor.firstCompression != -1 {
@@ -534,6 +663,9 @@ func TestRetireInterruptionStopsBeforeHostArchive(t *testing.T) {
 
 type retireExecutor struct {
 	units            map[string]bool
+	sockets          map[string]bool
+	inactive         map[string]bool
+	disabled         map[string]bool
 	fail             func(string) (host.Result, error, bool)
 	files            fileExecutor
 	commands         []string
@@ -544,6 +676,9 @@ type retireExecutor struct {
 func newRetireExecutor(units map[string]bool) *retireExecutor {
 	return &retireExecutor{
 		units:            units,
+		sockets:          units,
+		inactive:         make(map[string]bool),
+		disabled:         make(map[string]bool),
 		files:            fileExecutor{uid: 1000, gid: 1000, user: "ikigenba", group: "ikigenba"},
 		litestreamStop:   -1,
 		firstCompression: -1,
@@ -561,17 +696,35 @@ func (executor *retireExecutor) execute(ctx context.Context, command host.Comman
 	if command.Name == "systemctl" {
 		if reflect.DeepEqual(command.Args, []string{"stop", "litestream.service"}) {
 			executor.litestreamStop = len(executor.commands) - 1
+			executor.inactive["litestream.service"] = true
 			return host.Result{}, nil
 		}
-		if len(command.Args) == 3 && command.Args[0] == "show" && command.Args[1] == "--property=LoadState" {
-			name := strings.TrimSuffix(strings.TrimPrefix(command.Args[2], "ikigenba-"), ".service")
+		if len(command.Args) >= 3 && command.Args[0] == "show" {
+			unit := command.Args[len(command.Args)-1]
+			name := strings.TrimSuffix(strings.TrimSuffix(strings.TrimPrefix(unit, "ikigenba-"), ".service"), ".socket")
 			state := "not-found"
-			if executor.units[name] {
+			exists := executor.units[name]
+			if strings.HasSuffix(unit, ".socket") {
+				exists = executor.sockets[name]
+			}
+			if unit == "litestream.service" {
+				exists = true
+			}
+			if exists {
 				state = "loaded"
 			}
-			return host.Result{Stdout: []byte("LoadState=" + state + "\n")}, nil
+			active := "inactive"
+			if exists && !executor.inactive[unit] {
+				active = "active"
+			}
+			enablement := "enabled"
+			if executor.disabled[name] {
+				enablement = "disabled"
+			}
+			return host.Result{Stdout: []byte("LoadState=" + state + "\nActiveState=" + active + "\nUnitFileState=" + enablement + "\n")}, nil
 		}
 		if len(command.Args) == 2 && command.Args[0] == "stop" {
+			executor.inactive[command.Args[1]] = true
 			return host.Result{}, nil
 		}
 		return host.Result{}, fmt.Errorf("unexpected systemctl command %q", text)
@@ -593,14 +746,14 @@ func (executor *retireExecutor) execute(ctx context.Context, command host.Comman
 	return executor.files.execute(ctx, command)
 }
 
-func (executor *retireExecutor) systemctlCommands() []string {
-	var commands []string
-	for _, command := range executor.commands {
-		if strings.HasPrefix(command, "systemctl ") {
-			commands = append(commands, command)
+func retirementStopsOrdered(commands []string, units []string) bool {
+	var stopped []string
+	for _, command := range commands {
+		if strings.HasPrefix(command, "systemctl stop ") {
+			stopped = append(stopped, strings.TrimPrefix(command, "systemctl stop "))
 		}
 	}
-	return commands
+	return reflect.DeepEqual(stopped, units)
 }
 
 func containsRetireAction(commands []string, action string) bool {

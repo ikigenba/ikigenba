@@ -32,11 +32,10 @@ func TestDatabaseHasExactFields(t *testing.T) {
 	})
 }
 
-// R-XOS5-5M7T
+// R-U40N-4DRE
 func TestManifestHasExactFields(t *testing.T) {
 	assertExactFields(t, reflect.TypeFor[apps.Manifest](), []field{
 		{name: "App", typ: reflect.TypeFor[string]()},
-		{name: "Port", typ: reflect.TypeFor[int]()},
 		{name: "Default", typ: reflect.TypeFor[bool]()},
 		{name: "Secrets", typ: reflect.TypeFor[[]string]()},
 		{name: "Env", typ: reflect.TypeFor[map[string]string]()},
@@ -98,7 +97,7 @@ func TestValidateName(t *testing.T) {
 // R-XSFU-AXFW
 func TestParseManifestRejectsMalformedTOMLWithoutPartialResult(t *testing.T) {
 	malformed := []string{
-		"app = \"notes\"\nport = [3100\n",
+		"app = \"notes\"\nsecrets = [\n",
 		"value = 1-",
 		"other = i_n_f",
 		"other = n_a_n",
@@ -195,10 +194,9 @@ func TestParseManifestRejectsMalformedTOMLWithoutPartialResult(t *testing.T) {
 	}
 }
 
-// R-XTNQ-OP6L
+// R-U58J-I5I3
 func TestParseManifestMapsFieldsAndSuppliesEmptyCollections(t *testing.T) {
 	data := []byte(`app = "crm"
-port = 3100
 default = true
 secrets = ["CRM_API_KEY", "CRM_API_SECRET"]
 
@@ -215,7 +213,6 @@ path = "state/crm.db"
 	}
 	want := apps.Manifest{
 		App:     "crm",
-		Port:    3100,
 		Default: true,
 		Secrets: []string{"CRM_API_KEY", "CRM_API_SECRET"},
 		Env:     map[string]string{"OUTBOX_RETENTION_DAYS": "7"},
@@ -232,7 +229,7 @@ path = "state/crm.db"
 	if err != nil {
 		t.Fatalf("ParseManifest(empty) returned error: %v", err)
 	}
-	if minimal.App != "" || minimal.Port != 0 || minimal.Default || minimal.Database != nil {
+	if minimal.App != "" || minimal.Default || minimal.Database != nil {
 		t.Fatalf("ParseManifest(empty) did not retain scalar zero values: %#v", minimal)
 	}
 	if minimal.Secrets == nil || len(minimal.Secrets) != 0 || minimal.Env == nil || len(minimal.Env) != 0 {
@@ -240,7 +237,6 @@ path = "state/crm.db"
 	}
 
 	equivalent := []byte(`"app" = '''crm'''
-port = 0xC1C
 default = true
 secrets = ["""CRM_API_KEY""", '''CRM_API_SECRET''']
 env = { OUTBOX_RETENTION_DAYS = """7""" }
@@ -255,9 +251,9 @@ state/crm.db"""
 	if !reflect.DeepEqual(decoded, want) {
 		t.Fatalf("ParseManifest(equivalent forms) = %#v, want %#v", decoded, want)
 	}
-	crlf := []byte("app = \"crm\"\r\nport = 3100\r\n")
+	crlf := []byte("app = \"crm\"\r\ndefault = true\r\n")
 	decoded, err = apps.ParseManifest(crlf)
-	if err != nil || decoded.App != "crm" || decoded.Port != 3100 {
+	if err != nil || decoded.App != "crm" || !decoded.Default {
 		t.Fatalf("ParseManifest(CRLF document) = %#v, %v", decoded, err)
 	}
 	continued := []byte("app = \"\"\"c\\ \t\n  r\\\r\n\t m\"\"\"")
@@ -371,7 +367,7 @@ state/crm.db"""
 	}
 }
 
-// R-XUVN-2GXA
+// R-UDRU-6JOY
 func TestParseManifestValidatesRecognizedFieldsAndIgnoresOthers(t *testing.T) {
 	valid := []byte(`title = """unrelated
 title"""
@@ -403,18 +399,12 @@ MODE = "production"
 	if err != nil {
 		t.Fatalf("ParseManifest rejected capability-only manifest: %v", err)
 	}
-	if manifest.App != "" || manifest.Port != 0 || manifest.Default || len(manifest.Secrets) != 0 || manifest.Database != nil || !reflect.DeepEqual(manifest.Env, map[string]string{"MODE": "production"}) {
+	if manifest.App != "" || manifest.Default || len(manifest.Secrets) != 0 || manifest.Database != nil || !reflect.DeepEqual(manifest.Env, map[string]string{"MODE": "production"}) {
 		t.Fatalf("unexpected model from unrelated fields: %#v", manifest)
 	}
 	quotedDot, err := apps.ParseManifest([]byte("[env]\n\"foo.bar\" = \"x\""))
 	if err != nil || !reflect.DeepEqual(quotedDot.Env, map[string]string{"foo.bar": "x"}) {
 		t.Fatalf("ParseManifest(direct quoted env key) = %#v, %v", quotedDot, err)
-	}
-	for _, port := range []int{1, 65535} {
-		manifest, err := apps.ParseManifest([]byte(fmt.Sprintf("port = %d", port)))
-		if err != nil || manifest.Port != port {
-			t.Errorf("ParseManifest accepted-port %d = %#v, %v", port, manifest, err)
-		}
 	}
 	for _, root := range []string{"app", "port", "default", "secrets"} {
 		for _, format := range []string{"[%s]", "[[%s]]", "%s.child = \"x\"", "%s.child.value = 1"} {
@@ -470,6 +460,48 @@ MODE = "production"
 				t.Fatalf("failed ParseManifest returned partial model: %#v", manifest)
 			}
 		})
+	}
+}
+
+// R-U7OC-9OZH
+func TestParseManifestRejectsTopLevelPortRegardlessOfType(t *testing.T) {
+	const want = "'port' is not allowed; the host gives the app its socket"
+	for _, data := range []string{
+		`port = 3000`, `port = "socket"`, `port = true`, `"port" = []`,
+		"app = \"notes\"\nport = 3000",
+	} {
+		manifest, err := apps.ParseManifest([]byte(data))
+		if err == nil || err.Error() != want || !reflect.DeepEqual(manifest, apps.Manifest{}) {
+			t.Errorf("ParseManifest(%q) = %#v, %v; want exact port error and zero manifest", data, manifest, err)
+		}
+	}
+	for _, data := range []string{
+		"# port = 3000\napp = \"notes\"",
+		"description = '''\nport = 3000\n'''",
+		"description = \"\"\"\nport = 3000\n\"\"\"",
+		"[metadata]\nport = 3000",
+	} {
+		if _, err := apps.ParseManifest([]byte(data)); err != nil {
+			t.Errorf("ParseManifest(%q) falsely found top-level port: %v", data, err)
+		}
+	}
+}
+
+// R-Y2OV-VJIN
+func TestParseManifestPortErrorTakesPrecedence(t *testing.T) {
+	const want = "'port' is not allowed; the host gives the app its socket"
+	for _, data := range []string{
+		"app = \"host\"\nport = 0",
+		"app = [\nport = 3000\n",
+		"default = \"yes\"\nport = 3000",
+		"app = \"notes\"\napp = \"again\"\nport = 3000",
+		"port = false\napp = \"bad_name\"",
+		"port = [\n",
+	} {
+		manifest, err := apps.ParseManifest([]byte(data))
+		if err == nil || err.Error() != want || !reflect.DeepEqual(manifest, apps.Manifest{}) {
+			t.Errorf("ParseManifest(%q) = %#v, %v; want port precedence", data, manifest, err)
+		}
 	}
 }
 

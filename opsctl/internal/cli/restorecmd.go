@@ -21,11 +21,14 @@ SERVICE declares a [database], replace that database with what litestream
 holds. Without --at both halves are the newest there is. Nothing under bin/ or
 share/ is touched.
 
-SERVICE's unit is stopped for the restore and started again after it, and so is
-litestream.service, because the files step deletes the database both of them
-hold open. A restore is a brief outage. An app already stopped is left stopped,
-unless an earlier failed restore stopped it: a successful retry on the same
-running host starts it again. A failed restore leaves both stopped.
+SERVICE's socket and service are stopped for the restore, socket first so no
+request starts the service again mid-restore, and started again after it; so
+is litestream.service, because the files step deletes the database the app and
+litestream both hold open. A restore is a brief outage. An app whose socket
+was already stopped is left stopped, unless an earlier failed restore stopped
+it: a successful retry on the same running host starts it again. A disabled
+app stays disabled: neither of its units is enabled or started. A failed
+restore leaves them all stopped.
 
 Before litestream.service comes back, /etc/litestream.yml is regenerated from
 the manifest the restore put in place, so a database restored into a host that
@@ -218,6 +221,6 @@ func writeRestoreStoppedDetail(stderr io.Writer, stopped []string) {
 	case 2:
 		_, _ = fmt.Fprintf(stderr, "%s and %s were left stopped\n", diagnosticArg(stopped[0]), diagnosticArg(stopped[1]))
 	default:
-		_, _ = fmt.Fprintf(stderr, "%s were left stopped\n", diagnosticArg(strings.Join(stopped, ", ")))
+		_, _ = fmt.Fprintf(stderr, "%s, and %s were left stopped\n", diagnosticArg(strings.Join(stopped[:len(stopped)-1], ", ")), diagnosticArg(stopped[len(stopped)-1]))
 	}
 }

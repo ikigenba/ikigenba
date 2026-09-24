@@ -27,11 +27,14 @@ SERVICE declares a [database], replace that database with what litestream
 holds. Without --at both halves are the newest there is. Nothing under bin/ or
 share/ is touched.
 
-SERVICE's unit is stopped for the restore and started again after it, and so is
-litestream.service, because the files step deletes the database both of them
-hold open. A restore is a brief outage. An app already stopped is left stopped,
-unless an earlier failed restore stopped it: a successful retry on the same
-running host starts it again. A failed restore leaves both stopped.
+SERVICE's socket and service are stopped for the restore, socket first so no
+request starts the service again mid-restore, and started again after it; so
+is litestream.service, because the files step deletes the database the app and
+litestream both hold open. A restore is a brief outage. An app whose socket
+was already stopped is left stopped, unless an earlier failed restore stopped
+it: a successful retry on the same running host starts it again. A disabled
+app stays disabled: neither of its units is enabled or started. A failed
+restore leaves them all stopped.
 
 Before litestream.service comes back, /etc/litestream.yml is regenerated from
 the manifest the restore put in place, so a database restored into a host that
@@ -54,7 +57,7 @@ Configuration keys:
 `
 
 func TestRestoreHelpIsExactAndInert(t *testing.T) {
-	// R-GQLQ-NIVK
+	// R-XJ6H-R7NJ
 	for _, euid := range []int{0, 1000} {
 		for _, option := range []string{"--help", "-h"} {
 			root := filepath.Join(t.TempDir(), "host-state")
@@ -155,7 +158,7 @@ func TestRestoreInvalidNonRootInvocationReportsGrammarBeforeRefusal(t *testing.T
 }
 
 func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
-	// R-X7Z1-KY06
+	// R-XHYL-DFWU
 	root := configuredBackupRoot(t)
 	store := config.Store{Root: root}
 	if err := store.Set("host.name", "HOST.Example.Test."); err != nil {
@@ -171,7 +174,7 @@ func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
 	stamp := "2026-09-16T10:00:00Z"
 	uri := "s3://backups.example/host/notes/" + stamp + ".tar.zst"
 	archive := makeRestoreCLIArchive(t, map[string]string{
-		"etc/manifest.toml": "port = 4100\n",
+		"etc/manifest.toml": "app = \"notes\"\n",
 		"state/value":       "restored",
 	})
 	client.objects[uri] = append([]byte{0x28, 0xb5, 0x2f, 0xfd}, archive...)
@@ -182,16 +185,25 @@ func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
 		if command.Name == "zstd" {
 			return executeZstd(ctx, command)
 		}
-		if command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"show", "--property=LoadState", "--property=ActiveState", "ikigenba-notes.service"}) {
+		if command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"show", "--property=LoadState", "--property=ActiveState", "ikigenba-notes.socket"}) {
 			return host.Result{Stdout: []byte("LoadState=not-found\nActiveState=inactive\n")}, nil
+		}
+		if command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"show", "--property=LoadState", "--property=UnitFileState", "ikigenba-notes.socket"}) {
+			return host.Result{Stdout: []byte("LoadState=not-found\nUnitFileState=disabled\n")}, nil
+		}
+		if command.Name == "getent" && reflect.DeepEqual(command.Args, []string{"passwd", "ikigenba"}) {
+			return host.Result{Stdout: []byte("ikigenba:x:1234:1234::/nonexistent:/usr/sbin/nologin\n")}, nil
+		}
+		if command.Name == "id" && reflect.DeepEqual(command.Args, []string{"--group", "--name", "ikigenba"}) {
+			return host.Result{Stdout: []byte("ikigenba\n")}, nil
 		}
 		return host.Result{}, fmt.Errorf("unexpected command %q", commands[len(commands)-1])
 	}
 	stdout, stderr, code := invokeBackupCLI([]string{"restore", "--at", "2026-09-16T10:30:00Z", "notes"}, hostCLIDeps(root, client, execute))
 	want := "source: ok (notes/" + stamp + ".tar.zst, 0.0 MiB)\n" +
-		"stop: ok (no ikigenba-notes.service)\n" +
+		"stop: ok (no ikigenba-notes.socket)\n" +
 		"files: ok (/opt/notes/etc, /opt/notes/state, 2 files)\n" +
-		"start: ok (no ikigenba-notes.service)\n"
+		"start: ok (no ikigenba-notes.socket)\n"
 	if code != 0 || stdout != want || stderr != "" {
 		t.Fatalf("restore command = exit %d stdout %q stderr %q", code, stdout, stderr)
 	}
@@ -204,13 +216,20 @@ func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
 	if err != nil || !bytes.Contains(configuration, []byte("server_name         notes.host.example.test example.test;")) || bytes.Contains(configuration, []byte("HOST.Example.Test.")) {
 		t.Fatalf("nginx.Write output = %q, %v", configuration, err)
 	}
-	if len(commands) != 2 || !strings.HasPrefix(commands[0], "zstd ") || !strings.HasPrefix(commands[1], "systemctl show ") {
+	if !reflect.DeepEqual(commands, []string{
+		"zstd --quiet --decompress --stdout",
+		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket",
+		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
+		"getent passwd ikigenba",
+		"id --group --name ikigenba",
+		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
+	}) {
 		t.Fatalf("commands = %v; nginx callback must use Write without test/reload", commands)
 	}
 }
 
 func TestRestoreCommandAtReachesDomainSelectionInEitherPosition(t *testing.T) {
-	// R-GCBK-LDMU R-X7Z1-KY06
+	// R-GCBK-LDMU R-XHYL-DFWU
 	const (
 		older  = "2026-09-16T10:00:00Z"
 		later  = "2026-09-16T11:00:00Z"
@@ -245,8 +264,11 @@ func TestRestoreCommandAtReachesDomainSelectionInEitherPosition(t *testing.T) {
 				if command.Name == "zstd" {
 					return executeZstd(ctx, command)
 				}
-				if command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"show", "--property=LoadState", "--property=ActiveState", "ikigenba-notes.service"}) {
+				if command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"show", "--property=LoadState", "--property=ActiveState", "ikigenba-notes.socket"}) {
 					return host.Result{Stdout: []byte("LoadState=not-found\nActiveState=inactive\n")}, nil
+				}
+				if command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"show", "--property=LoadState", "--property=UnitFileState", "ikigenba-notes.socket"}) {
+					return host.Result{Stdout: []byte("LoadState=not-found\nUnitFileState=disabled\n")}, nil
 				}
 				return host.Result{}, fmt.Errorf("unexpected command %q %v", command.Name, command.Args)
 			}
@@ -270,7 +292,7 @@ func TestRestoreCommandAtReachesDomainSelectionInEitherPosition(t *testing.T) {
 }
 
 func TestRestoreCommandRetainsDomainStopFailureEndToEnd(t *testing.T) {
-	// R-X7Z1-KY06
+	// R-XHYL-DFWU
 	root := configuredBackupRoot(t)
 	store := config.Store{Root: root}
 	if err := store.Set("host.name", "host.example.test"); err != nil {
@@ -292,8 +314,14 @@ func TestRestoreCommandRetainsDomainStopFailureEndToEnd(t *testing.T) {
 		switch {
 		case command.Name == "zstd":
 			return executeZstd(ctx, command)
-		case command.Name == "systemctl" && len(command.Args) == 4 && command.Args[0] == "show":
+		case command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"show", "--property=LoadState", "--property=ActiveState", "ikigenba-notes.socket"}):
 			return host.Result{Stdout: []byte("LoadState=loaded\nActiveState=active\n")}, nil
+		case command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"show", "--property=LoadState", "--property=UnitFileState", "ikigenba-notes.socket"}):
+			return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=enabled\n")}, nil
+		case command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"show", "--property=LoadState", "--property=ActiveState", "litestream.service"}):
+			return host.Result{Stdout: []byte("LoadState=loaded\nActiveState=active\n")}, nil
+		case command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"stop", "ikigenba-notes.socket"}):
+			return host.Result{}, nil
 		case command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"stop", "ikigenba-notes.service"}):
 			return host.Result{}, nil
 		case command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"stop", "litestream.service"}):
@@ -307,15 +335,18 @@ func TestRestoreCommandRetainsDomainStopFailureEndToEnd(t *testing.T) {
 	wantOut := "source: ok (notes/" + stamp + ".tar.zst, 0.0 MiB)\n" +
 		"stop: failed: stop litestream.service: exit status 1\n"
 	wantErr := "opsctl: restore notes failed at stop\n\n" +
-		"ikigenba-notes.service was left stopped\n" +
+		"ikigenba-notes.socket and ikigenba-notes.service were left stopped\n" +
 		"> partial stop\n> bus secret\r\n"
 	if code != 1 || stdout != wantOut || stderr != wantErr {
 		t.Fatalf("restore stop failure = exit %d stdout %q stderr %q", code, stdout, stderr)
 	}
 	wantCommands := []string{
 		"zstd --quiet --decompress --stdout",
-		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.service",
+		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket",
+		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
+		"systemctl stop ikigenba-notes.socket",
 		"systemctl stop ikigenba-notes.service",
+		"systemctl show --property=LoadState --property=ActiveState litestream.service",
 		"systemctl stop litestream.service",
 	}
 	if !reflect.DeepEqual(commands, wantCommands) {
@@ -327,7 +358,7 @@ func TestRestoreCommandRetainsDomainStopFailureEndToEnd(t *testing.T) {
 }
 
 func TestRestoreCommandRequiresHostNameBeforeDomainAccess(t *testing.T) {
-	// R-X7Z1-KY06
+	// R-XHYL-DFWU
 	for _, test := range []struct {
 		name  string
 		setup func(*testing.T, string)
@@ -367,7 +398,7 @@ func TestRestoreCommandRequiresHostNameBeforeDomainAccess(t *testing.T) {
 }
 
 func TestRestoreCommandReportsHostApexReadFailure(t *testing.T) {
-	// R-X7Z1-KY06
+	// R-XHYL-DFWU
 	root := t.TempDir()
 	var keys []string
 	store := restoreStoreFunc(func(key string) (string, error) {
@@ -402,7 +433,7 @@ func TestRestoreCommandReportsHostApexReadFailure(t *testing.T) {
 }
 
 func TestRestoreCommandRejectsApexWithoutParentBeforeRestore(t *testing.T) {
-	// R-X7Z1-KY06
+	// R-XHYL-DFWU
 	root := configuredBackupRoot(t)
 	store := config.Store{Root: root}
 	if err := store.Set("host.name", "LOCALHOST."); err != nil {
@@ -436,17 +467,17 @@ func TestRestoreCommandRejectsApexWithoutParentBeforeRestore(t *testing.T) {
 }
 
 func TestRestoreOutcomePreservesReportsStoppedUnitsAndCommandDetail(t *testing.T) {
-	// R-X7Z1-KY06
+	// R-XHYL-DFWU
 	commandErr := &host.CommandError{Label: "stop litestream.service", Result: host.Result{ExitCode: 1, Stdout: []byte("partial\n"), Stderr: []byte("secret\r\n")}}
 	report := backup.RestoreReport{Steps: []backup.RestoreStep{
 		{Name: "source", Detail: "notes/stamp.tar.zst, 1.0 MiB"},
 		{Name: "stop", Err: fmt.Errorf("stop refused\nprivate detail: %w", commandErr)},
 	}}
-	runErr := &backup.RestoreError{Service: "notes", Stage: "stop", Err: commandErr, Stopped: []string{"ikigenba-notes.service", "litestream.service"}}
+	runErr := &backup.RestoreError{Service: "notes", Stage: "stop", Err: commandErr, Stopped: []string{"ikigenba-notes.socket", "ikigenba-notes.service", "litestream.service"}}
 	var stdout, stderr bytes.Buffer
 	code := renderRestoreOutcome(&stdout, &stderr, "notes", report, runErr)
 	wantOut := "source: ok (notes/stamp.tar.zst, 1.0 MiB)\nstop: failed: stop refused\n"
-	wantErr := "opsctl: restore notes failed at stop\n\nikigenba-notes.service and litestream.service were left stopped\n> partial\n> secret\r\n"
+	wantErr := "opsctl: restore notes failed at stop\n\nikigenba-notes.socket, ikigenba-notes.service, and litestream.service were left stopped\n> partial\n> secret\r\n"
 	if code != exitFail || stdout.String() != wantOut || stderr.String() != wantErr {
 		t.Fatalf("restore failure = exit %d stdout %q stderr %q", code, stdout.String(), stderr.String())
 	}
@@ -473,7 +504,7 @@ func TestRestoreOutcomePreservesReportsStoppedUnitsAndCommandDetail(t *testing.T
 }
 
 func TestRestoreReportWriteFailureIsOperational(t *testing.T) {
-	// R-X7Z1-KY06
+	// R-XHYL-DFWU
 	report := backup.RestoreReport{Steps: []backup.RestoreStep{{Name: "source", Detail: "ready"}}}
 	var stderr bytes.Buffer
 	code := renderRestoreOutcome(failingRestoreWriter{}, &stderr, "notes", report, nil)
