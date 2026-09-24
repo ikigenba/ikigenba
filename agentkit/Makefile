@@ -7,9 +7,6 @@ test:
 lint:
 	golangci-lint run
 
-llm-lint:
-	llm-lint .
-
 fmt:
 	gofmt -w .
 
@@ -26,4 +23,4 @@ live:
 	OPENAI_API_KEY="$$(secret-tool lookup name OPENAI_API_KEY)" \
 	go test -tags live -count=1 -run '^TestLive' ./...
 
-.PHONY: build test lint llm-lint fmt clean install live
+.PHONY: build test lint fmt clean install live

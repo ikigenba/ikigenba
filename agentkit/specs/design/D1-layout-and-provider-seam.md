@@ -10,11 +10,9 @@ house layout:
 agentkit/                               (this sub-project; go.mod lives here)
 ├── AGENTS.md                           spec-driven build contract, gates
 ├── README.md
-├── Makefile                            build test lint llm-lint fmt clean install
+├── Makefile                            build test lint fmt clean install
 ├── go.mod                              go 1.26; no go.work
 ├── .golangci.yml                       version 2; standard + errorlint, gocritic, …
-├── .llm-lint.json                      promotion allowlist
-├── lint-rules/                         llm-lint rule files
 ├── specs/
 │   ├── design/D<int>-<slug>.md         these documents
 │   └── loops/{gather,build,verify}.md  + executable run

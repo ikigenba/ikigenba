@@ -50,8 +50,8 @@ make build     # go build ./...
 make test      # go test -race ./...
 ```
 
-The full verification gates (format, build, race tests, `golangci-lint`,
-`llm-lint`) are declared in [`AGENTS.md`](AGENTS.md).
+The full verification gates (format, build, race tests, `golangci-lint`)
+are declared in [`AGENTS.md`](AGENTS.md).
 
 ## The spec
 

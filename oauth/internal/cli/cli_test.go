@@ -590,7 +590,6 @@ func TestRunWritesTokenResponseBytesVerbatimToStdout(t *testing.T) {
 }
 
 // R-EK80-A1KO
-// llm-lint:ignore overclaiming-exhaustive-test-name
 func TestRunKeepsStdoutEmptyForEveryFailureMode(t *testing.T) {
 	tests := []struct {
 		name     string

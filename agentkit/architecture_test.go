@@ -536,7 +536,7 @@ func TestModuleContainsOnlyRootAndRetryPackages(t *testing.T) {
 				return nil
 			}
 			name := entry.Name()
-			if strings.HasPrefix(name, ".") || name == "specs" || name == "lint-rules" || name == "testdata" {
+			if strings.HasPrefix(name, ".") || name == "specs" || name == "testdata" {
 				return filepath.SkipDir
 			}
 			return nil

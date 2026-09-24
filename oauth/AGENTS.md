@@ -60,11 +60,6 @@ use `go vet` rather than `go build` precisely because vet type-checks the test
 files too. Deliberately **not** run per-platform: `golangci-lint`, whose extra
 linters would fire on code paths nobody builds for diminishing returns.
 
-llm-lint is **disabled for now**: it is not a gate and not part of the
-toolchain, so the run needs neither it on PATH nor a provider API key.
-`.llm-lint.json`, the rules under `lint-rules/`, and the `make llm-lint` target
-are kept so it can be re-enabled.
-
 ## Commit conventions
 
 ```

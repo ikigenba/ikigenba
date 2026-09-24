@@ -13,9 +13,6 @@ vet:
 lint:
 	golangci-lint run
 
-llm-lint:
-	llm-lint cmd internal
-
 fmt:
 	gofmt -w .
 
@@ -25,4 +22,4 @@ clean:
 install:
 	go install ./cmd/oauth
 
-.PHONY: build test vet lint llm-lint fmt clean install
+.PHONY: build test vet lint fmt clean install

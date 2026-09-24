@@ -13,9 +13,9 @@ monorepo's house layout:
 toolkit/                                (this sub-project; go.mod lives here)
 ├── AGENTS.md                           spec-driven build contract, gates
 ├── README.md
-├── Makefile                            build test lint llm-lint fmt clean
+├── Makefile                            build test lint fmt clean
 ├── go.mod                              Go version + module requires
-├── .golangci.yml  .llm-lint.json  lint-rules/
+├── .golangci.yml
 ├── specs/design/D<int>-<slug>.md       these documents
 └── *.go                                the single package `toolkit`
 ```

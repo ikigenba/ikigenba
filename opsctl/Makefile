@@ -18,9 +18,6 @@ test:
 lint:
 	golangci-lint run
 
-llm-lint:
-	llm-lint cmd internal
-
 fmt:
 	gofmt -w .
 
@@ -30,4 +27,4 @@ clean:
 install:
 	go install ./cmd/opsctl
 
-.PHONY: build deploy test lint llm-lint fmt clean install
+.PHONY: build deploy test lint fmt clean install

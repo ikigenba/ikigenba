@@ -24,7 +24,6 @@ func TestRunVersionWritesExactVersion(t *testing.T) {
 		}
 		// The release value may change independently; this assertion instead proves
 		// that Run emits the package's source-carried product fact with exactly one newline.
-		// llm-lint:ignore expected-value-from-code-under-test
 		if got, want := stdout.String(), version+"\n"; got != want {
 			t.Errorf("Run(%q) stdout = %q, want exactly %q", flag, got, want)
 		}

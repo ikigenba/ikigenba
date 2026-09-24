@@ -95,7 +95,7 @@ make test      # go test -race ./...
 ```
 
 The full verification gates (build, cross-platform vet, race tests,
-`golangci-lint`, `llm-lint`) are declared in [`AGENTS.md`](AGENTS.md).
+`golangci-lint`) are declared in [`AGENTS.md`](AGENTS.md).
 
 ## The spec
 

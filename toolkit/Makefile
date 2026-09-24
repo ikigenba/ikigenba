@@ -7,9 +7,6 @@ test:
 lint:
 	golangci-lint run
 
-llm-lint:
-	llm-lint .
-
 fmt:
 	gofmt -w .
 
@@ -19,4 +16,4 @@ clean:
 install:
 	go install ./...
 
-.PHONY: build test lint llm-lint fmt clean install
+.PHONY: build test lint fmt clean install

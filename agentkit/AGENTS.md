@@ -76,11 +76,6 @@ skipped tests, no disabled linters laundering a failure.
    When it applies and a credential from the toolchain list is absent, that is
    a missing tool: file an issue, do not pass or skip.
 
-llm-lint is **disabled for now**: it is not a gate and not part of the
-toolchain, so the run needs neither it on PATH nor a provider API key.
-`.llm-lint.json`, the rules under `lint-rules/`, and the `make llm-lint` target
-are kept so it can be re-enabled.
-
 A per-finding `//nolint` comment counts as a disabled linter. Never add one
 to make a gate pass. A finding that cannot be fixed below the contract
 seam without changing an exported name, signature, or observable behavior, or

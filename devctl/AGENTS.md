@@ -24,7 +24,7 @@ is human-authored and read-only to the run.
 - Go 1.26 (`go version` must report 1.26+)
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory, `version: "2"`)
 - GNU `make`: the developer targets in the `Makefile` (`make install`,
-  `make fmt`, `make llm-lint`); no gate runs through it
+  `make fmt`); no gate runs through it
 
 The gates fake every external process, so they need nothing beyond Go and
 `golangci-lint`. Running the built `devctl` needs these on `PATH` as well:
@@ -81,11 +81,6 @@ skipped tests, no disabled linters laundering a failure.
 2. `go build ./...`
 3. `go test -race ./...`
 4. `golangci-lint run`
-
-llm-lint is **disabled for now**: it is not a gate and not part of the
-toolchain, so the run needs neither it on PATH nor a provider API key.
-`.llm-lint.json`, the rules under `lint-rules/`, and the `make llm-lint` target
-are kept so it can be re-enabled.
 
 ## Commit conventions
 
