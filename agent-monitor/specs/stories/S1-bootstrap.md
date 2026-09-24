@@ -9,8 +9,7 @@ later groups; the one it has is `list`.
 ## A developer runs agent-monitor
 
 With nothing to do, agent-monitor shows what it can do: the bare run prints
-the same help text as `agent-monitor --help`, and it proves the binary is
-built and runs.
+the same help text as `agent-monitor --help`.
 
 Command:
 
