@@ -1,14 +1,21 @@
 // Package cli contains the agent-monitor command and its run seam.
 package cli
 
+import "io/fs"
+
+// System contains the machine state visible to Run.
+type System struct {
+	Home string
+	Root fs.FS
+}
+
 // ExitCode is the result of running the command.
 type ExitCode int
 
+// Exit codes for command outcomes.
 const (
-	// ExitSuccess reports a successful command.
-	ExitSuccess ExitCode = 0
-	// ExitWriteFailed reports an output write failure.
-	ExitWriteFailed ExitCode = 1
-	// ExitUsage reports an invalid command line.
-	ExitUsage ExitCode = 2
+	ExitSuccess        ExitCode = 0
+	ExitWriteFailed    ExitCode = 1
+	ExitUsage          ExitCode = 2
+	ExitDataUnreadable ExitCode = 3
 )

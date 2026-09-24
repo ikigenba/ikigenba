@@ -8,6 +8,6 @@ import (
 )
 
 func main() {
-	code := cli.Run(os.Args[1:], os.Stdout, os.Stderr)
+	code := cli.Run(os.Args[1:], cli.System{Home: os.Getenv("HOME"), Root: os.DirFS("/")}, os.Stdout, os.Stderr)
 	os.Exit(int(code))
 }

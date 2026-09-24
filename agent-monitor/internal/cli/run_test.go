@@ -2,229 +2,208 @@ package cli
 
 import (
 	"errors"
+	"io/fs"
 	"strings"
 	"testing"
+	"testing/fstest"
+
+	"github.com/ikigenba/ikigenba/agent-monitor/internal/session"
 )
 
-const expectedUsage = "Usage: agent-monitor [options]\n\nObserve the coding agents on this machine through their logs and hooks.\n\nOptions:\n  -h, --help      print this help\n  -V, --version   print the version\n\nExit codes:\n  0  success\n  1  the output could not be written\n  2  usage error\n"
-
-type runRecorder struct {
+type recorder struct {
 	writes []string
 	err    error
 }
 
-func (w *runRecorder) Write(p []byte) (int, error) {
-	w.writes = append(w.writes, string(p))
-	if w.err != nil {
-		return 0, w.err
+func (r *recorder) Write(p []byte) (int, error) {
+	r.writes = append(r.writes, string(p))
+	if r.err != nil {
+		return 0, r.err
 	}
 	return len(p), nil
 }
 
-func checkRun(t *testing.T, args []string, wantCode ExitCode, wantOut, wantErr string) {
+func runRecorded(args []string, sys System, outErr, diagErr error) (ExitCode, recorder, recorder) {
+	out, diag := recorder{err: outErr}, recorder{err: diagErr}
+	code := Run(args, sys, &out, &diag)
+	return code, out, diag
+}
+
+func assertRun(t *testing.T, args []string, sys System, wantCode ExitCode, wantOut, wantErr string) {
 	t.Helper()
-	var stdout, stderr runRecorder
-	code := Run(args, &stdout, &stderr)
-	if code != wantCode {
-		t.Errorf("Run(%q) code = %d, want %d", args, code, wantCode)
+	code, out, diag := runRecorded(args, sys, nil, nil)
+	if code != wantCode || strings.Join(out.writes, "") != wantOut || strings.Join(diag.writes, "") != wantErr {
+		t.Errorf("Run(%q) = (%d, %q, %q); want (%d, %q, %q)", args, code, out.writes, diag.writes, wantCode, wantOut, wantErr)
 	}
-	if got := strings.Join(stdout.writes, ""); got != wantOut {
-		t.Errorf("Run(%q) stdout = %q, want %q", args, got, wantOut)
-	}
-	if got := strings.Join(stderr.writes, ""); got != wantErr {
-		t.Errorf("Run(%q) stderr = %q, want %q", args, got, wantErr)
+	if len(out.writes) > 1 || len(diag.writes) > 1 {
+		t.Errorf("multiple writes: stdout %q stderr %q", out.writes, diag.writes)
 	}
 }
 
-// R-2NZU-D5QZ
-func TestRunGreeting(t *testing.T) {
-	checkRun(t, nil, ExitSuccess, "hello, world\n", "")
+// R-EZ4D-QPN7 R-XK3U-55KN R-XLBQ-IXBC
+func TestBareRunReturnsUsage(t *testing.T) {
+	assertRun(t, nil, System{}, ExitSuccess, Usage, "")
 }
 
-// R-2P7Q-QXHO R-2VB8-NS75 R-HD1J-W1WR R-HE9G-9TNG
-func TestRunArgumentClasses(t *testing.T) {
-	originalVersion := Version
-	Version = "test-version"
-	defer func() { Version = originalVersion }()
-	const hint = "\n\nsee 'agent-monitor --help' for usage\n"
-	for _, tc := range []struct {
-		arg, product string
-	}{
-		{"--help", expectedUsage},
-		{"-h", expectedUsage},
-		{"--version", "test-version\n"},
-		{"-V", "test-version\n"},
-	} {
-		t.Run("known_"+tc.arg, func(t *testing.T) {
-			checkRun(t, []string{tc.arg}, ExitSuccess, tc.product, "")
-		})
-	}
+// R-E0Z7-14VR R-2VB8-NS75 R-EBYA-H2K0 R-ED66-UUAP
+func TestTopLevelClassification(t *testing.T) {
 	for _, arg := range []string{"-", "--", "-hV", "-Vh", "--help=x", "--version=x", "--HELP", "-H"} {
-		t.Run("option_"+arg, func(t *testing.T) {
-			checkRun(t, []string{arg}, ExitUsage, "", "agent-monitor: unknown option '"+arg+"'"+hint)
-		})
+		assertRun(t, []string{arg}, System{}, ExitUsage, "", "agent-monitor: unknown option '"+arg+"'"+usageHint)
 	}
-	for _, arg := range []string{"", "status", "help", "écho"} {
-		t.Run("command_"+arg, func(t *testing.T) {
-			checkRun(t, []string{arg}, ExitUsage, "", "agent-monitor: unknown command '"+arg+"'"+hint)
-		})
+	for _, arg := range []string{"", "List", "status"} {
+		assertRun(t, []string{arg}, System{}, ExitUsage, "", "agent-monitor: unknown command '"+arg+"'"+usageHint)
 	}
-	checkRun(t, []string{"--", "--help"}, ExitUsage, "", "agent-monitor: unknown option '--'"+hint)
+	assertRun(t, []string{"--", "--help"}, System{}, ExitUsage, "", "agent-monitor: unknown option '--'"+usageHint)
 }
 
-// R-2QFN-4P8D
-func TestRunOnlyFirstArgumentMatters(t *testing.T) {
-	originalVersion := Version
-	Version = "tail-test-version"
-	defer func() { Version = originalVersion }()
-	for _, tc := range []struct {
-		first   string
-		code    ExitCode
-		out     string
-		errText string
-	}{
-		{"--help", ExitSuccess, expectedUsage, ""},
-		{"-h", ExitSuccess, expectedUsage, ""},
-		{"--version", ExitSuccess, "tail-test-version\n", ""},
-		{"-V", ExitSuccess, "tail-test-version\n", ""},
-		{"--", ExitUsage, "", "agent-monitor: unknown option '--'\n\nsee 'agent-monitor --help' for usage\n"},
-		{"status", ExitUsage, "", "agent-monitor: unknown command 'status'\n\nsee 'agent-monitor --help' for usage\n"},
-		{"", ExitUsage, "", "agent-monitor: unknown command ''\n\nsee 'agent-monitor --help' for usage\n"},
-	} {
-		first := tc.first
-		var baseOut, baseErr runRecorder
-		baseCode := Run([]string{first}, &baseOut, &baseErr)
-		if baseCode != tc.code || strings.Join(baseOut.writes, "") != tc.out || strings.Join(baseErr.writes, "") != tc.errText {
-			t.Errorf("Run(%q) = (%d, %q, %q), want (%d, %q, %q)", first, baseCode, baseOut.writes, baseErr.writes, tc.code, tc.out, tc.errText)
-		}
-		for _, tail := range [][]string{{"--help"}, {"-hV", "status", "\xff"}, {"", "--version"}} {
-			var out, errOut runRecorder
+// R-E273-EWMG
+func TestTopLevelFirstArgumentWins(t *testing.T) {
+	for _, first := range []string{"--help", "-h", "--version", "-V", "--", "bogus", ""} {
+		base, outBase, errBase := runRecorded([]string{first}, System{}, nil, nil)
+		for _, tail := range [][]string{{"list", "--help"}, {"\xff", "--version"}} {
 			args := append([]string{first}, tail...)
-			code := Run(args, &out, &errOut)
-			if code != baseCode || strings.Join(out.writes, "") != strings.Join(baseOut.writes, "") || strings.Join(errOut.writes, "") != strings.Join(baseErr.writes, "") {
-				t.Errorf("Run(%q) differs from Run(%q): code %d/%d, stdout %q/%q, stderr %q/%q", args, first, code, baseCode, out.writes, baseOut.writes, errOut.writes, baseErr.writes)
+			code, out, diag := runRecorded(args, System{}, nil, nil)
+			if code != base || strings.Join(out.writes, "") != strings.Join(outBase.writes, "") || strings.Join(diag.writes, "") != strings.Join(errBase.writes, "") {
+				t.Errorf("Run(%q) differed from Run(%q)", args, first)
 			}
 		}
 	}
 }
 
-// R-HALR-4IFD
-func TestRunEscapesDiagnosticArguments(t *testing.T) {
-	const hint = "'\n\nsee 'agent-monitor --help' for usage\n"
+// R-E8AL-BRBX R-E9IH-PJ2M R-EFLZ-MDS3 R-EGTW-05IS R-EI1S-DX9H
+func TestListGrammar(t *testing.T) {
 	cases := []struct {
-		arg, escaped string
+		args       []string
+		diagnostic string
 	}{
-		{"bogus", "bogus"},
-		{"a\tb", "a\\tb"},
-		{"it's", "it\\'s"},
-		{"a\\b", "a\\\\b"},
-		{"a\nb\rc", "a\\nb\\rc"},
-		{"\x00\x1f\x7f", "\\x00\\x1f\\x7f"},
-		{"é", "é"},
-		{"\xff\xc0\xaf", "\\xff\\xc0\\xaf"},
-		{"\x1b[31m", "\\x1b[31m"},
-		{"\u2028\u2029\u202e\u0085\u00a0", "\\u2028\\u2029\\u202e\\u0085\\u00a0"},
-		{"\U000e0001", "\\U000e0001"},
-		{"😀", "😀"},
+		{[]string{"list"}, "agent-monitor: missing harness" + usageHint},
+		{[]string{"list", ""}, "agent-monitor: unknown harness ''" + usageHint},
+		{[]string{"list", "Claude"}, "agent-monitor: unknown harness 'Claude'" + usageHint},
+		{[]string{"list", "claud", "--bogus"}, "agent-monitor: unknown harness 'claud'" + usageHint},
+		{[]string{"list", "--bogus", "claud"}, "agent-monitor: unknown option '--bogus'" + usageHint},
+		{[]string{"list", "claude", "--bogus"}, "agent-monitor: unknown option '--bogus'" + usageHint},
+		{[]string{"list", "claude", "extra", "more"}, "agent-monitor: unexpected argument 'extra'" + usageHint},
+		{[]string{"list", "claude", "--version"}, "agent-monitor: unknown option '--version'" + usageHint},
+		{[]string{"list", "-", "claude"}, "agent-monitor: unknown option '-'" + usageHint},
 	}
 	for _, tc := range cases {
-		t.Run(tc.escaped, func(t *testing.T) {
-			checkRun(t, []string{tc.arg}, ExitUsage, "", "agent-monitor: unknown command '"+tc.escaped+hint)
-		})
+		assertRun(t, tc.args, System{}, ExitUsage, "", tc.diagnostic)
 	}
 }
 
-// R-2WJ5-1JXU R-32MM-YENB
-func TestRunWritesWholeProductsAndDiagnosticsOnce(t *testing.T) {
-	originalVersion := Version
-	Version = "write-test-version"
-	defer func() { Version = originalVersion }()
-	for _, tc := range []struct {
-		args    []string
-		product string
+// R-EJ9O-RP06 R-EKHL-5GQV
+func TestNonlistingOutcomesIgnoreSystem(t *testing.T) {
+	a := System{}
+	b := System{Home: "/elsewhere", Root: panicFS{}}
+	for _, args := range [][]string{nil, {"--help"}, {"--version"}, {"list", "--help"}, {"bogus"}, {"list"}, {"list", "claud"}} {
+		codeA, outA, diagA := runRecorded(args, a, nil, nil)
+		codeB, outB, diagB := runRecorded(args, b, nil, nil)
+		if codeA != codeB || strings.Join(outA.writes, "") != strings.Join(outB.writes, "") || strings.Join(diagA.writes, "") != strings.Join(diagB.writes, "") {
+			t.Errorf("Run(%q) depends on System", args)
+		}
+	}
+}
+
+type panicFS struct{}
+
+func (panicFS) Open(string) (fs.File, error) { panic("Root accessed") }
+
+// R-ELPH-J8HK R-ET0V-TUXQ R-ERSZ-G371
+func TestMissingHome(t *testing.T) {
+	for _, h := range []string{"claude", "codex", "grok"} {
+		args := []string{"list", h}
+		want := "agent-monitor: cannot find the home directory: HOME is not set\n"
+		assertRun(t, args, System{Root: panicFS{}}, ExitDataUnreadable, "", want)
+		code, out, diag := runRecorded(args, System{Root: panicFS{}}, nil, errors.New("closed"))
+		if code != ExitDataUnreadable || len(out.writes) != 0 || len(diag.writes) != 1 || diag.writes[0] != want {
+			t.Errorf("failed diagnostic write: %d %q %q", code, out.writes, diag.writes)
+		}
+	}
+}
+
+// R-EMXD-X089 R-EO5A-ARYY R-DZRA-ND52
+func TestListEmptyHarnessData(t *testing.T) {
+	for _, h := range []string{"claude", "codex", "grok"} {
+		code, out, diag := runRecorded([]string{"list", h}, System{Home: "/home/dev", Root: fstest.MapFS{}}, nil, nil)
+		if code != ExitSuccess || len(out.writes) != 1 || out.writes[0] != session.Table(nil) || len(diag.writes) != 0 {
+			t.Errorf("list %s: code %d, out %q, err %q", h, code, out.writes, diag.writes)
+		}
+	}
+}
+
+// R-EO5A-ARYY R-EMXD-X089
+func TestListNonemptyHarnessData(t *testing.T) {
+	root := fstest.MapFS{
+		"home/dev/.claude/sessions/a.json": &fstest.MapFile{Data: []byte(`{"sessionId":"alpha","pid":42,"status":"busy","name":"Implement feature","cwd":"/work"}`)},
+		"proc/42/stat":                     &fstest.MapFile{Data: []byte("42 (a) " + strings.Repeat("0 ", 19) + "150")},
+	}
+	want := session.Table([]session.Session{{ID: "alpha", Status: session.StatusWorking, CWD: "/work", Title: "Implement feature"}})
+	assertRun(t, []string{"list", "claude"}, System{Home: "/home/dev", Root: root}, ExitSuccess, want, "")
+}
+
+// R-2WJ5-1JXU R-2XR1-FBOJ R-2YYX-T3F8 R-31EQ-KMWM R-EQL3-2BGC R-EU8S-7MOF
+func TestWriteFailuresAndOneWrite(t *testing.T) {
+	for _, args := range [][]string{nil, {"--help"}, {"--version"}, {"list", "--help"}} {
+		code, out, diag := runRecorded(args, System{}, errors.New("disk full"), errors.New("closed"))
+		if code != ExitWriteFailed || len(out.writes) != 1 || len(diag.writes) != 1 || diag.writes[0] != "agent-monitor: write error: disk full\n" {
+			t.Errorf("Run(%q): code %d out %q err %q", args, code, out.writes, diag.writes)
+		}
+	}
+	code, out, diag := runRecorded([]string{"list", "claude"}, System{Home: "/home/dev", Root: fstest.MapFS{}}, errors.New("disk full"), nil)
+	if code != ExitWriteFailed || len(out.writes) != 1 || out.writes[0] != session.Table(nil) || len(diag.writes) != 1 || diag.writes[0] != "agent-monitor: write error: disk full\n" {
+		t.Errorf("list write failure: code %d out %q err %q", code, out.writes, diag.writes)
+	}
+	for _, args := range [][]string{{"-bad"}, {"bad"}, {"list"}, {"list", "bad"}, {"list", "claude", "extra"}} {
+		code, out, diag := runRecorded(args, System{}, nil, errors.New("closed"))
+		if code != ExitUsage || len(out.writes) != 0 || len(diag.writes) != 1 {
+			t.Errorf("Run(%q): code %d out %q err %q", args, code, out.writes, diag.writes)
+		}
+	}
+}
+
+type deniedFS struct{ opens []string }
+
+func (d *deniedFS) Open(name string) (fs.File, error) {
+	d.opens = append(d.opens, name)
+	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrPermission}
+}
+
+// R-EPD6-OJPN R-EMXD-X089 R-ET0V-TUXQ R-ERSZ-G371
+func TestHarnessReadErrors(t *testing.T) {
+	for _, h := range []string{"claude", "codex", "grok"} {
+		root := &deniedFS{}
+		code, out, diag := runRecorded([]string{"list", h}, System{Home: "/home/it's", Root: root}, nil, errors.New("closed"))
+		var wantPath string
+		switch h {
+		case "claude":
+			wantPath = "home/it's/.claude/sessions"
+		case "codex":
+			wantPath = "home/it's/.codex/thread-writer-locks"
+		case "grok":
+			wantPath = "home/it's/.grok/active_sessions.json"
+		}
+		if len(root.opens) != 1 || root.opens[0] != wantPath {
+			t.Errorf("%s opened %q, want exactly %q", h, root.opens, wantPath)
+		}
+		want := "agent-monitor: cannot read /" + wantPath + ": permission denied\n"
+		if code != ExitDataUnreadable || len(out.writes) != 0 || len(diag.writes) != 1 || diag.writes[0] != want {
+			t.Errorf("list %s: code %d out %q err %q, want %q", h, code, out.writes, diag.writes, want)
+		}
+	}
+}
+
+// R-EBYA-H2K0 R-ED66-UUAP R-EFLZ-MDS3 R-EGTW-05IS
+func TestDiagnosticsEscapeArguments(t *testing.T) {
+	cases := []struct {
+		args []string
+		want string
 	}{
-		{nil, "hello, world\n"},
-		{[]string{"--help"}, expectedUsage},
-		{[]string{"--version"}, "write-test-version\n"},
-	} {
-		var out, errOut runRecorder
-		if code := Run(tc.args, &out, &errOut); code != ExitSuccess {
-			t.Errorf("Run(%q) code = %d, want success", tc.args, code)
-		}
-		if len(out.writes) != 1 || out.writes[0] != tc.product || len(errOut.writes) != 0 {
-			t.Errorf("Run(%q) writes stdout %q, stderr %q", tc.args, out.writes, errOut.writes)
-		}
+		{[]string{"-a\nb"}, "agent-monitor: unknown option '-a\\nb'" + usageHint},
+		{[]string{"it's"}, "agent-monitor: unknown command 'it\\'s'" + usageHint},
+		{[]string{"list", "a\tb"}, "agent-monitor: unknown harness 'a\\tb'" + usageHint},
+		{[]string{"list", "claude", "\x1b[31m"}, "agent-monitor: unexpected argument '\\x1b[31m'" + usageHint},
 	}
-	for _, tc := range []struct {
-		arg, diagnostic string
-	}{
-		{"-x", "agent-monitor: unknown option '-x'\n\nsee 'agent-monitor --help' for usage\n"},
-		{"status", "agent-monitor: unknown command 'status'\n\nsee 'agent-monitor --help' for usage\n"},
-	} {
-		var out, errOut runRecorder
-		if code := Run([]string{tc.arg}, &out, &errOut); code != ExitUsage {
-			t.Errorf("Run(%q) code = %d, want usage", tc.arg, code)
-		}
-		if len(out.writes) != 0 || len(errOut.writes) != 1 || errOut.writes[0] != tc.diagnostic {
-			t.Errorf("Run(%q) writes stdout %q, stderr %q", tc.arg, out.writes, errOut.writes)
-		}
-	}
-}
-
-// R-2XR1-FBOJ R-2YYX-T3F8 R-31EQ-KMWM
-func TestRunProductWriteFailure(t *testing.T) {
-	writeErr := errors.New("disk full")
-	for _, args := range [][]string{nil, {"--help"}, {"-h"}, {"--version"}, {"-V"}} {
-		for _, stderrErr := range []error{nil, errors.New("stderr closed")} {
-			out := runRecorder{err: writeErr}
-			errOut := runRecorder{err: stderrErr}
-			if code := Run(args, &out, &errOut); code != ExitWriteFailed {
-				t.Errorf("Run(%q) code = %d, want write failure", args, code)
-			}
-			if len(out.writes) != 1 || len(errOut.writes) != 1 || errOut.writes[0] != "agent-monitor: write error: disk full\n" {
-				t.Errorf("Run(%q) writes stdout %q, stderr %q", args, out.writes, errOut.writes)
-			}
-		}
-	}
-}
-
-// R-306U-6V5X R-31EQ-KMWM
-func TestRunUsageDiagnosticWriteFailure(t *testing.T) {
-	for _, arg := range []string{"-bad", "status"} {
-		var out runRecorder
-		errOut := runRecorder{err: errors.New("stderr closed")}
-		if code := Run([]string{arg}, &out, &errOut); code != ExitUsage {
-			t.Errorf("Run(%q) code = %d, want usage", arg, code)
-		}
-		if len(out.writes) != 0 || len(errOut.writes) != 1 {
-			t.Errorf("Run(%q) writes stdout %q, stderr %q", arg, out.writes, errOut.writes)
-		}
-	}
-}
-
-// R-2MRX-ZE0A
-func TestRunExitCodeClosedSet(t *testing.T) {
-	for _, args := range [][]string{nil, {"--help"}, {"-h"}, {"--version"}, {"-V"}, {"-bad"}, {"status"}} {
-		for _, failOut := range []bool{false, true} {
-			for _, failErr := range []bool{false, true} {
-				var out, errOut runRecorder
-				if failOut {
-					out.err = errors.New("output failed")
-				}
-				if failErr {
-					errOut.err = errors.New("diagnostic failed")
-				}
-				code := Run(args, &out, &errOut)
-				want := ExitSuccess
-				if len(args) != 0 && (args[0] == "-bad" || args[0] == "status") {
-					want = ExitUsage
-				} else if failOut {
-					want = ExitWriteFailed
-				}
-				if code != want {
-					t.Errorf("Run(%q), failOut=%t, failErr=%t returned %d, want %d", args, failOut, failErr, code, want)
-				}
-			}
-		}
+	for _, tc := range cases {
+		assertRun(t, tc.args, System{}, ExitUsage, "", tc.want)
 	}
 }

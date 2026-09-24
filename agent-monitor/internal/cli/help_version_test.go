@@ -16,8 +16,8 @@ import (
 func TestUsageDeclaration(t *testing.T) {
 	// R-2GOG-2JAT: this assignment compiles only while Usage is a string constant.
 	const actual string = cli.Usage
-	// R-33UJ-C6E0
-	const want = "Usage: agent-monitor [options]\n\nObserve the coding agents on this machine through their logs and hooks.\n\nOptions:\n  -h, --help      print this help\n  -V, --version   print the version\n\nExit codes:\n  0  success\n  1  the output could not be written\n  2  usage error\n"
+	// R-EVGO-LEF4
+	const want = "Usage: agent-monitor [options]\n       agent-monitor list <harness>\n\nObserve the coding agents on this machine through their logs and hooks.\n\nCommands:\n  list <harness>  list the live root sessions of claude, codex, or grok\n\nsee 'agent-monitor <command> --help' for command options\n\nOptions:\n  -h, --help      print this help\n  -V, --version   print the version\n\nExit codes:\n  0  success\n  1  the output could not be written\n  2  usage error\n  3  the harness's session data could not be read\n"
 	if actual != want {
 		t.Errorf("Usage = %q, want %q", actual, want)
 	}
@@ -71,7 +71,7 @@ func TestVersionDeclaration(t *testing.T) {
 		t.Error("Version has no source-initialized value")
 	}
 	var stdout, stderr bytes.Buffer
-	code := cli.Run([]string{"--version"}, &stdout, &stderr)
+	code := cli.Run([]string{"--version"}, cli.System{}, &stdout, &stderr)
 	want := original + " test override\n"
 	if code != cli.ExitSuccess || stdout.String() != want || stderr.Len() != 0 {
 		t.Errorf("Run with overridden Version = (%q, %q, %d), want (%q, empty, %d)", stdout.String(), stderr.String(), code, want, cli.ExitSuccess)
@@ -91,7 +91,7 @@ func TestHelpOptions(t *testing.T) {
 	for _, arg := range []string{"--help", "-h"} {
 		t.Run(arg, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
-			code := cli.Run([]string{arg}, &stdout, &stderr)
+			code := cli.Run([]string{arg}, cli.System{}, &stdout, &stderr)
 			if code != cli.ExitSuccess || stdout.String() != cli.Usage || stderr.Len() != 0 {
 				t.Errorf("Run(%q) = (%q, %q, %d), want (%q, empty, %d)", arg, stdout.String(), stderr.String(), code, cli.Usage, cli.ExitSuccess)
 			}
@@ -104,11 +104,31 @@ func TestVersionOptions(t *testing.T) {
 	for _, arg := range []string{"--version", "-V"} {
 		t.Run(arg, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
-			code := cli.Run([]string{arg}, &stdout, &stderr)
+			code := cli.Run([]string{arg}, cli.System{}, &stdout, &stderr)
 			want := cli.Version + "\n"
 			if code != cli.ExitSuccess || stdout.String() != want || stderr.Len() != 0 {
 				t.Errorf("Run(%q) = (%q, %q, %d), want (%q, empty, %d)", arg, stdout.String(), stderr.String(), code, want, cli.ExitSuccess)
 			}
 		})
+	}
+}
+
+func TestListUsageDeclaration(t *testing.T) {
+	// R-DIOP-AKRC R-EWOK-Z65T
+	const actual string = cli.ListUsage
+	const want = "Usage: agent-monitor list <harness>\n\nList the live root sessions of one harness, newest activity first.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  -h, --help  print this help\n"
+	if actual != want {
+		t.Errorf("ListUsage = %q, want %q", actual, want)
+	}
+}
+
+func TestListHelpWins(t *testing.T) {
+	// R-F0CA-4HDW
+	for _, args := range [][]string{{"list", "--help"}, {"list", "-h"}, {"list", "claude", "--help"}, {"list", "bogus", "extra", "--bogus", "-h"}} {
+		var stdout, stderr bytes.Buffer
+		code := cli.Run(args, cli.System{}, &stdout, &stderr)
+		if code != cli.ExitSuccess || stdout.String() != cli.ListUsage || stderr.Len() != 0 {
+			t.Errorf("Run(%q) = (%q, %q, %d)", args, stdout.String(), stderr.String(), code)
+		}
 	}
 }

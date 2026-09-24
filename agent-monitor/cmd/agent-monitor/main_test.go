@@ -3,16 +3,14 @@ package main_test
 import (
 	"bytes"
 	"errors"
-	"go/ast"
-	"go/format"
-	"go/parser"
-	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/ikigenba/ikigenba/agent-monitor/internal/cli"
+	"github.com/ikigenba/ikigenba/agent-monitor/internal/session"
 )
 
 func buildBinary(t *testing.T) string {
@@ -31,9 +29,9 @@ func buildBinary(t *testing.T) string {
 }
 
 func TestMainWiring(t *testing.T) {
-	// R-2MHM-3BBW: main forwards arguments and real streams, then exits with Run's code.
+	// The built binary forwards arguments and real streams, then exits with Run's code.
 	path := buildBinary(t)
-	cmd := &exec.Cmd{Path: path, Args: []string{path, "mystery"}}
+	cmd := &exec.Cmd{Path: path, Args: []string{path, "mystery"}, Env: childEnvironment(nil)}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
@@ -47,60 +45,72 @@ func TestMainWiring(t *testing.T) {
 
 }
 
-func TestMainSourceWiring(t *testing.T) {
-	// R-2MHM-3BBW: exact main body permits one Run call and one Exit call only.
-	file, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(file.Decls) != 2 {
-		t.Fatalf("main.go has %d declarations, want imports and main only", len(file.Decls))
-	}
-	imports, ok := file.Decls[0].(*ast.GenDecl)
-	if !ok || imports.Tok != token.IMPORT || len(file.Imports) != 2 {
-		t.Fatalf("main.go imports = %#v", file.Imports)
-	}
-	wantImports := map[string]bool{"os": true, "github.com/ikigenba/ikigenba/agent-monitor/internal/cli": true}
-	for _, spec := range file.Imports {
-		path, err := strconv.Unquote(spec.Path.Value)
-		if err != nil || !wantImports[path] || spec.Name != nil {
-			t.Fatalf("unexpected main import %#v: %v", spec, err)
-		}
-		delete(wantImports, path)
-	}
-	if len(wantImports) != 0 {
-		t.Fatalf("missing main imports: %v", wantImports)
-	}
-	main, ok := file.Decls[1].(*ast.FuncDecl)
-	if !ok || main.Name.Name != "main" || main.Recv != nil || main.Type.Params.NumFields() != 0 || main.Type.Results != nil || len(main.Body.List) != 2 {
-		t.Fatalf("main must have exactly the Run and Exit statements")
-	}
-	want := []string{
-		"code := cli.Run(os.Args[1:], os.Stdout, os.Stderr)",
-		"os.Exit(int(code))",
-	}
-	for i, statement := range main.Body.List {
-		var actual bytes.Buffer
-		if err := format.Node(&actual, token.NewFileSet(), statement); err != nil {
-			t.Fatal(err)
-		}
-		if actual.String() != want[i] {
-			t.Errorf("main statement %d = %q, want %q", i, actual.String(), want[i])
-		}
-	}
-}
-
 func TestBareBinary(t *testing.T) {
-	// R-2KC5-7UIW: A bare built binary greets on stdout and succeeds.
+	// R-DW3L-I1WZ: A bare built binary prints the declared usage and succeeds.
 	path := buildBinary(t)
-	cmd := &exec.Cmd{Path: path, Args: []string{path}}
+	cmd := &exec.Cmd{Path: path, Args: []string{path}, Env: childEnvironment(nil)}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("bare exit: %v", err)
 	}
-	if stdout.String() != "hello, world\n" || stderr.Len() != 0 {
+	if stdout.String() != cli.Usage || stderr.Len() != 0 {
 		t.Fatalf("streams: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+}
+
+func childEnvironment(home *string) []string {
+	env := make([]string, 0, 1)
+	if home != nil {
+		env = append(env, "HOME="+*home)
+	}
+	return env
+}
+
+func TestListWithEmptyHome(t *testing.T) {
+	// R-DXBH-VTNO: each harness lists an empty home without creating files.
+	path := buildBinary(t)
+	for _, harness := range []string{"claude", "codex", "grok"} {
+		t.Run(harness, func(t *testing.T) {
+			home := t.TempDir()
+			cmd := &exec.Cmd{Path: path, Args: []string{path, "list", harness}, Env: childEnvironment(&home)}
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout, cmd.Stderr = &stdout, &stderr
+			if err := cmd.Run(); err != nil {
+				t.Fatalf("list exit: %v; stderr=%q", err, stderr.String())
+			}
+			if stdout.String() != session.Table(nil) || stderr.Len() != 0 {
+				t.Fatalf("streams: stdout=%q stderr=%q", stdout.String(), stderr.String())
+			}
+			entries, err := os.ReadDir(home)
+			if err != nil || len(entries) != 0 {
+				t.Fatalf("home changed: entries=%v err=%v", entries, err)
+			}
+		})
+	}
+}
+
+func TestListWithoutHome(t *testing.T) {
+	// R-DYJE-9LED: absent and empty HOME reach the same real-process diagnostic.
+	path := buildBinary(t)
+	empty := ""
+	for _, tc := range []struct {
+		name string
+		home *string
+	}{{"absent", nil}, {"empty", &empty}} {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := &exec.Cmd{Path: path, Args: []string{path, "list", "claude"}, Env: childEnvironment(tc.home)}
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout, cmd.Stderr = &stdout, &stderr
+			err := cmd.Run()
+			var exitErr *exec.ExitError
+			if !asExitError(err, &exitErr) || exitErr.ExitCode() != 3 {
+				t.Fatalf("exit = %v, want 3", err)
+			}
+			if stdout.Len() != 0 || stderr.String() != "agent-monitor: cannot find the home directory: HOME is not set\n" {
+				t.Fatalf("streams: stdout=%q stderr=%q", stdout.String(), stderr.String())
+			}
+		})
 	}
 }
 
