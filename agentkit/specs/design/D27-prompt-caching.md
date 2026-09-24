@@ -2,8 +2,8 @@
 
 A savepoint (D26) says something a wire can use: *everything before this mark is
 the stable part, and I intend to send it again.* That is exactly the condition
-every vendor's prompt cache is built for, and without it a consumer like
-`llm-lint` re-sends its whole corpus at full price once per rule. With it, the
+every vendor's prompt cache is built for, and without it a consumer like a
+rule-based code reviewer re-sends its whole corpus at full price once per rule. With it, the
 corpus is paid for once and read back at a tenth of the cost or less.
 
 **A savepoint is a request-prefix boundary, not a history boundary.** Vendors

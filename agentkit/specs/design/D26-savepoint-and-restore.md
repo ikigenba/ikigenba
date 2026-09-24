@@ -2,10 +2,11 @@
 
 A conversation's transcript only ever grows. That is right for a dialogue and
 wrong for a consumer that wants to ask many independent questions against one
-expensive body of context. `llm-lint` is the motivating case: load every source
-file under review, then check it against rule 1, rule 2, rule 3 — where each
-rule's answer must not colour the next, and where re-loading the files for every
-rule is the cost that makes the tool impractical.
+expensive body of context. A rule-based code reviewer is the motivating case:
+load every source file under review, then check it against rule 1, rule 2,
+rule 3 — where each rule's answer must not colour the next, and where
+re-loading the files for every rule is the cost that makes the tool
+impractical.
 
 **Savepoint and restore** give that consumer a transcript it can rewind. The
 consumer marks a point in `History`; later it puts `History` back exactly as it
@@ -50,7 +51,7 @@ usual load-as-a-side-effect. The tool array a round-trip advertises is the same
 array for as long as the savepoint lives.
 
 This costs a consumer nothing it cannot plan around — load the tools and write
-the system message before taking the savepoint — and it costs `llm-lint`
+the system message before taking the savepoint — and it costs such a reviewer
 nothing at all, since a consumer that registers no deferred groups has no
 `load_tools` to begin with (D16).
 
@@ -61,7 +62,7 @@ Anthropic's four breakpoints a stack may claim, how many billed Gemini cache
 resources one conversation may hold at once.
 
 **Ending a savepoint, and ending a conversation.** `Restore` does not end a
-savepoint; that is the whole point, since `llm-lint` restores to the same mark
+savepoint; that is the whole point, since a reviewer restores to the same mark
 on every rule. A savepoint ends at `Release`, which keeps the history built
 since the mark and simply stops offering to rewind it, or at `Close`.
 
@@ -140,7 +141,7 @@ loading paths so a live savepoint suspends them.
 
 ## Canonical usage
 
-The `llm-lint` loop — load the corpus once, check it against every rule, and
+The reviewer's loop — load the corpus once, check it against every rule, and
 keep each rule's verdict out of the next rule's context:
 
 ```go
