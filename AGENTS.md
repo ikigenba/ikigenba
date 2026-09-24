@@ -19,6 +19,10 @@ changing it on its merits: "we decided X; keep it because..." or "change it
 because...". Changing a requirement's text costs one re-minted id and nothing
 else.
 
+The visual style for every app, service, and page is defined in `design/`.
+`design/ikigenba/theme.css` is the source of truth and `design/README.md`
+records the decisions; UI work conforms to it, or changes it there first.
+
 Versions are data. No test, fixture, or requirement names a release version. A
 test that needs the current version reads the value the source declares,
 through the contract that declares it, and derives tags, asset names, and

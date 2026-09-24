@@ -3,9 +3,8 @@
    Fonts load from Google Fonts here; a service self-hosts the same Inter
    variable files (opsz 14..32, wght 100..900) in production.
 
-   Palette: ink — no hue in the chrome; black is the accent, blue is for links
-   and focus only.
-   Light only: there is no dark mode. */
+   Palette: ink — the chrome is greyscale; black is the accent, blue is for
+   links and focus only. Light grounds. */
 
 @import url("https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:wght@400..700&display=swap");
 
@@ -32,7 +31,6 @@
   --err: #b91c1c;
   --info: #1d4ed8;
 
-  --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
 
   /* Tabler icons (@tabler/icons 3.48.0, MIT; vendored in icons/tabler/) used as masks,
      so each takes its color from --c. Filled variants cut the glyph out of the disc. */
@@ -116,8 +114,7 @@ pre code { padding: 0; background: none; font-size: inherit; }
 hr { border: 0; border-top: 1px solid var(--line); margin: var(--s5) 0; }
 
 .num, td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-.eyebrow { font-size: var(--text-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
-:root .eyebrow { color: var(--muted); }
+.eyebrow { font-size: var(--text-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 
 /* ---------------------------------------------------------------- chrome */
 /* The top bar every app emits: product mark, service, user, sign out. */
@@ -204,8 +201,7 @@ select, textarea {
   box-shadow: var(--shadow-sm); transition: border-color .12s, box-shadow .12s;
 }
 input:hover, select:hover, textarea:hover { border-color: color-mix(in srgb, var(--line) 70%, var(--fg) 15%); }
-input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus); }
-:root input:focus, :root select:focus, :root textarea:focus { border-color: #0060f0; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--link); box-shadow: var(--focus); }
 input::placeholder, textarea::placeholder { color: var(--faint); }
 input:disabled, select:disabled { background: var(--subtle); color: var(--faint); cursor: not-allowed; }
 textarea { min-height: 88px; resize: vertical; }
@@ -243,8 +239,7 @@ th {
 }
 td { padding: 10px var(--s4); border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
 tbody tr:last-child td { border-bottom: 0; }
-tbody tr:hover td { background: color-mix(in srgb, var(--accent) 4%, var(--surface)); }
-:root tbody tr:hover td { background: var(--subtle); }
+tbody tr:hover td { background: var(--subtle); }
 caption { caption-side: top; text-align: left; padding: 0 0 var(--s2); font-weight: 600; }
 td:first-child { font-weight: 500; }
 tbody:empty::after {
@@ -252,7 +247,7 @@ tbody:empty::after {
 }
 .table-scroll { overflow-x: auto; border-radius: var(--r-lg); }
 
-/* Status color never arrives as a pale wash. Three treatments, each with a job:
+/* Status color is always solid. Three treatments, each with a job:
    .status        a Tabler filled icon, then the word — state in tables and lists
    .badge         white pill, colored dot, black text — labels and metadata
    .badge.strong  solid color, white text — the rare label that must stand out
@@ -372,9 +367,8 @@ dl.kv > :nth-last-child(-n+2) { border-bottom: 0; }
 .features p { color: var(--muted); }
 .icon {
   display: inline-grid; place-items: center; width: 36px; height: 36px; margin-bottom: var(--s4);
-  border-radius: 9px; background: var(--accent-soft); color: var(--accent);
+  border-radius: 9px; background: var(--line-soft); color: var(--fg);
 }
-:root .icon { background: var(--line-soft); color: var(--fg); }
 .icon svg { width: 18px; height: 18px; }
 
 .cta {
@@ -527,9 +521,8 @@ main > section.card { margin-top: var(--s5); }
 .identity { display: flex; align-items: center; gap: var(--s4); }
 .avatar {
   display: inline-grid; place-items: center; flex: none; width: 48px; height: 48px; border-radius: 50%;
-  background: var(--accent-soft); color: var(--accent); font-weight: 650; font-size: 17px; letter-spacing: -0.01em;
+  background: var(--line-soft); color: var(--fg); font-weight: 650; font-size: 17px; letter-spacing: -0.01em;
 }
-:root .avatar { background: var(--line-soft); color: var(--fg); }
 .identity strong { display: block; font-size: var(--text-lg); font-weight: 600; letter-spacing: -0.015em; }
 
 /* A secret shown once: mono, selectable, with its copy button. */
@@ -556,8 +549,7 @@ main > section.card { margin-top: var(--s5); }
 /* Marketing and docs pages carry body.site: header CTA, section bands, footer. */
 body.site > header > .button { margin-left: auto; }
 body.site main > .hero { margin-top: 0; }
-.hero > .eyebrow { margin: 0 0 var(--s4); font-size: var(--text-xs); line-height: 1.5; color: var(--accent); max-width: none; }
-:root .hero > .eyebrow { color: var(--muted); }
+.hero > .eyebrow { margin: 0 0 var(--s4); font-size: var(--text-xs); line-height: 1.5; color: var(--muted); max-width: none; }
 body.site main > section.band, body.site main > section.cta { margin-top: var(--s9); }
 
 .band-head { max-width: 640px; margin-bottom: var(--s6); }
@@ -596,9 +588,8 @@ body.site main > section.band, body.site main > section.cta { margin-top: var(--
 .steps > li > div::before {
   content: counter(step); position: absolute; left: 0; top: -2px;
   display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 8px;
-  background: var(--accent-soft); color: var(--accent); font-weight: 650; font-size: var(--text-sm);
+  background: var(--line-soft); color: var(--fg); font-weight: 650; font-size: var(--text-sm);
 }
-:root .steps > li > div::before { background: var(--line-soft); color: var(--fg); }
 .steps h3 { font-size: var(--text-lg); margin-bottom: var(--s2); }
 .steps p { color: var(--muted); }
 .steps pre { font-size: 13px; background: var(--surface); }

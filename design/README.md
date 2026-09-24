@@ -1,38 +1,29 @@
 # design
 
-Experiments toward one signature visual style for every Ikigenba app, service,
-and page. This is not a sub-project: nothing here is spec-managed or built.
-Open `index.html` in a browser; it always shows the current round.
-Rejected rounds are kept under `round<N>/` for reference.
+The signature visual style for every Ikigenba app, service, and page. This is
+not a sub-project: nothing here is spec-managed or built. Open `index.html` in
+a browser.
 
 ## Layout
 
 ```
 design/
-  index.html        the current work: links into ikigenba/
-  ikigenba/         the chosen direction (theme.css, lab.js, six pages)
-  status.html       status colors and pill / alert / field-error treatments
-  icons.html        icon-set study (six libraries, inlined); Tabler chosen
-  round1/           archived: console, blueprint, signal, with lab.js
-  round2/           archived: twelve mood tiles
-  round3/           archived: color study (font / top bar / palette)
-  <theme>/
+  index.html        links into ikigenba/
+  ikigenba/
     theme.css       the entire style — tokens, elements, components
+    lab.js          the page-switcher toolbar
+    icons/tabler/   the Tabler SVGs in use, with LICENSE and VERSION
     specimen.html   the parts: tokens, type, controls, table, alerts, states
     app.html        dummy's panel: chrome, widgets table, add form, states
     login.html      auth's sign-in, its error state, the signed-in profile
-    profile.html    (round two) account, sessions, API tokens
-    landing.html    (round two) marketing: hero, features, call to action
-    prose.html      (round two) long-form docs / blog / legal
+    profile.html    account, sessions, API tokens
+    landing.html    marketing: hero, features, call to action
+    prose.html      long-form docs / blog / legal
 ```
 
-## Rules for a theme
+## Rules
 
-- Every theme renders the same pages with the same content (below), so any
-  two can be compared by flipping between them.
-- All styling lives in `theme.css`. Pages carry no `<style>` blocks and no
-  `style=` attributes. Markup may differ between themes where the style needs
-  it, but stays semantic.
+- All styling lives in `theme.css`; pages carry only semantic markup.
 - App markup stays close to what the Go services emit: `header`, `main`,
   `table`, `form`, `label` + `input` + an error `span` wired with
   `aria-describedby`. Style elements first; add a class only when an element
@@ -41,16 +32,16 @@ design/
 - Typography is exact. Every face is the one we would ship, loaded from Google
   Fonts (a service self-hosts the same files in production), and every weight,
   style, and optical size a page uses is loaded — variable fonts with their
-  full `wght`/`opsz` ranges. `font-synthesis: none` everywhere, so a missing
-  weight or italic shows up as wrong instead of being faked. No system font
-  ever stands in for a design face; system stacks are fallbacks only. No other
-  external requests.
-- Light grounds only; there is no dark mode. Colors are custom properties on
-  `:root`.
-- Works at 375px wide with no horizontal page scroll (tables may scroll inside
-  their own container).
-- Visible focus states. Error text is never conveyed by color alone.
-- Every page ends with the lab toolbar script (`lab.js` in its theme folder).
+  full `wght`/`opsz` ranges. `font-synthesis: none` everywhere, so every
+  weight and italic on screen is the real cut. The design faces render every
+  page; system stacks exist only as fallbacks. Google Fonts is the only
+  external request.
+- Light grounds. Colors are custom properties on `:root`.
+- Every page fits a 375px-wide screen; a wide table scrolls inside its own
+  container.
+- Visible focus states. Errors are stated in words, with an icon, as well as
+  in color.
+- Every page ends with the lab toolbar script (`ikigenba/lab.js`).
 
 ## Shared content
 
@@ -75,7 +66,7 @@ systems. The product name is **Ikigenba**. The example space is
   `@acme.dev` Google accounts, `Continue with Google` (links `/login/google`).
 - Error state: "Sign-in failed" — the account `ada@gmail.com` is not in the
   `acme.dev` workspace; `Try another account`.
-- Signed-in profile (preview of round two): email, signed in via Google,
+- Signed-in profile: email, signed in via Google,
   last sign-in `2026-09-24 14:02 UTC`, session expires in 11h 58m, `Sign out`.
 
 **specimen.html** — the parts: color tokens (swatch, name, value); type scale
@@ -85,30 +76,31 @@ input, select, checkbox, input in error; a table; status badges for active /
 paused / retired; alerts info / success / warning / error; a key/value list;
 a card/panel; an empty state.
 
-## Findings so far
+## The style
 
-- No metaphors: nothing that imitates a terminal, a blueprint, or any object.
-- Light grounds. No dark-first themes.
-- Crisp sans type (Inter, Geist, Sora were the favorites); no serifs, no
-  high-contrast display faces.
-- Restrained structure (round two's Nordic, Minimal, Midnight) liked.
-- Round three picks: **Inter**, a **light top bar**, palettes **cobalt**,
-  **azure**, and **ink**. These became `ikigenba/`.
-- Of those, only **ink** survives: black as the accent, blue for links and
-  focus only, a near-white ground (`#fdfdfd`).
-- Status colors: the **deep** set — ok `#166534`, warn `#c2410c`, err
-  `#b91c1c`, info `#1d4ed8`.
-- No pale washes: status color is solid or absent, never a low-opacity fill.
-  Accepted treatments (from `status.html`): pills P2 dot (`.badge`), P3 solid
-  (`.badge.strong`), P6 mark (`.status`); alerts A3 neutral (`.alert`), A2
-  bar (`.alert.callout`), A4 grey (`.alert.quiet`).
-- Field errors: **E6, message only** — the input keeps its normal border; the
-  red message with its icon beneath it carries the error.
-- Icons matter as much as type: same rule as fonts — real library SVGs at
-  real sizes, never redrawn stand-ins. From `icons.html` (Lucide, Tabler,
-  Heroicons, Iconoir, Phosphor, Material Symbols) the pick is **Tabler**
-  (`@tabler/icons` 3.48.0, MIT), outline at its native 2px stroke. The icons
-  in use are vendored in `ikigenba/icons/tabler/` with the license; filled
-  variants (as CSS masks) mark status, alerts, and field errors.
-- Code font: **JetBrains Mono** (Google Fonts, variable 400–700), accepted.
-- Dark mode: skipped. The style is light-only.
+- Character comes from type, spacing, structure, and color alone.
+- Light grounds.
+- Type: **Inter** (variable, opsz 14–32, wght 100–900, with italic) for
+  everything; **JetBrains Mono** (variable 400–700) for code.
+- Palette **ink**: ground `#fdfdfd`, surface `#fff`, subtle `#f7f7f7`, fg
+  `#0a0a0a`, muted `#646464`, faint `#949494`, line `#e5e5e5`, line-soft
+  `#f0f0f0`. Black is the accent; blue `#0060f0` is for links and focus only.
+  A light top bar.
+- Status colors (**deep**): ok `#166534`, warn `#c2410c`, err `#b91c1c`, info
+  `#1d4ed8`.
+- Status color is always solid: a solid mark, dot, edge, or pill on a white
+  or grey ground.
+- Status treatments: `.status` (filled icon + word), `.badge` (white pill with
+  a colored dot), `.badge.strong` (solid pill). The kind comes from
+  `data-kind` (ok, warn, err, info, accent); dummy's widgets use
+  `data-status` (active, paused, retired).
+- Alerts: `.alert` (white card, colored icon), `.alert.callout` (adds a
+  colored left edge), `.alert.quiet` (grey fill).
+- Field errors: message only. The input keeps its normal border; the red
+  message with its icon beneath it, matched by `[id$="-error"]`, carries the
+  error.
+- Icons: **Tabler** (`@tabler/icons` 3.48.0, MIT), outline at its native 2px
+  stroke — the library's own SVGs, used at their native sizes. Inline
+  `<svg class="ico">` is 16px in buttons and links, 18px by default. Filled
+  variants, as CSS masks in `--i-ok`, `--i-warn`, `--i-err`, `--i-info`,
+  `--i-alert`, `--i-neutral`, mark status, alerts, and field errors.

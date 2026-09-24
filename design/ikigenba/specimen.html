@@ -208,16 +208,12 @@ x-ikigenba-user: ada@acme.dev</code></pre>
 </section>
 </main>
 <script>
-  // Fill each swatch with the active palette's computed value.
+  // Fill each swatch with its token's computed value.
   (() => {
-    const fill = () => {
-      const cs = getComputedStyle(document.documentElement);
-      document.querySelectorAll(".swatch").forEach((s) => {
-        s.querySelector("code").textContent = cs.getPropertyValue("--" + s.dataset.token).trim();
-      });
-    };
-    new MutationObserver(fill).observe(document.documentElement, { attributes: true, attributeFilter: ["data-palette"] });
-    fill();
+    const cs = getComputedStyle(document.documentElement);
+    document.querySelectorAll(".swatch").forEach((s) => {
+      s.querySelector("code").textContent = cs.getPropertyValue("--" + s.dataset.token).trim();
+    });
   })();
 </script>
 <script src="lab.js"></script>
