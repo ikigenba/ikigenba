@@ -25,8 +25,11 @@ to the run.
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - a POSIX shell at `/bin/sh`: the one exec'ing test starts the binary through
   it (see Test discipline)
+- GNU `make`: the developer targets in the `Makefile` (see Build); no gate
+  runs through it
 
-The toolchain names the tools the gates need; it pins no Go library. Library
+The toolchain names the tools the gates and the `Makefile` need; it pins no Go
+library. Library
 release selection is `go.mod`'s job, and the build run writes it.
 
 ## Dependencies
@@ -46,6 +49,14 @@ The run may add exactly these three and their transitive dependencies to
 `go.mod`, and nothing else. A phase that appears to need a module not reachable
 from these files files an issue for a human to adjudicate, rather than pulling
 in a new direct dependency on its own.
+
+## Build
+
+`make` builds `bin/auth` from the checkout (`make build`, the `Makefile` in
+this directory), cgo-free like the release build. `make fmt` rewrites
+unformatted files, and `make test` and `make lint` run gates 4 and 5. The gates
+below do not go through `make`: they call the Go tool directly, and the one
+test that needs a binary builds its own into a temporary directory.
 
 ## Test files
 
@@ -224,7 +235,7 @@ and pushed to a space's host by `devctl`, which drives `opsctl install` there.
 only place the version is recorded.
 
 A developer serves the checkout's binary with
-`systemd-socket-activate -l 127.0.0.1:3001 auth`, which passes a socket on the
+`systemd-socket-activate -l 127.0.0.1:3001 bin/auth`, which passes a socket on the
 same terms systemd does (`D03-serve`), with `GOOGLE_CLIENT_ID`,
 `GOOGLE_CLIENT_SECRET`, and `WORKSPACE_DOMAIN` exported. Run bare, auth refuses
 to start: it never opens a socket of its own.
