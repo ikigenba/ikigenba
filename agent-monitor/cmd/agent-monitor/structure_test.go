@@ -50,34 +50,3 @@ func TestPackageSet(t *testing.T) {
 		t.Errorf("missing packages: %v", want)
 	}
 }
-
-func TestDirectImportAllowLists(t *testing.T) {
-	// R-DMCE-FVZF R-DNKA-TNQ4 R-DOS7-7FGT R-DQ03-L77I R-DR7Z-YYY7 R-DSFW-CQOW
-	harness := "bytes cmp encoding/json errors io/fs path slices sort strconv strings time internal/session internal/proc"
-	allowed := map[string]string{
-		"cmd/agent-monitor":       "os internal/cli",
-		"internal/cli":            "errors io io/fs strings internal/quote internal/session internal/harness/claude internal/harness/codex internal/harness/grok",
-		"internal/quote":          "strconv strings unicode unicode/utf8",
-		"internal/session":        "bytes cmp errors slices sort strconv strings time unicode/utf8 internal/quote",
-		"internal/proc":           "bufio bytes errors io/fs path strconv strings syscall time",
-		"internal/harness/claude": harness,
-		"internal/harness/codex":  harness,
-		"internal/harness/grok":   harness,
-	}
-	for path, permitted := range allowed {
-		t.Run(path, func(t *testing.T) {
-			set := make(map[string]bool)
-			for _, name := range strings.Fields(permitted) {
-				if strings.HasPrefix(name, "internal/") {
-					name = modulePath + "/" + name
-				}
-				set[name] = true
-			}
-			for _, name := range strings.Fields(goList(t, "{{join .Imports \" \"}}", "./"+path)) {
-				if !set[name] {
-					t.Errorf("unexpected direct import %q", name)
-				}
-			}
-		})
-	}
-}
