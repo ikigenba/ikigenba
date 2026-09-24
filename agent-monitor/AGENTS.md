@@ -141,7 +141,7 @@ hand-maintained infrastructure, not spec-governed code.
   (repo root), which builds `bin/agent-monitor` and verifies that
   `agent-monitor --version` prints exactly the tag's version (a mismatched tag
   fails the release), then runs GoReleaser from this directory using
-  `.goreleaser.yaml` — linux/darwin × amd64/arm64, tar.gz archives, checksums —
+  `.goreleaser.yaml` — linux × amd64/arm64, tar.gz archives, checksums —
   and publishes a GitHub release on the tag, marked as a GitHub prerelease
   when the tag has a prerelease part.
 - Find the newest stable tag by filtering out prereleases first:

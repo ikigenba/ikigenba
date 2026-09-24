@@ -20,7 +20,6 @@ die() {
 
 case "$(uname -s)" in
     Linux) os=linux ;;
-    Darwin) os=darwin ;;
     *) die "unsupported operating system: $(uname -s)" ;;
 esac
 

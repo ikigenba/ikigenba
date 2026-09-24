@@ -8,7 +8,7 @@ builds:
     binary: agent-monitor
     env:
       - CGO_ENABLED=0
-    goos: [linux, darwin]
+    goos: [linux]
     goarch: [amd64, arm64]
     ldflags:
       - -s -w
