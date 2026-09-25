@@ -13,9 +13,11 @@ panel's script splices whatever comes back into a document that is already
 drawn, so an error wrapped in the panel's chrome would arrive as a whole page
 pushed into a table. An error from this endpoint is therefore never drawn in
 the chrome either — it is one line of plain text, whether or not the caller is
-identified. The polling interval belongs to the page's script and is not
-fixed by any story here; what these stories fix is the endpoint's HTTP
-behavior.
+identified. The page's script re-fetches the fragment every 5 seconds, on the
+panel page and on the 422 redraw alike (`S3`, `S5`), which is what the
+panel's subtitle, `refreshes every 5 seconds`, tells the reader. The subtitle
+is drawn with the page and is not part of the fragment, so a poll never
+changes it. The stories below fix the endpoint's HTTP behavior.
 
 Every request reaching dummy comes through the host's nginx gate, which sets
 `X-User-Id` and `X-User-Email` on each upstream request, or from a sibling app
@@ -32,7 +34,9 @@ count 0 status `paused`; `gamma` count 12 status `retired`. A widget has a
 come first and a newly created widget is last. Status is a word in its own
 column, never colour alone, so a caller reading the fragment with `curl`
 understands a row the same way a person looking at the browser does. The
-table carries the same marking as the panel's (`S3`): the count column's
+table carries the same header row and marking as the panel's (`S3`): its
+header row holds exactly three cells, in order, `<th>Name</th>`,
+`<th class="num">Count</th>`, and `<th>Status</th>`; the count column's
 header cell is marked numeric, `<th class="num">Count</th>`, as is each
 row's count cell, `<td class="num">3</td>`, and each status word sits inside a
 status marker naming its value,
@@ -77,7 +81,8 @@ document. It holds three rows, in fixture order, carrying `alpha` 3 `active`,
 `beta` 0 `paused`, and `gamma` 12 `retired`; each row shows its status as a
 word in its own column, inside a status marker naming that status, and its
 count in a cell marked numeric; the header row's `Count` cell is marked
-numeric too. The body is byte for byte the table a `GET
+numeric too, and the header row's cells read `Name`, `Count`, and `Status`, in
+that order. The body is byte for byte the table a `GET
 /widgets` embeds for the same widgets.
 
 Preconditions:
@@ -125,8 +130,8 @@ Postconditions:
 
 ## A page polls again and nothing has changed
 
-This is the ordinary case: the panel sits open, the script re-fetches on its
-interval, and no one has created anything. The page quotes the `ETag` from the
+This is the ordinary case: the panel sits open, the script re-fetches every 5
+seconds, and no one has created anything. The page quotes the `ETag` from the
 response it is currently showing in `If-None-Match`; because the table's
 content is unchanged, the tag still matches, and the server says so instead of
 re-sending markup the page already has. The page leaves the table it is

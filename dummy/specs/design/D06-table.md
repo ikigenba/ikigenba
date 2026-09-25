@@ -54,13 +54,16 @@ is fixed by exact read value on the count cells — S3 and S4 quote them as
 several classes, so a cell cannot slip the marking in beside another class.
 
 The header row is required — S4 fixes "a table with a header row and one row
-per widget and nothing around it". Of what its cells say, the stories quote
-only the count column's header, `Count`, so that is the one header text fixed,
-on the header cell standing over the count column, the second, just as the
-count is each data row's second cell. The texts of the other header cells are
-not fixed. The rows below it are one per widget, in the order `D05-widgets`'s
-`Store.All` returns them, which is fixture order followed by creation order, so
-a newly created widget is last.
+per widget and nothing around it". S3 and S4 now fix it whole: exactly three
+cells, in order, `<th>Name</th>`, `<th class="num">Count</th>` and
+`<th>Status</th>`. Since the stories quote each cell's markup, the design fixes
+each cell as those exact bytes, from its `<th` start tag through its `</th>` end
+tag, rather than as a read text: a column heading is a fixed label, never a
+value drawn from the request, so there is nothing for the normalisation to
+absorb. The count header is the second cell, just as the count is each data
+row's second cell. The rows below it are one per widget, in the order
+`D05-widgets`'s `Store.All` returns them, which is fixture order followed by
+creation order, so a newly created widget is last.
 
 A cell text is read through the normalisation, whose last step is the
 whitespace collapse, so it can never be compared against a raw stored value.
@@ -186,10 +189,19 @@ the two answers are required to agree only when `Store.All` returns the same
 widgets in the same order immediately before each request. On this route the
 `ETag` is exactly what makes the omission observable rather than theoretical.
 
-Two things deliberately get no requirement. The polling interval is not
-contract; S4 declines to fix it, and `D04-panel` says so where the script is
-designed. And the claim that "nothing is assembled afterwards by JavaScript" is
-owned here only in its decidable half — that the panel page contains the table
+The polling interval is contract, but not this document's: S4 says the page's
+script re-fetches the fragment every 5 seconds, and `D04-panel` fixes that
+where the script is designed. The fragment carries no trace of it — the panel
+subtitle that states the interval is part of the heading block `D04-panel` draws
+into the page content outside the table span, so the fragment carries neither
+the heading nor the subtitle, and a poll leaves both as they were. That absence
+is stated over the fragment's tags — no `h1` and no `p` element, the two the
+heading block draws them in — rather than over the subtitle's text, because a
+widget's name is free text and a caller may name a widget with words that read
+like a subtitle; its escaped name can add text to a cell but never a tag.
+
+One thing deliberately gets no requirement. The claim that "nothing is
+assembled afterwards by JavaScript" is owned here only in its decidable half — that the panel page contains the table
 in the body it sends — because the other half is not decidable by any procedure
 the standard library can run and is in plain tension with the poller the design
 puts in the page. It is recorded here rather than silently dropped.
@@ -201,10 +213,11 @@ This document declares no exported name. `internal/panel` owns them and
 
 - R-KVPQ-RDIA: The body of a 200 response to a `GET` request whose path is `/widgets/table` MUST be a **table fragment** for the widget set current when the response was rendered, where a table fragment for a widget set is a string that, after optional leading whitespace, begins with a `<table` start tag as `D04-panel` defines start tags and end tags (R-KDGH-2SDG), ends with a `</table>` end tag followed by optional trailing whitespace, and contains no `<html` start tag, no `<body` start tag, no `<script` start tag, and no occurrence of `<!doctype` compared case-insensitively.
 - R-KWXN-558Z: The `<table` start tag of a table fragment MUST carry an occurrence of the attribute `id`, as `D04-panel` defines an attribute occurrence and its read value (R-KEOD-GK45), whose read value is exactly `widgets-table`.
+- R-9PSS-27JH: A table fragment MUST contain no `<h1` start tag and no `<p` start tag, so that neither the page's heading nor its panel subtitle (`D04-panel` R-VLYN-3LNY), which the heading block draws in an `h1` and a `p` element, is ever part of what a poll replaces.
 - R-M3J7-QWZS: A table fragment MUST contain exactly one **header row** — a span from a `<tr` start tag through the next following `</tr>` end tag that contains at least one `<th` start tag and no `<td` start tag — and that header row MUST precede every **data row**, a span from a `<tr` start tag through the next following `</tr>` end tag that contains at least one `<td` start tag.
 - R-M4R4-4OQH: A table fragment for a widget set MUST contain exactly one data row for each widget in that set and no other data row, the data rows appearing in the order `D05-widgets`'s `Store.All` returns those widgets.
 - R-Q4HP-7G07: The first three **cell texts** of the data row for a widget MUST be the whitespace collapse of that widget's `Name`, the whitespace collapse of its `Count` written in decimal, and the whitespace collapse of the string value of its `Status`, where the whitespace collapse is the one the text procedures (`D04-panel`) define and the cell text of a `<td` start tag is the normalisation defined by those procedures of the text from that start tag's closing `>` through the next following `</td>` end tag.
-- R-AU0W-ONFN: The header row of a table fragment MUST contain at least two `<th` start tags; the second of them MUST carry an occurrence of the attribute `class`, as `D04-panel` defines an attribute occurrence and its read value, whose read value is exactly `num`; and the normalisation, as the text procedures (`D04-panel`) define it, of the text from that start tag's closing `>` through the next following `</th>` end tag MUST be exactly `Count`.
+- R-LNX6-XHWY: The header row of a table fragment MUST contain exactly three `<th` start tags and exactly three `</th>` end tags, and the span from each `<th` start tag through the next following `</th>` end tag MUST be exactly `<th>Name</th>` for the first, exactly `<th class="num">Count</th>` for the second, and exactly `<th>Status</th>` for the third.
 - R-AV8T-2F6C: In every data row of a table fragment, the second `<td` start tag MUST carry an occurrence of the attribute `class` whose read value is exactly `num`.
 - R-AWGP-G6X1: In the data row for a widget, the text from the closing `>` of the third `<td` start tag up to the `<` of the next following `</td>` end tag, once its leading and trailing ASCII whitespace is removed, MUST consist of exactly a `<span` start tag carrying an occurrence of the attribute `class` whose read value is exactly `status` and an occurrence of the attribute `data-status` whose read value is exactly the string value of that widget's `Status` (`D05-widgets`), then that same string value, then a `</span>` end tag, and nothing else.
 - R-QR6J-7N0Z: Every `<th` or `<td` start tag in a table fragment, other than the second `<th` start tag of its header row and the second `<td` start tag of each of its data rows, MUST NOT carry an occurrence of the attribute `class` whose read value, split on ASCII whitespace, has `num` as a member.

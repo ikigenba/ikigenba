@@ -210,8 +210,9 @@ Content-Type: text/html; charset=utf-8
 
 Status 404. The body is the page dummy sends for any path that does not exist
 (`S3`): an HTML document in the same chrome as the panel — the mark,
-`mg@example.com`, and the sign-out link, with the same title, stylesheet link,
-and viewport as every page — whose visible text says the page was not found
+`mg@example.com`, and the sign-out button, with the same title, stylesheet link,
+and viewport as every page — whose visible text, inside the page's one
+`<main>` element after the chrome's header, says the page was not found
 and carries a link to `/widgets`.
 
 Preconditions:
@@ -248,7 +249,8 @@ Content-Type: text/html; charset=utf-8
 
 Status 405. The body is an HTML document in the same chrome as the panel,
 with the same title, stylesheet link, and viewport as every page (`S3`),
-whose visible text says the method is not allowed and carries a link to
+whose visible text, inside the page's one `<main>` element after the chrome's
+header, says the method is not allowed and carries a link to
 `/widgets`. `PUT`, `DELETE`, and `PATCH` are refused the same way.
 
 Preconditions:

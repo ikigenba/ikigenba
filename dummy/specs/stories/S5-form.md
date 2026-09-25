@@ -19,9 +19,11 @@ A submission dummy accepts is answered `303 See Other` with `Location:
 /widgets` and an empty body: the browser then re-fetches the panel, where the
 new row is visible. A submission dummy reads and rejects is answered `422`
 whose body is the panel page re-rendered in the same chrome as a `GET
-/widgets` — the same title, stylesheet link, and viewport, the page's
-`Widgets` heading, and beneath it the table exactly as it was and the form in
-its card headed `Add widget`, still carrying the
+/widgets` — the same title, stylesheet link, and viewport, and inside the
+page's one `<main>` element the page's `Widgets` heading with its subtitle
+counting the widgets as they are (`3 widgets · refreshes every 5 seconds`
+for the fixture set, `S3`), and beneath it the table exactly as it was and
+the form in its card headed `Add widget`, still carrying the
 values the caller submitted, with an error message beside each field that was
 rejected. A submission dummy does not read at all, because its media type
 is not `application/x-www-form-urlencoded`, is answered `415` instead, and
@@ -100,7 +102,7 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 422. The body is the panel page in the same chrome as a `GET
-/widgets` — the mark, `mg@example.com`, and the sign-out link — with the
+/widgets` — the mark, `mg@example.com`, and the sign-out button — with the
 `Widgets` heading, and beneath it the table holding the three fixture widgets
 in fixture order and the form in its card headed `Add widget`. The form carries
 the values the caller submitted: the name field empty, the count field 7, the
@@ -371,9 +373,10 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 415. The body is an HTML document in the same chrome as the panel —
-the mark, `mg@example.com`, and the sign-out link, with the title, stylesheet
-link, and viewport every page carries (`S3`) — whose visible text
-says the media type is not supported and carries a link to `/widgets`. The
+the mark, `mg@example.com`, and the sign-out button, with the title, stylesheet
+link, and viewport every page carries (`S3`) — whose visible text, inside the
+page's one `<main>` element after the chrome's header, says the media type is
+not supported and carries a link to `/widgets`. The
 caller is identified, so this failure is a page in that chrome, as the 404 and
 the 405 are (`S3`); only the missing-header 500 is bare text. The request body
 is not read at all: `POST /widgets` accepts only
