@@ -1,8 +1,8 @@
 # D07-form
 
 Creating a widget is the one interaction in dummy that changes state, and this
-document owns all of it: the markup of the form that offers it, and the whole
-of `POST /widgets`.
+document owns all of it: the markup of the form that offers it, the card the
+form sits in, and the whole of `POST /widgets`.
 
 The form is an ordinary HTML form. It POSTs to `/widgets` with
 `application/x-www-form-urlencoded`, it has one control per widget field —
@@ -14,23 +14,24 @@ submission shape and dummy validates it the same way whoever sent it. The
 status control offers exactly the three choices, which is why a person in a
 browser cannot reach the status rejection at all and a `curl` caller can.
 
-Markup is normally not contract here — `D04-panel` established the technique
-of fixing the visible text (R-KLZR-R6KB) and leaving the tags alone — but a
-handful of anchors have to be, because `S5-form` fixes *where* a message sits
-and not merely that one appears: "a reader sees which field each message is
-about by where it sits". A promise the design cannot test is a promise the
-build run cannot keep. The anchor set is deliberately the smallest one that
-makes those promises decidable: `id="<field>-error"` and `aria-describedby`
-for the per-field placement, `method` and `action` on the form, and `name` and
-`value` on the three controls. The `enctype` clause belongs to that minimum
-too, and it costs nothing: HTML's default for a POST form already satisfies
-it, and without it a form could be marked `multipart/form-data` and a
-browser's own submission would come back 415. The submit control belongs to it
-for the same reason, one step earlier. Keeping a browser's default submission
-valid is pointless if the browser cannot submit at all, and three fields with
-no submit button would satisfy every other requirement here while `S5-form`'s
-"a user adds a widget" failed for the person in front of the page. A person
-cannot type a `curl` command into a form.
+Markup is contract here only where a story fixes it or a promise needs it to
+be decidable. The card and its button are the first kind, and they are
+described below. The rest are anchors, and they have to be, because `S5-form`
+fixes *where* a message sits and not merely that one appears: "a reader sees
+which field each message is about by where it sits". A promise the design
+cannot test is a promise the build run cannot keep. The anchor set is
+deliberately the smallest one that makes those promises decidable:
+`id="<field>-error"` and `aria-describedby` for the per-field placement,
+`method` and `action` on the form, and `name` and `value` on the three
+controls. The `enctype` clause belongs to that minimum too, and it costs
+nothing: HTML's default for a POST form already satisfies it, and without it a
+form could be marked `multipart/form-data` and a browser's own submission
+would come back 415. The submit control belongs to it for the same reason, one
+step earlier. Keeping a browser's default submission valid is pointless if the
+browser cannot submit at all, and three fields with no submit button would
+satisfy every other requirement here while `S5-form`'s "a user adds a widget"
+failed for the person in front of the page. A person cannot type a `curl`
+command into a form.
 
 Which buttons count is settled by HTML's invalid-value default rather than by
 the word `submit`. A `<button>` whose `type` is missing, empty, or anything at
@@ -70,11 +71,43 @@ button, a demo app has no graphical submit to offer, and a picture on the
 button is a styling choice that would cost the key parity every other clause
 here is spent on.
 
-The form sits below the table on the panel page (`D04-panel` R-KTB6-1T0H).
-That placement is `D04-panel`'s (R-MDKW-98OI), because it is a statement about
-how the page composes two fragments neither of which can see the other; this
-document fixes the anchor the check reads — the page's single `<form` start
-tag — and says nothing about the table.
+**The form sits in a card headed `Add widget`.** `S3-panel` and `S5-form` fix
+that heading, and `S3-panel` places it as "a heading beneath the page's
+`Widgets` heading". The page's heading is an `h1` (`D04-panel`), so the card's
+heading is one level below it, an `h2`. The card's markup follows the
+platform's mock of this very panel in `design/` (`design/ikigenba/app.html`):
+a `section` with the class `card`, whose first child is a `header` holding the
+`h2`, and then the form. The `header` is part of the contract, and not just
+the class, because the mock heads its card that way. The requirement is
+anchored on the page's one `<form` start tag rather than on the count of cards
+or sections in the page. The form card is then decidable without an HTML
+parser, because it is the chain of tags that runs immediately up to that start
+tag, plus the one end tag that immediately follows the form. It also leaves
+the rest of the page to `D04-panel`. The chain allows only whitespace between
+its links, so nothing can sit between the heading and the form, and nothing
+can sit between the form and the end of the card.
+
+Where the card sits is `D04-panel`'s. The page's heading comes first, then the
+page's `.panel` wrapper holding the table and then the form card. That is a
+statement about how the page composes parts that cannot see each other, and
+this document says nothing about the table. The stories' side-by-side and
+stacked arrangements are not something a check without a browser can observe,
+so the contract for them is that markup.
+
+**The button reads `Add widget` and nothing else.** `S3-panel` fixes "the
+form's button is the text `Add widget` alone, with no icon". The platform's
+mock puts an icon in its button, and the story overrides it. So the widget
+form contains exactly one `button` of any type, that button is the form's only
+submit control, and its content is a run of text with no element in it. That
+rules out an `svg` and an `img` with a single scan, and the text, once
+normalised, is exactly `Add widget`. Counting every `button`, not only the
+submit controls, is what makes "the form's button" name one thing: a
+`type="button"` or `type="reset"` button carrying an icon would otherwise sit
+beside it unchecked, and for the same reason the form holds no `<input` whose
+`type` is `button` or `reset`, named or not. This narrows R-UC44-S8EO's "at
+least one submit control" to exactly one, and R-UC44-S8EO's definition of a
+submit control and its ban on `name`, `formaction`, `formmethod` and
+`formenctype` still apply to it.
 
 **The route has four answers and no fifth.** A request without identity is a
 500, decided before anything else; that shape is `D04-panel`'s cross-route
@@ -97,19 +130,29 @@ submitting a second time. There is no flash message and no confirmation
 banner. dummy sets no cookie and puts nothing in the URL, so nothing carries a
 message across the redirect — the new row in the table is the confirmation,
 and the redirect's target is exactly `/widgets`, bare. No requirement below
-says "there is no flash message", and none could: "a message" is not something
-a check can recognise in a page. What the requirements fix instead are the
-carriers, and they fix every one a message could ride: the 303's `Location` is
+says "there is no flash message": "a message" is not something a check can
+recognise in a page. Two kinds of requirement close it off instead. The first
+fixes the carriers, every one a message could ride: the 303's `Location` is
 exactly `/widgets` with no query string and no fragment and its body is empty
 (R-NQ6Y-D2D3), and no answer this route sends carries a `Set-Cookie` header
-(R-NSMR-4LUH). Nothing else survives a redirect. The absence of the banner is
-therefore a consequence of decidable requirements rather than a requirement of
-its own, which is the most this contract can honestly claim.
+(R-NSMR-4LUH). Nothing else survives a redirect. The second fixes the page:
+`D04-panel` R-XZF6-1IBR leaves no text on a panel page outside the chrome
+header, the heading and the panel wrapper, and the form card's opening is
+fixed from its `<section` start tag to the `<form` start tag and its closing
+from `</form>` to `</section>` (R-9HU8-5PDQ), so a banner has nowhere to sit
+around the card or the table. The contents of the widget form between its
+controls are not fixed, so text placed there breaks no requirement; the
+carriers are what keep a message from existing to be placed. The absence of
+the banner is therefore a consequence of decidable requirements rather than a
+requirement of its own, which is the most this contract can honestly claim.
 
 **The 422 body is a panel page**, and "panel page" is a document shape
-`D04-panel` owns rather than a route (R-KTB6-1T0H), so this document refers to
-that shape and re-describes none of the chrome (R-KPNG-WHSE). What it does
-state is what a 422 adds to it: the form carries the values the caller
+`D04-panel` owns rather than a route (R-KTB6-1T0H). This document refers to
+that shape and re-describes none of the chrome, the head or the page's
+heading, all of which are `D04-panel`'s. Because the form card is required of
+every panel page, the redrawn form sits in its card headed `Add widget` just
+as it does on a `GET /widgets`. What this document does state is what a 422
+adds: the form carries the values the caller
 submitted, an error message sits beside each rejected field and beside no
 other, and nothing was created — so the table the shape requires holds exactly
 the widgets that were there before, in the order they were in.
@@ -247,10 +290,13 @@ reads — but some value must be written.
 - R-K9VE-9Q2G: The status control's element — the text from its `<select` start tag through the next `</select>` end tag (`D04-panel` R-KDGH-2SDG) — MUST contain exactly three `<option` start tags, the read values of whose occurrences of the attribute `value` (`D04-panel` R-KEOD-GK45) are, in document order, the three values `Statuses()` returns (`D05-widgets`).
 - R-UC44-S8EO: The widget form MUST contain at least one submit control, a submit control being a `<button` start tag (`D04-panel` R-KDGH-2SDG) that carries either no occurrence of the attribute `type` or an occurrence whose read value is neither `reset` nor `button`, each compared case-insensitively (`D04-panel` R-KEOD-GK45), or an `<input` start tag carrying an occurrence of the attribute `type` whose read value is `submit` compared case-insensitively; and every submit control the widget form contains MUST carry no occurrence of the attribute `name`, so that a browser's submission carries the same keys a `curl` caller sends, and no occurrence of the attribute `formaction`, `formmethod` or `formenctype`, so that the submission a browser makes through it uses the action, method and encoding R-K7FL-I6L2 fixes on the `<form` start tag.
 - R-M49S-JQ63: The widget form MUST contain no `<input` start tag (`D04-panel` R-KDGH-2SDG) carrying an occurrence of the attribute `type` whose read value is `image` compared case-insensitively (`D04-panel` R-KEOD-GK45).
+- R-9HU8-5PDQ: In the script-stripped form of every panel page, as `D04-panel` defines a panel page (R-KTB6-1T0H) and the script-stripped form (R-KH46-83LJ), the widget form's `<form` start tag MUST be immediately preceded, with nothing but ASCII whitespace between successive items, by these items in this order: a `<section` start tag carrying an occurrence of the attribute `class` whose read value is exactly `card` (`D04-panel` R-KDGH-2SDG, R-KEOD-GK45), a `<header` start tag, an `<h2` start tag, a run of characters containing no `<`, an `</h2>` end tag and an `</header>` end tag; and the widget form's `</form>` end tag MUST be immediately followed, with nothing but ASCII whitespace between, by a `</section>` end tag; the **form card** is the text from that `<section` start tag through that `</section>` end tag, and the form card's **heading text** is the normalisation, as `D04-panel` defines it (R-KIC2-LVC8), of that run of characters.
+- R-9J24-JH4F: The form card's heading text MUST be exactly `Add widget`.
+- R-JH6I-XDW1: The widget form MUST contain exactly one `<button` start tag (`D04-panel` R-KDGH-2SDG), whatever its `type`, and no other submit control, as R-UC44-S8EO defines a submit control, and MUST contain no `<input` start tag carrying an occurrence of the attribute `type` whose read value is `button` or `reset` compared ASCII case-insensitively (`D04-panel` R-KEOD-GK45); that `<button` start tag MUST itself be a submit control and MUST be immediately followed by a run of characters containing no `<` and then a `</button>` end tag, the normalisation of that run (`D04-panel` R-KIC2-LVC8) being exactly `Add widget`, so that the button contains no element, neither an `svg` nor an `img`, and no text but `Add widget`.
 - R-XBL8-ZHD9: In the body of a 422 answer to a `POST /widgets` request, the read value of the occurrence of the attribute `value` on the widget form's `name` control, as `D04-panel` defines an attribute occurrence and its read value (R-KEOD-GK45), MUST be exactly the `Name` field of the `Submission` (`D05-widgets` R-7WR2-CK99) that request produced, and the read value of the occurrence of the attribute `value` on its `count` control MUST be exactly that `Submission`'s `Count` field, each unaltered in any other way and an absent occurrence counting as the empty string; the tag structure of that body stays independent of both values by `D04-panel` R-RP4V-R2B5, which this document does not restate.
 - R-4NOW-M9YH: In the body of a 422 answer to a `POST /widgets` request, when the trimmed status (`D05-widgets`) of the `Submission` that request produced is exactly one of the three `option` values of the status control, that `<option` start tag MUST carry a `selected` attribute and MUST be the only one in the widget form that does, and when that trimmed status is none of the three, the widget form MUST contain no `<option` start tag carrying a `selected` attribute.
 - R-OPQ1-FGDT: In a response body that is a panel page and is not the body of a 422 answer to a `POST /widgets` request, the `value` attributes of the widget form's `name` and `count` controls MUST each be absent or empty, and the widget form MUST contain no `<option` start tag carrying a `selected` attribute.
-- R-XE11-R0UN: The field error text of a field in an HTML document MUST be read as the normalisation, as `D04-panel` defines it (R-KIC2-LVC8), of the text, in that document's script-stripped form as `D04-panel` defines it (R-KH46-83LJ), from the `>` ending the start tag that carries an occurrence of the attribute `id` whose read value is `<field>-error` (`D04-panel` R-KEOD-GK45) up to the next following `<`, where `<field>` is that field's key; normalising that text script-strips it a second time, which removes nothing from it, because that text is a substring of that script-stripped form and such a form contains no `script` start tag and no `style` start tag (`D04-panel` R-RNWZ-DAKG).
+- R-JFYM-JM5C: The field error text of a field in an HTML document MUST be read as the normalisation, as `D04-panel` defines it (R-KIC2-LVC8), of the text, in that document's script-stripped form as `D04-panel` defines it (R-KH46-83LJ), from the `>` ending the start tag that carries an occurrence of the attribute `id` whose read value is `<field>-error` (`D04-panel` R-KEOD-GK45) up to the next following `<`, where `<field>` is that field's key; normalising that text script-strips it a second time, which removes nothing from it, because that text is a substring of that script-stripped form and such a form contains no `script` start tag and no `style` start tag (`D04-panel` R-Y4AR-KLAJ).
 - R-W2WT-9FY8: An HTML document dummy sends, as `D04-panel` defines one (R-IWKC-JVY4), MUST contain, for each of `name-error`, `count-error` and `status-error`, at most one start tag carrying an occurrence of the attribute `id` whose read value is that string (`D04-panel` R-KDGH-2SDG, R-KEOD-GK45), and the element carrying such an occurrence MUST contain no child element: the first `<` at or after the `>` ending that start tag MUST be immediately followed by `/`.
 - R-KEQZ-ST18: For each field whose message in the `FieldErrors` value that `Store.Create` (`D05-widgets`) returned for a submission is non-empty, the body of the 422 answer to that submission MUST contain a start tag carrying an occurrence of the attribute `id` whose read value is `<field>-error` (`D04-panel` R-KEOD-GK45), that field's field error text in that body MUST be exactly that message, and that field's control MUST carry an occurrence of the attribute `aria-describedby` whose read value is exactly `<field>-error`.
 - R-KFYW-6KRX: For each field whose message in the `FieldErrors` value that `Store.Create` returned for a submission is empty, the body of the 422 answer to that submission MUST contain no start tag carrying an occurrence of the attribute `id` whose read value is `<field>-error` (`D04-panel` R-KEOD-GK45), and that field's control MUST carry no occurrence of the attribute `aria-describedby`.
