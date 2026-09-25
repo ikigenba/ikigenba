@@ -9,21 +9,14 @@ func TestHostDerivedValues(t *testing.T) {
 	// R-ILH9-35UU: the space is the host with one leading auth. label removed.
 	// R-U4SD-S667: only the exact localhost:3001 host is local.
 	// R-U8G2-XHEA: callback redirect_uri follows the exact host classification.
-	// R-UC3S-2SMD: own origin follows the same host classification.
 	if got := space("auth.green.example:443"); got != "green.example" {
 		t.Fatalf("space() = %q, want green.example", got)
 	}
 	if got := redirectURI("auth.green.example"); got != "https://auth.green.example/login/google/callback" {
 		t.Fatalf("redirectURI() = %q", got)
 	}
-	if got := ownOrigin("auth.green.example"); got != "https://auth.green.example" {
-		t.Fatalf("ownOrigin() = %q", got)
-	}
 	if got := redirectURI("localhost:3001"); got != "http://localhost:3001/login/google/callback" {
 		t.Fatalf("local redirectURI() = %q", got)
-	}
-	if got := ownOrigin("localhost:3001"); got != "http://localhost:3001" {
-		t.Fatalf("local ownOrigin() = %q", got)
 	}
 	for _, host := range []string{"localhost", "localhost:3002", "127.0.0.1:3001", "127.0.0.1", "LOCALHOST:3001"} {
 		if isLocalRequest(host) {
@@ -32,15 +25,88 @@ func TestHostDerivedValues(t *testing.T) {
 		if got := redirectURI(host); got != "https://auth."+space(host)+"/login/google/callback" {
 			t.Fatalf("redirectURI(%q) = %q", host, got)
 		}
-		if got := ownOrigin(host); got != "https://auth."+space(host) {
-			t.Fatalf("ownOrigin(%q) = %q", host, got)
-		}
 		if got := cookieForHost(host, "session", false).Domain; got != space(host) {
 			t.Fatalf("cookie domain for %q = %q", host, got)
 		}
 	}
 	if !isLocalRequest("localhost:3001") {
 		t.Fatal("localhost:3001 was not treated as local")
+	}
+}
+
+func TestOwnOrigin(t *testing.T) {
+	// R-7AQD-QSNL: token routes use auth's own origin for the exact local
+	// host and the derived auth host on a space.
+	for _, tc := range []struct{ host, want string }{
+		{"localhost:3001", "http://localhost:3001"},
+		{"auth.green.example", "https://auth.green.example"},
+		{"green.example", "https://auth.green.example"},
+		{"localhost:3002", "https://auth.localhost"},
+	} {
+		if got := ownOrigin(tc.host); got != tc.want {
+			t.Errorf("ownOrigin(%q) = %q, want %q", tc.host, got, tc.want)
+		}
+	}
+}
+
+func TestOnSpaceOrigin(t *testing.T) {
+	// R-60RY-2THD: space origins require HTTPS and an exact space host or
+	// a label-boundary subdomain, without a port or URL suffix.
+	for _, tc := range []struct {
+		origin string
+		want   bool
+	}{
+		{"https://green.example", true},
+		{"HTTPS://GREEN.EXAMPLE", true},
+		{"https://auth.green.example", true},
+		{"https://nested.app.green.example", true},
+		{"https://evilgreen.example", false},
+		{"https://green.example.evil.com", false},
+		{"http://green.example", false},
+		{"https://green.example:443", false},
+		{"https://green.example.", false},
+		{"https://green.example/path", false},
+		{"https://green.example?x=1", false},
+		{"https://green.example#x", false},
+		{"https://user@green.example", false},
+		{"http://localhost", false},
+		{"http://localhost:3001", false},
+		{"null", false},
+	} {
+		if got := onSpaceOrigin(tc.origin, "auth.green.example"); got != tc.want {
+			t.Errorf("onSpaceOrigin(%q, space) = %t, want %t", tc.origin, got, tc.want)
+		}
+	}
+
+	// R-7D66-IC4Z: local origins accept localhost on HTTP, with no port
+	// or a canonical decimal port in the valid range.
+	for _, tc := range []struct {
+		origin string
+		want   bool
+	}{
+		{"http://localhost", true},
+		{"HTTP://LOCALHOST", true},
+		{"http://localhost:1", true},
+		{"http://localhost:65535", true},
+		{"http://localhost:3001", true},
+		{"https://localhost", false},
+		{"http://localhost.", false},
+		{"http://localhost:", false},
+		{"http://localhost:0", false},
+		{"http://localhost:01", false},
+		{"http://localhost:65536", false},
+		{"http://localhost:999999999999999999999999", false},
+		{"http://127.0.0.1:3001", false},
+		{"https://auth.green.example", false},
+		{"http://localhost/path", false},
+		{"http://localhost?x=1", false},
+		{"http://localhost#x", false},
+		{"http://user@localhost", false},
+		{"null", false},
+	} {
+		if got := onSpaceOrigin(tc.origin, "localhost:3001"); got != tc.want {
+			t.Errorf("onSpaceOrigin(%q, local) = %t, want %t", tc.origin, got, tc.want)
+		}
 	}
 }
 

@@ -144,7 +144,8 @@ func (s *Server) handleLoginGoogleCallback(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Origin") != ownOrigin(r.Host) {
+	origins := r.Header.Values("Origin")
+	if len(origins) != 1 || !onSpaceOrigin(origins[0], r.Host) {
 		writePlainError(w, http.StatusForbidden, "forbidden")
 		return
 	}

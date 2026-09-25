@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
@@ -233,11 +234,11 @@ func TestSignInConstantsHostRulesAndAnonymousRoot(t *testing.T) {
 	if SessionCookieName != "ikigenba_session" {
 		t.Fatalf("SessionCookieName = %q", SessionCookieName)
 	}
-	// R-ILH9-35UU, R-U4SD-S667, R-U8G2-XHEA, R-UC3S-2SMD: space and local host derivations are exact.
-	if space("auth.green.example") != "green.example" || redirectURI("auth.green.example") != "https://auth.green.example/login/google/callback" || ownOrigin("auth.green.example") != "https://auth.green.example" {
+	// R-ILH9-35UU, R-U4SD-S667, R-U8G2-XHEA: space and local host derivations are exact.
+	if space("auth.green.example") != "green.example" || redirectURI("auth.green.example") != "https://auth.green.example/login/google/callback" {
 		t.Fatal("space host derivation is incorrect")
 	}
-	if redirectURI("localhost:3001") != "http://localhost:3001/login/google/callback" || ownOrigin("localhost:3001") != "http://localhost:3001" {
+	if redirectURI("localhost:3001") != "http://localhost:3001/login/google/callback" {
 		t.Fatal("local host derivation is incorrect")
 	}
 	// R-IQCU-M8TM: only the exact space and its label-boundary subdomains pass.
@@ -917,11 +918,21 @@ func TestProfileUsesLookupIgnoresReturnAndRendersFormsAndTokens(t *testing.T) {
 }
 
 func TestLogoutOriginDeletionAndCookieAttributes(t *testing.T) {
+	type logoutResponse struct {
+		status int
+		header http.Header
+		body   string
+	}
+	baseline := make(map[string]logoutResponse)
 	for _, tc := range []struct{ host, origin, domain string }{
 		{host: "auth.green.example", origin: "https://auth.green.example", domain: "green.example"},
+		{host: "auth.green.example", origin: "https://green.example", domain: "green.example"},
+		{host: "auth.green.example", origin: "https://nested.app.green.example", domain: "green.example"},
 		{host: "localhost:3001", origin: "http://localhost:3001"},
+		{host: "localhost:3001", origin: "http://localhost"},
+		{host: "localhost:3001", origin: "http://localhost:65535"},
 	} {
-		t.Run(tc.host, func(t *testing.T) {
+		t.Run(tc.host+"/"+tc.origin, func(t *testing.T) {
 			st := openSignInStore(t)
 			user, err := st.UpsertUserOnLogin("issuer", "subject", "member@example.test", signInNow)
 			if err != nil {
@@ -937,20 +948,23 @@ func TestLogoutOriginDeletionAndCookieAttributes(t *testing.T) {
 			}
 			s := New(Config{Store: st, Now: func() time.Time { return signInNow }})
 			cookie := &http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}
-
-			bad := serveSignIn(s, http.MethodPost, "/logout", tc.host, cookie, "https://attacker.example")
-			// R-J4ZN-7HPY: wrong Origin is a cookie-free 403 and leaves the session live.
-			if bad.Code != http.StatusForbidden || bad.Header().Get("Content-Type") != "text/plain; charset=utf-8" || len(bad.Result().Cookies()) != 0 {
-				t.Fatalf("bad-origin response = %d %#v", bad.Code, bad.Header())
-			}
-			if _, err := st.LookupSessionIdentity(session.ID, signInNow); err != nil {
-				t.Fatalf("bad origin deleted session: %v", err)
-			}
-
+			beforeUser := signInUserRows(t, st)
 			good := serveSignIn(s, http.MethodPost, "/logout", tc.host, cookie, tc.origin)
-			// R-J3RQ-TPZ9: accepted logout redirects, deletes only the session, and preserves user/token.
+			// R-ARX4-BPPM: every on-space origin gives the same redirect,
+			// cookie clearing, and session deletion without changing user/token.
+			response := logoutResponse{good.Code, good.Header().Clone(), good.Body.String()}
+			if first, ok := baseline[tc.host]; ok {
+				if !reflect.DeepEqual(response, first) {
+					t.Fatalf("logout response for %q differs: %#v, want %#v", tc.origin, response, first)
+				}
+			} else {
+				baseline[tc.host] = response
+			}
 			if good.Code != http.StatusFound || good.Header().Get("Location") != "/" || !errors.Is(lookupSessionError(st, session.ID), store.ErrNotFound) {
 				t.Fatalf("accepted logout = %d %q session=%v", good.Code, good.Header().Get("Location"), lookupSessionError(st, session.ID))
+			}
+			if got := signInUserRows(t, st); len(got) != len(beforeUser) || got[0] != beforeUser[0] {
+				t.Fatalf("logout changed user: %#v, want %#v", got, beforeUser)
 			}
 			if tokens, err := st.ListTokens(user.ID); err != nil || len(tokens) != 1 || tokens[0].ID != token.ID {
 				t.Fatalf("logout changed token/user: %#v %v", tokens, err)
@@ -962,6 +976,51 @@ func TestLogoutOriginDeletionAndCookieAttributes(t *testing.T) {
 			header := good.Header().Get("Set-Cookie")
 			if cleared.Name != SessionCookieName || cleared.Value != "" || cleared.Path != "/" || !setCookieAttr(header, "Path=/") || cleared.MaxAge != -1 || !setCookieAttr(header, "Max-Age=0") || !cleared.Secure || !setCookieAttr(header, "Secure") || !cleared.HttpOnly || !setCookieAttr(header, "HttpOnly") || cleared.SameSite != http.SameSiteLaxMode || !setCookieAttr(header, "SameSite=Lax") || cleared.Domain != tc.domain || setCookieHasDomain(header) != (tc.domain != "") {
 				t.Fatalf("cleared cookie = %#v header=%q", cleared, header)
+			}
+		})
+	}
+}
+
+func TestLogoutRejectsMissingRepeatedAndOffSpaceOrigins(t *testing.T) {
+	// R-AT50-PHGB: a missing, repeated, or off-space Origin is a plain
+	// single-line 403 with no cookie or session mutation.
+	for _, tc := range []struct {
+		name, host string
+		origins    []string
+	}{
+		{"missing", "auth.green.example", nil},
+		{"repeated", "auth.green.example", []string{"https://auth.green.example", "https://green.example"}},
+		{"off space", "auth.green.example", []string{"https://attacker.example"}},
+		{"http space", "auth.green.example", []string{"http://green.example"}},
+		{"port", "auth.green.example", []string{"https://green.example:443"}},
+		{"missing local", "localhost:3001", nil},
+		{"repeated local", "localhost:3001", []string{"http://localhost", "http://localhost:3001"}},
+		{"off local", "localhost:3001", []string{"https://localhost"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := openSignInStore(t)
+			user, err := st.UpsertUserOnLogin("issuer", "subject", "member@example.test", signInNow)
+			if err != nil {
+				t.Fatal(err)
+			}
+			session, err := st.CreateSession(user.ID, signInNow)
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := New(Config{Store: st, Now: func() time.Time { return signInNow }})
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/logout", nil)
+			req.Host = tc.host
+			req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+			for _, origin := range tc.origins {
+				req.Header.Add("Origin", origin)
+			}
+			w := httptest.NewRecorder()
+			s.ServeHTTP(w, req)
+			if w.Code != http.StatusForbidden || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || w.Header().Get("Set-Cookie") != "" || strings.Count(w.Body.String(), "\n") != 1 || !strings.HasSuffix(w.Body.String(), "\n") {
+				t.Fatalf("rejected logout = %d %#v %q", w.Code, w.Header(), w.Body.String())
+			}
+			if _, err := st.LookupSessionIdentity(session.ID, signInNow); err != nil {
+				t.Fatalf("rejected logout deleted session: %v", err)
 			}
 		})
 	}
