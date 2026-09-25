@@ -92,15 +92,17 @@ the checkout.
 3. Tag that commit `agent-monitor/vX.Y.Z` and push the tag.
    `.github/workflows/release-agent-monitor.yml` builds with GoReleaser and
    publishes linux amd64/arm64 archives and checksums.
-4. On the developer's machine, run the installer from this directory:
+4. Wait for the workflow to publish the release (`gh release view
+   agent-monitor/vX.Y.Z` succeeds), then install it on the developer's
+   machine from this directory. A release is not done until this step is:
 
 ```
-sh install.sh
+AGENT_MONITOR_VERSION=vX.Y.Z sh install.sh
+agent-monitor --version
 ```
 
-It installs the newest stable release into `~/.local/bin`;
-`AGENT_MONITOR_VERSION=vX.Y.Z sh install.sh` installs exactly that version.
-`agent-monitor --version` then prints `vX.Y.Z`.
+   The installer puts the binary in `~/.local/bin`, and `--version` must
+   print `vX.Y.Z`. Plain `sh install.sh` installs the newest stable release.
 
 ## Live data
 
