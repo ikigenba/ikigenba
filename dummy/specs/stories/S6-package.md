@@ -5,6 +5,9 @@ commit that a `dummy/v<semver>` tag points at, and `opsctl install` unpacks it
 into `/opt/dummy/`. Its contents are the whole of what dummy ships: the static
 `linux/amd64` binary and the manifest, nothing else. dummy keeps nothing
 under `etc/` but the manifest and has no `share/`, so no other member exists.
+The files that give the panel its style — the stylesheet, the fonts, and
+their licence — are inside the binary, so no `assets/` directory and no font
+file ships beside it.
 The version is in the file's name and in the binary, never in a member's
 path.
 

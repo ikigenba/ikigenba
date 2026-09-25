@@ -34,7 +34,11 @@ content-type: text/html; charset=utf-8
 
 Status 200. The body is an HTML page whose visible text carries the email
 address of the caller the gate authenticated and a table of the widgets that
-exist.
+exist. Its stylesheet is `https://dummy.sbx.ikigenba.dev/assets/theme.css`,
+and the fonts that stylesheet loads are under the same
+`https://dummy.sbx.ikigenba.dev/assets/` (`S8-assets.md`): a browser showing
+the panel requests its style from dummy's own host and from no other origin,
+Google Fonts included.
 
 Preconditions:
 

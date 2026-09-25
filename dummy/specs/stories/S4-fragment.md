@@ -32,6 +32,12 @@ count 0 status `paused`; `gamma` count 12 status `retired`. A widget has a
 come first and a newly created widget is last. Status is a word in its own
 column, never colour alone, so a caller reading the fragment with `curl`
 understands a row the same way a person looking at the browser does. The
+table carries the same marking as the panel's (`S3`): the count column's
+header cell is marked numeric, `<th class="num">Count</th>`, as is each
+row's count cell, `<td class="num">3</td>`, and each status word sits inside a
+status marker naming its value,
+`<span class="status" data-status="active">active</span>`. The fragment and
+the table the panel page embeds are the same markup, byte for byte. The
 fixture set changes only when someone POSTs to `/widgets`; nothing in this
 group changes it.
 
@@ -69,7 +75,10 @@ and one row per widget, and nothing around it — no doctype, no `html`
 element, no `body` element, no chrome. It is a fragment, not a whole HTML
 document. It holds three rows, in fixture order, carrying `alpha` 3 `active`,
 `beta` 0 `paused`, and `gamma` 12 `retired`; each row shows its status as a
-word in its own column.
+word in its own column, inside a status marker naming that status, and its
+count in a cell marked numeric; the header row's `Count` cell is marked
+numeric too. The body is byte for byte the table a `GET
+/widgets` embeds for the same widgets.
 
 Preconditions:
 
@@ -177,8 +186,8 @@ Status 200. The body is the widgets table alone, on the same terms as an
 unconditional fetch: the table and its rows, with no doctype, no `html`
 element and no `body` element. It holds four rows — the three fixture widgets,
 in their order, then a row for `delta` carrying the name, count, and status it
-was created with. The `ETag` differs from the one the request quoted, because
-the content differs.
+was created with, marked the same way as the others. The `ETag` differs from
+the one the request quoted, because the content differs.
 
 Preconditions:
 

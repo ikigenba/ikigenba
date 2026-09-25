@@ -1,8 +1,9 @@
 # Stories — form
 
 Creating a widget: the one interaction in dummy that changes state. The form
-sits on the panel page at `/widgets`, below the table, and it is an ordinary
-HTML form — it POSTs to `/widgets` with
+sits on the panel page at `/widgets`, in a card headed `Add widget` beside the
+table on a wide screen and below it on a narrow one (`S3`), and it is an
+ordinary HTML form — it POSTs to `/widgets` with
 `application/x-www-form-urlencoded`, and nothing about the submission is
 assembled by JavaScript, so a caller with `curl` submits exactly what a
 browser submits. A widget has three fields, and the form has one field for
@@ -18,7 +19,9 @@ A submission dummy accepts is answered `303 See Other` with `Location:
 /widgets` and an empty body: the browser then re-fetches the panel, where the
 new row is visible. A submission dummy reads and rejects is answered `422`
 whose body is the panel page re-rendered in the same chrome as a `GET
-/widgets` — the table exactly as it was, and the form still carrying the
+/widgets` — the same title, stylesheet link, and viewport, the page's
+`Widgets` heading, and beneath it the table exactly as it was and the form in
+its card headed `Add widget`, still carrying the
 values the caller submitted, with an error message beside each field that was
 rejected. A submission dummy does not read at all, because its media type
 is not `application/x-www-form-urlencoded`, is answered `415` instead, and
@@ -97,8 +100,9 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 422. The body is the panel page in the same chrome as a `GET
-/widgets` — the service name, `mg@example.com`, and the sign-out link — with
-the table holding the three fixture widgets in fixture order. The form carries
+/widgets` — the mark, `mg@example.com`, and the sign-out link — with the
+`Widgets` heading, and beneath it the table holding the three fixture widgets
+in fixture order and the form in its card headed `Add widget`. The form carries
 the values the caller submitted: the name field empty, the count field 7, the
 status field `active`. An error message sits beside the name field saying a
 name is required. No error sits beside the count or the status field.
@@ -367,7 +371,8 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 415. The body is an HTML document in the same chrome as the panel —
-the service name, `mg@example.com`, and the sign-out link — whose visible text
+the mark, `mg@example.com`, and the sign-out link, with the title, stylesheet
+link, and viewport every page carries (`S3`) — whose visible text
 says the media type is not supported and carries a link to `/widgets`. The
 caller is identified, so this failure is a page in that chrome, as the 404 and
 the 405 are (`S3`); only the missing-header 500 is bare text. The request body
