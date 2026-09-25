@@ -1,4 +1,4 @@
-package dummy
+package main
 
 import (
 	"bytes"
@@ -6,23 +6,26 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/ikigenba/ikigenba/dummy"
 )
 
 // R-5EOI-Q5FN
 func TestAssetsIsExportedEmbedFSVariable(t *testing.T) {
-	if reflect.TypeOf(Assets) != reflect.TypeFor[embed.FS]() {
-		t.Fatalf("Assets has type %T, want embed.FS", Assets)
+	if reflect.TypeOf(dummy.Assets) != reflect.TypeFor[embed.FS]() {
+		t.Fatalf("Assets has type %T, want embed.FS", dummy.Assets)
 	}
 }
 
 // R-T6W6-W28R
 func TestAssetDirectoryEntries(t *testing.T) {
-	entries, err := os.ReadDir("assets")
+	entries, err := os.ReadDir(filepath.Join(mainProjectRoot(t), "assets"))
 	if err != nil {
 		t.Fatalf("read assets directory: %v", err)
 	}
@@ -71,19 +74,29 @@ func validAssetName(name string) bool {
 
 // R-5FWF-3X6C
 func TestAssetsExactlyMatchDirectory(t *testing.T) {
-	entries, err := os.ReadDir("assets")
+	assetDir := filepath.Join(mainProjectRoot(t), "assets")
+	entries, err := os.ReadDir(assetDir)
 	if err != nil {
 		t.Fatal(err)
 	}
+	root, err := os.OpenRoot(assetDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := root.Close(); err != nil {
+			t.Errorf("close assets directory: %v", err)
+		}
+	}()
 	wantPaths := []string{".", "assets"}
 	for _, entry := range entries {
 		wantPaths = append(wantPaths, path.Join("assets", entry.Name()))
-		want, err := os.ReadFile(path.Join("assets", entry.Name()))
+		want, err := root.ReadFile(entry.Name())
 		if err != nil {
 			t.Errorf("read asset %q: %v", entry.Name(), err)
 			continue
 		}
-		got, err := Assets.ReadFile(path.Join("assets", entry.Name()))
+		got, err := dummy.Assets.ReadFile(path.Join("assets", entry.Name()))
 		if err != nil {
 			t.Errorf("read embedded asset %q: %v", entry.Name(), err)
 		} else if !bytes.Equal(got, want) {
@@ -91,7 +104,7 @@ func TestAssetsExactlyMatchDirectory(t *testing.T) {
 		}
 	}
 	var gotPaths []string
-	err = fs.WalkDir(Assets, ".", func(name string, entry fs.DirEntry, walkErr error) error {
+	err = fs.WalkDir(dummy.Assets, ".", func(name string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -111,7 +124,7 @@ func TestAssetsExactlyMatchDirectory(t *testing.T) {
 
 // R-WYWT-KUV5
 func TestAssetsHoldThemeCSS(t *testing.T) {
-	info, err := fs.Stat(Assets, "assets/theme.css")
+	info, err := fs.Stat(dummy.Assets, "assets/theme.css")
 	if err != nil {
 		t.Fatalf("stat embedded theme.css: %v", err)
 	}
