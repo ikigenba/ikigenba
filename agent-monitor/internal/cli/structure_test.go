@@ -44,14 +44,14 @@ func TestSystemFields(t *testing.T) {
 }
 
 func TestExitCodes(t *testing.T) {
-	// R-2ITW-Y03T R-2K1T-BRUI R-DHGS-WT0N R-2KFU-3SGC
-	const sessionNotFound cli.ExitCode = cli.ExitSessionNotFound
-	_ = sessionNotFound
-	codes := [5]cli.ExitCode{cli.ExitSuccess, cli.ExitWriteFailed, cli.ExitUsage, cli.ExitDataUnreadable, cli.ExitSessionNotFound}
+	// R-2ITW-Y03T R-2K1T-BRUI R-DHGS-WT0N R-JFJF-S38W
+	const notFound cli.ExitCode = cli.ExitNotFound
+	_ = notFound
+	codes := [5]cli.ExitCode{cli.ExitSuccess, cli.ExitWriteFailed, cli.ExitUsage, cli.ExitDataUnreadable, cli.ExitNotFound}
 	if codes != [5]cli.ExitCode{0, 1, 2, 3, 4} {
 		t.Fatalf("exit codes = %v", codes)
 	}
-	for _, constant := range []any{cli.ExitSuccess, cli.ExitWriteFailed, cli.ExitUsage, cli.ExitDataUnreadable, cli.ExitSessionNotFound} {
+	for _, constant := range []any{cli.ExitSuccess, cli.ExitWriteFailed, cli.ExitUsage, cli.ExitDataUnreadable, cli.ExitNotFound} {
 		if reflect.TypeOf(constant) != reflect.TypeOf(cli.ExitCode(0)) {
 			t.Fatalf("constant has type %T", constant)
 		}
@@ -61,7 +61,13 @@ func TestExitCodes(t *testing.T) {
 func TestCLIExportedNames(t *testing.T) {
 	t.Helper()
 	// Compile every declared export; absence of extras is checked by source review.
-	_ = []any{cli.Run, cli.System{}, cli.ExitCode(0), cli.ExitSuccess, cli.ExitWriteFailed, cli.ExitUsage, cli.ExitDataUnreadable, cli.ExitSessionNotFound, cli.Usage, cli.ListUsage, cli.TreeUsage, cli.Version}
+	_ = []any{cli.Run, cli.System{}, cli.ExitCode(0), cli.ExitSuccess, cli.ExitWriteFailed, cli.ExitUsage, cli.ExitDataUnreadable, cli.ExitNotFound, cli.Usage, cli.ListUsage, cli.TreeUsage, cli.ChatUsage, cli.Version}
+}
+
+func TestChatUsageDeclaration(_ *testing.T) {
+	// R-JGRC-5UZL: this assignment compiles only while ChatUsage is a string constant.
+	const actual string = cli.ChatUsage
+	_ = actual
 }
 
 func TestTreeUsageDeclaration(_ *testing.T) {

@@ -1,7 +1,6 @@
 package main_test
 
 import (
-	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -26,34 +25,26 @@ func goList(t *testing.T, format string, paths ...string) string {
 }
 
 func TestModuleStructure(t *testing.T) {
-	// R-2I01-C8YY R-2J7X-Q0PN
-	moduleFile, err := os.ReadFile("../../go.mod")
-	if err != nil {
-		t.Fatal(err)
-	}
-	moduleDeclared := false
-	for _, line := range strings.Split(string(moduleFile), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) >= 2 && fields[0] == "module" && fields[1] == modulePath {
-			moduleDeclared = true
-			break
-		}
-	}
-	if !moduleDeclared {
-		t.Fatalf("go.mod does not declare module %q", modulePath)
+	// R-JD3N-0JRI R-JEBJ-EBI7
+	module := strings.TrimSpace(goList(t, "{{.Path}}|{{.GoMod}}", "-m"))
+	mainDir := strings.TrimSpace(goList(t, "{{.Dir}}", "./cmd/agent-monitor"))
+	rootDir := strings.TrimSuffix(mainDir, "/cmd/agent-monitor")
+	if rootDir == mainDir || module != modulePath+"|"+rootDir+"/go.mod" {
+		t.Fatalf("module declaration and root = %q, main dir = %q", module, mainDir)
 	}
 
 	want := map[string]string{
 		"cmd/agent-monitor": "main", "internal/cli": "cli", "internal/quote": "quote",
-		"internal/session": "session", "internal/tree": "tree", "internal/proc": "proc",
+		"internal/session": "session", "internal/tree": "tree", "internal/chat": "chat", "internal/proc": "proc",
 		"internal/harness/claude": "claude", "internal/harness/codex": "codex", "internal/harness/grok": "grok",
 	}
 	allowed := map[string]map[string]bool{
 		"cmd/agent-monitor":       {"internal/cli": true},
-		"internal/cli":            {"internal/quote": true, "internal/session": true, "internal/tree": true, "internal/harness/claude": true, "internal/harness/codex": true, "internal/harness/grok": true},
-		"internal/harness/claude": {"internal/session": true, "internal/proc": true, "internal/tree": true},
-		"internal/harness/codex":  {"internal/session": true, "internal/proc": true, "internal/tree": true},
-		"internal/harness/grok":   {"internal/session": true, "internal/proc": true, "internal/tree": true},
+		"internal/cli":            {"internal/quote": true, "internal/session": true, "internal/tree": true, "internal/chat": true, "internal/harness/claude": true, "internal/harness/codex": true, "internal/harness/grok": true},
+		"internal/harness/claude": {"internal/session": true, "internal/proc": true, "internal/tree": true, "internal/chat": true},
+		"internal/harness/codex":  {"internal/session": true, "internal/proc": true, "internal/tree": true, "internal/chat": true},
+		"internal/harness/grok":   {"internal/session": true, "internal/proc": true, "internal/tree": true, "internal/chat": true},
+		"internal/chat":           {"internal/session": true},
 		"internal/session":        {"internal/quote": true, "internal/proc": true},
 		"internal/tree":           {"internal/quote": true},
 		"internal/proc":           {},

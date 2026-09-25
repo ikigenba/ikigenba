@@ -16,8 +16,8 @@ import (
 func TestUsageDeclaration(t *testing.T) {
 	// R-2GOG-2JAT: this assignment compiles only while Usage is a string constant.
 	const actual string = cli.Usage
-	// R-QCVS-17QG
-	const want = "Usage: agent-monitor [options]\n       agent-monitor list <harness>\n       agent-monitor tree <harness> <session-id>\n\nObserve the coding agents on this machine through their logs and hooks.\n\nCommands:\n  list <harness>               list the live root sessions of claude, codex, or grok\n  tree <harness> <session-id>  draw the subagent tree of one session\n\nsee 'agent-monitor <command> --help' for command options\n\nOptions:\n  -h, --help      print this help\n  -V, --version   print the version\n\nExit codes:\n  0  success\n  1  the output could not be written\n  2  usage error\n  3  the harness's session data could not be read\n  4  the session was not found\n"
+	// R-KDOM-HO0C
+	const want = "Usage: agent-monitor [options]\n       agent-monitor list <harness>\n       agent-monitor tree <harness> <session-id>\n       agent-monitor chat <harness> <session-id> [<agent-id>]\n\nObserve the coding agents on this machine through their logs and hooks.\n\nCommands:\n  list <harness>                            list the live root sessions of claude, codex, or grok\n  tree <harness> <session-id>               draw the subagent tree of one session\n  chat <harness> <session-id> [<agent-id>]  print one agent's chat\n\nsee 'agent-monitor <command> --help' for command options\n\nOptions:\n  -h, --help      print this help\n  -V, --version   print the version\n\nExit codes:\n  0  success\n  1  the output could not be written\n  2  usage error\n  3  the harness's session data could not be read\n  4  the session or agent was not found\n"
 	if actual != want {
 		t.Errorf("Usage = %q, want %q", actual, want)
 	}

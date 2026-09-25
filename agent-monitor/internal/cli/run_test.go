@@ -45,22 +45,22 @@ func TestBareRunReturnsUsage(t *testing.T) {
 	assertRun(t, nil, System{}, ExitSuccess, Usage, "")
 }
 
-// R-PN9W-015V R-2VB8-NS75 R-EBYA-H2K0 R-ED66-UUAP
+// R-JJ74-XEGZ R-2VB8-NS75 R-EBYA-H2K0 R-ED66-UUAP
 func TestTopLevelClassification(t *testing.T) {
 	for _, arg := range []string{"-", "--", "-hV", "-Vh", "--help=x", "--version=x", "--HELP", "-H"} {
 		assertRun(t, []string{arg}, System{}, ExitUsage, "", "agent-monitor: unknown option '"+arg+"'"+usageHint)
 	}
-	for _, arg := range []string{"", "List", "Tree", "status"} {
+	for _, arg := range []string{"", "List", "Tree", "Chat", "status"} {
 		assertRun(t, []string{arg}, System{}, ExitUsage, "", "agent-monitor: unknown command '"+arg+"'"+usageHint)
 	}
 	assertRun(t, []string{"--", "--help"}, System{}, ExitUsage, "", "agent-monitor: unknown option '--'"+usageHint)
 }
 
-// R-POHS-DSWK
+// R-JKF1-B67O
 func TestTopLevelFirstArgumentWins(t *testing.T) {
 	for _, first := range []string{"--help", "-h", "--version", "-V", "--", "bogus", ""} {
 		base, outBase, errBase := runRecorded([]string{first}, System{}, nil, nil)
-		for _, tail := range [][]string{{"list", "--help"}, {"\xff", "--version"}} {
+		for _, tail := range [][]string{{"list", "--help"}, {"tree", "chat"}, {"chat", "--help"}, {"\xff", "--version"}} {
 			args := append([]string{first}, tail...)
 			code, out, diag := runRecorded(args, System{}, nil, nil)
 			if code != base || strings.Join(out.writes, "") != strings.Join(outBase.writes, "") || strings.Join(diag.writes, "") != strings.Join(errBase.writes, "") {
@@ -91,11 +91,11 @@ func TestListGrammar(t *testing.T) {
 	}
 }
 
-// R-6ETF-P6A5 R-6G1C-2Y0U
+// R-JLMX-OXYD R-JO2Q-GHFR
 func TestNonlistingOutcomesIgnoreSystem(t *testing.T) {
 	a := System{}
 	b := System{Home: "/elsewhere", Root: panicFS{}, NoColor: "1", Term: "dumb", Terminal: true}
-	for _, args := range [][]string{nil, {"--help"}, {"--version"}, {"list", "--help"}, {"tree", "--help"}, {"bogus"}, {"list"}, {"list", "claud"}, {"tree", "--no-color"}, {"tree", "grok", "--no-color"}, {"tree", "claude", "id", "extra"}} {
+	for _, args := range [][]string{nil, {"--help"}, {"--version"}, {"list", "--help"}, {"tree", "--help"}, {"chat", "--help"}, {"bogus"}, {"list"}, {"list", "claud"}, {"tree", "--no-color"}, {"tree", "grok", "--no-color"}, {"tree", "claude", "id", "extra"}, {"chat"}, {"chat", "claud"}, {"chat", "claude"}, {"chat", "claude", "id", "extra", "more"}} {
 		codeA, outA, diagA := runRecorded(args, a, nil, nil)
 		codeB, outB, diagB := runRecorded(args, b, nil, nil)
 		if codeA != codeB || strings.Join(outA.writes, "") != strings.Join(outB.writes, "") || strings.Join(diagA.writes, "") != strings.Join(diagB.writes, "") {

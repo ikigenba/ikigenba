@@ -17,9 +17,9 @@ type ExitCode int
 
 // Exit codes for command outcomes.
 const (
-	ExitSuccess         ExitCode = 0
-	ExitWriteFailed     ExitCode = 1
-	ExitUsage           ExitCode = 2
-	ExitDataUnreadable  ExitCode = 3
-	ExitSessionNotFound ExitCode = 4
+	ExitSuccess        ExitCode = 0
+	ExitWriteFailed    ExitCode = 1
+	ExitUsage          ExitCode = 2
+	ExitDataUnreadable ExitCode = 3
+	ExitNotFound       ExitCode = 4
 )

@@ -42,12 +42,12 @@ func TestTreeGrammar(t *testing.T) {
 	}
 	for _, h := range []string{"claude", "codex", "grok"} {
 		assertRun(t, []string{"tree", h}, System{}, ExitUsage, "", "agent-monitor: missing session id"+usageHint)
-		assertRun(t, []string{"tree", h, ""}, System{Home: "/home/dev", Root: fstest.MapFS{}}, ExitSessionNotFound, "", "agent-monitor: no "+h+" session ''\n")
+		assertRun(t, []string{"tree", h, ""}, System{Home: "/home/dev", Root: fstest.MapFS{}}, ExitNotFound, "", "agent-monitor: no "+h+" session ''\n")
 	}
 	assertRun(t, []string{"tree", "claude", "id", "a\nb"}, System{}, ExitUsage, "", "agent-monitor: unexpected argument 'a\\nb'"+usageHint)
 }
 
-// R-6ETF-P6A5 R-6G1C-2Y0U R-6H98-GPRJ R-Q806-I4RO
+// R-6H98-GPRJ R-Q806-I4RO
 func TestTreeBeforeFilesystem(t *testing.T) {
 	for _, args := range [][]string{{"tree"}, {"tree", "--no-color"}, {"tree", "-bad"}, {"tree", "bogus"}, {"tree", "claude"}, {"tree", "claude", "id", "extra"}, {"tree", "claude", "id", "--no-color", "extra"}, {"tree", "--help"}} {
 		a, outA, errA := runRecorded(args, System{Root: panicFS{}}, nil, nil)
@@ -72,7 +72,7 @@ func TestTreeBeforeFilesystem(t *testing.T) {
 	}
 }
 
-// R-6IH4-UHI8 R-6M4T-ZSQB R-Q5KD-QLAA R-Q982-VWID R-QAFZ-9O92
+// R-6IH4-UHI8 R-Q5KD-QLAA R-JPAM-U96G
 func TestTreeHarnessOutcomes(t *testing.T) {
 	for _, h := range []string{"claude", "codex", "grok"} {
 		root := &deniedFS{}
@@ -96,15 +96,15 @@ func TestTreeHarnessOutcomes(t *testing.T) {
 		args := []string{"tree", h, "missing"}
 		code, out, diag := runRecorded(args, System{Home: "/home/dev", Root: fstest.MapFS{}}, nil, errors.New("closed"))
 		want := "agent-monitor: no " + h + " session 'missing'\n"
-		if code != ExitSessionNotFound || len(out.writes) != 0 || len(diag.writes) != 1 || diag.writes[0] != want {
+		if code != ExitNotFound || len(out.writes) != 0 || len(diag.writes) != 1 || diag.writes[0] != want {
 			t.Errorf("tree %s not found: code %d out %q diag %q", h, code, out.writes, diag.writes)
 		}
 	}
-	assertRun(t, []string{"tree", "claude", "a\nb"}, System{Home: "/home/dev", Root: fstest.MapFS{}}, ExitSessionNotFound, "", "agent-monitor: no claude session 'a\\nb'\n")
-	assertRun(t, []string{"tree", "--no-color", "claude", "a\nb", "--no-color"}, System{Home: "/home/dev", Root: fstest.MapFS{}}, ExitSessionNotFound, "", "agent-monitor: no claude session 'a\\nb'\n")
+	assertRun(t, []string{"tree", "claude", "a\nb"}, System{Home: "/home/dev", Root: fstest.MapFS{}}, ExitNotFound, "", "agent-monitor: no claude session 'a\\nb'\n")
+	assertRun(t, []string{"tree", "--no-color", "claude", "a\nb", "--no-color"}, System{Home: "/home/dev", Root: fstest.MapFS{}}, ExitNotFound, "", "agent-monitor: no claude session 'a\\nb'\n")
 }
 
-// R-6JP1-898X R-6KWX-M0ZM R-QBNV-NFZR R-PM1Z-M9F6
+// R-6JP1-898X R-6KWX-M0ZM
 func TestTreeSuccessfulProductAndCodes(t *testing.T) {
 	root := fstest.MapFS{
 		"home/dev/.claude/projects/work/sample.jsonl": &fstest.MapFile{Data: []byte("{}\n")},
@@ -116,7 +116,7 @@ func TestTreeSuccessfulProductAndCodes(t *testing.T) {
 	}
 	for _, args := range [][]string{nil, {"--help"}, {"-bad"}, {"tree"}, {"tree", "claude", "id"}} {
 		code, _, _ := runRecorded(args, System{Home: "/home/dev", Root: fstest.MapFS{}}, nil, nil)
-		if code < ExitSuccess || code > ExitSessionNotFound {
+		if code < ExitSuccess || code > ExitNotFound {
 			t.Errorf("Run(%q) returned invalid exit code %d", args, code)
 		}
 	}
