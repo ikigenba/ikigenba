@@ -17,8 +17,8 @@ id, ascending byte by byte. Every line of the tree is `● [<id>] <label>`: a
 dot (`●`, U+25CF), one space, the full id in square brackets, one space, and
 the label, with no column alignment. The id is the root's session id, or a
 subagent's Claude agent id, Codex thread id, or Grok subagent id, never
-shortened, so a developer can pass it to a later command that prints that
-agent's chat. The root's label is the session's title; a root with no title,
+shortened, so a developer can pass it to `chat`, which prints that agent's
+chat. The root's label is the session's title; a root with no title,
 or whose title cannot be read, has no label. A line with no label is
 `● [<id>]`, with nothing after the `]`. The title is read from the same place
 `list` reads it, except that a Claude Code root that is not live, or whose

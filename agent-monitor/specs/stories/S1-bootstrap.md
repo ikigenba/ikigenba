@@ -4,7 +4,7 @@ Running agent-monitor at all: the bare run, help, version, the exit codes,
 and the usage errors. agent-monitor is a local development tool, one binary a
 developer runs on their own machine; it is never deployed to a space. The
 binary is built from the checkout. Its commands are added to this frame by
-later groups; the ones it has are `list` and `tree`.
+later groups; the ones it has are `list`, `tree`, and `chat`.
 
 ## A developer runs agent-monitor
 
@@ -23,12 +23,14 @@ Output:
 Usage: agent-monitor [options]
        agent-monitor list <harness>
        agent-monitor tree <harness> <session-id>
+       agent-monitor chat <harness> <session-id> [<agent-id>]
 
 Observe the coding agents on this machine through their logs and hooks.
 
 Commands:
-  list <harness>               list the live root sessions of claude, codex, or grok
-  tree <harness> <session-id>  draw the subagent tree of one session
+  list <harness>                            list the live root sessions of claude, codex, or grok
+  tree <harness> <session-id>               draw the subagent tree of one session
+  chat <harness> <session-id> [<agent-id>]  print one agent's chat
 
 see 'agent-monitor <command> --help' for command options
 
@@ -41,7 +43,7 @@ Exit codes:
   1  the output could not be written
   2  usage error
   3  the harness's session data could not be read
-  4  the session was not found
+  4  the session or agent was not found
 ```
 
 Exits 0. The text is on stdout; stderr is empty.
@@ -80,12 +82,14 @@ Output:
 Usage: agent-monitor [options]
        agent-monitor list <harness>
        agent-monitor tree <harness> <session-id>
+       agent-monitor chat <harness> <session-id> [<agent-id>]
 
 Observe the coding agents on this machine through their logs and hooks.
 
 Commands:
-  list <harness>               list the live root sessions of claude, codex, or grok
-  tree <harness> <session-id>  draw the subagent tree of one session
+  list <harness>                            list the live root sessions of claude, codex, or grok
+  tree <harness> <session-id>               draw the subagent tree of one session
+  chat <harness> <session-id> [<agent-id>]  print one agent's chat
 
 see 'agent-monitor <command> --help' for command options
 
@@ -98,7 +102,7 @@ Exit codes:
   1  the output could not be written
   2  usage error
   3  the harness's session data could not be read
-  4  the session was not found
+  4  the session or agent was not found
 ```
 
 Exits 0. The text is on stdout; stderr is empty.
@@ -154,7 +158,7 @@ decides the outcome wins; nothing after it is looked at. `--help` or `-h`
 prints the help text and exits 0; `--version` or `-V` prints the version and
 exits 0; an unknown option fails as an unknown option; an argument that is
 not an option and not a command fails as an unknown command; a command,
-`list` or `tree`, hands the rest of the arguments to that command, which reads them by
+`list`, `tree`, or `chat`, hands the rest of the arguments to that command, which reads them by
 its own rules. So when help comes first, any argument after it, known or
 not, a command included, is ignored: `agent-monitor --help list` prints
 this help, not the help of `list`. When the version option comes
@@ -188,12 +192,14 @@ Output:
 Usage: agent-monitor [options]
        agent-monitor list <harness>
        agent-monitor tree <harness> <session-id>
+       agent-monitor chat <harness> <session-id> [<agent-id>]
 
 Observe the coding agents on this machine through their logs and hooks.
 
 Commands:
-  list <harness>               list the live root sessions of claude, codex, or grok
-  tree <harness> <session-id>  draw the subagent tree of one session
+  list <harness>                            list the live root sessions of claude, codex, or grok
+  tree <harness> <session-id>               draw the subagent tree of one session
+  chat <harness> <session-id> [<agent-id>]  print one agent's chat
 
 see 'agent-monitor <command> --help' for command options
 
@@ -206,7 +212,7 @@ Exit codes:
   1  the output could not be written
   2  usage error
   3  the harness's session data could not be read
-  4  the session was not found
+  4  the session or agent was not found
 ```
 
 Exits 0. The text is on stdout; stderr is empty.
@@ -224,8 +230,9 @@ Postconditions:
 When agent-monitor cannot write its output, it says so on stderr and fails.
 `<reason>` is the system's description of the failure and varies. The same
 holds for any output agent-monitor writes: the help text, the version, or
-the sessions `agent-monitor list <harness>` prints, or the tree
-`agent-monitor tree <harness> <session-id>` draws.
+the sessions `agent-monitor list <harness>` prints, the tree
+`agent-monitor tree <harness> <session-id>` draws, or the chat
+`agent-monitor chat <harness> <session-id> [<agent-id>]` prints.
 
 Command:
 
@@ -252,7 +259,7 @@ Postconditions:
 
 ## A developer mistypes a command
 
-agent-monitor's commands are `list` and `tree`, so any other argument that is
+agent-monitor's commands are `list`, `tree`, and `chat`, so any other argument that is
 not an option is an unknown command. Arguments are read left to right, so it fails at
 the first argument that is not an option even when a help, version, or unknown
 option follows it: `agent-monitor bogus --help` and
