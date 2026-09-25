@@ -7,4 +7,4 @@ const Usage string = "Usage: agent-monitor [options]\n       agent-monitor list 
 const ListUsage string = "Usage: agent-monitor list <harness>\n\nList the live root sessions of one harness, newest activity first.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  -h, --help  print this help\n"
 
 // TreeUsage is the complete help text for tree.
-const TreeUsage string = "Usage: agent-monitor tree <harness> <session-id>\n\nDraw the subagent tree of one session.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  -h, --help  print this help\n"
+const TreeUsage string = "Usage: agent-monitor tree [--no-color] <harness> <session-id>\n\nDraw the subagent tree of one session.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  --no-color  print without colour\n  -h, --help  print this help\n"

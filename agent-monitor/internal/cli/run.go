@@ -44,13 +44,14 @@ func runTree(args []string, sys System, stdout, stderr io.Writer) ExitCode {
 			return writeProduct(stdout, stderr, TreeUsage)
 		}
 	}
-	if len(args) == 0 {
-		writeDiagnostic(stderr, "agent-monitor: missing harness"+usageHint)
-		return ExitUsage
-	}
 	var harness, id string
 	place := 0
+	noColor := false
 	for _, arg := range args {
+		if arg == "--no-color" {
+			noColor = true
+			continue
+		}
 		if strings.HasPrefix(arg, "-") {
 			return usageError(stderr, "unknown option", arg)
 		}
@@ -68,6 +69,10 @@ func runTree(args []string, sys System, stdout, stderr io.Writer) ExitCode {
 			return usageError(stderr, "unexpected argument", arg)
 		}
 		place++
+	}
+	if place == 0 {
+		writeDiagnostic(stderr, "agent-monitor: missing harness"+usageHint)
+		return ExitUsage
 	}
 	if place == 1 {
 		writeDiagnostic(stderr, "agent-monitor: missing session id"+usageHint)
@@ -100,7 +105,8 @@ func runTree(args []string, sys System, stdout, stderr io.Writer) ExitCode {
 		writeDiagnostic(stderr, "agent-monitor: cannot read session data: "+err.Error()+"\n")
 		return ExitDataUnreadable
 	}
-	return writeProduct(stdout, stderr, tree.Draw(result))
+	color := sys.Terminal && sys.NoColor == "" && sys.Term != "dumb" && !noColor
+	return writeProduct(stdout, stderr, tree.Draw(result, color))
 }
 
 func runList(args []string, sys System, stdout, stderr io.Writer) ExitCode {

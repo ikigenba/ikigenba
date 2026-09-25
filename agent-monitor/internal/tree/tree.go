@@ -4,6 +4,7 @@ package tree
 import (
 	"errors"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,7 +45,7 @@ type Tree struct {
 var ErrNotFound = func() error { return errors.New("session not found") }()
 
 // Draw returns one line for the root and one for each distinct subagent.
-func Draw(t Tree) string {
+func Draw(t Tree, color bool) string {
 	nodes := make(map[string]Node, len(t.Subagents))
 	for _, node := range t.Subagents {
 		if node.ID == t.Root.ID {
@@ -72,7 +73,8 @@ func Draw(t Tree) string {
 	}
 
 	var out strings.Builder
-	writeLine(&out, "", t.Root)
+	counts := make(map[Status]int, len(statusOrder))
+	writeLine(&out, "", t.Root, color, counts)
 	var drawChildren func(string, string)
 	drawChildren = func(parent, prefix string) {
 		for i, node := range children[parent] {
@@ -81,12 +83,63 @@ func Draw(t Tree) string {
 			if last {
 				connector, continuation = "└── ", "    "
 			}
-			writeLine(&out, prefix+connector, node)
+			writeLine(&out, prefix+connector, node, color, counts)
 			drawChildren(node.ID, prefix+continuation)
 		}
 	}
 	drawChildren(t.Root.ID, "")
+	out.WriteByte('\n')
+	for i, status := range statusOrder {
+		if i > 0 {
+			out.WriteString("  ")
+		}
+		out.WriteString(dot(status, color))
+		out.WriteByte(' ')
+		out.WriteString(string(status))
+		out.WriteString(" (")
+		out.WriteString(strconv.Itoa(counts[status]))
+		out.WriteByte(')')
+	}
+	out.WriteByte('\n')
 	return out.String()
+}
+
+var statusOrder = [...]Status{
+	StatusWorking, StatusIdle, StatusDone, StatusKilled,
+	StatusFailed, StatusEnded, StatusUnknown,
+}
+
+func effectiveStatus(status Status) Status {
+	switch status {
+	case StatusWorking, StatusIdle, StatusDone, StatusKilled, StatusFailed, StatusEnded:
+		return status
+	default:
+		return StatusUnknown
+	}
+}
+
+func dot(status Status, color bool) string {
+	if !color {
+		return "●"
+	}
+	var code string
+	switch status {
+	case StatusWorking:
+		code = "36"
+	case StatusIdle:
+		code = "34"
+	case StatusDone:
+		code = "32"
+	case StatusKilled:
+		code = "33"
+	case StatusFailed:
+		code = "31"
+	case StatusEnded:
+		code = "35"
+	default:
+		code = "90"
+	}
+	return "\x1b[" + code + "m●\x1b[0m"
 }
 
 func onParentCycle(start Node, nodes map[string]Node, rootID string) bool {
@@ -124,14 +177,21 @@ func before(a, b Node) bool {
 	return a.ID < b.ID
 }
 
-func writeLine(out *strings.Builder, prefix string, node Node) {
-	label := node.Label
-	if label == "" {
-		label = node.ID
-	}
+func writeLine(out *strings.Builder, prefix string, node Node, color bool, counts map[Status]int) {
+	status := effectiveStatus(node.Status)
+	counts[status]++
 	out.WriteString(prefix)
-	out.WriteString(quote.Field(label))
-	out.WriteString("  ")
-	out.WriteString(string(node.Status))
+	out.WriteString(dot(status, color))
+	out.WriteString(" [")
+	out.WriteString(quote.Field(node.ID))
+	out.WriteByte(']')
+	if node.Label != "" {
+		out.WriteByte(' ')
+		out.WriteString(quote.Field(node.Label))
+	}
+	if !color {
+		out.WriteString("  ")
+		out.WriteString(string(status))
+	}
 	out.WriteByte('\n')
 }

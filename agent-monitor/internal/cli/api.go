@@ -5,8 +5,11 @@ import "io/fs"
 
 // System contains the machine state visible to Run.
 type System struct {
-	Home string
-	Root fs.FS
+	Home     string
+	Root     fs.FS
+	NoColor  string
+	Term     string
+	Terminal bool
 }
 
 // ExitCode is the result of running the command.

@@ -91,11 +91,11 @@ func TestListGrammar(t *testing.T) {
 	}
 }
 
-// R-PZGV-TQKT R-Q0OS-7IBI
+// R-6ETF-P6A5 R-6G1C-2Y0U
 func TestNonlistingOutcomesIgnoreSystem(t *testing.T) {
 	a := System{}
-	b := System{Home: "/elsewhere", Root: panicFS{}}
-	for _, args := range [][]string{nil, {"--help"}, {"--version"}, {"list", "--help"}, {"bogus"}, {"list"}, {"list", "claud"}} {
+	b := System{Home: "/elsewhere", Root: panicFS{}, NoColor: "1", Term: "dumb", Terminal: true}
+	for _, args := range [][]string{nil, {"--help"}, {"--version"}, {"list", "--help"}, {"tree", "--help"}, {"bogus"}, {"list"}, {"list", "claud"}, {"tree", "--no-color"}, {"tree", "grok", "--no-color"}, {"tree", "claude", "id", "extra"}} {
 		codeA, outA, diagA := runRecorded(args, a, nil, nil)
 		codeB, outB, diagB := runRecorded(args, b, nil, nil)
 		if codeA != codeB || strings.Join(outA.writes, "") != strings.Join(outB.writes, "") || strings.Join(diagA.writes, "") != strings.Join(diagB.writes, "") {

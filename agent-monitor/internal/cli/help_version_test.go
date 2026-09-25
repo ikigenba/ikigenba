@@ -134,9 +134,9 @@ func TestListHelpWins(t *testing.T) {
 }
 
 func TestTreeUsageText(t *testing.T) {
-	// R-QFBK-SR7U
+	// R-6NCQ-DKH0
 	const actual string = cli.TreeUsage
-	const want = "Usage: agent-monitor tree <harness> <session-id>\n\nDraw the subagent tree of one session.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  -h, --help  print this help\n"
+	const want = "Usage: agent-monitor tree [--no-color] <harness> <session-id>\n\nDraw the subagent tree of one session.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  --no-color  print without colour\n  -h, --help  print this help\n"
 	if actual != want {
 		t.Errorf("TreeUsage = %q, want %q", actual, want)
 	}

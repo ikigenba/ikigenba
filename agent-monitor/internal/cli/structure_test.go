@@ -12,14 +12,34 @@ import (
 )
 
 func TestRunSignatureAndSystem(t *testing.T) {
-	// R-DF10-59J9 R-XK3U-55KN R-XLBQ-IXBC
+	// R-XK3U-55KN R-XLBQ-IXBC
 	want := reflect.TypeOf((func([]string, cli.System, io.Writer, io.Writer) cli.ExitCode)(nil))
 	if got := reflect.TypeOf(cli.Run); got != want {
 		t.Fatalf("Run type = %v, want %v", got, want)
 	}
+}
+
+func TestSystemFields(t *testing.T) {
+	// R-68PX-SBKO
 	st := reflect.TypeOf(cli.System{})
-	if st.NumField() != 2 || st.Field(0).Name != "Home" || st.Field(0).Type != reflect.TypeOf("") || st.Field(1).Name != "Root" || st.Field(1).Type != reflect.TypeOf((*fs.FS)(nil)).Elem() {
-		t.Fatalf("System fields = %v", st)
+	want := []struct {
+		name string
+		typ  reflect.Type
+	}{
+		{"Home", reflect.TypeOf("")},
+		{"Root", reflect.TypeOf((*fs.FS)(nil)).Elem()},
+		{"NoColor", reflect.TypeOf("")},
+		{"Term", reflect.TypeOf("")},
+		{"Terminal", reflect.TypeOf(false)},
+	}
+	if st.NumField() != len(want) {
+		t.Fatalf("System field count = %d, want %d", st.NumField(), len(want))
+	}
+	for i, field := range want {
+		got := st.Field(i)
+		if got.Name != field.name || got.Type != field.typ || !got.IsExported() {
+			t.Fatalf("System field %d = %s %v, want %s %v", i, got.Name, got.Type, field.name, field.typ)
+		}
 	}
 }
 
