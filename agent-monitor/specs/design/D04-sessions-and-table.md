@@ -1,8 +1,9 @@
 # D04-sessions-and-table
 
 `internal/session` is the vocabulary the three harness packages and the
-command share when `agent-monitor list <harness>` or `agent-monitor tree
-<harness> <session-id>` runs. For `list`, a harness package
+command share when `agent-monitor list <harness>`, `agent-monitor tree
+<harness> <session-id>`, or `agent-monitor chat <harness> <session-id>
+[<agent-id>]` runs. For `list`, a harness package
 turns what its harness left on disk into a list of `Session` values; the
 command hands that list to `Table`, and what `Table` returns is the whole of
 standard output. When the place a harness registers its live sessions
@@ -86,7 +87,10 @@ The first pass of a new `Log` is therefore a snapshot: it returns exactly
 what `Lines` returns for the whole file. That is how `tree` reads: every
 harness `Tree` reads each log with one pass of a fresh `Log`, so the tree it
 draws today is the first frame a future `watch` would draw, and every later
-frame needs only the appended bytes. `list` keeps reading whole files through
+frame needs only the appended bytes. `chat` reads the same way: the
+`chat.Transcript` of `D10-chat` owns one `Log` for the agent's transcript
+and keeps it between passes, so a later `watch` of a chat decodes each
+appended record once and never re-reads the file. `list` keeps reading whole files through
 `Lines`; its contract is unchanged. The `Tree` rules here bind only files a
 harness design names as a log, so `D06`, `D07`, and `D08` must each say which
 of their files are logs.

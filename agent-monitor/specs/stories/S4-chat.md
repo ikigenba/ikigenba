@@ -1,43 +1,49 @@
 # Stories — reading the chat of an agent
 
 `agent-monitor chat <harness> <session-id> [<agent-id>]` prints a snapshot of
-the chat of one agent of a session and exits; it does not watch or redraw.
-The harness is `claude`, `codex`, or `grok`, spelled exactly so, and the
-session is named by its full session id, found as `tree` finds it: any root
-session of that harness in its default location under `$HOME`, live or
-ended; a subagent is never a session, and `$HOME` is never guessed. With no
-agent id the agent is the session's root; with one it is that subagent, at
-any depth, named by the full id `tree` prints for it in brackets. The output
-is one entry per thing said or done, in the order the agent's own transcript
-records them, then the totals line. An entry is a header line, then its body
-lines exactly as recorded with no indentation, then one empty line. The
-header is `<time> <kind>`: the time the entry was recorded, in UTC,
+the chat of one agent of a session and exits; it does not watch or redraw. The
+harness is `claude`, `codex`, or `grok`, spelled exactly so, and the session
+is named by its full session id, found as `tree` finds it: any root session of
+that harness in its default location under `$HOME`, live or ended; a subagent
+is never a session, and `$HOME` is never guessed. With no agent id the agent
+is the session's root; with one it is that subagent, at any depth, named by
+the full id `tree` prints for it in brackets. The output is one entry per
+thing said or done, in the order the agent's own transcript records them, then
+the totals line. An entry is a header line, then its body lines exactly as
+recorded with no indentation, then one empty line. The header is
+`<time> <kind>`: the time the entry was recorded, in UTC,
 `YYYY-MM-DDTHH:MM:SSZ`, converted and truncated as `list` prints LAST ACTIVE,
-and the kind. The kinds are `user`, a prompt a person typed; `assistant`, the
-agent's reply text; `reasoning`, the agent's reasoning, only when the
-transcript holds it as readable text; `agent`, text passed between agents,
-such as the task a parent gives a subagent or the notice that a subagent has
-finished; `tool <name>`, a tool call, whose body is the tool's arguments as
-the harness recorded them, printed as one line of JSON: a newline in an
-argument appears as `\n`, and arguments longer than 200 characters are cut
-to their first 200 characters followed by `…`, counting characters, not
+and the kind. The kinds are `user`, a prompt a person typed, a Claude Code
+slash command included, printed as typed: `/<name>`, then a space and its
+arguments when it has any, never the markup Claude Code records around it,
+while the output a local command prints, on stdout or stderr, is skipped;
+`assistant`, the agent's reply text; `reasoning`, the agent's reasoning, only
+when the transcript holds it as readable text; `agent`, text passed between
+agents, such as the task a parent gives a subagent or the notice that a
+subagent has finished; `tool <name>`, a tool call, whose body is the tool's
+arguments as the harness recorded them, printed as one line of JSON: a newline
+in an argument appears as `\n`, and arguments longer than 200 characters are
+cut to their first 200 characters followed by `…`, counting characters, not
 bytes; and `result ok` or `result error`, whether a tool call succeeded or
 failed. `result error` means the harness recorded the call as failed; a
 command-running tool whose command exits non-zero is an error on every
 harness, whether the harness marks the call failed, as Claude Code does, or
-records the exit code in its output, as Codex does. A result is its own
-entry, in its place in the transcript, and has no body: what the tool
-returned is never printed. Everything else the
-transcript holds is skipped: context the harness injects (the bodies of
-`AGENTS.md` and `CLAUDE.md`, system reminders, environment blocks, skill
-bodies, developer-role setup); reasoning or a message between agents whose
-text the harness recorded only in encrypted form; and system and status
-records (turn durations, hook summaries, mode changes, titles, file
-snapshots, queue operations). In a body a newline and a tab are printed as
-recorded and every other control character as `\xNN`, hex in lowercase; in
-a tool name every control character, a newline and a tab included, is
-printed as `\xNN`, so a header is always one line and an entry can never
-forge one. After the last entry's empty line comes the totals line,
+records the exit code in its output, as Codex does. A result is its own entry,
+in its place in the transcript, and has no body: what the tool returned is
+never printed. A Codex collaboration tool, such as `spawn_agent` or
+`send_message`, records its `message` argument encrypted, so that member is
+left out of the arguments printed. Everything else the transcript holds is
+skipped: context the harness injects (the bodies of `AGENTS.md` and
+`CLAUDE.md`, system reminders, environment blocks, skill bodies,
+developer-role setup); reasoning or a message between agents whose text the
+harness recorded only in encrypted form, and the encrypted part of one that is
+partly readable; and system and status records (turn durations, hook
+summaries, mode changes, titles, file snapshots, queue operations). In a body
+a newline and a tab are printed as recorded and every other control character
+as `\xNN`, hex in lowercase; in a tool name every control character, a newline
+and a tab included, is printed as `\xNN`, so a header is always one line and
+an entry can never forge one. After the last entry's empty line comes the
+totals line,
 `tokens: in <n>  cache-write <n>  cache-read <n>  out <n>  reasoning <n>  calls <n>`,
 every field always present, in that order, joined by two spaces: `in` is the
 input tokens neither read from nor written to a cache, `cache-write` the
@@ -62,14 +68,18 @@ is `cache-write`, `cache_read_input_tokens` is `cache-read`, `output_tokens`
 is `out`, and `output_tokens_details.thinking_tokens` is `reasoning`. The
 thinking block here is empty, as Claude Code usually records it, so no
 `reasoning` entry is printed, while its tokens are still counted. The first
-record is injected context and the last a turn duration; neither is printed.
+record is injected context, the second a slash command the developer typed,
+printed as typed without its markup, the third that command's local output,
+and the last a turn duration; of these only the slash command is printed.
 
 The records of
 `/home/dev/.claude/projects/-home-dev-src-shop/7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93.jsonl`,
 in order, with their other keys left out:
 
 ```
-{"type":"user","isMeta":true,"message":{"role":"user","content":"<system-reminder>\nContents of /home/dev/src/shop/CLAUDE.md:\n\nRun make test before committing.\n</system-reminder>"},"timestamp":"2026-09-24T19:58:03.101Z"}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<system-reminder>\nContents of /home/dev/src/shop/CLAUDE.md:\n\nRun make test before committing.\n</system-reminder>"},"timestamp":"2026-09-24T19:57:40.101Z"}
+{"type":"user","message":{"role":"user","content":"<command-name>/review</command-name>\n<command-message>review</command-message>\n<command-args>cart.go</command-args>"},"timestamp":"2026-09-24T19:57:40.518Z"}
+{"type":"user","message":{"role":"user","content":"<local-command-stdout>Review started for cart.go</local-command-stdout>"},"timestamp":"2026-09-24T19:57:40.602Z"}
 {"type":"user","message":{"role":"user","content":"commit all files"},"timestamp":"2026-09-24T19:58:03.412Z"}
 {"type":"assistant","message":{"id":"msg_01Qm4","role":"assistant","content":[{"type":"thinking","thinking":"","signature":"EqQBCkYIBxgCKkA"}],"usage":{"input_tokens":3,"cache_creation_input_tokens":5120,"cache_read_input_tokens":11840,"output_tokens":96,"output_tokens_details":{"thinking_tokens":30}}},"timestamp":"2026-09-24T19:58:05.030Z"}
 {"type":"assistant","message":{"id":"msg_01Qm4","role":"assistant","content":[{"type":"text","text":"I'll check the tree first."}],"usage":{"input_tokens":3,"cache_creation_input_tokens":5120,"cache_read_input_tokens":11840,"output_tokens":96,"output_tokens_details":{"thinking_tokens":30}}},"timestamp":"2026-09-24T19:58:05.377Z"}
@@ -90,6 +100,9 @@ $ agent-monitor chat claude 7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93
 Output:
 
 ```
+2026-09-24T19:57:40Z user
+/review cart.go
+
 2026-09-24T19:58:03Z user
 commit all files
 
@@ -193,9 +206,13 @@ A Codex subagent is a thread with its own rollout,
 begins with a copy of its parent's history; the copy is the parent's chat,
 not the subagent's, so none of it is printed and none of its usage is
 counted: the subagent's chat starts at its own first record. The task its
-parent sent it is an `agent` entry, printed as recorded. Codex records its
-reasoning only in encrypted form, so a Codex chat never has a `reasoning`
-entry, while the reasoning tokens it records are counted.
+parent sent it is an `agent` entry holding only the readable header lines
+Codex records for it; the payload is recorded encrypted, so it and the
+`Payload:` line before it are dropped. Codex runs commands through a tool
+named `exec` whose input is a script, not an object, so its body is that
+script as one JSON string. Codex records some reasoning with a readable
+summary, printed as a `reasoning` entry, and some only in encrypted form,
+which is skipped; the reasoning tokens it records are counted either way.
 
 Command:
 
@@ -210,16 +227,14 @@ Output:
 Message Type: NEW_TASK
 Task name: /root/forecast
 Sender: /root
-Payload:
-Get tomorrow's forecast for Berlin.
 
-2026-09-24T20:14:34Z tool exec_command
-{"cmd":"curl -s 'wttr.in/Berlin?format=3'"}
+2026-09-24T20:14:34Z tool exec
+"const r = await tools.exec_command({cmd:\"curl -s 'wttr.in/Berlin?format=3'\"}); text(r);\n"
 
 2026-09-24T20:14:35Z result ok
 
 2026-09-24T20:14:37Z tool spawn_agent
-{"task_name":"radar","message":"Check the radar for rain over Berlin tonight."}
+{"task_name":"radar"}
 
 2026-09-24T20:14:38Z result ok
 
@@ -238,16 +253,22 @@ Preconditions:
 - Thread `01a0d0ab-…` is a root with a rollout under
   `/home/dev/.codex/sessions/`, and it started thread
   `01a0d7c3-5e19-7f42-b0a8-4c6e1d9f2a07` at `/root/forecast`.
-- The rollout of `01a0d7c3-…` begins with a copy of the history of
+- The rollout of `01a0d7c3-…` begins with its own `session_meta`, then the
+  `session_meta` of `01a0d0ab-…`, then a copy of the history of
   `01a0d0ab-…`: its developer-role setup, the prompt `what's the weather in
-  berlin`, the parent's replies and tool calls, and their token counts.
+  berlin`, the parent's replies and tool calls, and their token counts. A
+  `thread_settings_applied` event naming `01a0d7c3-…` ends the copy.
 - After the copy, the rollout of `01a0d7c3-…` records, in order: the task
-  message from `/root` shown above; an `exec_command` call with the arguments
-  shown and its successful output; a `spawn_agent` call with the arguments
-  shown and its successful output; and the reply shown, each at the time
-  shown; along with encrypted reasoning, and token counts for three model
-  calls that together used 1204 fresh input tokens, wrote 0 to the cache,
-  read 44160 from it, and generated 261 tokens, 128 of them reasoning.
+  message from `/root`, whose readable text is the three header lines shown
+  above followed by a `Payload:` line, and whose payload is encrypted; an
+  `exec` custom tool call whose input is the script shown and its output,
+  which reports that the script completed and the command exited 0; a
+  `spawn_agent` call with the `task_name` shown and an encrypted `message`,
+  and its successful output; and the reply shown, each at the time shown;
+  along with reasoning recorded only in encrypted form,
+  and token counts for three model calls that together used 1204 fresh
+  input tokens, wrote 0 to the cache, read 44160 from it, and generated 261
+  tokens, 128 of them reasoning.
 
 Postconditions:
 
@@ -258,13 +279,12 @@ Postconditions:
 
 A Grok session's chat, and the time of each entry, is read from the
 session's `updates.jsonl`, in its directory
-`$HOME/.grok/sessions/<url-encoded-cwd>/<session-id>/`. Grok records each
-prompt inside a `<user_query>` wrapper, with the context it injects around
-it; `chat` prints only the text the developer typed. Grok also records a
-readable summary of its reasoning, printed as a `reasoning` entry. A tool
-call's arguments are the ones Grok recorded for it; here the `write` call's
-arguments run past 200 characters, so they are cut. Grok records every field
-of the totals line.
+`$HOME/.grok/sessions/<url-encoded-cwd>/<session-id>/`. It records each
+prompt as the text the developer typed, and a readable summary of the
+agent's reasoning, printed as a `reasoning` entry. A tool call's arguments
+are the ones Grok recorded for it; here the `write` call's arguments run
+past 200 characters, so they are cut. Grok records every field of the totals
+line.
 
 Command:
 
@@ -311,11 +331,10 @@ Preconditions:
 - Session `01a0c4f2-7b18-7d3a-9e61-3c8a0f5d2b47` is a root, with its files in
   `/home/dev/.grok/sessions/%2Fhome%2Fdev%2Fsrc%2Fsite/01a0c4f2-7b18-7d3a-9e61-3c8a0f5d2b47/`.
 - The session's `updates.jsonl` records, in order and at the times shown:
-  the prompt shown, inside a `<user_query>` wrapper with injected context
-  around it; the reasoning summary shown; the reply shown; a
+  the prompt shown; the reasoning summary shown; the reply shown; a
   `run_terminal_command` call with the arguments
   `{"command":"grep -n Redirect auth/login.go","description":"Find the redirects in the login handler"}`
-  that completed; a `write` call with the arguments
+  that completed with exit code 0; a `write` call with the arguments
   `{"file_path":"/home/dev/src/site/auth/cookie.go","content":"package auth\n\nimport \"net/http\"\n\n// sessionCookie is set for the parent domain so the redirect back from sign-in carries it.\nfunc sessionCookie(value string) *http.Cookie {\n\treturn &http.Cookie{Name: \"session\", Value: value, Domain: \".example.com\", Path: \"/\"}\n}\n"}`
   that completed; and the reply shown.
 - Grok recorded three model calls for the session that together used 18420
@@ -349,8 +368,6 @@ Output:
 Message Type: NEW_TASK
 Task name: /root/alerts
 Sender: /root
-Payload:
-List the weather alerts for Berlin.
 
 tokens: in 0  cache-write 0  cache-read 0  out 0  reasoning 0  calls 0
 ```
@@ -364,10 +381,14 @@ Preconditions:
 - Thread `01a0d0ab-…` is a root with a rollout under
   `/home/dev/.codex/sessions/`, and it started thread
   `01a0d8f1-0b6e-7d24-9c3a-5e7f1a2b4c68` at `/root/alerts`.
-- The rollout of `01a0d8f1-…` begins with a copy of the history of
-  `01a0d0ab-…`, token counts included, and after the copy records only its
-  turn's start and the task message from `/root` shown above, at the time
-  shown.
+- The rollout of `01a0d8f1-…` begins with its own `session_meta`, then the
+  `session_meta` of `01a0d0ab-…`, then a copy of the history of
+  `01a0d0ab-…`, token counts included, ended by a `thread_settings_applied`
+  event naming `01a0d8f1-…`. After it the rollout records its turn's start,
+  its settings and context, and, at the time shown, the task message from
+  `/root`, whose readable text is the three header lines shown above
+  followed by a `Payload:` line, and whose payload is encrypted; it records no
+  token count and nothing else.
 
 Postconditions:
 
@@ -446,6 +467,9 @@ $ agent-monitor chat claude 7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93
 Output:
 
 ```
+2026-09-24T19:57:40Z user
+/review cart.go
+
 2026-09-24T19:58:03Z user
 commit all files
 

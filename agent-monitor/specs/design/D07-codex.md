@@ -3,9 +3,10 @@
 `internal/harness/codex` answers `agent-monitor list codex`: which Codex
 threads on this machine are live roots, and what each one's STATUS, LAST
 ACTIVE, CWD, and TITLE are. It also answers `agent-monitor tree codex
-<thread-id>`: the tree of subagents one root thread started. It exports two
-functions, `List` and `Tree`, with the same shapes as the other harness
-packages, and it reaches the machine only through the `fs.FS` and the home
+<thread-id>`: the tree of subagents one root thread started, and `agent-monitor
+chat codex <thread-id> [<agent-id>]`: the chat of one thread of that tree. It
+exports three functions, `List`, `Tree`, and `Chat`, with the same shapes as
+the other harness packages, and it reaches the machine only through the `fs.FS` and the home
 directory it is handed, so a test drives it with a `testing/fstest.MapFS` and
 nothing else.
 
@@ -93,6 +94,69 @@ Every rollout and the index are read once, by one pass of a fresh
 frame a later `watch` would draw. The lock file is only stat'ed, as in `list`,
 so `tree` takes no lock and changes nothing.
 
+`Chat` (`D10-chat`) finds the session exactly as `Tree` does and prints one
+thread of its tree: the root when the agent id is the thread id, otherwise the
+subagent `tree` draws with that id. The named thread's transcript is its tree
+rollout, or no file at all when it has none yet. Every other rollout is read
+the way `Tree` reads it, but the named thread's own rollout is read only by the
+`Transcript`'s pass. That costs nothing when deciding whether a subagent
+belongs to the session, because a thread's own rollout names only the threads
+below it: the chain of `started` items that reaches it runs through its
+ancestors' rollouts. So a thread that is not in the session is reported
+without its rollout ever being opened. The root is different: whether a found
+rollout belongs to a subagent is written in its first record, so for the root
+`Chat` learns that from its decoder after the pass. When the rollout cannot be
+read, it is not usable, marks nothing as a subagent, and so is a root, and
+`Chat` fails naming that rollout. Errors therefore come in the order `tree`
+would meet them: the sessions directory, then the session, then the agent,
+then the agent's own rollout.
+
+Codex writes most things twice: once as a `response_item` (what the model saw
+or said) and once as an `event_msg` (`item_completed`, `token_count`) for its
+own UI. The decoder reads one stream of each kind: entries come only from
+`response_item` records, and usage only from `token_usage_record` records,
+one per model response, each with its own `response_id`. `event_msg`
+`token_count` repeats the same numbers and is never counted. Typed prompts
+and injected context are both recorded as user-role messages. Codex tags each
+content element with a kind, and only `user.text` elements are what a person
+typed; `AGENTS.md` bodies, `<environment_context>`, plugin lists, and skill
+bodies carry other kinds and are skipped, as are developer-role messages. A
+message between agents (`agent_message`) keeps its readable `input_text`
+header lines. In every encrypted message observed (8,864 of them), a single
+`input_text` of header lines ends in a `Payload:` line and is followed by an
+`encrypted_content` element. The encrypted payload is dropped, along with its
+`Payload:` label and the line break before it, so that the entry ends at the
+last header line. Reasoning is encrypted, except for the rare
+readable `summary_text`, which is shown. Codex also encrypts the `message`
+argument of its collaboration tools (all 9,148 observed `spawn_agent`,
+`send_message`, and `followup_task` messages begin `gAAAA`), so that member is
+dropped from their printed arguments. A tool call is a `function_call`
+(JSON arguments) or a `custom_tool_call` (free-form input, such as the script
+of Codex's `exec` tool), and its output is a separate record. Codex has no
+failed flag on an output. It records a command's exit code as an `exit_code`
+member of a JSON text in the output, and a failed script or collaboration
+call as an output that begins with a fixed phrase. Those are what make a
+result an error.
+
+A subagent forked with its parent's history begins with that history, copied.
+It is easy to tell: its second record is a second `session_meta`, the
+parent's, and the copy ends where Codex applies the child's own settings. That
+is the first `thread_settings_applied` event naming the child's own thread,
+and it is followed by the child's first `task_started`. A subagent started
+without the copy has a single `session_meta`. It can still record a
+`thread_settings_applied` later, when its settings change, and nothing before
+that is skipped. Copied records produce neither entries nor usage.
+`token_usage_record`s are also counted only when they name the thread itself,
+so a copied count could never be counted even if one slipped past the
+boundary.
+
+Codex records every one of the six counts. `input_tokens` includes the cached
+tokens (`total_tokens` is always `input_tokens + output_tokens`, and
+`cached_input_tokens` never exceeds `input_tokens`), and `output_tokens`
+includes `reasoning_output_tokens`. So `in` is `input_tokens` less
+`cached_input_tokens` and less `cache_write_input_tokens`, and `cache-write`
+is `cache_write_input_tokens`, which Codex has so far always recorded as 0.
+
 ## REQUIREMENTS
 
 - R-UBNS-BLZW: The package `internal/harness/codex` (import path `github.com/ikigenba/ikigenba/agent-monitor/internal/harness/codex`) MUST export the function `List(root fs.FS, home string) ([]session.Session, error)`, where `session` is `internal/session` (`D04-sessions-and-table`).
@@ -146,3 +210,21 @@ so `tree` takes no lock and changes nothing.
 - R-8LI1-N7UH: `Tree` MUST obtain the lock file's metadata only through `fs.Stat(root, name)`, and MUST NOT lock, write, or read the content of the lock file; when `root` implements `fs.StatFS`, `Tree` MUST NOT pass the lock file's name to `root.Open` or `root.ReadFile`.
 - R-8NXU-ERBV: `Tree` MUST call no method of `root`, or of any value obtained from `root`, other than the methods of `fs.FS`, `fs.ReadDirFS`, `fs.ReadFileFS`, `fs.StatFS`, `fs.ReadLinkFS`, `fs.File`, `fs.ReadDirFile`, `io.ReaderAt`, `fs.DirEntry`, and `fs.FileInfo`; in particular it MUST NOT call a `Write`, `WriteFile`, `Create`, `OpenFile`, `Mkdir`, `MkdirAll`, `Remove`, `RemoveAll`, `Rename`, `Chmod`, `Chtimes`, or `Symlink` method on any of them.
 - R-HRKB-5743: Whenever `Tree` returns a non-nil error it MUST return the zero `tree.Tree`.
+- R-EA5P-8WAS: Within `Chat(root, home, sessionID, agentID)` of `internal/harness/codex`, the *named agent* MUST be the thread `sessionID` when `agentID` equals `sessionID` byte for byte and the thread `agentID` otherwise, and the path of the `*chat.Transcript` that `Chat` builds for it (`R-LU4A-XSW7`, `D10-chat`) MUST be the absolute path of the named agent's tree rollout (`R-4294-DM88`), with `path.Join("/", home, ".codex", "sessions")` as the locating directory, when that rollout is found, and the empty string when it is not.
+- R-EBDL-MO1H: The `Recorded()` of every `*chat.Transcript` that `Chat` of `internal/harness/codex` returns MUST have each of the six fields `In`, `CacheWrite`, `CacheRead`, `Out`, `Reasoning`, and `Calls` true.
+- R-ECLI-0FS6: When `agentID` equals `sessionID`, `Chat` of `internal/harness/codex` MUST NOT read the content of `sessionID`'s tree rollout other than through the one pass of the `*chat.Transcript` it builds, and MUST decide whether `sessionID` is a subagent thread (`R-837J-WNQ2`) from the records that pass hands to its decoder; a pass that returns a non-nil error leaves the rollout not usable, so that a found tree rollout that cannot be read names a root session (`R-44OX-55PM`) and `Chat` returns that pass's error, and a found tree rollout whose session meta names a parent makes `Chat` return `tree.ErrNotFound` although the pass was made.
+- R-EDTE-E7IV: When `agentID` differs from `sessionID`, `Chat` of `internal/harness/codex` MUST read the rollouts it reads to decide whether `agentID` is a subagent of `sessionID` (`R-8CYQ-YTNM`) each by one pass of a fresh zero-value `session.Log`, MUST NOT read the content of `agentID`'s tree rollout in doing so, and MUST open `agentID`'s tree rollout, through the `Transcript`'s one pass, only when `agentID` is a subagent of `sessionID`; so that when `Chat` returns `chat.ErrAgentNotFound`, `tree.ErrNotFound`, or a `*session.ReadError` whose `Path` is the locating directory, no file named as `agentID`'s tree rollout has been opened.
+- R-EF1A-RZ9K: `Chat` of `internal/harness/codex` MUST return a `*session.ReadError` whose `Path` is the named agent's tree rollout only when neither `R-LROI-69ET` nor `R-LSWE-K15I` (`D10-chat`) requires it to return `tree.ErrNotFound`, a `*session.ReadError` naming the locating directory, or `chat.ErrAgentNotFound`; a subagent's rollout other than the named agent's that is not readable MUST make `Chat` fail only as it hides the threads its started items would name (`R-45WT-IXGB`), so that a named agent reached only through it is not a subagent of `sessionID` and `Chat` returns `chat.ErrAgentNotFound`, never that rollout's `*session.ReadError`.
+- R-EG97-5R09: `Chat(root, home, sessionID, agentID)` of `internal/harness/codex` MUST pass to `root` only names that `R-8KA5-9G3S` permits `Tree(root, home, sessionID)` to pass, other than the index, which it MUST NOT read; MUST obtain the lock file's metadata only through `fs.Stat(root, name)` and MUST NOT lock, write, or read the content of the lock file; and MUST call no method of `root`, or of any value obtained from `root`, other than those `R-8NXU-ERBV` permits `Tree` to call.
+- R-EIOZ-XAHN: `Chat` of `internal/harness/codex` MUST hand `chat.NewTranscript` a `newDecoder` each of whose calls returns a new decoder that has been handed no record, whose *own thread id* is the named agent's id; a `Decode(fsys, record)` call of such a decoder MUST call no method of `fsys`.
+- R-EJWW-B28C: The *copied records* of such a decoder MUST be, when the second record handed to it has the top-level `type` JSON string `session_meta`, that second record and every record handed to it after that one and before the first later record whose top-level `type` is the JSON string `event_msg`, whose `payload.type` is the JSON string `thread_settings_applied`, and whose `payload.thread_id` is a JSON string equal to its own thread id (every record from the second on, while no such record has been handed); and no record at all when the second record handed to it has any other top-level `type`. `Decode` of a copied record MUST return no entry and the zero `chat.Usage`.
+- R-EL4S-OTZ1: `Decode` of such a decoder, for a record that is not copied, MUST return no entry unless the record's top-level `type` is the JSON string `response_item`, and MUST return the zero `chat.Usage` unless it is the JSON string `token_usage_record`; so that `event_msg` records (`item_completed`, `token_count`, `thread_settings_applied`, and `task_started` among them), `session_meta`, `turn_context`, `world_state`, `compacted`, and `inter_agent_communication_metadata` records produce nothing, and a `response_item` record produces no usage.
+- R-EMCP-2LPQ: Every entry `Decode` of such a decoder returns for a record MUST have `HasTime` true and a `Time` for which `time.Time.Compare` with the record's timestamp under the member name `timestamp` (as `R-HFCK-YWC4`, `D04-sessions-and-table`, defines a timestamp) returns 0 when the record has one, and `HasTime` false and the zero `time.Time` as `Time` when it has none.
+- R-ENKL-GDGF: A `response_item` record that is not copied and whose `payload.type` is the JSON string `message` and `payload.role` the JSON string `user` MUST decode to exactly one entry, of kind `chat.KindUser`, when the concatenation, in order, of the `text` of every element at an index `i` of the array `payload.content` whose `type` is the JSON string `input_text` and whose `text` is a JSON string, and for which the element at index `i` of the array `payload.internal_chat_message_metadata_passthrough.content_item_kinds` is the JSON string `user.text`, is not empty, with that concatenation as its `Text`; and MUST decode to no entry when it is empty, so that injected `AGENTS.md` instructions, `<environment_context>`, plugin recommendations, and skill bodies, which Codex records as user-role elements of other kinds, are never shown.
+- R-EOSH-U574: A `response_item` record that is not copied and whose `payload.type` is the JSON string `message` MUST decode, when its `payload.role` is the JSON string `assistant`, to exactly one entry of kind `chat.KindAssistant` whose `Text` is the concatenation, in order, of the `text` of every element of the array `payload.content` whose `type` is the JSON string `output_text` and whose `text` is a JSON string, when that concatenation is not empty, and to no entry when it is empty; and to no entry when its `payload.role` is anything other than `user` or `assistant`, `developer` among them.
+- R-SHRO-3TIN: A `response_item` record that is not copied and whose `payload.type` is the JSON string `agent_message` MUST decode to exactly one entry of kind `chat.KindAgent` when its *message text* is not empty, with the message text as its `Text`, and to no entry when it is empty; the message text MUST be the concatenation `s`, in order, of the `text` of every element of the array `payload.content` whose `type` is the JSON string `input_text` and whose `text` is a JSON string, except that when some element of `payload.content` has the `type` JSON string `encrypted_content` and `s` ends with the eight bytes `Payload:` followed by one byte 0x0A that begin `s` or follow a byte 0x0A, the message text MUST be `s` without those nine bytes and without the one byte 0x0A before them, if any; an element of any other `type`, `encrypted_content` among them, MUST contribute nothing; so that `content` `[{"type":"input_text","text":"Message Type: NEW_TASK\nTask name: /root/alerts\nSender: /root\nPayload:\n"},{"type":"encrypted_content","encrypted_content":"gAAA"}]` gives `Message Type: NEW_TASK`, LF, `Task name: /root/alerts`, LF, `Sender: /root`, with no trailing LF, a message with no `encrypted_content` element keeps its text as recorded, and one recorded only in encrypted form gives no entry.
+- R-ER8A-LOOI: A `response_item` record that is not copied and whose `payload.type` is the JSON string `reasoning` MUST decode to one entry of kind `chat.KindReasoning` for each element of the array `payload.summary`, in order, whose `type` is the JSON string `summary_text` and whose `text` is a non-empty JSON string, with that string as its `Text`, and to no other entry; its `encrypted_content` and `content` members MUST NOT produce an entry, so that a reasoning record with an empty `summary` shows nothing.
+- R-XFBG-18LH: A `response_item` record that is not copied and whose `payload.type` is the JSON string `function_call` MUST decode to exactly one entry of kind `chat.KindTool` whose `Tool` is the string `payload.name` holds when that is a JSON string, and empty otherwise, and whose `Text` is the string `a` that `payload.arguments` holds when that is a JSON string, and empty otherwise, except that when `Tool` is one of Codex's collaboration tools `spawn_agent`, `send_message`, `followup_task`, `wait_agent`, `list_agents`, and `interrupt_agent` and `a` is a JSON object, `Text` MUST be the bytes `json.Compact` writes for the JSON object made of `a`'s members other than every member named `message`, in their order in `a`, each written as its name and value appear in `a`, separated by `,` and enclosed in `{` and `}`; so that `spawn_agent` with arguments `{"task_name":"radar","message":"gAAAAB0x"}` gives `{"task_name":"radar"}` and `send_message` with `{"target":"/root/a","message":"gAAAAB0x"}` gives `{"target":"/root/a"}`, while a tool of any other name keeps a `message` member; one whose `payload.type` is the JSON string `custom_tool_call` MUST decode as a tool of no collaboration name, with `payload.input` in place of `payload.arguments`.
+- R-ETO3-D85W: A `response_item` record that is not copied and whose `payload.type` is the JSON string `function_call_output` or `custom_tool_call_output` MUST decode to exactly one entry, with empty `Tool` and `Text`, of kind `chat.KindResultError` when its output is failed (`R-EUVZ-QZWL`) and `chat.KindResultOK` otherwise; a `response_item` record whose `payload.type` is none of `message`, `agent_message`, `reasoning`, `function_call`, `custom_tool_call`, `function_call_output`, and `custom_tool_call_output` MUST decode to no entry.
+- R-EUVZ-QZWL: The *output texts* of a `function_call_output` or `custom_tool_call_output` record MUST be the one string `payload.output` holds when it is a JSON string; the `text` of each element of the array `payload.output` that is a JSON object whose `text` is a JSON string, in order, when it is an array; and no string otherwise. Its output is *failed* if and only if its first output text begins with `Script failed`, `collab spawn failed:`, `collab tool failed:`, or `failed to parse function arguments:`, or some output text `s` for which `json.Valid([]byte(s))` is true is a JSON object with a member `exit_code` that is a JSON number whose value is not 0; so that an output text `{"exit_code":1,"output":""}` or `{"chunk_id":"a7","exit_code":-1}` in either kind of output makes it failed, while outputs whose texts are only `Script completed` lines, `{"exit_code":0,"output":"ok"}`, `{"message":"Wait completed.","timed_out":false}`, or the empty string are not.
+- R-EW3W-4RNA: A record that is not copied, whose top-level `type` is the JSON string `token_usage_record`, whose `payload.thread_id` is a JSON string equal to the decoder's own thread id, and whose `payload.usage` is a JSON object MUST decode to the `chat.Usage` with `In` equal to `i - c - w`, `CacheWrite` to `w`, `CacheRead` to `c`, `Out` to `o`, `Reasoning` to `r`, and `Calls` to 1, where `i`, `c`, `w`, `o`, and `r` are the values of `payload.usage`'s members `input_tokens`, `cached_input_tokens`, `cache_write_input_tokens`, `output_tokens`, and `reasoning_output_tokens`, each taken as 0 when absent or when `json.Unmarshal` of it into an `int64` returns an error; every other `token_usage_record` record, one whose `payload.thread_id` names another thread among them, MUST decode to the zero `chat.Usage`; so that `input_tokens` 14408, `cached_input_tokens` 7808, `cache_write_input_tokens` 0, `output_tokens` 74, and `reasoning_output_tokens` 9 decode to `In` 6600, `CacheWrite` 0, `CacheRead` 7808, `Out` 74, `Reasoning` 9, and `Calls` 1.

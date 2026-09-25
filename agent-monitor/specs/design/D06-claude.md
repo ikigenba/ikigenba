@@ -1,15 +1,20 @@
 # D06-claude
 
-How `list claude` finds the live root sessions of Claude Code, and how
-`tree claude` draws one session and its subagents. The package
+How `list claude` finds the live root sessions of Claude Code, how
+`tree claude` draws one session and its subagents, and how `chat claude`
+reads one agent's chat. The package
 `internal/harness/claude` turns what Claude Code leaves under `$HOME` into
-`session.Session` values (`D04-sessions-and-table`) and `tree.Tree` values
-(`D09-tree`), using the process facts of `D05-process-facts` to decide which
+`session.Session` values (`D04-sessions-and-table`), `tree.Tree` values
+(`D09-tree`), and `chat.Transcript` values (`D10-chat`), using the process
+facts of `D05-process-facts` to decide which
 registrations are still live. The command (`internal/cli`) calls `List` with
 the machine's filesystem and the home directory and prints `session.Table` of
 the result, or calls `Tree` with the same two and a session id and prints
-`tree.Draw` of the result and its colour decision; it turns a returned `*session.ReadError` into the
-`cannot read` diagnostic and `tree.ErrNotFound` into the not-found one.
+`tree.Draw` of the result and its colour decision, or calls `Chat` with the
+same two, a session id, and an agent id and prints the entries and totals
+line of the result; it turns a returned `*session.ReadError` into the
+`cannot read` diagnostic and `tree.ErrNotFound` and `chat.ErrAgentNotFound`
+into the not-found ones.
 
 Claude Code registers every running root session in a file of its own under
 `~/.claude/sessions`, named after the process id and holding a JSON object
@@ -98,6 +103,75 @@ each log in one pass of a fresh `session.Log`, reads each meta file and
 registration whole with `fs.ReadFile` (each is one small JSON object), takes
 no lock, and writes nothing.
 
+## The chat of one agent
+
+`Chat` finds the session and its agents exactly as `Tree` does, so its
+not-found and cannot-read outcomes are `Tree`'s (`D10-chat`), but it needs
+far less: no status, no label, no meta file. It stats the candidate root
+transcripts, lists the subagents directory when a subagent is named, and
+reads one file, the named agent's own transcript, in the one pass of the
+`chat.Transcript` it returns. The root's transcript is the root transcript
+`Tree` reads; a subagent's, at any depth, is `agent-<agentId>.jsonl` in the
+session's flat `subagents/` directory, where a subagent started by another
+subagent sits beside its parent. A root that only a live registration
+records has no transcript yet and reads as empty; so does a subagent whose
+transcript is missing.
+
+Claude Code writes every part of a reply — a thinking block, a text block,
+a tool call — as an `assistant` record of its own, one content block each,
+all carrying the reply's `message.id`. Each block becomes one entry in
+order: text is `assistant`, thinking is `reasoning` (usually recorded empty,
+and then dropped), and a tool call is `tool <name>` with its `input` as
+recorded. A `tool_result` block in a `user` record is `result error` when it
+is marked `is_error` — as Claude Code marks a shell command that exits
+non-zero — and `result ok` otherwise.
+
+What a person typed and what an agent sent are both `user` records with a
+string content, told apart by `origin` and `isMeta`. A prompt the developer
+typed has origin `human`, or, from older versions and in the story
+fixtures, no origin; it is `user` in the root's transcript, while the same
+shape as the first record of a subagent's transcript is the task its parent
+gave it, so `agent`. Notices that a subagent finished (origin
+`task-notification`) and messages from a coordinator or a peer are `agent`
+even though Claude Code marks them `isMeta`. Every other `isMeta` record is
+injected context — `CLAUDE.md`, skill bodies, image notes — and is skipped,
+as is the local output of a slash command (`<local-command-stdout>` or
+`<local-command-stderr>`). A slash command the developer
+typed is recorded wrapped in `<command-name>`, `<command-message>`, and
+`<command-args>` markup; its entry is the command as typed, such as `/clear`
+or `/draft-stories opsctl`, never the markup. A prompt the developer typed
+while the agent was busy arrives as a `queued_command` attachment instead,
+and so do some notices; they read the same way. Everything else — `system`,
+`queue-operation`, titles, snapshots, modes, the other attachments — is
+skipped.
+
+A fork, a subagent that starts from its parent's context, begins its
+transcript with a `fork-context-ref` record and then copies part of the
+parent's history — the parent's own `assistant` record that spawned it,
+with the parent's `message.id` and a partial usage, or a copied exchange —
+before the record holding `<fork-boilerplate>` and the fork's directive.
+Everything before that record is the parent's, so it is neither shown nor
+counted; the directive itself is the task, an `agent` entry.
+
+Usage lives only in `assistant` records' `message.usage`, and an agent's
+own transcript holds its own replies, never a subagent's, so the totals need
+no other file. Two kinds of transcript also hold copied replies: a fork's
+head, which is recognised and skipped (below the directive nothing is
+copied), and a root continued from another session (`continued-in`), which
+copies the earlier session's history with a rewritten `sessionId` and no
+marker. That copy cannot be told from the root's own replies, so a
+continued root counts the copied calls as its own; this is an accepted
+limitation.
+Every record of one reply repeats the usage, but in a subagent's transcript
+the earlier records of a reply carry a partial `output_tokens` that grows
+record by record (and may lack `output_tokens_details`), so each reply
+counts once with its largest values. The decoder remembers, for every
+`message.id` it has met, what it has counted, and each record adds only the
+increase; so a reply whose records straddle two passes of a watch is still
+counted once, with its final values. A `<synthetic>` reply was written by
+Claude Code, not the model, and counts nothing. Claude Code records all six
+counts.
+
 ## REQUIREMENTS
 
 - R-U803-6ART: The package `internal/harness/claude` (import path `github.com/ikigenba/ikigenba/agent-monitor/internal/harness/claude`) MUST export the function `List(root fs.FS, home string) ([]session.Session, error)`, where `session` is `internal/session` (`D04-sessions-and-table`).
@@ -156,3 +230,19 @@ no lock, and writes nothing.
 - R-21D1-WGU2: `Tree` MUST call no method of `root`, or of any value obtained from `root`, other than the methods of `fs.FS`, `fs.ReadDirFS`, `fs.ReadFileFS`, `fs.StatFS`, `fs.ReadLinkFS`, `fs.File`, `fs.ReadDirFile`, `io.ReaderAt`, `fs.DirEntry`, and `fs.FileInfo`; in particular it MUST NOT call a `Write`, `WriteFile`, `Create`, `OpenFile`, `Mkdir`, `MkdirAll`, `Remove`, `RemoveAll`, `Rename`, `Chmod`, `Chtimes`, or `Symlink` method on any of them, and so takes no lock.
 - R-22KY-A8KR: `Tree` MAY return the nodes of `Subagents` in any order.
 - R-XTHT-0P41: Whenever `Tree` returns a non-nil error it MUST return the zero `tree.Tree`.
+- R-0QSC-AOPC: The `Recorded()` of every `*chat.Transcript` that `Chat` of `internal/harness/claude` returns MUST be `chat.Recorded{In: true, CacheWrite: true, CacheRead: true, Out: true, Reasoning: true, Calls: true}`.
+- R-0S08-OGG1: When `R-LU4A-XSW7` (`D10-chat`) requires `Chat(root, home, sessionID, agentID)` of `internal/harness/claude` to build a `*chat.Transcript`, the path it builds it with MUST be, when `agentID` equals `sessionID`, the absolute path of the root transcript (`R-6E6W-MY7Q`), `path.Join("/", home, ".claude", "projects", d, sessionID + ".jsonl")` for the name `d` of the project directory, or the empty string when the session has no project directory; and, when `agentID` equals the `ID` `a` of a drawn subagent, `path.Join` of the subagents directory's absolute path and `"agent-" + a + ".jsonl"`, whatever the subagent's depth and whether or not listing the subagents directory yielded that entry; so that for `home` `/home/dev`, project directory `-home-dev-src-shop`, and session `7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93`, a subagent `a3e6f9d2b4c150783` whose meta file names the parent `a2d5f8e1c3b049672` has the path `/home/dev/.claude/projects/-home-dev-src-shop/7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93/subagents/agent-a3e6f9d2b4c150783.jsonl`, exactly as a subagent the session started would.
+- R-YH2G-31ED: Below the locating directory, `Chat` of `internal/harness/claude` MUST NOT open, read, stat, or list any name other than the locating directory itself (stat and list); for each direct subdirectory `d`, `d`'s entry `sessionID + ".jsonl"` (stat only); the subagents directory (list only); and the file at the path of the `*chat.Transcript` it builds, whose content it MUST obtain only through the `ReadAt` calls of that transcript's one pass (`R-LU4A-XSW7`, `R-GUKJ-NF66`, and `R-5HSP-OSAY`, `D10-chat`), a stat of it that `R-6E6W-MY7Q` needs to find the session being no read of its content; in particular it MUST NOT open any meta file, the root transcript when the named agent is a subagent, or the transcript of any subagent other than the named one; within the registry directory it MUST pass to `root` only the directory's own name and the names of its entries whose name ends in `.json`, and MUST NOT open, read, stat, or list any entry whose name ends in `.key`; below `path.Join("/", home, ".claude")` it MUST NOT pass to `root` any other name.
+- R-IMV6-1OX8: `Chat` of `internal/harness/claude`, and every pass of a `*chat.Transcript` it returns, MUST call no method of `root`, or of any value obtained from `root`, other than the methods of `fs.FS`, `fs.ReadDirFS`, `fs.ReadFileFS`, `fs.StatFS`, `fs.ReadLinkFS`, `fs.File`, `fs.ReadDirFile`, `io.ReaderAt`, `fs.DirEntry`, and `fs.FileInfo`; in particular it MUST NOT call a `Write`, `WriteFile`, `Create`, `OpenFile`, `Mkdir`, `MkdirAll`, `Remove`, `RemoveAll`, `Rename`, `Chmod`, `Chtimes`, or `Symlink` method on any of them, and so takes no lock.
+- R-IO32-FGNX: The *chat decoder* of `internal/harness/claude` is every `chat.Decoder` its `Chat` obtains from the function it hands to `chat.NewTranscript`; its `Decode` MUST call no method of the `fsys` it is handed, since each agent's transcript holds that agent's own usage and no other file is needed.
+- R-IPAY-T8EM: A chat decoder's transcript is a *fork transcript* when the first record the decoder decodes has a top-level `type` that is the JSON string `fork-context-ref`; its *directive record* is the first record the decoder decodes whose top-level `type` is the JSON string `user` and whose `message` is a JSON object whose `content` is a JSON array holding a JSON object whose `type` is the JSON string `text` and whose `text` is a JSON string beginning with `<fork-boilerplate>`; and its *fork head* is every record it decodes before the directive record, or every record it decodes when it has met no directive record. A record of a fork head MUST yield no entry and count no usage, so that the copy of the parent's `assistant` record that spawned a fork, which carries the parent's `message.id` and usage, counts no call; no record of a transcript that is not a fork transcript is in a fork head.
+- R-HUB1-QIKY: A record not in a fork head whose top-level `type` is the JSON string `user` and whose `message` is a JSON object whose `content` is a JSON string `s` MUST yield exactly one entry, with `Text` the *prompt text* of the string `encoding/json` decodes from `s` (`R-YOQ4-6NDT`) and `Tool` empty, when its `Kind` is given here, and no entry otherwise: `chat.KindUser` when its top-level `origin` is a JSON object whose `kind` is the JSON string `human`; `chat.KindAgent` when that `kind` is the JSON string `task-notification`, `coordinator`, or `peer`, whatever `isMeta` is; and, when it has no top-level `origin`, its top-level `isMeta` is not JSON `true`, and the decoded `s` begins with neither `<local-command-stdout>` nor `<local-command-stderr>`, `chat.KindUser` when the named agent is the root (`agentID` equals `sessionID`) and `chat.KindAgent` when it is a subagent. So `{"type":"user","message":{"role":"user","content":"commit all files"}}` is a `user` entry in the root's transcript and an `agent` entry in a subagent's, and `{"type":"user","isMeta":true,"message":{"role":"user","content":"<system-reminder>…</system-reminder>"}}` yields none.
+- R-YOQ4-6NDT: The *prompt text* of a decoded string `t` MUST be `t` itself unless `t` begins with `<command-name>` or `<command-message>` and contains `<command-name>` followed later by `</command-name>`; in that case it MUST be the *command name*, the text between the first `<command-name>` of `t` and the first `</command-name>` after it, followed, only when the *command args* — the text between the first `<command-args>` of `t` and the first `</command-args>` after it, the empty string when `t` holds no such pair — are non-empty, by one U+0020 and the command args; so that `<command-name>/clear</command-name>` LF followed by spaces, `<command-message>clear</command-message>`, LF, spaces, and `<command-args></command-args>` gives `/clear`, and `<command-message>draft-stories</command-message>` LF `<command-name>/draft-stories</command-name>` LF `<command-args>opsctl</command-args>` gives `/draft-stories opsctl`.
+- R-IRQR-KRW0: A record not in a fork head whose top-level `type` is the JSON string `attachment` and whose `attachment` is a JSON object whose `type` is the JSON string `queued_command` and whose `prompt` is a JSON string `p` MUST yield exactly one entry, with `Text` the string `encoding/json` decodes from `p` and `Tool` empty, whose `Kind` is `chat.KindUser` when the attachment's `origin` is a JSON object whose `kind` is the JSON string `human`, and otherwise `chat.KindAgent` when the attachment's `commandMode` is the JSON string `task-notification` or its `origin` is a JSON object whose `kind` is the JSON string `coordinator` or `peer`; it MUST yield no entry in every other case, and an `attachment` record of any other shape MUST yield no entry.
+- R-ISYN-YJMP: A record not in a fork head whose top-level `type` is the JSON string `user` and whose `message` is a JSON object whose `content` is a JSON array MUST yield, for the elements of that array in order, one entry for each element that is a JSON object whose `type` is the JSON string `tool_result`, with `Kind` `chat.KindResultError` when the element's `is_error` is JSON `true` and `chat.KindResultOK` otherwise and with empty `Tool` and `Text`, except that the tool results of a fork transcript's directive record yield none; and, only for a fork transcript's directive record, one entry for each element that is a JSON object whose `type` is the JSON string `text` and whose `text` is a JSON string beginning with `<fork-boilerplate>`, with `Kind` `chat.KindAgent` and `Text` that decoded string; every other element, a `text` element of any other record included, MUST yield no entry.
+- R-IU6K-CBDE: A record not in a fork head whose top-level `type` is the JSON string `assistant` and whose `message` is a JSON object whose `content` is a JSON array MUST yield, for the elements of that array in order, one entry for each element that is a JSON object and whose `type` is the JSON string `text` with a JSON string `text` (`Kind` `chat.KindAssistant`, `Text` the decoded `text`, empty `Tool`), the JSON string `thinking` with a JSON string `thinking` (`Kind` `chat.KindReasoning`, `Text` the decoded `thinking`, empty `Tool`), or the JSON string `tool_use` with a JSON string `name` (`Kind` `chat.KindTool`, `Tool` the decoded `name`, and `Text` the bytes of the element's `input` value exactly as they appear in the record, or the empty string when it has no `input`), and no entry for any other element; so that `{"type":"tool_use","id":"toolu_01Hx","name":"Bash","input":{"command":"git status --short","description":"Show working tree status"}}` yields a `tool` entry with `Tool` `Bash` and `Text` `{"command":"git status --short","description":"Show working tree status"}`, and an empty thinking block yields an entry that `chat.Transcript` drops (`R-LJ57-HV7Y`).
+- R-HVIY-4ABN: A chat decoder MUST yield an entry for a record only as `R-HUB1-QIKY`, `R-IRQR-KRW0`, `R-ISYN-YJMP`, and `R-IU6K-CBDE` state, so that a record whose top-level `type` is any other value — `system`, `queue-operation`, `custom-title`, `ai-title`, `file-history-snapshot`, `fork-context-ref`, and the rest — yields none; every entry it yields for a record MUST have `HasTime` true and a `Time` for which `time.Time.Compare` with the record's timestamp under the member name `timestamp` (`R-HFCK-YWC4`, `D04-sessions-and-table`) returns 0 when the record has one, and `HasTime` false when it has none.
+- R-IWMD-3UUS: A *counted reply record* MUST be a record not in a fork head whose top-level `type` is the JSON string `assistant` and whose `message` is a JSON object whose `id` is a JSON string, whose `usage` is a JSON object, and whose `model` is not the JSON string `<synthetic>`; its *counts* are `in` from `usage.input_tokens`, `cache-write` from `usage.cache_creation_input_tokens`, `cache-read` from `usage.cache_read_input_tokens`, `out` from `usage.output_tokens`, and `reasoning` from `usage.output_tokens_details.thinking_tokens`, each the value of that member when it is a JSON number whose value is a non-negative integer that fits in `int64`, and 0 when it is absent or anything else. No record other than a counted reply record counts usage.
+- R-IXU9-HMLH: The `Usage()` of a `*chat.Transcript` that `Chat` of `internal/harness/claude` returns MUST, after any sequence of its passes none of which resets, be the `chat.Usage` whose `Calls` is the number of distinct `message.id` values among the counted reply records its passes have decoded and whose `In`, `CacheWrite`, `CacheRead`, `Out`, and `Reasoning` are each the sum, over those distinct ids, of the greatest value of the corresponding count among the counted reply records with that id, whether those records fall within one pass or across several; so that records of one id with `output_tokens` 24 and then 210 count `out` 210 and one call, giving `out` 24 and `calls` 1 after a pass that ends between them and `out` 210 and `calls` 1 after the next.
+- R-9EAC-AJT0: For `home` `/home/dev`, a root session `7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93` whose root transcript in project directory `-home-dev-src-shop` holds as its only lines, each ending in a newline, exactly the twelve records shown in the story in which a developer reads a Claude Code session's chat, `Chat(root, "/home/dev", "7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93", "7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93")` MUST return entries that `chat.Format` prints, concatenated, as `"2026-09-24T19:57:40Z user\n/review cart.go\n\n2026-09-24T19:58:03Z user\ncommit all files\n\n2026-09-24T19:58:05Z assistant\nI'll check the tree first.\n\n2026-09-24T19:58:06Z tool Bash\n{\"command\":\"git status --short\",\"description\":\"Show working tree status\"}\n\n2026-09-24T19:58:07Z result ok\n\n2026-09-24T19:58:09Z tool Bash\n{\"command\":\"git add -A && git commit -m \\\"Fix refund rounding\\\"\",\"description\":\"Commit all changes\"}\n\n2026-09-24T19:58:10Z result error\n\n2026-09-24T19:58:12Z assistant\nThe commit failed: gpg could not sign it.\nUnlock your key and I'll retry.\n\n"`, and a transcript whose `Usage()` is `chat.Usage{In: 5, CacheWrite: 5391, CacheRead: 46131, Out: 201, Reasoning: 30, Calls: 3}`.
+- R-9FI8-OBJP: For the session of `R-9EAC-AJT0` with a subagents directory holding `agent-a1c4e7f09b2d38561.jsonl` whose only lines, each ending in a newline, are exactly the four records shown in the story in which a developer reads a Claude Code subagent's chat, `Chat(root, "/home/dev", "7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93", "a1c4e7f09b2d38561")` MUST return entries that `chat.Format` prints, concatenated, as `"2026-09-24T20:01:14Z agent\nFind where checkout requests are handled.\nReport the file and the function.\n\n2026-09-24T20:01:16Z tool Grep\n{\"pattern\":\"func .*Checkout\",\"path\":\"/home/dev/src/shop\"}\n\n2026-09-24T20:01:16Z result ok\n\n2026-09-24T20:01:19Z assistant\nThe handler is HandleCheckout in internal/cart/checkout.go, line 42.\n\n"`, and a transcript whose `Usage()` is `chat.Usage{In: 4, CacheWrite: 4370, CacheRead: 23950, Out: 95, Reasoning: 0, Calls: 2}`, and the root's `Usage()` MUST be unchanged by that subagent's records.

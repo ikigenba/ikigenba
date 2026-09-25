@@ -1,8 +1,12 @@
 # D08-grok
 
-How `list grok` finds the live root sessions of the Grok Build CLI, and how
-`tree grok` draws one root session with its subagents. The
-package `internal/harness/grok` turns what Grok leaves under `$HOME` into
+How `list grok` finds the live root sessions of the Grok Build CLI, how
+`tree grok` draws one root session with its subagents, and how `chat grok`
+reads one agent's chat and its own token usage. The package
+`internal/harness/grok` exports three functions. `Tree` returns the
+`tree.Tree` that `tree` draws (`D09-tree`), and `Chat` the `chat.Transcript`
+and first entries that `chat` prints (`D10-chat`); both are described in
+their own sections below. `List` turns what Grok leaves under `$HOME` into
 `session.Session` values (`D04-sessions-and-table`), using the process facts
 of `D05-process-facts` to decide which index entries are still live. The
 command (`internal/cli`) calls `List` with the machine's filesystem and the
@@ -91,6 +95,69 @@ fresh `session.Log` (`D04-sessions-and-table`); the index, `summary.json`, and
 through the `fs.FS` it is given, never touches a `*.lock` file, and takes no
 lock.
 
+## The chat of an agent
+
+`agent-monitor chat grok <session-id> [<agent-id>]` calls `Chat`
+(`D10-chat`), which finds the session exactly as `Tree` does and the agent
+among the ids `tree` draws, reading the index, `summary.json`, the
+`subagents` listing, and the named subagent's `meta.json` to do so, then
+reads the agent's own `updates.jsonl` as its transcript; the only other
+logs it reads are those of the root's subagents, while decoding the root's
+turn ends, as described below. Every agent, the root and each subagent at every depth, is
+a full Grok session with its own session directory, so the transcript is
+`updates.jsonl` in that directory. The root's is the directory found for
+the session id. A subagent's is the directory of its child session, whose
+id its `meta.json` records as `child_session_id`; that directory lives under
+the encoding of the child's own working directory, which is usually the
+root's but not always, so it is found the way every session directory is,
+by looking in every encoded-cwd directory. A root that only the index
+knows, or a subagent whose child session has no directory yet, has no
+transcript, and its chat is empty. Grok records every one of the six counts.
+
+Each line of `updates.jsonl` is one whole update: Grok writes a reply, a
+reasoning summary, or a prompt as a single `*_message_chunk` or
+`agent_thought_chunk` record, never streamed across records, so every record
+becomes at most one entry, on its own, and nothing is held back waiting for
+the next record. The entry's moment is the record's `timestamp`, whole
+seconds since the epoch. A prompt is `user` in the root and `agent` in a
+subagent, where it is the task its parent gave it; Grok records the text as
+typed, and marks the notices it injects as prompts (`hideFromScrollback`),
+which are skipped. `agent_message_chunk` is `assistant`,
+`agent_thought_chunk` is `reasoning`. A `tool_call` is `tool` with the name
+Grok's tool metadata gives (the title when there is none) and its
+`rawInput` as the arguments; the `tool_call_update` that carries a final
+status is the result: `failed` is an error, and so is a `completed` shell
+command whose recorded exit code is not zero, because Grok marks those
+completed. The root's `updates.jsonl` also records when a subagent
+finishes, with the text it handed back; that is an `agent` entry for a
+subagent the root started itself. Hooks, spawn records, retries, plans,
+background-task notices, recaps, and turn ends make no entry.
+
+A resumed subagent's session begins with a copy of the session it resumes.
+Grok stamps every record with an `eventId` that begins with the id of the
+session that wrote it, so a record whose `eventId` names another session is
+copied history: it makes no entry and counts no tokens.
+
+Usage comes from `turn_completed`, one per turn. Grok's `inputTokens` is
+the whole prompt, the cached part included, and `outputTokens` includes
+reasoning. `cacheCreationTokens` has only ever been observed as 0, so
+whether `inputTokens` includes it is unknown; subtracting it from
+`inputTokens` to get `in` is this design's rule, not an observed fact. A root's turn also counts every subagent the root itself started
+that finished during the turn — not deeper subagents, whose usage no turn
+of their parent includes — so when the decoder meets a root's
+`turn_completed` it subtracts, for each such subagent, the usage that
+subagent's own `updates.jsonl` records. The decoder keeps one `session.Log`
+per such subagent for its whole life and a running total for it, so each
+later read takes in only what that subagent appended since. This design
+accepts one limitation: if a subagent's recorded usage grows after a parent
+turn has subtracted it (a subagent that finishes in two turns, say), a
+running `watch` subtracts the growth at the later turn while a fresh `chat`
+subtracts it all at the first, so the two can give the root different
+totals. It has not been seen live: each of the 203 finished subagents on
+record finished once, with one turn. A
+subagent's own `updates.jsonl` never records a spawn, so a subagent's turns
+are its own.
+
 ## REQUIREMENTS
 
 - R-UGJD-UOYO: The package `internal/harness/grok` (import path `github.com/ikigenba/ikigenba/agent-monitor/internal/harness/grok`) MUST export the function `List(root fs.FS, home string) ([]session.Session, error)`, where `session` is `internal/session` (`D04-sessions-and-table`).
@@ -138,3 +205,20 @@ lock.
 - R-W63V-HY9D: `Tree` MUST call no method of `root`, or of any value obtained from `root`, other than the methods of `fs.FS`, `fs.ReadDirFS`, `fs.ReadFileFS`, `fs.StatFS`, `fs.ReadLinkFS`, `fs.File`, `fs.ReadDirFile`, `fs.DirEntry`, `fs.FileInfo`, and `io.ReaderAt`; in particular it MUST NOT call a `Write`, `WriteFile`, `Create`, `OpenFile`, `Mkdir`, `MkdirAll`, `Remove`, `RemoveAll`, `Rename`, `Chmod`, `Chtimes`, or `Symlink` method on any of them.
 - R-OYUK-2ZZW: Whenever `Tree` returns a non-nil error it MUST return the zero `tree.Tree`.
 - R-UEEA-A5UK: `Tree` MAY return the elements of `Subagents` in any order.
+- R-PN5X-UWUN: For `Chat(root, home, sessionID, agentID)` of `internal/harness/grok` with `agentID` byte-for-byte equal to `sessionID`, the agent is the *root*, its *own session id* MUST be `sessionID`, and its *transcript* MUST be the file `updates.jsonl` inside the session directory found for `sessionID` as `R-3H7Y-MJGW` defines a session's directory, the sessions directory there being `path.Join("/", home, ".grok", "sessions")`; the root MUST have no transcript file when no session directory is found for `sessionID`.
+- R-PODU-8OLC: For `Chat(root, home, sessionID, agentID)` of `internal/harness/grok` with `agentID` equal to the `ID` of a drawn subagent (`D09-tree`) and not to `sessionID`, the agent is a *subagent*, its *own session id* MUST be the string `encoding/json` decodes from the top-level `child_session_id` of the JSON object in its meta file (`R-U9IO-R2VS`), and its *transcript* MUST be the file `updates.jsonl` inside the session directory found for that id as `R-3H7Y-MJGW` defines a session's directory; the subagent MUST have no transcript file when its meta file does not exist, cannot be read, or is not a JSON object, when that `child_session_id` is absent, is not a JSON string, is empty, contains `/`, or is `.` or `..`, and when no session directory is found for it.
+- R-PPLQ-MGC1: The `path` with which `Chat` of `internal/harness/grok` calls `chat.NewTranscript` MUST be the absolute path of the agent's transcript (for `home` `/home/dev`, `/home/dev/.grok/sessions/<encoded-cwd>/<own session id>/updates.jsonl`) and the empty string when the agent has no transcript file, and `Chat` and every `Decode` call of the decoders it hands to `chat.NewTranscript` MUST name each path below `path.Join("/", home, ".grok")` to the filesystem they are given as that absolute path without its leading `/`.
+- R-PQTN-082Q: The `chat.Recorded` with which `Chat` of `internal/harness/grok` calls `chat.NewTranscript` MUST have all six fields true.
+- R-EODI-QJ1P: For `Chat` of `internal/harness/grok` and for every `Decode` call of the decoders it hands to `chat.NewTranscript`, every `updates.jsonl` inside a session directory MUST be a log in the sense of `R-5HSP-OSAY` and `R-GTCN-9NFH` (`D10-chat`); in the sense of `R-GTCN-9NFH`, the design of `internal/harness/grok` MUST name as recording a subagent's usage only the `updates.jsonl` of a subtracted child, read only through the `session.Log` the decoder keeps for it under `R-DLG6-8HL8`, as the directories a decoder may list or stat to find those files only `path.Join("/", home, ".grok", "sessions")` and its direct subdirectories, and as the only record that needs them an own record of kind `turn_completed` (`R-PT9F-RRK4`) for which `R-DLG6-8HL8` gives at least one subtracted child.
+- R-PT9F-RRK4: For the decoder that `Chat` of `internal/harness/grok` hands to `chat.NewTranscript` for an agent whose own session id is `s`, a record's *update* MUST be the member `update` of its top-level `params` and its *kind* the JSON string value of the update's member `sessionUpdate`; a record MUST be *copied* when its top-level `params` is a JSON object whose member `_meta` is a JSON object whose member `eventId` is a JSON string that does not begin with `s` followed by `-`, and *own* otherwise; `Decode` of a copied record MUST return no entry and the zero `chat.Usage`, and MUST leave the decoder's later results as they would be had that `Decode` call not been made.
+- R-PUHC-5JAT: Every entry the decoder of `internal/harness/grok` returns for a record MUST have `HasTime` true and a `Time` for which `time.Time.Compare` with `time.Unix(n, 0)` returns 0 when the record's top-level `timestamp` is a JSON number whose literal `strconv.ParseInt(literal, 10, 64)` parses as `n` with a nil error, and `HasTime` false otherwise.
+- R-PVP8-JB1I: `Decode` by the decoder of `internal/harness/grok` of an own record whose kind is `user_message_chunk`, `agent_message_chunk`, or `agent_thought_chunk` and whose update's member `content` is a JSON object with a member `text` that is a JSON string MUST return exactly one entry, with `Text` the string `encoding/json` decodes from that `text`, unchanged, an empty `Tool`, and `Kind` `chat.KindAssistant` for `agent_message_chunk`, `chat.KindReasoning` for `agent_thought_chunk`, and, for `user_message_chunk`, `chat.KindUser` when the agent is the root and `chat.KindAgent` when it is a subagent; except that it MUST return no entry for a `user_message_chunk` record whose update's member `_meta` is a JSON object whose member `hideFromScrollback` is JSON `true`, or whose `content` or `text` is not so; the text of one record MUST NOT be joined to that of another.
+- R-PWX4-X2S7: `Decode` by the decoder of `internal/harness/grok` of an own record whose kind is `tool_call` MUST return exactly one entry, with `Kind` `chat.KindTool`, `Text` the bytes of the JSON value of the update's member `rawInput` exactly as they appear in the record (the empty string when that member is absent), and `Tool` the string `encoding/json` decodes from the member `name` of the JSON object that is the member `x.ai/tool` of the JSON object that is the update's member `_meta` when that is a non-empty JSON string, and otherwise from the update's member `title` when that is a JSON string, and the empty string otherwise.
+- R-PY51-AUIW: `Decode` by the decoder of `internal/harness/grok` of an own record whose kind is `tool_call_update` MUST return exactly one entry, with an empty `Text` and `Tool`, when the update's member `status` is the JSON string `failed` or `completed`, and no entry otherwise; its `Kind` MUST be `chat.KindResultError` for `failed`, and for `completed` `chat.KindResultError` when the update's member `rawOutput` is a JSON object whose member `type` is the JSON string `Bash` and whose member `exit_code` is a JSON number whose value is not 0, and `chat.KindResultOK` otherwise.
+- R-PZCX-OM9L: When the decoder of `internal/harness/grok` decodes a record, a subagent id `a` MUST be *direct* if and only if among the own records that decoder decoded before it there is one of kind `subagent_spawned` whose update's member `subagent_id` is the JSON string `a`, and the update's member `parent_prompt_id` of the last such record is a JSON string equal to the JSON string value of `params._meta.promptId` of at least one own record that decoder decoded before the record being decoded.
+- R-GQ9H-3SFD: `Decode` by the decoder of `internal/harness/grok` of an own record whose kind is `subagent_finished` MUST return exactly one entry, with `Kind` `chat.KindAgent`, an empty `Tool`, and `Text` the string `encoding/json` decodes from the update's member `output` when that is a JSON string, otherwise from its member `error` when that is a JSON string (a failed subagent's finish record carries `error` and no `output`), and the empty string otherwise, when the update's member `subagent_id` is a JSON string naming a direct subagent (`R-PZCX-OM9L`), and no entry otherwise.
+- R-GV52-MVE5: `Decode` by the decoder of `internal/harness/grok` of a record MUST return no entry other than those `R-PVP8-JB1I`, `R-PWX4-X2S7`, `R-PY51-AUIW`, and `R-GQ9H-3SFD` require, so that a record whose kind is `turn_completed`, `subagent_spawned`, `hook_execution`, `retry_state`, `plan`, or any other kind, or that has no kind, makes no entry; and it MUST return the zero `chat.Usage` for every record that is not an own record of kind `turn_completed`.
+- R-Q48J-7P8D: The *turn usage* of a record of kind `turn_completed` MUST be the `chat.Usage` with `In` equal to `I - R - W`, `CacheWrite` equal to `W`, `CacheRead` equal to `R`, `Out` equal to `O`, `Reasoning` equal to `G`, and `Calls` equal to `M`, where `I`, `R`, `W`, `O`, `G`, and `M` are the values of the members `inputTokens`, `cachedReadTokens`, `cacheCreationTokens`, `outputTokens`, `reasoningTokens`, and `modelCalls` of the JSON object that is the update's member `usage`, each being 0 when `usage` is absent or not a JSON object, or the member is absent or not a JSON number whose literal `strconv.ParseInt(literal, 10, 64)` parses with a nil error.
+- R-DMO2-M9BX: `Decode` by the decoder of `internal/harness/grok` of an own record of kind `turn_completed` MUST return, for each of the six fields, that field of the record's turn usage minus the sum, over every subtracted child `c` of the record (`R-DLG6-8HL8`), of that field of `c`'s current total after this call's pass (`R-DLG6-8HL8`) minus the sum of what the same decoder already subtracted for `c` at the own `turn_completed` records it decoded before this one; the `subagent_finished` records counted for a `turn_completed` record MUST be the own records of kind `subagent_finished` that the same decoder decoded after the latest own record of kind `turn_completed` it decoded before this one (or, when there is none, after it was made) and whose `subagent_id` named a direct subagent (`R-PZCX-OM9L`) when that `subagent_finished` record was decoded; so that two finishes of one child in a turn subtract its usage once, and a later finish of a child subtracts only the usage it recorded since the last subtraction.
+- R-DLG6-8HL8: A *subtracted child* of an own record of kind `turn_completed` MUST be each distinct string `c` that is the JSON string value of the update's member `child_session_id` of an own record of kind `subagent_finished` counted by `R-DMO2-M9BX` for that `turn_completed` record, where `c` is non-empty, contains no `/`, is neither `.` nor `..`, and is not the decoder's own session id; the decoder MUST keep, for each subtracted child `c` for the rest of its life, one `session.Log` for the `updates.jsonl` in the session directory found for `c` as `R-3H7Y-MJGW` defines a session's directory, a zero-value `Log` when first made, and a *current total*, the zero `chat.Usage` when first made; within the `Decode` call of each `turn_completed` record of which `c` is a subtracted child the decoder MUST make exactly one pass of that `Log` and add to the current total, field by field, the turn usage of every record of kind `turn_completed` among the lines that pass returns that is own for the own session id `c` in the sense of `R-PT9F-RRK4`, setting the current total back to the zero `chat.Usage` before adding when that pass resets; when no session directory is found for `c`, or the pass returns an error, the current total MUST stay as it was; a `subagent_finished` record whose `child_session_id` is not so MUST cause no directory to be listed or stat'ed and no file to be opened or read.
+- R-DP3V-DSTB: Below `path.Join("/", home, ".grok", "sessions")`, `Chat` of `internal/harness/grok` MUST list no directory other than that directory, its direct subdirectories, and the `subagents` directory inside the session directory found for `sessionID`, and MUST open or read no file other than `summary.json` in the session directories it considers as `R-U27A-GGFM` and `R-U3F6-U86B` do, the meta file of the named subagent, and the agent's transcript; a `Decode` call of the decoders it hands to `chat.NewTranscript` MUST list no directory other than that directory and its direct subdirectories and MUST open or read no file other than those `R-DLG6-8HL8` names; `Chat` MUST read the index, each `summary.json`, and the meta file each with exactly one `fs.ReadFile` call as `R-P3Q5-M2YO` states for `Tree`; and `Chat` and its `Decode` calls MUST NOT open, read, or stat any entry whose name ends in `.lock`, and MUST NOT call a method outside those `R-W63V-HY9D` allows `Tree`.
