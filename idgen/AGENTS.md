@@ -38,7 +38,11 @@ skipped tests, no disabled linters laundering a failure.
    itself always exits 0, so the check form is the gate; fix with `make fmt`)
 2. `go build ./...`
 3. `go test -race ./...`
-4. `golangci-lint run`
+4. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run`
+   — the cache lives in this worktree's git directory, so worktrees never
+   share it (a shared `~/.cache/golangci-lint` keeps other worktrees' paths and
+   stops applying `//nolint` and `.golangci.yml` suppressions; `make lint` runs
+   this form)
 
 ## Commit conventions
 

@@ -11,7 +11,7 @@ vet:
 	GOOS=windows go vet ./...
 
 lint:
-	golangci-lint run
+	GOLANGCI_LINT_CACHE="$$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run
 
 fmt:
 	gofmt -w .

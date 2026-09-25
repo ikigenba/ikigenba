@@ -51,7 +51,11 @@ skipped tests, no disabled linters laundering a failure.
 4. `GOOS=windows go vet ./...` — type-checks `internal/browser/browser_other.go`,
    the `!linux && !darwin` fallback
 5. `go test -race ./...`
-6. `golangci-lint run`
+6. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run`
+   — the cache lives in this worktree's git directory, so worktrees never
+   share it (a shared `~/.cache/golangci-lint` keeps other worktrees' paths and
+   stops applying `//nolint` and `.golangci.yml` suppressions; `make lint` runs
+   this form)
 
 Gates 3 and 4 exist because `go build ./...` never compiles `_test.go` files
 and `golangci-lint` analyzes only the default build configuration, so the

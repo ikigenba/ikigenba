@@ -187,7 +187,11 @@ filed as an issue.
    the release build: proves `cmd/auth` builds static for the host without cgo,
    which is why the SQLite driver must be pure Go
 4. `go test -race ./...`
-5. `golangci-lint run`
+5. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run`
+   — the cache lives in this worktree's git directory, so worktrees never
+   share it (a shared `~/.cache/golangci-lint` keeps other worktrees' paths and
+   stops applying `//nolint` and `.golangci.yml` suppressions; `make lint` runs
+   this form)
 
 Gate 5 flags an `http.Server` without `ReadHeaderTimeout` (`gosec` G112); it
 is fixed in code, never suppressed.
