@@ -1,59 +1,31 @@
 # agent-monitor
 
-A local development tool: one Go binary a developer builds from the checkout
-and runs on their own machine to observe the coding agents there through their
-logs and hooks. It is never deployed to a space. The module path is
-`github.com/ikigenba/ikigenba/agent-monitor`. Its nine packages, import
-direction, declarations, exit codes, and run seam are design D01
-(`specs/design/D01-layout-and-run-seam.md`); the command line of `list` and
-`tree`, their diagnostics, and when each exit code (0 to 4) is returned are
-D02, the help texts (`Usage`, `ListUsage`, `TreeUsage`) and version output D03,
-sessions, the `list` table, and the incremental log reader `session.Log` D04,
-process facts read from `/proc` D05, the Claude, Codex, and Grok harnesses,
-each with its `List` and its `Tree`, D06, D07, and D08, and the subagent tree
-`tree` draws (`internal/tree`) D09. This file restates none of them.
+A local development tool: a Go binary run on a developer's own Linux machine,
+as that developer, to observe the coding agents working on it (Claude Code,
+Codex, and Grok). It reads the logs
+those agents keep under the developer's home directory and the process facts
+in `/proc`, and never writes to either. It is never deployed to a host.
+Module path `github.com/ikigenba/ikigenba/agent-monitor`.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
-build run writes the code (`cmd/`, `internal/`, and `go.mod`); a hand edit
-there desynchronizes the tree from the design. See the `spec` and `build-spec`
-skills. Everything below is what the build run computes the gap and runs the
-gates against; it is human-authored and read-only to the run.
-
-## Infrastructure
-
-Several files this document relies on are hand-authored infrastructure outside
-the spec system, not code the build run derives: in this directory the
-`Makefile`, `.golangci.yml`, `install.sh`, and `.goreleaser.yaml`, and at the
-repo root `.github/workflows/release-agent-monitor.yml`. They are written by
-hand under direct user instruction and must exist before the first build run.
-The build run never creates, edits, or deletes any of them; one that is
-missing, or that a gate needs in a form it lacks, is an environment blocker
-the run files as an issue. The sections below describe what each one does.
+build run brings `cmd/`, `internal/`, and `go.mod` into agreement with that
+target. See the `spec` and `build-spec` skills. Everything below is what the
+build run computes the gap and runs the gates against; it is human-authored
+and read-only to the run.
 
 ## Toolchain
 
-- Linux. The program reads `/proc` (D05). No test reads `/proc` itself.
-- Go 1.26 (`go version` must report 1.26+; verified with go1.26.5). The seam
-  needs `fs.ReadLink`/`fs.ReadLinkFS` and `fstest.MapFS` link support, which
-  arrived in Go 1.25.
-- a C compiler `cgo` can use (`gcc`, say): `go test -race` needs it, and
-  without one gate 3 fails with `go: -race requires cgo`
-- `golangci-lint` v2 (verified with 2.12.2; config: `.golangci.yml` in this
-  directory)
+- Linux (the program reads `/proc`)
+- Go 1.26 (`go version` must report 1.26+)
+- a C compiler `cgo` can use (`gcc`, say): without one, gate 3 fails with
+  `go: -race requires cgo`
+- `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 
 ## Dependencies
 
-D01 allows the standard library only, so `go.mod` carries no `require`
+The design allows the standard library only, so `go.mod` carries no `require`
 directive. The run never adds one; a phase that appears to need a module files
 an issue for a human to adjudicate.
-
-## Build
-
-`make` builds `bin/agent-monitor` from the checkout (`make build`, the
-`Makefile` in this directory), and that is what a story's
-"`bin/agent-monitor` exists" precondition means. The gates below do not go
-through `make`: they call the Go tool directly, and the tests that need a
-binary build their own into a temporary directory.
 
 ## Test files
 
@@ -64,70 +36,19 @@ This is the file set the canonical gap greps for requirement ids:
 grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' cmd internal | sort -u
 ```
 
-Should `cmd/` or `internal/` not exist, grep reports the missing directory on
-stderr and exits non-zero; that error means no test ids there, not a failure
-of the gap.
-
-**No id-shaped literal in a fixture.** The grep cannot tell a requirement tag
-from any other string of that shape: a literal matching the pattern anywhere in
-a `*_test.go` file is counted as a covered id. agent-monitor names an offending
-argument back in its escaped form, and prints session ids, paths, titles, and
-subagent labels in theirs; both leave an id-shaped string unchanged, so a test
-that feeds one in lands a matching literal in the test file. No test argument,
-expected diagnostic, fixture file name or content, or other literal carries
+**No id-shaped literal in a fixture.** agent-monitor echoes arguments, ids,
+paths, and transcript text back unchanged in shape, so a test that feeds in a
+string matching the pattern lands a literal the grep counts as a covered id.
+No test argument, expected output, fixture name, or fixture content carries
 one.
 
-**Tests run in process, through the seam.** The machine reaches the program
-only through `cli.System` (D01): tests drive `cli.Run` with buffers, injected
-writers (a writer that fails is how the write-error paths are exercised), and
-a `System` whose `Root` is a `testing/fstest.MapFS` and whose `Home` is a
-fixture path. `MapFS` implements `fs.ReadLinkFS`, so `proc/<pid>/cwd` is a
-symlink entry, and a `MapFile.Sys` may carry a `*syscall.Stat_t` for
-`proc.FileIDOf`. The package tests of `internal/session`, `internal/proc`, and
-`internal/harness/*` work the same way, with wrapper filesystems over a
-`MapFS` that inject errors (permission denied, say) or record the names
-opened (how a test proves a `*.key` file is never read and nothing is
-written). The package tests of `internal/tree` reach no filesystem at all:
-they call `Draw` on `Tree` values they build. No test reads the real
-filesystem, `/proc`, the real `HOME` or environment, or the real streams, and
-none starts a process.
-
-**Two kinds of recording wrapper.** A wrapper never embeds the `MapFS`,
-which implements every optional `fs` interface; it declares exactly the
-methods its kind names. Either kind's opened file passes `Read`, `Stat`,
-`ReadAt`, `ReadDir`, and `Close` through to the `MapFS` file and records each
-call: a `session.Log` pass fails on a file with no `ReadAt` (D04), so a
-wrapper that drops it breaks every `Tree`. Dropping `ReadAt` on purpose is
-how that failure is tested, and a `MapFile.Sys` with or without a
-`*syscall.Stat_t` is how a file's identity is known or not; a log grows or is
-replaced between passes by changing the `MapFS` between them.
-
-- An *open-only* wrapper implements `fs.FS` alone, not `fs.ReadFileFS`,
-  `fs.StatFS`, `fs.ReadDirFS`, or `fs.ReadLinkFS`, so every access, through
-  `fs.ReadFile` and `fs.Stat` included, arrives as an `Open` and shows on the
-  opened file. It proves D04's pass rules: one `Open`, reads only within
-  [offset, size) through `ReadAt`, no `Read`; and that a `Tree` takes each
-  log from one such pass and reads it no other way.
-- A *method-recording* wrapper also implements `fs.ReadFileFS`, `fs.StatFS`,
-  `fs.ReadDirFS`, and `fs.ReadLinkFS` (`ReadLink` and `Lstat`), delegating
-  each to the `MapFS` and recording the method and name. It proves a file is
-  read with exactly one `fs.ReadFile` call and not otherwise opened (Claude's
-  registrations and meta files, D06; Grok's index, `summary.json`, and
-  `meta.json`, D08), and what a harness does when `root` implements
-  `fs.StatFS` (D07's lock rules).
-
-The exceptions are the structure checks D01 states. A test in
-`cmd/agent-monitor` may run `go list -f <template> ./...` from this directory
-to read each package's import path, name, module, and non-test imports
-(`.Imports`, never `.TestImports`), which is how the package set and the
-import direction are checked; and a test may read this module's own `go.mod`
-and `internal/cli/version.go` to check that no module is required and how
-`Version` is declared. Beyond that one `go list`, no test builds, execs, or
-waits on a process. The gates run offline as an ordinary user; a test never
-sleeps.
-
-**Versions are data.** No test names a version value. A test that needs the
-version reads `cli.Version`, and the shape test applies D03's pattern to it.
+**No real machine in the gates.** The machine reaches the program only through
+the run seam the design defines: tests drive it with buffers, injected
+writers, a `testing/fstest.MapFS` root, and a fixture home, and fake faults
+with wrapper filesystems over that `MapFS`. No test reads the real filesystem,
+`/proc`, `HOME`, environment, or streams, and none sleeps. The only process a
+test starts is the `go list` the design's structure checks name. The gates
+run offline as an ordinary user.
 
 ## Gates
 
@@ -144,11 +65,6 @@ Run from this directory (`agent-monitor/`), in order; every command must exit
    stops applying `//nolint` and `.golangci.yml` suppressions; `make lint` runs
    this form)
 
-A per-finding `//nolint` comment for golangci-lint counts as a disabled
-linter. The run never adds one to make a gate pass; a finding it cannot fix
-below the contract seam, or believes is wrong, is filed as an issue for a
-human to adjudicate.
-
 ## Commit conventions
 
 ```
@@ -160,45 +76,35 @@ Requirements: R-XXXX-XXXX, R-YYYY-YYYY
 ```
 
 The `Requirements:` trailer lists the phase's ids so history stays greppable
-by id. Attribution follows the repository's rule.
+by id.
 
-## Releasing (infrastructure — outside the spec system)
+## Deploy
 
-Releases are cut from this monorepo by tag. The release machinery
-(`Makefile`, `.goreleaser.yaml`, `install.sh`, and the workflow below) is
-hand-maintained infrastructure, not spec-governed code.
+Release machinery — the version bump, tags, the `Makefile`, `install.sh`,
+`.goreleaser.yaml`, and `.github/workflows/release-agent-monitor.yml` (repo
+root) — is hand-maintained infrastructure outside the spec system: the build
+run never reads, edits, or tests it. `make` builds `bin/agent-monitor` from
+the checkout.
 
-- The version is `Version` in `internal/cli/version.go`, a source literal the
-  binary reports verbatim — never linker-injected. D03 fixes only its shape
-  (`v` plus a semantic version, prerelease and build metadata allowed); its
-  *value* is release data. Edit that file directly, keep the gates green,
-  merge, then tag to match. No build run is needed to bump it.
-- Tag `agent-monitor/v<semver>` on `main`, where the tag's version equals
-  `Version` exactly. A release tag never carries build metadata (`+...`):
-  `Version` may have that shape, but it is not released that way. A tag with a
-  prerelease part (`agent-monitor/v1.2.0-rc.1`) is a prerelease.
-- Pushing the tag triggers `.github/workflows/release-agent-monitor.yml`
-  (repo root), which builds `bin/agent-monitor` and verifies that
-  `agent-monitor --version` prints exactly the tag's version (a mismatched tag
-  fails the release), then runs GoReleaser from this directory using
-  `.goreleaser.yaml` — linux × amd64/arm64, tar.gz archives, checksums —
-  and publishes a GitHub release on the tag, marked as a GitHub prerelease
-  when the tag has a prerelease part.
-- Find the newest stable tag by filtering out prereleases first:
+1. Set `Version` in `internal/cli/version.go` to `vX.Y.Z`. The binary reports
+   that string, and the release refuses a tag that does not match it.
+2. Commit that on `main` and push `main`.
+3. Tag that commit `agent-monitor/vX.Y.Z` and push the tag.
+   `.github/workflows/release-agent-monitor.yml` builds with GoReleaser and
+   publishes linux amd64/arm64 archives and checksums.
+4. On the developer's machine, run the installer from this directory:
 
-  ```
-  git tag --list 'agent-monitor/v*' --sort=-v:refname \
-    | grep -E '^agent-monitor/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' \
-    | head -1
-  ```
+```
+sh install.sh
+```
 
-  Do not take the head of the unfiltered list: git's version sort places
-  `v1.0.0-rc.1` above `v1.0.0`. Order prereleases by semver.org precedence,
-  not by git's sort.
-- `install.sh` (this directory) installs a release. With no version it
-  installs the newest stable release: the highest semver precedence among
-  releases without a prerelease part. `AGENT_MONITOR_VERSION=<version>`
-  installs exactly that version, a prerelease included. It installs into
-  `BINDIR`, defaulting to `${PREFIX:-$HOME/.local}/bin` (so `~/.local/bin`),
-  and warns on stderr, prefixed `agent-monitor: `, when that directory is not
-  on `PATH`.
+It installs the newest stable release into `~/.local/bin`;
+`AGENT_MONITOR_VERSION=vX.Y.Z sh install.sh` installs exactly that version.
+`agent-monitor --version` then prints `vX.Y.Z`.
+
+## Live data
+
+The live data is the developer's own agent logs: `~/.claude`, `~/.codex`, and
+`~/.grok` on this machine. Any real-world verification — probing a transcript
+format, running a built binary against real sessions — reads them only, and
+runs from a scratch directory outside the repository.
