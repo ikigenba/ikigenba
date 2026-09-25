@@ -36,16 +36,42 @@ claim about Google's bytes, so it needs no new observation.
 The session is carried by a cookie named `ikigenba_session`. auth learns its own
 place in the world from each request's `Host`: the *space* is that host with a
 leading `auth.` label removed, and from the space auth derives the callback
-`redirect_uri`, the cookie `Domain`, its own origin (for the logout `Origin`
-check), and which return URLs count as being under the space. A request whose
-`Host` is exactly `localhost:3001` is *local* instead: it is a developer's auth,
-reached at `http://localhost:3001`, and it takes the fixed development forms —
-the callback `http://localhost:3001/login/google/callback` registered on the
-OAuth client for development, the origin `http://localhost:3001`, and a session
-cookie with no `Domain`. Every other request is on a space. Users are keyed by the verified ID
+`redirect_uri`, the cookie `Domain`, its own origin (for the token routes'
+`Origin` check, D07), which origins are *on this space* (for the logout
+`Origin` check), and which return URLs count as being under the space. A
+request whose `Host` is exactly `localhost:3001` is *local* instead: it is a
+developer's auth, reached at `http://localhost:3001`, and it takes the fixed
+development forms — the callback `http://localhost:3001/login/google/callback`
+registered on the OAuth client for development, the origin
+`http://localhost:3001`, and a session cookie with no `Domain`. Every other
+request is on a space. Users are keyed by the verified ID
 token's `(issuer, subject)`; the email is a copy refreshed on every login; auth's
 own `X-User-Id` is a fresh opaque id minted by `idcodec.NewID`, never Google's
 `sub`.
+
+Sign-out is the one state-changing route any app on the space may drive: an
+app renders a form that POSTs to auth's `/logout`, so its `Origin` is the
+app's, not auth's. The logout check accepts, on a space, `https://<space>` and
+`https://<prefix>.<space>` for any non-empty prefix, with no port; and, run
+locally, `http://localhost` and `http://localhost:<port>` for any port. These
+are the story's forms, and they are where the session cookie goes: on a space
+it carries `Domain=<space>` and `Secure`, and a `Domain` cookie matches a host
+only when the host equals the domain or ends in `.` plus the domain (RFC 6265
+§5.1.3), which is why `evil<space>`, `<space>.evil.com`, and a trailing-dot
+`<space>.` are all refused; run locally it has no `Domain`, so it is host-only
+on `localhost` and, cookies not being isolated by port (RFC 6265 §8.5), every
+`http://localhost` app shares it whatever its port. The accepted set is
+narrower than every origin the cookie reaches: the cookie also reaches a space
+host on a non-default `https` port and, since browsers treat `localhost` as a
+secure context, `https://localhost`; both are refused, following the story's
+forms, pending the user's confirmation. A browser serializes an origin as
+scheme, `://`, lowercase host, and a port only when it is not the scheme's
+default (RFC 6454 §6.2; the WHATWG URL standard's origin serialization), so a
+value carrying `/`, `?`, `#`, or `@` after the host is no origin at all, and
+it sends `Origin` on every `POST` (Fetch standard, "append a request `Origin`
+header"); a request with no `Origin`, the opaque origin `null`, or more than
+one `Origin` field cannot show that it came from this space and is refused.
+The token routes keep the narrower own-origin check.
 
 The profile page's presence, its logout form, and its create-token form are
 owned here; the per-token row contents and their enable/disable/delete forms are
@@ -78,7 +104,7 @@ owns is that auth answers its own host's `/` with the sign-in page.
 - R-U4SD-S667: auth MUST treat a request as *local* if and only if its `Host` is exactly `localhost:3001`; it MUST treat every other request as a request on a space.
 - R-ILH9-35UU: auth MUST derive the *space* for a request as the request's `Host` with a single leading `auth.` label removed.
 - R-U8G2-XHEA: The callback `redirect_uri` auth sends to Google MUST be `http://localhost:3001/login/google/callback` for a local request (R-U4SD-S667), and MUST be `https://auth.<space>/login/google/callback` for a request on a space.
-- R-UC3S-2SMD: auth's own origin (used for the logout `Origin` check) MUST be `http://localhost:3001` for a local request (R-U4SD-S667), and MUST be `https://auth.<space>` for a request on a space.
+- R-7AQD-QSNL: auth's own origin (used for the token routes' `Origin` check, D07) MUST be `http://localhost:3001` for a local request (R-U4SD-S667), and MUST be `https://auth.<space>` for a request on a space.
 - R-IQCU-M8TM: A return URL MUST be treated as in-space if and only if its host is the space or a subdomain of the space; any other return URL MUST be treated as out-of-space.
 - R-IRKR-00KB: `GET /` with no live session MUST respond `200` with `Content-Type: text/html; charset=utf-8` and a body containing a link whose target is `/login/google`; a `?return=<url>` on the request MUST be carried to the login start and MUST NOT be persisted.
 - R-ISSN-DSB0: `GET /` with a live session MUST respond `200` with `Content-Type: text/html; charset=utf-8` and a body containing a form that POSTs to `/logout` and a form that POSTs to `/tokens` with fields `name` and `expires`; it MUST resolve the identity via `LookupSessionIdentity` (no touch), MUST ignore any `?return`, and MUST NOT change any state.
@@ -91,6 +117,8 @@ owns is that auth answers its own host's `/` with the sign-in page.
 - R-J041-OER6: The `302` `Location` of a successful member sign-in MUST be the login state's carried return URL when that URL is in-space (per R-IQCU-M8TM), and MUST be `/` when there is no return URL or the carried return URL is out-of-space.
 - R-U14O-MUY4: A callback result MUST be treated as a member if and only if the verified `Claims.HostedDomain` equals `WORKSPACE_DOMAIN` and `Claims.EmailVerified` is true (an absent `hd` claim, i.e. empty `HostedDomain`, is not a member); a non-member result MUST respond `403` with `Content-Type: text/html; charset=utf-8`, send no `Set-Cookie`, consume the login state, and create or change no user, session, or cookie.
 - R-XYXG-DBKQ: When a matched-state callback's token exchange fails or Google is unreachable, auth MUST respond `502` with `Content-Type: text/plain; charset=utf-8` and a single line of body, MUST write the line R-XV9R-80CN states with the `Exchange` error as its reason, and MUST create no user, session, or cookie.
-- R-J3RQ-TPZ9: `POST /logout` whose `Origin` equals auth's own origin MUST respond `302` with `Location: /`, clear the session cookie, delete the session server-side via `DeleteSession`, and leave the user row and the user's tokens untouched.
-- R-J4ZN-7HPY: `POST /logout` whose `Origin` is not auth's own origin MUST respond `403` with `Content-Type: text/plain; charset=utf-8`, send no `Set-Cookie`, and leave the session untouched; this `Origin` check is the second line of cross-site defense after the cookie's `SameSite=Lax`.
+- R-60RY-2THD: For a request on a space, an `Origin` value MUST be treated as *on this space* if and only if it has the serialized shape `https://` followed by a host `H` and nothing else, where `H` contains none of `/`, `?`, `#`, `@`, or `:` (so the value carries no path, query, fragment, userinfo, or port), and `H`, compared with the space ASCII case-insensitively, either equals the space or ends in `.` followed by the space with a non-empty prefix before that `.`; the scheme `https` MUST be matched ASCII case-insensitively, and every other value — including an `http://` origin naming the space's hosts, any value carrying a port (`:443` included), a host with a trailing `.`, a host that merely ends in the space without a separating `.` (`evil<space>`), a host that only contains the space (`<space>.evil.com`), `http://localhost` or `http://localhost:<port>`, and `null` — MUST be treated as not on this space.
+- R-7D66-IC4Z: For a local request (R-U4SD-S667), an `Origin` value MUST be treated as *on this space* if and only if it is `http://localhost` or `http://localhost:<port>` and nothing else (no path, query, fragment, or userinfo), where `<port>` is a decimal integer from 1 to 65535 written without leading zeros, and the scheme `http` and the host `localhost` are matched ASCII case-insensitively; every other value — including any `https://` origin, `http://localhost.`, `http://localhost:` with an empty port, `http://127.0.0.1:<port>`, an origin naming a space host, and `null` — MUST be treated as not on this space.
+- R-ARX4-BPPM: `POST /logout` carrying exactly one `Origin` header field whose value is on this space (R-60RY-2THD for a request on a space, R-7D66-IC4Z for a local request) MUST respond `302` with `Location: /`, clear the session cookie, delete the session server-side via `DeleteSession`, and leave the user row and the user's tokens untouched; the response MUST be the same whichever on-this-space origin the request carries, auth's own origin (R-7AQD-QSNL) among them.
+- R-AT50-PHGB: `POST /logout` carrying no `Origin` header field, more than one `Origin` header field, or one whose value is not on this space (R-60RY-2THD for a request on a space, R-7D66-IC4Z for a local request) MUST respond `403` with `Content-Type: text/plain; charset=utf-8` and a single line of body, send no `Set-Cookie`, not call `DeleteSession`, and leave the session untouched; this `Origin` check is the second line of cross-site defense after the cookie's `SameSite=Lax`.
 - R-TQ5L-6X9V: When auth serves its own host on a space, `GET https://auth.<space>/` with no live session MUST respond `200` with `Content-Type: text/html; charset=utf-8` and a body containing a link whose target is `/login/google`.

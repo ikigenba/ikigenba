@@ -26,7 +26,15 @@ refreshed on every login. The return URL and the CSRF protection are the same
 thing: a random login state, recorded when a sign-in starts and carried through
 the Google round trip, that also holds the PKCE verifier and any return URL.
 Every state-changing request is a `POST`; `SameSite=Lax` is the first line of
-cross-site defense and an `Origin` check is the second. Pages are described only
+cross-site defense and an `Origin` check is the second. For `/logout` that check
+is that the origin is on this space, so any app on the space can sign its user
+out: on a space the accepted origins are exactly the hosts the session cookie
+reaches, over `https` — `https://<space>` and `https://<host>.<space>` for a
+subdomain at any depth (any host ending in `.<space>`), auth's own
+`https://auth.<space>` among them. Run locally, where
+the cookie has no `Domain` and every app on `localhost` shares it whatever its
+port, the accepted origins are `http://localhost` and `http://localhost:<port>`
+for any port, auth's own `http://localhost:3001` among them. Pages are described only
 by their observable structure — the links they contain and their targets, the
 forms they contain with their method, action, and field names — never by any
 wording, label, or heading. A response block shows the status line and only the
@@ -519,11 +527,61 @@ Postconditions:
   shows the sign-in page.
 - The user row and the user's tokens are untouched.
 
+## A user signs out from an app on the space
+
+An app on the space offers sign-out in its own chrome — dummy's, say, at
+`https://dummy.<space>`, or `http://localhost:3000` run locally — as a form
+that POSTs to auth's `/logout`. The app is same-site with auth, so the browser
+sends the `SameSite=Lax` session cookie with the `POST`, and its `Origin` is the
+app's own, which is on this space. One click signs the user out of the space,
+exactly as signing out from auth's own profile does.
+
+Request:
+
+```
+$ curl -si -X POST -H 'Origin: http://localhost:3000' --cookie 'ikigenba_session=<opaque>' http://localhost:3001/logout
+```
+
+Response:
+
+```
+HTTP/1.1 302 Found
+Location: /
+Set-Cookie: ikigenba_session=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax
+```
+
+Status 302. The response is the same as for a sign-out from auth's own origin:
+`Location: /` is auth's own `/`, so the browser lands on auth's sign-in page,
+not back on the app. The `Set-Cookie` clears `ikigenba_session` exactly as in
+the same-origin story; on a space it also carries `Domain=<space>`, run locally
+it has none. On a space the request is the same with an `Origin` such as
+`https://dummy.<space>`, `https://<space>`, or `https://a.b.<space>`: a
+subdomain at any depth is accepted, because the session cookie reaches it.
+
+Preconditions:
+
+- auth is serving on `127.0.0.1:3001` with its Google settings.
+- The request carries an `ikigenba_session` cookie naming a live session, and
+  its `Origin` is on this space but is not auth's own origin (locally
+  `http://localhost:3000`, or `http://localhost` or `http://localhost:<port>`
+  for any other port; on a space `https://<space>`, or `https://<host>.<space>`
+  for any subdomain at any depth other than `auth`).
+
+Postconditions:
+
+- The session is deleted server-side; the cookie no longer names any session.
+- The browser removes the cookie for that domain and `Path=/`; it no longer
+  sends that cookie to auth, the app the user signed out from, or the space's
+  other apps. Following the redirect shows auth's sign-in page.
+- The user row and the user's tokens are untouched.
+
 ## A user signs out from another site
 
-A cross-site `POST` to `/logout`: its `Origin` is not auth's own origin. The
+A cross-site `POST` to `/logout`: its `Origin` is not on this space. The
 `Origin` check is the second line of defense after `SameSite=Lax`, and it
-refuses the request.
+refuses the request. On a space the same refusal meets an origin that names the
+space's hosts over `http` rather than `https`: `http://<space>` or
+`http://<host>.<space>`.
 
 Request:
 
@@ -544,7 +602,39 @@ Preconditions:
 
 - auth is serving on `127.0.0.1:3001` with its Google settings.
 - The request carries an `ikigenba_session` cookie naming a live session, and
-  its `Origin` is not auth's own origin.
+  its `Origin` is not on this space (locally, not `http://localhost` or
+  `http://localhost:<port>`; on a space, not `https://<space>` or
+  `https://<host>.<space>` for a subdomain at any depth).
+
+Postconditions:
+
+- The session still exists; nothing has changed.
+
+## A user signs out with no Origin
+
+A `POST` to `/logout` that carries no `Origin` header cannot show it comes from
+this space, so it is refused as a cross-site one is.
+
+Request:
+
+```
+$ curl -si -X POST --cookie 'ikigenba_session=<opaque>' http://localhost:3001/logout
+```
+
+Response:
+
+```
+HTTP/1.1 403 Forbidden
+Content-Type: text/plain; charset=utf-8
+```
+
+Status 403. The body is one line of plain text. No `Set-Cookie` is sent.
+
+Preconditions:
+
+- auth is serving on `127.0.0.1:3001` with its Google settings.
+- The request carries an `ikigenba_session` cookie naming a live session, and
+  no `Origin` header.
 
 Postconditions:
 
