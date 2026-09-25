@@ -26,7 +26,7 @@ func (h *handler) table(w http.ResponseWriter, r *http.Request) {
 	for _, field := range r.Header.Values("If-None-Match") {
 		for entry := range strings.SplitSeq(field, ",") {
 			entry = strings.TrimSpace(entry)
-			if entry == "*" || entry == etag {
+			if entry == "*" || entry == etag || entry == "W/"+etag {
 				w.WriteHeader(http.StatusNotModified)
 				return
 			}

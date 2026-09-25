@@ -1,17 +1,22 @@
 package panel
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"html"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/ikigenba/ikigenba/dummy"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
@@ -171,7 +176,7 @@ func TestPageTextProcedures(t *testing.T) {
 	}
 }
 
-// R-ML16-47JW R-LAK4-0KYA R-LBS0-ECOZ R-LCZW-S4FO R-LE7T-5W6D
+// R-ML16-47JW R-XH4O-AY7C R-LBS0-ECOZ R-LCZW-S4FO R-LE7T-5W6D
 // R-ULUZ-4YJX R-LGNL-XFNR R-M1DW-FJ9K
 func TestPagePublicDeclarations(t *testing.T) {
 	construct := func(f func(*widget.Store, io.Writer) http.Handler) http.Handler {
@@ -186,7 +191,7 @@ func TestPagePublicDeclarations(t *testing.T) {
 	}
 	const service, missing, method, notFound, notAllowed, unsupported, signOut, local = ServiceName, MissingIdentityBody, MethodNotAllowedBody, NotFoundMessage, MethodNotAllowedMessage, UnsupportedMediaTypeMessage, SignOutText, LocalSignOutURL
 	got := []string{service, missing, method, notFound, notAllowed, unsupported, signOut, local}
-	want := []string{"Dummy", "identity header missing\n", "method not allowed\n", "That page was not found.", "That method is not allowed here.", "That media type is not supported.", "Sign out", "http://localhost:3001/"}
+	want := []string{"dummy", "identity header missing\n", "method not allowed\n", "That page was not found.", "That method is not allowed here.", "That media type is not supported.", "Sign out", "http://localhost:3001/"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("constants: %#v", got)
 	}
@@ -248,7 +253,7 @@ func TestPageIdentityBeforeRouting(t *testing.T) {
 }
 
 // R-ISWN-EKQ1 R-M3TP-72QY R-M51L-KUHN R-M69H-YM8C R-M8PA-Q5PQ
-// R-M9X7-3XGF R-MB53-HP74 R-KS39-O19S
+// R-Y0N2-FA2G R-MB53-HP74 R-KS39-O19S
 func TestPageRoutes(t *testing.T) {
 	cases := []struct {
 		method, path   string
@@ -360,7 +365,7 @@ func pageTestDocuments() []*http.Request {
 	}
 }
 
-// R-IWKC-JVY4 R-KKRV-DETM R-KPNG-WHSE R-KQVD-A9J3 R-KTB6-1T0H
+// R-IWKC-JVY4 R-KKRV-DETM R-XKSD-G9FF R-KTB6-1T0H
 func TestPageDocumentChromeAndAttributes(t *testing.T) {
 	for _, r := range pageTestDocuments() {
 		r.Header.Set("X-User-Email", "reader &lt; <b>\" &\t \n other@example.test")
@@ -376,7 +381,7 @@ func TestPageDocumentChromeAndAttributes(t *testing.T) {
 			t.Fatal("HTML document frame")
 		}
 		visible := pageTestVisible(body)
-		for _, want := range []string{ServiceName, SignOutText, strings.Join(strings.Fields(r.Header.Get("X-User-Email")), " ")} {
+		for _, want := range []string{"ikigenba", SignOutText, strings.Join(strings.Fields(r.Header.Get("X-User-Email")), " ")} {
 			if !strings.Contains(visible, want) {
 				t.Fatalf("chrome missing %q in %q", want, visible)
 			}
@@ -564,7 +569,7 @@ func TestPageRequestValuesPreserveDocumentStructure(t *testing.T) {
 	}
 }
 
-// R-LQES-ZLLB R-RNWZ-DAKG R-MDKW-98OI R-KWYV-748K
+// R-Y32V-6TJU R-Y4AR-KLAJ R-6TWQ-SJY0 R-KWYV-748K
 func TestPageScriptAndDocumentOrder(t *testing.T) {
 	requests := append(pageTestDocuments(), pageTestRequest("GET", "/widgets/table"), pageTestRequest("POST", "/widgets/table"), pageTestRequest("GET", "/"))
 	missing := pageTestRequest("GET", "/widgets")
@@ -680,6 +685,260 @@ func TestPageCallerBytesCannotChangeMarkup(t *testing.T) {
 	}
 }
 
+// R-XICK-OPY1 R-XJKH-2HOQ R-XKSD-G9FF
+func TestPageChromeHeader(t *testing.T) {
+	for _, r := range pageTestDocuments() {
+		for _, email := range []string{"", " one\t& <two>  three "} {
+			r.Header.Set("X-User-Email", email)
+			body := pageTestStrip(pageTestResponse(Handler(widget.NewStore(), io.Discard), r).Body.String())
+			bodies := pageTestTags(body, "body", false)
+			if len(bodies) != 1 {
+				t.Fatalf("body start count: %d", len(bodies))
+			}
+			headers := pageTestTags(body, "header", false)
+			if len(headers) < 1 || strings.TrimSpace(body[bodies[0][1]:headers[0][0]]) != "" {
+				t.Fatal("chrome header does not immediately follow body")
+			}
+			ends := pageTestTags(body[headers[0][1]:], "header", true)
+			if len(ends) == 0 {
+				t.Fatal("chrome header has no end")
+			}
+			chrome := body[headers[0][0] : headers[0][1]+ends[0][1]]
+			if len(pageTestTags(chrome, "header", false)) != 1 {
+				t.Fatal("nested header in chrome")
+			}
+			strong, spans, links := pageTestTags(chrome, "strong", false), pageTestTags(chrome, "span", false), pageTestTags(chrome, "a", false)
+			if len(strong) != 1 || len(spans) != 1 || len(links) != 1 || strong[0][0] >= spans[0][0] || spans[0][0] >= links[0][0] {
+				t.Fatalf("chrome order: %q", chrome)
+			}
+			if class, _ := pageTestAttribute(chrome[strong[0][0]:strong[0][1]], "class"); class != "mark" {
+				t.Fatal("mark class")
+			}
+			if service, _ := pageTestAttribute(chrome[strong[0][0]:strong[0][1]], "data-service"); service != ServiceName {
+				t.Fatal("mark service")
+			}
+			for _, item := range []struct {
+				open      [2]int
+				tag, want string
+			}{
+				{strong[0], "strong", "ikigenba"},
+				{spans[0], "span", strings.Join(strings.Fields(email), " ")},
+				{links[0], "a", SignOutText},
+			} {
+				closingTags := pageTestTags(chrome[item.open[1]:], item.tag, true)
+				if len(closingTags) == 0 || pageTestNormalize(chrome[item.open[1]:item.open[1]+closingTags[0][0]]) != item.want {
+					t.Fatalf("chrome %s text: %q", item.tag, chrome)
+				}
+			}
+			if href, _ := pageTestAttribute(chrome[links[0][0]:links[0][1]], "href"); href != SignOutURL(r.Host, r.Header.Get("X-Forwarded-Proto")) {
+				t.Fatal("sign out URL")
+			}
+		}
+	}
+}
+
+// R-XM09-U164 R-XN86-7SWT R-XOG2-LKNI R-U98Z-WRRS
+func TestPageDocumentHeadAndServiceSpelling(t *testing.T) {
+	for _, r := range pageTestDocuments() {
+		body := pageTestResponse(Handler(widget.NewStore(), io.Discard), r).Body.String()
+		stripped := pageTestStrip(body)
+		bodyStart := pageTestTags(stripped, "body", false)
+		if len(bodyStart) != 1 {
+			t.Fatal("missing body")
+		}
+		for _, tc := range []struct{ tag, attr, value string }{
+			{"title", "", ServiceName},
+			{"link", "rel", "stylesheet"},
+		} {
+			starts := pageTestTags(stripped, tc.tag, false)
+			if len(starts) != 1 || starts[0][1] > bodyStart[0][0] {
+				t.Fatalf("%s count or position: %q", tc.tag, body)
+			}
+			if tc.attr != "" {
+				if value, _ := pageTestAttribute(stripped[starts[0][0]:starts[0][1]], tc.attr); value != tc.value {
+					t.Fatalf("%s %s=%q", tc.tag, tc.attr, value)
+				}
+			}
+		}
+		titles := pageTestTags(stripped, "title", false)
+		titleEnds := pageTestTags(stripped, "title", true)
+		if len(titleEnds) != 1 || titleEnds[0][0] < titles[0][1] || titleEnds[0][1] > bodyStart[0][0] || pageTestNormalize(stripped[titles[0][1]:titleEnds[0][0]]) != ServiceName {
+			t.Fatal("title shape")
+		}
+		link := pageTestTags(stripped, "link", false)[0]
+		if href, _ := pageTestAttribute(stripped[link[0]:link[1]], "href"); href != "/assets/theme.css" {
+			t.Fatal("stylesheet URL")
+		}
+		var viewports []string
+		for _, meta := range pageTestTags(stripped, "meta", false) {
+			tag := stripped[meta[0]:meta[1]]
+			if name, _ := pageTestAttribute(tag, "name"); name == "viewport" {
+				if meta[1] > bodyStart[0][0] {
+					t.Fatal("viewport follows body")
+				}
+				content, _ := pageTestAttribute(tag, "content")
+				viewports = append(viewports, content)
+			}
+		}
+		if len(viewports) != 1 || viewports[0] != "width=device-width, initial-scale=1" {
+			t.Fatal("viewport content")
+		}
+		if regexp.MustCompile(`(?i)dummy`).FindStringIndex(body) == nil {
+			t.Fatal("service name absent")
+		}
+		for _, match := range regexp.MustCompile(`(?i)dummy`).FindAllString(body, -1) {
+			if match != "dummy" {
+				t.Fatalf("mixed-case service name %q", match)
+			}
+		}
+	}
+}
+
+// R-XS3R-QVVL R-XTBO-4NMA R-XVRG-W73O R-XWZD-9YUD R-XY79-NQL2 R-XZF6-1IBR
+func TestPagePanelLayout(t *testing.T) {
+	for _, r := range []*http.Request{pageTestRequest("GET", "/widgets"), pageTestFormRequest(widget.Submission{Name: "", Count: "bad", Status: "archived"})} {
+		body := pageTestStrip(pageTestResponse(Handler(widget.NewStore(), io.Discard), r).Body.String())
+		headers, headerEnds := pageTestTags(body, "header", false), pageTestTags(body, "header", true)
+		headings, headingEnds := pageTestTags(body, "h1", false), pageTestTags(body, "h1", true)
+		if len(headers) < 1 || len(headerEnds) < 1 || len(headings) != 1 || len(headingEnds) != 1 || headerEnds[0][1] > headings[0][0] || headings[0][1] > headingEnds[0][0] || pageTestNormalize(body[headings[0][1]:headingEnds[0][0]]) != "Widgets" {
+			t.Fatal("heading shape and order")
+		}
+		var panels [][2]int
+		for _, span := range pageTestTags(body, "div", false) {
+			if class, _ := pageTestAttribute(body[span[0]:span[1]], "class"); class == "panel" {
+				panels = append(panels, span)
+			}
+		}
+		if len(panels) != 1 || headingEnds[0][1] > panels[0][0] {
+			t.Fatal("panel count or position")
+		}
+		divStarts := pageTestTags(body[panels[0][0]:], "div", false)
+		divEnds := pageTestTags(body[panels[0][0]:], "div", true)
+		if len(divStarts) == 0 || len(divEnds) == 0 {
+			t.Fatal("unclosed panel")
+		}
+		depth, panelEnd := 0, -1
+		for i := panels[0][0]; i < len(body); i++ {
+			if strings.HasPrefix(body[i:], "<div") {
+				depth++
+			} else if strings.HasPrefix(body[i:], "</div>") {
+				depth--
+				if depth == 0 {
+					panelEnd = i
+					break
+				}
+			}
+		}
+		if panelEnd < 0 {
+			t.Fatal("panel not balanced")
+		}
+		inside := body[panels[0][1]:panelEnd]
+		tables, tableEnds := pageTestTags(inside, "table", false), pageTestTags(inside, "table", true)
+		sections, sectionEnds := pageTestTags(inside, "section", false), pageTestTags(inside, "section", true)
+		if len(tables) != 1 || len(tableEnds) != 1 || len(sections) != 1 || len(sectionEnds) != 1 || tables[0][0] >= tableEnds[0][0] || tableEnds[0][1] >= sections[0][0] || sections[0][0] >= sectionEnds[0][0] {
+			t.Fatalf("table and card shape: %q", inside)
+		}
+		if class, _ := pageTestAttribute(inside[sections[0][0]:sections[0][1]], "class"); class != "card" {
+			t.Fatal("form card class")
+		}
+		if strings.TrimSpace(inside[:tables[0][0]]) != "" || strings.TrimSpace(inside[tableEnds[0][1]:sections[0][0]]) != "" || strings.TrimSpace(inside[sectionEnds[0][1]:]) != "" {
+			t.Fatal("extra panel content")
+		}
+		bodyStarts, bodyEnds := pageTestTags(body, "body", false), pageTestTags(body, "body", true)
+		if len(bodyStarts) != 1 || len(bodyEnds) != 1 || bodyEnds[0][0] <= panelEnd {
+			t.Fatal("body frame")
+		}
+		outside := body[bodyStarts[0][1]:headers[0][0]] + body[headerEnds[0][1]:panels[0][0]] + body[panelEnd+len("</div>"):bodyEnds[0][0]]
+		if pageTestNormalize(outside) != "Widgets" {
+			t.Fatalf("extra outside text: %q", outside)
+		}
+	}
+}
+
+// R-F30C-CO4I R-F488-QFV7 R-6TWQ-SJY0 R-F7VX-VR3A R-F5G5-47LW R-F6O1-HZCL
+func TestPageDocumentMarkupSafety(t *testing.T) {
+	requests := pageTestDocuments()
+	attack := `"><svg onload="evil()"><script src="https://elsewhere.test/x">`
+	malicious := pageTestFormRequest(widget.Submission{Name: attack, Count: attack, Status: attack})
+	malicious.Header.Set("X-User-Email", attack)
+	malicious.Host = "dummy." + attack
+	requests = append(requests, malicious)
+	start := regexp.MustCompile(`<[A-Za-z]`)
+	wellFormed := regexp.MustCompile(`^<[A-Za-z][A-Za-z0-9-]*(?:[\t\n\v\f\r ]+[^\t\n\v\f\r "'<>/=]+(?:="[^"<>]*")?)*[\t\n\v\f\r ]*/?>`)
+	attribute := regexp.MustCompile(`[\t\n\v\f\r ]+([^\t\n\v\f\r "'<>/=]+)(?:="([^"<>]*)")?`)
+	for _, r := range requests {
+		body := pageTestResponse(Handler(widget.NewStore(), io.Discard), r).Body.String()
+		for _, at := range start.FindAllStringIndex(body, -1) {
+			matched := wellFormed.FindString(body[at[0]:])
+			if matched == "" {
+				t.Fatalf("malformed start tag at %d in %q", at[0], body)
+			}
+			nameEnd := 1
+			for nameEnd < len(matched) && (matched[nameEnd] == '-' || matched[nameEnd] >= 'a' && matched[nameEnd] <= 'z' || matched[nameEnd] >= 'A' && matched[nameEnd] <= 'Z' || matched[nameEnd] >= '0' && matched[nameEnd] <= '9') {
+				nameEnd++
+			}
+			name := strings.ToLower(matched[1:nameEnd])
+			if name == "svg" || name == "math" {
+				t.Fatalf("foreign-content tag: %q", matched)
+			}
+			for _, entry := range attribute.FindAllStringSubmatch(matched[nameEnd:len(matched)-1], -1) {
+				key := strings.ToLower(entry[1])
+				value := html.UnescapeString(entry[2])
+				if key == "style" || key == "ping" || key == "srcdoc" || key == "http-equiv" || strings.HasPrefix(key, "on") && len(key) > 2 && regexp.MustCompile(`^[a-z]+$`).MatchString(key[2:]) {
+					t.Fatalf("forbidden attribute %q in %q", key, matched)
+				}
+				if name == "script" && (key == "src" || key == "href" || key == "xlink:href") {
+					t.Fatalf("external script: %q", matched)
+				}
+				if name != "a" {
+					check := func(v string) bool {
+						v = strings.Map(func(c rune) rune {
+							if c == '\t' || c == '\n' || c == '\r' {
+								return -1
+							}
+							return c
+						}, v)
+						return v == "/" || len(v) >= 2 && v[0] == '/' && v[1] != '/' && v[1] != '\\'
+					}
+					switch key {
+					case "href", "xlink:href", "src", "poster", "data", "background", "manifest":
+						if !check(value) {
+							t.Fatalf("nonlocal resource %s=%q", key, value)
+						}
+					case "srcset", "imagesrcset":
+						for _, candidate := range strings.Split(value, ",") {
+							if !check(strings.TrimLeft(candidate, " \t\n\v\f\r")) {
+								t.Fatalf("nonlocal resource candidate %q", candidate)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// R-Y5IN-YD18 R-Y1UY-T1T5
+func TestPageAssetRouteAndMissingIdentityETag(t *testing.T) {
+	for _, path := range []string{"/", "/widgets", "/widgets/table", "/assets/theme.css", "/assets/OFL.txt", "/unknown"} {
+		for _, method := range []string{"GET", "HEAD", "POST"} {
+			r := pageTestRequest(method, path)
+			r.Header.Del("X-User-Id")
+			w := pageTestResponse(Handler(widget.NewStore(), io.Discard), r)
+			if w.Code != 500 || w.Header().Get("ETag") != "" {
+				t.Fatalf("missing identity %s %s: %d %v", method, path, w.Code, w.Header())
+			}
+			if strings.HasPrefix(path, "/assets/") {
+				r.Header.Set("X-User-Id", "caller")
+				w = pageTestResponse(Handler(widget.NewStore(), io.Discard), r)
+				if w.Code == 404 {
+					t.Fatalf("asset path treated as unknown: %s %s", method, path)
+				}
+			}
+		}
+	}
+}
+
 // R-JKLR-YCYB
 func TestPageResponsesIndependentOfWorkingDirectory(t *testing.T) {
 	checkout, err := os.Getwd()
@@ -703,6 +962,481 @@ func TestPageResponsesIndependentOfWorkingDirectory(t *testing.T) {
 		second := pageTestResponse(Handler(widget.NewStore(), io.Discard), secondRequest)
 		if first.Code != second.Code || !reflect.DeepEqual(first.Header(), second.Header()) || first.Body.String() != second.Body.String() {
 			t.Fatalf("directory-dependent response for %s %s", request.Method, request.URL.Path)
+		}
+	}
+}
+
+// R-5JK4-98EF R-5KS0-N054 R-5LZX-0RVT R-5N7T-EJMI R-5OFP-SBD7
+// R-5PNM-633W R-5QVI-JUUL R-5S3E-XMLA R-5TBB-BEBZ R-5UJ7-P62O
+func TestEmbeddedAssetResponses(t *testing.T) {
+	entries, err := fs.ReadDir(dummy.Assets, "assets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := widget.NewStore()
+	h := Handler(store, io.Discard)
+	present := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		present[entry.Name()] = true
+	}
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		name := entry.Name()
+		body, err := dummy.Assets.ReadFile("assets/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := "/assets/" + name
+		wantType := "application/octet-stream"
+		switch {
+		case strings.HasSuffix(name, ".css"):
+			wantType = "text/css; charset=utf-8"
+		case strings.HasSuffix(name, ".woff2"):
+			wantType = "font/woff2"
+		case strings.HasSuffix(name, ".txt"):
+			wantType = "text/plain; charset=utf-8"
+		}
+		etag := fmt.Sprintf(`"%x"`, sha256.Sum256(body))
+		base := pageTestResponse(h, pageTestRequest(http.MethodGet, path))
+		if base.Code != 200 || !slices.Equal(base.Body.Bytes(), body) || base.Header().Get("Content-Type") != wantType || base.Header().Get("ETag") != etag || !reflect.DeepEqual(base.Header().Values("Cache-Control"), []string{"no-cache"}) {
+			t.Fatalf("%s: status=%d headers=%v body length=%d", path, base.Code, base.Header(), base.Body.Len())
+		}
+		for _, tc := range []struct {
+			name   string
+			fields []string
+			match  bool
+		}{
+			{"absent", nil, false},
+			{"empty", []string{""}, false},
+			{"exact", []string{etag}, true},
+			{"weak", []string{"W/" + etag}, true},
+			{"wildcard", []string{"*"}, true},
+			{"later-field", []string{`"stale"`, " \tW/" + etag + " "}, true},
+			{"middle-entry", []string{`"stale", ` + etag + `, "other"`}, true},
+			{"quoted-star", []string{`"*"`}, false},
+			{"stale", []string{`"stale", W/"other"`}, false},
+			{"unquoted", []string{strings.Trim(etag, `"`)}, false},
+		} {
+			t.Run(name+"/"+tc.name, func(t *testing.T) {
+				var get *httptest.ResponseRecorder
+				for _, method := range []string{http.MethodGet, http.MethodHead} {
+					r := pageTestRequest(method, path)
+					if tc.fields != nil {
+						r.Header["If-None-Match"] = tc.fields
+					}
+					answer := pageTestResponse(h, r)
+					if method == http.MethodGet {
+						get = answer
+					}
+					wantStatus := 200
+					if tc.match {
+						wantStatus = 304
+					}
+					if answer.Code != wantStatus || answer.Header().Get("ETag") != etag || !reflect.DeepEqual(answer.Header().Values("Cache-Control"), []string{"no-cache"}) {
+						t.Errorf("%s response: %d %v", method, answer.Code, answer.Header())
+					}
+					if method == http.MethodHead || tc.match {
+						if answer.Body.Len() != 0 {
+							t.Error("body must be empty")
+						}
+					} else if !slices.Equal(answer.Body.Bytes(), body) || !reflect.DeepEqual(answer.Header(), base.Header()) {
+						t.Error("nonmatching condition changed response")
+					}
+					if method == http.MethodHead && (get.Code != answer.Code || !reflect.DeepEqual(get.Header(), answer.Header())) {
+						t.Error("HEAD does not mirror GET")
+					}
+				}
+			})
+		}
+		for _, method := range []string{"POST", "PUT", "DELETE", "OPTIONS"} {
+			r := pageTestRequest(method, path)
+			r.Header.Set("If-None-Match", "*")
+			answer := pageTestResponse(h, r)
+			if answer.Code != 405 || answer.Header().Get("Allow") != "GET, HEAD" || answer.Header().Get("ETag") != "" {
+				t.Errorf("%s %s: %d %v", method, path, answer.Code, answer.Header())
+			}
+			pageTestFailure(t, answer, r, MethodNotAllowedMessage)
+		}
+	}
+	// A percent-encoded spelling is decoded into URL.Path before routing.
+	encoded := pageTestResponse(h, pageTestRequest("GET", "/assets/%74heme.css"))
+	plain := pageTestResponse(h, pageTestRequest("GET", "/assets/theme.css"))
+	if encoded.Code != 200 || !reflect.DeepEqual(encoded.Header(), plain.Header()) || encoded.Body.String() != plain.Body.String() {
+		t.Error("decoded name did not select the same asset")
+	}
+	absent := "missing"
+	for present[absent] {
+		absent += "x"
+	}
+	missingPaths := []string{"/assets/", "/assets/" + absent, "/assets/theme.css/extra", "/assets/theme.css%2Fextra", "/assets/.."}
+	if !present["THEME.css"] {
+		missingPaths = append(missingPaths, "/assets/THEME.css")
+	}
+	for _, path := range missingPaths {
+		for _, method := range []string{"GET", "HEAD", "POST"} {
+			r := pageTestRequest(method, path)
+			r.Header.Set("If-None-Match", "*")
+			answer := pageTestResponse(h, r)
+			if answer.Code != 404 || answer.Header().Get("ETag") != "" {
+				t.Errorf("%s %s: %d %v", method, path, answer.Code, answer.Header())
+			}
+			pageTestFailure(t, answer, r, NotFoundMessage)
+		}
+	}
+	missing := pageTestRequest("GET", "/assets/theme.css")
+	missing.Header.Del("X-User-Id")
+	answer := pageTestResponse(h, missing)
+	if answer.Code != 500 || answer.Header().Get("ETag") != "" || answer.Body.String() != MissingIdentityBody {
+		t.Errorf("identity failure: %d %v %q", answer.Code, answer.Header(), answer.Body.String())
+	}
+}
+
+// R-5LZX-0RVT: The embedded inventory need not contain every extension.
+func TestAssetContentTypeFallback(t *testing.T) {
+	for _, tc := range []struct{ name, want string }{
+		{"theme.css", "text/css; charset=utf-8"},
+		{"font.woff2", "font/woff2"},
+		{"OFL.txt", "text/plain; charset=utf-8"},
+		{"file", "application/octet-stream"},
+		{"file.bin", "application/octet-stream"},
+		{"file.CSS", "application/octet-stream"},
+		{"file.css.bin", "application/octet-stream"},
+	} {
+		if got := assetContentType(tc.name); got != tc.want {
+			t.Errorf("%q: %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func cssPreprocess(source []byte) []rune {
+	runes := []rune(strings.TrimPrefix(string(source), "\ufeff"))
+	out := make([]rune, 0, len(runes))
+	for i, r := range runes {
+		switch r {
+		case '\x00':
+			r = '\ufffd'
+		case '\r':
+			if i+1 < len(runes) && runes[i+1] == '\n' {
+				continue
+			}
+			r = '\n'
+		case '\f':
+			r = '\n'
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+func cssHex(r rune) bool   { return r >= '0' && r <= '9' || r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F' }
+func cssSpace(r rune) bool { return r == ' ' || r == '\n' || r == '\t' }
+func cssNameStart(r rune) bool {
+	return r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= 0x80
+}
+func cssName(r rune) bool                 { return cssNameStart(r) || r == '-' || r >= '0' && r <= '9' }
+func cssValidEscape(s []rune, i int) bool { return i+1 < len(s) && s[i] == '\\' && s[i+1] != '\n' }
+func cssIdentStart(s []rune, i int) bool {
+	if i >= len(s) {
+		return false
+	}
+	if s[i] == '-' {
+		return i+1 < len(s) && (cssNameStart(s[i+1]) || s[i+1] == '-' || cssValidEscape(s, i+1))
+	}
+	return cssNameStart(s[i]) || cssValidEscape(s, i)
+}
+func cssEscape(s []rune, i int) (rune, int) {
+	if i+1 >= len(s) {
+		return '\ufffd', i + 1
+	}
+	i++
+	if !cssHex(s[i]) {
+		return s[i], i + 1
+	}
+	start := i
+	for i < len(s) && i < start+6 && cssHex(s[i]) {
+		i++
+	}
+	var value rune
+	for _, r := range s[start:i] {
+		value *= 16
+		switch {
+		case r >= '0' && r <= '9':
+			value += r - '0'
+		case r >= 'a' && r <= 'f':
+			value += r - 'a' + 10
+		default:
+			value += r - 'A' + 10
+		}
+	}
+	if i < len(s) && cssSpace(s[i]) {
+		i++
+	}
+	if value == 0 || value > 0x10ffff || value >= 0xd800 && value <= 0xdfff {
+		value = '\ufffd'
+	}
+	return value, i
+}
+func cssConsumeName(s []rune, i int) (string, int) {
+	var value strings.Builder
+	for i < len(s) {
+		switch {
+		case cssName(s[i]):
+			value.WriteRune(s[i])
+			i++
+		case cssValidEscape(s, i):
+			r, next := cssEscape(s, i)
+			value.WriteRune(r)
+			i = next
+		default:
+			return value.String(), i
+		}
+	}
+	return value.String(), i
+}
+func cssConsumeString(s []rune, i int) (string, int, bool) {
+	quote := s[i]
+	var value strings.Builder
+	for i++; i < len(s); {
+		switch {
+		case s[i] == quote:
+			return value.String(), i + 1, true
+		case s[i] == '\n':
+			return "", i, false // bad-string-token
+		case s[i] == '\\' && i+1 < len(s) && s[i+1] == '\n':
+			i += 2
+		case cssValidEscape(s, i):
+			r, next := cssEscape(s, i)
+			value.WriteRune(r)
+			i = next
+		default:
+			value.WriteRune(s[i])
+			i++
+		}
+	}
+	return value.String(), i, true
+}
+func cssConsumeURL(s []rune, i int) (string, int, bool) {
+	var value strings.Builder
+	for i < len(s) {
+		switch {
+		case s[i] == ')':
+			return value.String(), i + 1, true
+		case cssSpace(s[i]):
+			for i < len(s) && cssSpace(s[i]) {
+				i++
+			}
+			if i == len(s) || s[i] == ')' {
+				if i < len(s) {
+					i++
+				}
+				return value.String(), i, true
+			}
+			return "", cssSkipBadURL(s, i), false
+		case s[i] == '"' || s[i] == '\'' || s[i] == '(' || s[i] < 0x20 || s[i] == 0x7f || s[i] == '\\' && !cssValidEscape(s, i):
+			return "", cssSkipBadURL(s, i), false
+		case cssValidEscape(s, i):
+			r, next := cssEscape(s, i)
+			value.WriteRune(r)
+			i = next
+		default:
+			value.WriteRune(s[i])
+			i++
+		}
+	}
+	return value.String(), i, true
+}
+func cssSkipBadURL(s []rune, i int) int {
+	for i < len(s) && s[i] != ')' {
+		if cssValidEscape(s, i) {
+			_, i = cssEscape(s, i)
+		} else {
+			i++
+		}
+	}
+	if i < len(s) {
+		i++
+	}
+	return i
+}
+func cssDigit(r rune) bool { return r >= '0' && r <= '9' }
+func cssNumberStart(s []rune, i int) bool {
+	if i >= len(s) {
+		return false
+	}
+	if s[i] == '+' || s[i] == '-' {
+		i++
+	}
+	return i < len(s) && (cssDigit(s[i]) || s[i] == '.' && i+1 < len(s) && cssDigit(s[i+1]))
+}
+func cssConsumeNumber(s []rune, i int) int {
+	if s[i] == '+' || s[i] == '-' {
+		i++
+	}
+	for i < len(s) && cssDigit(s[i]) {
+		i++
+	}
+	if i+1 < len(s) && s[i] == '.' && cssDigit(s[i+1]) {
+		i++
+		for i < len(s) && cssDigit(s[i]) {
+			i++
+		}
+	}
+	if i < len(s) && (s[i] == 'e' || s[i] == 'E') {
+		exponent := i + 1
+		if exponent < len(s) && (s[exponent] == '+' || s[exponent] == '-') {
+			exponent++
+		}
+		if exponent < len(s) && cssDigit(s[exponent]) {
+			i = exponent + 1
+			for i < len(s) && cssDigit(s[i]) {
+				i++
+			}
+		}
+	}
+	return i
+}
+func cssReferenceAllowed(value string) bool {
+	value = strings.TrimFunc(value, func(r rune) bool { return r >= 0 && r <= 0x20 })
+	value = strings.Map(func(r rune) rune {
+		if r == '\t' || r == '\n' || r == '\r' {
+			return -1
+		}
+		return r
+	}, value)
+	if colon := strings.IndexByte(value, ':'); colon >= 0 && strings.EqualFold(value[:colon], "data") {
+		return true
+	}
+	runes := []rune(value)
+	if len(runes) >= 2 && (runes[0] == '/' || runes[0] == '\\') && (runes[1] == '/' || runes[1] == '\\') {
+		return false
+	}
+	for _, r := range runes {
+		if r == ':' {
+			return false
+		}
+		if r == '/' || r == '\\' || r == '?' || r == '#' {
+			return true
+		}
+	}
+	return true
+}
+func cssReferenceValues(source []byte) []string {
+	s := cssPreprocess(source)
+	var values []string
+	for i := 0; i < len(s); {
+		switch {
+		case i+1 < len(s) && s[i] == '/' && s[i+1] == '*':
+			i += 2
+			for i+1 < len(s) && (s[i] != '*' || s[i+1] != '/') {
+				i++
+			}
+			if i+1 < len(s) {
+				i += 2
+			} else {
+				i = len(s)
+			}
+		case s[i] == '"' || s[i] == '\'':
+			value, next, ok := cssConsumeString(s, i)
+			if ok {
+				values = append(values, value)
+			}
+			i = next
+		case cssNumberStart(s, i):
+			i = cssConsumeNumber(s, i)
+			if cssIdentStart(s, i) {
+				_, i = cssConsumeName(s, i) // dimension-token, not a following url-token
+			} else if i < len(s) && s[i] == '%' {
+				i++
+			}
+		case (s[i] == '#' || s[i] == '@') && cssIdentStart(s, i+1):
+			_, i = cssConsumeName(s, i+1) // hash-token or at-keyword-token
+		case cssIdentStart(s, i):
+			name, next := cssConsumeName(s, i)
+			i = next
+			if !strings.EqualFold(name, "url") || i >= len(s) || s[i] != '(' {
+				continue
+			}
+			i++
+			for i < len(s) && cssSpace(s[i]) {
+				i++
+			}
+			if i < len(s) && (s[i] == '"' || s[i] == '\'') {
+				continue // function-token; next string-token is scanned normally
+			}
+			value, next, ok := cssConsumeURL(s, i)
+			if ok {
+				values = append(values, value)
+			}
+			i = next
+		default:
+			i++
+		}
+	}
+	return values
+}
+
+// R-8VF0-T1ME
+func TestStylesheetReferencesStayOnOrigin(t *testing.T) {
+	fixtures := []struct {
+		css     string
+		values  []string
+		allowed bool
+	}{
+		{`a{background:url(../font.woff2)}`, []string{"../font.woff2"}, true},
+		{`a{background:URL("DATA:image/svg+xml,a:b")}`, []string{"DATA:image/svg+xml,a:b"}, true},
+		{`/* url(https://ignored.test/) */ a{background:url(local.svg)}`, []string{"local.svg"}, true},
+		{`a{background:url(https://elsewhere.test/x)}`, []string{"https://elsewhere.test/x"}, false},
+		{`a{background:url(//elsewhere.test/x)}`, []string{"//elsewhere.test/x"}, false},
+		{`a{background:u\72l(\\\\elsewhere.test/x)}`, []string{`\\elsewhere.test/x`}, false},
+		{`a{--x:"/\9 /elsewhere.test/x"}`, []string{"/\t/elsewhere.test/x"}, false},
+		{`@import "https://elsewhere.test/x";`, []string{"https://elsewhere.test/x"}, false},
+		{`a{--x:5url(https://elsewhere.test/x)}`, nil, true},
+		{`a{--x:1e2url(https://elsewhere.test/x)}`, nil, true},
+		{`a{--x:#url(https://elsewhere.test/x)}`, nil, true},
+		{`@url(https://elsewhere.test/x)`, nil, true},
+	}
+	for _, tc := range fixtures {
+		values := cssReferenceValues([]byte(tc.css))
+		if !slices.Equal(values, tc.values) {
+			t.Errorf("fixture %q: tokens=%q, want %q", tc.css, values, tc.values)
+		}
+		allowed := true
+		for _, value := range values {
+			allowed = allowed && cssReferenceAllowed(value)
+		}
+		if allowed != tc.allowed {
+			t.Errorf("fixture %q: tokens=%q allowed=%v", tc.css, values, allowed)
+		}
+	}
+	entries, err := fs.ReadDir(dummy.Assets, "assets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".css") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		content, err := dummy.Assets.ReadFile("assets/" + entry.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, value := range cssReferenceValues(content) {
+			if !cssReferenceAllowed(value) {
+				t.Errorf("%s has external reference %q", entry.Name(), value)
+			}
 		}
 	}
 }

@@ -2,21 +2,25 @@
 package panel
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"embed"
 	"fmt"
 	"html"
 	"io"
+	"io/fs"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"text/template"
 
+	"github.com/ikigenba/ikigenba/dummy"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
 // ServiceName is the name shown in the panel chrome.
-const ServiceName = "Dummy"
+const ServiceName = "dummy"
 
 // MissingIdentityBody reports an absent upstream identity.
 const MissingIdentityBody = "identity header missing\n"
@@ -110,8 +114,65 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/widgets/table":
 		h.table(w, r)
 	default:
+		if strings.HasPrefix(r.URL.Path, "/assets/") {
+			h.asset(w, r)
+			return
+		}
 		h.renderFailure(w, r, http.StatusNotFound, NotFoundMessage)
 	}
+}
+
+func (h *handler) asset(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, "/assets/")
+	if name == "" || strings.Contains(name, "/") {
+		h.renderFailure(w, r, http.StatusNotFound, NotFoundMessage)
+		return
+	}
+	file := "assets/" + name
+	info, err := fs.Stat(dummy.Assets, file)
+	if err != nil || !info.Mode().IsRegular() {
+		h.renderFailure(w, r, http.StatusNotFound, NotFoundMessage)
+		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		h.renderFailure(w, r, http.StatusMethodNotAllowed, MethodNotAllowedMessage)
+		return
+	}
+	body, err := dummy.Assets.ReadFile(file)
+	if err != nil {
+		panic(err)
+	}
+	etag := fmt.Sprintf(`"%x"`, sha256.Sum256(body))
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "no-cache")
+	for _, field := range r.Header.Values("If-None-Match") {
+		for entry := range strings.SplitSeq(field, ",") {
+			entry = strings.TrimSpace(entry)
+			if entry == "*" || entry == etag || entry == "W/"+etag {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+		}
+	}
+	w.Header().Set("Content-Type", assetContentType(name))
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	w.WriteHeader(http.StatusOK)
+	if r.Method != http.MethodHead {
+		_, _ = io.Copy(w, bytes.NewReader(body))
+	}
+}
+
+func assetContentType(name string) string {
+	switch {
+	case strings.HasSuffix(name, ".css"):
+		return "text/css; charset=utf-8"
+	case strings.HasSuffix(name, ".woff2"):
+		return "font/woff2"
+	case strings.HasSuffix(name, ".txt"):
+		return "text/plain; charset=utf-8"
+	}
+	return "application/octet-stream"
 }
 
 func plainFailure(w http.ResponseWriter, r *http.Request, status int, body string) {

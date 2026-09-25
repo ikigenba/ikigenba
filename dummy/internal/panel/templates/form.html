@@ -1,4 +1,6 @@
 {{define "form"}}
+<section class="card">
+<header><h2>Add widget</h2></header>
 <form method="post" action="/widgets" enctype="application/x-www-form-urlencoded">
 <label for="widget-name">Name</label>
 <input id="widget-name" type="text" name="name" {{attr "value" .Submission.Name}}{{if .Errors.Name}} aria-describedby="name-error"{{end}}>
@@ -13,4 +15,5 @@
 {{if .Errors.Status}}<span id="status-error">{{esc .Errors.Status}}</span>{{end}}
 <button type="submit">Add widget</button>
 </form>
+</section>
 {{end}}

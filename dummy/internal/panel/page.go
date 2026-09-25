@@ -8,14 +8,15 @@ import (
 )
 
 type pageData struct {
-	ServiceName string
-	Email       string
-	SignOutText string
-	SignOutURL  string
-	Message     string
-	Panel       bool
-	Widgets     []widget.Widget
-	Form        formData
+	ServiceName    string
+	Email          string
+	SignOutText    string
+	SignOutURL     string
+	Message        string
+	FailureService bool
+	Panel          bool
+	Widgets        []widget.Widget
+	Form           formData
 }
 
 func chromeData(r *http.Request) pageData {
@@ -33,6 +34,7 @@ func (h *handler) renderPage(w http.ResponseWriter, r *http.Request, status int,
 func (h *handler) renderFailure(w http.ResponseWriter, r *http.Request, status int, message string) {
 	data := chromeData(r)
 	data.Message = message
+	data.FailureService = status == http.StatusUnsupportedMediaType
 	h.renderDocument(w, r, status, data)
 }
 

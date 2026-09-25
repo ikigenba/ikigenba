@@ -1,18 +1,19 @@
 {{define "page"}}<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>{{esc .ServiceName}}</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/assets/theme.css"><title>{{esc .ServiceName}}</title></head>
 <body>
 {{template "chrome" .}}
-<main>
 {{if .Panel}}
 <h1>Widgets</h1>
+<div class="panel">
 {{template "table" .Widgets}}
 {{template "form" .Form}}
+</div>
 {{else}}
 <p>{{esc .Message}}</p>
+{{if .FailureService}}<p>dummy cannot use this form encoding.</p>{{end}}
 <a href="/widgets">Back to widgets</a>
 {{end}}
-</main>
 {{if .Panel}}{{template "script" .}}{{end}}
 </body>
 </html>

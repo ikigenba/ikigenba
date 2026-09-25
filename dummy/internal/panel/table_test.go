@@ -2,6 +2,7 @@ package panel
 
 import (
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -112,7 +113,7 @@ func tableTestPageSpan(t *testing.T, raw string) string {
 
 func TestTableMarkupAndPageIdentity(t *testing.T) {
 	// R-KVPQ-RDIA R-KWXN-558Z R-M3J7-QWZS R-M4R4-4OQH R-Q4HP-7G07
-	// R-3ABH-NPH7 R-3BJE-1H7W R-62UX-379I
+	// R-3ABH-NPH7 R-AST0-AVOY R-62UX-379I
 	for _, empty := range []bool{false, true} {
 		t.Run(fmt.Sprintf("empty=%v", empty), func(t *testing.T) {
 			store := widget.NewStore()
@@ -141,11 +142,107 @@ func TestTableMarkupAndPageIdentity(t *testing.T) {
 			for _, response := range []*httptest.ResponseRecorder{page, rejected} {
 				span := tableTestPageSpan(t, response.Body.String())
 				tableTestFragment(t, span, store.All())
-				if strings.TrimSpace(span) != strings.TrimSpace(fragment.Body.String()) {
+				if span != fragment.Body.String() {
 					t.Errorf("page %d table differs from fragment", response.Code)
 				}
 			}
 		})
+	}
+}
+
+func tableTestClassValues(tag string) []string {
+	matches := regexp.MustCompile(`(?i)[\t\n\v\f\r ]class="([^"]*)"`).FindAllStringSubmatch(tag, -1)
+	values := make([]string, 0, len(matches))
+	for _, match := range matches {
+		values = append(values, html.UnescapeString(match[1]))
+	}
+	return values
+}
+
+func tableTestHasASCIIClass(value, name string) bool {
+	for _, part := range strings.FieldsFunc(value, func(r rune) bool {
+		return r == ' ' || r == '\t' || r == '\n' || r == '\v' || r == '\f' || r == '\r'
+	}) {
+		if part == name {
+			return true
+		}
+	}
+	return false
+}
+
+func TestTableCountAndStatusMarkup(t *testing.T) {
+	// R-AU0W-ONFN R-AV8T-2F6C R-AWGP-G6X1 R-QR6J-7N0Z
+	store := widget.NewStore()
+	for _, status := range widget.Statuses() {
+		if _, errs := store.Create(widget.Submission{Name: "widget " + string(status), Count: "7", Status: string(status)}); errs.Any() {
+			t.Fatalf("create %q: %+v", status, errs)
+		}
+	}
+	response := tableTestRequest(Handler(store, io.Discard), "GET", "/widgets/table", tableTestIdentity(), "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("fragment status = %d", response.Code)
+	}
+	fragment := response.Body.String()
+	rows := pageTestTags(fragment, "tr", false)
+	widgets := store.All()
+	if len(rows) != len(widgets)+1 {
+		t.Fatalf("rows = %d, want %d", len(rows), len(widgets)+1)
+	}
+	for rowIndex, rowStart := range rows {
+		closing := pageTestTags(fragment[rowStart[1]:], "tr", true)
+		if len(closing) == 0 {
+			t.Fatalf("row %d unclosed", rowIndex)
+		}
+		row := fragment[rowStart[1] : rowStart[1]+closing[0][0]]
+		cellName := "td"
+		if rowIndex == 0 {
+			cellName = "th"
+		}
+		cells := pageTestTags(row, cellName, false)
+		if len(cells) < 2 || rowIndex > 0 && len(cells) < 3 {
+			t.Fatalf("row %d cells = %d", rowIndex, len(cells))
+		}
+		for _, kind := range []string{"th", "td"} {
+			for cellIndex, cell := range pageTestTags(row, kind, false) {
+				classes := tableTestClassValues(row[cell[0]:cell[1]])
+				if kind == cellName && cellIndex == 1 {
+					if !slices.Contains(classes, "num") {
+						t.Errorf("row %d second %s classes = %q, want exact num", rowIndex, kind, classes)
+					}
+				} else {
+					for _, value := range classes {
+						if tableTestHasASCIIClass(value, "num") {
+							t.Errorf("row %d %s cell %d has num class", rowIndex, kind, cellIndex)
+						}
+					}
+				}
+			}
+		}
+		if rowIndex == 0 {
+			closing := pageTestTags(row[cells[1][1]:], "th", true)
+			if len(closing) == 0 || pageTestNormalize(row[cells[1][1]:cells[1][1]+closing[0][0]]) != "Count" {
+				t.Error("second header cell does not read Count")
+			}
+			continue
+		}
+		third := cells[2]
+		closingCell := pageTestTags(row[third[1]:], "td", true)
+		if len(closingCell) == 0 {
+			t.Fatalf("row %d third cell unclosed", rowIndex)
+		}
+		content := strings.Trim(row[third[1]:third[1]+closingCell[0][0]], " \t\n\v\f\r")
+		starts, ends := pageTestTags(content, "span", false), pageTestTags(content, "span", true)
+		if len(starts) != 1 || len(ends) != 1 || starts[0][0] != 0 || ends[0][1] != len(content) {
+			t.Errorf("row %d status cell structure = %q", rowIndex, content)
+			continue
+		}
+		startTag := content[:starts[0][1]]
+		status := string(widgets[rowIndex-1].Status)
+		class, classOK := pageTestAttribute(startTag, "class")
+		dataStatus, dataOK := pageTestAttribute(startTag, "data-status")
+		if !classOK || class != "status" || !dataOK || dataStatus != status || content[starts[0][1]:ends[0][0]] != status {
+			t.Errorf("row %d status marker = %q, want %q", rowIndex, content, status)
+		}
 	}
 }
 
@@ -177,7 +274,7 @@ func TestTableValidatorsTrackRenderedContent(t *testing.T) {
 }
 
 func TestTableConditionalRequests(t *testing.T) {
-	// R-642T-GZ07 R-65AP-UQQW R-WIGA-XCYS
+	// R-WWH0-TBDR R-WXOX-734G R-WIGA-XCYS
 	for _, empty := range []bool{false, true} {
 		store := widget.NewStore()
 		if empty {
@@ -198,8 +295,11 @@ func TestTableConditionalRequests(t *testing.T) {
 			{"wildcard", []string{"*"}, true},
 			{"wildcard-list", []string{`"stale",  *  , "later"`}, true},
 			{"second-field", []string{`"stale"`, etag}, true},
+			{"weak", []string{"W/" + etag}, true},
+			{"weak-in-list", []string{`"stale", W/` + etag + `, "later"`}, true},
+			{"weak-second-field", []string{`"stale"`, " W/" + etag + " "}, true},
 			{"stale", []string{`"stale", "later"`}, false},
-			{"weak", []string{"W/" + etag}, false},
+			{"weak-stale", []string{`W/"stale"`}, false},
 			{"unquoted", []string{strings.Trim(etag, `"`)}, false},
 			{"quoted-star", []string{`"*"`}, false},
 		}

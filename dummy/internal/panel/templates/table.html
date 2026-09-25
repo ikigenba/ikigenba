@@ -1,6 +1,6 @@
 {{define "table"}}<table id="widgets-table">
-<thead><tr><th>Name</th><th>Count</th><th>Status</th></tr></thead>
+<thead><tr><th>dummy widget</th><th class="num">Count</th><th>Status</th></tr></thead>
 <tbody>{{range .}}
-<tr><td>{{esc .Name}}</td><td>{{esc .Count}}</td><td>{{esc .Status}}</td></tr>{{end}}
+<tr><td>{{esc .Name}}</td><td class="num">{{esc .Count}}</td><td><span class="status" data-status="{{esc .Status}}">{{esc .Status}}</span></td></tr>{{end}}
 </tbody>
 </table>{{end}}

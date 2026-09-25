@@ -51,6 +51,95 @@ func formTags(body, name string) []string {
 	return result
 }
 
+func formASCIIWhitespace(s string) bool {
+	return strings.Trim(s, " \t\n\v\f\r") == ""
+}
+
+// R-9HU8-5PDQ R-9J24-JH4F
+func TestFormCard(t *testing.T) {
+	for _, sub := range []widget.Submission{{}, {Name: "", Count: "bad", Status: "archived"}} {
+		method, encoded := http.MethodGet, ""
+		if sub.Count != "" {
+			method, encoded = http.MethodPost, formBody(sub)
+		}
+		body := pageTestStrip(formRequest(Handler(widget.NewStore(), io.Discard), method, "/widgets", "application/x-www-form-urlencoded", encoded).Body.String())
+		forms, formEnds := pageTestTags(body, "form", false), pageTestTags(body, "form", true)
+		if len(forms) != 1 || len(formEnds) != 1 {
+			t.Fatalf("form pairs: starts=%v ends=%v", forms, formEnds)
+		}
+		var section [2]int
+		found := false
+		for _, span := range pageTestTags(body[:forms[0][0]], "section", false) {
+			section, found = span, true
+		}
+		if !found {
+			t.Fatal("form card section missing")
+		}
+		if class, ok := pageTestAttribute(body[section[0]:section[1]], "class"); !ok || class != "card" {
+			t.Errorf("form card class = %q, present=%v", class, ok)
+		}
+		opening := body[section[1]:forms[0][0]]
+		var parts [4][2]int
+		for i, tag := range []struct {
+			name string
+			end  bool
+		}{{"header", false}, {"h2", false}, {"h2", true}, {"header", true}} {
+			spans := pageTestTags(opening, tag.name, tag.end)
+			if len(spans) != 1 {
+				t.Fatalf("form card %s end=%v spans=%v", tag.name, tag.end, spans)
+			}
+			parts[i] = spans[0]
+		}
+		if parts[0][0] > parts[0][1] || parts[0][1] > parts[1][0] || parts[1][1] > parts[2][0] || parts[2][1] > parts[3][0] || parts[3][1] > len(opening) {
+			t.Fatalf("form card tags are out of order: %v", parts)
+		}
+		if !formASCIIWhitespace(opening[:parts[0][0]]) || !formASCIIWhitespace(opening[parts[0][1]:parts[1][0]]) ||
+			!formASCIIWhitespace(opening[parts[2][1]:parts[3][0]]) || !formASCIIWhitespace(opening[parts[3][1]:]) {
+			t.Error("form card opening has content between required tags")
+		}
+		heading := opening[parts[1][1]:parts[2][0]]
+		if strings.Contains(heading, "<") || pageTestNormalize(heading) != "Add widget" {
+			t.Errorf("form card heading = %q", heading)
+		}
+		closing := body[formEnds[0][1]:]
+		sections := pageTestTags(closing, "section", true)
+		if len(sections) == 0 || !formASCIIWhitespace(closing[:sections[0][0]]) {
+			t.Error("form end is not immediately followed by card section end")
+		}
+	}
+}
+
+// R-JH6I-XDW1
+func TestFormTextOnlyButton(t *testing.T) {
+	for _, sub := range []widget.Submission{{}, {Name: "", Count: "bad", Status: "archived"}} {
+		method, encoded := http.MethodGet, ""
+		if sub.Count != "" {
+			method, encoded = http.MethodPost, formBody(sub)
+		}
+		form := formSpan(t, formRequest(Handler(widget.NewStore(), io.Discard), method, "/widgets", "application/x-www-form-urlencoded", encoded).Body.String())
+		buttons := pageTestTags(form, "button", false)
+		if len(buttons) != 1 {
+			t.Fatalf("button start tags = %d", len(buttons))
+		}
+		button := form[buttons[0][0]:buttons[0][1]]
+		buttonType, _ := pageTestAttribute(button, "type")
+		if strings.EqualFold(buttonType, "reset") || strings.EqualFold(buttonType, "button") {
+			t.Errorf("button is not a submit control: %s", button)
+		}
+		for _, input := range formTags(form, "input") {
+			typ, _ := pageTestAttribute(input, "type")
+			if strings.EqualFold(typ, "submit") || strings.EqualFold(typ, "button") || strings.EqualFold(typ, "reset") {
+				t.Errorf("additional submit or forbidden input control: %s", input)
+			}
+		}
+		rest := form[buttons[0][1]:]
+		ends := pageTestTags(rest, "button", true)
+		if len(ends) != 1 || strings.Contains(rest[:ends[0][0]], "<") || pageTestNormalize(rest[:ends[0][0]]) != "Add widget" {
+			t.Errorf("button has nested element, missing end, or wrong text: %s", rest)
+		}
+	}
+}
+
 func formControls(t *testing.T, body string) map[string]string {
 	t.Helper()
 	controls := make(map[string]string)
@@ -203,7 +292,32 @@ func TestFormRejectedStatusSelection(t *testing.T) {
 	}
 }
 
-// R-XE11-R0UN R-W2WT-9FY8 R-KEQZ-ST18 R-KFYW-6KRX
+func formFieldErrorText(body, field string) (string, bool) {
+	stripped := pageTestStrip(body)
+	for _, span := range regexp.MustCompile(`(?i)<[a-z][a-z0-9]*[^>]*>`).FindAllStringIndex(stripped, -1) {
+		id, _ := pageTestAttribute(stripped[span[0]:span[1]], "id")
+		if id != field+"-error" {
+			continue
+		}
+		rest := stripped[span[1]:]
+		end := strings.IndexByte(rest, '<')
+		if end < 0 {
+			return pageTestNormalize(rest), true
+		}
+		return pageTestNormalize(rest[:end]), true
+	}
+	return "", false
+}
+
+// R-JFYM-JM5C
+func TestFormFieldErrorTextProcedure(t *testing.T) {
+	body := `<script><span id="name-error">wrong</span></script><style>x</style><span id="name-error">  A &amp; B  </span>`
+	if got, ok := formFieldErrorText(body, "name"); !ok || got != "A & B" {
+		t.Errorf("field error text = %q, present=%v", got, ok)
+	}
+}
+
+// R-W2WT-9FY8 R-KEQZ-ST18 R-KFYW-6KRX
 func assertFormErrors(t *testing.T, body string, controls map[string]string, errs widget.FieldErrors) {
 	t.Helper()
 	stripped := pageTestStrip(body)

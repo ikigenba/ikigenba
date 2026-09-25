@@ -40,7 +40,7 @@ func projectFS(t *testing.T) *os.Root {
 	return root
 }
 
-// R-0Y17-99C9
+// R-5C8P-YLY9
 func TestModulePackageLayoutAndImports(t *testing.T) {
 	t.Parallel()
 
@@ -54,6 +54,7 @@ func TestModulePackageLayoutAndImports(t *testing.T) {
 	}
 
 	wantPackages := map[string]string{
+		".":               "dummy",
 		"cmd/dummy":       "main",
 		"internal/cli":    "cli",
 		"internal/server": "server",
@@ -108,23 +109,28 @@ func TestModulePackageLayoutAndImports(t *testing.T) {
 		t.Errorf("packages = %#v, want %#v", gotPackages, wantPackages)
 	}
 
-	const module = "github.com/ikigenba/ikigenba/dummy/"
+	const moduleRoot = "github.com/ikigenba/ikigenba/dummy"
+	const module = moduleRoot + "/"
 	wantImports := map[string]map[string]bool{
+		".":               {},
 		"cmd/dummy":       {module + "internal/cli": true},
 		"internal/cli":    {module + "internal/server": true, module + "internal/panel": true, module + "internal/widget": true},
-		"internal/panel":  {module + "internal/widget": true},
+		"internal/panel":  {moduleRoot: true, module + "internal/widget": true},
 		"internal/server": {},
 		"internal/widget": {},
 	}
 	for directory, packageImports := range imports {
 		local := make(map[string]bool)
 		for imported := range packageImports {
-			if strings.HasPrefix(imported, module) {
+			if imported == moduleRoot || strings.HasPrefix(imported, module) {
 				local[imported] = true
 			}
 		}
 		if !reflect.DeepEqual(local, wantImports[directory]) {
 			t.Errorf("%s module imports = %v, want %v", directory, local, wantImports[directory])
+		}
+		if directory == "." && !reflect.DeepEqual(packageImports, map[string]bool{"embed": true}) {
+			t.Errorf("root package imports = %v, want embed only", packageImports)
 		}
 	}
 }

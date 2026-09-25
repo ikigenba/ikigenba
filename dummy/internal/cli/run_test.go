@@ -192,10 +192,10 @@ func TestRunReturnsDeclaredExitCodes(t *testing.T) {
 	}
 }
 
-// R-LKG6-N3B2
+// R-5IC7-VGNQ
 func TestPackagesDoNotReachPastProcessSeam(t *testing.T) {
 	forbidden := map[string]bool{"Args": true, "Environ": true, "Getenv": true, "LookupEnv": true, "Setenv": true, "Unsetenv": true, "Clearenv": true, "Getpid": true, "Stdin": true, "Stdout": true, "Stderr": true, "Exit": true}
-	for _, dir := range []string{"internal/cli", "internal/server", "internal/panel", "internal/widget"} {
+	for _, dir := range []string{".", "internal/cli", "internal/server", "internal/panel", "internal/widget"} {
 		files, err := filepath.Glob(filepath.Join(projectRoot(t), dir, "*.go"))
 		if err != nil {
 			t.Fatal(err)
