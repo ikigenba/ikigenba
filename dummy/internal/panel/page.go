@@ -3,6 +3,7 @@ package panel
 import (
 	"bytes"
 	"net/http"
+	"strconv"
 
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
@@ -11,7 +12,9 @@ type pageData struct {
 	ServiceName    string
 	Email          string
 	SignOutText    string
-	SignOutURL     string
+	LogoutURL      string
+	LogoutIcon     string
+	Subtitle       string
 	Message        string
 	FailureService bool
 	Panel          bool
@@ -20,13 +23,18 @@ type pageData struct {
 }
 
 func chromeData(r *http.Request) pageData {
-	return pageData{ServiceName: ServiceName, Email: r.Header.Get("X-User-Email"), SignOutText: SignOutText, SignOutURL: SignOutURL(r.Host, r.Header.Get("X-Forwarded-Proto"))}
+	return pageData{ServiceName: ServiceName, Email: r.Header.Get("X-User-Email"), SignOutText: SignOutText, LogoutURL: LogoutURL(r.Host, r.Header.Get("X-Forwarded-Proto")), LogoutIcon: LogoutIcon}
 }
 
 func (h *handler) renderPage(w http.ResponseWriter, r *http.Request, status int, sub widget.Submission, errs widget.FieldErrors) {
 	data := chromeData(r)
 	data.Panel = true
 	data.Widgets = h.store.All()
+	noun := " widgets"
+	if len(data.Widgets) == 1 {
+		noun = " widget"
+	}
+	data.Subtitle = strconv.Itoa(len(data.Widgets)) + noun + " · refreshes every 5 seconds"
 	data.Form = newFormData(sub, errs)
 	h.renderDocument(w, r, status, data)
 }

@@ -35,7 +35,7 @@ func formBody(sub widget.Submission) string {
 
 func formSpan(t *testing.T, body string) string {
 	t.Helper()
-	body = pageTestStrip(body)
+	body = pageTestContent(t, body)
 	starts, ends := pageTestTags(body, "form", false), pageTestTags(body, "form", true)
 	if len(starts) != 1 || len(ends) != 1 || starts[0][1] > ends[0][0] {
 		t.Fatalf("expected one ordered form pair: %q", body)
@@ -55,14 +55,14 @@ func formASCIIWhitespace(s string) bool {
 	return strings.Trim(s, " \t\n\v\f\r") == ""
 }
 
-// R-9HU8-5PDQ R-9J24-JH4F
+// R-RBZN-I75Y R-9J24-JH4F
 func TestFormCard(t *testing.T) {
 	for _, sub := range []widget.Submission{{}, {Name: "", Count: "bad", Status: "archived"}} {
 		method, encoded := http.MethodGet, ""
 		if sub.Count != "" {
 			method, encoded = http.MethodPost, formBody(sub)
 		}
-		body := pageTestStrip(formRequest(Handler(widget.NewStore(), io.Discard), method, "/widgets", "application/x-www-form-urlencoded", encoded).Body.String())
+		body := pageTestContent(t, formRequest(Handler(widget.NewStore(), io.Discard), method, "/widgets", "application/x-www-form-urlencoded", encoded).Body.String())
 		forms, formEnds := pageTestTags(body, "form", false), pageTestTags(body, "form", true)
 		if len(forms) != 1 || len(formEnds) != 1 {
 			t.Fatalf("form pairs: starts=%v ends=%v", forms, formEnds)
@@ -97,6 +97,9 @@ func TestFormCard(t *testing.T) {
 			!formASCIIWhitespace(opening[parts[2][1]:parts[3][0]]) || !formASCIIWhitespace(opening[parts[3][1]:]) {
 			t.Error("form card opening has content between required tags")
 		}
+		if class, ok := pageTestAttribute(opening[parts[1][0]:parts[1][1]], "class"); !ok || class != "text-md" {
+			t.Error("form heading class")
+		}
 		heading := opening[parts[1][1]:parts[2][0]]
 		if strings.Contains(heading, "<") || pageTestNormalize(heading) != "Add widget" {
 			t.Errorf("form card heading = %q", heading)
@@ -109,8 +112,8 @@ func TestFormCard(t *testing.T) {
 	}
 }
 
-// R-JH6I-XDW1
-func TestFormTextOnlyButton(t *testing.T) {
+// R-RD7J-VYWN
+func TestFormIconButton(t *testing.T) {
 	for _, sub := range []widget.Submission{{}, {Name: "", Count: "bad", Status: "archived"}} {
 		method, encoded := http.MethodGet, ""
 		if sub.Count != "" {
@@ -134,7 +137,15 @@ func TestFormTextOnlyButton(t *testing.T) {
 		}
 		rest := form[buttons[0][1]:]
 		ends := pageTestTags(rest, "button", true)
-		if len(ends) != 1 || strings.Contains(rest[:ends[0][0]], "<") || pageTestNormalize(rest[:ends[0][0]]) != "Add widget" {
+		if len(ends) != 1 {
+			t.Fatalf("button end tags: %d", len(ends))
+		}
+		content := rest[:ends[0][0]]
+		if !strings.HasPrefix(content, PlusIcon) {
+			t.Fatalf("button lacks exact plus icon: %q", content)
+		}
+		text := content[len(PlusIcon):]
+		if strings.Contains(text, "<") || pageTestNormalize(text) != "Add widget" {
 			t.Errorf("button has nested element, missing end, or wrong text: %s", rest)
 		}
 	}
@@ -164,7 +175,7 @@ func formControls(t *testing.T, body string) map[string]string {
 	return controls
 }
 
-// R-K67P-4EUD R-K7FL-I6L2 R-K8NH-VYBR R-UC44-S8EO R-M49S-JQ63
+// R-RARR-4FF9 R-K7FL-I6L2 R-K8NH-VYBR R-UC44-S8EO R-M49S-JQ63
 func assertFormMarkup(t *testing.T, body string) map[string]string {
 	t.Helper()
 	form := formSpan(t, body)
@@ -387,7 +398,7 @@ func TestFormFreshPagesAndFailures(t *testing.T) {
 	}
 }
 
-// R-XBL8-ZHD9 R-GUU9-JB3W R-KIEO-Y49B R-NV2J-W5BV
+// R-REFG-9QNC R-GWHL-WEJ3 R-GYXE-NY0H R-H05B-1PR6
 func TestFormRejections(t *testing.T) {
 	cases := []widget.Submission{
 		{Name: "", Count: "2", Status: "active"},
@@ -464,24 +475,17 @@ func assertFormPanel(t *testing.T, body string) {
 		t.Error("422 lacks single body pair")
 	}
 	visible := pageTestVisible(body)
-	for _, want := range []string{ServiceName, "form-user@example.test", SignOutText} {
+	for _, want := range []string{"form-user@example.test", SignOutText} {
 		if !strings.Contains(visible, want) {
 			t.Errorf("422 chrome lacks %q", want)
 		}
 	}
-	linkFound := false
-	for _, span := range pageTestTags(stripped, "a", false) {
-		href, _ := pageTestAttribute(stripped[span[0]:span[1]], "href")
-		end := pageTestTags(stripped[span[1]:], "a", true)
-		if href == SignOutURL("example.com", "") && len(end) > 0 && pageTestNormalize(stripped[span[1]:span[1]+end[0][0]]) == SignOutText {
-			linkFound = true
-		}
-	}
-	if !linkFound {
-		t.Error("422 lacks sign-out link")
-	}
+	r := httptest.NewRequest("POST", "/widgets", nil)
+	r.Header.Set("X-User-Email", "form-user@example.test")
+	pageTestChrome(t, body, r)
 	_ = formTable(t, body)
-	if pageTestTags(stripped, "form", false)[0][0] < pageTestTags(stripped, "table", true)[0][1] {
+	content := pageTestContent(t, body)
+	if pageTestTags(content, "form", false)[0][0] < pageTestTags(content, "table", true)[0][1] {
 		t.Error("422 form does not follow table")
 	}
 	if len(pageTestTags(body, "script", false)) != 1 || len(pageTestTags(body, "script", true)) != 1 {
@@ -489,7 +493,7 @@ func assertFormPanel(t *testing.T, body string) {
 	}
 }
 
-// R-NLBC-TZEB R-6OLO-3T75 R-GUU9-JB3W R-NQ6Y-D2D3 R-NREU-QU3S
+// R-H1D7-FHHV R-6OLO-3T75 R-GWHL-WEJ3 R-NQ6Y-D2D3 R-NREU-QU3S
 func TestFormAcceptedSubmission(t *testing.T) {
 	for _, mediaType := range []string{
 		"application/x-www-form-urlencoded",
@@ -606,7 +610,7 @@ func (b *formObservedBody) Read(p []byte) (int, error) {
 
 func (*formObservedBody) Close() error { return nil }
 
-// R-NLBC-TZEB R-KJML-BW00 R-KKUH-PNQP R-NV2J-W5BV
+// R-H1D7-FHHV R-H2L3-T98K R-RFNC-NIE1 R-H05B-1PR6
 func TestFormUnsupportedMediaNeverReads(t *testing.T) {
 	for _, mediaType := range []string{"", "application/json", "multipart/form-data; boundary=a", "text/plain", "application/x-www-form-urlencoded-extra", ";application/x-www-form-urlencoded"} {
 		t.Run(mediaType, func(t *testing.T) {
@@ -628,28 +632,26 @@ func TestFormUnsupportedMediaNeverReads(t *testing.T) {
 				t.Errorf("unsupported request read body %d times or changed store", body.reads)
 			}
 			markup := pageTestStrip(w.Body.String())
-			if len(formTags(markup, "form")) != 0 {
+			if len(formTags(pageTestContent(t, markup), "form")) != 0 {
 				t.Error("unsupported answer includes form")
 			}
 			assertFormErrors(t, markup, map[string]string{}, widget.FieldErrors{})
 			visible := pageTestVisible(w.Body.String())
-			for _, want := range []string{ServiceName, "form-user@example.test", SignOutText, UnsupportedMediaTypeMessage} {
+			for _, want := range []string{"form-user@example.test", SignOutText, UnsupportedMediaTypeMessage} {
 				if !strings.Contains(visible, want) {
 					t.Errorf("unsupported chrome lacks %q", want)
 				}
 			}
-			back, signOut := false, false
+			pageTestChrome(t, w.Body.String(), r)
+			back := false
 			for _, span := range pageTestTags(markup, "a", false) {
 				href, _ := pageTestAttribute(markup[span[0]:span[1]], "href")
 				back = back || href == "/widgets"
-				ends := pageTestTags(markup[span[1]:], "a", true)
-				if href == SignOutURL(r.Host, "") && len(ends) > 0 && pageTestNormalize(markup[span[1]:span[1]+ends[0][0]]) == SignOutText {
-					signOut = true
-				}
 			}
-			if !back || !signOut {
-				t.Errorf("unsupported answer missing chrome links: back=%v sign-out=%v", back, signOut)
+			if !back {
+				t.Error("unsupported answer missing return link")
 			}
+
 		})
 	}
 }
@@ -689,7 +691,7 @@ type formFailingReader struct{}
 
 func (formFailingReader) Read([]byte) (int, error) { return 0, errors.New("broken body") }
 
-// R-NSMR-4LUH R-NZY5-F8AN R-W6KI-ER6B
+// R-NZY5-F8AN R-W6KI-ER6B
 func TestFormAnswerSetAndAcceptIndependence(t *testing.T) {
 	for _, tc := range []struct {
 		name, identity, mediaType, body string
@@ -720,11 +722,6 @@ func TestFormAnswerSetAndAcceptIndependence(t *testing.T) {
 				Handler(widget.NewStore(), io.Discard).ServeHTTP(w, r)
 				if w.Code != tc.want {
 					t.Errorf("status=%d, want=%d", w.Code, tc.want)
-				}
-				for key := range w.Header() {
-					if strings.EqualFold(key, "Set-Cookie") {
-						t.Error("POST answer carries Set-Cookie")
-					}
 				}
 				mediaType, _, _ := strings.Cut(w.Header().Get("Content-Type"), ";")
 				if strings.EqualFold(strings.TrimSpace(mediaType), "application/json") {

@@ -1,6 +1,6 @@
 {{define "form"}}
 <section class="card">
-<header><h2>Add widget</h2></header>
+<header><h2 class="text-md">Add widget</h2></header>
 <form method="post" action="/widgets" enctype="application/x-www-form-urlencoded">
 <label for="widget-name">Name</label>
 <input id="widget-name" type="text" name="name" {{attr "value" .Submission.Name}}{{if .Errors.Name}} aria-describedby="name-error"{{end}}>
@@ -13,7 +13,7 @@
 {{range .Statuses}}<option {{attr "value" (printf "%s" .)}}{{if eq (printf "%s" .) $.SelectedStatus}} selected="selected"{{end}}>{{esc .}}</option>{{end}}
 </select>
 {{if .Errors.Status}}<span id="status-error">{{esc .Errors.Status}}</span>{{end}}
-<button type="submit">Add widget</button>
+<button type="submit">{{plusIcon}}Add widget</button>
 </form>
 </section>
 {{end}}

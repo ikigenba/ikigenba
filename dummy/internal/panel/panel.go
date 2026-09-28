@@ -37,11 +37,17 @@ const MethodNotAllowedMessage = "That method is not allowed here."
 // UnsupportedMediaTypeMessage reports an unsupported form encoding.
 const UnsupportedMediaTypeMessage = "That media type is not supported."
 
-// SignOutText labels the chrome's sign-out link.
+// SignOutText labels the chrome's sign-out button.
 const SignOutText = "Sign out"
 
-// LocalSignOutURL is auth's local development origin.
-const LocalSignOutURL = "http://localhost:3001/"
+// LocalLogoutURL is auth's local development logout endpoint.
+const LocalLogoutURL = "http://localhost:3001/logout"
+
+// LogoutIcon draws the chrome sign-out button.
+const LogoutIcon = `<svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg>`
+
+// PlusIcon draws the widget creation button.
+const PlusIcon = `<svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5l0 14"/><path d="M5 12l14 0"/></svg>`
 
 //go:embed templates/*.html
 var templateFiles embed.FS
@@ -55,22 +61,22 @@ type handler struct {
 
 // Handler constructs a panel whose requests share s.
 func Handler(s *widget.Store, stderr io.Writer) http.Handler {
-	return &handler{store: s, stderr: stderr, templates: template.Must(template.New("panel").Funcs(template.FuncMap{"attr": safeAttribute, "esc": escapeText}).ParseFS(templateFiles, "templates/*.html"))}
+	return &handler{store: s, stderr: stderr, templates: template.Must(template.New("panel").Funcs(template.FuncMap{"attr": safeAttribute, "esc": escapeText, "plusIcon": func() string { return PlusIcon }}).ParseFS(templateFiles, "templates/*.html"))}
 }
 
-// SignOutURL derives auth's root from the request host and strict proxy scheme.
-func SignOutURL(host, forwardedProto string) string {
+// LogoutURL derives auth's logout endpoint from the request host and strict proxy scheme.
+func LogoutURL(host, forwardedProto string) string {
 	if i := strings.LastIndexByte(host, ':'); i >= 0 {
 		host = host[:i]
 	}
 	if !strings.HasPrefix(host, "dummy.") || len(host) == len("dummy.") {
-		return LocalSignOutURL
+		return LocalLogoutURL
 	}
 	scheme := "https"
 	if forwardedProto == "http" || forwardedProto == "https" {
 		scheme = forwardedProto
 	}
-	return scheme + "://auth." + strings.TrimPrefix(host, "dummy.") + "/"
+	return scheme + "://auth." + strings.TrimPrefix(host, "dummy.") + "/logout"
 }
 
 // safeAttribute is only called with template-owned attribute names. Escaping

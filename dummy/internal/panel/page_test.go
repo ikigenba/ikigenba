@@ -177,7 +177,7 @@ func TestPageTextProcedures(t *testing.T) {
 }
 
 // R-ML16-47JW R-XH4O-AY7C R-LBS0-ECOZ R-LCZW-S4FO R-LE7T-5W6D
-// R-ULUZ-4YJX R-LGNL-XFNR R-M1DW-FJ9K
+// R-V4W1-QTA8 R-V63Y-4L0X R-M1DW-FJ9K
 func TestPagePublicDeclarations(t *testing.T) {
 	construct := func(f func(*widget.Store, io.Writer) http.Handler) http.Handler {
 		return f(widget.NewStore(), io.Discard)
@@ -185,13 +185,14 @@ func TestPagePublicDeclarations(t *testing.T) {
 	if construct(Handler) == nil {
 		t.Fatal("nil handler")
 	}
-	derive := SignOutURL
-	if derive("localhost", "") != LocalSignOutURL {
+	type logoutURLFunc func(string, string) string
+	derive := logoutURLFunc(LogoutURL)
+	if derive("localhost", "") != LocalLogoutURL {
 		t.Fatal("derivation function")
 	}
-	const service, missing, method, notFound, notAllowed, unsupported, signOut, local = ServiceName, MissingIdentityBody, MethodNotAllowedBody, NotFoundMessage, MethodNotAllowedMessage, UnsupportedMediaTypeMessage, SignOutText, LocalSignOutURL
+	const service, missing, method, notFound, notAllowed, unsupported, signOut, local = ServiceName, MissingIdentityBody, MethodNotAllowedBody, NotFoundMessage, MethodNotAllowedMessage, UnsupportedMediaTypeMessage, SignOutText, LocalLogoutURL
 	got := []string{service, missing, method, notFound, notAllowed, unsupported, signOut, local}
-	want := []string{"dummy", "identity header missing\n", "method not allowed\n", "That page was not found.", "That method is not allowed here.", "That media type is not supported.", "Sign out", "http://localhost:3001/"}
+	want := []string{"dummy", "identity header missing\n", "method not allowed\n", "That page was not found.", "That method is not allowed here.", "That media type is not supported.", "Sign out", "http://localhost:3001/logout"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("constants: %#v", got)
 	}
@@ -202,23 +203,23 @@ func TestPagePublicDeclarations(t *testing.T) {
 	}
 }
 
-// R-KVQY-TCHV
-func TestPageSignOutURL(t *testing.T) {
+// R-V7BU-ICRM
+func TestPageLogoutURL(t *testing.T) {
 	cases := []struct{ host, proto, want string }{
-		{"dummy.space.test", "http", "http://auth.space.test/"},
-		{"dummy.space.test:8443", "https", "https://auth.space.test/"},
-		{"dummy.dummy.space.test:bad", "http", "http://auth.dummy.space.test/"},
-		{"dummy.space:part:last", "http", "http://auth.space:part/"},
-		{"dummy.x:", "http", "http://auth.x/"},
-		{"dummy.", "http", LocalSignOutURL}, {"dummy.:80", "https", LocalSignOutURL},
-		{"127.0.0.1:3000", "https", LocalSignOutURL}, {"Dummy.space", "http", LocalSignOutURL},
-		{"[::1]:3000", "http", LocalSignOutURL}, {"", "http", LocalSignOutURL},
+		{"dummy.space.test", "http", "http://auth.space.test/logout"},
+		{"dummy.space.test:8443", "https", "https://auth.space.test/logout"},
+		{"dummy.dummy.space.test:bad", "http", "http://auth.dummy.space.test/logout"},
+		{"dummy.space:part:last", "http", "http://auth.space:part/logout"},
+		{"dummy.x:", "http", "http://auth.x/logout"},
+		{"dummy.", "http", LocalLogoutURL}, {"dummy.:80", "https", LocalLogoutURL},
+		{"127.0.0.1:3000", "https", LocalLogoutURL}, {"Dummy.space", "http", LocalLogoutURL},
+		{"[::1]:3000", "http", LocalLogoutURL}, {"", "http", LocalLogoutURL},
 	}
 	for _, proto := range []string{"", "HTTPS", "https, http", " https", "https ", "javascript:alert(1)"} {
-		cases = append(cases, struct{ host, proto, want string }{"dummy.space.test", proto, "https://auth.space.test/"})
+		cases = append(cases, struct{ host, proto, want string }{"dummy.space.test", proto, "https://auth.space.test/logout"})
 	}
 	for _, tc := range cases {
-		if got := SignOutURL(tc.host, tc.proto); got != tc.want {
+		if got := LogoutURL(tc.host, tc.proto); got != tc.want {
 			t.Errorf("(%q,%q): %q want %q", tc.host, tc.proto, got, tc.want)
 		}
 	}
@@ -365,7 +366,7 @@ func pageTestDocuments() []*http.Request {
 	}
 }
 
-// R-IWKC-JVY4 R-KKRV-DETM R-XKSD-G9FF R-KTB6-1T0H
+// R-IWKC-JVY4 R-KKRV-DETM R-VAZJ-NNZP R-KTB6-1T0H
 func TestPageDocumentChromeAndAttributes(t *testing.T) {
 	for _, r := range pageTestDocuments() {
 		r.Header.Set("X-User-Email", "reader &lt; <b>\" &\t \n other@example.test")
@@ -386,17 +387,7 @@ func TestPageDocumentChromeAndAttributes(t *testing.T) {
 				t.Fatalf("chrome missing %q in %q", want, visible)
 			}
 		}
-		found := false
-		for _, span := range pageTestTags(stripped, "a", false) {
-			href, ok := pageTestAttribute(stripped[span[0]:span[1]], "href")
-			ends := pageTestTags(stripped[span[1]:], "a", true)
-			if ok && href == SignOutURL(r.Host, r.Header.Get("X-Forwarded-Proto")) && len(ends) > 0 && pageTestNormalize(stripped[span[1]:span[1]+ends[0][0]]) == SignOutText {
-				found = true
-			}
-		}
-		if !found {
-			t.Fatalf("sign out link mismatch for %q: %s", r.Host, body)
-		}
+		pageTestChrome(t, body, r)
 		pageTestAttributeInvariants(t, body)
 	}
 	// The fragment and bare faults do not belong to the HTML-document class.
@@ -523,7 +514,7 @@ func TestPageNamedAttributesHaveOneQuotedOccurrence(t *testing.T) {
 	pageTestAttributeInvariants(t, fragment.Body.String())
 }
 
-// R-RP4V-R2B5
+// R-VH31-KIP6
 func TestPageRequestValuesPreserveDocumentStructure(t *testing.T) {
 	base := widget.Submission{Name: strings.Repeat("n", widget.MaxNameRunes+1), Count: "bad", Status: "archived"}
 	attack := `"><form><script>bad</script></form>`
@@ -569,7 +560,7 @@ func TestPageRequestValuesPreserveDocumentStructure(t *testing.T) {
 	}
 }
 
-// R-Y32V-6TJU R-Y4AR-KLAJ R-6TWQ-SJY0 R-KWYV-748K
+// R-Y32V-6TJU R-Y4AR-KLAJ R-6TWQ-SJY0 R-VOEF-V55C
 func TestPageScriptAndDocumentOrder(t *testing.T) {
 	requests := append(pageTestDocuments(), pageTestRequest("GET", "/widgets/table"), pageTestRequest("POST", "/widgets/table"), pageTestRequest("GET", "/"))
 	missing := pageTestRequest("GET", "/widgets")
@@ -601,7 +592,7 @@ func TestPageScriptAndDocumentOrder(t *testing.T) {
 		if _, has := pageTestAttribute(body[starts[0][0]:starts[0][1]], "src"); has {
 			t.Fatal("external script")
 		}
-		for _, literal := range []string{"/widgets/table", "widgets-table"} {
+		for _, literal := range []string{"/widgets/table", "widgets-table", "5000"} {
 			if !strings.Contains(script, literal) {
 				t.Fatalf("script lacks %s", literal)
 			}
@@ -611,8 +602,9 @@ func TestPageScriptAndDocumentOrder(t *testing.T) {
 		if len(tables) != 1 || len(tableEnds) != 1 || (starts[0][0] > tables[0][0] && starts[0][0] < tableEnds[0][1]) {
 			t.Fatal("script inside table")
 		}
-		forms := pageTestTags(stripped, "form", false)
-		strippedEnds := pageTestTags(stripped, "table", true)
+		content := pageTestContent(t, stripped)
+		forms := pageTestTags(content, "form", false)
+		strippedEnds := pageTestTags(content, "table", true)
 		if len(forms) != 1 || len(strippedEnds) != 1 || forms[0][0] < strippedEnds[0][1] {
 			t.Fatal("form not below table")
 		}
@@ -685,55 +677,85 @@ func TestPageCallerBytesCannotChangeMarkup(t *testing.T) {
 	}
 }
 
-// R-XICK-OPY1 R-XJKH-2HOQ R-XKSD-G9FF
+// R-XICK-OPY1 R-V9RN-9W90 R-VAZJ-NNZP R-VC7G-1FQE
 func TestPageChromeHeader(t *testing.T) {
 	for _, r := range pageTestDocuments() {
 		for _, email := range []string{"", " one\t& <two>  three "} {
 			r.Header.Set("X-User-Email", email)
-			body := pageTestStrip(pageTestResponse(Handler(widget.NewStore(), io.Discard), r).Body.String())
-			bodies := pageTestTags(body, "body", false)
-			if len(bodies) != 1 {
-				t.Fatalf("body start count: %d", len(bodies))
-			}
-			headers := pageTestTags(body, "header", false)
-			if len(headers) < 1 || strings.TrimSpace(body[bodies[0][1]:headers[0][0]]) != "" {
-				t.Fatal("chrome header does not immediately follow body")
-			}
-			ends := pageTestTags(body[headers[0][1]:], "header", true)
-			if len(ends) == 0 {
-				t.Fatal("chrome header has no end")
-			}
-			chrome := body[headers[0][0] : headers[0][1]+ends[0][1]]
-			if len(pageTestTags(chrome, "header", false)) != 1 {
-				t.Fatal("nested header in chrome")
-			}
-			strong, spans, links := pageTestTags(chrome, "strong", false), pageTestTags(chrome, "span", false), pageTestTags(chrome, "a", false)
-			if len(strong) != 1 || len(spans) != 1 || len(links) != 1 || strong[0][0] >= spans[0][0] || spans[0][0] >= links[0][0] {
-				t.Fatalf("chrome order: %q", chrome)
-			}
-			if class, _ := pageTestAttribute(chrome[strong[0][0]:strong[0][1]], "class"); class != "mark" {
-				t.Fatal("mark class")
-			}
-			if service, _ := pageTestAttribute(chrome[strong[0][0]:strong[0][1]], "data-service"); service != ServiceName {
-				t.Fatal("mark service")
-			}
-			for _, item := range []struct {
-				open      [2]int
-				tag, want string
-			}{
-				{strong[0], "strong", "ikigenba"},
-				{spans[0], "span", strings.Join(strings.Fields(email), " ")},
-				{links[0], "a", SignOutText},
-			} {
-				closingTags := pageTestTags(chrome[item.open[1]:], item.tag, true)
-				if len(closingTags) == 0 || pageTestNormalize(chrome[item.open[1]:item.open[1]+closingTags[0][0]]) != item.want {
-					t.Fatalf("chrome %s text: %q", item.tag, chrome)
-				}
-			}
-			if href, _ := pageTestAttribute(chrome[links[0][0]:links[0][1]], "href"); href != SignOutURL(r.Host, r.Header.Get("X-Forwarded-Proto")) {
-				t.Fatal("sign out URL")
-			}
+			pageTestChrome(t, pageTestResponse(Handler(widget.NewStore(), io.Discard), r).Body.String(), r)
 		}
+	}
+}
+
+func pageTestChromeSpan(t *testing.T, raw string) string {
+	t.Helper()
+	body := pageTestStrip(raw)
+	bodies := pageTestTags(body, "body", false)
+	headers := pageTestTags(body, "header", false)
+	if len(bodies) != 1 || len(headers) < 1 || strings.TrimSpace(body[bodies[0][1]:headers[0][0]]) != "" {
+		t.Fatal("chrome header does not immediately follow body")
+	}
+	ends := pageTestTags(body[headers[0][1]:], "header", true)
+	if len(ends) == 0 {
+		t.Fatal("chrome header has no end")
+	}
+	return body[headers[0][0] : headers[0][1]+ends[0][1]]
+}
+
+func pageTestChrome(t *testing.T, raw string, r *http.Request) {
+	t.Helper()
+	chrome := pageTestChromeSpan(t, raw)
+	if len(pageTestTags(chrome, "header", false)) != 1 {
+		t.Fatal("nested header in chrome")
+	}
+	strong, spans, forms := pageTestTags(chrome, "strong", false), pageTestTags(chrome, "span", false), pageTestTags(chrome, "form", false)
+	if len(strong) != 1 || len(spans) != 1 || strong[0][0] >= spans[0][0] {
+		t.Fatalf("chrome order: %q", chrome)
+	}
+	if class, _ := pageTestAttribute(chrome[strong[0][0]:strong[0][1]], "class"); class != "mark" {
+		t.Fatal("mark class")
+	}
+	if service, _ := pageTestAttribute(chrome[strong[0][0]:strong[0][1]], "data-service"); service != ServiceName {
+		t.Fatal("mark service")
+	}
+	for _, item := range []struct {
+		open      [2]int
+		tag, want string
+	}{
+		{strong[0], "strong", "ikigenba"}, {spans[0], "span", strings.Join(strings.Fields(r.Header.Get("X-User-Email")), " ")},
+	} {
+		closingTags := pageTestTags(chrome[item.open[1]:], item.tag, true)
+		if len(closingTags) == 0 || pageTestNormalize(chrome[item.open[1]:item.open[1]+closingTags[0][0]]) != item.want {
+			t.Fatalf("chrome %s text: %q", item.tag, chrome)
+		}
+		if item.tag == "strong" && item.open[1]+closingTags[0][1] > spans[0][0] {
+			t.Fatal("chrome items overlap")
+		}
+	}
+	emailEnds := pageTestTags(chrome[spans[0][1]:], "span", true)
+	emailEnd := spans[0][1] + emailEnds[0][1]
+	want := `<button class="secondary small" type="submit">` + LogoutIcon + SignOutText + `</button></form>`
+	found := false
+	for _, form := range forms {
+		if form[0] < emailEnd {
+			continue
+		}
+		formTag := chrome[form[0]:form[1]]
+		qualifies := true
+		for name, value := range map[string]string{"class": "inline", "method": "post", "action": LogoutURL(r.Host, r.Header.Get("X-Forwarded-Proto"))} {
+			got, ok := pageTestAttribute(formTag, name)
+			qualifies = qualifies && ok && got == value
+		}
+		if qualifies && strings.HasPrefix(chrome[form[1]:], want) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("missing ordered logout form: %q", chrome)
+	}
+	if len(pageTestTags(chrome, "a", false)) != 0 {
+		t.Fatal("chrome contains anchor")
 	}
 }
 
@@ -794,7 +816,7 @@ func TestPageDocumentHeadAndServiceSpelling(t *testing.T) {
 	}
 }
 
-// R-XS3R-QVVL R-XTBO-4NMA R-XVRG-W73O R-XWZD-9YUD R-XY79-NQL2 R-XZF6-1IBR
+// R-XS3R-QVVL R-XTBO-4NMA R-XVRG-W73O R-XWZD-9YUD R-XY79-NQL2 R-VN6J-HDEN
 func TestPagePanelLayout(t *testing.T) {
 	for _, r := range []*http.Request{pageTestRequest("GET", "/widgets"), pageTestFormRequest(widget.Submission{Name: "", Count: "bad", Status: "archived"})} {
 		body := pageTestStrip(pageTestResponse(Handler(widget.NewStore(), io.Discard), r).Body.String())
@@ -848,14 +870,16 @@ func TestPagePanelLayout(t *testing.T) {
 		if len(bodyStarts) != 1 || len(bodyEnds) != 1 || bodyEnds[0][0] <= panelEnd {
 			t.Fatal("body frame")
 		}
-		outside := body[bodyStarts[0][1]:headers[0][0]] + body[headerEnds[0][1]:panels[0][0]] + body[panelEnd+len("</div>"):bodyEnds[0][0]]
-		if pageTestNormalize(outside) != "Widgets" {
-			t.Fatalf("extra outside text: %q", outside)
+		content := pageTestContent(t, body)
+		heading := `<div class="section-head"><div><h1>Widgets</h1><p>3 widgets · refreshes every 5 seconds</p></div></div>`
+		trimmed := strings.Trim(content, " \t\n\v\f\r")
+		if !strings.HasPrefix(trimmed, heading) || strings.TrimLeft(trimmed[len(heading):], " \t\n\v\f\r") != body[panels[0][0]:panelEnd+len("</div>")] {
+			t.Fatalf("page content: %q", content)
 		}
 	}
 }
 
-// R-F30C-CO4I R-F488-QFV7 R-6TWQ-SJY0 R-F7VX-VR3A R-F5G5-47LW R-F6O1-HZCL
+// R-F30C-CO4I R-F488-QFV7 R-6TWQ-SJY0 R-F7VX-VR3A R-F5G5-47LW R-VEN8-SZ7S
 func TestPageDocumentMarkupSafety(t *testing.T) {
 	requests := pageTestDocuments()
 	attack := `"><svg onload="evil()"><script src="https://elsewhere.test/x">`
@@ -878,7 +902,7 @@ func TestPageDocumentMarkupSafety(t *testing.T) {
 				nameEnd++
 			}
 			name := strings.ToLower(matched[1:nameEnd])
-			if name == "svg" || name == "math" {
+			if name == "math" || name == "svg" && !strings.HasPrefix(body[at[0]:], LogoutIcon) && !strings.HasPrefix(body[at[0]:], PlusIcon) {
 				t.Fatalf("foreign-content tag: %q", matched)
 			}
 			for _, entry := range attribute.FindAllStringSubmatch(matched[nameEnd:len(matched)-1], -1) {
@@ -1436,6 +1460,219 @@ func TestStylesheetReferencesStayOnOrigin(t *testing.T) {
 		for _, value := range cssReferenceValues(content) {
 			if !cssReferenceAllowed(value) {
 				t.Errorf("%s has external reference %q", entry.Name(), value)
+			}
+		}
+	}
+}
+
+// R-VIAX-YAFV
+func pageTestContentValue(raw string) (string, bool) {
+	body := pageTestStrip(raw)
+	starts := pageTestTags(body, "main", false)
+	if len(starts) == 0 {
+		return "", false
+	}
+	ends := pageTestTags(body[starts[0][1]:], "main", true)
+	if len(ends) == 0 {
+		return "", false
+	}
+	return body[starts[0][1] : starts[0][1]+ends[0][0]], true
+}
+
+func pageTestContent(t *testing.T, raw string) string {
+	t.Helper()
+	content, ok := pageTestContentValue(raw)
+	if !ok {
+		t.Fatal("missing page content")
+	}
+	return content
+}
+
+// R-VIAX-YAFV
+func TestPageContentProcedure(t *testing.T) {
+	for _, tc := range []struct {
+		raw, want string
+		ok        bool
+	}{
+		{`<main><p>first</p><script>hidden</script></main><main>second</main>`, `<p>first</p>`, true},
+		{`<script><main>hidden</main></script><MAIN class="content">first</MAIN>`, `first`, true},
+		{`<main></main>`, "", true},
+		{`</main><main>unfinished`, "", false},
+		{`<mainly>other</mainly>`, "", false},
+		{`<p>absent</p>`, "", false},
+	} {
+		if got, ok := pageTestContentValue(tc.raw); got != tc.want || ok != tc.ok {
+			t.Fatalf("content of %q = (%q,%v)", tc.raw, got, ok)
+		}
+	}
+}
+
+// R-V8JQ-W4IB
+func TestPageIconDeclarations(t *testing.T) {
+	type iconString string
+	const logout iconString = LogoutIcon
+	const plus iconString = PlusIcon
+
+	if logout != iconString(`<svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg>`) || plus != iconString(`<svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5l0 14"/><path d="M5 12l14 0"/></svg>`) {
+		t.Fatal("icon constants")
+	}
+}
+
+// R-VJIU-C26K R-VKQQ-PTX9
+func TestPageMainAndFailureContent(t *testing.T) {
+	for _, r := range pageTestDocuments() {
+		w := pageTestResponse(Handler(widget.NewStore(), io.Discard), r)
+		body := pageTestStrip(w.Body.String())
+		starts, ends := pageTestTags(body, "main", false), pageTestTags(body, "main", true)
+		bodies, bodyEnds := pageTestTags(body, "body", false), pageTestTags(body, "body", true)
+		if len(starts) != 1 || len(ends) != 1 || len(bodies) != 1 || len(bodyEnds) != 1 || starts[0][1] > ends[0][0] {
+			t.Fatal("main/body shape")
+		}
+		chrome := pageTestChromeSpan(t, body)
+		inside := body[bodies[0][1]:bodyEnds[0][0]]
+		prefix := strings.TrimLeft(inside, " \t\n\v\f\r")
+		if !strings.HasPrefix(prefix, chrome) {
+			t.Fatal("body chrome order")
+		}
+		after := strings.TrimLeft(prefix[len(chrome):], " \t\n\v\f\r")
+		main := body[starts[0][0]:ends[0][1]]
+		if !strings.HasPrefix(after, main) || !formASCIIWhitespace(after[len(main):]) {
+			t.Fatal("content outside main")
+		}
+		content := pageTestContent(t, body)
+		if w.Code == 404 || w.Code == 405 || w.Code == 415 {
+			message := map[int]string{404: NotFoundMessage, 405: MethodNotAllowedMessage, 415: UnsupportedMediaTypeMessage}[w.Code]
+			if !strings.Contains(pageTestNormalize(content), message) {
+				t.Fatal("failure message outside main")
+			}
+			back := false
+			for _, span := range pageTestTags(content, "a", false) {
+				value, ok := pageTestAttribute(content[span[0]:span[1]], "href")
+				back = back || ok && value == "/widgets"
+			}
+			if !back {
+				t.Fatal("failure return link outside main")
+			}
+		}
+	}
+}
+
+// R-VLYN-3LNY
+func pageTestHeading(n int) string {
+	noun := "widgets"
+	if n == 1 {
+		noun = "widget"
+	}
+	return fmt.Sprintf(`<div class="section-head"><div><h1>Widgets</h1><p>%d %s · refreshes every 5 seconds</p></div></div>`, n, noun)
+}
+
+// R-VLYN-3LNY
+func TestPageHeadingProcedure(t *testing.T) {
+	for _, tc := range []struct {
+		n    int
+		want string
+	}{
+		{0, `<div class="section-head"><div><h1>Widgets</h1><p>0 widgets · refreshes every 5 seconds</p></div></div>`},
+		{1, `<div class="section-head"><div><h1>Widgets</h1><p>1 widget · refreshes every 5 seconds</p></div></div>`},
+		{12, `<div class="section-head"><div><h1>Widgets</h1><p>12 widgets · refreshes every 5 seconds</p></div></div>`},
+	} {
+		if got := pageTestHeading(tc.n); got != tc.want {
+			t.Fatalf("heading for %d = %q", tc.n, got)
+		}
+	}
+}
+
+// R-VLYN-3LNY R-VN6J-HDEN
+func TestPageHeadingTracksTableRows(t *testing.T) {
+	for _, added := range []int{0, 1, 7} {
+		store := widget.NewStore()
+		for i := 0; i < added; i++ {
+			if _, errs := store.Create(widget.Submission{Name: fmt.Sprintf("added-%d", i), Count: "1", Status: "active"}); errs.Any() {
+				t.Fatal(errs)
+			}
+		}
+		for _, r := range []*http.Request{pageTestRequest("GET", "/widgets"), pageTestFormRequest(widget.Submission{Count: "bad"})} {
+			body := pageTestResponse(Handler(store, io.Discard), r).Body.String()
+			content := pageTestContent(t, body)
+			table := formTable(t, body)
+			n := 0
+			for _, row := range pageTestTags(table, "tr", false) {
+				ends := pageTestTags(table[row[1]:], "tr", true)
+				if len(ends) > 0 && len(pageTestTags(table[row[1]:row[1]+ends[0][0]], "td", false)) > 0 {
+					n++
+				}
+			}
+			heading := pageTestHeading(n)
+			trimmed := strings.Trim(content, " \t\n\v\f\r")
+			if !strings.HasPrefix(trimmed, heading) {
+				t.Fatalf("heading for %d rows: %q", n, content)
+			}
+			rest := strings.TrimLeft(trimmed[len(heading):], " \t\n\v\f\r")
+			startTags := pageTestTags(rest, "div", false)
+			endTags := pageTestTags(rest, "div", true)
+			depth, end := 0, -1
+			events := make([]struct {
+				at    [2]int
+				delta int
+			}, 0, len(startTags)+len(endTags))
+			for _, at := range startTags {
+				events = append(events, struct {
+					at    [2]int
+					delta int
+				}{at, 1})
+			}
+			for _, at := range endTags {
+				events = append(events, struct {
+					at    [2]int
+					delta int
+				}{at, -1})
+			}
+			slices.SortFunc(events, func(a, b struct {
+				at    [2]int
+				delta int
+			}) int {
+				return a.at[0] - b.at[0]
+			})
+			for _, event := range events {
+				depth += event.delta
+				if depth == 0 {
+					end = event.at[1]
+					break
+				}
+			}
+			if len(startTags) == 0 || startTags[0][0] != 0 {
+				t.Fatal("missing panel wrapper after heading")
+			}
+			class, ok := pageTestAttribute(rest[:startTags[0][1]], "class")
+			if !ok || class != "panel" || end != len(rest) {
+				t.Fatalf("heading/wrapper content: %q", rest)
+			}
+		}
+	}
+}
+
+// R-VDFC-F7H3
+func TestPageResponsesNeverSetCookie(t *testing.T) {
+	for _, path := range []string{"/", "/widgets", "/widgets/table", "/logout", "/unknown", "/assets/theme.css", "/assets/OFL.txt", "/assets/absent"} {
+		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "OPTIONS"} {
+			for _, identity := range []string{"", "user"} {
+				for _, media := range []string{"application/json", "application/x-www-form-urlencoded"} {
+					for _, body := range []string{"name=fresh&count=1&status=active", "name=&count=bad&status=archived"} {
+						for _, validator := range []string{"", "*"} {
+							r := httptest.NewRequest(method, path, strings.NewReader(body))
+							r.Header.Set("X-User-Id", identity)
+							r.Header.Set("Content-Type", media)
+							r.Header.Set("Cookie", "session=present")
+							r.Header.Set("If-None-Match", validator)
+							w := pageTestResponse(Handler(widget.NewStore(), io.Discard), r)
+							for key := range w.Header() {
+								if strings.EqualFold(key, "Set-Cookie") {
+									t.Fatalf("cookie in %s %s %d", method, path, w.Code)
+								}
+							}
+						}
+					}
+				}
 			}
 		}
 	}

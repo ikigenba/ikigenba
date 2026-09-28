@@ -171,7 +171,7 @@ func tableTestHasASCIIClass(value, name string) bool {
 }
 
 func TestTableCountAndStatusMarkup(t *testing.T) {
-	// R-AU0W-ONFN R-AV8T-2F6C R-AWGP-G6X1 R-QR6J-7N0Z
+	// R-LNX6-XHWY R-AV8T-2F6C R-AWGP-G6X1 R-QR6J-7N0Z
 	store := widget.NewStore()
 	for _, status := range widget.Statuses() {
 		if _, errs := store.Create(widget.Submission{Name: "widget " + string(status), Count: "7", Status: string(status)}); errs.Any() {
@@ -219,9 +219,15 @@ func TestTableCountAndStatusMarkup(t *testing.T) {
 			}
 		}
 		if rowIndex == 0 {
-			closing := pageTestTags(row[cells[1][1]:], "th", true)
-			if len(closing) == 0 || pageTestNormalize(row[cells[1][1]:cells[1][1]+closing[0][0]]) != "Count" {
-				t.Error("second header cell does not read Count")
+			ends := pageTestTags(row, "th", true)
+			if len(cells) != 3 || len(ends) != 3 {
+				t.Fatalf("header cells: starts=%d ends=%d", len(cells), len(ends))
+			}
+			for i, want := range []string{`<th>Name</th>`, `<th class="num">Count</th>`, `<th>Status</th>`} {
+				following := pageTestTags(row[cells[i][1]:], "th", true)
+				if len(following) == 0 || row[cells[i][0]:cells[i][1]+following[0][1]] != want {
+					t.Errorf("header cell %d: %q", i, row)
+				}
 			}
 			continue
 		}
@@ -469,5 +475,23 @@ func TestTableTransportHeadParity(t *testing.T) {
 				t.Errorf("Content-Length = %q, want %d", get.headers.Get("Content-Length"), len(get.body))
 			}
 		})
+	}
+}
+
+// R-9PSS-27JH
+func TestTableFragmentExcludesPageHeading(t *testing.T) {
+	store := widget.NewStore()
+	for _, extra := range []bool{false, true} {
+		if extra {
+			tableTestCreate(t, store, "one more")
+		}
+		h := Handler(store, io.Discard)
+		fragment := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "").Body.String()
+		page := tableTestRequest(h, "GET", "/widgets", tableTestIdentity(), "").Body.String()
+		for _, body := range []string{fragment, tableTestPageSpan(t, page)} {
+			if len(pageTestTags(body, "h1", false)) != 0 || len(pageTestTags(body, "p", false)) != 0 {
+				t.Fatalf("page heading in fragment: %q", body)
+			}
+		}
 	}
 }
