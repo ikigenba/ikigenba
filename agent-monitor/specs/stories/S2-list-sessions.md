@@ -1,7 +1,10 @@
 # Stories — listing live root sessions
 
-`agent-monitor list <harness>` prints a snapshot of the live root sessions of
-one harness on this machine and exits; it does not watch or redraw. The
+`agent-monitor list [-f] <harness>` shows the live root sessions of one
+harness on this machine. By default it prints a snapshot and exits; the
+snapshot does not watch or redraw. With `-f` or `--follow` it follows: it
+keeps the list up to date until the developer presses ctrl+c, each view
+being exactly the snapshot `list` would print at that moment. The
 harness is `claude` (Claude Code), `codex` (OpenAI Codex CLI), or `grok` (Grok
 Build CLI), spelled exactly so. A session is live when the harness registers
 it as running in its default location under `$HOME`, whichever client started
@@ -29,7 +32,8 @@ ordered by session id, ascending byte by byte. CWD and TITLE are printed
 escaped as agent-monitor echoes an argument in a diagnostic (a tab is `\t`, a
 newline `\n`, a backslash `\\`, a right-to-left override `\u202e`), without
 the quotes and with one difference: `'` is printed as typed. So every row is
-one line. `list` only reads: it takes no lock and changes nothing.
+one line. `list` only reads, following included: it takes no lock, changes
+nothing, and writes no file.
 
 ## A developer lists the live Claude Code sessions
 
@@ -304,6 +308,171 @@ Postconditions:
 - Nothing has changed.
 - No lock was taken.
 
+## A developer follows the live Claude Code sessions
+
+A developer keeps `list` running to watch sessions start, change, and end.
+Following starts exactly as the snapshot does: it prints the first snapshot,
+and every usage error and every error the snapshot would meet before its
+first output happens the same way, with the same text and exit code, and
+nothing is followed. Then, each time the snapshot would differ from the last
+one printed, one empty line and the whole new snapshot are appended; an
+identical snapshot is never printed twice in a row. Any change to the text
+counts: a STATUS or LAST ACTIVE that changes, a session that appears, a
+session that ends and drops out, and the list going empty, which is the
+header alone. A change is shown promptly after the file that records it
+changes, and a session whose process exits, which no file records, drops out
+within a couple of seconds. Following never ends by itself; ctrl+c ends it,
+and nothing more is written. Once following has started, a failure that would
+make the snapshot itself fail (the place the harness registers its live
+sessions cannot be read) does not end it: the last view stays, nothing is
+drawn from what could not be read, and it is read again at the next change.
+Anything the snapshot draws with a fallback is drawn exactly as the snapshot
+draws it, so every view is the snapshot at that moment whenever the snapshot
+would succeed. Only output that cannot be written ends it, with
+`agent-monitor: write error: <reason>` on stderr and exit 1.
+
+`-f` and `--follow` are the same option. It may stand anywhere after `list`,
+before or after the harness, and giving it more than once is the same as
+giving it once. It is not a harness, so it changes nothing else:
+`agent-monitor list -f claud` fails as an unknown harness, and
+`agent-monitor list -f` as a missing harness. It is an option of `list`, not
+of agent-monitor, so before `list` it is a top-level unknown option:
+`agent-monitor --follow list claude` fails with `agent-monitor: unknown
+option '--follow'`, and `agent-monitor -f list claude` with
+`agent-monitor: unknown option '-f'`.
+
+Here the sessions at the start are those of the story in which a developer
+lists the live Claude Code sessions. While it runs, session `7c2e9a41-…`'s
+registration changes its `status` to `idle`; then a new registration appears,
+`/home/dev/.claude/sessions/42310.json`:
+
+```
+{"pid":42310,"sessionId":"d2a8f613-5c07-4e9b-a1d4-8f3e6b0c7a52","cwd":"/home/dev/src/docs","status":"idle"}
+```
+
+whose transcript does not exist yet; then process 39107 exits; then the
+developer presses ctrl+c.
+
+Command:
+
+```
+$ agent-monitor list -f claude
+```
+
+```
+$ agent-monitor list --follow claude
+```
+
+```
+$ agent-monitor list claude -f
+```
+
+```
+$ agent-monitor list -f claude --follow
+```
+
+Options:
+
+- `-f`, `--follow`: keep the list up to date until interrupted.
+
+Output:
+
+```
+SESSION                               STATUS   LAST ACTIVE           CWD                 TITLE
+7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93  working  2026-09-23T23:52:10Z  /home/dev/src/shop  fix Bob's checkout
+b41f0c77-9e2a-4d18-8c3b-6a5e2f9d0c14  idle     2026-09-23T21:04:55Z  /home/dev/src/blog
+
+SESSION                               STATUS  LAST ACTIVE           CWD                 TITLE
+7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93  idle    2026-09-23T23:52:10Z  /home/dev/src/shop  fix Bob's checkout
+b41f0c77-9e2a-4d18-8c3b-6a5e2f9d0c14  idle    2026-09-23T21:04:55Z  /home/dev/src/blog
+
+SESSION                               STATUS  LAST ACTIVE           CWD                 TITLE
+7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93  idle    2026-09-23T23:52:10Z  /home/dev/src/shop  fix Bob's checkout
+b41f0c77-9e2a-4d18-8c3b-6a5e2f9d0c14  idle    2026-09-23T21:04:55Z  /home/dev/src/blog
+d2a8f613-5c07-4e9b-a1d4-8f3e6b0c7a52  idle    -                     /home/dev/src/docs
+
+SESSION                               STATUS  LAST ACTIVE           CWD                 TITLE
+7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93  idle    2026-09-23T23:52:10Z  /home/dev/src/shop  fix Bob's checkout
+d2a8f613-5c07-4e9b-a1d4-8f3e6b0c7a52  idle    -                     /home/dev/src/docs
+```
+
+Exits 0 when the developer presses ctrl+c. The text is on stdout; stderr is
+empty.
+
+Preconditions:
+
+- `bin/agent-monitor` exists.
+- `HOME` is `/home/dev`.
+- stdout is not a terminal.
+- At the start, the registrations, processes, and transcripts are exactly
+  those of the story in which a developer lists the live Claude Code
+  sessions.
+- Process 42310 is running and started no later than its session.
+
+Postconditions:
+
+- Nothing has changed.
+- No lock was taken.
+- No file was written.
+- No `*.key` file was read.
+
+## A developer follows the live sessions in a terminal
+
+When stdout is a terminal, the list is kept in place on the normal screen,
+not the alternate screen. Following starts by hiding the cursor, `ESC[?25l`,
+and each draw, the first included, is `ESC[H` and `ESC[2J`, cursor home and
+clear screen, followed by the snapshot. A draw happens only when the
+snapshot's text would differ from the one on screen, so a change to a file
+that leaves the text as it was draws nothing. When the developer presses
+ctrl+c, `ESC[?25h` shows the cursor again; the list ends with a newline, so
+the prompt starts on a fresh line below it. In the Output below, `ESC` stands
+for the one escape byte, 0x1b, and every other character is printed as shown.
+
+Here the sessions at the start are those of the story in which a developer
+lists the live Claude Code sessions. While it runs, a record with no
+`timestamp`, title metadata, is appended to session `7c2e9a41-…`'s
+transcript; then a record timestamped `2026-09-23T23:52:10.990Z`, the same
+second as its latest; then one timestamped `2026-09-23T23:53:41.305Z`; then
+the developer presses ctrl+c.
+
+Command:
+
+```
+$ agent-monitor list -f claude
+```
+
+Output:
+
+```
+ESC[?25lESC[HESC[2JSESSION                               STATUS   LAST ACTIVE           CWD                 TITLE
+7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93  working  2026-09-23T23:52:10Z  /home/dev/src/shop  fix Bob's checkout
+b41f0c77-9e2a-4d18-8c3b-6a5e2f9d0c14  idle     2026-09-23T21:04:55Z  /home/dev/src/blog
+ESC[HESC[2JSESSION                               STATUS   LAST ACTIVE           CWD                 TITLE
+7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93  working  2026-09-23T23:53:41Z  /home/dev/src/shop  fix Bob's checkout
+b41f0c77-9e2a-4d18-8c3b-6a5e2f9d0c14  idle     2026-09-23T21:04:55Z  /home/dev/src/blog
+ESC[?25h
+```
+
+The last line is `ESC[?25h` with no newline after it. Exits 0 when the
+developer presses ctrl+c. The text is on stdout; stderr is empty.
+
+Preconditions:
+
+- `bin/agent-monitor` exists.
+- `HOME` is `/home/dev`.
+- stdout is a terminal.
+- At the start, the registrations, processes, and transcripts are exactly
+  those of the story in which a developer lists the live Claude Code
+  sessions.
+
+Postconditions:
+
+- Nothing has changed.
+- No lock was taken.
+- No file was written.
+- No `*.key` file was read.
+- The screen shows the last list drawn, and the cursor is shown.
+
 ## A developer asks what list can do
 
 `--help` or `-h` anywhere after `list` prints the help of `list` and wins
@@ -337,7 +506,7 @@ Options:
 Output:
 
 ```
-Usage: agent-monitor list <harness>
+Usage: agent-monitor list [-f] <harness>
 
 List the live root sessions of one harness, newest activity first.
 
@@ -347,7 +516,8 @@ Harnesses:
   grok    Grok Build CLI
 
 Options:
-  -h, --help  print this help
+  -f, --follow  keep the list up to date until interrupted
+  -h, --help    print this help
 ```
 
 Exits 0. The text is on stdout; stderr is empty.
@@ -458,15 +628,15 @@ Postconditions:
 
 ## A developer gives list an unknown option
 
-The only option `list` takes is `--help` or `-h`; any other option after
-`list` is unknown, the top-level `--version` and `-V` included. The option is
-named and echoed exactly as a top-level unknown option is. Read left to
-right, an unknown option before the harness fails here, and an unknown
-option after a valid harness fails here too: `agent-monitor list claude
---bogus` fails with `agent-monitor: unknown option '--bogus'`. The
-`--no-color` that `tree` takes is unknown to `list` too: `agent-monitor list
---no-color claude` fails the same way, with `agent-monitor: unknown option
-'--no-color'`.
+The options `list` takes are `-f` or `--follow` and `--help` or `-h`; any
+other option after `list` is unknown, the top-level `--version` and `-V`
+included. The option is named and echoed exactly as a top-level unknown
+option is. Read left to right, an unknown option before the harness fails
+here, and an unknown option after a valid harness fails here too:
+`agent-monitor list claude --bogus` fails with `agent-monitor: unknown
+option '--bogus'`. The `--no-color` that `tree` takes is unknown to `list`
+too: `agent-monitor list --no-color claude` fails the same way, with
+`agent-monitor: unknown option '--no-color'`.
 
 Command:
 
@@ -496,6 +666,42 @@ Postconditions:
 
 - Nothing has changed.
 
+## A developer gives --follow a value
+
+`--follow` takes no value, and there is no `--name=value` form, so
+`--follow=x` is not `--follow`: it is an unknown option, named and echoed
+exactly as any other, and read left to right as any other. Short options do
+not bundle, so `-f=x` and `-fx` are unknown options too, `'-f=x'` and
+`'-fx'`.
+
+Command:
+
+```
+$ agent-monitor list --follow=x claude
+```
+
+```
+$ agent-monitor list claude --follow=x
+```
+
+Output:
+
+```
+agent-monitor: unknown option '--follow=x'
+
+see 'agent-monitor --help' for usage
+```
+
+Exits 2. The text is on stderr; stdout is empty.
+
+Preconditions:
+
+- `bin/agent-monitor` exists.
+
+Postconditions:
+
+- Nothing has changed.
+
 ## A developer's harness data cannot be read
 
 When the place the harness registers its live sessions exists but cannot be
@@ -510,12 +716,17 @@ unreadable Claude registry fails with `agent-monitor: cannot read
 /home/dev/.claude/sessions: permission denied`; for an index that is not
 valid JSON it is `not valid JSON`, as in `agent-monitor: cannot read
 /home/dev/.grok/active_sessions.json: not valid JSON`. A place that does not
-exist is not a failure: it means no live sessions.
+exist is not a failure: it means no live sessions. Following fails the same
+way when the place cannot be read at the start, and nothing is followed.
 
 Command:
 
 ```
 $ agent-monitor list grok
+```
+
+```
+$ agent-monitor list -f grok
 ```
 
 Output:

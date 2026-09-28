@@ -1,9 +1,11 @@
 # Stories — drawing the subagent tree of a session
 
-`agent-monitor tree [--no-color] <harness> <session-id>` prints a snapshot of
-one root session and every subagent it started, at every depth, and exits; it
-does not watch or redraw. The harness is `claude`, `codex`, or `grok`, spelled exactly
-so, as for `list`, and the session is named by its full session id. Any root
+`agent-monitor tree [-f] [--no-color] <harness> <session-id>` prints a snapshot
+of one root session and every subagent it started, at every depth, and exits:
+without `-f` it does not watch or redraw. With `-f`, or `--follow`, it follows
+the tree instead, as the end of this paragraph says. The harness is `claude`,
+`codex`, or `grok`, spelled exactly so, as for `list`, and the session is
+named by its full session id. Any root
 session of that harness found in its default location under `$HOME` is
 accepted, live or ended; a subagent is never a session, and `$HOME` is never
 guessed. The output is a tree drawn as the Unix `tree` command draws one: the
@@ -58,7 +60,35 @@ printed plain, each line of the tree ends with two spaces and its status word,
 as `└── ● [<id>] <label>  <status>`, and the key is the same text uncoloured.
 Unless a story says otherwise, its stdout is not a terminal, so its output is
 shown with colour off. `tree` only reads: it takes no lock and changes
-nothing.
+nothing. Following, the view is exactly the snapshot `tree` would print at
+that moment, by every rule above, colour included. When stdout is a terminal
+the view is drawn in the terminal's normal screen, not its alternate screen:
+following starts by hiding the cursor, `ESC[?25l`, and each draw, the first
+included, is `ESC[H` then `ESC[2J`, moving the cursor home and clearing the
+screen, then the view. When stdout is not a terminal, the first snapshot is
+printed as without `-f`, and each later one is appended whole after one empty
+line, with no escape sequence. A view is drawn again only when its text would
+differ from the last one drawn: a status changing, a subagent appearing or
+finishing, or the session ending each count, and the same text is never drawn
+twice in a row. A change is shown promptly after the harness writes the file
+that records it; a session's process exiting, which no file records, is shown
+within a couple of seconds. Following never ends by itself: when the session
+ends, its root becomes `ended`, its subagents take the rules of a session that
+has ended, and the tree is still followed. Ctrl+c ends it with exit 0 and
+stderr empty; in a terminal it then writes `ESC[?25h` to show the cursor
+again, leaving the last view on screen, and when stdout is not a terminal
+nothing more is written. Startup is the snapshot's: every usage error, and
+every error the snapshot meets before its first output, happens with `-f`
+exactly as without it, same text and exit code, and nothing is followed. Once
+following has started, a failure that would make the snapshot itself fail (the
+harness's sessions directory cannot be read, or the session is no longer
+found) does not end it: the last view stays, nothing is drawn from what could
+not be read, and it is read again at the next change. Anything the snapshot
+draws with a fallback is drawn exactly as the snapshot draws it, so every view
+is the snapshot at that moment whenever the snapshot would succeed. Only output
+that cannot be written ends it, with `agent-monitor: write error: <reason>` on
+stderr and exit 1. Following only reads too: it takes no lock, changes
+nothing, and writes no file.
 
 ## A developer draws the subagent tree of a Claude Code session
 
@@ -745,6 +775,237 @@ Postconditions:
 - Nothing has changed.
 - No lock was taken.
 
+## A developer follows the subagent tree of a Claude Code session
+
+A developer who wants to watch a session's subagents come and go, rather than
+run `tree` again and again, follows it. Here the session is the Claude Code
+session drawn above, and stdout is not a terminal, so each new view is
+appended after an empty line. While `tree` runs, the session's transcript
+records that `a2d5f8e1…` ended `completed`; then the session starts a subagent
+whose meta file, `agent-a8b2c5d8e0f3a6149.meta.json`, is written beside its
+transcript; then the session's process exits, so the root is `ended` and takes
+its title from its transcript, and `a5b8c1f4…`, sent a message after its
+latest notification, and `a8b2c5d8…`, with no result, are `unknown`; then the
+developer presses ctrl+c. The subagents' own transcripts grow throughout, and
+draw nothing, since they do not decide any line.
+
+`agent-a8b2c5d8e0f3a6149.meta.json`, with its other keys left out:
+
+```
+{"agentType":"general-purpose","description":"Update the checkout docs"}
+```
+
+Command:
+
+```
+$ agent-monitor tree -f claude 7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93
+```
+
+```
+$ agent-monitor tree claude 7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93 --follow
+```
+
+Options:
+
+- `-f`, `--follow`: keep the tree up to date until interrupted.
+
+Output:
+
+```
+● [7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93] fix Bob's checkout  working
+├── ● [a1c4e7f09b2d38561] Find the checkout handler  done
+├── ● [a2d5f8e1c3b049672] Review the payment tests  working
+│   └── ● [a3e6f9d2b4c150783] Run the payment suite  failed
+├── ● [a4f7e0c3d5a261894] Profile the cart query  killed
+└── ● [a5b8c1f4e6d372905] Draft the refund fix  working
+
+● working (3)  ● idle (0)  ● done (1)  ● killed (1)  ● failed (1)  ● ended (0)  ● unknown (0)
+
+● [7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93] fix Bob's checkout  working
+├── ● [a1c4e7f09b2d38561] Find the checkout handler  done
+├── ● [a2d5f8e1c3b049672] Review the payment tests  done
+│   └── ● [a3e6f9d2b4c150783] Run the payment suite  failed
+├── ● [a4f7e0c3d5a261894] Profile the cart query  killed
+└── ● [a5b8c1f4e6d372905] Draft the refund fix  working
+
+● working (2)  ● idle (0)  ● done (2)  ● killed (1)  ● failed (1)  ● ended (0)  ● unknown (0)
+
+● [7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93] fix Bob's checkout  working
+├── ● [a1c4e7f09b2d38561] Find the checkout handler  done
+├── ● [a2d5f8e1c3b049672] Review the payment tests  done
+│   └── ● [a3e6f9d2b4c150783] Run the payment suite  failed
+├── ● [a4f7e0c3d5a261894] Profile the cart query  killed
+├── ● [a5b8c1f4e6d372905] Draft the refund fix  working
+└── ● [a8b2c5d8e0f3a6149] Update the checkout docs  working
+
+● working (3)  ● idle (0)  ● done (2)  ● killed (1)  ● failed (1)  ● ended (0)  ● unknown (0)
+
+● [7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93] fix Bob's checkout  ended
+├── ● [a1c4e7f09b2d38561] Find the checkout handler  done
+├── ● [a2d5f8e1c3b049672] Review the payment tests  done
+│   └── ● [a3e6f9d2b4c150783] Run the payment suite  failed
+├── ● [a4f7e0c3d5a261894] Profile the cart query  killed
+├── ● [a5b8c1f4e6d372905] Draft the refund fix  unknown
+└── ● [a8b2c5d8e0f3a6149] Update the checkout docs  unknown
+
+● working (0)  ● idle (0)  ● done (2)  ● killed (1)  ● failed (1)  ● ended (1)  ● unknown (2)
+```
+
+Exits 0 when the developer presses ctrl+c. The text is on stdout; stderr is
+empty.
+
+Preconditions:
+
+- `bin/agent-monitor` exists.
+- `HOME` is `/home/dev`.
+- stdout is not a terminal.
+- The session's registration, transcript, and subagents are at first exactly
+  those of the story in which a developer draws the subagent tree of a Claude
+  Code session.
+- The session's transcript records a `custom-title` record whose
+  `customTitle` is `fix Bob's checkout`.
+- While `tree` runs, the session's transcript records a notification that
+  `a2d5f8e1…` ended `completed`; then the meta file above is written, the
+  session having started `a8b2c5d8…` after all the others; then process 41822
+  exits; then the developer presses ctrl+c. No other notification, result, or
+  `SendMessage` tool call is recorded.
+
+Postconditions:
+
+- Nothing has changed.
+- No lock was taken.
+- No file was written.
+
+## A developer follows a tree in a terminal
+
+In a terminal the view is redrawn in place, coloured as a snapshot in a
+terminal is. Here the session is the Claude Code session drawn above; while
+`tree` runs, its transcript records that `a2d5f8e1…` ended `completed`, so its
+dot turns from cyan to green, and then the developer presses ctrl+c. The
+Output shows the bytes written, with `ESC` for the one escape byte, 0x1b: the
+cursor is hidden, the screen is cleared and the first view drawn, then cleared
+again and the second drawn, and ctrl+c shows the cursor again. The view
+already ends at the start of a line, so nothing else is written, and the
+last view stays on screen above the prompt. The dots are coloured as in the
+story in which a developer views a tree in a terminal.
+
+Command:
+
+```
+$ agent-monitor tree -f claude 7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93
+```
+
+Output:
+
+```
+ESC[?25lESC[HESC[2JESC[36m●ESC[0m [7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93] fix Bob's checkout
+├── ESC[32m●ESC[0m [a1c4e7f09b2d38561] Find the checkout handler
+├── ESC[36m●ESC[0m [a2d5f8e1c3b049672] Review the payment tests
+│   └── ESC[31m●ESC[0m [a3e6f9d2b4c150783] Run the payment suite
+├── ESC[33m●ESC[0m [a4f7e0c3d5a261894] Profile the cart query
+└── ESC[36m●ESC[0m [a5b8c1f4e6d372905] Draft the refund fix
+
+ESC[36m●ESC[0m working (3)  ESC[34m●ESC[0m idle (0)  ESC[32m●ESC[0m done (1)  ESC[33m●ESC[0m killed (1)  ESC[31m●ESC[0m failed (1)  ESC[35m●ESC[0m ended (0)  ESC[90m●ESC[0m unknown (0)
+ESC[HESC[2JESC[36m●ESC[0m [7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93] fix Bob's checkout
+├── ESC[32m●ESC[0m [a1c4e7f09b2d38561] Find the checkout handler
+├── ESC[32m●ESC[0m [a2d5f8e1c3b049672] Review the payment tests
+│   └── ESC[31m●ESC[0m [a3e6f9d2b4c150783] Run the payment suite
+├── ESC[33m●ESC[0m [a4f7e0c3d5a261894] Profile the cart query
+└── ESC[36m●ESC[0m [a5b8c1f4e6d372905] Draft the refund fix
+
+ESC[36m●ESC[0m working (2)  ESC[34m●ESC[0m idle (0)  ESC[32m●ESC[0m done (2)  ESC[33m●ESC[0m killed (1)  ESC[31m●ESC[0m failed (1)  ESC[35m●ESC[0m ended (0)  ESC[90m●ESC[0m unknown (0)
+ESC[?25h
+```
+
+Exits 0 when the developer presses ctrl+c. The text is on stdout, with no
+newline after the last `ESC[?25h`; stderr is empty.
+
+Preconditions:
+
+- `bin/agent-monitor` exists.
+- `HOME` is `/home/dev`.
+- stdout is a terminal.
+- `NO_COLOR` is not set, and `TERM` is `xterm-256color`.
+- The session's registration, transcript, and subagents are at first exactly
+  those of the story in which a developer draws the subagent tree of a Claude
+  Code session.
+- While `tree` runs, the session's transcript records a notification that
+  `a2d5f8e1…` ended `completed`, and nothing else changes; then the developer
+  presses ctrl+c.
+
+Postconditions:
+
+- Nothing has changed.
+- No lock was taken.
+- No file was written.
+
+## A developer follows a tree without colour
+
+`-f` and `--no-color` combine: in a terminal the view is still redrawn in
+place, and it is the plain text with status words. Like `--no-color`, `-f`
+may stand anywhere after `tree`, before, between, or after the harness and
+the session id, `-f` and `--follow` are the same option, and giving it more
+than once is the same as giving it once. It is not a harness or a session id,
+so it changes nothing else: `agent-monitor tree -f claud` fails as an unknown
+harness, and `agent-monitor tree -f` as a missing harness. It is an option of
+`tree`, not of `agent-monitor`, so before `tree` it is a top-level unknown
+option: `agent-monitor -f tree grok 01a0c4f2-7b18-7d3a-9e61-3c8a0f5d2b47`
+fails with `agent-monitor: unknown option '-f'`, and `--follow` there with
+`agent-monitor: unknown option '--follow'`. Here the session is the Grok
+session drawn above, nothing changes while `tree` runs, and the developer
+presses ctrl+c.
+
+Command:
+
+```
+$ agent-monitor tree -f --no-color grok 01a0c4f2-7b18-7d3a-9e61-3c8a0f5d2b47
+```
+
+```
+$ agent-monitor tree --no-color grok 01a0c4f2-7b18-7d3a-9e61-3c8a0f5d2b47 --follow
+```
+
+```
+$ agent-monitor tree grok -f 01a0c4f2-7b18-7d3a-9e61-3c8a0f5d2b47 --no-color --follow
+```
+
+Options:
+
+- `-f`, `--follow`: keep the tree up to date until interrupted.
+- `--no-color`: print the tree and the key without colour, each line of the
+  tree ending with two spaces and its status word.
+
+Output:
+
+```
+ESC[?25lESC[HESC[2J● [01a0c4f2-7b18-7d3a-9e61-3c8a0f5d2b47] fix login redirect  working
+├── ● [01a0c51e-2a64-7f09-b3d8-6e1c9a4f0b25] Trace the redirect loop  done
+│   └── ● [01a0c533-8d0f-72c6-a4e7-1b5d8f2c6a90] Check the cookie domain  done
+└── ● [01a0c548-c3a1-7e5b-8f92-4d0b7e3a1c68] Update the login tests  working
+
+● working (2)  ● idle (0)  ● done (2)  ● killed (0)  ● failed (0)  ● ended (0)  ● unknown (0)
+ESC[?25h
+```
+
+Exits 0 when the developer presses ctrl+c. The text is on stdout, with no
+newline after the last `ESC[?25h`; stderr is empty.
+
+Preconditions:
+
+- `bin/agent-monitor` exists.
+- `HOME` is `/home/dev`.
+- stdout is a terminal.
+- `NO_COLOR` is not set, and `TERM` is `xterm-256color`.
+- The session and its subagents are exactly those of the story in which a
+  developer draws the subagent tree of a Grok session, and do not change
+  while `tree` runs.
+
+Postconditions:
+
+- Nothing has changed.
+- No lock was taken.
+- No file was written.
+
 ## A developer asks what tree can do
 
 `--help` or `-h` anywhere after `tree` prints the help of `tree` and wins
@@ -778,7 +1039,7 @@ Options:
 Output:
 
 ```
-Usage: agent-monitor tree [--no-color] <harness> <session-id>
+Usage: agent-monitor tree [-f] [--no-color] <harness> <session-id>
 
 Draw the subagent tree of one session.
 
@@ -788,8 +1049,9 @@ Harnesses:
   grok    Grok Build CLI
 
 Options:
-  --no-color  print without colour
-  -h, --help  print this help
+  -f, --follow  keep the tree up to date until interrupted
+  --no-color    print without colour
+  -h, --help    print this help
 ```
 
 Exits 0. The text is on stdout; stderr is empty.
@@ -928,9 +1190,10 @@ Postconditions:
 
 ## A developer gives tree an unknown option
 
-The options `tree` takes are `--no-color` and `--help` or `-h`; any other
-option after `tree` is unknown, the top-level `--version` and `-V` included. The option is
-named and echoed exactly as a top-level unknown option is. Read left to
+The options `tree` takes are `-f` or `--follow`, `--no-color`, and `--help`
+or `-h`; any other option after `tree` is unknown, the top-level `--version`
+and `-V` included. The option is named and echoed exactly as a top-level
+unknown option is. Read left to
 right, an unknown option before the harness fails here, and so does one after
 a valid harness or session id: `agent-monitor tree claude --bogus` and
 `agent-monitor tree claude 7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93 --bogus` both
@@ -998,6 +1261,41 @@ Postconditions:
 
 - Nothing has changed.
 
+## A developer gives --follow a value
+
+`--follow` takes no value either, so `--follow=x` is an unknown option,
+named and echoed exactly as any other, and read left to right as any other.
+Short options do not bundle, so `-f=x` and `-fx` are unknown options too,
+`'-f=x'` and `'-fx'`.
+
+Command:
+
+```
+$ agent-monitor tree --follow=x claude 7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93
+```
+
+```
+$ agent-monitor tree claude 7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93 --follow=x
+```
+
+Output:
+
+```
+agent-monitor: unknown option '--follow=x'
+
+see 'agent-monitor --help' for usage
+```
+
+Exits 2. The text is on stderr; stdout is empty.
+
+Preconditions:
+
+- `bin/agent-monitor` exists.
+
+Postconditions:
+
+- Nothing has changed.
+
 ## A developer names a session that does not exist
 
 When no root session of the harness has the id, `tree` prints nothing and
@@ -1006,12 +1304,17 @@ session. The id is echoed exactly as an unknown command is, so
 `agent-monitor tree claude bogus` fails with
 `agent-monitor: no claude session 'bogus'`. A harness never used on this
 machine, whose directory under `$HOME` does not exist, has no sessions, so
-every id fails this way.
+every id fails this way. With `-f` it fails the same way, before anything is
+followed, as every startup error does.
 
 Command:
 
 ```
 $ agent-monitor tree claude 0b9e4d12-7a3c-4f58-9e21-6c8d0a5b3f47
+```
+
+```
+$ agent-monitor tree -f claude 0b9e4d12-7a3c-4f58-9e21-6c8d0a5b3f47
 ```
 
 Output:

@@ -22,24 +22,27 @@ run prints it too, so with nothing to do agent-monitor shows what it can do.
 It is the whole of standard output for `--help` or `-h` as the first
 argument, ends in a newline, and is never written to standard error.
 
-The help of `list` names its one argument, says what it prints, lists the
-three harnesses with the product each stands for, and lists its one option.
-It does not repeat the exit codes. `--help` or `-h` anywhere after `list`
+The help of `list` names its one argument and shows `[-f]`, says what it
+prints, lists the three harnesses with the product each stands for, and
+lists its two options, `-f, --follow` and help, their descriptions aligned
+in one column. It does not repeat the exit codes. `--help` or `-h` anywhere after `list`
 prints it and wins over every other argument after `list`, an error among
 them; it needs no `HOME` and reads nothing.
 
-The help of `tree` is built the same way: its usage line shows
-`[--no-color]` and its two arguments, it says what it draws, lists the same
-three harnesses, and lists its two options, `--no-color` and help, without
-the exit codes. The top-level usage line for `tree` does not show
-`--no-color`; the top-level help points at a command's own help for its
-options. `--help` or `-h` anywhere after `tree` prints it and wins over
+The help of `tree` is built the same way: its usage line shows `[-f]`,
+`[--no-color]`, and its two arguments, it says what it draws, lists the same
+three harnesses, and lists its three options, `-f, --follow`,
+`--no-color`, and help, without the exit codes. The top-level usage lines
+show no command's options, `-f` and `--no-color` included; the top-level
+help points at a command's own help for its options, so `Usage` is
+unchanged by following. `--help` or `-h` anywhere after `tree` prints it and wins over
 every other argument after `tree` — a missing, unknown, or extra argument
 or an unknown option among them; it needs no `HOME` and reads nothing.
 
-The help of `chat` is built the same way: its usage line shows its two
-arguments and the optional agent id, it says what it prints, lists the same
-three harnesses, and lists its one option, help, without the exit codes.
+The help of `chat` is built the same way: its usage line shows `[-f]`, its
+two arguments, and the optional agent id, it says what it prints, lists the
+same three harnesses, and lists its two options, `-f, --follow` and help,
+without the exit codes.
 `chat` never prints colour, so it has no `--no-color`. `--help` or `-h`
 anywhere after `chat` prints it and wins over every other argument after
 `chat`; it needs no `HOME` and reads nothing.
@@ -55,9 +58,9 @@ standard output. After `list`, `tree`, or `chat` it is an unknown option
 ## REQUIREMENTS
 
 - R-KDOM-HO0C: `Usage` MUST be exactly `"Usage: agent-monitor [options]\n       agent-monitor list <harness>\n       agent-monitor tree <harness> <session-id>\n       agent-monitor chat <harness> <session-id> [<agent-id>]\n\nObserve the coding agents on this machine through their logs and hooks.\n\nCommands:\n  list <harness>                            list the live root sessions of claude, codex, or grok\n  tree <harness> <session-id>               draw the subagent tree of one session\n  chat <harness> <session-id> [<agent-id>]  print one agent's chat\n\nsee 'agent-monitor <command> --help' for command options\n\nOptions:\n  -h, --help      print this help\n  -V, --version   print the version\n\nExit codes:\n  0  success\n  1  the output could not be written\n  2  usage error\n  3  the harness's session data could not be read\n  4  the session or agent was not found\n"`.
-- R-EWOK-Z65T: `ListUsage` MUST be exactly `"Usage: agent-monitor list <harness>\n\nList the live root sessions of one harness, newest activity first.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  -h, --help  print this help\n"`.
-- R-6NCQ-DKH0: `TreeUsage` MUST be exactly `"Usage: agent-monitor tree [--no-color] <harness> <session-id>\n\nDraw the subagent tree of one session.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  --no-color  print without colour\n  -h, --help  print this help\n"`.
-- R-KEWI-VFR1: `ChatUsage` MUST be exactly `"Usage: agent-monitor chat <harness> <session-id> [<agent-id>]\n\nPrint one agent's chat and its token totals.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  -h, --help  print this help\n"`.
+- R-TNCN-3IL1: `ListUsage` MUST be exactly `"Usage: agent-monitor list [-f] <harness>\n\nList the live root sessions of one harness, newest activity first.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  -f, --follow  keep the list up to date until interrupted\n  -h, --help    print this help\n"`.
+- R-TOKJ-HABQ: `TreeUsage` MUST be exactly `"Usage: agent-monitor tree [-f] [--no-color] <harness> <session-id>\n\nDraw the subagent tree of one session.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  -f, --follow  keep the tree up to date until interrupted\n  --no-color    print without colour\n  -h, --help    print this help\n"`.
+- R-TPSF-V22F: `ChatUsage` MUST be exactly `"Usage: agent-monitor chat [-f] <harness> <session-id> [<agent-id>]\n\nPrint one agent's chat and its token totals.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  -f, --follow  keep printing new entries until interrupted\n  -h, --help    print this help\n"`.
 - R-EZ4D-QPN7: When `args` is empty, `Run` MUST write exactly `Usage` to `stdout`, write nothing to `stderr`, and return `ExitSuccess`.
 - R-352F-PY4P: When `args[0]` is `--help` or `-h`, `Run` MUST write exactly `Usage` to `stdout`, write nothing to `stderr`, and return `ExitSuccess`.
 - R-F0CA-4HDW: When `args[0]` is `list` and at least one element of `args[1:]` is byte-for-byte equal to `--help` or `-h`, `Run` MUST write exactly `ListUsage` to `stdout`, write nothing to `stderr`, and return `ExitSuccess`, whatever the other elements of `args[1:]` are, so that `["list", "--help"]`, `["list", "-h"]`, `["list", "claude", "--help"]`, and `["list", "bogus", "extra", "--bogus", "-h"]` all write `ListUsage`.

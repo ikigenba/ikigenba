@@ -232,7 +232,10 @@ When agent-monitor cannot write its output, it says so on stderr and fails.
 holds for any output agent-monitor writes: the help text, the version, or
 the sessions `agent-monitor list <harness>` prints, the tree
 `agent-monitor tree <harness> <session-id>` draws, or the chat
-`agent-monitor chat <harness> <session-id> [<agent-id>]` prints.
+`agent-monitor chat <harness> <session-id> [<agent-id>]` prints, whether
+printed once or followed with `-f`. Output that cannot be written while
+following ends the following the same way: agent-monitor stops and fails
+with this line, even after output has been written.
 
 Command:
 

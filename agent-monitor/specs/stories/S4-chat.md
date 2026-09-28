@@ -1,16 +1,36 @@
 # Stories — reading the chat of an agent
 
-`agent-monitor chat <harness> <session-id> [<agent-id>]` prints a snapshot of
-the chat of one agent of a session and exits; it does not watch or redraw. The
+`agent-monitor chat [-f] <harness> <session-id> [<agent-id>]` prints the chat
+of one agent of a session. Without `-f` it prints a snapshot and exits; the
+snapshot does not watch or redraw. With `-f`, or `--follow`, it follows: it
+prints the chat so far, entries exactly as the snapshot prints them, then
+appends each new entry promptly after the agent's transcript records it, and
+never ends by itself; an agent that finishes or a session that ends just stops
+adding entries. When stdout is not a terminal, following prints no totals line
+at all. When stdout is a terminal, the cursor is hidden while following and
+the totals line, the snapshot's text, is pinned as the last line on screen,
+written with no newline after it, and redrawn after the new entries each time
+entries or usage arrive. ctrl+c stops following: `chat` exits 0 with stderr
+empty, and in a terminal first shows the cursor again and ends the totals
+line with a newline, so the chat stays on screen. Following starts as the
+snapshot does: every usage error and every error the snapshot would meet
+before printing anything happens identically, and nothing is followed. Once
+following has started, a failure that would make the snapshot itself fail
+(the agent's transcript cannot be read or is gone) does not end it: the last
+view stays, nothing is drawn from what could not be read, and it is read again
+at the next change. Anything the snapshot draws with a fallback is drawn
+exactly as the snapshot draws it, so every view is the snapshot at that moment
+whenever the snapshot would succeed. Only output that cannot be written ends
+it, with `agent-monitor: write error: <reason>` on stderr and exit 1. The
 harness is `claude`, `codex`, or `grok`, spelled exactly so, and the session
-is named by its full session id, found as `tree` finds it: any root session of
-that harness in its default location under `$HOME`, live or ended; a subagent
-is never a session, and `$HOME` is never guessed. With no agent id the agent
-is the session's root; with one it is that subagent, at any depth, named by
-the full id `tree` prints for it in brackets. The output is one entry per
-thing said or done, in the order the agent's own transcript records them, then
-the totals line. An entry is a header line, then its body lines exactly as
-recorded with no indentation, then one empty line. The header is
+is named by its full session id, found as `tree` finds it: any root session
+of that harness in its default location under `$HOME`, live or ended; a
+subagent is never a session, and `$HOME` is never guessed. With no agent id
+the agent is the session's root; with one it is that subagent, at any depth,
+named by the full id `tree` prints for it in brackets. The snapshot is one
+entry per thing said or done, in the order the agent's own transcript records
+them, then the totals line. An entry is a header line, then its body lines
+exactly as recorded with no indentation, then one empty line. The header is
 `<time> <kind>`: the time the entry was recorded, in UTC,
 `YYYY-MM-DDTHH:MM:SSZ`, converted and truncated as `list` prints LAST ACTIVE,
 and the kind. The kinds are `user`, a prompt a person typed, a Claude Code
@@ -506,6 +526,151 @@ Postconditions:
 
 - Nothing has changed.
 
+## A developer follows a chat whose output is not a terminal
+
+A developer sends `chat -f` to a file or another program to watch an agent
+work. It prints the chat so far, then appends each new entry as the
+transcript records it; stdout is not a terminal, so no totals line is
+printed, then or ever, and no escape sequence is written. Here the agent is
+the Claude Code subagent that is still writing, in the story in which a
+developer reads the chat of an agent that is still writing. As in the
+snapshot, its half-written last line is not shown until it is complete, and a
+line in the middle of the transcript that cannot be read is skipped. `-f` and
+`--follow` are the same option. It may stand anywhere after `chat`, before,
+between, or after the harness, the session id, and the agent id, and giving it
+more than once is the same as giving it once. It is not a harness, a session
+id, or an agent id, so it changes nothing else: `agent-monitor chat -f`
+fails as a missing harness, and `agent-monitor chat -f claud` as an unknown
+harness. It is an option of `chat`, so before `chat` each spelling is a
+top-level unknown option:
+`agent-monitor -f chat claude 7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93` fails with
+`agent-monitor: unknown option '-f'`, and
+`agent-monitor --follow chat claude 7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93`
+with `agent-monitor: unknown option '--follow'`.
+
+While it runs, the subagent finishes the half-written line, so the record
+reads in full as the first line below, and then writes the second:
+
+```
+{"type":"assistant","isSidechain":true,"agentId":"a5b8c1f4e6d372905","message":{"id":"msg_03De8","role":"assistant","content":[{"type":"text","text":"Rounding happens in refundAmount in internal/cart/refund.go."}],"usage":{"input_tokens":1,"cache_creation_input_tokens":132,"cache_read_input_tokens":13850,"output_tokens":39,"output_tokens_details":{"thinking_tokens":0}}},"timestamp":"2026-09-24T20:05:45.302Z"}
+{"type":"assistant","isSidechain":true,"agentId":"a5b8c1f4e6d372905","message":{"id":"msg_03Ef5","role":"assistant","content":[{"type":"tool_use","id":"toolu_03Gh","name":"Read","input":{"file_path":"/home/dev/src/shop/internal/cart/refund.go"}}],"usage":{"input_tokens":1,"cache_creation_input_tokens":88,"cache_read_input_tokens":13982,"output_tokens":45,"output_tokens_details":{"thinking_tokens":0}}},"timestamp":"2026-09-24T20:05:47.910Z"}
+```
+
+Then the developer presses ctrl+c.
+
+Command:
+
+```
+$ agent-monitor chat -f claude 7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93 a5b8c1f4e6d372905
+```
+
+```
+$ agent-monitor chat claude 7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93 a5b8c1f4e6d372905 --follow
+```
+
+```
+$ agent-monitor chat claude -f 7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93 a5b8c1f4e6d372905 -f
+```
+
+Options:
+
+- `-f`, `--follow`: keep printing new entries until interrupted.
+
+Output: the first two entries are printed at once; the third is appended once
+the half-written line is complete, and the fourth once it is recorded. The
+output ends with the empty line after the last entry.
+
+```
+2026-09-24T20:05:40Z agent
+Draft a fix for refunds that round down.
+
+2026-09-24T20:05:42Z assistant
+I'll start from the refund calculation.
+
+2026-09-24T20:05:45Z assistant
+Rounding happens in refundAmount in internal/cart/refund.go.
+
+2026-09-24T20:05:47Z tool Read
+{"file_path":"/home/dev/src/shop/internal/cart/refund.go"}
+
+```
+
+Exits 0 when the developer presses ctrl+c. The text is on stdout; stderr is
+empty.
+
+Preconditions:
+
+- `bin/agent-monitor` exists.
+- `HOME` is `/home/dev`.
+- stdout is not a terminal.
+- The session, the subagent, and its transcript start exactly as in the story
+  in which a developer reads the chat of an agent that is still writing.
+
+Postconditions:
+
+- Nothing has changed.
+- No lock was taken.
+- No file was written.
+
+## A developer follows a chat in a terminal
+
+In a terminal, following hides the cursor and keeps the totals line pinned
+below the chat. In the Output below, `ESC` stands for the one escape byte,
+0x1b, `CR` for the one carriage return byte, 0x0d, and every other character
+is printed as shown; each line of the block ends with a newline. Following
+starts with `ESC[?25l`, then the entries so far, then the totals line with no
+newline after it. When the half-written line is complete, the totals line is
+erased, `CR` then `ESC[2K`, the new entry is written, and then the updated
+totals line, again with no newline. When the developer presses ctrl+c,
+`ESC[?25h` shows the cursor again and a newline ends the totals line, so the
+chat and its totals stay on screen and the prompt starts on a fresh line.
+Here the agent and the transcript are those of the story in which a
+developer follows a chat whose output is not a terminal, up to the
+half-written line being completed; the developer presses ctrl+c before the
+second record is written.
+
+Command:
+
+```
+$ agent-monitor chat -f claude 7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93 a5b8c1f4e6d372905
+```
+
+Options:
+
+- `-f`, `--follow`: keep printing new entries until interrupted.
+
+Output:
+
+```
+ESC[?25l2026-09-24T20:05:40Z agent
+Draft a fix for refunds that round down.
+
+2026-09-24T20:05:42Z assistant
+I'll start from the refund calculation.
+
+tokens: in 3  cache-write 3980  cache-read 9870  out 22  reasoning 0  calls 1CRESC[2K2026-09-24T20:05:45Z assistant
+Rounding happens in refundAmount in internal/cart/refund.go.
+
+tokens: in 4  cache-write 4112  cache-read 23720  out 61  reasoning 0  calls 2ESC[?25h
+```
+
+Exits 0 when the developer presses ctrl+c. The text is on stdout; stderr is
+empty.
+
+Preconditions:
+
+- `bin/agent-monitor` exists.
+- `HOME` is `/home/dev`.
+- stdout is a terminal.
+- The session, the subagent, and its transcript start exactly as in the story
+  in which a developer reads the chat of an agent that is still writing.
+
+Postconditions:
+
+- Nothing has changed.
+- No lock was taken.
+- No file was written.
+
 ## A developer asks what chat can do
 
 `--help` or `-h` anywhere after `chat` prints the help of `chat` and wins
@@ -539,7 +704,7 @@ Options:
 Output:
 
 ```
-Usage: agent-monitor chat <harness> <session-id> [<agent-id>]
+Usage: agent-monitor chat [-f] <harness> <session-id> [<agent-id>]
 
 Print one agent's chat and its token totals.
 
@@ -549,7 +714,8 @@ Harnesses:
   grok    Grok Build CLI
 
 Options:
-  -h, --help  print this help
+  -f, --follow  keep printing new entries until interrupted
+  -h, --help    print this help
 ```
 
 Exits 0. The text is on stdout; stderr is empty.
@@ -688,10 +854,10 @@ Postconditions:
 
 ## A developer gives chat an unknown option
 
-The only option `chat` takes is `--help` or `-h`; any other option after
-`chat` is unknown, the top-level `--version` and `-V` included. `chat` never
-prints colour, so the `--no-color` that `tree` takes is unknown to `chat`
-too: `agent-monitor chat --no-color claude
+The options `chat` takes are `-f` or `--follow` and `--help` or `-h`; any
+other option after `chat` is unknown, the top-level `--version` and `-V`
+included. `chat` never prints colour, so the `--no-color` that `tree` takes
+is unknown to `chat` too: `agent-monitor chat --no-color claude
 7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93` fails with `agent-monitor: unknown
 option '--no-color'`. The option is named and echoed exactly as a top-level
 unknown option is. Read left to right, an unknown option before the harness
@@ -713,6 +879,42 @@ Output:
 
 ```
 agent-monitor: unknown option '--bogus'
+
+see 'agent-monitor --help' for usage
+```
+
+Exits 2. The text is on stderr; stdout is empty.
+
+Preconditions:
+
+- `bin/agent-monitor` exists.
+
+Postconditions:
+
+- Nothing has changed.
+
+## A developer gives --follow a value
+
+`-f` and `--follow` take no value, and there is no `--name=value` form, so
+`--follow=x` is not `--follow`: it is an unknown option, named and echoed
+exactly as any other, and read left to right as any other. Short options do
+not bundle, so `-f=x` and `-fx` are unknown options too, `'-f=x'` and
+`'-fx'`.
+
+Command:
+
+```
+$ agent-monitor chat --follow=x claude 7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93
+```
+
+```
+$ agent-monitor chat claude 7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93 --follow=x
+```
+
+Output:
+
+```
+agent-monitor: unknown option '--follow=x'
 
 see 'agent-monitor --help' for usage
 ```
@@ -771,11 +973,17 @@ When the session is found but no agent in it has the agent id, `chat` prints
 nothing and fails. The agent id must be given in full, as `tree` prints it: a
 prefix of an agent's id names no agent, and neither does the id of a subagent
 of another session. Both ids are echoed exactly as an unknown command is.
+Following starts as the snapshot does, so with `-f` it fails the same way and
+follows nothing.
 
 Command:
 
 ```
 $ agent-monitor chat claude 7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93 a0b1c2d3e4f506172
+```
+
+```
+$ agent-monitor chat -f claude 7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93 a0b1c2d3e4f506172
 ```
 
 Output:
