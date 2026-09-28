@@ -5,11 +5,13 @@ import "io/fs"
 
 // System contains the machine state visible to Run.
 type System struct {
-	Home     string
-	Root     fs.FS
-	NoColor  string
-	Term     string
-	Terminal bool
+	Home      string
+	Root      fs.FS
+	NoColor   string
+	Term      string
+	Terminal  bool
+	Watcher   Watcher
+	Interrupt <-chan struct{}
 }
 
 // ExitCode is the result of running the command.
@@ -23,3 +25,9 @@ const (
 	ExitDataUnreadable ExitCode = 3
 	ExitNotFound       ExitCode = 4
 )
+
+// Watcher announces possible changes in the directories a command reads.
+type Watcher interface {
+	Watch(names []string)
+	Changes() <-chan struct{}
+}

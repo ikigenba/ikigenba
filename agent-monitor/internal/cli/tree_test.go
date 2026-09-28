@@ -9,7 +9,7 @@ import (
 	"github.com/ikigenba/ikigenba/agent-monitor/internal/tree"
 )
 
-// R-69XU-63BD R-6B5Q-JV22 R-6CDM-XMSR R-6DLJ-BEJG R-PQXL-5CDY R-PS5H-J44N R-PULA-ANM1 R-PVT6-OFCQ
+// R-PQXL-5CDY R-PS5H-J44N R-PULA-ANM1 R-PVT6-OFCQ
 func TestTreeGrammar(t *testing.T) {
 	cases := []struct {
 		args []string
@@ -72,7 +72,7 @@ func TestTreeBeforeFilesystem(t *testing.T) {
 	}
 }
 
-// R-6IH4-UHI8 R-Q5KD-QLAA R-JPAM-U96G
+// R-T9XQ-W1FE R-TB5N-9T63
 func TestTreeHarnessOutcomes(t *testing.T) {
 	for _, h := range []string{"claude", "codex", "grok"} {
 		root := &deniedFS{}
@@ -104,7 +104,8 @@ func TestTreeHarnessOutcomes(t *testing.T) {
 	assertRun(t, []string{"tree", "--no-color", "claude", "a\nb", "--no-color"}, System{Home: "/home/dev", Root: fstest.MapFS{}}, ExitNotFound, "", "agent-monitor: no claude session 'a\\nb'\n")
 }
 
-// R-6JP1-898X R-6KWX-M0ZM
+// R-6KWX-M0ZM
+// R-T8PU-I9OP
 func TestTreeSuccessfulProductAndCodes(t *testing.T) {
 	root := fstest.MapFS{
 		"home/dev/.claude/projects/work/sample.jsonl": &fstest.MapFile{Data: []byte("{}\n")},
@@ -126,7 +127,7 @@ func TestTreeSuccessfulProductAndCodes(t *testing.T) {
 	}
 }
 
-// R-69XU-63BD R-6IH4-UHI8 R-6JP1-898X R-6KWX-M0ZM
+// R-6KWX-M0ZM
 func TestTreeDrawingArgumentsAndColor(t *testing.T) {
 	root := fstest.MapFS{
 		"home/dev/.claude/projects/work/sample.jsonl": &fstest.MapFile{Data: []byte("{}\n")},

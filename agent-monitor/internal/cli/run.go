@@ -27,11 +27,11 @@ func Run(args []string, sys System, stdout, stderr io.Writer) ExitCode {
 	case "--version", "-V":
 		return writeProduct(stdout, stderr, Version+"\n")
 	case "list":
-		return runList(args[1:], sys, stdout, stderr)
+		return runCommand("list", args[1:], sys, stdout, stderr)
 	case "tree":
-		return runTree(args[1:], sys, stdout, stderr)
+		return runCommand("tree", args[1:], sys, stdout, stderr)
 	case "chat":
-		return runChat(args[1:], sys, stdout, stderr)
+		return runCommand("chat", args[1:], sys, stdout, stderr)
 	default:
 		kind := "unknown command"
 		if strings.HasPrefix(args[0], "-") {
@@ -41,18 +41,39 @@ func Run(args []string, sys System, stdout, stderr io.Writer) ExitCode {
 	}
 }
 
-func runTree(args []string, sys System, stdout, stderr io.Writer) ExitCode {
+type parsedCommand struct {
+	kind, harness, id, agent string
+	noColor, follow          bool
+}
+
+type renderedCommand struct {
+	view       string
+	transcript *chat.Transcript
+	entries    []chat.Entry
+}
+
+func runCommand(kind string, args []string, sys System, stdout, stderr io.Writer) ExitCode {
 	for _, arg := range args {
 		if arg == "--help" || arg == "-h" {
-			return writeProduct(stdout, stderr, TreeUsage)
+			usage := ListUsage
+			if kind == "tree" {
+				usage = TreeUsage
+			}
+			if kind == "chat" {
+				usage = ChatUsage
+			}
+			return writeProduct(stdout, stderr, usage)
 		}
 	}
-	var harness, id string
+	command := parsedCommand{kind: kind}
 	place := 0
-	noColor := false
 	for _, arg := range args {
-		if arg == "--no-color" {
-			noColor = true
+		if arg == "-f" || arg == "--follow" {
+			command.follow = true
+			continue
+		}
+		if kind == "tree" && arg == "--no-color" {
+			command.noColor = true
 			continue
 		}
 		if strings.HasPrefix(arg, "-") {
@@ -62,80 +83,20 @@ func runTree(args []string, sys System, stdout, stderr io.Writer) ExitCode {
 		case 0:
 			switch arg {
 			case "claude", "codex", "grok":
-				harness = arg
+				command.harness = arg
 			default:
 				return usageError(stderr, "unknown harness", arg)
 			}
 		case 1:
-			id = arg
-		default:
-			return usageError(stderr, "unexpected argument", arg)
-		}
-		place++
-	}
-	if place == 0 {
-		writeDiagnostic(stderr, "agent-monitor: missing harness"+usageHint)
-		return ExitUsage
-	}
-	if place == 1 {
-		writeDiagnostic(stderr, "agent-monitor: missing session id"+usageHint)
-		return ExitUsage
-	}
-	if sys.Home == "" {
-		writeDiagnostic(stderr, "agent-monitor: cannot find the home directory: HOME is not set\n")
-		return ExitDataUnreadable
-	}
-	var result tree.Tree
-	var err error
-	switch harness {
-	case "claude":
-		result, err = claude.Tree(sys.Root, sys.Home, id)
-	case "codex":
-		result, err = codex.Tree(sys.Root, sys.Home, id)
-	case "grok":
-		result, err = grok.Tree(sys.Root, sys.Home, id)
-	}
-	if err != nil {
-		if errors.Is(err, tree.ErrNotFound) {
-			writeDiagnostic(stderr, "agent-monitor: no "+harness+" session '"+quote.Arg(id)+"'\n")
-			return ExitNotFound
-		}
-		var readErr *session.ReadError
-		if errors.As(err, &readErr) {
-			writeDiagnostic(stderr, "agent-monitor: cannot read "+quote.Field(readErr.Path)+": "+readErr.Err.Error()+"\n")
-			return ExitDataUnreadable
-		}
-		writeDiagnostic(stderr, "agent-monitor: cannot read session data: "+err.Error()+"\n")
-		return ExitDataUnreadable
-	}
-	color := sys.Terminal && sys.NoColor == "" && sys.Term != "dumb" && !noColor
-	return writeProduct(stdout, stderr, tree.Draw(result, color))
-}
-
-func runChat(args []string, sys System, stdout, stderr io.Writer) ExitCode {
-	for _, arg := range args {
-		if arg == "--help" || arg == "-h" {
-			return writeProduct(stdout, stderr, ChatUsage)
-		}
-	}
-	var harness, id, agent string
-	place := 0
-	for _, arg := range args {
-		if strings.HasPrefix(arg, "-") {
-			return usageError(stderr, "unknown option", arg)
-		}
-		switch place {
-		case 0:
-			switch arg {
-			case "claude", "codex", "grok":
-				harness = arg
-			default:
-				return usageError(stderr, "unknown harness", arg)
+			if kind == "list" {
+				return usageError(stderr, "unexpected argument", arg)
 			}
-		case 1:
-			id = arg
+			command.id = arg
 		case 2:
-			agent = arg
+			if kind != "chat" {
+				return usageError(stderr, "unexpected argument", arg)
+			}
+			command.agent = arg
 		default:
 			return usageError(stderr, "unexpected argument", arg)
 		}
@@ -145,103 +106,102 @@ func runChat(args []string, sys System, stdout, stderr io.Writer) ExitCode {
 		writeDiagnostic(stderr, "agent-monitor: missing harness"+usageHint)
 		return ExitUsage
 	}
-	if place == 1 {
+	if kind != "list" && place == 1 {
 		writeDiagnostic(stderr, "agent-monitor: missing session id"+usageHint)
 		return ExitUsage
 	}
-	if place == 2 {
-		agent = id
+	if kind == "chat" && place == 2 {
+		command.agent = command.id
 	}
 	if sys.Home == "" {
 		writeDiagnostic(stderr, "agent-monitor: cannot find the home directory: HOME is not set\n")
 		return ExitDataUnreadable
 	}
-	var transcript *chat.Transcript
-	var entries []chat.Entry
-	var err error
-	switch harness {
-	case "claude":
-		transcript, entries, err = claude.Chat(sys.Root, sys.Home, id, agent)
-	case "codex":
-		transcript, entries, err = codex.Chat(sys.Root, sys.Home, id, agent)
-	case "grok":
-		transcript, entries, err = grok.Chat(sys.Root, sys.Home, id, agent)
+	if command.follow {
+		return followCommand(command, sys, stdout, stderr)
 	}
+	result, err := renderCommand(command, sys)
 	if err != nil {
-		if errors.Is(err, tree.ErrNotFound) {
-			writeDiagnostic(stderr, "agent-monitor: no "+harness+" session '"+quote.Arg(id)+"'\n")
-			return ExitNotFound
-		}
-		if errors.Is(err, chat.ErrAgentNotFound) {
-			writeDiagnostic(stderr, "agent-monitor: no "+harness+" agent '"+quote.Arg(agent)+"' in session '"+quote.Arg(id)+"'\n")
-			return ExitNotFound
-		}
-		var readErr *session.ReadError
-		if errors.As(err, &readErr) {
-			writeDiagnostic(stderr, "agent-monitor: cannot read "+quote.Field(readErr.Path)+": "+readErr.Err.Error()+"\n")
-			return ExitDataUnreadable
-		}
-		writeDiagnostic(stderr, "agent-monitor: cannot read session data: "+err.Error()+"\n")
-		return ExitDataUnreadable
+		return reportHarnessError(command, stderr, err)
 	}
-	var product strings.Builder
-	for _, entry := range entries {
-		product.WriteString(chat.Format(entry))
+	if kind == "chat" {
+		var product strings.Builder
+		for _, entry := range result.entries {
+			product.WriteString(chat.Format(entry))
+		}
+		product.WriteString(chat.TotalsLine(result.transcript.Usage(), result.transcript.Recorded()))
+		result.view = product.String()
 	}
-	product.WriteString(chat.TotalsLine(transcript.Usage(), transcript.Recorded()))
-	return writeProduct(stdout, stderr, product.String())
+	return writeProduct(stdout, stderr, result.view)
 }
 
-func runList(args []string, sys System, stdout, stderr io.Writer) ExitCode {
-	for _, arg := range args {
-		if arg == "--help" || arg == "-h" {
-			return writeProduct(stdout, stderr, ListUsage)
+func renderCommand(command parsedCommand, sys System) (renderedCommand, error) {
+	var result renderedCommand
+	switch command.kind {
+	case "list":
+		var sessions []session.Session
+		var err error
+		switch command.harness {
+		case "claude":
+			sessions, err = claude.List(sys.Root, sys.Home)
+		case "codex":
+			sessions, err = codex.List(sys.Root, sys.Home)
+		case "grok":
+			sessions, err = grok.List(sys.Root, sys.Home)
+		}
+		if err != nil {
+			return result, err
+		}
+		result.view = session.Table(sessions)
+	case "tree":
+		var value tree.Tree
+		var err error
+		switch command.harness {
+		case "claude":
+			value, err = claude.Tree(sys.Root, sys.Home, command.id)
+		case "codex":
+			value, err = codex.Tree(sys.Root, sys.Home, command.id)
+		case "grok":
+			value, err = grok.Tree(sys.Root, sys.Home, command.id)
+		}
+		if err != nil {
+			return result, err
+		}
+		color := sys.Terminal && sys.NoColor == "" && sys.Term != "dumb" && !command.noColor
+		result.view = tree.Draw(value, color)
+	case "chat":
+		var err error
+		switch command.harness {
+		case "claude":
+			result.transcript, result.entries, err = claude.Chat(sys.Root, sys.Home, command.id, command.agent)
+		case "codex":
+			result.transcript, result.entries, err = codex.Chat(sys.Root, sys.Home, command.id, command.agent)
+		case "grok":
+			result.transcript, result.entries, err = grok.Chat(sys.Root, sys.Home, command.id, command.agent)
+		}
+		if err != nil {
+			return result, err
 		}
 	}
-	if len(args) == 0 {
-		writeDiagnostic(stderr, "agent-monitor: missing harness"+usageHint)
-		return ExitUsage
+	return result, nil
+}
+
+func reportHarnessError(command parsedCommand, stderr io.Writer, err error) ExitCode {
+	if errors.Is(err, tree.ErrNotFound) {
+		writeDiagnostic(stderr, "agent-monitor: no "+command.harness+" session '"+quote.Arg(command.id)+"'\n")
+		return ExitNotFound
 	}
-	var harness string
-	for _, arg := range args {
-		if strings.HasPrefix(arg, "-") {
-			return usageError(stderr, "unknown option", arg)
-		}
-		if harness == "" {
-			switch arg {
-			case "claude", "codex", "grok":
-				harness = arg
-			default:
-				return usageError(stderr, "unknown harness", arg)
-			}
-		} else {
-			return usageError(stderr, "unexpected argument", arg)
-		}
+	if errors.Is(err, chat.ErrAgentNotFound) {
+		writeDiagnostic(stderr, "agent-monitor: no "+command.harness+" agent '"+quote.Arg(command.agent)+"' in session '"+quote.Arg(command.id)+"'\n")
+		return ExitNotFound
 	}
-	if sys.Home == "" {
-		writeDiagnostic(stderr, "agent-monitor: cannot find the home directory: HOME is not set\n")
-		return ExitDataUnreadable
+	var readErr *session.ReadError
+	if errors.As(err, &readErr) {
+		writeDiagnostic(stderr, "agent-monitor: cannot read "+quote.Field(readErr.Path)+": "+readErr.Err.Error()+"\n")
+	} else {
+		writeDiagnostic(stderr, "agent-monitor: cannot read session data: "+err.Error()+"\n")
 	}
-	var sessions []session.Session
-	var err error
-	switch harness {
-	case "claude":
-		sessions, err = claude.List(sys.Root, sys.Home)
-	case "codex":
-		sessions, err = codex.List(sys.Root, sys.Home)
-	case "grok":
-		sessions, err = grok.List(sys.Root, sys.Home)
-	}
-	if err != nil {
-		var readErr *session.ReadError
-		if errors.As(err, &readErr) {
-			writeDiagnostic(stderr, "agent-monitor: cannot read "+quote.Field(readErr.Path)+": "+readErr.Err.Error()+"\n")
-		} else {
-			writeDiagnostic(stderr, "agent-monitor: cannot read session data: "+err.Error()+"\n")
-		}
-		return ExitDataUnreadable
-	}
-	return writeProduct(stdout, stderr, session.Table(sessions))
+	return ExitDataUnreadable
 }
 
 func usageError(stderr io.Writer, kind, arg string) ExitCode {

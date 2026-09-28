@@ -20,7 +20,7 @@ func TestRunSignatureAndSystem(t *testing.T) {
 }
 
 func TestSystemFields(t *testing.T) {
-	// R-68PX-SBKO
+	// R-TR0C-8TT4
 	st := reflect.TypeOf(cli.System{})
 	want := []struct {
 		name string
@@ -31,6 +31,8 @@ func TestSystemFields(t *testing.T) {
 		{"NoColor", reflect.TypeOf("")},
 		{"Term", reflect.TypeOf("")},
 		{"Terminal", reflect.TypeOf(false)},
+		{"Watcher", reflect.TypeOf((*cli.Watcher)(nil)).Elem()},
+		{"Interrupt", reflect.TypeOf((<-chan struct{})(nil))},
 	}
 	if st.NumField() != len(want) {
 		t.Fatalf("System field count = %d, want %d", st.NumField(), len(want))
@@ -86,6 +88,20 @@ func TestModuleHasNoRequirements(t *testing.T) {
 		line = strings.TrimSpace(line)
 		if line == "require (" || strings.HasPrefix(line, "require ") {
 			t.Fatalf("unexpected require directive: %q", line)
+		}
+	}
+}
+
+// R-TS88-MLJT
+func TestWatcherMethods(t *testing.T) {
+	typ := reflect.TypeOf((*cli.Watcher)(nil)).Elem()
+	if typ.NumMethod() != 2 {
+		t.Fatalf("Watcher methods = %d", typ.NumMethod())
+	}
+	for name, want := range map[string]reflect.Type{"Watch": reflect.TypeOf((func([]string))(nil)), "Changes": reflect.TypeOf((func() <-chan struct{})(nil))} {
+		method, ok := typ.MethodByName(name)
+		if !ok || method.Type != want {
+			t.Errorf("Watcher.%s = %v, want %v", name, method.Type, want)
 		}
 	}
 }

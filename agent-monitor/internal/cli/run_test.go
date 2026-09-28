@@ -70,7 +70,8 @@ func TestTopLevelFirstArgumentWins(t *testing.T) {
 	}
 }
 
-// R-E8AL-BRBX R-E9IH-PJ2M R-EFLZ-MDS3 R-EGTW-05IS R-EI1S-DX9H
+// R-E9IH-PJ2M R-EFLZ-MDS3 R-EGTW-05IS
+// R-SKBU-UUUT R-SLJR-8MLI
 func TestListGrammar(t *testing.T) {
 	cases := []struct {
 		args       []string
@@ -91,7 +92,6 @@ func TestListGrammar(t *testing.T) {
 	}
 }
 
-// R-JLMX-OXYD R-JO2Q-GHFR
 func TestNonlistingOutcomesIgnoreSystem(t *testing.T) {
 	a := System{}
 	b := System{Home: "/elsewhere", Root: panicFS{}, NoColor: "1", Term: "dumb", Terminal: true}
@@ -108,7 +108,8 @@ type panicFS struct{}
 
 func (panicFS) Open(string) (fs.File, error) { panic("Root accessed") }
 
-// R-ELPH-J8HK R-ET0V-TUXQ R-ERSZ-G371
+// R-ET0V-TUXQ R-ERSZ-G371
+// R-T06J-TVHU
 func TestMissingHome(t *testing.T) {
 	for _, h := range []string{"claude", "codex", "grok"} {
 		args := []string{"list", h}
@@ -121,7 +122,7 @@ func TestMissingHome(t *testing.T) {
 	}
 }
 
-// R-EMXD-X089 R-EO5A-ARYY
+// R-T3U8-Z6PX
 func TestListEmptyHarnessData(t *testing.T) {
 	for _, h := range []string{"claude", "codex", "grok"} {
 		code, out, diag := runRecorded([]string{"list", h}, System{Home: "/home/dev", Root: fstest.MapFS{}}, nil, nil)
@@ -131,7 +132,7 @@ func TestListEmptyHarnessData(t *testing.T) {
 	}
 }
 
-// R-EO5A-ARYY R-EMXD-X089
+// R-T3U8-Z6PX
 func TestListNonemptyHarnessData(t *testing.T) {
 	root := fstest.MapFS{
 		"home/dev/.claude/sessions/a.json": &fstest.MapFile{Data: []byte(`{"sessionId":"alpha","pid":42,"status":"busy","name":"Implement feature","cwd":"/work"}`)},
@@ -141,7 +142,8 @@ func TestListNonemptyHarnessData(t *testing.T) {
 	assertRun(t, []string{"list", "claude"}, System{Home: "/home/dev", Root: root}, ExitSuccess, want, "")
 }
 
-// R-2WJ5-1JXU R-2XR1-FBOJ R-2YYX-T3F8 R-31EQ-KMWM
+// R-2XR1-FBOJ R-2YYX-T3F8
+// R-J9GH-YE70 R-TIH1-KFM9
 func TestWriteFailuresAndOneWrite(t *testing.T) {
 	for _, args := range [][]string{nil, {"--help"}, {"--version"}, {"list", "--help"}} {
 		code, out, diag := runRecorded(args, System{}, errors.New("disk full"), errors.New("closed"))
@@ -168,7 +170,8 @@ func (d *deniedFS) Open(name string) (fs.File, error) {
 	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrPermission}
 }
 
-// R-EPD6-OJPN R-EMXD-X089 R-ET0V-TUXQ R-ERSZ-G371
+// R-ET0V-TUXQ R-ERSZ-G371
+// R-T525-CYGM
 func TestHarnessReadErrors(t *testing.T) {
 	for _, h := range []string{"claude", "codex", "grok"} {
 		root := &deniedFS{}

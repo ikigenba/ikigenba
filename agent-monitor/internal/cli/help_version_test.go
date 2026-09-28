@@ -114,9 +114,10 @@ func TestVersionOptions(t *testing.T) {
 }
 
 func TestListUsageDeclaration(t *testing.T) {
-	// R-DIOP-AKRC R-EWOK-Z65T
+	// R-DIOP-AKRC
 	const actual string = cli.ListUsage
-	const want = "Usage: agent-monitor list <harness>\n\nList the live root sessions of one harness, newest activity first.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  -h, --help  print this help\n"
+	// R-TNCN-3IL1
+	const want = "Usage: agent-monitor list [-f] <harness>\n\nList the live root sessions of one harness, newest activity first.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  -f, --follow  keep the list up to date until interrupted\n  -h, --help    print this help\n"
 	if actual != want {
 		t.Errorf("ListUsage = %q, want %q", actual, want)
 	}
@@ -134,9 +135,9 @@ func TestListHelpWins(t *testing.T) {
 }
 
 func TestTreeUsageText(t *testing.T) {
-	// R-6NCQ-DKH0
 	const actual string = cli.TreeUsage
-	const want = "Usage: agent-monitor tree [--no-color] <harness> <session-id>\n\nDraw the subagent tree of one session.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  --no-color  print without colour\n  -h, --help  print this help\n"
+	// R-TOKJ-HABQ
+	const want = "Usage: agent-monitor tree [-f] [--no-color] <harness> <session-id>\n\nDraw the subagent tree of one session.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  -f, --follow  keep the tree up to date until interrupted\n  --no-color    print without colour\n  -h, --help    print this help\n"
 	if actual != want {
 		t.Errorf("TreeUsage = %q, want %q", actual, want)
 	}

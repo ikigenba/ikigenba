@@ -8,9 +8,9 @@ import (
 	"testing/fstest"
 )
 
-// R-KEWI-VFR1
 func TestChatUsageText(t *testing.T) {
-	const want = "Usage: agent-monitor chat <harness> <session-id> [<agent-id>]\n\nPrint one agent's chat and its token totals.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  -h, --help  print this help\n"
+	// R-TPSF-V22F
+	const want = "Usage: agent-monitor chat [-f] <harness> <session-id> [<agent-id>]\n\nPrint one agent's chat and its token totals.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  -f, --follow  keep printing new entries until interrupted\n  -h, --help    print this help\n"
 	if ChatUsage != want {
 		t.Errorf("ChatUsage = %q, want %q", ChatUsage, want)
 	}
@@ -23,7 +23,7 @@ func TestChatHelpWins(t *testing.T) {
 	}
 }
 
-// R-JQIJ-80X5 R-JRQF-LSNU R-JSYB-ZKEJ R-JU68-DC58 R-JVE4-R3VX R-JWM1-4VMM R-JXTX-INDB R-JZ1T-WF40
+// R-JSYB-ZKEJ R-JU68-DC58 R-JVE4-R3VX R-JWM1-4VMM
 func TestChatGrammar(t *testing.T) {
 	cases := []struct {
 		args []string
@@ -47,7 +47,6 @@ func TestChatGrammar(t *testing.T) {
 	}
 }
 
-// R-JLMX-OXYD R-JO2Q-GHFR
 func TestChatUsageIgnoresSystem(t *testing.T) {
 	a := System{Root: panicFS{}}
 	b := System{Home: "/home/dev", Root: panicFS{}, NoColor: "1", Term: "dumb", Terminal: true}
@@ -60,7 +59,7 @@ func TestChatUsageIgnoresSystem(t *testing.T) {
 	}
 }
 
-// R-K09Q-A6UP R-JO2Q-GHFR
+// R-K09Q-A6UP
 func TestChatMissingHome(t *testing.T) {
 	for _, h := range []string{"claude", "codex", "grok"} {
 		for _, args := range [][]string{{"chat", h, "id"}, {"chat", h, "id", "agent"}} {
@@ -69,7 +68,8 @@ func TestChatMissingHome(t *testing.T) {
 	}
 }
 
-// R-JHZ8-JMQA R-K7L4-KTAV R-KB8T-Q4IY R-KA0X-CCS9
+// R-JHZ8-JMQA  R-KB8T-Q4IY R-KA0X-CCS9
+// R-NC7A-KHTL
 func TestChatSessionNotFound(t *testing.T) {
 	for _, h := range []string{"claude", "codex", "grok"} {
 		for _, args := range [][]string{{"chat", h, "missing"}, {"chat", h, "missing", "agent"}} {
@@ -82,12 +82,12 @@ func TestChatSessionNotFound(t *testing.T) {
 	}
 }
 
-// R-JQIJ-80X5
 func TestChatAcceptsEmptyIDs(t *testing.T) {
 	assertRun(t, []string{"chat", "codex", "", ""}, System{Home: "/home/dev", Root: fstest.MapFS{}}, ExitNotFound, "", "agent-monitor: no codex session ''\n")
 }
 
-// R-K1HM-NYLE R-K2PJ-1QC3 R-K3XF-FI2S R-KCGQ-3W9N R-JQIJ-80X5
+// R-KCGQ-3W9N
+// R-TETC-F4E6 R-TH95-6NVK
 func TestChatProduct(t *testing.T) {
 	root := fstest.MapFS{
 		"home/dev/.claude/projects/work/sample.jsonl": &fstest.MapFile{Data: []byte("{\"type\":\"user\",\"message\":{\"content\":\"hello\"}}\n{\"type\":\"assistant\",\"message\":{\"id\":\"msg\",\"model\":\"model\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"}],\"usage\":{\"input_tokens\":2,\"output_tokens\":3}}}\n")},
@@ -113,13 +113,14 @@ func TestChatProduct(t *testing.T) {
 	}
 }
 
-// R-K2PJ-1QC3
+// R-TETC-F4E6
 func TestChatEmptyEntriesPrintTotals(t *testing.T) {
 	root := fstest.MapFS{"home/dev/.claude/projects/work/sample.jsonl": &fstest.MapFile{Data: []byte("{}\n")}}
 	assertRun(t, []string{"chat", "claude", "sample"}, System{Home: "/home/dev", Root: root}, ExitSuccess, "tokens: in 0  cache-write 0  cache-read 0  out 0  reasoning 0  calls 0\n", "")
 }
 
-// R-K8T0-YL1K R-KA0X-CCS9 R-KB8T-Q4IY
+// R-KA0X-CCS9 R-KB8T-Q4IY
+// R-NDF6-Y9KA
 func TestChatAgentNotFound(t *testing.T) {
 	root := fstest.MapFS{"home/dev/.claude/projects/work/sample.jsonl": &fstest.MapFile{Data: []byte("{}\n")}}
 	args := []string{"chat", "claude", "sample", "a\nb"}
@@ -130,7 +131,8 @@ func TestChatAgentNotFound(t *testing.T) {
 	}
 }
 
-// R-K6D8-71K6 R-KCGQ-3W9N
+// R-KCGQ-3W9N
+// R-N9RH-SYC7
 func TestChatReadError(t *testing.T) {
 	root := fstest.MapFS{"home/dev/.claude/projects/work/sample.jsonl": &fstest.MapFile{Data: []byte("{}\n")}}
 	blocked := "home/dev/.claude/projects/work/sample.jsonl"
