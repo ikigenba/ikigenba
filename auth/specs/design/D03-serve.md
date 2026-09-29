@@ -11,7 +11,8 @@ This design says how `Run` reads the Google settings and the drain deadline,
 takes the socket the host passes in, opens the store, builds the server,
 tells systemd it is ready and hands off to `Serve`; how `Serve` treats the
 listener it is handed; and the one line the server writes for a request that
-is trouble. It does not design any endpoint's HTTP contract (D05/D06/D07), the
+is trouble. It does not design any endpoint's HTTP contract (D05/D06/D07, and
+D08 for the style files under `/assets/`), the
 store's internals (D04), or the manifest and CLI surface (D02).
 
 ## The terms every app serves on
@@ -128,7 +129,7 @@ domain. The Google credentials are not repeated here; the Google client
 already holds them. The server side names the random source and diagnostic
 stream by their `io` interfaces, never by `cli.Process`, so D01's one-way
 import direction holds. That struct is the whole of what the handlers need;
-D05/D06/D07 attach observable HTTP behavior to this server, not new
+D05/D06/D07/D08 attach observable HTTP behavior to this server, not new
 construction parameters.
 
 Then `Run` tells systemd it is ready, before it calls `Serve`. The socket has
@@ -247,7 +248,7 @@ a `bytes.Buffer` that the race detector watches.
 - R-N8QZ-YOXC: When `server.Serve` returns a non-nil error to `Run`, `Run` MUST write to `Stderr` exactly `auth: `, that error's `Error()` text, and a newline, MUST write nothing to `Stdout`, and MUST return `1`.
 - R-H2IE-TQD6: `Run` MUST NOT let two calls to `Stderr.Write` be in progress at the same time, those made through the writer of R-A6NL-V77Q included, so that a `Stderr` that is not safe for concurrent use is never written concurrently.
 - R-NB6S-Q8EQ: When `Inherit` is nil and file descriptor 3 is a listening Unix-domain stream socket bound to a filesystem path, `Run` MUST leave that path in place and MUST NOT shut the socket down, so that after `Run` returns the socket still accepts connections into its queue for another process that holds it.
-- R-IVLV-52P1: The `*server.Server` returned by `server.New` MUST serve the HTTP routes whose contracts D05, D06, and D07 define.
+- R-2AOL-W6YZ: The `*server.Server` returned by `server.New` MUST serve the HTTP routes whose contracts D05, D06, D07, and D08 define.
 - R-UR0L-ZVDJ: The `*Server` returned by `New` MUST mint every random value the `*Server` mints itself (including the PKCE verifier D05 requires of `GET /login/google`) by reading `cfg.Rand`, MUST write every diagnostic its handlers emit (including the token-exchange error D05 requires of `GET /login/google/callback`) to `cfg.Stderr`, and MUST NOT read a global random source or write to a global output stream; given a `Config` whose `Rand` is a deterministic reader and whose `Stderr` is an in-memory buffer, the values minted are a function of the bytes that reader yields and every such diagnostic appears in that buffer.
 - R-CCQE-EHNR: When a store operation the `*Server` calls while handling a request on any route D05, D06, or D07 defines returns an error that does not satisfy `errors.Is(err, store.ErrNotFound)`, the `*Server` MUST answer that request with status `500`, `Content-Type: text/plain; charset=utf-8`, a body that is a single line of plain text, and neither `HeaderUserID` nor `HeaderUserEmail` set, whatever response another requirement states for that request, except that a `GET /login/google` already being answered `502` under R-XXPJ-ZJU1 stays `502` when the `ConsumeLoginState` it makes to discard its login state fails.
 - R-XV9R-80CN: For every request the `*Server` answers with a status from `500` through `599`, it MUST write exactly `"auth: request " + id + ": " + reason + "\n"` to `cfg.Stderr` in a single call to `cfg.Stderr.Write`, where `id` is the value `r.Header.Get("X-Request-Id")` returns when that value is non-empty and `-` when it is empty, and `reason` is the `Error()` text of the error that caused that status.

@@ -34,27 +34,60 @@ subdomain at any depth (any host ending in `.<space>`), auth's own
 `https://auth.<space>` among them. Run locally, where
 the cookie has no `Domain` and every app on `localhost` shares it whatever its
 port, the accepted origins are `http://localhost` and `http://localhost:<port>`
-for any port, auth's own `http://localhost:3001` among them. Pages are described only
-by their observable structure — the links they contain and their targets, the
-forms they contain with their method, action, and field names — never by any
-wording, label, or heading. A response block shows the status line and only the
-headers the story fixes; a header it does not show is not fixed.
+for any port, auth's own `http://localhost:3001` among them.
+
+A page fixes its visible text and the markup the stylesheet keys on: an
+element or class is quoted where the stylesheet hooks in, the visible text is
+stated as fact in the story's status line, and no body is quoted whole. Every
+HTML page auth serves is titled `auth`, links `/assets/theme.css` as its
+stylesheet, `<link rel="stylesheet" href="/assets/theme.css">`, and declares
+the phone-width viewport,
+`<meta name="viewport" content="width=device-width, initial-scale=1">`. The
+stylesheet and the fonts it loads are auth's own, served under `/assets/`; a
+page makes no request to any other host. An icon is a Tabler outline icon
+drawn inline before a button's text as `<svg class="ico" aria-hidden="true">`,
+so the button's accessible text is its word alone. The workspace a page names
+is `WORKSPACE_DOMAIN`, here `michaelgreenly.dev`. A page names the apex, which
+auth reads from the request's own `Host`: a trailing port is dropped, and the
+apex is the last two dot-separated labels of what remains —
+`auth.sbx.ikigenba.dev` gives `ikigenba.dev`, and the local `localhost:3001`
+gives `localhost`.
+
+auth draws its pages in one of two frames. A page for a visitor who is not
+signed in is a sign-in card: it has no header chrome, and its `<body>` holds
+`<main class="auth-page">`, which holds one `<section class="card">`; the card
+begins with the bare mark, `<span class="mark">ikigenba</span>`, and its
+heading is `<h1>` reading `Sign in to <apex>`. Its way forward is a link styled
+as a button, `<a class="button secondary large google">`, that starts a Google
+sign-in. A page for a signed-in user — the profile here, and the token-created
+page and the rejected-create page (`S5-tokens.md`) — is drawn in the signed-in
+chrome: a `<header>` at the top of its `<body>` holding the mark
+`<a class="mark" data-service="auth" href="/">ikigenba</a>`, which the
+stylesheet shows as `ikigenba │ auth`, then the user's email address, then the
+sign-out form, followed by one `<main>` element holding everything else on the
+page. The sign-out form is
+
+```
+<form class="inline" method="post" action="/logout"><button class="secondary small" type="submit"><svg class="ico" aria-hidden="true" …>…</svg>Sign out</button></form>
+```
+
+with the `logout` icon before the text. auth's failures that are not pages —
+the 400, the 502s, and the 403 sign-out refusals below — stay one line of
+plain text in neither frame, because the visitor may not be signed in. A
+response block shows the status line and only the headers the story fixes; a
+header it does not show is not fixed.
 
 ## A visitor asks for the sign-in page
 
-With no live session the index is the sign-in page: an HTML page whose only way
-forward is the link that starts a Google sign-in. It accepts a `?return=<url>`,
-which is not stored here; it is carried to the login start when the visitor
-follows the link.
+With no live session the index is the sign-in page: a sign-in card whose only
+way forward is the link that starts a Google sign-in. It tells the visitor
+which space they are signing in to and that one sign-in covers every service
+there.
 
 Request:
 
 ```
 $ curl -si http://localhost:3001/
-```
-
-```
-$ curl -si 'http://localhost:3001/?return=<url>'
 ```
 
 Response:
@@ -64,20 +97,151 @@ HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 200. The body is an HTML page containing a link to `/login/google`. Both
-forms return the same page; when `?return=<url>` is present the return URL is
-carried to the login start, not persisted.
+Status 200. The body is an HTML document titled `auth`, with the stylesheet
+link and viewport every page has, drawn as a sign-in card. Its visible text
+is the mark `ikigenba`, the heading `Sign in to localhost`, the sentence
+`Access is limited to Google accounts in the michaelgreenly.dev workspace.`,
+the link `Continue with Google` whose target is `/login/google`, and the
+card's `<footer>` reading
+`You're signing in at localhost:3001. One sign-in covers every service in this space.`
+The footer names the `Host` as sent, port included.
 
 Preconditions:
 
 - auth is serving on `127.0.0.1:3001` with `GOOGLE_CLIENT_ID`,
-  `GOOGLE_CLIENT_SECRET`, and `WORKSPACE_DOMAIN` set.
+  `GOOGLE_CLIENT_SECRET`, and `WORKSPACE_DOMAIN=michaelgreenly.dev` set.
 - The request carries no `ikigenba_session` cookie, or one that names no live
   session.
 
 Postconditions:
 
 - Nothing has changed.
+
+## A visitor on a space asks for the sign-in page
+
+On a space the page names the space's apex and auth's own host, both read
+from the request's `Host`, never fixed. A developer shows the space's `Host`
+by hand.
+
+Request:
+
+```
+$ curl -si -H 'Host: auth.sbx.ikigenba.dev' http://localhost:3001/
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+```
+
+Status 200. The body is the sign-in page of the story above, with the heading
+`Sign in to ikigenba.dev` and the footer reading
+`You're signing in at auth.sbx.ikigenba.dev. One sign-in covers every service in this space.`
+The workspace sentence and the `Continue with Google` link to `/login/google`
+are unchanged.
+
+Preconditions:
+
+- auth is serving on `127.0.0.1:3001` with its Google settings and
+  `WORKSPACE_DOMAIN=michaelgreenly.dev`.
+- The request carries no `ikigenba_session` cookie, or one that names no live
+  session.
+
+Postconditions:
+
+- Nothing has changed.
+
+## A visitor arrives at the sign-in page with a return URL
+
+An app on the space sends a visitor who is not signed in to auth with
+`?return=<url>`, the page they were after. The sign-in page names where the
+visitor is headed, and carries the return URL to the login start in its link;
+it does not store it.
+
+Request:
+
+```
+$ curl -si -H 'Host: auth.sbx.ikigenba.dev' 'http://localhost:3001/?return=https%3A%2F%2Fdummy.sbx.ikigenba.dev%2Fwidgets'
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+```
+
+Status 200. The body is an HTML document titled `auth`, with the stylesheet
+link and viewport every page has, drawn as a sign-in card. Its visible text
+is the mark `ikigenba`, the heading `Sign in to ikigenba.dev`, the sentence
+`Sign in to continue to dummy.sbx.ikigenba.dev.` naming the return URL's
+host exactly as the URL writes it, a port included, the link `Continue with Google` whose target is
+`/login/google?return=https%3A%2F%2Fdummy.sbx.ikigenba.dev%2Fwidgets` — the
+return URL, URL-encoded — and the card's `<footer>` reading
+`Access is limited to Google accounts in the michaelgreenly.dev workspace.`
+Run locally, a request to `http://localhost:3001/` with
+`?return=http%3A%2F%2Flocalhost%3A3000%2Fwidgets` is the same page with the
+heading `Sign in to localhost` and the sentence
+`Sign in to continue to localhost:3000.`
+
+Preconditions:
+
+- auth is serving on `127.0.0.1:3001` with its Google settings and
+  `WORKSPACE_DOMAIN=michaelgreenly.dev`.
+- The request carries no `ikigenba_session` cookie, or one that names no live
+  session.
+- The return URL's host is the space or a subdomain of it, by the rule the
+  callback uses to honor a return URL.
+
+Postconditions:
+
+- Nothing has changed. The return URL is not persisted; it travels in the
+  link to the login start.
+
+## A visitor arrives at the sign-in page with a return URL outside the space
+
+A return URL whose host is neither the space nor a subdomain of it — by the
+rule the callback uses to honor a return URL — or that cannot be parsed as a
+URL, is never named on the page: the visitor sees the plain sign-in card. The
+link still carries the return URL to the login start as written, where the
+callback later discards it (`Google returns a member with a return URL
+outside the space`).
+
+Request:
+
+```
+$ curl -si -H 'Host: auth.sbx.ikigenba.dev' 'http://localhost:3001/?return=https%3A%2F%2Fevil.example%2F'
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+```
+
+Status 200. The body is the sign-in page of `A visitor on a space asks for
+the sign-in page` — the heading `Sign in to ikigenba.dev`, the sentence
+`Access is limited to Google accounts in the michaelgreenly.dev workspace.`,
+and the footer reading
+`You're signing in at auth.sbx.ikigenba.dev. One sign-in covers every service in this space.`
+— except that the link `Continue with Google` has the target
+`/login/google?return=https%3A%2F%2Fevil.example%2F`. No sentence beginning
+`Sign in to continue to` appears. A `?return=` that is not a parseable URL
+gives the same page, its value carried in the link the same way.
+
+Preconditions:
+
+- auth is serving on `127.0.0.1:3001` with its Google settings and
+  `WORKSPACE_DOMAIN=michaelgreenly.dev`.
+- The request carries no `ikigenba_session` cookie, or one that names no live
+  session.
+
+Postconditions:
+
+- Nothing has changed. The return URL is not persisted.
 
 ## A visitor starts a Google sign-in
 
@@ -353,7 +517,8 @@ Postconditions:
 ## A visitor cancels at Google
 
 The visitor declined at Google, so the callback carries `error=access_denied`
-instead of a code. auth returns the sign-in page again.
+instead of a code. auth answers with the sign-in card again, saying the
+sign-in was cancelled and offering to start over.
 
 Request:
 
@@ -368,8 +533,14 @@ HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 200. The body is an HTML page containing a link to `/login/google` — the
-sign-in page again. No `Set-Cookie` is sent.
+Status 200. The body is an HTML document titled `auth`, with the stylesheet
+link and viewport every page has, drawn as a sign-in card. Its visible text
+is the mark `ikigenba`, the heading `Sign in to localhost`, a warning,
+`<div class="alert" data-kind="warn" role="status">`, titled
+`Sign-in cancelled` and reading
+`Google didn't grant access, so you weren't signed in. You can try again.`,
+and the link `Continue with Google` whose target is `/login/google`. No
+`Set-Cookie` is sent.
 
 Preconditions:
 
@@ -401,14 +572,23 @@ HTTP/1.1 403 Forbidden
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 403. The body is an HTML page. No `Set-Cookie` is sent.
+Status 403. The body is an HTML document titled `auth`, with the stylesheet
+link and viewport every page has, drawn as a sign-in card. Its visible text
+is the mark `ikigenba`, the heading `Sign in to localhost`, an error,
+`<div class="alert" data-kind="err" role="alert">`, titled
+`Workspace membership required` and reading
+`ada@example.com isn't a verified account in the michaelgreenly.dev workspace. Sign in with your @michaelgreenly.dev account instead.`
+— the email is the one the ID token carried — the link `Try another account`
+whose target is `/login/google`, and the card's `<footer>` reading
+`Think you should have access? Ask your michaelgreenly.dev workspace admin to add you.`
+No `Set-Cookie` is sent.
 
 Preconditions:
 
 - auth is serving on `127.0.0.1:3001` with its Google settings.
 - An in-flight login state exists named by `<state>`; the code exchanges
   successfully, but the account's `hd` is not `michaelgreenly.dev` or its email
-  is not verified.
+  is not verified. The ID token's email is `ada@example.com`.
 
 Postconditions:
 
@@ -451,16 +631,36 @@ Postconditions:
 
 ## A user asks for the profile
 
-With a live session the index is the profile, described here only by the forms
-and links it contains. A `?return=<url>` is ignored because the visitor is
-already signed in. On a space, a browser that has just completed sign-in sends
-the received cookie automatically on this HTTPS path and sees this profile;
-the session is not limited to the login callback's path.
+With a live session the index is the profile, drawn in the signed-in chrome:
+who the user is, the tokens they hold, and the form that creates another. A
+`?return=<url>` is ignored because the visitor is already signed in. On a
+space, a browser that has just completed sign-in sends the received cookie
+automatically on this HTTPS path and sees this profile; the session is not
+limited to the login callback's path.
+
+The page's heading is `<h1>` reading `Your account`, with the subtitle
+`You're signed in to <apex>.` beneath it. Three cards follow, each a
+`<section class="card">` whose heading is an `<h2>` in the card's `<header>`.
+The `Account` card holds `<dl class="kv">` pairing `Email` with the user's
+email, `Workspace` with `WORKSPACE_DOMAIN`, and `Signed in via` with `Google`.
+The `API tokens` card is `<section class="card flush">`; its header also
+reads `Personal access tokens let scripts and tools act as you. Send one as a bearer token.`
+It holds the user's tokens as a table inside `<div class="table-scroll">`,
+whose header cells read `Name`, `Created`, `Last used`, `Expires`, and
+`Status`, then one empty cell over the row actions. What each row shows, the
+order of the rows, and what the card holds instead of the table when the user
+has no tokens are `S5-tokens.md`'s. No token's secret appears anywhere on the
+profile. The third card is the `Create a token` card that `S5-tokens.md`
+defines, whose form POSTs to `/tokens` with fields `name` and `expires`.
 
 Request:
 
 ```
 $ curl -si --cookie 'ikigenba_session=<opaque>' http://localhost:3001/
+```
+
+```
+$ curl -si --cookie 'ikigenba_session=<opaque>' 'http://localhost:3001/?return=<url>'
 ```
 
 Response:
@@ -470,18 +670,25 @@ HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 200. The body is an HTML page containing: a form that POSTs to
-`/logout`; for each of the user's tokens, a form that POSTs to that token's
-enable or disable URL (`/tokens/<id>/enable`, `/tokens/<id>/disable`) and a form
-that POSTs to its delete URL (`/tokens/<id>/delete`); and a form that POSTs to
-`/tokens` with fields `name` and `expires`. A `?return=<url>` on this request is
-ignored.
+Status 200. The body is an HTML document titled `auth`, with the stylesheet
+link and viewport every page has, drawn in the signed-in chrome: the mark
+naming the service `auth`, the email `ada@michaelgreenly.dev`, and the
+`Sign out` button in the form that POSTs to `/logout`. Inside the page's one
+`<main>` its visible text is the heading `Your account` with the subtitle
+`You're signed in to localhost.`; the `Account` card reading `Email`
+`ada@michaelgreenly.dev`, `Workspace` `michaelgreenly.dev`, and
+`Signed in via` `Google`; the `API tokens` card with its explanation and the
+user's tokens (`S5-tokens.md`); and the `Create a token` card, whose form
+POSTs to `/tokens` with fields `name` and `expires` (`S5-tokens.md`).
+Both forms return the same page; the `?return=<url>` is ignored.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings.
+- auth is serving on `127.0.0.1:3001` with its Google settings and
+  `WORKSPACE_DOMAIN=michaelgreenly.dev`.
 - The request carries an `ikigenba_session` cookie naming a live session for a
-  provisioned user; that user holds zero or more tokens.
+  provisioned user whose email is `ada@michaelgreenly.dev`; that user holds
+  zero or more tokens.
 
 Postconditions:
 

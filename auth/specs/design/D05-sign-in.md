@@ -1,12 +1,12 @@
 # D05-sign-in
 
-The browser sign-in flow and its Google/OIDC client. A visitor lands on `/`,
-which is the sign-in page when there is no live session and the profile when
-there is. `/login/google` starts a Google sign-in; `/login/google/callback`
-finishes it; `POST /logout` ends a session. All of this attaches its observable
-HTTP behavior to `internal/server`'s router (D03 owns the router itself), and it
-speaks to Google through `internal/google`, whose exported surface this design
-declares.
+The browser sign-in flow, its Google/OIDC client, and the page vocabulary every
+HTML page auth draws. A visitor lands on `/`, which is the sign-in page when
+there is no live session and the profile when there is. `/login/google` starts
+a Google sign-in; `/login/google/callback` finishes it; `POST /logout` ends a
+session. All of this attaches its observable HTTP behavior to
+`internal/server`'s router (D03 owns the router itself), and it speaks to
+Google through `internal/google`, whose exported surface this design declares.
 
 `internal/google` wraps `golang.org/x/oauth2` and `github.com/coreos/go-oidc/v3`
 behind a small client this sub-project constructs once from configuration. The
@@ -49,6 +49,34 @@ token's `(issuer, subject)`; the email is a copy refreshed on every login; auth'
 own `X-User-Id` is a fresh opaque id minted by `idcodec.NewID`, never Google's
 `sub`.
 
+A return URL is under the space when it is an absolute `http` or `https` URL
+whose host is the space or a subdomain of it, written so plainly that every
+URL parser reads the same host from it; anything else is outside the space.
+The test is made on the URL's text, not on what some parser makes of it,
+because the host auth checks must be the host the browser goes to when it
+follows the redirect. The browser reads the URL by the WHATWG URL Standard's
+basic URL parser, which first removes leading and trailing C0 controls and
+spaces and every tab and newline ("Remove any leading and trailing C0 control
+or space from input", "Remove all ASCII tab or newline from input"), reads a
+`\` as a `/` in an `http` or `https` URL, skips any run of `/` and `\` after
+the scheme (its "special authority ignore slashes state", so `https:host` and
+`https:///host` both name `host`), and takes everything before an `@` in the
+authority as userinfo; its host parser then percent-decodes the host and
+maps it through UTS46 IDNA processing (§3.3) before using it. Go's `net/url`,
+by contrast, "generally follows RFC 3986" (its package documentation), in
+which `\` delimits nothing and the authority is what follows `//` up to the
+next `/`, `?`, or `#` (RFC 3986 §3.2), so `https:///host` has an empty one. So a return URL is outside the space when it holds a `\`, a control
+character, or a space anywhere, when its scheme is not followed by exactly
+`//`, or when its authority holds anything but a host of ASCII letters,
+digits, `-`, and `.` and an optional port of digits — which rules out `@`
+userinfo, `%` escapes, bracketed literals, and non-ASCII hosts at once. Both
+sides are compared ASCII case-insensitively and without a port, so run
+locally a return URL on `localhost:3000` is under the space `localhost:3001`
+belongs to, which is what the local sign-in story shows. The one rule serves
+the sign-in page, which names an in-space destination, and the callback,
+which honors one. The login start records whatever return URL it is given,
+unvalidated; only the callback decides whether to honor it.
+
 Sign-out is the one state-changing route any app on the space may drive: an
 app renders a form that POSTs to auth's `/logout`, so its `Origin` is the
 app's, not auth's. The logout check accepts, on a space, `https://<space>` and
@@ -73,19 +101,174 @@ header"); a request with no `Origin`, the opaque origin `null`, or more than
 one `Origin` field cannot show that it came from this space and is refused.
 The token routes keep the narrower own-origin check.
 
-The profile page's presence, its logout form, and its create-token form are
-owned here; the per-token row contents and their enable/disable/delete forms are
-D07's. The identity headers `X-User-Id`/`X-User-Email` and bearer parsing are
+## Pages
+
+auth's pages adopt the platform's visual design, defined in the repository's
+`design/`: the stylesheet keys on a handful of elements and classes, and the
+pages fix those hooks and their visible text, and nothing else of their markup.
+This design owns the vocabulary every page auth draws is described in, and D07
+uses it by name without restating it: what an **auth page** is and what every
+one carries in its head; the procedures a requirement reads a page by; the two
+frames a page is drawn in, the **sign-in card** and the **signed-in chrome**;
+the **card titled** a name, the **alert**, and the **icon**; and the
+**apex name** a page shows.
+
+Every auth page is titled `auth`, links the stylesheet at `/assets/theme.css`
+and declares the phone-width viewport. The stylesheet and the fonts it loads
+are served by auth itself under `/assets/`; the asset-serving design (D08) owns
+that, and this design refers to the stylesheet only by its URL. A page loads
+nothing from any other host: every resource reference it carries — a `src`,
+`poster`, `data`, `background`, or `manifest`, or a `link`'s `href` —
+is a path under `/assets/`, it carries no inline style that could name one, every
+resource-naming attribute is written in the one form the reading rules read,
+and its only `svg` elements are button icons, whose content is nothing but
+paths. The attribute scan looks only at attribute-name positions: it skips
+every double-quoted run, so a submitted value that happens to spell `src=`
+is not mistaken for an attribute, and it skips the content of `script`
+elements. A page carries no script unless a requirement places one there;
+what a placed script does is left to the design that places it. Event-handler
+attributes, `srcdoc`, and `http-equiv` are forbidden outright, the last so no
+`meta` refresh can navigate or fetch. Link and form
+targets are paths on auth's own host too, so no `javascript:` or other-host
+URL can sit in one. An `href` sits only on an `a`, where it is a navigation,
+and on a `link`, where it is a resource reference; no other element carries
+one, and no element carries `xlink:href`, because on SVG's `image`, `use`,
+`feImage`, and `script` either attribute is a fetch. `srcset`, `imagesrcset`,
+and `ping` are forbidden outright as well: each holds a list of URLs, and a
+rule on how a value begins would check only the first. A path on auth's own host is not enough for a resource
+reference, since auth's own `/login/google` answers with a redirect to Google:
+a page that loaded it as an image or stylesheet would make the browser fetch
+from Google. Only the asset paths auth answers itself (D08) may be loaded, so
+a resource reference begins with `/assets/` and holds no `..` segment,
+counting the percent-encoded forms the WHATWG URL parser treats as one
+("A double-dot URL path segment is a URL path segment that is ".." or an
+ASCII case-insensitive match for ".%2e", "%2e.", or "%2e%2e"") and splitting
+at `\` as well as `/`, which that parser does in an `http` or `https` URL; a
+navigation — a link, a form, a form button — is the visitor's own step and
+keeps the looser rule. Attribute values are always double-quoted and no `'`
+appears between attributes, so the simple reading rules and a browser's
+tokenizer agree — for every page these rules admit, a browser reads the same
+tags and attributes the reading rules find. That agreement needs the tokenizer
+to stay in its data state wherever the rules scan. The elements that switch it
+out (HTML Living Standard §13.2.6.2, "Parsing elements that contain only
+text", and the "in head" and "in body" insertion modes, §13.2.6.4.4 and
+§13.2.6.4.7) are `title` and `textarea` (RCDATA); `style`, `xmp`, `iframe`,
+`noembed`, `noframes`, and `noscript` when scripting is on (RAWTEXT); `script`
+(script data); and `plaintext` (PLAINTEXT). `style` and all of those but
+`title` and `script` are forbidden outright, wherever they would sit. A
+start tag for `title`, `script`, `style`, `noframes`, or `template` inside the
+body is reprocessed with the "in head" rules (§13.2.6.4.7) and switches the
+tokenizer just as it would in the head, so the pins hold across the whole
+page, not just the head: there is exactly one `title`, before the `body`, and
+it is exactly `auth`, so it holds no `<` at all; every `script` tag is
+pinned; and `style`, `noframes`, and `template` are forbidden everywhere. A placed script closes at its first `</script`, which
+must be exactly `</script>`, and holds no `<!--`, so its content never
+reaches the escaped script states. `template` and `math` are forbidden too,
+and the only foreign content is an icon's `svg`, which holds nothing but
+`path` tags, so no HTML breakout or CDATA section can arise there. The rules
+also exclude, outside
+script content, every other use of `<`: no comment, bogus comment, processing
+instruction, or end tag carrying anything but its name (html/template strips
+comments from template text and escapes a `<` in any value it writes). The
+tokenizer's before-attribute-name,
+attribute-name, after-attribute-name, before-attribute-value, the three
+attribute-value, after-attribute-value (quoted), and self-closing start tag
+states (HTML Living Standard §13.2.5.32–§13.2.5.40) read an attribute written
+that way, and separated by whitespace, `/`, or a closing `"`, as exactly that
+attribute. An attribute counts only where it starts outside every quoted run,
+every `=` follows a non-empty attribute name, and a `<` inside a quoted run
+starts no tag,
+so a submitted value that spells an attribute is never mistaken for one, and a
+tag ends at its first `>` outside a quoted run, for start tags and tag spans
+alike. An icon's `svg` and `path` carry only the attributes the icon
+definition lists, and the `svg` holds nothing but its listed `path` tags and
+whitespace, so no painted `url()` reference or embedded element can make a
+request from inside it; `attributionsrc` is forbidden with the other attributes that
+make a request.
+
+Every page begins with `<!DOCTYPE html>`. HTML Living Standard §13.1.1
+("The DOCTYPE") fixes that form, matched case-insensitively, and without it
+the tree builder's initial insertion mode (§13.2.6.4.1) puts the document in
+quirks mode, where class selectors match case-insensitively (§4.16.2,
+"Case-sensitivity of selectors"). Standards mode keeps the
+stylesheet's hooks exact. The doctype is not a tag span, since its `<` is
+followed by `!`, not a letter.
+
+auth's module may depend on only three external modules, none of them an HTML
+parser, so a test reads a page with the standard library. The reading rules
+are therefore stated as procedures: what a start tag and an end tag are, how an
+attribute is read, what an element's content is, and how text is normalised
+into the **visible text** a reader sees. A requirement over text says a
+content **reads** a string when its normalisation is exactly that string, and
+says it **contains** a string when a page has more around it. The element
+content rule takes the first end tag of the same name, so it reads correctly
+only elements that do not nest inside one of their own kind, which holds for
+every element these requirements name. Every value auth writes into a page
+from outside itself — the `Host`, a return URL, an email Google returned,
+`WORKSPACE_DOMAIN`, anything from the store — is escaped, so it adds no tag
+and reads back as itself.
+
+A page for a visitor who is not signed in is drawn as a sign-in card: no
+header chrome, one `main` of class `auth-page` holding one card, which begins
+with the bare `ikigenba` mark and is headed `Sign in to <apex>`, and whose one
+way forward is a link styled as the Google button. The sign-in page at `/`, the
+page a cancelled Google sign-in returns to, and the non-member page are all
+sign-in cards. The apex is the last two labels of the request's `Host` with
+its port dropped: `auth.sbx.ikigenba.dev` gives `ikigenba.dev`, and the local
+`localhost:3001` gives `localhost`.
+
+The sign-in page tells the visitor where they are signing in. With no return
+URL, or one outside the space, it names the workspace in the card and auth's
+own host, exactly as the request's `Host` carries it, in the card's footer.
+With an in-space return URL it names the destination's host (and port, as the
+URL writes them) instead, and the workspace sentence moves to the footer. An
+out-of-space return URL is never named, but the link still carries it to the
+login start, where the callback discards it. The link carries a return URL
+percent-encoded with every byte outside RFC 3986's unreserved set written as
+`%` and two uppercase hex digits (RFC 3986 §2.1, §2.3). Both the sign-in page
+and the login start decode `return` as a form-encoded query value (WHATWG URL
+Standard, `application/x-www-form-urlencoded` parsing), with three exceptions
+that are auth's own choice, not WHATWG's: a pair holding a `;` is ignored, a
+pair with a malformed `%` escape is ignored, and bytes that are not valid
+UTF-8 are kept as they are rather than replaced by U+FFFD, so they re-encode
+to the same escapes in the link. The sign-in cards fix their whole visible
+text, in the order S3 lists it, with one space between the pieces.
+
+A page for a signed-in user is drawn in the signed-in chrome: a header at the
+top of the body with the `ikigenba │ auth` mark linking to `/`, the user's
+email, and the sign-out form, then one `main` holding the rest. The stylesheet
+lays the chrome out as `body > header` and shows the email as the header's
+`span`. The sign-out button carries Tabler's outline `logout` icon, whose path
+data is that of the platform's copy at `design/ikigenba/icons/tabler/logout.svg`
+without its invisible bounding-box path. An icon is inline and `aria-hidden`
+(WAI-ARIA 1.2, `aria-hidden`: the element is excluded from the accessibility
+tree), so a button's accessible name is its word alone. The profile, D07's
+token-created page, and D07's rejected-create page are drawn in the chrome.
+
+The profile at `/` is headed `Your account` over the subtitle
+`You're signed in to <apex>.`, and holds three cards: `Account`, then
+`API tokens`, then `Create a token`. This design fixes the frame, the heading,
+the `Account` card, and where the other two cards sit; D07 fixes the
+`API tokens` and `Create a token` cards themselves, the per-token rows and
+their forms, and D07's own pages. The cancelled and non-member sign-in pages
+show their message in an alert — a `strong` title over a `p`, which is how the
+stylesheet lays an alert out — marked `warn` with `role="status"` for the
+cancelled sign-in and `err` with `role="alert"` for the refused one.
+
+The identity headers `X-User-Id`/`X-User-Email` and bearer parsing are
 D06's. Server construction and Google-config validation are D03's, and so is
 the one line auth writes to its diagnostic stream for a request it answers
 with a 5xx: `auth: request <id>: <reason>`, naming the request by its
 `X-Request-Id`. The two `502`s here — Google unreachable at the start of a
 sign-in, and a failed exchange at its end — are the sign-in flow's own trouble,
-and each writes that line with Google's error as the reason. S7's routing
-of *other* apps through `/check`, the public `/check` 404, and the nginx-side
-redirect that carries `?return` are properties of the space produced by opsctl,
-a separate sub-project, and are out of scope here; the only S7 fact this design
-owns is that auth answers its own host's `/` with the sign-in page.
+and each writes that line with Google's error as the reason. auth's failures
+that are not pages — the unknown-state `400`, the `502`s, and the `403` sign-out
+refusals — stay one line of plain text in neither frame, because the visitor
+may not be signed in. S7's routing of *other* apps through `/check`, the
+public `/check` 404, and the nginx-side redirect that carries `?return` are
+properties of the space produced by opsctl, a separate sub-project, and are out
+of scope here; the S7 facts this design owns are that auth answers its own
+host's `/` with the sign-in page, and what that page carries.
 
 ## REQUIREMENTS
 
@@ -105,8 +288,6 @@ owns is that auth answers its own host's `/` with the sign-in page.
 - R-ILH9-35UU: auth MUST derive the *space* for a request as the request's `Host` with a single leading `auth.` label removed.
 - R-U8G2-XHEA: The callback `redirect_uri` auth sends to Google MUST be `http://localhost:3001/login/google/callback` for a local request (R-U4SD-S667), and MUST be `https://auth.<space>/login/google/callback` for a request on a space.
 - R-7AQD-QSNL: auth's own origin (used for the token routes' `Origin` check, D07) MUST be `http://localhost:3001` for a local request (R-U4SD-S667), and MUST be `https://auth.<space>` for a request on a space.
-- R-IQCU-M8TM: A return URL MUST be treated as in-space if and only if its host is the space or a subdomain of the space; any other return URL MUST be treated as out-of-space.
-- R-IRKR-00KB: `GET /` with no live session MUST respond `200` with `Content-Type: text/html; charset=utf-8` and a body containing a link whose target is `/login/google`; a `?return=<url>` on the request MUST be carried to the login start and MUST NOT be persisted.
 - R-ISSN-DSB0: `GET /` with a live session MUST respond `200` with `Content-Type: text/html; charset=utf-8` and a body containing a form that POSTs to `/logout` and a form that POSTs to `/tokens` with fields `name` and `expires`; it MUST resolve the identity via `LookupSessionIdentity` (no touch), MUST ignore any `?return`, and MUST NOT change any state.
 - R-KY4E-8B7G: `GET /login/google` MUST mint a PKCE verifier from `Process.Rand`, derive the `redirect_uri` from the request `Host`, record a login state via `CreateLoginState` carrying that verifier and any return URL carried from the sign-in page, and obtain the authorization redirect URL via `AuthCodeURL(state, verifier, redirectURI)` for the recorded login state's `State` and that derived `redirectURI`; when `AuthCodeURL` returns a nil error it MUST respond `302` whose `Location` is that URL, so that the `state` value in `Location` names that login state.
 - R-XXPJ-ZJU1: When `AuthCodeURL` returns a non-nil error during `GET /login/google` (the `issuer`'s endpoints could not be discovered), auth MUST respond `502` with `Content-Type: text/plain; charset=utf-8` and a single line of body, MUST write the line R-XV9R-80CN states with that error as its reason, MUST create no user, session, or cookie, and MUST leave no login state recorded — removing via `ConsumeLoginState` any login state it created for the request.
@@ -114,7 +295,6 @@ owns is that auth answers its own host's `/` with the sign-in page.
 - R-Y05C-R3BF: `GET /login/google/callback` carrying `error=access_denied` MUST respond `200` with `Content-Type: text/html; charset=utf-8` and a body containing a link whose target is `/login/google`, MUST send no `Set-Cookie`, MUST consume the login state named by `state` if one exists, and MUST create no user or session, unless a store operation it makes to read or consume that login state fails, in which case it MUST answer as R-CCQE-EHNR states and write the line R-XV9R-80CN states; this `error=access_denied` response takes precedence over the unknown/missing-state `400` case (R-IV8G-5BSE), so when `error=access_denied` is present and no such store operation fails the response is `200` whether or not `state` matches a recorded login state.
 - R-IXO8-WV9S: `GET /login/google/callback` with a matched login state and a member result MUST exchange the code and verifier via `Exchange`, call `UpsertUserOnLogin`, call `CreateSession`, set the session cookie, consume the login state via `ConsumeLoginState`, and respond `302`.
 - R-IYW5-AN0H: On a member sign-in the `issuer`, `subject`, and `email` passed to `UpsertUserOnLogin` MUST be the verified ID token's `Claims.Issuer`, `Claims.Subject`, and `Claims.Email`, so that users are keyed by the verified `(issuer, subject)` and the stored email is refreshed to the token's value on every login.
-- R-J041-OER6: The `302` `Location` of a successful member sign-in MUST be the login state's carried return URL when that URL is in-space (per R-IQCU-M8TM), and MUST be `/` when there is no return URL or the carried return URL is out-of-space.
 - R-U14O-MUY4: A callback result MUST be treated as a member if and only if the verified `Claims.HostedDomain` equals `WORKSPACE_DOMAIN` and `Claims.EmailVerified` is true (an absent `hd` claim, i.e. empty `HostedDomain`, is not a member); a non-member result MUST respond `403` with `Content-Type: text/html; charset=utf-8`, send no `Set-Cookie`, consume the login state, and create or change no user, session, or cookie.
 - R-XYXG-DBKQ: When a matched-state callback's token exchange fails or Google is unreachable, auth MUST respond `502` with `Content-Type: text/plain; charset=utf-8` and a single line of body, MUST write the line R-XV9R-80CN states with the `Exchange` error as its reason, and MUST create no user, session, or cookie.
 - R-60RY-2THD: For a request on a space, an `Origin` value MUST be treated as *on this space* if and only if it has the serialized shape `https://` followed by a host `H` and nothing else, where `H` contains none of `/`, `?`, `#`, `@`, or `:` (so the value carries no path, query, fragment, userinfo, or port), and `H`, compared with the space ASCII case-insensitively, either equals the space or ends in `.` followed by the space with a non-empty prefix before that `.`; the scheme `https` MUST be matched ASCII case-insensitively, and every other value — including an `http://` origin naming the space's hosts, any value carrying a port (`:443` included), a host with a trailing `.`, a host that merely ends in the space without a separating `.` (`evil<space>`), a host that only contains the space (`<space>.evil.com`), `http://localhost` or `http://localhost:<port>`, and `null` — MUST be treated as not on this space.
@@ -122,3 +302,58 @@ owns is that auth answers its own host's `/` with the sign-in page.
 - R-ARX4-BPPM: `POST /logout` carrying exactly one `Origin` header field whose value is on this space (R-60RY-2THD for a request on a space, R-7D66-IC4Z for a local request) MUST respond `302` with `Location: /`, clear the session cookie, delete the session server-side via `DeleteSession`, and leave the user row and the user's tokens untouched; the response MUST be the same whichever on-this-space origin the request carries, auth's own origin (R-7AQD-QSNL) among them.
 - R-AT50-PHGB: `POST /logout` carrying no `Origin` header field, more than one `Origin` header field, or one whose value is not on this space (R-60RY-2THD for a request on a space, R-7D66-IC4Z for a local request) MUST respond `403` with `Content-Type: text/plain; charset=utf-8` and a single line of body, send no `Set-Cookie`, not call `DeleteSession`, and leave the session untouched; this `Origin` check is the second line of cross-site defense after the cookie's `SameSite=Lax`.
 - R-TQ5L-6X9V: When auth serves its own host on a space, `GET https://auth.<space>/` with no live session MUST respond `200` with `Content-Type: text/html; charset=utf-8` and a body containing a link whose target is `/login/google`.
+- R-VWSW-YH7W: auth's design defines, scanning an auth page from left to right, a **tag span** as a `<` that lies outside the content of every `script` element and outside every quoted run of an earlier tag span and is immediately followed by an ASCII letter, running through the first `>` after it that lies outside every **quoted run** of the span (a `"` and the text through the next `"`, the runs taken left to right); a tag span's **name** as the run of ASCII letters, ASCII digits, and `-` after its `<`; a **start tag** for a lowercase element name `N` as a tag span whose name is exactly `N`; and an **end tag** for `N` as the characters `</`, `N`, `>`; every requirement of auth's design that names these MUST denote that.
+- R-BSTK-NA80: auth's design defines an **occurrence** of an attribute `A` in a tag span (a start tag included) as `A` starting at a place outside the span's quoted runs, preceded by ASCII whitespace, and immediately followed by `="`; the **read value** of that occurrence as the text of the quoted run that this `"` opens, from after it up to the next `"`, with every character reference decoded as the WHATWG HTML tokenizer decodes one inside an attribute value (HTML Living Standard §13.2.5.77 onward: numeric references, and named references with or without their trailing `;` exactly where the tokenizer decodes them); and a start tag that **carries** `A` **reading** `v` as one holding exactly one occurrence of `A` whose read value is exactly `v`; every requirement of auth's design that names these MUST denote that.
+- R-PHJ1-EC2S: auth's design defines the **content** of an element as the text from the `>` that ends its start tag up to the `<` that begins the first end tag of the same name after that start tag; an element **holds** whatever lies in its content; a text **begins with** an element when, after any leading ASCII whitespace, it starts with that element's start tag; and a text **consists of** a sequence of elements when it is exactly those elements, each from its start tag through the end tag that ends its content, in that order, with nothing before, between, or after them but ASCII whitespace; every requirement of auth's design that names these MUST denote that.
+- R-PIQX-S3TH: auth's design defines the **normalisation** of a text as the result of removing every `script` element and every `style` element whole (from its start tag through the first end tag of the same name after it), then removing every remaining span from a `<` through the next `>`, then replacing every HTML character reference with the character or characters it denotes, then replacing every run of ASCII whitespace with a single space and removing any leading or trailing space; a text **reads** `s` when its normalisation is exactly `s`; and the **visible text** of an auth page is the normalisation of its `body` element's content; every requirement of auth's design that names these MUST denote that.
+- R-PJYU-5VK6: auth's design defines an **auth page** as a response body that a requirement of auth's design states is an auth page, is drawn as a sign-in card, or is drawn in the signed-in chrome; every auth page MUST hold exactly one `body` start tag and, after it, exactly one `</body>` end tag.
+- R-BWH9-SLG3: Every auth page MUST hold exactly one tag span whose name is `title` matched ASCII case-insensitively, anywhere in the page, and that tag span MUST lie before the `body` start tag, MUST be a start tag for `title`, and MUST be followed immediately by exactly `auth</title>`.
+- R-PMEM-XF1K: Every auth page MUST hold, before its `body` start tag, exactly one `link` start tag carrying `rel` reading `stylesheet`, and that start tag MUST carry `href` reading `/assets/theme.css`.
+- R-PNMJ-B6S9: Every auth page MUST hold, before its `body` start tag, exactly one `meta` start tag carrying `name` reading `viewport`, and that start tag MUST carry `content` reading `width=device-width, initial-scale=1`.
+- R-XC44-L4H5: In every auth page, the read value of every occurrence (R-BSTK-NA80) of `action` or `formaction` in any tag span, and of every occurrence of `href` in a tag span whose name is `a` matched ASCII case-insensitively, MUST contain no ASCII tab, line feed, or carriage return and MUST either be exactly `/` or begin with `/` followed by a character that is neither `/` nor `\`.
+- R-XDC0-YW7U: In every auth page, every tag span whose name, matched ASCII case-insensitively, is neither `a` nor `link` MUST hold no occurrence (R-BSTK-NA80) of `href`, and every tag span MUST hold no occurrence of `xlink:href`, `srcset`, `imagesrcset`, or `ping`.
+- R-XEJX-CNYJ: In every auth page, the read value of every occurrence (R-BSTK-NA80) of `src`, `poster`, `data`, `background`, or `manifest` in any tag span, and of every occurrence of `href` in a tag span whose name is `link` matched ASCII case-insensitively, MUST contain no ASCII tab, line feed, or carriage return, MUST begin with `/assets/`, and MUST hold no double-dot segment: when the part of the value before its first `?` or `#` (the whole value when it holds neither) is split at every `/` and every `\`, no piece is `..` or an ASCII case-insensitive match for `.%2e`, `%2e.`, or `%2e%2e`.
+- R-WF4E-EVPQ: Every auth page MUST hold no tag span whose name is `style` matched ASCII case-insensitively, and every tag span of an auth page MUST hold no occurrence of the attribute `style`.
+- R-PRA8-GI0C: Every value auth writes into an auth page that it takes from the request, from Google, from `WORKSPACE_DOMAIN`, or from the store MUST contribute no `<` and no `>` character to the page's bytes, and every normalisation or read value that a requirement states in terms of such a value MUST contain that value unchanged apart from the whitespace collapse normalisation performs.
+- R-PTQ1-81HQ: auth's design defines the **apex name** of a request as the result of taking the request's `Host` as sent, removing a trailing `:` followed by one or more ASCII digits, and keeping the last two of the remaining text's `.`-separated labels joined by `.`, or the whole remaining text when it has fewer than two labels, so that `auth.sbx.ikigenba.dev` gives `ikigenba.dev` and `localhost:3001` gives `localhost`; every apex a page shows MUST be the request's apex name.
+- R-FQZJ-J8UK: auth's design defines a `button` element **drawn with** an icon and a word as one whose content begins with an `svg` element whose start tag carries `class` reading `ico`, `aria-hidden` reading `true`, `viewBox` reading `0 0 24 24`, `fill` reading `none`, `stroke` reading `currentColor`, `stroke-width` reading `2`, `stroke-linecap` reading `round`, and `stroke-linejoin` reading `round` and has no attribute name other than those eight; whose `svg` element's content is made of nothing but ASCII whitespace, `</path>` end tags, and the `path` start tags that icon's definition lists, each exactly once and in that order, each carrying `d` reading the listed value and having no attribute name other than `d`, so that it holds no other tag span and no other text; and whose whole content reads that word alone; every requirement of auth's design that says a button is drawn with an icon MUST denote that.
+- R-4QC8-VNSH: auth's design defines the **logout icon** as the icon whose `path` start tags carry `d` reading, in order, `M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2`, `M9 12h12l-3 -3`, and `M18 15l3 -3`; every requirement of auth's design that names the logout icon MUST denote that.
+- R-PXDQ-DCPT: auth's design defines an auth page **drawn as a sign-in card** as one that holds no `header` start tag, whose `body` element's content consists of exactly one `main` element whose start tag carries `class` reading `auth-page`, and whose `main` element's content consists of exactly one `section` element — the page's **card** — whose start tag carries `class` reading `card`; every page a requirement of auth's design states is drawn as a sign-in card MUST be so.
+- R-PYLM-R4GI: The card of a page drawn as a sign-in card MUST begin with a `span` element whose start tag carries `class` reading `mark` and holds no occurrence of `data-service`, and whose content is exactly `ikigenba`.
+- R-PZTJ-4W77: A page drawn as a sign-in card MUST hold exactly one `h1` start tag, inside its card, and that `h1` element's content MUST read `Sign in to <apex>`, where `<apex>` is the request's apex name.
+- R-Q11F-INXW: The card of a page drawn as a sign-in card MUST hold exactly one `a` start tag, and that start tag MUST carry `class` reading `button secondary large google`; that `a` element is the page's **card link**.
+- R-Q29B-WFOL: The card of a page drawn as a sign-in card MUST hold at most one `footer` start tag, and when it holds one, the card's content MUST end, apart from trailing ASCII whitespace, with that `footer` element's end tag; the card **holds a footer reading** `s` when it holds a `footer` element whose content reads `s`.
+- R-Q3H8-A7FA: auth's design defines an auth page **drawn in the signed-in chrome** for a user as one whose `body` element's content consists of a `header` element — the page's **chrome header** — followed by exactly one `main` element, which holds everything else on the page; every page a requirement of auth's design states is drawn in the signed-in chrome for a user MUST be so.
+- R-Q4P4-NZ5Z: The chrome header of a page drawn in the signed-in chrome for a user MUST consist of, in this order: an `a` element whose start tag carries `class` reading `mark`, `data-service` reading `auth`, and `href` reading `/`, and whose content is exactly `ikigenba`; a `span` element whose content reads that user's email; and the sign-out form.
+- R-4RK5-9FJ6: auth's design defines the **sign-out form** as a `form` element whose start tag carries `class` reading `inline`, `method` reading `post`, and `action` reading `/logout`, and whose content consists of exactly one `button` element whose start tag carries `class` reading `secondary small` and `type` reading `submit` and which is drawn with the logout icon and the word `Sign out`; every requirement of auth's design that names the sign-out form MUST denote that.
+- R-EEF5-QXR9: auth's design defines a **card titled** `T` as a `section` element whose content begins with a `header` element that holds an `h2` element whose content reads `T`, and a requirement that places a card titled `T` also states the `class` its `section` start tag carries or names the design that states it; every requirement of auth's design that names a card titled `T` MUST denote that.
+- R-4TZY-0Z0K: auth's design defines an **alert titled** `T` **reading** `X` as a `div` element whose content consists of a `strong` element whose content reads `T` followed by a `p` element whose content reads `X`, and a requirement that places an alert also states the attributes its `div` start tag carries; every requirement of auth's design that names an alert titled `T` reading `X` MUST denote that.
+- R-ED79-D60K: auth's design defines the **percent-encoding** of a value as the value's bytes (a text's UTF-8 encoding, or the byte sequence itself when it is not valid UTF-8) with every byte other than an ASCII letter, an ASCII digit, `-`, `.`, `_`, or `~` written as `%` followed by that byte's two uppercase hexadecimal digits; every requirement of auth's design that names the percent-encoding of a value MUST denote that.
+- R-QC0I-YLM5: `GET /` with no live session MUST respond `200` with `Content-Type: text/html; charset=utf-8` and a body that is an auth page drawn as a sign-in card — the **sign-in page** — and MUST change no state, persisting neither the request's return URL nor anything else.
+- R-PNB9-4VJK: The **return URL** of a request for the sign-in page MUST be the value of the first `&`-separated pair of the request's query whose name, decoded the same way as the value, is exactly `return`, the name and value being decoded as the WHATWG URL Standard's `application/x-www-form-urlencoded` parser decodes them (`+` as a space, and `%` followed by two hexadecimal digits as the byte they denote), except that a pair that holds a `;`, or whose name or value holds a `%` not followed by two hexadecimal digits, MUST be ignored as though it were absent, and except that the decoded value MUST be the byte sequence the value denotes, kept as it is when it is not valid UTF-8 (no byte is replaced by U+FFFD), so that `?return=%FF` yields the single byte `0xFF`, whose percent-encoding is `%FF`; a request with no such pair, or whose first such pair's value decodes to the empty string, MUST be treated as carrying no return URL.
+- R-PPR1-WF0Y: `GET /login/google` MUST record, as the return URL of the login state it creates via `CreateLoginState`, the value of its own first `return` query parameter found and decoded by the rule R-PNB9-4VJK states for the sign-in page, unvalidated — including when that value is out-of-space or cannot be parsed as a URL — and MUST record no return URL when it has no such parameter or that parameter decodes to the empty string.
+- R-QEGB-Q53J: The sign-in page's card link MUST have content reading `Continue with Google`, and its start tag MUST carry `href` reading `/login/google` when the request carries no return URL, and reading `/login/google?return=` followed by the percent-encoding of the return URL when it carries one, whether that return URL is in-space or out-of-space.
+- R-EFN2-4PHY: When the request for the sign-in page carries no return URL or an out-of-space one, the page's visible text MUST be exactly these strings, in this order, each separated from the next by a single space: `ikigenba`, `Sign in to <apex>`, `Access is limited to Google accounts in the <workspace> workspace.`, `Continue with Google`, and `You're signing in at <host>. One sign-in covers every service in this space.`; and the card MUST hold a footer reading that last string; where `<apex>` is the request's apex name, `<workspace>` is the value of `WORKSPACE_DOMAIN`, and `<host>` is the request's `Host` as sent, port included.
+- R-EGUY-IH8N: When the request for the sign-in page carries an in-space return URL, the page's visible text MUST be exactly these strings, in this order, each separated from the next by a single space: `ikigenba`, `Sign in to <apex>`, `Sign in to continue to <display>.`, `Continue with Google`, and `Access is limited to Google accounts in the <workspace> workspace.`; and the card MUST hold a footer reading that last string; where `<apex>` is the request's apex name, `<display>` is the return URL's display host, and `<workspace>` is the value of `WORKSPACE_DOMAIN`.
+- R-QI40-VGBM: The **display host** of an in-space return URL MUST be the host subcomponent of its authority (RFC 3986 §3.2.2) exactly as the URL writes it, followed, when the authority has a non-empty port subcomponent (§3.2.3), by `:` and that port exactly as written; any userinfo subcomponent (§3.2.1) MUST NOT be part of it.
+- R-N2LW-9AQJ: A return URL MUST be treated as **in-space** if and only if all of the following hold: (a) it contains no `\` and no byte from 0x00 through 0x20 or equal to 0x7F (no ASCII control character and no space); (b) it begins with `http://` or `https://`, the scheme matched ASCII case-insensitively; (c) its **authority** — the text after that `//` up to, but not including, the first `/`, `?`, or `#` after it, or to its end when there is none — consists of a non-empty **host** made only of ASCII letters, ASCII digits, `-`, and `.`, optionally followed by `:` and zero or more ASCII digits, so that an authority holding `@`, `%`, `[`, or any byte that is not ASCII is never in-space; and (d) the space's host name — the space (R-ILH9-35UU) with a trailing `:` followed by one or more ASCII digits removed — is non-empty, and the host, compared with it ASCII case-insensitively, either equals it or ends with `.` followed by it. Every other return URL, including one that is not a URL at all, MUST be treated as **out-of-space**.
+- R-N3TS-N2H8: The `302` `Location` of a successful member sign-in MUST be the login state's carried return URL when that URL is in-space (R-N2LW-9AQJ), and MUST be `/` when there is no return URL or the carried return URL is out-of-space.
+- R-QLRQ-0RJP: The `200` body R-Y05C-R3BF requires of `GET /login/google/callback` carrying `error=access_denied` — the **cancelled page** — MUST be an auth page drawn as a sign-in card whose card holds, after its `h1` element, a `div` element whose start tag carries `class` reading `alert`, `data-kind` reading `warn`, and `role` reading `status`, and which is an alert titled `Sign-in cancelled` reading `Google didn't grant access, so you weren't signed in. You can try again.`
+- R-QMZM-EJAE: The cancelled page's card link MUST have content reading `Continue with Google` and its start tag MUST carry `href` reading `/login/google`, and the cancelled page's card MUST hold no `footer` start tag.
+- R-QO7I-SB13: The `403` body R-U14O-MUY4 requires for a non-member result — the **non-member page** — MUST be an auth page drawn as a sign-in card whose card holds, after its `h1` element, a `div` element whose start tag carries `class` reading `alert`, `data-kind` reading `err`, and `role` reading `alert`, and which is an alert titled `Workspace membership required` reading `<email> isn't a verified account in the <workspace> workspace. Sign in with your @<workspace> account instead.`, where `<email>` is the verified ID token's `Claims.Email` and `<workspace>` is the value of `WORKSPACE_DOMAIN`.
+- R-QPFF-62RS: The non-member page's card link MUST have content reading `Try another account` and its start tag MUST carry `href` reading `/login/google`, and the non-member page's card MUST hold a footer reading `Think you should have access? Ask your <workspace> workspace admin to add you.`, where `<workspace>` is the value of `WORKSPACE_DOMAIN`.
+- R-QQNB-JUIH: The `200` body R-ISSN-DSB0 requires of `GET /` with a live session — the **profile** — MUST be an auth page drawn in the signed-in chrome for the user `LookupSessionIdentity` resolves for that session.
+- R-QRV7-XM96: The profile's `main` element's content MUST begin with an `h1` element whose content reads `Your account`, followed, with nothing between them but ASCII whitespace, by a `p` element whose content reads `You're signed in to <apex>.`, where `<apex>` is the request's apex name.
+- R-QT34-BDZV: The profile's card titled `Account` MUST have a `section` start tag carrying `class` reading `card`, and MUST hold a `dl` element whose start tag carries `class` reading `kv` and whose content consists of exactly six elements, alternately `dt` and `dd`, whose contents read, in order, `Email`, the email of the user the profile is drawn for, `Workspace`, the value of `WORKSPACE_DOMAIN`, `Signed in via`, and `Google`.
+- R-QVIX-2XH9: The profile's `main` element's content MUST consist of its `h1` element, its `p` element, and exactly three cards, in this order: a card titled `Account`, a card titled `API tokens`, and a card titled `Create a token`; D07 states the `class` the last two cards' `section` start tags carry and everything those two cards hold.
+- R-BV9D-ETPE: In every tag span of an auth page, every place outside the span's quoted runs where one of `src`, `poster`, `data`, `background`, `manifest`, `ping`, `href`, `xlink:href`, `action`, `formaction`, `srcset`, `imagesrcset`, or `style`, matched ASCII case-insensitively, is preceded by ASCII whitespace, by `/`, or by the closing `"` of a quoted run, and is followed, after optional ASCII whitespace, by `=`, MUST be an occurrence of that attribute (R-BSTK-NA80): the name in lowercase, preceded by ASCII whitespace and immediately followed by `="`.
+- R-52J8-PD7F: In every auth page, every `<` followed by `svg`, matched ASCII case-insensitively, and then by a character that is neither an ASCII letter, an ASCII digit, nor `-` MUST begin the `svg` element of a `button` element drawn with an icon and a word.
+- R-EI2U-W8ZC: The cancelled page's visible text MUST be exactly these strings, in this order, each separated from the next by a single space: `ikigenba`, `Sign in to <apex>`, `Sign-in cancelled`, `Google didn't grant access, so you weren't signed in. You can try again.`, and `Continue with Google`, where `<apex>` is the request's apex name.
+- R-EJAR-A0Q1: The non-member page's visible text MUST be exactly these strings, in this order, each separated from the next by a single space: `ikigenba`, `Sign in to <apex>`, `Workspace membership required`, `<email> isn't a verified account in the <workspace> workspace. Sign in with your @<workspace> account instead.`, `Try another account`, and `Think you should have access? Ask your <workspace> workspace admin to add you.`, where `<apex>` is the request's apex name, `<email>` is the verified ID token's `Claims.Email`, and `<workspace>` is the value of `WORKSPACE_DOMAIN`.
+- R-25ZM-NNWQ: Every auth page MUST hold no tag span whose name is `script` matched ASCII case-insensitively, other than a `script` element that a requirement of auth's design places on that page.
+- R-VY0T-C8YL: auth's design defines an **attribute name** in a tag span as the longest non-empty run of characters other than ASCII whitespace, `/`, `>`, `=`, and `"` that starts at a place outside the span's quoted runs preceded by ASCII whitespace, by `/`, or by the closing `"` of a quoted run; in every tag span of an auth page, every attribute name MUST be, matched ASCII case-insensitively, neither `srcdoc`, nor `http-equiv`, nor `attributionsrc`, nor `on` followed by one or more ASCII letters.
+- R-VZ8P-Q0PA: In every tag span of an auth page, every `=` that lies outside the span's quoted runs MUST immediately follow a non-empty attribute name and MUST be immediately followed by `"`, every quoted run MUST begin with a `"` that immediately follows such an `=`, and the span MUST hold no `'` outside its quoted runs.
+- R-LG9Z-G3JB: Every auth page MUST begin, as the first characters of the response body, with `<!DOCTYPE html>`, matched ASCII case-insensitively.
+- R-W0GM-3SFZ: In every auth page, apart from the leading `<!DOCTYPE html>`, every `<` that lies outside the content of every `script` element and outside every quoted run of a tag span MUST either be immediately followed by an ASCII letter, beginning a tag span, or begin an end tag written exactly as `</`, one or more ASCII letters, ASCII digits, or `-`, and `>`.
+- R-FCA4-0P8U: Every auth page MUST hold no tag span whose name, matched ASCII case-insensitively, is `textarea`, `xmp`, `iframe`, `noembed`, `noframes`, `noscript`, `plaintext`, `template`, or `math`.
+- R-FDI0-EGZJ: In every auth page, every tag span whose name is `script` matched ASCII case-insensitively MUST be a start tag for `script`; the first `</script` after it, matched ASCII case-insensitively, MUST be exactly the end tag `</script>`; and that `script` element's content MUST hold no `<!--`.

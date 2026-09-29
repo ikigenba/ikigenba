@@ -3,9 +3,10 @@
 The file that carries auth to a space. `devctl build auth` writes it from a
 commit that an `auth/v<semver>` tag points at, and `opsctl install` unpacks it
 into `/opt/auth/`. Its contents are the whole of what auth ships: the static
-`linux/amd64` binary and the manifest, nothing else. auth carries its pages
-and its database schema inside the binary — its HTML, JavaScript, and CSS are
-embedded and it creates its schema on first start — so it keeps nothing under
+`linux/amd64` binary and the manifest, nothing else. auth carries its pages,
+the platform style's files, and its database schema inside the binary — its
+HTML is embedded, the stylesheet, fonts, and licences it serves at
+`/assets/` need no file beside it (`S8-assets.md`), and it creates its schema on first start — so it keeps nothing under
 `share/` and nothing under `etc/` but the manifest, and no other member
 exists. The version is in the file's name and in the binary, never in a
 member's path.

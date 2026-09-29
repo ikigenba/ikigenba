@@ -9,8 +9,31 @@ only where those things live and how they are wired and tested. The later
 design documents attach their contracts to the packages this document names:
 `internal/server` owns the HTTP handlers and router and the listener's life
 (D03), `internal/store` owns persistence (D04), `internal/google` owns the
-Google/OIDC client (D05), and `internal/idcodec` owns the opaque-id and secret
-encoding (D04).
+Google/OIDC client (D05), `internal/idcodec` owns the opaque-id and secret
+encoding (D04), and the root package `auth` owns the embedded copy of the
+platform style's files that `internal/server` serves (D08).
+
+The module root is a package too: `package auth`, whose only job is to carry
+the platform style's files into the binary. Those files — the stylesheet, the
+fonts, and the licences of what they carry — sit in the hand-maintained
+`assets/` directory beside `go.mod`. Go's `embed` package only embeds files
+from the directory of the package that declares the embedding, or below it:
+pkg.go.dev/embed says the files are "read from the package directory or
+subdirectories at compile time", that "the patterns are interpreted relative
+to the package directory containing the source file", and that patterns "may
+not contain '.' or '..'". A package under `internal/` therefore cannot reach
+`assets/`, and a package at the module root is the one place that can; so the
+root package exists and holds the one exported file system, `Assets`. It
+imports no other package of the module, and only `internal/server`, which
+serves the files (D08), imports it.
+The embedded HTML, JavaScript, and CSS that used to sit in a package below
+`internal/server` are retired with that package; the pages auth draws are
+D05's and D07's, and the only style files auth carries are those of `assets/`.
+
+One file is named by the contract: `theme.css`, because every HTML page auth
+draws links `/assets/theme.css` (D05, D07) and that link must resolve. The
+design requires it to be in `Assets` and says nothing of what it holds, and it
+names no other file.
 
 The platform's apps share a run seam so their gates run offline and
 deterministically; dummy, the platform's reference app, set its shape, and
@@ -93,7 +116,10 @@ deployed binary report the same string and nothing is injected at link time.
 - R-LTJ7-WBS6: `internal/cli` MUST export `type Process struct { Args []string; LookupEnv func(key string) (string, bool); Unsetenv func(key string) error; Pid int; Stdout io.Writer; Stderr io.Writer; Inherit func(fd uintptr) (net.Listener, error); Now func() time.Time; Rand io.Reader; OIDCIssuer string; DBSource string }`, with exactly those fields in that order, where `Args` excludes the program name, `Pid` is the id of the process `Run` speaks for, and a nil `Unsetenv` means `Run` removes no variable.
 - R-LUR4-A3IV: `internal/cli` MUST export `func Run(ctx context.Context, p Process) int`.
 - R-3SZS-Z4PL: `internal/version` MUST export `var Version string`, initialized in source to a string literal matching the shape `v<semver>` (a leading `v` followed by a semantic version), and its value MUST NOT depend on linker flags — a plain build with no `-ldflags` MUST yield that same literal value.
-- R-3U7P-CWGA: The internal packages MUST form a one-way import graph in which `cmd/auth` imports `internal/cli`; `internal/cli` may import `internal/server`, `internal/store`, `internal/google`, `internal/idcodec`, and `internal/version`; `internal/server` may import `internal/store`, `internal/google`, `internal/idcodec`, and `internal/version`; `internal/store` and `internal/google` may import `internal/idcodec` and `internal/version`; `internal/idcodec` and `internal/version` MUST import no other `internal/*` package; and no `internal/*` package MUST import `internal/cli`.
+- R-1W1T-AY2N: The Go module MUST consist of exactly eight packages — `package auth` at the module root beside `go.mod`, `package main` at `cmd/auth`, `internal/cli`, `internal/server`, `internal/store`, `internal/google`, `internal/idcodec`, and `internal/version` — so that no directory of the module other than those eight holds a `.go` file.
+- R-UC3D-XIHZ: The root package `auth` MUST own the embedded copy of the sub-project's `assets/` directory and nothing else, so that its non-test `.go` files declare no exported name other than `Assets`.
+- R-1YHM-2HK1: The root package `auth` MUST export `var Assets embed.FS`.
+- R-1TM0-JEL9: The imports written in the non-test `.go` files of the module's packages MUST form a one-way graph in which `cmd/auth` imports `internal/cli`; `internal/cli` may import `internal/server`, `internal/store`, `internal/google`, `internal/idcodec`, and `internal/version`; `internal/server` may import the root package `auth`, `internal/store`, `internal/google`, `internal/idcodec`, and `internal/version`; `internal/store` and `internal/google` may import `internal/idcodec` and `internal/version`; the root package `auth`, `internal/idcodec`, and `internal/version` MUST import no package of this module; no package other than `internal/server` MUST import the root package `auth`; and no `internal/*` package MUST import `internal/cli`.
 - R-LX6X-1N09: `main` MUST run `cli.Run` with `Process.Args` set to the process arguments after the program name, `LookupEnv` reading the process environment, `Unsetenv` removing a variable from the process environment, `Pid` the process's own id, `Stdout` and `Stderr` the process's standard output and standard error, `Inherit` nil, `Now` the system wall clock, `Rand` a cryptographically secure random source, `OIDCIssuer` the production Google OIDC issuer location, and `DBSource` the database path `state/auth.db`, and with a context that is cancelled when the process receives `SIGTERM` or `SIGINT`.
 - R-3WNI-4FXO: `main` MUST terminate the process with the exact integer that `cli.Run` returns as the process exit status.
 - R-3XVE-I7OD: `cli.Run` MUST return `0` on success, `1` when the server fails, and `2` on a usage error.
@@ -103,4 +129,5 @@ deployed binary report the same string and nothing is injected at link time.
 - R-M22I-KPZ1: The `internal/server` package MUST export `func Serve(ctx context.Context, ln net.Listener, h http.Handler, drain time.Duration) error`.
 - R-M3AE-YHPQ: The `internal/server` package MUST export `type DrainError struct { Unfinished int }` and `func (e *DrainError) Error() string`.
 - R-M4IB-C9GF: `*server.Server` MUST implement `http.Handler` through `func (*Server) ServeHTTP(w http.ResponseWriter, r *http.Request)`.
-- R-TL9Z-NUB3: A running `auth` server MUST be self-contained in its executable: it MUST serve its HTML, JavaScript, and CSS from assets embedded in the binary, MUST depend on no shared library at run time, and MUST open no configuration or asset file of its own at run time, its only file of its own being its SQLite database at `state/auth.db` and the files SQLite keeps beside it; files the Go runtime and standard library read on their own account (such as the system's time-zone, TLS root-certificate, or resolver files) are not auth's own files; the inherited file descriptor 3 and the `NOTIFY_SOCKET` datagram socket are not files it opens.
+- R-1UTW-X6BY: A running `auth` server MUST be self-contained in its executable: it MUST depend on no shared library at run time, and MUST open no file of its own at run time other than its SQLite database at `state/auth.db` and the files SQLite keeps beside it — no configuration file and no file of the sub-project's `assets/` directory among them; files the Go runtime and standard library read on their own account (such as the system's time-zone, TLS root-certificate, or resolver files) are not auth's own files; the inherited file descriptor 3 and the `NOTIFY_SOCKET` datagram socket are not files it opens.
+- R-20XE-U11F: `Assets` MUST hold a regular file at path `assets/theme.css`.

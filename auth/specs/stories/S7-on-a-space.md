@@ -35,7 +35,10 @@ HTTP/2 200
 content-type: text/html; charset=utf-8
 ```
 
-Status 200. The body is an HTML page containing a link to `/login/google`.
+Status 200. The body is the sign-in page (`S3-sign-in.md`): an HTML page
+whose title is `auth`, which links `/assets/theme.css` as its stylesheet, and
+whose visible text includes the heading `Sign in to ikigenba.dev` and a link to
+`/login/google`.
 
 Preconditions:
 

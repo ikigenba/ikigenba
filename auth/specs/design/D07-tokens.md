@@ -4,51 +4,210 @@ The token-management HTTP surface a signed-in Workspace member drives from
 their profile: creating a personal access token, listing the tokens they own,
 toggling one enabled or disabled, and deleting one. These handlers live in
 `internal/server` (D01) and are unexported; their contract is the observable
-HTTP behaviour — method, path, status, fixed headers, and the structure of the
-body — and nothing about how the handlers are written. Every name they lean on
-is already fixed elsewhere: the store operations and the `Token`/`Expiry`/
-`Identity` shapes in D04, the `ikigenba_session` cookie and the service's own
-origin in D05, the `idcodec` id and secret encodings in D04. D07 re-declares
-none of them.
+HTTP behaviour — method, path, status, fixed headers, and the markup and text
+of the body — and nothing about how the handlers are written. Every name they
+lean on is already fixed elsewhere: the store operations and the `Token`/
+`Expiry`/`Identity` shapes in D04, the `ikigenba_session` cookie and the
+service's own origin in D05, the `idcodec` id and secret encodings in D04. D07
+re-declares none of them.
 
 Every request in this design carries a valid `ikigenba_session` cookie (D05
 owns the cookie; this design only reads it to identify the acting user), and
 every state-changing request is a POST that also carries an `Origin` header
 equal to the service's own origin (D05 owns how that origin is derived from the
 request Host). A POST whose `Origin` is not the service's own origin is refused
-outright, and nothing is changed.
+outright, and nothing is changed. That refusal and the 404 for a token that is
+not the user's are auth's own failures, not pages: one line of plain text, in
+no chrome.
 
-Creating a token accepts a `name` (required, 1..64 characters once leading and
-trailing whitespace is trimmed) and an `expires` value drawn from the four
-`store.Expiry` members. On success the plaintext secret — the second return of
-`CreateToken`, of the form `ikp_` followed by 52 Crockford base32 characters —
-is presented exactly once, alongside a button that copies it and a link back to
-the profile; only its hash is ever stored, so it appears in this one response
-and never again. A blank or whitespace-only name creates nothing and returns the
-create form for another try.
+## The page vocabulary
 
-The profile page as a whole is D05's; D07 owns only the per-token rows within
-it. For each token the acting user owns — as `ListTokens` returns them — the
-page carries a row that exposes the token's name, created time, last-used time,
-expiry, and whether it is enabled, together with a POST form to that token's
-enable or disable URL and a POST form to its delete URL. The URL segment is the
-token's own random Crockford id (`idcodec.NewID`, the `Token.ID` field), never
-its secret, and no plaintext secret appears anywhere on the page. Posting to a
-token's enable, disable, or delete URL returns the user to the profile; a
-segment naming a token the user does not own, or no token at all, is answered
-the same way delete and toggle alike — a 404 — because the store cannot
-distinguish "not yours" from "does not exist".
+D05 owns the words every page auth draws is described in, and this design uses
+them by name without restating them: an **auth page** and what it carries in
+its head (the title `auth`, the stylesheet at `/assets/theme.css`, the
+phone-width viewport, nothing loaded from another host, every outside value
+escaped); a page **drawn in the signed-in chrome** for a user, with its
+**chrome header** and the **sign-out form**; a **card titled** a name; an
+**alert titled** a name **reading** a text; a button **drawn with** an icon and
+a word; and the reading procedures a requirement uses — start tag, end tag,
+occurrence, carries and read value, content, holds, begins with, consists of,
+normalisation, reads, visible text. D05 also defines the **profile** and fixes
+where on it the `API tokens` and `Create a token` cards sit and what they are
+titled; everything those two cards hold is this design's.
+
+This design adds three definitions of its own: the **plus icon** and the
+**copy icon**, defined the way D05 defines the logout icon, by the path data of
+Tabler's outline `plus` and `copy` icons in the platform's `design/` without
+their invisible bounding-box path; and a start tag that **marks** an
+attribute, read by D05's attribute name, case-insensitively, whatever the
+form of its value. D05's occurrence rule reads only the `name="value"` form, and the
+HTML standard lets a boolean attribute such as `selected` be written bare ("The
+presence of a boolean attribute on an element represents the true value", its
+value "either the empty string or a value that is an ASCII case-insensitive
+match for the attribute's canonical name"; WHATWG HTML, common microsyntaxes,
+boolean attributes), so the selected expiry option is read by presence.
+
+## The tokens on the profile
+
+The `API tokens` card is a flush card: its header carries the one-sentence
+explanation beside the title, and beneath it sits either the table of the
+user's tokens in a horizontally scrolling wrapper or, when the user owns none,
+the empty state that says what the card is for. The table's rows run most
+recently used first, so the token used last is at the top; tokens last used at
+the same instant run newest first by created time; and tokens never used come
+after every used one, newest first by created time among themselves. D04's
+`ListTokens` promises which tokens it returns and not their order, so the
+order is this page's own; two tokens that tie on both times may stand in
+either order.
+
+A time cell shows a time as a `time` element whose `datetime` is the time in
+UTC written as RFC 3339's `date-time` (§5.6: `full-date "T" full-time`, with
+`partial-time` requiring seconds and `time-offset` allowing `"Z"`), in whole
+seconds with `"Z"` as the offset, and whose text is the same time to the
+minute with ` UTC` after it. That `datetime` is also valid HTML: a `time`
+element's `datetime` may be "a valid global date and time string", which is a
+date, `T`, a time whose seconds are optional, and a time-zone offset such as
+`Z` (WHATWG HTML, the `time` element and common microsyntaxes). The `Created`
+and `Expires` cells are time cells. A token never used, or one that never
+expires, shows `Never` in a muted cell instead.
+
+The `Last used` cell of a used token says instead how long before the page was
+drawn the token was last used, rounded down to a whole unit: `just now` under
+a minute, then minutes, hours, and days, singular at exactly one, with days the
+largest unit, so a token last used a year ago reads `365 days ago`. The page's
+draw time is one reading of the server's injected clock, the `Now` of the
+`server.Config` it was built with (D03), so a test fixes it exactly. A
+last-used time later than the draw time, which clock skew can produce, reads
+`just now`. The cell keeps the same machine-readable `datetime` as a time
+cell, and its `title` carries the exact last-used time to the minute, which a
+browser shows on hover: the `title` attribute "represents advisory
+information for the element, such as would be appropriate for a tooltip"
+(WHATWG HTML, §3.2.6.1, the `title` attribute), and it is a global attribute,
+which the `time` element accepts (§4.5.14, the `time` element: content
+attributes "Global attributes" and `datetime`).
+
+Each row ends with its actions: an inline form that disables an enabled token
+or enables a disabled one, and an inline form that deletes it, each with one
+small ghost button. The URL segment is the token's own random Crockford id
+(`idcodec.NewID`, the `Token.ID` field), never its secret, and no plaintext
+secret appears anywhere on the profile. Posting to a token's enable, disable,
+or delete URL returns the user to the profile; a segment naming a token the
+user does not own, or no token at all, is answered the same way delete and
+toggle alike — a 404 — because the store cannot distinguish "not yours" from
+"does not exist".
+
+## Creating a token
+
+The `Create a token` card on the profile holds the create form: a `Name` text
+input capped at 64 characters with a hint beneath it, an `Expires` select
+offering 30, 90, and 365 days and never, with 90 days chosen, and a submit
+button carrying the plus icon. The labels name their controls by `for`, so a
+label names the field it sits over. A `name` is valid when it is 1 to 64
+characters once leading and trailing whitespace is trimmed; an `expires` is
+valid when it is one of the four `store.Expiry` values, and a missing one is
+invalid like any other.
+
+A rejected submission is answered 400 with a page in the signed-in chrome that
+holds only the `Create a token` card, keeping what the caller typed. Every
+field is checked, and each field in error shows its message beneath it in
+place of its hint, in a `span` whose id ends in `-error` — the hook the
+stylesheet draws an error by — and which the field names in its
+`aria-describedby` (WAI-ARIA 1.2: `aria-describedby` "identifies the element
+(or elements) that describes the object"). An expiry in error cannot be shown
+as submitted, since the select offers only its four choices, so it falls back
+to 90 days as on a fresh form. The submit button and a `Cancel` link back to
+the profile sit together in the form's actions row.
+
+A successful creation is answered 200 with its own page in the signed-in
+chrome: one card, `Token created`, whose quiet warning says this is the only
+time the token is shown, then the secret in a `code` element beside a `Copy`
+button, then a link back to the profile. The secret occurs exactly once in the
+page: the button carries no copy of it, and nothing auth sends afterward
+carries it. The plaintext is the second return of `CreateToken`, of the form
+`ikp_` followed by 52 Crockford base32 characters; only its hash is stored.
+
+`Copy` works through one inline script, which reads the `code` element's text
+and writes it to the clipboard with `navigator.clipboard.writeText`. The
+Clipboard API's `writeText` "writes the specified text to the system
+clipboard" and is available only in a secure context (MDN,
+`Clipboard.writeText()`; the W3C Clipboard API declares the interface
+`[SecureContext, Exposed=Window]`). Both places auth runs qualify: a space
+serves auth over `https`, and a document "delivered from a loopback (local)
+address" is secure too, `http://localhost` among them (MDN, Secure contexts).
+Firefox and Safari require transient activation for a write and Chromium
+requires it or the `clipboard-write` permission (MDN, Clipboard API, security
+considerations); the write happens in the handler of the button's own click,
+which supplies it. The button's `type` is `button`, the type that "does
+nothing" by itself (WHATWG HTML, the `button` element), so a click submits
+nothing.
+
+The script is inline, with no `src`, for the reason the stylesheet is a file:
+the files auth serves under `/assets/` are the platform's hand-copied style
+files, and a script is not one of them. It must also keep D05's promise that a
+page loads nothing from any other host, which D05's attribute rules cannot see
+inside a script. No gate runs JavaScript, so the script is pinned by what a
+standard-library test can read: its start tag is exactly `<script>`, with no
+`type`, `nomodule`, or other attribute that could keep it from running, and
+its source, apart from ASCII whitespace, is exactly one fixed statement — a
+`click` listener on the `button` child of the `secret` div
+(`document.querySelector`, MDN: "returns the first Element within the
+document that matches the specified selector"; `>` is the CSS child
+combinator) that passes the text of that div's `code` child to
+`navigator.clipboard.writeText`. No tag on the page but the secret div's
+mentions `secret` in any letter case, and no tag holds a character reference
+that could spell it, so the selectors find the Copy button and the secret and
+nothing else.
+Pinning the text apart from whitespace is the only form a text test can
+decide; a looser rule admits an extra listener or a wrapper that never runs.
+The source is further held to whitespace, letters, a short list of
+punctuation, and twelve fixed words, so that whitespace can never split a word
+(`docu ment`) or pad a quoted string (`'click '`) into something the whitespace-free comparison would accept. That
+statement assigns nothing, names no URL, and reaches no API that fetches,
+navigates, loads, or evaluates code. D05 bars every other script from auth's
+pages.
 
 ## REQUIREMENTS
 
 - R-N5RR-K5GT: A `POST /tokens` carrying a valid `ikigenba_session` cookie and an `Origin` header equal to the service's own origin (D05), whose `name` after trimming leading and trailing whitespace is 1..64 characters and whose `expires` is one of the `store.Expiry` members `ExpiryNever`, `Expiry30d`, `Expiry90d`, or `Expiry365d` (D04), MUST respond `200 OK` with `Content-Type: text/html; charset=utf-8` and MUST create exactly one token for the cookie's user by calling `CreateToken` (D04) with that trimmed `name` and the matching `store.Expiry`.
-- R-N6ZN-XX7I: The `200 OK` body of a successful `POST /tokens` MUST present the created token's plaintext secret — the second return value of `CreateToken` (D04), of the form `ikp_` followed by 52 Crockford base32 characters — exactly once, and MUST contain a button element that copies that secret and a link whose target is `/`; the plaintext secret MUST appear in this response only and on no later page.
 - R-N87K-BOY7: A `POST /tokens` carrying a valid `ikigenba_session` cookie and an `Origin` header equal to the service's own origin (D05), whose `name` after trimming leading and trailing whitespace is not 1..64 characters (empty, whitespace-only, or longer than 64), MUST respond `400 Bad Request` with `Content-Type: text/html; charset=utf-8`, MUST NOT call `CreateToken` (D04), and MUST return a body containing the create form: a form whose method is POST and whose action is `/tokens`, carrying a `name` field and an `expires` field.
 - R-G35Y-WGL0: A `POST /tokens` carrying a valid `ikigenba_session` cookie and an `Origin` header equal to the service's own origin (D05), whose `name` after trimming leading and trailing whitespace is 1..64 characters but whose `expires` is missing or is not one of the `store.Expiry` members `ExpiryNever`, `Expiry30d`, `Expiry90d`, or `Expiry365d` (D04), MUST respond `400 Bad Request` with `Content-Type: text/html; charset=utf-8`, MUST NOT call `CreateToken` (D04), and MUST return a body containing the create form: a form whose method is POST and whose action is `/tokens`, carrying a `name` field and an `expires` field.
-- R-N9FG-PGOW: The `200 OK` body of `GET /` for a signed-in user (the whole page is D05's) MUST contain, for each token the cookie's user owns as returned by `ListTokens` (D04), one row exposing that token's name, its created time, its last-used time, its expiry, and whether it is enabled.
-- R-NAND-38FL: Each token row on `GET /` MUST contain a form whose method is POST and whose action is `/tokens/<id>/enable` when the token is disabled or `/tokens/<id>/disable` when the token is enabled, and a form whose method is POST and whose action is `/tokens/<id>/delete`, where `<id>` is the token's `Token.ID` (the `idcodec.NewID` Crockford id, D04) and never its secret.
-- R-NBV9-H06A: The `GET /` body MUST NOT contain any token's plaintext secret.
 - R-ND35-URWZ: A `POST /tokens/<id>/enable` (respectively `/disable`) carrying a valid `ikigenba_session` cookie and an `Origin` header equal to the service's own origin (D05), where `<id>` names a token the cookie's user owns, MUST call `SetTokenEnabled` (D04) with `enabled` true (respectively false) and respond `302 Found` with `Location: /`.
 - R-NFIY-MBED: A `POST /tokens/<id>/delete` carrying a valid `ikigenba_session` cookie and an `Origin` header equal to the service's own origin (D05), where `<id>` names a token the cookie's user owns, MUST remove the token by calling `DeleteToken` (D04) and respond `302 Found` with `Location: /`; afterward the token no longer appears among `ListTokens` for that user and its secret authenticates no request.
 - R-NGQV-0352: A `POST /tokens/<id>/enable`, `/disable`, or `/delete` carrying a valid `ikigenba_session` cookie and an `Origin` header equal to the service's own origin (D05), where the store operation (`SetTokenEnabled` or `DeleteToken`, D04) returns an error satisfying `errors.Is(err, store.ErrNotFound)` because `<id>` names a token the user does not own or names no token, MUST respond `404 Not Found` with `Content-Type: text/plain; charset=utf-8` and MUST change nothing.
 - R-NHYR-DUVR: A `POST /tokens`, or a `POST /tokens/<id>/enable`, `/disable`, or `/delete`, whose `Origin` header is not equal to the service's own origin (D05) MUST respond `403 Forbidden` with `Content-Type: text/plain; charset=utf-8` and MUST NOT call `CreateToken`, `SetTokenEnabled`, or `DeleteToken` (D04) — nothing is changed.
+- R-T01Q-F5J7: The body of every `404 Not Found` response R-NGQV-0352 requires and of every `403 Forbidden` response R-NHYR-DUVR requires MUST be a single line of plain text: one or more bytes none of which is `\n` or `\r`, followed by a single `\n`.
+- R-T19M-SX9W: auth's design defines the **plus icon** as the icon whose `path` start tags carry `d` reading, in order, `M12 5l0 14` and `M5 12l14 0`; every requirement of auth's design that names the plus icon MUST denote that.
+- R-T2HJ-6P0L: auth's design defines the **copy icon** as the icon whose `path` start tags carry `d` reading, in order, `M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666` and `M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1`; every requirement of auth's design that names the copy icon MUST denote that.
+- R-VW7C-EV6R: auth's design defines a start tag that **marks** an attribute `A` as one that, read as a tag span, has an attribute name matching `A` ASCII case-insensitively; every requirement of auth's design that says a start tag marks, or does not mark, an attribute MUST denote that.
+- R-T4XB-Y8HZ: The profile's card titled `API tokens` MUST have a `section` start tag carrying `class` reading `card flush`, its content MUST consist of its `header` element followed by exactly one `div` element — the card's **token panel** — and that `header` element MUST hold a `p` element whose content reads `Personal access tokens let scripts and tools act as you. Send one as a bearer token.`
+- R-THYV-6MCE: When `ListTokens` (D04) returns at least one token for the profile's user, the start tag of the token panel of the profile's card titled `API tokens` MUST carry `class` reading `table-scroll`, the token panel MUST hold exactly one `table` start tag, and the profile MUST hold no `div` start tag carrying `class` reading `empty`.
+- R-TJ6R-KE33: The content of the `table` element of R-THYV-6MCE MUST consist of a `thead` element followed by a `tbody` element, and the `thead` element's content MUST consist of one `tr` element whose content consists of exactly six `th` elements whose contents read, in order, `Name`, `Created`, `Last used`, `Expires`, `Status`, and the empty string.
+- R-VMDB-UFAK: For each token `t` that `ListTokens` (D04) returns for the profile's user, the `tbody` element of R-TJ6R-KE33 MUST hold exactly one `tr` element — `t`'s **row** — holding a `form` start tag carrying `action` reading `/tokens/<id>/delete`, where `<id>` is `t.ID`, and the `tbody` element's content MUST consist of exactly those rows, one per token.
+- R-VNL8-8719: For any two tokens `a` and `b` whose rows R-VMDB-UFAK requires, `a`'s row MUST precede `b`'s row whenever `a.LastUsedAt` is non-nil and `b.LastUsedAt` is nil; whenever both are non-nil and the time `a.LastUsedAt` points to is later than the time `b.LastUsedAt` points to; whenever both are non-nil, both point to the same instant, and `a.CreatedAt` is later than `b.CreatedAt`; and whenever both are nil and `a.CreatedAt` is later than `b.CreatedAt`.
+- R-T9SX-HBGR: auth's design defines the **time cell** of a time `x` as a `td` element whose content consists of exactly one `time` element whose start tag carries `datetime` reading `x` in UTC written as an RFC 3339 `date-time` (§5.6) in the form `YYYY-MM-DDTHH:MM:SSZ`, whole seconds with any fraction dropped, and whose content reads `x` in UTC written as `YYYY-MM-DD HH:MM UTC`, whole minutes with any seconds and fraction dropped; and the **never cell** as a `td` element whose start tag carries `class` reading `muted` and whose content reads `Never`; every requirement of auth's design that names a time cell or a never cell MUST denote that.
+- R-VOT4-LYRY: auth's design defines the profile's **draw time** as one value that a call of the `Now` field of the `server.Config` passed to `server.New` (D03) returned while the server handled the profile's request, the same value for every row of that profile; every requirement of auth's design that names the profile's draw time MUST denote that.
+- R-VQ10-ZQIN: auth's design defines the **elapsed text** of a duration `e`, which may be negative, as: `just now` when `e` is less than 60 seconds, every negative `e` included; when `e` is at least 60 seconds and less than 3600 seconds, with `n` the number of seconds in `e` divided by 60 and rounded down to a whole number, `1 minute ago` when `n` is 1 and `<n> minutes ago` otherwise; when `e` is at least 3600 seconds and less than 86400 seconds, with `n` the number of seconds in `e` divided by 3600 and rounded down to a whole number, `1 hour ago` when `n` is 1 and `<n> hours ago` otherwise; and when `e` is at least 86400 seconds, with `n` the number of seconds in `e` divided by 86400 and rounded down to a whole number, `1 day ago` when `n` is 1 and `<n> days ago` otherwise, however large `n` is; where `<n>` is `n` written in ASCII decimal digits with no leading zero; every requirement of auth's design that names the elapsed text of a duration MUST denote that.
+- R-VR8X-DI9C: auth's design defines the **last-used cell** of a time `x` as a `td` element whose content consists of exactly one `time` element whose start tag carries `datetime` reading `x` in UTC written as an RFC 3339 `date-time` (§5.6) in the form `YYYY-MM-DDTHH:MM:SSZ`, whole seconds with any fraction dropped, and `title` reading `x` in UTC written as `YYYY-MM-DD HH:MM UTC`, whole minutes with any seconds and fraction dropped, and whose content reads the elapsed text of the profile's draw time minus `x`; every requirement of auth's design that names a last-used cell MUST denote that.
+- R-VSGT-RA01: The content of each token's row MUST consist of exactly six `td` elements, in this order: one whose content reads the token's `Name` with every run of ASCII whitespace in it replaced by a single space and any leading or trailing space removed; the time cell of its `CreatedAt`; the never cell when its `LastUsedAt` is nil and otherwise the last-used cell of the time `LastUsedAt` points to; the never cell when its `ExpiresAt` is nil and otherwise the time cell of the time `ExpiresAt` points to; its status cell (R-VYN5-6EO5); and its actions cell (R-TEOJ-0EFJ).
+- R-VYN5-6EO5: A token's **status cell** MUST be a `td` element whose content consists of exactly one `span` element, which, when the token's `Enabled` is true, has a start tag carrying `class` reading `badge` and `data-kind` reading `ok` and content reading `Enabled`, and, when `Enabled` is false, has a start tag carrying `class` reading `badge` and not marking `data-kind`, and content reading `Disabled`.
+- R-TEOJ-0EFJ: A token's **actions cell** MUST be a `td` element whose start tag carries `class` reading `row-actions` and whose content consists of exactly two `form` elements, each with a start tag carrying `class` reading `inline` and `method` reading `post` and each with content consisting of exactly one `button` element whose start tag carries `class` reading `ghost small` and `type` reading `submit`: first, one whose start tag carries `action` reading `/tokens/<id>/disable` and whose button's content reads `Disable` when the token is enabled, or `action` reading `/tokens/<id>/enable` and whose button's content reads `Enable` when it is disabled; then one whose start tag carries `action` reading `/tokens/<id>/delete` and whose button's content reads `Delete`; where `<id>` is the token's `Token.ID` (the `idcodec.NewID` Crockford id, D04) and never its secret.
+- R-TLMK-BXKH: When `ListTokens` (D04) returns no token for the profile's user, the profile MUST hold no `table` start tag and no `div` start tag carrying `class` reading `table-scroll`, the start tag of the token panel of the profile's card titled `API tokens` MUST carry `class` reading `empty`, and the token panel's content MUST consist of an `h3` element whose content reads `No tokens yet` followed by a `p` element whose content reads `Create one below when a script or tool needs to act as you.`
+- R-TH4B-RXWX: auth's design defines a **create-token form** as a `form` element whose start tag carries `method` reading `post` and `action` reading `/tokens`; every requirement of auth's design that names a create-token form MUST denote that.
+- R-TIC8-5PNM: Every create-token form MUST hold exactly one `label` start tag carrying `for` reading `token-name`, whose element's content reads `Name`; exactly one `label` start tag carrying `for` reading `token-expires`, whose element's content reads `Expires`; exactly one `input` start tag, which carries `id` reading `token-name`, `type` reading `text`, `name` reading `name`, `maxlength` reading `64`, and `placeholder` reading `e.g. ci-deploy`; and exactly one `select` start tag, which carries `id` reading `token-expires` and `name` reading `expires`.
+- R-TJK4-JHEB: The `select` element of every create-token form MUST have content consisting of exactly four `option` elements whose start tags carry `value` reading, in order, `30d`, `90d`, `365d`, and `never`, and whose contents read, in order, `In 30 days`, `In 90 days`, `In 365 days`, and `Never`, and exactly one of those `option` start tags MUST mark `selected`.
+- R-TKS0-X950: Every create-token form MUST hold exactly one `button` start tag, and that `button` element's start tag MUST carry `type` reading `submit` and the element MUST be drawn with the plus icon and the word `Create token`.
+- R-TLZX-B0VP: In every create-token form, the `label` start tag for `token-name`, the `input` start tag, the `label` start tag for `token-expires`, the `select` start tag, and the `button` start tag MUST appear in this order, and the form's `span` start tags MUST all lie either between the `input` start tag and the `label` start tag for `token-expires` or between the `</select>` end tag and the `button` start tag.
+- R-VZV1-K6EU: The profile's card titled `Create a token` MUST have a `section` start tag carrying `class` reading `card`, and its content MUST consist of its `header` element followed by a create-token form whose `input` start tag does not mark `value` and whose `option` start tag carrying `value` reading `90d` is the one that marks `selected`.
+- R-TOFQ-2KD3: The `400 Bad Request` body R-N87K-BOY7 or R-G35Y-WGL0 requires — the **rejected-create page** — MUST be an auth page drawn in the signed-in chrome for the cookie's user, whose `main` element's content consists of exactly one card titled `Create a token`, whose `section` start tag carries `class` reading `card` and whose content consists of its `header` element followed by a create-token form.
+- R-TPNM-GC3S: The `input` start tag of the rejected-create page's create-token form MUST carry `value` reading the request's submitted `name` exactly as submitted, untrimmed and unshortened, and reading the empty string when the request carries no `name`.
+- R-TQVI-U3UH: In the rejected-create page's create-token form, when the request's `expires` is one of `30d`, `90d`, `365d`, or `never`, the `option` start tag that marks `selected` MUST be the one carrying `value` reading that `expires`; when the request carries no `expires`, or one that is none of those four, it MUST be the one carrying `value` reading `90d`.
+- R-TS3F-7VL6: auth's design defines a create-token form's **name is in error** when, and only when, the form is the rejected-create page's and the request's `name` after trimming leading and trailing whitespace is not 1..64 characters, the request carrying no `name` included, and its **expiry is in error** when, and only when, the form is the rejected-create page's and the request carries no `expires` or one that is none of `30d`, `90d`, `365d`, or `never`; every requirement of auth's design that says a create-token form's name or expiry is in error MUST denote that.
+- R-W12X-XY5J: A create-token form whose name is not in error MUST hold, between its `input` start tag and its `label` start tag for `token-expires`, exactly one `span` element, whose start tag carries `class` reading `hint` and whose content reads `Something that tells you where it's used. Up to 64 characters.`, MUST hold no start tag carrying `id` reading `token-name-error`, and its `input` start tag MUST NOT mark `aria-describedby`; a create-token form whose name is in error MUST hold, between those two start tags, exactly one `span` element, whose start tag carries `id` reading `token-name-error` and whose content reads `the name must be 1 to 64 characters`, MUST hold no `span` start tag carrying `class` reading `hint`, and its `input` start tag MUST carry `aria-describedby` reading `token-name-error`.
+- R-W2AU-BPW8: A create-token form whose expiry is not in error MUST hold no `span` start tag after its `</select>` end tag and no start tag carrying `id` reading `token-expires-error`, and its `select` start tag MUST NOT mark `aria-describedby`; a create-token form whose expiry is in error MUST hold, between its `</select>` end tag and its `button` start tag, exactly one `span` element, whose start tag carries `id` reading `token-expires-error`, and whose content reads `choose one of the listed expiry options`, and its `select` start tag MUST carry `aria-describedby` reading `token-expires-error`.
+- R-TWZ0-QYJY: The rejected-create page's create-token form MUST hold exactly one `div` start tag, which carries `class` reading `actions`, and that `div` element's content MUST consist of the form's `button` element followed by an `a` element whose start tag carries `class` reading `button ghost` and `href` reading `/` and whose content reads `Cancel`; the form MUST hold no other `a` start tag.
+- R-TY6X-4QAN: The `200 OK` body R-N5RR-K5GT requires — the **token-created page** — MUST be an auth page drawn in the signed-in chrome for the cookie's user, whose `main` element's content consists of exactly one card titled `Token created`, whose `section` start tag carries `class` reading `card`, followed by exactly one `script` element.
+- R-W3IQ-PHMX: The token-created page's card MUST have content consisting of, in this order: its `header` element; a `div` element whose start tag carries `class` reading `alert quiet` and `data-kind` reading `warn` and which is an alert titled `Copy it now` reading `This is the only time <name> is shown. Only its hash is stored.`, where `<name>` is the created token's trimmed name with every run of ASCII whitespace in it replaced by a single space; a `div` element whose start tag carries `class` reading `secret`; and either an `a` element or a `p` element whose content consists of an `a` element, that `a` element's start tag carrying `href` reading `/` and its content reading `Back to your account`; and the card MUST hold no other `a` start tag.
+- R-U0MP-W9S1: The content of the token-created page's `div` element whose start tag carries `class` reading `secret` MUST consist of a `code` element whose content is exactly the plaintext secret `CreateToken` (D04) returned as its second result, followed by a `button` element whose start tag carries `class` reading `secondary` and `type` reading `button` and which is drawn with the copy icon and the word `Copy`.
+- R-W4QN-39DM: The plaintext secret `CreateToken` (D04) returned for a successful `POST /tokens` MUST occur exactly once in the bytes of the token-created page, inside the content of the `code` element of R-U0MP-W9S1, and MUST NOT occur in the bytes of any other response auth sends other than within a value a requirement of auth's design has auth write from that response's request or from a token's `Name`.
+- R-W76F-USV0: The token-created page MUST hold exactly one `script` start tag, which MUST be exactly the characters `<script>`, and exactly one `</script>` end tag; in that `script` element's content, every character MUST be ASCII whitespace, an ASCII letter, or one of `.`, `(`, `)`, `{`, `}`, `;`, `,`, `'`, and `>`, and every maximal run of ASCII letters (a **word**) MUST be one of `document`, `querySelector`, `addEventListener`, `click`, `function`, `navigator`, `clipboard`, `writeText`, `textContent`, `secret`, `button`, and `code`; ASCII whitespace MUST NOT lie between the first and second `'` of that content, between its third and fourth `'`, or between any later such pair; and that content with every ASCII whitespace character removed MUST be exactly `document.querySelector('.secret>button').addEventListener('click',function(){navigator.clipboard.writeText(document.querySelector('.secret>code').textContent);});` and nothing else.
+- R-TMUG-PPB6: In the token-created page, the start tag of the `div` element R-U0MP-W9S1 describes MUST be the only tag span that contains `secret` matched ASCII case-insensitively, and every tag span of the page MUST NOT contain `&`.
