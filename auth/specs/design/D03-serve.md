@@ -185,7 +185,7 @@ could cut a response short inside the drain.
 
 ## What auth writes
 
-A healthy run is silent from start to finish: no startup banner, no request
+A healthy run is silent from start to finish: no startup message, no request
 log, nothing on either stream when it stops, so that under systemd the
 journal holds only trouble. The one thing that reaches `Stderr` while auth
 serves is the server's line for a request that is trouble, written through

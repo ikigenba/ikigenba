@@ -36,7 +36,7 @@ compared is the request's `URL.Path`, which `net/http` stores decoded (the
 becomes /Go/"), so a percent-encoded spelling of an asset name is that asset,
 and an encoded slash is a slash and so never names one. Any other path
 beginning `/assets/` is a path that does not exist, whatever the method: it
-gets the same chrome-drawn not-found page as any unknown path (`D04-panel`),
+gets the same not-found page with the banner as any unknown path (`D04-panel`),
 never a 405. `D04-panel` routes an asset path here rather than to its
 catch-all 404.
 
@@ -78,7 +78,7 @@ field that matches nothing is ignored.
 
 Any method other than `GET` and `HEAD` on an asset path answers 405 with
 `Allow: GET, HEAD` (RFC 9110 section 15.5.6: a 405 "MUST generate an Allow
-header field") and `D04-panel`'s chrome failure page. A 405 and a 404 ignore
+header field") and `D04-panel`'s banner failure shape. A 405 and a 404 ignore
 `If-None-Match`, as RFC 9110 section 13.2.1 directs: a server "MUST ignore all
 received preconditions if its response to the same request without those
 conditions, prior to processing the request content, would have been a status
@@ -104,6 +104,6 @@ and no requirement here checks it.
 - R-5OFP-SBD7: A response `Handler` sends with status 200 or 304 to a request whose path is an asset path MUST carry the header `Cache-Control` exactly once, with the value exactly `no-cache`.
 - R-5PNM-633W: `Handler` MUST answer a `GET` request carrying a non-empty `X-User-Id` header, whose path is an asset path, and which carries an `If-None-Match` field at least one of whose entries — the values of all its `If-None-Match` header lines joined with commas, split on commas, each entry trimmed of leading and trailing whitespace — is exactly `*`, is byte-identical to the `ETag` value the same request would be answered with were the field absent, or is `W/` followed by that value, with status 304 and an empty body.
 - R-5QVI-JUUL: `Handler` MUST answer a `GET` request carrying a non-empty `X-User-Id` header, whose path is an asset path, and which carries an `If-None-Match` field no entry of which — the values of all its `If-None-Match` header lines joined with commas, split on commas, each entry trimmed of leading and trailing whitespace — is `*`, the `ETag` value the same request would be answered with were the field absent, or `W/` followed by that value, exactly as it would answer that request were the field absent: with the same status, the same value for every header it sets, and the same body.
-- R-5S3E-XMLA: `Handler` MUST answer a request carrying a non-empty `X-User-Id` header whose path is an asset path and whose method is neither `GET` nor `HEAD`, whatever `If-None-Match` field it carries, with status 405, the header `Allow: GET, HEAD`, and a response in the chrome failure shape for `MethodNotAllowedMessage`.
-- R-5TBB-BEBZ: `Handler` MUST answer a request carrying a non-empty `X-User-Id` header whose path begins with `/assets/` and is not an asset path — `/assets/` itself, a path with a further `/` after `/assets/`, and a name `Assets` holds no regular file for included — whatever its method and whatever `If-None-Match` field it carries, with status 404 and a response in the chrome failure shape for `NotFoundMessage`.
+- R-GKII-SBP9: `Handler` MUST answer a request carrying a non-empty `X-User-Id` header whose path is an asset path and whose method is neither `GET` nor `HEAD`, whatever `If-None-Match` field it carries, with status 405, the header `Allow: GET, HEAD`, and a response in the banner failure shape for `MethodNotAllowedMessage`.
+- R-GLQF-63FY: `Handler` MUST answer a request carrying a non-empty `X-User-Id` header whose path begins with `/assets/` and is not an asset path — `/assets/` itself, a path with a further `/` after `/assets/`, and a name `Assets` holds no regular file for included — whatever its method and whatever `If-None-Match` field it carries, with status 404 and a response in the banner failure shape for `NotFoundMessage`.
 - R-5UJ7-P62O: A response `Handler` sends to a request whose path begins with `/assets/` MUST carry no `ETag` header when its status is neither 200 nor 304.

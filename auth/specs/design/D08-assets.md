@@ -40,7 +40,7 @@ compared is the request's `URL.Path`, which `net/http` stores decoded (the
 that asset, and an encoded slash is a slash and so never names one. Any other
 path beginning `/assets/` is a path that does not exist, whatever the method:
 it answers 404 with one line of plain text (a `HEAD` gets the same status and
-headers with no body), never a 405 and never a page in the chrome, since the
+headers with no body), never a 405 and never a page with the banner, since the
 caller may be signed out. That includes paths `net/http`'s `ServeMux` would
 otherwise redirect to a cleaned form, such as `/assets//theme.css` or
 `/assets/./x`: each begins with `/assets/` and has a further `/`, so it is not

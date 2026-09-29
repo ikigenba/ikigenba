@@ -76,7 +76,7 @@ one is the invariant — checking the name and appending the widget is one step
 with respect to every other creation — and without it two callers submitting
 one name could each find it absent and each be accepted.
 
-Everything about HTTP is elsewhere. The panel page and its chrome are
+Everything about HTTP is elsewhere. The panel page and its banner are
 `D04-panel`, the table markup is `D06-table`, and the form, its per-field error
 placement and the answers to a submission are `D07-form`. Those documents name
 `Submission`, `FieldErrors`, `Store.Create`, `Store.All` and the six messages;

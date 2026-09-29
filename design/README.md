@@ -14,7 +14,7 @@ design/
     lab.js          the page-switcher toolbar
     icons/tabler/   the Tabler SVGs in use, with LICENSE and VERSION
     specimen.html   the parts: tokens, type, controls, table, alerts, states
-    app.html        dummy's panel: chrome, widgets table, add form, states
+    app.html        dummy's panel: banner, widgets table, add form, states
     login.html      auth's sign-in, its error state, the signed-in profile
     profile.html    account, sessions, API tokens
     landing.html    marketing: hero, features, call to action
@@ -51,7 +51,9 @@ systems. The product name is **Ikigenba**. The example space is
 `ada@acme.dev`.
 
 **app.html** — dummy's control panel.
-- Chrome: product mark, service name `dummy`, the user's email, `Sign out`.
+- Banner: product mark, service name `dummy`, the user's email linking to
+  their auth profile (`https://auth.acme.ikigenba.com/`), the `Sign out`
+  button (a form posting to `https://auth.acme.ikigenba.com/logout`).
 - `h1` Widgets; a table of Name / Count / Status: `alpha` 3 active, `beta` 0
   paused, `gamma` 12 retired, `delta` 128 active, `epsilon` 7 paused,
   `zeta` 1024 active.
@@ -85,7 +87,7 @@ a card/panel; an empty state.
 - Palette **ink**: ground `#fdfdfd`, surface `#fff`, subtle `#f7f7f7`, fg
   `#0a0a0a`, muted `#646464`, faint `#949494`, line `#e5e5e5`, line-soft
   `#f0f0f0`. Black is the accent; blue `#0060f0` is for links and focus only.
-  A light top bar.
+  A light banner.
 - Status colors (**deep**): ok `#166534`, warn `#c2410c`, err `#b91c1c`, info
   `#1d4ed8`.
 - Status color is always solid: a solid mark, dot, edge, or pill on a white

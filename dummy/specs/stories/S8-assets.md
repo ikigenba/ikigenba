@@ -180,8 +180,8 @@ The assets are the files `assets/` holds and nothing more, served flat, so the
 directory itself, a nested path, and a name the directory does not hold all
 name nothing, whatever the method: a `POST` to a missing asset's path is a 404
 like a `GET`, never a 405. The caller is identified, so this is the same page
-as any other path that does not exist (`S3`), in the chrome, with the way back
-to the panel.
+as any other path that does not exist (`S3`): a page with the banner and the
+way back to the panel.
 
 Request:
 
@@ -209,10 +209,11 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 404. The body is the page dummy sends for any path that does not exist
-(`S3`): an HTML document in the same chrome as the panel — the mark,
-`mg@example.com`, and the sign-out button, with the same title, stylesheet link,
-and viewport as every page — whose visible text, inside the page's one
-`<main>` element after the chrome's header, says the page was not found
+(`S3`): an HTML document with the same banner as the panel — the mark,
+`mg@example.com` linking to `http://localhost:3001/`, and the sign-out button
+POSTing to `http://localhost:3001/logout`, with the same title, stylesheet
+link, and viewport as every page — whose visible text, inside the page's one
+`<main>` element after the banner, says the page was not found
 and carries a link to `/widgets`.
 
 Preconditions:
@@ -231,7 +232,7 @@ An asset is read-only: dummy serves it and nothing changes it. This holds
 only for the path of a file `assets/` holds; any method on a missing asset's
 path is a 404. `Allow` names
 the two methods an asset takes, and the refusal, from an identified caller, is
-a page in the chrome.
+a page with the banner.
 
 Request:
 
@@ -247,10 +248,11 @@ Allow: GET, HEAD
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 405. The body is an HTML document in the same chrome as the panel,
-with the same title, stylesheet link, and viewport as every page (`S3`),
-whose visible text, inside the page's one `<main>` element after the chrome's
-header, says the method is not allowed and carries a link to
+Status 405. The body is an HTML document with the same banner as the panel —
+the mark, `mg@example.com` linking to `http://localhost:3001/`, and the
+sign-out button POSTing to `http://localhost:3001/logout` — with the same
+title, stylesheet link, and viewport as every page (`S3`), whose visible text,
+inside the page's one `<main>` element after the banner, says the method is not allowed and carries a link to
 `/widgets`. `PUT`, `DELETE`, and `PATCH` are refused the same way.
 
 Preconditions:

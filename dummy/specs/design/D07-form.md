@@ -84,7 +84,7 @@ is part of the contract, and not just the class, because the stylesheet
 styles a card's heading through it. The requirement is anchored on the one
 `<form` start tag in the page content (`D04-panel` R-VIAX-YAFV) rather than on
 the count of cards or sections in the page; the page's other form, the
-chrome's sign-out form (`D04-panel` R-V9RN-9W90), sits in the chrome header,
+banner's sign-out form (`D04-panel`), sits in the banner,
 outside the page content, and so is never the widget form. The form card is then decidable without an HTML
 parser, because it is the chain of tags that runs immediately up to that start
 tag, plus the one end tag that immediately follows the form. It also leaves
@@ -129,10 +129,10 @@ identically, and neither is read. A submission whose media type is not
 not to the values, and no retry that keeps the media type can succeed, so a
 422 would be an invitation to send better values that could never be taken up.
 The body is not read at all, no widget form and no field errors come back,
-and there is no JSON way in through this route. The 415 page is in the chrome
-like the 404 and the 405, so it carries the chrome's sign-out form; what it
+and there is no JSON way in through this route. The 415 page is drawn with the banner
+like the 404 and the 405, so it carries the banner's sign-out form; what it
 lacks is a form in its page content, where its message and its link to
-`/widgets` sit inside the one `main` (`D04-panel` R-VKQQ-PTX9). A submission dummy reads and accepts is
+`/widgets` sit inside the one `main` (`D04-panel`). A submission dummy reads and accepts is
 a 303 to `/widgets` with an empty body. A submission dummy reads and rejects
 is a 422 whose body is a panel page.
 
@@ -140,7 +140,7 @@ is a 422 whose body is a panel page.
 result of a POST: after a 303 it fetches `/widgets` with a GET, so the address
 the user ends on is the panel and refreshing re-reads the panel instead of
 submitting a second time. There is no flash message and no confirmation
-banner. dummy sets no cookie and puts nothing in the URL, so nothing carries a
+notice. dummy sets no cookie and puts nothing in the URL, so nothing carries a
 message across the redirect — the new row in the table is the confirmation,
 and the redirect's target is exactly `/widgets`, bare. No requirement below
 says "there is no flash message": "a message" is not something a check can
@@ -150,23 +150,23 @@ exactly `/widgets` with no query string and no fragment and its body is empty
 (R-NQ6Y-D2D3), and no answer carries a `Set-Cookie` header, which
 `D04-panel` states once for every response (R-VDFC-F7H3) and this document
 does not repeat. Nothing else survives a redirect. The second fixes the page:
-`D04-panel` puts everything after the chrome header inside the one `main`
-(R-VJIU-C26K) and leaves nothing in a panel page's content but the heading
+`D04-panel` puts everything after the banner inside the one `main`
+and leaves nothing in a panel page's content but the heading
 block and the panel wrapper (R-VN6J-HDEN), and the form card's opening is
 fixed from its `<section` start tag to the `<form` start tag and its closing
-from `</form>` to `</section>` (R-RBZN-I75Y), so a banner has nowhere to sit
+from `</form>` to `</section>` (R-QRUP-9LZ7), so a notice has nowhere to sit
 around the card or the table. The contents of the widget form between its
 controls are not fixed, so text placed there breaks no requirement; the
 carriers are what keep a message from existing to be placed. The absence of
-the banner is therefore a consequence of decidable requirements rather than a
+a notice is therefore a consequence of decidable requirements rather than a
 requirement of its own, which is the most this contract can honestly claim.
 
 **The 422 body is a panel page**, and "panel page" is a document shape
-`D04-panel` owns rather than a route (R-KTB6-1T0H). This document refers to
-that shape and re-describes none of the chrome, the head or the page's
+`D04-panel` owns rather than a route. This document refers to
+that shape and re-describes none of the banner, the head or the page's
 heading block, all of which are `D04-panel`'s. Because those are required of
-every panel page, the 422 redraw is in the same chrome, carries all of its
-content inside the page's one `main` (R-VJIU-C26K), opens that content with
+every panel page, the 422 redraw is drawn with the same banner, carries all of its
+content inside the page's one `main`, opens that content with
 the heading block whose subtitle counts the rows its own table shows
 (R-VN6J-HDEN) — the widgets as they are, since nothing was created — carries
 the script that re-fetches the table every 5 seconds (R-VOEF-V55C), and sits
@@ -193,7 +193,7 @@ what was submitted.
 
 Echoing arbitrary caller bytes into markup is exactly where a design can hand
 a caller a tag, and the requirement that closes that is `D04-panel`'s
-R-VH31-KIP6: the tag-name sequence of a document dummy sends cannot depend on
+R-1M7D-0VLJ: the tag-name sequence of a document dummy sends cannot depend on
 the echoed `Name`, `Count` or `Status`, and neither does how many `>`
 characters it holds, so whatever the caller submits comes back as a value and
 never as structure. That rule is D04's and is not restated
@@ -218,7 +218,7 @@ Escaping `=` as well is the simple way to hold the invariant for every input;
 the contract fixes the result and leaves the technique open. What this is not
 is a way for a caller to choose what some other requirement reads — the extra
 occurrence is dummy's own markup rather than an attacker-chosen string, and
-`D04-panel` R-VH31-KIP6 holds the tag structure still regardless — so no
+`D04-panel` R-1M7D-0VLJ holds the tag structure still regardless — so no
 requirement here that reads a `name`, `id` or `aria-describedby` occurrence is
 reachable through it.
 
@@ -250,7 +250,7 @@ drift. The same applies to the definitions `D04-panel` states once for the
 whole design: start tags and end tags (R-KDGH-2SDG), an attribute occurrence
 and its read value (R-KEOD-GK45), the script-stripped form (R-KH46-83LJ),
 normalisation (R-KIC2-LVC8), an HTML document dummy sends (R-IWKC-JVY4), a
-panel page (R-KTB6-1T0H) and the chrome failure shape (R-KS39-O19S). This
+panel page and the banner failure shape. This
 document cites each where it uses it and restates no step of any of them.
 
 Reading the message out of the markup rests on one assumption, so the
@@ -283,7 +283,7 @@ really is equal, and the thing most easily unequal is the store — a creation
 landing between the two requests changes the table inside a panel page and
 falsifies the claim without any handler misbehaving. Both therefore pin the
 store's contents equal immediately before each of the two requests, which is
-the form `D04-panel` settled for the whole design in R-VH31-KIP6.
+the form `D04-panel` settled for the whole design in R-1M7D-0VLJ.
 
 Every check below is runnable with the Go standard library alone: there is no
 HTML parser, so attributes are read by `D04-panel`'s single rule for an
@@ -305,16 +305,16 @@ reads — but some value must be written.
 
 ## REQUIREMENTS
 
-- R-RARR-4FF9: Every response body that is a panel page, as `D04-panel` defines a panel page (R-KTB6-1T0H), MUST have page content, as `D04-panel` defines it (R-VIAX-YAFV), that contains exactly one `<form` start tag and exactly one `</form>` end tag, as `D04-panel` defines start tags and end tags (R-KDGH-2SDG), the start tag first; the widget form is the text of that page content from that start tag through that end tag, so that the chrome's sign-out form (`D04-panel` R-V9RN-9W90), which lies in the chrome header and outside the page content, is never the widget form.
+- R-GI2Q-0S7V: Every response body that is a panel page, as `D04-panel` defines a panel page, MUST have page content, as `D04-panel` defines it (R-VIAX-YAFV), that contains exactly one `<form` start tag and exactly one `</form>` end tag, as `D04-panel` defines start tags and end tags (R-KDGH-2SDG), the start tag first; the widget form is the text of that page content from that start tag through that end tag, so that the banner's sign-out form (`D04-panel`), which lies in the banner and outside the page content, is never the widget form.
 - R-K7FL-I6L2: The widget form's `<form` start tag MUST carry an occurrence of the attribute `method`, as `D04-panel` defines an attribute occurrence and its read value (R-KEOD-GK45), whose read value is `post` compared case-insensitively, and an occurrence of the attribute `action` whose read value is exactly `/widgets`, and MUST carry either no occurrence of the attribute `enctype` or one whose read value is `application/x-www-form-urlencoded` compared case-insensitively.
 - R-K8NH-VYBR: The widget form MUST contain exactly one `<input` start tag, as `D04-panel` defines start tags (R-KDGH-2SDG), carrying an occurrence of the attribute `name`, as `D04-panel` defines an attribute occurrence and its read value (R-KEOD-GK45), whose read value is `name`, exactly one `<input` start tag carrying such an occurrence whose read value is `count`, and exactly one `<select` start tag carrying such an occurrence whose read value is `status`, and MUST contain no other `<input`, `<select` or `<textarea` start tag carrying an occurrence of the attribute `name`; the control of a field is the start tag carrying an occurrence of the attribute `name` whose read value is that field's key.
 - R-K9VE-9Q2G: The status control's element — the text from its `<select` start tag through the next `</select>` end tag (`D04-panel` R-KDGH-2SDG) — MUST contain exactly three `<option` start tags, the read values of whose occurrences of the attribute `value` (`D04-panel` R-KEOD-GK45) are, in document order, the three values `Statuses()` returns (`D05-widgets`).
 - R-UC44-S8EO: The widget form MUST contain at least one submit control, a submit control being a `<button` start tag (`D04-panel` R-KDGH-2SDG) that carries either no occurrence of the attribute `type` or an occurrence whose read value is neither `reset` nor `button`, each compared case-insensitively (`D04-panel` R-KEOD-GK45), or an `<input` start tag carrying an occurrence of the attribute `type` whose read value is `submit` compared case-insensitively; and every submit control the widget form contains MUST carry no occurrence of the attribute `name`, so that a browser's submission carries the same keys a `curl` caller sends, and no occurrence of the attribute `formaction`, `formmethod` or `formenctype`, so that the submission a browser makes through it uses the action, method and encoding R-K7FL-I6L2 fixes on the `<form` start tag.
 - R-M49S-JQ63: The widget form MUST contain no `<input` start tag (`D04-panel` R-KDGH-2SDG) carrying an occurrence of the attribute `type` whose read value is `image` compared case-insensitively (`D04-panel` R-KEOD-GK45).
-- R-RBZN-I75Y: In the page content of every panel page, as `D04-panel` defines a panel page (R-KTB6-1T0H) and page content (R-VIAX-YAFV), the widget form's `<form` start tag MUST be immediately preceded, with nothing but ASCII whitespace between successive items, by these items in this order: a `<section` start tag carrying an occurrence of the attribute `class` whose read value is exactly `card` (`D04-panel` R-KDGH-2SDG, R-KEOD-GK45), a `<header` start tag, an `<h2` start tag carrying an occurrence of the attribute `class` whose read value is exactly `text-md`, a run of characters containing no `<`, an `</h2>` end tag and an `</header>` end tag; and the widget form's `</form>` end tag MUST be immediately followed, with nothing but ASCII whitespace between, by a `</section>` end tag; the **form card** is the text from that `<section` start tag through that `</section>` end tag, and the form card's **heading text** is the normalisation, as `D04-panel` defines it (R-KIC2-LVC8), of that run of characters.
+- R-QRUP-9LZ7: In the page content of every panel page, as `D04-panel` defines a panel page (R-1ON5-SF2X) and page content (R-VIAX-YAFV), the widget form's `<form` start tag MUST be immediately preceded, with nothing but ASCII whitespace between successive items, by these items in this order: a `<section` start tag carrying an occurrence of the attribute `class` whose read value is exactly `card` (`D04-panel` R-KDGH-2SDG, R-KEOD-GK45), a `<header` start tag, an `<h2` start tag carrying an occurrence of the attribute `class` whose read value is exactly `text-md`, a run of characters containing no `<`, an `</h2>` end tag and an `</header>` end tag; and the widget form's `</form>` end tag MUST be immediately followed, with nothing but ASCII whitespace between, by a `</section>` end tag; the **form card** is the text from that `<section` start tag through that `</section>` end tag, and the form card's **heading text** is the normalisation, as `D04-panel` defines it (R-KIC2-LVC8), of that run of characters.
 - R-9J24-JH4F: The form card's heading text MUST be exactly `Add widget`.
 - R-RD7J-VYWN: The widget form MUST contain exactly one `<button` start tag (`D04-panel` R-KDGH-2SDG), whatever its `type`, and no other submit control, as R-UC44-S8EO defines a submit control, and MUST contain no `<input` start tag carrying an occurrence of the attribute `type` whose read value is `button` or `reset` compared ASCII case-insensitively (`D04-panel` R-KEOD-GK45); that `<button` start tag MUST itself be a submit control and MUST be immediately followed by exactly the value of `PlusIcon` (`D04-panel` R-V8JQ-W4IB), then a run of characters containing no `<`, then a `</button>` end tag, the normalisation of that run (`D04-panel` R-KIC2-LVC8) being exactly `Add widget`, so that the button draws the `plus` icon before its text, contains no element but that icon, and has `Add widget` alone as its accessible text.
-- R-REFG-9QNC: In the body of a 422 answer to a `POST /widgets` request, the read value of the occurrence of the attribute `value` on the widget form's `name` control, as `D04-panel` defines an attribute occurrence and its read value (R-KEOD-GK45), MUST be exactly the `Name` field of the `Submission` (`D05-widgets` R-7WR2-CK99) that request produced, and the read value of the occurrence of the attribute `value` on its `count` control MUST be exactly that `Submission`'s `Count` field, each unaltered in any other way and an absent occurrence counting as the empty string; the tag structure of that body stays independent of both values by `D04-panel` R-VH31-KIP6, which this document does not restate.
+- R-QT2L-NDPW: In the body of a 422 answer to a `POST /widgets` request, the read value of the occurrence of the attribute `value` on the widget form's `name` control, as `D04-panel` defines an attribute occurrence and its read value (R-KEOD-GK45), MUST be exactly the `Name` field of the `Submission` (`D05-widgets` R-7WR2-CK99) that request produced, and the read value of the occurrence of the attribute `value` on its `count` control MUST be exactly that `Submission`'s `Count` field, each unaltered in any other way and an absent occurrence counting as the empty string; the tag structure of that body stays independent of both values by `D04-panel` R-1M7D-0VLJ, which this document does not restate.
 - R-4NOW-M9YH: In the body of a 422 answer to a `POST /widgets` request, when the trimmed status (`D05-widgets`) of the `Submission` that request produced is exactly one of the three `option` values of the status control, that `<option` start tag MUST carry a `selected` attribute and MUST be the only one in the widget form that does, and when that trimmed status is none of the three, the widget form MUST contain no `<option` start tag carrying a `selected` attribute.
 - R-OPQ1-FGDT: In a response body that is a panel page and is not the body of a 422 answer to a `POST /widgets` request, the `value` attributes of the widget form's `name` and `count` controls MUST each be absent or empty, and the widget form MUST contain no `<option` start tag carrying a `selected` attribute.
 - R-JFYM-JM5C: The field error text of a field in an HTML document MUST be read as the normalisation, as `D04-panel` defines it (R-KIC2-LVC8), of the text, in that document's script-stripped form as `D04-panel` defines it (R-KH46-83LJ), from the `>` ending the start tag that carries an occurrence of the attribute `id` whose read value is `<field>-error` (`D04-panel` R-KEOD-GK45) up to the next following `<`, where `<field>` is that field's key; normalising that text script-strips it a second time, which removes nothing from it, because that text is a substring of that script-stripped form and such a form contains no `script` start tag and no `style` start tag (`D04-panel` R-Y4AR-KLAJ).
@@ -327,9 +327,9 @@ reads — but some value must be written.
 - R-GWHL-WEJ3: The handler MUST answer a `POST /widgets` request that carries identity and is a form-encoded submission with status 303 when `Any()` on the `FieldErrors` value `Store.Create` returned for that request is false, and with status 422 when it is true.
 - R-NQ6Y-D2D3: The 303 answer to a `POST /widgets` request MUST carry a `Location` header whose value is exactly `/widgets`, with no query string and no fragment, and an empty body.
 - R-NREU-QU3S: After a `POST /widgets` request the handler answered 303, the sequence `Store.All()` (`D05-widgets`) returns MUST be the sequence it returned immediately before that request with exactly one element appended at the end, equal in `Name`, `Count` and `Status` to the `Widget` `Store.Create` returned for that request.
-- R-GYXE-NY0H: The body of the 422 answer to a `POST /widgets` request MUST be a panel page, as `D04-panel` defines a panel page (R-KTB6-1T0H).
+- R-QUAI-15GL: The body of the 422 answer to a `POST /widgets` request MUST be a panel page, as `D04-panel` defines a panel page (R-1ON5-SF2X).
 - R-H05B-1PR6: A `POST /widgets` request the handler answered 415 or 422 MUST leave the sequence `Store.All()` returns equal to the sequence it returned immediately before that request, element for element, in order, and with each element's `Name`, `Count` and `Status` equal, so that no widget is added, removed, reordered or altered.
-- R-H2L3-T98K: A `POST /widgets` request that carries identity and is not a form-encoded submission MUST be answered with status 415 and a response in the chrome failure shape for `UnsupportedMediaTypeMessage`, as `D04-panel` defines that shape (R-KS39-O19S).
+- R-GJAM-EJYK: A `POST /widgets` request that carries identity and is not a form-encoded submission MUST be answered with status 415 and a response in the banner failure shape for `UnsupportedMediaTypeMessage`, as `D04-panel` defines that shape.
 - R-RFNC-NIE1: In answering a `POST /widgets` request that carries identity and is not a form-encoded submission, the handler MUST NOT read any byte of the request body, that answer's body MUST have page content (`D04-panel` R-VIAX-YAFV) containing no `<form` start tag (`D04-panel` R-KDGH-2SDG), and that body MUST contain no start tag carrying an occurrence of the attribute `id` whose read value is `name-error`, `count-error` or `status-error` (`D04-panel` R-KEOD-GK45).
 - R-W5CM-0ZFM: A `POST /widgets` request that does not carry identity MUST be answered without reading any byte of the request body and without changing the sequence `Store.All()` returns, and two such requests differing only in their bodies, immediately before each of which the sequence `Store.All()` returns is equal element for element, in the same order and with each element's `Name`, `Count` and `Status` equal, MUST receive the same status, the same value for every header the handler sets, and the same body.
 - R-NZY5-F8AN: The handler MUST answer every `POST /widgets` request with status 500, 415, 303 or 422, and with no other status.

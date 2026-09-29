@@ -18,7 +18,7 @@ last in the table (`S4`).
 A submission dummy accepts is answered `303 See Other` with `Location:
 /widgets` and an empty body: the browser then re-fetches the panel, where the
 new row is visible. A submission dummy reads and rejects is answered `422`
-whose body is the panel page re-rendered in the same chrome as a `GET
+whose body is the panel page re-rendered with the same banner as a `GET
 /widgets` — the same title, stylesheet link, and viewport, and inside the
 page's one `<main>` element the page's `Widgets` heading with its subtitle
 counting the widgets as they are (`3 widgets · refreshes every 5 seconds`
@@ -50,7 +50,7 @@ address the user ends on is the panel, and refreshing it re-reads the panel
 instead of submitting the form a second time. That is the whole reason the
 success answer carries no body.
 
-There is no flash message and no confirmation banner. The redirect lands on
+There is no flash message and no confirmation notice. The redirect lands on
 the panel, where the new row is in the table, and the row is the
 confirmation; dummy sets no cookie and puts nothing in the URL to carry a
 message across the redirect.
@@ -85,7 +85,7 @@ Postconditions:
 ## A user submits the form with no name
 
 A name is required, so an empty one is a rejection and not a widget with a
-blank name. The caller is identified, so dummy answers in the chrome with the
+blank name. The caller is identified, so dummy answers with the banner and the
 panel they were on rather than with bare text.
 
 Request:
@@ -101,8 +101,9 @@ HTTP/1.1 422 Unprocessable Content
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 422. The body is the panel page in the same chrome as a `GET
-/widgets` — the mark, `mg@example.com`, and the sign-out button — with the
+Status 422. The body is the panel page with the same banner as a `GET
+/widgets` — the mark, `mg@example.com` linking to `http://localhost:3001/`,
+and the sign-out button POSTing to `http://localhost:3001/logout` — with the
 `Widgets` heading, and beneath it the table holding the three fixture widgets
 in fixture order and the form in its card headed `Add widget`. The form carries
 the values the caller submitted: the name field empty, the count field 7, the
@@ -140,7 +141,7 @@ HTTP/1.1 422 Unprocessable Content
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 422. The body is the panel page in the same chrome as a `GET
+Status 422. The body is the panel page with the same banner as a `GET
 /widgets`, with the table holding the three fixture widgets in fixture order.
 The form carries the values the caller submitted: the name field `alpha`, the
 count field 5, the status field `paused`. An error message sits beside the
@@ -177,7 +178,7 @@ HTTP/1.1 422 Unprocessable Content
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 422. The body is the panel page in the same chrome as a `GET
+Status 422. The body is the panel page with the same banner as a `GET
 /widgets`, with the table holding the three fixture widgets in fixture order.
 The form carries the values the caller submitted: the name field holding the
 41-character name in full, unshortened, the count field 7, the status field
@@ -213,7 +214,7 @@ HTTP/1.1 422 Unprocessable Content
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 422. The body is the panel page in the same chrome as a `GET
+Status 422. The body is the panel page with the same banner as a `GET
 /widgets`, with the table holding the three fixture widgets in fixture order.
 The form carries the values the caller submitted: the name field `delta`, the
 count field holding the text `three` as it was typed, the status field
@@ -250,7 +251,7 @@ HTTP/1.1 422 Unprocessable Content
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 422. The body is the panel page in the same chrome as a `GET
+Status 422. The body is the panel page with the same banner as a `GET
 /widgets`, with the table holding the three fixture widgets in fixture order.
 The form carries the values the caller submitted: the name field `delta`, the
 count field -1, the status field `active`. An error message sits beside the
@@ -288,7 +289,7 @@ HTTP/1.1 422 Unprocessable Content
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 422. The body is the panel page in the same chrome as a `GET
+Status 422. The body is the panel page with the same banner as a `GET
 /widgets`, with the table holding the three fixture widgets in fixture order.
 The form carries the values the caller submitted: the name field `delta`, the
 count field 7, and the status field, which offers the same three choices and
@@ -311,7 +312,7 @@ Postconditions:
 Every field is checked, and every field that is wrong is reported, so a
 caller who got three things wrong learns all three from one answer instead of
 discovering them one submission at a time. This is what makes the errors
-per-field rather than a single banner at the top of the form: a reader sees
+per-field rather than a single summary at the top of the form: a reader sees
 which field each message is about by where it sits.
 
 Request:
@@ -327,7 +328,7 @@ HTTP/1.1 422 Unprocessable Content
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 422. The body is the panel page in the same chrome as a `GET
+Status 422. The body is the panel page with the same banner as a `GET
 /widgets`, with the table holding the three fixture widgets in fixture order.
 The form carries the values the caller submitted: the name field empty, the
 count field holding the text `three`, and the status field with none of the
@@ -372,12 +373,13 @@ HTTP/1.1 415 Unsupported Media Type
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 415. The body is an HTML document in the same chrome as the panel —
-the mark, `mg@example.com`, and the sign-out button, with the title, stylesheet
-link, and viewport every page carries (`S3`) — whose visible text, inside the
-page's one `<main>` element after the chrome's header, says the media type is
+Status 415. The body is an HTML document with the same banner as the panel —
+the mark, `mg@example.com` linking to `http://localhost:3001/`, and the
+sign-out button POSTing to `http://localhost:3001/logout`, with the title,
+stylesheet link, and viewport every page carries (`S3`) — whose visible text,
+inside the page's one `<main>` element after the banner, says the media type is
 not supported and carries a link to `/widgets`. The
-caller is identified, so this failure is a page in that chrome, as the 404 and
+caller is identified, so this failure is a page with that banner, as the 404 and
 the 405 are (`S3`); only the missing-header 500 is bare text. The request body
 is not read at all: `POST /widgets` accepts only
 `application/x-www-form-urlencoded`, and the names and values inside the JSON
@@ -402,7 +404,7 @@ forwards the one it received, and nothing but nginx and the suite's apps can
 reach dummy's socket, so a request without it says the gate or a sibling is
 misconfigured. That is dummy's fault to report rather
 than the caller's to correct, so it is a 500 and not a 400 or a 401. There is
-no identity to draw the chrome from, so the answer is bare text rather than a
+no identity to draw the banner from, so the answer is bare text rather than a
 page, as it is on every route. The identity check runs before dummy looks at
 the submitted fields, so a body that would have been rejected and a body that
 would have been accepted are answered the same way, and neither is examined. A

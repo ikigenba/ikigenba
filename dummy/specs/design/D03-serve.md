@@ -143,7 +143,7 @@ tested as `D01` tests its stream rule: a test points the `log` package at a
 buffer, drives `Serve` with a listener whose first `Accept` returns a
 temporary error and a handler that panics, and finds the buffer empty.
 
-A healthy run is silent from start to finish: no startup banner, no request
+A healthy run is silent from start to finish: no startup message, no request
 log, nothing on either stream when it stops, so that under systemd the
 journal holds only trouble. The one thing that reaches `Stderr` while dummy
 serves is the handler's line for a 500, written through a writer `Run` hands

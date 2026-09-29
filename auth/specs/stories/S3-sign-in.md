@@ -54,17 +54,19 @@ apex is the last two dot-separated labels of what remains —
 gives `localhost`.
 
 auth draws its pages in one of two frames. A page for a visitor who is not
-signed in is a sign-in card: it has no header chrome, and its `<body>` holds
+signed in is a sign-in card: it has no banner, and its `<body>` holds
 `<main class="auth-page">`, which holds one `<section class="card">`; the card
 begins with the bare mark, `<span class="mark">ikigenba</span>`, and its
 heading is `<h1>` reading `Sign in to <apex>`. Its way forward is a link styled
 as a button, `<a class="button secondary large google">`, that starts a Google
 sign-in. A page for a signed-in user — the profile here, and the token-created
-page and the rejected-create page (`S5-tokens.md`) — is drawn in the signed-in
-chrome: a `<header>` at the top of its `<body>` holding the mark
+page and the rejected-create page (`S5-tokens.md`) — is drawn with the
+banner: the `<header>` at the top of its `<body>`, holding the mark
 `<a class="mark" data-service="auth" href="/">ikigenba</a>`, which the
 stylesheet shows as `ikigenba │ auth`, then the user's email address, then the
-sign-out form, followed by one `<main>` element holding everything else on the
+sign-out form. On auth's own pages the email is plain text, not a link: the
+profile it would lead to is auth's `/`, where the mark already goes. The
+banner is followed by one `<main>` element holding everything else on the
 page. The sign-out form is
 
 ```
@@ -631,7 +633,7 @@ Postconditions:
 
 ## A user asks for the profile
 
-With a live session the index is the profile, drawn in the signed-in chrome:
+With a live session the index is the profile, drawn with the banner:
 who the user is, the tokens they hold, and the form that creates another. A
 `?return=<url>` is ignored because the visitor is already signed in. On a
 space, a browser that has just completed sign-in sends the received cookie
@@ -671,7 +673,7 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 200. The body is an HTML document titled `auth`, with the stylesheet
-link and viewport every page has, drawn in the signed-in chrome: the mark
+link and viewport every page has, drawn with the banner: the mark
 naming the service `auth`, the email `ada@michaelgreenly.dev`, and the
 `Sign out` button in the form that POSTs to `/logout`. Inside the page's one
 `<main>` its visible text is the heading `Your account` with the subtitle
@@ -736,7 +738,7 @@ Postconditions:
 
 ## A user signs out from an app on the space
 
-An app on the space offers sign-out in its own chrome — dummy's, say, at
+An app on the space offers sign-out in its own banner — dummy's, say, at
 `https://dummy.<space>`, or `http://localhost:3000` run locally — as a form
 that POSTs to auth's `/logout`. The app is same-site with auth, so the browser
 sends the `SameSite=Lax` session cookie with the `POST`, and its `Origin` is the

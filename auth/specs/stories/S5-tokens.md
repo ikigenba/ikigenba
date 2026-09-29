@@ -16,13 +16,13 @@ token carries its own random Crockford identifier used in the action URLs
 Every action is a POST: acting on a token id that is not the user's own or does
 not exist answers 404, and a POST whose `Origin` is not the service's own origin
 answers 403. Those failures, like every text/plain failure auth answers, are
-one line of plain text in no chrome. The whole profile page is S3's story; the
+one line of plain text with no banner. The whole profile page is S3's story; the
 stories here fix the token table and its empty state, the `Create a token`
 card, and the two pages token creation draws.
 
-Every HTML page these stories fix is drawn in the signed-in chrome (S3): its
+Every HTML page these stories fix is drawn with the banner (S3): its
 `<title>` is `auth`, it links `/assets/theme.css` as its stylesheet and
-declares the phone-width viewport, it opens with the chrome's `<header>`, and
+declares the phone-width viewport, it opens with the banner, and
 its content sits in the page's one `<main>`. A card is a
 `<section class="card">` whose `<header>` holds an `<h2>` naming it. An icon
 is an inline `<svg class="ico" aria-hidden="true">` drawn before a button's
@@ -41,8 +41,8 @@ is 1 to 64 characters once leading and trailing whitespace is trimmed; an
 `expires` is valid when it is one of the four option values. A missing
 `expires` is invalid in the same way as a value outside the list.
 
-A submission auth rejects is answered `400` with a page in the signed-in
-chrome holding only the `Create a token` card, still carrying the values the
+A submission auth rejects is answered `400` with a page drawn with the
+banner, holding only the `Create a token` card, still carrying the values the
 caller submitted, with its submit button inside a `<div class="actions">`
 followed by `<a class="button ghost" href="/">Cancel</a>`. Each field that is
 wrong has its own error message in a `<span>` beneath it, whose `id` that
@@ -79,7 +79,7 @@ HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 200. The body is an HTML page in the signed-in chrome (S3) whose
+Status 200. The body is an HTML page drawn with the banner (S3) whose
 `<main>` holds one card headed `Token created`. The card holds a
 `<div class="alert quiet" data-kind="warn">` titled `Copy it now`, whose text
 is `This is the only time <name> is shown. Only its hash is stored.`, with
@@ -127,7 +127,7 @@ HTTP/1.1 400 Bad Request
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 400. The body is an HTML page in the signed-in chrome (S3) whose
+Status 400. The body is an HTML page drawn with the banner (S3) whose
 `<main>` holds only the `Create a token` card, its form POSTing to `/tokens`.
 The form carries the values the caller submitted: the name field holding the
 three spaces, the expiry field with `never` selected. The message
@@ -169,7 +169,7 @@ HTTP/1.1 400 Bad Request
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 400. The body is an HTML page in the signed-in chrome (S3) whose
+Status 400. The body is an HTML page drawn with the banner (S3) whose
 `<main>` holds only the `Create a token` card, its form POSTing to `/tokens`.
 The form carries the values the caller submitted: the name field holding the
 65-character name in full, unshortened, the expiry field with `90d` selected.
@@ -213,7 +213,7 @@ HTTP/1.1 400 Bad Request
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 400. The body is an HTML page in the signed-in chrome (S3) whose
+Status 400. The body is an HTML page drawn with the banner (S3) whose
 `<main>` holds only the `Create a token` card, its form POSTing to `/tokens`.
 The form carries the values the caller submitted: the name field holding
 `<name>` with its hint beneath it; the expiry field, which offers the same
@@ -257,7 +257,7 @@ HTTP/1.1 400 Bad Request
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 400. The body is an HTML page in the signed-in chrome (S3) whose
+Status 400. The body is an HTML page drawn with the banner (S3) whose
 `<main>` holds only the `Create a token` card, its form POSTing to `/tokens`.
 The form carries the values the caller submitted: the name field holding the
 three spaces, and the expiry field with `90d` (`In 90 days`) selected, as on

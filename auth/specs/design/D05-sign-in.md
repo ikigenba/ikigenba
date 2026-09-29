@@ -109,7 +109,8 @@ pages fix those hooks and their visible text, and nothing else of their markup.
 This design owns the vocabulary every page auth draws is described in, and D07
 uses it by name without restating it: what an **auth page** is and what every
 one carries in its head; the procedures a requirement reads a page by; the two
-frames a page is drawn in, the **sign-in card** and the **signed-in chrome**;
+frames a page is drawn in, the **sign-in card** and a page **drawn with the
+banner**, whose `header` is the page's **banner**;
 the **card titled** a name, the **alert**, and the **icon**; and the
 **apex name** a page shows.
 
@@ -209,7 +210,7 @@ from outside itself — the `Host`, a return URL, an email Google returned,
 and reads back as itself.
 
 A page for a visitor who is not signed in is drawn as a sign-in card: no
-header chrome, one `main` of class `auth-page` holding one card, which begins
+banner, one `main` of class `auth-page` holding one card, which begins
 with the bare `ikigenba` mark and is headed `Sign in to <apex>`, and whose one
 way forward is a link styled as the Google button. The sign-in page at `/`, the
 page a cancelled Google sign-in returns to, and the non-member page are all
@@ -234,16 +235,18 @@ UTF-8 are kept as they are rather than replaced by U+FFFD, so they re-encode
 to the same escapes in the link. The sign-in cards fix their whole visible
 text, in the order S3 lists it, with one space between the pieces.
 
-A page for a signed-in user is drawn in the signed-in chrome: a header at the
+A page for a signed-in user is drawn with the banner: the `header` at the
 top of the body with the `ikigenba │ auth` mark linking to `/`, the user's
 email, and the sign-out form, then one `main` holding the rest. The stylesheet
-lays the chrome out as `body > header` and shows the email as the header's
-`span`. The sign-out button carries Tabler's outline `logout` icon, whose path
-data is that of the platform's copy at `design/ikigenba/icons/tabler/logout.svg`
-without its invisible bounding-box path. An icon is inline and `aria-hidden`
+lays the banner out as `body > header` and shows the email as the banner's
+`span`, plain text rather than a link: the profile it would lead to is auth's
+`/`, where the mark already goes. The sign-out button carries Tabler's outline
+`logout` icon, whose path data is that of the platform's copy at
+`design/ikigenba/icons/tabler/logout.svg` without its invisible bounding-box
+path. An icon is inline and `aria-hidden`
 (WAI-ARIA 1.2, `aria-hidden`: the element is excluded from the accessibility
 tree), so a button's accessible name is its word alone. The profile, D07's
-token-created page, and D07's rejected-create page are drawn in the chrome.
+token-created page, and D07's rejected-create page are drawn with the banner.
 
 The profile at `/` is headed `Your account` over the subtitle
 `You're signed in to <apex>.`, and holds three cards: `Account`, then
@@ -263,10 +266,11 @@ with a 5xx: `auth: request <id>: <reason>`, naming the request by its
 sign-in, and a failed exchange at its end — are the sign-in flow's own trouble,
 and each writes that line with Google's error as the reason. auth's failures
 that are not pages — the unknown-state `400`, the `502`s, and the `403` sign-out
-refusals — stay one line of plain text in neither frame, because the visitor
-may not be signed in. S7's routing of *other* apps through `/check`, the
-public `/check` 404, and the nginx-side redirect that carries `?return` are
-properties of the space produced by opsctl, a separate sub-project, and are out
+refusals — stay one line of plain text, neither a sign-in card nor a page
+drawn with the banner, because the visitor may not be signed in. S7's routing
+of *other* apps through `/check`, the public `/check` 404, and the nginx-side
+redirect that carries `?return` are properties of the space produced by
+opsctl, a separate sub-project, and are out
 of scope here; the S7 facts this design owns are that auth answers its own
 host's `/` with the sign-in page, and what that page carries.
 
@@ -306,7 +310,7 @@ host's `/` with the sign-in page, and what that page carries.
 - R-BSTK-NA80: auth's design defines an **occurrence** of an attribute `A` in a tag span (a start tag included) as `A` starting at a place outside the span's quoted runs, preceded by ASCII whitespace, and immediately followed by `="`; the **read value** of that occurrence as the text of the quoted run that this `"` opens, from after it up to the next `"`, with every character reference decoded as the WHATWG HTML tokenizer decodes one inside an attribute value (HTML Living Standard §13.2.5.77 onward: numeric references, and named references with or without their trailing `;` exactly where the tokenizer decodes them); and a start tag that **carries** `A` **reading** `v` as one holding exactly one occurrence of `A` whose read value is exactly `v`; every requirement of auth's design that names these MUST denote that.
 - R-PHJ1-EC2S: auth's design defines the **content** of an element as the text from the `>` that ends its start tag up to the `<` that begins the first end tag of the same name after that start tag; an element **holds** whatever lies in its content; a text **begins with** an element when, after any leading ASCII whitespace, it starts with that element's start tag; and a text **consists of** a sequence of elements when it is exactly those elements, each from its start tag through the end tag that ends its content, in that order, with nothing before, between, or after them but ASCII whitespace; every requirement of auth's design that names these MUST denote that.
 - R-PIQX-S3TH: auth's design defines the **normalisation** of a text as the result of removing every `script` element and every `style` element whole (from its start tag through the first end tag of the same name after it), then removing every remaining span from a `<` through the next `>`, then replacing every HTML character reference with the character or characters it denotes, then replacing every run of ASCII whitespace with a single space and removing any leading or trailing space; a text **reads** `s` when its normalisation is exactly `s`; and the **visible text** of an auth page is the normalisation of its `body` element's content; every requirement of auth's design that names these MUST denote that.
-- R-PJYU-5VK6: auth's design defines an **auth page** as a response body that a requirement of auth's design states is an auth page, is drawn as a sign-in card, or is drawn in the signed-in chrome; every auth page MUST hold exactly one `body` start tag and, after it, exactly one `</body>` end tag.
+- R-7L31-YC7U: auth's design defines an **auth page** as a response body that a requirement of auth's design states is an auth page, is drawn as a sign-in card, or is drawn with the banner; every auth page MUST hold exactly one `body` start tag and, after it, exactly one `</body>` end tag.
 - R-BWH9-SLG3: Every auth page MUST hold exactly one tag span whose name is `title` matched ASCII case-insensitively, anywhere in the page, and that tag span MUST lie before the `body` start tag, MUST be a start tag for `title`, and MUST be followed immediately by exactly `auth</title>`.
 - R-PMEM-XF1K: Every auth page MUST hold, before its `body` start tag, exactly one `link` start tag carrying `rel` reading `stylesheet`, and that start tag MUST carry `href` reading `/assets/theme.css`.
 - R-PNMJ-B6S9: Every auth page MUST hold, before its `body` start tag, exactly one `meta` start tag carrying `name` reading `viewport`, and that start tag MUST carry `content` reading `width=device-width, initial-scale=1`.
@@ -323,8 +327,8 @@ host's `/` with the sign-in page, and what that page carries.
 - R-PZTJ-4W77: A page drawn as a sign-in card MUST hold exactly one `h1` start tag, inside its card, and that `h1` element's content MUST read `Sign in to <apex>`, where `<apex>` is the request's apex name.
 - R-Q11F-INXW: The card of a page drawn as a sign-in card MUST hold exactly one `a` start tag, and that start tag MUST carry `class` reading `button secondary large google`; that `a` element is the page's **card link**.
 - R-Q29B-WFOL: The card of a page drawn as a sign-in card MUST hold at most one `footer` start tag, and when it holds one, the card's content MUST end, apart from trailing ASCII whitespace, with that `footer` element's end tag; the card **holds a footer reading** `s` when it holds a `footer` element whose content reads `s`.
-- R-Q3H8-A7FA: auth's design defines an auth page **drawn in the signed-in chrome** for a user as one whose `body` element's content consists of a `header` element — the page's **chrome header** — followed by exactly one `main` element, which holds everything else on the page; every page a requirement of auth's design states is drawn in the signed-in chrome for a user MUST be so.
-- R-Q4P4-NZ5Z: The chrome header of a page drawn in the signed-in chrome for a user MUST consist of, in this order: an `a` element whose start tag carries `class` reading `mark`, `data-service` reading `auth`, and `href` reading `/`, and whose content is exactly `ikigenba`; a `span` element whose content reads that user's email; and the sign-out form.
+- R-7MAY-C3YJ: auth's design defines an auth page **drawn with the banner** for a user as one whose `body` element's content consists of a `header` element — the page's **banner** — followed by exactly one `main` element, which holds everything else on the page; every page a requirement of auth's design states is drawn with the banner for a user MUST be so.
+- R-YP8V-LBSG: The banner of a page drawn with the banner for a user MUST consist of, in this order: an `a` element whose start tag carries `class` reading `mark`, `data-service` reading `auth`, and `href` reading `/`, and whose content is exactly `ikigenba`; a `span` element whose content reads that user's email and which holds no `a` start tag; and the sign-out form.
 - R-4RK5-9FJ6: auth's design defines the **sign-out form** as a `form` element whose start tag carries `class` reading `inline`, `method` reading `post`, and `action` reading `/logout`, and whose content consists of exactly one `button` element whose start tag carries `class` reading `secondary small` and `type` reading `submit` and which is drawn with the logout icon and the word `Sign out`; every requirement of auth's design that names the sign-out form MUST denote that.
 - R-EEF5-QXR9: auth's design defines a **card titled** `T` as a `section` element whose content begins with a `header` element that holds an `h2` element whose content reads `T`, and a requirement that places a card titled `T` also states the `class` its `section` start tag carries or names the design that states it; every requirement of auth's design that names a card titled `T` MUST denote that.
 - R-4TZY-0Z0K: auth's design defines an **alert titled** `T` **reading** `X` as a `div` element whose content consists of a `strong` element whose content reads `T` followed by a `p` element whose content reads `X`, and a requirement that places an alert also states the attributes its `div` start tag carries; every requirement of auth's design that names an alert titled `T` reading `X` MUST denote that.
@@ -342,7 +346,7 @@ host's `/` with the sign-in page, and what that page carries.
 - R-QMZM-EJAE: The cancelled page's card link MUST have content reading `Continue with Google` and its start tag MUST carry `href` reading `/login/google`, and the cancelled page's card MUST hold no `footer` start tag.
 - R-QO7I-SB13: The `403` body R-U14O-MUY4 requires for a non-member result — the **non-member page** — MUST be an auth page drawn as a sign-in card whose card holds, after its `h1` element, a `div` element whose start tag carries `class` reading `alert`, `data-kind` reading `err`, and `role` reading `alert`, and which is an alert titled `Workspace membership required` reading `<email> isn't a verified account in the <workspace> workspace. Sign in with your @<workspace> account instead.`, where `<email>` is the verified ID token's `Claims.Email` and `<workspace>` is the value of `WORKSPACE_DOMAIN`.
 - R-QPFF-62RS: The non-member page's card link MUST have content reading `Try another account` and its start tag MUST carry `href` reading `/login/google`, and the non-member page's card MUST hold a footer reading `Think you should have access? Ask your <workspace> workspace admin to add you.`, where `<workspace>` is the value of `WORKSPACE_DOMAIN`.
-- R-LBVA-50VC: The `200` body R-LAND-R94N requires of `GET /` with a live session — the **profile** — MUST be an auth page drawn in the signed-in chrome for the user `LookupSessionIdentity` resolves for that session.
+- R-7OQR-3NFX: The `200` body R-LAND-R94N requires of `GET /` with a live session — the **profile** — MUST be an auth page drawn with the banner for the user `LookupSessionIdentity` resolves for that session.
 - R-QRV7-XM96: The profile's `main` element's content MUST begin with an `h1` element whose content reads `Your account`, followed, with nothing between them but ASCII whitespace, by a `p` element whose content reads `You're signed in to <apex>.`, where `<apex>` is the request's apex name.
 - R-QT34-BDZV: The profile's card titled `Account` MUST have a `section` start tag carrying `class` reading `card`, and MUST hold a `dl` element whose start tag carries `class` reading `kv` and whose content consists of exactly six elements, alternately `dt` and `dd`, whose contents read, in order, `Email`, the email of the user the profile is drawn for, `Workspace`, the value of `WORKSPACE_DOMAIN`, `Signed in via`, and `Google`.
 - R-QVIX-2XH9: The profile's `main` element's content MUST consist of its `h1` element, its `p` element, and exactly three cards, in this order: a card titled `Account`, a card titled `API tokens`, and a card titled `Create a token`; D07 states the `class` the last two cards' `section` start tags carry and everything those two cards hold.

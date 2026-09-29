@@ -2,7 +2,7 @@
 
 An app of the Ikigenba platform: one Go binary that serves a control panel on
 the socket systemd passes it (`/run/ikigenba/dummy.sock` on a host), behind the
-host's nginx. The panel is a chrome-framed page
+host's nginx. The panel is a page with the banner
 listing widgets, an HTML table fragment the page re-fetches and that answers a
 conditional GET, and a form that creates a widget. The widgets live in an
 in-memory set built at process start and dying with the process: dummy's

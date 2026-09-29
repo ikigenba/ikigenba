@@ -17,8 +17,8 @@ every state-changing request is a POST that also carries an `Origin` header
 equal to the service's own origin (D05 owns how that origin is derived from the
 request Host). A POST whose `Origin` is not the service's own origin is refused
 outright, and nothing is changed. That refusal and the 404 for a token that is
-not the user's are auth's own failures, not pages: one line of plain text, in
-no chrome.
+not the user's are auth's own failures, not pages: one line of plain text,
+with no banner.
 
 ## The page vocabulary
 
@@ -26,8 +26,8 @@ D05 owns the words every page auth draws is described in, and this design uses
 them by name without restating them: an **auth page** and what it carries in
 its head (the title `auth`, the stylesheet at `/assets/theme.css`, the
 phone-width viewport, nothing loaded from another host, every outside value
-escaped); a page **drawn in the signed-in chrome** for a user, with its
-**chrome header** and the **sign-out form**; a **card titled** a name; an
+escaped); a page **drawn with the banner** for a user, with its **banner**
+and the **sign-out form**; a **card titled** a name; an
 **alert titled** a name **reading** a text; a button **drawn with** an icon and
 a word; and the reading procedures a requirement uses — start tag, end tag,
 occurrence, carries and read value, content, holds, begins with, consists of,
@@ -107,7 +107,7 @@ characters once leading and trailing whitespace is trimmed; an `expires` is
 valid when it is one of the four `store.Expiry` values, and a missing one is
 invalid like any other.
 
-A rejected submission is answered 400 with a page in the signed-in chrome that
+A rejected submission is answered 400 with a page drawn with the banner that
 holds only the `Create a token` card, keeping what the caller typed. Every
 field is checked, and each field in error shows its message beneath it in
 place of its hint, in a `span` whose id ends in `-error` — the hook the
@@ -118,8 +118,8 @@ as submitted, since the select offers only its four choices, so it falls back
 to 90 days as on a fresh form. The submit button and a `Cancel` link back to
 the profile sit together in the form's actions row.
 
-A successful creation is answered 200 with its own page in the signed-in
-chrome: one card, `Token created`, whose quiet warning says this is the only
+A successful creation is answered 200 with its own page drawn with the
+banner: one card, `Token created`, whose quiet warning says this is the only
 time the token is shown, then the secret in a `code` element beside a `Copy`
 button, then a link back to the profile. The secret occurs exactly once in the
 page: the button carries no copy of it, and nothing auth sends afterward
@@ -198,14 +198,14 @@ pages.
 - R-TKS0-X950: Every create-token form MUST hold exactly one `button` start tag, and that `button` element's start tag MUST carry `type` reading `submit` and the element MUST be drawn with the plus icon and the word `Create token`.
 - R-TLZX-B0VP: In every create-token form, the `label` start tag for `token-name`, the `input` start tag, the `label` start tag for `token-expires`, the `select` start tag, and the `button` start tag MUST appear in this order, and the form's `span` start tags MUST all lie either between the `input` start tag and the `label` start tag for `token-expires` or between the `</select>` end tag and the `button` start tag.
 - R-VZV1-K6EU: The profile's card titled `Create a token` MUST have a `section` start tag carrying `class` reading `card`, and its content MUST consist of its `header` element followed by a create-token form whose `input` start tag does not mark `value` and whose `option` start tag carrying `value` reading `90d` is the one that marks `selected`.
-- R-TOFQ-2KD3: The `400 Bad Request` body R-N87K-BOY7 or R-G35Y-WGL0 requires — the **rejected-create page** — MUST be an auth page drawn in the signed-in chrome for the cookie's user, whose `main` element's content consists of exactly one card titled `Create a token`, whose `section` start tag carries `class` reading `card` and whose content consists of its `header` element followed by a create-token form.
+- R-7PYN-HF6M: The `400 Bad Request` body R-N87K-BOY7 or R-G35Y-WGL0 requires — the **rejected-create page** — MUST be an auth page drawn with the banner for the cookie's user, whose `main` element's content consists of exactly one card titled `Create a token`, whose `section` start tag carries `class` reading `card` and whose content consists of its `header` element followed by a create-token form.
 - R-TPNM-GC3S: The `input` start tag of the rejected-create page's create-token form MUST carry `value` reading the request's submitted `name` exactly as submitted, untrimmed and unshortened, and reading the empty string when the request carries no `name`.
 - R-TQVI-U3UH: In the rejected-create page's create-token form, when the request's `expires` is one of `30d`, `90d`, `365d`, or `never`, the `option` start tag that marks `selected` MUST be the one carrying `value` reading that `expires`; when the request carries no `expires`, or one that is none of those four, it MUST be the one carrying `value` reading `90d`.
 - R-TS3F-7VL6: auth's design defines a create-token form's **name is in error** when, and only when, the form is the rejected-create page's and the request's `name` after trimming leading and trailing whitespace is not 1..64 characters, the request carrying no `name` included, and its **expiry is in error** when, and only when, the form is the rejected-create page's and the request carries no `expires` or one that is none of `30d`, `90d`, `365d`, or `never`; every requirement of auth's design that says a create-token form's name or expiry is in error MUST denote that.
 - R-W12X-XY5J: A create-token form whose name is not in error MUST hold, between its `input` start tag and its `label` start tag for `token-expires`, exactly one `span` element, whose start tag carries `class` reading `hint` and whose content reads `Something that tells you where it's used. Up to 64 characters.`, MUST hold no start tag carrying `id` reading `token-name-error`, and its `input` start tag MUST NOT mark `aria-describedby`; a create-token form whose name is in error MUST hold, between those two start tags, exactly one `span` element, whose start tag carries `id` reading `token-name-error` and whose content reads `the name must be 1 to 64 characters`, MUST hold no `span` start tag carrying `class` reading `hint`, and its `input` start tag MUST carry `aria-describedby` reading `token-name-error`.
 - R-W2AU-BPW8: A create-token form whose expiry is not in error MUST hold no `span` start tag after its `</select>` end tag and no start tag carrying `id` reading `token-expires-error`, and its `select` start tag MUST NOT mark `aria-describedby`; a create-token form whose expiry is in error MUST hold, between its `</select>` end tag and its `button` start tag, exactly one `span` element, whose start tag carries `id` reading `token-expires-error`, and whose content reads `choose one of the listed expiry options`, and its `select` start tag MUST carry `aria-describedby` reading `token-expires-error`.
 - R-TWZ0-QYJY: The rejected-create page's create-token form MUST hold exactly one `div` start tag, which carries `class` reading `actions`, and that `div` element's content MUST consist of the form's `button` element followed by an `a` element whose start tag carries `class` reading `button ghost` and `href` reading `/` and whose content reads `Cancel`; the form MUST hold no other `a` start tag.
-- R-TY6X-4QAN: The `200 OK` body R-N5RR-K5GT requires — the **token-created page** — MUST be an auth page drawn in the signed-in chrome for the cookie's user, whose `main` element's content consists of exactly one card titled `Token created`, whose `section` start tag carries `class` reading `card`, followed by exactly one `script` element.
+- R-7R6J-V6XB: The `200 OK` body R-N5RR-K5GT requires — the **token-created page** — MUST be an auth page drawn with the banner for the cookie's user, whose `main` element's content consists of exactly one card titled `Token created`, whose `section` start tag carries `class` reading `card`, followed by exactly one `script` element.
 - R-W3IQ-PHMX: The token-created page's card MUST have content consisting of, in this order: its `header` element; a `div` element whose start tag carries `class` reading `alert quiet` and `data-kind` reading `warn` and which is an alert titled `Copy it now` reading `This is the only time <name> is shown. Only its hash is stored.`, where `<name>` is the created token's trimmed name with every run of ASCII whitespace in it replaced by a single space; a `div` element whose start tag carries `class` reading `secret`; and either an `a` element or a `p` element whose content consists of an `a` element, that `a` element's start tag carrying `href` reading `/` and its content reading `Back to your account`; and the card MUST hold no other `a` start tag.
 - R-U0MP-W9S1: The content of the token-created page's `div` element whose start tag carries `class` reading `secret` MUST consist of a `code` element whose content is exactly the plaintext secret `CreateToken` (D04) returned as its second result, followed by a `button` element whose start tag carries `class` reading `secondary` and `type` reading `button` and which is drawn with the copy icon and the word `Copy`.
 - R-W4QN-39DM: The plaintext secret `CreateToken` (D04) returned for a successful `POST /tokens` MUST occur exactly once in the bytes of the token-created page, inside the content of the `code` element of R-U0MP-W9S1, and MUST NOT occur in the bytes of any other response auth sends other than within a value a requirement of auth's design has auth write from that response's request or from a token's `Name`.

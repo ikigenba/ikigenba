@@ -65,7 +65,7 @@ drain deadline, and `D03-serve` says what it does with them; it knows nothing
 of widgets, routes, identity, HTML, sockets passed in or systemd.
 `internal/panel` owns dummy's whole HTTP surface: the one handler, the
 identity precondition and the line it writes when that fails, routing, the
-chrome, rendering, the two failure shapes, the table fragment, the form and
+banner, rendering, the two failure shapes, the table fragment, the form and
 the asset routes (`D04-panel`, `D06-table`, `D07-form`, `D08-assets`).
 `internal/widget` owns the domain: the widget entity, the status enumeration,
 the in-memory store, and the validation of a submission (`D05-widgets`).

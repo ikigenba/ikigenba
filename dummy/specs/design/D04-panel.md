@@ -2,7 +2,7 @@
 
 What a visitor gets from a running dummy. dummy's whole HTTP surface lives in
 one package, `internal/panel`: the one `http.Handler` the process serves, the
-identity precondition every request passes through, routing, the chrome, the
+identity precondition every request passes through, routing, the banner, the
 page frame and the head every page is drawn with, the two icons the pages
 carry, the two failure shapes, and the panel page itself.
 `internal/cli` builds the widget store, hands it to `panel.Handler` together
@@ -45,7 +45,7 @@ Only nginx and the suite's own apps can reach dummy's socket. So a request
 arriving without `X-User-Id` says the gate or a sibling is misconfigured —
 dummy's fault to report, not the caller's to fix, hence a 500 and not a 400 or
 a 401. `X-User-Id` alone gates the request: a present-but-empty value counts
-as missing. `X-User-Email` is not a precondition at all; the chrome renders
+as missing. `X-User-Email` is not a precondition at all; the banner renders
 whatever arrived, which may be nothing.
 
 That 500 is trouble — every 5xx is, and it is dummy's only one — and it is
@@ -71,13 +71,13 @@ the outside only until the first unknown path arrives without headers.
 There is no unauthenticated case anywhere: every path is one of the three
 routes, an asset path, or an unknown path answered with a 404, all of them
 behind the same check, and so there is no sign-in page and no signed-out
-chrome for a request to reach. The asset paths are no exception — a
+banner for a request to reach. The asset paths are no exception — a
 stylesheet is never sent to a request without identity, and the 500 that
 answers it carries no validator for a cache to keep.
 
-## The space, the scheme and the sign-out form
+## The space, the scheme, the email link and the sign-out form
 
-The chrome offers sign-out as a form, not a link: a one-button `POST` to auth's
+The banner offers sign-out as a form, not a link: a one-button `POST` to auth's
 `/logout` on the same space. That is possible because auth accepts a sign-out
 `POST` whose `Origin` is on its space — over `https`, `https://<space>` or any
 `https://<host>.<space>` at any depth, and run locally `http://localhost` on any
@@ -87,23 +87,39 @@ cookie with that `POST` because dummy and auth are same-site, and auth's answer
 ends the session and sends the browser to auth's sign-in page. All of that is
 auth's behavior, stated in auth's stories and not restated here. dummy's part
 is to draw the form and nothing more: it serves no logout route — `/logout` is
-an unknown path like any other and takes the chrome 404 — it sets no cookie on
-any answer, and no link in the chrome leads to auth.
+an unknown path like any other and takes a 404 with the banner — and it sets
+no cookie on any answer.
+
+The banner's one link is the caller's email, which leads to their profile in
+auth. auth's stories put the profile at auth's `/`: its `S3-sign-in` group
+opens with "the sign-in page and profile at `/`", and its story "A user asks
+for the profile" fetches the profile as `http://localhost:3001/`. On a space
+auth is served as `auth.<space>`, the host that same group names as auth's own
+origin, `https://auth.<space>`. So the link's `href` is auth's root on the same
+space, and what auth shows there — the profile, or its sign-in page to a
+visitor whose session has ended — is auth's behavior, not restated here. The
+link is bare: an `a` whose only attribute is `href`, between the mark and the
+sign-out form, with no wrapper, exactly as the platform's app specimen draws
+it (`design/ikigenba/app.html`). Sign-out stays a form, so the
+email link is the only `a` in the banner.
 
 dummy derives the space per request, from the request's own `Host`: strip a
 trailing port if there is one, then strip a single leading `dummy.` label; what
-remains is the space, and the form's `action` is the scheme, `://auth.`, the
-space, and `/logout`. When `Host` carries no `dummy.` label to strip — a
-developer on `127.0.0.1:3000` or `localhost:3000` — the whole `action` is
-auth's documented local sign-out instead. That value,
-`http://localhost:3001/logout`, is a fact about a sibling project taken from
-auth's stories — auth, run bare, is served on `127.0.0.1:3001`, and its story of
-a sign-out from an app on the space posts to `http://localhost:3001/logout` with
-the `Origin` `http://localhost:3000` — not from reading auth's tree; nothing
-here names a path inside auth, builds auth, or parses auth's output. A
-developer who wants the button to work locally opens dummy as
-`http://localhost:3000`: auth's stories accept `localhost` origins, not
-`127.0.0.1` ones, and that is auth's rule to keep.
+remains is the space. The form's `action` is the scheme, `://auth.`, the
+space, and `/logout`; the email link's `href` is the same with `/` in place of
+`/logout`. When `Host` carries no `dummy.` label to strip — a developer on
+`127.0.0.1:3000` or `localhost:3000` — both name auth's local origin instead:
+the `action` is `http://localhost:3001/logout` and the `href` is
+`http://localhost:3001/`. Those two values are facts about a sibling project
+taken from auth's stories — auth, run bare, is served on `127.0.0.1:3001`
+(`S2-serve`) at `http://localhost:3001`, its profile is fetched as
+`http://localhost:3001/`, and its story of a sign-out from an app on the space
+posts to `http://localhost:3001/logout` with the `Origin`
+`http://localhost:3000` — not from reading auth's tree; nothing here names a
+path inside auth, builds auth, or parses auth's output. A developer who wants
+the button to work locally opens dummy as `http://localhost:3000`: auth's
+stories accept `localhost` origins, not `127.0.0.1` ones, and that is auth's
+rule to keep.
 
 The scheme reading is deliberately strict and stays strict. It is
 `X-Forwarded-Proto` only when that header is exactly `http` or exactly
@@ -114,14 +130,19 @@ must never reach a rendered `action` unvalidated; and a request whose `Host`
 carries a space is by construction a deployed one, where `https` is the truth.
 This must not be "simplified" into using the header whenever it is non-empty.
 A request that names a space and says `http` gets an `http://auth.<space>`
-action, as the stories fix; auth's stories refuse an `http` origin on a space,
+action and `href`, as the stories fix; auth's stories refuse an `http` origin on a space,
 which is harmless because a space is never served over `http`.
 
-`LogoutURL` is exported so the derivation is testable directly, as a table of
-host and forwarded-proto against the resulting URL, rather than only through a
-rendered page. The names follow auth's route: the form posts to auth's
-`/logout`, and `LocalLogoutURL` is auth's local one; `SignOutText` stays the
-name of the button's label, which is what a reader sees.
+`LogoutURL` and `ProfileURL` are exported so each derivation is testable
+directly, as a table of host and forwarded-proto against the resulting URL,
+rather than only through a rendered page. The names follow what auth serves at
+each address: the form posts to auth's `/logout`, and `LocalLogoutURL` is
+auth's local one; the email link leads to auth's profile, and
+`LocalProfileURL` is auth's local one. The two functions share the space and
+the scheme and differ only in the path, and each is stated whole rather than
+one defined through the other, so either can be read, and tested, on its own.
+`SignOutText` stays the name of the button's label, which is what a reader
+sees.
 
 ## Icons
 
@@ -198,8 +219,10 @@ simple fix; numeric-escaping the whitespace does the same job.
 The sign-out form's `action` is that trap's mirror image. It is a URL context,
 and there `html/template` percent-encodes rather than writing character
 references, so a `Host` of `dummy.a" id="count-error` yields an `action` whose
-read value is not what `LogoutURL` returns for that `Host` — and the chrome
-comparison then fails on a page no attacker got anything out of. The injection is blocked, but by
+read value is not what `LogoutURL` returns for that `Host` — and the banner
+comparison then fails on a page no attacker got anything out of. The email
+link's `href` is the same URL context, compared the same way against
+`ProfileURL`, and falls into the same trap. The injection is blocked, but by
 escaping that is too strong rather than too weak, and the naive implementation
 is non-conforming in the other direction. The same `=`-escaping fix settles
 both, and a reader who has met one of these two should meet the other.
@@ -221,7 +244,7 @@ is removed whole, from its start tag through its matching end tag. Then
 **normalisation**: remove the remaining tags, unescape HTML character
 references, and take the **whitespace collapse** — every run of whitespace down
 to a single space, then trim. The whitespace collapse is named on its own
-because the chrome's email comparison needs that step and no other one. The
+because the banner's email comparison needs that step and no other one. The
 **visible text** of a document is the normalisation of what lies between its
 `body` start tag and its `</body>` end tag.
 
@@ -247,7 +270,7 @@ contains a `script` or a `style` start tag. So the stripping normalisation perfo
 inside the visible-text procedure, provably removes nothing — the redundancy is
 an idempotent step rather than a second reading of the same body.
 
-Unescaping is there because the chrome renders an email address and the form
+Unescaping is there because the banner renders an email address and the form
 echoes an arbitrary submitted string, both of which the template escapes.
 Without unescaping, a value containing `&` or `<` fails a comparison it must
 pass — and the raw echo of attacker-chosen input is exactly where that shows
@@ -288,7 +311,7 @@ why dummy states both: the raw-body ban says no page or fragment carries a
 and the stripped-form ban says a second strip finds nothing left to remove.
 Read either over the other's frame and one of the two is lost.
 
-## The chrome, the two failure shapes and the panel page
+## The banner, the two failure shapes and the panel page
 
 Everything in this section is said about **an HTML document dummy sends**, and
 that class is named rather than left implicit because it has to exclude one
@@ -305,37 +328,42 @@ falls in the class either, because `D08-assets` types no asset `text/html`; the
 404 for a name under `/assets/` that dummy does not hold, and the 405 an asset
 path answers, are ordinary HTML documents and carry everything below.
 
-Every HTML document dummy sends is drawn in one frame, the **chrome**: the
-mark, the caller's email, and the sign-out form, in that order, inside the
-page's **chrome header** — the `header` element that is the body's first
-child, which is where the platform's stylesheet looks for them. The mark is a
-`strong` element of class `mark` whose text is the platform's name,
-`ikigenba`, and whose `data-service` attribute carries `ServiceName`; the
-stylesheet draws the service's name beside the platform's from that attribute,
-so the chrome carries the service's name only in that attribute and not in
-the visible text. The email is the text of a `span`, and the **sign-out form** follows it: a
-`form` of class `inline` whose `method` is `post` and whose `action` is the
-derivation above, holding one submit `button` of classes `secondary` and
-`small` whose content is `LogoutIcon` and then `SignOutText`. The form's start
-tag is read by the attribute rule, because its `action` carries a value drawn
-from the request and escaped on the way out; everything after that start tag
-is fixed byte for byte, because none of it depends on anything. The chrome
-header holds no `a` element at all, so no link in the chrome leads to auth or
-anywhere else. The chrome is a defined term rather than a passing phrase
-because several requirements are stated over it, here and in the sibling
-documents.
+Every HTML document dummy sends is **drawn with the banner**: the mark, the
+**email link**, and the sign-out form, in that order, inside the page's
+**banner** — the `header` element that is the body's first child, its
+WAI-ARIA banner landmark, which is where the platform's stylesheet looks for
+them. The mark is a `strong` element of class `mark` whose text is the
+platform's name, `ikigenba`, and whose `data-service` attribute carries
+`ServiceName`; the stylesheet draws the service's name beside the platform's
+from that attribute, so the banner carries the service's name only in that
+attribute and not in the visible text. The email link follows the mark with
+nothing but whitespace between them: exactly `<a href="`, the `href` value,
+`">`, the caller's email as escaped text, and `</a>` — no wrapper and no
+other attribute — and its `href` is the `ProfileURL` derivation above. The
+**sign-out form** follows the link, again with nothing but whitespace
+between: a `form` of class `inline` whose `method` is `post` and whose
+`action` is the `LogoutURL` derivation, holding one submit `button` of
+classes `secondary` and `small` whose content is `LogoutIcon` and then
+`SignOutText`. The link's `href` and the form's `action` are both read by the
+attribute rule, because each carries a value drawn from the request and
+escaped on the way out; everything after the form's start tag is fixed byte
+for byte, because none of it depends on anything. The banner holds exactly
+one `a` element, the email link, so the one link in the banner leads to auth's
+profile and sign-out is never a link. The banner is a defined term rather than
+a passing phrase because several requirements are stated over it, here and in
+the sibling documents.
 
-The chrome header is the first of exactly two things a page's body holds; the
+The banner is the first of exactly two things a page's body holds; the
 second is one `main` element, and everything that is the page's own — the
 panel's heading block, table and form card, or a failure page's message and
 its link back — is inside it, so the content sits in the stylesheet's centred
-column under the chrome rather than running the width of the window. What
+column under the banner rather than running the width of the window. What
 lies between the `main` start tag and its end tag is the page's **page
 content**, a defined term so that `D07-form` and `D08-assets` can place things
 in it without restating the frame. The frame is stated once, over every HTML
 document dummy sends, so the 404, the 405s, the 415, the 422 redraw and the
 404 and 405 under `/assets/` all have it; the plain-text 500 is not an HTML
-document and has neither the chrome nor the `main`.
+document and has neither the banner nor the `main`.
 
 `ServiceName` is lowercase, `dummy`, and so is every other place the service's
 name appears: the page's title is `ServiceName` too, and no document carries
@@ -344,14 +372,14 @@ reach a page is inside a value a caller sent or a widget's name, so the rule
 is stated over requests and stores that carry none; dummy does not rewrite a
 caller's bytes.
 
-The chrome header is found without a parser by position: it is the `header`
+The banner is found without a parser by position: it is the `header`
 start tag immediately after the `body` start tag, through the first
 `</header>` after it, and it holds no second `header`. That last clause is
 what makes "the first `</header>`" the right end: the form card (`D07-form`)
 has a `header` of its own, and it sits later in the page, inside the wrapper.
 
-The email is compared against the **whitespace collapse** of what the header
-carried and not against its raw bytes: normalisation collapses runs of
+The email link's text is compared against the **whitespace collapse** of what
+`X-User-Email` carried and not against its raw bytes: normalisation collapses runs of
 whitespace, so an address carrying two spaces would otherwise fail against a
 page that rendered it perfectly. It is not compared against the full
 normalisation either, which would be worse than the raw value — normalisation
@@ -362,27 +390,27 @@ the normalisation would fail on a page that rendered the address perfectly.
 Collapsing whitespace is exactly the difference the comparison needs, and
 nothing else is.
 
-Because the chrome is drawn from the caller's identity, a failure dummy can
-name to an identified caller is itself a page in that same chrome, with a way
+Because the banner is drawn from the caller's identity, a failure dummy can
+name to an identified caller is itself a page with that same banner, with a way
 back to the panel; only the missing-identity fault, where there is no identity
 to draw with, is bare text. So there are two failure shapes, and they are
 defined here as shapes. Which shape a given route uses is stated by whoever
 owns that route: the 404 and the two 405s below, `D07-form` for the 415, and
 `D06-table` for its own route, which is plain always — the deliberate
 exception, because the panel's script splices that response into a live
-document and a whole chrome page pushed into a table element is exactly what
+document and a whole page with the banner pushed into a table element is exactly what
 must not happen.
 
 A **panel page** is a document shape, not a route, and it is a shape a
 requirement *assigns*: a body is a panel page because some requirement says
 that body is one — the 200 on `GET /widgets` here, the 422 body in `D07-form` —
 never merely because it happens to look like one. What this document owns of
-the shape is that a panel page is an HTML document dummy sends and is drawn in
-the chrome, and how its parts are composed (below); what those parts hold
+the shape is that a panel page is an HTML document dummy sends and is drawn
+with the banner, and how its parts are composed (below); what those parts hold
 belongs to the documents that own them, `D06-table` for the widgets table and
 `D07-form` for the widget form and its card, each stating its obligation over
 every panel page. That is why
-membership is assigned rather than tested: were it decided by chrome and
+membership is assigned rather than tested: were it decided by the banner and
 content type alone, the 404 page would qualify and would then be required to
 carry a table and a form. Naming the shape is what lets `D07-form` say that its
 422 body is a panel page without either document leaving the 422's table
@@ -475,10 +503,11 @@ test can see of it. That the poller fetches nothing but `/widgets/table` is
 the author's obligation, not a tested claim.
 
 Only `a` is exempt from the path rule, because following a link is navigation,
-not a load; the one link a page carries back to the panel is `/widgets`
-anyway. A form's `action` is outside the list because it is a submission, and
-that is what lets the sign-out form's `action` be absolute and name auth's
-host. Whether the stylesheet itself loads
+not a load; that is what lets the email link's `href` be absolute and name
+auth's host, and the one other link a page carries, back to the panel, is
+`/widgets` anyway. A form's `action` is outside the list because it is a
+submission, and that is what lets the sign-out form's `action` be absolute and
+name auth's host too. Whether the stylesheet itself loads
 anything from elsewhere is a question about the file's contents, which no
 design states; it is not decided here.
 
@@ -490,7 +519,7 @@ settles the one — `=` written as a character reference — settles the others.
 
 ## The panel page's composition
 
-The panel page has three parts in a fixed order: the chrome header, then, as
+The panel page has three parts in a fixed order: the banner, then, as
 the whole of its page content, the page's **heading block** and the **panel
 wrapper**, a `div` of class `panel` holding the widgets table (`D06-table`) and
 then the form card (`D07-form`) and nothing else. The platform's stylesheet lays the
@@ -502,7 +531,7 @@ in order. The narrow layout's "the form below the table" is document order,
 which holds in both layouts and needs no rule of its own: the wrapper holds
 the table span and then the form card, and the single table and the widget
 form each sit inside their own part. (The page's other form, the sign-out form,
-is in the chrome header, outside the page content.)
+is in the banner, outside the page content.)
 
 The wrapper is found without a parser by counting: from its `div` start tag,
 its end is the first `</div>` at which the `div` end tags seen balance the
@@ -524,18 +553,19 @@ nothing of it.
 
 The page content holds the heading block and the wrapper and nothing else:
 nothing can sit before the heading, between the heading and the wrapper, or
-after the wrapper, so a footer, a skip link or a banner has nowhere to go. The
+after the wrapper, so a footer, a skip link or a notice has nowhere to go. The
 stories show no other text on the page, and that is meant to be decidable.
 
 ## A caller's bytes never become markup
 
 dummy draws three kinds of caller-supplied value into a document: the email
-from `X-User-Email`; the sign-out form's `action`, which `LogoutURL` derives
-from `Host` and `X-Forwarded-Proto`; and — on a 422 — the name, the count and
-the status exactly as they were submitted. The `action` belongs in that list on
-its own account: a `Host` of `dummy.a<table` reaches the rendered form, and
-leaving it out would mean that value was policed only by the table count
-`D06-table` happens to state. What becomes of a `<` in one of them has to be contract:
+from `X-User-Email`; the email link's `href` and the sign-out form's `action`,
+which `ProfileURL` and `LogoutURL` derive from `Host` and `X-Forwarded-Proto`;
+and — on a 422 — the name, the count and the status exactly as they were
+submitted. The two URLs belong in that list on their own account: a `Host` of
+`dummy.a<table` reaches the rendered link and form, and leaving them out would
+mean that value was policed only by the table count `D06-table` happens to
+state. What becomes of a `<` in one of them has to be contract:
 an implementation that escaped `&` and `"` but not `<` would meet every other
 requirement in this design while a submitted name of `<table id=x></table>`
 produced a page carrying two tables. Such a page breaks the table identity `D06-table`
@@ -555,7 +585,7 @@ unescaped `>` inside a quoted value, which ends a start tag early and would let
 the document's tag extents follow the caller too. The comparison holds the
 widget set fixed as well, since a page renders the store and a creation
 between the two reads would move the tag sequence with no caller value doing
-it. The value itself still has to arrive — the chrome's email in the visible
+it. The value itself still has to arrive — the banner's email in the visible
 text, the echoed name in an attribute — and the unescape step in normalisation
 is what makes those comparisons come out right.
 
@@ -614,8 +644,8 @@ this document says about it is that it is not an unknown path, which is
 exactly enough to keep routing total without owning a fragment-route fact. An
 asset path, as `D08-assets` defines it, is answered as that document says, and
 this document says of it only the same thing: it is not an unknown path. Every
-path that is neither one of the three routes nor an asset path is a 404 in the
-chrome, whatever the method — `/assets/` itself, `/assets/a/b`, and a name
+path that is neither one of the three routes nor an asset path is a 404 with
+the banner, whatever the method — `/assets/` itself, `/assets/a/b`, and a name
 under `/assets/` that dummy does not hold included. `D08-assets` names those
 three cases too, and the two documents agree on them because both send them to
 this one catch-all; there is one 404, not two.
@@ -654,6 +684,9 @@ back out of a rendered page.
 - R-V4W1-QTA8: The `internal/panel` package MUST export `const LocalLogoutURL = "http://localhost:3001/logout"`.
 - R-V63Y-4L0X: The `internal/panel` package MUST export `func LogoutURL(host, forwardedProto string) string`.
 - R-V7BU-ICRM: `LogoutURL` MUST return, for arguments `host` and `forwardedProto`: let `h` be `host` when `host` contains no `:`, and otherwise `host` with its last `:` and every character following that `:` removed; when `h` begins with the six characters `dummy.` and at least one character follows them, the result is `<scheme>` then `://auth.` then those following characters then `/logout`; otherwise the result is exactly `LocalLogoutURL`; where `<scheme>` is `forwardedProto` when `forwardedProto` is exactly `http` or exactly `https`, and is `https` in every other case, the empty string included.
+- R-1A0D-766L: The `internal/panel` package MUST export `const LocalProfileURL = "http://localhost:3001/"`.
+- R-1B89-KXXA: The `internal/panel` package MUST export `func ProfileURL(host, forwardedProto string) string`.
+- R-1DO2-CHEO: `ProfileURL` MUST return, for arguments `host` and `forwardedProto`: let `h` be `host` when `host` contains no `:`, and otherwise `host` with its last `:` and every character following that `:` removed; when `h` begins with the six characters `dummy.` and at least one character follows them, the result is `<scheme>` then `://auth.` then those following characters then `/`; otherwise the result is exactly `LocalProfileURL`; where `<scheme>` is `forwardedProto` when `forwardedProto` is exactly `http` or exactly `https`, and is `https` in every other case, the empty string included.
 - R-V8JQ-W4IB: The `internal/panel` package MUST export `const LogoutIcon` and `const PlusIcon`, untyped string constants whose values are exactly, respectively, `<svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg>` and `<svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5l0 14"/><path d="M5 12l14 0"/></svg>`, the Tabler outline `logout` and `plus` icons as the platform style draws them inline.
 - R-KDGH-2SDG: dummy's design defines, for an element name `x` and a string `s`, an **`x` start tag** in `s` — written `<x` start tag where that reads better, and meaning the same span — as a span beginning with a `<`, then `x` compared case-insensitively, then a character that is neither an ASCII letter nor an ASCII digit, and running through the first `>` that follows that `<`; and an **`</x>` end tag** in `s` as a span beginning with a `<`, then a `/`, then `x` compared case-insensitively, then a character that is neither an ASCII letter nor an ASCII digit, and running through the first `>` that follows that `<`; a `<` that no `>` follows begins neither; and every requirement in dummy's design that names a start tag or an end tag of an element MUST denote such a span.
 - R-KEOD-GK45: dummy's design defines an **occurrence** of a named attribute in a start tag as that attribute's name compared case-insensitively, immediately preceded within that start tag by an ASCII whitespace character and immediately followed by `=`, and the **read value** of that occurrence as the characters between the double quote that follows that `=` and the next double quote, with HTML character references unescaped by `html.UnescapeString` from the Go standard library and with nothing else altered; in the markup dummy sends every attribute a requirement in dummy's design names MUST be written that way with its value enclosed in double quotes, and a start tag MUST carry at most one occurrence of each attribute a requirement in dummy's design names; and every requirement in dummy's design that names an attribute's read value MUST denote that result.
@@ -666,14 +699,14 @@ back out of a rendered page.
 - R-RMP2-ZITR: Wherever a requirement in dummy's design fixes how many start tags or end tags of a named element a document contains and does not itself name the form of that document the count is taken over, the count MUST be taken over that document's script-stripped form, except where the requirement names the `script` element itself, whose count MUST be taken over the raw body; and wherever such a requirement does name the form the count is taken over, the count MUST be taken over the form it names.
 - R-Y32V-6TJU: The source of every `script` element — the characters between that element's start tag and its end tag — in every response body `Handler` sends, other than the body of a response with status 200 to a request whose path is an asset path (`D08-assets`), MUST NOT contain the sequence `</script` compared case-insensitively.
 - R-Y4AR-KLAJ: Let a **written body** be any response body `Handler` sends other than the body of a response with status 200 to a request whose path is an asset path (`D08-assets`); the raw text of every written body MUST NOT contain a `style` start tag, so dummy sends no `style` element in any page or fragment; and the script-stripped form of every written body MUST NOT contain a `script` start tag and MUST NOT contain a `style` start tag, so that taking the script-stripped form of that form again removes nothing from it; neither half implies the other, because stripping removes a `style` element the raw body really held, and because a removal can join a `<sty` preceding a `script` element to an `le>` following it and so put a `style` start tag in the form that the raw body never held.
-- R-XICK-OPY1: dummy's design defines the **chrome header** of a string `s` as the span of the script-stripped form of `s` running from the `<` of the `header` start tag whose `<` follows the `>` of the first `body` start tag in that form with nothing but ASCII whitespace between them, through the `>` of the first `</header>` end tag following that `header` start tag; a string has no chrome header when no `header` start tag so follows or no `</header>` end tag follows it; and every requirement in dummy's design that names a chrome header MUST denote that span.
-- R-V9RN-9W90: dummy's design defines a response body to be **drawn in the chrome** for the request it answers when it has a chrome header, that chrome header contains exactly one `header` start tag, and that chrome header contains, in this order and without overlap: a `strong` start tag carrying an occurrence of the attribute `class` whose read value is exactly `mark` and an occurrence of the attribute `data-service` whose read value is exactly `ServiceName`, the normalisation of whose element content — the characters from that start tag's `>` up to the `<` of the first `</strong>` end tag following it — is exactly `ikigenba`; then a `span` start tag the normalisation of whose element content, up to the `<` of the first `</span>` end tag following it, is exactly the whitespace collapse of the value that request's `X-User-Email` header carried, the empty string when it carried none; then the **sign-out form**: a `form` start tag carrying an occurrence of the attribute `class` whose read value is exactly `inline`, an occurrence of the attribute `method` whose read value is exactly `post` and an occurrence of the attribute `action` whose read value is exactly the value `LogoutURL` returns for that request's `Host` header and its `X-Forwarded-Proto` header, immediately followed by exactly the string `<button class="secondary small" type="submit">`, then exactly the value of `LogoutIcon`, then exactly the value of `SignOutText`, then exactly the string `</button></form>`; and every requirement in dummy's design that names the chrome or the sign-out form MUST denote that property.
-- R-VAZJ-NNZP: Every HTML document dummy sends MUST be drawn in the chrome for the request it answers.
-- R-VC7G-1FQE: The chrome header of every HTML document dummy sends MUST contain no `a` start tag, so that no link in the chrome leads to auth or to any other place.
+- R-1EVY-Q95D: dummy's design defines the **banner** of a string `s` as the span of the script-stripped form of `s` running from the `<` of the `header` start tag whose `<` follows the `>` of the first `body` start tag in that form with nothing but ASCII whitespace between them, through the `>` of the first `</header>` end tag following that `header` start tag; a string has no banner when no `header` start tag so follows or no `</header>` end tag follows it; and every requirement in dummy's design that names a banner MUST denote that span.
+- R-D1RN-G96D: dummy's design defines a response body to be **drawn with the banner** for the request it answers when it has a banner, that banner contains exactly one `header` start tag, and that banner contains, in this order and without overlap: a `strong` start tag carrying an occurrence of the attribute `class` whose read value is exactly `mark` and an occurrence of the attribute `data-service` whose read value is exactly `ServiceName`, the normalisation of whose element content — the characters from that start tag's `>` up to the `<` of the first `</strong>` end tag following it — is exactly `ikigenba`; then the **email link**: an `a` start tag consisting of exactly the characters `<a href="`, then zero or more characters none of which is `"`, `<` or `>`, then the characters `">`, whose occurrence of the attribute `href` has a read value exactly the value `ProfileURL` returns for that request's `Host` header and its `X-Forwarded-Proto` header, whose element content — the characters from that start tag's `>` up to the `<` of the first `</a>` end tag following it — contains no `<`, and the normalisation of whose element content is exactly the whitespace collapse of the value that request's `X-User-Email` header carried, the empty string when it carried none; then the **sign-out form**: a `form` start tag carrying an occurrence of the attribute `class` whose read value is exactly `inline`, an occurrence of the attribute `method` whose read value is exactly `post` and an occurrence of the attribute `action` whose read value is exactly the value `LogoutURL` returns for that request's `Host` header and its `X-Forwarded-Proto` header, immediately followed by exactly the string `<button class="secondary small" type="submit">`, then exactly the value of `LogoutIcon`, then exactly the value of `SignOutText`, then exactly the string `</button></form>`; where nothing but ASCII whitespace lies between the `>` of the first `</strong>` end tag following the mark's `strong` start tag and the `<` of the email link's `a` start tag, and nothing but ASCII whitespace lies between the `>` of the first `</a>` end tag following the email link's `a` start tag and the `<` of the sign-out form's `form` start tag; and every requirement in dummy's design that names being drawn with the banner, the email link or the sign-out form MUST denote that property.
+- R-1HBR-HSMR: Every HTML document dummy sends MUST be drawn with the banner for the request it answers.
+- R-1IJN-VKDG: The banner of every HTML document dummy sends MUST contain exactly one `a` start tag, the email link's, so that the email link is the banner's only link and sign-out is offered by the sign-out form and never by a link.
 - R-VDFC-F7H3: `Handler` MUST NOT send a `Set-Cookie` header in any response, whatever the request's path, method and headers, so that dummy sets no cookie and leaves the session to auth.
 - R-VIAX-YAFV: dummy's design defines the **page content** of a string `s` as the characters of the script-stripped form of `s` lying between the `>` of the first `main` start tag in that form and the `<` of the first `</main>` end tag following that start tag; a string has no page content when either tag is absent; and every requirement in dummy's design that names page content MUST denote those characters.
-- R-VJIU-C26K: The script-stripped form of every HTML document dummy sends MUST contain exactly one `main` start tag and exactly one `</main>` end tag, and the characters of that form between the `>` of its first `body` start tag and the `<` of the first `</body>` end tag following it MUST consist of exactly these, in this order: optional ASCII whitespace, the chrome header, optional ASCII whitespace, that `main` start tag, the page content, that `</main>` end tag, optional ASCII whitespace; so that the chrome header is drawn at the top of the body and everything after it is inside the one `main` element.
-- R-VKQQ-PTX9: Every response in the chrome failure shape for a named message constant whose body is non-empty MUST have page content the normalisation of which contains that constant and which contains an `a` start tag carrying an occurrence of the attribute `href` whose read value is exactly `/widgets`, so that a failure page's message and its way back sit inside its `main` element.
+- R-1JRK-9C45: The script-stripped form of every HTML document dummy sends MUST contain exactly one `main` start tag and exactly one `</main>` end tag, and the characters of that form between the `>` of its first `body` start tag and the `<` of the first `</body>` end tag following it MUST consist of exactly these, in this order: optional ASCII whitespace, the banner, optional ASCII whitespace, that `main` start tag, the page content, that `</main>` end tag, optional ASCII whitespace; so that the banner is drawn at the top of the body and everything after it is inside the one `main` element.
+- R-1KZG-N3UU: Every response in the banner failure shape for a named message constant whose body is non-empty MUST have page content the normalisation of which contains that constant and which contains an `a` start tag carrying an occurrence of the attribute `href` whose read value is exactly `/widgets`, so that a failure page's message and its way back sit inside its `main` element.
 - R-XM09-U164: The script-stripped form of every HTML document dummy sends MUST contain exactly one `title` start tag and exactly one `</title>` end tag, both before the first `body` start tag and the start tag first, and the normalisation of the characters between that start tag's `>` and that end tag's `<` MUST be exactly `ServiceName`.
 - R-XN86-7SWT: The script-stripped form of every HTML document dummy sends MUST contain exactly one `link` start tag carrying an occurrence of the attribute `rel` whose read value is exactly `stylesheet`, and that start tag MUST lie before the first `body` start tag and MUST carry an occurrence of the attribute `href` whose read value is exactly `/assets/theme.css`.
 - R-XOG2-LKNI: The script-stripped form of every HTML document dummy sends MUST contain exactly one `meta` start tag carrying an occurrence of the attribute `name` whose read value is exactly `viewport`, and that start tag MUST lie before the first `body` start tag and MUST carry an occurrence of the attribute `content` whose read value is exactly `width=device-width, initial-scale=1`.
@@ -684,10 +717,10 @@ back out of a rendered page.
 - R-F7VX-VR3A: In the raw body of every HTML document dummy sends, every `<` immediately followed by an ASCII letter MUST begin a **well-formed start tag**, meaning a span consisting of exactly these, in this order: that `<`; a tag name of one or more characters each of which is an ASCII letter, an ASCII digit or `-`; zero or more attributes, each being one or more ASCII whitespace characters, then an attribute name of one or more characters none of which is ASCII whitespace, `"`, `'`, `<`, `>`, `/` or `=`, then optionally `=` immediately followed by a double quote, zero or more characters none of which is `"`, `<` or `>`, and a double quote; zero or more ASCII whitespace characters; an optional `/`; and `>`; so that the first `>` following that `<` ends the tag a browser reads there and every attribute a browser reads in that tag is preceded by ASCII whitespace and, when it has a value, followed immediately by `=` and a double-quoted value.
 - R-F5G5-47LW: In the raw body of every HTML document dummy sends, every start tag MUST contain no ASCII whitespace character immediately followed by the two characters `on` compared case-insensitively, then one or more ASCII letters, then `=`, and MUST carry no occurrence of the attribute `srcdoc` and no occurrence of the attribute `http-equiv`, so that no event-handler attribute carries script, no inline frame is handed a document written in place, and no `meta` element refreshes the page or sends it elsewhere.
 - R-VEN8-SZ7S: The raw body of every HTML document dummy sends MUST contain no `math` start tag, and every `svg` start tag in it MUST begin an occurrence of the value of `LogoutIcon` or of the value of `PlusIcon`, meaning that the raw body, read from that start tag's `<`, begins with the whole of one of those two values; so that the only foreign content a page carries is one of two icons whose every byte dummy's design fixes, and no presentation attribute or animation element names a resource.
-- R-VH31-KIP6: The tag structure of an HTML document dummy sends MUST NOT depend on any value `Handler` draws into it from the request — the value of the request's `X-User-Email` header, the values of its `Host` and `X-Forwarded-Proto` headers, which reach the document through the sign-out form's `action` that `LogoutURL` derives from them, and the `Name`, `Count` and `Status` fields of the `Submission` (`D05-widgets`) a 422 answer echoes: for two requests that differ only in one of those values, that are answered with the same status, immediately before each of which the slice `s.All()` returns is equal element for element and in the same order, and for which, where `Store.Create` (`D05-widgets`) was called at all, it returned equal `FieldErrors` values, the **tag-name sequence** of the two documents MUST be equal and the two documents MUST contain equally many `>` characters, so that such a value can neither open a tag nor end one, where the tag-name sequence of a body is obtained by scanning the raw body from the left and taking, for each `<` in turn, the characters following that `<` — following the `/` when a `/` immediately follows it — up to but not including the first character that is neither an ASCII letter nor an ASCII digit.
+- R-1M7D-0VLJ: The tag structure of an HTML document dummy sends MUST NOT depend on any value `Handler` draws into it from the request — the value of the request's `X-User-Email` header, the values of its `Host` and `X-Forwarded-Proto` headers, which reach the document through the email link's `href` that `ProfileURL` derives from them and the sign-out form's `action` that `LogoutURL` derives from them, and the `Name`, `Count` and `Status` fields of the `Submission` (`D05-widgets`) a 422 answer echoes: for two requests that differ only in one of those values, that are answered with the same status, immediately before each of which the slice `s.All()` returns is equal element for element and in the same order, and for which, where `Store.Create` (`D05-widgets`) was called at all, it returned equal `FieldErrors` values, the **tag-name sequence** of the two documents MUST be equal and the two documents MUST contain equally many `>` characters, so that such a value can neither open a tag nor end one, where the tag-name sequence of a body is obtained by scanning the raw body from the left and taking, for each `<` in turn, the characters following that `<` — following the `/` when a `/` immediately follows it — up to but not including the first character that is neither an ASCII letter nor an ASCII digit.
 - R-LU2I-4WTE: dummy's design defines a response to be in the **plain failure shape** for a named body constant when its `Content-Type` header is exactly `text/plain; charset=utf-8` and its body is exactly that constant, or is empty when the request's method is `HEAD`.
-- R-KS39-O19S: dummy's design defines a response to be in the **chrome failure shape** for a named message constant when its `Content-Type` header is exactly `text/html; charset=utf-8` and its body is empty when the request's method is `HEAD` and is otherwise a body whose visible text contains that constant and which contains an `a` start tag whose `href` attribute has read value exactly `/widgets`.
-- R-KTB6-1T0H: dummy's design uses **panel page** for a document shape and not for a route: a response body is a panel page exactly when a requirement in dummy's design requires that body to be one, and no body is a panel page merely by meeting the obligations stated here; every panel page MUST be an HTML document dummy sends and MUST be drawn in the chrome for the request it answers; and every further obligation a panel page carries is stated by the requirement that states it.
+- R-1NF9-ENC8: dummy's design defines a response to be in the **banner failure shape** for a named message constant when its `Content-Type` header is exactly `text/html; charset=utf-8` and its body is empty when the request's method is `HEAD` and is otherwise a body whose visible text contains that constant and which contains an `a` start tag whose `href` attribute has read value exactly `/widgets`.
+- R-1ON5-SF2X: dummy's design uses **panel page** for a document shape and not for a route: a response body is a panel page exactly when a requirement in dummy's design requires that body to be one, and no body is a panel page merely by meeting the obligations stated here; every panel page MUST be an HTML document dummy sends and MUST be drawn with the banner for the request it answers; and every further obligation a panel page carries is stated by the requirement that states it.
 - R-LXQ7-A81H: `Handler` MUST answer a request whose `X-User-Id` header is absent, or present with an empty value, with status 500, the header `Content-Type: text/plain; charset=utf-8`, no `Allow` header, and a response in the plain failure shape for `MissingIdentityBody`, whatever the request's path and method.
 - R-Y5IN-YD18: `Handler` MUST NOT set an `ETag` header on a response it answers with status 500 because the request's `X-User-Id` header is absent or present with an empty value, whatever the request's path and method.
 - R-LYY3-NZS6: `Handler` MUST decide that a request carries no identity before it examines the request's path or method, so that a request whose `X-User-Id` header is absent or empty MUST NOT be answered with status 303, 404, 405 or 415 for any path, `/`, `/widgets` and `/widgets/table` included.
@@ -695,10 +728,10 @@ back out of a rendered page.
 - R-M1DW-FJ9K: `MissingIdentityBody` and `MethodNotAllowedBody` MUST each be one line: exactly one newline, at the end.
 - R-ISWN-EKQ1: `Handler` MUST decide a request's route from the path component of its URL alone, compared for exact equality and nothing else — not the query string, not the `Host` header, not any other header — so that a request whose path is `/widgets/` or `/widgets/table/` is answered as a request whose path is none of `/`, `/widgets` and `/widgets/table`; `Handler` MUST NOT answer any request with status 301; and `Handler` MUST NOT answer a request whose path is `/widgets/` or `/widgets/table/` with any status in the 3xx range or with a `Location` header, so that no trailing-slash variant is redirected to the path it resembles.
 - R-M3TP-72QY: `Handler` MUST answer a request carrying identity whose path is `/` and whose method is `GET` or `HEAD` with status 303, the header `Location: /widgets`, and an empty body.
-- R-M51L-KUHN: `Handler` MUST answer a request carrying identity whose path is `/` and whose method is neither `GET` nor `HEAD` with status 405, the header `Allow: GET, HEAD`, and a response in the chrome failure shape for `MethodNotAllowedMessage`.
+- R-1PV2-66TM: `Handler` MUST answer a request carrying identity whose path is `/` and whose method is neither `GET` nor `HEAD` with status 405, the header `Allow: GET, HEAD`, and a response in the banner failure shape for `MethodNotAllowedMessage`.
 - R-M69H-YM8C: `Handler` MUST answer a request carrying identity whose path is `/widgets` and whose method is `GET` with status 200, the header `Content-Type: text/html; charset=utf-8`, and a body that is a panel page.
-- R-M8PA-Q5PQ: `Handler` MUST answer a request carrying identity whose path is `/widgets` and whose method is none of `GET`, `HEAD` and `POST` with status 405, the header `Allow: GET, HEAD, POST`, and a response in the chrome failure shape for `MethodNotAllowedMessage`.
-- R-Y0N2-FA2G: `Handler` MUST answer a request carrying identity whose path is none of `/`, `/widgets` and `/widgets/table` and is not an asset path (`D08-assets`), whatever its method, with status 404 and a response in the chrome failure shape for `NotFoundMessage`.
+- R-1R2Y-JYKB: `Handler` MUST answer a request carrying identity whose path is `/widgets` and whose method is none of `GET`, `HEAD` and `POST` with status 405, the header `Allow: GET, HEAD, POST`, and a response in the banner failure shape for `MethodNotAllowedMessage`.
+- R-1TIR-BI1P: `Handler` MUST answer a request carrying identity whose path is none of `/`, `/widgets` and `/widgets/table` and is not an asset path (`D08-assets`), whatever its method, with status 404 and a response in the banner failure shape for `NotFoundMessage`.
 - R-MB53-HP74: `Handler` MUST NOT answer a request whose path is `/widgets/table` as a path it does not know: such a request, carrying identity, MUST NOT be answered with status 404.
 - R-Y1UY-T1T5: `Handler` MUST NOT answer a request whose path is an asset path (`D08-assets`) as a path it does not know: such a request, carrying identity, MUST NOT be answered with status 404, whatever its method.
 - R-JJDV-KL7M: For two requests that differ only in that one's method is `HEAD` and the other's is `GET`, and immediately before each of which the slice `s.All()` returns is equal element for element and in the same order, `Handler` MUST answer the `HEAD` request with the same status and the same value for every header it sets as it answers the `GET` request, and with an empty body; this holds for every path, `/` included.
@@ -706,7 +739,7 @@ back out of a rendered page.
 - R-XTBO-4NMA: dummy's design defines the **panel wrapper** of a string `s` as the span of the script-stripped form of `s` running from the `<` of the first `div` start tag in that form that carries an occurrence of the attribute `class` whose read value is exactly `panel`, through the `>` of the earliest `</div>` end tag following that start tag such that the span from that start tag through that end tag contains exactly as many `</div>` end tags as `div` start tags; a string has no panel wrapper when no such start tag or no such end tag exists; and every requirement in dummy's design that names a panel wrapper MUST denote that span.
 - R-XVRG-W73O: Every panel page MUST have a panel wrapper, and its script-stripped form MUST contain exactly one start tag carrying an occurrence of the attribute `class` whose read value is exactly `panel`.
 - R-XWZD-9YUD: In a panel page, the characters of the panel wrapper between the `>` ending the `div` start tag that begins it and the `<` beginning the `</div>` end tag that ends it MUST consist of exactly these, in this order: optional ASCII whitespace, the page's table span (`D06-table`), optional ASCII whitespace, the page's form card (`D07-form`), optional ASCII whitespace.
-- R-XY79-NQL2: In a panel page's script-stripped form, the single `h1` start tag MUST follow the end of the chrome header and the single `</h1>` end tag MUST precede the start of the panel wrapper.
+- R-1UQN-P9SE: In a panel page's script-stripped form, the single `h1` start tag MUST follow the end of the banner and the single `</h1>` end tag MUST precede the start of the panel wrapper.
 - R-VLYN-3LNY: dummy's design defines the **panel subtitle** for a non-negative integer `n` as the decimal digits of `n` with no sign and no leading zero, `0` when `n` is zero, then ` widget` when `n` is 1 and ` widgets` otherwise, then a space, the character U+00B7 MIDDLE DOT encoded in UTF-8, a space, and `refreshes every 5 seconds`; and the **heading block** for `n` as exactly the string `<div class="section-head"><div><h1>Widgets</h1><p>`, then the panel subtitle for `n`, then the string `</p></div></div>`; and every requirement in dummy's design that names a panel subtitle or a heading block MUST denote that string.
 - R-VN6J-HDEN: The page content of every panel page MUST consist of exactly these, in this order: optional ASCII whitespace, the heading block for `n`, optional ASCII whitespace, the panel wrapper, optional ASCII whitespace; where `n` is the number of data rows (`D06-table`) in that page's table span (`D06-table` R-3ABH-NPH7); so that every rendering of the panel page, the 422 redraw included, carries the heading and a subtitle counting the widgets its table shows, and nothing else sits in the page's content.
 - R-VOEF-V55C: A panel page MUST contain exactly one `script` start tag and exactly one `</script>` end tag, counted over the raw body; that `script` start tag MUST carry no `src` attribute; the source of that element — the characters between that start tag's `>` and the `<` of that end tag — MUST contain the literal `/widgets/table`, the literal `widgets-table` and the literal `5000`, the interval in milliseconds at which the script re-fetches the table; and in the raw body that `script` start tag MUST NOT lie between the first `table` start tag and the first `</table>` end tag following that `table` start tag.

@@ -28,7 +28,7 @@ yields a different one.
 An asset is the same for everyone: a visitor drawing the sign-in page has no
 session yet, so an asset needs no credential and is answered the same
 whether or not the request carries a session cookie or a token. auth's own failures here are
-one line of plain text, never a page in the chrome, since the caller may be
+one line of plain text, never a page with the banner, since the caller may be
 signed out. The requests below go to auth a developer serves with
 `systemd-socket-activate -l 127.0.0.1:3001 auth` (`S2-serve.md`), at
 `http://localhost:3001`; on a space nginx proxies auth's hostname to auth's

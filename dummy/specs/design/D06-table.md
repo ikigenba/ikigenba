@@ -25,7 +25,7 @@ it, so no wrapper `D04-panel` places around the table can change a byte this
 document fixes.
 
 The fragment is a fragment. There is no doctype, no `html` element, no `body`
-element and no chrome around it — a caller fetching it with `curl` sees exactly
+element and no banner — a caller fetching it with `curl` sees exactly
 the markup the page splices in. It also carries no `script` element of its own:
 the page's script must sit outside the table, because the first swap deletes
 whatever the table contained, and a poller inside the table would make the page
@@ -73,8 +73,8 @@ create and `D07-form` requires that creation to succeed. Comparing a collapsed
 cell text against that raw name would be unsatisfiable the moment such a widget
 existed, and three bodies would become unproducible at once: this route's 200,
 the panel page's 200, and the 422. So both sides are collapsed, exactly as
-`D04-panel` already does for the email it draws into the chrome, in its
-definition of being drawn in the chrome. Nothing is lost that was ever
+`D04-panel` already does for the email it draws into the banner, in its
+definition of being drawn with the banner. Nothing is lost that was ever
 decidable here, and the submitted bytes still have a home: `D07-form` reads the
 422's echo out of an attribute, and an attribute's read value, as `D04-panel`
 defines it, is unescaped but never collapsed. The count and the status are
@@ -88,7 +88,7 @@ separately, over the cell's markup as sent.
 Where this document has to read text out of markup, it uses the text
 procedures `D04-panel` states in its "The text procedures" section — the
 script-stripped form, the normalisation, the whitespace collapse — and the
-plain failure shape it defines alongside the chrome. It restates no step of any
+plain failure shape it defines alongside the banner failure shape. It restates no step of any
 of them: a restatement would be a second contract, and the two would drift.
 Which form a tag count is taken over is `D04-panel`'s rule too, R-RMP2-ZITR,
 and this document neither repeats it nor keeps one of its own. Read it there;
@@ -123,12 +123,12 @@ then runs against a span that is not the table at all; a conforming page built
 that way fails a check it should pass. Taking the span over the script-stripped
 form closes exactly that hole.
 
-Every failure from this endpoint is plain text — one line, with no chrome —
+Every failure from this endpoint is plain text — one line, with no banner —
 whether or not the caller is identified. This is the deliberate exception to
 the rule that a failure dummy can name to an identified caller is itself a page
-in the chrome. The reason is the swap again: the script splices whatever comes
-back into a document that is already drawn, so an error wrapped in the chrome
-would arrive as a whole page pushed into a table. So this document says which
+with the banner. The reason is the swap again: the script splices whatever comes
+back into a document that is already drawn, so an error drawn as a page with the
+banner would arrive as a whole page pushed into a table. So this document says which
 shape each of this route's failures takes, and `D04-panel` keeps the shapes
 themselves. The missing-identity 500 is the one place the two documents meet:
 `D04-panel` fixes that response for every route at once, from the identity
@@ -230,7 +230,7 @@ This document declares no exported name. `internal/panel` owns them and
 - R-WIGA-XCYS: For a `HEAD` request whose path is `/widgets/table` and the otherwise identical `GET` request, immediately before each of which the slice `D05-widgets`'s `Store.All` returns is equal element for element and in the same order, the `HEAD` request MUST be answered with the status, the `ETag` value and every other header the `GET` request is answered with, and with an empty body.
 - R-WWH0-TBDR: A `GET` or `HEAD` request carrying a non-empty `X-User-Id` header, whose path is `/widgets/table`, and which carries an `If-None-Match` field at least one of whose entries — the values of all its `If-None-Match` header lines joined with commas, split on commas, each entry trimmed of leading and trailing whitespace — is exactly `*`, is byte-identical to the `ETag` value the same request would be answered with were the field absent, or is `W/` followed by that value, MUST be answered with status 304, that same `ETag` value, and an empty body.
 - R-WXOX-734G: A `GET` or `HEAD` request carrying a non-empty `X-User-Id` header, whose path is `/widgets/table`, and which carries an `If-None-Match` field no entry of which — the values of all its `If-None-Match` header lines joined with commas, split on commas, each entry trimmed of leading and trailing whitespace — is `*`, the `ETag` value the same request would be answered with were the field absent, or `W/` followed by that value, MUST be answered exactly as it would be were the field absent, and the `ETag` value it is answered with MUST be such that no entry of that field is that value or `W/` followed by it.
-- R-66IM-8IHL: A request whose path is `/widgets/table` and whose `X-User-Id` header is absent or present with an empty value MUST be answered with status 500 and a response in the plain failure shape (`D04-panel`) for `MissingIdentityBody`, never in the chrome failure shape.
-- R-67QI-MA8A: A request carrying a non-empty `X-User-Id` header, whose path is `/widgets/table` and whose method is neither `GET` nor `HEAD`, MUST be answered with status 405, the header `Allow: GET, HEAD`, no `Location` header, and a response in the plain failure shape (`D04-panel`) for `MethodNotAllowedBody`, never in the chrome failure shape.
+- R-GFMX-98QH: A request whose path is `/widgets/table` and whose `X-User-Id` header is absent or present with an empty value MUST be answered with status 500 and a response in the plain failure shape (`D04-panel`) for `MissingIdentityBody`, never in the banner failure shape.
+- R-GGUT-N0H6: A request carrying a non-empty `X-User-Id` header, whose path is `/widgets/table` and whose method is neither `GET` nor `HEAD`, MUST be answered with status 405, the header `Allow: GET, HEAD`, no `Location` header, and a response in the plain failure shape (`D04-panel`) for `MethodNotAllowedBody`, never in the banner failure shape.
 - R-MLTP-HH47: A response to a request whose path is `/widgets/table` whose status is neither 200 nor 304 MUST carry no `ETag` header.
 - R-MN1L-V8UW: Handling a request whose path is `/widgets/table` MUST leave the widget set unchanged, whatever the request's method and whatever status it is answered with: the slice `D05-widgets`'s `Store.All` returns immediately before the request and the slice it returns immediately after are equal element for element and in the same order.

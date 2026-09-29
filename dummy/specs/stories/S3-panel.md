@@ -9,7 +9,7 @@ content looks, never what the content is. An nginx gate in front of dummy
 authenticates every request and sets `X-User-Id` and `X-User-Email` on the
 request it passes upstream; a sibling app calling dummy forwards the ones it
 received (`S2`). dummy trusts those two headers absolutely and has no
-unauthenticated case, so there is no sign-in page and no signed-out chrome.
+unauthenticated case, so there is no sign-in page and no signed-out banner.
 Only nginx and the suite's own apps can reach dummy's socket, so a request
 that arrives without `X-User-Id` means the gate or a sibling is misconfigured
 — a server fault, not a bad request. On a developer's laptop there is no gate,
@@ -24,20 +24,35 @@ nothing; at startup it holds exactly three, in this order: `alpha` count 3
 status `active`, `beta` count 0 status `paused`, `gamma` count 12 status
 `retired`.
 
-Every page dummy serves is drawn in one common frame, the chrome: the mark,
-the email address of the caller taken from `X-User-Email`, and a sign-out
-button. The mark's visible text is `ikigenba`, and its `data-service`
-attribute names the service it fronts,
+Every page dummy serves is drawn in one common frame, the banner: the
+`<header>` at the top of the page's `<body>`, holding the mark, the email
+address of the caller taken from `X-User-Email` as a link to their profile in
+auth, and a sign-out button. The mark's visible text is `ikigenba`, and its
+`data-service` attribute names the service it fronts,
 `<strong class="mark" data-service="dummy">ikigenba</strong>`, which the
 stylesheet shows as `ikigenba │ dummy`; the service's name is lowercase
 `dummy` everywhere it appears, and every page's `<title>` is `dummy`. Because
-the caller's identity is what the chrome is drawn from, a failure on a page
-that dummy can name to an identified caller is itself a page in that same
-chrome, and only the missing-header fault, where there is no identity to draw
+the caller's identity is what the banner is drawn from, a failure on a page
+that dummy can name to an identified caller is itself a page with that same
+banner, and only the missing-header fault, where there is no identity to draw
 with, is bare text.
 
+The caller's email address in the banner is a bare link to their profile in
+auth, with no wrapper and no other attribute:
+
+```
+<a href="<auth-profile>"><email></a>
+```
+
+`<email>` is the `X-User-Email` value written as escaped HTML text, and
+`<auth-profile>` is auth's root on the same space, an absolute URL derived
+from the request as `<auth-logout>` is (below), so
+following it leaves dummy for auth; what auth shows there is auth's
+behaviour, told in auth's own stories. This link is the banner's one link to
+auth.
+
 The sign-out button signs the caller out of the whole space in one click. It
-is a form, not a link, and it follows the email in the chrome's header:
+is a form, not a link, and it follows the email in the banner:
 
 ```
 <form class="inline" method="post" action="<auth-logout>"><button class="secondary small" type="submit"><svg class="ico" aria-hidden="true" …>…</svg>Sign out</button></form>
@@ -52,22 +67,24 @@ ending the session and sending the browser to auth's sign-in page — is auth's
 behaviour, told in auth's own stories. dummy serves no logout route and sets
 no cookie. dummy reads the space from the request's own `Host`: a trailing
 port is dropped, then a single leading `dummy.` label; what remains is the
-space, and `<auth-logout>` is `<scheme>://auth.<space>/logout`. The scheme is
+space, `<auth-profile>` is `<scheme>://auth.<space>/`, and `<auth-logout>` is
+`<scheme>://auth.<space>/logout`. The scheme is
 the request's `X-Forwarded-Proto` when that header is exactly `http` or
 exactly `https`, and `https` otherwise — `HTTPS`, `https, http`, an empty
 value, or no header at all. A `Host` with no `dummy.` label, as on a
-developer's `127.0.0.1:3000`, has no space in it, and `<auth-logout>` is then
-auth's local origin, `http://localhost:3001/logout`.
+developer's `127.0.0.1:3000`, has no space in it, and both then name auth's
+local origin: `<auth-profile>` is `http://localhost:3001/` and `<auth-logout>`
+is `http://localhost:3001/logout`.
 
-Every HTML page dummy sends — the panel and every page in the chrome: the
+Every HTML page dummy sends — the panel and every page with the banner: the
 404, the 405, the 415, and the 422 redraw (`S5`) — links `/assets/theme.css`
 as its stylesheet, `<link rel="stylesheet" href="/assets/theme.css">`, and
 declares the phone-width viewport,
 `<meta name="viewport" content="width=device-width, initial-scale=1">`. Each
-such page draws the chrome as a `<header>` at the top of its `<body>`, and
-puts everything after that header — the page's own content — inside one
+such page draws the banner, the `<header>` at the top of its `<body>`, and
+puts everything after the banner — the page's own content — inside one
 `<main>` element, so the content sits in the same centred column as the
-chrome rather than running the full width of the window. The
+banner rather than running the full width of the window. The
 missing-header 500, being bare text, has neither. The
 stylesheet and the fonts it loads are dummy's own, served under `/assets/`
 (`S8`); a page makes no request to any third party.
@@ -86,7 +103,7 @@ header it does not show, `Date` say, is not fixed.
 
 ## A user opens the panel
 
-The panel is the whole of dummy's interface: the chrome, the table of
+The panel is the whole of dummy's interface: the banner, the table of
 widgets, and the form that creates one. The table's rows are in the document
 that arrives, so a reader who fetches the page with `curl` has everything
 someone looking at a browser has. Each widget's status is a word in its own
@@ -140,7 +157,7 @@ Status 200. The body is an HTML document titled `dummy` that links
 `/assets/theme.css` as its stylesheet and declares the phone-width viewport.
 Its visible text carries the mark's text `ikigenba` — the mark names the
 service `dummy` in its `data-service` attribute — the caller's email address
-`mg@example.com`, the sign-out button reading `Sign out` in a form that
+`mg@example.com` as a link to `http://localhost:3001/`, the sign-out button reading `Sign out` in a form that
 POSTs to `http://localhost:3001/logout`, the heading `Widgets` with the subtitle
 `3 widgets · refreshes every 5 seconds`, and beneath it a table whose header
 cells read `Name`, `Count`, and `Status` and whose rows are the
@@ -150,7 +167,7 @@ words: `alpha` 3 `active`, `beta` 0 `paused`, `gamma` 12 `retired`. The
 word is inside a status marker naming that status. Beside the table is the
 card headed `Add widget` holding the form that creates a widget, with a field
 for each of a widget's three fields and a button reading `Add widget` behind
-its hidden `plus` icon. Everything after the chrome's header — the heading
+its hidden `plus` icon. Everything after the banner — the heading
 block, the table, and the card — is inside the page's one `<main>` element.
 The text `Dummy` appears nowhere.
 
@@ -222,9 +239,9 @@ Postconditions:
 
 ## A user on a space is offered sign-out from that space
 
-The sign-out form addresses auth on the space the request names in its
-`Host`, never a fixed host, so one dummy build signs a caller out of whichever
-space it is serving. A developer shows the space's headers by hand.
+The sign-out form and the email's link address auth on the space the request
+names in its `Host`, never a fixed host, so one dummy build signs a caller out
+of, and sends them to their profile on, whichever space it is serving. A developer shows the space's headers by hand.
 
 Request:
 
@@ -247,11 +264,13 @@ HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 200. The body is the panel page, and its chrome's sign-out button
+Status 200. The body is the panel page, and its banner's sign-out button
 reading `Sign out` is in a form whose method is `post` and whose action is
-`https://auth.sbx.ikigenba.dev/logout`. With `X-Forwarded-Proto: http` and the
-same `Host`, the action is `http://auth.sbx.ikigenba.dev/logout`. No link in
-the chrome leads to auth.
+`https://auth.sbx.ikigenba.dev/logout`, and the caller's email address
+`mg@example.com` in the banner links to `https://auth.sbx.ikigenba.dev/`. With
+`X-Forwarded-Proto: http` and the same `Host`, the action is
+`http://auth.sbx.ikigenba.dev/logout` and the email links to
+`http://auth.sbx.ikigenba.dev/`. The email is the banner's only link to auth.
 
 Preconditions:
 
@@ -268,7 +287,7 @@ In production this cannot happen from outside: the gate sets the headers on
 every request it forwards, a sibling app forwards the ones it received, and
 nothing but nginx and the suite's apps can reach dummy's socket. So a request
 without `X-User-Id` says the gate or a sibling is misconfigured, which is dummy's fault to report, not the caller's to fix — hence a
-500 and not a 400 or a 401. There is no identity to draw the chrome from, so
+500 and not a 400 or a 401. There is no identity to draw the banner from, so
 this one answer is bare text. A developer meets it by forgetting the headers,
 as here.
 
@@ -338,7 +357,7 @@ Postconditions:
 
 ## A caller asks for a path that does not exist
 
-The caller is identified, so dummy can answer in the chrome and give them the
+The caller is identified, so dummy can answer with the banner and give them the
 way back to the panel rather than a dead end.
 
 Request:
@@ -354,10 +373,11 @@ HTTP/1.1 404 Not Found
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 404. The body is an HTML document in the same chrome as the panel —
-the mark, `mg@example.com`, and the sign-out button, with the same title,
+Status 404. The body is an HTML document with the same banner as the panel —
+the mark, `mg@example.com` linking to `http://localhost:3001/`, and the
+sign-out button POSTing to `http://localhost:3001/logout`, with the same title,
 stylesheet link, and viewport as every page (above) — whose visible text,
-inside the page's one `<main>` element after the chrome's header,
+inside the page's one `<main>` element after the banner,
 says the page was not found and carries a link to `/widgets`.
 
 Preconditions:
@@ -387,10 +407,11 @@ Allow: GET, HEAD, POST
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 405. The body is an HTML document in the same chrome as the panel,
-with the same title, stylesheet link, and viewport as every page (above),
-whose visible text, inside the page's one `<main>` element after the chrome's
-header, says the method is not allowed and carries a link to
+Status 405. The body is an HTML document with the same banner as the panel —
+the mark, `mg@example.com` linking to `http://localhost:3001/`, and the
+sign-out button POSTing to `http://localhost:3001/logout` — with the same
+title, stylesheet link, and viewport as every page (above), whose visible
+text, inside the page's one `<main>` element after the banner, says the method is not allowed and carries a link to
 `/widgets`. `PUT` and `PATCH` are refused the same way.
 
 Preconditions:

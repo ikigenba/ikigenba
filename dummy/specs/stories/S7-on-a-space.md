@@ -38,9 +38,11 @@ exist. Its stylesheet is `https://dummy.sbx.ikigenba.dev/assets/theme.css`,
 and the fonts that stylesheet loads are under the same
 `https://dummy.sbx.ikigenba.dev/assets/` (`S8-assets.md`): a browser showing
 the panel requests its style from dummy's own host and from no other origin,
-Google Fonts included. The chrome's `Sign out` button is in a form that POSTs
-to `https://auth.sbx.ikigenba.dev/logout`, auth on the same space (`S3`);
-submitting it signs the visitor out of the space, as auth's stories tell.
+Google Fonts included. In the banner, the caller's email address links to
+`https://auth.sbx.ikigenba.dev/`, their profile in auth on the same space, and
+the `Sign out` button is in a form that POSTs to
+`https://auth.sbx.ikigenba.dev/logout` (`S3`); submitting it signs the visitor
+out of the space, as auth's stories tell.
 
 Preconditions:
 
