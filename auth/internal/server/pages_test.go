@@ -632,7 +632,7 @@ func assertSignInCard(t *testing.T, body, host, word, target, footer string) str
 }
 func assertChrome(t *testing.T, body, email string) string {
 	t.Helper()
-	// R-Q3H8-A7FA R-Q4P4-NZ5Z R-4RK5-9FJ6 R-FQZJ-J8UK R-4QC8-VNSH
+	// R-7MAY-C3YJ R-YP8V-LBSG R-4RK5-9FJ6 R-FQZJ-J8UK R-4QC8-VNSH
 	inside := pageContent(body, pageOne(t, body, "body"))
 	seq := pageSequence(t, inside, "header", "main")
 	header := pageContent(inside, seq[0])
@@ -643,6 +643,9 @@ func assertChrome(t *testing.T, body, email string) string {
 	pageAttr(t, mark, "href", "/")
 	if pageContent(header, mark) != "ikigenba" || pageText(pageContent(header, items[1])) != pageText(html.EscapeString(email)) {
 		t.Fatal("chrome identity")
+	}
+	if len(pageElements(pageContent(header, items[1]), "a")) != 0 {
+		t.Fatal("banner email contains a link")
 	}
 	form := items[2]
 	pageAttr(t, form, "class", "inline")
@@ -681,7 +684,7 @@ func assertPageAlert(t *testing.T, text, kind, role, title, message string) {
 	}
 }
 func TestGeneratedAuthPagesShareVocabulary(t *testing.T) {
-	// R-PJYU-5VK6 R-BWH9-SLG3 R-PMEM-XF1K R-PNMJ-B6S9
+	// R-7L31-YC7U R-BWH9-SLG3 R-PMEM-XF1K R-PNMJ-B6S9
 	// R-XC44-L4H5 R-XDC0-YW7U R-XEJX-CNYJ R-WF4E-EVPQ R-PRA8-GI0C
 	// R-BV9D-ETPE R-52J8-PD7F R-25ZM-NNWQ R-VY0T-C8YL R-VZ8P-Q0PA
 	// R-LG9Z-G3JB R-W0GM-3SFZ R-FCA4-0P8U R-FDI0-EGZJ
@@ -867,7 +870,7 @@ func TestCancelledAndNonmemberCards(t *testing.T) {
 }
 
 func TestProfileFrameAndAccount(t *testing.T) {
-	// R-LBVA-50VC R-QRV7-XM96 R-QT34-BDZV R-QVIX-2XH9 R-EEF5-QXR9
+	// R-7OQR-3NFX R-QRV7-XM96 R-QT34-BDZV R-QVIX-2XH9 R-EEF5-QXR9
 	st := openSignInStore(t)
 	email := `member<&"@example.com`
 	workspace := `workspace<&".test`

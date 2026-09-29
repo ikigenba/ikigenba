@@ -381,7 +381,7 @@ func tokenCreatedFinalChild(t *testing.T, content string, header, warn, secret, 
 
 func TestTokenEmptyProfileAndRejectedForms(t *testing.T) {
 	st := openTokenTestStore(t)
-	_, session := tokenTestIdentity(t, st, "forms")
+	user, session := tokenTestIdentity(t, st, "forms")
 	srv := tokenTestServer(st)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, tokenProfileRequest(session.ID))
@@ -420,8 +420,8 @@ func TestTokenEmptyProfileAndRejectedForms(t *testing.T) {
 		}
 		body = w.Body.String()
 		assertAuthPage(t, body, false)
-		// R-TOFQ-2KD3: rejected page's main holds exactly one Create a token card.
-		main := tokenElement(t, body, "main")
+		// R-7PYN-HF6M: rejected page has the user's banner and one Create a token card.
+		main := assertChrome(t, body, user.Email)
 		cards := tokenElements(main, "section")
 		if len(cards) != 1 {
 			t.Fatalf("rejected cards=%v", cards)
@@ -658,8 +658,8 @@ func TestTokenCreatedPageAndSecretLifetime(t *testing.T) {
 	if !ok {
 		t.Fatal("stored secret not presented")
 	}
-	// R-TY6X-4QAN: signed chrome main contains only Token created card then script.
-	main := tokenElement(t, body, "main")
+	// R-7R6J-V6XB: created page has the user's banner, one Token created card, then script.
+	main := assertChrome(t, body, user.Email)
 	card := tokenCard(t, main, "Token created")
 	script := tokenElements(main, "script")
 	if len(script) != 1 || len(tokenElements(main, "section")) != 1 {
