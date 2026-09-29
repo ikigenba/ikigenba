@@ -241,7 +241,7 @@ func TestSignInConstantsHostRulesAndAnonymousRoot(t *testing.T) {
 	if redirectURI("localhost:3001") != "http://localhost:3001/login/google/callback" {
 		t.Fatal("local host derivation is incorrect")
 	}
-	// R-IQCU-M8TM: only the exact space and its label-boundary subdomains pass.
+	// R-N2LW-9AQJ: only the exact space and its label-boundary subdomains pass.
 	for raw, want := range map[string]bool{
 		"https://green.example/path": true, "https://app.green.example/path": true,
 		"https://evilgreen.example/path": false, "https://green.example.evil/path": false,
@@ -265,7 +265,7 @@ func TestSignInConstantsHostRulesAndAnonymousRoot(t *testing.T) {
 }
 
 func TestAnonymousRootCarriesReturnOnlyInTheLoginLink(t *testing.T) {
-	// R-IRKR-00KB: an anonymous GET / is the HTML sign-in page. Its link target
+	// R-QC0I-YLM5: an anonymous GET / is the HTML sign-in page. Its link target
 	// is /login/google, and a return query is carried only on that link.
 	returnURL := `https://evil.example/steal?x=1&y=2"`
 	issuer := newSignInIssuer(t)
@@ -642,7 +642,7 @@ func TestMemberCallbackCreatesIdentitySessionCookieAndSafeRedirect(t *testing.T)
 				t.Fatal(err)
 			}
 			w := serveSignIn(s, http.MethodGet, "/login/google/callback?state="+state.State+"&code=member-code", tc.host, nil, "")
-			// R-J041-OER6: a member callback exchanges, provisions, creates a session, and applies exact in-space redirect rules.
+			// R-N3TS-N2H8: a member callback exchanges, provisions, creates a session, and applies exact in-space redirect rules.
 			if w.Code != http.StatusFound || w.Header().Get("Location") != tc.wantLocation {
 				t.Fatalf("callback = %d location %q", w.Code, w.Header().Get("Location"))
 			}
@@ -887,7 +887,9 @@ func TestCallbackMembershipIsHostedDomainAndVerifiedEmail(t *testing.T) {
 	}
 }
 
-func TestProfileUsesLookupIgnoresReturnAndRendersFormsAndTokens(t *testing.T) {
+func TestProfileUsesLookupIgnoresReturnAndRendersForms(t *testing.T) {
+	// R-LAND-R94N: live-session GET / resolves without touching state, ignores
+	// return, and supplies logout and token-creation forms in a 200 HTML page.
 	st := openSignInStore(t)
 	user, err := st.UpsertUserOnLogin("issuer", "subject", "member@green.example", signInNow)
 	if err != nil {
@@ -900,21 +902,108 @@ func TestProfileUsesLookupIgnoresReturnAndRendersFormsAndTokens(t *testing.T) {
 	if _, _, err := st.CreateToken(user.ID, "profile token", store.ExpiryNever, signInNow); err != nil {
 		t.Fatal(err)
 	}
+	other, err := st.UpsertUserOnLogin("issuer", "other", "other@green.example", signInNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateSession(other.ID, signInNow); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateLoginState("keep verifier", "https://app.green.example/keep"); err != nil {
+		t.Fatal(err)
+	}
 	s := New(Config{Store: st, Now: func() time.Time { return signInNow.Add(10 * time.Minute) }})
-	w := serveSignIn(s, http.MethodGet, "/?return=https%3A%2F%2Fevil.example", "auth.green.example", &http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}, "")
-	// R-ISSN-DSB0: profile lookup is read-only, ignores return, embeds logout/create forms, and integrates D07 token rows.
-	body := w.Body.String()
-	for _, fragment := range []string{`<form method="post" action="/logout">`, `<form method="post" action="/tokens">`, `name="name"`, `name="expires"`, "profile token"} {
-		if !strings.Contains(body, fragment) {
-			t.Errorf("profile missing %q: %s", fragment, body)
+	cookie := &http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}
+	before := profileStateSnapshot(t, st)
+	baseline := serveSignIn(s, http.MethodGet, "/", "auth.green.example", cookie, "")
+	if baseline.Code != http.StatusOK || baseline.Header().Get("Content-Type") != signInHTMLContentType {
+		t.Fatalf("profile response = %d %q", baseline.Code, baseline.Header().Get("Content-Type"))
+	}
+	body := baseline.Body.String()
+	logout, create := false, false
+	for _, form := range pageElements(body, "form") {
+		attrs := pageAttrs(form)
+		if len(attrs["method"]) != 1 || !strings.EqualFold(attrs["method"][0], "post") || len(attrs["action"]) != 1 {
+			continue
+		}
+		switch attrs["action"][0] {
+		case "/logout":
+			logout = true
+		case "/tokens":
+			fields := make(map[string]bool)
+			for _, field := range pageTags(pageContent(body, form)) {
+				if field.name == "input" || field.name == "select" || field.name == "textarea" {
+					for _, name := range pageAttrs(field)["name"] {
+						fields[name] = true
+					}
+				}
+			}
+			create = fields["name"] && fields["expires"]
 		}
 	}
-	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != signInHTMLContentType || strings.Contains(body, "evil.example") {
-		t.Fatalf("profile response = %d %q %s", w.Code, w.Header().Get("Content-Type"), body)
+	if !logout || !create {
+		t.Fatalf("profile forms: logout=%t, token creation with name/expires=%t", logout, create)
 	}
-	if _, err := st.LookupSessionIdentity(session.ID, signInNow.Add(16*time.Minute)); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("profile touched session; later lookup error = %v", err)
+	if got := profileStateSnapshot(t, st); got != before {
+		t.Fatalf("profile changed state:\n%s\nwant:\n%s", got, before)
 	}
+	for _, query := range []string{
+		"return=", "return=https%3A%2F%2Fevil.example", "return=https%3A%2F%2Fapp.green.example%2Fwork",
+		"return=first&return=second", "return=%FF", "return=%", "ret%75rn=carried",
+	} {
+		w := serveSignIn(s, http.MethodGet, "/?"+query, "auth.green.example", cookie, "")
+		if w.Code != baseline.Code || !reflect.DeepEqual(w.Header(), baseline.Header()) || w.Body.String() != body {
+			t.Fatalf("profile did not ignore query %q: %d %v %s", query, w.Code, w.Header(), w.Body.String())
+		}
+		if got := profileStateSnapshot(t, st); got != before {
+			t.Fatalf("profile query %q changed state:\n%s\nwant:\n%s", query, got, before)
+		}
+	}
+}
+
+// profileStateSnapshot observes all persisted values without modifying them.
+func profileStateSnapshot(t *testing.T, st *store.Store) string {
+	t.Helper()
+	db := openSignInSQL(t, st)
+	defer func() { _ = db.Close() }()
+	var snapshot strings.Builder
+	for _, table := range []struct{ name, query string }{
+		{"users", "SELECT * FROM users ORDER BY id"},
+		{"sessions", "SELECT * FROM sessions ORDER BY id"},
+		{"login_states", "SELECT * FROM login_states ORDER BY state"},
+		{"tokens", "SELECT * FROM tokens ORDER BY id"},
+	} {
+		rows, err := db.QueryContext(context.Background(), table.query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		columns, err := rows.Columns()
+		if err != nil {
+			_ = rows.Close()
+			t.Fatal(err)
+		}
+		fmt.Fprintf(&snapshot, "%s\n", table.name)
+		for rows.Next() {
+			values := make([]any, len(columns))
+			pointers := make([]any, len(columns))
+			for i := range values {
+				pointers[i] = &values[i]
+			}
+			if err := rows.Scan(pointers...); err != nil {
+				_ = rows.Close()
+				t.Fatal(err)
+			}
+			fmt.Fprintf(&snapshot, "%#v\n", values)
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			t.Fatal(err)
+		}
+		if err := rows.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return snapshot.String()
 }
 
 func TestLogoutOriginDeletionAndCookieAttributes(t *testing.T) {

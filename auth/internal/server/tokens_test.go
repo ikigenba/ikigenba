@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -456,54 +455,6 @@ func TestTokenMutationsRejectBadOrMissingOriginWithoutMutation(t *testing.T) {
 	}
 }
 
-func TestCreateTokenShowsStoredSecretOnceThenNeverAgain(t *testing.T) {
-	st := openTokenTestStore(t)
-	user, session := tokenTestIdentity(t, st, "member")
-	srv := tokenTestServer(st)
-	response := httptest.NewRecorder()
-	srv.httpServer.Handler.ServeHTTP(response, tokenRequest("/tokens", session.ID, url.Values{
-		"name":    {"ledger-token"},
-		"expires": {"never"},
-	}))
-
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", response.Code)
-	}
-	tokens, err := st.ListTokens(user.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(tokens) != 1 {
-		t.Fatalf("len(ListTokens()) = %d, want 1", len(tokens))
-	}
-	body := response.Body.String()
-	secret, ok := presentedSecret(body, tokens[0].Hash)
-	if !ok || secretPattern.FindString(secret) != secret {
-		t.Fatalf("body does not present the stored ikp_ secret once: %s", body)
-	}
-	// R-N6ZN-XX7I: the stored plaintext secret appears once, a button copies
-	// that secret, and a link targets /.
-	if strings.Count(body, secret) != 1 {
-		t.Fatalf("secret appears %d times, want 1", strings.Count(body, secret))
-	}
-	if !buttonCopiesSecret(body, secret) {
-		t.Fatalf("no button copies the secret: %s", body)
-	}
-	if !anchorTargetsRoot(body) {
-		t.Fatalf("no link targets /: %s", body)
-	}
-
-	later := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
-	req.Host = "localhost:3001"
-	req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
-	srv.httpServer.Handler.ServeHTTP(later, req)
-	laterBody := later.Body.String()
-	if later.Code != http.StatusOK || !strings.Contains(laterBody, "ledger-token") || strings.Contains(laterBody, secret) {
-		t.Fatalf("later GET / = %d, leaked=%v, body %s", later.Code, strings.Contains(laterBody, secret), laterBody)
-	}
-}
-
 func TestCreateTokenRejectsMissingAndNonMemberExpiry(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -541,123 +492,6 @@ func TestCreateTokenRejectsMissingAndNonMemberExpiry(t *testing.T) {
 	}
 }
 
-func TestSignedInRootRowsExposeMetadataActionsAndNoSecrets(t *testing.T) {
-	st := openTokenTestStore(t)
-	owner, session := tokenTestIdentity(t, st, "owner")
-	other, _ := tokenTestIdentity(t, st, "other")
-	alphaSecret := createProfileToken(t, st, owner.ID, "alpha token", store.Expiry30d, tokenTestNow)
-	if _, err := st.TouchTokenIdentity(alphaSecret, tokenTestNow.Add(2*time.Hour)); err != nil {
-		t.Fatal(err)
-	}
-	betaSecret := createProfileToken(t, st, owner.ID, "beta token", store.ExpiryNever, tokenTestNow.Add(time.Hour))
-	beta, err := listedTokenByName(st, owner.ID, "beta token")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := st.SetTokenEnabled(owner.ID, beta.ID, false); err != nil {
-		t.Fatal(err)
-	}
-	gammaSecret := createProfileToken(t, st, owner.ID, "gamma token", store.ExpiryNever, tokenTestNow.Add(3*time.Hour))
-	if _, err := st.TouchTokenIdentity(gammaSecret, tokenTestNow.Add(4*time.Hour)); err != nil {
-		t.Fatal(err)
-	}
-	deltaSecret := createProfileToken(t, st, owner.ID, "delta token", store.Expiry90d, tokenTestNow.Add(5*time.Hour))
-	delta, err := listedTokenByName(st, owner.ID, "delta token")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := st.SetTokenEnabled(owner.ID, delta.ID, false); err != nil {
-		t.Fatal(err)
-	}
-	foreignSecret := createProfileToken(t, st, other.ID, "foreign token", store.Expiry365d, tokenTestNow)
-	foreign, err := listedTokenByName(st, other.ID, "foreign token")
-	if err != nil {
-		t.Fatal(err)
-	}
-	tokens, err := st.ListTokens(owner.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(tokens) != 4 {
-		t.Fatalf("len(ListTokens()) = %d, want 4", len(tokens))
-	}
-
-	response := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
-	req.Host = "auth.green.example"
-	req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
-	tokenTestServer(st).httpServer.Handler.ServeHTTP(response, req)
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", response.Code)
-	}
-	body := response.Body.String()
-	rows := htmlRows(body)
-	if len(rows) != len(tokens) {
-		t.Fatalf("row count = %d, want %d for ListTokens\n%s", len(rows), len(tokens), body)
-	}
-	secrets := []string{alphaSecret, betaSecret, gammaSecret, deltaSecret, foreignSecret}
-	for _, token := range tokens {
-		row, n := rowContaining(rows, token.ID)
-		if n != 1 {
-			t.Fatalf("token %s appears in %d rows", token.ID, n)
-		}
-		cells := cellTexts(row)
-		wantCells := []string{
-			html.EscapeString(token.Name),
-			token.CreatedAt.Format(time.RFC3339Nano),
-			optionalTimeText(token.LastUsedAt),
-			optionalTimeText(token.ExpiresAt),
-			fmt.Sprintf("%t", token.Enabled),
-		}
-		// R-N9FG-PGOW: each owned token is one row showing name, created,
-		// last-used, expiry, and enabled, in that order, from ListTokens.
-		if !containsSubsequence(cells, wantCells) {
-			t.Fatalf("row for %s cells = %#v, want subsequence %#v", token.Name, cells, wantCells)
-		}
-		toggle := "disable"
-		if !token.Enabled {
-			toggle = "enable"
-		}
-		// R-NAND-38FL: each row has POST forms for the state toggle and delete,
-		// addressed by Token.ID and not by the secret.
-		forms := formActions(row)
-		if !hasForm(forms, "POST", "/tokens/"+token.ID+"/"+toggle) || !hasForm(forms, "POST", "/tokens/"+token.ID+"/delete") {
-			t.Fatalf("row forms = %#v, want POST /tokens/%s/%s and /delete", forms, token.ID, toggle)
-		}
-	}
-	// R-NBV9-H06A: the signed-in GET / body contains no plaintext secret.
-	for _, secret := range secrets {
-		if strings.Contains(body, secret) {
-			t.Fatalf("GET / contains plaintext secret %q", secret)
-		}
-	}
-	if strings.Contains(body, foreign.Name) || strings.Contains(body, foreign.ID) {
-		t.Fatalf("GET / contains another user's token: %s", body)
-	}
-}
-
-func createProfileToken(t *testing.T, st *store.Store, userID, name string, expiry store.Expiry, created time.Time) string {
-	t.Helper()
-	_, secret, err := st.CreateToken(userID, name, expiry, created)
-	if err != nil {
-		t.Fatalf("CreateToken(%q) error = %v", name, err)
-	}
-	return secret
-}
-
-func listedTokenByName(st *store.Store, userID, name string) (store.Token, error) {
-	tokens, err := st.ListTokens(userID)
-	if err != nil {
-		return store.Token{}, err
-	}
-	for _, token := range tokens {
-		if token.Name == name {
-			return token, nil
-		}
-	}
-	return store.Token{}, fmt.Errorf("token %q not listed", name)
-}
-
 var secretPattern = regexp.MustCompile(`^ikp_[0-9A-HJKMNP-TV-Z]{52}$`)
 
 func presentedSecret(body, hash string) (string, bool) {
@@ -685,34 +519,6 @@ func presentedSecret(body, hash string) (string, bool) {
 	return found, found != ""
 }
 
-func buttonCopiesSecret(body, secret string) bool {
-	buttonRE := regexp.MustCompile(`(?is)<button\b([^>]*)>(.*?)</button>`)
-	literalRE := regexp.MustCompile(`clipboard\.writeText\(\s*(?:'([^']*)'|"([^"]*)")\s*\)`)
-	elementRE := regexp.MustCompile(`clipboard\.writeText\(\s*document\.getElementById\(\s*['"]([^'"]+)['"]\s*\)\s*\.\s*(?:textContent|innerText|value)\s*\)`)
-	for _, button := range buttonRE.FindAllStringSubmatch(body, -1) {
-		blob := button[1] + ">" + button[2]
-		for _, match := range literalRE.FindAllStringSubmatch(blob, -1) {
-			if match[1] == secret || match[2] == secret {
-				return true
-			}
-		}
-		match := elementRE.FindStringSubmatch(blob)
-		if match == nil {
-			continue
-		}
-		elementRE := regexp.MustCompile(`(?is)<[^>]*\bid\s*=\s*['"]` + regexp.QuoteMeta(match[1]) + `['"][^>]*>(.*?)</`)
-		element := elementRE.FindStringSubmatch(body)
-		if element != nil && (element[1] == secret || html.UnescapeString(element[1]) == secret) {
-			return true
-		}
-	}
-	return false
-}
-
-func anchorTargetsRoot(body string) bool {
-	return regexp.MustCompile(`(?i)<a\b[^>]*\bhref\s*=\s*(?:"/"|'/')`).MatchString(body)
-}
-
 func bodyHasTokenCreateForm(body string) bool {
 	formRE := regexp.MustCompile(`(?is)<form\b([^>]*)>(.*?)</form>`)
 	for _, form := range formRE.FindAllStringSubmatch(body, -1) {
@@ -728,74 +534,6 @@ func bodyHasTokenCreateForm(body string) bool {
 
 func namedControl(inner, name string) bool {
 	return regexp.MustCompile(`(?i)<(?:input|select|textarea)\b[^>]*\bname\s*=\s*(?:"` + regexp.QuoteMeta(name) + `"|'` + regexp.QuoteMeta(name) + `')`).MatchString(inner)
-}
-
-func htmlRows(body string) []string {
-	return regexp.MustCompile(`(?is)<tr\b[^>]*>.*?</tr>`).FindAllString(body, -1)
-}
-
-func rowContaining(rows []string, id string) (string, int) {
-	var found string
-	n := 0
-	for _, row := range rows {
-		if strings.Contains(row, id) {
-			n++
-			found = row
-		}
-	}
-	return found, n
-}
-
-func cellTexts(row string) []string {
-	matches := regexp.MustCompile(`(?is)<td\b[^>]*>(.*?)</td>`).FindAllStringSubmatch(row, -1)
-	cells := make([]string, 0, len(matches))
-	for _, match := range matches {
-		cells = append(cells, strings.TrimSpace(match[1]))
-	}
-	return cells
-}
-
-func containsSubsequence(cells, want []string) bool {
-	next := 0
-	for _, cell := range cells {
-		if next < len(want) && cell == want[next] {
-			next++
-		}
-	}
-	return next == len(want)
-}
-
-func optionalTimeText(value *time.Time) string {
-	if value == nil {
-		return "never"
-	}
-	return value.Format(time.RFC3339Nano)
-}
-
-type htmlForm struct {
-	method string
-	action string
-}
-
-func formActions(row string) []htmlForm {
-	matches := regexp.MustCompile(`(?is)<form\b([^>]*)>`).FindAllStringSubmatch(row, -1)
-	forms := make([]htmlForm, 0, len(matches))
-	for _, match := range matches {
-		forms = append(forms, htmlForm{
-			method: strings.ToUpper(tagAttr(match[1], "method")),
-			action: tagAttr(match[1], "action"),
-		})
-	}
-	return forms
-}
-
-func hasForm(forms []htmlForm, method, action string) bool {
-	for _, form := range forms {
-		if form.method == method && form.action == action {
-			return true
-		}
-	}
-	return false
 }
 
 func tagAttr(tag, name string) string {

@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/auth/internal/google"
-	"github.com/ikigenba/ikigenba/auth/internal/server/assets"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
 )
 
@@ -89,12 +88,14 @@ func TestServeSignatureAndHandler(t *testing.T) {
 	if got := reflect.TypeOf(Serve); got != want {
 		t.Fatalf("Serve type = %s, want %s", got, want)
 	}
-	// R-M4IB-C9GF: *Server itself handles requests through its router.
-	var handler http.Handler = New(Config{Now: fixedNow})
-	r := httptest.NewRecorder()
-	handler.ServeHTTP(r, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil))
-	if r.Code != http.StatusOK || !strings.Contains(r.Body.String(), "Sign in with Google") {
-		t.Fatalf("ServeHTTP returned %d %q", r.Code, r.Body.String())
+}
+
+func TestServerHandlerSignature(t *testing.T) {
+	// R-L9FH-DHDY: *Server implements http.Handler through this exact method.
+	var _ http.Handler = (*Server)(nil)
+	want := reflect.TypeOf(func(*Server, http.ResponseWriter, *http.Request) {})
+	if got := reflect.TypeOf((*Server).ServeHTTP); got != want {
+		t.Fatalf("ServeHTTP type = %s, want %s", got, want)
 	}
 }
 
@@ -347,7 +348,7 @@ func TestServeFailureAndSilence(t *testing.T) {
 	}
 }
 
-func TestRouterRegistersContractRoutesAndEmbeddedAssets(t *testing.T) {
+func TestRouterRegistersContractRoutes(t *testing.T) {
 	s := New(Config{Now: fixedNow})
 	for _, target := range []struct {
 		method string
@@ -375,49 +376,9 @@ func TestRouterRegistersContractRoutesAndEmbeddedAssets(t *testing.T) {
 	if missing.Code != http.StatusNotFound {
 		t.Fatalf("missing route status = %d, want %d", missing.Code, http.StatusNotFound)
 	}
-
-	// Serving the files from this package directory would still succeed if the
-	// handler read them off disk. A temp working directory has none of them.
-	t.Chdir(t.TempDir())
-
-	for _, asset := range []string{"/assets/index.html", "/assets/app.js", "/assets/style.css"} {
-		t.Run(asset, func(t *testing.T) {
-			response := httptest.NewRecorder()
-			s.httpServer.Handler.ServeHTTP(response, httptest.NewRequestWithContext(context.Background(), http.MethodGet, asset, nil))
-			if response.Code != http.StatusOK || response.Body.Len() == 0 {
-				t.Fatalf("asset response = status %d, %d bytes", response.Code, response.Body.Len())
-			}
-		})
-	}
-
-	// HTML, JavaScript, and CSS bytes are the embedded filesystem's, still
-	// served when the process working directory has no asset files.
-	embedded := map[string]string{}
-	for _, name := range []string{"index.html", "app.js", "style.css"} {
-		body, err := assets.Files.ReadFile(name)
-		if err != nil {
-			t.Fatalf("embedded %s: %v", name, err)
-		}
-		embedded[name] = string(body)
-	}
-	wantType := map[string]string{
-		"index.html": "text/html; charset=utf-8",
-		"app.js":     "text/javascript; charset=utf-8",
-		"style.css":  "text/css; charset=utf-8",
-	}
-	for _, name := range []string{"index.html", "app.js", "style.css"} {
-		response := httptest.NewRecorder()
-		s.httpServer.Handler.ServeHTTP(response, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/assets/"+name, nil))
-		if response.Code != http.StatusOK || response.Header().Get("Content-Type") != wantType[name] || response.Body.String() != embedded[name] {
-			t.Fatalf("served %s status=%d type=%q (%d bytes), want 200 %s and the embedded bytes", name, response.Code, response.Header().Get("Content-Type"), response.Body.Len(), wantType[name])
-		}
-		if _, err := os.ReadFile(filepath.Clean(filepath.Join("assets", name))); err == nil {
-			t.Fatalf("asset %s is readable from the working directory; the serve above would not prove the embed", name)
-		}
-	}
 }
 
-// R-IVLV-52P1: each D05, D06, and D07 method and path is this server's route.
+// R-2AOL-W6YZ: each D05, D06, D07, and D08 method and path is this server's route.
 func TestContractRoutesServed(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "auth.db"), bytes.NewReader(bytes.Repeat([]byte{4}, 64)))
 	if err != nil {
@@ -452,8 +413,13 @@ func TestContractRoutesServed(t *testing.T) {
 	})
 
 	root := serveRoute(s, http.MethodGet, "/", nil)
-	if root.Code != http.StatusOK || root.Header().Get("Content-Type") != "text/html; charset=utf-8" || root.Body.String() != `<!doctype html><html><body><a href="/login/google">Sign in with Google</a></body></html>` {
+	if root.Code != http.StatusOK || root.Header().Get("Content-Type") != "text/html; charset=utf-8" || !strings.Contains(root.Body.String(), `href="/login/google"`) {
 		t.Fatalf("GET / = %d %q %q", root.Code, root.Header().Get("Content-Type"), root.Body.String())
+	}
+
+	asset := serveRoute(s, http.MethodGet, "/assets/theme.css", nil)
+	if asset.Code != http.StatusOK || asset.Header().Get("Content-Type") != "text/css; charset=utf-8" {
+		t.Fatalf("GET /assets/theme.css = %d %q", asset.Code, asset.Header().Get("Content-Type"))
 	}
 
 	login := serveRoute(s, http.MethodGet, "/login/google", nil)

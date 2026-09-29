@@ -1,13 +1,11 @@
 package server
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"html"
 	"io"
 	"net/http"
-	"net/url"
 
 	"github.com/ikigenba/ikigenba/auth/internal/idcodec"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
@@ -27,20 +25,19 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !signedIn {
-		writeSignInPage(w, r.URL.Query().Get("return"))
+		writeSignInPage(w, r.Host, s.cfg.WorkspaceDomain, returnQuery(r.URL.RawQuery))
 		return
 	}
 
-	var rows bytes.Buffer
-	if err := s.renderTokenRows(&rows, identity.UserID); err != nil {
+	rows, err := s.tokenRows(identity.UserID, s.now())
+	if err != nil {
 		s.writeServerError(w, r, err)
 		return
 	}
-	w.Header().Set("Content-Type", signInHTMLContentType)
-	w.WriteHeader(http.StatusOK)
-	_, _ = fmt.Fprintf(w, `<!doctype html><html><body><p>%s</p><form method="post" action="/logout"><button type="submit">Log out</button></form><form method="post" action="/tokens"><input name="name"><select name="expires"><option value="never">never</option><option value="30d">30d</option><option value="90d">90d</option><option value="365d">365d</option></select><button type="submit">Create token</button></form><table>`, html.EscapeString(identity.Email))
-	_, _ = rows.WriteTo(w)
-	_, _ = io.WriteString(w, `</table></body></html>`)
+	writeAuthPage(w, http.StatusOK, authPageData{Email: identity.Email, Profile: &profilePageData{
+		Apex: apexName(r.Host), Email: identity.Email, Workspace: s.cfg.WorkspaceDomain,
+		Rows: rows, Create: tokenCreateValues("", "90d", false),
+	}})
 }
 
 func (s *Server) handleLoginGoogle(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +47,7 @@ func (s *Server) handleLoginGoogle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	returnURL := r.URL.Query().Get("return")
+	returnURL := returnQuery(r.URL.RawQuery)
 	loginState, err := s.st.CreateLoginState(verifier, returnURL)
 	if err != nil {
 		s.writeServerError(w, r, err)
@@ -97,7 +94,7 @@ func (s *Server) handleLoginGoogleCallback(w http.ResponseWriter, r *http.Reques
 				return
 			}
 		}
-		writeSignInPage(w, "")
+		writeCancelledPage(w, r.Host)
 		return
 	}
 
@@ -118,9 +115,7 @@ func (s *Server) handleLoginGoogleCallback(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if !claims.EmailVerified || claims.HostedDomain != s.cfg.WorkspaceDomain {
-		w.Header().Set("Content-Type", signInHTMLContentType)
-		w.WriteHeader(http.StatusForbidden)
-		_, _ = io.WriteString(w, `<!doctype html><html><body><p>Workspace membership required.</p></body></html>`)
+		writeNonMemberPage(w, r.Host, s.cfg.WorkspaceDomain, claims.Email)
 		return
 	}
 
@@ -170,16 +165,6 @@ func (s *Server) sessionIdentity(r *http.Request) (store.Identity, bool, error) 
 		return store.Identity{}, false, nil
 	}
 	return identity, err == nil, err
-}
-
-func writeSignInPage(w http.ResponseWriter, returnURL string) {
-	target := "/login/google"
-	if returnURL != "" {
-		target += "?return=" + url.QueryEscape(returnURL)
-	}
-	w.Header().Set("Content-Type", signInHTMLContentType)
-	w.WriteHeader(http.StatusOK)
-	_, _ = fmt.Fprintf(w, `<!doctype html><html><body><a href="%s">Sign in with Google</a></body></html>`, html.EscapeString(target))
 }
 
 func writePlainError(w http.ResponseWriter, status int, message string) {

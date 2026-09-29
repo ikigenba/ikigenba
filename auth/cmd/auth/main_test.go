@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ikigenba/ikigenba/auth/internal/server/assets"
 	"github.com/ikigenba/ikigenba/auth/internal/version"
 )
 
@@ -23,15 +22,9 @@ import (
 func TestMainWiring(t *testing.T) {
 	// R-NJQ3-EMLL R-LX6X-1N09 R-3WNI-4FXO
 	// R-P02O-R3KF R-P2IH-IN1T R-P666-NY9W
-	// R-TL9Z-NUB3 R-M6Y4-3SXT
+	// R-1UTW-X6BY R-M6Y4-3SXT
 	binary := buildBinary(t)
 	assertStatic(t, binary)
-	for _, name := range []string{"index.html", "app.js", "style.css"} {
-		body, err := assets.Files.ReadFile(name)
-		if err != nil || len(body) == 0 {
-			t.Fatalf("embedded %s: %v (%d bytes)", name, err, len(body))
-		}
-	}
 
 	for _, tc := range []struct {
 		name, wantOut, wantErr string

@@ -752,7 +752,7 @@ func (b *brokenListener) Close() error              { return nil }
 func (b *brokenListener) Addr() net.Addr            { return &net.TCPAddr{} }
 
 func TestSourceRestrictions(t *testing.T) {
-	// R-LZMP-T6HN R-M0UM-6Y8C R-3I0P-J71C R-3J8L-WYS1 R-3KGI-AQIQ R-3LOE-OI9F R-3MWB-2A04 R-3U7P-CWGA
+	// R-LZMP-T6HN R-M0UM-6Y8C R-3I0P-J71C R-3J8L-WYS1 R-3KGI-AQIQ R-3LOE-OI9F R-3MWB-2A04
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("caller")

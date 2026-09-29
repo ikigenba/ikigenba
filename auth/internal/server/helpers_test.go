@@ -111,7 +111,7 @@ func TestOnSpaceOrigin(t *testing.T) {
 }
 
 func TestCookieAndReturnURLHelpers(t *testing.T) {
-	// R-IQCU-M8TM: a return URL is in-space only when its host is the space
+	// R-N2LW-9AQJ: a return URL is in-space only when its host is the space
 	// or a subdomain of the space.
 	for _, test := range []struct {
 		name, returnURL string
@@ -136,5 +136,30 @@ func TestCookieAndReturnURLHelpers(t *testing.T) {
 	cleared := cookieForHost("localhost:3001", "", true)
 	if cleared.Value != "" || cleared.Domain != "" || cleared.Path != "/" || cleared.MaxAge != -1 || !cleared.Secure || !cleared.HttpOnly || cleared.SameSite != http.SameSiteLaxMode {
 		t.Fatalf("local cleared cookie = %#v", cleared)
+	}
+}
+
+func TestReturnURLUsesUnambiguousTextPolicy(t *testing.T) {
+	// R-N2LW-9AQJ
+	for _, tc := range []struct {
+		raw, host string
+		want      bool
+	}{
+		{"https://GREEN.EXAMPLE/a", "auth.green.example", true}, {"HtTp://App.Green.Example:0080/a", "auth.green.example:443", true}, {"https://green.example:/a", "auth.green.example", true}, {"https://.green.example/a", "auth.green.example", true}, {"http://LOCALHOST:3000/a", "localhost:3001", true},
+		{"https://green.example:9999999999999/a", "auth.green.example", true}, {"https://green.example/a?q=é", "auth.green.example", true},
+		{"https://green.example@evil.test/a", "auth.green.example", false}, {"https://evil.test@green.example/a", "auth.green.example", false}, {"https://%67reen.example/a", "auth.green.example", false}, {"https://Ｇreen.example/a", "auth.green.example", false}, {"https://[green.example]/a", "auth.green.example", false}, {"https://green.example:abc/a", "auth.green.example", false}, {"https://green.example:1:2/a", "auth.green.example", false},
+		{"https:green.example/a", "auth.green.example", false}, {"https:/green.example/a", "auth.green.example", false}, {"https:///green.example/a", "auth.green.example", false}, {"//green.example/a", "auth.green.example", false}, {"ftp://green.example/a", "auth.green.example", false}, {"https://evilgreen.example/a", "auth.green.example", false}, {"https://green.example.evil/a", "auth.green.example", false}, {"https://green.example./a", "auth.green.example", false}, {"https://green.example\\@evil.test/a", "auth.green.example", false}, {" https://green.example/a", "auth.green.example", false}, {"https://green.example/a b", "auth.green.example", false}, {"https://green.example/a", "auth.:443", false}, {"not a URL", "auth.green.example", false},
+	} {
+		if got := inSpace(tc.raw, tc.host); got != tc.want {
+			t.Errorf("inSpace(%q,%q) = %t want %t", tc.raw, tc.host, got, tc.want)
+		}
+	}
+	for c := byte(0); c <= 0x20; c++ {
+		if inSpace("https://green.example/a"+string([]byte{c}), "auth.green.example") {
+			t.Errorf("accepted forbidden byte %x", c)
+		}
+	}
+	if inSpace("https://green.example/a\x7f", "auth.green.example") {
+		t.Error("accepted DEL")
 	}
 }

@@ -9,12 +9,12 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/ikigenba/ikigenba/auth/internal/google"
-	"github.com/ikigenba/ikigenba/auth/internal/server/assets"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
 )
 
@@ -61,9 +61,14 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("GET /me", s.handleMe)
 	mux.HandleFunc("POST /tokens", s.handleCreateToken)
 	mux.HandleFunc("POST /tokens/{id}/{action}", s.handleTokenAction)
-	mux.HandleFunc("GET /assets/{name}", s.handleAsset)
 
-	s.httpServer = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	s.httpServer = &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/assets/") {
+			s.handleAsset(w, r)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	}), ReadHeaderTimeout: 10 * time.Second}
 	return s
 }
 
@@ -90,30 +95,6 @@ func (s *Server) writeDiagnostic(r *http.Request, err error) {
 		id = "-"
 	}
 	_, _ = s.stderr.Write([]byte("auth: request " + id + ": " + err.Error() + "\n"))
-}
-
-func (s *Server) handleAsset(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
-	var contentType string
-	switch name {
-	case "index.html":
-		contentType = "text/html; charset=utf-8"
-	case "app.js":
-		contentType = "text/javascript; charset=utf-8"
-	case "style.css":
-		contentType = "text/css; charset=utf-8"
-	default:
-		http.NotFound(w, r)
-		return
-	}
-	body, err := assets.Files.ReadFile(name)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	w.Header().Set("Content-Type", contentType)
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(body)
 }
 
 // DrainError reports requests still in progress after the drain deadline.
