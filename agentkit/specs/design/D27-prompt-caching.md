@@ -86,37 +86,17 @@ saves, `Cost` continues to price tokens only, and the rent is knowingly
 unaccounted. Making that explicit is better than a cost figure that is quietly
 wrong.
 
-**Proof against the real hosts.** Caching is exactly the kind of behavior that
-can be implemented plausibly and still not work — a breakpoint in the wrong
-place, an invalidation nobody predicted, a cache that is created and never read.
-Golden fixtures pin what we emit; only a live call proves the vendor honoured it.
-So every wire family carries a live test that takes a savepoint and sends two
-different suffixes across a `Restore`.
-
-Four of the five then assert the second round-trip actually read from cache.
-xAI is the exception, and deliberately: probing it against the real host showed
-cache reads arriving intermittently — hits and misses alternating on an
-identical prefix seconds apart, at every prefix size tried, and no better with a
-larger one. Worse, nearly every xAI response reports a small constant
-`cached_tokens` floor unrelated to the prefix we sent, so a naive "greater than
-zero" assertion would pass without proving anything. A gate that fails at random,
-or passes vacuously, is worse than no gate: it teaches everyone to re-run the
-suite until it goes green. So the xAI subtest proves what is actually
-reproducible — that a live savepoint does not break the turn — and asserts
-nothing about caching. If xAI's behavior becomes dependable, that is a
-requirement to add then, on evidence.
-
-The prefix floor is a single number for every subtest rather than a per-host
-minimum, chosen to clear the largest of them with margin: the observed minimums
-are 4096 tokens on `claude-haiku-4-5` and 1024 on `gemini-3.5-flash-lite`, and
-OpenAI proved unreliable near 2000 tokens but perfectly reliable past 5000.
-
-The Anthropic subtest builds its prefix with `AddSystem` alone, so what it
-proves is the breakpoint on a `system` block — the shape a consumer that loads
-its corpus as system content depends on. A probe against the real host showed
-that placement written (`cache_creation_input_tokens: 6702`) and read back
-exactly on the next two requests, with no message preceding the `system`
-array and an uncached `tools` array ahead of it.
+**Proof.** Golden request fixtures pin what each wire emits, and the
+offline tests pin the Gemini cache lifecycle against a stand-in host. No live
+test covers caching: the live tests prove only that each transport path is
+glued together (D23). The vendor facts this design relies on were observed
+against the real hosts while it was drafted. A probe against Anthropic showed
+a breakpoint on the last `system` block written (`cache_creation_input_tokens:
+6702`) and read back exactly on the next two requests, with no message
+preceding the `system` array and an uncached `tools` array ahead of it. xAI's
+cache reads proved intermittent — hits and misses alternating on an identical
+prefix seconds apart, with a small constant `cached_tokens` floor reported
+regardless of the prefix — so nothing here promises a cache hit on xAI.
 
 ## REQUIREMENTS
 
@@ -132,8 +112,6 @@ array and an uncached `tools` array ahead of it.
 - R-NWI7-DP1G: When creating a `cachedContents` resource is rejected with HTTP 400 whose `error.status` is `INVALID_ARGUMENT` and whose `error.message` begins `Cached content is too small` — the host's below-minimum-size rejection — the turn MUST proceed with no cache — rendering the request exactly as R-LC8M-BVVD requires — MUST complete normally, and MUST surface no error on `Stream.Err()`.
 - R-NXQ3-RGS5: When a `generateContent` request carrying `cachedContent` is rejected with HTTP 403 whose `error.status` is `PERMISSION_DENIED` — the host's shape for a `cachedContents` resource that no longer exists — the wire MUST create the resource once more and retry that request exactly once, and MUST NOT surface that first rejection as an `*Error` whose `Category` is `CategoryAuth`; a 403 on the retry, or on the creating `POST`, MUST surface through the ordinary classification (D4).
 - R-L7D0-SSWL: The `Cost` reported for a turn MUST be derived from `Usage` alone; the storage rent a `cachedContents` resource accrues MUST NOT be added to any `usage`, `turn_end`, or `summary` record's `Cost`.
-- R-1ETZ-7OQ0: The module MUST contain the file `cache_live_test.go`, beginning with the build constraint `//go:build live`, containing a test named `TestLiveCache` that runs one subtest per built-in wire family — `anthropic-messages`, `openai-responses`, `openai-chat`, `gemini-generate-content`, and `xai-responses` — reading its credential from the environment exactly as R-L2HW-IKU6 requires and failing, never skipping, when it is absent.
-- R-6PME-Y8QW: Every `TestLiveCache` subtest MUST build a conversation whose `History` before the savepoint exceeds 8192 tokens — the `anthropic-messages` subtest by `AddSystem` alone with no `Send` before the savepoint, so the breakpoint it proves is one on a `system` block, and every other subtest by at least one `Send` — take a `Savepoint`, run one `Send`, `Restore`, then run a second `Send` carrying different text, and MUST assert `Stream.Err()` is nil for both; the `anthropic-messages`, `openai-responses`, `openai-chat`, and `gemini-generate-content` subtests MUST additionally assert that the `usage` log record of the second `Send`'s round-trip has `CachedTokens` greater than zero, and the `xai-responses` subtest MUST NOT assert anything about `CachedTokens`.
 
 ## Canonical usage
 

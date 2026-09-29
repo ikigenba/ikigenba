@@ -37,20 +37,15 @@ byte-identity requirement.
 ## Test files
 
 The sub-project's spec tests are all `*_test.go` files under this module,
-**excluding** the live tests named `*_live_test.go` (which are guarded by a
-`//go:build live` tag and carry no requirement ids — they prove the vendor facts
-the designs record, and an offline architecture test carries the id that pins
-each live file's existence and shape). This is the file set the canonical gap
-greps for requirement ids:
+live tests included. This is the file set the canonical gap greps for
+requirement ids:
 
 ```
-grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' --exclude='*_live_test.go' . | sort -u
+grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' . | sort -u
 ```
 
-Live tests are excluded above so they never contribute an id to the gap.
-Every requirement id is proved by an offline `*_test.go`; a golden SSE fixture
-lives under `testdata/` and carries no id-shaped literal that is not a genuine
-requirement-id tag.
+A golden SSE fixture lives under `testdata/` and carries no id-shaped literal
+that is not a genuine requirement-id tag.
 
 ## Test discipline
 

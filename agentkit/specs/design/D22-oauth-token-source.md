@@ -24,7 +24,7 @@ asks for a rotation:
 
 Consumers obtain the model and OAuth-capable endpoint from `Catalog()`, then
 pass the selected offering's rotation metadata to the rotator through
-`Offering.Authenticator`. Live fixtures use the lexicographically first
+`Offering.Authenticator`. Live tests use the lexicographically first
 eligible catalog record for each host rather than pinning a release.
 
 Only OpenAI's responses protocol and xAI accept OAuth; Anthropic's terms do not
@@ -113,25 +113,25 @@ vendor's own token being handed back to the vendor) whenever the claim is
 present and leaves `AccountID` empty otherwise. Only the OpenAI responses wire
 reads it (D7).
 
-**Live rotation and re-issue tests.** Every requirement below except the
-live-file ones is provable offline: an `httptest` server standing in for the
+**Live re-issue tests.** Every behavior of the rotator, the store, and the
+re-issue path is proved offline: an `httptest` server standing in for the
 refresh endpoint or the vendor, a temporary directory for `FileTokenStore`, a
 fake `TokenStore` for the rotator, a fake `Rotator` for the conversation's
 re-issue path, and a crafted JWT (any three base64url segments whose payload
-carries `exp`; the signature is never checked) for `ExpiresAt`. A real
-rotation rotates the real refresh token, which is the strongest proof that
-the write path is right, so live tests exist as well, under the `live` build
-tag that D23 defines, reading their token file paths from
-`AGENTKIT_OPENAI_OAUTH_FILE` and `AGENTKIT_XAI_OAUTH_FILE` and failing, never
-skipping, when a variable is unset. Two rotate directly. Two more prove the
-reactive path end to end on each host: they wrap the real file in a store
-whose `Read` hands back the bytes with the access token's signature segment
-altered, so the vendor rejects it exactly as it rejects an expired one, and
-whose `Write` goes to the real file, so the rotated refresh token is never
-lost; a text turn then succeeds only if the wire classified the rejection,
-the rotation ran, and the re-issue carried the new token. They run through
-`make live` (D23). The requirement ids for the live files ride on offline
-architecture tests that prove the files exist with the build tag.
+carries `exp`; the signature is never checked) for `ExpiresAt`. What offline
+tests cannot show is that a real vendor's rejection, a real refresh endpoint,
+and the real token file fit together, so one live test per OAuth host proves
+the reactive path end to end, following the Live tests section of AGENTS.md
+and carrying its requirement id. Each wraps the real file in a store whose
+`Read` hands back the bytes with the access token's signature segment altered,
+so the vendor rejects it exactly as it rejects an expired one, and whose
+`Write` goes to the real file, so the rotated refresh token is never lost; a
+text turn then succeeds only if the wire classified the rejection, the
+rotation ran, and the re-issue carried the new token. A real rotation also
+rotates the real refresh token, so these tests exercise refresh as well and no
+separate live refresh test exists. They read their token file paths from
+`AGENTKIT_OPENAI_OAUTH_FILE` and `AGENTKIT_XAI_OAUTH_FILE` and run through
+`make live` (D23).
 
 ## REQUIREMENTS
 
@@ -151,5 +151,5 @@ architecture tests that prove the files exist with the build tag.
 - R-J6FV-1PBM: `agentkit` MUST export the constant `OAuthRefreshWindow time.Duration = 5 * time.Minute`.
 - R-J7NR-FH2B: The authenticator from `o.Authenticator(r)` where `r.AuthMode()` is `AuthModeOAuth` MUST, on every request, when the `Token` returned by `r.Token(ctx)` has a non-zero `ExpiresAt` that is not after `time.Now().Add(OAuthRefreshWindow)`, call `r.Rotate(ctx, rotation)` exactly once with the `Rotation` of the `EndpointSpec` in `o.Endpoints` whose `AuthMode` is `AuthModeOAuth` before the request is sent and transmit the `Bearer` (and, where the wire places it, `AccountID`) of the token `Rotate` returned; and MUST NOT call `r.Rotate` when `ExpiresAt` is zero or is after that instant.
 - R-EBV0-BHS5: When the `r.Rotate` call made before a request because `Token.ExpiresAt` fell within `OAuthRefreshWindow` fails, `Authenticate` on the authenticator from `o.Authenticator(r)` MUST return that error unchanged, the `Conversation` MUST send no request, and `Send` MUST surface the error such that `errors.As` finds the `*Error` that `Rotate` returned.
-- R-GTME-OJGW: The module MUST contain `oauth_reissue_openai_live_test.go` and `oauth_reissue_xai_live_test.go`, each beginning with `//go:build live` and containing a test whose name begins with `TestLive`; the OpenAI file MUST use `AGENTKIT_OPENAI_OAUTH_FILE` and the `HostOpenAI` responses offering, the xAI file MUST use `AGENTKIT_XAI_OAUTH_FILE` and the `HostXAI` responses offering, and each test MUST fail rather than skip unless its environment variable names a readable file, derive from `Catalog()` the lexicographically first model carrying the assigned host's responses offering with an OAuth `EndpointSpec`, build a `Conversation` from `Offering.Authenticator` with `OAuthRotator` over a `TokenStore` whose `Read` returns the file's bytes with the last four characters of the stored `access_token` JWT signature segment replaced by different base64url characters and whose `Write` writes the file, use `NewEndpoint(auth)` without `WithBaseURL` and `New`, run a text turn, and assert nil `Stream.Err()`, a `MessageDone` with a non-empty `Text` block, and a persisted `access_token` different from its value before the turn; neither file may contain a model literal.
-- R-GUUB-2B7L: The module MUST contain `oauth_refresh_openai_live_test.go` and `oauth_refresh_xai_live_test.go`, each beginning with `//go:build live` and containing a test whose name begins with `TestLive`; the OpenAI file MUST use `AGENTKIT_OPENAI_OAUTH_FILE` and the `HostOpenAI` responses offering, the xAI file MUST use `AGENTKIT_XAI_OAUTH_FILE` and the `HostXAI` responses offering, and each test MUST fail rather than skip unless its environment variable names a readable file, derive from `Catalog()` the lexicographically first model carrying the assigned host's responses offering with an OAuth `EndpointSpec`, build `OAuthRotator(FileTokenStore(path))`, call `Rotate` with that `EndpointSpec.Rotation`, and assert the file's persisted `access_token` differs from its value before the call; neither file may contain a model literal.
+- R-CNF3-8S8L: `TestLiveOAuthReissueOpenAI`, in `oauth_reissue_openai_live_test.go`, MUST derive from `Catalog()` the lexicographically first model carrying the `HostOpenAI` responses offering with an OAuth `EndpointSpec`, build a `Conversation` from `Offering.Authenticator` with `OAuthRotator` over a `TokenStore` whose `Read` returns the bytes of the file `AGENTKIT_OPENAI_OAUTH_FILE` names with the last four characters of the stored `access_token` JWT signature segment replaced by different base64url characters and whose `Write` writes that file, `NewEndpoint(auth)` without `WithBaseURL`, and `New`, and run one text turn against the real vendor, which rejects the altered token; it MUST require nil `Stream.Err()`, a `MessageDone` carrying a non-empty `Text` block, and a persisted `access_token` in the file different from its value before the turn, and MUST contain no model literal.
+- R-COMZ-MJZA: `TestLiveOAuthReissueXAI`, in `oauth_reissue_xai_live_test.go`, MUST derive from `Catalog()` the lexicographically first model carrying the `HostXAI` responses offering with an OAuth `EndpointSpec`, build a `Conversation` from `Offering.Authenticator` with `OAuthRotator` over a `TokenStore` whose `Read` returns the bytes of the file `AGENTKIT_XAI_OAUTH_FILE` names with the last four characters of the stored `access_token` JWT signature segment replaced by different base64url characters and whose `Write` writes that file, `NewEndpoint(auth)` without `WithBaseURL`, and `New`, and run one text turn against the real vendor, which rejects the altered token; it MUST require nil `Stream.Err()`, a `MessageDone` carrying a non-empty `Text` block, and a persisted `access_token` in the file different from its value before the turn, and MUST contain no model literal.

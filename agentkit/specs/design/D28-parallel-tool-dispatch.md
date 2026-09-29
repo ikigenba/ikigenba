@@ -54,7 +54,8 @@ request advertises tools — Anthropic inside `tool_choice` as
 `disable_parallel_tool_use`, the Chat and Responses families as the top-level
 `parallel_tool_calls: false` — and the Gemini wire, whose grammar has no such
 control, fails at `Send` with `ErrInvalidConfig` rather than silently ignoring
-it (D8). Each vendor's acceptance of the rendered field is proved live (D23).
+it (D8). Golden fixtures pin each rendering; no live test exercises the
+switch.
 The structural requirement below owns the `Settings` field shape.
 
 ## REQUIREMENTS
@@ -70,5 +71,4 @@ The structural requirement below owns the `Settings` field shape.
 - R-D9QG-1UNX: When `Settings.SerialToolCalls` is `true` and the request advertises at least one tool, `ChatWire()`, `OpenAIChatWire()`, `XAIChatWire()`, `ResponsesWire()`, `OpenAIResponsesWire()`, and `XAIResponsesWire()` MUST each render the top-level field `"parallel_tool_calls":false`, pinned by a golden fixture.
 - R-DAYC-FMEM: A `Send` on a conversation whose wire is `GeminiGenerateContentWire()` with `Settings.SerialToolCalls` `true` MUST fail with `ErrInvalidConfig`, making no provider call and leaving `History` unchanged.
 - R-DDE5-75W0: When `Settings.SerialToolCalls` is `false`, or when the request advertises no tool, no shipped wire MUST emit `disable_parallel_tool_use` or `parallel_tool_calls` in the request body.
-- R-BCKD-INQL: `TestLiveSerialToolCalls` MUST iterate every representative D23 cell except the one whose `Offering.ID` is `OfferingGeminiGenerateContent`, run a tool turn with `Settings.SerialToolCalls=true` and two advertised tools, and require nil `Stream.Err()` and at most one `ToolUse` block in each assistant `MessageDone`; it MUST derive models from the D23 cells and contain no model literal.
 - R-DFTX-YPDE: The `Access` returned by a tool built with `NewTool`, `MustTool`, or `NewToolFromSchema` MUST be the value the constructor's `access` argument returns for the call's validated arguments, decoded into `In` for the generic constructors and passed raw for `NewToolFromSchema`.

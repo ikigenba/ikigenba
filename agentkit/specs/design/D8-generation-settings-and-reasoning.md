@@ -246,8 +246,9 @@ toggle-kind. The OpenRouter Responses endpoint is documented as
 OpenAI-compatible and its main reasoning page presents the `reasoning` object
 as one parameter shared by both endpoints, though its Responses reference
 shows only `effort` in examples; `ResponsesWire` renders `enabled` and
-`max_tokens` on the same `reasoning` object on that basis, and the live
-fixture-capture tests are where the vendor's actual acceptance is recorded.
+`max_tokens` on the same `reasoning` object on that basis, and the
+vendor's acceptance of those fields is a targeted observation recorded in the
+design, not a live test.
 xAI documents only the effort control on both of its endpoints — no toggle,
 no budget — so on an xai endpoint a toggle or budget request is well-formed
 on the wire and answered by the vendor (D4), never gated by agentkit. The
