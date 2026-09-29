@@ -76,7 +76,7 @@ requirement tag.
 ## Test discipline
 
 These rules govern the unit tests: everything `go test ./...` runs. Live
-tests are separate, carry the `live` build tag, and are not part of it.
+tests follow Live tests below.
 
 - Offline: no network beyond loopback, no real credentials.
 - Deterministic: time, randomness, and environment are injected; no test
@@ -100,6 +100,28 @@ as the working directory. A test that reaches a real AWS
 endpoint, or whose result depends on the developer's credentials, checkout,
 or machine, is a bug. The gates run offline as an ordinary user.
 
+## Live tests
+
+Live tests are the only tests that connect to external services. Every other
+test is a unit test and follows Test discipline.
+
+- Minimal: a live test proves lightly that the whole application or library
+  is glued together and works end to end, about one per external service,
+  never an exhaustive suite. Behavior, edge cases, and error paths are the
+  unit tests' job.
+- Separate: live tests are `*_live_test.go` files guarded by
+  `//go:build live`, with test functions named `TestLive*`. `go test ./...`
+  never runs them; `make live` runs
+  `go test -tags live -count=1 -run '^TestLive' ./...`.
+- Designed: a live test carries the requirement id it proves, and the gap
+  counts it like any other test.
+- Local: the code under test runs on the developer's machine; only the
+  external service is real.
+- Credentials: a live test reads its credentials from the environment. It
+  never skips: a missing credential fails it. No credential appears in the
+  repo or in test output.
+- Run: live tests run only as the conditional `make live` gate below.
+
 ## Gates
 
 Run from this directory (`devctl/`), in order; every command must exit 0. No
@@ -114,6 +136,11 @@ skipped tests, no disabled linters laundering a failure.
    share it (a shared `~/.cache/golangci-lint` keeps other worktrees' paths and
    stops applying `//nolint` and `.golangci.yml` suppressions; `make lint` runs
    this form)
+5. `make live` — **conditional**: run only when the phase's diff (the working
+   tree against the last phase commit) adds or modifies a `*_live_test.go`
+   file; otherwise it is not run and not counted. When it applies and a
+   credential is absent, that is a missing tool: file an issue, do not pass or
+   skip.
 
 ## Commit conventions
 

@@ -26,12 +26,9 @@ byte-identity requirement.
 - Go 1.26 (`go version` must report 1.26+)
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - GNU Make 4.4.1
-- `secret-tool` from Debian `libsecret-tools` 0.21.7-1
-- For the conditional live gate (below): `GEMINI_API_KEY`, `XAI_API_KEY`, and
-  `OPENROUTER_API_KEY` in the environment; `ANTHROPIC_API_KEY` and
-  `OPENAI_API_KEY` resolved by the `live` Makefile target itself from the
-  keyring via `secret-tool`, so their absence from the shell environment is
-  not a missing credential; and OAuth token files at
+- For the conditional live gate (below): `ANTHROPIC_API_KEY`,
+  `OPENAI_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, and `OPENROUTER_API_KEY`
+  in the environment; and OAuth token files at
   `~/.agentkit/openai-auth.json` and `~/.agentkit/x-ai-auth.json` written by
   the `oauth` CLI. Judge a credential present or absent by running `make live`
   as written, never by inspecting the environment: a missing credential fails
@@ -50,17 +47,15 @@ greps for requirement ids:
 grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' --exclude='*_live_test.go' . | sort -u
 ```
 
-Live tests are gated by `//go:build live` only. They never skip: a missing
-credential fails the test, because a missing credential is a missing proof. They
-are excluded above so they never contribute an id to the gap. Every requirement
-id is proved by an offline `*_test.go`; a golden SSE fixture lives under
-`testdata/` and carries no id-shaped literal that is not a genuine
+Live tests are excluded above so they never contribute an id to the gap.
+Every requirement id is proved by an offline `*_test.go`; a golden SSE fixture
+lives under `testdata/` and carries no id-shaped literal that is not a genuine
 requirement-id tag.
 
 ## Test discipline
 
 These rules govern the unit tests: everything `go test ./...` runs. Live
-tests are separate, carry the `live` build tag, and are not part of it.
+tests follow Live tests below.
 
 - Offline: no network beyond loopback, no real credentials.
 - Deterministic: time, randomness, and environment are injected; no test
@@ -69,6 +64,28 @@ tests are separate, carry the `live` build tag, and are not part of it.
   temporary directory.
 - Isolated: a test touches only its own temporary directory, never the
   developer's home, config, or real state.
+
+## Live tests
+
+Live tests are the only tests that connect to external services. Every other
+test is a unit test and follows Test discipline.
+
+- Minimal: a live test proves lightly that the whole application or library
+  is glued together and works end to end, about one per external service,
+  never an exhaustive suite. Behavior, edge cases, and error paths are the
+  unit tests' job.
+- Separate: live tests are `*_live_test.go` files guarded by
+  `//go:build live`, with test functions named `TestLive*`. `go test ./...`
+  never runs them; `make live` runs
+  `go test -tags live -count=1 -run '^TestLive' ./...`.
+- Designed: a live test carries the requirement id it proves, and the gap
+  counts it like any other test.
+- Local: the code under test runs on the developer's machine; only the
+  external service is real.
+- Credentials: a live test reads its credentials from the environment. It
+  never skips: a missing credential fails it. No credential appears in the
+  repo or in test output.
+- Run: live tests run only as the conditional `make live` gate below.
 
 ## Gates
 
@@ -86,12 +103,9 @@ skipped tests, no disabled linters laundering a failure.
    this form)
 5. `make live` — **conditional**: run only when the phase's diff (the working
    tree against the last phase commit) adds or modifies a `*_live_test.go`
-   file; otherwise it is not run and not counted. It drives one
-   lexicographically selected catalog offering for every offering-id/auth-mode
-   pair against the real vendor host (D23), so the phase that creates or
-   extends a live test must pass it live, and later phases do not pay for it.
-   When it applies and a credential from the toolchain list is absent, that is
-   a missing tool: file an issue, do not pass or skip.
+   file; otherwise it is not run and not counted. When it applies and a
+   credential is absent, that is a missing tool: file an issue, do not pass or
+   skip.
 
 A per-finding `//nolint` comment counts as a disabled linter. Never add one
 to make a gate pass. A finding that cannot be fixed below the contract

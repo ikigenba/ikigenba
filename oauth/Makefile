@@ -22,4 +22,7 @@ clean:
 install:
 	go install ./cmd/oauth
 
-.PHONY: build test vet lint fmt clean install
+live:
+	go test -tags live -count=1 -run '^TestLive' ./...
+
+.PHONY: build test vet lint fmt clean install live

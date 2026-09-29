@@ -57,7 +57,7 @@ mistaken for a requirement tag.
 ## Test discipline
 
 These rules govern the unit tests: everything `go test ./...` runs. Live
-tests are separate, carry the `live` build tag, and are not part of it.
+tests follow Live tests below.
 
 - Offline: no network beyond loopback, no real credentials.
 - Deterministic: time, randomness, and environment are injected; no test
@@ -157,6 +157,28 @@ login. It makes no HTTP request of the child: what auth answers is decided in
 process, and the exec'ing test exists only to prove the wiring. Any other test
 that builds, execs, waits on, or signals a process is a bug.
 
+## Live tests
+
+Live tests are the only tests that connect to external services. Every other
+test is a unit test and follows Test discipline.
+
+- Minimal: a live test proves lightly that the whole application or library
+  is glued together and works end to end, about one per external service,
+  never an exhaustive suite. Behavior, edge cases, and error paths are the
+  unit tests' job.
+- Separate: live tests are `*_live_test.go` files guarded by
+  `//go:build live`, with test functions named `TestLive*`. `go test ./...`
+  never runs them; `make live` runs
+  `go test -tags live -count=1 -run '^TestLive' ./...`.
+- Designed: a live test carries the requirement id it proves, and the gap
+  counts it like any other test.
+- Local: the code under test runs on the developer's machine; only the
+  external service is real.
+- Credentials: a live test reads its credentials from the environment. It
+  never skips: a missing credential fails it. No credential appears in the
+  repo or in test output.
+- Run: live tests run only as the conditional `make live` gate below.
+
 ## Gates
 
 Run from this directory (`auth/`), in order; every command must exit 0. No
@@ -177,6 +199,11 @@ filed as an issue.
    share it (a shared `~/.cache/golangci-lint` keeps other worktrees' paths and
    stops applying `//nolint` and `.golangci.yml` suppressions; `make lint` runs
    this form)
+6. `make live` — **conditional**: run only when the phase's diff (the working
+   tree against the last phase commit) adds or modifies a `*_live_test.go`
+   file; otherwise it is not run and not counted. When it applies and a
+   credential is absent, that is a missing tool: file an issue, do not pass or
+   skip.
 
 Gate 5 flags an `http.Server` without `ReadHeaderTimeout` (`gosec` G112); it
 is fixed in code, never suppressed.

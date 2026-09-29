@@ -18,4 +18,7 @@ clean:
 install:
 	go install ./cmd/idgen
 
-.PHONY: build test lint fmt clean install
+live:
+	go test -tags live -count=1 -run '^TestLive' ./...
+
+.PHONY: build test lint fmt clean install live
