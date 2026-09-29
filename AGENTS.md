@@ -62,6 +62,10 @@ directory. Its assets (markup, styles, fonts, icons) are written and approved
 by a human in interactive sessions, following `design/`. They are inputs to
 the spec: the build run never writes them.
 
+Markup assets are Go `html/template` files. The code embeds and executes
+them; it never writes markup of its own. Design names each template, the data
+it receives, and the hooks it emits.
+
 - Stories describe what a user does and observes: actions, states, and the
   text they see. They never describe appearance or structure.
 - Design names the hooks the code relies on (classes, ids, attributes,
