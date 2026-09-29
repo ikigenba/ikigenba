@@ -1,8 +1,11 @@
 name: Release devctl
 
-# Monorepo release: tag devctl/vX.Y.Z. GoReleaser OSS wants a plain semver tag,
-# so we lay a local vX.Y.Z tag on the commit, build/archive with publishing
-# skipped, and publish the GitHub release ourselves on the real monorepo tag.
+# Monorepo release: tag devctl/v<semver>, a prerelease part allowed
+# (devctl/v1.2.0-rc.1), build metadata (+...) never. GoReleaser OSS
+# wants a plain semver tag, so we lay a local v<semver> tag on the commit,
+# build/archive with publishing skipped, and publish the GitHub release
+# ourselves on the real monorepo tag -- as a GitHub prerelease when the tag
+# has a prerelease part.
 
 on:
   push:
@@ -23,17 +26,45 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.26"
+          go-version-file: devctl/go.mod
 
       - name: Derive version from tag
         id: v
-        run: echo "version=${GITHUB_REF_NAME#devctl/}" >> "$GITHUB_OUTPUT"
-
-      - name: Verify tag matches the source version
         run: |
-          src=$(sed -nE 's/.*version = "(v[^"]+)".*/\1/p' devctl/internal/cli/run.go)
-          if [ "$src" != "${{ steps.v.outputs.version }}" ]; then
-            echo "tag $GITHUB_REF_NAME (=> ${{ steps.v.outputs.version }}) != source version $src" >&2
+          version=${GITHUB_REF_NAME#devctl/}
+          # v<semver> without build metadata: a release tag never carries +...
+          if ! printf '%s\n' "$version" | grep -qE '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$'; then
+            echo "release: tag $GITHUB_REF_NAME is not devctl/v<semver> without build metadata" >&2
+            exit 1
+          fi
+          case "$version" in
+            *-*) prerelease=true ;;
+            *) prerelease=false ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag matches the binary's reported version
+        working-directory: devctl
+        env:
+          WANT: ${{ steps.v.outputs.version }}
+        run: |
+          # Observable check: build the binary and compare what --version
+          # prints against the tag, rather than scraping the source.
+          if ! out=$(go build -o bin/devctl ./cmd/devctl 2>&1); then
+            printf 'release: cannot build devctl\n\n%s\n' "$(printf '%s\n' "$out" | sed 's/^/> /')" >&2
+            exit 1
+          fi
+          # The x sentinel keeps trailing newlines, so the output must be
+          # exactly the version plus one newline.
+          if ! got=$(bin/devctl --version 2>&1; rc=$?; echo x; exit $rc); then
+            printf 'release: devctl --version failed\n\n%s\n' "$(printf '%s' "${got%x}" | sed 's/^/> /')" >&2
+            exit 1
+          fi
+          got=${got%x}
+          if [ "$got" != "$WANT"$'\n' ]; then
+            printf 'release: tag %s (=> %s) != devctl --version\n\n%s\n' \
+              "$GITHUB_REF_NAME" "$WANT" "$(printf '%s' "$got" | sed 's/^/> /')" >&2
             exit 1
           fi
 
@@ -53,9 +84,11 @@ jobs:
       - name: Publish GitHub release on the monorepo tag
         env:
           GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ steps.v.outputs.prerelease }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --title "$GITHUB_REF_NAME" \
-            --verify-tag \
-            --generate-notes \
+          set -- --title "$GITHUB_REF_NAME" --verify-tag --generate-notes
+          if [ "$PRERELEASE" = true ]; then
+            set -- "$@" --prerelease
+          fi
+          gh release create "$GITHUB_REF_NAME" "$@" \
             devctl/dist/*.tar.gz devctl/dist/checksums.txt

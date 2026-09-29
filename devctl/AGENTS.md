@@ -157,25 +157,28 @@ by id.
 
 ## Deploy
 
-Deploy machinery — the version bump, tags, `.goreleaser.yaml`, and
-`.github/workflows/release-devctl.yml` (repo root) — is hand-maintained
-infrastructure outside the spec system: the build run never reads, edits, or
-tests it.
+Deploy machinery — the version bump, tags, the `Makefile`, `install.sh`,
+`.goreleaser.yaml`, and `.github/workflows/release-devctl.yml` (repo root) —
+is hand-maintained infrastructure outside the spec system: the build run never
+reads, edits, or tests it.
 
-devctl installs on the developer's own machine, as an ordinary user; there is
-no host and no root step.
-
-1. Set the version in `internal/cli/run.go` (D02) to `vX.Y.Z`. It is a
-   source literal the binary reports verbatim, and the deploy refuses a tag
-   that does not match it.
+1. Set the version in `internal/cli/run.go` (D02) to `vX.Y.Z`. It is a source
+   literal the binary reports verbatim, and the deploy refuses a tag that does
+   not match what the built binary's `--version` prints.
 2. Commit that on `main` and push `main`.
 3. Tag that commit `devctl/vX.Y.Z` and push the tag.
    `.github/workflows/release-devctl.yml` builds with GoReleaser and publishes
-   `devctl_<os>_<arch>.tar.gz` (linux and darwin, amd64 and arm64) and
-   `checksums.txt`.
-4. Install it locally, either way:
-   - from a checkout at that tag, `make install` (`go install ./cmd/devctl`);
-   - or download that release's archive for your platform and put the `devctl`
-     binary on your `PATH`.
+   linux/darwin amd64/arm64 archives and checksums. A tag with a prerelease
+   part (`devctl/vX.Y.Z-rc.1`) publishes a GitHub prerelease.
+4. Wait for the workflow to publish the release (`gh release view
+   devctl/vX.Y.Z` succeeds), then install it on the developer's machine from
+   this directory. A release is not done until this step is:
 
-`devctl version` then prints `vX.Y.Z`.
+   ```
+   DEVCTL_VERSION=vX.Y.Z sh install.sh
+   ```
+
+   The installer puts the binary in `~/.local/bin`. Plain `sh install.sh`
+   installs the newest stable release.
+
+`devctl --version` then prints `vX.Y.Z`.

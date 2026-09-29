@@ -119,19 +119,28 @@ by id.
 
 ## Deploy
 
-Deploy machinery — the version bump, tags, `.goreleaser.yaml`, and
-`.github/workflows/release-oauth.yml` (repo root) — is hand-maintained
-infrastructure outside the spec system: the build run never reads, edits, or
-tests it.
+Deploy machinery — the version bump, tags, the `Makefile`, `install.sh`,
+`.goreleaser.yaml`, and `.github/workflows/release-oauth.yml` (repo root) — is
+hand-maintained infrastructure outside the spec system: the build run never
+reads, edits, or tests it.
 
 1. Set the version in `internal/cli/version.go` (D10) to `vX.Y.Z`. It is a
    source literal the binary reports verbatim, and the deploy refuses a tag
-   that does not match it.
+   that does not match what the built binary's `--version` prints.
 2. Commit that on `main` and push `main`.
-3. Tag that commit `oauth/vX.Y.Z` and push the tag. The workflow runs
-   GoReleaser from this directory: linux/darwin × amd64/arm64 tar.gz archives,
-   checksums, and a GitHub release on the tag.
-4. Install it locally: download that release's archive for your platform and
-   put the `oauth` binary on your `PATH`.
+3. Tag that commit `oauth/vX.Y.Z` and push the tag.
+   `.github/workflows/release-oauth.yml` builds with GoReleaser and publishes
+   linux/darwin amd64/arm64 archives and checksums. A tag with a prerelease
+   part (`oauth/vX.Y.Z-rc.1`) publishes a GitHub prerelease.
+4. Wait for the workflow to publish the release (`gh release view
+   oauth/vX.Y.Z` succeeds), then install it on the developer's machine from
+   this directory. A release is not done until this step is:
+
+   ```
+   OAUTH_VERSION=vX.Y.Z sh install.sh
+   ```
+
+   The installer puts the binary in `~/.local/bin`. Plain `sh install.sh`
+   installs the newest stable release.
 
 `oauth --version` then prints `vX.Y.Z`.

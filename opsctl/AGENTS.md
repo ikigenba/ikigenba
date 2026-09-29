@@ -131,11 +131,12 @@ tests it.
 
 1. Set the version in `internal/cli/cli.go` (D02) to `vX.Y.Z`. It is a
    source literal the binary reports verbatim, and the deploy refuses a tag
-   that does not match it.
+   that does not match what the built binary's `--version` prints.
 2. Commit that on `main` and push `main`.
 3. Tag that commit `opsctl/vX.Y.Z` and push the tag.
    `.github/workflows/release-opsctl.yml` builds with GoReleaser and publishes
-   `opsctl-vX.Y.Z-linux-amd64`, `checksums.txt`, and `install.sh`.
+   `opsctl-vX.Y.Z-linux-amd64`, `checksums.txt`, and `install.sh`. A tag with
+   a prerelease part (`opsctl/vX.Y.Z-rc.1`) publishes a GitHub prerelease.
 4. On the host, as root, run that release's installer with the same version:
 
 ```

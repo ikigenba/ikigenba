@@ -121,14 +121,15 @@ run never reads, edits, or tests it.
 
 1. Set the version in `internal/cli/version.go` (D03) to `vX.Y.Z`. It is a
    source literal the binary reports verbatim, and the deploy refuses a tag
-   that does not match it.
+   that does not match what the built binary's `--version` prints.
 2. Commit that on `main` and push `main`.
 3. Tag that commit `agent-monitor/vX.Y.Z` and push the tag.
    `.github/workflows/release-agent-monitor.yml` builds with GoReleaser and
-   publishes linux amd64/arm64 archives and checksums.
+   publishes linux amd64/arm64 archives and checksums. A tag with a prerelease
+   part (`agent-monitor/vX.Y.Z-rc.1`) publishes a GitHub prerelease.
 4. Wait for the workflow to publish the release (`gh release view
-   agent-monitor/vX.Y.Z` succeeds), then install it on the developer's
-   machine from this directory. A release is not done until this step is:
+   agent-monitor/vX.Y.Z` succeeds), then install it on the developer's machine
+   from this directory. A release is not done until this step is:
 
    ```
    AGENT_MONITOR_VERSION=vX.Y.Z sh install.sh
