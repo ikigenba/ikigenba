@@ -158,7 +158,7 @@ func TestRestoreInvalidNonRootInvocationReportsGrammarBeforeRefusal(t *testing.T
 }
 
 func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
-	// R-XHYL-DFWU
+	// R-XHYL-DFWU R-K9DU-97YV R-LZ82-QJF7
 	root := configuredBackupRoot(t)
 	store := config.Store{Root: root}
 	if err := store.Set("host.name", "HOST.Example.Test."); err != nil {
@@ -168,6 +168,12 @@ func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(root, "etc/nginx/conf.d"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "var/lib/ikigenba"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "var/lib/ikigenba/sentinel"), []byte("untouched sibling"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	client := newHostCLICloud()
@@ -197,6 +203,12 @@ func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
 		if command.Name == "id" && reflect.DeepEqual(command.Args, []string{"--group", "--name", "ikigenba"}) {
 			return host.Result{Stdout: []byte("ikigenba\n")}, nil
 		}
+		if command.Name == "id" && reflect.DeepEqual(command.Args, []string{"--user", "ikigenba"}) {
+			return host.Result{Stdout: []byte("1234\n")}, nil
+		}
+		if command.Name == "chown" {
+			return host.Result{}, nil
+		}
 		return host.Result{}, fmt.Errorf("unexpected command %q", commands[len(commands)-1])
 	}
 	stdout, stderr, code := invokeBackupCLI([]string{"restore", "--at", "2026-09-16T10:30:00Z", "notes"}, hostCLIDeps(root, client, execute))
@@ -216,16 +228,125 @@ func TestRestoreCommandReadsHostAndUsesNginxWrite(t *testing.T) {
 	if err != nil || !bytes.Contains(configuration, []byte("server_name         notes.host.example.test example.test;")) || bytes.Contains(configuration, []byte("HOST.Example.Test.")) {
 		t.Fatalf("nginx.Write output = %q, %v", configuration, err)
 	}
-	if !reflect.DeepEqual(commands, []string{
+	wantCommands := []string{
 		"zstd --quiet --decompress --stdout",
 		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket",
 		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
-		"getent passwd ikigenba",
-		"id --group --name ikigenba",
+		"id --user ikigenba", "id --group --name ikigenba", "getent passwd ikigenba",
 		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
-	}) {
+		"id --user ikigenba", "id --group --name ikigenba",
+	}
+	if len(commands) != len(wantCommands)+1 || !reflect.DeepEqual(commands[:len(wantCommands)], wantCommands) || !strings.HasPrefix(commands[len(wantCommands)], "chown root:ikigenba "+filepath.Join(root, "var/lib/ikigenba")+" "+filepath.Join(root, "var/lib/ikigenba/.services-")) {
 		t.Fatalf("commands = %v; nginx callback must use Write without test/reload", commands)
 	}
+	if got, err := rootFS.ReadFile("var/lib/ikigenba/services.json"); err != nil || string(got) != "{\n  \"services\": []\n}\n" {
+		t.Fatalf("services file = %q, %v", got, err)
+	}
+	if got, err := rootFS.ReadFile("var/lib/ikigenba/sentinel"); err != nil || string(got) != "untouched sibling" {
+		t.Fatalf("services sibling = %q, %v", got, err)
+	}
+	if info, err := rootFS.Lstat("var/lib/ikigenba/sentinel"); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("services sibling mode = %v, %v", info, err)
+	}
+}
+
+func TestRestoreRegenerationFailuresLeaveServicesFileUnchanged(t *testing.T) {
+	// R-K9DU-97YV R-LZ82-QJF7
+	for _, test := range []struct {
+		name          string
+		nginxFails    bool
+		wantAccountID int
+	}{
+		{name: "nginx fails", nginxFails: true},
+		{name: "services write fails", wantAccountID: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := configuredBackupRoot(t)
+			store := config.Store{Root: root}
+			if err := store.Set("host.name", "host.example.test"); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(root, "var/lib/ikigenba"), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			const previous = "previous services file\n"
+			servicesPath := filepath.Join(root, "var/lib/ikigenba/services.json")
+			if err := os.WriteFile(servicesPath, []byte(previous), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if !test.nginxFails {
+				if err := os.MkdirAll(filepath.Join(root, "etc/nginx/conf.d"), 0o750); err != nil {
+					t.Fatal(err)
+				}
+			}
+			client := newHostCLICloud()
+			client.objects["s3://backups.example/host/notes/2026-09-16T10:00:00Z.tar.zst"] = append([]byte{0x28, 0xb5, 0x2f, 0xfd}, makeRestoreCLITar(t, "state/value", "restored")...)
+			accountCalls := 0
+			executeZstd := roundTripZstdExecute(nil)
+			execute := func(ctx context.Context, command host.Command) (host.Result, error) {
+				if command.Name == "zstd" {
+					return executeZstd(ctx, command)
+				}
+				if command.Name == "systemctl" && len(command.Args) == 4 && command.Args[0] == "show" {
+					return host.Result{Stdout: []byte("LoadState=not-found\nActiveState=inactive\nUnitFileState=disabled\n")}, nil
+				}
+				if command.Name == "id" && reflect.DeepEqual(command.Args, []string{"--user", "ikigenba"}) {
+					accountCalls++
+					return host.Result{}, errors.New("account unavailable")
+				}
+				return host.Result{}, fmt.Errorf("unexpected command %q %v", command.Name, command.Args)
+			}
+			stdout, stderr, code := invokeBackupCLI([]string{"restore", "notes"}, hostCLIDeps(root, client, execute))
+			if code != 1 || !strings.Contains(stderr, "nginx regeneration") || !strings.Contains(stdout, "files: ok (") || strings.Contains(stdout, "start:") || accountCalls != test.wantAccountID {
+				t.Fatalf("restore = %d, %q, %q, account calls %d", code, stdout, stderr, accountCalls)
+			}
+			if data := readRestoreServicesFile(t, root); data != previous {
+				t.Fatalf("services file = %q", data)
+			}
+		})
+	}
+}
+
+func TestRestoreSourceFailureLeavesServicesFileUnchanged(t *testing.T) {
+	// R-K9DU-97YV R-LZ82-QJF7
+	root := configuredBackupRoot(t)
+	store := config.Store{Root: root}
+	if err := store.Set("host.name", "host.example.test"); err != nil {
+		t.Fatal(err)
+	}
+	servicesPath := filepath.Join(root, "var/lib/ikigenba/services.json")
+	if err := os.MkdirAll(filepath.Dir(servicesPath), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	const previous = "previous services file\n"
+	if err := os.WriteFile(servicesPath, []byte(previous), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	commands := 0
+	stdout, stderr, code := invokeBackupCLI([]string{"restore", "notes"}, hostCLIDeps(root, newHostCLICloud(), func(context.Context, host.Command) (host.Result, error) {
+		commands++
+		return host.Result{}, errors.New("unexpected command")
+	}))
+	if code != 1 || !strings.HasPrefix(stdout, "source: failed: ") || !strings.HasPrefix(stderr, "opsctl: restore notes failed at source\n") || commands != 0 {
+		t.Fatalf("source failure = %d, %q, %q, commands %d", code, stdout, stderr, commands)
+	}
+	if data := readRestoreServicesFile(t, root); data != previous {
+		t.Fatalf("services file = %q", data)
+	}
+}
+
+func readRestoreServicesFile(t *testing.T, root string) string {
+	t.Helper()
+	rootFS, err := os.OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rootFS.Close() }()
+	data, err := rootFS.ReadFile("var/lib/ikigenba/services.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }
 
 func TestRestoreCommandAtReachesDomainSelectionInEitherPosition(t *testing.T) {
@@ -269,6 +390,15 @@ func TestRestoreCommandAtReachesDomainSelectionInEitherPosition(t *testing.T) {
 				}
 				if command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"show", "--property=LoadState", "--property=UnitFileState", "ikigenba-notes.socket"}) {
 					return host.Result{Stdout: []byte("LoadState=not-found\nUnitFileState=disabled\n")}, nil
+				}
+				if command.Name == "id" && reflect.DeepEqual(command.Args, []string{"--user", "ikigenba"}) {
+					return host.Result{Stdout: []byte("1234\n")}, nil
+				}
+				if command.Name == "id" && reflect.DeepEqual(command.Args, []string{"--group", "--name", "ikigenba"}) {
+					return host.Result{Stdout: []byte("ikigenba\n")}, nil
+				}
+				if command.Name == "chown" {
+					return host.Result{}, nil
 				}
 				return host.Result{}, fmt.Errorf("unexpected command %q %v", command.Name, command.Args)
 			}

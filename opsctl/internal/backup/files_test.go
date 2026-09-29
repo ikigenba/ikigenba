@@ -110,7 +110,7 @@ func TestFilesAPIAndConfigurationBoundary(t *testing.T) {
 }
 
 func TestFilesSelectsAndArchivesServiceTrees(t *testing.T) {
-	// R-RPWA-HQD2 R-DCSZ-8N4J R-DE0V-MEV8 R-Z9DH-5EZK
+	// R-RPWA-HQD2 R-DCSZ-8N4J R-DE0V-MEV8 R-Z9DH-5EZK R-LZ82-QJF7
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/alpha/etc/manifest.toml", "app = \"alpha\"\n[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n", 0o640)
@@ -130,6 +130,7 @@ func TestFilesSelectsAndArchivesServiceTrees(t *testing.T) {
 	writeFile(t, root, "opt/zeta/etc/env", "Z=1\n", 0o600)
 	writeFile(t, root, "opt/ignored/cache/item", "ignored", 0o600)
 	writeFile(t, root, "etc/systemd/system/generated.service", "unit", 0o644)
+	writeFile(t, root, "var/lib/ikigenba/services.json", "launcher secret", 0o640)
 	for name, mode := range map[string]fs.FileMode{
 		"opt/alpha/etc":               0o711,
 		"opt/alpha/state":             0o750,
@@ -142,6 +143,7 @@ func TestFilesSelectsAndArchivesServiceTrees(t *testing.T) {
 		}
 	}
 	before := fileTreeSnapshot(t, root)
+	servicesWatch := newFileAccessWatch(t, filepath.Join(root, "var/lib/ikigenba"), filepath.Join(root, "var/lib/ikigenba/services.json"))
 
 	executor := &fileExecutor{uid: os.Getuid(), gid: os.Getgid(), user: "ikigenba", group: "ikigenba"}
 	client := newFileCloud()
@@ -196,6 +198,7 @@ func TestFilesSelectsAndArchivesServiceTrees(t *testing.T) {
 	if got := string(plain["state/app.db"].data); got != "ordinary without manifest" {
 		t.Fatalf("manifest-free state/app.db = %q", got)
 	}
+	servicesWatch.assertQuiet(t)
 	if after := fileTreeSnapshot(t, root); !reflect.DeepEqual(after, before) {
 		t.Fatalf("Files mutated local filesystem:\nbefore %v\nafter  %v", before, after)
 	}

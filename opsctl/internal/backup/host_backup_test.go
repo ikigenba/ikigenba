@@ -139,7 +139,7 @@ func TestHostBackupAPIConfigurationAndPreworkflow(t *testing.T) {
 }
 
 func TestHostBackupArchiveContentsAndBoundaries(t *testing.T) {
-	// R-YCP3-2YZF R-YDWZ-GQQ4 R-9TEE-6UL8 R-YYIY-T743
+	// R-YCP3-2YZF R-YDWZ-GQQ4 R-9TEE-6UL8 R-YYIY-T743 R-LZ82-QJF7
 	root := t.TempDir()
 	store := configuredHostStore(t, root)
 	writeFile(t, root, "etc/ikigenba/nested/settings", "host settings\n", 0o640)
@@ -147,6 +147,7 @@ func TestHostBackupArchiveContentsAndBoundaries(t *testing.T) {
 	writeFile(t, root, "opt/app/state/value", "service data", 0o600)
 	writeFile(t, root, "etc/nginx/nginx.conf", "nginx data", 0o600)
 	writeFile(t, root, "etc/systemd/system/ikigenba-app.service", "unit data", 0o600)
+	writeFile(t, root, "var/lib/ikigenba/services.json", "launcher secret", 0o640)
 	if err := os.Symlink("../../outside-certificate", filepath.Join(root, "etc/letsencrypt/live/current")); err != nil {
 		t.Fatal(err)
 	}
@@ -155,6 +156,8 @@ func TestHostBackupArchiveContentsAndBoundaries(t *testing.T) {
 		filepath.Join(root, "opt"),
 		filepath.Join(root, "etc/nginx"),
 		filepath.Join(root, "etc/systemd/system"),
+		filepath.Join(root, "var/lib/ikigenba"),
+		filepath.Join(root, "var/lib/ikigenba/services.json"),
 	)
 	executor := &fileExecutor{unmapped: true}
 	client := newFileCloud()

@@ -86,7 +86,7 @@ func TestRestoreAtControlsArchiveAndDatabaseTogether(t *testing.T) {
 }
 
 func TestRestoreValidArchiveIgnoresInstalledDatabaseAndOtherServices(t *testing.T) {
-	// R-FWGV-MCZT R-FXOS-04QI R-XGQO-ZO65 R-1JU3-1QOH
+	// R-FWGV-MCZT R-FXOS-04QI R-XGQO-ZO65 R-UD79-TQKH
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/etc/manifest.toml", "[database]\nengine = \"sqlite\"\npath = \"state/installed.db\"\n", 0o600)
@@ -622,8 +622,57 @@ func TestRestoreStoppedListsOnlyActiveUnitsWithIntent(t *testing.T) {
 	}
 }
 
+func TestRestoreFailuresBeforeRegenerationDoNotCallCallback(t *testing.T) {
+	// R-K9DU-97YV
+	for _, test := range []struct {
+		name            string
+		failCommand     string
+		ltx             string
+		badOwnership    bool
+		invalidInterval bool
+		wantStage       string
+		wantStep        string
+	}{
+		{name: "stop", failCommand: "systemctl stop ikigenba-notes.socket", wantStage: "stop", wantStep: "stop"},
+		{name: "files", badOwnership: true, wantStage: "files", wantStep: "files"},
+		{name: "db", ltx: `[]`, wantStage: "litestream restore", wantStep: "db"},
+		{name: "litestream", ltx: `[{"timestamp":"2026-09-16T11:00:00Z"}]`, invalidInterval: true, wantStage: "litestream regeneration", wantStep: "litestream"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			store := configuredFileStore(t, root)
+			if test.invalidInterval {
+				if err := store.Set("backup.service_wal_seconds", "invalid"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			writeFile(t, root, "var/lib/ikigenba/services.json", "prior launcher", 0o640)
+			body := restoreIntegrationDatabaseArchive(t, "new state")
+			if test.badOwnership {
+				body = hostRestoreArchive(t,
+					restoreMember{name: "etc/manifest.toml", data: []byte("[database]\nengine = \"sqlite\"\npath = \"state/app.db\"\n")},
+					restoreMember{name: "state/value", data: []byte("new state"), uid: os.Getuid() + 100000, gid: os.Getgid()},
+				)
+			}
+			executor := &restoreIntegrationExecutor{t: t, root: root, installed: true, active: true, failCommand: test.failCommand, ltx: test.ltx}
+			callbackCalls := 0
+			report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, func(context.Context) error {
+				callbackCalls++
+				return nil
+			})
+			var failure *backup.RestoreError
+			if !errors.As(err, &failure) || failure.Stage != test.wantStage || len(report.Steps) == 0 || report.Steps[len(report.Steps)-1].Name != test.wantStep || report.Steps[len(report.Steps)-1].Err == nil || callbackCalls != 0 {
+				t.Fatalf("Restore() = %+v, %#v, callback calls %d", report, err, callbackCalls)
+			}
+			if got := string(readHostRestoreFile(t, root, "var/lib/ikigenba/services.json")); got != "prior launcher" {
+				t.Fatalf("services file = %q", got)
+			}
+		})
+	}
+}
+
 func TestRestoreDatabaseDoesNotTouchOtherServiceOrCloud(t *testing.T) {
-	// R-1JU3-1QOH
+	// R-UD79-TQKH
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	const (

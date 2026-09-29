@@ -3,7 +3,7 @@ package backup
 import "testing"
 
 func TestMappedServiceRestoreOwnershipMapsNamesIndependently(t *testing.T) {
-	// R-OPIE-CD52
+	// R-KALQ-MZPK
 	const (
 		sourceUID      = 4242
 		sourceGID      = 4343

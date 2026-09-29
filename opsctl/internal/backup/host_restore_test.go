@@ -152,7 +152,7 @@ func TestHostRestoreRejectsInvalidArchivesBeforeChanges(t *testing.T) {
 }
 
 func TestHostRestoreReplacesTreesAndPreservesArchiveMetadata(t *testing.T) {
-	// R-YISK-ZTOW R-HUTO-NMJ7
+	// R-YISK-ZTOW R-HUTO-NMJ7 R-LZ82-QJF7
 	root := t.TempDir()
 	store := configuredHostStore(t, root)
 	writeFile(t, root, "etc/ikigenba/stale", "remove", 0o600)
@@ -160,10 +160,15 @@ func TestHostRestoreReplacesTreesAndPreservesArchiveMetadata(t *testing.T) {
 	writeFile(t, root, "opt/app/state/data", "untouched service", 0o600)
 	writeFile(t, root, "etc/nginx/nginx.conf", "untouched nginx", 0o600)
 	writeFile(t, root, "etc/systemd/system/ikigenba-app.service", "untouched unit", 0o600)
+	writeFile(t, root, "var/lib/ikigenba/services.json", "generated launcher", 0o640)
+	writeFile(t, root, "var/lib/ikigenba/sentinel", "untouched sibling", 0o600)
+	servicesBefore := fileTreeSnapshot(t, filepath.Join(root, "var/lib/ikigenba"))
 	untouched := map[string]string{
 		"opt/app/state/data":                      "untouched service",
 		"etc/nginx/nginx.conf":                    "untouched nginx",
 		"etc/systemd/system/ikigenba-app.service": "untouched unit",
+		"var/lib/ikigenba/services.json":          "generated launcher",
+		"var/lib/ikigenba/sentinel":               "untouched sibling",
 	}
 	body := hostRestoreArchive(t,
 		restoreMember{name: "etc/ikigenba", typeflag: tar.TypeDir, mode: 0o750},
@@ -215,6 +220,9 @@ func TestHostRestoreReplacesTreesAndPreservesArchiveMetadata(t *testing.T) {
 		if string(data) != want {
 			t.Fatalf("out-of-scope file %q = %q", name, data)
 		}
+	}
+	if servicesAfter := fileTreeSnapshot(t, filepath.Join(root, "var/lib/ikigenba")); !reflect.DeepEqual(servicesAfter, servicesBefore) {
+		t.Fatalf("generated services tree changed: before %v, after %v", servicesBefore, servicesAfter)
 	}
 	if client.puts != 0 {
 		t.Fatalf("cloud writes = %d", client.puts)
@@ -513,6 +521,9 @@ func restoreHostEnv(t *testing.T, root string) host.Env {
 				return host.Result{Stdout: []byte(fmt.Sprintf("ikigenba:x:%d:%d::/nonexistent:/usr/sbin/nologin\n", os.Getuid(), os.Getgid()))}, nil
 			}
 		case "id":
+			if reflect.DeepEqual(command.Args, []string{"--user", "ikigenba"}) {
+				return host.Result{Stdout: []byte(fmt.Sprintln(os.Getuid()))}, nil
+			}
 			if reflect.DeepEqual(command.Args, []string{"--group", "--name", "ikigenba"}) {
 				return host.Result{Stdout: []byte("ikigenba\n")}, nil
 			}

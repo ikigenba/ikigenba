@@ -12,6 +12,7 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 	"github.com/ikigenba/ikigenba/opsctl/internal/nginx"
+	"github.com/ikigenba/ikigenba/opsctl/internal/services"
 )
 
 const restoreUsage = `Usage: opsctl restore SERVICE [--at <timestamp>]
@@ -99,7 +100,13 @@ func runRestoreWithStore(args []string, stdout, stderr io.Writer, deps Deps, sto
 	env := host.Env{Root: deps.Root, Getenv: deps.Getenv, Execute: deps.Execute, Now: deps.Now}
 	report, runErr := backup.Restore(
 		context.Background(), env, deps.Cloud, config.Store{Root: deps.Root}, invocation.service, invocation.at,
-		func(ctx context.Context) error { return nginx.Write(ctx, env, hostName, apexApp) },
+		func(ctx context.Context) error {
+			if err := nginx.Write(ctx, env, hostName, apexApp); err != nil {
+				return err
+			}
+			_, err := services.Write(ctx, env, hostName)
+			return err
+		},
 	)
 	return renderRestoreOutcome(stdout, stderr, invocation.service, report, runErr)
 }

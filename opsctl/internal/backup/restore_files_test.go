@@ -19,7 +19,7 @@ import (
 )
 
 func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
-	// R-XEAW-84OR R-G04K-RO7W R-OPIE-CD52
+	// R-XEAW-84OR R-G04K-RO7W R-KALQ-MZPK
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/etc/stale", "remove", 0o600)
@@ -61,8 +61,9 @@ func TestRestoreStopsOwnersAndReplacesCompleteTrees(t *testing.T) {
 		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket", "systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		"systemctl stop ikigenba-notes.socket", "systemctl stop ikigenba-notes.service",
 		"systemctl show --property=LoadState --property=ActiveState litestream.service", "systemctl stop litestream.service",
-		"getent passwd ikigenba",
+		"id --user ikigenba",
 		"id --group --name ikigenba",
+		"getent passwd ikigenba",
 		"litestream ltx -level all -json s3://bucket/host/notes/",
 		"litestream restore -o " + filepath.Join(root, "opt/notes/state/app.db") + " s3://bucket/host/notes/",
 		"systemctl start litestream.service",
@@ -219,7 +220,7 @@ func TestRestoreStopFailuresPreserveCauseStoppedUnitsAndTargets(t *testing.T) {
 }
 
 func TestRestoreCreatesAccountBeforePublishingAndRetainsMarkerOnFailure(t *testing.T) {
-	// R-OPIE-CD52
+	// R-KALQ-MZPK
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/state/existing", "unchanged", 0o600)
@@ -243,8 +244,29 @@ func TestRestoreCreatesAccountBeforePublishingAndRetainsMarkerOnFailure(t *testi
 	assertRestoreMarker(t, root)
 }
 
+func TestRestoreEnsureAccountFailurePreventsReplacement(t *testing.T) {
+	// R-KALQ-MZPK
+	root := t.TempDir()
+	store := configuredFileStore(t, root)
+	writeFile(t, root, "opt/notes/state/existing", "unchanged", 0o600)
+	body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("new"), gname: "ikigenba"})
+	executor := &restoreStageExecutor{t: t, root: root, failCommand: "id --user ikigenba", failErr: errors.New("account backend unavailable")}
+	report, err := backup.Restore(context.Background(), host.Env{Root: root, Execute: executor.execute}, cloud.Env{Open: restoreClientFor(t, body).open}, store, "notes", nil, func(context.Context) error { return nil })
+	var failure *backup.RestoreError
+	var commandFailure *host.CommandError
+	if !errors.As(err, &failure) || failure.Stage != "ownership" || !errors.As(err, &commandFailure) || len(report.Steps) != 3 || report.Steps[0].Name != "source" || report.Steps[0].Err != nil || report.Steps[2].Name != "files" || report.Steps[2].Err == nil {
+		t.Fatalf("Restore() = %+v, %#v", report, err)
+	}
+	if got := string(readHostRestoreFile(t, root, "opt/notes/state/existing")); got != "unchanged" {
+		t.Fatalf("existing state = %q", got)
+	}
+	if _, statErr := os.Lstat(filepath.Join(root, "opt/notes/state/value")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("incoming state published: %v", statErr)
+	}
+}
+
 func TestRestoreCreatesMissingAccountWithNoLoginAndNoHome(t *testing.T) {
-	// R-OPIE-CD52
+	// R-KALQ-MZPK
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("new"), uname: "ikigenba", gname: "ikigenba"})
@@ -258,10 +280,9 @@ func TestRestoreCreatesMissingAccountWithNoLoginAndNoHome(t *testing.T) {
 	wantCommands := []string{
 		"zstd --quiet --decompress --stdout",
 		"systemctl show --property=LoadState --property=ActiveState ikigenba-notes.socket", "systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
+		"id --user ikigenba",
+		"useradd --system --no-create-home --shell /usr/sbin/nologin --user-group ikigenba",
 		"getent passwd ikigenba",
-		"useradd --system --no-create-home --shell /usr/sbin/nologin ikigenba",
-		"getent passwd ikigenba",
-		"id --group --name ikigenba",
 	}
 	if !reflect.DeepEqual(executor.commands, wantCommands) {
 		t.Fatalf("commands = %v, want %v", executor.commands, wantCommands)
@@ -273,7 +294,7 @@ func TestRestoreCreatesMissingAccountWithNoLoginAndNoHome(t *testing.T) {
 }
 
 func TestRestoreOwnershipApplicationFailurePreservesPublishedTrees(t *testing.T) {
-	// R-OPIE-CD52 R-G04K-RO7W R-G7FZ-2AO2 R-RX15-3IAF
+	// R-KALQ-MZPK R-G04K-RO7W R-G7FZ-2AO2 R-RX15-3IAF
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/etc/old", "old etc", 0o600)
@@ -309,7 +330,7 @@ func TestRestoreOwnershipApplicationFailurePreservesPublishedTrees(t *testing.T)
 }
 
 func TestRestoreManifestAppAloneTriggersAccountPreparation(t *testing.T) {
-	// R-OPIE-CD52
+	// R-KALQ-MZPK
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	body := hostRestoreArchive(t,
@@ -323,13 +344,13 @@ func TestRestoreManifestAppAloneTriggersAccountPreparation(t *testing.T) {
 		t.Fatalf("Restore() = %+v, %v", report, err)
 	}
 	joined := strings.Join(executor.commands, "\n")
-	if !strings.Contains(joined, "getent passwd ikigenba") || !strings.Contains(joined, "id --group --name ikigenba") {
+	if !strings.Contains(joined, "id --user ikigenba") || !strings.Contains(joined, "id --group --name ikigenba") || !strings.Contains(joined, "getent passwd ikigenba") {
 		t.Fatalf("manifest app did not trigger account preparation: %v", executor.commands)
 	}
 }
 
 func TestRestoreRejectsWrongAccountPrimaryGroupBeforePublishing(t *testing.T) {
-	// R-OPIE-CD52
+	// R-KALQ-MZPK
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/state/existing", "unchanged", 0o600)
@@ -444,6 +465,16 @@ func (executor *restoreStageExecutor) execute(_ context.Context, command host.Co
 		executor.accountCreated = true
 		return host.Result{}, nil
 	case "id":
+		if reflect.DeepEqual(command.Args, []string{"--user", "ikigenba"}) {
+			if executor.accountMissing && !executor.accountCreated {
+				return host.Result{ExitCode: 1}, nil
+			}
+			uid := executor.accountUID
+			if uid == 0 {
+				uid = os.Getuid()
+			}
+			return host.Result{Stdout: []byte(fmt.Sprintln(uid))}, nil
+		}
 		group := executor.accountPrimaryGroup
 		if group == "" {
 			group = "ikigenba"

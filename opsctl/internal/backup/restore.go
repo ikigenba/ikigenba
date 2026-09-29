@@ -151,10 +151,10 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 			}
 		}
 		if unitInstalled {
-			if err := runRestoreCommand(ctx, env, "stop "+socket, "systemctl", "stop", socket); err != nil {
+			if err := runRestoreCommand(ctx, env, "stop "+socket, "stop", socket); err != nil {
 				return failRestoreStep(report, service, "stop", "stop", err, nil)
 			}
-			if err := runRestoreCommand(ctx, env, "stop "+serviceUnit, "systemctl", "stop", serviceUnit); err != nil {
+			if err := runRestoreCommand(ctx, env, "stop "+serviceUnit, "stop", serviceUnit); err != nil {
 				var stopped []string
 				if activationIntent {
 					stopped = []string{socket}
@@ -171,7 +171,7 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 		if err != nil {
 			return failRestoreStep(report, service, "stop", "unit inspection", err, restoreStoppedUnits(socket, serviceUnit, activationIntent, false))
 		}
-		if err := runRestoreCommand(ctx, env, "stop litestream.service", "systemctl", "stop", "litestream.service"); err != nil {
+		if err := runRestoreCommand(ctx, env, "stop litestream.service", "stop", "litestream.service"); err != nil {
 			stopped := restoreStoppedUnits(socket, serviceUnit, activationIntent, false)
 			return failRestoreStep(report, service, "stop", "stop", err, stopped)
 		}
@@ -225,18 +225,18 @@ func Restore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config
 		return report, &RestoreError{Service: service, Stage: "nginx regeneration", Err: err, Stopped: stopped}
 	}
 	if databaseIncoming {
-		if err := runRestoreCommand(ctx, env, "start litestream.service", "systemctl", "start", "litestream.service"); err != nil {
+		if err := runRestoreCommand(ctx, env, "start litestream.service", "start", "litestream.service"); err != nil {
 			return failRestoreStep(report, service, "start", "start", err, stopped)
 		}
 		stopped = removeStoppedUnit(stopped, "litestream.service")
 	}
 	startDetail := restoreStartDetail(socket, serviceUnit, unitInstalled, unitDisabled, activationIntent, databaseIncoming)
 	if activationIntent {
-		if err := runRestoreCommand(ctx, env, "start "+socket, "systemctl", "start", socket); err != nil {
+		if err := runRestoreCommand(ctx, env, "start "+socket, "start", socket); err != nil {
 			return failRestoreStep(report, service, "start", "start", err, stopped)
 		}
 		stopped = removeStoppedUnit(stopped, socket)
-		if err := runRestoreCommand(ctx, env, "start "+serviceUnit, "systemctl", "start", serviceUnit); err != nil {
+		if err := runRestoreCommand(ctx, env, "start "+serviceUnit, "start", serviceUnit); err != nil {
 			return failRestoreStep(report, service, "start", "start", err, stopped)
 		}
 	}
@@ -626,8 +626,8 @@ func inspectRestoreUnit(ctx context.Context, env host.Env, unit string) (bool, b
 	return installed, values["ActiveState"] == "active", nil
 }
 
-func runRestoreCommand(ctx context.Context, env host.Env, label, name string, args ...string) error {
-	result, err := env.Execute(ctx, host.Command{Name: name, Args: args})
+func runRestoreCommand(ctx context.Context, env host.Env, label string, args ...string) error {
+	result, err := env.Execute(ctx, host.Command{Name: "systemctl", Args: args})
 	if err != nil || result.ExitCode != 0 {
 		return restoreCommandError(label, result, err)
 	}
@@ -767,50 +767,24 @@ func prepareRestoreIdentity(ctx context.Context, env host.Env, service string, e
 }
 
 func ensureRestoreAccount(ctx context.Context, env host.Env) (int, int, error) {
-	lookup := func() (int, int, bool, error) {
-		result, err := env.Execute(ctx, host.Command{Name: "getent", Args: []string{"passwd", "ikigenba"}})
-		if err != nil {
-			return 0, 0, false, restoreCommandError("inspect ikigenba account", result, err)
-		}
-		if result.ExitCode == 2 {
-			return 0, 0, false, nil
-		}
-		if result.ExitCode != 0 {
-			return 0, 0, false, restoreCommandError("inspect ikigenba account", result, nil)
-		}
-		fields := strings.Split(strings.TrimSpace(string(result.Stdout)), ":")
-		if len(fields) < 7 || fields[0] != "ikigenba" {
-			return 0, 0, false, errors.New("inspect ikigenba account: invalid response")
-		}
-		uid, uidErr := strconv.Atoi(fields[2])
-		gid, gidErr := strconv.Atoi(fields[3])
-		if uidErr != nil || gidErr != nil || uid == 0 {
-			return 0, 0, false, errors.New("inspect ikigenba account: invalid non-root identity")
-		}
-		return uid, gid, true, nil
-	}
-	uid, gid, found, err := lookup()
-	if err != nil {
+	if err := apps.EnsureAccount(ctx, env); err != nil {
 		return 0, 0, err
 	}
-	if !found {
-		if err := runRestoreCommand(ctx, env, "create ikigenba account", "useradd", "--system", "--no-create-home", "--shell", "/usr/sbin/nologin", "ikigenba"); err != nil {
-			return 0, 0, err
-		}
-		uid, gid, found, err = lookup()
-		if err != nil || !found {
-			if err == nil {
-				err = errors.New("created ikigenba account is unavailable")
-			}
-			return 0, 0, err
-		}
+	result, err := env.Execute(ctx, host.Command{Name: "getent", Args: []string{"passwd", "ikigenba"}})
+	if err != nil {
+		return 0, 0, restoreCommandError("inspect ikigenba account", result, err)
 	}
-	result, err := env.Execute(ctx, host.Command{Name: "id", Args: []string{"--group", "--name", "ikigenba"}})
-	if err != nil || result.ExitCode != 0 {
-		return 0, 0, restoreCommandError("inspect ikigenba primary group", result, err)
+	if result.ExitCode != 0 {
+		return 0, 0, restoreCommandError("inspect ikigenba account", result, nil)
 	}
-	if strings.TrimSpace(string(result.Stdout)) != "ikigenba" {
-		return 0, 0, errors.New("ikigenba primary group must be ikigenba")
+	fields := strings.Split(strings.TrimSpace(string(result.Stdout)), ":")
+	if len(fields) < 7 || fields[0] != "ikigenba" {
+		return 0, 0, errors.New("inspect ikigenba account: invalid response")
+	}
+	uid, uidErr := strconv.Atoi(fields[2])
+	gid, gidErr := strconv.Atoi(fields[3])
+	if uidErr != nil || gidErr != nil || uid == 0 {
+		return 0, 0, errors.New("inspect ikigenba account: invalid non-root identity")
 	}
 	return uid, gid, nil
 }
