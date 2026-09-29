@@ -29,9 +29,6 @@ refreshes them in the same session. The copied stylesheet replaces the
 Google Fonts import with `@font-face` rules for the files beside it, and its
 header names the `design/` commit it came from, so that commit lands first.
 
-The build run never writes to `assets/`. A needed asset that is missing or
-wrong is an issue for a human.
-
 ## Toolchain
 
 - Go 1.26 (`go version` must report 1.26+)

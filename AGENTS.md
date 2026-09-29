@@ -22,10 +22,6 @@ changing it on its merits: "we decided X; keep it because..." or "change it
 because...". Changing a requirement's text costs one re-minted id and nothing
 else.
 
-The visual style for every app, service, and page is defined in `design/`.
-`design/ikigenba/theme.css` is the source of truth and `design/README.md`
-records the decisions; UI work conforms to it, or changes it there first.
-
 Versions are data. No test, fixture, or requirement names a release version. A
 test that needs the current version reads the value the source declares,
 through the contract that declares it, and derives tags, asset names, and
@@ -54,6 +50,29 @@ Every commit an agent makes ends with a `Co-Authored-By:` trailer naming the
 agent that made it, in whatever form that agent identifies itself. This is the
 only commit attribution rule in the repository; no sub-project AGENTS.md
 restates it or names a specific model.
+
+## Web assets
+
+The visual style for every app, service, and page is defined in `design/`.
+`design/ikigenba/theme.css` is the source of truth and `design/README.md`
+records the decisions; UI work conforms to it, or changes it there first.
+
+The rest of this section applies only to a sub-project with an `assets/`
+directory. Its assets (markup, styles, fonts, icons) are written and approved
+by a human in interactive sessions, following `design/`. They are inputs to
+the spec: the build run never writes them.
+
+- Stories describe what a user does and observes: actions, states, and the
+  text they see. They never describe appearance or structure.
+- Design names the hooks the code relies on (classes, ids, attributes,
+  labels, and text) and which state produces each. It never restates markup
+  or styles.
+- Code uses the assets and emits the named hooks. Tests assert on those hooks
+  and on visible text, never on layout.
+
+A needed asset that is missing or wrong is an issue for a human. That includes
+a state a story names that the assets can't show, and a hook design names that
+the assets lack.
 
 ## Command-line conventions
 
