@@ -53,14 +53,15 @@ func staticConditionalResponse(handler http.Handler, method, target string, head
 	return recorder
 }
 
-func staticNonmatchingHeaders() []http.Header {
+func staticNonmatchingHeaders(etag string) []http.Header {
+	nonmatch := etag[:len(etag)-1] + `!"`
 	return []http.Header{
 		{},
 		{"If-None-Match": {""}},
-		{"If-None-Match": {`"different"`}},
-		{"If-None-Match": {`W/"different", , "also different"`}},
-		{"If-None-Match": {`"different"`}, "If-Modified-Since": {"Tue, 01 Jan 2030 00:00:00 GMT"}},
-		{"If-None-Match": {`W/"different"`}, "If-Modified-Since": {"Tue, 01 Jan 1980 00:00:00 GMT"}},
+		{"If-None-Match": {nonmatch}},
+		{"If-None-Match": {"W/" + nonmatch + ", , " + nonmatch}},
+		{"If-None-Match": {nonmatch}, "If-Modified-Since": {"Tue, 01 Jan 2030 00:00:00 GMT"}},
+		{"If-None-Match": {"W/" + nonmatch}, "If-Modified-Since": {"Tue, 01 Jan 1980 00:00:00 GMT"}},
 		{"If-None-Match": {", ,\t,"}, "If-Modified-Since": {"Tue, 01 Jan 2030 00:00:00 GMT"}},
 	}
 }
@@ -90,13 +91,14 @@ func TestStaticGETBytes(t *testing.T) {
 	for _, file := range staticFiles {
 		t.Run(file.name, func(t *testing.T) {
 			want := staticBytes(t, file.name)
+			etag := staticResponse(handler, http.MethodGet, appkit.StaticPrefix+file.name).Header().Get("ETag")
 			for _, target := range []string{
 				appkit.StaticPrefix + file.name,
 				appkit.StaticPrefix + file.name + "?download=1&path=banner.html",
 				"/%5Fappkit/" + file.name,
 				"/_appkit%2F" + file.name,
 			} {
-				for _, headers := range staticNonmatchingHeaders() {
+				for _, headers := range staticNonmatchingHeaders(etag) {
 					response := staticConditionalResponse(handler, http.MethodGet, target, headers)
 					if response.Code != http.StatusOK || !bytes.Equal(response.Body.Bytes(), want) {
 						t.Errorf("GET %s with %v: status %d, body equals asset: %t", target, headers, response.Code, bytes.Equal(response.Body.Bytes(), want))
@@ -124,7 +126,7 @@ func TestStaticHEAD(t *testing.T) {
 	for _, file := range staticFiles {
 		get := staticResponse(handler, http.MethodGet, appkit.StaticPrefix+file.name)
 		for _, target := range []string{appkit.StaticPrefix + file.name, "/%5Fappkit/" + file.name + "?x=1"} {
-			for _, headers := range staticNonmatchingHeaders() {
+			for _, headers := range staticNonmatchingHeaders(get.Header().Get("ETag")) {
 				response := staticConditionalResponse(handler, http.MethodHead, target, headers)
 				if response.Code != http.StatusOK || response.Body.Len() != 0 || response.Header().Get("Content-Type") != get.Header().Get("Content-Type") {
 					t.Errorf("HEAD %s with %v: status %d, body length %d, Content-Type %q; GET Content-Type %q", target, headers, response.Code, response.Body.Len(), response.Header().Get("Content-Type"), get.Header().Get("Content-Type"))
@@ -223,8 +225,9 @@ func TestStaticConcurrentFactories(t *testing.T) {
 func TestStaticStrongEntityTags(t *testing.T) {
 	// R-74E3-X756
 	for _, file := range staticFiles {
+		etag := staticResponse(appkit.Static(), http.MethodGet, appkit.StaticPrefix+file.name).Header().Get("ETag")
 		for _, method := range []string{http.MethodGet, http.MethodHead} {
-			for _, headers := range staticNonmatchingHeaders() {
+			for _, headers := range staticNonmatchingHeaders(etag) {
 				response := staticConditionalResponse(appkit.Static(), method, appkit.StaticPrefix+file.name, headers)
 				assertStrongEntityTag(t, response.Header().Values("ETag"))
 			}
@@ -308,13 +311,13 @@ func TestStaticIfNoneMatch(t *testing.T) {
 			{`"contains,a,comma", ` + etag, true},
 			{`"backslash\", ` + etag, true},
 			{"\"\x80\xff\", " + etag, true},
-			{`""`, false},
-			{`W/""`, false},
-			{`"different"`, false},
-			{`W/"different", , "other"`, false},
+			{`""`, etag == `""`},
+			{`W/""`, etag == `""`},
+			{`"different"`, etag == `"different"`},
+			{`W/"different", , "other"`, etag == `"different"` || etag == `"other"`},
 			{", ,\t,", false},
-			{`"contains,a,comma", "backslash\"`, false},
-			{"\"\x80\xff\"", false},
+			{`"contains,a,comma", "backslash\"`, etag == `"contains,a,comma"` || etag == `"backslash\"`},
+			{"\"\x80\xff\"", etag == "\"\x80\xff\""},
 			{`"prefix` + etag[1:], false},
 			{etag[:len(etag)-1] + `suffix"`, false},
 		}
