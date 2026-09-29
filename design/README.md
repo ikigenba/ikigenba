@@ -78,6 +78,10 @@ systems. The product name is **Ikigenba**. The example space is
 - States: filtered by `cr` (cron, scripts, secrets); no match for `kafka`;
   filtered by `re` with `repos` unavailable beside `secrets`.
 - Below 640px the panel is a full-width sheet under the banner.
+- Each tile's icon is the app's own `share/icon.svg`, inserted verbatim, so
+  it carries no class: the launcher styles `nav.services a > svg`, never
+  `svg.ico`, and leaves the icon without `aria-hidden` (the link text names
+  the service).
 
 **login.html** — auth at `auth.acme.ikigenba.com`.
 - Sign-in: product mark, "Sign in to acme", note that access is limited to

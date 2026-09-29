@@ -185,19 +185,19 @@ nav.services a {
   text-align: center; overflow-wrap: anywhere;
 }
 nav.services a:hover { background: var(--subtle); text-decoration: none; }
-nav.services a svg.ico {
+nav.services a > svg {
   width: 42px; height: 42px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r);
   background: var(--surface); box-shadow: var(--shadow-sm);
 }
-nav.services a:hover svg.ico { border-color: color-mix(in srgb, var(--line) 60%, var(--fg) 20%); }
+nav.services a:hover > svg { border-color: color-mix(in srgb, var(--line) 60%, var(--fg) 20%); }
 nav.services a[aria-current] { font-weight: 600; }
-nav.services a[aria-current] svg.ico { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+nav.services a[aria-current] > svg { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 /* A disabled service keeps its tile, so the grid never reshuffles: faint,
    unlinked, and saying why on hover. */
 nav.services a:not([href]) { color: var(--faint); cursor: default; }
 nav.services a:not([href]):hover { background: none; }
-nav.services a:not([href]) svg.ico,
-nav.services a:not([href]):hover svg.ico { background: var(--subtle); border-color: var(--line-soft); box-shadow: none; }
+nav.services a:not([href]) > svg,
+nav.services a:not([href]):hover > svg { background: var(--subtle); border-color: var(--line-soft); box-shadow: none; }
 nav.services > p { padding: var(--s5) var(--s3); text-align: center; color: var(--muted); font-size: var(--text-sm); }
 nav.services > p[hidden] { display: none; }
 
