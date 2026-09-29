@@ -15,6 +15,7 @@ design/
     icons/tabler/   the Tabler SVGs in use, with LICENSE and VERSION
     specimen.html   the parts: tokens, type, controls, table, alerts, states
     app.html        dummy's panel: banner, widgets table, add form, states
+    launcher.html   the banner's service launcher, open, filtered, empty
     login.html      auth's sign-in, its error state, the signed-in profile
     profile.html    account, sessions, API tokens
     landing.html    marketing: hero, features, call to action
@@ -62,6 +63,18 @@ systems. The product name is **Ikigenba**. The example space is
   count cannot be negative", Status `active` accepted.
 - A states section: the table with no widgets; the message page
   ("Widget created." + `Back to widgets`).
+
+**launcher.html** — the service launcher, shown from dummy.
+- Banner as in app.html, with the launcher's grid button between the mark and
+  the user's email; the panel open on load.
+- The panel: a `Find a service` search field over a 4-column grid of 30
+  services, A to Z, each a Tabler icon over its name, linking to
+  `https://<name>.acme.ikigenba.com/`; `dummy` marked current. The services
+  known today — `auth`, `crm`, `cron`, `dummy`, `files`, `invoices`,
+  `ledger`, `prompts`, `repos`, `scripts`, `sites`, `webhooks`, `wiki` — with
+  plausible others to fill the grid to scale.
+- States: filtered by `cr` (cron, scripts, secrets); no match for `kafka`.
+- Below 640px the panel is a full-width sheet under the banner.
 
 **login.html** — auth at `auth.acme.ikigenba.com`.
 - Sign-in: product mark, "Sign in to acme", note that access is limited to
