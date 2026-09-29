@@ -39,10 +39,17 @@ ids, and an `oauth` cell for `openai-responses`, `xai-responses`, and
 holding a catalog offering does: the `Offering` the derivation selected from
 `Catalog()` (no `Lookup` round-trip), `Authenticator`, `NewEndpoint(auth)`,
 `New`, with a `Log` writer so usage is observable and one advertised tool,
-`echo`, taking one required string `text` that its handler returns. One `Send` asks the model to call `echo` and then answer
-in text. The cell passes when the stream's `Err()` is nil, the tool call is
-observed and executed, its result is carried back in a second round-trip, the
-turn ends in a `MessageDone` with non-empty text, and every round-trip's
+`secret_word`, taking one required string argument `topic`, whose handler
+returns the fixed word `mango` whatever the topic. The argument exists only so
+the schema is never an object with empty `properties`, which Gemini may
+reject. One `Send` asks the model to call `secret_word` with topic `fruit` and
+then reply with only the word it returned. The tool's result is information
+the model does not have until the call executes, so an answer containing
+`mango` proves the tool result reached the model and was used. The cell
+passes when the stream's `Err()` is nil, the tool call is observed and
+executed, its result is carried back in a second round-trip, the turn ends in
+a `MessageDone` whose text contains `mango` (case-insensitive), and every
+round-trip's
 `usage` record (at least two) shows output tokens above zero and prompt
 tokens, fresh plus cached, above zero; fresh input alone is not required to be
 positive, since a vendor may serve the whole prompt from cache. That one turn covers
@@ -69,5 +76,5 @@ variables it sets, is proved offline.
 - R-FVBP-5TAH: `TestLiveMatrix`, in `matrix_live_test.go`, MUST run each cell derived under R-FU3S-S1JS as a subtest named `<offering-id>/<auth-mode>/<ordinal>`, where `ordinal` is the one-based position among representatives for that pair (and therefore `1` while R-FU3S-S1JS selects exactly one); a subtest name MUST NOT contain a model release.
 - R-FU3S-S1JS: `TestLiveMatrix` MUST derive exactly one representative cell for every distinct `(Offering.ID, EndpointSpec.AuthMode)` pair present in `Catalog()`, selecting the lexicographically first `CatalogEntry.Model` among entries carrying the pair; the cell's `Offering` is that entry's matching `Offering` exactly as `Catalog()` returns it. This is one transport/auth representative per pair—not one paid call per catalog row—and contains no model literal.
 - R-CJRE-3H0I: Every `TestLiveMatrix` cell MUST read its credential from the environment by its offering's `Host`: for an `api_key` cell the key in `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, or `OPENROUTER_API_KEY` for `HostAnthropic`, `HostOpenAI`, `HostGemini`, `HostXAI`, or `HostOpenRouter` respectively, and for an `oauth` cell the token file named by `AGENTKIT_OPENAI_OAUTH_FILE` for `HostOpenAI` or `AGENTKIT_XAI_OAUTH_FILE` for `HostXAI`.
-- R-FWJL-JL16: Every `TestLiveMatrix` cell MUST build one `Conversation` from the `Offering` selected under R-FU3S-S1JS, without calling `Lookup`, through `Offering.Authenticator` with `APIKeyRotator` for an `api_key` cell or `OAuthRotator(FileTokenStore(path))` for an `oauth` cell, `NewEndpoint(auth)` without `WithBaseURL`, and `New` with a `Log` and exactly one advertised tool, named `echo`, whose input schema is an object with one required string property `text` and whose handler returns its `text` argument; it MUST run one `Send` of `Call the echo tool with {"text":"pong"}, then answer with the single word: done` against the real vendor and require nil `Stream.Err()`, in order a `ToolCall` whose `Use.Name` is `echo`, a `ToolReturn` for that call, and a `MessageDone` carrying a non-empty `Text` block, and at least two `usage` log records, each whose `Usage` has positive `OutputTokens` and positive `InputTokens + CachedTokens`. No model-specific exception, system message, or reasoning probe may occur.
+- R-X5IY-V2SF: Every `TestLiveMatrix` cell MUST build one `Conversation` from the `Offering` selected under R-FU3S-S1JS, without calling `Lookup`, through `Offering.Authenticator` with `APIKeyRotator` for an `api_key` cell or `OAuthRotator(FileTokenStore(path))` for an `oauth` cell, `NewEndpoint(auth)` without `WithBaseURL`, and `New` with a `Log` and exactly one advertised tool, named `secret_word`, whose input schema is an object with exactly one property, `topic`, of type string and listed as required, and whose handler returns the fixed word `mango` regardless of its argument; it MUST run one `Send` of `Call the secret_word tool with topic "fruit", then reply with only the word it returns.` against the real vendor and require nil `Stream.Err()`, in order a `ToolCall` whose `Use.Name` is `secret_word`, a `ToolReturn` for that call, and a `MessageDone` carrying a `Text` block containing `mango` compared case-insensitively, and at least two `usage` log records, each whose `Usage` has positive `OutputTokens` and positive `InputTokens + CachedTokens`. No model-specific exception, system message, or reasoning probe may occur.
 - R-CM76-V0HW: The module's `Makefile` `live` target MUST run its tests with `AGENTKIT_OPENAI_OAUTH_FILE` set to `$(HOME)/.agentkit/openai-auth.json` and `AGENTKIT_XAI_OAUTH_FILE` set to `$(HOME)/.agentkit/x-ai-auth.json`.
