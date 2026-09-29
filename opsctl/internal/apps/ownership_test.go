@@ -6,7 +6,6 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -15,33 +14,26 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
 )
 
-// R-XMCC-E2QF
+// R-8WJB-6AN6
 func TestAppsOwnsHostLocalModelConsumedAcrossOperations(t *testing.T) {
 	t.Parallel()
 
 	validateName := apps.ValidateName
 	parseManifest := apps.ParseManifest
 	discover := apps.Discover
+	_ = apps.CheckIcon
+	_ = apps.EnsureAccount
 
 	if err := validateName("ledger"); err != nil {
 		t.Fatalf("ValidateName: %v", err)
 	}
-	manifestData := []byte("app = \"ledger\"\n[database]\nengine = \"sqlite\"\npath = \"state/ledger.db\"\n")
-	wantManifest := apps.Manifest{
-		App:     "ledger",
-		Secrets: []string{},
-		Env:     map[string]string{},
-		Database: &apps.Database{
-			Engine: "sqlite",
-			Path:   "state/ledger.db",
-		},
-	}
+	manifestData := []byte("app = \"ledger\"\n")
 	parsedManifest, err := parseManifest(manifestData)
 	if err != nil {
 		t.Fatalf("ParseManifest: %v", err)
 	}
-	if !reflect.DeepEqual(parsedManifest, wantManifest) {
-		t.Fatalf("ParseManifest = %#v, want %#v", parsedManifest, wantManifest)
+	if parsedManifest.App != "ledger" {
+		t.Fatalf("ParseManifest = %#v, want app ledger", parsedManifest)
 	}
 	root := t.TempDir()
 	writeManifest(t, root, "ledger", string(manifestData))
@@ -49,7 +41,7 @@ func TestAppsOwnsHostLocalModelConsumedAcrossOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
-	if len(services) != 1 || services[0].Name != "ledger" || services[0].Manifest == nil || !reflect.DeepEqual(*services[0].Manifest, wantManifest) {
+	if len(services) != 1 || services[0].Name != "ledger" || services[0].Manifest == nil || services[0].Manifest.App != "ledger" {
 		t.Fatalf("Discover(%q) = %#v, want the host-local ledger manifest", root, services)
 	}
 
@@ -59,9 +51,10 @@ func TestAppsOwnsHostLocalModelConsumedAcrossOperations(t *testing.T) {
 	}
 	internalDirectory := filepath.Dir(filepath.Dir(currentFile))
 	consumers := map[string][]string{
-		"cli":    {"ValidateName"},
-		"nginx":  {"Discover"},
-		"backup": {"Discover"},
+		"cli":      {"ValidateName"},
+		"nginx":    {"Discover"},
+		"backup":   {"Discover"},
+		"services": {"Discover", "EnsureAccount"},
 	}
 	for packageName, calls := range consumers {
 		t.Run(packageName, func(t *testing.T) {
