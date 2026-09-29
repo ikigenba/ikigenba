@@ -35,7 +35,10 @@ edit to something `init` generated. From the developer's machine that pair is
 `devctl space init`, which sets the keys `create` set and runs `init` again;
 `create` runs it once and `space init` runs it on any later day. Two of the
 generated files also answer to
-what is under `/opt`, and the nginx file to which apps are disabled as well;
+what is under `/opt`, and the nginx file to which apps are disabled as well.
+So does `/var/lib/ikigenba/services.json`, the services file
+(`S9-services.md`), which `init` rewrites every run without printing a line
+for it;
 `install`, `uninstall`, `restore`, `disable`, and `enable` regenerate those
 themselves when they change what they answer to (see `S7-apps.md` and
 `S8-backup.md`); `init` remains the only
@@ -154,9 +157,12 @@ Postconditions:
   naming every declared database with `litestream.service` enabled, the two
   backup unit pairs with each timer enabled whose period the store gives as
   non-zero, and the certificate renewal pair with its timer enabled.
-- Every installed app's `etc/env` holds `DRAIN_SECONDS=5` and its service
-  unit a stop timeout of `10` seconds. An app that already held those values
-  was not restarted.
+- `/var/lib/ikigenba/services.json` has been rewritten from the store, what
+  is under `/opt`, and which apps are disabled. No line reports it.
+- Every installed app's `etc/env` holds `DRAIN_SECONDS=5` and
+  `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json`, and its service unit a
+  stop timeout of `10` seconds. An app that already held those values was not
+  restarted.
 - Every setup command is idempotent, so a host that was already set up is
   unchanged by the run.
 
@@ -209,8 +215,8 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. No setup command ran, no file under `/etc` or `/opt`
-  was created, modified, or removed.
+- Nothing has changed. No setup command ran, no file under `/etc`, `/opt`, or
+  `/var/lib/ikigenba` was created, modified, or removed.
 
 ## An operator runs init again after fixing what it found
 
@@ -321,7 +327,8 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. No setup command ran, no app's `etc/env` or unit was
-  rewritten, and no app was restarted.
+  rewritten, `/var/lib/ikigenba/services.json` was not rewritten, and no app
+  was restarted.
 
 ## An operator gives init an argument
 

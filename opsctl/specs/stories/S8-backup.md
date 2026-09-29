@@ -128,6 +128,9 @@ snapshot and the committed changes after it, and nothing else.
 - Never `/etc/nginx/` and never a unit file: both are generated from the
   configuration store and what is under `/opt`, so a restored host writes
   them again rather than carrying stale copies forward.
+- Never `/var/lib/ikigenba/`: the services file there is generated from the
+  configuration store, what is under `/opt`, and which apps are disabled, so a
+  restored host writes it again as well.
 
 A service is discovered, never registered: any `/opt/<name>/` holding an
 `etc/` or a `state/` directory.
@@ -808,6 +811,8 @@ Postconditions:
   and was answered by nginx with an error.
 - `/etc/litestream.yml` is byte for byte as it was: the restored manifest
   declares the database the installed one did.
+- `/var/lib/ikigenba/services.json` has been rewritten from the store, what
+  is now under `/opt`, and which apps are disabled. No line reports it.
 - No unit was enabled or disabled, and nginx was not reloaded.
 - The restore itself wrote and deleted no object under `<backup.s3_uri>`. What
   litestream ships once it is running again is litestream's business, not the
@@ -1012,6 +1017,8 @@ Postconditions:
 - Both of `crm`'s units are still disabled and inactive; neither was enabled
   or started, `/run/ikigenba/crm.sock` does not exist, and nginx was not
   reloaded, so `crm`'s names still answer `503`.
+- `/var/lib/ikigenba/services.json` has been rewritten; if it lists `crm`, it
+  still gives `crm` `"enabled": false`.
 - A retry after a failed restore of a disabled app leaves it disabled too: a
   failed restore stops units but never disables them, and a disabled app is
   never one the restore stopped.
@@ -1144,8 +1151,8 @@ Postconditions:
   database at `/opt/crm/state/crm.db`: the tarball never held one.
 - `ikigenba-crm.socket`, `ikigenba-crm.service`, and `litestream.service` are
   all stopped, and none was enabled or disabled. No database on this host is being
-  replicated until one of them is started. `/etc/litestream.yml` is as it was
-  before the restore.
+  replicated until one of them is started. `/etc/litestream.yml` and
+  `/var/lib/ikigenba/services.json` are as they were before the restore.
 - Nothing was rolled back. The host is left where an operator can look at it,
   and re-running the restore once the database objects are in place finishes
   the job and starts both.

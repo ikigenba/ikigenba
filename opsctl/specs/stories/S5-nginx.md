@@ -686,7 +686,9 @@ Postconditions:
 ## An operator applies the configuration
 
 `apply` writes the file, has nginx check the whole configuration, and reloads
-it. Nothing is printed; the answer is the exit code.
+it. It also rewrites the services file, `/var/lib/ikigenba/services.json`
+(`S9-services.md`), so the two never disagree about which apps are disabled.
+Nothing is printed; the answer is the exit code.
 
 Command:
 
@@ -715,6 +717,8 @@ Postconditions:
 - `nginx -t` passed and nginx has been reloaded; it is serving the new
   configuration and never stopped serving the old one.
 - No other file under `/etc/nginx` was created, modified, or removed.
+- `/var/lib/ikigenba/services.json` has been rewritten from the same store,
+  `/opt`, and disabled apps the nginx file was. Nothing was printed about it.
 - Applying again with nothing else changed rewrites the same bytes, passes
   the same test, reloads again, and exits 0.
 - When a routed `auth` wires the other blocks, `nginx -t` still passes: `-t`
@@ -756,6 +760,7 @@ Postconditions:
 - `/etc/nginx/conf.d/ikigenba.conf` is exactly as it was before the command:
   the candidate was written, rejected, and the previous content put back.
 - nginx was not reloaded and is serving what it was serving.
+- `/var/lib/ikigenba/services.json` is as it was before the command.
 
 ## An agent applies on a host with no host.name
 

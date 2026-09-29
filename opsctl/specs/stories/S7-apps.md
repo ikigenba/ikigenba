@@ -50,6 +50,13 @@ it needs, an `[env]` table of plain settings, and a `[database]` table when the
 app keeps one. It names no port: no app listens on one, and a manifest that
 carries a `port` is refused.
 
+A file that carries `share/icon.svg` puts its app in the host's service
+launcher; nothing in the manifest does. `install` refuses an icon that is not
+an SVG image or is larger than 64 KiB. Every command here that regenerates
+nginx also rewrites `/var/lib/ikigenba/services.json`, the list of launcher
+services (see `S9-services.md`), and reports it on a `services` line right
+after the `nginx` line.
+
 ```toml
 app = "crm"
 default = false
@@ -144,10 +151,11 @@ over a running app keeps its data. Safe to re-run. An app that is disabled
 stays disabled: its files and units are replaced, but neither unit is enabled
 or started until 'opsctl enable'.
 
-The nginx configuration and /etc/litestream.yml are regenerated from every app
-on the host, so an app that declares a [database] is replicated from the
-moment it is installed. litestream.service is restarted only when its
-configuration changed.
+The nginx configuration, /var/lib/ikigenba/services.json, and
+/etc/litestream.yml are regenerated from every app on the host, so an app that
+ships share/icon.svg appears in the service launcher and an app that declares
+a [database] is replicated from the moment it is installed. litestream.service
+is restarted only when its configuration changed.
 
 Configuration keys:
   aws.region          the region this host's parameters and artifacts live in
@@ -175,7 +183,8 @@ adds the socket's state and the database journal mode in its five-column
 report. The `fetch` step is the host reading the object with its own role:
 the file never travels over the ssh connection. The `unit` step writes both
 units and brings the socket up, so the socket is listening before the `nginx`
-step routes the app's name to it. The `litestream` step names the database this manifest declares, now in
+step routes the app's name to it. The `services` step lists the app in the
+service launcher, because the file ships an icon. The `litestream` step names the database this manifest declares, now in
 `/etc/litestream.yml`; it comes before `service` so that replication is in
 place before the app writes its first row.
 
@@ -194,6 +203,7 @@ secrets: ok (3 keys)
 unpack: ok (/opt/crm)
 unit: ok (ikigenba-crm.socket, ikigenba-crm.service)
 nginx: ok (crm.sbx.ikigenba.dev)
+services: ok (crm added)
 litestream: ok (state/crm.db)
 service: ok (crm v0.1.0 active)
 ```
@@ -204,8 +214,8 @@ Preconditions:
 
 - `host.name` and `aws.region` are set, and `init` reported the host ready.
 - `apps.drain_seconds` and `apps.stop_seconds` are unset.
-- The object holds `bin/crm` and `etc/manifest.toml`, and the host's role can
-  read it.
+- The object holds `bin/crm`, `etc/manifest.toml`, and `share/icon.svg`, an
+  SVG image of at most 64 KiB, and the host's role can read it.
 - `/<host.name>/crm` holds every name the manifest's `secrets`
   array lists.
 - `crm` has never been installed on this host.
@@ -216,9 +226,10 @@ Postconditions:
   replacing whatever was there. `/opt/crm/state/` and `/opt/crm/cache/` were
   neither created nor touched.
 - `/opt/crm/etc/env` has mode `0600` and holds one `NAME=value` line per
-  secret the manifest names, every setting in its `[env]` table, and
-  `DRAIN_SECONDS=5`, the value of `apps.drain_seconds` or its default. It
-  holds no `PORT`. Keys in the parameter that the manifest no longer names are
+  secret the manifest names, every setting in its `[env]` table,
+  `DRAIN_SECONDS=5`, the value of `apps.drain_seconds` or its default, and
+  `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json`, which every app gets,
+  launcher service or not. It holds no `PORT`. Keys in the parameter that the manifest no longer names are
   not written. The values are never printed and never appear on a command
   line.
 - `/etc/systemd/system/ikigenba-crm.socket` and
@@ -236,6 +247,9 @@ Postconditions:
   other app's server block to the authenticator's `/check` (`S5-nginx.md`), so
   each begins requiring a valid session. The `nginx:` line still reports only
   the installed app's own name.
+- `/var/lib/ikigenba/services.json` has been rewritten and now lists `crm`,
+  with the URL `https://crm.sbx.ikigenba.dev`, the contents of
+  `/opt/crm/share/icon.svg`, and enabled.
 - `/etc/litestream.yml` has been regenerated from every manifest under `/opt`
   and now names `/opt/crm/state/crm.db`, replicating to `<backup.s3_uri>crm/`.
   Because the file changed, `litestream.service` was restarted; it is running.
@@ -267,6 +281,7 @@ secrets: ok (4 keys)
 unpack: ok (/opt/crm)
 unit: ok (ikigenba-crm.socket, ikigenba-crm.service)
 nginx: ok (crm.sbx.ikigenba.dev)
+services: ok (unchanged)
 litestream: ok (unchanged)
 service: ok (crm v0.2.0 active)
 ```
@@ -277,6 +292,7 @@ Preconditions:
 
 - `crm` is installed, its socket is listening, and its service is `active`.
 - The new manifest names a fourth secret, and the parameter holds it.
+- The new file's `share/icon.svg` is byte for byte the installed one.
 
 Postconditions:
 
@@ -290,7 +306,10 @@ Postconditions:
   was not restarted, so its replication of `crm.db` was never interrupted. A
   manifest that changed its `[database]` path would have changed the file, and
   the line would have named the new path and the service been restarted.
-- Installing the same file again produces the same eight lines and exit 0.
+- `/var/lib/ikigenba/services.json` is byte for byte as it was. A new file
+  whose icon differed would have changed `crm`'s entry, and the line would
+  have read `services: ok (crm updated)`.
+- Installing the same file again produces the same nine lines and exit 0.
 
 ## An agent deploys a new version over a disabled app
 
@@ -315,6 +334,7 @@ secrets: ok (4 keys)
 unpack: ok (/opt/crm)
 unit: ok (ikigenba-crm.socket, ikigenba-crm.service)
 nginx: ok (crm.sbx.ikigenba.dev disabled)
+services: ok (unchanged)
 litestream: ok (unchanged)
 service: ok (crm v0.2.0 disabled)
 ```
@@ -325,6 +345,7 @@ Preconditions:
 
 - `crm` is installed and disabled: both its units are disabled and inactive.
 - The new manifest names a fourth secret, and the parameter holds it.
+- The new file's `share/icon.svg` is byte for byte the installed one.
 
 Postconditions:
 
@@ -336,6 +357,8 @@ Postconditions:
   `/run/ikigenba/crm.sock` does not exist.
 - `/etc/nginx/conf.d/ikigenba.conf` has been regenerated and nginx reloaded;
   `crm`'s names still answer `503`.
+- `/var/lib/ikigenba/services.json` is byte for byte as it was: it still
+  lists `crm` as not enabled.
 - The version in the last line is what the new binary answers to
   `--version`. Whether the release starts is not known until `opsctl enable
   crm` starts it.
@@ -361,6 +384,7 @@ secrets: ok (0 keys)
 unpack: ok (/opt/dashboard)
 unit: ok (ikigenba-dashboard.socket, ikigenba-dashboard.service)
 nginx: ok (dashboard.sbx.ikigenba.dev, sbx.ikigenba.dev)
+services: ok (unchanged)
 litestream: ok (unchanged)
 service: ok (dashboard v0.0.9 active)
 ```
@@ -370,6 +394,7 @@ Exits 0. The lines are on stdout; stderr is empty.
 Preconditions:
 
 - `dashboard`'s manifest sets `default = true` and names no secrets.
+- The file ships no `share/icon.svg`.
 - No other installed app sets `default = true`.
 
 Postconditions:
@@ -377,6 +402,9 @@ Postconditions:
 - `https://sbx.ikigenba.dev` and `https://dashboard.sbx.ikigenba.dev` both
   reach `dashboard` through `/run/ikigenba/dashboard.sock`; every other name
   under the host still answers 404.
+- `/var/lib/ikigenba/services.json` is byte for byte as it was: `dashboard`
+  is not a launcher service. Its `/opt/dashboard/etc/env` still holds
+  `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json`.
 - `/etc/litestream.yml` is byte for byte as it was and `litestream.service`
   was not restarted.
 
@@ -403,6 +431,7 @@ secrets: ok (3 keys)
 unpack: ok (/opt/crm)
 unit: ok (ikigenba-crm.socket, ikigenba-crm.service)
 nginx: ok (crm.sbx.ikigenba.dev, ikigenba.dev)
+services: ok (crm added)
 litestream: ok (state/crm.db)
 service: ok (crm v0.1.0 active)
 ```
@@ -414,12 +443,16 @@ Preconditions:
 - `host.name` is `sbx.ikigenba.dev` and `host.apex` is `crm`.
 - The host's certificate covers `ikigenba.dev` and the apex record points
   here: both are `devctl apex set`'s doing, before this deploy.
-- `crm`'s manifest does not set `default = true`.
+- `crm`'s manifest does not set `default = true`, and the file ships
+  `share/icon.svg`.
 
 Postconditions:
 
 - Everything the first install's postconditions say, and
   `https://ikigenba.dev` reaches `crm` through `/run/ikigenba/crm.sock`.
+- `crm`'s entry in `/var/lib/ikigenba/services.json` still has the URL
+  `https://crm.sbx.ikigenba.dev`: the launcher names an app by its own name,
+  never the apex.
 - An app that is both default and apex reports all three names:
   `nginx: ok (crm.sbx.ikigenba.dev, sbx.ikigenba.dev, ikigenba.dev)`.
 - Installing any other app on this host leaves the apex where it is; only
@@ -456,7 +489,8 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. `/opt/dashboard/` was not created, no unit was
-  written, and nginx was not reloaded.
+  written, nginx was not reloaded, and `/var/lib/ikigenba/services.json` was
+  not rewritten.
 - Making `dashboard` the default means installing `crm` again with
   `default = false` first.
 
@@ -490,7 +524,8 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. `/opt/gmail/` was not created, no unit was written,
-  and nginx was not reloaded.
+  nginx was not reloaded, and `/var/lib/ikigenba/services.json` was not
+  rewritten.
 
 ## An operator installs a file that is not an app
 
@@ -556,8 +591,78 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. `/opt/crm/` was neither created nor touched, no unit
-  was written, and nginx was not reloaded. An installed `crm` keeps running
+  was written, nginx was not reloaded, and `/var/lib/ikigenba/services.json`
+  was not rewritten. An installed `crm` keeps running
   the release it had.
+
+## An agent installs an app whose icon is not an SVG image
+
+The icon goes into the services file as it is, and every app on the host
+reads that file, so install checks it before anything is written. An SVG
+image is a file that parses as XML with the root element `svg`.
+
+Command:
+
+```
+$ sudo opsctl install s3://ikigenba.dev/sbx/deploy/crm-v0.1.0.tar.xz
+```
+
+Output:
+
+```
+fetch: ok (crm-v0.1.0.tar.xz, 8.4 MiB)
+file: failed: share/icon.svg is not an SVG image
+opsctl: install failed
+```
+
+Exits 2. The fetch and file outcome lines are on stdout; the last line is on
+stderr.
+
+Preconditions:
+
+- `opsctl` is running as root.
+- The file's `share/icon.svg` does not parse as XML with the root element
+  `svg`: it is a PNG under that name, say.
+
+Postconditions:
+
+- Nothing has changed. `/opt/crm/` was neither created nor touched, no unit
+  was written, nginx was not reloaded, and `/var/lib/ikigenba/services.json`
+  was not rewritten. An installed `crm` keeps running the release it had.
+
+## An agent installs an app whose icon is larger than 64 KiB
+
+Every app on the host reads the services file, which carries every icon in
+it, so install holds each icon to 64 KiB.
+
+Command:
+
+```
+$ sudo opsctl install s3://ikigenba.dev/sbx/deploy/crm-v0.1.0.tar.xz
+```
+
+Output:
+
+```
+fetch: ok (crm-v0.1.0.tar.xz, 8.4 MiB)
+file: failed: share/icon.svg is larger than 64 KiB
+opsctl: install failed
+```
+
+Exits 2. The fetch and file outcome lines are on stdout; the last line is on
+stderr.
+
+Preconditions:
+
+- `opsctl` is running as root.
+- The file's `share/icon.svg` is an SVG image larger than 64 KiB (65,536
+  bytes).
+
+Postconditions:
+
+- Nothing has changed. `/opt/crm/` was neither created nor touched, no unit
+  was written, nginx was not reloaded, and `/var/lib/ikigenba/services.json`
+  was not rewritten. An installed `crm` keeps running the release it had.
 
 ## An agent installs an app while the timing settings are invalid
 
@@ -588,7 +693,8 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed. No object was fetched, nothing under `/opt/` was
-  written, no unit was written, and nginx was not reloaded.
+  written, no unit was written, nginx was not reloaded, and
+  `/var/lib/ikigenba/services.json` was not rewritten.
 
 ## An operator installs an app with a reserved name
 
@@ -639,6 +745,7 @@ secrets: ok (2 keys)
 unpack: ok (/opt/gmail)
 unit: ok (ikigenba-gmail.socket, ikigenba-gmail.service)
 nginx: ok (gmail.sbx.ikigenba.dev)
+services: ok (unchanged)
 litestream: ok (unchanged)
 service: failed: gmail: service failed to start
 opsctl: install failed
@@ -653,7 +760,8 @@ journal are on stderr.
 Preconditions:
 
 - `gmail`'s binary exits at start, before it tells systemd it is ready.
-- `gmail`'s manifest declares no database.
+- `gmail`'s manifest declares no database, and its file ships no
+  `share/icon.svg`.
 
 Postconditions:
 
@@ -719,9 +827,10 @@ untouched, so APP is still a service the host backs up, and a later install
 lands over its data the way an install over a restore does. Removing state/ is
 a decision made by hand, never here.
 
-The nginx configuration and /etc/litestream.yml are regenerated from every app
-left on the host, so APP's name stops answering, and a database APP declared
-stops being replicated once litestream has shipped what it holds.
+The nginx configuration, /var/lib/ikigenba/services.json, and
+/etc/litestream.yml are regenerated from every app left on the host, so APP's
+name stops answering, APP leaves the service launcher, and a database APP
+declared stops being replicated once litestream has shipped what it holds.
 
 The parameter /<host.name>/APP is not touched: it is devctl's.
 
@@ -764,6 +873,7 @@ stop: ok (ikigenba-crm.socket, ikigenba-crm.service stopped, disabled)
 unit: ok (removed ikigenba-crm.socket, ikigenba-crm.service)
 files: ok (removed /opt/crm/bin, etc, share, cache; kept state)
 nginx: ok (crm.sbx.ikigenba.dev removed)
+services: ok (crm removed)
 litestream: ok (state/crm.db removed)
 ```
 
@@ -775,6 +885,8 @@ Preconditions:
 - `crm` is installed, its socket is listening, and its service is `active`.
   Its manifest declares a
   `[database]` at `state/crm.db`, and `litestream.service` is replicating it.
+- `crm` shipped `share/icon.svg`, so `/var/lib/ikigenba/services.json` lists
+  it.
 
 Postconditions:
 
@@ -798,6 +910,8 @@ Postconditions:
   authenticator wiring from every other app's server block (`S5-nginx.md`), so
   each returns to fail-open. The `nginx:` line still reports only the
   uninstalled app's own name.
+- `/var/lib/ikigenba/services.json` has been rewritten and no longer lists
+  `crm`.
 - `/etc/litestream.yml` has been regenerated from the manifests left under
   `/opt` and no longer names `/opt/crm/state/crm.db`. Because the file
   changed, `litestream.service` was restarted. It was stopped after the
@@ -835,6 +949,7 @@ stop: ok (ikigenba-dashboard.socket, ikigenba-dashboard.service stopped, disable
 unit: ok (removed ikigenba-dashboard.socket, ikigenba-dashboard.service)
 files: ok (removed /opt/dashboard/bin, etc, share, cache; kept state)
 nginx: ok (dashboard.sbx.ikigenba.dev, sbx.ikigenba.dev removed)
+services: ok (unchanged)
 litestream: ok (unchanged)
 ```
 
@@ -844,11 +959,14 @@ Preconditions:
 
 - `dashboard` is installed, its manifest sets `default = true`, and it
   declares no database.
+- `dashboard` shipped no `share/icon.svg`, so
+  `/var/lib/ikigenba/services.json` does not list it.
 
 Postconditions:
 
 - `https://sbx.ikigenba.dev` and `https://dashboard.sbx.ikigenba.dev` both
   answer 404. The host has no default app until an install brings one.
+- `/var/lib/ikigenba/services.json` is byte for byte as it was.
 - `/etc/litestream.yml` is byte for byte as it was and `litestream.service`
   was not restarted.
 - `/opt/dashboard/` holds `state/` and nothing else.
@@ -1110,8 +1228,9 @@ Usage: opsctl disable APP
 
 Stop ikigenba-APP.socket and ikigenba-APP.service, socket first so no request
 starts the service again, and disable both, so neither starts at boot or on a
-request. The nginx configuration is then regenerated, so APP's names answer
-503 until it is enabled. Nothing on disk under /opt/APP/ changes.
+request. The nginx configuration and /var/lib/ikigenba/services.json are then
+regenerated, so APP's names answer 503 and the service launcher shows APP
+disabled until it is enabled. Nothing on disk under /opt/APP/ changes.
 'opsctl enable APP' undoes it.
 
 auth, the authenticator every other app is checked against, is never
@@ -1138,9 +1257,10 @@ Output:
 Usage: opsctl enable APP
 
 Enable ikigenba-APP.socket and ikigenba-APP.service and start the socket,
-regenerate the nginx configuration so APP's names reach it again, then start
-the service and report it as the last line of 'opsctl install' does. Nothing
-on disk under /opt/APP/ changes.
+regenerate the nginx configuration and /var/lib/ikigenba/services.json so
+APP's names reach it again and the service launcher shows it enabled, then
+start the service and report it as the last line of 'opsctl install' does.
+Nothing on disk under /opt/APP/ changes.
 
 Configuration keys:
   host.name  the fully-qualified name this host answers at
@@ -1170,6 +1290,7 @@ Output:
 ```
 stop: ok (ikigenba-crm.socket, ikigenba-crm.service stopped, disabled)
 nginx: ok (crm.sbx.ikigenba.dev disabled)
+services: ok (crm disabled)
 ```
 
 Exits 0. The lines are on stdout; stderr is empty. The `nginx` line names
@@ -1179,6 +1300,8 @@ Preconditions:
 
 - `crm` is installed, both its units are enabled, its socket is listening,
   and its service is `active`.
+- `crm` shipped `share/icon.svg`, so `/var/lib/ikigenba/services.json` lists
+  it as enabled.
 
 Postconditions:
 
@@ -1191,6 +1314,8 @@ Postconditions:
   `https://crm.sbx.ikigenba.dev` answers `503` (`S5-nginx.md`). Between the
   stop and the reload, a request found no socket and nginx answered it with
   an error of its own.
+- `/var/lib/ikigenba/services.json` has been rewritten and lists `crm` as not
+  enabled.
 - Both unit files and everything under `/opt/crm/` are as they were.
   `status` shows `crm v0.1.0 inactive disabled wal`.
 - No other app on the host has changed.
@@ -1208,18 +1333,21 @@ Output:
 ```
 enable: ok (ikigenba-crm.socket, ikigenba-crm.service)
 nginx: ok (crm.sbx.ikigenba.dev)
+services: ok (crm enabled)
 service: ok (crm v0.1.0 active)
 ```
 
 Exits 0. The lines are on stdout; stderr is empty. A service that will not
 come up is reported as `restart` reports it: `service: failed: crm: service
 failed to start` on stdout, `opsctl: enable failed` and the quoted journal on
-stderr, exit 1, with both units left enabled and nginx routing the app's names
-to its socket.
+stderr, exit 1, with both units left enabled, nginx routing the app's names
+to its socket, and `/var/lib/ikigenba/services.json` listing it as enabled.
 
 Preconditions:
 
 - `crm` is installed and both its units are disabled and inactive.
+- `crm` shipped `share/icon.svg`, so `/var/lib/ikigenba/services.json` lists
+  it as not enabled.
 
 Postconditions:
 
@@ -1228,8 +1356,11 @@ Postconditions:
   service is `active`. Both start at the next boot.
 - `/etc/nginx/conf.d/ikigenba.conf` has been regenerated and nginx reloaded:
   `https://crm.sbx.ikigenba.dev` reaches `crm` again.
+- `/var/lib/ikigenba/services.json` has been rewritten and lists `crm` as
+  enabled.
 - Nothing under `/opt/crm/` or `/etc/` was written other than systemd's own
-  enablement links and the nginx configuration.
+  enablement links and the nginx configuration. The only other file written
+  is `/var/lib/ikigenba/services.json`.
 - No other app on the host has changed.
 
 ## An operator disables an app that is already disabled, or enables one that is already enabled
@@ -1249,6 +1380,7 @@ Output:
 ```
 stop: ok (ikigenba-crm.socket, ikigenba-crm.service already inactive, disabled)
 nginx: ok (unchanged)
+services: ok (unchanged)
 ```
 
 Command:
@@ -1262,6 +1394,7 @@ Output:
 ```
 enable: ok (ikigenba-crm.socket, ikigenba-crm.service already enabled)
 nginx: ok (unchanged)
+services: ok (unchanged)
 service: ok (crm v0.1.0 active)
 ```
 
@@ -1280,7 +1413,8 @@ Postconditions:
 
 - Nothing has changed. No unit was enabled, disabled, started, or stopped,
   and nginx was not reloaded: the configuration it would have written is
-  byte for byte the one in place.
+  byte for byte the one in place. `/var/lib/ikigenba/services.json` is byte
+  for byte as it was.
 
 ## An operator tries to disable the authenticator
 
@@ -1311,8 +1445,9 @@ Preconditions:
 
 Postconditions:
 
-- Nothing has changed. Both of `auth`'s units are as they were, and nginx was
-  neither regenerated nor reloaded. `uninstall` remains the only way to take
+- Nothing has changed. Both of `auth`'s units are as they were, nginx was
+  neither regenerated nor reloaded, and `/var/lib/ikigenba/services.json` was
+  not rewritten. `uninstall` remains the only way to take
   the authenticator off the host.
 
 ## An operator disables or enables an app that is not installed
