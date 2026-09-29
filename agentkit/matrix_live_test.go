@@ -54,7 +54,7 @@ func liveMatrixRepresentativeCells() []liveMatrixCell {
 // R-FU3S-S1JS
 // R-FVBP-5TAH
 // R-CJRE-3H0I
-// R-FWJL-JL16
+// R-UD68-I6G1
 func TestLiveMatrix(t *testing.T) {
 	for _, cell := range liveMatrixRepresentativeCells() {
 		t.Run(fmt.Sprintf("%s/%s/1", cell.offering.ID, cell.authMode), func(t *testing.T) {
@@ -104,14 +104,14 @@ func runLiveMatrixCell(t *testing.T, cell liveMatrixCell) {
 	if err != nil {
 		t.Fatalf("endpoint: %v", err)
 	}
-	type echoInput struct {
-		Text string `json:"text" jsonschema:"required"`
+	type secretWordInput struct {
+		Topic string `json:"topic" jsonschema:"required"`
 	}
-	tool, err := NewTool("echo", "Return the text argument", func(_ context.Context, input echoInput) (string, error) {
-		return input.Text, nil
-	}, func(echoInput) Access { return BlocksNone() })
+	tool, err := NewTool("secret_word", "Find the secret word for a topic", func(context.Context, secretWordInput) (string, error) {
+		return "mango", nil
+	}, func(secretWordInput) Access { return BlocksNone() })
 	if err != nil {
-		t.Fatalf("echo tool: %v", err)
+		t.Fatalf("secret_word tool: %v", err)
 	}
 	var log bytes.Buffer
 	conversation, err := New(cell.offering.WireFormat, endpoint, cell.offering.WireModel, Config{
@@ -121,13 +121,13 @@ func runLiveMatrixCell(t *testing.T, cell liveMatrixCell) {
 	if err != nil {
 		t.Fatalf("conversation: %v", err)
 	}
-	stream := conversation.Send(context.Background(), Text{Text: `Call the echo tool with {"text":"pong"}, then answer with the single word: done`})
+	stream := conversation.Send(context.Background(), Text{Text: `What is the secret word for the topic "fruit"? Use the secret_word tool to find out, then tell me.`})
 	stage := 0
 	var callID string
 	for event := range stream.Events() {
 		switch event := event.(type) {
 		case ToolCall:
-			if stage == 0 && event.Use.Name == "echo" {
+			if stage == 0 && event.Use.Name == "secret_word" {
 				callID = event.Use.ID
 				stage = 1
 			}
@@ -138,7 +138,7 @@ func runLiveMatrixCell(t *testing.T, cell liveMatrixCell) {
 		case MessageDone:
 			if stage == 2 {
 				for _, block := range event.Message.Blocks {
-					if text, ok := block.(Text); ok && text.Text != "" {
+					if text, ok := block.(Text); ok && strings.Contains(strings.ToLower(text.Text), "mango") {
 						stage = 3
 					}
 				}
@@ -149,7 +149,7 @@ func runLiveMatrixCell(t *testing.T, cell liveMatrixCell) {
 		t.Fatalf("stream: %v", err)
 	}
 	if stage != 3 {
-		t.Fatal("turn lacked an echo ToolCall, its ToolReturn, and a subsequent MessageDone with text")
+		t.Fatal("turn lacked a secret_word ToolCall, its ToolReturn, and a subsequent MessageDone containing mango")
 	}
 	decoder := json.NewDecoder(&log)
 	usageRecords := 0
