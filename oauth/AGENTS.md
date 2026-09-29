@@ -86,11 +86,13 @@ skipped tests, no disabled linters laundering a failure.
 4. `GOOS=windows go vet ./...` — type-checks `internal/browser/browser_other.go`,
    the `!linux && !darwin` fallback
 5. `go test -race ./...`
-6. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run`
+6. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`
    — the cache lives in this worktree's git directory, so worktrees never
    share it (a shared `~/.cache/golangci-lint` keeps other worktrees' paths and
    stops applying `//nolint` and `.golangci.yml` suppressions; `make lint` runs
-   this form)
+   this form; since the cache is private, `--allow-parallel-runners` skips
+   golangci-lint's machine-wide lock so gates for several sub-projects can lint
+   at once)
 7. `make live` — **conditional**: run only when the phase's diff (the working
    tree against the last phase commit) adds or modifies a `*_live_test.go`
    file; otherwise it is not run and not counted. When it applies and a

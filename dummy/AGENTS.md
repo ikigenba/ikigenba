@@ -206,11 +206,13 @@ one; a finding it cannot fix, or believes is wrong, is filed as an issue.
    the release build: proves `cmd/dummy` builds static for the host without
    cgo, the way `devctl build` builds it
 4. `go test -race ./...`
-5. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run`
+5. `GOLANGCI_LINT_CACHE="$(git rev-parse --absolute-git-dir)/golangci-lint" golangci-lint run --allow-parallel-runners`
    — the cache lives in this worktree's git directory, so worktrees never
    share it (a shared `~/.cache/golangci-lint` keeps other worktrees' paths and
    stops applying `//nolint` and `.golangci.yml` suppressions; `make lint` runs
-   this form)
+   this form; since the cache is private, `--allow-parallel-runners` skips
+   golangci-lint's machine-wide lock so gates for several sub-projects can lint
+   at once)
 6. `make live` — **conditional**: run only when the phase's diff (the working
    tree against the last phase commit) adds or modifies a `*_live_test.go`
    file; otherwise it is not run and not counted. When it applies and a
