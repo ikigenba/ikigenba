@@ -12,14 +12,14 @@ import (
 )
 
 func TestAPI(t *testing.T) {
-	// R-GNAW-66A5 R-GOIS-JY0U R-GPQO-XPRJ R-GQYL-BHI8 R-GS6H-P98X R-GTEE-30ZM R-W4QW-UJZU R-GVU6-UKH0
+	// R-GNAW-66A5 R-GOIS-JY0U R-MSC2-VBSG R-GQYL-BHI8 R-GS6H-P98X R-GTEE-30ZM R-W4QW-UJZU R-GVU6-UKH0
 	status := StatusWorking
 	if status != "working" || StatusIdle != "idle" || StatusUnknown != "unknown" {
 		t.Fatal("status declarations have wrong values")
 	}
 	st := reflect.TypeFor[Session]()
-	wantFields := []string{"ID", "Status", "LastActive", "HasLastActive", "CWD", "Title"}
-	wantTypes := []reflect.Type{reflect.TypeFor[string](), reflect.TypeFor[Status](), reflect.TypeFor[time.Time](), reflect.TypeFor[bool](), reflect.TypeFor[string](), reflect.TypeFor[string]()}
+	wantFields := []string{"ID", "Status", "Started", "HasStarted", "LastActive", "HasLastActive", "CWD", "Title"}
+	wantTypes := []reflect.Type{reflect.TypeFor[string](), reflect.TypeFor[Status](), reflect.TypeFor[time.Time](), reflect.TypeFor[bool](), reflect.TypeFor[time.Time](), reflect.TypeFor[bool](), reflect.TypeFor[string](), reflect.TypeFor[string]()}
 	if st.NumField() != len(wantFields) {
 		t.Fatalf("Session has %d fields", st.NumField())
 	}

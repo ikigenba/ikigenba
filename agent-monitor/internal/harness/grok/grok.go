@@ -61,6 +61,7 @@ func List(root fs.FS, home string) ([]session.Session, error) {
 			continue
 		}
 		s := session.Session{ID: id, Status: session.StatusUnknown}
+		s.Started, s.HasStarted = jsonTimestamp(entry["opened_at"])
 		if cwd, valid := jsonString(entry["cwd"]); valid && cwd != "" {
 			s.CWD = cwd
 		} else {

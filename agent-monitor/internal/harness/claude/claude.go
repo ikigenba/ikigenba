@@ -55,6 +55,15 @@ func List(root fs.FS, home string) ([]session.Session, error) {
 			continue
 		}
 		s := session.Session{ID: id, Status: session.StatusUnknown}
+		if magnitude, ok := numberField(fields["startedAt"], true); ok {
+			text := strconv.FormatUint(magnitude, 10)
+			if bytes.HasPrefix(fields["startedAt"], []byte("-")) {
+				text = "-" + text
+			}
+			if millis, err := strconv.ParseInt(text, 10, 64); err == nil {
+				s.Started, s.HasStarted = time.UnixMilli(millis), true
+			}
+		}
 		if status, ok := stringField(fields["status"]); ok {
 			switch status {
 			case "busy":

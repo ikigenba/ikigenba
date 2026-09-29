@@ -25,6 +25,8 @@ const (
 type Session struct {
 	ID            string
 	Status        Status
+	Started       time.Time
+	HasStarted    bool
 	LastActive    time.Time
 	HasLastActive bool
 	CWD           string
@@ -74,14 +76,41 @@ func Table(sessions []Session) string {
 		return a.ID < b.ID
 	})
 
+	header, lines := TableRows(rows)
+	if len(lines) == 0 {
+		return header + "\n"
+	}
+	return header + "\n" + strings.Join(lines, "\n") + "\n"
+}
+
+// OrderByStart returns an independent copy ordered from oldest start to newest.
+func OrderByStart(sessions []Session) []Session {
+	rows := append([]Session{}, sessions...)
+	sort.SliceStable(rows, func(i, j int) bool {
+		a, b := rows[i], rows[j]
+		if a.HasStarted != b.HasStarted {
+			return a.HasStarted
+		}
+		if a.HasStarted {
+			if c := a.Started.Compare(b.Started); c != 0 {
+				return c < 0
+			}
+		}
+		return a.ID < b.ID
+	})
+	return rows
+}
+
+// TableRows renders the table header and rows in the supplied order.
+func TableRows(sessions []Session) (header string, rows []string) {
 	const columns = 5
-	header := [columns]string{"SESSION", "STATUS", "LAST ACTIVE", "CWD", "TITLE"}
+	heading := [columns]string{"SESSION", "STATUS", "LAST ACTIVE", "CWD", "TITLE"}
 	widths := [columns]int{}
-	for i, cell := range header {
+	for i, cell := range heading {
 		widths[i] = utf8.RuneCountInString(cell)
 	}
-	data := make([][columns]string, len(rows))
-	for i, s := range rows {
+	data := make([][columns]string, len(sessions))
+	for i, s := range sessions {
 		lastActive := "-"
 		if s.HasLastActive {
 			lastActive = s.LastActive.UTC().Format("2006-01-02T15:04:05Z")
@@ -107,9 +136,13 @@ func Table(sessions []Session) string {
 		}
 		out.WriteByte('\n')
 	}
-	writeRow(header)
-	for _, cells := range data {
+	writeRow(heading)
+	header = strings.TrimSuffix(out.String(), "\n")
+	rows = make([]string, len(data))
+	for i, cells := range data {
+		out.Reset()
 		writeRow(cells)
+		rows[i] = strings.TrimSuffix(out.String(), "\n")
 	}
-	return out.String()
+	return header, rows
 }

@@ -58,6 +58,9 @@ func List(root fs.FS, home string) ([]session.Session, error) {
 				records := logRecords(data)
 				if len(records) != 0 {
 					meta := firstMeta(records)
+					if stamp, parseErr := time.Parse(time.RFC3339Nano, stringField(meta, "timestamp")); parseErr == nil {
+						s.Started, s.HasStarted = stamp, true
+					}
 					if parentID(meta) != "" {
 						continue
 					}
