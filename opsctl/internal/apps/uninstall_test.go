@@ -14,7 +14,7 @@ import (
 )
 
 func TestUninstallAPISignatureAndCompleteDomainWorkflow(t *testing.T) {
-	// R-LONI-RKQN R-X6R5-769H
+	// R-LONI-RKQN R-V3TR-FMU7
 	want := reflect.TypeFor[func(context.Context, host.Env, string, apps.UninstallHooks) error]()
 	if got := reflect.TypeOf(apps.Uninstall); got != want {
 		t.Fatalf("Uninstall type = %v, want %v", got, want)
@@ -37,13 +37,18 @@ func TestUninstallAPISignatureAndCompleteDomainWorkflow(t *testing.T) {
 		{Name: "systemctl", Args: []string{"disable", "ikigenba-notes.socket", "ikigenba-notes.service"}},
 		{Name: "systemctl", Args: []string{"daemon-reload"}},
 	}
-	if !reflect.DeepEqual(fixture.commands, wantCommands) || len(configured) != 1 || configured[0].App != "notes" {
-		t.Fatalf("commands = %#v, configured = %#v", fixture.commands, configured)
+	if !reflect.DeepEqual(fixture.commands, wantCommands) || len(configured) != 1 || configured[0].App != "notes" ||
+		!reflect.DeepEqual(fixture.reports, []uninstallReport{
+			{"stop", "ikigenba-notes.socket, ikigenba-notes.service stopped, disabled", true},
+			{"unit", "removed ikigenba-notes.socket, ikigenba-notes.service", true},
+			{"files", "removed /opt/notes/bin, etc, share, cache; kept state", true},
+		}) {
+		t.Fatalf("commands = %#v, configured = %#v, reports = %#v", fixture.commands, configured, fixture.reports)
 	}
 }
 
 func TestUninstallRejectsEveryMissingPrerequisiteBeforeEffects(t *testing.T) {
-	// R-XRPS-FLUE
+	// R-XRPS-FLUE R-V69K-76BL
 	for _, test := range []struct {
 		name   string
 		mutate func(*testing.T, *uninstallFixture)
@@ -112,7 +117,7 @@ func TestUninstallRejectsUnreadableManifestBeforeEffects(t *testing.T) {
 
 func TestUninstallActionAndReportFailuresAreJoined(t *testing.T) {
 	// R-GWME-QK2L
-	// R-ETFY-8BTG R-VSZM-8WU4 R-VGSM-F7F6
+	// R-V51N-TEKW R-VGSM-F7F6 R-V69K-76BL
 	fixture := newUninstallFixture(t, "active")
 	actionErr := errors.New("stop transport failed")
 	reportErr := errors.New("report write failed")
@@ -136,6 +141,31 @@ func TestUninstallActionAndReportFailuresAreJoined(t *testing.T) {
 	if !errors.Is(err, actionErr) || !errors.Is(err, reportErr) || !errors.As(err, &commandErr) ||
 		commandErr.Label != "stop ikigenba-notes.socket" {
 		t.Fatalf("Uninstall error = %#v, command error = %#v", err, commandErr)
+	}
+}
+
+func TestUninstallConfigureFailurePreservesOwnedOutcomes(t *testing.T) {
+	// R-V69K-76BL
+	fixture := newUninstallFixture(t, "active")
+	configureErr := errors.New("configuration failed")
+	fixture.configure = func(_ context.Context, manifest apps.Manifest) error {
+		if manifest.App != "notes" {
+			t.Fatalf("configured manifest = %#v", manifest)
+		}
+		return configureErr
+	}
+	err := fixture.uninstall()
+	var failure *apps.LifecycleError
+	if !errors.As(err, &failure) || failure.Code != 1 || !errors.Is(err, configureErr) || fixture.configureCalls != 1 {
+		t.Fatalf("configure failure = %v, calls = %d", err, fixture.configureCalls)
+	}
+	want := []uninstallReport{
+		{"stop", "ikigenba-notes.socket, ikigenba-notes.service stopped, disabled", true},
+		{"unit", "removed ikigenba-notes.socket, ikigenba-notes.service", true},
+		{"files", "removed /opt/notes/bin, etc, share, cache; kept state", true},
+	}
+	if !reflect.DeepEqual(fixture.reports, want) {
+		t.Fatalf("reports after Configure failure = %#v, want %#v", fixture.reports, want)
 	}
 }
 

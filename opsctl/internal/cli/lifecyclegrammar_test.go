@@ -19,9 +19,10 @@ untouched, so APP is still a service the host backs up, and a later install
 lands over its data the way an install over a restore does. Removing state/ is
 a decision made by hand, never here.
 
-The nginx configuration and /etc/litestream.yml are regenerated from every app
-left on the host, so APP's name stops answering, and a database APP declared
-stops being replicated once litestream has shipped what it holds.
+The nginx configuration, /var/lib/ikigenba/services.json, and
+/etc/litestream.yml are regenerated from every app left on the host, so APP's
+name stops answering, APP leaves the service launcher, and a database APP
+declared stops being replicated once litestream has shipped what it holds.
 
 The parameter /<host.name>/APP is not touched: it is devctl's.
 
@@ -67,8 +68,9 @@ const wantDisableUsage = `Usage: opsctl disable APP
 
 Stop ikigenba-APP.socket and ikigenba-APP.service, socket first so no request
 starts the service again, and disable both, so neither starts at boot or on a
-request. The nginx configuration is then regenerated, so APP's names answer
-503 until it is enabled. Nothing on disk under /opt/APP/ changes.
+request. The nginx configuration and /var/lib/ikigenba/services.json are then
+regenerated, so APP's names answer 503 and the service launcher shows APP
+disabled until it is enabled. Nothing on disk under /opt/APP/ changes.
 'opsctl enable APP' undoes it.
 
 auth, the authenticator every other app is checked against, is never
@@ -82,9 +84,10 @@ Configuration keys:
 const wantEnableUsage = `Usage: opsctl enable APP
 
 Enable ikigenba-APP.socket and ikigenba-APP.service and start the socket,
-regenerate the nginx configuration so APP's names reach it again, then start
-the service and report it as the last line of 'opsctl install' does. Nothing
-on disk under /opt/APP/ changes.
+regenerate the nginx configuration and /var/lib/ikigenba/services.json so
+APP's names reach it again and the service launcher shows it enabled, then
+start the service and report it as the last line of 'opsctl install' does.
+Nothing on disk under /opt/APP/ changes.
 
 Configuration keys:
   host.name  the fully-qualified name this host answers at
@@ -92,7 +95,7 @@ Configuration keys:
 `
 
 func TestUninstallHelpIsExactAndHostIndependent(t *testing.T) {
-	// R-V9H8-4KZ0
+	// R-V062-ABM4
 	assertLifecycleHelp(t, "uninstall", wantUninstallUsage)
 }
 
@@ -107,12 +110,12 @@ func TestStatusHelpIsExactAndHostIndependent(t *testing.T) {
 }
 
 func TestDisableHelpIsExactAndHostIndependent(t *testing.T) {
-	// R-VD4X-9W73
+	// R-V1DY-O3CT
 	assertLifecycleHelp(t, "disable", wantDisableUsage)
 }
 
 func TestEnableHelpIsExactAndHostIndependent(t *testing.T) {
-	// R-VECT-NNXS
+	// R-V2LV-1V3I
 	assertLifecycleHelp(t, "enable", wantEnableUsage)
 }
 

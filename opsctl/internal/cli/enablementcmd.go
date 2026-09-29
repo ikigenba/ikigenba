@@ -9,14 +9,16 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 	"github.com/ikigenba/ikigenba/opsctl/internal/nginx"
+	"github.com/ikigenba/ikigenba/opsctl/internal/services"
 )
 
 const disableUsage = `Usage: opsctl disable APP
 
 Stop ikigenba-APP.socket and ikigenba-APP.service, socket first so no request
 starts the service again, and disable both, so neither starts at boot or on a
-request. The nginx configuration is then regenerated, so APP's names answer
-503 until it is enabled. Nothing on disk under /opt/APP/ changes.
+request. The nginx configuration and /var/lib/ikigenba/services.json are then
+regenerated, so APP's names answer 503 and the service launcher shows APP
+disabled until it is enabled. Nothing on disk under /opt/APP/ changes.
 'opsctl enable APP' undoes it.
 
 auth, the authenticator every other app is checked against, is never
@@ -30,9 +32,10 @@ Configuration keys:
 const enableUsage = `Usage: opsctl enable APP
 
 Enable ikigenba-APP.socket and ikigenba-APP.service and start the socket,
-regenerate the nginx configuration so APP's names reach it again, then start
-the service and report it as the last line of 'opsctl install' does. Nothing
-on disk under /opt/APP/ changes.
+regenerate the nginx configuration and /var/lib/ikigenba/services.json so
+APP's names reach it again and the service launcher shows it enabled, then
+start the service and report it as the last line of 'opsctl install' does.
+Nothing on disk under /opt/APP/ changes.
 
 Configuration keys:
   host.name  the fully-qualified name this host answers at
@@ -71,7 +74,18 @@ func runEnablement(action, app string, stdout, stderr io.Writer, deps Deps) exit
 			} else if action == "disable" {
 				detail += " disabled"
 			}
-			return report("nginx", detail, true)
+			if err := report("nginx", detail, true); err != nil {
+				return err
+			}
+			changes, err := services.Write(ctx, env, hostName)
+			if err != nil {
+				return reportLifecycleConfigurationFailure(report, "services", err)
+			}
+			serviceDetail := "unchanged"
+			if change := changes.For(manifest.App); change != services.Unchanged {
+				serviceDetail = manifest.App + " " + string(change)
+			}
+			return report("services", serviceDetail, true)
 		},
 	}
 	var err error

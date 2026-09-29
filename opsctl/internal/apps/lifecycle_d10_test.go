@@ -116,7 +116,7 @@ func (model *lifecycleModel) hooks() apps.LifecycleHooks {
 }
 
 func TestLifecycleDomainAPIsAndNameValidation(t *testing.T) {
-	// R-V0XX-G6S5 R-V71F-D1HM R-VGSM-F7F6
+	// R-UYY5-WJVF R-V71F-D1HM R-VGSM-F7F6
 	if reflect.TypeOf(apps.Disable) != reflect.TypeFor[func(context.Context, host.Env, string, apps.LifecycleHooks) error]() ||
 		reflect.TypeOf(apps.Enable) != reflect.TypeFor[func(context.Context, host.Env, string, apps.LifecycleHooks) error]() {
 		t.Fatal("domain lifecycle API signatures changed")
@@ -132,7 +132,7 @@ func TestLifecycleDomainAPIsAndNameValidation(t *testing.T) {
 }
 
 func TestLifecycleDomainHasNoCLIRoutingOrBackupDependency(t *testing.T) {
-	// R-V0XX-G6S5
+	// R-UYY5-WJVF
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
@@ -150,7 +150,7 @@ func TestLifecycleDomainHasNoCLIRoutingOrBackupDependency(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, forbidden := range []string{"/internal/cli", "/internal/nginx", "/internal/backup"} {
+			for _, forbidden := range []string{"/internal/cli", "/internal/nginx", "/internal/services", "/internal/backup"} {
 				if strings.HasSuffix(name, forbidden) {
 					t.Fatalf("apps file %s imports %s", file, name)
 				}
@@ -211,7 +211,7 @@ func TestDisableAuthRefusalPrecedesHostAccess(t *testing.T) {
 }
 
 func TestDisableOrderAndIdempotence(t *testing.T) {
-	// R-XVDH-KX2H R-VSZM-8WU4
+	// R-XVDH-KX2H
 	root := lifecycleRoot(t)
 	before := readRestartTree(t, root)
 	model := &lifecycleModel{socketActive: true, serviceActive: true, socketEnabled: true, serviceEnabled: true}
@@ -373,7 +373,7 @@ func TestAllLifecycleActionsRejectMissingAndUninstalledWithoutExecution(t *testi
 }
 
 func TestEnableFailureReportsJournalAndLeavesEnabledUnits(t *testing.T) {
-	// R-W0B0-JJAA R-VSZM-8WU4
+	// R-W0B0-JJAA
 	root := lifecycleRoot(t)
 	model := &lifecycleModel{version: "v5", failCommand: "systemctl start ikigenba-notes.service"}
 	err := apps.Enable(context.Background(), host.Env{Root: root, Execute: model.execute}, "notes", model.hooks())
@@ -394,7 +394,7 @@ func TestEnableFailureReportsJournalAndLeavesEnabledUnits(t *testing.T) {
 }
 
 func TestDisableAndEnableFailAtFirstStageForMissingUnit(t *testing.T) {
-	// R-VVFF-0GBI R-VSZM-8WU4
+	// R-VVFF-0GBI
 	for _, operation := range []struct {
 		name, step string
 		run        func(context.Context, host.Env, string, apps.LifecycleHooks) error

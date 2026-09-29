@@ -22,7 +22,7 @@ import (
 )
 
 func TestLifecyclePackageOwnership(t *testing.T) {
-	// R-V0XX-G6S5
+	// R-UYY5-WJVF
 	appsDirectory := filepath.Join("..", "apps")
 	err := filepath.WalkDir(appsDirectory, func(name string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -36,7 +36,7 @@ func TestLifecyclePackageOwnership(t *testing.T) {
 			return err
 		}
 		for _, imported := range parsed.Imports {
-			if strings.Contains(imported.Path.Value, "/internal/nginx") || strings.Contains(imported.Path.Value, "/internal/backup") ||
+			if strings.Contains(imported.Path.Value, "/internal/nginx") || strings.Contains(imported.Path.Value, "/internal/services") || strings.Contains(imported.Path.Value, "/internal/backup") ||
 				strings.Contains(imported.Path.Value, "/internal/cli") {
 				t.Errorf("%s has orchestration dependency %s", name, imported.Path.Value)
 			}
@@ -49,7 +49,7 @@ func TestLifecyclePackageOwnership(t *testing.T) {
 }
 
 func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
-	// R-V0XX-G6S5 R-M6Y0-I4V2 R-VLO7-YADY R-X6R5-769H
+	// R-UYY5-WJVF R-M6Y0-I4V2 R-VLO7-YADY R-V3TR-FMU7
 	root := uninstallCommandRoot(t, true)
 	var commands []host.Command
 	otherBefore := snapshotUninstallPaths(t, root, "opt/tasks", "etc/systemd/system/ikigenba-tasks.service")
@@ -71,7 +71,7 @@ func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
 			writeUninstallFile(t, root, "replicas/tasks/tasks.db", readUninstallFile(t, root, "opt/tasks/state/tasks.db"))
 			return host.Result{}, nil
 		default:
-			return host.Result{}, nil
+			return uninstallCommandResult(command), nil
 		}
 	}
 
@@ -80,6 +80,7 @@ func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
 		"unit: ok (removed ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"files: ok (removed /opt/notes/bin, etc, share, cache; kept state)\n" +
 		"nginx: ok (notes.example.test, example.test removed)\n" +
+		"services: ok (notes removed)\n" +
 		"litestream: ok (state/notes.db removed)\n"
 	if code != 0 || stdout != wantOutput || stderr != "" {
 		t.Fatalf("uninstall = exit %d stdout %q stderr %q", code, stdout, stderr)
@@ -95,7 +96,14 @@ func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
 		{Name: "systemctl", Args: []string{"show", "--property=LoadState", "--property=UnitFileState", "ikigenba-tasks.socket"}},
 		{Name: "nginx", Args: []string{"-t"}},
 		{Name: "systemctl", Args: []string{"reload-or-restart", "nginx"}},
+		{Name: "id", Args: []string{"--user", "ikigenba"}},
+		{Name: "useradd", Args: []string{"--system", "--no-create-home", "--shell", "/usr/sbin/nologin", "--user-group", "ikigenba"}},
+		{Name: "chown", Args: []string{"root:ikigenba", filepath.Join(root, "var/lib/ikigenba"), "<temporary services file>"}},
 		{Name: "systemctl", Args: []string{"restart", "litestream.service"}},
+	}
+	if len(commands) == len(wantCommands) && commands[11].Name == "chown" && len(commands[11].Args) == 3 &&
+		strings.HasPrefix(commands[11].Args[2], filepath.Join(root, "var/lib/ikigenba/.services-")) {
+		commands[11].Args[2] = "<temporary services file>"
 	}
 	if !reflect.DeepEqual(commands, wantCommands) {
 		t.Fatalf("commands = %#v, want %#v", commands, wantCommands)
@@ -173,7 +181,7 @@ func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
 }
 
 func TestUninstallReportsAllLitestreamConfigurationOutcomes(t *testing.T) {
-	// R-X6R5-769H
+	// R-V3TR-FMU7
 	for _, test := range []struct {
 		name        string
 		prepare     func(*testing.T, string)
@@ -215,7 +223,7 @@ func TestUninstallReportsAllLitestreamConfigurationOutcomes(t *testing.T) {
 				case reflect.DeepEqual(command.Args, []string{"restart", "litestream.service"}):
 					restarts++
 				}
-				return host.Result{}, nil
+				return uninstallCommandResult(command), nil
 			}})
 			wantOutcome := "litestream: ok (" + test.wantDetail + ")\n"
 			if code != 0 || stderr != "" || !strings.HasSuffix(stdout, wantOutcome) {
@@ -229,7 +237,7 @@ func TestUninstallReportsAllLitestreamConfigurationOutcomes(t *testing.T) {
 }
 
 func TestUninstallValidationPrecedesOwnedStopStage(t *testing.T) {
-	// R-VSZM-8WU4 R-VSZM-8WU4 R-XRPS-FLUE
+	// R-XRPS-FLUE R-V69K-76BL
 	for _, test := range []struct {
 		name       string
 		app        string
@@ -275,11 +283,11 @@ func TestUninstallValidationPrecedesOwnedStopStage(t *testing.T) {
 		if args[1] == "bad/name" {
 			wantCode = 2
 		}
-		wantStdout := ""
+		wantStdout, wantStderr := "", "opsctl: 'bad/name' is not a usable app name\n"
 		if args[1] == "notes" {
-			wantStdout = ""
+			wantStdout, wantStderr = "service: failed: no service 'notes'\n", "opsctl: restart failed\n"
 		}
-		if code != wantCode || stdout != wantStdout || stderr == "" || executed {
+		if code != wantCode || stdout != wantStdout || stderr != wantStderr || executed {
 			t.Fatalf("restart preflight %q = exit %d stdout %q stderr %q executed %t", args[1], code, stdout, stderr, executed)
 		}
 	}
@@ -407,7 +415,7 @@ func waitForUninstallConfigReaderClose(name string) error {
 }
 
 func TestUninstallNormalizesHostAndPreservesApexConfiguration(t *testing.T) {
-	// R-XRPS-FLUE R-X6R5-769H R-VLO7-YADY
+	// R-XRPS-FLUE R-V3TR-FMU7 R-VLO7-YADY
 	root := uninstallCommandRoot(t, true)
 	store := config.Store{Root: root}
 	if err := store.Set("host.name", "SBX.Example.Test."); err != nil {
@@ -421,7 +429,7 @@ func TestUninstallNormalizesHostAndPreservesApexConfiguration(t *testing.T) {
 		if reflect.DeepEqual(command.Args, []string{"is-active", "ikigenba-notes.service"}) {
 			return host.Result{Stdout: []byte("inactive\n"), ExitCode: 3}, nil
 		}
-		return host.Result{}, nil
+		return uninstallCommandResult(command), nil
 	}})
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "nginx: ok (notes.sbx.example.test, sbx.example.test, example.test removed)\n") {
 		t.Fatalf("uninstall = exit %d stdout %q stderr %q", code, stdout, stderr)
@@ -470,7 +478,7 @@ func TestUninstallRejectsConfiguredApexWithoutParentBeforeEffects(t *testing.T) 
 }
 
 func TestLifecycleFailureReportsStageOnceAndRetainsCause(t *testing.T) {
-	// R-ETFY-8BTG R-VRRP-V53F
+	// R-V51N-TEKW R-VRRP-V53F
 	root := uninstallCommandRoot(t, true)
 	var commands []host.Command
 	execute := func(_ context.Context, command host.Command) (host.Result, error) {
@@ -514,7 +522,7 @@ func TestLifecycleFailureReportsStageOnceAndRetainsCause(t *testing.T) {
 }
 
 func TestUninstallActionFailuresStopAtOwningStage(t *testing.T) {
-	// R-ETFY-8BTG R-VRRP-V53F R-VSZM-8WU4
+	// R-V51N-TEKW R-VRRP-V53F R-V69K-76BL
 	tests := []struct {
 		stage     string
 		wantSteps []string
@@ -523,7 +531,8 @@ func TestUninstallActionFailuresStopAtOwningStage(t *testing.T) {
 		{stage: "unit", wantSteps: []string{"stop: ok (", "unit: failed: "}},
 		{stage: "files", wantSteps: []string{"stop: ok (", "unit: ok (", "files: failed: "}},
 		{stage: "nginx", wantSteps: []string{"stop: ok (", "unit: ok (", "files: ok (", "nginx: failed: "}},
-		{stage: "litestream", wantSteps: []string{"stop: ok (", "unit: ok (", "files: ok (", "nginx: ok (", "litestream: failed: "}},
+		{stage: "services", wantSteps: []string{"stop: ok (", "unit: ok (", "files: ok (", "nginx: ok (", "services: failed: "}},
+		{stage: "litestream", wantSteps: []string{"stop: ok (", "unit: ok (", "files: ok (", "nginx: ok (", "services: ok (", "litestream: failed: "}},
 	}
 	for _, test := range tests {
 		t.Run(test.stage, func(t *testing.T) {
@@ -545,10 +554,12 @@ func TestUninstallActionFailuresStopAtOwningStage(t *testing.T) {
 					return host.Result{}, nil
 				case test.stage == "nginx" && command.Name == "nginx":
 					return host.Result{}, errors.New("nginx transport failed")
+				case test.stage == "services" && command.Name == "chown":
+					return host.Result{}, errors.New("services transport failed")
 				case test.stage == "litestream" && reflect.DeepEqual(command.Args, []string{"restart", "litestream.service"}):
 					return host.Result{}, errors.New("litestream transport failed")
 				default:
-					return host.Result{}, nil
+					return uninstallCommandResult(command), nil
 				}
 			}
 
@@ -574,8 +585,8 @@ func TestUninstallActionFailuresStopAtOwningStage(t *testing.T) {
 }
 
 func TestUninstallReportWriteFailuresAreNotRetried(t *testing.T) {
-	// R-ETFY-8BTG R-VRRP-V53F
-	for _, stage := range []string{"stop", "unit", "files", "nginx", "litestream"} {
+	// R-V51N-TEKW R-VRRP-V53F R-V69K-76BL
+	for _, stage := range []string{"stop", "unit", "files", "nginx", "services", "litestream"} {
 		t.Run(stage, func(t *testing.T) {
 			root := uninstallCommandRoot(t, true)
 			output := &failStepWriter{failStep: stage, err: errors.New("report output unavailable")}
@@ -589,7 +600,7 @@ func TestUninstallReportWriteFailuresAreNotRetried(t *testing.T) {
 					if reflect.DeepEqual(command.Args, []string{"is-active", "ikigenba-notes.service"}) {
 						return host.Result{Stdout: []byte("active\n")}, nil
 					}
-					return host.Result{}, nil
+					return uninstallCommandResult(command), nil
 				},
 			})
 			if code != 1 || output.failures != 1 || output.writesAfterFailure != 0 || diagnostic.String() != "opsctl: uninstall failed\n" {
@@ -605,7 +616,7 @@ func TestUninstallReportWriteFailuresAreNotRetried(t *testing.T) {
 				if got := readUninstallFile(t, root, "etc/nginx/conf.d/ikigenba.conf"); got != "old nginx\n" {
 					t.Fatalf("nginx changed after files report failure: %q", got)
 				}
-			case "nginx":
+			case "nginx", "services":
 				if got := readUninstallFile(t, root, "etc/litestream.yml"); got != "old litestream\n" {
 					t.Fatalf("litestream changed after nginx report failure: %q", got)
 				}
@@ -636,7 +647,7 @@ func TestUninstallWithoutStateDoesNotCreateDiscoverableService(t *testing.T) {
 		if reflect.DeepEqual(command.Args, []string{"is-active", "ikigenba-notes.service"}) {
 			return host.Result{Stdout: []byte("inactive\n"), ExitCode: 3}, nil
 		}
-		return host.Result{}, nil
+		return uninstallCommandResult(command), nil
 	}})
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "litestream: ok") {
 		t.Fatalf("uninstall = exit %d stdout %q stderr %q", code, stdout, stderr)
@@ -681,9 +692,17 @@ func uninstallCommandRoot(t *testing.T, state bool) string {
 	writeUninstallFile(t, root, "etc/systemd/system/ikigenba-tasks.socket", "other socket")
 	writeUninstallFile(t, root, "etc/nginx/conf.d/ikigenba.conf", "old nginx\n")
 	writeUninstallFile(t, root, "etc/litestream.yml", "old litestream\n")
+	writeUninstallFile(t, root, "var/lib/ikigenba/services.json", "{\n  \"services\": [\n    { \"name\": \"notes\", \"url\": \"https://notes.example.test\", \"icon\": \"notes\", \"enabled\": true }\n  ]\n}\n")
 	writeUninstallFile(t, root, "remote/parameters/notes", "owned by devctl")
 	writeUninstallFile(t, root, "remote/releases/notes.tar.xz", "deployment artifact")
 	return root
+}
+
+func uninstallCommandResult(command host.Command) host.Result {
+	if command.Name == "id" && reflect.DeepEqual(command.Args, []string{"--user", "ikigenba"}) {
+		return host.Result{ExitCode: 1}
+	}
+	return host.Result{}
 }
 
 func setUninstallConfig(t *testing.T, root string) {

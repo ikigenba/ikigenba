@@ -71,7 +71,7 @@ func TestEnablementConfigurationPrecedesHostEffects(t *testing.T) {
 }
 
 func TestEnablementFailedStagesStopLaterWork(t *testing.T) {
-	// R-W1IW-XB0Z
+	// R-V8PC-YPSZ
 	for _, test := range []struct {
 		action, failCommand, wantLast string
 		disabled                      bool
@@ -93,6 +93,12 @@ func TestEnablementFailedStagesStopLaterWork(t *testing.T) {
 				}
 				if command.Name == "nginx" {
 					controls = append(controls, "nginx test")
+					return host.Result{}, nil
+				}
+				if command.Name == "id" {
+					return host.Result{ExitCode: 1}, nil
+				}
+				if command.Name == "useradd" || command.Name == "chown" {
 					return host.Result{}, nil
 				}
 				if command.Name != "systemctl" {
@@ -126,7 +132,7 @@ func TestEnablementFailedStagesStopLaterWork(t *testing.T) {
 			lines := strings.Split(strings.TrimSuffix(stdout, "\n"), "\n")
 			wantLines := 1
 			if test.failCommand == "start ikigenba-notes.service" {
-				wantLines = 3
+				wantLines = 4
 			}
 			if code != 1 || len(lines) != wantLines || !strings.HasPrefix(lines[len(lines)-1], test.wantLast) ||
 				strings.Contains(stdout, "\r") || !strings.HasPrefix(stderr, "opsctl: "+test.action+" failed\n") {
@@ -135,7 +141,7 @@ func TestEnablementFailedStagesStopLaterWork(t *testing.T) {
 			if wantLines == 1 && (!strings.Contains(stdout, `blocked\r\nnow`) || len(controls) != 1) {
 				t.Fatalf("failed first stage continued or did not escape detail: %q %#v", stdout, controls)
 			}
-			if wantLines == 3 && (!strings.HasPrefix(lines[0], "enable: ok (") || !strings.HasPrefix(lines[1], "nginx: ok (") ||
+			if wantLines == 4 && (!strings.HasPrefix(lines[0], "enable: ok (") || !strings.HasPrefix(lines[1], "nginx: ok (") || lines[2] != "services: ok (unchanged)" ||
 				!strings.Contains(stderr, "\n\n> startup detail\n") || controls[len(controls)-1] != test.failCommand) {
 				t.Fatalf("service failure did not preserve completed stages and journal: %q %q %#v", stdout, stderr, controls)
 			}
@@ -144,13 +150,13 @@ func TestEnablementFailedStagesStopLaterWork(t *testing.T) {
 }
 
 func TestEnablementReportWriteFailureOccursOnce(t *testing.T) {
-	// R-W1IW-XB0Z
+	// R-V8PC-YPSZ
 	for _, test := range []struct {
 		action, failStep string
 		disabled         bool
 	}{
-		{"disable", "stop", false}, {"disable", "nginx", false},
-		{"enable", "enable", true}, {"enable", "nginx", true}, {"enable", "service", true},
+		{"disable", "stop", false}, {"disable", "nginx", false}, {"disable", "services", false},
+		{"enable", "enable", true}, {"enable", "nginx", true}, {"enable", "services", true}, {"enable", "service", true},
 	} {
 		t.Run(test.action+"/"+test.failStep, func(t *testing.T) {
 			root := enablementFailureRoot(t)
@@ -165,6 +171,12 @@ func TestEnablementReportWriteFailureOccursOnce(t *testing.T) {
 					}
 					if command.Name == "nginx" {
 						controls = append(controls, "nginx test")
+						return host.Result{}, nil
+					}
+					if command.Name == "id" {
+						return host.Result{ExitCode: 1}, nil
+					}
+					if command.Name == "useradd" || command.Name == "chown" {
 						return host.Result{}, nil
 					}
 					if command.Name != "systemctl" {
@@ -201,7 +213,7 @@ func TestEnablementReportWriteFailureOccursOnce(t *testing.T) {
 					}
 				}
 			}
-			if test.failStep == "nginx" {
+			if test.failStep == "nginx" || test.failStep == "services" {
 				for _, control := range controls {
 					if control == "start ikigenba-notes.service" {
 						t.Fatal("service started after nginx report failed")
@@ -209,6 +221,39 @@ func TestEnablementReportWriteFailureOccursOnce(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestEnablementServicesFailureStopsBeforeService(t *testing.T) {
+	// R-V7HG-KY2A R-V8PC-YPSZ
+	root := enablementFailureRoot(t)
+	var commands []host.Command
+	stdout, stderr, code := invoke([]string{"enable", "notes"}, cli.Deps{Root: root, EUID: 0,
+		Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+			commands = append(commands, command)
+			switch command.Name {
+			case "systemctl":
+				if len(command.Args) > 0 && command.Args[0] == "show" {
+					return host.Result{Stdout: []byte("LoadState=loaded\nActiveState=inactive\nUnitFileState=disabled\n")}, nil
+				}
+			case "id":
+				return host.Result{ExitCode: 1}, nil
+			case "chown":
+				return host.Result{}, errors.New("ownership\r\nfailed")
+			}
+			return host.Result{}, nil
+		}})
+	want := "enable: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
+		"nginx: ok (notes.sbx.example.test)\n" +
+		`services: failed: own services file: ownership\r\nfailed` + "\n"
+	if code != 1 || stdout != want || stderr != "opsctl: enable failed\n" {
+		t.Fatalf("services failure = exit %d stdout %q stderr %q", code, stdout, stderr)
+	}
+	for _, command := range commands {
+		if command.Name == "systemctl" && len(command.Args) > 0 && (command.Args[0] == "start" && command.Args[1] == "ikigenba-notes.service" || command.Args[0] == "is-active") ||
+			command.Name == filepath.Join(root, "opt/notes/bin/notes") {
+			t.Fatalf("service stage ran after services failure: %#v", command)
+		}
 	}
 }
 
@@ -233,7 +278,7 @@ func enablementFailureRoot(t *testing.T) string {
 }
 
 func TestEnablementStagesAndIdempotence(t *testing.T) {
-	// R-VZ34-5RJL R-W1IW-XB0Z R-W56M-2M92
+	// R-V7HG-KY2A R-V8PC-YPSZ R-A8TU-ROGW
 	root := t.TempDir()
 	store := config.Store{Root: root}
 	for key, value := range map[string]string{"host.name": "SBX.Example.Test.", "host.apex": "notes"} {
@@ -245,11 +290,13 @@ func TestEnablementStagesAndIdempotence(t *testing.T) {
 		"opt/notes/bin/notes":                       "binary",
 		"opt/notes/etc/manifest.toml":               "app = \"notes\"\ndefault = true\n",
 		"opt/notes/state/data":                      "preserved app data",
+		"opt/notes/share/icon.svg":                  "<svg/>",
 		"opt/tasks/state/data":                      "preserved sibling data",
 		"etc/systemd/system/ikigenba-notes.socket":  "socket",
 		"etc/systemd/system/ikigenba-notes.service": "service",
 		"etc/systemd/system/ikigenba-tasks.socket":  "sibling socket",
 		"etc/systemd/system/ikigenba-tasks.service": "sibling service",
+		"var/lib/ikigenba/services.json":            "{\n  \"services\": [\n    { \"name\": \"notes\", \"url\": \"https://notes.sbx.example.test\", \"icon\": \"<svg/>\", \"enabled\": true }\n  ]\n}\n",
 	} {
 		full := filepath.Join(root, filepath.FromSlash(path))
 		if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
@@ -280,12 +327,20 @@ func TestEnablementStagesAndIdempotence(t *testing.T) {
 
 	disabled, socketActive, serviceActive := false, true, true
 	var controls []string
+	var serviceWrites int
 	execute := func(_ context.Context, command host.Command) (host.Result, error) {
 		if command.Name == filepath.Join(root, "opt/notes/bin/notes") && reflect.DeepEqual(command.Args, []string{"--version"}) {
 			return host.Result{Stdout: []byte("v2.3.4\n")}, nil
 		}
 		if command.Name == "nginx" {
 			controls = append(controls, "nginx test")
+			return host.Result{}, nil
+		}
+		if command.Name == "id" {
+			serviceWrites++
+			return host.Result{ExitCode: 1}, nil
+		}
+		if command.Name == "useradd" || command.Name == "chown" {
 			return host.Result{}, nil
 		}
 		if command.Name != "systemctl" {
@@ -332,19 +387,22 @@ func TestEnablementStagesAndIdempotence(t *testing.T) {
 	}
 	deps := cli.Deps{Root: root, EUID: 0, Execute: execute}
 	var priorConfig os.FileInfo
+	var priorServices os.FileInfo
+	servicesFile := filepath.Join(root, "var/lib/ikigenba/services.json")
 	for _, test := range []struct {
 		action, want string
 		wantControls []string
 	}{
-		{"disable", "stop: ok (ikigenba-notes.socket, ikigenba-notes.service stopped, disabled)\nnginx: ok (notes.sbx.example.test, sbx.example.test, example.test disabled)\n", []string{"stop ikigenba-notes.socket", "stop ikigenba-notes.service", "disable ikigenba-notes.socket ikigenba-notes.service", "nginx test", "reload-or-restart nginx"}},
-		{"disable", "stop: ok (ikigenba-notes.socket, ikigenba-notes.service already inactive, disabled)\nnginx: ok (unchanged)\n", nil},
-		{"enable", "enable: ok (ikigenba-notes.socket, ikigenba-notes.service)\nnginx: ok (notes.sbx.example.test, sbx.example.test, example.test)\nservice: ok (notes v2.3.4 active)\n", []string{"enable ikigenba-notes.socket ikigenba-notes.service", "start ikigenba-notes.socket", "nginx test", "reload-or-restart nginx", "start ikigenba-notes.service"}},
-		{"enable", "enable: ok (ikigenba-notes.socket, ikigenba-notes.service already enabled)\nnginx: ok (unchanged)\nservice: ok (notes v2.3.4 active)\n", nil},
+		{"disable", "stop: ok (ikigenba-notes.socket, ikigenba-notes.service stopped, disabled)\nnginx: ok (notes.sbx.example.test, sbx.example.test, example.test disabled)\nservices: ok (notes disabled)\n", []string{"stop ikigenba-notes.socket", "stop ikigenba-notes.service", "disable ikigenba-notes.socket ikigenba-notes.service", "nginx test", "reload-or-restart nginx"}},
+		{"disable", "stop: ok (ikigenba-notes.socket, ikigenba-notes.service already inactive, disabled)\nnginx: ok (unchanged)\nservices: ok (unchanged)\n", nil},
+		{"enable", "enable: ok (ikigenba-notes.socket, ikigenba-notes.service)\nnginx: ok (notes.sbx.example.test, sbx.example.test, example.test)\nservices: ok (notes enabled)\nservice: ok (notes v2.3.4 active)\n", []string{"enable ikigenba-notes.socket ikigenba-notes.service", "start ikigenba-notes.socket", "nginx test", "reload-or-restart nginx", "start ikigenba-notes.service"}},
+		{"enable", "enable: ok (ikigenba-notes.socket, ikigenba-notes.service already enabled)\nnginx: ok (unchanged)\nservices: ok (unchanged)\nservice: ok (notes v2.3.4 active)\n", nil},
 	} {
 		controls = nil
+		serviceWrites = 0
 		stdout, stderr, code := invoke([]string{test.action, "notes"}, deps)
-		if code != 0 || stdout != test.want || stderr != "" || !reflect.DeepEqual(controls, test.wantControls) {
-			t.Fatalf("%s = exit %d stdout %q stderr %q controls %#v, want %#v", test.action, code, stdout, stderr, controls, test.wantControls)
+		if code != 0 || stdout != test.want || stderr != "" || serviceWrites != 1 || !reflect.DeepEqual(controls, test.wantControls) {
+			t.Fatalf("%s = exit %d stdout %q stderr %q services writes %d controls %#v, want %#v", test.action, code, stdout, stderr, serviceWrites, controls, test.wantControls)
 		}
 		currentConfig, err := os.Stat(file)
 		if err != nil {
@@ -354,6 +412,14 @@ func TestEnablementStagesAndIdempotence(t *testing.T) {
 			t.Fatalf("%s idempotent rerun republished nginx configuration", test.action)
 		}
 		priorConfig = currentConfig
+		currentServices, err := os.Stat(servicesFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(test.wantControls) == 0 && (priorServices == nil || !os.SameFile(priorServices, currentServices)) {
+			t.Fatalf("%s idempotent rerun republished services file", test.action)
+		}
+		priorServices = currentServices
 		if preservedAfter := snapshotUninstallPaths(t, root, preservedPaths...); !reflect.DeepEqual(preservedAfter, preservedBefore) {
 			t.Fatalf("%s changed app files, sibling files, or store", test.action)
 		}
@@ -374,11 +440,12 @@ func TestEnablementStagesAndIdempotence(t *testing.T) {
 		t.Fatal(err)
 	}
 	controls = nil
+	serviceWrites = 0
 	stdout, stderr, code := invoke([]string{"enable", "notes"}, deps)
 	if code != 1 || !strings.HasPrefix(stdout,
 		"enable: ok (ikigenba-notes.socket, ikigenba-notes.service)\nnginx: failed: ") ||
 		!strings.HasSuffix(stdout, "\n") || stderr != "opsctl: enable failed\n" ||
-		!reflect.DeepEqual(controls, []string{"enable ikigenba-notes.socket ikigenba-notes.service", "start ikigenba-notes.socket"}) {
+		serviceWrites != 0 || !reflect.DeepEqual(controls, []string{"enable ikigenba-notes.socket ikigenba-notes.service", "start ikigenba-notes.socket"}) {
 		t.Fatalf("failed nginx stage = exit %d stdout %q stderr %q controls %#v", code, stdout, stderr, controls)
 	}
 }

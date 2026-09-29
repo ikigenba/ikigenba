@@ -12,6 +12,7 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 	"github.com/ikigenba/ikigenba/opsctl/internal/nginx"
+	"github.com/ikigenba/ikigenba/opsctl/internal/services"
 )
 
 const restartUsage = `Usage: opsctl restart APP
@@ -37,9 +38,10 @@ untouched, so APP is still a service the host backs up, and a later install
 lands over its data the way an install over a restore does. Removing state/ is
 a decision made by hand, never here.
 
-The nginx configuration and /etc/litestream.yml are regenerated from every app
-left on the host, so APP's name stops answering, and a database APP declared
-stops being replicated once litestream has shipped what it holds.
+The nginx configuration, /var/lib/ikigenba/services.json, and
+/etc/litestream.yml are regenerated from every app left on the host, so APP's
+name stops answering, APP leaves the service launcher, and a database APP
+declared stops being replicated once litestream has shipped what it holds.
 
 The parameter /<host.name>/APP is not touched: it is devctl's.
 
@@ -114,15 +116,6 @@ func runUninstall(app string, stdout, stderr io.Writer, deps Deps) exitCode {
 	return exitFail
 }
 
-func restartPreflightFailure(message, app string) bool {
-	switch message {
-	case "no service '" + app + "'", app + " is not installed", "inspect service failed", "inspect installed app failed", "invalid service layout", "invalid installation layout", "restart failed":
-		return true
-	default:
-		return false
-	}
-}
-
 func configureUninstalledApp(
 	ctx context.Context,
 	env host.Env,
@@ -147,6 +140,17 @@ func configureUninstalledApp(
 		return reportLifecycleConfigurationFailure(report, "nginx", err)
 	}
 	if err := report("nginx", names+" removed", true); err != nil {
+		return err
+	}
+	changes, err := services.Write(ctx, env, hostName)
+	if err != nil {
+		return reportLifecycleConfigurationFailure(report, "services", err)
+	}
+	serviceDetail := "unchanged"
+	if change := changes.For(manifest.App); change != services.Unchanged {
+		serviceDetail = manifest.App + " " + string(change)
+	}
+	if err := report("services", serviceDetail, true); err != nil {
 		return err
 	}
 
@@ -212,10 +216,6 @@ func runRestart(app string, stdout, stderr io.Writer, deps Deps) exitCode {
 	if !errors.As(err, &failure) {
 		writeDiagnostic(stderr, err)
 		return exitFail
-	}
-	if restartPreflightFailure(failure.Message, app) {
-		writeDiagnostic(stderr, failure)
-		return exitCode(failure.Code)
 	}
 	detail := strings.NewReplacer("\r", `\r`, "\n", `\n`).Replace(failure.Message)
 	_, reportErr := io.WriteString(stdout, "service: failed: "+detail+"\n")

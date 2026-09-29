@@ -128,21 +128,22 @@ func TestRestartReportsDisabledServiceWithoutStartingIt(t *testing.T) {
 
 func TestRestartCommandValidationPrecedesServiceStage(t *testing.T) {
 	for _, test := range []struct {
-		name string
-		app  string
-		root func(*testing.T) string
-		want string
-		code int
+		name       string
+		app        string
+		root       func(*testing.T) string
+		wantStdout string
+		wantStderr string
+		code       int
 	}{
-		{name: "invalid", app: "bad/name", root: func(t *testing.T) string { return filepath.Join(t.TempDir(), "missing") }, want: "opsctl: 'bad/name' is not a usable app name\n", code: 2},
-		{name: "missing", app: "notes", root: func(t *testing.T) string { return t.TempDir() }, want: "opsctl: no service 'notes'\n", code: 1},
+		{name: "invalid", app: "bad/name", root: func(t *testing.T) string { return filepath.Join(t.TempDir(), "missing") }, wantStderr: "opsctl: 'bad/name' is not a usable app name\n", code: 2},
+		{name: "missing", app: "notes", root: func(t *testing.T) string { return t.TempDir() }, wantStdout: "service: failed: no service 'notes'\n", wantStderr: "opsctl: restart failed\n", code: 1},
 		{name: "binary missing", app: "notes", root: func(t *testing.T) string {
 			root := t.TempDir()
 			if err := os.MkdirAll(filepath.Join(root, "opt/notes/etc"), 0o750); err != nil {
 				t.Fatal(err)
 			}
 			return root
-		}, want: "opsctl: notes is not installed\n", code: 1},
+		}, wantStdout: "service: failed: notes is not installed\n", wantStderr: "opsctl: restart failed\n", code: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			executed := false
@@ -150,8 +151,7 @@ func TestRestartCommandValidationPrecedesServiceStage(t *testing.T) {
 				executed = true
 				return host.Result{}, nil
 			}})
-			wantStdout, wantStderr := "", test.want
-			if code != test.code || stdout != wantStdout || stderr != wantStderr || executed {
+			if code != test.code || stdout != test.wantStdout || stderr != test.wantStderr || executed {
 				t.Fatalf("preflight = exit %d stdout %q stderr %q executed %t", code, stdout, stderr, executed)
 			}
 		})

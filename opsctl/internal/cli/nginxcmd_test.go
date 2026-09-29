@@ -349,6 +349,9 @@ func TestEnablementUpdatesNginxOnlyWhenRenderedBytesChange(t *testing.T) {
 			}
 			var reloads []host.Command
 			execute := func(_ context.Context, command host.Command) (host.Result, error) {
+				if command.Name == "id" && reflect.DeepEqual(command.Args, []string{"--user", "ikigenba"}) {
+					return host.Result{ExitCode: 1}, nil
+				}
 				if command.Name == "nginx" || (command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"reload-or-restart", "nginx"})) {
 					reloads = append(reloads, command)
 				}
