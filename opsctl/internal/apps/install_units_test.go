@@ -20,7 +20,7 @@ import (
 )
 
 func TestInstallPublishesAndEnablesRootedAppUnit(t *testing.T) {
-	// R-UL38-H654 R-EN8B-K8GR R-UJVC-3EEF R-UMB4-UXVT
+	// R-USUN-ZP5Y R-EN8B-K8GR R-UJVC-3EEF R-UMB4-UXVT
 	root := t.TempDir()
 	statePath := filepath.Join(root, "opt", "notes", "state", "db")
 	cachePath := filepath.Join(root, "opt", "notes", "cache", "item")
@@ -84,7 +84,7 @@ func TestInstallPublishesAndEnablesRootedAppUnit(t *testing.T) {
 }
 
 func TestInstallRequiresExpectedExistingAccountGroup(t *testing.T) {
-	// R-UL38-H654
+	// R-USUN-ZP5Y
 	fixture := newCompletedInstallFixture(t, t.TempDir(), false)
 	if err := fixture.run(); err != nil {
 		t.Fatal(err)
@@ -105,26 +105,16 @@ func TestInstallRequiresExpectedExistingAccountGroup(t *testing.T) {
 		t.Fatalf("reports = %#v, Configure calls = %d", wrongGroup.reports, wrongGroup.configureCalls)
 	}
 
-	loginShell := newCompletedInstallFixture(t, t.TempDir(), false)
-	loginShell.accountShell = "/bin/bash"
-	err = loginShell.run()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loginShell.accountShell != "/usr/sbin/nologin" {
-		t.Fatalf("account shell = %q, want /usr/sbin/nologin", loginShell.accountShell)
-	}
-	wantLoginCommands := completedInstallCommands(loginShell.root, false)
-	wantLoginCommands = append(wantLoginCommands[:6], append([]commandCall{
-		{"usermod", []string{"--shell", "/usr/sbin/nologin", "ikigenba"}},
-	}, wantLoginCommands[6:]...)...)
-	if !reflect.DeepEqual(loginShell.commands, wantLoginCommands) {
-		t.Fatalf("commands = %#v, want %#v", loginShell.commands, wantLoginCommands)
+	// EnsureAccount accepts an existing account without additional inspection.
+	for _, command := range fixture.commands {
+		if command.name == "getent" || command.name == "usermod" {
+			t.Fatalf("extra account inspection: %#v", fixture.commands)
+		}
 	}
 }
 
 func TestInstallRejectsRootServiceAccount(t *testing.T) {
-	// R-UL38-H654
+	// R-USUN-ZP5Y
 	fixture := newCompletedInstallFixture(t, t.TempDir(), false)
 	fixture.accountUID = "0"
 	err := fixture.run()
@@ -451,7 +441,7 @@ func TestInstallReportsUnitFailureBeforeConfiguration(t *testing.T) {
 			if got := fixture.reports[len(fixture.reports)-1]; got.step != "unit" || got.success {
 				t.Fatalf("reports = %#v", fixture.reports)
 			}
-			wantCommands := completedInstallCommands(fixture.root, false)[:10]
+			wantCommands := completedInstallCommands(fixture.root, false)[:9]
 			if action == "enable" {
 				wantCommands = append(wantCommands, commandCall{"systemctl", []string{"enable", "ikigenba-notes.service"}})
 			}
@@ -463,7 +453,7 @@ func TestInstallReportsUnitFailureBeforeConfiguration(t *testing.T) {
 }
 
 func TestInstallConfiguresOnceBeforeActivation(t *testing.T) {
-	// R-XMU6-WIVM
+	// R-UU2K-DGWN
 	fixture := newCompletedInstallFixture(t, t.TempDir(), false)
 	configureAt := -1
 	fixture.configure = func(_ context.Context, manifest apps.Manifest) error {
@@ -493,7 +483,7 @@ func TestInstallConfiguresOnceBeforeActivation(t *testing.T) {
 	if !errors.Is(err, stop) || failed.configureCalls != 1 {
 		t.Fatalf("error = %v, Configure calls = %d", err, failed.configureCalls)
 	}
-	wantFailedCommands := completedInstallCommands(failed.root, false)[:12]
+	wantFailedCommands := completedInstallCommands(failed.root, false)[:11]
 	if !reflect.DeepEqual(failed.commands, wantFailedCommands) {
 		t.Fatalf("commands = %#v, want %#v", failed.commands, wantFailedCommands)
 	}
@@ -544,7 +534,7 @@ func TestInstallReplacesDisabledUnitsWithoutActivation(t *testing.T) {
 		"[Install]\nWantedBy=multi-user.target\n"
 	assertFile(t, socketPath, wantSocket)
 	assertFile(t, servicePath, wantService)
-	wantCommands := completedInstallCommands(root, false)[:10]
+	wantCommands := completedInstallCommands(root, false)[:9]
 	wantCommands = append(wantCommands, commandCall{filepath.Join(appRoot, "bin", "notes"), []string{"--version"}})
 	if !reflect.DeepEqual(fixture.commands, wantCommands) {
 		t.Fatalf("commands = %#v, want %#v", fixture.commands, wantCommands)
@@ -571,7 +561,7 @@ func TestInstallActivationFailureObtainsJournal(t *testing.T) {
 	if !reflect.DeepEqual(fixture.reports, wantReports) {
 		t.Fatalf("reports = %#v, want %#v", fixture.reports, wantReports)
 	}
-	wantStartFailureCommands := completedInstallCommands(fixture.root, false)[:13]
+	wantStartFailureCommands := completedInstallCommands(fixture.root, false)[:12]
 	wantStartFailureCommands = append(wantStartFailureCommands,
 		commandCall{"journalctl", []string{"--unit", "ikigenba-notes.service", "--no-pager", "--lines", "50"}})
 	if !reflect.DeepEqual(fixture.commands, wantStartFailureCommands) {
@@ -581,7 +571,7 @@ func TestInstallActivationFailureObtainsJournal(t *testing.T) {
 	fixture = newCompletedInstallFixture(t, t.TempDir(), false)
 	fixture.resultingInactive = true
 	err = fixture.run()
-	wantInactiveCommands := completedInstallCommands(fixture.root, false)[:14]
+	wantInactiveCommands := completedInstallCommands(fixture.root, false)[:13]
 	wantInactiveCommands = append(wantInactiveCommands,
 		commandCall{"journalctl", []string{"--unit", "ikigenba-notes.service", "--no-pager", "--lines", "50"}})
 	if !errors.As(err, &failure) || failure.Message != "notes: service failed to start" ||
@@ -620,7 +610,6 @@ type completedInstallFixture struct {
 	unitFailureAction        string
 	accountUID               string
 	accountGroup             string
-	accountShell             string
 	archive                  []byte
 	ownershipFailure         error
 	removeTreeAfterOwnership bool
@@ -643,7 +632,7 @@ func newCompletedInstallFixture(t *testing.T, root string, active bool) *complet
 	t.Helper()
 	return &completedInstallFixture{
 		t: t, root: root, initiallyActive: active,
-		accountUID: "998", accountGroup: "ikigenba", accountShell: "/usr/sbin/nologin",
+		accountUID: "998", accountGroup: "ikigenba",
 	}
 }
 
@@ -705,14 +694,6 @@ func (fixture *completedInstallFixture) execute(_ context.Context, command host.
 			return host.Result{Stdout: []byte(fixture.accountGroup + "\n")}, nil
 		}
 		return host.Result{Stdout: []byte(fixture.accountUID + "\n")}, nil
-	case "getent":
-		return host.Result{Stdout: []byte("ikigenba:x:" + fixture.accountUID + ":998::/nonexistent:" + fixture.accountShell + "\n")}, nil
-	case "usermod":
-		if !reflect.DeepEqual(command.Args, []string{"--shell", "/usr/sbin/nologin", "ikigenba"}) {
-			fixture.t.Fatalf("usermod args = %#v", command.Args)
-		}
-		fixture.accountShell = "/usr/sbin/nologin"
-		return host.Result{}, nil
 	case "systemctl":
 		switch command.Args[0] {
 		case "show":
@@ -856,7 +837,6 @@ func completedInstallCommands(root string, initiallyActive bool) []commandCall {
 		{"systemctl", []string{"show", "--property=LoadState", "--property=UnitFileState", "ikigenba-notes.socket"}},
 		{"chown", []string{"root:root", filepath.Join(root, "opt")}},
 		{"id", []string{"--user", "ikigenba"}},
-		{"getent", []string{"passwd", "ikigenba"}},
 		{"id", []string{"--group", "--name", "ikigenba"}},
 		{"chown", []string{"ikigenba:ikigenba", appRoot}},
 		{"chown", []string{"--recursive", "root:ikigenba", filepath.Join(appRoot, "bin"), filepath.Join(appRoot, "etc")}},

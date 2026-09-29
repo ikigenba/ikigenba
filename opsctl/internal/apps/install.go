@@ -229,10 +229,11 @@ func (artifact *inspectedArtifact) hasTopLevel(name string) bool {
 }
 
 type archiveEntry struct {
-	name string
-	mode fs.FileMode
-	data []byte
-	dir  bool
+	name     string
+	mode     fs.FileMode
+	data     []byte
+	dir      bool
+	typeflag byte
 }
 
 func failInstallStage(hooks InstallHooks, step string, failure *stageFailure) error {
@@ -359,6 +360,9 @@ func inspectArtifact(ctx context.Context, env host.Env, artifact []byte, basenam
 	if failure := requireAppExecutable(entries, manifest, basename); failure != nil {
 		return nil, failure
 	}
+	if err := checkArchiveIcon(entries); err != nil {
+		return nil, &stageFailure{code: 2, detail: err.Error(), cause: err}
+	}
 	return &inspectedArtifact{basename: basename, manifest: manifest, entries: entries}, nil
 }
 
@@ -450,7 +454,7 @@ func validateArchive(data []byte) ([]archiveEntry, []byte, error) {
 		if name == "etc/env" {
 			return nil, nil, errors.New("archive path etc/env is reserved for generated environment")
 		}
-		entry := archiveEntry{name: name, mode: header.FileInfo().Mode()}
+		entry := archiveEntry{name: name, mode: header.FileInfo().Mode(), typeflag: header.Typeflag}
 		switch header.Typeflag {
 		case tar.TypeDir:
 			entry.dir = true
@@ -460,7 +464,9 @@ func validateArchive(data []byte) ([]archiveEntry, []byte, error) {
 				return nil, nil, fmt.Errorf("truncated archive while reading %s: %w", safeDiagnosticToken(name), err)
 			}
 		default:
-			return nil, nil, fmt.Errorf("archive path %s is not a regular file or directory", safeDiagnosticToken(name))
+			if !iconArchivePath(name) {
+				return nil, nil, fmt.Errorf("archive path %s is not a regular file or directory", safeDiagnosticToken(name))
+			}
 		}
 		seen[name] = entry.dir
 		if !strings.Contains(name, "/") && !entry.dir {
@@ -475,7 +481,7 @@ func validateArchive(data []byte) ([]archiveEntry, []byte, error) {
 		entries = append(entries, entry)
 	}
 	for name, directory := range seen {
-		if directory {
+		if directory || iconArchivePath(name) {
 			continue
 		}
 		for other := range seen {
@@ -485,6 +491,30 @@ func validateArchive(data []byte) ([]archiveEntry, []byte, error) {
 		}
 	}
 	return entries, manifest, nil
+}
+
+func iconArchivePath(name string) bool {
+	return name == IconPath || strings.HasPrefix(name, IconPath+"/")
+}
+
+func checkArchiveIcon(entries []archiveEntry) error {
+	var icon *archiveEntry
+	for index := range entries {
+		entry := &entries[index]
+		if strings.HasPrefix(entry.name, IconPath+"/") {
+			return ErrIconNotSVG
+		}
+		if entry.name == IconPath {
+			icon = entry
+		}
+	}
+	if icon == nil {
+		return nil
+	}
+	if icon.typeflag != tar.TypeReg && icon.typeflag != 0 {
+		return ErrIconNotSVG
+	}
+	return CheckIcon(icon.data)
 }
 
 func validateArchivePath(name string) (string, error) {
@@ -597,7 +627,7 @@ func validateEnvironment(manifest Manifest, secrets map[string]string) error {
 		if !validEnvironmentName(name) {
 			return fmt.Errorf("%s: invalid secret name %q", safeDiagnosticToken(manifest.App), name)
 		}
-		if name == "DRAIN_SECONDS" || name == "PORT" {
+		if name == "DRAIN_SECONDS" || name == ServicesEnv || name == "PORT" {
 			return fmt.Errorf("%s: secret name %s is reserved", safeDiagnosticToken(manifest.App), name)
 		}
 		secretSet[name] = struct{}{}
@@ -609,7 +639,7 @@ func validateEnvironment(manifest Manifest, secrets map[string]string) error {
 		if !validEnvironmentName(name) {
 			return fmt.Errorf("%s: invalid setting name %q", safeDiagnosticToken(manifest.App), name)
 		}
-		if name == "DRAIN_SECONDS" || name == "PORT" {
+		if name == "DRAIN_SECONDS" || name == ServicesEnv || name == "PORT" {
 			return fmt.Errorf("%s: setting name %s is reserved", safeDiagnosticToken(manifest.App), name)
 		}
 		if _, overlap := secretSet[name]; overlap {
@@ -659,6 +689,7 @@ func renderEnvironment(manifest Manifest, secrets map[string]string, drainSecond
 	output.WriteString("DRAIN_SECONDS=")
 	output.WriteString(strconv.FormatInt(drainSeconds, 10))
 	output.WriteByte('\n')
+	output.WriteString(ServicesEnv + "=" + ServicesPath + "\n")
 	return []byte(output.String())
 }
 
@@ -817,7 +848,7 @@ func unpackFailure(err error) *stageFailure {
 
 func publishAppUnit(ctx context.Context, env host.Env, artifact *inspectedArtifact, stopSeconds int64) *stageFailure {
 	manifest := artifact.manifest
-	if err := ensureServiceAccount(ctx, env); err != nil {
+	if err := EnsureAccount(ctx, env); err != nil {
 		return operationalFailure(err)
 	}
 
@@ -856,65 +887,6 @@ func publishAppUnit(ctx context.Context, env host.Env, artifact *inspectedArtifa
 		}); err != nil {
 			return operationalFailure(err)
 		}
-	}
-	return nil
-}
-
-func ensureServiceAccount(ctx context.Context, env host.Env) error {
-	uid, err := inspectServiceAccount(ctx, env)
-	if err == nil {
-		if uid == 0 {
-			return errors.New("ikigenba account must not be root")
-		}
-		if err := ensureServiceAccountShell(ctx, env); err != nil {
-			return err
-		}
-		return requireServiceAccountGroup(ctx, env)
-	}
-	var commandErr *host.CommandError
-	if !errors.As(err, &commandErr) || commandErr.Result.ExitCode != 1 {
-		return err
-	}
-	if err := executeInstallCommand(ctx, env, "create ikigenba account", host.Command{
-		Name: "useradd", Args: []string{"--system", "--no-create-home", "--shell", "/usr/sbin/nologin", "--user-group", "ikigenba"},
-	}); err != nil {
-		return err
-	}
-	return nil
-}
-
-func ensureServiceAccountShell(ctx context.Context, env host.Env) error {
-	result, err := env.Execute(ctx, host.Command{Name: "getent", Args: []string{"passwd", "ikigenba"}})
-	if err != nil {
-		return commandTransportError("inspect ikigenba login shell", err)
-	}
-	if result.ExitCode != 0 {
-		return &host.CommandError{Label: "inspect ikigenba login shell", Result: result}
-	}
-	fields := strings.Split(strings.TrimSpace(string(result.Stdout)), ":")
-	if len(fields) != 7 || fields[0] != "ikigenba" {
-		return errors.New("inspect ikigenba login shell: invalid passwd entry")
-	}
-	shell := fields[6]
-	if shell == "/usr/sbin/nologin" || shell == "/sbin/nologin" || shell == "/bin/false" {
-		return nil
-	}
-	return executeInstallCommand(ctx, env, "disable ikigenba login", host.Command{
-		Name: "usermod", Args: []string{"--shell", "/usr/sbin/nologin", "ikigenba"},
-	})
-}
-
-func requireServiceAccountGroup(ctx context.Context, env host.Env) error {
-	result, err := env.Execute(ctx, host.Command{Name: "id", Args: []string{"--group", "--name", "ikigenba"}})
-	if err != nil {
-		return commandTransportError("inspect ikigenba primary group", err)
-	}
-	if result.ExitCode != 0 {
-		return &host.CommandError{Label: "inspect ikigenba primary group", Result: result}
-	}
-	group := strings.TrimSpace(string(result.Stdout))
-	if group != "ikigenba" {
-		return fmt.Errorf("ikigenba account primary group is %q, want ikigenba", group)
 	}
 	return nil
 }
@@ -1005,22 +977,6 @@ func makeAppRootWritable(root, app string) error {
 	}
 	defer func() { _ = filesystem.Close() }()
 	return filesystem.Chmod(path.Join("opt", app), 0o750)
-}
-
-func inspectServiceAccount(ctx context.Context, env host.Env) (uint64, error) {
-	result, err := env.Execute(ctx, host.Command{Name: "id", Args: []string{"--user", "ikigenba"}})
-	if err != nil {
-		return 0, commandTransportError("inspect ikigenba account", err)
-	}
-	if result.ExitCode != 0 {
-		return 0, &host.CommandError{Label: "inspect ikigenba account", Result: result}
-	}
-	uidText := strings.TrimSpace(string(result.Stdout))
-	uid, parseErr := strconv.ParseUint(uidText, 10, 32)
-	if parseErr != nil {
-		return 0, fmt.Errorf("inspect ikigenba account: invalid uid %q", uidText)
-	}
-	return uid, nil
 }
 
 func writeAppUnit(root, app string, stopSeconds int64) error {
@@ -1236,7 +1192,8 @@ func SetupTimeouts(ctx context.Context, env host.Env, store config.Store) error 
 		if readErr != nil {
 			return fmt.Errorf("%s: read etc/env: %w", service.Name, readErr)
 		}
-		updated := updateDrainEntry(current, timeouts.DrainSeconds)
+		updated := updateEnvironmentEntry(current, "DRAIN_SECONDS", strconv.FormatInt(timeouts.DrainSeconds, 10))
+		updated = updateEnvironmentEntry(updated, ServicesEnv, ServicesPath)
 		appChanged := !bytes.Equal(current, updated)
 		if appChanged {
 			if err := writeTimeoutFile(env.Root, envPath, updated, 0o600); err != nil {
@@ -1299,14 +1256,14 @@ func SetupTimeouts(ctx context.Context, env host.Env, store config.Store) error 
 	return nil
 }
 
-func updateDrainEntry(contents []byte, drain int64) []byte {
-	replacement := []byte("DRAIN_SECONDS=" + strconv.FormatInt(drain, 10))
+func updateEnvironmentEntry(contents []byte, name, value string) []byte {
+	replacement := []byte(name + "=" + value)
 	lines := bytes.SplitAfter(contents, []byte("\n"))
 	var output []byte
 	found := false
 	for _, line := range lines {
 		bare := bytes.TrimSuffix(line, []byte("\n"))
-		if bytes.HasPrefix(bare, []byte("DRAIN_SECONDS=")) {
+		if bytes.HasPrefix(bare, []byte(name+"=")) {
 			if !found {
 				output = append(output, replacement...)
 				if len(line) > len(bare) {

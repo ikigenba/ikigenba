@@ -3,6 +3,7 @@ package apps_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -220,8 +221,8 @@ func TestInstallCompletesFileStageBeforeSecretsOrMutation(t *testing.T) {
 }
 
 func TestInstallRunsStagesInOrderAndStopsAtConfigurationFailure(t *testing.T) {
-	// R-USEM-RSLA
-	for _, failAt := range []string{"", "nginx", "litestream"} {
+	// R-UWID-50E1
+	for _, failAt := range []string{"", "nginx", "services", "litestream"} {
 		name := failAt
 		if name == "" {
 			name = "success"
@@ -234,7 +235,7 @@ func TestInstallRunsStagesInOrderAndStopsAtConfigurationFailure(t *testing.T) {
 				if manifest.App != "notes" {
 					t.Fatalf("configured manifest = %#v", manifest)
 				}
-				for _, stage := range []string{"nginx", "litestream"} {
+				for _, stage := range []string{"nginx", "services", "litestream"} {
 					if stage == failAt {
 						fixture.reports = append(fixture.reports, installReport{stage, cause.Error(), false})
 						return cause
@@ -244,16 +245,19 @@ func TestInstallRunsStagesInOrderAndStopsAtConfigurationFailure(t *testing.T) {
 				return nil
 			}
 			err := fixture.run()
-			wantSteps := []string{"fetch", "file", "secrets", "unpack", "unit", "nginx", "litestream", "service"}
+			wantSteps := []string{"fetch", "file", "secrets", "unpack", "unit", "nginx", "services", "litestream", "service"}
 			if failAt != "" {
 				var failure *apps.InstallError
 				if !errors.As(err, &failure) || failure.Code != 1 || !errors.Is(failure.Cause, cause) {
 					t.Fatalf("failure = %#v; want callback cause", err)
 				}
-				if failAt == "nginx" {
+				switch failAt {
+				case "nginx":
 					wantSteps = wantSteps[:6]
-				} else {
+				case "services":
 					wantSteps = wantSteps[:7]
+				case "litestream":
+					wantSteps = wantSteps[:8]
 				}
 			} else if err != nil {
 				t.Fatal(err)
@@ -304,4 +308,66 @@ func TestInstallRunsStagesInOrderAndStopsAtConfigurationFailure(t *testing.T) {
 			t.Fatalf("host mutated after secret failure: %v", statErr)
 		}
 	})
+}
+
+func TestInstallOwnedStagesStopOnActionAndReportFailures(t *testing.T) {
+	// R-UWID-50E1
+	stages := []string{"fetch", "file", "secrets", "unpack", "unit", "service"}
+	for index, stage := range stages {
+		for _, actionFails := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/action=%t", stage, actionFails), func(t *testing.T) {
+				fixture := newCompletedInstallFixture(t, t.TempDir(), false)
+				actionCause := errors.New("action failed")
+				reportCause := errors.New("report failed")
+				fixture.reportFailureStage = stage
+				fixture.reportFailureSuccess = !actionFails
+				fixture.reportFailure = reportCause
+				if actionFails {
+					switch stage {
+					case "fetch":
+						fixture.downloadFailure = actionCause
+					case "file":
+						fixture.fileFailure = actionCause
+					case "secrets":
+						fixture.archive = validInstallTar(t, "app = \"notes\"\nsecrets = [\"TOKEN\"]\n")
+						fixture.secretsFailure = actionCause
+					case "unpack":
+						if err := os.MkdirAll(filepath.Join(fixture.root, "opt"), 0o750); err != nil {
+							t.Fatal(err)
+						}
+						if err := os.Symlink(t.TempDir(), filepath.Join(fixture.root, "opt", "notes")); err != nil {
+							t.Fatal(err)
+						}
+					case "unit":
+						fixture.ownershipFailure = actionCause
+					case "service":
+						fixture.serviceFailure = actionCause
+					}
+				}
+				err := fixture.run()
+				var failure *apps.InstallError
+				if !errors.As(err, &failure) || !errors.Is(failure.Cause, reportCause) {
+					t.Fatalf("failure = %v", err)
+				}
+				if actionFails && stage != "unpack" && !errors.Is(failure.Cause, actionCause) {
+					t.Fatalf("lost action cause: %v", failure.Cause)
+				}
+				if len(fixture.reports) != index+1 {
+					t.Fatalf("reports = %#v", fixture.reports)
+				}
+				for number, report := range fixture.reports {
+					if report.step != stages[number] || report.success != (number != index || !actionFails) {
+						t.Fatalf("reports = %#v", fixture.reports)
+					}
+				}
+				last := fixture.reports[index]
+				if actionFails && last.detail == "" {
+					t.Fatal("missing failure reason")
+				}
+				if index < len(stages)-1 && (fixture.configureCalls != 0 || fixture.activated) {
+					t.Fatalf("later work after failure: Configure=%d, activated=%t", fixture.configureCalls, fixture.activated)
+				}
+			})
+		}
+	}
 }

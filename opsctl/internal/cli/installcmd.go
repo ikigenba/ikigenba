@@ -13,6 +13,7 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 	"github.com/ikigenba/ikigenba/opsctl/internal/nginx"
+	"github.com/ikigenba/ikigenba/opsctl/internal/services"
 )
 
 const installUsage = `Usage: opsctl install URI
@@ -27,10 +28,11 @@ over a running app keeps its data. Safe to re-run. An app that is disabled
 stays disabled: its files and units are replaced, but neither unit is enabled
 or started until 'opsctl enable'.
 
-The nginx configuration and /etc/litestream.yml are regenerated from every app
-on the host, so an app that declares a [database] is replicated from the
-moment it is installed. litestream.service is restarted only when its
-configuration changed.
+The nginx configuration, /var/lib/ikigenba/services.json, and
+/etc/litestream.yml are regenerated from every app on the host, so an app that
+ships share/icon.svg appears in the service launcher and an app that declares
+a [database] is replicated from the moment it is installed. litestream.service
+is restarted only when its configuration changed.
 
 Configuration keys:
   aws.region          the region this host's parameters and artifacts live in
@@ -155,11 +157,23 @@ func configureInstalledApp(
 		return err
 	}
 
+	changes, err := services.Write(ctx, env, hostName)
+	if err != nil {
+		return reportInstallConfigurationFailure(report, "services", err)
+	}
+	detail := "unchanged"
+	if change := changes.For(manifest.App); change != services.Unchanged {
+		detail = manifest.App + " " + string(change)
+	}
+	if err := report("services", detail, true); err != nil {
+		return err
+	}
+
 	changed, err := backup.Regenerate(ctx, env, store)
 	if err != nil {
 		return reportInstallConfigurationFailure(report, "litestream", err)
 	}
-	detail := "unchanged"
+	detail = "unchanged"
 	if changed {
 		detail = "updated"
 		if manifest.Database != nil {

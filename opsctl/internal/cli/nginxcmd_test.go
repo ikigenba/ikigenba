@@ -239,7 +239,7 @@ func TestNginxShowPrintsRenderedConfiguration(t *testing.T) {
 
 func TestNginxApplyUsesHostEnvironmentAndSuppressesSuccessOutput(t *testing.T) {
 	// R-O1UL-2JBJ
-	// R-O4AD-U2SX
+	// R-K5Q5-3WQS
 	root := t.TempDir()
 	store := config.Store{Root: root}
 	if err := store.Set("host.name", "SBX.Example.Test."); err != nil {
@@ -254,6 +254,9 @@ func TestNginxApplyUsesHostEnvironmentAndSuppressesSuccessOutput(t *testing.T) {
 	writeNginxManifest(t, root, "api", "app = \"api\"\n")
 	var commands []host.Command
 	stdout, stderr, code := invoke([]string{"nginx", "apply"}, cli.Deps{Root: root, EUID: 0, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+		if result, handled := servicesFixtureCommand(command); handled {
+			return result, nil
+		}
 		commands = append(commands, command)
 		if command.Name == "systemctl" && len(command.Args) > 0 && command.Args[0] == "show" {
 			return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=enabled\n")}, nil
@@ -290,6 +293,9 @@ func TestNginxApplyRepeatsEvenWhenConfigurationIsUnchanged(t *testing.T) {
 	}
 	var commands []host.Command
 	deps := cli.Deps{Root: root, EUID: 0, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+		if result, handled := servicesFixtureCommand(command); handled {
+			return result, nil
+		}
 		commands = append(commands, command)
 		return host.Result{}, nil
 	}}
@@ -490,7 +496,7 @@ func TestNginxRejectsApexWithoutParentBeforeDomainWork(t *testing.T) {
 
 func TestNginxExternalFailuresUseCommandDiagnostics(t *testing.T) {
 	// R-2P2U-ULPL
-	// R-O4AD-U2SX
+	// R-K5Q5-3WQS
 	for _, test := range []struct {
 		name        string
 		failCommand string
@@ -523,7 +529,7 @@ func TestNginxStandaloneRenderAndApplyFailures(t *testing.T) {
 	// R-G0B8-HTXJ
 	// R-G1J4-VLO8
 	// R-O32H-GB28
-	// R-O4AD-U2SX
+	// R-K5Q5-3WQS
 	tests := []struct {
 		name    string
 		command string

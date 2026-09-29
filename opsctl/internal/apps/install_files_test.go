@@ -18,7 +18,7 @@ import (
 )
 
 func TestInstallValidatesCompleteArchiveLayout(t *testing.T) {
-	// R-UG7M-Y36C
+	// R-UNZ2-GM76
 	manifest := []byte("app = \"notes\"\n")
 	tests := []struct {
 		name    string
@@ -56,7 +56,7 @@ func TestInstallValidatesCompleteArchiveLayout(t *testing.T) {
 }
 
 func TestInstallAcceptsOptionalShareAndAdditionalFiles(t *testing.T) {
-	// R-UG7M-Y36C
+	// R-UNZ2-GM76
 	root := t.TempDir()
 	archive := tarEntries(t, []installTarEntry{
 		regularEntry("etc/manifest.toml", []byte("app = \"notes\"\n"), 0o644),
@@ -156,7 +156,7 @@ func TestInstallReadsDistinctSecretsAndReportsMissingInOrder(t *testing.T) {
 }
 
 func TestInstallValidatesEnvironmentWithoutExposingValues(t *testing.T) {
-	// R-UINF-PMNQ
+	// R-UQEV-85OK
 	secretValue := "top-secret\nsecond-line"
 	tests := []struct {
 		name     string
@@ -166,6 +166,8 @@ func TestInstallValidatesEnvironmentWithoutExposingValues(t *testing.T) {
 		{"invalid secret name", "secrets = [\"BAD-NAME\"]\n", map[string]string{"BAD-NAME": "x"}},
 		{"invalid secret start", "secrets = [\"9BAD\"]\n", map[string]string{"9BAD": "x"}},
 		{"invalid setting name", "[env]\n\"BAD-NAME\" = \"x\"\n", nil},
+		{"secret services", "secrets = [\"IKIGENBA_SERVICES\"]\n", map[string]string{"IKIGENBA_SERVICES": "x"}},
+		{"setting services", "[env]\nIKIGENBA_SERVICES = \"x\"\n", nil},
 		{"secret drain", "secrets = [\"DRAIN_SECONDS\"]\n", map[string]string{"DRAIN_SECONDS": "x"}},
 		{"setting drain", "[env]\nDRAIN_SECONDS = \"x\"\n", nil},
 		{"overlap", "secrets = [\"TOKEN\"]\n[env]\nTOKEN = \"plain\"\n", map[string]string{"TOKEN": "value-not-for-diagnostics"}},
@@ -197,10 +199,10 @@ func TestInstallValidatesEnvironmentWithoutExposingValues(t *testing.T) {
 }
 
 func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) {
-	// R-UG7M-Y36C
+	// R-UNZ2-GM76
 	// R-OUAD-BPMU
 	// R-WY7U-IS2M
-	// R-UINF-PMNQ
+	// R-UQEV-85OK
 	// R-OXY2-H0UX
 	root := t.TempDir()
 	writeFixture(t, filepath.Join(root, "opt", "notes", "bin", "stale"), []byte("old"), 0o700)
@@ -261,7 +263,7 @@ func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) 
 		}
 	}
 	envPath := filepath.Join(root, "opt", "notes", "etc", "env")
-	assertFile(t, envPath, "TOKEN=\"a value\"\nEMPTY=\"\"\nMODE=\"production\"\nQUOTED=\"a\\\"b\\\\c\"\nDRAIN_SECONDS=5\n")
+	assertFile(t, envPath, "TOKEN=\"a value\"\nEMPTY=\"\"\nMODE=\"production\"\nQUOTED=\"a\\\"b\\\\c\"\nDRAIN_SECONDS=5\nIKIGENBA_SERVICES=/var/lib/ikigenba/services.json\n")
 	info, statErr := os.Stat(envPath)
 	if statErr != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("env mode = %v, error = %v", info.Mode().Perm(), statErr)
@@ -269,7 +271,7 @@ func TestInstallReplacesFilesPublishesEnvironmentAndPreservesData(t *testing.T) 
 }
 
 func TestInstallRejectsDestinationSymlinkWithoutFollowingIt(t *testing.T) {
-	// R-UG7M-Y36C
+	// R-UNZ2-GM76
 	root := t.TempDir()
 	outside := t.TempDir()
 	writeFixture(t, filepath.Join(outside, "marker"), []byte("unchanged"), 0o600)

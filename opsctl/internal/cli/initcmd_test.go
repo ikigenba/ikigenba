@@ -324,7 +324,7 @@ func TestInitTimingFindingIsIndependentAndStopsSetup(t *testing.T) {
 }
 
 func TestInitHealthyPreflight(t *testing.T) {
-	// R-X4JP-5YR7 R-X23W-EF9T R-X3BS-S70I
+	// R-X4JP-5YR7 R-X23W-EF9T R-V0E8-TY5K
 	// R-LIU3-NA5F R-LK20-11W4 R-LMHS-SLDI R-ELKW-EVLN
 	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL
 	// R-LHM7-9IEQ R-ZIB1-SI40
@@ -405,6 +405,9 @@ func TestInitHealthyPreflight(t *testing.T) {
 	}
 	var commands []string
 	deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+		if result, handled := servicesFixtureCommand(command); handled {
+			return result, nil
+		}
 		commands = append(commands, strings.Join(append([]string{command.Name}, command.Args...), " "))
 		if command.Name == "systemctl" && len(command.Args) > 0 && command.Args[0] == "show" {
 			return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=enabled\n")}, nil
@@ -575,6 +578,9 @@ func TestInitStopsAtFirstSetupFailure(t *testing.T) {
 
 			var commands []string
 			deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+				if result, handled := servicesFixtureCommand(command); handled {
+					return result, nil
+				}
 				invocation := strings.Join(append([]string{command.Name}, command.Args...), " ")
 				commands = append(commands, invocation)
 				if invocation == allCommands[failIndex] {
@@ -1148,7 +1154,7 @@ func TestInitRejectsEmptyWildcardAddressSet(t *testing.T) {
 }
 
 func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
-	// R-LW8Z-URB2 R-JWO0-EHD7 R-Y3WS-9B9C R-X3BS-S70I
+	// R-K6Y1-HOHH R-JWO0-EHD7 R-K85X-VG86 R-V0E8-TY5K
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZONE": {
 			{Name: "example.com", Type: "SOA"},
@@ -1186,6 +1192,9 @@ func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
 	active := map[string]bool{}
 	var appCommands []string
 	deps.Execute = func(_ context.Context, command host.Command) (host.Result, error) {
+		if result, handled := servicesFixtureCommand(command); handled {
+			return result, nil
+		}
 		appCommands = append(appCommands, strings.Join(append([]string{command.Name}, command.Args...), " "))
 		if command.Name == "systemctl" && len(command.Args) > 0 {
 			switch command.Args[0] {
@@ -1250,7 +1259,7 @@ func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(appEnv) != "OTHER=keep\nDRAIN_SECONDS=7\n" {
+	if string(appEnv) != "OTHER=keep\nDRAIN_SECONDS=7\nIKIGENBA_SERVICES=/var/lib/ikigenba/services.json\n" {
 		t.Errorf("app env = %q, want current drain setting", appEnv)
 	}
 	service, err := os.ReadFile(filepath.Join(deps.Root, "etc", "systemd", "system", "ikigenba-notes.service"))

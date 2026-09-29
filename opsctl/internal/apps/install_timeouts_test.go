@@ -14,7 +14,7 @@ import (
 )
 
 func TestSetupTimeoutsUpdatesRunningAppsAndRerunIsInert(t *testing.T) {
-	// R-UUUF-JC2O R-UW2B-X3TD R-Y1GZ-HRRY
+	// R-UUUF-JC2O R-UXQ9-IS4Q R-Y1GZ-HRRY
 	root := t.TempDir()
 	store := installStoreAt(t, root, map[string]string{
 		"apps.drain_seconds": "7", "apps.stop_seconds": "19",
@@ -41,7 +41,7 @@ func TestSetupTimeoutsUpdatesRunningAppsAndRerunIsInert(t *testing.T) {
 	if err := apps.SetupTimeouts(t.Context(), env, store); err != nil {
 		t.Fatal(err)
 	}
-	assertFile(t, filepath.Join(appRoot, "etc", "env"), "TOKEN=\"value\"\nDRAIN_SECONDS=7\nMODE=\"prod\"\n")
+	assertFile(t, filepath.Join(appRoot, "etc", "env"), "TOKEN=\"value\"\nDRAIN_SECONDS=7\nMODE=\"prod\"\nIKIGENBA_SERVICES=/var/lib/ikigenba/services.json\n")
 	unitData, err := readFixturePath(root, "etc/systemd/system/ikigenba-notes.service")
 	if err != nil || !strings.Contains(string(unitData), "TimeoutStopSec=19\n") ||
 		!strings.Contains(string(unitData), "Requires=ikigenba-notes.socket\n") {
@@ -104,7 +104,7 @@ func TestSetupTimeoutsUpdatesRunningAppsAndRerunIsInert(t *testing.T) {
 }
 
 func TestSetupTimeoutsUpdatesOnlyInstalledAppsInNameOrder(t *testing.T) {
-	// R-UW2B-X3TD R-Y1GZ-HRRY R-UYI4-ONAR
+	// R-UXQ9-IS4Q R-Y1GZ-HRRY R-UYI4-ONAR
 	root := t.TempDir()
 	store := installStoreAt(t, root, map[string]string{"apps.drain_seconds": "8", "apps.stop_seconds": "20"})
 	for name, content := range map[string]string{
@@ -139,8 +139,8 @@ func TestSetupTimeoutsUpdatesOnlyInstalledAppsInNameOrder(t *testing.T) {
 	if err := apps.SetupTimeouts(t.Context(), env, store); err != nil {
 		t.Fatal(err)
 	}
-	assertFile(t, filepath.Join(root, "opt", "alpha", "etc", "env"), "TOKEN=one\nDRAIN_SECONDS=8\n")
-	assertFile(t, filepath.Join(root, "opt", "zeta", "etc", "env"), "DRAIN_SECONDS=8\nMODE=prod\n")
+	assertFile(t, filepath.Join(root, "opt", "alpha", "etc", "env"), "TOKEN=one\nDRAIN_SECONDS=8\nIKIGENBA_SERVICES=/var/lib/ikigenba/services.json\n")
+	assertFile(t, filepath.Join(root, "opt", "zeta", "etc", "env"), "DRAIN_SECONDS=8\nMODE=prod\nIKIGENBA_SERVICES=/var/lib/ikigenba/services.json\n")
 	for _, name := range []string{"alpha", "idle", "zeta"} {
 		info, err := os.Stat(filepath.Join(root, "opt", name, "etc", "env"))
 		if err != nil {
@@ -194,7 +194,7 @@ func TestSetupTimeoutsStopsAfterReloadFailure(t *testing.T) {
 	if !errors.Is(err, transport) || !errors.As(err, &commandErr) || calls != 1 {
 		t.Fatalf("failure = %v, calls = %d", err, calls)
 	}
-	assertFile(t, filepath.Join(appRoot, "etc", "env"), "DRAIN_SECONDS=5\n")
+	assertFile(t, filepath.Join(appRoot, "etc", "env"), "DRAIN_SECONDS=5\nIKIGENBA_SERVICES=/var/lib/ikigenba/services.json\n")
 }
 
 func TestSetupTimeoutsReturnsMissingEnvWithoutWritingUnit(t *testing.T) {
@@ -242,11 +242,11 @@ func TestSetupTimeoutsLeavesDisabledAppInactive(t *testing.T) {
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("commands = %#v, want %#v", calls, want)
 	}
-	assertFile(t, filepath.Join(appRoot, "etc", "env"), "DRAIN_SECONDS=6\n")
+	assertFile(t, filepath.Join(appRoot, "etc", "env"), "DRAIN_SECONDS=6\nIKIGENBA_SERVICES=/var/lib/ikigenba/services.json\n")
 }
 
 func TestSetupTimeoutsIgnoresServicesWithoutBinary(t *testing.T) {
-	// R-UW2B-X3TD
+	// R-UXQ9-IS4Q
 	root := t.TempDir()
 	store := installStoreAt(t, root, nil)
 	state := filepath.Join(root, "opt", "notes", "state", "keep")
@@ -260,5 +260,117 @@ func TestSetupTimeoutsIgnoresServicesWithoutBinary(t *testing.T) {
 	assertFile(t, state, "persistent")
 	if _, err := os.Stat(filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.service")); !os.IsNotExist(err) {
 		t.Fatalf("unit created for service without binary: %v", err)
+	}
+}
+
+func TestSetupTimeoutsReplacesServicesEntryInPlaceAndKeepsUnitBytes(t *testing.T) {
+	// R-UXQ9-IS4Q
+	tests := []struct{ name, before, after string }{
+		{"replace both", "# header\nIKIGENBA_SERVICES=\"old\"\nKEEP='literal'\nDRAIN_SECONDS=0005\nTAIL=x", "# header\nIKIGENBA_SERVICES=/var/lib/ikigenba/services.json\nKEEP='literal'\nDRAIN_SECONDS=5\nTAIL=x"},
+		{"append drain", "IKIGENBA_SERVICES=old\nKEEP=x", "IKIGENBA_SERVICES=/var/lib/ikigenba/services.json\nKEEP=x\nDRAIN_SECONDS=5\n"},
+		{"append both", "KEEP=x", "KEEP=x\nDRAIN_SECONDS=5\nIKIGENBA_SERVICES=/var/lib/ikigenba/services.json\n"},
+		{"unchanged", "DRAIN_SECONDS=5\nIKIGENBA_SERVICES=/var/lib/ikigenba/services.json\n", "DRAIN_SECONDS=5\nIKIGENBA_SERVICES=/var/lib/ikigenba/services.json\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			fixture := newCompletedInstallFixture(t, root, false)
+			if err := fixture.run(); err != nil {
+				t.Fatal(err)
+			}
+			envPath := filepath.Join(root, "opt", "notes", "etc", "env")
+			writeFixture(t, envPath, []byte(test.before), 0o600)
+			unitPath := filepath.Join(root, "etc", "systemd", "system", "ikigenba-notes.service")
+			unitBytes, err := readFixturePath(root, "etc/systemd/system/ikigenba-notes.service")
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeEnv, err := os.Stat(envPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeUnit, err := os.Stat(unitPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := apps.SetupTimeouts(t.Context(), host.Env{Root: root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+				if command.Args[0] != "show" {
+					t.Fatalf("unexpected command: %#v", command)
+				}
+				return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=disabled\n")}, nil
+			}}, installStoreAt(t, root, nil)); err != nil {
+				t.Fatal(err)
+			}
+			assertFile(t, envPath, test.after)
+			assertMode(t, envPath, 0o600)
+			assertFile(t, unitPath, string(unitBytes))
+			afterUnit, err := os.Stat(unitPath)
+			if err != nil || !os.SameFile(beforeUnit, afterUnit) {
+				t.Fatalf("unchanged unit rewritten: %v", err)
+			}
+			if test.before == test.after {
+				afterEnv, err := os.Stat(envPath)
+				if err != nil || !os.SameFile(beforeEnv, afterEnv) {
+					t.Fatalf("unchanged env rewritten: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestSetupTimeoutsRejectsTimingBeforeWritingAndNonAppsStayUntouched(t *testing.T) {
+	// R-UXQ9-IS4Q
+	root := t.TempDir()
+	fixture := newCompletedInstallFixture(t, root, false)
+	if err := fixture.run(); err != nil {
+		t.Fatal(err)
+	}
+	envPath := filepath.Join(root, "opt", "notes", "etc", "env")
+	before, err := os.Stat(envPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := installStoreAt(t, root, map[string]string{"apps.drain_seconds": "bad"})
+	env := host.Env{Root: root, Execute: func(context.Context, host.Command) (host.Result, error) {
+		t.Fatal("unexpected command")
+		return host.Result{}, nil
+	}}
+	if err := apps.SetupTimeouts(t.Context(), env, store); err == nil {
+		t.Fatal("invalid timing accepted")
+	}
+	after, err := os.Stat(envPath)
+	if err != nil || !os.SameFile(before, after) {
+		t.Fatalf("timing error rewrote env: %v", err)
+	}
+
+	root = t.TempDir()
+	for _, name := range []string{"host", "folder", "linked"} {
+		writeFixture(t, filepath.Join(root, "opt", name, "etc", "env"), []byte("KEEP=x\n"), 0o600)
+		binary := filepath.Join(root, "opt", name, "bin", name)
+		if name == "folder" {
+			if err := os.MkdirAll(binary, 0o750); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			writeFixture(t, binary, []byte("binary"), 0o750)
+			if name == "linked" {
+				if err := os.Remove(binary); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(filepath.Join(root, "target"), binary); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
+	env.Root = root
+	if err := apps.SetupTimeouts(t.Context(), env, installStoreAt(t, root, nil)); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"host", "folder", "linked"} {
+		assertFile(t, filepath.Join(root, "opt", name, "etc", "env"), "KEEP=x\n")
+		if _, err := os.Stat(filepath.Join(root, "etc", "systemd", "system", "ikigenba-"+name+".service")); !os.IsNotExist(err) {
+			t.Fatalf("unit for %s: %v", name, err)
+		}
 	}
 }

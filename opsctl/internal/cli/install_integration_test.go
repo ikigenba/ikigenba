@@ -22,7 +22,7 @@ import (
 )
 
 func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
-	// R-OJB9-VRYL R-JWO0-EHD7
+	// R-ULJ9-P2PS R-JWO0-EHD7
 	entries, err := os.ReadDir(filepath.Join("..", "apps"))
 	if err != nil {
 		t.Fatal(err)
@@ -62,6 +62,7 @@ func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
 		"unpack: ok (/opt/notes)\n" +
 		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: ok (notes.host.example, host.example)\n" +
+		"services: ok (unchanged)\n" +
 		"litestream: ok (state/notes.db)\n" +
 		"service: ok (notes v1.2.3 active)\n"
 	if stdout != wantOutput {
@@ -72,7 +73,6 @@ func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
 		"systemctl is-active ikigenba-notes.service",
 		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		"id --user ikigenba",
-		"getent passwd ikigenba",
 		"id --group --name ikigenba",
 		"chown ikigenba:ikigenba " + filepath.Join(fixture.root, "opt", "notes"),
 		"chown --recursive root:ikigenba " + filepath.Join(fixture.root, "opt", "notes", "bin") + " " + filepath.Join(fixture.root, "opt", "notes", "etc"),
@@ -91,7 +91,7 @@ func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
 }
 
 func TestInstallCLIUsesNormalizedHostAndConfiguredApex(t *testing.T) {
-	// R-XMU6-WIVM R-UOQX-MHD7
+	// R-UU2K-DGWN R-UVAG-R8NC
 	fixture := newCLIInstallFixture(t)
 	store := config.Store{Root: fixture.root}
 	if err := store.Set("host.name", "SBX.Example.Test."); err != nil {
@@ -109,6 +109,7 @@ func TestInstallCLIUsesNormalizedHostAndConfiguredApex(t *testing.T) {
 		"unpack: ok (/opt/notes)\n" +
 		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: ok (notes.sbx.example.test, sbx.example.test, example.test)\n" +
+		"services: ok (unchanged)\n" +
 		"litestream: ok (state/notes.db)\n" +
 		"service: ok (notes v1.2.3 active)\n"
 	if code != 0 || stdout != wantOutput || stderr != "" {
@@ -130,7 +131,7 @@ func TestInstallCLIUsesNormalizedHostAndConfiguredApex(t *testing.T) {
 }
 
 func TestInstallCLIReportsNoApexForDifferentConfiguredApp(t *testing.T) {
-	// R-UOQX-MHD7
+	// R-UVAG-R8NC
 	fixture := newCLIInstallFixture(t)
 	store := config.Store{Root: fixture.root}
 	if err := store.Set("host.name", "sbx.example.test"); err != nil {
@@ -149,6 +150,7 @@ func TestInstallCLIReportsNoApexForDifferentConfiguredApp(t *testing.T) {
 		"unpack: ok (/opt/notes)\n" +
 		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: ok (notes.sbx.example.test, sbx.example.test)\n" +
+		"services: ok (unchanged)\n" +
 		"litestream: ok (state/notes.db)\n" +
 		"service: ok (notes v1.2.3 active)\n"
 	if code != 0 || stdout != wantOutput || stderr != "" {
@@ -157,7 +159,7 @@ func TestInstallCLIReportsNoApexForDifferentConfiguredApp(t *testing.T) {
 }
 
 func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
-	// R-XMU6-WIVM, R-UOQX-MHD7, R-XLMA-IR4X, R-EOKC-P8UO
+	// R-UU2K-DGWN, R-UVAG-R8NC, R-UWID-50E1, R-XLMA-IR4X, R-EOKC-P8UO
 	fixture := newCLIInstallFixture(t)
 	fixture.failCommand = "nginx -t"
 	stdout, stderr, code := fixture.invoke()
@@ -175,7 +177,6 @@ func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
 		"systemctl is-active ikigenba-notes.service",
 		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		"id --user ikigenba",
-		"getent passwd ikigenba",
 		"id --group --name ikigenba",
 		"chown ikigenba:ikigenba " + filepath.Join(fixture.root, "opt", "notes"),
 		"chown --recursive root:ikigenba " + filepath.Join(fixture.root, "opt", "notes", "bin") + " " + filepath.Join(fixture.root, "opt", "notes", "etc"),
@@ -191,7 +192,7 @@ func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRegenerationFails(t *testing.T) {
-	// R-XMU6-WIVM, R-XLMA-IR4X
+	// R-UU2K-DGWN, R-XLMA-IR4X
 	fixture := newCLIInstallFixture(t)
 	store := config.Store{Root: fixture.root}
 	if err := store.Set("backup.s3_uri", "not-an-s3-uri"); err != nil {
@@ -205,6 +206,7 @@ func TestInstallCLIStopsWhenLitestreamRegenerationFails(t *testing.T) {
 		"unpack: ok (/opt/notes)\n" +
 		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: ok (notes.host.example, host.example)\n" +
+		"services: ok (unchanged)\n" +
 		"litestream: failed: backup.s3_uri: must be an absolute s3:// URI with a nonempty bucket and no query or fragment\n"
 	if code != 1 || stdout != wantOutput || stderr != "opsctl: install failed\n" {
 		t.Fatalf("regeneration failure = exit %d stdout %q stderr %q", code, stdout, stderr)
@@ -213,7 +215,7 @@ func TestInstallCLIStopsWhenLitestreamRegenerationFails(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRestartFails(t *testing.T) {
-	// R-XMU6-WIVM, R-XLMA-IR4X
+	// R-UU2K-DGWN, R-XLMA-IR4X
 	fixture := newCLIInstallFixture(t)
 	fixture.failCommand = "systemctl restart litestream.service"
 
@@ -224,6 +226,7 @@ func TestInstallCLIStopsWhenLitestreamRestartFails(t *testing.T) {
 		"unpack: ok (/opt/notes)\n" +
 		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: ok (notes.host.example, host.example)\n" +
+		"services: ok (unchanged)\n" +
 		"litestream: failed: restart litestream.service: exit status 7\n"
 	if code != 1 || stdout != wantOutput || stderr != "opsctl: install failed\n\n> command rejected\n" {
 		t.Fatalf("restart failure = exit %d stdout %q stderr %q", code, stdout, stderr)
@@ -233,7 +236,7 @@ func TestInstallCLIStopsWhenLitestreamRestartFails(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRestartTransportFails(t *testing.T) {
-	// R-XMU6-WIVM, R-XLMA-IR4X
+	// R-UU2K-DGWN, R-XLMA-IR4X
 	for _, test := range []struct {
 		name       string
 		failure    error
@@ -280,7 +283,7 @@ func TestInstallCLIStopsWhenLitestreamRestartTransportFails(t *testing.T) {
 }
 
 func TestInstallCLIDatabaseRemovalReportsUpdatedLitestream(t *testing.T) {
-	// R-UOQX-MHD7
+	// R-UVAG-R8NC
 	fixture := newCLIInstallFixture(t)
 	if stdout, stderr, code := fixture.invoke(); code != 0 || stderr != "" || stdout != installReportPrefix("state/notes.db")+"service: ok (notes v1.2.3 active)\n" {
 		t.Fatalf("initial install = exit %d stdout %q stderr %q", code, stdout, stderr)
@@ -315,7 +318,7 @@ func TestInstallCLIRejectsInvalidAppTimeoutsBeforeFetch(t *testing.T) {
 }
 
 func TestInstallCLILeavesDisabledAppStopped(t *testing.T) {
-	// R-XMU6-WIVM, R-UOQX-MHD7, R-XLMA-IR4X
+	// R-UU2K-DGWN, R-UVAG-R8NC, R-XLMA-IR4X
 	fixture := newCLIInstallFixture(t)
 	fixture.disabled = true
 	stdout, stderr, code := fixture.invoke()
@@ -325,6 +328,7 @@ func TestInstallCLILeavesDisabledAppStopped(t *testing.T) {
 		"unpack: ok (/opt/notes)\n" +
 		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: ok (notes.host.example, host.example disabled)\n" +
+		"services: ok (unchanged)\n" +
 		"litestream: ok (state/notes.db)\n" +
 		"service: ok (notes v1.2.3 disabled)\n"
 	if code != 0 || stdout != want || stderr != "" {
@@ -440,7 +444,8 @@ func installReportThroughNginx() string {
 		"secrets: ok (1 keys)\n" +
 		"unpack: ok (/opt/notes)\n" +
 		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
-		"nginx: ok (notes.host.example, host.example)\n"
+		"nginx: ok (notes.host.example, host.example)\n" +
+		"services: ok (unchanged)\n"
 }
 
 func installCommandsThroughNginx(root string) []string {
@@ -449,7 +454,6 @@ func installCommandsThroughNginx(root string) []string {
 		"systemctl is-active ikigenba-notes.service",
 		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		"id --user ikigenba",
-		"getent passwd ikigenba",
 		"id --group --name ikigenba",
 		"chown ikigenba:ikigenba " + filepath.Join(root, "opt", "notes"),
 		"chown --recursive root:ikigenba " + filepath.Join(root, "opt", "notes", "bin") + " " + filepath.Join(root, "opt", "notes", "etc"),
@@ -548,6 +552,7 @@ type cliInstallFixture struct {
 	t               *testing.T
 	root            string
 	manifest        string
+	icon            string
 	secretValue     string
 	plainValue      string
 	commands        []host.Command
@@ -635,7 +640,7 @@ func (fixture *cliInstallFixture) execute(_ context.Context, command host.Comman
 	}
 	switch {
 	case command.Name == "xz":
-		return host.Result{Stdout: cliInstallTar(fixture.t, fixture.manifest)}, nil
+		return host.Result{Stdout: cliInstallTar(fixture.t, fixture.manifest, fixture.icon)}, nil
 	case key == "systemctl is-active ikigenba-notes.service":
 		if fixture.active {
 			return host.Result{Stdout: []byte("active\n")}, nil
@@ -648,8 +653,6 @@ func (fixture *cliInstallFixture) execute(_ context.Context, command host.Comman
 		return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=enabled\n")}, nil
 	case key == "id --user ikigenba":
 		return host.Result{Stdout: []byte("998\n")}, nil
-	case key == "getent passwd ikigenba":
-		return host.Result{Stdout: []byte("ikigenba:x:998:998::/nonexistent:/usr/sbin/nologin\n")}, nil
 	case key == "id --group --name ikigenba":
 		return host.Result{Stdout: []byte("ikigenba\n")}, nil
 	case key == "systemctl start ikigenba-notes.service" || key == "systemctl restart ikigenba-notes.service":
@@ -680,7 +683,15 @@ func (fixture *cliInstallFixture) execute(_ context.Context, command host.Comman
 func (fixture *cliInstallFixture) assertOrderedCommands(t *testing.T, want []string) {
 	t.Helper()
 	got := make([]string, 0, len(fixture.commands))
+	servicesPhase := false
 	for _, command := range fixture.commands {
+		if command.Name == "systemctl" && strings.Join(command.Args, " ") == "reload-or-restart nginx" {
+			servicesPhase = true
+		} else if servicesPhase {
+			if _, handled := servicesFixtureCommand(command); handled {
+				continue
+			}
+		}
 		line := command.Name
 		if len(command.Args) > 0 {
 			line += " " + strings.Join(command.Args, " ")
@@ -723,7 +734,7 @@ func (client *cliInstallCloud) ReadSecrets(_ context.Context, parameter string) 
 	return map[string]string{"TOKEN": client.fixture.secretValue, "UNREQUESTED": "not installed"}, nil
 }
 
-func cliInstallTar(t *testing.T, manifest string) []byte {
+func cliInstallTar(t *testing.T, manifest string, icons ...string) []byte {
 	t.Helper()
 	var output bytes.Buffer
 	writer := tar.NewWriter(&output)
@@ -739,6 +750,15 @@ func cliInstallTar(t *testing.T, manifest string) []byte {
 			t.Fatal(err)
 		}
 		if _, err := io.WriteString(writer, entry.body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(icons) > 0 && icons[0] != "" {
+		icon := icons[0]
+		if err := writer.WriteHeader(&tar.Header{Name: "share/icon.svg", Mode: 0o644, Size: int64(len(icon)), Typeflag: tar.TypeReg}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.WriteString(writer, icon); err != nil {
 			t.Fatal(err)
 		}
 	}

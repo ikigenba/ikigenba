@@ -23,10 +23,11 @@ over a running app keeps its data. Safe to re-run. An app that is disabled
 stays disabled: its files and units are replaced, but neither unit is enabled
 or started until 'opsctl enable'.
 
-The nginx configuration and /etc/litestream.yml are regenerated from every app
-on the host, so an app that declares a [database] is replicated from the
-moment it is installed. litestream.service is restarted only when its
-configuration changed.
+The nginx configuration, /var/lib/ikigenba/services.json, and
+/etc/litestream.yml are regenerated from every app on the host, so an app that
+ships share/icon.svg appears in the service launcher and an app that declares
+a [database] is replicated from the moment it is installed. litestream.service
+is restarted only when its configuration changed.
 
 Configuration keys:
   aws.region          the region this host's parameters and artifacts live in
@@ -36,7 +37,7 @@ Configuration keys:
 `
 
 func TestInstallHelpIsInert(t *testing.T) {
-	// R-UEZQ-KBFN
+	// R-UMR6-2UGH
 	for _, uid := range []int{0, 1, -1, 1000} {
 		for _, option := range []string{"-h", "--help"} {
 			t.Run(fmt.Sprintf("%s/%d", option, uid), func(t *testing.T) {

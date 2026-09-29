@@ -8,6 +8,7 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 	"github.com/ikigenba/ikigenba/opsctl/internal/nginx"
+	"github.com/ikigenba/ikigenba/opsctl/internal/services"
 )
 
 const nginxUsage = `Usage: opsctl nginx <subcommand>
@@ -89,6 +90,10 @@ func executeNginx(subcommand string, stdout, stderr io.Writer, env host.Env, hos
 		return exitOK
 	}
 	if err := nginx.Apply(context.Background(), env, hostName, apexApp); err != nil {
+		writeDiagnostic(stderr, err)
+		return exitFail
+	}
+	if _, err := services.Write(context.Background(), env, hostName); err != nil {
 		writeDiagnostic(stderr, err)
 		return exitFail
 	}

@@ -18,6 +18,7 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/dns"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 	"github.com/ikigenba/ikigenba/opsctl/internal/nginx"
+	"github.com/ikigenba/ikigenba/opsctl/internal/services"
 )
 
 const initUsage = `Usage: opsctl init
@@ -320,6 +321,9 @@ func (p *initPreflight) finish(stdout, stderr io.Writer) exitCode {
 	}
 	if err == nil {
 		err = nginx.Apply(ctx, env, p.host, apexApp)
+	}
+	if err == nil {
+		_, err = services.Write(ctx, env, p.host)
 	}
 	if err == nil {
 		err = backup.SetupReplication(ctx, env, p.store)
