@@ -32,8 +32,8 @@ current target, not a compatibility obligation. Respect spec's sub-project
 boundary; do not inspect sibling internals.
 
 Repository writes are limited to `specs/design/`. No source, test, story,
-issue, or review-file changes; no commits. Do not start `check-spec` or
-`build-spec`.
+issue, or review-file changes; no commits. Do not start `build-spec` or
+`check-spec`.
 Report blockers and unresolved decisions to the user, not `specs/issues/`.
 
 ## Coverage and design work
@@ -121,4 +121,4 @@ Report consumer usage first, then design paths,
 coverage counts, the implementation gap, and consolidated unresolved work.
 Distinguish a partial draft from a complete design. Completion requires
 verified coverage, consistent contracts, and no unresolved design decisions. Never claim that the design has been
-checked or built.
+built.

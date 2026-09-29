@@ -48,4 +48,4 @@ written by `devctl build dummy`, which builds `cmd/dummy` itself for
   the build run verifies against.
 
 To change dummy, change the spec — `draft-stories`, `draft-design`,
-`check-spec`, then `build-spec` — rather than editing the code directly.
+then `build-spec` — rather than editing the code directly.

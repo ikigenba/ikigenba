@@ -1,6 +1,6 @@
 ---
 name: spec
-description: The specs/ system — layout, requirement ids, the canonical gap, the sub-project's AGENTS.md, issue filing, and the story and design formats. Shared foundation for the draft-stories / draft-design / check-spec / build-spec / audit-spec skills.
+description: The specs/ system — layout, requirement ids, the canonical gap, the sub-project's AGENTS.md, issue filing, and the story and design formats. Shared foundation for the draft-stories / draft-design / build-spec / audit-spec / check-spec skills.
 ---
 
 # specs/
@@ -84,13 +84,13 @@ Each operation is a sibling skill. All five load this one for the shared rules a
 
 - `draft-stories` — turn the user's intent into stories under `specs/stories/`, new or updated, grilling the user for what the intent leaves open. The format is `references/story-format.md` in this skill.
 - `draft-design` — author a design by recursive delegation from user stories, for one sub-project at a time. The design format and id rules it authors against are `references/design-format.md` in this skill.
-- `check-spec` — report whether the design is buildable and show the gap. Feedback only; it gates nothing and commits nothing.
 - `build-spec` — close the mechanical gap by recursive delegation.
 - `audit-spec` — audit adequacy of tests for ids already proved on both sides.
+- `check-spec` — report whether the design is buildable and show the gap. A discretionary tool the human runs when they choose; it is not a step in any sequence, nothing depends on it, and an agent never suggests running it.
 
 `draft-stories`, `draft-design`, `build-spec`, and `audit-spec` each load
 `fanout` for delegation and independent verification. Invoke the desired
 operation directly; naming `fanout` separately is unnecessary. Each operation
 supplies its own goal, completion criteria, authority, and reporting channel.
 
-`check-spec`, `build-spec`, and `audit-spec` are human-gated: an agent never starts one on its own. `build-spec` and `audit-spec` commit, edit tests, or both; `check-spec` only reports.
+`build-spec`, `audit-spec`, and `check-spec` are human-gated: an agent never starts one on its own. `build-spec` and `audit-spec` commit, edit tests, or both; `check-spec` only reports.

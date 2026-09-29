@@ -10,6 +10,9 @@ Agents write no file under a sub-project's tree without direct user
 instruction — tests and throwaway diagnostics included. A probe that must sit
 in the tree goes in a worktree that is removed afterwards. Agents never start
 the build run (`build-spec`); it is strictly a human-gated operation.
+`check-spec` is a discretionary tool the human runs when they choose; it is
+not a step before `build-spec` or in any other sequence, and agents never
+suggest running it.
 
 Stories and designs are the working material, never a constraint on the work.
 Only the build run and the audit treat them as read-only. In any proposal or

@@ -148,8 +148,8 @@ adding a model changes only that source data; requirements and tests project
 and validate it without repeating its release-bearing values.
 
 A row's reasoning vocabulary is the curated set agentkit advertises, not a
-claim that the host rejects every omitted alias. Before `check-spec`, targeted
-observations for a new row exercise its default and every advertised control
+claim that the host rejects every omitted alias. Before a new row is written,
+targeted observations exercise its default and every advertised control
 on every listed host and wire. Those model-specific observations remain
 external evidence. D23 separately retains a bounded live regression for one
 lexicographically selected representative of every offering-id/auth-mode pair;

@@ -52,7 +52,7 @@ error paths are the offline tests' job.
 
 This representative matrix proves transport and authentication integration.
 Targeted, dated observations outside the repository establish model-specific
-availability and reasoning data before `check-spec`; the paid regression does
+availability and reasoning data before a row is written; the paid regression does
 not sweep every catalog record, probe reasoning vocabularies, or exercise
 system messages.
 

@@ -74,8 +74,8 @@ The full verification gates are declared in [`AGENTS.md`](AGENTS.md).
   `R-XXXX-XXXX` id, and every test tags the id it proves.
 - `AGENTS.md` — the toolchain, test-file set, gates, and commit conventions.
 
-To change agent-repl, change the spec — `draft-design`, then `check-spec`, then
-`build-spec` — rather than editing the code directly.
+To change agent-repl, change the spec — `draft-design`, then `build-spec` —
+rather than editing the code directly.
 
 ## Releases
 

@@ -61,5 +61,5 @@ are declared in [`AGENTS.md`](AGENTS.md).
 - `AGENTS.md` — the toolchain, test-file set, gates, and commit conventions the
   build run verifies against.
 
-To change agentkit, change the spec — `draft-design`, then `check-spec`, then
-`build-spec` — rather than editing the code directly.
+To change agentkit, change the spec — `draft-design`, then `build-spec` —
+rather than editing the code directly.
