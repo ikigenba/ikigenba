@@ -8,9 +8,7 @@ root package `dummy` exports (`D01-layout-and-run-seam`). This design is how
 dummy serves them. It says nothing about what the files contain, which files
 there are, or what they are called: the tests compare what dummy serves with
 what `Assets` holds, so a restyle that only replaces files touches no
-requirement here. The one exception is a single property every stylesheet in
-`Assets` must have, set out under "No other origin" below; it constrains what
-a stylesheet may point at, never what it says.
+requirement here.
 
 Serving is part of dummy's one HTTP surface, so it lives in `internal/panel`
 and is done by `panel.Handler`, which keeps the signature `D04-panel` declares
@@ -91,65 +89,11 @@ code other than a 2xx (Successful) or 412 (Precondition Failed)", and a 405 or
 ## No other origin
 
 The page needs nothing from any other host: no font service and no
-third-party request of any kind. The page's own markup is `D04-panel`'s. What
-the stylesheet makes a browser fetch is decided by the URLs it carries, so
-every stylesheet in `Assets` may carry only relative references. That rules
-out two forms. The first is a URL with a scheme, the absolute-URI of RFC 3986
-section 4.3 (`scheme ":" hier-part`). The second is a network-path reference,
-the `"//" authority` form of a relative reference in RFC 3986 section 4.2.
-Both can name another host. A relative reference without them resolves
-against the stylesheet's own URL, which is on dummy's origin.
-
-A `data:` URL is the one scheme allowed. It carries its resource inline and
-makes no request. The WHATWG Fetch standard's scheme fetch answers `"data"`
-by running "the data: URL processor on request's current URL" and returning
-the result, with no network step, and lists `data` among its local schemes.
-The platform style deliberately draws its filled status icons as CSS masks in
-custom properties (`design/README.md`, the Icons entry). Those masks are
-written as `data:` URLs, so the exemption is what lets a faithful copy of the
-style pass. Scheme names are case-insensitive (RFC 3986 section 3.1), so
-`DATA:` passes too.
-
-The requirement has to be decidable by a finite scan, so it is stated over
-the tokens CSS Syntax Level 3 produces, not over raw text. The bytes are read
-as UTF-8, the encoding a stylesheet defaults to (CSS Syntax Level 3 section
-3.2), with a leading U+FEFF dropped as that section's decode step drops a
-byte order mark. Each checked value is called V in the requirement, and V
-passes when it is a `data:` URL or when it is a relative reference with no
-network path; either one is enough. Its tokenizer
-(section 3.3 preprocessing, section 4 tokenization) already does the hard
-parts. It drops comments (4.3.2). It resolves escapes in strings and in
-unquoted URLs (4.3.7). It matches `url` ASCII case-insensitively (4.3.4). It
-turns an unquoted `url(...)` into a url-token, and a quoted one into a
-function token followed by a string token (4.3.4). Every place CSS takes a
-URL ends up as a url-token or a string-token:
-- CSS Values Level 4 section 4.5 writes a URL as `url(<string>)`, as the
-  unquoted url-token, or as `src(<string>)`, and `src()` may take its string
-  through `var()`, from a custom property.
-- CSS Cascade Level 5 section 2 gives `@import` a URL or a bare string.
-- CSS Images Level 4 says each string inside `image-set()` "represents a
-  <url>".
-
-So the scan checks the value of every url-token and every string-token,
-wherever it stands, and not only those in a URL position. That catches a URL
-reached through `var()` and makes no claim about grammar positions. The cost
-is that a non-URL string shaped like a scheme, such as `"a:b"`, also fails.
-A stylesheet is unlikely to need one, and a false alarm is cheap. Before the
-check, the value gets the treatment the WHATWG URL parser gives its input. It
-strips leading and trailing C0 controls and spaces, and it removes every
-U+0009, U+000A and U+000D; the requirement names U+000D explicitly because
-an escaped carriage return (`\d`) survives section 3.3 preprocessing into a
-token's value. A backslash counts as a slash because that parser
-reads `\` as `/` in a URL with a special scheme. Without those steps, a value
-such as `\\host/x` or `/<tab>/host` would slip past as relative while
-resolving to another host. A bad-url-token or a bad-string-token is not
-checked: the declaration or rule holding one is invalid, so a browser fetches
-nothing from it.
-
-The build run cannot fix a violation. `assets/` is hand-maintained and
-read-only to the run (`dummy/AGENTS.md`, `## Assets`), so a test that fails
-this requirement is filed as an issue for a human, who refreshes the copied
-stylesheet.
+third-party request of any kind. The page's own markup is `D04-panel`'s. The
+hand-maintained stylesheet is expected to reference only the files beside it
+and `data:` URLs, and the copying rule in `dummy/AGENTS.md` (`## Assets`) keeps
+it so. That is an authoring rule for the hand copy, not part of this design,
+and no requirement here checks it.
 
 ## REQUIREMENTS
 
@@ -163,4 +107,3 @@ stylesheet.
 - R-5S3E-XMLA: `Handler` MUST answer a request carrying a non-empty `X-User-Id` header whose path is an asset path and whose method is neither `GET` nor `HEAD`, whatever `If-None-Match` field it carries, with status 405, the header `Allow: GET, HEAD`, and a response in the chrome failure shape for `MethodNotAllowedMessage`.
 - R-5TBB-BEBZ: `Handler` MUST answer a request carrying a non-empty `X-User-Id` header whose path begins with `/assets/` and is not an asset path — `/assets/` itself, a path with a further `/` after `/assets/`, and a name `Assets` holds no regular file for included — whatever its method and whatever `If-None-Match` field it carries, with status 404 and a response in the chrome failure shape for `NotFoundMessage`.
 - R-5UJ7-P62O: A response `Handler` sends to a request whose path begins with `/assets/` MUST carry no `ETag` header when its status is neither 200 nor 304.
-- R-8VF0-T1ME: For every regular file in `Assets` at a path `assets/<name>` where `<name>` ends with the bytes `.css`, take the tokens CSS Syntax Level 3 produces from that file's bytes decoded as UTF-8 with a leading U+FEFF removed, after its section 3.3 preprocessing and by its section 4 tokenization; for every url-token and every string-token among them, let V be that token's value with leading and trailing C0 control and space characters removed and then every U+0009, U+000A and U+000D removed; V MUST satisfy at least one of: (a) V contains a `:` and the text before its first `:` is ASCII case-insensitively `data`; (b) V does not begin with two characters each of which is `/` or `\`, and V contains no `:` before its first `/`, `\`, `?` or `#`, or anywhere if it contains none of those four characters.

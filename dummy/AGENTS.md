@@ -56,15 +56,16 @@ expects goes through the stories and designs like any other change.
 
 ## Test files
 
-The sub-project's tests are all `*_test.go` files in the module: `cmd/dummy` and
-everything under `internal/`. This is the file set the canonical gap greps
+The sub-project's tests are all `*_test.go` files in the module: the root package,
+`cmd/dummy`, and everything under `internal/`. This is the file set the canonical gap greps
 for requirement ids:
 
 ```
 grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' . | sort -u
 ```
 
-`.` covers `cmd/` and `internal/`; `specs/` holds no `*_test.go`, so the
+`.` covers the root package, `cmd/`, and `internal/`;
+`specs/` holds no `*_test.go`, so the
 design documents never enter the test side of the grep.
 
 **No id-shaped literal in a fixture.** The grep above cannot tell a
@@ -141,6 +142,10 @@ that re-fetches the table fragment. The gates have no browser and no
 JavaScript engine, and the stdlib-only rule above forbids adding one, so a
 test asserts what a response body carries and never what a script would do
 with it. Nothing in the gates waits on a timer for a poll to come round.
+
+**A test may read `assets/`.** A test may open the files in this directory's
+own `assets/`, read-only, to compare them with what dummy embeds. It never
+writes there, and this is the only checkout file a test reads.
 
 **One exec'ing test, and only one.** Tests under `internal/` never start a
 real process; the run seam exists so they need not. The wiring in `cmd/dummy`
