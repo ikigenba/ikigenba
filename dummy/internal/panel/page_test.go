@@ -225,6 +225,58 @@ func TestPageLogoutURL(t *testing.T) {
 	}
 }
 
+// R-1A0D-766L R-1B89-KXXA R-1DO2-CHEO
+func TestPageProfileURL(t *testing.T) {
+	type profileString string
+	const local profileString = LocalProfileURL
+	if local != profileString("http://localhost:3001/") {
+		t.Fatal("local profile URL")
+	}
+	derive := []func(string, string) string{ProfileURL}[0]
+	for _, tc := range []struct{ host, proto, want string }{
+		{"dummy.space.test", "", "https://auth.space.test/"},
+		{"dummy.space.test:8443", "http", "http://auth.space.test/"},
+		{"dummy.space.test:8443", "https", "https://auth.space.test/"},
+		{"dummy.space.test", "HTTPS", "https://auth.space.test/"},
+		{"dummy.space.test", "http, https", "https://auth.space.test/"},
+		{"dummy.space.test", " https", "https://auth.space.test/"},
+		{"dummy.a:b:c", "http", "http://auth.a:b/"},
+		{"dummy..", "http", "http://auth../"},
+		{"dummy.", "https", LocalProfileURL},
+		{"dummy.:8443", "http", LocalProfileURL},
+		{"Dummy.space.test", "http", LocalProfileURL},
+		{"localhost:8080", "http", LocalProfileURL},
+		{"", "https", LocalProfileURL},
+		{"[::1]:8080", "http", LocalProfileURL},
+		{"unrelated.test", "https", LocalProfileURL},
+	} {
+		if got := derive(tc.host, tc.proto); got != tc.want {
+			t.Errorf("ProfileURL(%q, %q) = %q, want %q", tc.host, tc.proto, got, tc.want)
+		}
+	}
+}
+
+// R-1EVY-Q95D
+func TestPageBannerProcedure(t *testing.T) {
+	for _, tc := range []struct {
+		raw, want string
+		ok        bool
+	}{
+		{`<body> <header>first</header><header>second</header></body>`, `<header>first</header>`, true},
+		{`<script><body><header>hidden</header></script><BODY>
+<HEADER>shown</HEADER>`, `<HEADER>shown</HEADER>`, true},
+		{`<body><header><header>nested</header></header>`, `<header><header>nested</header>`, true},
+		{`<body><header>unfinished`, "", false},
+		{`<body><p>before</p><header>later</header>`, "", false},
+		{"<body>\u00a0<header>later</header>", "", false},
+		{`<header>no body</header>`, "", false},
+	} {
+		if got, ok := pageTestBannerValue(tc.raw); got != tc.want || ok != tc.ok {
+			t.Errorf("banner of %q = (%q, %v), want (%q, %v)", tc.raw, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
 // R-LXQ7-A81H R-LYY3-NZS6 R-LU2I-4WTE
 func TestPageIdentityBeforeRouting(t *testing.T) {
 	for _, path := range []string{"/", "/widgets", "/widgets/table", "/widgets/", "/unknown"} {
@@ -253,8 +305,8 @@ func TestPageIdentityBeforeRouting(t *testing.T) {
 	}
 }
 
-// R-ISWN-EKQ1 R-M3TP-72QY R-M51L-KUHN R-M69H-YM8C R-M8PA-Q5PQ
-// R-Y0N2-FA2G R-MB53-HP74 R-KS39-O19S
+// R-ISWN-EKQ1 R-M3TP-72QY R-1PV2-66TM R-M69H-YM8C R-1R2Y-JYKB
+// R-1TIR-BI1P R-MB53-HP74 R-1NF9-ENC8
 func TestPageRoutes(t *testing.T) {
 	cases := []struct {
 		method, path   string
@@ -366,7 +418,7 @@ func pageTestDocuments() []*http.Request {
 	}
 }
 
-// R-IWKC-JVY4 R-KKRV-DETM R-VAZJ-NNZP R-KTB6-1T0H
+// R-IWKC-JVY4 R-KKRV-DETM R-1HBR-HSMR R-1ON5-SF2X
 func TestPageDocumentChromeAndAttributes(t *testing.T) {
 	for _, r := range pageTestDocuments() {
 		r.Header.Set("X-User-Email", "reader &lt; <b>\" &\t \n other@example.test")
@@ -514,7 +566,7 @@ func TestPageNamedAttributesHaveOneQuotedOccurrence(t *testing.T) {
 	pageTestAttributeInvariants(t, fragment.Body.String())
 }
 
-// R-VH31-KIP6
+// R-1M7D-0VLJ
 func TestPageRequestValuesPreserveDocumentStructure(t *testing.T) {
 	base := widget.Submission{Name: strings.Repeat("n", widget.MaxNameRunes+1), Count: "bad", Status: "archived"}
 	attack := `"><form><script>bad</script></form>`
@@ -677,7 +729,7 @@ func TestPageCallerBytesCannotChangeMarkup(t *testing.T) {
 	}
 }
 
-// R-XICK-OPY1 R-V9RN-9W90 R-VAZJ-NNZP R-VC7G-1FQE
+// R-1EVY-Q95D R-D1RN-G96D R-1HBR-HSMR R-1IJN-VKDG
 func TestPageChromeHeader(t *testing.T) {
 	for _, r := range pageTestDocuments() {
 		for _, email := range []string{"", " one\t& <two>  three "} {
@@ -687,75 +739,97 @@ func TestPageChromeHeader(t *testing.T) {
 	}
 }
 
-func pageTestChromeSpan(t *testing.T, raw string) string {
-	t.Helper()
+func pageTestBannerValue(raw string) (string, bool) {
 	body := pageTestStrip(raw)
 	bodies := pageTestTags(body, "body", false)
-	headers := pageTestTags(body, "header", false)
-	if len(bodies) != 1 || len(headers) < 1 || strings.TrimSpace(body[bodies[0][1]:headers[0][0]]) != "" {
-		t.Fatal("chrome header does not immediately follow body")
+	if len(bodies) == 0 {
+		return "", false
 	}
-	ends := pageTestTags(body[headers[0][1]:], "header", true)
-	if len(ends) == 0 {
-		t.Fatal("chrome header has no end")
+	for _, header := range pageTestTags(body, "header", false) {
+		if header[0] < bodies[0][1] || !formASCIIWhitespace(body[bodies[0][1]:header[0]]) {
+			continue
+		}
+		ends := pageTestTags(body[header[1]:], "header", true)
+		if len(ends) == 0 {
+			return "", false
+		}
+		return body[header[0] : header[1]+ends[0][1]], true
 	}
-	return body[headers[0][0] : headers[0][1]+ends[0][1]]
+	return "", false
+}
+
+func pageTestChromeSpan(t *testing.T, raw string) string {
+	t.Helper()
+	banner, ok := pageTestBannerValue(raw)
+	if !ok {
+		t.Fatal("missing banner")
+	}
+	return banner
 }
 
 func pageTestChrome(t *testing.T, raw string, r *http.Request) {
 	t.Helper()
-	chrome := pageTestChromeSpan(t, raw)
-	if len(pageTestTags(chrome, "header", false)) != 1 {
-		t.Fatal("nested header in chrome")
+	banner := pageTestChromeSpan(t, raw)
+	if len(pageTestTags(banner, "header", false)) != 1 {
+		t.Fatal("nested header in banner")
 	}
-	strong, spans, forms := pageTestTags(chrome, "strong", false), pageTestTags(chrome, "span", false), pageTestTags(chrome, "form", false)
-	if len(strong) != 1 || len(spans) != 1 || strong[0][0] >= spans[0][0] {
-		t.Fatalf("chrome order: %q", chrome)
+	strong, links, forms := pageTestTags(banner, "strong", false), pageTestTags(banner, "a", false), pageTestTags(banner, "form", false)
+	if len(strong) == 0 || len(links) != 1 || len(forms) == 0 {
+		t.Fatalf("banner items: %q", banner)
 	}
-	if class, _ := pageTestAttribute(chrome[strong[0][0]:strong[0][1]], "class"); class != "mark" {
-		t.Fatal("mark class")
-	}
-	if service, _ := pageTestAttribute(chrome[strong[0][0]:strong[0][1]], "data-service"); service != ServiceName {
-		t.Fatal("mark service")
-	}
-	for _, item := range []struct {
-		open      [2]int
-		tag, want string
-	}{
-		{strong[0], "strong", "ikigenba"}, {spans[0], "span", strings.Join(strings.Fields(r.Header.Get("X-User-Email")), " ")},
-	} {
-		closingTags := pageTestTags(chrome[item.open[1]:], item.tag, true)
-		if len(closingTags) == 0 || pageTestNormalize(chrome[item.open[1]:item.open[1]+closingTags[0][0]]) != item.want {
-			t.Fatalf("chrome %s text: %q", item.tag, chrome)
-		}
-		if item.tag == "strong" && item.open[1]+closingTags[0][1] > spans[0][0] {
-			t.Fatal("chrome items overlap")
-		}
-	}
-	emailEnds := pageTestTags(chrome[spans[0][1]:], "span", true)
-	emailEnd := spans[0][1] + emailEnds[0][1]
-	want := `<button class="secondary small" type="submit">` + LogoutIcon + SignOutText + `</button></form>`
-	found := false
-	for _, form := range forms {
-		if form[0] < emailEnd {
+	link := links[0]
+	markFound := false
+	for _, mark := range strong {
+		markTag := banner[mark[0]:mark[1]]
+		class, hasClass := pageTestAttribute(markTag, "class")
+		service, hasService := pageTestAttribute(markTag, "data-service")
+		if !hasClass || class != "mark" || !hasService || service != ServiceName {
 			continue
 		}
-		formTag := chrome[form[0]:form[1]]
-		qualifies := true
-		for name, value := range map[string]string{"class": "inline", "method": "post", "action": LogoutURL(r.Host, r.Header.Get("X-Forwarded-Proto"))} {
-			got, ok := pageTestAttribute(formTag, name)
-			qualifies = qualifies && ok && got == value
+		markEnds := pageTestTags(banner[mark[1]:], "strong", true)
+		if len(markEnds) == 0 || pageTestNormalize(banner[mark[1]:mark[1]+markEnds[0][0]]) != "ikigenba" {
+			continue
 		}
-		if qualifies && strings.HasPrefix(chrome[form[1]:], want) {
-			found = true
+		markEnd := mark[1] + markEnds[0][1]
+		if markEnd <= link[0] && formASCIIWhitespace(banner[markEnd:link[0]]) {
+			markFound = true
 			break
 		}
 	}
-	if !found {
-		t.Fatalf("missing ordered logout form: %q", chrome)
+	if !markFound {
+		t.Fatal("missing ordered mark before email link")
 	}
-	if len(pageTestTags(chrome, "a", false)) != 0 {
-		t.Fatal("chrome contains anchor")
+	linkTag := banner[link[0]:link[1]]
+	if !regexp.MustCompile(`^<a href="[^"<>]*">$`).MatchString(linkTag) {
+		t.Fatal("email link shape")
+	}
+	if href, _ := pageTestAttribute(linkTag, "href"); href != ProfileURL(r.Host, r.Header.Get("X-Forwarded-Proto")) {
+		t.Fatal("profile URL")
+	}
+	linkEnds := pageTestTags(banner[link[1]:], "a", true)
+	if len(linkEnds) == 0 {
+		t.Fatal("email link end")
+	}
+	email := banner[link[1] : link[1]+linkEnds[0][0]]
+	if strings.Contains(email, "<") || pageTestNormalize(email) != strings.Join(strings.Fields(r.Header.Get("X-User-Email")), " ") {
+		t.Fatal("email text")
+	}
+	emailEnd := link[1] + linkEnds[0][1]
+	want := `<button class="secondary small" type="submit">` + LogoutIcon + SignOutText + `</button></form>`
+	found := false
+	for _, form := range forms {
+		if form[0] < emailEnd || !formASCIIWhitespace(banner[emailEnd:form[0]]) {
+			continue
+		}
+		qualifies := true
+		for name, value := range map[string]string{"class": "inline", "method": "post", "action": LogoutURL(r.Host, r.Header.Get("X-Forwarded-Proto"))} {
+			got, ok := pageTestAttribute(banner[form[0]:form[1]], name)
+			qualifies = qualifies && ok && got == value
+		}
+		found = found || qualifies && strings.HasPrefix(banner[form[1]:], want)
+	}
+	if !found {
+		t.Fatalf("missing ordered sign-out form: %q", banner)
 	}
 }
 
@@ -816,7 +890,7 @@ func TestPageDocumentHeadAndServiceSpelling(t *testing.T) {
 	}
 }
 
-// R-XS3R-QVVL R-XTBO-4NMA R-XVRG-W73O R-XWZD-9YUD R-XY79-NQL2 R-VN6J-HDEN
+// R-XS3R-QVVL R-XTBO-4NMA R-XVRG-W73O R-XWZD-9YUD R-1UQN-P9SE R-VN6J-HDEN
 func TestPagePanelLayout(t *testing.T) {
 	for _, r := range []*http.Request{pageTestRequest("GET", "/widgets"), pageTestFormRequest(widget.Submission{Name: "", Count: "bad", Status: "archived"})} {
 		body := pageTestStrip(pageTestResponse(Handler(widget.NewStore(), io.Discard), r).Body.String())
@@ -991,7 +1065,7 @@ func TestPageResponsesIndependentOfWorkingDirectory(t *testing.T) {
 }
 
 // R-5JK4-98EF R-5KS0-N054 R-5LZX-0RVT R-5N7T-EJMI R-5OFP-SBD7
-// R-5PNM-633W R-5QVI-JUUL R-5S3E-XMLA R-5TBB-BEBZ R-5UJ7-P62O
+// R-5PNM-633W R-5QVI-JUUL R-GKII-SBP9 R-GLQF-63FY R-5UJ7-P62O
 func TestEmbeddedAssetResponses(t *testing.T) {
 	entries, err := fs.ReadDir(dummy.Assets, "assets")
 	if err != nil {
@@ -1138,333 +1212,6 @@ func TestAssetContentTypeFallback(t *testing.T) {
 	}
 }
 
-func cssPreprocess(source []byte) []rune {
-	runes := []rune(strings.TrimPrefix(string(source), "\ufeff"))
-	out := make([]rune, 0, len(runes))
-	for i, r := range runes {
-		switch r {
-		case '\x00':
-			r = '\ufffd'
-		case '\r':
-			if i+1 < len(runes) && runes[i+1] == '\n' {
-				continue
-			}
-			r = '\n'
-		case '\f':
-			r = '\n'
-		}
-		out = append(out, r)
-	}
-	return out
-}
-
-func cssHex(r rune) bool   { return r >= '0' && r <= '9' || r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F' }
-func cssSpace(r rune) bool { return r == ' ' || r == '\n' || r == '\t' }
-func cssNameStart(r rune) bool {
-	return r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= 0x80
-}
-func cssName(r rune) bool                 { return cssNameStart(r) || r == '-' || r >= '0' && r <= '9' }
-func cssValidEscape(s []rune, i int) bool { return i+1 < len(s) && s[i] == '\\' && s[i+1] != '\n' }
-func cssIdentStart(s []rune, i int) bool {
-	if i >= len(s) {
-		return false
-	}
-	if s[i] == '-' {
-		return i+1 < len(s) && (cssNameStart(s[i+1]) || s[i+1] == '-' || cssValidEscape(s, i+1))
-	}
-	return cssNameStart(s[i]) || cssValidEscape(s, i)
-}
-func cssEscape(s []rune, i int) (rune, int) {
-	if i+1 >= len(s) {
-		return '\ufffd', i + 1
-	}
-	i++
-	if !cssHex(s[i]) {
-		return s[i], i + 1
-	}
-	start := i
-	for i < len(s) && i < start+6 && cssHex(s[i]) {
-		i++
-	}
-	var value rune
-	for _, r := range s[start:i] {
-		value *= 16
-		switch {
-		case r >= '0' && r <= '9':
-			value += r - '0'
-		case r >= 'a' && r <= 'f':
-			value += r - 'a' + 10
-		default:
-			value += r - 'A' + 10
-		}
-	}
-	if i < len(s) && cssSpace(s[i]) {
-		i++
-	}
-	if value == 0 || value > 0x10ffff || value >= 0xd800 && value <= 0xdfff {
-		value = '\ufffd'
-	}
-	return value, i
-}
-func cssConsumeName(s []rune, i int) (string, int) {
-	var value strings.Builder
-	for i < len(s) {
-		switch {
-		case cssName(s[i]):
-			value.WriteRune(s[i])
-			i++
-		case cssValidEscape(s, i):
-			r, next := cssEscape(s, i)
-			value.WriteRune(r)
-			i = next
-		default:
-			return value.String(), i
-		}
-	}
-	return value.String(), i
-}
-func cssConsumeString(s []rune, i int) (string, int, bool) {
-	quote := s[i]
-	var value strings.Builder
-	for i++; i < len(s); {
-		switch {
-		case s[i] == quote:
-			return value.String(), i + 1, true
-		case s[i] == '\n':
-			return "", i, false // bad-string-token
-		case s[i] == '\\' && i+1 < len(s) && s[i+1] == '\n':
-			i += 2
-		case cssValidEscape(s, i):
-			r, next := cssEscape(s, i)
-			value.WriteRune(r)
-			i = next
-		default:
-			value.WriteRune(s[i])
-			i++
-		}
-	}
-	return value.String(), i, true
-}
-func cssConsumeURL(s []rune, i int) (string, int, bool) {
-	var value strings.Builder
-	for i < len(s) {
-		switch {
-		case s[i] == ')':
-			return value.String(), i + 1, true
-		case cssSpace(s[i]):
-			for i < len(s) && cssSpace(s[i]) {
-				i++
-			}
-			if i == len(s) || s[i] == ')' {
-				if i < len(s) {
-					i++
-				}
-				return value.String(), i, true
-			}
-			return "", cssSkipBadURL(s, i), false
-		case s[i] == '"' || s[i] == '\'' || s[i] == '(' || s[i] < 0x20 || s[i] == 0x7f || s[i] == '\\' && !cssValidEscape(s, i):
-			return "", cssSkipBadURL(s, i), false
-		case cssValidEscape(s, i):
-			r, next := cssEscape(s, i)
-			value.WriteRune(r)
-			i = next
-		default:
-			value.WriteRune(s[i])
-			i++
-		}
-	}
-	return value.String(), i, true
-}
-func cssSkipBadURL(s []rune, i int) int {
-	for i < len(s) && s[i] != ')' {
-		if cssValidEscape(s, i) {
-			_, i = cssEscape(s, i)
-		} else {
-			i++
-		}
-	}
-	if i < len(s) {
-		i++
-	}
-	return i
-}
-func cssDigit(r rune) bool { return r >= '0' && r <= '9' }
-func cssNumberStart(s []rune, i int) bool {
-	if i >= len(s) {
-		return false
-	}
-	if s[i] == '+' || s[i] == '-' {
-		i++
-	}
-	return i < len(s) && (cssDigit(s[i]) || s[i] == '.' && i+1 < len(s) && cssDigit(s[i+1]))
-}
-func cssConsumeNumber(s []rune, i int) int {
-	if s[i] == '+' || s[i] == '-' {
-		i++
-	}
-	for i < len(s) && cssDigit(s[i]) {
-		i++
-	}
-	if i+1 < len(s) && s[i] == '.' && cssDigit(s[i+1]) {
-		i++
-		for i < len(s) && cssDigit(s[i]) {
-			i++
-		}
-	}
-	if i < len(s) && (s[i] == 'e' || s[i] == 'E') {
-		exponent := i + 1
-		if exponent < len(s) && (s[exponent] == '+' || s[exponent] == '-') {
-			exponent++
-		}
-		if exponent < len(s) && cssDigit(s[exponent]) {
-			i = exponent + 1
-			for i < len(s) && cssDigit(s[i]) {
-				i++
-			}
-		}
-	}
-	return i
-}
-func cssReferenceAllowed(value string) bool {
-	value = strings.TrimFunc(value, func(r rune) bool { return r >= 0 && r <= 0x20 })
-	value = strings.Map(func(r rune) rune {
-		if r == '\t' || r == '\n' || r == '\r' {
-			return -1
-		}
-		return r
-	}, value)
-	if colon := strings.IndexByte(value, ':'); colon >= 0 && strings.EqualFold(value[:colon], "data") {
-		return true
-	}
-	runes := []rune(value)
-	if len(runes) >= 2 && (runes[0] == '/' || runes[0] == '\\') && (runes[1] == '/' || runes[1] == '\\') {
-		return false
-	}
-	for _, r := range runes {
-		if r == ':' {
-			return false
-		}
-		if r == '/' || r == '\\' || r == '?' || r == '#' {
-			return true
-		}
-	}
-	return true
-}
-func cssReferenceValues(source []byte) []string {
-	s := cssPreprocess(source)
-	var values []string
-	for i := 0; i < len(s); {
-		switch {
-		case i+1 < len(s) && s[i] == '/' && s[i+1] == '*':
-			i += 2
-			for i+1 < len(s) && (s[i] != '*' || s[i+1] != '/') {
-				i++
-			}
-			if i+1 < len(s) {
-				i += 2
-			} else {
-				i = len(s)
-			}
-		case s[i] == '"' || s[i] == '\'':
-			value, next, ok := cssConsumeString(s, i)
-			if ok {
-				values = append(values, value)
-			}
-			i = next
-		case cssNumberStart(s, i):
-			i = cssConsumeNumber(s, i)
-			if cssIdentStart(s, i) {
-				_, i = cssConsumeName(s, i) // dimension-token, not a following url-token
-			} else if i < len(s) && s[i] == '%' {
-				i++
-			}
-		case (s[i] == '#' || s[i] == '@') && cssIdentStart(s, i+1):
-			_, i = cssConsumeName(s, i+1) // hash-token or at-keyword-token
-		case cssIdentStart(s, i):
-			name, next := cssConsumeName(s, i)
-			i = next
-			if !strings.EqualFold(name, "url") || i >= len(s) || s[i] != '(' {
-				continue
-			}
-			i++
-			for i < len(s) && cssSpace(s[i]) {
-				i++
-			}
-			if i < len(s) && (s[i] == '"' || s[i] == '\'') {
-				continue // function-token; next string-token is scanned normally
-			}
-			value, next, ok := cssConsumeURL(s, i)
-			if ok {
-				values = append(values, value)
-			}
-			i = next
-		default:
-			i++
-		}
-	}
-	return values
-}
-
-// R-8VF0-T1ME
-func TestStylesheetReferencesStayOnOrigin(t *testing.T) {
-	fixtures := []struct {
-		css     string
-		values  []string
-		allowed bool
-	}{
-		{`a{background:url(../font.woff2)}`, []string{"../font.woff2"}, true},
-		{`a{background:URL("DATA:image/svg+xml,a:b")}`, []string{"DATA:image/svg+xml,a:b"}, true},
-		{`/* url(https://ignored.test/) */ a{background:url(local.svg)}`, []string{"local.svg"}, true},
-		{`a{background:url(https://elsewhere.test/x)}`, []string{"https://elsewhere.test/x"}, false},
-		{`a{background:url(//elsewhere.test/x)}`, []string{"//elsewhere.test/x"}, false},
-		{`a{background:u\72l(\\\\elsewhere.test/x)}`, []string{`\\elsewhere.test/x`}, false},
-		{`a{--x:"/\9 /elsewhere.test/x"}`, []string{"/\t/elsewhere.test/x"}, false},
-		{`@import "https://elsewhere.test/x";`, []string{"https://elsewhere.test/x"}, false},
-		{`a{--x:5url(https://elsewhere.test/x)}`, nil, true},
-		{`a{--x:1e2url(https://elsewhere.test/x)}`, nil, true},
-		{`a{--x:#url(https://elsewhere.test/x)}`, nil, true},
-		{`@url(https://elsewhere.test/x)`, nil, true},
-	}
-	for _, tc := range fixtures {
-		values := cssReferenceValues([]byte(tc.css))
-		if !slices.Equal(values, tc.values) {
-			t.Errorf("fixture %q: tokens=%q, want %q", tc.css, values, tc.values)
-		}
-		allowed := true
-		for _, value := range values {
-			allowed = allowed && cssReferenceAllowed(value)
-		}
-		if allowed != tc.allowed {
-			t.Errorf("fixture %q: tokens=%q allowed=%v", tc.css, values, allowed)
-		}
-	}
-	entries, err := fs.ReadDir(dummy.Assets, "assets")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range entries {
-		if !strings.HasSuffix(entry.Name(), ".css") {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !info.Mode().IsRegular() {
-			continue
-		}
-		content, err := dummy.Assets.ReadFile("assets/" + entry.Name())
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, value := range cssReferenceValues(content) {
-			if !cssReferenceAllowed(value) {
-				t.Errorf("%s has external reference %q", entry.Name(), value)
-			}
-		}
-	}
-}
-
 // R-VIAX-YAFV
 func pageTestContentValue(raw string) (string, bool) {
 	body := pageTestStrip(raw)
@@ -1518,7 +1265,7 @@ func TestPageIconDeclarations(t *testing.T) {
 	}
 }
 
-// R-VJIU-C26K R-VKQQ-PTX9
+// R-1JRK-9C45 R-1KZG-N3UU
 func TestPageMainAndFailureContent(t *testing.T) {
 	for _, r := range pageTestDocuments() {
 		w := pageTestResponse(Handler(widget.NewStore(), io.Discard), r)

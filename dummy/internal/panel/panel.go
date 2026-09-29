@@ -43,6 +43,9 @@ const SignOutText = "Sign out"
 // LocalLogoutURL is auth's local development logout endpoint.
 const LocalLogoutURL = "http://localhost:3001/logout"
 
+// LocalProfileURL is auth's local development profile endpoint.
+const LocalProfileURL = "http://localhost:3001/"
+
 // LogoutIcon draws the chrome sign-out button.
 const LogoutIcon = `<svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg>`
 
@@ -77,6 +80,21 @@ func LogoutURL(host, forwardedProto string) string {
 		scheme = forwardedProto
 	}
 	return scheme + "://auth." + strings.TrimPrefix(host, "dummy.") + "/logout"
+}
+
+// ProfileURL derives auth's profile endpoint from the request host and strict proxy scheme.
+func ProfileURL(host, forwardedProto string) string {
+	if i := strings.LastIndexByte(host, ':'); i >= 0 {
+		host = host[:i]
+	}
+	if !strings.HasPrefix(host, "dummy.") || len(host) == len("dummy.") {
+		return LocalProfileURL
+	}
+	scheme := "https"
+	if forwardedProto == "http" || forwardedProto == "https" {
+		scheme = forwardedProto
+	}
+	return scheme + "://auth." + strings.TrimPrefix(host, "dummy.") + "/"
 }
 
 // safeAttribute is only called with template-owned attribute names. Escaping

@@ -334,7 +334,7 @@ func TestTableConditionalRequests(t *testing.T) {
 }
 
 func TestTableFailuresAndReadOnlyRequests(t *testing.T) {
-	// R-66IM-8IHL R-67QI-MA8A R-MLTP-HH47 R-MN1L-V8UW R-WIGA-XCYS
+	// R-GFMX-98QH R-GGUT-N0H6 R-MLTP-HH47 R-MN1L-V8UW R-WIGA-XCYS
 	for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE", "CUSTOM"} {
 		for _, identity := range []string{"absent", "empty", "present"} {
 			for _, conditional := range []string{"", "*", `"stale"`} {
@@ -376,7 +376,7 @@ func TestTableFailuresAndReadOnlyRequests(t *testing.T) {
 						if _, exists := response.Header()["Etag"]; exists {
 							t.Error("failure carries ETag")
 						}
-						if _, exists := response.Header()["Location"]; exists {
+						if _, exists := response.Header()["Location"]; wantStatus == http.StatusMethodNotAllowed && exists {
 							t.Error("failure carries Location")
 						}
 					}

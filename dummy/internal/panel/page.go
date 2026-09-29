@@ -13,6 +13,7 @@ type pageData struct {
 	Email          string
 	SignOutText    string
 	LogoutURL      string
+	ProfileURL     string
 	LogoutIcon     string
 	Subtitle       string
 	Message        string
@@ -23,7 +24,7 @@ type pageData struct {
 }
 
 func chromeData(r *http.Request) pageData {
-	return pageData{ServiceName: ServiceName, Email: r.Header.Get("X-User-Email"), SignOutText: SignOutText, LogoutURL: LogoutURL(r.Host, r.Header.Get("X-Forwarded-Proto")), LogoutIcon: LogoutIcon}
+	return pageData{ServiceName: ServiceName, Email: r.Header.Get("X-User-Email"), SignOutText: SignOutText, LogoutURL: LogoutURL(r.Host, r.Header.Get("X-Forwarded-Proto")), LogoutIcon: LogoutIcon, ProfileURL: ProfileURL(r.Host, r.Header.Get("X-Forwarded-Proto"))}
 }
 
 func (h *handler) renderPage(w http.ResponseWriter, r *http.Request, status int, sub widget.Submission, errs widget.FieldErrors) {

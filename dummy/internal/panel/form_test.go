@@ -43,6 +43,17 @@ func formSpan(t *testing.T, body string) string {
 	return body[starts[0][0]:ends[0][1]]
 }
 
+// R-GI2Q-0S7V
+func TestWidgetFormPageContent(t *testing.T) {
+	for _, request := range []*http.Request{
+		pageTestRequest(http.MethodGet, "/widgets"),
+		pageTestFormRequest(widget.Submission{Count: "bad"}),
+	} {
+		body := pageTestResponse(Handler(widget.NewStore(), io.Discard), request).Body.String()
+		_ = formSpan(t, body)
+	}
+}
+
 func formTags(body, name string) []string {
 	var result []string
 	for _, span := range pageTestTags(body, name, false) {
@@ -55,7 +66,7 @@ func formASCIIWhitespace(s string) bool {
 	return strings.Trim(s, " \t\n\v\f\r") == ""
 }
 
-// R-RBZN-I75Y R-9J24-JH4F
+// R-QRUP-9LZ7 R-9J24-JH4F
 func TestFormCard(t *testing.T) {
 	for _, sub := range []widget.Submission{{}, {Name: "", Count: "bad", Status: "archived"}} {
 		method, encoded := http.MethodGet, ""
@@ -175,7 +186,7 @@ func formControls(t *testing.T, body string) map[string]string {
 	return controls
 }
 
-// R-RARR-4FF9 R-K7FL-I6L2 R-K8NH-VYBR R-UC44-S8EO R-M49S-JQ63
+// R-K7FL-I6L2 R-K8NH-VYBR R-UC44-S8EO R-M49S-JQ63
 func assertFormMarkup(t *testing.T, body string) map[string]string {
 	t.Helper()
 	form := formSpan(t, body)
@@ -398,7 +409,7 @@ func TestFormFreshPagesAndFailures(t *testing.T) {
 	}
 }
 
-// R-REFG-9QNC R-GWHL-WEJ3 R-GYXE-NY0H R-H05B-1PR6
+// R-QT2L-NDPW R-GWHL-WEJ3 R-QUAI-15GL R-H05B-1PR6
 func TestFormRejections(t *testing.T) {
 	cases := []widget.Submission{
 		{Name: "", Count: "2", Status: "active"},
@@ -488,8 +499,62 @@ func assertFormPanel(t *testing.T, body string) {
 	if pageTestTags(content, "form", false)[0][0] < pageTestTags(content, "table", true)[0][1] {
 		t.Error("422 form does not follow table")
 	}
-	if len(pageTestTags(body, "script", false)) != 1 || len(pageTestTags(body, "script", true)) != 1 {
-		t.Error("422 lacks panel script")
+	table := formTable(t, body)
+	rows := 0
+	for _, row := range pageTestTags(table, "tr", false) {
+		ends := pageTestTags(table[row[1]:], "tr", true)
+		if len(ends) > 0 && len(pageTestTags(table[row[1]:row[1]+ends[0][0]], "td", false)) > 0 {
+			rows++
+		}
+	}
+	heading := pageTestHeading(rows)
+	trimmed := strings.Trim(content, " \t\n\v\f\r")
+	if !strings.HasPrefix(trimmed, heading) {
+		t.Fatal("422 heading does not count its table rows")
+	}
+	rest := strings.TrimLeft(trimmed[len(heading):], " \t\n\v\f\r")
+	divs, divEnds := pageTestTags(rest, "div", false), pageTestTags(rest, "div", true)
+	if len(divs) == 0 || len(divEnds) == 0 || divs[0][0] != 0 || divEnds[len(divEnds)-1][1] != len(rest) {
+		t.Fatal("422 content lacks panel wrapper after heading")
+	}
+	if class, _ := pageTestAttribute(rest[divs[0][0]:divs[0][1]], "class"); class != "panel" {
+		t.Fatal("422 panel wrapper class")
+	}
+	inside := rest[divs[0][1]:divEnds[len(divEnds)-1][0]]
+	forms, formEnds := pageTestTags(inside, "form", false), pageTestTags(inside, "form", true)
+	if len(forms) != 1 || len(formEnds) != 1 || forms[0][1] > formEnds[0][0] {
+		t.Fatal("422 widget form pair")
+	}
+	sections := pageTestTags(inside[:forms[0][0]], "section", false)
+	sectionEnds := pageTestTags(inside[formEnds[0][1]:], "section", true)
+	if len(sections) == 0 || len(sectionEnds) == 0 {
+		t.Fatal("422 form card pair")
+	}
+	card := inside[sections[len(sections)-1][0] : formEnds[0][1]+sectionEnds[0][1]]
+	inside = strings.TrimLeft(inside, " \t\n\v\f\r")
+	if !strings.HasPrefix(inside, table) {
+		t.Fatal("422 panel wrapper does not begin with table")
+	}
+	inside = strings.TrimLeft(inside[len(table):], " \t\n\v\f\r")
+	if !strings.HasPrefix(inside, card) || !formASCIIWhitespace(inside[len(card):]) {
+		t.Fatal("422 panel wrapper does not end with form card")
+	}
+	starts, ends := pageTestTags(body, "script", false), pageTestTags(body, "script", true)
+	if len(starts) != 1 || len(ends) != 1 || starts[0][1] > ends[0][0] {
+		t.Fatal("422 lacks panel script pair")
+	}
+	if _, present := pageTestAttribute(body[starts[0][0]:starts[0][1]], "src"); present {
+		t.Error("422 panel script loads external source")
+	}
+	for _, literal := range []string{"/widgets/table", "widgets-table", "5000"} {
+		if !strings.Contains(body[starts[0][1]:ends[0][0]], literal) {
+			t.Errorf("422 panel script lacks %q", literal)
+		}
+	}
+	tableStart := pageTestTags(body, "table", false)[0]
+	tableEnd := pageTestTags(body, "table", true)[0]
+	if starts[0][0] > tableStart[0] && starts[0][0] < tableEnd[1] {
+		t.Error("422 panel script is inside table")
 	}
 }
 
@@ -610,7 +675,7 @@ func (b *formObservedBody) Read(p []byte) (int, error) {
 
 func (*formObservedBody) Close() error { return nil }
 
-// R-H1D7-FHHV R-H2L3-T98K R-RFNC-NIE1 R-H05B-1PR6
+// R-H1D7-FHHV R-GJAM-EJYK R-RFNC-NIE1 R-H05B-1PR6
 func TestFormUnsupportedMediaNeverReads(t *testing.T) {
 	for _, mediaType := range []string{"", "application/json", "multipart/form-data; boundary=a", "text/plain", "application/x-www-form-urlencoded-extra", ";application/x-www-form-urlencoded"} {
 		t.Run(mediaType, func(t *testing.T) {

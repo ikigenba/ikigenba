@@ -1,5 +1,5 @@
 {{define "chrome"}}<header>
 <strong class="mark" data-service="dummy">ikigenba</strong>
-<span>{{esc .Email}}</span>
+<a {{attr "href" .ProfileURL}}>{{esc .Email}}</a>
 <form class="inline" method="post" {{attr "action" .LogoutURL}}><button class="secondary small" type="submit">{{.LogoutIcon}}{{esc .SignOutText}}</button></form>
 </header>{{end}}
