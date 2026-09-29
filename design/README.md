@@ -15,7 +15,7 @@ design/
     icons/tabler/   the Tabler SVGs in use, with LICENSE and VERSION
     specimen.html   the parts: tokens, type, controls, table, alerts, states
     app.html        dummy's panel: banner, widgets table, add form, states
-    launcher.html   the banner's service launcher, open, filtered, empty
+    launcher.html   the banner's service launcher, open, filtered, empty, disabled
     login.html      auth's sign-in, its error state, the signed-in profile
     profile.html    account, sessions, API tokens
     landing.html    marketing: hero, features, call to action
@@ -73,7 +73,10 @@ systems. The product name is **Ikigenba**. The example space is
   known today — `auth`, `crm`, `cron`, `dummy`, `files`, `invoices`,
   `ledger`, `prompts`, `repos`, `scripts`, `sites`, `webhooks`, `wiki` — with
   plausible others to fill the grid to scale.
-- States: filtered by `cr` (cron, scripts, secrets); no match for `kafka`.
+- `repos` is disabled (`opsctl disable`): its tile stays in place, faint and
+  unlinked, titled "repos is unavailable".
+- States: filtered by `cr` (cron, scripts, secrets); no match for `kafka`;
+  filtered by `re` with `repos` unavailable beside `secrets`.
 - Below 640px the panel is a full-width sheet under the banner.
 
 **login.html** — auth at `auth.acme.ikigenba.com`.

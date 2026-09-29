@@ -150,10 +150,10 @@ body > header nav a[aria-current] { color: var(--fg); background: var(--line-sof
 /* -------------------------------------------------------------- launcher */
 /* The service launcher: a grid button in the banner, left of the user, opens
    a panel of every service on the space — an icon over its name, A to Z, the
-   current one marked in black. The panel is a popover, so it opens, closes on
-   Escape or an outside click, and returns focus on its own. It hangs under the
-   banner, its right edge on the banner's; the tile grid scrolls under the
-   search field. */
+   current one marked in black, a disabled one faint. The panel is a popover,
+   so it opens, closes on Escape or an outside click, and returns focus on its
+   own. It hangs under the banner, its right edge on the banner's; the tile
+   grid scrolls under the search field. */
 body > header > .launcher { margin-left: auto; }
 body > header > .launcher ~ :is(span, a:not([class])) { margin-left: 0; }
 button.launcher {
@@ -192,6 +192,12 @@ nav.services a svg.ico {
 nav.services a:hover svg.ico { border-color: color-mix(in srgb, var(--line) 60%, var(--fg) 20%); }
 nav.services a[aria-current] { font-weight: 600; }
 nav.services a[aria-current] svg.ico { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+/* A disabled service keeps its tile, so the grid never reshuffles: faint,
+   unlinked, and saying why on hover. */
+nav.services a:not([href]) { color: var(--faint); cursor: default; }
+nav.services a:not([href]):hover { background: none; }
+nav.services a:not([href]) svg.ico,
+nav.services a:not([href]):hover svg.ico { background: var(--subtle); border-color: var(--line-soft); box-shadow: none; }
 nav.services > p { padding: var(--s5) var(--s3); text-align: center; color: var(--muted); font-size: var(--text-sm); }
 nav.services > p[hidden] { display: none; }
 
