@@ -4,6 +4,10 @@ Service file backups preserve ordinary service data while Litestream owns the
 declared databases. Init generates the file-backup schedules and the host's sole
 certificate-renewal schedule from configuration.
 
+A service archive holds only that service's `etc/` and `state/`; the services
+file under `/var/lib/ikigenba/` is never archived, because it is regenerated
+(D15, R-LZ82-QJF7).
+
 ## REQUIREMENTS
 
 - R-FJVO-5X9J: Package `internal/backup` MUST export `SetupTimers(ctx context.Context, env host.Env, store config.Store) error`.

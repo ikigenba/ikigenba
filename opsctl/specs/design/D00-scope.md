@@ -20,6 +20,9 @@ disabled through every operation until it is enabled. Release publication and th
 a host are maintained outside these designs. Setup composes certificate,
 nginx, replication and timer operations. Generated files are reconstructed from
 configuration and service declarations; application state outlives installation.
+One of them, the services file, lists the host's services for the launcher in
+every app's banner; it is rewritten wherever the nginx configuration is and is
+never backed up (D15).
 
 External programs and cloud access cross explicit dependency seams. The
 requirements state the supported public boundary; facts about external tools

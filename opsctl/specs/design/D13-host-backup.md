@@ -2,7 +2,10 @@
 
 The host keeps its configuration and certificate separately from service data.
 The backup package owns archive and retirement operations; the CLI renders their
-results. Its existing D11 package boundary remains sufficient.
+results. Its existing D11 package boundary remains sufficient. The host
+archive holds only `/etc/ikigenba/` and `/etc/letsencrypt/`; the generated
+services file under `/var/lib/ikigenba/` is neither archived nor restored
+(D15, R-LZ82-QJF7).
 
 Retirement stops every app's socket before any app's service, so no request
 and no app still running can start a service again, and leaves every unit

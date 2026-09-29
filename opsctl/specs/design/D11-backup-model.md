@@ -12,6 +12,11 @@ over TLS. The generated file therefore tells Litestream to address every
 replica path-style (`force-path-style: true`), unconditionally: the emitted key
 is part of the file's shape, not something derived from the bucket name.
 
+Nothing under `/var/lib/ikigenba/` is backed up: the services file there is
+generated from the store, what is under `/opt`, and which apps are disabled,
+like the nginx configuration and the unit files, so a restored host writes it
+again (D15, R-LZ82-QJF7).
+
 ## REQUIREMENTS
 
 - R-JJ94-707K: Package `internal/backup` MUST own service-file backup, host-file backup, service restore, retirement, and shared replication configuration, with shared service and database declarations consumed from `internal/apps`; its dependencies within this module MUST be limited to `internal/apps`, `internal/config`, `internal/cloud`, and `internal/host`, and it MUST NOT install Litestream or implement SQLite replication itself.
