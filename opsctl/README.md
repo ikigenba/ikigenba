@@ -3,36 +3,22 @@
 
 # opsctl
 
-`opsctl` is the operator CLI for the Ikigenba platform. Ikigenba is a PaaS
-for running internal apps; its core platform services all run on a single
-Linux host. `opsctl` is installed to `/usr/local/bin` on that host and is
-used, by humans and by agents, to bootstrap the platform and to help manage
-it. Most configuration and setup work is done over ssh by running `opsctl`
-on the host.
+`opsctl` is a CLI that bootstraps and manages the Ikigenba platform on a host.
+It runs as root on the platform's Linux host, where it is used by humans and
+agents, and by [`devctl`](../devctl) over ssh, to set up the host and install,
+restart, back up, and restore apps.
 
-Built spec-first: `specs/design/` is the contract, `AGENTS.md` the gates. No
-code or tests are written by hand; the build run derives them from the
-design. See the `spec` skill (`.agents/skills/spec/SKILL.md` at the repo root).
+## Installing it
 
-## Building it
-
-Requires **Go 1.26+**. From this directory:
+On the platform host, as root, run a release's installer with its version:
 
 ```sh
-make build     # bin/opsctl
-make install   # go install ./cmd/opsctl
-make test      # go test -race ./...
+curl -fsSL -o /tmp/opsctl-install.sh https://github.com/ikigenba/ikigenba/releases/download/opsctl/vX.Y.Z/install.sh
+sudo bash /tmp/opsctl-install.sh vX.Y.Z
 ```
 
-The full verification gates are declared in [`AGENTS.md`](AGENTS.md).
+## Using it
 
-## The spec
-
-- `specs/design/` — design documents; each requirement carries a permanent
-  `R-XXXX-XXXX` id, and every test tags the id it proves, so coverage is a
-  `grep`.
-- `AGENTS.md` — the toolchain, test-file set, gates, and commit conventions
-  the build run verifies against.
-
-To change opsctl, change the spec — `draft-design`, then `build-spec` —
-rather than editing the code directly.
+```sh
+opsctl --help
+```

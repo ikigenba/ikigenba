@@ -3,38 +3,24 @@
 
 # devctl
 
-`devctl` is the developer's CLI for the Ikigenba platform. Ikigenba is a PaaS
-for running internal apps; each deployment of it is complete on one Linux
-host. `devctl` is a Go binary built and run on the developer's own machine,
-as an ordinary user, under the developer's own AWS identity. It creates and
-manages the platform's deployments and the hosts they run on, talking to AWS
-APIs and, over ssh, to those hosts. It never runs as root and holds no
-host-side secrets. Its sibling, `opsctl`, is the host-side counterpart that
-runs as root on a host.
+`devctl` is a CLI that manages the Ikigenba platform from a developer's
+machine. It creates and manages spaces (each a complete deployment on one
+Linux host) and builds and deploys apps onto them, talking to AWS and, over
+ssh, to the hosts. It never runs as root. [`opsctl`](../opsctl) is its
+host-side counterpart.
 
-Built spec-first: `specs/design/` is the contract, `AGENTS.md` the gates. No
-code or tests are written by hand; the build run derives them from the
-design. See the `spec` skill (`.agents/skills/spec/SKILL.md` at the repo root).
-
-## Building it
-
-Requires **Go 1.26+**. From this directory:
+## Installing it
 
 ```sh
-make build     # bin/devctl
-make install   # go install ./cmd/devctl
-make test      # go test -race ./...
+curl -fsSL https://raw.githubusercontent.com/ikigenba/ikigenba/main/devctl/install.sh | sh
 ```
 
-The full verification gates are declared in [`AGENTS.md`](AGENTS.md).
+This installs the newest stable release (Linux and macOS, amd64 and arm64) to
+`~/.local/bin`. Set `DEVCTL_VERSION=vX.Y.Z` to pin a version, or `BINDIR` to
+change the destination.
 
-## The spec
+## Using it
 
-- `specs/design/` — design documents; each requirement carries a permanent
-  `R-XXXX-XXXX` id, and every test tags the id it proves, so coverage is a
-  `grep`.
-- `AGENTS.md` — the toolchain, test-file set, gates, and commit conventions
-  the build run verifies against.
-
-To change devctl, change the spec — `draft-design`, then `build-spec` —
-rather than editing the code directly.
+```sh
+devctl --help
+```
