@@ -16,6 +16,17 @@ the `spec` and `build-spec` skills. Everything below is what the build run
 computes the gap and runs the gates against; it is human-authored and read-only
 to the run.
 
+## Assets
+
+`assets/` holds copies of the repository's `design/` files: the stylesheet,
+fonts, and their licences. The interactive agent that changes `design/`
+refreshes them in the same session. The copied stylesheet replaces the
+Google Fonts import with `@font-face` rules for the files beside it, and its
+header names the `design/` commit it came from, so that commit lands first.
+
+The build run never writes to `assets/`. A needed asset that is missing or
+wrong is an issue for a human.
+
 ## Toolchain
 
 - Go 1.26 (`go version` must report 1.26+)

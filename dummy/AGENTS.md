@@ -23,26 +23,14 @@ human-authored and read-only to the run.
 
 ## Assets
 
-`assets/` holds the files that give dummy's pages the platform's visual style:
-the stylesheet, the font files, and the licences of what they carry —
-`OFL.txt` for the fonts and `TABLER-LICENSE.txt` for the Tabler icons the
-stylesheet and pages embed. They are copied by hand
-from the repository's `design/`, where the style is defined, and are not
-derived from `specs/`. The directory is hand-maintained and read-only to the
-run: the run never creates, edits, renames, or deletes anything in it, and
-writes no other file into it. The designs state how dummy embeds and serves
-these files, never what they contain, and the tests compare what dummy serves
-against the embedded files rather than restating their contents. A phase that
-needs an asset that is absent, or that has a different name or content,
-files an issue for a human to adjudicate.
+`assets/` holds copies of the repository's `design/` files: the stylesheet,
+fonts, and their licences. The interactive agent that changes `design/`
+refreshes them in the same session. The copied stylesheet replaces the
+Google Fonts import with `@font-face` rules for the files beside it, and its
+header names the `design/` commit it came from, so that commit lands first.
 
-A human refreshes `assets/` by copying the current files from `design/`,
-including `design/ikigenba/icons/tabler/LICENSE` as `TABLER-LICENSE.txt`. The
-copied stylesheet loads its fonts through `@font-face` rules that name the
-files beside it, in place of the design lab's font import, and its header
-comment names the `design/` commit it was copied from. A restyle that changes
-only these files touches no spec. A change to the markup the stylesheet
-expects goes through the stories and designs like any other change.
+The build run never writes to `assets/`. A needed asset that is missing or
+wrong is an issue for a human.
 
 ## Toolchain
 
