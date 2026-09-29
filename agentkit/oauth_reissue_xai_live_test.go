@@ -32,11 +32,15 @@ func (s xAIReissueTokenStore) Read(_ context.Context) ([]byte, error) {
 	if len(segments) != 3 || len(segments[2]) < 4 {
 		return nil, fmt.Errorf("access_token is not a three-segment JWT with a four-character signature suffix")
 	}
-	suffix := "AAAA"
-	if strings.HasSuffix(segments[2], suffix) {
-		suffix = "BBBB"
+	signature := []byte(segments[2])
+	for index := len(signature) - 4; index < len(signature); index++ {
+		if signature[index] == 'A' {
+			signature[index] = 'B'
+		} else {
+			signature[index] = 'A'
+		}
 	}
-	segments[2] = segments[2][:len(segments[2])-4] + suffix
+	segments[2] = string(signature)
 	stored["access_token"], err = json.Marshal(strings.Join(segments, "."))
 	if err != nil {
 		return nil, err
@@ -63,7 +67,7 @@ func readXAIAccessToken(t *testing.T, path string) string {
 	return stored.AccessToken
 }
 
-func buildXAIReissueConversation(t *testing.T, path string) *Conversation {
+func buildXAIReissueConversation(t *testing.T, path string) (*Conversation, *oauthRejectionObserver) {
 	t.Helper()
 	model, offering := firstXAIReissueOffering(t)
 	rotator := OAuthRotator(xAIReissueTokenStore{path: path})
@@ -79,7 +83,7 @@ func buildXAIReissueConversation(t *testing.T, path string) *Conversation {
 	if err != nil {
 		t.Fatalf("build xAI conversation: %v", err)
 	}
-	return conversation
+	return conversation, observeOAuthRejection(t, conversation, rotator)
 }
 
 func firstXAIReissueOffering(t *testing.T) (string, Offering) {
@@ -126,6 +130,7 @@ func assertXAIReissueTextTurn(t *testing.T, conversation *Conversation) {
 	}
 }
 
+// R-COMZ-MJZA
 func TestLiveOAuthReissueXAI(t *testing.T) {
 	path := os.Getenv("AGENTKIT_XAI_OAUTH_FILE")
 	if path == "" {
@@ -133,8 +138,11 @@ func TestLiveOAuthReissueXAI(t *testing.T) {
 	}
 
 	beforeToken := readXAIAccessToken(t, path)
-	conversation := buildXAIReissueConversation(t, path)
+	conversation, observer := buildXAIReissueConversation(t, path)
 	assertXAIReissueTextTurn(t, conversation)
+	if !observer.rejected {
+		t.Fatal("vendor did not reject the altered OAuth bearer")
+	}
 	if readXAIAccessToken(t, path) == beforeToken {
 		t.Fatal("xAI access_token did not change after rejected-credential reissue")
 	}
