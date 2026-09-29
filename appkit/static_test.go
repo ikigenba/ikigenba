@@ -45,6 +45,26 @@ func staticResponse(handler http.Handler, method, target string) *httptest.Respo
 	return recorder
 }
 
+func staticConditionalResponse(handler http.Handler, method, target string, headers http.Header) *httptest.ResponseRecorder {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(method, target, nil)
+	request.Header = headers.Clone()
+	handler.ServeHTTP(recorder, request)
+	return recorder
+}
+
+func staticNonmatchingHeaders() []http.Header {
+	return []http.Header{
+		{},
+		{"If-None-Match": {""}},
+		{"If-None-Match": {`"different"`}},
+		{"If-None-Match": {`W/"different", , "also different"`}},
+		{"If-None-Match": {`"different"`}, "If-Modified-Since": {"Tue, 01 Jan 2030 00:00:00 GMT"}},
+		{"If-None-Match": {`W/"different"`}, "If-Modified-Since": {"Tue, 01 Jan 1980 00:00:00 GMT"}},
+		{"If-None-Match": {", ,\t,"}, "If-Modified-Since": {"Tue, 01 Jan 2030 00:00:00 GMT"}},
+	}
+}
+
 func TestStaticPrefix(t *testing.T) {
 	// R-7MDN-MICX
 	const prefix = appkit.StaticPrefix
@@ -65,7 +85,7 @@ func TestStaticFactory(t *testing.T) {
 }
 
 func TestStaticGETBytes(t *testing.T) {
-	// R-7OTG-E1UB
+	// R-41EX-WQFL
 	handler := appkit.Static()
 	for _, file := range staticFiles {
 		t.Run(file.name, func(t *testing.T) {
@@ -76,9 +96,11 @@ func TestStaticGETBytes(t *testing.T) {
 				"/%5Fappkit/" + file.name,
 				"/_appkit%2F" + file.name,
 			} {
-				response := staticResponse(handler, http.MethodGet, target)
-				if response.Code != http.StatusOK || !bytes.Equal(response.Body.Bytes(), want) {
-					t.Errorf("GET %s: status %d, body equals asset: %t", target, response.Code, bytes.Equal(response.Body.Bytes(), want))
+				for _, headers := range staticNonmatchingHeaders() {
+					response := staticConditionalResponse(handler, http.MethodGet, target, headers)
+					if response.Code != http.StatusOK || !bytes.Equal(response.Body.Bytes(), want) {
+						t.Errorf("GET %s with %v: status %d, body equals asset: %t", target, headers, response.Code, bytes.Equal(response.Body.Bytes(), want))
+					}
 				}
 			}
 		})
@@ -97,21 +119,23 @@ func TestStaticContentTypes(t *testing.T) {
 }
 
 func TestStaticHEAD(t *testing.T) {
-	// R-7R99-5LBP
+	// R-42MU-AI6A
 	handler := appkit.Static()
 	for _, file := range staticFiles {
 		get := staticResponse(handler, http.MethodGet, appkit.StaticPrefix+file.name)
 		for _, target := range []string{appkit.StaticPrefix + file.name, "/%5Fappkit/" + file.name + "?x=1"} {
-			response := staticResponse(handler, http.MethodHead, target)
-			if response.Code != http.StatusOK || response.Body.Len() != 0 || response.Header().Get("Content-Type") != get.Header().Get("Content-Type") {
-				t.Errorf("HEAD %s: status %d, body length %d, Content-Type %q; GET Content-Type %q", target, response.Code, response.Body.Len(), response.Header().Get("Content-Type"), get.Header().Get("Content-Type"))
+			for _, headers := range staticNonmatchingHeaders() {
+				response := staticConditionalResponse(handler, http.MethodHead, target, headers)
+				if response.Code != http.StatusOK || response.Body.Len() != 0 || response.Header().Get("Content-Type") != get.Header().Get("Content-Type") {
+					t.Errorf("HEAD %s with %v: status %d, body length %d, Content-Type %q; GET Content-Type %q", target, headers, response.Code, response.Body.Len(), response.Header().Get("Content-Type"), get.Header().Get("Content-Type"))
+				}
 			}
 		}
 	}
 }
 
 func TestStaticUnknownPaths(t *testing.T) {
-	// R-7SH5-JD2E
+	// R-71YB-5NNS
 	paths := []string{appkit.StaticPrefix, appkit.StaticPrefix + "banner.html", "/", "/_appkit", "/_appkit/missing", "/_appkit/assets/theme.css"}
 	for _, file := range staticFiles {
 		paths = append(paths,
@@ -129,23 +153,27 @@ func TestStaticUnknownPaths(t *testing.T) {
 	handler := appkit.Static()
 	for _, path := range paths {
 		for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions, http.MethodConnect, http.MethodTrace, "CUSTOM"} {
-			response := staticResponse(handler, method, path)
-			if response.Code != http.StatusNotFound {
-				t.Errorf("%s %s: status %d, want 404", method, path, response.Code)
+			for _, headers := range []http.Header{{}, {"If-None-Match": {"*"}}, {"Range": {"bytes=0-3"}}} {
+				response := staticConditionalResponse(handler, method, path, headers)
+				if response.Code != http.StatusNotFound {
+					t.Errorf("%s %s with %v: status %d, want 404", method, path, headers, response.Code)
+				}
 			}
 		}
 	}
 }
 
 func TestStaticDisallowedMethods(t *testing.T) {
-	// R-7TP1-X4T3
+	// R-7367-JFEH
 	handler := appkit.Static()
 	for _, file := range staticFiles {
 		want := staticBytes(t, file.name)
 		for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions, http.MethodConnect, http.MethodTrace, "CUSTOM", "get", "head"} {
-			response := staticResponse(handler, method, appkit.StaticPrefix+file.name)
-			if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != "GET, HEAD" || bytes.Equal(response.Body.Bytes(), want) {
-				t.Errorf("%s %s: status %d, Allow %q, body equals asset: %t", method, file.name, response.Code, response.Header().Get("Allow"), bytes.Equal(response.Body.Bytes(), want))
+			for _, headers := range []http.Header{{}, {"If-None-Match": {"*"}}, {"Range": {"bytes=0-3"}}} {
+				response := staticConditionalResponse(handler, method, appkit.StaticPrefix+file.name, headers)
+				if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != "GET, HEAD" || bytes.Equal(response.Body.Bytes(), want) {
+					t.Errorf("%s %s with %v: status %d, Allow %q, body equals asset: %t", method, file.name, headers, response.Code, response.Header().Get("Allow"), bytes.Equal(response.Body.Bytes(), want))
+				}
 			}
 		}
 	}
@@ -189,5 +217,142 @@ func TestStaticConcurrentFactories(t *testing.T) {
 	close(errors)
 	for err := range errors {
 		t.Error(err)
+	}
+}
+
+func TestStaticStrongEntityTags(t *testing.T) {
+	// R-74E3-X756
+	for _, file := range staticFiles {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			for _, headers := range staticNonmatchingHeaders() {
+				response := staticConditionalResponse(appkit.Static(), method, appkit.StaticPrefix+file.name, headers)
+				assertStrongEntityTag(t, response.Header().Values("ETag"))
+			}
+		}
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			for _, headers := range []http.Header{
+				{"Range": {"bytes=0-3"}},
+				{"If-Match": {`"different"`}},
+				{"If-Unmodified-Since": {"Tue, 01 Jan 1980 00:00:00 GMT"}},
+				{"If-Range": {`"different"`}},
+				{"If-Modified-Since": {"Tue, 01 Jan 2030 00:00:00 GMT"}},
+			} {
+				response := staticConditionalResponse(appkit.Static(), method, appkit.StaticPrefix+file.name, headers)
+				if response.Code == http.StatusOK {
+					assertStrongEntityTag(t, response.Header().Values("ETag"))
+				}
+			}
+		}
+	}
+}
+
+func assertStrongEntityTag(t *testing.T, values []string) {
+	t.Helper()
+	if len(values) != 1 {
+		t.Fatalf("ETag headers = %q, want exactly one", values)
+	}
+	value := values[0]
+	if len(value) < 2 || value[0] != '"' || value[len(value)-1] != '"' {
+		t.Fatalf("ETag = %q, want a double-quoted strong entity-tag", value)
+	}
+	for index := 1; index < len(value)-1; index++ {
+		character := value[index]
+		if character < 0x21 || character == '"' || character == 0x7f {
+			t.Fatalf("ETag = %q, contains invalid opaque-tag byte", value)
+		}
+	}
+}
+
+func TestStaticCacheControl(t *testing.T) {
+	// R-EH0Y-OJ8X
+	for _, file := range staticFiles {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			for _, headers := range []http.Header{
+				{},
+				{"If-None-Match": {"*"}},
+				{"If-None-Match": {`"different"`}, "If-Modified-Since": {"Tue, 01 Jan 2030 00:00:00 GMT"}},
+				{"Range": {"bytes=0-3"}},
+				{"If-Match": {`"different"`}},
+				{"If-Unmodified-Since": {"Tue, 01 Jan 1980 00:00:00 GMT"}},
+				{"If-Range": {`"different"`}},
+				{"If-Modified-Since": {"Tue, 01 Jan 2030 00:00:00 GMT"}},
+			} {
+				response := staticConditionalResponse(appkit.Static(), method, appkit.StaticPrefix+file.name, headers)
+				if response.Code == http.StatusOK || response.Code == http.StatusNotModified {
+					if values := response.Header().Values("Cache-Control"); len(values) != 1 || values[0] != "no-cache" {
+						t.Errorf("%s %s with %v: Cache-Control = %q", method, file.name, headers, values)
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestStaticIfNoneMatch(t *testing.T) {
+	// R-EJGR-G2QB
+	for _, file := range staticFiles {
+		handler := appkit.Static()
+		path := appkit.StaticPrefix + file.name
+		etag := staticResponse(handler, http.MethodGet, path).Header().Get("ETag")
+		cases := []struct {
+			value string
+			match bool
+		}{
+			{"*", true},
+			{etag, true},
+			{"W/" + etag, true},
+			{`"different", ` + etag, true},
+			{etag + `, "different"`, true},
+			{`W/"different", W/` + etag + `, "other"`, true},
+			{"\t, , W/" + etag + "\t , ,\t", true},
+			{`"contains,a,comma", ` + etag, true},
+			{`"backslash\", ` + etag, true},
+			{"\"\x80\xff\", " + etag, true},
+			{`""`, false},
+			{`W/""`, false},
+			{`"different"`, false},
+			{`W/"different", , "other"`, false},
+			{", ,\t,", false},
+			{`"contains,a,comma", "backslash\"`, false},
+			{"\"\x80\xff\"", false},
+			{`"prefix` + etag[1:], false},
+			{etag[:len(etag)-1] + `suffix"`, false},
+		}
+		for _, item := range cases {
+			for _, method := range []string{http.MethodGet, http.MethodHead} {
+				response := staticConditionalResponse(handler, method, path, http.Header{"If-None-Match": {item.value}})
+				want := http.StatusOK
+				if item.match {
+					want = http.StatusNotModified
+				}
+				if response.Code != want {
+					t.Errorf("%s %s If-None-Match %q: status %d, want %d", method, file.name, item.value, response.Code, want)
+				}
+			}
+		}
+	}
+}
+
+func TestStaticNotModified(t *testing.T) {
+	// R-43UQ-O9WZ
+	for _, file := range staticFiles {
+		handler := appkit.Static()
+		path := appkit.StaticPrefix + file.name
+		etag := staticResponse(handler, http.MethodGet, path).Header().Get("ETag")
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			for _, condition := range []string{"*", etag, "W/" + etag, `"other", W/` + etag + ", ,"} {
+				for _, modifiedSince := range []string{"", "Tue, 01 Jan 1980 00:00:00 GMT", "Tue, 01 Jan 2030 00:00:00 GMT"} {
+					headers := http.Header{"If-None-Match": {condition}}
+					if modifiedSince != "" {
+						headers.Set("If-Modified-Since", modifiedSince)
+					}
+					response := staticConditionalResponse(handler, method, path, headers)
+					values := response.Header().Values("ETag")
+					if response.Code != http.StatusNotModified || response.Body.Len() != 0 || len(values) != 1 || values[0] != etag {
+						t.Errorf("%s %s with %v: status %d, body length %d, ETag %q; want 304, empty body, %q", method, file.name, headers, response.Code, response.Body.Len(), values, etag)
+					}
+				}
+			}
+		}
 	}
 }
