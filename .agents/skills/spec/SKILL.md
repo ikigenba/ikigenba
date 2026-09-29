@@ -11,7 +11,7 @@ The specs describe the **current target**, not a commitment to earlier designs. 
 
 ## Layout
 
-- `specs/stories/` — user stories, one group per file (`S<int>-<slug>.md`). The intent the designs realise; written first, carry no ids. Format: `references/story-format.md`.
+- `specs/stories/` — user stories, one group per file (`S<int>-<slug>.md`). The intent the designs realise; written first, carry no ids. Absent for a library, whose intent is the interface agreed in conversation and locked in by `draft-design`. Format: `references/story-format.md`.
 - `specs/design/` — design documents (`D<int>-<slug>.md`). Human-authored.
 - `specs/issues/` — escalation channel; one markdown file per open issue, named `<slug>.md` (issues carry no minted id).
 - `AGENTS.md` — beside `specs/`; declares the sub-project's toolchain, test files, gates, and commit conventions (below). Human-authored.

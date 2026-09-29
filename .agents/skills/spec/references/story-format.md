@@ -101,14 +101,11 @@ implemented or tested; those belong to the design. It does name the things the a
 can see: paths on disk the command reads or writes, environment it consults,
 a resource's identifier scheme.
 
-## For a package
+## For a library
 
-The format above assumes a CLI. A sub-project whose
-consumer is another program, not a person at a terminal, keeps the same
-sections with the interaction as consumer code: the `Command:` block is the
-call as the consumer writes it, `Output:` is what it returns or the error it
-surfaces, and the exit line is replaced by a sentence naming the return.
-Preconditions and postconditions are unchanged.
+A library has no stories: no person interacts with it. Its intent is the
+public interface agreed with the user in conversation, and `draft-design`
+locks that agreement in as design.
 
 ## For a web app
 

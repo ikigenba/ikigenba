@@ -15,8 +15,11 @@ decomposition, ownership, verification, capacity handling, and repairs.
 ## Goal and authority
 
 Produce a coherent, testable public contract for the selected story groups
-in one sub-project. Finish all work possible from available inputs while
-carrying unsettled user decisions to the root.
+in one sub-project. For a library, the input is instead the public interface
+agreed with the user in this conversation: present it at a high level and
+get agreement before authoring; this operation locks it in. Finish all work
+possible from available inputs while carrying unsettled user decisions to
+the root.
 
 Resolve the selected sub-project to an absolute directory; ask if context does
 not identify it. Read applicable ancestor guidance and its own `AGENTS.md`;
@@ -38,7 +41,8 @@ Report blockers and unresolved decisions to the user, not `specs/issues/`.
 
 ## Coverage and design work
 
-Delegate an inventory of input stories and acceptance criteria, using stable
+Delegate an inventory of input stories and acceptance criteria (for a
+library, the agreed interface and its consumer tasks), using stable
 source locators rather than minted ids. For stories without explicit criteria,
 identify their stated outcomes and distinguish them from open questions.
 Track, for each of those outcomes, its owning scope, requirements, verified
@@ -56,8 +60,9 @@ package layout still fits, including the package owning every exported name.
 Capture needed layout changes as structural requirements. Author structural
 and behavioral requirements under the canonical rules, minting ids with
 `idgen`. Preserve unchanged requirement text byte-for-byte; changed text gets
-a new id. Every requirement must trace to a story outcome or a necessary
-public declaration, invariant, or project constraint supporting one.
+a new id. Every requirement must trace to a story outcome (for a library,
+an agreed consumer task) or a necessary public declaration, invariant, or
+project constraint supporting one.
 
 Supply complete consumer tasks using exactly the proposed contract. For
 revisions, show current and proposed usage. Usage review must
