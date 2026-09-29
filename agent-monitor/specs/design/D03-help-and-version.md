@@ -11,14 +11,19 @@ matters, and why these outcomes are the same whatever the `System` is and
 touch no file are `D02-cli-grammar`.
 
 The top-level help describes what the tool is for — observing the coding
-agents on the machine through their logs and hooks. Its usage has four
+agents on the machine through their logs and hooks — and, on the line right
+after that description, that running it with no arguments in a terminal
+browses them interactively. Its usage has four
 lines, one for the options and one for each command; it lists the three
 commands, `list`, `tree`, and `chat`, with their arguments aligned in one
 column, points at a command's own help, lists the two options, each in its
 short and long spelling, and lists the five exit codes `D01` declares, the
 codes the commands use between them (`tree` and `chat` find a session not
-found, and `chat` an agent). The bare
-run prints it too, so with nothing to do agent-monitor shows what it can do.
+found, and `chat` an agent). A bare
+run that does not browse — standard input or standard output is not a
+terminal (`D01`) — prints it too, so where there is no one to browse with
+agent-monitor shows what it can do instead; like every help it needs no
+`HOME` and reads nothing. A bare run that browses prints no help (`D02`).
 It is the whole of standard output for `--help` or `-h` as the first
 argument, ends in a newline, and is never written to standard error.
 
@@ -57,11 +62,11 @@ standard output. After `list`, `tree`, or `chat` it is an unknown option
 
 ## REQUIREMENTS
 
-- R-KDOM-HO0C: `Usage` MUST be exactly `"Usage: agent-monitor [options]\n       agent-monitor list <harness>\n       agent-monitor tree <harness> <session-id>\n       agent-monitor chat <harness> <session-id> [<agent-id>]\n\nObserve the coding agents on this machine through their logs and hooks.\n\nCommands:\n  list <harness>                            list the live root sessions of claude, codex, or grok\n  tree <harness> <session-id>               draw the subagent tree of one session\n  chat <harness> <session-id> [<agent-id>]  print one agent's chat\n\nsee 'agent-monitor <command> --help' for command options\n\nOptions:\n  -h, --help      print this help\n  -V, --version   print the version\n\nExit codes:\n  0  success\n  1  the output could not be written\n  2  usage error\n  3  the harness's session data could not be read\n  4  the session or agent was not found\n"`.
+- R-XCWD-J432: `Usage` MUST be exactly `"Usage: agent-monitor [options]\n       agent-monitor list <harness>\n       agent-monitor tree <harness> <session-id>\n       agent-monitor chat <harness> <session-id> [<agent-id>]\n\nObserve the coding agents on this machine through their logs and hooks.\nRun with no arguments in a terminal to browse them interactively.\n\nCommands:\n  list <harness>                            list the live root sessions of claude, codex, or grok\n  tree <harness> <session-id>               draw the subagent tree of one session\n  chat <harness> <session-id> [<agent-id>]  print one agent's chat\n\nsee 'agent-monitor <command> --help' for command options\n\nOptions:\n  -h, --help      print this help\n  -V, --version   print the version\n\nExit codes:\n  0  success\n  1  the output could not be written\n  2  usage error\n  3  the harness's session data could not be read\n  4  the session or agent was not found\n"`.
 - R-TNCN-3IL1: `ListUsage` MUST be exactly `"Usage: agent-monitor list [-f] <harness>\n\nList the live root sessions of one harness, newest activity first.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  -f, --follow  keep the list up to date until interrupted\n  -h, --help    print this help\n"`.
 - R-TOKJ-HABQ: `TreeUsage` MUST be exactly `"Usage: agent-monitor tree [-f] [--no-color] <harness> <session-id>\n\nDraw the subagent tree of one session.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  -f, --follow  keep the tree up to date until interrupted\n  --no-color    print without colour\n  -h, --help    print this help\n"`.
 - R-TPSF-V22F: `ChatUsage` MUST be exactly `"Usage: agent-monitor chat [-f] <harness> <session-id> [<agent-id>]\n\nPrint one agent's chat and its token totals.\n\nHarnesses:\n  claude  Claude Code\n  codex   OpenAI Codex CLI\n  grok    Grok Build CLI\n\nOptions:\n  -f, --follow  keep printing new entries until interrupted\n  -h, --help    print this help\n"`.
-- R-EZ4D-QPN7: When `args` is empty, `Run` MUST write exactly `Usage` to `stdout`, write nothing to `stderr`, and return `ExitSuccess`.
+- R-XE49-WVTR: When `args` is empty and the call of `Run` does not browse (`R-KSC4-HRUU`, `D01-layout-and-run-seam`), `Run` MUST write exactly `Usage` to `stdout`, write nothing to `stderr`, and return `ExitSuccess`, whether or not `sys.Home` is the empty string.
 - R-352F-PY4P: When `args[0]` is `--help` or `-h`, `Run` MUST write exactly `Usage` to `stdout`, write nothing to `stderr`, and return `ExitSuccess`.
 - R-F0CA-4HDW: When `args[0]` is `list` and at least one element of `args[1:]` is byte-for-byte equal to `--help` or `-h`, `Run` MUST write exactly `ListUsage` to `stdout`, write nothing to `stderr`, and return `ExitSuccess`, whatever the other elements of `args[1:]` are, so that `["list", "--help"]`, `["list", "-h"]`, `["list", "claude", "--help"]`, and `["list", "bogus", "extra", "--bogus", "-h"]` all write `ListUsage`.
 - R-QGJH-6IYJ: When `args[0]` is `tree` and at least one element of `args[1:]` is byte-for-byte equal to `--help` or `-h`, `Run` MUST write exactly `TreeUsage` to `stdout`, write nothing to `stderr`, and return `ExitSuccess`, whatever the other elements of `args[1:]` are, so that `["tree", "--help"]`, `["tree", "-h"]`, `["tree", "claude", "7c2e9a41-3b0d-4f6e-9a57-2d8c1e0b5f93", "--help"]`, and `["tree", "bogus", "extra", "more", "--bogus", "-h"]` all write `TreeUsage`.

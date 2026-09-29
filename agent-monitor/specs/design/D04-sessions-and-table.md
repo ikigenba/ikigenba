@@ -14,13 +14,36 @@ locates a session in. The package reaches nothing on the machine by itself:
 it formats, it splits bytes, and its log reader reads only through the
 `fs.FS` it is handed, never writing.
 
-A session is its id, its status, the time it was last active, the directory
-it works in, and its title. Status is one of three words — `working`,
-`idle`, or `unknown` — so it is a named string type with one constant per
-word, and what the table prints for it is the word itself. The time a
-session was last active may not be known yet; that is said by a separate
-flag rather than by the zero time, so that no time value is ever mistaken
-for "absent".
+A session is its id, its status, the moment it started, the time it was
+last active, the directory it works in, and its title. Status is one of
+three words — `working`, `idle`, or `unknown` — so it is a named string type
+with one constant per word, and what the table prints for it is the word
+itself. The moment a session started and the time it was last active may
+each not be known; each is said by a separate flag rather than by the zero
+time, so that no time value is ever mistaken for "absent" — the same
+`Started`/`HasStarted` shape `tree.Node` (`D09-tree`) uses for a subagent.
+
+A session's start is the moment its harness recorded the session starting,
+and each harness design names where that is: the registration's `startedAt`
+for Claude Code (`D06`), the `timestamp` of the `session_meta` record that
+begins a Codex rollout (`D07`), and the index entry's `opened_at` for Grok
+(`D08`). Where a harness design names none, or the source is missing or
+unreadable, the start is unknown. The table never shows the start and never
+orders by it: `list` stays ordered by activity. The start orders the
+browser's session menu instead (`D12-browse`), through `OrderByStart`, which
+returns the sessions oldest start first, the ones whose start is unknown
+after all the others, and ties by id, byte by byte. It hands back a new slice
+and leaves the one it was given alone, so a caller can keep both.
+
+The browser draws each session row exactly as `list` does, but in its own
+order, and it must know which line is which session to put its highlight on
+one. `TableRows` is `Table` taken apart for that: it returns the header line
+and one row per session, each without its newline, the rows in the order
+they were handed in, so `rows[i]` is the row of `sessions[i]`. Every cell and
+every column width is the one `Table` gives for the same sessions, so a menu
+drawn from `TableRows` lines up exactly as `list` would. Cutting a row at the
+terminal's edge and the reverse-video highlight belong to the browser, not
+here.
 
 The table is plain, aligned text. The header names five columns; every
 column is as wide as its widest cell, header included, counted in
@@ -99,8 +122,10 @@ of their files are logs.
 
 - R-GNAW-66A5: The `internal/session` package MUST export the named type `type Status string`.
 - R-GOIS-JY0U: The `internal/session` package MUST export the constants `StatusWorking Status = "working"`, `StatusIdle Status = "idle"`, and `StatusUnknown Status = "unknown"`, each declared with the type `Status`.
-- R-GPQO-XPRJ: The `internal/session` package MUST export the struct type `type Session struct { ID string; Status Status; LastActive time.Time; HasLastActive bool; CWD string; Title string }`, with exactly these fields in this order.
+- R-MSC2-VBSG: The `internal/session` package MUST export the struct type `type Session struct { ID string; Status Status; Started time.Time; HasStarted bool; LastActive time.Time; HasLastActive bool; CWD string; Title string }`, with exactly these fields in this order.
 - R-GQYL-BHI8: The `internal/session` package MUST export `func Table(sessions []Session) string`.
+- R-MTJZ-93J5: The `internal/session` package MUST export `func OrderByStart(sessions []Session) []Session`.
+- R-KFTE-HPU0: The `internal/session` package MUST export `func TableRows(sessions []Session) (header string, rows []string)`.
 - R-GS6H-P98X: The `internal/session` package MUST export the struct type `type ReadError struct { Path string; Err error }`, with exactly these fields in this order.
 - R-GTEE-30ZM: The `internal/session` package MUST export the method `func (e *ReadError) Error() string`, so that `*ReadError` implements `error` and `ReadError` (the non-pointer type) does not.
 - R-W4QW-UJZU: The `internal/session` package MUST export the variable `ErrNotJSON` of type `error`, and its value MUST be non-nil.
@@ -120,9 +145,15 @@ of their files are logs.
 - R-HAGZ-FTDC: `Table` MUST order two sessions that tie — both with `HasLastActive` true and `LastActive` values for which `time.Time.Compare` returns 0, or both with `HasLastActive` false — by `ID` ascending in bytewise order of the raw `ID` strings (not of their escaped form), and sessions that also have equal `ID` MUST keep their relative order in `sessions`.
 - R-HBOV-TL41: When `sessions` is empty or nil, `Table(sessions)` MUST return exactly `"SESSION  STATUS  LAST ACTIVE  CWD  TITLE\n"`.
 - R-HCWS-7CUQ: `Table` MUST NOT modify `sessions` or any of its elements: the slice's length and every element are the same after the call as before it.
+- R-KH1A-VHKP: For every `sessions`, `TableRows(sessions)` MUST return `rows` with `len(rows)` equal to `len(sessions)`, `header` equal to the first line of `Table(sessions)` without its terminating `"\n"`, and each `rows[i]` equal to the line `Table(sessions)` writes for `sessions[i]` without its terminating `"\n"`, so that the rows come in the order of `sessions`, not in `Table`'s order, while every cell and column width is exactly `Table`'s for the same `sessions`; for an empty or nil `sessions` it MUST return `header` `SESSION  STATUS  LAST ACTIVE  CWD  TITLE` and a `rows` of length 0.
+- R-KI97-99BE: `TableRows` MUST NOT modify `sessions` or any of its elements: the slice's length and every element are the same after the call as before it.
+- R-MURV-MV9U: `OrderByStart(sessions)` MUST return a slice whose length is `len(sessions)` and whose elements are the elements of `sessions`, each `Session` value appearing as many times as it appears in `sessions`, and MUST NOT modify `sessions` or any of its elements, so that the slice's length and every element are the same after the call as before it; the returned slice MUST NOT share its backing array with `sessions`, so that assigning to an element of the returned slice changes no element of `sessions`; for an empty or nil `sessions` it MUST return a slice of length 0.
+- R-MVZS-0N0J: `OrderByStart` MUST order the sessions it returns so that every session with `HasStarted` true comes before every session with `HasStarted` false, and sessions that both have `HasStarted` true come in ascending order of `Started` as compared by `time.Time.Compare` (oldest first), the full time including fractional seconds; the `Started` of a session with `HasStarted` false MUST NOT affect the result.
+- R-MX7O-EER8: `OrderByStart` MUST order two sessions that tie — both with `HasStarted` true and `Started` values for which `time.Time.Compare` returns 0, or both with `HasStarted` false — by `ID` ascending in bytewise order of the raw `ID` strings, and sessions that also have equal `ID` MUST keep their relative order in `sessions`; so sessions with `ID`s `b` and `a` started at the same moment, `d` started a second earlier, and `z` and `c` with `HasStarted` false, handed in the order `z`, `b`, `c`, `a`, `d`, are returned in the order `d`, `a`, `b`, `c`, `z`.
 - R-HE4O-L4LF: A *record* of a log file MUST be an element of `Lines` applied to the file's whole content for which `json.Valid` reports true and whose first byte that is not JSON whitespace is `{`; the `List` function of `internal/harness/claude`, `internal/harness/codex`, and `internal/harness/grok` MUST take every value it derives from a log file (a JSONL file their designs name as a log) from the log's records only, ignoring every line that is not a record and the final fragment `Lines` does not return, so that a log whose last line is half written yields the same values as the same log without that fragment.
 - R-HFCK-YWC4: A *timestamp* of a record under a member name `k` named by a harness design MUST be the time `t` for which `time.Parse(time.RFC3339Nano, s)` returns `t` and a nil error, where `s` is the JSON string value of the record's top-level member `k`; a record whose top-level member `k` is absent, is not a JSON string, or holds a string for which `time.Parse(time.RFC3339Nano, s)` returns an error MUST be treated by the harness `List` functions as having no timestamp under `k`, exactly as a record without that member.
 - R-HHSD-QFTI: The *latest timestamp* of a log file under a member name `k` MUST be the greatest, as compared by `time.Time.Compare`, of the timestamps under `k` of the log's records, whatever their order in the file, and a log none of whose records has a timestamp under `k` has no latest timestamp; wherever a harness design sets a `Session`'s `LastActive` from a log's latest timestamp, the harness `List` MUST set `LastActive` to a time for which `time.Time.Compare` with the latest timestamp returns 0 and `HasLastActive` to true, and when the log has no latest timestamp MUST set `HasLastActive` to false.
+- R-MYFK-S6HX: Wherever a harness design sets a `Session`'s `Started` from a moment `t` it names as the session's start, the `List` function of `internal/harness/claude`, `internal/harness/codex`, or `internal/harness/grok` MUST set that `Session`'s `Started` to a time for which `time.Time.Compare` with `t` returns 0 and its `HasStarted` to true; for every other `Session` it returns — its harness design names no start for it, or the named source is absent or does not yield a time — `List` MUST set `HasStarted` to false.
 - R-2PBF-MVF4: A pass `l.Read(fsys, name)` MUST call no method of `fsys` other than `Open`, and that exactly once, with `name`; when `Open` returns a nil error, the pass MUST call the opened file's `Stat` at most once and its `Close` exactly once before returning, MUST NOT call the opened file's `Read` method, and MUST NOT write, create, or remove anything.
 - R-2QJC-0N5T: The *size* a pass observes MUST be `fi.Size()`, and its *identity* the `proc.FileID` and flag `proc.FileIDOf(fi)` returns, where `fi` is the `fs.FileInfo` returned by the `Stat` of the file the pass opened.
 - R-2RR8-EEWI: A pass MUST reset — return `reset` true — if and only if it returns a nil error and either the size it observes is less than the `Log`'s offset before the pass, or `proc.FileIDOf` reported true both for its identity and for the identity observed by the `Log`'s latest earlier pass that returned a nil error, and the two `proc.FileID` values differ; so the first pass of a zero-value `Log` never resets, and when `proc.FileIDOf` reports false for either of those two passes only a size below the offset resets.

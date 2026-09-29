@@ -41,6 +41,25 @@ record and a timestamp in `D04-sessions-and-table`. TITLE is the
 appends a new line when a thread is renamed, so the last line is the current
 name.
 
+A session's start, which orders the browser's session menu, is the top-level
+`timestamp` of that first `session_meta` record, read as every other
+timestamp is (`D04-sessions-and-table`). On this machine every rollout begins
+with a `session_meta` record whose `timestamp` is an RFC 3339 UTC string with
+milliseconds, such as `2026-09-24T05:23:50.721Z`. Only the first record
+counts. A forked subagent's second record is a copy of its parent's
+`session_meta`, with the parent's id and creation time, and it never supplies
+the start. No thread here has more than one rollout, and no rollout holds a
+`session_meta` after its second record, even where records resume hours after
+a pause; records appended later cannot move the start, so a thread that is
+loaded again keeps the start its rollout first recorded. The record's
+`payload.timestamp` is not used. It is the moment Codex created the thread,
+the same moment the rollout's file name records in local time, and the
+top-level `timestamp` follows it by up to about a minute, because Codex writes
+the rollout only when the thread first needs it. A start that cannot be read
+is unknown rather than a failure, like every other field: the rollout is not
+written yet or holds no record, its first record is not `session_meta`, or
+that record's `timestamp` is missing, is not a string, or is not a time.
+
 Each field falls back on its own. A thread whose rollout does not exist yet,
 cannot be read, or holds no complete record is still listed, as `unknown`
 with no LAST ACTIVE and with the working directory of the process that holds
@@ -177,6 +196,9 @@ is `cache_write_input_tokens`, which Codex has so far always recorded as 0.
 - R-P234-64KW: A returned session's `CWD` MUST be the string `encoding/json` decodes from the `payload.cwd` of its thread's session meta when that is a JSON string and the decoded string is non-empty; otherwise it MUST be the path `proc.Cwd(root, pid)` (`D05-process-facts`) returns for the entry's holder pid, or the empty string when `proc.Cwd` returns an error.
 - R-Z25O-1EBN: When a returned session's rollout is usable, its `Status` MUST be decided by the last record, in file order, whose top-level `type` is the JSON string `event_msg` and whose `payload.type` is the JSON string `task_started`, `task_complete`, or `turn_aborted`: `session.StatusWorking` for `task_started`, `session.StatusIdle` for `task_complete` or `turn_aborted`; when the rollout holds no such record, its `Status` MUST be `session.StatusIdle`.
 - R-06UD-ZTMA: When a returned session's rollout is usable, `List` MUST set the session's `LastActive` and `HasLastActive` from the rollout's latest timestamp under the member name `timestamp`, as `R-HFCK-YWC4` and `R-HHSD-QFTI` (`D04-sessions-and-table`) define a timestamp and the latest timestamp.
+- R-EODJ-505D: When a returned session's thread has a session meta (`R-YYHY-W33K`) that has a timestamp under the member name `timestamp`, as `R-HFCK-YWC4` (`D04-sessions-and-table`) defines a timestamp of a record, `List` MUST take that timestamp as the session's start and set its `Started` and `HasStarted` as `R-MYFK-S6HX` (`D04-sessions-and-table`) requires; so that a session meta whose top-level `timestamp` is `"2026-09-14T05:13:21Z"` or `"2026-09-14T05:13:21.000Z"` gives a `Started` equal to 2026-09-14T05:13:21Z, and one whose `timestamp` is `"2026-09-14T00:13:21-05:00"` gives the same instant.
+- R-KBNU-W724: A returned session's `HasStarted` MUST be false when its rollout is not usable (`R-I50A-PCF3`), when its usable rollout has no session meta (`R-YYHY-W33K`), and when its session meta has no timestamp under the member name `timestamp`: that member absent, JSON `null`, a JSON number, object, array, or boolean, or a JSON string that `time.Parse(time.RFC3339Nano, s)` rejects, such as `"2026-09-14 05:13:21"`, `"1790195467000"`, or the empty string.
+- R-P7VE-LZBA: Once `R-P4IW-XO2A` has selected a thread's rollout, a returned session's `Started` and `HasStarted` MUST depend on no record of that rollout other than its first, and on no member of that record other than its top-level `type` and `timestamp` (`R-YYHY-W33K`, `R-EODJ-505D`): a later record whose `type` is `session_meta` (such as the copy of a parent's `session_meta` that is the second record of a forked subagent's rollout), the timestamps of later records, and records appended to that rollout (as Codex appends when a thread is loaded again) MUST NOT change them, and they MUST NOT be derived from the session meta's `payload.timestamp`, from the time stamp in that rollout's file name or its dated directories, or from the index; the file name and dated directories matter only to which rollout `R-P4IW-XO2A` selects.
 - R-I50A-PCF3: When a live lock entry's rollout is not usable (the sessions directory does not exist, no rollout is found, the rollout cannot be read, or it holds no record), `List` MUST still return a session for it, with `Status` `session.StatusUnknown`, `HasLastActive` false, and `CWD` equal to the path `proc.Cwd(root, pid)` returns for the entry's holder pid, or the empty string when `proc.Cwd` returns an error.
 - R-P3B0-JWBL: A returned session's `Title` MUST be the string `encoding/json` decodes from the `thread_name` of the last record of the index, in file order, whose `id` is a JSON string equal to the session's `ID`, when that `thread_name` is a JSON string, apostrophes included; it MUST be the empty string when that record's `thread_name` is absent or not a JSON string, when no record of the index has that `id`, and when the index does not exist or cannot be read.
 - R-Z719-KHAF: A returned session's `Title` MUST NOT depend on whether its rollout exists, can be read, or holds any record, and its `Status`, `LastActive`, `HasLastActive`, and `CWD` MUST NOT depend on whether the index exists, can be read, or holds a record for it.

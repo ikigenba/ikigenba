@@ -23,6 +23,15 @@ command: unreadable, or not a JSON array of objects, it is reported as a
 `*session.ReadError`, the latter with the cause `session.ErrNotJSON`. A
 missing index means Grok has no live session.
 
+The entry's `opened_at` is also the session's start, the moment the browser
+orders a harness's sessions by (`D04-sessions-and-table`). It is read the one
+way the liveness check reads it, as an RFC 3339 time with or without
+fractional seconds and with `Z` or a numeric offset; an entry whose
+`opened_at` is absent, `null`, not a string, or not such a time has no known
+start. That is not a failure: the entry is still judged live or not without
+it, as before. The start never comes from the process, from `summary.json`,
+or from `events.jsonl`.
+
 Each session keeps its files in `~/.grok/sessions/<encoded-cwd>/<session-id>/`.
 The encoding is Grok's business, so the directory is found by looking in
 every encoded-cwd directory for one named after the session id. The title is
@@ -178,6 +187,9 @@ are its own.
 - R-B42X-A8CU: A returned session's `Status` MUST be `session.StatusUnknown` when no session directory is found for it or its `events.jsonl` does not exist or cannot be read.
 - R-UYXC-XTBM: When a session's `events.jsonl` can be read, its `Status` MUST be `session.StatusIdle` when the last of its records (`R-HE4O-L4LF`, `D04-sessions-and-table`) has a top-level `type` equal to the JSON string `turn_ended`, `session.StatusIdle` when none of its records has a top-level `type` equal to the JSON string `turn_started` (a file holding no record included), and `session.StatusWorking` otherwise.
 - R-V059-BL2B: A session's `LastActive` and `HasLastActive` MUST be set from the latest timestamp under the member name `ts` (`R-HHSD-QFTI`, with records per `R-HE4O-L4LF` and timestamps per `R-HFCK-YWC4`, `D04-sessions-and-table`) of the `events.jsonl` in its session directory, where an `events.jsonl` that does not exist, cannot be read, or has no session directory found for it counts as a log with no latest timestamp.
+- R-3ZJG-I3EF: When a returned session's index entry has a top-level `opened_at` that is a JSON string `s` for which `time.Parse(time.RFC3339Nano, s)` returns a time `t` and a nil error, `List` MUST set that session's `Started` to a time for which `time.Time.Compare` with `t` returns 0 and its `HasStarted` to true (so `"2026-09-23T20:31:07.123456789Z"` gives a start equal to 2026-09-23T20:31:07.123456789Z, and `"2026-09-23T20:31:07Z"` and `"2026-09-23T15:31:07-05:00"` each give a start equal to 2026-09-23T20:31:07Z).
+- R-40RC-VV54: When a returned session's index entry has no top-level `opened_at`, or its `opened_at` is JSON `null`, is not a JSON string, or is a JSON string for which `time.Parse(time.RFC3339Nano, …)` returns a non-nil error (such as `""` or `"2026-09-23 20:31:07"`), `List` MUST set that session's `HasStarted` to false.
+- R-E1R3-XO1J: A returned session's `Started` and `HasStarted` MUST NOT depend on its `summary.json` or `events.jsonl`, on whether either exists or can be read, or on the time `proc.Start(root, pid)` returns.
 - R-3JNR-E2YA: A session's `events.jsonl` MUST be a log in the sense of `R-HE4O-L4LF` (`D04-sessions-and-table`).
 - R-3KVN-RUOZ: Every non-nil error `List` returns MUST have dynamic type `*session.ReadError`, and whenever `List` returns a non-nil error it MUST return a nil slice.
 - R-BBEB-KUT0: A session's `Title` MUST NOT depend on whether its `events.jsonl` exists or can be read, its `Status`, `LastActive`, and `HasLastActive` MUST NOT depend on whether its `summary.json` exists or can be read, and its `CWD` MUST NOT depend on either file.

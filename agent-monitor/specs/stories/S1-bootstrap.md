@@ -4,12 +4,18 @@ Running agent-monitor at all: the bare run, help, version, the exit codes,
 and the usage errors. agent-monitor is a local development tool, one binary a
 developer runs on their own machine; it is never deployed to a space. The
 binary is built from the checkout. Its commands are added to this frame by
-later groups; the ones it has are `list`, `tree`, and `chat`.
+later groups; the ones it has are `list`, `tree`, and `chat`. When both stdin
+and stdout are terminals, the bare run browses the agents interactively, as
+the stories of browsing the agents tell; otherwise it prints the help.
 
 ## A developer runs agent-monitor
 
-With nothing to do, agent-monitor shows what it can do: the bare run prints
-the same help text as `agent-monitor --help`.
+With no arguments, agent-monitor looks at where it is running. When both
+stdin and stdout are terminals, the bare run opens the interactive browser
+told in the stories of browsing the agents (S5-browse). When stdin or stdout
+is not a terminal there is no one to browse with, so agent-monitor shows what
+it can do instead: the bare run prints the same help text as
+`agent-monitor --help`.
 
 Command:
 
@@ -26,6 +32,7 @@ Usage: agent-monitor [options]
        agent-monitor chat <harness> <session-id> [<agent-id>]
 
 Observe the coding agents on this machine through their logs and hooks.
+Run with no arguments in a terminal to browse them interactively.
 
 Commands:
   list <harness>                            list the live root sessions of claude, codex, or grok
@@ -51,6 +58,7 @@ Exits 0. The text is on stdout; stderr is empty.
 Preconditions:
 
 - `bin/agent-monitor` exists, built from the checkout with `make`.
+- stdin or stdout is not a terminal.
 
 Postconditions:
 
@@ -85,6 +93,7 @@ Usage: agent-monitor [options]
        agent-monitor chat <harness> <session-id> [<agent-id>]
 
 Observe the coding agents on this machine through their logs and hooks.
+Run with no arguments in a terminal to browse them interactively.
 
 Commands:
   list <harness>                            list the live root sessions of claude, codex, or grok
@@ -195,6 +204,7 @@ Usage: agent-monitor [options]
        agent-monitor chat <harness> <session-id> [<agent-id>]
 
 Observe the coding agents on this machine through their logs and hooks.
+Run with no arguments in a terminal to browse them interactively.
 
 Commands:
   list <harness>                            list the live root sessions of claude, codex, or grok

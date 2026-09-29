@@ -43,6 +43,14 @@ timestamp, and latest-timestamp definitions `D04-sessions-and-table` shares
 with every harness, which also make a half-written last line count for
 nothing.
 
+A session's start, by which the browser orders its session menu, is the
+registration's `startedAt`, read as milliseconds since the Unix epoch, the
+same reading the liveness fallback uses; Claude Code writes it as a JSON
+integer a moment after the process starts. A registration whose `startedAt`
+is absent or is not an integer that fits in `int64` still lists, with its
+start unknown: a start is never a reason to drop a session or fail. Nothing
+else, the transcript included, moves the start.
+
 `List` only reads. It reaches the machine solely through the `fs.FS` it is
 given, and it can neither write nor lock anything.
 
@@ -192,6 +200,9 @@ counts.
 - R-TVR7-PUBW: Below the projects directory, `List` MAY list (as a directory) the projects directory itself and its direct subdirectories, as the transcript search requires, and MUST NOT otherwise open, read, stat, or list anything there: the only non-directory files below the projects directory it opens or reads MUST be the transcripts of the registrations it considers, and it MUST NOT list, open, read, or stat any name below a direct subdirectory of the projects directory other than such a transcript.
 - R-A9LF-PYTH: When a registration's `sessionId` contains `/` or is `.` or `..`, `List` MUST NOT look for its transcript, and the session MUST be returned with `HasLastActive` false when it is live.
 - R-UXPG-K1KX: A session's `LastActive` and `HasLastActive` MUST be set from the latest timestamp under the member name `timestamp` (`R-HHSD-QFTI`, with records per `R-HE4O-L4LF` and timestamps per `R-HFCK-YWC4`, `D04-sessions-and-table`) of its transcript, where a transcript that is not found (the projects directory missing or unlistable included) or cannot be read counts as a log with no latest timestamp.
+- R-NP8G-9BZ6: When a returned session's registration has a `startedAt` that is a JSON number whose value is an integer `m` that fits in `int64`, the session's start moment (`R-MYFK-S6HX`, `D04-sessions-and-table`) MUST be `time.UnixMilli(m)`, so that `List` sets `Started` to a time for which `time.Time.Compare` with `time.UnixMilli(m)` returns 0 and `HasStarted` to true; so a `startedAt` of `1790195467000` gives a `Started` of 2026-09-23T20:31:07Z and one of `1790201442000` gives 2026-09-23T22:10:42Z.
+- R-NQGC-N3PV: When a returned session's registration has no `startedAt`, or its `startedAt` is `null`, a JSON string (`"1790195467000"` included), a JSON boolean, object, or array, a JSON number whose value is not an integer (such as `1790195467000.5`), or a JSON number whose value is an integer that does not fit in `int64`, `List` MUST return that session with `HasStarted` false, the registration being considered as `R-33T2-F2B9` states and its `startedAt` being no cause for `List` to skip it or return an error.
+- R-NRO9-0VGK: A returned session's `Started` and `HasStarted` MUST NOT depend on anything but its registration's `startedAt`: not on its transcript's existence or content, `procStart`, `proc.Start`, `proc.StartTicks`, or the registration's other members.
 - R-39WK-BX0Q: A session's transcript MUST be a log in the sense of `R-HE4O-L4LF` (`D04-sessions-and-table`).
 - R-3B4G-PORF: Every non-nil error `List` returns MUST have dynamic type `*session.ReadError`, and whenever `List` returns a non-nil error it MUST return a nil slice.
 - R-AEH1-91S9: A session's `Status`, `CWD`, and `Title` MUST NOT depend on whether its transcript exists, can be read, or holds any record, and its `LastActive` and `HasLastActive` MUST NOT depend on its registration's `status`, `cwd`, or `name`.
