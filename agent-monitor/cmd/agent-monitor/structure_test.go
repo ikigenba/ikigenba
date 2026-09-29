@@ -25,7 +25,7 @@ func goList(t *testing.T, format string, paths ...string) string {
 }
 
 func TestModuleStructure(t *testing.T) {
-	// R-JD3N-0JRI R-JEBJ-EBI7
+	// R-KJST-TDNZ R-KL0Q-75EO R-KM8M-KX5D
 	module := strings.TrimSpace(goList(t, "{{.Path}}|{{.GoMod}}", "-m"))
 	mainDir := strings.TrimSpace(goList(t, "{{.Dir}}", "./cmd/agent-monitor"))
 	rootDir := strings.TrimSuffix(mainDir, "/cmd/agent-monitor")
@@ -35,12 +35,13 @@ func TestModuleStructure(t *testing.T) {
 
 	want := map[string]string{
 		"cmd/agent-monitor": "main", "internal/cli": "cli", "internal/quote": "quote",
-		"internal/session": "session", "internal/tree": "tree", "internal/chat": "chat", "internal/proc": "proc",
+		"internal/session": "session", "internal/tree": "tree", "internal/chat": "chat", "internal/browse": "browse", "internal/proc": "proc",
 		"internal/harness/claude": "claude", "internal/harness/codex": "codex", "internal/harness/grok": "grok",
 	}
 	allowed := map[string]map[string]bool{
 		"cmd/agent-monitor":       {"internal/cli": true},
-		"internal/cli":            {"internal/quote": true, "internal/session": true, "internal/tree": true, "internal/chat": true, "internal/harness/claude": true, "internal/harness/codex": true, "internal/harness/grok": true},
+		"internal/browse":         {"internal/quote": true, "internal/session": true, "internal/tree": true, "internal/chat": true, "internal/harness/claude": true, "internal/harness/codex": true, "internal/harness/grok": true},
+		"internal/cli":            {"internal/browse": true, "internal/quote": true, "internal/session": true, "internal/tree": true, "internal/chat": true, "internal/harness/claude": true, "internal/harness/codex": true, "internal/harness/grok": true},
 		"internal/harness/claude": {"internal/session": true, "internal/proc": true, "internal/tree": true, "internal/chat": true},
 		"internal/harness/codex":  {"internal/session": true, "internal/proc": true, "internal/tree": true, "internal/chat": true},
 		"internal/harness/grok":   {"internal/session": true, "internal/proc": true, "internal/tree": true, "internal/chat": true},
@@ -67,6 +68,9 @@ func TestModuleStructure(t *testing.T) {
 		for _, imp := range strings.Split(strings.TrimSuffix(fields[3], ","), ",") {
 			if imp == "" {
 				continue
+			}
+			if path == "internal/browse" && (imp == "os" || imp == "syscall" || imp == "unsafe" || imp == "net" || imp == "path/filepath" || strings.HasPrefix(imp, "os/") || strings.HasPrefix(imp, "net/")) {
+				t.Errorf("browse imports forbidden standard package %q", imp)
 			}
 			if imp == modulePath {
 				t.Errorf("package %q imports disallowed module root", path)

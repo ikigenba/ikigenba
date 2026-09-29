@@ -127,7 +127,7 @@ func TestFollowStartupFailureDoesNotTouchWatcher(t *testing.T) {
 	}
 }
 
-// R-D336-BYWY
+// R-HII3-JDHF
 func TestFollowInterruptPriorityAndCompletesRender(t *testing.T) {
 	for _, already := range []bool{false, true} {
 		interrupt := make(chan struct{})
@@ -153,7 +153,7 @@ func TestFollowInterruptPriorityAndCompletesRender(t *testing.T) {
 	}
 }
 
-// R-JSRJ-5UCB
+// R-HJPZ-X584
 func TestFollowWriteFailureStopsImmediately(t *testing.T) {
 	for _, failAt := range []int{1, 2, 3} {
 		interrupt := make(chan struct{})

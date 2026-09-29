@@ -1,8 +1,6 @@
 package main
 
 import (
-	"os"
-	"os/signal"
 	"sync"
 	"syscall"
 	"time"
@@ -88,17 +86,4 @@ func (w *machineWatcher) close() {
 		_ = syscall.Close(w.fd)
 		w.fd = -1
 	}
-}
-
-func machineInterrupt() <-chan struct{} {
-	interrupted := make(chan struct{})
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT)
-	go func() {
-		<-signals
-		close(interrupted)
-		signal.Stop(signals)
-		signal.Reset(syscall.SIGINT)
-	}()
-	return interrupted
 }

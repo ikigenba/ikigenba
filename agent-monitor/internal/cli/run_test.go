@@ -40,7 +40,7 @@ func assertRun(t *testing.T, args []string, sys System, wantCode ExitCode, wantO
 	}
 }
 
-// R-EZ4D-QPN7 R-XK3U-55KN R-XLBQ-IXBC
+// R-XE49-WVTR R-XK3U-55KN R-XLBQ-IXBC
 func TestBareRunReturnsUsage(t *testing.T) {
 	assertRun(t, nil, System{}, ExitSuccess, Usage, "")
 }
@@ -122,7 +122,7 @@ func TestMissingHome(t *testing.T) {
 	}
 }
 
-// R-T3U8-Z6PX
+// R-X5KZ-8HMW
 func TestListEmptyHarnessData(t *testing.T) {
 	for _, h := range []string{"claude", "codex", "grok"} {
 		code, out, diag := runRecorded([]string{"list", h}, System{Home: "/home/dev", Root: fstest.MapFS{}}, nil, nil)
@@ -132,7 +132,7 @@ func TestListEmptyHarnessData(t *testing.T) {
 	}
 }
 
-// R-T3U8-Z6PX
+// R-X5KZ-8HMW
 func TestListNonemptyHarnessData(t *testing.T) {
 	root := fstest.MapFS{
 		"home/dev/.claude/sessions/a.json": &fstest.MapFile{Data: []byte(`{"sessionId":"alpha","pid":42,"status":"busy","name":"Implement feature","cwd":"/work"}`)},
@@ -142,8 +142,8 @@ func TestListNonemptyHarnessData(t *testing.T) {
 	assertRun(t, []string{"list", "claude"}, System{Home: "/home/dev", Root: root}, ExitSuccess, want, "")
 }
 
-// R-2XR1-FBOJ R-2YYX-T3F8
-// R-J9GH-YE70 R-TIH1-KFM9
+// R-7BPS-795K R-2YYX-T3F8
+// R-5CA8-BZUX R-7CXO-L0W9
 func TestWriteFailuresAndOneWrite(t *testing.T) {
 	for _, args := range [][]string{nil, {"--help"}, {"--version"}, {"list", "--help"}} {
 		code, out, diag := runRecorded(args, System{}, errors.New("disk full"), errors.New("closed"))
@@ -171,7 +171,7 @@ func (d *deniedFS) Open(name string) (fs.File, error) {
 }
 
 // R-ET0V-TUXQ R-ERSZ-G371
-// R-T525-CYGM
+// R-X6SV-M9DL
 func TestHarnessReadErrors(t *testing.T) {
 	for _, h := range []string{"claude", "codex", "grok"} {
 		root := &deniedFS{}

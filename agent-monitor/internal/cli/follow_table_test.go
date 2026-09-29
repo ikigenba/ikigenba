@@ -41,7 +41,7 @@ func TestFollowViewMatchesSnapshotArguments(t *testing.T) {
 	}
 }
 
-// R-I94I-3QAH R-D4B2-PQNN R-EKCG-R3OS R-ELKD-4VFH R-EMS9-IN66
+// R-I94I-3QAH R-3LNI-HE3O R-EKCG-R3OS R-ELKD-4VFH R-EMS9-IN66
 func TestFollowViewsRenderOnceAndWriteWholeOutputs(t *testing.T) {
 	for _, terminal := range []bool{false, true} {
 		interrupt := make(chan struct{})
@@ -173,7 +173,7 @@ func (r *followCountRoot) ReadFile(name string) ([]byte, error) {
 	return r.MapFS.ReadFile(name)
 }
 
-// R-I94I-3QAH R-D4B2-PQNN
+// R-I94I-3QAH R-3LNI-HE3O
 func TestFollowEachHarnessListAndTreeCallPerChange(t *testing.T) {
 	data := fstest.MapFS{
 		"home/dev/.claude/projects/work/sample.jsonl":                                  &fstest.MapFile{Data: []byte("{}\n")},

@@ -86,8 +86,8 @@ func TestChatAcceptsEmptyIDs(t *testing.T) {
 	assertRun(t, []string{"chat", "codex", "", ""}, System{Home: "/home/dev", Root: fstest.MapFS{}}, ExitNotFound, "", "agent-monitor: no codex session ''\n")
 }
 
-// R-KCGQ-3W9N
-// R-TETC-F4E6 R-TH95-6NVK
+// R-X356-GY5I
+// R-XAGK-RKLO R-TH95-6NVK
 func TestChatProduct(t *testing.T) {
 	root := fstest.MapFS{
 		"home/dev/.claude/projects/work/sample.jsonl": &fstest.MapFile{Data: []byte("{\"type\":\"user\",\"message\":{\"content\":\"hello\"}}\n{\"type\":\"assistant\",\"message\":{\"id\":\"msg\",\"model\":\"model\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"}],\"usage\":{\"input_tokens\":2,\"output_tokens\":3}}}\n")},
@@ -113,7 +113,7 @@ func TestChatProduct(t *testing.T) {
 	}
 }
 
-// R-TETC-F4E6
+// R-XAGK-RKLO
 func TestChatEmptyEntriesPrintTotals(t *testing.T) {
 	root := fstest.MapFS{"home/dev/.claude/projects/work/sample.jsonl": &fstest.MapFile{Data: []byte("{}\n")}}
 	assertRun(t, []string{"chat", "claude", "sample"}, System{Home: "/home/dev", Root: root}, ExitSuccess, "tokens: in 0  cache-write 0  cache-read 0  out 0  reasoning 0  calls 0\n", "")
@@ -131,8 +131,8 @@ func TestChatAgentNotFound(t *testing.T) {
 	}
 }
 
-// R-KCGQ-3W9N
-// R-N9RH-SYC7
+// R-X356-GY5I
+// R-XBOH-5CCD
 func TestChatReadError(t *testing.T) {
 	root := fstest.MapFS{"home/dev/.claude/projects/work/sample.jsonl": &fstest.MapFile{Data: []byte("{}\n")}}
 	blocked := "home/dev/.claude/projects/work/sample.jsonl"

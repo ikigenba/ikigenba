@@ -20,7 +20,7 @@ func TestRunSignatureAndSystem(t *testing.T) {
 }
 
 func TestSystemFields(t *testing.T) {
-	// R-TR0C-8TT4
+	// R-KNGI-YOW2
 	st := reflect.TypeOf(cli.System{})
 	want := []struct {
 		name string
@@ -31,8 +31,10 @@ func TestSystemFields(t *testing.T) {
 		{"NoColor", reflect.TypeOf("")},
 		{"Term", reflect.TypeOf("")},
 		{"Terminal", reflect.TypeOf(false)},
+		{"StdinTerminal", reflect.TypeOf(false)},
 		{"Watcher", reflect.TypeOf((*cli.Watcher)(nil)).Elem()},
 		{"Interrupt", reflect.TypeOf((<-chan struct{})(nil))},
+		{"Console", reflect.TypeOf((*cli.Console)(nil)).Elem()},
 	}
 	if st.NumField() != len(want) {
 		t.Fatalf("System field count = %d, want %d", st.NumField(), len(want))

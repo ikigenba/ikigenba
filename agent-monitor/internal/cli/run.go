@@ -19,6 +19,9 @@ const usageHint = "\n\nsee 'agent-monitor --help' for usage\n"
 // Run handles one invocation and returns its exit code to the caller.
 func Run(args []string, sys System, stdout, stderr io.Writer) ExitCode {
 	if len(args) == 0 {
+		if sys.Terminal && sys.StdinTerminal {
+			return runBrowse(sys, stdout, stderr)
+		}
 		return writeProduct(stdout, stderr, Usage)
 	}
 	switch args[0] {

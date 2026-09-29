@@ -47,7 +47,7 @@ func TestTreeGrammar(t *testing.T) {
 	assertRun(t, []string{"tree", "claude", "id", "a\nb"}, System{}, ExitUsage, "", "agent-monitor: unexpected argument 'a\\nb'"+usageHint)
 }
 
-// R-6H98-GPRJ R-Q806-I4RO
+// R-6H98-GPRJ R-X4D2-UPW7
 func TestTreeBeforeFilesystem(t *testing.T) {
 	for _, args := range [][]string{{"tree"}, {"tree", "--no-color"}, {"tree", "-bad"}, {"tree", "bogus"}, {"tree", "claude"}, {"tree", "claude", "id", "extra"}, {"tree", "claude", "id", "--no-color", "extra"}, {"tree", "--help"}} {
 		a, outA, errA := runRecorded(args, System{Root: panicFS{}}, nil, nil)
@@ -72,7 +72,7 @@ func TestTreeBeforeFilesystem(t *testing.T) {
 	}
 }
 
-// R-T9XQ-W1FE R-TB5N-9T63
+// R-X98O-DSUZ R-TB5N-9T63
 func TestTreeHarnessOutcomes(t *testing.T) {
 	for _, h := range []string{"claude", "codex", "grok"} {
 		root := &deniedFS{}
@@ -105,7 +105,7 @@ func TestTreeHarnessOutcomes(t *testing.T) {
 }
 
 // R-6KWX-M0ZM
-// R-T8PU-I9OP
+// R-X80S-014A
 func TestTreeSuccessfulProductAndCodes(t *testing.T) {
 	root := fstest.MapFS{
 		"home/dev/.claude/projects/work/sample.jsonl": &fstest.MapFile{Data: []byte("{}\n")},

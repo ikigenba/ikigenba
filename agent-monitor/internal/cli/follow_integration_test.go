@@ -70,7 +70,7 @@ func TestFollowGrammarErrors(t *testing.T) {
 	}
 }
 
-// R-TKWU-BZ3N R-SWIU-OK9R R-SYYN-G3R5 R-T06J-TVHU R-TTG5-0DAI
+// R-TKWU-BZ3N R-X0PD-PEO4 R-X1XA-36ET R-T06J-TVHU R-AFT8-G88I
 func TestNonfollowingCallsIgnoreWatcherAndRoot(t *testing.T) {
 	for _, args := range [][]string{nil, {"--help"}, {"--version"}, {"list", "--follow", "--help"}, {"tree", "-f", "--help"}, {"chat", "--follow", "--help"}, {"list", "-f", "claud"}, {"tree", "-f"}, {"chat", "--follow", "claude"}, {"list", "claude", "--follow=x", "-f"}} {
 		stripped := []string{}
@@ -204,8 +204,8 @@ func directProduct(kind, h string, root fs.FS) (string, error) {
 	return text.String(), nil
 }
 
-// R-T1EG-7N8J R-T2MC-LEZ8 R-T3U8-Z6PX R-T6A1-QQ7B R-T7HY-4HY0
-// R-T8PU-I9OP R-J88L-KMGB R-TDLG-1CNH R-TETC-F4E6 R-TH95-6NVK R-TTG5-0DAI
+// R-T1EG-7N8J R-T2MC-LEZ8 R-X5KZ-8HMW R-T6A1-QQ7B R-T7HY-4HY0
+// R-X80S-014A R-J88L-KMGB R-TDLG-1CNH R-XAGK-RKLO R-TH95-6NVK R-AFT8-G88I
 func TestSnapshotDispatchIsExactlyOneSelectedHarnessCall(t *testing.T) {
 	for _, kind := range []string{"list", "tree", "chat"} {
 		for _, h := range []string{"claude", "codex", "grok"} {
@@ -232,8 +232,8 @@ func TestSnapshotDispatchIsExactlyOneSelectedHarnessCall(t *testing.T) {
 	}
 }
 
-// R-T525-CYGM R-T9XQ-W1FE R-N9RH-SYC7 R-TB5N-9T63 R-NC7A-KHTL R-NDF6-Y9KA
-// R-J9GH-YE70 R-TIH1-KFM9
+// R-X6SV-M9DL R-X98O-DSUZ R-XBOH-5CCD R-TB5N-9T63 R-NC7A-KHTL R-NDF6-Y9KA
+// R-5CA8-BZUX R-7CXO-L0W9
 func TestFirstFollowFailureMatchesSnapshot(t *testing.T) {
 	for _, kind := range []string{"list", "tree", "chat"} {
 		for _, h := range []string{"claude", "codex", "grok"} {
