@@ -28,6 +28,9 @@ test that needs the current version reads the value the source declares,
 through the contract that declares it, and derives tags, asset names, and
 expected output from that value.
 
+Adding an external dependency requires human approval. Ask first; never add
+one on your own.
+
 Branches are never pushed to the remote except `main`. Work happens on local
 branches and worktrees; only `main` (and release tags) is published to origin.
 Never push a working or feature branch, and never create a remote branch other

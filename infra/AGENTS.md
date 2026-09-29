@@ -141,7 +141,7 @@ NS record. Accepted caveat: IAM cannot express "one label deep", so a space's
 protected against destruction in Terraform (`prevent_destroy`), as is the
 state bucket.
 
-## Credentials
+## Operator setup
 
 The profile is named after the domain, under `sso-session metaspot` in
 `~/.aws/config`. AWS CLI v2 is required (`sso-session` stanzas are v2 only).
@@ -160,8 +160,7 @@ sso_role_name = <role name>
 region = us-east-2
 ```
 
-Every Terraform command needs a live session and the profile selected. This
-is the precondition for the gates:
+Every Terraform command needs a live session and the profile selected:
 
 ```
 aws sso login --sso-session metaspot
@@ -170,18 +169,8 @@ export AWS_PROFILE=ikigenba.dev
 
 ## Gates
 
-There is no build run here; these are the operator's checks. Run them after
-every change. Each must exit 0, and each `plan` must report `No changes` unless
-the change was meant to produce one.
+There are no gates.
 
-1. `terraform fmt -check -recursive` — from `infra/`.
-2. In `infra/`:
-   `terraform init -input=false`, then
-   `terraform validate`, then
-   `terraform plan -input=false -detailed-exitcode` (exit 0 is `No changes`;
-   exit 2 is a pending change to read before anyone applies it).
-3. In `infra/bootstrap/`: the same three commands, with
-   `-var-file=../terraform.tfvars.json` on `plan`.
+## Deploy
 
-Terraform 1.10+ is required (`required_version`); the AWS provider is pinned
-`~> 5.70` and locked by `.terraform.lock.hcl`.
+Not needed.

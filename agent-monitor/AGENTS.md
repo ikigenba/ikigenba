@@ -21,12 +21,6 @@ and read-only to the run.
   `go: -race requires cgo`
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 
-## Dependencies
-
-The design allows the standard library only, so `go.mod` carries no `require`
-directive. The run never adds one; a phase that appears to need a module files
-an issue for a human to adjudicate.
-
 ## Test files
 
 The sub-project's tests are all `*_test.go` files under `cmd/` and `internal/`.
@@ -41,6 +35,19 @@ paths, and transcript text back unchanged in shape, so a test that feeds in a
 string matching the pattern lands a literal the grep counts as a covered id.
 No test argument, expected output, fixture name, or fixture content carries
 one.
+
+## Test discipline
+
+These rules govern the unit tests: everything `go test ./...` runs. Live
+tests are separate, carry the `live` build tag, and are not part of it.
+
+- Offline: no network beyond loopback, no real credentials.
+- Deterministic: time, randomness, and environment are injected; no test
+  sleeps to wait for something.
+- No fixed ports: a test binds `127.0.0.1:0` or a Unix socket in a
+  temporary directory.
+- Isolated: a test touches only its own temporary directory, never the
+  developer's home, config, or real state.
 
 **No real machine in the gates.** The machine reaches the program only through
 the run seam the design defines: tests drive it with buffers, injected
@@ -80,14 +87,14 @@ by id.
 
 ## Deploy
 
-Release machinery — the version bump, tags, the `Makefile`, `install.sh`,
+Deploy machinery — the version bump, tags, the `Makefile`, `install.sh`,
 `.goreleaser.yaml`, and `.github/workflows/release-agent-monitor.yml` (repo
 root) — is hand-maintained infrastructure outside the spec system: the build
-run never reads, edits, or tests it. `make` builds `bin/agent-monitor` from
-the checkout.
+run never reads, edits, or tests it.
 
-1. Set `Version` in `internal/cli/version.go` to `vX.Y.Z`. The binary reports
-   that string, and the release refuses a tag that does not match it.
+1. Set the version in `internal/cli/version.go` (D03) to `vX.Y.Z`. It is a
+   source literal the binary reports verbatim, and the deploy refuses a tag
+   that does not match it.
 2. Commit that on `main` and push `main`.
 3. Tag that commit `agent-monitor/vX.Y.Z` and push the tag.
    `.github/workflows/release-agent-monitor.yml` builds with GoReleaser and
@@ -96,17 +103,11 @@ the checkout.
    agent-monitor/vX.Y.Z` succeeds), then install it on the developer's
    machine from this directory. A release is not done until this step is:
 
-```
-AGENT_MONITOR_VERSION=vX.Y.Z sh install.sh
-agent-monitor --version
-```
+   ```
+   AGENT_MONITOR_VERSION=vX.Y.Z sh install.sh
+   ```
 
-   The installer puts the binary in `~/.local/bin`, and `--version` must
-   print `vX.Y.Z`. Plain `sh install.sh` installs the newest stable release.
+   The installer puts the binary in `~/.local/bin`. Plain `sh install.sh`
+   installs the newest stable release.
 
-## Live data
-
-The live data is the developer's own agent logs: `~/.claude`, `~/.codex`, and
-`~/.grok` on this machine. Any real-world verification — probing a transcript
-format, running a built binary against real sessions — reads them only, and
-runs from a scratch directory outside the repository.
+`agent-monitor --version` then prints `vX.Y.Z`.

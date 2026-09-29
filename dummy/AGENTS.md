@@ -21,25 +21,9 @@ build run writes the source, including the templates it embeds, the tests, and
 is what the build run computes the gap and runs the gates against; it is
 human-authored and read-only to the run.
 
-## Toolchain
-
-- Go 1.26 (`go version` must report 1.26+)
-- a C compiler `cgo` can use (`gcc`, say): `go test -race` needs it, and
-  without one gate 4 fails with `go: -race requires cgo`. The release build
-  itself is cgo-free, which gate 3 proves.
-- `golangci-lint` v2 (config: `.golangci.yml` in this directory)
-- a POSIX shell at `/bin/sh`: the one exec'ing test starts the binary through
-  it (see Test files)
-
-## Dependencies
-
-D01 allows the standard library only, so `go.mod` carries no `require`
-directive. The run never adds one; a phase that appears to need a module files
-an issue for a human to adjudicate.
-
 ## Assets
 
-`assets/` holds the files that give the panel the platform's visual style:
+`assets/` holds the files that give dummy's pages the platform's visual style:
 the stylesheet, the font files, and the licences of what they carry —
 `OFL.txt` for the fonts and `TABLER-LICENSE.txt` for the Tabler icons the
 stylesheet and pages embed. They are copied by hand
@@ -60,13 +44,15 @@ comment names the `design/` commit it was copied from. A restyle that changes
 only these files touches no spec. A change to the markup the stylesheet
 expects goes through the stories and designs like any other change.
 
-## Build
+## Toolchain
 
-`make` builds `bin/dummy` from the checkout (`make build`, the `Makefile` in
-this directory), and that is what a story's "`bin/dummy` exists" precondition
-means. The gates below do not go through `make`: they call the Go tool
-directly, and the one test that needs a binary builds its own into a temporary
-directory.
+- Go 1.26 (`go version` must report 1.26+)
+- a C compiler `cgo` can use (`gcc`, say): `go test -race` needs it, and
+  without one gate 4 fails with `go: -race requires cgo`. The release build
+  itself is cgo-free, which gate 3 proves.
+- `golangci-lint` v2 (config: `.golangci.yml` in this directory)
+- a POSIX shell at `/bin/sh`: the one exec'ing test starts the binary through
+  it (see Test files)
 
 ## Test files
 
@@ -91,6 +77,19 @@ file. No test fixture carries one: not a widget name, not a header value, not
 an expected body. This is an obligation on the test author, not a property of
 the program, and it does not lapse because dummy's own output alphabet is
 narrow.
+
+## Test discipline
+
+These rules govern the unit tests: everything `go test ./...` runs. Live
+tests are separate, carry the `live` build tag, and are not part of it.
+
+- Offline: no network beyond loopback, no real credentials.
+- Deterministic: time, randomness, and environment are injected; no test
+  sleeps to wait for something.
+- No fixed ports: a test binds `127.0.0.1:0` or a Unix socket in a
+  temporary directory.
+- Isolated: a test touches only its own temporary directory, never the
+  developer's home, config, or real state.
 
 **No fixed ports, no real environment, no sleeping in the gates.** dummy
 binds nothing itself; it serves on the listener it is passed (D01, D03). A
@@ -203,9 +202,17 @@ Requirements: R-XXXX-XXXX, R-YYYY-YYYY
 The `Requirements:` trailer lists the phase's ids so history stays greppable
 by id.
 
+## Build
+
+`make` builds `bin/dummy` from the checkout (`make build`, the `Makefile` in
+this directory). `make fmt` rewrites unformatted files, and `make test` and
+`make lint` run the test and lint gates. The gates do not go through `make`:
+they call the Go tool directly, and the one test that needs a binary builds
+its own into a temporary directory.
+
 ## Deploy
 
-Release machinery — the version bump, tags, and the `devctl build`/`devctl
+Deploy machinery — the version bump, tags, and the `devctl build`/`devctl
 deploy` steps — is hand-maintained infrastructure outside the spec system: the
 build run never reads, edits, or tests it.
 
@@ -213,13 +220,14 @@ dummy is an app, not a self-installing CLI: it is built into a release tarball
 and pushed to a space's host by `devctl`, which drives `opsctl install` there.
 
 1. Set the version in `internal/cli/release.go` (D01) to `vX.Y.Z`. It is a
-   source literal the binary reports verbatim — no linker injection — and
-   `devctl build` refuses a tarball whose `--version` disagrees with the tag or
-   whose `manifest` disagrees with the committed `etc/manifest.toml`.
+   source literal the binary reports verbatim, and the deploy refuses a tag
+   that does not match it.
 2. Commit that on `main` and push `main`.
 3. Tag that commit `dummy/vX.Y.Z` and push the tag.
 4. `devctl build dummy` at that tag writes `dummy/dist/dummy-vX.Y.Z.tar.xz`,
    holding `bin/dummy` and `etc/`, with no version recorded anywhere inside.
+   It refuses a binary whose `manifest` disagrees with the committed
+   `etc/manifest.toml`.
 5. `devctl deploy <space> dummy/dist/dummy-vX.Y.Z.tar.xz` uploads the tarball
    to the space's `deploy/` prefix and runs `opsctl install` over ssh; the host
    fetches it, writes `etc/env` (with the space's `DRAIN_SECONDS`), replaces
@@ -228,10 +236,4 @@ and pushed to a space's host by `devctl`, which drives `opsctl install` there.
    regenerates the host's nginx configuration, and restarts the service alone;
    the socket stays up, so requests queue on it across the restart.
 
-`dummy --version` (and `space status`) then report `vX.Y.Z`; the binary is the
-only place the version is recorded.
-
-A developer serves the checkout's binary with
-`systemd-socket-activate -l 127.0.0.1:3000 bin/dummy`, which passes a socket
-on the same terms systemd does (`D03-serve`). Run bare, dummy refuses to start:
-it never opens a socket of its own.
+`dummy --version` then prints `vX.Y.Z`, and `space status` reports it.

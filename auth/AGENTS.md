@@ -32,32 +32,6 @@ The toolchain names the tools the gates and the `Makefile` need; it pins no Go
 library. Library
 release selection is `go.mod`'s job, and the build run writes it.
 
-## Dependencies
-
-Unlike a stdlib-only app, auth requires external modules. They are named here by
-import path only; the release each resolves to lives in `go.mod`, which the
-build run writes, never in this file:
-
-- `modernc.org/sqlite` — the SQLite driver `internal/store` opens. It is pure
-  Go, so the release build stays `CGO_ENABLED=0` (gate 3); a cgo SQLite driver
-  would break that gate.
-- `golang.org/x/oauth2` — the OAuth2 exchange in `internal/google`.
-- `github.com/coreos/go-oidc/v3` — OIDC discovery and ID-token verification in
-  `internal/google`.
-
-The run may add exactly these three and their transitive dependencies to
-`go.mod`, and nothing else. A phase that appears to need a module not reachable
-from these files files an issue for a human to adjudicate, rather than pulling
-in a new direct dependency on its own.
-
-## Build
-
-`make` builds `bin/auth` from the checkout (`make build`, the `Makefile` in
-this directory), cgo-free like the release build. `make fmt` rewrites
-unformatted files, and `make test` and `make lint` run gates 4 and 5. The gates
-below do not go through `make`: they call the Go tool directly, and the one
-test that needs a binary builds its own into a temporary directory.
-
 ## Test files
 
 The sub-project's tests are all `*_test.go` files in the module: `cmd/auth` and
@@ -81,6 +55,17 @@ pattern the grep matches, so no auth literal — id, secret, or hash — can be
 mistaken for a requirement tag.
 
 ## Test discipline
+
+These rules govern the unit tests: everything `go test ./...` runs. Live
+tests are separate, carry the `live` build tag, and are not part of it.
+
+- Offline: no network beyond loopback, no real credentials.
+- Deterministic: time, randomness, and environment are injected; no test
+  sleeps to wait for something.
+- No fixed ports: a test binds `127.0.0.1:0` or a Unix socket in a
+  temporary directory.
+- Isolated: a test touches only its own temporary directory, never the
+  developer's home, config, or real state.
 
 **Offline, deterministic, no fixed ports, no sleeping.** The gates run offline
 as an ordinary user, with no systemd. Every input reaches the code through the
@@ -209,9 +194,17 @@ Requirements: R-XXXX-XXXX, R-YYYY-YYYY
 The `Requirements:` trailer lists the phase's ids so history stays greppable by
 id.
 
+## Build
+
+`make` builds `bin/auth` from the checkout (`make build`, the `Makefile` in
+this directory). `make fmt` rewrites unformatted files, and `make test` and
+`make lint` run the test and lint gates. The gates do not go through `make`:
+they call the Go tool directly, and the one test that needs a binary builds
+its own into a temporary directory.
+
 ## Deploy
 
-Release machinery — the version bump, tags, and the `devctl build`/`devctl
+Deploy machinery — the version bump, tags, and the `devctl build`/`devctl
 deploy` steps — is hand-maintained infrastructure outside the spec system: the
 build run never reads, edits, or tests it.
 
@@ -219,15 +212,16 @@ auth is an app, not a self-installing CLI: it is built into a release tarball
 and pushed to a space's host by `devctl`, which drives `opsctl install` there.
 
 1. Set the version in `internal/version/version.go` (D01) to `vX.Y.Z`. It is a
-   source literal the binary reports verbatim — no linker injection — and
-   `devctl build` refuses a tarball whose `--version` disagrees with the tag or
-   whose `manifest` disagrees with the committed `etc/manifest.toml`.
+   source literal the binary reports verbatim, and the deploy refuses a tag
+   that does not match it.
 2. Commit that on `main` and push `main`.
 3. Tag that commit `auth/vX.Y.Z` and push the tag.
 4. `devctl build auth` at that tag writes `auth/dist/auth-vX.Y.Z.tar.xz`,
    holding `bin/auth` and `etc/`, with no version recorded anywhere inside.
-5. `devctl deploy <space> auth/dist/auth-vX.Y.Z.tar.xz` uploads the tarball to
-   the space's `deploy/` prefix and runs `opsctl install` over ssh; the host
+   It refuses a binary whose `manifest` disagrees with the committed
+   `etc/manifest.toml`.
+5. `devctl deploy <space> auth/dist/auth-vX.Y.Z.tar.xz` uploads the tarball
+   to the space's `deploy/` prefix and runs `opsctl install` over ssh; the host
    fetches it, writes `etc/env` (with the space's `DRAIN_SECONDS`), replaces
    the release, publishes `ikigenba-auth.socket` (the Unix socket
    `/run/ikigenba/auth.sock`) and the `Type=notify` `ikigenba-auth.service`,
@@ -235,11 +229,4 @@ and pushed to a space's host by `devctl`, which drives `opsctl install` there.
    service alone; the socket stays up, so requests — `/check` subrequests for
    every other app among them — queue on it across the restart.
 
-`auth --version` (and `space status`) then report `vX.Y.Z`; the binary is the
-only place the version is recorded.
-
-A developer serves the checkout's binary with
-`systemd-socket-activate -l 127.0.0.1:3001 bin/auth`, which passes a socket on the
-same terms systemd does (`D03-serve`), with `GOOGLE_CLIENT_ID`,
-`GOOGLE_CLIENT_SECRET`, and `WORKSPACE_DOMAIN` exported. Run bare, auth refuses
-to start: it never opens a socket of its own.
+`auth --version` then prints `vX.Y.Z`, and `space status` reports it.

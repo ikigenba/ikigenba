@@ -29,6 +29,19 @@ contain any id-shaped literal that is not a genuine requirement-id tag:
 golden-vector ids are built by joining prefix and body at runtime (see the
 spec-system note in `specs/design/D2-id-format.md`).
 
+## Test discipline
+
+These rules govern the unit tests: everything `go test ./...` runs. Live
+tests are separate, carry the `live` build tag, and are not part of it.
+
+- Offline: no network beyond loopback, no real credentials.
+- Deterministic: time, randomness, and environment are injected; no test
+  sleeps to wait for something.
+- No fixed ports: a test binds `127.0.0.1:0` or a Unix socket in a
+  temporary directory.
+- Isolated: a test touches only its own temporary directory, never the
+  developer's home, config, or real state.
+
 ## Gates
 
 Run from this directory (`idgen/`), in order; every command must exit 0. No
@@ -57,20 +70,21 @@ Requirements: R-XXXX-XXXX, R-YYYY-YYYY
 The `Requirements:` trailer lists the phase's ids so history stays greppable
 by id.
 
-## Releasing
+## Deploy
 
-Release machinery — the version bump, tags, `.goreleaser.yaml`, and
+Deploy machinery — the version bump, tags, `.goreleaser.yaml`, and
 `.github/workflows/release-idgen.yml` (repo root) — is hand-maintained
 infrastructure outside the spec system: the build run never reads, edits, or
 tests it.
 
-1. Set the version in `internal/cli/version.go` (D6) to `vX.Y.Z`. It is
-   source-carried, never ldflags-injected; the spec fixes only its shape, so no
-   build run is needed to bump it.
+1. Set the version in `internal/cli/version.go` (D6) to `vX.Y.Z`. It is a
+   source literal the binary reports verbatim, and the deploy refuses a tag
+   that does not match it.
 2. Commit that on `main` and push `main`.
-3. Tag that commit `idgen/vX.Y.Z` and push the tag. The workflow verifies the
-   tag matches the in-source version (a mismatch fails the release), then runs
+3. Tag that commit `idgen/vX.Y.Z` and push the tag. The workflow runs
    GoReleaser from this directory: linux/darwin × amd64/arm64 tar.gz archives,
    checksums, and a GitHub release on the tag.
+4. Install it locally: download that release's archive for your platform and
+   put the `idgen` binary on your `PATH`.
 
-The latest release is `git tag --list 'idgen/v*' --sort=-v:refname | head -1`.
+`idgen --version` then prints `vX.Y.Z`.

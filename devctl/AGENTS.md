@@ -19,6 +19,31 @@ build run writes the code under `cmd/` and `internal/`. See the `spec` and
 below is what the build run computes the gap and runs the gates against; it
 is human-authored and read-only to the run.
 
+## Operator setup
+
+Conventions for running the built `devctl` against the real platform, by a
+human or an agent. They are not devctl behaviour: they say what the operator
+supplies. What devctl itself does with the root file, the profile, and the
+operands is the stories' and design's business and is not restated here.
+
+- **Run from inside the checkout.** Every command that touches AWS or a host
+  is run from a directory inside this repository's checkout; the checkout's
+  `infra/terraform.tfvars.json` is the only statement of the root domain and
+  region.
+
+- **One AWS profile, named after the root.** `~/.aws/config` holds a profile
+  whose name is the root domain exactly as the root file spells it
+  (`ikigenba.dev`), and that profile has a live SSO session before any cloud
+  command is run (`aws sso login --profile ikigenba.dev`). No account id is
+  configured anywhere; the account is whatever that profile reaches.
+
+- **ACME email.** The address given to `space create --acme-email` and, when
+  changing it, `space init --acme-email` is `ops@ikigenba.dev`, the address the
+  stories use. It must be one the CA will accept.
+
+- **ssh.** The developer's ssh configuration reaches a space's instance as
+  `ec2-user` with the platform's key pair, which is named after the root.
+
 ## Toolchain
 
 - Go 1.26 (`go version` must report 1.26+)
@@ -35,15 +60,6 @@ The gates fake every external process, so they need nothing beyond Go and
 - `secret-tool` (libsecret; reads the developer's keyring)
 - `curl` (fetches opsctl's published releases)
 
-## Dependencies
-
-Every direct dependency is approved by a human, and the approval is recorded
-in the design: D01 names the exact set of direct requirements with pinned
-versions, `go.mod` carries exactly that set, and a gate test compares the two.
-Transitive modules are whatever `go mod tidy` resolves for that set. The run
-never adds a direct module; a phase that appears to need one files an issue
-for a human to adjudicate.
-
 ## Test files
 
 The sub-project's tests are all `*_test.go` files under `cmd/` and `internal/`.
@@ -56,6 +72,19 @@ grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' cmd internal | sort
 **No id-shaped-literal hazard.** devctl neither mints nor emits
 `PREFIX-XXXX-XXXX` values, so no test literal can be mistaken for a
 requirement tag.
+
+## Test discipline
+
+These rules govern the unit tests: everything `go test ./...` runs. Live
+tests are separate, carry the `live` build tag, and are not part of it.
+
+- Offline: no network beyond loopback, no real credentials.
+- Deterministic: time, randomness, and environment are injected; no test
+  sleeps to wait for something.
+- No fixed ports: a test binds `127.0.0.1:0` or a Unix socket in a
+  temporary directory.
+- Isolated: a test touches only its own temporary directory, never the
+  developer's home, config, or real state.
 
 **No network and no real identity in the gates.** Tests never make a network
 call, never load the AWS SDK's default credential chain, and never read
@@ -101,7 +130,7 @@ by id.
 
 ## Deploy
 
-Release machinery — the version bump, tags, `.goreleaser.yaml`, and
+Deploy machinery — the version bump, tags, `.goreleaser.yaml`, and
 `.github/workflows/release-devctl.yml` (repo root) — is hand-maintained
 infrastructure outside the spec system: the build run never reads, edits, or
 tests it.
@@ -109,8 +138,9 @@ tests it.
 devctl installs on the developer's own machine, as an ordinary user; there is
 no host and no root step.
 
-1. Set the version in `internal/cli/run.go` (D02) to `vX.Y.Z`. The binary
-   reports that string, and the release refuses a tag that does not match it.
+1. Set the version in `internal/cli/run.go` (D02) to `vX.Y.Z`. It is a
+   source literal the binary reports verbatim, and the deploy refuses a tag
+   that does not match it.
 2. Commit that on `main` and push `main`.
 3. Tag that commit `devctl/vX.Y.Z` and push the tag.
    `.github/workflows/release-devctl.yml` builds with GoReleaser and publishes
@@ -122,28 +152,3 @@ no host and no root step.
      binary on your `PATH`.
 
 `devctl version` then prints `vX.Y.Z`.
-
-## Operating defaults
-
-Conventions for running the built `devctl` against the real platform, by a
-human or an agent. They are not devctl behaviour: they say what the operator
-supplies. What devctl itself does with the root file, the profile, and the
-operands is the stories' and design's business and is not restated here.
-
-- **Run from inside the checkout.** Every command that touches AWS or a host
-  is run from a directory inside this repository's checkout; the checkout's
-  `infra/terraform.tfvars.json` is the only statement of the root domain and
-  region.
-
-- **One AWS profile, named after the root.** `~/.aws/config` holds a profile
-  whose name is the root domain exactly as the root file spells it
-  (`ikigenba.dev`), and that profile has a live SSO session before any cloud
-  command is run (`aws sso login --profile ikigenba.dev`). No account id is
-  configured anywhere; the account is whatever that profile reaches.
-
-- **ACME email.** The address given to `space create --acme-email` and, when
-  changing it, `space init --acme-email` is `ops@ikigenba.dev`, the address the
-  stories use. It must be one the CA will accept.
-
-- **ssh.** The developer's ssh configuration reaches a space's instance as
-  `ec2-user` with the platform's key pair, which is named after the root.

@@ -13,6 +13,11 @@ with that target. See the `spec` and `build-spec` skills. Everything below is
 what the build run computes the gap and runs the gates against; it is
 human-authored and read-only to the run.
 
+## Host
+
+opsctl runs on a space's host, as root. It is not designed to run on the
+developer's machine, and there is no permanent test host.
+
 ## Toolchain
 
 - Go 1.26 (`go version` must report 1.26+)
@@ -23,16 +28,6 @@ archive utilities are observed on `dev`, not invoked against the gate host.
 Tests use the injected D01 boundaries and controlled process fixtures.
 Mere tool availability is not
 proof of its protocol or of a successful platform operation.
-
-## Dependencies
-
-Every direct dependency is approved by a human, and the approval is recorded
-in the design: D1 names the exact set of direct requirements (the AWS SDK v2
-core, `config`, `service/route53`, `service/s3`, and `service/ssm` modules), and a gate test compares the
-module paths in `go.mod` against it. Which release of each satisfies them is
-data, and it lives in `go.mod`. Transitive modules are whatever
-`go mod tidy` resolves for that set. The run never adds a direct module; a
-phase that appears to need one files an issue for a human to adjudicate.
 
 ## Test files
 
@@ -46,6 +41,19 @@ grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' cmd internal | sort
 **No id-shaped-literal hazard.** opsctl neither mints nor emits
 `PREFIX-XXXX-XXXX` values, so no test literal can be mistaken for a
 requirement tag.
+
+## Test discipline
+
+These rules govern the unit tests: everything `go test ./...` runs. Live
+tests are separate, carry the `live` build tag, and are not part of it.
+
+- Offline: no network beyond loopback, no real credentials.
+- Deterministic: time, randomness, and environment are injected; no test
+  sleeps to wait for something.
+- No fixed ports: a test binds `127.0.0.1:0` or a Unix socket in a
+  temporary directory.
+- Isolated: a test touches only its own temporary directory, never the
+  developer's home, config, or real state.
 
 **No root and no deployment-host paths in the gates.** Commands invoked
 through `cli.Run` resolve host paths under `cli.Deps.Root` (design D01), and
@@ -86,13 +94,14 @@ by id.
 
 ## Deploy
 
-Release machinery — the version bump, tags, `install.sh`, `.goreleaser.yaml`,
+Deploy machinery — the version bump, tags, `install.sh`, `.goreleaser.yaml`,
 and `.github/workflows/release-opsctl.yml` (repo root) — is hand-maintained
 infrastructure outside the spec system: the build run never reads, edits, or
 tests it.
 
-1. Set the version in `internal/cli/cli.go` (D02) to `vX.Y.Z`. The binary
-   reports that string, and the release refuses a tag that does not match it.
+1. Set the version in `internal/cli/cli.go` (D02) to `vX.Y.Z`. It is a
+   source literal the binary reports verbatim, and the deploy refuses a tag
+   that does not match it.
 2. Commit that on `main` and push `main`.
 3. Tag that commit `opsctl/vX.Y.Z` and push the tag.
    `.github/workflows/release-opsctl.yml` builds with GoReleaser and publishes
@@ -105,11 +114,3 @@ sudo bash /tmp/opsctl-install.sh vX.Y.Z
 ```
 
 `opsctl version` then prints `vX.Y.Z`.
-
-## Host
-
-The live box for this project is the host answering at `ikigenba.dev`. The
-ssh alias `dev` reaches it by that name, so it follows the DNS record when the
-instance is replaced; the login is `ec2-user`, and `sudo` needs no password.
-Any real-world verification — a live DNS round-trip, checking installed
-prerequisites — runs there.

@@ -19,16 +19,6 @@ read-only to the run.
   `toolkit`, both published from this monorepo under `agentkit/v*` and
   `toolkit/v*` tags, and for `github.com/google/uuid`.
 
-## Dependencies
-
-Every direct dependency is approved by a human, and the approval is recorded
-in the design: D1 names the exact set of direct requirements, and a gate test
-compares `go.mod` against it. The run never adds a module; a phase that
-appears to need one files an issue for a human to adjudicate. Adopting a new
-release of an approved dependency is a dependency edit, not a design change,
-and the run makes it whenever a phase's requirements only compile against
-the newer release.
-
 ## Test files
 
 The sub-project's tests are all `*_test.go` files under `cmd/` and `internal/`.
@@ -41,6 +31,19 @@ grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' cmd internal | sort
 **No id-shaped-literal hazard.** agent-repl neither mints nor emits
 `PREFIX-XXXX-XXXX` values, so no test literal can be mistaken for a
 requirement tag.
+
+## Test discipline
+
+These rules govern the unit tests: everything `go test ./...` runs. Live
+tests are separate, carry the `live` build tag, and are not part of it.
+
+- Offline: no network beyond loopback, no real credentials.
+- Deterministic: time, randomness, and environment are injected; no test
+  sleeps to wait for something.
+- No fixed ports: a test binds `127.0.0.1:0` or a Unix socket in a
+  temporary directory.
+- Isolated: a test touches only its own temporary directory, never the
+  developer's home, config, or real state.
 
 **No live provider in the gates.** agentkit sends requests through Go's
 default HTTP client, so every test that needs a provider stands up an
@@ -80,21 +83,21 @@ Requirements: R-XXXX-XXXX, R-YYYY-YYYY
 The `Requirements:` trailer lists the phase's ids so history stays greppable
 by id.
 
-## Releasing
+## Deploy
 
-Release machinery — the version bump, tags, `.goreleaser.yaml`, and
+Deploy machinery — the version bump, tags, `.goreleaser.yaml`, and
 `.github/workflows/release-agent-repl.yml` (repo root) — is hand-maintained
 infrastructure outside the spec system: the build run never reads, edits, or
 tests it.
 
-1. Set the version in `internal/cli/version.go` (D4) to `vX.Y.Z`. It is
-   source-carried, never ldflags-injected; the spec fixes only its shape, so no
-   build run is needed to bump it.
+1. Set the version in `internal/cli/version.go` (D4) to `vX.Y.Z`. It is a
+   source literal the binary reports verbatim, and the deploy refuses a tag
+   that does not match it.
 2. Commit that on `main` and push `main`.
-3. Tag that commit `agent-repl/vX.Y.Z` and push the tag. The workflow verifies
-   the tag matches the in-source version (a mismatch fails the release), then
-   runs GoReleaser from this directory: linux/darwin × amd64/arm64 tar.gz
-   archives, checksums, and a GitHub release on the tag.
+3. Tag that commit `agent-repl/vX.Y.Z` and push the tag. The workflow runs
+   GoReleaser from this directory: linux/darwin × amd64/arm64 tar.gz archives,
+   checksums, and a GitHub release on the tag.
+4. Install it locally: download that release's archive for your platform and
+   put the `agent-repl` binary on your `PATH`.
 
-The latest release is `git tag --list 'agent-repl/v*' --sort=-v:refname | head
--1`.
+`agent-repl --version` then prints `vX.Y.Z`.
