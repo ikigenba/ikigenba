@@ -1,11 +1,13 @@
 # D2-services
 
-A `Kit` is what an app holds to build its banner. The app makes one with
-`New`, naming its own service, and asks it for a `Banner` on every page,
-passing a `User`: the signed-in person's email and the URLs of their profile
-and of sign-out. The returned `Banner` is the data the `banner` and
-`launcher` templates (D3) render: the app's service name, the user's three
-values, and the services the launcher offers.
+A `Kit` is what an app holds to build its banner and footer. The app makes
+one with `New`, naming its own service and its release version, and asks it
+for a `Banner` on every page, passing a `User`: the signed-in person's email
+and the URLs of their profile and of sign-out. The returned `Banner` is the
+data the `banner`, `launcher`, and `footer` templates (D3) render: the app's
+service name and version, the user's three values, and the services the
+launcher offers. The version is whatever string the app declares (its
+`--version` output, say); appkit carries it unaltered and never parses it.
 
 ## The services file
 
@@ -49,15 +51,15 @@ option.
 
 - R-69LO-BOP5: Package `appkit` MUST export `type User struct { Email, ProfileURL, LogoutURL string }`, with exactly these fields in this order.
 - R-6ATK-PGFU: Package `appkit` MUST export `type Service struct { Name, URL string; Icon template.HTML; Enabled, Current bool }`, with exactly these fields in this order, where `template` is the standard library's `html/template`.
-- R-6D9D-GZX8: Package `appkit` MUST export `type Banner struct { Service, Email, ProfileURL, LogoutURL string; Services []Service }`, with exactly these fields in this order.
-- R-LMSI-9AMX: Package `appkit` MUST export type `Kit`, `func New(service string) *Kit`, and the method `func (k *Kit) Banner(u User) Banner`.
+- R-AYMG-TUX2: Package `appkit` MUST export `type Banner struct { Service, Version, Email, ProfileURL, LogoutURL string; Services []Service }`, with exactly these fields in this order.
+- R-AZUD-7MNR: Package `appkit` MUST export type `Kit`, `func New(service, version string) *Kit`, and the method `func (k *Kit) Banner(u User) Banner`.
 - R-6FP6-8JEM: `New` MUST read the environment variable `IKIGENBA_SERVICES` exactly once, during the call, and the returned `Kit` MUST use the value read then as the services file path, so setting, changing, or unsetting the variable after `New` returns does not change what that `Kit`'s `Banner` returns.
-- R-6GX2-MB5B: `Kit.Banner` MUST return a `Banner` whose `Service` is the `service` passed to `New` and whose `Email`, `ProfileURL`, and `LogoutURL` are `u`'s fields of the same names, each unaltered.
+- R-B129-LEEG: `Kit.Banner` MUST return a `Banner` whose `Service` and `Version` are the `service` and `version` passed to `New` and whose `Email`, `ProfileURL`, and `LogoutURL` are `u`'s fields of the same names, each unaltered.
 - R-6I4Z-02W0: Every `Kit.Banner` call MUST read the services file anew at the path `New` read, as given (a relative path resolves against the process working directory at the time of the call), so a change to the file's content, or its appearance or removal, between two calls is reflected in the second call's `Services`.
 - R-Z24E-CK72: `Kit.Banner` MUST return `Services` of length zero when `IKIGENBA_SERVICES` was unset or empty when `New` read it; when the path names nothing, or something that cannot be read as a file (a directory included); when the file's content is not valid UTF-8, begins with a byte order mark, or is not exactly one JSON text (RFC 8259); when that JSON value is not an object; when the object has no `services` member or that member is not an array; or when the array has no usable element.
 - R-6KKR-RMDE: An element of the `services` array MUST be usable exactly when it is a JSON object whose member `name` is a string other than the empty string, whose member `url` is a string, whose member `icon` is a string, and whose member `enabled` is `true` or `false`; an element that is not usable MUST contribute nothing to `Services` and MUST NOT prevent the usable elements from contributing.
 - R-Z4K7-43OG: Members that R-Z24E-CK72 and R-6KKR-RMDE do not name, in the top-level object or in an element, MUST be ignored, so adding any such member of any type to a file does not change the `Services` that `Kit.Banner` returns for it; when one object, at any level, holds a member name more than once, only the last occurrence of that name MUST count.
 - R-6N0K-J5US: `Kit.Banner` MUST return one `Service` per usable element, in the order the elements appear in the array, duplicates by name included, with `Name` the decoded `name`, `URL` the decoded `url`, `Icon` the decoded `icon` string unaltered, `Enabled` the value of `enabled`, and `Current` true exactly when `Name` equals the `service` passed to `New`.
 - R-Z5S3-HVF5: `New` and `Kit.Banner` MUST NOT panic and MUST NOT write to standard output, to standard error, or through the standard library `log` package's default logger, in any of the cases R-Z24E-CK72 and R-6KKR-RMDE describe.
-- R-6PGD-APC6: The zero value of `Kit` MUST behave as the `Kit` that `New("")` returns when `IKIGENBA_SERVICES` is unset: its `Banner` returns `Service` empty and `Services` of length zero.
+- R-B2A5-Z655: The zero value of `Kit` MUST behave as the `Kit` that `New("", "")` returns when `IKIGENBA_SERVICES` is unset: its `Banner` returns `Service` and `Version` empty and `Services` of length zero.
 - R-6QO9-OH2V: `Kit.Banner` MUST be safe to call concurrently from multiple goroutines on the same `Kit`.
