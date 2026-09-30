@@ -1016,7 +1016,7 @@ func TestApplyRestoresPreviousConfigurationWhenNginxTestFails(t *testing.T) {
 }
 
 func TestApplyReturnsCommandErrorsAndReportsRestorationFailure(t *testing.T) {
-	// R-2P2U-ULPL R-GWME-QK2L
+	// R-2P2U-ULPL R-YBI2-GUY1
 	t.Parallel()
 	t.Run("reload", func(t *testing.T) {
 		root := t.TempDir()
@@ -1065,7 +1065,7 @@ func TestApplyReturnsCommandErrorsAndReportsRestorationFailure(t *testing.T) {
 	})
 }
 
-// R-GWME-QK2L
+// R-YBI2-GUY1
 func TestApplyPreservesExistingCommandErrorIdentity(t *testing.T) {
 	existing := &host.CommandError{
 		Label:  "remote nginx test",

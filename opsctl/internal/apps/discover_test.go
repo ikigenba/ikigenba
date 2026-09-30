@@ -210,10 +210,6 @@ func TestServiceModelOperationsLeaveFilesUnchangedAndManifestHasNoVersion(t *tes
 	if after := snapshotTree(t, root); !reflect.DeepEqual(after, before) {
 		t.Fatalf("model operations changed host state:\nbefore: %#v\nafter:  %#v", before, after)
 	}
-	manifestType := reflect.TypeFor[apps.Manifest]()
-	if _, exists := manifestType.FieldByName("Version"); exists {
-		t.Fatal("manifest carries an authoritative Version field")
-	}
 }
 
 func writeManifest(t *testing.T, root, name, contents string) {

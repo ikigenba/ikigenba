@@ -190,7 +190,7 @@ func TestRestoreDatabaseRemovesStaleSidecarsBeforeLitestream(t *testing.T) {
 }
 
 func TestRestoreDatabaseMissingSnapshotStopsAtFailedDatabaseStep(t *testing.T) {
-	// R-Y55N-UUDW R-G7FZ-2AO2 R-RX15-3IAF
+	// R-Y55N-UUDW R-G7FZ-2AO2 R-Z77G-EW83
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "etc/litestream.yml", "original configuration\n", 0o600)

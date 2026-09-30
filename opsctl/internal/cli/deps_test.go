@@ -80,24 +80,42 @@ func TestDepsFallbacksAndInjections(t *testing.T) {
 }
 
 func TestDepsFields(t *testing.T) {
-	// R-5CW6-TG0X
-	typ := reflect.TypeFor[Deps]()
-	want := map[string]reflect.Type{
-		"Root": reflect.TypeFor[string](), "EUID": reflect.TypeFor[int](),
-		"Getenv": reflect.TypeFor[func(string) string](), "DNS": reflect.TypeFor[dns.Env](),
-		"LookPath":   reflect.TypeFor[func(string) (string, error)](),
-		"LookupHost": reflect.TypeFor[func(context.Context, string) ([]string, error)](),
-		"Execute":    reflect.TypeFor[func(context.Context, host.Command) (host.Result, error)](),
-		"Now":        reflect.TypeFor[func() time.Time](), "Cloud": reflect.TypeFor[cloud.Env](),
+	// R-Y46O-68HV
+	deps := Deps{
+		Root:       "/root",
+		EUID:       7,
+		Getenv:     func(key string) string { return key },
+		DNS:        dns.Env{},
+		LookPath:   func(file string) (string, error) { return file, nil },
+		LookupHost: func(_ context.Context, host string) ([]string, error) { return []string{host}, nil },
+		Execute:    func(context.Context, host.Command) (host.Result, error) { return host.Result{ExitCode: 3}, nil },
+		Now:        func() time.Time { return time.Unix(9, 0) },
+		Cloud:      cloud.Env{},
 	}
-	if typ.NumField() != len(want) {
-		t.Fatalf("Deps has %d fields, want %d", typ.NumField(), len(want))
+	root := typed[string](deps.Root)
+	euid := typed[int](deps.EUID)
+	getenv := typed[func(key string) string](deps.Getenv)
+	dnsEnv := typed[dns.Env](deps.DNS)
+	lookPath := typed[func(file string) (string, error)](deps.LookPath)
+	lookupHost := typed[func(ctx context.Context, host string) ([]string, error)](deps.LookupHost)
+	execute := typed[func(context.Context, host.Command) (host.Result, error)](deps.Execute)
+	now := typed[func() time.Time](deps.Now)
+	cloudEnv := typed[cloud.Env](deps.Cloud)
+	_, _ = dnsEnv, cloudEnv
+	if root != "/root" || euid != 7 || getenv("K") != "K" {
+		t.Fatalf("Deps Root/EUID/Getenv = %q/%d/%q", root, euid, getenv("K"))
 	}
-	for name, signature := range want {
-		field, ok := typ.FieldByName(name)
-		if !ok || !field.IsExported() || field.Type != signature {
-			t.Errorf("Deps.%s = %v, want exported %v", name, field.Type, signature)
-		}
+	if got, err := lookPath("tool"); got != "tool" || err != nil {
+		t.Fatalf("Deps.LookPath = (%q, %v)", got, err)
+	}
+	if got, err := lookupHost(context.Background(), "h"); err != nil || len(got) != 1 || got[0] != "h" {
+		t.Fatalf("Deps.LookupHost = (%v, %v)", got, err)
+	}
+	if got, err := execute(context.Background(), host.Command{}); err != nil || got.ExitCode != 3 {
+		t.Fatalf("Deps.Execute = (%v, %v)", got, err)
+	}
+	if !now().Equal(time.Unix(9, 0)) {
+		t.Fatalf("Deps.Now = %v", now())
 	}
 }
 
@@ -130,3 +148,6 @@ func TestNormalizeDeps(t *testing.T) {
 		t.Fatal("supplied values replaced")
 	}
 }
+
+// typed returns v as a T; the call compiles only when v is assignable to T.
+func typed[T any](v T) T { return v }

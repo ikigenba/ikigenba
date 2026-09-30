@@ -23,7 +23,7 @@ import (
 var _ func(context.Context, host.Env, cloud.Env, config.Store, string, *time.Time, backup.NginxRegenerator) (backup.RestoreReport, error) = backup.Restore
 
 func TestRestoreAtControlsArchiveAndDatabaseTogether(t *testing.T) {
-	// R-1EYH-INPP R-RX15-3IAF
+	// R-1EYH-INPP R-Z77G-EW83
 	const (
 		older  = "2026-09-16T10:00:00Z"
 		cutoff = "2026-09-16T10:30:00Z"
@@ -152,7 +152,7 @@ func TestRestoreValidArchiveIgnoresInstalledDatabaseAndOtherServices(t *testing.
 }
 
 func TestRestoreDatabaseRetryUsesDurableActivationIntent(t *testing.T) {
-	// R-D4R8-7TVQ R-XFIS-LWFG R-G7FZ-2AO2 R-RX15-3IAF
+	// R-D4R8-7TVQ R-XFIS-LWFG R-G7FZ-2AO2 R-Z77G-EW83
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	body := restoreIntegrationDatabaseArchive(t, "published before database failure")
@@ -306,7 +306,7 @@ func TestRestoreWithoutDatabaseHonorsEveryUnitState(t *testing.T) {
 }
 
 func TestRestoreStartFailuresRetainOnlyUnitsStillStopped(t *testing.T) {
-	// R-XFIS-LWFG R-G7FZ-2AO2 R-RX15-3IAF
+	// R-XFIS-LWFG R-G7FZ-2AO2 R-Z77G-EW83
 	for _, test := range []struct {
 		name        string
 		failCommand string
@@ -346,7 +346,7 @@ func TestRestoreStartFailuresRetainOnlyUnitsStillStopped(t *testing.T) {
 }
 
 func TestRestoreCloudAndCancellationFailuresStopTheirStages(t *testing.T) {
-	// R-G7FZ-2AO2 R-RX15-3IAF
+	// R-G7FZ-2AO2 R-Z77G-EW83
 	t.Run("cloud open is failed source", func(t *testing.T) {
 		root := t.TempDir()
 		cause := errors.New("cloud credentials unavailable")
@@ -414,7 +414,7 @@ func TestRestoreCloudAndCancellationFailuresStopTheirStages(t *testing.T) {
 }
 
 func TestRestoreActivationMarkerFailuresPreserveIntentWithoutReportRows(t *testing.T) {
-	// R-D4R8-7TVQ R-G7FZ-2AO2 R-RX15-3IAF
+	// R-D4R8-7TVQ R-G7FZ-2AO2 R-Z77G-EW83
 	body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("restored")})
 
 	t.Run("lookup", func(t *testing.T) {

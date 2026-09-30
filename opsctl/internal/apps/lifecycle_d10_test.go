@@ -113,10 +113,6 @@ func (model *lifecycleModel) hooks() apps.LifecycleHooks {
 
 func TestLifecycleDomainAPIsAndNameValidation(t *testing.T) {
 	// R-V71F-D1HM R-VGSM-F7F6
-	if reflect.TypeOf(apps.Disable) != reflect.TypeFor[func(context.Context, host.Env, string, apps.LifecycleHooks) error]() ||
-		reflect.TypeOf(apps.Enable) != reflect.TypeFor[func(context.Context, host.Env, string, apps.LifecycleHooks) error]() {
-		t.Fatal("domain lifecycle API signatures changed")
-	}
 	for _, operation := range []func(context.Context, host.Env, string, apps.LifecycleHooks) error{apps.Disable, apps.Enable} {
 		called := false
 		err := operation(context.Background(), host.Env{Root: "/missing", Execute: func(context.Context, host.Command) (host.Result, error) { called = true; return host.Result{}, nil }}, "../bad", apps.LifecycleHooks{})

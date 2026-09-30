@@ -145,8 +145,8 @@ func TestRestoreAppGuardAndStopDetails(t *testing.T) {
 }
 
 func TestRestoreStopFailuresPreserveCauseStoppedUnitsAndTargets(t *testing.T) {
-	// R-GWME-QK2L
-	// R-XEAW-84OR R-G7FZ-2AO2 R-RX15-3IAF
+	// R-YBI2-GUY1
+	// R-XEAW-84OR R-G7FZ-2AO2 R-Z77G-EW83
 	transport := errors.New("system bus unavailable")
 	for _, test := range []struct {
 		name         string
@@ -294,7 +294,7 @@ func TestRestoreCreatesMissingAccountWithNoLoginAndNoHome(t *testing.T) {
 }
 
 func TestRestoreOwnershipApplicationFailurePreservesPublishedTrees(t *testing.T) {
-	// R-KALQ-MZPK R-G04K-RO7W R-G7FZ-2AO2 R-RX15-3IAF
+	// R-KALQ-MZPK R-G04K-RO7W R-G7FZ-2AO2 R-Z77G-EW83
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/etc/old", "old etc", 0o600)

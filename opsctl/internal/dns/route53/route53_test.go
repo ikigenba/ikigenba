@@ -68,14 +68,8 @@ func getChangeResponse(status string) string {
 
 // R-7JWE-YKBM R-ERWS-0X5E R-EUCK-SGMS
 func TestExportsAndNew(t *testing.T) {
-	newSignature := reflect.TypeFor[func(context.Context, string) (dns.Provider, error)]()
-	if got := reflect.TypeOf(route53.New); got != newSignature {
-		t.Fatalf("New signature = %s, want %s", got, newSignature)
-	}
-	openSignature := reflect.TypeFor[func(context.Context, string) (dns.Provider, error)]()
-	if got := reflect.TypeOf(route53.Open); got != openSignature {
-		t.Fatalf("Open signature = %s, want %s", got, openSignature)
-	}
+	_ = typed[func(context.Context, string) (dns.Provider, error)](route53.New)
+	_ = typed[func(context.Context, string) (dns.Provider, error)](route53.Open)
 	setAWSEnvironment(t)
 	if route53.Region != "us-east-1" {
 		t.Fatalf("Region = %q", route53.Region)
@@ -524,3 +518,6 @@ func TestChangesWaitForINSYNCAndWrapContextError(t *testing.T) {
 		}
 	})
 }
+
+// typed returns v as a T; the call compiles only when v is assignable to T.
+func typed[T any](v T) T { return v }

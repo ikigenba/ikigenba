@@ -28,25 +28,18 @@ import (
 var _ func(context.Context, host.Env, cloud.Env, config.Store, string) ([]backup.FileResult, error) = backup.Files
 
 func TestFilesAPIAndConfigurationBoundary(t *testing.T) {
-	// R-D7XD-PK5R R-D95A-3BWG R-DAD6-H3N5 R-DK7F-CAV0
-	wantFields := []struct {
-		name string
-		typ  reflect.Type
-	}{
-		{"Service", reflect.TypeFor[string]()},
-		{"Object", reflect.TypeFor[string]()},
-		{"Size", reflect.TypeFor[int64]()},
-		{"Err", reflect.TypeFor[error]()},
-	}
-	resultType := reflect.TypeFor[backup.FileResult]()
-	if resultType.NumField() != len(wantFields) {
-		t.Fatalf("FileResult has %d fields, want %d", resultType.NumField(), len(wantFields))
-	}
-	for index, want := range wantFields {
-		field := resultType.Field(index)
-		if field.Name != want.name || field.Type != want.typ {
-			t.Fatalf("FileResult field %d = %s %v, want %s %v", index, field.Name, field.Type, want.name, want.typ)
-		}
+	// R-D7XD-PK5R R-Z4RN-NCQP R-DAD6-H3N5 R-DK7F-CAV0
+	fileErr := errors.New("upload failed")
+	fileResult := backup.FileResult{Service: "notes", Object: "s3://bucket/notes.tar.zst", Size: 42, Err: fileErr}
+	var (
+		resultService string
+		resultObject  string
+		resultSize    int64
+		resultErr     error
+	)
+	resultService, resultObject, resultSize, resultErr = fileResult.Service, fileResult.Object, fileResult.Size, fileResult.Err
+	if resultService != "notes" || resultObject != "s3://bucket/notes.tar.zst" || resultSize != 42 || !errors.Is(resultErr, fileErr) {
+		t.Fatalf("FileResult = %+v", fileResult)
 	}
 
 	t.Run("prefix before region", func(t *testing.T) {
@@ -301,7 +294,7 @@ func TestFilesExplicitSelectionAndInvalidDiscoveredName(t *testing.T) {
 }
 
 func TestFilesServiceFailuresContinueWithoutPartialObjects(t *testing.T) {
-	// R-I3CZ-C0Q2 R-GWME-QK2L
+	// R-I3CZ-C0Q2 R-YBI2-GUY1
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/alpha/state/value", "alpha", 0o600)

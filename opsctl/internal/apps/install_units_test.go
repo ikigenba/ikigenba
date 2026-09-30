@@ -427,7 +427,7 @@ func TestInstallRejectsAppUnitSymlinkWithoutFollowingIt(t *testing.T) {
 }
 
 func TestInstallReportsUnitFailureBeforeConfiguration(t *testing.T) {
-	// R-GWME-QK2L
+	// R-YBI2-GUY1
 	for _, action := range []string{"daemon-reload", "enable"} {
 		t.Run(action, func(t *testing.T) {
 			fixture := newCompletedInstallFixture(t, t.TempDir(), false)

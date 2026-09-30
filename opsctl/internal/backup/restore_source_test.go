@@ -19,34 +19,38 @@ import (
 var _ func(context.Context, host.Env, cloud.Env, config.Store, string, *time.Time, backup.NginxRegenerator) (backup.RestoreReport, error) = backup.Restore
 
 func TestRestoreSourceContracts(t *testing.T) {
-	// R-Y7LG-MDVA R-FRLA-3A11
-	stepType := reflect.TypeFor[backup.RestoreStep]()
-	wantStep := []struct {
-		name   string
-		typeOf reflect.Type
-	}{
-		{"Name", reflect.TypeFor[string]()},
-		{"Detail", reflect.TypeFor[string]()},
-		{"Err", reflect.TypeFor[error]()},
+	// R-Z5ZK-14HE R-Z8FC-SNYS
+	stepErr := errors.New("step failed")
+	step := backup.RestoreStep{Name: "source", Detail: "s3://bucket/notes.tar.zst", Err: stepErr}
+	var (
+		stepName   string
+		stepDetail string
+		stepError  error
+	)
+	stepName, stepDetail, stepError = step.Name, step.Detail, step.Err
+	if stepName != "source" || stepDetail != "s3://bucket/notes.tar.zst" || !errors.Is(stepError, stepErr) {
+		t.Fatalf("RestoreStep = %+v", step)
 	}
-	assertRestoreFields(t, stepType, wantStep)
-	reportType := reflect.TypeFor[backup.RestoreReport]()
-	assertRestoreFields(t, reportType, []struct {
-		name   string
-		typeOf reflect.Type
-	}{{"Steps", reflect.TypeFor[[]backup.RestoreStep]()}})
-	errorType := reflect.TypeFor[backup.RestoreError]()
-	assertRestoreFields(t, errorType, []struct {
-		name   string
-		typeOf reflect.Type
-	}{
-		{"Service", reflect.TypeFor[string]()},
-		{"Stage", reflect.TypeFor[string]()},
-		{"Err", reflect.TypeFor[error]()},
-		{"Stopped", reflect.TypeFor[[]string]()},
-	})
+
+	// R-Z77G-EW83
+	report := backup.RestoreReport{Steps: []backup.RestoreStep{step}}
+	steps := append([]backup.RestoreStep(nil), report.Steps...)
+	if len(steps) != 1 || steps[0].Name != "source" {
+		t.Fatalf("RestoreReport = %+v", report)
+	}
+
 	cause := errors.New("archive unavailable")
 	failure := &backup.RestoreError{Service: "notes", Stage: "source", Err: cause, Stopped: []string{"ikigenba-notes.service"}}
+	var (
+		failureService string
+		failureStage   string
+		failureErr     error
+		failureStopped []string
+	)
+	failureService, failureStage, failureErr, failureStopped = failure.Service, failure.Stage, failure.Err, failure.Stopped
+	if failureService != "notes" || failureStage != "source" || !errors.Is(failureErr, cause) || len(failureStopped) != 1 || failureStopped[0] != "ikigenba-notes.service" {
+		t.Fatalf("RestoreError fields = %+v", failure)
+	}
 	if failure.Error() != "notes: source: archive unavailable" || !errors.Is(failure, cause) {
 		t.Fatalf("RestoreError = %q, unwrap %v", failure.Error(), errors.Unwrap(failure))
 	}
@@ -130,7 +134,7 @@ func TestRestoreNewestSourceWhenAtIsNil(t *testing.T) {
 }
 
 func TestRestorePreworkflowValidationHasNoSourceStepOrEffects(t *testing.T) {
-	// R-FST6-H1RQ R-RX15-3IAF R-G7FZ-2AO2 R-DK7F-CAV0
+	// R-FST6-H1RQ R-Z77G-EW83 R-G7FZ-2AO2 R-DK7F-CAV0
 	tests := []struct {
 		name    string
 		service string
@@ -249,7 +253,7 @@ func TestRestoreMissingSourceReportsOneFailedStepWithoutMutation(t *testing.T) {
 }
 
 func TestRestoreRejectsInvalidSourceBeforeHostChanges(t *testing.T) {
-	// R-FWGV-MCZT R-FXOS-04QI R-G7FZ-2AO2 R-RX15-3IAF
+	// R-FWGV-MCZT R-FXOS-04QI R-G7FZ-2AO2 R-Z77G-EW83
 	tests := []struct {
 		name       string
 		members    []restoreMember
@@ -293,22 +297,6 @@ func TestRestoreRejectsInvalidSourceBeforeHostChanges(t *testing.T) {
 				t.Fatalf("invalid source effects: puts %d readers %#v", client.puts, client.readers)
 			}
 		})
-	}
-}
-
-func assertRestoreFields(t *testing.T, typeOf reflect.Type, want []struct {
-	name   string
-	typeOf reflect.Type
-}) {
-	t.Helper()
-	if typeOf.NumField() != len(want) {
-		t.Fatalf("%s has %d fields, want %d", typeOf.Name(), typeOf.NumField(), len(want))
-	}
-	for index, field := range want {
-		got := typeOf.Field(index)
-		if got.Name != field.name || got.Type != field.typeOf {
-			t.Fatalf("%s field %d = %s %v, want %s %v", typeOf.Name(), index, got.Name, got.Type, field.name, field.typeOf)
-		}
 	}
 }
 

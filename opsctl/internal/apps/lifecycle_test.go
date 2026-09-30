@@ -15,56 +15,70 @@ import (
 )
 
 func TestLifecycleAPITypes(t *testing.T) {
-	// R-ES81-UK2R
-	// R-V4LM-LI08 R-V3DQ-7Q9J R-V5TI-Z9QX
-	// R-LTJ4-ANPF
-	typeFieldsExactly(t, reflect.TypeFor[apps.UninstallHooks](), []fieldShape{
-		{"Report", reflect.TypeFor[func(string, string, bool) error]()},
-		{"Configure", reflect.TypeFor[func(context.Context, apps.Manifest) error]()},
-	})
-	typeFieldsExactly(t, reflect.TypeFor[apps.StatusRow](), []fieldShape{
-		{"Name", reflect.TypeFor[string]()},
-		{"Version", reflect.TypeFor[string]()},
-		{"State", reflect.TypeFor[string]()},
-		{"Socket", reflect.TypeFor[string]()},
-		{"JournalMode", reflect.TypeFor[string]()},
-	})
-	typeFieldsExactly(t, reflect.TypeFor[apps.ServiceReport](), []fieldShape{
-		{"Name", reflect.TypeFor[string]()},
-		{"Version", reflect.TypeFor[string]()},
-		{"State", reflect.TypeFor[string]()},
-	})
-	typeFieldsExactly(t, reflect.TypeFor[apps.LifecycleHooks](), []fieldShape{
-		{"Report", reflect.TypeFor[func(string, string, bool) error]()},
-		{"Configure", reflect.TypeFor[func(context.Context, apps.Manifest) error]()},
-	})
-	typeFieldsExactly(t, reflect.TypeFor[apps.LifecycleError](), []fieldShape{
-		{"Code", reflect.TypeFor[int]()},
-		{"Message", reflect.TypeFor[string]()},
-		{"Cause", reflect.TypeFor[error]()},
-	})
+	// R-YV0G-L6T5
+	var reported []string
+	var configured []string
+	report := func(step, detail string, success bool) error {
+		reported = append(reported, step+":"+detail)
+		if !success {
+			return errors.New("unexpected failure report")
+		}
+		return nil
+	}
+	configure := func(_ context.Context, manifest apps.Manifest) error {
+		configured = append(configured, manifest.App)
+		return nil
+	}
+	var (
+		reportHook    func(string, string, bool) error
+		configureHook func(context.Context, apps.Manifest) error
+	)
+	uninstallHooks := apps.UninstallHooks{Report: report, Configure: configure}
+	reportHook, configureHook = uninstallHooks.Report, uninstallHooks.Configure
+	if reportHook("stop", "uninstall", true) != nil || configureHook(context.Background(), apps.Manifest{App: "uninstall"}) != nil {
+		t.Fatal("UninstallHooks did not carry its hooks")
+	}
+
+	// R-YXG9-CQAJ
+	row := apps.StatusRow{Name: "notes", Version: "v1", State: "active", Socket: "enabled", JournalMode: "wal"}
+	var rowName, rowVersion, rowState, rowSocket, rowJournal string
+	rowName, rowVersion, rowState, rowSocket, rowJournal = row.Name, row.Version, row.State, row.Socket, row.JournalMode
+	if rowName != "notes" || rowVersion != "v1" || rowState != "active" || rowSocket != "enabled" || rowJournal != "wal" {
+		t.Fatalf("StatusRow = %#v", row)
+	}
+
+	// R-YW8C-YYJU
+	serviceReport := apps.ServiceReport{Name: "notes", Version: "v2", State: "inactive"}
+	var reportName, reportVersion, reportState string
+	reportName, reportVersion, reportState = serviceReport.Name, serviceReport.Version, serviceReport.State
+	if reportName != "notes" || reportVersion != "v2" || reportState != "inactive" {
+		t.Fatalf("ServiceReport = %#v", serviceReport)
+	}
+
+	// R-Z13Y-I1IM
+	lifecycleHooks := apps.LifecycleHooks{Report: report, Configure: configure}
+	reportHook, configureHook = lifecycleHooks.Report, lifecycleHooks.Configure
+	if reportHook("enable", "lifecycle", true) != nil || configureHook(context.Background(), apps.Manifest{App: "lifecycle"}) != nil {
+		t.Fatal("LifecycleHooks did not carry its hooks")
+	}
+	if !slices.Equal(reported, []string{"stop:uninstall", "enable:lifecycle"}) || !slices.Equal(configured, []string{"uninstall", "lifecycle"}) {
+		t.Fatalf("hooks observed reports %q and configures %q", reported, configured)
+	}
+
+	// R-YYO5-QI18
 	cause := errors.New("cause")
 	failure := &apps.LifecycleError{Code: 7, Message: "message", Cause: cause}
-	if failure.Error() != "message" || !errors.Is(failure, cause) {
+	var (
+		code    int
+		message string
+		wrapped error
+	)
+	code, message, wrapped = failure.Code, failure.Message, failure.Cause
+	if code != 7 || message != "message" || !errors.Is(wrapped, cause) {
+		t.Fatalf("LifecycleError fields = (%d, %q, %v)", code, message, wrapped)
+	}
+	if failure.Error() != "message" || !errors.Is(failure, cause) || !errors.Is(failure.Unwrap(), cause) {
 		t.Fatalf("LifecycleError = (%q, %v), want message and wrapped cause", failure.Error(), errors.Unwrap(failure))
-	}
-}
-
-type fieldShape struct {
-	name   string
-	typeOf reflect.Type
-}
-
-func typeFieldsExactly(t *testing.T, actual reflect.Type, want []fieldShape) {
-	t.Helper()
-	if actual.NumField() != len(want) {
-		t.Fatalf("%s has %d fields, want %d", actual, actual.NumField(), len(want))
-	}
-	for index, expected := range want {
-		field := actual.Field(index)
-		if field.Name != expected.name || field.Type != expected.typeOf {
-			t.Fatalf("%s field %d = %s %s, want %s %s", actual, index, field.Name, field.Type, expected.name, expected.typeOf)
-		}
 	}
 }
 

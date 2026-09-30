@@ -60,59 +60,35 @@ func TestErrorValues(t *testing.T) {
 }
 
 func TestExportedAPI(t *testing.T) {
-	stringType := reflect.TypeOf("")
-
-	// R-ETPG-BBIJ
-	st := reflect.TypeOf(config.Store{})
-	if st.Kind() != reflect.Struct {
-		t.Fatalf("Store is %s, want struct", st.Kind())
-	}
-	if st.NumField() != 1 {
-		t.Fatalf("Store has %d fields, want 1", st.NumField())
-	}
-	root := st.Field(0)
-	if root.Name != "Root" || root.Type != stringType {
-		t.Errorf("Store field = %s %s, want Root string", root.Name, root.Type)
+	// R-YCPY-UMOQ
+	store := config.Store{Root: "/root"}
+	root := typed[string](store.Root)
+	if root != "/root" {
+		t.Errorf("Store.Root = %q", root)
 	}
 
-	// R-EUXC-P398
-	et := reflect.TypeOf(config.Entry{})
-	if et.Kind() != reflect.Struct {
-		t.Fatalf("Entry is %s, want struct", et.Kind())
+	// R-YDXV-8EFF
+	entry := config.Entry{Key: "k", Value: "v"}
+	key := typed[string](entry.Key)
+	value := typed[string](entry.Value)
+	if key != "k" || value != "v" {
+		t.Errorf("Entry = %+v", entry)
 	}
-	if et.NumField() != 2 {
-		t.Fatalf("Entry has %d fields, want 2", et.NumField())
-	}
-	key := et.Field(0)
-	value := et.Field(1)
-	if key.Name != "Key" || key.Type != stringType {
-		t.Errorf("Entry field 0 = %s %s, want Key string", key.Name, key.Type)
-	}
-	if value.Name != "Value" || value.Type != stringType {
-		t.Errorf("Entry field 1 = %s %s, want Value string", value.Name, value.Type)
-	}
-
-	boolType := reflect.TypeOf(false)
-	errorType := reflect.TypeOf((*error)(nil)).Elem()
-	entrySlice := reflect.TypeOf([]config.Entry{})
 
 	// R-EW59-2UZX
-	vt := reflect.TypeOf(config.ValidKey)
-	if vt.Kind() != reflect.Func {
-		t.Fatalf("ValidKey is %s, want func", vt.Kind())
-	}
-	if vt.NumIn() != 1 || vt.In(0) != stringType || vt.NumOut() != 1 || vt.Out(0) != boolType {
-		t.Errorf("ValidKey signature = %s, want func(string) bool", vt)
+	validKey := typed[func(key string) bool](config.ValidKey)
+	if !validKey("a") {
+		t.Error("ValidKey(\"a\") = false")
 	}
 
 	// R-EXD5-GMQM
-	checkMethod(t, st, "Get", []reflect.Type{stringType}, []reflect.Type{stringType, errorType})
+	_ = typed[func(config.Store, string) (string, error)](config.Store.Get)
 	// R-EYL1-UEHB
-	checkMethod(t, st, "Set", []reflect.Type{stringType, stringType}, []reflect.Type{errorType})
+	_ = typed[func(config.Store, string, string) error](config.Store.Set)
 	// R-EZSY-8680
-	checkMethod(t, st, "Del", []reflect.Type{stringType}, []reflect.Type{errorType})
+	_ = typed[func(config.Store, string) error](config.Store.Del)
 	// R-F10U-LXYP
-	checkMethod(t, st, "List", nil, []reflect.Type{entrySlice, errorType})
+	_ = typed[func(config.Store) ([]config.Entry, error)](config.Store.List)
 }
 
 func TestValidKey(t *testing.T) {
@@ -969,29 +945,5 @@ func snapshotStore(t *testing.T, s config.Store) []storeSnapshotEntry {
 	return append(snapshot, storeSnapshotEntry{Name: ".", Metadata: persistentMetadata(stat)})
 }
 
-func checkMethod(t *testing.T, recv reflect.Type, name string, in, out []reflect.Type) {
-	t.Helper()
-	m, ok := recv.MethodByName(name)
-	if !ok {
-		t.Fatalf("missing method %s", name)
-	}
-	mt := m.Type
-	if mt.NumIn() != 1+len(in) {
-		t.Errorf("%s has %d parameters, want %d", name, mt.NumIn()-1, len(in))
-		return
-	}
-	for i, want := range in {
-		if got := mt.In(i + 1); got != want {
-			t.Errorf("%s parameter %d is %s, want %s", name, i, got, want)
-		}
-	}
-	if mt.NumOut() != len(out) {
-		t.Errorf("%s has %d results, want %d", name, mt.NumOut(), len(out))
-		return
-	}
-	for i, want := range out {
-		if got := mt.Out(i); got != want {
-			t.Errorf("%s result %d is %s, want %s", name, i, got, want)
-		}
-	}
-}
+// typed returns v as a T; the call compiles only when v is assignable to T.
+func typed[T any](v T) T { return v }

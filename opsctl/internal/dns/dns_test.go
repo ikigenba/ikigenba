@@ -74,84 +74,63 @@ func TestVocabulary(t *testing.T) {
 	}
 }
 
-// R-DW7E-2VVC R-DYN6-UFCQ R-E12Z-LYU4 R-KVNV-XV2Y R-E9MA-AD0Z
-// R-E3IS-DIBI R-WIKZ-XNM7 R-EC23-1WID R-EEHV-TFZR R-EGXO-KZH5 R-EJDH-CIYJ R-ELTA-42FX
+// R-YF5R-M664 R-YGDN-ZXWT R-YITG-RHE7 R-KVNV-XV2Y R-E9MA-AD0Z
+// R-YK1D-594W R-YL99-J0VL R-EC23-1WID R-EEHV-TFZR R-EGXO-KZH5 R-EJDH-CIYJ R-ELTA-42FX
 func TestExportedShapesAndSignatures(t *testing.T) {
-	typesAndFields := []struct {
-		value any
-		names []string
-		types []reflect.Type
-	}{
-		{Zone{}, []string{"Name", "ID"}, []reflect.Type{reflect.TypeFor[string](), reflect.TypeFor[string]()}},
-		{Record{}, []string{"Name", "Type", "TTL", "Values"}, []reflect.Type{reflect.TypeFor[string](), reflect.TypeFor[string](), reflect.TypeFor[int](), reflect.TypeFor[[]string]()}},
-		{Env{}, []string{"Open", "LookupNS"}, []reflect.Type{reflect.TypeFor[func(context.Context, string) (Provider, error)](), reflect.TypeFor[func(context.Context, string) ([]string, error)]()}},
-		{CheckResult{}, []string{"ZoneName", "Nameservers", "Delegated"}, []reflect.Type{reflect.TypeFor[string](), reflect.TypeFor[[]string](), reflect.TypeFor[bool]()}},
-		{Client{}, []string{"Provider", "Zones"}, []reflect.Type{reflect.TypeFor[Provider](), reflect.TypeFor[[]Zone]()}},
-	}
-	for _, item := range typesAndFields {
-		typ := reflect.TypeOf(item.value)
-		if typ.Name() != "Client" {
-			if typ.NumField() != len(item.names) {
-				t.Fatalf("%s has %d fields, want exactly %d", typ.Name(), typ.NumField(), len(item.names))
-			}
-			for i, name := range item.names {
-				field := typ.Field(i)
-				if field.Name != name || field.Type != item.types[i] {
-					t.Fatalf("%s field %d = %s %s", typ.Name(), i, field.Name, field.Type)
-				}
-			}
-			continue
-		}
-		exported := 0
-		for i := range typ.NumField() {
-			field := typ.Field(i)
-			if field.IsExported() {
-				if exported >= len(item.names) || field.Name != item.names[exported] || field.Type != item.types[exported] {
-					t.Fatalf("%s exported field %d = %s %s", typ.Name(), exported, field.Name, field.Type)
-				}
-				exported++
-			}
-		}
-		if exported != len(item.names) {
-			t.Fatalf("%s has %d exported fields, want %d", typ.Name(), exported, len(item.names))
-		}
+	zone := Zone{Name: "example.com", ID: "Z1"}
+	zoneName := typed[string](zone.Name)
+	zoneID := typed[string](zone.ID)
+	if zoneName != "example.com" || zoneID != "Z1" {
+		t.Fatalf("Zone = %+v", zone)
 	}
 
-	var _ Provider = (*fakeProvider)(nil)
-	providerType := reflect.TypeFor[Provider]()
-	providerMethods := []struct {
-		name string
-		typ  reflect.Type
-	}{
-		{"Add", reflect.TypeFor[func(context.Context, string, string, string, int, string) error]()},
-		{"Records", reflect.TypeFor[func(context.Context, string) ([]Record, error)]()},
-		{"Remove", reflect.TypeFor[func(context.Context, string, string, string, string) error]()},
+	record := Record{Name: "www.example.com", Type: "A", TTL: 300, Values: []string{"192.0.2.1"}}
+	recordName := typed[string](record.Name)
+	recordType := typed[string](record.Type)
+	recordTTL := typed[int](record.TTL)
+	recordValues := typed[[]string](record.Values)
+	if recordName != "www.example.com" || recordType != "A" || recordTTL != 300 || len(recordValues) != 1 {
+		t.Fatalf("Record = %+v", record)
 	}
-	if providerType.NumMethod() != len(providerMethods) {
-		t.Fatalf("Provider has %d methods, want %d", providerType.NumMethod(), len(providerMethods))
+
+	provider := &fakeProvider{}
+	env := Env{
+		Open:     func(context.Context, string) (Provider, error) { return provider, nil },
+		LookupNS: func(_ context.Context, zone string) ([]string, error) { return []string{"ns." + zone}, nil },
 	}
-	for i, want := range providerMethods {
-		got := providerType.Method(i)
-		if got.Name != want.name || got.Type != want.typ {
-			t.Fatalf("Provider method %d = %s %s, want %s %s", i, got.Name, got.Type, want.name, want.typ)
-		}
+	open := typed[func(ctx context.Context, provider string) (Provider, error)](env.Open)
+	lookupNS := typed[func(ctx context.Context, zone string) ([]string, error)](env.LookupNS)
+	if got, err := open(context.Background(), "route53"); err != nil || got != provider {
+		t.Fatalf("Env.Open = (%v, %v)", got, err)
 	}
-	signatures := []struct {
-		got  reflect.Type
-		want reflect.Type
-	}{
-		{reflect.TypeOf(Open), reflect.TypeFor[func(context.Context, config.Store, Env) (*Client, error)]()},
-		{reflect.TypeOf((*Client).ZoneFor), reflect.TypeFor[func(*Client, string) (Zone, error)]()},
-		{reflect.TypeOf((*Client).Records), reflect.TypeFor[func(*Client, context.Context, Zone) ([]Record, error)]()},
-		{reflect.TypeOf((*Client).Add), reflect.TypeFor[func(*Client, context.Context, string, string, int, string) error]()},
-		{reflect.TypeOf((*Client).Remove), reflect.TypeFor[func(*Client, context.Context, string, string, string) error]()},
-		{reflect.TypeOf((*Client).Check), reflect.TypeFor[func(*Client, context.Context, Zone) (CheckResult, error)]()},
+	if got, err := lookupNS(context.Background(), "example.com"); err != nil || len(got) != 1 || got[0] != "ns.example.com" {
+		t.Fatalf("Env.LookupNS = (%v, %v)", got, err)
 	}
-	for _, signature := range signatures {
-		if signature.got != signature.want {
-			t.Fatalf("signature = %s, want %s", signature.got, signature.want)
-		}
+
+	check := CheckResult{ZoneName: "example.com", Nameservers: []string{"ns1"}, Delegated: true}
+	checkZone := typed[string](check.ZoneName)
+	nameservers := typed[[]string](check.Nameservers)
+	delegated := typed[bool](check.Delegated)
+	if checkZone != "example.com" || len(nameservers) != 1 || !delegated {
+		t.Fatalf("CheckResult = %+v", check)
 	}
+
+	client := Client{Provider: provider, Zones: []Zone{zone}}
+	clientProvider := typed[Provider](client.Provider)
+	clientZones := typed[[]Zone](client.Zones)
+	if clientProvider != provider || len(clientZones) != 1 || clientZones[0] != zone {
+		t.Fatalf("Client = %+v", client)
+	}
+
+	// fakeProvider implements only Records, Add, and Remove.
+	_ = typed[Provider]((*fakeProvider)(nil))
+
+	_ = typed[func(context.Context, config.Store, Env) (*Client, error)](Open)
+	_ = typed[func(*Client, string) (Zone, error)]((*Client).ZoneFor)
+	_ = typed[func(*Client, context.Context, Zone) ([]Record, error)]((*Client).Records)
+	_ = typed[func(*Client, context.Context, string, string, int, string) error]((*Client).Add)
+	_ = typed[func(*Client, context.Context, string, string, string) error]((*Client).Remove)
+	_ = typed[func(*Client, context.Context, Zone) (CheckResult, error)]((*Client).Check)
 }
 
 // R-XS5E-41C6 R-FF2V-AK8L
@@ -623,3 +602,6 @@ func dnsWireLength(length int) (byte, byte, error) {
 	}
 	return high, low, nil
 }
+
+// typed returns v as a T; the call compiles only when v is assignable to T.
+func typed[T any](v T) T { return v }

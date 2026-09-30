@@ -11,8 +11,8 @@ Package `internal/config` owns the host configuration store, a flat map of strin
 - R-WA1P-99FC: Package `internal/config` MUST export the error value `ErrInvalidKey`.
 - R-WB9L-N161: Package `internal/config` MUST export the error value `ErrInvalidValue`.
 - R-WCHI-0SWQ: Package `internal/config` MUST export the error value `ErrCorrupt`.
-- R-ETPG-BBIJ: Package `internal/config` MUST export a `Store` struct whose only field is `Root string`.
-- R-EUXC-P398: Package `internal/config` MUST export an `Entry` struct whose fields are exactly `Key string` and `Value string`.
+- R-YCPY-UMOQ: Package `internal/config` MUST export a `Store` struct with the field `Root string`.
+- R-YDXV-8EFF: Package `internal/config` MUST export an `Entry` struct with the fields `Key string` and `Value string`.
 - R-EW59-2UZX: Package `internal/config` MUST export `ValidKey(key string) bool`.
 - R-EXD5-GMQM: Package `internal/config` MUST export `(Store) Get(key string) (string, error)`.
 - R-EYL1-UEHB: Package `internal/config` MUST export `(Store) Set(key, value string) error`.

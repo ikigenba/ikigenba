@@ -14,11 +14,11 @@ its role's business, so zone selection reads only `dns.zones` and the name.
 - R-DMG7-0PXS: Package `internal/dns` MUST export the sentinel error `ErrNotConfigured`.
 - R-DQ3W-615V: Package `internal/dns` MUST export the sentinel error `ErrNoZone`.
 - R-DTRL-BCDY: Package `internal/dns` MUST export the sentinel error `ErrUnknownProvider`.
-- R-DW7E-2VVC: Package `internal/dns` MUST export the struct `Zone` with fields exactly `Name string` and `ID string`.
-- R-DYN6-UFCQ: Package `internal/dns` MUST export the struct `Record` with fields exactly `Name string`, `Type string`, `TTL int`, and `Values []string`.
-- R-E12Z-LYU4: Package `internal/dns` MUST export the struct `Env` with fields exactly `Open func(ctx context.Context, provider string) (Provider, error)` and `LookupNS func(ctx context.Context, zone string) ([]string, error)`.
-- R-E3IS-DIBI: Package `internal/dns` MUST export the struct `CheckResult` with fields exactly `ZoneName string`, `Nameservers []string`, and `Delegated bool`.
-- R-WIKZ-XNM7: Package `internal/dns` MUST export the struct `Client` with exported fields exactly `Provider Provider` and `Zones []Zone`.
+- R-YF5R-M664: Package `internal/dns` MUST export the struct `Zone` with the fields `Name string` and `ID string`.
+- R-YGDN-ZXWT: Package `internal/dns` MUST export the struct `Record` with the fields `Name string`, `Type string`, `TTL int`, and `Values []string`.
+- R-YITG-RHE7: Package `internal/dns` MUST export the struct `Env` with the fields `Open func(ctx context.Context, provider string) (Provider, error)` and `LookupNS func(ctx context.Context, zone string) ([]string, error)`.
+- R-YK1D-594W: Package `internal/dns` MUST export the struct `CheckResult` with the fields `ZoneName string`, `Nameservers []string`, and `Delegated bool`.
+- R-YL99-J0VL: Package `internal/dns` MUST export the struct `Client` with the exported fields `Provider Provider` and `Zones []Zone`.
 - R-KVNV-XV2Y: Package `internal/dns` MUST export the interface `Provider` with methods exactly `Records(ctx context.Context, zoneID string) ([]Record, error)`, `Add(ctx context.Context, zoneID, name, typ string, ttl int, value string) error`, and `Remove(ctx context.Context, zoneID, name, typ, value string) error`.
 - R-E9MA-AD0Z: Package `internal/dns` MUST export `Open(ctx context.Context, store config.Store, env Env) (*Client, error)`.
 - R-EC23-1WID: Package `internal/dns` MUST export `(*Client) ZoneFor(name string) (Zone, error)`.

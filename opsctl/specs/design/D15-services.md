@@ -56,7 +56,7 @@ until no installed app reads the old one.
 
 ## REQUIREMENTS
 
-- R-86XF-542L: Package `internal/services` MUST export type `Change string` with exactly the constants `Unchanged Change = "unchanged"`, `Added Change = "added"`, `Removed Change = "removed"`, `Disabled Change = "disabled"`, `Enabled Change = "enabled"`, and `Updated Change = "updated"`.
+- R-Z9N9-6FPH: Package `internal/services` MUST export type `Change string` with the constants `Unchanged Change = "unchanged"`, `Added Change = "added"`, `Removed Change = "removed"`, `Disabled Change = "disabled"`, `Enabled Change = "enabled"`, and `Updated Change = "updated"`.
 - R-885B-IVTA: Package `internal/services` MUST export type `Changes map[string]Change` with the method `func (c Changes) For(app string) Change`, which MUST return `c[app]` when `app` is a key of `c` and `Unchanged` otherwise, including for a nil `Changes`.
 - R-89D7-WNJZ: Package `internal/services` MUST export `Write(ctx context.Context, env host.Env, hostName string) (Changes, error)`.
 - R-8BT0-O71D: A service returned by `apps.Discover(env.Root)` MUST be a *launcher service* exactly when its `Manifest` is non-nil with a nonempty `App`, `/opt/<name>/bin/<name>` is a regular file, and `/opt/<name>/` joined with `apps.IconPath` exists as a directory entry of any type, every path resolved under `env.Root`; a service lacking any of these MUST NOT appear in the file, and a launcher service MUST appear in it whether or not `apps.Disabled` reports it disabled.

@@ -1,6 +1,7 @@
 package apps_test
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,32 +25,53 @@ func TestServiceModelRetainsManifestDatabase(t *testing.T) {
 	}
 }
 
-// R-XNK8-RUH4
-func TestDatabaseHasExactFields(t *testing.T) {
-	assertExactFields(t, reflect.TypeFor[apps.Database](), []field{
-		{name: "Engine", typ: reflect.TypeFor[string]()},
-		{name: "Path", typ: reflect.TypeFor[string]()},
-	})
+// R-YNP2-AKCZ
+func TestDatabaseFields(t *testing.T) {
+	database := apps.Database{Engine: "sqlite", Path: "state/app.db"}
+	var engine, path string
+	engine, path = database.Engine, database.Path
+	if engine != "sqlite" || path != "state/app.db" {
+		t.Fatalf("Database = %#v", database)
+	}
 }
 
-// R-U40N-4DRE
-func TestManifestHasExactFields(t *testing.T) {
-	assertExactFields(t, reflect.TypeFor[apps.Manifest](), []field{
-		{name: "App", typ: reflect.TypeFor[string]()},
-		{name: "Default", typ: reflect.TypeFor[bool]()},
-		{name: "Secrets", typ: reflect.TypeFor[[]string]()},
-		{name: "Env", typ: reflect.TypeFor[map[string]string]()},
-		{name: "Database", typ: reflect.TypeFor[*apps.Database]()},
-	})
+// R-YOWY-OC3O
+func TestManifestFields(t *testing.T) {
+	database := &apps.Database{Engine: "sqlite", Path: "state/app.db"}
+	manifest := apps.Manifest{
+		App:      "notes",
+		Default:  true,
+		Secrets:  []string{"TOKEN"},
+		Env:      map[string]string{"MODE": "production"},
+		Database: database,
+	}
+	var (
+		app       string
+		isDefault bool
+		secrets   []string
+		env       map[string]string
+		db        *apps.Database
+	)
+	app, isDefault, secrets, env, db = manifest.App, manifest.Default, manifest.Secrets, manifest.Env, manifest.Database
+	if app != "notes" || !isDefault || len(secrets) != 1 || secrets[0] != "TOKEN" || env["MODE"] != "production" || db != database {
+		t.Fatalf("Manifest = %#v", manifest)
+	}
 }
 
-// R-XQ01-JDYI
-func TestServiceHasExactFields(t *testing.T) {
-	assertExactFields(t, reflect.TypeFor[apps.Service](), []field{
-		{name: "Name", typ: reflect.TypeFor[string]()},
-		{name: "Manifest", typ: reflect.TypeFor[*apps.Manifest]()},
-		{name: "ManifestError", typ: reflect.TypeFor[error]()},
-	})
+// R-YQ4V-23UD
+func TestServiceFields(t *testing.T) {
+	manifest := &apps.Manifest{App: "notes"}
+	cause := errors.New("bad manifest")
+	service := apps.Service{Name: "notes", Manifest: manifest, ManifestError: cause}
+	var (
+		name        string
+		model       *apps.Manifest
+		manifestErr error
+	)
+	name, model, manifestErr = service.Name, service.Manifest, service.ManifestError
+	if name != "notes" || model != manifest || !errors.Is(manifestErr, cause) {
+		t.Fatalf("Service = %#v", service)
+	}
 }
 
 // R-A2TS-K4M0
@@ -610,23 +632,5 @@ func snapshotDatabaseState(t *testing.T, databasePath, stateDir string) database
 		mode:     uint32(info.Mode()),
 		modified: info.ModTime().UnixNano(),
 		entries:  entries,
-	}
-}
-
-type field struct {
-	name string
-	typ  reflect.Type
-}
-
-func assertExactFields(t *testing.T, structure reflect.Type, want []field) {
-	t.Helper()
-	if structure.NumField() != len(want) {
-		t.Fatalf("%s has %d fields, want %d", structure.Name(), structure.NumField(), len(want))
-	}
-	for index, expected := range want {
-		actual := structure.Field(index)
-		if actual.Name != expected.name || actual.Type != expected.typ {
-			t.Errorf("%s field %d = %s %s, want %s %s", structure.Name(), index, actual.Name, actual.Type, expected.name, expected.typ)
-		}
 	}
 }

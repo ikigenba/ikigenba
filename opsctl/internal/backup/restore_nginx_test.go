@@ -16,9 +16,10 @@ import (
 
 func TestNginxRegeneratorContractAndPreflight(t *testing.T) {
 	// R-1NHS-71WK R-1OPO-KTN9
-	typeOf := reflect.TypeFor[backup.NginxRegenerator]()
-	if typeOf.Name() != "NginxRegenerator" || typeOf.Kind() != reflect.Func || typeOf.NumIn() != 1 || typeOf.In(0) != reflect.TypeFor[context.Context]() || typeOf.NumOut() != 1 || typeOf.Out(0) != reflect.TypeFor[error]() {
-		t.Fatalf("NginxRegenerator type = %v", typeOf)
+	var regenerator backup.NginxRegenerator = func(context.Context) error { return nil }
+	var regenerate func(context.Context) error = regenerator
+	if err := regenerate(context.Background()); err != nil {
+		t.Fatalf("NginxRegenerator call = %v", err)
 	}
 
 	root := t.TempDir()
@@ -71,7 +72,7 @@ func TestRestoreRunsNginxOnceAfterPublicationAndBeforeStarts(t *testing.T) {
 }
 
 func TestRestoreNginxFailurePreservesCauseAndStopsWorkflow(t *testing.T) {
-	// R-1OPO-KTN9 R-G7FZ-2AO2 R-RX15-3IAF
+	// R-1OPO-KTN9 R-G7FZ-2AO2 R-Z77G-EW83
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	body := hostRestoreArchive(t, restoreMember{name: "state/value", data: []byte("published"), uid: os.Getuid(), gid: os.Getgid()})

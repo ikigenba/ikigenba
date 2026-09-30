@@ -20,30 +20,33 @@ import (
 var _ func(context.Context, host.Env, cloud.Env, config.Store) (backup.RetireResult, error) = backup.Retire
 
 func TestRetireAPIAndOrderedSuccessfulEffects(t *testing.T) {
-	// R-Y91D-XNRC R-X6ZH-XI8L R-X9FA-P1PZ R-XAN7-2TGO
+	// R-Y91D-XNRC R-Z3JR-9L00 R-X9FA-P1PZ R-XAN7-2TGO
 	// R-YW7H-7AUJ R-YUZK-TJ3U
-	wantFields := []struct {
-		name string
-		typ  reflect.Type
-	}{
-		{"Services", reflect.TypeFor[[]string]()},
-		{"Disabled", reflect.TypeFor[[]string]()},
-		{"ServicesStopped", reflect.TypeFor[bool]()},
-		{"LitestreamStopped", reflect.TypeFor[bool]()},
-		{"SyncedDatabases", reflect.TypeFor[[]string]()},
-		{"Files", reflect.TypeFor[[]backup.FileResult]()},
-		{"Host", reflect.TypeFor[backup.FileResult]()},
-		{"FailedStep", reflect.TypeFor[string]()},
+	shape := backup.RetireResult{
+		Services:          []string{"alpha"},
+		Disabled:          []string{"ikigenba-alpha.service"},
+		ServicesStopped:   true,
+		LitestreamStopped: true,
+		SyncedDatabases:   []string{"alpha"},
+		Files:             []backup.FileResult{{Service: "alpha"}},
+		Host:              backup.FileResult{Service: "host"},
+		FailedStep:        "host",
 	}
-	resultType := reflect.TypeFor[backup.RetireResult]()
-	if resultType.NumField() != len(wantFields) {
-		t.Fatalf("RetireResult has %d fields, want %d", resultType.NumField(), len(wantFields))
-	}
-	for index, want := range wantFields {
-		field := resultType.Field(index)
-		if field.Name != want.name || field.Type != want.typ {
-			t.Fatalf("RetireResult field %d = %s %v, want %s %v", index, field.Name, field.Type, want.name, want.typ)
-		}
+	var (
+		shapeServices          []string
+		shapeDisabled          []string
+		shapeServicesStopped   bool
+		shapeLitestreamStopped bool
+		shapeSyncedDatabases   []string
+		shapeFiles             []backup.FileResult
+		shapeHost              backup.FileResult
+		shapeFailedStep        string
+	)
+	shapeServices, shapeDisabled, shapeServicesStopped, shapeLitestreamStopped = shape.Services, shape.Disabled, shape.ServicesStopped, shape.LitestreamStopped
+	shapeSyncedDatabases, shapeFiles, shapeHost, shapeFailedStep = shape.SyncedDatabases, shape.Files, shape.Host, shape.FailedStep
+	if len(shapeServices) != 1 || len(shapeDisabled) != 1 || !shapeServicesStopped || !shapeLitestreamStopped || len(shapeSyncedDatabases) != 1 ||
+		len(shapeFiles) != 1 || shapeFiles[0].Service != "alpha" || shapeHost.Service != "host" || shapeFailedStep != "host" {
+		t.Fatalf("RetireResult = %+v", shape)
 	}
 
 	root := t.TempDir()
@@ -112,7 +115,7 @@ func TestRetireAPIAndOrderedSuccessfulEffects(t *testing.T) {
 }
 
 func TestRetireStopsOnUnitFailuresWithoutArchiveOrRollback(t *testing.T) {
-	// R-GWME-QK2L R-DK7F-CAV0
+	// R-YBI2-GUY1 R-DK7F-CAV0
 	// R-X9FA-P1PZ R-XAN7-2TGO
 	t.Run("discovery failure before unit operation", func(t *testing.T) {
 		root := t.TempDir()

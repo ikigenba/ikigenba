@@ -12,15 +12,19 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 )
 
-// R-U8W8-NGQ6
+// R-YRCR-FVL2
 func TestTimeoutsContract(t *testing.T) {
-	assertExactFields(t, reflect.TypeFor[apps.Timeouts](), []field{
-		{name: "DrainSeconds", typ: reflect.TypeFor[int64]()},
-		{name: "StopSeconds", typ: reflect.TypeFor[int64]()},
-	})
-	got, err := apps.ReadTimeouts(config.Store{Root: t.TempDir()})
-	if err != nil || got != (apps.Timeouts{DrainSeconds: 5, StopSeconds: 10}) {
-		t.Fatalf("ReadTimeouts(empty) = %#v, %v", got, err)
+	timeouts := apps.Timeouts{DrainSeconds: 3, StopSeconds: 4}
+	var drain, stop int64
+	drain, stop = timeouts.DrainSeconds, timeouts.StopSeconds
+	if drain != 3 || stop != 4 {
+		t.Fatalf("Timeouts = %#v", timeouts)
+	}
+	for _, readTimeouts := range []func(config.Store) (apps.Timeouts, error){apps.ReadTimeouts} {
+		got, err := readTimeouts(config.Store{Root: t.TempDir()})
+		if err != nil || got != (apps.Timeouts{DrainSeconds: 5, StopSeconds: 10}) {
+			t.Fatalf("ReadTimeouts(empty) = %#v, %v", got, err)
+		}
 	}
 }
 

@@ -15,9 +15,12 @@ import (
 
 func TestRestartAPISignature(t *testing.T) {
 	// R-V25T-TYIU
-	want := reflect.TypeFor[func(context.Context, host.Env, string) (apps.ServiceReport, error)]()
-	if got := reflect.TypeOf(apps.Restart); got != want {
-		t.Fatalf("Restart type = %v, want %v", got, want)
+	for _, restart := range []func(context.Context, host.Env, string) (apps.ServiceReport, error){apps.Restart} {
+		report, err := restart(context.Background(), host.Env{Root: t.TempDir()}, "bad/name")
+		var failure *apps.LifecycleError
+		if report != (apps.ServiceReport{}) || !errors.As(err, &failure) || failure.Code != 2 {
+			t.Fatalf("Restart(invalid name) = (%#v, %v), want empty report and code 2", report, err)
+		}
 	}
 }
 
@@ -216,7 +219,7 @@ func TestRestartFailureCapturesJournalAndLeavesFailedStateVisible(t *testing.T) 
 }
 
 func TestRestartFailurePreservesJournalQueryFailure(t *testing.T) {
-	// R-GWME-QK2L
+	// R-YBI2-GUY1
 	// R-ME9E-SRB8
 	root := restartRoot(t)
 	restartFailure := errors.New("restart transport failed")

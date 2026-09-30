@@ -103,7 +103,7 @@ func TestSetupReplicationRejectsMissingExecutionDependencyBeforeRegeneration(t *
 }
 
 func TestSetupReplicationStopsAfterCommandFailuresWithoutRollback(t *testing.T) {
-	// R-JVG4-0PMI R-GWME-QK2L
+	// R-JVG4-0PMI R-YBI2-GUY1
 	tests := []struct {
 		name         string
 		unchanged    bool

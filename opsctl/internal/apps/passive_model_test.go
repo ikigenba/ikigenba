@@ -46,10 +46,6 @@ func TestServiceModelIsPassiveAndStatusOwnsVersionQuery(t *testing.T) {
 	if after := snapshotTree(t, root); !reflect.DeepEqual(after, before) {
 		t.Fatalf("model operations changed host state:\nbefore: %#v\nafter:  %#v", before, after)
 	}
-	manifestType := reflect.TypeFor[apps.Manifest]()
-	if _, exists := manifestType.FieldByName("Version"); exists {
-		t.Fatal("manifest carries an authoritative Version field")
-	}
 	if !reflect.DeepEqual(manifest, *services[0].Manifest) {
 		t.Fatalf("parsed and discovered manifests differ: %#v, %#v", manifest, services[0].Manifest)
 	}

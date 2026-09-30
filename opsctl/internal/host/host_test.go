@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -16,26 +15,47 @@ import (
 )
 
 func TestBoundaryFields(t *testing.T) {
-	// R-5GJV-YR90 R-5HRS-CIZP R-5IZO-QAQE R-GWME-QK2L
-	cases := []struct {
-		typ    reflect.Type
-		fields map[string]reflect.Type
-	}{
-		{reflect.TypeFor[host.Env](), map[string]reflect.Type{"Root": reflect.TypeFor[string](), "Getenv": reflect.TypeFor[func(string) string](), "Execute": reflect.TypeFor[func(context.Context, host.Command) (host.Result, error)](), "Now": reflect.TypeFor[func() time.Time]()}},
-		{reflect.TypeFor[host.Command](), map[string]reflect.Type{"Name": reflect.TypeFor[string](), "Args": reflect.TypeFor[[]string](), "Dir": reflect.TypeFor[string](), "Env": reflect.TypeFor[[]string](), "Stdin": reflect.TypeFor[io.Reader]()}},
-		{reflect.TypeFor[host.Result](), map[string]reflect.Type{"Stdout": reflect.TypeFor[[]byte](), "Stderr": reflect.TypeFor[[]byte](), "ExitCode": reflect.TypeFor[int]()}},
-		{reflect.TypeFor[host.CommandError](), map[string]reflect.Type{"Label": reflect.TypeFor[string](), "Result": reflect.TypeFor[host.Result](), "Err": reflect.TypeFor[error]()}},
+	// R-Y5EK-K08K R-Y6MG-XRZ9 R-Y7UD-BJPY R-YBI2-GUY1
+	stdin := strings.NewReader("input")
+	command := host.Command{Name: "tool", Args: []string{"a"}, Dir: "/dir", Env: []string{"K=V"}, Stdin: stdin}
+	name := typed[string](command.Name)
+	args := typed[[]string](command.Args)
+	dir := typed[string](command.Dir)
+	cmdEnv := typed[[]string](command.Env)
+	cmdStdin := *typed[*io.Reader](&command.Stdin)
+	if name != "tool" || len(args) != 1 || args[0] != "a" || dir != "/dir" || len(cmdEnv) != 1 || cmdEnv[0] != "K=V" || cmdStdin != stdin {
+		t.Errorf("Command = %+v", command)
 	}
-	for _, c := range cases {
-		if c.typ.NumField() != len(c.fields) {
-			t.Errorf("%s field count = %d, want %d", c.typ, c.typ.NumField(), len(c.fields))
-		}
-		for name, typ := range c.fields {
-			f, ok := c.typ.FieldByName(name)
-			if !ok || !f.IsExported() || f.Type != typ {
-				t.Errorf("%s.%s = %v, want exported %v", c.typ, name, f.Type, typ)
-			}
-		}
+
+	result := host.Result{Stdout: []byte("out"), Stderr: []byte("err"), ExitCode: 2}
+	stdout := typed[[]byte](result.Stdout)
+	stderr := typed[[]byte](result.Stderr)
+	exitCode := typed[int](result.ExitCode)
+	if string(stdout) != "out" || string(stderr) != "err" || exitCode != 2 {
+		t.Errorf("Result = %+v", result)
+	}
+
+	env := host.Env{
+		Root:    "/root",
+		Getenv:  func(key string) string { return key },
+		Execute: func(context.Context, host.Command) (host.Result, error) { return result, nil },
+		Now:     func() time.Time { return time.Unix(5, 0) },
+	}
+	root := typed[string](env.Root)
+	getenv := typed[func(string) string](env.Getenv)
+	execute := typed[func(context.Context, host.Command) (host.Result, error)](env.Execute)
+	now := typed[func() time.Time](env.Now)
+	if got, err := execute(context.Background(), command); root != "/root" || getenv("K") != "K" || err != nil || got.ExitCode != 2 || !now().Equal(time.Unix(5, 0)) {
+		t.Errorf("Env = %+v, Execute = (%+v, %v)", env, got, err)
+	}
+
+	cause := errors.New("cause")
+	commandErr := host.CommandError{Label: "label", Result: result, Err: cause}
+	label := typed[string](commandErr.Label)
+	errResult := typed[host.Result](commandErr.Result)
+	errErr := typed[error](commandErr.Err)
+	if label != "label" || errResult.ExitCode != 2 || !errors.Is(errErr, cause) {
+		t.Errorf("CommandError = %+v", commandErr)
 	}
 }
 
@@ -173,3 +193,6 @@ func TestHostChild(_ *testing.T) {
 		os.Exit(23)
 	}
 }
+
+// typed returns v as a T; the call compiles only when v is assignable to T.
+func typed[T any](v T) T { return v }

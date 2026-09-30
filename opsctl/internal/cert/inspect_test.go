@@ -21,24 +21,17 @@ import (
 )
 
 func TestInspectionAPI(t *testing.T) {
-	// R-YDSO-B3IA
-	infoType := reflect.TypeFor[cert.Info]()
-	wantFields := []struct {
-		name   string
-		typeOf reflect.Type
-	}{
-		{"Names", reflect.TypeFor[[]string]()},
-		{"Issuer", reflect.TypeFor[string]()},
-		{"Expires", reflect.TypeFor[time.Time]()},
-	}
-	if infoType.NumField() != len(wantFields) {
-		t.Fatalf("Info has %d fields, want exactly %d", infoType.NumField(), len(wantFields))
-	}
-	for i, want := range wantFields {
-		field := infoType.Field(i)
-		if field.Name != want.name || field.Type != want.typeOf {
-			t.Errorf("Info field %d = %s %v, want %s %v", i, field.Name, field.Type, want.name, want.typeOf)
-		}
+	// R-YMH5-WSMA
+	expiresAt := time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC)
+	info := cert.Info{Names: []string{"example.com"}, Issuer: "Test CA", Expires: expiresAt}
+	var (
+		names   []string
+		issuer  string
+		expires time.Time
+	)
+	names, issuer, expires = info.Names, info.Issuer, info.Expires
+	if len(names) != 1 || names[0] != "example.com" || issuer != "Test CA" || !expires.Equal(expiresAt) {
+		t.Errorf("Info = %+v", info)
 	}
 
 	// R-YF0K-OV8Z

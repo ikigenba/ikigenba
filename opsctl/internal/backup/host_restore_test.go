@@ -23,27 +23,19 @@ import (
 var _ func(context.Context, host.Env, cloud.Env, config.Store) (backup.HostRestoreResult, error) = backup.HostRestore
 
 func TestHostRestoreAPI(t *testing.T) {
-	// R-Y6LL-649Y R-HPY3-4JKF
-	typeOf := reflect.TypeOf(backup.HostRestoreResult{})
-	want := []struct {
-		name   string
-		typeOf reflect.Type
-	}{
-		{"Object", reflect.TypeOf("")},
-		{"Size", reflect.TypeOf(int64(0))},
-		{"Files", reflect.TypeOf(int(0))},
-		{"SourceReady", reflect.TypeOf(false)},
-		{"FilesRestored", reflect.TypeOf(false)},
-		{"FailedStep", reflect.TypeOf("")},
-	}
-	if typeOf.NumField() != len(want) {
-		t.Fatalf("HostRestoreResult has %d fields, want %d", typeOf.NumField(), len(want))
-	}
-	for index, field := range want {
-		got := typeOf.Field(index)
-		if got.Name != field.name || got.Type != field.typeOf {
-			t.Fatalf("HostRestoreResult field %d = %s %v, want %s %v", index, got.Name, got.Type, field.name, field.typeOf)
-		}
+	// R-Y6LL-649Y R-Z2BU-VT9B
+	result := backup.HostRestoreResult{Object: "s3://bucket/host.tar.zst", Size: 7, Files: 3, SourceReady: true, FilesRestored: true, FailedStep: "extract"}
+	var (
+		object        string
+		size          int64
+		files         int
+		sourceReady   bool
+		filesRestored bool
+		failedStep    string
+	)
+	object, size, files, sourceReady, filesRestored, failedStep = result.Object, result.Size, result.Files, result.SourceReady, result.FilesRestored, result.FailedStep
+	if object != "s3://bucket/host.tar.zst" || size != 7 || files != 3 || !sourceReady || !filesRestored || failedStep != "extract" {
+		t.Fatalf("HostRestoreResult = %+v", result)
 	}
 }
 

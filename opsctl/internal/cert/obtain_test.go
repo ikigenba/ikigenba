@@ -473,7 +473,7 @@ func TestObtainReissuesMismatchedLineageAndThenKeepsIt(t *testing.T) {
 	}
 }
 
-// R-YORR-R16J R-GWME-QK2L
+// R-YORR-R16J R-YBI2-GUY1
 func TestObtainPreservesCertbotFailure(t *testing.T) {
 	cause := errors.New("cannot start")
 	wantResult := host.Result{Stdout: []byte("out"), Stderr: []byte("detail"), ExitCode: 17}
@@ -511,7 +511,7 @@ func TestObtainPreservesCertbotFailure(t *testing.T) {
 	}
 }
 
-// R-GWME-QK2L
+// R-YBI2-GUY1
 func TestObtainPreservesExistingCommandErrorIdentity(t *testing.T) {
 	cause := errors.New("remote certbot failed")
 	existing := &host.CommandError{
