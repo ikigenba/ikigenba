@@ -125,9 +125,18 @@ bug.
   gates have no browser and no JavaScript engine, and adding one is an
   external dependency no one has approved, so a test asserts what a response
   body carries and never what a script would do with it.
-- **A test may read `share/icon.svg`.** A test may open this directory's
-  `share/icon.svg`, read-only, to check what D01 fixes about it. It never
-  writes there, and this is the only checkout file a test reads.
+- **Structural tests read the module's own tree.** D01 fixes properties of
+  the source rather than of the running binary: the package and file sets,
+  the import graph, what `main` holds and calls, `go.mod`'s requires and
+  replaces, and the entries of `etc/` and `share/`. A test proving one of
+  them may read this module's tree, and only for that: walk its directories,
+  parse its Go files with the standard library (`go/parser`, `go/ast`), read
+  `go.mod` as text, and list and read `etc/` and `share/`, `share/icon.svg`
+  included. It finds the tree relative to its own package directory, the
+  working directory `go test` gives it, never by an absolute path; it reads
+  nothing outside the module and writes nothing inside it; and it starts no
+  process (`go list`, `go vet`, and the like included). These are the only
+  checkout files a test reads.
 
 **auth binds nothing; a test makes its listener.** auth serves on the listener
 it is passed (D01, D03). A test that needs a listener makes its own: a
