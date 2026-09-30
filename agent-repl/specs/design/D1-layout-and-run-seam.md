@@ -9,16 +9,6 @@ the provider and credentials is handed to agentkit unchecked. Module path
 `github.com/ikigenba/ikigenba/agent-repl`, targeting the Go version pinned
 in `go.mod`.
 
-**Direct dependencies are an approved list.** The module's direct
-requirements are exactly agentkit, toolkit, and `github.com/google/uuid`;
-everything else in `go.mod` is `// indirect`. That list is the record of
-human approval: a test compares `go.mod`'s direct requirements against it, so
-the build run cannot promote a new module without a human first replacing the
-requirement that names the set. Versions are deliberately not pinned here —
-adopting a release is a dependency edit, not a design change. `go.sum` and the
-module cache are not consulted; indirect entries move without anyone approving
-a dependency.
-
 ```
 agent-repl/                         (this sub-project; go.mod lives here)
 ├── cmd/agent-repl/main.go          thin: os.Args/stdio/real deps → cli.Run(); os.Exit
@@ -76,12 +66,6 @@ byte for byte in a test. `Run` trusts the value as it trusts `Home`; the `uuid`
 import lives in `cmd/agent-repl` alone, so the internal packages stay testable
 with any string.
 
-Dependencies point one way: `cmd/agent-repl` → `internal/cli` →
-`{internal/options, internal/session, internal/render}`, and
-`internal/options` → `internal/help`. `internal/help`, `internal/session`, and
-`internal/render` import nothing else in this module, so each is testable with
-no knowledge that a CLI exists.
-
 **The network is not injectable.** agentkit sends every request through Go's
 default HTTP client and offers no seam for a fake. What it does offer is the
 endpoint's base URL, so every test that needs a provider stands up an
@@ -105,9 +89,8 @@ edited directly.
 
 ## REQUIREMENTS
 
-- R-OWY5-60C0: The module MUST be `github.com/ikigenba/ikigenba/agent-repl` with its own `go.mod` that specifies a Go version, and the set of `require` entries in that `go.mod` not marked `// indirect` MUST be exactly `github.com/ikigenba/ikigenba/agentkit`, `github.com/ikigenba/ikigenba/toolkit`, and `github.com/google/uuid`, verified by a test that reads `go.mod` and consults neither `go.sum` nor the module cache.
+- R-R5A1-54IQ: The module path MUST be `github.com/ikigenba/ikigenba/agent-repl`, and packages `internal/cli`, `internal/options`, `internal/help`, `internal/session`, and `internal/render` MUST each be importable from `github.com/ikigenba/ikigenba/agent-repl/internal/<name>`.
 - R-U01R-JPKI: Package `internal/cli` MUST export `Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, deps Deps) int`, and calling it MUST return an exit code in-process without terminating the calling program.
 - R-OY61-JS2P: Package `internal/cli` MUST export a `Deps` struct whose fields are exactly `Home string`, `Getenv func(string) string`, `Now func() time.Time`, `LogID string`, `Root string`, and `Interrupts <-chan struct{}`.
 - R-OZDX-XJTE: A session run through `Run` MUST obtain its home directory, its environment lookups, its clock, its log id, and its tool root from the corresponding `Deps` fields, verified by injected values each of which is observable in the session's behavior (the log file path, the credential used, the log timestamps, the `id` field of every log record, and a tool's resolved root).
-- R-U3PG-P0SL: Packages `internal/help`, `internal/session`, and `internal/render` MUST import no other package of this module, and `internal/options` MUST import no package of this module other than `internal/help`.
 - R-P0LU-BBK3: The binary built from `./cmd/agent-repl`, run with a piped prompt on stdin, a temporary `HOME`, `OPENAI_API_KEY` set, and `-c provider=openai -c auth=api_key -c base_url=` naming an `httptest` provider that answers with a text reply, MUST exit 0, MUST write a line beginning `assistant › ` followed by that reply to stdout, and MUST leave exactly one `.jsonl` file under `$HOME/.agent-repl/logs/` in which every record's `id` field is the same lowercase RFC 4122 version 4 UUID string.
