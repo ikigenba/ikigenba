@@ -67,5 +67,5 @@ and step 5 still renders the page, without the launcher. Nothing is reported.
 
 ## REQUIREMENTS
 
-- R-LJ4T-3ZEU: Package `appkit` MUST be imported from the path `github.com/ikigenba/ikigenba/appkit`, and its package name MUST be `appkit`.
+- R-UVKQ-NC2C: Package `appkit` MUST be imported from the path `github.com/ikigenba/ikigenba/appkit`, and its package name MUST be `appkit`.
 - R-LLKL-VIW8: `Templates` and `Static` MUST behave identically whatever the process working directory is, including a directory that contains no `assets/` directory.
