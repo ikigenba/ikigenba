@@ -3,6 +3,7 @@ package agentkit
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"iter"
@@ -136,7 +137,21 @@ func (provider *composedProvider) Decode(_ context.Context, response *http.Respo
 		}
 	}
 	frames := SSEFrames(response.Body)
-	return provider.wire.DecodeStream(frames)
+	decoded := provider.wire.DecodeStream(frames)
+	retryAfter := parseRetryAfter(response.Header)
+	return func(yield func(Event, error) bool) {
+		for event, err := range decoded {
+			// An in-band error frame carries no headers of its own, so its
+			// RetryAfter follows the 200 response's Retry-After header (D4).
+			var inBand *Error
+			if errors.As(err, &inBand) && inBand.Status == http.StatusOK {
+				inBand.RetryAfter = retryAfter
+			}
+			if !yield(event, err) {
+				return
+			}
+		}
+	}
 }
 
 func (provider *composedProvider) Classify(status int, header http.Header, body []byte) error {

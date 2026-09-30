@@ -1,6 +1,7 @@
 package agentkit_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ikigenba/ikigenba/agentkit"
 )
@@ -229,6 +231,74 @@ func TestOpenAIFamilyInBandErrorCategoryFollowsPairedStatus(t *testing.T) {
 					got := inBandTerminal(t, newWire(), family.stream(test.code))
 					if got.Category != test.want {
 						t.Fatalf("Category = %v, want %v", got.Category, test.want)
+					}
+				})
+			}
+		}
+	}
+}
+
+type noAuth struct{}
+
+func (noAuth) Authenticate(context.Context, *http.Request, []byte) error { return nil }
+
+func TestInBandErrorRetryAfterFollowsResponseHeader(t *testing.T) {
+	// R-JS3H-493H
+	type family struct {
+		wires map[string]func() agentkit.WireFormat
+		body  string
+	}
+	families := map[string]family{
+		"anthropic": {map[string]func() agentkit.WireFormat{"AnthropicMessagesWire": agentkit.AnthropicMessagesWire},
+			anthropicErrorStream(`{"type":"overloaded_error","message":"Overloaded"}`)},
+		"responses error":  {responsesWires(), responsesErrorStream(`{"type":"error","code":"slow_down","message":"m"}`)},
+		"responses failed": {responsesWires(), responsesErrorStream(`{"type":"response.failed","response":{"error":{"code":"slow_down","message":"m"}}}`)},
+		"chat":             {chatWires(), chatErrorStream(`{"error":{"code":"slow_down","message":"m"}}`)},
+	}
+	headers := []struct {
+		name  string
+		set   bool
+		value string
+		want  time.Duration
+	}{
+		{name: "delta-seconds", set: true, value: "30", want: 30 * time.Second},
+		{name: "absent", want: 0},
+		{name: "http-date", set: true, value: "Wed, 21 Oct 2026 07:28:00 GMT", want: 0},
+		{name: "negative", set: true, value: "-5", want: 0},
+		{name: "non-integer", set: true, value: "3.5", want: 0},
+	}
+	for familyName, family := range families {
+		for wireName, newWire := range family.wires {
+			for _, header := range headers {
+				t.Run(strings.Join([]string{familyName, wireName, header.name}, "/"), func(t *testing.T) {
+					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+						w.Header().Set("Content-Type", "text/event-stream")
+						if header.set {
+							w.Header().Set("Retry-After", header.value)
+						}
+						w.WriteHeader(http.StatusOK)
+						_, _ = io.WriteString(w, family.body)
+					}))
+					t.Cleanup(server.Close)
+					endpoint, err := agentkit.NewEndpoint(noAuth{}, agentkit.WithBaseURL(server.URL))
+					if err != nil {
+						t.Fatal(err)
+					}
+					conversation, err := agentkit.New(newWire(), endpoint, "model", agentkit.Config{Settings: agentkit.Settings{Options: agentkit.Options{"max_output_tokens": "64"}}})
+					if err != nil {
+						t.Fatal(err)
+					}
+					stream := conversation.Send(context.Background(), agentkit.Text{Text: "hello"})
+					stream.Events()(func(agentkit.Event) bool { return true })
+					var providerErr *agentkit.Error
+					if !errors.As(stream.Err(), &providerErr) {
+						t.Fatalf("Err() = %T %v, want *Error", stream.Err(), stream.Err())
+					}
+					if providerErr.Status != http.StatusOK {
+						t.Fatalf("Status = %d, want 200 (in-band error): %+v", providerErr.Status, providerErr)
+					}
+					if providerErr.RetryAfter != header.want {
+						t.Fatalf("RetryAfter = %v, want %v", providerErr.RetryAfter, header.want)
 					}
 				})
 			}
