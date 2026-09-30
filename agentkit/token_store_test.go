@@ -12,33 +12,32 @@ import (
 
 // R-ZOPK-NW7S
 func TestTokenStoreMethodSetIsExact(t *testing.T) {
-	storeType := reflect.TypeFor[TokenStore]()
-	if storeType.Name() != "TokenStore" || storeType.Kind() != reflect.Interface {
-		t.Fatalf("TokenStore name/kind = %q/%s, want TokenStore/interface", storeType.Name(), storeType.Kind())
+	// A stub with only Read and Write satisfies TokenStore (no more methods
+	// are required), and every TokenStore converts to an interface with Read
+	// and Write (at least these methods are present).
+	var store TokenStore = stubTokenStore{data: []byte("token")}
+	local := interface {
+		Read(ctx context.Context) ([]byte, error)
+		Write(ctx context.Context, data []byte) error
+	}(store)
+	if err := local.Write(context.Background(), []byte("token")); err != nil {
+		t.Fatalf("Write() = %v, want nil", err)
 	}
-
-	wantMethods := map[string]reflect.Type{
-		"Read":  reflect.TypeOf(func(context.Context) ([]byte, error) { return nil, nil }),
-		"Write": reflect.TypeOf(func(context.Context, []byte) error { return nil }),
-	}
-	if storeType.NumMethod() != len(wantMethods) {
-		t.Fatalf("TokenStore method count = %d, want %d", storeType.NumMethod(), len(wantMethods))
-	}
-	for name, wantType := range wantMethods {
-		method, ok := storeType.MethodByName(name)
-		if !ok || method.Type != wantType {
-			t.Fatalf("TokenStore.%s = %v (present=%t), want %s", name, method.Type, ok, wantType)
-		}
+	if got, err := local.Read(context.Background()); err != nil || string(got) != "token" {
+		t.Fatalf("Read() = %q, %v, want %q, nil", got, err, "token")
 	}
 }
 
+type stubTokenStore struct{ data []byte }
+
+func (s stubTokenStore) Read(context.Context) ([]byte, error) { return s.data, nil }
+
+func (s stubTokenStore) Write(context.Context, []byte) error { return nil }
+
 // R-ZPXH-1NYH
 func TestFileTokenStoreConstructor(t *testing.T) {
-	wantSignature := reflect.TypeOf(func(string) TokenStore { return nil })
-	if got := reflect.TypeOf(FileTokenStore); got != wantSignature {
-		t.Fatalf("FileTokenStore signature = %s, want %s", got, wantSignature)
-	}
-	if store := FileTokenStore(filepath.Join(t.TempDir(), "token.json")); store == nil {
+	constructor := pinned[func(path string) TokenStore](FileTokenStore)
+	if store := constructor(filepath.Join(t.TempDir(), "token.json")); store == nil {
 		t.Fatal("FileTokenStore returned a nil TokenStore")
 	}
 }

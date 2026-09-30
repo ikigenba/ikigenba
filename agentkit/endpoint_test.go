@@ -4,18 +4,20 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"reflect"
 	"testing"
 )
 
+// pinned returns v unchanged; its explicit type argument makes the compiler
+// check that v has exactly type T.
+func pinned[T any](v T) T { return v }
+
 // R-LX5G-URHI
 func TestEndpointExportsNoOptionFunctions(t *testing.T) {
-	if reflect.TypeFor[EndpointOption]().Kind() != reflect.Func {
-		t.Fatalf("EndpointOption kind = %s, want Func", reflect.TypeFor[EndpointOption]().Kind())
-	}
-	wantOptionSignature := reflect.TypeOf(func(string) EndpointOption { return nil })
-	if got := reflect.TypeOf(WithBaseURL); got != wantOptionSignature {
-		t.Fatalf("WithBaseURL = %s, want %s", got, wantOptionSignature)
+	withBaseURL := pinned[func(url string) EndpointOption](WithBaseURL)
+	option := pinned[EndpointOption](withBaseURL("https://example.test"))
+	auth := authFunc(func(context.Context, *http.Request, []byte) error { return nil })
+	if _, err := NewEndpoint(auth, option); err != nil {
+		t.Fatalf("NewEndpoint with EndpointOption = %v, want nil", err)
 	}
 }
 
@@ -23,12 +25,9 @@ func TestEndpointExportsNoOptionFunctions(t *testing.T) {
 // R-K0P0-NOUN
 // R-BC2W-K5J6
 func TestNewEndpointHasExactConstructorAndValidation(t *testing.T) {
-	wantSignature := reflect.TypeOf(func(Authenticator, ...EndpointOption) (Endpoint, error) { return Endpoint{}, nil })
-	if got := reflect.TypeOf(NewEndpoint); got != wantSignature || !got.IsVariadic() {
-		t.Fatalf("NewEndpoint = %s variadic=%t, want %s variadic", got, got.IsVariadic(), wantSignature)
-	}
+	constructor := pinned[func(auth Authenticator, opts ...EndpointOption) (Endpoint, error)](NewEndpoint)
 	auth := authFunc(func(context.Context, *http.Request, []byte) error { return nil })
-	endpoint, err := NewEndpoint(auth, WithBaseURL("https://example.test/v1/models/model:stream?alt=sse"))
+	endpoint, err := constructor(auth, WithBaseURL("https://example.test/v1/models/model:stream?alt=sse"))
 	if err != nil {
 		t.Fatal(err)
 	}

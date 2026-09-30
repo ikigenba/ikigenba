@@ -10,66 +10,66 @@ import (
 
 func TestClockHasExactMethodSet(t *testing.T) {
 	// R-0HAQ-WTJK
-	typ := reflect.TypeOf((*Clock)(nil)).Elem()
-	if typ.Name() != "Clock" || typ.Kind() != reflect.Interface {
-		t.Fatalf("Clock is %q of kind %v, want defined interface Clock", typ.Name(), typ.Kind())
-	}
+	// A stub with only Now and Sleep satisfies Clock, so Clock requires no
+	// other method.
+	var clock Clock = exactClockStub{}
 
-	want := []struct {
-		name string
-		in   []reflect.Type
-		out  []reflect.Type
-	}{
-		{name: "Now", out: []reflect.Type{reflect.TypeOf(time.Time{})}},
-		{
-			name: "Sleep",
-			in: []reflect.Type{
-				reflect.TypeOf((*context.Context)(nil)).Elem(),
-				reflect.TypeOf(time.Duration(0)),
-			},
-			out: []reflect.Type{reflect.TypeOf((*error)(nil)).Elem()},
-		},
+	// Any Clock converts to an interface with exactly Now and Sleep, so
+	// Clock has at least those methods with those signatures.
+	type nowSleeper interface {
+		Now() time.Time
+		Sleep(ctx context.Context, d time.Duration) error
 	}
-	if typ.NumMethod() != len(want) {
-		t.Fatalf("Clock has %d methods, want %d", typ.NumMethod(), len(want))
+	var ns nowSleeper = clock
+	if got := ns.Now(); !got.Equal(exactClockNow) {
+		t.Errorf("Now() = %v, want %v", got, exactClockNow)
 	}
-	for i, expected := range want {
-		method := typ.Method(i)
-		if method.Name != expected.name {
-			t.Errorf("method %d name = %q, want %q", i, method.Name, expected.name)
-		}
-		assertFunctionSignature(t, method.Type, expected.in, expected.out)
+	if err := ns.Sleep(context.Background(), time.Second); err != nil {
+		t.Errorf("Sleep() error = %v, want nil", err)
 	}
 }
 
+var exactClockNow = time.Date(2024, time.January, 2, 3, 4, 5, 0, time.UTC)
+
+type exactClockStub struct{}
+
+func (exactClockStub) Now() time.Time { return exactClockNow }
+
+func (exactClockStub) Sleep(context.Context, time.Duration) error { return nil }
+
 func TestPolicyHasExactFieldsInOrder(t *testing.T) {
 	// R-0IIN-ALA9
-	typ := reflect.TypeOf(Policy{})
-	want := []struct {
-		name string
-		typ  reflect.Type
-	}{
-		{name: "MaxAttempts", typ: reflect.TypeOf(int(0))},
-		{name: "Base", typ: reflect.TypeOf(time.Duration(0))},
-		{name: "Max", typ: reflect.TypeOf(time.Duration(0))},
-		{name: "Jitter", typ: reflect.TypeOf(float64(0))},
-		{name: "Clock", typ: reflect.TypeOf((*Clock)(nil)).Elem()},
-		{name: "Rand", typ: reflect.TypeOf((func() float64)(nil))},
-		{name: "Retryable", typ: reflect.TypeOf((func(error) bool)(nil))},
-		{name: "RetryAfter", typ: reflect.TypeOf((func(error) time.Duration)(nil))},
+	// Conversion from an identical anonymous struct compiles only when field
+	// names, types, and order all match exactly.
+	type policyShape = struct {
+		MaxAttempts int
+		Base        time.Duration
+		Max         time.Duration
+		Jitter      float64
+		Clock       Clock
+		Rand        func() float64
+		Retryable   func(err error) bool
+		RetryAfter  func(err error) time.Duration
 	}
-	if typ.Name() != "Policy" || typ.Kind() != reflect.Struct {
-		t.Fatalf("Policy is %q of kind %v, want defined struct Policy", typ.Name(), typ.Kind())
+	clock := exactClockStub{}
+	policy := Policy(policyShape{
+		MaxAttempts: 3,
+		Base:        time.Second,
+		Max:         time.Minute,
+		Jitter:      0.5,
+		Clock:       clock,
+		Rand:        func() float64 { return 0.25 },
+		Retryable:   func(error) bool { return true },
+		RetryAfter:  func(error) time.Duration { return 2 * time.Second },
+	})
+	back := policyShape(policy)
+	if back.MaxAttempts != 3 || back.Base != time.Second || back.Max != time.Minute ||
+		back.Jitter != 0.5 || back.Clock != Clock(clock) {
+		t.Errorf("Policy round trip = %+v, want the constructed values", back)
 	}
-	if typ.NumField() != len(want) {
-		t.Fatalf("Policy has %d fields, want %d", typ.NumField(), len(want))
-	}
-	for i, expected := range want {
-		field := typ.Field(i)
-		if field.Name != expected.name || field.Type != expected.typ || !field.IsExported() {
-			t.Errorf("field %d = exported=%v %s %v, want exported %s %v",
-				i, field.IsExported(), field.Name, field.Type, expected.name, expected.typ)
-		}
+	if policy.Rand() != 0.25 || !policy.Retryable(errors.New("x")) ||
+		policy.RetryAfter(nil) != 2*time.Second {
+		t.Errorf("Policy function fields did not return the constructed values")
 	}
 }
 
@@ -468,22 +468,4 @@ func sameError(got, want error) bool {
 		wantValue.Kind() == reflect.Pointer &&
 		gotValue.Type() == wantValue.Type() &&
 		gotValue.Pointer() == wantValue.Pointer()
-}
-
-func assertFunctionSignature(t *testing.T, got reflect.Type, in, out []reflect.Type) {
-	t.Helper()
-	if got.NumIn() != len(in) || got.NumOut() != len(out) || got.IsVariadic() {
-		t.Errorf("signature = %v, want %d inputs, %d outputs, non-variadic", got, len(in), len(out))
-		return
-	}
-	for i, expected := range in {
-		if got.In(i) != expected {
-			t.Errorf("input %d = %v, want %v", i, got.In(i), expected)
-		}
-	}
-	for i, expected := range out {
-		if got.Out(i) != expected {
-			t.Errorf("output %d = %v, want %v", i, got.Out(i), expected)
-		}
-	}
 }

@@ -55,9 +55,11 @@ func TestOptionSpecHasDocumentedFields(t *testing.T) {
 	if spec.Name != "temperature" || spec.Kind != OptionKindNumber || spec.Description != "sampling temperature" {
 		t.Fatalf("OptionSpec fields did not preserve their values: %#v", spec)
 	}
-	if got := reflect.TypeOf(spec).NumField(); got != 3 {
-		t.Fatalf("OptionSpec field count = %d, want 3", got)
-	}
+	_ = OptionSpec(struct {
+		Name        string
+		Kind        OptionKind
+		Description string
+	}{})
 }
 
 func TestValidateOptionValueFollowsKindGrammar(t *testing.T) {
@@ -128,23 +130,13 @@ func TestValidateOptionsChecksKeyLegalityAndGrammar(t *testing.T) {
 func TestSettingsHasExactWireNeutralShapeAndZeroValue(t *testing.T) {
 	// R-DLXF-VK2V: Settings has exactly Options, ToolChoice, and SerialToolCalls.
 	// R-BDAS-XX9V
-	typeOfSettings := reflect.TypeFor[Settings]()
-	if got := typeOfSettings.NumField(); got != 3 {
-		t.Fatalf("Settings field count = %d, want 3", got)
-	}
-	wantFields := []struct {
-		name   string
-		typeOf reflect.Type
-	}{
-		{name: "Options", typeOf: reflect.TypeFor[Options]()},
-		{name: "ToolChoice", typeOf: reflect.TypeFor[ToolChoice]()},
-		{name: "SerialToolCalls", typeOf: reflect.TypeFor[bool]()},
-	}
-	for index, want := range wantFields {
-		field := typeOfSettings.Field(index)
-		if field.Name != want.name || field.Type != want.typeOf {
-			t.Fatalf("Settings field %d = %s %v, want %s %v", index, field.Name, field.Type, want.name, want.typeOf)
-		}
+	settings := Settings(struct {
+		Options         Options
+		ToolChoice      ToolChoice
+		SerialToolCalls bool
+	}{Options: Options{"temperature": "0.7"}, SerialToolCalls: true})
+	if settings.Options["temperature"] != "0.7" || !settings.SerialToolCalls {
+		t.Fatalf("Settings fields did not preserve their values: %#v", settings)
 	}
 	if !settingsAreZero(Settings{}) || !reflect.DeepEqual(cloneSettings(Settings{}), Settings{}) {
 		t.Fatal("zero Settings does not preserve vendor defaults with no options")
