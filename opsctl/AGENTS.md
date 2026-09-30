@@ -131,7 +131,7 @@ and `.github/workflows/release-opsctl.yml` (repo root) — is hand-maintained
 infrastructure outside the spec system: the build run never reads, edits, or
 tests it.
 
-1. Set the version in `internal/cli/cli.go` (D02) to `vX.Y.Z`. It is a
+1. Set the version in `internal/cli/cli.go` to `vX.Y.Z`. It is a
    source literal the binary reports verbatim, and the deploy refuses a tag
    that does not match what the built binary's `--version` prints.
 2. Commit that on `main` and push `main`.
