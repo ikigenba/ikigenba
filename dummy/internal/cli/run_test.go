@@ -165,7 +165,7 @@ func TestSocketCount(t *testing.T) {
 	}
 }
 
-// R-M6ED-IYNK R-M7M9-WQE9 R-W8XB-1OGJ
+// R-M6ED-IYNK R-Z60E-E4HH R-W8XB-1OGJ
 func TestRunTakesOnlyDescriptorThree(t *testing.T) {
 	var out, err recordingWriter
 	var unset []string

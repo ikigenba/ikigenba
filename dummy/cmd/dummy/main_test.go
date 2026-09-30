@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"html"
 	"io"
 	"net"
 	"net/http"
@@ -12,14 +13,16 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/ikigenba/ikigenba/dummy/internal/cli"
+	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 )
 
-// R-Z46Q-6N1H R-Z5EM-KES6 R-Z7UF-BY9K
+// R-Z2CP-8T9E R-Z3KL-ML03 R-Z4SI-0CQS
 func TestMainWiring(t *testing.T) {
 	root := mainProjectRoot(t)
 	binary := filepath.Join(t.TempDir(), "dummy")
@@ -87,7 +90,7 @@ func runBinary(t *testing.T, binary string, args []string) (string, string, int)
 	return stdout.String(), stderr.String(), exitError.ExitCode()
 }
 
-// R-M7M9-WQE9 R-MJT9-QFT7
+// R-Z60E-E4HH R-Z78A-RW86 R-7J0U-GFGT
 func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
 	t.Helper()
 	directory, err := os.MkdirTemp("", "dummy-exec-")
@@ -174,7 +177,7 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
 	if got := string(datagram[:n]); got != "READY=1" {
 		t.Fatalf("readiness = %q, want READY=1", got)
 	}
-	if sig == syscall.SIGTERM {
+	{
 		transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
 		}}
@@ -195,9 +198,10 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
 		if err != nil || closeErr != nil {
 			t.Fatalf("read child response: %v, close: %v", err, closeErr)
 		}
-		if !launcherButton.Match(body) {
+		if sig == syscall.SIGTERM && !launcherButton.Match(body) {
 			t.Error("main did not pass appkit banner source to handler")
 		}
+		assertVersionFooter(t, string(body))
 	}
 	if err := command.Process.Signal(sig); err != nil {
 		t.Fatalf("send %v: %v", sig, err)
@@ -228,4 +232,58 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
 	} else if err := connection.Close(); err != nil {
 		t.Errorf("close queued connection: %v", err)
 	}
+}
+
+func assertVersionFooter(t *testing.T, body string) {
+	t.Helper()
+	starts := elementStart("footer").FindAllStringIndex(body, -1)
+	if len(starts) != 1 {
+		t.Fatalf("whole response contains %d footer start tags, want 1", len(starts))
+	}
+	content := body[starts[0][1]:]
+	end := elementEnd("footer").FindStringIndex(content)
+	if end == nil {
+		t.Fatal("footer has no following end tag")
+	}
+	got := normaliseFooterContent(content[:end[0]])
+	if want := panel.ServiceName + " " + cli.Version; got != want {
+		t.Errorf("normalised footer = %q, want %q", got, want)
+	}
+}
+
+func elementStart(name string) *regexp.Regexp {
+	return regexp.MustCompile(`(?i)<` + name + `(?:[^a-z0-9>][^>]*|)>`)
+}
+
+func elementEnd(name string) *regexp.Regexp {
+	return regexp.MustCompile(`(?i)</` + name + `(?:[^a-z0-9>][^>]*|)>`)
+}
+
+func normaliseFooterContent(content string) string {
+	blocks := regexp.MustCompile(`(?i)<(script|style)(?:[^a-z0-9>][^>]*|)>`)
+	for {
+		start := blocks.FindStringSubmatchIndex(content)
+		if start == nil {
+			break
+		}
+		end := elementEnd(content[start[2]:start[3]]).FindStringIndex(content[start[1]:])
+		if end == nil {
+			content = content[:start[0]]
+			break
+		}
+		content = content[:start[0]] + content[start[1]+end[1]:]
+	}
+	for {
+		start := strings.IndexByte(content, '<')
+		if start == -1 {
+			break
+		}
+		end := strings.IndexByte(content[start:], '>')
+		if end == -1 {
+			content = content[:start]
+			break
+		}
+		content = content[:start] + content[start+end+1:]
+	}
+	return strings.Join(strings.Fields(html.UnescapeString(content)), " ")
 }
