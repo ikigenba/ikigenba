@@ -17,10 +17,13 @@ func checkDraw(t *testing.T, input Tree, color bool, want string) {
 func acceptDraw(func(Tree, bool) string) {}
 func isNilError(err error) bool          { return err == nil }
 
+// typed returns v as a T; a call compiles only when v is assignable to T.
+func typed[T any](v T) T { return v }
+
 // R-2TXU-JT5P
 func TestStatusType(t *testing.T) {
-	var status Status = "custom"
-	if reflect.TypeOf(status).Kind() != reflect.String {
+	status := typed[Status]("custom")
+	if status+"!" != Status("custom!") || len(status) != 6 {
 		t.Fatal("Status is not string based")
 	}
 }
@@ -28,7 +31,7 @@ func TestStatusType(t *testing.T) {
 // R-2V5Q-XKWE
 func TestStatusConstants(t *testing.T) {
 	values := []struct {
-		status Status
+		status any
 		want   string
 	}{
 		{StatusWorking, "working"}, {StatusIdle, "idle"}, {StatusUnknown, "unknown"},
@@ -36,41 +39,33 @@ func TestStatusConstants(t *testing.T) {
 		{StatusKilled, "killed"},
 	}
 	for _, item := range values {
-		if string(item.status) != item.want || reflect.TypeOf(item.status) != reflect.TypeOf(Status("")) {
+		if status, ok := item.status.(Status); !ok || string(status) != item.want {
 			t.Errorf("status %q has wrong value or type", item.want)
 		}
 	}
 }
 
-// R-2WDN-BCN3
+// R-YWIB-JVBL
 func TestNodeFields(t *testing.T) {
-	typ := reflect.TypeOf(Node{})
-	want := []struct {
-		name string
-		typ  reflect.Type
-	}{
-		{"ID", reflect.TypeOf("")}, {"Parent", reflect.TypeOf("")},
-		{"Label", reflect.TypeOf("")}, {"Status", reflect.TypeOf(Status(""))},
-		{"Started", reflect.TypeOf(time.Time{})}, {"HasStarted", reflect.TypeOf(false)},
-	}
-	if typ.NumField() != len(want) {
-		t.Fatalf("Node has %d fields, want %d", typ.NumField(), len(want))
-	}
-	for i, field := range want {
-		got := typ.Field(i)
-		if got.Name != field.name || got.Type != field.typ || !got.IsExported() {
-			t.Errorf("Node field %d = %s %s", i, got.Name, got.Type)
-		}
+	id := typed[string]("id")
+	parent := typed[string]("parent")
+	label := typed[string]("label")
+	status := typed[Status](StatusDone)
+	started := typed[time.Time](time.Date(2026, 9, 23, 1, 2, 3, 0, time.UTC))
+	hasStarted := typed[bool](true)
+	n := Node{ID: id, Parent: parent, Label: label, Status: status, Started: started, HasStarted: hasStarted}
+	if n.ID != id || n.Parent != parent || n.Label != label || n.Status != status || !n.Started.Equal(started) || !n.HasStarted {
+		t.Errorf("Node = %+v", n)
 	}
 }
 
-// R-2XLJ-P4DS
+// R-YXQ7-XN2A
 func TestTreeFields(t *testing.T) {
-	typ := reflect.TypeOf(Tree{})
-	if typ.NumField() != 2 || typ.Field(0).Name != "Root" || typ.Field(0).Type != reflect.TypeOf(Node{}) ||
-		typ.Field(1).Name != "Subagents" || typ.Field(1).Type != reflect.TypeOf([]Node{}) ||
-		!typ.Field(0).IsExported() || !typ.Field(1).IsExported() {
-		t.Errorf("Tree fields = %v", typ)
+	root := typed[Node](Node{ID: "r"})
+	subagents := typed[[]Node]([]Node{{ID: "s", Parent: "r"}})
+	tr := Tree{Root: root, Subagents: subagents}
+	if tr.Root.ID != "r" || len(tr.Subagents) != 1 || tr.Subagents[0].ID != "s" {
+		t.Errorf("Tree = %+v", tr)
 	}
 }
 

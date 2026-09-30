@@ -122,15 +122,15 @@ of their files are logs.
 
 - R-GNAW-66A5: The `internal/session` package MUST export the named type `type Status string`.
 - R-GOIS-JY0U: The `internal/session` package MUST export the constants `StatusWorking Status = "working"`, `StatusIdle Status = "idle"`, and `StatusUnknown Status = "unknown"`, each declared with the type `Status`.
-- R-MSC2-VBSG: The `internal/session` package MUST export the struct type `type Session struct { ID string; Status Status; Started time.Time; HasStarted bool; LastActive time.Time; HasLastActive bool; CWD string; Title string }`, with exactly these fields in this order.
+- R-YNZ0-VH4Q: The `internal/session` package MUST export the struct type `type Session struct { ID string; Status Status; Started time.Time; HasStarted bool; LastActive time.Time; HasLastActive bool; CWD string; Title string }`.
 - R-GQYL-BHI8: The `internal/session` package MUST export `func Table(sessions []Session) string`.
 - R-MTJZ-93J5: The `internal/session` package MUST export `func OrderByStart(sessions []Session) []Session`.
 - R-KFTE-HPU0: The `internal/session` package MUST export `func TableRows(sessions []Session) (header string, rows []string)`.
-- R-GS6H-P98X: The `internal/session` package MUST export the struct type `type ReadError struct { Path string; Err error }`, with exactly these fields in this order.
+- R-YP6X-98VF: The `internal/session` package MUST export the struct type `type ReadError struct { Path string; Err error }`.
 - R-GTEE-30ZM: The `internal/session` package MUST export the method `func (e *ReadError) Error() string`, so that `*ReadError` implements `error` and `ReadError` (the non-pointer type) does not.
 - R-W4QW-UJZU: The `internal/session` package MUST export the variable `ErrNotJSON` of type `error`, and its value MUST be non-nil.
 - R-GVU6-UKH0: The `internal/session` package MUST export `func Lines(data []byte) [][]byte`.
-- R-2MVM-VBXQ: The `internal/session` package MUST export the struct type `Log`, with no exported field, whose zero value is a `Log` that has made no pass.
+- R-Z1DX-2YAD: The `internal/session` package MUST export the struct type `Log`, whose zero value is a `Log` that has made no pass.
 - R-2O3J-93OF: The `internal/session` package MUST export the method `func (l *Log) Read(fsys fs.FS, name string) (lines [][]byte, reset bool, err error)`, where `fs` is the standard library's `io/fs`; each call of `Read` is a *pass* of `l`.
 - R-GX23-8C7P: For a `*ReadError` `e` whose `Err` is non-nil, `e.Error()` MUST return exactly `"cannot read " + e.Path + ": " + e.Err.Error()`, so that `(&ReadError{Path: "/home/dev/.claude/sessions", Err: fs.ErrPermission}).Error()` is `cannot read /home/dev/.claude/sessions: permission denied`.
 - R-GZHV-ZVP3: `ErrNotJSON.Error()` MUST return exactly `not valid JSON`.

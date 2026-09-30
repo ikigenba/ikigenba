@@ -7,11 +7,11 @@ import (
 	"time"
 )
 
-func TestNewTableAndStartSignatures(t *testing.T) {
+func TestNewTableAndStartSignatures(_ *testing.T) {
 	// R-MTJZ-93J5 R-KFTE-HPU0
-	if reflect.TypeOf(OrderByStart).String() != "func([]session.Session) []session.Session" || reflect.TypeOf(TableRows).String() != "func([]session.Session) (string, []string)" {
-		t.Fatal("unexpected function signatures")
-	}
+	orderByStart := typed[func([]Session) []Session](OrderByStart)
+	tableRows := typed[func([]Session) (string, []string)](TableRows)
+	_, _ = orderByStart, tableRows
 }
 
 func TestNewTableRows(t *testing.T) {

@@ -112,11 +112,11 @@ records are `D06-claude`, `D07-codex`, and `D08-grok`.
 
 - R-KHCB-MZ8F: The `internal/chat` package (import path `github.com/ikigenba/ikigenba/agent-monitor/internal/chat`, package name `chat`) MUST export the named type `type Kind string`.
 - R-KIK8-0QZ4: The `internal/chat` package MUST export the constants `KindUser Kind = "user"`, `KindAssistant Kind = "assistant"`, `KindReasoning Kind = "reasoning"`, `KindAgent Kind = "agent"`, `KindTool Kind = "tool"`, `KindResultOK Kind = "result ok"`, and `KindResultError Kind = "result error"`, each declared with the type `Kind`.
-- R-KJS4-EIPT: The `internal/chat` package MUST export the struct type `type Entry struct { Time time.Time; HasTime bool; Kind Kind; Tool string; Text string }`, with exactly these fields in this order.
-- R-KL00-SAGI: The `internal/chat` package MUST export the struct type `type Usage struct { In int64; CacheWrite int64; CacheRead int64; Out int64; Reasoning int64; Calls int64 }`, with exactly these fields in this order.
-- R-KNFT-JTXW: The `internal/chat` package MUST export the struct type `type Recorded struct { In bool; CacheWrite bool; CacheRead bool; Out bool; Reasoning bool; Calls bool }`, with exactly these fields in this order.
-- R-6S43-37D6: The `internal/chat` package MUST export the interface type `type Decoder interface { Decode(fsys fs.FS, record []byte) ([]Entry, Usage) }`, with exactly that one method, where `fs` is the standard library's `io/fs`.
-- R-KPVM-BDFA: The `internal/chat` package MUST export the struct type `Transcript`, with no exported field.
+- R-YQET-N0M4: The `internal/chat` package MUST export the struct type `type Entry struct { Time time.Time; HasTime bool; Kind Kind; Tool string; Text string }`.
+- R-YRMQ-0SCT: The `internal/chat` package MUST export the struct type `type Usage struct { In int64; CacheWrite int64; CacheRead int64; Out int64; Reasoning int64; Calls int64 }`.
+- R-YSUM-EK3I: The `internal/chat` package MUST export the struct type `type Recorded struct { In bool; CacheWrite bool; CacheRead bool; Out bool; Reasoning bool; Calls bool }`.
+- R-YU2I-SBU7: The `internal/chat` package MUST export the interface type `type Decoder interface { Decode(fsys fs.FS, record []byte) ([]Entry, Usage) }`, where `fs` is the standard library's `io/fs`.
+- R-Z2LT-GQ12: The `internal/chat` package MUST export the struct type `Transcript`.
 - R-KR3I-P55Z: The `internal/chat` package MUST export `func NewTranscript(path string, recorded Recorded, newDecoder func() Decoder) *Transcript`.
 - R-KSBF-2WWO: The `internal/chat` package MUST export the method `func (t *Transcript) Read(fsys fs.FS) (entries []Entry, reset bool, err error)`, where `fs` is the standard library's `io/fs`; each call of `Read` is a *pass* of `t`.
 - R-KTJB-GOND: The `internal/chat` package MUST export the method `func (t *Transcript) Usage() Usage`.

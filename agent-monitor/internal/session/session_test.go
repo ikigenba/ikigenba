@@ -11,26 +11,34 @@ import (
 	"github.com/ikigenba/ikigenba/agent-monitor/internal/quote"
 )
 
+// typed returns v as a T; a call compiles only when v is assignable to T.
+func typed[T any](v T) T { return v }
+
 func TestAPI(t *testing.T) {
-	// R-GNAW-66A5 R-GOIS-JY0U R-MSC2-VBSG R-GQYL-BHI8 R-GS6H-P98X R-GTEE-30ZM R-W4QW-UJZU R-GVU6-UKH0
+	// R-GNAW-66A5 R-GOIS-JY0U R-YNZ0-VH4Q R-GQYL-BHI8 R-YP6X-98VF R-GTEE-30ZM R-W4QW-UJZU R-GVU6-UKH0
 	status := StatusWorking
 	if status != "working" || StatusIdle != "idle" || StatusUnknown != "unknown" {
 		t.Fatal("status declarations have wrong values")
 	}
-	st := reflect.TypeFor[Session]()
-	wantFields := []string{"ID", "Status", "Started", "HasStarted", "LastActive", "HasLastActive", "CWD", "Title"}
-	wantTypes := []reflect.Type{reflect.TypeFor[string](), reflect.TypeFor[Status](), reflect.TypeFor[time.Time](), reflect.TypeFor[bool](), reflect.TypeFor[time.Time](), reflect.TypeFor[bool](), reflect.TypeFor[string](), reflect.TypeFor[string]()}
-	if st.NumField() != len(wantFields) {
-		t.Fatalf("Session has %d fields", st.NumField())
+	started := time.Date(2026, 9, 23, 1, 2, 3, 0, time.UTC)
+	active := started.Add(time.Minute)
+	id := typed[string]("id")
+	st := typed[Status](StatusIdle)
+	hasStarted := typed[bool](true)
+	hasLastActive := typed[bool](true)
+	cwd := typed[string]("/work")
+	title := typed[string]("title")
+	startedAt := typed[time.Time](started)
+	lastActive := typed[time.Time](active)
+	s := Session{ID: id, Status: st, Started: startedAt, HasStarted: hasStarted, LastActive: lastActive, HasLastActive: hasLastActive, CWD: cwd, Title: title}
+	if s.ID != id || s.Status != st || !s.Started.Equal(started) || !s.HasStarted || !s.LastActive.Equal(active) || !s.HasLastActive || s.CWD != cwd || s.Title != title {
+		t.Fatalf("Session = %+v", s)
 	}
-	for i := range wantFields {
-		if f := st.Field(i); f.Name != wantFields[i] || f.Type != wantTypes[i] {
-			t.Fatalf("Session field %d = %v", i, f)
-		}
-	}
-	re := reflect.TypeFor[ReadError]()
-	if re.NumField() != 2 || re.Field(0).Name != "Path" || re.Field(0).Type != reflect.TypeFor[string]() || re.Field(1).Name != "Err" || re.Field(1).Type != reflect.TypeFor[error]() {
-		t.Fatalf("ReadError fields: %v", re)
+	path := typed[string]("/p")
+	cause := typed[error](fs.ErrPermission)
+	re := ReadError{Path: path, Err: cause}
+	if re.Path != path || !errors.Is(re.Err, cause) {
+		t.Fatalf("ReadError = %+v", re)
 	}
 	if _, ok := any(ReadError{}).(error); ok {
 		t.Fatal("ReadError value implements error")
@@ -38,12 +46,10 @@ func TestAPI(t *testing.T) {
 	if _, ok := any(&ReadError{}).(error); !ok {
 		t.Fatal("*ReadError does not implement error")
 	}
-	if reflect.TypeFor[ReadError]().NumMethod() != 0 || reflect.TypeFor[*ReadError]().NumMethod() != 1 {
-		t.Fatal("ReadError has unexpected methods")
-	}
-	if reflect.TypeOf(Table).String() != "func([]session.Session) string" || reflect.TypeOf(Lines).String() != "func([]uint8) [][]uint8" {
-		t.Fatal("unexpected function signatures")
-	}
+	errorOf := typed[func(*ReadError) string]((*ReadError).Error)
+	table := typed[func([]Session) string](Table)
+	lines := typed[func([]byte) [][]byte](Lines)
+	_, _, _ = errorOf, table, lines
 	if ErrNotJSON == nil {
 		t.Fatal("ErrNotJSON is nil")
 	}

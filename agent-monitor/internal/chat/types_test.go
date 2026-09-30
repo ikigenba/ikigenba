@@ -4,13 +4,18 @@ import (
 	"io/fs"
 	"reflect"
 	"testing"
+	"testing/fstest"
 	"time"
 )
 
+// typed returns v as a T; a call compiles only when v is assignable to T.
+func typed[T any](v T) T { return v }
+
 func TestKindType(t *testing.T) {
 	// R-KHCB-MZ8F
-	if got, want := reflect.TypeOf(Kind("")), reflect.TypeOf(""); got.Kind() != want.Kind() || got.Name() != "Kind" || got.PkgPath() != "github.com/ikigenba/ikigenba/agent-monitor/internal/chat" {
-		t.Fatalf("Kind type = %v", got)
+	k := typed[Kind]("user")
+	if k+" ok" != Kind("user ok") || len(k) != 4 {
+		t.Fatalf("Kind = %q", k)
 	}
 }
 
@@ -21,71 +26,70 @@ func TestKinds(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("kinds = %q, want %q", got, want)
 	}
-	for _, typ := range []reflect.Type{reflect.TypeOf(KindUser), reflect.TypeOf(KindAssistant), reflect.TypeOf(KindReasoning), reflect.TypeOf(KindAgent), reflect.TypeOf(KindTool), reflect.TypeOf(KindResultOK), reflect.TypeOf(KindResultError)} {
-		if typ != reflect.TypeOf(Kind("")) {
-			t.Fatalf("kind constant type = %v", typ)
-		}
-	}
-}
-
-func checkFields(t *testing.T, typ reflect.Type, names []string, types []reflect.Type) {
-	t.Helper()
-	if typ.Kind() != reflect.Struct || typ.NumField() != len(names) {
-		t.Fatalf("%s fields = %v", typ, typ.NumField())
-	}
-	for i, name := range names {
-		field := typ.Field(i)
-		if field.Name != name || field.Type != types[i] || !field.IsExported() {
-			t.Fatalf("%s field %d = %v", typ, i, field)
+	for _, constant := range []any{KindUser, KindAssistant, KindReasoning, KindAgent, KindTool, KindResultOK, KindResultError} {
+		if _, ok := constant.(Kind); !ok {
+			t.Fatalf("kind constant type = %T", constant)
 		}
 	}
 }
 
 func TestEntryShape(t *testing.T) {
-	// R-KJS4-EIPT
-	checkFields(t, reflect.TypeOf(Entry{}), []string{"Time", "HasTime", "Kind", "Tool", "Text"}, []reflect.Type{reflect.TypeOf(time.Time{}), reflect.TypeOf(false), reflect.TypeOf(Kind("")), reflect.TypeOf(""), reflect.TypeOf("")})
+	// R-YQET-N0M4
+	when := typed[time.Time](time.Date(2026, 9, 23, 1, 2, 3, 0, time.UTC))
+	hasTime := typed[bool](true)
+	kind := typed[Kind](KindTool)
+	tool := typed[string]("shell")
+	text := typed[string]("body")
+	e := Entry{Time: when, HasTime: hasTime, Kind: kind, Tool: tool, Text: text}
+	if !e.Time.Equal(when) || !e.HasTime || e.Kind != kind || e.Tool != tool || e.Text != text {
+		t.Fatalf("Entry = %+v", e)
+	}
 }
 
 func TestUsageShape(t *testing.T) {
-	// R-KL00-SAGI
-	i64 := reflect.TypeOf(int64(0))
-	checkFields(t, reflect.TypeOf(Usage{}), []string{"In", "CacheWrite", "CacheRead", "Out", "Reasoning", "Calls"}, []reflect.Type{i64, i64, i64, i64, i64, i64})
+	// R-YRMQ-0SCT
+	u := Usage{In: typed[int64](1), CacheWrite: typed[int64](2), CacheRead: typed[int64](3), Out: typed[int64](4), Reasoning: typed[int64](5), Calls: typed[int64](6)}
+	if u.In != 1 || u.CacheWrite != 2 || u.CacheRead != 3 || u.Out != 4 || u.Reasoning != 5 || u.Calls != 6 {
+		t.Fatalf("Usage = %+v", u)
+	}
 }
 
 func TestRecordedShape(t *testing.T) {
-	// R-KNFT-JTXW
-	b := reflect.TypeOf(false)
-	checkFields(t, reflect.TypeOf(Recorded{}), []string{"In", "CacheWrite", "CacheRead", "Out", "Reasoning", "Calls"}, []reflect.Type{b, b, b, b, b, b})
+	// R-YSUM-EK3I
+	r := Recorded{In: typed[bool](true), CacheWrite: typed[bool](false), CacheRead: typed[bool](true), Out: typed[bool](false), Reasoning: typed[bool](true), Calls: typed[bool](false)}
+	if !r.In || r.CacheWrite || !r.CacheRead || r.Out || !r.Reasoning || r.Calls {
+		t.Fatalf("Recorded = %+v", r)
+	}
+}
+
+type shapeDecoder struct{}
+
+func (shapeDecoder) Decode(_ fs.FS, record []byte) ([]Entry, Usage) {
+	return []Entry{{Kind: KindUser, Text: string(record)}}, Usage{Calls: 1}
 }
 
 func TestDecoderShape(t *testing.T) {
-	// R-6S43-37D6
-	typ := reflect.TypeOf((*Decoder)(nil)).Elem()
-	if typ.Kind() != reflect.Interface || typ.NumMethod() != 1 {
-		t.Fatalf("Decoder methods = %v", typ.NumMethod())
-	}
-	m := typ.Method(0)
-	if m.Name != "Decode" || m.Type.NumIn() != 2 || m.Type.In(0) != reflect.TypeOf((*fs.FS)(nil)).Elem() || m.Type.In(1) != reflect.TypeOf([]byte(nil)) || m.Type.NumOut() != 2 || m.Type.Out(0) != reflect.TypeOf([]Entry(nil)) || m.Type.Out(1) != reflect.TypeOf(Usage{}) {
-		t.Fatalf("Decode signature = %v", m.Type)
+	// R-YU2I-SBU7
+	d := typed[Decoder](shapeDecoder{})
+	decode := typed[func(fs.FS, []byte) ([]Entry, Usage)](d.Decode)
+	entries, usage := decode(fstest.MapFS{}, []byte("record"))
+	if len(entries) != 1 || entries[0].Text != "record" || usage.Calls != 1 {
+		t.Fatalf("Decode = %v %+v", entries, usage)
 	}
 }
 
 func TestTranscriptShape(t *testing.T) {
-	// R-KPVM-BDFA
-	typ := reflect.TypeOf(Transcript{})
-	if typ.Kind() != reflect.Struct || typ.Name() != "Transcript" {
-		t.Fatalf("Transcript type = %v", typ)
-	}
-	for i := 0; i < typ.NumField(); i++ {
-		if typ.Field(i).IsExported() {
-			t.Fatalf("Transcript exported field = %v", typ.Field(i))
-		}
+	// R-Z2LT-GQ12
+	tr := NewTranscript("/log", Recorded{}, func() Decoder { return shapeDecoder{} })
+	if typed[*Transcript](tr).Path() != "/log" {
+		t.Fatal("Transcript lost its path")
 	}
 }
 
 func TestErrAgentNotFound(t *testing.T) {
 	// R-KX70-LZVG
-	if reflect.TypeOf(&ErrAgentNotFound).Elem() != reflect.TypeOf((*error)(nil)).Elem() || ErrAgentNotFound == nil {
-		t.Fatalf("ErrAgentNotFound type or value invalid")
+	errPtr := typed[*error](&ErrAgentNotFound)
+	if *errPtr == nil {
+		t.Fatalf("ErrAgentNotFound is nil")
 	}
 }

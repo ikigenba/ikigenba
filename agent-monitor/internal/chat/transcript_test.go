@@ -76,18 +76,13 @@ func checkReadError(t *testing.T, err error, path string, cause error) {
 
 func TestTranscriptAPIAndMetadata(t *testing.T) {
 	// R-KR3I-P55Z R-KSBF-2WWO R-KTJB-GOND R-KUR7-UGE2 R-KVZ4-884R R-LD1P-L0IH
-	constructor := NewTranscript
-	read := (*Transcript).Read
-	getUsage := (*Transcript).Usage
-	getRecorded := (*Transcript).Recorded
-	getPath := (*Transcript).Path
-	if reflect.TypeOf(constructor) != reflect.TypeOf((func(string, Recorded, func() Decoder) *Transcript)(nil)) ||
-		reflect.TypeOf(read) != reflect.TypeOf((func(*Transcript, fs.FS) ([]Entry, bool, error))(nil)) ||
-		reflect.TypeOf(getUsage) != reflect.TypeOf((func(*Transcript) Usage)(nil)) ||
-		reflect.TypeOf(getRecorded) != reflect.TypeOf((func(*Transcript) Recorded)(nil)) ||
-		reflect.TypeOf(getPath) != reflect.TypeOf((func(*Transcript) string)(nil)) {
-		t.Fatal("transcript API signature mismatch")
-	}
+	constructor := typed[func(string, Recorded, func() Decoder) *Transcript](NewTranscript)
+	read := typed[func(*Transcript, fs.FS) ([]Entry, bool, error)]((*Transcript).Read)
+	getUsage := typed[func(*Transcript) Usage]((*Transcript).Usage)
+	getRecorded := typed[func(*Transcript) Recorded]((*Transcript).Recorded)
+	getPath := typed[func(*Transcript) string]((*Transcript).Path)
+	_, _, _ = read, getUsage, getRecorded
+	_ = getPath
 	recorded := Recorded{In: true, CacheRead: true, Calls: true}
 	tr := constructor("/log", recorded, func() Decoder { return &transcriptDecoder{} })
 	if tr.Path() != "/log" || tr.Recorded() != recorded || tr.Usage() != (Usage{}) {

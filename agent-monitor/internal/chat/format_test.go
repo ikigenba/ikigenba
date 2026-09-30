@@ -1,24 +1,21 @@
 package chat
 
 import (
-	"reflect"
 	"strings"
 	"testing"
 	"time"
 )
 
-func TestFormatSignature(t *testing.T) {
+func TestFormatSignature(_ *testing.T) {
 	// R-KYEW-ZRM5
-	if reflect.TypeOf(Format) != reflect.TypeOf((func(Entry) string)(nil)) {
-		t.Fatal("Format signature differs")
-	}
+	format := typed[func(Entry) string](Format)
+	_ = format
 }
 
-func TestTotalsLineSignature(t *testing.T) {
+func TestTotalsLineSignature(_ *testing.T) {
 	// R-KZMT-DJCU
-	if reflect.TypeOf(TotalsLine) != reflect.TypeOf((func(Usage, Recorded) string)(nil)) {
-		t.Fatal("TotalsLine signature differs")
-	}
+	totalsLine := typed[func(Usage, Recorded) string](TotalsLine)
+	_ = totalsLine
 }
 
 func TestTextEscape(t *testing.T) {

@@ -142,14 +142,9 @@ func assertPass(t *testing.T, l *Log, f *logFS, want []string, wantReset bool) {
 }
 
 func TestLogFirstPassAndAppend(t *testing.T) {
-	// R-2MVM-VBXQ R-2O3J-93OF R-2PBF-MVF4 R-2QJC-0N5T
+	// R-Z1DX-2YAD R-2O3J-93OF R-2PBF-MVF4 R-2QJC-0N5T
 	// R-2SZ4-S6N7 R-2U71-5YDW R-59S8-SV67 R-BB0C-V2OE
 	var log Log
-	for i := 0; i < reflect.TypeOf(log).NumField(); i++ {
-		if reflect.TypeOf(log).Field(i).IsExported() {
-			t.Fatal("Log has an exported field")
-		}
-	}
 	f := logFixture("a\n\nb\nc", 1)
 	assertPass(t, &log, f, []string{"a", "", "b"}, false)
 	assertPass(t, &log, f, []string{}, false)

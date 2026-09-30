@@ -55,7 +55,7 @@ func (w *chatFollowScriptWatcher) Watch(_ []string) {
 
 func (w *chatFollowScriptWatcher) Changes() <-chan struct{} { return w.changes }
 
-// R-XBO0-PGW8 R-EP82-A6NK R-EQFY-NYE9 R-ERNV-1Q4Y R-ESVR-FHVN
+// R-Z51M-89IG R-EP82-A6NK R-EQFY-NYE9 R-ERNV-1Q4Y R-ESVR-FHVN
 func TestFollowChatRunPreservesOutputThroughFailureAndReset(t *testing.T) {
 	for _, terminal := range []bool{false, true} {
 		f := &chatFollowScriptRoot{chatFollowFS: &chatFollowFS{root: fstest.MapFS{chatFollowPath: &fstest.MapFile{Data: []byte(chatFollowUser("one long initial message") + chatFollowUsage("old", 8))}}}, interrupt: make(chan struct{})}
@@ -119,7 +119,7 @@ func (f *chatFollowFS) Open(name string) (fs.File, error) {
 	return f.root.Open(name)
 }
 
-// R-XBO0-PGW8
+// R-Z51M-89IG
 func TestFollowChatRetainsTranscriptAndReadsOnePass(t *testing.T) {
 	f := &chatFollowFS{root: fstest.MapFS{chatFollowPath: &fstest.MapFile{Data: []byte(chatFollowUser("first"))}}}
 	r := chatFollowNew(f, false)
@@ -228,7 +228,7 @@ func TestFollowChatResetAppendsEntriesAndReplacesTotals(t *testing.T) {
 	}
 }
 
-// R-XCVX-38MX
+// R-Z69I-M195
 func TestFollowChatRediscoversEmptyPath(t *testing.T) {
 	f := &chatFollowFS{root: fstest.MapFS{
 		"home/dev/.claude/projects":           &fstest.MapFile{Mode: fs.ModeDir},

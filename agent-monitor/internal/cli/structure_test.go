@@ -3,45 +3,51 @@ package cli_test
 import (
 	"io"
 	"io/fs"
-	"reflect"
 	"testing"
+	"testing/fstest"
 
 	"github.com/ikigenba/ikigenba/agent-monitor/internal/cli"
 )
 
-func TestRunSignatureAndSystem(t *testing.T) {
+func TestRunSignatureAndSystem(_ *testing.T) {
 	// R-XK3U-55KN R-XLBQ-IXBC
-	want := reflect.TypeOf((func([]string, cli.System, io.Writer, io.Writer) cli.ExitCode)(nil))
-	if got := reflect.TypeOf(cli.Run); got != want {
-		t.Fatalf("Run type = %v, want %v", got, want)
-	}
+	run := typed[func([]string, cli.System, io.Writer, io.Writer) cli.ExitCode](cli.Run)
+	_ = run
 }
 
+// typed returns v as a T; a call compiles only when v is assignable to T.
+func typed[T any](v T) T { return v }
+
+type structureWatcher struct{ changes chan struct{} }
+
+func (structureWatcher) Watch([]string)             {}
+func (w structureWatcher) Changes() <-chan struct{} { return w.changes }
+
+type structureConsole struct{}
+
+func (structureConsole) Raw() func()              { return func() {} }
+func (structureConsole) Keys() <-chan []byte      { return nil }
+func (structureConsole) Size() (int, int)         { return 80, 24 }
+func (structureConsole) Resized() <-chan struct{} { return nil }
+
 func TestSystemFields(t *testing.T) {
-	// R-KNGI-YOW2
-	st := reflect.TypeOf(cli.System{})
-	want := []struct {
-		name string
-		typ  reflect.Type
-	}{
-		{"Home", reflect.TypeOf("")},
-		{"Root", reflect.TypeOf((*fs.FS)(nil)).Elem()},
-		{"NoColor", reflect.TypeOf("")},
-		{"Term", reflect.TypeOf("")},
-		{"Terminal", reflect.TypeOf(false)},
-		{"StdinTerminal", reflect.TypeOf(false)},
-		{"Watcher", reflect.TypeOf((*cli.Watcher)(nil)).Elem()},
-		{"Interrupt", reflect.TypeOf((<-chan struct{})(nil))},
-		{"Console", reflect.TypeOf((*cli.Console)(nil)).Elem()},
+	// R-YLJ8-3XNC
+	interrupt := make(chan struct{})
+	home := typed[string]("/home/dev")
+	root := typed[fs.FS](fstest.MapFS{})
+	noColor := typed[string]("1")
+	term := typed[string]("xterm")
+	terminal := typed[bool](true)
+	stdinTerminal := typed[bool](true)
+	watcher := typed[cli.Watcher](structureWatcher{})
+	interruptCh := typed[<-chan struct{}](interrupt)
+	console := typed[cli.Console](structureConsole{})
+	sys := cli.System{Home: home, Root: root, NoColor: noColor, Term: term, Terminal: terminal, StdinTerminal: stdinTerminal, Watcher: watcher, Interrupt: interruptCh, Console: console}
+	if sys.Home != home || sys.NoColor != noColor || sys.Term != term || !sys.Terminal || !sys.StdinTerminal || sys.Watcher != watcher || sys.Interrupt != interruptCh || sys.Console != console {
+		t.Fatalf("System = %+v", sys)
 	}
-	if st.NumField() != len(want) {
-		t.Fatalf("System field count = %d, want %d", st.NumField(), len(want))
-	}
-	for i, field := range want {
-		got := st.Field(i)
-		if got.Name != field.name || got.Type != field.typ || !got.IsExported() {
-			t.Fatalf("System field %d = %s %v, want %s %v", i, got.Name, got.Type, field.name, field.typ)
-		}
+	if _, ok := sys.Root.(fstest.MapFS); !ok {
+		t.Fatalf("Root = %T", sys.Root)
 	}
 }
 
@@ -54,7 +60,7 @@ func TestExitCodes(t *testing.T) {
 		t.Fatalf("exit codes = %v", codes)
 	}
 	for _, constant := range []any{cli.ExitSuccess, cli.ExitWriteFailed, cli.ExitUsage, cli.ExitDataUnreadable, cli.ExitNotFound} {
-		if reflect.TypeOf(constant) != reflect.TypeOf(cli.ExitCode(0)) {
+		if _, ok := constant.(cli.ExitCode); !ok {
 			t.Fatalf("constant has type %T", constant)
 		}
 	}
@@ -78,16 +84,14 @@ func TestTreeUsageDeclaration(_ *testing.T) {
 	_ = actual
 }
 
-// R-TS88-MLJT
+// R-YMR4-HPE1
 func TestWatcherMethods(t *testing.T) {
-	typ := reflect.TypeOf((*cli.Watcher)(nil)).Elem()
-	if typ.NumMethod() != 2 {
-		t.Fatalf("Watcher methods = %d", typ.NumMethod())
-	}
-	for name, want := range map[string]reflect.Type{"Watch": reflect.TypeOf((func([]string))(nil)), "Changes": reflect.TypeOf((func() <-chan struct{})(nil))} {
-		method, ok := typ.MethodByName(name)
-		if !ok || method.Type != want {
-			t.Errorf("Watcher.%s = %v, want %v", name, method.Type, want)
-		}
+	changes := make(chan struct{})
+	w := typed[cli.Watcher](structureWatcher{changes: changes})
+	watch := typed[func([]string)](w.Watch)
+	changesOf := typed[func() <-chan struct{}](w.Changes)
+	watch([]string{"name"})
+	if changesOf() != changes {
+		t.Fatal("Changes channel lost")
 	}
 }

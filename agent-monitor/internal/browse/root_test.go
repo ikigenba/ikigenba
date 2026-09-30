@@ -48,20 +48,16 @@ func (r *runtimeRootSpy) Lstat(n string) (fs.FileInfo, error) {
 }
 
 func TestBrowseRootForwarding(t *testing.T) {
-	// R-VPYY-S08F
+	// R-YYY4-BESZ
 	source := &runtimeRootSpy{source: fstest.MapFS{"folder/item": &fstest.MapFile{Data: []byte("value")}}}
 	root := &browseRoot{source: source}
 	resetRoot(root)
-	methods := reflect.TypeOf(root)
-	wantMethods := []string{"Lstat", "Open", "ReadDir", "ReadFile", "ReadLink", "Stat"}
-	if methods.NumMethod() != len(wantMethods) {
-		t.Fatalf("methods: %d", methods.NumMethod())
-	}
-	for i, name := range wantMethods {
-		if methods.Method(i).Name != name {
-			t.Fatalf("method: %s", methods.Method(i).Name)
-		}
-	}
+	var _ interface {
+		fs.ReadDirFS
+		fs.ReadFileFS
+		fs.StatFS
+		fs.ReadLinkFS
+	} = root
 	file, err := root.Open("folder/item")
 	if err != nil {
 		t.Fatal(err)

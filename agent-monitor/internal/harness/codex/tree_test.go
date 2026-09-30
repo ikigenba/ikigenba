@@ -33,11 +33,13 @@ func started(id, path, stamp string) string {
 	return `{"type":"event_msg","timestamp":"` + stamp + `","payload":{"item":{"type":"SubAgentActivity","kind":"started","agent_thread_id":"` + id + `","agent_path":"` + path + `"}}}` + "\n"
 }
 
+// typed returns v as a T; a call compiles only when v is assignable to T.
+func typed[T any](v T) T { return v }
+
 func TestTreeLocationAndErrors(t *testing.T) {
 	// R-HSS7-IYUS R-HP4I-DNMP R-8J28-VOD3 R-HRKB-5743 R-DKI4-OYFH: signature, invalid id, absent directory and zero tree on error.
-	if got, want := reflect.TypeOf(Tree), reflect.TypeOf((func(fs.FS, string, string) (tree.Tree, error))(nil)); got != want {
-		t.Fatalf("Tree type = %v, want %v", got, want)
-	}
+	treeOf := typed[func(fs.FS, string, string) (tree.Tree, error)](Tree)
+	_ = treeOf
 	f := fixture()
 	got, err := Tree(f, home, "x")
 	if reflect.ValueOf(err) != reflect.ValueOf(tree.ErrNotFound) || !reflect.DeepEqual(got, tree.Tree{}) || !reflect.DeepEqual(f.calls, []string{"stat:" + strings.TrimSuffix(sessions, "/")}) {

@@ -85,8 +85,8 @@ one, is each harness design's business.
 
 - R-2TXU-JT5P: The `internal/tree` package (import path `github.com/ikigenba/ikigenba/agent-monitor/internal/tree`, package name `tree`) MUST export the named type `type Status string`.
 - R-2V5Q-XKWE: The `internal/tree` package MUST export the constants `StatusWorking Status = "working"`, `StatusIdle Status = "idle"`, `StatusUnknown Status = "unknown"`, `StatusEnded Status = "ended"`, `StatusDone Status = "done"`, `StatusFailed Status = "failed"`, and `StatusKilled Status = "killed"`, each declared with the type `Status`.
-- R-2WDN-BCN3: The `internal/tree` package MUST export the struct type `type Node struct { ID string; Parent string; Label string; Status Status; Started time.Time; HasStarted bool }`, with exactly these fields in this order.
-- R-2XLJ-P4DS: The `internal/tree` package MUST export the struct type `type Tree struct { Root Node; Subagents []Node }`, with exactly these fields in this order.
+- R-YWIB-JVBL: The `internal/tree` package MUST export the struct type `type Node struct { ID string; Parent string; Label string; Status Status; Started time.Time; HasStarted bool }`.
+- R-YXQ7-XN2A: The `internal/tree` package MUST export the struct type `type Tree struct { Root Node; Subagents []Node }`.
 - R-VZAE-KSAJ: The `internal/tree` package MUST export `func Draw(t Tree, color bool) string`.
 - R-301C-GNV6: The `internal/tree` package MUST export the variable `ErrNotFound` of type `error`, and its value MUST be non-nil.
 - R-DKI4-OYFH: The `Tree` function of each of `internal/harness/claude`, `internal/harness/codex`, and `internal/harness/grok` MUST return, as its error, only a nil error, exactly the value `tree.ErrNotFound` (so that `err == tree.ErrNotFound`), or an error whose dynamic type is `*session.ReadError`.

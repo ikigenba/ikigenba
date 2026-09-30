@@ -64,18 +64,15 @@ func (p *rootForwardProbe) Lstat(n string) (fs.FileInfo, error) {
 	return fs.Stat(p.root, n)
 }
 
-// R-IBKA-V9RV
+// R-Z060-P6JO
 func TestFollowRootMethodSetAndForwarding(t *testing.T) {
 	r := newFollowRoot(fstest.MapFS{})
-	typ := reflect.TypeOf(r)
-	var methods []string
-	for i := range typ.NumMethod() {
-		methods = append(methods, typ.Method(i).Name)
-	}
-	wantMethods := []string{"Lstat", "Open", "ReadDir", "ReadFile", "ReadLink", "Stat"}
-	if !slices.Equal(methods, wantMethods) {
-		t.Fatalf("methods = %v, want %v", methods, wantMethods)
-	}
+	var _ interface {
+		fs.ReadDirFS
+		fs.ReadFileFS
+		fs.StatFS
+		fs.ReadLinkFS
+	} = r
 	f, err := (fstest.MapFS{"file": &fstest.MapFile{Data: []byte("text")}}).Open("file")
 	if err != nil {
 		t.Fatal(err)
@@ -129,7 +126,7 @@ func TestFollowRootMethodSetAndForwarding(t *testing.T) {
 	}
 }
 
-// R-IBKA-V9RV R-IE03-MT99
+// R-Z060-P6JO R-IE03-MT99
 func TestFollowRootGlobAndSubAccountNames(t *testing.T) {
 	r := newFollowRoot(fstest.MapFS{"home/dev/logs/a/file": &fstest.MapFile{Data: []byte("log")}})
 	matches, err := fs.Glob(r, "home/dev/logs/*/file")

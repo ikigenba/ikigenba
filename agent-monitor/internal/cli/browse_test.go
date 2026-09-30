@@ -37,22 +37,24 @@ func browseFixture() (System, *browserConsole) {
 	return System{Home: "/home/dev", Root: fstest.MapFS{}, Terminal: true, StdinTerminal: true, Console: c}, c
 }
 
-// R-KOOF-CGMR R-KPWB-Q8DG
+// typed returns v as a T; a call compiles only when v is assignable to T.
+func typed[T any](v T) T { return v }
+
+// R-YKBB-Q5WN R-KPWB-Q8DG
 func TestConsoleContract(t *testing.T) {
-	typ := reflect.TypeOf((*Console)(nil)).Elem()
-	if typ.NumMethod() != 4 {
-		t.Fatalf("method count %d", typ.NumMethod())
+	console := &browserConsole{cols: 81, rows: 25, keys: make(chan []byte), resized: make(chan struct{})}
+	c := typed[Console](console)
+	raw := typed[func() func()](c.Raw)
+	keys := typed[func() <-chan []byte](c.Keys)
+	size := typed[func() (int, int)](c.Size)
+	resized := typed[func() <-chan struct{}](c.Resized)
+	raw()()
+	if cols, rows := size(); keys() != console.keys || resized() != console.resized || cols != 81 || rows != 25 {
+		t.Fatal("Console methods lost values")
 	}
-	for name, want := range map[string]reflect.Type{
-		"Raw": reflect.TypeOf((func() func())(nil)), "Keys": reflect.TypeOf((func() <-chan []byte)(nil)),
-		"Size": reflect.TypeOf((func() (int, int))(nil)), "Resized": reflect.TypeOf((func() <-chan struct{})(nil)),
-	} {
-		got, ok := typ.MethodByName(name)
-		if !ok || got.Type != want {
-			t.Errorf("%s = %v", name, got.Type)
-		}
+	if want := []string{"raw", "restore", "size", "keys", "resized"}; strings.Join(console.calls, ",") != strings.Join(want, ",") {
+		t.Fatalf("calls = %v", console.calls)
 	}
-	var c Console = &browserConsole{}
 	var term browse.Terminal = c
 	if term != c {
 		t.Fatal("terminal identity lost")
@@ -261,7 +263,7 @@ func TestBrowseWriterLatchesFirstError(t *testing.T) {
 	}
 }
 
-// R-5B2B-Y848 R-AH14-TZZ7
+// R-Z3TP-UHRR R-AH14-TZZ7
 func TestBrowseContextAndColor(t *testing.T) {
 	sys, c := browseFixture()
 	sys.Root = &dispatchRoot{root: fstest.MapFS{}}
