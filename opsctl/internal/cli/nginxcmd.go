@@ -36,7 +36,8 @@ access-log line. The app
 host.apex names also answers at the parent of host.name; until that app is
 routed, the parent answers 404. A routed app named auth is the authenticator:
 every other app's block then requires a valid session, checked against auth's
-/check, while auth's own name is not gated.
+/check, while auth's own name is not gated. Under /mcp, a request without a
+valid credential is answered 401 instead of being sent to sign in.
 `
 
 func runNginx(args []string, stdout, stderr io.Writer, deps Deps) exitCode {

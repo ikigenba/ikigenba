@@ -108,9 +108,9 @@ func TestRenderAppendsUnroutedApexTo404WithRoutedDefault(t *testing.T) {
 	}
 }
 
-// R-WHDL-WBO0
+// R-78QR-PFQ3
 // R-WILI-A3EP
-// R-UZTC-F1T1
+// R-79YO-37GS
 // R-WOP0-6Y46
 func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 	t.Parallel()
@@ -151,7 +151,7 @@ func TestRenderRoutesServicesInDiscoveryOrderWithoutSideEffects(t *testing.T) {
 	}
 }
 
-// R-UZTC-F1T1
+// R-79YO-37GS
 // R-WOP0-6Y46
 func TestRenderKeepsPlainBlocksWhenAuthIsNotRouted(t *testing.T) {
 	t.Parallel()
@@ -224,9 +224,9 @@ func TestRenderKeepsPlainBlocksWhenAuthIsNotRouted(t *testing.T) {
 	}
 }
 
-// R-UZTC-F1T1
-// R-WPWW-KPUV
-// R-WR4S-YHLK
+// R-79YO-37GS
+// R-7CEG-UQY6
+// R-7DMD-8IOV
 func TestRenderUsesUnwiredAuthenticatorAndWiredServices(t *testing.T) {
 	t.Parallel()
 	hostName := "space.example.test"
@@ -333,72 +333,56 @@ func TestRenderNamesAuthenticatorHostAndCheckEndpoint(t *testing.T) {
 	}
 }
 
-// R-WYG7-941Q
+// R-7G26-0269
 func TestRenderWiredBlockSubrequestsAndBlanksClientIdentity(t *testing.T) {
-	t.Parallel()
-	hostName := "space.example.test"
-	got := renderAuthenticatedServices(t, hostName, "web", false)
-	for _, port := range []int{5200, 8100, 9100} {
-		proxy := "        proxy_pass       http://unix:/run/ikigenba/" + map[int]string{5200: "beta", 8100: "notes", 9100: "web"}[port] + ".sock:;\n"
-		proxyAt := strings.Index(got, proxy)
-		if proxyAt < 0 {
-			t.Fatalf("missing upstream proxy for port %d\n%s", port, got)
-		}
-		locationAt := strings.LastIndex(got[:proxyAt], "    location / {\n")
-		closeRel := strings.Index(got[proxyAt:], "\n    }\n")
-		if locationAt < 0 || closeRel < 0 {
-			t.Fatalf("port %d proxy is not inside location /", port)
-		}
-		location := got[locationAt : proxyAt+closeRel+1]
-		if !strings.Contains(location, "        auth_request     /_ikigenba/check;\n") {
-			t.Fatalf("location / for port %d does not subrequest /_ikigenba/check before proxying:\n%s", port, location)
-		}
-		if strings.Count(location, "error_page") != 1 || !strings.Contains(location, "        error_page       401 = @auth_redirect;\n") {
-			t.Fatalf("location / for port %d does not map only 401 to @auth_redirect:\n%s", port, location)
-		}
-		if strings.Contains(location, "403") || strings.Contains(location, "error_page 401") {
-			t.Fatalf("location / for port %d intercepts a status other than the 401 redirect:\n%s", port, location)
-		}
-		for _, want := range []string{
-			"        auth_request_set $auth_user_id    $upstream_http_x_user_id;\n",
-			"        auth_request_set $auth_user_email $upstream_http_x_user_email;\n",
-			"        proxy_set_header X-User-Id         $auth_user_id;\n",
-			"        proxy_set_header X-User-Email      $auth_user_email;\n",
-		} {
-			if !strings.Contains(location, want) {
-				t.Fatalf("location / for port %d missing %q:\n%s", port, want, location)
+	got := renderAuthenticatedServices(t, "space.example.test", "web", false)
+	for _, name := range []string{"beta", "notes", "web"} {
+		block := serverBlockFor(t, got, name+".space.example.test")
+		for _, location := range []string{"= /mcp", "^~ /mcp/", "/"} {
+			section := locationFor(t, block, location)
+			for _, directive := range []string{
+				"auth_request     /_ikigenba/check;",
+				"auth_request_set $auth_user_id    $upstream_http_x_user_id;",
+				"auth_request_set $auth_user_email $upstream_http_x_user_email;",
+				"proxy_set_header X-User-Id         $auth_user_id;",
+				"proxy_set_header X-User-Email      $auth_user_email;",
+			} {
+				if strings.Count(section, directive) != 1 {
+					t.Fatalf("%s %s missing unique %q: %s", name, location, directive, section)
+				}
+			}
+			if strings.Contains(section, "$http_x_user_") {
+				t.Fatal("client identity forwarded")
+			}
+			if strings.Index(section, "auth_request ") > strings.Index(section, "proxy_pass ") {
+				t.Fatal("proxy before auth")
 			}
 		}
-		if strings.Contains(location, "$http_x_user_id") || strings.Contains(location, "$http_x_user_email") {
-			t.Fatalf("location / for port %d relays a client identity header:\n%s", port, location)
+		browser := locationFor(t, block, "/")
+		if strings.Count(browser, "error_page") != 1 || !strings.Contains(browser, "error_page       401 = @auth_redirect;") {
+			t.Fatalf("browser status mapping: %s", browser)
 		}
-		if strings.Count(location, "proxy_set_header X-User-Id") != 1 || strings.Count(location, "proxy_set_header X-User-Email") != 1 {
-			t.Fatalf("location / for port %d does not set identity solely from the subrequest:\n%s", port, location)
-		}
-
-		checkAt := strings.LastIndex(got[:locationAt], "    location = /_ikigenba/check {\n")
-		redirectAt := strings.LastIndex(got[:locationAt], "    location @auth_redirect {\n")
-		if checkAt < 0 || redirectAt < checkAt {
-			t.Fatalf("port %d is missing the internal check or redirect", port)
-		}
-		check := got[checkAt:redirectAt]
-		endpoint := "http://unix:/run/ikigenba/auth.sock:/check"
-		for _, want := range []string{
-			"        internal;\n",
-			"        proxy_pass              " + endpoint + ";\n",
-			"        proxy_pass_request_body off;\n",
-			"        proxy_set_header        Content-Length \"\";\n",
-			"        proxy_set_header        X-User-Id    \"\";\n",
-			"        proxy_set_header        X-User-Email \"\";\n",
-		} {
-			if !strings.Contains(check, want) {
-				t.Fatalf("check subrequest for port %d missing %q:\n%s", port, want, check)
+		check := locationFor(t, block, "= /_ikigenba/check")
+		for _, directive := range []string{"proxy_pass_request_body off;", "proxy_set_header        X-User-Id    \"\";", "proxy_set_header        X-User-Email \"\";"} {
+			if !strings.Contains(check, directive) {
+				t.Fatalf("missing %q: %s", directive, check)
 			}
-		}
-		if strings.Contains(check, "$auth_user_id") || strings.Contains(check, "$http_x_user_id") || strings.Contains(check, "$auth_user_email") || strings.Contains(check, "$http_x_user_email") {
-			t.Fatalf("check subrequest for port %d forwards client identity:\n%s", port, check)
 		}
 	}
+}
+
+func locationFor(t *testing.T, block, location string) string {
+	t.Helper()
+	needle := "    location " + location + " {\n"
+	start := strings.Index(block, needle)
+	if start < 0 {
+		t.Fatalf("missing location %s: %s", location, block)
+	}
+	end := strings.Index(block[start:], "    }\n")
+	if end < 0 {
+		t.Fatalf("unclosed location %s", location)
+	}
+	return block[start : start+end+6]
 }
 
 func renderAuthenticatedServices(t *testing.T, hostName, apexApp string, authDefault bool) string {
@@ -1180,11 +1164,22 @@ func wiredServiceBlock(name string, _ int, defaultService bool, hostName, apexNa
 		"    location @auth_redirect {\n" +
 		"        return 302 https://auth." + hostName + "/?return=$scheme://$host$request_uri;\n" +
 		"    }\n\n" +
-		"    location / {\n" +
+		"    location @mcp_unauthorized {\n" +
+		"        default_type text/plain;\n" +
+		"        add_header   WWW-Authenticate 'Bearer realm=\"ikigenba\"' always;\n" +
+		"        return       401 \"authentication required: send Authorization: Bearer <token>\\n\";\n" +
+		"    }\n\n" +
+		wiredProxyLocation(name, "= /mcp", "@mcp_unauthorized") + "\n" +
+		wiredProxyLocation(name, "^~ /mcp/", "@mcp_unauthorized") + "\n" +
+		wiredProxyLocation(name, "/", "@auth_redirect") + "}\n"
+}
+
+func wiredProxyLocation(name, location, unauthorized string) string {
+	return "    location " + location + " {\n" +
 		"        auth_request     /_ikigenba/check;\n" +
 		"        auth_request_set $auth_user_id    $upstream_http_x_user_id;\n" +
 		"        auth_request_set $auth_user_email $upstream_http_x_user_email;\n" +
-		"        error_page       401 = @auth_redirect;\n\n" +
+		"        error_page       401 = " + unauthorized + ";\n\n" +
 		"        proxy_pass       http://unix:/run/ikigenba/" + name + ".sock:;\n" +
 		"        proxy_set_header Host              $host;\n" +
 		"        proxy_set_header X-Real-IP         $remote_addr;\n" +
@@ -1193,7 +1188,7 @@ func wiredServiceBlock(name string, _ int, defaultService bool, hostName, apexNa
 		"        proxy_set_header X-Request-Id      $request_id;\n" +
 		"        proxy_set_header X-User-Id         $auth_user_id;\n" +
 		"        proxy_set_header X-User-Email      $auth_user_email;\n" +
-		"    }\n}\n"
+		"    }\n"
 }
 
 func disabledServiceBlock(name string, defaultService bool, hostName, apexName string) string {
@@ -1377,7 +1372,7 @@ func snapshotTree(t *testing.T, root string) map[string]treeEntry {
 	return snapshot
 }
 
-// R-WNH3-T6DH R-UZTC-F1T1 R-WHDL-WBO0
+// R-7B6K-GZ7H R-79YO-37GS R-78QR-PFQ3
 func TestRenderDisabledBlocksKeepNamesAndAuthWiring(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, "auth", "app = \"auth\"\n")
@@ -1410,7 +1405,7 @@ func TestRenderDisabledBlocksKeepNamesAndAuthWiring(t *testing.T) {
 	}
 }
 
-// R-WHDL-WBO0 R-WUSI-3STN
+// R-78QR-PFQ3 R-WUSI-3STN
 func TestRenderAndUpdatePropagateDisabledQueryFailure(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, "notes", "app = \"notes\"\n")
@@ -1439,20 +1434,60 @@ func TestRenderAndUpdatePropagateDisabledQueryFailure(t *testing.T) {
 	assertPublishedConfiguration(t, filepath.Dir(destination), []byte("previous"), 0o600)
 }
 
-// R-WSCP-C9C9 R-WYG7-941Q
-func TestRenderSetsRequestIDAndOnlyAuthenticatorIdentity(t *testing.T) {
-	got := renderAuthenticatedServices(t, "space.example.test", "web", false)
-	if !strings.Contains(got, "\"$http_user_agent\" $request_id';") {
-		t.Fatalf("access log omits request ID: %s", got)
-	}
-	if strings.Count(got, "access_log          /var/log/nginx/access.log ikigenba;") != 5 || strings.Count(got, "access_log  /var/log/nginx/access.log ikigenba;") != 1 {
-		t.Fatalf("answering server access logs are incomplete: %s", got)
-	}
-	if strings.Count(got, "proxy_set_header X-Request-Id      $request_id;") != 4 || strings.Count(got, "proxy_set_header        X-Request-Id $request_id;") != 3 {
-		t.Fatalf("proxy request ID propagation is incomplete: %s", got)
-	}
-	if strings.Contains(got, "$http_x_request_id") || strings.Contains(got, "error_page       403") || strings.Contains(got, "$http_x_user_id") {
-		t.Fatalf("client identity or request ID leaked: %s", got)
+// R-7HA2-DTWY
+func TestRenderSetsRequestIDAndLogsEveryAnsweringServer(t *testing.T) {
+	for _, authenticated := range []bool{false, true} {
+		root := t.TempDir()
+		writeManifest(t, root, "notes", "app = \"notes\"\n")
+		writeManifest(t, root, "disabled", "app = \"disabled\"\n")
+		if authenticated {
+			writeManifest(t, root, "auth", "app = \"auth\"\n")
+		}
+		env := host.Env{Root: root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+			if command.Args[3] == "ikigenba-disabled.socket" {
+				return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=disabled\n")}, nil
+			}
+			return host.Result{}, nil
+		}}
+		bytes, err := nginx.Render(context.Background(), env, "space.example.test", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := string(bytes)
+		if !strings.Contains(got, "\"$http_user_agent\" $request_id';") || strings.Contains(got, "$http_x_request_id") {
+			t.Fatalf("request ID log format: %s", got)
+		}
+		blocks := strings.Split(got, "server {\n")[1:]
+		for _, block := range blocks {
+			if strings.Contains(block, "ssl_reject_handshake on;") {
+				if strings.Contains(block, "access_log") {
+					t.Fatalf("handshake block logged: %s", block)
+				}
+			} else if strings.Count(block, "/var/log/nginx/access.log ikigenba;") != 1 {
+				t.Fatalf("answering block missing unique access log: %s", block)
+			}
+		}
+		notes := serverBlockFor(t, got, "notes.space.example.test")
+		locations := []string{"/"}
+		if authenticated {
+			locations = append(locations, "= /mcp", "^~ /mcp/", "= /_ikigenba/check")
+		}
+		for _, location := range locations {
+			section := locationFor(t, notes, location)
+			want := "proxy_set_header X-Request-Id      $request_id;"
+			if location == "= /_ikigenba/check" {
+				want = "proxy_set_header        X-Request-Id $request_id;"
+			}
+			if strings.Count(section, "X-Request-Id") != 1 || !strings.Contains(section, want) {
+				t.Fatalf("request ID relay: %s", section)
+			}
+		}
+		if authenticated {
+			auth := locationFor(t, serverBlockFor(t, got, "auth.space.example.test"), "/")
+			if strings.Count(auth, "proxy_set_header X-Request-Id      $request_id;") != 1 {
+				t.Fatalf("auth request ID relay: %s", auth)
+			}
+		}
 	}
 }
 
@@ -1523,5 +1558,115 @@ func TestUpdateRejectsInvalidApexBeforeHostWork(t *testing.T) {
 	changed, err := nginx.Update(context.Background(), env, "localhost", "notes")
 	if changed || err == nil || err.Error() != "host.apex is set but host.name 'localhost' has no parent domain" || len(commands) != 0 {
 		t.Fatalf("Update = (%v, %v), commands = %#v", changed, err, commands)
+	}
+}
+
+// R-7IHY-RLNN
+func TestRenderMCPReservationsIgnoreManifestMCP(t *testing.T) {
+	for _, manifestMCP := range []string{"", "mcp = false\n", "mcp = true\ndescription = \"Offers app tools\"\n"} {
+		t.Run(strings.TrimSpace(manifestMCP), func(t *testing.T) {
+			root := t.TempDir()
+			writeManifest(t, root, "auth", "app = \"auth\"\n")
+			writeManifest(t, root, "notes", "app = \"notes\"\n"+manifestMCP)
+			writeManifest(t, root, "disabled", "app = \"disabled\"\n"+manifestMCP)
+			env := host.Env{Root: root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+				if command.Args[3] == "ikigenba-disabled.socket" {
+					return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=disabled\n")}, nil
+				}
+				return host.Result{}, nil
+			}}
+			got, err := nginx.Render(context.Background(), env, "space.example.test", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			wired := serverBlockFor(t, string(got), "notes.space.example.test")
+			for _, location := range []string{"@mcp_unauthorized", "= /mcp", "^~ /mcp/"} {
+				locationFor(t, wired, location)
+			}
+			for _, name := range []string{"auth", "disabled"} {
+				block := serverBlockFor(t, string(got), name+".space.example.test")
+				if strings.Contains(block, "/mcp") || strings.Contains(block, "@mcp_unauthorized") {
+					t.Fatalf("%s carries MCP locations: %s", name, block)
+				}
+			}
+			if err := os.RemoveAll(filepath.Join(root, "opt", "auth")); err != nil {
+				t.Fatal(err)
+			}
+			plain, err := nginx.Render(context.Background(), env, "space.example.test", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(plain), "/mcp") || strings.Contains(string(plain), "@mcp_unauthorized") {
+				t.Fatalf("plain config carries MCP: %s", plain)
+			}
+		})
+	}
+}
+
+// R-7KXR-J551
+func TestRenderMCP401MappingAndPathBoundaries(t *testing.T) {
+	got := renderAuthenticatedServices(t, "space.example.test", "web", false)
+	for _, name := range []string{"beta", "notes", "web"} {
+		block := serverBlockFor(t, got, name+".space.example.test")
+		for _, location := range []string{"= /mcp", "^~ /mcp/"} {
+			section := locationFor(t, block, location)
+			if strings.Count(section, "error_page") != 1 || !strings.Contains(section, "error_page       401 = @mcp_unauthorized;") || strings.Contains(section, "@auth_redirect") {
+				t.Fatalf("MCP status mapping: %s", section)
+			}
+		}
+		if strings.Count(block, "    location ") != 6 {
+			t.Fatalf("unexpected location overrides: %s", block)
+		}
+		browser := locationFor(t, block, "/")
+		if !strings.Contains(browser, "error_page       401 = @auth_redirect;") {
+			t.Fatalf("ordinary paths must redirect: %s", browser)
+		}
+	}
+}
+
+// R-7JPV-5DEC
+func TestRenderMCPUnauthorizedExactResponse(t *testing.T) {
+	got := renderAuthenticatedServices(t, "space.example.test", "web", false)
+	want := "    location @mcp_unauthorized {\n" +
+		"        default_type text/plain;\n" +
+		"        add_header   WWW-Authenticate 'Bearer realm=\"ikigenba\"' always;\n" +
+		"        return       401 \"authentication required: send Authorization: Bearer <token>\\n\";\n" +
+		"    }\n"
+	for _, name := range []string{"beta", "notes", "web"} {
+		block := serverBlockFor(t, got, name+".space.example.test")
+		if section := locationFor(t, block, "@mcp_unauthorized"); section != want {
+			t.Fatalf("unauthorized response = %q, want %q", section, want)
+		}
+	}
+}
+
+// R-78QR-PFQ3
+func TestRenderOnlyQueriesRoutedSocketsReadOnly(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, "zeta", "app = \"zeta\"\n")
+	writeManifest(t, root, "alpha", "app = \"alpha\"\n")
+	writeManifest(t, root, "unrouted", "default = false\n")
+	before := snapshotTree(t, root)
+	var commands []host.Command
+	env := host.Env{Root: root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+		commands = append(commands, command)
+		return host.Result{Stdout: []byte("LoadState=not-found\nUnitFileState=\n")}, nil
+	}}
+	got, err := nginx.Render(context.Background(), env, "space.example.test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantCommands := []host.Command{
+		{Name: "systemctl", Args: []string{"show", "--property=LoadState", "--property=UnitFileState", "ikigenba-alpha.socket"}},
+		{Name: "systemctl", Args: []string{"show", "--property=LoadState", "--property=UnitFileState", "ikigenba-zeta.socket"}},
+	}
+	if !reflect.DeepEqual(commands, wantCommands) {
+		t.Fatalf("commands = %#v", commands)
+	}
+	if string(got) != baseForHost("space.example.test", false)+serviceBlock("alpha", 0, false, "space.example.test", "")+serviceBlock("zeta", 0, false, "space.example.test", "") {
+		t.Fatalf("missing sockets should remain routed and enabled: %s", got)
+	}
+	if after := snapshotTree(t, root); !reflect.DeepEqual(before, after) {
+		t.Fatal("Render changed files")
 	}
 }

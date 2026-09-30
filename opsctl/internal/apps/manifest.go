@@ -160,6 +160,14 @@ func (decoder *manifestDecoder) manifest() (Manifest, error) {
 			return Manifest{}, fmt.Errorf("invalid manifest: %w", err)
 		}
 	}
+	for _, character := range decoder.result.Description {
+		if character <= '\u001f' || character == '\u007f' {
+			return Manifest{}, errors.New("'description' must be one line of text")
+		}
+	}
+	if decoder.result.MCP && strings.TrimSpace(decoder.result.Description) == "" {
+		return Manifest{}, errors.New("'mcp' is true but 'description' is empty; an MCP service must say what it offers")
+	}
 	return decoder.result, nil
 }
 
@@ -327,6 +335,16 @@ func (decoder *manifestDecoder) apply(path []string, value tomlValue) error {
 				return err
 			}
 			decoder.result.App = value.text
+		case "description":
+			if value.kind != tomlString {
+				return decoder.errorf("description must be a string")
+			}
+			decoder.result.Description = value.text
+		case "mcp":
+			if value.kind != tomlBoolean {
+				return decoder.errorf("mcp must be a Boolean")
+			}
+			decoder.result.MCP = value.boolean
 		case "default":
 			if value.kind != tomlBoolean {
 				return decoder.errorf("default must be a Boolean")
@@ -744,12 +762,12 @@ func (decoder *manifestDecoder) errorf(format string, arguments ...any) error {
 
 func (decoder *manifestDecoder) scalarRootTypeError(root string) error {
 	switch root {
-	case "app":
-		return decoder.errorf("app must be a string")
+	case "app", "description":
+		return decoder.errorf("%s must be a string", root)
 	case "port":
 		return decoder.errorf("port must be an integer from 1 through 65535")
-	case "default":
-		return decoder.errorf("default must be a Boolean")
+	case "default", "mcp":
+		return decoder.errorf("%s must be a Boolean", root)
 	case "secrets":
 		return decoder.errorf("secrets must be an array of strings")
 	default:
@@ -759,7 +777,7 @@ func (decoder *manifestDecoder) scalarRootTypeError(root string) error {
 
 func isRecognizedScalarRoot(root string) bool {
 	switch root {
-	case "app", "port", "default", "secrets":
+	case "app", "description", "port", "default", "mcp", "secrets":
 		return true
 	default:
 		return false

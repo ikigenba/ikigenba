@@ -18,11 +18,13 @@ type Database struct {
 
 // Manifest describes the capabilities declared by an installed app.
 type Manifest struct {
-	App      string
-	Default  bool
-	Secrets  []string
-	Env      map[string]string
-	Database *Database
+	App         string
+	Description string
+	Default     bool
+	MCP         bool
+	Secrets     []string
+	Env         map[string]string
+	Database    *Database
 }
 
 // Timeouts are the space-wide drain and systemd stop periods in seconds.

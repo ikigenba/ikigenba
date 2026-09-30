@@ -35,25 +35,29 @@ func TestDatabaseFields(t *testing.T) {
 	}
 }
 
-// R-YOWY-OC3O
+// R-Y6EK-LI1I
 func TestManifestFields(t *testing.T) {
 	database := &apps.Database{Engine: "sqlite", Path: "state/app.db"}
 	manifest := apps.Manifest{
-		App:      "notes",
-		Default:  true,
-		Secrets:  []string{"TOKEN"},
-		Env:      map[string]string{"MODE": "production"},
-		Database: database,
+		App:         "notes",
+		Description: "Offers notes tools",
+		MCP:         true,
+		Default:     true,
+		Secrets:     []string{"TOKEN"},
+		Env:         map[string]string{"MODE": "production"},
+		Database:    database,
 	}
 	var (
-		app       string
-		isDefault bool
-		secrets   []string
-		env       map[string]string
-		db        *apps.Database
+		app         string
+		description string
+		mcp         bool
+		isDefault   bool
+		secrets     []string
+		env         map[string]string
+		db          *apps.Database
 	)
-	app, isDefault, secrets, env, db = manifest.App, manifest.Default, manifest.Secrets, manifest.Env, manifest.Database
-	if app != "notes" || !isDefault || len(secrets) != 1 || secrets[0] != "TOKEN" || env["MODE"] != "production" || db != database {
+	app, description, mcp, isDefault, secrets, env, db = manifest.App, manifest.Description, manifest.MCP, manifest.Default, manifest.Secrets, manifest.Env, manifest.Database
+	if app != "notes" || description != "Offers notes tools" || !mcp || !isDefault || len(secrets) != 1 || secrets[0] != "TOKEN" || env["MODE"] != "production" || db != database {
 		t.Fatalf("Manifest = %#v", manifest)
 	}
 }
@@ -216,9 +220,11 @@ func TestParseManifestRejectsMalformedTOMLWithoutPartialResult(t *testing.T) {
 	}
 }
 
-// R-U58J-I5I3
+// R-Y7MG-Z9S7
 func TestParseManifestMapsFieldsAndSuppliesEmptyCollections(t *testing.T) {
 	data := []byte(`app = "crm"
+description = "  Offers CRM tools  "
+mcp = true
 default = true
 secrets = ["CRM_API_KEY", "CRM_API_SECRET"]
 
@@ -234,10 +240,12 @@ path = "state/crm.db"
 		t.Fatalf("ParseManifest returned error: %v", err)
 	}
 	want := apps.Manifest{
-		App:     "crm",
-		Default: true,
-		Secrets: []string{"CRM_API_KEY", "CRM_API_SECRET"},
-		Env:     map[string]string{"OUTBOX_RETENTION_DAYS": "7"},
+		App:         "crm",
+		Description: "  Offers CRM tools  ",
+		MCP:         true,
+		Default:     true,
+		Secrets:     []string{"CRM_API_KEY", "CRM_API_SECRET"},
+		Env:         map[string]string{"OUTBOX_RETENTION_DAYS": "7"},
 		Database: &apps.Database{
 			Engine: "sqlite",
 			Path:   "state/crm.db",
@@ -251,7 +259,7 @@ path = "state/crm.db"
 	if err != nil {
 		t.Fatalf("ParseManifest(empty) returned error: %v", err)
 	}
-	if minimal.App != "" || minimal.Default || minimal.Database != nil {
+	if minimal.App != "" || minimal.Description != "" || minimal.MCP || minimal.Default || minimal.Database != nil {
 		t.Fatalf("ParseManifest(empty) did not retain scalar zero values: %#v", minimal)
 	}
 	if minimal.Secrets == nil || len(minimal.Secrets) != 0 || minimal.Env == nil || len(minimal.Env) != 0 {
@@ -259,6 +267,8 @@ path = "state/crm.db"
 	}
 
 	equivalent := []byte(`"app" = '''crm'''
+description = '  Offers CRM tools  '
+mcp = true
 default = true
 secrets = ["""CRM_API_KEY""", '''CRM_API_SECRET''']
 env = { OUTBOX_RETENTION_DAYS = """7""" }
@@ -389,7 +399,7 @@ state/crm.db"""
 	}
 }
 
-// R-UDRU-6JOY
+// R-Y8UD-D1IW
 func TestParseManifestValidatesRecognizedFieldsAndIgnoresOthers(t *testing.T) {
 	valid := []byte(`title = """unrelated
 title"""
@@ -409,6 +419,8 @@ x = 2
 [metadata]
 enabled = true
 app = "host"
+description = 3
+mcp = "yes"
 port = 70000
 default = "yes"
 secrets = [1]
@@ -421,14 +433,14 @@ MODE = "production"
 	if err != nil {
 		t.Fatalf("ParseManifest rejected capability-only manifest: %v", err)
 	}
-	if manifest.App != "" || manifest.Default || len(manifest.Secrets) != 0 || manifest.Database != nil || !reflect.DeepEqual(manifest.Env, map[string]string{"MODE": "production"}) {
+	if manifest.App != "" || manifest.Description != "" || manifest.MCP || manifest.Default || len(manifest.Secrets) != 0 || manifest.Database != nil || !reflect.DeepEqual(manifest.Env, map[string]string{"MODE": "production"}) {
 		t.Fatalf("unexpected model from unrelated fields: %#v", manifest)
 	}
 	quotedDot, err := apps.ParseManifest([]byte("[env]\n\"foo.bar\" = \"x\""))
 	if err != nil || !reflect.DeepEqual(quotedDot.Env, map[string]string{"foo.bar": "x"}) {
 		t.Fatalf("ParseManifest(direct quoted env key) = %#v, %v", quotedDot, err)
 	}
-	for _, root := range []string{"app", "port", "default", "secrets"} {
+	for _, root := range []string{"app", "description", "port", "default", "mcp", "secrets"} {
 		for _, format := range []string{"[%s]", "[[%s]]", "%s.child = \"x\"", "%s.child.value = 1"} {
 			data := fmt.Sprintf(format, root)
 			manifest, err := apps.ParseManifest([]byte(data))
@@ -458,6 +470,8 @@ MODE = "production"
 		name string
 		data string
 	}{
+		{name: "description type", data: "description = 3"},
+		{name: "mcp type", data: "mcp = 3"},
 		{name: "app type", data: "app = 3"},
 		{name: "app value", data: "app = \"host\""},
 		{name: "port type", data: "port = \"3100\""},
@@ -485,7 +499,7 @@ MODE = "production"
 	}
 }
 
-// R-U7OC-9OZH
+// R-YBA6-4L0A
 func TestParseManifestRejectsTopLevelPortRegardlessOfType(t *testing.T) {
 	const want = "'port' is not allowed; the host gives the app its socket"
 	for _, data := range []string{
@@ -499,12 +513,81 @@ func TestParseManifestRejectsTopLevelPortRegardlessOfType(t *testing.T) {
 	}
 	for _, data := range []string{
 		"# port = 3000\napp = \"notes\"",
-		"description = '''\nport = 3000\n'''",
-		"description = \"\"\"\nport = 3000\n\"\"\"",
+		"other = '''\nport = 3000\n'''",
+		"other = \"\"\"\nport = 3000\n\"\"\"",
 		"[metadata]\nport = 3000",
 	} {
 		if _, err := apps.ParseManifest([]byte(data)); err != nil {
 			t.Errorf("ParseManifest(%q) falsely found top-level port: %v", data, err)
+		}
+	}
+}
+
+// R-YCI2-ICQZ
+func TestParseManifestDescriptionIsOneLine(t *testing.T) {
+	for character := rune(0); character <= 0x7f; character++ {
+		if character > 0x1f && character != 0x7f {
+			continue
+		}
+		data := fmt.Sprintf(`description = "before\u%04Xafter"`, character)
+		for _, mcp := range []string{"", "\nmcp = false", "\nmcp = true"} {
+			_, err := apps.ParseManifest([]byte(data + mcp))
+			if err == nil || err.Error() != "'description' must be one line of text" {
+				t.Errorf("ParseManifest(%q) = %v; want one-line error", data+mcp, err)
+			}
+		}
+	}
+	for _, description := range []string{"", "   ", "  Tools for café ☃  ", "\u0080\u0085\u00a0"} {
+		data := fmt.Sprintf("description = %q", description)
+		manifest, err := apps.ParseManifest([]byte(data))
+		if err != nil || manifest.Description != description {
+			t.Errorf("ParseManifest(%q) = %#v, %v; want verbatim allowed description", data, manifest, err)
+		}
+	}
+}
+
+// R-YDPY-W4HO
+func TestParseManifestMCPRequiresDescription(t *testing.T) {
+	for _, description := range []string{"", `description = ""`, `description = "   "`, `description = "\u00A0\u2003\u0085"`} {
+		for _, mcp := range []string{"", "mcp = false", "mcp = true"} {
+			data := description + "\n" + mcp
+			_, err := apps.ParseManifest([]byte(data))
+			if mcp == "mcp = true" {
+				if err == nil || err.Error() != "'mcp' is true but 'description' is empty; an MCP service must say what it offers" {
+					t.Errorf("ParseManifest(%q) = %v; want empty MCP description error", data, err)
+				}
+			} else if err != nil {
+				t.Errorf("ParseManifest(%q) rejected an optional description: %v", data, err)
+			}
+		}
+	}
+	if _, err := apps.ParseManifest([]byte("mcp = true\ndescription = '  Offers tools  '")); err != nil {
+		t.Fatalf("nonblank MCP description rejected: %v", err)
+	}
+}
+
+// R-YEXV-9W8D
+func TestParseManifestOtherRulesPrecedeEmptyMCPDescription(t *testing.T) {
+	for _, other := range []string{
+		`app = "host"`, `app = 3`, `default = "yes"`, `secrets = [3]`,
+		`port = true`, `description = "\n"`, `description = "\t"`, `description = 3`,
+		"[env]\nMODE = 3", "[database]\nengine = 'sqlite'\npath = '../bad.db'",
+		"[database]", `other = [`, "app = 'notes'\napp = 'again'",
+	} {
+		_, baseline := apps.ParseManifest([]byte(other))
+		_, combined := apps.ParseManifest([]byte("mcp = true\n" + other))
+		if baseline == nil || combined == nil {
+			t.Errorf("ParseManifest(%q) errors = %v, %v; want the other rule's error", other, baseline, combined)
+			continue
+		}
+		baselineText, combinedText := baseline.Error(), combined.Error()
+		// The extra root assignment shifts locations, but not the failure.
+		if strings.HasPrefix(baselineText, "invalid manifest: line ") && strings.HasPrefix(combinedText, "invalid manifest: line ") {
+			baselineText = strings.SplitN(baselineText, ": ", 3)[2]
+			combinedText = strings.SplitN(combinedText, ": ", 3)[2]
+		}
+		if baselineText != combinedText {
+			t.Errorf("ParseManifest(%q) error = %v; want other error %v", "mcp = true\n"+other, combined, baseline)
 		}
 	}
 }
