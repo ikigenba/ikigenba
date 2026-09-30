@@ -9,7 +9,7 @@ app is `<app>.<space>`, so dummy on the space `sbx.ikigenba.dev` answers at
 before it reaches dummy and passes the caller on in `X-User-Id` and
 `X-User-Email`, with the request's id in `X-Request-Id`;
 dummy itself has no unauthenticated case, so a request that arrives at all is
-one of a known caller. The story proves the whole path from checkout to
+one of a known caller. The stories prove the whole path from checkout to
 browser and nothing about dummy that the earlier groups do not already say.
 devctl and opsctl are named only by their published commands.
 
@@ -34,9 +34,9 @@ content-type: text/html; charset=utf-8
 
 Status 200. The body is an HTML page whose visible text carries the email
 address of the caller the gate authenticated and a table of the widgets that
-exist. Its stylesheet is `https://dummy.sbx.ikigenba.dev/assets/theme.css`,
+exist. Its stylesheet is `https://dummy.sbx.ikigenba.dev/_appkit/theme.css`,
 and the fonts that stylesheet loads are under the same
-`https://dummy.sbx.ikigenba.dev/assets/` (`S8-assets.md`): a browser showing
+`https://dummy.sbx.ikigenba.dev/_appkit/` (`S8-assets.md`): a browser showing
 the panel requests its style from dummy's own host and from no other origin,
 Google Fonts included. In the banner, the caller's email address links to
 `https://auth.sbx.ikigenba.dev/`, their profile in auth on the same space, and
@@ -60,6 +60,49 @@ Preconditions:
   dummy sees it.
 - The caller holds a credential the gate accepts, and the email that
   credential names is the one the panel shows.
+
+Postconditions:
+
+- Nothing has changed.
+
+## A visitor on a space opens the service launcher
+
+On a space the host sets `IKIGENBA_SERVICES` in dummy's environment to the
+path of its services file (`S2`), and that file lists dummy because dummy's
+package ships `share/icon.svg` (`S6-package.md`).
+So the panel a visitor reaches on a space carries the launcher in its banner,
+and dummy is one of the services it offers. The launcher's text and behavior
+are `S3`'s; this story fixes only what the visitor sees on a space.
+
+Request:
+
+```
+$ curl -si https://dummy.sbx.ikigenba.dev/widgets
+```
+
+Response:
+
+```
+HTTP/2 200
+content-type: text/html; charset=utf-8
+```
+
+Status 200. The body is the panel page of the story above, and its banner
+carries the launcher button (`S3`). In a browser, pressing the button opens a
+list of the space's services with a search box labelled `Find a service`;
+each entry shows a service's icon and name, as `S3` tells. dummy's own entry
+is in the list and is marked as the current page. The launcher's script is
+`https://dummy.sbx.ikigenba.dev/_appkit/launcher.js` (`S8-assets.md`), so the
+launcher, like the style, needs nothing from any other origin.
+
+Preconditions:
+
+- Everything the story above requires holds: dummy `v<semver>` is deployed
+  and active on `sbx.ikigenba.dev`, and the caller holds a credential the gate
+  accepts.
+- `dummy/dist/dummy-v<semver>.tar.xz` holds `share/icon.svg` (`S6-package.md`).
+- The host sets `IKIGENBA_SERVICES` in dummy's environment to the path of
+  its services file, and that file lists dummy.
 
 Postconditions:
 

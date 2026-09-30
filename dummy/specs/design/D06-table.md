@@ -73,8 +73,8 @@ create and `D07-form` requires that creation to succeed. Comparing a collapsed
 cell text against that raw name would be unsatisfiable the moment such a widget
 existed, and three bodies would become unproducible at once: this route's 200,
 the panel page's 200, and the 422. So both sides are collapsed, exactly as
-`D04-panel` already does for the email it draws into the banner, in its
-definition of being drawn with the banner. Nothing is lost that was ever
+`D04-panel` already does for the email appkit draws into the banner, in its
+observation of the banner's email link. Nothing is lost that was ever
 decidable here, and the submitted bytes still have a home: `D07-form` reads the
 422's echo out of an attribute, and an attribute's read value, as `D04-panel`
 defines it, is unescaped but never collapsed. The count and the status are
@@ -141,10 +141,11 @@ and this document only names. The 405 names `Allow: GET, HEAD` and refuses a
 route with its own story.
 
 This route's `ETag` is stated here, whole: every rule about the table's
-validator is in this document. It is not the only `ETag` dummy sends —
-`D08-assets` gives every asset its own, on its own terms — and nothing here
-reaches beyond `/widgets/table`. It is a strong validator, an opaque quoted
-string determined by the rendered fragment's bytes. The quoted characters
+validator is in this document. It is not the only `ETag` dummy sends — every
+shared file under `/_appkit/` carries appkit's own, on appkit's terms
+(`D08-assets`) — and nothing here reaches beyond `/widgets/table`. It is a
+strong validator, an opaque quoted string determined by the rendered
+fragment's bytes. The quoted characters
 exclude the comma and whitespace: `If-None-Match` carries a comma-separated
 list, so a tag containing a comma would be split into pieces that match
 nothing, and the 304 would be unreachable while every requirement here stayed
@@ -168,8 +169,11 @@ comparison is the weak one that section requires ("A recipient MUST use the
 weak comparison function when comparing entity tags for If-None-Match"), so an
 entry of `W/` followed by the current tag matches too. A request may carry the
 field on several header lines; RFC 9110 §5.3 reads them as one list joined with
-commas, and so does this route. `D08-assets` reads the field the same way, word
-for word, so `/widgets/table` and `/assets/*` answer the same field alike. RFC
+commas, and so does this route: every entry of every line counts, and the
+field is never refused as malformed — an entry that is not `*`, the current
+tag, or `W/` followed by it simply matches nothing. That is this route's own
+rule, stated whole below; the shared files follow appkit's, which
+`D08-assets` states for them, and neither document leans on the other. RFC
 9110 is published documentation of a well-known protocol, so it is the proof
 for this behavior and no live observation is needed.
 
@@ -200,11 +204,13 @@ heading block draws them in — rather than over the subtitle's text, because a
 widget's name is free text and a caller may name a widget with words that read
 like a subtitle; its escaped name can add text to a cell but never a tag.
 
-One thing deliberately gets no requirement. The claim that "nothing is
-assembled afterwards by JavaScript" is owned here only in its decidable half — that the panel page contains the table
-in the body it sends — because the other half is not decidable by any procedure
-the standard library can run and is in plain tension with the poller the design
-puts in the page. It is recorded here rather than silently dropped.
+One thing deliberately gets no requirement. The claim that "the whole of a
+page's content arrives in the response body" and that "script never adds
+content of its own" is owned here only in its decidable half — that the panel
+page contains the table in the body it sends, and that the fragment the poller
+fetches is that same table — because the other half, what a script does once
+it runs, is not decidable by any procedure the standard library can run. It is
+recorded here rather than silently dropped.
 
 This document declares no exported name. `internal/panel` owns them and
 `D04-panel` declares them; nothing that computes the `ETag` is exported.
@@ -212,7 +218,7 @@ This document declares no exported name. `internal/panel` owns them and
 ## REQUIREMENTS
 
 - R-KVPQ-RDIA: The body of a 200 response to a `GET` request whose path is `/widgets/table` MUST be a **table fragment** for the widget set current when the response was rendered, where a table fragment for a widget set is a string that, after optional leading whitespace, begins with a `<table` start tag as `D04-panel` defines start tags and end tags (R-KDGH-2SDG), ends with a `</table>` end tag followed by optional trailing whitespace, and contains no `<html` start tag, no `<body` start tag, no `<script` start tag, and no occurrence of `<!doctype` compared case-insensitively.
-- R-KWXN-558Z: The `<table` start tag of a table fragment MUST carry an occurrence of the attribute `id`, as `D04-panel` defines an attribute occurrence and its read value (R-KEOD-GK45), whose read value is exactly `widgets-table`.
+- R-MNY9-498Y: The `<table` start tag of a table fragment MUST carry an occurrence of the attribute `id`, as `D04-panel` defines an attribute occurrence and its read value (R-LX4G-PAXO), whose read value is exactly `widgets-table`.
 - R-9PSS-27JH: A table fragment MUST contain no `<h1` start tag and no `<p` start tag, so that neither the page's heading nor its panel subtitle (`D04-panel` R-VLYN-3LNY), which the heading block draws in an `h1` and a `p` element, is ever part of what a poll replaces.
 - R-M3J7-QWZS: A table fragment MUST contain exactly one **header row** — a span from a `<tr` start tag through the next following `</tr>` end tag that contains at least one `<th` start tag and no `<td` start tag — and that header row MUST precede every **data row**, a span from a `<tr` start tag through the next following `</tr>` end tag that contains at least one `<td` start tag.
 - R-M4R4-4OQH: A table fragment for a widget set MUST contain exactly one data row for each widget in that set and no other data row, the data rows appearing in the order `D05-widgets`'s `Store.All` returns those widgets.
@@ -221,8 +227,8 @@ This document declares no exported name. `internal/panel` owns them and
 - R-AV8T-2F6C: In every data row of a table fragment, the second `<td` start tag MUST carry an occurrence of the attribute `class` whose read value is exactly `num`.
 - R-AWGP-G6X1: In the data row for a widget, the text from the closing `>` of the third `<td` start tag up to the `<` of the next following `</td>` end tag, once its leading and trailing ASCII whitespace is removed, MUST consist of exactly a `<span` start tag carrying an occurrence of the attribute `class` whose read value is exactly `status` and an occurrence of the attribute `data-status` whose read value is exactly the string value of that widget's `Status` (`D05-widgets`), then that same string value, then a `</span>` end tag, and nothing else.
 - R-QR6J-7N0Z: Every `<th` or `<td` start tag in a table fragment, other than the second `<th` start tag of its header row and the second `<td` start tag of each of its data rows, MUST NOT carry an occurrence of the attribute `class` whose read value, split on ASCII whitespace, has `num` as a member.
-- R-3ABH-NPH7: Every panel page (`D04-panel`) MUST contain, counted over that page's script-stripped form as the text procedures (`D04-panel`) define it, exactly one `<table` start tag and exactly one `</table>` end tag, and the text of that script-stripped form from that start tag through that end tag inclusive — the page's **table span** — MUST be a table fragment for the widget set current when the page was rendered.
-- R-AST0-AVOY: For one and the same widget set, the table span of every panel page (`D04-panel`) and the body of a 200 response to a `GET` request whose path is `/widgets/table` MUST be byte-identical, with no leading or trailing whitespace excepted.
+- R-MLIG-CPRK: Every panel page (`D04-panel`) MUST contain, counted over that page's script-stripped form as the text procedures (`D04-panel`) define it, exactly one `<table` start tag and exactly one `</table>` end tag, and the text of that script-stripped form from that start tag through that end tag inclusive — the page's **table span** — MUST be a table fragment for the widget set current when the page was rendered.
+- R-MMQC-QHI9: For one and the same widget set, the table span of every panel page (`D04-panel`) and the body of a 200 response to a `GET` request whose path is `/widgets/table` MUST be byte-identical, with no leading or trailing whitespace excepted.
 - R-62UX-379I: A `GET` request carrying a non-empty `X-User-Id` header, whose path is `/widgets/table`, and which carries no `If-None-Match` field whose condition succeeds, MUST be answered with status 200 and the header `Content-Type: text/html; charset=utf-8`.
 - R-KY5J-IWZO: A 200 response to a request whose path is `/widgets/table` MUST carry an `ETag` header whose value is a strong validator: a `"`, then at least one character, none of which is a `"`, a comma or an ASCII whitespace character, then a `"`, with no `W/` prefix and nothing before or after the quoted string.
 - R-0NC2-JFTW: Two 200 responses to `GET` requests whose path is `/widgets/table` whose bodies are byte-identical MUST carry `ETag` values that are byte-identical.

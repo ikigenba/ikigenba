@@ -19,8 +19,8 @@ A submission dummy accepts is answered `303 See Other` with `Location:
 /widgets` and an empty body: the browser then re-fetches the panel, where the
 new row is visible. A submission dummy reads and rejects is answered `422`
 whose body is the panel page re-rendered with the same banner as a `GET
-/widgets` — the same title, stylesheet link, and viewport, and inside the
-page's one `<main>` element the page's `Widgets` heading with its subtitle
+/widgets` — the same title, stylesheet link, and viewport, and after the
+banner the page's `Widgets` heading with its subtitle
 counting the widgets as they are (`3 widgets · refreshes every 5 seconds`
 for the fixture set, `S3`), and beneath it the table exactly as it was and
 the form in its card headed `Add widget`, still carrying the
@@ -270,8 +270,8 @@ Postconditions:
 ## A caller submits a status that is not one of the three
 
 A person using the browser cannot reach this rejection: the status field is a
-`<select>` offering `active`, `paused`, and `retired`, and a browser submits
-one of them or nothing. A caller with `curl` sends whatever they like, which
+choice among `active`, `paused`, and `retired`, and a browser submits one of
+them or nothing. A caller with `curl` sends whatever they like, which
 is why dummy checks the value against the three words rather than trusting
 that the form was the thing that produced it. Every field is validated on the
 same terms, for the same reason.
@@ -377,7 +377,7 @@ Status 415. The body is an HTML document with the same banner as the panel —
 the mark, `mg@example.com` linking to `http://localhost:3001/`, and the
 sign-out button POSTing to `http://localhost:3001/logout`, with the title,
 stylesheet link, and viewport every page carries (`S3`) — whose visible text,
-inside the page's one `<main>` element after the banner, says the media type is
+after the banner, says the media type is
 not supported and carries a link to `/widgets`. The
 caller is identified, so this failure is a page with that banner, as the 404 and
 the 405 are (`S3`); only the missing-header 500 is bare text. The request body

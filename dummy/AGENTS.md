@@ -9,7 +9,10 @@ in-memory set built at process start and dying with the process: dummy's
 handler is built over that set and holds it, so requests share mutable state.
 On a host it runs as `/opt/dummy/bin/dummy` with `/opt/dummy` as its working
 directory; a developer runs the same binary from the checkout. The module path
-is `github.com/ikigenba/ikigenba/dummy`. Its package layout, import direction,
+is `github.com/ikigenba/ikigenba/dummy`. It requires one other module, appkit
+(`github.com/ikigenba/ikigenba/appkit`), which supplies the banner, the
+service launcher, and the shared stylesheet, fonts, licences and launcher
+script under `/_appkit/`. Its package layout, import direction,
 version and manifest declarations, and run seam are design D01
 (`specs/design/D01-layout-and-run-seam.md`); the rest of the contract — the
 panel, the widgets, the table and the form — is the other documents in
@@ -23,11 +26,12 @@ human-authored and read-only to the run.
 
 ## Assets
 
-`assets/` holds copies of the repository's `design/` files: the stylesheet,
-fonts, and their licences. The interactive agent that changes `design/`
-refreshes them in the same session. The copied stylesheet replaces the
-Google Fonts import with `@font-face` rules for the files beside it, and its
-header names the `design/` commit it came from, so that commit lands first.
+dummy holds no copy of the stylesheet, fonts, or licences; appkit embeds and
+serves them. `share/icon.svg` is dummy's icon in the service launcher: the
+Tabler outline `cube` from `design/ikigenba/icons/tabler/`, without its class,
+width, height, or invisible bounding path, as `design/README.md` asks of a
+launcher icon. It is human-authored; the build run never writes it.
+`devctl build` packs it beside `bin/` and `etc/`.
 
 ## Toolchain
 
@@ -35,21 +39,24 @@ header names the `design/` commit it came from, so that commit lands first.
 - a C compiler `cgo` can use (`gcc`, say): `go test -race` needs it, and
   without one gate 4 fails with `go: -race requires cgo`. The release build
   itself is cgo-free, which gate 3 proves.
+- the appkit module at the version `go.mod` requires, in the Go module cache
+  (`go mod download` fetches it once, online); `go.sum` is committed, and the
+  gates themselves run offline
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - a POSIX shell at `/bin/sh`: the one exec'ing test starts the binary through
   it (see Test files)
 
 ## Test files
 
-The sub-project's tests are all `*_test.go` files in the module: the root package,
-`cmd/dummy`, and everything under `internal/`. This is the file set the canonical gap greps
+The sub-project's tests are all `*_test.go` files in the module: `cmd/dummy`
+and everything under `internal/`. This is the file set the canonical gap greps
 for requirement ids:
 
 ```
 grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' . | sort -u
 ```
 
-`.` covers the root package, `cmd/`, and `internal/`;
+`.` covers `cmd/` and `internal/`;
 `specs/` holds no `*_test.go`, so the
 design documents never enter the test side of the grep.
 
@@ -113,23 +120,28 @@ use is a bug. The gates run offline as an ordinary user, with no systemd.
 **The handler is built over a store the test owns.** `internal/cli` creates
 the widget set once it has taken the socket and hands it to the panel's
 handler (D01, D03). A handler-level test therefore creates its own store,
-seeds it with whatever widgets the case needs, hands the handler a buffer for
-its diagnostics, and drives it in process; it needs no listener and no port at
-all. Every such test builds a fresh store. No test
+seeds it with whatever widgets the case needs, hands the handler a banner
+source of its own and a buffer for its diagnostics, and drives it in process;
+it needs no listener and no port at all. Every such test builds a fresh store.
+The banner source is a function the test writes, returning whatever services
+the case needs (D04); no test calls `appkit.New`, which reads
+`IKIGENBA_SERVICES` from the real environment. A test may call appkit's other
+exported functions, to render the banner it expects, for instance. No test
 depends on a widget another test created, on the order the tests run in, or on
 a package-level set — there is none. The set is shared mutable state that
 concurrent requests touch, which is what gate 4's race detector is there to
 catch: a test may exercise it concurrently, and gate 4 is never reduced to a
 plain `go test`.
 
-**No test runs the page's script.** The panel page carries an inline script
-that re-fetches the table fragment. The gates have no browser and no
-JavaScript engine, and the stdlib-only rule above forbids adding one, so a
-test asserts what a response body carries and never what a script would do
-with it. Nothing in the gates waits on a timer for a poll to come round.
+**No test runs the page's scripts.** The panel page carries an inline script
+that re-fetches the table fragment, and, when there are services, appkit's
+launcher script. The gates have no browser and no JavaScript engine, and
+adding one is an external dependency no one has approved, so a test asserts
+what a response body carries and never what a script would do with it.
+Nothing in the gates waits on a timer for a poll to come round.
 
-**A test may read `assets/`.** A test may open the files in this directory's
-own `assets/`, read-only, to compare them with what dummy embeds. It never
+**A test may read `share/icon.svg`.** A test may open this directory's
+`share/icon.svg`, read-only, to check what D01 fixes about it. It never
 writes there, and this is the only checkout file a test reads.
 
 **One exec'ing test, and only one.** Tests under `internal/` never start a
@@ -150,9 +162,14 @@ connection into its queue after the child has exited. It runs the serve case a
 second time, with a fresh socket, and stops it with `SIGINT`, asserting the
 same, because `main` promises both signals. The child's environment is one the
 test composes, never the developer's, and it runs offline like everything
-else. It makes no HTTP request of the child: what dummy answers is decided in
-process against a handler the test built, and the exec'ing test exists only to
-prove the wiring. Any other test that builds, execs, waits on, or signals a
+else. In the first serve case that environment names, in `IKIGENBA_SERVICES`,
+a services file the test wrote in its temporary directory, and before
+signalling the test makes one request of the child: `GET /widgets` with the
+identity headers, over the socket. It asserts only that the page carries the
+launcher, which proves `main` handed appkit's kit to the handler. Everything
+else dummy answers is decided in process against a handler the test built,
+and the exec'ing test exists only to prove the wiring. Any other test that
+builds, execs, waits on, or signals a
 process is a bug.
 
 ## Live tests
@@ -244,7 +261,8 @@ and pushed to a space's host by `devctl`, which drives `opsctl install` there.
 2. Commit that on `main` and push `main`.
 3. Tag that commit `dummy/vX.Y.Z` and push the tag.
 4. `devctl build dummy` at that tag writes `dummy/dist/dummy-vX.Y.Z.tar.xz`,
-   holding `bin/dummy` and `etc/`, with no version recorded anywhere inside.
+   holding `bin/dummy`, `etc/`, and `share/icon.svg`, with no version recorded
+   anywhere inside.
    It refuses a binary whose `manifest` disagrees with the committed
    `etc/manifest.toml`.
 5. `devctl deploy <space> dummy/dist/dummy-vX.Y.Z.tar.xz` uploads the tarball

@@ -1,109 +1,88 @@
 # D08-assets
 
-dummy's pages take the platform's visual style from files dummy carries
-itself: the stylesheet every page links, the fonts that stylesheet loads, and
-the fonts' licence. They live in the checkout's hand-maintained `assets/`
-directory and reach the binary through `Assets`, the embedded file system the
-root package `dummy` exports (`D01-layout-and-run-seam`). This design is how
-dummy serves them. It says nothing about what the files contain, which files
-there are, or what they are called: the tests compare what dummy serves with
-what `Assets` holds, so a restyle that only replaces files touches no
-requirement here.
+dummy's pages take the platform's visual style and its service launcher from
+files dummy does not author: the stylesheet every page links, the fonts that
+stylesheet loads, the launcher's script, and the licences of the fonts and of
+the Tabler icons the style draws. They are the platform's shared web files,
+the same for every app, and they come from appkit
+(`github.com/ikigenba/ikigenba/appkit`, `D01-layout-and-run-seam`), which
+embeds them and serves them through the handler `appkit.Static()` returns,
+under the prefix `appkit.StaticPrefix`, `/_appkit/`. This design is how dummy
+mounts that handler and what a caller observes of it through dummy.
 
-Serving is part of dummy's one HTTP surface, so it lives in `internal/panel`
-and is done by `panel.Handler`, which keeps the signature `D04-panel` declares
-and reads `Assets` directly; `internal/panel` is the root package's only
-importer. Nothing here declares a new exported name. Everything `Handler` does
-before it looks at a path — the identity check that answers a request without
-`X-User-Id` with the plain 500 — is `D04-panel`'s, and applies to these routes
-as to every other, so it is not repeated here. The same holds for `HEAD`:
-`D04-panel` requires a `HEAD` to be answered with the status and headers of
-the matching `GET` and an empty body on every path, and that covers a
-conditional `HEAD` too, since it is compared with the `GET` carrying the same
-`If-None-Match`. The requirements below speak of `GET` and leave `HEAD` to that
-rule. Because every asset path is a path other than `/`, `/widgets` and
-`/widgets/table`, `D04-panel`'s store-neutrality requirement for such paths
-already guarantees that no asset request changes the widgets.
+dummy carries no style file of its own any more. The hand-maintained
+`assets/` directory, the root package that embedded it, the `/assets/` route
+and dummy's own extension-to-`Content-Type` table are gone; a path under
+`/assets/` is now an ordinary path that does not exist, answered by
+`D04-panel`'s catch-all like any other.
 
-## Paths
+## Mounting inside the identity gate
 
-The namespace is flat. An **asset path** is `/assets/` followed by the name
-of a file directly in `Assets`' `assets` directory, and nothing else is: not
-`/assets/` itself, not a path with a further `/`, not a name `Assets` does not
-hold, not a name that differs from a held one only in letter case. The path
-compared is the request's `URL.Path`, which `net/http` stores decoded (the
-`net/url` documentation: "the Path field is stored in decoded form: /%47%6f%2f
-becomes /Go/"), so a percent-encoded spelling of an asset name is that asset,
-and an encoded slash is a slash and so never names one. Any other path
-beginning `/assets/` is a path that does not exist, whatever the method: it
-gets the same not-found page with the banner as any unknown path (`D04-panel`),
-never a 405. `D04-panel` routes an asset path here rather than to its
-catch-all 404.
+The shared files are routes like any other, served by `panel.Handler`
+(`D04-panel`), which passes a request whose path begins with `/_appkit/` to
+the handler `appkit.Static()` returns, unchanged: that handler compares the
+request's whole `URL.Path` against `/_appkit/<name>` itself, so no prefix is
+stripped. Everything `Handler` does before it looks at a path — the identity
+check that answers a request without `X-User-Id` with the plain 500 and the
+line on stderr — is `D04-panel`'s and applies here as on every route, so a
+request with no identity is never answered by appkit at all. `D04-panel`'s
+rule that a `HEAD` is answered with the status and headers of the matching
+`GET` holds here too, and appkit's handler answers `HEAD` that way. Because
+every such path is none of `/`, `/widgets` and `/widgets/table`,
+`D04-panel`'s store-neutrality requirement for such paths already guarantees
+that no request for a shared file changes the widgets.
 
-## Responses
+Delegation is one requirement: through dummy, a request with identity under
+`/_appkit/` gets exactly what appkit's handler gives it. The requirements after
+it state what the stories fix about that answer, as dummy's own observable
+behaviour, so that dummy's tests fail if a different appkit release stopped
+giving it. Each was observed against the published appkit module by driving
+`appkit.Static()` with `httptest` for every served name and method.
 
-A `GET` of an asset path answers 200 with the file's bytes, unchanged. The
-`Content-Type` comes from a fixed table keyed on the file name's extension,
-because leaving it unset would let `net/http` guess: the `ResponseWriter.Write`
-documentation says that when the header "does not contain a Content-Type
-line, Write adds a Content-Type set to the result of passing the initial 512
-bytes of written data to DetectContentType".
+## What is served
 
-Every 200 and 304 carries an `ETag` and `Cache-Control: no-cache`. RFC 9111
-section 5.2.2.4 gives unqualified `no-cache` the meaning the stories want: the
-response "MUST NOT be used to satisfy any other request without forwarding it
-for validation". The `ETag` is fixed as the quoted lowercase hexadecimal
-SHA-256 digest of the file's bytes. RFC 9110 section 8.8.3.1 names "a
-collision-resistant hash of representation content" as a way to generate an
-entity tag, and fixing it makes the stories' relation testable within one
-build: the same file always yields the same value because the value is a
-function of the bytes, and different content yields a different value because
-SHA-256 is collision-resistant. A relation stated only as "different content
-gives a different tag" could not be tested without building two binaries; a
-declared computation is checked against `Assets` directly. The digest's
-characters are all within RFC 9110's `etagc`, and there is no `W/` prefix, so
-the tag is strong by the grammar of RFC 9110 section 8.8.3; since it changes
-whenever a byte changes, it also meets the strong validator's meaning.
+Exactly seven paths name a file: `/_appkit/` followed by `theme.css`,
+`launcher.js`, `InterVariable.woff2`, `InterVariable-Italic.woff2`,
+`JetBrainsMono.woff2`, `OFL.txt` or `TABLER-LICENSE.txt`, compared byte for
+byte. The path compared is the request's `URL.Path`, which `net/http` stores
+decoded. A `GET` of one answers 200 with the file and a fixed `Content-Type`
+per file; the body is the same bytes on every request to one binary, and no
+requirement says what the bytes are. Every other path under `/_appkit/` —
+the prefix itself, another name such as `banner.html`, a served name with a
+further `/` or segment, a served name in other letter case — answers 404,
+whatever the method; a method other than `GET` and `HEAD` on a served name
+answers 405 with `Allow: GET, HEAD`. The bodies and other headers of the 404
+and the 405 are appkit's and are not fixed here: they are not HTML documents
+with the banner, and nothing under `/_appkit/` is.
 
-A request whose `If-None-Match` names the current tag gets a 304 with an
-empty body, and that 304 carries the same `ETag` and `Cache-Control` the 200
-would, as RFC 9110 section 15.4.5 requires of a 304 ("MUST generate any of
-the following header fields that would have been sent in a 200 (OK) response
-... ETag ... Cache-Control"). The field is read as RFC 9110 section 13.1.2
-defines it: a comma-separated list of entity tags, or `*`, which matches
-because the asset has a current representation; and the comparison is the
-weak comparison that section requires ("A recipient MUST use the weak
-comparison function"), so an entry of `W/` followed by the tag matches too. A
-field that matches nothing is ignored.
+## Revalidation
 
-Any method other than `GET` and `HEAD` on an asset path answers 405 with
-`Allow: GET, HEAD` (RFC 9110 section 15.5.6: a 405 "MUST generate an Allow
-header field") and `D04-panel`'s banner failure shape. A 405 and a 404 ignore
-`If-None-Match`, as RFC 9110 section 13.2.1 directs: a server "MUST ignore all
-received preconditions if its response to the same request without those
-conditions, prior to processing the request content, would have been a status
-code other than a 2xx (Successful) or 412 (Precondition Failed)", and a 405 or
-404 is neither. No answer on these paths other than a 200 or a 304 carries an
-`ETag`, the identity 500 included.
-
-## No other origin
-
-The page needs nothing from any other host: no font service and no
-third-party request of any kind. The page's own markup is `D04-panel`'s. The
-hand-maintained stylesheet is expected to reference only the files beside it
-and `data:` URLs, and the copying rule in `dummy/AGENTS.md` (`## Assets`) keeps
-it so. That is an authoring rule for the hand copy, not part of this design,
-and no requirement here checks it.
+Every 200 and 304 for a served name carries one strong `ETag` and one
+`Cache-Control: no-cache`, so a browser keeps its copy but asks each time. The
+tag's value is opaque; what is fixed is that it is a well-formed strong entity
+tag (RFC 9110 section 8.8.3) and that one binary gives one file the same tag
+every time. The story's other half of the relation, that different content
+yields a different tag, is appkit's property and not dummy's: dummy embeds no
+content of its own under `/_appkit/`, and R-SDFO-JNO1 hands every such request
+to `appkit.Static()`, so one dummy binary only ever serves one content for
+each file and no dummy test could observe two. No dummy requirement fixes it.
+A request whose single `If-None-Match` line is `*`, or a comma-separated list
+of tags one of which, with any `W/` removed, is the file's tag, gets 304 with
+an empty body and the same tag, whatever `If-Modified-Since` says; a
+well-formed list that names no current tag gets the 200 as if the field were
+absent. Several `If-None-Match` lines, a malformed list, `Range`,
+`Last-Modified`, `If-Match`, `If-Unmodified-Since`, `If-Range`, and
+`If-Modified-Since` without `If-None-Match` are not fixed by the stories and
+not fixed here. No 404 or 405 under `/_appkit/` carries an `ETag`.
 
 ## REQUIREMENTS
 
-- R-5JK4-98EF: dummy's design defines an **asset path** as a request path — the value of the request's `URL.Path` field, which `net/http` stores decoded — that consists of `/assets/` followed by a non-empty `<name>` containing no `/`, where `Assets` holds a regular file at path `assets/<name>`, `<name>` being compared byte for byte and so case-sensitively; it calls that file the asset path's **asset file**; and every requirement in dummy's design that names an asset path or an asset file MUST denote that path or that file.
-- R-5KS0-N054: `Handler` MUST answer a `GET` request carrying a non-empty `X-User-Id` header, whose path is an asset path, and which carries no `If-None-Match` header, with status 200 and a body byte-identical to that path's asset file.
-- R-5LZX-0RVT: A response `Handler` sends with status 200 to a request whose path is an asset path MUST carry a `Content-Type` header whose value is fixed by the extension of the asset file's name — the characters from the last `.` in `<name>` through its end, compared byte for byte, and no extension when `<name>` contains no `.` — as exactly `text/css; charset=utf-8` for `.css`, exactly `font/woff2` for `.woff2`, exactly `text/plain; charset=utf-8` for `.txt`, and exactly `application/octet-stream` for any other extension or none.
-- R-5N7T-EJMI: A response `Handler` sends with status 200 or 304 to a request whose path is an asset path MUST carry an `ETag` header whose value is exactly a `"`, then the SHA-256 digest of the bytes of that path's asset file written as 64 lowercase hexadecimal digits, then a `"`, with nothing before or after.
-- R-5OFP-SBD7: A response `Handler` sends with status 200 or 304 to a request whose path is an asset path MUST carry the header `Cache-Control` exactly once, with the value exactly `no-cache`.
-- R-5PNM-633W: `Handler` MUST answer a `GET` request carrying a non-empty `X-User-Id` header, whose path is an asset path, and which carries an `If-None-Match` field at least one of whose entries — the values of all its `If-None-Match` header lines joined with commas, split on commas, each entry trimmed of leading and trailing whitespace — is exactly `*`, is byte-identical to the `ETag` value the same request would be answered with were the field absent, or is `W/` followed by that value, with status 304 and an empty body.
-- R-5QVI-JUUL: `Handler` MUST answer a `GET` request carrying a non-empty `X-User-Id` header, whose path is an asset path, and which carries an `If-None-Match` field no entry of which — the values of all its `If-None-Match` header lines joined with commas, split on commas, each entry trimmed of leading and trailing whitespace — is `*`, the `ETag` value the same request would be answered with were the field absent, or `W/` followed by that value, exactly as it would answer that request were the field absent: with the same status, the same value for every header it sets, and the same body.
-- R-GKII-SBP9: `Handler` MUST answer a request carrying a non-empty `X-User-Id` header whose path is an asset path and whose method is neither `GET` nor `HEAD`, whatever `If-None-Match` field it carries, with status 405, the header `Allow: GET, HEAD`, and a response in the banner failure shape for `MethodNotAllowedMessage`.
-- R-GLQF-63FY: `Handler` MUST answer a request carrying a non-empty `X-User-Id` header whose path begins with `/assets/` and is not an asset path — `/assets/` itself, a path with a further `/` after `/assets/`, and a name `Assets` holds no regular file for included — whatever its method and whatever `If-None-Match` field it carries, with status 404 and a response in the banner failure shape for `NotFoundMessage`.
-- R-5UJ7-P62O: A response `Handler` sends to a request whose path begins with `/assets/` MUST carry no `ETag` header when its status is neither 200 nor 304.
+- R-SC7S-5VXC: dummy's design defines an **appkit path** as a request path — the value of the request's `URL.Path` field, which `net/http` stores decoded — that begins with `/_appkit/`, the value of `appkit.StaticPrefix`, and a **shared file path** as an appkit path that is exactly `/_appkit/` followed by one of `theme.css`, `launcher.js`, `InterVariable.woff2`, `InterVariable-Italic.woff2`, `JetBrainsMono.woff2`, `OFL.txt`, and `TABLER-LICENSE.txt`, compared byte for byte and so case-sensitively; and every requirement in dummy's design that names an appkit path or a shared file path MUST denote such a path.
+- R-SDFO-JNO1: `Handler` MUST answer every request carrying a non-empty `X-User-Id` header whose path is an appkit path, whatever its method and other headers, exactly as the `http.Handler` that `appkit.Static()` returns answers the same request: with the same status, the same set of header fields with the same values, and the same body.
+- R-SENK-XFEQ: `Handler` MUST answer a `GET` request carrying a non-empty `X-User-Id` header and no `If-None-Match` header, whose path is a shared file path, with status 200, a non-empty body, and exactly one `Content-Type` header, whose value is exactly `text/css; charset=utf-8` for `/_appkit/theme.css`, exactly `text/javascript; charset=utf-8` for `/_appkit/launcher.js`, exactly `font/woff2` for each of `/_appkit/InterVariable.woff2`, `/_appkit/InterVariable-Italic.woff2`, and `/_appkit/JetBrainsMono.woff2`, and exactly `text/plain; charset=utf-8` for each of `/_appkit/OFL.txt` and `/_appkit/TABLER-LICENSE.txt`.
+- R-SFVH-B75F: A response `Handler` sends with status 200 or 304 to a request carrying a non-empty `X-User-Id` header whose path is a shared file path MUST carry exactly one `ETag` header, whose value is a strong entity tag — a `"`, then zero or more characters each of which is the byte 0x21 or in the byte ranges 0x23–0x7E and 0x80–0xFF, then a `"`, with nothing before or after — and exactly one `Cache-Control` header, whose value is exactly `no-cache`.
+- R-SH3D-OYW4: Any two `GET` requests carrying a non-empty `X-User-Id` header and no `If-None-Match` header, whose path is the same shared file path, answered by `Handler` in one binary, whether by one handler or by two, MUST be answered with byte-identical bodies and the same `ETag` value.
+- R-SJJ6-GIDI: `Handler` MUST answer a `GET` or `HEAD` request carrying a non-empty `X-User-Id` header, whose path is a shared file path, and which carries exactly one `If-None-Match` header line whose value either is exactly `*` or is a list of one or more elements separated by commas — each element being empty or, once leading and trailing spaces and tabs are removed, an entity tag of the form R-SFVH-B75F describes, optionally preceded by `W/` — at least one of whose entity tags, with any `W/` removed, is byte-identical to the `ETag` value a `GET` of that path carrying no `If-None-Match` header is answered with, with status 304, an empty body, and that same `ETag` value, whatever `If-Modified-Since` header the request carries.
+- R-SKR2-UA47: `Handler` MUST answer a `GET` request carrying a non-empty `X-User-Id` header, whose path is a shared file path, and which carries exactly one `If-None-Match` header line whose value is not `*` and is a list of the form R-SJJ6-GIDI describes none of whose entity tags, with any `W/` removed, is byte-identical to the `ETag` value a `GET` of that path carrying no `If-None-Match` header is answered with, with status 200, that `ETag` value, and the body that `GET` is answered with, whatever `If-Modified-Since` header the request carries.
+- R-SLYZ-81UW: `Handler` MUST answer a request carrying a non-empty `X-User-Id` header whose path is a shared file path and whose method is neither `GET` nor `HEAD`, whatever `If-None-Match` header it carries, with status 405, the header `Allow: GET, HEAD`, and no `ETag` header.
+- R-4FAJ-45J6: `Handler` MUST answer a request carrying a non-empty `X-User-Id` header whose path is an appkit path and not a shared file path — `/_appkit/` itself, a shared file path followed by further characters, and a shared file path's name in other letter case included — whatever its method and whatever `If-None-Match` header it carries, with status 404 and no `ETag` header.

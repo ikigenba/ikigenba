@@ -17,7 +17,15 @@ environment, and 5 when that is unset or empty. On a host, opsctl owns this
 value and the service unit's stop timeout: both are space-wide settings in
 opsctl's configuration, opsctl writes the drain into every app's `etc/env` and
 the stop timeout (10 seconds by default, always longer than the drain) into
-every service unit, and an app's manifest never sets either. A developer stands in for
+every service unit, and an app's manifest never sets either. dummy's
+environment also carries `IKIGENBA_SERVICES`, the path of the host's services
+file, which lists the platform's services for the launcher in every page's
+banner (`S3`). On a host, opsctl sets it in the environment the host gives
+dummy, normally `/var/lib/ikigenba/services.json`; on a developer's laptop it
+is normally unset, and dummy's pages then carry no launcher. dummy reads the
+variable once, when it starts, and never fails to start over it: unset, empty,
+or naming a file that is missing or unreadable, dummy starts and serves all the
+same, and says nothing about it. A developer stands in for
 the host with `systemd-socket-activate`, which passes a socket on the same
 terms. A healthy dummy prints nothing, so under systemd the journal holds only
 trouble. A diagnostic dummy writes about a request names that request by its
@@ -93,7 +101,11 @@ the later groups' requests go to `http://127.0.0.1:3000`. The three lines are
 `systemd-socket-activate`'s own: it announces the socket, and it starts dummy
 only when the first connection arrives, which dummy then answers. dummy adds
 nothing to them. There is no `NOTIFY_SOCKET` here, so dummy reports readiness
-to nobody.
+to nobody. `systemd-socket-activate` does not hand dummy the developer's
+environment, only a few basics such as `PATH` and the variables named with
+`-E`, so `IKIGENBA_SERVICES` is unset here and the pages carry no
+launcher; a developer who wants one names a services file with
+`-E IKIGENBA_SERVICES=<path>` (`S3`).
 
 Command:
 
@@ -322,7 +334,7 @@ unit's stop timeout is opsctl's to enforce.
 Command:
 
 ```
-$ DRAIN_SECONDS=abc systemd-socket-activate -l 127.0.0.1:3000 dummy
+$ systemd-socket-activate -E DRAIN_SECONDS=abc -l 127.0.0.1:3000 dummy
 ```
 
 Output:

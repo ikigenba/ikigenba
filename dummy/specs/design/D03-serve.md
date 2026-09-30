@@ -2,8 +2,8 @@
 
 The serve path: what happens between `cli.Run` being called with no
 arguments and the process being gone. `D01-layout-and-run-seam` declares the
-names this design behaves through: `cli.Process` with its `Pid`, `Unsetenv`
-and `Inherit`, `cli.Run`, the exit codes, `server.Serve` and
+names this design behaves through: `cli.Process` with its `Pid`, `Unsetenv`,
+`Inherit` and `Banner`, `cli.Run`, the exit codes, `server.Serve` and
 `server.DrainError`. `D02-cli` decides that an empty `Args` means serve and
 that nothing else touches the environment; `D04-panel` decides what the
 handler answers and the line it writes for a 500. This design says how `Run`
@@ -42,7 +42,14 @@ and never removes the socket's path. `DRAIN_SECONDS` and the service unit's
 (defaults 5 and 10): opsctl writes `DRAIN_SECONDS` into every app's
 `etc/env`, and no manifest sets either. An app reads `DRAIN_SECONDS` as a
 positive whole number, 5 when it is unset or empty, and sets no upper limit
-of its own.
+of its own. The environment opsctl gives an app also carries
+`IKIGENBA_SERVICES`, the path of the host's services file, normally
+`/var/lib/ikigenba/services.json`; `systemd-socket-activate` passes only the
+variables named with `-E`, so on a laptop it is normally unset. An app reads
+it once, at start, through `appkit.New`, and never fails to start over it:
+unset, empty, or naming a file that is missing or unreadable, the app starts,
+serves, and says nothing about it (`D01-layout-and-run-seam` explains why that
+read happens in `main` and cannot fail).
 
 The socket is the app's only way in, and every app runs as `ikigenba`, so the
 suite and nginx can reach it and nothing else on the host can. The suite is a
@@ -92,8 +99,11 @@ that is trouble on the host rather than a caller's typo: `dummy: ` and the
 error, exit 1.
 
 With the listener in hand `Run` builds the process's widget store, the
-panel's handler over it, and then tells systemd it is ready, before it calls
-`Serve`. The socket has been listening since systemd made it, so from that
+panel's handler over it and over `Process.Banner`, and then tells systemd it is
+ready, before it calls `Serve`. `Run` never calls the banner source itself:
+only the handler does, once for each page it draws with the banner
+(`D04-panel`), so the services file can neither delay nor fail a start, and a
+start that is refused never reads it. The socket has been listening since systemd made it, so from that
 moment every connection is queued and will be answered: ready is true before
 the first `Accept`, and sending it first means a failure to send is reported
 without anything having been served. That failure is trouble — under
@@ -177,12 +187,13 @@ could cut a response short inside the drain.
 - R-M6ED-IYNK: When `Args` is empty, `DRAIN_SECONDS` is unset, empty, or accepted, and exactly one socket is passed in, `Run` MUST call `Unsetenv`, when it is not nil, once with each of `LISTEN_PID`, `LISTEN_FDS`, and `LISTEN_FDNAMES` before it returns, and MUST NOT call it with any other key.
 - R-M7M9-WQE9: When `Args` is empty, `DRAIN_SECONDS` is unset, empty, or accepted, and exactly one socket is passed in, `Run` MUST take file descriptor 3, and no other descriptor, as its listener, by calling `Inherit(3)` exactly once when `Inherit` is not nil, and by calling `net.FileListener` on a file for the process's file descriptor 3 when `Inherit` is nil.
 - R-W8XB-1OGJ: When taking file descriptor 3 as a listener fails with an error `err`, `Run` MUST write exactly `"dummy: " + err.Error() + "\n"` to `Stderr`, write nothing to `Stdout`, send nothing to a notification socket, and return `ExitServerFailed`.
-- R-MA22-O9VN: When `Run` has taken file descriptor 3 as a listener `ln` and does not fail to notify, it MUST call `widget.NewStore` exactly once and then `server.Serve` exactly once with `Run`'s own `ctx`, `ln`, `panel.Handler(store, w)`, and the `drain` of R-M1IR-ZVOS, where `store` is the value `widget.NewStore` returned and `w` is a writer each of whose `Write` calls results in exactly one call to `Stderr.Write` with the same bytes.
+- R-S7C6-MSYK: When `Run` has taken file descriptor 3 as a listener `ln` and does not fail to notify, it MUST call `widget.NewStore` exactly once and then `server.Serve` exactly once with `Run`'s own `ctx`, `ln`, `panel.Handler(store, p.Banner, w)`, and the `drain` of R-M1IR-ZVOS, where `store` is the value `widget.NewStore` returned and `w` is a writer each of whose `Write` calls results in exactly one call to `Stderr.Write` with the same bytes.
+- R-SAZV-S46N: When no request reaches the handler `Run` passes to `server.Serve`, `Run` MUST return having made no call to `p.Banner`, whatever it returns.
 - R-MCHV-FTD1: When `Run` has taken file descriptor 3 as a listener and `LookupEnv("NOTIFY_SOCKET")` returns `true` with a non-empty value `a`, `Run` MUST, after taking the listener and before calling `server.Serve`, send exactly one datagram, whose content is exactly `READY=1`, to the Unix datagram socket whose address is `a`, an `a` beginning with `@` naming a socket in the abstract namespace; `Run` MUST send nothing to a notification socket on any other occasion.
 - R-MDPR-TL3Q: When `LookupEnv("NOTIFY_SOCKET")` returns `false` or the empty string, `Run` MUST send no datagram and MUST serve as it otherwise would.
 - R-WA57-FG78: When sending `READY=1` fails with an error `err`, `Run` MUST write exactly `"dummy: " + err.Error() + "\n"` to `Stderr`, write nothing to `Stdout`, accept no connection on the listener it took, and return `ExitServerFailed`.
 - R-MG5K-L4L4: A `Run` that calls `server.Serve` and to which `Serve` returns nil MUST return `ExitSuccess`.
-- R-MHDG-YWBT: A `Run` that calls `server.Serve` MUST write nothing to `Stdout`, and MUST write nothing to `Stderr` other than what the handler writes through the writer of R-MA22-O9VN and, when `Serve` returns a non-nil error, the one line R-QVIS-THYV states.
+- R-S8K3-0KP9: A `Run` that calls `server.Serve` MUST write nothing to `Stdout`, and MUST write nothing to `Stderr` other than what the handler writes through the writer of R-S7C6-MSYK and, when `Serve` returns a non-nil error, the one line R-QVIS-THYV states.
 - R-QVIS-THYV: When `server.Serve` returns a non-nil error to `Run`, `Run` MUST write to `Stderr` exactly `dummy: `, that error's `Error()` text, and a newline, MUST write nothing to `Stdout`, and MUST return `ExitServerFailed`.
-- R-MILD-CO2I: `Run` MUST NOT let two calls to `Stderr.Write` be in progress at the same time, those made through the writer of R-MA22-O9VN included, so that a `Stderr` that is not safe for concurrent use is never written concurrently.
+- R-S9RZ-ECFY: `Run` MUST NOT let two calls to `Stderr.Write` be in progress at the same time, those made through the writer of R-S7C6-MSYK included, so that a `Stderr` that is not safe for concurrent use is never written concurrently.
 - R-MJT9-QFT7: When `Inherit` is nil and file descriptor 3 is a listening Unix-domain stream socket bound to a filesystem path, `Run` MUST leave that path in place and MUST NOT shut the socket down, so that after `Run` returns the socket still accepts connections into its queue for another process that holds it.

@@ -3,11 +3,15 @@
 The file that carries dummy to a space. `devctl build dummy` writes it from a
 commit that a `dummy/v<semver>` tag points at, and `opsctl install` unpacks it
 into `/opt/dummy/`. Its contents are the whole of what dummy ships: the static
-`linux/amd64` binary and the manifest, nothing else. dummy keeps nothing
-under `etc/` but the manifest and has no `share/`, so no other member exists.
-The files that give the panel its style — the stylesheet, the fonts, and
-their licence — are inside the binary, so no `assets/` directory and no font
-file ships beside it.
+`linux/amd64` binary, the manifest, and `share/icon.svg`, nothing else.
+`share/icon.svg` is dummy's icon, an SVG image a human draws; its presence is
+what lists dummy in the platform's service launcher on a space
+(`S7-on-a-space.md`), and no story fixes its content beyond its being an SVG.
+dummy keeps nothing under `etc/` but the manifest and nothing under `share/`
+but the icon, so no other member exists. The files that give the panel its
+style and its launcher — the stylesheet, the fonts, their licences, and the
+launcher's script — are inside the binary (`S8-assets.md`), so no `assets/`
+directory and no font file ships beside it.
 The version is in the file's name and in the binary, never in a member's
 path.
 
@@ -24,6 +28,7 @@ Output:
 ```
 bin/dummy
 etc/manifest.toml
+share/icon.svg
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.
