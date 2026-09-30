@@ -199,9 +199,9 @@ store, banner source, readiness, serve — is `D03-serve` too.
 
 ## REQUIREMENTS
 
-- R-Z46Q-6N1H: The `dummy` binary MUST behave as `cli.Run` does when given the binary's arguments after the program name, the process's environment, its process id, and its standard output and standard error, and MUST exit with the value `Run` returns.
-- R-Z5EM-KES6: When the `dummy` binary is serving and receives `SIGTERM` or `SIGINT`, it MUST stop as `Run` does when its context is cancelled.
-- R-Z7UF-BY9K: When the `dummy` binary starts with `IKIGENBA_SERVICES` naming a services file that lists one or more services, the page it serves for `GET /widgets` MUST carry the appkit launcher: a `button` start tag whose `class` is `launcher`.
+- R-Z2CP-8T9E: The `dummy` binary MUST behave as `cli.Run` does when given the binary's arguments after the program name, the process's environment, its process id, and its standard output and standard error, and MUST exit with the value `Run` returns.
+- R-Z3KL-ML03: When the `dummy` binary is serving and receives `SIGTERM` or `SIGINT`, it MUST stop as `Run` does when its context is cancelled.
+- R-Z4SI-0CQS: When the `dummy` binary starts with `IKIGENBA_SERVICES` naming a services file that lists one or more services, the page it serves for `GET /widgets` MUST carry the appkit launcher: a `button` start tag whose `class` is `launcher`.
 - R-7J0U-GFGT: When the `dummy` binary is serving with `IKIGENBA_SERVICES` unset or naming a services file no part of which contains the sequence `footer` compared case-insensitively, the page it serves in answer to a `GET /widgets` request carrying a non-empty `X-User-Id` header MUST, read as a whole body, contain exactly one `footer` start tag, as `D04-panel` defines start tags and end tags (R-KDGH-2SDG), and the normalisation (`D04-panel` R-KIC2-LVC8) of the characters from that start tag's `>` up to the `<` of the first `</footer>` end tag following it MUST be exactly the value of `panel.ServiceName` (`D04-panel`), one space, and the value of `Version`.
 - R-AMJL-GJV8: The `internal/cli` package MUST export `var Version string`.
 - R-ANRH-UBLX: `Version` MUST be the letter `v` followed by a valid Semantic Versioning version as defined at semver.org, prerelease and build metadata included when present.
