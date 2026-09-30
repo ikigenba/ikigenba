@@ -196,7 +196,7 @@ func (f *signInIssuer) formCount() int {
 func signInServer(t *testing.T, st *store.Store, issuer *signInIssuer, now func() time.Time) *Server {
 	t.Helper()
 	gc := googleclient.NewClient("client-id", "client-secret", "green.example", issuer.server.URL)
-	return New(Config{
+	return New(Config{Banner: testPageBanner,
 		Store:           st,
 		Google:          gc,
 		Now:             now,
@@ -252,7 +252,7 @@ func TestSignInConstantsHostRulesAndAnonymousRoot(t *testing.T) {
 	}
 
 	st := openSignInStore(t)
-	s := New(Config{Store: st, Now: func() time.Time { return signInNow }})
+	s := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }})
 	w := serveSignIn(s, http.MethodGet, "/?return=https%3A%2F%2Fapp.green.example%2Fwork", "auth.green.example", nil, "")
 	// R-TQ5L-6X9V: auth's own space host serves an anonymous sign-in page.
 	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != signInHTMLContentType || !strings.Contains(w.Body.String(), `href="/login/google?return=`) {
@@ -303,7 +303,7 @@ func TestAnonymousRootCarriesReturnOnlyInTheLoginLink(t *testing.T) {
 			}
 			before := formatSignInIdentity(t, st)
 			deadAt := signInNow.Add(store.SessionIdle + time.Nanosecond)
-			dead := New(Config{Store: st, Now: func() time.Time { return deadAt }})
+			dead := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return deadAt }})
 			deadCookie := &http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}
 			deadPage := serveSignIn(dead, http.MethodGet, "/?return="+url.QueryEscape(returnURL), host, deadCookie, "")
 			assertHTMLStatus(t, deadPage, http.StatusOK)
@@ -342,7 +342,7 @@ func TestOwnSpaceHostAnonymousRootLinksToLogin(t *testing.T) {
 	// R-TQ5L-6X9V: an anonymous HTTPS request to auth's own space host
 	// reaches the sign-in page, with a link directly to the login start.
 	st := openSignInStore(t)
-	s := New(Config{Store: st, Now: func() time.Time { return signInNow }})
+	s := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }})
 	w := serveSignIn(s, http.MethodGet, "https://auth.green.example/", "auth.green.example", nil, "")
 	assertHTMLStatus(t, w, http.StatusOK)
 	if !hasExactSignInLink(w.Body.String(), "/login/google") {
@@ -362,7 +362,7 @@ func TestLoginStartMintsVerifierFromRandAndRedirects(t *testing.T) {
 	gc := googleclient.NewClient("client-id", "client-secret", "green.example", issuer.server.URL)
 	verifierBytes := bytes.Repeat([]byte{0x2a}, pkceVerifierBytes)
 	serverRand := bytes.NewReader(append([]byte(nil), verifierBytes...))
-	s := New(Config{
+	s := New(Config{Banner: testPageBanner,
 		Store:           st,
 		Google:          gc,
 		Now:             func() time.Time { return signInNow },
@@ -410,7 +410,7 @@ func TestLoginStartMintsVerifierFromRandAndRedirects(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = secondStore.Close() })
-	second := New(Config{
+	second := New(Config{Banner: testPageBanner,
 		Store:           secondStore,
 		Google:          gc,
 		Now:             func() time.Time { return signInNow },
@@ -436,7 +436,7 @@ func TestLoginStartDiscoveryFailureRemovesStateAndWritesDiagnostic(t *testing.T)
 	issuer.server.Close()
 	gc := googleclient.NewClient("client-id", "client-secret", "green.example", issuer.server.URL)
 	var stderr signInDiagnosticWrites
-	s := New(Config{
+	s := New(Config{Banner: testPageBanner,
 		Store:           st,
 		Google:          gc,
 		Now:             func() time.Time { return signInNow },
@@ -537,7 +537,7 @@ func TestCallbackAccessDeniedReportsStoreFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stderr signInDiagnosticWrites
-	s := New(Config{Store: st, Stderr: &stderr})
+	s := New(Config{Banner: testPageBanner, Store: st, Stderr: &stderr})
 	if err := st.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -573,7 +573,7 @@ func TestCallbackRejectsMissingUnknownAndExchangeFailure(t *testing.T) {
 	}
 	var stderr signInDiagnosticWrites
 	gc := googleclient.NewClient("client-id", "client-secret", "green.example", issuer.server.URL)
-	s = New(Config{
+	s = New(Config{Banner: testPageBanner,
 		Store:           st,
 		Google:          gc,
 		Now:             func() time.Time { return signInNow },
@@ -602,7 +602,7 @@ func TestCallbackRejectsMissingUnknownAndExchangeFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	var otherStderr bytes.Buffer
-	other := New(Config{
+	other := New(Config{Banner: testPageBanner,
 		Store:           st,
 		Google:          googleclient.NewClient("client-id", "client-secret", "green.example", issuer.server.URL),
 		Now:             func() time.Time { return signInNow },
@@ -801,7 +801,7 @@ func TestCallbackMembershipIsHostedDomainAndVerifiedEmail(t *testing.T) {
 			st := openSignInStore(t)
 			gc := googleclient.NewClient("client-id", "client-secret", "not-the-workspace.example", issuer.server.URL)
 			callbackNow := signInNow.Add(time.Minute)
-			s := New(Config{
+			s := New(Config{Banner: testPageBanner,
 				Store:           st,
 				Google:          gc,
 				Now:             func() time.Time { return callbackNow },
@@ -912,7 +912,7 @@ func TestProfileUsesLookupIgnoresReturnAndRendersForms(t *testing.T) {
 	if _, err := st.CreateLoginState("keep verifier", "https://app.green.example/keep"); err != nil {
 		t.Fatal(err)
 	}
-	s := New(Config{Store: st, Now: func() time.Time { return signInNow.Add(10 * time.Minute) }})
+	s := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow.Add(10 * time.Minute) }})
 	cookie := &http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}
 	before := profileStateSnapshot(t, st)
 	baseline := serveSignIn(s, http.MethodGet, "/", "auth.green.example", cookie, "")
@@ -1035,7 +1035,7 @@ func TestLogoutOriginDeletionAndCookieAttributes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			s := New(Config{Store: st, Now: func() time.Time { return signInNow }})
+			s := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }})
 			cookie := &http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}
 			beforeUser := signInUserRows(t, st)
 			good := serveSignIn(s, http.MethodPost, "/logout", tc.host, cookie, tc.origin)
@@ -1096,7 +1096,7 @@ func TestLogoutRejectsMissingRepeatedAndOffSpaceOrigins(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			s := New(Config{Store: st, Now: func() time.Time { return signInNow }})
+			s := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }})
 			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/logout", nil)
 			req.Host = tc.host
 			req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
@@ -1349,7 +1349,7 @@ func TestSignInStoreFailuresReportTheirCause(t *testing.T) {
 	issuer.issue("member-code", "subject-failure", "member@green.example")
 
 	newServer := func(st *store.Store, writes *signInDiagnosticWrites) *Server {
-		return New(Config{
+		return New(Config{Banner: testPageBanner,
 			Store: st, Google: googleclient.NewClient("client-id", "client-secret", "green.example", issuer.server.URL),
 			Now: func() time.Time { return signInNow }, Rand: &signInRand{next: 1},
 			Stderr: writes, WorkspaceDomain: "green.example",
@@ -1454,7 +1454,7 @@ func TestProfileStoreFailuresArePlain500(t *testing.T) {
 				t.Fatal(err)
 			}
 			var writes signInDiagnosticWrites
-			s := New(Config{Store: st, Now: func() time.Time { return signInNow }, Stderr: &writes})
+			s := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }, Stderr: &writes})
 			if step == "identity" {
 				if err := st.Close(); err != nil {
 					t.Fatal(err)
@@ -1494,7 +1494,7 @@ func TestLoginStartCleanupFailureKeepsDiscoveryDiagnostic(t *testing.T) {
 	issuer.server.Close()
 	gc := googleclient.NewClient("client-id", "client-secret", "green.example", issuer.server.URL)
 	var writes signInDiagnosticWrites
-	s := New(Config{Store: st, Google: gc, Rand: &signInRand{next: 1}, Stderr: &writes})
+	s := New(Config{Banner: testPageBanner, Store: st, Google: gc, Rand: &signInRand{next: 1}, Stderr: &writes})
 	w := serveSignInWithRequestID(s, "/login/google", "discovery-request")
 	// R-CCQE-EHNR: the cleanup store error is the declared exception to the
 	// general store-error 500 rule; discovery remains a 502.
@@ -1517,7 +1517,7 @@ func TestLoginStartCleanupFailureKeepsDiscoveryDiagnostic(t *testing.T) {
 func TestSignInNonServerResponsesStaySilent(t *testing.T) {
 	st := openSignInStore(t)
 	var writes signInDiagnosticWrites
-	s := New(Config{Store: st, Stderr: &writes})
+	s := New(Config{Banner: testPageBanner, Store: st, Stderr: &writes})
 	for _, tc := range []struct {
 		method, target, origin string
 		status                 int

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit"
 	"github.com/ikigenba/ikigenba/auth/internal/google"
 	"github.com/ikigenba/ikigenba/auth/internal/server"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
@@ -31,6 +32,7 @@ type Process struct {
 	Rand       io.Reader
 	OIDCIssuer string
 	DBSource   string
+	Banner     func(u appkit.User) appkit.Banner
 }
 
 const usageText = `Usage: auth [command]
@@ -63,7 +65,7 @@ engine = "sqlite"
 path = "state/auth.db"
 `
 
-const socketHint = "\n\nrun it under systemd, or locally with 'systemd-socket-activate -l 127.0.0.1:3001 auth'\n"
+const socketHint = "\n\nrun it under systemd, or locally with 'systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth'\n"
 
 type lockedWriter struct {
 	mu sync.Mutex
@@ -157,7 +159,7 @@ func serve(ctx context.Context, p Process, stderr io.Writer) int {
 	}
 	defer func() { _ = st.Close() }()
 	client := google.NewClient(values[0], values[1], values[2], p.OIDCIssuer)
-	h := server.New(server.Config{Store: st, Google: client, Now: p.Now, Rand: p.Rand, Stderr: stderr, WorkspaceDomain: values[2]})
+	h := server.New(server.Config{Store: st, Google: client, Now: p.Now, Rand: p.Rand, Stderr: stderr, WorkspaceDomain: values[2], Banner: p.Banner})
 	if addr, ok := lookup("NOTIFY_SOCKET"); ok && addr != "" {
 		if err := notify(addr); err != nil {
 			_, _ = fmt.Fprintf(stderr, "auth: %s\n", err)

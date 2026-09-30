@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ikigenba/ikigenba/appkit"
 )
 
 type pageTag struct {
@@ -293,7 +295,7 @@ func authPageErrors(body string, allowScript bool) []string {
 		}
 		if tag.name == "link" && tag.start < bodyAt && len(attrs["rel"]) == 1 && attrs["rel"][0] == "stylesheet" {
 			stylesheet++
-			if len(attrs["href"]) != 1 || attrs["href"][0] != "/assets/theme.css" {
+			if len(attrs["href"]) != 1 || attrs["href"][0] != "/_appkit/theme.css" {
 				bad("stylesheet")
 			}
 		}
@@ -388,7 +390,7 @@ func authPageErrors(body string, allowScript bool) []string {
 					}
 				}
 				if name == "src" || name == "poster" || name == "data" || name == "background" || name == "manifest" || name == "href" && lower == "link" {
-					if strings.ContainsAny(value, "\t\n\r") || !strings.HasPrefix(value, "/assets/") || pageDotSegment(value) {
+					if strings.ContainsAny(value, "\t\n\r") || !strings.HasPrefix(value, "/_appkit/") || pageDotSegment(value) {
 						bad("resource %q", value)
 					}
 				}
@@ -415,7 +417,7 @@ func authPageErrors(body string, allowScript bool) []string {
 		}
 	}
 	// The svg pin applies even inside a quoted run or script data.
-	lowerBody := strings.ToLower(body)
+	lowerBody := pageASCIILower(body)
 	for offset := 0; offset < len(body); {
 		found := strings.Index(lowerBody[offset:], "<svg")
 		if found < 0 {
@@ -520,6 +522,7 @@ func pageAttributeNames(tag pageTag) []string {
 }
 
 func pageIconError(body string, tag pageTag) string {
+	// R-FQZJ-J8UK: auth button icon vocabulary.
 	want := map[string]string{"class": "ico", "aria-hidden": "true", "viewBox": "0 0 24 24", "fill": "none", "stroke": "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round"}
 	attrs := pageAttrs(tag)
 	if len(attrs) != len(want) || len(pageAttributeNames(tag)) != len(want) {
@@ -556,7 +559,7 @@ func pageIconError(body string, tag pageTag) string {
 }
 func assertAuthPage(t *testing.T, body string, allowScript bool) {
 	t.Helper()
-	if errors := authPageErrors(body, allowScript); len(errors) > 0 {
+	if errors := authPageErrors(fixtureWrittenMarkup(t, body), allowScript); len(errors) > 0 {
 		t.Fatalf("page errors: %v\n%s", errors, body)
 	}
 }
@@ -632,43 +635,14 @@ func assertSignInCard(t *testing.T, body, host, word, target, footer string) str
 }
 func assertChrome(t *testing.T, body, email string) string {
 	t.Helper()
-	// R-7MAY-C3YJ R-YP8V-LBSG R-4RK5-9FJ6 R-FQZJ-J8UK R-4QC8-VNSH
-	inside := pageContent(body, pageOne(t, body, "body"))
-	seq := pageSequence(t, inside, "header", "main")
-	header := pageContent(inside, seq[0])
-	items := pageSequence(t, header, "a", "span", "form")
-	mark := items[0]
-	pageAttr(t, mark, "class", "mark")
-	pageAttr(t, mark, "data-service", "auth")
-	pageAttr(t, mark, "href", "/")
-	if pageContent(header, mark) != "ikigenba" || pageText(pageContent(header, items[1])) != pageText(html.EscapeString(email)) {
-		t.Fatal("chrome identity")
+	banner := renderTestBanner(t, testPageBanner(appkit.User{Email: email, ProfileURL: "/", LogoutURL: "/logout"}))
+	written := pageWrittenMarkup(body, banner)
+	if written == body {
+		t.Fatal("missing expected appkit banner at body start")
 	}
-	if len(pageElements(pageContent(header, items[1]), "a")) != 0 {
-		t.Fatal("banner email contains a link")
-	}
-	form := items[2]
-	pageAttr(t, form, "class", "inline")
-	pageAttr(t, form, "method", "post")
-	pageAttr(t, form, "action", "/logout")
-	formContent := pageContent(header, form)
-	button := pageSequence(t, formContent, "button")[0]
-	pageAttr(t, button, "class", "secondary small")
-	pageAttr(t, button, "type", "submit")
-	buttonContent := pageContent(formContent, button)
-	svg := pageOne(t, buttonContent, "svg")
-	if !strings.HasPrefix(strings.TrimLeft(buttonContent, " \t\r\n\f"), svg.raw) || pageText(buttonContent) != "Sign out" {
-		t.Fatal("sign-out button")
-	}
-	paths := pageElements(pageContent(buttonContent, svg), "path")
-	want := []string{"M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2", "M9 12h12l-3 -3", "M18 15l3 -3"}
-	if len(paths) != len(want) {
-		t.Fatal("logout path count")
-	}
-	for i, path := range paths {
-		pageAttr(t, path, "d", want[i])
-	}
-	return pageContent(inside, seq[1])
+	inside := pageContent(written, pageOne(t, written, "body"))
+	seq := pageSequence(t, inside, "main")
+	return pageContent(inside, seq[0])
 }
 func assertPageAlert(t *testing.T, text, kind, role, title, message string) {
 	t.Helper()
@@ -684,10 +658,10 @@ func assertPageAlert(t *testing.T, text, kind, role, title, message string) {
 	}
 }
 func TestGeneratedAuthPagesShareVocabulary(t *testing.T) {
-	// R-7L31-YC7U R-BWH9-SLG3 R-PMEM-XF1K R-PNMJ-B6S9
-	// R-XC44-L4H5 R-XDC0-YW7U R-XEJX-CNYJ R-WF4E-EVPQ R-PRA8-GI0C
-	// R-BV9D-ETPE R-52J8-PD7F R-25ZM-NNWQ R-VY0T-C8YL R-VZ8P-Q0PA
-	// R-LG9Z-G3JB R-W0GM-3SFZ R-FCA4-0P8U R-FDI0-EGZJ
+	// R-D16O-S2X9 R-D2EL-5UNY R-D3MH-JMEN R-PNMJ-B6S9
+	// R-D4UD-XE5C R-D62A-B5W1 R-D7A6-OXMQ R-D8I3-2PDF R-PRA8-GI0C
+	// R-D9PZ-GH44 R-DAXV-U8UT R-DC5S-80LI R-DDDO-LSC7 R-DELK-ZK2W
+	// R-LG9Z-G3JB R-DFTH-DBTL R-DH1D-R3KA R-DI9A-4VAZ
 	issuer := newSignInIssuer(t)
 	st := openSignInStore(t)
 	email := `odd <script src="https://evil/"> & src=x >@green.example`
@@ -744,10 +718,10 @@ func TestGeneratedAuthPagesShareVocabulary(t *testing.T) {
 	pageAttr(t, input, "value", `<fake src="x">`)
 }
 func TestAuthPageScannerRejectsUnsafeVocabulary(t *testing.T) {
-	base := `<!DOCTYPE html><html><head><title>auth</title><link rel="stylesheet" href="/assets/theme.css"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><main><a href="/">safe</a></main></body></html>`
+	base := `<!DOCTYPE html><html><head><title>auth</title><link rel="stylesheet" href="/_appkit/theme.css"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><main><a href="/">safe</a></main></body></html>`
 	assertAuthPage(t, base, false)
 	// Head hooks count only occurrences before body; later conforming hooks are allowed.
-	laterHooks := strings.Replace(base, `<main><a href="/">safe</a></main>`, `<main><link rel="stylesheet" href="/assets/extra.css"><meta name="viewport" content="width=device-width, initial-scale=1"><a href="/">safe</a></main>`, 1)
+	laterHooks := strings.Replace(base, `<main><a href="/">safe</a></main>`, `<main><link rel="stylesheet" href="/_appkit/extra.css"><meta name="viewport" content="width=device-width, initial-scale=1"><a href="/">safe</a></main>`, 1)
 	assertAuthPage(t, laterHooks, false)
 	prematureEnd := strings.Replace(strings.Replace(base, "<body>", "</body><body>", 1), "</main></body>", "</main>", 1)
 	if len(authPageErrors(prematureEnd, false)) == 0 {
@@ -759,11 +733,11 @@ func TestAuthPageScannerRejectsUnsafeVocabulary(t *testing.T) {
 	}
 	cases := []string{strings.TrimPrefix(base, "<!DOCTYPE html>"), strings.Replace(base, "auth</title>", "Auth</title>", 1), strings.Replace(base, "<body>", "<body><TITLE>x</TITLE>", 1), strings.Replace(base, "<body>", "<body><body>", 1),
 		`<meta http-equiv="refresh">`, `<a href="https://elsewhere">x</a>`, `<a href="//evil">x</a>`, `<a href="/\evil">x</a>`, `<a href="/x&#10;">x</a>`, `<form action="javascript:x"></form>`, `<button formaction="//evil">x</button>`,
-		`<img src="/login/google">`, `<img src="/assets/%2E%2e/x">`, `<img src="/assets/.%2e/x">`, `<img src="/assets/%2e./x">`, `<img src="/assets/..\x">`, `<link href="/assets/x&#9;">`,
-		`<img SRC="/assets/x">`, `<img src ="/assets/x">`, `<img src='/assets/x'>`, `<img/src="/assets/x">`, `<img alt="x"src="/assets/x">`, `<img src=/assets/x>`, `<img alt ="x">`, `<img alt="x" 'x>`,
-		`<div onclick="x"></div>`, `<div OnLoad></div>`, `<div srcdoc="x"></div>`, `<div attributionsrc="x"></div>`, `<a ping="/assets/x">x</a>`, `<img srcset="/assets/a">`, `<link imagesrcset="/assets/a">`, `<div href="/">x</div>`, `<svg xlink:href="/assets/x"></svg>`,
+		`<img src="/login/google">`, `<img src="/_appkit/%2E%2e/x">`, `<img src="/_appkit/.%2e/x">`, `<img src="/_appkit/%2e./x">`, `<img src="/_appkit/..\x">`, `<link href="/_appkit/x&#9;">`,
+		`<img SRC="/_appkit/x">`, `<img src ="/_appkit/x">`, `<img src='/_appkit/x'>`, `<img/src="/_appkit/x">`, `<img alt="x"src="/_appkit/x">`, `<img src=/_appkit/x>`, `<img alt ="x">`, `<img alt="x" 'x>`,
+		`<div onclick="x"></div>`, `<div OnLoad></div>`, `<div srcdoc="x"></div>`, `<div attributionsrc="x"></div>`, `<a ping="/_appkit/x">x</a>`, `<img srcset="/_appkit/a">`, `<link imagesrcset="/_appkit/a">`, `<div href="/">x</div>`, `<svg xlink:href="/_appkit/x"></svg>`,
 		`<style>x</style>`, `<p style="x">x</p>`, `<textarea>x</textarea>`, `<xmp>x</xmp>`, `<iframe></iframe>`, `<noembed></noembed>`, `<noframes></noframes>`, `<noscript></noscript>`, `<plaintext>x`, `<template>x</template>`, `<math></math>`,
-		`<script>x</script>`, `<!-- comment -->`, `<?instruction>`, `</main extra>`, `<svg></svg>`, `<input value="<svg>">`, `<button><svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" extra><path d="x"></path></svg>x</button>`, `<button><svg class="ico"><image src="/assets/x"></image></svg>x</button>`}
+		`<script>x</script>`, `<!-- comment -->`, `<?instruction>`, `</main extra>`, `<svg></svg>`, `<input value="<svg>">`, `<button><svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" extra><path d="x"></path></svg>x</button>`, `<button><svg class="ico"><image src="/_appkit/x"></image></svg>x</button>`}
 	for i, fragment := range cases {
 		body := fragment
 		if !strings.Contains(body, "<html>") {
@@ -787,7 +761,7 @@ func TestSignInPagesFixVisibleText(t *testing.T) {
 	// R-QC0I-YLM5 R-QEGB-Q53J R-EFN2-4PHY R-EGUY-IH8N R-QI40-VGBM
 	workspace := `workspace<&".example`
 	st := openSignInStore(t)
-	s := New(Config{Store: st, Now: func() time.Time { return signInNow }, WorkspaceDomain: workspace})
+	s := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }, WorkspaceDomain: workspace})
 	for _, tc := range []struct{ host, returnURL, display string }{
 		{"auth.sbx.ikigenba.dev:443", "", ""}, {"localhost:3001", "", ""}, {"auth.sbx.ikigenba.dev", "https://elsewhere.test/path", ""},
 		{"auth.sbx.ikigenba.dev", "HTTPS://App.SBX.Ikigenba.Dev:0080/path?x=1", "App.SBX.Ikigenba.Dev:0080"}, {"localhost:3001", "http://LOCALHOST:3000/path", "LOCALHOST:3000"}, {"auth.green.example", "https://app.green.example:/", "app.green.example"},
@@ -882,7 +856,7 @@ func TestProfileFrameAndAccount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := New(Config{Store: st, Now: func() time.Time { return signInNow }, WorkspaceDomain: workspace})
+	s := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }, WorkspaceDomain: workspace})
 	cookie := &http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}
 	before := formatSignInIdentity(t, st)
 	w := serveSignIn(s, http.MethodGet, "/?return=https%3A%2F%2Felsewhere.test", "auth.sbx.ikigenba.dev", cookie, "")
@@ -1025,4 +999,14 @@ func TestAuthPagePreservesExternalBytes(t *testing.T) {
 	assertAuthPage(t, rejected.Body.String(), false)
 	assertChrome(t, rejected.Body.String(), email)
 	pageAttr(t, pageOne(t, rejected.Body.String(), "input"), "value", raw)
+}
+
+func pageASCIILower(value string) string {
+	bytes := []byte(value)
+	for i, c := range bytes {
+		if c >= 'A' && c <= 'Z' {
+			bytes[i] = c + ('a' - 'A')
+		}
+	}
+	return string(bytes)
 }

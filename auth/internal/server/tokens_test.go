@@ -62,7 +62,7 @@ func tokenTestIdentity(t *testing.T, st *store.Store, subject string) (store.Use
 }
 
 func tokenTestServer(st *store.Store) *Server {
-	return New(Config{Store: st, Now: func() time.Time { return tokenTestNow }})
+	return New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return tokenTestNow }})
 }
 
 func tokenRequest(target, sessionID string, form url.Values) *http.Request {
@@ -112,7 +112,7 @@ func TestTokenRoutesReportClosedStoreOnce(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var stderr identityDiagnosticWrites
-			srv := New(Config{Store: st, Now: func() time.Time { return tokenTestNow }, Stderr: &stderr})
+			srv := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return tokenTestNow }, Stderr: &stderr})
 			tc.req.Header.Set("X-Request-Id", "token-42")
 			response := httptest.NewRecorder()
 			srv.ServeHTTP(response, tc.req)
@@ -175,7 +175,7 @@ func TestTokenMutationStoreFailuresReport500(t *testing.T) {
 				t.Fatal("trigger did not fail store operation")
 			}
 			var stderr identityDiagnosticWrites
-			srv := New(Config{Store: st, Now: func() time.Time { return tokenTestNow }, Stderr: &stderr})
+			srv := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return tokenTestNow }, Stderr: &stderr})
 			response := httptest.NewRecorder()
 			srv.ServeHTTP(response, tc.req)
 
@@ -197,7 +197,7 @@ func TestTokenRefusalsWriteNoDiagnostic(t *testing.T) {
 	st := openTokenTestStore(t)
 	_, session := tokenTestIdentity(t, st, "refused")
 	var stderr identityDiagnosticWrites
-	srv := New(Config{Store: st, Now: func() time.Time { return tokenTestNow }, Stderr: &stderr})
+	srv := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return tokenTestNow }, Stderr: &stderr})
 	missing := tokenActionRequest(session.ID, "missing", "delete")
 	badOrigin := tokenRequest("/tokens", session.ID, url.Values{"name": {"new"}, "expires": {"never"}})
 	badOrigin.Header.Set("Origin", "https://foreign.example")

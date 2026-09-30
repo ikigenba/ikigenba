@@ -9,10 +9,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit"
 	"github.com/ikigenba/ikigenba/auth/internal/cli"
 )
 
 func main() {
+	kit := appkit.New("auth")
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	code := cli.Run(ctx, cli.Process{
 		Args:       os.Args[1:],
@@ -25,6 +27,7 @@ func main() {
 		Rand:       rand.Reader,
 		OIDCIssuer: "https://accounts.google.com",
 		DBSource:   "state/auth.db",
+		Banner:     kit.Banner,
 	})
 	stop()
 	os.Exit(code)

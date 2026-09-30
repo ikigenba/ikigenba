@@ -34,7 +34,7 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 		s.writeServerError(w, r, err)
 		return
 	}
-	writeAuthPage(w, http.StatusOK, authPageData{Email: identity.Email, Profile: &profilePageData{
+	writeAuthPage(w, http.StatusOK, authPageData{Banner: s.pageBanner(identity.Email), Profile: &profilePageData{
 		Apex: apexName(r.Host), Email: identity.Email, Workspace: s.cfg.WorkspaceDomain,
 		Rows: rows, Create: tokenCreateValues("", "90d", false),
 	}})

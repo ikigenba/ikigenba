@@ -389,7 +389,7 @@ func TestTokenEmptyProfileAndRejectedForms(t *testing.T) {
 	assertAuthPage(t, body, false)
 	api := tokenCard(t, body, "API tokens")
 	create := tokenCard(t, body, "Create a token")
-	// R-T4XB-Y8HZ, R-TLMK-BXKH: flush header and sole empty token panel; no table/scrolling wrapper.
+	// R-T4XB-Y8HZ, R-1RCO-XPWA: flush header and sole empty token panel; no table/scrolling wrapper.
 	tokenAttrs(t, api, map[string]string{"class": "card flush"})
 	header := tokenElements(api, "header")[0]
 	panel := tokenElements(api, "div")[0]
@@ -401,7 +401,7 @@ func TestTokenEmptyProfileAndRejectedForms(t *testing.T) {
 	tokenRead(t, h3, "No tokens yet")
 	tokenRead(t, p, "Create one below when a script or tool needs to act as you.")
 	tokenConsists(t, tokenElement(t, panel, "div"), h3, p)
-	if strings.Contains(body, "<table") || strings.Contains(body, `class="table-scroll"`) {
+	if strings.Contains(fixtureWrittenMarkup(t, body), "<table") || strings.Contains(fixtureWrittenMarkup(t, body), `class="table-scroll"`) {
 		t.Fatal("empty profile has table")
 	}
 	// R-VZV1-K6EU: fresh create card consists of header and default form.
@@ -486,7 +486,7 @@ func TestTokenPopulatedProfile(t *testing.T) {
 	}
 	calls := 0
 	var readings []time.Time
-	srv := New(Config{Store: st, Now: func() time.Time {
+	srv := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time {
 		calls++
 		value := tokenTestNow.Add(time.Duration(calls-1) * time.Hour)
 		readings = append(readings, value)
@@ -502,12 +502,12 @@ func TestTokenPopulatedProfile(t *testing.T) {
 	api := tokenCard(t, body, "API tokens")
 	panel := tokenElements(api, "div")[0]
 	table := tokenElements(panel, "table")
-	// R-THYV-6MCE: populated token panel is table-scroll with one table and no empty state.
+	// R-1L97-0V6T: populated token panel is table-scroll with one table and no empty state.
 	tokenAttrs(t, panel, map[string]string{"class": "table-scroll"})
-	if len(table) != 1 || strings.Contains(body, `class="empty"`) {
+	if len(table) != 1 || strings.Contains(fixtureWrittenMarkup(t, body), `class="empty"`) {
 		t.Fatal("populated panel wrong")
 	}
-	// R-TJ6R-KE33: table consists of head then body, with precisely six ordered column names.
+	// R-1MH3-EMXI: table consists of head then body, with precisely six ordered column names.
 	head := tokenElement(t, table[0], "thead")
 	tbody := tokenElement(t, table[0], "tbody")
 	tokenConsists(t, tokenElement(t, table[0], "table"), tokenElements(table[0], "thead")[0], tokenElements(table[0], "tbody")[0])
@@ -524,7 +524,7 @@ func TestTokenPopulatedProfile(t *testing.T) {
 	}
 	tokenConsists(t, tokenElement(t, headRows[0], "tr"), ths...)
 	tokenConsists(t, head, headRows...)
-	// R-VMDB-UFAK, R-VNL8-8719: one row per owned token, sorted used-first, usage desc, creation desc for ties and never-used.
+	// R-1OWW-66EW, R-1Q4S-JY5L: one row per owned token, sorted used-first, usage desc, creation desc for ties and never-used.
 	rows := tokenElements(tbody, "tr")
 	if len(rows) != len(cases) {
 		t.Fatalf("row count=%d", len(rows))
@@ -695,9 +695,9 @@ func TestTokenCreatedPageAndSecretLifetime(t *testing.T) {
 	tokenAttrs(t, button, map[string]string{"class": "secondary", "type": "button"})
 	tokenRead(t, button, "Copy")
 	tokenAssertIcon(t, button, []string{"M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666", "M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1"})
-	// R-TMUG-PPB6: only the secret div's tag mentions secret; no tag contains a character reference.
+	// R-DOCS-1Q0G: only the secret div's tag mentions secret; no tag contains a character reference.
 	secretTags := 0
-	for _, tag := range pageTags(body) {
+	for _, tag := range pageTags(fixtureWrittenMarkup(t, body)) {
 		if strings.Contains(tag.raw, "&") {
 			t.Fatalf("tag contains character reference %s", tag.raw)
 		}
@@ -711,8 +711,8 @@ func TestTokenCreatedPageAndSecretLifetime(t *testing.T) {
 	if secretTags != 1 {
 		t.Fatalf("secret tags=%d", secretTags)
 	}
-	// R-W76F-USV0: exact sole script tags and fixed statement, with lexical and quoted-whitespace restrictions.
-	if strings.Count(body, "<script>") != 1 || strings.Count(body, "</script>") != 1 || tokenOpening(script[0]) != "<script>" {
+	// R-DN4V-NY9R: exact sole script tags and fixed statement, with lexical and quoted-whitespace restrictions.
+	if strings.Count(fixtureWrittenMarkup(t, body), "<script>") != 1 || strings.Count(fixtureWrittenMarkup(t, body), "</script>") != 1 || tokenOpening(script[0]) != "<script>" {
 		t.Fatal("script tags wrong")
 	}
 	source := tokenElement(t, script[0], "script")

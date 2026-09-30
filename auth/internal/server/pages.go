@@ -4,10 +4,12 @@ import (
 	"html/template"
 	"net/http"
 	"strings"
+
+	"github.com/ikigenba/ikigenba/appkit"
 )
 
 type authPageData struct {
-	Email   string
+	Banner  appkit.Banner
 	SignIn  *signInPageData
 	Profile *profilePageData
 	Create  *tokenCreateData
@@ -31,19 +33,19 @@ type profilePageData struct {
 
 const iconStart = `<svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">`
 
-const authPageTemplates = `{{define "page"}}<!DOCTYPE html><html><head><title>auth</title><link rel="stylesheet" href="/assets/theme.css"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>{{if .SignIn}}{{template "signIn" .SignIn}}{{else}}{{template "chrome" .}}{{end}}</body></html>{{end}}
+const authPageTemplates = `{{define "page"}}<!DOCTYPE html><html><head><title>auth</title><link rel="stylesheet" href="/_appkit/theme.css"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>{{if .SignIn}}{{template "signIn" .SignIn}}{{else}}{{template "chrome" .}}{{end}}</body></html>{{end}}
 {{define "signIn"}}<main class="auth-page"><section class="card"><span class="mark">ikigenba</span> <h1>Sign in to {{template "value" .Apex}}</h1> {{if .Alert}}{{template "alert" .Alert}}{{else}}<p>{{template "value" .Sentence}}</p>{{end}} <a class="button secondary large google" href="{{.Link}}">{{.Word}}</a>{{if .Footer}} <footer>{{template "value" .Footer}}</footer>{{end}}</section></main>{{end}}
 {{define "alert"}}<div class="alert" data-kind="{{.Kind}}" role="{{.Role}}"><strong>{{template "value" .Title}}</strong> <p>{{template "value" .Message}}</p></div>{{end}}
-{{define "chrome"}}<header><a class="mark" data-service="auth" href="/">ikigenba</a><span>{{template "value" .Email}}</span><form class="inline" method="post" action="/logout"><button class="secondary small" type="submit">{{template "logoutIcon"}} Sign out</button></form></header><main>{{if .Profile}}{{template "profile" .Profile}}{{else if .Create}}{{template "tokenCreate" .Create}}{{else if .Created}}{{template "tokenCreated" .Created}}{{end}}</main>{{end}}
+{{define "chrome"}}{{template "banner" .Banner}}<main>{{if .Profile}}{{template "profile" .Profile}}{{else if .Create}}{{template "tokenCreate" .Create}}{{else if .Created}}{{template "tokenCreated" .Created}}{{end}}</main>{{end}}
 {{define "profile"}}<h1>Your account</h1><p>You're signed in to {{template "value" .Apex}}.</p><section class="card"><header><h2>Account</h2></header><dl class="kv"><dt>Email</dt><dd>{{template "value" .Email}}</dd><dt>Workspace</dt><dd>{{template "value" .Workspace}}</dd><dt>Signed in via</dt><dd>Google</dd></dl></section>{{template "tokenList" .Rows}}{{template "tokenCreate" .Create}}{{end}}
-{{define "logoutIcon"}}` + iconStart + `<path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"></path><path d="M9 12h12l-3 -3"></path><path d="M18 15l3 -3"></path></svg>{{end}}`
+`
 
 // html/template replaces a NUL in a dynamic string with U+FFFD. The read
 // contracts preserve submitted bytes, so emit NUL from static template text
 // between independently context-escaped segments. No segment is trusted HTML.
 const pageValueTemplate = `{{define "value"}}{{range $i, $part := splitNUL .}}{{if $i}}` + "\x00" + `{{end}}{{$part}}{{end}}{{end}}`
 
-var authTemplates = template.Must(template.New("auth").Funcs(template.FuncMap{
+var authTemplates = template.Must(appkit.Templates().Funcs(template.FuncMap{
 	"splitNUL": func(value string) []string { return strings.Split(value, "\x00") },
 }).Parse(authPageTemplates + tokenPageTemplates + pageValueTemplate))
 
@@ -86,4 +88,8 @@ func writeNonMemberPage(w http.ResponseWriter, host, workspace, email string) {
 		Apex: apexName(host), Link: "/login/google", Word: "Try another account", Footer: "Think you should have access? Ask your " + workspace + " workspace admin to add you.",
 		Alert: &pageAlertData{Kind: "err", Role: "alert", Title: "Workspace membership required", Message: message},
 	}})
+}
+
+func (s *Server) pageBanner(email string) appkit.Banner {
+	return s.cfg.Banner(appkit.User{Email: email, ProfileURL: "/", LogoutURL: "/logout"})
 }

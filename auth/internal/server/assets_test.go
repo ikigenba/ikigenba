@@ -3,166 +3,194 @@ package server
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/ikigenba/ikigenba/auth"
+	"github.com/ikigenba/ikigenba/appkit"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
 )
 
-func assetRequest(s *Server, method, target string, headers http.Header) *httptest.ResponseRecorder {
+var sharedFiles = map[string]string{
+	"theme.css":                  "text/css; charset=utf-8",
+	"launcher.js":                "text/javascript; charset=utf-8",
+	"InterVariable.woff2":        "font/woff2",
+	"InterVariable-Italic.woff2": "font/woff2",
+	"JetBrainsMono.woff2":        "font/woff2",
+	"OFL.txt":                    "text/plain; charset=utf-8",
+	"TABLER-LICENSE.txt":         "text/plain; charset=utf-8",
+}
+
+func assetRequest(h http.Handler, method, target string, headers http.Header) *httptest.ResponseRecorder {
 	r := httptest.NewRequestWithContext(context.Background(), method, target, nil)
 	r.Header = headers.Clone()
 	if r.Header == nil {
 		r.Header = make(http.Header)
 	}
 	w := httptest.NewRecorder()
-	s.ServeHTTP(w, r)
+	h.ServeHTTP(w, r)
 	return w
 }
 
-func assetNames(t *testing.T) []string {
+func assertAssetResponseEqual(t *testing.T, got, want *httptest.ResponseRecorder) {
 	t.Helper()
-	entries, err := auth.Assets.ReadDir("assets")
-	if err != nil {
-		t.Fatal(err)
+	if got.Code != want.Code || !reflect.DeepEqual(got.Header(), want.Header()) || !bytes.Equal(got.Body.Bytes(), want.Body.Bytes()) {
+		t.Fatalf("response %d %v body length %d, want %d %v body length %d", got.Code, got.Header(), got.Body.Len(), want.Code, want.Header(), want.Body.Len())
 	}
-	var names []string
-	for _, entry := range entries {
-		info, err := entry.Info()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if info.Mode().IsRegular() {
-			names = append(names, entry.Name())
-		}
-	}
-	return names
 }
 
-func TestAssetRepresentations(t *testing.T) {
-	// R-23D7-LKIT R-25T0-D407 R-270W-QVQW R-288T-4NHL R-29GP-IF8A
-	s := New(Config{Now: fixedNow})
-	for _, name := range assetNames(t) {
+func assertAssetHeader(t *testing.T, w *httptest.ResponseRecorder, name, want string) {
+	t.Helper()
+	if !reflect.DeepEqual(w.Header().Values(name), []string{want}) {
+		t.Fatalf("%s=%v, want one %q", name, w.Header().Values(name), want)
+	}
+}
+
+func assertStrongAssetTag(t *testing.T, w *httptest.ResponseRecorder) string {
+	t.Helper()
+	tags := w.Header().Values("ETag")
+	if len(tags) != 1 {
+		t.Fatalf("ETag=%v", tags)
+	}
+	tag := tags[0]
+	if len(tag) < 2 || tag[0] != '"' || tag[len(tag)-1] != '"' {
+		t.Fatalf("not strong entity tag: %q", tag)
+	}
+	for i := 1; i < len(tag)-1; i++ {
+		c := tag[i]
+		if c != 0x21 && (c < 0x23 || c > 0x7e) && c < 0x80 {
+			t.Fatalf("invalid entity-tag byte in %q", tag)
+		}
+	}
+	return tag
+}
+
+func TestSharedAssetRepresentations(t *testing.T) {
+	// R-1F5P-40HC: the seven shared files are nonempty and have their specified types.
+	// R-4PQJ-VKID: 200 and 304 carry one strong tag and no-cache.
+	// R-1GDL-HS81: the body and tag are stable within and across servers.
+	// R-1HLH-VJYQ: HEAD has the GET representation headers and no body.
+	s, other := New(Config{}), New(Config{})
+	for name, contentType := range sharedFiles {
 		t.Run(name, func(t *testing.T) {
-			body, err := auth.Assets.ReadFile("assets/" + name)
-			if err != nil {
-				t.Fatal(err)
+			target := appkit.StaticPrefix + name
+			get := assetRequest(s, "GET", target, nil)
+			if get.Code != 200 || get.Body.Len() == 0 {
+				t.Fatalf("GET = %d body length %d", get.Code, get.Body.Len())
 			}
-			w := assetRequest(s, http.MethodGet, "/assets/"+name, nil)
-			if w.Code != http.StatusOK || !bytes.Equal(w.Body.Bytes(), body) {
-				t.Fatalf("status=%d body differs=%v", w.Code, !bytes.Equal(w.Body.Bytes(), body))
+			assertAssetHeader(t, get, "Content-Type", contentType)
+			tag := assertStrongAssetTag(t, get)
+			assertAssetHeader(t, get, "Cache-Control", "no-cache")
+			for _, server := range []*Server{s, other} {
+				again := assetRequest(server, "GET", target, nil)
+				if !bytes.Equal(again.Body.Bytes(), get.Body.Bytes()) || again.Header().Get("ETag") != tag {
+					t.Fatal("representation changed")
+				}
 			}
-			types := map[string]string{".css": "text/css; charset=utf-8", ".woff2": "font/woff2", ".txt": "text/plain; charset=utf-8"}
-			wantType := types[filepath.Ext(name)]
-			if wantType == "" {
-				wantType = "application/octet-stream"
+			head := assetRequest(s, "HEAD", target, nil)
+			if head.Code != 200 || head.Body.Len() != 0 {
+				t.Fatalf("HEAD = %d body length %d", head.Code, head.Body.Len())
 			}
-			if w.Header().Get("Content-Type") != wantType {
-				t.Fatalf("Content-Type=%q, want %q", w.Header().Get("Content-Type"), wantType)
+			for _, header := range []string{"Content-Type", "ETag", "Cache-Control"} {
+				assertAssetHeader(t, head, header, get.Header().Get(header))
 			}
-			tag := fmt.Sprintf("\"%x\"", sha256.Sum256(body))
-			if w.Header().Get("ETag") != tag {
-				t.Fatalf("ETag=%q, want %q", w.Header().Get("ETag"), tag)
+			cached := assetRequest(s, "GET", target, http.Header{"If-None-Match": {tag}})
+			if cached.Code != 304 {
+				t.Fatalf("conditional status %d", cached.Code)
 			}
-			if !reflect.DeepEqual(w.Header().Values("Cache-Control"), []string{"no-cache"}) {
-				t.Fatalf("Cache-Control=%v", w.Header().Values("Cache-Control"))
-			}
+			assertStrongAssetTag(t, cached)
+			assertAssetHeader(t, cached, "Cache-Control", "no-cache")
 		})
 	}
-	// Percent encoding is decoded before matching the file name.
-	assertAssetResponseEqual(t, assetRequest(s, "GET", "/assets/%74heme.css", nil), assetRequest(s, "GET", "/assets/theme.css", nil), false)
 }
 
-func TestAssetContentTypeExtensionTable(t *testing.T) {
-	// R-270W-QVQW: cover extensions not present in the maintained file set.
-	for _, tc := range []struct{ name, want string }{
-		{"a.css", "text/css; charset=utf-8"}, {"a.woff2", "font/woff2"}, {"a.txt", "text/plain; charset=utf-8"},
-		{"a.CSS", "application/octet-stream"}, {"a", "application/octet-stream"}, {"a.css.bin", "application/octet-stream"}, {".txt", "text/plain; charset=utf-8"},
-	} {
-		if got := assetContentType(tc.name); got != tc.want {
-			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
-		}
-	}
-}
-
-func TestAssetConditionalRequests(t *testing.T) {
-	// R-2BWI-9YPO R-2D4E-NQGD R-288T-4NHL R-29GP-IF8A
-	s := New(Config{Now: fixedNow})
-	for _, name := range assetNames(t) {
-		target := "/assets/" + name
-		plain := assetRequest(s, "GET", target, nil)
-		tag := plain.Header().Get("ETag")
-		for _, values := range [][]string{{tag}, {"W/" + tag}, {"*"}, {" \t\"other\" , W/" + tag + " \t"}, {"\"other\"", "  " + tag + "  "}, {"\"other\"", " * "}} {
-			w := assetRequest(s, "GET", target, http.Header{"If-None-Match": values})
-			if w.Code != 304 || w.Body.Len() != 0 || w.Header().Get("ETag") != tag || !reflect.DeepEqual(w.Header().Values("Cache-Control"), []string{"no-cache"}) {
-				t.Fatalf("%s with %v: %d %v %q", name, values, w.Code, w.Header(), w.Body.String())
-			}
-		}
-		for _, values := range [][]string{{""}, {"\"other\""}, {"w/" + tag}, {strings.Trim(tag, "\"")}, {"\"other\"", " W/\"different\" "}, {"\"other\", ,\"more\""}} {
-			assertAssetResponseEqual(t, assetRequest(s, "GET", target, http.Header{"If-None-Match": values}), plain, false)
-		}
-	}
-}
-
-func TestAssetMissingPathsAndMethods(t *testing.T) {
-	// R-UDBA-BA8O R-2FK7-F9XR R-2I00-6TF5 R-23D7-LKIT
-	s := New(Config{Now: fixedNow})
-	for _, target := range []string{"/assets/", "/assets/missing", "/assets/THEME.CSS", "/assets/theme.css/child", "/assets//theme.css", "/assets/./theme.css", "/assets/../theme.css", "/assets/%2ftheme.css", "/assets/index.html", "/assets/app.js", "/assets/style.css"} {
-		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS", "CUSTOM"} {
-			w := assetRequest(s, method, target, http.Header{"If-None-Match": []string{"*"}})
-			if w.Code != 404 || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || w.Header().Get("ETag") != "" {
-				t.Fatalf("%s %s: %d %v", method, target, w.Code, w.Header())
-			}
-			if method == "HEAD" {
-				if w.Body.Len() != 0 {
-					t.Fatal("HEAD body")
+func TestSharedAssetConditionalRequests(t *testing.T) {
+	// R-1ITE-9BPF: matching well-formed lists or * yield empty 304 for GET and HEAD.
+	// R-1K1A-N3G4: nonmatching well-formed lists yield the GET representation.
+	s := New(Config{})
+	for name, contentType := range sharedFiles {
+		target := appkit.StaticPrefix + name
+		get := assetRequest(s, "GET", target, nil)
+		tag := get.Header().Get("ETag")
+		for _, modified := range []string{"", "Thu, 01 Jan 1970 00:00:00 GMT", "Fri, 31 Dec 9999 23:59:59 GMT", "invalid"} {
+			for _, match := range []string{"*", tag, "W/" + tag, " , \t\"other\", W/" + tag + "\t , ,", "\"other\", " + tag} {
+				for _, method := range []string{"GET", "HEAD"} {
+					w := assetRequest(s, method, target, http.Header{"If-None-Match": {match}, "If-Modified-Since": {modified}})
+					if w.Code != 304 || w.Body.Len() != 0 {
+						t.Fatalf("%s %s match %q modified %q = %d body %q", method, name, match, modified, w.Code, w.Body.String())
+					}
+					assertAssetHeader(t, w, "ETag", tag)
 				}
-			} else {
-				assertAssetPlainLine(t, w.Body.String())
 			}
-		}
-	}
-	for _, name := range assetNames(t) {
-		for _, method := range []string{"POST", "PUT", "DELETE", "OPTIONS", "CUSTOM"} {
-			w := assetRequest(s, method, "/assets/"+name, http.Header{"If-None-Match": []string{"*"}})
-			if w.Code != 405 || w.Header().Get("Allow") != "GET, HEAD" || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || w.Header().Get("ETag") != "" {
-				t.Fatalf("%s %s: %d %v", method, name, w.Code, w.Header())
+			for _, match := range []string{"\"other\"", "W/\"other\"", " ,\t\"other\" , W/\"different\", ,"} {
+				w := assetRequest(s, "GET", target, http.Header{"If-None-Match": {match}, "If-Modified-Since": {modified}})
+				if w.Code != 200 || !bytes.Equal(w.Body.Bytes(), get.Body.Bytes()) {
+					t.Fatalf("nonmatch %q = %d different body", match, w.Code)
+				}
+				assertAssetHeader(t, w, "Content-Type", contentType)
+				assertAssetHeader(t, w, "ETag", tag)
 			}
-			assertAssetPlainLine(t, w.Body.String())
 		}
 	}
 }
 
-func TestAssetHeadMirrorsGet(t *testing.T) {
-	// R-2ECB-1I72
-	s := New(Config{Now: fixedNow})
-	targets := []string{"/assets/", "/assets/missing", "/assets//theme.css", "/assets/./theme.css"}
-	for _, name := range assetNames(t) {
-		targets = append(targets, "/assets/"+name)
+func TestSharedAssetPathsMethodsAndDelegation(t *testing.T) {
+	// R-4KUY-CHJL: decoded byte-exact prefix and file names define the paths.
+	// R-4M2U-Q9AA: every appkit path delegates unchanged, including unspecified header behavior.
+	// R-4VU1-SF7U: unsupported methods on files yield 405, Allow, and no tag.
+	// R-4X1Y-66YJ: non-file appkit paths yield 404 without a tag for any method or condition.
+	s := New(Config{})
+	static := appkit.Static()
+	missing := []string{"/_appkit/", "/_appkit/banner.html", "/_appkit/missing", "/_appkit/THEME.CSS", "/_appkit/theme.cssX", "/_appkit/theme.css/child", "/_appkit//theme.css", "/_appkit/./theme.css", "/_appkit/../theme.css", "/_appkit/%2ftheme.css"}
+	for name := range sharedFiles {
+		missing = append(missing, appkit.StaticPrefix+strings.ToUpper(name), appkit.StaticPrefix+name+"extra")
 	}
+	targets := append([]string{}, missing...)
+	for name := range sharedFiles {
+		targets = append(targets, appkit.StaticPrefix+name)
+	}
+	targets = append(targets, "/_appkit/%74heme.css")
+	conditions := []http.Header{nil, {"If-None-Match": {"*"}}, {"If-None-Match": {"\"other\""}}, {"If-None-Match": {"malformed", "*"}, "Range": {"bytes=0-1"}, "If-Match": {"*"}, "If-Unmodified-Since": {"invalid"}, "If-Range": {"invalid"}, "If-Modified-Since": {"invalid"}, "X-Test": {"one", "two"}}}
 	for _, target := range targets {
-		tag := assetRequest(s, "GET", target, nil).Header().Get("ETag")
-		for _, header := range []http.Header{nil, {"If-None-Match": []string{"*"}}, {"If-None-Match": []string{tag}}, {"If-None-Match": []string{"\"other\""}}} {
-			assertAssetResponseEqual(t, assetRequest(s, "HEAD", target, header), assetRequest(s, "GET", target, header), true)
+		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE", "CONNECT", "CUSTOM"} {
+			for _, header := range conditions {
+				w := assetRequest(s, method, target, header)
+				assertAssetResponseEqual(t, w, assetRequest(static, method, target, header))
+				isMissing := false
+				for _, path := range missing {
+					if target == path {
+						isMissing = true
+					}
+				}
+				if isMissing {
+					if w.Code != 404 || len(w.Header().Values("ETag")) != 0 {
+						t.Fatalf("%s %s = %d %v", method, target, w.Code, w.Header())
+					}
+				} else if method != "GET" && method != "HEAD" {
+					if w.Code != 405 || len(w.Header().Values("ETag")) != 0 {
+						t.Fatalf("%s %s = %d %v", method, target, w.Code, w.Header())
+					}
+					assertAssetHeader(t, w, "Allow", "GET, HEAD")
+				}
+			}
 		}
 	}
+	// URL.Path is decoded before delegation.
+	assertAssetResponseEqual(t, assetRequest(s, "GET", "/_appkit/%74heme.css", nil), assetRequest(s, "GET", "/_appkit/theme.css", nil))
 }
 
-func TestAssetCredentialAndStoreIndependence(t *testing.T) {
-	// R-2J7W-KL5U R-2LNP-C4N8 R-2MVL-PWDX
+func TestSharedAssetCredentialAndStoreIndependence(t *testing.T) {
+	// R-4Y9U-JYP8: live and invalid credentials leave the entire response unchanged.
+	// R-4ZHQ-XQFX: no appkit response sets a cookie.
+	// R-50PN-BI6M: closing the store leaves the entire response unchanged.
 	st, err := store.Open(filepath.Join(t.TempDir(), "auth.db"), &tokenTestRand{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = st.Close() }()
+	t.Cleanup(func() { _ = st.Close() })
 	user, err := st.UpsertUserOnLogin("issuer", "asset-user", "asset@example.test", fixedNow())
 	if err != nil {
 		t.Fatal(err)
@@ -176,39 +204,41 @@ func TestAssetCredentialAndStoreIndependence(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := New(Config{Store: st, Now: fixedNow})
-	targets := []string{"/assets/", "/assets/missing", "/assets//theme.css"}
-	for _, name := range assetNames(t) {
-		targets = append(targets, "/assets/"+name)
+	targets := []string{"/_appkit/", "/_appkit/missing", "/_appkit//theme.css"}
+	for name := range sharedFiles {
+		targets = append(targets, appkit.StaticPrefix+name)
 	}
-	type response struct {
+	type testCase struct {
 		method, target string
 		header         http.Header
-		plain          *httptest.ResponseRecorder
+		response       *httptest.ResponseRecorder
 	}
-	var cases []response
+	var cases []testCase
 	for _, target := range targets {
+		tag := assetRequest(s, "GET", target, nil).Header().Get("ETag")
 		for _, method := range []string{"GET", "HEAD", "POST"} {
-			for _, condition := range []string{"", "*", "\"other\""} {
+			for _, condition := range []string{"", "*", tag, "\"other\""} {
 				header := http.Header{}
 				if condition != "" {
 					header.Set("If-None-Match", condition)
 				}
 				plain := assetRequest(s, method, target, header)
 				if len(plain.Header().Values("Set-Cookie")) != 0 {
-					t.Fatal("Set-Cookie on unauthenticated request")
+					t.Fatal("Set-Cookie on appkit response")
 				}
-				for _, credentials := range []http.Header{{"Cookie": []string{SessionCookieName + "=" + session.ID}}, {"Authorization": []string{"Bearer " + secret}}, {"Cookie": []string{SessionCookieName + "=invalid; other=value"}, "Authorization": []string{"arbitrary invalid credentials"}}} {
+				cases = append(cases, testCase{method, target, header, plain})
+				for _, credentials := range []http.Header{{"Cookie": {SessionCookieName + "=" + session.ID}}, {"Authorization": {"Bearer " + secret}}, {"Cookie": {SessionCookieName + "=" + session.ID}, "Authorization": {"Bearer " + secret}}, {"Cookie": {SessionCookieName + "=invalid; other=value"}, "Authorization": {"arbitrary invalid credentials"}}} {
 					combined := header.Clone()
 					for key, values := range credentials {
 						combined[key] = values
 					}
 					got := assetRequest(s, method, target, combined)
-					assertAssetResponseEqual(t, got, plain, false)
+					assertAssetResponseEqual(t, got, plain)
 					if len(got.Header().Values("Set-Cookie")) != 0 {
-						t.Fatal("Set-Cookie on credentialed request")
+						t.Fatal("Set-Cookie on credentialed response")
 					}
+					cases = append(cases, testCase{method, target, combined, got})
 				}
-				cases = append(cases, response{method, target, header, plain})
 			}
 		}
 	}
@@ -216,64 +246,6 @@ func TestAssetCredentialAndStoreIndependence(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tc := range cases {
-		assertAssetResponseEqual(t, assetRequest(s, tc.method, tc.target, tc.header), tc.plain, false)
-	}
-}
-
-func TestAssetWorkingDirectoryIndependence(t *testing.T) {
-	// R-2O3I-3O4M
-	s := New(Config{Now: fixedNow})
-	targets := []string{"/assets/", "/assets/missing"}
-	for _, name := range assetNames(t) {
-		targets = append(targets, "/assets/"+name)
-	}
-	baseline := map[string]*httptest.ResponseRecorder{}
-	for _, target := range targets {
-		for _, method := range []string{"GET", "HEAD", "POST"} {
-			baseline[method+target] = assetRequest(s, method, target, nil)
-		}
-	}
-	dir := t.TempDir()
-	t.Chdir(dir)
-	if err := os.Mkdir("assets", 0700); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range assetNames(t) {
-		if err := os.WriteFile(filepath.Join("assets", name), []byte("different content"), 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for key, want := range baseline {
-		method, target, _ := strings.Cut(key, "/")
-		assertAssetResponseEqual(t, assetRequest(s, method, "/"+target, nil), want, false)
-	}
-	t.Chdir(t.TempDir())
-	for key, want := range baseline {
-		method, target, _ := strings.Cut(key, "/")
-		assertAssetResponseEqual(t, assetRequest(s, method, "/"+target, nil), want, false)
-	}
-}
-
-func assertAssetResponseEqual(t *testing.T, got, want *httptest.ResponseRecorder, head bool) {
-	t.Helper()
-	gh, wh := got.Header().Clone(), want.Header().Clone()
-	gh.Del("Date")
-	wh.Del("Date")
-	if got.Code != want.Code || !reflect.DeepEqual(gh, wh) {
-		t.Fatalf("response %d %v, want %d %v", got.Code, gh, want.Code, wh)
-	}
-	if head {
-		if got.Body.Len() != 0 {
-			t.Fatal("HEAD body")
-		}
-	} else if !bytes.Equal(got.Body.Bytes(), want.Body.Bytes()) {
-		t.Fatal("response body differs")
-	}
-}
-
-func assertAssetPlainLine(t *testing.T, body string) {
-	t.Helper()
-	if !strings.HasSuffix(body, "\n") || len(body) < 2 || strings.ContainsAny(strings.TrimSuffix(body, "\n"), "\r\n") {
-		t.Fatalf("not one plain line: %q", body)
+		assertAssetResponseEqual(t, assetRequest(s, tc.method, tc.target, tc.header), tc.response)
 	}
 }

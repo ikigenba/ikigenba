@@ -18,12 +18,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit"
 	"github.com/ikigenba/ikigenba/auth/internal/google"
 	"github.com/ikigenba/ikigenba/auth/internal/store"
 )
 
 func TestConfigAndNew(t *testing.T) {
-	// R-KTXG-XSI4: Config is exactly the process dependencies handlers need.
+	// R-SXGG-AZM6: Config is exactly the process dependencies handlers need.
 	configType := reflect.TypeFor[Config]()
 	wantFields := []struct {
 		name string
@@ -35,13 +36,14 @@ func TestConfigAndNew(t *testing.T) {
 		{name: "Rand", typ: reflect.TypeFor[io.Reader]()},
 		{name: "Stderr", typ: reflect.TypeFor[io.Writer]()},
 		{name: "WorkspaceDomain", typ: reflect.TypeFor[string]()},
+		{name: "Banner", typ: reflect.TypeFor[func(appkit.User) appkit.Banner]()},
 	}
 	if configType.NumField() != len(wantFields) {
 		t.Fatalf("Config has %d fields, want %d", configType.NumField(), len(wantFields))
 	}
 	for i, want := range wantFields {
 		field := configType.Field(i)
-		if field.Name != want.name || field.Type != want.typ {
+		if field.Name != want.name || field.Type != want.typ || field.PkgPath != "" {
 			t.Fatalf("Config field %d = %s %s, want %s %s", i, field.Name, field.Type, want.name, want.typ)
 		}
 	}
@@ -410,6 +412,9 @@ func TestContractRoutesServed(t *testing.T) {
 		Rand:            bytes.NewReader(bytes.Repeat([]byte{5}, 64)),
 		Stderr:          &bytes.Buffer{},
 		WorkspaceDomain: "example.test",
+		Banner: func(u appkit.User) appkit.Banner {
+			return appkit.Banner{Service: "auth", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+		},
 	})
 
 	root := serveRoute(s, http.MethodGet, "/", nil)
@@ -417,9 +422,9 @@ func TestContractRoutesServed(t *testing.T) {
 		t.Fatalf("GET / = %d %q %q", root.Code, root.Header().Get("Content-Type"), root.Body.String())
 	}
 
-	asset := serveRoute(s, http.MethodGet, "/assets/theme.css", nil)
+	asset := serveRoute(s, http.MethodGet, "/_appkit/theme.css", nil)
 	if asset.Code != http.StatusOK || asset.Header().Get("Content-Type") != "text/css; charset=utf-8" {
-		t.Fatalf("GET /assets/theme.css = %d %q", asset.Code, asset.Header().Get("Content-Type"))
+		t.Fatalf("GET /_appkit/theme.css = %d %q", asset.Code, asset.Header().Get("Content-Type"))
 	}
 
 	login := serveRoute(s, http.MethodGet, "/login/google", nil)
@@ -526,7 +531,9 @@ func TestCrossRouteFailureDiagnostics(t *testing.T) {
 	}
 
 	var writes diagnosticWrites
-	s := New(Config{Store: st, Now: fixedNow, Stderr: &writes})
+	s := New(Config{Store: st, Now: fixedNow, Stderr: &writes, Banner: func(u appkit.User) appkit.Banner {
+		return appkit.Banner{Service: "auth", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+	}})
 	for _, tc := range []struct{ method, target, origin string }{
 		{http.MethodGet, "/", ""},
 		{http.MethodGet, "/check", ""},
@@ -599,4 +606,17 @@ func (l *observedListener) Accept() (net.Conn, error) {
 
 func fixedNow() time.Time {
 	return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+}
+
+func TestRetiredAssetsPaths(t *testing.T) {
+	// R-TQGG-VYEV: flat legacy asset paths are missing for every method.
+	s := New(Config{})
+	for _, name := range []string{"theme.css", "launcher.js", "InterVariable.woff2", "unknown", ".hidden", "...", "%74heme.css", "a%20b"} {
+		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE", "CONNECT", "CUSTOM"} {
+			w := assetRequest(s, method, "/assets/"+name, nil)
+			if w.Code != http.StatusNotFound {
+				t.Fatalf("%s /assets/%s = %d, want 404", method, name, w.Code)
+			}
+		}
+	}
 }

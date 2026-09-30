@@ -30,14 +30,14 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 
 	if err := r.ParseForm(); err != nil {
 		create := tokenCreateValues(r.Form.Get("name"), r.Form.Get("expires"), true)
-		writeAuthPage(w, http.StatusBadRequest, authPageData{Email: identity.Email, Create: &create})
+		writeAuthPage(w, http.StatusBadRequest, authPageData{Banner: s.pageBanner(identity.Email), Create: &create})
 		return
 	}
 	name := strings.TrimSpace(r.Form.Get("name"))
 	expiry, validExpiry := tokenExpiry(r.Form.Get("expires"))
 	if utf8.RuneCountInString(name) < 1 || utf8.RuneCountInString(name) > 64 || !validExpiry {
 		create := tokenCreateValues(r.Form.Get("name"), r.Form.Get("expires"), true)
-		writeAuthPage(w, http.StatusBadRequest, authPageData{Email: identity.Email, Create: &create})
+		writeAuthPage(w, http.StatusBadRequest, authPageData{Banner: s.pageBanner(identity.Email), Create: &create})
 		return
 	}
 
@@ -47,7 +47,7 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeAuthPage(w, http.StatusOK, authPageData{Email: identity.Email, Created: &tokenCreatedData{Name: name, Secret: secret}})
+	writeAuthPage(w, http.StatusOK, authPageData{Banner: s.pageBanner(identity.Email), Created: &tokenCreatedData{Name: name, Secret: secret}})
 }
 
 func (s *Server) handleTokenAction(w http.ResponseWriter, r *http.Request) {

@@ -2,10 +2,13 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"debug/elf"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,15 +17,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/auth/internal/server"
+	"github.com/ikigenba/ikigenba/auth/internal/store"
 	"github.com/ikigenba/ikigenba/auth/internal/version"
 )
 
 // TestMainWiring is the one test that builds and executes auth. It verifies
 // the real process boundary, including socket activation and both signals.
 func TestMainWiring(t *testing.T) {
-	// R-NJQ3-EMLL R-LX6X-1N09 R-3WNI-4FXO
+	// R-3WNI-4FXO
 	// R-P02O-R3KF R-P2IH-IN1T R-P666-NY9W
-	// R-1UTW-X6BY R-M6Y4-3SXT
+	// R-STSR-5OE3 R-M6Y4-3SXT
 	binary := buildBinary(t)
 	assertStatic(t, binary)
 
@@ -35,7 +40,7 @@ func TestMainWiring(t *testing.T) {
 		{name: "version", args: []string{"--version"}, wantOut: version.Version + "\n"},
 		{name: "manifest", args: []string{"manifest"}, wantOut: manifestFile(t)},
 		{name: "bogus", args: []string{"bogus"}, wantErr: "auth: unknown command 'bogus'\n\nsee 'auth --help' for usage\n", wantCode: 2},
-		{name: "bare", env: googleEnv(), wantErr: "auth: no socket was passed in\n\nrun it under systemd, or locally with 'systemd-socket-activate -l 127.0.0.1:3001 auth'\n", wantCode: 2},
+		{name: "bare", env: googleEnv(), wantErr: "auth: no socket was passed in\n\nrun it under systemd, or locally with 'systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth'\n", wantCode: 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			out, errOut, code := execChild(t, binary, tc.env, tc.args...)
@@ -157,6 +162,31 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal) {
 	cmd := &exec.Cmd{Path: "/bin/sh", Args: []string{"/bin/sh", "-c", "LISTEN_PID=$$ LISTEN_FDS=1 exec \"$0\"", binary}}
 	cmd.Dir = work
 	cmd.Env = append(googleEnv(), "NOTIFY_SOCKET="+notifyPath)
+	var sessionID string
+	if sig == syscall.SIGTERM {
+		services := filepath.Join(shortDir, "services.json")
+		if err := os.WriteFile(services, []byte(`{"services":[{"name":"auth","url":"/","icon":"","enabled":true}]}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cmd.Env = append(cmd.Env, "IKIGENBA_SERVICES="+services)
+		st, err := store.Open(filepath.Join(work, "state", "auth.db"), bytes.NewReader(bytes.Repeat([]byte{0x42}, 4096)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		now := time.Now()
+		u, err := st.UpsertUserOnLogin("https://accounts.google.com", "subject", "user@example.test", now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		session, err := st.CreateSession(u.ID, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sessionID = session.ID
+		if err := st.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
 	cmd.ExtraFiles = []*os.File{file}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -184,6 +214,30 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal) {
 		t.Fatalf("database %s: %v", dbPath, err)
 	}
 	assertOnlyDatabaseOpen(t, cmd.Process.Pid, dbPath)
+	if sessionID != "" {
+		transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
+		}}
+		defer transport.CloseIdleConnections()
+		client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://auth/", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.AddCookie(&http.Cookie{Name: server.SessionCookieName, Value: sessionID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Contains(body, []byte(`popovertarget="services"`)) {
+			t.Fatalf("main banner source has no launcher: %s", body)
+		}
+	}
 
 	if err := cmd.Process.Signal(sig); err != nil {
 		t.Fatal(err)

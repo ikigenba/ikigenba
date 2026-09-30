@@ -28,7 +28,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit"
 	"github.com/ikigenba/ikigenba/auth/internal/idcodec"
+	"github.com/ikigenba/ikigenba/auth/internal/store"
 	"github.com/ikigenba/ikigenba/auth/internal/version"
 )
 
@@ -61,10 +63,10 @@ engine = "sqlite"
 path = "state/auth.db"
 `
 
-const wantSocketHint = "\n\nrun it under systemd, or locally with 'systemd-socket-activate -l 127.0.0.1:3001 auth'\n"
+const wantSocketHint = "\n\nrun it under systemd, or locally with 'systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth'\n"
 
 func TestSurface(t *testing.T) {
-	// R-LTJ7-WBS6
+	// R-SITN-PQPU
 	typ := reflect.TypeOf(Process{})
 	want := []struct {
 		name string
@@ -76,6 +78,7 @@ func TestSurface(t *testing.T) {
 		{"Inherit", reflect.TypeFor[func(uintptr) (net.Listener, error)]()},
 		{"Now", reflect.TypeFor[func() time.Time]()}, {"Rand", reflect.TypeFor[io.Reader]()},
 		{"OIDCIssuer", reflect.TypeFor[string]()}, {"DBSource", reflect.TypeFor[string]()},
+		{"Banner", reflect.TypeFor[func(appkit.User) appkit.Banner]()},
 	}
 	if typ.NumField() != len(want) {
 		t.Fatalf("Process fields = %d", typ.NumField())
@@ -161,7 +164,9 @@ func baseProcess(env map[string]string, source string, ln net.Listener) Process 
 			return nil, fmt.Errorf("fd %d", fd)
 		}
 		return ln, nil
-	}, Now: func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }, Rand: bytes.NewReader(bytes.Repeat([]byte{0x42}, 4096)), OIDCIssuer: "http://127.0.0.1:0", DBSource: source}
+	}, Now: func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }, Rand: bytes.NewReader(bytes.Repeat([]byte{0x42}, 4096)), OIDCIssuer: "http://127.0.0.1:0", DBSource: source, Banner: func(u appkit.User) appkit.Banner {
+		return appkit.Banner{Service: "auth", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+	}}
 }
 func goodEnv() map[string]string {
 	return map[string]string{"GOOGLE_CLIENT_ID": "id", "GOOGLE_CLIENT_SECRET": "secret", "WORKSPACE_DOMAIN": "example.test", "LISTEN_PID": "42", "LISTEN_FDS": "1"}
@@ -169,8 +174,7 @@ func goodEnv() map[string]string {
 func testSource(t *testing.T) string { return filepath.Join(t.TempDir(), "auth.db") }
 
 func TestConfigAndSocketValidation(t *testing.T) {
-	//nolint:misspell // R-MROE-LWJM is an opaque requirement ID.
-	// R-MKD0-BA3G R-MLKW-P1U5 R-MO0P-GLBJ R-MMST-2TKU R-MQGI-84SX R-MSWA-ZOAB
+	// R-MKD0-BA3G R-MLKW-P1U5 R-MO0P-GLBJ R-MMST-2TKU R-MQGI-84SX R-SZW9-2J3K R-SYOC-ORCV
 	cases := []struct {
 		name   string
 		mutate func(map[string]string)
@@ -280,7 +284,7 @@ func TestInheritedListenerFailuresAndOpenOrder(t *testing.T) {
 }
 
 func TestServeReadinessAndInjectedSeam(t *testing.T) {
-	// R-NKXZ-SECA R-NII7-0UUW R-A6NL-V77Q R-N1FL-O2H6 R-N3VE-FLYK R-N6B7-75FY R-GYUP-OF53 R-OYUS-DBTQ
+	// R-T145-GAU9 R-NII7-0UUW R-SRCY-E4WP R-N1FL-O2H6 R-N3VE-FLYK R-N6B7-75FY R-T2C1-U2KY R-OYUS-DBTQ
 	for _, preexisting := range []bool{false, true} {
 		t.Run(strconv.FormatBool(preexisting), func(t *testing.T) {
 			source := testSource(t)
@@ -318,6 +322,8 @@ func TestServeReadinessAndInjectedSeam(t *testing.T) {
 			defer func() { _ = notifyLn.Close() }()
 			env["NOTIFY_SOCKET"] = addr
 			p := baseProcess(env, source, ln)
+			// R-T4RU-LM2C: no request may consult the banner source.
+			p.Banner = func(appkit.User) appkit.Banner { t.Error("banner called without request"); return appkit.Banner{} }
 			ctx, cancel := context.WithCancel(t.Context())
 			done := make(chan int, 1)
 			go func() { done <- Run(ctx, p) }()
@@ -359,9 +365,11 @@ func TestServeReadinessAndInjectedSeam(t *testing.T) {
 }
 
 func TestRunWiresIssuerAndRandomness(t *testing.T) {
-	// R-A6NL-V77Q R-NKXZ-SECA: serve a request through Run's inherited listener.
+	// R-SRCY-E4WP R-T145-GAU9: serve a request through Run's inherited listener.
+	var issuerCalls atomic.Int32
 	var issuer *httptest.Server
 	issuer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		issuerCalls.Add(1)
 		if r.URL.Path != "/.well-known/openid-configuration" {
 			http.NotFound(w, r)
 			return
@@ -392,7 +400,28 @@ func TestRunWiresIssuerAndRandomness(t *testing.T) {
 	defer func() { _ = ready.Close() }()
 	env := goodEnv()
 	env["NOTIFY_SOCKET"] = addr
-	p := baseProcess(env, testSource(t), ln)
+	source := testSource(t)
+	p := baseProcess(env, source, ln)
+	st, err := store.Open(source, &synchronizedRand{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := st.UpsertUserOnLogin("issuer", "subject", "user@example.test", p.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := st.CreateSession(u.ID, p.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	bannerCalls := 0
+	p.Banner = func(u appkit.User) appkit.Banner {
+		bannerCalls++
+		return appkit.Banner{Service: "injected-banner", Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+	}
 	p.OIDCIssuer = issuer.URL
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -404,6 +433,9 @@ func TestRunWiresIssuerAndRandomness(t *testing.T) {
 	buf := make([]byte, 32)
 	if _, _, err := ready.ReadFromUnix(buf); err != nil {
 		t.Fatal(err)
+	}
+	if issuerCalls.Load() != 0 {
+		t.Fatal("issuer contacted before a request")
 	}
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	reqCtx, reqCancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -426,9 +458,26 @@ func TestRunWiresIssuerAndRandomness(t *testing.T) {
 	if resp.StatusCode != http.StatusFound || loc.Scheme+"://"+loc.Host+loc.Path != issuer.URL+"/authorize" || loc.Query().Get("state") != idcodec.Encode(bytes.Repeat([]byte{0x42}, 16)) || loc.Query().Get("code_challenge") != base64.RawURLEncoding.EncodeToString(sum[:]) {
 		t.Fatalf("status=%d location=%s", resp.StatusCode, loc)
 	}
+	profile, err := http.NewRequestWithContext(reqCtx, http.MethodGet, "http://"+ln.Addr().String()+"/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile.AddCookie(&http.Cookie{Name: "ikigenba_session", Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+	page, err := client.Do(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(page.Body)
+	_ = page.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
 	cancel()
 	if code := <-done; code != 0 {
 		t.Fatalf("Run=%d diagnostic=%q", code, p.Stderr)
+	}
+	if bannerCalls == 0 || !bytes.Contains(body, []byte("injected-banner")) {
+		t.Fatalf("banner calls=%d page=%s", bannerCalls, body)
 	}
 }
 
@@ -666,7 +715,7 @@ func (w *overlapWriter) Write(b []byte) (int, error) {
 }
 
 func TestDiagnosticWriterSerializesCalls(t *testing.T) {
-	// R-H2IE-TQD6: concurrent HTTP failures exercise the writer passed by Run.
+	// R-T3JY-7UBN: concurrent HTTP failures exercise the writer passed by Run.
 	underlying := new(overlapWriter)
 	issuer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) }))
 	defer issuer.Close()
