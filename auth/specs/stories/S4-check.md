@@ -9,7 +9,7 @@ means copy the identity headers onto the upstream request, 401 means redirect
 the browser to sign in, 403 means pass the refusal through. `GET /me` is the
 public "who am I" endpoint an agent or a signed-in user can call directly.
 Every story here is a `curl` request against auth a developer serves with
-`systemd-socket-activate -l 127.0.0.1:3001 auth` (`S2-serve.md`), at
+`systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth` (`S2-serve.md`), at
 `http://localhost:3001`, standing in for nginx or for the caller.
 
 A credential reaches these endpoints one of two ways: the session cookie

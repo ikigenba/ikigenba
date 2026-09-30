@@ -3,13 +3,18 @@
 The file that carries auth to a space. `devctl build auth` writes it from a
 commit that an `auth/v<semver>` tag points at, and `opsctl install` unpacks it
 into `/opt/auth/`. Its contents are the whole of what auth ships: the static
-`linux/amd64` binary and the manifest, nothing else. auth carries its pages,
-the platform style's files, and its database schema inside the binary — its
-HTML is embedded, the stylesheet, fonts, and licences it serves at
-`/assets/` need no file beside it (`S8-assets.md`), and it creates its schema on first start — so it keeps nothing under
-`share/` and nothing under `etc/` but the manifest, and no other member
-exists. The version is in the file's name and in the binary, never in a
-member's path.
+`linux/amd64` binary, the manifest, and `share/icon.svg`, nothing else.
+`share/icon.svg` is auth's icon, an SVG image a human authors from the Tabler
+outline icon `fingerprint`; its presence is what lists auth in the platform's
+service launcher on a space (`S7-on-a-space.md`), and no story fixes its
+content further than that. auth carries its pages, the platform's shared
+files, and its database schema inside the binary — its HTML is embedded, the
+stylesheet, fonts, licences, and launcher script it serves at `/_appkit/` need
+no file beside it (`S8-assets.md`), and it creates its schema on first start —
+so it keeps nothing under `etc/` but the manifest and nothing under `share/`
+but the icon, and no other member exists. No `assets/` directory and no font
+file ships beside the binary. The version is in the file's name and in the
+binary, never in a member's path.
 
 ## A developer lists what the file holds
 
@@ -24,6 +29,7 @@ Output:
 ```
 bin/auth
 etc/manifest.toml
+share/icon.svg
 ```
 
 Exits 0. The lines are on stdout; stderr is empty.

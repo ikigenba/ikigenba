@@ -30,7 +30,11 @@ Arguments are checked before the environment is read. A command never needs a
 socket, so `auth --version` succeeds with nothing passed in and `auth bogus`
 fails as an unknown command whatever the environment holds; `Run` touches none
 of the environment, the inherited descriptor or systemd's notification socket
-unless `Args` is empty.
+unless `Args` is empty. The one environment read that happens before `Run` is
+appkit's: `main` builds the banner kit, which captures `IKIGENBA_SERVICES`,
+before it calls `Run` whatever the arguments (D01), and that read can neither
+fail nor change a command's outcome; `Run` never calls the banner source for a
+command (D03).
 
 The program follows the repository's stream and exit conventions: the product
 of a command goes to stdout, a diagnostic goes to stderr with a first line that

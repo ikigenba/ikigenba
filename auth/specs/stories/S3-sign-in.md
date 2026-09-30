@@ -3,8 +3,9 @@
 The browser sign-in flow: the sign-in page and profile at `/`, the start of a
 Google sign-in at `/login/google`, the callback at `/login/google/callback`,
 and sign-out at `/logout`. Every request here runs against auth a developer
-serves with `systemd-socket-activate -l 127.0.0.1:3001 auth` (`S2-serve.md`),
-at `http://localhost:3001`; on a space nginx proxies auth's hostname to auth's
+serves with `systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth` (`S2-serve.md`),
+with no services file unless a story says otherwise, at
+`http://localhost:3001`; on a space nginx proxies auth's hostname to auth's
 socket instead. A request whose `Host` is `localhost:3001` is a local one and
 takes the fixed development forms stated below; every other request is on a
 space. The facts that depend on the space's own
@@ -39,12 +40,13 @@ for any port, auth's own `http://localhost:3001` among them.
 A page fixes its visible text and the markup the stylesheet keys on: an
 element or class is quoted where the stylesheet hooks in, the visible text is
 stated as fact in the story's status line, and no body is quoted whole. Every
-HTML page auth serves is titled `auth`, links `/assets/theme.css` as its
-stylesheet, `<link rel="stylesheet" href="/assets/theme.css">`, and declares
-the phone-width viewport,
-`<meta name="viewport" content="width=device-width, initial-scale=1">`. The
-stylesheet and the fonts it loads are auth's own, served under `/assets/`; a
-page makes no request to any other host. An icon is a Tabler outline icon
+HTML page auth serves is titled `auth`, links `/_appkit/theme.css` as its
+stylesheet, and declares the phone-width viewport, so a phone shows it at the
+phone's own width rather than as a shrunken desktop page. The stylesheet, the
+fonts it loads, and the launcher's script are the platform's shared files,
+served by auth under `/_appkit/` (`S8-assets.md`); a page makes no request to
+any other host. auth serves nothing under `/assets/`: a path there is a path
+that does not exist, like any other. An icon is a Tabler outline icon
 drawn inline before a button's text as `<svg class="ico" aria-hidden="true">`,
 so the button's accessible text is its word alone. The workspace a page names
 is `WORKSPACE_DOMAIN`, here `michaelgreenly.dev`. A page names the apex, which
@@ -54,30 +56,61 @@ apex is the last two dot-separated labels of what remains —
 gives `localhost`.
 
 auth draws its pages in one of two frames. A page for a visitor who is not
-signed in is a sign-in card: it has no banner, and its `<body>` holds
-`<main class="auth-page">`, which holds one `<section class="card">`; the card
-begins with the bare mark, `<span class="mark">ikigenba</span>`, and its
-heading is `<h1>` reading `Sign in to <apex>`. Its way forward is a link styled
-as a button, `<a class="button secondary large google">`, that starts a Google
-sign-in. A page for a signed-in user — the profile here, and the token-created
-page and the rejected-create page (`S5-tokens.md`) — is drawn with the
-banner: the `<header>` at the top of its `<body>`, holding the mark
-`<a class="mark" data-service="auth" href="/">ikigenba</a>`, which the
-stylesheet shows as `ikigenba │ auth`, then the user's email address, then the
-sign-out form. On auth's own pages the email is plain text, not a link: the
-profile it would lead to is auth's `/`, where the mark already goes. The
-banner is followed by one `<main>` element holding everything else on the
-page. The sign-out form is
+signed in is a sign-in card: it has no banner and no launcher, and its
+`<body>` holds `<main class="auth-page">`, which holds one
+`<section class="card">`; the card begins with the bare mark,
+`<span class="mark">ikigenba</span>`, and its heading is `<h1>` reading
+`Sign in to <apex>`. Its way forward is a link styled as a button,
+`<a class="button secondary large google">`, that starts a Google sign-in. A
+page for a signed-in user — the profile here, and the token-created page and
+the rejected-create page (`S5-tokens.md`) — is drawn with the banner, the same
+banner every app of the platform draws, at the top of the page. It holds the
+mark, the user's email address, and a sign-out button; on a host with a
+services file it also holds the launcher button (below). The mark's text is
+`ikigenba`, and it names the service it fronts, `auth`, which a browser shows
+as `ikigenba │ auth`; the mark is not a link. The user's email address is a
+link whose text is the email, written as escaped HTML text, and whose target
+is `/`, auth's own profile. The banner is followed by one `<main>` element
+holding everything else on the page.
 
-```
-<form class="inline" method="post" action="/logout"><button class="secondary small" type="submit"><svg class="ico" aria-hidden="true" …>…</svg>Sign out</button></form>
-```
+The sign-out button signs the user out of the whole space in one click. It
+follows the email in the banner, and it is a form, not a link: pressing it
+POSTs to `/logout` (`A user signs out`). The `logout` icon is drawn before
+the text and hidden from assistive technology, so the button's accessible
+text is `Sign out` alone.
 
-with the `logout` icon before the text. auth's failures that are not pages —
-the 400, the 502s, and the 403 sign-out refusals below — stay one line of
-plain text in neither frame, because the visitor may not be signed in. A
-response block shows the status line and only the headers the story fixes; a
-header it does not show is not fixed.
+The launcher is the banner's way to the platform's other services. It is
+there only when the host's services file lists services: auth takes the
+file's path from `IKIGENBA_SERVICES`, which it reads once, when it starts
+(`S2-serve.md`), and it reads the file itself afresh for every page, so a
+rewrite of the file shows on the next page without a restart. The file is a
+JSON object whose `services` member is an array; each entry is an object with
+`name`, a non-empty string; `url`, a string; `icon`, a string holding the SVG
+text of the service's icon; and `enabled`, `true` or `false`, `false` for a
+service switched off. The array's order is the launcher's order. Members the
+launcher does not know are ignored, and an entry that lacks one of the four,
+or holds one of the wrong kind, is left out while the rest are still shown.
+With no variable, no readable file, a file that is not such an object, or no
+usable entry, the page has no launcher, and is otherwise the same page; auth
+writes nothing about it, since a broken launcher never breaks a page. When
+the launcher is there, the banner holds a launcher button labelled
+`Services`; pressing it opens the list of the services, which is closed when
+the page loads. The list holds a search field labelled `Find a service`, with
+the placeholder `Find a service`, and one entry per service in the file's
+order, each showing the service's icon and then its name. An enabled
+service's entry is a link to its `url`. A service switched off keeps its place
+but is not a working link, and its entry is titled `<name> is unavailable`,
+which a browser shows as its tooltip; its visible text is still its icon and
+name. auth's own entry, the one named `auth`, is marked as the current page.
+The list, the search field, and a hidden no-match line are all in the page as
+served; the one script the launcher adds is `/_appkit/launcher.js`, and
+without a launcher the page loads no such script. A sign-in card never has a
+launcher, whatever the services file holds.
+
+auth's failures that are not pages — the 400, the 502s, and the 403 sign-out
+refusals below — stay one line of plain text in neither frame, because the
+visitor may not be signed in. A response block shows the status line and
+only the headers the story fixes; a header it does not show is not fixed.
 
 ## A visitor asks for the sign-in page
 
@@ -106,7 +139,8 @@ is the mark `ikigenba`, the heading `Sign in to localhost`, the sentence
 the link `Continue with Google` whose target is `/login/google`, and the
 card's `<footer>` reading
 `You're signing in at localhost:3001. One sign-in covers every service in this space.`
-The footer names the `Host` as sent, port included.
+The footer names the `Host` as sent, port included. The page has no banner
+and no launcher, and loads no `/_appkit/launcher.js`.
 
 Preconditions:
 
@@ -673,9 +707,12 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 200. The body is an HTML document titled `auth`, with the stylesheet
-link and viewport every page has, drawn with the banner: the mark
-naming the service `auth`, the email `ada@michaelgreenly.dev`, and the
-`Sign out` button in the form that POSTs to `/logout`. Inside the page's one
+link and viewport every page has, drawn with the banner: the mark's text
+`ikigenba`, naming the service `auth` and not a link, the email
+`ada@michaelgreenly.dev` as a link to `/`, and the `Sign out` button in the
+form that POSTs to `/logout`. The banner holds no launcher button, and the
+page loads no `/_appkit/launcher.js`, since auth has no services file here.
+Inside the page's one
 `<main>` its visible text is the heading `Your account` with the subtitle
 `You're signed in to localhost.`; the `Account` card reading `Email`
 `ada@michaelgreenly.dev`, `Workspace` `michaelgreenly.dev`, and
@@ -687,7 +724,8 @@ Both forms return the same page; the `?return=<url>` is ignored.
 Preconditions:
 
 - auth is serving on `127.0.0.1:3001` with its Google settings and
-  `WORKSPACE_DOMAIN=michaelgreenly.dev`.
+  `WORKSPACE_DOMAIN=michaelgreenly.dev`, started with `IKIGENBA_SERVICES`
+  unset.
 - The request carries an `ikigenba_session` cookie naming a live session for a
   provisioned user whose email is `ada@michaelgreenly.dev`; that user holds
   zero or more tokens.
@@ -848,3 +886,188 @@ Preconditions:
 Postconditions:
 
 - The session still exists; nothing has changed.
+
+## A user on a host with services opens the launcher
+
+On a host, the services file lists the platform's services, and the launcher
+is how a user gets from their profile to any of them without typing an
+address. A developer stands in for the host by writing a services file and
+naming it when serving auth. The file here, `/tmp/services.json`, lists three
+services, one of them switched off:
+
+```
+{
+  "services": [
+    {"name": "auth", "url": "https://auth.sbx.ikigenba.dev/", "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='9'/></svg>", "enabled": true},
+    {"name": "dummy", "url": "https://dummy.sbx.ikigenba.dev/", "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='4' y='4' width='16' height='16'/></svg>", "enabled": true},
+    {"name": "ledger", "url": "https://ledger.sbx.ikigenba.dev/", "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M4 20L20 4'/></svg>", "enabled": false}
+  ]
+}
+```
+
+In a browser, the list is closed when the page loads, and pressing the
+launcher button opens it. Typing in the search field keeps only the entries
+whose name contains the typed text, ignoring case and any spaces around it;
+clearing the field shows them all again. When the text matches no entry, the
+no-match line appears, reading `No service matches “<text>”.` with the typed
+text in quotation marks. Pressing Enter in the search field opens the first
+entry still shown that is a working link, and does nothing when there is
+none. That filtering is the whole of what `/_appkit/launcher.js` does: every
+entry, and the no-match line, arrived with the page.
+
+Request:
+
+```
+$ curl -si --cookie 'ikigenba_session=<opaque>' http://localhost:3001/
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+```
+
+Status 200. The body is the profile page of `A user asks for the profile`,
+with the same banner, and the banner also holds the launcher button labelled
+`Services`. The page carries the list of services labelled `Services`,
+holding the search field labelled `Find a service` with the placeholder
+`Find a service` and three entries in the file's order: `auth`, showing its
+icon and then its name, a link to `https://auth.sbx.ikigenba.dev/`, marked as
+the current page; `dummy`, showing its icon and then its name, a link to
+`https://dummy.sbx.ikigenba.dev/`; and `ledger`, showing its icon and then its
+name, not a working link, titled `ledger is unavailable`. The no-match line
+is in the page and hidden. The page loads the script `/_appkit/launcher.js`.
+
+Preconditions:
+
+- auth is serving on `127.0.0.1:3001` with its Google settings and
+  `WORKSPACE_DOMAIN=michaelgreenly.dev`, started with
+  `systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -E IKIGENBA_SERVICES=/tmp/services.json -l 127.0.0.1:3001 auth`.
+- `/tmp/services.json` holds the file above and is readable by auth.
+- The request carries an `ikigenba_session` cookie naming a live session for a
+  provisioned user whose email is `ada@michaelgreenly.dev`.
+
+Postconditions:
+
+- Nothing has changed. The services file is as it was.
+
+## A user on a laptop with no services file sees no launcher
+
+A developer's laptop has no services file, and nothing names one:
+`IKIGENBA_SERVICES` is unset (`S2-serve.md`). The banner is then the banner
+without a launcher, and the page is otherwise the same page a host serves.
+
+Request:
+
+```
+$ curl -si --cookie 'ikigenba_session=<opaque>' http://localhost:3001/
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+```
+
+Status 200. The body is the profile page of `A user asks for the profile`:
+the banner holds the mark, `ada@michaelgreenly.dev` linking to `/`, and the
+sign-out button POSTing to `/logout`, and no launcher button. The page
+carries no list of services, no `Find a service` field, and no no-match line,
+and it loads no `/_appkit/launcher.js`.
+
+Preconditions:
+
+- auth is serving on `127.0.0.1:3001` with its Google settings and
+  `WORKSPACE_DOMAIN=michaelgreenly.dev`, started with
+  `systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth`, so `IKIGENBA_SERVICES` is
+  unset.
+- The request carries an `ikigenba_session` cookie naming a live session for a
+  provisioned user whose email is `ada@michaelgreenly.dev`.
+
+Postconditions:
+
+- Nothing has changed.
+- auth wrote nothing to stderr.
+
+## A user on a host whose services file is missing sees no launcher
+
+`IKIGENBA_SERVICES` names a file, but there is nothing there to read. A
+broken launcher never breaks a page, so auth draws the page without one and
+reports nothing: this is not a fault of the request, and auth's answer is the
+same as when no file is named at all. A file that exists but cannot be read,
+is not a JSON object with a `services` array, or has no usable entry is
+answered the same way.
+
+Request:
+
+```
+$ curl -si --cookie 'ikigenba_session=<opaque>' http://localhost:3001/
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+```
+
+Status 200. The body is the profile page of `A user asks for the profile`,
+with no launcher button, no list of services, and no `/_appkit/launcher.js`.
+
+Preconditions:
+
+- auth is serving on `127.0.0.1:3001` with its Google settings and
+  `WORKSPACE_DOMAIN=michaelgreenly.dev`, started with
+  `systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -E IKIGENBA_SERVICES=/tmp/services.json -l 127.0.0.1:3001 auth`.
+- `/tmp/services.json` does not exist.
+- The request carries an `ikigenba_session` cookie naming a live session for a
+  provisioned user whose email is `ada@michaelgreenly.dev`.
+
+Postconditions:
+
+- Nothing has changed.
+- auth wrote nothing to stderr.
+
+## A user sees the launcher follow a change to the services file
+
+The host rewrites the services file when a service is installed or switched
+on or off, and auth reads the file afresh for every page, so the next page a
+user loads shows the new list without auth being restarted. Here the host
+has switched `ledger` on since auth started: `/tmp/services.json` is the file
+of `A user on a host with services opens the launcher` with `ledger`'s
+`enabled` now `true`.
+
+Request:
+
+```
+$ curl -si --cookie 'ikigenba_session=<opaque>' http://localhost:3001/
+```
+
+Response:
+
+```
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+```
+
+Status 200. The body is the profile page with the launcher, as in
+`A user on a host with services opens the launcher`, except that the `ledger`
+entry is a link to `https://ledger.sbx.ikigenba.dev/` and is no longer titled
+as unavailable.
+
+Preconditions:
+
+- auth is serving on `127.0.0.1:3001` with its Google settings and
+  `WORKSPACE_DOMAIN=michaelgreenly.dev`, started with
+  `systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -E IKIGENBA_SERVICES=/tmp/services.json -l 127.0.0.1:3001 auth`
+  while `/tmp/services.json` listed `ledger` as switched off, and it has not
+  been restarted since.
+- `/tmp/services.json` now lists `ledger` with `enabled` `true`.
+- The request carries an `ikigenba_session` cookie naming a live session for a
+  provisioned user whose email is `ada@michaelgreenly.dev`.
+
+Postconditions:
+
+- Nothing has changed.

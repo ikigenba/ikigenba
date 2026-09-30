@@ -5,7 +5,10 @@ the socket systemd passes it (`/run/ikigenba/auth.sock` on a host), behind the
 host's nginx, which also sends it the identity subrequest for every other app.
 On a host it runs as `/opt/auth/bin/auth` with `/opt/auth` as its working
 directory and its environment from `/opt/auth/etc/env`; a developer runs the
-same binary from the checkout under `systemd-socket-activate`. The module path is `github.com/ikigenba/ikigenba/auth`. Its package
+same binary from the checkout under `systemd-socket-activate`. The module path is `github.com/ikigenba/ikigenba/auth`. It requires appkit
+(`github.com/ikigenba/ikigenba/appkit`), which supplies the banner, the
+service launcher, and the shared stylesheet, fonts, licences and launcher
+script under `/_appkit/`. Its package
 layout, import direction, version and manifest declarations, and run seam are
 design D01 (`specs/design/D01-layout-and-run-seam.md`); this file does not
 restate them.
@@ -18,11 +21,12 @@ to the run.
 
 ## Assets
 
-`assets/` holds copies of the repository's `design/` files: the stylesheet,
-fonts, and their licences. The interactive agent that changes `design/`
-refreshes them in the same session. The copied stylesheet replaces the
-Google Fonts import with `@font-face` rules for the files beside it, and its
-header names the `design/` commit it came from, so that commit lands first.
+auth holds no copy of the stylesheet, fonts, or licences; appkit embeds and
+serves them. `share/icon.svg` is auth's icon in the service launcher: the
+Tabler outline `fingerprint` from `design/ikigenba/icons/tabler/`, without its
+class, width, height, or invisible bounding path, as `design/README.md` asks of
+a launcher icon. It is human-authored; the build run never writes it.
+`devctl build` packs it beside `bin/` and `etc/`.
 
 ## Toolchain
 
@@ -30,6 +34,9 @@ header names the `design/` commit it came from, so that commit lands first.
 - a C compiler `cgo` can use (`gcc`, say): `go test -race` needs it, and
   without one gate 4 fails with `go: -race requires cgo`. The release build
   itself is cgo-free, which gate 3 proves.
+- the appkit module at the version `go.mod` requires, in the Go module cache
+  (`go mod download` fetches it once, online); `go.sum` is committed, and the
+  gates themselves run offline
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - a POSIX shell at `/bin/sh`: the one exec'ing test starts the binary through
   it (see Test discipline)
@@ -78,8 +85,8 @@ tests follow Live tests below.
 **Offline, deterministic, no fixed ports, no sleeping.** The gates run offline
 as an ordinary user, with no systemd. Every input reaches the code through the
 run seam (`cli.Process`, design D01) — `Args`, `LookupEnv`, `Unsetenv`, `Pid`,
-`Stdout`, `Stderr`, `Inherit`, `Now`, `Rand`, `OIDCIssuer`, `DBSource` — and
-tests supply each one; a test never reads or changes the real environment,
+`Stdout`, `Stderr`, `Inherit`, `Now`, `Rand`, `OIDCIssuer`, `DBSource`,
+`Banner` — and tests supply each one; a test never reads or changes the real environment,
 clock, or randomness, or accesses filesystem or network state outside the
 isolated fixtures described below. A test whose result depends on the
 developer's machine, wall-clock, environment, or a port already in use is a
@@ -108,6 +115,19 @@ bug.
 - **Randomness is injected.** `Process.Rand` supplies the bytes `idcodec`
   mints ids and secrets from, so id and secret values under test are
   reproducible.
+- **The banner source is the test's own.** `Process.Banner` and
+  `server.Config.Banner` are a function the test writes, returning whatever
+  services the case needs (D01, D05); no test calls `appkit.New`, which reads
+  `IKIGENBA_SERVICES` from the real environment. A test may call appkit's
+  other exported functions, to render the banner it expects, for instance.
+- **No test runs the page's scripts.** The pages carry the Copy button's
+  inline script and, when there are services, appkit's launcher script. The
+  gates have no browser and no JavaScript engine, and adding one is an
+  external dependency no one has approved, so a test asserts what a response
+  body carries and never what a script would do with it.
+- **A test may read `share/icon.svg`.** A test may open this directory's
+  `share/icon.svg`, read-only, to check what D01 fixes about it. It never
+  writes there, and this is the only checkout file a test reads.
 
 **auth binds nothing; a test makes its listener.** auth serves on the listener
 it is passed (D01, D03). A test that needs a listener makes its own: a
@@ -161,8 +181,15 @@ temporary working directory, where it creates `state/auth.db`. Its environment
 is one the test composes, never the developer's — the three Google settings
 set to placeholder values — and it runs offline like everything else: its
 serve case needs no Google, since readiness is the datagram, not a completed
-login. It makes no HTTP request of the child: what auth answers is decided in
-process, and the exec'ing test exists only to prove the wiring. Any other test
+login. In the first serve case that environment also names, in
+`IKIGENBA_SERVICES`, a services file the test wrote in its temporary
+directory, and before starting the child the test seeds `state/auth.db` in
+the child's working directory with a user and a live session through
+`internal/store`. Before signalling, it makes one request of the child:
+`GET /` with that session's cookie, over the socket. It asserts only that the
+page carries the launcher, which proves `main` handed appkit's kit to the
+server. Everything else auth answers is decided in process, and the exec'ing
+test exists only to prove the wiring. Any other test
 that builds, execs, waits on, or signals a process is a bug.
 
 ## Live tests
@@ -254,7 +281,7 @@ and pushed to a space's host by `devctl`, which drives `opsctl install` there.
 2. Commit that on `main` and push `main`.
 3. Tag that commit `auth/vX.Y.Z` and push the tag.
 4. `devctl build auth` at that tag writes `auth/dist/auth-vX.Y.Z.tar.xz`,
-   holding `bin/auth` and `etc/`, with no version recorded anywhere inside.
+   holding `bin/auth`, `etc/`, and `share/icon.svg`, with no version recorded anywhere inside.
    It refuses a binary whose `manifest` disagrees with the committed
    `etc/manifest.toml`.
 5. `devctl deploy <space> auth/dist/auth-vX.Y.Z.tar.xz` uploads the tarball

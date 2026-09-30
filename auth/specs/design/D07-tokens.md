@@ -24,10 +24,12 @@ with no banner.
 
 D05 owns the words every page auth draws is described in, and this design uses
 them by name without restating them: an **auth page** and what it carries in
-its head (the title `auth`, the stylesheet at `/assets/theme.css`, the
+its head (the title `auth`, the stylesheet at `/_appkit/theme.css`, the
 phone-width viewport, nothing loaded from another host, every outside value
-escaped); a page **drawn with the banner** for a user, with its **banner**
-and the **sign-out form**; a **card titled** a name; an
+escaped); a page **drawn with the banner** for a user, whose banner is
+appkit's, drawn from the data the server's `Banner` function returns, and the
+page's **written markup**, the page with that banner taken out, which is what
+auth's own markup rules read; a **card titled** a name; an
 **alert titled** a name **reading** a text; a button **drawn with** an icon and
 a word; and the reading procedures a requirement uses — start tag, end tag,
 occurrence, carries and read value, content, holds, begins with, consists of,
@@ -36,7 +38,7 @@ where on it the `API tokens` and `Create a token` cards sit and what they are
 titled; everything those two cards hold is this design's.
 
 This design adds three definitions of its own: the **plus icon** and the
-**copy icon**, defined the way D05 defines the logout icon, by the path data of
+**copy icon**, defined by the path data of
 Tabler's outline `plus` and `copy` icons in the platform's `design/` without
 their invisible bounding-box path; and a start tag that **marks** an
 attribute, read by D05's attribute name, case-insensitively, whatever the
@@ -142,9 +144,9 @@ nothing" by itself (WHATWG HTML, the `button` element), so a click submits
 nothing.
 
 The script is inline, with no `src`, for the reason the stylesheet is a file:
-the files auth serves under `/assets/` are the platform's hand-copied style
-files, and a script is not one of them. It must also keep D05's promise that a
-page loads nothing from any other host, which D05's attribute rules cannot see
+the files auth serves under `/_appkit/` are appkit's fixed set of shared files,
+and this script is not one of them. It must also keep D05's promise that
+auth's written markup loads nothing from any other host, which D05's attribute rules cannot see
 inside a script. No gate runs JavaScript, so the script is pinned by what a
 standard-library test can read: its start tag is exactly `<script>`, with no
 `type`, `nomodule`, or other attribute that could keep it from running, and
@@ -153,10 +155,12 @@ its source, apart from ASCII whitespace, is exactly one fixed statement — a
 (`document.querySelector`, MDN: "returns the first Element within the
 document that matches the specified selector"; `>` is the CSS child
 combinator) that passes the text of that div's `code` child to
-`navigator.clipboard.writeText`. No tag on the page but the secret div's
-mentions `secret` in any letter case, and no tag holds a character reference
-that could spell it, so the selectors find the Copy button and the secret and
-nothing else.
+`navigator.clipboard.writeText`. No tag in the page's written markup but the
+secret div's mentions `secret` in any letter case, and no tag there holds a
+character reference that could spell it; the banner above it is appkit's
+markup, whose own classes are fixed by appkit's design, and whose launcher
+icons are written only by opsctl, which validates each (appkit's D2). So the
+selectors find the Copy button and the secret and nothing else.
 Pinning the text apart from whitespace is the only form a text test can
 decide; a looser rule admits an extra listener or a wrapper that never runs.
 The source is further held to whitespace, letters, a short list of
@@ -164,7 +168,8 @@ punctuation, and twelve fixed words, so that whitespace can never split a word
 (`docu ment`) or pad a quoted string (`'click '`) into something the whitespace-free comparison would accept. That
 statement assigns nothing, names no URL, and reaches no API that fetches,
 navigates, loads, or evaluates code. D05 bars every other script from auth's
-pages.
+written markup; the one other script a page may carry is the launcher's, which
+is part of appkit's banner.
 
 ## REQUIREMENTS
 
@@ -180,10 +185,10 @@ pages.
 - R-T2HJ-6P0L: auth's design defines the **copy icon** as the icon whose `path` start tags carry `d` reading, in order, `M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666` and `M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1`; every requirement of auth's design that names the copy icon MUST denote that.
 - R-VW7C-EV6R: auth's design defines a start tag that **marks** an attribute `A` as one that, read as a tag span, has an attribute name matching `A` ASCII case-insensitively; every requirement of auth's design that says a start tag marks, or does not mark, an attribute MUST denote that.
 - R-T4XB-Y8HZ: The profile's card titled `API tokens` MUST have a `section` start tag carrying `class` reading `card flush`, its content MUST consist of its `header` element followed by exactly one `div` element — the card's **token panel** — and that `header` element MUST hold a `p` element whose content reads `Personal access tokens let scripts and tools act as you. Send one as a bearer token.`
-- R-THYV-6MCE: When `ListTokens` (D04) returns at least one token for the profile's user, the start tag of the token panel of the profile's card titled `API tokens` MUST carry `class` reading `table-scroll`, the token panel MUST hold exactly one `table` start tag, and the profile MUST hold no `div` start tag carrying `class` reading `empty`.
-- R-TJ6R-KE33: The content of the `table` element of R-THYV-6MCE MUST consist of a `thead` element followed by a `tbody` element, and the `thead` element's content MUST consist of one `tr` element whose content consists of exactly six `th` elements whose contents read, in order, `Name`, `Created`, `Last used`, `Expires`, `Status`, and the empty string.
-- R-VMDB-UFAK: For each token `t` that `ListTokens` (D04) returns for the profile's user, the `tbody` element of R-TJ6R-KE33 MUST hold exactly one `tr` element — `t`'s **row** — holding a `form` start tag carrying `action` reading `/tokens/<id>/delete`, where `<id>` is `t.ID`, and the `tbody` element's content MUST consist of exactly those rows, one per token.
-- R-VNL8-8719: For any two tokens `a` and `b` whose rows R-VMDB-UFAK requires, `a`'s row MUST precede `b`'s row whenever `a.LastUsedAt` is non-nil and `b.LastUsedAt` is nil; whenever both are non-nil and the time `a.LastUsedAt` points to is later than the time `b.LastUsedAt` points to; whenever both are non-nil, both point to the same instant, and `a.CreatedAt` is later than `b.CreatedAt`; and whenever both are nil and `a.CreatedAt` is later than `b.CreatedAt`.
+- R-1L97-0V6T: When `ListTokens` (D04) returns at least one token for the profile's user, the start tag of the token panel of the profile's card titled `API tokens` MUST carry `class` reading `table-scroll`, the token panel MUST hold exactly one `table` start tag, and the profile's written markup (R-CWB3-8ZYH) MUST hold no `div` start tag carrying `class` reading `empty`.
+- R-1MH3-EMXI: The content of the `table` element of R-1L97-0V6T MUST consist of a `thead` element followed by a `tbody` element, and the `thead` element's content MUST consist of one `tr` element whose content consists of exactly six `th` elements whose contents read, in order, `Name`, `Created`, `Last used`, `Expires`, `Status`, and the empty string.
+- R-1OWW-66EW: For each token `t` that `ListTokens` (D04) returns for the profile's user, the `tbody` element of R-1MH3-EMXI MUST hold exactly one `tr` element — `t`'s **row** — holding a `form` start tag carrying `action` reading `/tokens/<id>/delete`, where `<id>` is `t.ID`, and the `tbody` element's content MUST consist of exactly those rows, one per token.
+- R-1Q4S-JY5L: For any two tokens `a` and `b` whose rows R-1OWW-66EW requires, `a`'s row MUST precede `b`'s row whenever `a.LastUsedAt` is non-nil and `b.LastUsedAt` is nil; whenever both are non-nil and the time `a.LastUsedAt` points to is later than the time `b.LastUsedAt` points to; whenever both are non-nil, both point to the same instant, and `a.CreatedAt` is later than `b.CreatedAt`; and whenever both are nil and `a.CreatedAt` is later than `b.CreatedAt`.
 - R-T9SX-HBGR: auth's design defines the **time cell** of a time `x` as a `td` element whose content consists of exactly one `time` element whose start tag carries `datetime` reading `x` in UTC written as an RFC 3339 `date-time` (§5.6) in the form `YYYY-MM-DDTHH:MM:SSZ`, whole seconds with any fraction dropped, and whose content reads `x` in UTC written as `YYYY-MM-DD HH:MM UTC`, whole minutes with any seconds and fraction dropped; and the **never cell** as a `td` element whose start tag carries `class` reading `muted` and whose content reads `Never`; every requirement of auth's design that names a time cell or a never cell MUST denote that.
 - R-VOT4-LYRY: auth's design defines the profile's **draw time** as one value that a call of the `Now` field of the `server.Config` passed to `server.New` (D03) returned while the server handled the profile's request, the same value for every row of that profile; every requirement of auth's design that names the profile's draw time MUST denote that.
 - R-VQ10-ZQIN: auth's design defines the **elapsed text** of a duration `e`, which may be negative, as: `just now` when `e` is less than 60 seconds, every negative `e` included; when `e` is at least 60 seconds and less than 3600 seconds, with `n` the number of seconds in `e` divided by 60 and rounded down to a whole number, `1 minute ago` when `n` is 1 and `<n> minutes ago` otherwise; when `e` is at least 3600 seconds and less than 86400 seconds, with `n` the number of seconds in `e` divided by 3600 and rounded down to a whole number, `1 hour ago` when `n` is 1 and `<n> hours ago` otherwise; and when `e` is at least 86400 seconds, with `n` the number of seconds in `e` divided by 86400 and rounded down to a whole number, `1 day ago` when `n` is 1 and `<n> days ago` otherwise, however large `n` is; where `<n>` is `n` written in ASCII decimal digits with no leading zero; every requirement of auth's design that names the elapsed text of a duration MUST denote that.
@@ -191,7 +196,7 @@ pages.
 - R-VSGT-RA01: The content of each token's row MUST consist of exactly six `td` elements, in this order: one whose content reads the token's `Name` with every run of ASCII whitespace in it replaced by a single space and any leading or trailing space removed; the time cell of its `CreatedAt`; the never cell when its `LastUsedAt` is nil and otherwise the last-used cell of the time `LastUsedAt` points to; the never cell when its `ExpiresAt` is nil and otherwise the time cell of the time `ExpiresAt` points to; its status cell (R-VYN5-6EO5); and its actions cell (R-TEOJ-0EFJ).
 - R-VYN5-6EO5: A token's **status cell** MUST be a `td` element whose content consists of exactly one `span` element, which, when the token's `Enabled` is true, has a start tag carrying `class` reading `badge` and `data-kind` reading `ok` and content reading `Enabled`, and, when `Enabled` is false, has a start tag carrying `class` reading `badge` and not marking `data-kind`, and content reading `Disabled`.
 - R-TEOJ-0EFJ: A token's **actions cell** MUST be a `td` element whose start tag carries `class` reading `row-actions` and whose content consists of exactly two `form` elements, each with a start tag carrying `class` reading `inline` and `method` reading `post` and each with content consisting of exactly one `button` element whose start tag carries `class` reading `ghost small` and `type` reading `submit`: first, one whose start tag carries `action` reading `/tokens/<id>/disable` and whose button's content reads `Disable` when the token is enabled, or `action` reading `/tokens/<id>/enable` and whose button's content reads `Enable` when it is disabled; then one whose start tag carries `action` reading `/tokens/<id>/delete` and whose button's content reads `Delete`; where `<id>` is the token's `Token.ID` (the `idcodec.NewID` Crockford id, D04) and never its secret.
-- R-TLMK-BXKH: When `ListTokens` (D04) returns no token for the profile's user, the profile MUST hold no `table` start tag and no `div` start tag carrying `class` reading `table-scroll`, the start tag of the token panel of the profile's card titled `API tokens` MUST carry `class` reading `empty`, and the token panel's content MUST consist of an `h3` element whose content reads `No tokens yet` followed by a `p` element whose content reads `Create one below when a script or tool needs to act as you.`
+- R-1RCO-XPWA: When `ListTokens` (D04) returns no token for the profile's user, the profile's written markup (R-CWB3-8ZYH) MUST hold no `table` start tag and no `div` start tag carrying `class` reading `table-scroll`, the start tag of the token panel of the profile's card titled `API tokens` MUST carry `class` reading `empty`, and the token panel's content MUST consist of an `h3` element whose content reads `No tokens yet` followed by a `p` element whose content reads `Create one below when a script or tool needs to act as you.`
 - R-TH4B-RXWX: auth's design defines a **create-token form** as a `form` element whose start tag carries `method` reading `post` and `action` reading `/tokens`; every requirement of auth's design that names a create-token form MUST denote that.
 - R-TIC8-5PNM: Every create-token form MUST hold exactly one `label` start tag carrying `for` reading `token-name`, whose element's content reads `Name`; exactly one `label` start tag carrying `for` reading `token-expires`, whose element's content reads `Expires`; exactly one `input` start tag, which carries `id` reading `token-name`, `type` reading `text`, `name` reading `name`, `maxlength` reading `64`, and `placeholder` reading `e.g. ci-deploy`; and exactly one `select` start tag, which carries `id` reading `token-expires` and `name` reading `expires`.
 - R-TJK4-JHEB: The `select` element of every create-token form MUST have content consisting of exactly four `option` elements whose start tags carry `value` reading, in order, `30d`, `90d`, `365d`, and `never`, and whose contents read, in order, `In 30 days`, `In 90 days`, `In 365 days`, and `Never`, and exactly one of those `option` start tags MUST mark `selected`.
@@ -209,5 +214,5 @@ pages.
 - R-W3IQ-PHMX: The token-created page's card MUST have content consisting of, in this order: its `header` element; a `div` element whose start tag carries `class` reading `alert quiet` and `data-kind` reading `warn` and which is an alert titled `Copy it now` reading `This is the only time <name> is shown. Only its hash is stored.`, where `<name>` is the created token's trimmed name with every run of ASCII whitespace in it replaced by a single space; a `div` element whose start tag carries `class` reading `secret`; and either an `a` element or a `p` element whose content consists of an `a` element, that `a` element's start tag carrying `href` reading `/` and its content reading `Back to your account`; and the card MUST hold no other `a` start tag.
 - R-U0MP-W9S1: The content of the token-created page's `div` element whose start tag carries `class` reading `secret` MUST consist of a `code` element whose content is exactly the plaintext secret `CreateToken` (D04) returned as its second result, followed by a `button` element whose start tag carries `class` reading `secondary` and `type` reading `button` and which is drawn with the copy icon and the word `Copy`.
 - R-W4QN-39DM: The plaintext secret `CreateToken` (D04) returned for a successful `POST /tokens` MUST occur exactly once in the bytes of the token-created page, inside the content of the `code` element of R-U0MP-W9S1, and MUST NOT occur in the bytes of any other response auth sends other than within a value a requirement of auth's design has auth write from that response's request or from a token's `Name`.
-- R-W76F-USV0: The token-created page MUST hold exactly one `script` start tag, which MUST be exactly the characters `<script>`, and exactly one `</script>` end tag; in that `script` element's content, every character MUST be ASCII whitespace, an ASCII letter, or one of `.`, `(`, `)`, `{`, `}`, `;`, `,`, `'`, and `>`, and every maximal run of ASCII letters (a **word**) MUST be one of `document`, `querySelector`, `addEventListener`, `click`, `function`, `navigator`, `clipboard`, `writeText`, `textContent`, `secret`, `button`, and `code`; ASCII whitespace MUST NOT lie between the first and second `'` of that content, between its third and fourth `'`, or between any later such pair; and that content with every ASCII whitespace character removed MUST be exactly `document.querySelector('.secret>button').addEventListener('click',function(){navigator.clipboard.writeText(document.querySelector('.secret>code').textContent);});` and nothing else.
-- R-TMUG-PPB6: In the token-created page, the start tag of the `div` element R-U0MP-W9S1 describes MUST be the only tag span that contains `secret` matched ASCII case-insensitively, and every tag span of the page MUST NOT contain `&`.
+- R-DN4V-NY9R: The token-created page's written markup (R-CWB3-8ZYH) MUST hold exactly one `script` start tag, which MUST be exactly the characters `<script>`, and exactly one `</script>` end tag; in that `script` element's content, every character MUST be ASCII whitespace, an ASCII letter, or one of `.`, `(`, `)`, `{`, `}`, `;`, `,`, `'`, and `>`, and every maximal run of ASCII letters (a **word**) MUST be one of `document`, `querySelector`, `addEventListener`, `click`, `function`, `navigator`, `clipboard`, `writeText`, `textContent`, `secret`, `button`, and `code`; ASCII whitespace MUST NOT lie between the first and second `'` of that content, between its third and fourth `'`, or between any later such pair; and that content with every ASCII whitespace character removed MUST be exactly `document.querySelector('.secret>button').addEventListener('click',function(){navigator.clipboard.writeText(document.querySelector('.secret>code').textContent);});` and nothing else.
+- R-DOCS-1Q0G: In the token-created page's written markup (R-CWB3-8ZYH), the start tag of the `div` element R-U0MP-W9S1 describes MUST be the only tag span that contains `secret` matched ASCII case-insensitively, and every tag span of it MUST NOT contain `&`.

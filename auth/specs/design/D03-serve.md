@@ -4,15 +4,16 @@ The serve path: what happens between `cli.Run` being called with no arguments
 and the process being gone, and the run-time skeleton around the HTTP
 handlers. `D01-layout-and-run-seam` declares the names this design behaves
 through: `cli.Process` with its `LookupEnv`, `Pid`, `Unsetenv`, `Inherit`,
-`Now`, `Rand`, `OIDCIssuer` and `DBSource`, `cli.Run`, `server.Serve`,
+`Now`, `Rand`, `OIDCIssuer`, `DBSource` and `Banner`, `cli.Run`, `server.Serve`,
 `server.DrainError`, and `*server.Server` as a handler. `D02-cli` decides that
 an empty `Args` means serve and that nothing else touches the environment.
 This design says how `Run` reads the Google settings and the drain deadline,
 takes the socket the host passes in, opens the store, builds the server,
 tells systemd it is ready and hands off to `Serve`; how `Serve` treats the
-listener it is handed; and the one line the server writes for a request that
-is trouble. It does not design any endpoint's HTTP contract (D05/D06/D07, and
-D08 for the style files under `/assets/`), the
+listener it is handed; how the server divides requests between appkit's
+shared files and its own routes; and the one line the server writes for a
+request that is trouble. It does not design any endpoint's HTTP contract
+(D05/D06/D07, and D08 for appkit's shared files under `/_appkit/`), the
 store's internals (D04), or the manifest and CLI surface (D02).
 
 ## The terms every app serves on
@@ -31,8 +32,8 @@ every other app to `http://unix:/run/ikigenba/auth.sock:/check`. A deploy
 restarts the service alone, so the socket, and the connections queued on it —
 `/check` subrequests for every app auth guards among them — outlive every
 restart. A developer stands in for the host with
-`systemd-socket-activate -l 127.0.0.1:3001 auth`, which passes a loopback TCP
-socket on the same terms; a browser reaches it at `http://localhost:3001`, the
+`systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth`,
+which passes a loopback TCP socket on the same terms; a browser reaches it at `http://localhost:3001`, the
 origin whose callback is registered on the OAuth client for development, and a
 request whose `Host` is `localhost:3001` is the local one (D05).
 
@@ -51,7 +52,19 @@ unit's `TimeoutStopSec` are space-wide integer-second settings owned by opsctl
 (defaults 5 and 10): opsctl writes `DRAIN_SECONDS` into every app's
 `etc/env`, and no manifest sets either. auth reads `DRAIN_SECONDS` as a
 positive whole number, 5 when it is unset or empty, and sets no upper limit of
-its own.
+its own. The environment opsctl gives auth also carries `IKIGENBA_SERVICES`,
+the path of the host's services file, normally
+`/var/lib/ikigenba/services.json`. `systemd-socket-activate` hands the program
+it starts only a few basics such as `PATH`, the `LISTEN_*` variables, and the
+variables named with `-E`; its manual page documents that `-E VAR` with no
+`=VALUE` passes the value from its own environment, and a run of it under a
+shell exporting another variable shows that variable absent from the child.
+So the developer's command names the three Google settings with `-E`, and on
+a laptop `IKIGENBA_SERVICES` is normally unset. auth reads it once, at start,
+through `appkit.New` in `main` (`D01-layout-and-run-seam` explains why that
+read happens there and cannot fail), and auth's own code never reads it: unset,
+empty, or naming a file that is missing or unreadable, auth starts, serves,
+and says nothing about it.
 
 The socket is auth's only way in, and every app runs as `ikigenba`, so the
 suite and nginx can reach it and nothing else on the host can. The suite is a
@@ -124,8 +137,11 @@ struct carries every process dependency the handlers need: the opened store,
 the Google client (its surface is D05's; `google.NewClient` does no I/O and
 cannot fail, so building it has no failure path), the clock, the random
 source from which handlers mint values such as the PKCE verifier, the
-diagnostic stream to which handlers write their lines, and the workspace
-domain. The Google credentials are not repeated here; the Google client
+diagnostic stream to which handlers write their lines, the workspace
+domain, and, last, the banner source `Process.Banner` carries. `Run` never
+calls the banner source itself: only the handlers do, once for each page
+they draw with the banner (D05, D07), so the services file can neither delay
+nor fail a start, and a start that is refused never reads it. The Google credentials are not repeated here; the Google client
 already holds them. The server side names the random source and diagnostic
 stream by their `io` interfaces, never by `cli.Process`, so D01's one-way
 import direction holds. That struct is the whole of what the handlers need;
@@ -183,6 +199,20 @@ and suppression is forbidden, and it affects only a connection that has not
 yet delivered a request header. The build must not set a write timeout that
 could cut a response short inside the drain.
 
+## Routing
+
+The server divides every request by its path before anything else. A path
+beginning with `/_appkit/`, appkit's `StaticPrefix`, is handed unchanged to
+the handler `appkit.Static()` returns, ahead of every route of auth's own:
+that handler compares the whole `URL.Path` itself, so nothing is stripped, and
+what it answers — the seven shared files, their 404s and 405s — is D08's. No
+identity is decided and the store is never called for such a request, so a
+failed store changes nothing there, which is why the store-failure rule below
+names only the routes D05, D06 and D07 define. Every other path goes to auth's
+own routes. `/assets/` is no longer special: the style files auth used to
+serve there are appkit's now, under `/_appkit/`, and a path under `/assets/`
+is a path no route defines, answered 404 like any other.
+
 ## What auth writes
 
 A healthy run is silent from start to finish: no startup message, no request
@@ -216,7 +246,7 @@ a `bytes.Buffer` that the race detector watches.
 
 ## REQUIREMENTS
 
-- R-KTXG-XSI4: The `internal/server` package MUST export `type Config struct { Store *store.Store; Google *google.Client; Now func() time.Time; Rand io.Reader; Stderr io.Writer; WorkspaceDomain string }`.
+- R-SXGG-AZM6: The `internal/server` package MUST export `type Config struct { Store *store.Store; Google *google.Client; Now func() time.Time; Rand io.Reader; Stderr io.Writer; WorkspaceDomain string; Banner func(u appkit.User) appkit.Banner }`, with exactly those fields in that order, where `appkit` is the package `github.com/ikigenba/ikigenba/appkit`.
 - R-KWD9-PBZI: The `internal/server` package MUST export `type Server` and `func New(cfg Config) *Server`.
 - R-MALT-945W: `Serve` MUST accept connections on `ln` and answer every request received on them over HTTP/1.1 with the response `h` produces for that request, and MUST NOT return while `ctx` is not done and serving has not failed.
 - R-MBTP-MVWL: When `ctx` is done, `Serve` MUST stop accepting connections and close `ln`, and MUST close every connection that carries no request.
@@ -231,25 +261,27 @@ a `bytes.Buffer` that the race detector watches.
 - R-MO0P-GLBJ: When `Args` is empty, the three Google settings are set, and `LookupEnv("DRAIN_SECONDS")` returns `true` with a non-empty value `v` that `Run` does not accept, `Run` MUST write exactly `"auth: DRAIN_SECONDS is '" + v + "', not a positive whole number of seconds\n"` to `Stderr` with `v` verbatim, write nothing to `Stdout`, call none of `store.Open`, `Inherit`, or `Unsetenv`, send nothing to a notification socket, and accept no connection on any listener, and return `2`.
 - R-MP8L-UD28: The `drain` `Run` passes to `server.Serve` MUST be `5 * time.Second` when `LookupEnv("DRAIN_SECONDS")` returns `false` or the empty string, and otherwise, for the accepted value denoting the integer `n`, MUST be `n` seconds when `n` seconds is at most the largest `time.Duration` and the largest `time.Duration` when it is not.
 - R-MQGI-84SX: `Run` MUST treat a socket as passed in if and only if `LookupEnv("LISTEN_PID")` returns `true` with a value equal to `strconv.Itoa(p.Pid)` and `LookupEnv("LISTEN_FDS")` returns `true` with a value of one or more ASCII decimal digits and no other characters denoting an integer of at least 1, that integer being the number of sockets passed in.
-- R-MROE-LWJM: When `Args` is empty, the three Google settings are set, `DRAIN_SECONDS` is unset, empty, or accepted, and no socket is passed in, `Run` MUST write exactly `"auth: no socket was passed in\n\nrun it under systemd, or locally with 'systemd-socket-activate -l 127.0.0.1:3001 auth'\n"` to `Stderr`, write nothing to `Stdout`, call none of `store.Open`, `Inherit`, or `Unsetenv`, send nothing to a notification socket, and accept no connection on any listener, and return `2`.
-- R-MSWA-ZOAB: When `Args` is empty, the three Google settings are set, `DRAIN_SECONDS` is unset, empty, or accepted, and more than one socket is passed in, `Run` MUST write exactly `"auth: " + v + " sockets were passed in, expected 1\n\nrun it under systemd, or locally with 'systemd-socket-activate -l 127.0.0.1:3001 auth'\n"` to `Stderr` with `v` the value of `LISTEN_FDS` verbatim, write nothing to `Stdout`, call none of `store.Open`, `Inherit`, or `Unsetenv`, send nothing to a notification socket, and accept no connection on any listener, and return `2`.
+- R-SYOC-ORCV: When `Args` is empty, the three Google settings are set, `DRAIN_SECONDS` is unset, empty, or accepted, and no socket is passed in, `Run` MUST write exactly `"auth: no socket was passed in\n\nrun it under systemd, or locally with 'systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth'\n"` to `Stderr`, write nothing to `Stdout`, call none of `store.Open`, `Inherit`, or `Unsetenv`, send nothing to a notification socket, and accept no connection on any listener, and return `2`.
+- R-SZW9-2J3K: When `Args` is empty, the three Google settings are set, `DRAIN_SECONDS` is unset, empty, or accepted, and more than one socket is passed in, `Run` MUST write exactly `"auth: " + v + " sockets were passed in, expected 1\n\nrun it under systemd, or locally with 'systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth'\n"` to `Stderr` with `v` the value of `LISTEN_FDS` verbatim, write nothing to `Stdout`, call none of `store.Open`, `Inherit`, or `Unsetenv`, send nothing to a notification socket, and accept no connection on any listener, and return `2`.
 - R-MU47-DG10: When `Args` is empty, the three Google settings are set, `DRAIN_SECONDS` is unset, empty, or accepted, and exactly one socket is passed in, `Run` MUST call `Unsetenv`, when it is not nil, once with each of `LISTEN_PID`, `LISTEN_FDS`, and `LISTEN_FDNAMES` before it returns, and MUST NOT call it with any other key.
 - R-MVC3-R7RP: When `Args` is empty, the three Google settings are set, `DRAIN_SECONDS` is unset, empty, or accepted, and exactly one socket is passed in, `Run` MUST take file descriptor 3, and no other descriptor, as its listener, by calling `Inherit(3)` exactly once when `Inherit` is not nil, and by calling `net.FileListener` on a file for the process's file descriptor 3 when `Inherit` is nil.
 - R-MWK0-4ZIE: When taking file descriptor 3 as a listener fails with an error `err`, `Run` MUST write exactly `"auth: " + err.Error() + "\n"` to `Stderr`, write nothing to `Stdout`, not call `store.Open`, send nothing to a notification socket, and return `1`.
 - R-MXRW-IR93: `Run` MUST call `store.Open(p.DBSource, p.Rand)` only after it has taken file descriptor 3 as a listener, exactly once, and before it sends anything to a notification socket or calls `server.Serve`.
 - R-NII7-0UUW: When `store.Open` returns without error, `Run` MUST proceed identically whether or not the database source pre-existed, relying on D04's `store.Open` to have created the schema when the source was absent.
 - R-MYZS-WIZS: When `store.Open` returns an error, `Run` MUST write exactly `"auth: cannot open database " + p.DBSource + ": " + err.Error() + "\n"` to `Stderr`, where `err` is that error, write nothing to `Stdout`, send nothing to a notification socket, accept no connection on the listener it took, and return `1`.
-- R-A6NL-V77Q: When `store.Open` succeeds, `Run` MUST construct the Google client via `google.NewClient` with the values of `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `WORKSPACE_DOMAIN`, and `p.OIDCIssuer`, construct the server via `server.New` with a `server.Config` whose `Store` is the opened `*store.Store`, `Google` is that client, `Now` is `p.Now`, `Rand` is `p.Rand`, `Stderr` is a writer `w` each of whose `Write` calls results in exactly one call to `p.Stderr.Write` with the same bytes, and `WorkspaceDomain` is the value of `WORKSPACE_DOMAIN`, and, unless notifying fails, call `server.Serve` exactly once with `Run`'s own `ctx`, the listener it took, that `*server.Server` as the handler, and the `drain` of R-MP8L-UD28, without contacting the issuer `p.OIDCIssuer` names before a request needs it. This wiring MUST be observable through the served listener: with `p.OIDCIssuer` set to a reachable loopback OIDC issuer, `p.Rand` a deterministic reader, and `p.Now` a fixed clock, a `GET /login/google` served by `Run` MUST return `302` whose `Location` is addressed to that issuer's discovered `authorization_endpoint` and whose `state` and `code_challenge` are derived from `p.Rand`; the sign-in handler's own contract is D05's (R-TTTA-C8HY, R-KY4E-8B7G), not this requirement's.
+- R-T145-GAU9: When `store.Open` succeeds, `Run` MUST construct the Google client via `google.NewClient` with the values of `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `WORKSPACE_DOMAIN`, and `p.OIDCIssuer`, construct the server via `server.New` with a `server.Config` whose `Store` is the opened `*store.Store`, `Google` is that client, `Now` is `p.Now`, `Rand` is `p.Rand`, `Stderr` is a writer `w` each of whose `Write` calls results in exactly one call to `p.Stderr.Write` with the same bytes, `WorkspaceDomain` is the value of `WORKSPACE_DOMAIN`, and `Banner` is `p.Banner`, and, unless notifying fails, call `server.Serve` exactly once with `Run`'s own `ctx`, the listener it took, that `*server.Server` as the handler, and the `drain` of R-MP8L-UD28, without contacting the issuer `p.OIDCIssuer` names before a request needs it. This wiring MUST be observable through the served listener: with `p.OIDCIssuer` set to a reachable loopback OIDC issuer, `p.Rand` a deterministic reader, and `p.Now` a fixed clock, a `GET /login/google` served by `Run` MUST return `302` whose `Location` is addressed to that issuer's discovered `authorization_endpoint` and whose `state` and `code_challenge` are derived from `p.Rand`; the sign-in handler's own contract is D05's (R-TTTA-C8HY, R-KY4E-8B7G), not this requirement's.
+- R-T4RU-LM2C: When no request reaches the handler `Run` passes to `server.Serve`, `Run` MUST return having made no call to `p.Banner`, whatever it returns.
 - R-N1FL-O2H6: When `store.Open` has succeeded and `LookupEnv("NOTIFY_SOCKET")` returns `true` with a non-empty value `a`, `Run` MUST, after `store.Open` returns and before calling `server.Serve`, send exactly one datagram, whose content is exactly `READY=1`, to the Unix datagram socket whose address is `a`, an `a` beginning with `@` naming a socket in the abstract namespace; `Run` MUST send nothing to a notification socket on any other occasion.
 - R-N3VE-FLYK: When `LookupEnv("NOTIFY_SOCKET")` returns `false` or the empty string, `Run` MUST send no datagram and MUST serve as it otherwise would.
 - R-N53A-TDP9: When sending `READY=1` fails with an error `err`, `Run` MUST write exactly `"auth: " + err.Error() + "\n"` to `Stderr`, write nothing to `Stdout`, accept no connection on the listener it took, not call `server.Serve`, and return `1`.
 - R-N6B7-75FY: A `Run` that calls `server.Serve` and to which `Serve` returns nil MUST return `0`.
-- R-GYUP-OF53: A `Run` that calls `server.Serve` MUST write nothing to `Stdout`, and MUST write nothing to `Stderr` other than what the server writes through the writer of R-A6NL-V77Q and, when `Serve` returns a non-nil error, the one line R-N8QZ-YOXC states.
+- R-T2C1-U2KY: A `Run` that calls `server.Serve` MUST write nothing to `Stdout`, and MUST write nothing to `Stderr` other than what the server writes through the writer of R-T145-GAU9 and, when `Serve` returns a non-nil error, the one line R-N8QZ-YOXC states.
 - R-N8QZ-YOXC: When `server.Serve` returns a non-nil error to `Run`, `Run` MUST write to `Stderr` exactly `auth: `, that error's `Error()` text, and a newline, MUST write nothing to `Stdout`, and MUST return `1`.
-- R-H2IE-TQD6: `Run` MUST NOT let two calls to `Stderr.Write` be in progress at the same time, those made through the writer of R-A6NL-V77Q included, so that a `Stderr` that is not safe for concurrent use is never written concurrently.
+- R-T3JY-7UBN: `Run` MUST NOT let two calls to `Stderr.Write` be in progress at the same time, those made through the writer of R-T145-GAU9 included, so that a `Stderr` that is not safe for concurrent use is never written concurrently.
 - R-NB6S-Q8EQ: When `Inherit` is nil and file descriptor 3 is a listening Unix-domain stream socket bound to a filesystem path, `Run` MUST leave that path in place and MUST NOT shut the socket down, so that after `Run` returns the socket still accepts connections into its queue for another process that holds it.
 - R-2AOL-W6YZ: The `*server.Server` returned by `server.New` MUST serve the HTTP routes whose contracts D05, D06, D07, and D08 define.
 - R-UR0L-ZVDJ: The `*Server` returned by `New` MUST mint every random value the `*Server` mints itself (including the PKCE verifier D05 requires of `GET /login/google`) by reading `cfg.Rand`, MUST write every diagnostic its handlers emit (including the token-exchange error D05 requires of `GET /login/google/callback`) to `cfg.Stderr`, and MUST NOT read a global random source or write to a global output stream; given a `Config` whose `Rand` is a deterministic reader and whose `Stderr` is an in-memory buffer, the values minted are a function of the bytes that reader yields and every such diagnostic appears in that buffer.
 - R-CCQE-EHNR: When a store operation the `*Server` calls while handling a request on any route D05, D06, or D07 defines returns an error that does not satisfy `errors.Is(err, store.ErrNotFound)`, the `*Server` MUST answer that request with status `500`, `Content-Type: text/plain; charset=utf-8`, a body that is a single line of plain text, and neither `HeaderUserID` nor `HeaderUserEmail` set, whatever response another requirement states for that request, except that a `GET /login/google` already being answered `502` under R-XXPJ-ZJU1 stays `502` when the `ConsumeLoginState` it makes to discard its login state fails.
 - R-XV9R-80CN: For every request the `*Server` answers with a status from `500` through `599`, it MUST write exactly `"auth: request " + id + ": " + reason + "\n"` to `cfg.Stderr` in a single call to `cfg.Stderr.Write`, where `id` is the value `r.Header.Get("X-Request-Id")` returns when that value is non-empty and `-` when it is empty, and `reason` is the `Error()` text of the error that caused that status.
 - R-XWHN-LS3C: The `*Server` MUST write nothing to `cfg.Stderr` for a request it answers with a status outside `500` through `599`, and MUST write exactly one line to `cfg.Stderr` for each request it answers with a status from `500` through `599`.
+- R-TQGG-VYEV: The `*Server` returned by `server.New` MUST answer with status `404`, whatever its method, every request whose `URL.Path` consists of `/assets/` followed by a non-empty name that contains no `/` and is neither `.` nor `..`, `/assets/theme.css` included.

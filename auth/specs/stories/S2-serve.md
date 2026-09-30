@@ -19,25 +19,38 @@ in these stories is the host, whether that is systemd or a developer at a
 terminal standing in for it.
 
 The environment auth reads is the two Google secrets `GOOGLE_CLIENT_ID` and
-`GOOGLE_CLIENT_SECRET`, `WORKSPACE_DOMAIN`, and `DRAIN_SECONDS`. The first
-three are required. `DRAIN_SECONDS` is how long auth drains when stopped, a
-positive whole number of seconds, and 5 when it is unset or empty. On a host,
-opsctl owns that value and the service unit's stop timeout: both are
-space-wide settings in opsctl's configuration, opsctl writes the drain into
-every app's `etc/env` and the stop timeout (10 seconds by default, always
-longer than the drain) into every service unit, and an app's manifest never
-sets either. auth checks its environment first — `GOOGLE_CLIENT_ID`,
+`GOOGLE_CLIENT_SECRET`, `WORKSPACE_DOMAIN`, `DRAIN_SECONDS`, and
+`IKIGENBA_SERVICES`. The first three are required. `DRAIN_SECONDS` is how long
+auth drains when stopped, a positive whole number of seconds, and 5 when it is
+unset or empty. On a host, opsctl owns that value and the service unit's stop
+timeout: both are space-wide settings in opsctl's configuration, opsctl writes
+the drain into every app's `etc/env` and the stop timeout (10 seconds by
+default, always longer than the drain) into every service unit, and an app's
+manifest never sets either. `IKIGENBA_SERVICES` is the path of the host's
+services file, which lists the platform's services for the launcher in the
+banner of auth's signed-in pages (`S3-sign-in.md`). On a host, opsctl sets it
+in the environment the host gives auth, normally
+`/var/lib/ikigenba/services.json`; on a developer's laptop it is normally
+unset, and auth's pages then carry no launcher. auth reads the variable once,
+when it starts, and never fails to start over it: unset, empty, or naming a
+file that is missing or unreadable, auth starts and serves all the same, and
+says nothing about it. auth checks its environment first — `GOOGLE_CLIENT_ID`,
 `GOOGLE_CLIENT_SECRET`, `WORKSPACE_DOMAIN`, then `DRAIN_SECONDS` — then looks
 for its socket, and only then opens its SQLite database at `state/auth.db`,
 relative to its working directory. So a start refused as a usage error has
 touched nothing, not even the database. Starting touches no network: the
-Google settings are read and required at startup, but Google itself is
-reached only when a human signs in (`S3-sign-in.md`), so auth serves even
-while Google is unreachable, and `/check` and `/me` keep answering from the
-local database (`S4-check.md`). In the laptop stories below the developer's
-shell exports `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
-`WORKSPACE_DOMAIN=michaelgreenly.dev` unless a story says otherwise, and
-`systemd-socket-activate` passes its environment on to auth.
+Google settings are read and required at startup, but Google itself is reached
+only when a human signs in (`S3-sign-in.md`), so auth serves even while Google
+is unreachable, and `/check` and `/me` keep answering from the local database
+(`S4-check.md`). In the laptop stories below the developer's shell exports
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
+`WORKSPACE_DOMAIN=michaelgreenly.dev` unless a story says otherwise.
+`systemd-socket-activate` does not hand auth the developer's environment, only
+a few basics such as `PATH` and the variables named with `-E`; a `-E` that
+names a variable without a value passes the shell's own value. So every laptop
+command names the three Google settings,
+`-E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN`, and any
+other variable auth is to see is named with its own `-E`.
 
 A healthy auth prints nothing, so under systemd the journal holds only
 trouble. A diagnostic auth writes about a request names that request by its
@@ -115,12 +128,15 @@ whose callback is registered on the OAuth client for development
 (`S3-sign-in.md`). The three lines are `systemd-socket-activate`'s own: it
 announces the socket, and it starts auth only when the first connection
 arrives, which auth then answers. auth adds nothing to them. There is no
-`NOTIFY_SOCKET` here, so auth reports readiness to nobody.
+`NOTIFY_SOCKET` here, so auth reports readiness to nobody. The command names
+only the three Google settings, so `IKIGENBA_SERVICES` is unset here and
+auth's signed-in pages carry no launcher; a developer who wants one names a
+services file with `-E IKIGENBA_SERVICES=<path>` (`S3-sign-in.md`).
 
 Command:
 
 ```
-$ systemd-socket-activate -l 127.0.0.1:3001 auth
+$ systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth
 ```
 
 Output:
@@ -162,7 +178,7 @@ directory.
 Command:
 
 ```
-$ systemd-socket-activate -l 127.0.0.1:3001 auth
+$ systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth
 ```
 
 Output:
@@ -205,7 +221,7 @@ caller's usage, so it exits 1.
 Command:
 
 ```
-$ systemd-socket-activate -l 127.0.0.1:3001 auth
+$ systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth
 ```
 
 Output:
@@ -249,7 +265,7 @@ it.
 Command:
 
 ```
-$ systemd-socket-activate -l 127.0.0.1:3001 auth
+$ systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth
 ```
 
 Output:
@@ -414,7 +430,7 @@ Output:
 ```
 auth: no socket was passed in
 
-run it under systemd, or locally with 'systemd-socket-activate -l 127.0.0.1:3001 auth'
+run it under systemd, or locally with 'systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth'
 ```
 
 Exits 2. The text is on stderr; stdout is empty.
@@ -441,7 +457,7 @@ misconfigured, and auth will not guess which one it was meant to serve on.
 Command:
 
 ```
-$ systemd-socket-activate -l 127.0.0.1:3001 -l 127.0.0.1:3002 auth
+$ systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 -l 127.0.0.1:3002 auth
 ```
 
 Output:
@@ -453,7 +469,7 @@ Communication attempt on fd 3.
 Execing auth (auth)
 auth: 2 sockets were passed in, expected 1
 
-run it under systemd, or locally with 'systemd-socket-activate -l 127.0.0.1:3001 auth'
+run it under systemd, or locally with 'systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth'
 ```
 
 Exits 2. The text is on stderr; stdout is empty. The first four lines are
@@ -486,7 +502,7 @@ unit's stop timeout is opsctl's to enforce.
 Command:
 
 ```
-$ DRAIN_SECONDS=abc systemd-socket-activate -l 127.0.0.1:3001 auth
+$ systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -E DRAIN_SECONDS=abc -l 127.0.0.1:3001 auth
 ```
 
 Output:

@@ -36,9 +36,10 @@ content-type: text/html; charset=utf-8
 ```
 
 Status 200. The body is the sign-in page (`S3-sign-in.md`): an HTML page
-whose title is `auth`, which links `/assets/theme.css` as its stylesheet, and
+whose title is `auth`, which links `/_appkit/theme.css` as its stylesheet, and
 whose visible text includes the heading `Sign in to ikigenba.dev` and a link to
-`/login/google`.
+`/login/google`. The sign-in page has no banner, so it carries no launcher,
+whatever the host's services file lists.
 
 Preconditions:
 
@@ -56,6 +57,58 @@ Preconditions:
 Postconditions:
 
 - Nothing has changed.
+
+## A user on a space opens the service launcher
+
+On a space the host sets `IKIGENBA_SERVICES` in auth's environment to the
+path of its services file (`S2-serve.md`), and that file lists auth because
+auth's package ships `share/icon.svg` (`S6-package.md`). So the profile a
+signed-in user reaches at auth's own hostname carries the launcher in its
+banner, and auth is one of the services it offers. The launcher's text and
+behavior are `S3-sign-in.md`'s; this story fixes only what the user sees on a
+space.
+
+Request:
+
+```
+$ curl -si --cookie 'ikigenba_session=<opaque>' https://auth.sbx.ikigenba.dev/
+```
+
+Response:
+
+```
+HTTP/2 200
+content-type: text/html; charset=utf-8
+```
+
+Status 200. The body is the profile (`S3-sign-in.md`), drawn with the banner,
+and its stylesheet is `https://auth.sbx.ikigenba.dev/_appkit/theme.css`. Its
+banner carries the launcher button labelled `Services`. In a browser, pressing
+the button opens a list of the space's services with a search box labelled
+`Find a service`; each entry shows a service's icon and name, as
+`S3-sign-in.md` tells. auth's own entry is in the list and is marked as the
+current page. The launcher's script is
+`https://auth.sbx.ikigenba.dev/_appkit/launcher.js` (`S8-assets.md`), so the
+launcher, like the style, needs nothing from any other origin.
+
+Preconditions:
+
+- The auth deploy chain above holds: the space exists in account
+  `602773793009`, its instance is `running`, `opsctl` is installed, the
+  `auth/v<semver>` tag and `auth/dist/auth-v<semver>.tar.xz` exist, the
+  `devctl deploy` of auth exited 0, and `space status` shows `auth v<semver>
+  active active -`.
+- `auth/dist/auth-v<semver>.tar.xz` holds `share/icon.svg` (`S6-package.md`).
+- The host sets `IKIGENBA_SERVICES` in auth's environment to the path of its
+  services file, and that file lists auth.
+- The request carries an `ikigenba_session` cookie naming a live session on
+  this space, from a sign-in through Google at
+  `https://auth.sbx.ikigenba.dev/`.
+
+Postconditions:
+
+- Nothing has changed. Serving the profile does not touch the session
+  (`S3-sign-in.md`).
 
 ## A visitor reaches an app on a space without signing in
 

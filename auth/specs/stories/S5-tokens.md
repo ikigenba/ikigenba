@@ -2,7 +2,7 @@
 
 The token actions a signed-in user drives from their profile. Every request
 here is a curl against auth a developer serves with
-`systemd-socket-activate -l 127.0.0.1:3001 auth` (`S2-serve.md`), at
+`systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth` (`S2-serve.md`), at
 `http://localhost:3001`, carrying a valid
 `ikigenba_session` cookie, and every state-changing request is a POST that also
 carries an `Origin` header matching the service's own origin (in development
@@ -21,9 +21,11 @@ stories here fix the token table and its empty state, the `Create a token`
 card, and the two pages token creation draws.
 
 Every HTML page these stories fix is drawn with the banner (S3): its
-`<title>` is `auth`, it links `/assets/theme.css` as its stylesheet and
-declares the phone-width viewport, it opens with the banner, and
-its content sits in the page's one `<main>`. A card is a
+`<title>` is `auth`, it links `/_appkit/theme.css` as its stylesheet and
+declares the phone-width viewport, it opens with the banner — the mark, the
+user's email as a link to `/`, the `Sign out` button POSTing to `/logout`,
+and, when auth's services file lists services, the launcher (S3) — and its
+content sits in the page's one `<main>`. A card is a
 `<section class="card">` whose `<header>` holds an `<h2>` naming it. An icon
 is an inline `<svg class="ico" aria-hidden="true">` drawn before a button's
 text, so the button's accessible text is the word alone.
