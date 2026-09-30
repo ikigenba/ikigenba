@@ -52,9 +52,13 @@ systems. The product name is **Ikigenba**. The example space is
 `ada@acme.dev`.
 
 **app.html** — dummy's control panel.
-- Banner: product mark, service name `dummy`, the user's email linking to
-  their auth profile (`https://auth.acme.ikigenba.com/`), the `Sign out`
-  button (a form posting to `https://auth.acme.ikigenba.com/logout`).
+- Banner: product mark, service name `dummy`, a Tabler `user-circle` icon
+  button linking to the user's auth profile
+  (`https://auth.acme.ikigenba.com/`), labelled `Profile` and titled with the
+  email `ada@acme.dev`, the `Sign out` button (a form posting to
+  `https://auth.acme.ikigenba.com/logout`).
+- Footer: the service name and its version, `dummy v0.8.0`, muted and small.
+  Banner and footer appear only on signed-in pages.
 - `h1` Widgets; a table of Name / Count / Status: `alpha` 3 active, `beta` 0
   paused, `gamma` 12 retired, `delta` 128 active, `epsilon` 7 paused,
   `zeta` 1024 active.
@@ -65,8 +69,8 @@ systems. The product name is **Ikigenba**. The example space is
   ("Widget created." + `Back to widgets`).
 
 **launcher.html** — the service launcher, shown from dummy.
-- Banner as in app.html, with the launcher's grid button between the mark and
-  the user's email; the panel open on load.
+- Banner and footer as in app.html, with the launcher's grid button between
+  the mark and the profile icon; the panel open on load.
 - The panel: a `Find a service` search field over a 4-column grid of 30
   services, A to Z, each a Tabler icon over its name, linking to
   `https://<name>.acme.ikigenba.com/`; `dummy` marked current. The services
