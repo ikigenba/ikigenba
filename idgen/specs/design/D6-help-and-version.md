@@ -19,9 +19,8 @@ Options:
   -V, --version        print version
 ```
 
-**Version.** The version string is a product fact carried in source — a single
-`var version` in `internal/cli` — not injected at build time, so dev builds and
-released builds report the same string. Its *value* is release data, not a
+**Version.** The version string is a product fact: dev builds and released builds
+report the same string. Its *value* is release data, not a
 design fact: an agent (or the release process) may change it freely without
 touching this spec. The spec fixes only its **shape** — a `v`-prefixed
 `MAJOR.MINOR.PATCH` — and the output form. The release workflow (see

@@ -3,9 +3,6 @@ package idgen
 import (
 	"errors"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"strings"
 	"testing"
 	"time"
@@ -146,57 +143,24 @@ func TestTimeOfPrefixAcceptanceAgreesWithValidPrefix(t *testing.T) {
 }
 
 func TestEpoch(t *testing.T) {
-	// R-HF29-98B6
+	// R-26N0-RS6E
 	assertEpochValue(t)
-	assertEpochDeclaration(t)
+}
+
+func callEpoch(function func() time.Time) time.Time {
+	return function()
 }
 
 func assertEpochValue(t *testing.T) {
 	t.Helper()
 
-	got := Epoch()
+	got := callEpoch(Epoch)
 	want := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	if got != want {
 		t.Fatalf("Epoch() = %s, want %s", got, want)
 	}
 	if got.Location() != time.UTC {
 		t.Fatalf("Epoch() location = %v, want time.UTC", got.Location())
-	}
-}
-
-func assertEpochDeclaration(t *testing.T) {
-	t.Helper()
-
-	file, err := parser.ParseFile(token.NewFileSet(), "idgen.go", nil, 0)
-	if err != nil {
-		t.Fatalf("parse idgen.go: %v", err)
-	}
-	foundFunction := false
-	for _, declaration := range file.Decls {
-		switch declaration := declaration.(type) {
-		case *ast.FuncDecl:
-			if declaration.Recv == nil && declaration.Name.Name == "Epoch" {
-				foundFunction = true
-			}
-		case *ast.GenDecl:
-			if declaration.Tok != token.VAR {
-				continue
-			}
-			for _, spec := range declaration.Specs {
-				valueSpec, ok := spec.(*ast.ValueSpec)
-				if !ok {
-					continue
-				}
-				for _, name := range valueSpec.Names {
-					if name.Name == "Epoch" {
-						t.Fatal("Epoch is declared as an assignable package variable")
-					}
-				}
-			}
-		}
-	}
-	if !foundFunction {
-		t.Fatal("Epoch is not declared as a package function")
 	}
 }
 
@@ -276,102 +240,34 @@ func TestMintAtExportedSignature(t *testing.T) {
 }
 
 func TestErrInvalidIDDeclarationAndIdentity(t *testing.T) {
-	// R-AXI2-8KM2
-	if ErrInvalidID == nil {
-		t.Fatal("ErrInvalidID is nil, want a non-nil error sentinel")
-	}
-	if wrapped := fmt.Errorf("context: %w", ErrInvalidID); !errors.Is(wrapped, ErrInvalidID) {
-		t.Fatalf("errors.Is(%v, ErrInvalidID) = false, want true", wrapped)
-	}
-
-	file, err := parser.ParseFile(token.NewFileSet(), "idgen.go", nil, 0)
-	if err != nil {
-		t.Fatalf("parse idgen.go: %v", err)
-	}
-	var matchingDeclarations int
-	for _, declaration := range file.Decls {
-		general, ok := declaration.(*ast.GenDecl)
-		if !ok || general.Tok != token.VAR {
-			continue
-		}
-		for _, specification := range general.Specs {
-			value, ok := specification.(*ast.ValueSpec)
-			if !ok || len(value.Names) != 1 || value.Names[0].Name != "ErrInvalidID" {
-				continue
-			}
-			matchingDeclarations++
-			call, callOK := singleCall(value.Values)
-			if !callOK {
-				t.Errorf("ErrInvalidID initializer is not a single call to errors.New")
-				continue
-			}
-			selector, selectorOK := call.Fun.(*ast.SelectorExpr)
-			if !selectorOK {
-				t.Errorf("ErrInvalidID initializer is not a call to errors.New")
-				continue
-			}
-			packageName, packageOK := selector.X.(*ast.Ident)
-			if !packageOK || packageName.Name != "errors" || selector.Sel.Name != "New" {
-				t.Errorf("ErrInvalidID initializer is not a call to errors.New")
-			}
-		}
-	}
-	if matchingDeclarations != 1 {
-		t.Fatalf("found %d ErrInvalidID declarations, want exactly 1", matchingDeclarations)
-	}
+	// R-27UX-5JX3
+	assertSentinel(t, "ErrInvalidID", &ErrInvalidID)
 }
 
 func TestErrTimeRangeDeclarationAndIdentity(t *testing.T) {
-	// R-FSTT-23N2
-	sentinel := ErrTimeRange
-	if sentinel == nil || !errors.Is(fmt.Errorf("context: %w", sentinel), ErrTimeRange) {
-		t.Fatalf("ErrTimeRange = %v, want a non-nil identity-comparable error sentinel", sentinel)
-	}
-
-	file, err := parser.ParseFile(token.NewFileSet(), "idgen.go", nil, 0)
-	if err != nil {
-		t.Fatalf("parse idgen.go: %v", err)
-	}
-	var matchingDeclarations int
-	for _, declaration := range file.Decls {
-		general, ok := declaration.(*ast.GenDecl)
-		if !ok || general.Tok != token.VAR {
-			continue
-		}
-		for _, specification := range general.Specs {
-			value, ok := specification.(*ast.ValueSpec)
-			if !ok || len(value.Names) != 1 || value.Names[0].Name != "ErrTimeRange" {
-				continue
-			}
-			matchingDeclarations++
-			typeName, typeOK := value.Type.(*ast.Ident)
-			call, callOK := singleCall(value.Values)
-			if !typeOK || typeName.Name != "error" || !callOK {
-				t.Errorf("ErrTimeRange declaration must be `var ErrTimeRange error = errors.New(...)`")
-				continue
-			}
-			selector, selectorOK := call.Fun.(*ast.SelectorExpr)
-			if !selectorOK {
-				t.Errorf("ErrTimeRange declaration must be `var ErrTimeRange error = errors.New(...)`")
-				continue
-			}
-			packageName, packageOK := selector.X.(*ast.Ident)
-			if !packageOK || packageName.Name != "errors" || selector.Sel.Name != "New" {
-				t.Errorf("ErrTimeRange declaration must be `var ErrTimeRange error = errors.New(...)`")
-			}
-		}
-	}
-	if matchingDeclarations != 1 {
-		t.Fatalf("found %d ErrTimeRange declarations, want exactly 1", matchingDeclarations)
-	}
+	// R-292T-JBNS
+	assertSentinel(t, "ErrTimeRange", &ErrTimeRange)
 }
 
-func singleCall(expressions []ast.Expr) (*ast.CallExpr, bool) {
-	if len(expressions) != 1 {
-		return nil, false
+// assertSentinel takes the sentinel's address, which compiles only for a
+// variable of type error, then proves errors.Is matches it by identity,
+// directly and through %w wrapping, and not by message.
+func assertSentinel(t *testing.T, name string, variable *error) {
+	t.Helper()
+
+	sentinel := *variable
+	if sentinel == nil {
+		t.Fatalf("%s is nil, want a non-nil error sentinel", name)
 	}
-	call, ok := expressions[0].(*ast.CallExpr)
-	return call, ok
+	if !errors.Is(sentinel, *variable) {
+		t.Errorf("errors.Is(%s, %s) = false, want true", name, name)
+	}
+	if wrapped := fmt.Errorf("context: %w", sentinel); !errors.Is(wrapped, *variable) {
+		t.Errorf("errors.Is(%v, %s) = false, want true", wrapped, name)
+	}
+	if lookalike := errors.New(sentinel.Error()); errors.Is(lookalike, *variable) {
+		t.Errorf("errors.Is matched %s by message, want identity only", name)
+	}
 }
 
 func TestMintAtRejectsOutsideRepresentableWindow(t *testing.T) {

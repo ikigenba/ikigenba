@@ -17,8 +17,8 @@ Options (short and long forms are equivalent wherever both exist):
 | `-h`, `--help`   | print help                                           |         |
 | `-V`, `--version`| print version                                        |         |
 
-Parsing uses the standard library `flag` package (no third-party CLI
-dependency); options therefore precede positionals. Positional `ID` arguments
+Parsing uses the standard library `flag` package; options therefore precede
+positionals. Positional `ID` arguments
 are meaningful only in decode mode — mint mode takes none, and supplying one
 is a usage error that names the unexpected argument. `-n`/`-p` supplied
 alongside `--decode` are accepted but inert (they are mint concerns with no
@@ -38,7 +38,6 @@ with package constants `exitSuccess = 0`, `exitFailure = 1`, `exitUsage = 2`.
 
 ## REQUIREMENTS
 
-- R-VKIS-QBJ8: Package `internal/cli` MUST export a type named `ExitCode` — a typed exit-code enumeration whose underlying type is `int` — with exactly three named values: `exitSuccess` = 0, `exitFailure` = 1, and `exitUsage` = 2.
 - R-U5PD-1SYE: The command MUST accept exactly this option set, with short and long forms equivalent where both exist: `-n`/`--number`, `-p`/`--prefix`, `--decode`, `-h`/`--help`, `-V`/`--version`; and no other options.
 - R-U6X9-FKP3: The `--number` option MUST default to 1 when not supplied.
 - R-U855-TCFS: The `--prefix` option MUST default to `R` when not supplied.

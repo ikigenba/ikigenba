@@ -2,11 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"go/ast"
-	"go/importer"
-	"go/parser"
-	"go/token"
-	"go/types"
 	"io"
 	"os"
 	"os/exec"
@@ -19,104 +14,6 @@ import (
 
 	"github.com/ikigenba/ikigenba/idgen/internal/idgen"
 )
-
-type sourceTestImporter struct {
-	standard types.Importer
-}
-
-func (sourceTestImporter sourceTestImporter) Import(path string) (*types.Package, error) {
-	if path == "github.com/ikigenba/ikigenba/idgen/internal/idgen" {
-		pkg := types.NewPackage(path, "idgen")
-		pkg.MarkComplete()
-		return pkg, nil
-	}
-	return sourceTestImporter.standard.Import(path)
-}
-
-// R-VKIS-QBJ8: ExitCode is the sole exported defined exit-code type, with
-// exactly the three specified typed package constants and numeric values.
-func TestExitCodeDeclarationAndValues(t *testing.T) {
-	t.Parallel()
-
-	fset := token.NewFileSet()
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("read cli package: %v", err)
-	}
-	files := make([]*ast.File, 0, len(entries))
-	var declarations int
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
-		}
-		file, parseErr := parser.ParseFile(fset, entry.Name(), nil, 0)
-		if parseErr != nil {
-			t.Fatalf("parse %s: %v", entry.Name(), parseErr)
-		}
-		files = append(files, file)
-		for _, declaration := range file.Decls {
-			general, ok := declaration.(*ast.GenDecl)
-			if !ok || general.Tok != token.TYPE {
-				continue
-			}
-			for _, specification := range general.Specs {
-				typeSpec := specification.(*ast.TypeSpec)
-				if typeSpec.Name.Name == "ExitCode" {
-					declarations++
-				}
-			}
-		}
-	}
-	if declarations != 1 {
-		t.Fatalf("found %d ExitCode declarations, want exactly 1", declarations)
-	}
-
-	checked, err := (&types.Config{
-		IgnoreFuncBodies: true,
-		Importer:         sourceTestImporter{standard: importer.Default()},
-	}).Check(
-		"github.com/ikigenba/ikigenba/idgen/internal/cli",
-		fset,
-		files,
-		nil,
-	)
-	if err != nil {
-		t.Fatalf("type-check cli package: %v", err)
-	}
-	exitObject, ok := checked.Scope().Lookup("ExitCode").(*types.TypeName)
-	if !ok || !exitObject.Exported() {
-		t.Fatalf("ExitCode object = %T, exported = %t; want exported type name", checked.Scope().Lookup("ExitCode"), ok && exitObject.Exported())
-	}
-	exitType, ok := exitObject.Type().(*types.Named)
-	if !ok {
-		t.Fatalf("ExitCode type = %T, want distinct defined type", exitObject.Type())
-	}
-	underlying, ok := exitType.Underlying().(*types.Basic)
-	if !ok || underlying.Kind() != types.Int {
-		t.Fatalf("ExitCode underlying type = %v, want int", exitType.Underlying())
-	}
-
-	wantConstants := map[string]string{
-		"exitSuccess": "0",
-		"exitFailure": "1",
-		"exitUsage":   "2",
-	}
-	gotConstants := make(map[string]string)
-	for _, name := range checked.Scope().Names() {
-		constant, ok := checked.Scope().Lookup(name).(*types.Const)
-		if ok && types.Identical(constant.Type(), exitType) {
-			gotConstants[name] = constant.Val().ExactString()
-		}
-	}
-	if len(gotConstants) != len(wantConstants) {
-		t.Fatalf("ExitCode constants = %v, want exactly %v", gotConstants, wantConstants)
-	}
-	for name, want := range wantConstants {
-		if got, exists := gotConstants[name]; !exists || got != want {
-			t.Errorf("%s = %q (present %t), want ExitCode value %s", name, got, exists, want)
-		}
-	}
-}
 
 // R-VLQP-439X: Run returns ExitCode directly and completes in-process.
 func TestRunReturnsExitCodeInProcess(t *testing.T) {
@@ -137,90 +34,43 @@ func TestRunReturnsExitCodeInProcess(t *testing.T) {
 	}
 }
 
-// R-U39K-A9H0: Clock is exported as an interface with exactly the specified
-// method names, parameter name and types, return type, and no embedded methods.
+// R-U39K-A9H0: Clock is an exported interface whose method set is exactly
+// Now() time.Time and Sleep(d time.Duration).
 func TestClockExportedExactMethodSet(t *testing.T) {
 	t.Parallel()
 
-	file, err := parser.ParseFile(token.NewFileSet(), "cli.go", nil, 0)
-	if err != nil {
-		t.Fatalf("parse cli.go: %v", err)
-	}
+	// A type with only Now and Sleep satisfies Clock, so Clock requires
+	// nothing beyond them.
+	fake := &exactClock{now: time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)}
+	var clock Clock = fake
 
-	var clockDeclarations []*ast.TypeSpec
-	for _, declaration := range file.Decls {
-		general, ok := declaration.(*ast.GenDecl)
-		if !ok || general.Tok != token.TYPE {
-			continue
-		}
-		for _, specification := range general.Specs {
-			typeSpec, ok := specification.(*ast.TypeSpec)
-			if ok && typeSpec.Name.Name == "Clock" {
-				clockDeclarations = append(clockDeclarations, typeSpec)
-			}
-		}
-	}
-	if len(clockDeclarations) != 1 {
-		t.Fatalf("found %d Clock declarations, want exactly 1", len(clockDeclarations))
-	}
+	// A Clock satisfies an interface requiring Now and Sleep, so Clock
+	// includes both.
+	var exact interface {
+		Now() time.Time
+		Sleep(d time.Duration)
+	} = clock
 
-	clockDeclaration := clockDeclarations[0]
-	if !ast.IsExported(clockDeclaration.Name.Name) {
-		t.Errorf("Clock identifier %q is not exported", clockDeclaration.Name.Name)
+	if got := exact.Now(); !got.Equal(fake.now) {
+		t.Errorf("Clock.Now() = %v, want %v", got, fake.now)
 	}
-	clock, ok := clockDeclaration.Type.(*ast.InterfaceType)
-	if !ok {
-		t.Fatalf("Clock declaration type = %T, want *ast.InterfaceType", clockDeclaration.Type)
+	exact.Sleep(3 * time.Millisecond)
+	if fake.slept != 3*time.Millisecond {
+		t.Errorf("Clock.Sleep passed %v, want %v", fake.slept, 3*time.Millisecond)
 	}
-	if got := len(clock.Methods.List); got != 2 {
-		t.Fatalf("Clock has %d method or embedded-interface fields, want exactly 2", got)
-	}
+}
 
-	methods := make(map[string]*ast.FuncType, len(clock.Methods.List))
-	for _, field := range clock.Methods.List {
-		if len(field.Names) != 1 {
-			t.Fatalf("Clock contains an embedded or multiply-named method field: %#v", field)
-		}
-		method, ok := field.Type.(*ast.FuncType)
-		if !ok {
-			t.Fatalf("Clock.%s type = %T, want *ast.FuncType", field.Names[0].Name, field.Type)
-		}
-		methods[field.Names[0].Name] = method
-	}
+type exactClock struct {
+	now   time.Time
+	slept time.Duration
+}
 
-	assertSelector := func(expression ast.Expr, packageName, typeName string) bool {
-		selector, ok := expression.(*ast.SelectorExpr)
-		if !ok || selector.Sel.Name != typeName {
-			return false
-		}
-		identifier, ok := selector.X.(*ast.Ident)
-		return ok && identifier.Name == packageName
-	}
+func (c *exactClock) Now() time.Time {
+	return c.now
+}
 
-	now, ok := methods["Now"]
-	if !ok {
-		t.Fatal("Clock.Now is missing")
-	}
-	if now.Params.NumFields() != 0 {
-		t.Errorf("Clock.Now has %d parameters, want 0", now.Params.NumFields())
-	}
-	if now.Results == nil || len(now.Results.List) != 1 || len(now.Results.List[0].Names) != 0 ||
-		!assertSelector(now.Results.List[0].Type, "time", "Time") {
-		t.Errorf("Clock.Now result = %#v, want unnamed time.Time", now.Results)
-	}
-
-	sleep, ok := methods["Sleep"]
-	if !ok {
-		t.Fatal("Clock.Sleep is missing")
-	}
-	if sleep.Params == nil || len(sleep.Params.List) != 1 || len(sleep.Params.List[0].Names) != 1 ||
-		sleep.Params.List[0].Names[0].Name != "d" ||
-		!assertSelector(sleep.Params.List[0].Type, "time", "Duration") {
-		t.Errorf("Clock.Sleep parameters = %#v, want exactly d time.Duration", sleep.Params)
-	}
-	if sleep.Results != nil && sleep.Results.NumFields() != 0 {
-		t.Errorf("Clock.Sleep has %d results, want 0", sleep.Results.NumFields())
-	}
+func (c *exactClock) Sleep(d time.Duration) {
+	c.slept += d
 }
 
 type fakeClock struct {

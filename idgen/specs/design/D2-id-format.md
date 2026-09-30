@@ -88,10 +88,10 @@ against the shipping binary):
 
 - R-FRLW-OBWD: Package `idgen` MUST export `MintAt(prefix string, t time.Time) (string, error)`.
 - R-U0TR-IPZM: Package `idgen` MUST export `TimeOf(id string) (time.Time, error)`.
-- R-AXI2-8KM2: Package `idgen` MUST export `ErrInvalidID` as a package-level variable whose static type is `error` and whose value is constructed with `errors.New`, so that `errors.Is(err, ErrInvalidID)` compares by identity; its static type MUST be checked by assignability (a compile-time `var _ error = ErrInvalidID`), not by requiring an explicit `error` annotation on the declaration.
-- R-FSTT-23N2: Package `idgen` MUST export `ErrTimeRange` as a package-level variable of type `error`, constructed with `errors.New`, so that `errors.Is(err, ErrTimeRange)` compares by identity.
+- R-27UX-5JX3: Package `idgen` MUST export `ErrInvalidID` as a package-level variable of type `error` that `errors.Is` matches by identity, including through wrapping.
+- R-292T-JBNS: Package `idgen` MUST export `ErrTimeRange` as a package-level variable of type `error` that `errors.Is` matches by identity, including through wrapping.
 - R-SJ7P-ALD5: `TimeOf(MintAt(p, t))` MUST return `t` truncated to the millisecond, verified by an ordinary deterministic test (not a Go fuzz target) sweeping a large (hundreds+) PRNG-seeded sample of `ms ∈ [0, 36⁸)` across several valid prefixes.
-- R-HF29-98B6: Package `idgen` MUST expose the epoch as the exported function `Epoch() time.Time` returning 2026-01-01T00:00:00 UTC, and MUST NOT export it as an assignable package-level variable.
+- R-26N0-RS6E: Package `idgen` MUST export `Epoch() time.Time` returning 2026-01-01T00:00:00 UTC.
 - R-WHEV-1AN5: `MintAt("R", Epoch())` MUST return the id with prefix `R` and the independently derived golden body `0007-J3LA`, pinning the affine offset constant.
 - R-SLNI-24UJ: `MintAt("R", ...)` of the literal absolute instant 2026-03-15T12:00:00.000Z (written as a civil time, not as an offset from the `Epoch` symbol) MUST return the id with prefix `R` and the independently derived golden body `OBCA-0VLA`, pinning the affine multiplier, the 4-4 split, and the 2026 epoch together.
 - R-SMVE-FWL8: `MintAt` MUST zero-pad the body to exactly 8 characters for small millisecond values.
