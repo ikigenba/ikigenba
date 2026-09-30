@@ -1,7 +1,8 @@
 package appkit
 
 import (
-	"encoding/base64"
+	"crypto/sha256"
+	"encoding/hex"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -36,8 +37,8 @@ func (h staticHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", contentType)
-	// Encoding the full content preserves exact equality across builds.
-	etag := `"` + base64.StdEncoding.EncodeToString(data) + `"`
+	digest := sha256.Sum256(data)
+	etag := `"` + hex.EncodeToString(digest[:]) + `"`
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "no-cache")
 	if values := r.Header.Values("If-None-Match"); len(values) == 1 && matchesEntityTag(values[0], etag) {
