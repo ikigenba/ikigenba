@@ -56,8 +56,8 @@ Postconditions:
 
 ## A developer asks which idgen they have
 
-The version is carried in the source, never injected at build time, so a
-developer's build and a release report the same string. Its shape is
+`--version` and `-V` print the same string, and a developer's build and a
+release report the same string. Its shape is
 `v<major>.<minor>.<patch>`: a `v`, then three non-negative integers without
 leading zeros, separated by dots. It is printed bare, alone on its line. Its
 value is data and is not fixed here.
