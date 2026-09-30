@@ -4,8 +4,11 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"maps"
+	"path"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -352,6 +355,125 @@ func TestFollowDoesNotMutateRootOrFiles(t *testing.T) {
 					t.Fatalf("fixture failed before following %v: %d", args, code)
 				}
 				<-done
+			}
+		}
+	}
+}
+
+// rootSameProbe is sys.Root for a following Run. It records every name any
+// read reaches it with, and closes the interrupt once the last queued change
+// has been received, so the render then in progress is the last.
+type rootSameProbe struct {
+	root      fstest.MapFS
+	names     []string
+	changes   chan struct{}
+	interrupt chan struct{}
+	closed    bool
+}
+
+func (p *rootSameProbe) seen(n string) {
+	p.names = append(p.names, n)
+	if len(p.changes) == 0 && !p.closed {
+		p.closed = true
+		close(p.interrupt)
+	}
+}
+func (p *rootSameProbe) Open(n string) (fs.File, error) { p.seen(n); return p.root.Open(n) }
+func (p *rootSameProbe) ReadDir(n string) ([]fs.DirEntry, error) {
+	p.seen(n)
+	return fs.ReadDir(p.root, n)
+}
+func (p *rootSameProbe) ReadFile(n string) ([]byte, error)   { p.seen(n); return fs.ReadFile(p.root, n) }
+func (p *rootSameProbe) Stat(n string) (fs.FileInfo, error)  { p.seen(n); return fs.Stat(p.root, n) }
+func (p *rootSameProbe) ReadLink(n string) (string, error)   { p.seen(n); return fs.ReadLink(p.root, n) }
+func (p *rootSameProbe) Lstat(n string) (fs.FileInfo, error) { p.seen(n); return fs.Lstat(p.root, n) }
+
+// rootSameWatcher checks, at each Watch, that the set equals the names the
+// render just ended reached sys.Root with, then flips the fixture so the next
+// render's watched set differs: every name that render reached, and every
+// fixture file, becomes a directory, or the fixture is restored.
+type rootSameWatcher struct {
+	t       *testing.T
+	label   string
+	probe   *rootSameProbe
+	files   fstest.MapFS
+	changes chan struct{}
+	calls   int
+}
+
+func (w *rootSameWatcher) Watch(names []string) {
+	w.t.Helper()
+	seen := map[string]struct{}{}
+	for _, n := range w.probe.names {
+		if n == "proc" || strings.HasPrefix(n, "proc/") {
+			continue
+		}
+		dir := path.Dir(n)
+		if info, err := fs.Stat(w.probe.root, n); err == nil && info.IsDir() {
+			dir = n
+		}
+		seen[dir] = struct{}{}
+	}
+	want := make([]string, 0, len(seen))
+	for n := range seen {
+		want = append(want, n)
+	}
+	slices.Sort(want)
+	if !slices.Equal(names, want) {
+		w.t.Errorf("%s render %d: watched %v, but sys.Root was reached with names giving %v", w.label, w.calls+1, names, want)
+	}
+	w.calls++
+	next := fstest.MapFS{}
+	for n, f := range w.files {
+		next[n] = &fstest.MapFile{Data: f.Data}
+	}
+	if w.calls%2 == 1 {
+		for n := range next {
+			next[n] = &fstest.MapFile{Mode: fs.ModeDir | 0o755}
+		}
+		for _, n := range w.probe.names {
+			if fs.ValidPath(n) && n != "." && n != "proc" && !strings.HasPrefix(n, "proc/") {
+				next[n] = &fstest.MapFile{Mode: fs.ModeDir | 0o755}
+			}
+		}
+	}
+	w.probe.names = nil
+	clear(w.probe.root)
+	maps.Copy(w.probe.root, next)
+}
+func (w *rootSameWatcher) Changes() <-chan struct{} { return w.changes }
+
+// R-Z060-P6JO
+func TestFollowEveryCallReachesTheOneFollowRoot(t *testing.T) {
+	files := fstest.MapFS{
+		"home/dev/.claude/projects/work/sample.jsonl":                                  &fstest.MapFile{Data: []byte(`{"type":"user","message":{"content":"hello"}}` + "\n")},
+		"home/dev/.claude/sessions/sample.json":                                        &fstest.MapFile{Data: []byte(`{"sessionId":"sample","pid":42}`)},
+		"home/dev/.codex/sessions/2026/09/24/rollout-2026-09-24T12-00-00-sample.jsonl": &fstest.MapFile{Data: []byte("{\"type\":\"session_meta\",\"payload\":{\"id\":\"sample\"}}\n")},
+		"home/dev/.grok/sessions/x/sample/summary.json":                                &fstest.MapFile{Data: []byte(`{"session_kind":"headless"}`)},
+		"home/dev/.grok/sessions/x/sample/updates.jsonl":                               &fstest.MapFile{Data: []byte("{}\n")},
+	}
+	const renders = 5
+	for _, harness := range []string{"claude", "codex", "grok"} {
+		for _, command := range []string{"list", "tree", "chat"} {
+			args := []string{command, harness}
+			if command != "list" {
+				args = append(args, "sample")
+			}
+			args = append(args, "--follow")
+			changes := make(chan struct{}, renders-1)
+			for range renders - 1 {
+				changes <- struct{}{}
+			}
+			probe := &rootSameProbe{root: maps.Clone(files), changes: changes, interrupt: make(chan struct{})}
+			w := &rootSameWatcher{t: t, label: strings.Join(args, " "), probe: probe, files: files, changes: changes}
+			sys := System{Home: "/home/dev", Root: probe, Watcher: w, Interrupt: probe.interrupt}
+			if code := Run(args, sys, io.Discard, io.Discard); code != ExitSuccess {
+				t.Fatalf("%v: code %d", args, code)
+			}
+			// Every render but the last must end in a Watch: the fixture
+			// flips at each one, so no two consecutive sets are equal.
+			if w.calls < renders-1 || len(changes) != 0 {
+				t.Errorf("%v: %d Watch calls over %d renders", args, w.calls, renders-len(changes))
 			}
 		}
 	}
