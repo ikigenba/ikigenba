@@ -27,9 +27,13 @@ status to a `Category` with one shared table (the requirement below). Reading
 the vendor's JSON error envelope — its `code` and `message`, and the cases where
 one status covers two categories (an OpenAI 429 that is really exhausted quota,
 a Gemini 400 that is really a bad key) — is deferred to a later design that adds
-per-wire envelope parsing on top of the table. Until then `Error.Code` and
-`Error.Message` may be empty and the status table is the whole classification
-of the *category*. One header is read today, because it is wire-agnostic: a
+per-wire envelope parsing on top of the table. Until then, for a non-2xx
+response, `Error.Code` and `Error.Message` may be empty and the status table is
+the whole classification of the *category*. The one exception is an error that
+arrives in-band after a 200 (below): there the frame *is* the error, so the
+built-in wires read its code and message, and the category comes from the same
+status table applied to the HTTP status the provider documents for that code.
+One header is read today, because it is wire-agnostic: a
 `Retry-After` header in RFC 9110 delta-seconds form is lifted into
 `Error.RetryAfter`. The HTTP-date form is deliberately not read — its value
 depends on the wall clock, which classification has no injected source for,
@@ -95,17 +99,65 @@ retry layer both call `Retryable`, never re-deciding per call site:
 func Retryable(err error) bool
 ```
 
-**A mid-stream error can arrive after a 200.** Some wires open with HTTP 200 and
-then emit an error *event* partway through the byte stream, after usable content
-has already been decoded. The classifier must therefore be reachable from inside
-the stream decode (D5/D13), not only at the moment the response headers land: the
-adapter, on seeing an error frame, runs the same classification path (status is
-the already-seen 200, but the body is the error frame and any trailing headers
-are absent) and surfaces the resulting `*Error` as the stream's terminal error.
-There is one classification path, invoked from two points. Recognizing a
-vendor's error *frame* is envelope parsing, so the built-in wires do not yet
-detect one; the path is reachable and exercised, and the per-wire frame
-recognizers arrive with the envelope design.
+**A mid-stream error can arrive after a 200.** Some providers open with HTTP 200
+and then emit an error *frame* partway through the byte stream, possibly after
+usable content has already been decoded. Each built-in wire recognizes the
+in-band error frame its provider documents, and nothing else, and ends the
+stream with a terminal `*Error` (D5's decode error channel; D12/D13 define what
+a terminal error does to the stream and History). The error's `Status` is the
+response's actual status, 200; `Code` and `Message` are the frame's own values,
+verbatim; `RetryAfter` follows the ordinary `Retry-After` header rule applied
+to the 200 response's headers — a frame carries no headers of its own, and a
+200 in practice carries no `Retry-After`, so it is normally zero. The category is not guessed from the code's name: it is the same
+status table a non-2xx response goes through, applied to the HTTP status the
+provider's documentation pairs with that code. A code the documentation pairs
+with no status is `CategoryUnknown`, which is never retried — the safe reading
+of an error nobody has characterized. The recognizers are stated per family,
+not per vendor, because the three wires of a family yield identical events for
+the same frames (D5).
+
+- **Anthropic** (`AnthropicMessagesWire()`). The streaming guide documents an
+  SSE `event: error` whose data is `{"type": "error", "error": {"type":
+  "overloaded_error", "message": "Overloaded"}}`
+  (https://platform.claude.com/docs/en/build-with-claude/streaming#error-events).
+  The errors reference says an error can occur after the API returns a 200 and
+  points at that shape, and lists each error type beside its HTTP status —
+  `invalid_request_error` 400 through `overloaded_error` 529 — noting the list
+  may grow (https://platform.claude.com/docs/en/api/errors). `Code` is the
+  inner `error.type`; the category is that type's listed status run through the
+  table, and an unlisted type is `CategoryUnknown`.
+- **Responses family** (`ResponsesWire()`, `OpenAIResponsesWire()`,
+  `XAIResponsesWire()`). OpenAI's official OpenAPI description
+  (https://github.com/openai/openai-openapi, `openapi.yaml`; rendered in the
+  API reference at https://developers.openai.com) documents two stream events
+  that end a response in error: `ResponseErrorEvent`, `{"type": "error",
+  "code": <string or null>, "message": <string>, "param": ..., "sequence_number":
+  ...}`, and `ResponseFailedEvent`, `type` `response.failed`, whose
+  `response.error` is a `ResponseError` `{"code": ..., "message": ...}`. Either
+  ends the stream; a null code becomes an empty `Code`.
+- **Chat family** (`ChatWire()`, `OpenAIChatWire()`, `XAIChatWire()`). The same
+  OpenAPI description, on the 200 response of `POST /chat/completions`, says
+  that if a failure occurs after streaming has started, a data frame may
+  contain a JSON object with an `error` field instead of a completion chunk. It
+  gives that field no schema; the description's standard `Error` object is
+  `{code, message, param, type}`, so the wire reads `error.code` and
+  `error.message` when each is a string and leaves the field empty otherwise.
+- **OpenAI category** (both families). The only code-to-status pairs OpenAI
+  documents are in its error-codes guide
+  (https://developers.openai.com/api/docs/guides/error-codes): `slow_down`,
+  `credit_balance_exhausted`, `organization_spend_limit_exceeded`,
+  `project_spend_limit_exceeded`, and `organization_usage_limit_exceeded` with
+  429, and `server_is_overloaded` with 503. Every other code — an empty one, and
+  every Responses `ResponseErrorCode` such as `server_error`, none of which has
+  a documented status — is `CategoryUnknown`.
+- **Gemini** (`GeminiGenerateContentWire()`) recognizes no in-band frame,
+  because Google documents none for `streamGenerateContent`: the method's
+  response "contains a stream of `GenerateContentResponse` instances"
+  (https://ai.google.dev/api/generate-content), and the API errors guide
+  documents errors only as non-2xx bodies
+  (https://ai.google.dev/gemini-api/docs/generate-content/api-errors). The
+  in-stream error shown at https://ai.google.dev/gemini-api/docs/api-errors
+  belongs to the Interactions API, which no built-in wire speaks.
 
 **Config failures and lifecycle failures are fail-loud sentinels.** Two
 conditions are the consumer's mistake, not the provider's, and are reported as
@@ -144,7 +196,12 @@ condition that would have been a warning is now either a typed field or a hard
 
 - R-2K5Z-AIWY: agentkit MUST return provider failures as a single `*Error` type whose failure kind is a `Category` field, and MUST NOT distinguish failure kinds by distinct Go error types.
 - R-OGQM-PKFZ: A non-2xx HTTP response MUST surface from `Send` as a populated `*Error` whose `Status` is the response status and whose `Category` is assigned by the library's built-in classification, with no consumer-installed classifier involved.
-- R-8XT7-SY68: An error frame arriving after an HTTP 200 MUST be surfaced as the stream's terminal `*Error`, its `Category` assigned by the same built-in classification as a non-2xx response.
+- R-ISHO-CITZ: When a 200 stream from `AnthropicMessagesWire()` carries an event whose data is a JSON object with `type` equal to `"error"` and an `error` object, the stream MUST end with a terminal `*Error` whose `Status` is 200, whose `Code` is that `error` object's `type`, and whose `Message` is that `error` object's `message`.
+- R-ITPK-QAKO: A terminal `*Error` from an Anthropic in-band error event MUST carry the `Category` built-in classification assigns to the HTTP status the error type is paired with — `invalid_request_error` 400, `authentication_error` 401, `billing_error` 402, `permission_error` 403, `not_found_error` 404, `conflict_error` 409, `request_too_large` 413, `rate_limit_error` 429, `api_error` 500, `timeout_error` 504, `overloaded_error` 529 — and MUST carry `CategoryUnknown` for any other error type.
+- R-IW5D-HU22: When a 200 stream from `ResponsesWire()`, `OpenAIResponsesWire()`, or `XAIResponsesWire()` carries an event with `type` equal to `"error"`, the stream MUST end with a terminal `*Error` whose `Status` is 200, whose `Code` is the event's `code` (empty when `code` is null), and whose `Message` is the event's `message`.
+- R-IXD9-VLSR: When a 200 stream from `ResponsesWire()`, `OpenAIResponsesWire()`, or `XAIResponsesWire()` carries an event with `type` equal to `"response.failed"`, the stream MUST end with a terminal `*Error` whose `Status` is 200, whose `Code` is the event's `response.error.code` (empty when null), and whose `Message` is the event's `response.error.message`.
+- R-IYL6-9DJG: When a 200 stream from `ChatWire()`, `OpenAIChatWire()`, or `XAIChatWire()` carries a data frame whose JSON object has a top-level `error` field, the stream MUST end with a terminal `*Error` whose `Status` is 200, whose `Code` is `error.code` when that is a string and empty otherwise, and whose `Message` is `error.message` when that is a string and empty otherwise.
+- R-IZT2-N5A5: A terminal `*Error` from an in-band error frame of a chat-family or responses-family wire MUST carry the `Category` built-in classification assigns to the HTTP status its `Code` is paired with — `slow_down` 429, `server_is_overloaded` 503, `credit_balance_exhausted` 429, `organization_spend_limit_exceeded` 429, `project_spend_limit_exceeded` 429, `organization_usage_limit_exceeded` 429 — and MUST carry `CategoryUnknown` for any other `Code`, including an empty one.
 - R-2RHD-L5D4: `Retryable(err)` MUST be the single authority on retryability, returning true for rate-limit, overloaded, timeout, and transport categories and false for auth, invalid-request, insufficient-quota, and unknown, unwrapping to find an agentkit `*Error`.
 - R-CJTD-QX2U: `ErrInvalidConfig`, `ErrClosed`, and `ErrInvalidArgument` MUST be sentinel errors comparable via `errors.Is`, including when wrapped in `*Error`.
 - R-2TX6-COUI: A `Send` that fails configuration validation MUST make no provider call and MUST leave History unchanged.
