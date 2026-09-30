@@ -37,7 +37,6 @@ nothing for a stopped one, and fails when the reload fails.
 
 ## REQUIREMENTS
 
-- R-YBCV-JK0W: Package `internal/cert` MUST own obtaining and inspecting the host certificate, depend within this module only on `internal/host`, and leave command parsing, configuration-store reads, output formatting, and exit codes to `internal/cli`.
 - R-2X8T-NIF1: Package `internal/cert` MUST export `Obtain(ctx context.Context, env host.Env, hostName, email string, apex bool) error`.
 - R-YDSO-B3IA: Package `internal/cert` MUST export `Info` with exactly the fields `Names []string`, `Issuer string`, and `Expires time.Time`.
 - R-YF0K-OV8Z: Package `internal/cert` MUST export `Inspect(env host.Env, hostName string) (Info, error)`.

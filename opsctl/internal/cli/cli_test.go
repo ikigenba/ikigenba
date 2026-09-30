@@ -2,9 +2,6 @@ package cli_test
 
 import (
 	"bytes"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"io"
 	"io/fs"
 	"os"
@@ -20,8 +17,6 @@ var _ func([]string, io.Reader, io.Writer, io.Writer, cli.Deps) int = cli.Run
 
 func TestRunReturnsWithoutTerminating(t *testing.T) {
 	// R-MUPN-JCBU
-	assertNoOsExit(t, ".")
-
 	var stdout, stderr bytes.Buffer
 	code := cli.Run([]string{"--help"}, strings.NewReader(""), &stdout, &stderr, cli.Deps{
 		Root: t.TempDir(),
@@ -161,48 +156,4 @@ func filesystemStateOutside(t *testing.T, sandbox, root string) map[string]files
 		t.Fatal(err)
 	}
 	return state
-}
-
-func assertNoOsExit(t *testing.T, dir string) {
-	t.Helper()
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("read %s: %v", dir, err)
-	}
-	fset := token.NewFileSet()
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
-		}
-		path := filepath.Join(dir, entry.Name())
-		parsed, parseErr := parser.ParseFile(fset, path, nil, 0)
-		if parseErr != nil {
-			t.Fatalf("parse %s: %v", path, parseErr)
-		}
-		osNames := map[string]bool{}
-		for _, spec := range parsed.Imports {
-			if spec.Path.Value != `"os"` {
-				continue
-			}
-			switch {
-			case spec.Name == nil:
-				osNames["os"] = true
-			case spec.Name.Name == ".":
-				t.Errorf("%s dot-imports os, so uses of os.Exit cannot be excluded", path)
-			case spec.Name.Name != "_":
-				osNames[spec.Name.Name] = true
-			}
-		}
-		ast.Inspect(parsed, func(n ast.Node) bool {
-			sel, ok := n.(*ast.SelectorExpr)
-			if !ok {
-				return true
-			}
-			ident, ok := sel.X.(*ast.Ident)
-			if ok && osNames[ident.Name] && sel.Sel.Name == "Exit" {
-				t.Errorf("%s references os.Exit", path)
-			}
-			return true
-		})
-	}
 }

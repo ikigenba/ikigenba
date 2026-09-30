@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"go/parser"
-	"go/token"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -21,35 +19,8 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 )
 
-func TestLifecyclePackageOwnership(t *testing.T) {
-	// R-UYY5-WJVF
-	appsDirectory := filepath.Join("..", "apps")
-	err := filepath.WalkDir(appsDirectory, func(name string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() || filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") {
-			return nil
-		}
-		parsed, err := parser.ParseFile(token.NewFileSet(), name, nil, parser.ImportsOnly)
-		if err != nil {
-			return err
-		}
-		for _, imported := range parsed.Imports {
-			if strings.Contains(imported.Path.Value, "/internal/nginx") || strings.Contains(imported.Path.Value, "/internal/services") || strings.Contains(imported.Path.Value, "/internal/backup") ||
-				strings.Contains(imported.Path.Value, "/internal/cli") {
-				t.Errorf("%s has orchestration dependency %s", name, imported.Path.Value)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
-	// R-UYY5-WJVF R-M6Y0-I4V2 R-VLO7-YADY R-V3TR-FMU7
+	// R-M6Y0-I4V2 R-VLO7-YADY R-V3TR-FMU7
 	root := uninstallCommandRoot(t, true)
 	var commands []host.Command
 	otherBefore := snapshotUninstallPaths(t, root, "opt/tasks", "etc/systemd/system/ikigenba-tasks.service")

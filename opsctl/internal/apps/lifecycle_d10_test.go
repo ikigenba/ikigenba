@@ -3,14 +3,10 @@ package apps_test
 import (
 	"context"
 	"errors"
-	"go/parser"
-	"go/token"
 	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
-	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
@@ -116,7 +112,7 @@ func (model *lifecycleModel) hooks() apps.LifecycleHooks {
 }
 
 func TestLifecycleDomainAPIsAndNameValidation(t *testing.T) {
-	// R-UYY5-WJVF R-V71F-D1HM R-VGSM-F7F6
+	// R-V71F-D1HM R-VGSM-F7F6
 	if reflect.TypeOf(apps.Disable) != reflect.TypeFor[func(context.Context, host.Env, string, apps.LifecycleHooks) error]() ||
 		reflect.TypeOf(apps.Enable) != reflect.TypeFor[func(context.Context, host.Env, string, apps.LifecycleHooks) error]() {
 		t.Fatal("domain lifecycle API signatures changed")
@@ -127,34 +123,6 @@ func TestLifecycleDomainAPIsAndNameValidation(t *testing.T) {
 		var failure *apps.LifecycleError
 		if !errors.As(err, &failure) || failure.Code != 2 || failure.Message != "'../bad' is not a usable app name" || called {
 			t.Fatalf("invalid name: %v called=%t", err, called)
-		}
-	}
-}
-
-func TestLifecycleDomainHasNoCLIRoutingOrBackupDependency(t *testing.T) {
-	// R-UYY5-WJVF
-	files, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, file := range files {
-		if strings.HasSuffix(file, "_test.go") {
-			continue
-		}
-		parsed, err := parser.ParseFile(token.NewFileSet(), file, nil, parser.ImportsOnly)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, imported := range parsed.Imports {
-			name, err := strconv.Unquote(imported.Path.Value)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, forbidden := range []string{"/internal/cli", "/internal/nginx", "/internal/services", "/internal/backup"} {
-				if strings.HasSuffix(name, forbidden) {
-					t.Fatalf("apps file %s imports %s", file, name)
-				}
-			}
 		}
 	}
 }

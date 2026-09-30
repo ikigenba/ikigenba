@@ -46,7 +46,6 @@ apex check) is `host.NormalizeName` of the stored `host.name` (D01).
 
 ## REQUIREMENTS
 
-- R-ULJ9-P2PS: Package `internal/apps` MUST own artifact installation and app unit publication, depending only on `internal/config`, `internal/host`, and `internal/cloud` within this module; `internal/cli` MUST own install grammar, rendering of reports and diagnostics, and composition with `internal/nginx`, `internal/services`, and `internal/backup`.
 - R-YNIK-9QOD: Package `internal/apps` MUST export `InstallHooks` as a struct with exactly `Report func(step, detail string, success bool) error` and `Configure func(context.Context, Manifest) error` fields.
 - R-OLR2-NBFZ: Package `internal/apps` MUST export `Install(ctx context.Context, env host.Env, remote cloud.Env, store config.Store, uri string, hooks InstallHooks) error`.
 - R-OMYZ-136O: Package `internal/apps` MUST export `InstallError` as a struct with exactly `Code int`, `Message string`, and `Cause error` fields; `(*InstallError).Error() string` MUST return `Message`, and `(*InstallError).Unwrap() error` MUST return `Cause`.

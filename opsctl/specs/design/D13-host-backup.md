@@ -2,8 +2,7 @@
 
 The host keeps its configuration and certificate separately from service data.
 The backup package owns archive and retirement operations; the CLI renders their
-results. Its existing D11 package boundary remains sufficient. The host
-archive holds only `/etc/ikigenba/` and `/etc/letsencrypt/`; the generated
+results. The host archive holds only `/etc/ikigenba/` and `/etc/letsencrypt/`; the generated
 services file under `/var/lib/ikigenba/` is neither archived nor restored
 (D15, R-LZ82-QJF7).
 
@@ -19,7 +18,7 @@ synchronization proof.
 
 ## REQUIREMENTS
 
-- R-Y5DO-SCJ9: Package `internal/backup` MUST export `HostBackup(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config.Store) (FileResult, error)`, using the D12 result shape for the host archive; CLI consumers MUST own textual rendering and exit-code selection.
+- R-FCIA-771G: Package `internal/backup` MUST export `HostBackup(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config.Store) (FileResult, error)`, using the D12 result shape for the host archive.
 - R-Y6LL-649Y: Package `internal/backup` MUST export `HostRestore(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config.Store) (HostRestoreResult, error)`.
 - R-HPY3-4JKF: Package `internal/backup` MUST export `HostRestoreResult` with exactly the fields `Object string`, `Size int64`, `Files int`, `SourceReady bool`, and `FilesRestored bool`, and `FailedStep string`.
 - R-Y91D-XNRC: Package `internal/backup` MUST export `Retire(ctx context.Context, env host.Env, cloudEnv cloud.Env, store config.Store) (RetireResult, error)`.

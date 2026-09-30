@@ -2,22 +2,13 @@ package apps_test
 
 import (
 	"bytes"
-	"embed"
 	"errors"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"path"
+	"os"
 	"reflect"
-	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
 )
-
-//go:embed *.go
-var appsSources embed.FS
 
 // R-8XR7-K2DV
 func TestIconAndServicesConstants(t *testing.T) {
@@ -90,113 +81,48 @@ func TestCheckIconSVGDefinition(t *testing.T) {
 
 // R-93UP-GX3C
 func TestCheckIconDependsOnlyOnInput(t *testing.T) {
-	entries, err := appsSources.ReadDir(".")
-	if err != nil {
-		t.Fatal(err)
+	inputs := [][]byte{
+		nil,
+		[]byte("<svg/>"),
+		[]byte("<svg><g/></svg>"),
+		[]byte("plain text"),
+		[]byte("<svg>&undefined;</svg>"),
+		bytes.Repeat([]byte{'x'}, 65537),
 	}
-	type sourceFunction struct {
-		declaration *ast.FuncDecl
-		imports     map[string]string
+	results := func() []error {
+		out := make([]error, len(inputs))
+		for i, data := range inputs {
+			out[i] = apps.CheckIcon(data)
+		}
+		return out
 	}
-	functions := make(map[string]sourceFunction)
-	globals := make(map[string]bool)
-	for _, entry := range entries {
-		if !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
-		}
-		content, err := appsSources.ReadFile(entry.Name())
-		if err != nil {
-			t.Fatal(err)
-		}
-		file, err := parser.ParseFile(token.NewFileSet(), entry.Name(), content, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		imports := make(map[string]string)
-		for _, imported := range file.Imports {
-			importPath, err := strconv.Unquote(imported.Path.Value)
-			if err != nil {
-				t.Fatal(err)
-			}
-			alias := path.Base(importPath)
-			if imported.Name != nil {
-				alias = imported.Name.Name
-			}
-			imports[alias] = importPath
-		}
-		for _, decl := range file.Decls {
-			switch declaration := decl.(type) {
-			case *ast.GenDecl:
-				if declaration.Tok != token.VAR {
-					continue
-				}
-				for _, spec := range declaration.Specs {
-					for _, name := range spec.(*ast.ValueSpec).Names {
-						if name.Name != "_" {
-							globals[name.Name] = true
-						}
-					}
-				}
-			case *ast.FuncDecl:
-				if declaration.Recv == nil {
-					functions[declaration.Name.Name] = sourceFunction{declaration, imports}
-				}
-			}
-		}
-	}
-	if _, ok := functions["CheckIcon"]; !ok {
-		t.Fatal("CheckIcon declaration not found")
-	}
-	visited := make(map[string]bool)
-	var inspectFunction func(string)
-	inspectFunction = func(name string) {
-		if visited[name] {
-			return
-		}
-		visited[name] = true
-		function := functions[name]
-		selectorNames := make(map[*ast.Ident]bool)
-		ast.Inspect(function.declaration.Body, func(node ast.Node) bool {
-			if selector, ok := node.(*ast.SelectorExpr); ok {
-				selectorNames[selector.Sel] = true
-				if receiver, ok := selector.X.(*ast.Ident); ok {
-					importPath := function.imports[receiver.Name]
-					if isExternalEffectPackage(importPath) {
-						t.Errorf("%s references effectful package %s", name, importPath)
-					}
-				}
-			}
-			return true
-		})
-		ast.Inspect(function.declaration.Body, func(node ast.Node) bool {
-			switch expression := node.(type) {
-			case *ast.Ident:
-				if selectorNames[expression] || expression.Name == "ErrIconNotSVG" || expression.Name == "ErrIconTooLarge" {
-					break
-				}
-				if globals[expression.Name] {
-					t.Errorf("%s accesses mutable package global %s", name, expression.Name)
-				}
-			case *ast.CallExpr:
-				if called, ok := expression.Fun.(*ast.Ident); ok {
-					if _, exists := functions[called.Name]; exists {
-						inspectFunction(called.Name)
-					} else if called.Name == "print" || called.Name == "println" {
-						t.Errorf("%s writes process output", name)
-					}
-				}
-			}
-			return true
-		})
-	}
-	inspectFunction("CheckIcon")
-}
 
-func isExternalEffectPackage(importPath string) bool {
-	for _, prefix := range []string{"os", "net", "time", "syscall", "runtime", "unsafe", "crypto/rand", "math/rand"} {
-		if importPath == prefix || strings.HasPrefix(importPath, prefix+"/") {
-			return true
+	first := t.TempDir()
+	t.Chdir(first)
+	t.Setenv("HOME", first)
+	t.Setenv("PATH", first)
+	t.Setenv("TMPDIR", first)
+	want := results()
+
+	second := t.TempDir()
+	t.Chdir(second)
+	t.Setenv("HOME", "/nonexistent")
+	t.Setenv("PATH", "")
+	t.Setenv("TMPDIR", "/nonexistent")
+	got := results()
+
+	for i := range inputs {
+		if !errors.Is(got[i], want[i]) {
+			t.Errorf("CheckIcon(%q) = %v under a different environment and directory, want %v", inputs[i], got[i], want[i])
 		}
 	}
-	return false
+	for _, dir := range []string{first, second} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 0 {
+			t.Errorf("CheckIcon created files in %s: %v", dir, entries)
+		}
+	}
 }

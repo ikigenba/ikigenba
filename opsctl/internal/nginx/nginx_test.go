@@ -4,13 +4,9 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -54,51 +50,6 @@ func enabledEnv(root string) host.Env {
 		}
 		return host.Result{Stdout: []byte("LoadState=loaded\nUnitFileState=enabled\n")}, nil
 	}}
-}
-
-func TestNginxPackageOwnsRenderingWithOnlyApprovedInternalDependencies(t *testing.T) {
-	// R-54PQ-5Q31
-	t.Parallel()
-	_, currentFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("locate nginx package")
-	}
-	directory := filepath.Dir(currentFile)
-	entries, err := os.ReadDir(directory)
-	if err != nil {
-		t.Fatalf("read nginx package: %v", err)
-	}
-	var files []*ast.File
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
-		}
-		file, parseErr := parser.ParseFile(token.NewFileSet(), filepath.Join(directory, entry.Name()), nil, 0)
-		if parseErr != nil {
-			t.Fatalf("parse %q: %v", entry.Name(), parseErr)
-		}
-		if file.Name.Name != "nginx" {
-			t.Fatalf("%q declares package %s", entry.Name(), file.Name.Name)
-		}
-		files = append(files, file)
-	}
-	if len(files) == 0 {
-		t.Fatal("internal/nginx contains no source files")
-	}
-	for _, file := range files {
-		for _, spec := range file.Imports {
-			path := strings.Trim(spec.Path.Value, `"`)
-			if strings.Contains(path, "/internal/") && path != "github.com/ikigenba/ikigenba/opsctl/internal/apps" && path != "github.com/ikigenba/ikigenba/opsctl/internal/host" {
-				t.Errorf("unapproved internal dependency %q", path)
-			}
-		}
-	}
-	if !filesDeclareFunction(files, "Render") {
-		t.Error("internal/nginx does not own Render")
-	}
-	if !filesDeclareFunction(files, "Apply") {
-		t.Error("internal/nginx does not own Apply")
-	}
 }
 
 func TestRenderHasExportedContract(t *testing.T) {
@@ -1138,18 +1089,6 @@ func TestApplyPreservesExistingCommandErrorIdentity(t *testing.T) {
 			}
 		})
 	}
-}
-
-func filesDeclareFunction(files []*ast.File, name string) bool {
-	for _, file := range files {
-		for _, declaration := range file.Decls {
-			function, ok := declaration.(*ast.FuncDecl)
-			if ok && function.Name.Name == name {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func assertRenderSignature(t *testing.T, _ func(context.Context, host.Env, string, string) ([]byte, error)) {

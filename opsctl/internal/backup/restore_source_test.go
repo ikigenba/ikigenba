@@ -53,7 +53,7 @@ func TestRestoreSourceContracts(t *testing.T) {
 }
 
 func TestRestoreSelectsSourceByArchiveTimestamp(t *testing.T) {
-	// R-FU12-UTIF R-GFZ9-QOUX R-DK7F-CAV0
+	// R-FU12-UTIF R-FDQ6-KYS5 R-DK7F-CAV0
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	writeFile(t, root, "opt/notes/etc/manifest.toml", "app = \"wrong-installed-app\"\n", 0o600)
@@ -315,7 +315,7 @@ func assertRestoreFields(t *testing.T, typeOf reflect.Type, want []struct {
 func restoreTimePointer(value time.Time) *time.Time { return &value }
 
 func TestRestoreUsesRootForRestoredTarget(t *testing.T) {
-	// R-GFZ9-QOUX
+	// R-FDQ6-KYS5
 	root := t.TempDir()
 	store := configuredFileStore(t, root)
 	uri := "s3://bucket/host/notes/2026-09-16T00:00:00Z.tar.zst"

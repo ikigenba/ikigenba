@@ -19,7 +19,6 @@ again (D15, R-LZ82-QJF7).
 
 ## REQUIREMENTS
 
-- R-JJ94-707K: Package `internal/backup` MUST own service-file backup, host-file backup, service restore, retirement, and shared replication configuration, with shared service and database declarations consumed from `internal/apps`; its dependencies within this module MUST be limited to `internal/apps`, `internal/config`, `internal/cloud`, and `internal/host`, and it MUST NOT install Litestream or implement SQLite replication itself.
 - R-JKH0-KRY9: Package `internal/backup` MUST export `Regenerate(ctx context.Context, env host.Env, store config.Store) (changed bool, err error)`.
 - R-JLOW-YJOY: Package `internal/backup` MUST export `SetupReplication(ctx context.Context, env host.Env, store config.Store) error`.
 - R-JMWT-CBFN: Package `internal/backup` MUST export `DatabaseFiles(database apps.Database) []string`.

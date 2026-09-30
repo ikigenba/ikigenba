@@ -327,7 +327,7 @@ func TestInitHealthyPreflight(t *testing.T) {
 	// R-X4JP-5YR7 R-X23W-EF9T R-V0E8-TY5K
 	// R-LIU3-NA5F R-LK20-11W4 R-LMHS-SLDI R-ELKW-EVLN
 	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL
-	// R-LHM7-9IEQ R-ZIB1-SI40
+	// R-ZIB1-SI40
 	// R-JWO0-EHD7 R-5E43-77RM
 	// R-YYIY-T743
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{

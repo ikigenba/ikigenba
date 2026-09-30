@@ -78,7 +78,6 @@ func writeLauncherEnv(t *testing.T, root string, commands *[]host.Command, disab
 }
 
 func TestWriteOwnsServicesPublication(t *testing.T) {
-	// R-M0FZ-4B5W
 	root := t.TempDir()
 	_, err := Write(context.Background(), writeEnv(t, root, nil), "example.test")
 	if err != nil {

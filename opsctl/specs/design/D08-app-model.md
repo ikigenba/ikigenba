@@ -34,7 +34,6 @@ designs.
 
 ## REQUIREMENTS
 
-- R-8WJB-6AN6: Package `internal/apps` MUST own the shared service discovery, app-name validation, manifest decoding, icon validation, and service-account contract consumed by `internal/cli`, `internal/nginx`, `internal/backup`, and `internal/services`; discovery and decoding MUST use host-local inputs without any registration database or remote deployment record.
 - R-XNK8-RUH4: Package `internal/apps` MUST export `Database` as a struct with exactly `Engine string` and `Path string` fields.
 - R-U40N-4DRE: Package `internal/apps` MUST export `Manifest` as a struct with exactly `App string`, `Default bool`, `Secrets []string`, `Env map[string]string`, and `Database *Database` fields.
 - R-XQ01-JDYI: Package `internal/apps` MUST export `Service` as a struct with exactly `Name string`, `Manifest *Manifest`, and `ManifestError error` fields.

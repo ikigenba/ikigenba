@@ -1,6 +1,6 @@
 # D02-cli-conventions
 
-Package `internal/cli` owns command grammar, help, dispatch, version, root refusal, and output conventions. All story command groups share this frame. Version values are release data held in source.
+Package `internal/cli` owns command grammar, help, dispatch, version, root refusal, and output conventions. All story command groups share this frame.
 
 ## REQUIREMENTS
 
@@ -10,8 +10,8 @@ Package `internal/cli` owns command grammar, help, dispatch, version, root refus
 - R-CYFL-TDTY: An invocation with no command MUST write exactly the three lines `opsctl: no command given`, an empty line, and `see 'opsctl --help' for usage` to stderr, nothing to stdout, and exit 2.
 - R-CZNI-75KN: An unknown command MUST write exactly the three lines `opsctl: unknown command '<name>'`, an empty line, and `see 'opsctl --help' for usage` to stderr, nothing to stdout, and exit 2.
 - R-D0VE-KXBC: An unknown top-level option MUST write exactly the three lines `opsctl: unknown option '<option>'`, an empty line, and `see 'opsctl --help' for usage` to stderr, nothing to stdout, and exit 2.
-- R-PPUV-ITT1: The opsctl version MUST be a value fixed in source matching `^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$` (a `v` followed by a full semantic version, pre-release and build metadata included); no build flag, environment variable, option, or configuration key changes it.
-- R-PR2R-WLJQ: `opsctl version`, `opsctl -V`, and `opsctl --version` MUST each print exactly one line to stdout matching the version shape of R-PPUV-ITT1, all three printing the same line, write nothing to stderr, and exit 0.
+- R-FA2H-FNK2: `opsctl version` MUST print exactly one line to stdout consisting of the opsctl version, a `v` followed by a full semantic version, pre-release and build metadata included, matching `^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`; the line MUST be identical whatever environment `Deps.Getenv` supplies and whatever the configuration store under `Deps.Root` contains, and an option that names a version, such as `--version=<v>`, MUST be rejected as an unknown top-level option.
+- R-FBAD-TFAR: `opsctl version`, `opsctl -V`, and `opsctl --version` MUST each print exactly one line to stdout matching the version shape of R-FA2H-FNK2, all three printing the same line, write nothing to stderr, and exit 0.
 - R-ENLY-EGT2: Any invocation that would dispatch to a command's action with `Deps.EUID` not equal to 0 MUST write the single line `opsctl: must run as root` to stderr, write nothing to stdout, and exit 3 without reading or writing any host file, invoking an external command, or making a network request; help and version are exempt.
 - R-ND05-9WG9: `--help`, `-h`, `--version`, `-V`, `version`, and `<command> --help` MUST succeed with `Deps.EUID` not equal to 0.
 - R-EQ1R-60AG: The first line of every diagnostic `opsctl` writes to stderr MUST begin with `opsctl: `; any further detail MUST follow exactly one empty line, with output from another program quoted by prefixing every line with `> ` and opsctl-authored detail unprefixed; usage text MUST never be written to stderr.

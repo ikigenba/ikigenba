@@ -4,14 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
-	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -68,11 +63,16 @@ Subcommands:
 Keys match ^[a-z0-9_.-]+$. Values may not contain newlines.
 `
 
-// wantVersion is the version the source declares; versions are data, so no
-// test names one.
+// wantVersion is the version opsctl reports through `opsctl version`;
+// versions are data, so no test names one.
 func wantVersion(t *testing.T) string {
 	t.Helper()
-	return versionLiteral(t)
+	stdout, stderr, code := invoke([]string{"version"}, cli.Deps{Root: t.TempDir(), EUID: 1})
+	line, found := strings.CutSuffix(stdout, "\n")
+	if code != 0 || stderr != "" || !found || line == "" || strings.Contains(line, "\n") {
+		t.Fatalf("version: exit %d stdout %q stderr %q, want exit 0 and one line on stdout", code, stdout, stderr)
+	}
+	return line
 }
 
 func invoke(args []string, deps cli.Deps) (stdout, stderr string, code int) {
@@ -140,10 +140,6 @@ func TestTopLevelGrammar(t *testing.T) {
 	user := depsAt(t, 1)
 	root := depsAt(t, 0)
 
-	if got, want := functionSwitchCases(t, "classifyTopLevelOption"), []string{"--help", "--version", "-V", "-h"}; !slices.Equal(got, want) {
-		t.Fatalf("accepted top-level option names = %q, want exactly %q", got, want)
-	}
-
 	stdout, stderr, code := invoke([]string{"-h"}, user)
 	if code != 0 || stderr != "" || stdout != wantUsage {
 		t.Errorf("-h: exit %d stdout %q stderr %q, want exit 0, usage on stdout, empty stderr", code, stdout, stderr)
@@ -187,6 +183,7 @@ func TestTopLevelGrammar(t *testing.T) {
 		"--help=true", "--help=false", "-h=true", "-h=false",
 		"--version=true", "--version=false", "-V=true", "-V=false",
 		"-help", "-version", "--",
+		"-v", "--verbose", "-q", "--quiet", "-r", "--root", "--root=/tmp", "-c", "--config",
 	} {
 		stdout, stderr, code = invoke([]string{option}, user)
 		wantErr = "opsctl: unknown option '" + option + "'\n\nsee 'opsctl --help' for usage\n"
@@ -201,8 +198,11 @@ func TestCommandSet(t *testing.T) {
 	user := depsAt(t, 1)
 
 	wantCommands := []string{"backup", "cert", "config", "disable", "dns", "enable", "host", "init", "install", "nginx", "restart", "restore", "retire", "status", "uninstall", "version"}
-	if got := functionSwitchCases(t, "dispatch"); !slices.Equal(got, wantCommands) {
-		t.Fatalf("top-level dispatch cases = %q, want exactly %q", got, wantCommands)
+	for _, name := range wantCommands {
+		_, stderr, _ := invoke([]string{name}, user)
+		if strings.Contains(stderr, "unknown command") {
+			t.Errorf("%s: stderr %q, want the command recognized", name, stderr)
+		}
 	}
 	for _, name := range []string{"disable", "enable"} {
 		stdout, stderr, code := invoke([]string{name, "app"}, user)
@@ -238,52 +238,6 @@ func TestCommandSet(t *testing.T) {
 			t.Errorf("%s: exit %d stdout %q stderr %q, want exit 2, empty stdout and %q", name, code, stdout, stderr, wantErr)
 		}
 	}
-}
-
-func parseCLIFile(t *testing.T) *ast.File {
-	t.Helper()
-	parsed, err := parser.ParseFile(token.NewFileSet(), "cli.go", nil, 0)
-	if err != nil {
-		t.Fatalf("parse cli.go: %v", err)
-	}
-	return parsed
-}
-
-func namedFunction(t *testing.T, name string) *ast.FuncDecl {
-	t.Helper()
-	for _, decl := range parseCLIFile(t).Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if ok && fn.Name.Name == name {
-			return fn
-		}
-	}
-	t.Fatalf("function %s not found in cli.go", name)
-	return nil
-}
-
-func functionSwitchCases(t *testing.T, function string) []string {
-	t.Helper()
-	var values []string
-	ast.Inspect(namedFunction(t, function).Body, func(node ast.Node) bool {
-		clause, ok := node.(*ast.CaseClause)
-		if !ok {
-			return true
-		}
-		for _, expression := range clause.List {
-			literal, ok := expression.(*ast.BasicLit)
-			if !ok || literal.Kind != token.STRING {
-				continue
-			}
-			value, err := strconv.Unquote(literal.Value)
-			if err != nil {
-				t.Fatalf("unquote dispatch case: %v", err)
-			}
-			values = append(values, value)
-		}
-		return true
-	})
-	slices.Sort(values)
-	return values
 }
 
 func TestTopLevelHelp(t *testing.T) {
@@ -362,125 +316,48 @@ func TestUnknownOption(t *testing.T) {
 	}
 }
 
-func TestVersionFixedInSource(t *testing.T) {
-	// R-PPUV-ITT1
+func TestVersionIndependentOfEnvironmentAndStore(t *testing.T) {
+	// R-FA2H-FNK2
+	baseline := wantVersion(t)
 	re := regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`)
-	value := versionLiteral(t)
-	if !re.MatchString(value) {
-		t.Errorf("version = %q, want to match %s", value, re.String())
+	if !re.MatchString(baseline) {
+		t.Errorf("version = %q, want to match %s", baseline, re.String())
 	}
 
+	override := baseline + "-override"
 	root := t.TempDir()
 	configDir := filepath.Join(root, "etc", "ikigenba")
 	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "config.json"), []byte(`{"version":"v9.8.7"}`), 0o600); err != nil {
+	store := `{"version":"` + override + `","opsctl.version":"` + override + `"}`
+	if err := os.WriteFile(filepath.Join(configDir, "config.json"), []byte(store), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	deps := cli.Deps{
 		Root: root,
 		EUID: 1,
 		Getenv: func(string) string {
-			return "v9.8.7"
+			return override
 		},
 	}
-	stdout, stderr, code := invoke([]string{"version"}, deps)
-	if stdout != wantVersion(t)+"\n" || stderr != "" || code != 0 {
-		t.Errorf("runtime version: exit %d stdout %q stderr %q, want %q", code, stdout, stderr, wantVersion(t)+"\n")
-	}
-	stdout, stderr, code = invoke([]string{"--version=v9.8.7"}, deps)
-	wantErr := "opsctl: unknown option '--version=v9.8.7'\n\nsee 'opsctl --help' for usage\n"
-	if stdout != "" || stderr != wantErr || code != 2 {
-		t.Errorf("version override option: exit %d stdout %q stderr %q, want exit 2, empty stdout, stderr %q", code, stdout, stderr, wantErr)
-	}
-}
-
-func versionLiteral(t *testing.T) string {
-	t.Helper()
-	fset := token.NewFileSet()
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var value string
-	found := false
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
-		}
-		path := filepath.Join(".", entry.Name())
-		parsed, parseErr := parser.ParseFile(fset, path, nil, 0)
-		if parseErr != nil {
-			t.Fatalf("parse %s: %v", path, parseErr)
-		}
-		ast.Inspect(parsed, func(node ast.Node) bool {
-			var targets []ast.Expr
-			switch node := node.(type) {
-			case *ast.AssignStmt:
-				targets = node.Lhs
-			case *ast.IncDecStmt:
-				targets = []ast.Expr{node.X}
-			case *ast.UnaryExpr:
-				if node.Op == token.AND {
-					targets = []ast.Expr{node.X}
-				}
-			}
-			for _, target := range targets {
-				ident, ok := target.(*ast.Ident)
-				if !ok || ident.Name != "version" {
-					continue
-				}
-				if ident.Obj == nil || ident.Obj == parsed.Scope.Lookup("version") {
-					t.Errorf("%s: version must not be overridden or exposed for mutation", fset.Position(target.Pos()))
-				}
-			}
-			return true
-		})
-		for _, decl := range parsed.Decls {
-			gen, ok := decl.(*ast.GenDecl)
-			if !ok || gen.Tok != token.CONST {
-				continue
-			}
-			for _, spec := range gen.Specs {
-				vs := spec.(*ast.ValueSpec)
-				for i, name := range vs.Names {
-					if name.Name != "version" {
-						continue
-					}
-					if found {
-						t.Fatalf("multiple package-level const version declarations")
-					}
-					found = true
-					if vs.Type != nil {
-						ident, ok := vs.Type.(*ast.Ident)
-						if !ok || ident.Name != "string" {
-							t.Errorf("%s: const version type = %T, want string", path, vs.Type)
-						}
-					}
-					if i >= len(vs.Values) {
-						t.Fatalf("%s: const version has no value", path)
-					}
-					lit, ok := vs.Values[i].(*ast.BasicLit)
-					if !ok || lit.Kind != token.STRING {
-						t.Fatalf("%s: const version value is not a string literal", path)
-					}
-					value, err = strconv.Unquote(lit.Value)
-					if err != nil {
-						t.Fatalf("unquote version in %s: %v", path, err)
-					}
-				}
-			}
+	for _, args := range [][]string{{"version"}, {"-V"}, {"--version"}} {
+		stdout, stderr, code := invoke(args, deps)
+		if stdout != baseline+"\n" || stderr != "" || code != 0 {
+			t.Errorf("%q with differing environment and store: exit %d stdout %q stderr %q, want %q", args, code, stdout, stderr, baseline+"\n")
 		}
 	}
-	if !found {
-		t.Fatal("package-level const version string not found")
+	for _, option := range []string{"--version=" + override, "-V=" + override} {
+		stdout, stderr, code := invoke([]string{option}, deps)
+		wantErr := "opsctl: unknown option '" + option + "'\n\nsee 'opsctl --help' for usage\n"
+		if stdout != "" || stderr != wantErr || code != 2 {
+			t.Errorf("version override option %q: exit %d stdout %q stderr %q, want exit 2, empty stdout, stderr %q", option, code, stdout, stderr, wantErr)
+		}
 	}
-	return value
 }
 
 func TestVersionOutput(t *testing.T) {
-	// R-PR2R-WLJQ
+	// R-FBAD-TFAR
 	user := depsAt(t, 1)
 	var want string
 	versionPattern := regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?\n$`)

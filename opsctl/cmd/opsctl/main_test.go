@@ -5,37 +5,21 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
+
+	"github.com/ikigenba/ikigenba/opsctl/internal/cli"
 )
 
 func TestBinaryHelp(t *testing.T) {
 	// R-N0T5-G71B
 	// R-U2SQ-QM0P
-	t.Cleanup(func() { _ = os.Remove("opsctl.help.test") })
-	build := exec.Command("go", "build", "-o", "opsctl.help.test", ".")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("go build ./cmd/opsctl: %v\n%s", err, out)
-	}
-
-	cmd := exec.Command("./opsctl.help.test", "--help")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	code := 0
-	if err != nil {
-		var ee *exec.ExitError
-		if errors.As(err, &ee) {
-			code = ee.ExitCode()
-		} else {
-			t.Fatalf("opsctl --help: %v", err)
-		}
-	}
+	stdout, stderr, code := runBinary(t, buildOpsctl(t), exec.Command("./opsctl", "--help"))
 	if code != 0 {
 		t.Errorf("exit code = %d, want 0", code)
 	}
-	if stderr.String() != "" {
-		t.Errorf("stderr = %q, want empty", stderr.String())
+	if stderr != "" {
+		t.Errorf("stderr = %q, want empty", stderr)
 	}
 	want := `Usage: opsctl [options] <command> [arguments]
 
@@ -71,7 +55,84 @@ Exit codes:
 
 Run 'opsctl <command> --help' for details on a command.
 `
-	if stdout.String() != want {
-		t.Errorf("stdout = %q, want %q", stdout.String(), want)
+	if stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
 	}
+}
+
+// TestBinaryPassesArgumentsStreamsAndExitCode builds the opsctl binary and
+// runs it, observing that arguments reach cli.Run, its output reaches the
+// process's standard streams, and its return value is the exit code.
+func TestBinaryPassesArgumentsStreamsAndExitCode(t *testing.T) {
+	// R-F8UL-1VTD
+	dir := buildOpsctl(t)
+
+	t.Run("unknown command", func(t *testing.T) {
+		stdout, stderr, code := runBinary(t, dir, exec.Command("./opsctl", "nosuchcommand"))
+		if code != 2 {
+			t.Errorf("exit code = %d, want 2", code)
+		}
+		if stdout != "" {
+			t.Errorf("stdout = %q, want empty", stdout)
+		}
+		want := "opsctl: unknown command 'nosuchcommand'\n\nsee 'opsctl --help' for usage\n"
+		if stderr != want {
+			t.Errorf("stderr = %q, want %q", stderr, want)
+		}
+	})
+
+	t.Run("version", func(t *testing.T) {
+		var wantOut, wantErr bytes.Buffer
+		if code := cli.Run([]string{"version"}, strings.NewReader(""), &wantOut, &wantErr, cli.Deps{}); code != 0 || wantErr.Len() != 0 {
+			t.Fatalf("cli.Run version = %d, stderr %q; want 0 and empty", code, wantErr.String())
+		}
+		if strings.Count(wantOut.String(), "\n") != 1 || !strings.HasSuffix(wantOut.String(), "\n") {
+			t.Fatalf("cli.Run version stdout = %q, want one line", wantOut.String())
+		}
+		stdout, stderr, code := runBinary(t, dir, exec.Command("./opsctl", "version"))
+		if code != 0 {
+			t.Errorf("exit code = %d, want 0", code)
+		}
+		if stderr != "" {
+			t.Errorf("stderr = %q, want empty", stderr)
+		}
+		if stdout != wantOut.String() {
+			t.Errorf("stdout = %q, want %q", stdout, wantOut.String())
+		}
+	})
+}
+
+// buildOpsctl installs this package's binary, named opsctl, into a fresh
+// temporary directory and returns that directory.
+func buildOpsctl(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	build := exec.Command("go", "install", ".")
+	build.Env = append(os.Environ(), "GOBIN="+dir)
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go install ./cmd/opsctl: %v\n%s", err, out)
+	}
+	return dir
+}
+
+// runBinary runs cmd, whose path is relative to dir, with an empty
+// environment and empty stdin, returning its stdout, stderr, and exit code.
+func runBinary(t *testing.T, dir string, cmd *exec.Cmd) (string, string, int) {
+	t.Helper()
+	cmd.Dir = dir
+	cmd.Env = []string{}
+	cmd.Stdin = strings.NewReader("")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	code := 0
+	if err != nil {
+		var ee *exec.ExitError
+		if !errors.As(err, &ee) {
+			t.Fatalf("%v: %v", cmd.Args, err)
+		}
+		code = ee.ExitCode()
+	}
+	return stdout.String(), stderr.String(), code
 }

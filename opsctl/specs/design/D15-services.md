@@ -17,8 +17,7 @@ exact bytes, and its publication. Package `internal/apps` (D08) owns what the
 file is built from and what an app is given: the icon's service-relative path,
 the icon check `install` applies in its `file` step, the file's path and
 variable name that every app's environment carries, and the `ikigenba`
-account whose group owns the file. The dependency points one way: `services`
-imports `apps` and `host`, never the reverse.
+account whose group owns the file.
 
 The file is rewritten wherever nginx's configuration is regenerated —
 `install`, `uninstall`, `enable`, `disable`, `restore`, `init`, and
@@ -57,7 +56,6 @@ until no installed app reads the old one.
 
 ## REQUIREMENTS
 
-- R-M0FZ-4B5W: Package `internal/services` MUST own the services file: the launcher-service criterion, the file's bytes, its publication, and the classification of the change to an entry; package `internal/apps` (D08) owns the icon path, the install-time icon check, the file's path and environment-variable name, and the `ikigenba` account.
 - R-86XF-542L: Package `internal/services` MUST export type `Change string` with exactly the constants `Unchanged Change = "unchanged"`, `Added Change = "added"`, `Removed Change = "removed"`, `Disabled Change = "disabled"`, `Enabled Change = "enabled"`, and `Updated Change = "updated"`.
 - R-885B-IVTA: Package `internal/services` MUST export type `Changes map[string]Change` with the method `func (c Changes) For(app string) Change`, which MUST return `c[app]` when `app` is a key of `c` and `Unchanged` otherwise, including for a nil `Changes`.
 - R-89D7-WNJZ: Package `internal/services` MUST export `Write(ctx context.Context, env host.Env, hostName string) (Changes, error)`.

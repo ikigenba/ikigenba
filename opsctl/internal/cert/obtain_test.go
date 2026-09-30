@@ -9,15 +9,12 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
-	"go/parser"
-	"go/token"
 	"io"
 	"io/fs"
 	"math/big"
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -30,60 +27,9 @@ import (
 
 const wantDeployHook = "systemctl try-reload-or-restart nginx"
 
-// R-YBCV-JK0W R-2X8T-NIF1
-func TestObtainPackageBoundaryAndSignature(t *testing.T) {
+// R-2X8T-NIF1
+func TestObtainPackageBoundaryAndSignature(*testing.T) {
 	acceptObtainSignature(cert.Obtain)
-
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("locate test source")
-	}
-	dir := filepath.Dir(file)
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dirFS := os.DirFS(dir)
-	var internalImports []string
-	foundPackage := false
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
-		}
-		sourceFile, err := dirFS.Open(entry.Name())
-		if err != nil {
-			t.Fatal(err)
-		}
-		source, parseErr := parser.ParseFile(token.NewFileSet(), entry.Name(), sourceFile, parser.ImportsOnly)
-		closeErr := sourceFile.Close()
-		if parseErr != nil {
-			t.Fatal(parseErr)
-		}
-		if closeErr != nil {
-			t.Fatal(closeErr)
-		}
-		if source.Name.Name != "cert" {
-			t.Fatalf("%s package = %s, want cert", entry.Name(), source.Name.Name)
-		}
-		foundPackage = true
-		for _, spec := range source.Imports {
-			path, err := strconv.Unquote(spec.Path.Value)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if strings.Contains(path, "/internal/") {
-				internalImports = append(internalImports, path)
-			}
-		}
-	}
-	slices.Sort(internalImports)
-	want := []string{"github.com/ikigenba/ikigenba/opsctl/internal/host"}
-	if !reflect.DeepEqual(internalImports, want) {
-		t.Fatalf("internal imports = %v, want %v", internalImports, want)
-	}
-	if !foundPackage {
-		t.Fatal("certificate operations are not owned by package cert")
-	}
 }
 
 func acceptObtainSignature(func(context.Context, host.Env, string, string, bool) error) {}

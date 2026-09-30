@@ -25,27 +25,6 @@ import (
 
 var _ cloud.Client = (*client)(nil)
 
-// R-DLFB-Q2LP
-func TestInjectedProviderInterfacesContainOnlyOperationalMethods(t *testing.T) {
-	s3Interface := reflect.TypeFor[s3API]()
-	ssmInterface := reflect.TypeFor[ssmAPI]()
-	if s3Interface.NumMethod() != 3 || s3Interface.Method(0).Name != "GetObject" ||
-		s3Interface.Method(1).Name != "ListObjectsV2" || s3Interface.Method(2).Name != "PutObject" {
-		t.Fatalf("s3API methods = %v", interfaceMethodNames(s3Interface))
-	}
-	if ssmInterface.NumMethod() != 1 || ssmInterface.Method(0).Name != "GetParameter" {
-		t.Fatalf("ssmAPI methods = %v", interfaceMethodNames(ssmInterface))
-	}
-}
-
-func interfaceMethodNames(interfaceType reflect.Type) []string {
-	names := make([]string, interfaceType.NumMethod())
-	for index := range names {
-		names[index] = interfaceType.Method(index).Name
-	}
-	return names
-}
-
 type fakeS3 struct {
 	get  func(context.Context, *awss3.GetObjectInput) (*awss3.GetObjectOutput, error)
 	put  func(context.Context, *awss3.PutObjectInput) (*awss3.PutObjectOutput, error)
@@ -94,30 +73,40 @@ func (body *trackedBody) Close() error {
 	return nil
 }
 
-// R-DLFB-Q2LP R-DMN8-3UCE
+func acceptOpenSignature(func(context.Context, string) (cloud.Client, error)) {}
+
+// R-F7MO-O42O R-DMN8-3UCE
 func TestOpenUsesRegionAndConcreteClients(t *testing.T) {
 	t.Setenv("AWS_ACCESS_KEY_ID", "test-access")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "test-secret")
 	t.Setenv("AWS_SESSION_TOKEN", "")
 	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
-	t.Setenv("AWS_REGION", "ignored-region")
-	t.Setenv("AWS_DEFAULT_REGION", "ignored-default-region")
+	acceptOpenSignature(Open)
+	for _, tc := range []struct{ name, region, defaultRegion string }{
+		{"both variables", "ignored-region", "ignored-default-region"},
+		{"default region only", "", "ignored-default-region"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("AWS_REGION", tc.region)
+			t.Setenv("AWS_DEFAULT_REGION", tc.defaultRegion)
 
-	opened, err := Open(t.Context(), "eu-north-1")
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	actual, ok := opened.(*client)
-	if !ok {
-		t.Fatalf("Open returned %T", opened)
-	}
-	s3Client, ok := actual.s3.(*awss3.Client)
-	if !ok || s3Client.Options().Region != "eu-north-1" || !s3Client.Options().UsePathStyle {
-		t.Fatalf("S3 client = %T options %#v", actual.s3, s3Client.Options())
-	}
-	ssmClient, ok := actual.ssm.(*awsssm.Client)
-	if !ok || ssmClient.Options().Region != "eu-north-1" {
-		t.Fatalf("SSM client = %T region %q", actual.ssm, ssmClient.Options().Region)
+			opened, err := Open(t.Context(), "eu-north-1")
+			if err != nil {
+				t.Fatalf("Open: %v", err)
+			}
+			actual, ok := opened.(*client)
+			if !ok {
+				t.Fatalf("Open returned %T", opened)
+			}
+			s3Client, ok := actual.s3.(*awss3.Client)
+			if !ok || s3Client.Options().Region != "eu-north-1" || !s3Client.Options().UsePathStyle {
+				t.Fatalf("S3 client = %T options %#v", actual.s3, s3Client.Options())
+			}
+			ssmClient, ok := actual.ssm.(*awsssm.Client)
+			if !ok || ssmClient.Options().Region != "eu-north-1" {
+				t.Fatalf("SSM client = %T region %q", actual.ssm, ssmClient.Options().Region)
+			}
+		})
 	}
 }
 

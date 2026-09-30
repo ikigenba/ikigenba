@@ -5,13 +5,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"go/parser"
-	"go/token"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -22,35 +19,7 @@ import (
 )
 
 func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
-	// R-ULJ9-P2PS R-JWO0-EHD7
-	entries, err := os.ReadDir(filepath.Join("..", "apps"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	allowed := map[string]bool{"cloud": true, "config": true, "host": true}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
-		}
-		file, parseErr := parser.ParseFile(token.NewFileSet(), filepath.Join("..", "apps", entry.Name()), nil, parser.ImportsOnly)
-		if parseErr != nil {
-			t.Fatal(parseErr)
-		}
-		for _, spec := range file.Imports {
-			importPath, unquoteErr := strconv.Unquote(spec.Path.Value)
-			if unquoteErr != nil {
-				t.Fatal(unquoteErr)
-			}
-			const prefix = "github.com/ikigenba/ikigenba/opsctl/internal/"
-			if strings.HasPrefix(importPath, prefix) {
-				dependency := strings.Split(strings.TrimPrefix(importPath, prefix), "/")[0]
-				if !allowed[dependency] {
-					t.Errorf("internal/apps/%s imports forbidden internal dependency %q", entry.Name(), importPath)
-				}
-			}
-		}
-	}
-
+	// R-JWO0-EHD7
 	fixture := newCLIInstallFixture(t)
 	stdout, stderr, code := fixture.invoke()
 	if code != 0 || stderr != "" {

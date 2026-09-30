@@ -70,7 +70,6 @@ belongs to D05.
 
 ## REQUIREMENTS
 
-- R-54PQ-5Q31: Package `internal/nginx` MUST own generation and application of `/etc/nginx/conf.d/ikigenba.conf`, depending within this module only on `internal/host` and `internal/apps`; `internal/cli` owns nginx command parsing, configuration-store reads, output, and exit codes.
 - R-5H6Q-PYQB: The configuration key `host.apex` MUST name the app that answers at the parent domain of `host.name`, the value D01's `host.Apex` derives, chosen independently of any manifest's `Default`; an absent or empty value MUST mean this host holds no apex.
 - R-NH7K-2R1K: Package `internal/nginx` MUST export `Render(ctx context.Context, env host.Env, hostName, apexApp string) ([]byte, error)`.
 - R-NIFG-GIS9: Package `internal/nginx` MUST export `Apply(ctx context.Context, env host.Env, hostName, apexApp string) error`.

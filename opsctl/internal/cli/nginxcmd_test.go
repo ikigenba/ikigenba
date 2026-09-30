@@ -116,7 +116,6 @@ func TestNginxHelpIsExactAndInert(t *testing.T) {
 }
 
 func TestNginxGrammarPrecedesConfigurationAndHostWork(t *testing.T) {
-	// R-54PQ-5Q31
 	// R-FSNN-9FKB
 	root := t.TempDir()
 	writeCorruptCLIConfigFile(t, root)

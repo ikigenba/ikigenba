@@ -177,8 +177,10 @@ func TestStatusIsReadOnlyAndKeepsManifestFailuresIndependent(t *testing.T) {
 }
 
 func TestStatusReadsPersistentSQLiteJournalMode(t *testing.T) {
-	// R-PWID-NYOW
+	// R-NCMF-J9UV
 	root := t.TempDir()
+	// No host executable is reachable: an empty PATH and no Execute hook.
+	t.Setenv("PATH", t.TempDir())
 	wantModes := map[string]string{"missing": "-"}
 	for _, tc := range []struct {
 		name   string
