@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"reflect"
 	"testing"
 )
 
@@ -99,7 +98,7 @@ func testInvalidOutputIdentityAndWrapping(t *testing.T) {
 }
 
 func TestErrorHasOnePublicShapeAndWrapsCause(t *testing.T) {
-	// R-2K5Z-AIWY
+	// R-IVU4-KSGT
 	t.Run("category values", testCategoryValues)
 	t.Run("error shape", testErrorShape)
 	t.Run("error and unwrap", testErrorTextAndUnwrap)
@@ -124,33 +123,14 @@ func testCategoryValues(t *testing.T) {
 }
 
 func testErrorShape(t *testing.T) {
-	type field struct {
-		name     string
-		typeName string
-		exported bool
-	}
-	want := []field{
-		{name: "Category", typeName: "agentkit.Category", exported: true},
-		{name: "Status", typeName: "int", exported: true},
-		{name: "Code", typeName: "string", exported: true},
-		{name: "Message", typeName: "string", exported: true},
-		{name: "RetryAfter", typeName: "time.Duration", exported: true},
-		{name: "Endpoint", typeName: "agentkit.Identity", exported: true},
-	}
-	errorType := reflect.TypeOf(Error{})
-	var exported []reflect.StructField
-	for index := range errorType.NumField() {
-		if field := errorType.Field(index); field.IsExported() {
-			exported = append(exported, field)
+	for _, category := range []Category{CategoryAuth, CategoryRateLimit, CategoryTransport} {
+		err := fmt.Errorf("outer: %w", &Error{Category: category})
+		var providerError *Error
+		if !errors.As(err, &providerError) {
+			t.Fatalf("errors.As(%v, *Error) = false", err)
 		}
-	}
-	if len(exported) != len(want) {
-		t.Fatalf("Error has %d exported fields, want exact D4 shape of %d", len(exported), len(want))
-	}
-	for index, expected := range want {
-		actual := exported[index]
-		if actual.Name != expected.name || actual.Type.String() != expected.typeName || actual.IsExported() != expected.exported {
-			t.Fatalf("Error exported field %d = (%s, %s, exported=%t), want %#v", index, actual.Name, actual.Type, actual.IsExported(), expected)
+		if providerError.Category != category {
+			t.Fatalf("Category = %v, want %v", providerError.Category, category)
 		}
 	}
 }

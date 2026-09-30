@@ -16,8 +16,24 @@ func TestOfferingIDVocabulary(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("offering IDs = %q, want %q", got, want)
 	}
-	if typ := reflect.TypeOf(OfferingID("")); typ.Name() != "OfferingID" || typ.Kind() != reflect.String {
-		t.Fatalf("OfferingID type = %v (kind %v), want named string", typ, typ.Kind())
+	converted := OfferingID("x")
+	if string(converted) != "x" || stringBased(converted) != "x" {
+		t.Fatalf("OfferingID does not convert to and from string")
+	}
+	var matched string
+	switch any(converted).(type) {
+	case string:
+		matched = "string"
+	case OfferingID:
+		matched = "OfferingID"
+	}
+	if matched != "OfferingID" {
+		t.Fatalf("OfferingID value matched case %q, want OfferingID", matched)
+	}
+	for _, constant := range []any{OfferingAnthropicMessages, OfferingOpenAIResponses, OfferingOpenAIChat, OfferingGeminiGenerateContent, OfferingXAIResponses, OfferingXAIChat, OfferingOpenRouterChat, OfferingOpenRouterResponses} {
+		if _, ok := constant.(OfferingID); !ok {
+			t.Fatalf("constant %v is %T, want OfferingID", constant, constant)
+		}
 	}
 }
 
@@ -28,8 +44,24 @@ func TestHostVocabulary(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("hosts = %q, want %q", got, want)
 	}
-	if typ := reflect.TypeOf(Host("")); typ.Name() != "Host" || typ.Kind() != reflect.String {
-		t.Fatalf("Host type = %v (kind %v), want named string", typ, typ.Kind())
+	converted := Host("x")
+	if string(converted) != "x" || stringBased(converted) != "x" {
+		t.Fatalf("Host does not convert to and from string")
+	}
+	var matched string
+	switch any(converted).(type) {
+	case string:
+		matched = "string"
+	case Host:
+		matched = "Host"
+	}
+	if matched != "Host" {
+		t.Fatalf("Host value matched case %q, want Host", matched)
+	}
+	for _, constant := range []any{HostAnthropic, HostOpenAI, HostGemini, HostXAI, HostOpenRouter} {
+		if _, ok := constant.(Host); !ok {
+			t.Fatalf("constant %v is %T, want Host", constant, constant)
+		}
 	}
 }
 
@@ -40,33 +72,55 @@ func TestWireNameVocabulary(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("wire names = %q, want %q", got, want)
 	}
-	if typ := reflect.TypeOf(WireName("")); typ.Name() != "WireName" || typ.Kind() != reflect.String {
-		t.Fatalf("WireName type = %v (kind %v), want named string", typ, typ.Kind())
+	converted := WireName("x")
+	if string(converted) != "x" || stringBased(converted) != "x" {
+		t.Fatalf("WireName does not convert to and from string")
+	}
+	var matched string
+	switch any(converted).(type) {
+	case string:
+		matched = "string"
+	case WireName:
+		matched = "WireName"
+	}
+	if matched != "WireName" {
+		t.Fatalf("WireName value matched case %q, want WireName", matched)
+	}
+	for _, constant := range []any{WireMessages, WireGenerateContent, WireChat, WireResponses} {
+		if _, ok := constant.(WireName); !ok {
+			t.Fatalf("constant %v is %T, want WireName", constant, constant)
+		}
 	}
 }
 
 // R-KGJP-MPHO
 func TestOfferingShape(t *testing.T) {
-	assertStructShape(t, Offering{}, []fieldShape{
-		{"ID", reflect.TypeOf(OfferingID(""))},
-		{"Host", reflect.TypeOf(Host(""))},
-		{"WireName", reflect.TypeOf(WireName(""))},
-		{"WireFormat", reflect.TypeOf((*WireFormat)(nil)).Elem()},
-		{"Endpoints", reflect.TypeOf([]EndpointSpec(nil))},
-		{"WireModel", reflect.TypeOf("")},
-		{"Context", reflect.TypeOf(int64(0))},
-		{"MaxOutputTokens", reflect.TypeOf(int64(0))},
-		{"Pricing", reflect.TypeOf(Pricing{})},
-		{"Reasoning", reflect.TypeOf(ReasoningSpec{})},
-	})
+	offering := Offering(struct {
+		ID              OfferingID
+		Host            Host
+		WireName        WireName
+		WireFormat      WireFormat
+		Endpoints       []EndpointSpec
+		WireModel       string
+		Context         int64
+		MaxOutputTokens int64
+		Pricing         Pricing
+		Reasoning       ReasoningSpec
+	}{ID: OfferingAnthropicMessages, WireModel: "m"})
+	if offering.ID != OfferingAnthropicMessages || offering.WireModel != "m" {
+		t.Fatalf("Offering fields = %q %q", offering.ID, offering.WireModel)
+	}
 }
 
 func TestCatalogEntryShape(t *testing.T) {
 	// R-JKVR-8O82
-	assertStructShape(t, CatalogEntry{}, []fieldShape{
-		{"Model", reflect.TypeOf("")},
-		{"Offerings", reflect.TypeOf([]Offering(nil))},
-	})
+	entry := CatalogEntry(struct {
+		Model     string
+		Offerings []Offering
+	}{Model: "m"})
+	if entry.Model != "m" {
+		t.Fatalf("CatalogEntry.Model = %q", entry.Model)
+	}
 }
 
 func TestCatalogLookupSurface(t *testing.T) {
@@ -565,8 +619,24 @@ func TestReasoningKindValuesAndOrder(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("reasoning kinds = %v, want iota order %v", got, want)
 	}
-	if typ := reflect.TypeOf(ReasoningKind(0)); typ.Name() != "ReasoningKind" || typ.Kind() != reflect.Int {
-		t.Fatalf("ReasoningKind type = %v (kind %v), want named int", typ, typ.Kind())
+	converted := ReasoningKind(7)
+	if int(converted) != 7 || intBased(converted) != 7 {
+		t.Fatalf("ReasoningKind does not convert to and from int")
+	}
+	var matched string
+	switch any(converted).(type) {
+	case int:
+		matched = "int"
+	case ReasoningKind:
+		matched = "ReasoningKind"
+	}
+	if matched != "ReasoningKind" {
+		t.Fatalf("ReasoningKind value matched case %q, want ReasoningKind", matched)
+	}
+	for _, constant := range []any{ReasoningKindNone, ReasoningKindEffort, ReasoningKindBudget, ReasoningKindToggle} {
+		if _, ok := constant.(ReasoningKind); !ok {
+			t.Fatalf("constant %v is %T, want ReasoningKind", constant, constant)
+		}
 	}
 }
 
@@ -577,16 +647,19 @@ func TestReasoningSpecAcceptsSignature(t *testing.T) {
 
 func TestReasoningSpecShape(t *testing.T) {
 	// R-O11N-T3ME
-	assertStructShape(t, ReasoningSpec{}, []fieldShape{
-		{"Kind", reflect.TypeOf(ReasoningKind(0))},
-		{"Term", reflect.TypeOf("")},
-		{"Levels", reflect.TypeOf([]Effort(nil))},
-		{"MinBudget", reflect.TypeOf(int(0))},
-		{"MaxBudget", reflect.TypeOf(int(0))},
-		{"CanEnable", reflect.TypeOf(false)},
-		{"CanDisable", reflect.TypeOf(false)},
-		{"Default", reflect.TypeOf(ReasoningConfig{})},
-	})
+	spec := ReasoningSpec(struct {
+		Kind       ReasoningKind
+		Term       string
+		Levels     []Effort
+		MinBudget  int
+		MaxBudget  int
+		CanEnable  bool
+		CanDisable bool
+		Default    ReasoningConfig
+	}{Kind: ReasoningKindBudget, MaxBudget: 9})
+	if spec.Kind != ReasoningKindBudget || spec.MaxBudget != 9 {
+		t.Fatalf("ReasoningSpec fields = %v %d", spec.Kind, spec.MaxBudget)
+	}
 }
 
 func assertReasoningSpecAcceptsSignature(t *testing.T, accepts func(ReasoningSpec, ReasoningConfig) bool) {
@@ -772,11 +845,14 @@ func TestCatalogReasoningVocabularySendable(t *testing.T) {
 
 // R-KFBT-8XQZ
 func TestEndpointSpecShape(t *testing.T) {
-	assertStructShape(t, EndpointSpec{}, []fieldShape{
-		{"AuthMode", reflect.TypeOf(AuthMode(""))},
-		{"BaseURL", reflect.TypeOf("")},
-		{"Rotation", reflect.TypeOf(Rotation{})},
-	})
+	endpoint := EndpointSpec(struct {
+		AuthMode AuthMode
+		BaseURL  string
+		Rotation Rotation
+	}{AuthMode: AuthModeAPIKey, BaseURL: "https://example.test"})
+	if endpoint.AuthMode != AuthModeAPIKey || endpoint.BaseURL != "https://example.test" {
+		t.Fatalf("EndpointSpec fields = %q %q", endpoint.AuthMode, endpoint.BaseURL)
+	}
 }
 
 // TestCatalogReasoningInvariants is the reasoning half of the same table-wide
@@ -944,24 +1020,8 @@ func offeringEqual(got, want Offering) bool {
 	return reflect.DeepEqual(got, want)
 }
 
-type fieldShape struct {
-	name   string
-	typeOf reflect.Type
-}
+// stringBased compiles only for types whose underlying type is string.
+func stringBased[T ~string](value T) string { return string(value) }
 
-func assertStructShape(t *testing.T, value any, want []fieldShape) {
-	t.Helper()
-	typ := reflect.TypeOf(value)
-	if typ.NumField() != len(want) {
-		t.Fatalf("%s has %d fields, want exactly %d", typ.Name(), typ.NumField(), len(want))
-	}
-	for index, expected := range want {
-		field := typ.Field(index)
-		if field.Name != expected.name || field.Type != expected.typeOf {
-			t.Errorf("%s field %d = %s %v, want %s %v", typ.Name(), index, field.Name, field.Type, expected.name, expected.typeOf)
-		}
-		if !field.IsExported() {
-			t.Errorf("%s.%s is not exported", typ.Name(), field.Name)
-		}
-	}
-}
+// intBased compiles only for types whose underlying type is int.
+func intBased[T ~int](value T) int { return int(value) }

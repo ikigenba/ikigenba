@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,10 +12,19 @@ import (
 
 // R-P5PA-T4A1
 func TestAuthModeContract(t *testing.T) {
-	if reflect.TypeFor[AuthMode]().Kind() != reflect.String {
-		t.Fatalf("AuthMode underlying kind = %s, want string", reflect.TypeFor[AuthMode]().Kind())
+	mode := AuthMode("custom")
+	if string(mode) != "custom" {
+		t.Fatalf("string(AuthMode(%q)) = %q, want custom", "custom", string(mode))
 	}
-	if AuthModeAPIKey != AuthMode("api_key") || AuthModeOAuth != AuthMode("oauth") {
+	switch any(mode).(type) {
+	case AuthMode:
+	case string:
+		t.Fatal("AuthMode value matched case string, want case AuthMode")
+	default:
+		t.Fatalf("AuthMode value has dynamic type %T, want AuthMode", mode)
+	}
+	modes := []AuthMode{inferredType(AuthModeAPIKey), inferredType(AuthModeOAuth)}
+	if modes[0] != AuthMode("api_key") || modes[1] != AuthMode("oauth") {
 		t.Fatalf("auth modes = %q, %q; want api_key, oauth", AuthModeAPIKey, AuthModeOAuth)
 	}
 }
@@ -221,13 +229,17 @@ func TestOAuthAuthenticatorUsesRotatorTokenAndOpenAIAccountID(t *testing.T) {
 
 // R-J6FV-1PBM
 func TestOAuthRefreshWindow(t *testing.T) {
-	if reflect.TypeOf(OAuthRefreshWindow) != reflect.TypeFor[time.Duration]() {
-		t.Fatalf("OAuthRefreshWindow type = %T, want time.Duration", OAuthRefreshWindow)
-	}
-	if OAuthRefreshWindow != 5*time.Minute {
-		t.Fatalf("OAuthRefreshWindow = %s, want %s", OAuthRefreshWindow, 5*time.Minute)
+	const window = OAuthRefreshWindow
+	var _ = func() time.Duration { return inferredType(window) }
+	if window != 5*time.Minute {
+		t.Fatalf("OAuthRefreshWindow = %s, want %s", window, 5*time.Minute)
 	}
 }
+
+// inferredType returns its argument as the type Go infers for it, so an
+// untyped constant comes back as its default type rather than converting to
+// the variable it is assigned to.
+func inferredType[T any](v T) T { return v }
 
 // R-J7NR-FH2B
 func TestOAuthAuthenticatorProactivelyRotatesExpiringTokens(t *testing.T) {

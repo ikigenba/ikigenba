@@ -571,7 +571,7 @@ func TestBuiltInWireLiftsRetryAfterHeaderIntoError(t *testing.T) {
 }
 
 func TestTransportFailureIsWrappedWithStableIdentity(t *testing.T) {
-	// R-2K5Z-AIWY
+	// R-IVU4-KSGT
 	cause := errors.New("connection refused")
 	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return nil, cause

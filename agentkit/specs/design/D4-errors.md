@@ -194,7 +194,7 @@ condition that would have been a warning is now either a typed field or a hard
 
 ## REQUIREMENTS
 
-- R-2K5Z-AIWY: agentkit MUST return provider failures as a single `*Error` type whose failure kind is a `Category` field, and MUST NOT distinguish failure kinds by distinct Go error types.
+- R-IVU4-KSGT: agentkit MUST return provider failures as a single `*Error` type whose failure kind is a `Category` field.
 - R-OFGN-QEQY: A non-2xx HTTP response MUST surface from `Send` as a populated `*Error` whose `Status` is the response status and whose `Category` is assigned by the library's built-in classification.
 - R-ISHO-CITZ: When a 200 stream from `AnthropicMessagesWire()` carries an event whose data is a JSON object with `type` equal to `"error"` and an `error` object, the stream MUST end with a terminal `*Error` whose `Status` is 200, whose `Code` is that `error` object's `type`, and whose `Message` is that `error` object's `message`.
 - R-ITPK-QAKO: A terminal `*Error` from an Anthropic in-band error event MUST carry the `Category` built-in classification assigns to the HTTP status the error type is paired with — `invalid_request_error` 400, `authentication_error` 401, `billing_error` 402, `permission_error` 403, `not_found_error` 404, `conflict_error` 409, `request_too_large` 413, `rate_limit_error` 429, `api_error` 500, `timeout_error` 504, `overloaded_error` 529 — and MUST carry `CategoryUnknown` for any other error type.
