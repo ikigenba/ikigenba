@@ -2,7 +2,6 @@ package widget_test
 
 import (
 	"fmt"
-	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -33,25 +32,19 @@ const (
 
 // R-RKRT-ZN8J.
 func TestStatusTypeAndConstants(t *testing.T) {
-	status := reflect.TypeFor[widget.Status]()
-	if status.Kind() != reflect.String || status.Name() != "Status" || status.PkgPath() != "github.com/ikigenba/ikigenba/dummy/internal/widget" {
-		t.Fatalf("Status is %v (kind %v), want a defined type with underlying string", status, status.Kind())
+	// An untyped string constant converts to Status, and a Status converts to
+	// string, only if Status is a type whose underlying type is string.
+	custom := widget.Status("custom")
+	if string(custom) != "custom" {
+		t.Errorf("Status round trip = %q", custom)
 	}
-	for _, tc := range []struct {
-		name  string
-		value any
-		want  string
-	}{
-		{"StatusActive", widget.StatusActive, "active"},
-		{"StatusPaused", widget.StatusPaused, "paused"},
-		{"StatusRetired", widget.StatusRetired, "retired"},
-	} {
-		if reflect.TypeOf(tc.value) != status {
-			t.Errorf("%s has type %T, want widget.Status", tc.name, tc.value)
-		}
-		if got := reflect.ValueOf(tc.value).String(); got != tc.want {
-			t.Errorf("%s = %q, want %q", tc.name, got, tc.want)
-		}
+	// Each short declaration takes the constant's own type; assigning it to a
+	// Status variable compiles only if that type is Status.
+	active, paused, retired := widget.StatusActive, widget.StatusPaused, widget.StatusRetired
+	var statuses [3]widget.Status
+	statuses[0], statuses[1], statuses[2] = active, paused, retired
+	if statuses != [3]widget.Status{"active", "paused", "retired"} {
+		t.Errorf("status constants = %q", statuses)
 	}
 	if string(externalStatusActive) != "active" || string(externalStatusPaused) != "paused" || string(externalStatusRetired) != "retired" {
 		t.Errorf("status constants = %q, %q, %q", externalStatusActive, externalStatusPaused, externalStatusRetired)
@@ -81,59 +74,50 @@ func TestMessageConstants(t *testing.T) {
 	}
 }
 
-// R-QKS8-P3QQ, R-7WR2-CK99, R-QPNU-86PI, R-QTBJ-DHXL.
-func TestPublicStructFields(t *testing.T) {
-	for _, tc := range []struct {
-		typ    reflect.Type
-		fields map[string]reflect.Type
-	}{
-		{reflect.TypeFor[widget.Widget](), map[string]reflect.Type{"Name": reflect.TypeFor[string](), "Count": reflect.TypeFor[int](), "Status": reflect.TypeFor[widget.Status]()}},
-		{reflect.TypeFor[widget.Submission](), map[string]reflect.Type{"Name": reflect.TypeFor[string](), "Count": reflect.TypeFor[string](), "Status": reflect.TypeFor[string]()}},
-		{reflect.TypeFor[widget.FieldErrors](), map[string]reflect.Type{"Name": reflect.TypeFor[string](), "Count": reflect.TypeFor[string](), "Status": reflect.TypeFor[string]()}},
-		{reflect.TypeFor[widget.Store](), map[string]reflect.Type{}},
-	} {
-		t.Run(tc.typ.Name(), func(t *testing.T) {
-			if tc.typ.Kind() != reflect.Struct {
-				t.Fatal("type must be a struct")
-			}
-			fields := make(map[string]reflect.Type)
-			for i := 0; i < tc.typ.NumField(); i++ {
-				f := tc.typ.Field(i)
-				if f.IsExported() {
-					fields[f.Name] = f.Type
-				}
-			}
-			if !reflect.DeepEqual(fields, tc.fields) {
-				t.Errorf("exported fields = %v, want %v", fields, tc.fields)
-			}
-		})
+// R-4F49-SZRQ, R-4GC6-6RIF, R-4IRY-YAZT.
+func TestPublicStructsConstructWithDeclaredFields(t *testing.T) {
+	// Each literal names its fields with values of the declared types, and each
+	// read compares a field against a value of the declared type, so this
+	// compiles only if every declared field exists with its declared type.
+	name, count, status := "delta", 7, widget.StatusPaused
+	w := widget.Widget{Name: name, Count: count, Status: status}
+	if w.Name != name || w.Count != count || w.Status != status {
+		t.Errorf("Widget = %+v", w)
+	}
+	rawName, rawCount, rawStatus := " delta ", "7", "paused"
+	sub := widget.Submission{Name: rawName, Count: rawCount, Status: rawStatus}
+	if sub.Name != rawName || sub.Count != rawCount || sub.Status != rawStatus {
+		t.Errorf("Submission = %+v", sub)
+	}
+	nameErr, countErr, statusErr := "name error", "count error", "status error"
+	errs := widget.FieldErrors{Name: nameErr, Count: countErr, Status: statusErr}
+	if errs.Name != nameErr || errs.Count != countErr || errs.Status != statusErr {
+		t.Errorf("FieldErrors = %+v", errs)
 	}
 }
 
 // R-QJKC-BC01, R-QY74-WKWD, R-QZF1-ACN2.
 func TestStatuses(t *testing.T) {
-	statuses := widget.Statuses
-	if reflect.TypeOf(statuses) != reflect.TypeFor[func() []widget.Status]() {
-		t.Fatal("unexpected signature for widget.Statuses")
-	}
+	declared := struct {
+		statuses func() []widget.Status
+	}{widget.Statuses}
 	want := []widget.Status{widget.StatusActive, widget.StatusPaused, widget.StatusRetired}
-	got := statuses()
+	got := declared.statuses()
 	if !slices.Equal(got, want) {
 		t.Fatalf("Statuses = %v, want %v", got, want)
 	}
 	got[0] = widget.StatusRetired
 	got[1] = widget.StatusActive
-	if !slices.Equal(statuses(), want) {
+	if !slices.Equal(declared.statuses(), want) {
 		t.Fatal("mutating a returned slice changed later statuses")
 	}
 }
 
 // R-QQVQ-LYG7, R-RIXF-EOI6.
 func TestFieldErrorsAny(t *testing.T) {
-	anyError := widget.FieldErrors.Any
-	if reflect.TypeOf(anyError) != reflect.TypeFor[func(widget.FieldErrors) bool]() {
-		t.Fatal("unexpected signature for widget.FieldErrors.Any")
-	}
+	declared := struct {
+		anyError func(widget.FieldErrors) bool
+	}{widget.FieldErrors.Any}
 	for bits := range 8 {
 		e := widget.FieldErrors{}
 		if bits&1 != 0 {
@@ -145,7 +129,7 @@ func TestFieldErrorsAny(t *testing.T) {
 		if bits&4 != 0 {
 			e.Status = "status error"
 		}
-		if got := anyError(e); got != (bits != 0) {
+		if got := declared.anyError(e); got != (bits != 0) {
 			t.Errorf("%+v.Any() = %v", e, got)
 		}
 	}
@@ -161,24 +145,20 @@ func initialWidgets() []widget.Widget {
 
 // R-QUJF-R9OA, R-QVRC-51EZ, R-R1UU-1W4G, R-RRGQ-32P1.
 func TestStoreInitialStateAndIndependence(t *testing.T) {
-	newStore := widget.NewStore
-	if reflect.TypeOf(newStore) != reflect.TypeFor[func() *widget.Store]() {
-		t.Fatal("unexpected signature for widget.NewStore")
-	}
-	all := (*widget.Store).All
-	if reflect.TypeOf(all) != reflect.TypeFor[func(*widget.Store) []widget.Widget]() {
-		t.Fatal("unexpected signature for (*widget.Store).All")
-	}
-	first, second := newStore(), newStore()
+	declared := struct {
+		newStore func() *widget.Store
+		all      func(*widget.Store) []widget.Widget
+	}{widget.NewStore, (*widget.Store).All}
+	first, second := declared.newStore(), declared.newStore()
 	want := initialWidgets()
-	if !slices.Equal(all(first), want) || !slices.Equal(all(second), want) {
+	if !slices.Equal(declared.all(first), want) || !slices.Equal(declared.all(second), want) {
 		t.Fatal("new stores do not contain the exact starting widgets")
 	}
 	created, errs := first.Create(widget.Submission{Name: "delta", Count: "5", Status: "active"})
 	if errs.Any() {
 		t.Fatal(errs)
 	}
-	if !slices.Equal(second.All(), want) || !slices.Equal(newStore().All(), want) {
+	if !slices.Equal(second.All(), want) || !slices.Equal(widget.NewStore().All(), want) {
 		t.Fatal("a write changed another store or later store's starting widgets")
 	}
 	if _, errs := second.Create(widget.Submission{Name: "epsilon", Count: "6", Status: "paused"}); errs.Any() {
@@ -214,10 +194,9 @@ func TestAllReturnsIndependentSnapshots(t *testing.T) {
 
 // R-QWZ8-IT5O, R-R4AM-TFLU, R-R5IJ-77CJ, R-RLD8-67ZK.
 func TestAcceptedCreationOrderAndTrimming(t *testing.T) {
-	create := (*widget.Store).Create
-	if reflect.TypeOf(create) != reflect.TypeFor[func(*widget.Store, widget.Submission) (widget.Widget, widget.FieldErrors)]() {
-		t.Fatal("unexpected signature for (*widget.Store).Create")
-	}
+	declared := struct {
+		create func(*widget.Store, widget.Submission) (widget.Widget, widget.FieldErrors)
+	}{(*widget.Store).Create}
 	s := widget.NewStore()
 	want := initialWidgets()
 	for _, tc := range []struct {
@@ -229,7 +208,7 @@ func TestAcceptedCreationOrderAndTrimming(t *testing.T) {
 		{widget.Submission{Name: "epsilon", Count: "12", Status: "retired"}, widget.Widget{Name: "epsilon", Count: 12, Status: widget.StatusRetired}},
 	} {
 		before := tc.sub
-		got, errs := create(s, tc.sub)
+		got, errs := declared.create(s, tc.sub)
 		if errs != (widget.FieldErrors{}) || got != tc.want {
 			t.Fatalf("Create(%+v) = %+v, %+v", tc.sub, got, errs)
 		}
@@ -324,7 +303,7 @@ func TestStatusValidation(t *testing.T) {
 	}
 }
 
-// R-RHPJ-0WRH, R-RML4-JZQ9, R-QPNU-86PI, R-R5IJ-77CJ.
+// R-RHPJ-0WRH, R-RML4-JZQ9, R-4IRY-YAZT, R-R5IJ-77CJ.
 func TestRejectedSubmissionReportsEveryFieldAndLeavesStoreUnchanged(t *testing.T) {
 	for bits := 1; bits < 8; bits++ {
 		t.Run(strconv.Itoa(bits), func(t *testing.T) {

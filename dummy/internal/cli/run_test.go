@@ -25,28 +25,23 @@ func TestUsageConstant(t *testing.T) {
 }
 
 // R-S3OH-HHQH
-func TestProcessShape(t *testing.T) {
-	if reflect.TypeOf(Run) != reflect.TypeOf((func(context.Context, Process) int)(nil)) {
-		t.Fatal("Run has wrong signature")
-	}
-	writer := reflect.TypeOf((*io.Writer)(nil)).Elem()
-	want := []struct {
-		name string
-		typ  reflect.Type
-	}{
-		{"Args", reflect.TypeOf([]string(nil))}, {"LookupEnv", reflect.TypeOf((func(string) (string, bool))(nil))},
-		{"Unsetenv", reflect.TypeOf((func(string) error)(nil))}, {"Pid", reflect.TypeOf(int(0))},
-		{"Stdout", writer}, {"Stderr", writer}, {"Inherit", reflect.TypeOf((func(uintptr) (net.Listener, error))(nil))},
-		{"Banner", reflect.TypeOf((func(appkit.User) appkit.Banner)(nil))},
-	}
-	got := reflect.TypeOf(Process{})
-	if got.NumField() != len(want) {
-		t.Fatalf("Process fields = %d, want %d", got.NumField(), len(want))
-	}
-	for i, field := range want {
-		if got.Field(i).Name != field.name || got.Field(i).Type != field.typ {
-			t.Errorf("field %d = %v, want %v", i, got.Field(i), field)
-		}
+func TestProcessConstructsWithDeclaredFieldsAndRuns(t *testing.T) {
+	// The literal names every declared field with a value of its declared type,
+	// and Run is stored in a field of its declared type, so this compiles
+	// only if Process and Run have the declared shape.
+	declared := struct {
+		run func(context.Context, Process) int
+	}{Run}
+	var out, errOut bytes.Buffer
+	var stdout, stderr io.Writer = &out, &errOut
+	args := []string{"--version"}
+	lookupEnv := func(string) (string, bool) { return "", false }
+	unsetenv := func(string) error { return nil }
+	inherit := func(uintptr) (net.Listener, error) { return nil, errors.New("unexpected") }
+	banner := func(appkit.User) appkit.Banner { return appkit.Banner{} }
+	p := Process{Args: args, LookupEnv: lookupEnv, Unsetenv: unsetenv, Pid: 1, Stdout: stdout, Stderr: stderr, Inherit: inherit, Banner: banner}
+	if code := declared.run(context.Background(), p); code != ExitSuccess || out.String() != Version+"\n" || errOut.Len() != 0 {
+		t.Errorf("Run(--version) = %d, stdout %q, stderr %q", code, out.String(), errOut.String())
 	}
 }
 

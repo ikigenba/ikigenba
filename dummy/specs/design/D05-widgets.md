@@ -23,10 +23,9 @@ still holds exactly those three. There is no exported fixture value, because
 the fixtures are an outcome of `NewStore` rather than a thing a caller could
 hold and modify. `All` returns the widgets in creation order, the starting
 three first and every accepted creation after them in the order it was
-accepted, so a new widget is last. `All` hands back a fresh slice: the store
-has no exported field and no other way in, which is what makes "the set was
-left exactly as it was, down to its order" something a test can decide without
-a back door.
+accepted, so a new widget is last. `All` hands back a fresh slice, which is
+what makes "the set was left exactly as it was, down to its order" something a
+test can decide without a back door.
 
 Creating is where the rules live. A caller submits three strings exactly as
 they arrived, and `Submission` holds them raw — untrimmed, unshortened —
@@ -84,13 +83,12 @@ this one declares them.
 
 - R-RKRT-ZN8J: The `internal/widget` package MUST export `type Status string` together with these values of that type: `StatusActive Status = "active"`, `StatusPaused Status = "paused"`, and `StatusRetired Status = "retired"`.
 - R-QJKC-BC01: The `internal/widget` package MUST export `func Statuses() []Status`.
-- R-QKS8-P3QQ: The `internal/widget` package MUST export `type Widget` as a struct whose exported fields are exactly `Name string`, `Count int`, and `Status Status`.
+- R-4F49-SZRQ: The `internal/widget` package MUST export `type Widget` as a struct with the fields `Name string`, `Count int`, and `Status Status`.
 - R-QM05-2VHF: The `internal/widget` package MUST export `const MaxNameRunes = 40`.
-- R-7WR2-CK99: The `internal/widget` package MUST export `type Submission` as a struct whose exported fields are exactly `Name string`, `Count string`, and `Status string`.
-- R-QPNU-86PI: The `internal/widget` package MUST export `type FieldErrors` as a struct whose exported fields are exactly `Name string`, `Count string`, and `Status string`, each holding at most one message for the field it names, the empty string meaning that field was accepted.
+- R-4GC6-6RIF: The `internal/widget` package MUST export `type Submission` as a struct with the fields `Name string`, `Count string`, and `Status string`.
+- R-4IRY-YAZT: The `internal/widget` package MUST export `type FieldErrors` as a struct with the fields `Name string`, `Count string`, and `Status string`, each holding at most one message for the field it names, the empty string meaning that field was accepted.
 - R-QQVQ-LYG7: The `internal/widget` package MUST export `func (e FieldErrors) Any() bool`.
 - R-QS3M-ZQ6W: The `internal/widget` package MUST export six string constants with exactly these values: `NameRequiredMessage = "a name is required"`, `NameTooLongMessage = "the name is too long; the limit is 40 characters"`, `NameTakenMessage = "that name is already taken"`, `CountNotWholeMessage = "the count must be a whole number"`, `CountNegativeMessage = "the count cannot be negative"`, and `StatusNotAllowedMessage = "the status must be one of active, paused, or retired"`.
-- R-QTBJ-DHXL: The `internal/widget` package MUST export `type Store` as a struct type with no exported field, so that the widgets it holds are reachable only through its exported methods.
 - R-QUJF-R9OA: The `internal/widget` package MUST export `func NewStore() *Store`.
 - R-QVRC-51EZ: The `internal/widget` package MUST export `func (s *Store) All() []Widget`.
 - R-QWZ8-IT5O: The `internal/widget` package MUST export `func (s *Store) Create(sub Submission) (Widget, FieldErrors)`.

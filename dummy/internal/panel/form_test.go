@@ -413,7 +413,7 @@ func TestFormFreshPagesAndFailures(t *testing.T) {
 	}
 }
 
-// R-N7GN-8L42 R-GWHL-WEJ3 R-N3SY-39VZ R-H05B-1PR6
+// R-4JZV-C2QI R-GWHL-WEJ3 R-N3SY-39VZ R-H05B-1PR6
 func TestFormRejections(t *testing.T) {
 	cases := []widget.Submission{
 		{Name: "", Count: "2", Status: "active"},

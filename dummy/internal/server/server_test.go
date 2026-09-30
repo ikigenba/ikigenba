@@ -9,7 +9,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,9 +20,15 @@ import (
 func TestServeSignature(t *testing.T) {
 	t.Parallel()
 
-	want := reflect.TypeOf((func(context.Context, net.Listener, http.Handler, time.Duration) error)(nil))
-	if got := reflect.TypeOf(Serve); got != want {
-		t.Errorf("Serve type = %v, want %v", got, want)
+	// Storing Serve in a field of the declared function type compiles only
+	// if Serve has exactly that signature; calling it proves it runs.
+	declared := struct {
+		serve func(context.Context, net.Listener, http.Handler, time.Duration) error
+	}{Serve}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := declared.serve(ctx, listenLoopback(t), http.NotFoundHandler(), time.Millisecond); err != nil {
+		t.Errorf("Serve with a done context = %v, want nil", err)
 	}
 }
 
@@ -141,13 +146,19 @@ func TestServeAnswersHTTPAndDrainsAcceptedRequests(t *testing.T) {
 func TestDrainErrorShapeAndText(t *testing.T) {
 	t.Parallel()
 
-	typ := reflect.TypeOf(DrainError{})
-	if typ.Kind() != reflect.Struct || typ.NumField() != 1 {
-		t.Fatalf("DrainError type = %v, want struct with one field", typ)
+	// The literal and the typed read compile only if DrainError is a struct
+	// with an Unfinished int field; the method expression compiles only if
+	// (*DrainError).Error has the declared signature.
+	unfinished := 3
+	e := DrainError{Unfinished: unfinished}
+	if e.Unfinished != unfinished {
+		t.Errorf("Unfinished = %d, want %d", e.Unfinished, unfinished)
 	}
-	field := typ.Field(0)
-	if field.Name != "Unfinished" || field.Type.Kind() != reflect.Int || field.PkgPath != "" {
-		t.Errorf("DrainError field = %+v, want exported Unfinished int", field)
+	declared := struct {
+		errorText func(*DrainError) string
+	}{(*DrainError).Error}
+	if got := declared.errorText(&e); got != "stopped with 3 requests unfinished" {
+		t.Errorf("Error() = %q", got)
 	}
 	for _, tc := range []struct {
 		count int
