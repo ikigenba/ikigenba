@@ -8,10 +8,12 @@ import (
 	"io"
 	"iter"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -187,10 +189,10 @@ func TestConversationConstructionFixesOrchestrationConfiguration(t *testing.T) {
 
 	firstProvider := first.provider.(*composedProvider)
 	secondProvider := second.provider.(*composedProvider)
-	if _, ok := firstProvider.wire.(*anthropicMessagesWire); !ok {
+	if reflect.TypeOf(firstProvider.wire) != reflect.TypeOf(AnthropicMessagesWire()) {
 		t.Fatalf("first construction wire = %T, want Anthropic", firstProvider.wire)
 	}
-	if _, ok := secondProvider.wire.(*openAIResponsesWire); !ok {
+	if reflect.TypeOf(secondProvider.wire) != reflect.TypeOf(OpenAIResponsesWire()) {
 		t.Fatalf("second construction wire = %T, want OpenAI Responses", secondProvider.wire)
 	}
 	if first.identity.Model != "model-a" || second.identity.Model != "model-b" ||
@@ -374,31 +376,66 @@ func TestNewDeclarationTakesWireFormatAndRejectsNilWire(t *testing.T) {
 		t.Fatalf("New(nil, ...) = (%v, %v), want nil ErrInvalidConfig", conversation, err)
 	}
 
+	// Each built-in wire speaks its own request grammar; the request New's
+	// conversation sends is the observable proof of which codec was selected.
+	anthropicGrammar := []string{"max_tokens", "messages", "model", "stream"}
+	chatGrammar := []string{"max_completion_tokens", "messages", "model", "stream", "stream_options"}
+	responsesGrammar := []string{"input", "max_output_tokens", "model", "store", "stream"}
+	geminiGrammar := []string{"contents", "generationConfig"}
 	for _, test := range []struct {
-		name string
-		wire WireFormat
-		want reflect.Type
+		name             string
+		wire             WireFormat
+		keys             []string
+		anthropicVersion bool
 	}{
-		{"anthropic_messages", AnthropicMessagesWire(), reflect.TypeFor[*anthropicMessagesWire]()},
-		{"openai_responses", OpenAIResponsesWire(), reflect.TypeFor[*openAIResponsesWire]()},
-		{"responses", ResponsesWire(), reflect.TypeFor[*responsesWire]()},
-		{"openai_chat_completions", OpenAIChatWire(), reflect.TypeFor[*openAIChatWire]()},
-		{"chat", ChatWire(), reflect.TypeFor[*chatWire]()},
-		{"gemini_generate_content", GeminiGenerateContentWire(), reflect.TypeFor[*geminiGenerateContentWire]()},
-		{"xai_chat", XAIChatWire(), reflect.TypeFor[*xaiChatWire]()},
-		{"xai_responses", XAIResponsesWire(), reflect.TypeFor[*xaiResponsesWire]()},
+		{"anthropic_messages", AnthropicMessagesWire(), anthropicGrammar, true},
+		{"openai_responses", OpenAIResponsesWire(), responsesGrammar, false},
+		{"responses", ResponsesWire(), responsesGrammar, false},
+		{"openai_chat_completions", OpenAIChatWire(), chatGrammar, false},
+		{"chat", ChatWire(), chatGrammar, false},
+		{"gemini_generate_content", GeminiGenerateContentWire(), geminiGrammar, false},
+		{"xai_chat", XAIChatWire(), chatGrammar, false},
+		{"xai_responses", XAIResponsesWire(), responsesGrammar, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			conversation, err := New(test.wire, endpoint, "model", Config{})
+			type captured struct {
+				header http.Header
+				body   []byte
+			}
+			requests := make(chan captured, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+				body, _ := io.ReadAll(request.Body)
+				requests <- captured{header: request.Header.Clone(), body: body}
+			}))
+			defer server.Close()
+			endpoint, err := NewEndpoint(auth, WithBaseURL(server.URL))
 			if err != nil {
 				t.Fatal(err)
 			}
-			provider, ok := conversation.provider.(*composedProvider)
-			if !ok {
-				t.Fatalf("New provider = %T, want *composedProvider", conversation.provider)
+			conversation, err := New(test.wire, endpoint, "model", Config{Settings: Settings{Options: Options{"max_output_tokens": "64"}}})
+			if err != nil {
+				t.Fatal(err)
 			}
-			if reflect.TypeOf(provider.wire) != test.want {
-				t.Fatalf("New wire = %T, want %s", provider.wire, test.want)
+			stream := conversation.Send(context.Background(), Text{Text: "hello"})
+			drainStream(stream)
+			if err := stream.Err(); err != nil {
+				t.Fatal(err)
+			}
+			request := <-requests
+			var document map[string]json.RawMessage
+			if err := json.Unmarshal(request.body, &document); err != nil {
+				t.Fatalf("request body %s: %v", request.body, err)
+			}
+			keys := make([]string, 0, len(document))
+			for key := range document {
+				keys = append(keys, key)
+			}
+			slices.Sort(keys)
+			if !slices.Equal(keys, test.keys) {
+				t.Fatalf("request top-level keys = %v, want the %s grammar %v; body %s", keys, test.name, test.keys, request.body)
+			}
+			if got := request.header.Get("anthropic-version") != ""; got != test.anthropicVersion {
+				t.Fatalf("anthropic-version header present = %t, want %t", got, test.anthropicVersion)
 			}
 		})
 	}
@@ -412,13 +449,9 @@ func TestWireFormatDeclarationIsExactAndSealed(t *testing.T) {
 		t.Fatalf("WireFormat name/kind = %q/%s, want exported named interface", wireType.Name(), wireType.Kind())
 	}
 	wantMethods := map[string]reflect.Type{
-		"EncodeRequest": reflect.TypeOf(func(requestState) ([]byte, error) { return nil, nil }),
-		"DecodeStream":  reflect.TypeOf(func(iter.Seq2[[]byte, error]) iter.Seq2[Event, error] { return nil }),
-		"RenderTools":   reflect.TypeOf(func([]Tool) (json.RawMessage, error) { return nil, nil }),
-		"OptionSpecs":   reflect.TypeOf(func() []OptionSpec { return nil }),
-	}
-	if wireType.NumMethod() != len(wantMethods) {
-		t.Fatalf("WireFormat method count = %d, want %d", wireType.NumMethod(), len(wantMethods))
+		"DecodeStream": reflect.TypeOf(func(iter.Seq2[[]byte, error]) iter.Seq2[Event, error] { return nil }),
+		"RenderTools":  reflect.TypeOf(func([]Tool) (json.RawMessage, error) { return nil, nil }),
+		"OptionSpecs":  reflect.TypeOf(func() []OptionSpec { return nil }),
 	}
 	for name, signature := range wantMethods {
 		method, ok := wireType.MethodByName(name)
@@ -426,29 +459,39 @@ func TestWireFormatDeclarationIsExactAndSealed(t *testing.T) {
 			t.Fatalf("WireFormat.%s = %v (present=%t), want %s", name, method.Type, ok, signature)
 		}
 	}
+	if _, ok := wireType.MethodByName("EncodeRequest"); !ok {
+		t.Fatal("WireFormat does not declare EncodeRequest")
+	}
+	if _, ok := wireType.MethodByName("ReservedKeys"); ok {
+		t.Fatal("WireFormat declares ReservedKeys")
+	}
 
 	tests := []struct {
 		name     string
 		exported func() WireFormat
-		wantType reflect.Type
 	}{
-		{"AnthropicMessagesWire", AnthropicMessagesWire, reflect.TypeFor[*anthropicMessagesWire]()},
-		{"GeminiGenerateContentWire", GeminiGenerateContentWire, reflect.TypeFor[*geminiGenerateContentWire]()},
-		{"ChatWire", ChatWire, reflect.TypeFor[*chatWire]()},
-		{"ResponsesWire", ResponsesWire, reflect.TypeFor[*responsesWire]()},
-		{"OpenAIChatWire", OpenAIChatWire, reflect.TypeFor[*openAIChatWire]()},
-		{"OpenAIResponsesWire", OpenAIResponsesWire, reflect.TypeFor[*openAIResponsesWire]()},
-		{"XAIChatWire", XAIChatWire, reflect.TypeFor[*xaiChatWire]()},
-		{"XAIResponsesWire", XAIResponsesWire, reflect.TypeFor[*xaiResponsesWire]()},
+		{"AnthropicMessagesWire", AnthropicMessagesWire},
+		{"GeminiGenerateContentWire", GeminiGenerateContentWire},
+		{"ChatWire", ChatWire},
+		{"ResponsesWire", ResponsesWire},
+		{"OpenAIChatWire", OpenAIChatWire},
+		{"OpenAIResponsesWire", OpenAIResponsesWire},
+		{"XAIChatWire", XAIChatWire},
+		{"XAIResponsesWire", XAIResponsesWire},
 	}
+	codecs := make(map[reflect.Type]string, len(tests))
 	for _, test := range tests {
 		got := test.exported()
 		if got == nil {
 			t.Fatalf("%s returned nil", test.name)
 		}
-		if reflect.TypeOf(got) != test.wantType {
-			t.Fatalf("%s returned %T, want the built-in codec %v", test.name, got, test.wantType)
+		if again := test.exported(); reflect.TypeOf(again) != reflect.TypeOf(got) {
+			t.Fatalf("%s returned %T then %T, want one built-in codec", test.name, got, again)
 		}
+		if other, taken := codecs[reflect.TypeOf(got)]; taken {
+			t.Fatalf("%s and %s return the same codec %T, want one per built-in wire", other, test.name, got)
+		}
+		codecs[reflect.TypeOf(got)] = test.name
 	}
 }
 

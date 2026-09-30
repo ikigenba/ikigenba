@@ -939,12 +939,12 @@ func catalogEntryEqual(got, want CatalogEntry) bool {
 }
 
 func offeringEqual(got, want Offering) bool {
-	wireTypes := map[OfferingID]string{
-		OfferingAnthropicMessages:   "*agentkit.anthropicMessagesWire",
-		OfferingOpenRouterChat:      "*agentkit.chatWire",
-		OfferingOpenRouterResponses: "*agentkit.responsesWire",
+	wireTypes := map[OfferingID]reflect.Type{
+		OfferingAnthropicMessages:   reflect.TypeOf(AnthropicMessagesWire()),
+		OfferingOpenRouterChat:      reflect.TypeOf(ChatWire()),
+		OfferingOpenRouterResponses: reflect.TypeOf(ResponsesWire()),
 	}
-	if reflect.TypeOf(got.WireFormat).String() != wireTypes[want.ID] {
+	if reflect.TypeOf(got.WireFormat) != wireTypes[want.ID] {
 		return false
 	}
 	got.WireFormat = nil
