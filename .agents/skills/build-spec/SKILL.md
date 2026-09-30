@@ -26,7 +26,7 @@ Confirm the sub-project's directory holds both `specs/` and the sub-project's `A
 
 Once the sub-project is identified, every prompt a coordinator gives a sub-agent includes the sub-project's absolute directory, this skill, the sub-agent's assigned gap ids, and the completion criteria.
 
-Close the mechanical gap between design ids and tagged test ids. Verify the work performed to close it and pass the gates declared in the sub-project's `AGENTS.md`. The work is the gap ids found at the start of the run, and each sub-agent works only on the gap ids assigned to it. Ids already present in both design and tests are not part of the work: their tests must keep passing, but are never judged, strengthened, or rewritten.
+Close the mechanical gap between design ids and tagged test ids. Verify the work performed to close it and pass the gates declared in the sub-project's `AGENTS.md`. The work is the gap ids found at the start of the run, and each sub-agent works only on the gap ids assigned to it. Ids already present in both design and tests are not part of the work: their tests must keep passing, but are never judged, strengthened, or rewritten. A test that carries no requirement id is not protected: when it contradicts the design, rewrite or delete it with the gap work it conflicts with.
 
 Design and the sub-project's `AGENTS.md` are read-only. Source and test changes must close specific gap ids; issue files are the escalation channel defined by `spec`. Never mint ids or run `idgen`. Never alter a contract to make work pass. Do not add aliases, shims, or forwarding layers preserving superseded shapes.
 
