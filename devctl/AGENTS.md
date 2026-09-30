@@ -164,7 +164,7 @@ Deploy machinery — the version bump, tags, the `Makefile`, `install.sh`,
 is hand-maintained infrastructure outside the spec system: the build run never
 reads, edits, or tests it.
 
-1. Set the version in `internal/cli/run.go` (D02) to `vX.Y.Z`. It is a source
+1. Set the version in `internal/cli/run.go` to `vX.Y.Z`. It is a source
    literal the binary reports verbatim, and the deploy refuses a tag that does
    not match what the built binary's `--version` prints.
 2. Commit that on `main` and push `main`.
