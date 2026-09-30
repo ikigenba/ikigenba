@@ -16,6 +16,7 @@ func newOpenAIChatWire(classifier errorClassifier) wireFormat {
 	wire.wireCodec = wireCodec{
 		encode:      wire.encodeRequest,
 		decoder:     newOpenAIChatDecoder,
+		inBandError: chatInBandError,
 		optionSpecs: wireOptionSpecsWithStop,
 		classifier:  classifier,
 		capabilities: wireCapabilities{

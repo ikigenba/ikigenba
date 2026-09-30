@@ -23,6 +23,7 @@ func newResponsesWireCodec(encode func(requestState) ([]byte, error)) wireCodec 
 	return wireCodec{
 		encode:      encode,
 		decoder:     newOpenAIResponsesDecoder,
+		inBandError: responsesInBandError,
 		optionSpecs: wireOptionSpecsWithoutStop,
 		capabilities: wireCapabilities{
 			name:       "Responses",

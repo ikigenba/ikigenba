@@ -23,6 +23,7 @@ func newChatWireCodec(encode func(requestState) ([]byte, error)) wireCodec {
 	return wireCodec{
 		encode:      encode,
 		decoder:     newOpenAIChatDecoder,
+		inBandError: chatInBandError,
 		optionSpecs: wireOptionSpecsWithStop,
 		capabilities: wireCapabilities{
 			name:       "Chat Completions",

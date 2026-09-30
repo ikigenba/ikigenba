@@ -22,6 +22,7 @@ func newOpenAIResponsesWire(classifier errorClassifier) wireFormat {
 	wire.wireCodec = wireCodec{
 		encode:      wire.encodeRequest,
 		decoder:     newOpenAIResponsesDecoder,
+		inBandError: responsesInBandError,
 		optionSpecs: wireOptionSpecsWithoutStop,
 		classifier:  classifier,
 		capabilities: wireCapabilities{

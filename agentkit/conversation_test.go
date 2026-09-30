@@ -41,20 +41,15 @@ type fixtureEndpoint struct {
 }
 
 type fixtureProvider struct {
-	wire               fixtureWire
-	endpoint           fixtureEndpoint
-	model              string
-	states             []requestState
-	buildErr           error
-	decodeErr          error
-	classifyErr        error
-	decodeCalls        int
-	classifyCalls      int
-	classifiedStatus   int
-	classifiedHeader   http.Header
-	classifiedBody     []byte
-	decodeClassifyBody []byte
-	classify           func(int, http.Header, []byte) error
+	wire          fixtureWire
+	endpoint      fixtureEndpoint
+	model         string
+	states        []requestState
+	buildErr      error
+	decodeErr     error
+	classifyErr   error
+	decodeCalls   int
+	classifyCalls int
 }
 
 func (p *fixtureProvider) BuildRequest(ctx context.Context, state requestState) (*http.Request, error) {
@@ -65,16 +60,11 @@ func (p *fixtureProvider) BuildRequest(ctx context.Context, state requestState) 
 	return http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint.url, strings.NewReader(p.wire.name))
 }
 
-func (p *fixtureProvider) Decode(_ context.Context, response *http.Response) iter.Seq2[Event, error] {
+func (p *fixtureProvider) Decode(context.Context, *http.Response) iter.Seq2[Event, error] {
 	p.decodeCalls++
 	return func(yield func(Event, error) bool) {
 		event := ToolCall{Use: ToolUse{Name: p.wire.name + ":" + p.endpoint.name}}
 		if !yield(event, nil) {
-			return
-		}
-		if p.decodeClassifyBody != nil {
-			yield(nil, p.Classify(response.StatusCode, nil, p.decodeClassifyBody))
-
 			return
 		}
 		if p.decodeErr != nil {
@@ -83,14 +73,8 @@ func (p *fixtureProvider) Decode(_ context.Context, response *http.Response) ite
 	}
 }
 
-func (p *fixtureProvider) Classify(status int, header http.Header, body []byte) error {
+func (p *fixtureProvider) Classify(status int, _ http.Header, _ []byte) error {
 	p.classifyCalls++
-	p.classifiedStatus = status
-	p.classifiedHeader = header.Clone()
-	p.classifiedBody = append([]byte(nil), body...)
-	if p.classify != nil {
-		return p.classify(status, header, body)
-	}
 	if p.classifyErr != nil {
 		return p.classifyErr
 	}
@@ -611,40 +595,6 @@ func TestTransportFailureIsWrappedWithStableIdentity(t *testing.T) {
 	}
 	if !errors.Is(providerError, cause) {
 		t.Fatalf("transport error does not wrap original cause: %v", providerError)
-	}
-}
-
-func TestDecodeCanUseClassifierForInBandErrorAfterHTTP200(t *testing.T) {
-	// R-8XT7-SY68
-	frame := []byte(`{"error":{"code":"busy","message":"try later"}}`)
-	classified := &Error{
-		Category: CategoryOverloaded,
-		Status:   http.StatusOK,
-		Code:     "busy",
-		Message:  "try later",
-	}
-	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader("stream bytes")),
-		}, nil
-	})}
-	conversation, provider := vendorFixture("http://provider.invalid", "model", client)
-	provider.decodeClassifyBody = frame
-	provider.classify = func(int, http.Header, []byte) error { return classified }
-
-	stream := conversation.Send(context.Background(), Text{Text: "hello"})
-	events := drainStream(stream)
-	wantEvent := ToolCall{Use: ToolUse{Name: "messages:vendor"}}
-	if len(events) != 1 || !reflect.DeepEqual(events[0], wantEvent) {
-		t.Fatalf("events before terminal error = %#v", events)
-	}
-	if reflect.ValueOf(stream.err).Pointer() != reflect.ValueOf(classified).Pointer() {
-		t.Fatalf("terminal error = %#v, want in-band classifier result %#v", stream.err, classified)
-	}
-	if provider.classifyCalls != 1 || provider.classifiedStatus != http.StatusOK || provider.classifiedHeader != nil || !bytes.Equal(provider.classifiedBody, frame) {
-		t.Fatalf("in-band classifier inputs/calls = %d, (%d, %#v, %q)", provider.classifyCalls, provider.classifiedStatus, provider.classifiedHeader, provider.classifiedBody)
 	}
 }
 

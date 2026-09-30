@@ -26,6 +26,7 @@ func newAnthropicMessagesWire(classifier errorClassifier) wireFormat {
 	wire.wireCodec = wireCodec{
 		encode:      wire.encodeRequest,
 		decoder:     newAnthropicDecoder,
+		inBandError: anthropicInBandError,
 		optionSpecs: wireOptionSpecsWithStop,
 		classifier:  classifier,
 		capabilities: wireCapabilities{

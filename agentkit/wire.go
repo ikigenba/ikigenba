@@ -41,6 +41,7 @@ type wireCodec struct {
 	decoder           func() frameDecoder
 	optionSpecs       []OptionSpec
 	classifier        errorClassifier
+	inBandError       inBandErrorRecognizer
 	rejectsCredential func(status int, body []byte) bool
 	lastUsage         Usage
 	capabilities      wireCapabilities
@@ -97,6 +98,12 @@ func (w *wireCodec) DecodeStream(frames iter.Seq2[[]byte, error]) iter.Seq2[Even
 			if w.classifier != nil {
 				err := w.classifier(http.StatusOK, nil, append([]byte(nil), frame...))
 				if err != nil {
+					yield(nil, err)
+					return
+				}
+			}
+			if w.inBandError != nil {
+				if err := w.inBandError(frame); err != nil {
 					yield(nil, err)
 					return
 				}
