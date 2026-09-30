@@ -189,8 +189,9 @@ directory, and before starting the child the test seeds `state/auth.db` in
 the child's working directory with a user and a live session through
 `internal/store`. Before signalling, it makes one request of the child:
 `GET /` with that session's cookie, over the socket. It asserts only that the
-page carries the launcher, which proves `main` handed appkit's kit to the
-server. Everything else auth answers is decided in process, and the exec'ing
+page carries the launcher and ends with the footer reading `auth` and the
+`Version` that `internal/version` declares, which proves `main` handed
+appkit's kit, with auth's version, to the server. Everything else auth answers is decided in process, and the exec'ing
 test exists only to prove the wiring. Any other test
 that builds, execs, waits on, or signals a process is a bug.
 
