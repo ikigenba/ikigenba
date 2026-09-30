@@ -6,22 +6,35 @@ without an installed executable. Its manifest contributes routing and database
 declarations independently of whether its service can run.
 
 A manifest names its app, whether it is the host's default, its secrets, its
-plain settings and its database. It names no port: the host hands every app
-its socket, so a manifest that still carries `port` is refused rather than
+plain settings and its database. It may also carry a `description`, one line
+of text saying what the app offers, and `mcp`, which is `false` unless set:
+`true` puts the app's tools in the suite's MCP catalog. The services file
+(D15) carries both for every installed app, so readers learn them without
+parsing manifests. An app that sets `mcp = true` must say what it offers, so
+its description may not be missing, empty, or only whitespace; and a
+description is one line of text wherever it is shown, so it may hold no
+control character. These are rules about the manifest, like `port`, so they
+hold wherever a manifest is parsed: `install` refuses in its `file` step, and
+a regeneration over a hand-edited manifest that breaks them refuses as it does
+for any unreadable manifest. When both description rules are broken, the
+one-line rule is the one reported. A description is kept exactly as written,
+never trimmed. The manifest names no port: the host hands every app its
+socket, so a manifest that still carries `port` is refused rather than
 ignored. How long an app may drain and how long systemd waits for it to stop
 are not the app's choice either; they are two space-wide keys in the store,
 read and validated here so install and init agree on them.
 
 A package may also ship an icon, `share/icon.svg`, which puts its app in the
-host's service launcher (D15). The icon is not part of the manifest or of a
-discovered `Service`: discovery stays what nginx and backup need, and the
-services package reads the icon itself when it regenerates the services file.
-What belongs here is what an icon is allowed to be, because `install` checks
-it in its `file` step (D09) before anything is written: at most 64 KiB, and an
-SVG image — one well-formed XML document whose root element is `svg`. Icons
-must be UTF-8: a leading byte-order mark is allowed, a declared other
-encoding is not, and a duplicate attribute makes the document not well-formed.
-The icon is still embedded byte for byte, mark included. The
+host's service launcher (D15); an app without one is still listed in the
+services file, it just shows no launcher tile. The icon is not part of the
+manifest or of a discovered `Service`: discovery stays what nginx and backup
+need, and the services package reads the icon itself when it regenerates the
+services file. What belongs here is what an icon is allowed to be, because
+`install` checks it in its `file` step (D09) before anything is written: at
+most 64 KiB, and an SVG image — one well-formed XML document whose root
+element is `svg`. Icons must be UTF-8: a leading byte-order mark is allowed, a
+declared other encoding is not, and a duplicate attribute makes the document
+not well-formed. The icon is still embedded byte for byte, mark included. The
 same model names the services file and the variable every app's environment
 carries to find it, and the `ikigenba` account whose group owns both the
 installed trees and that file, so install, init, and the services package
@@ -35,14 +48,17 @@ designs.
 ## REQUIREMENTS
 
 - R-YNP2-AKCZ: Package `internal/apps` MUST export `Database` as a struct with `Engine string` and `Path string` fields.
-- R-YOWY-OC3O: Package `internal/apps` MUST export `Manifest` as a struct with `App string`, `Default bool`, `Secrets []string`, `Env map[string]string`, and `Database *Database` fields.
+- R-Y6EK-LI1I: Package `internal/apps` MUST export `Manifest` as a struct with `App string`, `Description string`, `Default bool`, `MCP bool`, `Secrets []string`, `Env map[string]string`, and `Database *Database` fields.
 - R-YQ4V-23UD: Package `internal/apps` MUST export `Service` as a struct with `Name string`, `Manifest *Manifest`, and `ManifestError error` fields.
 - R-A2TS-K4M0: Package `internal/apps` MUST export `ValidateName(name string) error`, returning nil exactly for a name of one through 63 ASCII letters, digits, or hyphens whose first and last characters are letters or digits and whose lowercase form is none of `host`, `deploy`, `backup-host`, `backup-services`, or `renew-certificate`; all other inputs MUST return an error identifying the unusable name.
 - R-XSFU-AXFW: Package `internal/apps` MUST export `ParseManifest(data []byte) (Manifest, error)`, accepting a TOML document and returning an error for malformed TOML or an invalid recognized field rather than a partially usable manifest.
-- R-U58J-I5I3: `ParseManifest` MUST map TOML `app`, `default`, `secrets`, `[env]`, and `[database]` to their correspondingly named `Manifest` fields, with database `engine` and `path` mapped to `Database.Engine` and `Database.Path`; absent fields MUST produce their Go zero values, absent `[database]` MUST produce nil `Database`, and absent `secrets` or `[env]` MUST be usable as empty collections.
-- R-UDRU-6JOY: `ParseManifest` MUST require a present `app` to be a string accepted by `ValidateName`, a present `default` to be a Boolean, a present `secrets` to be an array of strings, and every `[env]` value to be a string; fields other than `app`, `default`, `secrets`, `[env]`, `[database]`, and `port` MUST not contribute to the returned model, and an omitted `app` MUST remain valid for a service whose manifest declares only other capabilities.
-- R-U7OC-9OZH: `ParseManifest` MUST reject a document with a top-level `port` key, whatever its value or type, returning an error whose `Error()` is exactly `'port' is not allowed; the host gives the app its socket`; no app listens on a port, and the host hands every app its socket (D09).
+- R-Y7MG-Z9S7: `ParseManifest` MUST map TOML `app`, `description`, `default`, `mcp`, `secrets`, `[env]`, and `[database]` to the `Manifest` fields `App`, `Description`, `Default`, `MCP`, `Secrets`, `Env`, and `Database` respectively, with database `engine` and `path` mapped to `Database.Engine` and `Database.Path`; a present `description` MUST be kept verbatim, without trimming; absent fields MUST produce their Go zero values, so an absent `description` is empty and an absent `mcp` is `false`; absent `[database]` MUST produce nil `Database`, and absent `secrets` or `[env]` MUST be usable as empty collections.
+- R-Y8UD-D1IW: `ParseManifest` MUST require a present `app` to be a string accepted by `ValidateName`, a present `description` to be a string, a present `default` and a present `mcp` each to be a Boolean, a present `secrets` to be an array of strings, and every `[env]` value to be a string; fields other than `app`, `description`, `default`, `mcp`, `secrets`, `[env]`, `[database]`, and `port` MUST not contribute to the returned model, and an omitted `app` MUST remain valid for a service whose manifest declares only other capabilities.
+- R-YBA6-4L0A: `ParseManifest` MUST reject a document with a top-level `port` key, whatever its value or type, returning an error whose `Error()` is exactly `'port' is not allowed; the host gives the app its socket`; no app listens on a port, and the host hands every app its socket (D09).
 - R-Y2OV-VJIN: When a document carries a top-level `port` key and also fails another `ParseManifest` rule, including an `app` value `ValidateName` rejects, `ParseManifest` MUST return the `port` error.
+- R-YCI2-ICQZ: `ParseManifest` MUST reject a document whose `description` is a string holding any character from U+0000 through U+001F or U+007F, line feed and tab included, returning an error whose `Error()` is exactly `'description' must be one line of text`; a `description` holding none of them, including an empty one or one of only spaces, MUST NOT fail this rule.
+- R-YDPY-W4HO: `ParseManifest` MUST reject a document whose `mcp` is `true` and whose `description` is absent or is a string that `strings.TrimSpace` reduces to the empty string, returning an error whose `Error()` is exactly `'mcp' is true but 'description' is empty; an MCP service must say what it offers`; when `mcp` is `false` or absent, an absent, empty, or whitespace-only `description` MUST be accepted.
+- R-YEXV-9W8D: When a document breaks the rule of R-YDPY-W4HO and also any other `ParseManifest` rule, `ParseManifest` MUST return the other rule's error, so a `description` that is not one line of text gets the error of R-YCI2-ICQZ whatever `mcp` is, and a document carrying `port` gets the `port` error (R-Y2OV-VJIN).
 - R-XW3J-G8NZ: `ParseManifest` MUST require a present `[database]` to contain `engine = "sqlite"` and a string `path` naming a file strictly below `state/` relative to the service directory, rejecting absolute paths, empty path components, `.` or `..` components, and any other engine; decoding MUST not require the named database to exist or change its journal mode.
 - R-XXBF-U0EO: Package `internal/apps` MUST export `Discover(root string) ([]Service, error)`, returning services in ascending bytewise `Name` order, one for each immediate directory `/opt/<name>/` holding an `etc/` or `state/` directory, resolving every filesystem access under `root`; a missing `/opt` MUST produce an empty successful result, and failure to enumerate `/opt` MUST return an error.
 - R-XYJC-7S5D: For each service, `Discover` MUST read `/opt/<name>/etc/manifest.toml` when present and use `ParseManifest` to populate `Service.Manifest`; a missing manifest MUST leave both `Manifest` and `ManifestError` nil, while a read or decode failure MUST leave `Manifest` nil and populate `ManifestError` without dropping that service or failing discovery of the other services.

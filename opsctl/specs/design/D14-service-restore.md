@@ -25,7 +25,7 @@ reads is passed through `host.NormalizeName` (D01) before the apex check and
 the callback, so restore agrees with install and uninstall on the name.
 
 The same callback rewrites the services file (D15) once `nginx.Write` has
-succeeded, so a restored host's launcher answers to what is now under `/opt`
+succeeded, so a restored host's services file answers to what is now under `/opt`
 without running init. The rewrite is silent, like the nginx regeneration it
 follows; a restore that fails before the callback, or whose `nginx.Write`
 fails, leaves the file as it was; and a failed rewrite fails the restore as a
