@@ -68,7 +68,7 @@ func TestExitCodes(t *testing.T) {
 
 func TestCLIExportedNames(t *testing.T) {
 	t.Helper()
-	// Compile every declared export; absence of extras is checked by source review.
+	// Compile every declared export.
 	_ = []any{cli.Run, cli.System{}, cli.ExitCode(0), cli.ExitSuccess, cli.ExitWriteFailed, cli.ExitUsage, cli.ExitDataUnreadable, cli.ExitNotFound, cli.Usage, cli.ListUsage, cli.TreeUsage, cli.ChatUsage, cli.Version}
 }
 

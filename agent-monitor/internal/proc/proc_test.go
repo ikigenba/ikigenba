@@ -94,8 +94,14 @@ func TestCwd(t *testing.T) {
 	}
 }
 
-// R-HNVV-NAIZ R-HP3S-129O R-I8M6-5E4S R-I02V-GZXX
+// R-Y655-FZHP R-HP3S-129O R-I8M6-5E4S R-I02V-GZXX
 func TestFileIDOf(t *testing.T) {
+	var major, minor uint32 = 259, 5
+	var inode uint64 = 77
+	id := proc.FileID{Major: major, Minor: minor, Inode: inode}
+	if gotMajor, gotMinor, gotInode := id.Major, id.Minor, id.Inode; gotMajor != major || gotMinor != minor || gotInode != inode {
+		t.Fatalf("FileID fields = %d, %d, %d", gotMajor, gotMinor, gotInode)
+	}
 	for _, tc := range []struct {
 		dev  uint64
 		want proc.FileID

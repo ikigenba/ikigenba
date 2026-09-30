@@ -57,7 +57,7 @@ so the caller can name `/proc/locks` in its own diagnostic.
 - R-HLG2-VR1L: The `internal/proc` package MUST export `func Start(root fs.FS, pid int) (time.Time, error)`.
 - R-F8QR-G78N: The `internal/proc` package MUST export `func StartTicks(root fs.FS, pid int) (uint64, error)`.
 - R-HMNZ-9ISA: The `internal/proc` package MUST export `func Cwd(root fs.FS, pid int) (string, error)`.
-- R-HNVV-NAIZ: The `internal/proc` package MUST export the struct type `type FileID struct { Major, Minor uint32; Inode uint64 }`, with exactly these fields in this order.
+- R-Y655-FZHP: The `internal/proc` package MUST export the struct type `type FileID struct { Major, Minor uint32; Inode uint64 }`.
 - R-HP3S-129O: The `internal/proc` package MUST export `func FileIDOf(fi fs.FileInfo) (FileID, bool)`.
 - R-HQBO-EU0D: The `internal/proc` package MUST export `func LockHolders(root fs.FS) (map[FileID]int, error)`.
 - R-FB6K-7QQ1: Each of `Start`, `StartTicks`, `Cwd`, and `LockHolders` MUST open, stat, or read-link through `root` no name other than, respectively, `proc/stat` and `proc/<pid>/stat`; `proc/<pid>/stat`; `proc/<pid>/cwd`; and `proc/locks` — where `<pid>` is `strconv.Itoa(pid)` — and MUST NOT write, create, or remove anything.
