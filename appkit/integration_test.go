@@ -63,7 +63,7 @@ func TestConsumerWiresServicesTemplatesAndStatic(t *testing.T) {
 	}
 	writeServices(`{"services":[{"name":"dummy","url":"/dummy","icon":"<svg data-service-icon=\"dummy\"></svg>","enabled":true},{"name":"calendar","url":"/calendar","icon":"","enabled":false}]}`)
 	t.Setenv("IKIGENBA_SERVICES", servicesPath)
-	kit := New("dummy")
+	kit := New("dummy", "")
 	pages := fstest.MapFS{"templates/page.html": {Data: []byte(`{{define "page"}}<link rel="stylesheet" href="{{.Stylesheet}}">{{template "banner" .Banner}}{{end}}`)}}
 	templates, err := Templates().ParseFS(pages, "templates/*.html")
 	if err != nil {

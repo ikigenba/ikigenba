@@ -26,25 +26,23 @@ func servicesKit(t *testing.T, content string) *appkit.Kit {
 	path := filepath.Join(t.TempDir(), "services.json")
 	servicesWrite(t, path, content)
 	t.Setenv("IKIGENBA_SERVICES", path)
-	return appkit.New("app")
+	return appkit.New("app", "version")
 }
 
 func TestImportPathAndPackageName(t *testing.T) {
-	// R-LJ4T-3ZEU
+	// R-UVKQ-NC2C
 	// This file imports github.com/ikigenba/ikigenba/appkit without an alias
 	// and names it appkit, so it compiles only if both hold.
 	t.Setenv("IKIGENBA_SERVICES", "")
-	if appkit.New("app") == nil {
-		t.Fatal("appkit.New returned nil")
-	}
+	_ = appkit.New("app", "version")
 }
 
 func TestServicesPublicTypes(t *testing.T) {
-	// R-69LO-BOP5 R-6ATK-PGFU R-6D9D-GZX8
+	// R-UWSN-13T1 R-UY0J-EVJQ R-AYMG-TUX2
 	var (
-		name, url, email, profile, logout = "n", "u", "e", "p", "l"
-		icon                              = template.HTML("<svg></svg>")
-		enabled, current                  = true, false
+		name, version, url, email, profile, logout = "n", "v", "u", "e", "p", "l"
+		icon                                       = template.HTML("<svg></svg>")
+		enabled, current                           = true, false
 	)
 	user := appkit.User{Email: email, ProfileURL: profile, LogoutURL: logout}
 	if unkeyed := (appkit.User{email, profile, logout}); unkeyed != user {
@@ -55,38 +53,34 @@ func TestServicesPublicTypes(t *testing.T) {
 		t.Fatalf("Service field order: %+v != %+v", unkeyed, service)
 	}
 	services := []appkit.Service{service}
-	banner := appkit.Banner{Service: name, Email: email, ProfileURL: profile, LogoutURL: logout, Services: services}
-	if unkeyed := (appkit.Banner{name, email, profile, logout, services}); !reflect.DeepEqual(unkeyed, banner) {
+	banner := appkit.Banner{Service: name, Version: version, Email: email, ProfileURL: profile, LogoutURL: logout, Services: services}
+	if unkeyed := (appkit.Banner{name, version, email, profile, logout, services}); !reflect.DeepEqual(unkeyed, banner) {
 		t.Fatalf("Banner field order: %+v != %+v", unkeyed, banner)
 	}
-	// R-LMSI-9AMX
+	// R-AZUD-7MNR
 	t.Setenv("IKIGENBA_SERVICES", "")
-	newKit, ok := any(appkit.New).(func(string) *appkit.Kit)
-	if !ok {
-		t.Fatalf("New has type %T, want func(string) *appkit.Kit", appkit.New)
+	useBanner := func(bannerOf func(appkit.User) appkit.Banner) {
+		_ = bannerOf(user)
 	}
-	k := newKit("app")
-	bannerOf, ok := any(k.Banner).(func(appkit.User) appkit.Banner)
-	if !ok {
-		t.Fatalf("Kit.Banner has type %T, want func(appkit.User) appkit.Banner", k.Banner)
+	useKit := func(newKit func(string, string) *appkit.Kit) {
+		useBanner(newKit("app", version).Banner)
 	}
-	if got := bannerOf(user); got.Service != "app" {
-		t.Fatalf("Banner().Service = %q", got.Service)
-	}
+	useKit(appkit.New)
 }
 
 func TestServicesBannerValues(t *testing.T) {
-	// R-6GX2-MB5B
+	// R-B129-LEEG
 	t.Setenv("IKIGENBA_SERVICES", "")
 	u := appkit.User{Email: "  person+tag@example.test ", ProfileURL: "?profile=<>&", LogoutURL: "../exit?x=1"}
-	banner := appkit.New(" App ").Banner(u)
-	if banner.Service != " App " || banner.Email != u.Email || banner.ProfileURL != u.ProfileURL || banner.LogoutURL != u.LogoutURL {
+	version := " release+build/<>& \n"
+	banner := appkit.New(" App ", version).Banner(u)
+	if banner.Service != " App " || banner.Version != version || banner.Email != u.Email || banner.ProfileURL != u.ProfileURL || banner.LogoutURL != u.LogoutURL {
 		t.Fatalf("values altered: %+v", banner)
 	}
 }
 
 func TestServicesEnvironmentSnapshot(t *testing.T) {
-	// R-6FP6-8JEM
+	// R-UZ8F-SNAF
 	kit := servicesKit(t, `{"services":[{"name":"first","url":"","icon":"","enabled":true}]}`)
 	second := filepath.Join(t.TempDir(), "other.json")
 	servicesWrite(t, second, `{"services":[{"name":"second","url":"","icon":"","enabled":false}]}`)
@@ -102,7 +96,7 @@ func TestServicesEnvironmentSnapshot(t *testing.T) {
 	if got := kit.Banner(appkit.User{}).Services; len(got) != 1 || got[0].Name != "first" {
 		t.Fatalf("unset changed snapshot: %+v", got)
 	}
-	empty := appkit.New("app")
+	empty := appkit.New("app", "version")
 	t.Setenv("IKIGENBA_SERVICES", second)
 	if len(empty.Banner(appkit.User{}).Services) != 0 {
 		t.Fatal("later environment setting affected kit")
@@ -110,11 +104,11 @@ func TestServicesEnvironmentSnapshot(t *testing.T) {
 }
 
 func TestServicesFreshReadAndRelativePath(t *testing.T) {
-	// R-6I4Z-02W0
+	// R-V0GC-6F14
 	dir := t.TempDir()
 	t.Chdir(dir)
 	t.Setenv("IKIGENBA_SERVICES", "services.json")
-	kit := appkit.New("app")
+	kit := appkit.New("app", "version")
 	if len(kit.Banner(appkit.User{}).Services) != 0 {
 		t.Fatal("missing file yielded services")
 	}
@@ -140,11 +134,11 @@ func TestServicesFreshReadAndRelativePath(t *testing.T) {
 }
 
 func TestServicesPathAsGiven(t *testing.T) {
-	// R-6I4Z-02W0
+	// R-V0GC-6F14
 	path := filepath.Join(t.TempDir(), "services.json")
 	servicesWrite(t, path, `{"services":[{"name":"app","url":"","icon":"","enabled":true}]}`)
 	t.Setenv("IKIGENBA_SERVICES", path+"/")
-	if got := appkit.New("app").Banner(appkit.User{}).Services; len(got) != 0 {
+	if got := appkit.New("app", "version").Banner(appkit.User{}).Services; len(got) != 0 {
 		t.Fatalf("trailing slash was removed from the file path: %+v", got)
 	}
 }
@@ -158,7 +152,7 @@ func servicesInvalidDocuments() []string {
 }
 
 func TestServicesEmptyFallback(t *testing.T) {
-	// R-Z24E-CK72
+	// R-V1O8-K6RT
 	for _, content := range servicesInvalidDocuments() {
 		t.Run(fmt.Sprintf("%q", content), func(t *testing.T) {
 			if got := servicesKit(t, content).Banner(appkit.User{}).Services; len(got) != 0 {
@@ -168,14 +162,14 @@ func TestServicesEmptyFallback(t *testing.T) {
 	}
 	for _, path := range []string{"", filepath.Join(t.TempDir(), "missing"), t.TempDir()} {
 		t.Setenv("IKIGENBA_SERVICES", path)
-		if len(appkit.New("app").Banner(appkit.User{}).Services) != 0 {
+		if len(appkit.New("app", "version").Banner(appkit.User{}).Services) != 0 {
 			t.Fatalf("unreadable path %q yielded services", path)
 		}
 	}
 	if err := os.Unsetenv("IKIGENBA_SERVICES"); err != nil {
 		t.Fatal(err)
 	}
-	if len(appkit.New("app").Banner(appkit.User{}).Services) != 0 {
+	if len(appkit.New("app", "version").Banner(appkit.User{}).Services) != 0 {
 		t.Fatal("unset path yielded services")
 	}
 }
@@ -206,7 +200,7 @@ func servicesInvalidEntries() []string {
 }
 
 func TestServicesElementValidation(t *testing.T) {
-	// R-6KKR-RMDE
+	// R-V2W4-XYII
 	for _, entry := range servicesInvalidEntries() {
 		t.Run(entry, func(t *testing.T) {
 			content := `{"services":[{"name":"before","url":"","icon":"","enabled":true},` + entry + `,{"name":"after","url":"","icon":"","enabled":false}]}`
@@ -219,7 +213,7 @@ func TestServicesElementValidation(t *testing.T) {
 }
 
 func TestServicesUnknownAndDuplicateMembers(t *testing.T) {
-	// R-Z4K7-43OG
+	// R-V441-BQ97
 	base := `{"name":"app","url":"/url","icon":"icon","enabled":true}`
 	expected := []appkit.Service{{Name: "app", URL: "/url", Icon: "icon", Enabled: true, Current: true}}
 	for _, extra := range []string{`null`, `true`, `123`, `"text"`, `[]`, `{"nested":[false]}`} {
@@ -244,7 +238,7 @@ func TestServicesUnknownAndDuplicateMembers(t *testing.T) {
 }
 
 func TestServicesDecodedOrderAndCurrent(t *testing.T) {
-	// R-6N0K-J5US
+	// R-V5BX-PHZW
 	got := servicesKit(t, `{"services":[{"name":"app","url":"/a?x=1&y=2","icon":"<svg>\n&\"é</svg>","enabled":false},{"name":"APP","url":"","icon":"","enabled":true},{"name":"app","url":"different","icon":"other","enabled":true},{"name":" ","url":"","icon":"","enabled":false}]}`).Banner(appkit.User{}).Services
 	expected := []appkit.Service{
 		{Name: "app", URL: "/a?x=1&y=2", Icon: template.HTML("<svg>\n&\"é</svg>"), Current: true},
@@ -258,7 +252,7 @@ func TestServicesDecodedOrderAndCurrent(t *testing.T) {
 }
 
 func TestServicesSilentFailures(t *testing.T) {
-	// R-Z5S3-HVF5
+	// R-V6JU-39QL
 	capture, err := os.CreateTemp(t.TempDir(), "output")
 	if err != nil {
 		t.Fatal(err)
@@ -278,12 +272,12 @@ func TestServicesSilentFailures(t *testing.T) {
 	}
 	for _, path := range []string{"", filepath.Join(t.TempDir(), "absent"), t.TempDir()} {
 		t.Setenv("IKIGENBA_SERVICES", path)
-		_ = appkit.New("app").Banner(appkit.User{})
+		_ = appkit.New("app", "version").Banner(appkit.User{})
 	}
 	if err := os.Unsetenv("IKIGENBA_SERVICES"); err != nil {
 		t.Fatal(err)
 	}
-	_ = appkit.New("app").Banner(appkit.User{})
+	_ = appkit.New("app", "version").Banner(appkit.User{})
 	info, err := capture.Stat()
 	if err != nil {
 		t.Fatal(err)
@@ -294,21 +288,21 @@ func TestServicesSilentFailures(t *testing.T) {
 }
 
 func TestServicesZeroKit(t *testing.T) {
-	// R-6PGD-APC6
+	// R-B2A5-Z655
 	t.Setenv("IKIGENBA_SERVICES", "")
 	if err := os.Unsetenv("IKIGENBA_SERVICES"); err != nil {
 		t.Fatal(err)
 	}
 	u := appkit.User{Email: "email", ProfileURL: "profile", LogoutURL: "logout"}
 	var zero appkit.Kit
-	got, expected := zero.Banner(u), appkit.New("").Banner(u)
-	if !reflect.DeepEqual(got, expected) || got.Service != "" || len(got.Services) != 0 {
+	got, expected := zero.Banner(u), appkit.New("", "").Banner(u)
+	if !reflect.DeepEqual(got, expected) || got.Service != "" || got.Version != "" || len(got.Services) != 0 {
 		t.Fatalf("zero Kit differs: %+v versus %+v", got, expected)
 	}
 }
 
 func TestServicesConcurrentBanner(t *testing.T) {
-	// R-6QO9-OH2V
+	// R-V7RQ-H1HA
 	kit := servicesKit(t, `{"services":[{"name":"app","url":"/","icon":"<svg/>","enabled":true}]}`)
 	expected := kit.Banner(appkit.User{Email: "person"})
 	results := make(chan appkit.Banner, 64)

@@ -13,14 +13,16 @@ import (
 
 // templateElement records hooks and content without depending on layout.
 type templateElement struct {
-	tag       string
-	attrs     map[string]string
-	rawAttrs  map[string]string
-	children  []*templateElement
-	content   string
-	text      string
-	rawText   string
-	textStart int
+	tag         string
+	attrs       map[string]string
+	rawAttrs    map[string]string
+	children    []*templateElement
+	content     string
+	text        string
+	rawText     string
+	textStart   int
+	markupStart int
+	markupEnd   int
 }
 
 var templateAttribute = regexp.MustCompile(`([^\s=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s]+)))?`)
@@ -70,6 +72,7 @@ func templateDocument(t *testing.T, markup string) *templateElement {
 				t.Fatalf("unmatched closing tag %q", token)
 			}
 			stack[len(stack)-1].content = markup[starts[len(starts)-1]:pos]
+			stack[len(stack)-1].markupEnd = end + 1
 			stack = stack[:len(stack)-1]
 			starts = starts[:len(starts)-1]
 		} else {
@@ -77,7 +80,7 @@ func templateDocument(t *testing.T, markup string) *templateElement {
 			if nameEnd < 0 {
 				nameEnd = len(token)
 			}
-			node := &templateElement{tag: token[:nameEnd], attrs: map[string]string{}, rawAttrs: map[string]string{}, textStart: len(root.text)}
+			node := &templateElement{tag: token[:nameEnd], attrs: map[string]string{}, rawAttrs: map[string]string{}, textStart: len(root.text), markupStart: pos, markupEnd: end + 1}
 			for _, attr := range templateAttribute.FindAllStringSubmatch(strings.TrimSpace(strings.TrimSuffix(token[nameEnd:], "/")), -1) {
 				value := attr[2] + attr[3] + attr[4]
 				node.attrs[attr[1]] = html.UnescapeString(value)
@@ -201,7 +204,7 @@ func TestTemplatesSignature(t *testing.T) {
 }
 
 func TestTemplatesEmbeddedDefinitions(t *testing.T) {
-	// R-6T42-G0K9
+	// R-B3I2-CXVU
 	markup, err := assetsFS.ReadFile("assets/banner.html")
 	if err != nil {
 		t.Fatal(err)
@@ -214,7 +217,7 @@ func TestTemplatesEmbeddedDefinitions(t *testing.T) {
 	if actual == nil {
 		t.Fatal("nil set")
 	}
-	for _, name := range []string{"banner", "launcher"} {
+	for _, name := range []string{"banner", "launcher", "footer"} {
 		if actual.Lookup(name) == nil {
 			t.Fatalf("missing %s", name)
 		}
@@ -227,9 +230,9 @@ func TestTemplatesEmbeddedDefinitions(t *testing.T) {
 }
 
 func TestTemplatesNames(t *testing.T) {
-	// R-6UBY-TSAY
+	// R-B4PY-QPMJ
 	set := Templates()
-	allowed := []string{"appkit", "banner", "launcher"}
+	allowed := []string{"appkit", "banner", "launcher", "footer"}
 	if !slices.Contains(allowed, set.Name()) {
 		t.Fatalf("root name %q", set.Name())
 	}
@@ -268,10 +271,10 @@ func TestTemplatesIndependent(t *testing.T) {
 }
 
 func TestTemplatesConsumerParse(t *testing.T) {
-	// R-6XZN-Z3J1
-	const page = `{{define "page"}}{{template "banner" .}}{{template "launcher" .}}{{end}}`
+	// R-B5XV-4HD8
+	const page = `{{define "page"}}{{template "banner" .}}{{template "launcher" .}}{{template "footer" .}}{{end}}`
 	data := templateFixture()
-	want := templateExecute(t, Templates(), "banner", data) + templateExecute(t, Templates(), "launcher", data)
+	want := templateExecute(t, Templates(), "banner", data) + templateExecute(t, Templates(), "launcher", data) + templateExecute(t, Templates(), "footer", data)
 	for _, mode := range []string{"Parse", "ParseFS"} {
 		t.Run(mode, func(t *testing.T) {
 			set := Templates()
@@ -285,7 +288,7 @@ func TestTemplatesConsumerParse(t *testing.T) {
 				t.Fatal(err)
 			}
 			if got := templateExecute(t, set, "page", data); got != want {
-				t.Fatal("consumer did not render banner and launcher")
+				t.Fatal("consumer did not render banner, launcher, and footer")
 			}
 		})
 	}
@@ -309,12 +312,12 @@ func templateSignOut(t *testing.T, root *templateElement, logout string) {
 func templateCheckBannerIdentity(t *testing.T, root *templateElement, data Banner) {
 	t.Helper()
 	templateHook(t, root, "strong", map[string]string{"class": "mark", "data-service": data.Service}, "ikigenba")
-	templateHook(t, root, "a", map[string]string{"href": data.ProfileURL}, data.Email)
+	templateCheckProfile(t, root, data)
 	templateSignOut(t, root, data.LogoutURL)
 }
 
 func TestBannerMark(t *testing.T) {
-	// R-1IZJ-274C
+	// R-S1G1-Y5AY
 	data := templateFixture()
 	mark := templateHook(t, templateRender(t, "banner", data), "strong", map[string]string{"class": "mark", "data-service": data.Service}, "ikigenba")
 	templateAttr(t, mark, "data-service", data.Service)
@@ -323,19 +326,39 @@ func TestBannerMark(t *testing.T) {
 	}
 }
 
+func templateCheckProfile(t *testing.T, root *templateElement, data Banner) {
+	t.Helper()
+	var profiles []*templateElement
+	for _, link := range templateFind(root, "a") {
+		if slices.Contains(strings.Fields(link.attrs["class"]), "profile") {
+			profiles = append(profiles, link)
+		}
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("profile links: %d, want one", len(profiles))
+	}
+	link := profiles[0]
+	url := templateOne(t, templateDocument(t, templateEscape(t, `<a href="{{.}}"></a>`, data.ProfileURL)), "a").attrs["href"]
+	title := templateOne(t, templateDocument(t, templateEscape(t, `<a title="{{.}}"></a>`, data.Email)), "a").attrs["title"]
+	templateAttr(t, link, "href", url)
+	templateAttr(t, link, "aria-label", "Profile")
+	templateAttr(t, link, "title", title)
+	if strings.TrimSpace(link.text) != "" {
+		t.Fatalf("profile contains text %q", link.text)
+	}
+}
+
 func TestBannerProfile(t *testing.T) {
-	// R-1K7F-FYV1
-	data := templateFixture()
-	data.Services = nil
-	link := templateHook(t, templateRender(t, "banner", data), "a", map[string]string{"href": data.ProfileURL}, data.Email)
-	templateAttr(t, link, "href", data.ProfileURL)
-	if link.text != data.Email {
-		t.Fatalf("profile text %q", link.text)
+	// R-S2NY-BX1N
+	for _, services := range [][]Service{nil, templateFixture().Services} {
+		data := templateFixture()
+		data.Services = services
+		templateCheckProfile(t, templateRender(t, "banner", data), data)
 	}
 }
 
 func TestBannerSignOut(t *testing.T) {
-	// R-1LFB-TQLQ
+	// R-S3VU-POSC
 	data := templateFixture()
 	templateSignOut(t, templateRender(t, "banner", data), data.LogoutURL)
 }
@@ -378,7 +401,7 @@ func TestBannerScript(t *testing.T) {
 }
 
 func TestBannerEmptyServices(t *testing.T) {
-	// R-1QAX-CTKI
+	// R-S9ZC-MJHT
 	for _, services := range [][]Service{nil, {}} {
 		data := templateFixture()
 		data.Services = services
@@ -448,7 +471,7 @@ func TestLauncherSearch(t *testing.T) {
 }
 
 func TestLauncherTiles(t *testing.T) {
-	// R-1P30-Z1TT
+	// R-S53R-3GJ1
 	data := templateFixture()
 	data.Services = append(data.Services, data.Services[0])
 	for _, services := range [][]Service{data.Services, nil, {}} {
@@ -465,7 +488,7 @@ func TestLauncherTiles(t *testing.T) {
 				t.Fatalf("tile %d icon changed: %q", index, link.content)
 			}
 			name := templateEscape(t, "{{.}}", services[index].Name)
-			if strings.TrimSpace(templateDocument(t, strings.TrimPrefix(content, icon)).rawText) != name {
+			if strings.TrimSpace(strings.TrimPrefix(content, icon)) != name {
 				t.Fatalf("tile %d name changed: %q", index, link.content)
 			}
 		}
@@ -488,7 +511,7 @@ func templateTileLinks(t *testing.T, root *templateElement, services []Service) 
 }
 
 func TestLauncherEnabled(t *testing.T) {
-	// R-1MN8-7ICF
+	// R-S6BN-H89Q
 	for _, current := range []bool{false, true} {
 		data := Banner{Services: []Service{{Name: "enabled", URL: "/service", Enabled: true, Current: current}}}
 		link := templateTileLinks(t, templateRender(t, "launcher", data), data.Services)[0]
@@ -498,7 +521,7 @@ func TestLauncherEnabled(t *testing.T) {
 }
 
 func TestLauncherDisabled(t *testing.T) {
-	// R-1NV4-LA34
+	// R-S7JJ-V00F
 	for _, current := range []bool{false, true} {
 		data := Banner{Services: []Service{{Name: "disabled", URL: "/unused", Current: current}}}
 		link := templateTileLinks(t, templateRender(t, "launcher", data), data.Services)[0]
@@ -548,20 +571,18 @@ func templateEscape(t *testing.T, markup string, value string) string {
 }
 
 func TestTemplatesAutoescaping(t *testing.T) {
-	// R-1HRM-OFDN
+	// R-S085-KDK9
 	const special = "<> &\"'+\x00"
 	for _, url := range []string{"/some path?q=<> &\"'+", "javascript:alert(1)", "https://example.test/a b"} {
-		data := Banner{Service: special, Email: "email" + special, ProfileURL: url, LogoutURL: url, Services: []Service{{Name: "enabled" + special, URL: url, Enabled: true}, {Name: "disabled" + special, Enabled: false}}}
+		data := Banner{Service: special, Version: "build" + special, Email: "email" + special, ProfileURL: url, LogoutURL: url, Services: []Service{{Name: "enabled" + special, URL: url, Enabled: true}, {Name: "disabled" + special, Enabled: false}}}
 		root := templateRender(t, "banner", data)
 		referenceAttr := templateOne(t, templateDocument(t, templateEscape(t, `<span title="{{.}}"></span>`, special)), "span").rawAttrs["title"]
 		referenceURL := templateOne(t, templateDocument(t, templateEscape(t, `<a href="{{.}}"></a>`, url)), "a").rawAttrs["href"]
 		mark := templateHook(t, root, "strong", map[string]string{"class": "mark"}, "ikigenba")
 		templateRawAttr(t, mark, "data-service", referenceAttr)
-		email := templateEscape(t, "{{.}}", data.Email)
-		profile := templateHook(t, root, "a", nil, html.UnescapeString(email))
-		if profile.rawText != email {
-			t.Fatalf("email escaping %q, want %q", profile.rawText, email)
-		}
+		profile := templateHook(t, root, "a", map[string]string{"class": "profile"}, "")
+		email := templateOne(t, templateDocument(t, templateEscape(t, `<span title="{{.}}"></span>`, data.Email)), "span").rawAttrs["title"]
+		templateRawAttr(t, profile, "title", email)
 		templateRawAttr(t, profile, "href", referenceURL)
 		form := templateHook(t, root, "form", map[string]string{"method": "post", "action": html.UnescapeString(referenceURL)}, "")
 		templateRawAttr(t, form, "action", referenceURL)
@@ -577,6 +598,27 @@ func TestTemplatesAutoescaping(t *testing.T) {
 				title := templateOne(t, templateDocument(t, templateEscape(t, `<span title="{{.}} is unavailable"></span>`, service.Name)), "span").rawAttrs["title"]
 				templateRawAttr(t, link, "title", title)
 			}
+		}
+		footer := templateOne(t, templateRender(t, "footer", data), "footer")
+		want := templateEscape(t, "{{.}}", data.Service) + " " + templateEscape(t, "{{.}}", data.Version)
+		if footer.rawText != want {
+			t.Fatalf("footer escaping %q, want %q", footer.rawText, want)
+		}
+	}
+}
+
+func TestFooter(t *testing.T) {
+	// R-S8RG-8RR4
+	for _, data := range []Banner{{}, {Service: "notes", Version: "development"}, {Service: " <app>& ", Version: " build+\"' \x00"}} {
+		output := templateExecute(t, Templates(), "footer", data)
+		root := templateDocument(t, output)
+		footer := templateOne(t, root, "footer")
+		want := templateEscape(t, "{{.}}", data.Service) + " " + templateEscape(t, "{{.}}", data.Version)
+		if len(root.children) != 1 || footer.content != want {
+			t.Fatalf("footer content %q, want %q, top-level elements %d", footer.content, want, len(root.children))
+		}
+		if strings.TrimSpace(output[:footer.markupStart]) != "" || strings.TrimSpace(output[footer.markupEnd:]) != "" {
+			t.Fatalf("output outside footer %q", output)
 		}
 	}
 }

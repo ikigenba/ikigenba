@@ -21,25 +21,26 @@ type Service struct {
 
 // Banner is the data rendered by the banner and launcher templates.
 type Banner struct {
-	Service, Email, ProfileURL, LogoutURL string
-	Services                              []Service
+	Service, Version, Email, ProfileURL, LogoutURL string
+	Services                                       []Service
 }
 
 // Kit holds the app identity and the services path captured at construction.
 type Kit struct {
 	service string
+	version string
 	path    string
 }
 
 // New captures the host services path for the named app.
-func New(service string) *Kit {
-	return &Kit{service: service, path: os.Getenv("IKIGENBA_SERVICES")}
+func New(service, version string) *Kit {
+	return &Kit{service: service, version: version, path: os.Getenv("IKIGENBA_SERVICES")}
 }
 
 // Banner reads the current services file and combines it with the user's data.
 func (k *Kit) Banner(u User) Banner {
 	return Banner{
-		Service: k.service, Email: u.Email, ProfileURL: u.ProfileURL,
+		Service: k.service, Version: k.version, Email: u.Email, ProfileURL: u.ProfileURL,
 		LogoutURL: u.LogoutURL, Services: k.services(),
 	}
 }
