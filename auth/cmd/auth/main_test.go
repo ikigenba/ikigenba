@@ -6,12 +6,14 @@ import (
 	"debug/elf"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -235,6 +237,20 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal) {
 		}
 		if !bytes.Contains(body, []byte(`popovertarget="services"`)) || !bytes.Contains(body, []byte("https://probe.example.test/")) {
 			t.Fatalf("main banner source has no launcher drawn from IKIGENBA_SERVICES: %s", body)
+		}
+		// R-1O20-M7FN: the real executable's banner page ends its body with
+		// the footer carrying the release value exported by internal/version.
+		bodyContent := regexp.MustCompile(`(?s)<body\b[^>]*>(.*)</body>`).FindSubmatch(body)
+		if len(bodyContent) != 2 {
+			t.Fatalf("main page has no body element: %s", body)
+		}
+		footer := regexp.MustCompile(`(?s)<footer\b[^>]*>(.*?)</footer>[ \t\r\n\f\v]*$`).FindSubmatch(bodyContent[1])
+		if len(footer) != 2 {
+			t.Fatalf("main page body does not end with a footer: %s", bodyContent[1])
+		}
+		text := html.UnescapeString(regexp.MustCompile(`<[^>]*>`).ReplaceAllString(string(footer[1]), ""))
+		if text != "auth "+version.Version {
+			t.Fatalf("main footer text = %q, want %q", text, "auth "+version.Version)
 		}
 	}
 

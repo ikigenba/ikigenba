@@ -636,7 +636,12 @@ func assertSignInCard(t *testing.T, body, host, word, target, footer string) str
 func assertChrome(t *testing.T, body, email string) string {
 	t.Helper()
 	banner := renderTestBanner(t, testPageBanner(appkit.User{Email: email, ProfileURL: "/", LogoutURL: "/logout"}))
-	written := pageWrittenMarkup(body, banner)
+	data := testPageBanner(appkit.User{Email: email, ProfileURL: "/", LogoutURL: "/logout"})
+	footer := renderTestFooter(t, data)
+	if !strings.HasSuffix(body[:strings.LastIndex(body, "</body>")], footer) {
+		t.Fatal("missing expected appkit footer at body end")
+	}
+	written := pageWrittenMarkup(body, banner, footer)
 	if written == body {
 		t.Fatal("missing expected appkit banner at body start")
 	}
@@ -658,10 +663,10 @@ func assertPageAlert(t *testing.T, text, kind, role, title, message string) {
 	}
 }
 func TestGeneratedAuthPagesShareVocabulary(t *testing.T) {
-	// R-D16O-S2X9 R-D2EL-5UNY R-D3MH-JMEN R-PNMJ-B6S9
-	// R-D4UD-XE5C R-D62A-B5W1 R-D7A6-OXMQ R-D8I3-2PDF R-PRA8-GI0C
-	// R-D9PZ-GH44 R-DAXV-U8UT R-DC5S-80LI R-DDDO-LSC7 R-DELK-ZK2W
-	// R-LG9Z-G3JB R-DFTH-DBTL R-DH1D-R3KA R-DI9A-4VAZ
+	// R-08U8-JUAH R-0A24-XM16 R-0BA1-BDRV R-0YG4-L0V2
+	// R-0DPU-2X99 R-0EXQ-GOZY R-0G5M-UGQN R-0HDJ-88HC R-0ZO0-YSLR
+	// R-0ILF-M081 R-0JTB-ZRYQ R-0L18-DJPF R-0M94-RBG4 R-0NH1-536T
+	// R-0W0B-THDO R-0OOX-IUXI R-0PWT-WMO7 R-0R4Q-AEEW
 	issuer := newSignInIssuer(t)
 	st := openSignInStore(t)
 	email := `odd <script src="https://evil/"> & src=x >@green.example`
@@ -844,7 +849,7 @@ func TestCancelledAndNonmemberCards(t *testing.T) {
 }
 
 func TestProfileFrameAndAccount(t *testing.T) {
-	// R-7OQR-3NFX R-QRV7-XM96 R-QT34-BDZV R-QVIX-2XH9 R-EEF5-QXR9
+	// R-ZZ31-HOCX R-10VX-CKCG R-123T-QC35 R-13BQ-43TU R-0USF-FPMZ
 	st := openSignInStore(t)
 	email := `member<&"@example.com`
 	workspace := `workspace<&".test`
@@ -956,8 +961,7 @@ func TestCallbackUsesTextPolicyForCarriedReturn(t *testing.T) {
 }
 
 func TestAuthPagePreservesExternalBytes(t *testing.T) {
-	// R-PRA8-GI0C: external text preserves bytes, while contributing no markup.
-	// R-TPNM-GC3S: a rejected form reads back the unmodified submitted name.
+	// R-0ZO0-YSLR: external text preserves bytes, while contributing no markup.
 	raw := "\x00<fake src=\"x\">&\xff\x00"
 	st := openSignInStore(t)
 	s := signInServer(t, st, newSignInIssuer(t), func() time.Time { return signInNow })

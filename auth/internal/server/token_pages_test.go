@@ -251,7 +251,7 @@ func assertTokenCreateForm(t *testing.T, body, name, expiry string, rejected, na
 			t.Fatalf("span outside field positions")
 		}
 	}
-	// R-TPNM-GC3S and R-VZV1-K6EU: rejected values remain raw, while fresh input has no value.
+	// R-19F8-0YJB and R-1HYI-PCQ6: rejected values remain raw, while fresh input has no value.
 	if rejected {
 		tokenAttrs(t, inputs[0], map[string]string{"value": name})
 	} else {
@@ -389,7 +389,7 @@ func TestTokenEmptyProfileAndRejectedForms(t *testing.T) {
 	assertAuthPage(t, body, false)
 	api := tokenCard(t, body, "API tokens")
 	create := tokenCard(t, body, "Create a token")
-	// R-T4XB-Y8HZ, R-1RCO-XPWA: flush header and sole empty token panel; no table/scrolling wrapper.
+	// R-15RI-VNB8, R-ZXV5-3WM8: flush header and sole empty token panel; no table/scrolling wrapper.
 	tokenAttrs(t, api, map[string]string{"class": "card flush"})
 	header := tokenElements(api, "header")[0]
 	panel := tokenElements(api, "div")[0]
@@ -401,10 +401,8 @@ func TestTokenEmptyProfileAndRejectedForms(t *testing.T) {
 	tokenRead(t, h3, "No tokens yet")
 	tokenRead(t, p, "Create one below when a script or tool needs to act as you.")
 	tokenConsists(t, tokenElement(t, panel, "div"), h3, p)
-	if strings.Contains(fixtureWrittenMarkup(t, body), "<table") || strings.Contains(fixtureWrittenMarkup(t, body), `class="table-scroll"`) {
-		t.Fatal("empty profile has table")
-	}
-	// R-VZV1-K6EU: fresh create card consists of header and default form.
+	tokenAssertNoPanel(t, fixtureWrittenMarkup(t, body), "table", "table-scroll")
+	// R-1HYI-PCQ6: fresh create card consists of header and default form.
 	tokenAttrs(t, create, map[string]string{"class": "card"})
 	tokenConsists(t, tokenElement(t, create, "section"), tokenElements(create, "header")[0], tokenForm(t, create))
 	assertTokenCreateForm(t, body, "", "90d", false, false, false)
@@ -420,7 +418,7 @@ func TestTokenEmptyProfileAndRejectedForms(t *testing.T) {
 		}
 		body = w.Body.String()
 		assertAuthPage(t, body, false)
-		// R-7PYN-HF6M: rejected page has the user's banner and one Create a token card.
+		// R-00AX-VG3M: rejected page has the user's banner and one Create a token card.
 		main := assertChrome(t, body, user.Email)
 		cards := tokenElements(main, "section")
 		if len(cards) != 1 {
@@ -430,7 +428,7 @@ func TestTokenEmptyProfileAndRejectedForms(t *testing.T) {
 		card := tokenCard(t, main, "Create a token")
 		tokenAttrs(t, card, map[string]string{"class": "card"})
 		tokenConsists(t, tokenElement(t, card, "section"), tokenElements(card, "header")[0], tokenForm(t, card))
-		// R-TQVI-U3UH: accepted expiry is retained; malformed or missing selects 90d.
+		// R-1AN4-EQA0: accepted expiry is retained; malformed or missing selects 90d.
 		exp := c.expiry
 		if _, ok := tokenExpiry(exp); !ok {
 			exp = "90d"
@@ -443,8 +441,8 @@ func TestTokenPopulatedProfile(t *testing.T) {
 	st := openTokenTestStore(t)
 	user, session := tokenTestIdentity(t, st, "rows")
 	other, _ := tokenTestIdentity(t, st, "foreign")
-	created := tokenTestNow.Add(-24 * time.Hour).In(time.FixedZone("offset", 3600))
-	used := tokenTestNow.Add(-2 * time.Hour)
+	created := tokenTestNow.Add(-24*time.Hour + 37*time.Second).In(time.FixedZone("offset", 3600))
+	used := tokenTestNow.Add(-2*time.Hour + 19*time.Second)
 	type fixture struct {
 		name    string
 		created time.Time
@@ -502,12 +500,13 @@ func TestTokenPopulatedProfile(t *testing.T) {
 	api := tokenCard(t, body, "API tokens")
 	panel := tokenElements(api, "div")[0]
 	table := tokenElements(panel, "table")
-	// R-1L97-0V6T: populated token panel is table-scroll with one table and no empty state.
+	// R-ZSZJ-KTNG: populated token panel is table-scroll with one table and no empty state.
 	tokenAttrs(t, panel, map[string]string{"class": "table-scroll"})
-	if len(table) != 1 || strings.Contains(fixtureWrittenMarkup(t, body), `class="empty"`) {
+	if len(table) != 1 {
 		t.Fatal("populated panel wrong")
 	}
-	// R-1MH3-EMXI: table consists of head then body, with precisely six ordered column names.
+	tokenAssertNoPanel(t, fixtureWrittenMarkup(t, body), "", "empty")
+	// R-ZU7F-YLE5: table consists of head then body, with precisely six ordered column names.
 	head := tokenElement(t, table[0], "thead")
 	tbody := tokenElement(t, table[0], "tbody")
 	tokenConsists(t, tokenElement(t, table[0], "table"), tokenElements(table[0], "thead")[0], tokenElements(table[0], "tbody")[0])
@@ -524,7 +523,7 @@ func TestTokenPopulatedProfile(t *testing.T) {
 	}
 	tokenConsists(t, tokenElement(t, headRows[0], "tr"), ths...)
 	tokenConsists(t, head, headRows...)
-	// R-1OWW-66EW, R-1Q4S-JY5L: one row per owned token, sorted used-first, usage desc, creation desc for ties and never-used.
+	// R-ZVFC-CD4U, R-ZWN8-Q4VJ: one row per owned token, sorted used-first, usage desc, creation desc for ties and never-used.
 	rows := tokenElements(tbody, "tr")
 	if len(rows) != len(cases) {
 		t.Fatalf("row count=%d", len(rows))
@@ -538,16 +537,16 @@ func TestTokenPopulatedProfile(t *testing.T) {
 		if strings.Count(row, `action="/tokens/`+token.ID+`/delete"`) != 1 {
 			t.Fatalf("row %d does not uniquely identify %s: %s", i, name, row)
 		}
-		// R-VSGT-RA01: exactly six cells in defined order, with normalized token name.
+		// R-1FIP-XT8S: exactly six cells in defined order, with normalized token name.
 		cells := tokenElements(row, "td")
 		if len(cells) != 6 {
 			t.Fatalf("cells=%v", cells)
 		}
 		tokenConsists(t, tokenElement(t, row, "tr"), cells...)
 		tokenRead(t, cells[0], name)
-		// R-T9SX-HBGR: UTC datetime drops fractional seconds and displayed time drops seconds.
+		// R-16ZF-9F1X: UTC datetime drops fractional seconds and displayed time drops seconds.
 		tokenAssertTime(t, cells[1], token.CreatedAt, false, "")
-		// R-VOT4-LYRY, R-VR8X-DI9C: each last-used cell uses the same injected draw reading; title and datetime describe exact stored instant.
+		// R-1D2X-69RE, R-1EAT-K1I3: each last-used cell uses the same injected draw reading; title and datetime describe exact stored instant.
 		if token.LastUsedAt == nil {
 			tokenAttrs(t, cells[2], map[string]string{"class": "muted"})
 			tokenRead(t, cells[2], "Never")
@@ -568,7 +567,7 @@ func TestTokenPopulatedProfile(t *testing.T) {
 		} else {
 			tokenAssertTime(t, cells[3], *token.ExpiresAt, false, "")
 		}
-		// R-VYN5-6EO5: single status badge, ok only when enabled.
+		// R-1GQM-BKZH: single status badge, ok only when enabled.
 		spans := tokenElements(cells[4], "span")
 		if len(spans) != 1 {
 			t.Fatalf("status=%s", cells[4])
@@ -583,7 +582,7 @@ func TestTokenPopulatedProfile(t *testing.T) {
 			tokenNoMark(t, spans[0], "data-kind")
 		}
 		tokenRead(t, spans[0], word)
-		// R-TEOJ-0EFJ: exactly ordered inline toggle/delete forms with small ghost submit buttons.
+		// R-187B-N6SM: exactly ordered inline toggle/delete forms with small ghost submit buttons.
 		tokenAttrs(t, cells[5], map[string]string{"class": "row-actions"})
 		forms := tokenElements(cells[5], "form")
 		if len(forms) != 2 {
@@ -612,7 +611,7 @@ func TestTokenPopulatedProfile(t *testing.T) {
 	if len(commonReadings) == 0 {
 		t.Fatal("row elapsed values do not share any actual injected clock reading")
 	}
-	// R-W4QN-39DM: profiles do not disclose any stored plaintext secret.
+	// R-1LM7-UNY9: profiles do not disclose any stored plaintext secret.
 	for _, secret := range secrets {
 		if strings.Contains(body, secret) {
 			t.Fatal("secret disclosed")
@@ -658,7 +657,7 @@ func TestTokenCreatedPageAndSecretLifetime(t *testing.T) {
 	if !ok {
 		t.Fatal("stored secret not presented")
 	}
-	// R-7R6J-V6XB: created page has the user's banner, one Token created card, then script.
+	// R-01IU-97UB: created page has the user's banner, one Token created card, then script.
 	main := assertChrome(t, body, user.Email)
 	card := tokenCard(t, main, "Token created")
 	script := tokenElements(main, "script")
@@ -667,7 +666,7 @@ func TestTokenCreatedPageAndSecretLifetime(t *testing.T) {
 	}
 	tokenAttrs(t, card, map[string]string{"class": "card"})
 	tokenConsists(t, main, card, script[0])
-	// R-W3IQ-PHMX: warning, secret div and sole account link follow the card header exactly.
+	// R-1KEB-GW7K: warning, secret div and sole account link follow the card header exactly.
 	divs := tokenElements(card, "div")
 	links := tokenElements(card, "a")
 	if len(divs) != 2 || len(links) != 1 {
@@ -684,7 +683,7 @@ func TestTokenCreatedPageAndSecretLifetime(t *testing.T) {
 	content := tokenElement(t, card, "section")
 	final := tokenCreatedFinalChild(t, content, tokenElements(card, "header")[0], divs[0], divs[1], links[0])
 	tokenConsists(t, content, tokenElements(card, "header")[0], divs[0], divs[1], final)
-	// R-U0MP-W9S1, R-T2HJ-6P0L: code is exact returned plaintext, followed by secondary Copy button and exact copy paths.
+	// R-1BV0-SI0P, R-14JM-HVKJ: code is exact returned plaintext, followed by secondary Copy button and exact copy paths.
 	tokenAttrs(t, divs[1], map[string]string{"class": "secret"})
 	code := tokenElements(divs[1], "code")[0]
 	button := tokenElements(divs[1], "button")[0]
@@ -695,7 +694,7 @@ func TestTokenCreatedPageAndSecretLifetime(t *testing.T) {
 	tokenAttrs(t, button, map[string]string{"class": "secondary", "type": "button"})
 	tokenRead(t, button, "Copy")
 	tokenAssertIcon(t, button, []string{"M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666", "M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1"})
-	// R-DOCS-1Q0G: only the secret div's tag mentions secret; no tag contains a character reference.
+	// R-0TKJ-1XWA: only the secret div's tag mentions secret; no tag contains a character reference.
 	secretTags := 0
 	for _, tag := range pageTags(fixtureWrittenMarkup(t, body)) {
 		if strings.Contains(tag.raw, "&") {
@@ -711,7 +710,7 @@ func TestTokenCreatedPageAndSecretLifetime(t *testing.T) {
 	if secretTags != 1 {
 		t.Fatalf("secret tags=%d", secretTags)
 	}
-	// R-DN4V-NY9R: exact sole script tags and fixed statement, with lexical and quoted-whitespace restrictions.
+	// R-0SCM-O65L: exact sole script tags and fixed statement, with lexical and quoted-whitespace restrictions.
 	if strings.Count(fixtureWrittenMarkup(t, body), "<script>") != 1 || strings.Count(fixtureWrittenMarkup(t, body), "</script>") != 1 || tokenOpening(script[0]) != "<script>" {
 		t.Fatal("script tags wrong")
 	}
@@ -745,7 +744,7 @@ func TestTokenCreatedPageAndSecretLifetime(t *testing.T) {
 			t.Fatal("script whitespace inside quote")
 		}
 	}
-	// R-W4QN-39DM: secret appears once in code, then never in profile, mutation or rejection responses.
+	// R-1LM7-UNY9: secret appears once in code, then never in profile, mutation or rejection responses.
 	if strings.Count(body, secret) != 1 {
 		t.Fatal("secret repeated")
 	}
@@ -777,7 +776,7 @@ func TestTokenContractPermittedShapesAndFieldSlots(t *testing.T) {
 	fresh := tokenTemplateFixture(t, "tokenCreate", tokenCreateValues("", "90d", false))
 	extra := strings.Replace(fresh, `<label for="token-name">`, `<label for="other">Other</label><label for="token-name">`, 1)
 	assertTokenCreateForm(t, extra, "", "90d", false, false, false)
-	// R-W3IQ-PHMX: the final account link may stand alone or inside one paragraph.
+	// R-1KEB-GW7K: the final account link may stand alone or inside one paragraph.
 	header, warn, displayedValue, link := `<header><h2>Token created</h2></header>`, `<div>warning</div>`, `<div>secret</div>`, `<a href="/">Back to your account</a>`
 	for _, final := range []string{link, "<p> \n" + link + " </p>"} {
 		content := header + warn + displayedValue + final
@@ -785,7 +784,7 @@ func TestTokenContractPermittedShapesAndFieldSlots(t *testing.T) {
 			t.Fatalf("final=%s want %s", got, final)
 		}
 	}
-	// R-T19M-SX9W, R-T2HJ-6P0L: leading ASCII whitespace and omitted path end tags are permitted by the shared icon grammar.
+	// R-T19M-SX9W, R-14JM-HVKJ: leading ASCII whitespace and omitted path end tags are permitted by the shared icon grammar.
 	for _, fixture := range []struct {
 		name  string
 		paths []string
@@ -819,4 +818,81 @@ func tokenTemplateFixture(t *testing.T, name string, data any) string {
 		t.Fatal(err)
 	}
 	return w.Body.String()
+}
+
+func tokenAssertNoPanel(t *testing.T, markup, element, class string) {
+	t.Helper()
+	for _, tag := range pageTags(markup) {
+		if element != "" && tag.name == element {
+			t.Fatalf("unexpected %s start tag: %s", element, tag.raw)
+		}
+		if tag.name == "div" {
+			values := pageAttrs(tag)["class"]
+			if len(values) == 1 && values[0] == class {
+				t.Fatalf("unexpected %s panel: %s", class, tag.raw)
+			}
+		}
+	}
+}
+
+func TestTokenRejectedMissingName(t *testing.T) {
+	// R-19F8-0YJB, R-1AN4-EQA0: omitted fields retain an empty name and select the fallback expiry.
+	st := openTokenTestStore(t)
+	_, session := tokenTestIdentity(t, st, "omitted")
+	w := httptest.NewRecorder()
+	tokenTestServer(st).ServeHTTP(w, tokenRequest("/tokens", session.ID, url.Values{}))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d", w.Code)
+	}
+	assertTokenCreateForm(t, w.Body.String(), "", "90d", true, true, true)
+}
+
+func TestTokenNameNormalisationAndSecretExceptions(t *testing.T) {
+	st := openTokenTestStore(t)
+	user, session := tokenTestIdentity(t, st, "name-normalisation")
+	srv := tokenTestServer(st)
+	_, secret, err := st.CreateToken(user.ID, " \t build\n\r\f agent \t ", store.ExpiryNever, tokenTestNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, tokenProfileRequest(session.ID))
+	// R-1FIP-XT8S: row names collapse ASCII whitespace and trim the resulting spaces.
+	rows := tokenElements(tokenCard(t, w.Body.String(), "API tokens"), "tbody")
+	if len(rows) != 1 {
+		t.Fatalf("tbody count=%d", len(rows))
+	}
+	row := tokenElements(rows[0], "tr")
+	if len(row) != 1 {
+		t.Fatalf("rows=%d", len(row))
+	}
+	tokenRead(t, tokenElements(row[0], "td")[0], "build agent")
+
+	// R-1LM7-UNY9: a caller's submitted name may repeat a secret; returning that value is permitted.
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, tokenRequest("/tokens", session.ID, url.Values{"name": {secret}, "expires": {"bad"}}))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("rejected status=%d", w.Code)
+	}
+	tokenAttrs(t, regexp.MustCompile(`<input\b[^>]*>`).FindString(tokenForm(t, w.Body.String())), map[string]string{"value": secret})
+	// A token's Name is permitted to repeat an existing secret on later profile responses.
+	if _, _, err := st.CreateToken(user.ID, secret, store.ExpiryNever, tokenTestNow); err != nil {
+		t.Fatal(err)
+	}
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, tokenProfileRequest(session.ID))
+	rows = tokenElements(tokenCard(t, w.Body.String(), "API tokens"), "tr")
+	found := false
+	for _, r := range rows {
+		cells := tokenElements(r, "td")
+		if len(cells) == 6 && pageText(cells[0]) == secret {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("profile omitted a token's secret-shaped name")
+	}
+	if strings.Count(w.Body.String(), secret) != 1 {
+		t.Fatal("profile secret occurs outside the token name")
+	}
 }

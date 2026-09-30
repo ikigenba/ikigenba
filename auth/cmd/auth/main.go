@@ -11,10 +11,11 @@ import (
 
 	"github.com/ikigenba/ikigenba/appkit"
 	"github.com/ikigenba/ikigenba/auth/internal/cli"
+	"github.com/ikigenba/ikigenba/auth/internal/version"
 )
 
 func main() {
-	kit := appkit.New("auth")
+	kit := appkit.New("auth", version.Version)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	code := cli.Run(ctx, cli.Process{
 		Args:       os.Args[1:],

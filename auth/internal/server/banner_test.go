@@ -1,7 +1,6 @@
 package server
 
 import (
-	"html"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
@@ -26,12 +25,25 @@ func renderTestBanner(t *testing.T, data appkit.Banner) string {
 	return out.String()
 }
 
-func pageWrittenMarkup(body, banner string) string {
-	// R-CWB3-8ZYH: remove precisely one exact banner only immediately after first body start.
+func renderTestFooter(t *testing.T, data appkit.Banner) string {
+	t.Helper()
+	var out strings.Builder
+	if err := appkit.Templates().ExecuteTemplate(&out, "footer", data); err != nil {
+		t.Fatal(err)
+	}
+	return out.String()
+}
+
+func pageWrittenMarkup(body, banner, footer string) string {
+	// R-056J-EJ2E: remove only exact boundary occurrences, independently.
 	bodies := pageElements(body, "body")
 	if len(bodies) > 0 && strings.HasPrefix(body[bodies[0].end:], banner) {
 		at := bodies[0].end
-		return body[:at] + body[at+len(banner):]
+		body = body[:at] + body[at+len(banner):]
+	}
+	at := strings.LastIndex(body, "</body>")
+	if at >= 0 && strings.HasSuffix(body[:at], footer) {
+		body = body[:at-len(footer)] + body[at:]
 	}
 	return body
 }
@@ -47,26 +59,29 @@ func fixtureWrittenMarkup(t *testing.T, body string) string {
 	if len(links) == 0 {
 		return body
 	}
-	email := html.UnescapeString(pageContent(header, links[0]))
-	return pageWrittenMarkup(body, renderTestBanner(t, testPageBanner(appkit.User{Email: email, ProfileURL: "/", LogoutURL: "/logout"})))
+	email := pageAttrs(links[0])["title"][0]
+	data := testPageBanner(appkit.User{Email: email, ProfileURL: "/", LogoutURL: "/logout"})
+	return pageWrittenMarkup(body, renderTestBanner(t, data), renderTestFooter(t, data))
 }
 
-func TestWrittenMarkupRemovesOnlyExactInitialBanner(t *testing.T) {
-	banner := renderTestBanner(t, testPageBanner(appkit.User{Email: "one@example", ProfileURL: "/", LogoutURL: "/logout"}))
+func TestWrittenMarkupRemovesOnlyExactBoundaryTemplates(t *testing.T) {
+	data := testPageBanner(appkit.User{Email: "one@example", ProfileURL: "/", LogoutURL: "/logout"})
+	banner, footer := renderTestBanner(t, data), renderTestFooter(t, data)
 	for _, tc := range []struct{ body, want string }{
-		{"<body>" + banner + "<main>" + banner + "</main></body>", "<body><main>" + banner + "</main></body>"},
-		{"<body> " + banner + "</body>", "<body> " + banner + "</body>"},
-		{"<body><main>" + banner + "</main></body>", "<body><main>" + banner + "</main></body>"},
+		{"<body>" + banner + "<main>" + banner + footer + "</main>" + footer + "</body>", "<body><main>" + banner + footer + "</main></body>"},
+		{"<body> " + banner + "<main></main>" + footer + " </body>", "<body> " + banner + "<main></main>" + footer + " </body>"},
+		{"<body><main>" + banner + "</main>" + footer + "</body>", "<body><main>" + banner + "</main></body>"},
+		{"<body>" + banner + "<main>" + footer + "</main></body>", "<body><main>" + footer + "</main></body>"},
 		{"<body><main></main></body>", "<body><main></main></body>"},
 	} {
-		if got := pageWrittenMarkup(tc.body, banner); got != tc.want {
+		if got := pageWrittenMarkup(tc.body, banner, footer); got != tc.want {
 			t.Fatalf("written=%q want=%q", got, tc.want)
 		}
 	}
 }
 
 func TestPagesUseReturnedBannerOnce(t *testing.T) {
-	// R-CTVA-HGH3 R-CV36-V87S R-CXIZ-MRP6 R-CYQW-0JFV
+	// R-02QQ-MZL0 R-03YN-0RBP R-1MU4-8FOY R-06EF-SAT3 R-07MC-62JS
 	for _, services := range [][]appkit.Service{nil, {
 		{Name: "Outside & secret", URL: "https://other.example/", Icon: template.HTML(`<svg><path d="x"/></svg>`), Enabled: true},
 		{Name: "auth", URL: "https://auth.example/", Enabled: true, Current: true},
@@ -74,10 +89,12 @@ func TestPagesUseReturnedBannerOnce(t *testing.T) {
 		st := openTokenTestStore(t)
 		user, session := tokenTestIdentity(t, st, "banner")
 		calls := []appkit.User{}
-		returned := appkit.Banner{Service: "returned service", Email: "returned <& email", ProfileURL: "/returned-profile", LogoutURL: "/returned-logout", Services: services}
+		returned := appkit.Banner{Service: "returned service", Version: "fixture<& version", Email: "returned <& email", ProfileURL: "/returned-profile", LogoutURL: "/returned-logout", Services: services}
 		srv := New(Config{Store: st, Now: func() time.Time { return tokenTestNow }, Banner: func(u appkit.User) appkit.Banner { calls = append(calls, u); return returned }})
 		requests := []*http.Request{tokenProfileRequest(session.ID), tokenRequest("/tokens", session.ID, url.Values{"name": {""}, "expires": {"bad"}}), tokenRequest("/tokens", session.ID, url.Values{"name": {"banner token"}, "expires": {"never"}}), tokenProfileRequest(session.ID)}
 		for i, req := range requests {
+			returned.Service = []string{"profile", "rejected", "created", "refreshed"}[i] + " <& service"
+			returned.Version = []string{"first", "second", "third", "fourth"}[i] + " <& version"
 			calls = nil
 			w := httptest.NewRecorder()
 			srv.ServeHTTP(w, req)
@@ -87,7 +104,12 @@ func TestPagesUseReturnedBannerOnce(t *testing.T) {
 			}
 			body := w.Body.String()
 			banner := renderTestBanner(t, returned)
-			written := pageWrittenMarkup(body, banner)
+			footer := renderTestFooter(t, returned)
+			bodies := pageElements(body, "body")
+			if len(bodies) != 1 || !strings.HasPrefix(body[bodies[0].end:], banner) || !strings.HasSuffix(body[:strings.LastIndex(body, "</body>")], footer) {
+				t.Fatalf("request %d missing boundary templates", i)
+			}
+			written := pageWrittenMarkup(body, banner, footer)
 			if written == body {
 				t.Fatalf("request %d missing exact returned banner", i)
 			}
@@ -99,7 +121,7 @@ func TestPagesUseReturnedBannerOnce(t *testing.T) {
 }
 
 func TestOtherResponsesNeverCallBanner(t *testing.T) {
-	// R-CYQW-0JFV: only a response drawn with the banner consults its source.
+	// R-07MC-62JS: only a response drawn with the banner consults its source.
 	st := openTokenTestStore(t)
 	_, session := tokenTestIdentity(t, st, "no-banner")
 	calls := 0
