@@ -86,9 +86,9 @@ the `limit` record is the whole account.
 ## REQUIREMENTS
 
 - R-TILY-AHD5: `agentkit` MUST export `type Limits struct { MaxToolCalls int; MaxContextTokens int64 }` with exactly those two fields.
-- R-TJTU-O93U: `agentkit` MUST export `type LimitKind string` whose complete set of exported constants is exactly `LimitToolCalls = "tool_calls"` and `LimitContextTokens = "context_tokens"`.
+- R-LS9V-BOIQ: `agentkit` MUST export `type LimitKind string` with the constants `LimitToolCalls = "tool_calls"` and `LimitContextTokens = "context_tokens"`.
 - R-TL1R-20UJ: `agentkit` MUST export `type LimitInfo struct { Kind LimitKind; Max int64; Actual int64 }` with exactly those three fields and the JSON tags `kind`, `max`, and `actual`.
-- R-TNHJ-TKBX: `agentkit` MUST export the sentinel error `ErrLimitExceeded`, created with `errors.New`, and a limit refusal's terminal error MUST satisfy `errors.Is(err, ErrLimitExceeded)`, MUST NOT be an `*Error`, and `Retryable` MUST return false for it.
+- R-B89M-MEWF: `agentkit` MUST export the sentinel error `ErrLimitExceeded`, and a limit refusal's terminal error MUST satisfy `errors.Is(err, ErrLimitExceeded)`, MUST NOT be an `*Error`, and `Retryable` MUST return false for it.
 - R-TOPG-7C2M: A `Conversation` whose `Config.Limits` is the zero value MUST never write a `limit` record and MUST never end a turn with `ErrLimitExceeded`.
 - R-TPXC-L3TB: A `Send` on a `Conversation` whose `Config.Limits` has a negative `MaxToolCalls` or a negative `MaxContextTokens` MUST fail with `ErrInvalidConfig`, make no provider call, and leave `History` unchanged.
 - R-6LYP-SXIT: When `MaxToolCalls` is positive and a round-trip requests tool calls whose count, added to the number of tool calls the conversation has dispatched over its current history — every dispatch since the conversation began, less those a successful `Restore` (D26) rewound past, so that after a `Restore` the count is what it was when the savepoint was taken — exceeds `MaxToolCalls`, the orchestrator MUST dispatch none of them, write one `limit` record with `Kind` `LimitToolCalls`, `Max` equal to `MaxToolCalls`, and `Actual` equal to that sum, and end the turn with `ErrLimitExceeded` on `Stream.Err()` and `History` unchanged.

@@ -130,7 +130,7 @@ func assertOpenAIReissueTextTurn(t *testing.T, conversation *Conversation) {
 	}
 }
 
-// R-CNF3-8S8L
+// R-BD58-5HV7
 func TestLiveOAuthReissueOpenAI(t *testing.T) {
 	path := os.Getenv("AGENTKIT_OPENAI_OAUTH_FILE")
 	if path == "" {

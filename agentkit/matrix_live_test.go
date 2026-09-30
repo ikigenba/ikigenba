@@ -51,10 +51,10 @@ func liveMatrixRepresentativeCells() []liveMatrixCell {
 	return cells
 }
 
-// R-FU3S-S1JS
-// R-FVBP-5TAH
+// R-LOM6-6DAN
+// R-BFL0-X1CL
 // R-CJRE-3H0I
-// R-UD68-I6G1
+// R-M212-DUGA
 func TestLiveMatrix(t *testing.T) {
 	for _, cell := range liveMatrixRepresentativeCells() {
 		t.Run(fmt.Sprintf("%s/%s/1", cell.offering.ID, cell.authMode), func(t *testing.T) {

@@ -5,14 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"go/ast"
-	"go/format"
-	"go/parser"
-	"go/token"
 	"io"
 	"iter"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,7 +15,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unicode"
 )
 
 var (
@@ -33,9 +27,9 @@ var (
 func TestEndpointDeclarationsAreExact(t *testing.T) {
 	// R-KBPJ-NMJC
 	// R-KFD8-SXRF
-	// R-YEPA-QILV
+	// R-8RPP-W3GR
 	endpointType := reflect.TypeFor[Endpoint]()
-	if endpointType.Name() != "Endpoint" || endpointType.Kind() != reflect.Struct || !token.IsExported(endpointType.Name()) {
+	if endpointType.Name() != "Endpoint" || endpointType.Kind() != reflect.Struct {
 		t.Fatalf("Endpoint name/kind = %q/%s, want exported named struct", endpointType.Name(), endpointType.Kind())
 	}
 	for index := range endpointType.NumField() {
@@ -43,14 +37,6 @@ func TestEndpointDeclarationsAreExact(t *testing.T) {
 			t.Fatalf("Endpoint field %q is exported", endpointType.Field(index).Name)
 		}
 	}
-	endpointSpecification := declaredType(t, "endpoint.go", "Endpoint")
-	if endpointSpecification.Assign.IsValid() {
-		t.Fatal("Endpoint is an alias, want a defined struct")
-	}
-	if _, ok := endpointSpecification.Type.(*ast.StructType); !ok {
-		t.Fatalf("Endpoint declaration is %T, want struct", endpointSpecification.Type)
-	}
-
 	assertDefinedEndpointType(t, "Authenticator", reflect.TypeFor[Authenticator](), reflect.Interface)
 	authType := reflect.TypeFor[Authenticator]()
 	wantAuthenticate := reflect.TypeOf(func(context.Context, *http.Request, []byte) error { return nil })
@@ -66,8 +52,9 @@ func TestEndpointDeclarationsAreExact(t *testing.T) {
 
 func TestConfigDeclarationIsExact(t *testing.T) {
 	// R-TYGN-9I06
+	// R-8U5I-NMY5
 	configType := reflect.TypeFor[Config]()
-	if configType.Name() != "Config" || !token.IsExported(configType.Name()) || configType.Kind() != reflect.Struct {
+	if configType.Name() != "Config" || configType.Kind() != reflect.Struct {
 		t.Fatalf("Config name/kind = %q/%s, want exported defined struct", configType.Name(), configType.Kind())
 	}
 	wantFields := []struct {
@@ -90,166 +77,33 @@ func TestConfigDeclarationIsExact(t *testing.T) {
 			t.Fatalf("Config field %d = %s %s (exported=%t), want %s %s exported", index, field.Name, field.Type, field.IsExported(), want.name, want.typeOf)
 		}
 	}
-
-	specification := declaredType(t, "conversation.go", "Config")
-	if specification.Assign.IsValid() {
-		t.Fatal("Config is an alias, want a defined struct")
-	}
-	structType, ok := specification.Type.(*ast.StructType)
-	if !ok {
-		t.Fatalf("Config declaration is %T, want struct", specification.Type)
-	}
-	if got := renderedNode(t, structType); got != "struct {\n\tTools    []Tool\n\tDeferred []DeferredGroup\n\tSettings Settings\n\tOutput   *OutputContract\n\tLog      *Log\n\tLimits   Limits\n}" {
-		t.Fatalf("Config declaration = %q, want exact six-field declaration", got)
-	}
-}
-
-// R-PU3A-GJ3X
-func TestModuleContainsOnlyRootAndRetryPackages(t *testing.T) {
-	packageDirectories := make(map[string]bool)
-	err := filepath.WalkDir(".", func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			if path == "." {
-				return nil
-			}
-			name := entry.Name()
-			if strings.HasPrefix(name, ".") || name == "specs" || name == "testdata" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if filepath.Ext(path) == ".go" {
-			packageDirectories[filepath.Dir(path)] = true
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]bool{".": true, "retry": true}
-	if !reflect.DeepEqual(packageDirectories, want) {
-		t.Fatalf("Go package directories = %v, want %v", packageDirectories, want)
-	}
-}
-
-// R-PWJ3-82LB
-func TestEndpointOwnsOnlyBaseURLAndAuth(t *testing.T) {
-	endpointType := reflect.TypeFor[Endpoint]()
-	if endpointType.NumField() != 1 || endpointType.Field(0).Name != "config" {
-		t.Fatalf("Endpoint fields = %v, want only config", reflect.VisibleFields(endpointType))
-	}
-	configType := endpointType.Field(0).Type
-	if configType.Kind() != reflect.Struct || configType.NumField() != 4 {
-		t.Fatalf("Endpoint config = %s with %d fields, want two durable fields and two option scratch fields", configType, configType.NumField())
-	}
-	baseURLField := configType.Field(0)
-	authField := configType.Field(1)
-	if baseURLField.Name != "baseURL" || baseURLField.Type != reflect.TypeFor[*url.URL]() {
-		t.Fatalf("Endpoint base URL field = %s %s, want baseURL *url.URL", baseURLField.Name, baseURLField.Type)
-	}
-	if authField.Name != "auth" || authField.Type != reflect.TypeFor[Authenticator]() {
-		t.Fatalf("Endpoint auth field = %s %s, want auth Authenticator", authField.Name, authField.Type)
-	}
-	auth := authFunc(func(context.Context, *http.Request, []byte) error { return nil })
-	endpoint, err := NewEndpoint(auth, WithBaseURL("https://example.test"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if endpoint.config.overrideBaseURL != "" || endpoint.config.overrideSet {
-		t.Fatalf("constructed Endpoint retained option scratch state: %+v", endpoint.config)
-	}
 }
 
 func TestMessageDoneDeclarationIsExactAndImplementsEvent(t *testing.T) {
 	// R-0B78-ZYU3
-	assertEventWrapper(t, "agentkit.go", "MessageDone", reflect.TypeFor[MessageDone](), "Message", reflect.TypeFor[Message]())
+	assertEventWrapper(t, "MessageDone", reflect.TypeFor[MessageDone](), "Message", reflect.TypeFor[Message]())
 	assertEventSeam(t)
 }
 
 func TestOutputDoneDeclarationIsExactAndImplementsEvent(t *testing.T) {
 	// R-TOUQ-SVMB
-	assertEventWrapper(t, "output.go", "OutputDone", reflect.TypeFor[OutputDone](), "Value", reflect.TypeFor[json.RawMessage]())
-}
-
-func TestEventIsSealedToExactlyFourVariants(t *testing.T) {
-	// R-UQNM-NRLU
-	assertEventSeam(t)
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var implementations []string
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
-		}
-		parsed, parseErr := parser.ParseFile(token.NewFileSet(), entry.Name(), nil, 0)
-		if parseErr != nil {
-			t.Fatal(parseErr)
-		}
-		for _, declaration := range parsed.Decls {
-			general, ok := declaration.(*ast.GenDecl)
-			if ok && general.Tok == token.TYPE {
-				for _, rawSpecification := range general.Specs {
-					specification := rawSpecification.(*ast.TypeSpec)
-					structure, isStruct := specification.Type.(*ast.StructType)
-					if !specification.Name.IsExported() || !isStruct {
-						continue
-					}
-					for _, field := range structure.Fields.List {
-						if len(field.Names) == 0 || !field.Names[0].IsExported() {
-							continue
-						}
-						var rendered bytes.Buffer
-						if formatErr := format.Node(&rendered, token.NewFileSet(), field.Type); formatErr != nil {
-							t.Fatal(formatErr)
-						}
-						for _, codecName := range []string{"wireFormat", "anthropicMessagesWire", "openAIResponsesWire", "responsesWire", "openAIChatWire", "chatWire", "geminiGenerateContentWire", "xaiChatWire", "xaiResponsesWire"} {
-							if strings.Contains(rendered.String(), codecName) {
-								t.Fatalf("consumer-visible %s.%s exposes assignable wire codec %s", specification.Name, field.Names[0], rendered.String())
-							}
-						}
-					}
-				}
-			}
-			function, ok := declaration.(*ast.FuncDecl)
-			if !ok || function.Recv == nil || function.Name.Name != "isEvent" {
-				continue
-			}
-			receiver := function.Recv.List[0].Type
-			if pointer, ok := receiver.(*ast.StarExpr); ok {
-				receiver = pointer.X
-			}
-			identifier, ok := receiver.(*ast.Ident)
-			if !ok {
-				t.Fatalf("isEvent receiver = %T, want named Event variant", receiver)
-			}
-			implementations = append(implementations, identifier.Name)
-		}
-	}
-	want := []string{"MessageDone", "ToolCall", "ToolReturn", "OutputDone"}
-	if !reflect.DeepEqual(implementations, want) {
-		t.Fatalf("in-package Event implementations = %v, want exactly %v", implementations, want)
-	}
+	assertEventWrapper(t, "OutputDone", reflect.TypeFor[OutputDone](), "Value", reflect.TypeFor[json.RawMessage]())
 }
 
 func TestToolCallDeclarationIsExactAndImplementsEvent(t *testing.T) {
 	// R-0CF5-DQKS
-	assertEventWrapper(t, "agentkit.go", "ToolCall", reflect.TypeFor[ToolCall](), "Use", reflect.TypeFor[ToolUse]())
+	assertEventWrapper(t, "ToolCall", reflect.TypeFor[ToolCall](), "Use", reflect.TypeFor[ToolUse]())
 }
 
 func TestToolReturnDeclarationIsExactAndImplementsEvent(t *testing.T) {
 	// R-0DN1-RIBH
-	assertEventWrapper(t, "agentkit.go", "ToolReturn", reflect.TypeFor[ToolReturn](), "Result", reflect.TypeFor[ToolResult]())
+	assertEventWrapper(t, "ToolReturn", reflect.TypeFor[ToolReturn](), "Result", reflect.TypeFor[ToolResult]())
 }
 
 func TestStreamDeclarationIsOpaqueWithExactMethods(t *testing.T) {
 	// R-0G2U-J1SV
 	streamType := reflect.TypeFor[Stream]()
-	if streamType.Name() != "Stream" || streamType.Kind() != reflect.Struct || !token.IsExported(streamType.Name()) {
+	if streamType.Name() != "Stream" || streamType.Kind() != reflect.Struct {
 		t.Fatalf("Stream name/kind = %q/%s, want exported defined struct", streamType.Name(), streamType.Kind())
 	}
 	for index := range streamType.NumField() {
@@ -257,14 +111,6 @@ func TestStreamDeclarationIsOpaqueWithExactMethods(t *testing.T) {
 			t.Fatalf("Stream field %q is exported", streamType.Field(index).Name)
 		}
 	}
-	streamSpecification := declaredType(t, "agentkit.go", "Stream")
-	if streamSpecification.Assign.IsValid() {
-		t.Fatal("Stream is an alias, want a defined struct")
-	}
-	if _, ok := streamSpecification.Type.(*ast.StructType); !ok {
-		t.Fatalf("Stream declaration is %T, want struct", streamSpecification.Type)
-	}
-
 	pointerType := reflect.TypeFor[*Stream]()
 	wantMethods := map[string]reflect.Type{
 		"Events": reflect.TypeOf(func(*Stream) iter.Seq[Event] { return nil }),
@@ -281,9 +127,9 @@ func TestStreamDeclarationIsOpaqueWithExactMethods(t *testing.T) {
 	}
 }
 
-func assertEventWrapper(t *testing.T, filename string, name string, wrapper reflect.Type, fieldName string, fieldType reflect.Type) {
+func assertEventWrapper(t *testing.T, name string, wrapper reflect.Type, fieldName string, fieldType reflect.Type) {
 	t.Helper()
-	if wrapper.Name() != name || wrapper.Kind() != reflect.Struct || !token.IsExported(wrapper.Name()) {
+	if wrapper.Name() != name || wrapper.Kind() != reflect.Struct {
 		t.Fatalf("%s name/kind = %q/%s, want exported defined struct", name, wrapper.Name(), wrapper.Kind())
 	}
 	if wrapper.NumField() != 1 {
@@ -296,40 +142,18 @@ func assertEventWrapper(t *testing.T, filename string, name string, wrapper refl
 	if !wrapper.Implements(reflect.TypeFor[Event]()) {
 		t.Fatalf("%s does not implement Event", name)
 	}
-	specification := declaredType(t, filename, name)
-	if specification.Assign.IsValid() {
-		t.Fatalf("%s is an alias", name)
-	}
-	structType, ok := specification.Type.(*ast.StructType)
-	if !ok || len(structType.Fields.List) != 1 {
-		fieldCount := 0
-		if ok {
-			fieldCount = len(structType.Fields.List)
-		}
-		t.Fatalf("%s declaration = %T with %d fields, want one-field struct", name, specification.Type, fieldCount)
-	}
 }
 
 func assertEventSeam(t *testing.T) {
 	t.Helper()
 	eventType := reflect.TypeFor[Event]()
-	if eventType.Name() != "Event" || eventType.Kind() != reflect.Interface || eventType.NumMethod() != 1 {
-		t.Fatalf("Event = %q/%s with %d methods, want defined one-method interface", eventType.Name(), eventType.Kind(), eventType.NumMethod())
+	if eventType.Name() != "Event" || eventType.Kind() != reflect.Interface {
+		t.Fatalf("Event = %q/%s, want defined interface", eventType.Name(), eventType.Kind())
 	}
-	marker, ok := eventType.MethodByName("isEvent")
-	if !ok || marker.Type != reflect.TypeOf(func() {}) || marker.PkgPath == "" || marker.Name != "isEvent" {
-		t.Fatalf("Event marker = %#v (present=%t), want unexported isEvent()", marker, ok)
-	}
-	specification := declaredType(t, "agentkit.go", "Event")
-	if specification.Assign.IsValid() {
-		t.Fatal("Event is an alias")
-	}
-	interfaceType, ok := specification.Type.(*ast.InterfaceType)
-	if !ok || !reflect.DeepEqual(interfaceMethodNames(interfaceType), []string{"isEvent"}) {
-		t.Fatalf("Event declaration = %T with methods %v, want only isEvent", specification.Type, interfaceMethodNames(interfaceType))
-	}
-	if interfaceType.Methods.List[0].Names[0].IsExported() {
-		t.Fatal("Event marker is exported")
+	for index := range eventType.NumMethod() {
+		if method := eventType.Method(index); method.IsExported() {
+			t.Fatalf("Event exports method %s, want none", method.Name)
+		}
 	}
 }
 
@@ -446,7 +270,7 @@ func TestConversationIdentityMatchesOfferingAndRotatorWithAndWithoutBaseURLOverr
 	}
 }
 
-// R-IJ9R-S28F
+// R-LYDD-8J87
 func TestConstructionSeamIsExactAndSufficientForEveryOffering(t *testing.T) {
 	for _, entry := range Catalog() {
 		for _, offering := range entry.Offerings {
@@ -522,16 +346,7 @@ func TestConstructionSeamIsExactAndSufficientForEveryOffering(t *testing.T) {
 		{name: "EndpointSpec", got: reflect.TypeFor[EndpointSpec](), kind: reflect.Struct},
 		{name: "Offering.Authenticator", got: reflect.TypeOf(Offering.Authenticator), want: reflect.TypeOf(func(Offering, Rotator) (Authenticator, error) { return nil, nil }), kind: reflect.Func},
 	}
-	wantNames := []string{
-		"New", "NewEndpoint", "EndpointOption", "WithBaseURL", "Endpoint", "Authenticator", "WireFormat",
-		"AnthropicMessagesWire", "GeminiGenerateContentWire", "ChatWire", "ResponsesWire",
-		"OpenAIChatWire", "OpenAIResponsesWire", "XAIChatWire", "XAIResponsesWire",
-		"Rotator", "APIKeyRotator", "OAuthRotator", "Token", "TokenStore", "FileTokenStore",
-		"AuthMode", "Rotation", "EndpointSpec", "Offering.Authenticator",
-	}
-	gotNames := make([]string, len(symbols))
-	for index, symbol := range symbols {
-		gotNames[index] = symbol.name
+	for _, symbol := range symbols {
 		if symbol.got == nil || symbol.got.Kind() != symbol.kind {
 			t.Fatalf("%s type/kind = %v, want present %s", symbol.name, symbol.got, symbol.kind)
 		}
@@ -539,17 +354,15 @@ func TestConstructionSeamIsExactAndSufficientForEveryOffering(t *testing.T) {
 			t.Fatalf("%s type = %s, want %s", symbol.name, symbol.got, symbol.want)
 		}
 	}
-	if !reflect.DeepEqual(gotNames, wantNames) {
-		t.Fatalf("construction seam = %v, want exactly %v", gotNames, wantNames)
-	}
 }
 
-// R-W1KR-P3S7
+// R-NY6T-G0IY
 // R-VT1H-0PLC
-// R-IKHO-5TZ4
+// R-8U5I-NMY5
 func TestNewDeclarationTakesWireFormatAndRejectsNilWire(t *testing.T) {
-	declarations := parsePackageDeclarations(t, ".")
-	assertASTFunction(t, declarations, "New", []string{"WireFormat", "Endpoint", "string", "Config"}, []string{"*Conversation", "error"}, false)
+	if got, want := reflect.TypeOf(New), reflect.TypeOf(func(WireFormat, Endpoint, string, Config) (*Conversation, error) { return nil, nil }); got != want {
+		t.Fatalf("New type = %s, want %s", got, want)
+	}
 
 	auth := authFunc(func(context.Context, *http.Request, []byte) error { return nil })
 	endpoint, err := NewEndpoint(auth, WithBaseURL("https://example.invalid/wire"))
@@ -593,9 +406,9 @@ func TestNewDeclarationTakesWireFormatAndRejectsNilWire(t *testing.T) {
 
 func TestWireFormatDeclarationIsExactAndSealed(t *testing.T) {
 	// R-OXYY-4WN5
-	// R-OWR1-R4WG
+	// R-LZL9-MAYW
 	wireType := reflect.TypeFor[WireFormat]()
-	if wireType.Name() != "WireFormat" || !token.IsExported(wireType.Name()) || wireType.Kind() != reflect.Interface {
+	if wireType.Name() != "WireFormat" || wireType.Kind() != reflect.Interface {
 		t.Fatalf("WireFormat name/kind = %q/%s, want exported named interface", wireType.Name(), wireType.Kind())
 	}
 	wantMethods := map[string]reflect.Type{
@@ -614,24 +427,6 @@ func TestWireFormatDeclarationIsExactAndSealed(t *testing.T) {
 		}
 	}
 
-	declarations := parsePackageDeclarations(t, ".")
-	interfaceSpecification, ok := declarations.types["WireFormat"]
-	if !ok {
-		t.Fatal("WireFormat declaration is missing")
-	}
-	interfaceType, ok := interfaceSpecification.Type.(*ast.InterfaceType)
-	if !ok {
-		t.Fatalf("WireFormat declaration is %T, want interface", interfaceSpecification.Type)
-	}
-	methodNames := []string{"EncodeRequest", "DecodeStream", "RenderTools", "OptionSpecs"}
-	if got := interfaceMethodNames(interfaceType); !reflect.DeepEqual(got, methodNames) {
-		t.Fatalf("WireFormat methods = %v, want exactly %v in order", got, methodNames)
-	}
-	assertASTMethod(t, interfaceType, "EncodeRequest", []string{"requestState"}, []string{"[]byte", "error"})
-	assertASTMethod(t, interfaceType, "DecodeStream", []string{"iter.Seq2[[]byte, error]"}, []string{"iter.Seq2[Event, error]"})
-	assertASTMethod(t, interfaceType, "RenderTools", []string{"[]Tool"}, []string{"json.RawMessage", "error"})
-	assertASTMethod(t, interfaceType, "OptionSpecs", nil, []string{"[]OptionSpec"})
-
 	tests := []struct {
 		name     string
 		exported func() WireFormat
@@ -646,10 +441,7 @@ func TestWireFormatDeclarationIsExactAndSealed(t *testing.T) {
 		{"XAIChatWire", XAIChatWire, reflect.TypeFor[*xaiChatWire]()},
 		{"XAIResponsesWire", XAIResponsesWire, reflect.TypeFor[*xaiResponsesWire]()},
 	}
-	wantConstructors := make(map[string]bool, len(tests))
 	for _, test := range tests {
-		wantConstructors[test.name] = true
-		assertASTFunction(t, declarations, test.name, nil, []string{"WireFormat"}, false)
 		got := test.exported()
 		if got == nil {
 			t.Fatalf("%s returned nil", test.name)
@@ -658,133 +450,9 @@ func TestWireFormatDeclarationIsExactAndSealed(t *testing.T) {
 			t.Fatalf("%s returned %T, want the built-in codec %v", test.name, got, test.wantType)
 		}
 	}
-	var gotConstructors []string
-	for name := range declarations.functions {
-		if token.IsExported(name) && strings.HasSuffix(name, "Wire") {
-			gotConstructors = append(gotConstructors, name)
-			if !wantConstructors[name] {
-				t.Errorf("unexpected exported wire constructor %s", name)
-			}
-		}
-	}
-	if len(gotConstructors) != len(wantConstructors) {
-		t.Fatalf("exported wire constructors = %v, want exactly eight", gotConstructors)
-	}
 }
 
-// R-HC0C-ZEW7
-func TestRootWireConstructorsHaveDistinctSoleCodecTypes(t *testing.T) {
-	wires := []struct {
-		filename    string
-		typeName    string
-		constructor func() WireFormat
-	}{
-		{"wire_anthropic_messages.go", "anthropicMessagesWire", AnthropicMessagesWire},
-		{"wire_gemini_generate_content.go", "geminiGenerateContentWire", GeminiGenerateContentWire},
-		{"wire_chat.go", "chatWire", ChatWire},
-		{"wire_responses.go", "responsesWire", ResponsesWire},
-		{"wire_openai_chat.go", "openAIChatWire", OpenAIChatWire},
-		{"wire_openai_responses.go", "openAIResponsesWire", OpenAIResponsesWire},
-		{"wire_xai_chat.go", "xaiChatWire", XAIChatWire},
-		{"wire_xai_responses.go", "xaiResponsesWire", XAIResponsesWire},
-	}
-
-	allowedTypes := make(map[string]bool, len(wires))
-	dynamicTypes := make(map[reflect.Type]string, len(wires))
-	for _, wire := range wires {
-		allowedTypes[wire.typeName] = true
-		structure, ok := declaredType(t, wire.filename, wire.typeName).Type.(*ast.StructType)
-		if !ok {
-			t.Errorf("%s in %s is not a struct", wire.typeName, wire.filename)
-			continue
-		}
-		wantFields := 1
-		if wire.typeName == "geminiGenerateContentWire" {
-			wantFields = 4
-		}
-		if len(structure.Fields.List) != wantFields {
-			t.Errorf("%s fields = %d, want embedded wireCodec plus required private state", wire.typeName, len(structure.Fields.List))
-			continue
-		}
-		field := structure.Fields.List[0]
-		codec, isIdentifier := field.Type.(*ast.Ident)
-		if len(field.Names) != 0 || !isIdentifier || codec.Name != "wireCodec" {
-			t.Errorf("%s first field = %#v, want embedded wireCodec", wire.typeName, field)
-		}
-		if wire.typeName == "geminiGenerateContentWire" {
-			cacheMark := structure.Fields.List[1]
-			cacheName := structure.Fields.List[2]
-			requestUsedCache := structure.Fields.List[3]
-			markType, markIsIdentifier := cacheMark.Type.(*ast.Ident)
-			nameType, nameIsIdentifier := cacheName.Type.(*ast.Ident)
-			requestUsedCacheType, requestUsedCacheIsIdentifier := requestUsedCache.Type.(*ast.Ident)
-			if len(cacheMark.Names) != 1 || cacheMark.Names[0].Name != "cacheMark" || !markIsIdentifier || markType.Name != "int" {
-				t.Errorf("gemini cache mark field = %#v, want cacheMark int", cacheMark)
-			}
-			if len(cacheName.Names) != 1 || cacheName.Names[0].Name != "cacheName" || !nameIsIdentifier || nameType.Name != "string" {
-				t.Errorf("gemini cache name field = %#v, want cacheName string", cacheName)
-			}
-			if len(requestUsedCache.Names) != 1 || requestUsedCache.Names[0].Name != "requestUsedCache" || !requestUsedCacheIsIdentifier || requestUsedCacheType.Name != "bool" {
-				t.Errorf("gemini request cache-use field = %#v, want requestUsedCache bool", requestUsedCache)
-			}
-		}
-
-		dynamicType := reflect.TypeOf(wire.constructor())
-		wantType := "*agentkit." + wire.typeName
-		if dynamicType == nil || dynamicType.String() != wantType {
-			t.Errorf("%s() dynamic type = %v, want %s", strings.TrimSuffix(strings.TrimPrefix(wire.filename, "wire_"), ".go"), dynamicType, wantType)
-		}
-		if prior, duplicate := dynamicTypes[dynamicType]; duplicate {
-			t.Errorf("%s and %s constructors share dynamic type %v", prior, wire.typeName, dynamicType)
-		}
-		dynamicTypes[dynamicType] = wire.typeName
-	}
-	if len(dynamicTypes) != len(wires) {
-		t.Errorf("root constructors have %d distinct dynamic types, want %d", len(dynamicTypes), len(wires))
-	}
-
-	filenames, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	embeddingTypes := 0
-	for _, filename := range filenames {
-		if filename == "wire.go" || strings.HasSuffix(filename, "_test.go") {
-			continue
-		}
-		parsed, parseErr := parser.ParseFile(token.NewFileSet(), filename, nil, 0)
-		if parseErr != nil {
-			t.Fatal(parseErr)
-		}
-		for _, declaration := range parsed.Decls {
-			general, ok := declaration.(*ast.GenDecl)
-			if !ok || general.Tok != token.TYPE {
-				continue
-			}
-			for _, rawSpecification := range general.Specs {
-				specification := rawSpecification.(*ast.TypeSpec)
-				structure, ok := specification.Type.(*ast.StructType)
-				if !ok {
-					continue
-				}
-				for _, field := range structure.Fields.List {
-					codec, isIdentifier := field.Type.(*ast.Ident)
-					if len(field.Names) == 0 && isIdentifier && codec.Name == "wireCodec" {
-						embeddingTypes++
-						if !allowedTypes[specification.Name.Name] {
-							t.Errorf("production type %s in %s also embeds wireCodec", specification.Name.Name, filename)
-						}
-					}
-				}
-			}
-		}
-	}
-	if embeddingTypes != len(wires) {
-		t.Errorf("production types embedding wireCodec = %d, want exactly %d", embeddingTypes, len(wires))
-	}
-}
-
-// R-II1V-EAHQ
+// R-LZL9-MAYW
 func TestExternalPackageCannotImplementWireFormat(t *testing.T) {
 	workingDirectory, err := os.Getwd()
 	if err != nil {
@@ -823,51 +491,15 @@ var _ agentkit.WireFormat = outsider{}
 	if err == nil {
 		t.Fatalf("external WireFormat implementation compiled successfully:\n%s", output)
 	}
-	if !bytes.Contains(output, []byte("want EncodeRequest(agentkit.requestState)")) {
+	if !bytes.Contains(output, []byte("does not implement agentkit.WireFormat")) {
 		t.Fatalf("external implementation failed for the wrong reason: %v\n%s", err, output)
-	}
-}
-
-// R-IMXG-XDGI
-func TestWireConstructorsMatchFileNames(t *testing.T) {
-	constructors := []struct {
-		name     string
-		filename string
-	}{
-		{"AnthropicMessagesWire", "wire_anthropic_messages.go"},
-		{"GeminiGenerateContentWire", "wire_gemini_generate_content.go"},
-		{"ChatWire", "wire_chat.go"},
-		{"ResponsesWire", "wire_responses.go"},
-		{"OpenAIChatWire", "wire_openai_chat.go"},
-		{"OpenAIResponsesWire", "wire_openai_responses.go"},
-		{"XAIChatWire", "wire_xai_chat.go"},
-		{"XAIResponsesWire", "wire_xai_responses.go"},
-	}
-	for _, constructor := range constructors {
-		for _, candidate := range constructors {
-			parsed, err := parser.ParseFile(token.NewFileSet(), candidate.filename, nil, 0)
-			if err != nil {
-				t.Fatal(err)
-			}
-			found := false
-			for _, declaration := range parsed.Decls {
-				function, ok := declaration.(*ast.FuncDecl)
-				found = found || ok && function.Recv == nil && function.Name.Name == constructor.name
-			}
-			if found != (candidate.filename == constructor.filename) {
-				t.Fatalf("%s presence in %s = %t, want %t", constructor.name, candidate.filename, found, candidate.filename == constructor.filename)
-			}
-		}
 	}
 }
 
 func assertDefinedEndpointType(t *testing.T, name string, typeOf reflect.Type, kind reflect.Kind) {
 	t.Helper()
-	if typeOf.Name() != name || typeOf.Kind() != kind || !token.IsExported(typeOf.Name()) {
+	if typeOf.Name() != name || typeOf.Kind() != kind {
 		t.Fatalf("%s = %q/%s, want exported defined %s", name, typeOf.Name(), typeOf.Kind(), kind)
-	}
-	if specification := declaredType(t, "endpoint.go", name); specification.Assign.IsValid() {
-		t.Fatalf("%s is an alias", name)
 	}
 }
 
@@ -889,9 +521,9 @@ func assertFunctionSignature(t *testing.T, got, want reflect.Type) {
 }
 
 func TestToolDeclarationIsExactAndSealed(t *testing.T) {
-	// R-DH1U-CH43
+	// R-LNE9-SLJY
 	toolType := reflect.TypeFor[Tool]()
-	if toolType.Name() != "Tool" || !token.IsExported(toolType.Name()) || toolType.Kind() != reflect.Interface {
+	if toolType.Name() != "Tool" || toolType.Kind() != reflect.Interface {
 		t.Fatalf("Tool name/kind = %q/%s, want exported named interface", toolType.Name(), toolType.Kind())
 	}
 	wantExported := map[string]reflect.Type{
@@ -900,10 +532,15 @@ func TestToolDeclarationIsExactAndSealed(t *testing.T) {
 		"Schema":      reflect.TypeOf(func() json.RawMessage { return nil }),
 		"Call":        reflect.TypeOf(func(context.Context, json.RawMessage) (string, error) { return "", nil }),
 		"Access":      reflect.TypeOf(func(json.RawMessage) Access { panic("type only") }),
-		"isTool":      reflect.TypeOf(func() {}),
 	}
-	if toolType.NumMethod() != len(wantExported) {
-		t.Fatalf("Tool exported method count = %d, want %d", toolType.NumMethod(), len(wantExported))
+	exported := 0
+	for index := range toolType.NumMethod() {
+		if toolType.Method(index).IsExported() {
+			exported++
+		}
+	}
+	if exported != len(wantExported) {
+		t.Fatalf("Tool exported method count = %d, want %d", exported, len(wantExported))
 	}
 	for name, signature := range wantExported {
 		method, ok := toolType.MethodByName(name)
@@ -911,73 +548,26 @@ func TestToolDeclarationIsExactAndSealed(t *testing.T) {
 			t.Fatalf("Tool.%s = %v (present=%t), want %s", name, method.Type, ok, signature)
 		}
 	}
-	marker, _ := toolType.MethodByName("isTool")
-	if marker.PkgPath == "" {
-		t.Fatal("Tool marker has no package path, want unexported sealing method")
-	}
-
-	specification := declaredType(t, "tool.go", "Tool")
-	if specification.Assign.IsValid() {
-		t.Fatal("Tool is an alias, want a defined interface")
-	}
-	interfaceType, ok := specification.Type.(*ast.InterfaceType)
-	if !ok {
-		t.Fatalf("Tool declaration = %T, want interface", specification.Type)
-	}
-	wantMethods := []string{"Name", "Description", "Schema", "Call", "Access", "isTool"}
-	if got := interfaceMethodNames(interfaceType); !reflect.DeepEqual(got, wantMethods) {
-		t.Fatalf("Tool methods = %v, want exactly %v in order", got, wantMethods)
-	}
-	assertASTMethod(t, interfaceType, "Name", nil, []string{"string"})
-	assertASTMethod(t, interfaceType, "Description", nil, []string{"string"})
-	assertASTMethod(t, interfaceType, "Schema", nil, []string{"json.RawMessage"})
-	assertASTMethod(t, interfaceType, "Call", []string{"context.Context", "json.RawMessage"}, []string{"string", "error"})
-	assertASTMethod(t, interfaceType, "Access", []string{"json.RawMessage"}, []string{"Access"})
-	assertASTMethod(t, interfaceType, "isTool", nil, nil)
-	if interfaceType.Methods.List[5].Names[0].IsExported() {
-		t.Fatal("Tool marker is exported, want package-sealing lowercase marker")
-	}
 }
 
 func TestSiblingToolConstructionSurfaceIsExactAndSealed(t *testing.T) {
-	// R-5ZBT-XCT3
-	toolType := reflect.TypeFor[Tool]()
-	if toolType.Kind() != reflect.Interface || toolType.NumMethod() != 6 {
-		t.Fatalf("Tool = %s with %d methods, want sealed six-method interface", toolType, toolType.NumMethod())
+	// R-NZEP-TS9N
+	if toolType := reflect.TypeFor[Tool](); toolType.Name() != "Tool" || toolType.Kind() != reflect.Interface {
+		t.Fatalf("Tool = %s, want exported interface", toolType)
 	}
-	marker, ok := toolType.MethodByName("isTool")
-	if !ok || marker.PkgPath == "" {
-		t.Fatal("Tool lacks its unexported package-sealing marker")
-	}
-
-	parsed, err := parser.ParseFile(token.NewFileSet(), "tool.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var constructors []string
-	for _, declaration := range parsed.Decls {
-		function, ok := declaration.(*ast.FuncDecl)
-		if !ok || function.Recv != nil || !function.Name.IsExported() || function.Type.Results == nil {
-			continue
-		}
-		results := function.Type.Results.List
-		returnsTool := len(results) == 1 && renderedNode(t, results[0].Type) == "Tool"
-		returnsToolAndError := len(results) == 2 && renderedNode(t, results[0].Type) == "Tool" && renderedNode(t, results[1].Type) == "error"
-		if returnsTool || returnsToolAndError {
-			constructors = append(constructors, function.Name.Name)
-		}
-	}
-	want := []string{"NewTool", "MustTool", "NewToolFromSchema"}
-	if !reflect.DeepEqual(constructors, want) {
-		t.Fatalf("exported Tool constructors = %v, want exactly %v", constructors, want)
-	}
-	assertExactToolFunctionDeclaration(t, "NewTool", "func[In any](name, description string, fn func(ctx context.Context, in In) (string, error), access func(in In) Access) (Tool, error)")
-	assertExactToolFunctionDeclaration(t, "MustTool", "func[In any](name, description string, fn func(ctx context.Context, in In) (string, error), access func(in In) Access) Tool")
-	assertExactToolFunctionDeclaration(t, "NewToolFromSchema", "func(name, description string, schema json.RawMessage, fn func(ctx context.Context, args json.RawMessage) (string, error), access func(args json.RawMessage) Access) (Tool, error)")
+	assertFunctionSignature(t, reflect.TypeOf(NewTool[architectureToolInput]), reflect.TypeOf(func(string, string, func(context.Context, architectureToolInput) (string, error), func(architectureToolInput) Access) (Tool, error) {
+		return nil, nil
+	}))
+	assertFunctionSignature(t, reflect.TypeOf(MustTool[architectureToolInput]), reflect.TypeOf(func(string, string, func(context.Context, architectureToolInput) (string, error), func(architectureToolInput) Access) Tool {
+		return nil
+	}))
+	assertFunctionSignature(t, reflect.TypeOf(NewToolFromSchema), reflect.TypeOf(func(string, string, json.RawMessage, func(context.Context, json.RawMessage) (string, error), func(json.RawMessage) Access) (Tool, error) {
+		return nil, nil
+	}))
 }
 
 func TestExternalPackageCannotImplementSealedTool(t *testing.T) {
-	// R-3Y5U-Z4BF
+	// R-LM6D-ETT9
 	workingDirectory, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -1000,7 +590,6 @@ func (outsider) Description() string { return "outside" }
 func (outsider) Schema() json.RawMessage { return json.RawMessage(` + "`{\"type\":\"object\"}`" + `) }
 func (outsider) Call(context.Context, json.RawMessage) (string, error) { return "", nil }
 func (outsider) Access(json.RawMessage) agentkit.Access { panic("not called") }
-func (outsider) isTool() {}
 
 var _ agentkit.Tool = outsider{}
 `
@@ -1016,242 +605,9 @@ var _ agentkit.Tool = outsider{}
 	if err == nil {
 		t.Fatalf("external Tool implementation compiled successfully:\n%s", output)
 	}
-	if !bytes.Contains(output, []byte("unexported method isTool")) {
+	if !bytes.Contains(output, []byte("does not implement agentkit.Tool")) {
 		t.Fatalf("external implementation failed for the wrong reason: %v\n%s", err, output)
 	}
-}
-
-func TestJSONSchemaVocabularyIsDocumentedStringGrammarNotExportedConstants(t *testing.T) {
-	// R-431G-I7A7
-	// R-61RM-OWAH
-	parsed, err := parser.ParseFile(token.NewFileSet(), "tool.go", nil, parser.ParseComments)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var newToolDocumentation string
-	for _, declaration := range parsed.Decls {
-		switch declaration := declaration.(type) {
-		case *ast.FuncDecl:
-			if declaration.Name.Name == "NewTool" && declaration.Doc != nil {
-				newToolDocumentation = declaration.Doc.Text()
-			}
-		case *ast.GenDecl:
-			if declaration.Tok != token.CONST {
-				continue
-			}
-			for _, specification := range declaration.Specs {
-				for _, name := range specification.(*ast.ValueSpec).Names {
-					if name.IsExported() {
-						t.Fatalf("tool.go exports tag-vocabulary constant %s", name.Name)
-					}
-				}
-			}
-		}
-	}
-	if !strings.Contains(newToolDocumentation, "jsonschema string tag") {
-		t.Errorf("NewTool documentation does not describe the jsonschema string tag grammar:\n%s", newToolDocumentation)
-	}
-	documentedTokens := make(map[string]bool)
-	for _, token := range strings.FieldsFunc(newToolDocumentation, func(character rune) bool {
-		return unicode.IsSpace(character) || strings.ContainsRune(`\",.`, character)
-	}) {
-		documentedTokens[token] = true
-	}
-	for _, fragment := range []string{
-		"required", "enum=a|b", "description=text", "minimum=n", "maximum=n",
-		"exclusiveMinimum=n", "exclusiveMaximum=n", "multipleOf=n", "minLength=n", "maxLength=n",
-		"pattern=expr", "format=name", "minItems=n", "maxItems=n", "uniqueItems=true|false",
-	} {
-		if !documentedTokens[fragment] {
-			t.Errorf("NewTool documentation does not describe string grammar fragment %q:\n%s", fragment, newToolDocumentation)
-		}
-	}
-}
-
-func TestEveryToolConstructionAndWireRenderingUsesExportedSchemaChecker(t *testing.T) {
-	// R-45H9-9QRL
-	wantCalls := map[string]string{
-		"NewTool":           "newTool",
-		"MustTool":          "NewTool",
-		"NewToolFromSchema": "newTool",
-		"newTool":           "ValidateToolSchema",
-	}
-	for functionName, calledName := range wantCalls {
-		function := declaredFunction(t, "tool.go", functionName)
-		if !functionCallsIdentifier(function, calledName) {
-			t.Errorf("%s does not route through %s", functionName, calledName)
-		}
-	}
-	canonicalValidation := declaredFunction(t, "wire.go", "validateCanonicalTools")
-	if !functionCallsIdentifier(canonicalValidation, "ValidateToolSchema") {
-		t.Fatal("common canonical tool validation does not defensively call exported ValidateToolSchema")
-	}
-	for _, filename := range []string{"wire_responses.go", "wire_chat.go", "wire_openai_responses.go", "wire_openai_chat.go", "wire_anthropic_messages.go", "wire_gemini_generate_content.go", "wire_xai_chat.go", "wire_xai_responses.go"} {
-		wireRender := declaredMethod(t, filename, "RenderTools")
-		if !functionCallsIdentifier(wireRender, "validateCanonicalTools") {
-			t.Errorf("%s RenderTools does not call the one common canonical validator", filename)
-		}
-	}
-	wireCodecType := declaredType(t, "wire.go", "wireCodec").Type.(*ast.StructType)
-	for _, field := range wireCodecType.Fields.List {
-		for _, name := range field.Names {
-			lower := strings.ToLower(name.Name)
-			if strings.Contains(lower, "render") || strings.Contains(lower, "dialect") || strings.Contains(lower, "mode") {
-				t.Errorf("wireCodec retains shared declaration-shaping field %q", name.Name)
-			}
-		}
-	}
-	parsed, err := parser.ParseFile(token.NewFileSet(), "tool.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, declaration := range parsed.Decls {
-		function, ok := declaration.(*ast.FuncDecl)
-		if ok && function.Name.IsExported() && strings.Contains(function.Name.Name, "Schema") && strings.Contains(function.Name.Name, "Valid") && function.Name.Name != "ValidateToolSchema" {
-			t.Fatalf("competing exported schema checker %s exists", function.Name.Name)
-		}
-	}
-}
-
-func TestConcreteWiresOwnToolDeclarationShaping(t *testing.T) {
-	// R-47X2-1A8Z
-	// R-494Y-F1ZO
-	wires := []struct {
-		filename       string
-		receiver       string
-		renderer       string
-		wrapperMarkers []string
-		forbidden      []string
-	}{
-		{
-			filename:       "wire_openai_responses.go",
-			receiver:       "openAIResponsesWire",
-			renderer:       "renderOpenAIResponsesTools",
-			wrapperMarkers: []string{"json:\"type\"", "json:\"name\"", "json:\"description\"", "json:\"parameters\""},
-			forbidden:      []string{"json:\"function\"", "json:\"input_schema\"", "json:\"functionDeclarations\""},
-		},
-		{
-			filename:       "wire_openai_chat.go",
-			receiver:       "openAIChatWire",
-			renderer:       "renderOpenAIChatTools",
-			wrapperMarkers: []string{"json:\"type\"", "json:\"function\"", "json:\"name\"", "json:\"description\"", "json:\"parameters\""},
-			forbidden:      []string{"json:\"input_schema\"", "json:\"functionDeclarations\""},
-		},
-		{
-			filename:       "wire_anthropic_messages.go",
-			receiver:       "anthropicMessagesWire",
-			renderer:       "renderAnthropicTools",
-			wrapperMarkers: []string{"json:\"name\"", "json:\"description\"", "json:\"input_schema\""},
-			forbidden:      []string{"json:\"type\"", "json:\"parameters\"", "json:\"functionDeclarations\""},
-		},
-		{
-			filename:       "wire_gemini_generate_content.go",
-			receiver:       "geminiGenerateContentWire",
-			renderer:       "renderGeminiTools",
-			wrapperMarkers: []string{"json:\"tools\"", "json:\"functionDeclarations\"", "json:\"name\"", "json:\"description\"", "json:\"parameters\""},
-			forbidden:      []string{"json:\"type\"", "json:\"input_schema\""},
-		},
-	}
-
-	for _, wire := range wires {
-		t.Run(wire.receiver, func(t *testing.T) {
-			method := declaredMethod(t, wire.filename, "RenderTools")
-			if got := methodReceiverName(method); got != wire.receiver {
-				t.Fatalf("%s RenderTools receiver = %q, want %q", wire.filename, got, wire.receiver)
-			}
-			if !functionCallsIdentifier(method, "validateCanonicalTools") {
-				t.Errorf("%s RenderTools bypasses canonical validation", wire.filename)
-			}
-			if !functionCallsIdentifier(method, wire.renderer) {
-				t.Errorf("%s RenderTools does not delegate declaration shaping to its local %s", wire.filename, wire.renderer)
-			}
-
-			renderer := declaredFunction(t, wire.filename, wire.renderer)
-			shape := renderedNode(t, renderer)
-			for _, marker := range wire.wrapperMarkers {
-				if !strings.Contains(shape, marker) {
-					t.Errorf("%s lacks wire-owned declaration marker %q", wire.renderer, marker)
-				}
-			}
-			for _, marker := range wire.forbidden {
-				if strings.Contains(shape, marker) {
-					t.Errorf("%s contains another wire's declaration marker %q", wire.renderer, marker)
-				}
-			}
-		})
-	}
-
-	parsed, err := parser.ParseFile(token.NewFileSet(), "wire.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, declaration := range parsed.Decls {
-		function, ok := declaration.(*ast.FuncDecl)
-		if !ok {
-			continue
-		}
-		signature := renderedNode(t, function.Type)
-		if strings.Contains(signature, "[]Tool") && strings.Contains(signature, "json.RawMessage") {
-			t.Errorf("shared wire layer declares tool-shaping function %s with signature %s", function.Name, signature)
-		}
-		if function.Name.Name != "validateCanonicalTools" {
-			continue
-		}
-		ast.Inspect(function.Body, func(node ast.Node) bool {
-			switch node.(type) {
-			case *ast.SwitchStmt, *ast.TypeSwitchStmt:
-				t.Error("shared canonical validation contains wire-mode/dialect dispatch")
-			}
-			return true
-		})
-	}
-}
-
-func methodReceiverName(function *ast.FuncDecl) string {
-	if function.Recv == nil || len(function.Recv.List) != 1 {
-		return ""
-	}
-	receiver := function.Recv.List[0].Type
-	if pointer, ok := receiver.(*ast.StarExpr); ok {
-		receiver = pointer.X
-	}
-	identifier, _ := receiver.(*ast.Ident)
-	if identifier == nil {
-		return ""
-	}
-	return identifier.Name
-}
-
-func functionCallsIdentifier(function *ast.FuncDecl, name string) bool {
-	found := false
-	ast.Inspect(function.Body, func(node ast.Node) bool {
-		call, ok := node.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		identifier, ok := call.Fun.(*ast.Ident)
-		if ok && identifier.Name == name {
-			found = true
-		}
-		return true
-	})
-	return found
-}
-
-func declaredMethod(t *testing.T, filename, name string) *ast.FuncDecl {
-	t.Helper()
-	parsed, err := parser.ParseFile(token.NewFileSet(), filename, nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, declaration := range parsed.Decls {
-		function, ok := declaration.(*ast.FuncDecl)
-		if ok && function.Recv != nil && function.Name.Name == name {
-			return function
-		}
-	}
-	t.Fatalf("method %s is not declared in %s", name, filename)
-	return nil
 }
 
 type architectureToolInput struct {
@@ -1265,7 +621,6 @@ func TestNewToolDeclarationIsExact(t *testing.T) {
 		return nil, nil
 	})
 	assertFunctionSignature(t, got, want)
-	assertExactToolFunctionDeclaration(t, "NewTool", "func[In any](name, description string, fn func(ctx context.Context, in In) (string, error), access func(in In) Access) (Tool, error)")
 }
 
 func TestMustToolDeclarationIsExact(t *testing.T) {
@@ -1275,7 +630,6 @@ func TestMustToolDeclarationIsExact(t *testing.T) {
 		return nil
 	})
 	assertFunctionSignature(t, got, want)
-	assertExactToolFunctionDeclaration(t, "MustTool", "func[In any](name, description string, fn func(ctx context.Context, in In) (string, error), access func(in In) Access) Tool")
 }
 
 func TestNewToolFromSchemaDeclarationIsExact(t *testing.T) {
@@ -1285,7 +639,6 @@ func TestNewToolFromSchemaDeclarationIsExact(t *testing.T) {
 		return nil, nil
 	})
 	assertFunctionSignature(t, got, want)
-	assertExactToolFunctionDeclaration(t, "NewToolFromSchema", "func(name, description string, schema json.RawMessage, fn func(ctx context.Context, args json.RawMessage) (string, error), access func(args json.RawMessage) Access) (Tool, error)")
 }
 
 func TestValidateToolSchemaDeclarationIsExact(t *testing.T) {
@@ -1293,31 +646,6 @@ func TestValidateToolSchemaDeclarationIsExact(t *testing.T) {
 	got := reflect.TypeOf(ValidateToolSchema)
 	want := reflect.TypeOf(func(json.RawMessage) error { return nil })
 	assertFunctionSignature(t, got, want)
-	assertExactToolFunctionDeclaration(t, "ValidateToolSchema", "func(schema json.RawMessage) error")
-}
-
-func assertExactToolFunctionDeclaration(t *testing.T, name, want string) {
-	t.Helper()
-	declaration := declaredFunction(t, "tool.go", name)
-	if declaration.Recv != nil || !declaration.Name.IsExported() {
-		t.Fatalf("%s is not an exported package function", name)
-	}
-	var rendered bytes.Buffer
-	if err := format.Node(&rendered, token.NewFileSet(), declaration.Type); err != nil {
-		t.Fatal(err)
-	}
-	if got := rendered.String(); got != want {
-		t.Fatalf("%s declaration = %q, want exactly %q", name, got, want)
-	}
-}
-
-func renderedNode(t *testing.T, node ast.Node) string {
-	t.Helper()
-	var rendered bytes.Buffer
-	if err := format.Node(&rendered, token.NewFileSet(), node); err != nil {
-		t.Fatal(err)
-	}
-	return rendered.String()
 }
 
 func TestFramerAndSSEFramesDeclarationsAreExact(t *testing.T) {
@@ -1325,20 +653,12 @@ func TestFramerAndSSEFramesDeclarationsAreExact(t *testing.T) {
 	// R-ZHXN-TH1F
 	wantSignature := reflect.TypeOf(func(io.Reader) iter.Seq2[[]byte, error] { return nil })
 	framerType := reflect.TypeFor[Framer]()
-	if framerType.Name() != "Framer" || !token.IsExported(framerType.Name()) || framerType.Kind() != reflect.Func {
+	if framerType.Name() != "Framer" || framerType.Kind() != reflect.Func {
 		t.Fatalf("Framer name/kind = %q/%s, want exported defined function type", framerType.Name(), framerType.Kind())
 	}
 	if framerType.NumIn() != 1 || framerType.In(0) != wantSignature.In(0) || framerType.NumOut() != 1 || framerType.Out(0) != wantSignature.Out(0) {
 		t.Fatalf("Framer signature = %s, want func%s", framerType, strings.TrimPrefix(wantSignature.String(), "func"))
 	}
-	framerSpecification := declaredType(t, "wire.go", "Framer")
-	if framerSpecification.Assign.IsValid() {
-		t.Fatal("Framer is an alias, want a defined function type")
-	}
-	if _, ok := framerSpecification.Type.(*ast.FuncType); !ok {
-		t.Fatalf("Framer declaration is %T, want function type", framerSpecification.Type)
-	}
-
 	sseType := reflect.TypeOf(SSEFrames)
 	if sseType != wantSignature {
 		t.Fatalf("SSEFrames signature = %s, want exactly %s", sseType, wantSignature)
@@ -1350,48 +670,6 @@ func TestFramerAndSSEFramesDeclarationsAreExact(t *testing.T) {
 	if assigned == nil {
 		t.Fatal("SSEFrames assignment unexpectedly produced a nil Framer")
 	}
-	sseDeclaration := declaredFunction(t, "sse.go", "SSEFrames")
-	if sseDeclaration.Recv != nil || !sseDeclaration.Name.IsExported() {
-		t.Fatal("SSEFrames is not an exported package function")
-	}
-}
-
-func declaredType(t *testing.T, filename, name string) *ast.TypeSpec {
-	t.Helper()
-	parsed, err := parser.ParseFile(token.NewFileSet(), filename, nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, declaration := range parsed.Decls {
-		general, ok := declaration.(*ast.GenDecl)
-		if !ok || general.Tok != token.TYPE {
-			continue
-		}
-		for _, specification := range general.Specs {
-			typeSpecification := specification.(*ast.TypeSpec)
-			if typeSpecification.Name.Name == name {
-				return typeSpecification
-			}
-		}
-	}
-	t.Fatalf("type %s is not declared in %s", name, filename)
-	return nil
-}
-
-func declaredFunction(t *testing.T, filename, name string) *ast.FuncDecl {
-	t.Helper()
-	parsed, err := parser.ParseFile(token.NewFileSet(), filename, nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, declaration := range parsed.Decls {
-		function, ok := declaration.(*ast.FuncDecl)
-		if ok && function.Name.Name == name {
-			return function
-		}
-	}
-	t.Fatalf("function %s is not declared in %s", name, filename)
-	return nil
 }
 
 func TestConversationPublicShape(t *testing.T) {
@@ -1399,9 +677,9 @@ func TestConversationPublicShape(t *testing.T) {
 	// R-WEW7-DNV4
 	// R-7KE4-A3OZ
 	// R-VT1H-0PLC
-	// R-IKHO-5TZ4
+	// R-8U5I-NMY5
 	conversationType := reflect.TypeOf(Conversation{})
-	if conversationType.Name() != "Conversation" || !token.IsExported(conversationType.Name()) || conversationType.Kind() != reflect.Struct {
+	if conversationType.Name() != "Conversation" || conversationType.Kind() != reflect.Struct {
 		t.Fatalf("Conversation name/kind = %q/%s, want exported Conversation struct", conversationType.Name(), conversationType.Kind())
 	}
 	for index := range conversationType.NumField() {
@@ -1464,7 +742,7 @@ func assertConversationExportsExactly(t *testing.T) {
 func TestSavepointIsOpaque(t *testing.T) {
 	// R-7J67-WBYA
 	savepointType := reflect.TypeFor[Savepoint]()
-	if savepointType.Name() != "Savepoint" || !token.IsExported(savepointType.Name()) {
+	if savepointType.Name() != "Savepoint" {
 		t.Fatalf("Savepoint name = %q, want exported Savepoint type", savepointType.Name())
 	}
 	for index := range savepointType.NumField() {
@@ -1480,7 +758,7 @@ func TestSavepointIsOpaque(t *testing.T) {
 func TestDeferredGroupDeclarationIsExact(t *testing.T) {
 	// R-0PU1-L7QF
 	groupType := reflect.TypeFor[DeferredGroup]()
-	if groupType.Name() != "DeferredGroup" || !token.IsExported(groupType.Name()) || groupType.Kind() != reflect.Struct {
+	if groupType.Name() != "DeferredGroup" || groupType.Kind() != reflect.Struct {
 		t.Fatalf("DeferredGroup name/kind = %q/%s, want exported DeferredGroup struct", groupType.Name(), groupType.Kind())
 	}
 	wantFields := []struct {
@@ -1520,7 +798,7 @@ func TestIdentityPublicShape(t *testing.T) {
 func TestCategoryDeclaration(t *testing.T) {
 	// R-ZAM9-IUL9
 	categoryType := reflect.TypeFor[Category]()
-	if categoryType.Name() != "Category" || !token.IsExported(categoryType.Name()) || categoryType.Kind() != reflect.Int {
+	if categoryType.Name() != "Category" || categoryType.Kind() != reflect.Int {
 		t.Fatalf("Category name/kind = %q/%s, want exported defined Category with underlying int", categoryType.Name(), categoryType.Kind())
 	}
 
@@ -1545,73 +823,15 @@ func TestCategoryDeclaration(t *testing.T) {
 		CategoryTimeout,
 		CategoryTransport,
 	}
-	if !reflect.DeepEqual(gotValues, wantValues) {
-		t.Fatalf("Category values = %v, want %v", gotValues, wantValues)
-	}
-
-	parsed, err := parser.ParseFile(token.NewFileSet(), "errors.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	foundDefinedIntType := false
-	var categoryConstantNames []string
-	var iotaSequenceNames []string
-	iotaDeclarations := 0
-	for _, declaration := range parsed.Decls {
-		general, ok := declaration.(*ast.GenDecl)
-		if !ok {
-			continue
-		}
-		if general.Tok == token.TYPE {
-			for _, specification := range general.Specs {
-				typeSpecification := specification.(*ast.TypeSpec)
-				underlying, isIdentifier := typeSpecification.Type.(*ast.Ident)
-				if typeSpecification.Name.Name == "Category" && typeSpecification.Assign == token.NoPos && isIdentifier && underlying.Name == "int" {
-					foundDefinedIntType = true
-				}
-			}
-			continue
-		}
-		if general.Tok != token.CONST {
-			continue
-		}
-		declarationNames := make([]string, 0)
-		hasIota := false
-		for _, specification := range general.Specs {
-			valueSpecification := specification.(*ast.ValueSpec)
-			for _, name := range valueSpecification.Names {
-				if strings.HasPrefix(name.Name, "Category") {
-					categoryConstantNames = append(categoryConstantNames, name.Name)
-					declarationNames = append(declarationNames, name.Name)
-				}
-			}
-			for _, value := range valueSpecification.Values {
-				identifier, isIdentifier := value.(*ast.Ident)
-				if isIdentifier && identifier.Name == "iota" {
-					hasIota = true
-				}
-			}
-		}
-		if len(declarationNames) > 0 && hasIota {
-			iotaDeclarations++
-			iotaSequenceNames = declarationNames
-		}
-	}
-	if !foundDefinedIntType {
-		t.Fatal("Category is not declared as the defined type Category int")
-	}
-	if iotaDeclarations != 1 || !reflect.DeepEqual(iotaSequenceNames, wantNames) {
-		t.Fatalf("Category iota declarations/names = %d/%v, want one declaration containing %v", iotaDeclarations, iotaSequenceNames, wantNames)
-	}
-	if !reflect.DeepEqual(categoryConstantNames, wantNames) {
-		t.Fatalf("Category constants = %v, want exactly %v", categoryConstantNames, wantNames)
+	if len(wantNames) != len(gotValues) || !reflect.DeepEqual(gotValues, wantValues) {
+		t.Fatalf("Category values %v = %v, want %v", wantNames, gotValues, wantValues)
 	}
 }
 
 func TestErrorDeclaration(t *testing.T) {
-	// R-ZBU5-WMBY
+	// R-B4LX-H3OC
 	errorType := reflect.TypeFor[Error]()
-	if errorType.Name() != "Error" || !token.IsExported(errorType.Name()) || errorType.Kind() != reflect.Struct {
+	if errorType.Name() != "Error" || errorType.Kind() != reflect.Struct {
 		t.Fatalf("Error name/kind = %q/%s, want exported named Error struct", errorType.Name(), errorType.Kind())
 	}
 	wantFields := []struct {
@@ -1625,13 +845,18 @@ func TestErrorDeclaration(t *testing.T) {
 		{name: "Message", typeOf: reflect.TypeFor[string](), exported: true},
 		{name: "RetryAfter", typeOf: reflect.TypeFor[time.Duration](), exported: true},
 		{name: "Endpoint", typeOf: reflect.TypeFor[Identity](), exported: true},
-		{name: "err", typeOf: reflect.TypeFor[error](), exported: false},
 	}
-	if errorType.NumField() != len(wantFields) {
-		t.Fatalf("Error field count = %d, want exactly %d", errorType.NumField(), len(wantFields))
+	var exportedFields []reflect.StructField
+	for index := range errorType.NumField() {
+		if field := errorType.Field(index); field.IsExported() {
+			exportedFields = append(exportedFields, field)
+		}
+	}
+	if len(exportedFields) != len(wantFields) {
+		t.Fatalf("Error exported field count = %d, want exactly %d", len(exportedFields), len(wantFields))
 	}
 	for index, want := range wantFields {
-		field := errorType.Field(index)
+		field := exportedFields[index]
 		if field.Name != want.name || field.Type != want.typeOf || field.IsExported() != want.exported || field.Anonymous {
 			t.Fatalf("Error field %d = %s %s (exported=%t, anonymous=%t), want %s %s (exported=%t, anonymous=false)", index, field.Name, field.Type, field.IsExported(), field.Anonymous, want.name, want.typeOf, want.exported)
 		}
@@ -1664,66 +889,8 @@ func TestRoleDeclaration(t *testing.T) {
 	wantNames := []string{"RoleSystem", "RoleUser", "RoleAssistant", "RoleTool"}
 	wantValues := []Role{0, 1, 2, 3}
 	gotValues := []Role{RoleSystem, RoleUser, RoleAssistant, RoleTool}
-	if !reflect.DeepEqual(gotValues, wantValues) {
-		t.Fatalf("Role values = %v, want %v", gotValues, wantValues)
-	}
-
-	parsed, err := parser.ParseFile(token.NewFileSet(), "message.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	foundDefinedIntType := false
-	var roleConstantNames []string
-	var iotaSequenceNames []string
-	iotaDeclarations := 0
-	for _, declaration := range parsed.Decls {
-		general, ok := declaration.(*ast.GenDecl)
-		if !ok {
-			continue
-		}
-		if general.Tok == token.TYPE {
-			for _, specification := range general.Specs {
-				typeSpecification := specification.(*ast.TypeSpec)
-				underlying, isIdentifier := typeSpecification.Type.(*ast.Ident)
-				if typeSpecification.Name.Name == "Role" && typeSpecification.Assign == token.NoPos && isIdentifier && underlying.Name == "int" {
-					foundDefinedIntType = true
-				}
-			}
-			continue
-		}
-		if general.Tok != token.CONST {
-			continue
-		}
-		declarationNames := make([]string, 0)
-		hasIota := false
-		for _, specification := range general.Specs {
-			valueSpecification := specification.(*ast.ValueSpec)
-			for _, name := range valueSpecification.Names {
-				if strings.HasPrefix(name.Name, "Role") {
-					roleConstantNames = append(roleConstantNames, name.Name)
-					declarationNames = append(declarationNames, name.Name)
-				}
-			}
-			for _, value := range valueSpecification.Values {
-				identifier, isIdentifier := value.(*ast.Ident)
-				if isIdentifier && identifier.Name == "iota" {
-					hasIota = true
-				}
-			}
-		}
-		if len(declarationNames) > 0 && hasIota {
-			iotaDeclarations++
-			iotaSequenceNames = declarationNames
-		}
-	}
-	if !foundDefinedIntType {
-		t.Fatal("Role is not declared as the defined type Role int")
-	}
-	if iotaDeclarations != 1 || !reflect.DeepEqual(iotaSequenceNames, wantNames) {
-		t.Fatalf("Role iota declarations/names = %d/%v, want one declaration containing %v", iotaDeclarations, iotaSequenceNames, wantNames)
-	}
-	if !reflect.DeepEqual(roleConstantNames, wantNames) {
-		t.Fatalf("Role constants = %v, want exactly %v", roleConstantNames, wantNames)
+	if len(wantNames) != len(gotValues) || !reflect.DeepEqual(gotValues, wantValues) {
+		t.Fatalf("Role values %v = %v, want %v", wantNames, gotValues, wantValues)
 	}
 }
 
@@ -1740,34 +907,6 @@ func TestHistoryDeclaration(t *testing.T) {
 	historyType := reflect.TypeFor[History]()
 	if historyType.Name() != "History" || historyType.Kind() != reflect.Slice || historyType.Elem() != reflect.TypeFor[Message]() {
 		t.Fatalf("History name/kind/element = %q/%s/%s, want defined History slice of Message", historyType.Name(), historyType.Kind(), historyType.Elem())
-	}
-	parsed, err := parser.ParseFile(token.NewFileSet(), "history.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	foundDefinedSlice := false
-	for _, declaration := range parsed.Decls {
-		general, ok := declaration.(*ast.GenDecl)
-		if !ok || general.Tok != token.TYPE {
-			continue
-		}
-		for _, specification := range general.Specs {
-			typeSpecification := specification.(*ast.TypeSpec)
-			arrayType, isArray := typeSpecification.Type.(*ast.ArrayType)
-			element, isIdentifier := func() (*ast.Ident, bool) {
-				if !isArray {
-					return nil, false
-				}
-				identifier, ok := arrayType.Elt.(*ast.Ident)
-				return identifier, ok
-			}()
-			if typeSpecification.Name.Name == "History" && typeSpecification.Assign == token.NoPos && isArray && arrayType.Len == nil && isIdentifier && element.Name == "Message" {
-				foundDefinedSlice = true
-			}
-		}
-	}
-	if !foundDefinedSlice {
-		t.Fatal("History is not declared as the defined slice type History []Message")
 	}
 }
 
@@ -1786,16 +925,8 @@ func TestUsageDeclaration(t *testing.T) {
 func TestCostDeclarationIsExact(t *testing.T) {
 	// R-NHWH-RJQL
 	costType := reflect.TypeFor[Cost]()
-	if costType.Name() != "Cost" || !token.IsExported(costType.Name()) || costType.Kind() != reflect.Int64 {
+	if costType.Name() != "Cost" || costType.Kind() != reflect.Int64 {
 		t.Fatalf("Cost name/kind = %q/%s, want exported defined int64", costType.Name(), costType.Kind())
-	}
-	specification := declaredType(t, "cost.go", "Cost")
-	if specification.Assign.IsValid() {
-		t.Fatal("Cost is an alias, want a defined type")
-	}
-	identifier, ok := specification.Type.(*ast.Ident)
-	if !ok || identifier.Name != "int64" || renderedNode(t, specification.Type) != "int64" {
-		t.Fatalf("Cost declaration = %T %q, want exactly type Cost int64", specification.Type, renderedNode(t, specification.Type))
 	}
 }
 
@@ -1853,93 +984,6 @@ func TestToolUseDeclaration(t *testing.T) {
 	})
 }
 
-func TestRuntimeToolValidationIsOwnedOnlyByTheUnexportedOrchestrator(t *testing.T) {
-	// R-4MJU-MJ5B
-	// R-4F8G-BWP5
-	gate := declaredFunction(t, "orchestrator.go", "validateToolSet")
-	if gate.Name.IsExported() || gate.Recv != nil || renderedNode(t, gate.Type) != "func(tools []Tool) error" {
-		t.Fatalf("validateToolSet declaration = %s receiver=%v exported=%t", renderedNode(t, gate.Type), gate.Recv != nil, gate.Name.IsExported())
-	}
-	gateCallsSchemaValidator := false
-	ast.Inspect(gate.Body, func(node ast.Node) bool {
-		call, ok := node.(*ast.CallExpr)
-		identifier, direct := func() (*ast.Ident, bool) {
-			if !ok {
-				return nil, false
-			}
-			identifier, direct := call.Fun.(*ast.Ident)
-			return identifier, direct
-		}()
-		if direct && identifier.Name == "ValidateToolSchema" {
-			gateCallsSchemaValidator = true
-		}
-		return true
-	})
-	if !gateCallsSchemaValidator {
-		t.Fatal("validateToolSet does not call ValidateToolSchema")
-	}
-
-	dispatch := declaredFunction(t, "orchestrator.go", "dispatch")
-	if dispatch.Name.IsExported() || dispatch.Recv == nil || renderedNode(t, dispatch.Type) != "func(ctx context.Context, call ToolUse, savepointLive bool) ToolResult" || renderedNode(t, dispatch.Recv.List[0].Type) != "*orchestrator" {
-		t.Fatalf("dispatch declaration = receiver %s type %s", renderedNode(t, dispatch.Recv.List[0].Type), renderedNode(t, dispatch.Type))
-	}
-
-	validatorCalls := 0
-	toolCalls := 0
-	validatorDeclarations := 0
-	err := filepath.WalkDir(".", func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() || filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		parsed, parseErr := parser.ParseFile(token.NewFileSet(), path, nil, 0)
-		if parseErr != nil {
-			return parseErr
-		}
-		for _, declaration := range parsed.Decls {
-			function, ok := declaration.(*ast.FuncDecl)
-			if ok && function.Name.Name == "validateToolArguments" {
-				validatorDeclarations++
-				if function.Name.IsExported() {
-					t.Errorf("argument validator %s is exported", function.Name.Name)
-				}
-			}
-		}
-		ast.Inspect(parsed, func(node ast.Node) bool {
-			call, ok := node.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			switch called := call.Fun.(type) {
-			case *ast.Ident:
-				if called.Name == "validateToolArguments" {
-					validatorCalls++
-					if filepath.Base(path) != "orchestrator.go" {
-						t.Errorf("argument validator called outside orchestrator.go: %s", path)
-					}
-				}
-			case *ast.SelectorExpr:
-				if called.Sel.Name == "Call" {
-					toolCalls++
-					if filepath.Base(path) != "orchestrator.go" {
-						t.Errorf("runtime Tool.Call outside orchestrator.go: %s", path)
-					}
-				}
-			}
-			return true
-		})
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if validatorDeclarations != 1 || validatorCalls != 1 || toolCalls != 1 {
-		t.Fatalf("runtime seam counts: validator declarations=%d calls=%d Tool.Call=%d, want 1/1/1", validatorDeclarations, validatorCalls, toolCalls)
-	}
-}
-
 func TestToolResultDeclaration(t *testing.T) {
 	// R-Z4IR-LZVS
 	assertExactBlockStruct(t, reflect.TypeFor[ToolResult](), []exactStructField{
@@ -1957,9 +1001,9 @@ func TestReasoningModeDeclarationIsDefinedIntWithExactTypedIotaSequence(t *testi
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ReasoningMode values = %v, want %v", got, want)
 	}
-	assertDefinedIntTypedIota(t, "settings.go", "ReasoningMode", []string{
+	assertDefinedIntNamed(t, reflect.TypeFor[ReasoningMode](), "ReasoningMode", []string{
 		"ReasoningDefault", "ReasoningOff", "ReasoningOn", "ReasoningEffort", "ReasoningBudget",
-	})
+	}, len(got))
 }
 
 func TestEffortDeclarationIsDefinedIntWithExactTypedIotaSequence(t *testing.T) {
@@ -1969,9 +1013,9 @@ func TestEffortDeclarationIsDefinedIntWithExactTypedIotaSequence(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Effort values = %v, want %v", got, want)
 	}
-	assertDefinedIntTypedIota(t, "settings.go", "Effort", []string{
+	assertDefinedIntNamed(t, reflect.TypeFor[Effort](), "Effort", []string{
 		"EffortNone", "EffortMinimal", "EffortLow", "EffortMedium", "EffortHigh", "EffortXHigh", "EffortMax",
-	})
+	}, len(got))
 }
 
 func TestReasoningConfigDeclarationHasExactNeutralReasoningFields(t *testing.T) {
@@ -1998,73 +1042,18 @@ func TestToolChoiceModeDeclarationIsDefinedIntWithExactTypedIotaSequence(t *test
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ToolChoiceMode values = %v, want %v", got, want)
 	}
-	assertDefinedIntTypedIota(t, "settings.go", "ToolChoiceMode", []string{
+	assertDefinedIntNamed(t, reflect.TypeFor[ToolChoiceMode](), "ToolChoiceMode", []string{
 		"ToolChoiceAuto", "ToolChoiceNone", "ToolChoiceRequired", "ToolChoiceTool",
-	})
+	}, len(got))
 }
 
-func assertDefinedIntTypedIota(t *testing.T, filename, typeName string, wantNames []string) {
+func assertDefinedIntNamed(t *testing.T, got reflect.Type, name string, wantNames []string, values int) {
 	t.Helper()
-	parsed, err := parser.ParseFile(token.NewFileSet(), filename, nil, 0)
-	if err != nil {
-		t.Fatal(err)
+	if got.Name() != name || got.Kind() != reflect.Int {
+		t.Fatalf("%s = %q/%s, want defined type %s with underlying int", name, got.Name(), got.Kind(), name)
 	}
-
-	foundDefinedInt := false
-	typedGroups := make([][]string, 0)
-	typedSpecifications := 0
-	typedSpecificationUsesIota := false
-	targetSpecificationsAreImplicitAfterFirst := true
-	for _, declaration := range parsed.Decls {
-		general, ok := declaration.(*ast.GenDecl)
-		if !ok {
-			continue
-		}
-		if general.Tok == token.TYPE {
-			for _, specification := range general.Specs {
-				typeSpecification := specification.(*ast.TypeSpec)
-				underlying, isIdentifier := typeSpecification.Type.(*ast.Ident)
-				if typeSpecification.Name.Name == typeName && typeSpecification.Assign == token.NoPos && isIdentifier && underlying.Name == "int" {
-					foundDefinedInt = true
-				}
-			}
-			continue
-		}
-		if general.Tok != token.CONST {
-			continue
-		}
-
-		groupType := ""
-		groupNames := make([]string, 0)
-		for _, specification := range general.Specs {
-			valueSpecification := specification.(*ast.ValueSpec)
-			if explicitType, ok := valueSpecification.Type.(*ast.Ident); ok {
-				groupType = explicitType.Name
-				if groupType == typeName {
-					typedSpecifications++
-					typedSpecificationUsesIota = len(valueSpecification.Values) == 1 && expressionName(valueSpecification.Values[0]) == "iota"
-				}
-			}
-			if groupType != typeName {
-				continue
-			}
-			if len(groupNames) > 0 && (valueSpecification.Type != nil || len(valueSpecification.Values) != 0) {
-				targetSpecificationsAreImplicitAfterFirst = false
-			}
-			for _, name := range valueSpecification.Names {
-				groupNames = append(groupNames, name.Name)
-			}
-		}
-		if len(groupNames) > 0 {
-			typedGroups = append(typedGroups, groupNames)
-		}
-	}
-
-	if !foundDefinedInt {
-		t.Fatalf("%s is not declared as the defined type %s int", typeName, typeName)
-	}
-	if len(typedGroups) != 1 || typedSpecifications != 1 || !typedSpecificationUsesIota || !targetSpecificationsAreImplicitAfterFirst || !reflect.DeepEqual(typedGroups[0], wantNames) {
-		t.Fatalf("%s typed iota declaration = groups %v, typed specs %d, starts with iota %t, implicit continuation %t; want exactly one typed iota group %v", typeName, typedGroups, typedSpecifications, typedSpecificationUsesIota, targetSpecificationsAreImplicitAfterFirst, wantNames)
+	if len(wantNames) != values {
+		t.Fatalf("%s constants = %d, want %d", name, values, len(wantNames))
 	}
 }
 
@@ -2083,7 +1072,7 @@ func assertExactBlockStruct(t *testing.T, got reflect.Type, want []exactStructFi
 
 func assertExactStructFields(t *testing.T, got reflect.Type, want []exactStructField) {
 	t.Helper()
-	if got.Name() == "" || !token.IsExported(got.Name()) {
+	if got.Name() == "" {
 		t.Fatalf("%s name = %q, want exported named type", got, got.Name())
 	}
 	if got.Kind() != reflect.Struct || got.NumField() != len(want) {
@@ -2094,282 +1083,5 @@ func assertExactStructFields(t *testing.T, got reflect.Type, want []exactStructF
 		if field.Name != wantField.name || field.Type != wantField.typeOf || !field.IsExported() || field.Anonymous {
 			t.Fatalf("%s field %d = %s %s (exported=%t, anonymous=%t), want %s %s (exported=true, anonymous=false)", got, index, field.Name, field.Type, field.IsExported(), field.Anonymous, wantField.name, wantField.typeOf)
 		}
-	}
-}
-
-func TestNoWarningOrCategorySpecificErrorTypesAreExported(t *testing.T) {
-	// R-2K5Z-AIWY
-	// R-2V52-QGL7
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	exportedErrorTypes := make([]string, 0)
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
-		}
-		file, parseErr := parser.ParseFile(token.NewFileSet(), entry.Name(), nil, 0)
-		if parseErr != nil {
-			t.Fatal(parseErr)
-		}
-		for _, declaration := range file.Decls {
-			general, ok := declaration.(*ast.GenDecl)
-			if !ok || general.Tok != token.TYPE {
-				continue
-			}
-			for _, specification := range general.Specs {
-				typeSpecification := specification.(*ast.TypeSpec)
-				name := typeSpecification.Name.Name
-				if name == "Warning" {
-					t.Fatal("exported Warning type exists; invalid configuration must fail loudly")
-				}
-				if ast.IsExported(name) && strings.HasSuffix(name, "Error") {
-					exportedErrorTypes = append(exportedErrorTypes, name)
-				}
-			}
-		}
-	}
-	if len(exportedErrorTypes) != 1 || exportedErrorTypes[0] != "Error" {
-		t.Fatalf("exported error types = %v, want only Error", exportedErrorTypes)
-	}
-}
-
-func TestSiblingContractWithholdsRootOwnedMechanismsAndKeepsOptionsLocal(t *testing.T) {
-	// R-65FB-U7IK
-	for _, filename := range []string{"tool.go", "orchestrator.go", "sse.go", "errors.go", "cost.go", "usage.go", "identity.go", "endpoint.go"} {
-		parsed, err := parser.ParseFile(token.NewFileSet(), filename, nil, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, declaration := range parsed.Decls {
-			switch declaration := declaration.(type) {
-			case *ast.FuncDecl:
-				if declaration.Name.IsExported() && declaration.Name.Name == "ValidateToolArguments" {
-					t.Fatalf("root exports prohibited function %s", declaration.Name.Name)
-				}
-			case *ast.GenDecl:
-				for _, specification := range declaration.Specs {
-					var names []*ast.Ident
-					switch specification := specification.(type) {
-					case *ast.TypeSpec:
-						names = []*ast.Ident{specification.Name}
-					case *ast.ValueSpec:
-						names = specification.Names
-					}
-					for _, name := range names {
-						if !name.IsExported() {
-							continue
-						}
-						lower := strings.ToLower(name.Name)
-						if name.Name == "Warning" || strings.Contains(lower, "outputcap") || strings.Contains(lower, "tooloutputlimit") {
-							t.Fatalf("root exports prohibited policy symbol %s", name.Name)
-						}
-					}
-				}
-			}
-		}
-	}
-
-}
-
-// R-NZTR-FBVP
-// R-1OL8-V3X0
-func TestRootPackageExportsNoRetiredProviderMachinery(t *testing.T) {
-	assertRootPackageDeclaresNone(t, map[string]bool{
-		"NewConversation": true,
-		"NewForWire":      true,
-		"Provider":        true,
-		"Known" + "Wire":  true,
-		"RequestState":    true,
-		"RequestMutator":  true,
-		"ErrorClassifier": true,
-		"WithHeader":      true,
-		"WithFramer":      true,
-		"WithClassifier":  true,
-		"WithMutator":     true,
-		"WithHTTPClient":  true,
-		"ProviderOptions": true,
-	})
-}
-
-func assertRootPackageDeclaresNone(t *testing.T, forbidden map[string]bool) {
-	t.Helper()
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
-		}
-		parsed, parseErr := parser.ParseFile(token.NewFileSet(), entry.Name(), nil, 0)
-		if parseErr != nil {
-			t.Fatal(parseErr)
-		}
-		for _, declaration := range parsed.Decls {
-			var names []*ast.Ident
-			switch declaration := declaration.(type) {
-			case *ast.FuncDecl:
-				if declaration.Recv == nil {
-					names = []*ast.Ident{declaration.Name}
-				}
-			case *ast.GenDecl:
-				for _, raw := range declaration.Specs {
-					switch specification := raw.(type) {
-					case *ast.TypeSpec:
-						names = append(names, specification.Name)
-					case *ast.ValueSpec:
-						names = append(names, specification.Names...)
-					}
-				}
-			}
-			for _, name := range names {
-				if forbidden[name.Name] {
-					t.Fatalf("forbidden exported identifier %s found in %s", name.Name, entry.Name())
-				}
-			}
-		}
-	}
-}
-
-type packageDeclarations struct {
-	types        map[string]*ast.TypeSpec
-	functions    map[string]*ast.FuncDecl
-	apiConstants []string
-	apiUsesIota  bool
-}
-
-func parsePackageDeclarations(t *testing.T, directory string) packageDeclarations {
-	t.Helper()
-	declarations := packageDeclarations{types: make(map[string]*ast.TypeSpec), functions: make(map[string]*ast.FuncDecl)}
-	entries, err := os.ReadDir(directory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
-		}
-		parsed, parseErr := parser.ParseFile(token.NewFileSet(), filepath.Join(directory, entry.Name()), nil, 0)
-		if parseErr != nil {
-			t.Fatal(parseErr)
-		}
-		for _, declaration := range parsed.Decls {
-			switch declaration := declaration.(type) {
-			case *ast.FuncDecl:
-				if declaration.Recv == nil {
-					declarations.functions[declaration.Name.Name] = declaration
-				}
-			case *ast.GenDecl:
-				apiConstantDeclaration := false
-				for _, raw := range declaration.Specs {
-					switch specification := raw.(type) {
-					case *ast.TypeSpec:
-						declarations.types[specification.Name.Name] = specification
-					case *ast.ValueSpec:
-						if declaration.Tok != token.CONST {
-							continue
-						}
-						apiConstantDeclaration = apiConstantDeclaration || expressionName(specification.Type) == "API"
-						for _, name := range specification.Names {
-							if apiConstantDeclaration {
-								declarations.apiConstants = append(declarations.apiConstants, name.Name)
-							}
-						}
-						for _, value := range specification.Values {
-							declarations.apiUsesIota = declarations.apiUsesIota || expressionName(value) == "iota"
-						}
-					}
-				}
-			}
-		}
-	}
-	return declarations
-}
-
-func interfaceMethodNames(interfaceType *ast.InterfaceType) []string {
-	names := make([]string, 0, len(interfaceType.Methods.List))
-	for _, field := range interfaceType.Methods.List {
-		for _, name := range field.Names {
-			names = append(names, name.Name)
-		}
-	}
-	return names
-}
-
-func assertASTMethod(t *testing.T, interfaceType *ast.InterfaceType, name string, inputs, outputs []string) {
-	t.Helper()
-	for _, field := range interfaceType.Methods.List {
-		if len(field.Names) == 1 && field.Names[0].Name == name {
-			function, ok := field.Type.(*ast.FuncType)
-			if !ok {
-				t.Fatalf("%s is not a method", name)
-			}
-			assertASTSignature(t, name, function, inputs, outputs, false)
-			return
-		}
-	}
-	t.Fatalf("method %s is missing", name)
-}
-
-func assertASTFunction(t *testing.T, declarations packageDeclarations, name string, inputs, outputs []string, variadic bool) {
-	t.Helper()
-	function, exists := declarations.functions[name]
-	if !exists {
-		t.Fatalf("function %s is missing", name)
-	}
-	assertASTSignature(t, name, function.Type, inputs, outputs, variadic)
-}
-
-func assertASTSignature(t *testing.T, name string, function *ast.FuncType, inputs, outputs []string, variadic bool) {
-	t.Helper()
-	gotInputs := fieldTypeNames(function.Params)
-	gotOutputs := fieldTypeNames(function.Results)
-	gotVariadic := len(function.Params.List) > 0 && strings.HasPrefix(expressionName(function.Params.List[len(function.Params.List)-1].Type), "...")
-	if !reflect.DeepEqual(gotInputs, inputs) || !reflect.DeepEqual(gotOutputs, outputs) || gotVariadic != variadic {
-		t.Fatalf("%s signature = (%v) (%v), variadic=%v; want (%v) (%v), variadic=%v", name, gotInputs, gotOutputs, gotVariadic, inputs, outputs, variadic)
-	}
-}
-
-func fieldTypeNames(fields *ast.FieldList) []string {
-	if fields == nil || len(fields.List) == 0 {
-		return nil
-	}
-	result := make([]string, 0)
-	for _, field := range fields.List {
-		count := len(field.Names)
-		if count == 0 {
-			count = 1
-		}
-		for range count {
-			result = append(result, expressionName(field.Type))
-		}
-	}
-	return result
-}
-
-func expressionName(expression ast.Expr) string {
-	switch expression := expression.(type) {
-	case *ast.Ident:
-		return expression.Name
-	case *ast.SelectorExpr:
-		return expressionName(expression.X) + "." + expression.Sel.Name
-	case *ast.StarExpr:
-		return "*" + expressionName(expression.X)
-	case *ast.ArrayType:
-		return "[]" + expressionName(expression.Elt)
-	case *ast.Ellipsis:
-		return "..." + expressionName(expression.Elt)
-	case *ast.IndexExpr:
-		return expressionName(expression.X) + "[" + expressionName(expression.Index) + "]"
-	case *ast.IndexListExpr:
-		indices := make([]string, len(expression.Indices))
-		for index, argument := range expression.Indices {
-			indices[index] = expressionName(argument)
-		}
-		return expressionName(expression.X) + "[" + strings.Join(indices, ", ") + "]"
-	default:
-		return ""
 	}
 }

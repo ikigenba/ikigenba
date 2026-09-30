@@ -1,11 +1,9 @@
 # D14-retry
 
-`agentkit/retry` is a **public leaf**: its own package under the module, importing
-nothing but the standard library, depended on by the agentkit root and never
-depending back on it. The root wires its own error knowledge into the package
-through function-typed hooks, so the retry driver can decide *whether* to retry
-and *how long* to wait without ever importing agentkit's `*Error`, `Category`, or
-`Retryable` (D4) — which would close a dependency cycle. The package is exported
+`agentkit/retry` is a **public leaf**: its own package under the module. The
+root wires its own error knowledge into the package through function-typed
+hooks, so the retry driver can decide *whether* to retry and *how long* to wait
+without knowing agentkit's `*Error`, `Category`, or `Retryable` (D4). The package is exported
 so a sibling (D0) can reuse the same backoff driver, and so its behavior is
 testable in isolation.
 
@@ -30,7 +28,7 @@ type Clock interface {
 **`Policy` is pure backoff configuration plus the two hooks the root supplies.**
 It holds no agentkit types; `Retryable` and `RetryAfter` are functions the caller
 passes in — the root binds `agentkit.Retryable` and a reader of `*Error.RetryAfter`
-respectively — so `Policy` stays stdlib-only while still honoring a category-driven
+respectively — so `Policy` still honors a category-driven
 retry decision and a server-mandated delay floor.
 
 ```go
@@ -86,7 +84,6 @@ record and folding a retried request's usage into the turn (D12, D15).
 
 ## REQUIREMENTS
 
-- R-5628-QV0F: The `agentkit/retry` package MUST import only the standard library and MUST NOT import the agentkit root package, so the dependency arrow points root → retry only.
 - R-57A5-4MR4: `Do` MUST retry only while `Policy.Retryable(err)` is true and fewer than `MaxAttempts` attempts have run; a nil `Retryable` MUST make the first error terminal, and `MaxAttempts <= 0` MUST permit exactly one attempt.
 - R-58I1-IEHT: The delay before an attempt MUST be the larger of the computed exponential-backoff-with-jitter delay and `Policy.RetryAfter(err)`, and every computed backoff delay MUST be capped at `Policy.Max`.
 - R-59PX-W68I: All waiting MUST occur through the injected `Clock.Sleep`; with a fake clock whose `Sleep` advances a virtual now, a full retry sequence MUST complete consuming no real wall time.

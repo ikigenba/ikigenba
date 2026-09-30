@@ -176,7 +176,7 @@ is the searchable answer to "why did this agent stop", distinct from an `error`
 record, which is a provider or transport failure.
 
 **The log is best-effort and never load-bearing.** A `nil` log is valid and
-writes nothing, so the orchestrator carries no per-call-site nil check. A write
+writes nothing. A write
 failure is retained on the log for inspection but **never aborts the turn and
 never changes `Stream.Err()`** — a full disk must not fail a model call that
 otherwise succeeded. The live `Stream` is the source of truth for the turn in
@@ -198,7 +198,7 @@ func (l *Log) Close() error
 
 ## REQUIREMENTS
 
-- R-5W0X-N9YY: `agentkit` MUST export `type RecordType string` whose complete set of exported constants is exactly `RecordConversation = "conversation"`, `RecordTurnStart = "turn_start"`, `RecordMessage = "message"`, `RecordToolUse = "tool_use"`, `RecordToolResult = "tool_result"`, `RecordOutput = "output"`, `RecordUsage = "usage"`, `RecordLimit = "limit"`, `RecordError = "error"`, `RecordRetry = "retry"`, `RecordTurnEnd = "turn_end"`, `RecordSummary = "summary"`, `RecordSavepoint = "savepoint"`, `RecordRestore = "restore"`, `RecordRelease = "release"` (D26), `RecordClosed = "closed"`, with no other member.
+- R-LR1Y-XWS1: `agentkit` MUST export `type RecordType string` with the constants `RecordConversation = "conversation"`, `RecordTurnStart = "turn_start"`, `RecordMessage = "message"`, `RecordToolUse = "tool_use"`, `RecordToolResult = "tool_result"`, `RecordOutput = "output"`, `RecordUsage = "usage"`, `RecordLimit = "limit"`, `RecordError = "error"`, `RecordRetry = "retry"`, `RecordTurnEnd = "turn_end"`, `RecordSummary = "summary"`, `RecordSavepoint = "savepoint"`, `RecordRestore = "restore"`, `RecordRelease = "release"` (D26), and `RecordClosed = "closed"`.
 - R-5YGQ-ETGC: `agentkit` MUST export `type LogRecord struct { Type RecordType; ID string; Time time.Time; Seq int; Conversation *ConversationInfo; Message *Message; ToolUse *ToolUse; ToolResult *ToolResult; Output json.RawMessage; Usage *Usage; Cost *Cost; Limit *LimitInfo; Err *Error; Retry *RetryInfo }` with exactly those fields and the JSON tags `type`, `id` (omitempty), `time`, `seq`, and the `omitempty` fields `conversation`/`message`/`tool_use`/`tool_result`/`output`/`usage`/`cost`/`limit`/`error`/`retry`.
 - R-5ZOM-SL71: `agentkit` MUST export `type ConversationInfo struct { Format int; Identity Identity; Settings Settings; Tools []ToolInfo; Deferred []DeferredInfo; Output *OutputContract; Limits Limits }` with exactly those fields and the JSON tags `format`, `identity`, `settings`, `tools` (omitempty), `deferred` (omitempty), `output` (omitempty), `limits`.
 - R-60WJ-6CXQ: `agentkit` MUST export `type ToolInfo struct { Name string; Description string; Schema json.RawMessage }` with exactly those fields and the JSON tags `name`, `description`, `schema`.
@@ -217,7 +217,7 @@ func (l *Log) Close() error
 - R-TG65-IXVR: Every `turn_end` record MUST carry `Usage` and `Cost` equal to the field-wise integer sums of the `usage` records written since that turn's `turn_start`, and zero values when the turn completed no round-trip.
 - R-THE1-WPMG: The `summary` record MUST carry `Usage` and `Cost` equal to the field-wise integer sums of every `turn_end` record the log has written.
 - R-6701-37N7: A `turn_start` record MUST carry no payload field: every `omitempty` field of `LogRecord` MUST be absent from its JSON line.
-- R-5KP1-C3WR: A `nil` log MUST write nothing and MUST require no per-call-site nil check; log payloads MUST reuse the canonical `Identity`/`Usage`/`Cost`/`Error`/`Block` types rather than log-only shadow structs.
+- R-M0T6-02PL: `Close` on a nil `*Log` MUST return nil, and a `Log` built by `NewLog` with a nil `w` MUST write nothing, MUST never call `now`, and its `Close` MUST return nil.
 - R-5LWX-PVNG: A log write failure MUST NOT abort the turn and MUST NOT change `Stream.Err()`; the failure MAY be retained on the log for inspection.
 - R-5N4U-3NE5: `Close` MUST emit exactly one cumulative `summary` record and MUST be idempotent; a `Send` after `Close` MUST return `ErrClosed`.
 - R-0NE8-TO91: `agentkit` MUST export `type RetryInfo struct { Attempt int; Delay time.Duration; Reason string }` with exactly those three fields.

@@ -94,7 +94,7 @@ is spliced once on success — the `Stream` is the *live* view, `History` the
 
 ## REQUIREMENTS
 
-- R-UQNM-NRLU: `Event` MUST be a sealed union of exactly `MessageDone`, `ToolCall`, `ToolReturn`, and `OutputDone` (D20) — an interface with an unexported marker — so a consumer switches it exhaustively.
+- R-LKYH-122K: `Event` MUST be a sealed union of exactly `MessageDone`, `ToolCall`, `ToolReturn`, and `OutputDone` (D20), so a consumer switches it exhaustively.
 - R-4ZYQ-U0AY: A `Stream` MUST yield events at message granularity, one per completed protocol message, and MUST NOT expose token deltas or any framing artifact.
 - R-516N-7S1N: A `Stream` MUST yield events in the order they occur across the turn's round-trips, delivering each round-trip's events as that round-trip completes rather than only at turn end.
 - R-52EJ-LJSC: A tool returning an error MUST surface as a `ToolReturn` with `IsError` set and MUST NOT be reported by `Stream.Err()`.

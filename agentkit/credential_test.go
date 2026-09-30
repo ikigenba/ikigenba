@@ -61,13 +61,6 @@ func TestTokenAndRotatorContract(t *testing.T) {
 			t.Errorf("Rotator.%s type = %s, want %s", name, method.Type, wantSignature)
 		}
 	}
-
-	assertRootPackageDeclaresNone(t, map[string]bool{
-		"Credential":  true,
-		"APIKey":      true,
-		"OAuth":       true,
-		"TokenSource": true,
-	})
 }
 
 type tokenSourceStub struct {

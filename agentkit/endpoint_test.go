@@ -3,17 +3,15 @@ package agentkit
 import (
 	"context"
 	"errors"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"net/http"
 	"reflect"
 	"testing"
 )
 
-// R-JVTF-4LVV
+// R-8QHT-IBQ2
 func TestEndpointFieldsAreUnexported(t *testing.T) {
-	// R-YEPA-QILV
+	// R-8RPP-W3GR
+	// R-8U5I-NMY5
 	typeOfEndpoint := reflect.TypeFor[Endpoint]()
 	for index := range typeOfEndpoint.NumField() {
 		if typeOfEndpoint.Field(index).IsExported() {
@@ -22,24 +20,9 @@ func TestEndpointFieldsAreUnexported(t *testing.T) {
 	}
 }
 
-// R-JVTF-4LVV
-// R-JY97-W5D9
+// R-8QHT-IBQ2
+// R-LX5G-URHI
 func TestEndpointExportsNoOptionFunctions(t *testing.T) {
-	parsed, err := parser.ParseFile(token.NewFileSet(), "endpoint.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var exportedFunctions []string
-	for _, declaration := range parsed.Decls {
-		function, ok := declaration.(*ast.FuncDecl)
-		if ok && function.Recv == nil && function.Name.IsExported() {
-			exportedFunctions = append(exportedFunctions, function.Name.Name)
-		}
-	}
-	if !reflect.DeepEqual(exportedFunctions, []string{"NewEndpoint", "WithBaseURL"}) {
-		t.Fatalf("endpoint exports functions %v, want exactly NewEndpoint, WithBaseURL", exportedFunctions)
-	}
-
 	if reflect.TypeFor[EndpointOption]().Kind() != reflect.Func {
 		t.Fatalf("EndpointOption kind = %s, want Func", reflect.TypeFor[EndpointOption]().Kind())
 	}

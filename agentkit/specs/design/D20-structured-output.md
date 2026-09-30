@@ -111,7 +111,7 @@ classifier. There is no forced-tool fallback for older models.
 - R-TMEY-1C4X: `agentkit` MUST export `func ValidateOutputSchema(schema json.RawMessage) error`.
 - R-TOUQ-SVMB: `agentkit` MUST export `type OutputDone struct { Value json.RawMessage }`, and `OutputDone` MUST implement `Event`.
 - R-TQ2N-6ND0: `agentkit` MUST export `func Output[T any](s *Stream) (T, error)`.
-- R-TRAJ-KF3P: `agentkit` MUST export the sentinel `ErrInvalidOutput`, an `error` created with `errors.New`, comparable via `errors.Is` including when wrapped in `*Error`.
+- R-B71Q-8N5Q: `agentkit` MUST export the sentinel `ErrInvalidOutput`, an `error` comparable via `errors.Is` including when wrapped in `*Error`.
 - R-TSIF-Y6UE: `ValidateOutputSchema` MUST accept the grammar-tier keywords `type`, `properties`, `required`, `items`, `enum`, `const`, `description`, nullable `anyOf`, `additionalProperties: false`, and internal `$ref`/`$defs`, and the constraint-tier keywords `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, `minLength`, `maxLength`, `pattern`, `format`, `minItems`, `maxItems`, and `uniqueItems`.
 - R-TTQC-BYL3: `ValidateOutputSchema` MUST reject a non-object root, `additionalProperties` with any value other than `false`, an external or recursive `$ref`, `allOf`, `oneOf`, a property not listed in its object's `required`, and any keyword outside the accepted set, naming the offending construct in the error.
 - R-TUY8-PQBS: `OutputSchema[T]` MUST derive the schema from the D9 `jsonschema` tag vocabulary, list every field in `required`, render a pointer field as nullable, and produce a schema that passes `ValidateOutputSchema`.

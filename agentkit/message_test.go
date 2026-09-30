@@ -29,7 +29,7 @@ func TestBlockVariantsAndDiscriminators(t *testing.T) {
 }
 
 func TestBlockIsSealedOutsidePackage(t *testing.T) {
-	// R-1Y7S-ENKG
+	// R-B264-PK6Y
 	moduleRoot, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -40,7 +40,6 @@ func TestBlockIsSealedOutsidePackage(t *testing.T) {
 import "github.com/ikigenba/ikigenba/agentkit"
 type outside struct{}
 func (outside) BlockType() string { return "outside" }
-func (outside) isBlock() {}
 var _ agentkit.Block = outside{}
 `
 	if err := os.WriteFile(filepath.Join(temporary, "go.mod"), []byte(goMod), 0o600); err != nil {
@@ -55,8 +54,8 @@ var _ agentkit.Block = outside{}
 	if err == nil {
 		t.Fatalf("outside type unexpectedly implemented Block:\n%s", output)
 	}
-	if !strings.Contains(string(output), "unexported method isBlock") {
-		t.Fatalf("compile failure did not prove the sealed marker:\n%s", output)
+	if !strings.Contains(string(output), "does not implement agentkit.Block") {
+		t.Fatalf("compile failure did not prove Block is sealed:\n%s", output)
 	}
 }
 

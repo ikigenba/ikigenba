@@ -112,7 +112,7 @@ which is what cost and audit want.
 
 - R-7J67-WBYA: `agentkit` MUST export `type Savepoint` as an opaque type with no exported fields and no exported methods.
 - R-7KE4-A3OZ: `agentkit` MUST export the methods `func (c *Conversation) Savepoint() (Savepoint, error)`, `func (c *Conversation) Restore(sp Savepoint) error`, `func (c *Conversation) Release(sp Savepoint) error`, and `func (c *Conversation) Close() error`.
-- R-7LM0-NVFO: `agentkit` MUST export the sentinel errors `ErrSavepointActive` and `ErrTurnInFlight`, each an `error` created with `errors.New` and comparable via `errors.Is`, including when wrapped in `*Error`.
+- R-BAPF-DYDT: `agentkit` MUST export the sentinel errors `ErrSavepointActive` and `ErrTurnInFlight`, each an `error` comparable via `errors.Is`, including when wrapped in `*Error`.
 - R-7MTX-1N6D: A successful `Savepoint` MUST record the conversation's current `History` as the point a later `Restore` returns to, MUST make no provider call, and MUST leave `History` unchanged.
 - R-7O1T-FEX2: A `Conversation` MUST hold at most one live savepoint; `Savepoint` called while one is live MUST return the zero `Savepoint` and an error satisfying `errors.Is(err, ErrSavepointActive)`, and MUST leave `History` and the live savepoint unchanged.
 - R-7P9P-T6NR: `Restore` or `Release` given a `Savepoint` that is not the conversation's live savepoint — the zero value, one already released, or one taken from another `Conversation` — MUST return an error satisfying `errors.Is(err, ErrInvalidArgument)` and leave `History`, the live savepoint, and every `Limits` counter unchanged.

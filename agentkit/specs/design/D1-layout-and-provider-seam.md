@@ -1,25 +1,9 @@
 # D1-layout-and-provider-seam
 
 `agentkit` is a Go library that talks to LLM chat/completions APIs and runs an
-agentic tool loop. Module path `github.com/ikigenba/ikigenba/agentkit`, its own
-`go.mod`, `go 1.26`, no `go.work`; every command runs from this sub-project
-directory. It is a sub-project in the ikigenba monorepo and mirrors idgen's
-house layout:
-
-```
-agentkit/                               (this sub-project; go.mod lives here)
-├── AGENTS.md                           spec-driven build contract, gates
-├── README.md
-├── Makefile                            build test lint fmt clean install
-├── go.mod                              go 1.26; no go.work
-├── .golangci.yml                       version 2; standard + errorlint, gocritic, …
-├── specs/
-│   ├── design/D<int>-<slug>.md         these documents
-│   └── loops/{gather,build,verify}.md  + executable run
-├── agentkit.go, conversation.go, …     the root package (public surface)
-├── retry/                              public leaf: stdlib-only retry (D14)
-└── catalog_table.go                    the model/provider table (D21)
-```
+agentic tool loop. Its import path is `github.com/ikigenba/ikigenba/agentkit`,
+with a public leaf package `agentkit/retry` (D14). It is a sub-project in the
+ikigenba monorepo.
 
 The core seam is a **three-part decomposition** that replaces the old library's
 single "provider" axis. Every conversation is assembled from three orthogonal
@@ -33,7 +17,7 @@ pieces, and the whole rest of the design hangs off keeping them separate:
   passes it to `New`; it is never an assignable field and cannot be implemented
   outside the root package. Detailed in D5.
 - **`Endpoint`** — the opaque transport description: base URL (with any
-  model-in-path placement baked in) and the authenticator, and nothing else.
+  model-in-path placement baked in) and the authenticator.
   Detailed in D6.
 - **`Model`** — a free-flow string, never gated, passed verbatim. A model released
   today runs with no agentkit release; an unknown model is the vendor's 400, not
@@ -59,9 +43,7 @@ classification, response framing, the HTTP client — is defined inside agentkit
 A new host is a new `OfferingID` and table rows, never consumer code.
 
 The single exported entry point of a conversation is `Send`; everything else is
-injected at construction through the `Config` value (D18). Dependencies point
-one way: `Conversation` → wire codec/`Endpoint` → transport. Nothing below
-`Conversation` reaches back up.
+injected at construction through the `Config` value (D18).
 
 ```go
 package agentkit
@@ -123,13 +105,12 @@ after the `conversation` record `New` wrote.
 
 ## REQUIREMENTS
 
-- R-1OGL-CHMW: The module MUST declare path `github.com/ikigenba/ikigenba/agentkit` in its own `go.mod` at `go 1.26`, with no `go.work` file, so every gate and command runs from the `agentkit/` directory.
+- R-AZQB-Y0PK: The root package MUST be importable as `github.com/ikigenba/ikigenba/agentkit` from a consumer module.
 - R-VT1H-0PLC: A `Conversation` MUST be constructed from exactly three parts — a built-in wire codec as a `WireFormat` value, an `Endpoint`, and a `Model` string — and MUST expose no method to reassign the wire, endpoint, or model after construction.
 - R-1S4A-HSUZ: A `Model` MUST be carried and transmitted verbatim as a free-form string with no allow-list, gate, or capability check; an unrecognized model MUST reach the vendor and surface as a vendor error, never a pre-flight rejection.
 - R-1TC6-VKLO: `Conversation.Send(ctx, ...Block)` MUST be the sole verb for advancing a conversation, and additional input modalities MUST be expressible as new `Block` variants without adding a second send method.
-- R-PU3A-GJ3X: The module MUST consist of exactly the packages `github.com/ikigenba/ikigenba/agentkit` and `github.com/ikigenba/ikigenba/agentkit/retry`; in particular no `anthropic`, `openai`, `gemini`, `xai`, or `openrouter` package may exist.
 - R-1OL8-V3X0: `agentkit` MUST NOT export any of `NewConversation`, `NewForWire`, `Provider`, `KnownWire`, `RequestState`, `RequestMutator`, `ErrorClassifier`, `WithHeader`, `WithFramer`, `WithClassifier`, `WithMutator`, or `WithHTTPClient`.
 - R-YURK-JTY8: `agentkit` MUST export `Conversation` as an opaque struct type with no exported fields, exposing the method `func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream`.
 - R-YVZG-XLOX: `agentkit` MUST export `type Identity struct { Endpoint string; AuthMode string; Model string }` with exactly those three string fields.
-- R-II1V-EAHQ: `agentkit` MUST export a sealed `WireFormat` interface, not implementable outside the root package, together with exactly eight argument-less constructors `AnthropicMessagesWire() WireFormat`, `GeminiGenerateContentWire() WireFormat`, `ChatWire() WireFormat`, `ResponsesWire() WireFormat`, `OpenAIChatWire() WireFormat`, `OpenAIResponsesWire() WireFormat`, `XAIChatWire() WireFormat`, and `XAIResponsesWire() WireFormat`, one per built-in wire codec.
-- R-IJ9R-S28F: The root package's exported construction seam MUST be exactly `New`, `NewEndpoint`, `EndpointOption`, `WithBaseURL`, `Endpoint`, `Authenticator`, `WireFormat` and its eight constructors, `Rotator`, `APIKeyRotator`, `OAuthRotator`, `Token`, `TokenStore`, `FileTokenStore`, `AuthMode`, `Rotation`, `EndpointSpec`, and `Offering.Authenticator`, and a conversation for any cataloged offering MUST be constructible from those symbols and the offering's fields alone.
+- R-LZL9-MAYW: `agentkit` MUST export a sealed `WireFormat` interface, not implementable outside the root package, together with the argument-less constructors `AnthropicMessagesWire() WireFormat`, `GeminiGenerateContentWire() WireFormat`, `ChatWire() WireFormat`, `ResponsesWire() WireFormat`, `OpenAIChatWire() WireFormat`, `OpenAIResponsesWire() WireFormat`, `XAIChatWire() WireFormat`, and `XAIResponsesWire() WireFormat`, one per built-in wire codec.
+- R-LYDD-8J87: A conversation for any cataloged offering MUST be constructible from `New`, `NewEndpoint`, `EndpointOption`, `WithBaseURL`, `Endpoint`, `Authenticator`, `WireFormat` and its constructors, `Rotator`, `APIKeyRotator`, `OAuthRotator`, `Token`, `TokenStore`, `FileTokenStore`, `AuthMode`, `Rotation`, `EndpointSpec`, and `Offering.Authenticator`, and the offering's fields alone.

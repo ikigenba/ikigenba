@@ -5,9 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"reflect"
 	"testing"
 	"time"
@@ -35,7 +32,7 @@ func TestLimitsShape(t *testing.T) {
 }
 
 func TestLimitKindValues(t *testing.T) {
-	// R-TJTU-O93U
+	// R-LS9V-BOIQ
 	if reflect.TypeOf(LimitKind("")).Kind() != reflect.String {
 		t.Fatalf("LimitKind underlying kind = %s, want string", reflect.TypeOf(LimitKind("")).Kind())
 	}
@@ -97,7 +94,7 @@ func TestLimitInfoShapeAndJSON(t *testing.T) {
 }
 
 func TestErrLimitExceededDeclarationAndBehavior(t *testing.T) {
-	// R-TNHJ-TKBX
+	// R-B89M-MEWF
 	if ErrLimitExceeded == nil {
 		t.Fatal("ErrLimitExceeded is nil")
 	}
@@ -106,31 +103,6 @@ func TestErrLimitExceededDeclarationAndBehavior(t *testing.T) {
 	}
 	if !errors.Is(ErrLimitExceeded, ErrLimitExceeded) {
 		t.Fatal("errors.Is(ErrLimitExceeded, ErrLimitExceeded) = false")
-	}
-
-	parsed, err := parser.ParseFile(token.NewFileSet(), "limits.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	found := 0
-	for _, declaration := range parsed.Decls {
-		general, ok := declaration.(*ast.GenDecl)
-		if !ok || general.Tok != token.VAR {
-			continue
-		}
-		for _, specification := range general.Specs {
-			value := specification.(*ast.ValueSpec)
-			if len(value.Names) != 1 || value.Names[0].Name != "ErrLimitExceeded" {
-				continue
-			}
-			found++
-			if !ast.IsExported(value.Names[0].Name) || !isDirectErrorsNew(value, "agentkit: limit exceeded") {
-				t.Fatal("ErrLimitExceeded is not declared directly with the exact errors.New message")
-			}
-		}
-	}
-	if found != 1 {
-		t.Fatalf("ErrLimitExceeded package declarations = %d, want exactly one", found)
 	}
 
 	var providerError *Error

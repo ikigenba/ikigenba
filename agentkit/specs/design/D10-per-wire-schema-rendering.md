@@ -4,9 +4,8 @@ A tool set is defined once, against the canonical subset (D9), and rendered into
 each wire's own tool-declaration grammar by that wire's `RenderTools` (D5). The
 canonical subset is the *input* to rendering; the differences between wires are all
 in the envelope around the schema, and in one wire's need to trim the schema
-further. Rendering is a pure function of `[]Tool` and lives entirely inside the
-wire — there is **no shared dialect hook** for schema shaping, because the shapes
-do not factor: what varies is each wire's declaration wrapper, not a set of knobs.
+further. Rendering is a pure function of `[]Tool`: what varies is each wire's
+declaration wrapper, not a set of knobs.
 
 The four declaration shapes differ along two axes — how the function envelope
 nests, and whether the schema field is named `parameters` or `input_schema`:
@@ -68,8 +67,6 @@ concern too (D5) and are pinned by the round-trip property test, not restated he
 
 ## REQUIREMENTS
 
-- R-47X2-1A8Z: Each wire's `RenderTools` MUST render a canonical-subset tool set (D9) into that wire's own tool-declaration grammar, and schema rendering MUST NOT be factored into a shared cross-wire dialect hook.
-- R-494Y-F1ZO: The flat and nested function forms MUST be produced by their respective wires' own renderers — the declaration envelope (sibling fields vs. a nested `function` object; `parameters` vs. `input_schema`; grouped `functionDeclarations`) is owned per wire.
-- R-4ACU-STQD: A wire whose accepted schema is narrower than the canonical subset MUST perform its additional narrowing inside its own `RenderTools`, and that narrowing MUST NOT appear in the canonical subset definition or in any other wire.
+- R-B3E1-3BXN: A narrowing one wire applies MUST NOT change `ValidateToolSchema`'s verdict or any other wire's rendering of the schema.
 - R-4BKR-6LH2: `RenderTools` MUST NOT widen a schema beyond what the orchestrator supplied; a wire that accepts richer schemas MUST still emit only what the canonical schema expressed.
 - R-4E0J-Y4YG: Each wire's rendered tool declaration MUST be pinned by a golden-fixture test asserting the exact declaration bytes for a representative canonical tool set.

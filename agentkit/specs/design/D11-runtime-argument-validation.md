@@ -74,4 +74,3 @@ model could legally have been shown is a call the tool will legally receive.
 - R-4IW5-H7X8: A call to an unknown tool name MUST produce an `IsError` `ToolResult` without executing anything and MUST NOT end the turn; a deferred-but-unloaded tool named directly MUST additionally be loaded as a side effect.
 - R-4K41-UZNX: An argument-validation failure MUST produce an `IsError` `ToolResult` describing the failure without calling the tool, and MUST NOT end the turn.
 - R-4LBY-8REM: A tool whose `Call` returns an error MUST yield an `IsError` `ToolResult` carrying that error, and MUST NOT surface through `Stream.Err()` or abort the turn.
-- R-4MJU-MJ5B: Runtime argument validation MUST live in the orchestrator and MUST NOT be exported for tool authors, so exactly one validation path exists.

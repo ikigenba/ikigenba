@@ -615,7 +615,7 @@ func TestTransportFailureIsWrappedWithStableIdentity(t *testing.T) {
 }
 
 func TestDecodeCanUseClassifierForInBandErrorAfterHTTP200(t *testing.T) {
-	// R-2P1K-TLVQ
+	// R-8XT7-SY68
 	frame := []byte(`{"error":{"code":"busy","message":"try later"}}`)
 	classified := &Error{
 		Category: CategoryOverloaded,
@@ -2715,7 +2715,7 @@ func TestDeferredToolsAreOwnedValidatedAndWithheldUntilLoaded(t *testing.T) {
 
 func TestDeferredGroupsConditionallySynthesizeExactlyOneLoader(t *testing.T) {
 	// R-5QSJ-8YM8
-	// R-SUD9-8M2Y
+	// R-8SXM-9V7G
 	for _, test := range []struct {
 		name   string
 		groups []DeferredGroup

@@ -1,33 +1,16 @@
 package agentkit
 
 import (
-	"bytes"
 	"errors"
 	"net/url"
-	"os"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
 )
 
-// R-59J0-X9Y5
-func TestCatalogTableMatchesSeed(t *testing.T) {
-	got, err := os.ReadFile("catalog_table.go")
-	if err != nil {
-		t.Fatalf("read catalog_table.go: %v", err)
-	}
-	want, err := os.ReadFile("specs/_data/catalog_table.go")
-	if err != nil {
-		t.Fatalf("read specs/_data/catalog_table.go: %v", err)
-	}
-	if !bytes.Equal(got, want) {
-		t.Error("catalog_table.go is not byte-identical to specs/_data/catalog_table.go")
-	}
-}
-
 func TestOfferingIDVocabulary(t *testing.T) {
-	// R-JB4K-6IAI
+	// R-LTHR-PG9F
 	want := []OfferingID{"anthropic-messages", "openai-responses", "openai-chat", "gemini-generate-content", "xai-responses", "xai-chat", "openrouter-chat", "openrouter-responses"}
 	got := []OfferingID{OfferingAnthropicMessages, OfferingOpenAIResponses, OfferingOpenAIChat, OfferingGeminiGenerateContent, OfferingXAIResponses, OfferingXAIChat, OfferingOpenRouterChat, OfferingOpenRouterResponses}
 	if !reflect.DeepEqual(got, want) {
@@ -39,7 +22,7 @@ func TestOfferingIDVocabulary(t *testing.T) {
 }
 
 func TestHostVocabulary(t *testing.T) {
-	// R-JCCG-KA17
+	// R-LUPO-3804
 	want := []Host{"anthropic", "openai", "gemini", "xai", "openrouter"}
 	got := []Host{HostAnthropic, HostOpenAI, HostGemini, HostXAI, HostOpenRouter}
 	if !reflect.DeepEqual(got, want) {
@@ -51,7 +34,7 @@ func TestHostVocabulary(t *testing.T) {
 }
 
 func TestWireNameVocabulary(t *testing.T) {
-	// R-JDKC-Y1RW
+	// R-LVXK-GZQT
 	want := []WireName{"messages", "generate-content", "chat", "responses"}
 	got := []WireName{WireMessages, WireGenerateContent, WireChat, WireResponses}
 	if !reflect.DeepEqual(got, want) {
@@ -217,17 +200,6 @@ func lookupError(model string, host Host, wire WireName) error {
 	return err
 }
 
-func TestCatalogExportsNoRetiredQuerySurface(t *testing.T) {
-	// R-JES9-BTIL
-	assertRootPackageDeclaresNone(t, map[string]bool{
-		"Vendor":       true,
-		"ProviderID":   true,
-		"ResolveModel": true,
-		"LookupModel":  true,
-		"CatalogFor":   true,
-	})
-}
-
 // R-JIFY-H4QO
 func TestCatalogAlternateAPIOfferingsArePaired(t *testing.T) {
 	for _, entry := range Catalog() {
@@ -267,7 +239,7 @@ func TestCatalogEntryFirstOfferingHostPreference(t *testing.T) {
 	}
 }
 
-// R-GSEI-ARQ7
+// R-LPU2-K51C
 func TestCatalogExactlyProjectsGroundTable(t *testing.T) {
 	original := catalogTable
 	t.Cleanup(func() { catalogTable = original })
@@ -297,9 +269,8 @@ func TestCatalogExactlyProjectsGroundTable(t *testing.T) {
 			}},
 		},
 	}
-	// The byte-identity test above independently anchors the installed table to
-	// project ground. This fixture checks Catalog's projection of every field
-	// without deriving the expected value from the production table.
+	// This fixture checks Catalog's projection of every field without deriving
+	// the expected value from the production table.
 	catalogTable = []CatalogEntry{want[1], want[0]}
 
 	got := Catalog()
@@ -389,54 +360,54 @@ func TestCatalogEndpointsWellFormed(t *testing.T) {
 	}
 }
 
-// R-HD89-D6MW
+// R-BBXB-RQ4I
 func TestCatalogOfferingsCarryFixedRootWireTransport(t *testing.T) {
 	for _, entry := range Catalog() {
 		for _, offering := range entry.Offerings {
 			var wantHost Host
 			var wantWireName WireName
-			var wantWireType string
+			var wantWireType reflect.Type
 			var wantBaseURL string
 			switch offering.ID {
 			case OfferingAnthropicMessages:
 				wantHost = HostAnthropic
 				wantWireName = WireMessages
-				wantWireType = "*agentkit.anthropicMessagesWire"
+				wantWireType = reflect.TypeOf(AnthropicMessagesWire())
 				wantBaseURL = "https://api.anthropic.com/v1/messages"
 			case OfferingOpenAIResponses:
 				wantHost = HostOpenAI
 				wantWireName = WireResponses
-				wantWireType = "*agentkit.openAIResponsesWire"
+				wantWireType = reflect.TypeOf(OpenAIResponsesWire())
 				wantBaseURL = "https://api.openai.com/v1/responses"
 			case OfferingOpenAIChat:
 				wantHost = HostOpenAI
 				wantWireName = WireChat
-				wantWireType = "*agentkit.openAIChatWire"
+				wantWireType = reflect.TypeOf(OpenAIChatWire())
 				wantBaseURL = "https://api.openai.com/v1/chat/completions"
 			case OfferingGeminiGenerateContent:
 				wantHost = HostGemini
 				wantWireName = WireGenerateContent
-				wantWireType = "*agentkit.geminiGenerateContentWire"
+				wantWireType = reflect.TypeOf(GeminiGenerateContentWire())
 				wantBaseURL = "https://generativelanguage.googleapis.com/v1beta/models/" + url.PathEscape(offering.WireModel) + ":streamGenerateContent?alt=sse"
 			case OfferingXAIResponses:
 				wantHost = HostXAI
 				wantWireName = WireResponses
-				wantWireType = "*agentkit.xaiResponsesWire"
+				wantWireType = reflect.TypeOf(XAIResponsesWire())
 				wantBaseURL = "https://api.x.ai/v1/responses"
 			case OfferingXAIChat:
 				wantHost = HostXAI
 				wantWireName = WireChat
-				wantWireType = "*agentkit.xaiChatWire"
+				wantWireType = reflect.TypeOf(XAIChatWire())
 				wantBaseURL = "https://api.x.ai/v1/chat/completions"
 			case OfferingOpenRouterChat:
 				wantHost = HostOpenRouter
 				wantWireName = WireChat
-				wantWireType = "*agentkit.chatWire"
+				wantWireType = reflect.TypeOf(ChatWire())
 				wantBaseURL = "https://openrouter.ai/api/v1/chat/completions"
 			case OfferingOpenRouterResponses:
 				wantHost = HostOpenRouter
 				wantWireName = WireResponses
-				wantWireType = "*agentkit.responsesWire"
+				wantWireType = reflect.TypeOf(ResponsesWire())
 				wantBaseURL = "https://openrouter.ai/api/v1/responses"
 			default:
 				t.Fatalf("%q has unexpected offering ID %q", entry.Model, offering.ID)
@@ -448,8 +419,8 @@ func TestCatalogOfferingsCarryFixedRootWireTransport(t *testing.T) {
 			if offering.WireName != wantWireName {
 				t.Errorf("%q offering %q WireName = %q, want %q", entry.Model, offering.ID, offering.WireName, wantWireName)
 			}
-			if got := reflect.TypeOf(offering.WireFormat); got == nil || got.String() != wantWireType {
-				t.Errorf("%q offering %q WireFormat type = %v, want %q", entry.Model, offering.ID, got, wantWireType)
+			if got := reflect.TypeOf(offering.WireFormat); got == nil || got != wantWireType {
+				t.Errorf("%q offering %q WireFormat type = %v, want %v", entry.Model, offering.ID, got, wantWireType)
 			}
 			if !requireEndpoints(t, entry, offering) {
 				continue

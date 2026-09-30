@@ -1,19 +1,9 @@
 package retry
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"go/ast"
-	"go/build"
-	"go/format"
-	"go/parser"
-	"go/token"
-	"os"
-	"path/filepath"
 	"reflect"
-	"strconv"
-	"strings"
 	"testing"
 	"time"
 )
@@ -94,70 +84,12 @@ func TestDoHasExactGenericDeclaration(t *testing.T) {
 	}
 	assertCallable(Do[int])
 
-	fileSet := token.NewFileSet()
-	file, err := parser.ParseFile(fileSet, "retry.go", nil, 0)
-	if err != nil {
-		t.Fatalf("parse retry.go: %v", err)
-	}
-	var declaration *ast.FuncDecl
-	for _, item := range file.Decls {
-		if function, ok := item.(*ast.FuncDecl); ok && function.Name.Name == "Do" {
-			declaration = function
-			break
-		}
-	}
-	if declaration == nil {
-		t.Fatal("Do declaration not found")
-	}
-	if declaration.Recv != nil {
-		t.Fatal("Do is a method, want package function")
-	}
-	assertASTFields(t, fileSet, declaration.Type.TypeParams, []astField{
-		{names: []string{"T"}, typ: "any"},
-	})
-	assertASTFields(t, fileSet, declaration.Type.Params, []astField{
-		{names: []string{"ctx"}, typ: "context.Context"},
-		{names: []string{"p"}, typ: "Policy"},
-		{names: []string{"op"}, typ: "func(ctx context.Context) (T, error)"},
-		{names: []string{"onRetry"}, typ: "func(attempt int, err error, delay time.Duration)"},
-	})
-	assertASTFields(t, fileSet, declaration.Type.Results, []astField{
-		{typ: "T"},
-		{typ: "error"},
-	})
-}
-
-func TestRetryProductionImportsOnlyStandardLibrary(t *testing.T) {
-	// R-5628-QV0F
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("read retry package: %v", err)
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
-		}
-		file, parseErr := parser.ParseFile(token.NewFileSet(), entry.Name(), nil, parser.ImportsOnly)
-		if parseErr != nil {
-			t.Fatalf("parse %s: %v", entry.Name(), parseErr)
-		}
-		for _, imported := range file.Imports {
-			path, unquoteErr := strconv.Unquote(imported.Path.Value)
-			if unquoteErr != nil {
-				t.Fatalf("unquote import %s in %s: %v", imported.Path.Value, entry.Name(), unquoteErr)
-			}
-			if path == "github.com/ikigenba/ikigenba/agentkit" {
-				t.Errorf("production file %s imports agentkit root", entry.Name())
-			}
-			pkg, importErr := build.Default.Import(path, ".", build.FindOnly)
-			if importErr != nil {
-				t.Errorf("resolve import %q in %s: %v", path, entry.Name(), importErr)
-				continue
-			}
-			if !pkg.Goroot {
-				t.Errorf("production import %q in %s is not from the standard library", path, entry.Name())
-			}
-		}
+	type result struct{ Name string }
+	got, err := Do(context.Background(), Policy{MaxAttempts: 1}, func(context.Context) (result, error) {
+		return result{Name: "done"}, nil
+	}, func(int, error, time.Duration) {})
+	if err != nil || got.Name != "done" {
+		t.Fatalf("Do[result] = %+v, %v; want done, nil", got, err)
 	}
 }
 
@@ -552,45 +484,6 @@ func assertFunctionSignature(t *testing.T, got reflect.Type, in, out []reflect.T
 	for i, expected := range out {
 		if got.Out(i) != expected {
 			t.Errorf("output %d = %v, want %v", i, got.Out(i), expected)
-		}
-	}
-}
-
-type astField struct {
-	names []string
-	typ   string
-}
-
-func assertASTFields(t *testing.T, fileSet *token.FileSet, got *ast.FieldList, want []astField) {
-	t.Helper()
-	if got == nil || len(got.List) != len(want) {
-		if got == nil {
-			t.Fatalf("field list is nil, want %d fields", len(want))
-		}
-		t.Fatalf("field list has %d fields, want %d", len(got.List), len(want))
-	}
-	for i, expected := range want {
-		field := got.List[i]
-		names := make([]string, len(field.Names))
-		for j, name := range field.Names {
-			names[j] = name.Name
-		}
-		if len(names) != len(expected.names) {
-			t.Errorf("field %d names = %v, want %v", i, names, expected.names)
-		} else {
-			for j := range names {
-				if names[j] != expected.names[j] {
-					t.Errorf("field %d names = %v, want %v", i, names, expected.names)
-					break
-				}
-			}
-		}
-		var rendered bytes.Buffer
-		if err := format.Node(&rendered, fileSet, field.Type); err != nil {
-			t.Fatalf("format field %d type: %v", i, err)
-		}
-		if rendered.String() != expected.typ {
-			t.Errorf("field %d type = %q, want %q", i, rendered.String(), expected.typ)
 		}
 	}
 }

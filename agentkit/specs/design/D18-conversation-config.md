@@ -74,12 +74,12 @@ still constructs and the fault surfaces from the first `Send` as
 ## REQUIREMENTS
 
 - R-TYGN-9I06: `agentkit` MUST export `type Config struct { Tools []Tool; Deferred []DeferredGroup; Settings Settings; Output *OutputContract; Log *Log; Limits Limits }` with exactly those fields.
-- R-W1KR-P3S7: `agentkit` MUST export `func New(wire WireFormat, endpoint Endpoint, model string, cfg Config) (*Conversation, error)` as the sole root constructor, taking the wire, endpoint, model, and config as required positional parameters with no functional options, and MUST return `ErrInvalidConfig` for a nil `wire`.
+- R-NY6T-G0IY: `agentkit` MUST export `func New(wire WireFormat, endpoint Endpoint, model string, cfg Config) (*Conversation, error)`, taking the wire, endpoint, model, and config as required positional parameters with no functional options, and MUST return `ErrInvalidConfig` for a nil `wire`.
 - R-8A00-BA9K: The exported method set of `Conversation` MUST be exactly `Send`, `AddSystem` (D24), `Savepoint`, `Restore`, `Release`, and `Close` (D26); in particular no `Deferred` method and no other post-construction attach method may exist.
 - R-SQPK-3AUV: A `Conversation` built from a zero `Config` MUST advertise no tools, request vendor defaults for every generation control, send no pass-through options, declare no structured output, and write no log.
 - R-NW62-A0NM: The constructor MUST copy `Config` such that mutating the caller's `Tools`, `Deferred`, or `Settings.Options` after construction has no observable effect on any subsequent `Send`.
 - R-ST5C-UUC9: `Config.Tools` MUST be the eager tool set: every tool in it MUST be advertised on every round-trip of every turn and MUST be dispatchable by name (D11).
-- R-SUD9-8M2Y: `Config.Deferred` MUST be the sole registration of deferred tool groups, and a non-empty `Config.Deferred` MUST cause the orchestrator to synthesize `load_tools` exactly as D16 specifies.
+- R-8SXM-9V7G: `Config.Deferred` MUST register deferred tool groups: a non-empty `Config.Deferred` MUST cause the orchestrator to synthesize `load_tools` exactly as D16 specifies.
 - R-NXDY-NSEB: `Config.Settings` MUST be the `Settings` the wire codec encodes on every round-trip of every turn, unchanged across the conversation's life.
 - R-SY0Y-DXB1: `Config.Log` MUST be the event log written for every turn of the conversation, and a nil `Config.Log` MUST write nothing.
 - R-NYLV-1K50: Passing a `Config` whose `Tools`, `Deferred`, or `Settings` fail their `Send`-time gates (D8, D11, D12) MUST NOT fail construction; the fault MUST surface from `Send` as `ErrInvalidConfig` with no provider call and `History` unchanged.

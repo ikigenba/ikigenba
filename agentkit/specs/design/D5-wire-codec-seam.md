@@ -6,10 +6,7 @@ its methods are unexported, so a value can be held and passed but never
 implemented outside the root package, and it is never an assignable field on a
 `Conversation`. A consumer obtains one from a catalog offering's `WireFormat` field or from an
 argument-less root constructor named `<X>Wire()` and hands it to `New`,
-which pairs it with an `Endpoint` (D6) for the orchestrator. Each constructor
-`<X>Wire` lives in `wire_<x>.go`, so the constructor and its file always read the
-same (the file rule names layout on purpose, overriding the usual public-only
-scope). Eight wires ship:
+which pairs it with an `Endpoint` (D6) for the orchestrator. Eight wires ship:
 
 | Constructor | Struct | `WireName` (D21) | Credential placement | Used by hosts |
 |---|---|---|---|---|
@@ -23,16 +20,12 @@ scope). Eight wires ship:
 | `XAIResponsesWire()` | `xaiResponsesWire` | `responses` | `Authorization: Bearer` | xai |
 
 **Every wire is its own struct, and the struct is named for its grammar.**
-Each constructor returns a distinct type `<x>Wire`, declared as
-`struct{ wireCodec }` with `wireCodec` as its sole, embedded field: the
+Each constructor returns a distinct type `<x>Wire`: the
 generic wires are `<format>Wire`, a vendor's variant is `<provider><format>Wire`.
 Names carry the design: `anthropicMessagesWire` says there is a Messages
 grammar and that Anthropic may have others (it has, and will again), where a
 name like `anthropicWire` would claim the whole vendor and collide with the
-next format. The rule is enforced on unexported types on purpose, overriding
-the usual public-only scope, for the same reason as the file rule: it is how
-a reader identifies a wire, and how the catalog test tells an xAI wire from
-the generic wire it otherwise resembles. There are no derived wires: a vendor
+next format. There are no derived wires: a vendor
 variant that shares a family's grammar shares the encode and decode
 *functions*, not a struct, so bodies stay byte-identical without a type
 hierarchy.
@@ -126,7 +119,7 @@ checks `total_tokens` against `prompt + completion` (nested) and against
 accordingly, nested being the fallback. The wire stays host-unaware; the
 answer is in the vendor's own arithmetic.
 
-**What the wire owns**, and nothing else touches: the request body shape; the
+**What the wire owns**: the request body shape; the
 streaming framing choice and its event vocabulary; where usage sits in the
 response, its field names, and its subset topology (which token buckets nest
 inside which — cached ⊂ input, and whether reasoning nests inside output or
@@ -217,8 +210,7 @@ in requirement text; the requirements below fix the seam's shape.
 
 ## REQUIREMENTS
 
-- R-IKHO-5TZ4: A wire codec MUST be selectable only by passing a `WireFormat` value obtained from one of the eight root constructors to `New`, and MUST NOT be an assignable field on a `Conversation` or any consumer-visible value.
-- R-OWR1-R4WG: A wire codec MUST own the request body grammar, the streaming event vocabulary, the usage location and subset topology, the tool declaration and tool-result shapes, reasoning replay in full — both its mechanics and its body encoding — the option vocabulary it accepts and each option's body encoding (D8), the classification of its vendor's error responses (D4), the vendor's required protocol headers, and the placement of a credential on the request; it MUST NOT own the base URL or hold a credential.
+- R-8U5I-NMY5: A wire codec MUST be selected by passing a `WireFormat` value obtained from one of the eight root constructors to `New`, and MUST NOT be an assignable field on `Conversation`, `Config`, or `Endpoint`.
 - R-OXYY-4WN5: The `WireFormat` interface MUST declare the exported method `OptionSpecs() []OptionSpec` and MUST NOT declare `ReservedKeys`.
 - R-K4E5-D036: Every request built with `AnthropicMessagesWire()` MUST carry the header `anthropic-version: 2023-06-01`.
 - R-IQL6-2OOL: Every request body produced by `AnthropicMessagesWire()`, `ChatWire()`, `OpenAIChatWire()`, `XAIChatWire()`, `ResponsesWire()`, `OpenAIResponsesWire()`, and `XAIResponsesWire()` MUST carry the top-level field `"stream":true`, pinned by the golden request fixtures.
@@ -231,9 +223,9 @@ in requirement text; the requirements below fix the seam's shape.
 - R-SBI8-RVG3: `DecodeStream` on `ChatWire()` and `OpenAIChatWire()` MUST size `OutputTokens` from a chunk's `usage` object by its `total_tokens`: when `prompt_tokens + completion_tokens == total_tokens`, `OutputTokens` MUST be `completion_tokens − reasoning_tokens`; otherwise, when `prompt_tokens + completion_tokens + reasoning_tokens == total_tokens`, `OutputTokens` MUST be `completion_tokens`; in every other case, including an absent `total_tokens`, `OutputTokens` MUST be `completion_tokens − reasoning_tokens`; `ReasoningTokens` MUST be `reasoning_tokens` in every case; pinned by golden fixtures in both the nested and the disjoint topology.
 - R-SPQ8-AYZN: `DecodeStream` on `GeminiGenerateContentWire()` MUST map `usageMetadata.candidatesTokenCount` directly to `Usage.OutputTokens` and `usageMetadata.thoughtsTokenCount` directly to `Usage.ReasoningTokens`, without subtracting either count from the other; pinned by a golden fixture carrying both fields.
 - R-IPD9-OWXW: For every request state that all wires of a family accept, `ChatWire()`, `OpenAIChatWire()`, and `XAIChatWire()` MUST produce byte-identical request bodies, as MUST `ResponsesWire()`, `OpenAIResponsesWire()`, and `XAIResponsesWire()`; each family MUST return identical `OptionSpecs()`; and for the same frames each family MUST yield identical events.
-- R-2YSR-VRTA: `DecodeStream` MUST terminate framing decode within the wire and yield only message-granular events; no framing artifact may reach the orchestrator.
+- R-8VDF-1EOU: `DecodeStream` MUST yield only message-granular events; no framing artifact may appear among them.
 - R-300O-9JJZ: `DecodeStream` MUST merge `Usage` field-wise with each field treated as absolute and last-non-absent winning, and MUST NOT replace usage as a whole object.
-- R-318K-NBAO: An in-band vendor error arriving after a 2xx status MUST be surfaced through `DecodeStream`'s error channel (the classifier MUST be reachable from inside the decode).
+- R-8WLB-F6FJ: An in-band vendor error arriving after a 2xx status MUST be surfaced through `DecodeStream`'s error channel.
 - R-O9F8-EXZT: The SSE frame reader MUST be exported as a public leaf usable independently of any wire codec (for sibling `mcp`).
 - R-34W9-SMIR: `RenderTools` MUST reject a tool schema outside the canonical subset (D9) before a request is sent.
 - R-3646-6E9G: Every shipped wire MUST satisfy a round-trip property test: parsing a fixture into a `Message` and re-assembling the request body MUST reproduce the fixture's input bytes exactly.
@@ -241,5 +233,3 @@ in requirement text; the requirements below fix the seam's shape.
 - R-ZHXN-TH1F: `agentkit` MUST export `func SSEFrames(r io.Reader) iter.Seq2[[]byte, error]`, assignable to `Framer`.
 - R-IU8V-7ZWO: `XAIResponsesWire()` and `XAIChatWire()` MUST classify a response as a rejected credential exactly when its status is `403` and its body is a JSON object whose `code` field is the string `unauthenticated:bad-credentials`; a `403` with any other body, and a response of any other status including `401`, MUST NOT be classified as a rejected credential, the classification being observable as whether the D22 re-issue path rotates.
 - R-IVGR-LRND: `OpenAIResponsesWire()` MUST classify a response as a rejected credential exactly when its status is `401`, whatever its body; a response of any other status, including `403`, MUST NOT be classified as a rejected credential, the classification being observable as whether the D22 re-issue path rotates.
-- R-IMXG-XDGI: Each exported wire constructor `<X>Wire` MUST be declared in the file `wire_<x>.go` (`<x>` being `<X>` in snake_case) — `AnthropicMessagesWire` in `wire_anthropic_messages.go`, `GeminiGenerateContentWire` in `wire_gemini_generate_content.go`, `ChatWire` in `wire_chat.go`, `ResponsesWire` in `wire_responses.go`, `OpenAIChatWire` in `wire_openai_chat.go`, `OpenAIResponsesWire` in `wire_openai_responses.go`, `XAIChatWire` in `wire_xai_chat.go`, `XAIResponsesWire` in `wire_xai_responses.go` — so a constructor and its file share the same `<X>`.
-- R-HC0C-ZEW7: Each of the eight root wire constructors MUST return a `WireFormat` whose dynamic type is a pointer to a distinct unexported struct declared as `struct{ wireCodec }` with `wireCodec` as its sole, embedded field, named for the constructor: `AnthropicMessagesWire()` → `anthropicMessagesWire`, `GeminiGenerateContentWire()` → `geminiGenerateContentWire`, `ChatWire()` → `chatWire`, `ResponsesWire()` → `responsesWire`, `OpenAIChatWire()` → `openAIChatWire`, `OpenAIResponsesWire()` → `openAIResponsesWire`, `XAIChatWire()` → `xaiChatWire`, `XAIResponsesWire()` → `xaiResponsesWire`; and `agentkit` MUST declare no other type that embeds `wireCodec`.

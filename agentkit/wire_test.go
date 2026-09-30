@@ -1753,7 +1753,6 @@ func assertNoMaxAttempts(t *testing.T, document map[string]any, body []byte) {
 
 func TestWireOwnsOnlyBodyGrammar(t *testing.T) {
 	// R-NGOL-DRZW
-	assertEndpointConcernsAreOutsideWireInterface(t)
 	state := requestState{Model: "endpoint-owned-model", History: History{
 		{Role: RoleAssistant, Blocks: []Block{
 			Text{Text: "Hello"},
@@ -1927,41 +1926,6 @@ func TestWireOptionSpecsMatchDesignVocabulary(t *testing.T) {
 	}
 }
 
-func assertEndpointConcernsAreOutsideWireInterface(t *testing.T) {
-	t.Helper()
-	wireType := reflect.TypeFor[wireFormat]()
-	endpointType := reflect.TypeFor[endpointConfig]()
-	concerns := []struct {
-		name  string
-		field string
-	}{
-		{"base URL", "baseURL"},
-		{"auth", "auth"},
-	}
-	for _, concern := range concerns {
-		field, ok := endpointType.FieldByName(concern.field)
-		if !ok {
-			t.Fatalf("endpointConfig lacks independently expected %s field %q", concern.name, concern.field)
-		}
-		for index := range wireType.NumMethod() {
-			method := wireType.Method(index)
-			if strings.Contains(strings.ToLower(method.Name), strings.ToLower(concern.field)) {
-				t.Errorf("wireFormat method %q owns endpoint %s", method.Name, concern.name)
-			}
-			for parameter := range method.Type.NumIn() {
-				if method.Type.In(parameter) == field.Type {
-					t.Errorf("wireFormat.%s accepts endpoint-owned %s type %s", method.Name, concern.name, field.Type)
-				}
-			}
-			for result := range method.Type.NumOut() {
-				if method.Type.Out(result) == field.Type {
-					t.Errorf("wireFormat.%s returns endpoint-owned %s type %s", method.Name, concern.name, field.Type)
-				}
-			}
-		}
-	}
-}
-
 func assertExactRequestRoot(t *testing.T, wireName string, body []byte, wantKey, wantModel string) {
 	t.Helper()
 	var root map[string]json.RawMessage
@@ -2051,7 +2015,7 @@ func decodedWireUsage(wire wireFormat) Usage {
 }
 
 func TestDecodeStreamYieldsOnlyCompletedMessages(t *testing.T) {
-	// R-2YSR-VRTA
+	// R-8VDF-1EOU
 	// R-4ZYQ-U0AY
 	for _, test := range wireFixtures() {
 		wire := test.make(nil)
@@ -2572,7 +2536,7 @@ func TestOpenAIChatFamilyDecodeStreamSizesUsageByTotalTokensTopology(t *testing.
 }
 
 func TestDecodeStreamUsesClassifierForInBandError(t *testing.T) {
-	// R-318K-NBAO
+	// R-8WLB-F6FJ
 	want := &Error{Category: CategoryRateLimit, Status: http.StatusOK, Code: "slow", Message: "wait"}
 	called := 0
 	classifier := func(status int, _ http.Header, body []byte) error {
@@ -2679,8 +2643,6 @@ func phase16Tools() []Tool {
 }
 
 func TestPerWireToolDeclarationGoldenAndSchemaOwnership(t *testing.T) {
-	// R-47X2-1A8Z
-	// R-494Y-F1ZO
 	// R-4E0J-Y4YG
 	tests := []struct {
 		name    string
@@ -2734,16 +2696,23 @@ func TestRenderToolsNeverWidensCanonicalSchemas(t *testing.T) {
 }
 
 func TestGeminiOwnsRecursiveSchemaNarrowing(t *testing.T) {
-	// R-4ACU-STQD
+	// R-B3E1-3BXN
 	tools := phase16Tools()
 	originals := make([][]byte, len(tools))
+	verdicts := make([]error, len(tools))
 	for index, tool := range tools {
 		originals[index] = append([]byte(nil), tool.Schema()...)
+		verdicts[index] = ValidateToolSchema(tool.Schema())
 	}
 	gemini := newGeminiGenerateContentWire(nil)
 	rendered, err := gemini.RenderTools(tools)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for index, tool := range tools {
+		if got := ValidateToolSchema(tool.Schema()); (got == nil) != (verdicts[index] == nil) {
+			t.Errorf("ValidateToolSchema verdict for schema %d changed after Gemini narrowing: %v, want %v", index, got, verdicts[index])
+		}
 	}
 	geminiSchemas := renderedToolSchemas(t, gemini, rendered)
 	for index, schema := range geminiSchemas {
@@ -2777,7 +2746,6 @@ func TestGeminiOwnsRecursiveSchemaNarrowing(t *testing.T) {
 }
 
 func TestRequestBodiesEmbedRenderedToolsOnceAndInOrder(t *testing.T) {
-	// R-47X2-1A8Z
 	tools := phase16Tools()
 	tests := []struct {
 		wire    wireFormat

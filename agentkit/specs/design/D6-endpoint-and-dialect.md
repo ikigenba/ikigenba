@@ -2,8 +2,7 @@
 
 An **`Endpoint`** is *where* a wire's bytes are sent and *how* they are
 authenticated. It is the second axis: a wire codec (D5) owns the body grammar
-and the error envelope, an `Endpoint` owns the base URL and the authenticator,
-and nothing else. The two are paired by the root constructor `New` (D18) for
+and the error envelope, an `Endpoint` owns the base URL and the authenticator. The two are paired by the root constructor `New` (D18) for
 the orchestrator to drive.
 
 The authenticator is the default source of the URL. It came from an offering
@@ -70,13 +69,12 @@ wires paired with an `Endpoint`. There is no consumer-implementable provider.
 
 ## REQUIREMENTS
 
-- R-JVTF-4LVV: An `Endpoint` MUST expose no assignable fields to consumers and MUST be configurable only through its constructor's positional authenticator and the `WithBaseURL` option.
-- R-PWJ3-82LB: An `Endpoint` MUST own the base URL (including any model-in-path placement the catalog offering bakes into `BaseURL`) and the authenticator, and nothing else.
+- R-8QHT-IBQ2: An `Endpoint` MUST expose no assignable fields to consumers and MUST be configurable through its constructor's positional authenticator and the `WithBaseURL` option.
 - R-JX1B-IDMK: `agentkit` MUST export `func NewEndpoint(auth Authenticator, opts ...EndpointOption) (Endpoint, error)` and MUST return `ErrInvalidConfig` for a nil `auth`.
-- R-JY97-W5D9: `agentkit` MUST export `type EndpointOption` and `func WithBaseURL(url string) EndpointOption`, and MUST NOT export any other `EndpointOption` constructor.
+- R-LX5G-URHI: `agentkit` MUST export `type EndpointOption` and `func WithBaseURL(url string) EndpointOption`.
 - R-JZH4-9X3Y: `NewEndpoint(auth)` with no `WithBaseURL`, where `auth` came from `o.Authenticator(r)`, MUST send every request to the `BaseURL` of the `EndpointSpec` in `o.Endpoints` whose `AuthMode` equals `r.AuthMode()`.
 - R-K0P0-NOUN: `NewEndpoint(auth, WithBaseURL(u))` MUST send every request to `u` in place of the offering's URL, MUST return `ErrInvalidConfig` when `u` is not an absolute HTTP(S) URL, and when `WithBaseURL` is given more than once the last MUST win.
 - R-OFIQ-BSPA: A `Conversation` MUST execute every request with `http.DefaultClient`, and construction MUST accept no consumer-supplied HTTP client, header, framer, classifier, or request mutation.
-- R-YEPA-QILV: `agentkit` MUST export `Endpoint` as an opaque struct type with no exported fields, constructed only through `NewEndpoint`.
+- R-8RPP-W3GR: `agentkit` MUST export `Endpoint` as an opaque struct type with no exported fields, constructed through `NewEndpoint`.
 - R-KBPJ-NMJC: `agentkit` MUST export the `Authenticator` interface whose method set is exactly `Authenticate(ctx context.Context, req *http.Request, body []byte) error`, and MUST NOT export `AuthApplier`.
 - R-U1DK-UGQI: When a `Conversation` builds a request, the `body` argument passed to `Authenticator.Authenticate` MUST be byte-equal to the `WireFormat.EncodeRequest` output used as that request's body, so a body-signing authenticator signs the exact bytes transmitted.

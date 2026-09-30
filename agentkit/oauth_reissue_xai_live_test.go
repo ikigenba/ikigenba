@@ -130,7 +130,7 @@ func assertXAIReissueTextTurn(t *testing.T, conversation *Conversation) {
 	}
 }
 
-// R-COMZ-MJZA
+// R-BED4-J9LW
 func TestLiveOAuthReissueXAI(t *testing.T) {
 	path := os.Getenv("AGENTKIT_XAI_OAUTH_FILE")
 	if path == "" {

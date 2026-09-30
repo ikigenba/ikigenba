@@ -18,8 +18,7 @@ human-authored and read-only to the run.
 `specs/_data/catalog_table.go` is the user-authorized authoritative project
 ground for versioned catalog records. The design contract projects this data
 without repeating release values in requirements, tests, or fixtures; the
-build run installs it as the root package's `catalog_table.go` under D21's
-byte-identity requirement.
+build run installs it verbatim as the root package's `catalog_table.go`.
 
 ## Toolchain
 
@@ -59,6 +58,10 @@ tests follow Live tests below.
   temporary directory.
 - Isolated: a test touches only its own temporary directory, never the
   developer's home, config, or real state.
+- Proof by use: a test reads no checkout file — never the module's source,
+  layout, `go.mod`/`go.sum`, or `specs/`; the only files a test reads are its
+  own fixtures under `testdata/`. Running `make` or building an external
+  consumer module that imports agentkit is use, not reading.
 
 ## Live tests
 

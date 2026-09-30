@@ -130,7 +130,7 @@ persisting a partial turn.
 
 ## REQUIREMENTS
 
-- R-1Y7S-ENKG: `Block` MUST be a sealed union — an interface with an unexported marker method — so no package outside agentkit can introduce a variant, and every wire codec MUST switch it exhaustively.
+- R-B264-PK6Y: `Block` MUST be sealed: no type declared outside agentkit can implement it.
 - R-1ZFO-SFB5: Every `Block` variant MUST carry an opaque provider payload as bare bytes with no endpoint tag and no `kind` discriminator, and agentkit MUST replay that payload byte-identically without inspecting it.
 - R-20NL-671U: Each `Block` variant MUST report a stable serialization discriminator via `BlockType()`, distinct from the opaque provider payload, sufficient for a `History` to unmarshal back to the correct concrete variants.
 - R-21VH-JYSJ: A `History` MUST round-trip through `json.Marshal`/`json.Unmarshal` to an equal sequence of concrete `Block` variants, including each block's provider payload.

@@ -265,7 +265,7 @@ func TestNewToolFromSchemaValidatesAndPreservesRawBoundary(t *testing.T) {
 }
 
 func TestOnlyMustToolPanicsForInvalidSchemas(t *testing.T) {
-	// R-60JQ-B4JS
+	// R-O0MM-7K0C
 	tests := []struct {
 		name string
 		call func() (Tool, error)
@@ -338,5 +338,40 @@ func TestValidateToolSchemaRecursivelyDefinesCanonicalSubset(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), test.want) {
 			t.Errorf("ValidateToolSchema(%s) = %v, want diagnostic containing %q", test.schema, err, test.want)
 		}
+	}
+}
+
+func TestNewToolFromSchemaAgreesWithValidateToolSchema(t *testing.T) {
+	// R-B0Y8-BSG9
+	schemas := []json.RawMessage{
+		json.RawMessage(`{"type":"object"}`),
+		json.RawMessage(`{"type":"object","properties":{"q":{"type":"string","minLength":1}},"required":["q"]}`),
+		json.RawMessage(`{"type":"object","properties":{"values":{"type":"array","items":{"type":"number","minimum":0}}}}`),
+		json.RawMessage(`{"type":"object","properties":{"optional":{"anyOf":[{"type":"integer"},{"type":"null"}]}}}`),
+		json.RawMessage(`{"type":"string"}`),
+		json.RawMessage(`{"type":"object","properties":{"x":{"$ref":"#/$defs/X"}}}`),
+		json.RawMessage(`{"type":"object","properties":{"x":{"type":"array"}}}`),
+		json.RawMessage(`{"type":"object","required":["missing"]}`),
+		json.RawMessage(`{"type":"object","properties":{"x":{"type":"string","pattern":"["}}}`),
+		json.RawMessage(`not json`),
+		json.RawMessage(``),
+	}
+	accepted, rejected := 0, 0
+	for _, schema := range schemas {
+		validateErr := ValidateToolSchema(schema)
+		_, constructErr := NewToolFromSchema("schema_tool", "tool", schema, func(context.Context, json.RawMessage) (string, error) {
+			return "", nil
+		}, blocksAllForTest[json.RawMessage])
+		if (validateErr == nil) != (constructErr == nil) {
+			t.Errorf("schema %s: ValidateToolSchema = %v, NewToolFromSchema = %v; want both nil or both non-nil", schema, validateErr, constructErr)
+		}
+		if validateErr == nil {
+			accepted++
+		} else {
+			rejected++
+		}
+	}
+	if accepted == 0 || rejected == 0 {
+		t.Fatalf("schema set exercised accepted=%d rejected=%d, want both verdicts", accepted, rejected)
 	}
 }

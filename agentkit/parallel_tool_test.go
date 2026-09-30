@@ -19,8 +19,14 @@ import (
 // R-CZZ8-ZOQD
 // R-D175-DGH2
 func TestAccessConstructorsAndConflictGeometry(t *testing.T) {
-	if reflect.TypeFor[Access]().NumField() != 2 || reflect.TypeFor[Access]().Field(0).PkgPath == "" || reflect.TypeFor[Access]().Field(1).PkgPath == "" {
+	accessType := reflect.TypeFor[Access]()
+	if accessType.Kind() != reflect.Struct {
 		t.Fatal("Access must be an opaque struct with no exported fields")
+	}
+	for index := range accessType.NumField() {
+		if accessType.Field(index).IsExported() {
+			t.Fatalf("Access field %q is exported, want an opaque struct", accessType.Field(index).Name)
+		}
 	}
 	none := BlocksNone()
 	empty := BlocksPaths()

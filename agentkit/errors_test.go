@@ -3,16 +3,13 @@ package agentkit
 import (
 	"errors"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"net/http"
 	"reflect"
 	"testing"
 )
 
 func TestSentinelDeclarations(t *testing.T) {
-	// R-CL1A-4OTJ
+	// R-B5TT-UVF1
 	wantMessages := map[string]string{
 		"ErrInvalidConfig":   "agentkit: invalid configuration",
 		"ErrClosed":          "agentkit: conversation closed",
@@ -24,11 +21,10 @@ func TestSentinelDeclarations(t *testing.T) {
 		"ErrInvalidArgument": ErrInvalidArgument,
 	}
 	checkSentinelValues(t, wantMessages, sentinels)
-	checkDirectSentinelDeclarations(t, wantMessages)
 }
 
 func TestSavepointSentinelDeclarationsAndWrapping(t *testing.T) {
-	// R-7LM0-NVFO
+	// R-BAPF-DYDT
 	wantMessages := map[string]string{
 		"ErrSavepointActive": "agentkit: savepoint active",
 		"ErrTurnInFlight":    "agentkit: turn in flight",
@@ -38,7 +34,6 @@ func TestSavepointSentinelDeclarationsAndWrapping(t *testing.T) {
 		"ErrTurnInFlight":    ErrTurnInFlight,
 	}
 	checkSentinelValues(t, wantMessages, sentinels)
-	checkDirectSentinelDeclarations(t, wantMessages)
 	allOthers := []error{
 		ErrInvalidConfig,
 		ErrClosed,
@@ -82,98 +77,9 @@ func checkSentinelValues(t *testing.T, wantMessages map[string]string, sentinels
 	}
 }
 
-func checkDirectSentinelDeclarations(t *testing.T, wantMessages map[string]string) {
-	t.Helper()
-	parsed, err := parser.ParseFile(token.NewFileSet(), "errors.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	found := make(map[string]bool, len(wantMessages))
-	for _, declaration := range parsed.Decls {
-		general, ok := declaration.(*ast.GenDecl)
-		if !ok || general.Tok != token.VAR {
-			continue
-		}
-		for _, specification := range general.Specs {
-			value := specification.(*ast.ValueSpec)
-			if len(value.Names) != 1 {
-				continue
-			}
-			name := value.Names[0].Name
-			wantMessage, wanted := wantMessages[name]
-			if !wanted {
-				continue
-			}
-			if !ast.IsExported(name) || found[name] {
-				t.Fatalf("%s is not one uniquely declared exported package variable", name)
-			}
-			if value.Type != nil {
-				identifier, isError := value.Type.(*ast.Ident)
-				if !isError || identifier.Name != "error" {
-					t.Fatalf("%s explicit static type is %T, want error", name, value.Type)
-				}
-			}
-			if !isDirectErrorsNew(value, wantMessage) {
-				t.Fatalf("%s is not initialized directly by errors.New with exact message %q", name, wantMessage)
-			}
-			found[name] = true
-		}
-	}
-	for name := range wantMessages {
-		if !found[name] {
-			t.Fatalf("%s direct errors.New package variable declaration not found", name)
-		}
-	}
-}
-
 func TestInvalidOutputSentinel(t *testing.T) {
-	// R-TRAJ-KF3P
-	t.Run("direct declaration", testInvalidOutputDeclaration)
+	// R-B71Q-8N5Q
 	t.Run("identity and wrapping", testInvalidOutputIdentityAndWrapping)
-}
-
-func testInvalidOutputDeclaration(t *testing.T) {
-	parsed, err := parser.ParseFile(token.NewFileSet(), "errors.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	found := 0
-	for _, declaration := range parsed.Decls {
-		general, ok := declaration.(*ast.GenDecl)
-		if !ok || general.Tok != token.VAR {
-			continue
-		}
-		for _, specification := range general.Specs {
-			value := specification.(*ast.ValueSpec)
-			if len(value.Names) != 1 || value.Names[0].Name != "ErrInvalidOutput" {
-				continue
-			}
-			found++
-			if !ast.IsExported(value.Names[0].Name) || !isDirectErrorsNew(value, "agentkit: structured output rejected") {
-				t.Fatal("ErrInvalidOutput is not declared directly with the exact errors.New message")
-			}
-		}
-	}
-	if found != 1 {
-		t.Fatalf("ErrInvalidOutput package declarations = %d, want exactly one", found)
-	}
-}
-
-func isDirectErrorsNew(value *ast.ValueSpec, wantMessage string) bool {
-	if len(value.Values) != 1 {
-		return false
-	}
-	call, ok := value.Values[0].(*ast.CallExpr)
-	if !ok || len(call.Args) != 1 {
-		return false
-	}
-	selector, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok || selector.Sel.Name != "New" {
-		return false
-	}
-	packageName, ok := selector.X.(*ast.Ident)
-	message, literal := call.Args[0].(*ast.BasicLit)
-	return ok && literal && packageName.Name == "errors" && message.Kind == token.STRING && message.Value == fmt.Sprintf("%q", wantMessage)
 }
 
 func testInvalidOutputIdentityAndWrapping(t *testing.T) {
@@ -230,16 +136,21 @@ func testErrorShape(t *testing.T) {
 		{name: "Message", typeName: "string", exported: true},
 		{name: "RetryAfter", typeName: "time.Duration", exported: true},
 		{name: "Endpoint", typeName: "agentkit.Identity", exported: true},
-		{name: "err", typeName: "error", exported: false},
 	}
 	errorType := reflect.TypeOf(Error{})
-	if errorType.NumField() != len(want) {
-		t.Fatalf("Error has %d fields, want exact D4 shape of %d", errorType.NumField(), len(want))
+	var exported []reflect.StructField
+	for index := range errorType.NumField() {
+		if field := errorType.Field(index); field.IsExported() {
+			exported = append(exported, field)
+		}
+	}
+	if len(exported) != len(want) {
+		t.Fatalf("Error has %d exported fields, want exact D4 shape of %d", len(exported), len(want))
 	}
 	for index, expected := range want {
-		actual := errorType.Field(index)
+		actual := exported[index]
 		if actual.Name != expected.name || actual.Type.String() != expected.typeName || actual.IsExported() != expected.exported {
-			t.Fatalf("Error field %d = (%s, %s, exported=%t), want %#v", index, actual.Name, actual.Type, actual.IsExported(), expected)
+			t.Fatalf("Error exported field %d = (%s, %s, exported=%t), want %#v", index, actual.Name, actual.Type, actual.IsExported(), expected)
 		}
 	}
 }
