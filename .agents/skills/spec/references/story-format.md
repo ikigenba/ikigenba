@@ -132,9 +132,7 @@ command to this frame.
 
 ## A developer asks which version they have
 
-The version is a `var` in the source with a `v<major>.<minor>.<patch>` shape,
-never injected at build time, so a developer's build and a release report the
-same string.
+Both forms print the same version string, a `v<major>.<minor>.<patch>` shape.
 
 Command:
 

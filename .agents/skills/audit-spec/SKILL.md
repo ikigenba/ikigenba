@@ -57,6 +57,9 @@ Route verified findings:
   useful partial assertions and other ids for the subsequent build to use.
 - **Coverage complete, but a tag is irrelevant:** remove only the unsupported
   tag; retain tags contributing to the verified complete coverage.
+- **Test proves by reading source instead of by use:** remove the tag. If no
+  test could prove the requirement by use, also file an issue: the
+  requirement must leave the design.
 - **Requirement untestable or contract cannot be satisfied:** file an evidenced
   issue under spec's rules. Validate it as a blocker and use fanout's halt
   behavior; the audit cannot redesign the contract.

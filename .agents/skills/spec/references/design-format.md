@@ -15,13 +15,13 @@ Everything in scope must be captured **as requirements**, not merely described i
 In scope (the public surface):
 
 - Domain language: the concrete, shared vocabulary — entities, terms, and their definitions.
-- Module boundaries and responsibilities: what modules/subsystems exist and what each owns. Every design states which module or package its exported names live in. A package is one concern, small enough for a reader or a build agent to hold whole — on the order of a dozen files. When a design would push a package past that, splitting it is a design decision made here, as a re-minted layout requirement, never something left for the run to improvise.
+- Module boundaries: which package each exported name is imported from. A consumer proves this by importing it. A package is one concern, small enough to hold whole; keeping it so is guidance for the author and the run, not a requirement.
 - Names of public things: modules, types, constants, operations.
 - Public types and data shapes that cross a boundary, including their fields.
 - Operation signatures: name, parameters, return type, and errors/failure modes surfaced. The shape only, never the body. (e.g. an exported Go function signature or interface, a module's exported JavaScript functions.)
 - Interfaces/protocols the module implements or depends on.
 - Constants that are part of the contract: limits, defaults, enumerated values, error codes.
-- Dependencies and their direction: who depends on whom.
+- External tools and services the code relies on, reached through their published interfaces. Which internal package imports which is not observable and not a requirement.
 - Observable behavior and invariants: what an operation does as seen from outside, and pre/postconditions at the boundary. Expressed as requirements (below), not as procedure steps.
 - State machine, when the subsystem is stateful: the set of states, the events/operations that trigger transitions, which transitions are allowed, guards on them, and the observable effect of each.
 
@@ -94,14 +94,14 @@ One bullet per requirement:
 
 Requirements come in two forms, and a design needs both:
 
-- **Structural** — declares a public name and its shape: a module and what it exports, a type and its exact fields, an operation's signature, an enumeration's members, a contract constant's name and value. Structural requirements are testable by construction: code referencing the declared shape compiles (or a reflection/introspection check passes). Write one requirement per declaration — the type with its field list in one requirement, not one per field — so a rename or reshape re-mints exactly one id.
+- **Structural** — declares a public name and its shape: a package and what it exports, a type and its exact fields, an operation's signature, an enumeration's members, a contract constant's name and value; for a program, a command, flag, path, environment variable, or route. Structural requirements are proved by use: a test imports the package and references the declared shape exactly, so it compiles only if the declaration holds, or invokes the command as declared. Write one requirement per declaration — the type with its field list in one requirement, not one per field — so a rename or reshape re-mints exactly one id. A structural requirement declares only what a consumer can use. How many packages exist, what imports what, what `main` holds, what `go.mod` requires, and which files sit in a directory are not usable and are never requirements.
 - **Behavioral** — a claim about what a declared symbol does. It names the symbol and nothing more: the signature, fields, or value live in the structural requirement that declares it. So a reshaped declaration re-mints one structural id, and the behavioral requirements that mention it keep theirs unless their own text changes.
 
 If every structural requirement were deleted, the design should no longer name anything; if that is not true, some of the contract is squatting in prose.
 
 ## Changing a design
 
-A design document defines the current target, not a commitment to what earlier iterations decided. When adding to or revising a design, actively reconsider the decisions already in place — names, type shapes, boundaries, and especially package layout, which is usually settled when the scope was one design and quietly goes stale as designs accumulate — wherever changing them would produce clearer, simpler code. The existing implementation is not a reason to keep an inferior shape: the run restructures to fit the current design, and superseded structure and tests carry no compatibility claim unless a current requirement states one. When a revision replaces something, put the whole replacement in the requirements — the new declaration, the deletion of the old one, and any compatibility that genuinely must be kept — so the gap shows the addition and the removal together and the run retires the old shape instead of bridging to it.
+A design document defines the current target, not a commitment to what earlier iterations decided. When adding to or revising a design, actively reconsider the decisions already in place — names, type shapes, boundaries, and especially which package owns each exported name, which is usually settled when the scope was one design and quietly goes stale as designs accumulate — wherever changing them would produce clearer, simpler code. The existing implementation is not a reason to keep an inferior shape: the run restructures to fit the current design, and superseded structure and tests carry no compatibility claim unless a current requirement states one. When a revision replaces something, put the whole replacement in the requirements — the new declaration, the deletion of the old one, and any compatibility that genuinely must be kept — so the gap shows the addition and the removal together and the run retires the old shape instead of bridging to it.
 
 Design documents are never frozen; they may change at any time, and an existing requirement is never a reason a design cannot change — it is a decision under review like every other. Their prose may be rewritten freely — it is non-normative, so rewriting it changes nothing; a rewrite that *would* change the contract is really a requirement change and must be made in the `REQUIREMENTS` list. The only rule is how a requirement changes: **new text, new id**.
 

@@ -56,13 +56,13 @@ and verified before dependent authors draft against them. Changes return to
 the owning scope and trigger review of affected consumers.
 
 Authors establish relevant existing behavior and reconsider whether the
-package layout still fits, including the package owning every exported name.
-Capture needed layout changes as structural requirements. Author structural
-and behavioral requirements under the canonical rules, minting ids with
-`idgen`. Preserve unchanged requirement text byte-for-byte; changed text gets
-a new id. Every requirement must trace to a story outcome (for a library,
-an agreed consumer task) or a necessary public declaration, invariant, or
-project constraint supporting one.
+package owning each exported name still fits. Capture a changed owner as a
+structural requirement, proved by importing the name from its new package.
+Author structural and behavioral requirements under the canonical rules,
+minting ids with `idgen`. Preserve unchanged requirement text byte-for-byte;
+changed text gets a new id. Every requirement must trace to a story outcome
+(for a library, an agreed consumer task) or a public declaration supporting
+one, and must be provable by use.
 
 Supply complete consumer tasks using exactly the proposed contract. For
 revisions, show current and proposed usage. Usage review must

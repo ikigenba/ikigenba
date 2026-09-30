@@ -52,6 +52,7 @@ Verification must establish:
 
 - Every gap id recorded at the start of the run is resolved: each id to add is tagged in a test, and each id to remove is gone from the tests.
 - Every test added or changed asserts its requirement, no less and no more. A passing test with the id in it is not enough; neither is a test that proves things the requirement does not say.
+- Every test proves its requirement by use. A test that reads the module's source, layout, or `go.mod`, or parses or reflects over source, closes nothing; the requirement it was written for is filed as an issue.
 - The implementation realizes the requirements behind the gap ids, including replacement of superseded behavior, without changing design or the sub-project's `AGENTS.md`.
 - Every declared gate exits zero, in the declared order, with nothing skipped or suppressed.
 - Every commit follows the declared convention, names the gap ids it closes, and was made with every declared gate passing.

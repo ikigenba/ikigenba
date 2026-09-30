@@ -39,6 +39,10 @@ test ids:   grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' <AGENTS.md test files>  | sor
 
 The gap is the diff: an id in design but not tests must be **added**; an id in tests but not design must be **removed**. Presence alone defines the gap; adequacy is judged separately (audit, and the adversarial check inside the run). A revision that replaces a requirement therefore appears as a paired add and remove, and the pair is landed together so the old shape is retired, never bridged.
 
+## Tests prove by use
+
+A test proves a requirement by using what it declares: it imports the package, calls the function with the declared signature, constructs the type with the declared fields, runs the command with the declared flag, requests the declared route, and asserts the outcome. A name or shape is verified because using it compiles and behaves as stated. A test never reads the module's source, layout, or `go.mod`, and never parses or reflects over source to check how something is written. A requirement that use cannot reach is not a requirement.
+
 ## The sub-project's AGENTS.md
 
 Each sub-project has an `AGENTS.md` beside `specs/` that declares how the sub-project is built and tested: its toolchain, its test files (the file set the gap is computed against), its gates, and its commit conventions. That directory — the parent of `specs/` — is the sub-project's working directory: every gate command and path is relative to it, and a monorepo may hold several such sub-projects below one git root. The git root's own `AGENTS.md` is repo-wide guidance and never stands in for a sub-project's `AGENTS.md`; the sub-project's `AGENTS.md` is always the one that sits beside `specs/`. It is read-only to the run. It must declare:
