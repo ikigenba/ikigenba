@@ -343,7 +343,7 @@ func TestConstructionSeamIsExactAndSufficientForEveryOffering(t *testing.T) {
 	}
 }
 
-// R-NY6T-G0IY
+// R-BAV0-6DSH
 func TestNewDeclarationTakesWireFormatAndRejectsNilWire(t *testing.T) {
 	if got, want := reflect.TypeOf(New), reflect.TypeOf(func(WireFormat, Endpoint, string, Config) (*Conversation, error) { return nil, nil }); got != want {
 		t.Fatalf("New type = %s, want %s", got, want)
@@ -700,7 +700,7 @@ func TestUsageDeclaration(t *testing.T) {
 }
 
 func TestCostDeclarationIsExact(t *testing.T) {
-	// R-NHWH-RJQL
+	// R-BEIP-BP0K
 	costType := reflect.TypeFor[Cost]()
 	if costType.Name() != "Cost" || costType.Kind() != reflect.Int64 {
 		t.Fatalf("Cost name/kind = %q/%s, want exported defined int64", costType.Name(), costType.Kind())

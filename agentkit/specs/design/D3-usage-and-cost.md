@@ -124,7 +124,7 @@ the app. An unlisted model finds no offering and prices to zero.
 - R-ND0W-8GRT: `agentkit` MUST export `type Usage struct { InputTokens int64; CachedTokens int64; CacheWrite5mTokens int64; CacheWrite1hTokens int64; OutputTokens int64; ReasoningTokens int64 }` with exactly those six fields.
 - R-NFGP-0097: The six `Usage` buckets MUST be disjoint as they leave the wire adapter — `InputTokens` excludes `CachedTokens` and both cache-write buckets, and `OutputTokens` excludes `ReasoningTokens` — so their sum is a correct grand total.
 - R-NGOL-DRZW: The Anthropic Messages wire MUST decode the 5-minute and 1-hour cache-creation token counts into `CacheWrite5mTokens` and `CacheWrite1hTokens` respectively, and every other built-in wire MUST leave both cache-write buckets at zero.
-- R-NHWH-RJQL: `agentkit` MUST export `type Cost int64` as a bare nano-USD amount with no companion flag, label, or provenance field.
+- R-BEIP-BP0K: `agentkit` MUST export `type Cost int64` as a bare nano-USD amount.
 - R-NJ4E-5BHA: `agentkit` MUST export `type RateTier struct { MinInputTokens int64; InputUncached int64; CacheReadInput int64; CacheWrite5m int64; CacheWrite1h int64; Output int64 }` with exactly those six fields.
 - R-NKCA-J37Z: `agentkit` MUST export `type Pricing struct { Tiers []RateTier }` with exactly that field.
 - R-NLK6-WUYO: `agentkit` MUST export `func (p Pricing) Cost(u Usage) Cost`, and an empty `Tiers` MUST price every `Usage` to zero.

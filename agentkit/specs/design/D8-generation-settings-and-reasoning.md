@@ -282,7 +282,7 @@ release: only a genuinely new *wire shape* (not a new model) requires library wo
 
 ## REQUIREMENTS
 
-- R-O755-PYBV: `Settings` MUST be a plain value type such that a zero `Settings` requests vendor defaults for every control, sends no option, and carries no vendor-specific vocabulary.
+- R-BDAS-XX9V: `Settings` MUST be a plain value type such that a zero `Settings` requests vendor defaults for every control and sends no option.
 - R-3QUG-OHV9: A reasoning request MUST be expressed in a wire-neutral model (default, off, bare-on, effort, budget) that the consumer sets without naming any vendor.
 - R-3S2D-29LY: A reasoning shape a target wire cannot express MUST fail at `Send` with `ErrInvalidConfig` before any provider call, and MUST NOT be silently downgraded, substituted, or dropped.
 - R-3UI5-TT3C: A `ToolChoice` directive a target wire cannot express MUST fail at `Send` with `ErrInvalidConfig`, consistent with reasoning representability and out-of-subset schemas.

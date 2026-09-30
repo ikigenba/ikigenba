@@ -127,7 +127,7 @@ func TestValidateOptionsChecksKeyLegalityAndGrammar(t *testing.T) {
 
 func TestSettingsHasExactWireNeutralShapeAndZeroValue(t *testing.T) {
 	// R-DLXF-VK2V: Settings has exactly Options, ToolChoice, and SerialToolCalls.
-	// R-O755-PYBV
+	// R-BDAS-XX9V
 	typeOfSettings := reflect.TypeFor[Settings]()
 	if got := typeOfSettings.NumField(); got != 3 {
 		t.Fatalf("Settings field count = %d, want 3", got)

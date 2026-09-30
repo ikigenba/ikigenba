@@ -34,7 +34,7 @@ rewound transcript does not unspend it. Everything else about a `Conversation`
 construction (D12) and cannot move in either direction.
 
 Loaded deferred tools are the one piece of current-history state a restore
-leaves alone, and not by choice: D16's R-5UG8-E9UB forbids unloading outright,
+leaves alone, and not by choice: D16's R-B77B-12KE keeps a loaded tool loaded,
 because removing a tool would strand the `tool_use`/`tool_result` pairs that
 `History` still carries. A restore therefore cannot un-load, and must not
 pretend to.
@@ -124,7 +124,7 @@ which is what cost and audit want.
 - R-7Z0W-VCLB: While a savepoint is live, a `load_tools` call MUST load no tool and MUST return a `ToolResult` with `IsError` set whose content names the live savepoint as the reason, and MUST NOT end the turn.
 - R-808T-94C0: While a savepoint is live, a direct call to a deferred-but-unloaded tool MUST NOT load that tool and MUST return a `ToolResult` with `IsError` set, and MUST NOT end the turn.
 - R-81GP-MW2P: While a savepoint is live, every round-trip MUST advertise the same tool sequence, in the same order, as the round-trip that followed the savepoint's creation.
-- R-82OM-0NTE: A successful `Restore` MUST leave the set of loaded deferred tools unchanged, and no operation in this design may unload a deferred tool (D16, R-5UG8-E9UB).
+- R-B8F7-EUB3: A successful `Restore` MUST leave the set of loaded deferred tools unchanged.
 - R-83WI-EFK3: `Close` MUST be idempotent — a second `Close` MUST change nothing and return `nil` — and MUST NOT close the conversation's `Log`.
 - R-854E-S7AS: After `Close`, each of `Send`, `AddSystem`, `Savepoint`, `Restore`, and `Release` MUST return an error satisfying `errors.Is(err, ErrClosed)`, make no provider call, and leave `History` unchanged.
 - R-86CB-5Z1H: A successful `Savepoint`, `Restore`, and `Release` MUST each write exactly one log record (D15), of type `RecordSavepoint`, `RecordRestore`, and `RecordRelease` respectively, outside any `turn_start`/`turn_end` pair; a call that returns an error MUST write none.

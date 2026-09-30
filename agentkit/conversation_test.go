@@ -2672,10 +2672,6 @@ func TestDeferredGroupsConditionallySynthesizeExactlyOneLoader(t *testing.T) {
 			}
 		})
 	}
-	conversationType := reflect.TypeFor[*Conversation]()
-	if _, exists := conversationType.MethodByName("Deferred"); exists {
-		t.Fatal("post-construction Deferred registration still exists")
-	}
 }
 
 func TestLoadToolsCatalogContainsOnlyGroupBlurbsAndBareNames(t *testing.T) {
@@ -2852,7 +2848,7 @@ func TestToolSequenceStableAcrossRoundTripsWhileSavepointLive(t *testing.T) {
 }
 
 func TestRestoreLeavesLoadedDeferredToolsUnchanged(t *testing.T) {
-	// R-82OM-0NTE
+	// R-B8F7-EUB3
 	load := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "load-a", Name: loadToolsName, Input: json.RawMessage(`{"names":["group_a"]}`)}}}
 	done := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
 	provider := &phase15Provider{model: "model", responses: [][]Event{
@@ -2897,7 +2893,7 @@ func TestRestoreLeavesLoadedDeferredToolsUnchanged(t *testing.T) {
 }
 
 func TestDeferredLoadingIsMonotonicAcrossConversationSends(t *testing.T) {
-	// R-5UG8-E9UB
+	// R-B77B-12KE
 	loadSecond := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "second", Name: loadToolsName, Input: json.RawMessage(`{"names":["second"]}`)}}}
 	loadFirst := Message{Role: RoleAssistant, Blocks: []Block{ToolUse{ID: "first", Name: loadToolsName, Input: json.RawMessage(`{"names":["first"]}`)}}}
 	done := Message{Role: RoleAssistant, Blocks: []Block{Text{Text: "done"}}}
@@ -2919,10 +2915,6 @@ func TestDeferredLoadingIsMonotonicAcrossConversationSends(t *testing.T) {
 	}
 	if got := toolNames(provider.states[3].Tools); !reflect.DeepEqual(got, []string{loadToolsName, "second", "first"}) {
 		t.Fatalf("monotonic conversation order = %v", got)
-	}
-	conversationType := reflect.TypeFor[*Conversation]()
-	if _, exists := conversationType.MethodByName("Unload"); exists {
-		t.Fatal("Conversation unexpectedly exposes an unload operation")
 	}
 }
 

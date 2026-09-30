@@ -21,7 +21,7 @@ func TestEndpointExportsNoOptionFunctions(t *testing.T) {
 
 // R-JX1B-IDMK
 // R-K0P0-NOUN
-// R-KE5C-F60Q
+// R-BC2W-K5J6
 func TestNewEndpointHasExactConstructorAndValidation(t *testing.T) {
 	wantSignature := reflect.TypeOf(func(Authenticator, ...EndpointOption) (Endpoint, error) { return Endpoint{}, nil })
 	if got := reflect.TypeOf(NewEndpoint); got != wantSignature || !got.IsVariadic() {
