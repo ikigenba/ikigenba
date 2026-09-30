@@ -20,10 +20,6 @@ type Authenticator interface {
 	Authenticate(ctx context.Context, req *http.Request, body []byte) error
 }
 
-// errorClassifier classifies a provider response from its complete transport
-// inputs.
-type errorClassifier func(status int, header http.Header, body []byte) error
-
 type endpointConfig struct {
 	baseURL *url.URL
 	auth    Authenticator

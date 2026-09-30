@@ -20,9 +20,8 @@ func (function authFunc) Authenticate(ctx context.Context, request *http.Request
 }
 
 type testWire struct {
-	encode     func(requestState) ([]byte, error)
-	decode     func(iter.Seq2[[]byte, error]) iter.Seq2[Event, error]
-	classifier errorClassifier
+	encode func(requestState) ([]byte, error)
+	decode func(iter.Seq2[[]byte, error]) iter.Seq2[Event, error]
 }
 
 func (wire *testWire) EncodeRequest(state requestState) ([]byte, error) {
@@ -46,12 +45,6 @@ func (wire *testWire) defaultDecodeStream(frames iter.Seq2[[]byte, error]) iter.
 				yield(nil, err)
 				return
 			}
-			if wire.classifier != nil {
-				if classifyErr := wire.classifier(http.StatusOK, nil, frame); classifyErr != nil {
-					yield(nil, classifyErr)
-					return
-				}
-			}
 			event := MessageDone{Message: Message{Role: RoleAssistant, Blocks: []Block{Text{Text: string(frame)}}}}
 			if !yield(event, nil) {
 				return
@@ -60,14 +53,9 @@ func (wire *testWire) defaultDecodeStream(frames iter.Seq2[[]byte, error]) iter.
 	}
 }
 
-func (*testWire) RenderTools([]Tool) (json.RawMessage, error) { return nil, nil }
-func (*testWire) OptionSpecs() []OptionSpec                   { return nil }
-func (wire *testWire) classifyResponse(status int, header http.Header, body []byte) error {
-	if wire.classifier == nil {
-		return nil
-	}
-	return wire.classifier(status, header, body)
-}
+func (*testWire) RenderTools([]Tool) (json.RawMessage, error)     { return nil, nil }
+func (*testWire) OptionSpecs() []OptionSpec                       { return nil }
+func (*testWire) classifyResponse(int, http.Header, []byte) error { return nil }
 
 func TestComposedProviderPropagatesAssemblyFailures(t *testing.T) {
 	encodeFailure := errors.New("encode failed")
