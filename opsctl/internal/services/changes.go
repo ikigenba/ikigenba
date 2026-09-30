@@ -1,7 +1,10 @@
 // Package services publishes the host's launcher service entries.
 package services
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"reflect"
+)
 
 // classify compares the entries from the previous file with the entries that
 // will be published. Invalid previous content has no entries.
@@ -66,9 +69,15 @@ func previousEntries(data []byte) map[string]map[string]any {
 }
 
 func sameEntry(prior map[string]any, item entry) bool {
-	url, urlOK := prior["url"].(string)
-	icon, iconOK := prior["icon"].(string)
-	enabled, enabledOK := prior["enabled"].(bool)
-	return urlOK && iconOK && enabledOK &&
-		url == item.URL && icon == item.Icon && enabled == item.Enabled
+	fields := map[string]any{
+		"url": item.URL, "description": item.Description, "socket": item.Socket,
+		"enabled": item.Enabled, "mcp": item.MCP,
+	}
+	for name, value := range fields {
+		if !reflect.DeepEqual(prior[name], value) {
+			return false
+		}
+	}
+	icon, present := prior["icon"].(string)
+	return present == item.HasIcon && (!present || icon == item.Icon)
 }

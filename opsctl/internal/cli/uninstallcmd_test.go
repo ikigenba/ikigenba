@@ -1,9 +1,11 @@
 package cli_test
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -15,15 +17,18 @@ import (
 	"github.com/ikigenba/ikigenba/opsctl/internal/apps"
 	"github.com/ikigenba/ikigenba/opsctl/internal/backup"
 	"github.com/ikigenba/ikigenba/opsctl/internal/cli"
+	"github.com/ikigenba/ikigenba/opsctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/opsctl/internal/config"
 	"github.com/ikigenba/ikigenba/opsctl/internal/host"
 )
 
 func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
-	// R-M6Y0-I4V2 R-VLO7-YADY R-V3TR-FMU7
+	// R-W9B4-QTH7 R-WBQX-ICYL R-YTKN-V54P
 	root := uninstallCommandRoot(t, true)
 	var commands []host.Command
-	otherBefore := snapshotUninstallPaths(t, root, "opt/tasks", "etc/systemd/system/ikigenba-tasks.service")
+	otherBefore := snapshotUninstallPaths(t, root, "opt/tasks", "etc/systemd/system/ikigenba-tasks.service", "etc/systemd/system/ikigenba-tasks.socket")
+	stateBefore := snapshotUninstallPaths(t, root, "opt/notes/state")
+	appStopped := false
 	writeUninstallFile(t, root, "replicas/notes/notes.db", "stale transaction")
 	writeUninstallFile(t, root, "replicas/tasks/tasks.db", "stale remaining replica")
 	execute := func(_ context.Context, command host.Command) (host.Result, error) {
@@ -32,9 +37,17 @@ func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
 		case command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"is-active", "ikigenba-notes.service"}):
 			return host.Result{Stdout: []byte("active\n")}, nil
 		case command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"stop", "ikigenba-notes.service"}):
-			writeUninstallFile(t, root, "replicas/notes/notes.db", readUninstallFile(t, root, "opt/notes/state/notes.db"))
+			appStopped = true
 			return host.Result{}, nil
 		case command.Name == "systemctl" && reflect.DeepEqual(command.Args, []string{"restart", "litestream.service"}):
+			if !appStopped {
+				t.Fatal("Litestream restarted before app stop completed")
+			}
+			if state := snapshotUninstallPaths(t, root, "opt/notes/state"); !reflect.DeepEqual(state, stateBefore) {
+				t.Fatalf("shutdown synchronization lost database, sidecars or metadata: %#v", state)
+			}
+			// The existing replication process synchronizes its retained database on shutdown.
+			writeUninstallFile(t, root, "replicas/notes/notes.db", readUninstallFile(t, root, "opt/notes/state/notes.db"))
 			configuration := readUninstallFile(t, root, "etc/litestream.yml")
 			if !strings.Contains(configuration, "opt/tasks/state/tasks.db") || strings.Contains(configuration, "opt/notes/") {
 				t.Fatalf("litestream restarted with wrong configuration: %q", configuration)
@@ -67,14 +80,15 @@ func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
 		{Name: "systemctl", Args: []string{"show", "--property=LoadState", "--property=UnitFileState", "ikigenba-tasks.socket"}},
 		{Name: "nginx", Args: []string{"-t"}},
 		{Name: "systemctl", Args: []string{"reload-or-restart", "nginx"}},
+		{Name: "systemctl", Args: []string{"show", "--property=LoadState", "--property=UnitFileState", "ikigenba-tasks.socket"}},
 		{Name: "id", Args: []string{"--user", "ikigenba"}},
 		{Name: "useradd", Args: []string{"--system", "--no-create-home", "--shell", "/usr/sbin/nologin", "--user-group", "ikigenba"}},
 		{Name: "chown", Args: []string{"root:ikigenba", filepath.Join(root, "var/lib/ikigenba"), "<temporary services file>"}},
 		{Name: "systemctl", Args: []string{"restart", "litestream.service"}},
 	}
-	if len(commands) == len(wantCommands) && commands[11].Name == "chown" && len(commands[11].Args) == 3 &&
-		strings.HasPrefix(commands[11].Args[2], filepath.Join(root, "var/lib/ikigenba/.services-")) {
-		commands[11].Args[2] = "<temporary services file>"
+	if len(commands) == len(wantCommands) && commands[12].Name == "chown" && len(commands[12].Args) == 3 &&
+		strings.HasPrefix(commands[12].Args[2], filepath.Join(root, "var/lib/ikigenba/.services-")) {
+		commands[12].Args[2] = "<temporary services file>"
 	}
 	if !reflect.DeepEqual(commands, wantCommands) {
 		t.Fatalf("commands = %#v, want %#v", commands, wantCommands)
@@ -113,7 +127,7 @@ func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
 	if got := readUninstallFile(t, root, "opt/tasks/bin/tasks"); got != "other binary" {
 		t.Fatalf("other app changed to %q", got)
 	}
-	if otherAfter := snapshotUninstallPaths(t, root, "opt/tasks", "etc/systemd/system/ikigenba-tasks.service"); !reflect.DeepEqual(otherAfter, otherBefore) {
+	if otherAfter := snapshotUninstallPaths(t, root, "opt/tasks", "etc/systemd/system/ikigenba-tasks.service", "etc/systemd/system/ikigenba-tasks.socket"); !reflect.DeepEqual(otherAfter, otherBefore) {
 		t.Fatalf("other app changed:\nbefore %#v\nafter  %#v", otherBefore, otherAfter)
 	}
 
@@ -131,28 +145,56 @@ func TestUninstallCommandComposesLifecycleRoutingAndReplication(t *testing.T) {
 		t.Fatalf("manifest-free Regenerate = %t, %v, want unchanged success", changed, err)
 	}
 
-	rows, err := apps.Status(context.Background(), host.Env{Root: root, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+	statusOut, statusErr, statusCode := invoke([]string{"status"}, cli.Deps{Root: root, EUID: 0, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
 		if command.Name == "systemctl" && strings.Contains(command.Args[len(command.Args)-1], "notes") {
 			return host.Result{Stdout: []byte("LoadState=not-found\nActiveState=inactive\n")}, nil
 		}
 		return host.Result{}, errors.New("unavailable")
 	}})
-	if err != nil {
-		t.Fatal(err)
+	if statusCode != 0 || statusErr != "" || !strings.HasPrefix(statusOut, "notes - - - -\n") {
+		t.Fatalf("retained state status = exit %d stdout %q stderr %q", statusCode, statusOut, statusErr)
 	}
-	var notes apps.StatusRow
-	for _, row := range rows {
-		if row.Name == "notes" {
-			notes = row
-		}
-	}
-	if notes != (apps.StatusRow{Name: "notes", Version: "-", State: "-", Socket: "-", JournalMode: "-"}) {
-		t.Fatalf("retained state service row = %#v", notes)
+
+	archived := make(map[string]string)
+	results, err := backup.Files(context.Background(), host.Env{
+		Root: root,
+		Now:  func() time.Time { return time.Unix(1, 0) },
+		Execute: func(_ context.Context, command host.Command) (host.Result, error) {
+			if command.Name == "getent" {
+				return host.Result{ExitCode: 2}, nil
+			}
+			if command.Name != "zstd" {
+				return host.Result{}, errors.New("unexpected backup command")
+			}
+			archive := tar.NewReader(command.Stdin)
+			for {
+				header, err := archive.Next()
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					return host.Result{}, err
+				}
+				if header.Typeflag == tar.TypeReg {
+					data, err := io.ReadAll(archive)
+					if err != nil {
+						return host.Result{}, err
+					}
+					archived["opt/notes/"+header.Name] = string(data)
+				}
+			}
+			return host.Result{Stdout: []byte{0x28, 0xb5, 0x2f, 0xfd, 0x20, 0, 1, 0, 0}}, nil
+		},
+	}, cloud.Env{Open: func(context.Context, string) (cloud.Client, error) {
+		return &cliInstallCloud{}, nil
+	}}, config.Store{Root: root}, "notes")
+	if err != nil || len(results) != 1 || results[0].Err != nil || !reflect.DeepEqual(archived, stateBefore) {
+		t.Fatalf("manifest-free state backup = %#v, %v; archived %#v, want %#v", results, err, archived, stateBefore)
 	}
 }
 
 func TestUninstallReportsAllLitestreamConfigurationOutcomes(t *testing.T) {
-	// R-V3TR-FMU7
+	// R-YTKN-V54P
 	for _, test := range []struct {
 		name        string
 		prepare     func(*testing.T, string)
@@ -386,7 +428,7 @@ func waitForUninstallConfigReaderClose(name string) error {
 }
 
 func TestUninstallNormalizesHostAndPreservesApexConfiguration(t *testing.T) {
-	// R-XRPS-FLUE R-V3TR-FMU7 R-VLO7-YADY
+	// R-XRPS-FLUE R-YTKN-V54P R-WBQX-ICYL
 	root := uninstallCommandRoot(t, true)
 	store := config.Store{Root: root}
 	if err := store.Set("host.name", "SBX.Example.Test."); err != nil {
@@ -612,7 +654,7 @@ func assertNoLifecycleCommandsAfter(t *testing.T, stage string, commands []host.
 }
 
 func TestUninstallWithoutStateDoesNotCreateDiscoverableService(t *testing.T) {
-	// R-VLO7-YADY
+	// R-WBQX-ICYL
 	root := uninstallCommandRoot(t, false)
 	stdout, stderr, code := invoke([]string{"uninstall", "notes"}, cli.Deps{Root: root, EUID: 0, Execute: func(_ context.Context, command host.Command) (host.Result, error) {
 		if reflect.DeepEqual(command.Args, []string{"is-active", "ikigenba-notes.service"}) {

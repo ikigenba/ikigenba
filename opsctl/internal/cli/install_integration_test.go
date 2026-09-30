@@ -19,7 +19,7 @@ import (
 )
 
 func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
-	// R-JWO0-EHD7
+	// R-YZO5-RZU6
 	fixture := newCLIInstallFixture(t)
 	stdout, stderr, code := fixture.invoke()
 	if code != 0 || stderr != "" {
@@ -52,6 +52,7 @@ func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
 		"nginx -t",
 		"systemctl reload-or-restart nginx",
 		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
+		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		"systemctl restart litestream.service",
 		"systemctl start ikigenba-notes.service",
 		"systemctl is-active ikigenba-notes.service",
@@ -60,8 +61,11 @@ func TestInstallPackageOwnershipAndCLIComposition(t *testing.T) {
 }
 
 func TestInstallCLIUsesNormalizedHostAndConfiguredApex(t *testing.T) {
-	// R-UU2K-DGWN R-UVAG-R8NC
+	// R-YOP2-C25X R-YPWY-PTWM
 	fixture := newCLIInstallFixture(t)
+	if err := os.Remove(filepath.Join(fixture.root, "var/lib/ikigenba/services.json")); err != nil {
+		t.Fatal(err)
+	}
 	store := config.Store{Root: fixture.root}
 	if err := store.Set("host.name", "SBX.Example.Test."); err != nil {
 		t.Fatal(err)
@@ -78,7 +82,7 @@ func TestInstallCLIUsesNormalizedHostAndConfiguredApex(t *testing.T) {
 		"unpack: ok (/opt/notes)\n" +
 		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: ok (notes.sbx.example.test, sbx.example.test, example.test)\n" +
-		"services: ok (unchanged)\n" +
+		"services: ok (notes added)\n" +
 		"litestream: ok (state/notes.db)\n" +
 		"service: ok (notes v1.2.3 active)\n"
 	if code != 0 || stdout != wantOutput || stderr != "" {
@@ -100,8 +104,11 @@ func TestInstallCLIUsesNormalizedHostAndConfiguredApex(t *testing.T) {
 }
 
 func TestInstallCLIReportsNoApexForDifferentConfiguredApp(t *testing.T) {
-	// R-UVAG-R8NC
+	// R-YPWY-PTWM
 	fixture := newCLIInstallFixture(t)
+	if err := os.Remove(filepath.Join(fixture.root, "var/lib/ikigenba/services.json")); err != nil {
+		t.Fatal(err)
+	}
 	store := config.Store{Root: fixture.root}
 	if err := store.Set("host.name", "sbx.example.test"); err != nil {
 		t.Fatal(err)
@@ -119,7 +126,7 @@ func TestInstallCLIReportsNoApexForDifferentConfiguredApp(t *testing.T) {
 		"unpack: ok (/opt/notes)\n" +
 		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: ok (notes.sbx.example.test, sbx.example.test)\n" +
-		"services: ok (unchanged)\n" +
+		"services: ok (notes added)\n" +
 		"litestream: ok (state/notes.db)\n" +
 		"service: ok (notes v1.2.3 active)\n"
 	if code != 0 || stdout != wantOutput || stderr != "" {
@@ -128,7 +135,7 @@ func TestInstallCLIReportsNoApexForDifferentConfiguredApp(t *testing.T) {
 }
 
 func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
-	// R-UU2K-DGWN, R-UVAG-R8NC, R-UWID-50E1, R-XLMA-IR4X, R-EOKC-P8UO
+	// R-YOP2-C25X, R-YPWY-PTWM, R-YR4V-3LNB, R-YSCR-HDE0, R-EOKC-P8UO
 	fixture := newCLIInstallFixture(t)
 	fixture.failCommand = "nginx -t"
 	stdout, stderr, code := fixture.invoke()
@@ -161,7 +168,7 @@ func TestInstallCLIReportsEveryStageAndStopsAtFailure(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRegenerationFails(t *testing.T) {
-	// R-UU2K-DGWN, R-XLMA-IR4X
+	// R-YOP2-C25X, R-YSCR-HDE0
 	fixture := newCLIInstallFixture(t)
 	store := config.Store{Root: fixture.root}
 	if err := store.Set("backup.s3_uri", "not-an-s3-uri"); err != nil {
@@ -184,7 +191,7 @@ func TestInstallCLIStopsWhenLitestreamRegenerationFails(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRestartFails(t *testing.T) {
-	// R-UU2K-DGWN, R-XLMA-IR4X
+	// R-YOP2-C25X, R-YSCR-HDE0
 	fixture := newCLIInstallFixture(t)
 	fixture.failCommand = "systemctl restart litestream.service"
 
@@ -205,7 +212,7 @@ func TestInstallCLIStopsWhenLitestreamRestartFails(t *testing.T) {
 }
 
 func TestInstallCLIStopsWhenLitestreamRestartTransportFails(t *testing.T) {
-	// R-UU2K-DGWN, R-XLMA-IR4X
+	// R-YOP2-C25X, R-YSCR-HDE0
 	for _, test := range []struct {
 		name       string
 		failure    error
@@ -252,7 +259,7 @@ func TestInstallCLIStopsWhenLitestreamRestartTransportFails(t *testing.T) {
 }
 
 func TestInstallCLIDatabaseRemovalReportsUpdatedLitestream(t *testing.T) {
-	// R-UVAG-R8NC
+	// R-YPWY-PTWM
 	fixture := newCLIInstallFixture(t)
 	if stdout, stderr, code := fixture.invoke(); code != 0 || stderr != "" || stdout != installReportPrefix("state/notes.db")+"service: ok (notes v1.2.3 active)\n" {
 		t.Fatalf("initial install = exit %d stdout %q stderr %q", code, stdout, stderr)
@@ -287,8 +294,11 @@ func TestInstallCLIRejectsInvalidAppTimeoutsBeforeFetch(t *testing.T) {
 }
 
 func TestInstallCLILeavesDisabledAppStopped(t *testing.T) {
-	// R-UU2K-DGWN, R-UVAG-R8NC, R-XLMA-IR4X
+	// R-YOP2-C25X, R-YPWY-PTWM, R-YSCR-HDE0
 	fixture := newCLIInstallFixture(t)
+	if err := os.Remove(filepath.Join(fixture.root, "var/lib/ikigenba/services.json")); err != nil {
+		t.Fatal(err)
+	}
 	fixture.disabled = true
 	stdout, stderr, code := fixture.invoke()
 	want := "fetch: ok (notes-v1.tar.xz, 0.0 MiB)\n" +
@@ -297,7 +307,7 @@ func TestInstallCLILeavesDisabledAppStopped(t *testing.T) {
 		"unpack: ok (/opt/notes)\n" +
 		"unit: ok (ikigenba-notes.socket, ikigenba-notes.service)\n" +
 		"nginx: ok (notes.host.example, host.example disabled)\n" +
-		"services: ok (unchanged)\n" +
+		"services: ok (notes added)\n" +
 		"litestream: ok (state/notes.db)\n" +
 		"service: ok (notes v1.2.3 disabled)\n"
 	if code != 0 || stdout != want || stderr != "" {
@@ -432,6 +442,7 @@ func installCommandsThroughNginx(root string) []string {
 		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		"nginx -t",
 		"systemctl reload-or-restart nginx",
+		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 		"systemctl show --property=LoadState --property=UnitFileState ikigenba-notes.socket",
 	}
 }
@@ -569,6 +580,9 @@ func newCLIInstallFixture(t *testing.T) *cliInstallFixture {
 		t: t, root: root, manifest: manifest,
 		secretValue: "secret", plainValue: "PLAIN_VALUE", secretParameter: "/host.example/notes",
 	}
+	// Existing catalog state keeps shared matched workflow fixtures focused on
+	// their own requirements; first-install tests remove it explicitly.
+	writeCLIInstallFile(t, filepath.Join(root, "var/lib/ikigenba/services.json"), `{ "services": [{"name":"notes","url":"https://notes.host.example","description":"","socket":"/run/ikigenba/notes.sock","enabled":true,"mcp":false}] }`)
 	fixture.cloud = &cliInstallCloud{fixture: fixture}
 	return fixture
 }

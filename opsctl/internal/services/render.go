@@ -15,13 +15,17 @@ import (
 )
 
 type entry struct {
-	Name    string
-	URL     string
-	Icon    string
-	Enabled bool
+	Name        string
+	URL         string
+	Description string
+	Socket      string
+	Icon        string
+	Enabled     bool
+	MCP         bool
+	HasIcon     bool
 }
 
-// render obtains every launcher entry before producing the file's exact bytes.
+// render obtains every listed service entry before producing the file's exact bytes.
 func render(ctx context.Context, env host.Env, hostName string) ([]byte, []entry, error) {
 	if hostName == "" {
 		return nil, nil, errors.New("host.name not set")
@@ -54,21 +58,22 @@ func render(ctx context.Context, env host.Env, hostName string) ([]byte, []entry
 		}
 		iconPath := path.Join(base, apps.IconPath)
 		iconInfo, err := filesystem.Lstat(iconPath)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return nil, nil, fmt.Errorf("%s: %s: %w", service.Name, apps.IconPath, err)
-		}
-		if !iconInfo.Mode().IsRegular() {
-			return nil, nil, fmt.Errorf("%s: %s is not a regular file", service.Name, apps.IconPath)
-		}
-		icon, err := filesystem.ReadFile(iconPath)
-		if err != nil {
-			return nil, nil, fmt.Errorf("%s: %s: %w", service.Name, apps.IconPath, err)
-		}
-		if !utf8.Valid(icon) {
-			return nil, nil, fmt.Errorf("%s: %s is not valid UTF-8", service.Name, apps.IconPath)
+		hasIcon := !errors.Is(err, os.ErrNotExist)
+		var icon []byte
+		if hasIcon {
+			if err != nil {
+				return nil, nil, fmt.Errorf("%s: %s: %w", service.Name, apps.IconPath, err)
+			}
+			if !iconInfo.Mode().IsRegular() {
+				return nil, nil, fmt.Errorf("%s: %s is not a regular file", service.Name, apps.IconPath)
+			}
+			icon, err = filesystem.ReadFile(iconPath)
+			if err != nil {
+				return nil, nil, fmt.Errorf("%s: %s: %w", service.Name, apps.IconPath, err)
+			}
+			if !utf8.Valid(icon) {
+				return nil, nil, fmt.Errorf("%s: %s is not valid UTF-8", service.Name, apps.IconPath)
+			}
 		}
 		disabled, err := apps.Disabled(ctx, env, service.Name)
 		if err != nil {
@@ -76,7 +81,8 @@ func render(ctx context.Context, env host.Env, hostName string) ([]byte, []entry
 		}
 		entries = append(entries, entry{
 			Name: service.Name, URL: "https://" + service.Name + "." + hostName,
-			Icon: string(icon), Enabled: !disabled,
+			Description: service.Manifest.Description, Socket: "/run/ikigenba/" + service.Name + ".sock",
+			Icon: string(icon), HasIcon: hasIcon, Enabled: !disabled, MCP: service.Manifest.MCP,
 		})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
@@ -96,13 +102,25 @@ func encodeEntries(entries []entry) []byte {
 		writeJSONString(&output, item.Name)
 		output.WriteString(", \"url\": ")
 		writeJSONString(&output, item.URL)
-		output.WriteString(", \"icon\": ")
-		writeJSONString(&output, item.Icon)
+		output.WriteString(", \"description\": ")
+		writeJSONString(&output, item.Description)
+		output.WriteString(", \"socket\": ")
+		writeJSONString(&output, item.Socket)
 		output.WriteString(", \"enabled\": ")
 		if item.Enabled {
 			output.WriteString("true")
 		} else {
 			output.WriteString("false")
+		}
+		output.WriteString(", \"mcp\": ")
+		if item.MCP {
+			output.WriteString("true")
+		} else {
+			output.WriteString("false")
+		}
+		if item.HasIcon {
+			output.WriteString(", \"icon\": ")
+			writeJSONString(&output, item.Icon)
 		}
 		output.WriteString(" }")
 	}

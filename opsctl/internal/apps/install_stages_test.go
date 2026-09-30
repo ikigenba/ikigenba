@@ -221,7 +221,7 @@ func TestInstallCompletesFileStageBeforeSecretsOrMutation(t *testing.T) {
 }
 
 func TestInstallRunsStagesInOrderAndStopsAtConfigurationFailure(t *testing.T) {
-	// R-UWID-50E1
+	// R-YR4V-3LNB
 	for _, failAt := range []string{"", "nginx", "services", "litestream"} {
 		name := failAt
 		if name == "" {
@@ -311,7 +311,7 @@ func TestInstallRunsStagesInOrderAndStopsAtConfigurationFailure(t *testing.T) {
 }
 
 func TestInstallOwnedStagesStopOnActionAndReportFailures(t *testing.T) {
-	// R-UWID-50E1
+	// R-YR4V-3LNB
 	stages := []string{"fetch", "file", "secrets", "unpack", "unit", "service"}
 	for index, stage := range stages {
 		for _, actionFails := range []bool{false, true} {

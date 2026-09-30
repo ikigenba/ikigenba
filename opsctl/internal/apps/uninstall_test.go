@@ -14,7 +14,7 @@ import (
 )
 
 func TestUninstallAPISignatureAndCompleteDomainWorkflow(t *testing.T) {
-	// R-LONI-RKQN R-V3TR-FMU7
+	// R-LONI-RKQN R-YTKN-V54P
 	for _, uninstall := range []func(context.Context, host.Env, string, apps.UninstallHooks) error{apps.Uninstall} {
 		var invalid *apps.LifecycleError
 		if err := uninstall(context.Background(), host.Env{Root: t.TempDir()}, "bad/name", apps.UninstallHooks{}); !errors.As(err, &invalid) || invalid.Code != 2 {

@@ -240,7 +240,7 @@ func TestInstallAppliesInstalledTreeOwnershipAndModes(t *testing.T) {
 }
 
 func TestInstallReportsInstalledTreeShapingFailures(t *testing.T) {
-	// R-EOG7-Y07G R-XLMA-IR4X
+	// R-EOG7-Y07G R-YSCR-HDE0
 	ownershipFailure := errors.New("ownership failed")
 	for _, test := range []struct {
 		name      string
@@ -285,7 +285,7 @@ func TestInstallReportsInstalledTreeShapingFailures(t *testing.T) {
 }
 
 func TestInstallStageActionAndReportFailuresStopInOrder(t *testing.T) {
-	// R-XLMA-IR4X
+	// R-YSCR-HDE0
 	stages := []struct {
 		name      string
 		configure func(*completedInstallFixture, error)
@@ -453,7 +453,7 @@ func TestInstallReportsUnitFailureBeforeConfiguration(t *testing.T) {
 }
 
 func TestInstallConfiguresOnceBeforeActivation(t *testing.T) {
-	// R-UU2K-DGWN
+	// R-YOP2-C25X
 	fixture := newCompletedInstallFixture(t, t.TempDir(), false)
 	configureAt := -1
 	fixture.configure = func(_ context.Context, manifest apps.Manifest) error {

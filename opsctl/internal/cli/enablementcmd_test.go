@@ -71,7 +71,7 @@ func TestEnablementConfigurationPrecedesHostEffects(t *testing.T) {
 }
 
 func TestEnablementFailedStagesStopLaterWork(t *testing.T) {
-	// R-V8PC-YPSZ
+	// R-YYG9-E83H
 	for _, test := range []struct {
 		action, failCommand, wantLast string
 		disabled                      bool
@@ -141,7 +141,7 @@ func TestEnablementFailedStagesStopLaterWork(t *testing.T) {
 			if wantLines == 1 && (!strings.Contains(stdout, `blocked\r\nnow`) || len(controls) != 1) {
 				t.Fatalf("failed first stage continued or did not escape detail: %q %#v", stdout, controls)
 			}
-			if wantLines == 4 && (!strings.HasPrefix(lines[0], "enable: ok (") || !strings.HasPrefix(lines[1], "nginx: ok (") || lines[2] != "services: ok (unchanged)" ||
+			if wantLines == 4 && (!strings.HasPrefix(lines[0], "enable: ok (") || !strings.HasPrefix(lines[1], "nginx: ok (") || lines[2] != "services: ok (notes added)" ||
 				!strings.Contains(stderr, "\n\n> startup detail\n") || controls[len(controls)-1] != test.failCommand) {
 				t.Fatalf("service failure did not preserve completed stages and journal: %q %q %#v", stdout, stderr, controls)
 			}
@@ -150,7 +150,7 @@ func TestEnablementFailedStagesStopLaterWork(t *testing.T) {
 }
 
 func TestEnablementReportWriteFailureOccursOnce(t *testing.T) {
-	// R-V8PC-YPSZ
+	// R-YYG9-E83H
 	for _, test := range []struct {
 		action, failStep string
 		disabled         bool
@@ -225,7 +225,7 @@ func TestEnablementReportWriteFailureOccursOnce(t *testing.T) {
 }
 
 func TestEnablementServicesFailureStopsBeforeService(t *testing.T) {
-	// R-V7HG-KY2A R-V8PC-YPSZ
+	// R-YW0G-MOM3 R-YYG9-E83H
 	root := enablementFailureRoot(t)
 	var commands []host.Command
 	stdout, stderr, code := invoke([]string{"enable", "notes"}, cli.Deps{Root: root, EUID: 0,
@@ -278,7 +278,7 @@ func enablementFailureRoot(t *testing.T) string {
 }
 
 func TestEnablementStagesAndIdempotence(t *testing.T) {
-	// R-V7HG-KY2A R-V8PC-YPSZ R-A8TU-ROGW
+	// R-YW0G-MOM3 R-YYG9-E83H R-YX8D-0GCS
 	root := t.TempDir()
 	store := config.Store{Root: root}
 	for key, value := range map[string]string{"host.name": "SBX.Example.Test.", "host.apex": "notes"} {

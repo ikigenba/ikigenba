@@ -257,7 +257,7 @@ func TestStatusSocketFieldRetainsDisabledAndIndependentFacts(t *testing.T) {
 }
 
 func TestUninstallRetainsStateOnlyDiscoveryWithoutCreatingState(t *testing.T) {
-	// R-VLO7-YADY
+	// R-WBQX-ICYL
 	for _, state := range []bool{false, true} {
 		fixture := newUninstallFixture(t, "inactive")
 		if state {

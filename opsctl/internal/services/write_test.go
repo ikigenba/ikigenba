@@ -499,7 +499,7 @@ func TestWriteExecutesOnlyAccountAndOwnershipCommands(t *testing.T) {
 }
 
 func TestWriteReturnsChangesFromPublishedEntries(t *testing.T) {
-	// R-LY06-CROI
+	// R-YM99-KIOJ
 	root := t.TempDir()
 	writeLauncher(t, root, "running")
 	file := servicesFile(root)

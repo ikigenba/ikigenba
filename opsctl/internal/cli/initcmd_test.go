@@ -328,7 +328,7 @@ func TestInitHealthyPreflight(t *testing.T) {
 	// R-LIU3-NA5F R-LK20-11W4 R-LMHS-SLDI R-ELKW-EVLN
 	// R-ZAOK-6AFV R-LOXL-K4UW R-LQ5H-XWLL
 	// R-ZIB1-SI40
-	// R-JWO0-EHD7 R-5E43-77RM
+	// R-YZO5-RZU6 R-5E43-77RM
 	// R-YYIY-T743
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZA": {
@@ -501,7 +501,7 @@ func TestInitHealthyPreflight(t *testing.T) {
 }
 
 func TestInitStopsAtFirstSetupFailure(t *testing.T) {
-	// R-LXGW-8J1R R-JWO0-EHD7
+	// R-LXGW-8J1R R-YZO5-RZU6
 	wantStdout := "nginx: ok (/bin/nginx)\n" +
 		"certbot: ok (/bin/certbot)\n" +
 		"systemctl: ok (/bin/systemctl)\n" +
@@ -1154,7 +1154,7 @@ func TestInitRejectsEmptyWildcardAddressSet(t *testing.T) {
 }
 
 func TestInitSuccessfulSetupIsRepeatable(t *testing.T) {
-	// R-K6Y1-HOHH R-JWO0-EHD7 R-K85X-VG86 R-V0E8-TY5K
+	// R-K6Y1-HOHH R-YZO5-RZU6 R-K85X-VG86 R-V0E8-TY5K
 	provider := &fakeDNSProvider{records: map[string][]dns.Record{
 		"ZONE": {
 			{Name: "example.com", Type: "SOA"},

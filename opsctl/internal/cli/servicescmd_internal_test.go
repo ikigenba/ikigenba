@@ -15,7 +15,7 @@ import (
 )
 
 func TestInstallConfigureServicesActionAndReportFailuresPreserveBothCauses(t *testing.T) {
-	// R-UWID-50E1
+	// R-YR4V-3LNB
 	for _, failedStep := range []string{"nginx", "services", "litestream"} {
 		t.Run(failedStep, func(t *testing.T) {
 			root := t.TempDir()

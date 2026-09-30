@@ -105,35 +105,35 @@ func readRootFile(t *testing.T, root, relative string) []byte {
 	return data
 }
 
-func publishedServices(t *testing.T, root string) []struct {
-	Name    string `json:"name"`
-	URL     string `json:"url"`
-	Icon    string `json:"icon"`
-	Enabled bool   `json:"enabled"`
-} {
+type publishedEntry struct {
+	Name        string `json:"name"`
+	URL         string `json:"url"`
+	Description string `json:"description"`
+	Socket      string `json:"socket"`
+	Icon        string `json:"icon"`
+	Enabled     bool   `json:"enabled"`
+	MCP         bool   `json:"mcp"`
+}
+
+func publishedServices(t *testing.T, root string) []publishedEntry {
 	t.Helper()
-	data := readPublishedServices(t, root)
 	var document struct {
-		Services []struct {
-			Name    string `json:"name"`
-			URL     string `json:"url"`
-			Icon    string `json:"icon"`
-			Enabled bool   `json:"enabled"`
-		} `json:"services"`
+		Services []publishedEntry `json:"services"`
 	}
-	if err := json.Unmarshal(data, &document); err != nil {
+	if err := json.Unmarshal(readPublishedServices(t, root), &document); err != nil {
 		t.Fatal(err)
 	}
 	return document.Services
 }
 
-// R-8BT0-O71D
-func TestRenderSelectsExactlyLauncherServices(t *testing.T) {
+// R-YG5R-NNZ2
+func TestRenderSelectsExactlyListedServices(t *testing.T) {
 	root := t.TempDir()
 	icon := []byte("<svg/>\n")
 	renderFixture(t, root, "routed", "app = \"routed\"\n", true, icon)
 	renderFixture(t, root, "unrouted", "", true, icon)
 	renderFixture(t, root, "no-binary", "app = \"no-binary\"\n", false, icon)
+	renderFixture(t, root, "empty-app", "description = \"Not routed\"\n", true, icon)
 	renderFixture(t, root, "no-icon", "app = \"no-icon\"\n", true, nil)
 	for _, name := range []string{"directory-binary", "symlink-binary"} {
 		renderFixture(t, root, name, "app = \""+name+"\"\n", false, icon)
@@ -147,44 +147,65 @@ func TestRenderSelectsExactlyLauncherServices(t *testing.T) {
 	if err := os.Symlink(filepath.Join(root, "opt", "routed", "bin", "routed"), filepath.Join(root, "opt", "symlink-binary", "bin", "symlink-binary")); err != nil {
 		t.Fatal(err)
 	}
-	_, err := Write(context.Background(), renderWriteEnv(t, root, map[string]bool{"routed": true}, nil), "host.example")
+	_, err := Write(context.Background(), renderWriteEnv(t, root, map[string]bool{"routed": true, "no-icon": true}, nil), "host.example")
 	if err != nil {
 		t.Fatal(err)
 	}
 	services := publishedServices(t, root)
-	if len(services) != 1 || services[0].Name != "routed" {
-		t.Fatalf("published launcher names = %#v; want routed only", services)
+	if len(services) != 2 || services[0].Name != "no-icon" || services[1].Name != "routed" {
+		t.Fatalf("published launcher names = %#v; want no-icon and routed", services)
 	}
 }
 
-// R-8D0X-1YS2
+// R-YHDO-1FPR
 func TestRenderEntryValuesIncludeDefaultAndApex(t *testing.T) {
 	root := t.TempDir()
 	icon := []byte("<svg>full</svg>\r\n")
-	renderFixture(t, root, "alpha", "app = \"alpha\"\ndefault = true\n", true, icon)
-	renderFixture(t, root, "apex", "app = \"apex\"\n", true, icon) // app named by host.apex
+	renderFixture(t, root, "alpha", "app = \"alpha\"\ndefault = true\ndescription = \"  A full description ☃  \"\nmcp = true\n", true, icon)
+	renderFixture(t, root, "apex", "app = \"apex\"\n", true, nil) // app named by host.apex
+	renderFixture(t, root, "empty-icon", "app = \"empty-icon\"\n", true, []byte{})
 	_, err := Write(context.Background(), renderWriteEnv(t, root, map[string]bool{"apex": true}, nil), "box.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []struct {
-		Name    string `json:"name"`
-		URL     string `json:"url"`
-		Icon    string `json:"icon"`
-		Enabled bool   `json:"enabled"`
-	}{
-		{Name: "alpha", URL: "https://alpha.box.example.com", Icon: string(icon), Enabled: true},
-		{Name: "apex", URL: "https://apex.box.example.com", Icon: string(icon), Enabled: false},
+	want := []publishedEntry{
+		{Name: "alpha", URL: "https://alpha.box.example.com", Description: "  A full description ☃  ", Socket: "/run/ikigenba/alpha.sock", Icon: string(icon), Enabled: true, MCP: true},
+		{Name: "apex", URL: "https://apex.box.example.com", Socket: "/run/ikigenba/apex.sock", Enabled: false},
+		{Name: "empty-icon", URL: "https://empty-icon.box.example.com", Socket: "/run/ikigenba/empty-icon.sock", Enabled: true},
 	}
 	if got := publishedServices(t, root); !reflect.DeepEqual(got, want) {
 		t.Fatalf("published entries = %#v, want %#v", got, want)
 	}
+	var document struct {
+		Services []map[string]any `json:"services"`
+	}
+	if err := json.Unmarshal(readPublishedServices(t, root), &document); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range document.Services {
+		iconValue, present := item["icon"]
+		switch item["name"] {
+		case "alpha":
+			if !present || iconValue != string(icon) {
+				t.Fatalf("full icon: %#v", item)
+			}
+		case "apex":
+			if present {
+				t.Fatalf("absent icon: %#v", item)
+			}
+		case "empty-icon":
+			if !present || iconValue != "" {
+				t.Fatalf("empty icon: %#v", item)
+			}
+		}
+	}
+
 }
 
-// R-8E8T-FQIR
+// R-YILK-F7GG
 func TestRenderExactLayoutAndBytewiseOrder(t *testing.T) {
 	root := t.TempDir()
-	env := renderWriteEnv(t, root, nil, nil)
+	env := renderWriteEnv(t, root, map[string]bool{"zeta": true}, nil)
 	if _, err := Write(context.Background(), env, "box.example"); err != nil {
 		t.Fatal(err)
 	}
@@ -192,25 +213,29 @@ func TestRenderExactLayoutAndBytewiseOrder(t *testing.T) {
 	if string(empty) != "{\n  \"services\": []\n}\n" {
 		t.Fatalf("empty published file = %q", empty)
 	}
-	renderFixture(t, root, "zeta", "app = \"zeta\"\n", true, []byte("z"))
+	renderFixture(t, root, "zeta", "app = \"zeta\"\ndescription = \"Z\"\nmcp = true\n", true, nil)
 	renderFixture(t, root, "alpha", "app = \"alpha\"\n", true, []byte("a"))
 	if _, err := Write(context.Background(), env, "box.example"); err != nil {
 		t.Fatal(err)
 	}
 	got := readPublishedServices(t, root)
 	want := "{\n  \"services\": [\n" +
-		"    { \"name\": \"alpha\", \"url\": \"https://alpha.box.example\", \"icon\": \"a\", \"enabled\": true },\n" +
-		"    { \"name\": \"zeta\", \"url\": \"https://zeta.box.example\", \"icon\": \"z\", \"enabled\": true }\n" +
+		"    { \"name\": \"alpha\", \"url\": \"https://alpha.box.example\", \"description\": \"\", \"socket\": \"/run/ikigenba/alpha.sock\", \"enabled\": true, \"mcp\": false, \"icon\": \"a\" },\n" +
+		"    { \"name\": \"zeta\", \"url\": \"https://zeta.box.example\", \"description\": \"Z\", \"socket\": \"/run/ikigenba/zeta.sock\", \"enabled\": false, \"mcp\": true }\n" +
 		"  ]\n}\n"
 	if string(got) != want {
 		t.Fatalf("render = %q, want %q", got, want)
 	}
 }
 
-// R-LVKD-L874
+// R-YJTG-SZ75
 func TestRenderMinimalJSONEscapesAndRoundTrip(t *testing.T) {
 	root := t.TempDir()
-	value := string([]byte{0, 1, 8, 9, 10, 12, 13, 31}) + "\"\\<>/&" + "\u007f☃\u2028\u2029"
+	var controls []byte
+	for character := byte(0); character < 32; character++ {
+		controls = append(controls, character)
+	}
+	value := string(controls) + "\"\\<>/&" + "\u007f☃\u2028\u2029"
 	renderFixture(t, root, "a", "app = \"a\"\n", true, []byte(value))
 	var commands []host.Command
 	hostName := "h\"\\<>/&\u007f☃\u2028\u2029.example"
@@ -218,33 +243,37 @@ func TestRenderMinimalJSONEscapesAndRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := readPublishedServices(t, root)
-	want := `\u0000\u0001\b\t\n\f\r\u001f\"\\<>/&` + "\u007f☃" + `\u2028\u2029`
+	want := `\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\b\t\n\u000b\f\r\u000e\u000f\u0010\u0011\u0012\u0013\u0014\u0015\u0016\u0017\u0018\u0019\u001a\u001b\u001c\u001d\u001e\u001f\"\\<>/&` + "\u007f☃" + `\u2028\u2029`
 	if !strings.Contains(string(data), want) {
 		t.Fatalf("encoded icon absent from %q; want %q", data, want)
 	}
 	if !strings.Contains(string(data), `"url": "https://a.h\"\\<>/&`+"\u007f☃"+`\u2028\u2029.example"`) {
 		t.Fatalf("minimal URL escape absent from %q", data)
 	}
-	nameData := encodeEntries([]entry{{Name: "n\"\\<>/&\u007f☃\u2028\u2029", URL: "u", Icon: "i"}})
-	if !strings.Contains(string(nameData), `"name": "n\"\\<>/&`+"\u007f☃"+`\u2028\u2029"`) {
-		t.Fatalf("minimal name escape absent from %q", nameData)
+	nameData := encodeEntries([]entry{{Name: value, URL: value, Description: value, Socket: value, Icon: value, HasIcon: true}})
+	for _, field := range []string{"name", "url", "description", "socket", "icon"} {
+		if !strings.Contains(string(nameData), `"`+field+`": "`+want+`"`) {
+			t.Fatalf("minimal %s escape absent from %q", field, nameData)
+		}
 	}
 	var decoded struct {
 		Services []struct {
-			Name string `json:"name"`
-			URL  string `json:"url"`
-			Icon string `json:"icon"`
+			Name        string `json:"name"`
+			URL         string `json:"url"`
+			Icon        string `json:"icon"`
+			Description string `json:"description"`
+			Socket      string `json:"socket"`
 		} `json:"services"`
 	}
 	if err := json.Unmarshal(data, &decoded); err != nil || len(decoded.Services) != 1 || decoded.Services[0].Name != "a" || decoded.Services[0].URL != "https://a."+hostName || decoded.Services[0].Icon != value {
 		t.Fatalf("round trip = %#v, %v", decoded, err)
 	}
-	if err := json.Unmarshal(nameData, &decoded); err != nil || decoded.Services[0].Name != "n\"\\<>/&\u007f☃\u2028\u2029" {
+	if err := json.Unmarshal(nameData, &decoded); err != nil || decoded.Services[0].Name != value || decoded.Services[0].URL != value || decoded.Services[0].Description != value || decoded.Services[0].Socket != value || decoded.Services[0].Icon != value {
 		t.Fatalf("name round trip = %#v, %v", decoded, err)
 	}
 }
 
-// R-8HWI-L1QU
+// R-YL1D-6QXU
 func TestRenderRejectsUnembeddableIcons(t *testing.T) {
 	for _, test := range []struct {
 		name     string
@@ -315,7 +344,7 @@ func assertIconWriteFailure(t *testing.T, root, want string) {
 	}
 }
 
-// R-8HWI-L1QU
+// R-YL1D-6QXU
 func TestWritePreservesFileOnIconReadFailure(t *testing.T) {
 	root := t.TempDir()
 	icon := renderFixture(t, root, "bad", "app = \"bad\"\n", true, []byte("<svg/>"))
@@ -335,7 +364,7 @@ func TestWritePreservesFileOnIconReadFailure(t *testing.T) {
 	assertIconWriteFailure(t, root, want)
 }
 
-// R-8HWI-L1QU
+// R-YL1D-6QXU
 func TestRenderDoesNotApplyInstallIconChecks(t *testing.T) {
 	root := t.TempDir()
 	icon := []byte(strings.Repeat("x", 65537))
