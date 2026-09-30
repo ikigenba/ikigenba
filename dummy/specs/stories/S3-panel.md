@@ -30,9 +30,9 @@ status `active`, `beta` count 0 status `paused`, `gamma` count 12 status
 
 Every page dummy serves is drawn in one common frame, the banner, the same
 banner every app of the platform draws, at the top of the page. It holds the
-mark, the email address of the caller taken from `X-User-Email` as a link to
-their profile in auth, and a sign-out button; on a host with a services file
-it also holds the launcher button (below). The mark's text is `ikigenba`, and
+mark, a profile icon linking to the caller's profile in auth, and a sign-out
+button; on a host with a services file it also holds the launcher button
+(below). The mark's text is `ikigenba`, and
 it names the service it fronts, `dummy`, which a browser shows as
 `ikigenba │ dummy`; the service's name is lowercase `dummy` everywhere it
 appears, and every page's title, the one a browser shows on its tab, is
@@ -41,8 +41,21 @@ is what the banner is drawn from, a failure on a page that dummy can name to
 an identified caller is itself a page with that same banner, and only the
 missing-header fault, where there is no identity to draw with, is bare text.
 
-The caller's email address in the banner is a link whose text is the
-`X-User-Email` value, written as escaped HTML text, and whose target is
+Every page with the banner also ends with the footer, the last thing on the
+page, whose text is `dummy v<semver>`: the service's name, one space, and the
+version `dummy --version` prints (`S1`), exactly as it prints it, so a user
+can tell which release is serving the page. The version is data, and no
+story fixes its value. The missing-header 500, being bare text, has no
+footer, and neither does the table fragment (`S4`).
+
+The profile link in the banner is an icon, the `user-circle` icon, with no
+text of its own: it is labelled `Profile` for assistive technology and titled
+with the caller's `X-User-Email` value, exactly as it arrived, which a browser
+shows as its tooltip, so hovering the icon shows who is signed in. The email
+is in no visible text on the page; the link's title is the one place it
+appears.
+
+The profile link's target is
 `<auth-profile>`, auth's root on the same space, an absolute URL derived from
 the request as `<auth-logout>` is (below), so following it leaves dummy for
 auth; what auth shows there is auth's behaviour, told in auth's own stories.
@@ -50,7 +63,7 @@ Apart from the launcher, which may list auth among the platform's services,
 this link is the banner's one link to auth.
 
 The sign-out button signs the caller out of the whole space in one click. It
-follows the email in the banner, and it is a form, not a link: pressing it
+follows the profile link in the banner, and it is a form, not a link: pressing it
 POSTs to `<auth-logout>`. The `logout` icon is drawn before the text and
 hidden from assistive technology, so the button's accessible text is
 `Sign out` alone. `<auth-logout>` is auth's `/logout` on the same space, an
@@ -166,10 +179,11 @@ Content-Type: text/html; charset=utf-8
 
 Status 200. The body is an HTML document titled `dummy` that links
 `/_appkit/theme.css` as its stylesheet and declares the phone-width viewport.
-Its visible text carries the mark's text `ikigenba` — the mark names the
-service `dummy` — the caller's email address
-`mg@example.com` as a link to `http://localhost:3001/`, the sign-out button reading `Sign out` in a form that
-POSTs to `http://localhost:3001/logout`, the heading `Widgets` with the subtitle
+Its banner holds the mark, whose text is `ikigenba` and which names the
+service `dummy`; the profile link, labelled `Profile` and titled
+`mg@example.com`, leading to `http://localhost:3001/`; and the sign-out button
+reading `Sign out` in a form that POSTs to `http://localhost:3001/logout`.
+Beneath the banner is the heading `Widgets` with the subtitle
 `3 widgets · refreshes every 5 seconds`, and beneath it a table whose header
 cells read `Name`, `Count`, and `Status` and whose rows are the
 three fixture widgets in fixture order with their counts and their statuses as
@@ -179,8 +193,10 @@ word is inside a status marker naming that status. Beside the table is the
 card headed `Add widget` holding the form that creates a widget, with a field
 for each of a widget's three fields and a button reading `Add widget` behind
 its hidden `plus` icon. The banner holds no launcher button, and the page
-loads no `/_appkit/launcher.js`, since dummy has no services file. The text
-`Dummy` appears nowhere.
+loads no `/_appkit/launcher.js`, since dummy has no services file. Last on
+the page is the footer reading `dummy v<semver>`, where `v<semver>` is what
+`dummy --version` prints. The address `mg@example.com` is not in the page's
+visible text. The text `Dummy` appears nowhere.
 
 Preconditions:
 
@@ -251,7 +267,7 @@ Postconditions:
 
 ## A user on a space is offered sign-out from that space
 
-The sign-out form and the email's link address auth on the space the request
+The sign-out form and the profile link address auth on the space the request
 names in its `Host`, never a fixed host, so one dummy build signs a caller out
 of, and sends them to their profile on, whichever space it is serving. A developer shows the space's headers by hand.
 
@@ -278,12 +294,12 @@ Content-Type: text/html; charset=utf-8
 
 Status 200. The body is the panel page, and its banner's sign-out button
 reading `Sign out` is in a form whose method is `post` and whose action is
-`https://auth.sbx.ikigenba.dev/logout`, and the caller's email address
-`mg@example.com` in the banner links to `https://auth.sbx.ikigenba.dev/`. With
+`https://auth.sbx.ikigenba.dev/logout`, and the banner's profile link, titled
+`mg@example.com`, leads to `https://auth.sbx.ikigenba.dev/`. With
 `X-Forwarded-Proto: http` and the same `Host`, the action is
-`http://auth.sbx.ikigenba.dev/logout` and the email links to
-`http://auth.sbx.ikigenba.dev/`. There is no launcher here, so the email is
-the banner's only link to auth.
+`http://auth.sbx.ikigenba.dev/logout` and the profile link leads to
+`http://auth.sbx.ikigenba.dev/`. There is no launcher here, so the profile
+link is the banner's only link to auth.
 
 Preconditions:
 
@@ -393,11 +409,12 @@ HTTP/1.1 404 Not Found
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 404. The body is an HTML document with the same banner as the panel —
-the mark, `mg@example.com` linking to `http://localhost:3001/`, and the
-sign-out button POSTing to `http://localhost:3001/logout`, with the same title,
-stylesheet link, and viewport as every page (above) — whose visible text,
-after the banner, says the page was not found and carries a link to `/widgets`.
+Status 404. The body is an HTML document with the same banner and footer as
+the panel — the mark, the profile link titled `mg@example.com` leading to
+`http://localhost:3001/`, and the sign-out button POSTing to
+`http://localhost:3001/logout`, with the same title, stylesheet link, and
+viewport as every page (above) — which, between the banner and the footer,
+says the page was not found and carries a link to `/widgets`.
 
 Preconditions:
 
@@ -426,12 +443,12 @@ Allow: GET, HEAD, POST
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 405. The body is an HTML document with the same banner as the panel —
-the mark, `mg@example.com` linking to `http://localhost:3001/`, and the
-sign-out button POSTing to `http://localhost:3001/logout` — with the same
-title, stylesheet link, and viewport as every page (above), whose visible
-text, after the banner, says the method is not allowed and carries a link to
-`/widgets`. `PUT` and `PATCH` are refused the same way.
+Status 405. The body is an HTML document with the same banner and footer as
+the panel — the mark, the profile link titled `mg@example.com` leading to
+`http://localhost:3001/`, and the sign-out button POSTing to
+`http://localhost:3001/logout` — with the same title, stylesheet link, and
+viewport as every page (above), which, between the banner and the footer,
+says the method is not allowed and carries a link to `/widgets`. `PUT` and `PATCH` are refused the same way.
 
 Preconditions:
 
@@ -525,9 +542,9 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 200. The body is the panel page of `A user opens the panel`: the banner
-holds the mark, `mg@example.com` linking to `http://localhost:3001/`, and the
-sign-out button POSTing to `http://localhost:3001/logout`, and no launcher
-button. The page carries no list of services, no `Find a service` field, and
+holds the mark, the profile link titled `mg@example.com` leading to
+`http://localhost:3001/`, and the sign-out button POSTing to
+`http://localhost:3001/logout`, and no launcher button. The page carries no list of services, no `Find a service` field, and
 no no-match line, and it loads no `/_appkit/launcher.js`.
 
 Preconditions:

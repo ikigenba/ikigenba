@@ -32,13 +32,15 @@ HTTP/2 200
 content-type: text/html; charset=utf-8
 ```
 
-Status 200. The body is an HTML page whose visible text carries the email
-address of the caller the gate authenticated and a table of the widgets that
-exist. Its stylesheet is `https://dummy.sbx.ikigenba.dev/_appkit/theme.css`,
+Status 200. The body is an HTML page whose banner's profile link is titled
+with the email address of the caller the gate authenticated, whose visible
+text carries a table of the widgets that exist, and whose footer reads
+`dummy v<semver>`, the version the deployed binary's `dummy --version`
+prints (`S1`), the same one `space status` reports for dummy. Its stylesheet is `https://dummy.sbx.ikigenba.dev/_appkit/theme.css`,
 and the fonts that stylesheet loads are under the same
 `https://dummy.sbx.ikigenba.dev/_appkit/` (`S8-assets.md`): a browser showing
 the panel requests its style from dummy's own host and from no other origin,
-Google Fonts included. In the banner, the caller's email address links to
+Google Fonts included. In the banner, the profile link leads to
 `https://auth.sbx.ikigenba.dev/`, their profile in auth on the same space, and
 the `Sign out` button is in a form that POSTs to
 `https://auth.sbx.ikigenba.dev/logout` (`S3`); submitting it signs the visitor
@@ -59,7 +61,7 @@ Preconditions:
   it passes to dummy, and refuses a request it cannot authenticate before
   dummy sees it.
 - The caller holds a credential the gate accepts, and the email that
-  credential names is the one the panel shows.
+  credential names is the one the panel's profile link is titled with.
 
 Postconditions:
 

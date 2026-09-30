@@ -72,11 +72,9 @@ class (R-R5IJ-77CJ), so `my widget` — two spaces — is a name a caller can
 create and `D07-form` requires that creation to succeed. Comparing a collapsed
 cell text against that raw name would be unsatisfiable the moment such a widget
 existed, and three bodies would become unproducible at once: this route's 200,
-the panel page's 200, and the 422. So both sides are collapsed, exactly as
-`D04-panel` already does for the email appkit draws into the banner, in its
-observation of the banner's email link. Nothing is lost that was ever
-decidable here, and the submitted bytes still have a home: `D07-form` reads the
-422's echo out of an attribute, and an attribute's read value, as `D04-panel`
+the panel page's 200, and the 422. So both sides are collapsed. Nothing is
+lost that was ever decidable here, and the submitted bytes still have a home:
+`D07-form` reads the 422's echo out of an attribute, and an attribute's read value, as `D04-panel`
 defines it, is unescaped but never collapsed. The count and the status are
 collapsed too, though neither can hold whitespace — a decimal integer, and one
 of three fixed words — because a rule that bites on one of the three cells and

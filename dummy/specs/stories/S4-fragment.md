@@ -6,13 +6,13 @@ not JSON: the server re-renders the same table markup the panel page already
 embeds, and the browser swaps the markup in rather than assembling content
 itself. `GET /widgets/table` is that endpoint, and what it returns is the
 widgets table alone — no doctype, no `html` element, no `body` element, no
-banner. It is a fragment, never a whole HTML document, and a caller that
+banner, no footer. It is a fragment, never a whole HTML document, and a caller that
 fetches it with `curl` sees exactly the markup the page splices in. Being a
 fragment governs this endpoint's failures as much as its successes: the
 panel's script splices whatever comes back into a document that is already
 drawn, so an error drawn as a page with the panel's banner would arrive as a
 whole page pushed into a table. An error from this endpoint therefore never
-carries the banner either — it is one line of plain text, whether or not the caller is
+carries the banner or the footer either — it is one line of plain text, whether or not the caller is
 identified. The page's script re-fetches the fragment every 5 seconds, on the
 panel page and on the 422 redraw alike (`S3`, `S5`), which is what the
 panel's subtitle, `refreshes every 5 seconds`, tells the reader. The subtitle
@@ -76,7 +76,7 @@ ETag: "<etag>"
 
 Status 200. The body is the widgets table alone: a table with a header row
 and one row per widget, and nothing around it — no doctype, no `html`
-element, no `body` element, no banner. It is a fragment, not a whole HTML
+element, no `body` element, no banner, no footer. It is a fragment, not a whole HTML
 document. It holds three rows, in fixture order, carrying `alpha` 3 `active`,
 `beta` 0 `paused`, and `gamma` 12 `retired`; each row shows its status as a
 word in its own column, inside a status marker naming that status, and its

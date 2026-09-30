@@ -14,12 +14,15 @@ host's name, because none of those reach the handler.
 The banner is no longer dummy's markup. It is the platform's, the same for
 every app: appkit (`github.com/ikigenba/ikigenba/appkit`,
 `D01-layout-and-run-seam`) ships it as the template named `banner` in the set
-`appkit.Templates()` returns, together with the service launcher it opens.
+`appkit.Templates()` returns, together with the service launcher it opens,
+and the footer that ends each page is appkit's too, the template named
+`footer` in the same set, drawn from the same data.
 dummy decides what goes into it — the caller's email and the two auth URLs it
 derives from the request — and where it goes on the page; appkit decides how
 it is drawn. The banner data comes from the **banner source**, the function
 `Handler` is built over: in the running binary the `Banner` method of the kit
-`main` made with `appkit.New(ServiceName)`, which adds the service's name and
+`main` made with `appkit.New(ServiceName, cli.Version)`, which adds the
+service's name, dummy's release version exactly as `--version` prints it, and
 the launcher's services, read afresh from the host's services file on every
 call; in a test, a closure returning whatever the case needs.
 
@@ -50,7 +53,8 @@ included, even though the behavior that names each of those four is stated by
 `D06-table` or by `D07-form`. Those documents name the constants; they do not
 re-declare them. `ServiceName` is declared here too, and `main` hands it to
 `appkit.New` (`D01-layout-and-run-seam`), so the name the page's title
-carries and the name appkit's banner marks are one declaration.
+carries and the name appkit's banner marks and its footer shows are one
+declaration.
 
 ## Identity comes first
 
@@ -93,7 +97,7 @@ answers it carries no validator for a cache to keep. A request without
 identity never reaches the banner source either, so it never causes a read of
 the services file.
 
-## The space, the scheme, the email link and the sign-out form
+## The space, the scheme, the profile link and the sign-out form
 
 The banner offers sign-out as a form, not a link: a one-button `POST` to auth's
 `/logout` on the same space. That is possible because auth accepts a sign-out
@@ -108,8 +112,10 @@ is to name the form's target and nothing more — appkit's banner template draws
 the form: dummy serves no logout route — `/logout` is an unknown path like any
 other and takes a 404 with the banner — and it sets no cookie on any answer.
 
-The banner's one link is the caller's email, which leads to their profile in
-auth. auth's stories put the profile at auth's `/`: its `S3-sign-in` group
+The banner's one link is the profile link, an icon that leads to the caller's
+profile in auth. It carries no text: appkit labels it `Profile` for assistive
+technology and titles it with the caller's email, so the email is shown as the
+link's tooltip and is in no visible text. auth's stories put the profile at auth's `/`: its `S3-sign-in` group
 opens with "the sign-in page and profile at `/`", and its story "A user asks
 for the profile" fetches the profile as `http://localhost:3001/`. On a space
 auth is served as `auth.<space>`, the host that same group names as auth's own
@@ -117,15 +123,15 @@ origin, `https://auth.<space>`. So the link's `href` is auth's root on the same
 space, and what auth shows there — the profile, or its sign-in page to a
 visitor whose session has ended — is auth's behavior, not restated here. The
 link sits between the mark and the sign-out form, and sign-out stays a form,
-so the email link is the only `a` in the banner. The launcher's entries are
+so the profile link is the only `a` in the banner. The launcher's entries are
 links too, and one of them may lead to auth, but they sit in the list of
-services that follows the banner, not in it; with no launcher, the email is
-the page's only link to auth.
+services that follows the banner, not in it; with no launcher, the profile
+link is the page's only link to auth.
 
 dummy derives the space per request, from the request's own `Host`: strip a
 trailing port if there is one, then strip a single leading `dummy.` label; what
 remains is the space. The form's `action` is the scheme, `://auth.`, the
-space, and `/logout`; the email link's `href` is the same with `/` in place of
+space, and `/logout`; the profile link's `href` is the same with `/` in place of
 `/logout`. When `Host` carries no `dummy.` label to strip — a developer on
 `127.0.0.1:3000` or `localhost:3000` — both name auth's local origin instead:
 the `action` is `http://localhost:3001/logout` and the `href` is
@@ -156,7 +162,7 @@ which is harmless because a space is never served over `http`.
 directly, as a table of host and forwarded-proto against the resulting URL,
 rather than only through a rendered page. The names follow what auth serves at
 each address: the form posts to auth's `/logout`, and `LocalLogoutURL` is
-auth's local one; the email link leads to auth's profile, and
+auth's local one; the profile link leads to auth's profile, and
 `LocalProfileURL` is auth's local one. The two functions share the space and
 the scheme and differ only in the path, and each is stated whole rather than
 one defined through the other, so either can be read, and tested, on its own.
@@ -238,7 +244,7 @@ does not survive, and the binary is non-conforming. Escaping `=` as well is the
 simple fix; numeric-escaping the whitespace does the same job.
 
 The banner's two URLs are that trap's mirror image, and they are no longer
-dummy's to settle. The sign-out form's `action` and the email link's `href`
+dummy's to settle. The sign-out form's `action` and the profile link's `href`
 are URL contexts in appkit's template, and there `html/template` percent-encodes
 rather than writing character references — observed against the published
 module: a `ProfileURL` of `https://auth.a" id="x/` is drawn as
@@ -266,7 +272,8 @@ is removed whole, from its start tag through its matching end tag. Then
 **normalisation**: remove the remaining tags, unescape HTML character
 references, and take the **whitespace collapse** — every run of whitespace down
 to a single space, then trim. The whitespace collapse is named on its own
-because the banner's email comparison needs that step and no other one. The
+because a comparison against a raw value, such as `D06-table`'s cell texts,
+needs that step and no other one. The
 **visible text** of a document is the normalisation of what lies between its
 `body` start tag and its `</body>` end tag.
 
@@ -292,26 +299,29 @@ contains a `script` or a `style` start tag. So the stripping normalisation perfo
 inside the visible-text procedure, provably removes nothing — the redundancy is
 an idempotent step rather than a second reading of the same body.
 
-Unescaping is there because the banner renders an email address and the form
-echoes an arbitrary submitted string, both of which a template escapes.
+Unescaping is there because the form echoes an arbitrary submitted string and
+a widget's name reaches the table, and a template escapes both; the banner's
+email reaches the page only in an attribute, whose read value is unescaped
+the same way.
 Without unescaping, a value containing `&` or `<` fails a comparison it must
 pass — and the raw echo of attacker-chosen input is exactly where that shows
 up.
 
 Requirements over pages say the visible text **contains** a constant rather
 than **equals** it, because a page's text also carries its link back to the
-panel, and a whole body read with its banner carries the mark's text, the
-caller's email and the sign-out button's label as well.
+panel, and a whole body read with its banner and footer carries the mark's
+text, the sign-out button's label, and the footer's service name and version
+as well.
 
 These body rules — the `style` ban, the `</script` ban — are stated over what
 dummy writes, never over what appkit writes. Every answer to an appkit path is
 appkit's (`D08-assets`), and a stylesheet or a font may hold any bytes at all,
 `<style` included, so each rule leaves every such answer out. Inside a page
-the same line is drawn around the appkit banner (below): its markup is
-appkit's, and each launcher entry's icon is the services file's SVG text
+the same line is drawn around the appkit banner and the appkit footer
+(below): their markup is appkit's, and each launcher entry's icon is the services file's SVG text
 inserted verbatim, which may use single-quoted attributes or anything else SVG
 allows. So each rule is read over a page's **written markup**, the page with
-its appkit banner taken out. The attribute rule's "markup dummy sends" has the
+its appkit banner and its appkit footer taken out. The attribute rule's "markup dummy sends" has the
 same reach: it means the written markup of the HTML documents dummy sends and
 the table fragment, never appkit's bytes.
 
@@ -366,7 +376,26 @@ file changes the next page shows the change; and it never calls the source for
 an answer that draws no banner — the missing-identity 500, the fragment, the
 shared files — so those never cause a read of the services file. This is the
 whole of dummy's side of the banner, and it is stated exactly: the data in,
-the one call, and the placement of appkit's output byte for byte. How appkit
+the one call, and the placement of appkit's output byte for byte.
+
+Every HTML document dummy sends is also **drawn with the footer**: its last
+thing before the body's end tag is the **appkit footer** for the request —
+exactly what appkit's `footer` template writes for the same banner data the
+banner was drawn from, the one call serving both. appkit's footer is one
+`footer` element holding the banner data's service name, one space, and its
+version, the version as the app handed it to `appkit.New`, escaped as text
+and so reading back unchanged once normalised (observed
+against the appkit module that adds the footer: a `Banner` with `Service`
+`dummy` and `Version` `v1.2.3` drew `<footer>dummy v1.2.3</footer>`). In the
+running binary that version is `cli.Version`, the value `dummy --version`
+prints (`D01-layout-and-run-seam`); in a handler test it is whatever the
+test's source returned. The footer is the page's last child, after the
+`main` and after the panel's inline script, and it is found without a parser
+by the same means as the banner: it is appkit's output for that same call,
+ending right before the last `</body>`. An answer that draws no banner draws no
+footer either, because both come from the one call the handler never makes for
+it: the missing-identity 500, the fragment and the shared files carry
+neither, and the fragment's shape (`D06-table`) has nowhere to put one. How appkit
 draws that data is appkit's; which template dummy's pages are parsed with to
 get there is the build run's.
 
@@ -376,8 +405,9 @@ landmark: the **mark**, a `strong` of class `mark` reading `ikigenba` whose
 `data-service` carries the banner data's service name, from which the
 stylesheet draws `ikigenba │ dummy`; then, when the banner data lists
 services, the **launcher button**, a `button` of class `launcher` labelled
-`Services`; then the **email link**, an `a` whose `href` is the profile URL
-and whose text is the email; then the **sign-out form**, a `form` POSTing to
+`Services`; then the **profile link**, an `a` of class `profile` whose `href`
+is the profile URL, labelled `Profile` and titled with the email, holding only
+an `aria-hidden` `user-circle` icon and no text; then the **sign-out form**, a `form` POSTing to
 the logout URL around a submit `button` reading `Sign out` behind an
 `aria-hidden` `logout` icon. When there are services, the header is followed
 by the **list of services**, a `nav` with id `services`, labelled `Services`
@@ -397,8 +427,11 @@ markup than that.
 dummy's tests cannot build the kit — `appkit.New` reads the real environment,
 which no test may touch — so they observe the banner through an **echoing
 banner source**: a function returning the banner user's three values with
-`ServiceName` and a list of services the test chose. That is exactly what the
-kit's `Banner` method returns, with the services its file lists and the one
+`ServiceName` and a list of services the test chose. That is what the kit's
+`Banner` method returns, less the version, which the echoing source leaves
+empty because nothing it observes depends on it — the footer's requirements
+are stated over whatever the source returned — with the services its file
+lists and the one
 named like the service marked current (observed against the published module:
 an entry named `dummy` came back with `Current` true, an entry lacking a field
 was left out, and a missing file or an unset variable gave no services). So
@@ -426,13 +459,15 @@ link. The banner is a defined term rather than a passing phrase because the
 observations are stated over it, and `D07-form` places the widget form
 outside it.
 
-A page's **written markup** is the page with its appkit banner taken out: the
-one stretch of the body that dummy's own markup did not produce. Every rule
+A page's **written markup** is the page with its appkit banner and its appkit
+footer taken out: the two stretches of the body that dummy's own markup did
+not produce. Every rule
 this design states over a page's markup — the head, the frame, the counts, the
 attribute and tag rules, the script rules — is read out of the written markup,
 because appkit's bytes are not dummy's to guarantee and a service's icon is
-the services file's. The appkit banner is the first thing in the body; the
-written markup's body then holds exactly one thing, one `main` element, and
+the services file's. The appkit banner is the first thing in the body and the
+appkit footer the last; the written markup's body then holds exactly one
+thing, one `main` element, and
 everything that is the page's own — the panel's heading block, table and form
 card, or a failure page's message and its link back — is inside it, so the
 content sits in the stylesheet's centred column under the banner rather than
@@ -441,26 +476,28 @@ its end tag is the page's **page content**, a defined term so that `D07-form`
 can place things in it without restating the frame. The frame is stated once,
 over every HTML document dummy sends, so the 404, the 405s, the 415 and the
 422 redraw all have it; the plain-text 500 is not an HTML document and has
-neither the banner nor the `main`.
+neither the banner, the `main`, nor the footer.
 
 `ServiceName` is lowercase, `dummy`, and so is every other place the service's
 name appears: the page's title is `ServiceName` too, the kit `main` builds is
-named with it, and no document carries the name in any other casing. The only
+named with it, so appkit's banner marks it and its footer shows it, and no
+document carries the name in any other casing. The only
 way a differently cased `dummy` can reach a page is inside a value a caller
 sent or a widget's name, so the rule is stated over requests and stores that
 carry none; dummy does not rewrite a caller's bytes.
 
-The email link's text is compared against the **whitespace collapse** of what
-`X-User-Email` carried and not against its raw bytes: normalisation collapses runs of
-whitespace, so an address carrying two spaces would otherwise fail against a
-page that rendered it perfectly. It is not compared against the full
-normalisation either, which would be worse than the raw value — normalisation
-unescapes, so a header carrying the four characters `&lt;` would normalise to
-`<`, while the page renders those four characters and the email's normalised
-text hands them back unchanged, and `&lt;` is not `<`, so a comparison against
-the normalisation would fail on a page that rendered the address perfectly.
-Collapsing whitespace is exactly the difference the comparison needs, and
-nothing else is.
+The profile link's `title` is compared against exactly what `X-User-Email`
+carried. An attribute's read value is unescaped but never collapsed, and
+appkit draws the title through `html/template`'s attribute escaping, which
+writes character references for markup characters and leaves whitespace
+alone, so reading the title back gives the header's bytes unchanged — with
+one exception: that escaping turns a NUL into U+FFFD (observed against the
+appkit module that adds the profile link, whose title for an email of
+`a+b&<"'`, a tab, a space and `c` read back byte for byte). A header can carry
+no NUL over the wire, since `net/http` refuses such a request, so the
+observation leaves NUL out rather than bending the comparison around it. The
+link carries no text: its content normalises to nothing, and the email is in
+no visible text of the page.
 
 Because the banner is drawn from the caller's identity, a failure dummy can
 name to an identified caller is itself a page with that same banner, with a way
@@ -496,7 +533,7 @@ whose text is `ServiceName`, one stylesheet link whose `href` is
 `/_appkit/theme.css`, the platform stylesheet appkit serves through dummy
 (`D08-assets`), and the phone-width viewport declaration,
 `width=device-width, initial-scale=1`. The head is dummy's markup, not
-appkit's: appkit's template draws only the banner and the launcher. They are stated once, over the class, so no page can be the one that
+appkit's: appkit's templates draw only the banner, the launcher and the footer. They are stated once, over the class, so no page can be the one that
 forgot. The table fragment is not in the class and carries none of them: it
 is spliced into a page that already has them. The plain-text 500 carries
 none either, which is the point of it — a request without identity is sent
@@ -632,13 +669,14 @@ nothing of it.
 
 The page content holds the heading block and the wrapper and nothing else:
 nothing can sit before the heading, between the heading and the wrapper, or
-after the wrapper, so a footer, a skip link or a notice has nowhere to go. The
-stories show no other text on the page, and that is meant to be decidable.
+after the wrapper, so a skip link or a notice has nowhere to go. The appkit
+footer is not page content: it follows the `main`, as the body's last child.
+The stories show no other text on the page, and that is meant to be decidable.
 
 ## A caller's bytes never become markup
 
 Three kinds of caller-supplied value reach a page: the email from
-`X-User-Email`; the email link's `href` and the sign-out form's `action`,
+`X-User-Email`; the profile link's `href` and the sign-out form's `action`,
 which `ProfileURL` and `LogoutURL` derive from `Host` and `X-Forwarded-Proto`;
 and — on a 422 — the name, the count and the status exactly as they were
 submitted. The first two reach it through the banner user and appkit's
@@ -666,9 +704,9 @@ unescaped `>` inside a quoted value, which ends a start tag early and would let
 the document's tag extents follow the caller too. The comparison holds the
 widget set fixed as well, since a page renders the store and a creation
 between the two reads would move the tag sequence with no caller value doing
-it. The value itself still has to arrive — the banner's email in the visible
-text, the echoed name in an attribute — and the unescape step in normalisation
-is what makes those comparisons come out right.
+it. The value itself still has to arrive — the banner's email in the profile
+link's title, the echoed name in an attribute — and the unescaping of a read
+value is what makes those comparisons come out right.
 
 ## The inline polling script
 
@@ -778,8 +816,8 @@ no script; and none of it writes to stderr, since a 200 writes nothing.
 
 appkit's half is covered by the wiring and not by dummy's handler tests,
 because a test may not read the real environment `appkit.New` reads:
-`main` builds the kit with `appkit.New(ServiceName)` and hands its `Banner`
-method down unchanged (`D01-layout-and-run-seam`, `D03-serve`). Reading
+`main` builds the kit with `appkit.New(ServiceName, cli.Version)` and hands
+its `Banner` method down unchanged (`D01-layout-and-run-seam`, `D03-serve`). Reading
 `IKIGENBA_SERVICES` once at start; reading the file afresh on every call, so
 that a rewritten file shows on the next page without a restart; answering an
 unset variable, a missing, unreadable or malformed file, or no usable entry
@@ -812,28 +850,30 @@ acceptance of a deployment and adds no requirement here.
 - R-KFW9-UBUU: dummy's design defines the **whitespace collapse** of a string `s` as `s` with every run of one or more whitespace characters replaced by a single space and with leading and trailing whitespace then removed, and every requirement in dummy's design that names the whitespace collapse of a string MUST denote that result.
 - R-KH46-83LJ: dummy's design defines the **script-stripped form** of a string `s` as the result of this procedure, and every requirement in dummy's design that names the script-stripped form MUST denote that result: scanning `s` from the left, repeatedly find the earliest `script` start tag or `style` start tag and delete every character from that start tag's `<` through the last character of the first `</script>` end tag or `</style>` end tag respectively that follows that start tag; when no such end tag follows, delete every character from that `<` through the end of `s`.
 - R-KIC2-LVC8: dummy's design defines the **normalisation** of a string `s` as the result of these steps applied in this order, and every requirement in dummy's design that names the normalisation of a string MUST denote that result: take the script-stripped form of `s`; remove every tag, meaning that, scanning from the left, the span from the earliest remaining `<` through the first `>` that follows that `<` is removed, and the span from a `<` that no `>` follows through the end of the string is removed, until no `<` remains; unescape HTML character references with `html.UnescapeString` from the Go standard library; take the whitespace collapse of the result.
-- R-AU3J-CVPL: dummy's design defines **an HTML document dummy sends** to be a non-empty response body `Handler` sends with the header `Content-Type: text/html; charset=utf-8` in answer to a request whose path is neither `/widgets/table` nor an appkit path (`D08-assets`), and the **written markup** of such a body to be that body with the occurrence of the appkit banner that its being drawn with the banner places in it removed, or that body unchanged when it is not drawn with the banner; every requirement in dummy's design that names an HTML document dummy sends, or a body that is one, a panel page included, MUST denote such a body; and wherever such a requirement reads anything out of that body — its raw body, its script-stripped form, its visible text, its page content, a tag, a count of tags or an attribute — other than whether it is drawn with the banner, and other than where the requirement says it reads the whole body, it MUST read it out of that body's written markup; and every requirement in dummy's design that names the markup dummy sends MUST denote the written markup of every HTML document dummy sends together with every other response body `Handler` sends in answer to a request whose path is not an appkit path.
-- R-LYCD-32OD: Every HTML document dummy sends MUST, after optional leading whitespace, begin with `<!doctype html>` compared case-insensitively, and its script-stripped form MUST contain exactly one `body` start tag and exactly one `</body>` end tag.
+- R-3XY9-6C27: dummy's design defines **an HTML document dummy sends** to be a non-empty response body `Handler` sends with the header `Content-Type: text/html; charset=utf-8` in answer to a request whose path is neither `/widgets/table` nor an appkit path (`D08-assets`), and the **written markup** of such a body to be that body with the occurrence of the appkit banner that its being drawn with the banner places in it and the occurrence of the appkit footer that its being drawn with the footer places in it removed, each only when the body is so drawn, and otherwise unchanged; every requirement in dummy's design that names an HTML document dummy sends, or a body that is one, a panel page included, MUST denote such a body; and wherever such a requirement reads anything out of that body — its raw body, its script-stripped form, its visible text, its page content, a tag, a count of tags or an attribute — other than whether it is drawn with the banner or drawn with the footer, and other than where the requirement says it reads the whole body, it MUST read it out of that body's written markup; and every requirement in dummy's design that names the markup dummy sends MUST denote the written markup of every HTML document dummy sends together with every other response body `Handler` sends in answer to a request whose path is not an appkit path.
+- R-3Z65-K3SW: Every HTML document dummy sends MUST, after optional leading whitespace, begin with `<!doctype html>` compared case-insensitively, and its script-stripped form MUST contain exactly one `body` start tag and exactly one `</body>` end tag.
 - R-KLZR-R6KB: dummy's design defines the **visible text** of a string `s` as the normalisation of the characters lying between the `>` of the first `body` start tag in the script-stripped form of `s` and the `<` of the first `</body>` end tag following that start tag in that same form, and as the empty string when either of those tags is absent; and every requirement in dummy's design that names a document's visible text MUST denote that result.
 - R-RMP2-ZITR: Wherever a requirement in dummy's design fixes how many start tags or end tags of a named element a document contains and does not itself name the form of that document the count is taken over, the count MUST be taken over that document's script-stripped form, except where the requirement names the `script` element itself, whose count MUST be taken over the raw body; and wherever such a requirement does name the form the count is taken over, the count MUST be taken over the form it names.
 - R-B8QB-Y4LX: The source of every `script` element — the characters between that element's start tag and its end tag — in every response body `Handler` sends in answer to a request whose path is not an appkit path (`D08-assets`), read out of that body's written markup when that body is an HTML document dummy sends, MUST NOT contain the sequence `</script` compared case-insensitively.
 - R-B9Y8-BWCM: Let a **written body** be any response body `Handler` sends in answer to a request whose path is not an appkit path (`D08-assets`), taken to be that body's written markup when that body is an HTML document dummy sends; the raw text of every written body MUST NOT contain a `style` start tag, so dummy writes no `style` element in any page or fragment; and the script-stripped form of every written body MUST NOT contain a `script` start tag and MUST NOT contain a `style` start tag, so that taking the script-stripped form of that form again removes nothing from it; neither half implies the other, because stripping removes a `style` element the raw body really held, and because a removal can join a `<sty` preceding a `script` element to an `le>` following it and so put a `style` start tag in the form that the raw body never held.
-- R-1EVY-Q95D: dummy's design defines the **banner** of a string `s` as the span of the script-stripped form of `s` running from the `<` of the `header` start tag whose `<` follows the `>` of the first `body` start tag in that form with nothing but ASCII whitespace between them, through the `>` of the first `</header>` end tag following that `header` start tag; a string has no banner when no `header` start tag so follows or no `</header>` end tag follows it; and every requirement in dummy's design that names a banner MUST denote that span.
+- R-441R-36RO: dummy's design defines the **banner** of a string `s` as the span of the script-stripped form of `s` running from the `<` of the `header` start tag whose `<` follows the `>` of the first `body` start tag in that form with nothing but ASCII whitespace between them, through the `>` of the first `</header>` end tag following that `header` start tag; a string has no banner when no `header` start tag so follows or no `</header>` end tag follows it; and every requirement in dummy's design that names a banner MUST denote that span.
 - R-AVBF-QNGA: dummy's design defines the **banner user** for a request as the `appkit.User` whose `Email` is the value `r.Header.Get("X-User-Email")` returns for that request, the empty string when it carries none, whose `ProfileURL` is the value `ProfileURL` returns for that request's `Host` header and its `X-Forwarded-Proto` header, and whose `LogoutURL` is the value `LogoutURL` returns for those same two headers; and every requirement in dummy's design that names the banner user MUST denote that value.
 - R-AWJC-4F6Z: dummy's design defines the **appkit banner** for a request `Handler` answers as the text that executing the template named `banner` in the set `appkit.Templates()` returns writes when its data is the `appkit.Banner` value returned by the call to its banner source that `Handler` made while answering that request; and every requirement in dummy's design that names the appkit banner MUST denote that text.
 - R-AXR8-I6XO: dummy's design defines a response body to be **drawn with the banner** for the request it answers when, read as sent, it contains the appkit banner for that request beginning immediately after the `>` of its first `body` start tag, with nothing but ASCII whitespace between them; that occurrence is the one its written markup leaves out; and every requirement in dummy's design that names being drawn with the banner MUST denote that property.
+- R-4CL1-RKYJ: dummy's design defines the **appkit footer** for a request `Handler` answers as the text that executing the template named `footer` in the set `appkit.Templates()` returns writes when its data is the `appkit.Banner` value returned by the call to its banner source that `Handler` made while answering that request, the same value the appkit banner for that request is drawn from; and every requirement in dummy's design that names the appkit footer MUST denote that text.
+- R-4DSY-5CP8: dummy's design defines a response body to be **drawn with the footer** for the request it answers when, read as sent, it contains the appkit footer for that request ending immediately before the `<` of the last `</body>` end tag in it, with nothing but ASCII whitespace between them, and beginning after the end of the occurrence of the appkit banner that its being drawn with the banner places in it when it is so drawn; that occurrence is the one its written markup leaves out; and every requirement in dummy's design that names being drawn with the footer MUST denote that property.
 - R-AYZ4-VYOD: `Handler` MUST call its banner source exactly once while answering each request it answers with an HTML document dummy sends, with the banner user for that request as its argument, and MUST NOT call it while answering a request it answers with status 500 because its `X-User-Id` header is absent or empty, a request whose path is `/widgets/table`, or a request whose path is an appkit path (`D08-assets`); so that every page is drawn from banner data fetched for that page and never from data fetched for another request.
 - R-85Q6-Z7GW: dummy's design defines, for a slice `svc` of `appkit.Service` values, the **echoing banner source** for `svc` as a function of type `func(u appkit.User) appkit.Banner` that, called with any `u`, returns `appkit.Banner{Service: ServiceName, Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL, Services: svc}`; and a **plain service** as an `appkit.Service` whose `Name` is non-empty and consists only of ASCII letters, ASCII digits, `.`, `-` and `_`, whose `URL` is empty or is `http://` or `https://` followed by characters each of which is an ASCII letter, an ASCII digit or one of `:/.-_~`, and whose `Icon` is empty or is one `svg` element — an `svg` start tag through an `</svg>` end tag that ends the string — every `<` of which begins a start tag or an end tag of `svg`, `g`, `path`, `circle`, `rect` or `line` and whose normalisation is empty; and every requirement in dummy's design that names an echoing banner source or a plain service MUST denote such a function or such a value.
-- R-B1EX-NI5R: dummy's design defines a **bare occurrence** of a named attribute in a start tag as that attribute's name compared case-insensitively, immediately preceded within that start tag by an ASCII whitespace character and immediately followed by an ASCII whitespace character, a `/`, or the `>` that ends that start tag; and every requirement in dummy's design that names a bare occurrence MUST denote that.
-- R-B2MU-19WG: For a `Handler` built over an echoing banner source, every HTML document dummy sends in answer to a request whose `Host` header consists only of ASCII letters, ASCII digits, `.`, `-` and `:` MUST, read as a whole body, have a banner that contains exactly one `a` start tag and exactly one `form` start tag and contains, in this order: a `strong` start tag carrying an occurrence of the attribute `class` whose read value is exactly `mark` and an occurrence of the attribute `data-service` whose read value is exactly `ServiceName`, the normalisation of whose element content — the characters from that start tag's `>` up to the `<` of the first `</strong>` end tag following it — is exactly `ikigenba`; then the **email link**, that `a` start tag, carrying an occurrence of the attribute `href` whose read value is exactly the `ProfileURL` of the banner user for that request, the normalisation of whose element content up to the first `</a>` end tag following it is exactly the whitespace collapse of that banner user's `Email`; then the **sign-out form**, that `form` start tag, carrying an occurrence of the attribute `method` whose read value is exactly `post` and an occurrence of the attribute `action` whose read value is exactly the `LogoutURL` of that banner user, whose element content up to the first `</form>` end tag following it contains exactly one `button` start tag, carrying an occurrence of the attribute `type` whose read value is exactly `submit`, the normalisation of whose element content up to the first `</button>` end tag following it is exactly `Sign out`; and every `svg` start tag in that banner MUST carry an occurrence of the attribute `aria-hidden` whose read value is exactly `true`.
+- R-48XC-M9QG: dummy's design defines a **bare occurrence** of a named attribute in a start tag as that attribute's name compared case-insensitively, immediately preceded within that start tag by an ASCII whitespace character and immediately followed by an ASCII whitespace character, a `/`, or the `>` that ends that start tag; and every requirement in dummy's design that names a bare occurrence MUST denote that.
+- R-459N-GYID: For a `Handler` built over an echoing banner source, every HTML document dummy sends in answer to a request whose `Host` header consists only of ASCII letters, ASCII digits, `.`, `-` and `:` and whose `X-User-Email` header value contains no NUL character MUST, read as a whole body, have a banner that contains exactly one `a` start tag and exactly one `form` start tag and contains, in this order: a `strong` start tag carrying an occurrence of the attribute `class` whose read value is exactly `mark` and an occurrence of the attribute `data-service` whose read value is exactly `ServiceName`, the normalisation of whose element content — the characters from that start tag's `>` up to the `<` of the first `</strong>` end tag following it — is exactly `ikigenba`; then the **profile link**, that `a` start tag, carrying an occurrence of the attribute `class` whose read value is exactly `profile`, an occurrence of the attribute `href` whose read value is exactly the `ProfileURL` of the banner user for that request, an occurrence of the attribute `aria-label` whose read value is exactly `Profile` and an occurrence of the attribute `title` whose read value is exactly that banner user's `Email`, the normalisation of whose element content up to the first `</a>` end tag following it is the empty string; then the **sign-out form**, that `form` start tag, carrying an occurrence of the attribute `method` whose read value is exactly `post` and an occurrence of the attribute `action` whose read value is exactly the `LogoutURL` of that banner user, whose element content up to the first `</form>` end tag following it contains exactly one `button` start tag, carrying an occurrence of the attribute `type` whose read value is exactly `submit`, the normalisation of whose element content up to the first `</button>` end tag following it is exactly `Sign out`; and every `svg` start tag in that banner MUST carry an occurrence of the attribute `aria-hidden` whose read value is exactly `true`.
 - R-86Y3-CZ7L: For a `Handler` built over the echoing banner source for an empty or nil slice, every HTML document dummy sends MUST, read as a whole body, contain no `nav` start tag, no `button` start tag carrying an occurrence of the attribute `class` whose read value is exactly `launcher`, no `input` start tag carrying an occurrence of the attribute `type` whose read value is exactly `search`, no occurrence of the string `No service matches`, and no occurrence of the string `/_appkit/launcher.js`, so that a page drawn with no services carries no launcher button, no list of services, no search field and no no-match line, and loads no launcher script.
-- R-B52M-STDU: For a `Handler` built over the echoing banner source for a slice of one or more plain services, every HTML document dummy sends MUST, read as a whole body: have a banner containing a `button` start tag carrying an occurrence of the attribute `class` whose read value is exactly `launcher`, an occurrence of the attribute `type` whose read value is exactly `button` and an occurrence of the attribute `aria-label` whose read value is exactly `Services`, lying before the banner's `a` start tag; contain exactly one `nav` start tag, lying after the end of that banner and before the first `main` start tag, carrying an occurrence of the attribute `id` whose read value is exactly `services`, an occurrence of the attribute `aria-label` whose read value is exactly `Services` and a bare occurrence of the attribute `popover`, whose element — the characters from that start tag through the first `</nav>` end tag following it — contains exactly one `input` start tag, carrying an occurrence of the attribute `type` whose read value is exactly `search`, an occurrence of the attribute `placeholder` whose read value is exactly `Find a service` and an occurrence of the attribute `aria-label` whose read value is exactly `Find a service`, and exactly one `p` start tag, carrying a bare occurrence of the attribute `hidden`, the normalisation of whose element content up to the first `</p>` end tag following it begins with `No service matches`; and contain exactly one `script` start tag carrying an occurrence of the attribute `src` whose read value is exactly `/_appkit/launcher.js`, lying after that `</nav>` end tag and before the first `main` start tag.
-- R-B6AJ-6L4J: For a `Handler` built over the echoing banner source for a slice `svc` of one or more plain services, in every HTML document dummy sends, read as a whole body, the element of the `nav` start tag R-B52M-STDU describes MUST contain exactly as many `a` start tags as `svc` has elements, and for each index `i` the `i`-th of those `a` start tags in document order MUST: when `svc[i].Enabled` is true, carry an occurrence of the attribute `href` whose read value is exactly `svc[i].URL` and no occurrence of the attribute `aria-disabled`; when it is false, carry no occurrence of the attribute `href`, an occurrence of the attribute `aria-disabled` whose read value is exactly `true`, and an occurrence of the attribute `title` whose read value is exactly `svc[i].Name` followed by ` is unavailable`; when `svc[i].Current` is true, carry an occurrence of the attribute `aria-current` whose read value is exactly `page`, and otherwise no occurrence of that attribute; and be followed by element content — the characters from that start tag's `>` up to the `<` of the first `</a>` end tag following it — that begins with exactly `svc[i].Icon` and whose normalisation is exactly `svc[i].Name`.
-- R-LZK9-GUF2: Every HTML document dummy sends MUST be drawn with the banner for the request it answers.
+- R-4A59-01H5: For a `Handler` built over the echoing banner source for a slice of one or more plain services, every HTML document dummy sends MUST, read as a whole body: have a banner containing a `button` start tag carrying an occurrence of the attribute `class` whose read value is exactly `launcher`, an occurrence of the attribute `type` whose read value is exactly `button` and an occurrence of the attribute `aria-label` whose read value is exactly `Services`, lying before the banner's `a` start tag; contain exactly one `nav` start tag, lying after the end of that banner and before the first `main` start tag, carrying an occurrence of the attribute `id` whose read value is exactly `services`, an occurrence of the attribute `aria-label` whose read value is exactly `Services` and a bare occurrence of the attribute `popover`, whose element — the characters from that start tag through the first `</nav>` end tag following it — contains exactly one `input` start tag, carrying an occurrence of the attribute `type` whose read value is exactly `search`, an occurrence of the attribute `placeholder` whose read value is exactly `Find a service` and an occurrence of the attribute `aria-label` whose read value is exactly `Find a service`, and exactly one `p` start tag, carrying a bare occurrence of the attribute `hidden`, the normalisation of whose element content up to the first `</p>` end tag following it begins with `No service matches`; and contain exactly one `script` start tag carrying an occurrence of the attribute `src` whose read value is exactly `/_appkit/launcher.js`, lying after that `</nav>` end tag and before the first `main` start tag.
+- R-4BD5-DT7U: For a `Handler` built over the echoing banner source for a slice `svc` of one or more plain services, in every HTML document dummy sends, read as a whole body, the element of the `nav` start tag R-4A59-01H5 describes MUST contain exactly as many `a` start tags as `svc` has elements, and for each index `i` the `i`-th of those `a` start tags in document order MUST: when `svc[i].Enabled` is true, carry an occurrence of the attribute `href` whose read value is exactly `svc[i].URL` and no occurrence of the attribute `aria-disabled`; when it is false, carry no occurrence of the attribute `href`, an occurrence of the attribute `aria-disabled` whose read value is exactly `true`, and an occurrence of the attribute `title` whose read value is exactly `svc[i].Name` followed by ` is unavailable`; when `svc[i].Current` is true, carry an occurrence of the attribute `aria-current` whose read value is exactly `page`, and otherwise no occurrence of that attribute; and be followed by element content — the characters from that start tag's `>` up to the `<` of the first `</a>` end tag following it — that begins with exactly `svc[i].Icon` and whose normalisation is exactly `svc[i].Name`.
+- R-41LY-BNAA: Every HTML document dummy sends MUST be drawn with the banner and drawn with the footer for the request it answers.
 - R-VDFC-F7H3: `Handler` MUST NOT send a `Set-Cookie` header in any response, whatever the request's path, method and headers, so that dummy sets no cookie and leaves the session to auth.
 - R-VIAX-YAFV: dummy's design defines the **page content** of a string `s` as the characters of the script-stripped form of `s` lying between the `>` of the first `main` start tag in that form and the `<` of the first `</main>` end tag following that start tag; a string has no page content when either tag is absent; and every requirement in dummy's design that names page content MUST denote those characters.
-- R-BB64-PO3B: The script-stripped form of every HTML document dummy sends MUST contain exactly one `main` start tag and exactly one `</main>` end tag, and the characters of that form between the `>` of its first `body` start tag and the `<` of the first `</body>` end tag following it MUST consist of exactly these, in this order: optional ASCII whitespace, that `main` start tag, the page content, that `</main>` end tag, optional ASCII whitespace; so that, with the appkit banner at the top of the body, everything the page itself holds is inside the one `main` element.
-- R-M0S5-UM5R: Every response in the banner failure shape for a named message constant whose body is non-empty MUST have page content the normalisation of which contains that constant and which contains an `a` start tag carrying an occurrence of the attribute `href` whose read value is exactly `/widgets`, so that a failure page's message and its way back sit inside its `main` element.
+- R-46HJ-UQ92: The script-stripped form of every HTML document dummy sends MUST contain exactly one `main` start tag and exactly one `</main>` end tag, and the characters of that form between the `>` of its first `body` start tag and the `<` of the first `</body>` end tag following it MUST consist of exactly these, in this order: optional ASCII whitespace, that `main` start tag, the page content, that `</main>` end tag, optional ASCII whitespace; so that, with the appkit banner at the top of the body and the appkit footer at its end, everything the page itself holds is inside the one `main` element.
+- R-47PG-8HZR: Every response in the banner failure shape for a named message constant whose body is non-empty MUST have page content the normalisation of which contains that constant and which contains an `a` start tag carrying an occurrence of the attribute `href` whose read value is exactly `/widgets`, so that a failure page's message and its way back sit inside its `main` element.
 - R-M202-8DWG: The script-stripped form of every HTML document dummy sends MUST contain exactly one `title` start tag and exactly one `</title>` end tag, both before the first `body` start tag and the start tag first, and the normalisation of the characters between that start tag's `>` and that end tag's `<` MUST be exactly `ServiceName`.
 - R-BCE1-3FU0: The script-stripped form of every HTML document dummy sends MUST contain exactly one `link` start tag carrying an occurrence of the attribute `rel` whose read value is exactly `stylesheet`, and that start tag MUST lie before the first `body` start tag and MUST carry an occurrence of the attribute `href` whose read value is exactly `/_appkit/theme.css`.
 - R-M37Y-M5N5: The script-stripped form of every HTML document dummy sends MUST contain exactly one `meta` start tag carrying an occurrence of the attribute `name` whose read value is exactly `viewport`, and that start tag MUST lie before the first `body` start tag and MUST carry an occurrence of the attribute `content` whose read value is exactly `width=device-width, initial-scale=1`.
@@ -844,10 +884,11 @@ acceptance of a deployment and adds no requirement here.
 - R-M9BG-J0CM: In the raw body of every HTML document dummy sends, every `<` immediately followed by an ASCII letter MUST begin a **well-formed start tag**, meaning a span consisting of exactly these, in this order: that `<`; a tag name of one or more characters each of which is an ASCII letter, an ASCII digit or `-`; zero or more attributes, each being one or more ASCII whitespace characters, then an attribute name of one or more characters none of which is ASCII whitespace, `"`, `'`, `<`, `>`, `/` or `=`, then optionally `=` immediately followed by a double quote, zero or more characters none of which is `"`, `<` or `>`, and a double quote; zero or more ASCII whitespace characters; an optional `/`; and `>`; so that the first `>` following that `<` ends the tag a browser reads there and every attribute a browser reads in that tag is preceded by ASCII whitespace and, when it has a value, followed immediately by `=` and a double-quoted value.
 - R-MAJC-WS3B: In the raw body of every HTML document dummy sends, every start tag MUST contain no ASCII whitespace character immediately followed by the two characters `on` compared case-insensitively, then one or more ASCII letters, then `=`, and MUST carry no occurrence of the attribute `srcdoc` and no occurrence of the attribute `http-equiv`, so that no event-handler attribute carries script, no inline frame is handed a document written in place, and no `meta` element refreshes the page or sends it elsewhere.
 - R-BDLX-H7KP: The raw body of every HTML document dummy sends MUST contain no `math` start tag, and every `svg` start tag in it MUST begin an occurrence of the value of `PlusIcon`, meaning that the raw body, read from that start tag's `<`, begins with the whole of that value; so that the only foreign content dummy's own markup carries is one icon whose every byte dummy's design fixes, and no presentation attribute or animation element names a resource.
+- R-7HSY-2NQ4: For a `Handler` built over the echoing banner source for an empty or nil slice or for a slice of plain services, an HTML document dummy sends in answer to a request whose `X-User-Email` header value contains `@`, whose body contains no `@`, and immediately before which no widget in the slice `s.All()` returns has a `Name` containing `@`, MUST, read as a whole body, have visible text that does not contain the whitespace collapse of that header value, so that the caller's email is in no visible text of the page.
 - R-BETT-UZBE: For a `Handler` built over an echoing banner source, the tag structure of an HTML document dummy sends, read as a whole body, MUST NOT depend on any value `Handler` draws into it from the request — the value of the request's `X-User-Email` header, the values of its `Host` and `X-Forwarded-Proto` headers, which reach it through the banner user, and the `Name`, `Count` and `Status` fields of the `Submission` (`D05-widgets`) a 422 answer echoes: for two requests that differ only in one of those values, that are answered with the same status, immediately before each of which the slice `s.All()` returns is equal element for element and in the same order, and for which, where `Store.Create` (`D05-widgets`) was called at all, it returned equal `FieldErrors` values, the **tag-name sequence** of the two bodies MUST be equal and the two bodies MUST contain equally many `>` characters, so that such a value can neither open a tag nor end one, where the tag-name sequence of a body is obtained by scanning the whole body from the left and taking, for each `<` in turn, the characters following that `<` — following the `/` when a `/` immediately follows it — up to but not including the first character that is neither an ASCII letter nor an ASCII digit.
 - R-LU2I-4WTE: dummy's design defines a response to be in the **plain failure shape** for a named body constant when its `Content-Type` header is exactly `text/plain; charset=utf-8` and its body is exactly that constant, or is empty when the request's method is `HEAD`.
 - R-MBR9-AJU0: dummy's design defines a response to be in the **banner failure shape** for a named message constant when its `Content-Type` header is exactly `text/html; charset=utf-8` and its body is empty when the request's method is `HEAD` and is otherwise a body whose visible text contains that constant and which contains an `a` start tag whose `href` attribute has read value exactly `/widgets`.
-- R-ME72-23BE: dummy's design uses **panel page** for a document shape and not for a route: a response body is a panel page exactly when a requirement in dummy's design requires that body to be one, and no body is a panel page merely by meeting the obligations stated here; every panel page MUST be an HTML document dummy sends and MUST be drawn with the banner for the request it answers; and every further obligation a panel page carries is stated by the requirement that states it.
+- R-42TU-PF0Z: dummy's design uses **panel page** for a document shape and not for a route: a response body is a panel page exactly when a requirement in dummy's design requires that body to be one, and no body is a panel page merely by meeting the obligations stated here; every panel page MUST be an HTML document dummy sends and MUST be drawn with the banner and drawn with the footer for the request it answers; and every further obligation a panel page carries is stated by the requirement that states it.
 - R-LXQ7-A81H: `Handler` MUST answer a request whose `X-User-Id` header is absent, or present with an empty value, with status 500, the header `Content-Type: text/plain; charset=utf-8`, no `Allow` header, and a response in the plain failure shape for `MissingIdentityBody`, whatever the request's path and method.
 - R-Y5IN-YD18: `Handler` MUST NOT set an `ETag` header on a response it answers with status 500 because the request's `X-User-Id` header is absent or present with an empty value, whatever the request's path and method.
 - R-LYY3-NZS6: `Handler` MUST decide that a request carries no identity before it examines the request's path or method, so that a request whose `X-User-Id` header is absent or empty MUST NOT be answered with status 303, 404, 405 or 415 for any path, `/`, `/widgets` and `/widgets/table` included.

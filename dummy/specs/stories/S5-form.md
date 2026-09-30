@@ -18,7 +18,7 @@ last in the table (`S4`).
 A submission dummy accepts is answered `303 See Other` with `Location:
 /widgets` and an empty body: the browser then re-fetches the panel, where the
 new row is visible. A submission dummy reads and rejects is answered `422`
-whose body is the panel page re-rendered with the same banner as a `GET
+whose body is the panel page re-rendered with the same banner and footer as a `GET
 /widgets` — the same title, stylesheet link, and viewport, and after the
 banner the page's `Widgets` heading with its subtitle
 counting the widgets as they are (`3 widgets · refreshes every 5 seconds`
@@ -101,13 +101,14 @@ HTTP/1.1 422 Unprocessable Content
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 422. The body is the panel page with the same banner as a `GET
-/widgets` — the mark, `mg@example.com` linking to `http://localhost:3001/`,
-and the sign-out button POSTing to `http://localhost:3001/logout` — with the
-`Widgets` heading, and beneath it the table holding the three fixture widgets
-in fixture order and the form in its card headed `Add widget`. The form carries
-the values the caller submitted: the name field empty, the count field 7, the
-status field `active`. An error message sits beside the name field saying a
+Status 422. The body is the panel page with the same banner and footer as a
+`GET /widgets` — the mark, the profile link titled `mg@example.com` leading to
+`http://localhost:3001/`, and the sign-out button POSTing to
+`http://localhost:3001/logout` — with the `Widgets` heading, and beneath it
+the table holding the three fixture widgets in fixture order and the form in
+its card headed `Add widget`, and last the footer reading `dummy v<semver>`.
+The form carries the values the caller submitted: the name field empty, the
+count field 7, the status field `active`. An error message sits beside the name field saying a
 name is required. No error sits beside the count or the status field.
 
 Preconditions:
@@ -141,8 +142,8 @@ HTTP/1.1 422 Unprocessable Content
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 422. The body is the panel page with the same banner as a `GET
-/widgets`, with the table holding the three fixture widgets in fixture order.
+Status 422. The body is the panel page with the same banner and footer as a
+`GET /widgets`, with the table holding the three fixture widgets in fixture order.
 The form carries the values the caller submitted: the name field `alpha`, the
 count field 5, the status field `paused`. An error message sits beside the
 name field saying that name is already taken.
@@ -178,8 +179,8 @@ HTTP/1.1 422 Unprocessable Content
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 422. The body is the panel page with the same banner as a `GET
-/widgets`, with the table holding the three fixture widgets in fixture order.
+Status 422. The body is the panel page with the same banner and footer as a
+`GET /widgets`, with the table holding the three fixture widgets in fixture order.
 The form carries the values the caller submitted: the name field holding the
 41-character name in full, unshortened, the count field 7, the status field
 `active`. An error message sits beside the name field saying the name is too
@@ -214,8 +215,8 @@ HTTP/1.1 422 Unprocessable Content
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 422. The body is the panel page with the same banner as a `GET
-/widgets`, with the table holding the three fixture widgets in fixture order.
+Status 422. The body is the panel page with the same banner and footer as a
+`GET /widgets`, with the table holding the three fixture widgets in fixture order.
 The form carries the values the caller submitted: the name field `delta`, the
 count field holding the text `three` as it was typed, the status field
 `active`. An error message sits beside the count field saying the count must
@@ -251,8 +252,8 @@ HTTP/1.1 422 Unprocessable Content
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 422. The body is the panel page with the same banner as a `GET
-/widgets`, with the table holding the three fixture widgets in fixture order.
+Status 422. The body is the panel page with the same banner and footer as a
+`GET /widgets`, with the table holding the three fixture widgets in fixture order.
 The form carries the values the caller submitted: the name field `delta`, the
 count field -1, the status field `active`. An error message sits beside the
 count field saying the count cannot be negative.
@@ -289,8 +290,8 @@ HTTP/1.1 422 Unprocessable Content
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 422. The body is the panel page with the same banner as a `GET
-/widgets`, with the table holding the three fixture widgets in fixture order.
+Status 422. The body is the panel page with the same banner and footer as a
+`GET /widgets`, with the table holding the three fixture widgets in fixture order.
 The form carries the values the caller submitted: the name field `delta`, the
 count field 7, and the status field, which offers the same three choices and
 has none of them selected, because `archived` is not one of them. An error
@@ -328,8 +329,8 @@ HTTP/1.1 422 Unprocessable Content
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 422. The body is the panel page with the same banner as a `GET
-/widgets`, with the table holding the three fixture widgets in fixture order.
+Status 422. The body is the panel page with the same banner and footer as a
+`GET /widgets`, with the table holding the three fixture widgets in fixture order.
 The form carries the values the caller submitted: the name field empty, the
 count field holding the text `three`, and the status field with none of the
 three choices selected. Three error messages appear, one beside the name
@@ -373,12 +374,12 @@ HTTP/1.1 415 Unsupported Media Type
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 415. The body is an HTML document with the same banner as the panel —
-the mark, `mg@example.com` linking to `http://localhost:3001/`, and the
-sign-out button POSTing to `http://localhost:3001/logout`, with the title,
-stylesheet link, and viewport every page carries (`S3`) — whose visible text,
-after the banner, says the media type is
-not supported and carries a link to `/widgets`. The
+Status 415. The body is an HTML document with the same banner and footer as
+the panel — the mark, the profile link titled `mg@example.com` leading to
+`http://localhost:3001/`, and the sign-out button POSTing to
+`http://localhost:3001/logout`, with the title, stylesheet link, and viewport
+every page carries (`S3`) — which, between the banner and the footer, says the
+media type is not supported and carries a link to `/widgets`. The
 caller is identified, so this failure is a page with that banner, as the 404 and
 the 405 are (`S3`); only the missing-header 500 is bare text. The request body
 is not read at all: `POST /widgets` accepts only

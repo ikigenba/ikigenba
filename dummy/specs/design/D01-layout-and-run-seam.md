@@ -24,9 +24,11 @@ lives in `go.mod`, and no requirement names it. appkit is a sibling
 sub-project, so dummy reaches it only through its published package, whose
 documented surface (`go doc -all github.com/ikigenba/ikigenba/appkit`) is
 `StaticPrefix = "/_appkit/"`, `Static() http.Handler`, `Templates()
-*template.Template`, `New(service string) *Kit`, `(*Kit).Banner(User) Banner`,
-and the plain data types `User`, `Banner` and `Service`. appkit owns the
-banner's markup, the launcher's markup and script, the stylesheet, the fonts
+*template.Template`, `New(service, version string) *Kit`,
+`(*Kit).Banner(User) Banner`, and the plain data types `User`, `Banner` and
+`Service`; a `Banner` carries the service and the version `New` was given,
+unaltered. appkit owns the banner's markup, the footer's markup, the
+launcher's markup and script, the stylesheet, the fonts
 and their licences; dummy authors none of them and carries no copy.
 
 `appkit.New` is the one place the kit touches the process: it reads
@@ -51,9 +53,15 @@ data the case needs, a launcher's services included, without a services file
 and without touching the environment. The same unnamed function type is the
 handler's parameter (`D04-panel` declares `panel.Handler`), so `internal/cli`
 hands the source on unchanged and never calls it itself. Because the kit is
-built in `main` and must name dummy's service, `main` passes it
-`panel.ServiceName`, the one declaration of the name; that is why
-`cmd/dummy` imports `internal/panel` as well as `internal/cli`.
+built in `main` and must name dummy's service and its release version, `main`
+passes it `panel.ServiceName`, the one declaration of the name, and
+`cli.Version`, the one declaration of the version, the same value `--version`
+prints; that is why `cmd/dummy` imports `internal/panel` as well as
+`internal/cli`. The footer every page ends with (`D04-panel`) shows those two
+values, so it names the release that is serving the page. That `main` hands
+`New` the version is wiring, proved like the launcher's wiring by the one
+exec'ing test: the page the running binary serves carries a footer naming
+`ServiceName` and `Version`.
 
 ## Packages
 
@@ -194,6 +202,7 @@ store, banner source, readiness, serve — is `D03-serve` too.
 - R-Z46Q-6N1H: The `dummy` binary MUST behave as `cli.Run` does when given the binary's arguments after the program name, the process's environment, its process id, and its standard output and standard error, and MUST exit with the value `Run` returns.
 - R-Z5EM-KES6: When the `dummy` binary is serving and receives `SIGTERM` or `SIGINT`, it MUST stop as `Run` does when its context is cancelled.
 - R-Z7UF-BY9K: When the `dummy` binary starts with `IKIGENBA_SERVICES` naming a services file that lists one or more services, the page it serves for `GET /widgets` MUST carry the appkit launcher: a `button` start tag whose `class` is `launcher`.
+- R-7J0U-GFGT: When the `dummy` binary is serving with `IKIGENBA_SERVICES` unset or naming a services file no part of which contains the sequence `footer` compared case-insensitively, the page it serves in answer to a `GET /widgets` request carrying a non-empty `X-User-Id` header MUST, read as a whole body, contain exactly one `footer` start tag, as `D04-panel` defines start tags and end tags (R-KDGH-2SDG), and the normalisation (`D04-panel` R-KIC2-LVC8) of the characters from that start tag's `>` up to the `<` of the first `</footer>` end tag following it MUST be exactly the value of `panel.ServiceName` (`D04-panel`), one space, and the value of `Version`.
 - R-AMJL-GJV8: The `internal/cli` package MUST export `var Version string`.
 - R-ANRH-UBLX: `Version` MUST be the letter `v` followed by a valid Semantic Versioning version as defined at semver.org, prerelease and build metadata included when present.
 - R-LI0D-VJTO: The `internal/cli` package MUST export `const Manifest = "app = \"dummy\"\ndefault = false\nsecrets = []\n"`.
