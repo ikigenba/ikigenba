@@ -1,5 +1,5 @@
 /* Ikigenba — the signature style.
-   Copied from design/ikigenba/theme.css at commit ad436c0. The design lab's
+   Copied from design/ikigenba/theme.css at commit 8e7c444. The design lab's
    Google Fonts import is replaced by the @font-face rules below, which load
    the font files beside this stylesheet: Inter 4.1 (InterVariable.woff2,
    InterVariable-Italic.woff2; opsz 14..32, wght 100..900) and JetBrains Mono
@@ -139,9 +139,10 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--s5) 0; }
 .eyebrow { font-size: var(--text-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 
 /* ---------------------------------------------------------------- banner */
-/* The banner every app emits: product mark, service, user, sign out.
-   The user's email is a span in auth's banner and a bare link to their auth
-   profile in every other app's; both sit right, muted and small. */
+/* The banner every app emits: product mark, service, profile, sign out.
+   The profile is a user-circle icon button linking to the user's auth
+   profile, titled with their email; it sits right, muted like the launcher.
+   auth's own banner may still show the email as a bare span. */
 body > header {
   display: flex; align-items: center; gap: var(--s4);
   padding: 0 max(var(--s4), calc((100% - var(--page)) / 2 + var(--s4)));
@@ -168,6 +169,13 @@ body > header nav a {
 }
 body > header nav a:hover { color: var(--fg); background: var(--subtle); text-decoration: none; }
 body > header nav a[aria-current] { color: var(--fg); background: var(--line-soft); }
+body > header > .profile { margin-left: auto; }
+a.profile {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: var(--r); color: var(--muted);
+}
+a.profile:hover { background: var(--line-soft); color: var(--fg); text-decoration: none; }
+a.profile svg.ico { width: 20px; height: 20px; }
 
 /* -------------------------------------------------------------- launcher */
 /* The service launcher: a grid button in the banner, left of the user, opens
@@ -177,7 +185,7 @@ body > header nav a[aria-current] { color: var(--fg); background: var(--line-sof
    own. It hangs under the banner, its right edge on the banner's; the tile
    grid scrolls under the search field. */
 body > header > .launcher { margin-left: auto; }
-body > header > .launcher ~ :is(span, a:not([class])) { margin-left: 0; }
+body > header > .launcher ~ :is(span, a:not([class]), .profile) { margin-left: 0; }
 button.launcher {
   width: 36px; height: 36px; padding: 0; margin-right: calc(-1 * var(--s2));
   background: transparent; color: var(--muted); box-shadow: none;
@@ -227,6 +235,7 @@ main { max-width: var(--page); margin: 0 auto; padding: var(--s6) var(--s4) var(
 main > * + * { margin-top: var(--s5); }
 main > h1 + p { margin-top: var(--s2); color: var(--muted); font-size: var(--text-md); }
 
+/* An app's footer names the service and its version, muted and small. */
 body > footer {
   border-top: 1px solid var(--line); background: var(--surface);
   padding: var(--s6) max(var(--s4), calc((100% - var(--page)) / 2 + var(--s4)));
