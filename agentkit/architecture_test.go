@@ -89,49 +89,108 @@ func assertEventWrapper(t *testing.T, name string, wrapper reflect.Type, fieldNa
 
 func TestConversationConstructionFixesOrchestrationConfiguration(t *testing.T) {
 	// R-NW62-A0NM
-	auth := authFunc(func(context.Context, *http.Request, []byte) error { return nil })
-	endpointA, err := NewEndpoint(auth, WithBaseURL("https://one.invalid/messages"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	endpointB, err := NewEndpoint(auth, WithBaseURL("https://two.invalid/responses"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	tool := fixtureTool{name: "fixed_tool", schema: json.RawMessage(`{"type":"object"}`)}
-	cfg := Config{
-		Tools:    []Tool{tool},
-		Settings: Settings{Options: Options{"temperature": "0.2", "stop": `["fixed"]`}},
-	}
-	first, err := New(AnthropicMessagesWire(), endpointA, "model-a", cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := New(OpenAIResponsesWire(), endpointB, "model-b", cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg.Tools[0] = fixtureTool{name: "mutated", schema: json.RawMessage(`{"type":"object"}`)}
-	cfg.Settings.Options["stop"] = `["mutated"]`
-
-	firstProvider := first.provider.(*composedProvider)
-	secondProvider := second.provider.(*composedProvider)
-	if reflect.TypeOf(firstProvider.wire) != reflect.TypeOf(AnthropicMessagesWire()) {
-		t.Fatalf("first construction wire = %T, want Anthropic", firstProvider.wire)
-	}
-	if reflect.TypeOf(secondProvider.wire) != reflect.TypeOf(OpenAIResponsesWire()) {
-		t.Fatalf("second construction wire = %T, want OpenAI Responses", secondProvider.wire)
-	}
-	if first.identity.Model != "model-a" || second.identity.Model != "model-b" ||
-		firstProvider.endpoint.config.baseURL.String() != "https://one.invalid/messages" ||
-		secondProvider.endpoint.config.baseURL.String() != "https://two.invalid/responses" {
-		t.Fatalf("construction identities/endpoints changed: %#v/%#v", first.identity, second.identity)
-	}
-	for index, conversation := range []*Conversation{first, second} {
-		if len(conversation.tools) != 1 || conversation.tools[0].Name() != "fixed_tool" ||
-			conversation.settings.Options["stop"] != `["fixed"]` {
-			t.Fatalf("conversation %d construction config changed: tools=%v settings=%#v", index, toolNames(conversation.tools), conversation.settings)
+	frame := func(event, payload string) string { return "event: " + event + "\ndata: " + payload + "\n\n" }
+	finalText := frame("message_start", `{"type":"message_start","message":{"usage":{"input_tokens":1}}}`) +
+		frame("content_block_start", `{"type":"content_block_start","index":0,"content_block":{"type":"text"}}`) +
+		frame("content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"done"}}`) +
+		frame("content_block_stop", `{"type":"content_block_stop","index":0}`) +
+		frame("message_stop", `{"type":"message_stop"}`)
+	loadGroup := frame("message_start", `{"type":"message_start","message":{"usage":{"input_tokens":1}}}`) +
+		frame("content_block_start", `{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"load_1","name":"load_tools","input":{}}}`) +
+		frame("content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"names\":[\"records\"]}"}}`) +
+		frame("content_block_stop", `{"type":"content_block_stop","index":0}`) +
+		frame("message_stop", `{"type":"message_stop"}`)
+	responses := []string{finalText, loadGroup, finalText}
+	var bodies [][]byte
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Errorf("read request: %v", err)
 		}
+		bodies = append(bodies, body)
+		if len(bodies) > len(responses) {
+			t.Errorf("request %d exceeded scripted responses", len(bodies))
+			writer.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(writer, responses[len(bodies)-1])
+	}))
+	t.Cleanup(server.Close)
+
+	auth := authFunc(func(context.Context, *http.Request, []byte) error { return nil })
+	endpoint, err := NewEndpoint(auth, WithBaseURL(server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{
+		Tools:    []Tool{phase17Tool("fixed_tool")},
+		Deferred: []DeferredGroup{{Name: "records", Blurb: "fixed blurb", Tools: []Tool{phase17Tool("records_lookup")}}},
+		Settings: Settings{Options: Options{"temperature": "0.25", "stop": `["fixed"]`, "max_output_tokens": "64"}},
+	}
+	conversation, err := New(AnthropicMessagesWire(), endpoint, "model-a", cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg.Tools[0] = phase17Tool("mutated_tool")
+	cfg.Deferred[0].Tools[0] = phase17Tool("mutated_lookup")
+	cfg.Deferred[0].Blurb = "mutated blurb"
+	cfg.Deferred[0].Name = "mutated_records"
+	cfg.Settings.Options["temperature"] = "0.75"
+	cfg.Settings.Options["stop"] = `["mutated"]`
+	cfg.Settings.Options["top_p"] = "0.5"
+	cfg.Settings.Options["max_output_tokens"] = "128"
+
+	for _, prompt := range []string{"first", "second"} {
+		stream := conversation.Send(context.Background(), Text{Text: prompt})
+		drainStream(stream)
+		if stream.Err() != nil {
+			t.Fatalf("Send(%q) = %v", prompt, stream.Err())
+		}
+	}
+	if len(bodies) != len(responses) {
+		t.Fatalf("requests = %d, want %d", len(bodies), len(responses))
+	}
+
+	type sentTool struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	var loadedMember bool
+	for index, body := range bodies {
+		var request struct {
+			Tools         []sentTool `json:"tools"`
+			Temperature   *float64   `json:"temperature"`
+			TopP          *float64   `json:"top_p"`
+			MaxTokens     *int64     `json:"max_tokens"`
+			StopSequences []string   `json:"stop_sequences"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Fatalf("request %d body %s: %v", index, body, err)
+		}
+		if request.Temperature == nil || *request.Temperature != 0.25 || request.TopP != nil ||
+			request.MaxTokens == nil || *request.MaxTokens != 64 ||
+			!slices.Equal(request.StopSequences, []string{"fixed"}) {
+			t.Fatalf("request %d settings changed after construction: %s", index, body)
+		}
+		names := make([]string, len(request.Tools))
+		for toolIndex, tool := range request.Tools {
+			names[toolIndex] = tool.Name
+			if tool.Name == loadToolsName && (!strings.Contains(tool.Description, "fixed blurb") || strings.Contains(tool.Description, "mutated")) {
+				t.Fatalf("request %d loader catalog changed after construction: %q", index, tool.Description)
+			}
+		}
+		if !slices.Contains(names, "fixed_tool") || !slices.Contains(names, loadToolsName) ||
+			slices.Contains(names, "mutated_tool") || slices.Contains(names, "mutated_lookup") {
+			t.Fatalf("request %d tools changed after construction: %v", index, names)
+		}
+		if slices.Contains(names, "records_lookup") {
+			loadedMember = true
+		}
+	}
+	if !loadedMember {
+		t.Fatal("loading the deferred group never advertised the constructed member records_lookup")
 	}
 }
 
