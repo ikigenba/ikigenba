@@ -56,8 +56,8 @@ apex is the last two dot-separated labels of what remains —
 gives `localhost`.
 
 auth draws its pages in one of two frames. A page for a visitor who is not
-signed in is a sign-in card: it has no banner and no launcher, and its
-`<body>` holds `<main class="auth-page">`, which holds one
+signed in is a sign-in card: it has no banner, no launcher, and no page
+footer, and its `<body>` holds `<main class="auth-page">`, which holds one
 `<section class="card">`; the card begins with the bare mark,
 `<span class="mark">ikigenba</span>`, and its heading is `<h1>` reading
 `Sign in to <apex>`. Its way forward is a link styled as a button,
@@ -65,17 +65,23 @@ signed in is a sign-in card: it has no banner and no launcher, and its
 page for a signed-in user — the profile here, and the token-created page and
 the rejected-create page (`S5-tokens.md`) — is drawn with the banner, the same
 banner every app of the platform draws, at the top of the page. It holds the
-mark, the user's email address, and a sign-out button; on a host with a
-services file it also holds the launcher button (below). The mark's text is
-`ikigenba`, and it names the service it fronts, `auth`, which a browser shows
-as `ikigenba │ auth`; the mark is not a link. The user's email address is a
-link whose text is the email, written as escaped HTML text, and whose target
-is `/`, auth's own profile. The banner is followed by one `<main>` element
-holding everything else on the page.
+mark, the profile icon, and a sign-out button; on a host with a services file
+it also holds the launcher button (below). The mark's text is `ikigenba`, and
+it names the service it fronts, `auth`, which a browser shows as
+`ikigenba │ auth`; the mark is not a link. The profile icon is a link to `/`,
+auth's own profile: `<a class="profile">`, labelled `Profile` for assistive
+technology and titled with the user's email address, which a browser shows as
+its tooltip, so hovering it shows who is signed in. It shows the `user-circle`
+icon and no text; the email is not part of the page's visible text there. The
+banner is followed by one `<main>` element holding the page's content, and the
+page ends with the page footer, a `<footer>` that is the last thing in the
+body, reading `auth <version>`: the service's name, one space, and auth's
+version exactly as `auth --version` prints it (`S1-bootstrap.md`). The
+version is data; no story fixes its value.
 
 The sign-out button signs the user out of the whole space in one click. It
-follows the email in the banner, and it is a form, not a link: pressing it
-POSTs to `/logout` (`A user signs out`). The `logout` icon is drawn before
+follows the profile icon in the banner, and it is a form, not a link:
+pressing it POSTs to `/logout` (`A user signs out`). The `logout` icon is drawn before
 the text and hidden from assistive technology, so the button's accessible
 text is `Sign out` alone.
 
@@ -708,17 +714,19 @@ Content-Type: text/html; charset=utf-8
 
 Status 200. The body is an HTML document titled `auth`, with the stylesheet
 link and viewport every page has, drawn with the banner: the mark's text
-`ikigenba`, naming the service `auth` and not a link, the email
-`ada@michaelgreenly.dev` as a link to `/`, and the `Sign out` button in the
-form that POSTs to `/logout`. The banner holds no launcher button, and the
-page loads no `/_appkit/launcher.js`, since auth has no services file here.
-Inside the page's one
+`ikigenba`, naming the service `auth` and not a link, the profile icon
+labelled `Profile` and titled `ada@michaelgreenly.dev` as a link to `/`, and
+the `Sign out` button in the form that POSTs to `/logout`. The banner holds no
+launcher button, and the page loads no `/_appkit/launcher.js`, since auth has
+no services file here. Inside the page's one
 `<main>` its visible text is the heading `Your account` with the subtitle
 `You're signed in to localhost.`; the `Account` card reading `Email`
 `ada@michaelgreenly.dev`, `Workspace` `michaelgreenly.dev`, and
 `Signed in via` `Google`; the `API tokens` card with its explanation and the
 user's tokens (`S5-tokens.md`); and the `Create a token` card, whose form
-POSTs to `/tokens` with fields `name` and `expires` (`S5-tokens.md`).
+POSTs to `/tokens` with fields `name` and `expires` (`S5-tokens.md`). After
+the `<main>`, the page ends with the page footer reading `auth <version>`,
+where `<version>` is what `auth --version` prints.
 Both forms return the same page; the `?return=<url>` is ignored.
 
 Preconditions:
@@ -972,8 +980,9 @@ Content-Type: text/html; charset=utf-8
 ```
 
 Status 200. The body is the profile page of `A user asks for the profile`:
-the banner holds the mark, `ada@michaelgreenly.dev` linking to `/`, and the
-sign-out button POSTing to `/logout`, and no launcher button. The page
+the banner holds the mark, the profile icon titled `ada@michaelgreenly.dev`
+linking to `/`, and the sign-out button POSTing to `/logout`, and no launcher
+button. The page
 carries no list of services, no `Find a service` field, and no no-match line,
 and it loads no `/_appkit/launcher.js`.
 
