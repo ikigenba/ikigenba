@@ -119,8 +119,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--s5) 0; }
 /* ---------------------------------------------------------------- banner */
 /* The banner every app emits: product mark, service, profile, sign out.
    The profile is a user-circle icon button linking to the user's auth
-   profile, titled with their email; it sits right, muted like the launcher.
-   auth's own banner may still show the email as a bare span. */
+   profile, titled with their email; it sits right, muted like the launcher. */
 body > header {
   display: flex; align-items: center; gap: var(--s4);
   padding: 0 max(var(--s4), calc((100% - var(--page)) / 2 + var(--s4)));
