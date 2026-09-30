@@ -58,12 +58,13 @@ type outputSchemaRecursiveFixture struct {
 	Next *outputSchemaRecursiveFixture `json:"next"`
 }
 
+// asType returns v unchanged; instantiating it with an explicit type argument
+// fails to compile unless v is assignable to that type.
+func asType[T any](v T) T { return v }
+
 func TestOutputSchemaHasExactPublicSignature(t *testing.T) {
 	// R-TL71-NKE8
-	derive := OutputSchema[outputSchemaContractFixture]
-	if got, want := reflect.TypeOf(derive), reflect.TypeOf((func() (json.RawMessage, error))(nil)); got != want {
-		t.Fatalf("OutputSchema[T] type = %v, want %v", got, want)
-	}
+	derive := asType[func() (json.RawMessage, error)](OutputSchema[outputSchemaContractFixture])
 	schema, err := derive()
 	if err != nil {
 		t.Fatalf("OutputSchema returned error: %v", err)
@@ -235,11 +236,8 @@ func assertOutputValues(t *testing.T, schema, want map[string]any) {
 
 func TestValidateOutputSchemaHasExactPublicSignature(t *testing.T) {
 	// R-TMEY-1C4X
-	want := reflect.TypeOf(func(json.RawMessage) error { return nil })
-	if got := reflect.TypeOf(ValidateOutputSchema); got != want {
-		t.Fatalf("ValidateOutputSchema type = %v, want %v", got, want)
-	}
-	if err := ValidateOutputSchema(json.RawMessage(`{"type":"object","properties":{},"required":[]}`)); err != nil {
+	validate := asType[func(json.RawMessage) error](ValidateOutputSchema)
+	if err := validate(json.RawMessage(`{"type":"object","properties":{},"required":[]}`)); err != nil {
 		t.Fatalf("ValidateOutputSchema rejected a valid schema: %v", err)
 	}
 }

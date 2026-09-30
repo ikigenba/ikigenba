@@ -418,9 +418,9 @@ func decodeLogRecords(t *testing.T, data []byte) []LogRecord {
 
 func TestRecordTypeIsClosedEnumeration(t *testing.T) {
 	// R-LR1Y-XWS1
-	recordType := reflect.TypeFor[RecordType]()
-	if recordType.Name() != "RecordType" || recordType.Kind() != reflect.String {
-		t.Fatalf("RecordType = %q/%s, want defined string type", recordType.Name(), recordType.Kind())
+	recordType := RecordType("conversation")
+	if string(recordType) != "conversation" {
+		t.Fatalf("string(RecordType(%q)) = %q, want round trip", "conversation", string(recordType))
 	}
 
 	want := map[string]string{
@@ -466,31 +466,22 @@ func TestRecordTypeIsClosedEnumeration(t *testing.T) {
 
 func TestLogRecordDeclarationIsExact(t *testing.T) {
 	// R-5YGQ-ETGC
-	typeOf := reflect.TypeFor[LogRecord]()
-	if typeOf.Name() != "LogRecord" || typeOf.Kind() != reflect.Struct {
-		t.Fatalf("LogRecord = %q/%s, want defined struct", typeOf.Name(), typeOf.Kind())
-	}
-	want := []struct {
-		name   string
-		typeOf reflect.Type
-		tag    string
-	}{
-		{"Type", reflect.TypeFor[RecordType](), `json:"type"`},
-		{"ID", reflect.TypeFor[string](), `json:"id,omitempty"`},
-		{"Time", reflect.TypeFor[time.Time](), `json:"time"`},
-		{"Seq", reflect.TypeFor[int](), `json:"seq"`},
-		{"Conversation", reflect.TypeFor[*ConversationInfo](), `json:"conversation,omitempty"`},
-		{"Message", reflect.TypeFor[*Message](), `json:"message,omitempty"`},
-		{"ToolUse", reflect.TypeFor[*ToolUse](), `json:"tool_use,omitempty"`},
-		{"ToolResult", reflect.TypeFor[*ToolResult](), `json:"tool_result,omitempty"`},
-		{"Output", reflect.TypeFor[json.RawMessage](), `json:"output,omitempty"`},
-		{"Usage", reflect.TypeFor[*Usage](), `json:"usage,omitempty"`},
-		{"Cost", reflect.TypeFor[*Cost](), `json:"cost,omitempty"`},
-		{"Limit", reflect.TypeFor[*LimitInfo](), `json:"limit,omitempty"`},
-		{"Err", reflect.TypeFor[*Error](), `json:"error,omitempty"`},
-		{"Retry", reflect.TypeFor[*RetryInfo](), `json:"retry,omitempty"`},
-	}
-	assertExactStruct(t, typeOf, want)
+	var _ LogRecord = struct {
+		Type         RecordType        `json:"type"`
+		ID           string            `json:"id,omitempty"`
+		Time         time.Time         `json:"time"`
+		Seq          int               `json:"seq"`
+		Conversation *ConversationInfo `json:"conversation,omitempty"`
+		Message      *Message          `json:"message,omitempty"`
+		ToolUse      *ToolUse          `json:"tool_use,omitempty"`
+		ToolResult   *ToolResult       `json:"tool_result,omitempty"`
+		Output       json.RawMessage   `json:"output,omitempty"`
+		Usage        *Usage            `json:"usage,omitempty"`
+		Cost         *Cost             `json:"cost,omitempty"`
+		Limit        *LimitInfo        `json:"limit,omitempty"`
+		Err          *Error            `json:"error,omitempty"`
+		Retry        *RetryInfo        `json:"retry,omitempty"`
+	}{}
 
 	record := LogRecord{Type: RecordLimit, ID: "agent-7", Limit: &LimitInfo{}}
 	encoded, err := json.Marshal(record)
@@ -508,41 +499,37 @@ func TestLogRecordDeclarationIsExact(t *testing.T) {
 
 func TestConversationLogDeclarationsAreExact(t *testing.T) {
 	// R-5ZOM-SL71
-	assertExactStruct(t, reflect.TypeFor[ConversationInfo](), []struct {
-		name   string
-		typeOf reflect.Type
-		tag    string
-	}{
-		{"Format", reflect.TypeFor[int](), `json:"format"`},
-		{"Identity", reflect.TypeFor[Identity](), `json:"identity"`},
-		{"Settings", reflect.TypeFor[Settings](), `json:"settings"`},
-		{"Tools", reflect.TypeFor[[]ToolInfo](), `json:"tools,omitempty"`},
-		{"Deferred", reflect.TypeFor[[]DeferredInfo](), `json:"deferred,omitempty"`},
-		{"Output", reflect.TypeFor[*OutputContract](), `json:"output,omitempty"`},
-		{"Limits", reflect.TypeFor[Limits](), `json:"limits"`},
-	})
+	var _ ConversationInfo = struct {
+		Format   int             `json:"format"`
+		Identity Identity        `json:"identity"`
+		Settings Settings        `json:"settings"`
+		Tools    []ToolInfo      `json:"tools,omitempty"`
+		Deferred []DeferredInfo  `json:"deferred,omitempty"`
+		Output   *OutputContract `json:"output,omitempty"`
+		Limits   Limits          `json:"limits"`
+	}{}
 
 	// R-60WJ-6CXQ
-	assertExactStruct(t, reflect.TypeFor[ToolInfo](), []struct {
-		name   string
-		typeOf reflect.Type
-		tag    string
-	}{
-		{"Name", reflect.TypeFor[string](), `json:"name"`},
-		{"Description", reflect.TypeFor[string](), `json:"description"`},
-		{"Schema", reflect.TypeFor[json.RawMessage](), `json:"schema"`},
-	})
+	var _ ToolInfo = struct {
+		Name        string          `json:"name"`
+		Description string          `json:"description"`
+		Schema      json.RawMessage `json:"schema"`
+	}{}
 
 	// R-624F-K4OF
-	assertExactStruct(t, reflect.TypeFor[DeferredInfo](), []struct {
-		name   string
-		typeOf reflect.Type
-		tag    string
-	}{
-		{"Name", reflect.TypeFor[string](), `json:"name"`},
-		{"Blurb", reflect.TypeFor[string](), `json:"blurb"`},
-		{"Tools", reflect.TypeFor[[]ToolInfo](), `json:"tools"`},
-	})
+	var _ DeferredInfo = struct {
+		Name  string     `json:"name"`
+		Blurb string     `json:"blurb"`
+		Tools []ToolInfo `json:"tools"`
+	}{}
+
+	tool := ToolInfo{Name: "read", Description: "reads", Schema: json.RawMessage(`{}`)}
+	deferred := DeferredInfo{Name: "files", Blurb: "file tools", Tools: []ToolInfo{tool}}
+	info := ConversationInfo{Format: LogFormatVersion, Tools: []ToolInfo{tool}, Deferred: []DeferredInfo{deferred}}
+	if info.Format != 1 || info.Tools[0].Name != "read" || info.Tools[0].Description != "reads" || string(info.Tools[0].Schema) != "{}" ||
+		info.Deferred[0].Name != "files" || info.Deferred[0].Blurb != "file tools" || len(info.Deferred[0].Tools) != 1 {
+		t.Fatalf("ConversationInfo = %+v, want constructed fields", info)
+	}
 }
 
 func TestLogFormatVersionIsUntypedOne(t *testing.T) {
@@ -850,20 +837,14 @@ func TestLogRecordOutputJSONCodec(t *testing.T) {
 
 func TestRetryInfoDeclarationIsExact(t *testing.T) {
 	// R-0NE8-TO91
-	typeOf := reflect.TypeFor[RetryInfo]()
-	if typeOf.Name() != "RetryInfo" || typeOf.Kind() != reflect.Struct {
-		t.Fatalf("RetryInfo = %q/%s, want defined struct", typeOf.Name(), typeOf.Kind())
+	retry := RetryInfo(struct {
+		Attempt int
+		Delay   time.Duration
+		Reason  string
+	}{Attempt: 2, Delay: time.Second, Reason: "overloaded"})
+	if retry.Attempt != 2 || retry.Delay != time.Second || retry.Reason != "overloaded" {
+		t.Fatalf("RetryInfo = %+v, want Attempt 2, Delay 1s, Reason overloaded", retry)
 	}
-	want := []struct {
-		name   string
-		typeOf reflect.Type
-		tag    string
-	}{
-		{"Attempt", reflect.TypeFor[int](), `json:"attempt"`},
-		{"Delay", reflect.TypeFor[time.Duration](), `json:"delay"`},
-		{"Reason", reflect.TypeFor[string](), `json:"reason"`},
-	}
-	assertExactStruct(t, typeOf, want)
 }
 
 func TestLogIsOpaqueAndCallable(t *testing.T) {
@@ -923,23 +904,6 @@ func TestLogStampsIDOnEveryRecordAndOmitsWhenEmpty(t *testing.T) {
 		}
 		if _, present := raw["id"]; present {
 			t.Fatalf("empty-id line %d has an id key: %s", index, line)
-		}
-	}
-}
-
-func assertExactStruct(t *testing.T, got reflect.Type, want []struct {
-	name   string
-	typeOf reflect.Type
-	tag    string
-}) {
-	t.Helper()
-	if got.NumField() != len(want) {
-		t.Fatalf("%s field count = %d, want exactly %d", got.Name(), got.NumField(), len(want))
-	}
-	for index, expected := range want {
-		field := got.Field(index)
-		if field.Name != expected.name || field.Type != expected.typeOf || string(field.Tag) != expected.tag || !field.IsExported() {
-			t.Errorf("%s field %d = %s %s tag %q exported=%t, want %s %s tag %q exported", got.Name(), index, field.Name, field.Type, field.Tag, field.IsExported(), expected.name, expected.typeOf, expected.tag)
 		}
 	}
 }

@@ -12,61 +12,36 @@ import (
 
 func TestLimitsShape(t *testing.T) {
 	// R-TILY-AHD5
-	typeOfLimits := reflect.TypeOf(Limits{})
-	if typeOfLimits.NumField() != 2 {
-		t.Fatalf("Limits has %d fields, want exactly 2", typeOfLimits.NumField())
-	}
-	want := []struct {
-		name   string
-		typeOf reflect.Type
-	}{
-		{name: "MaxToolCalls", typeOf: reflect.TypeOf(int(0))},
-		{name: "MaxContextTokens", typeOf: reflect.TypeOf(int64(0))},
-	}
-	for index, expected := range want {
-		field := typeOfLimits.Field(index)
-		if field.Name != expected.name || field.Type != expected.typeOf {
-			t.Fatalf("Limits field %d = (%s, %s), want (%s, %s)", index, field.Name, field.Type, expected.name, expected.typeOf)
-		}
+	var limits Limits = struct {
+		MaxToolCalls     int
+		MaxContextTokens int64
+	}{MaxToolCalls: 3, MaxContextTokens: 4096}
+	if limits.MaxToolCalls != 3 || limits.MaxContextTokens != 4096 {
+		t.Fatalf("Limits = %#v, want MaxToolCalls 3 and MaxContextTokens 4096", limits)
 	}
 }
 
 func TestLimitKindValues(t *testing.T) {
 	// R-LS9V-BOIQ
-	if reflect.TypeOf(LimitKind("")).Kind() != reflect.String {
-		t.Fatalf("LimitKind underlying kind = %s, want string", reflect.TypeOf(LimitKind("")).Kind())
+	kind := LimitKind("x")
+	if string(kind) != "x" {
+		t.Fatalf("LimitKind string conversion = %q, want %q", string(kind), "x")
 	}
-	if got := string(LimitToolCalls); got != "tool_calls" {
-		t.Fatalf("LimitToolCalls = %q, want %q", got, "tool_calls")
+	if got, ok := any(LimitToolCalls).(LimitKind); !ok || got != "tool_calls" {
+		t.Fatalf("LimitToolCalls = %#v, want LimitKind %q", any(LimitToolCalls), "tool_calls")
 	}
-	if got := string(LimitContextTokens); got != "context_tokens" {
-		t.Fatalf("LimitContextTokens = %q, want %q", got, "context_tokens")
+	if got, ok := any(LimitContextTokens).(LimitKind); !ok || got != "context_tokens" {
+		t.Fatalf("LimitContextTokens = %#v, want LimitKind %q", any(LimitContextTokens), "context_tokens")
 	}
 }
 
 func TestLimitInfoShapeAndJSON(t *testing.T) {
 	// R-TL1R-20UJ
-	typeOfInfo := reflect.TypeOf(LimitInfo{})
-	want := []struct {
-		name    string
-		typeOf  reflect.Type
-		jsonTag string
-	}{
-		{name: "Kind", typeOf: reflect.TypeOf(LimitKind("")), jsonTag: "kind"},
-		{name: "Max", typeOf: reflect.TypeOf(int64(0)), jsonTag: "max"},
-		{name: "Actual", typeOf: reflect.TypeOf(int64(0)), jsonTag: "actual"},
-	}
-	if typeOfInfo.NumField() != len(want) {
-		t.Fatalf("LimitInfo has %d fields, want exactly %d", typeOfInfo.NumField(), len(want))
-	}
-	for index, expected := range want {
-		field := typeOfInfo.Field(index)
-		if field.Name != expected.name || field.Type != expected.typeOf || field.Tag.Get("json") != expected.jsonTag {
-			t.Fatalf("LimitInfo field %d = (%s, %s, json:%q), want (%s, %s, json:%q)", index, field.Name, field.Type, field.Tag.Get("json"), expected.name, expected.typeOf, expected.jsonTag)
-		}
-	}
-
-	wantInfo := LimitInfo{Kind: LimitContextTokens, Max: 100, Actual: 101}
+	var wantInfo LimitInfo = struct {
+		Kind   LimitKind `json:"kind"`
+		Max    int64     `json:"max"`
+		Actual int64     `json:"actual"`
+	}{Kind: LimitContextTokens, Max: 100, Actual: 101}
 	encoded, err := json.Marshal(wantInfo)
 	if err != nil {
 		t.Fatal(err)
