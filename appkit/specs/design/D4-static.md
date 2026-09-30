@@ -28,10 +28,12 @@ Browsers may keep the files but must check back before using them, so an
 app upgrade that changes an asset is seen on the next page load while an
 unchanged asset costs only an empty reply. Every 200 response for one of the
 seven files, to GET or HEAD, carries a strong `ETag` and
-`Cache-Control: no-cache`. The ETag is opaque and depends on the file's
-bytes alone: the same content always yields the same tag — on every request,
-from every handler `Static` returns, and in every build of appkit — and
-different content yields a different tag.
+`Cache-Control: no-cache`. The ETag is the file's SHA-256 digest in
+lowercase hex, quoted: it follows the bytes alone, so the same content yields
+the same tag on every request and in every build, and it stays 66 characters
+whatever the file's size. The bound matters because a proxy in front of an
+app caps the size of a response's headers, so a tag that grew with the file
+would turn a large asset into a proxy error.
 
 The caching promise covers a *plain* request: a GET or HEAD for one of the
 seven files carrying none of `Range`, `If-Match`, `If-Unmodified-Since`, or
@@ -71,7 +73,7 @@ state.
 - R-7367-JFEH: The handler MUST answer a request whose method is neither GET nor HEAD, for a served path, with status 405, the header `Allow` with exactly the value `GET, HEAD`, and a body that is not the file's content.
 - R-74E3-X756: Every 200 response the handler gives for a served path MUST carry exactly one `ETag` header whose value is a strong entity-tag as RFC 9110 section 8.8.3 defines it: a double-quoted opaque-tag with no `W/` prefix.
 - R-EH0Y-OJ8X: Every 200 and 304 response the handler gives for a served path MUST carry exactly one `Cache-Control` header, with the value `no-cache`.
-- R-EI8V-2AZM: A served path's `ETag` value MUST be determined by the bytes of its embedded file alone: across all 200 and 304 responses — whatever the method or request, from any handler `Static` returns, and in any build of `appkit`, including one whose `assets/` differ — two responses for served paths whose embedded files are byte-identical MUST carry the same `ETag` value, and two whose embedded files differ in content MUST carry different `ETag` values.
+- R-UIW2-AEPG: A served path's `ETag` value, on every 200 and 304 response the handler gives for it, MUST be exactly a double quote (`"`), followed by the SHA-256 digest (FIPS 180-4) of the bytes of that path's embedded file under `assets/` written as 64 lowercase hexadecimal digits, followed by a double quote — 66 characters in all.
 - R-EJGR-G2QB: For a request carrying exactly one `If-None-Match` header, the header MUST be treated as matching a served path's `ETag` when its value is exactly `*`, or when it is a well-formed comma-separated list of entity-tags — optional whitespace around each comma, empty list elements ignored as RFC 9110 section 5.6.1.2 requires — at least one of which, after removing any `W/` prefix, is character-for-character equal to that `ETag` (the weak comparison of RFC 9110 sections 8.8.3.2 and 13.1.2); a well-formed comma-separated list of entity-tags none of which is so equal MUST be treated as not matching.
 - R-43UQ-O9WZ: The handler MUST answer a GET or HEAD plain request for a served path whose `If-None-Match` header is treated as matching that path's `ETag` under R-EJGR-G2QB, whether or not the request also carries an `If-Modified-Since` header, with status 304, exactly one `ETag` header whose value is the same `ETag` value the 200 response for that path carries, and an empty body.
 - R-7UWY-AWJS: The handler `Static` returns MUST be safe to serve concurrent requests from multiple goroutines, and every call to `Static` MUST return a handler that behaves identically.
