@@ -80,8 +80,7 @@ hand-maintained `assets/` directory, which `internal/` could not reach; the
 style files now come from appkit, which embeds them itself, so dummy embeds no
 style file and has nothing for a root package to do.
 
-Dependencies point one way, and the layout requirement fixes the whole
-direction rather than one edge of it. `cmd/dummy` imports `internal/cli` and
+Dependencies point one way. `cmd/dummy` imports `internal/cli` and
 `internal/panel`; `internal/cli` imports `internal/server`, `internal/panel`
 and `internal/widget`; `internal/panel` imports `internal/widget`. appkit is
 imported by `cmd/dummy` (to build the kit), `internal/cli` (whose `Process`
@@ -108,29 +107,22 @@ interface would be a name with no second member.
 
 ## Declarations and the checkout
 
-The version is a `var` in `internal/cli`, initialised in its declaration and
-never injected by the linker, so a developer's `go build` and a release build
-report the same string. Its value is data: a requirement fixes the name, that
+The version is a `var` in `internal/cli`. Its value is data: a requirement fixes the name, that
 it is a `var`, and its shape, and nothing else. The manifest is a constant in
 the same package holding exactly the three lines the bootstrap story shows,
 with a trailing newline; it declares no port, because dummy serves on the
 socket the host passes it and a manifest carrying `port` is refused by
-`devctl build` and by opsctl. The committed `etc/manifest.toml` is a copy of
-that constant kept so the checkout can be read without a build, and the two
-are byte-identical. The usage text is a constant in that package too, declared
+`devctl build` and by opsctl. The usage text is a constant in that package too, declared
 here so that every name `internal/cli` exports is declared in one place; its
 value belongs to `D02-cli`, because the help output is that design's subject,
 and it is fixed there byte for byte.
 
 The package story lists exactly three members in the release file —
-`bin/dummy`, `etc/manifest.toml` and `share/icon.svg` — which holds only if
-the checkout keeps nothing else under `etc/` and nothing but the icon under
-`share/`; that is stated as an invariant of the checkout. `share/icon.svg` is
+`bin/dummy`, `etc/manifest.toml` and `share/icon.svg`. `share/icon.svg` is
 dummy's icon, an SVG image a human draws, and its presence in the package is
 what lists dummy in the platform's launcher on a space. It is a human-authored
 input like `etc/`'s hand-read copy of the manifest, never written by the build
-run; the design fixes only that it is there and that it is an SVG document,
-because that is all the package story fixes. Everything dummy serves is inside
+run. Everything dummy serves is inside
 the binary — `internal/panel`'s templates and appkit's embedded files alike —
 and `D04-panel`'s rule about the working directory is what shows that no
 answer depends on a file beside the binary.
@@ -151,14 +143,10 @@ serves with a nil `Banner` is not contract, so a test that serves supplies
 one. Nothing below `main` reads `os.Args`, the real environment, the real pid
 or the real streams, changes the real environment, calls `appkit.New`, or
 installs a signal handler, so a test that drives `Run` sees the whole
-program's behaviour and nothing leaks past it. That is stated over the
-non-test files of all four internal packages — a handler or a domain type can
-reach the real process exactly as easily as a command can — and their tests
-may name the real streams freely. The one writer below the seam that could
+program's behaviour and nothing leaks past it. The one writer below the seam that could
 reach the real standard error on its own, the HTTP server's diagnostics that
 `net/http` would send through the `log` package, is silenced by `D03-serve`:
-`Serve` discards the server's own diagnostics, so the `log` package needs no
-ban here.
+`Serve` discards the server's own diagnostics.
 
 Socket activation hands the process a listening socket as file descriptor 3,
 and the one thing below the seam that touches a real descriptor is turning
@@ -178,8 +166,7 @@ it hands `Run`, and waits for the datagram. That is the same signal systemd
 waits for, so an in-process test and the host learn readiness the same way.
 There is no listen factory and no readiness callback in the seam: dummy binds
 nothing, so there is no bind to fake, and the datagram is the readiness
-signal. dummy opens no listening socket anywhere in its code, which is how
-"dummy listens on no other socket and no port" is kept.
+signal.
 
 `Process` carries no store. The widget set is neither an argument, an
 environment value nor a stream, so it is not part of the process seam; it
@@ -204,22 +191,15 @@ store, banner source, readiness, serve — is `D03-serve` too.
 
 ## REQUIREMENTS
 
-- R-RWD3-6VAB: The Go module MUST be `github.com/ikigenba/ikigenba/dummy` with its `go.mod` at the sub-project root, and MUST consist of exactly five packages, with no package at the module root: `package main` at `cmd/dummy`, `internal/cli`, `internal/server`, `internal/panel`, and `internal/widget`; the imports of one of those packages by another MUST be exactly `cmd/dummy` importing each of `internal/cli` and `internal/panel`, `internal/cli` importing each of `internal/server`, `internal/panel`, and `internal/widget`, and `internal/panel` importing `internal/widget`, so that `internal/server` and `internal/widget` import no package of this module and nothing but `cmd/dummy` imports `internal/cli`; and the package `github.com/ikigenba/ikigenba/appkit` MUST be imported by the non-test `.go` files of `cmd/dummy`, `internal/cli`, and `internal/panel`, and by the non-test `.go` files of no other package of this module.
-- R-RYSV-YERP: `go.mod` MUST contain exactly one module requirement, for the module `github.com/ikigenba/ikigenba/appkit`, and MUST contain no `replace` directive.
-- R-S00S-C6IE: The `package main` at `cmd/dummy` MUST call `appkit.New(panel.ServiceName)` exactly once, before it calls `cli.Run`, and MUST run `cli.Run` with `Process.Args` set to the process arguments after the program name, `LookupEnv` reading the process environment, `Unsetenv` removing a variable from the process environment, `Pid` the process's own id, `Stdout` and `Stderr` the process's standard output and standard error, `Inherit` nil, `Banner` the `Banner` method of the `*appkit.Kit` that call to `appkit.New` returned, and a context that is cancelled when the process receives `SIGTERM` or `SIGINT`, and MUST exit the process with the value `Run` returned.
+- R-Z46Q-6N1H: The `dummy` binary MUST behave as `cli.Run` does when given the binary's arguments after the program name, the process's environment, its process id, and its standard output and standard error, and MUST exit with the value `Run` returns.
+- R-Z5EM-KES6: When the `dummy` binary is serving and receives `SIGTERM` or `SIGINT`, it MUST stop as `Run` does when its context is cancelled.
+- R-Z7UF-BY9K: When the `dummy` binary starts with `IKIGENBA_SERVICES` naming a services file that lists one or more services, the page it serves for `GET /widgets` MUST carry the appkit launcher: a `button` start tag whose `class` is `launcher`.
 - R-AMJL-GJV8: The `internal/cli` package MUST export `var Version string`.
 - R-ANRH-UBLX: `Version` MUST be the letter `v` followed by a valid Semantic Versioning version as defined at semver.org, prerelease and build metadata included when present.
-- R-AOZE-83CM: `Version` MUST be set by the initializer of its declaration in source, so that a binary produced by `go build` with no linker flags reports the same `Version` the source declares.
 - R-LI0D-VJTO: The `internal/cli` package MUST export `const Manifest = "app = \"dummy\"\ndefault = false\nsecrets = []\n"`.
-- R-ASN3-DEKP: The committed file `etc/manifest.toml` at the sub-project root MUST be byte-identical to `Manifest`.
-- R-S18O-PY93: The sub-project's `etc/` directory MUST contain exactly one entry, `manifest.toml`, and the sub-project's `share/` directory MUST contain exactly one entry, a regular file named `icon.svg`.
-- R-S2GL-3PZS: The file `share/icon.svg` at the sub-project root MUST be a well-formed XML document whose root element is an `svg` element in the namespace `http://www.w3.org/2000/svg`.
 - R-10H0-0STN: The `internal/cli` package MUST export `Usage` as a string constant, holding the usage text whose value `D02-cli` fixes.
 - R-S3OH-HHQH: The `internal/cli` package MUST export `type Process struct { Args []string; LookupEnv func(key string) (string, bool); Unsetenv func(key string) error; Pid int; Stdout io.Writer; Stderr io.Writer; Inherit func(fd uintptr) (net.Listener, error); Banner func(u appkit.User) appkit.Banner }` and `func Run(ctx context.Context, p Process) int`, where `appkit` is the package `github.com/ikigenba/ikigenba/appkit`, `Args` excludes the program name, `Pid` is the id of the process `Run` speaks for, a nil `Unsetenv` means `Run` removes no variable, and `Banner` is the source of the banner data every page the handler draws with the banner is drawn from.
 - R-092E-Q4T0: The `internal/cli` package MUST export `ExitSuccess`, `ExitServerFailed` and `ExitUsage` as constants, so that each of the three names is usable as an operand of a constant expression — the initializer of a `const` declaration in a package that imports `internal/cli` included — and their constant values MUST be 0, 1 and 2 respectively.
 - R-AXIO-WHJH: `Run` MUST return one of `ExitSuccess`, `ExitServerFailed`, or `ExitUsage`, and no other value.
-- R-S4WD-V9H6: The non-test `.go` files of `internal/cli`, `internal/server`, `internal/panel`, and `internal/widget` MUST NOT reference `os.Args`, `os.Environ`, `os.Getenv`, `os.LookupEnv`, `os.Setenv`, `os.Unsetenv`, `os.Clearenv`, `os.Getpid`, `os.Stdin`, `os.Stdout`, `os.Stderr`, or `os.Exit`, and MUST NOT import `os/signal`.
-- R-S64A-917V: The non-test `.go` files of `internal/cli`, `internal/server`, `internal/panel`, and `internal/widget` MUST NOT reference `appkit.New`, so that the one read of `IKIGENBA_SERVICES` from the process environment is the one `main` makes through `appkit.New`.
 - R-LLO3-0V1R: The `internal/server` package MUST export `func Serve(ctx context.Context, ln net.Listener, h http.Handler, drain time.Duration) error`.
 - R-LMVZ-EMSG: The `internal/server` package MUST export `type DrainError struct { Unfinished int }` and `func (e *DrainError) Error() string`.
-- R-WBD3-T7XX: The non-test `.go` files of the module MUST NOT call `net.Listen`, `net.ListenTCP`, `net.ListenUnix`, `net.ListenUDP`, `net.ListenUnixgram`, `net.ListenIP`, `net.ListenMulticastUDP`, `net.ListenPacket`, the `Listen` or `ListenPacket` method of a `net.ListenConfig`, `http.ListenAndServe`, `http.ListenAndServeTLS`, the `ListenAndServe` or `ListenAndServeTLS` method of an `http.Server`, `syscall.Socket`, `syscall.Bind`, or `syscall.Listen`, so that the only listening socket dummy serves on is the one it is passed.

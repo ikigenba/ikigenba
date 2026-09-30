@@ -2,12 +2,6 @@ package widget_test
 
 import (
 	"fmt"
-	"go/ast"
-	"go/importer"
-	"go/parser"
-	"go/token"
-	"go/types"
-	"os"
 	"reflect"
 	"slices"
 	"strconv"
@@ -18,63 +12,71 @@ import (
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
-// R-QICF-XK9C, R-QM05-2VHF, R-QS3M-ZQ6W, R-RQ8T-PAYC.
-func TestSourceDeclarations(t *testing.T) {
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatal(err)
+// Declaring these from another package proves each name is an exported
+// constant: a const declaration accepts nothing else.
+const (
+	externalStatusActive  widget.Status = widget.StatusActive
+	externalStatusPaused  widget.Status = widget.StatusPaused
+	externalStatusRetired widget.Status = widget.StatusRetired
+
+	// Both declarations compile only if MaxNameRunes is an untyped constant.
+	externalMaxNameRunesInt8  int8    = widget.MaxNameRunes
+	externalMaxNameRunesFloat float64 = widget.MaxNameRunes
+
+	externalNameRequiredMessage     string = widget.NameRequiredMessage
+	externalNameTooLongMessage      string = widget.NameTooLongMessage
+	externalNameTakenMessage        string = widget.NameTakenMessage
+	externalCountNotWholeMessage    string = widget.CountNotWholeMessage
+	externalCountNegativeMessage    string = widget.CountNegativeMessage
+	externalStatusNotAllowedMessage string = widget.StatusNotAllowedMessage
+)
+
+// R-RKRT-ZN8J.
+func TestStatusTypeAndConstants(t *testing.T) {
+	status := reflect.TypeFor[widget.Status]()
+	if status.Kind() != reflect.String || status.Name() != "Status" || status.PkgPath() != "github.com/ikigenba/ikigenba/dummy/internal/widget" {
+		t.Fatalf("Status is %v (kind %v), want a defined type with underlying string", status, status.Kind())
 	}
-	fset := token.NewFileSet()
-	var files []*ast.File
-	for _, entry := range entries {
-		if !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
+	for _, tc := range []struct {
+		name  string
+		value any
+		want  string
+	}{
+		{"StatusActive", widget.StatusActive, "active"},
+		{"StatusPaused", widget.StatusPaused, "paused"},
+		{"StatusRetired", widget.StatusRetired, "retired"},
+	} {
+		if reflect.TypeOf(tc.value) != status {
+			t.Errorf("%s has type %T, want widget.Status", tc.name, tc.value)
 		}
-		file, parseErr := parser.ParseFile(fset, entry.Name(), nil, 0)
-		if parseErr != nil {
-			t.Fatal(parseErr)
-		}
-		files = append(files, file)
-		for _, decl := range file.Decls {
-			if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.VAR {
-				t.Errorf("package-level var at %s", fset.Position(gen.Pos()))
-			}
+		if got := reflect.ValueOf(tc.value).String(); got != tc.want {
+			t.Errorf("%s = %q, want %q", tc.name, got, tc.want)
 		}
 	}
-	config := types.Config{Importer: importer.Default()}
-	pkg, err := config.Check("github.com/ikigenba/ikigenba/dummy/internal/widget", fset, files, nil)
-	if err != nil {
-		t.Fatal(err)
+	if string(externalStatusActive) != "active" || string(externalStatusPaused) != "paused" || string(externalStatusRetired) != "retired" {
+		t.Errorf("status constants = %q, %q, %q", externalStatusActive, externalStatusPaused, externalStatusRetired)
 	}
-	scope := pkg.Scope()
-	status, ok := scope.Lookup("Status").(*types.TypeName)
-	if !ok || status.IsAlias() || status.Type().Underlying() != types.Typ[types.String] {
-		t.Fatal("Status must be a defined string type")
+}
+
+// R-QM05-2VHF.
+func TestMaxNameRunesConstant(t *testing.T) {
+	if externalMaxNameRunesInt8 != 40 || externalMaxNameRunesFloat != 40 {
+		t.Errorf("MaxNameRunes = %d, %v; want 40", externalMaxNameRunesInt8, externalMaxNameRunesFloat)
 	}
-	wantStatuses := map[string]string{"StatusActive": `"active"`, "StatusPaused": `"paused"`, "StatusRetired": `"retired"`}
-	gotStatuses := make(map[string]string)
-	for _, name := range scope.Names() {
-		obj := scope.Lookup(name)
-		if c, isConst := obj.(*types.Const); isConst && types.Identical(c.Type(), status.Type()) && c.Exported() {
-			gotStatuses[name] = c.Val().ExactString()
-		}
-	}
-	if !reflect.DeepEqual(gotStatuses, wantStatuses) {
-		t.Errorf("Status values = %v, want %v", gotStatuses, wantStatuses)
-	}
-	wantConstants := map[string]string{
-		"MaxNameRunes":            "40",
-		"NameRequiredMessage":     strconv.Quote("a name is required"),
-		"NameTooLongMessage":      strconv.Quote("the name is too long; the limit is 40 characters"),
-		"NameTakenMessage":        strconv.Quote("that name is already taken"),
-		"CountNotWholeMessage":    strconv.Quote("the count must be a whole number"),
-		"CountNegativeMessage":    strconv.Quote("the count cannot be negative"),
-		"StatusNotAllowedMessage": strconv.Quote("the status must be one of active, paused, or retired"),
-	}
-	for name, want := range wantConstants {
-		c, isConst := scope.Lookup(name).(*types.Const)
-		if !isConst || c.Val().ExactString() != want {
-			t.Errorf("%s = %v, want constant %s", name, scope.Lookup(name), want)
+}
+
+// R-QS3M-ZQ6W.
+func TestMessageConstants(t *testing.T) {
+	for _, tc := range []struct{ name, got, want string }{
+		{"NameRequiredMessage", externalNameRequiredMessage, "a name is required"},
+		{"NameTooLongMessage", externalNameTooLongMessage, "the name is too long; the limit is 40 characters"},
+		{"NameTakenMessage", externalNameTakenMessage, "that name is already taken"},
+		{"CountNotWholeMessage", externalCountNotWholeMessage, "the count must be a whole number"},
+		{"CountNegativeMessage", externalCountNegativeMessage, "the count cannot be negative"},
+		{"StatusNotAllowedMessage", externalStatusNotAllowedMessage, "the status must be one of active, paused, or retired"},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%s = %q, want %q", tc.name, tc.got, tc.want)
 		}
 	}
 }

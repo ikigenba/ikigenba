@@ -3,9 +3,6 @@ package panel
 import (
 	"errors"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -595,7 +592,7 @@ func TestFormAcceptedSubmission(t *testing.T) {
 }
 
 // R-6OLO-3T75: behavior above proves first body values, this proves raw/missing
-// values on rejection, and source inspection below checks the concrete call count.
+// values on rejection.
 func TestFormMissingAndRepeatedFields(t *testing.T) {
 	for _, tc := range []struct {
 		body string
@@ -619,50 +616,6 @@ func TestFormMissingAndRepeatedFields(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestFormCreateCallCount(t *testing.T) {
-	file, err := parser.ParseFile(token.NewFileSet(), "form.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	calls, directCalls := 0, 0
-	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Name.Name != "serveForm" {
-			continue
-		}
-		for _, statement := range fn.Body.List {
-			assignment, ok := statement.(*ast.AssignStmt)
-			if !ok {
-				continue
-			}
-			for _, rhs := range assignment.Rhs {
-				call, ok := rhs.(*ast.CallExpr)
-				if !ok {
-					continue
-				}
-				selector, ok := call.Fun.(*ast.SelectorExpr)
-				if ok && selector.Sel.Name == "Create" {
-					directCalls++
-				}
-			}
-		}
-	}
-	ast.Inspect(file, func(node ast.Node) bool {
-		call, ok := node.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		selector, ok := call.Fun.(*ast.SelectorExpr)
-		if ok && selector.Sel.Name == "Create" {
-			calls++
-		}
-		return true
-	})
-	if calls != 1 || directCalls != 1 {
-		t.Errorf("form has %d Create call sites, %d directly in handler body; want one without a loop or conditional", calls, directCalls)
 	}
 }
 

@@ -12,8 +12,8 @@ directory; a developer runs the same binary from the checkout. The module path
 is `github.com/ikigenba/ikigenba/dummy`. It requires one other module, appkit
 (`github.com/ikigenba/ikigenba/appkit`), which supplies the banner, the
 service launcher, and the shared stylesheet, fonts, licences and launcher
-script under `/_appkit/`. Its package layout, import direction,
-version and manifest declarations, and run seam are design D01
+script under `/_appkit/`. Its version and manifest declarations and run
+seam are design D01
 (`specs/design/D01-layout-and-run-seam.md`); the rest of the contract — the
 panel, the widgets, the table and the form — is the other documents in
 `specs/design/`. This file restates none of them.
@@ -140,13 +140,15 @@ adding one is an external dependency no one has approved, so a test asserts
 what a response body carries and never what a script would do with it.
 Nothing in the gates waits on a timer for a poll to come round.
 
-**A test may read `share/icon.svg`.** A test may open this directory's
-`share/icon.svg`, read-only, to check what D01 fixes about it. It never
-writes there, and this is the only checkout file a test reads.
+**No test reads the checkout.** A test opens no file of this directory — no
+`.go` file, not `go.mod` or `go.sum`, nothing under `etc/` or `share/` — and
+never parses or inspects source. It proves what the design declares by using
+it: importing, calling, constructing, or running the binary the exec'ing test
+builds. Handing `cmd/dummy` to `go build` is not the test reading it.
 
 **One exec'ing test, and only one.** Tests under `internal/` never start a
 real process; the run seam exists so they need not. The wiring in `cmd/dummy`
-(D01's `main` requirement) can be proved no other way, so exactly one kind of
+(D01's requirements on the `dummy` binary) can be proved no other way, so exactly one kind of
 test that execs the binary is admissible, and it lives in `cmd/dummy`. It
 builds the binary into a temporary directory and runs it with `--version`, with
 `bogus`, and bare with no socket passed in (exit 2). For the serve case it

@@ -4,18 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"go/ast"
-	"go/format"
-	"go/parser"
-	"go/token"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
-	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -23,7 +19,7 @@ import (
 	"github.com/ikigenba/ikigenba/dummy/internal/cli"
 )
 
-// R-S00S-C6IE R-AOZE-83CM
+// R-Z46Q-6N1H R-Z5EM-KES6 R-Z7UF-BY9K
 func TestMainWiring(t *testing.T) {
 	root := mainProjectRoot(t)
 	binary := filepath.Join(t.TempDir(), "dummy")
@@ -59,6 +55,9 @@ func TestMainWiring(t *testing.T) {
 		})
 	}
 }
+
+// launcherButton matches a button start tag whose class is launcher.
+var launcherButton = regexp.MustCompile(`<button\s[^>]*\bclass="launcher"[^>]*>`)
 
 func mainProjectRoot(t *testing.T) string {
 	t.Helper()
@@ -196,7 +195,7 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
 		if err != nil || closeErr != nil {
 			t.Fatalf("read child response: %v, close: %v", err, closeErr)
 		}
-		if !strings.Contains(string(body), `class="launcher"`) {
+		if !launcherButton.Match(body) {
 			t.Error("main did not pass appkit banner source to handler")
 		}
 	}
@@ -228,90 +227,5 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
 		t.Errorf("socket no longer accepts queued connections: %v", err)
 	} else if err := connection.Close(); err != nil {
 		t.Errorf("close queued connection: %v", err)
-	}
-}
-
-// R-S00S-C6IE
-func TestMainConstructsKitAndPassesProcessState(t *testing.T) {
-	files, err := filepath.Glob(filepath.Join(mainProjectRoot(t), "cmd", "dummy", "*.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var calls []string
-	var process *ast.CompositeLit
-	var newCall *ast.CallExpr
-	var kitName, contextName string
-	fileSet := token.NewFileSet()
-	expression := func(node ast.Node) string {
-		var buffer bytes.Buffer
-		if err := format.Node(&buffer, fileSet, node); err != nil {
-			t.Fatal(err)
-		}
-		return buffer.String()
-	}
-	for _, path := range files {
-		if strings.HasSuffix(path, "_test.go") {
-			continue
-		}
-		parsed, err := parser.ParseFile(fileSet, path, nil, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		ast.Inspect(parsed, func(node ast.Node) bool {
-			if assignment, ok := node.(*ast.AssignStmt); ok && len(assignment.Rhs) == 1 && len(assignment.Lhs) > 0 {
-				if call, ok := assignment.Rhs[0].(*ast.CallExpr); ok {
-					switch expression(call.Fun) {
-					case "appkit.New":
-						kitName = expression(assignment.Lhs[0])
-					case "signal.NotifyContext":
-						contextName = expression(assignment.Lhs[0])
-					}
-				}
-			}
-			call, ok := node.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			switch expression(call.Fun) {
-			case "appkit.New":
-				calls = append(calls, "New")
-				newCall = call
-			case "cli.Run":
-				calls = append(calls, "Run")
-				if len(call.Args) != 2 || contextName == "" || expression(call.Args[0]) != contextName {
-					t.Error("Run must receive signal context and Process")
-					return true
-				}
-				process, _ = call.Args[1].(*ast.CompositeLit)
-			}
-			return true
-		})
-	}
-	if strings.Join(calls, ",") != "New,Run" {
-		t.Fatalf("kit/run calls = %v", calls)
-	}
-	if len(newCall.Args) != 1 || expression(newCall.Args[0]) != "panel.ServiceName" {
-		t.Error("kit does not use panel.ServiceName")
-	}
-	if process == nil || expression(process.Type) != "cli.Process" {
-		t.Fatal("missing Process literal")
-	}
-	want := map[string]string{"Args": "os.Args[1:]", "LookupEnv": "os.LookupEnv", "Unsetenv": "os.Unsetenv", "Pid": "os.Getpid()", "Stdout": "os.Stdout", "Stderr": "os.Stderr", "Banner": kitName + ".Banner"}
-	for _, field := range process.Elts {
-		keyValue, ok := field.(*ast.KeyValueExpr)
-		if !ok {
-			t.Fatal("Process uses positional fields")
-		}
-		key := expression(keyValue.Key)
-		if key == "Inherit" && expression(keyValue.Value) == "nil" {
-			continue
-		}
-		if value, exists := want[key]; !exists || value != expression(keyValue.Value) {
-			t.Errorf("Process.%s = %s", key, expression(keyValue.Value))
-		}
-		delete(want, key)
-	}
-	if len(want) != 0 {
-		t.Errorf("missing Process fields: %v", want)
 	}
 }

@@ -22,3 +22,15 @@ func TestExportedExitConstants(t *testing.T) {
 			externalExitSuccess, externalExitServerFailed, externalExitUsage)
 	}
 }
+
+// R-AMJL-GJV8
+func TestExportedVersionVariable(t *testing.T) {
+	t.Parallel()
+
+	// Taking its address as a *string proves Version is a variable of type string.
+	if version := readString(&cli.Version); version == "" {
+		t.Error("Version is empty")
+	}
+}
+
+func readString(p *string) string { return *p }

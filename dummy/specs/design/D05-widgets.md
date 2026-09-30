@@ -14,9 +14,7 @@ A widget is three fields: a name, a whole-number count, and a status that is
 one of three words. The status is an enumeration rather than a bare string so
 that the three words exist in exactly one place, and `Statuses` hands them out
 in the order the form offers them. It is a function and not a package-level
-slice because a slice would be mutable shared state; there is no package-level
-`var` in this package at all, and the requirement that says so is what
-guarantees the widget set lives in a `Store` value rather than in the package.
+slice because a slice would be mutable shared state.
 
 The set is in memory and per-process. A new store holds exactly three widgets
 — `alpha` 3 `active`, `beta` 0 `paused`, `gamma` 12 `retired`, in that order —
@@ -84,7 +82,7 @@ this one declares them.
 
 ## REQUIREMENTS
 
-- R-QICF-XK9C: The `internal/widget` package MUST export `type Status string` together with exactly three values of that type: `StatusActive Status = "active"`, `StatusPaused Status = "paused"`, and `StatusRetired Status = "retired"`.
+- R-RKRT-ZN8J: The `internal/widget` package MUST export `type Status string` together with these values of that type: `StatusActive Status = "active"`, `StatusPaused Status = "paused"`, and `StatusRetired Status = "retired"`.
 - R-QJKC-BC01: The `internal/widget` package MUST export `func Statuses() []Status`.
 - R-QKS8-P3QQ: The `internal/widget` package MUST export `type Widget` as a struct whose exported fields are exactly `Name string`, `Count int`, and `Status Status`.
 - R-QM05-2VHF: The `internal/widget` package MUST export `const MaxNameRunes = 40`.
@@ -118,5 +116,4 @@ this one declares them.
 - R-RNT0-XRGY: A `*Store` MUST be safe for concurrent use: calls to `All` and `Create` made on one store from several goroutines at once MUST complete without Go's race detector reporting a data race.
 - R-RP0X-BJ7N: When several goroutines each make one `Create` call on the same store that the validation rules accept, with trimmed names that differ from one another and from the name of every widget the store already holds, a later call to `All` MUST return exactly one additional widget for each of those calls.
 - R-7XYY-QBZY: The slice `All` returns MUST NEVER hold two widgets whose `Name` values are equal, however many `Create` calls run concurrently, because a `Create` call decides the name it was given is held by no widget of the store and adds its widget as one step with respect to every other `Create` call: when several goroutines each make one `Create` call on the same store with submissions whose trimmed names are all equal to one name no widget the store already holds carries and whose count and status the validation rules accept, exactly one of those calls MUST return a `FieldErrors` all three of whose fields are the empty string, every other one of those calls MUST return a `FieldErrors` whose `Name` is `NameTakenMessage`, and a later call to `All` MUST return exactly one additional widget.
-- R-RQ8T-PAYC: The non-test `.go` files of `internal/widget` MUST declare no package-level `var`.
 - R-RRGQ-32P1: Two stores returned by two separate calls to `NewStore` MUST NOT share widgets: a widget a `Create` call accepted on one of them MUST NOT appear in the slice the other's `All` returns.

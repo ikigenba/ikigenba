@@ -4,15 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"io"
 	"math"
 	"net"
-	"path/filepath"
 	"reflect"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -195,109 +190,6 @@ func TestRunReturnsDeclaredExitCodes(t *testing.T) {
 	}
 }
 
-// R-S4WD-V9H6
-func TestPackagesDoNotReachPastProcessSeam(t *testing.T) {
-	forbidden := map[string]bool{"Args": true, "Environ": true, "Getenv": true, "LookupEnv": true, "Setenv": true, "Unsetenv": true, "Clearenv": true, "Getpid": true, "Stdin": true, "Stdout": true, "Stderr": true, "Exit": true}
-	for _, dir := range []string{"internal/cli", "internal/server", "internal/panel", "internal/widget"} {
-		files, err := filepath.Glob(filepath.Join(projectRoot(t), dir, "*.go"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, path := range files {
-			if strings.HasSuffix(path, "_test.go") {
-				continue
-			}
-			parsed, e := parser.ParseFile(token.NewFileSet(), path, nil, 0)
-			if e != nil {
-				t.Fatal(e)
-			}
-			osNames := map[string]bool{}
-			for _, imp := range parsed.Imports {
-				name, e := strconv.Unquote(imp.Path.Value)
-				if e != nil {
-					t.Fatal(e)
-				}
-				if name == "os/signal" {
-					t.Errorf("%s imports os/signal", path)
-				}
-				if name == "os" {
-					alias := "os"
-					if imp.Name != nil {
-						alias = imp.Name.Name
-					}
-					if alias == "." {
-						t.Errorf("%s dot imports os", path)
-					}
-					osNames[alias] = true
-				}
-			}
-			ast.Inspect(parsed, func(n ast.Node) bool {
-				sel, ok := n.(*ast.SelectorExpr)
-				if !ok {
-					return true
-				}
-				ident, ok := sel.X.(*ast.Ident)
-				if ok && osNames[ident.Name] && forbidden[sel.Sel.Name] {
-					t.Errorf("%s references os.%s", path, sel.Sel.Name)
-				}
-				return true
-			})
-		}
-	}
-}
-
-// R-WBD3-T7XX
-func TestModuleNeverOpensListeningSocket(t *testing.T) {
-	forbidden := map[string]map[string]bool{"net": {"Listen": true, "ListenTCP": true, "ListenUnix": true, "ListenUDP": true, "ListenUnixgram": true, "ListenIP": true, "ListenMulticastUDP": true, "ListenPacket": true}, "net/http": {"ListenAndServe": true, "ListenAndServeTLS": true}, "syscall": {"Socket": true, "Bind": true, "Listen": true}}
-	methodNames := map[string]bool{"Listen": true, "ListenPacket": true, "ListenAndServe": true, "ListenAndServeTLS": true}
-	for _, dir := range []string{"cmd/dummy", "internal/cli", "internal/server", "internal/panel", "internal/widget"} {
-		files, _ := filepath.Glob(filepath.Join(projectRoot(t), dir, "*.go"))
-		for _, path := range files {
-			if strings.HasSuffix(path, "_test.go") {
-				continue
-			}
-			parsed, e := parser.ParseFile(token.NewFileSet(), path, nil, 0)
-			if e != nil {
-				t.Fatal(e)
-			}
-			aliases := map[string]string{}
-			for _, imp := range parsed.Imports {
-				importPath, unquoteErr := strconv.Unquote(imp.Path.Value)
-				if unquoteErr != nil {
-					t.Fatal(unquoteErr)
-				}
-				if forbidden[importPath] != nil {
-					alias := filepath.Base(importPath)
-					if imp.Name != nil {
-						alias = imp.Name.Name
-					}
-					if alias == "." {
-						t.Errorf("%s dot imports %s", path, importPath)
-					}
-					aliases[alias] = importPath
-				}
-			}
-			ast.Inspect(parsed, func(n ast.Node) bool {
-				call, ok := n.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				sel, ok := call.Fun.(*ast.SelectorExpr)
-				if !ok {
-					return true
-				}
-				id, ok := sel.X.(*ast.Ident)
-				if ok && forbidden[aliases[id.Name]][sel.Sel.Name] {
-					t.Errorf("%s calls %s.%s", path, id.Name, sel.Sel.Name)
-				} else if methodNames[sel.Sel.Name] && (!ok || aliases[id.Name] == "") {
-					t.Errorf("%s calls forbidden listening method %s", path, sel.Sel.Name)
-				}
-				return true
-			})
-		}
-	}
-}
-
 func mapLookup(env map[string]string) func(string) (string, bool) {
 	return func(k string) (string, bool) { v, ok := env[k]; return v, ok }
 }
@@ -319,55 +211,3 @@ type failedListener struct{ err error }
 func (l *failedListener) Accept() (net.Conn, error) { return nil, l.err }
 func (l *failedListener) Close() error              { return nil }
 func (l *failedListener) Addr() net.Addr            { return testAddr("failed") }
-
-// R-S64A-917V
-func TestInternalPackagesNeverConstructKit(t *testing.T) {
-	for _, dir := range []string{"internal/cli", "internal/server", "internal/panel", "internal/widget"} {
-		files, err := filepath.Glob(filepath.Join(projectRoot(t), dir, "*.go"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, path := range files {
-			if strings.HasSuffix(path, "_test.go") {
-				continue
-			}
-			parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
-			if err != nil {
-				t.Fatal(err)
-			}
-			aliases := map[string]bool{}
-			for _, imp := range parsed.Imports {
-				name, err := strconv.Unquote(imp.Path.Value)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if name != "github.com/ikigenba/ikigenba/appkit" {
-					continue
-				}
-				alias := "appkit"
-				if imp.Name != nil {
-					alias = imp.Name.Name
-				}
-				aliases[alias] = true
-			}
-			if aliases["."] {
-				for _, name := range parsed.Unresolved {
-					if name.Name == "New" {
-						t.Errorf("%s references dot-imported appkit.New", path)
-					}
-				}
-			}
-			ast.Inspect(parsed, func(node ast.Node) bool {
-				selector, ok := node.(*ast.SelectorExpr)
-				if !ok {
-					return true
-				}
-				name, ok := selector.X.(*ast.Ident)
-				if ok && aliases[name.Name] && selector.Sel.Name == "New" {
-					t.Errorf("%s references appkit.New", path)
-				}
-				return true
-			})
-		}
-	}
-}
