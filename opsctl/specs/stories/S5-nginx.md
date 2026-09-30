@@ -57,6 +57,21 @@ not the authenticator, and with no routed `auth` on the host every block is unwi
 — the fail-open frame, which is what these stories show unless one says a
 routed `auth` is present.
 
+The paths `/mcp` and `/mcp/...` are reserved across the suite for MCP, the
+protocol programs rather than browsers use to call an app's tools. Every wired
+block answers them with the same subrequest to `/check` and the same identity
+relay as `location /`, with one difference: a request `auth` answers 401 is
+not sent to sign in, since the client is not a browser that could follow the
+redirect. It is answered `401` with `WWW-Authenticate: Bearer realm="ikigenba"`
+and the one line of plain text `authentication required: send Authorization:
+Bearer <token>`, where `<token>` is literal text telling the client what to
+send. A 403 from `auth` still reaches the client unchanged. Every wired block
+carries these locations whatever the app's manifest says about `mcp`: the
+paths are the suite's, not an app's opt-in. Only `/mcp` itself and paths
+under `/mcp/` are reserved — `/mcpx` is an ordinary path and redirects to sign
+in like any other. Plain blocks on a host with no authenticator, `auth`'s own
+block, and a disabled app's block are unchanged.
+
 One host in the account also answers at the root domain's apex,
 `ikigenba.dev`. Which host that is, and which app answers there, is a
 decision made from the developer's machine (`devctl apex set`), and it
@@ -116,7 +131,8 @@ access-log line. The app
 host.apex names also answers at the parent of host.name; until that app is
 routed, the parent answers 404. A routed app named auth is the authenticator:
 every other app's block then requires a valid session, checked against auth's
-/check, while auth's own name is not gated.
+/check, while auth's own name is not gated. Under /mcp, a request without a
+valid credential is answered 401 instead of being sent to sign in.
 ```
 
 Exits 0. The text is on stdout; stderr is empty. It prints for any user.
@@ -479,7 +495,12 @@ wired block a client cannot forge identity: the subrequest to `/check` carries
 no client `X-User-Id` or `X-User-Email`, and on a valid session nginx sets
 those two headers on the upstream from `auth`'s answer. A 401 from `auth`
 becomes a 302 redirect to `auth.sbx.ikigenba.dev` carrying the original request
-URL as `return=`; a 403 reaches the client unchanged.
+URL as `return=`; a 403 reaches the client unchanged. Between the redirect and
+`location /`, each wired block carries the MCP locations: `/mcp` exactly and
+everything under `/mcp/` are checked and relayed like `location /`, but a 401
+from `auth` is answered by `@mcp_unauthorized` — the `401` with its
+`WWW-Authenticate` header and one-line body — instead of the redirect. The `\n`
+in that `return` is the two characters backslash and `n` in the file.
 
 Command:
 
@@ -565,6 +586,44 @@ server {
         return 302 https://auth.sbx.ikigenba.dev/?return=$scheme://$host$request_uri;
     }
 
+    location @mcp_unauthorized {
+        default_type text/plain;
+        add_header   WWW-Authenticate 'Bearer realm="ikigenba"' always;
+        return       401 "authentication required: send Authorization: Bearer <token>\n";
+    }
+
+    location = /mcp {
+        auth_request     /_ikigenba/check;
+        auth_request_set $auth_user_id    $upstream_http_x_user_id;
+        auth_request_set $auth_user_email $upstream_http_x_user_email;
+        error_page       401 = @mcp_unauthorized;
+
+        proxy_pass       http://unix:/run/ikigenba/crm.sock:;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header X-User-Id         $auth_user_id;
+        proxy_set_header X-User-Email      $auth_user_email;
+    }
+
+    location ^~ /mcp/ {
+        auth_request     /_ikigenba/check;
+        auth_request_set $auth_user_id    $upstream_http_x_user_id;
+        auth_request_set $auth_user_email $upstream_http_x_user_email;
+        error_page       401 = @mcp_unauthorized;
+
+        proxy_pass       http://unix:/run/ikigenba/crm.sock:;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header X-User-Id         $auth_user_id;
+        proxy_set_header X-User-Email      $auth_user_email;
+    }
+
     location / {
         auth_request     /_ikigenba/check;
         auth_request_set $auth_user_id    $upstream_http_x_user_id;
@@ -605,6 +664,44 @@ server {
         return 302 https://auth.sbx.ikigenba.dev/?return=$scheme://$host$request_uri;
     }
 
+    location @mcp_unauthorized {
+        default_type text/plain;
+        add_header   WWW-Authenticate 'Bearer realm="ikigenba"' always;
+        return       401 "authentication required: send Authorization: Bearer <token>\n";
+    }
+
+    location = /mcp {
+        auth_request     /_ikigenba/check;
+        auth_request_set $auth_user_id    $upstream_http_x_user_id;
+        auth_request_set $auth_user_email $upstream_http_x_user_email;
+        error_page       401 = @mcp_unauthorized;
+
+        proxy_pass       http://unix:/run/ikigenba/dashboard.sock:;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header X-User-Id         $auth_user_id;
+        proxy_set_header X-User-Email      $auth_user_email;
+    }
+
+    location ^~ /mcp/ {
+        auth_request     /_ikigenba/check;
+        auth_request_set $auth_user_id    $upstream_http_x_user_id;
+        auth_request_set $auth_user_email $upstream_http_x_user_email;
+        error_page       401 = @mcp_unauthorized;
+
+        proxy_pass       http://unix:/run/ikigenba/dashboard.sock:;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id      $request_id;
+        proxy_set_header X-User-Id         $auth_user_id;
+        proxy_set_header X-User-Email      $auth_user_email;
+    }
+
     location / {
         auth_request     /_ikigenba/check;
         auth_request_set $auth_user_id    $upstream_http_x_user_id;
@@ -642,9 +739,14 @@ Postconditions:
 - `auth` alone carries no `auth_request`; every other routed app carries it,
   purely because a routed `auth` is present — there is no per-app opt-in or
   opt-out.
+- `crm` and `dashboard` carry the MCP locations whether their manifests set
+  `mcp = true`, `mcp = false`, or no `mcp` at all; `auth`'s block carries none.
 - Once applied, the subrequest to `/check` and the request it admits carry the
   same `X-Request-Id`: nginx's id for the client's request, never the
-  client's own value.
+  client's own value. This holds under `/mcp` as under `/`: a request to
+  `/mcp` or `/mcp/<anything>` that `auth` admits reaches the app with
+  `X-Request-Id`, `X-User-Id`, and `X-User-Email` set exactly as a request to
+  `/` would.
 
 ## An operator reads the configuration where auth is present but not routed
 
@@ -682,6 +784,124 @@ Postconditions:
 - `auth` has no block: unrouted, it is a service the host will back up and one
   nginx cannot route, and it is not the authenticator. No block is wired; the
   host stays fail-open until an `auth` manifest naming its app is in place.
+
+## An MCP client reaches a wired app without a credential
+
+An MCP client is a program, not a browser: a redirect to a sign-in page is
+nothing it can follow. So on a wired app, a request under `/mcp` that `auth`
+answers 401 is answered `401` by nginx itself, with a challenge naming the
+scheme the client should use and one line saying what to send. `/mcp` itself
+and any path under `/mcp/` behave the same.
+
+Request:
+
+```
+$ curl -si https://crm.sbx.ikigenba.dev/mcp
+```
+
+```
+$ curl -si https://crm.sbx.ikigenba.dev/mcp/<anything>
+```
+
+Response:
+
+```
+HTTP/1.1 401 Unauthorized
+Content-Type: text/plain
+WWW-Authenticate: Bearer realm="ikigenba"
+```
+
+Status 401. The body is the one line `authentication required: send
+Authorization: Bearer <token>`, ending in a newline, where `<token>` is those
+seven characters as written, not a value filled in.
+
+Preconditions:
+
+- The configuration of the `host running apps behind the authenticator` story
+  has been applied, and `auth` and `crm` are active.
+- The request carries no `ikigenba_session` cookie and no `Authorization`
+  header, so `auth`'s `/check` answers 401.
+
+Postconditions:
+
+- Nothing has changed. Nothing reached `/run/ikigenba/crm.sock`; the request
+  was decided by the `/check` subrequest alone.
+- The access-log line for the request records status `401` and ends with
+  nginx's request id, the same id the subrequest to `/check` carried.
+
+## An MCP client whose token the authenticator refuses reaches a wired app
+
+A client that sends a bearer token `auth` will not honor — unknown, disabled,
+expired, or its owner's sign-in lapsed — gets `auth`'s 403, exactly as it
+would at `/`. Only 401 is turned into the MCP challenge; a refusal is not a
+request to authenticate, and it reaches the client unchanged.
+
+Request:
+
+```
+$ curl -si -H 'Authorization: Bearer ikp_<token>' https://crm.sbx.ikigenba.dev/mcp
+```
+
+```
+$ curl -si -H 'Authorization: Bearer ikp_<token>' https://crm.sbx.ikigenba.dev/mcp/<anything>
+```
+
+Response:
+
+```
+HTTP/1.1 403 Forbidden
+```
+
+Status 403. The body is not fixed.
+
+Preconditions:
+
+- The configuration of the `host running apps behind the authenticator` story
+  has been applied, and `auth` and `crm` are active.
+- `auth`'s `/check` answers 403 for `ikp_<token>`.
+
+Postconditions:
+
+- Nothing has changed. Nothing reached `/run/ikigenba/crm.sock`.
+
+## A browser reaches a wired app outside `/mcp` without signing in
+
+The MCP answer belongs to `/mcp` and `/mcp/...` alone. Everywhere else a wired
+block still sends a visitor with no credential to sign in, including a path
+that merely begins with the same letters.
+
+Request:
+
+```
+$ curl -si https://crm.sbx.ikigenba.dev/
+```
+
+```
+$ curl -si https://crm.sbx.ikigenba.dev/mcpx
+```
+
+Response:
+
+```
+HTTP/1.1 302 Moved Temporarily
+Location: https://auth.sbx.ikigenba.dev/?return=https://crm.sbx.ikigenba.dev/
+```
+
+Status 302. For the second form the `Location` ends
+`?return=https://crm.sbx.ikigenba.dev/mcpx`: the original URL, whatever its
+path. The response carries no `WWW-Authenticate` header; the body is not
+fixed.
+
+Preconditions:
+
+- The configuration of the `host running apps behind the authenticator` story
+  has been applied, and `auth` and `crm` are active.
+- The request carries no `ikigenba_session` cookie and no `Authorization`
+  header, so `auth`'s `/check` answers 401.
+
+Postconditions:
+
+- Nothing has changed. Nothing reached `/run/ikigenba/crm.sock`.
 
 ## An operator applies the configuration
 

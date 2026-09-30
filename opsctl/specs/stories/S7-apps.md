@@ -47,19 +47,31 @@ and `share/` when the app has one. The version is nowhere in the file:
 `bin/<app>` answers `--version` with it, and that is what opsctl reports.
 The manifest names the app, whether it is the host's default app, the secrets
 it needs, an `[env]` table of plain settings, and a `[database]` table when the
-app keeps one. It names no port: no app listens on one, and a manifest that
-carries a `port` is refused.
+app keeps one. It may also carry a `description`, one line of text saying what
+the app offers, and `mcp`, a Boolean that is `false` when absent: `true` means
+the app's tools belong in the suite's MCP catalog. An app that sets `mcp =
+true` must say what it offers, so its `description` may not be missing, empty,
+or only whitespace. A `description` is one line of text when it holds no
+control character (U+0000–U+001F, U+007F), so no line break. The manifest
+names no port: no app listens on one, and a manifest that carries a `port` is
+refused.
 
 A file that carries `share/icon.svg` puts its app in the host's service
 launcher; nothing in the manifest does. `install` refuses an icon that is not
 an SVG image or is larger than 64 KiB. Every command here that regenerates
-nginx also rewrites `/var/lib/ikigenba/services.json`, the list of launcher
-services (see `S9-services.md`), and reports it on a `services` line right
-after the `nginx` line.
+nginx also rewrites `/var/lib/ikigenba/services.json`, the list of the host's
+installed services, each with its manifest's `description` and `mcp`, and its
+icon when it ships one (see `S9-services.md`), and reports it on a `services`
+line right after the `nginx` line. Every installed app has an entry there,
+icon or not, so the line reports a change for any app that is added, removed,
+disabled, or enabled; a reinstall changes the app's entry only when its
+`description`, `mcp`, or icon changed.
 
 ```toml
 app = "crm"
+description = "Customers, contacts, and deals"
 default = false
+mcp = true
 secrets = ["CRM_API_KEY", "CRM_API_SECRET", "CRM_ORG"]
 
 [env]
@@ -76,8 +88,8 @@ choice, made in the store rather than the manifest (`host.apex`, see
 `S5-nginx.md`): the app it names answers at `ikigenba.dev` as well, and
 `install` and `uninstall` report that name the way they report the space's.
 
-`install` reads the app, `default`, and `secrets`. The `[env]` table
-it writes out. The `[database]` table it reads for one purpose only: to
+`install` reads the app, `default`, `secrets`, `description`, and `mcp`. The
+`[env]` table it writes out. The `[database]` table it reads for one purpose only: to
 regenerate `/etc/litestream.yml` from every manifest on the host, the way it
 regenerates nginx, so that a database arrives on the host and starts being
 replicated in the same command. What the table means, and what replication
@@ -183,8 +195,9 @@ adds the socket's state and the database journal mode in its five-column
 report. The `fetch` step is the host reading the object with its own role:
 the file never travels over the ssh connection. The `unit` step writes both
 units and brings the socket up, so the socket is listening before the `nginx`
-step routes the app's name to it. The `services` step lists the app in the
-service launcher, because the file ships an icon. The `litestream` step names the database this manifest declares, now in
+step routes the app's name to it. The `services` step adds the app's entry to
+the services file; because the file ships an icon, that entry puts the app in
+the service launcher. The `litestream` step names the database this manifest declares, now in
 `/etc/litestream.yml`; it comes before `service` so that replication is in
 place before the app writes its first row.
 
@@ -215,7 +228,8 @@ Preconditions:
 - `host.name` and `aws.region` are set, and `init` reported the host ready.
 - `apps.drain_seconds` and `apps.stop_seconds` are unset.
 - The object holds `bin/crm`, `etc/manifest.toml`, and `share/icon.svg`, an
-  SVG image of at most 64 KiB, and the host's role can read it.
+  SVG image of at most 64 KiB, and the host's role can read it. The manifest
+  is the one the group shows.
 - `/<host.name>/crm` holds every name the manifest's `secrets`
   array lists.
 - `crm` has never been installed on this host.
@@ -248,8 +262,9 @@ Postconditions:
   each begins requiring a valid session. The `nginx:` line still reports only
   the installed app's own name.
 - `/var/lib/ikigenba/services.json` has been rewritten and now lists `crm`,
-  with the URL `https://crm.sbx.ikigenba.dev`, the contents of
-  `/opt/crm/share/icon.svg`, and enabled.
+  with the URL `https://crm.sbx.ikigenba.dev`, the description `Customers,
+  contacts, and deals`, the socket `/run/ikigenba/crm.sock`, enabled, `mcp`
+  true, and the contents of `/opt/crm/share/icon.svg`.
 - `/etc/litestream.yml` has been regenerated from every manifest under `/opt`
   and now names `/opt/crm/state/crm.db`, replicating to `<backup.s3_uri>crm/`.
   Because the file changed, `litestream.service` was restarted; it is running.
@@ -291,7 +306,8 @@ Exits 0. The lines are on stdout; stderr is empty.
 Preconditions:
 
 - `crm` is installed, its socket is listening, and its service is `active`.
-- The new manifest names a fourth secret, and the parameter holds it.
+- The new manifest names a fourth secret, and the parameter holds it. Its
+  `description` and `mcp` are the installed manifest's.
 - The new file's `share/icon.svg` is byte for byte the installed one.
 
 Postconditions:
@@ -307,8 +323,9 @@ Postconditions:
   manifest that changed its `[database]` path would have changed the file, and
   the line would have named the new path and the service been restarted.
 - `/var/lib/ikigenba/services.json` is byte for byte as it was. A new file
-  whose icon differed would have changed `crm`'s entry, and the line would
-  have read `services: ok (crm updated)`.
+  whose icon, `description`, or `mcp` differed, or that gained or dropped an
+  icon, would have changed `crm`'s entry, and the line would have read
+  `services: ok (crm updated)`.
 - Installing the same file again produces the same nine lines and exit 0.
 
 ## An agent deploys a new version over a disabled app
@@ -344,7 +361,8 @@ Exits 0. The lines are on stdout; stderr is empty.
 Preconditions:
 
 - `crm` is installed and disabled: both its units are disabled and inactive.
-- The new manifest names a fourth secret, and the parameter holds it.
+- The new manifest names a fourth secret, and the parameter holds it. Its
+  `description` and `mcp` are the installed manifest's.
 - The new file's `share/icon.svg` is byte for byte the installed one.
 
 Postconditions:
@@ -366,8 +384,9 @@ Postconditions:
 ## An agent installs the host's default app
 
 The app whose manifest sets `default = true` answers at the host's own name as
-well as its own, and the nginx step says so. It declares no database, so the
-regenerated `/etc/litestream.yml` is what it was.
+well as its own, and the nginx step says so. It ships no icon, so its new
+entry in the services file keeps it out of the launcher. It declares no
+database, so the regenerated `/etc/litestream.yml` is what it was.
 
 Command:
 
@@ -384,7 +403,7 @@ secrets: ok (0 keys)
 unpack: ok (/opt/dashboard)
 unit: ok (ikigenba-dashboard.socket, ikigenba-dashboard.service)
 nginx: ok (dashboard.sbx.ikigenba.dev, sbx.ikigenba.dev)
-services: ok (unchanged)
+services: ok (dashboard added)
 litestream: ok (unchanged)
 service: ok (dashboard v0.0.9 active)
 ```
@@ -393,18 +412,23 @@ Exits 0. The lines are on stdout; stderr is empty.
 
 Preconditions:
 
-- `dashboard`'s manifest sets `default = true` and names no secrets.
+- `dashboard`'s manifest sets `default = true`, names no secrets, and carries
+  no `description` or `mcp`.
 - The file ships no `share/icon.svg`.
-- No other installed app sets `default = true`.
+- `dashboard` has never been installed on this host, and no other installed
+  app sets `default = true`.
 
 Postconditions:
 
 - `https://sbx.ikigenba.dev` and `https://dashboard.sbx.ikigenba.dev` both
   reach `dashboard` through `/run/ikigenba/dashboard.sock`; every other name
   under the host still answers 404.
-- `/var/lib/ikigenba/services.json` is byte for byte as it was: `dashboard`
-  is not a launcher service. Its `/opt/dashboard/etc/env` still holds
-  `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json`.
+- `/var/lib/ikigenba/services.json` has been rewritten and now lists
+  `dashboard`, with the URL `https://dashboard.sbx.ikigenba.dev`, the
+  description `""`, the socket `/run/ikigenba/dashboard.sock`, enabled, `mcp`
+  false, and no icon: it is not in the launcher. Its
+  `/opt/dashboard/etc/env` holds
+  `IKIGENBA_SERVICES=/var/lib/ikigenba/services.json` like every app's.
 - `/etc/litestream.yml` is byte for byte as it was and `litestream.service`
   was not restarted.
 
@@ -595,6 +619,84 @@ Postconditions:
   was not rewritten. An installed `crm` keeps running
   the release it had.
 
+## An agent installs an MCP app that does not say what it offers
+
+An app whose tools belong in the suite's MCP catalog is listed there by its
+`description`: it is what an agent reads to decide whether the app is worth
+calling. A manifest that sets `mcp = true` and leaves that empty is refused
+before anything is written, rather than installing an app no agent can
+make sense of. With `mcp` false or absent, a missing or empty `description`
+is accepted, and the app's entry carries the description `""`. A description
+holding a control character, a tab say, gets the one-line refusal of the next
+story instead, because the one-line rule is judged first.
+
+Command:
+
+```
+$ sudo opsctl install s3://ikigenba.dev/sbx/deploy/crm-v0.1.0.tar.xz
+```
+
+Output:
+
+```
+fetch: ok (crm-v0.1.0.tar.xz, 8.4 MiB)
+file: failed: crm-v0.1.0.tar.xz: etc/manifest.toml: 'mcp' is true but 'description' is empty; an MCP service must say what it offers
+opsctl: install failed
+```
+
+Exits 2. The fetch and file outcome lines are on stdout; the last line is on
+stderr. A `description` that is not a string, or an `mcp` that is not a
+Boolean, is refused the way any other key of the wrong type is: `file: failed:
+crm-v0.1.0.tar.xz: etc/manifest.toml: <decoder complaint>` on stdout and
+`opsctl: install failed` on stderr, exit 2.
+
+Preconditions:
+
+- `opsctl` is running as root.
+- The file's `etc/manifest.toml` sets `mcp = true` and has no `description`,
+  or one that is empty or holds only whitespace.
+
+Postconditions:
+
+- Nothing has changed. `/opt/crm/` was neither created nor touched, no unit
+  was written, nginx was not reloaded, and `/var/lib/ikigenba/services.json`
+  was not rewritten. An installed `crm` keeps running the release it had.
+
+## An agent installs an app whose description is not one line
+
+A description is one line of text wherever it is shown, so a line break or
+any other control character in it is refused before anything is written.
+
+Command:
+
+```
+$ sudo opsctl install s3://ikigenba.dev/sbx/deploy/crm-v0.1.0.tar.xz
+```
+
+Output:
+
+```
+fetch: ok (crm-v0.1.0.tar.xz, 8.4 MiB)
+file: failed: crm-v0.1.0.tar.xz: etc/manifest.toml: 'description' must be one line of text
+opsctl: install failed
+```
+
+Exits 2. The fetch and file outcome lines are on stdout; the last line is on
+stderr.
+
+Preconditions:
+
+- `opsctl` is running as root.
+- The file's `etc/manifest.toml` has a `description` holding a control
+  character (U+0000–U+001F or U+007F): `"Customers\nand deals"`, say, whatever
+  `mcp` is.
+
+Postconditions:
+
+- Nothing has changed. `/opt/crm/` was neither created nor touched, no unit
+  was written, nginx was not reloaded, and `/var/lib/ikigenba/services.json`
+  was not rewritten. An installed `crm` keeps running the release it had.
+
 ## An agent installs an app whose icon is not an SVG image
 
 The icon goes into the services file as it is, and every app on the host
@@ -745,7 +847,7 @@ secrets: ok (2 keys)
 unpack: ok (/opt/gmail)
 unit: ok (ikigenba-gmail.socket, ikigenba-gmail.service)
 nginx: ok (gmail.sbx.ikigenba.dev)
-services: ok (unchanged)
+services: ok (gmail added)
 litestream: ok (unchanged)
 service: failed: gmail: service failed to start
 opsctl: install failed
@@ -759,6 +861,7 @@ journal are on stderr.
 
 Preconditions:
 
+- `gmail` has never been installed on this host.
 - `gmail`'s binary exits at start, before it tells systemd it is ready.
 - `gmail`'s manifest declares no database, and its file ships no
   `share/icon.svg`.
@@ -769,6 +872,9 @@ Postconditions:
   listening, and nginx routes its name. The service is `failed`. Nothing was
   rolled back: the host is left in the state an operator can inspect and fix,
   and `status` shows `gmail v0.1.0 failed active -`.
+- `/var/lib/ikigenba/services.json` has been rewritten and lists `gmail` as
+  enabled, with no icon: the entry is written before the service starts, and
+  a failed service does not undo it any more than it undoes nginx.
 - Had the manifest declared a database, the `litestream` line would have
   named it and the failure would still be the service's: a failed unit does
   not undo a regenerated `/etc/litestream.yml`, and litestream replicates
@@ -885,8 +991,8 @@ Preconditions:
 - `crm` is installed, its socket is listening, and its service is `active`.
   Its manifest declares a
   `[database]` at `state/crm.db`, and `litestream.service` is replicating it.
-- `crm` shipped `share/icon.svg`, so `/var/lib/ikigenba/services.json` lists
-  it.
+- `/var/lib/ikigenba/services.json` lists `crm`, as it lists every installed
+  app.
 
 Postconditions:
 
@@ -934,7 +1040,8 @@ Postconditions:
 
 The app declared no database, so the regenerated `/etc/litestream.yml` is what
 it was and litestream is left alone. The nginx line names both names the app
-answered at.
+answered at. The app shipped no icon, so it was never in the launcher, but it
+had an entry in the services file all the same, and that entry goes.
 
 Command:
 
@@ -949,7 +1056,7 @@ stop: ok (ikigenba-dashboard.socket, ikigenba-dashboard.service stopped, disable
 unit: ok (removed ikigenba-dashboard.socket, ikigenba-dashboard.service)
 files: ok (removed /opt/dashboard/bin, etc, share, cache; kept state)
 nginx: ok (dashboard.sbx.ikigenba.dev, sbx.ikigenba.dev removed)
-services: ok (unchanged)
+services: ok (dashboard removed)
 litestream: ok (unchanged)
 ```
 
@@ -959,14 +1066,15 @@ Preconditions:
 
 - `dashboard` is installed, its manifest sets `default = true`, and it
   declares no database.
-- `dashboard` shipped no `share/icon.svg`, so
-  `/var/lib/ikigenba/services.json` does not list it.
+- `dashboard` shipped no `share/icon.svg`; `/var/lib/ikigenba/services.json`
+  lists it with no icon.
 
 Postconditions:
 
 - `https://sbx.ikigenba.dev` and `https://dashboard.sbx.ikigenba.dev` both
   answer 404. The host has no default app until an install brings one.
-- `/var/lib/ikigenba/services.json` is byte for byte as it was.
+- `/var/lib/ikigenba/services.json` has been rewritten and no longer lists
+  `dashboard`.
 - `/etc/litestream.yml` is byte for byte as it was and `litestream.service`
   was not restarted.
 - `/opt/dashboard/` holds `state/` and nothing else.
@@ -1300,8 +1408,7 @@ Preconditions:
 
 - `crm` is installed, both its units are enabled, its socket is listening,
   and its service is `active`.
-- `crm` shipped `share/icon.svg`, so `/var/lib/ikigenba/services.json` lists
-  it as enabled.
+- `/var/lib/ikigenba/services.json` lists `crm` as enabled.
 
 Postconditions:
 
@@ -1346,8 +1453,7 @@ to its socket, and `/var/lib/ikigenba/services.json` listing it as enabled.
 Preconditions:
 
 - `crm` is installed and both its units are disabled and inactive.
-- `crm` shipped `share/icon.svg`, so `/var/lib/ikigenba/services.json` lists
-  it as not enabled.
+- `/var/lib/ikigenba/services.json` lists `crm` as not enabled.
 
 Postconditions:
 
