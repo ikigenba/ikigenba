@@ -27,8 +27,9 @@ that directory, the user's request and settled decisions, this skill, and the
 completion criteria to the fanout assignments.
 
 Repository writes are limited to stories. No design, source, test,
-`AGENTS.md`, or issue-file changes; no requirement ids or commits. Do not start
-`draft-design`.
+`AGENTS.md`, or issue-file changes; no requirement ids. Do not start
+`draft-design`. The root commits the stories once verification passes (see
+"Committing").
 Report blockers and unresolved decisions to the user, not `specs/issues/`.
 
 ## Domain work
@@ -87,7 +88,18 @@ Verification must establish:
 - Every requested outcome has verified coverage, an explicit user exclusion,
   or a specific pending decision. Only the first two permit completion.
 
-Report added and changed stories by heading and file, consistency changes,
+## Committing
+
+The operation is not complete until its story changes are committed. Once
+the completion criteria hold, the root commits exactly the story files this
+operation wrote, and nothing else, on the current branch. The message is an
+imperative summary of at most 50 characters, optionally followed by one or two
+lines on what changed and why, and it ends with the repository's attribution
+trailer. It carries no `Requirements:` trailer, because stories carry no ids.
+A partial draft is not committed: report it as partial, with its files left
+uncommitted.
+
+Report added and changed stories by heading and file, the commit, consistency changes,
 and unresolved questions with affected work.
 Identify designs that now diverge and name `draft-design` as the next step
 without starting it. Label unresolved work as a partial draft. If existing

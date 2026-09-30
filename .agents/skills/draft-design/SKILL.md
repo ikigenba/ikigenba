@@ -35,8 +35,8 @@ current target, not a compatibility obligation. Respect spec's sub-project
 boundary; do not inspect sibling internals.
 
 Repository writes are limited to `specs/design/`. No source, test, story,
-issue, or review-file changes; no commits. Do not start `build-spec` or
-`check-spec`.
+issue, or review-file changes. Do not start `build-spec` or `check-spec`.
+The root commits the design once verification passes (see "Committing").
 Report blockers and unresolved decisions to the user, not `specs/issues/`.
 
 ## Coverage and design work
@@ -122,7 +122,17 @@ a root review of the whole design. For a new sub-project report absent
 implementation; do not invent test results or run build gates against
 unwritten code.
 
-Report consumer usage first, then design paths,
+## Committing
+
+The operation is not complete until its design changes are committed. Once
+the completion criteria hold, the root commits exactly the `specs/design/`
+files this operation wrote, and nothing else, on the current branch. The
+message follows the sub-project's `AGENTS.md` commit conventions. Its
+`Requirements:` trailer lists the ids this operation added, and the message
+ends with the repository's attribution trailer. A partial draft is not
+committed: report it as partial, with its files left uncommitted.
+
+Report consumer usage first, then design paths, the commit,
 coverage counts, the implementation gap, and consolidated unresolved work.
 Distinguish a partial draft from a complete design. Completion requires
 verified coverage, consistent contracts, and no unresolved design decisions. Never claim that the design has been
