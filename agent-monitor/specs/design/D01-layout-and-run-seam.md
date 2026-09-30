@@ -2,16 +2,13 @@
 
 agent-monitor is one Go binary a developer builds from the checkout and runs
 on their own machine. This design is the structural ground the other designs
-stand on: which packages exist, which package owns which exported names, which
-way the imports point, how the version and the four help texts are declared,
-and the seam through which the program is run so that every behaviour can be
-tested in-process, without a real process, real streams, or the real
-filesystem.
+stand on: which package owns which exported names, how the version and the
+four help texts are declared, and the seam through which the program is run
+so that every behaviour can be tested in-process, without a real process,
+real streams, or the real filesystem.
 
-The module is `github.com/ikigenba/ikigenba/agent-monitor`, rooted at the
-sub-project directory with `go.mod` beside `specs/`. The standard library is
-enough; the module requires no other module. There are eleven packages, not
-counting the external `_test` packages tests may add, each one concern:
+The module is `github.com/ikigenba/ikigenba/agent-monitor`. Each package is
+one concern:
 
 - `cmd/agent-monitor` is wiring, and the one place the machine's own
   signals are heard. It reads the process arguments (without the program
@@ -73,22 +70,6 @@ counting the external `_test` packages tests may add, each one concern:
   turn them into sessions for `list`, into a tree for `tree`, and into one
   agent's transcript for `chat`. `D06`, `D07`, and `D08` declare their names,
   except `Chat`, which `D10` declares once for all three.
-
-Imports point one way, and a requirement fixes, for every package, the
-packages of this module it may import: `cmd/agent-monitor` imports
-`internal/cli`; `internal/cli` imports `internal/quote`, `internal/session`,
-`internal/tree`, `internal/chat`, `internal/browse`, and the three harness
-packages; `internal/browse` imports `internal/quote`, `internal/session`,
-`internal/tree`, `internal/chat`, and the three harness packages; each harness
-package imports `internal/session`, `internal/proc`, `internal/tree`, and
-`internal/chat`; `internal/chat` imports `internal/session`; `internal/session`
-imports `internal/quote` and `internal/proc` (the reader learns a file's
-device and inode through `proc.FileIDOf`, so that `syscall` stays in
-`internal/proc`); `internal/tree` imports `internal/quote`; `internal/proc`
-and `internal/quote` import nothing of this module. No harness package
-imports another, and none imports `internal/cli` or `internal/browse`;
-nothing but `internal/cli` imports `internal/browse`, and `internal/browse`
-never imports `internal/cli`.
 
 The run seam is `cli.Run`. It takes the arguments, a `System`, and the two
 output streams, and returns the exit code as an `ExitCode`; it never
@@ -247,8 +228,7 @@ anything under `net/`, or `path/filepath`; below `main`, only `internal/proc`
 may import `syscall` (to read the device and inode numbers from a file's
 `Sys()`); and only `main` may use `unsafe`, which gosec's G103 check rejects
 everywhere outside `cmd/` (the one exclusion `.golangci.yml` makes).
-`internal/browse` sits below `main` like the rest, and a requirement also
-names what it may not import, so a structure check sees it directly.
+`internal/browse` sits below `main` like the rest.
 
 `main` learns whether standard input and standard output are terminals the
 way the C library's `isatty` does: glibc's `isatty` is `tcgetattr`, which
@@ -356,13 +336,9 @@ and a named session or agent that was not found (which `tree` and `chat`
 return). The last is `ExitNotFound`, not a session-only name, because
 `chat` returns it for an agent too. `D02` fixes when each is returned.
 
-The version is a `var` initialised in its own declaration, the only
-declaration in `internal/cli/version.go`, and never injected by the linker, so
-a developer's `go build` and a release build report the same string, and a
-release check can read the string from that one file. Its value is data:
-requirements fix the name, the file, that it is a source-initialised `var`,
-and its shape (`D03`), never the value. The four help texts are constants
-in the same package; `D03` fixes their values byte for byte.
+The version is a `var`. Its value is data: requirements fix the name, its
+type, and its shape (`D03`), never the value. The four help texts are
+constants in the same package; `D03` fixes their values byte for byte.
 
 `main`'s `Watcher` uses Linux inotify through the standard library's
 `syscall` (`InotifyInit1`, `InotifyAddWatch`, `InotifyRmWatch`, as
@@ -407,10 +383,7 @@ sequence is `"\x1b[?1049h\x1b[?25l"` and the leave sequence
 
 ## REQUIREMENTS
 
-- R-KJST-TDNZ: The Go module MUST be `github.com/ikigenba/ikigenba/agent-monitor` with its `go.mod` at the sub-project root, and MUST contain exactly eleven non-test packages, with these import paths relative to the module path and these package names: `cmd/agent-monitor` (`package main`), `internal/cli` (`package cli`), `internal/quote` (`package quote`), `internal/session` (`package session`), `internal/tree` (`package tree`), `internal/chat` (`package chat`), `internal/browse` (`package browse`), `internal/proc` (`package proc`), `internal/harness/claude` (`package claude`), `internal/harness/codex` (`package codex`), and `internal/harness/grok` (`package grok`); external test packages (a `_test` package declared in `_test.go` files) MAY exist beside them.
-- R-KL0Q-75EO: The non-test Go files of each package of the module MUST import no package of this module other than those listed here for that package, import paths relative to the module path: `cmd/agent-monitor` — `internal/cli`; `internal/cli` — `internal/quote`, `internal/session`, `internal/tree`, `internal/chat`, `internal/browse`, `internal/harness/claude`, `internal/harness/codex`, and `internal/harness/grok`; `internal/browse` — `internal/quote`, `internal/session`, `internal/tree`, `internal/chat`, `internal/harness/claude`, `internal/harness/codex`, and `internal/harness/grok`; each of `internal/harness/claude`, `internal/harness/codex`, and `internal/harness/grok` — `internal/session`, `internal/proc`, `internal/tree`, and `internal/chat`; `internal/chat` — `internal/session`; `internal/session` — `internal/quote` and `internal/proc`; `internal/tree` — `internal/quote`; `internal/proc` — none; `internal/quote` — none.
-- R-KM8M-KX5D: The non-test Go files of `internal/browse` MUST NOT import the standard library packages `os`, `syscall`, `unsafe`, `net`, or `path/filepath`, nor any package whose import path begins with `os/` or `net/`.
-- R-29D1-RWUN: The module MUST require no other module; `go.mod` MUST contain no `require` directive.
+- R-YIMH-5RL1: Each package this design names by a path relative to the module — `internal/cli`, `internal/quote`, `internal/session`, `internal/tree`, `internal/chat`, `internal/browse`, `internal/proc`, `internal/harness/claude`, `internal/harness/codex`, and `internal/harness/grok` — MUST be importable at `github.com/ikigenba/ikigenba/agent-monitor/` followed by that path.
 - R-XK3U-55KN: The `internal/cli` package MUST export `func Run(args []string, sys System, stdout, stderr io.Writer) ExitCode`.
 - R-XLBQ-IXBC: `Run` MUST treat `args` as the program's arguments excluding the program name, and a call to `Run` MUST return its exit code to the caller without terminating the calling program.
 - R-KNGI-YOW2: The `internal/cli` package MUST export the struct type `type System struct { Home string; Root fs.FS; NoColor string; Term string; Terminal bool; StdinTerminal bool; Watcher Watcher; Interrupt <-chan struct{}; Console Console }`, with exactly those nine fields in that order, where `fs` is the standard library's `io/fs`, `Watcher` is the interface type `Watcher` of `internal/cli`, and `Console` is the interface type `Console` of `internal/cli`.
@@ -424,8 +397,7 @@ sequence is `"\x1b[?1049h\x1b[?25l"` and the leave sequence
 - R-2K1T-BRUI: The `internal/cli` package MUST export the constants `ExitSuccess ExitCode = 0`, `ExitWriteFailed ExitCode = 1`, and `ExitUsage ExitCode = 2`, each declared with the type `ExitCode`.
 - R-DHGS-WT0N: The `internal/cli` package MUST export the constant `ExitDataUnreadable ExitCode = 3`, declared with the type `ExitCode`.
 - R-JFJF-S38W: The `internal/cli` package MUST export the constant `ExitNotFound ExitCode = 4`, declared with the type `ExitCode`.
-- R-67Z3-IN6V: The `internal/cli` package MUST export `var Version string`, declared with its value set in source in the file `internal/cli/version.go`, and that file MUST contain only the package clause, that one declaration, and comments — no other declaration and no import.
-- R-2FGJ-ORK4: `Version` MUST be set by a string-literal initializer in its declaration, so that a binary produced by `go build` with no linker flags reports the same `Version` the source declares.
+- R-YJUD-JJBQ: The `internal/cli` package MUST export the variable `Version` of type `string`.
 - R-2GOG-2JAT: The `internal/cli` package MUST export `Usage` as a string constant.
 - R-DIOP-AKRC: The `internal/cli` package MUST export `ListUsage` as a string constant.
 - R-2LNQ-HK71: The `internal/cli` package MUST export `TreeUsage` as a string constant.

@@ -3,9 +3,7 @@ package cli_test
 import (
 	"io"
 	"io/fs"
-	"os"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/agent-monitor/internal/cli"
@@ -78,20 +76,6 @@ func TestTreeUsageDeclaration(_ *testing.T) {
 	// R-2LNQ-HK71: this assignment compiles only while TreeUsage is a string constant.
 	const actual string = cli.TreeUsage
 	_ = actual
-}
-
-func TestModuleHasNoRequirements(t *testing.T) {
-	// R-29D1-RWUN: inspect the module file, not just the resolved package graph.
-	data, err := os.ReadFile("../../go.mod")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "require (" || strings.HasPrefix(line, "require ") {
-			t.Fatalf("unexpected require directive: %q", line)
-		}
-	}
 }
 
 // R-TS88-MLJT

@@ -2,12 +2,7 @@ package cli_test
 
 import (
 	"bytes"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"os"
 	"regexp"
-	"strconv"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/agent-monitor/internal/cli"
@@ -24,49 +19,13 @@ func TestUsageDeclaration(t *testing.T) {
 }
 
 func TestVersionDeclaration(t *testing.T) {
-	// R-67Z3-IN6V and R-2FGJ-ORK4: verify the sole source declaration and literal initializer.
-	data, err := os.ReadFile("version.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	file, err := parser.ParseFile(token.NewFileSet(), "version.go", data, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(file.Imports) != 0 || len(file.Decls) != 1 {
-		t.Fatalf("version.go has %d imports and %d declarations", len(file.Imports), len(file.Decls))
-	}
-	decl, ok := file.Decls[0].(*ast.GenDecl)
-	if !ok || decl.Tok != token.VAR || len(decl.Specs) != 1 {
-		t.Fatalf("version.go must declare one var: %#v", file.Decls[0])
-	}
-	spec, ok := decl.Specs[0].(*ast.ValueSpec)
-	if !ok || len(spec.Names) != 1 || spec.Names[0].Name != "Version" || len(spec.Values) != 1 {
-		t.Fatalf("version.go must initialize Version once: %#v", decl.Specs[0])
-	}
-	if spec.Type != nil {
-		valueType, ok := spec.Type.(*ast.Ident)
-		if !ok || valueType.Name != "string" {
-			t.Fatalf("Version must have type string: %#v", spec.Type)
-		}
-	}
-	literal, ok := spec.Values[0].(*ast.BasicLit)
-	if !ok || literal.Kind != token.STRING {
-		t.Fatalf("Version initializer must be a string literal: %#v", spec.Values[0])
-	}
-	sourceValue, err := strconv.Unquote(literal.Value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sourceValue != cli.Version {
-		t.Fatalf("source Version = %q, package Version = %q", sourceValue, cli.Version)
-	}
-
+	// R-YJUD-JJBQ: taking Version's address as a *string compiles only while it is a string variable.
+	stringVariable := func(*string) {}
+	stringVariable(&cli.Version)
 	original := cli.Version
 	cli.Version = original + " test override"
 	defer func() { cli.Version = original }()
 
-	// The default build comparison is also exercised in cmd/agent-monitor.
 	if original == "" {
 		t.Error("Version has no source-initialized value")
 	}

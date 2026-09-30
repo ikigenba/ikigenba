@@ -5,8 +5,7 @@ share when `agent-monitor chat <harness> <session-id> [<agent-id>]` runs, as
 `internal/session` (`D04-sessions-and-table`) is for `list` and
 `internal/tree` (`D09-tree`) is for `tree`. It owns what a chat is made of
 (entries and token usage), how it is printed, and the reader that turns one
-agent's transcript into entries and running totals. It imports, of this
-module, `internal/session` alone, as `D01-layout-and-run-seam` states: the
+agent's transcript into entries and running totals. The
 reader follows its file with a `session.Log` and reports a file it cannot
 read as a `*session.ReadError`. It reaches nothing on the machine except
 through the `fs.FS` it is handed, and never writes.

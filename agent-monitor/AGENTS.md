@@ -53,9 +53,11 @@ tests follow Live tests below.
 the run seam the design defines: tests drive it with buffers, injected
 writers, a `testing/fstest.MapFS` root, and a fixture home, and fake faults
 with wrapper filesystems over that `MapFS`. No test reads the real filesystem,
-`/proc`, `HOME`, environment, or streams, and none sleeps. The only process a
-test starts is the `go list` the design's structure checks name. The gates
-run offline as an ordinary user.
+`/proc`, `HOME`, environment, or streams, and none sleeps. No test starts a
+process or reads a file of the checkout: a test proves the design by using
+what it declares (importing, calling, constructing, driving `Run`), never by
+reading the module's source, layout, or `go.mod`. The gates run offline as an
+ordinary user.
 
 ## Live tests
 

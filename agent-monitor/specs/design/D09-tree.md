@@ -8,8 +8,7 @@ package's `Tree` function (declared in `D06-claude`, `D07-codex`, and
 `Tree` value; the command hands that value to `Draw`, together with whether to
 draw in colour, which the command decides (`D02-cli-grammar`), and what `Draw`
 returns is the whole of standard output. The package reaches nothing on the machine:
-it only formats. It imports, of this module, `internal/quote` alone, as
-`D01-layout-and-run-seam` states.
+it only formats.
 
 The tree gets a package of its own rather than growing `internal/session`:
 the list table's vocabulary stays exactly as it is, and the tree's statuses,
