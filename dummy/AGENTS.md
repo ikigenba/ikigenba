@@ -168,7 +168,8 @@ else. In the first serve case that environment names, in `IKIGENBA_SERVICES`,
 a services file the test wrote in its temporary directory, and before
 signalling the test makes one request of the child: `GET /widgets` with the
 identity headers, over the socket. It asserts only that the page carries the
-launcher, which proves `main` handed appkit's kit to the handler. Everything
+launcher and the footer naming `ServiceName` and `Version`, which proves
+`main` handed appkit's kit, with dummy's version, to the handler. Everything
 else dummy answers is decided in process against a handler the test built,
 and the exec'ing test exists only to prove the wiring. Any other test that
 builds, execs, waits on, or signals a
