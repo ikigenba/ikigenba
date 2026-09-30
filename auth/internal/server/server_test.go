@@ -13,7 +13,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -25,40 +24,25 @@ import (
 
 func TestConfigAndNew(t *testing.T) {
 	// R-SXGG-AZM6: Config is exactly the process dependencies handlers need.
-	configType := reflect.TypeFor[Config]()
-	wantFields := []struct {
-		name string
-		typ  reflect.Type
-	}{
-		{name: "Store", typ: reflect.TypeFor[*store.Store]()},
-		{name: "Google", typ: reflect.TypeFor[*google.Client]()},
-		{name: "Now", typ: reflect.TypeFor[func() time.Time]()},
-		{name: "Rand", typ: reflect.TypeFor[io.Reader]()},
-		{name: "Stderr", typ: reflect.TypeFor[io.Writer]()},
-		{name: "WorkspaceDomain", typ: reflect.TypeFor[string]()},
-		{name: "Banner", typ: reflect.TypeFor[func(appkit.User) appkit.Banner]()},
-	}
-	if configType.NumField() != len(wantFields) {
-		t.Fatalf("Config has %d fields, want %d", configType.NumField(), len(wantFields))
-	}
-	for i, want := range wantFields {
-		field := configType.Field(i)
-		if field.Name != want.name || field.Type != want.typ || field.PkgPath != "" {
-			t.Fatalf("Config field %d = %s %s, want %s %s", i, field.Name, field.Type, want.name, want.typ)
-		}
-	}
+	// An unkeyed literal fixes the field set, order, and types at compile time;
+	// reading each exported field back into a variable of its declared type
+	// fixes them exactly.
+	var (
+		st              *store.Store
+		gClient         *google.Client
+		nowFn           func() time.Time
+		rnd             io.Reader
+		errOut          io.Writer
+		workspaceDomain string
+		bannerFn        func(appkit.User) appkit.Banner
+	)
+	fields := Config{st, gClient, nowFn, rnd, errOut, workspaceDomain, bannerFn}
+	st, gClient, nowFn, rnd = fields.Store, fields.Google, fields.Now, fields.Rand
+	errOut, workspaceDomain, bannerFn = fields.Stderr, fields.WorkspaceDomain, fields.Banner
+	_, _, _, _, _, _, _ = st, gClient, nowFn, rnd, errOut, workspaceDomain, bannerFn
 
-	// R-KWD9-PBZI: New is func(Config) *Server and the result's type is the exported Server.
-	fn := reflect.TypeOf(New)
-	wantFn := reflect.TypeOf(func(Config) *Server { return nil })
-	if fn != wantFn {
-		t.Fatalf("New has type %s, want %s", fn, wantFn)
-	}
-	serverType := reflect.TypeFor[*Server]().Elem()
-	if serverType.Name() != "Server" || serverType.PkgPath() != "github.com/ikigenba/ikigenba/auth/internal/server" {
-		t.Fatalf("Server type = %s pkg=%s", serverType.Name(), serverType.PkgPath())
-	}
-
+	// R-KWD9-PBZI: New is func(Config) *Server and the result's type is the
+	// exported Server; pinNew accepts New only with that exact signature.
 	constructor := pinNew(New)
 	now := func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
 	gc := google.NewClient("client", "secret", "space.example", "http://127.0.0.1:1")
@@ -84,22 +68,14 @@ func pinNew(newFn func(Config) *Server) func(Config) *Server { return newFn }
 
 func pinServer(s *Server) *Server { return s }
 
-func TestServeSignatureAndHandler(t *testing.T) {
+// Assigning to explicitly typed variables compiles only with these exact signatures.
+var (
 	// R-M22I-KPZ1: Serve exposes the listener, handler, context and drain seam.
-	want := reflect.TypeOf(func(context.Context, net.Listener, http.Handler, time.Duration) error { return nil })
-	if got := reflect.TypeOf(Serve); got != want {
-		t.Fatalf("Serve type = %s, want %s", got, want)
-	}
-}
-
-func TestServerHandlerSignature(t *testing.T) {
+	_ func(context.Context, net.Listener, http.Handler, time.Duration) error = Serve
 	// R-L9FH-DHDY: *Server implements http.Handler through this exact method.
-	var _ http.Handler = (*Server)(nil)
-	want := reflect.TypeOf(func(*Server, http.ResponseWriter, *http.Request) {})
-	if got := reflect.TypeOf((*Server).ServeHTTP); got != want {
-		t.Fatalf("ServeHTTP type = %s, want %s", got, want)
-	}
-}
+	_ http.Handler                                      = (*Server)(nil)
+	_ func(*Server, http.ResponseWriter, *http.Request) = (*Server).ServeHTTP
+)
 
 func TestServeRequestsAndStop(t *testing.T) {
 	// R-MALT-945W: Serve answers HTTP/1.1 on the supplied listener and stays up.

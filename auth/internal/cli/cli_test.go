@@ -8,9 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"io"
 	"net"
 	"net/http"
@@ -18,7 +15,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"slices"
 	"strconv"
@@ -67,28 +63,27 @@ const wantSocketHint = "\n\nrun it under systemd, or locally with 'systemd-socke
 
 func TestSurface(t *testing.T) {
 	// R-SITN-PQPU
-	typ := reflect.TypeOf(Process{})
-	want := []struct {
-		name string
-		typ  reflect.Type
-	}{
-		{"Args", reflect.TypeFor[[]string]()}, {"LookupEnv", reflect.TypeFor[func(string) (string, bool)]()},
-		{"Unsetenv", reflect.TypeFor[func(string) error]()}, {"Pid", reflect.TypeFor[int]()},
-		{"Stdout", reflect.TypeFor[io.Writer]()}, {"Stderr", reflect.TypeFor[io.Writer]()},
-		{"Inherit", reflect.TypeFor[func(uintptr) (net.Listener, error)]()},
-		{"Now", reflect.TypeFor[func() time.Time]()}, {"Rand", reflect.TypeFor[io.Reader]()},
-		{"OIDCIssuer", reflect.TypeFor[string]()}, {"DBSource", reflect.TypeFor[string]()},
-		{"Banner", reflect.TypeFor[func(appkit.User) appkit.Banner]()},
-	}
-	if typ.NumField() != len(want) {
-		t.Fatalf("Process fields = %d", typ.NumField())
-	}
-	for i, w := range want {
-		f := typ.Field(i)
-		if f.Name != w.name || f.Type != w.typ {
-			t.Fatalf("field %d = %s %s", i, f.Name, f.Type)
-		}
-	}
+	// An unkeyed literal fixes the field set, order, and types at compile time;
+	// reading each field back into a variable of its declared type fixes them exactly.
+	var (
+		args      []string
+		lookupEnv func(string) (string, bool)
+		unsetenv  func(string) error
+		pid       int
+		stdout    io.Writer
+		stderr    io.Writer
+		inherit   func(uintptr) (net.Listener, error)
+		now       func() time.Time
+		rnd       io.Reader
+		issuer    string
+		dbSource  string
+		banner    func(appkit.User) appkit.Banner
+	)
+	p := Process{args, lookupEnv, unsetenv, pid, stdout, stderr, inherit, now, rnd, issuer, dbSource, banner}
+	args, lookupEnv, unsetenv, pid = p.Args, p.LookupEnv, p.Unsetenv, p.Pid
+	stdout, stderr, inherit, now = p.Stdout, p.Stderr, p.Inherit, p.Now
+	rnd, issuer, dbSource, banner = p.Rand, p.OIDCIssuer, p.DBSource, p.Banner
+	_, _, _, _, _, _, _, _, _, _, _, _ = args, lookupEnv, unsetenv, pid, stdout, stderr, inherit, now, rnd, issuer, dbSource, banner
 	// R-LUR4-A3IV R-3XVE-I7OD
 	runFn := Run
 	if code := runFn(t.Context(), Process{Args: []string{"--version"}, Stdout: io.Discard, Stderr: io.Discard}); code != 0 {
@@ -124,14 +119,6 @@ func TestCommands(t *testing.T) {
 				t.Fatalf("diagnostic writes=%d", errOut.calls)
 			}
 		})
-	}
-	// R-P4YA-A6J7
-	b, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.toml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(b) != wantManifest {
-		t.Fatalf("manifest file=%q", b)
 	}
 }
 
@@ -506,20 +493,7 @@ func TestNotificationFailureAndServeFailure(t *testing.T) {
 }
 
 func TestDrainDuration(t *testing.T) {
-	// R-MP8L-UD28: Run uses this conversion after the validation exercised above.
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("caller")
-	}
-	source, err := os.ReadFile(filepath.Join(filepath.Dir(thisFile), "cli.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, fragment := range []string{"drain := 5 * time.Second", "drain = drainDuration(v)", "server.Serve(ctx, ln, h, drain)"} {
-		if !bytes.Contains(source, []byte(fragment)) {
-			t.Fatalf("Run does not use %q", fragment)
-		}
-	}
+	// R-MP8L-UD28
 	if got := drainDuration("1"); got != time.Second {
 		t.Fatal(got)
 	}
@@ -799,62 +773,3 @@ type brokenListener struct{ err error }
 func (b *brokenListener) Accept() (net.Conn, error) { return nil, b.err }
 func (b *brokenListener) Close() error              { return nil }
 func (b *brokenListener) Addr() net.Addr            { return &net.TCPAddr{} }
-
-func TestSourceRestrictions(t *testing.T) {
-	// R-LZMP-T6HN R-M0UM-6Y8C R-3I0P-J71C R-3J8L-WYS1 R-3KGI-AQIQ R-3LOE-OI9F R-3MWB-2A04
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("caller")
-	}
-	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
-	// R-3FKW-RNJY
-	module, err := os.ReadFile(filepath.Join(root, "go.mod"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasPrefix(string(module), "module github.com/ikigenba/ikigenba/auth\n") {
-		t.Fatalf("module declaration: %s", module)
-	}
-	prohibited := map[string]bool{"os.Args": true, "os.Environ": true, "os.Getenv": true, "os.LookupEnv": true, "os.Setenv": true, "os.Unsetenv": true, "os.Clearenv": true, "os.Getpid": true, "os.Stdin": true, "os.Stdout": true, "os.Stderr": true, "os.Exit": true, "net.Listen": true, "net.ListenTCP": true, "net.ListenUnix": true, "net.ListenUDP": true, "net.ListenUnixgram": true, "net.ListenIP": true, "net.ListenMulticastUDP": true, "net.ListenPacket": true, "http.ListenAndServe": true, "http.ListenAndServeTLS": true, "syscall.Socket": true, "syscall.Bind": true, "syscall.Listen": true}
-	checkFile := func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		f, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
-		if err != nil {
-			return err
-		}
-		underInternal := strings.HasPrefix(path, filepath.Join(root, "internal")+string(filepath.Separator))
-		for _, imp := range f.Imports {
-			if underInternal && imp.Path.Value == `"os/signal"` {
-				t.Errorf("%s imports os/signal", path)
-			}
-		}
-		ast.Inspect(f, func(n ast.Node) bool {
-			if call, ok := n.(*ast.CallExpr); ok {
-				method, ok := call.Fun.(*ast.SelectorExpr)
-				if ok && (method.Sel.Name == "Listen" || method.Sel.Name == "ListenPacket" || method.Sel.Name == "ListenAndServe" || method.Sel.Name == "ListenAndServeTLS") {
-					t.Errorf("forbidden listener method %s in %s", method.Sel.Name, path)
-				}
-			}
-			sel, ok := n.(*ast.SelectorExpr)
-			if !ok {
-				return true
-			}
-			id, ok := sel.X.(*ast.Ident)
-			if ok && prohibited[id.Name+"."+sel.Sel.Name] && (underInternal || id.Name != "os") {
-				t.Errorf("forbidden %s.%s in %s", id.Name, sel.Sel.Name, path)
-			}
-			return true
-		})
-		return nil
-	}
-	for _, dir := range []string{"internal", "cmd"} {
-		if err := filepath.WalkDir(filepath.Join(root, dir), checkFile); err != nil {
-			t.Fatal(err)
-		}
-	}
-}

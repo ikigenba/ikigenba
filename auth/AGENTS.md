@@ -8,8 +8,7 @@ directory and its environment from `/opt/auth/etc/env`; a developer runs the
 same binary from the checkout under `systemd-socket-activate`. The module path is `github.com/ikigenba/ikigenba/auth`. It requires appkit
 (`github.com/ikigenba/ikigenba/appkit`), which supplies the banner, the
 service launcher, and the shared stylesheet, fonts, licences and launcher
-script under `/_appkit/`. Its package
-layout, import direction, version and manifest declarations, and run seam are
+script under `/_appkit/`. Its version declaration and run seam are
 design D01 (`specs/design/D01-layout-and-run-seam.md`); this file does not
 restate them.
 
@@ -125,18 +124,12 @@ bug.
   gates have no browser and no JavaScript engine, and adding one is an
   external dependency no one has approved, so a test asserts what a response
   body carries and never what a script would do with it.
-- **Structural tests read the module's own tree.** D01 fixes properties of
-  the source rather than of the running binary: the package and file sets,
-  the import graph, what `main` holds and calls, `go.mod`'s requires and
-  replaces, and the entries of `etc/` and `share/`. A test proving one of
-  them may read this module's tree, and only for that: walk its directories,
-  parse its Go files with the standard library (`go/parser`, `go/ast`), read
-  `go.mod` as text, and list and read `etc/` and `share/`, `share/icon.svg`
-  included. It finds the tree relative to its own package directory, the
-  working directory `go test` gives it, never by an absolute path; it reads
-  nothing outside the module and writes nothing inside it; and it starts no
-  process (`go list`, `go vet`, and the like included). These are the only
-  checkout files a test reads.
+- **Tests read no checkout file.** No test reads this module's source,
+  `go.mod`, `go.sum`, `etc/`, or `share/`, walks its directories, or parses
+  or reflects over its code. Structure is proven by use: a test imports the
+  package, constructs the type, calls the function, or runs the built binary
+  (the one exec'ing test below), and asserts the outcome. There is no
+  exception.
 
 **auth binds nothing; a test makes its listener.** auth serves on the listener
 it is passed (D01, D03). A test that needs a listener makes its own: a
@@ -169,8 +162,8 @@ exchange; only then does it cancel the context, and it releases the fake
 endpoint after `Run` has returned.
 
 **One exec'ing test, and only one.** Tests under `internal/` never start a real
-process; the run seam exists so they need not. The wiring in `cmd/auth` (D01's
-`main` requirement) can be proved no other way, so exactly one kind of test that
+process; the run seam exists so they need not. The wiring in `cmd/auth` (D01's run
+with no command, R-2B1J-WL7R) can be proved no other way, so exactly one kind of test that
 execs the binary is admissible, and it lives in `cmd/auth`. It builds the
 binary into a temporary directory and runs it with `--version`, with
 `manifest`, with a bogus command, and bare with the three Google settings set

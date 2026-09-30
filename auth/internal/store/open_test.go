@@ -22,47 +22,49 @@ var (
 )
 
 func TestFoundationContract(t *testing.T) {
+	// Each conversion from a struct of exactly the declared exported fields, in
+	// the declared order, compiles only if the type has identical fields.
 	// R-47ML-KDLX
-	assertStructFields(t, User{}, []fieldSpec{
-		{"ID", reflect.TypeFor[string]()},
-		{"Issuer", reflect.TypeFor[string]()},
-		{"Subject", reflect.TypeFor[string]()},
-		{"Email", reflect.TypeFor[string]()},
-		{"LastGoogleLogin", reflect.TypeFor[time.Time]()},
-	})
+	_ = User(struct {
+		ID              string
+		Issuer          string
+		Subject         string
+		Email           string
+		LastGoogleLogin time.Time
+	}{})
 
 	// R-48UH-Y5CM
-	assertStructFields(t, Session{}, []fieldSpec{
-		{"ID", reflect.TypeFor[string]()},
-		{"UserID", reflect.TypeFor[string]()},
-		{"LoginAt", reflect.TypeFor[time.Time]()},
-		{"LastUsedAt", reflect.TypeFor[time.Time]()},
-	})
+	_ = Session(struct {
+		ID         string
+		UserID     string
+		LoginAt    time.Time
+		LastUsedAt time.Time
+	}{})
 
 	// R-4A2E-BX3B
-	assertStructFields(t, LoginState{}, []fieldSpec{
-		{"State", reflect.TypeFor[string]()},
-		{"Verifier", reflect.TypeFor[string]()},
-		{"ReturnURL", reflect.TypeFor[string]()},
-	})
+	_ = LoginState(struct {
+		State     string
+		Verifier  string
+		ReturnURL string
+	}{})
 
 	// R-4CI7-3GKP
-	assertStructFields(t, Token{}, []fieldSpec{
-		{"ID", reflect.TypeFor[string]()},
-		{"UserID", reflect.TypeFor[string]()},
-		{"Name", reflect.TypeFor[string]()},
-		{"Hash", reflect.TypeFor[string]()},
-		{"Enabled", reflect.TypeFor[bool]()},
-		{"CreatedAt", reflect.TypeFor[time.Time]()},
-		{"ExpiresAt", reflect.TypeFor[*time.Time]()},
-		{"LastUsedAt", reflect.TypeFor[*time.Time]()},
-	})
+	_ = Token(struct {
+		ID         string
+		UserID     string
+		Name       string
+		Hash       string
+		Enabled    bool
+		CreatedAt  time.Time
+		ExpiresAt  *time.Time
+		LastUsedAt *time.Time
+	}{})
 
 	// R-4DQ3-H8BE
-	assertStructFields(t, Identity{}, []fieldSpec{
-		{"UserID", reflect.TypeFor[string]()},
-		{"Email", reflect.TypeFor[string]()},
-	})
+	_ = Identity(struct {
+		UserID string
+		Email  string
+	}{})
 
 	if ExpiryNever != "never" || Expiry30d != "30d" || Expiry90d != "90d" || Expiry365d != "365d" {
 		t.Fatalf("expiry constants = %q, %q, %q, %q", ExpiryNever, Expiry30d, Expiry90d, Expiry365d)
@@ -194,31 +196,31 @@ func TestExpiryIsDefinedStringTypeWithTypedConstants(t *testing.T) {
 		_ = Expiry365d
 	)
 
-	expiryType := reflect.TypeFor[Expiry]()
-	if expiryType.Kind() != reflect.String || expiryType.Name() != "Expiry" || expiryType.PkgPath() != "github.com/ikigenba/ikigenba/auth/internal/store" {
-		t.Fatalf("Expiry type = %s kind %s pkg %q", expiryType, expiryType.Kind(), expiryType.PkgPath())
+	// Expiry converts to and from string, so its underlying type is string.
+	if got := Expiry(string(Expiry("30d"))); got != Expiry30d {
+		t.Errorf("Expiry round trip through string = %q", got)
 	}
-
 	constants := []struct {
-		name string
-		typ  reflect.Type
-		got  string
-		want string
+		name  string
+		value any
+		want  string
 	}{
-		{name: "ExpiryNever", typ: reflect.TypeOf(ExpiryNever), got: string(ExpiryNever), want: "never"},
-		{name: "Expiry30d", typ: reflect.TypeOf(Expiry30d), got: string(Expiry30d), want: "30d"},
-		{name: "Expiry90d", typ: reflect.TypeOf(Expiry90d), got: string(Expiry90d), want: "90d"},
-		{name: "Expiry365d", typ: reflect.TypeOf(Expiry365d), got: string(Expiry365d), want: "365d"},
+		{name: "ExpiryNever", value: ExpiryNever, want: "never"},
+		{name: "Expiry30d", value: Expiry30d, want: "30d"},
+		{name: "Expiry90d", value: Expiry90d, want: "90d"},
+		{name: "Expiry365d", value: Expiry365d, want: "365d"},
 	}
 	seen := make(map[string]string, len(constants))
 	for _, constant := range constants {
-		if constant.typ != expiryType || constant.got != constant.want {
-			t.Errorf("%s = %q type %s, want Expiry %q", constant.name, constant.got, constant.typ, constant.want)
+		// An untyped constant would box as a plain string, not an Expiry.
+		typed, ok := constant.value.(Expiry)
+		if !ok || string(typed) != constant.want {
+			t.Errorf("%s = %#v, want Expiry %q", constant.name, constant.value, constant.want)
 		}
-		if previous, ok := seen[constant.got]; ok {
-			t.Errorf("%s duplicates %s value %q", constant.name, previous, constant.got)
+		if previous, ok := seen[string(typed)]; ok {
+			t.Errorf("%s duplicates %s value %q", constant.name, previous, typed)
 		}
-		seen[constant.got] = constant.name
+		seen[string(typed)] = constant.name
 	}
 }
 
@@ -616,25 +618,6 @@ func TestErrNotFoundForMissingAndOtherOwnerRows(t *testing.T) {
 		"kept-state",
 	).Scan(&verifier, &returnURL); err != nil || verifier != "verifier" || returnURL != "/return" {
 		t.Errorf("kept login state = (%q, %q, %v), want verifier and /return", verifier, returnURL, err)
-	}
-}
-
-type fieldSpec struct {
-	name string
-	typ  reflect.Type
-}
-
-func assertStructFields(t *testing.T, value any, want []fieldSpec) {
-	t.Helper()
-	typ := reflect.TypeOf(value)
-	if typ.NumField() != len(want) {
-		t.Fatalf("%s has %d fields, want %d", typ, typ.NumField(), len(want))
-	}
-	for i, field := range want {
-		got := typ.Field(i)
-		if got.Name != field.name || got.Type != field.typ || !got.IsExported() {
-			t.Fatalf("%s field %d = %s %v (exported %v), want %s %v", typ, i, got.Name, got.Type, got.IsExported(), field.name, field.typ)
-		}
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -28,6 +29,14 @@ func TestMainWiring(t *testing.T) {
 	// R-3WNI-4FXO
 	// R-P02O-R3KF R-P2IH-IN1T R-P666-NY9W
 	// R-STSR-5OE3 R-M6Y4-3SXT
+	// R-3FKW-RNJY: this test imports the module's packages by their
+	// github.com/ikigenba/ikigenba/auth/internal/... paths.
+	// R-2B1J-WL7R: the serve cases run the binary bare with the Google settings
+	// and a socket on descriptor 3; they prove it opens state/auth.db in its
+	// working directory, draws its banner from IKIGENBA_SERVICES, and stops
+	// silently with exit 0 on SIGTERM and on SIGINT.
+	// R-2DHC-O4P5: while serving, the only listening socket it holds is the one
+	// passed as descriptor 3.
 	binary := buildBinary(t)
 	assertStatic(t, binary)
 
@@ -38,7 +47,7 @@ func TestMainWiring(t *testing.T) {
 		env                    []string
 	}{
 		{name: "version", args: []string{"--version"}, wantOut: version.Version + "\n"},
-		{name: "manifest", args: []string{"manifest"}, wantOut: manifestFile(t)},
+		{name: "manifest", args: []string{"manifest"}, wantOut: wantManifest},
 		{name: "bogus", args: []string{"bogus"}, wantErr: "auth: unknown command 'bogus'\n\nsee 'auth --help' for usage\n", wantCode: 2},
 		{name: "bare", env: googleEnv(), wantErr: "auth: no socket was passed in\n\nrun it under systemd, or locally with 'systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth'\n", wantCode: 2},
 	} {
@@ -72,9 +81,7 @@ func buildBinary(t *testing.T) string {
 	return path
 }
 
-func manifestFile(t *testing.T) string {
-	t.Helper()
-	const want = `app = "auth"
+const wantManifest = `app = "auth"
 default = false
 secrets = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]
 
@@ -85,15 +92,6 @@ WORKSPACE_DOMAIN = "michaelgreenly.dev"
 engine = "sqlite"
 path = "state/auth.db"
 `
-	body, err := os.ReadFile(filepath.Join("..", "..", "etc", "manifest.toml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(body) != want {
-		t.Fatalf("manifest file differs from contract: %q", body)
-	}
-	return string(body)
-}
 
 func googleEnv() []string {
 	return []string{
@@ -165,7 +163,7 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal) {
 	var sessionID string
 	if sig == syscall.SIGTERM {
 		services := filepath.Join(shortDir, "services.json")
-		if err := os.WriteFile(services, []byte(`{"services":[{"name":"auth","url":"/","icon":"","enabled":true}]}`), 0o600); err != nil {
+		if err := os.WriteFile(services, []byte(`{"services":[{"name":"auth","url":"/","icon":"","enabled":true},{"name":"Wiring probe","url":"https://probe.example.test/","icon":"","enabled":true}]}`), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		cmd.Env = append(cmd.Env, "IKIGENBA_SERVICES="+services)
@@ -214,6 +212,7 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal) {
 		t.Fatalf("database %s: %v", dbPath, err)
 	}
 	assertOnlyDatabaseOpen(t, cmd.Process.Pid, dbPath)
+	assertOnlyPassedListener(t, cmd.Process.Pid, file)
 	if sessionID != "" {
 		transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
@@ -234,8 +233,8 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !bytes.Contains(body, []byte(`popovertarget="services"`)) {
-			t.Fatalf("main banner source has no launcher: %s", body)
+		if !bytes.Contains(body, []byte(`popovertarget="services"`)) || !bytes.Contains(body, []byte("https://probe.example.test/")) {
+			t.Fatalf("main banner source has no launcher drawn from IKIGENBA_SERVICES: %s", body)
 		}
 	}
 
@@ -300,6 +299,86 @@ func assertOnlyDatabaseOpen(t *testing.T, pid int, dbPath string) {
 		base := filepath.Base(path)
 		if path != dbPath && base != "auth.db" && !strings.HasPrefix(base, "auth.db-") {
 			t.Fatalf("unexpected open regular file %s", path)
+		}
+	}
+}
+
+// assertOnlyPassedListener proves the child holds exactly one listening
+// socket, the one the test passed it as descriptor 3: it matches the socket
+// inodes in the child's descriptor table against the listening entries of the
+// child's own view of /proc/net.
+func assertOnlyPassedListener(t *testing.T, pid int, passed *os.File) {
+	t.Helper()
+	// Stat, not Fd: Fd would switch the shared socket to blocking mode.
+	info, err := passed.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Fatalf("socket stat is %T", info.Sys())
+	}
+	passedInode := strconv.FormatUint(st.Ino, 10)
+	fdDir := fmt.Sprintf("/proc/%d/fd", pid)
+	entries, err := os.ReadDir(fdDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	held := map[string]string{}
+	for _, entry := range entries {
+		target, err := os.Readlink(filepath.Join(fdDir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		if inode, ok := strings.CutPrefix(target, "socket:["); ok {
+			held[strings.TrimSuffix(inode, "]")] = entry.Name()
+		}
+	}
+	// The child may hold the passed socket under another descriptor number
+	// (a dup of 3); it is the same socket, identified by its inode.
+	if _, ok := held[passedInode]; !ok {
+		t.Fatalf("child does not hold the passed socket %s: held=%v", passedInode, held)
+	}
+	listening := map[string]bool{}
+	for _, table := range []struct {
+		name                 string
+		inodeCol, stateCol   int
+		stateWant, flagsWant string
+		flagsCol             int
+	}{
+		{name: "tcp", inodeCol: 9, stateCol: 3, stateWant: "0A", flagsCol: -1},
+		{name: "tcp6", inodeCol: 9, stateCol: 3, stateWant: "0A", flagsCol: -1},
+		// __SO_ACCEPTCON (0x10000) in the flags column marks a listening Unix socket.
+		{name: "unix", inodeCol: 6, stateCol: -1, flagsCol: 3, flagsWant: "00010000"},
+	} {
+		body, err := os.ReadFile(fmt.Sprintf("/proc/%d/net/%s", pid, table.name))
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			t.Fatal(err)
+		}
+		lines := strings.Split(strings.TrimSpace(string(body)), "\n")
+		for _, line := range lines[1:] {
+			fields := strings.Fields(line)
+			if len(fields) <= table.inodeCol {
+				continue
+			}
+			if table.stateCol >= 0 && fields[table.stateCol] != table.stateWant {
+				continue
+			}
+			if table.flagsCol >= 0 && fields[table.flagsCol] != table.flagsWant {
+				continue
+			}
+			listening[fields[table.inodeCol]] = true
+		}
+	}
+	if !listening[passedInode] {
+		t.Fatalf("passed socket %s is not listed as listening", passedInode)
+	}
+	for inode, fd := range held {
+		if listening[inode] && inode != passedInode {
+			t.Fatalf("child holds another listening socket on descriptor %s (inode %s)", fd, inode)
 		}
 	}
 }

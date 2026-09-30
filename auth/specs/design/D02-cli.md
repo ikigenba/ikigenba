@@ -12,7 +12,7 @@ document only fixes that a bare invocation is the one that serves.
 
 The manifest is a fact about the binary, so the binary emits it. The committed
 `etc/manifest.toml` in the checkout is a copy kept so the tree can be read
-without a build, and the two are byte-identical. The manifest declares auth's
+without a build. The manifest declares auth's
 name, that it is not the host's default app, the secrets it needs, its
 Workspace domain, and its SQLite database. It declares no port: auth serves on
 the socket the host passes it, and a manifest carrying `port` is refused by
@@ -85,7 +85,6 @@ a literal here.
 - R-P02O-R3KF: `auth --version` MUST write the value of `Version` from `internal/version`, followed by a single newline, to stdout, write nothing to stderr, and exit `0`.
 - R-P1AL-4VB4: `auth --help` MUST write the usage text to stdout, write nothing to stderr, and exit `0`.
 - R-P2IH-IN1T: `auth manifest` MUST write the app manifest to stdout, write nothing to stderr, and exit `0`.
-- R-P4YA-A6J7: The `etc/manifest.toml` file in the checkout MUST be byte-identical to the output of `auth manifest`.
 - R-P666-NY9W: Given a first argument that is not a recognized command or option, auth MUST write to stderr exactly the line `auth: unknown command '<x>'` (where `<x>` is that argument), then one empty line, then the line `see 'auth --help' for usage`; it MUST write nothing to stdout and exit `2`.
 - R-P7E3-1Q0L: Given an unrecognized option of the form `--<x>`, auth MUST write to stderr exactly the line `auth: unknown option '--<x>'`, then one empty line, then the line `see 'auth --help' for usage`; it MUST write nothing to stdout and exit `2`.
 - R-P8LZ-FHRA: On a usage error, auth MUST emit only the diagnostic described above; it MUST NOT write the usage text to stderr or to stdout.
@@ -111,9 +110,6 @@ WORKSPACE_DOMAIN = "michaelgreenly.dev"
 [database]
 engine = "sqlite"
 path = "state/auth.db"
-
-$ diff <(auth manifest) etc/manifest.toml && echo same
-same
 
 $ auth --help
 Usage: auth [command]

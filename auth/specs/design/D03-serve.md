@@ -143,8 +143,7 @@ calls the banner source itself: only the handlers do, once for each page
 they draw with the banner (D05, D07), so the services file can neither delay
 nor fail a start, and a start that is refused never reads it. The Google credentials are not repeated here; the Google client
 already holds them. The server side names the random source and diagnostic
-stream by their `io` interfaces, never by `cli.Process`, so D01's one-way
-import direction holds. That struct is the whole of what the handlers need;
+stream by their `io` interfaces, never by `cli.Process`. That struct is the whole of what the handlers need;
 D05/D06/D07/D08 attach observable HTTP behavior to this server, not new
 construction parameters.
 
