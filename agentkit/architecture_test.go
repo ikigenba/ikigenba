@@ -24,66 +24,52 @@ var (
 
 func TestConfigDeclarationIsExact(t *testing.T) {
 	// R-TYGN-9I06
-	configType := reflect.TypeFor[Config]()
-	if configType.Name() != "Config" || configType.Kind() != reflect.Struct {
-		t.Fatalf("Config name/kind = %q/%s, want exported defined struct", configType.Name(), configType.Kind())
-	}
-	wantFields := []struct {
-		name   string
-		typeOf reflect.Type
-	}{
-		{name: "Tools", typeOf: reflect.TypeFor[[]Tool]()},
-		{name: "Deferred", typeOf: reflect.TypeFor[[]DeferredGroup]()},
-		{name: "Settings", typeOf: reflect.TypeFor[Settings]()},
-		{name: "Output", typeOf: reflect.TypeFor[*OutputContract]()},
-		{name: "Log", typeOf: reflect.TypeFor[*Log]()},
-		{name: "Limits", typeOf: reflect.TypeFor[Limits]()},
-	}
-	if configType.NumField() != len(wantFields) {
-		t.Fatalf("Config field count = %d, want exactly %d", configType.NumField(), len(wantFields))
-	}
-	for index, want := range wantFields {
-		field := configType.Field(index)
-		if field.Name != want.name || field.Type != want.typeOf || !field.IsExported() {
-			t.Fatalf("Config field %d = %s %s (exported=%t), want %s %s exported", index, field.Name, field.Type, field.IsExported(), want.name, want.typeOf)
-		}
+	cfg := Config(struct {
+		Tools    []Tool
+		Deferred []DeferredGroup
+		Settings Settings
+		Output   *OutputContract
+		Log      *Log
+		Limits   Limits
+	}{Tools: []Tool{phase17Tool("config_tool")}, Deferred: []DeferredGroup{{Name: "group"}}})
+	if len(cfg.Tools) != 1 || len(cfg.Deferred) != 1 || cfg.Deferred[0].Name != "group" || cfg.Output != nil || cfg.Log != nil {
+		t.Fatalf("Config fields did not carry the constructed values: %+v", cfg)
 	}
 }
 
 func TestMessageDoneDeclarationIsExactAndImplementsEvent(t *testing.T) {
 	// R-0B78-ZYU3
-	assertEventWrapper(t, "MessageDone", reflect.TypeFor[MessageDone](), "Message", reflect.TypeFor[Message]())
+	done := MessageDone(struct{ Message Message }{Message: Message{Role: RoleAssistant}})
+	var event Event = done
+	if got, ok := event.(MessageDone); !ok || got.Message.Role != RoleAssistant {
+		t.Fatalf("Event = %#v, want MessageDone carrying its Message", event)
+	}
 }
 
 func TestOutputDoneDeclarationIsExactAndImplementsEvent(t *testing.T) {
 	// R-TOUQ-SVMB
-	assertEventWrapper(t, "OutputDone", reflect.TypeFor[OutputDone](), "Value", reflect.TypeFor[json.RawMessage]())
+	done := OutputDone(struct{ Value json.RawMessage }{Value: json.RawMessage(`{"ok":true}`)})
+	var event Event = done
+	if got, ok := event.(OutputDone); !ok || string(got.Value) != `{"ok":true}` {
+		t.Fatalf("Event = %#v, want OutputDone carrying its Value", event)
+	}
 }
 
 func TestToolCallDeclarationIsExactAndImplementsEvent(t *testing.T) {
 	// R-0CF5-DQKS
-	assertEventWrapper(t, "ToolCall", reflect.TypeFor[ToolCall](), "Use", reflect.TypeFor[ToolUse]())
+	call := ToolCall(struct{ Use ToolUse }{Use: ToolUse{Name: "lookup"}})
+	var event Event = call
+	if got, ok := event.(ToolCall); !ok || got.Use.Name != "lookup" {
+		t.Fatalf("Event = %#v, want ToolCall carrying its Use", event)
+	}
 }
 
 func TestToolReturnDeclarationIsExactAndImplementsEvent(t *testing.T) {
 	// R-0DN1-RIBH
-	assertEventWrapper(t, "ToolReturn", reflect.TypeFor[ToolReturn](), "Result", reflect.TypeFor[ToolResult]())
-}
-
-func assertEventWrapper(t *testing.T, name string, wrapper reflect.Type, fieldName string, fieldType reflect.Type) {
-	t.Helper()
-	if wrapper.Name() != name || wrapper.Kind() != reflect.Struct {
-		t.Fatalf("%s name/kind = %q/%s, want exported defined struct", name, wrapper.Name(), wrapper.Kind())
-	}
-	if wrapper.NumField() != 1 {
-		t.Fatalf("%s field count = %d, want exactly one", name, wrapper.NumField())
-	}
-	field := wrapper.Field(0)
-	if field.Name != fieldName || field.Type != fieldType || !field.IsExported() || field.Anonymous {
-		t.Fatalf("%s.%s = %s (exported=%t, anonymous=%t), want %s exported", name, field.Name, field.Type, field.IsExported(), field.Anonymous, fieldType)
-	}
-	if !wrapper.Implements(reflect.TypeFor[Event]()) {
-		t.Fatalf("%s does not implement Event", name)
+	ret := ToolReturn(struct{ Result ToolResult }{Result: ToolResult{ToolUseID: "lookup"}})
+	var event Event = ret
+	if got, ok := event.(ToolReturn); !ok || got.Result.ToolUseID != "lookup" {
+		t.Fatalf("Event = %#v, want ToolReturn carrying its Result", event)
 	}
 }
 
@@ -300,61 +286,44 @@ func TestConstructionSeamIsExactAndSufficientForEveryOffering(t *testing.T) {
 		}
 	}
 
-	type symbolCheck struct {
-		name string
-		got  reflect.Type
-		want reflect.Type
-		kind reflect.Kind
-	}
-	symbols := []symbolCheck{
-		{name: "New", got: reflect.TypeOf(New), want: reflect.TypeOf(func(WireFormat, Endpoint, string, Config) (*Conversation, error) { return nil, nil }), kind: reflect.Func},
-		{name: "NewEndpoint", got: reflect.TypeOf(NewEndpoint), want: reflect.TypeOf(func(Authenticator, ...EndpointOption) (Endpoint, error) { return Endpoint{}, nil }), kind: reflect.Func},
-		{name: "EndpointOption", got: reflect.TypeFor[EndpointOption](), kind: reflect.Func},
-		{name: "WithBaseURL", got: reflect.TypeOf(WithBaseURL), want: reflect.TypeOf(func(string) EndpointOption { return nil }), kind: reflect.Func},
-		{name: "Endpoint", got: reflect.TypeFor[Endpoint](), kind: reflect.Struct},
-		{name: "Authenticator", got: reflect.TypeFor[Authenticator](), kind: reflect.Interface},
-		{name: "WireFormat", got: reflect.TypeFor[WireFormat](), kind: reflect.Interface},
-		{name: "AnthropicMessagesWire", got: reflect.TypeOf(AnthropicMessagesWire), want: reflect.TypeOf(func() WireFormat { return nil }), kind: reflect.Func},
-		{name: "GeminiGenerateContentWire", got: reflect.TypeOf(GeminiGenerateContentWire), want: reflect.TypeOf(func() WireFormat { return nil }), kind: reflect.Func},
-		{name: "ChatWire", got: reflect.TypeOf(ChatWire), want: reflect.TypeOf(func() WireFormat { return nil }), kind: reflect.Func},
-		{name: "ResponsesWire", got: reflect.TypeOf(ResponsesWire), want: reflect.TypeOf(func() WireFormat { return nil }), kind: reflect.Func},
-		{name: "OpenAIChatWire", got: reflect.TypeOf(OpenAIChatWire), want: reflect.TypeOf(func() WireFormat { return nil }), kind: reflect.Func},
-		{name: "OpenAIResponsesWire", got: reflect.TypeOf(OpenAIResponsesWire), want: reflect.TypeOf(func() WireFormat { return nil }), kind: reflect.Func},
-		{name: "XAIChatWire", got: reflect.TypeOf(XAIChatWire), want: reflect.TypeOf(func() WireFormat { return nil }), kind: reflect.Func},
-		{name: "XAIResponsesWire", got: reflect.TypeOf(XAIResponsesWire), want: reflect.TypeOf(func() WireFormat { return nil }), kind: reflect.Func},
-		{name: "Rotator", got: reflect.TypeFor[Rotator](), kind: reflect.Interface},
-		{name: "APIKeyRotator", got: reflect.TypeOf(APIKeyRotator), want: reflect.TypeOf(func(string) Rotator { return nil }), kind: reflect.Func},
-		{name: "OAuthRotator", got: reflect.TypeOf(OAuthRotator), want: reflect.TypeOf(func(TokenStore) Rotator { return nil }), kind: reflect.Func},
-		{name: "Token", got: reflect.TypeFor[Token](), kind: reflect.Struct},
-		{name: "TokenStore", got: reflect.TypeFor[TokenStore](), kind: reflect.Interface},
-		{name: "FileTokenStore", got: reflect.TypeOf(FileTokenStore), want: reflect.TypeOf(func(string) TokenStore { return nil }), kind: reflect.Func},
-		{name: "AuthMode", got: reflect.TypeFor[AuthMode](), kind: reflect.String},
-		{name: "Rotation", got: reflect.TypeFor[Rotation](), kind: reflect.Struct},
-		{name: "EndpointSpec", got: reflect.TypeFor[EndpointSpec](), kind: reflect.Struct},
-		{name: "Offering.Authenticator", got: reflect.TypeOf(Offering.Authenticator), want: reflect.TypeOf(func(Offering, Rotator) (Authenticator, error) { return nil, nil }), kind: reflect.Func},
-	}
-	for _, symbol := range symbols {
-		if symbol.got == nil || symbol.got.Kind() != symbol.kind {
-			t.Fatalf("%s type/kind = %v, want present %s", symbol.name, symbol.got, symbol.kind)
-		}
-		if symbol.want != nil && symbol.got != symbol.want {
-			t.Fatalf("%s type = %s, want %s", symbol.name, symbol.got, symbol.want)
-		}
+	// Every seam symbol is usable with its declared signature.
+	_ = typed[func(WireFormat, Endpoint, string, Config) (*Conversation, error)](New)
+	_ = typed[func(Authenticator, ...EndpointOption) (Endpoint, error)](NewEndpoint)
+	_ = typed[func(string) EndpointOption](WithBaseURL)
+	_ = typed[Endpoint](Endpoint{})
+	_ = typed[Authenticator](authFunc(nil))
+	_ = typed[func() WireFormat](AnthropicMessagesWire)
+	_ = typed[func() WireFormat](GeminiGenerateContentWire)
+	_ = typed[func() WireFormat](ChatWire)
+	_ = typed[func() WireFormat](ResponsesWire)
+	_ = typed[func() WireFormat](OpenAIChatWire)
+	_ = typed[func() WireFormat](OpenAIResponsesWire)
+	_ = typed[func() WireFormat](XAIChatWire)
+	_ = typed[func() WireFormat](XAIResponsesWire)
+	_ = typed[Rotator](&tokenSourceStub{})
+	_ = typed[func(string) Rotator](APIKeyRotator)
+	_ = typed[func(TokenStore) Rotator](OAuthRotator)
+	_ = typed[Token](Token{})
+	_ = typed[func(string) TokenStore](FileTokenStore)
+	_ = typed[Rotation](Rotation{})
+	_ = typed[EndpointSpec](EndpointSpec{})
+	_ = typed[func(Offering, Rotator) (Authenticator, error)](Offering.Authenticator)
+	mode := AuthMode("api_key")
+	if string(mode) != string(AuthModeAPIKey) {
+		t.Fatalf("AuthMode(%q) != AuthModeAPIKey %q", mode, AuthModeAPIKey)
 	}
 }
 
 // R-BAV0-6DSH
 func TestNewDeclarationTakesWireFormatAndRejectsNilWire(t *testing.T) {
-	if got, want := reflect.TypeOf(New), reflect.TypeOf(func(WireFormat, Endpoint, string, Config) (*Conversation, error) { return nil, nil }); got != want {
-		t.Fatalf("New type = %s, want %s", got, want)
-	}
+	newConversation := typed[func(wire WireFormat, endpoint Endpoint, model string, cfg Config) (*Conversation, error)](New)
 
 	auth := authFunc(func(context.Context, *http.Request, []byte) error { return nil })
 	endpoint, err := NewEndpoint(auth, WithBaseURL("https://example.invalid/wire"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := New(nil, endpoint, "model", Config{})
+	conversation, err := newConversation(nil, endpoint, "model", Config{})
 	if conversation != nil || !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("New(nil, ...) = (%v, %v), want nil ErrInvalidConfig", conversation, err)
 	}
@@ -424,159 +393,97 @@ func TestNewDeclarationTakesWireFormatAndRejectsNilWire(t *testing.T) {
 	}
 }
 
-func assertFunctionSignature(t *testing.T, got, want reflect.Type) {
-	t.Helper()
-	if got.NumIn() != want.NumIn() || got.NumOut() != want.NumOut() {
-		t.Fatalf("signature %s does not match %s", got, want)
-	}
-	for index := range got.NumIn() {
-		if got.In(index) != want.In(index) {
-			t.Fatalf("parameter %d = %s, want %s", index, got.In(index), want.In(index))
-		}
-	}
-	for index := range got.NumOut() {
-		if got.Out(index) != want.Out(index) {
-			t.Fatalf("result %d = %s, want %s", index, got.Out(index), want.Out(index))
-		}
-	}
-}
-
 type architectureToolInput struct {
 	Query string `json:"query" jsonschema:"required"`
 }
 
 func TestNewToolDeclarationIsExact(t *testing.T) {
 	// R-DI9Q-Q8US
-	got := reflect.TypeOf(NewTool[architectureToolInput])
-	want := reflect.TypeOf(func(string, string, func(context.Context, architectureToolInput) (string, error), func(architectureToolInput) Access) (Tool, error) {
-		return nil, nil
-	})
-	assertFunctionSignature(t, got, want)
+	newTool := typed[func(name, description string, fn func(ctx context.Context, in architectureToolInput) (string, error), access func(in architectureToolInput) Access) (Tool, error)](NewTool[architectureToolInput])
+	tool, err := newTool("lookup", "look something up", func(context.Context, architectureToolInput) (string, error) { return "", nil }, func(architectureToolInput) Access { return BlocksAll() })
+	if err != nil || tool == nil || tool.Name() != "lookup" {
+		t.Fatalf("NewTool = (%v, %v), want tool named lookup", tool, err)
+	}
 }
 
 func TestMustToolDeclarationIsExact(t *testing.T) {
 	// R-DJHN-40LH
-	got := reflect.TypeOf(MustTool[architectureToolInput])
-	want := reflect.TypeOf(func(string, string, func(context.Context, architectureToolInput) (string, error), func(architectureToolInput) Access) Tool {
-		return nil
-	})
-	assertFunctionSignature(t, got, want)
+	mustTool := typed[func(name, description string, fn func(ctx context.Context, in architectureToolInput) (string, error), access func(in architectureToolInput) Access) Tool](MustTool[architectureToolInput])
+	tool := mustTool("lookup", "look something up", func(context.Context, architectureToolInput) (string, error) { return "", nil }, func(architectureToolInput) Access { return BlocksAll() })
+	if tool == nil || tool.Name() != "lookup" {
+		t.Fatalf("MustTool = %v, want tool named lookup", tool)
+	}
 }
 
 func TestNewToolFromSchemaDeclarationIsExact(t *testing.T) {
 	// R-DKPJ-HSC6
-	got := reflect.TypeOf(NewToolFromSchema)
-	want := reflect.TypeOf(func(string, string, json.RawMessage, func(context.Context, json.RawMessage) (string, error), func(json.RawMessage) Access) (Tool, error) {
-		return nil, nil
-	})
-	assertFunctionSignature(t, got, want)
+	newToolFromSchema := typed[func(name, description string, schema json.RawMessage, fn func(ctx context.Context, args json.RawMessage) (string, error), access func(args json.RawMessage) Access) (Tool, error)](NewToolFromSchema)
+	schema := json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"}}}`)
+	tool, err := newToolFromSchema("lookup", "look something up", schema, func(context.Context, json.RawMessage) (string, error) { return "", nil }, func(json.RawMessage) Access { return BlocksAll() })
+	if err != nil || tool == nil || tool.Name() != "lookup" {
+		t.Fatalf("NewToolFromSchema = (%v, %v), want tool named lookup", tool, err)
+	}
 }
 
 func TestValidateToolSchemaDeclarationIsExact(t *testing.T) {
 	// R-07JJ-UNM0
-	got := reflect.TypeOf(ValidateToolSchema)
-	want := reflect.TypeOf(func(json.RawMessage) error { return nil })
-	assertFunctionSignature(t, got, want)
+	validateToolSchema := typed[func(schema json.RawMessage) error](ValidateToolSchema)
+	if err := validateToolSchema(json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"}}}`)); err != nil {
+		t.Fatalf("ValidateToolSchema(object schema) = %v, want nil", err)
+	}
 }
 
 func TestFramerAndSSEFramesDeclarationsAreExact(t *testing.T) {
 	// R-ZGPR-FPAQ
 	// R-ZHXN-TH1F
-	wantSignature := reflect.TypeOf(func(io.Reader) iter.Seq2[[]byte, error] { return nil })
-	framerType := reflect.TypeFor[Framer]()
-	if framerType.Name() != "Framer" || framerType.Kind() != reflect.Func {
-		t.Fatalf("Framer name/kind = %q/%s, want exported defined function type", framerType.Name(), framerType.Kind())
-	}
-	if framerType.NumIn() != 1 || framerType.In(0) != wantSignature.In(0) || framerType.NumOut() != 1 || framerType.Out(0) != wantSignature.Out(0) {
-		t.Fatalf("Framer signature = %s, want func%s", framerType, strings.TrimPrefix(wantSignature.String(), "func"))
-	}
-	sseType := reflect.TypeOf(SSEFrames)
-	if sseType != wantSignature {
-		t.Fatalf("SSEFrames signature = %s, want exactly %s", sseType, wantSignature)
-	}
-	if !sseType.AssignableTo(framerType) {
-		t.Fatalf("SSEFrames type %s is not assignable to Framer %s", sseType, framerType)
-	}
+	framer := Framer(func(io.Reader) iter.Seq2[[]byte, error] { return nil })
+	_ = typed[func(io.Reader) iter.Seq2[[]byte, error]](framer)
+	sseFrames := typed[func(r io.Reader) iter.Seq2[[]byte, error]](SSEFrames)
 	var assigned Framer = SSEFrames
-	if assigned == nil {
-		t.Fatal("SSEFrames assignment unexpectedly produced a nil Framer")
+	if sseFrames == nil || assigned == nil {
+		t.Fatal("SSEFrames assignment unexpectedly produced a nil function")
 	}
 }
 
-func TestConversationPublicShape(t *testing.T) {
+func TestConversationPublicShape(_ *testing.T) {
 	// R-WEW7-DNV4
 	// R-7KE4-A3OZ
-	pointerType := reflect.TypeFor[*Conversation]()
-	addSystem, ok := pointerType.MethodByName("AddSystem")
-	if !ok {
-		t.Fatal("*Conversation has no exported AddSystem method")
-	}
-	wantAddSystem := reflect.TypeOf(func(*Conversation, string) error { return nil })
-	if addSystem.Type != wantAddSystem {
-		t.Fatalf("AddSystem type = %s, want %s", addSystem.Type, wantAddSystem)
-	}
-	wantMethods := map[string]reflect.Type{
-		"Close":     reflect.TypeOf(func(*Conversation) error { return nil }),
-		"Release":   reflect.TypeOf(func(*Conversation, Savepoint) error { return nil }),
-		"Restore":   reflect.TypeOf(func(*Conversation, Savepoint) error { return nil }),
-		"Savepoint": reflect.TypeOf(func(*Conversation) (Savepoint, error) { return Savepoint{}, nil }),
-	}
-	for name, want := range wantMethods {
-		method, exists := pointerType.MethodByName(name)
-		if !exists {
-			t.Fatalf("*Conversation has no exported %s method", name)
-		}
-		if method.Type != want {
-			t.Fatalf("%s type = %s, want %s", name, method.Type, want)
-		}
-	}
+	_ = typed[func(c *Conversation, text string) error]((*Conversation).AddSystem)
+	_ = typed[func(c *Conversation) (Savepoint, error)]((*Conversation).Savepoint)
+	_ = typed[func(c *Conversation, sp Savepoint) error]((*Conversation).Restore)
+	_ = typed[func(c *Conversation, sp Savepoint) error]((*Conversation).Release)
+	_ = typed[func(c *Conversation) error]((*Conversation).Close)
 }
 
 func TestDeferredGroupDeclarationIsExact(t *testing.T) {
 	// R-0PU1-L7QF
-	groupType := reflect.TypeFor[DeferredGroup]()
-	if groupType.Name() != "DeferredGroup" || groupType.Kind() != reflect.Struct {
-		t.Fatalf("DeferredGroup name/kind = %q/%s, want exported DeferredGroup struct", groupType.Name(), groupType.Kind())
-	}
-	wantFields := []struct {
-		name   string
-		typeOf reflect.Type
-	}{
-		{name: "Name", typeOf: reflect.TypeFor[string]()},
-		{name: "Blurb", typeOf: reflect.TypeFor[string]()},
-		{name: "Tools", typeOf: reflect.TypeFor[[]Tool]()},
-	}
-	if groupType.NumField() != len(wantFields) {
-		t.Fatalf("DeferredGroup field count = %d, want exactly %d", groupType.NumField(), len(wantFields))
-	}
-	for index, want := range wantFields {
-		field := groupType.Field(index)
-		if field.Name != want.name || field.Type != want.typeOf || !field.IsExported() {
-			t.Fatalf("DeferredGroup field %d = %s %s (exported=%t), want %s %s (exported=true)", index, field.Name, field.Type, field.IsExported(), want.name, want.typeOf)
-		}
+	group := DeferredGroup(struct {
+		Name  string
+		Blurb string
+		Tools []Tool
+	}{Name: "group", Blurb: "blurb", Tools: []Tool{phase17Tool("deferred_tool")}})
+	if group.Name != "group" || group.Blurb != "blurb" || len(group.Tools) != 1 {
+		t.Fatalf("DeferredGroup fields did not carry the constructed values: %+v", group)
 	}
 }
 
 func TestIdentityPublicShape(t *testing.T) {
 	// R-YVZG-XLOX
-	identityType := reflect.TypeOf(Identity{})
-	wantNames := []string{"Endpoint", "AuthMode", "Model"}
-	if identityType.Kind() != reflect.Struct || identityType.NumField() != len(wantNames) {
-		t.Fatalf("Identity kind/field count = %s/%d, want struct/%d", identityType.Kind(), identityType.NumField(), len(wantNames))
-	}
-	for index, wantName := range wantNames {
-		field := identityType.Field(index)
-		if field.Name != wantName || field.Type != reflect.TypeOf("") || !field.IsExported() {
-			t.Fatalf("Identity field %d = %s %s (exported=%t), want %s string (exported=true)", index, field.Name, field.Type, field.IsExported(), wantName)
-		}
+	identity := Identity(struct {
+		Endpoint string
+		AuthMode string
+		Model    string
+	}{Endpoint: "endpoint", AuthMode: "api_key", Model: "model"})
+	if identity.Endpoint != "endpoint" || identity.AuthMode != "api_key" || identity.Model != "model" {
+		t.Fatalf("Identity fields did not carry the constructed values: %+v", identity)
 	}
 }
 
 func TestCategoryDeclaration(t *testing.T) {
 	// R-ZAM9-IUL9
-	categoryType := reflect.TypeFor[Category]()
-	if categoryType.Name() != "Category" || categoryType.Kind() != reflect.Int {
-		t.Fatalf("Category name/kind = %q/%s, want exported defined Category with underlying int", categoryType.Name(), categoryType.Kind())
+	category := Category(7)
+	if asInt(category) != 7 {
+		t.Fatalf("Category(7) = %d, want 7", asInt(category))
 	}
 
 	wantNames := []string{
@@ -607,61 +514,47 @@ func TestCategoryDeclaration(t *testing.T) {
 
 func TestErrorDeclaration(t *testing.T) {
 	// R-B4LX-H3OC
-	errorType := reflect.TypeFor[Error]()
-	if errorType.Name() != "Error" || errorType.Kind() != reflect.Struct {
-		t.Fatalf("Error name/kind = %q/%s, want exported named Error struct", errorType.Name(), errorType.Kind())
+	providerErr := Error{
+		Category:   CategoryRateLimit,
+		Status:     429,
+		Code:       "rate_limited",
+		Message:    "slow down",
+		RetryAfter: time.Second,
+		Endpoint:   Identity{Model: "model"},
 	}
-	wantFields := []struct {
-		name     string
-		typeOf   reflect.Type
-		exported bool
-	}{
-		{name: "Category", typeOf: reflect.TypeFor[Category](), exported: true},
-		{name: "Status", typeOf: reflect.TypeFor[int](), exported: true},
-		{name: "Code", typeOf: reflect.TypeFor[string](), exported: true},
-		{name: "Message", typeOf: reflect.TypeFor[string](), exported: true},
-		{name: "RetryAfter", typeOf: reflect.TypeFor[time.Duration](), exported: true},
-		{name: "Endpoint", typeOf: reflect.TypeFor[Identity](), exported: true},
-	}
-	var exportedFields []reflect.StructField
-	for index := range errorType.NumField() {
-		if field := errorType.Field(index); field.IsExported() {
-			exportedFields = append(exportedFields, field)
-		}
-	}
-	if len(exportedFields) != len(wantFields) {
-		t.Fatalf("Error exported field count = %d, want exactly %d", len(exportedFields), len(wantFields))
-	}
-	for index, want := range wantFields {
-		field := exportedFields[index]
-		if field.Name != want.name || field.Type != want.typeOf || field.IsExported() != want.exported || field.Anonymous {
-			t.Fatalf("Error field %d = %s %s (exported=%t, anonymous=%t), want %s %s (exported=%t, anonymous=false)", index, field.Name, field.Type, field.IsExported(), field.Anonymous, want.name, want.typeOf, want.exported)
-		}
+	category := typed[Category](providerErr.Category)
+	status := typed[int](providerErr.Status)
+	code := typed[string](providerErr.Code)
+	message := typed[string](providerErr.Message)
+	retryAfter := typed[time.Duration](providerErr.RetryAfter)
+	endpoint := typed[Identity](providerErr.Endpoint)
+	if category != CategoryRateLimit || status != 429 || code != "rate_limited" || message != "slow down" || retryAfter != time.Second || endpoint.Model != "model" {
+		t.Fatalf("Error fields did not carry the constructed values: %+v", providerErr)
 	}
 
-	pointerType := reflect.TypeFor[*Error]()
-	if !pointerType.Implements(reflect.TypeFor[error]()) {
-		t.Fatal("*Error does not implement error")
+	var asError error = &providerErr
+	var unwrapper interface{ Unwrap() error } = &providerErr
+	if asError.Error() == "" {
+		t.Fatal("(*Error).Error() returned empty text")
 	}
-	if !pointerType.Implements(reflect.TypeFor[interface{ Unwrap() error }]()) {
-		t.Fatal("*Error does not implement interface { Unwrap() error }")
+	if unwrapper.Unwrap() != nil {
+		t.Fatalf("(*Error).Unwrap() = %v, want nil for an Error with no cause", unwrapper.Unwrap())
 	}
 }
 
 func TestRetryableDeclaration(t *testing.T) {
 	// R-ZD22-AE2N
-	got := reflect.TypeOf(Retryable)
-	want := reflect.TypeOf(func(error) bool { return false })
-	if got != want {
-		t.Fatalf("Retryable type = %s, want exactly %s", got, want)
+	retryable := typed[func(err error) bool](Retryable)
+	if retryable(nil) {
+		t.Fatal("Retryable(nil) = true, want false")
 	}
 }
 
 func TestRoleDeclaration(t *testing.T) {
 	// R-YX7D-BDFM
-	roleType := reflect.TypeFor[Role]()
-	if roleType.Name() != "Role" || roleType.Kind() != reflect.Int {
-		t.Fatalf("Role name/kind = %q/%s, want defined Role with underlying int", roleType.Name(), roleType.Kind())
+	role := Role(3)
+	if asInt(role) != 3 {
+		t.Fatalf("Role(3) = %d, want 3", asInt(role))
 	}
 	wantNames := []string{"RoleSystem", "RoleUser", "RoleAssistant", "RoleTool"}
 	wantValues := []Role{0, 1, 2, 3}
@@ -671,194 +564,203 @@ func TestRoleDeclaration(t *testing.T) {
 	}
 }
 
+// typed compiles only when v is assignable to T, pinning a declaration by use.
+func typed[T any](v T) T { return v }
+
+// asInt compiles only for a type whose underlying type is int.
+func asInt[T ~int](v T) int { return int(v) }
+
+// asInt64 compiles only for a type whose underlying type is int64.
+func asInt64[T ~int64](v T) int64 { return int64(v) }
+
+// asMessages compiles only for a type whose underlying type is []Message.
+func asMessages[T ~[]Message](v T) []Message { return []Message(v) }
+
 func TestMessageDeclaration(t *testing.T) {
 	// R-YYF9-P56B
-	assertExactStructFields(t, reflect.TypeFor[Message](), []exactStructField{
-		{name: "Role", typeOf: reflect.TypeFor[Role]()},
-		{name: "Blocks", typeOf: reflect.TypeFor[[]Block]()},
-	})
+	message := Message(struct {
+		Role   Role
+		Blocks []Block
+	}{Role: RoleUser, Blocks: []Block{Text{Text: "hi"}}})
+	if message.Role != RoleUser || len(message.Blocks) != 1 {
+		t.Fatalf("Message fields did not carry the constructed values: %+v", message)
+	}
 }
 
 func TestHistoryDeclaration(t *testing.T) {
 	// R-YZN6-2WX0
-	historyType := reflect.TypeFor[History]()
-	if historyType.Name() != "History" || historyType.Kind() != reflect.Slice || historyType.Elem() != reflect.TypeFor[Message]() {
-		t.Fatalf("History name/kind/element = %q/%s/%s, want defined History slice of Message", historyType.Name(), historyType.Kind(), historyType.Elem())
+	history := History([]Message{{Role: RoleUser}})
+	messages := asMessages(history)
+	if len(messages) != 1 || messages[0].Role != RoleUser {
+		t.Fatalf("History did not carry the constructed messages: %+v", history)
 	}
 }
 
 func TestUsageDeclaration(t *testing.T) {
 	// R-ND0W-8GRT
-	assertExactStructFields(t, reflect.TypeFor[Usage](), []exactStructField{
-		{name: "InputTokens", typeOf: reflect.TypeFor[int64]()},
-		{name: "CachedTokens", typeOf: reflect.TypeFor[int64]()},
-		{name: "CacheWrite5mTokens", typeOf: reflect.TypeFor[int64]()},
-		{name: "CacheWrite1hTokens", typeOf: reflect.TypeFor[int64]()},
-		{name: "OutputTokens", typeOf: reflect.TypeFor[int64]()},
-		{name: "ReasoningTokens", typeOf: reflect.TypeFor[int64]()},
-	})
+	usage := Usage(struct {
+		InputTokens        int64
+		CachedTokens       int64
+		CacheWrite5mTokens int64
+		CacheWrite1hTokens int64
+		OutputTokens       int64
+		ReasoningTokens    int64
+	}{InputTokens: 1, CachedTokens: 2, CacheWrite5mTokens: 3, CacheWrite1hTokens: 4, OutputTokens: 5, ReasoningTokens: 6})
+	if usage.InputTokens != 1 || usage.CachedTokens != 2 || usage.CacheWrite5mTokens != 3 || usage.CacheWrite1hTokens != 4 || usage.OutputTokens != 5 || usage.ReasoningTokens != 6 {
+		t.Fatalf("Usage fields did not carry the constructed values: %+v", usage)
+	}
 }
 
 func TestCostDeclarationIsExact(t *testing.T) {
 	// R-BEIP-BP0K
-	costType := reflect.TypeFor[Cost]()
-	if costType.Name() != "Cost" || costType.Kind() != reflect.Int64 {
-		t.Fatalf("Cost name/kind = %q/%s, want exported defined int64", costType.Name(), costType.Kind())
+	cost := Cost(int64(1_500_000_000))
+	if asInt64(cost) != 1_500_000_000 {
+		t.Fatalf("Cost(1500000000) = %d, want 1500000000", asInt64(cost))
 	}
 }
 
 func TestRateTierDeclarationIsExact(t *testing.T) {
 	// R-NJ4E-5BHA
-	assertExactStructFields(t, reflect.TypeFor[RateTier](), []exactStructField{
-		{name: "MinInputTokens", typeOf: reflect.TypeFor[int64]()},
-		{name: "InputUncached", typeOf: reflect.TypeFor[int64]()},
-		{name: "CacheReadInput", typeOf: reflect.TypeFor[int64]()},
-		{name: "CacheWrite5m", typeOf: reflect.TypeFor[int64]()},
-		{name: "CacheWrite1h", typeOf: reflect.TypeFor[int64]()},
-		{name: "Output", typeOf: reflect.TypeFor[int64]()},
-	})
+	tier := RateTier(struct {
+		MinInputTokens int64
+		InputUncached  int64
+		CacheReadInput int64
+		CacheWrite5m   int64
+		CacheWrite1h   int64
+		Output         int64
+	}{MinInputTokens: 1, InputUncached: 2, CacheReadInput: 3, CacheWrite5m: 4, CacheWrite1h: 5, Output: 6})
+	if tier.MinInputTokens != 1 || tier.InputUncached != 2 || tier.CacheReadInput != 3 || tier.CacheWrite5m != 4 || tier.CacheWrite1h != 5 || tier.Output != 6 {
+		t.Fatalf("RateTier fields did not carry the constructed values: %+v", tier)
+	}
 }
 
 func TestPricingDeclarationAndCostMethodAreExact(t *testing.T) {
 	// R-NKCA-J37Z
 	// R-NLK6-WUYO
-	assertExactStructFields(t, reflect.TypeFor[Pricing](), []exactStructField{
-		{name: "Tiers", typeOf: reflect.TypeFor[[]RateTier]()},
-	})
+	pricing := Pricing(struct {
+		Tiers []RateTier
+	}{Tiers: []RateTier{{Output: 1}}})
+	if len(pricing.Tiers) != 1 || pricing.Tiers[0].Output != 1 {
+		t.Fatalf("Pricing fields did not carry the constructed values: %+v", pricing)
+	}
 
-	pricingType := reflect.TypeFor[Pricing]()
-	method, ok := pricingType.MethodByName("Cost")
-	wantMethod := reflect.TypeOf(func(Pricing, Usage) Cost { return 0 })
-	if !ok || method.Type != wantMethod {
-		t.Fatalf("Pricing.Cost = %v (present=%t), want exact value-receiver signature %s", method.Type, ok, wantMethod)
+	cost := typed[func(p Pricing, u Usage) Cost](Pricing.Cost)
+	if got := cost(Pricing{}, Usage{InputTokens: 1000, OutputTokens: 1000}); got != 0 {
+		t.Fatalf("Pricing{}.Cost(usage) = %d, want 0", got)
 	}
 }
 
 func TestTextDeclaration(t *testing.T) {
 	// R-Z0V2-GONP
-	assertExactBlockStruct(t, reflect.TypeFor[Text](), []exactStructField{
-		{name: "Text", typeOf: reflect.TypeFor[string]()},
-		{name: "Provider", typeOf: reflect.TypeFor[json.RawMessage]()},
-	})
+	text := Text(struct {
+		Text     string
+		Provider json.RawMessage
+	}{Text: "hello", Provider: json.RawMessage(`{}`)})
+	var block Block = text
+	if got, ok := block.(Text); !ok || got.Text != "hello" || string(got.Provider) != "{}" {
+		t.Fatalf("Text as Block = %+v, want the constructed Text", block)
+	}
 }
 
 func TestReasoningDeclaration(t *testing.T) {
 	// R-Z22Y-UGEE
-	assertExactBlockStruct(t, reflect.TypeFor[Reasoning](), []exactStructField{
-		{name: "Text", typeOf: reflect.TypeFor[string]()},
-		{name: "Redacted", typeOf: reflect.TypeFor[bool]()},
-		{name: "Provider", typeOf: reflect.TypeFor[json.RawMessage]()},
-	})
+	reasoning := Reasoning(struct {
+		Text     string
+		Redacted bool
+		Provider json.RawMessage
+	}{Text: "think", Redacted: true, Provider: json.RawMessage(`{}`)})
+	var block Block = reasoning
+	if got, ok := block.(Reasoning); !ok || got.Text != "think" || !got.Redacted || string(got.Provider) != "{}" {
+		t.Fatalf("Reasoning as Block = %+v, want the constructed Reasoning", block)
+	}
 }
 
 func TestToolUseDeclaration(t *testing.T) {
 	// R-Z3AV-8853
-	assertExactBlockStruct(t, reflect.TypeFor[ToolUse](), []exactStructField{
-		{name: "ID", typeOf: reflect.TypeFor[string]()},
-		{name: "Name", typeOf: reflect.TypeFor[string]()},
-		{name: "Input", typeOf: reflect.TypeFor[json.RawMessage]()},
-		{name: "Provider", typeOf: reflect.TypeFor[json.RawMessage]()},
-	})
+	toolUse := ToolUse(struct {
+		ID       string
+		Name     string
+		Input    json.RawMessage
+		Provider json.RawMessage
+	}{ID: "id", Name: "name", Input: json.RawMessage(`{"a":1}`), Provider: json.RawMessage(`{}`)})
+	var block Block = toolUse
+	if got, ok := block.(ToolUse); !ok || got.ID != "id" || got.Name != "name" || string(got.Input) != `{"a":1}` || string(got.Provider) != "{}" {
+		t.Fatalf("ToolUse as Block = %+v, want the constructed ToolUse", block)
+	}
 }
 
 func TestToolResultDeclaration(t *testing.T) {
 	// R-Z4IR-LZVS
-	assertExactBlockStruct(t, reflect.TypeFor[ToolResult](), []exactStructField{
-		{name: "ToolUseID", typeOf: reflect.TypeFor[string]()},
-		{name: "Content", typeOf: reflect.TypeFor[string]()},
-		{name: "IsError", typeOf: reflect.TypeFor[bool]()},
-		{name: "Provider", typeOf: reflect.TypeFor[json.RawMessage]()},
-	})
+	toolResult := ToolResult(struct {
+		ToolUseID string
+		Content   string
+		IsError   bool
+		Provider  json.RawMessage
+	}{ToolUseID: "id", Content: "out", IsError: true, Provider: json.RawMessage(`{}`)})
+	var block Block = toolResult
+	if got, ok := block.(ToolResult); !ok || got.ToolUseID != "id" || got.Content != "out" || !got.IsError || string(got.Provider) != "{}" {
+		t.Fatalf("ToolResult as Block = %+v, want the constructed ToolResult", block)
+	}
 }
 
 func TestReasoningModeDeclarationIsDefinedIntWithExactTypedIotaSequence(t *testing.T) {
 	// R-ZWKG-EPXR
+	mode := ReasoningMode(4)
+	if asInt(mode) != 4 {
+		t.Fatalf("ReasoningMode(4) = %d, want 4", asInt(mode))
+	}
 	want := []ReasoningMode{0, 1, 2, 3, 4}
 	got := []ReasoningMode{ReasoningDefault, ReasoningOff, ReasoningOn, ReasoningEffort, ReasoningBudget}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ReasoningMode values = %v, want %v", got, want)
 	}
-	assertDefinedIntNamed(t, reflect.TypeFor[ReasoningMode](), "ReasoningMode", []string{
-		"ReasoningDefault", "ReasoningOff", "ReasoningOn", "ReasoningEffort", "ReasoningBudget",
-	}, len(got))
 }
 
 func TestEffortDeclarationIsDefinedIntWithExactTypedIotaSequence(t *testing.T) {
 	// R-NU3H-L95J
+	effort := Effort(6)
+	if asInt(effort) != 6 {
+		t.Fatalf("Effort(6) = %d, want 6", asInt(effort))
+	}
 	want := []Effort{0, 1, 2, 3, 4, 5, 6}
 	got := []Effort{EffortNone, EffortMinimal, EffortLow, EffortMedium, EffortHigh, EffortXHigh, EffortMax}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Effort values = %v, want %v", got, want)
 	}
-	assertDefinedIntNamed(t, reflect.TypeFor[Effort](), "Effort", []string{
-		"EffortNone", "EffortMinimal", "EffortLow", "EffortMedium", "EffortHigh", "EffortXHigh", "EffortMax",
-	}, len(got))
 }
 
 func TestReasoningConfigDeclarationHasExactNeutralReasoningFields(t *testing.T) {
 	// R-ZXSC-SHOG
-	assertExactStructFields(t, reflect.TypeFor[ReasoningConfig](), []exactStructField{
-		{name: "Mode", typeOf: reflect.TypeFor[ReasoningMode]()},
-		{name: "Effort", typeOf: reflect.TypeFor[Effort]()},
-		{name: "Budget", typeOf: reflect.TypeFor[int]()},
-	})
+	config := ReasoningConfig(struct {
+		Mode   ReasoningMode
+		Effort Effort
+		Budget int
+	}{Mode: ReasoningBudget, Effort: EffortHigh, Budget: 1024})
+	if config.Mode != ReasoningBudget || config.Effort != EffortHigh || config.Budget != 1024 {
+		t.Fatalf("ReasoningConfig fields did not carry the constructed values: %+v", config)
+	}
 }
 
 func TestToolChoiceDeclarationHasExactNeutralSelectionFields(t *testing.T) {
 	// R-0085-K15U
-	assertExactStructFields(t, reflect.TypeFor[ToolChoice](), []exactStructField{
-		{name: "Mode", typeOf: reflect.TypeFor[ToolChoiceMode]()},
-		{name: "Name", typeOf: reflect.TypeFor[string]()},
-	})
+	choice := ToolChoice(struct {
+		Mode ToolChoiceMode
+		Name string
+	}{Mode: ToolChoiceTool, Name: "tool"})
+	if choice.Mode != ToolChoiceTool || choice.Name != "tool" {
+		t.Fatalf("ToolChoice fields did not carry the constructed values: %+v", choice)
+	}
 }
 
 func TestToolChoiceModeDeclarationIsDefinedIntWithExactTypedIotaSequence(t *testing.T) {
 	// R-01G1-XSWJ
+	mode := ToolChoiceMode(3)
+	if asInt(mode) != 3 {
+		t.Fatalf("ToolChoiceMode(3) = %d, want 3", asInt(mode))
+	}
 	want := []ToolChoiceMode{0, 1, 2, 3}
 	got := []ToolChoiceMode{ToolChoiceAuto, ToolChoiceNone, ToolChoiceRequired, ToolChoiceTool}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ToolChoiceMode values = %v, want %v", got, want)
-	}
-	assertDefinedIntNamed(t, reflect.TypeFor[ToolChoiceMode](), "ToolChoiceMode", []string{
-		"ToolChoiceAuto", "ToolChoiceNone", "ToolChoiceRequired", "ToolChoiceTool",
-	}, len(got))
-}
-
-func assertDefinedIntNamed(t *testing.T, got reflect.Type, name string, wantNames []string, values int) {
-	t.Helper()
-	if got.Name() != name || got.Kind() != reflect.Int {
-		t.Fatalf("%s = %q/%s, want defined type %s with underlying int", name, got.Name(), got.Kind(), name)
-	}
-	if len(wantNames) != values {
-		t.Fatalf("%s constants = %d, want %d", name, values, len(wantNames))
-	}
-}
-
-type exactStructField struct {
-	name   string
-	typeOf reflect.Type
-}
-
-func assertExactBlockStruct(t *testing.T, got reflect.Type, want []exactStructField) {
-	t.Helper()
-	assertExactStructFields(t, got, want)
-	if !got.Implements(reflect.TypeFor[Block]()) {
-		t.Fatalf("%s does not implement Block as a value", got)
-	}
-}
-
-func assertExactStructFields(t *testing.T, got reflect.Type, want []exactStructField) {
-	t.Helper()
-	if got.Name() == "" {
-		t.Fatalf("%s name = %q, want exported named type", got, got.Name())
-	}
-	if got.Kind() != reflect.Struct || got.NumField() != len(want) {
-		t.Fatalf("%s kind/field count = %s/%d, want struct/%d", got, got.Kind(), got.NumField(), len(want))
-	}
-	for index, wantField := range want {
-		field := got.Field(index)
-		if field.Name != wantField.name || field.Type != wantField.typeOf || !field.IsExported() || field.Anonymous {
-			t.Fatalf("%s field %d = %s %s (exported=%t, anonymous=%t), want %s %s (exported=true, anonymous=false)", got, index, field.Name, field.Type, field.IsExported(), field.Anonymous, wantField.name, wantField.typeOf)
-		}
 	}
 }
