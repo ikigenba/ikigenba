@@ -13,6 +13,7 @@ type pageData struct {
 	ServiceName    string
 	Banner         appkit.Banner
 	BannerMarkup   string
+	FooterMarkup   string
 	Subtitle       string
 	Message        string
 	FailureService bool
@@ -52,6 +53,11 @@ func (h *handler) renderDocument(w http.ResponseWriter, r *http.Request, status 
 		panic(err)
 	}
 	data.BannerMarkup = banner.String()
+	var footer bytes.Buffer
+	if err := h.bannerTemplates.ExecuteTemplate(&footer, "footer", data.Banner); err != nil {
+		panic(err)
+	}
+	data.FooterMarkup = footer.String()
 	var body bytes.Buffer
 	if err := h.templates.ExecuteTemplate(&body, "page", data); err != nil {
 		panic(err)

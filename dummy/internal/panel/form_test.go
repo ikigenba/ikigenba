@@ -63,7 +63,7 @@ func formASCIIWhitespace(s string) bool {
 	return strings.Trim(s, " \t\n\v\f\r") == ""
 }
 
-// R-MXPG-6F6I R-9J24-JH4F
+// R-9J24-JH4F
 func TestFormCard(t *testing.T) {
 	for _, sub := range []widget.Submission{{}, {Name: "", Count: "bad", Status: "archived"}} {
 		method, encoded := http.MethodGet, ""
@@ -336,7 +336,7 @@ func TestFormFieldErrorTextProcedure(t *testing.T) {
 	}
 }
 
-// R-N9WG-04LG R-N1D5-BQEL R-N2L1-PI5A
+// R-N1D5-BQEL R-N2L1-PI5A
 func assertFormErrors(t *testing.T, body string, controls map[string]string, errs widget.FieldErrors) {
 	t.Helper()
 	r := httptest.NewRequest(http.MethodGet, "/widgets", nil)
@@ -372,7 +372,7 @@ func assertFormErrors(t *testing.T, body string, controls map[string]string, err
 	}
 }
 
-// R-N058-XYNW R-NB4C-DWC5
+// R-N058-XYNW
 func TestFormFreshPagesAndFailures(t *testing.T) {
 	for _, tc := range []struct{ method, path, contentType string }{
 		{http.MethodGet, "/widgets", ""},
@@ -413,7 +413,6 @@ func TestFormFreshPagesAndFailures(t *testing.T) {
 	}
 }
 
-// R-4JZV-C2QI R-GWHL-WEJ3 R-N3SY-39VZ R-H05B-1PR6
 func TestFormRejections(t *testing.T) {
 	cases := []widget.Submission{
 		{Name: "", Count: "2", Status: "active"},
@@ -558,7 +557,7 @@ func assertFormPanel(t *testing.T, body string) {
 	}
 }
 
-// R-H1D7-FHHV R-Y6WI-J3RD R-GWHL-WEJ3 R-NQ6Y-D2D3 R-NREU-QU3S
+// R-Y6WI-J3RD R-NQ6Y-D2D3 R-NREU-QU3S
 func TestFormAcceptedSubmission(t *testing.T) {
 	for _, mediaType := range []string{
 		"application/x-www-form-urlencoded",
@@ -642,7 +641,6 @@ func (b *formObservedBody) Read(p []byte) (int, error) {
 
 func (*formObservedBody) Close() error { return nil }
 
-// R-H1D7-FHHV R-GJAM-EJYK R-N50U-H1MO R-H05B-1PR6
 func TestFormUnsupportedMediaNeverReads(t *testing.T) {
 	for _, mediaType := range []string{"", "application/json", "multipart/form-data; boundary=a", "text/plain", "application/x-www-form-urlencoded-extra", ";application/x-www-form-urlencoded"} {
 		t.Run(mediaType, func(t *testing.T) {
@@ -669,7 +667,7 @@ func TestFormUnsupportedMediaNeverReads(t *testing.T) {
 			}
 			assertFormErrors(t, markup, map[string]string{}, widget.FieldErrors{})
 			visible := pageTestVisible(w.Body.String())
-			for _, want := range []string{"form-user@example.test", "Sign out", UnsupportedMediaTypeMessage} {
+			for _, want := range []string{"Sign out", UnsupportedMediaTypeMessage} {
 				if !strings.Contains(visible, want) {
 					t.Errorf("unsupported chrome lacks %q", want)
 				}

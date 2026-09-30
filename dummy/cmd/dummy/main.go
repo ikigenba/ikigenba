@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	kit := appkit.New(panel.ServiceName)
+	kit := appkit.New(panel.ServiceName, cli.Version)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	exit := cli.Run(ctx, cli.Process{
 		Args:      os.Args[1:],
