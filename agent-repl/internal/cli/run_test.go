@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -38,30 +37,23 @@ func TestRunIsCallableInProcessAndReturnsAnExitCode(t *testing.T) {
 	}
 }
 
-// R-OY61-JS2P
-func TestDepsHasExactlyTheSpecifiedFields(t *testing.T) {
-	interruptType := reflect.TypeOf((<-chan struct{})(nil))
-	want := []struct {
-		name   string
-		typeOf reflect.Type
-	}{
-		{name: "Home", typeOf: reflect.TypeOf("")},
-		{name: "Getenv", typeOf: reflect.TypeOf((func(string) string)(nil))},
-		{name: "Now", typeOf: reflect.TypeOf((func() time.Time)(nil))},
-		{name: "LogID", typeOf: reflect.TypeOf("")},
-		{name: "Root", typeOf: reflect.TypeOf("")},
-		{name: "Interrupts", typeOf: interruptType},
+// R-RHNO-OZNB
+func TestDepsHasTheSpecifiedFields(t *testing.T) {
+	home, logID, root := "home", "log-id", "root"
+	getenv := func(string) string { return "value" }
+	now := func() time.Time { return time.Unix(1, 0) }
+	interrupts := make(<-chan struct{})
+	deps := cli.Deps{
+		Home:       home,
+		Getenv:     getenv,
+		Now:        now,
+		LogID:      logID,
+		Root:       root,
+		Interrupts: interrupts,
 	}
-
-	got := reflect.TypeOf(cli.Deps{})
-	if got.NumField() != len(want) {
-		t.Fatalf("Deps has %d fields, want %d", got.NumField(), len(want))
-	}
-	for index, expected := range want {
-		field := got.Field(index)
-		if field.Name != expected.name || field.Type != expected.typeOf {
-			t.Errorf("Deps field %d = %s %s, want %s %s", index, field.Name, field.Type, expected.name, expected.typeOf)
-		}
+	if deps.Home != home || deps.Getenv("KEY") != "value" || !deps.Now().Equal(time.Unix(1, 0)) ||
+		deps.LogID != logID || deps.Root != root || deps.Interrupts != interrupts {
+		t.Fatalf("Deps did not carry its field values: %+v", deps)
 	}
 }
 

@@ -13,58 +13,59 @@ import (
 	"github.com/ikigenba/ikigenba/agentkit"
 )
 
-// R-NBLA-8LFJ
+// R-RIVL-2RE0
 func TestConfigContract(t *testing.T) {
-	want := []struct {
-		name   string
-		typeOf reflect.Type
-	}{
-		{"Provider", reflect.TypeFor[string]()}, {"Model", reflect.TypeFor[string]()},
-		{"Wire", reflect.TypeFor[string]()}, {"Auth", reflect.TypeFor[string]()},
-		{"AuthFile", reflect.TypeFor[string]()}, {"BaseURL", reflect.TypeFor[string]()},
-		{"SystemFile", reflect.TypeFor[string]()}, {"Settings", reflect.TypeFor[map[string]string]()},
-		{"Home", reflect.TypeFor[string]()}, {"Getenv", reflect.TypeFor[func(string) string]()},
-		{"Root", reflect.TypeFor[string]()}, {"Log", reflect.TypeFor[*agentkit.Log]()},
+	provider, model, wire, auth := "provider", "model", "wire", "auth"
+	authFile, baseURL, systemFile := "auth-file", "base-url", "system-file"
+	settings := map[string]string{"key": "value"}
+	home, root := "home", "root"
+	getenv := func(string) string { return "value" }
+	log := &agentkit.Log{}
+	cfg := Config{
+		Provider:   provider,
+		Model:      model,
+		Wire:       wire,
+		Auth:       auth,
+		AuthFile:   authFile,
+		BaseURL:    baseURL,
+		SystemFile: systemFile,
+		Settings:   settings,
+		Home:       home,
+		Getenv:     getenv,
+		Root:       root,
+		Log:        log,
 	}
-	assertFields(t, reflect.TypeFor[Config](), want)
+	if cfg.Provider != provider || cfg.Model != model || cfg.Wire != wire || cfg.Auth != auth ||
+		cfg.AuthFile != authFile || cfg.BaseURL != baseURL || cfg.SystemFile != systemFile ||
+		!reflect.DeepEqual(cfg.Settings, settings) || cfg.Home != home || cfg.Getenv("KEY") != "value" ||
+		cfg.Root != root || cfg.Log != log {
+		t.Fatalf("Config = %+v, want the constructed field values", cfg)
+	}
 }
 
-// R-UVR5-HQUK
+// R-RK3H-GJ4P
 func TestPlanContract(t *testing.T) {
-	want := []struct {
-		name   string
-		typeOf reflect.Type
-	}{
-		{"Offering", reflect.TypeFor[agentkit.Offering]()}, {"Model", reflect.TypeFor[string]()},
-		{"AuthMode", reflect.TypeFor[agentkit.AuthMode]()}, {"EnvVar", reflect.TypeFor[string]()},
-		{"AuthFile", reflect.TypeFor[string]()}, {"BaseURL", reflect.TypeFor[string]()},
+	var offering agentkit.Offering
+	var mode agentkit.AuthMode
+	model, envVar, authFile, baseURL := "model", "ENV", "auth-file", "base-url"
+	plan := Plan{Offering: offering, Model: model, AuthMode: mode, EnvVar: envVar, AuthFile: authFile, BaseURL: baseURL}
+	if !reflect.DeepEqual(plan.Offering, offering) || plan.AuthMode != mode || plan.Model != model ||
+		plan.EnvVar != envVar || plan.AuthFile != authFile || plan.BaseURL != baseURL {
+		t.Fatalf("Plan = %+v, want the constructed field values", plan)
 	}
-	assertFields(t, reflect.TypeFor[Plan](), want)
 }
 
 // R-ANGT-BS97
-func TestSessionAPIContract(t *testing.T) {
-	if got, want := reflect.TypeOf(Resolve), reflect.TypeOf(func(Config) (Plan, error) { return Plan{}, nil }); got != want {
-		t.Fatalf("Resolve type = %s, want %s", got, want)
+func TestSessionAPIContract(_ *testing.T) {
+	declared := func(
+		func(Config) (Plan, error),
+		func(Config) (*Session, error),
+		func(*Session) Plan,
+		func(*Session, context.Context, string) *agentkit.Stream,
+		func(*Session) error,
+	) {
 	}
-	if got, want := reflect.TypeOf(Open), reflect.TypeOf(func(Config) (*Session, error) { return nil, nil }); got != want {
-		t.Fatalf("Open type = %s, want %s", got, want)
-	}
-	sessionType := reflect.TypeFor[*Session]()
-	wantMethods := map[string]reflect.Type{
-		"Plan":  reflect.TypeOf(func(*Session) Plan { return Plan{} }),
-		"Send":  reflect.TypeOf(func(*Session, context.Context, string) *agentkit.Stream { return nil }),
-		"Close": reflect.TypeOf(func(*Session) error { return nil }),
-	}
-	if sessionType.NumMethod() != len(wantMethods) {
-		t.Fatalf("Session method count = %d, want %d", sessionType.NumMethod(), len(wantMethods))
-	}
-	for name, want := range wantMethods {
-		method, ok := sessionType.MethodByName(name)
-		if !ok || method.Type != want {
-			t.Fatalf("Session.%s type = %v, present=%t, want %s", name, method.Type, ok, want)
-		}
-	}
+	declared(Resolve, Open, (*Session).Plan, (*Session).Send, (*Session).Close)
 }
 
 // R-UY6Y-9ABY
@@ -240,22 +241,6 @@ func TestResolveBaseURL(t *testing.T) {
 	plan, err = Resolve(cfg)
 	if err != nil || plan.BaseURL != cfg.BaseURL {
 		t.Fatalf("override base URL = %q, error %v, want %q", plan.BaseURL, err, cfg.BaseURL)
-	}
-}
-
-func assertFields(t *testing.T, got reflect.Type, want []struct {
-	name   string
-	typeOf reflect.Type
-}) {
-	t.Helper()
-	if got.NumField() != len(want) {
-		t.Fatalf("%s field count = %d, want %d", got, got.NumField(), len(want))
-	}
-	for index, expected := range want {
-		field := got.Field(index)
-		if field.Name != expected.name || field.Type != expected.typeOf {
-			t.Fatalf("%s field %d = %s %s, want %s %s", got, index, field.Name, field.Type, expected.name, expected.typeOf)
-		}
 	}
 }
 

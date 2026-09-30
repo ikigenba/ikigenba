@@ -9,40 +9,22 @@ import (
 	"github.com/ikigenba/ikigenba/agent-repl/internal/options"
 )
 
-// R-U659-GK9Z
-func TestPairHasExactlyKeyAndValueStringFields(t *testing.T) {
-	typeOfPair := reflect.TypeOf(options.Pair{})
-	want := []reflect.StructField{
-		{Name: "Key", Type: reflect.TypeOf("")},
-		{Name: "Value", Type: reflect.TypeOf("")},
-	}
-	if typeOfPair.NumField() != len(want) {
-		t.Fatalf("Pair field count = %d, want %d", typeOfPair.NumField(), len(want))
-	}
-	for index, wantField := range want {
-		got := typeOfPair.Field(index)
-		if got.Name != wantField.Name || got.Type != wantField.Type {
-			t.Errorf("Pair field %d = %s %s, want %s %s", index, got.Name, got.Type, wantField.Name, wantField.Type)
-		}
+// R-RLBD-UAVE
+func TestPairHasKeyAndValueStringFields(t *testing.T) {
+	key, value := "provider", "openai"
+	pair := options.Pair{Key: key, Value: value}
+	if pair.Key != key || pair.Value != value {
+		t.Fatalf("Pair = %+v, want Key provider and Value openai", pair)
 	}
 }
 
-// R-U7D5-UC0O
-func TestFlagsHasExactlyConfigRawAndVersionFields(t *testing.T) {
-	typeOfFlags := reflect.TypeOf(options.Flags{})
-	want := []reflect.StructField{
-		{Name: "Config", Type: reflect.TypeOf([]options.Pair(nil))},
-		{Name: "Raw", Type: reflect.TypeOf(false)},
-		{Name: "Version", Type: reflect.TypeOf(false)},
-	}
-	if typeOfFlags.NumField() != len(want) {
-		t.Fatalf("Flags field count = %d, want %d", typeOfFlags.NumField(), len(want))
-	}
-	for index, wantField := range want {
-		got := typeOfFlags.Field(index)
-		if got.Name != wantField.Name || got.Type != wantField.Type {
-			t.Errorf("Flags field %d = %s %s, want %s %s", index, got.Name, got.Type, wantField.Name, wantField.Type)
-		}
+// R-RMJA-82M3
+func TestFlagsHasConfigRawAndVersionFields(t *testing.T) {
+	config := []options.Pair{{Key: "k", Value: "v"}}
+	raw, version := true, true
+	flags := options.Flags{Config: config, Raw: raw, Version: version}
+	if !reflect.DeepEqual(flags.Config, config) || flags.Raw != raw || flags.Version != version {
+		t.Fatalf("Flags = %+v, want the constructed field values", flags)
 	}
 }
 

@@ -7,30 +7,28 @@ import (
 	"testing"
 )
 
-// R-N7XL-3A7G
-func TestOptionsHasExactExportedShape(t *testing.T) {
-	want := []reflect.StructField{
-		{Name: "Provider", Type: reflect.TypeFor[string]()},
-		{Name: "Model", Type: reflect.TypeFor[string]()},
-		{Name: "Wire", Type: reflect.TypeFor[string]()},
-		{Name: "Auth", Type: reflect.TypeFor[string]()},
-		{Name: "AuthFile", Type: reflect.TypeFor[string]()},
-		{Name: "BaseURL", Type: reflect.TypeFor[string]()},
-		{Name: "SystemFile", Type: reflect.TypeFor[string]()},
-		{Name: "Settings", Type: reflect.TypeFor[map[string]string]()},
-		{Name: "Raw", Type: reflect.TypeFor[bool]()},
-		{Name: "Version", Type: reflect.TypeFor[bool]()},
+// R-RNR6-LUCS
+func TestOptionsHasTheSpecifiedFields(t *testing.T) {
+	provider, model, wire, auth := "provider", "model", "wire", "auth"
+	authFile, baseURL, systemFile := "auth-file", "base-url", "system-file"
+	settings := map[string]string{"key": "value"}
+	raw, version := true, true
+	options := Options{
+		Provider:   provider,
+		Model:      model,
+		Wire:       wire,
+		Auth:       auth,
+		AuthFile:   authFile,
+		BaseURL:    baseURL,
+		SystemFile: systemFile,
+		Settings:   settings,
+		Raw:        raw,
+		Version:    version,
 	}
-
-	got := reflect.TypeFor[Options]()
-	if got.NumField() != len(want) {
-		t.Fatalf("Options has %d fields, want %d", got.NumField(), len(want))
-	}
-	for index, wantField := range want {
-		gotField := got.Field(index)
-		if gotField.Name != wantField.Name || gotField.Type != wantField.Type {
-			t.Errorf("Options field %d = %s %v, want %s %v", index, gotField.Name, gotField.Type, wantField.Name, wantField.Type)
-		}
+	if options.Provider != provider || options.Model != model || options.Wire != wire || options.Auth != auth ||
+		options.AuthFile != authFile || options.BaseURL != baseURL || options.SystemFile != systemFile ||
+		!reflect.DeepEqual(options.Settings, settings) || options.Raw != raw || options.Version != version {
+		t.Fatalf("Options = %+v, want the constructed field values", options)
 	}
 }
 

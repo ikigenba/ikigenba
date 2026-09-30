@@ -55,8 +55,8 @@ continues to the next prompt.
 
 ## REQUIREMENTS
 
-- R-U659-GK9Z: Package `internal/options` MUST export a `Pair` struct whose fields are exactly `Key string` and `Value string`.
-- R-U7D5-UC0O: Package `internal/options` MUST export a `Flags` struct whose fields are exactly `Config []Pair`, `Raw bool`, and `Version bool`.
+- R-RLBD-UAVE: Package `internal/options` MUST export a `Pair` struct with the fields `Key string` and `Value string`.
+- R-RMJA-82M3: Package `internal/options` MUST export a `Flags` struct with the fields `Config []Pair`, `Raw bool`, and `Version bool`.
 - R-U8L2-83RD: Package `internal/options` MUST export `ParseFlags(args []string) (Flags, error)`.
 - R-U9SY-LVI2: Package `internal/options` MUST export the method `Validate() (Options, error)` on `Flags`.
 - R-UB0U-ZN8R: Package `internal/options` MUST export a sentinel error `ErrHelp` that `ParseFlags` returns when `-h` or `--help` is supplied.

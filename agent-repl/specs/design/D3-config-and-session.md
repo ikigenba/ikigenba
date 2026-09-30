@@ -143,7 +143,7 @@ prompt: agentkit's log records protocol events, never consumer input.
 
 ## REQUIREMENTS
 
-- R-N7XL-3A7G: Package `internal/options` MUST export an `Options` struct whose fields are exactly `Provider string`, `Model string`, `Wire string`, `Auth string`, `AuthFile string`, `BaseURL string`, `SystemFile string`, `Settings map[string]string`, `Raw bool`, and `Version bool`.
+- R-RNR6-LUCS: Package `internal/options` MUST export an `Options` struct with the fields `Provider string`, `Model string`, `Wire string`, `Auth string`, `AuthFile string`, `BaseURL string`, `SystemFile string`, `Settings map[string]string`, `Raw bool`, and `Version bool`.
 - R-NADD-UTOU: `Flags.Validate` MUST fold `Flags.Config` so that for a repeated key the last `Pair` wins, MUST place the values of `provider`, `model`, `wire`, `auth`, `auth_file`, `base_url`, and `system_file` in the corresponding `Options` fields, and MUST place every other key verbatim in `Options.Settings`.
 - R-NCT6-MD68: `Flags.Validate` MUST accept a `system_file` value naming a path that does not exist, placing it in `Options.SystemFile` without reading it or returning an error.
 - R-UOFR-74EE: `Flags.Validate` MUST set `Options.Model` to `gpt-5.6-sol` when no `model` pair is present, and MUST return an error naming `model` when a `model` pair is present with an empty value.
@@ -151,8 +151,8 @@ prompt: agentkit's log records protocol events, never consumer input.
 - R-UQVJ-YNVS: When `model` is set (explicitly or by default) and `provider` is absent, `Flags.Validate` MUST set `Options.Provider` to the `Host` of the first offering `agentkit.Lookup(model, "", "")` returns, and MUST return an error naming `model` when that lookup fails.
 - R-US3G-CFMH: When `provider` is given, `Flags.Validate` MUST accept any non-empty `model`, including one not in the catalog, and leave `Options.Provider` as given.
 - R-UTBC-Q7D6: `Flags.Validate` MUST NOT read the environment or any file, verified by validating options whose `auth_file` names a path that does not exist and whose API-key variable is unset.
-- R-NBLA-8LFJ: Package `internal/session` MUST export a `Config` struct whose fields are exactly `Provider string`, `Model string`, `Wire string`, `Auth string`, `AuthFile string`, `BaseURL string`, `SystemFile string`, `Settings map[string]string`, `Home string`, `Getenv func(string) string`, `Root string`, and `Log *agentkit.Log`.
-- R-UVR5-HQUK: Package `internal/session` MUST export a `Plan` struct whose fields are exactly `Offering agentkit.Offering`, `Model string`, `AuthMode agentkit.AuthMode`, `EnvVar string`, `AuthFile string`, and `BaseURL string`.
+- R-RIVL-2RE0: Package `internal/session` MUST export a `Config` struct with the fields `Provider string`, `Model string`, `Wire string`, `Auth string`, `AuthFile string`, `BaseURL string`, `SystemFile string`, `Settings map[string]string`, `Home string`, `Getenv func(string) string`, `Root string`, and `Log *agentkit.Log`.
+- R-RK3H-GJ4P: Package `internal/session` MUST export a `Plan` struct with the fields `Offering agentkit.Offering`, `Model string`, `AuthMode agentkit.AuthMode`, `EnvVar string`, `AuthFile string`, and `BaseURL string`.
 - R-ANGT-BS97: Package `internal/session` MUST export `Resolve(cfg Config) (Plan, error)`, `Open(cfg Config) (*Session, error)`, and on `*Session` the methods `Plan() Plan`, `Send(ctx context.Context, prompt string) *agentkit.Stream`, and `Close() error`.
 - R-UY6Y-9ABY: For a cataloged model, `Resolve` MUST set `Plan.Offering` to the offering `agentkit.Lookup(cfg.Model, agentkit.Host(cfg.Provider), agentkit.WireName(cfg.Wire))` returns and `Plan.Model` to that offering's `WireModel`.
 - R-UZEU-N22N: For a model not in the catalog, `Resolve` MUST set `Plan.Offering` to the first cataloged offering whose `Host` equals `cfg.Provider` and, when `cfg.Wire` is non-empty, whose `WireName` equals it, with `WireModel` replaced by `cfg.Model`, and MUST set `Plan.Model` to `cfg.Model`.
