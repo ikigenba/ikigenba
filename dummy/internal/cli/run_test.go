@@ -26,9 +26,9 @@ func TestUsageConstant(t *testing.T) {
 
 // R-S3OH-HHQH
 func TestProcessConstructsWithDeclaredFieldsAndRuns(t *testing.T) {
-	// The literal names every declared field with a value of its declared type,
+	// Each field's address is stored in a slot of the declared pointer type,
 	// and Run is stored in a field of its declared type, so this compiles
-	// only if Process and Run have the declared shape.
+	// only if Process and Run have exactly the declared shape.
 	declared := struct {
 		run func(context.Context, Process) int
 	}{Run}
@@ -39,7 +39,19 @@ func TestProcessConstructsWithDeclaredFieldsAndRuns(t *testing.T) {
 	unsetenv := func(string) error { return nil }
 	inherit := func(uintptr) (net.Listener, error) { return nil, errors.New("unexpected") }
 	banner := func(appkit.User) appkit.Banner { return appkit.Banner{} }
-	p := Process{Args: args, LookupEnv: lookupEnv, Unsetenv: unsetenv, Pid: 1, Stdout: stdout, Stderr: stderr, Inherit: inherit, Banner: banner}
+	var p Process
+	fields := struct {
+		args      *[]string
+		lookupEnv *func(key string) (string, bool)
+		unsetenv  *func(key string) error
+		pid       *int
+		stdout    *io.Writer
+		stderr    *io.Writer
+		inherit   *func(fd uintptr) (net.Listener, error)
+		banner    *func(u appkit.User) appkit.Banner
+	}{&p.Args, &p.LookupEnv, &p.Unsetenv, &p.Pid, &p.Stdout, &p.Stderr, &p.Inherit, &p.Banner}
+	*fields.args, *fields.lookupEnv, *fields.unsetenv, *fields.pid = args, lookupEnv, unsetenv, 1
+	*fields.stdout, *fields.stderr, *fields.inherit, *fields.banner = stdout, stderr, inherit, banner
 	if code := declared.run(context.Background(), p); code != ExitSuccess || out.String() != Version+"\n" || errOut.Len() != 0 {
 		t.Errorf("Run(--version) = %d, stdout %q, stderr %q", code, out.String(), errOut.String())
 	}
