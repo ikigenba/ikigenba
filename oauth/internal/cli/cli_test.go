@@ -1346,7 +1346,7 @@ func TestRunVersionShortCircuitsBeforeLoginSideEffects(t *testing.T) {
 // R-VLZU-SFLH
 func TestDepsExactFields(t *testing.T) {
 	var launcher browser.Launcher
-	entropy := strings.NewReader("entropy")
+	var entropy io.Reader = strings.NewReader("entropy")
 	client := &http.Client{}
 	var listen callback.ListenFunc = net.Listen
 	deps := cli.Deps{
