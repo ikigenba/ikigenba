@@ -2,7 +2,7 @@
 package cli
 
 // Version is the dummy release version.
-var Version = "v0.7.1"
+var Version = "v0.8.0"
 
 // Manifest describes dummy to the Ikigenba host.
 const Manifest = "app = \"dummy\"\ndefault = false\nsecrets = []\n"
