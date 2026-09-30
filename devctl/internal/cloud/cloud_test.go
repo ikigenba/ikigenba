@@ -4,16 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go/ast"
-	"go/constant"
-	"go/importer"
-	"go/parser"
-	"go/token"
-	"go/types"
 	"io"
-	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -240,19 +232,19 @@ func TestNotFoundErrorContract(t *testing.T) {
 }
 
 func TestEC2ValueContracts(t *testing.T) {
-	// R-Q8YT-KO8B
+	// R-6N60-DGIR
 	states := []InstanceState{StatePending, StateRunning, StateShuttingDown, StateTerminated, StateStopping, StateStopped}
 	wantStates := []InstanceState{"pending", "running", "shutting-down", "terminated", "stopping", "stopped"}
 	if !reflect.DeepEqual(states, wantStates) {
 		t.Fatalf("instance states = %v, want %v", states, wantStates)
 	}
-	assertExactStringConstants(t, "InstanceState", map[string]string{
-		"StatePending":      "pending",
-		"StateRunning":      "running",
-		"StateShuttingDown": "shutting-down",
-		"StateTerminated":   "terminated",
-		"StateStopping":     "stopping",
-		"StateStopped":      "stopped",
+	assertTypedStringConstants(t, reflect.TypeOf(InstanceState("")), []typedConstant{
+		{"StatePending", StatePending, "pending"},
+		{"StateRunning", StateRunning, "running"},
+		{"StateShuttingDown", StateShuttingDown, "shutting-down"},
+		{"StateTerminated", StateTerminated, "terminated"},
+		{"StateStopping", StateStopping, "stopping"},
+		{"StateStopped", StateStopped, "stopped"},
 	})
 	assertNamedString(t, reflect.TypeOf(InstanceState("")), "InstanceState")
 	assertStructFields(t, reflect.TypeOf(Instance{}), []field{{"ID", stringType()}, {"Space", stringType()}, {"State", reflect.TypeOf(InstanceState(""))}, {"Address", stringType()}})
@@ -272,7 +264,7 @@ func TestSSMContract(t *testing.T) {
 }
 
 func TestRoute53ValueContracts(t *testing.T) {
-	// R-YERT-KNRZ
+	// R-6ODW-R89G
 	assertStructFields(t, reflect.TypeOf(Zone{}), []field{{"ID", stringType()}, {"Name", stringType()}})
 	assertStructFields(t, reflect.TypeOf(Record{}), []field{{"Name", stringType()}, {"Type", stringType()}, {"TTL", reflect.TypeOf(int64(0))}, {"Values", reflect.TypeOf([]string{})}})
 	assertNamedString(t, reflect.TypeOf(ChangeAction("")), "ChangeAction")
@@ -284,13 +276,13 @@ func TestRoute53ValueContracts(t *testing.T) {
 	if ChangePending != "PENDING" || ChangeInsync != "INSYNC" {
 		t.Fatalf("change statuses = %q, %q", ChangePending, ChangeInsync)
 	}
-	assertExactStringConstants(t, "ChangeAction", map[string]string{
-		"ChangeUpsert": "UPSERT",
-		"ChangeDelete": "DELETE",
+	assertTypedStringConstants(t, reflect.TypeOf(ChangeAction("")), []typedConstant{
+		{"ChangeUpsert", ChangeUpsert, "UPSERT"},
+		{"ChangeDelete", ChangeDelete, "DELETE"},
 	})
-	assertExactStringConstants(t, "ChangeStatus", map[string]string{
-		"ChangePending": "PENDING",
-		"ChangeInsync":  "INSYNC",
+	assertTypedStringConstants(t, reflect.TypeOf(ChangeStatus("")), []typedConstant{
+		{"ChangePending", ChangePending, "PENDING"},
+		{"ChangeInsync", ChangeInsync, "INSYNC"},
 	})
 }
 
@@ -501,34 +493,19 @@ func assertNamedString(t *testing.T, got reflect.Type, name string) {
 	}
 }
 
-func assertExactStringConstants(t *testing.T, typeName string, want map[string]string) {
+type typedConstant struct {
+	name  string
+	value any
+	want  string
+}
+
+func assertTypedStringConstants(t *testing.T, want reflect.Type, constants []typedConstant) {
 	t.Helper()
-	_, testFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("locate cloud_test.go")
-	}
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, filepath.Join(filepath.Dir(testFile), "cloud.go"), nil, 0)
-	if err != nil {
-		t.Fatalf("parse cloud.go: %v", err)
-	}
-	info, err := (&types.Config{Importer: importer.Default()}).Check("cloud", fset, []*ast.File{file}, nil)
-	if err != nil {
-		t.Fatalf("type-check cloud.go: %v", err)
-	}
-	wantType := info.Scope().Lookup(typeName)
-	if wantType == nil {
-		t.Fatalf("type %s is not declared", typeName)
-	}
-	got := make(map[string]string)
-	for _, name := range info.Scope().Names() {
-		object, ok := info.Scope().Lookup(name).(*types.Const)
-		if ok && object.Exported() && types.Identical(object.Type(), wantType.Type()) {
-			got[name] = constant.StringVal(object.Val())
+	for _, c := range constants {
+		got := reflect.ValueOf(c.value)
+		if got.Type() != want || got.String() != c.want {
+			t.Errorf("%s = %v (type %s), want %q of type %s", c.name, c.value, got.Type(), c.want, want)
 		}
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("exported %s constants = %v, want exactly %v", typeName, got, want)
 	}
 }
 

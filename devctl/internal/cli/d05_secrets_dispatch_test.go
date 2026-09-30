@@ -112,7 +112,7 @@ func TestSecretsPushResolvesCheckoutAppBeforeCloud(t *testing.T) {
 }
 
 func TestSecretsCLIParsesSpaceAndConnectsFromRootFile(t *testing.T) {
-	// R-0Z7G-BIFL
+	// R-267W-YMZ0
 	root := t.TempDir()
 	writeD05CLIRootFile(t, root)
 	writeD05CLIFile(t, filepath.Join(root, "crm", "cmd", "crm", "main.go"), "package main\n")

@@ -239,7 +239,7 @@ func TestPushResolvesAppBeforeRootAndCloud(t *testing.T) {
 }
 
 func TestCommandsParseSpaceAndConnectFromRootFile(t *testing.T) {
-	// R-0Z7G-BIFL
+	// R-267W-YMZ0
 	root := d05Checkout(t)
 	const domain = "sbx1.ikigenba.dev"
 	for _, test := range []struct {

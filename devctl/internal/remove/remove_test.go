@@ -72,7 +72,7 @@ func TestHelpAndGrammarStopBeforeExternalAccess(t *testing.T) {
 }
 
 func TestResolutionFailuresStopBeforeSSH(t *testing.T) {
-	// R-HU9Z-SKBD
+	// R-2DJB-99F6
 	for _, tc := range []struct {
 		name      string
 		instances []cloud.Instance

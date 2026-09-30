@@ -44,7 +44,7 @@ func TestRemoveHelpAndSyntaxThroughCLI(t *testing.T) {
 }
 
 func TestCLIDispatchesRemoveAndMapsResolution(t *testing.T) {
-	// R-HT23-ESKO R-HU9Z-SKBD R-MTKM-W619
+	// R-HT23-ESKO R-2DJB-99F6 R-MTKM-W619
 	missing := newD12Fixture(t, nil)
 	assertResult(t, invokeWithDeps(missing.deps(), "remove", "gone", "crm"), 1, "", "devctl: no space at 'gone.ikigenba.dev'\n")
 	if len(missing.ssh) != 0 {

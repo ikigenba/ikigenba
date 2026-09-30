@@ -25,7 +25,7 @@ const (
 )
 
 func TestRunListCurrentRootAndApex(t *testing.T) {
-	// R-RJ9Z-1OB0 R-V57V-SDRH R-V6FS-65I6 R-XO8Q-YVRD R-V8VK-XOZK R-8YVJ-0IZI
+	// R-RJ9Z-1OB0 R-27FT-CEPP R-V6FS-65I6 R-XO8Q-YVRD R-V8VK-XOZK R-8YVJ-0IZI
 	if got, want := reflect.TypeOf(Run), reflect.TypeFor[func(context.Context, []string, io.Writer, seam.Deps) error](); got != want {
 		t.Fatalf("Run has type %v, want %v", got, want)
 	}

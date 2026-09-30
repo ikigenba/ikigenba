@@ -31,8 +31,8 @@ checkout for its apps should not run `git` a second time to find the same
 root.
 
 The `<space>` operand every space-taking command accepts, and the
-`<app>.<space>` operand `apex set` accepts, are parsed by one shared package,
-`internal/spaceref`, and by nothing else. The rule is the stories': strip the
+`<app>.<space>` operand `apex set` accepts, are parsed by `internal/spaceref`.
+The rule is the stories': strip the
 root suffix if present, then what remains must be exactly one valid DNS label
 (a space) or exactly two (an app on a space). A label is an RFC 1123 label in
 lowercase, 1 to 63 bytes of lowercase ASCII letters, digits and hyphens with
@@ -167,4 +167,4 @@ looked up.
 
 - R-QUSN-72OQ: When `spaceref.ParseApp` does not fail, it MUST return an `App` whose `Name` is the first piece, whose `Space` is what `Parse` returns for the second piece with the same `root`, and whose `Hostname` is `Name`, `.`, and `Space.Domain`, verified at least by `crm.sbx1` and `crm.sbx1.ikigenba.dev` with root `ikigenba.dev` each returning `Name` `crm`, `Space.Label` `sbx1`, `Space.Domain` `sbx1.ikigenba.dev`, and `Hostname` `crm.sbx1.ikigenba.dev`.
 
-- R-QW0J-KUFF: Every command that takes a `<space>` operand MUST obtain the space by calling `spaceref.Parse` with the operand as typed and the `Domain` of the checkout's `RootFile`, `apex set` MUST obtain the app and space by calling `spaceref.ParseApp` the same way, no package other than `internal/spaceref` MUST split an operand on `.` or compare it with the root to decide what it names, and when the call returns an error the command MUST return that error unchanged and MUST call `Deps.Cloud` not at all; verified at least through `cli.Run` by `devctl space status crm.sbx1` writing the single line `devctl: 'crm.sbx1' is not a space: a space is one label under 'ikigenba.dev'`, `devctl space status Foo_1` writing `devctl: 'Foo_1' is not a valid label`, and `devctl apex set sbx1` writing `devctl: 'sbx1' is not an app on a space: <app>.<space>`, each to stderr with empty stdout, exit 2, and a recording fake `Deps.Cloud` left with no call.
+- R-ST4K-APZN: Every command that takes a `<space>` operand MUST act on the `spaceref.Space` that `spaceref.Parse` returns for the operand as typed and the `Domain` of the checkout's `RootFile`, and `apex set` MUST act on the `spaceref.App` that `spaceref.ParseApp` returns for its operand the same way; when that call returns an error the command MUST return that error unchanged and MUST call `Deps.Cloud` not at all; verified at least through `cli.Run` by `devctl space status crm.sbx1` writing the single line `devctl: 'crm.sbx1' is not a space: a space is one label under 'ikigenba.dev'`, `devctl space status Foo_1` writing `devctl: 'Foo_1' is not a valid label`, and `devctl apex set sbx1` writing `devctl: 'sbx1' is not an app on a space: <app>.<space>`, each to stderr with empty stdout, exit 2, and a recording fake `Deps.Cloud` left with no call.

@@ -33,6 +33,7 @@ func TestPolicyDocumentContract(t *testing.T) {
 }
 
 func TestPolicyDocumentIsDeterministic(t *testing.T) {
+	// R-SUCG-OHQC
 	sp := spaceref.Space{Label: "sbx1", Domain: "sbx1.ikigenba.dev"}
 	first := PolicyDocument("ikigenba.dev", "ZONE1", sp, true)
 	if second := PolicyDocument("ikigenba.dev", "ZONE1", sp, true); first != second {

@@ -107,7 +107,7 @@ func TestD09CommandBoundaryEarlyResultsOutsideCheckout(t *testing.T) {
 }
 
 func TestD09CommandBoundaryMissingAndStoppedSpaces(t *testing.T) {
-	// R-OCRZ-CEDP R-OTUK-P6RF
+	// R-29VM-3Y73 R-2B3I-HPXS
 	root := d09Root(t)
 	name := "gmail-v0.1.0.tar.xz"
 	if err := os.WriteFile(filepath.Join(root, name), []byte("artifact"), 0o600); err != nil {

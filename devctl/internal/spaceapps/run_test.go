@@ -83,7 +83,7 @@ func TestHelpAndSyntaxBeforeExternalAccess(t *testing.T) {
 }
 
 func TestResolutionFailuresStopBeforeHostAccess(t *testing.T) {
-	// R-JMFV-ZBE3
+	// R-2ER7-N15V
 	for _, subcommand := range []string{"restart", "disable", "enable", "logs"} {
 		for _, tc := range []struct {
 			name      string

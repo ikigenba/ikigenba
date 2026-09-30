@@ -71,7 +71,7 @@ func TestOpenWithLoaderUsesPathStyleS3(t *testing.T) {
 }
 
 func TestOpenWithLoaderUsesOnlySuppliedConfiguration(t *testing.T) {
-	// R-CG22-V9E5 R-CH9Z-914U
+	// R-CG22-V9E5 R-2WML-KG2W
 	poisonDefaultConfiguration(t)
 
 	const (
@@ -133,7 +133,7 @@ func TestOpenWithLoaderFailureReturnsNoClients(t *testing.T) {
 }
 
 func TestOpenLoadsExactProfileAndRegion(t *testing.T) {
-	// R-YM37-VA85 R-YNB4-91YU R-CH9Z-914U
+	// R-YM37-VA85 R-YNB4-91YU
 	const profile = "MiXeD Profile"
 	configPath := filepath.Join(t.TempDir(), "config")
 	contents := "[profile " + profile + "]\nregion = profile-region-1\n" +

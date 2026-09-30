@@ -97,5 +97,3 @@ returned unchanged, so the diagnostic relay is the one D06 states.
 - R-8QYV-93D9: `GetKey` MUST make exactly one call to `(h).Sudo` with the step `step` and exactly the arguments `opsctl`, `config`, `get`, and `key`; on exit 0 it MUST return that call's `Output.Stdout` with trailing newline characters removed, `true`, and a nil error; when the call returns a `*host.CommandError` whose `Status` is 1 it MUST return an empty string, `false`, and a nil error, since the installed opsctl documents exit 1 for `config get` as the key not being set; any other error MUST be returned unchanged with an empty string and `false`.
 
 - R-8TEO-0MUN: `Configure`, `SetKey`, `DelKey`, and `GetKey` MUST NOT parse, validate, or interpret the standard output or standard error of any opsctl command beyond what R-8QYV-93D9 states, and MUST NOT alter the bytes of an `Output` or `*host.CommandError` they return.
-
-- R-8UMK-EELC: Package `internal/hostsetup` MUST import neither `internal/cloud` nor `internal/cloud/awssdk`: every value it writes to the host arrives as a plain string or a `spaceref.Space` in `Config`, verified by a test that inspects the package's imports.

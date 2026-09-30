@@ -1,17 +1,14 @@
+// Package main tests the devctl entry point by building and running it.
 package main
 
 import (
-	"go/ast"
-	"go/format"
-	"go/parser"
-	"go/token"
+	"bytes"
 	"os"
 	"path/filepath"
-	"reflect"
-	"sort"
 	"strings"
 	"testing"
 
+	"github.com/ikigenba/ikigenba/devctl/internal/cli"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
 
@@ -41,128 +38,6 @@ Exit codes:
 
 Run 'devctl <command> --help' for details on a command.
 `
-
-func TestMainDeclaresAndWiresEveryDependency(t *testing.T) {
-	// R-A782-RJCD R-BWJO-QXJ1
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "main.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	wantFields := make([]string, reflect.TypeFor[seam.Deps]().NumField())
-	for i := range wantFields {
-		wantFields[i] = reflect.TypeFor[seam.Deps]().Field(i).Name
-	}
-	sort.Strings(wantFields)
-
-	var literal *ast.CompositeLit
-	ast.Inspect(file, func(node ast.Node) bool {
-		candidate, ok := node.(*ast.CompositeLit)
-		if !ok {
-			return true
-		}
-		selector, ok := candidate.Type.(*ast.SelectorExpr)
-		if ok && expression(fset, selector) == "seam.Deps" {
-			if literal != nil {
-				t.Fatal("main.go contains more than one seam.Deps composite literal")
-			}
-			literal = candidate
-		}
-		return true
-	})
-	if literal == nil {
-		t.Fatal("main.go contains no seam.Deps composite literal")
-	}
-
-	gotFields := make([]string, 0, len(literal.Elts))
-	gotValues := make(map[string]string, len(literal.Elts))
-	for _, element := range literal.Elts {
-		entry, ok := element.(*ast.KeyValueExpr)
-		if !ok {
-			t.Fatal("seam.Deps literal contains an unnamed field")
-		}
-		name := expression(fset, entry.Key)
-		gotFields = append(gotFields, name)
-		gotValues[name] = expression(fset, entry.Value)
-	}
-	sort.Strings(gotFields)
-	if !reflect.DeepEqual(gotFields, wantFields) {
-		t.Fatalf("seam.Deps fields = %v, want %v", gotFields, wantFields)
-	}
-
-	wantValues := map[string]string{
-		"Dir": "dir", "EUID": "os.Geteuid()", "Getenv": "os.Getenv",
-		"Cloud": "awssdk.Open", "Exec": "seam.Exec", "Stream": "seam.Stream",
-		"Now": "time.Now", "After": "time.After",
-	}
-	if !reflect.DeepEqual(gotValues, wantValues) {
-		t.Fatalf("seam.Deps wiring = %#v, want %#v", gotValues, wantValues)
-	}
-
-	wantCalls := map[string]bool{
-		"signal.NotifyContext(context.Background(), os.Interrupt)":        true,
-		"cli.Run(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr, deps)": true,
-		"cancel()":      true,
-		"os.Exit(code)": true,
-	}
-	getwdAssignedToDir := false
-	interruptContextAssignedToRunInputs := false
-	codeAssignedFromRun := false
-	var runPos, cancelPos, exitPos token.Pos
-	ast.Inspect(file, func(node ast.Node) bool {
-		call, ok := node.(*ast.CallExpr)
-		if ok {
-			rendered := expression(fset, call)
-			delete(wantCalls, rendered)
-			switch rendered {
-			case "cli.Run(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr, deps)":
-				runPos = call.Pos()
-			case "cancel()":
-				cancelPos = call.Pos()
-			case "os.Exit(code)":
-				exitPos = call.Pos()
-			}
-		}
-		assignment, ok := node.(*ast.AssignStmt)
-		if !ok {
-			return true
-		}
-		if len(assignment.Lhs) == 2 && len(assignment.Rhs) == 1 {
-			lhs0 := expression(fset, assignment.Lhs[0])
-			lhs1 := expression(fset, assignment.Lhs[1])
-			rhs := expression(fset, assignment.Rhs[0])
-			if lhs0 == "dir" && lhs1 == "err" && rhs == "os.Getwd()" {
-				getwdAssignedToDir = true
-			}
-			if lhs0 == "ctx" && lhs1 == "cancel" &&
-				rhs == "signal.NotifyContext(context.Background(), os.Interrupt)" {
-				interruptContextAssignedToRunInputs = true
-			}
-		}
-		if len(assignment.Lhs) == 1 && len(assignment.Rhs) == 1 &&
-			expression(fset, assignment.Lhs[0]) == "code" &&
-			expression(fset, assignment.Rhs[0]) == "cli.Run(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr, deps)" {
-			codeAssignedFromRun = true
-		}
-		return true
-	})
-	for missing := range wantCalls {
-		t.Errorf("main.go does not contain call %q", missing)
-	}
-	if !codeAssignedFromRun {
-		t.Error("main.go does not pass cli.Run's result to os.Exit through code")
-	}
-	if !getwdAssignedToDir {
-		t.Error("main.go does not assign os.Getwd's result to the dir supplied as Deps.Dir")
-	}
-	if !interruptContextAssignedToRunInputs {
-		t.Error("main.go does not assign signal.NotifyContext's results to the ctx passed to cli.Run and its cancel function")
-	}
-	if runPos == token.NoPos || runPos >= cancelPos || cancelPos >= exitPos {
-		t.Error("main.go must call cli.Run, cancel its interrupt context, then call os.Exit")
-	}
-}
 
 func TestBuiltBinaryHelp(t *testing.T) {
 	// R-F59F-A9GW
@@ -196,10 +71,39 @@ func TestBuiltBinaryHelp(t *testing.T) {
 	}
 }
 
-func expression(fset *token.FileSet, expr ast.Expr) string {
-	var rendered strings.Builder
-	if err := format.Node(&rendered, fset, expr); err != nil {
-		panic(err)
+func TestBuiltBinaryVersionMatchesRun(t *testing.T) {
+	// R-SRWN-WY8Y
+	if os.Geteuid() == 0 {
+		t.Fatal("test must run as a non-root user")
 	}
-	return rendered.String()
+	var wantStdout, wantStderr bytes.Buffer
+	if code := cli.Run(t.Context(), []string{"--version"}, strings.NewReader(""), &wantStdout, &wantStderr, seam.Deps{EUID: 1}); code != 0 {
+		t.Fatalf("cli.Run --version exit code = %d, want 0", code)
+	}
+
+	binary := filepath.Join(t.TempDir(), "devctl")
+	moduleDir := filepath.Clean(filepath.Join("..", ".."))
+	build, err := seam.Exec(t.Context(), seam.Cmd{
+		Path: "go", Args: []string{"build", "-o", binary, "./cmd/devctl"}, Dir: moduleDir,
+	})
+	if err != nil {
+		t.Fatalf("start go build: %v", err)
+	}
+	if build.ExitCode != 0 {
+		t.Fatalf("go build exited %d: %s", build.ExitCode, build.Stderr)
+	}
+
+	result, err := seam.Exec(t.Context(), seam.Cmd{Path: binary, Args: []string{"--version"}, Dir: moduleDir})
+	if err != nil {
+		t.Fatalf("start devctl: %v", err)
+	}
+	if result.ExitCode != 0 {
+		t.Errorf("exit code = %d, want 0", result.ExitCode)
+	}
+	if got := string(result.Stdout); got != wantStdout.String() {
+		t.Errorf("stdout = %q, want %q", got, wantStdout.String())
+	}
+	if len(result.Stderr) != 0 {
+		t.Errorf("stderr = %q, want empty", result.Stderr)
+	}
 }

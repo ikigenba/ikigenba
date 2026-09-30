@@ -3,13 +3,8 @@ package hostsetup
 import (
 	"context"
 	"errors"
-	"go/parser"
-	"go/token"
 	"io"
-	"os"
-	"path/filepath"
 	"reflect"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -293,33 +288,6 @@ func TestOnlySingleKeyOperationsCanNameHostApex(t *testing.T) {
 	for _, command := range logicalCommands(commands) {
 		if strings.Contains(command, KeyHostApex) {
 			t.Fatalf("general operation named %q in %q", KeyHostApex, command)
-		}
-	}
-}
-
-func TestHostsetupProductionDoesNotImportCloud(t *testing.T) {
-	// R-8UMK-EELC
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
-		}
-		file, err := parser.ParseFile(token.NewFileSet(), entry.Name(), nil, parser.ImportsOnly)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, imported := range file.Imports {
-			path, err := strconv.Unquote(imported.Path.Value)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if path == "github.com/ikigenba/ikigenba/devctl/internal/cloud" ||
-				path == "github.com/ikigenba/ikigenba/devctl/internal/cloud/awssdk" {
-				t.Fatalf("%s imports forbidden package %q", entry.Name(), path)
-			}
 		}
 	}
 }

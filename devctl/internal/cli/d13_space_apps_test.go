@@ -101,7 +101,7 @@ func TestSpaceAppSyntaxThroughCLI(t *testing.T) {
 }
 
 func TestSpaceAppResolutionThroughCLI(t *testing.T) {
-	// R-JMFV-ZBE3
+	// R-2ER7-N15V
 	for _, subcommand := range []string{"restart", "disable", "enable", "logs"} {
 		missing := newD13Fixture(t, nil)
 		assertResult(t, invokeWithDeps(missing.deps(), "space", subcommand, "gone", "crm"), 1, "", "devctl: no space at 'gone.ikigenba.dev'\n")

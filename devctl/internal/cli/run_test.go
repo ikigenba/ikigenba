@@ -5,16 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -23,6 +19,10 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/host"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 	"github.com/ikigenba/ikigenba/devctl/internal/secrets"
+	"github.com/ikigenba/ikigenba/devctl/internal/space"
+	"github.com/ikigenba/ikigenba/devctl/internal/spaceapps"
+	"github.com/ikigenba/ikigenba/devctl/internal/spacecreate"
+	"github.com/ikigenba/ikigenba/devctl/internal/spaceinit"
 )
 
 var _ func(context.Context, []string, io.Reader, io.Writer, io.Writer, seam.Deps) int = Run
@@ -181,26 +181,6 @@ state and database journal mode. A host with no apps prints nothing.
 
 func TestRunReturnsWithoutTerminatingCaller(t *testing.T) {
 	// R-U72C-BSYD
-	file, err := parser.ParseFile(token.NewFileSet(), "run.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ast.Inspect(file, func(node ast.Node) bool {
-		call, ok := node.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		selector, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		identifier, isIdentifier := selector.X.(*ast.Ident)
-		if isIdentifier && identifier.Name == "os" && selector.Sel.Name == "Exit" {
-			t.Error("Run calls os.Exit instead of returning")
-		}
-		return true
-	})
-
 	result := invoke("--help")
 	if result.code != 0 {
 		t.Fatalf("Run returned %d, want 0", result.code)
@@ -382,7 +362,7 @@ func TestEveryCloudCommandStopsAtMissingRootFile(t *testing.T) {
 }
 
 func TestEverySpaceOperandUsesSharedGrammarBeforeCloud(t *testing.T) {
-	// R-QW0J-KUFF
+	// R-ST4K-APZN
 	tests := []struct {
 		name    string
 		args    []string
@@ -423,6 +403,17 @@ func TestEverySpaceOperandUsesSharedGrammarBeforeCloud(t *testing.T) {
 				t.Fatalf("Run(%q) = %#v, cloud calls %d", test.args, result, cloudCalls)
 			}
 		})
+	}
+
+	deps := checkoutDeps(t, `{"domain":"ikigenba.dev","region":"us-east-2"}`)
+	cloudCalls := 0
+	deps.Cloud = func(context.Context, string, string) (cloud.Clients, error) {
+		cloudCalls++
+		return cloud.Clients{}, errors.New("unexpected cloud call")
+	}
+	assertResult(t, invokeWithDeps(deps, "space", "status", "Foo_1"), 2, "", "devctl: 'Foo_1' is not a valid label\n")
+	if cloudCalls != 0 {
+		t.Fatalf("space status Foo_1 made %d cloud calls, want none", cloudCalls)
 	}
 }
 
@@ -479,6 +470,28 @@ func TestCloudErrorsAreSingleLineOperationFailures(t *testing.T) {
 			deps.Cloud = func(context.Context, string, string) (cloud.Clients, error) { return test.clients, nil }
 			assertResult(t, invokeWithDeps(deps, test.args...), 1, test.wantStdout, test.wantStderr)
 		})
+	}
+}
+
+func TestFailedStepWritesNoStepLine(t *testing.T) {
+	// R-SVKD-29H1
+	deps := checkoutDeps(t, `{"domain":"ikigenba.dev","region":"us-east-2"}`)
+	deps.Exec = cliCheckoutAndHostExec(t, deps.Exec)
+	clients := createCLIClients(&cliEC2{runErr: &cloud.Error{
+		Service: "ec2", Operation: "RunInstances", Code: "InsufficientInstanceCapacity",
+	}}, &cliRoute53{})
+	deps.Cloud = func(context.Context, string, string) (cloud.Clients, error) { return clients, nil }
+	result := invokeWithDeps(deps, "space", "create", "sbx1", "--acme-email", "ops@ikigenba.dev")
+	if result.code != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr %q", result.code, result.stderr)
+	}
+	for line := range strings.Lines(result.stdout) {
+		if strings.HasPrefix(line, "instance:") {
+			t.Fatalf("stdout names the failed instance step: %q", result.stdout)
+		}
+	}
+	if !strings.HasSuffix(result.stdout, "role: ok (sbx1.ikigenba.dev)\n") {
+		t.Fatalf("stdout = %q, want the completed steps through role", result.stdout)
 	}
 }
 
@@ -575,13 +588,14 @@ func TestTopLevelNonCommandsDoNotTouchExternalDependencies(t *testing.T) {
 }
 
 func TestVersionDeclaration(t *testing.T) {
-	// R-DFEA-OSNK
-	if !regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`).MatchString(version) {
-		t.Fatalf("version = %q, want a stable semantic version", version)
-	}
-	declaration := findVersionDeclaration(t)
-	if declaration == nil {
-		t.Fatal("run.go has no package-level var version")
+	// R-R2LW-I8W3
+	semver := regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+	for _, args := range [][]string{{"version"}, {"-V"}, {"--version"}} {
+		result := invoke(args...)
+		printed, ok := strings.CutSuffix(result.stdout, "\n")
+		if result.code != 0 || !ok || !semver.MatchString(printed) {
+			t.Errorf("Run(%q) = %d, %q, want a stable semantic version line", args, result.code, result.stdout)
+		}
 	}
 }
 
@@ -939,51 +953,7 @@ func TestDiagnosticStreams(t *testing.T) {
 }
 
 func TestCLIAloneWritesCheckoutDiagnostics(t *testing.T) {
-	// R-OQGB-9JBO
-	for _, commandPackage := range []string{
-		"space", "spacecreate", "spaceinit", "spaceapps", "secrets",
-		"build", "deploy", "restore", "remove", "apex",
-	} {
-		directory := filepath.Join("..", commandPackage)
-		entries, err := os.ReadDir(directory)
-		if err != nil {
-			t.Fatalf("read internal/%s: %v", commandPackage, err)
-		}
-		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
-				continue
-			}
-			file, err := parser.ParseFile(token.NewFileSet(), filepath.Join(directory, entry.Name()), nil, 0)
-			if err != nil {
-				t.Fatalf("parse internal/%s/%s: %v", commandPackage, entry.Name(), err)
-			}
-			for _, declaration := range file.Decls {
-				function, ok := declaration.(*ast.FuncDecl)
-				if !ok || function.Recv != nil || function.Name.Name != "Run" {
-					continue
-				}
-				writers := 0
-				for _, field := range function.Type.Params.List {
-					selector, ok := field.Type.(*ast.SelectorExpr)
-					if !ok {
-						continue
-					}
-					qualifier, qualified := selector.X.(*ast.Ident)
-					if !qualified || qualifier.Name != "io" || selector.Sel.Name != "Writer" {
-						continue
-					}
-					writers += len(field.Names)
-					if len(field.Names) != 1 || field.Names[0].Name != "stdout" {
-						t.Errorf("internal/%s.Run writer parameter is not exactly stdout", commandPackage)
-					}
-				}
-				if writers != 1 {
-					t.Errorf("internal/%s.Run has %d io.Writer parameters, want 1", commandPackage, writers)
-				}
-			}
-		}
-	}
-
+	// R-R3TS-W0MS
 	outside := filepath.Join(t.TempDir(), "outside")
 	assertResult(t, invokeWithDeps(seam.Deps{
 		EUID: 1,
@@ -1042,46 +1012,6 @@ func TestHostCommandDetailIsNotQuotedAgain(t *testing.T) {
 	if got := stderr.String(); got != want {
 		t.Fatalf("stderr = %q, want %q", got, want)
 	}
-}
-
-func TestVersionIsInitializedInSource(t *testing.T) {
-	// R-GV4C-IOFR
-	declaration := findVersionDeclaration(t)
-	if declaration == nil || len(declaration.Values) != 1 {
-		t.Fatal("version has no source initializer")
-	}
-	literal, ok := declaration.Values[0].(*ast.BasicLit)
-	if !ok || literal.Kind != token.STRING {
-		t.Fatal("version is not initialized directly from source text")
-	}
-	sourceVersion, err := strconv.Unquote(literal.Value)
-	if err != nil {
-		t.Fatalf("parse version initializer: %v", err)
-	}
-	if version != sourceVersion {
-		t.Fatalf("built version = %q, source version = %q", version, sourceVersion)
-	}
-}
-
-func findVersionDeclaration(t *testing.T) *ast.ValueSpec {
-	t.Helper()
-	file, err := parser.ParseFile(token.NewFileSet(), "run.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, declaration := range file.Decls {
-		general, ok := declaration.(*ast.GenDecl)
-		if !ok || general.Tok != token.VAR {
-			continue
-		}
-		for _, specification := range general.Specs {
-			value := specification.(*ast.ValueSpec)
-			if len(value.Names) == 1 && value.Names[0].Name == "version" {
-				return value
-			}
-		}
-	}
-	return nil
 }
 
 type runResult struct {
@@ -1282,4 +1212,109 @@ func cliCheckoutAndHostExec(t *testing.T, checkoutExec seam.Runner) seam.Runner 
 			return seam.Result{}, errors.New("unexpected command")
 		}
 	}
+}
+
+func TestSpaceDispatchMatchesOwningPackage(t *testing.T) {
+	// R-JDWL-AX78
+	type target func(context.Context, []string, io.Writer, seam.Deps) error
+	tests := []struct {
+		name   string
+		args   []string
+		run    target
+		direct []string
+	}{
+		{name: "create", args: []string{"space", "create", "sbx1", "--acme-email", "ops@ikigenba.dev"}, run: spacecreate.Run, direct: []string{"sbx1", "--acme-email", "ops@ikigenba.dev"}},
+		{name: "init", args: []string{"space", "init", "sbx1"}, run: spaceinit.Run, direct: []string{"sbx1"}},
+		{name: "restart", args: []string{"space", "restart", "sbx1", "crm"}, run: spaceapps.Run, direct: []string{"restart", "sbx1", "crm"}},
+		{name: "disable", args: []string{"space", "disable", "sbx1", "crm"}, run: spaceapps.Run, direct: []string{"disable", "sbx1", "crm"}},
+		{name: "enable", args: []string{"space", "enable", "sbx1", "crm"}, run: spaceapps.Run, direct: []string{"enable", "sbx1", "crm"}},
+		{name: "logs", args: []string{"space", "logs", "sbx1", "crm"}, run: spaceapps.Run, direct: []string{"logs", "sbx1", "crm"}},
+		{name: "list", args: []string{"space", "list"}, run: space.Run, direct: []string{"list"}},
+		{name: "status", args: []string{"space", "status", "sbx1"}, run: space.Run, direct: []string{"status", "sbx1"}},
+		{name: "stop", args: []string{"space", "stop", "sbx1"}, run: space.Run, direct: []string{"stop", "sbx1"}},
+	}
+	type observed struct {
+		stdout string
+		err    error
+		calls  []string
+	}
+	observe := func(t *testing.T, invoke func(seam.Deps, io.Writer) error) observed {
+		t.Helper()
+		var o observed
+		deps := checkoutDeps(t, `{"domain":"ikigenba.dev","region":"us-east-2"}`)
+		checkoutExec := deps.Exec
+		deps.Exec = func(ctx context.Context, command seam.Cmd) (seam.Result, error) {
+			o.calls = append(o.calls, "exec "+command.Path+" "+strings.Join(command.Args, " "))
+			return checkoutExec(ctx, command)
+		}
+		deps.Cloud = func(_ context.Context, profile, region string) (cloud.Clients, error) {
+			o.calls = append(o.calls, "cloud "+profile+" "+region)
+			return cloud.Clients{}, errors.New("cloud stopped here")
+		}
+		var stdout bytes.Buffer
+		o.err = invoke(deps, &stdout)
+		o.stdout = stdout.String()
+		return o
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var stderr bytes.Buffer
+			code := 0
+			viaRun := observe(t, func(deps seam.Deps, stdout io.Writer) error {
+				code = Run(t.Context(), test.args, strings.NewReader(""), stdout, &stderr, deps)
+				return nil
+			})
+			direct := observe(t, func(deps seam.Deps, stdout io.Writer) error {
+				return test.run(t.Context(), test.direct, stdout, deps)
+			})
+			if direct.err == nil {
+				t.Fatalf("%s.Run(%q) returned nil, want the cloud failure", test.name, test.direct)
+			}
+			if viaRun.stdout != direct.stdout || !reflect.DeepEqual(viaRun.calls, direct.calls) {
+				t.Fatalf("Run(%q) = stdout %q calls %q; owning package gives stdout %q calls %q", test.args, viaRun.stdout, viaRun.calls, direct.stdout, direct.calls)
+			}
+			if want := "devctl: " + direct.err.Error() + "\n"; code != 1 || stderr.String() != want {
+				t.Fatalf("Run(%q) = %d, stderr %q; want 1, %q", test.args, code, stderr.String(), want)
+			}
+		})
+	}
+
+	// Arguments only the owning package's grammar rejects this way.
+	rejected := []struct {
+		args   []string
+		run    target
+		direct []string
+	}{
+		{args: []string{"space", "create", "sbx1"}, run: spacecreate.Run, direct: []string{"sbx1"}},
+		{args: []string{"space", "init", "sbx1", "extra"}, run: spaceinit.Run, direct: []string{"sbx1", "extra"}},
+		{args: []string{"space", "restart", "sbx1"}, run: spaceapps.Run, direct: []string{"restart", "sbx1"}},
+		{args: []string{"space", "logs", "sbx1"}, run: spaceapps.Run, direct: []string{"logs", "sbx1"}},
+		{args: []string{"space", "status"}, run: space.Run, direct: []string{"status"}},
+	}
+	for _, test := range rejected {
+		direct := observe(t, func(deps seam.Deps, stdout io.Writer) error {
+			return test.run(t.Context(), test.direct, stdout, deps)
+		})
+		if direct.err == nil {
+			t.Fatalf("owning package accepted %q", test.direct)
+		}
+		result := invokeWithDeps(checkoutDeps(t, `{"domain":"ikigenba.dev","region":"us-east-2"}`), test.args...)
+		firstLine, _, _ := strings.Cut(result.stderr, "\n")
+		if result.code == 0 || result.stdout != direct.stdout || firstLine != "devctl: "+direct.err.Error() {
+			t.Errorf("Run(%q) = %d, stderr %q; owning package returned %q", test.args, result.code, result.stderr, direct.err)
+		}
+	}
+
+	listDeps := func(t *testing.T) seam.Deps {
+		deps := checkoutDeps(t, `{"domain":"ikigenba.dev","region":"us-east-2"}`)
+		deps.Cloud = func(context.Context, string, string) (cloud.Clients, error) {
+			return cliClients(&cliEC2{instances: []cloud.Instance{{ID: "i-one", Space: "sbx1.ikigenba.dev", State: cloud.StateRunning, Address: "192.0.2.10"}}}, &cliRoute53{}), nil
+		}
+		return deps
+	}
+	var want bytes.Buffer
+	if err := space.Run(t.Context(), []string{"list"}, &want, listDeps(t)); err != nil {
+		t.Fatalf("space.Run(list) = %v", err)
+	}
+	assertResult(t, invokeWithDeps(listDeps(t), "space", "list"), 0, want.String(), "")
 }

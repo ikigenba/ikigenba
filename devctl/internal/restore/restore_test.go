@@ -73,7 +73,7 @@ func TestRestorePublicContractAndGrammar(t *testing.T) {
 }
 
 func TestRestoreReturnsRootParseConnectAndLookupFailuresUnchanged(t *testing.T) {
-	// R-OTUK-P6RF
+	// R-2B3I-HPXS
 	t.Run("root", func(t *testing.T) {
 		h := newRestoreHarness(t)
 		if err := os.WriteFile(filepath.Join(h.root, "infra", "terraform.tfvars.json"), []byte(`{"domain":"ikigenba.dev"}`), 0o600); err != nil {
@@ -118,7 +118,7 @@ func TestRestoreReturnsRootParseConnectAndLookupFailuresUnchanged(t *testing.T) 
 }
 
 func TestRestoreUsesOnlyRootSessionAndOneHostCommand(t *testing.T) {
-	// R-OTUK-P6RF R-9R4L-UV1E R-FV7X-I3AA R-OWAD-GQ8T
+	// R-2B3I-HPXS R-9R4L-UV1E R-FV7X-I3AA R-OWAD-GQ8T
 	h := newRestoreHarness(t)
 	var stdout bytes.Buffer
 	stamp := "2026-09-11T18:00:00.25-05:00"

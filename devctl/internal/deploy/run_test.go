@@ -273,7 +273,7 @@ func TestDeployFileValidationAndArchiveContract(t *testing.T) {
 }
 
 func TestDeployUsesRootSessionSpaceSecretsUploadAndHost(t *testing.T) {
-	// R-OCRZ-CEDP R-9PWP-H3AP R-OF7S-3XV3 R-0HFK-QF61 R-OHNK-VHCH R-OK3D-N0TV R-FAHM-ZZOH R-FHT1-AM4N
+	// R-29VM-3Y73 R-9PWP-H3AP R-OF7S-3XV3 R-0HFK-QF61 R-OHNK-VHCH R-OK3D-N0TV R-FAHM-ZZOH R-FHT1-AM4N
 	h := newHarness(t, "crm-v0.2.0-rc.1.tar.xz", "app = \"crm\"\nsecrets = [\"B\", \"A\", \"C\"]\n")
 	h.secretNames = []string{"A", "B", "C", "EXTRA"}
 	var stdout bytes.Buffer
@@ -419,7 +419,7 @@ func TestDeployLifecycleFailuresStopInOrderAndKeepUpload(t *testing.T) {
 }
 
 func TestDeployReturnsRootParseConnectAndLookupFailuresUnchanged(t *testing.T) {
-	// R-OCRZ-CEDP
+	// R-29VM-3Y73
 	t.Run("root", func(t *testing.T) {
 		h := newHarness(t, "crm-v0.1.0.tar.xz", "app = \"crm\"\n")
 		if err := os.WriteFile(filepath.Join(h.root, "infra", "terraform.tfvars.json"), []byte(`{"domain":"ikigenba.dev"}`), 0o600); err != nil {
@@ -497,7 +497,7 @@ func TestDeployPromotesSameFileAcrossSpacesWithoutIdentityRestriction(t *testing
 }
 
 func TestDeploySpaceFailuresStopBeforeSecretsUploadAndHost(t *testing.T) {
-	// R-OCRZ-CEDP
+	// R-29VM-3Y73
 	tests := []struct {
 		name, operand string
 		instances     []cloud.Instance

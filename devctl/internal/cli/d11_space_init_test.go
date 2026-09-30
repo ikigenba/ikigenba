@@ -61,7 +61,7 @@ func TestSpaceInitHelpThroughCLIOutsideCheckout(t *testing.T) {
 }
 
 func TestSpaceInitLookupRefusalsThroughCLI(t *testing.T) {
-	// R-OR9K-LL65
+	// R-2CBE-VHOH
 	t.Run("absent", func(t *testing.T) {
 		h := newD11Harness(t)
 		h.instances = nil
@@ -81,7 +81,7 @@ func TestSpaceInitLookupRefusalsThroughCLI(t *testing.T) {
 }
 
 func TestSpaceInitFailureRelaysHostDiagnosticThroughCLI(t *testing.T) {
-	// R-OSHG-ZCWU R-OW56-4O4X
+	// R-IRWQ-H3I4 R-OW56-4O4X
 	h := newD11Harness(t)
 	h.sshResults = make([]seam.Result, 7)
 	h.sshResults[0].Stdout = []byte("v3.2.1\n")

@@ -94,7 +94,7 @@ func TestGrammarAndHelpAreSideEffectFree(t *testing.T) {
 }
 
 func TestSetRunsPreflightAndOrderedSteps(t *testing.T) {
-	// R-4D75-ZO9I R-4FMY-R7QW R-4GUV-4ZHL R-4I2R-IR8A R-VX21-6EX8
+	// R-2FZ4-0SWK R-4FMY-R7QW R-4GUV-4ZHL R-4I2R-IR8A R-VX21-6EX8
 	// R-SNXG-N0VB R-4LQG-O2GD R-VY9X-K6NX R-4O69-FLXR
 	f := successfulFake()
 	deps := testDeps(t, f)
@@ -169,7 +169,7 @@ func TestSetPreflightRefusesBeforeOutputOrMutation(t *testing.T) {
 }
 
 func TestAcceptedInvocationFailureOrderAndPropagation(t *testing.T) {
-	// R-4D75-ZO9I R-4FMY-R7QW
+	// R-2FZ4-0SWK R-4FMY-R7QW
 	t.Run("root discovery", func(t *testing.T) {
 		want := errors.New("git unavailable")
 		cloudCalls := 0
