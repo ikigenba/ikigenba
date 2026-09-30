@@ -770,14 +770,6 @@ func TestCatalogReasoningVocabularySendable(t *testing.T) {
 	}
 }
 
-// R-KE3W-V60A
-func TestRotationShape(t *testing.T) {
-	assertStructShape(t, Rotation{}, []fieldShape{
-		{"RefreshURL", reflect.TypeOf("")},
-		{"ClientID", reflect.TypeOf("")},
-	})
-}
-
 // R-KFBT-8XQZ
 func TestEndpointSpecShape(t *testing.T) {
 	assertStructShape(t, EndpointSpec{}, []fieldShape{

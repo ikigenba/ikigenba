@@ -322,11 +322,7 @@ func TestConversationNeverRotatesRejectedAPIKeyCredential(t *testing.T) {
 }
 
 func TestEndpointConversationExecutesWithDefaultHTTPClient(t *testing.T) {
-	// R-OFIQ-BSPA
-	wantConstructor := reflect.TypeOf(func(Authenticator, ...EndpointOption) (Endpoint, error) { return Endpoint{}, nil })
-	if got := reflect.TypeOf(NewEndpoint); got != wantConstructor || !got.IsVariadic() {
-		t.Fatalf("endpoint construction exposes transport hooks: %s variadic=%t", got, got.IsVariadic())
-	}
+	// R-OE8R-CN09
 	originalDefault := http.DefaultClient
 	t.Cleanup(func() { http.DefaultClient = originalDefault })
 
@@ -401,7 +397,7 @@ func TestConversationIdentityRemainsStable(t *testing.T) {
 
 func TestSendValidationFailsBeforeConfiguredProviderBoundaries(t *testing.T) {
 	// R-2TX6-COUI
-	// R-2V52-QGL7
+	// R-OBSY-L3IV
 	tests := []struct {
 		name  string
 		cause error
@@ -448,7 +444,7 @@ func TestSendValidationFailsBeforeConfiguredProviderBoundaries(t *testing.T) {
 }
 
 func TestBuiltInWireClassifiesNonSuccessResponse(t *testing.T) {
-	// R-OGQM-PKFZ
+	// R-OFGN-QEQY
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusPaymentRequired)
 		_, _ = writer.Write([]byte("quota exhausted"))
@@ -599,7 +595,7 @@ func TestTransportFailureIsWrappedWithStableIdentity(t *testing.T) {
 }
 
 func TestSendAcceptsDifferentBlockVariants(t *testing.T) {
-	// R-1TC6-VKLO
+	// R-JJEW-ZZ4H
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer server.Close()
 	conversation, provider := vendorFixture(server.URL, "model", server.Client())
@@ -608,11 +604,10 @@ func TestSendAcceptsDifferentBlockVariants(t *testing.T) {
 	if len(provider.states) != 1 || len(provider.states[0].History) != 1 || len(provider.states[0].History[0].Blocks) != 2 {
 		t.Fatalf("Send did not carry both block variants: %#v", provider.states)
 	}
-	assertConversationExportsExactly(t)
 }
 
 func TestSendSnapshotPreservesPayloadAndCommitsCompleteUserTurn(t *testing.T) {
-	// R-1ZFO-SFB5
+	// R-ONZY-ESXT
 	// R-25J6-PA0M
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer server.Close()
@@ -2501,7 +2496,6 @@ func TestSendCompletesToolRoundTripsWithFixedClonedConfigAndOneCommit(t *testing
 	if result.Blocks[0].(ToolResult).ToolUseID != callID || provider.states[1].History[3].Blocks[0].(ToolResult).ToolUseID != callID {
 		t.Fatal("tool result did not preserve the vendor call id byte-for-byte")
 	}
-	assertConversationExportsExactly(t)
 	if conversation.tools[0] == nil || conversation.settings.Options["stop"] != `["END"]` || conversation.history[0].Blocks == nil {
 		t.Fatal("provider snapshot mutated fixed config or prior history")
 	}
@@ -2679,7 +2673,6 @@ func TestDeferredGroupsConditionallySynthesizeExactlyOneLoader(t *testing.T) {
 		})
 	}
 	conversationType := reflect.TypeFor[*Conversation]()
-	assertConversationExportsExactly(t)
 	if _, exists := conversationType.MethodByName("Deferred"); exists {
 		t.Fatal("post-construction Deferred registration still exists")
 	}

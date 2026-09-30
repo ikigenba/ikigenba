@@ -60,7 +60,7 @@ The structural requirement below owns the `Settings` field shape.
 
 ## REQUIREMENTS
 
-- R-CZZ8-ZOQD: `agentkit` MUST export `Access` as an opaque struct type with no exported fields together with `func BlocksNone() Access`, `func BlocksPaths(paths ...string) Access`, and `func BlocksAll() Access`.
+- R-OLK5-N9GF: `agentkit` MUST export the `Access` type together with `func BlocksNone() Access`, `func BlocksPaths(paths ...string) Access`, and `func BlocksAll() Access`.
 - R-D175-DGH2: Two tool calls MUST be treated as conflicting exactly when either call's `Access` is `BlocksAll()`, or both are `BlocksPaths` and some path of one, after `filepath.Clean`, equals or is an ancestor directory of some path of the other; `BlocksNone()` and `BlocksPaths()` with no paths MUST conflict with nothing but a `BlocksAll()` call.
 - R-D2F1-R87R: For each tool call of a round-trip that passes argument validation (D11), the orchestrator MUST invoke the tool's `Access` exactly once with the validated arguments before starting the call, and MUST NOT invoke `Access` for a call answered without dispatch (an unknown name or an argument-validation failure).
 - R-D3MY-4ZYG: Within one round-trip the orchestrator MUST start each tool call only after every earlier call, in the order of the assistant message's `ToolUse` blocks, that conflicts with it has returned, and MUST NOT delay a call on any call it does not conflict with; verified by a round of non-conflicting calls that each block until every one of them has started, which MUST complete, and by a round of conflicting calls whose executions MUST never overlap in time.

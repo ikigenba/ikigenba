@@ -16,18 +16,9 @@ import (
 	"time"
 )
 
-// R-CZZ8-ZOQD
+// R-OLK5-N9GF
 // R-D175-DGH2
 func TestAccessConstructorsAndConflictGeometry(t *testing.T) {
-	accessType := reflect.TypeFor[Access]()
-	if accessType.Kind() != reflect.Struct {
-		t.Fatal("Access must be an opaque struct with no exported fields")
-	}
-	for index := range accessType.NumField() {
-		if accessType.Field(index).IsExported() {
-			t.Fatalf("Access field %q is exported, want an opaque struct", accessType.Field(index).Name)
-		}
-	}
 	none := BlocksNone()
 	empty := BlocksPaths()
 	all := BlocksAll()
@@ -439,3 +430,9 @@ func TestDeferredToolMutationsArePreparedAsBlocksAll(t *testing.T) {
 		t.Fatalf("savepoint-suspended direct deferred call = %#v, want in-band error", result)
 	}
 }
+
+var (
+	_ func() Access          = BlocksNone
+	_ func(...string) Access = BlocksPaths
+	_ func() Access          = BlocksAll
+)

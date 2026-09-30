@@ -210,8 +210,7 @@ in requirement text; the requirements below fix the seam's shape.
 
 ## REQUIREMENTS
 
-- R-8U5I-NMY5: A wire codec MUST be selected by passing a `WireFormat` value obtained from one of the eight root constructors to `New`, and MUST NOT be an assignable field on `Conversation`, `Config`, or `Endpoint`.
-- R-OXYY-4WN5: The `WireFormat` interface MUST declare the exported method `OptionSpecs() []OptionSpec` and MUST NOT declare `ReservedKeys`.
+- R-OD0U-YV9K: The `WireFormat` interface MUST declare the exported method `OptionSpecs() []OptionSpec`.
 - R-K4E5-D036: Every request built with `AnthropicMessagesWire()` MUST carry the header `anthropic-version: 2023-06-01`.
 - R-IQL6-2OOL: Every request body produced by `AnthropicMessagesWire()`, `ChatWire()`, `OpenAIChatWire()`, `XAIChatWire()`, `ResponsesWire()`, `OpenAIResponsesWire()`, and `XAIResponsesWire()` MUST carry the top-level field `"stream":true`, pinned by the golden request fixtures.
 - R-IRT2-GGFA: Every request body produced by `ChatWire()`, `OpenAIChatWire()`, and `XAIChatWire()` MUST carry the top-level field `"stream_options":{"include_usage":true}`, pinned by the golden request fixture.

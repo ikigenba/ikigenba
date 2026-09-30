@@ -103,14 +103,13 @@ purpose.
 
 ## REQUIREMENTS
 
-- R-LM6D-ETT9: `Tool` MUST be a sealed union so every dispatchable tool originates from an agentkit constructor and no external type can satisfy it directly.
 - R-3ZDR-CW24: `NewTool[In]` MUST return an error (never panic) when the schema derived from `In`'s `jsonschema` tags is malformed or outside the canonical subset, so a data-driven schema fault cannot crash the host.
 - R-40LN-QNST: `MustTool[In]` MUST be the panicking sibling of `NewTool[In]`, producing an identical `Tool` for a schema proven valid at author time.
 - R-41TK-4FJI: `NewToolFromSchema` MUST build a `Tool` from a raw input schema with no backing Go type, validating that schema against the canonical subset at construction.
 - R-449C-VZ0W: agentkit MUST define one canonical schema subset — the intersection all four wires can render — and MUST reject `$ref`/`$defs`, `additionalProperties`, and tool-unfriendly `anyOf`/`oneOf`/`allOf` forms within it.
 - R-B0Y8-BSG9: For any raw schema, `NewToolFromSchema` MUST return an error exactly when `ValidateToolSchema` returns one for that schema.
 - R-46P5-NIIA: A tool schema accepted as canonical MUST be renderable by every shipped wire, so a tool set moves between vendors unchanged or fails identically on all of them.
-- R-LNE9-SLJY: `agentkit` MUST export the sealed `Tool` interface whose exported method set is exactly `Name() string`, `Description() string`, `Schema() json.RawMessage`, `Call(ctx context.Context, args json.RawMessage) (string, error)`, and `Access(args json.RawMessage) Access`.
+- R-OHWG-HY8C: `agentkit` MUST export the `Tool` interface with the methods `Name() string`, `Description() string`, `Schema() json.RawMessage`, `Call(ctx context.Context, args json.RawMessage) (string, error)`, and `Access(args json.RawMessage) Access`.
 - R-DI9Q-Q8US: `agentkit` MUST export `func NewTool[In any](name, description string, fn func(ctx context.Context, in In) (string, error), access func(in In) Access) (Tool, error)`.
 - R-DJHN-40LH: `agentkit` MUST export `func MustTool[In any](name, description string, fn func(ctx context.Context, in In) (string, error), access func(in In) Access) Tool`.
 - R-DKPJ-HSC6: `agentkit` MUST export `func NewToolFromSchema(name, description string, schema json.RawMessage, fn func(ctx context.Context, args json.RawMessage) (string, error), access func(args json.RawMessage) Access) (Tool, error)`.

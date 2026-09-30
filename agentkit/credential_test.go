@@ -21,48 +21,6 @@ func TestAuthModeContract(t *testing.T) {
 	}
 }
 
-// R-IXWK-DB4R
-func TestTokenAndRotatorContract(t *testing.T) {
-	tokenType := reflect.TypeFor[Token]()
-	wantFields := []struct {
-		name   string
-		typeOf reflect.Type
-	}{
-		{name: "Bearer", typeOf: reflect.TypeFor[string]()},
-		{name: "AccountID", typeOf: reflect.TypeFor[string]()},
-		{name: "ExpiresAt", typeOf: reflect.TypeFor[time.Time]()},
-	}
-	if tokenType.Kind() != reflect.Struct || tokenType.NumField() != len(wantFields) {
-		t.Fatalf("Token = %s with %d fields, want struct with %d fields", tokenType.Kind(), tokenType.NumField(), len(wantFields))
-	}
-	for index, want := range wantFields {
-		field := tokenType.Field(index)
-		if field.Name != want.name || field.Type != want.typeOf {
-			t.Errorf("Token field %d = %s %s, want %s %s", index, field.Name, field.Type, want.name, want.typeOf)
-		}
-	}
-
-	rotatorType := reflect.TypeFor[Rotator]()
-	wantMethods := map[string]reflect.Type{
-		"AuthMode": reflect.TypeOf(func() AuthMode { return "" }),
-		"Token":    reflect.TypeOf(func(context.Context) (Token, error) { return Token{}, nil }),
-		"Rotate":   reflect.TypeOf(func(context.Context, Rotation) (Token, error) { return Token{}, nil }),
-	}
-	if rotatorType.Kind() != reflect.Interface || rotatorType.NumMethod() != len(wantMethods) {
-		t.Fatalf("Rotator = %s with %d methods, want interface with %d methods", rotatorType.Kind(), rotatorType.NumMethod(), len(wantMethods))
-	}
-	for name, wantSignature := range wantMethods {
-		method, ok := rotatorType.MethodByName(name)
-		if !ok {
-			t.Errorf("Rotator has no %s method", name)
-			continue
-		}
-		if method.Type != wantSignature {
-			t.Errorf("Rotator.%s type = %s, want %s", name, method.Type, wantSignature)
-		}
-	}
-}
-
 type tokenSourceStub struct {
 	token        Token
 	err          error
@@ -119,13 +77,8 @@ func (s *rotatorStub) Rotate(_ context.Context, rotation Rotation) (Token, error
 	return s.rotateToken, nil
 }
 
-// R-K5KM-6RTF
+// R-O9D5-TK1H
 func TestOfferingAuthenticatorRequiresAcceptedRotator(t *testing.T) {
-	wantSignature := reflect.TypeOf(func(Offering, Rotator) (Authenticator, error) { return nil, nil })
-	if got := reflect.TypeOf(Offering.Authenticator); got != wantSignature {
-		t.Fatalf("Offering.Authenticator type = %s, want %s", got, wantSignature)
-	}
-
 	offering := Offering{ID: OfferingAnthropicMessages, Endpoints: []EndpointSpec{{AuthMode: AuthModeAPIKey}}}
 	if _, err := offering.Authenticator(nil); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("Authenticator(nil) error = %v, want ErrInvalidConfig", err)
@@ -133,13 +86,6 @@ func TestOfferingAuthenticatorRequiresAcceptedRotator(t *testing.T) {
 	unmatched := &rotatorStub{mode: AuthModeOAuth}
 	if _, err := offering.Authenticator(unmatched); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("Authenticator(unmatched) error = %v, want ErrInvalidConfig", err)
-	}
-
-	offeringType := reflect.TypeFor[Offering]()
-	for _, retired := range []string{"Auth", "TokenSource"} {
-		if _, exists := offeringType.MethodByName(retired); exists {
-			t.Fatalf("Offering still exports retired method %s", retired)
-		}
 	}
 }
 
@@ -417,3 +363,5 @@ func TestOAuthProactiveRotationFailureStopsRequest(t *testing.T) {
 		}
 	})
 }
+
+var _ func(Offering, Rotator) (Authenticator, error) = Offering.Authenticator

@@ -105,12 +105,10 @@ after the `conversation` record `New` wrote.
 
 ## REQUIREMENTS
 
-- R-AZQB-Y0PK: The root package MUST be importable as `github.com/ikigenba/ikigenba/agentkit` from a consumer module.
-- R-VT1H-0PLC: A `Conversation` MUST be constructed from exactly three parts — a built-in wire codec as a `WireFormat` value, an `Endpoint`, and a `Model` string — and MUST expose no method to reassign the wire, endpoint, or model after construction.
+- R-01PL-YNFH: The root package MUST be importable as `github.com/ikigenba/ikigenba/agentkit`.
 - R-1S4A-HSUZ: A `Model` MUST be carried and transmitted verbatim as a free-form string with no allow-list, gate, or capability check; an unrecognized model MUST reach the vendor and surface as a vendor error, never a pre-flight rejection.
-- R-1TC6-VKLO: `Conversation.Send(ctx, ...Block)` MUST be the sole verb for advancing a conversation, and additional input modalities MUST be expressible as new `Block` variants without adding a second send method.
-- R-1OL8-V3X0: `agentkit` MUST NOT export any of `NewConversation`, `NewForWire`, `Provider`, `KnownWire`, `RequestState`, `RequestMutator`, `ErrorClassifier`, `WithHeader`, `WithFramer`, `WithClassifier`, `WithMutator`, or `WithHTTPClient`.
-- R-YURK-JTY8: `agentkit` MUST export `Conversation` as an opaque struct type with no exported fields, exposing the method `func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream`.
+- R-JJEW-ZZ4H: `Conversation.Send(ctx, ...Block)` MUST carry every block it is given, of any `Block` variant, into the turn's user message.
+- R-OJ4C-VPZ1: `agentkit` MUST export the `Conversation` type with the method `func (c *Conversation) Send(ctx context.Context, blocks ...Block) *Stream`.
 - R-YVZG-XLOX: `agentkit` MUST export `type Identity struct { Endpoint string; AuthMode string; Model string }` with exactly those three string fields.
-- R-LZL9-MAYW: `agentkit` MUST export a sealed `WireFormat` interface, not implementable outside the root package, together with the argument-less constructors `AnthropicMessagesWire() WireFormat`, `GeminiGenerateContentWire() WireFormat`, `ChatWire() WireFormat`, `ResponsesWire() WireFormat`, `OpenAIChatWire() WireFormat`, `OpenAIResponsesWire() WireFormat`, `XAIChatWire() WireFormat`, and `XAIResponsesWire() WireFormat`, one per built-in wire codec.
+- R-OGOK-46HN: `agentkit` MUST export a `WireFormat` interface together with the argument-less constructors `AnthropicMessagesWire() WireFormat`, `GeminiGenerateContentWire() WireFormat`, `ChatWire() WireFormat`, `ResponsesWire() WireFormat`, `OpenAIChatWire() WireFormat`, `OpenAIResponsesWire() WireFormat`, `XAIChatWire() WireFormat`, and `XAIResponsesWire() WireFormat`, one per built-in wire codec.
 - R-LYDD-8J87: A conversation for any cataloged offering MUST be constructible from `New`, `NewEndpoint`, `EndpointOption`, `WithBaseURL`, `Endpoint`, `Authenticator`, `WireFormat` and its constructors, `Rotator`, `APIKeyRotator`, `OAuthRotator`, `Token`, `TokenStore`, `FileTokenStore`, `AuthMode`, `Rotation`, `EndpointSpec`, and `Offering.Authenticator`, and the offering's fields alone.

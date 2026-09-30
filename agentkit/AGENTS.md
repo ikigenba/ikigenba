@@ -60,8 +60,12 @@ tests follow Live tests below.
   developer's home, config, or real state.
 - Proof by use: a test reads no checkout file — never the module's source,
   layout, `go.mod`/`go.sum`, or `specs/`; the only files a test reads are its
-  own fixtures under `testdata/`. Running `make` or building an external
-  consumer module that imports agentkit is use, not reading.
+  own fixtures under `testdata/`. Running a documented `make` target and
+  observing its outcome is use, not reading. A test never runs the Go
+  toolchain (`go build`, `go list`, `go vet`, `go test`) and never builds a
+  separate consumer module; consumer use is proved by an external
+  `package agentkit_test` test that imports and calls agentkit. A test never
+  asserts that a name is absent or that a type cannot be implemented.
 
 ## Live tests
 

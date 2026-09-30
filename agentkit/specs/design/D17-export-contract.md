@@ -98,7 +98,6 @@ some later opaque point — the same gate that governs hand-written tools.
 
 ## REQUIREMENTS
 
-- R-NZEP-TS9N: The root package MUST export the sealed `Tool` interface together with `NewTool[In]`, `MustTool[In]`, and `NewToolFromSchema`, and `Tool` MUST NOT be implementable outside agentkit.
 - R-O0MM-7K0C: `NewTool[In]` and `NewToolFromSchema` MUST return an error on a malformed schema rather than panic, and `MustTool[In]` MUST panic on a schema for which `NewTool[In]` would return an error.
 - R-647F-GFRV: The root MUST export `ValidateToolSchema`, the error taxonomy (`Error`, `Category`, `ErrInvalidConfig`, `ErrClosed`, `Retryable`), the value types `Pricing`/`Cost`/`Usage`/`Identity`, the `agentkit/retry` leaf, and the `SSEFrames` reader as the shared sibling-facing vocabulary.
 - R-66N8-7Z99: A tool built by a sibling via `NewToolFromSchema` MUST be validated against the canonical subset at `Send` and fail the turn with `ErrInvalidConfig` on a non-conforming schema, identically to a root-authored tool.

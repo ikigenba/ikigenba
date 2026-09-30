@@ -69,12 +69,10 @@ wires paired with an `Endpoint`. There is no consumer-implementable provider.
 
 ## REQUIREMENTS
 
-- R-8QHT-IBQ2: An `Endpoint` MUST expose no assignable fields to consumers and MUST be configurable through its constructor's positional authenticator and the `WithBaseURL` option.
 - R-JX1B-IDMK: `agentkit` MUST export `func NewEndpoint(auth Authenticator, opts ...EndpointOption) (Endpoint, error)` and MUST return `ErrInvalidConfig` for a nil `auth`.
 - R-LX5G-URHI: `agentkit` MUST export `type EndpointOption` and `func WithBaseURL(url string) EndpointOption`.
 - R-JZH4-9X3Y: `NewEndpoint(auth)` with no `WithBaseURL`, where `auth` came from `o.Authenticator(r)`, MUST send every request to the `BaseURL` of the `EndpointSpec` in `o.Endpoints` whose `AuthMode` equals `r.AuthMode()`.
 - R-K0P0-NOUN: `NewEndpoint(auth, WithBaseURL(u))` MUST send every request to `u` in place of the offering's URL, MUST return `ErrInvalidConfig` when `u` is not an absolute HTTP(S) URL, and when `WithBaseURL` is given more than once the last MUST win.
-- R-OFIQ-BSPA: A `Conversation` MUST execute every request with `http.DefaultClient`, and construction MUST accept no consumer-supplied HTTP client, header, framer, classifier, or request mutation.
-- R-8RPP-W3GR: `agentkit` MUST export `Endpoint` as an opaque struct type with no exported fields, constructed through `NewEndpoint`.
-- R-KBPJ-NMJC: `agentkit` MUST export the `Authenticator` interface whose method set is exactly `Authenticate(ctx context.Context, req *http.Request, body []byte) error`, and MUST NOT export `AuthApplier`.
+- R-OE8R-CN09: A `Conversation` MUST execute every request with `http.DefaultClient`.
+- R-OAL2-7BS6: `agentkit` MUST export the `Authenticator` interface whose method set is exactly `Authenticate(ctx context.Context, req *http.Request, body []byte) error`.
 - R-U1DK-UGQI: When a `Conversation` builds a request, the `body` argument passed to `Authenticator.Authenticate` MUST be byte-equal to the `WireFormat.EncodeRequest` output used as that request's body, so a body-signing authenticator signs the exact bytes transmitted.

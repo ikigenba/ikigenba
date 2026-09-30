@@ -1,7 +1,6 @@
 package agentkit
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,9 +8,6 @@ import (
 	"iter"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -26,35 +22,8 @@ var (
 	_ Event = OutputDone{}
 )
 
-func TestEndpointDeclarationsAreExact(t *testing.T) {
-	// R-KBPJ-NMJC
-	// R-KFD8-SXRF
-	// R-8RPP-W3GR
-	endpointType := reflect.TypeFor[Endpoint]()
-	if endpointType.Name() != "Endpoint" || endpointType.Kind() != reflect.Struct {
-		t.Fatalf("Endpoint name/kind = %q/%s, want exported named struct", endpointType.Name(), endpointType.Kind())
-	}
-	for index := range endpointType.NumField() {
-		if endpointType.Field(index).IsExported() {
-			t.Fatalf("Endpoint field %q is exported", endpointType.Field(index).Name)
-		}
-	}
-	assertDefinedEndpointType(t, "Authenticator", reflect.TypeFor[Authenticator](), reflect.Interface)
-	authType := reflect.TypeFor[Authenticator]()
-	wantAuthenticate := reflect.TypeOf(func(context.Context, *http.Request, []byte) error { return nil })
-	if authType.NumMethod() != 1 {
-		t.Fatalf("Authenticator method count = %d, want 1", authType.NumMethod())
-	}
-	authenticate, ok := authType.MethodByName("Authenticate")
-	if !ok || authenticate.Type != wantAuthenticate {
-		t.Fatalf("Authenticator.Authenticate = %v (present=%t), want %s", authenticate.Type, ok, wantAuthenticate)
-	}
-
-}
-
 func TestConfigDeclarationIsExact(t *testing.T) {
 	// R-TYGN-9I06
-	// R-8U5I-NMY5
 	configType := reflect.TypeFor[Config]()
 	if configType.Name() != "Config" || configType.Kind() != reflect.Struct {
 		t.Fatalf("Config name/kind = %q/%s, want exported defined struct", configType.Name(), configType.Kind())
@@ -84,7 +53,6 @@ func TestConfigDeclarationIsExact(t *testing.T) {
 func TestMessageDoneDeclarationIsExactAndImplementsEvent(t *testing.T) {
 	// R-0B78-ZYU3
 	assertEventWrapper(t, "MessageDone", reflect.TypeFor[MessageDone](), "Message", reflect.TypeFor[Message]())
-	assertEventSeam(t)
 }
 
 func TestOutputDoneDeclarationIsExactAndImplementsEvent(t *testing.T) {
@@ -100,33 +68,6 @@ func TestToolCallDeclarationIsExactAndImplementsEvent(t *testing.T) {
 func TestToolReturnDeclarationIsExactAndImplementsEvent(t *testing.T) {
 	// R-0DN1-RIBH
 	assertEventWrapper(t, "ToolReturn", reflect.TypeFor[ToolReturn](), "Result", reflect.TypeFor[ToolResult]())
-}
-
-func TestStreamDeclarationIsOpaqueWithExactMethods(t *testing.T) {
-	// R-0G2U-J1SV
-	streamType := reflect.TypeFor[Stream]()
-	if streamType.Name() != "Stream" || streamType.Kind() != reflect.Struct {
-		t.Fatalf("Stream name/kind = %q/%s, want exported defined struct", streamType.Name(), streamType.Kind())
-	}
-	for index := range streamType.NumField() {
-		if streamType.Field(index).IsExported() {
-			t.Fatalf("Stream field %q is exported", streamType.Field(index).Name)
-		}
-	}
-	pointerType := reflect.TypeFor[*Stream]()
-	wantMethods := map[string]reflect.Type{
-		"Events": reflect.TypeOf(func(*Stream) iter.Seq[Event] { return nil }),
-		"Err":    reflect.TypeOf(func(*Stream) error { return nil }),
-	}
-	if pointerType.NumMethod() != len(wantMethods) {
-		t.Fatalf("*Stream exported method count = %d, want exactly %d", pointerType.NumMethod(), len(wantMethods))
-	}
-	for name, signature := range wantMethods {
-		method, ok := pointerType.MethodByName(name)
-		if !ok || method.Type != signature {
-			t.Fatalf("Stream.%s = %v (present=%t), want %s", name, method.Type, ok, signature)
-		}
-	}
 }
 
 func assertEventWrapper(t *testing.T, name string, wrapper reflect.Type, fieldName string, fieldType reflect.Type) {
@@ -146,21 +87,7 @@ func assertEventWrapper(t *testing.T, name string, wrapper reflect.Type, fieldNa
 	}
 }
 
-func assertEventSeam(t *testing.T) {
-	t.Helper()
-	eventType := reflect.TypeFor[Event]()
-	if eventType.Name() != "Event" || eventType.Kind() != reflect.Interface {
-		t.Fatalf("Event = %q/%s, want defined interface", eventType.Name(), eventType.Kind())
-	}
-	for index := range eventType.NumMethod() {
-		if method := eventType.Method(index); method.IsExported() {
-			t.Fatalf("Event exports method %s, want none", method.Name)
-		}
-	}
-}
-
 func TestConversationConstructionFixesOrchestrationConfiguration(t *testing.T) {
-	// R-OJ6F-H3XD
 	// R-NW62-A0NM
 	auth := authFunc(func(context.Context, *http.Request, []byte) error { return nil })
 	endpointA, err := NewEndpoint(auth, WithBaseURL("https://one.invalid/messages"))
@@ -206,7 +133,6 @@ func TestConversationConstructionFixesOrchestrationConfiguration(t *testing.T) {
 			t.Fatalf("conversation %d construction config changed: tools=%v settings=%#v", index, toolNames(conversation.tools), conversation.settings)
 		}
 	}
-	assertConversationExportsExactly(t)
 }
 
 // R-KAG7-PUS7
@@ -359,8 +285,6 @@ func TestConstructionSeamIsExactAndSufficientForEveryOffering(t *testing.T) {
 }
 
 // R-NY6T-G0IY
-// R-VT1H-0PLC
-// R-8U5I-NMY5
 func TestNewDeclarationTakesWireFormatAndRejectsNilWire(t *testing.T) {
 	if got, want := reflect.TypeOf(New), reflect.TypeOf(func(WireFormat, Endpoint, string, Config) (*Conversation, error) { return nil, nil }); got != want {
 		t.Fatalf("New type = %s, want %s", got, want)
@@ -441,111 +365,6 @@ func TestNewDeclarationTakesWireFormatAndRejectsNilWire(t *testing.T) {
 	}
 }
 
-func TestWireFormatDeclarationIsExactAndSealed(t *testing.T) {
-	// R-OXYY-4WN5
-	// R-LZL9-MAYW
-	wireType := reflect.TypeFor[WireFormat]()
-	if wireType.Name() != "WireFormat" || wireType.Kind() != reflect.Interface {
-		t.Fatalf("WireFormat name/kind = %q/%s, want exported named interface", wireType.Name(), wireType.Kind())
-	}
-	wantMethods := map[string]reflect.Type{
-		"DecodeStream": reflect.TypeOf(func(iter.Seq2[[]byte, error]) iter.Seq2[Event, error] { return nil }),
-		"RenderTools":  reflect.TypeOf(func([]Tool) (json.RawMessage, error) { return nil, nil }),
-		"OptionSpecs":  reflect.TypeOf(func() []OptionSpec { return nil }),
-	}
-	for name, signature := range wantMethods {
-		method, ok := wireType.MethodByName(name)
-		if !ok || method.Type != signature {
-			t.Fatalf("WireFormat.%s = %v (present=%t), want %s", name, method.Type, ok, signature)
-		}
-	}
-	if _, ok := wireType.MethodByName("EncodeRequest"); !ok {
-		t.Fatal("WireFormat does not declare EncodeRequest")
-	}
-	if _, ok := wireType.MethodByName("ReservedKeys"); ok {
-		t.Fatal("WireFormat declares ReservedKeys")
-	}
-
-	tests := []struct {
-		name     string
-		exported func() WireFormat
-	}{
-		{"AnthropicMessagesWire", AnthropicMessagesWire},
-		{"GeminiGenerateContentWire", GeminiGenerateContentWire},
-		{"ChatWire", ChatWire},
-		{"ResponsesWire", ResponsesWire},
-		{"OpenAIChatWire", OpenAIChatWire},
-		{"OpenAIResponsesWire", OpenAIResponsesWire},
-		{"XAIChatWire", XAIChatWire},
-		{"XAIResponsesWire", XAIResponsesWire},
-	}
-	codecs := make(map[reflect.Type]string, len(tests))
-	for _, test := range tests {
-		got := test.exported()
-		if got == nil {
-			t.Fatalf("%s returned nil", test.name)
-		}
-		if again := test.exported(); reflect.TypeOf(again) != reflect.TypeOf(got) {
-			t.Fatalf("%s returned %T then %T, want one built-in codec", test.name, got, again)
-		}
-		if other, taken := codecs[reflect.TypeOf(got)]; taken {
-			t.Fatalf("%s and %s return the same codec %T, want one per built-in wire", other, test.name, got)
-		}
-		codecs[reflect.TypeOf(got)] = test.name
-	}
-}
-
-// R-LZL9-MAYW
-func TestExternalPackageCannotImplementWireFormat(t *testing.T) {
-	workingDirectory, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	temporary := t.TempDir()
-	module := "module externalwiretest\n\ngo 1.26\n\nrequire github.com/ikigenba/ikigenba/agentkit v0.0.0\n\nreplace github.com/ikigenba/ikigenba/agentkit => " + workingDirectory + "\n"
-	source := `package externalwiretest
-
-import (
-	"encoding/json"
-	"iter"
-
-	"github.com/ikigenba/ikigenba/agentkit"
-)
-
-type requestState struct{}
-type outsider struct{}
-
-func (outsider) EncodeRequest(requestState) ([]byte, error) { return nil, nil }
-func (outsider) DecodeStream(iter.Seq2[[]byte, error]) iter.Seq2[agentkit.Event, error] { return nil }
-func (outsider) RenderTools([]agentkit.Tool) (json.RawMessage, error) { return nil, nil }
-func (outsider) OptionSpecs() []agentkit.OptionSpec { return nil }
-
-var _ agentkit.WireFormat = outsider{}
-`
-	if err := os.WriteFile(filepath.Join(temporary, "go.mod"), []byte(module), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(temporary, "outside_test.go"), []byte(source), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	command := exec.Command("go", "test", ".")
-	command.Dir = temporary
-	output, err := command.CombinedOutput()
-	if err == nil {
-		t.Fatalf("external WireFormat implementation compiled successfully:\n%s", output)
-	}
-	if !bytes.Contains(output, []byte("does not implement agentkit.WireFormat")) {
-		t.Fatalf("external implementation failed for the wrong reason: %v\n%s", err, output)
-	}
-}
-
-func assertDefinedEndpointType(t *testing.T, name string, typeOf reflect.Type, kind reflect.Kind) {
-	t.Helper()
-	if typeOf.Name() != name || typeOf.Kind() != kind {
-		t.Fatalf("%s = %q/%s, want exported defined %s", name, typeOf.Name(), typeOf.Kind(), kind)
-	}
-}
-
 func assertFunctionSignature(t *testing.T, got, want reflect.Type) {
 	t.Helper()
 	if got.NumIn() != want.NumIn() || got.NumOut() != want.NumOut() {
@@ -560,96 +379,6 @@ func assertFunctionSignature(t *testing.T, got, want reflect.Type) {
 		if got.Out(index) != want.Out(index) {
 			t.Fatalf("result %d = %s, want %s", index, got.Out(index), want.Out(index))
 		}
-	}
-}
-
-func TestToolDeclarationIsExactAndSealed(t *testing.T) {
-	// R-LNE9-SLJY
-	toolType := reflect.TypeFor[Tool]()
-	if toolType.Name() != "Tool" || toolType.Kind() != reflect.Interface {
-		t.Fatalf("Tool name/kind = %q/%s, want exported named interface", toolType.Name(), toolType.Kind())
-	}
-	wantExported := map[string]reflect.Type{
-		"Name":        reflect.TypeOf(func() string { return "" }),
-		"Description": reflect.TypeOf(func() string { return "" }),
-		"Schema":      reflect.TypeOf(func() json.RawMessage { return nil }),
-		"Call":        reflect.TypeOf(func(context.Context, json.RawMessage) (string, error) { return "", nil }),
-		"Access":      reflect.TypeOf(func(json.RawMessage) Access { panic("type only") }),
-	}
-	exported := 0
-	for index := range toolType.NumMethod() {
-		if toolType.Method(index).IsExported() {
-			exported++
-		}
-	}
-	if exported != len(wantExported) {
-		t.Fatalf("Tool exported method count = %d, want %d", exported, len(wantExported))
-	}
-	for name, signature := range wantExported {
-		method, ok := toolType.MethodByName(name)
-		if !ok || method.Type != signature {
-			t.Fatalf("Tool.%s = %v (present=%t), want %s", name, method.Type, ok, signature)
-		}
-	}
-}
-
-func TestSiblingToolConstructionSurfaceIsExactAndSealed(t *testing.T) {
-	// R-NZEP-TS9N
-	if toolType := reflect.TypeFor[Tool](); toolType.Name() != "Tool" || toolType.Kind() != reflect.Interface {
-		t.Fatalf("Tool = %s, want exported interface", toolType)
-	}
-	assertFunctionSignature(t, reflect.TypeOf(NewTool[architectureToolInput]), reflect.TypeOf(func(string, string, func(context.Context, architectureToolInput) (string, error), func(architectureToolInput) Access) (Tool, error) {
-		return nil, nil
-	}))
-	assertFunctionSignature(t, reflect.TypeOf(MustTool[architectureToolInput]), reflect.TypeOf(func(string, string, func(context.Context, architectureToolInput) (string, error), func(architectureToolInput) Access) Tool {
-		return nil
-	}))
-	assertFunctionSignature(t, reflect.TypeOf(NewToolFromSchema), reflect.TypeOf(func(string, string, json.RawMessage, func(context.Context, json.RawMessage) (string, error), func(json.RawMessage) Access) (Tool, error) {
-		return nil, nil
-	}))
-}
-
-func TestExternalPackageCannotImplementSealedTool(t *testing.T) {
-	// R-LM6D-ETT9
-	workingDirectory, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	temporary := t.TempDir()
-	module := "module externaltooltest\n\ngo 1.26\n\nrequire github.com/ikigenba/ikigenba/agentkit v0.0.0\n\nreplace github.com/ikigenba/ikigenba/agentkit => " + workingDirectory + "\n"
-	source := `package externaltooltest
-
-import (
-	"context"
-	"encoding/json"
-
-	"github.com/ikigenba/ikigenba/agentkit"
-)
-
-type outsider struct{}
-
-func (outsider) Name() string { return "outside" }
-func (outsider) Description() string { return "outside" }
-func (outsider) Schema() json.RawMessage { return json.RawMessage(` + "`{\"type\":\"object\"}`" + `) }
-func (outsider) Call(context.Context, json.RawMessage) (string, error) { return "", nil }
-func (outsider) Access(json.RawMessage) agentkit.Access { panic("not called") }
-
-var _ agentkit.Tool = outsider{}
-`
-	if err := os.WriteFile(filepath.Join(temporary, "go.mod"), []byte(module), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(temporary, "outside_test.go"), []byte(source), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	command := exec.Command("go", "test", ".")
-	command.Dir = temporary
-	output, err := command.CombinedOutput()
-	if err == nil {
-		t.Fatalf("external Tool implementation compiled successfully:\n%s", output)
-	}
-	if !bytes.Contains(output, []byte("does not implement agentkit.Tool")) {
-		t.Fatalf("external implementation failed for the wrong reason: %v\n%s", err, output)
 	}
 }
 
@@ -716,31 +445,9 @@ func TestFramerAndSSEFramesDeclarationsAreExact(t *testing.T) {
 }
 
 func TestConversationPublicShape(t *testing.T) {
-	// R-YURK-JTY8
 	// R-WEW7-DNV4
 	// R-7KE4-A3OZ
-	// R-VT1H-0PLC
-	// R-8U5I-NMY5
-	conversationType := reflect.TypeOf(Conversation{})
-	if conversationType.Name() != "Conversation" || conversationType.Kind() != reflect.Struct {
-		t.Fatalf("Conversation name/kind = %q/%s, want exported Conversation struct", conversationType.Name(), conversationType.Kind())
-	}
-	for index := range conversationType.NumField() {
-		field := conversationType.Field(index)
-		if field.IsExported() {
-			t.Fatalf("Conversation field %q is exported", field.Name)
-		}
-	}
-
 	pointerType := reflect.TypeFor[*Conversation]()
-	send, ok := pointerType.MethodByName("Send")
-	if !ok {
-		t.Fatal("*Conversation has no exported Send method")
-	}
-	wantSend := reflect.TypeOf(func(*Conversation, context.Context, ...Block) *Stream { return nil })
-	if send.Type != wantSend || !send.Type.IsVariadic() {
-		t.Fatalf("Send type = %s (variadic=%t), want %s (variadic=true)", send.Type, send.Type.IsVariadic(), wantSend)
-	}
 	addSystem, ok := pointerType.MethodByName("AddSystem")
 	if !ok {
 		t.Fatal("*Conversation has no exported AddSystem method")
@@ -763,38 +470,6 @@ func TestConversationPublicShape(t *testing.T) {
 		if method.Type != want {
 			t.Fatalf("%s type = %s, want %s", name, method.Type, want)
 		}
-	}
-	assertConversationExportsExactly(t)
-}
-
-func assertConversationExportsExactly(t *testing.T) {
-	// R-8A00-BA9K
-	t.Helper()
-	pointerType := reflect.TypeFor[*Conversation]()
-	want := []string{"AddSystem", "Close", "Release", "Restore", "Savepoint", "Send"}
-	if pointerType.NumMethod() != len(want) {
-		t.Fatalf("*Conversation has %d exported methods, want exactly %v", pointerType.NumMethod(), want)
-	}
-	for index, name := range want {
-		if got := pointerType.Method(index).Name; got != name {
-			t.Fatalf("*Conversation exported method %d = %s, want exact method set %v", index, got, want)
-		}
-	}
-}
-
-func TestSavepointIsOpaque(t *testing.T) {
-	// R-7J67-WBYA
-	savepointType := reflect.TypeFor[Savepoint]()
-	if savepointType.Name() != "Savepoint" {
-		t.Fatalf("Savepoint name = %q, want exported Savepoint type", savepointType.Name())
-	}
-	for index := range savepointType.NumField() {
-		if field := savepointType.Field(index); field.IsExported() {
-			t.Fatalf("Savepoint field %q is exported", field.Name)
-		}
-	}
-	if savepointType.NumMethod() != 0 || reflect.PointerTo(savepointType).NumMethod() != 0 {
-		t.Fatalf("Savepoint value/pointer exported methods = %d/%d, want 0/0", savepointType.NumMethod(), reflect.PointerTo(savepointType).NumMethod())
 	}
 }
 

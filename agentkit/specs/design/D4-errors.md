@@ -195,7 +195,7 @@ condition that would have been a warning is now either a typed field or a hard
 ## REQUIREMENTS
 
 - R-2K5Z-AIWY: agentkit MUST return provider failures as a single `*Error` type whose failure kind is a `Category` field, and MUST NOT distinguish failure kinds by distinct Go error types.
-- R-OGQM-PKFZ: A non-2xx HTTP response MUST surface from `Send` as a populated `*Error` whose `Status` is the response status and whose `Category` is assigned by the library's built-in classification, with no consumer-installed classifier involved.
+- R-OFGN-QEQY: A non-2xx HTTP response MUST surface from `Send` as a populated `*Error` whose `Status` is the response status and whose `Category` is assigned by the library's built-in classification.
 - R-ISHO-CITZ: When a 200 stream from `AnthropicMessagesWire()` carries an event whose data is a JSON object with `type` equal to `"error"` and an `error` object, the stream MUST end with a terminal `*Error` whose `Status` is 200, whose `Code` is that `error` object's `type`, and whose `Message` is that `error` object's `message`.
 - R-ITPK-QAKO: A terminal `*Error` from an Anthropic in-band error event MUST carry the `Category` built-in classification assigns to the HTTP status the error type is paired with — `invalid_request_error` 400, `authentication_error` 401, `billing_error` 402, `permission_error` 403, `not_found_error` 404, `conflict_error` 409, `request_too_large` 413, `rate_limit_error` 429, `api_error` 500, `timeout_error` 504, `overloaded_error` 529 — and MUST carry `CategoryUnknown` for any other error type.
 - R-IW5D-HU22: When a 200 stream from `ResponsesWire()`, `OpenAIResponsesWire()`, or `XAIResponsesWire()` carries an event with `type` equal to `"error"`, the stream MUST end with a terminal `*Error` whose `Status` is 200, whose `Code` is the event's `code` (empty when `code` is null), and whose `Message` is the event's `message`.
@@ -206,7 +206,7 @@ condition that would have been a warning is now either a typed field or a hard
 - R-2RHD-L5D4: `Retryable(err)` MUST be the single authority on retryability, returning true for rate-limit, overloaded, timeout, and transport categories and false for auth, invalid-request, insufficient-quota, and unknown, unwrapping to find an agentkit `*Error`.
 - R-CJTD-QX2U: `ErrInvalidConfig`, `ErrClosed`, and `ErrInvalidArgument` MUST be sentinel errors comparable via `errors.Is`, including when wrapped in `*Error`.
 - R-2TX6-COUI: A `Send` that fails configuration validation MUST make no provider call and MUST leave History unchanged.
-- R-2V52-QGL7: A forced tool-choice a wire cannot express MUST fail at `Send` with `ErrInvalidConfig` rather than degrade silently; agentkit MUST expose no `Warning` type or warning channel.
+- R-OBSY-L3IV: A forced tool-choice a wire cannot express MUST fail at `Send` with `ErrInvalidConfig` rather than degrade silently.
 - R-ZAM9-IUL9: `agentkit` MUST export `type Category int` with the constants `CategoryUnknown`, `CategoryAuth`, `CategoryInvalidRequest`, `CategoryRateLimit`, `CategoryOverloaded`, `CategoryInsufficientQuota`, `CategoryTimeout`, `CategoryTransport` declared in that `iota` order starting at 0.
 - R-B4LX-H3OC: `agentkit` MUST export `type Error struct { Category Category; Status int; Code string; Message string; RetryAfter time.Duration; Endpoint Identity }` with those exported fields, and `*Error` MUST implement `Error() string` and `Unwrap() error`.
 - R-ZD22-AE2N: `agentkit` MUST export `func Retryable(err error) bool`.

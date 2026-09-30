@@ -110,7 +110,6 @@ which is what cost and audit want.
 
 ## REQUIREMENTS
 
-- R-7J67-WBYA: `agentkit` MUST export `type Savepoint` as an opaque type with no exported fields and no exported methods.
 - R-7KE4-A3OZ: `agentkit` MUST export the methods `func (c *Conversation) Savepoint() (Savepoint, error)`, `func (c *Conversation) Restore(sp Savepoint) error`, `func (c *Conversation) Release(sp Savepoint) error`, and `func (c *Conversation) Close() error`.
 - R-BAPF-DYDT: `agentkit` MUST export the sentinel errors `ErrSavepointActive` and `ErrTurnInFlight`, each an `error` comparable via `errors.Is`, including when wrapped in `*Error`.
 - R-7MTX-1N6D: A successful `Savepoint` MUST record the conversation's current `History` as the point a later `Restore` returns to, MUST make no provider call, and MUST leave `History` unchanged.

@@ -79,9 +79,7 @@ express is refused, not silently reshaped.
 ## REQUIREMENTS
 
 - R-4NRR-0AW0: `Send` MUST drive a turn to completion — appending the caller's blocks, then alternating provider round-trips and tool dispatch until a round-trip yields no tool call — and MUST return a `*Stream` (D13) of message-granular events.
-- R-OJ6F-H3XD: A `Conversation` MUST fix its wire codec, `Endpoint`, `Model`, `Settings`, and registered tool set at construction and expose no method to reassign them.
 - R-4Q7J-RUDE: The orchestrator MUST buffer a turn's blocks and splice them onto `History` exactly once, only on successful completion; a turn that ends in a terminal error MUST leave `History` byte-for-byte unchanged.
 - R-4RFG-5M43: A tool returning an error, an unknown tool name, and an argument-validation failure (D11) MUST each become a `ToolResult` with `IsError` set and be fed back to the model, and MUST NOT end the turn.
 - R-4SNC-JDUS: A terminal error (transport, classified vendor error, unrecoverable decode) MUST end the turn, append nothing to `History`, and surface on `Stream.Err()`.
 - R-4TV8-X5LH: The orchestrator MUST correlate each `ToolResult` to its `ToolUse` by the vendor's verbatim call id and MUST NOT substitute a library-minted identifier.
-- R-NZTR-FBVP: `agentkit` MUST NOT export `ProviderOptions`, and `Conversation` MUST accept no raw JSON pass-through at construction or at `Send`.

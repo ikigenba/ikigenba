@@ -130,8 +130,7 @@ persisting a partial turn.
 
 ## REQUIREMENTS
 
-- R-B264-PK6Y: `Block` MUST be sealed: no type declared outside agentkit can implement it.
-- R-1ZFO-SFB5: Every `Block` variant MUST carry an opaque provider payload as bare bytes with no endpoint tag and no `kind` discriminator, and agentkit MUST replay that payload byte-identically without inspecting it.
+- R-ONZY-ESXT: agentkit MUST replay a `Block` variant's opaque provider payload byte-identically without inspecting it.
 - R-20NL-671U: Each `Block` variant MUST report a stable serialization discriminator via `BlockType()`, distinct from the opaque provider payload, sufficient for a `History` to unmarshal back to the correct concrete variants.
 - R-21VH-JYSJ: A `History` MUST round-trip through `json.Marshal`/`json.Unmarshal` to an equal sequence of concrete `Block` variants, including each block's provider payload.
 - R-U2LH-88H7: When a wire decodes a vendor tool call, the resulting `ToolUse.ID` MUST equal the vendor's call id verbatim (including surrounding whitespace or punctuation), and re-encoding a `ToolResult` whose `ToolUseID` is that value MUST place the same id on the wire unchanged; agentkit MUST NOT generate or substitute its own identifier at any step.

@@ -94,7 +94,6 @@ is spliced once on success — the `Stream` is the *live* view, `History` the
 
 ## REQUIREMENTS
 
-- R-LKYH-122K: `Event` MUST be a sealed union of exactly `MessageDone`, `ToolCall`, `ToolReturn`, and `OutputDone` (D20), so a consumer switches it exhaustively.
 - R-4ZYQ-U0AY: A `Stream` MUST yield events at message granularity, one per completed protocol message, and MUST NOT expose token deltas or any framing artifact.
 - R-516N-7S1N: A `Stream` MUST yield events in the order they occur across the turn's round-trips, delivering each round-trip's events as that round-trip completes rather than only at turn end.
 - R-52EJ-LJSC: A tool returning an error MUST surface as a `ToolReturn` with `IsError` set and MUST NOT be reported by `Stream.Err()`.
@@ -103,4 +102,4 @@ is spliced once on success — the `Stream` is the *live* view, `History` the
 - R-0B78-ZYU3: `agentkit` MUST export `type MessageDone struct { Message Message }`, and `MessageDone` MUST implement `Event`.
 - R-0CF5-DQKS: `agentkit` MUST export `type ToolCall struct { Use ToolUse }`, and `ToolCall` MUST implement `Event`.
 - R-0DN1-RIBH: `agentkit` MUST export `type ToolReturn struct { Result ToolResult }`, and `ToolReturn` MUST implement `Event`.
-- R-0G2U-J1SV: `agentkit` MUST export `Stream` as an opaque struct type with no exported fields, exposing the methods `Events() iter.Seq[Event]` and `Err() error`.
+- R-OKC9-9HPQ: `agentkit` MUST export the `Stream` type with the methods `func (s *Stream) Events() iter.Seq[Event]` and `func (s *Stream) Err() error`.

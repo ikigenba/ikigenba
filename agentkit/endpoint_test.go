@@ -8,19 +8,6 @@ import (
 	"testing"
 )
 
-// R-8QHT-IBQ2
-func TestEndpointFieldsAreUnexported(t *testing.T) {
-	// R-8RPP-W3GR
-	// R-8U5I-NMY5
-	typeOfEndpoint := reflect.TypeFor[Endpoint]()
-	for index := range typeOfEndpoint.NumField() {
-		if typeOfEndpoint.Field(index).IsExported() {
-			t.Fatalf("Endpoint field %q is assignable by consumers", typeOfEndpoint.Field(index).Name)
-		}
-	}
-}
-
-// R-8QHT-IBQ2
 // R-LX5G-URHI
 func TestEndpointExportsNoOptionFunctions(t *testing.T) {
 	if reflect.TypeFor[EndpointOption]().Kind() != reflect.Func {

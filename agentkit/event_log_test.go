@@ -867,27 +867,7 @@ func TestRetryInfoDeclarationIsExact(t *testing.T) {
 }
 
 func TestLogIsOpaqueAndCallable(t *testing.T) {
-	// R-T7MU-UJOW
-	typeOf := reflect.TypeFor[Log]()
-	if typeOf.Name() != "Log" || typeOf.Kind() != reflect.Struct {
-		t.Fatalf("Log = %q/%s, want defined opaque struct", typeOf.Name(), typeOf.Kind())
-	}
-	for index := range typeOf.NumField() {
-		if typeOf.Field(index).IsExported() {
-			t.Fatalf("Log field %q is exported", typeOf.Field(index).Name)
-		}
-	}
-
-	wantConstructor := reflect.TypeOf(func(io.Writer, func() time.Time, string) *Log { return nil })
-	if got := reflect.TypeOf(NewLog); got != wantConstructor {
-		t.Fatalf("NewLog = %s, want %s", got, wantConstructor)
-	}
-	wantClose := reflect.TypeOf(func(*Log) error { return nil })
-	closeMethod, ok := reflect.TypeFor[*Log]().MethodByName("Close")
-	if !ok || closeMethod.Type != wantClose {
-		t.Fatalf("(*Log).Close = %v (present=%t), want %s", closeMethod.Type, ok, wantClose)
-	}
-
+	// R-OMS2-1174
 	log := NewLog(nil, func() time.Time { return time.Time{} }, "")
 	if log == nil {
 		t.Fatal("NewLog returned nil, want callable *Log")
@@ -963,3 +943,8 @@ func assertExactStruct(t *testing.T, got reflect.Type, want []struct {
 		}
 	}
 }
+
+var (
+	_ func(io.Writer, func() time.Time, string) *Log = NewLog
+	_ func(*Log) error                               = (*Log).Close
+)
