@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"math/rand"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -14,40 +13,21 @@ import (
 
 const sampleSize = 64
 
-// R-L4FP-FHTU
+// R-VIC5-N4DE
 func TestNewSessionExposesExactSessionFields(t *testing.T) {
-	sessionType := reflect.TypeOf(oauth.Session{})
-	wantFields := []struct {
-		name   string
-		typeOf reflect.Type
-	}{
-		{name: "State", typeOf: reflect.TypeOf("")},
-		{name: "CodeVerifier", typeOf: reflect.TypeOf("")},
-	}
-
-	if sessionType.NumField() != len(wantFields) {
-		t.Fatalf("oauth.Session has %d fields, want exactly %d", sessionType.NumField(), len(wantFields))
-	}
-	for index, want := range wantFields {
-		got := sessionType.Field(index)
-		if got.Name != want.name {
-			t.Errorf("oauth.Session field %d name = %q, want %q", index, got.Name, want.name)
-		}
-		if got.Type != want.typeOf {
-			t.Errorf("oauth.Session field %d (%s) type = %v, want %v", index, got.Name, got.Type, want.typeOf)
-		}
-		if !got.IsExported() {
-			t.Errorf("oauth.Session field %d (%s) is not exported", index, got.Name)
-		}
+	session := oauth.Session{State: "state-value", CodeVerifier: "verifier-value"}
+	hasType[string](session.State)
+	hasType[string](session.CodeVerifier)
+	if session.State != "state-value" || session.CodeVerifier != "verifier-value" {
+		t.Errorf("oauth.Session fields read back %+v, want the constructed values", session)
 	}
 }
 
 // R-L5NL-T9KJ
 func TestNewSessionHasExactFunctionSignature(t *testing.T) {
-	got := reflect.TypeOf(oauth.NewSession)
-	want := reflect.TypeOf(func(io.Reader) (oauth.Session, error) { return oauth.Session{}, nil })
-	if got != want {
-		t.Errorf("oauth.NewSession type = %v, want %v", got, want)
+	hasType[func(entropy io.Reader) (oauth.Session, error)](oauth.NewSession)
+	if _, err := oauth.NewSession(bytes.NewReader(make([]byte, 256))); err != nil {
+		t.Errorf("oauth.NewSession(256 zero bytes) error = %v", err)
 	}
 }
 

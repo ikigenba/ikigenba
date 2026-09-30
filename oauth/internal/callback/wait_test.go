@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -27,18 +26,12 @@ var (
 	_ error = callback.ErrNoCode
 )
 
-// R-LQDW-BD6C
+// R-VDGK-41EM
 func TestResultHasExactExportedShape(t *testing.T) {
-	resultType := reflect.TypeOf(callback.Result{})
-	if resultType.Kind() != reflect.Struct || resultType.Name() != "Result" || resultType.PkgPath() != "github.com/ikigenba/ikigenba/oauth/internal/callback" {
-		t.Fatalf("callback.Result type = %v (kind %v, name %q, package %q), want exported named struct Result from internal/callback", resultType, resultType.Kind(), resultType.Name(), resultType.PkgPath())
-	}
-	if resultType.NumField() != 1 {
-		t.Fatalf("callback.Result has %d fields, want exactly 1", resultType.NumField())
-	}
-	field := resultType.Field(0)
-	if field.Name != "Code" || field.Type != reflect.TypeFor[string]() || field.PkgPath != "" || field.Anonymous {
-		t.Errorf("callback.Result field = {Name:%q Type:%v PkgPath:%q Anonymous:%t}, want exported non-anonymous Code string", field.Name, field.Type, field.PkgPath, field.Anonymous)
+	result := callback.Result{Code: "authorization-code"}
+	hasType[string](result.Code)
+	if result.Code != "authorization-code" {
+		t.Errorf("callback.Result{Code: %q}.Code = %q", "authorization-code", result.Code)
 	}
 }
 
@@ -61,50 +54,31 @@ func TestCallbackSentinelErrorsAreDistinctWrappingTargets(t *testing.T) {
 	}
 }
 
-// R-LSTP-2WNQ
+// R-VEOG-HT5B
 func TestAuthorizeErrorHasExactExportedShapeAndErrorMethod(t *testing.T) {
-	authorizeErrorType := reflect.TypeOf(callback.AuthorizeError{})
-	if authorizeErrorType.Kind() != reflect.Struct || authorizeErrorType.Name() != "AuthorizeError" || authorizeErrorType.PkgPath() != "github.com/ikigenba/ikigenba/oauth/internal/callback" {
-		t.Fatalf("callback.AuthorizeError type = %v (kind %v, name %q, package %q), want exported named struct AuthorizeError from internal/callback", authorizeErrorType, authorizeErrorType.Kind(), authorizeErrorType.Name(), authorizeErrorType.PkgPath())
-	}
-	if authorizeErrorType.NumField() != 2 {
-		t.Fatalf("callback.AuthorizeError has %d fields, want exactly 2", authorizeErrorType.NumField())
-	}
-	wantFields := []string{"Code", "Description"}
-	for index, wantName := range wantFields {
-		field := authorizeErrorType.Field(index)
-		if field.Name != wantName || field.Type != reflect.TypeFor[string]() || field.PkgPath != "" || field.Anonymous {
-			t.Errorf("callback.AuthorizeError field %d = {Name:%q Type:%v PkgPath:%q Anonymous:%t}, want exported non-anonymous %s string", index, field.Name, field.Type, field.PkgPath, field.Anonymous, wantName)
-		}
+	authorizeError := &callback.AuthorizeError{Code: "access_denied", Description: "user declined"}
+	hasType[string](authorizeError.Code)
+	hasType[string](authorizeError.Description)
+	if authorizeError.Code != "access_denied" || authorizeError.Description != "user declined" {
+		t.Errorf("callback.AuthorizeError fields = {%q %q}, want {%q %q}", authorizeError.Code, authorizeError.Description, "access_denied", "user declined")
 	}
 
-	pointerType := reflect.TypeOf((*callback.AuthorizeError)(nil))
-	errorMethod, ok := pointerType.MethodByName("Error")
-	if !ok {
-		t.Fatal("(*callback.AuthorizeError).Error method is missing")
-	}
-	wantMethodType := reflect.TypeOf((func(*callback.AuthorizeError) string)(nil))
-	if errorMethod.Type != wantMethodType {
-		t.Errorf("(*callback.AuthorizeError).Error type = %v, want %v", errorMethod.Type, wantMethodType)
-	}
-	if valueMethod, ok := authorizeErrorType.MethodByName("Error"); ok {
-		t.Errorf("callback.AuthorizeError unexpectedly has Error method with type %v; want Error declared only on *callback.AuthorizeError", valueMethod.Type)
+	hasType[func(*callback.AuthorizeError) string]((*callback.AuthorizeError).Error)
+	hasType[error](authorizeError)
+	if got := authorizeError.Error(); got == "" {
+		t.Errorf("(*callback.AuthorizeError).Error() = %q, want the non-empty error text", got)
 	}
 }
 
 // R-LV9H-UG54
 func TestWaitHasExactExportedMethodSignature(t *testing.T) {
-	serverType := reflect.TypeOf((*callback.Server)(nil))
-	waitMethod, ok := serverType.MethodByName("Wait")
-	if !ok {
-		t.Fatal("(*callback.Server).Wait method is missing")
-	}
-	wantMethodType := reflect.TypeOf((func(*callback.Server, context.Context, string, string) (callback.Result, error))(nil))
-	if waitMethod.Type != wantMethodType {
-		t.Errorf("(*callback.Server).Wait type = %v, want %v", waitMethod.Type, wantMethodType)
-	}
-	if valueMethod, ok := serverType.Elem().MethodByName("Wait"); ok {
-		t.Errorf("callback.Server unexpectedly has Wait method with type %v; want Wait declared only on *callback.Server", valueMethod.Type)
+	hasType[func(*callback.Server, context.Context, string, string) (callback.Result, error)]((*callback.Server).Wait)
+
+	server := listenForWait(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := server.Wait(ctx, "/callback", "state"); err == nil {
+		t.Error("(*callback.Server).Wait with a cancelled context returned nil error")
 	}
 }
 

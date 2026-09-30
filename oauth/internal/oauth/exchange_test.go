@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -101,8 +100,7 @@ func TestExchangeMaxErrorBodyConstant(t *testing.T) {
 
 // R-LHUL-MYZH
 func TestExchangeMethodSignature(t *testing.T) {
-	got := reflect.TypeOf(oauth.Client.Exchange)
-	want := reflect.TypeOf((func(
+	hasType[func(
 		oauth.Client,
 		context.Context,
 		*http.Client,
@@ -110,18 +108,21 @@ func TestExchangeMethodSignature(t *testing.T) {
 		string,
 		[]oauth.Param,
 		[]oauth.Param,
-	) ([]byte, error))(nil))
-	if got != want {
-		t.Errorf("oauth.Client.Exchange type = %v, want %v", got, want)
+	) ([]byte, error)](oauth.Client.Exchange)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	client := oauth.Client{TokenURL: &url.URL{Scheme: "http", Host: "127.0.0.1:1", Path: "/token"}}
+	if _, err := client.Exchange(ctx, http.DefaultClient, oauth.Session{}, "code", nil, nil); err == nil {
+		t.Error("Client.Exchange with a cancelled context returned nil error")
 	}
 }
 
 // R-LJ2I-0QQ6
 func TestReservedTokenParamSignature(t *testing.T) {
-	got := reflect.TypeOf(oauth.ReservedTokenParam)
-	want := reflect.TypeOf((func(string) bool)(nil))
-	if got != want {
-		t.Errorf("oauth.ReservedTokenParam type = %v, want %v", got, want)
+	hasType[func(key string) bool](oauth.ReservedTokenParam)
+	if !oauth.ReservedTokenParam("grant_type") {
+		t.Error("oauth.ReservedTokenParam(\"grant_type\") = false, want true")
 	}
 }
 

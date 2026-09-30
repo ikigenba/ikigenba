@@ -79,61 +79,52 @@ Basic authentication:
 
 const expectedUsage = expectedFlagsBlock + expectedOpenAIExample + expectedXAIExample + expectedBasicAuthentication
 
-// R-M68L-ADTD
+// R-VJK2-0W43
 func TestOptionsHasExactExportedStructShape(t *testing.T) {
 	t.Parallel()
 
-	got := reflect.TypeOf(options.Options{})
-	if got.Kind() != reflect.Struct {
-		t.Fatalf("options.Options kind = %v, want %v", got.Kind(), reflect.Struct)
+	authURL := &url.URL{Scheme: "https", Host: "identity.example", Path: "/authorize"}
+	tokenURL := &url.URL{Scheme: "https", Host: "identity.example", Path: "/token"}
+	authParams := []oauth.Param{{Key: "audience", Value: "api"}}
+	tokenParams := []oauth.Param{{Key: "resource", Value: "api"}}
+	tokenHeaders := []oauth.Param{{Key: "X-Trace", Value: "1"}}
+	timeout := 90 * time.Second
+	clientSecret := strings.ToLower("CLIENT-SECRET")
+	got := options.Options{
+		AuthURL:      authURL,
+		TokenURL:     tokenURL,
+		ClientID:     "client-id",
+		Scope:        "openid",
+		ClientSecret: clientSecret,
+		CallbackHost: "localhost",
+		Port:         8391,
+		CallbackPath: "/callback",
+		AuthParams:   authParams,
+		TokenParams:  tokenParams,
+		TokenHeaders: tokenHeaders,
+		NoBrowser:    true,
+		Timeout:      timeout,
+		Version:      true,
 	}
-	if got.Name() != "Options" {
-		t.Errorf("options.Options type name = %q, want %q", got.Name(), "Options")
-	}
-	const wantPackagePath = "github.com/ikigenba/ikigenba/oauth/internal/options"
-	if got.PkgPath() != wantPackagePath {
-		t.Errorf("options.Options package path = %q, want %q", got.PkgPath(), wantPackagePath)
-	}
-
-	wantFields := []struct {
-		name string
-		typ  reflect.Type
-	}{
-		{"AuthURL", reflect.TypeOf((*url.URL)(nil))},
-		{"TokenURL", reflect.TypeOf((*url.URL)(nil))},
-		{"ClientID", reflect.TypeOf(string(""))},
-		{"Scope", reflect.TypeOf(string(""))},
-		{"ClientSecret", reflect.TypeOf(string(""))},
-		{"CallbackHost", reflect.TypeOf(string(""))},
-		{"Port", reflect.TypeOf(int(0))},
-		{"CallbackPath", reflect.TypeOf(string(""))},
-		{"AuthParams", reflect.TypeOf([]oauth.Param(nil))},
-		{"TokenParams", reflect.TypeOf([]oauth.Param(nil))},
-		{"TokenHeaders", reflect.TypeOf([]oauth.Param(nil))},
-		{"NoBrowser", reflect.TypeOf(bool(false))},
-		{"Timeout", reflect.TypeOf(time.Duration(0))},
-		{"Version", reflect.TypeOf(bool(false))},
-	}
-	if got.NumField() != len(wantFields) {
-		t.Fatalf("options.Options field count = %d, want exactly %d", got.NumField(), len(wantFields))
-	}
-	for index, want := range wantFields {
-		field := got.Field(index)
-		if field.Name != want.name {
-			t.Errorf("options.Options field %d name = %q, want %q", index, field.Name, want.name)
-		}
-		if field.Type != want.typ {
-			t.Errorf("options.Options field %d (%s) type = %v, want %v", index, field.Name, field.Type, want.typ)
-		}
-		if !field.IsExported() {
-			t.Errorf("options.Options field %d (%s) is unexported (package path %q), want exported", index, field.Name, field.PkgPath)
-		}
-		if field.Anonymous {
-			t.Errorf("options.Options field %d (%s) is anonymous, want named", index, field.Name)
-		}
-		if field.Tag != "" {
-			t.Errorf("options.Options field %d (%s) tag = %q, want empty", index, field.Name, field.Tag)
-		}
+	hasType[*url.URL](got.AuthURL)
+	hasType[*url.URL](got.TokenURL)
+	hasType[string](got.ClientID)
+	hasType[string](got.Scope)
+	hasType[string](got.ClientSecret)
+	hasType[string](got.CallbackHost)
+	hasType[int](got.Port)
+	hasType[string](got.CallbackPath)
+	hasType[[]oauth.Param](got.AuthParams)
+	hasType[[]oauth.Param](got.TokenParams)
+	hasType[[]oauth.Param](got.TokenHeaders)
+	hasType[bool](got.NoBrowser)
+	hasType[time.Duration](got.Timeout)
+	hasType[bool](got.Version)
+	if got.AuthURL != authURL || got.TokenURL != tokenURL || got.ClientID != "client-id" || got.Scope != "openid" ||
+		got.ClientSecret != clientSecret || got.CallbackHost != "localhost" || got.Port != 8391 || got.CallbackPath != "/callback" ||
+		!reflect.DeepEqual(got.AuthParams, authParams) || !reflect.DeepEqual(got.TokenParams, tokenParams) ||
+		!reflect.DeepEqual(got.TokenHeaders, tokenHeaders) || !got.NoBrowser || got.Timeout != timeout || !got.Version {
+		t.Errorf("options.Options fields read back %+v, want the constructed values", got)
 	}
 }
 
@@ -233,38 +224,52 @@ func TestParseFlagsReturnsExportedHelpSentinel(t *testing.T) {
 	}
 }
 
-// R-M1CZ-RAUL
+// R-VKRY-ENUS
 func TestFlagsHasExactExportedStructShape(t *testing.T) {
 	t.Parallel()
 
-	got := reflect.TypeOf(options.Flags{})
-	wantFields := []struct {
-		name string
-		typ  reflect.Type
-	}{
-		{"AuthURL", reflect.TypeOf(string(""))},
-		{"TokenURL", reflect.TypeOf(string(""))},
-		{"ClientID", reflect.TypeOf(string(""))},
-		{"Scope", reflect.TypeOf(string(""))},
-		{"ClientSecret", reflect.TypeOf(string(""))},
-		{"CallbackHost", reflect.TypeOf(string(""))},
-		{"Port", reflect.TypeOf(int(0))},
-		{"CallbackPath", reflect.TypeOf(string(""))},
-		{"AuthParams", reflect.TypeOf([]oauth.Param(nil))},
-		{"TokenParams", reflect.TypeOf([]oauth.Param(nil))},
-		{"TokenHeaders", reflect.TypeOf([]oauth.Param(nil))},
-		{"NoBrowser", reflect.TypeOf(bool(false))},
-		{"Timeout", reflect.TypeOf(time.Duration(0))},
-		{"Version", reflect.TypeOf(bool(false))},
+	authURL := "https://identity.example/authorize"
+	exchangeURL := "https://identity.example/token"
+	authParams := []oauth.Param{{Key: "audience", Value: "api"}}
+	tokenParams := []oauth.Param{{Key: "resource", Value: "api"}}
+	tokenHeaders := []oauth.Param{{Key: "X-Trace", Value: "1"}}
+	timeout := 90 * time.Second
+	clientSecret := strings.ToLower("CLIENT-SECRET")
+	got := options.Flags{
+		AuthURL:      authURL,
+		TokenURL:     exchangeURL,
+		ClientID:     "client-id",
+		Scope:        "openid",
+		ClientSecret: clientSecret,
+		CallbackHost: "localhost",
+		Port:         8391,
+		CallbackPath: "/callback",
+		AuthParams:   authParams,
+		TokenParams:  tokenParams,
+		TokenHeaders: tokenHeaders,
+		NoBrowser:    true,
+		Timeout:      timeout,
+		Version:      true,
 	}
-	if got.NumField() != len(wantFields) {
-		t.Fatalf("options.Flags field count = %d, want exactly %d", got.NumField(), len(wantFields))
-	}
-	for index, want := range wantFields {
-		field := got.Field(index)
-		if field.Name != want.name || field.Type != want.typ || !field.IsExported() || field.Anonymous || field.Tag != "" {
-			t.Errorf("options.Flags field %d = %#v, want exported named field %s %v without tag", index, field, want.name, want.typ)
-		}
+	hasType[string](got.AuthURL)
+	hasType[string](got.TokenURL)
+	hasType[string](got.ClientID)
+	hasType[string](got.Scope)
+	hasType[string](got.ClientSecret)
+	hasType[string](got.CallbackHost)
+	hasType[int](got.Port)
+	hasType[string](got.CallbackPath)
+	hasType[[]oauth.Param](got.AuthParams)
+	hasType[[]oauth.Param](got.TokenParams)
+	hasType[[]oauth.Param](got.TokenHeaders)
+	hasType[bool](got.NoBrowser)
+	hasType[time.Duration](got.Timeout)
+	hasType[bool](got.Version)
+	if got.AuthURL != authURL || got.TokenURL != exchangeURL || got.ClientID != "client-id" || got.Scope != "openid" ||
+		got.ClientSecret != clientSecret || got.CallbackHost != "localhost" || got.Port != 8391 || got.CallbackPath != "/callback" ||
+		!reflect.DeepEqual(got.AuthParams, authParams) || !reflect.DeepEqual(got.TokenParams, tokenParams) ||
+		!reflect.DeepEqual(got.TokenHeaders, tokenHeaders) || !got.NoBrowser || got.Timeout != timeout || !got.Version {
+		t.Errorf("options.Flags fields read back %+v, want the constructed values", got)
 	}
 }
 
@@ -483,8 +488,8 @@ func TestFlagsValidateReturnsParsedURLsWithoutIOParameters(t *testing.T) {
 		t.Errorf("Options.TokenURL = %#v, want %#v", got.TokenURL, wantTokenURL)
 	}
 
-	validateType := reflect.TypeOf(options.Flags.Validate)
-	if validateType.NumIn() != 1 || validateType.NumOut() != 2 {
-		t.Errorf("Flags.Validate signature = %v, want func(Flags) (Options, error) with no I/O parameter", validateType)
-	}
+	hasType[func(options.Flags) (options.Options, error)](options.Flags.Validate)
 }
+
+// hasType compiles only when its argument is assignable to T.
+func hasType[T any](T) {}

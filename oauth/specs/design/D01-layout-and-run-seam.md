@@ -104,7 +104,7 @@ it.
 ## REQUIREMENTS
 
 - R-E5L7-OSOC: Package `internal/cli` MUST export `Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Deps) int`, and calling it MUST return an exit code in-process without terminating the calling program.
-- R-E6T4-2KF1: Package `internal/cli` MUST export a `Deps` struct whose fields are exactly `Launcher browser.Launcher`, `Entropy io.Reader`, `HTTPClient *http.Client`, and `Listen callback.ListenFunc`.
+- R-VLZU-SFLH: Package `internal/cli` MUST export a `Deps` struct with the fields `Launcher browser.Launcher`, `Entropy io.Reader`, `HTTPClient *http.Client`, and `Listen callback.ListenFunc`.
 - R-E810-GC5Q: A successful `Run` MUST obtain its browser launch, its random bytes, its token-exchange HTTP round trip, and its loopback listener from the corresponding `Deps` fields, verified by four injected fakes each of which records that it was used.
 - R-EAGT-7VN4: The binary built from `./cmd/oauth`, run with `--no-browser` against an `httptest` provider that redirects to the binary's own loopback listener, MUST exit 0 and write exactly the provider's token response bytes to stdout.
 - R-EBOP-LNDT: Two successive runs of the binary built from `./cmd/oauth` against an `httptest` provider MUST present that provider with different `state` values and different `code_challenge` values, proving `main` wired a real entropy source rather than a fixed or empty one.

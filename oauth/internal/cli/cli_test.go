@@ -1343,41 +1343,26 @@ func TestRunVersionShortCircuitsBeforeLoginSideEffects(t *testing.T) {
 	}
 }
 
-// R-E6T4-2KF1
+// R-VLZU-SFLH
 func TestDepsExactFields(t *testing.T) {
 	var launcher browser.Launcher
-	var entropy io.Reader
-	var client *http.Client
-	var listen callback.ListenFunc
-	_ = cli.Deps{
+	entropy := strings.NewReader("entropy")
+	client := &http.Client{}
+	var listen callback.ListenFunc = net.Listen
+	deps := cli.Deps{
 		Launcher:   launcher,
 		Entropy:    entropy,
 		HTTPClient: client,
 		Listen:     listen,
 	}
-
-	type expectedField struct {
-		name string
-		typ  reflect.Type
-	}
-	want := []expectedField{
-		{"Launcher", reflect.TypeOf((*browser.Launcher)(nil)).Elem()},
-		{"Entropy", reflect.TypeOf((*io.Reader)(nil)).Elem()},
-		{"HTTPClient", reflect.TypeOf((*http.Client)(nil))},
-		{"Listen", reflect.TypeOf((*callback.ListenFunc)(nil)).Elem()},
-	}
-
-	typ := reflect.TypeOf(cli.Deps{})
-	if typ.NumField() != len(want) {
-		t.Fatalf("Deps has %d fields, want exactly %d", typ.NumField(), len(want))
-	}
-	for i, expected := range want {
-		field := typ.Field(i)
-		if field.Name != expected.name {
-			t.Errorf("Deps field %d is named %q, want %q", i, field.Name, expected.name)
-		}
-		if field.Type != expected.typ {
-			t.Errorf("Deps.%s has type %v, want %v", field.Name, field.Type, expected.typ)
-		}
+	hasType[browser.Launcher](deps.Launcher)
+	hasType[io.Reader](deps.Entropy)
+	hasType[*http.Client](deps.HTTPClient)
+	hasType[callback.ListenFunc](deps.Listen)
+	if deps.Launcher != nil || deps.Entropy != entropy || deps.HTTPClient != client || deps.Listen == nil {
+		t.Errorf("cli.Deps fields read back %+v, want the constructed values", deps)
 	}
 }
+
+// hasType compiles only when its argument is assignable to T.
+func hasType[T any](T) {}

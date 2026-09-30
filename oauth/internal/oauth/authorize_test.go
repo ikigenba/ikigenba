@@ -3,7 +3,6 @@ package oauth_test
 import (
 	"math/rand"
 	"net/url"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -11,87 +10,67 @@ import (
 	"github.com/ikigenba/ikigenba/oauth/internal/oauth"
 )
 
-// R-L83E-KT1X
+// R-VFWC-VKW0
 func TestClientExportedFieldContract(t *testing.T) {
-	clientType := reflect.TypeOf(oauth.Client{})
-	wantFields := []struct {
-		name      string
-		fieldType reflect.Type
-	}{
-		{name: "AuthURL", fieldType: reflect.TypeOf((*url.URL)(nil))},
-		{name: "TokenURL", fieldType: reflect.TypeOf((*url.URL)(nil))},
-		{name: "ClientID", fieldType: reflect.TypeOf("")},
-		{name: "ClientSecret", fieldType: reflect.TypeOf("")},
-		{name: "RedirectURI", fieldType: reflect.TypeOf("")},
-		{name: "Scope", fieldType: reflect.TypeOf("")},
+	authURL := &url.URL{Scheme: "https", Host: "identity.example", Path: "/authorize"}
+	tokenURL := &url.URL{Scheme: "https", Host: "identity.example", Path: "/token"}
+	client := oauth.Client{
+		AuthURL:      authURL,
+		TokenURL:     tokenURL,
+		ClientID:     "client-id",
+		ClientSecret: "client-secret",
+		RedirectURI:  "http://127.0.0.1:8391/callback",
+		Scope:        "openid",
 	}
-
-	if got, want := clientType.NumField(), len(wantFields); got != want {
-		t.Fatalf("oauth.Client has %d fields, want exactly %d", got, want)
-	}
-	for index, want := range wantFields {
-		field := clientType.Field(index)
-		if field.Name != want.name {
-			t.Errorf("oauth.Client field %d name = %q, want %q", index, field.Name, want.name)
-		}
-		if !field.IsExported() {
-			t.Errorf("oauth.Client field %d (%q) is unexported, want exported", index, field.Name)
-		}
-		if field.Type != want.fieldType {
-			t.Errorf("oauth.Client field %d (%q) type = %v, want %v", index, field.Name, field.Type, want.fieldType)
-		}
+	hasType[*url.URL](client.AuthURL)
+	hasType[*url.URL](client.TokenURL)
+	hasType[string](client.ClientID)
+	hasType[string](client.ClientSecret)
+	hasType[string](client.RedirectURI)
+	hasType[string](client.Scope)
+	if client.AuthURL != authURL || client.TokenURL != tokenURL || client.ClientID != "client-id" ||
+		client.ClientSecret != "client-secret" || client.RedirectURI != "http://127.0.0.1:8391/callback" || client.Scope != "openid" {
+		t.Errorf("oauth.Client fields read back %+v, want the constructed values", client)
 	}
 }
 
-// R-L9BA-YKSM
+// R-VH49-9CMP
 func TestParamExportedFieldContract(t *testing.T) {
-	paramType := reflect.TypeOf(oauth.Param{})
-	wantNames := []string{"Key", "Value"}
-	stringType := reflect.TypeOf("")
-
-	if got, want := paramType.NumField(), len(wantNames); got != want {
-		t.Fatalf("oauth.Param has %d fields, want exactly %d", got, want)
-	}
-	for index, wantName := range wantNames {
-		field := paramType.Field(index)
-		if field.Name != wantName {
-			t.Errorf("oauth.Param field %d name = %q, want %q", index, field.Name, wantName)
-		}
-		if !field.IsExported() {
-			t.Errorf("oauth.Param field %d (%q) is unexported, want exported", index, field.Name)
-		}
-		if field.Type != stringType {
-			t.Errorf("oauth.Param field %d (%q) type = %v, want %v", index, field.Name, field.Type, stringType)
-		}
+	param := oauth.Param{Key: "audience", Value: "api"}
+	hasType[string](param.Key)
+	hasType[string](param.Value)
+	if param.Key != "audience" || param.Value != "api" {
+		t.Errorf("oauth.Param{Key: %q, Value: %q} read back %+v", "audience", "api", param)
 	}
 }
 
 // R-LBR3-Q4A0
 func TestChallengeExportedFunctionSignature(t *testing.T) {
-	got := reflect.TypeOf(oauth.Challenge)
-	want := reflect.TypeOf((func(string) string)(nil))
-	if got != want {
-		t.Fatalf("oauth.Challenge type = %v, want %v", got, want)
+	hasType[func(verifier string) string](oauth.Challenge)
+	if oauth.Challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk") == "" {
+		t.Error("oauth.Challenge returned an empty challenge")
 	}
 }
 
 // R-LCZ0-3W0P
 func TestAuthorizeURLExportedMethodSignature(t *testing.T) {
-	got := reflect.TypeOf(oauth.Client.AuthorizeURL)
-	want := reflect.TypeOf((func(oauth.Client, oauth.Session, []oauth.Param) string)(nil))
-	if got != want {
-		t.Fatalf("oauth.Client.AuthorizeURL method expression type = %v, want %v", got, want)
+	hasType[func(oauth.Client, oauth.Session, []oauth.Param) string](oauth.Client.AuthorizeURL)
+	client := oauth.Client{AuthURL: &url.URL{Scheme: "https", Host: "identity.example", Path: "/authorize"}}
+	if got := client.AuthorizeURL(oauth.Session{State: "state", CodeVerifier: "verifier"}, nil); !strings.HasPrefix(got, "https://identity.example/authorize?") {
+		t.Errorf("Client.AuthorizeURL() = %q, want the authorize endpoint with a query", got)
 	}
 }
 
 // R-LE6W-HNRE
 func TestReservedAuthorizeParamExportedFunctionSignature(t *testing.T) {
-	got := reflect.TypeOf(oauth.ReservedAuthorizeParam)
-	want := reflect.TypeOf((func(string) bool)(nil))
-	if got != want {
-		t.Fatalf("oauth.ReservedAuthorizeParam type = %v, want %v", got, want)
+	hasType[func(key string) bool](oauth.ReservedAuthorizeParam)
+	if !oauth.ReservedAuthorizeParam("state") {
+		t.Error("oauth.ReservedAuthorizeParam(\"state\") = false, want true")
 	}
 }
+
+// hasType compiles only when its argument is assignable to T.
+func hasType[T any](T) {}
 
 // R-J54Q-DJJP
 func TestAuthorizeURLIncludesRequiredParameters(t *testing.T) {

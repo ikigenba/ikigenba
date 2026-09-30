@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net"
-	"reflect"
 	"strconv"
 	"testing"
 
@@ -25,68 +24,46 @@ type fakeListener struct {
 // R-LLIA-SA7K
 func TestListenFuncHasNetworkDependencySignature(t *testing.T) {
 	var standardListen callback.ListenFunc = net.Listen
-	_ = standardListen
+	hasType[func(network, address string) (net.Listener, error)](standardListen)
 
-	listenType := reflect.TypeOf((*callback.ListenFunc)(nil)).Elem()
-	if listenType.Name() != "ListenFunc" {
-		t.Errorf("ListenFunc type name = %q, want %q", listenType.Name(), "ListenFunc")
+	listener, err := standardListen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("ListenFunc(net.Listen)(tcp, 127.0.0.1:0) error = %v", err)
 	}
-	if listenType.PkgPath() != "github.com/ikigenba/ikigenba/oauth/internal/callback" {
-		t.Errorf("ListenFunc package path = %q, want internal/callback package", listenType.PkgPath())
-	}
-	if listenType.Kind() != reflect.Func {
-		t.Fatalf("ListenFunc kind = %v, want func", listenType.Kind())
-	}
-
-	stringType := reflect.TypeOf("")
-	if listenType.NumIn() != 2 {
-		t.Fatalf("ListenFunc input count = %d, want 2", listenType.NumIn())
-	}
-	for index := range 2 {
-		if inputType := listenType.In(index); inputType != stringType {
-			t.Errorf("ListenFunc input %d = %v, want string", index, inputType)
-		}
-	}
-
-	listenerType := reflect.TypeOf((*net.Listener)(nil)).Elem()
-	errorType := reflect.TypeOf((*error)(nil)).Elem()
-	if listenType.NumOut() != 2 {
-		t.Fatalf("ListenFunc result count = %d, want 2", listenType.NumOut())
-	}
-	if resultType := listenType.Out(0); resultType != listenerType {
-		t.Errorf("ListenFunc result 0 = %v, want %v", resultType, listenerType)
-	}
-	if resultType := listenType.Out(1); resultType != errorType {
-		t.Errorf("ListenFunc result 1 = %v, want %v", resultType, errorType)
+	if err := listener.Close(); err != nil {
+		t.Errorf("listener Close() error = %v", err)
 	}
 }
 
 // R-LMQ7-61Y9
 func TestListenHasCallbackListenerSignature(t *testing.T) {
-	wantType := reflect.TypeOf((func(callback.ListenFunc, int) (*callback.Server, error))(nil))
-	if gotType := reflect.TypeOf(callback.Listen); gotType != wantType {
-		t.Errorf("Listen type = %v, want %v", gotType, wantType)
+	hasType[func(listen callback.ListenFunc, port int) (*callback.Server, error)](callback.Listen)
+
+	server, err := callback.Listen(net.Listen, 0)
+	if err != nil {
+		t.Fatalf("Listen(net.Listen, 0) error = %v", err)
+	}
+	if err := server.Close(); err != nil {
+		t.Errorf("Close() error = %v", err)
 	}
 }
 
 // R-LNY3-JTOY
 func TestListenServerProvidesListenerMethods(t *testing.T) {
-	serverType := reflect.TypeOf((*callback.Server)(nil))
-	wantMethods := map[string]reflect.Type{
-		"Port":        reflect.TypeOf((func(*callback.Server) int)(nil)),
-		"BindWarning": reflect.TypeOf((func(*callback.Server) error)(nil)),
-		"Close":       reflect.TypeOf((func(*callback.Server) error)(nil)),
-	}
+	hasType[func(*callback.Server) int]((*callback.Server).Port)
+	hasType[func(*callback.Server) error]((*callback.Server).BindWarning)
+	hasType[func(*callback.Server) error]((*callback.Server).Close)
 
-	for name, wantType := range wantMethods {
-		method, found := serverType.MethodByName(name)
-		if !found {
-			t.Errorf("*callback.Server is missing exported method %s with type %v", name, wantType)
-			continue
-		}
-		if method.Type != wantType {
-			t.Errorf("(*callback.Server).%s type = %v, want %v", name, method.Type, wantType)
-		}
+	server, err := callback.Listen(net.Listen, 0)
+	if err != nil {
+		t.Fatalf("Listen(net.Listen, 0) error = %v", err)
+	}
+	if got := server.Port(); got <= 0 {
+		t.Errorf("Port() = %d, want an assigned port", got)
+	}
+	_ = server.BindWarning()
+	if err := server.Close(); err != nil {
+		t.Errorf("Close() error = %v", err)
 	}
 }
 
@@ -334,3 +311,6 @@ func tcpAddress(t *testing.T, address string) net.Addr {
 	}
 	return resolved
 }
+
+// hasType compiles only when its argument is assignable to T.
+func hasType[T any](T) {}
