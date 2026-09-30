@@ -4,8 +4,8 @@ go 1.26
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/ikigenba/ikigenba/agentkit v0.12.0
-	github.com/ikigenba/ikigenba/toolkit v0.2.0
+	github.com/ikigenba/ikigenba/agentkit v0.13.0
+	github.com/ikigenba/ikigenba/toolkit v0.3.0
 )
 
 require (
