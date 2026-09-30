@@ -18,7 +18,10 @@ func TestHostPublicContract(t *testing.T) {
 	if User != "ec2-user" {
 		t.Fatalf("User = %q", User)
 	}
-	assertFields(t, Host{}, []field{{"Address", reflect.TypeFor[string]()}, {"Deps", reflect.TypeFor[seam.Deps]()}})
+	_ = Host(struct {
+		Address string
+		Deps    seam.Deps
+	}{})
 	h := Host{Address: "3.19.79.227"}
 	if got, want := h.Target(), "ec2-user@3.19.79.227"; got != want {
 		t.Fatalf("Target() = %q, want %q", got, want)
@@ -30,29 +33,32 @@ func TestHostPublicContract(t *testing.T) {
 	}
 
 	// R-T88J-WFG4
-	assertFields(t, UnreachableError{}, []field{{"Address", reflect.TypeFor[string]()}})
+	_ = UnreachableError(struct{ Address string }{})
 	err := (&UnreachableError{Address: "3.145.72.19"}).Error()
 	if want := "ssh ec2-user@3.145.72.19: connection timed out"; err != want {
 		t.Fatalf("Error() = %q, want %q", err, want)
 	}
 
 	// R-D6VV-A7PF
-	assertFields(t, Output{}, []field{{"Stdout", reflect.TypeFor[string]()}, {"Stderr", reflect.TypeFor[string]()}})
-	assertType(t, "Host.Run", Host.Run, reflect.TypeFor[func(Host, context.Context, string, ...string) (Output, error)]())
-	assertType(t, "Host.Sudo", Host.Sudo, reflect.TypeFor[func(Host, context.Context, string, ...string) (Output, error)]())
-	assertType(t, "Host.StreamSudo", Host.StreamSudo, reflect.TypeFor[func(Host, context.Context, io.Writer, string, ...string) error]())
-	assertType(t, "Host.Wait", Host.Wait, reflect.TypeFor[func(Host, context.Context) error]())
+	_ = Output(struct {
+		Stdout string
+		Stderr string
+	}{})
+	_ = []func(Host, context.Context, string, ...string) (Output, error){Host.Run}
+	_ = []func(Host, context.Context, string, ...string) (Output, error){Host.Sudo}
+	_ = []func(Host, context.Context, io.Writer, string, ...string) error{Host.StreamSudo}
+	_ = []func(Host, context.Context) error{Host.Wait}
 }
 
 func TestCommandErrorContract(t *testing.T) {
 	// R-JA8W-5LZ5
-	assertFields(t, CommandError{}, []field{
-		{"Step", reflect.TypeFor[string]()},
-		{"Command", reflect.TypeFor[[]string]()},
-		{"Status", reflect.TypeFor[int]()},
-		{"Stdout", reflect.TypeFor[string]()},
-		{"Stderr", reflect.TypeFor[string]()},
-	})
+	_ = CommandError(struct {
+		Step    string
+		Command []string
+		Status  int
+		Stdout  string
+		Stderr  string
+	}{})
 	tests := []struct {
 		name string
 		err  CommandError
@@ -321,31 +327,5 @@ func TestStreamSudoSuccess(t *testing.T) {
 	}
 	if got, want := stdout.String(), "unchanged\x00output"; got != want {
 		t.Fatalf("stdout = %q, want %q", got, want)
-	}
-}
-
-type field struct {
-	name string
-	typ  reflect.Type
-}
-
-func assertFields(t *testing.T, value any, want []field) {
-	t.Helper()
-	typ := reflect.TypeOf(value)
-	if typ.NumField() != len(want) {
-		t.Fatalf("%s has %d fields, want %d", typ, typ.NumField(), len(want))
-	}
-	for i, expected := range want {
-		got := typ.Field(i)
-		if got.Name != expected.name || got.Type != expected.typ {
-			t.Errorf("field %d = %s %v, want %s %v", i, got.Name, got.Type, expected.name, expected.typ)
-		}
-	}
-}
-
-func assertType(t *testing.T, name string, value any, want reflect.Type) {
-	t.Helper()
-	if got := reflect.TypeOf(value); got != want {
-		t.Errorf("%s type = %v, want %v", name, got, want)
 	}
 }

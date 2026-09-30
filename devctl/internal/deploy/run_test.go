@@ -33,13 +33,25 @@ var _ runSignature = deploy.Run
 
 func TestDeployPublicContract(t *testing.T) {
 	// R-O0KZ-IOYR R-YR44-RQHN R-YSC1-5I8C R-O1SV-WGPG R-F81U-8G73 R-FWFT-VV0Z R-OIVH-9936
-	assertFields(t, deploy.UsageError{}, "Message", "Help")
-	assertFields(t, deploy.NoFileError{}, "Path")
-	assertFields(t, deploy.MissingSecretsError{}, "App", "Space", "Names")
-	assertFields(t, deploy.ProcessError{}, "Label", "Status", "Stderr")
-	assertFields(t, deploy.FileError{}, "Path", "Reason")
-	assertFieldTypes(t, deploy.ProcessError{}, reflect.TypeFor[string](), reflect.TypeFor[int](), reflect.TypeFor[string]())
-	assertFieldTypes(t, deploy.FileError{}, reflect.TypeFor[string](), reflect.TypeFor[string]())
+	_ = deploy.UsageError(struct {
+		Message string
+		Help    string
+	}{})
+	_ = deploy.NoFileError(struct{ Path string }{})
+	_ = deploy.MissingSecretsError(struct {
+		App   string
+		Space string
+		Names []string
+	}{})
+	_ = deploy.ProcessError(struct {
+		Label  string
+		Status int
+		Stderr string
+	}{})
+	_ = deploy.FileError(struct {
+		Path   string
+		Reason string
+	}{})
 	usage := &deploy.UsageError{Message: "bad", Help: "devctl deploy --help"}
 	if usage.Error() != "bad" || usage.Detail() != "see 'devctl deploy --help' for usage" || usage.ExitCode() != 2 || (&deploy.UsageError{}).Detail() != "" {
 		t.Fatalf("UsageError contract failed: %#v", usage)
@@ -721,32 +733,6 @@ func (f *fakeS3) DeleteObjects(context.Context, string, []string) error {
 	f.h.s3Calls++
 	f.h.deleteCalls++
 	return nil
-}
-
-func assertFields(t *testing.T, value any, names ...string) {
-	t.Helper()
-	typ := reflect.TypeOf(value)
-	if typ.NumField() != len(names) {
-		t.Fatalf("%T has %d fields, want %d", value, typ.NumField(), len(names))
-	}
-	for i, name := range names {
-		if typ.Field(i).Name != name {
-			t.Fatalf("%T field %d = %s", value, i, typ.Field(i).Name)
-		}
-	}
-}
-
-func assertFieldTypes(t *testing.T, value any, types ...reflect.Type) {
-	t.Helper()
-	typ := reflect.TypeOf(value)
-	if typ.NumField() != len(types) {
-		t.Fatalf("%T has %d fields, want %d", value, typ.NumField(), len(types))
-	}
-	for i, want := range types {
-		if got := typ.Field(i).Type; got != want {
-			t.Fatalf("%T field %d type = %v, want %v", value, i, got, want)
-		}
-	}
 }
 
 func failRunner(t *testing.T) seam.Runner {

@@ -76,7 +76,7 @@ func TestWaitDeclarations(t *testing.T) {
 func TestUsageError(t *testing.T) {
 	// R-SZP9-8199
 	err := &UsageError{Message: "bad option", Help: "devctl space --help"}
-	assertFields(t, err, struct {
+	_ = UsageError(struct {
 		Message string
 		Help    string
 	}{})
@@ -94,7 +94,7 @@ func TestUsageError(t *testing.T) {
 func TestNotRunningError(t *testing.T) {
 	// R-XQOJ-QF8R
 	err := &NotRunningError{Domain: "sbx2.ikigenba.dev", State: cloud.StateStopped}
-	assertFields(t, err, struct {
+	_ = NotRunningError(struct {
 		Domain string
 		State  cloud.InstanceState
 	}{})
@@ -106,7 +106,7 @@ func TestNotRunningError(t *testing.T) {
 func TestWaitError(t *testing.T) {
 	// R-T251-ZKQN
 	err := &WaitError{Subject: "i-0c9e94542d98846a8", Want: "be running"}
-	assertFields(t, err, struct {
+	_ = WaitError(struct {
 		Subject string
 		Want    string
 	}{})
@@ -122,7 +122,7 @@ func TestRetireStateError(t *testing.T) {
 		State: cloud.StateStopped,
 		Label: "staging",
 	}
-	assertFields(t, err, struct {
+	_ = RetireStateError(struct {
 		ID    string
 		State cloud.InstanceState
 		Label string
@@ -136,25 +136,5 @@ func TestRetireStateError(t *testing.T) {
 	const wantDetail = "run 'devctl space start staging' first, or pass --no-backup"
 	if got := err.Detail(); got != wantDetail {
 		t.Errorf("Detail() = %q, want %q", got, wantDetail)
-	}
-}
-
-func assertFields(t *testing.T, value, want any) {
-	t.Helper()
-	typeOf := reflect.TypeOf(value)
-	if typeOf.Kind() == reflect.Pointer {
-		typeOf = typeOf.Elem()
-	}
-	wantType := reflect.TypeOf(want)
-	if typeOf.NumField() != wantType.NumField() {
-		t.Fatalf("%s has %d fields, want %d", typeOf.Name(), typeOf.NumField(), wantType.NumField())
-	}
-	for index := range wantType.NumField() {
-		gotField := typeOf.Field(index)
-		wantField := wantType.Field(index)
-		if gotField.Name != wantField.Name || gotField.Type != wantField.Type {
-			t.Errorf("field %d = %s %s, want %s %s", index,
-				gotField.Name, gotField.Type, wantField.Name, wantField.Type)
-		}
 	}
 }

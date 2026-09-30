@@ -859,7 +859,7 @@ func (fake *cliSTS) CallerAccountID(context.Context) (string, error) {
 }
 
 func TestSecretsNeverExposeValuesThroughCLIOrExports(t *testing.T) {
-	// R-GS9N-A51O
+	// R-870Q-W892
 	const (
 		pushSentinel  = "push-value-sentinel-7fdf"
 		listSentinel  = "list-value-sentinel-a9c2"

@@ -12,14 +12,9 @@ import (
 
 func TestLookupAPI(t *testing.T) {
 	// R-VU0Q-MF0R
-	if got, want := reflect.TypeOf(Lookup), reflect.TypeFor[func(context.Context, seam.Deps, string) (string, error)](); got != want {
-		t.Fatalf("Lookup type = %v, want %v", got, want)
-	}
+	_ = []func(context.Context, seam.Deps, string) (string, error){Lookup}
 
-	typ := reflect.TypeFor[NoValueError]()
-	if typ.NumField() != 1 || typ.Field(0).Name != "Name" || typ.Field(0).Type.Kind() != reflect.String {
-		t.Fatalf("NoValueError fields = %v, want only Name string", typ)
-	}
+	_ = NoValueError(struct{ Name string }{})
 	err := &NoValueError{Name: "CRM_API_KEY"}
 	if got, want := err.Error(), "no value for 'CRM_API_KEY' in the keyring or the environment"; got != want {
 		t.Fatalf("Error() = %q, want %q", got, want)

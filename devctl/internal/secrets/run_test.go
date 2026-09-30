@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"reflect"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/checkout"
@@ -81,11 +80,10 @@ func TestOperationSignatures(t *testing.T) {
 
 func TestUsageErrorHasExactFieldsAndBehavior(t *testing.T) {
 	// R-FVCC-YC0X
-	want := []reflect.StructField{
-		{Name: "Message", Type: reflect.TypeFor[string]()},
-		{Name: "Help", Type: reflect.TypeFor[string]()},
-	}
-	assertExactFields(t, reflect.TypeFor[UsageError](), want)
+	_ = UsageError(struct {
+		Message string
+		Help    string
+	}{})
 
 	err := &UsageError{Message: "bad option", Help: "devctl secrets --help"}
 	if got := err.Error(); got != "bad option" {

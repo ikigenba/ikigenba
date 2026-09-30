@@ -6,11 +6,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/cli"
+	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 	"github.com/ikigenba/ikigenba/devctl/internal/seam"
 )
 
@@ -136,13 +136,11 @@ func invokeDeployBoundaryAt(t *testing.T, dir string, args ...string) (int, stri
 			execCalls++
 			return seam.Result{}, errors.New("unexpected process access")
 		},
+		Cloud: func(context.Context, string, string) (cloud.Clients, error) {
+			cloudCalls++
+			return cloud.Clients{}, errors.New("unexpected cloud access")
+		},
 	}
-	cloud := reflect.ValueOf(&deps).Elem().FieldByName("Cloud")
-	cloudErr := func() error { return errors.New("unexpected cloud access") }()
-	cloud.Set(reflect.MakeFunc(cloud.Type(), func([]reflect.Value) []reflect.Value {
-		cloudCalls++
-		return []reflect.Value{reflect.Zero(cloud.Type().Out(0)), reflect.ValueOf(&cloudErr).Elem()}
-	}))
 	code := cli.Run(context.Background(), args, strings.NewReader(""), &stdout, &stderr, deps)
 	return code, stdout.String(), stderr.String(), cloudCalls, execCalls
 }

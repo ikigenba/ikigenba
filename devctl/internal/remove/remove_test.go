@@ -23,12 +23,10 @@ var _ runSignature = Run
 
 func TestPublicContract(t *testing.T) {
 	// R-8AJV-4VEY R-GTD4-7O1Q
-	wantString := reflect.TypeFor[string]()
-	typeOf := reflect.TypeOf(UsageError{})
-	if typeOf.NumField() != 2 || typeOf.Field(0).Name != "Message" || typeOf.Field(0).Type != wantString ||
-		typeOf.Field(1).Name != "Help" || typeOf.Field(1).Type != wantString {
-		t.Fatalf("UsageError fields = %v, want exactly Message string and Help string", typeOf)
-	}
+	_ = UsageError(struct {
+		Message string
+		Help    string
+	}{})
 	err := &UsageError{Message: "bad invocation", Help: "devctl remove --help"}
 	if err.Error() != "bad invocation" || err.ExitCode() != 2 || err.Detail() != "see 'devctl remove --help' for usage" {
 		t.Fatalf("UsageError methods = (%q, %d, %q)", err.Error(), err.ExitCode(), err.Detail())

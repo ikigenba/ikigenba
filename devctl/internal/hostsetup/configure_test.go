@@ -32,12 +32,12 @@ func TestConfigurationContract(t *testing.T) {
 	}
 
 	// R-8B46-A2Q8
-	requireExactFields(t, reflect.TypeFor[BackupPeriods](), []fieldSpec{
-		{"HostFilesSeconds", reflect.TypeFor[int]()},
-		{"ServiceFilesSeconds", reflect.TypeFor[int]()},
-		{"ServiceDBSeconds", reflect.TypeFor[int]()},
-		{"ServiceWALSeconds", reflect.TypeFor[int]()},
-	})
+	_ = BackupPeriods(struct {
+		HostFilesSeconds    int
+		ServiceFilesSeconds int
+		ServiceDBSeconds    int
+		ServiceWALSeconds   int
+	}{})
 
 	// R-8CC2-NUGX R-8DJZ-1M7M
 	if DefaultHostFilesSeconds != 86400 || DefaultServiceFilesSeconds != 86400 ||
@@ -52,14 +52,14 @@ func TestConfigurationContract(t *testing.T) {
 	}
 
 	// R-8ERV-FDYB
-	requireExactFields(t, reflect.TypeFor[Config](), []fieldSpec{
-		{"Root", reflect.TypeFor[string]()},
-		{"Region", reflect.TypeFor[string]()},
-		{"ZoneID", reflect.TypeFor[string]()},
-		{"Space", reflect.TypeFor[spaceref.Space]()},
-		{"Email", reflect.TypeFor[string]()},
-		{"Periods", reflect.TypeFor[*BackupPeriods]()},
-	})
+	_ = Config(struct {
+		Root    string
+		Region  string
+		ZoneID  string
+		Space   spaceref.Space
+		Email   string
+		Periods *BackupPeriods
+	}{})
 
 	// R-8FZR-T5P0 R-8H7O-6XFP
 	requireConfigureSignature(Configure)
@@ -288,24 +288,6 @@ func TestOnlySingleKeyOperationsCanNameHostApex(t *testing.T) {
 	for _, command := range logicalCommands(commands) {
 		if strings.Contains(command, KeyHostApex) {
 			t.Fatalf("general operation named %q in %q", KeyHostApex, command)
-		}
-	}
-}
-
-type fieldSpec struct {
-	name string
-	typ  reflect.Type
-}
-
-func requireExactFields(t *testing.T, typ reflect.Type, want []fieldSpec) {
-	t.Helper()
-	if typ.NumField() != len(want) {
-		t.Fatalf("%s has %d fields, want %d", typ, typ.NumField(), len(want))
-	}
-	for i, field := range want {
-		got := typ.Field(i)
-		if got.Name != field.name || got.Type != field.typ {
-			t.Fatalf("%s field %d = %s %s, want %s %s", typ, i, got.Name, got.Type, field.name, field.typ)
 		}
 	}
 }

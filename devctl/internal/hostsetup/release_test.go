@@ -15,11 +15,10 @@ import (
 
 func TestReleaseDiscoveryContract(t *testing.T) {
 	// R-FXNQ-9MRO
-	releaseType := reflect.TypeOf(Release{})
-	if releaseType.NumField() != 2 || releaseType.Field(0).Name != "Version" || releaseType.Field(0).Type != reflect.TypeFor[string]() ||
-		releaseType.Field(1).Name != "InstallerURL" || releaseType.Field(1).Type != reflect.TypeFor[string]() {
-		t.Fatalf("Release fields = %#v", reflect.VisibleFields(releaseType))
-	}
+	_ = Release(struct {
+		Version      string
+		InstallerURL string
+	}{})
 
 	// R-L6YF-GLM5
 	if ReleasesURL != "https://api.github.com/repos/ikigenba/ikigenba/releases" ||
@@ -171,12 +170,11 @@ func requireLatestSignature(func(context.Context, seam.Deps) (Release, error)) {
 
 func TestProcessErrorContract(t *testing.T) {
 	// R-GB2M-H3XB
-	typ := reflect.TypeOf(ProcessError{})
-	if typ.NumField() != 3 || typ.Field(0).Name != "Label" || typ.Field(0).Type != reflect.TypeFor[string]() ||
-		typ.Field(1).Name != "Status" || typ.Field(1).Type != reflect.TypeFor[int]() ||
-		typ.Field(2).Name != "Stderr" || typ.Field(2).Type != reflect.TypeFor[string]() {
-		t.Fatalf("ProcessError fields = %#v", reflect.VisibleFields(typ))
-	}
+	_ = ProcessError(struct {
+		Label  string
+		Status int
+		Stderr string
+	}{})
 	err := &ProcessError{Label: "curl releases", Status: 7, Stderr: "first\nsecond\n"}
 	if err.Error() != "curl releases: exit status 7" || err.Detail() != "> first\n> second" || err.ExitCode() != 1 {
 		t.Fatalf("ProcessError methods = %q, %q, %d", err.Error(), err.Detail(), err.ExitCode())

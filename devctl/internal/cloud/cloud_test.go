@@ -69,30 +69,28 @@ type expectedSTS interface {
 
 func TestOpenerAndClientsContract(t *testing.T) {
 	// R-Y7GF-A1BT
-	wantOpener := reflect.TypeOf((func(context.Context, string, string) (Clients, error))(nil))
-	gotOpener := reflect.TypeOf(Opener(nil))
-	if gotOpener.Name() != "Opener" || gotOpener.Kind() != reflect.Func || !gotOpener.ConvertibleTo(wantOpener) {
-		t.Fatalf("Opener has type %v, want underlying type %v", gotOpener, wantOpener)
+	var open func(context.Context, string, string) (Clients, error) = Opener(nil)
+	var opener Opener = open
+	if _, ok := any(opener).(func(context.Context, string, string) (Clients, error)); ok {
+		t.Fatal("Opener is an alias, want a defined func type")
 	}
-	assertStructFields(t, reflect.TypeOf(Clients{}), []field{
-		{"EC2", reflect.TypeOf((*EC2)(nil)).Elem()},
-		{"SSM", reflect.TypeOf((*SSM)(nil)).Elem()},
-		{"Route53", reflect.TypeOf((*Route53)(nil)).Elem()},
-		{"S3", reflect.TypeOf((*S3)(nil)).Elem()},
-		{"IAM", reflect.TypeOf((*IAM)(nil)).Elem()},
-		{"STS", reflect.TypeOf((*STS)(nil)).Elem()},
-	})
+	_ = Clients(struct {
+		EC2     EC2
+		SSM     SSM
+		Route53 Route53
+		S3      S3
+		IAM     IAM
+		STS     STS
+	}{})
 }
 
-func TestSessionContract(t *testing.T) {
+func TestSessionContract(_ *testing.T) {
 	// R-8YCX-BKJM
-	assertStructFields(t, reflect.TypeOf(Session{}), []field{
-		{"AccountID", stringType()},
-		{"Clients", reflect.TypeOf(Clients{})},
-	})
-	if got, want := reflect.TypeOf(Connect), reflect.TypeFor[func(context.Context, Opener, string, string) (Session, error)](); got != want {
-		t.Fatalf("Connect has type %v, want %v", got, want)
-	}
+	_ = Session(struct {
+		AccountID string
+		Clients   Clients
+	}{})
+	_ = []func(context.Context, Opener, string, string) (Session, error){Connect}
 }
 
 func TestConnect(t *testing.T) {
@@ -158,13 +156,13 @@ func TestConnectPropagatesErrorsAndReturnsZeroSession(t *testing.T) {
 
 func TestErrorContract(t *testing.T) {
 	// R-Y8OB-NT2I
-	assertStructFields(t, reflect.TypeOf(Error{}), []field{
-		{"Service", reflect.TypeOf("")},
-		{"Operation", reflect.TypeOf("")},
-		{"Subject", reflect.TypeOf("")},
-		{"Code", reflect.TypeOf("")},
-		{"Err", reflect.TypeOf((*error)(nil)).Elem()},
-	})
+	_ = Error(struct {
+		Service   string
+		Operation string
+		Subject   string
+		Code      string
+		Err       error
+	}{})
 	cause := errors.New("cause")
 	err := &Error{Err: cause}
 	gotCause := err.Unwrap()
@@ -207,10 +205,10 @@ func TestErrorMatchesThroughWrapping(t *testing.T) {
 
 func TestNotFoundErrorContract(t *testing.T) {
 	// R-Q7QX-6WHM
-	assertStructFields(t, reflect.TypeOf(NotFoundError{}), []field{
-		{"Kind", stringType()},
-		{"Name", stringType()},
-	})
+	_ = NotFoundError(struct {
+		Kind string
+		Name string
+	}{})
 	tests := []struct {
 		kind string
 		want string
@@ -238,95 +236,164 @@ func TestEC2ValueContracts(t *testing.T) {
 	if !reflect.DeepEqual(states, wantStates) {
 		t.Fatalf("instance states = %v, want %v", states, wantStates)
 	}
-	assertTypedStringConstants(t, reflect.TypeOf(InstanceState("")), []typedConstant{
-		{"StatePending", StatePending, "pending"},
-		{"StateRunning", StateRunning, "running"},
-		{"StateShuttingDown", StateShuttingDown, "shutting-down"},
-		{"StateTerminated", StateTerminated, "terminated"},
-		{"StateStopping", StateStopping, "stopping"},
-		{"StateStopped", StateStopped, "stopped"},
-	})
-	assertNamedString(t, reflect.TypeOf(InstanceState("")), "InstanceState")
-	assertStructFields(t, reflect.TypeOf(Instance{}), []field{{"ID", stringType()}, {"Space", stringType()}, {"State", reflect.TypeOf(InstanceState(""))}, {"Address", stringType()}})
-	assertStructFields(t, reflect.TypeOf(Address{}), []field{{"AllocationID", stringType()}, {"AssociationID", stringType()}, {"IP", stringType()}, {"Space", stringType()}})
-	assertStructFields(t, reflect.TypeOf(LaunchSpec{}), []field{{"LaunchTemplateID", stringType()}, {"InstanceProfile", stringType()}, {"Domain", stringType()}, {"Space", stringType()}})
+	pending, running, shuttingDown := StatePending, StateRunning, StateShuttingDown
+	terminated, stopping, stopped := StateTerminated, StateStopping, StateStopped
+	for _, c := range []struct {
+		name  string
+		value InstanceState
+		want  string
+	}{
+		{"StatePending", pending, "pending"},
+		{"StateRunning", running, "running"},
+		{"StateShuttingDown", shuttingDown, "shutting-down"},
+		{"StateTerminated", terminated, "terminated"},
+		{"StateStopping", stopping, "stopping"},
+		{"StateStopped", stopped, "stopped"},
+	} {
+		if string(c.value) != c.want {
+			t.Errorf("%s = %q, want %q", c.name, c.value, c.want)
+		}
+	}
+	const state InstanceState = "x"
+	_ = string(state)
+	if _, ok := any(state).(string); ok {
+		t.Fatal("InstanceState is an alias of string, want a defined type")
+	}
+	_ = Instance(struct {
+		ID      string
+		Space   string
+		State   InstanceState
+		Address string
+	}{})
+	_ = Address(struct {
+		AllocationID  string
+		AssociationID string
+		IP            string
+		Space         string
+	}{})
+	_ = LaunchSpec(struct {
+		LaunchTemplateID string
+		InstanceProfile  string
+		Domain           string
+		Space            string
+	}{})
 }
 
-func TestEC2InterfaceContract(t *testing.T) {
+func TestEC2InterfaceContract(_ *testing.T) {
 	// R-QA6P-YFZ0
-	assertInterface(t, reflect.TypeOf((*EC2)(nil)).Elem(), reflect.TypeOf((*expectedEC2)(nil)).Elem())
+	var gotEC2 EC2
+	wantEC2 := expectedEC2(gotEC2)
+	gotEC2 = wantEC2
+	_ = gotEC2
 }
 
-func TestSSMContract(t *testing.T) {
+func TestSSMContract(_ *testing.T) {
 	// R-YDJX-6W1A
-	assertStructFields(t, reflect.TypeOf(Parameter{}), []field{{"Name", stringType()}, {"Value", stringType()}})
-	assertInterface(t, reflect.TypeOf((*SSM)(nil)).Elem(), reflect.TypeOf((*expectedSSM)(nil)).Elem())
+	_ = Parameter(struct {
+		Name  string
+		Value string
+	}{})
+	var gotSSM SSM
+	wantSSM := expectedSSM(gotSSM)
+	gotSSM = wantSSM
+	_ = gotSSM
 }
 
 func TestRoute53ValueContracts(t *testing.T) {
 	// R-6ODW-R89G
-	assertStructFields(t, reflect.TypeOf(Zone{}), []field{{"ID", stringType()}, {"Name", stringType()}})
-	assertStructFields(t, reflect.TypeOf(Record{}), []field{{"Name", stringType()}, {"Type", stringType()}, {"TTL", reflect.TypeOf(int64(0))}, {"Values", reflect.TypeOf([]string{})}})
-	assertNamedString(t, reflect.TypeOf(ChangeAction("")), "ChangeAction")
+	_ = Zone(struct {
+		ID   string
+		Name string
+	}{})
+	_ = Record(struct {
+		Name   string
+		Type   string
+		TTL    int64
+		Values []string
+	}{})
+	const action ChangeAction = "x"
+	_ = string(action)
+	if _, ok := any(action).(string); ok {
+		t.Fatal("ChangeAction is an alias of string, want a defined type")
+	}
 	if ChangeUpsert != "UPSERT" || ChangeDelete != "DELETE" {
 		t.Fatalf("change actions = %q, %q", ChangeUpsert, ChangeDelete)
 	}
-	assertStructFields(t, reflect.TypeOf(RecordChange{}), []field{{"Action", reflect.TypeOf(ChangeAction(""))}, {"Record", reflect.TypeOf(Record{})}})
-	assertNamedString(t, reflect.TypeOf(ChangeStatus("")), "ChangeStatus")
+	_ = RecordChange(struct {
+		Action ChangeAction
+		Record Record
+	}{})
+	const status ChangeStatus = "x"
+	_ = string(status)
+	if _, ok := any(status).(string); ok {
+		t.Fatal("ChangeStatus is an alias of string, want a defined type")
+	}
 	if ChangePending != "PENDING" || ChangeInsync != "INSYNC" {
 		t.Fatalf("change statuses = %q, %q", ChangePending, ChangeInsync)
 	}
-	assertTypedStringConstants(t, reflect.TypeOf(ChangeAction("")), []typedConstant{
-		{"ChangeUpsert", ChangeUpsert, "UPSERT"},
-		{"ChangeDelete", ChangeDelete, "DELETE"},
-	})
-	assertTypedStringConstants(t, reflect.TypeOf(ChangeStatus("")), []typedConstant{
-		{"ChangePending", ChangePending, "PENDING"},
-		{"ChangeInsync", ChangeInsync, "INSYNC"},
-	})
+	upsert, deleteAction := ChangeUpsert, ChangeDelete
+	_ = []ChangeAction{upsert, deleteAction}
+	pending, insync := ChangePending, ChangeInsync
+	_ = []ChangeStatus{pending, insync}
 }
 
-func TestRoute53InterfaceContract(t *testing.T) {
+func TestRoute53InterfaceContract(_ *testing.T) {
 	// R-QBEM-C7PP
-	assertInterface(t, reflect.TypeOf((*Route53)(nil)).Elem(), reflect.TypeOf((*expectedRoute53)(nil)).Elem())
+	var gotRoute53 Route53
+	wantRoute53 := expectedRoute53(gotRoute53)
+	gotRoute53 = wantRoute53
+	_ = gotRoute53
 }
 
-func TestIAMContract(t *testing.T) {
+func TestIAMContract(_ *testing.T) {
 	// R-QCMI-PZGE
-	assertStructFields(t, reflect.TypeOf(RoleSpec{}), []field{{"Name", stringType()}, {"AssumeRolePolicy", stringType()}, {"PermissionsBoundaryARN", stringType()}})
-	assertInterface(t, reflect.TypeOf((*IAM)(nil)).Elem(), reflect.TypeOf((*expectedIAM)(nil)).Elem())
+	_ = RoleSpec(struct {
+		Name                   string
+		AssumeRolePolicy       string
+		PermissionsBoundaryARN string
+	}{})
+	var gotIAM IAM
+	wantIAM := expectedIAM(gotIAM)
+	gotIAM = wantIAM
+	_ = gotIAM
 }
 
-func TestSTSContract(t *testing.T) {
+func TestSTSContract(_ *testing.T) {
 	// R-YKVB-HIHG
-	assertInterface(t, reflect.TypeOf((*STS)(nil)).Elem(), reflect.TypeOf((*expectedSTS)(nil)).Elem())
+	var gotSTS STS
+	wantSTS := expectedSTS(gotSTS)
+	gotSTS = wantSTS
+	_ = gotSTS
 }
 
-func TestS3Contract(t *testing.T) {
+func TestS3Contract(_ *testing.T) {
 	// R-CCED-PY62
-	assertStructFields(t, reflect.TypeOf(Object{}), []field{{"Key", stringType()}, {"Size", reflect.TypeOf(int64(0))}, {"Modified", reflect.TypeOf(time.Time{})}})
-	assertInterface(t, reflect.TypeOf((*S3)(nil)).Elem(), reflect.TypeOf((*expectedS3)(nil)).Elem())
+	_ = Object(struct {
+		Key      string
+		Size     int64
+		Modified time.Time
+	}{})
+	var gotS3 S3
+	wantS3 := expectedS3(gotS3)
+	gotS3 = wantS3
+	_ = gotS3
 }
 
-func TestSpaceContract(t *testing.T) {
+func TestSpaceContract(_ *testing.T) {
 	// R-QDUF-3R73
-	assertStructFields(t, reflect.TypeOf(Space{}), []field{
-		{"Domain", stringType()},
-		{"ID", stringType()},
-		{"State", reflect.TypeOf(InstanceState(""))},
-		{"Address", stringType()},
-	})
-	if got, want := reflect.TypeOf(Spaces), reflect.TypeFor[func(context.Context, EC2, string) ([]Space, error)](); got != want {
-		t.Fatalf("Spaces has type %v, want %v", got, want)
-	}
-	if got, want := reflect.TypeOf(LookupSpace), reflect.TypeFor[func(context.Context, EC2, string, string) (Space, error)](); got != want {
-		t.Fatalf("LookupSpace has type %v, want %v", got, want)
-	}
+	_ = Space(struct {
+		Domain  string
+		ID      string
+		State   InstanceState
+		Address string
+	}{})
+	_ = []func(context.Context, EC2, string) ([]Space, error){Spaces}
+	_ = []func(context.Context, EC2, string, string) (Space, error){LookupSpace}
 }
 
 func TestNoSpaceErrorContract(t *testing.T) {
 	// R-QF2B-HIXS
-	assertStructFields(t, reflect.TypeOf(NoSpaceError{}), []field{{"Domain", stringType()}})
+	_ = NoSpaceError(struct{ Domain string }{})
 	err := &NoSpaceError{Domain: "gone.ikigenba.dev"}
 	if got := err.Error(); got != "no space at 'gone.ikigenba.dev'" {
 		t.Fatalf("Error() = %q, want no space message", got)
@@ -453,60 +520,3 @@ func (e *listEC2) ListSpaceInstances(ctx context.Context, domain string) ([]Inst
 	e.calls++
 	return e.instances, e.err
 }
-
-type field struct {
-	name      string
-	fieldType reflect.Type
-}
-
-func assertStructFields(t *testing.T, got reflect.Type, want []field) {
-	t.Helper()
-	if got.Kind() != reflect.Struct || got.NumField() != len(want) {
-		t.Fatalf("%s has %d fields, want exactly %d", got.Name(), got.NumField(), len(want))
-	}
-	for i, expected := range want {
-		actual := got.Field(i)
-		if actual.Name != expected.name || actual.Type != expected.fieldType || !actual.IsExported() {
-			t.Errorf("%s field %d = exported %s %v, want exported %s %v", got.Name(), i, actual.Name, actual.Type, expected.name, expected.fieldType)
-		}
-	}
-}
-
-func assertInterface(t *testing.T, got, want reflect.Type) {
-	t.Helper()
-	if got.Kind() != reflect.Interface || got.NumMethod() != want.NumMethod() {
-		t.Fatalf("%s has %d methods, want exactly %d", got.Name(), got.NumMethod(), want.NumMethod())
-	}
-	for i := range want.NumMethod() {
-		gotMethod := got.Method(i)
-		wantMethod := want.Method(i)
-		if gotMethod.Name != wantMethod.Name || gotMethod.Type != wantMethod.Type {
-			t.Errorf("%s method %d = %s %v, want %s %v", got.Name(), i, gotMethod.Name, gotMethod.Type, wantMethod.Name, wantMethod.Type)
-		}
-	}
-}
-
-func assertNamedString(t *testing.T, got reflect.Type, name string) {
-	t.Helper()
-	if got.Name() != name || got.Kind() != reflect.String {
-		t.Fatalf("type = %s (kind %s), want named string %s", got.Name(), got.Kind(), name)
-	}
-}
-
-type typedConstant struct {
-	name  string
-	value any
-	want  string
-}
-
-func assertTypedStringConstants(t *testing.T, want reflect.Type, constants []typedConstant) {
-	t.Helper()
-	for _, c := range constants {
-		got := reflect.ValueOf(c.value)
-		if got.Type() != want || got.String() != c.want {
-			t.Errorf("%s = %v (type %s), want %q of type %s", c.name, c.value, got.Type(), c.want, want)
-		}
-	}
-}
-
-func stringType() reflect.Type { return reflect.TypeOf("") }

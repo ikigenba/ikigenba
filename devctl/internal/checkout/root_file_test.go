@@ -2,6 +2,7 @@ package checkout_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -21,15 +22,21 @@ func TestRootFilePublicShapesAndErrors(t *testing.T) {
 		t.Fatalf("RootFilePath = %q", checkout.RootFilePath)
 	}
 	// R-Q3YU-S4DG
-	assertFields(t, checkout.RootFile{}, []field{{"Domain", reflect.TypeFor[string]()}, {"Region", reflect.TypeFor[string]()}})
-	assertStructTags(t, checkout.RootFile{}, []string{`json:"domain"`, `json:"region"`})
+	_ = checkout.RootFile(struct {
+		Domain string
+		Region string
+	}{})
+	var decoded checkout.RootFile
+	if err := json.Unmarshal([]byte(`{"domain":"ikigenba.dev","region":"us-east-2"}`), &decoded); err != nil || decoded != (checkout.RootFile{Domain: "ikigenba.dev", Region: "us-east-2"}) {
+		t.Errorf("json.Unmarshal(domain, region) = %#v, %v", decoded, err)
+	}
 	// R-Q56R-5W45
 	assertSignature[func(context.Context, seam.Deps) (checkout.RootFile, error)](checkout.ReadRootFile)
 	assertSignature[func(*checkout.Checkout) (checkout.RootFile, error)]((*checkout.Checkout).ReadRootFile)
 
 	// R-Q6EN-JNUU
-	assertFields(t, checkout.NoRootFileError{}, []field{{"Checkout", reflect.TypeFor[string]()}})
-	assertFields(t, checkout.RootFileError{}, []field{{"Detail", reflect.TypeFor[string]()}})
+	_ = checkout.NoRootFileError(struct{ Checkout string }{})
+	_ = checkout.RootFileError(struct{ Detail string }{})
 	if got := (&checkout.NoRootFileError{Checkout: "/work/repo"}).Error(); got != "no infra/terraform.tfvars.json in the checkout" {
 		t.Errorf("NoRootFileError.Error() = %q", got)
 	}

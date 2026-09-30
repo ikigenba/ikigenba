@@ -17,22 +17,42 @@ func TestFoundationPublicShapes(t *testing.T) {
 	t.Parallel()
 
 	// R-VGLU-EXV4
-	assertFields(t, checkout.Checkout{}, []field{{"Root", reflect.TypeFor[string]()}, {"Deps", reflect.TypeFor[seam.Deps]()}})
+	_ = checkout.Checkout(struct {
+		Root string
+		Deps seam.Deps
+	}{})
 	assertSignature[func(context.Context, seam.Deps) (*checkout.Checkout, error)](checkout.Open)
 	// R-VLHF-Y0TW
-	assertFields(t, checkout.App{}, []field{{"Name", reflect.TypeFor[string]()}, {"Dir", reflect.TypeFor[string]()}, {"Manifest", reflect.TypeFor[checkout.Manifest]()}})
+	_ = checkout.App(struct {
+		Name     string
+		Dir      string
+		Manifest checkout.Manifest
+	}{})
 	// R-CM5K-S43M
-	assertFields(t, checkout.Manifest{}, []field{{"App", reflect.TypeFor[string]()}, {"Secrets", reflect.TypeFor[[]string]()}})
-	assertStructTags(t, checkout.Manifest{}, []string{`toml:"app"`, `toml:"secrets"`})
+	_ = checkout.Manifest(struct {
+		App     string
+		Secrets []string
+	}{})
+	if got, err := checkout.DecodeManifest(strings.NewReader("app = \"crm\"\nsecrets = [\"CRM_TOKEN\"]\n")); err != nil || !reflect.DeepEqual(got, checkout.Manifest{App: "crm", Secrets: []string{"CRM_TOKEN"}}) {
+		t.Errorf("DecodeManifest(app, secrets) = %#v, %v", got, err)
+	}
 	// R-VNX8-PKBA
 	assertSignature[func(io.Reader) (checkout.Manifest, error)](checkout.DecodeManifest)
 	// R-VQD1-H3SO
-	assertFields(t, checkout.NotInCheckoutError{}, []field{{"Dir", reflect.TypeFor[string]()}})
-	assertFields(t, checkout.NoAppError{}, []field{{"Name", reflect.TypeFor[string]()}})
+	_ = checkout.NotInCheckoutError(struct{ Dir string }{})
+	_ = checkout.NoAppError(struct{ Name string }{})
 	// R-VRKX-UVJD
-	assertFields(t, checkout.ManifestError{}, []field{{"App", reflect.TypeFor[string]()}, {"Detail", reflect.TypeFor[string]()}, {"Err", reflect.TypeFor[error]()}})
+	_ = checkout.ManifestError(struct {
+		App    string
+		Detail string
+		Err    error
+	}{})
 	// R-VSSU-8NA2
-	assertFields(t, checkout.GitError{}, []field{{"Args", reflect.TypeFor[[]string]()}, {"ExitCode", reflect.TypeFor[int]()}, {"Stderr", reflect.TypeFor[string]()}})
+	_ = checkout.GitError(struct {
+		Args     []string
+		ExitCode int
+		Stderr   string
+	}{})
 	// R-CJPS-0KM8
 	if checkout.ManifestFile != "etc/manifest.toml" {
 		t.Fatalf("ManifestFile = %q", checkout.ManifestFile)
@@ -225,40 +245,8 @@ func TestDecodeManifestPortScope(t *testing.T) {
 	}
 }
 
-type field struct {
-	name   string
-	typeOf reflect.Type
-}
-
 type manifestCause struct{}
 
 func (*manifestCause) Error() string { return "bad document" }
 
 func assertSignature[T any](T) {}
-
-func assertFields(t *testing.T, value any, want []field) {
-	t.Helper()
-	typeOf := reflect.TypeOf(value)
-	if typeOf.NumField() != len(want) {
-		t.Fatalf("%s has %d fields, want %d", typeOf, typeOf.NumField(), len(want))
-	}
-	for index, wantField := range want {
-		got := typeOf.Field(index)
-		if got.Name != wantField.name || got.Type != wantField.typeOf {
-			t.Errorf("%s field %d = %s %s, want %s %s", typeOf, index, got.Name, got.Type, wantField.name, wantField.typeOf)
-		}
-	}
-}
-
-func assertStructTags(t *testing.T, value any, want []string) {
-	t.Helper()
-	typeOf := reflect.TypeOf(value)
-	if typeOf.NumField() != len(want) {
-		t.Fatalf("%s has %d fields, want %d tags", typeOf, typeOf.NumField(), len(want))
-	}
-	for index, wantTag := range want {
-		if got := string(typeOf.Field(index).Tag); got != wantTag {
-			t.Errorf("%s field %d tag = %q, want %q", typeOf, index, got, wantTag)
-		}
-	}
-}

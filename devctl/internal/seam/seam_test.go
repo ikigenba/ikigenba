@@ -17,19 +17,19 @@ import (
 	"github.com/ikigenba/ikigenba/devctl/internal/cloud"
 )
 
-func TestSurface(t *testing.T) {
+func TestSurface(_ *testing.T) {
 	// R-9ZWO-GWW7
-	assertFields(t, Cmd{Dir: ""}, []field{
-		{name: "Path", typ: reflect.TypeFor[string]()},
-		{name: "Args", typ: reflect.TypeFor[[]string]()},
-		{name: "Dir", typ: reflect.TypeFor[string]()},
-		{name: "Env", typ: reflect.TypeFor[[]string]()},
-	})
-	assertFields(t, Result{}, []field{
-		{name: "Stdout", typ: reflect.TypeFor[[]byte]()},
-		{name: "Stderr", typ: reflect.TypeFor[[]byte]()},
-		{name: "ExitCode", typ: reflect.TypeFor[int]()},
-	})
+	_ = Cmd(struct {
+		Path string
+		Args []string
+		Dir  string
+		Env  []string
+	}{})
+	_ = Result(struct {
+		Stdout   []byte
+		Stderr   []byte
+		ExitCode int
+	}{})
 	var _ Runner = Exec
 
 	// R-BO0E-2JC6
@@ -163,16 +163,16 @@ func TestExecErrorsAndExitStatus(t *testing.T) {
 
 func TestDepsDefaults(t *testing.T) {
 	// R-BMSH-ORLH
-	assertFields(t, Deps{}, []field{
-		{name: "Dir", typ: reflect.TypeFor[string]()},
-		{name: "EUID", typ: reflect.TypeFor[int]()},
-		{name: "Getenv", typ: reflect.TypeFor[func(string) string]()},
-		{name: "Cloud", typ: reflect.TypeFor[cloud.Opener]()},
-		{name: "Exec", typ: reflect.TypeFor[Runner]()},
-		{name: "Stream", typ: reflect.TypeFor[StreamRunner]()},
-		{name: "Now", typ: reflect.TypeFor[func() time.Time]()},
-		{name: "After", typ: reflect.TypeFor[func(time.Duration) <-chan time.Time]()},
-	})
+	_ = Deps(struct {
+		Dir    string
+		EUID   int
+		Getenv func(string) string
+		Cloud  cloud.Opener
+		Exec   Runner
+		Stream StreamRunner
+		Now    func() time.Time
+		After  func(time.Duration) <-chan time.Time
+	}{})
 
 	deps := (Deps{}).Defaults()
 	if got := deps.Getenv("ANYTHING"); got != "" {
@@ -422,25 +422,6 @@ type errorWriter struct {
 
 func (writer errorWriter) Write([]byte) (int, error) {
 	return 0, writer.err
-}
-
-type field struct {
-	name string
-	typ  reflect.Type
-}
-
-func assertFields(t *testing.T, value any, want []field) {
-	t.Helper()
-	typeOf := reflect.TypeOf(value)
-	if typeOf.NumField() != len(want) {
-		t.Fatalf("%s has %d fields, want %d", typeOf, typeOf.NumField(), len(want))
-	}
-	for index, wantField := range want {
-		got := typeOf.Field(index)
-		if got.Name != wantField.name || got.Type != wantField.typ {
-			t.Fatalf("%s field %d = %s %s, want %s %s", typeOf, index, got.Name, got.Type, wantField.name, wantField.typ)
-		}
-	}
 }
 
 func helperCommand(t *testing.T, operation string) Cmd {

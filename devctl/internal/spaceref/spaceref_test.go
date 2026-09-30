@@ -2,7 +2,6 @@ package spaceref_test
 
 import (
 	"errors"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -14,8 +13,15 @@ func TestExportedAPIShapes(t *testing.T) {
 	t.Parallel()
 
 	// R-QILN-DD9S R-QJTJ-R50H R-QL1G-4WR6
-	assertFields(t, spaceref.Space{}, []field{{"Label", "string"}, {"Domain", "string"}})
-	assertFields(t, spaceref.App{}, []field{{"Name", "string"}, {"Space", "spaceref.Space"}, {"Hostname", "string"}})
+	_ = spaceref.Space(struct {
+		Label  string
+		Domain string
+	}{})
+	_ = spaceref.App(struct {
+		Name     string
+		Space    spaceref.Space
+		Hostname string
+	}{})
 	assertFunctionTypes(t, spaceref.Parse, spaceref.ParseApp, spaceref.ValidLabel)
 }
 
@@ -23,36 +29,40 @@ func TestErrorTypes(t *testing.T) {
 	t.Parallel()
 
 	// R-QM9C-IOHV R-QNH8-WG8K
+	_ = spaceref.NotASpaceError(struct {
+		Operand string
+		Root    string
+	}{})
+	_ = spaceref.InvalidLabelError(struct{ Operand string }{})
+	_ = spaceref.NotAnAppError(struct{ Operand string }{})
+	_ = spaceref.UnusableAppError(struct{ Name string }{})
 	tests := []struct {
 		name string
 		err  interface {
 			error
 			ExitCode() int
 		}
-		fields []field
-		want   string
+		want string
 	}{
 		{
 			name: "not a space", err: &spaceref.NotASpaceError{Operand: "crm.sbx1", Root: "ikigenba.dev"},
-			fields: []field{{"Operand", "string"}, {"Root", "string"}},
-			want:   "'crm.sbx1' is not a space: a space is one label under 'ikigenba.dev'",
+			want: "'crm.sbx1' is not a space: a space is one label under 'ikigenba.dev'",
 		},
 		{
 			name: "invalid label", err: &spaceref.InvalidLabelError{Operand: "Crm"},
-			fields: []field{{"Operand", "string"}}, want: "'Crm' is not a valid label",
+			want: "'Crm' is not a valid label",
 		},
 		{
 			name: "not an app", err: &spaceref.NotAnAppError{Operand: "sbx1"},
-			fields: []field{{"Operand", "string"}}, want: "'sbx1' is not an app on a space: <app>.<space>",
+			want: "'sbx1' is not an app on a space: <app>.<space>",
 		},
 		{
 			name: "unusable app", err: &spaceref.UnusableAppError{Name: "host"},
-			fields: []field{{"Name", "string"}}, want: "'host' is not a usable app name",
+			want: "'host' is not a usable app name",
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			assertFields(t, reflect.ValueOf(tc.err).Elem().Interface(), tc.fields)
 			if got := tc.err.Error(); got != tc.want {
 				t.Errorf("Error() = %q, want %q", got, tc.want)
 			}
@@ -193,24 +203,5 @@ func assertFunctionTypes(
 	t.Helper()
 	if parse == nil || parseApp == nil || validLabel == nil {
 		t.Fatal("exported spaceref functions are nil")
-	}
-}
-
-type field struct {
-	name     string
-	typeName string
-}
-
-func assertFields(t *testing.T, value any, want []field) {
-	t.Helper()
-	typeOf := reflect.TypeOf(value)
-	if typeOf.NumField() != len(want) {
-		t.Fatalf("%s has %d fields, want %d", typeOf, typeOf.NumField(), len(want))
-	}
-	for i, expected := range want {
-		actual := typeOf.Field(i)
-		if actual.Name != expected.name || actual.Type.String() != expected.typeName {
-			t.Errorf("%s field %d = %s %s, want %s %s", typeOf, i, actual.Name, actual.Type, expected.name, expected.typeName)
-		}
 	}
 }

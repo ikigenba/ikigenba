@@ -24,10 +24,10 @@ var _ runContract = Run
 
 func TestPublicContract(t *testing.T) {
 	// R-JIS6-U060 R-H1WE-W28L
-	typeOf := reflect.TypeFor[NoAppError]()
-	if typeOf.NumField() != 2 || typeOf.Field(0).Name != "App" || typeOf.Field(1).Name != "Domain" {
-		t.Fatalf("NoAppError fields = %v", typeOf)
-	}
+	_ = NoAppError(struct {
+		App    string
+		Domain string
+	}{})
 	if got := (&NoAppError{App: "crm", Domain: "sbx1.ikigenba.dev"}).Error(); got != "no app 'crm' on 'sbx1.ikigenba.dev'" {
 		t.Fatalf("Error() = %q", got)
 	}

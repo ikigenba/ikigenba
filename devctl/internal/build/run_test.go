@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"reflect"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/devctl/internal/build"
@@ -21,12 +20,9 @@ the app's version tag (<app>/v<semver>) points at, with no uncommitted
 changes.
 `
 
-func TestRunPublicSignature(t *testing.T) {
+func TestRunPublicSignature(_ *testing.T) {
 	// R-63VS-7J2D
-	want := reflect.TypeFor[func(context.Context, []string, io.Writer, seam.Deps) error]()
-	if got := reflect.TypeOf(build.Run); got != want {
-		t.Fatalf("Run type = %s, want %s", got, want)
-	}
+	_ = []func(context.Context, []string, io.Writer, seam.Deps) error{build.Run}
 }
 
 func TestRunHelpAnywhereHasNoExternalOperation(t *testing.T) {

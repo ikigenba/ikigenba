@@ -25,22 +25,35 @@ func TestErrorContracts(t *testing.T) {
 
 	// R-4282-JQL9 R-43FY-XIBY R-44NV-BA2N R-45VR-P1TC
 	holder := &apex.HolderStoppedError{Domain: "sbx2.ikigenba.dev", Label: "sbx2", State: cloud.StateStopped}
-	assertFields(t, holder, []string{"Domain", "Label", "State"})
+	_ = apex.HolderStoppedError(struct {
+		Domain string
+		Label  string
+		State  cloud.InstanceState
+	}{})
 	if holder.Error() != "'sbx2.ikigenba.dev' holds the apex and is stopped" || holder.ExitCode() != 1 || holder.Detail() != "run 'devctl space start sbx2' first" {
 		t.Fatalf("HolderStoppedError = %q, %d, %q", holder.Error(), holder.ExitCode(), holder.Detail())
 	}
 	address := &apex.NotSpaceAddressError{Root: "ikigenba.dev", Values: []string{"203.0.113.9"}}
-	assertFields(t, address, []string{"Root", "Values"})
+	_ = apex.NotSpaceAddressError(struct {
+		Root   string
+		Values []string
+	}{})
 	if got := address.Error(); got != "ikigenba.dev points at 203.0.113.9, which is not a space's address" {
 		t.Errorf("NotSpaceAddressError = %q", got)
 	}
 	noApp := &apex.NoApexAppError{Root: "ikigenba.dev", Domain: "sbx1.ikigenba.dev"}
-	assertFields(t, noApp, []string{"Root", "Domain"})
+	_ = apex.NoApexAppError(struct {
+		Root   string
+		Domain string
+	}{})
 	if got := noApp.Error(); got != "ikigenba.dev points at sbx1.ikigenba.dev, whose host.apex is not set" {
 		t.Errorf("NoApexAppError = %q", got)
 	}
 	step := &apex.StepError{Step: "previous", Err: &host.UnreachableError{Address: "18.220.10.5"}}
-	assertFields(t, step, []string{"Step", "Err"})
+	_ = apex.StepError(struct {
+		Step string
+		Err  error
+	}{})
 	if step.Error() != "previous: ssh ec2-user@18.220.10.5: connection timed out" || step.ExitCode() != 1 || step.Detail() != "" {
 		t.Errorf("StepError = %q, %d, %q", step.Error(), step.ExitCode(), step.Detail())
 	}
@@ -805,19 +818,6 @@ func testDeps(t *testing.T, f *fake) seam.Deps {
 			return seam.Result{}, nil
 		},
 		After: func(_ time.Duration) <-chan time.Time { ch := make(chan time.Time); close(ch); return ch },
-	}
-}
-
-func assertFields(t *testing.T, pointer any, names []string) {
-	t.Helper()
-	typeOf := reflect.TypeOf(pointer).Elem()
-	if typeOf.NumField() != len(names) {
-		t.Fatalf("%s has %d fields, want %d", typeOf, typeOf.NumField(), len(names))
-	}
-	for i, name := range names {
-		if typeOf.Field(i).Name != name {
-			t.Errorf("field %d = %s, want %s", i, typeOf.Field(i).Name, name)
-		}
 	}
 }
 

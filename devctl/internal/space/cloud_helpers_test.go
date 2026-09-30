@@ -502,7 +502,7 @@ func TestDeleteRole(t *testing.T) {
 
 func TestFindApex(t *testing.T) {
 	// R-U8AL-GKQQ R-UMXE-1TN2
-	assertFields(t, ApexRecord{}, struct {
+	_ = ApexRecord(struct {
 		Record cloud.Record
 		Found  bool
 		Holder string
