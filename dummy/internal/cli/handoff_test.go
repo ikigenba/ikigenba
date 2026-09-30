@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit"
 	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 	"github.com/ikigenba/ikigenba/dummy/internal/server"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
@@ -47,7 +48,7 @@ func readySocket(t *testing.T) (string, *net.UnixConn) {
 	return path, conn
 }
 
-// R-MA22-O9VN R-M1IR-ZVOS R-MCHV-FTD1 R-MG5K-L4L4 R-MDPR-TL3Q R-MHDG-YWBT
+// R-S7C6-MSYK R-M1IR-ZVOS R-MCHV-FTD1 R-MG5K-L4L4 R-MDPR-TL3Q R-S8K3-0KP9
 func TestRunHandoffAndReady(t *testing.T) {
 	withHandoffStubs(t)
 	for _, drainText := range []string{"", "2", strings.Repeat("9", 100)} {
@@ -58,11 +59,15 @@ func TestRunHandoffAndReady(t *testing.T) {
 			handler := http.NewServeMux()
 			var events []string
 			var handedWriter io.Writer
+			source := func(u appkit.User) appkit.Banner { return appkit.Banner{Email: u.Email, Service: "injected"} }
 			newStore = func() *widget.Store { events = append(events, "store"); return store }
-			panelHandler = func(got *widget.Store, w io.Writer) http.Handler {
+			panelHandler = func(got *widget.Store, banner func(appkit.User) appkit.Banner, w io.Writer) http.Handler {
 				events = append(events, "handler")
 				if got != store {
 					t.Error("different store")
+				}
+				if got := banner(appkit.User{Email: "user"}); !reflect.DeepEqual(got, source(appkit.User{Email: "user"})) {
+					t.Errorf("wrong banner source: %#v", got)
 				}
 				handedWriter = w
 				return handler
@@ -103,7 +108,7 @@ func TestRunHandoffAndReady(t *testing.T) {
 				events = append(events, "inherit")
 				inherited = append(inherited, fd)
 				return ln, nil
-			}, Stdout: &out, Stderr: &err})
+			}, Banner: source, Stdout: &out, Stderr: &err})
 			if code != ExitSuccess || out.Len() != 0 || err.Len() != 0 {
 				t.Errorf("code=%d out=%q err=%q", code, out.String(), err.String())
 			}
@@ -133,7 +138,7 @@ func TestRunHandoffAndReady(t *testing.T) {
 	}
 }
 
-// R-MA22-O9VN R-MDPR-TL3Q
+// R-S7C6-MSYK R-MDPR-TL3Q
 func TestRunWithoutNotification(t *testing.T) {
 	withHandoffStubs(t)
 	ln := &failedListener{err: errors.New("unused")}
@@ -146,7 +151,7 @@ func TestRunWithoutNotification(t *testing.T) {
 		return nil
 	}
 	var out, err bytes.Buffer
-	code := Run(context.Background(), Process{Pid: 1, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "1", "LISTEN_FDS": "1", "NOTIFY_SOCKET": ""}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Stdout: &out, Stderr: &err})
+	code := Run(context.Background(), Process{Pid: 1, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "1", "LISTEN_FDS": "1", "NOTIFY_SOCKET": ""}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: emptyBanner, Stdout: &out, Stderr: &err})
 	if code != ExitSuccess || calls != 1 || out.Len() != 0 || err.Len() != 0 {
 		t.Errorf("code=%d calls=%d out=%q err=%q", code, calls, out.String(), err.String())
 	}
@@ -178,23 +183,26 @@ func TestRunNotifiesAbstractSocket(t *testing.T) {
 		return nil
 	}
 	var out, diagnostics bytes.Buffer
-	code := Run(context.Background(), Process{Pid: 3, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "3", "LISTEN_FDS": "1", "NOTIFY_SOCKET": address}), Inherit: func(uintptr) (net.Listener, error) { return &failedListener{}, nil }, Stdout: &out, Stderr: &diagnostics})
+	code := Run(context.Background(), Process{Pid: 3, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "3", "LISTEN_FDS": "1", "NOTIFY_SOCKET": address}), Inherit: func(uintptr) (net.Listener, error) { return &failedListener{}, nil }, Banner: emptyBanner, Stdout: &out, Stderr: &diagnostics})
 	if code != ExitSuccess || out.Len() != 0 || diagnostics.Len() != 0 {
 		t.Errorf("code=%d out=%q stderr=%q", code, out.String(), diagnostics.String())
 	}
 }
 
-// R-MA22-O9VN
+// R-S7C6-MSYK
 func TestRunBuildsNoStoreBeforeSocketIsTaken(t *testing.T) {
 	withHandoffStubs(t)
 	newStore = func() *widget.Store { t.Error("store built before socket"); return nil }
-	panelHandler = func(*widget.Store, io.Writer) http.Handler { t.Error("handler built before socket"); return nil }
+	panelHandler = func(*widget.Store, func(appkit.User) appkit.Banner, io.Writer) http.Handler {
+		t.Error("handler built before socket")
+		return nil
+	}
 	serve = func(context.Context, net.Listener, http.Handler, time.Duration) error {
 		t.Error("served without socket")
 		return nil
 	}
 	for _, args := range [][]string{{"--version"}, {"bogus"}, nil} {
-		p := Process{Args: args, Pid: 9, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "9", "LISTEN_FDS": "1"}), Inherit: func(uintptr) (net.Listener, error) { return nil, errors.New("take failed") }, Stdout: io.Discard, Stderr: io.Discard}
+		p := Process{Args: args, Pid: 9, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "9", "LISTEN_FDS": "1"}), Inherit: func(uintptr) (net.Listener, error) { return nil, errors.New("take failed") }, Banner: emptyBanner, Stdout: io.Discard, Stderr: io.Discard}
 		Run(context.Background(), p)
 	}
 }
@@ -213,32 +221,35 @@ func TestReadyFailurePreventsServe(t *testing.T) {
 		t.Fatal("notification unexpectedly succeeded")
 	}
 	var out, err recordingWriter
-	code := Run(context.Background(), Process{Pid: 1, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "1", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Stdout: &out, Stderr: &err})
+	code := Run(context.Background(), Process{Pid: 1, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "1", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: emptyBanner, Stdout: &out, Stderr: &err})
 	if code != ExitServerFailed || out.Len() != 0 || err.calls != 1 || err.String() != "dummy: "+wantErr.Error()+"\n" {
 		t.Errorf("code=%d out=%q err=%q writes=%d", code, out.String(), err.String(), err.calls)
 	}
 }
 
-// R-QVIS-THYV R-MHDG-YWBT
+// R-QVIS-THYV R-S8K3-0KP9
 func TestRunReportsServeFailure(t *testing.T) {
 	withHandoffStubs(t)
 	wantErr := errors.New("server broke")
 	serve = func(context.Context, net.Listener, http.Handler, time.Duration) error { return wantErr }
 	var out, err recordingWriter
-	code := Run(context.Background(), Process{Pid: 7, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "7", "LISTEN_FDS": "1"}), Inherit: func(uintptr) (net.Listener, error) { return &failedListener{}, nil }, Stdout: &out, Stderr: &err})
+	code := Run(context.Background(), Process{Pid: 7, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "7", "LISTEN_FDS": "1"}), Inherit: func(uintptr) (net.Listener, error) { return &failedListener{}, nil }, Banner: emptyBanner, Stdout: &out, Stderr: &err})
 	if code != ExitServerFailed || out.Len() != 0 || err.String() != "dummy: server broke\n" || err.calls != 1 {
 		t.Errorf("code=%d out=%q err=%q writes=%d", code, out.String(), err.String(), err.calls)
 	}
 }
 
-// R-MILD-CO2I
+// R-S9RZ-ECFY
 func TestRunSerializesHandlerAndServeDiagnostics(t *testing.T) {
 	withHandoffStubs(t)
 	writer := &overlapWriter{entered: make(chan struct{}, 1), release: make(chan struct{})}
 	var handlerWriter io.Writer
 	serveReturned := make(chan struct{})
 	handlerDone := make(chan struct{})
-	panelHandler = func(_ *widget.Store, w io.Writer) http.Handler { handlerWriter = w; return http.NotFoundHandler() }
+	panelHandler = func(_ *widget.Store, _ func(appkit.User) appkit.Banner, w io.Writer) http.Handler {
+		handlerWriter = w
+		return http.NotFoundHandler()
+	}
 	serve = func(context.Context, net.Listener, http.Handler, time.Duration) error {
 		go func() { defer close(handlerDone); _, _ = handlerWriter.Write([]byte("handler\n")) }()
 		<-writer.entered
@@ -247,7 +258,7 @@ func TestRunSerializesHandlerAndServeDiagnostics(t *testing.T) {
 	}
 	result := make(chan int, 1)
 	go func() {
-		result <- Run(context.Background(), Process{Pid: 7, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "7", "LISTEN_FDS": "1"}), Inherit: func(uintptr) (net.Listener, error) { return &failedListener{}, nil }, Stdout: io.Discard, Stderr: writer})
+		result <- Run(context.Background(), Process{Pid: 7, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "7", "LISTEN_FDS": "1"}), Inherit: func(uintptr) (net.Listener, error) { return &failedListener{}, nil }, Banner: emptyBanner, Stdout: io.Discard, Stderr: writer})
 	}()
 	<-serveReturned
 	for range 100 {
@@ -261,7 +272,7 @@ func TestRunSerializesHandlerAndServeDiagnostics(t *testing.T) {
 	}
 }
 
-// R-MILD-CO2I R-QVIS-THYV
+// R-S9RZ-ECFY R-QVIS-THYV
 func TestRunReportsDrainOverrunAfterHandlerStarts(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -274,7 +285,7 @@ func TestRunReportsDrainOverrunAfterHandlerStarts(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	result := make(chan int, 1)
 	go func() {
-		result <- Run(ctx, Process{Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "DRAIN_SECONDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return listener, nil }, Stdout: &stdout, Stderr: &stderr})
+		result <- Run(ctx, Process{Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "DRAIN_SECONDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return listener, nil }, Banner: emptyBanner, Stdout: &stdout, Stderr: &stderr})
 	}()
 	if err = notify.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		t.Fatal(err)
@@ -343,3 +354,43 @@ func (w *overlapWriter) Write(p []byte) (int, error) {
 	return w.buf.Write(p)
 }
 func (w *overlapWriter) String() string { w.mu.Lock(); defer w.mu.Unlock(); return w.buf.String() }
+
+func emptyBanner(appkit.User) appkit.Banner { return appkit.Banner{} }
+
+// R-SAZV-S46N
+func TestRunDoesNotCallBannerWithoutRequests(t *testing.T) {
+	withHandoffStubs(t)
+	for _, scenario := range []string{"version", "invalid arguments", "drain", "missing socket", "inherit failure", "notify failure", "serve success", "serve failure"} {
+		t.Run(scenario, func(t *testing.T) {
+			env := map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1"}
+			calls := 0
+			p := Process{Pid: 42, LookupEnv: mapLookup(env), Stdout: io.Discard, Stderr: io.Discard,
+				Inherit: func(uintptr) (net.Listener, error) { return &failedListener{}, nil },
+				Banner:  func(appkit.User) appkit.Banner { calls++; return appkit.Banner{} },
+			}
+			serve = func(context.Context, net.Listener, http.Handler, time.Duration) error { return nil }
+			switch scenario {
+			case "version":
+				p.Args = []string{"--version"}
+			case "invalid arguments":
+				p.Args = []string{"bogus"}
+			case "drain":
+				env["DRAIN_SECONDS"] = "bad"
+			case "missing socket":
+				delete(env, "LISTEN_FDS")
+			case "inherit failure":
+				p.Inherit = func(uintptr) (net.Listener, error) { return nil, errors.New("cannot inherit") }
+			case "notify failure":
+				env["NOTIFY_SOCKET"] = filepath.Join(t.TempDir(), "missing.sock")
+			case "serve failure":
+				serve = func(context.Context, net.Listener, http.Handler, time.Duration) error {
+					return errors.New("serve failed")
+				}
+			}
+			Run(context.Background(), p)
+			if calls != 0 {
+				t.Errorf("banner calls = %d", calls)
+			}
+		})
+	}
+}

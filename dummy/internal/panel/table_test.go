@@ -103,7 +103,9 @@ func tableTestFragment(t *testing.T, raw string, widgets []widget.Widget) {
 
 func tableTestPageSpan(t *testing.T, raw string) string {
 	t.Helper()
-	body := pageTestStrip(raw)
+	r := httptest.NewRequest(http.MethodGet, "/widgets", nil)
+	r.Header = tableTestIdentity()
+	body := pageTestStrip(pageTestWritten(t, raw, r))
 	starts, ends := pageTestTags(body, "table", false), pageTestTags(body, "table", true)
 	if len(starts) != 1 || len(ends) != 1 || starts[0][0] >= ends[0][0] {
 		t.Fatalf("page has no unique ordered table span: %q", body)
@@ -112,8 +114,8 @@ func tableTestPageSpan(t *testing.T, raw string) string {
 }
 
 func TestTableMarkupAndPageIdentity(t *testing.T) {
-	// R-KVPQ-RDIA R-KWXN-558Z R-M3J7-QWZS R-M4R4-4OQH R-Q4HP-7G07
-	// R-3ABH-NPH7 R-AST0-AVOY R-62UX-379I
+	// R-KVPQ-RDIA R-MNY9-498Y R-M3J7-QWZS R-M4R4-4OQH R-Q4HP-7G07
+	// R-MLIG-CPRK R-MMQC-QHI9 R-62UX-379I
 	for _, empty := range []bool{false, true} {
 		t.Run(fmt.Sprintf("empty=%v", empty), func(t *testing.T) {
 			store := widget.NewStore()
@@ -123,7 +125,7 @@ func TestTableMarkupAndPageIdentity(t *testing.T) {
 				tableTestCreate(t, store, "  my  \twidget\n<&>\"  ")
 				tableTestCreate(t, store, "last widget")
 			}
-			h := Handler(store, io.Discard)
+			h := Handler(store, pageTestBanner, io.Discard)
 			headers := tableTestIdentity()
 			fragment := tableTestRequest(h, "GET", "/widgets/table", headers, "")
 			if fragment.Code != http.StatusOK || fragment.Header().Get("Content-Type") != "text/html; charset=utf-8" {
@@ -178,7 +180,7 @@ func TestTableCountAndStatusMarkup(t *testing.T) {
 			t.Fatalf("create %q: %+v", status, errs)
 		}
 	}
-	response := tableTestRequest(Handler(store, io.Discard), "GET", "/widgets/table", tableTestIdentity(), "")
+	response := tableTestRequest(Handler(store, pageTestBanner, io.Discard), "GET", "/widgets/table", tableTestIdentity(), "")
 	if response.Code != http.StatusOK {
 		t.Fatalf("fragment status = %d", response.Code)
 	}
@@ -255,10 +257,10 @@ func TestTableCountAndStatusMarkup(t *testing.T) {
 func TestTableValidatorsTrackRenderedContent(t *testing.T) {
 	// R-KY5J-IWZO R-0NC2-JFTW R-MDAE-T2XC
 	store := widget.NewStore()
-	h := Handler(store, io.Discard)
+	h := Handler(store, pageTestBanner, io.Discard)
 	first := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "")
 	second := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "")
-	otherStore := tableTestRequest(Handler(widget.NewStore(), io.Discard), "GET", "/widgets/table", tableTestIdentity(), "")
+	otherStore := tableTestRequest(Handler(widget.NewStore(), pageTestBanner, io.Discard), "GET", "/widgets/table", tableTestIdentity(), "")
 	for _, response := range []*httptest.ResponseRecorder{first, second, otherStore} {
 		if response.Code != http.StatusOK || !regexp.MustCompile(`^"[^",\x09-\x0d\x20]+"$`).MatchString(response.Header().Get("ETag")) {
 			t.Fatalf("invalid success validator: %d %v", response.Code, response.Header())
@@ -286,7 +288,7 @@ func TestTableConditionalRequests(t *testing.T) {
 		if empty {
 			store = new(widget.Store)
 		}
-		h := Handler(store, io.Discard)
+		h := Handler(store, pageTestBanner, io.Discard)
 		baseline := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "")
 		etag := baseline.Header().Get("ETag")
 		cases := []struct {
@@ -350,7 +352,7 @@ func TestTableFailuresAndReadOnlyRequests(t *testing.T) {
 					}
 					headers.Set("If-None-Match", conditional)
 					before := store.All()
-					response := tableTestRequest(Handler(store, io.Discard), method, "/widgets/table", headers, "name=unwanted&count=3&status=active")
+					response := tableTestRequest(Handler(store, pageTestBanner, io.Discard), method, "/widgets/table", headers, "name=unwanted&count=3&status=active")
 					if !slices.Equal(before, store.All()) {
 						t.Error("table request mutated the store")
 					}
@@ -384,7 +386,7 @@ func TestTableFailuresAndReadOnlyRequests(t *testing.T) {
 						t.Errorf("Allow = %q", response.Header().Get("Allow"))
 					}
 					if method == "HEAD" {
-						get := tableTestRequest(Handler(store, io.Discard), "GET", "/widgets/table", headers, "name=unwanted&count=3&status=active")
+						get := tableTestRequest(Handler(store, pageTestBanner, io.Discard), "GET", "/widgets/table", headers, "name=unwanted&count=3&status=active")
 						if response.Code != get.Code || !reflect.DeepEqual(response.Header(), get.Header()) || response.Body.Len() != 0 {
 							t.Error("HEAD failure/success does not mirror GET")
 						}
@@ -397,7 +399,7 @@ func TestTableFailuresAndReadOnlyRequests(t *testing.T) {
 
 func TestTableConcurrentSnapshots(t *testing.T) {
 	store := widget.NewStore()
-	h := Handler(store, io.Discard)
+	h := Handler(store, pageTestBanner, io.Discard)
 	var group sync.WaitGroup
 	for i := range 12 {
 		group.Go(func() {
@@ -422,7 +424,7 @@ func TestTableTransportHeadParity(t *testing.T) {
 	// R-WIGA-XCYS: exercise net/http's real response framing, including lengths
 	// it otherwise adds to GET responses but omits from unwritten HEAD bodies.
 	store := widget.NewStore()
-	h := Handler(store, io.Discard)
+	h := Handler(store, pageTestBanner, io.Discard)
 	etag := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "").Header().Get("ETag")
 	server := httptest.NewServer(h)
 	defer server.Close()
@@ -485,7 +487,7 @@ func TestTableFragmentExcludesPageHeading(t *testing.T) {
 		if extra {
 			tableTestCreate(t, store, "one more")
 		}
-		h := Handler(store, io.Discard)
+		h := Handler(store, pageTestBanner, io.Discard)
 		fragment := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "").Body.String()
 		page := tableTestRequest(h, "GET", "/widgets", tableTestIdentity(), "").Body.String()
 		for _, body := range []string{fragment, tableTestPageSpan(t, page)} {

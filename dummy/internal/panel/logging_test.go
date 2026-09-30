@@ -68,7 +68,7 @@ func TestPanelRequestDiagnostics(t *testing.T) {
 				r.Header.Set("X-Request-Id", "")
 			}
 			w := httptest.NewRecorder()
-			Handler(widget.NewStore(), log).ServeHTTP(w, r)
+			Handler(widget.NewStore(), pageTestBanner, log).ServeHTTP(w, r)
 			entries := log.entries()
 			if tc.want == "" {
 				if w.Code >= 500 || len(entries) != 0 {
@@ -87,7 +87,7 @@ func TestPanelRequestDiagnostics(t *testing.T) {
 func TestPanelDiagnosticsSerializeWrites(t *testing.T) {
 	const requests = 64
 	log := &panelLogWriter{}
-	h := Handler(widget.NewStore(), log)
+	h := Handler(widget.NewStore(), pageTestBanner, log)
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	for i := range requests {

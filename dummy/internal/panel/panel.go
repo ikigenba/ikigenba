@@ -2,20 +2,18 @@
 package panel
 
 import (
-	"bytes"
-	"crypto/sha256"
 	"embed"
 	"fmt"
 	"html"
+	htmltemplate "html/template"
 	"io"
-	"io/fs"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"text/template"
 
-	"github.com/ikigenba/ikigenba/dummy"
+	"github.com/ikigenba/ikigenba/appkit"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
@@ -37,17 +35,11 @@ const MethodNotAllowedMessage = "That method is not allowed here."
 // UnsupportedMediaTypeMessage reports an unsupported form encoding.
 const UnsupportedMediaTypeMessage = "That media type is not supported."
 
-// SignOutText labels the chrome's sign-out button.
-const SignOutText = "Sign out"
-
 // LocalLogoutURL is auth's local development logout endpoint.
 const LocalLogoutURL = "http://localhost:3001/logout"
 
 // LocalProfileURL is auth's local development profile endpoint.
 const LocalProfileURL = "http://localhost:3001/"
-
-// LogoutIcon draws the chrome sign-out button.
-const LogoutIcon = `<svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg>`
 
 // PlusIcon draws the widget creation button.
 const PlusIcon = `<svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5l0 14"/><path d="M5 12l14 0"/></svg>`
@@ -56,15 +48,18 @@ const PlusIcon = `<svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2
 var templateFiles embed.FS
 
 type handler struct {
-	store     *widget.Store
-	stderr    io.Writer
-	stderrMu  sync.Mutex
-	templates *template.Template
+	store           *widget.Store
+	stderr          io.Writer
+	stderrMu        sync.Mutex
+	templates       *template.Template
+	bannerTemplates *htmltemplate.Template
+	banner          func(appkit.User) appkit.Banner
 }
 
 // Handler constructs a panel whose requests share s.
-func Handler(s *widget.Store, stderr io.Writer) http.Handler {
-	return &handler{store: s, stderr: stderr, templates: template.Must(template.New("panel").Funcs(template.FuncMap{"attr": safeAttribute, "esc": escapeText, "plusIcon": func() string { return PlusIcon }}).ParseFS(templateFiles, "templates/*.html"))}
+func Handler(s *widget.Store, banner func(u appkit.User) appkit.Banner, stderr io.Writer) http.Handler {
+	set := template.Must(template.New("panel").Funcs(template.FuncMap{"attr": safeAttribute, "esc": escapeText, "plusIcon": func() string { return PlusIcon }}).ParseFS(templateFiles, "templates/*.html"))
+	return &handler{store: s, banner: banner, stderr: stderr, templates: set, bannerTemplates: appkit.Templates()}
 }
 
 // LogoutURL derives auth's logout endpoint from the request host and strict proxy scheme.
@@ -97,8 +92,8 @@ func ProfileURL(host, forwardedProto string) string {
 	return scheme + "://auth." + strings.TrimPrefix(host, "dummy.") + "/"
 }
 
-// safeAttribute is only called with template-owned attribute names. Escaping
-// equals signs also keeps echoed bytes from looking like attribute occurrences.
+// safeAttribute is called only with template-owned names. Escaping equals
+// preserves the design's attribute occurrence rule even for echoed values.
 func safeAttribute(name string, value any) string {
 	escaped := strings.ReplaceAll(html.EscapeString(fmt.Sprint(value)), "=", "&#61;")
 	return name + `="` + escaped + `"`
@@ -114,6 +109,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.stderrMu.Lock()
 		_, _ = h.stderr.Write([]byte("dummy: request " + id + ": X-User-Id is missing\n"))
 		h.stderrMu.Unlock()
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, appkit.StaticPrefix) {
+		appkit.Static().ServeHTTP(w, r)
 		return
 	}
 	switch r.URL.Path {
@@ -138,65 +137,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/widgets/table":
 		h.table(w, r)
 	default:
-		if strings.HasPrefix(r.URL.Path, "/assets/") {
-			h.asset(w, r)
-			return
-		}
 		h.renderFailure(w, r, http.StatusNotFound, NotFoundMessage)
 	}
-}
-
-func (h *handler) asset(w http.ResponseWriter, r *http.Request) {
-	name := strings.TrimPrefix(r.URL.Path, "/assets/")
-	if name == "" || strings.Contains(name, "/") {
-		h.renderFailure(w, r, http.StatusNotFound, NotFoundMessage)
-		return
-	}
-	file := "assets/" + name
-	info, err := fs.Stat(dummy.Assets, file)
-	if err != nil || !info.Mode().IsRegular() {
-		h.renderFailure(w, r, http.StatusNotFound, NotFoundMessage)
-		return
-	}
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		w.Header().Set("Allow", "GET, HEAD")
-		h.renderFailure(w, r, http.StatusMethodNotAllowed, MethodNotAllowedMessage)
-		return
-	}
-	body, err := dummy.Assets.ReadFile(file)
-	if err != nil {
-		panic(err)
-	}
-	etag := fmt.Sprintf(`"%x"`, sha256.Sum256(body))
-	w.Header().Set("ETag", etag)
-	w.Header().Set("Cache-Control", "no-cache")
-	for _, field := range r.Header.Values("If-None-Match") {
-		for entry := range strings.SplitSeq(field, ",") {
-			entry = strings.TrimSpace(entry)
-			if entry == "*" || entry == etag || entry == "W/"+etag {
-				w.WriteHeader(http.StatusNotModified)
-				return
-			}
-		}
-	}
-	w.Header().Set("Content-Type", assetContentType(name))
-	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-	w.WriteHeader(http.StatusOK)
-	if r.Method != http.MethodHead {
-		_, _ = io.Copy(w, bytes.NewReader(body))
-	}
-}
-
-func assetContentType(name string) string {
-	switch {
-	case strings.HasSuffix(name, ".css"):
-		return "text/css; charset=utf-8"
-	case strings.HasSuffix(name, ".woff2"):
-		return "font/woff2"
-	case strings.HasSuffix(name, ".txt"):
-		return "text/plain; charset=utf-8"
-	}
-	return "application/octet-stream"
 }
 
 func plainFailure(w http.ResponseWriter, r *http.Request, status int, body string) {

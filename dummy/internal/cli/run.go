@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit"
 	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 	"github.com/ikigenba/ikigenba/dummy/internal/server"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
@@ -26,6 +27,7 @@ type Process struct {
 	Stdout    io.Writer
 	Stderr    io.Writer
 	Inherit   func(fd uintptr) (net.Listener, error)
+	Banner    func(u appkit.User) appkit.Banner
 }
 
 // Process exit codes.
@@ -108,7 +110,7 @@ func Run(ctx context.Context, p Process) int {
 	defer func() { _ = ln.Close() }()
 
 	store := newStore()
-	handler := panelHandler(store, stderr)
+	handler := panelHandler(store, p.Banner, stderr)
 	if address, ok := lookup(p.LookupEnv, "NOTIFY_SOCKET"); ok && address != "" {
 		if err = notifyReady(address); err != nil {
 			writeDiagnostic(stderr, "dummy: "+err.Error()+"\n")

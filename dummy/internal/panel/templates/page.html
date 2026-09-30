@@ -1,8 +1,8 @@
 {{define "page"}}<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/assets/theme.css"><title>{{esc .ServiceName}}</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css"><title>{{esc .ServiceName}}</title></head>
 <body>
-{{template "chrome" .}}
+{{.BannerMarkup}}
 <main>
 {{if .Panel}}
 <div class="section-head"><div><h1>Widgets</h1><p>{{esc .Subtitle}}</p></div></div>

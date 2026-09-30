@@ -16,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ikigenba/ikigenba/appkit"
 )
 
 // R-10H0-0STN R-LPBS-669U
@@ -27,7 +29,7 @@ func TestUsageConstant(t *testing.T) {
 	}
 }
 
-// R-LJ8A-9BKD
+// R-S3OH-HHQH
 func TestProcessShape(t *testing.T) {
 	if reflect.TypeOf(Run) != reflect.TypeOf((func(context.Context, Process) int)(nil)) {
 		t.Fatal("Run has wrong signature")
@@ -40,6 +42,7 @@ func TestProcessShape(t *testing.T) {
 		{"Args", reflect.TypeOf([]string(nil))}, {"LookupEnv", reflect.TypeOf((func(string) (string, bool))(nil))},
 		{"Unsetenv", reflect.TypeOf((func(string) error)(nil))}, {"Pid", reflect.TypeOf(int(0))},
 		{"Stdout", writer}, {"Stderr", writer}, {"Inherit", reflect.TypeOf((func(uintptr) (net.Listener, error))(nil))},
+		{"Banner", reflect.TypeOf((func(appkit.User) appkit.Banner)(nil))},
 	}
 	got := reflect.TypeOf(Process{})
 	if got.NumField() != len(want) {
@@ -192,10 +195,10 @@ func TestRunReturnsDeclaredExitCodes(t *testing.T) {
 	}
 }
 
-// R-5IC7-VGNQ
+// R-S4WD-V9H6
 func TestPackagesDoNotReachPastProcessSeam(t *testing.T) {
 	forbidden := map[string]bool{"Args": true, "Environ": true, "Getenv": true, "LookupEnv": true, "Setenv": true, "Unsetenv": true, "Clearenv": true, "Getpid": true, "Stdin": true, "Stdout": true, "Stderr": true, "Exit": true}
-	for _, dir := range []string{".", "internal/cli", "internal/server", "internal/panel", "internal/widget"} {
+	for _, dir := range []string{"internal/cli", "internal/server", "internal/panel", "internal/widget"} {
 		files, err := filepath.Glob(filepath.Join(projectRoot(t), dir, "*.go"))
 		if err != nil {
 			t.Fatal(err)
@@ -316,3 +319,55 @@ type failedListener struct{ err error }
 func (l *failedListener) Accept() (net.Conn, error) { return nil, l.err }
 func (l *failedListener) Close() error              { return nil }
 func (l *failedListener) Addr() net.Addr            { return testAddr("failed") }
+
+// R-S64A-917V
+func TestInternalPackagesNeverConstructKit(t *testing.T) {
+	for _, dir := range []string{"internal/cli", "internal/server", "internal/panel", "internal/widget"} {
+		files, err := filepath.Glob(filepath.Join(projectRoot(t), dir, "*.go"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, path := range files {
+			if strings.HasSuffix(path, "_test.go") {
+				continue
+			}
+			parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			aliases := map[string]bool{}
+			for _, imp := range parsed.Imports {
+				name, err := strconv.Unquote(imp.Path.Value)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if name != "github.com/ikigenba/ikigenba/appkit" {
+					continue
+				}
+				alias := "appkit"
+				if imp.Name != nil {
+					alias = imp.Name.Name
+				}
+				aliases[alias] = true
+			}
+			if aliases["."] {
+				for _, name := range parsed.Unresolved {
+					if name.Name == "New" {
+						t.Errorf("%s references dot-imported appkit.New", path)
+					}
+				}
+			}
+			ast.Inspect(parsed, func(node ast.Node) bool {
+				selector, ok := node.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				name, ok := selector.X.(*ast.Ident)
+				if ok && aliases[name.Name] && selector.Sel.Name == "New" {
+					t.Errorf("%s references appkit.New", path)
+				}
+				return true
+			})
+		}
+	}
+}

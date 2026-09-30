@@ -40,7 +40,7 @@ func projectFS(t *testing.T) *os.Root {
 	return root
 }
 
-// R-5C8P-YLY9
+// R-RWD3-6VAB
 func TestModulePackageLayoutAndImports(t *testing.T) {
 	t.Parallel()
 
@@ -54,7 +54,6 @@ func TestModulePackageLayoutAndImports(t *testing.T) {
 	}
 
 	wantPackages := map[string]string{
-		".":               "dummy",
 		"cmd/dummy":       "main",
 		"internal/cli":    "cli",
 		"internal/server": "server",
@@ -112,10 +111,9 @@ func TestModulePackageLayoutAndImports(t *testing.T) {
 	const moduleRoot = "github.com/ikigenba/ikigenba/dummy"
 	const module = moduleRoot + "/"
 	wantImports := map[string]map[string]bool{
-		".":               {},
-		"cmd/dummy":       {module + "internal/cli": true},
+		"cmd/dummy":       {module + "internal/cli": true, module + "internal/panel": true},
 		"internal/cli":    {module + "internal/server": true, module + "internal/panel": true, module + "internal/widget": true},
-		"internal/panel":  {moduleRoot: true, module + "internal/widget": true},
+		"internal/panel":  {module + "internal/widget": true},
 		"internal/server": {},
 		"internal/widget": {},
 	}
@@ -129,23 +127,53 @@ func TestModulePackageLayoutAndImports(t *testing.T) {
 		if !reflect.DeepEqual(local, wantImports[directory]) {
 			t.Errorf("%s module imports = %v, want %v", directory, local, wantImports[directory])
 		}
-		if directory == "." && !reflect.DeepEqual(packageImports, map[string]bool{"embed": true}) {
-			t.Errorf("root package imports = %v, want embed only", packageImports)
+		wantAppkit := directory == "cmd/dummy" || directory == "internal/cli" || directory == "internal/panel"
+		if packageImports["github.com/ikigenba/ikigenba/appkit"] != wantAppkit {
+			t.Errorf("%s appkit import = %t, want %t", directory, packageImports["github.com/ikigenba/ikigenba/appkit"], wantAppkit)
 		}
 	}
 }
 
-// R-AK3S-P0DU
-func TestModuleHasNoRequirements(t *testing.T) {
+// R-RYSV-YERP
+func TestModuleHasOnlyAppkitRequirement(t *testing.T) {
 	t.Parallel()
-
 	contents, err := projectFS(t).ReadFile("go.mod")
 	if err != nil {
-		t.Fatalf("read go.mod: %v", err)
+		t.Fatal(err)
 	}
-	requireDirective := regexp.MustCompile(`(?m)^[[:blank:]]*require(?:[[:space:]]|\()`)
-	if requireDirective.Match(contents) {
-		t.Errorf("go.mod contains a require directive:\n%s", contents)
+	var requirements []string
+	inRequire := false
+	for _, line := range strings.Split(string(contents), "\n") {
+		line = strings.TrimSpace(strings.SplitN(line, "//", 2)[0])
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		if fields[0] == "replace" {
+			t.Error("go.mod has replace directive")
+		}
+		if fields[0] == "require" {
+			if len(fields) == 2 && fields[1] == "(" {
+				inRequire = true
+				continue
+			}
+			if len(fields) != 3 {
+				t.Fatalf("invalid require line %q", line)
+			}
+			requirements = append(requirements, fields[1])
+		} else if inRequire {
+			if line == ")" {
+				inRequire = false
+				continue
+			}
+			if len(fields) != 2 {
+				t.Fatalf("invalid requirement %q", line)
+			}
+			requirements = append(requirements, fields[0])
+		}
+	}
+	if !reflect.DeepEqual(requirements, []string{"github.com/ikigenba/ikigenba/appkit"}) {
+		t.Errorf("requirements = %v", requirements)
 	}
 }
 
@@ -280,7 +308,7 @@ func TestCommittedManifestMatchesConstant(t *testing.T) {
 	}
 }
 
-// R-ATUZ-R6BE
+// R-S18O-PY93
 func TestPackageCheckoutEntries(t *testing.T) {
 	t.Parallel()
 
@@ -292,8 +320,19 @@ func TestPackageCheckoutEntries(t *testing.T) {
 	if len(entries) != 1 || entries[0].Name() != "manifest.toml" {
 		t.Errorf("etc entries = %v, want only manifest.toml", entryNames(entries))
 	}
-	if _, err = os.Stat(filepath.Join(root, "share")); !os.IsNotExist(err) {
-		t.Errorf("share directory must not exist; stat error = %v", err)
+	entries, err = os.ReadDir(filepath.Join(root, "share"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "icon.svg" {
+		t.Fatalf("share entries = %v", entryNames(entries))
+	}
+	info, err := entries[0].Info()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.Mode().IsRegular() {
+		t.Error("share/icon.svg is not regular")
 	}
 }
 
