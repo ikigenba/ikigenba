@@ -558,7 +558,7 @@ func assertFormPanel(t *testing.T, body string) {
 	}
 }
 
-// R-H1D7-FHHV R-6OLO-3T75 R-GWHL-WEJ3 R-NQ6Y-D2D3 R-NREU-QU3S
+// R-H1D7-FHHV R-WDJ2-DLBJ R-GWHL-WEJ3 R-NQ6Y-D2D3 R-NREU-QU3S
 func TestFormAcceptedSubmission(t *testing.T) {
 	for _, mediaType := range []string{
 		"application/x-www-form-urlencoded",
@@ -591,8 +591,8 @@ func TestFormAcceptedSubmission(t *testing.T) {
 	}
 }
 
-// R-6OLO-3T75: behavior above proves first body values, this proves raw/missing
-// values on rejection.
+// R-WDJ2-DLBJ: behavior above proves first body values and one widget added on
+// acceptance; this proves raw/missing values and no widget added on rejection.
 func TestFormMissingAndRepeatedFields(t *testing.T) {
 	for _, tc := range []struct {
 		body string
@@ -603,9 +603,14 @@ func TestFormMissingAndRepeatedFields(t *testing.T) {
 		{"name=+first+&name=later&count=+bad+&count=1&status=+paused+&status=active", widget.Submission{Name: " first ", Count: " bad ", Status: " paused "}},
 	} {
 		t.Run(tc.body, func(t *testing.T) {
-			w := formRequest(Handler(widget.NewStore(), pageTestBanner, io.Discard), http.MethodPost, "/widgets?name=query&count=9&status=active", "application/x-www-form-urlencoded", tc.body)
+			store := widget.NewStore()
+			before := store.All()
+			w := formRequest(Handler(store, pageTestBanner, io.Discard), http.MethodPost, "/widgets?name=query&count=9&status=active", "application/x-www-form-urlencoded", tc.body)
 			if w.Code != http.StatusUnprocessableEntity {
 				t.Fatalf("status = %d", w.Code)
+			}
+			if got := store.All(); !slices.Equal(got, before) {
+				t.Errorf("rejected submission changed store: %v, want %v", got, before)
 			}
 			controls := assertFormMarkup(t, w.Body.String())
 			_, errs := widget.NewStore().Create(tc.sub)
@@ -613,6 +618,12 @@ func TestFormMissingAndRepeatedFields(t *testing.T) {
 			for field, want := range map[string]string{"name": tc.sub.Name, "count": tc.sub.Count} {
 				if got, _ := pageTestAttribute(controls[field], "value"); got != want {
 					t.Errorf("%s=%q, want %q", field, got, want)
+				}
+			}
+			for _, option := range formTags(formSpan(t, w.Body.String()), "option") {
+				value, _ := pageTestAttribute(option, "value")
+				if _, selected := pageTestAttribute(option, "selected"); selected != (value == strings.TrimSpace(tc.sub.Status)) {
+					t.Errorf("option %q selected=%v for status %q", value, selected, tc.sub.Status)
 				}
 			}
 		})
