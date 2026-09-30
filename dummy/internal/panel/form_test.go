@@ -558,7 +558,7 @@ func assertFormPanel(t *testing.T, body string) {
 	}
 }
 
-// R-H1D7-FHHV R-WDJ2-DLBJ R-GWHL-WEJ3 R-NQ6Y-D2D3 R-NREU-QU3S
+// R-H1D7-FHHV R-Y6WI-J3RD R-GWHL-WEJ3 R-NQ6Y-D2D3 R-NREU-QU3S
 func TestFormAcceptedSubmission(t *testing.T) {
 	for _, mediaType := range []string{
 		"application/x-www-form-urlencoded",
@@ -591,7 +591,7 @@ func TestFormAcceptedSubmission(t *testing.T) {
 	}
 }
 
-// R-WDJ2-DLBJ: behavior above proves first body values and one widget added on
+// R-Y6WI-J3RD: behavior above proves first body values and one widget added on
 // acceptance; this proves raw/missing values and no widget added on rejection.
 func TestFormMissingAndRepeatedFields(t *testing.T) {
 	for _, tc := range []struct {
