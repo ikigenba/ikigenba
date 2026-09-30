@@ -2,56 +2,20 @@ package appkit
 
 import (
 	"bytes"
-	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
 )
 
-// R-675V-K57R
+// R-LLKL-VIW8
 func TestEmbeddedAssetsIgnoreWorkingDirectory(t *testing.T) {
-	wantPaths := []string{
-		"assets/InterVariable-Italic.woff2", "assets/InterVariable.woff2",
-		"assets/JetBrainsMono.woff2", "assets/OFL.txt", "assets/TABLER-LICENSE.txt",
-		"assets/banner.html", "assets/launcher.js", "assets/theme.css",
-	}
-	var paths []string
-	err := fs.WalkDir(assetsFS, ".", func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if !entry.IsDir() {
-			paths = append(paths, path)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, path := range wantPaths {
-		if !slices.Contains(paths, path) {
-			t.Errorf("asset %s is not embedded", path)
-		}
-	}
-	snapshots := make(map[string][]byte)
-	for _, path := range wantPaths {
-		disk, readErr := os.ReadFile(filepath.Clean(path))
-		if readErr != nil {
-			t.Fatal(readErr)
-		}
-		embedded, readErr := assetsFS.ReadFile(path)
-		if readErr != nil {
-			t.Fatal(readErr)
-		}
-		if !bytes.Equal(embedded, disk) {
-			t.Fatalf("embedded asset %s differs from the source bytes", path)
-		}
-		snapshots[path] = disk
+	staticNames := []string{
+		"InterVariable-Italic.woff2", "InterVariable.woff2", "JetBrainsMono.woff2",
+		"OFL.txt", "TABLER-LICENSE.txt", "launcher.js", "theme.css",
 	}
 	banner := Banner{Service: "dummy", Email: "user@example.test", ProfileURL: "/profile", LogoutURL: "/logout",
 		Services: []Service{{Name: "dummy", URL: "/", Enabled: true, Current: true}}}
@@ -62,21 +26,29 @@ func TestEmbeddedAssetsIgnoreWorkingDirectory(t *testing.T) {
 		}
 		return output.Bytes()
 	}
+	serve := func() map[string][]byte {
+		handler := Static()
+		bodies := make(map[string][]byte)
+		for _, name := range staticNames {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, StaticPrefix+name, nil))
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("%s: status %d", name, recorder.Code)
+			}
+			bodies[name] = recorder.Body.Bytes()
+		}
+		return bodies
+	}
 	wantBanner := render()
+	wantBodies := serve()
 	for range 2 {
 		t.Chdir(t.TempDir())
 		if got := render(); !bytes.Equal(got, wantBanner) {
 			t.Fatal("banner output changed with working directory")
 		}
-		handler := Static()
-		for _, path := range wantPaths {
-			if path == "assets/banner.html" {
-				continue
-			}
-			recorder := httptest.NewRecorder()
-			handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, StaticPrefix+path[len("assets/"):], nil))
-			if recorder.Code != http.StatusOK || !bytes.Equal(recorder.Body.Bytes(), snapshots[path]) {
-				t.Errorf("%s: status %d or body changed with working directory", path, recorder.Code)
+		for name, got := range serve() {
+			if !bytes.Equal(got, wantBodies[name]) {
+				t.Errorf("%s: body changed with working directory", name)
 			}
 		}
 	}

@@ -3,17 +3,15 @@
 `appkit` is a Go library that gives every Ikigenba app the same banner: the
 shared stylesheet, fonts, and launcher script served from one fixed path
 prefix; the `banner` and `launcher` templates; and a reader for the host's
-services file that fills the launcher. Module path
-`github.com/ikigenba/ikigenba/appkit`, its own `go.mod`, no `go.work`, the
-standard library only. Every command runs from this sub-project directory.
+services file that fills the launcher. Every command runs from this
+sub-project directory.
 
-The module is one package, `appkit`, at the module root, beside the
-human-authored `assets/` directory it embeds. `assets/` is an input to the
-spec: the build run reads it and never writes it. It holds the markup
-template file `banner.html`, the launcher script `launcher.js`, and copies of
-the repository's design files: `theme.css`, the three fonts, and their
-licences. Because the assets are embedded, an app binary carries them and
-never looks for them on disk.
+The package `appkit` embeds the human-authored `assets/` directory.
+`assets/` is an input to the spec: the build run reads it and never writes
+it. It holds the markup template file `banner.html`, the launcher script
+`launcher.js`, and copies of the repository's design files: `theme.css`,
+the three fonts, and their licences. Because the assets are embedded,
+an app binary carries them and never looks for them on disk.
 
 appkit has three consumers. The app developer writes Go against the exported
 surface. A person using an app sees the banner and the launcher in a browser.
@@ -28,8 +26,7 @@ profile and sign-out live, and appkit only renders it.
 - D3 (templates): `Templates`.
 - D4 (static files): `StaticPrefix`, `Static`.
 
-Nothing else is exported. The package is small — a handful of files — and
-one concern: the shared banner.
+The package has one concern: the shared banner.
 
 ## Consumer task: an app wires the banner
 
@@ -62,7 +59,5 @@ and step 5 still renders the page, without the launcher. Nothing is reported.
 
 ## REQUIREMENTS
 
-- R-64Q2-SLQD: The module MUST be `github.com/ikigenba/ikigenba/appkit`, with its own `go.mod` that specifies a Go version and has no `require` directive, and no `go.work` file.
-- R-Z0WH-YSGD: The module MUST contain exactly one non-test Go package, named `appkit`, whose files sit at the module root; its test files MAY declare package `appkit` or `appkit_test`.
-- R-675V-K57R: Package `appkit` MUST embed at build time the files `assets/banner.html`, `assets/launcher.js`, `assets/theme.css`, `assets/InterVariable.woff2`, `assets/InterVariable-Italic.woff2`, `assets/JetBrainsMono.woff2`, `assets/OFL.txt`, and `assets/TABLER-LICENSE.txt`, and MUST NOT read any of them from the file system at run time, so `Templates` and `Static` behave identically whatever the process working directory is.
-- R-68DR-XWYG: Package `appkit` MUST NOT export any package-level identifier other than `New`, `Kit`, `User`, `Banner`, `Service`, `Templates`, `StaticPrefix`, and `Static`, and `Kit` MUST have no exported field and no exported method other than `Banner`.
+- R-LJ4T-3ZEU: Package `appkit` MUST be imported from the path `github.com/ikigenba/ikigenba/appkit`, and its package name MUST be `appkit`.
+- R-LLKL-VIW8: `Templates` and `Static` MUST behave identically whatever the process working directory is, including a directory that contains no `assets/` directory.

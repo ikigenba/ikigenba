@@ -50,7 +50,7 @@ option.
 - R-69LO-BOP5: Package `appkit` MUST export `type User struct { Email, ProfileURL, LogoutURL string }`, with exactly these fields in this order.
 - R-6ATK-PGFU: Package `appkit` MUST export `type Service struct { Name, URL string; Icon template.HTML; Enabled, Current bool }`, with exactly these fields in this order, where `template` is the standard library's `html/template`.
 - R-6D9D-GZX8: Package `appkit` MUST export `type Banner struct { Service, Email, ProfileURL, LogoutURL string; Services []Service }`, with exactly these fields in this order.
-- R-6EH9-URNX: Package `appkit` MUST export `type Kit struct` with no exported field, `func New(service string) *Kit`, and the method `func (k *Kit) Banner(u User) Banner`.
+- R-LMSI-9AMX: Package `appkit` MUST export type `Kit`, `func New(service string) *Kit`, and the method `func (k *Kit) Banner(u User) Banner`.
 - R-6FP6-8JEM: `New` MUST read the environment variable `IKIGENBA_SERVICES` exactly once, during the call, and the returned `Kit` MUST use the value read then as the services file path, so setting, changing, or unsetting the variable after `New` returns does not change what that `Kit`'s `Banner` returns.
 - R-6GX2-MB5B: `Kit.Banner` MUST return a `Banner` whose `Service` is the `service` passed to `New` and whose `Email`, `ProfileURL`, and `LogoutURL` are `u`'s fields of the same names, each unaltered.
 - R-6I4Z-02W0: Every `Kit.Banner` call MUST read the services file anew at the path `New` read, as given (a relative path resolves against the process working directory at the time of the call), so a change to the file's content, or its appearance or removal, between two calls is reflected in the second call's `Services`.

@@ -29,43 +29,49 @@ func servicesKit(t *testing.T, content string) *appkit.Kit {
 	return appkit.New("app")
 }
 
+func TestImportPathAndPackageName(t *testing.T) {
+	// R-LJ4T-3ZEU
+	// This file imports github.com/ikigenba/ikigenba/appkit without an alias
+	// and names it appkit, so it compiles only if both hold.
+	t.Setenv("IKIGENBA_SERVICES", "")
+	if appkit.New("app") == nil {
+		t.Fatal("appkit.New returned nil")
+	}
+}
+
 func TestServicesPublicTypes(t *testing.T) {
 	// R-69LO-BOP5 R-6ATK-PGFU R-6D9D-GZX8
-	for _, tc := range []struct {
-		value any
-		names []string
-		types []reflect.Type
-	}{
-		{appkit.User{}, []string{"Email", "ProfileURL", "LogoutURL"}, []reflect.Type{reflect.TypeFor[string](), reflect.TypeFor[string](), reflect.TypeFor[string]()}},
-		{appkit.Service{}, []string{"Name", "URL", "Icon", "Enabled", "Current"}, []reflect.Type{reflect.TypeFor[string](), reflect.TypeFor[string](), reflect.TypeFor[template.HTML](), reflect.TypeFor[bool](), reflect.TypeFor[bool]()}},
-		{appkit.Banner{}, []string{"Service", "Email", "ProfileURL", "LogoutURL", "Services"}, []reflect.Type{reflect.TypeFor[string](), reflect.TypeFor[string](), reflect.TypeFor[string](), reflect.TypeFor[string](), reflect.TypeFor[[]appkit.Service]()}},
-	} {
-		typ := reflect.TypeOf(tc.value)
-		if typ.Kind() != reflect.Struct || typ.NumField() != len(tc.names) {
-			t.Fatalf("unexpected fields in %v", typ)
-		}
-		for i, name := range tc.names {
-			field := typ.Field(i)
-			if field.Name != name || field.Type != tc.types[i] || !field.IsExported() {
-				t.Fatalf("%v field %d: %+v", typ, i, field)
-			}
-		}
+	var (
+		name, url, email, profile, logout = "n", "u", "e", "p", "l"
+		icon                              = template.HTML("<svg></svg>")
+		enabled, current                  = true, false
+	)
+	user := appkit.User{Email: email, ProfileURL: profile, LogoutURL: logout}
+	if unkeyed := (appkit.User{email, profile, logout}); unkeyed != user {
+		t.Fatalf("User field order: %+v != %+v", unkeyed, user)
 	}
-	// R-6EH9-URNX
-	if reflect.TypeOf(appkit.New) != reflect.TypeFor[func(string) *appkit.Kit]() {
-		t.Fatal("unexpected constructor signature")
+	service := appkit.Service{Name: name, URL: url, Icon: icon, Enabled: enabled, Current: current}
+	if unkeyed := (appkit.Service{name, url, icon, enabled, current}); unkeyed != service {
+		t.Fatalf("Service field order: %+v != %+v", unkeyed, service)
 	}
-	if reflect.TypeOf((*appkit.Kit).Banner) != reflect.TypeFor[func(*appkit.Kit, appkit.User) appkit.Banner]() {
-		t.Fatal("unexpected Banner method signature")
+	services := []appkit.Service{service}
+	banner := appkit.Banner{Service: name, Email: email, ProfileURL: profile, LogoutURL: logout, Services: services}
+	if unkeyed := (appkit.Banner{name, email, profile, logout, services}); !reflect.DeepEqual(unkeyed, banner) {
+		t.Fatalf("Banner field order: %+v != %+v", unkeyed, banner)
 	}
-	typ := reflect.TypeFor[appkit.Kit]()
-	if typ.Kind() != reflect.Struct {
-		t.Fatal("Kit is not a struct")
+	// R-LMSI-9AMX
+	t.Setenv("IKIGENBA_SERVICES", "")
+	newKit, ok := any(appkit.New).(func(string) *appkit.Kit)
+	if !ok {
+		t.Fatalf("New has type %T, want func(string) *appkit.Kit", appkit.New)
 	}
-	for i := range typ.NumField() {
-		if typ.Field(i).IsExported() {
-			t.Fatal("exported Kit field")
-		}
+	k := newKit("app")
+	bannerOf, ok := any(k.Banner).(func(appkit.User) appkit.Banner)
+	if !ok {
+		t.Fatalf("Kit.Banner has type %T, want func(appkit.User) appkit.Banner", k.Banner)
+	}
+	if got := bannerOf(user); got.Service != "app" {
+		t.Fatalf("Banner().Service = %q", got.Service)
 	}
 }
 

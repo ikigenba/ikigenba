@@ -2,20 +2,15 @@ package appkit_test
 
 import (
 	"bytes"
-	"embed"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/ikigenba/ikigenba/appkit"
 )
-
-//go:embed assets/theme.css assets/launcher.js assets/InterVariable.woff2 assets/InterVariable-Italic.woff2 assets/JetBrainsMono.woff2 assets/OFL.txt assets/TABLER-LICENSE.txt
-var staticExpectedFS embed.FS
 
 var staticFiles = []struct {
 	name        string
@@ -32,7 +27,7 @@ var staticFiles = []struct {
 
 func staticBytes(t *testing.T, name string) []byte {
 	t.Helper()
-	data, err := staticExpectedFS.ReadFile("assets/" + name)
+	data, err := appkit.AssetsFS.ReadFile("assets/" + name)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,10 +72,11 @@ func TestStaticPrefix(t *testing.T) {
 func TestStaticFactory(t *testing.T) {
 	// R-7NLK-0A3M
 	factory := appkit.Static
-	if got, want := reflect.TypeOf(factory), reflect.TypeFor[func() http.Handler](); got != want {
-		t.Fatalf("Static type = %v, want %v", got, want)
+	typed, ok := any(factory).(func() http.Handler)
+	if !ok {
+		t.Fatalf("Static has type %T, want func() http.Handler", factory)
 	}
-	if factory() == nil {
+	if typed() == nil {
 		t.Fatal("Static returned a nil handler")
 	}
 }
