@@ -4,14 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
-	"sort"
 	"strings"
 	"testing"
 
@@ -278,52 +274,5 @@ func TestToolNamesAndSchemaPropertyNames(t *testing.T) {
 				t.Errorf("%s schema property %q has disallowed casing", constructor.name, name)
 			}
 		}
-	}
-}
-
-func TestExportedIdentifierClosure(t *testing.T) {
-	// R-CCMC-FD1P: non-test package files expose exactly the contracted identifier set.
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var exported []string
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
-		if err != nil {
-			t.Fatalf("parse %s: %v", name, err)
-		}
-		for _, declaration := range file.Decls {
-			switch declaration := declaration.(type) {
-			case *ast.FuncDecl:
-				if declaration.Recv == nil && ast.IsExported(declaration.Name.Name) {
-					exported = append(exported, declaration.Name.Name)
-				}
-			case *ast.GenDecl:
-				for _, spec := range declaration.Specs {
-					switch spec := spec.(type) {
-					case *ast.TypeSpec:
-						if ast.IsExported(spec.Name.Name) {
-							exported = append(exported, spec.Name.Name)
-						}
-					case *ast.ValueSpec:
-						for _, name := range spec.Names {
-							if ast.IsExported(name.Name) {
-								exported = append(exported, name.Name)
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-	sort.Strings(exported)
-	want := []string{"Bash", "Edit", "Glob", "GlobOption", "Grep", "GrepOption", "Read", "SkipOption", "WithSkip", "Write"}
-	if !reflect.DeepEqual(exported, want) {
-		t.Errorf("exported identifiers = %v, want %v", exported, want)
 	}
 }

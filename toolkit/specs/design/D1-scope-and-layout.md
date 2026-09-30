@@ -5,20 +5,7 @@
 `Read`, `Write`, `Edit`, `Glob`, `Grep` — as ready-made `agentkit.Tool` values.
 It is the sibling agentkit's D0 names for exactly this job: agentkit owns the
 conversation loop and the tool seam, toolkit owns the tools. Module path
-`github.com/ikigenba/ikigenba/toolkit`, its own `go.mod` specifying a Go
-version, no `go.work`; every command runs from this sub-project directory. It follows the
-monorepo's house layout:
-
-```
-toolkit/                                (this sub-project; go.mod lives here)
-├── AGENTS.md                           spec-driven build contract, gates
-├── README.md
-├── Makefile                            build test lint fmt clean
-├── go.mod                              Go version + module requires
-├── .golangci.yml
-├── specs/design/D<int>-<slug>.md       these documents
-└── *.go                                the single package `toolkit`
-```
+`github.com/ikigenba/ikigenba/toolkit`.
 
 The tools mirror the behavior of the Claude Code harness's own tools of the same
 names. Where this design had to choose a behavior, it copied the harness tool
@@ -120,16 +107,14 @@ func WithSkip(patterns ...string) SkipOption
 
 ## REQUIREMENTS
 
-- R-3AIY-084U: The module MUST be `github.com/ikigenba/ikigenba/toolkit` with its own `go.mod` that specifies a Go version and no `go.work`, and it MUST require `github.com/ikigenba/ikigenba/agentkit`, `github.com/boyter/gocodewalker`, and `github.com/bmatcuk/doublestar/v4`.
+- R-NP5G-QO43: Package `toolkit` MUST be importable as `github.com/ikigenba/ikigenba/toolkit`.
 - R-C2V5-D745: Package `toolkit` MUST export `func Bash(root string) (agentkit.Tool, error)`.
 - R-C431-QYUU: Package `toolkit` MUST export `func Read(root string) (agentkit.Tool, error)`.
 - R-C5AY-4QLJ: Package `toolkit` MUST export `func Write(root string) (agentkit.Tool, error)`.
 - R-C6IU-IIC8: Package `toolkit` MUST export `func Edit(root string) (agentkit.Tool, error)`.
 - R-C7QQ-WA2X: Package `toolkit` MUST export `func Glob(root string, opts ...GlobOption) (agentkit.Tool, error)`.
 - R-C8YN-A1TM: Package `toolkit` MUST export `func Grep(root string, opts ...GrepOption) (agentkit.Tool, error)`.
-- R-CA6J-NTKB: Package `toolkit` MUST export the interfaces `GlobOption` and `GrepOption`, each sealed by an unexported method so no type outside `toolkit` can satisfy them.
 - R-CBEG-1LB0: Package `toolkit` MUST export `type SkipOption` and `func WithSkip(patterns ...string) SkipOption`, and `SkipOption` MUST satisfy both `GlobOption` and `GrepOption`.
-- R-CCMC-FD1P: Package `toolkit` MUST NOT export any identifier other than `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`, `GlobOption`, `GrepOption`, `SkipOption`, and `WithSkip`.
 - R-CDU8-T4SE: The tools' `Name()` values MUST be exactly `Bash`, `Read`, `Write`, `Edit`, `Glob`, and `Grep` respectively, and every property name in every tool's `Schema()` MUST be lowercase snake_case or one of the `Grep` flag names `-i`, `-n`, `-A`, `-B`, `-C`.
 - R-CF25-6WJ3: Every constructor MUST return a non-nil error, and a nil tool, when `root` is empty, does not exist, or is not a directory after symlink resolution.
 - R-CGA1-KO9S: Every constructor MUST accept a relative `root`, resolving it against the process working directory at construction time, so that a later change of the process working directory does not move the tool's root.
