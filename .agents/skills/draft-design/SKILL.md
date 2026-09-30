@@ -60,7 +60,11 @@ package owning each exported name still fits. Capture a changed owner as a
 structural requirement, proved by importing the name from its new package.
 Author structural and behavioral requirements under the canonical rules,
 minting ids with `idgen`. Preserve unchanged requirement text byte-for-byte;
-changed text gets a new id. Every requirement must trace to a story outcome
+changed text gets a new id. Also re-mint every requirement whose matched tests
+assume behavior the revision replaces, even if its text still holds, and every
+requirement citing a re-minted id, until none remain. Never edit a test and
+never ask the user whether to: a stale test is retired only by re-minting.
+Every requirement must trace to a story outcome
 (for a library, an agreed consumer task) or a public declaration supporting
 one, and must be provable by use.
 
@@ -106,6 +110,7 @@ Verification must establish:
   build-time design decisions, unsupported product behavior, or private
   implementation prescriptions.
 - Consumer tasks use the declared surface and accomplish their story outcomes.
+- No matched test contradicts the revised design.
 - Contracts agree across documents. Assign each shared boundary and story
   spanning documents as bounded integration work; local coverage alone is
   insufficient.
