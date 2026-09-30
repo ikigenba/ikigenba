@@ -225,7 +225,6 @@ in requirement text; the requirements below fix the seam's shape.
 - R-IPD9-OWXW: For every request state that all wires of a family accept, `ChatWire()`, `OpenAIChatWire()`, and `XAIChatWire()` MUST produce byte-identical request bodies, as MUST `ResponsesWire()`, `OpenAIResponsesWire()`, and `XAIResponsesWire()`; each family MUST return identical `OptionSpecs()`; and for the same frames each family MUST yield identical events.
 - R-8VDF-1EOU: `DecodeStream` MUST yield only message-granular events; no framing artifact may appear among them.
 - R-300O-9JJZ: `DecodeStream` MUST merge `Usage` field-wise with each field treated as absolute and last-non-absent winning, and MUST NOT replace usage as a whole object.
-- R-8WLB-F6FJ: An in-band vendor error arriving after a 2xx status MUST be surfaced through `DecodeStream`'s error channel.
 - R-O9F8-EXZT: The SSE frame reader MUST be exported as a public leaf usable independently of any wire codec (for sibling `mcp`).
 - R-34W9-SMIR: `RenderTools` MUST reject a tool schema outside the canonical subset (D9) before a request is sent.
 - R-3646-6E9G: Every shipped wire MUST satisfy a round-trip property test: parsing a fixture into a `Message` and re-assembling the request body MUST reproduce the fixture's input bytes exactly.

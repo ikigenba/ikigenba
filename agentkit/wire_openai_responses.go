@@ -11,20 +11,19 @@ import (
 type openAIResponsesWire struct{ wireCodec }
 
 // OpenAIResponsesWire returns the built-in OpenAI Responses wire codec.
-func OpenAIResponsesWire() WireFormat { return newOpenAIResponsesWire(nil) }
+func OpenAIResponsesWire() WireFormat { return newOpenAIResponsesWire() }
 
 func openAIRejectsCredential(status int, _ []byte) bool {
 	return status == http.StatusUnauthorized
 }
 
-func newOpenAIResponsesWire(classifier errorClassifier) wireFormat {
+func newOpenAIResponsesWire() wireFormat {
 	wire := &openAIResponsesWire{}
 	wire.wireCodec = wireCodec{
 		encode:      wire.encodeRequest,
 		decoder:     newOpenAIResponsesDecoder,
 		inBandError: responsesInBandError,
 		optionSpecs: wireOptionSpecsWithoutStop,
-		classifier:  classifier,
 		capabilities: wireCapabilities{
 			name:       "OpenAI Responses",
 			reasoning:  reasoningShapeOff | reasoningShapeEffort,

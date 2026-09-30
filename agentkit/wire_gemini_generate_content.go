@@ -28,15 +28,14 @@ type geminiCacheErrorStatus struct {
 }
 
 // GeminiGenerateContentWire returns the built-in Gemini GenerateContent wire codec.
-func GeminiGenerateContentWire() WireFormat { return newGeminiGenerateContentWire(nil) }
+func GeminiGenerateContentWire() WireFormat { return newGeminiGenerateContentWire() }
 
-func newGeminiGenerateContentWire(classifier errorClassifier) wireFormat {
+func newGeminiGenerateContentWire() wireFormat {
 	wire := &geminiGenerateContentWire{}
 	wire.wireCodec = wireCodec{
 		encode:      wire.encodeRequest,
 		decoder:     newGeminiDecoder,
 		optionSpecs: wireOptionSpecsWithStop,
-		classifier:  classifier,
 		capabilities: wireCapabilities{
 			name:       "Gemini GenerateContent",
 			reasoning:  reasoningShapeOff | reasoningShapeOn | reasoningShapeEffort | reasoningShapeBudget,

@@ -9,16 +9,15 @@ import (
 type openAIChatWire struct{ wireCodec }
 
 // OpenAIChatWire returns the built-in OpenAI Chat wire codec.
-func OpenAIChatWire() WireFormat { return newOpenAIChatWire(nil) }
+func OpenAIChatWire() WireFormat { return newOpenAIChatWire() }
 
-func newOpenAIChatWire(classifier errorClassifier) wireFormat {
+func newOpenAIChatWire() wireFormat {
 	wire := &openAIChatWire{}
 	wire.wireCodec = wireCodec{
 		encode:      wire.encodeRequest,
 		decoder:     newOpenAIChatDecoder,
 		inBandError: chatInBandError,
 		optionSpecs: wireOptionSpecsWithStop,
-		classifier:  classifier,
 		capabilities: wireCapabilities{
 			name:       "OpenAI Chat Completions",
 			reasoning:  reasoningShapeOff | reasoningShapeEffort,

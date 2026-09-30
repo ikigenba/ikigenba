@@ -999,7 +999,6 @@ func TestUnknownModelReachesVendorAndClassifier(t *testing.T) {
 	var encodedState requestState
 	transportCalls := 0
 	responseBody := []byte(`{"error":"unsupported model"}`)
-	classified := &Error{Category: CategoryInvalidRequest, Status: http.StatusBadRequest, Code: "model_not_found", Message: "unsupported model"}
 	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		transportCalls++
 		return &http.Response{
@@ -1009,7 +1008,6 @@ func TestUnknownModelReachesVendorAndClassifier(t *testing.T) {
 		}, nil
 	})}
 	useDefaultHTTPClient(t, client)
-	classifierCalls := 0
 	endpoint, err := NewEndpoint(authFunc(func(context.Context, *http.Request, []byte) error { return nil }), WithBaseURL("https://provider.invalid/generate"))
 	if err != nil {
 		t.Fatal(err)
@@ -1019,13 +1017,6 @@ func TestUnknownModelReachesVendorAndClassifier(t *testing.T) {
 		func(state requestState) { encodedState = state },
 		func() { t.Fatal("non-2xx response must not be decoded") },
 	)
-	wire.classifier = func(status int, header http.Header, body []byte) error {
-		classifierCalls++
-		if status != http.StatusBadRequest || header.Get("X-Vendor") != "exact" || !bytes.Equal(body, responseBody) {
-			t.Fatalf("classifier inputs = (%d, %#v, %q)", status, header, body)
-		}
-		return classified
-	}
 	conversation := newEndpointConversation(wire, endpoint, Identity{Endpoint: "controlled", Model: unknownModel}, Config{})
 	conversation.settings = settings
 
@@ -1034,11 +1025,12 @@ func TestUnknownModelReachesVendorAndClassifier(t *testing.T) {
 	if encodedState.Model != unknownModel || !reflect.DeepEqual(encodedState.Settings, settings) {
 		t.Fatalf("wire received state %#v, want opaque model and unchanged settings %#v", encodedState, settings)
 	}
-	if transportCalls != 1 || classifierCalls != 1 {
-		t.Fatalf("vendor boundary calls: transport=%d classifier=%d, want one each", transportCalls, classifierCalls)
+	if transportCalls != 1 {
+		t.Fatalf("vendor boundary calls: transport=%d, want one", transportCalls)
 	}
-	if reflect.ValueOf(stream.err).Pointer() != reflect.ValueOf(classified).Pointer() {
-		t.Fatalf("Send error = %#v, want classifier result unchanged %#v", stream.err, classified)
+	var classified *Error
+	if !errors.As(stream.err, &classified) || classified.Status != http.StatusBadRequest || classified.Category != CategoryInvalidRequest || classified.Message != string(responseBody) {
+		t.Fatalf("Send error = %#v, want vendor 400 classified as invalid request carrying the vendor body", stream.err)
 	}
 }
 

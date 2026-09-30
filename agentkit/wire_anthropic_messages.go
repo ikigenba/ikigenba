@@ -19,16 +19,15 @@ func init() {
 }
 
 // AnthropicMessagesWire returns the built-in Anthropic Messages wire codec.
-func AnthropicMessagesWire() WireFormat { return newAnthropicMessagesWire(nil) }
+func AnthropicMessagesWire() WireFormat { return newAnthropicMessagesWire() }
 
-func newAnthropicMessagesWire(classifier errorClassifier) wireFormat {
+func newAnthropicMessagesWire() wireFormat {
 	wire := &anthropicMessagesWire{}
 	wire.wireCodec = wireCodec{
 		encode:      wire.encodeRequest,
 		decoder:     newAnthropicDecoder,
 		inBandError: anthropicInBandError,
 		optionSpecs: wireOptionSpecsWithStop,
-		classifier:  classifier,
 		capabilities: wireCapabilities{
 			name:       "Anthropic Messages",
 			reasoning:  reasoningShapeOff | reasoningShapeEffort | reasoningShapeBudget,
