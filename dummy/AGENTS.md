@@ -228,11 +228,7 @@ binary name, over the socket and with the identity headers: `GET /widgets`,
 an MCP call made with appkit's `mcp.Client`, and, for what that client cannot
 send (`server/discover`, whose result carries the instructions), a raw POST to
 `/mcp`. The second serve case, whose environment names no services file, may
-make the same raw POST to prove the instructions are then absent. A third
-serve case passes a TCP listener bound to `127.0.0.1:0` instead of the Unix
-socket, makes one `GET /widgets` over it, and stops the child with `SIGTERM`,
-proving dummy serves on whichever kind of socket descriptor 3 is; it asserts
-nothing about a socket path. It asserts only what
+make the same raw POST to prove the instructions are then absent. It asserts only what
 those requirements state, which proves `main` handed appkit's banner kit and
 MCP server, with dummy's name and version, to the handler. Everything else
 dummy answers is decided in process against a handler the test built, and the
