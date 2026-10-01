@@ -120,12 +120,22 @@ file in its temporary directory naming those sockets, with whatever `mcp`,
 requests, since the gateway reads it afresh each time. An unreachable backend
 is a socket path nothing listens on. A backend that records the identity
 headers it received proves forwarding. Every test builds its own backends and
-services file; no test depends on another's.
+services file; no test depends on another's. A backend may also be a plain `http.Handler` of the test's own on such a
+socket, alone or wrapped around an appkit `mcp.Server`: to record the requests
+it receives, to hold one until the test releases it, or to answer with bytes
+the test writes (a JSON-RPC error, a tool list an appkit server cannot
+produce, a non-MCP status, or a connection closed before any status), since
+the gateway must handle answers no appkit server gives.
 
 **No test waits out the backend timeout.** The 50-second limit is injected: a
 test that proves the timeout sets a short one and a backend that blocks on a
 channel until the test releases it. A test that proves cancellation cancels
-the request's context while the backend blocks.
+the request's context while the backend blocks. That the default budget is fifty seconds is proved by `DefaultBudget`'s value;
+a test proves only that a zero `Budget` is not shorter than the few seconds it
+waits. A test that proves the budget is shared by a gateway call's backend
+requests, or is not cut short, may release a held backend answer on a timer
+within the short budget; like a drain test, it keeps that wait to a few
+seconds.
 
 **One environment variable, set by the test.** appkit's constructors read
 `IKIGENBA_SERVICES` (`services.Variable`) from the process environment; it is
@@ -146,8 +156,11 @@ wrapped in it, by use.
 **MCP through appkit's client.** A test drives `/mcp` the way a client would:
 it serves the handler it built on loopback or a Unix socket and calls it with
 appkit's `mcp.Client`, passing the caller whose identity headers the client
-forwards. Raw HTTP to `/mcp` is for what the client cannot send (a missing
-identity header, a malformed scope path), never a substitute for it.
+forwards. Raw HTTP to `/mcp` is for what the client cannot send (a missing, duplicated
+or empty identity header, a malformed scope path, a method other than POST, a
+request on an earlier protocol revision, `initialize` or `server/discover`)
+and for comparing the gateway's answer with appkit's server's answer to the
+same request; never a substitute for the client.
 Assertions are on the `mcp.Result` and `mcp.ToolInfo` the client returns, and
 on the diagnostics the test captured in a buffer of its own. The gateway's
 tests never re-prove appkit's transport.

@@ -1,9 +1,9 @@
 {{/* The connect page at GET /: how to point an MCP client at the gateway.
      Data: .Banner (a page.Banner, for banner and footer); .Endpoint (the
-     unscoped URL, https://mcp.<host>/mcp); .Banner.ProfileURL (auth's profile
+     unscoped URL, <scheme>://<Host>/mcp); .Banner.ProfileURL (auth's profile
      page, where API tokens are made); .Services, in name order, each with
      .Name, .Description, .URL (its scoped endpoint, <endpoint>/<name>),
-     .Available (bool) and .Reason ("disabled" or "not installed", set only
+     .Available (bool) and .Reason ("disabled", set only
      when unavailable). Hooks: code#endpoint; a#profile-link; table#mcp-services
      with one tr[data-service=<name>][data-available=true|false] per service,
      whose td code holds .URL and whose span.badge holds "available" or the
