@@ -127,7 +127,7 @@ func TestDrainValidationPrecedesSocket(t *testing.T) {
 	for _, s := range []string{"1", "5", "9223372036854775808", strings.Repeat("9", 100)} {
 		var out, diagnostics recordingWriter
 		code := Run(context.Background(), Process{LookupEnv: mapLookup(map[string]string{"DRAIN_SECONDS": s}), Stdout: &out, Stderr: &diagnostics})
-		const want = "dummy: no socket was passed in\n\nrun it under systemd, or locally with 'systemd-socket-activate -l 127.0.0.1:3000 dummy'\n"
+		const want = "dummy: no socket was passed in\n\nrun it under systemd, with a listening socket passed in\n"
 		if code != ExitUsage || out.Len() != 0 || diagnostics.String() != want {
 			t.Errorf("valid drain %q rejected: code=%d out=%q diagnostics=%q", s, code, out.String(), diagnostics.String())
 		}
@@ -147,9 +147,9 @@ func TestDrainDuration(t *testing.T) {
 	}
 }
 
-// R-PU58-9AJ7 R-2JFJ-P9LM R-32XX-TLGQ
+// R-PU58-9AJ7 R-JI4Z-UR8P R-JJCW-8IZE
 func TestSocketCount(t *testing.T) {
-	const hint = "\n\nrun it under systemd, or locally with 'systemd-socket-activate -l 127.0.0.1:3000 dummy'\n"
+	const hint = "\n\nrun it under systemd, with a listening socket passed in\n"
 	for _, tc := range []struct {
 		pid, fds string
 		want     string
@@ -159,19 +159,28 @@ func TestSocketCount(t *testing.T) {
 		{"42", "-1", "dummy: no socket was passed in" + hint}, {"42", "1x", "dummy: no socket was passed in" + hint},
 		{"42", "2", "dummy: 2 sockets were passed in, expected 1" + hint}, {"42", "0002", "dummy: 0002 sockets were passed in, expected 1" + hint},
 	} {
-		var out, err recordingWriter
-		calls := 0
-		p := Process{Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": tc.pid, "LISTEN_FDS": tc.fds}), Unsetenv: func(string) error { calls++; return nil }, Inherit: func(uintptr) (net.Listener, error) { calls++; return nil, nil }, Stdout: &out, Stderr: &err}
-		if code := Run(context.Background(), p); code != ExitUsage {
-			t.Errorf("%q,%q exit=%d", tc.pid, tc.fds, code)
-		}
-		if out.Len() != 0 || err.String() != tc.want || err.calls != 1 || calls != 0 {
-			t.Errorf("%q,%q out=%q err=%q writes=%d calls=%d", tc.pid, tc.fds, out.String(), err.String(), err.calls, calls)
+		for _, drain := range []string{"unset", "", "1", strings.Repeat("9", 100)} {
+			path, notify := readySocket(t)
+			ln := &observingListener{err: errors.New("unexpected Accept")}
+			var out, err recordingWriter
+			calls := 0
+			env := map[string]string{"LISTEN_PID": tc.pid, "LISTEN_FDS": tc.fds, "NOTIFY_SOCKET": path}
+			if drain != "unset" {
+				env["DRAIN_SECONDS"] = drain
+			}
+			p := Process{Pid: 42, LookupEnv: mapLookup(env), Unsetenv: func(string) error { calls++; return nil }, Inherit: func(uintptr) (net.Listener, error) { calls++; return ln, nil }, Stdout: &out, Stderr: &err}
+			if code := Run(context.Background(), p); code != ExitUsage {
+				t.Errorf("%q,%q exit=%d", tc.pid, tc.fds, code)
+			}
+			if out.Len() != 0 || err.String() != tc.want || err.calls != 1 || calls != 0 || ln.accepts != 0 {
+				t.Errorf("%q,%q out=%q err=%q writes=%d calls=%d accepts=%d", tc.pid, tc.fds, out.String(), err.String(), err.calls, calls, ln.accepts)
+			}
+			assertNoNotification(t, notify)
 		}
 	}
 }
 
-// R-QEVI-RE50 R-5F30-7RMN R-3OW4-PGT8
+// R-QEVI-RE50 R-DPQ2-9T5Q R-3OW4-PGT8
 func TestRunTakesOnlyDescriptorThree(t *testing.T) {
 	var out, err recordingWriter
 	var unset []string

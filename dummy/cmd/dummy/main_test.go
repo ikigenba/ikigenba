@@ -46,7 +46,7 @@ func TestMainWiring(t *testing.T) {
 	}{
 		{name: "version", args: []string{"--version"}, exit: cli.ExitSuccess, stdout: cli.Version + "\n"},
 		{name: "invalid command", args: []string{"bogus"}, exit: cli.ExitUsage, stderr: "dummy: unknown command 'bogus'\n\nsee 'dummy --help' for usage\n"},
-		{name: "bare without socket", exit: cli.ExitUsage, stderr: "dummy: no socket was passed in\n\nrun it under systemd, or locally with 'systemd-socket-activate -l 127.0.0.1:3000 dummy'\n"},
+		{name: "bare without socket", exit: cli.ExitUsage, stderr: "dummy: no socket was passed in\n\nrun it under systemd, with a listening socket passed in\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			stdout, stderr, exit := runBinary(t, binary, test.args)
@@ -94,7 +94,7 @@ func runBinary(t *testing.T, binary string, args []string) (string, string, int)
 	return stdout.String(), stderr.String(), exitError.ExitCode()
 }
 
-// R-5F30-7RMN R-5ZTA-PV8G R-DXP8-MKZA
+// R-DPQ2-9T5Q R-5ZTA-PV8G R-DXP8-MKZA
 func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
 	t.Helper()
 	directory, err := os.MkdirTemp("", "dummy-exec-")

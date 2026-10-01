@@ -80,7 +80,7 @@ func Run(ctx context.Context, p Process) int {
 
 	pid, pidSet := lookup(p.LookupEnv, "LISTEN_PID")
 	fds, fdsSet := lookup(p.LookupEnv, "LISTEN_FDS")
-	const hint = "\n\nrun it under systemd, or locally with 'systemd-socket-activate -l 127.0.0.1:3000 dummy'\n"
+	const hint = "\n\nrun it under systemd, with a listening socket passed in\n"
 	if !pidSet || pid != strconv.Itoa(p.Pid) || !fdsSet || !decimalPositive(fds, false) {
 		writeDiagnostic(stderr, "dummy: no socket was passed in"+hint)
 		return ExitUsage

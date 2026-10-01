@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -43,64 +44,119 @@ func readySocket(t *testing.T) (string, *net.UnixConn) {
 	return path, conn
 }
 
-// R-EYA8-3P84 R-EVUF-C5QQ
+// R-PE6U-PF31 R-PFER-36TQ R-EUBD-X7ZQ
 func TestRunReportsDrainOverrunAfterHandlerStarts(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = listener.Close() })
-	path, notify := readySocket(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	srv := testMCP(t)
-	var stdout, stderr bytes.Buffer
-	result := make(chan int, 1)
-	go func() {
-		result <- Run(ctx, Process{Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "DRAIN_SECONDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return listener, nil }, Banner: emptyBanner, MCP: srv, Stdout: &stdout, Stderr: &stderr})
-	}()
-	if err = notify.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
-		t.Fatal(err)
-	}
-	var ready [16]byte
-	n, _, err := notify.ReadFromUnix(ready[:])
-	if err != nil || string(ready[:n]) != "READY=1" {
-		t.Fatalf("ready datagram %q, error %v", ready[:n], err)
-	}
-	conn, err := net.Dial("tcp", listener.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-	if err = conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
-		t.Fatal(err)
-	}
-	request := "POST /widgets HTTP/1.1\r\nHost: dummy\r\nX-User-Id: test-user\r\nContent-Type: application/x-www-form-urlencoded\r\nExpect: 100-continue\r\nContent-Length: 100\r\n\r\nname=x"
-	if _, err = io.WriteString(conn, request); err != nil {
-		t.Fatal(err)
-	}
-	line, err := bufio.NewReader(conn).ReadString('\n')
-	if err != nil || !strings.Contains(line, "100 Continue") {
-		t.Fatalf("first response line = %q, error %v", line, err)
-	}
-	cancel()
-	select {
-	case code := <-result:
-		if code != ExitServerFailed {
-			t.Errorf("exit = %d, want %d", code, ExitServerFailed)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("Run did not return after drain")
-	}
-	if stdout.Len() != 0 || !strings.Contains(stderr.String(), "dummy: stopped with 1 request unfinished\n") {
-		t.Errorf("stdout = %q, stderr = %q", stdout.String(), stderr.String())
-	}
-	if lines := strings.Count(stderr.String(), "dummy: stopped with 1 request unfinished\n"); lines != 1 {
-		t.Errorf("drain diagnostics = %d", lines)
+	for _, tc := range []struct {
+		name, value   string
+		set, complete bool
+		duration      time.Duration
+	}{
+		{"one", "1", true, false, time.Second},
+		{"unset", "", false, false, 5 * time.Second},
+		{"empty", "", true, false, 5 * time.Second},
+		{"huge", strings.Repeat("9", 100), true, true, 7 * time.Second},
+	} {
+		srv := testMCP(t)
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = listener.Close() })
+			path, notify := readySocket(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(cancel)
+			env := map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}
+			if tc.set {
+				env["DRAIN_SECONDS"] = tc.value
+			}
+			var stdout, stderr bytes.Buffer
+			result := make(chan int, 1)
+			go func() {
+				result <- Run(ctx, Process{Pid: 42, LookupEnv: mapLookup(env), Inherit: func(uintptr) (net.Listener, error) { return listener, nil }, Banner: emptyBanner, MCP: srv, Stdout: &stdout, Stderr: &stderr})
+			}()
+			waitReady(t, notify)
+			conn, err := net.Dial("tcp", listener.Addr().String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = conn.Close() })
+			if err = conn.SetDeadline(time.Now().Add(12 * time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			body := "name=drained&count=2&status=active"
+			header := fmt.Sprintf("POST /widgets HTTP/1.1\r\nHost: dummy\r\nX-User-Id: test-user\r\nContent-Type: application/x-www-form-urlencoded\r\nExpect: 100-continue\r\nContent-Length: %d\r\n\r\n", len(body))
+			if _, err = io.WriteString(conn, header); err != nil {
+				t.Fatal(err)
+			}
+			reader := bufio.NewReader(conn)
+			response, err := http.ReadResponse(reader, &http.Request{Method: http.MethodPost})
+			if err != nil || response.StatusCode != http.StatusContinue {
+				t.Fatalf("continue=%v error=%v", response, err)
+			}
+			_ = response.Body.Close()
+			started := time.Now()
+			cancel()
+			if tc.complete {
+				if err = conn.SetReadDeadline(started.Add(tc.duration)); err != nil {
+					t.Fatal(err)
+				}
+				_, err = reader.Peek(1)
+				var netErr net.Error
+				if !errors.As(err, &netErr) || !netErr.Timeout() {
+					t.Fatalf("large drain closed early: %v", err)
+				}
+				select {
+				case code := <-result:
+					t.Fatalf("large drain returned early: %d", code)
+				default:
+				}
+				if err = conn.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
+					t.Fatal(err)
+				}
+				if _, err = io.WriteString(conn, body); err != nil {
+					t.Fatal(err)
+				}
+				response, err = http.ReadResponse(reader, &http.Request{Method: http.MethodPost})
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, err = io.ReadAll(response.Body)
+				_ = response.Body.Close()
+				if err != nil || response.StatusCode != http.StatusSeeOther {
+					t.Fatalf("complete response=%v error=%v", response, err)
+				}
+			} else {
+				_, err = reader.Peek(1)
+				elapsed := time.Since(started)
+				if !errors.Is(err, io.EOF) {
+					t.Fatalf("cutoff did not close without response: %v", err)
+				}
+				if elapsed < tc.duration || elapsed >= tc.duration+time.Second {
+					t.Errorf("cutoff after %v, want [%v,%v)", elapsed, tc.duration, tc.duration+time.Second)
+				}
+			}
+			select {
+			case code := <-result:
+				want, diagnostic := ExitServerFailed, "dummy: stopped with 1 request unfinished\n"
+				if tc.complete {
+					want, diagnostic = ExitSuccess, ""
+				}
+				if code != want || stdout.Len() != 0 || stderr.String() != diagnostic {
+					t.Errorf("exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+				}
+				if !tc.complete && time.Since(started) >= tc.duration+time.Second {
+					t.Error("Run returned too late")
+				}
+			case <-time.After(time.Second):
+				t.Fatal("Run did not return promptly")
+			}
+		})
 	}
 }
 
-// R-EJNF-IGBS R-EUMI-YE01 R-EVUF-C5QQ R-EOJ1-1JAK
+// R-ET3H-JG91 R-QFU0-CZZ9 R-EUBD-X7ZQ
 func TestRunNoRequestsAndNoNotification(t *testing.T) {
 	for _, env := range []map[string]string{{}, {"NOTIFY_SOCKET": ""}} {
 		srv := testMCP(t)
@@ -136,7 +192,7 @@ func (l *observingListener) Accept() (net.Conn, error) {
 func (l *observingListener) Close() error   { return nil }
 func (l *observingListener) Addr() net.Addr { return testAddr("observing") }
 
-// R-EM38-9ZT6 R-EYA8-3P84 R-EVUF-C5QQ
+// R-QH1W-QRPY R-ERVL-5OIC R-EUBD-X7ZQ
 func TestRunNotifiesBeforeAcceptAndReportsServeFailure(t *testing.T) {
 	for _, abstract := range []bool{false, true} {
 		srv := testMCP(t)
@@ -221,7 +277,7 @@ func (w *overlapWriter) Write(p []byte) (int, error) {
 	return w.buf.Write(p)
 }
 
-// R-F0Q0-V8PI
+// R-PHUJ-UQB4
 func TestRunSerializesConcurrentHandlerDiagnostics(t *testing.T) {
 	srv := testMCP(t)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
