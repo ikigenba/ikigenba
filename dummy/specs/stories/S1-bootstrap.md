@@ -1,7 +1,8 @@
 # Stories — bootstrap
 
 Running dummy at all: help, version, the manifest, exit codes. dummy is an
-app of the platform: one Go binary that serves a control panel. On a host it
+app of the platform: one Go binary that serves a control panel, and offers
+the same widgets to MCP clients at `/mcp` (`S9-mcp.md`). On a host it
 runs as `/opt/dummy/bin/dummy` with `/opt/dummy` as its working directory and
 its environment read from `/opt/dummy/etc/env`; a developer runs the same
 binary from the checkout. With no command it serves (`S2-serve.md`); the
@@ -38,13 +39,17 @@ Postconditions:
 
 ## A developer asks for the manifest
 
-The manifest is a fact about the binary, so the binary emits it. The
-committed `etc/manifest.toml` is a copy kept so the checkout can be read
-without a build; the two are byte-identical, and `devctl build` refuses an
-app where they differ. dummy declares its name, that it is not the host's
-default app, and no secrets. It declares no port: dummy serves on the socket
-the host passes it (`S2-serve.md`), and a manifest carrying `port` is refused
-by `devctl build` and by opsctl.
+The manifest is a fact about the binary, so the binary emits it. The committed
+`etc/manifest.toml` is a copy kept so the checkout can be read without a
+build; the two are byte-identical, and `devctl build` refuses an app where
+they differ. dummy declares its name; its description, the one line that says
+what dummy is for, which the host publishes in its services file and which
+dummy's MCP endpoint gives its clients as instructions (`S9-mcp.md`); that it
+is not the host's default app; that it offers an MCP endpoint, at `/mcp`, so
+the platform's MCP gateway may reach it (`S9-mcp.md`); and no secrets, in that
+order. It declares no port: dummy serves on the socket the host passes it
+(`S2-serve.md`), and a manifest carrying `port` is refused by `devctl build`
+and by opsctl.
 
 Command:
 
@@ -56,7 +61,9 @@ Output:
 
 ```
 app = "dummy"
+description = "Demo widgets to list and create"
 default = false
+mcp = true
 secrets = []
 ```
 
@@ -84,8 +91,8 @@ Output:
 ```
 Usage: dummy [command]
 
-Serve the dummy control panel on the socket systemd passes in. With no
-command, serve.
+Serve the dummy control panel, and its MCP tools at /mcp, on the socket
+systemd passes in. With no command, serve.
 
 Commands:
   manifest   print the app manifest

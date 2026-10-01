@@ -2,8 +2,8 @@
 
 The bare binary serves, and it serves only on a listening socket it inherits:
 dummy never opens one of its own. It takes the socket the way systemd socket
-activation passes it — `LISTEN_PID` names dummy's own process, `LISTEN_FDS`
-is `1`, and the socket is file descriptor 3 — and it removes the `LISTEN_*`
+activation passes it — `LISTEN_PID` names dummy's own process, `LISTEN_FDS` is
+`1`, and the socket is file descriptor 3 — and it removes the `LISTEN_*`
 variables from its environment once it has taken it. On a host, opsctl
 publishes `ikigenba-dummy.socket`, which holds the Unix socket
 `/run/ikigenba/dummy.sock`, beside `ikigenba-dummy.service`, which runs
@@ -20,21 +20,24 @@ the stop timeout (10 seconds by default, always longer than the drain) into
 every service unit, and an app's manifest never sets either. dummy's
 environment also carries `IKIGENBA_SERVICES`, the path of the host's services
 file, which lists the platform's services for the launcher in every page's
-banner (`S3`). On a host, opsctl sets it in the environment the host gives
-dummy, normally `/var/lib/ikigenba/services.json`; on a developer's laptop it
-is normally unset, and dummy's pages then carry no launcher. dummy reads the
-variable once, when it starts, and never fails to start over it: unset, empty,
-or naming a file that is missing or unreadable, dummy starts and serves all the
-same, and says nothing about it. A developer stands in for
-the host with `systemd-socket-activate`, which passes a socket on the same
-terms. A healthy dummy prints nothing, so under systemd the journal holds only
-trouble. A diagnostic dummy writes about a request names that request by its
+banner (`S3`) and holds the description dummy's MCP endpoint gives its clients
+as instructions (`S9-mcp.md`). On a host, opsctl sets it in the environment
+the host gives dummy, normally `/var/lib/ikigenba/services.json`; on a
+developer's laptop it is normally unset, and dummy's pages then carry no
+launcher and its MCP endpoint no instructions. dummy reads the variable once,
+when it starts, and never fails to start over it: unset, empty, or naming a
+file that is missing or unreadable, dummy starts and serves all the same, and
+says nothing about it. A developer stands in for the host with
+`systemd-socket-activate`, which passes a socket on the same terms. A healthy
+dummy prints nothing, so under systemd the journal holds only trouble. A
+diagnostic dummy writes about a request names that request by its
 `X-Request-Id`, as `dummy: request <id>: <reason>` on stderr, so a line in the
 journal can be matched to nginx's log of the same request; a request that
 carries no `X-Request-Id` is named `-`. An app writes one such line for each
 request it answers with a 5xx, any status from 500 through 599, and nothing
-for any other answer: a 4xx is the caller's to fix, not trouble. The actor in these stories is the host, whether that is systemd or a
-developer at a terminal standing in for it.
+for any other answer: a 4xx is the caller's to fix, not trouble. The actor in
+these stories is the host, whether that is systemd or a developer at a
+terminal standing in for it.
 
 These are the terms every app of the platform serves on, and a new app copies
 them from here. The socket is the app's only way in. Every app runs as the one

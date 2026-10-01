@@ -1,10 +1,11 @@
 # Stories — form
 
-Creating a widget: the one interaction in dummy that changes state. The form
-sits on the panel page at `/widgets`, in a card headed `Add widget` beside the
-table on a wide screen and below it on a narrow one (`S3`), and it is an
-ordinary HTML form — it POSTs to `/widgets` with
-`application/x-www-form-urlencoded`, and nothing about the submission is
+Creating a widget from the panel: one of the two ways a widget is created (the
+other is the MCP tool `create_widget`, `S9-mcp.md`), and creation is the only
+change of state dummy has. The form sits on the panel page at `/widgets`, in a
+card headed `Add widget` beside the table on a wide screen and below it on a
+narrow one (`S3`), and it is an ordinary HTML form — it POSTs to `/widgets`
+with `application/x-www-form-urlencoded`, and nothing about the submission is
 assembled by JavaScript, so a caller with `curl` submits exactly what a
 browser submits. A widget has three fields, and the form has one field for
 each: `name`, text, required, 1 to 40 characters and unique across widgets;
@@ -424,8 +425,8 @@ HTTP/1.1 500 Internal Server Error
 Content-Type: text/plain; charset=utf-8
 ```
 
-Status 500. The body is one line of plain text saying the identity header is
-missing.
+Status 500. The body is exactly the one line `identity header missing`,
+ending in a newline, as on every route (`S3`).
 
 Preconditions:
 

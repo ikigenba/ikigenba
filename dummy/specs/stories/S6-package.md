@@ -59,7 +59,9 @@ Output:
 ```
 v<semver>
 app = "dummy"
+description = "Demo widgets to list and create"
 default = false
+mcp = true
 secrets = []
 ```
 

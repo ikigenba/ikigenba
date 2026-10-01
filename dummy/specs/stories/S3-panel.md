@@ -4,22 +4,22 @@ The panel and dummy's routing: what a running dummy answers, and the frame
 every page it serves is drawn in. dummy is the platform's UI reference
 implementation, so every page is server-rendered HTML — the whole of a page's
 content arrives in the response body, the launcher's list of services
-included, and script never adds content of its own. A page's scripts only
-act on what the server sent: the panel's re-fetches the table (`S4`), and the
+included, and script never adds content of its own. A page's scripts only act
+on what the server sent: the panel's re-fetches the table (`S4`), and the
 launcher's, `/_appkit/launcher.js`, filters the list of services as the user
-types. The stylesheet a page links is not script: it changes how the
-content looks, never what the content is. An nginx gate in front of dummy
+types. The stylesheet a page links is not script: it changes how the content
+looks, never what the content is. An nginx gate in front of dummy
 authenticates every request and sets `X-User-Id` and `X-User-Email` on the
 request it passes upstream; a sibling app calling dummy forwards the ones it
 received (`S2`). dummy trusts those two headers absolutely and has no
 unauthenticated case, so there is no sign-in page and no signed-out banner.
 Only nginx and the suite's own apps can reach dummy's socket, so a request
-that arrives without `X-User-Id` means the gate or a sibling is misconfigured
-— a server fault, not a bad request. On a developer's laptop there is no gate,
-so the headers are passed by hand, and every request below that needs identity
-shows them. The requests go to a dummy the developer serves with
-`systemd-socket-activate -l 127.0.0.1:3000 dummy` (`S2`), with no services
-file unless a story says otherwise.
+that arrives without `X-User-Id`, or with it empty, means the gate or a
+sibling is misconfigured — a server fault, not a bad request. On a developer's
+laptop there is no gate, so the headers are passed by hand, and every request
+below that needs identity shows them. The requests go to a dummy the developer
+serves with `systemd-socket-activate -l 127.0.0.1:3000 dummy` (`S2`), with no
+services file unless a story says otherwise.
 
 The demo resource is widgets. A widget has a `name`, an integer `count`, and
 a `status` that is one of `active`, `paused`, or `retired`. The widgets are an
@@ -82,32 +82,36 @@ developer's `127.0.0.1:3000`, has no space in it, and both then name auth's
 local origin: `<auth-profile>` is `http://localhost:3001/` and `<auth-logout>`
 is `http://localhost:3001/logout`.
 
-The launcher is the banner's way to the platform's other services. It is
-there only when the host's services file lists services: dummy takes the
-file's path from `IKIGENBA_SERVICES`, which it reads once, when it starts
-(`S2`), and it reads the file itself afresh for every page, so a rewrite of
-the file shows on the next page without a restart. The file is a JSON object
-whose `services` member is an array; each entry is an object with `name`, a
-non-empty string; `url`, a string; `icon`, a string holding the SVG text of
-the service's icon; and `enabled`, `true` or `false`, `false` for a service
-switched off. The array's order is the launcher's order. Members the launcher
-does not know are ignored, and an entry that lacks one of the four, or holds
-one of the wrong kind, is left out while the rest are still shown. With no
-variable, no readable file, a file that is not such an object, or no usable
-entry, the page has no launcher, and is otherwise the same page; dummy writes
-nothing about it, since a broken launcher never breaks a page. When the
-launcher is there, the banner holds a launcher button labelled `Services`;
-pressing it opens the list of the services, which is closed when the page
-loads. The list holds a search field labelled `Find a service`, with the
-placeholder `Find a service`, and one entry per service in the file's order,
-each showing the service's icon and then its name. An enabled service's entry
-is a link to its `url`. A service switched off keeps its place but is not a
-working link, and its entry is titled `<name> is unavailable`, which a
-browser shows as its tooltip; its visible text is still its icon and name. dummy's own entry,
-the one named `dummy`, is marked as the current page. The list, the search
-field, and a hidden no-match line are all in the page as served; the one
-script the launcher adds is `/_appkit/launcher.js`, and without a launcher the
-page loads no such script.
+The launcher is the banner's way to the platform's other services. It is there
+only when the host's services file lists services: dummy takes the file's path
+from `IKIGENBA_SERVICES`, which it reads once, when it starts (`S2`), and it
+reads the file itself afresh for every page, so a rewrite of the file shows on
+the next page without a restart. The file is a JSON object whose `services`
+member is an array; each entry is an object with `name`, a non-empty string;
+`url`, `description`, and `socket`, strings; `enabled`, `true` or `false`,
+`false` for a service switched off; `mcp`, `true` or `false`; and, optionally,
+`icon`, a string holding the SVG text of the service's icon. The file lists
+every service on the host, but the launcher offers only the entries that carry
+an icon: an entry with no `icon`, or one that is not a string, stays out of
+the launcher. The array's order is the launcher's order. Members the launcher
+does not know are ignored, and an entry that lacks one of the six others, or
+holds one of the wrong kind, is left out while the rest are still shown. With
+no variable, no readable file, a file that is not such an object, or no usable
+entry that carries an icon, the page has no launcher, and is otherwise the
+same page; dummy writes nothing about it, since a broken launcher never breaks
+a page. When the launcher is there, the banner holds a launcher button
+labelled `Services`; pressing it opens the list of the services, which is
+closed when the page loads. The list holds a search field labelled `Find a
+service`, with the placeholder `Find a service`, and one entry per service
+that carries an icon, in the file's order, each showing the service's icon and
+then its name. An enabled service's entry is a link to its `url`. A service
+switched off keeps its place but is not a working link, and its entry is
+titled `<name> is unavailable`, which a browser shows as its tooltip; its
+visible text is still its icon and name. dummy's own entry, the one named
+`dummy`, is marked as the current page. The list, the search field, and a
+hidden no-match line are all in the page as served; the one script the
+launcher adds is `/_appkit/launcher.js`, and without a launcher the page loads
+no such script.
 
 Every HTML page dummy sends — the panel and every page with the banner: the
 404, the 405, the 415, and the 422 redraw (`S5`) — links
@@ -125,11 +129,13 @@ missing-header 500 below — and nothing for any other answer: a 404, a 405, a 4
 trouble, and a healthy dummy stays silent.
 
 The routes are `GET /`, which sends the caller to the panel; `GET /widgets`,
-the panel page; `GET /widgets/table`, the table fragment (`S4`);
-`POST /widgets`, which creates a widget (`S5`); and `/_appkit/<name>`, the
-stylesheet, launcher script, fonts, and licences that every page shares
-(`S8`). A response block shows the status line and the headers the story
-fixes; a header it does not show, `Date` say, is not fixed.
+the panel page; `GET /widgets/table`, the table fragment (`S4`); `POST
+/widgets`, which creates a widget (`S5`); `/_appkit/<name>`, the stylesheet,
+launcher script, fonts, and licences that every page shares (`S8`); and
+`/mcp`, exactly that path, the MCP endpoint that offers the widgets to MCP
+clients, whose answers, to every method, are `S9-mcp.md`'s and never one of
+the pages below. A response block shows the status line and the headers the
+story fixes; a header it does not show, `Date` say, is not fixed.
 
 ## A user opens the panel
 
@@ -334,15 +340,18 @@ HTTP/1.1 500 Internal Server Error
 Content-Type: text/plain; charset=utf-8
 ```
 
-Status 500. The body is one line of plain text saying the identity header is
-missing. Every route answers this way, the root, the fragment, and the shared
-files under `/_appkit/` included; the identity check runs before dummy looks at the path or the method, so a request
-with no headers is never a 303, a 404, or a 405.
+Status 500. The body is exactly the one line `identity header missing`,
+ending in a newline. A `HEAD` is answered with the same status and headers
+and an empty body. An `X-User-Id` header whose value is empty is answered the
+same way as no header at all. Every route answers this way, the root, the
+fragment, the shared files under `/_appkit/`, and the MCP endpoint `/mcp`
+included; the identity check runs before dummy looks at the path or the
+method, so a request with no headers is never a 303, a 404, or a 405.
 
 Preconditions:
 
 - dummy is serving on `127.0.0.1:3000`.
-- The request carries no `X-User-Id` header.
+- The request carries no `X-User-Id` header, or one whose value is empty.
 
 Postconditions:
 
@@ -371,8 +380,8 @@ HTTP/1.1 500 Internal Server Error
 Content-Type: text/plain; charset=utf-8
 ```
 
-Status 500. The body is the same one line of plain text saying the identity
-header is missing.
+Status 500. The body is exactly the same one line, `identity header missing`,
+ending in a newline.
 
 Preconditions:
 
@@ -390,7 +399,9 @@ Postconditions:
 The caller is identified, so dummy can answer with the banner and give them the
 way back to the panel rather than a dead end. dummy serves nothing under
 `/assets/`, so a path there, such as `/assets/theme.css`, is answered the same
-way; the page's stylesheet is under `/_appkit/` (`S8`).
+way; the page's stylesheet is under `/_appkit/` (`S8`). The MCP endpoint is
+`/mcp` alone (`S9-mcp.md`): `/mcp/`, or any path beneath it, is a path that
+does not exist like any other.
 
 Request:
 
@@ -400,6 +411,10 @@ $ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://1
 
 ```
 $ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/assets/theme.css
+```
+
+```
+$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/mcp/
 ```
 
 Response:
@@ -427,7 +442,9 @@ Postconditions:
 ## A caller sends the panel a method it does not take
 
 `Allow` names every method `/widgets` takes, whichever story owns it: `GET`
-and `HEAD` read the panel, and `POST` creates a widget (`S5`).
+and `HEAD` read the panel, and `POST` creates a widget (`S5`). The MCP
+endpoint `/mcp` refuses a method it does not take in its own way, not with
+this page (`S9-mcp.md`).
 
 Request:
 
@@ -463,15 +480,17 @@ Postconditions:
 On a host, the services file lists the platform's services, and the launcher
 is how a user gets from dummy to any of them without typing an address. A
 developer stands in for the host by writing a services file and naming it
-when serving dummy. The file here, `/tmp/services.json`, lists three
-services, one of them switched off:
+when serving dummy. The file here, `/tmp/services.json`, lists four
+services: three with an icon, one of them switched off, and `mcp`, the
+platform's MCP gateway, which has no icon and so is not in the launcher:
 
 ```
 {
   "services": [
-    {"name": "auth", "url": "https://auth.sbx.ikigenba.dev/", "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='9'/></svg>", "enabled": true},
-    {"name": "dummy", "url": "https://dummy.sbx.ikigenba.dev/", "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='4' y='4' width='16' height='16'/></svg>", "enabled": true},
-    {"name": "ledger", "url": "https://ledger.sbx.ikigenba.dev/", "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M4 20L20 4'/></svg>", "enabled": false}
+    {"name": "auth", "url": "https://auth.sbx.ikigenba.dev/", "description": "Sign in to the space", "socket": "/run/ikigenba/auth.sock", "enabled": true, "mcp": false, "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='9'/></svg>"},
+    {"name": "mcp", "url": "https://mcp.sbx.ikigenba.dev/", "description": "The space's MCP gateway", "socket": "/run/ikigenba/mcp.sock", "enabled": true, "mcp": false},
+    {"name": "dummy", "url": "https://dummy.sbx.ikigenba.dev/", "description": "Demo widgets to list and create", "socket": "/run/ikigenba/dummy.sock", "enabled": true, "mcp": true, "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='4' y='4' width='16' height='16'/></svg>"},
+    {"name": "ledger", "url": "https://ledger.sbx.ikigenba.dev/", "description": "Ledger", "socket": "/run/ikigenba/ledger.sock", "enabled": false, "mcp": false, "icon": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M4 20L20 4'/></svg>"}
   ]
 }
 ```
@@ -508,7 +527,8 @@ icon and then its name, a link to `https://auth.sbx.ikigenba.dev/`; `dummy`,
 showing its icon and then its name, a link to
 `https://dummy.sbx.ikigenba.dev/`, marked as the current page; and `ledger`,
 showing its icon and then its name, not a working link, titled
-`ledger is unavailable`. The no-match line is in the page and hidden. The page
+`ledger is unavailable`. There is no entry for `mcp`, which has no icon. The
+no-match line is in the page and hidden. The page
 loads the script `/_appkit/launcher.js`.
 
 Preconditions:
@@ -564,8 +584,8 @@ Postconditions:
 broken launcher never breaks a page, so dummy draws the page without one and
 reports nothing: this is not a fault of the request, and dummy's answer is the
 same as when no file is named at all. A file that exists but cannot be read,
-is not a JSON object with a `services` array, or has no usable entry is
-answered the same way.
+is not a JSON object with a `services` array, or has no usable entry that
+carries an icon is answered the same way.
 
 Request:
 

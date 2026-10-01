@@ -42,8 +42,9 @@ row's count cell, `<td class="num">3</td>`, and each status word sits inside a
 status marker naming its value,
 `<span class="status" data-status="active">active</span>`. The fragment and
 the table the panel page embeds are the same markup, byte for byte. The
-fixture set changes only when someone POSTs to `/widgets`; nothing in this
-group changes it.
+fixture set changes only when a widget is created, by a POST to `/widgets`
+(`S5`) or by the MCP tool `create_widget` (`S9-mcp.md`); nothing in this group
+changes it.
 
 Every response carries an `ETag`. Its value is opaque — no story fixes it, and
 `"<etag>"` below stands for whatever the server sent. What is fixed is the
@@ -229,8 +230,9 @@ HTTP/1.1 500 Internal Server Error
 Content-Type: text/plain; charset=utf-8
 ```
 
-Status 500. The body is one line of plain text saying the identity header is
-missing. No table markup and no `ETag` are sent.
+Status 500. The body is exactly the one line `identity header missing`,
+ending in a newline, as on every route (`S3`). No table markup and no `ETag`
+are sent.
 
 Preconditions:
 

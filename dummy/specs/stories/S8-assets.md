@@ -415,8 +415,10 @@ HTTP/1.1 500 Internal Server Error
 Content-Type: text/plain; charset=utf-8
 ```
 
-Status 500. The body is one line of plain text saying the identity header is
-missing. No stylesheet and no `ETag` are sent.
+Status 500. The body is exactly the one line `identity header missing`,
+ending in a newline, as on every route (`S3`). No stylesheet and no `ETag`
+are sent. A `HEAD` is answered with the same status and headers and an empty
+body.
 
 Preconditions:
 

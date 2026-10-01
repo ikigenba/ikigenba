@@ -7,11 +7,13 @@ app is `<app>.<space>`, so dummy on the space `sbx.ikigenba.dev` answers at
 `dummy.sbx.ikigenba.dev`. nginx on the space proxies to dummy's socket,
 `/run/ikigenba/dummy.sock` (`S2`). The space authenticates every request
 before it reaches dummy and passes the caller on in `X-User-Id` and
-`X-User-Email`, with the request's id in `X-Request-Id`;
-dummy itself has no unauthenticated case, so a request that arrives at all is
-one of a known caller. The stories prove the whole path from checkout to
-browser and nothing about dummy that the earlier groups do not already say.
-devctl and opsctl are named only by their published commands.
+`X-User-Email`, with the request's id in `X-Request-Id`; dummy itself has no
+unauthenticated case, so a request that arrives at all is one of a known
+caller. The stories prove the whole path from checkout to browser and nothing
+about dummy that the earlier groups do not already say. The same deployment
+also offers dummy's MCP endpoint, at `https://dummy.<space>/mcp` and through
+the space's MCP gateway; those stories are `S9-mcp.md`'s. devctl and opsctl
+are named only by their published commands.
 
 ## A visitor reaches the dummy panel on a space
 
@@ -70,8 +72,10 @@ Postconditions:
 ## A visitor on a space opens the service launcher
 
 On a space the host sets `IKIGENBA_SERVICES` in dummy's environment to the
-path of its services file (`S2`), and that file lists dummy because dummy's
-package ships `share/icon.svg` (`S6-package.md`).
+path of its services file (`S2`). That file lists every service installed on
+the host, and dummy's entry carries an icon because dummy's package ships
+`share/icon.svg` (`S6-package.md`), which is what puts dummy in the launcher
+(`S3`).
 So the panel a visitor reaches on a space carries the launcher in its banner,
 and dummy is one of the services it offers. The launcher's text and behavior
 are `S3`'s; this story fixes only what the visitor sees on a space.
@@ -104,7 +108,7 @@ Preconditions:
   accepts.
 - `dummy/dist/dummy-v<semver>.tar.xz` holds `share/icon.svg` (`S6-package.md`).
 - The host sets `IKIGENBA_SERVICES` in dummy's environment to the path of
-  its services file, and that file lists dummy.
+  its services file, and that file lists dummy with its icon.
 
 Postconditions:
 
