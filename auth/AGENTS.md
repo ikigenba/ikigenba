@@ -175,8 +175,10 @@ descriptor 3, and starts the child through
 `LISTEN_PID` must be the child's own pid and `exec` keeps the shell's. It sets
 `NOTIFY_SOCKET` to a datagram socket it bound and waits for `READY=1`, never a
 fixed sleep; then it sends `SIGTERM` and asserts exit 0 and silence on both
-streams, and that the socket's path still exists and still accepts a
-connection into its queue after the child has exited. It runs the serve case a
+streams, that the socket's path still exists and still accepts a
+connection into its queue after the child has exited, and that its working
+directory then holds nothing but `state/`, `state/auth.db`, and SQLite's
+`auth.db-journal`, `auth.db-wal`, and `auth.db-shm`. It runs the serve case a
 second time, with a fresh socket, and stops it with `SIGINT`, asserting the
 same, because `main` promises both signals. The child runs in a test-owned
 temporary working directory, where it creates `state/auth.db`. Its environment
