@@ -1,0 +1,37 @@
+{{/* The connect page at GET /: how to point an MCP client at the gateway.
+     Data: .Banner (a page.Banner, for banner and footer); .Endpoint (the
+     unscoped URL, https://mcp.<host>/mcp); .Banner.ProfileURL (auth's profile
+     page, where API tokens are made); .Services, in name order, each with
+     .Name, .Description, .URL (its scoped endpoint, <endpoint>/<name>),
+     .Available (bool) and .Reason ("disabled" or "not installed", set only
+     when unavailable). Hooks: code#endpoint; a#profile-link; table#mcp-services
+     with one tr[data-service=<name>][data-available=true|false] per service,
+     whose td code holds .URL and whose span.badge holds "available" or the
+     reason, with data-reason=<reason> when unavailable; p#no-services when
+     .Services is empty, in place of the table. No script. */}}
+{{define "connect"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css"><title>mcp</title></head>
+<body>
+{{template "banner" .Banner}}
+<main>
+<h1>Connect an MCP client</h1>
+<p>Add this server to your client as a remote (Streamable HTTP) MCP server.</p>
+<pre><code id="endpoint">{{.Endpoint}}</code></pre>
+<p>Every request must send the header <code>Authorization: Bearer &lt;token&gt;</code>. Create a token on <a id="profile-link" href="{{.Banner.ProfileURL}}">your profile</a>.</p>
+<section>
+<div class="section-head"><div><h2>Services</h2><p>The endpoint above reaches every service. To limit a client to some of them, append their names, separated by commas: <code>{{.Endpoint}}/a,b</code>.</p></div></div>
+{{if .Services}}<div class="table-scroll">
+<table id="mcp-services">
+<thead><tr><th>Name</th><th>Description</th><th>Endpoint</th><th>Status</th></tr></thead>
+<tbody>{{range .Services}}
+<tr data-service="{{.Name}}" data-available="{{.Available}}"><td>{{.Name}}</td><td>{{.Description}}</td><td><code>{{.URL}}</code></td><td>{{if .Available}}<span class="badge" data-kind="ok">available</span>{{else}}<span class="badge" data-kind="warn" data-reason="{{.Reason}}">{{.Reason}}</span>{{end}}</td></tr>{{end}}
+</tbody>
+</table>
+</div>{{else}}<div class="empty"><p id="no-services">No MCP services are installed.</p></div>{{end}}
+</section>
+</main>
+{{template "footer" .Banner}}
+</body>
+</html>
+{{end}}
