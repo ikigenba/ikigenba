@@ -3,7 +3,7 @@
 The serve path: what happens between `cli.Run` being called with no
 arguments and the process being gone. `D01-layout-and-run-seam` declares the
 names this design behaves through: `cli.Process` with its `Pid`, `Unsetenv`,
-`Inherit` and `Banner`, `cli.Run`, the exit codes, `server.Serve` and
+`Inherit`, `Banner` and `MCP`, `cli.Run`, the exit codes, `server.Serve` and
 `server.DrainError`. `D02-cli` decides that an empty `Args` means serve and
 that nothing else touches the environment; `D04-panel` decides what the
 handler answers and the line it writes for a 500. This design says how `Run`
@@ -46,10 +46,12 @@ of its own. The environment opsctl gives an app also carries
 `IKIGENBA_SERVICES`, the path of the host's services file, normally
 `/var/lib/ikigenba/services.json`; `systemd-socket-activate` passes only the
 variables named with `-E`, so on a laptop it is normally unset. An app reads
-it once, at start, through `appkit.New`, and never fails to start over it:
-unset, empty, or naming a file that is missing or unreadable, the app starts,
-serves, and says nothing about it (`D01-layout-and-run-seam` explains why that
-read happens in `main` and cannot fail).
+it once, at start, through appkit's `page.New` and `mcp.NewServer`, and never
+fails to start over it: unset, empty, or naming a file that is missing or
+unreadable, the app starts, serves, and says nothing about it; its pages then
+carry no launcher and its MCP endpoint gives no instructions
+(`D01-layout-and-run-seam` explains why that read happens in `main` and cannot
+fail).
 
 The socket is the app's only way in, and every app runs as `ikigenba`, so the
 suite and nginx can reach it and nothing else on the host can. The suite is a
@@ -99,11 +101,14 @@ that is trouble on the host rather than a caller's typo: `dummy: ` and the
 error, exit 1.
 
 With the listener in hand `Run` builds the process's widget store, the
-panel's handler over it and over `Process.Banner`, and then tells systemd it is
-ready, before it calls `Serve`. `Run` never calls the banner source itself:
-only the handler does, once for each page it draws with the banner
-(`D04-panel`), so the services file can neither delay nor fail a start, and a
-start that is refused never reads it. The socket has been listening since systemd made it, so from that
+panel's handler over it, `Process.Banner` and `Process.MCP`, and then tells
+systemd it is ready, before it calls `Serve`. `Run` never calls the banner
+source or the MCP server itself: only the handler does, the banner source once
+for each page it draws with the banner (`D04-panel`) and the server for each
+request to `/mcp`, so the services file can neither delay nor fail a start,
+and a start that is refused never reads it. Building the handler registers
+dummy's tools on `Process.MCP` (`D04-panel`), which is why the server `main`
+makes is handed to `Run` fresh and why `Run` builds the handler exactly once. The socket has been listening since systemd made it, so from that
 moment every connection is queued and will be answered: ready is true before
 the first `Accept`, and sending it first means a failure to send is reported
 without anything having been served. That failure is trouble — under
@@ -156,8 +161,10 @@ temporary error and a handler that panics, and finds the buffer empty.
 A healthy run is silent from start to finish: no startup message, no request
 log, nothing on either stream when it stops, so that under systemd the
 journal holds only trouble. The one thing that reaches `Stderr` while dummy
-serves is the handler's line for a 500, written through a writer `Run` hands
-the handler. `Run` makes sure no two writes to `Stderr` are ever in progress
+serves is the handler's missing-identity line, which appkit's
+`identity.Require` writes for a request without `X-User-Id` and which is the
+only line the handler writes (`D04-panel`), written through a writer `Run`
+hands the handler. `Run` makes sure no two writes to `Stderr` are ever in progress
 at once, the handler's included — requests are concurrent, a handler cut off
 by the drain may still be running when `Run` reports the overrun, and a test's
 `Stderr` is a `bytes.Buffer` that the race detector watches.
@@ -177,23 +184,23 @@ could cut a response short inside the drain.
 - R-LURX-UT17: `(*DrainError).Error` MUST return exactly `"stopped with 1 request unfinished"` when `e.Unfinished` is 1, and exactly `"stopped with " + strconv.Itoa(e.Unfinished) + " requests unfinished"` for every other value of `e.Unfinished`.
 - R-QO7E-IVIP: When serving fails while `ctx` is not done, `Serve` MUST return a non-nil error, and `Serve` MUST NOT return nil for any reason other than `ctx` being done.
 - R-IBR4-T2PU: `Serve` MUST write nothing to the `log` package's default logger and nothing to any process stream, whatever `ln` and `h` do: the diagnostics `net/http`'s server writes through its `ErrorLog`, such as an `Accept` error it retries or a handler that panics, MUST be discarded, so that a test which points the `log` package's output at a buffer and drives `Serve` with a listener whose `Accept` returns a temporary error and a handler that panics finds the buffer empty when `Serve` returns.
-- R-LXV2-UKGP: When `Args` is empty, `Run` MUST decide whether `DRAIN_SECONDS` is acceptable before it calls `LookupEnv` for `LISTEN_PID` or `LISTEN_FDS`, so that when `DRAIN_SECONDS` is not acceptable and no socket was passed in, the `DRAIN_SECONDS` diagnostic is the one `Run` writes.
-- R-LZ2Z-8C7E: `Run` MUST accept a non-empty `DRAIN_SECONDS` value if and only if it consists of one or more ASCII decimal digits, the first of which is not `0`, and no other characters, whatever the magnitude of the integer those digits denote, so that `0`, `-1`, `2.5`, `5s`, `05`, ` 5`, and `abc` are refused and no value is refused for being large.
-- R-W59L-WD8G: When `Args` is empty and `LookupEnv("DRAIN_SECONDS")` returns `true` with a non-empty value `v` that `Run` does not accept, `Run` MUST write exactly `"dummy: DRAIN_SECONDS is '" + v + "', not a positive whole number of seconds\n"` to `Stderr` with `v` verbatim, write nothing to `Stdout`, call neither `Inherit` nor `Unsetenv`, send nothing to a notification socket, and accept no connection on any listener, and return `ExitUsage`.
-- R-M1IR-ZVOS: The `drain` `Run` passes to `server.Serve` MUST be `5 * time.Second` when `LookupEnv("DRAIN_SECONDS")` returns `false` or the empty string, and otherwise, for the accepted value denoting the integer `n`, MUST be `n` seconds when `n` seconds is at most the largest `time.Duration` and the largest `time.Duration` when it is not.
-- R-M2QO-DNFH: `Run` MUST treat a socket as passed in if and only if `LookupEnv("LISTEN_PID")` returns `true` with a value equal to `strconv.Itoa(p.Pid)` and `LookupEnv("LISTEN_FDS")` returns `true` with a value of one or more ASCII decimal digits and no other characters denoting an integer of at least 1, that integer being the number of sockets passed in.
-- R-W6HI-A4Z5: When `Args` is empty, `DRAIN_SECONDS` is unset, empty, or accepted, and no socket is passed in, `Run` MUST write exactly `"dummy: no socket was passed in\n\nrun it under systemd, or locally with 'systemd-socket-activate -l 127.0.0.1:3000 dummy'\n"` to `Stderr`, write nothing to `Stdout`, call neither `Inherit` nor `Unsetenv`, send nothing to a notification socket, and accept no connection on any listener, and return `ExitUsage`.
-- R-W7PE-NWPU: When `Args` is empty, `DRAIN_SECONDS` is unset, empty, or accepted, and more than one socket is passed in, `Run` MUST write exactly `"dummy: " + v + " sockets were passed in, expected 1\n\nrun it under systemd, or locally with 'systemd-socket-activate -l 127.0.0.1:3000 dummy'\n"` to `Stderr` with `v` the value of `LISTEN_FDS` verbatim, write nothing to `Stdout`, call neither `Inherit` nor `Unsetenv`, send nothing to a notification socket, and accept no connection on any listener, and return `ExitUsage`.
-- R-M6ED-IYNK: When `Args` is empty, `DRAIN_SECONDS` is unset, empty, or accepted, and exactly one socket is passed in, `Run` MUST call `Unsetenv`, when it is not nil, once with each of `LISTEN_PID`, `LISTEN_FDS`, and `LISTEN_FDNAMES` before it returns, and MUST NOT call it with any other key.
-- R-Z60E-E4HH: When `Args` is empty, `DRAIN_SECONDS` is unset, empty, or accepted, and exactly one socket is passed in, `Run` MUST take file descriptor 3, and no other descriptor, as its listener, by calling `Inherit(3)` exactly once when `Inherit` is not nil, and by calling `net.FileListener` on a file for the process's file descriptor 3 when `Inherit` is nil.
-- R-W8XB-1OGJ: When taking file descriptor 3 as a listener fails with an error `err`, `Run` MUST write exactly `"dummy: " + err.Error() + "\n"` to `Stderr`, write nothing to `Stdout`, send nothing to a notification socket, and return `ExitServerFailed`.
-- R-S7C6-MSYK: When `Run` has taken file descriptor 3 as a listener `ln` and does not fail to notify, it MUST call `widget.NewStore` exactly once and then `server.Serve` exactly once with `Run`'s own `ctx`, `ln`, `panel.Handler(store, p.Banner, w)`, and the `drain` of R-M1IR-ZVOS, where `store` is the value `widget.NewStore` returned and `w` is a writer each of whose `Write` calls results in exactly one call to `Stderr.Write` with the same bytes.
-- R-SAZV-S46N: When no request reaches the handler `Run` passes to `server.Serve`, `Run` MUST return having made no call to `p.Banner`, whatever it returns.
-- R-MCHV-FTD1: When `Run` has taken file descriptor 3 as a listener and `LookupEnv("NOTIFY_SOCKET")` returns `true` with a non-empty value `a`, `Run` MUST, after taking the listener and before calling `server.Serve`, send exactly one datagram, whose content is exactly `READY=1`, to the Unix datagram socket whose address is `a`, an `a` beginning with `@` naming a socket in the abstract namespace; `Run` MUST send nothing to a notification socket on any other occasion.
-- R-MDPR-TL3Q: When `LookupEnv("NOTIFY_SOCKET")` returns `false` or the empty string, `Run` MUST send no datagram and MUST serve as it otherwise would.
-- R-WA57-FG78: When sending `READY=1` fails with an error `err`, `Run` MUST write exactly `"dummy: " + err.Error() + "\n"` to `Stderr`, write nothing to `Stdout`, accept no connection on the listener it took, and return `ExitServerFailed`.
-- R-MG5K-L4L4: A `Run` that calls `server.Serve` and to which `Serve` returns nil MUST return `ExitSuccess`.
-- R-S8K3-0KP9: A `Run` that calls `server.Serve` MUST write nothing to `Stdout`, and MUST write nothing to `Stderr` other than what the handler writes through the writer of R-S7C6-MSYK and, when `Serve` returns a non-nil error, the one line R-QVIS-THYV states.
-- R-QVIS-THYV: When `server.Serve` returns a non-nil error to `Run`, `Run` MUST write to `Stderr` exactly `dummy: `, that error's `Error()` text, and a newline, MUST write nothing to `Stdout`, and MUST return `ExitServerFailed`.
-- R-S9RZ-ECFY: `Run` MUST NOT let two calls to `Stderr.Write` be in progress at the same time, those made through the writer of R-S7C6-MSYK included, so that a `Stderr` that is not safe for concurrent use is never written concurrently.
-- R-Z78A-RW86: When `Inherit` is nil and file descriptor 3 is a listening Unix-domain stream socket bound to a filesystem path, `Run` MUST leave that path in place and MUST NOT shut the socket down, so that after `Run` returns the socket still accepts connections into its queue for another process that holds it.
+- R-ONGQ-VBKW: When `Args` is empty, `Run` MUST decide whether `DRAIN_SECONDS` is acceptable before it calls `LookupEnv` for `LISTEN_PID` or `LISTEN_FDS`, so that when `DRAIN_SECONDS` is not acceptable and no socket was passed in, the `DRAIN_SECONDS` diagnostic is the one `Run` writes.
+- R-P9EX-R6XE: `Run` MUST accept a non-empty `DRAIN_SECONDS` value if and only if it consists of one or more ASCII decimal digits, the first of which is not `0`, and no other characters, whatever the magnitude of the integer those digits denote, so that `0`, `-1`, `2.5`, `5s`, `05`, ` 5`, and `abc` are refused and no value is refused for being large.
+- R-1XHC-TE94: When `Args` is empty and `LookupEnv("DRAIN_SECONDS")` returns `true` with a non-empty value `v` that `Run` does not accept, `Run` MUST write exactly `"dummy: DRAIN_SECONDS is '" + v + "', not a positive whole number of seconds\n"` to `Stderr` with `v` verbatim, write nothing to `Stdout`, call neither `Inherit` nor `Unsetenv`, send nothing to a notification socket, and accept no connection on any listener, and return `ExitUsage`.
+- R-ECC1-7TVM: The `drain` `Run` passes to `server.Serve` MUST be `5 * time.Second` when `LookupEnv("DRAIN_SECONDS")` returns `false` or the empty string, and otherwise, for the accepted value denoting the integer `n`, MUST be `n` seconds when `n` seconds is at most the largest `time.Duration` and the largest `time.Duration` when it is not.
+- R-PU58-9AJ7: `Run` MUST treat a socket as passed in if and only if `LookupEnv("LISTEN_PID")` returns `true` with a value equal to `strconv.Itoa(p.Pid)` and `LookupEnv("LISTEN_FDS")` returns `true` with a value of one or more ASCII decimal digits and no other characters denoting an integer of at least 1, that integer being the number of sockets passed in.
+- R-2JFJ-P9LM: When `Args` is empty, `DRAIN_SECONDS` is unset, empty, or accepted, and no socket is passed in, `Run` MUST write exactly `"dummy: no socket was passed in\n\nrun it under systemd, or locally with 'systemd-socket-activate -l 127.0.0.1:3000 dummy'\n"` to `Stderr`, write nothing to `Stdout`, call neither `Inherit` nor `Unsetenv`, send nothing to a notification socket, and accept no connection on any listener, and return `ExitUsage`.
+- R-32XX-TLGQ: When `Args` is empty, `DRAIN_SECONDS` is unset, empty, or accepted, and more than one socket is passed in, `Run` MUST write exactly `"dummy: " + v + " sockets were passed in, expected 1\n\nrun it under systemd, or locally with 'systemd-socket-activate -l 127.0.0.1:3000 dummy'\n"` to `Stderr` with `v` the value of `LISTEN_FDS` verbatim, write nothing to `Stdout`, call neither `Inherit` nor `Unsetenv`, send nothing to a notification socket, and accept no connection on any listener, and return `ExitUsage`.
+- R-QEVI-RE50: When `Args` is empty, `DRAIN_SECONDS` is unset, empty, or accepted, and exactly one socket is passed in, `Run` MUST call `Unsetenv`, when it is not nil, once with each of `LISTEN_PID`, `LISTEN_FDS`, and `LISTEN_FDNAMES` before it returns, and MUST NOT call it with any other key.
+- R-5F30-7RMN: When `Args` is empty, `DRAIN_SECONDS` is unset, empty, or accepted, and exactly one socket is passed in, `Run` MUST take file descriptor 3, and no other descriptor, as its listener, by calling `Inherit(3)` exactly once when `Inherit` is not nil, and by calling `net.FileListener` on a file for the process's file descriptor 3 when `Inherit` is nil.
+- R-3OW4-PGT8: When taking file descriptor 3 as a listener fails with an error `err`, `Run` MUST write exactly `"dummy: " + err.Error() + "\n"` to `Stderr`, write nothing to `Stdout`, send nothing to a notification socket, and return `ExitServerFailed`.
+- R-EFZQ-D53P: When `Run` has taken file descriptor 3 as a listener `ln` and does not fail to notify, it MUST call `widget.NewStore` exactly once and then `server.Serve` exactly once with `Run`'s own `ctx`, `ln`, `panel.Handler(store, p.Banner, p.MCP, w)`, and the `drain` of R-ECC1-7TVM, where `store` is the value `widget.NewStore` returned and `w` is a writer each of whose `Write` calls results in exactly one call to `Stderr.Write` with the same bytes.
+- R-EJNF-IGBS: When no request reaches the handler `Run` passes to `server.Serve`, `Run` MUST return having made no call to `p.Banner`, whatever it returns.
+- R-EM38-9ZT6: When `Run` has taken file descriptor 3 as a listener and `LookupEnv("NOTIFY_SOCKET")` returns `true` with a non-empty value `a`, `Run` MUST, after taking the listener and before calling `server.Serve`, send exactly one datagram, whose content is exactly `READY=1`, to the Unix datagram socket whose address is `a`, an `a` beginning with `@` naming a socket in the abstract namespace; `Run` MUST send nothing to a notification socket on any other occasion.
+- R-EOJ1-1JAK: When `LookupEnv("NOTIFY_SOCKET")` returns `false` or the empty string, `Run` MUST send no datagram and MUST serve as it otherwise would.
+- R-EQYT-T2RY: When sending `READY=1` fails with an error `err`, `Run` MUST write exactly `"dummy: " + err.Error() + "\n"` to `Stderr`, write nothing to `Stdout`, accept no connection on the listener it took, and return `ExitServerFailed`.
+- R-EUMI-YE01: A `Run` that calls `server.Serve` and to which `Serve` returns nil MUST return `ExitSuccess`.
+- R-EVUF-C5QQ: A `Run` that calls `server.Serve` MUST write nothing to `Stdout`, and MUST write nothing to `Stderr` other than what the handler writes through the writer of R-EFZQ-D53P and, when `Serve` returns a non-nil error, the one line R-EYA8-3P84 states.
+- R-EYA8-3P84: When `server.Serve` returns a non-nil error to `Run`, `Run` MUST write to `Stderr` exactly `dummy: `, that error's `Error()` text, and a newline, MUST write nothing to `Stdout`, and MUST return `ExitServerFailed`.
+- R-F0Q0-V8PI: `Run` MUST NOT let two calls to `Stderr.Write` be in progress at the same time, those made through the writer of R-EFZQ-D53P included, so that a `Stderr` that is not safe for concurrent use is never written concurrently.
+- R-5ZTA-PV8G: When `Inherit` is nil and file descriptor 3 is a listening Unix-domain stream socket bound to a filesystem path, `Run` MUST leave that path in place and MUST NOT shut the socket down, so that after `Run` returns the socket still accepts connections into its queue for another process that holds it.

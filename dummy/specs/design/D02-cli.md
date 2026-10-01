@@ -25,8 +25,9 @@ after exactly one empty line comes the hint to run `dummy --help`, unprefixed
 because dummy is speaking for itself. The usage text is never written to
 `Stderr`.
 
-The help text says where dummy serves — on the socket systemd passes in — and
-names the exit codes, which is where the contract the rest of the design
+The help text says what dummy serves — the control panel, and its MCP tools
+at `/mcp` — and where — on the socket systemd passes in — and names the exit
+codes, which is where the contract the rest of the design
 realises is declared: 0 for success, 1 for a server that failed, 2 for a usage
 error. `D03-serve` leans on that split: a start the caller got wrong (no
 socket, several sockets, a drain deadline that is not a number of seconds)
@@ -46,12 +47,12 @@ another writer such as journald interleaves with the same stream.
 
 ## REQUIREMENTS
 
-- R-LPBS-669U: `Usage` MUST be exactly `"Usage: dummy [command]\n\nServe the dummy control panel on the socket systemd passes in. With no\ncommand, serve.\n\nCommands:\n  manifest   print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  the server failed\n  2  usage error\n"`.
-- R-MMB3-ASQ6: When `Args` is exactly `["--version"]`, `Run` MUST write `Version` followed by a single `"\n"` to `Stdout` and nothing else, write nothing to `Stderr`, and return `ExitSuccess`.
-- R-MNIZ-OKGV: When `Args` is exactly `["manifest"]`, `Run` MUST write exactly `Manifest` to `Stdout` and nothing else, write nothing to `Stderr`, and return `ExitSuccess`.
-- R-MOQW-2C7K: When `Args` is exactly `["--help"]`, `Run` MUST write exactly `Usage` to `Stdout` and nothing else, write nothing to `Stderr`, and return `ExitSuccess`.
-- R-MPYS-G3Y9: `Run` MUST treat `Args` as a usage error unless `Args` is empty or is exactly one of `["--version"]`, `["manifest"]`, or `["--help"]`.
-- R-MR6O-TVOY: On a usage error from `Args`, the offending argument MUST be `Args[0]` when `Args[0]` is none of `--version`, `manifest`, or `--help`, and `Args[1]` otherwise.
-- R-MSEL-7NFN: On a usage error from `Args`, `Run` MUST write exactly `"dummy: unknown option '" + arg + "'\n\nsee 'dummy --help' for usage\n"` to `Stderr` when the offending argument `arg` begins with `-`, and exactly `"dummy: unknown command '" + arg + "'\n\nsee 'dummy --help' for usage\n"` otherwise, MUST write nothing to `Stdout`, and MUST return `ExitUsage`.
-- R-MUSD-6DHG: When `Args` is not empty, `Run` MUST return without calling `LookupEnv`, `Unsetenv`, or `Inherit`, without taking file descriptor 3, and without sending anything to a notification socket, so that the outcome of a command or a usage error is the same whatever the environment holds.
-- R-N0XV-W1MI: Whenever `Run` returns a value other than `ExitSuccess` it MUST have written nothing to `Stdout`, and every diagnostic `Run` writes MUST be delivered as a single call to `Stderr.Write` whose first line begins `dummy: `.
+- R-E8OC-2INJ: `Usage` MUST be exactly `"Usage: dummy [command]\n\nServe the dummy control panel, and its MCP tools at /mcp, on the socket\nsystemd passes in. With no command, serve.\n\nCommands:\n  manifest   print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  the server failed\n  2  usage error\n"`.
+- R-QZLT-9HQT: When `Args` is exactly `["--version"]`, `Run` MUST write `Version` followed by a single `"\n"` to `Stdout` and nothing else, write nothing to `Stderr`, and return `ExitSuccess`.
+- R-RKC3-RLCM: When `Args` is exactly `["manifest"]`, `Run` MUST write exactly `Manifest` to `Stdout` and nothing else, write nothing to `Stderr`, and return `ExitSuccess`.
+- R-S6AA-NGP4: When `Args` is exactly `["--help"]`, `Run` MUST write exactly `Usage` to `Stdout` and nothing else, write nothing to `Stderr`, and return `ExitSuccess`.
+- R-SR0L-5KAX: `Run` MUST treat `Args` as a usage error unless `Args` is empty or is exactly one of `["--version"]`, `["manifest"]`, or `["--help"]`.
+- R-TAIZ-9W61: On a usage error from `Args`, the offending argument MUST be `Args[0]` when `Args[0]` is none of `--version`, `manifest`, or `--help`, and `Args[1]` otherwise.
+- R-TV99-RZRU: On a usage error from `Args`, `Run` MUST write exactly `"dummy: unknown option '" + arg + "'\n\nsee 'dummy --help' for usage\n"` to `Stderr` when the offending argument `arg` begins with `-`, and exactly `"dummy: unknown command '" + arg + "'\n\nsee 'dummy --help' for usage\n"` otherwise, MUST write nothing to `Stdout`, and MUST return `ExitUsage`.
+- R-UFZK-A3DN: When `Args` is not empty, `Run` MUST return without calling `LookupEnv`, `Unsetenv`, or `Inherit`, without taking file descriptor 3, and without sending anything to a notification socket, so that the outcome of a command or a usage error is the same whatever the environment holds.
+- R-V0PU-S6ZG: Whenever `Run` returns a value other than `ExitSuccess` it MUST have written nothing to `Stdout`, and every diagnostic `Run` writes MUST be delivered as a single call to `Stderr.Write` whose first line begins `dummy: `.
