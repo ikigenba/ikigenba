@@ -95,18 +95,14 @@ test sees that as no store created at `DBSource`, `Inherit` never called, no
 With exactly one socket passed in, `Run` removes the three `LISTEN_*`
 variables through `Unsetenv` and takes descriptor 3 as its listener: the one
 `Process.Inherit` returns when a test supplies it, otherwise one made from the
-real descriptor. Whatever kind of listening socket it is, `Run` treats it the
-same way: it accepts connections on it and closes it when it is done, and
-nothing else. The code names no socket kind: no `*net.UnixListener` or
-`*net.TCPListener`, no type assertion or type switch on the listener, and no
-kind-specific setting such as `SetUnlinkOnClose`. None is needed. What closing
-does is decided by the listener's own settings, and Go documents that a
-listener made from an already open descriptor (`net.FileListener`) leaves the
-socket file in place on close, while one `net.Listen` created removes it. So
-the socket systemd made stays where it is, and systemd's own copy of it keeps
-queueing connections for the next auth; and a test that hands `Run`, through
-`Inherit`, a Unix listener it made with `net.Listen` finds the socket file gone
-once `Run` returns, which is how a stray kind-specific setting shows. If the
+real descriptor. `Run` uses that listener only through the `net.Listener`
+interface: it accepts connections on it and closes it when it is done, and
+nothing else. The code names no socket kind and inspects the listener no
+further: no type assertion or type switch on it and no setting beyond what the
+interface offers. None is needed. Go documents that a listener made from an
+already open descriptor (`net.FileListener`) leaves the socket in place when
+it is closed, so the socket systemd made stays where it is, and systemd's own
+copy of it keeps queueing connections for the next auth. If the
 descriptor cannot be made into a listener, that is trouble on the host rather
 than a caller's typo: `auth: ` and the error, exit 1.
 
@@ -257,8 +253,8 @@ a `bytes.Buffer` that the race detector watches.
 - R-ERFV-M2PB: When `Args` is empty, the three Google settings are set, `DRAIN_SECONDS` is unset, empty, or accepted, and no socket is passed in, `Run` MUST write exactly `"auth: no socket was passed in\n\nrun it under systemd, with a listening socket passed in\n"` to `Stderr`, write nothing to `Stdout`, call none of `store.Open`, `Inherit`, or `Unsetenv`, send nothing to a notification socket, and accept no connection on any listener, and return `2`.
 - R-ETVO-DM6P: When `Args` is empty, the three Google settings are set, `DRAIN_SECONDS` is unset, empty, or accepted, and more than one socket is passed in, `Run` MUST write exactly `"auth: " + v + " sockets were passed in, expected 1\n\nrun it under systemd, with a listening socket passed in\n"` to `Stderr` with `v` the value of `LISTEN_FDS` verbatim, write nothing to `Stdout`, call none of `store.Open`, `Inherit`, or `Unsetenv`, send nothing to a notification socket, and accept no connection on any listener, and return `2`.
 - R-MU47-DG10: When `Args` is empty, the three Google settings are set, `DRAIN_SECONDS` is unset, empty, or accepted, and exactly one socket is passed in, `Run` MUST call `Unsetenv`, when it is not nil, once with each of `LISTEN_PID`, `LISTEN_FDS`, and `LISTEN_FDNAMES` before it returns, and MUST NOT call it with any other key.
-- R-BOTA-99G2: When `Args` is empty, the three Google settings are set, `DRAIN_SECONDS` is unset, empty, or accepted, and exactly one socket is passed in, `Run` MUST take file descriptor 3, and no other descriptor, as its listener, whatever kind of listening socket it is: when `Inherit` is not nil, the listener returned by `Inherit(3)`, `Inherit` being called exactly once and with no argument other than 3; when `Inherit` is nil, the listening socket the process holds as file descriptor 3; so that a request sent to that socket's address, a Unix socket's path or a TCP socket's host and port alike, is answered by `Run`.
-- R-BQ16-N16R: Once `Run` has taken a listener, it MUST treat that listener the same whatever kind of listening socket it is, MUST apply to it no setting specific to its kind, and MUST close it before it returns, so that the listener's own settings alone decide what closing it does: when `Inherit` returns a `*net.UnixListener` that `net.Listen("unix", path)` made, no file remains at `path` once `Run` has returned, whether `Run` returned after serving or because a later step failed.
+- R-FLRS-9LZN: When `Args` is empty, the three Google settings are set, `DRAIN_SECONDS` is unset, empty, or accepted, and exactly one socket is passed in, `Run` MUST take file descriptor 3, and no other descriptor, as its listener, whatever kind of listening socket it is: when `Inherit` is not nil, the listener returned by `Inherit(3)`, `Inherit` being called exactly once and with no argument other than 3; when `Inherit` is nil, the listening socket the process holds as file descriptor 3; so that a request sent to that socket's address is answered by `Run`.
+- R-FO7L-15H1: Once `Run` has taken a listener, it MUST close that listener before it returns, whether it returns after serving or because a later step failed.
 - R-MWK0-4ZIE: When taking file descriptor 3 as a listener fails with an error `err`, `Run` MUST write exactly `"auth: " + err.Error() + "\n"` to `Stderr`, write nothing to `Stdout`, not call `store.Open`, send nothing to a notification socket, and return `1`.
 - R-MXRW-IR93: `Run` MUST call `store.Open(p.DBSource, p.Rand)` only after it has taken file descriptor 3 as a listener, exactly once, and before it sends anything to a notification socket or calls `server.Serve`.
 - R-NII7-0UUW: When `store.Open` returns without error, `Run` MUST proceed identically whether or not the database source pre-existed, relying on D04's `store.Open` to have created the schema when the source was absent.
