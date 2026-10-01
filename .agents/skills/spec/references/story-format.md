@@ -111,8 +111,10 @@ locks that agreement in as design.
 
 A sub-project whose consumer is an HTTP client keeps the same sections with
 the interaction as a request. `Command:` becomes `Request:`, one fenced block
-per form, each a `$ curl -si` line so the verb, path, and any header the story
-depends on are explicit and the line can be run as written. `Output:` becomes
+per form, each a plain HTTP request: the request line, the headers the story
+depends on, and any body. A request to the app names no address or
+transport, since the app serves whatever socket it is given; a request made
+through a deployed host is a `$ curl -si` line to its public URL. `Output:` becomes
 `Response:`, a fenced block holding the status line and only the headers the
 story fixes. The exit line becomes a status line: `Status 200.` followed by
 what the body must satisfy, stated as a fact (`The body is an HTML page whose
