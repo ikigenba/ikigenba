@@ -70,21 +70,35 @@ func TestFoundationContract(t *testing.T) {
 		t.Fatalf("expiry constants = %q, %q, %q, %q", ExpiryNever, Expiry30d, Expiry90d, Expiry365d)
 	}
 
-	// R-G4DV-A8BP
-	if SessionIdle != 15*time.Minute {
-		t.Fatalf("SessionIdle = %v", SessionIdle)
-	}
-	// R-G5LR-O02E
-	if SessionMax != 18*time.Hour {
-		t.Fatalf("SessionMax = %v", SessionMax)
-	}
-	// R-G81K-FJJS
-	if TokenLoginWindow != 30*24*time.Hour {
-		t.Fatalf("TokenLoginWindow = %v", TokenLoginWindow)
-	}
-
 	if ErrNotFound == nil || !errors.Is(ErrNotFound, ErrNotFound) || !errors.Is(errors.Join(errors.New("context"), ErrNotFound), ErrNotFound) {
 		t.Fatalf("ErrNotFound is not a usable errors.Is sentinel")
+	}
+}
+
+func TestSessionIdleIsDurationConstant(t *testing.T) {
+	// R-J5A1-Z776
+	const idle = SessionIdle
+	value, ok := any(idle).(time.Duration)
+	if !ok || value != 15*time.Minute {
+		t.Fatalf("SessionIdle = %#v, want time.Duration constant 15 * time.Minute", any(idle))
+	}
+}
+
+func TestSessionMaxIsDurationConstant(t *testing.T) {
+	// R-J6HY-CYXV
+	const sessionMax = SessionMax
+	value, ok := any(sessionMax).(time.Duration)
+	if !ok || value != 18*time.Hour {
+		t.Fatalf("SessionMax = %#v, want time.Duration constant 18 * time.Hour", any(sessionMax))
+	}
+}
+
+func TestTokenLoginWindowIsDurationConstant(t *testing.T) {
+	// R-J7PU-QQOK
+	const window = TokenLoginWindow
+	value, ok := any(window).(time.Duration)
+	if !ok || value != 30*24*time.Hour {
+		t.Fatalf("TokenLoginWindow = %#v, want time.Duration constant 30 * 24 * time.Hour", any(window))
 	}
 }
 

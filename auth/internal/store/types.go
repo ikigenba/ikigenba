@@ -57,7 +57,7 @@ const (
 
 // Bounds applied by session and token identity lookups.
 const (
-	SessionIdle      = 15 * time.Minute
-	SessionMax       = 18 * time.Hour
-	TokenLoginWindow = 30 * 24 * time.Hour
+	SessionIdle      time.Duration = 15 * time.Minute
+	SessionMax       time.Duration = 18 * time.Hour
+	TokenLoginWindow time.Duration = 30 * 24 * time.Hour
 )

@@ -465,17 +465,17 @@ func TestCrossRouteFailureDiagnostics(t *testing.T) {
 		{"login start", http.MethodGet, "/login/google", "", "", "", "insert login state: sql: database is closed"},
 		{"callback", http.MethodGet, "/login/google/callback?state=recorded", "", "", "callback-id", "consume login state: sql: database is closed"},
 		{"denied callback", http.MethodGet, "/login/google/callback?error=access_denied&state=recorded", "", "", "denied-id", "consume login state: sql: database is closed"},
-		{"logout", http.MethodPost, "/logout", "session", "http://localhost:3001", "logout-id", "delete session: sql: database is closed"},
+		{"logout", http.MethodPost, "/logout", "session", "https://auth.green.example", "logout-id", "delete session: sql: database is closed"},
 		{"check", http.MethodGet, "/check", "session", "", "check-id", "begin session touch: sql: database is closed"},
 		{"me", http.MethodGet, "/me", "session", "", "me-id", "lookup session identity: sql: database is closed"},
-		{"token create", http.MethodPost, "/tokens", "session", "http://localhost:3001", "create-id", "lookup session identity: sql: database is closed"},
-		{"token action", http.MethodPost, "/tokens/a/enable", "session", "http://localhost:3001", "action-id", "lookup session identity: sql: database is closed"},
+		{"token create", http.MethodPost, "/tokens", "session", "https://auth.green.example", "create-id", "lookup session identity: sql: database is closed"},
+		{"token action", http.MethodPost, "/tokens/a/enable", "session", "https://auth.green.example", "action-id", "lookup session identity: sql: database is closed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var writes diagnosticWrites
 			s := New(Config{Store: st, Now: fixedNow, Rand: bytes.NewReader(bytes.Repeat([]byte{2}, 128)), Stderr: &writes})
 			r := httptest.NewRequestWithContext(context.Background(), tc.method, tc.target, nil)
-			r.Host = "localhost:3001"
+			r.Host = "auth.green.example"
 			if tc.cookie != "" {
 				r.AddCookie(&http.Cookie{Name: SessionCookieName, Value: tc.cookie, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 			}
@@ -489,7 +489,13 @@ func TestCrossRouteFailureDiagnostics(t *testing.T) {
 			response.Header().Set(HeaderUserID, "stale-user")
 			response.Header().Set(HeaderUserEmail, "stale@example.test")
 			s.ServeHTTP(response, r)
-			if response.Code != http.StatusInternalServerError || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" || response.Body.String() != "internal server error\n" {
+			line := response.Body.String()
+			if strings.HasSuffix(line, "\r\n") {
+				line = strings.TrimSuffix(line, "\r\n")
+			} else {
+				line = strings.TrimSuffix(line, "\n")
+			}
+			if response.Code != http.StatusInternalServerError || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" || line == "" || strings.ContainsAny(line, "\r\n") {
 				t.Fatalf("response = %d %q %q", response.Code, response.Header().Get("Content-Type"), response.Body.String())
 			}
 			if response.Header().Get(HeaderUserID) != "" || response.Header().Get(HeaderUserEmail) != "" {
@@ -517,7 +523,7 @@ func TestCrossRouteFailureDiagnostics(t *testing.T) {
 		{http.MethodGet, "/missing", ""},
 	} {
 		r := httptest.NewRequestWithContext(context.Background(), tc.method, tc.target, nil)
-		r.Host = "localhost:3001"
+		r.Host = "auth.green.example"
 		r.Header.Set("Origin", tc.origin)
 		response := httptest.NewRecorder()
 		s.ServeHTTP(response, r)

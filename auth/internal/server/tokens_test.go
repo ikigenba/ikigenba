@@ -74,8 +74,8 @@ func tokenRequest(target, sessionID string, form url.Values) *http.Request {
 	if form != nil {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
-	req.Host = "localhost:3001"
-	req.Header.Set("Origin", "http://localhost:3001")
+	req.Host = "auth.green.example:8443"
+	req.Header.Set("Origin", "https://auth.green.example:8443")
 	req.AddCookie(&http.Cookie{
 		Name:     SessionCookieName,
 		Value:    sessionID,
@@ -397,8 +397,10 @@ func TestTokenMutationsRejectBadOrMissingOriginWithoutMutation(t *testing.T) {
 	origins := []struct{ name, value string }{
 		{name: "missing", value: ""},
 		{name: "foreign", value: "https://evil.example"},
-		{name: "scheme", value: "https://localhost:3001"},
-		{name: "prefix", value: "http://localhost:3001.evil"},
+		{name: "scheme", value: "http://auth.green.example:8443"},
+		{name: "prefix", value: "https://auth.green.example:8443.evil"},
+		{name: "missing port", value: "https://auth.green.example"},
+		{name: "space sibling", value: "https://app.green.example:8443"},
 	}
 	for _, action := range []string{"create", "enable", "disable", "delete"} {
 		for _, origin := range origins {

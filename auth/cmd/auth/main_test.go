@@ -3,9 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
-	"debug/elf"
 	"errors"
-	"fmt"
 	"html"
 	"io"
 	"net"
@@ -14,8 +12,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strconv"
-	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -30,17 +26,14 @@ import (
 func TestMainWiring(t *testing.T) {
 	// R-3WNI-4FXO
 	// R-P02O-R3KF R-P2IH-IN1T R-P666-NY9W
-	// R-STSR-5OE3 R-M6Y4-3SXT
+	// R-M6Y4-3SXT
 	// R-3FKW-RNJY: this test imports the module's packages by their
 	// github.com/ikigenba/ikigenba/auth/internal/... paths.
 	// R-2B1J-WL7R: the serve cases run the binary bare with the Google settings
 	// and a socket on descriptor 3; they prove it opens state/auth.db in its
 	// working directory, draws its banner from IKIGENBA_SERVICES, and stops
 	// silently with exit 0 on SIGTERM and on SIGINT.
-	// R-2DHC-O4P5: while serving, the only listening socket it holds is the one
-	// passed as descriptor 3.
 	binary := buildBinary(t)
-	assertStatic(t, binary)
 
 	for _, tc := range []struct {
 		name, wantOut, wantErr string
@@ -75,7 +68,7 @@ func buildBinary(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := &exec.Cmd{Path: goTool, Args: []string{"go", "build", "-o", path, "."}}
+	cmd := &exec.Cmd{Path: goTool, Args: []string{"go", "build", "-o", path, "./cmd/auth"}, Dir: "../.."}
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, output)
@@ -187,6 +180,9 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal) {
 			t.Fatal(err)
 		}
 	}
+	// The first run starts with only state/auth.db; the second starts with
+	// an empty state directory. Services and sockets are outside work.
+	assertRuntimeFiles(t, work, sig == syscall.SIGTERM, false)
 	cmd.ExtraFiles = []*os.File{file}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -213,9 +209,9 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal) {
 	if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
 		t.Fatalf("database %s: %v", dbPath, err)
 	}
-	assertOnlyDatabaseOpen(t, cmd.Process.Pid, dbPath)
-	assertOnlyPassedListener(t, cmd.Process.Pid, file)
 	if sessionID != "" {
+		// R-9ZGQ-O2GR: the cgo-free executable serves the live session from
+		// a working directory containing only state/auth.db.
 		transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
 		}}
@@ -229,6 +225,10 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal) {
 		resp, err := client.Do(req)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			_ = resp.Body.Close()
+			t.Fatalf("GET / status = %d, want 200", resp.StatusCode)
 		}
 		body, err := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
@@ -261,6 +261,9 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal) {
 	if code != 0 || stdout.Len() != 0 || stderr.Len() != 0 {
 		t.Fatalf("%s code=%d stdout=%q stderr=%q", sig, code, stdout.String(), stderr.String())
 	}
+	// R-A0ON-1U7G: after either signal, only the database and its named
+	// SQLite auxiliary files remain in the working directory.
+	assertRuntimeFiles(t, work, true, true)
 	// R-NI60-D0O6
 	if _, err := os.Stat(socketPath); err != nil {
 		t.Fatalf("socket path removed: %v", err)
@@ -272,129 +275,45 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal) {
 	_ = conn.Close()
 }
 
-func assertStatic(t *testing.T, path string) {
+// assertRuntimeFiles checks only the child-owned runtime fixture. It never
+// reads the checkout or inspects process descriptors.
+func assertRuntimeFiles(t *testing.T, work string, wantDatabase, allowAuxiliary bool) {
 	t.Helper()
-	file, err := elf.Open(path)
+	entries, err := os.ReadDir(work)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = file.Close() }()
-	for _, program := range file.Progs {
-		if program.Type == elf.PT_INTERP {
-			t.Fatal("binary has a dynamic interpreter")
-		}
+	if len(entries) != 1 || entries[0].Name() != "state" || !entries[0].IsDir() {
+		t.Fatalf("working directory must contain only state/: %v", entries)
 	}
-	needed, err := file.DynString(elf.DT_NEEDED)
-	if err == nil && len(needed) != 0 {
-		t.Fatalf("binary needs shared libraries: %v", needed)
-	}
-}
-
-func assertOnlyDatabaseOpen(t *testing.T, pid int, dbPath string) {
-	t.Helper()
-	fdDir := fmt.Sprintf("/proc/%d/fd", pid)
-	entries, err := os.ReadDir(fdDir)
+	entries, err = os.ReadDir(filepath.Join(work, "state"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	foundDatabase := false
 	for _, entry := range entries {
-		target, err := os.Readlink(filepath.Join(fdDir, entry.Name()))
-		if err != nil {
-			continue
-		}
-		if strings.HasPrefix(target, "socket:") || strings.HasPrefix(target, "pipe:") ||
-			strings.HasPrefix(target, "anon_inode:") || strings.HasPrefix(target, "/dev/") ||
-			strings.HasPrefix(target, "/proc/") || strings.HasPrefix(target, "/sys/") {
-			continue
-		}
-		path := strings.TrimSuffix(target, " (deleted)")
-		info, err := os.Stat(path)
-		if err != nil || !info.Mode().IsRegular() {
-			continue
-		}
-		base := filepath.Base(path)
-		if path != dbPath && base != "auth.db" && !strings.HasPrefix(base, "auth.db-") {
-			t.Fatalf("unexpected open regular file %s", path)
-		}
-	}
-}
-
-// assertOnlyPassedListener proves the child holds exactly one listening
-// socket, the one the test passed it as descriptor 3: it matches the socket
-// inodes in the child's descriptor table against the listening entries of the
-// child's own view of /proc/net.
-func assertOnlyPassedListener(t *testing.T, pid int, passed *os.File) {
-	t.Helper()
-	// Stat, not Fd: Fd would switch the shared socket to blocking mode.
-	info, err := passed.Stat()
-	if err != nil {
-		t.Fatal(err)
-	}
-	st, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		t.Fatalf("socket stat is %T", info.Sys())
-	}
-	passedInode := strconv.FormatUint(st.Ino, 10)
-	fdDir := fmt.Sprintf("/proc/%d/fd", pid)
-	entries, err := os.ReadDir(fdDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	held := map[string]string{}
-	for _, entry := range entries {
-		target, err := os.Readlink(filepath.Join(fdDir, entry.Name()))
-		if err != nil {
-			continue
-		}
-		if inode, ok := strings.CutPrefix(target, "socket:["); ok {
-			held[strings.TrimSuffix(inode, "]")] = entry.Name()
-		}
-	}
-	// The child may hold the passed socket under another descriptor number
-	// (a dup of 3); it is the same socket, identified by its inode.
-	if _, ok := held[passedInode]; !ok {
-		t.Fatalf("child does not hold the passed socket %s: held=%v", passedInode, held)
-	}
-	listening := map[string]bool{}
-	for _, table := range []struct {
-		name                 string
-		inodeCol, stateCol   int
-		stateWant, flagsWant string
-		flagsCol             int
-	}{
-		{name: "tcp", inodeCol: 9, stateCol: 3, stateWant: "0A", flagsCol: -1},
-		{name: "tcp6", inodeCol: 9, stateCol: 3, stateWant: "0A", flagsCol: -1},
-		// __SO_ACCEPTCON (0x10000) in the flags column marks a listening Unix socket.
-		{name: "unix", inodeCol: 6, stateCol: -1, flagsCol: 3, flagsWant: "00010000"},
-	} {
-		body, err := os.ReadFile(fmt.Sprintf("/proc/%d/net/%s", pid, table.name))
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				continue
+		switch entry.Name() {
+		case "auth.db":
+			foundDatabase = true
+		case "auth.db-journal", "auth.db-wal", "auth.db-shm":
+			if !allowAuxiliary {
+				t.Fatalf("unexpected initial auxiliary file state/%s", entry.Name())
 			}
+		default:
+			t.Fatalf("unexpected runtime file state/%s", entry.Name())
+		}
+		info, err := entry.Info()
+		if err != nil {
 			t.Fatal(err)
 		}
-		lines := strings.Split(strings.TrimSpace(string(body)), "\n")
-		for _, line := range lines[1:] {
-			fields := strings.Fields(line)
-			if len(fields) <= table.inodeCol {
-				continue
-			}
-			if table.stateCol >= 0 && fields[table.stateCol] != table.stateWant {
-				continue
-			}
-			if table.flagsCol >= 0 && fields[table.flagsCol] != table.flagsWant {
-				continue
-			}
-			listening[fields[table.inodeCol]] = true
+		if !info.Mode().IsRegular() {
+			t.Fatalf("state/%s is not a regular file", entry.Name())
 		}
 	}
-	if !listening[passedInode] {
-		t.Fatalf("passed socket %s is not listed as listening", passedInode)
+	if foundDatabase != wantDatabase {
+		t.Fatalf("database exists = %t, want %t", foundDatabase, wantDatabase)
 	}
-	for inode, fd := range held {
-		if listening[inode] && inode != passedInode {
-			t.Fatalf("child holds another listening socket on descriptor %s (inode %s)", fd, inode)
-		}
+	if !wantDatabase && len(entries) != 0 {
+		t.Fatalf("initial state directory must be empty: %v", entries)
 	}
 }

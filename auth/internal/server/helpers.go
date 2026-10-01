@@ -1,7 +1,6 @@
 package server
 
 import (
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -17,75 +16,21 @@ const (
 	HeaderUserEmail = "X-User-Email"
 )
 
-const localHost = "localhost:3001"
-
-// space returns the space a request host belongs to. A request to an auth
-// subdomain removes exactly its leading auth. label; a local request has no
-// space.
+// space removes one leading auth. label and retains the request's port.
 func space(host string) string {
-	host = hostWithoutPort(host)
-	if strings.HasPrefix(host, "auth.") {
-		return strings.TrimPrefix(host, "auth.")
-	}
-	return host
-}
-
-func hostWithoutPort(host string) string {
-	if name, _, err := net.SplitHostPort(host); err == nil {
-		return name
-	}
-	return host
-}
-
-func isLocalRequest(host string) bool {
-	return host == localHost
+	return strings.TrimPrefix(host, "auth.")
 }
 
 func redirectURI(host string) string {
-	if isLocalRequest(host) {
-		return "http://localhost:3001/login/google/callback"
-	}
 	return "https://auth." + space(host) + "/login/google/callback"
 }
 
 func ownOrigin(host string) string {
-	if isLocalRequest(host) {
-		return "http://" + localHost
-	}
 	return "https://auth." + space(host)
 }
 
 // onSpaceOrigin accepts only the serialized origins that can drive logout.
 func onSpaceOrigin(origin, requestHost string) bool {
-	if isLocalRequest(requestHost) {
-		const prefix = "http://"
-		if len(origin) < len(prefix) || !asciiEqualFold(origin[:len(prefix)], prefix) {
-			return false
-		}
-		hostPort := origin[len(prefix):]
-		const localhost = "localhost"
-		if len(hostPort) < len(localhost) || !asciiEqualFold(hostPort[:len(localhost)], localhost) {
-			return false
-		}
-		rest := hostPort[len(localhost):]
-		if rest == "" {
-			return true
-		}
-		if len(rest) < 2 || rest[0] != ':' || rest[1] == '0' {
-			return false
-		}
-		port := 0
-		for i := 1; i < len(rest); i++ {
-			if rest[i] < '0' || rest[i] > '9' {
-				return false
-			}
-			port = port*10 + int(rest[i]-'0')
-			if port > 65535 {
-				return false
-			}
-		}
-		return port > 0
-	}
 
 	const prefix = "https://"
 	if len(origin) <= len(prefix) || !asciiEqualFold(origin[:len(prefix)], prefix) {
@@ -133,9 +78,7 @@ func cookieForHost(host, value string, expire bool) *http.Cookie {
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	}
-	if !isLocalRequest(host) {
-		cookie.Domain = space(host)
-	}
+	cookie.Domain = stripNumericPort(space(host))
 	if expire {
 		cookie.MaxAge = -1
 	}

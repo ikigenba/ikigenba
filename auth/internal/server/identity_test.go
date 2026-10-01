@@ -216,9 +216,15 @@ func TestIdentityRefusalsWriteNoDiagnostic(t *testing.T) {
 }
 
 func TestIdentityHeaderConstants(t *testing.T) {
-	// R-F4UP-FSRL: the exported header names have their exact wire spelling.
-	if HeaderUserID != "X-User-Id" || HeaderUserEmail != "X-User-Email" {
-		t.Fatalf("identity headers = %q, %q", HeaderUserID, HeaderUserEmail)
+	// R-J8XR-4IF9: both exported names are untyped string constants, usable
+	// as constant initializers of a distinct type with string underlying type.
+	type headerName string
+	const (
+		userID    headerName = HeaderUserID
+		userEmail headerName = HeaderUserEmail
+	)
+	if userID != "X-User-Id" || userEmail != "X-User-Email" {
+		t.Fatalf("identity headers = %q, %q", userID, userEmail)
 	}
 }
 

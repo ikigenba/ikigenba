@@ -1,47 +1,44 @@
 package server
 
 import (
-	"net/http"
 	"testing"
 )
 
 func TestHostDerivedValues(t *testing.T) {
-	// R-ILH9-35UU: the space is the host with one leading auth. label removed.
-	// R-U4SD-S667: only the exact localhost:3001 host is local.
-	// R-U8G2-XHEA: callback redirect_uri follows the exact host classification.
-	if got := space("auth.green.example:443"); got != "green.example" {
-		t.Fatalf("space() = %q, want green.example", got)
-	}
-	if got := redirectURI("auth.green.example"); got != "https://auth.green.example/login/google/callback" {
-		t.Fatalf("redirectURI() = %q", got)
-	}
-	if got := redirectURI("localhost:3001"); got != "http://localhost:3001/login/google/callback" {
-		t.Fatalf("local redirectURI() = %q", got)
-	}
-	for _, host := range []string{"localhost", "localhost:3002", "127.0.0.1:3001", "127.0.0.1", "LOCALHOST:3001"} {
-		if isLocalRequest(host) {
-			t.Fatalf("host %q was treated as local", host)
-		}
-		if got := redirectURI(host); got != "https://auth."+space(host)+"/login/google/callback" {
-			t.Fatalf("redirectURI(%q) = %q", host, got)
-		}
-		if got := cookieForHost(host, "session", false).Domain; got != space(host) {
-			t.Fatalf("cookie domain for %q = %q", host, got)
+	// R-ILH9-35UU: remove only one leading auth. label, preserving the port.
+	for _, tc := range []struct{ host, want string }{
+		{"auth.green.example:443", "green.example:443"},
+		{"auth.auth.green.example", "auth.green.example"},
+		{"green.example:8443", "green.example:8443"},
+		{"localhost:3001", "localhost:3001"},
+		{"AUTH.green.example", "AUTH.green.example"},
+	} {
+		if got := space(tc.host); got != tc.want {
+			t.Errorf("space(%q) = %q, want %q", tc.host, got, tc.want)
 		}
 	}
-	if !isLocalRequest("localhost:3001") {
-		t.Fatal("localhost:3001 was not treated as local")
+}
+
+func TestRedirectURI(t *testing.T) {
+	// R-3K0O-TESB
+	for _, tc := range []struct{ host, want string }{
+		{"auth.green.example", "https://auth.green.example/login/google/callback"},
+		{"auth.green.example:8443", "https://auth.green.example:8443/login/google/callback"},
+		{"localhost:3001", "https://auth.localhost:3001/login/google/callback"},
+	} {
+		if got := redirectURI(tc.host); got != tc.want {
+			t.Errorf("redirectURI(%q) = %q, want %q", tc.host, got, tc.want)
+		}
 	}
 }
 
 func TestOwnOrigin(t *testing.T) {
-	// R-7AQD-QSNL: token routes use auth's own origin for the exact local
-	// host and the derived auth host on a space.
+	// R-3L8L-76J0
 	for _, tc := range []struct{ host, want string }{
-		{"localhost:3001", "http://localhost:3001"},
 		{"auth.green.example", "https://auth.green.example"},
 		{"green.example", "https://auth.green.example"},
-		{"localhost:3002", "https://auth.localhost"},
+		{"auth.green.example:8443", "https://auth.green.example:8443"},
+		{"localhost:3001", "https://auth.localhost:3001"},
 	} {
 		if got := ownOrigin(tc.host); got != tc.want {
 			t.Errorf("ownOrigin(%q) = %q, want %q", tc.host, got, tc.want)
@@ -49,8 +46,24 @@ func TestOwnOrigin(t *testing.T) {
 	}
 }
 
+func TestCookieDomain(t *testing.T) {
+	// R-9Y8U-AAQ2
+	for _, tc := range []struct{ host, want string }{
+		{"auth.green.example:8443", "green.example"},
+		{"auth.green.example:443", "green.example"},
+		{"auth.green.example", "green.example"},
+		{"auth.green.example:", "green.example:"},
+		{"auth.green.example:abc", "green.example:abc"},
+		{"auth.auth.green.example:123", "auth.green.example"},
+	} {
+		if got := cookieForHost(tc.host, "session", false).Domain; got != tc.want {
+			t.Errorf("cookie domain for %q = %q, want %q", tc.host, got, tc.want)
+		}
+	}
+}
+
 func TestOnSpaceOrigin(t *testing.T) {
-	// R-60RY-2THD: space origins require HTTPS and an exact space host or
+	// R-3MGH-KY9P: space origins require HTTPS and an exact space host or
 	// a label-boundary subdomain, without a port or URL suffix.
 	for _, tc := range []struct {
 		origin string
@@ -78,36 +91,6 @@ func TestOnSpaceOrigin(t *testing.T) {
 		}
 	}
 
-	// R-7D66-IC4Z: local origins accept localhost on HTTP, with no port
-	// or a canonical decimal port in the valid range.
-	for _, tc := range []struct {
-		origin string
-		want   bool
-	}{
-		{"http://localhost", true},
-		{"HTTP://LOCALHOST", true},
-		{"http://localhost:1", true},
-		{"http://localhost:65535", true},
-		{"http://localhost:3001", true},
-		{"https://localhost", false},
-		{"http://localhost.", false},
-		{"http://localhost:", false},
-		{"http://localhost:0", false},
-		{"http://localhost:01", false},
-		{"http://localhost:65536", false},
-		{"http://localhost:999999999999999999999999", false},
-		{"http://127.0.0.1:3001", false},
-		{"https://auth.green.example", false},
-		{"http://localhost/path", false},
-		{"http://localhost?x=1", false},
-		{"http://localhost#x", false},
-		{"http://user@localhost", false},
-		{"null", false},
-	} {
-		if got := onSpaceOrigin(tc.origin, "localhost:3001"); got != tc.want {
-			t.Errorf("onSpaceOrigin(%q, local) = %t, want %t", tc.origin, got, tc.want)
-		}
-	}
 }
 
 func TestCookieAndReturnURLHelpers(t *testing.T) {
@@ -129,14 +112,6 @@ func TestCookieAndReturnURLHelpers(t *testing.T) {
 		})
 	}
 
-	cookie := cookieForHost("auth.green.example", "session", false)
-	if cookie.Name != SessionCookieName || cookie.Path != "/" || cookie.Domain != "green.example" || !cookie.Secure || !cookie.HttpOnly || cookie.SameSite != http.SameSiteLaxMode {
-		t.Fatalf("space cookie = %#v", cookie)
-	}
-	cleared := cookieForHost("localhost:3001", "", true)
-	if cleared.Value != "" || cleared.Domain != "" || cleared.Path != "/" || cleared.MaxAge != -1 || !cleared.Secure || !cleared.HttpOnly || cleared.SameSite != http.SameSiteLaxMode {
-		t.Fatalf("local cleared cookie = %#v", cleared)
-	}
 }
 
 func TestReturnURLUsesUnambiguousTextPolicy(t *testing.T) {

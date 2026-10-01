@@ -15,6 +15,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"reflect"
@@ -233,13 +234,6 @@ func TestSignInConstantsHostRulesAndAnonymousRoot(t *testing.T) {
 	// R-ICXY-ERNZ: the shared browser session cookie name is exported exactly.
 	if SessionCookieName != "ikigenba_session" {
 		t.Fatalf("SessionCookieName = %q", SessionCookieName)
-	}
-	// R-ILH9-35UU, R-U4SD-S667, R-U8G2-XHEA: space and local host derivations are exact.
-	if space("auth.green.example") != "green.example" || redirectURI("auth.green.example") != "https://auth.green.example/login/google/callback" {
-		t.Fatal("space host derivation is incorrect")
-	}
-	if redirectURI("localhost:3001") != "http://localhost:3001/login/google/callback" {
-		t.Fatal("local host derivation is incorrect")
 	}
 	// R-N2LW-9AQJ: only the exact space and its label-boundary subdomains pass.
 	for raw, want := range map[string]bool{
@@ -630,7 +624,8 @@ func TestMemberCallbackCreatesIdentitySessionCookieAndSafeRedirect(t *testing.T)
 		{name: "space exact", host: "auth.green.example", returnURL: "https://green.example/after", wantLocation: "https://green.example/after", wantDomain: "green.example"},
 		{name: "space subdomain", host: "auth.green.example", returnURL: "https://app.green.example/after", wantLocation: "https://app.green.example/after", wantDomain: "green.example"},
 		{name: "deceptive", host: "auth.green.example", returnURL: "https://evilgreen.example/after", wantLocation: "/", wantDomain: "green.example"},
-		{name: "local", host: "localhost:3001", returnURL: "", wantLocation: "/", wantDomain: ""},
+		{name: "port", host: "auth.green.example:8443", returnURL: "", wantLocation: "/", wantDomain: "green.example"},
+		{name: "standard port", host: "auth.green.example:443", returnURL: "", wantLocation: "/", wantDomain: "green.example"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			issuer := newSignInIssuer(t)
@@ -651,12 +646,29 @@ func TestMemberCallbackCreatesIdentitySessionCookieAndSafeRedirect(t *testing.T)
 				t.Fatalf("cookies = %#v", cookies)
 			}
 			cookie := cookies[0]
-			// R-UFRH-83UG: the login cookie is the created session id with
-			// Path=/, Secure, HttpOnly, and SameSite=Lax. Domain is the space
-			// on a space and is absent when run locally.
+			// R-J1MC-TVZ3: the login cookie is usable across the cookie domain.
 			header := w.Header().Get("Set-Cookie")
 			if cookie.Name != SessionCookieName || cookie.Value == "" || cookie.Path != "/" || !setCookieAttr(header, "Path=/") || !cookie.Secure || !setCookieAttr(header, "Secure") || !cookie.HttpOnly || !setCookieAttr(header, "HttpOnly") || cookie.SameSite != http.SameSiteLaxMode || !setCookieAttr(header, "SameSite=Lax") || cookie.Domain != tc.wantDomain || setCookieHasDomain(header) != (tc.wantDomain != "") {
 				t.Fatalf("cookie = %#v header %q", cookie, header)
+			}
+			jar, err := cookiejar.New(nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			requestURL, err := url.Parse("https://" + tc.host + "/login/google/callback")
+			if err != nil {
+				t.Fatal(err)
+			}
+			jar.SetCookies(requestURL, cookies)
+			for _, host := range []string{tc.wantDomain, "app." + tc.wantDomain, "nested.app." + tc.wantDomain} {
+				u, err := url.Parse("https://" + host + "/")
+				if err != nil {
+					t.Fatal(err)
+				}
+				stored := jar.Cookies(u)
+				if len(stored) != 1 || stored[0].Name != SessionCookieName || stored[0].Value != cookie.Value {
+					t.Fatalf("jar cookies for %s = %#v", u, stored)
+				}
 			}
 			identity, err := st.LookupSessionIdentity(cookie.Value, signInNow)
 			if err != nil || identity.Email != "fresh@green.example" {
@@ -667,7 +679,7 @@ func TestMemberCallbackCreatesIdentitySessionCookieAndSafeRedirect(t *testing.T)
 			if err != nil || user.ID != identity.UserID {
 				t.Fatalf("verified identity was not used exactly: %#v %v", user, err)
 			}
-			if form := issuer.lastForm(); form.Get("code") != "member-code" || form.Get("code_verifier") != "pkce-verifier" || form.Get("redirect_uri") != redirectURI(tc.host) {
+			if form := issuer.lastForm(); form.Get("code") != "member-code" || form.Get("code_verifier") != "pkce-verifier" || form.Get("redirect_uri") != "https://"+tc.host+"/login/google/callback" {
 				t.Fatalf("exchange form = %v", form)
 			}
 			if _, err := st.ConsumeLoginState(state.State); !errors.Is(err, store.ErrNotFound) {
@@ -1017,9 +1029,6 @@ func TestLogoutOriginDeletionAndCookieAttributes(t *testing.T) {
 		{host: "auth.green.example", origin: "https://auth.green.example", domain: "green.example"},
 		{host: "auth.green.example", origin: "https://green.example", domain: "green.example"},
 		{host: "auth.green.example", origin: "https://nested.app.green.example", domain: "green.example"},
-		{host: "localhost:3001", origin: "http://localhost:3001"},
-		{host: "localhost:3001", origin: "http://localhost"},
-		{host: "localhost:3001", origin: "http://localhost:65535"},
 	} {
 		t.Run(tc.host+"/"+tc.origin, func(t *testing.T) {
 			st := openSignInStore(t)
@@ -1038,8 +1047,20 @@ func TestLogoutOriginDeletionAndCookieAttributes(t *testing.T) {
 			s := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }})
 			cookie := &http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}
 			beforeUser := signInUserRows(t, st)
+			jar, err := cookiejar.New(nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			requestURL, err := url.Parse("https://" + tc.host + "/logout")
+			if err != nil {
+				t.Fatal(err)
+			}
+			jar.SetCookies(requestURL, []*http.Cookie{cookieForHost(tc.host, session.ID, false)})
+			if len(jar.Cookies(requestURL)) != 1 {
+				t.Fatal("login cookie was not stored")
+			}
 			good := serveSignIn(s, http.MethodPost, "/logout", tc.host, cookie, tc.origin)
-			// R-ARX4-BPPM: every on-space origin gives the same redirect,
+			// R-3NOD-YQ0E: every on-space origin gives the same redirect,
 			// cookie clearing, and session deletion without changing user/token.
 			response := logoutResponse{good.Code, good.Header().Clone(), good.Body.String()}
 			if first, ok := baseline[tc.host]; ok {
@@ -1058,10 +1079,20 @@ func TestLogoutOriginDeletionAndCookieAttributes(t *testing.T) {
 			if tokens, err := st.ListTokens(user.ID); err != nil || len(tokens) != 1 || tokens[0].ID != token.ID {
 				t.Fatalf("logout changed token/user: %#v %v", tokens, err)
 			}
+			jar.SetCookies(requestURL, good.Result().Cookies())
+			for _, host := range []string{tc.domain, "app." + tc.domain, "nested.app." + tc.domain} {
+				u, err := url.Parse("https://" + host + "/")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if stored := jar.Cookies(u); len(stored) != 0 {
+					t.Fatalf("logout left cookies for %s: %#v", u, stored)
+				}
+			}
 			cleared := good.Result().Cookies()[0]
-			// R-UJF6-DF2J: logout clears the session cookie with an empty
+			// R-J2U9-7NPS: logout clears the session cookie with an empty
 			// value, Max-Age=0, Path=/, Secure, HttpOnly, and SameSite=Lax.
-			// Domain is the space on a space and is absent when run locally.
+			// Domain is the request's cookie domain.
 			header := good.Header().Get("Set-Cookie")
 			if cleared.Name != SessionCookieName || cleared.Value != "" || cleared.Path != "/" || !setCookieAttr(header, "Path=/") || cleared.MaxAge != -1 || !setCookieAttr(header, "Max-Age=0") || !cleared.Secure || !setCookieAttr(header, "Secure") || !cleared.HttpOnly || !setCookieAttr(header, "HttpOnly") || cleared.SameSite != http.SameSiteLaxMode || !setCookieAttr(header, "SameSite=Lax") || cleared.Domain != tc.domain || setCookieHasDomain(header) != (tc.domain != "") {
 				t.Fatalf("cleared cookie = %#v header=%q", cleared, header)
@@ -1071,7 +1102,7 @@ func TestLogoutOriginDeletionAndCookieAttributes(t *testing.T) {
 }
 
 func TestLogoutRejectsMissingRepeatedAndOffSpaceOrigins(t *testing.T) {
-	// R-AT50-PHGB: a missing, repeated, or off-space Origin is a plain
+	// R-3OWA-CHR3: a missing, repeated, or off-space Origin is a plain
 	// single-line 403 with no cookie or session mutation.
 	for _, tc := range []struct {
 		name, host string
