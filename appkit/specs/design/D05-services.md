@@ -21,7 +21,7 @@ Member names are matched exactly as written, letter case included: `Name` is not
 ## REQUIREMENTS
 
 - R-JKK3-SH90: Package `services` MUST export `const Variable = "IKIGENBA_SERVICES"`.
-- R-6U3A-2O7Q: Package `services` MUST export `type Entry struct { Name, URL, Description, Socket string; Enabled, MCP bool; Icon template.HTML; HasIcon bool }`, with exactly these fields in this order, where `template` is the standard library's `html/template`.
+- R-GZJJ-CAL0: Package `services` MUST export `type Entry struct { Name, URL, Description, Socket string; Enabled, MCP bool; Icon template.HTML; HasIcon bool }`, with exactly these fields in this order, where `template` is the standard library's `html/template`.
 - R-JMZW-K0QE: Package `services` MUST export `type List []Entry`.
 - R-JPFP-BK7S: Package `services` MUST export `func Read(path string) (List, error)`.
 - R-JQNL-PBYH: Package `services` MUST export the method `func (l List) Find(name string) (Entry, bool)`.
