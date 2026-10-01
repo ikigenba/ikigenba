@@ -231,8 +231,7 @@ Socket activation hands the process a listening socket as file descriptor 3,
 and the one thing below the seam that touches a real descriptor is turning
 that number into a `net.Listener`. `Process.Inherit` is that step: `main`
 leaves it nil, and `Run` then makes the listener from the real descriptor; a
-test supplies a function that returns a listener it bound itself, on a
-loopback port the kernel chose or a Unix socket in a temporary directory, so
+test supplies a function that returns a listener it bound itself, so
 the inherited-socket path runs in process without systemd and without a real
 descriptor 3. The environment half of the protocol — `LISTEN_PID`,
 `LISTEN_FDS`, and `NOTIFY_SOCKET` — arrives through `LookupEnv` and is checked
