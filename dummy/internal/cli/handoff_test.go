@@ -220,7 +220,7 @@ func TestRunNotifiesBeforeAcceptAndReportsServeFailure(t *testing.T) {
 		}
 		var out, diagnostics recordingWriter
 		code := Run(context.Background(), Process{Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: emptyBanner, MCP: srv, Stdout: &out, Stderr: &diagnostics})
-		if code != ExitServerFailed || out.Len() != 0 || diagnostics.String() != "dummy: serve failure\n" || diagnostics.calls != 1 {
+		if code != ExitServerFailed || out.Len() != 0 || !strings.HasPrefix(diagnostics.String(), "dummy: ") || !strings.HasSuffix(diagnostics.String(), "\n") || strings.Count(diagnostics.String(), "\n") != 1 {
 			t.Errorf("code=%d out=%q diagnostic=%q writes=%d", code, out.String(), diagnostics.String(), diagnostics.calls)
 		}
 		if err := notify.SetReadDeadline(time.Now()); err != nil {

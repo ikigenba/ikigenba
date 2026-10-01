@@ -108,7 +108,7 @@ func (run *servingRun) stop(t *testing.T) {
 		if code != ExitSuccess {
 			t.Errorf("exit=%d stderr=%q", code, run.stderr.String())
 		}
-	case <-time.After(4 * time.Second):
+	case <-time.After(6 * time.Second):
 		t.Fatal("idle Run failed to stop before default drain")
 	}
 	if time.Since(started) >= 5*time.Second {
@@ -290,14 +290,18 @@ func TestRunDiscardsRetryAndPanicLogs(t *testing.T) {
 		_ = resp.Body.Close()
 		t.Fatal("panic request unexpectedly answered")
 	}
+	started := time.Now()
 	cancel()
 	select {
 	case code := <-result:
 		if code != ExitSuccess {
 			t.Errorf("exit=%d", code)
 		}
-	case <-time.After(4 * time.Second):
+	case <-time.After(6 * time.Second):
 		t.Fatal("Run did not stop")
+	}
+	if time.Since(started) >= 5*time.Second {
+		t.Error("idle stop exceeded drain")
 	}
 	if logs.Len() != 0 || stdout.Len() != 0 || stderr.Len() != 0 {
 		t.Errorf("log=%q stdout=%q stderr=%q", logs.String(), stdout.String(), stderr.String())
