@@ -223,8 +223,9 @@ streams, changes the real environment, calls `page.New` or `mcp.NewServer`, or
 installs a signal handler, so a test that drives `Run` sees the whole
 program's behaviour and nothing leaks past it. The one writer below the seam
 that could reach the real standard error on its own, the HTTP server's
-diagnostics that `net/http` would send through the `log` package, is silenced
-by `D03-serve`: `Serve` discards the server's own diagnostics.
+diagnostics that `net/http` would send through the `log` package, is silenced:
+`D03-serve` requires that neither `Serve` nor `Run` writes to the `log`
+package's default logger.
 
 Socket activation hands the process a listening socket as file descriptor 3,
 and the one thing below the seam that touches a real descriptor is turning
@@ -247,29 +248,14 @@ nothing, so there is no bind to fake, and the datagram is the readiness
 signal.
 
 `Process` carries no store. The widget set is neither an argument, an
-environment value nor a stream, so it is not part of the process seam; it
-comes into being below it. Below the seam, `internal/cli` takes the socket
-and, when that succeeds, makes the process's one widget store and hands the
-listener to `server.Serve` together with the handler `panel.Handler` builds
-over that store, `Process.Banner`, `Process.MCP` and a writer for the
-handler's diagnostics, and the drain deadline. Making the store there, and
-after the socket is taken, puts "the widget set is created once, at process
-start, and dies with the process" at the one place that happens, keeps a start
-that fails from building anything, and keeps `--version` from building a store
-it will never use; it also lets a test build a handler over a store it has
-already filled, a banner source it wrote and a server it made. The page routes
-and the MCP tools are built over that one store, so a widget created either
-way is seen by the other at once. The handler is handed the writer its
-per-request diagnostic goes to — the missing-identity line `identity.Require`
-writes, the only line the handler writes (`D04-panel`) — because the handler
-is the one that knows which request it was. `Serve` owns the listener from then on and returns
-when the drain after the context is cancelled has ended or the server fails;
-when the drain deadline passes with requests still running it returns a
-`server.DrainError` counting them, which `Run` reports like any other serve
-failure. What `Serve` does between those points is `D03-serve`, what the
-handler answers is `D04-panel` and the designs it leads to, and the hand-off
-itself — drain deadline, socket, store, banner source, MCP server, readiness,
-serve — is `D03-serve` too.
+environment value nor a stream, so it is not part of the process seam. What a
+client of a serving `Run` sees is one set, starting from the three fixture
+widgets each time `Run` starts and shared by the pages and the MCP tools, so a
+widget created either way is seen by the other at once; a test that wants a
+store it has filled builds a handler over it directly (`D04-panel`). What
+`Run` does once it has the socket — readiness, serving, the drain and how it
+ends — is `D03-serve`, stated as what a client and the streams see; what the
+handler answers is `D04-panel` and the designs it leads to.
 
 ## REQUIREMENTS
 
