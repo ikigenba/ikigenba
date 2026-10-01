@@ -360,9 +360,9 @@ Postconditions:
 
 - Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
 
-## A developer brings up an app whose manifest cannot be read
+## A developer brings up an app whose manifest is not valid TOML
 
-A manifest that is not valid TOML, or gives a key a value of the wrong type, is refused with the parser's own reason, which varies with the fault.
+A manifest that is not valid TOML is refused with the TOML parser's own description of the fault, which says the line and varies with the fault.
 
 Command:
 
@@ -370,10 +370,10 @@ Command:
 $ sandbox up
 ```
 
-Output: one line, where `<reason>` is the parser's description of the fault:
+Output:
 
 ```
-sandbox: dummy: etc/manifest.toml: <reason>
+sandbox: dummy: etc/manifest.toml: line 1 (last key "app"): strings cannot contain newlines
 ```
 
 Exits 2. The line is on stderr; stdout is empty.
@@ -381,7 +381,35 @@ Exits 2. The line is on stderr; stdout is empty.
 Preconditions:
 
 - The current directory is `/home/me/src/ikigenba/wip`.
-- `dummy/etc/manifest.toml` is not valid TOML (its first line reads `app = "dummy`), or it sets `mcp = "yes"` where a boolean belongs.
+- `dummy/etc/manifest.toml` is not valid TOML: its first line reads `app = "dummy`.
+- `wip` is up from an earlier `up`, or is not yet known.
+
+Postconditions:
+
+- Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
+
+## A developer brings up an app whose manifest gives a key the wrong type
+
+A key sandbox reads that holds a value of the wrong type is refused in sandbox's own words, which say what the key must be: `app` and `description` a string, `default` and `mcp` a boolean, `secrets` an array of strings, `env` a table of strings.
+
+Command:
+
+```
+$ sandbox up
+```
+
+Output:
+
+```
+sandbox: dummy: etc/manifest.toml: 'mcp' must be a boolean
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- The current directory is `/home/me/src/ikigenba/wip`.
+- `dummy/etc/manifest.toml` holds the manifest above with `mcp = "yes"` in place of `mcp = true`.
 - `wip` is up from an earlier `up`, or is not yet known.
 
 Postconditions:
