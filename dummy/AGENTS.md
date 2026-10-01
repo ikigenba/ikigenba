@@ -222,7 +222,10 @@ else. In the first serve case that environment names, in `IKIGENBA_SERVICES`,
 a services file the test wrote in its temporary directory, and before
 signalling the test makes the requests D01's requirements on the `dummy`
 binary name, over the socket and with the identity headers: `GET /widgets`,
-and an MCP request made with appkit's `mcp.Client`. It asserts only what
+an MCP call made with appkit's `mcp.Client`, and, for what that client cannot
+send (`server/discover`, whose result carries the instructions), a raw POST to
+`/mcp`. The second serve case, whose environment names no services file, may
+make the same raw POST to prove the instructions are then absent. It asserts only what
 those requirements state, which proves `main` handed appkit's banner kit and
 MCP server, with dummy's name and version, to the handler. Everything else
 dummy answers is decided in process against a handler the test built, and the
