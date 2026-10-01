@@ -31,8 +31,6 @@ requests for auth's own hostname and the identity subrequest, `/check`, for
 every other app; to auth each is an ordinary HTTP request. A deploy restarts
 the service alone, so the socket, and the connections queued on it — `/check`
 subrequests for every app auth guards among them — outlive every restart.
-Which request is the local one is decided by its `Host` header alone, and is
-D05's.
 
 auth takes the socket the way `sd_listen_fds(3)` documents: `LISTEN_PID` is
 its own process id, `LISTEN_FDS` counts the sockets passed, and the first is
@@ -51,7 +49,8 @@ integer-second settings owned by opsctl (defaults 5 and 10): opsctl writes
 reads `DRAIN_SECONDS` as a positive whole number, 5 when it is unset or empty,
 and sets no upper limit of its own. The environment opsctl gives auth also
 carries `IKIGENBA_SERVICES`, the path of the host's services file, normally
-`/var/lib/ikigenba/services.json`; off a host it is normally unset. auth reads
+`/var/lib/ikigenba/services.json`; on a host that has no services file it is
+unset. auth reads
 it once, at start, through `appkit.New` in `main` (`D01-layout-and-run-seam`
 explains why that read happens there and cannot fail), and auth's own code
 never reads it: unset, empty, or naming a file that is missing or unreadable,

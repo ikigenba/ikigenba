@@ -134,9 +134,9 @@ and writes it to the clipboard with `navigator.clipboard.writeText`. The
 Clipboard API's `writeText` "writes the specified text to the system
 clipboard" and is available only in a secure context (MDN,
 `Clipboard.writeText()`; the W3C Clipboard API declares the interface
-`[SecureContext, Exposed=Window]`). Both places auth runs qualify: a space
-serves auth over `https`, and a document "delivered from a loopback (local)
-address" is secure too, `http://localhost` among them (MDN, Secure contexts).
+`[SecureContext, Exposed=Window]`). auth's pages qualify: a space serves auth
+over `https`, the only way auth is reached, and a document delivered over
+`https` is a secure context (MDN, Secure contexts).
 Firefox and Safari require transient activation for a write and Chromium
 requires it or the `clipboard-write` permission (MDN, Clipboard API, security
 considerations); the write happens in the handler of the button's own click,

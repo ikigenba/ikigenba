@@ -30,8 +30,8 @@ the database.
 
 Opening the store at `state/auth.db` creates missing parent directories and
 the database with its schema, or opens the existing database. Directory
-creation belongs to the store, so both a fresh deployment and a local first
-start work without advance preparation. Newly created directories are private
+creation belongs to the store, so a first start works without advance
+preparation. Newly created directories are private
 to the service user; existing directory permissions stay as they are. A
 filesystem or database failure returns through the same open-error boundary,
 and so does a database the service user cannot write: `Open` never settles for
