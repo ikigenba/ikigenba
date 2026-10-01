@@ -4,34 +4,55 @@ An app of the Ikigenba platform: one Go binary that serves a control panel on
 the socket systemd passes it (`/run/ikigenba/dummy.sock` on a host), behind the
 host's nginx. The panel is a page with the banner
 listing widgets, an HTML table fragment the page re-fetches and that answers a
-conditional GET, and a form that creates a widget. The widgets live in an
+conditional GET, and a form that creates a widget. The same widgets are offered
+to MCP clients at `/mcp`: a tool that lists them and a tool that creates one,
+under the same rules as the form. The widgets live in an
 in-memory set built at process start and dying with the process: dummy's
 handler is built over that set and holds it, so requests share mutable state.
 On a host it runs as `/opt/dummy/bin/dummy` with `/opt/dummy` as its working
 directory; a developer runs the same binary from the checkout. The module path
 is `github.com/ikigenba/ikigenba/dummy`. It requires one other module, appkit
-(`github.com/ikigenba/ikigenba/appkit`), which supplies the banner, the
-service launcher, and the shared stylesheet, fonts, licences and launcher
-script under `/_appkit/`. Its version and manifest declarations and run
-seam are design D01
+(`github.com/ikigenba/ikigenba/appkit`), and uses its packages `page` (the
+banner, launcher and footer templates, and the shared stylesheet, fonts,
+licences and launcher script under `/_appkit/`), `identity` (the caller nginx
+authenticated, required on every request), and `mcp` (the MCP server mounted
+at `/mcp`, and the client the tests drive it with). Its version and manifest
+declarations and run seam are design D01
 (`specs/design/D01-layout-and-run-seam.md`); the rest of the contract — the
-panel, the widgets, the table and the form — is the other documents in
-`specs/design/`. This file restates none of them.
+panel, the widgets, the table, the form and the MCP tools — is the other
+documents in `specs/design/`. This file restates none of them.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
-build run writes the source, including the templates it embeds, the tests, and
-`etc/manifest.toml`. See the `spec` and `build-spec` skills. Everything below
-is what the build run computes the gap and runs the gates against; it is
-human-authored and read-only to the run.
+build run writes the Go source, the tests, and `etc/manifest.toml`. It never
+writes `assets/` or `share/`. See the `spec` and `build-spec` skills.
+Everything below is what the build run computes the gap and runs the gates
+against; it is human-authored and read-only to the run.
 
 ## Assets
 
-dummy holds no copy of the stylesheet, fonts, or licences; appkit embeds and
-serves them. `share/icon.svg` is dummy's icon in the service launcher: the
-Tabler outline `cube` from `design/ikigenba/icons/tabler/`, without its class,
-width, height, or invisible bounding path, as `design/README.md` asks of a
-launcher icon. It is human-authored; the build run never writes it.
-`devctl build` packs it beside `bin/` and `etc/`.
+`assets/` holds dummy's markup: the Go `html/template` files `page.html`,
+`table.html`, `form.html` and `script.html`. They are written and approved by
+a human in interactive sessions, following the repository's `design/`, and are
+inputs to the spec: human-authored and read-only to the build run, which reads
+them and never writes them. The code embeds them and executes them by
+template name; it never writes markup of its own, not even a fragment or an
+error page. Go's `embed` reaches only files at or below the embedding
+package's directory, so the module's root package (the directory holding
+`go.mod`) is the one that embeds `assets/`, and design D01 names what it
+exports. Design names each template, the data it receives, and the hooks it
+emits; the tests assert on those hooks and on visible text, never on layout. A
+needed template that is missing or wrong, a state a story names that the
+templates cannot show, or a hook design names that the templates lack is an
+issue for a human: the run files it in `specs/issues/` and never edits the
+asset to close it.
+
+dummy holds no copy of the stylesheet, fonts, or licences; appkit's `page`
+package embeds and serves them. `share/icon.svg` is dummy's icon in the
+service launcher: the Tabler outline `cube` from
+`design/ikigenba/icons/tabler/`, without its class, width, height, or
+invisible bounding path, as `design/README.md` asks of a launcher icon. It is
+human-authored; the build run never writes it. `devctl build` packs it beside
+`bin/` and `etc/`.
 
 ## Toolchain
 
@@ -41,7 +62,10 @@ launcher icon. It is human-authored; the build run never writes it.
   itself is cgo-free, which gate 3 proves.
 - the appkit module at the version `go.mod` requires, in the Go module cache
   (`go mod download` fetches it once, online); `go.sum` is committed, and the
-  gates themselves run offline
+  gates themselves run offline. `go.mod` requires appkit `v0.5.0`, the first
+  release with the packages `page`, `services`, `identity` and `mcp`; the
+  build run sets that requirement and its `go.sum` lines, and moves to a later
+  appkit release only when this file names one
 - `golangci-lint` v2 (config: `.golangci.yml` in this directory)
 - a POSIX shell at `/bin/sh`: the one exec'ing test starts the binary through
   it (see Test files)
@@ -56,9 +80,9 @@ for requirement ids:
 grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' . | sort -u
 ```
 
-`.` covers `cmd/` and `internal/`;
-`specs/` holds no `*_test.go`, so the
-design documents never enter the test side of the grep.
+`.` covers the module's root package, `cmd/` and `internal/`; `specs/` and
+`assets/` hold no `*_test.go`, so the design documents never enter the test
+side of the grep.
 
 **No id-shaped literal in a fixture.** The grep above cannot tell a
 requirement tag from any other string of that shape: a literal matching the
@@ -122,16 +146,46 @@ the widget set once it has taken the socket and hands it to the panel's
 handler (D01, D03). A handler-level test therefore creates its own store,
 seeds it with whatever widgets the case needs, hands the handler a banner
 source of its own and a buffer for its diagnostics, and drives it in process;
-it needs no listener and no port at all. Every such test builds a fresh store.
-The banner source is a function the test writes, returning whatever services
-the case needs (D04); no test calls `appkit.New`, which reads
-`IKIGENBA_SERVICES` from the real environment. A test may call appkit's other
-exported functions, to render the banner it expects, for instance. No test
-depends on a widget another test created, on the order the tests run in, or on
-a package-level set — there is none. The set is shared mutable state that
+it needs no listener and no port at all, except to reach `/mcp` (below). Every
+such test builds a fresh store. The banner source is a function the test
+writes, returning whatever services the case needs (D04). No test depends on a
+widget another test created, on the order the tests run in, or on a
+package-level set — there is none. The set is shared mutable state that
 concurrent requests touch, which is what gate 4's race detector is there to
 catch: a test may exercise it concurrently, and gate 4 is never reduced to a
 plain `go test`.
+
+**One environment variable, set by the test.** appkit's `page.New` and
+`mcp.NewServer` each read `IKIGENBA_SERVICES` (`services.Variable`) from the
+process environment once, when called; it is the one environment read dummy
+cannot route through `cli.Process`, and in the binary only `main` makes it
+(D01). A test that calls either one, directly or through a dummy constructor
+that does, first sets that variable with `testing.T.Setenv` — to a services
+file it wrote in its own temporary directory, or to the empty string — so the
+developer's environment never decides a result. That is the only variable a
+test sets, and such a test does not call `t.Parallel`. A test may call
+appkit's other exported functions, to render the banner it expects, for
+instance.
+
+**Identity comes from headers the test sets.** appkit's `identity.Require`
+wraps dummy's whole handler, so a request reaches a page, the fragment,
+the form or `/mcp` only with an `X-User-Id` header. A test sets the identity
+headers on the requests it makes, or omits `X-User-Id` to exercise the
+missing-identity answer. Code beneath the middleware that needs a caller is
+handed one with `identity.NewContext`. What the middleware itself does is
+appkit's contract and its tests'; dummy's tests prove only that dummy's
+handler is wrapped in it, by use.
+
+**MCP through appkit's client, in process.** A test proves the MCP tools by
+calling them as a client would: it serves the handler it built on an
+`httptest` server on loopback, or on a Unix socket in a short temporary
+directory with an `http.Client` that dials it, and drives `/mcp` with
+appkit's `mcp.Client` (`ListTools`, `CallTool`), passing the caller whose
+identity headers the client forwards. Raw HTTP to `/mcp` is for what the
+client cannot send — a missing identity header, say — never a substitute for
+it. The tools' behavior is asserted on the `mcp.Result` and
+`mcp.ToolInfo` the client returns, and dummy's tests never re-prove appkit's
+transport, which appkit's own tests cover.
 
 **No test runs the page's scripts.** The panel page carries an inline script
 that re-fetches the table fragment, and, when there are services, appkit's
@@ -141,7 +195,7 @@ what a response body carries and never what a script would do with it.
 Nothing in the gates waits on a timer for a poll to come round.
 
 **No test reads the checkout.** A test opens no file of this directory — no
-`.go` file, not `go.mod` or `go.sum`, nothing under `etc/` or `share/` — and
+`.go` file, not `go.mod` or `go.sum`, nothing under `etc/`, `share/` or `assets/` — and
 never parses or inspects source. It proves what the design declares by using
 it: importing, calling, constructing, or running the binary the exec'ing test
 builds. Handing `cmd/dummy` to `go build` is not the test reading it.
@@ -166,19 +220,23 @@ same, because `main` promises both signals. The child's environment is one the
 test composes, never the developer's, and it runs offline like everything
 else. In the first serve case that environment names, in `IKIGENBA_SERVICES`,
 a services file the test wrote in its temporary directory, and before
-signalling the test makes one request of the child: `GET /widgets` with the
-identity headers, over the socket. It asserts only that the page carries the
-launcher and the footer naming `ServiceName` and `Version`, which proves
-`main` handed appkit's kit, with dummy's version, to the handler. Everything
-else dummy answers is decided in process against a handler the test built,
-and the exec'ing test exists only to prove the wiring. Any other test that
+signalling the test makes the requests D01's requirements on the `dummy`
+binary name, over the socket and with the identity headers: `GET /widgets`,
+and an MCP request made with appkit's `mcp.Client`. It asserts only what
+those requirements state, which proves `main` handed appkit's banner kit and
+MCP server, with dummy's name and version, to the handler. Everything else
+dummy answers is decided in process against a handler the test built, and the
+exec'ing test exists only to prove the wiring. Any other test that
 builds, execs, waits on, or signals a
 process is a bug.
 
 ## Live tests
 
 Live tests are the only tests that connect to external services. Every other
-test is a unit test and follows Test discipline.
+test is a unit test and follows Test discipline. dummy calls no external
+service — nginx and auth stand in front of it, and its MCP tools answer from
+its own store — so it has no live tests, and the MCP tests above are unit
+tests. The rules below govern one should a design ever call for it.
 
 - Minimal: a live test proves lightly that the whole application or library
   is glued together and works end to end, about one per external service,
