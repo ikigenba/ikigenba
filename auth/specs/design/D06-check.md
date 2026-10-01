@@ -43,7 +43,7 @@ writes anything.
 
 ## REQUIREMENTS
 
-- R-F4UP-FSRL: The `internal/server` package MUST export the identity-header name constants `HeaderUserID = "X-User-Id"` and `HeaderUserEmail = "X-User-Email"`.
+- R-J8XR-4IF9: The `internal/server` package MUST export `HeaderUserID` and `HeaderUserEmail` as untyped string constants whose values are `"X-User-Id"` and `"X-User-Email"`, so that each is usable wherever Go requires a constant expression, such as the initializer of a `const` declaration of any type whose underlying type is `string`.
 - R-F62L-TKIA: The `/check` and `/me` handlers MUST read a bearer credential from an `Authorization` header bearing the `Bearer ` scheme, passing the entire token value that follows `Bearer ` (the `ikp_`-prefixed secret) unmodified to the store operation that hashes it; and MUST read a session credential from the request cookie named `ikigenba_session` (D05), passing its value as the session id.
 - R-F7AI-7C8Z: When a request carries an `Authorization` header with the `Bearer ` scheme, the `/check` and `/me` handlers MUST resolve identity solely through the token store operation and MUST NOT consult the `ikigenba_session` cookie, whether or not the token is honored.
 - R-F8IE-L3ZO: A `GET /check` carrying no bearer credential and an `ikigenba_session` cookie whose session `TouchSession` (D04) reports live MUST respond 200 with `HeaderUserID` set to the returned `Identity.UserID` and `HeaderUserEmail` set to the returned `Identity.Email`, and MUST leave the session's last-use time updated to the request time (the request counts as use).

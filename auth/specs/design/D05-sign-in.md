@@ -76,7 +76,9 @@ app renders a form that POSTs to auth's `/logout`, so its `Origin` is the
 app's, not auth's. The logout check accepts `https://<space>` and
 `https://<prefix>.<space>` for any non-empty prefix, with no port. These are
 the story's forms, and they are where the session cookie goes: it carries
-`Domain=<space>` and `Secure`, and a `Domain` cookie matches a host only when
+`Domain=` the *cookie domain*, the space with any `:port` removed (a
+cookie `Domain` is a host name and never carries a port, RFC 6265 §4.1.1
+and §5.3), and `Secure`, and a `Domain` cookie matches a host only when
 the host equals the domain or ends in `.` plus the domain (RFC 6265 §5.1.3),
 which is why `evil<space>`, `<space>.evil.com`, and a trailing-dot `<space>.`
 are all refused. The accepted set is narrower than every origin the cookie
@@ -313,9 +315,10 @@ host's `/` with the sign-in page, and what that page carries.
 - R-KZCA-M2Y5: When the client cannot discover the `issuer`'s endpoints (the `issuer` is unreachable or its OpenID configuration cannot be fetched), `AuthCodeURL` MUST return a non-nil error and an empty URL string.
 - R-TTTA-C8HY: `AuthCodeURL` MUST return a URL addressed to the `authorization_endpoint` discovered from the client's issuer (for Google's issuer this is `https://accounts.google.com/o/oauth2/v2/auth`), whose query carries the OAuth client id (from `GOOGLE_CLIENT_ID`), `hd` set to `WORKSPACE_DOMAIN`, the `redirect_uri`, the given `state`, a `code_challenge` that is the S256 hash of the given `verifier`, and `code_challenge_method=S256`.
 - R-TXGZ-HJQ1: `Exchange` MUST POST the code, PKCE `verifier`, and the given `redirectURI` to the `token_endpoint` discovered from the client's issuer (for Google's issuer this is `https://oauth2.googleapis.com/token`), MUST send to that endpoint the same `redirect_uri` value it was given (matching the one used at authorization), MUST verify the returned ID token's RS256 signature against the discovered JWKS, MUST accept an issuer claim of either `accounts.google.com` or `https://accounts.google.com`, and MUST return `Claims` populated from the verified token; a failed exchange, unreachable endpoint, or failed verification MUST return a non-nil error.
-- R-3GCZ-O3K8: On a successful sign-in the response MUST set the `SessionCookieName` cookie to the created session's opaque id with attributes `Domain=<space>`, `Path=/`, `Secure`, `HttpOnly`, and `SameSite=Lax`.
-- R-3ISS-FN1M: On logout the response MUST clear the `SessionCookieName` cookie with an empty value, `Max-Age=0`, and the same domain, path, and security attributes as the login cookie (`Domain=<space>`, `Path=/`, `Secure`, `HttpOnly`, `SameSite=Lax`).
+- R-J1MC-TVZ3: On a successful sign-in the response MUST set the `SessionCookieName` cookie to the created session's opaque id with attributes `Domain=<cookie domain>` (R-9Y8U-AAQ2), `Path=/`, `Secure`, `HttpOnly`, and `SameSite=Lax`, so that a cookie jar following RFC 6265 given the response for the request's own `https` URL, port included, stores the cookie and returns it for `https` URLs whose host is the cookie domain or ends with `.` followed by it.
+- R-J2U9-7NPS: On logout the response MUST clear the `SessionCookieName` cookie with an empty value, `Max-Age=0`, and the same domain, path, and security attributes as the login cookie (`Domain=<cookie domain>` (R-9Y8U-AAQ2), `Path=/`, `Secure`, `HttpOnly`, `SameSite=Lax`), so that a cookie jar following RFC 6265 that holds the login cookie, given the response for the request's own `https` URL, no longer returns it.
 - R-ILH9-35UU: auth MUST derive the *space* for a request as the request's `Host` with a single leading `auth.` label removed.
+- R-9Y8U-AAQ2: auth's design defines the **cookie domain** of a request as its space (R-ILH9-35UU) with a trailing `:` followed by one or more ASCII digits removed, and as the space itself when it has no such suffix, so that `Host: auth.green.example:8443`, `Host: auth.green.example:443`, and `Host: auth.green.example` all give `green.example`.
 - R-3K0O-TESB: The callback `redirect_uri` auth sends to Google MUST be `https://auth.<space>/login/google/callback`.
 - R-3L8L-76J0: auth's own origin (used for the token routes' `Origin` check, D07) MUST be `https://auth.<space>`.
 - R-LAND-R94N: `GET /` with a live session MUST respond `200` with `Content-Type: text/html; charset=utf-8` and a body containing a form that POSTs to `/logout` and a form that POSTs to `/tokens` with fields `name` and `expires`; it MUST resolve the identity via `LookupSessionIdentity` (no touch), MUST ignore any `?return`, and MUST NOT change any state.

@@ -62,6 +62,17 @@ package is what lists auth in the platform's launcher on a space. The build
 run never writes it. Everything auth serves is inside the binary — its own templates and appkit's
 embedded files alike.
 
+So auth needs nothing on disk but its database. The release build is cgo-free
+(`CGO_ENABLED=0`), and a cgo-free Go build links no C library and yields an
+executable that loads no shared library. A working directory holding only
+`state/` is all it runs from: it reads no configuration file and nothing of
+the checkout's `etc/` or `share/`, and it leaves behind nothing but its
+database and the journal, WAL, and shared-memory files SQLite names after it
+(`auth.db-journal`, `auth.db-wal`, `auth.db-shm`; SQLite's "Temporary Files
+Used By SQLite"). The one exec'ing test proves this from the outside, in the
+directory it already runs the child in; which files a running process opens
+is visible only in its `/proc` entries, which the tests never read.
+
 ## The run seam
 
 The platform's apps share a run seam so their gates run offline and
@@ -107,7 +118,12 @@ waits for, so an in-process test and the host learn readiness the same way.
 There is no listen factory and no readiness callback in the seam: auth binds
 nothing, so there is no bind to fake, and the datagram is the readiness
 signal. auth opens no listening socket of its own, which is how "auth
-listens on no other socket" is kept.
+listens on no other socket" is kept: the seam's `Process` (R-SITN-PQPU)
+carries exactly one way to come by a listener, `Inherit`, and nothing that
+binds one, and `Run` takes every input and produces every output through that
+`Process` (R-SRCY-E4WP). No requirement asserts the absence of other sockets in a running
+process, because only the process's `/proc` entries could show it and the
+tests read nothing there.
 
 `internal/server` keeps the handlers and gains the listener's life. `*Server`
 is the handler — it implements `http.Handler` — and `server.Serve` is handed a
@@ -146,8 +162,8 @@ The version is a value: `internal/version` exports it as a `var` of shape
 - R-3WNI-4FXO: `main` MUST terminate the process with the exact integer that `cli.Run` returns as the process exit status.
 - R-3XVE-I7OD: `cli.Run` MUST return `0` on success, `1` when the server fails, and `2` on a usage error.
 - R-SRCY-E4WP: Given a `Process` whose `Stdout` and `Stderr` are in-memory buffers, `Args` an explicit slice, `LookupEnv` a fake lookup, `Unsetenv` nil or a recorder, `Pid` a value the test chose, `Inherit` a function returning a listener the test made, `Now` a fixed clock, `Rand` a deterministic reader, `OIDCIssuer` a loopback URL, `DBSource` a temporary database, and `Banner` a function the test wrote, `cli.Run` MUST take every input and produce every output through that `Process` — reading arguments only from `Args`, environment only through `LookupEnv`, every time it records or compares against stored state only through `Now`, randomness only through `Rand`, and banner data only through `Banner`, and removing environment variables only through `Unsetenv` — and MUST NOT read the real process arguments, the real process environment, the real process id, or a global random source; the drain deadline of D03 and `net/http`'s own deadlines are measured in real elapsed time and are not read through `Now`.
-- R-2DHC-O4P5: A running `auth` server MUST hold no listening socket other than the one passed to it as file descriptor 3.
 - R-M22I-KPZ1: The `internal/server` package MUST export `func Serve(ctx context.Context, ln net.Listener, h http.Handler, drain time.Duration) error`.
 - R-M3AE-YHPQ: The `internal/server` package MUST export `type DrainError struct { Unfinished int }` and `func (e *DrainError) Error() string`.
 - R-L9FH-DHDY: `*server.Server` MUST implement `http.Handler` through `func (*Server) ServeHTTP(w http.ResponseWriter, r *http.Request)`.
-- R-STSR-5OE3: A running `auth` server MUST be self-contained in its executable: it MUST depend on no shared library at run time, and MUST open no file of its own at run time other than its SQLite database at `state/auth.db`, the files SQLite keeps beside it, and the services file the banner source reads — no configuration file and no file of the sub-project's `etc/` or `share/` directory among them; files the Go runtime and standard library read on their own account (such as the system's time-zone, TLS root-certificate, or resolver files) are not auth's own files; the inherited file descriptor 3 and the `NOTIFY_SOCKET` datagram socket are not files it opens.
+- R-9ZGQ-O2GR: The `auth` executable built from `./cmd/auth` with `CGO_ENABLED=0`, run as R-2B1J-WL7R describes from a working directory that holds nothing but `state/auth.db`, a database holding a live session (no `etc/` directory, no `share/` directory, and no configuration file), with any services file `IKIGENBA_SERVICES` names kept outside that directory, MUST answer `GET /` carrying that session's `SessionCookieName` cookie with the page R-1O20-M7FN describes.
+- R-A0ON-1U7G: After the `auth` executable built from `./cmd/auth` with `CGO_ENABLED=0` has run as R-2B1J-WL7R describes and exited, from a working directory that held nothing but a `state/` directory, empty or holding a database at `state/auth.db`, with any services file `IKIGENBA_SERVICES` names kept outside that directory, that working directory MUST hold nothing but `state/`, `state/auth.db`, and, in `state/`, only files named `auth.db-journal`, `auth.db-wal`, or `auth.db-shm`.

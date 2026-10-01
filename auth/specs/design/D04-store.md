@@ -65,9 +65,9 @@ may also have no expiry, which never expires.
 - R-4CI7-3GKP: `internal/store` MUST export `type Token struct` with exactly the fields `ID string`, `UserID string`, `Name string`, `Hash string`, `Enabled bool`, `CreatedAt time.Time`, `ExpiresAt *time.Time`, and `LastUsedAt *time.Time`.
 - R-4DQ3-H8BE: `internal/store` MUST export `type Identity struct` with exactly the fields `UserID string` and `Email string`.
 - R-4EXZ-V023: `internal/store` MUST export `type Expiry string` and the constants `ExpiryNever Expiry = "never"`, `Expiry30d Expiry = "30d"`, `Expiry90d Expiry = "90d"`, and `Expiry365d Expiry = "365d"`.
-- R-G4DV-A8BP: `internal/store` MUST export `const SessionIdle = 15 * time.Minute`.
-- R-G5LR-O02E: `internal/store` MUST export `const SessionMax = 18 * time.Hour`.
-- R-G81K-FJJS: `internal/store` MUST export `const TokenLoginWindow = 30 * 24 * time.Hour`.
+- R-J5A1-Z776: `internal/store` MUST export `SessionIdle` as a constant of type `time.Duration` whose value is `15 * time.Minute`, so that it is usable wherever Go requires a constant expression, such as the initializer of a `const` declaration.
+- R-J6HY-CYXV: `internal/store` MUST export `SessionMax` as a constant of type `time.Duration` whose value is `18 * time.Hour`, so that it is usable wherever Go requires a constant expression, such as the initializer of a `const` declaration.
+- R-J7PU-QQOK: `internal/store` MUST export `TokenLoginWindow` as a constant of type `time.Duration` whose value is `30 * 24 * time.Hour`, so that it is usable wherever Go requires a constant expression, such as the initializer of a `const` declaration.
 - R-4HDS-MJJH: `internal/store` MUST export `var ErrNotFound error`, the sentinel every operation returns (wrapped or as-is, matchable with `errors.Is`) when the row it was asked for does not exist or is not the caller's.
 - R-4ILP-0BA6: `internal/store` MUST export `type Store`, `func Open(source string, rand io.Reader) (*Store, error)`, and `func (*Store) Close() error`.
 - R-4JTL-E30V: `internal/store` MUST export `func (*Store) UpsertUserOnLogin(issuer, subject, email string, now time.Time) (User, error)`.
