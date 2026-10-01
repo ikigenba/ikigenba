@@ -35,11 +35,13 @@ branches and worktrees; only `main` (and release tags) is published to origin.
 Never push a working or feature branch, and never create a remote branch other
 than `main`.
 
-Local `main` is the source of truth; the remote is ignored unless the user
-asks to push. Land work by fast-forwarding local `main` from the branch
-(`git fetch . <branch>:main`). Never push to, fetch from, or rebase onto
-`origin` without explicit user instruction. When asked to push, push local
-`main` itself (`git push origin main`), never `<branch>:main`.
+Agents commit only to the branch checked out in their own worktree. Moving
+any other branch, `main` included, happens only when the user asks for it in
+that session. When asked to land work, fast-forward local `main` from the
+branch (`git fetch . <branch>:main`). Local `main` is the source of truth; the
+remote is ignored unless the user asks to push. Never push to, fetch from, or
+rebase onto `origin` without explicit user instruction. When asked to push,
+push local `main` itself (`git push origin main`), never `<branch>:main`.
 
 Never use `git stash`. The stash stack is shared across all worktrees, so
 another session may pop or drop your entry. Set work aside with a temporary WIP
