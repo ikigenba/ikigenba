@@ -1,0 +1,60 @@
+// Package tools registers the widget tools on an appkit MCP server.
+package tools
+
+import (
+	"context"
+	"errors"
+	"strings"
+
+	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/dummy/internal/widget"
+)
+
+type widgetObject struct {
+	Name   string        `json:"name" mcp:"required" description:"The widget's name: 1 to 40 characters after trimming, unique."`
+	Count  int           `json:"count" mcp:"required" description:"How many: a whole number, zero or more."`
+	Status widget.Status `json:"status" mcp:"required" description:"The widget's status."`
+}
+
+type widgetList struct {
+	Widgets []widgetObject `json:"widgets" mcp:"required" description:"Every widget, oldest first."`
+}
+
+func object(w widget.Widget) widgetObject {
+	return widgetObject{Name: w.Name, Count: w.Count, Status: w.Status}
+}
+
+// Register adds the read-only listing and additive creation tools over s.
+func Register(srv *mcp.Server, s *widget.Store) {
+	mcp.AddTool(srv, mcp.Tool[struct{}, widgetList]{
+		Name: "list_widgets", Description: "List the widgets, oldest first.", Effect: mcp.Read,
+		Handler: func(context.Context, identity.Caller, struct{}) (widgetList, error) {
+			widgets := s.All()
+			out := widgetList{Widgets: make([]widgetObject, len(widgets))}
+			for i, w := range widgets {
+				out.Widgets[i] = object(w)
+			}
+			return out, nil
+		},
+	})
+	mcp.AddTool(srv, mcp.Tool[widgetObject, widgetObject]{
+		Name:        "create_widget",
+		Description: "Create a widget and return it.\n\nThe name is trimmed of surrounding white space and must then be 1 to 40 characters and not already taken (letter case counts). The count is a whole number, zero or more. Every rule the arguments break is reported in one error, and nothing is created unless all of them hold.",
+		Effect:      mcp.Additive,
+		Handler: func(_ context.Context, _ identity.Caller, in widgetObject) (widgetObject, error) {
+			w, errs := s.Create(widget.Draft{Name: in.Name, Count: in.Count, Status: in.Status})
+			if errs.Any() {
+				lines := []string{"invalid arguments:"}
+				if errs.Name != "" {
+					lines = append(lines, "name: "+errs.Name)
+				}
+				if errs.Count != "" {
+					lines = append(lines, "count: "+errs.Count)
+				}
+				return widgetObject{}, errors.New(strings.Join(lines, "\n"))
+			}
+			return object(w), nil
+		},
+	})
+}

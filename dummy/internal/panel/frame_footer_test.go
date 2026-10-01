@@ -7,21 +7,21 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ikigenba/ikigenba/appkit"
+	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
-func frameTestRender(t *testing.T, name string, data appkit.Banner) string {
+func frameTestRender(t *testing.T, name string, data page.Banner) string {
 	t.Helper()
 	var rendered bytes.Buffer
-	if err := appkit.Templates().ExecuteTemplate(&rendered, name, data); err != nil {
+	if err := page.Templates().ExecuteTemplate(&rendered, name, data); err != nil {
 		t.Fatal(err)
 	}
 	return rendered.String()
 }
 
-// R-4CL1-RKYJ R-4DSY-5CP8 R-3XY9-6C27
-func frameTestWritten(t *testing.T, raw string, data appkit.Banner) string {
+// R-Z2EC-BYR0 R-Z4U5-3I8E R-YGG5-G3EI
+func frameTestWritten(t *testing.T, raw string, data page.Banner) string {
 	t.Helper()
 	banner := frameTestRender(t, "banner", data)
 	footer := frameTestRender(t, "footer", data)
@@ -60,9 +60,9 @@ func frameTestWritten(t *testing.T, raw string, data appkit.Banner) string {
 	return raw
 }
 
-// R-3XY9-6C27 R-4CL1-RKYJ R-4DSY-5CP8
+// R-YGG5-G3EI R-Z2EC-BYR0 R-Z4U5-3I8E
 func TestFrameWrittenMarkupOccurrences(t *testing.T) {
-	data := appkit.Banner{Service: "given <service>", Version: "given <version>", Email: "reader@example.test", ProfileURL: "/profile", LogoutURL: "/logout"}
+	data := page.Banner{Service: "given <service>", Version: "given <version>", Email: "reader@example.test", ProfileURL: "/profile", LogoutURL: "/logout"}
 	banner, footer := frameTestRender(t, "banner", data), frameTestRender(t, "footer", data)
 	for _, tc := range []struct{ raw, want string }{
 		{"<body>\n" + banner + "<main>content</main>" + footer + " \t</body>", "<body>\n<main>content</main> \t</body>"},
@@ -80,17 +80,17 @@ func TestFrameWrittenMarkupOccurrences(t *testing.T) {
 	}
 }
 
-// R-41LY-BNAA R-4CL1-RKYJ R-4DSY-5CP8 R-42TU-PF0Z
+// R-ZQSB-ZDKW R-Z2EC-BYR0 R-Z4U5-3I8E R-0ZWM-4W0L
 func TestFrameDocumentsDrawSameFetchedBannerAndFooter(t *testing.T) {
-	var drawn appkit.Banner
+	var drawn page.Banner
 	calls := 0
-	source := func(u appkit.User) appkit.Banner {
+	source := func(u page.User) page.Banner {
 		calls++
-		drawn = appkit.Banner{Service: fmt.Sprintf("source <%d>", calls), Version: fmt.Sprintf("revision <%d>", calls), Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL,
-			Services: []appkit.Service{{Name: "other", URL: "/other", Enabled: true}}}
+		drawn = page.Banner{Service: fmt.Sprintf("source <%d>", calls), Version: fmt.Sprintf("revision <%d>", calls), Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL,
+			Services: []page.Service{{Name: "other", URL: "/other", Enabled: true}}}
 		return drawn
 	}
-	h := Handler(widget.NewStore(), source, io.Discard)
+	h := coreHandler(t, widget.NewStore(), source, io.Discard)
 	for _, r := range pageTestDocuments() {
 		body := pageTestResponse(h, r).Body.String()
 		banner := frameTestRender(t, "banner", drawn)
@@ -123,10 +123,10 @@ func TestFrameDocumentsDrawSameFetchedBannerAndFooter(t *testing.T) {
 	}
 }
 
-// R-7HSY-2NQ4
+// R-0OXI-OYCC
 func TestFrameEmailHasNoVisibleText(t *testing.T) {
-	for _, services := range [][]appkit.Service{nil, {}, {{Name: "alpha", URL: "https://alpha.test/", Enabled: true, Icon: `<svg><path d="M0 0"/></svg>`}}} {
-		source := func(u appkit.User) appkit.Banner {
+	for _, services := range [][]page.Service{nil, {}, {{Name: "alpha", URL: "https://alpha.test/", Enabled: true, Icon: `<svg><path d="M0 0"/></svg>`}}} {
+		source := func(u page.User) page.Banner {
 			data := pageTestBanner(u)
 			data.Services = services
 			return data
@@ -134,7 +134,7 @@ func TestFrameEmailHasNoVisibleText(t *testing.T) {
 		for _, email := range []string{"reader@example.test", " \treader+<&\"@example.test \n"} {
 			for _, r := range pageTestDocuments() {
 				r.Header.Set("X-User-Email", email)
-				body := pageTestResponse(Handler(widget.NewStore(), source, io.Discard), r).Body.String()
+				body := pageTestResponse(coreHandler(t, widget.NewStore(), source, io.Discard), r).Body.String()
 				if strings.Contains(pageTestVisible(body), strings.Join(strings.Fields(email), " ")) {
 					t.Fatal("email appears in visible text")
 				}

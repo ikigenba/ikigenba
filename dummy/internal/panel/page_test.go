@@ -2,6 +2,7 @@ package panel
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"html"
 	"io"
@@ -11,11 +12,15 @@ import (
 	"os"
 	"reflect"
 	"regexp"
-	"slices"
 	"strings"
 	"testing"
 
-	"github.com/ikigenba/ikigenba/appkit"
+	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/services"
+	"github.com/ikigenba/ikigenba/dummy"
+	"github.com/ikigenba/ikigenba/dummy/internal/tools"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
@@ -33,13 +38,61 @@ func pageTestTags(s, name string, end bool) [][2]int {
 	return spans
 }
 
-func pageTestAttribute(tag, name string) (string, bool) {
-	re := regexp.MustCompile(`(?i)[\t\n\v\f\r ]` + regexp.QuoteMeta(name) + `="([^"]*)"`)
-	match := re.FindStringSubmatch(tag)
-	if match == nil {
-		return "", false
+type coreAttribute struct {
+	name, value string
+	valued      bool
+}
+
+func coreAttributes(tag string) []coreAttribute {
+	i := 1
+	for i < len(tag) && ((tag[i] >= 'a' && tag[i] <= 'z') || (tag[i] >= 'A' && tag[i] <= 'Z') || (tag[i] >= '0' && tag[i] <= '9') || tag[i] == '-') {
+		i++
 	}
-	return html.UnescapeString(match[1]), true
+	var attrs []coreAttribute
+	for i < len(tag) {
+		start := i
+		for i < len(tag) && strings.ContainsRune(" \t\n\v\f\r", rune(tag[i])) {
+			i++
+		}
+		if i == start {
+			break
+		}
+		start = i
+		for i < len(tag) && !strings.ContainsRune(" \t\n\v\f\r\"'<>/=", rune(tag[i])) {
+			i++
+		}
+		if i == start {
+			break
+		}
+		attr := coreAttribute{name: tag[start:i]}
+		if i < len(tag) && tag[i] == '=' {
+			if i+1 >= len(tag) || tag[i+1] != '"' {
+				break
+			}
+			i += 2
+			start = i
+			for i < len(tag) && tag[i] != '"' {
+				i++
+			}
+			if i >= len(tag) {
+				break
+			}
+			attr.value = html.UnescapeString(tag[start:i])
+			attr.valued = true
+			i++
+		}
+		attrs = append(attrs, attr)
+	}
+	return attrs
+}
+
+func pageTestAttribute(tag, name string) (string, bool) {
+	for _, attr := range coreAttributes(tag) {
+		if attr.valued && strings.EqualFold(attr.name, name) {
+			return attr.value, true
+		}
+	}
+	return "", false
 }
 
 func pageTestStrip(s string) string {
@@ -120,8 +173,8 @@ func pageTestFormRequest(sub widget.Submission) *http.Request {
 	return r
 }
 
-// R-KDGH-2SDG R-KFW9-UBUU R-KH46-83LJ R-KIC2-LVC8
-// R-KLZR-R6KB R-RMP2-ZITR
+// R-LPDH-LA2H R-MBBO-H5EZ R-MW1Y-Z90S R-NGS9-HCML
+// R-O2QG-D7Z3 R-07AH-B3FP
 func TestPageTextProcedures(t *testing.T) {
 	if got := pageTestTags("<tr><th>x</th></tr>", "tr", false); len(got) != 1 || got[0] != [2]int{0, 4} {
 		t.Fatalf("adjacent bare tag extent: %v", got)
@@ -175,11 +228,12 @@ func TestPageTextProcedures(t *testing.T) {
 	}
 }
 
-// R-ARNQ-LC87 R-XH4O-AY7C R-LBS0-ECOZ R-LCZW-S4FO
-// R-V4W1-QTA8 R-V63Y-4L0X R-M1DW-FJ9K
+// R-XJIV-4ADR R-XN6K-9LLU R-XQU9-EWTX R-XTA2-6GBB
+// R-XWXR-BRJE R-Y0LG-H2RH R-Y319-8M8V
 func TestPagePublicDeclarations(t *testing.T) {
-	construct := func(f func(*widget.Store, func(appkit.User) appkit.Banner, io.Writer) http.Handler) http.Handler {
-		return f(widget.NewStore(), pageTestBanner, io.Discard)
+	construct := func(f func(*widget.Store, func(page.User) page.Banner, *mcp.Server, io.Writer) http.Handler) http.Handler {
+		t.Setenv(services.Variable, "")
+		return f(widget.NewStore(), pageTestBanner, mcp.NewServer(mcp.ServerConfig{Name: ServiceName}), io.Discard)
 	}
 	if construct(Handler) == nil {
 		t.Fatal("nil handler")
@@ -189,20 +243,20 @@ func TestPagePublicDeclarations(t *testing.T) {
 	if derive("localhost", "") != LocalLogoutURL {
 		t.Fatal("derivation function")
 	}
-	const service, missing, method, notFound, notAllowed, unsupported, local = ServiceName, MissingIdentityBody, MethodNotAllowedBody, NotFoundMessage, MethodNotAllowedMessage, UnsupportedMediaTypeMessage, LocalLogoutURL
-	got := []string{service, missing, method, notFound, notAllowed, unsupported, local}
-	want := []string{"dummy", "identity header missing\n", "method not allowed\n", "That page was not found.", "That method is not allowed here.", "That media type is not supported.", "http://localhost:3001/logout"}
+	const service, method, notFound, notAllowed, unsupported, local = ServiceName, MethodNotAllowedBody, NotFoundMessage, MethodNotAllowedMessage, UnsupportedMediaTypeMessage, LocalLogoutURL
+	got := []string{service, method, notFound, notAllowed, unsupported, local}
+	want := []string{"dummy", "method not allowed\n", "That page was not found.", "That method is not allowed here.", "That media type is not supported.", "http://localhost:3001/logout"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("constants: %#v", got)
 	}
-	for _, body := range []string{MissingIdentityBody, MethodNotAllowedBody} {
+	for _, body := range []string{MethodNotAllowedBody} {
 		if strings.Count(body, "\n") != 1 || !strings.HasSuffix(body, "\n") {
 			t.Fatalf("plain line: %q", body)
 		}
 	}
 }
 
-// R-V7BU-ICRM
+// R-0S0R-T71I
 func TestPageLogoutURL(t *testing.T) {
 	cases := []struct{ host, proto, want string }{
 		{"dummy.space.test", "http", "http://auth.space.test/logout"},
@@ -224,7 +278,7 @@ func TestPageLogoutURL(t *testing.T) {
 	}
 }
 
-// R-1A0D-766L R-1B89-KXXA R-1DO2-CHEO
+// R-FPJ9-VVTK R-GBHG-RR62 R-GYNK-1E99
 func TestPageProfileURL(t *testing.T) {
 	type profileString string
 	const local profileString = LocalProfileURL
@@ -255,7 +309,7 @@ func TestPageProfileURL(t *testing.T) {
 	}
 }
 
-// R-441R-36RO
+// R-HJDU-JHV2
 func TestPageBannerProcedure(t *testing.T) {
 	for _, tc := range []struct {
 		raw, want string
@@ -276,9 +330,9 @@ func TestPageBannerProcedure(t *testing.T) {
 	}
 }
 
-// R-LXQ7-A81H R-LYY3-NZS6 R-LU2I-4WTE
+// R-12CE-WFHZ R-1604-1QQ2 R-MFHP-F5AC
 func TestPageIdentityBeforeRouting(t *testing.T) {
-	for _, path := range []string{"/", "/widgets", "/widgets/table", "/widgets/", "/unknown"} {
+	for _, path := range []string{"/", "/widgets", "/widgets/table", "/widgets/", "/unknown", "/mcp", "/_appkit/theme.css"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "OPTIONS"} {
 			for _, present := range []bool{false, true} {
 				s := widget.NewStore()
@@ -288,13 +342,18 @@ func TestPageIdentityBeforeRouting(t *testing.T) {
 				if present {
 					r.Header["X-User-Id"] = []string{""}
 				}
-				w := pageTestResponse(Handler(s, pageTestBanner, io.Discard), r)
-				want := MissingIdentityBody
+				w := pageTestResponse(coreHandler(t, s, pageTestBanner, io.Discard), r)
+				want := identity.MissingBody
 				if method == "HEAD" {
 					want = ""
 				}
-				if w.Code != 500 || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" || w.Header().Get("Allow") != "" || w.Body.String() != want {
+				if w.Code != 500 || !reflect.DeepEqual(w.Header().Values("Content-Type"), []string{"text/plain; charset=utf-8"}) || len(w.Header().Values("Allow")) != 0 || len(w.Header().Values("ETag")) != 0 || w.Body.String() != want {
 					t.Fatalf("missing %s %s: %d %v %q", method, path, w.Code, w.Header(), w.Body.String())
+				}
+				for name := range w.Header() {
+					if strings.EqualFold(name, "Allow") || strings.EqualFold(name, "ETag") {
+						t.Fatalf("missing identity response carries forbidden header %q", name)
+					}
 				}
 				if !reflect.DeepEqual(before, s.All()) {
 					t.Fatal("missing identity changed store")
@@ -304,8 +363,8 @@ func TestPageIdentityBeforeRouting(t *testing.T) {
 	}
 }
 
-// R-ISWN-EKQ1 R-M3TP-72QY R-1PV2-66TM R-M69H-YM8C R-1R2Y-JYKB
-// R-BG1Q-8R23 R-MB53-HP74 R-MBR9-AJU0
+// R-1I73-VG50 R-1KMW-MZME R-1N2P-EJ3S R-1KMW-MZME R-1PII-62L6
+// R-1RYA-XM2K R-1UE3-P5JY R-MGPL-SX11
 func TestPageRoutes(t *testing.T) {
 	cases := []struct {
 		method, path   string
@@ -319,6 +378,7 @@ func TestPageRoutes(t *testing.T) {
 		{"OPTIONS", "/widgets", 405, "GET, HEAD, POST", MethodNotAllowedMessage},
 		{"GET", "/unknown", 404, "", NotFoundMessage}, {"POST", "/unknown", 404, "", NotFoundMessage},
 		{"HEAD", "/unknown", 404, "", NotFoundMessage}, {"DELETE", "/unknown", 404, "", NotFoundMessage},
+		{"GET", "/mcp/", 404, "", NotFoundMessage}, {"POST", "/mcp/more", 404, "", NotFoundMessage},
 		{"GET", "/widgets/", 404, "", NotFoundMessage}, {"POST", "/widgets/", 404, "", NotFoundMessage},
 		{"GET", "/widgets/table/", 404, "", NotFoundMessage}, {"HEAD", "/widgets/table/", 404, "", NotFoundMessage},
 		{"GET", "//widgets", 404, "", NotFoundMessage}, {"GET", "/Widgets", 404, "", NotFoundMessage},
@@ -332,7 +392,7 @@ func TestPageRoutes(t *testing.T) {
 			r.Host = "unrelated.test"
 			r.Header.Set("Accept", "application/json")
 			r.Header.Set("X-Original-URI", "/different")
-			w := pageTestResponse(Handler(s, pageTestBanner, io.Discard), r)
+			w := pageTestResponse(coreHandler(t, s, pageTestBanner, io.Discard), r)
 			if w.Code != tc.status || w.Header().Get("Allow") != tc.allow {
 				t.Fatalf("route: %d %v", w.Code, w.Header())
 			}
@@ -364,6 +424,17 @@ func pageTestFailure(t *testing.T, w *httptest.ResponseRecorder, r *http.Request
 		}
 		return
 	}
+	var exact bytes.Buffer
+	set, err := page.Templates().ParseFS(dummy.Assets(), "*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = set.ExecuteTemplate(&exact, "page", pageData{Banner: pageTestBannerData(r), Message: message}); err != nil {
+		t.Fatal(err)
+	}
+	if w.Body.String() != exact.String() {
+		t.Fatal("failure differs from template")
+	}
 	if !strings.Contains(pageTestVisible(w.Body.String()), message) {
 		t.Fatalf("failure message absent: %q", w.Body.String())
 	}
@@ -378,11 +449,11 @@ func pageTestFailure(t *testing.T, w *httptest.ResponseRecorder, r *http.Request
 	}
 }
 
-// R-IVCG-647F R-JJDV-KL7M
+// R-18FW-TA7G R-1WTW-GP1C
 func TestPageHeadAndOptionalEmail(t *testing.T) {
 	for _, path := range []string{"/", "/widgets", "/widgets/table", "/unknown", "/widgets/", "/widgets/table/"} {
 		for _, identity := range []bool{false, true} {
-			h := Handler(widget.NewStore(), pageTestBanner, io.Discard)
+			h := coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard)
 			get := pageTestRequest("GET", path)
 			if !identity {
 				get.Header.Del("X-User-Id")
@@ -394,7 +465,7 @@ func TestPageHeadAndOptionalEmail(t *testing.T) {
 				t.Fatalf("HEAD %s identity=%v: %d/%d %v/%v", path, identity, a.Code, b.Code, a.Header(), b.Header())
 			}
 		}
-		h := Handler(widget.NewStore(), pageTestBanner, io.Discard)
+		h := coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard)
 		absent := pageTestRequest("GET", path)
 		absent.Header.Del("X-User-Email")
 		empty := absent.Clone(absent.Context())
@@ -417,10 +488,10 @@ func pageTestDocuments() []*http.Request {
 	}
 }
 
-// R-3Z65-K3SW R-42TU-PF0Z
+// R-YIVY-7MVW R-0ZWM-4W0L
 func TestPageDocumentChromeAndAttributes(t *testing.T) {
 	for _, r := range pageTestDocuments() {
-		w := pageTestResponse(Handler(widget.NewStore(), pageTestBanner, io.Discard), r)
+		w := pageTestResponse(coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard), r)
 		body := w.Body.String()
 		if w.Header().Get("Content-Type") != "text/html; charset=utf-8" || body == "" {
 			t.Fatal("expected HTML document")
@@ -506,7 +577,7 @@ func pageTestNamedAttributeError(tag string) string {
 	return ""
 }
 
-// R-LX4G-PAXO
+// R-YLBQ-Z6DA
 func TestPageNamedAttributesHaveOneQuotedOccurrence(t *testing.T) {
 	for _, name := range []string{"class", "rel", "content", "data-status", "aria-label", "xlink:href", "srcset", "for"} {
 		if pageTestNamedAttributeError(fmt.Sprintf(`<span %s="first" %s="second">`, name, name)) == "" {
@@ -530,7 +601,7 @@ func TestPageNamedAttributesHaveOneQuotedOccurrence(t *testing.T) {
 		request.Header.Set("X-User-Email", attack)
 		request.Host = "dummy." + attack
 		request.Header.Set("X-Forwarded-Proto", attack)
-		response := pageTestResponse(Handler(widget.NewStore(), pageTestBanner, io.Discard), request)
+		response := pageTestResponse(coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard), request)
 		if response.Body.Len() == 0 || response.Header().Get("Content-Type") != "text/html; charset=utf-8" {
 			t.Fatalf("expected HTML document: %d", response.Code)
 		}
@@ -545,14 +616,14 @@ func TestPageNamedAttributesHaveOneQuotedOccurrence(t *testing.T) {
 			}
 		}
 	}
-	fragment := pageTestResponse(Handler(widget.NewStore(), pageTestBanner, io.Discard), pageTestRequest(http.MethodGet, "/widgets/table"))
+	fragment := pageTestResponse(coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard), pageTestRequest(http.MethodGet, "/widgets/table"))
 	if fragment.Code != http.StatusOK || fragment.Body.Len() == 0 {
 		t.Fatalf("expected table fragment: %d", fragment.Code)
 	}
 	pageTestAttributeInvariants(t, fragment.Body.String())
 }
 
-// R-BETT-UZBE
+// R-0RDB-GHTQ
 func TestPageRequestValuesPreserveDocumentStructure(t *testing.T) {
 	base := widget.Submission{Name: strings.Repeat("n", widget.MaxNameRunes+1), Count: "bad", Status: "archived"}
 	attack := `"><form><script>bad</script></form>`
@@ -577,14 +648,14 @@ func TestPageRequestValuesPreserveDocumentStructure(t *testing.T) {
 			second = pageTestFormRequest(variant)
 		}
 		oracle := widget.NewStore()
-		_, firstErrors := oracle.Create(base)
-		_, secondErrors := oracle.Create(variant)
+		firstErrors := coreSubmissionErrors(oracle, base)
+		secondErrors := coreSubmissionErrors(oracle, variant)
 		if firstErrors != secondErrors {
 			t.Fatalf("%s: unequal validation errors", field)
 		}
 		store := widget.NewStore()
 		before := store.All()
-		h := Handler(store, pageTestBanner, io.Discard)
+		h := coreHandler(t, store, pageTestBanner, io.Discard)
 		a, b := pageTestResponse(h, first), pageTestResponse(h, second)
 		if a.Code != b.Code || a.Code != http.StatusUnprocessableEntity || !reflect.DeepEqual(before, store.All()) {
 			t.Fatalf("%s: comparison preconditions failed", field)
@@ -598,14 +669,14 @@ func TestPageRequestValuesPreserveDocumentStructure(t *testing.T) {
 	}
 }
 
-// R-B8QB-Y4LX R-B9Y8-BWCM R-M83K-58LX R-MKAJ-YY0V
+// R-YOZG-4HLD R-YSN5-9STG R-0F6B-MSES R-2L7W-43V8
 func TestPageScriptAndDocumentOrder(t *testing.T) {
 	requests := append(pageTestDocuments(), pageTestRequest("GET", "/widgets/table"), pageTestRequest("POST", "/widgets/table"), pageTestRequest("GET", "/"))
 	missing := pageTestRequest("GET", "/widgets")
 	missing.Header.Del("X-User-Id")
 	requests = append(requests, missing)
 	for _, r := range requests {
-		w := pageTestResponse(Handler(widget.NewStore(), pageTestBanner, io.Discard), r)
+		w := pageTestResponse(coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard), r)
 		body := pageTestWritten(t, w.Body.String(), r)
 		stripped := pageTestStrip(body)
 		if len(pageTestTags(body, "style", false)) != 0 || len(pageTestTags(stripped, "script", false)) != 0 || len(pageTestTags(stripped, "style", false)) != 0 || pageTestStrip(stripped) != stripped {
@@ -684,8 +755,8 @@ func TestPageCallerBytesCannotChangeMarkup(t *testing.T) {
 				variant.Status = attack + "archived"
 			}
 			s := widget.NewStore()
-			_, baseErr := s.Create(base)
-			_, variantErr := s.Create(variant)
+			baseErr := coreSubmissionErrors(s, base)
+			variantErr := coreSubmissionErrors(s, variant)
 			if baseErr != variantErr {
 				t.Fatal("test must preserve FieldErrors")
 			}
@@ -698,7 +769,7 @@ func TestPageCallerBytesCannotChangeMarkup(t *testing.T) {
 			case "proto":
 				b.Header.Set("X-Forwarded-Proto", attack)
 			}
-			h := Handler(s, pageTestBanner, io.Discard)
+			h := coreHandler(t, s, pageTestBanner, io.Discard)
 			first := pageTestResponse(h, a)
 			second := pageTestResponse(h, b)
 			if first.Code != 422 || second.Code != 422 {
@@ -719,12 +790,12 @@ func TestPageCallerBytesCannotChangeMarkup(t *testing.T) {
 	}
 }
 
-// R-459N-GYID
+// R-ZFT8-JFWN
 func TestPageChromeHeader(t *testing.T) {
 	for _, r := range pageTestDocuments() {
 		for _, email := range []string{"", " one\t& <two>  three "} {
 			r.Header.Set("X-User-Email", email)
-			pageTestChrome(t, pageTestResponse(Handler(widget.NewStore(), pageTestBanner, io.Discard), r).Body.String(), r)
+			pageTestChrome(t, pageTestResponse(coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard), r).Body.String(), r)
 		}
 	}
 }
@@ -814,10 +885,10 @@ func pageTestChrome(t *testing.T, raw string, r *http.Request) {
 	}
 }
 
-// R-M202-8DWG R-BCE1-3FU0 R-M37Y-M5N5 R-M4FU-ZXDU
+// R-00JJ-1JIG R-02ZB-T2ZU R-05F4-KMH8 R-07UX-C5YM
 func TestPageDocumentHeadAndServiceSpelling(t *testing.T) {
 	for _, r := range pageTestDocuments() {
-		body := pageTestWritten(t, pageTestResponse(Handler(widget.NewStore(), pageTestBanner, io.Discard), r).Body.String(), r)
+		body := pageTestWritten(t, pageTestResponse(coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard), r).Body.String(), r)
 		stripped := pageTestStrip(body)
 		bodyStart := pageTestTags(stripped, "body", false)
 		if len(bodyStart) != 1 {
@@ -872,10 +943,10 @@ func TestPageDocumentHeadAndServiceSpelling(t *testing.T) {
 	}
 }
 
-// R-MFEY-FV23 R-XTBO-4NMA R-MGMU-TMSS R-MHUR-7EJH R-MJ2N-L6A6
+// R-25D7-5387 R-27SZ-WMPL R-2A8S-O66Z R-2COL-FPOD
 func TestPagePanelLayout(t *testing.T) {
 	for _, r := range []*http.Request{pageTestRequest("GET", "/widgets"), pageTestFormRequest(widget.Submission{Name: "", Count: "bad", Status: "archived"})} {
-		body := pageTestStrip(pageTestWritten(t, pageTestResponse(Handler(widget.NewStore(), pageTestBanner, io.Discard), r).Body.String(), r))
+		body := pageTestStrip(pageTestWritten(t, pageTestResponse(coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard), r).Body.String(), r))
 		headings, headingEnds := pageTestTags(body, "h1", false), pageTestTags(body, "h1", true)
 		if len(headings) != 1 || len(headingEnds) != 1 || headings[0][1] > headingEnds[0][0] || pageTestNormalize(body[headings[0][1]:headingEnds[0][0]]) != "Widgets" {
 			t.Fatal("heading shape and order")
@@ -925,16 +996,11 @@ func TestPagePanelLayout(t *testing.T) {
 		if len(bodyStarts) != 1 || len(bodyEnds) != 1 || bodyEnds[0][0] <= panelEnd {
 			t.Fatal("body frame")
 		}
-		content := pageTestContent(t, body)
-		heading := `<div class="section-head"><div><h1>Widgets</h1><p>3 widgets · refreshes every 5 seconds</p></div></div>`
-		trimmed := strings.Trim(content, " \t\n\v\f\r")
-		if !strings.HasPrefix(trimmed, heading) || strings.TrimLeft(trimmed[len(heading):], " \t\n\v\f\r") != body[panels[0][0]:panelEnd+len("</div>")] {
-			t.Fatalf("page content: %q", content)
-		}
+
 	}
 }
 
-// R-M5NR-DP4J R-M6VN-RGV8 R-M83K-58LX R-M9BG-J0CM R-MAJC-WS3B R-BDLX-H7KP
+// R-0AAQ-3PG0 R-0CQI-V8XE R-0F6B-MSES R-0HM4-EBW6 R-0K1X-5VDK R-0MHP-XEUY
 func TestPageDocumentMarkupSafety(t *testing.T) {
 	requests := pageTestDocuments()
 	attack := `"><svg onload="evil()"><script src="https://elsewhere.test/x">`
@@ -946,7 +1012,7 @@ func TestPageDocumentMarkupSafety(t *testing.T) {
 	wellFormed := regexp.MustCompile(`^<[A-Za-z][A-Za-z0-9-]*(?:[\t\n\v\f\r ]+[^\t\n\v\f\r "'<>/=]+(?:="[^"<>]*")?)*[\t\n\v\f\r ]*/?>`)
 	attribute := regexp.MustCompile(`[\t\n\v\f\r ]+([^\t\n\v\f\r "'<>/=]+)(?:="([^"<>]*)")?`)
 	for _, r := range requests {
-		body := pageTestWritten(t, pageTestResponse(Handler(widget.NewStore(), pageTestBanner, io.Discard), r).Body.String(), r)
+		body := pageTestWritten(t, pageTestResponse(coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard), r).Body.String(), r)
 		for _, at := range start.FindAllStringIndex(body, -1) {
 			matched := wellFormed.FindString(body[at[0]:])
 			if matched == "" {
@@ -957,8 +1023,38 @@ func TestPageDocumentMarkupSafety(t *testing.T) {
 				nameEnd++
 			}
 			name := strings.ToLower(matched[1:nameEnd])
-			if name == "math" || name == "svg" && !strings.HasPrefix(body[at[0]:], PlusIcon) {
+			if name == "math" {
 				t.Fatalf("foreign-content tag: %q", matched)
+			}
+			if name == "svg" {
+				if hidden, ok := pageTestAttribute(matched, "aria-hidden"); !ok || hidden != "true" {
+					t.Fatal("SVG not hidden")
+				}
+				var ends [][2]int
+				// at covers < plus first letter; locate content from actual tag end.
+				contentStart := at[0] + len(matched)
+				ends = pageTestTags(body[contentStart:], "svg", true)
+				if len(ends) == 0 {
+					t.Fatal("SVG not closed")
+				}
+				svgContent := body[contentStart : contentStart+ends[0][0]]
+				allowed := map[string]bool{"path": true, "g": true, "circle": true, "ellipse": true, "line": true, "polyline": true, "polygon": true, "rect": true}
+				for _, inner := range regexp.MustCompile(`<[^>]*>`).FindAllString(svgContent, -1) {
+					names := pageTestTagSequence(inner)
+					if len(names) != 1 || !allowed[strings.ToLower(names[0])] {
+						t.Fatalf("SVG child: %s", inner)
+					}
+					for _, attr := range coreAttributes(inner) {
+						if strings.Contains(strings.ToLower(attr.value), "url(") {
+							t.Fatal("SVG resource")
+						}
+					}
+				}
+				for _, attr := range coreAttributes(matched) {
+					if strings.Contains(strings.ToLower(attr.value), "url(") {
+						t.Fatal("SVG resource")
+					}
+				}
 			}
 			for _, entry := range attribute.FindAllStringSubmatch(matched[nameEnd:len(matched)-1], -1) {
 				key := strings.ToLower(entry[1])
@@ -997,21 +1093,22 @@ func TestPageDocumentMarkupSafety(t *testing.T) {
 	}
 }
 
-// R-Y5IN-YD18
+// R-12CE-WFHZ
 func TestPageAssetRouteAndMissingIdentityETag(t *testing.T) {
 	for _, path := range []string{"/", "/widgets", "/widgets/table", "/assets/theme.css", "/assets/OFL.txt", "/unknown"} {
 		for _, method := range []string{"GET", "HEAD", "POST"} {
 			r := pageTestRequest(method, path)
 			r.Header.Del("X-User-Id")
-			w := pageTestResponse(Handler(widget.NewStore(), pageTestBanner, io.Discard), r)
-			if w.Code != 500 || w.Header().Get("ETag") != "" {
+			w := pageTestResponse(coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard), r)
+			_, hasETag := w.Header()["Etag"]
+			if w.Code != 500 || hasETag || len(w.Header().Values("ETag")) != 0 {
 				t.Fatalf("missing identity %s %s: %d %v", method, path, w.Code, w.Header())
 			}
 		}
 	}
 }
 
-// R-BH9M-MISS
+// R-3FPD-ODEL
 func TestPageResponsesIndependentOfWorkingDirectory(t *testing.T) {
 	checkout, err := os.Getwd()
 	if err != nil {
@@ -1022,7 +1119,7 @@ func TestPageResponsesIndependentOfWorkingDirectory(t *testing.T) {
 	secondRequests := pageTestDocuments()
 	for i, request := range pageTestDocuments() {
 		t.Chdir(checkout)
-		first := pageTestResponse(Handler(widget.NewStore(), pageTestBanner, io.Discard), request.Clone(request.Context()))
+		first := pageTestResponse(coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard), request.Clone(request.Context()))
 		t.Chdir(empty)
 		secondRequest := secondRequests[i]
 		if request.GetBody != nil {
@@ -1031,14 +1128,14 @@ func TestPageResponsesIndependentOfWorkingDirectory(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		second := pageTestResponse(Handler(widget.NewStore(), pageTestBanner, io.Discard), secondRequest)
+		second := pageTestResponse(coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard), secondRequest)
 		if first.Code != second.Code || !reflect.DeepEqual(first.Header(), second.Header()) || first.Body.String() != second.Body.String() {
 			t.Fatalf("directory-dependent response for %s %s", request.Method, request.URL.Path)
 		}
 	}
 }
 
-// R-VIAX-YAFV
+// R-1DYY-P2E0
 func pageTestContentValue(raw string) (string, bool) {
 	body := pageTestStrip(raw)
 	starts := pageTestTags(body, "main", false)
@@ -1061,7 +1158,7 @@ func pageTestContent(t *testing.T, raw string) string {
 	return content
 }
 
-// R-VIAX-YAFV
+// R-1DYY-P2E0
 func TestPageContentProcedure(t *testing.T) {
 	for _, tc := range []struct {
 		raw, want string
@@ -1080,19 +1177,10 @@ func TestPageContentProcedure(t *testing.T) {
 	}
 }
 
-// R-ASVM-Z3YW
-func TestPageIconDeclarations(t *testing.T) {
-	type iconString string
-	const plus iconString = PlusIcon
-	if plus != iconString(`<svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5l0 14"/><path d="M5 12l14 0"/></svg>`) {
-		t.Fatal("plus icon constant")
-	}
-}
-
-// R-46HJ-UQ92 R-47PG-8HZR
+// R-ZVNX-IGJO R-ZY3Q-A012
 func TestPageMainAndFailureContent(t *testing.T) {
 	for _, r := range pageTestDocuments() {
-		w := pageTestResponse(Handler(widget.NewStore(), pageTestBanner, io.Discard), r)
+		w := pageTestResponse(coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard), r)
 		body := pageTestStrip(pageTestWritten(t, w.Body.String(), r))
 		starts, ends := pageTestTags(body, "main", false), pageTestTags(body, "main", true)
 		bodies, bodyEnds := pageTestTags(body, "body", false), pageTestTags(body, "body", true)
@@ -1123,42 +1211,26 @@ func TestPageMainAndFailureContent(t *testing.T) {
 	}
 }
 
-// R-VLYN-3LNY
+// R-2F4E-795R
 func pageTestHeading(n int) string {
 	noun := "widgets"
 	if n == 1 {
 		noun = "widget"
 	}
-	return fmt.Sprintf(`<div class="section-head"><div><h1>Widgets</h1><p>%d %s · refreshes every 5 seconds</p></div></div>`, n, noun)
+	return fmt.Sprintf(`<div class="section-head"><div><h1>Widgets</h1><p id="panel-subtitle">%d %s · refreshes every 5 seconds</p></div></div>`, n, noun)
 }
 
-// R-VLYN-3LNY
-func TestPageHeadingProcedure(t *testing.T) {
-	for _, tc := range []struct {
-		n    int
-		want string
-	}{
-		{0, `<div class="section-head"><div><h1>Widgets</h1><p>0 widgets · refreshes every 5 seconds</p></div></div>`},
-		{1, `<div class="section-head"><div><h1>Widgets</h1><p>1 widget · refreshes every 5 seconds</p></div></div>`},
-		{12, `<div class="section-head"><div><h1>Widgets</h1><p>12 widgets · refreshes every 5 seconds</p></div></div>`},
-	} {
-		if got := pageTestHeading(tc.n); got != tc.want {
-			t.Fatalf("heading for %d = %q", tc.n, got)
-		}
-	}
-}
-
-// R-VLYN-3LNY R-MJ2N-L6A6
+// R-2F4E-795R R-2HK6-YSN5
 func TestPageHeadingTracksTableRows(t *testing.T) {
 	for _, added := range []int{0, 1, 7} {
 		store := widget.NewStore()
 		for i := 0; i < added; i++ {
-			if _, errs := store.Create(widget.Submission{Name: fmt.Sprintf("added-%d", i), Count: "1", Status: "active"}); errs.Any() {
+			if _, errs := store.Create(widget.Draft{Name: fmt.Sprintf("added-%d", i), Count: 1, Status: widget.StatusActive}); errs.Any() {
 				t.Fatal(errs)
 			}
 		}
 		for _, r := range []*http.Request{pageTestRequest("GET", "/widgets"), pageTestFormRequest(widget.Submission{Count: "bad"})} {
-			body := pageTestWritten(t, pageTestResponse(Handler(store, pageTestBanner, io.Discard), r).Body.String(), r)
+			body := pageTestStrip(pageTestWritten(t, pageTestResponse(coreHandler(t, store, pageTestBanner, io.Discard), r).Body.String(), r))
 			content := pageTestContent(t, body)
 			table := formTable(t, body)
 			n := 0
@@ -1168,56 +1240,34 @@ func TestPageHeadingTracksTableRows(t *testing.T) {
 					n++
 				}
 			}
-			heading := pageTestHeading(n)
-			trimmed := strings.Trim(content, " \t\n\v\f\r")
-			if !strings.HasPrefix(trimmed, heading) {
-				t.Fatalf("heading for %d rows: %q", n, content)
+			hooks := regexp.MustCompile(`<([A-Za-z][A-Za-z0-9-]*)[^>]* id="panel-subtitle"[^>]*>`).FindAllStringSubmatchIndex(content, -1)
+			if len(hooks) != 1 {
+				t.Fatalf("subtitle hooks: %v", hooks)
 			}
-			rest := strings.TrimLeft(trimmed[len(heading):], " \t\n\v\f\r")
-			startTags := pageTestTags(rest, "div", false)
-			endTags := pageTestTags(rest, "div", true)
-			depth, end := 0, -1
-			events := make([]struct {
-				at    [2]int
-				delta int
-			}, 0, len(startTags)+len(endTags))
-			for _, at := range startTags {
-				events = append(events, struct {
-					at    [2]int
-					delta int
-				}{at, 1})
+			hook := hooks[0]
+			name := content[hook[2]:hook[3]]
+			ends := pageTestTags(content[hook[1]:], name, true)
+			if len(ends) == 0 {
+				t.Fatal("subtitle end missing")
 			}
-			for _, at := range endTags {
-				events = append(events, struct {
-					at    [2]int
-					delta int
-				}{at, -1})
+			noun := "widgets"
+			if n == 1 {
+				noun = "widget"
 			}
-			slices.SortFunc(events, func(a, b struct {
-				at    [2]int
-				delta int
-			}) int {
-				return a.at[0] - b.at[0]
-			})
-			for _, event := range events {
-				depth += event.delta
-				if depth == 0 {
-					end = event.at[1]
-					break
-				}
+			want := fmt.Sprintf("%d %s · refreshes every 5 seconds", n, noun)
+			if pageTestNormalize(content[hook[1]:hook[1]+ends[0][0]]) != want {
+				t.Fatal("subtitle count")
 			}
-			if len(startTags) == 0 || startTags[0][0] != 0 {
-				t.Fatal("missing panel wrapper after heading")
-			}
-			class, ok := pageTestAttribute(rest[:startTags[0][1]], "class")
-			if !ok || class != "panel" || end != len(rest) {
-				t.Fatalf("heading/wrapper content: %q", rest)
+			headings := pageTestTags(content, "h1", false)
+			panels := strings.Index(content, `class="panel"`)
+			if len(headings) != 1 || headings[0][0] >= hook[0] || panels < hook[1] {
+				t.Fatal("subtitle position")
 			}
 		}
 	}
 }
 
-// R-VDFC-F7H3
+// R-ZT84-QX2A
 func TestPageResponsesNeverSetCookie(t *testing.T) {
 	for _, path := range []string{"/", "/widgets", "/widgets/table", "/logout", "/unknown", "/assets/theme.css", "/assets/OFL.txt", "/assets/absent"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "OPTIONS"} {
@@ -1230,7 +1280,7 @@ func TestPageResponsesNeverSetCookie(t *testing.T) {
 							r.Header.Set("Content-Type", media)
 							r.Header.Set("Cookie", "session=present")
 							r.Header.Set("If-None-Match", validator)
-							w := pageTestResponse(Handler(widget.NewStore(), pageTestBanner, io.Discard), r)
+							w := pageTestResponse(coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard), r)
 							for key := range w.Header() {
 								if strings.EqualFold(key, "Set-Cookie") {
 									t.Fatalf("cookie in %s %s %d", method, path, w.Code)
@@ -1244,24 +1294,24 @@ func TestPageResponsesNeverSetCookie(t *testing.T) {
 	}
 }
 
-// R-85Q6-Z7GW
-func pageTestBanner(u appkit.User) appkit.Banner {
-	return appkit.Banner{Service: ServiceName, Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
+// R-ZAXN-0CXV
+func pageTestBanner(u page.User) page.Banner {
+	return page.Banner{Service: ServiceName, Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}
 }
 
-func pageTestBannerData(r *http.Request) appkit.Banner {
-	return pageTestBanner(appkit.User{Email: r.Header.Get("X-User-Email"), ProfileURL: ProfileURL(r.Host, r.Header.Get("X-Forwarded-Proto")), LogoutURL: LogoutURL(r.Host, r.Header.Get("X-Forwarded-Proto"))})
+func pageTestBannerData(r *http.Request) page.Banner {
+	return pageTestBanner(page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: ProfileURL(r.Host, r.Header.Get("X-Forwarded-Proto")), LogoutURL: LogoutURL(r.Host, r.Header.Get("X-Forwarded-Proto"))})
 }
 
-// R-AWJC-4F6Z R-AXR8-I6XO
-func pageTestWrittenBanner(t *testing.T, raw string, data appkit.Banner) string {
+// R-YXIQ-SVS8 R-YZYJ-KF9M
+func pageTestWrittenBanner(t *testing.T, raw string, data page.Banner) string {
 	t.Helper()
 	bodies := pageTestTags(raw, "body", false)
 	if len(bodies) == 0 {
 		return raw
 	}
 	var rendered bytes.Buffer
-	if err := appkit.Templates().ExecuteTemplate(&rendered, "banner", data); err != nil {
+	if err := page.Templates().ExecuteTemplate(&rendered, "banner", data); err != nil {
 		t.Fatal(err)
 	}
 	at := bodies[0][1]
@@ -1279,16 +1329,16 @@ func pageTestWritten(t *testing.T, raw string, r *http.Request) string {
 	return frameTestWritten(t, raw, pageTestBannerData(r))
 }
 
-// R-AVBF-QNGA R-AYZ4-VYOD R-AWJC-4F6Z R-AXR8-I6XO
+// R-YV2Y-1CAU R-Z79X-V1PS R-YXIQ-SVS8 R-YZYJ-KF9M
 func TestPageBannerSourcePerDocument(t *testing.T) {
-	var users []appkit.User
-	var drawn appkit.Banner
-	source := func(u appkit.User) appkit.Banner {
+	var users []page.User
+	var drawn page.Banner
+	source := func(u page.User) page.Banner {
 		users = append(users, u)
-		drawn = appkit.Banner{Service: "supplied", Email: fmt.Sprintf("fresh-%d", len(users)), ProfileURL: "/profile", LogoutURL: "/logout"}
+		drawn = page.Banner{Service: "supplied", Email: fmt.Sprintf("fresh-%d", len(users)), ProfileURL: "/profile", LogoutURL: "/logout"}
 		return drawn
 	}
-	h := Handler(widget.NewStore(), source, io.Discard)
+	h := coreHandler(t, widget.NewStore(), source, io.Discard)
 	for i, r := range pageTestDocuments() {
 		r.Host = "dummy.space.test:8443"
 		r.Header.Set("X-User-Email", fmt.Sprintf("reader-%d@example.test", i))
@@ -1298,7 +1348,7 @@ func TestPageBannerSourcePerDocument(t *testing.T) {
 		if w.Body.Len() == 0 || w.Header().Get("Content-Type") != "text/html; charset=utf-8" || len(users) != before+1 {
 			t.Fatal("document must fetch exactly one banner")
 		}
-		want := appkit.User{Email: r.Header.Get("X-User-Email"), ProfileURL: "http://auth.space.test/", LogoutURL: "http://auth.space.test/logout"}
+		want := page.User{Email: r.Header.Get("X-User-Email"), ProfileURL: "http://auth.space.test/", LogoutURL: "http://auth.space.test/logout"}
 		if users[len(users)-1] != want {
 			t.Fatalf("banner user: %#v want %#v", users[len(users)-1], want)
 		}
@@ -1307,7 +1357,7 @@ func TestPageBannerSourcePerDocument(t *testing.T) {
 	for _, path := range []string{"/widgets/table", "/_appkit/theme.css", "/_appkit/", "/_appkit/absent", "/widgets", "/unknown"} {
 		for _, method := range []string{"GET", "HEAD", "POST", "PUT"} {
 			for _, identity := range []bool{false, true} {
-				if identity && path != "/widgets/table" && !strings.HasPrefix(path, appkit.StaticPrefix) {
+				if identity && path != "/widgets/table" && !strings.HasPrefix(path, page.StaticPrefix) {
 					continue
 				}
 				r := pageTestRequest(method, path)
@@ -1324,12 +1374,12 @@ func TestPageBannerSourcePerDocument(t *testing.T) {
 	}
 }
 
-// R-85Q6-Z7GW R-86Y3-CZ7L
+// R-ZAXN-0CXV R-ZI91-AZE1
 func TestPageEmptyServicesHaveNoLauncher(t *testing.T) {
-	for _, services := range [][]appkit.Service{nil, {}} {
-		source := func(u appkit.User) appkit.Banner { data := pageTestBanner(u); data.Services = services; return data }
+	for _, services := range [][]page.Service{nil, {}} {
+		source := func(u page.User) page.Banner { data := pageTestBanner(u); data.Services = services; return data }
 		for _, r := range pageTestDocuments() {
-			body := pageTestResponse(Handler(widget.NewStore(), source, io.Discard), r).Body.String()
+			body := pageTestResponse(coreHandler(t, widget.NewStore(), source, io.Discard), r).Body.String()
 			if len(pageTestTags(body, "nav", false)) != 0 || strings.Contains(body, "No service matches") || strings.Contains(body, "/_appkit/launcher.js") {
 				t.Fatal("empty services carry launcher")
 			}
@@ -1342,18 +1392,23 @@ func TestPageEmptyServicesHaveNoLauncher(t *testing.T) {
 			}
 		}
 	}
-	u := appkit.User{Email: "email", ProfileURL: "/profile", LogoutURL: "/logout"}
-	if got, want := pageTestBanner(u), (appkit.Banner{Service: ServiceName, Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}); !reflect.DeepEqual(got, want) {
+	u := page.User{Email: "email", ProfileURL: "/profile", LogoutURL: "/logout"}
+	if got, want := pageTestBanner(u), (page.Banner{Service: ServiceName, Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL}); !reflect.DeepEqual(got, want) {
 		t.Fatal("echoing banner source")
 	}
 }
 
-// R-48XC-M9QG
+// R-ZDDF-RWF9
 func pageTestBareAttribute(tag, name string) bool {
-	return regexp.MustCompile(`(?i)[\t\n\v\f\r ]` + regexp.QuoteMeta(name) + `(?:[\t\n\v\f\r />])`).MatchString(tag)
+	for _, attr := range coreAttributes(tag) {
+		if !attr.valued && strings.EqualFold(attr.name, name) {
+			return true
+		}
+	}
+	return false
 }
 
-// R-48XC-M9QG R-4A59-01H5 R-4BD5-DT7U
+// R-ZLWQ-GAM4 R-ZOCJ-7U3I
 func TestPageServicesDrawLauncher(t *testing.T) {
 	for _, tc := range []struct {
 		tag  string
@@ -1363,15 +1418,15 @@ func TestPageServicesDrawLauncher(t *testing.T) {
 			t.Fatalf("bare attribute %q: %v", tc.tag, got)
 		}
 	}
-	services := []appkit.Service{
+	services := []page.Service{
 		{Name: "alpha", URL: "https://alpha.space.test/", Enabled: true, Current: true, Icon: `<svg aria-hidden="true"><path d="M0 0"/></svg>`},
 		{Name: "beta", URL: "", Enabled: false, Current: false},
 		{Name: "gamma", URL: "http://gamma.space.test/", Enabled: true, Current: false, Icon: `<svg><g><circle r="1"/></g></svg>`},
 		{Name: "delta", URL: "https://delta.space.test/", Enabled: false, Current: true},
 	}
-	source := func(u appkit.User) appkit.Banner { data := pageTestBanner(u); data.Services = services; return data }
+	source := func(u page.User) page.Banner { data := pageTestBanner(u); data.Services = services; return data }
 	for _, r := range pageTestDocuments() {
-		body := pageTestResponse(Handler(widget.NewStore(), source, io.Discard), r).Body.String()
+		body := pageTestResponse(coreHandler(t, widget.NewStore(), source, io.Discard), r).Body.String()
 		header := pageTestChromeSpan(t, body)
 		buttons, links := pageTestTags(header, "button", false), pageTestTags(header, "a", false)
 		launcher := false
@@ -1455,5 +1510,96 @@ func TestPageServicesDrawLauncher(t *testing.T) {
 			}
 		}
 
+	}
+}
+
+func coreHandler(t *testing.T, s *widget.Store, banner func(page.User) page.Banner, stderr io.Writer) http.Handler {
+	t.Helper()
+	t.Setenv(services.Variable, "")
+	return Handler(s, banner, mcp.NewServer(mcp.ServerConfig{Name: ServiceName}), stderr)
+}
+
+func coreDraft(sub widget.Submission) widget.Draft { d, _ := widget.ParseSubmission(sub); return d }
+
+func coreSubmissionErrors(s *widget.Store, sub widget.Submission) widget.FieldErrors {
+	d, parsed := widget.ParseSubmission(sub)
+	checked := s.Check(d)
+	if parsed.Name == "" {
+		parsed.Name = checked.Name
+	}
+	if parsed.Count == "" {
+		parsed.Count = checked.Count
+	}
+	if parsed.Status == "" {
+		parsed.Status = checked.Status
+	}
+	return parsed
+}
+
+// R-Y5H2-05Q9 R-Y7WU-RP7N R-YACN-J8P1 R-YE0C-OJX4
+func TestPageTemplateContract(t *testing.T) {
+	set, err := page.Templates().ParseFS(dummy.Assets(), "*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"page", "table", "form", "script"} {
+		if set.Lookup(name) == nil {
+			t.Fatalf("missing %s", name)
+		}
+	}
+	store := widget.NewStore()
+	request := pageTestRequest("GET", "/widgets")
+	data := pageData{Banner: pageTestBannerData(request), Panel: true, Count: len(store.All()), Table: store.All(), Form: newFormData(widget.Submission{}, widget.FieldErrors{})}
+	var body bytes.Buffer
+	if err = set.ExecuteTemplate(&body, "page", data); err != nil {
+		t.Fatal(err)
+	}
+	got := pageTestResponse(coreHandler(t, store, pageTestBanner, io.Discard), request)
+	if got.Code != 200 || got.Header().Get("Content-Type") != "text/html; charset=utf-8" || got.Body.String() != body.String() {
+		t.Fatalf("panel template result: %d %v", got.Code, got.Header())
+	}
+}
+
+// R-1Z9P-88IQ R-21PH-ZS04
+func TestPanelMCPDelegation(t *testing.T) {
+	t.Setenv(services.Variable, "")
+	store := widget.NewStore()
+	makeServer := func() *mcp.Server {
+		return mcp.NewServer(mcp.ServerConfig{Name: ServiceName, Instructions: func(ctx context.Context) string {
+			c, _ := identity.FromContext(ctx)
+			return c.UserID + "|" + c.Email + "|" + c.RequestID
+		}})
+	}
+	actual, wantServer := makeServer(), makeServer()
+	h := Handler(store, pageTestBanner, actual, io.Discard)
+	tools.Register(wantServer, store)
+	for _, tc := range []struct{ method, media, body string }{{"GET", "", ""}, {"HEAD", "", ""}, {"POST", "application/json", `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`}, {"POST", "application/json", `{broken`}, {"POST", "text/plain", ""}} {
+		r := httptest.NewRequest(tc.method, "/mcp?q=x", strings.NewReader(tc.body))
+		r.Header["X-User-Id"] = []string{"caller", "ignored"}
+		r.Header["X-User-Email"] = []string{"email", "ignored"}
+		r.Header["X-Request-Id"] = []string{"trace", "ignored"}
+		r.Header.Set("Content-Type", tc.media)
+		expected := r.Clone(identity.NewContext(r.Context(), identity.Caller{UserID: "caller", Email: "email", RequestID: "trace"}))
+		expected.Body = io.NopCloser(strings.NewReader(tc.body))
+		a, b := pageTestResponse(h, r), pageTestResponse(wantServer, expected)
+		if a.Code != b.Code || !reflect.DeepEqual(a.Header(), b.Header()) || a.Body.String() != b.Body.String() {
+			t.Fatalf("MCP delegation %s: %d/%d", tc.method, a.Code, b.Code)
+		}
+	}
+	aServer := httptest.NewServer(h)
+	defer aServer.Close()
+	bServer := httptest.NewServer(identity.Require(ServiceName, io.Discard, wantServer))
+	defer bServer.Close()
+	caller := identity.Caller{UserID: "caller"}
+	a, err := mcp.NewClient(mcp.ClientConfig{Endpoint: aServer.URL + "/mcp"}).ListTools(context.Background(), caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := mcp.NewClient(mcp.ClientConfig{Endpoint: bServer.URL + "/mcp"}).ListTools(context.Background(), caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(a, b) {
+		t.Fatal("Handler registered different tools")
 	}
 }

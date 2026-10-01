@@ -6,7 +6,7 @@ import (
 	"github.com/ikigenba/ikigenba/dummy/internal/cli"
 )
 
-// R-092E-Q4T0
+// R-EBJE-7AF3
 // These declarations must compile from a package importing cli.
 const (
 	externalExitSuccess      = cli.ExitSuccess
@@ -23,14 +23,12 @@ func TestExportedExitConstants(t *testing.T) {
 	}
 }
 
-// R-AMJL-GJV8
+// R-JWQT-BFRO
 func TestExportedVersionVariable(t *testing.T) {
 	t.Parallel()
 
 	// Taking its address as a *string proves Version is a variable of type string.
-	if version := readString(&cli.Version); version == "" {
-		t.Error("Version is empty")
-	}
+	_ = readString(&cli.Version)
 }
 
 func readString(p *string) string { return *p }

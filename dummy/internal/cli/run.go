@@ -12,7 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ikigenba/ikigenba/appkit"
+	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 	"github.com/ikigenba/ikigenba/dummy/internal/server"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
@@ -27,7 +28,8 @@ type Process struct {
 	Stdout    io.Writer
 	Stderr    io.Writer
 	Inherit   func(fd uintptr) (net.Listener, error)
-	Banner    func(u appkit.User) appkit.Banner
+	Banner    func(u page.User) page.Banner
+	MCP       *mcp.Server
 }
 
 // Process exit codes.
@@ -38,13 +40,7 @@ const (
 )
 
 // Usage describes the dummy command line.
-const Usage = "Usage: dummy [command]\n\nServe the dummy control panel on the socket systemd passes in. With no\ncommand, serve.\n\nCommands:\n  manifest   print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  the server failed\n  2  usage error\n"
-
-var (
-	serve        = server.Serve
-	newStore     = widget.NewStore
-	panelHandler = panel.Handler
-)
+const Usage = "Usage: dummy [command]\n\nServe the dummy control panel, and its MCP tools at /mcp, on the socket\nsystemd passes in. With no command, serve.\n\nCommands:\n  manifest   print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  the server failed\n  2  usage error\n"
 
 // Run runs the dummy command and returns its process exit code.
 func Run(ctx context.Context, p Process) int {
@@ -109,15 +105,15 @@ func Run(ctx context.Context, p Process) int {
 	}
 	defer func() { _ = ln.Close() }()
 
-	store := newStore()
-	handler := panelHandler(store, p.Banner, stderr)
+	store := widget.NewStore()
+	handler := panel.Handler(store, p.Banner, p.MCP, stderr)
 	if address, ok := lookup(p.LookupEnv, "NOTIFY_SOCKET"); ok && address != "" {
 		if err = notifyReady(address); err != nil {
 			writeDiagnostic(stderr, "dummy: "+err.Error()+"\n")
 			return ExitServerFailed
 		}
 	}
-	if err = serve(ctx, ln, handler, drain); err != nil {
+	if err = server.Serve(ctx, ln, handler, drain); err != nil {
 		writeDiagnostic(stderr, "dummy: "+err.Error()+"\n")
 		return ExitServerFailed
 	}

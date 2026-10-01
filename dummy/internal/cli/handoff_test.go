@@ -10,28 +10,23 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/ikigenba/ikigenba/appkit"
-	"github.com/ikigenba/ikigenba/dummy/internal/panel"
-	"github.com/ikigenba/ikigenba/dummy/internal/server"
-	"github.com/ikigenba/ikigenba/dummy/internal/widget"
+	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/appkit/services"
 )
 
-func withHandoffStubs(t *testing.T) {
+func testMCP(t *testing.T) *mcp.Server {
 	t.Helper()
-	oldServe, oldStore, oldHandler := serve, newStore, panelHandler
-	t.Cleanup(func() { serve, newStore, panelHandler = oldServe, oldStore, oldHandler })
-	if reflect.ValueOf(oldServe).Pointer() != reflect.ValueOf(server.Serve).Pointer() || reflect.ValueOf(oldStore).Pointer() != reflect.ValueOf(widget.NewStore).Pointer() || reflect.ValueOf(oldHandler).Pointer() != reflect.ValueOf(panel.Handler).Pointer() {
-		t.Fatal("default handoff changed")
-	}
+	t.Setenv(services.Variable, "")
+	return mcp.NewServer(mcp.ServerConfig{Name: "dummy", Version: Version, Stderr: io.Discard})
 }
-
+func emptyBanner(page.User) page.Banner { return page.Banner{} }
 func readySocket(t *testing.T) (string, *net.UnixConn) {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "dummy-ready-")
@@ -48,231 +43,7 @@ func readySocket(t *testing.T) (string, *net.UnixConn) {
 	return path, conn
 }
 
-// R-S7C6-MSYK R-M1IR-ZVOS R-MCHV-FTD1 R-MG5K-L4L4 R-MDPR-TL3Q R-S8K3-0KP9
-func TestRunHandoffAndReady(t *testing.T) {
-	withHandoffStubs(t)
-	for _, drainText := range []string{"", "2", strings.Repeat("9", 100)} {
-		t.Run(drainText, func(t *testing.T) {
-			path, notify := readySocket(t)
-			ln := &failedListener{err: errors.New("unused")}
-			store := widget.NewStore()
-			handler := http.NewServeMux()
-			var events []string
-			var handedWriter io.Writer
-			source := func(u appkit.User) appkit.Banner { return appkit.Banner{Email: u.Email, Service: "injected"} }
-			newStore = func() *widget.Store { events = append(events, "store"); return store }
-			panelHandler = func(got *widget.Store, banner func(appkit.User) appkit.Banner, w io.Writer) http.Handler {
-				events = append(events, "handler")
-				if got != store {
-					t.Error("different store")
-				}
-				if got := banner(appkit.User{Email: "user"}); !reflect.DeepEqual(got, source(appkit.User{Email: "user"})) {
-					t.Errorf("wrong banner source: %#v", got)
-				}
-				handedWriter = w
-				return handler
-			}
-			ctx := context.Background()
-			serve = func(gotCtx context.Context, gotLn net.Listener, gotHandler http.Handler, gotDrain time.Duration) error {
-				events = append(events, "serve")
-				if gotCtx != ctx || gotLn != ln || gotHandler != handler {
-					t.Error("wrong Serve arguments")
-				}
-				want := 5 * time.Second
-				if drainText == "2" {
-					want = 2 * time.Second
-				}
-				if len(drainText) > 10 {
-					want = time.Duration(int64(^uint64(0) >> 1))
-				}
-				if gotDrain != want {
-					t.Errorf("drain=%v want %v", gotDrain, want)
-				}
-				b := make([]byte, 16)
-				if err := notify.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
-					t.Fatal(err)
-				}
-				n, _, err := notify.ReadFromUnix(b)
-				if err != nil {
-					t.Errorf("read readiness: %v", err)
-				} else if string(b[:n]) != "READY=1" {
-					t.Errorf("ready=%q", b[:n])
-				}
-				return nil
-			}
-			env := map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path, "DRAIN_SECONDS": drainText}
-			var out, err recordingWriter
-			var unset []string
-			var inherited []uintptr
-			code := Run(ctx, Process{Pid: 42, LookupEnv: mapLookup(env), Unsetenv: func(k string) error { unset = append(unset, k); return nil }, Inherit: func(fd uintptr) (net.Listener, error) {
-				events = append(events, "inherit")
-				inherited = append(inherited, fd)
-				return ln, nil
-			}, Banner: source, Stdout: &out, Stderr: &err})
-			if code != ExitSuccess || out.Len() != 0 || err.Len() != 0 {
-				t.Errorf("code=%d out=%q err=%q", code, out.String(), err.String())
-			}
-			if deadlineErr := notify.SetReadDeadline(time.Now()); deadlineErr != nil {
-				t.Fatal(deadlineErr)
-			}
-			var extra [16]byte
-			var timeout net.Error
-			if n, _, readErr := notify.ReadFromUnix(extra[:]); readErr == nil {
-				t.Errorf("unexpected second readiness datagram %q", extra[:n])
-			} else if !errors.As(readErr, &timeout) || !timeout.Timeout() {
-				t.Errorf("checking second readiness datagram: %v", readErr)
-			}
-			if !reflect.DeepEqual(events, []string{"inherit", "store", "handler", "serve"}) || !reflect.DeepEqual(inherited, []uintptr{3}) || !reflect.DeepEqual(unset, []string{"LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES"}) {
-				t.Errorf("events=%v inherited=%v unset=%v", events, inherited, unset)
-			}
-			if handedWriter == nil {
-				t.Fatal("handler got nil writer")
-			}
-			if _, e := handedWriter.Write([]byte("handler diagnostic\n")); e != nil {
-				t.Fatal(e)
-			}
-			if err.String() != "handler diagnostic\n" || err.calls != 1 {
-				t.Errorf("handler writer err=%q calls=%d", err.String(), err.calls)
-			}
-		})
-	}
-}
-
-// R-S7C6-MSYK R-MDPR-TL3Q
-func TestRunWithoutNotification(t *testing.T) {
-	withHandoffStubs(t)
-	ln := &failedListener{err: errors.New("unused")}
-	calls := 0
-	serve = func(_ context.Context, _ net.Listener, _ http.Handler, drain time.Duration) error {
-		calls++
-		if drain != 5*time.Second {
-			t.Errorf("unset DRAIN_SECONDS yields %v", drain)
-		}
-		return nil
-	}
-	var out, err bytes.Buffer
-	code := Run(context.Background(), Process{Pid: 1, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "1", "LISTEN_FDS": "1", "NOTIFY_SOCKET": ""}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: emptyBanner, Stdout: &out, Stderr: &err})
-	if code != ExitSuccess || calls != 1 || out.Len() != 0 || err.Len() != 0 {
-		t.Errorf("code=%d calls=%d out=%q err=%q", code, calls, out.String(), err.String())
-	}
-}
-
-// R-MCHV-FTD1
-func TestRunNotifiesAbstractSocket(t *testing.T) {
-	withHandoffStubs(t)
-	dir, err := os.MkdirTemp("", "dummy-abstract-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	address := "@" + filepath.Base(dir)
-	notify, err := net.ListenUnixgram("unixgram", &net.UnixAddr{Name: address, Net: "unixgram"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = notify.Close() })
-	serve = func(context.Context, net.Listener, http.Handler, time.Duration) error {
-		if err := notify.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
-			t.Fatal(err)
-		}
-		var packet [16]byte
-		n, _, err := notify.ReadFromUnix(packet[:])
-		if err != nil || string(packet[:n]) != "READY=1" {
-			t.Errorf("abstract readiness = %q, error %v", packet[:n], err)
-		}
-		return nil
-	}
-	var out, diagnostics bytes.Buffer
-	code := Run(context.Background(), Process{Pid: 3, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "3", "LISTEN_FDS": "1", "NOTIFY_SOCKET": address}), Inherit: func(uintptr) (net.Listener, error) { return &failedListener{}, nil }, Banner: emptyBanner, Stdout: &out, Stderr: &diagnostics})
-	if code != ExitSuccess || out.Len() != 0 || diagnostics.Len() != 0 {
-		t.Errorf("code=%d out=%q stderr=%q", code, out.String(), diagnostics.String())
-	}
-}
-
-// R-S7C6-MSYK
-func TestRunBuildsNoStoreBeforeSocketIsTaken(t *testing.T) {
-	withHandoffStubs(t)
-	newStore = func() *widget.Store { t.Error("store built before socket"); return nil }
-	panelHandler = func(*widget.Store, func(appkit.User) appkit.Banner, io.Writer) http.Handler {
-		t.Error("handler built before socket")
-		return nil
-	}
-	serve = func(context.Context, net.Listener, http.Handler, time.Duration) error {
-		t.Error("served without socket")
-		return nil
-	}
-	for _, args := range [][]string{{"--version"}, {"bogus"}, nil} {
-		p := Process{Args: args, Pid: 9, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "9", "LISTEN_FDS": "1"}), Inherit: func(uintptr) (net.Listener, error) { return nil, errors.New("take failed") }, Banner: emptyBanner, Stdout: io.Discard, Stderr: io.Discard}
-		Run(context.Background(), p)
-	}
-}
-
-// R-WA57-FG78
-func TestReadyFailurePreventsServe(t *testing.T) {
-	withHandoffStubs(t)
-	ln := &failedListener{err: errors.New("unused")}
-	serve = func(context.Context, net.Listener, http.Handler, time.Duration) error {
-		t.Error("served after notify failed")
-		return nil
-	}
-	path := filepath.Join(t.TempDir(), "missing.sock")
-	wantErr := notifyReady(path)
-	if wantErr == nil {
-		t.Fatal("notification unexpectedly succeeded")
-	}
-	var out, err recordingWriter
-	code := Run(context.Background(), Process{Pid: 1, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "1", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: emptyBanner, Stdout: &out, Stderr: &err})
-	if code != ExitServerFailed || out.Len() != 0 || err.calls != 1 || err.String() != "dummy: "+wantErr.Error()+"\n" {
-		t.Errorf("code=%d out=%q err=%q writes=%d", code, out.String(), err.String(), err.calls)
-	}
-}
-
-// R-QVIS-THYV R-S8K3-0KP9
-func TestRunReportsServeFailure(t *testing.T) {
-	withHandoffStubs(t)
-	wantErr := errors.New("server broke")
-	serve = func(context.Context, net.Listener, http.Handler, time.Duration) error { return wantErr }
-	var out, err recordingWriter
-	code := Run(context.Background(), Process{Pid: 7, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "7", "LISTEN_FDS": "1"}), Inherit: func(uintptr) (net.Listener, error) { return &failedListener{}, nil }, Banner: emptyBanner, Stdout: &out, Stderr: &err})
-	if code != ExitServerFailed || out.Len() != 0 || err.String() != "dummy: server broke\n" || err.calls != 1 {
-		t.Errorf("code=%d out=%q err=%q writes=%d", code, out.String(), err.String(), err.calls)
-	}
-}
-
-// R-S9RZ-ECFY
-func TestRunSerializesHandlerAndServeDiagnostics(t *testing.T) {
-	withHandoffStubs(t)
-	writer := &overlapWriter{entered: make(chan struct{}, 1), release: make(chan struct{})}
-	var handlerWriter io.Writer
-	serveReturned := make(chan struct{})
-	handlerDone := make(chan struct{})
-	panelHandler = func(_ *widget.Store, _ func(appkit.User) appkit.Banner, w io.Writer) http.Handler {
-		handlerWriter = w
-		return http.NotFoundHandler()
-	}
-	serve = func(context.Context, net.Listener, http.Handler, time.Duration) error {
-		go func() { defer close(handlerDone); _, _ = handlerWriter.Write([]byte("handler\n")) }()
-		<-writer.entered
-		close(serveReturned)
-		return errors.New("serve failure")
-	}
-	result := make(chan int, 1)
-	go func() {
-		result <- Run(context.Background(), Process{Pid: 7, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "7", "LISTEN_FDS": "1"}), Inherit: func(uintptr) (net.Listener, error) { return &failedListener{}, nil }, Banner: emptyBanner, Stdout: io.Discard, Stderr: writer})
-	}()
-	<-serveReturned
-	for range 100 {
-		runtime.Gosched()
-	}
-	close(writer.release)
-	<-handlerDone
-	code := <-result
-	if code != ExitServerFailed || writer.overlap || writer.String() != "handler\ndummy: serve failure\n" {
-		t.Errorf("code=%d overlap=%t output=%q", code, writer.overlap, writer.String())
-	}
-}
-
-// R-S9RZ-ECFY R-QVIS-THYV
+// R-EYA8-3P84 R-EVUF-C5QQ
 func TestRunReportsDrainOverrunAfterHandlerStarts(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -282,10 +53,11 @@ func TestRunReportsDrainOverrunAfterHandlerStarts(t *testing.T) {
 	path, notify := readySocket(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
+	srv := testMCP(t)
 	var stdout, stderr bytes.Buffer
 	result := make(chan int, 1)
 	go func() {
-		result <- Run(ctx, Process{Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "DRAIN_SECONDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return listener, nil }, Banner: emptyBanner, Stdout: &stdout, Stderr: &stderr})
+		result <- Run(ctx, Process{Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "DRAIN_SECONDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return listener, nil }, Banner: emptyBanner, MCP: srv, Stdout: &stdout, Stderr: &stderr})
 	}()
 	if err = notify.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		t.Fatal(err)
@@ -328,13 +100,107 @@ func TestRunReportsDrainOverrunAfterHandlerStarts(t *testing.T) {
 	}
 }
 
+// R-EJNF-IGBS R-EUMI-YE01 R-EVUF-C5QQ R-EOJ1-1JAK
+func TestRunNoRequestsAndNoNotification(t *testing.T) {
+	for _, env := range []map[string]string{{}, {"NOTIFY_SOCKET": ""}} {
+		srv := testMCP(t)
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		env["LISTEN_PID"], env["LISTEN_FDS"] = "42", "1"
+		calls := 0
+		var out, diagnostics bytes.Buffer
+		code := Run(ctx, Process{Pid: 42, LookupEnv: mapLookup(env), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: func(page.User) page.Banner { calls++; return page.Banner{} }, MCP: srv, Stdout: &out, Stderr: &diagnostics})
+		if code != ExitSuccess || calls != 0 || out.Len() != 0 || diagnostics.Len() != 0 {
+			t.Errorf("code=%d banner=%d out=%q diagnostics=%q", code, calls, out.String(), diagnostics.String())
+		}
+	}
+}
+
+type observingListener struct {
+	beforeAccept func()
+	err          error
+	accepts      int
+}
+
+func (l *observingListener) Accept() (net.Conn, error) {
+	l.accepts++
+	if l.beforeAccept != nil {
+		l.beforeAccept()
+	}
+	return nil, l.err
+}
+func (l *observingListener) Close() error   { return nil }
+func (l *observingListener) Addr() net.Addr { return testAddr("observing") }
+
+// R-EM38-9ZT6 R-EYA8-3P84 R-EVUF-C5QQ
+func TestRunNotifiesBeforeAcceptAndReportsServeFailure(t *testing.T) {
+	for _, abstract := range []bool{false, true} {
+		srv := testMCP(t)
+		path, notify := readySocket(t)
+		if abstract {
+			_ = notify.Close()
+			path = "@" + filepath.Base(filepath.Dir(path))
+			var err error
+			notify, err = net.ListenUnixgram("unixgram", &net.UnixAddr{Name: path, Net: "unixgram"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = notify.Close() })
+		}
+		ln := &observingListener{err: errors.New("serve failure")}
+		ln.beforeAccept = func() {
+			if err := notify.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			var packet [32]byte
+			n, _, err := notify.ReadFromUnix(packet[:])
+			if err != nil || string(packet[:n]) != "READY=1" {
+				t.Fatalf("readiness=%q error=%v", packet[:n], err)
+			}
+		}
+		var out, diagnostics recordingWriter
+		code := Run(context.Background(), Process{Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: emptyBanner, MCP: srv, Stdout: &out, Stderr: &diagnostics})
+		if code != ExitServerFailed || out.Len() != 0 || diagnostics.String() != "dummy: serve failure\n" || diagnostics.calls != 1 {
+			t.Errorf("code=%d out=%q diagnostic=%q writes=%d", code, out.String(), diagnostics.String(), diagnostics.calls)
+		}
+		if err := notify.SetReadDeadline(time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		var packet [32]byte
+		_, _, err := notify.ReadFromUnix(packet[:])
+		var netErr net.Error
+		if !errors.As(err, &netErr) || !netErr.Timeout() {
+			t.Errorf("extra notification check: %v", err)
+		}
+	}
+}
+
+// R-EQYT-T2RY
+func TestReadyFailurePreventsAccept(t *testing.T) {
+	srv := testMCP(t)
+	ln := &observingListener{err: errors.New("unexpected accept")}
+	path := filepath.Join(t.TempDir(), "missing.sock")
+	wantErr := notifyReady(path)
+	if wantErr == nil {
+		t.Fatal("notification unexpectedly succeeded")
+	}
+	var out, diagnostics recordingWriter
+	code := Run(context.Background(), Process{Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: emptyBanner, MCP: srv, Stdout: &out, Stderr: &diagnostics})
+	if code != ExitServerFailed || out.Len() != 0 || diagnostics.String() != "dummy: "+wantErr.Error()+"\n" || ln.accepts != 0 {
+		t.Errorf("code=%d out=%q diagnostic=%q accepts=%d", code, out.String(), diagnostics.String(), ln.accepts)
+	}
+}
+
 type overlapWriter struct {
-	mu      sync.Mutex
-	active  bool
-	overlap bool
-	buf     bytes.Buffer
-	entered chan struct{}
-	release chan struct{}
+	mu              sync.Mutex
+	active, overlap bool
+	entered         chan struct{}
+	release         chan struct{}
+	buf             bytes.Buffer
 }
 
 func (w *overlapWriter) Write(p []byte) (int, error) {
@@ -344,53 +210,68 @@ func (w *overlapWriter) Write(p []byte) (int, error) {
 	}
 	w.active = true
 	w.mu.Unlock()
-	if string(p) == "handler\n" {
-		w.entered <- struct{}{}
-		<-w.release
+	w.entered <- struct{}{}
+	<-w.release
+	for range 100 {
+		runtime.Gosched()
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.active = false
 	return w.buf.Write(p)
 }
-func (w *overlapWriter) String() string { w.mu.Lock(); defer w.mu.Unlock(); return w.buf.String() }
 
-func emptyBanner(appkit.User) appkit.Banner { return appkit.Banner{} }
-
-// R-SAZV-S46N
-func TestRunDoesNotCallBannerWithoutRequests(t *testing.T) {
-	withHandoffStubs(t)
-	for _, scenario := range []string{"version", "invalid arguments", "drain", "missing socket", "inherit failure", "notify failure", "serve success", "serve failure"} {
-		t.Run(scenario, func(t *testing.T) {
-			env := map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1"}
-			calls := 0
-			p := Process{Pid: 42, LookupEnv: mapLookup(env), Stdout: io.Discard, Stderr: io.Discard,
-				Inherit: func(uintptr) (net.Listener, error) { return &failedListener{}, nil },
-				Banner:  func(appkit.User) appkit.Banner { calls++; return appkit.Banner{} },
+// R-F0Q0-V8PI
+func TestRunSerializesConcurrentHandlerDiagnostics(t *testing.T) {
+	srv := testMCP(t)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, notify := readySocket(t)
+	writer := &overlapWriter{entered: make(chan struct{}, 32), release: make(chan struct{})}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan int, 1)
+	go func() {
+		result <- Run(ctx, Process{Pid: 42, LookupEnv: mapLookup(map[string]string{"LISTEN_PID": "42", "LISTEN_FDS": "1", "NOTIFY_SOCKET": path}), Inherit: func(uintptr) (net.Listener, error) { return ln, nil }, Banner: emptyBanner, MCP: srv, Stdout: io.Discard, Stderr: writer})
+	}()
+	if err := notify.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	var packet [32]byte
+	if _, _, err := notify.ReadFromUnix(packet[:]); err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	done := make(chan error, 32)
+	for range 32 {
+		go func() {
+			resp, err := client.Get("http://" + ln.Addr().String() + "/widgets")
+			if err == nil {
+				_, err = io.Copy(io.Discard, resp.Body)
+				_ = resp.Body.Close()
 			}
-			serve = func(context.Context, net.Listener, http.Handler, time.Duration) error { return nil }
-			switch scenario {
-			case "version":
-				p.Args = []string{"--version"}
-			case "invalid arguments":
-				p.Args = []string{"bogus"}
-			case "drain":
-				env["DRAIN_SECONDS"] = "bad"
-			case "missing socket":
-				delete(env, "LISTEN_FDS")
-			case "inherit failure":
-				p.Inherit = func(uintptr) (net.Listener, error) { return nil, errors.New("cannot inherit") }
-			case "notify failure":
-				env["NOTIFY_SOCKET"] = filepath.Join(t.TempDir(), "missing.sock")
-			case "serve failure":
-				serve = func(context.Context, net.Listener, http.Handler, time.Duration) error {
-					return errors.New("serve failed")
-				}
-			}
-			Run(context.Background(), p)
-			if calls != 0 {
-				t.Errorf("banner calls = %d", calls)
-			}
-		})
+			done <- err
+		}()
+	}
+	<-writer.entered
+	close(writer.release)
+	for range 32 {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	cancel()
+	if code := <-result; code != ExitSuccess {
+		t.Errorf("exit=%d", code)
+	}
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	if writer.overlap {
+		t.Error("overlapping Stderr.Write calls")
+	}
+	if strings.Count(writer.buf.String(), "\n") != 32 {
+		t.Errorf("diagnostics=%q", writer.buf.String())
 	}
 }

@@ -30,7 +30,7 @@ const (
 	externalStatusNotAllowedMessage string = widget.StatusNotAllowedMessage
 )
 
-// R-RKRT-ZN8J.
+// R-ZMK6-SZTW.
 func TestStatusTypeAndConstants(t *testing.T) {
 	// An untyped string constant converts to Status, and a Status converts to
 	// string, only if Status is a type whose underlying type is string.
@@ -51,14 +51,14 @@ func TestStatusTypeAndConstants(t *testing.T) {
 	}
 }
 
-// R-QM05-2VHF.
+// R-W66F-SE72.
 func TestMaxNameRunesConstant(t *testing.T) {
 	if externalMaxNameRunesInt8 != 40 || externalMaxNameRunesFloat != 40 {
 		t.Errorf("MaxNameRunes = %d, %v; want 40", externalMaxNameRunesInt8, externalMaxNameRunesFloat)
 	}
 }
 
-// R-QS3M-ZQ6W.
+// R-XBN0-SLEO.
 func TestMessageConstants(t *testing.T) {
 	for _, tc := range []struct{ name, got, want string }{
 		{"NameRequiredMessage", externalNameRequiredMessage, "a name is required"},
@@ -74,7 +74,7 @@ func TestMessageConstants(t *testing.T) {
 	}
 }
 
-// R-4F49-SZRQ, R-4GC6-6RIF, R-4IRY-YAZT.
+// R-I2W8-NTQ6, R-ISI4-P0AR, R-EBQ5-GVM3.
 func TestPublicStructsConstructWithDeclaredFields(t *testing.T) {
 	// Each literal names its fields with values of the declared types, and each
 	// read compares a field against a value of the declared type, so this
@@ -96,7 +96,7 @@ func TestPublicStructsConstructWithDeclaredFields(t *testing.T) {
 	}
 }
 
-// R-QJKC-BC01, R-QY74-WKWD, R-QZF1-ACN2.
+// R-VLG5-AAL9, R-XV5E-WX9S, R-YH3L-SSMA.
 func TestStatuses(t *testing.T) {
 	declared := struct {
 		statuses func() []widget.Status
@@ -113,7 +113,7 @@ func TestStatuses(t *testing.T) {
 	}
 }
 
-// R-QQVQ-LYG7, R-RIXF-EOI6.
+// R-WPOT-WQ26, R-Z1TW-AW83.
 func TestFieldErrorsAny(t *testing.T) {
 	declared := struct {
 		anyError func(widget.FieldErrors) bool
@@ -143,7 +143,7 @@ func initialWidgets() []widget.Widget {
 	}
 }
 
-// R-QUJF-R9OA, R-QVRC-51EZ, R-R1UU-1W4G, R-RRGQ-32P1.
+// R-EFDU-M6U6, R-EJ1J-RI29, R-EYW8-QIPA, R-GV6M-5O86.
 func TestStoreInitialStateAndIndependence(t *testing.T) {
 	declared := struct {
 		newStore func() *widget.Store
@@ -154,14 +154,14 @@ func TestStoreInitialStateAndIndependence(t *testing.T) {
 	if !slices.Equal(declared.all(first), want) || !slices.Equal(declared.all(second), want) {
 		t.Fatal("new stores do not contain the exact starting widgets")
 	}
-	created, errs := first.Create(widget.Submission{Name: "delta", Count: "5", Status: "active"})
+	created, errs := first.Create(widget.Draft{Name: "delta", Count: 5, Status: widget.StatusActive})
 	if errs.Any() {
 		t.Fatal(errs)
 	}
 	if !slices.Equal(second.All(), want) || !slices.Equal(widget.NewStore().All(), want) {
 		t.Fatal("a write changed another store or later store's starting widgets")
 	}
-	if _, errs := second.Create(widget.Submission{Name: "epsilon", Count: "6", Status: "paused"}); errs.Any() {
+	if _, errs := second.Create(widget.Draft{Name: "epsilon", Count: 6, Status: widget.StatusPaused}); errs.Any() {
 		t.Fatal(errs)
 	}
 	if !slices.Equal(first.All(), append(want, created)) {
@@ -169,7 +169,7 @@ func TestStoreInitialStateAndIndependence(t *testing.T) {
 	}
 }
 
-// R-R32Q-FNV5.
+// R-F1C1-I26O.
 func TestAllReturnsIndependentSnapshots(t *testing.T) {
 	s := widget.NewStore()
 	want := initialWidgets()
@@ -184,7 +184,7 @@ func TestAllReturnsIndependentSnapshots(t *testing.T) {
 		t.Fatal("discard changed store")
 	}
 	old := s.All()
-	if _, errs := s.Create(widget.Submission{Name: "delta", Count: "1", Status: "active"}); errs.Any() {
+	if _, errs := s.Create(widget.Draft{Name: "delta", Count: 1, Status: widget.StatusActive}); errs.Any() {
 		t.Fatal(errs)
 	}
 	if !slices.Equal(old, want) {
@@ -192,38 +192,109 @@ func TestAllReturnsIndependentSnapshots(t *testing.T) {
 	}
 }
 
-// R-QWZ8-IT5O, R-R4AM-TFLU, R-R5IJ-77CJ, R-RLD8-67ZK.
-func TestAcceptedCreationOrderAndTrimming(t *testing.T) {
-	declared := struct {
-		create func(*widget.Store, widget.Submission) (widget.Widget, widget.FieldErrors)
-	}{(*widget.Store).Create}
-	s := widget.NewStore()
-	want := initialWidgets()
-	for _, tc := range []struct {
-		sub  widget.Submission
-		want widget.Widget
-	}{
-		{widget.Submission{Name: "\u2003 delta \t", Count: "\u00a0+007\n", Status: "\ractive\u2002"}, widget.Widget{Name: "delta", Count: 7, Status: widget.StatusActive}},
-		{widget.Submission{Name: "omega", Count: "0", Status: "paused"}, widget.Widget{Name: "omega", Count: 0, Status: widget.StatusPaused}},
-		{widget.Submission{Name: "epsilon", Count: "12", Status: "retired"}, widget.Widget{Name: "epsilon", Count: 12, Status: widget.StatusRetired}},
-	} {
-		before := tc.sub
-		got, errs := declared.create(s, tc.sub)
-		if errs != (widget.FieldErrors{}) || got != tc.want {
-			t.Fatalf("Create(%+v) = %+v, %+v", tc.sub, got, errs)
+// R-APP9-2RBW.
+func TestDraftFields(t *testing.T) {
+	name, count, status := " raw ", -7, widget.StatusPaused
+	d := widget.Draft{Name: name, Count: count, Status: status}
+	if d.Name != name || d.Count != count || d.Status != status {
+		t.Errorf("Draft = %+v", d)
+	}
+}
+
+// R-AN9G-B7UI, R-EU0N-7FQI, R-EWGF-YZ7W.
+func TestStatusEnum(t *testing.T) {
+	enum := struct {
+		call func(widget.Status) []string
+	}{call: widget.Status.Enum}.call
+	statuses := widget.Statuses()
+	want := make([]string, len(statuses))
+	for i, status := range statuses {
+		want[i] = string(status)
+	}
+	for _, receiver := range []widget.Status{"", "unknown", widget.StatusActive, widget.StatusPaused, widget.StatusRetired} {
+		got := enum(receiver)
+		if !slices.Equal(got, want) {
+			t.Fatalf("Enum(%q) = %v, want %v", receiver, got, want)
 		}
-		if tc.sub != before {
-			t.Fatal("Create changed the raw submission")
-		}
-		want = append(want, tc.want)
-		if !slices.Equal(s.All(), want) {
-			t.Fatalf("All = %v, want %v", s.All(), want)
+		got[0] = "changed"
+		if !slices.Equal(enum(receiver), want) || !slices.Equal(widget.Statuses(), statuses) {
+			t.Fatal("Enum slice mutation changed allowed values")
 		}
 	}
 }
 
-// R-R5IJ-77CJ, R-R6QF-KZ38, R-R7YB-YQTX, R-R968-CIKM, R-RAE4-QABB.
-func TestNameValidation(t *testing.T) {
+// R-EMP8-WTAC, R-F7FJ-EWW5.
+func TestParseSubmissionCopiesNameWithoutJudgingIt(t *testing.T) {
+	parse := struct {
+		call func(widget.Submission) (widget.Draft, widget.FieldErrors)
+	}{call: widget.ParseSubmission}.call
+	for _, name := range []string{"", " \t", " alpha\u2003", strings.Repeat("é", widget.MaxNameRunes+1), "\xff"} {
+		sub := widget.Submission{Name: name, Count: "0", Status: "active"}
+		d, errs := parse(sub)
+		if d.Name != name || errs.Name != "" {
+			t.Errorf("ParseSubmission(%q) = %+v, %+v", name, d, errs)
+		}
+	}
+}
+
+// R-F9VC-6GDJ, R-FCB4-XZUX.
+func TestParseCount(t *testing.T) {
+	maxInt := int(^uint(0) >> 1)
+	for _, tc := range []struct {
+		raw  string
+		want int
+		err  string
+	}{
+		{"", 0, widget.CountNotWholeMessage}, {" \u2003\t", 0, widget.CountNotWholeMessage},
+		{"1.0", 0, widget.CountNotWholeMessage}, {"1e2", 0, widget.CountNotWholeMessage},
+		{"0x10", 0, widget.CountNotWholeMessage}, {"1_000", 0, widget.CountNotWholeMessage},
+		{"1 2", 0, widget.CountNotWholeMessage}, {"text", 0, widget.CountNotWholeMessage},
+		{strings.Repeat("9", 100), 0, widget.CountNotWholeMessage},
+		{"-" + strings.Repeat("9", 100), 0, widget.CountNotWholeMessage},
+		{strconv.FormatUint(uint64(maxInt)+1, 10), 0, widget.CountNotWholeMessage},
+		{"-1", -1, ""}, {"\t-12\u2003", -12, ""}, {strconv.Itoa(-maxInt - 1), -maxInt - 1, ""},
+		{"0", 0, ""}, {"-0", 0, ""}, {"+7", 7, ""}, {"007", 7, ""},
+		{" \u00a042\n", 42, ""}, {strconv.Itoa(maxInt), maxInt, ""},
+	} {
+		t.Run(strconv.Quote(tc.raw), func(t *testing.T) {
+			d, errs := widget.ParseSubmission(widget.Submission{Count: tc.raw, Status: "active"})
+			if d.Count != tc.want || errs.Count != tc.err {
+				t.Errorf("ParseSubmission count %q = %d, %q; want %d, %q", tc.raw, d.Count, errs.Count, tc.want, tc.err)
+			}
+		})
+	}
+}
+
+// R-FFYU-3B30.
+func TestParseStatus(t *testing.T) {
+	for _, tc := range []struct {
+		raw  string
+		want widget.Status
+		err  string
+	}{
+		{"", "", widget.StatusNotAllowedMessage}, {" \t", "", widget.StatusNotAllowedMessage},
+		{"Active", "", widget.StatusNotAllowedMessage}, {"ACTIVE", "", widget.StatusNotAllowedMessage},
+		{"pending", "", widget.StatusNotAllowedMessage}, {"active paused", "", widget.StatusNotAllowedMessage},
+		{"active", widget.StatusActive, ""}, {"paused", widget.StatusPaused, ""},
+		{"retired", widget.StatusRetired, ""}, {"\u2003active\n", widget.StatusActive, ""},
+	} {
+		d, errs := widget.ParseSubmission(widget.Submission{Count: "0", Status: tc.raw})
+		if d.Status != tc.want || errs.Status != tc.err {
+			t.Errorf("ParseSubmission status %q = %q, %q", tc.raw, d.Status, errs.Status)
+		}
+	}
+}
+
+// R-ENX5-AL11, R-FIEM-UUKE, R-FM2C-05SH, R-FOI4-RP9V, R-FQXX-J8R9, R-FTDQ-AS8N, R-GAGB-NKMD.
+func TestCheckNames(t *testing.T) {
+	check := struct {
+		call func(*widget.Store, widget.Draft) widget.FieldErrors
+	}{call: (*widget.Store).Check}.call
+	s := widget.NewStore()
+	if _, errs := s.Create(widget.Draft{Name: " new name ", Count: 0, Status: widget.StatusActive}); errs.Any() {
+		t.Fatal(errs)
+	}
+	before := s.All()
 	for _, tc := range []struct{ name, want string }{
 		{"", widget.NameRequiredMessage}, {" \t\r\n\u2003", widget.NameRequiredMessage},
 		{strings.Repeat("x", widget.MaxNameRunes+1), widget.NameTooLongMessage},
@@ -231,121 +302,119 @@ func TestNameValidation(t *testing.T) {
 		{"  " + strings.Repeat("é", widget.MaxNameRunes) + " \u00a0", ""},
 		{strings.Repeat("x", widget.MaxNameRunes), ""},
 		{" alpha\t", widget.NameTakenMessage}, {"beta", widget.NameTakenMessage}, {"gamma", widget.NameTakenMessage},
+		{" \u2003new name\t", widget.NameTakenMessage},
 		{"Alpha", ""}, {"ALPHA", ""}, {"distinct", ""}, {"\xff", ""},
 	} {
-		t.Run(strconv.Quote(tc.name), func(t *testing.T) {
-			s := widget.NewStore()
-			_, errs := s.Create(widget.Submission{Name: tc.name, Count: "0", Status: "active"})
-			if errs != (widget.FieldErrors{Name: tc.want}) {
-				t.Errorf("errors = %+v, want name %q only", errs, tc.want)
-			}
-		})
-	}
-	s := widget.NewStore()
-	if _, errs := s.Create(widget.Submission{Name: " new name ", Count: "0", Status: "active"}); errs.Any() {
-		t.Fatal(errs)
-	}
-	if _, errs := s.Create(widget.Submission{Name: "new name", Count: "0", Status: "active"}); errs.Name != widget.NameTakenMessage {
-		t.Fatalf("new name was not reserved: %+v", errs)
+		errs := check(s, widget.Draft{Name: tc.name, Count: 0, Status: widget.StatusActive})
+		if errs.Name != tc.want {
+			t.Errorf("Check(%q).Name = %q; want %q", tc.name, errs.Name, tc.want)
+		}
+		if !slices.Equal(s.All(), before) {
+			t.Fatal("Check changed widgets or order")
+		}
 	}
 }
 
-// R-RBM1-4220, R-RCTX-HTSP, R-RE1T-VLJE, R-R5IJ-77CJ.
-func TestCountValidation(t *testing.T) {
+// R-FVTJ-2BQ1, R-FZH8-7MY4.
+func TestCheckCounts(t *testing.T) {
 	maxInt := int(^uint(0) >> 1)
-	for _, tc := range []struct{ count, want string }{
-		{"", widget.CountNotWholeMessage}, {" \u2003\t", widget.CountNotWholeMessage},
-		{"1.0", widget.CountNotWholeMessage}, {"1e2", widget.CountNotWholeMessage},
-		{"0x10", widget.CountNotWholeMessage}, {"1_000", widget.CountNotWholeMessage},
-		{"1 2", widget.CountNotWholeMessage}, {"text", widget.CountNotWholeMessage},
-		{strings.Repeat("9", 100), widget.CountNotWholeMessage}, {"-" + strings.Repeat("9", 100), widget.CountNotWholeMessage},
-		{strconv.FormatUint(uint64(maxInt)+1, 10), widget.CountNotWholeMessage},
-		{"-1", widget.CountNegativeMessage}, {"\t-12\u2003", widget.CountNegativeMessage},
-		{strconv.Itoa(-maxInt - 1), widget.CountNegativeMessage},
-		{"0", ""}, {"-0", ""}, {"+7", ""}, {"007", ""}, {" \u00a042\n", ""}, {strconv.Itoa(maxInt), ""},
+	for _, count := range []int{-maxInt - 1, -12, -1, 0, 1, maxInt} {
+		want := ""
+		if count < 0 {
+			want = widget.CountNegativeMessage
+		}
+		errs := widget.NewStore().Check(widget.Draft{Name: "delta", Count: count, Status: widget.StatusActive})
+		if errs.Count != want {
+			t.Errorf("Check count %d = %q; want %q", count, errs.Count, want)
+		}
+	}
+}
+
+// R-G1X0-Z6FI, R-G4CT-QPWW.
+func TestCheckStatuses(t *testing.T) {
+	for _, status := range []widget.Status{"", "Active", "active ", " active", "pending", widget.StatusActive, widget.StatusPaused, widget.StatusRetired} {
+		want := widget.StatusNotAllowedMessage
+		if slices.Contains(widget.Statuses(), status) {
+			want = ""
+		}
+		errs := widget.NewStore().Check(widget.Draft{Name: "delta", Count: 0, Status: status})
+		if errs.Status != want {
+			t.Errorf("Check status %q = %q; want %q", status, errs.Status, want)
+		}
+	}
+}
+
+// R-G6SM-I9EA, R-GAGB-NKMD, R-GCW4-F43R, R-GIZM-BYT8, R-EQCY-24IF.
+func TestCheckAndCreateRejections(t *testing.T) {
+	create := struct {
+		call func(*widget.Store, widget.Draft) (widget.Widget, widget.FieldErrors)
+	}{call: (*widget.Store).Create}.call
+	for bits := range 8 {
+		s := widget.NewStore()
+		before := s.All()
+		d := widget.Draft{Name: " delta ", Count: 0, Status: widget.StatusActive}
+		want := widget.FieldErrors{}
+		if bits&1 != 0 {
+			d.Name = " \t"
+			want.Name = widget.NameRequiredMessage
+		}
+		if bits&2 != 0 {
+			d.Count = -1
+			want.Count = widget.CountNegativeMessage
+		}
+		if bits&4 != 0 {
+			d.Status = "invalid"
+			want.Status = widget.StatusNotAllowedMessage
+		}
+		checked := s.Check(d)
+		if checked != want {
+			t.Fatalf("Check(%+v) = %+v; want %+v", d, checked, want)
+		}
+		if !slices.Equal(s.All(), before) {
+			t.Fatal("Check changed widgets")
+		}
+		w, errs := create(s, d)
+		if errs != checked {
+			t.Fatalf("Create errors %+v differ from Check %+v", errs, checked)
+		}
+		if want.Any() && (w != (widget.Widget{}) || !slices.Equal(s.All(), before)) {
+			t.Fatal("rejection returned widget or changed store")
+		}
+	}
+	// All name rules must agree too, including duplicate and rune limit.
+	for _, name := range []string{"alpha", " alpha ", strings.Repeat("é", widget.MaxNameRunes+1), strings.Repeat("é", widget.MaxNameRunes), "Alpha"} {
+		s := widget.NewStore()
+		d := widget.Draft{Name: name, Count: 2, Status: widget.StatusPaused}
+		before, checked := s.All(), s.Check(d)
+		w, errs := create(s, d)
+		if errs != checked {
+			t.Fatalf("Create(%q) errors differ from Check", name)
+		}
+		if errs.Any() && (w != (widget.Widget{}) || !slices.Equal(s.All(), before)) {
+			t.Fatal("rejection changed store")
+		}
+	}
+}
+
+// R-F4ZQ-NDER, R-FIEM-UUKE, R-GFBX-6NL5.
+func TestAcceptedCreationOrder(t *testing.T) {
+	s := widget.NewStore()
+	for _, d := range []widget.Draft{
+		{Name: "\u2003 delta \t", Count: 7, Status: widget.StatusActive},
+		{Name: "omega", Count: 0, Status: widget.StatusPaused},
+		{Name: "epsilon", Count: 12, Status: widget.StatusRetired},
 	} {
-		t.Run(strconv.Quote(tc.count), func(t *testing.T) {
-			s := widget.NewStore()
-			got, errs := s.Create(widget.Submission{Name: "delta", Count: tc.count, Status: "active"})
-			if errs != (widget.FieldErrors{Count: tc.want}) {
-				t.Fatalf("errors = %+v, want count %q only", errs, tc.want)
-			}
-			if tc.want == "" {
-				want, err := strconv.Atoi(strings.TrimSpace(tc.count))
-				if err != nil {
-					t.Fatal(err)
-				}
-				if got.Count != want {
-					t.Errorf("stored count = %d, want %d", got.Count, want)
-				}
-			}
-		})
+		before := s.All()
+		want := widget.Widget{Name: strings.TrimSpace(d.Name), Count: d.Count, Status: d.Status}
+		got, errs := s.Create(d)
+		if errs.Any() || got != want || !slices.Equal(s.All(), append(before, want)) {
+			t.Fatalf("Create(%+v) = %+v, %+v; All=%+v", d, got, errs, s.All())
+		}
 	}
 }
 
-// R-RF9Q-9DA3, R-RGHM-N50S, R-R5IJ-77CJ.
-func TestStatusValidation(t *testing.T) {
-	for _, tc := range []struct{ status, want string }{
-		{"", widget.StatusNotAllowedMessage}, {" \t", widget.StatusNotAllowedMessage},
-		{"Active", widget.StatusNotAllowedMessage}, {"ACTIVE", widget.StatusNotAllowedMessage},
-		{"pending", widget.StatusNotAllowedMessage}, {"active paused", widget.StatusNotAllowedMessage},
-		{"active", ""}, {"paused", ""}, {"retired", ""}, {"\u2003active\n", ""},
-	} {
-		t.Run(strconv.Quote(tc.status), func(t *testing.T) {
-			got, errs := widget.NewStore().Create(widget.Submission{Name: "delta", Count: "1", Status: tc.status})
-			if errs != (widget.FieldErrors{Status: tc.want}) {
-				t.Fatalf("errors = %+v, want status %q only", errs, tc.want)
-			}
-			if tc.want == "" && got.Status != widget.Status(strings.TrimSpace(tc.status)) {
-				t.Errorf("stored status = %q", got.Status)
-			}
-		})
-	}
-}
-
-// R-RHPJ-0WRH, R-RML4-JZQ9, R-4IRY-YAZT, R-R5IJ-77CJ.
-func TestRejectedSubmissionReportsEveryFieldAndLeavesStoreUnchanged(t *testing.T) {
-	for bits := 1; bits < 8; bits++ {
-		t.Run(strconv.Itoa(bits), func(t *testing.T) {
-			s := widget.NewStore()
-			if _, errs := s.Create(widget.Submission{Name: "zeta", Count: "2", Status: "retired"}); errs.Any() {
-				t.Fatal(errs)
-			}
-			before := s.All()
-			sub := widget.Submission{Name: " delta ", Count: " 0 ", Status: " active "}
-			want := widget.FieldErrors{}
-			if bits&1 != 0 {
-				sub.Name = " \t"
-				want.Name = widget.NameRequiredMessage
-			}
-			if bits&2 != 0 {
-				sub.Count = " 1.5 "
-				want.Count = widget.CountNotWholeMessage
-			}
-			if bits&4 != 0 {
-				sub.Status = " invalid "
-				want.Status = widget.StatusNotAllowedMessage
-			}
-			raw := sub
-			got, errs := s.Create(sub)
-			if errs != want {
-				t.Errorf("errors = %+v, want %+v", errs, want)
-			}
-			if got != (widget.Widget{}) {
-				t.Errorf("rejected widget = %+v", got)
-			}
-			if !slices.Equal(s.All(), before) {
-				t.Fatal("rejection changed store content or order")
-			}
-			if sub != raw {
-				t.Fatal("rejection changed raw submission")
-			}
-		})
-	}
-}
-
-// R-RNT0-XRGY, R-RP0X-BJ7N.
-func TestConcurrentCreationAndSnapshots(t *testing.T) {
+// R-GMNB-HA1B, R-GQB0-ML9E.
+func TestConcurrentCreationChecksAndSnapshots(t *testing.T) {
 	s := widget.NewStore()
 	const writers = 64
 	start := make(chan struct{})
@@ -354,10 +423,10 @@ func TestConcurrentCreationAndSnapshots(t *testing.T) {
 	for i := range writers {
 		wg.Go(func() {
 			<-start
-			name := fmt.Sprintf("widget-%d", i)
-			created, errs := s.Create(widget.Submission{Name: name, Count: strconv.Itoa(i), Status: "active"})
+			d := widget.Draft{Name: fmt.Sprintf("widget-%d", i), Count: i, Status: widget.StatusActive}
+			created, errs := s.Create(d)
 			if errs.Any() {
-				t.Errorf("Create(%s): %+v", name, errs)
+				t.Errorf("Create(%s): %+v", d.Name, errs)
 				return
 			}
 			results <- created
@@ -371,6 +440,10 @@ func TestConcurrentCreationAndSnapshots(t *testing.T) {
 					return
 				}
 				snapshot[0].Name = "caller mutation"
+				errs := s.Check(widget.Draft{Name: "alpha", Count: -1, Status: "bad"})
+				if errs != (widget.FieldErrors{Name: widget.NameTakenMessage, Count: widget.CountNegativeMessage, Status: widget.StatusNotAllowedMessage}) {
+					t.Errorf("concurrent Check = %+v", errs)
+				}
 			}
 		})
 	}
@@ -396,11 +469,11 @@ func TestConcurrentCreationAndSnapshots(t *testing.T) {
 		}
 	}
 	if accepted != writers {
-		t.Errorf("accepted %d, want %d", accepted, writers)
+		t.Errorf("accepted %d; want %d", accepted, writers)
 	}
 }
 
-// R-7XYY-QBZY, R-RNT0-XRGY.
+// R-GSQT-E4QS, R-GMNB-HA1B.
 func TestConcurrentDuplicateNamesAreAtomic(t *testing.T) {
 	s := widget.NewStore()
 	const writers = 64
@@ -418,7 +491,7 @@ func TestConcurrentDuplicateNamesAreAtomic(t *testing.T) {
 			if i%2 == 0 {
 				name = " \u2003delta\t"
 			}
-			w, errs := s.Create(widget.Submission{Name: name, Count: strconv.Itoa(i), Status: "paused"})
+			w, errs := s.Create(widget.Draft{Name: name, Count: i, Status: widget.StatusPaused})
 			results <- outcome{w, errs}
 		})
 	}
@@ -436,7 +509,7 @@ func TestConcurrentDuplicateNamesAreAtomic(t *testing.T) {
 		}
 	}
 	if accepted != 1 {
-		t.Fatalf("accepted = %d, want 1", accepted)
+		t.Fatalf("accepted = %d; want 1", accepted)
 	}
 	if !slices.Equal(s.All(), append(initialWidgets(), winner)) {
 		t.Fatalf("All = %+v", s.All())

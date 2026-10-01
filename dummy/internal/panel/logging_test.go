@@ -40,7 +40,7 @@ func (w *panelLogWriter) entries() []string {
 	return slices.Clone(w.writes)
 }
 
-// R-MM92-HZAL R-Y1D9-4V24
+// R-1AVP-KTOU R-1DBI-CD68
 func TestPanelRequestDiagnostics(t *testing.T) {
 	cases := []struct {
 		method, path, userID, requestID, want string
@@ -52,6 +52,8 @@ func TestPanelRequestDiagnostics(t *testing.T) {
 		{"GET", "/missing", "reader", "not-found", ""},
 		{"PUT", "/widgets", "reader", "wrong-method", ""},
 		{"POST", "/widgets", "reader", "wrong-media", ""},
+		{"GET", "/mcp", "reader", "mcp-authenticated", ""},
+		{"POST", "/mcp", "", "mcp-missing", "dummy: request mcp-missing: X-User-Id is missing\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.requestID+tc.method, func(t *testing.T) {
@@ -68,7 +70,7 @@ func TestPanelRequestDiagnostics(t *testing.T) {
 				r.Header.Set("X-Request-Id", "")
 			}
 			w := httptest.NewRecorder()
-			Handler(widget.NewStore(), pageTestBanner, log).ServeHTTP(w, r)
+			coreHandler(t, widget.NewStore(), pageTestBanner, log).ServeHTTP(w, r)
 			entries := log.entries()
 			if tc.want == "" {
 				if w.Code >= 500 || len(entries) != 0 {
@@ -83,11 +85,11 @@ func TestPanelRequestDiagnostics(t *testing.T) {
 	}
 }
 
-// R-MOOV-9IRZ
+// R-1EJE-Q4WX
 func TestPanelDiagnosticsSerializeWrites(t *testing.T) {
 	const requests = 64
 	log := &panelLogWriter{}
-	h := Handler(widget.NewStore(), pageTestBanner, log)
+	h := coreHandler(t, widget.NewStore(), pageTestBanner, log)
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	for i := range requests {

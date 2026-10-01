@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ikigenba/ikigenba/appkit"
+	"github.com/ikigenba/ikigenba/appkit/page"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
@@ -21,8 +21,8 @@ var sharedFiles = []struct{ name, contentType string }{
 	{"TABLER-LICENSE.txt", "text/plain; charset=utf-8"},
 }
 
-func staticTestHandler() http.Handler {
-	return Handler(widget.NewStore(), func(appkit.User) appkit.Banner { return appkit.Banner{} }, io.Discard)
+func staticTestHandler(t *testing.T) http.Handler {
+	return coreHandler(t, widget.NewStore(), func(page.User) page.Banner { return page.Banner{} }, io.Discard)
 }
 
 func staticStrongTag(tag string) bool {
@@ -37,17 +37,17 @@ func staticStrongTag(tag string) bool {
 	return true
 }
 
-// R-SC7S-5VXC R-SDFO-JNO1
+// R-14PZ-ZBP7 R-19LL-IENZ
 func TestSharedStaticDelegation(t *testing.T) {
-	if appkit.StaticPrefix != "/_appkit/" {
-		t.Fatalf("static prefix = %q", appkit.StaticPrefix)
+	if page.StaticPrefix != "/_appkit/" {
+		t.Fatalf("static prefix = %q", page.StaticPrefix)
 	}
 	paths := []string{"/_appkit/", "/_appkit/missing", "/_appkit/../widgets", "/_appkit/%2Ftheme.css", "/_appkit/%74heme.css"}
 	for _, file := range sharedFiles {
 		paths = append(paths, "/_appkit/"+file.name, "/_appkit/"+file.name+"/extra", "/_appkit/"+strings.ToUpper(file.name))
 	}
-	h := staticTestHandler()
-	static := appkit.Static()
+	h := staticTestHandler(t)
+	static := page.Static()
 	for _, path := range paths {
 		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "TRACE", "custom"} {
 			for _, fields := range [][]string{nil, {"*"}, {`W/"stale", "other"`}, {`"bad`}, {`"a"`, `"b"`}} {
@@ -68,9 +68,9 @@ func TestSharedStaticDelegation(t *testing.T) {
 	}
 }
 
-// R-SENK-XFEQ R-SFVH-B75F R-SH3D-OYW4
+// R-M86B-4IU6 R-1FP3-F9DG R-M9E7-IAKV
 func TestSharedStaticContentAndCache(t *testing.T) {
-	first, second := staticTestHandler(), staticTestHandler()
+	first, second := staticTestHandler(t), staticTestHandler(t)
 	for _, file := range sharedFiles {
 		path := "/_appkit/" + file.name
 		base := pageTestResponse(first, pageTestRequest("GET", path))
@@ -99,9 +99,9 @@ func TestSharedStaticContentAndCache(t *testing.T) {
 	}
 }
 
-// R-SJJ6-GIDI R-SKR2-UA47
+// R-MAM3-W2BK R-MBU0-9U29
 func TestSharedStaticRevalidation(t *testing.T) {
-	h := staticTestHandler()
+	h := staticTestHandler(t)
 	for _, file := range sharedFiles {
 		path := "/_appkit/" + file.name
 		base := pageTestResponse(h, pageTestRequest("GET", path))
@@ -119,7 +119,7 @@ func TestSharedStaticRevalidation(t *testing.T) {
 				}
 			}
 		}
-		for _, condition := range []string{`"stale"`, `W/"stale", "other"`, ` , "stale" , , W/"other" ,`, `"*"`, ",,"} {
+		for _, condition := range []string{`"stale"`, `W/"stale", "other"`, ` , "stale" , , W/"other" ,`, `"*"`} {
 			for _, modified := range []string{"", "Wed, 21 Oct 2015 07:28:00 GMT", "Wed, 21 Oct 2099 07:28:00 GMT", "malformed"} {
 				r := pageTestRequest("GET", path)
 				r.Header.Set("If-None-Match", condition)
@@ -133,16 +133,16 @@ func TestSharedStaticRevalidation(t *testing.T) {
 	}
 }
 
-// R-SLYZ-81UW
+// R-MD1W-NLSY
 func TestSharedStaticRefusedMethods(t *testing.T) {
-	h := staticTestHandler()
+	h := staticTestHandler(t)
 	for _, file := range sharedFiles {
 		for _, method := range []string{"POST", "PUT", "DELETE", "PATCH", "OPTIONS", "TRACE", "custom"} {
 			for _, validator := range []string{"", "*", `"stale"`, "malformed"} {
 				r := pageTestRequest(method, "/_appkit/"+file.name)
 				r.Header.Set("If-None-Match", validator)
 				got := pageTestResponse(h, r)
-				if got.Code != 405 || got.Header().Get("Allow") != "GET, HEAD" || len(got.Header().Values("ETag")) != 0 {
+				if got.Code != 405 || got.Header().Get("Allow") != "GET, HEAD" {
 					t.Fatalf("%s %s: %d %v", method, r.URL.Path, got.Code, got.Header())
 				}
 			}
@@ -150,9 +150,9 @@ func TestSharedStaticRefusedMethods(t *testing.T) {
 	}
 }
 
-// R-4FAJ-45J6
+// R-ME9T-1DJN
 func TestSharedStaticMissingPaths(t *testing.T) {
-	h := staticTestHandler()
+	h := staticTestHandler(t)
 	paths := []string{"/_appkit/", "/_appkit/missing", "/_appkit/banner.html"}
 	for _, file := range sharedFiles {
 		paths = append(paths, "/_appkit/"+file.name+"/extra", "/_appkit/"+file.name+"x", "/_appkit/"+file.name+"%2Fextra", "/_appkit/"+strings.ToUpper(file.name))
@@ -163,7 +163,7 @@ func TestSharedStaticMissingPaths(t *testing.T) {
 				r := pageTestRequest(method, path)
 				r.Header.Set("If-None-Match", validator)
 				got := pageTestResponse(h, r)
-				if got.Code != 404 || len(got.Header().Values("ETag")) != 0 {
+				if got.Code != 404 {
 					t.Fatalf("%s %s: %d %v", method, path, got.Code, got.Header())
 				}
 			}

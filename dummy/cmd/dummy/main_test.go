@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"html"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"strings"
@@ -18,11 +20,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/mcp"
 	"github.com/ikigenba/ikigenba/dummy/internal/cli"
 	"github.com/ikigenba/ikigenba/dummy/internal/panel"
 )
 
-// R-Z2CP-8T9E R-Z3KL-ML03 R-Z4SI-0CQS
+// R-49MF-7KF1 R-4UCP-PO0U R-JC0I-TC5V
 func TestMainWiring(t *testing.T) {
 	root := mainProjectRoot(t)
 	binary := filepath.Join(t.TempDir(), "dummy")
@@ -90,7 +94,7 @@ func runBinary(t *testing.T, binary string, args []string) (string, string, int)
 	return stdout.String(), stderr.String(), exitError.ExitCode()
 }
 
-// R-Z60E-E4HH R-Z78A-RW86 R-7J0U-GFGT
+// R-5F30-7RMN R-5ZTA-PV8G R-DXP8-MKZA
 func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
 	t.Helper()
 	directory, err := os.MkdirTemp("", "dummy-exec-")
@@ -145,12 +149,10 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
 
 	command := exec.Command("/bin/sh")
 	command.Args = []string{"/bin/sh", "-c", `LISTEN_PID=$$ LISTEN_FDS=1 exec "$0"`, binary}
+	servicesPath := filepath.Join(directory, "services.json")
 	command.Env = []string{"NOTIFY_SOCKET=" + notifyPath}
 	if sig == syscall.SIGTERM {
-		servicesPath := filepath.Join(directory, "services.json")
-		if err := os.WriteFile(servicesPath, []byte(`{"services":[{"name":"dummy","url":"/widgets","icon":"","enabled":true}]}`), 0600); err != nil {
-			t.Fatal(err)
-		}
+		writeServices(t, servicesPath, "First description")
 		command.Env = append(command.Env, "IKIGENBA_SERVICES="+servicesPath)
 	}
 	// Only descriptor 3 is a listener. Readiness proves the child took it.
@@ -202,6 +204,14 @@ func serveAndSignal(t *testing.T, binary string, sig os.Signal) {
 			t.Error("main did not pass appkit banner source to handler")
 		}
 		assertVersionFooter(t, string(body))
+		assertMCPWiring(t, client)
+		if sig == syscall.SIGTERM {
+			assertDiscovery(t, client, "First description", true)
+			writeServices(t, servicesPath, "Second description")
+			assertDiscovery(t, client, "Second description", true)
+		} else {
+			assertDiscovery(t, client, "", false)
+		}
 	}
 	if err := command.Process.Signal(sig); err != nil {
 		t.Fatalf("send %v: %v", sig, err)
@@ -286,4 +296,93 @@ func normaliseFooterContent(content string) string {
 		content = content[:start] + content[start+end+1:]
 	}
 	return strings.Join(strings.Fields(html.UnescapeString(content)), " ")
+}
+
+func writeServices(t *testing.T, path, description string) {
+	t.Helper()
+	entry := map[string]any{"name": panel.ServiceName, "url": "/widgets", "description": description, "socket": "dummy.sock", "enabled": true, "mcp": true, "icon": ""}
+	data, err := json.Marshal(map[string]any{"services": []any{entry}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// R-E051-E4GO
+func assertMCPWiring(t *testing.T, httpClient *http.Client) {
+	t.Helper()
+	client := mcp.NewClient(mcp.ClientConfig{Endpoint: "http://dummy/mcp", HTTPClient: httpClient, Name: "test", Version: "test"})
+	result, err := client.CallTool(context.Background(), identity.Caller{UserID: "test-user"}, "list_widgets", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.IsError() {
+		t.Fatal("list_widgets returned a tool error")
+	}
+	data, err := result.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		t.Fatal(err)
+	}
+	var meta map[string]json.RawMessage
+	if err := json.Unmarshal(fields["_meta"], &meta); err != nil {
+		t.Fatal(err)
+	}
+	var info map[string]string
+	if err := json.Unmarshal(meta["io.modelcontextprotocol/serverInfo"], &info); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(info, map[string]string{"name": panel.ServiceName, "version": cli.Version}) {
+		t.Errorf("serverInfo=%v", info)
+	}
+}
+
+// R-E3SQ-JFOR R-E68J-AZ65
+func assertDiscovery(t *testing.T, client *http.Client, instructions string, present bool) {
+	t.Helper()
+	payload := map[string]any{"jsonrpc": "2.0", "id": 1, "method": "server/discover", "params": map[string]any{"_meta": map[string]any{"io.modelcontextprotocol/protocolVersion": mcp.ProtocolVersion, "io.modelcontextprotocol/clientCapabilities": map[string]any{}}}}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "http://dummy/mcp", bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("X-User-Id", "test-user")
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("MCP-Protocol-Version", mcp.ProtocolVersion)
+	request.Header.Set("Mcp-Method", "server/discover")
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("discovery status=%d", response.StatusCode)
+	}
+	var decoded struct {
+		Result map[string]json.RawMessage `json:"result"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&decoded); err != nil {
+		t.Fatal(err)
+	}
+	value, ok := decoded.Result["instructions"]
+	if ok != present {
+		t.Fatalf("instructions presence=%t want %t", ok, present)
+	}
+	if present {
+		var text string
+		if err := json.Unmarshal(value, &text); err != nil {
+			t.Fatal(err)
+		}
+		if text != instructions {
+			t.Errorf("instructions=%q want %q", text, instructions)
+		}
+	}
 }

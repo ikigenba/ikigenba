@@ -12,19 +12,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ikigenba/ikigenba/appkit"
+	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/page"
 )
 
-// R-10H0-0STN R-LPBS-669U
+// R-F2D6-M8QD R-E8OC-2INJ
 func TestUsageConstant(t *testing.T) {
-	const want = "Usage: dummy [command]\n\nServe the dummy control panel on the socket systemd passes in. With no\ncommand, serve.\n\nCommands:\n  manifest   print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  the server failed\n  2  usage error\n"
+	const want = "Usage: dummy [command]\n\nServe the dummy control panel, and its MCP tools at /mcp, on the socket\nsystemd passes in. With no command, serve.\n\nCommands:\n  manifest   print the app manifest\n\nOptions:\n  --help      print this help\n  --version   print the version\n\nExit codes:\n  0  success\n  1  the server failed\n  2  usage error\n"
 	const declared = Usage
 	if declared != want {
 		t.Errorf("Usage = %q, want %q", declared, want)
 	}
 }
 
-// R-S3OH-HHQH
+// R-DSTN-3I0I
 func TestProcessConstructsWithDeclaredFieldsAndRuns(t *testing.T) {
 	// Each field's address is stored in a slot of the declared pointer type,
 	// and Run is stored in a field of its declared type, so this compiles
@@ -38,7 +39,7 @@ func TestProcessConstructsWithDeclaredFieldsAndRuns(t *testing.T) {
 	lookupEnv := func(string) (string, bool) { return "", false }
 	unsetenv := func(string) error { return nil }
 	inherit := func(uintptr) (net.Listener, error) { return nil, errors.New("unexpected") }
-	banner := func(appkit.User) appkit.Banner { return appkit.Banner{} }
+	banner := func(page.User) page.Banner { return page.Banner{} }
 	var p Process
 	fields := struct {
 		args      *[]string
@@ -48,16 +49,18 @@ func TestProcessConstructsWithDeclaredFieldsAndRuns(t *testing.T) {
 		stdout    *io.Writer
 		stderr    *io.Writer
 		inherit   *func(fd uintptr) (net.Listener, error)
-		banner    *func(u appkit.User) appkit.Banner
-	}{&p.Args, &p.LookupEnv, &p.Unsetenv, &p.Pid, &p.Stdout, &p.Stderr, &p.Inherit, &p.Banner}
+		banner    *func(u page.User) page.Banner
+		mcp       **mcp.Server
+	}{&p.Args, &p.LookupEnv, &p.Unsetenv, &p.Pid, &p.Stdout, &p.Stderr, &p.Inherit, &p.Banner, &p.MCP}
 	*fields.args, *fields.lookupEnv, *fields.unsetenv, *fields.pid = args, lookupEnv, unsetenv, 1
 	*fields.stdout, *fields.stderr, *fields.inherit, *fields.banner = stdout, stderr, inherit, banner
+	*fields.mcp = nil
 	if code := declared.run(context.Background(), p); code != ExitSuccess || out.String() != Version+"\n" || errOut.Len() != 0 {
 		t.Errorf("Run(--version) = %d, stdout %q, stderr %q", code, out.String(), errOut.String())
 	}
 }
 
-// R-MMB3-ASQ6 R-MNIZ-OKGV R-MOQW-2C7K R-MUSD-6DHG
+// R-QZLT-9HQT R-RKC3-RLCM R-S6AA-NGP4 R-UFZK-A3DN
 func TestRunCommandsDoNotTouchServeState(t *testing.T) {
 	for _, tc := range []struct{ arg, want string }{{"--version", Version + "\n"}, {"manifest", Manifest}, {"--help", Usage}} {
 		t.Run(tc.arg, func(t *testing.T) {
@@ -74,7 +77,7 @@ func TestRunCommandsDoNotTouchServeState(t *testing.T) {
 	}
 }
 
-// R-MPYS-G3Y9 R-MR6O-TVOY R-MSEL-7NFN R-MUSD-6DHG R-N0XV-W1MI
+// R-SR0L-5KAX R-TAIZ-9W61 R-TV99-RZRU R-UFZK-A3DN R-V0PU-S6ZG
 func TestRunInvalidArguments(t *testing.T) {
 	for _, tc := range []struct {
 		args []string
@@ -100,7 +103,7 @@ func TestRunInvalidArguments(t *testing.T) {
 	}
 }
 
-// R-LXV2-UKGP R-LZ2Z-8C7E R-W59L-WD8G
+// R-ONGQ-VBKW R-P9EX-R6XE R-1XHC-TE94
 func TestDrainValidationPrecedesSocket(t *testing.T) {
 	for _, s := range []string{"0", "01", "-1", "2.5", "5s", " 5", "abc", "1 ", "１２"} {
 		var out, err recordingWriter
@@ -122,13 +125,16 @@ func TestDrainValidationPrecedesSocket(t *testing.T) {
 		}
 	}
 	for _, s := range []string{"1", "5", "9223372036854775808", strings.Repeat("9", 100)} {
-		if _, ok := parseDrain(s); !ok {
-			t.Errorf("valid drain %q rejected", s)
+		var out, diagnostics recordingWriter
+		code := Run(context.Background(), Process{LookupEnv: mapLookup(map[string]string{"DRAIN_SECONDS": s}), Stdout: &out, Stderr: &diagnostics})
+		const want = "dummy: no socket was passed in\n\nrun it under systemd, or locally with 'systemd-socket-activate -l 127.0.0.1:3000 dummy'\n"
+		if code != ExitUsage || out.Len() != 0 || diagnostics.String() != want {
+			t.Errorf("valid drain %q rejected: code=%d out=%q diagnostics=%q", s, code, out.String(), diagnostics.String())
 		}
 	}
 }
 
-// R-M1IR-ZVOS
+// Drain calculation helper, without claiming the fixed-call handoff contract.
 func TestDrainDuration(t *testing.T) {
 	for _, tc := range []struct {
 		s    string
@@ -141,7 +147,7 @@ func TestDrainDuration(t *testing.T) {
 	}
 }
 
-// R-M2QO-DNFH R-W6HI-A4Z5 R-W7PE-NWPU
+// R-PU58-9AJ7 R-2JFJ-P9LM R-32XX-TLGQ
 func TestSocketCount(t *testing.T) {
 	const hint = "\n\nrun it under systemd, or locally with 'systemd-socket-activate -l 127.0.0.1:3000 dummy'\n"
 	for _, tc := range []struct {
@@ -165,7 +171,7 @@ func TestSocketCount(t *testing.T) {
 	}
 }
 
-// R-M6ED-IYNK R-Z60E-E4HH R-W8XB-1OGJ
+// R-QEVI-RE50 R-5F30-7RMN R-3OW4-PGT8
 func TestRunTakesOnlyDescriptorThree(t *testing.T) {
 	var out, err recordingWriter
 	var unset []string
@@ -182,7 +188,7 @@ func TestRunTakesOnlyDescriptorThree(t *testing.T) {
 	}
 }
 
-// R-AXIO-WHJH R-N0XV-W1MI
+// R-L27E-BMZA R-V0PU-S6ZG
 func TestRunReturnsDeclaredExitCodes(t *testing.T) {
 	p := Process{Stderr: io.Discard}
 	for _, args := range [][]string{{"--version"}, {"bogus"}, nil} {
@@ -212,9 +218,3 @@ type testAddr string
 
 func (a testAddr) Network() string { return "test" }
 func (a testAddr) String() string  { return string(a) }
-
-type failedListener struct{ err error }
-
-func (l *failedListener) Accept() (net.Conn, error) { return nil, l.err }
-func (l *failedListener) Close() error              { return nil }
-func (l *failedListener) Addr() net.Addr            { return testAddr("failed") }

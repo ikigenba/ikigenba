@@ -37,6 +37,16 @@ func Statuses() []Status {
 	return []Status{StatusActive, StatusPaused, StatusRetired}
 }
 
+// Enum returns the allowed statuses independently of its receiver.
+func (s Status) Enum() []string {
+	statuses := Statuses()
+	values := make([]string, len(statuses))
+	for i, status := range statuses {
+		values[i] = string(status)
+	}
+	return values
+}
+
 // Widget is an accepted name, count, and status.
 type Widget struct {
 	Name   string
@@ -49,6 +59,13 @@ type Submission struct {
 	Name   string
 	Count  string
 	Status string
+}
+
+// Draft holds typed field values for checking or creation.
+type Draft struct {
+	Name   string
+	Count  int
+	Status Status
 }
 
 // FieldErrors holds one rejection message per field, or an empty string.
@@ -85,14 +102,48 @@ func (s *Store) All() []Widget {
 	return slices.Clone(s.widgets)
 }
 
-// Create validates all trimmed fields and appends an accepted widget atomically.
-func (s *Store) Create(sub Submission) (Widget, FieldErrors) {
-	name := strings.TrimSpace(sub.Name)
-	countText := strings.TrimSpace(sub.Count)
+// ParseSubmission converts the form's fields without judging typed values.
+func ParseSubmission(sub Submission) (Draft, FieldErrors) {
+	d := Draft{Name: sub.Name}
+	var errs FieldErrors
+	count, err := strconv.Atoi(strings.TrimSpace(sub.Count))
+	if err != nil {
+		errs.Count = CountNotWholeMessage
+	} else {
+		d.Count = count
+	}
 	status := Status(strings.TrimSpace(sub.Status))
+	if allowedStatus(status) {
+		d.Status = status
+	} else {
+		errs.Status = StatusNotAllowedMessage
+	}
+	return d, errs
+}
+
+// Check judges all fields without modifying the store.
+func (s *Store) Check(d Draft) FieldErrors {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.check(d)
+}
+
+// Create judges and appends an accepted widget atomically.
+func (s *Store) Create(d Draft) (Widget, FieldErrors) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	errs := s.check(d)
+	if errs.Any() {
+		return Widget{}, errs
+	}
+	w := Widget{Name: strings.TrimSpace(d.Name), Count: d.Count, Status: d.Status}
+	s.widgets = append(s.widgets, w)
+	return w, errs
+}
 
+// check requires the caller to hold the store's lock.
+func (s *Store) check(d Draft) FieldErrors {
+	name := strings.TrimSpace(d.Name)
 	var errs FieldErrors
 	switch {
 	case name == "":
@@ -107,22 +158,20 @@ func (s *Store) Create(sub Submission) (Widget, FieldErrors) {
 			}
 		}
 	}
-	count, err := strconv.Atoi(countText)
-	switch {
-	case err != nil:
-		errs.Count = CountNotWholeMessage
-	case count < 0:
+	if d.Count < 0 {
 		errs.Count = CountNegativeMessage
 	}
-	switch status {
-	case StatusActive, StatusPaused, StatusRetired:
-	default:
+	if !allowedStatus(d.Status) {
 		errs.Status = StatusNotAllowedMessage
 	}
-	if errs.Any() {
-		return Widget{}, errs
+	return errs
+}
+
+func allowedStatus(status Status) bool {
+	switch status {
+	case StatusActive, StatusPaused, StatusRetired:
+		return true
+	default:
+		return false
 	}
-	w := Widget{Name: name, Count: count, Status: status}
-	s.widgets = append(s.widgets, w)
-	return w, errs
 }

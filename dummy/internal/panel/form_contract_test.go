@@ -13,14 +13,14 @@ import (
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
-// R-4R7U-CTUV
+// R-APBB-VZAZ
 func TestFormCardAdjacency(t *testing.T) {
 	for _, sub := range []widget.Submission{{}, {Name: "", Count: "bad", Status: "archived"}} {
 		method, encoded := http.MethodGet, ""
 		if sub.Count != "" {
 			method, encoded = http.MethodPost, formBody(sub)
 		}
-		body := pageTestContent(t, formRequest(Handler(widget.NewStore(), pageTestBanner, io.Discard), method, "/widgets", "application/x-www-form-urlencoded", encoded).Body.String())
+		body := pageTestContent(t, formRequest(coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard), method, "/widgets", "application/x-www-form-urlencoded", encoded).Body.String())
 		forms, formEnds := pageTestTags(body, "form", false), pageTestTags(body, "form", true)
 		if len(forms) != 1 || len(formEnds) != 1 {
 			t.Fatalf("form pairs: starts=%v ends=%v", forms, formEnds)
@@ -70,7 +70,7 @@ func TestFormCardAdjacency(t *testing.T) {
 	}
 }
 
-// R-4F0U-J4FX
+// R-6LRH-LQKY
 func TestFormRawRejectedEcho(t *testing.T) {
 	for i, sub := range []widget.Submission{
 		{Name: "", Count: "", Status: "archived"},
@@ -79,7 +79,7 @@ func TestFormRawRejectedEcho(t *testing.T) {
 		{Name: "a\x00b", Count: "three\x00", Status: "retired"},
 	} {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			w := formRequest(Handler(widget.NewStore(), pageTestBanner, io.Discard), http.MethodPost, "/widgets", "application/x-www-form-urlencoded", formBody(sub))
+			w := formRequest(coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard), http.MethodPost, "/widgets", "application/x-www-form-urlencoded", formBody(sub))
 			if w.Code != http.StatusUnprocessableEntity {
 				t.Fatalf("fixture did not produce 422: %d", w.Code)
 			}
@@ -91,7 +91,7 @@ func TestFormRawRejectedEcho(t *testing.T) {
 				}
 			}
 			for name, want := range map[string]string{"name": sub.Name, "count": sub.Count} {
-				if got := values[name]; got != want {
+				if got := values[name]; got != strings.ReplaceAll(want, "\x00", "\ufffd") {
 					t.Errorf("%s echo=%q, want raw %q", name, got, want)
 				}
 			}
@@ -115,7 +115,7 @@ func formContractDocuments(t *testing.T, check func(*testing.T, *http.Request, *
 			r.Header.Set("X-User-Id", "form-user")
 			r.Header.Set("X-User-Email", "form-user@example.test")
 			r.Header.Set("Content-Type", tc.media)
-			w := pageTestResponse(Handler(widget.NewStore(), pageTestBanner, io.Discard), r)
+			w := pageTestResponse(coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard), r)
 			if w.Header().Get("Content-Type") != "text/html; charset=utf-8" {
 				t.Fatal("fixture did not produce HTML document")
 			}
@@ -124,7 +124,7 @@ func formContractDocuments(t *testing.T, check func(*testing.T, *http.Request, *
 	}
 }
 
-// R-4OS1-LADH
+// R-BURW-W6IL
 func TestFormDocumentErrorElements(t *testing.T) {
 	formContractDocuments(t, func(t *testing.T, r *http.Request, w *httptest.ResponseRecorder) {
 		written := pageTestWritten(t, w.Body.String(), r)
@@ -148,7 +148,7 @@ func TestFormDocumentErrorElements(t *testing.T) {
 	})
 }
 
-// R-4PZX-Z246
+// R-DMHD-83PR
 func TestFormNonRejectionDocumentHasNoErrorHooks(t *testing.T) {
 	formContractDocuments(t, func(t *testing.T, r *http.Request, w *httptest.ResponseRecorder) {
 		if w.Code == http.StatusUnprocessableEntity {
@@ -176,7 +176,7 @@ func formContractNoErrorIDs(t *testing.T, body string) {
 	}
 }
 
-// R-4MC8-TQW3 R-4G8Q-WW6M
+// R-K5GV-9F5J R-MO10-3JH7
 func TestFormMediaClassificationAndValidationDecision(t *testing.T) {
 	for _, media := range []string{"application/x-www-form-urlencoded", " APPLICATION/X-WWW-FORM-URLENCODED \t; charset=UTF-8", "\u2003application/x-www-form-urlencoded\u2003;ignored;more", "application/x-www-form-urlencoded; invalid parameter", "", "application/json", "application/x-www-form-urlencoded-extra", ";application/x-www-form-urlencoded", "application/x-www-form-urlencoded, text/plain"} {
 		for _, sub := range []widget.Submission{{Name: "fresh", Count: "1", Status: "active"}, {Name: "", Count: "bad", Status: "archived"}, {Name: "fresh", Count: "bad", Status: "active"}} {
@@ -184,13 +184,13 @@ func TestFormMediaClassificationAndValidationDecision(t *testing.T) {
 				mediaPrefix, _, _ := strings.Cut(media, ";")
 				want := http.StatusUnsupportedMediaType
 				if strings.EqualFold(strings.TrimSpace(mediaPrefix), "application/x-www-form-urlencoded") {
-					_, errs := widget.NewStore().Create(sub)
+					_, errs := formTestCreate(widget.NewStore(), sub)
 					want = http.StatusSeeOther
 					if errs.Any() {
 						want = http.StatusUnprocessableEntity
 					}
 				}
-				w := formRequest(Handler(widget.NewStore(), pageTestBanner, io.Discard), http.MethodPost, "/widgets", media, formBody(sub))
+				w := formRequest(coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard), http.MethodPost, "/widgets", media, formBody(sub))
 				if w.Code != want {
 					t.Errorf("status=%d, want %d", w.Code, want)
 				}
@@ -199,10 +199,10 @@ func TestFormMediaClassificationAndValidationDecision(t *testing.T) {
 	}
 }
 
-// R-4IOJ-OFO0
+// R-DOX5-ZN75
 func TestFormRejectedBodyIsPanelPage(t *testing.T) {
 	for _, sub := range []widget.Submission{{}, {Name: "valid", Count: "bad", Status: "active"}, {Name: "", Count: "bad", Status: "archived"}} {
-		w := formRequest(Handler(widget.NewStore(), pageTestBanner, io.Discard), http.MethodPost, "/widgets", "application/x-www-form-urlencoded", formBody(sub))
+		w := formRequest(coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard), http.MethodPost, "/widgets", "application/x-www-form-urlencoded", formBody(sub))
 		if w.Code != http.StatusUnprocessableEntity {
 			t.Fatalf("fixture did not produce 422: %d", w.Code)
 		}
@@ -210,7 +210,7 @@ func TestFormRejectedBodyIsPanelPage(t *testing.T) {
 	}
 }
 
-// R-4HGN-ANXB
+// R-KLBK-8FSK
 func TestFormRefusalsPreserveWholeStoreSequence(t *testing.T) {
 	for _, media := range []string{"application/json", "application/x-www-form-urlencoded"} {
 		for _, seeded := range []bool{false, true} {
@@ -218,13 +218,13 @@ func TestFormRefusalsPreserveWholeStoreSequence(t *testing.T) {
 				store := widget.NewStore()
 				if seeded {
 					for _, sub := range []widget.Submission{{Name: "z-last", Count: "6", Status: "retired"}, {Name: "a-first", Count: "0", Status: "paused"}} {
-						if _, errs := store.Create(sub); errs.Any() {
+						if _, errs := formTestCreate(store, sub); errs.Any() {
 							t.Fatal(errs)
 						}
 					}
 				}
 				before := store.All()
-				w := formRequest(Handler(store, pageTestBanner, io.Discard), http.MethodPost, "/widgets", media, formBody(widget.Submission{Name: "z-last", Count: "bad", Status: "archived"}))
+				w := formRequest(coreHandler(t, store, pageTestBanner, io.Discard), http.MethodPost, "/widgets", media, formBody(widget.Submission{Name: "z-last", Count: "bad", Status: "archived"}))
 				if w.Code != http.StatusUnsupportedMediaType && w.Code != http.StatusUnprocessableEntity {
 					t.Fatalf("fixture did not produce refusal: %d", w.Code)
 				}
@@ -236,7 +236,7 @@ func TestFormRefusalsPreserveWholeStoreSequence(t *testing.T) {
 	}
 }
 
-// R-4L4C-FZ5E R-4NK5-7IMS
+// R-KNRC-ZZ9Y R-CFI7-EA4E
 func TestFormUnsupportedMediaFailureContract(t *testing.T) {
 	for _, media := range []string{"", "application/json", "multipart/form-data; boundary=a", "text/plain", "application/x-www-form-urlencoded-extra", ";application/x-www-form-urlencoded"} {
 		t.Run(media, func(t *testing.T) {
@@ -247,7 +247,7 @@ func TestFormUnsupportedMediaFailureContract(t *testing.T) {
 			if media != "" {
 				r.Header.Set("Content-Type", media)
 			}
-			w := pageTestResponse(Handler(widget.NewStore(), pageTestBanner, io.Discard), r)
+			w := pageTestResponse(coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard), r)
 			if w.Code != http.StatusUnsupportedMediaType || w.Header().Get("Content-Type") != "text/html; charset=utf-8" {
 				t.Fatalf("unsupported response=%d %v", w.Code, w.Header())
 			}

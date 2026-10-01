@@ -5,4 +5,4 @@ package cli
 var Version = "v0.9.0"
 
 // Manifest describes dummy to the Ikigenba host.
-const Manifest = "app = \"dummy\"\ndefault = false\nsecrets = []\n"
+const Manifest = "app = \"dummy\"\ndescription = \"Demo widgets to list and create\"\ndefault = false\nmcp = true\nsecrets = []\n"

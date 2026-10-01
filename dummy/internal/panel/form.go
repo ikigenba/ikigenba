@@ -9,17 +9,19 @@ import (
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
-type formData struct {
-	Submission     widget.Submission
-	Errors         widget.FieldErrors
-	Statuses       []widget.Status
-	SelectedStatus string
+// FormView is the data consumed by the form asset.
+type FormView struct {
+	Submission widget.Submission
+	Errors     widget.FieldErrors
+	Statuses   []widget.Status
+	Selected   widget.Status
 }
 
-func newFormData(sub widget.Submission, errs widget.FieldErrors) formData {
-	return formData{
+func newFormData(sub widget.Submission, errs widget.FieldErrors) FormView {
+	d, _ := widget.ParseSubmission(sub)
+	return FormView{
 		Submission: sub, Errors: errs, Statuses: widget.Statuses(),
-		SelectedStatus: strings.TrimSpace(sub.Status),
+		Selected: d.Status,
 	}
 }
 
@@ -37,7 +39,21 @@ func (h *handler) serveForm(w http.ResponseWriter, r *http.Request) {
 	sub := widget.Submission{
 		Name: values.Get("name"), Count: values.Get("count"), Status: values.Get("status"),
 	}
-	_, errs := h.store.Create(sub)
+	d, errs := widget.ParseSubmission(sub)
+	if errs.Any() {
+		rules := h.store.Check(d)
+		if errs.Name == "" {
+			errs.Name = rules.Name
+		}
+		if errs.Count == "" {
+			errs.Count = rules.Count
+		}
+		if errs.Status == "" {
+			errs.Status = rules.Status
+		}
+	} else {
+		_, errs = h.store.Create(d)
+	}
 	if errs.Any() {
 		h.renderPage(w, r, http.StatusUnprocessableEntity, sub, errs)
 		return

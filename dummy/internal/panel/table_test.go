@@ -1,6 +1,7 @@
 package panel
 
 import (
+	"bytes"
 	"fmt"
 	"html"
 	"io"
@@ -15,6 +16,9 @@ import (
 	"sync"
 	"testing"
 
+	appidentity "github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/page"
+	"github.com/ikigenba/ikigenba/dummy"
 	"github.com/ikigenba/ikigenba/dummy/internal/widget"
 )
 
@@ -32,7 +36,7 @@ func tableTestIdentity() http.Header {
 
 func tableTestCreate(t *testing.T, store *widget.Store, name string) {
 	t.Helper()
-	if _, errs := store.Create(widget.Submission{Name: name, Count: "45", Status: "paused"}); errs.Any() {
+	if _, errs := store.Create(widget.Draft{Name: name, Count: 45, Status: widget.StatusPaused}); errs.Any() {
 		t.Fatalf("create %q: %+v", name, errs)
 	}
 }
@@ -83,7 +87,7 @@ func tableTestFragment(t *testing.T, raw string, widgets []widget.Widget) {
 			t.Fatal("data row has fewer than three cells")
 		}
 		w := widgets[dataCount]
-		want := []string{strings.Join(strings.Fields(w.Name), " "), strconv.Itoa(w.Count), string(w.Status)}
+		want := []string{strings.Join(strings.Fields(strings.ReplaceAll(w.Name, "\x00", "\ufffd")), " "), strconv.Itoa(w.Count), string(w.Status)}
 		for i, cell := range cells[:3] {
 			endCells := pageTestTags(row[cell[1]:], "td", true)
 			if len(endCells) == 0 {
@@ -114,18 +118,18 @@ func tableTestPageSpan(t *testing.T, raw string) string {
 }
 
 func TestTableMarkupAndPageIdentity(t *testing.T) {
-	// R-KVPQ-RDIA R-MNY9-498Y R-M3J7-QWZS R-M4R4-4OQH R-Q4HP-7G07
-	// R-MLIG-CPRK R-MMQC-QHI9 R-62UX-379I
+	// R-76HS-3U6R R-CEKZ-GD0R R-H8LI-D5DT R-HB1B-4OV7 R-MHXI-6ORQ
+	// R-MJ5E-KGIF R-HUJP-90QB R-HWZI-0K7P
 	for _, empty := range []bool{false, true} {
 		t.Run(fmt.Sprintf("empty=%v", empty), func(t *testing.T) {
 			store := widget.NewStore()
 			if empty {
 				store = new(widget.Store)
 			} else {
-				tableTestCreate(t, store, "  my  \twidget\n<&>\"  ")
+				tableTestCreate(t, store, "  my  \twidget\n<&>\"\x00  ")
 				tableTestCreate(t, store, "last widget")
 			}
-			h := Handler(store, pageTestBanner, io.Discard)
+			h := coreHandler(t, store, pageTestBanner, io.Discard)
 			headers := tableTestIdentity()
 			fragment := tableTestRequest(h, "GET", "/widgets/table", headers, "")
 			if fragment.Code != http.StatusOK || fragment.Header().Get("Content-Type") != "text/html; charset=utf-8" {
@@ -173,14 +177,14 @@ func tableTestHasASCIIClass(value, name string) bool {
 }
 
 func TestTableCountAndStatusMarkup(t *testing.T) {
-	// R-LNX6-XHWY R-AV8T-2F6C R-AWGP-G6X1 R-QR6J-7N0Z
+	// R-HH4T-1JKO R-HICP-FBBD R-HM0E-KMJG R-HOG7-C60U
 	store := widget.NewStore()
 	for _, status := range widget.Statuses() {
-		if _, errs := store.Create(widget.Submission{Name: "widget " + string(status), Count: "7", Status: string(status)}); errs.Any() {
+		if _, errs := store.Create(widget.Draft{Name: "widget " + string(status), Count: 7, Status: status}); errs.Any() {
 			t.Fatalf("create %q: %+v", status, errs)
 		}
 	}
-	response := tableTestRequest(Handler(store, pageTestBanner, io.Discard), "GET", "/widgets/table", tableTestIdentity(), "")
+	response := tableTestRequest(coreHandler(t, store, pageTestBanner, io.Discard), "GET", "/widgets/table", tableTestIdentity(), "")
 	if response.Code != http.StatusOK {
 		t.Fatalf("fragment status = %d", response.Code)
 	}
@@ -255,12 +259,12 @@ func TestTableCountAndStatusMarkup(t *testing.T) {
 }
 
 func TestTableValidatorsTrackRenderedContent(t *testing.T) {
-	// R-KY5J-IWZO R-0NC2-JFTW R-MDAE-T2XC
+	// R-HZFA-S3P3 R-I1V3-JN6H R-I4AW-B6NV
 	store := widget.NewStore()
-	h := Handler(store, pageTestBanner, io.Discard)
+	h := coreHandler(t, store, pageTestBanner, io.Discard)
 	first := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "")
 	second := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "")
-	otherStore := tableTestRequest(Handler(widget.NewStore(), pageTestBanner, io.Discard), "GET", "/widgets/table", tableTestIdentity(), "")
+	otherStore := tableTestRequest(coreHandler(t, widget.NewStore(), pageTestBanner, io.Discard), "GET", "/widgets/table", tableTestIdentity(), "")
 	for _, response := range []*httptest.ResponseRecorder{first, second, otherStore} {
 		if response.Code != http.StatusOK || !regexp.MustCompile(`^"[^",\x09-\x0d\x20]+"$`).MatchString(response.Header().Get("ETag")) {
 			t.Fatalf("invalid success validator: %d %v", response.Code, response.Header())
@@ -282,13 +286,13 @@ func TestTableValidatorsTrackRenderedContent(t *testing.T) {
 }
 
 func TestTableConditionalRequests(t *testing.T) {
-	// R-WWH0-TBDR R-WXOX-734G R-WIGA-XCYS
+	// R-IAEE-81DC R-ICU6-ZKUQ R-I7YL-GHVY
 	for _, empty := range []bool{false, true} {
 		store := widget.NewStore()
 		if empty {
 			store = new(widget.Store)
 		}
-		h := Handler(store, pageTestBanner, io.Discard)
+		h := coreHandler(t, store, pageTestBanner, io.Discard)
 		baseline := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "")
 		etag := baseline.Header().Get("ETag")
 		cases := []struct {
@@ -336,7 +340,7 @@ func TestTableConditionalRequests(t *testing.T) {
 }
 
 func TestTableFailuresAndReadOnlyRequests(t *testing.T) {
-	// R-GFMX-98QH R-GGUT-N0H6 R-MLTP-HH47 R-MN1L-V8UW R-WIGA-XCYS
+	// R-IF9Z-R4C4 R-IIXO-WFK7 R-ILDH-NZ1L R-INTA-FIIZ R-I7YL-GHVY
 	for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE", "CUSTOM"} {
 		for _, identity := range []string{"absent", "empty", "present"} {
 			for _, conditional := range []string{"", "*", `"stale"`} {
@@ -352,14 +356,14 @@ func TestTableFailuresAndReadOnlyRequests(t *testing.T) {
 					}
 					headers.Set("If-None-Match", conditional)
 					before := store.All()
-					response := tableTestRequest(Handler(store, pageTestBanner, io.Discard), method, "/widgets/table", headers, "name=unwanted&count=3&status=active")
+					response := tableTestRequest(coreHandler(t, store, pageTestBanner, io.Discard), method, "/widgets/table", headers, "name=unwanted&count=3&status=active")
 					if !slices.Equal(before, store.All()) {
 						t.Error("table request mutated the store")
 					}
 					wantStatus, wantBody := http.StatusOK, ""
 					switch {
 					case identity != "present":
-						wantStatus, wantBody = http.StatusInternalServerError, MissingIdentityBody
+						wantStatus, wantBody = http.StatusInternalServerError, appidentity.MissingBody
 					case method != "GET" && method != "HEAD":
 						wantStatus, wantBody = http.StatusMethodNotAllowed, MethodNotAllowedBody
 					case conditional == "*":
@@ -386,7 +390,7 @@ func TestTableFailuresAndReadOnlyRequests(t *testing.T) {
 						t.Errorf("Allow = %q", response.Header().Get("Allow"))
 					}
 					if method == "HEAD" {
-						get := tableTestRequest(Handler(store, pageTestBanner, io.Discard), "GET", "/widgets/table", headers, "name=unwanted&count=3&status=active")
+						get := tableTestRequest(coreHandler(t, store, pageTestBanner, io.Discard), "GET", "/widgets/table", headers, "name=unwanted&count=3&status=active")
 						if response.Code != get.Code || !reflect.DeepEqual(response.Header(), get.Header()) || response.Body.Len() != 0 {
 							t.Error("HEAD failure/success does not mirror GET")
 						}
@@ -399,12 +403,12 @@ func TestTableFailuresAndReadOnlyRequests(t *testing.T) {
 
 func TestTableConcurrentSnapshots(t *testing.T) {
 	store := widget.NewStore()
-	h := Handler(store, pageTestBanner, io.Discard)
+	h := coreHandler(t, store, pageTestBanner, io.Discard)
 	var group sync.WaitGroup
 	for i := range 12 {
 		group.Go(func() {
 			name := fmt.Sprintf("concurrent-%d", i)
-			if _, errs := store.Create(widget.Submission{Name: name, Count: "2", Status: "active"}); errs.Any() {
+			if _, errs := store.Create(widget.Draft{Name: name, Count: 2, Status: widget.StatusActive}); errs.Any() {
 				t.Errorf("create: %+v", errs)
 			}
 		})
@@ -421,10 +425,10 @@ func TestTableConcurrentSnapshots(t *testing.T) {
 }
 
 func TestTableTransportHeadParity(t *testing.T) {
-	// R-WIGA-XCYS: exercise net/http's real response framing, including lengths
+	// R-I7YL-GHVY: exercise net/http's real response framing, including lengths
 	// it otherwise adds to GET responses but omits from unwritten HEAD bodies.
 	store := widget.NewStore()
-	h := Handler(store, pageTestBanner, io.Discard)
+	h := coreHandler(t, store, pageTestBanner, io.Discard)
 	etag := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "").Header().Get("ETag")
 	server := httptest.NewServer(h)
 	defer server.Close()
@@ -480,20 +484,44 @@ func TestTableTransportHeadParity(t *testing.T) {
 	}
 }
 
-// R-9PSS-27JH
+// R-CI8O-LO8U
 func TestTableFragmentExcludesPageHeading(t *testing.T) {
 	store := widget.NewStore()
 	for _, extra := range []bool{false, true} {
 		if extra {
 			tableTestCreate(t, store, "one more")
 		}
-		h := Handler(store, pageTestBanner, io.Discard)
+		h := coreHandler(t, store, pageTestBanner, io.Discard)
 		fragment := tableTestRequest(h, "GET", "/widgets/table", tableTestIdentity(), "").Body.String()
 		page := tableTestRequest(h, "GET", "/widgets", tableTestIdentity(), "").Body.String()
 		for _, body := range []string{fragment, tableTestPageSpan(t, page)} {
-			if len(pageTestTags(body, "h1", false)) != 0 || len(pageTestTags(body, "p", false)) != 0 {
+			if len(pageTestTags(body, "h1", false)) != 0 || strings.Contains(body, `id="panel-subtitle"`) {
 				t.Fatalf("page heading in fragment: %q", body)
 			}
+		}
+	}
+}
+
+// R-CAXA-B1SO
+func TestTableUsesAssetData(t *testing.T) {
+	set, err := page.Templates().ParseFS(dummy.Assets(), "*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, empty := range []bool{false, true} {
+		store := widget.NewStore()
+		if empty {
+			store = new(widget.Store)
+		} else {
+			tableTestCreate(t, store, "a\x00b <&>")
+		}
+		var expected bytes.Buffer
+		if err := set.ExecuteTemplate(&expected, "table", store.All()); err != nil {
+			t.Fatal(err)
+		}
+		response := tableTestRequest(coreHandler(t, store, pageTestBanner, io.Discard), "GET", "/widgets/table", tableTestIdentity(), "")
+		if response.Code != http.StatusOK || response.Body.String() != expected.String() {
+			t.Fatalf("fragment differs from table template output: %d %q", response.Code, response.Body.String())
 		}
 	}
 }

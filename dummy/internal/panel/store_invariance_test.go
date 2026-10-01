@@ -19,17 +19,22 @@ func invariantSeededStore(t *testing.T) *widget.Store {
 		{Name: "later first", Count: "8", Status: string(widget.StatusPaused)},
 		{Name: "later second", Count: "2", Status: string(widget.StatusActive)},
 	} {
-		if _, errs := store.Create(sub); errs.Any() {
+		if _, errs := store.Create(coreDraft(sub)); errs.Any() {
 			t.Fatalf("seed submission rejected: %+v", errs)
 		}
 	}
 	return store
 }
 
+// R-2MFS-HVLX
 func invariantSubmission(t *testing.T) string {
 	t.Helper()
 	sub := widget.Submission{Name: "new entry", Count: "9", Status: string(widget.StatusRetired)}
-	if _, errs := invariantSeededStore(t).Create(sub); errs.Any() {
+	draft, parsed := widget.ParseSubmission(sub)
+	if parsed.Any() {
+		t.Fatal(parsed)
+	}
+	if errs := invariantSeededStore(t).Check(draft); errs.Any() {
 		t.Fatalf("valid submission rejected: %+v", errs)
 	}
 	return url.Values{"name": {sub.Name}, "count": {sub.Count}, "status": {sub.Status}}.Encode()
@@ -51,7 +56,7 @@ func assertPanelStoreInvariant(t *testing.T, method, path, identity string, pres
 		request.Header["X-User-Id"] = []string{identity}
 	}
 	response := httptest.NewRecorder()
-	Handler(store, pageTestBanner, io.Discard).ServeHTTP(response, request)
+	coreHandler(t, store, pageTestBanner, io.Discard).ServeHTTP(response, request)
 	if response.Code != wantStatus {
 		t.Errorf("%s %s status = %d, want %d", method, path, response.Code, wantStatus)
 	}
@@ -60,7 +65,7 @@ func assertPanelStoreInvariant(t *testing.T, method, path, identity string, pres
 	}
 }
 
-// R-0AAB-3WJP R-0BI7-HOAE R-0CQ3-VG13 R-0DY0-97RS
+// R-2Q3H-N6U0 R-2SJA-EQBE R-2UZ3-69SS R-2YMS-BL0V
 func TestPanelReadRoutesPreserveStore(t *testing.T) {
 	for _, tc := range []struct {
 		method, path string
@@ -77,7 +82,7 @@ func TestPanelReadRoutesPreserveStore(t *testing.T) {
 	}
 }
 
-// R-A2RR-3ZJU R-A3ZN-HRAJ R-A57J-VJ18
+// R-312L-34I9 R-34QA-8FQC R-0GMA-SDQL
 func TestPanelRejectedRoutesPreserveStore(t *testing.T) {
 	for _, tc := range []struct {
 		method, path string
@@ -97,7 +102,7 @@ func TestPanelRejectedRoutesPreserveStore(t *testing.T) {
 	}
 }
 
-// R-KX9D-3SPX R-KYH9-HKGM
+// R-39LV-RIP4 R-3D9K-WTX7
 func TestPanelMissingIdentityPreservesStore(t *testing.T) {
 	for _, identity := range []struct {
 		name    string
@@ -115,6 +120,7 @@ func TestPanelMissingIdentityPreservesStore(t *testing.T) {
 			{http.MethodPost, "/widgets", true},
 			{http.MethodPost, "/widgets/", true},
 			{http.MethodPut, "/other", true},
+			{http.MethodPost, "/mcp", false},
 			{http.MethodGet, "/widgets/table", false},
 		} {
 			t.Run(identity.name+"/"+tc.method+tc.path, func(t *testing.T) {

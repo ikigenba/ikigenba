@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// R-ANRH-UBLX
+// R-KHH3-TJDH
 func TestVersionIsSemanticVersion(t *testing.T) {
 	t.Parallel()
 
@@ -15,12 +15,12 @@ func TestVersionIsSemanticVersion(t *testing.T) {
 	}
 }
 
-// R-LI0D-VJTO
+// R-DV9F-V1HW
 func TestManifestConstant(t *testing.T) {
 	t.Parallel()
 
 	const compiledAsConstant = Manifest
-	const want = "app = \"dummy\"\ndefault = false\nsecrets = []\n"
+	const want = "app = \"dummy\"\ndescription = \"Demo widgets to list and create\"\ndefault = false\nmcp = true\nsecrets = []\n"
 	if compiledAsConstant != want {
 		t.Errorf("Manifest = %q, want %q", compiledAsConstant, want)
 	}
