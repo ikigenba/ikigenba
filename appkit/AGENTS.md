@@ -1,12 +1,23 @@
 # appkit
 
-A Go library that gives every app of the Ikigenba platform the same banner:
-the shared stylesheet, fonts, and launcher script, served from one fixed path
-prefix; the `banner` and `launcher` templates; and a reader for the host's
-services file (`IKIGENBA_SERVICES`, owned by opsctl) that fills the launcher.
-An app passes in who is signed in and where its profile and sign-out live;
-appkit knows nothing about authentication. Module path
-`github.com/ikigenba/ikigenba/appkit`.
+The shared Go library of the Ikigenba services: any functionality that more
+than one service needs lives here, one concern per package, and no package is
+privileged; the module root holds no exported name. Module path
+`github.com/ikigenba/ikigenba/appkit`. The packages:
+
+- `page` — the page chrome every app shows a signed-in user: the banner,
+  launcher, and footer templates, and the shared stylesheet, fonts, and
+  launcher script served from one fixed path prefix.
+- `services` — the one reader of the host's services file
+  (`IKIGENBA_SERVICES`, owned by opsctl).
+- `identity` — the caller nginx authenticated (`X-User-Id`, `X-User-Email`,
+  `X-Request-Id`): the middleware that requires it, and forwarding it on a
+  call to a sibling service.
+- `mcp` — the Model Context Protocol: the server a service mounts at `/mcp`
+  with its tools, and the client the gateway and service tests use.
+
+appkit knows nothing about authentication: nginx and auth establish who the
+caller is, and appkit only carries it.
 
 This sub-project is spec-driven: `specs/design/` defines the contract, and the
 build run writes the Go source and tests. See the `spec` and `build-spec`
@@ -15,14 +26,15 @@ gates against; it is human-authored and read-only to the run.
 
 ## Assets
 
-`assets/` is human-authored and read-only to the build run. It holds the
-markup templates (`banner.html`), the launcher script (`launcher.js`), and
-copies of the repository's `design/` files: the stylesheet, fonts, and their
+`page/assets/` is human-authored and read-only to the build run. It sits
+inside the `page` package directory because Go's `embed` reaches only files
+at or below the embedding package. It holds the markup templates
+(`banner.html`), the launcher script (`launcher.js`), and copies of the repository's `design/` files: the stylesheet, fonts, and their
 licences. The interactive agent that changes `design/` refreshes the copies in
 the same session. The copied stylesheet replaces the Google Fonts import with
 `@font-face` rules for the files beside it, and its header names the `design/`
-commit it came from, so that commit lands first. The code embeds `assets/`
-and never writes markup of its own.
+commit it came from, so that commit lands first. Package `page`
+embeds `page/assets/` and never writes markup of its own.
 
 ## Toolchain
 
@@ -47,12 +59,20 @@ requirement-id tag.
 
 ## Test discipline
 
-- Offline: no network beyond loopback.
+- Offline: no network beyond loopback. MCP and identity tests talk HTTP to
+  an `httptest` server on loopback, or to a unix socket created in the
+  test's own temporary directory; never to `/run/ikigenba` or a real
+  service.
 - Deterministic: time, randomness, and environment are injected; no test
   sleeps to wait for something.
 - No fixed ports: a test uses `httptest` or binds `127.0.0.1:0`.
 - Isolated: a test touches only its own temporary directory, never the
   developer's home, config, or real state, and never `/var/lib/ikigenba`.
+  A services file a test needs is written there and named through
+  `IKIGENBA_SERVICES` with `testing.T.Setenv`.
+- Logs are captured: anything appkit writes as a diagnostic goes to an
+  `io.Writer` the test supplies, and the test asserts on it; a test never
+  reads the process's real stderr.
 - Hooks, not layout: tests assert on the hooks design names and on visible
   text, never on markup structure or styles.
 
