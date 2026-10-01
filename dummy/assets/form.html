@@ -3,17 +3,17 @@
 <header><h2 class="text-md">Add widget</h2></header>
 <form method="post" action="/widgets" enctype="application/x-www-form-urlencoded">
 <label for="widget-name">Name</label>
-<input id="widget-name" type="text" name="name" {{attr "value" .Submission.Name}}{{if .Errors.Name}} aria-describedby="name-error"{{end}}>
-{{if .Errors.Name}}<span id="name-error">{{esc .Errors.Name}}</span>{{end}}
+<input id="widget-name" type="text" name="name" value="{{.Submission.Name}}"{{if .Errors.Name}} aria-describedby="name-error"{{end}}>
+{{if .Errors.Name}}<span id="name-error">{{.Errors.Name}}</span>{{end}}
 <label for="widget-count">Count</label>
-<input id="widget-count" type="text" name="count" {{attr "value" .Submission.Count}}{{if .Errors.Count}} aria-describedby="count-error"{{end}}>
-{{if .Errors.Count}}<span id="count-error">{{esc .Errors.Count}}</span>{{end}}
+<input id="widget-count" type="text" name="count" value="{{.Submission.Count}}"{{if .Errors.Count}} aria-describedby="count-error"{{end}}>
+{{if .Errors.Count}}<span id="count-error">{{.Errors.Count}}</span>{{end}}
 <label for="widget-status">Status</label>
 <select id="widget-status" name="status"{{if .Errors.Status}} aria-describedby="status-error"{{end}}>
-{{range .Statuses}}<option {{attr "value" (printf "%s" .)}}{{if eq (printf "%s" .) $.SelectedStatus}} selected="selected"{{end}}>{{esc .}}</option>{{end}}
+{{range .Statuses}}<option value="{{.}}"{{if eq . $.Selected}} selected="selected"{{end}}>{{.}}</option>{{end}}
 </select>
-{{if .Errors.Status}}<span id="status-error">{{esc .Errors.Status}}</span>{{end}}
-<button type="submit">{{plusIcon}}Add widget</button>
+{{if .Errors.Status}}<span id="status-error">{{.Errors.Status}}</span>{{end}}
+<button type="submit"><svg class="ico" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5l0 14"/><path d="M5 12l14 0"/></svg>Add widget</button>
 </form>
 </section>
 {{end}}

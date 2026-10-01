@@ -1,23 +1,22 @@
 {{define "page"}}<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css"><title>{{esc .ServiceName}}</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/_appkit/theme.css"><title>dummy</title></head>
 <body>
-{{.BannerMarkup}}
+{{template "banner" .Banner}}
 <main>
 {{if .Panel}}
-<div class="section-head"><div><h1>Widgets</h1><p>{{esc .Subtitle}}</p></div></div>
+<div class="section-head"><div><h1>Widgets</h1><p id="panel-subtitle">{{.Count}} widget{{if ne .Count 1}}s{{end}} · refreshes every 5 seconds</p></div></div>
 <div class="panel">
-{{template "table" .Widgets}}
+{{template "table" .Table}}
 {{template "form" .Form}}
 </div>
 {{else}}
-<p>{{esc .Message}}</p>
-{{if .FailureService}}<p>dummy cannot use this form encoding.</p>{{end}}
+<p>{{.Message}}</p>
 <a href="/widgets">Back to widgets</a>
 {{end}}
 </main>
-{{if .Panel}}{{template "script" .}}{{end}}
-{{.FooterMarkup}}
+{{if .Panel}}{{template "script"}}{{end}}
+{{template "footer" .Banner}}
 </body>
 </html>
 {{end}}
