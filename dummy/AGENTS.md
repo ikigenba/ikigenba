@@ -130,9 +130,14 @@ in `NOTIFY_SOCKET` in the environment map, and waits for the `READY=1`
 datagram, with a deadline that fails the test rather than a sleep that hopes.
 The drain tests are the one place a test waits on the clock, because the
 drain deadline is the behavior: a `Serve`-level test passes a drain of a few
-milliseconds and a handler that blocks on a channel, and the one `Run`-level
-overrun test sets `DRAIN_SECONDS=1` and holds a `POST /widgets` open by
-sending fewer body bytes than its `Content-Length` declares. It learns that
+milliseconds and a handler that blocks on a channel, and the `Run`-level
+overrun tests hold a `POST /widgets` open by sending fewer body bytes than its
+`Content-Length` declares. There are at most four: one sets
+`DRAIN_SECONDS=1`; two observe the 5-second default, one with the variable
+unset and one with it empty; and one sets a value too large for a
+`time.Duration`, observes that the request is not cut off within 7 seconds,
+and then completes the body itself. The last three run as parallel subtests
+of one parent that sets the environment and builds their servers. It learns that
 the handler has begun, without sleeping, by sending `Expect: 100-continue`, with `X-User-Id` and
 `Content-Type: application/x-www-form-urlencoded` so the handler reads the
 body at all, and
@@ -141,9 +146,7 @@ first reads the body; only then does it cancel the context. A test whose
 result depends on the developer's machine, environment, or a port already in
 use is a bug. The gates run offline as an ordinary user, with no systemd.
 
-**The handler is built over a store the test owns.** `internal/cli` creates
-the widget set once it has taken the socket and hands it to the panel's
-handler (D01, D03). A handler-level test therefore creates its own store,
+**The handler is built over a store the test owns.** A handler-level test therefore creates its own store,
 seeds it with whatever widgets the case needs, hands the handler a banner
 source of its own and a buffer for its diagnostics, and drives it in process;
 it needs no listener and no port at all, except to reach `/mcp` (below). Every
@@ -225,7 +228,11 @@ binary name, over the socket and with the identity headers: `GET /widgets`,
 an MCP call made with appkit's `mcp.Client`, and, for what that client cannot
 send (`server/discover`, whose result carries the instructions), a raw POST to
 `/mcp`. The second serve case, whose environment names no services file, may
-make the same raw POST to prove the instructions are then absent. It asserts only what
+make the same raw POST to prove the instructions are then absent. A third
+serve case passes a TCP listener bound to `127.0.0.1:0` instead of the Unix
+socket, makes one `GET /widgets` over it, and stops the child with `SIGTERM`,
+proving dummy serves on whichever kind of socket descriptor 3 is; it asserts
+nothing about a socket path. It asserts only what
 those requirements state, which proves `main` handed appkit's banner kit and
 MCP server, with dummy's name and version, to the handler. Everything else
 dummy answers is decided in process against a handler the test built, and the
