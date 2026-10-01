@@ -1,4 +1,4 @@
-package appkit_test
+package page
 
 import (
 	"bytes"
@@ -8,8 +8,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/ikigenba/ikigenba/appkit"
 )
 
 var staticFiles = []struct {
@@ -27,7 +25,7 @@ var staticFiles = []struct {
 
 func staticBytes(t *testing.T, name string) []byte {
 	t.Helper()
-	data, err := appkit.AssetsFS.ReadFile("assets/" + name)
+	data, err := assetsFS.ReadFile("assets/" + name)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,16 +60,16 @@ func staticNonmatchingHeaders(etag string) []http.Header {
 }
 
 func TestStaticPrefix(t *testing.T) {
-	// R-7MDN-MICX
-	const prefix = appkit.StaticPrefix
+	// R-J29M-1X4L
+	const prefix = StaticPrefix
 	if prefix != "/_appkit/" {
 		t.Fatalf("StaticPrefix = %q", prefix)
 	}
 }
 
 func TestStaticFactory(t *testing.T) {
-	// R-7NLK-0A3M
-	factory := appkit.Static
+	// R-J4PE-TGLZ
+	factory := Static
 	typed, ok := any(factory).(func() http.Handler)
 	if !ok {
 		t.Fatalf("Static has type %T, want func() http.Handler", factory)
@@ -82,15 +80,15 @@ func TestStaticFactory(t *testing.T) {
 }
 
 func TestStaticGETBytes(t *testing.T) {
-	// R-41EX-WQFL
-	handler := appkit.Static()
+	// R-J5XB-78CO
+	handler := Static()
 	for _, file := range staticFiles {
 		t.Run(file.name, func(t *testing.T) {
 			want := staticBytes(t, file.name)
-			etag := staticResponse(handler, http.MethodGet, appkit.StaticPrefix+file.name).Header().Get("ETag")
+			etag := staticResponse(handler, http.MethodGet, StaticPrefix+file.name).Header().Get("ETag")
 			for _, target := range []string{
-				appkit.StaticPrefix + file.name,
-				appkit.StaticPrefix + file.name + "?download=1&path=banner.html",
+				StaticPrefix + file.name,
+				StaticPrefix + file.name + "?download=1&path=banner.html",
 				"/%5Fappkit/" + file.name,
 				"/_appkit%2F" + file.name,
 			} {
@@ -106,10 +104,10 @@ func TestStaticGETBytes(t *testing.T) {
 }
 
 func TestStaticContentTypes(t *testing.T) {
-	// R-7Q1C-RTL0
-	handler := appkit.Static()
+	// R-J757-L03D
+	handler := Static()
 	for _, file := range staticFiles {
-		response := staticResponse(handler, http.MethodGet, appkit.StaticPrefix+file.name)
+		response := staticResponse(handler, http.MethodGet, StaticPrefix+file.name)
 		if response.Code != http.StatusOK || response.Header().Get("Content-Type") != file.contentType {
 			t.Errorf("GET %s: status %d, Content-Type %q; want 200, %q", file.name, response.Code, response.Header().Get("Content-Type"), file.contentType)
 		}
@@ -117,11 +115,11 @@ func TestStaticContentTypes(t *testing.T) {
 }
 
 func TestStaticHEAD(t *testing.T) {
-	// R-42MU-AI6A
-	handler := appkit.Static()
+	// R-J8D3-YRU2
+	handler := Static()
 	for _, file := range staticFiles {
-		get := staticResponse(handler, http.MethodGet, appkit.StaticPrefix+file.name)
-		for _, target := range []string{appkit.StaticPrefix + file.name, "/%5Fappkit/" + file.name + "?x=1"} {
+		get := staticResponse(handler, http.MethodGet, StaticPrefix+file.name)
+		for _, target := range []string{StaticPrefix + file.name, "/%5Fappkit/" + file.name + "?x=1"} {
 			for _, headers := range staticNonmatchingHeaders(get.Header().Get("ETag")) {
 				response := staticConditionalResponse(handler, http.MethodHead, target, headers)
 				if response.Code != http.StatusOK || response.Body.Len() != 0 || response.Header().Get("Content-Type") != get.Header().Get("Content-Type") {
@@ -133,22 +131,22 @@ func TestStaticHEAD(t *testing.T) {
 }
 
 func TestStaticUnknownPaths(t *testing.T) {
-	// R-71YB-5NNS
-	paths := []string{appkit.StaticPrefix, appkit.StaticPrefix + "banner.html", "/", "/_appkit", "/_appkit/missing", "/_appkit/assets/theme.css"}
+	// R-J9L0-CJKR
+	paths := []string{StaticPrefix, StaticPrefix + "banner.html", "/", "/_appkit", "/_appkit/missing", "/_appkit/assets/theme.css"}
 	for _, file := range staticFiles {
 		paths = append(paths,
-			appkit.StaticPrefix+file.name+"/",
-			appkit.StaticPrefix+file.name+"/child",
-			appkit.StaticPrefix+strings.ToUpper(file.name),
-			appkit.StaticPrefix+"./"+file.name,
-			appkit.StaticPrefix+"/"+file.name,
-			appkit.StaticPrefix+"child/../"+file.name,
+			StaticPrefix+file.name+"/",
+			StaticPrefix+file.name+"/child",
+			StaticPrefix+strings.ToUpper(file.name),
+			StaticPrefix+"./"+file.name,
+			StaticPrefix+"/"+file.name,
+			StaticPrefix+"child/../"+file.name,
 			"/"+file.name,
 			"/_appkit-other/"+file.name,
-			appkit.StaticPrefix+file.name+"%2F",
+			StaticPrefix+file.name+"%2F",
 		)
 	}
-	handler := appkit.Static()
+	handler := Static()
 	for _, path := range paths {
 		for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions, http.MethodConnect, http.MethodTrace, "CUSTOM"} {
 			for _, headers := range []http.Header{{}, {"If-None-Match": {"*"}}, {"Range": {"bytes=0-3"}}} {
@@ -162,13 +160,13 @@ func TestStaticUnknownPaths(t *testing.T) {
 }
 
 func TestStaticDisallowedMethods(t *testing.T) {
-	// R-7367-JFEH
-	handler := appkit.Static()
+	// R-JASW-QBBG
+	handler := Static()
 	for _, file := range staticFiles {
 		want := staticBytes(t, file.name)
 		for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions, http.MethodConnect, http.MethodTrace, "CUSTOM", "get", "head"} {
 			for _, headers := range []http.Header{{}, {"If-None-Match": {"*"}}, {"Range": {"bytes=0-3"}}} {
-				response := staticConditionalResponse(handler, method, appkit.StaticPrefix+file.name, headers)
+				response := staticConditionalResponse(handler, method, StaticPrefix+file.name, headers)
 				if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != "GET, HEAD" || bytes.Equal(response.Body.Bytes(), want) {
 					t.Errorf("%s %s with %v: status %d, Allow %q, body equals asset: %t", method, file.name, headers, response.Code, response.Header().Get("Allow"), bytes.Equal(response.Body.Bytes(), want))
 				}
@@ -178,7 +176,7 @@ func TestStaticDisallowedMethods(t *testing.T) {
 }
 
 func TestStaticConcurrentFactories(t *testing.T) {
-	// R-7UWY-AWJS
+	// R-JI4B-0XRM
 	type requestCase struct {
 		method string
 		path   string
@@ -186,11 +184,11 @@ func TestStaticConcurrentFactories(t *testing.T) {
 	var cases []requestCase
 	for _, file := range staticFiles {
 		for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost} {
-			cases = append(cases, requestCase{method, appkit.StaticPrefix + file.name})
+			cases = append(cases, requestCase{method, StaticPrefix + file.name})
 		}
 	}
-	cases = append(cases, requestCase{http.MethodOptions, appkit.StaticPrefix + "banner.html"})
-	baseline := appkit.Static()
+	cases = append(cases, requestCase{http.MethodOptions, StaticPrefix + "banner.html"})
+	baseline := Static()
 	var expected []*httptest.ResponseRecorder
 	for _, item := range cases {
 		expected = append(expected, staticResponse(baseline, item.method, item.path))
@@ -198,7 +196,7 @@ func TestStaticConcurrentFactories(t *testing.T) {
 	errors := make(chan string, 6*4*len(cases))
 	var workers sync.WaitGroup
 	for range 6 {
-		handler := appkit.Static()
+		handler := Static()
 		for range 4 {
 			workers.Go(func() {
 				for index, item := range cases {
@@ -219,12 +217,12 @@ func TestStaticConcurrentFactories(t *testing.T) {
 }
 
 func TestStaticStrongEntityTags(t *testing.T) {
-	// R-74E3-X756
+	// R-JC0T-4325
 	for _, file := range staticFiles {
-		etag := staticResponse(appkit.Static(), http.MethodGet, appkit.StaticPrefix+file.name).Header().Get("ETag")
+		etag := staticResponse(Static(), http.MethodGet, StaticPrefix+file.name).Header().Get("ETag")
 		for _, method := range []string{http.MethodGet, http.MethodHead} {
 			for _, headers := range staticNonmatchingHeaders(etag) {
-				response := staticConditionalResponse(appkit.Static(), method, appkit.StaticPrefix+file.name, headers)
+				response := staticConditionalResponse(Static(), method, StaticPrefix+file.name, headers)
 				assertStrongEntityTag(t, response.Header().Values("ETag"))
 			}
 		}
@@ -236,7 +234,7 @@ func TestStaticStrongEntityTags(t *testing.T) {
 				{"If-Range": {`"different"`}},
 				{"If-Modified-Since": {"Tue, 01 Jan 2030 00:00:00 GMT"}},
 			} {
-				response := staticConditionalResponse(appkit.Static(), method, appkit.StaticPrefix+file.name, headers)
+				response := staticConditionalResponse(Static(), method, StaticPrefix+file.name, headers)
 				if response.Code == http.StatusOK {
 					assertStrongEntityTag(t, response.Header().Values("ETag"))
 				}
@@ -263,7 +261,7 @@ func assertStrongEntityTag(t *testing.T, values []string) {
 }
 
 func TestStaticCacheControl(t *testing.T) {
-	// R-EH0Y-OJ8X
+	// R-JD8P-HUSU
 	for _, file := range staticFiles {
 		for _, method := range []string{http.MethodGet, http.MethodHead} {
 			for _, headers := range []http.Header{
@@ -276,7 +274,7 @@ func TestStaticCacheControl(t *testing.T) {
 				{"If-Range": {`"different"`}},
 				{"If-Modified-Since": {"Tue, 01 Jan 2030 00:00:00 GMT"}},
 			} {
-				response := staticConditionalResponse(appkit.Static(), method, appkit.StaticPrefix+file.name, headers)
+				response := staticConditionalResponse(Static(), method, StaticPrefix+file.name, headers)
 				if response.Code == http.StatusOK || response.Code == http.StatusNotModified {
 					if values := response.Header().Values("Cache-Control"); len(values) != 1 || values[0] != "no-cache" {
 						t.Errorf("%s %s with %v: Cache-Control = %q", method, file.name, headers, values)
@@ -288,10 +286,10 @@ func TestStaticCacheControl(t *testing.T) {
 }
 
 func TestStaticIfNoneMatch(t *testing.T) {
-	// R-EJGR-G2QB
+	// R-JFOI-9EA8
 	for _, file := range staticFiles {
-		handler := appkit.Static()
-		path := appkit.StaticPrefix + file.name
+		handler := Static()
+		path := StaticPrefix + file.name
 		etag := staticResponse(handler, http.MethodGet, path).Header().Get("ETag")
 		cases := []struct {
 			value string
@@ -333,10 +331,10 @@ func TestStaticIfNoneMatch(t *testing.T) {
 }
 
 func TestStaticNotModified(t *testing.T) {
-	// R-43UQ-O9WZ
+	// R-JGWE-N60X
 	for _, file := range staticFiles {
-		handler := appkit.Static()
-		path := appkit.StaticPrefix + file.name
+		handler := Static()
+		path := StaticPrefix + file.name
 		etag := staticResponse(handler, http.MethodGet, path).Header().Get("ETag")
 		for _, method := range []string{http.MethodGet, http.MethodHead} {
 			for _, condition := range []string{"*", etag, "W/" + etag, `"other", W/` + etag + ", ,"} {

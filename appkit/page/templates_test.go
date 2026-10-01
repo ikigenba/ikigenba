@@ -1,4 +1,4 @@
-package appkit
+package page
 
 import (
 	"bytes"
@@ -197,14 +197,14 @@ func templateFixture() Banner {
 }
 
 func TestTemplatesSignature(t *testing.T) {
-	// R-6RW6-28TK
+	// R-I900-VFBX
 	if _, ok := any(Templates).(func() *template.Template); !ok {
 		t.Fatalf("Templates has type %T, want func() *template.Template", Templates)
 	}
 }
 
 func TestTemplatesEmbeddedDefinitions(t *testing.T) {
-	// R-B3I2-CXVU
+	// R-IA7X-972M
 	markup, err := assetsFS.ReadFile("assets/banner.html")
 	if err != nil {
 		t.Fatal(err)
@@ -230,10 +230,11 @@ func TestTemplatesEmbeddedDefinitions(t *testing.T) {
 }
 
 func TestTemplatesNames(t *testing.T) {
-	// R-B4PY-QPMJ
+	// R-YJ6S-QL2Q
 	set := Templates()
 	allowed := []string{"appkit", "banner", "launcher", "footer"}
-	if !slices.Contains(allowed, set.Name()) {
+	// R-YHYW-CTC1
+	if set.Name() != "appkit" {
 		t.Fatalf("root name %q", set.Name())
 	}
 	for _, member := range set.Templates() {
@@ -244,7 +245,7 @@ func TestTemplatesNames(t *testing.T) {
 }
 
 func TestTemplatesIndependent(t *testing.T) {
-	// R-6WRR-LBSC
+	// R-ICNQ-0QK0
 	first, second := Templates(), Templates()
 	if first == second {
 		t.Fatal("shared set")
@@ -271,7 +272,7 @@ func TestTemplatesIndependent(t *testing.T) {
 }
 
 func TestTemplatesConsumerParse(t *testing.T) {
-	// R-B5XV-4HD8
+	// R-IDVM-EIAP
 	const page = `{{define "page"}}{{template "banner" .}}{{template "launcher" .}}{{template "footer" .}}{{end}}`
 	data := templateFixture()
 	want := templateExecute(t, Templates(), "banner", data) + templateExecute(t, Templates(), "launcher", data) + templateExecute(t, Templates(), "footer", data)
@@ -317,7 +318,7 @@ func templateCheckBannerIdentity(t *testing.T, root *templateElement, data Banne
 }
 
 func TestBannerMark(t *testing.T) {
-	// R-S1G1-Y5AY
+	// R-IF3I-SA1E
 	data := templateFixture()
 	mark := templateHook(t, templateRender(t, "banner", data), "strong", map[string]string{"class": "mark", "data-service": data.Service}, "ikigenba")
 	templateAttr(t, mark, "data-service", data.Service)
@@ -349,7 +350,7 @@ func templateCheckProfile(t *testing.T, root *templateElement, data Banner) {
 }
 
 func TestBannerProfile(t *testing.T) {
-	// R-S2NY-BX1N
+	// R-IGBF-61S3
 	for _, services := range [][]Service{nil, templateFixture().Services} {
 		data := templateFixture()
 		data.Services = services
@@ -358,13 +359,13 @@ func TestBannerProfile(t *testing.T) {
 }
 
 func TestBannerSignOut(t *testing.T) {
-	// R-S3VU-POSC
+	// R-IHJB-JTIS
 	data := templateFixture()
 	templateSignOut(t, templateRender(t, "banner", data), data.LogoutURL)
 }
 
 func TestBannerLauncherButton(t *testing.T) {
-	// R-72V9-I6HT
+	// R-IJZ4-BD06
 	root := templateRender(t, "banner", templateFixture())
 	var buttons []*templateElement
 	for _, button := range templateFind(root, "button") {
@@ -381,10 +382,11 @@ func TestBannerLauncherButton(t *testing.T) {
 }
 
 func TestBannerInvokesLauncherOnce(t *testing.T) {
-	// R-7435-VY8I
+	// R-IL70-P4QV
 	data := templateFixture()
+	data.Version = "consumer-build"
 	set := Templates()
-	if _, err := set.Parse(`{{define "launcher"}}sentinel:{{.Service}}/{{.Email}}/{{.ProfileURL}}/{{.LogoutURL}}{{range .Services}}/{{.Name}}/{{.URL}}/{{.Enabled}}/{{.Current}}/{{.Icon}}{{end}}:end{{end}}`); err != nil {
+	if _, err := set.Parse(`{{define "launcher"}}sentinel:{{.Service}}/{{.Version}}/{{.Email}}/{{.ProfileURL}}/{{.LogoutURL}}{{range .Services}}/{{.Name}}/{{.URL}}/{{.Enabled}}/{{.Current}}/{{.Icon}}{{end}}:end{{end}}`); err != nil {
 		t.Fatal(err)
 	}
 	launcher := templateExecute(t, set, "launcher", data)
@@ -394,14 +396,14 @@ func TestBannerInvokesLauncherOnce(t *testing.T) {
 }
 
 func TestBannerScript(t *testing.T) {
-	// R-75B2-9PZ7
+	// R-IMEX-2WHK
 	script := templateOne(t, templateRender(t, "banner", templateFixture()), "script")
 	templateAttr(t, script, "src", "/_appkit/launcher.js")
 	templatePresentAttr(t, script, "defer")
 }
 
 func TestBannerEmptyServices(t *testing.T) {
-	// R-S9ZC-MJHT
+	// R-INMT-GO89
 	for _, services := range [][]Service{nil, {}} {
 		data := templateFixture()
 		data.Services = services
@@ -425,7 +427,7 @@ func TestBannerEmptyServices(t *testing.T) {
 }
 
 func TestBannerNoStylesheet(t *testing.T) {
-	// R-77QV-19GL
+	// R-IOUP-UFYY
 	for _, data := range []Banner{{}, templateFixture()} {
 		if len(templateFind(templateRender(t, "banner", data), "link")) != 0 {
 			t.Fatal("banner emits link")
@@ -434,7 +436,7 @@ func TestBannerNoStylesheet(t *testing.T) {
 }
 
 func TestLauncherContainer(t *testing.T) {
-	// R-78YR-F17A
+	// R-IQ2M-87PN
 	data := templateFixture()
 	root := templateRender(t, "launcher", data)
 	nav := templateHook(t, root, "nav", map[string]string{"class": "services", "id": "services", "aria-label": "Services"}, "", "popover")
@@ -463,7 +465,7 @@ func TestLauncherContainer(t *testing.T) {
 }
 
 func TestLauncherSearch(t *testing.T) {
-	// R-7A6N-SSXZ
+	// R-IRAI-LZGC
 	input := templateHook(t, templateRender(t, "launcher", templateFixture()), "input", map[string]string{"type": "search", "placeholder": "Find a service", "aria-label": "Find a service"}, "")
 	for key, value := range map[string]string{"type": "search", "placeholder": "Find a service", "aria-label": "Find a service"} {
 		templateAttr(t, input, key, value)
@@ -471,7 +473,7 @@ func TestLauncherSearch(t *testing.T) {
 }
 
 func TestLauncherTiles(t *testing.T) {
-	// R-S53R-3GJ1
+	// R-ISIE-ZR71
 	data := templateFixture()
 	data.Services = append(data.Services, data.Services[0])
 	for _, services := range [][]Service{data.Services, nil, {}} {
@@ -511,7 +513,7 @@ func templateTileLinks(t *testing.T, root *templateElement, services []Service) 
 }
 
 func TestLauncherEnabled(t *testing.T) {
-	// R-S6BN-H89Q
+	// R-ITQB-DIXQ
 	for _, current := range []bool{false, true} {
 		data := Banner{Services: []Service{{Name: "enabled", URL: "/service", Enabled: true, Current: current}}}
 		link := templateTileLinks(t, templateRender(t, "launcher", data), data.Services)[0]
@@ -521,7 +523,7 @@ func TestLauncherEnabled(t *testing.T) {
 }
 
 func TestLauncherDisabled(t *testing.T) {
-	// R-S7JJ-V00F
+	// R-IUY7-RAOF
 	for _, current := range []bool{false, true} {
 		data := Banner{Services: []Service{{Name: "disabled", URL: "/unused", Current: current}}}
 		link := templateTileLinks(t, templateRender(t, "launcher", data), data.Services)[0]
@@ -532,7 +534,7 @@ func TestLauncherDisabled(t *testing.T) {
 }
 
 func TestLauncherCurrent(t *testing.T) {
-	// R-7HI2-3FE5
+	// R-IW64-52F4
 	for _, enabled := range []bool{false, true} {
 		for _, current := range []bool{false, true} {
 			data := Banner{Services: []Service{{Name: "service", Enabled: enabled, Current: current}}}
@@ -547,7 +549,7 @@ func TestLauncherCurrent(t *testing.T) {
 }
 
 func TestLauncherNoMatch(t *testing.T) {
-	// R-7IPY-H74U
+	// R-IXE0-IU5T
 	paragraph := templateHook(t, templateRender(t, "launcher", templateFixture()), "p", nil, "No service matches .", "hidden")
 	templatePresentAttr(t, paragraph, "hidden")
 	quote := templateOne(t, paragraph, "q")
@@ -571,7 +573,7 @@ func templateEscape(t *testing.T, markup string, value string) string {
 }
 
 func TestTemplatesAutoescaping(t *testing.T) {
-	// R-S085-KDK9
+	// R-IYLW-WLWI
 	const special = "<> &\"'+\x00"
 	for _, url := range []string{"/some path?q=<> &\"'+", "javascript:alert(1)", "https://example.test/a b"} {
 		data := Banner{Service: special, Version: "build" + special, Email: "email" + special, ProfileURL: url, LogoutURL: url, Services: []Service{{Name: "enabled" + special, URL: url, Enabled: true}, {Name: "disabled" + special, Enabled: false}}}
@@ -608,7 +610,7 @@ func TestTemplatesAutoescaping(t *testing.T) {
 }
 
 func TestFooter(t *testing.T) {
-	// R-S8RG-8RR4
+	// R-J11P-O5DW
 	for _, data := range []Banner{{}, {Service: "notes", Version: "development"}, {Service: " <app>& ", Version: " build+\"' \x00"}} {
 		output := templateExecute(t, Templates(), "footer", data)
 		root := templateDocument(t, output)
@@ -624,7 +626,7 @@ func TestFooter(t *testing.T) {
 }
 
 func TestLauncherIconUnaltered(t *testing.T) {
-	// R-7L5R-8QM8
+	// R-IZTT-ADN7
 	icons := []template.HTML{`<svg data-icon="a&b"><path d="M0 1"/></svg>`, `<svg><title> A &amp; B </title></svg>`}
 	data := Banner{Services: []Service{{Name: "first", Icon: icons[0]}, {Name: "second", Icon: icons[1]}}}
 	links := templateTileLinks(t, templateRender(t, "launcher", data), data.Services)

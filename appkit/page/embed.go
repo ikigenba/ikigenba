@@ -1,5 +1,4 @@
-// Package appkit provides the shared Ikigenba banner and its browser assets.
-package appkit
+package page
 
 import "embed"
 

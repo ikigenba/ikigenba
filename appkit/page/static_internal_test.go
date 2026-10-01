@@ -1,4 +1,4 @@
-package appkit
+package page
 
 import (
 	"crypto/sha256"
@@ -9,7 +9,7 @@ import (
 )
 
 func TestStaticEntityTagsAreQuotedSHA256Digests(t *testing.T) {
-	// R-UIW2-AEPG
+	// R-JEGL-VMJJ
 	for _, name := range []string{"theme.css", "launcher.js", "InterVariable.woff2", "InterVariable-Italic.woff2", "JetBrainsMono.woff2", "OFL.txt", "TABLER-LICENSE.txt"} {
 		content, err := assetsFS.ReadFile("assets/" + name)
 		if err != nil {

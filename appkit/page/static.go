@@ -1,4 +1,4 @@
-package appkit
+package page
 
 import (
 	"crypto/sha256"
