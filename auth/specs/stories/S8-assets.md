@@ -41,11 +41,12 @@ the sign-in page has no session yet: a file under `/_appkit/` needs no
 credential, is answered the same whether or not the request carries a
 session cookie or a token, and no answer sets a cookie. The requests below
 carry neither, and go to a running auth (`S2-serve.md`), started with its
-Google settings; on a space they reach it through nginx. Each request is
+Google settings; they reach it through nginx on a space. Each request is
 shown as the HTTP request auth receives, with the headers the story depends
-on; a request that shows no `Host` header carries `Host: localhost:3001`, a
-local one (`S3-sign-in.md`). A response block shows the status line and the
-headers the story fixes; a header it does not show, `Date` say, is not fixed.
+on. Every request is on a space; a request that shows no `Host` header
+carries `Host: auth.sbx.ikigenba.dev`, on the space `sbx.ikigenba.dev`
+(`S3-sign-in.md`). A response block shows the status line and the headers
+the story fixes; a header it does not show, `Date` say, is not fixed.
 
 ## A browser fetches the stylesheet
 

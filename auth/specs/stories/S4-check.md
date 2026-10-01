@@ -8,10 +8,11 @@ auth returns — 200 means copy the identity headers onto the upstream request,
 401 means redirect the browser to sign in, 403 means pass the refusal through.
 `GET /me` is the public "who am I" endpoint an agent or a signed-in user can
 call directly. The requests, standing in for nginx or for the caller, go to a
-running auth (`S2-serve.md`), started with its Google settings; on a space they
-reach it through nginx. Each request is shown as the HTTP request auth
-receives, with the headers the story depends on; a request that shows no `Host`
-header carries `Host: localhost:3001`, a local one (`S3-sign-in.md`).
+running auth (`S2-serve.md`), started with its Google settings; they reach it
+through nginx on a space. Each request is shown as the HTTP request auth
+receives, with the headers the story depends on. Every request is on a space;
+a request that shows no `Host` header carries `Host: auth.sbx.ikigenba.dev`,
+on the space `sbx.ikigenba.dev` (`S3-sign-in.md`).
 
 A credential reaches these endpoints one of two ways: the session cookie
 `ikigenba_session=<session-id>`, or `Authorization: Bearer ikp_<token>`. Both

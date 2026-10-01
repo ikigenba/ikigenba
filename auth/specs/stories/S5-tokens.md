@@ -1,18 +1,19 @@
 # Stories — tokens
 
 The token actions a signed-in user drives from their profile. The requests go
-to a running auth (`S2-serve.md`), started with its Google settings; on a
-space they reach it through nginx. Each request is shown as the HTTP request
-auth receives, with the headers the story depends on; a request that shows no
-`Host` header carries `Host: localhost:3001`, a local one (`S3-sign-in.md`).
-Every request carries a valid `ikigenba_session` cookie, and every
-state-changing request is a POST that also carries an `Origin` header matching
-the service's own origin (in development that is the local origin, here
-`http://localhost:3001`; on a space it is `https://auth.<space>`). A user may
-hold many tokens. A token's secret has the form `ikp_` followed by 52
-Crockford base32 characters (`0`-`9` and `A`-`Z` without `I`, `L`, `O`, `U`),
-the encoding of 32 random bytes; it is shown once at creation and never
-again, and only a hash of it is stored. Separately, each token carries its
+to a running auth (`S2-serve.md`), started with its Google settings; they
+reach it through nginx on a space. Each request is shown as the HTTP request
+auth receives, with the headers the story depends on. Every request is on a
+space; a request that shows no `Host` header carries
+`Host: auth.sbx.ikigenba.dev`, on the space `sbx.ikigenba.dev`
+(`S3-sign-in.md`). Every request carries a valid `ikigenba_session` cookie,
+and every state-changing request is a POST that also carries an `Origin`
+header matching the service's own origin, `https://auth.<space>`, here
+`https://auth.sbx.ikigenba.dev`. A user may hold many tokens. A token's
+secret has the form `ikp_` followed by 52 Crockford base32 characters
+(`0`-`9` and `A`-`Z` without `I`, `L`, `O`, `U`), the encoding of 32 random
+bytes; it is shown once at creation and never again, and only a hash of it
+is stored. Separately, each token carries its
 own random Crockford identifier used in the action URLs
 (`POST /tokens/<id>/enable`, `/disable`, `/delete`); this id is not the secret.
 Every action is a POST: acting on a token id that is not the user's own or does
@@ -72,7 +73,7 @@ Request:
 ```
 POST /tokens HTTP/1.1
 Cookie: ikigenba_session=<id>
-Origin: http://localhost:3001
+Origin: https://auth.sbx.ikigenba.dev
 Content-Type: application/x-www-form-urlencoded
 
 name=<name>&expires=<never|30d|90d|365d>
@@ -121,7 +122,7 @@ Request:
 ```
 POST /tokens HTTP/1.1
 Cookie: ikigenba_session=<id>
-Origin: http://localhost:3001
+Origin: https://auth.sbx.ikigenba.dev
 Content-Type: application/x-www-form-urlencoded
 
 name=%20%20%20&expires=never
@@ -164,7 +165,7 @@ Request:
 ```
 POST /tokens HTTP/1.1
 Cookie: ikigenba_session=<id>
-Origin: http://localhost:3001
+Origin: https://auth.sbx.ikigenba.dev
 Content-Type: application/x-www-form-urlencoded
 
 name=a-token-name-that-runs-well-past-the-sixty-four-character-limit-x&expires=90d
@@ -209,7 +210,7 @@ Request:
 ```
 POST /tokens HTTP/1.1
 Cookie: ikigenba_session=<id>
-Origin: http://localhost:3001
+Origin: https://auth.sbx.ikigenba.dev
 Content-Type: application/x-www-form-urlencoded
 
 name=<name>&expires=1y
@@ -254,7 +255,7 @@ Request:
 ```
 POST /tokens HTTP/1.1
 Cookie: ikigenba_session=<id>
-Origin: http://localhost:3001
+Origin: https://auth.sbx.ikigenba.dev
 Content-Type: application/x-www-form-urlencoded
 
 name=%20%20%20&expires=1y
@@ -480,13 +481,13 @@ Request:
 ```
 POST /tokens/<id>/disable HTTP/1.1
 Cookie: ikigenba_session=<id>
-Origin: http://localhost:3001
+Origin: https://auth.sbx.ikigenba.dev
 ```
 
 ```
 POST /tokens/<id>/enable HTTP/1.1
 Cookie: ikigenba_session=<id>
-Origin: http://localhost:3001
+Origin: https://auth.sbx.ikigenba.dev
 ```
 
 Response (each):
@@ -523,7 +524,7 @@ Request:
 ```
 POST /tokens/<id>/delete HTTP/1.1
 Cookie: ikigenba_session=<id>
-Origin: http://localhost:3001
+Origin: https://auth.sbx.ikigenba.dev
 ```
 
 Response:
@@ -556,7 +557,7 @@ Request:
 ```
 POST /tokens/<id>/disable HTTP/1.1
 Cookie: ikigenba_session=<id>
-Origin: http://localhost:3001
+Origin: https://auth.sbx.ikigenba.dev
 ```
 
 Response:

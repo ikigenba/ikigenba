@@ -4,23 +4,22 @@ The browser sign-in flow: the sign-in page and profile at `/`, the start of a
 Google sign-in at `/login/google`, the callback at `/login/google/callback`,
 and sign-out at `/logout`. The requests go to a running auth (`S2-serve.md`),
 started with its Google settings and no services file unless a story says
-otherwise; on a space they reach it through nginx. Each request is shown as the
-HTTP request auth receives, with the headers the story depends on. A request
-whose `Host` is `localhost:3001` is a local one and takes the fixed development
-forms stated below; every other request is on a space. The facts that depend
-on the space's own hostname — the callback `redirect_uri`, the session
-cookie's `Domain`, and which return URLs count as being under the space — are
-stated in prose, because a real space carries them and `S7-on-a-space.md`
-proves the whole path there.
+otherwise; they reach it through nginx on a space. Each request is shown as the
+HTTP request auth receives, with the headers the story depends on. Every
+request is on a space: the space is auth's own hostname without its leading
+`auth.` label, and the stories below use the space `sbx.ikigenba.dev`, whose
+auth is `auth.sbx.ikigenba.dev`. The facts that depend on the space's own
+hostname — the callback `redirect_uri`, the session cookie's `Domain`, and
+which return URLs count as being under the space — are stated for that space,
+and `S7-on-a-space.md` proves the whole path on a real one.
 
-The session cookie is named `ikigenba_session`; it carries `Path=/`, `Secure`,
-`HttpOnly`, and `SameSite=Lax`, and on a space it also carries `Domain=<space>`
-(the space host and every subdomain). Its path covers every path on those hosts,
-including auth's `/`, `/tokens`, and `/logout`, and other apps' paths. Run
-locally the cookie has no `Domain` and is still
-`Secure`, so the response blocks below show it without one. A login records the
-user's last-Google-login time, which `S4-check.md` reads when it decides a
-token.
+The session cookie is named `ikigenba_session`; it carries `Domain=<space>`
+(the space host and every subdomain), `Path=/`, `Secure`, `HttpOnly`, and
+`SameSite=Lax`, so the response blocks below show it with
+`Domain=sbx.ikigenba.dev`. Its path covers every path on those hosts,
+including auth's `/`, `/tokens`, and `/logout`, and other apps' paths. A login
+records the user's last-Google-login time, which `S4-check.md` reads when it
+decides a token.
 
 Users are keyed by `(issuer, subject)` from the ID token; the email is a copy
 refreshed on every login. The return URL and the CSRF protection are the same
@@ -29,13 +28,10 @@ the Google round trip, that also holds the PKCE verifier and any return URL.
 Every state-changing request is a `POST`; `SameSite=Lax` is the first line of
 cross-site defense and an `Origin` check is the second. For `/logout` that check
 is that the origin is on this space, so any app on the space can sign its user
-out: on a space the accepted origins are exactly the hosts the session cookie
-reaches, over `https` — `https://<space>` and `https://<host>.<space>` for a
-subdomain at any depth (any host ending in `.<space>`), auth's own
-`https://auth.<space>` among them. Run locally, where
-the cookie has no `Domain` and every app on `localhost` shares it whatever its
-port, the accepted origins are `http://localhost` and `http://localhost:<port>`
-for any port, auth's own `http://localhost:3001` among them.
+out: the accepted origins are exactly the hosts the session cookie reaches,
+over `https` — `https://<space>` and `https://<host>.<space>` for a subdomain
+at any depth (any host ending in `.<space>`), auth's own `https://auth.<space>`
+among them.
 
 A page fixes its visible text and the markup the stylesheet keys on: an
 element or class is quoted where the stylesheet hooks in, the visible text is
@@ -52,8 +48,7 @@ so the button's accessible text is its word alone. The workspace a page names
 is `WORKSPACE_DOMAIN`, here `michaelgreenly.dev`. A page names the apex, which
 auth reads from the request's own `Host`: a trailing port is dropped, and the
 apex is the last two dot-separated labels of what remains —
-`auth.sbx.ikigenba.dev` gives `ikigenba.dev`, and the local `localhost:3001`
-gives `localhost`.
+`auth.sbx.ikigenba.dev` gives `ikigenba.dev`.
 
 auth draws its pages in one of two frames. A page for a visitor who is not
 signed in is a sign-in card: it has no banner, no launcher, and no page
@@ -123,48 +118,8 @@ only the headers the story fixes; a header it does not show is not fixed.
 With no live session the index is the sign-in page: a sign-in card whose only
 way forward is the link that starts a Google sign-in. It tells the visitor
 which space they are signing in to and that one sign-in covers every service
-there.
-
-Request:
-
-```
-GET / HTTP/1.1
-Host: localhost:3001
-```
-
-Response:
-
-```
-HTTP/1.1 200 OK
-Content-Type: text/html; charset=utf-8
-```
-
-Status 200. The body is an HTML document titled `auth`, with the stylesheet
-link and viewport every page has, drawn as a sign-in card. Its visible text
-is the mark `ikigenba`, the heading `Sign in to localhost`, the sentence
-`Access is limited to Google accounts in the michaelgreenly.dev workspace.`,
-the link `Continue with Google` whose target is `/login/google`, and the
-card's `<footer>` reading
-`You're signing in at localhost:3001. One sign-in covers every service in this space.`
-The footer names the `Host` as sent, port included. The page has no banner
-and no launcher, and loads no `/_appkit/launcher.js`.
-
-Preconditions:
-
-- auth is serving, with `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
-  `WORKSPACE_DOMAIN=michaelgreenly.dev` set.
-- The request carries no `ikigenba_session` cookie, or one that names no live
-  session.
-
-Postconditions:
-
-- Nothing has changed.
-
-## A visitor on a space asks for the sign-in page
-
-On a space the page names the space's apex and auth's own host, both read
-from the request's `Host`, never fixed. A developer shows the space's `Host`
-by hand.
+there. The page names the space's apex and auth's own host, both read from the
+request's `Host`, never fixed.
 
 Request:
 
@@ -180,16 +135,20 @@ HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 200. The body is the sign-in page of the story above, with the heading
-`Sign in to ikigenba.dev` and the footer reading
+Status 200. The body is an HTML document titled `auth`, with the stylesheet
+link and viewport every page has, drawn as a sign-in card. Its visible text
+is the mark `ikigenba`, the heading `Sign in to ikigenba.dev`, the sentence
+`Access is limited to Google accounts in the michaelgreenly.dev workspace.`,
+the link `Continue with Google` whose target is `/login/google`, and the
+card's `<footer>` reading
 `You're signing in at auth.sbx.ikigenba.dev. One sign-in covers every service in this space.`
-The workspace sentence and the `Continue with Google` link to `/login/google`
-are unchanged.
+The footer names the `Host` as sent, port included. The page has no banner
+and no launcher, and loads no `/_appkit/launcher.js`.
 
 Preconditions:
 
-- auth is serving, with its Google settings and
-  `WORKSPACE_DOMAIN=michaelgreenly.dev`.
+- auth is serving, with `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
+  `WORKSPACE_DOMAIN=michaelgreenly.dev` set.
 - The request carries no `ikigenba_session` cookie, or one that names no live
   session.
 
@@ -226,10 +185,6 @@ host exactly as the URL writes it, a port included, the link `Continue with Goog
 `/login/google?return=https%3A%2F%2Fdummy.sbx.ikigenba.dev%2Fwidgets` — the
 return URL, URL-encoded — and the card's `<footer>` reading
 `Access is limited to Google accounts in the michaelgreenly.dev workspace.`
-Run locally, a request for `/` with `Host: localhost:3001` and
-`?return=http%3A%2F%2Flocalhost%3A3000%2Fwidgets` is the same page with the
-heading `Sign in to localhost` and the sentence
-`Sign in to continue to localhost:3000.`
 
 Preconditions:
 
@@ -268,8 +223,8 @@ HTTP/1.1 200 OK
 Content-Type: text/html; charset=utf-8
 ```
 
-Status 200. The body is the sign-in page of `A visitor on a space asks for
-the sign-in page` — the heading `Sign in to ikigenba.dev`, the sentence
+Status 200. The body is the sign-in page of `A visitor asks for the sign-in
+page` — the heading `Sign in to ikigenba.dev`, the sentence
 `Access is limited to Google accounts in the michaelgreenly.dev workspace.`,
 and the footer reading
 `You're signing in at auth.sbx.ikigenba.dev. One sign-in covers every service in this space.`
@@ -300,7 +255,7 @@ Request:
 
 ```
 GET /login/google HTTP/1.1
-Host: localhost:3001
+Host: auth.sbx.ikigenba.dev
 ```
 
 Response:
@@ -314,10 +269,9 @@ Status 302. The `Location` is Google's OAuth 2.0 authorization endpoint; its
 query carries the OAuth client id from `GOOGLE_CLIENT_ID`, `hd=michaelgreenly.dev`
 as the Workspace hint, a `redirect_uri`, a `state` parameter, and a PKCE
 `code_challenge` with `code_challenge_method=S256`. The rest of the query is not
-fixed here. On a space the `redirect_uri` is
-`https://auth.<space>/login/google/callback`; run locally it is
-`http://localhost:3001/login/google/callback`, the callback registered on the
-same OAuth client for development.
+fixed here. The `redirect_uri` is
+`https://auth.<space>/login/google/callback`, here
+`https://auth.sbx.ikigenba.dev/login/google/callback`.
 
 Preconditions:
 
@@ -341,7 +295,7 @@ Request:
 
 ```
 GET /login/google HTTP/1.1
-Host: localhost:3001
+Host: auth.sbx.ikigenba.dev
 ```
 
 Response:
@@ -378,7 +332,7 @@ Request:
 
 ```
 GET /login/google/callback?code=<code>&state=<state> HTTP/1.1
-Host: localhost:3001
+Host: auth.sbx.ikigenba.dev
 ```
 
 Response:
@@ -386,12 +340,11 @@ Response:
 ```
 HTTP/1.1 302 Found
 Location: /
-Set-Cookie: ikigenba_session=<opaque>; Path=/; Secure; HttpOnly; SameSite=Lax
+Set-Cookie: ikigenba_session=<opaque>; Domain=sbx.ikigenba.dev; Path=/; Secure; HttpOnly; SameSite=Lax
 ```
 
-Status 302. Redirects to `/`. On a space the cookie also carries
-`Domain=<space>` (the space host and every subdomain); run locally it has no
-`Domain` and is still `Secure`.
+Status 302. Redirects to `/`. The cookie carries `Domain=<space>`, here
+`Domain=sbx.ikigenba.dev`, so it reaches the space host and every subdomain.
 
 Preconditions:
 
@@ -406,9 +359,8 @@ Postconditions:
 - A new user row exists, keyed by `(issuer, subject)`, with a freshly minted
   opaque `X-User-Id` and the account's email.
 - A session exists server-side, named by the `ikigenba_session` cookie.
-- On a space, the browser stores the cookie and sends it when following the
-  redirect to `/` over HTTPS, so the user sees the profile without signing in
-  again.
+- The browser stores the cookie and sends it when following the redirect to
+  `/` over HTTPS, so the user sees the profile without signing in again.
 - The user's last-Google-login time is set.
 - The in-flight login state is consumed.
 
@@ -422,7 +374,7 @@ Request:
 
 ```
 GET /login/google/callback?code=<code>&state=<state> HTTP/1.1
-Host: localhost:3001
+Host: auth.sbx.ikigenba.dev
 ```
 
 Response:
@@ -430,7 +382,7 @@ Response:
 ```
 HTTP/1.1 302 Found
 Location: /
-Set-Cookie: ikigenba_session=<opaque>; Path=/; Secure; HttpOnly; SameSite=Lax
+Set-Cookie: ikigenba_session=<opaque>; Domain=sbx.ikigenba.dev; Path=/; Secure; HttpOnly; SameSite=Lax
 ```
 
 Status 302. Redirects to `/`. The cookie carries the same attributes as in the
@@ -448,8 +400,8 @@ Postconditions:
 - No new user row is created and the `X-User-Id` is unchanged; the existing
   user's email is refreshed to the ID token's value.
 - A new session exists server-side, named by the cookie.
-- On a space, the browser stores the new cookie and sends it when following the
-  redirect to `/` over HTTPS, so the user sees the profile.
+- The browser stores the new cookie and sends it when following the redirect
+  to `/` over HTTPS, so the user sees the profile.
 - The user's last-Google-login time is updated.
 - The in-flight login state is consumed. No duplicate user exists.
 
@@ -462,7 +414,7 @@ Request:
 
 ```
 GET /login/google/callback?code=<code>&state=<state> HTTP/1.1
-Host: localhost:3001
+Host: auth.sbx.ikigenba.dev
 ```
 
 Response:
@@ -470,14 +422,13 @@ Response:
 ```
 HTTP/1.1 302 Found
 Location: <return>
-Set-Cookie: ikigenba_session=<opaque>; Path=/; Secure; HttpOnly; SameSite=Lax
+Set-Cookie: ikigenba_session=<opaque>; Domain=sbx.ikigenba.dev; Path=/; Secure; HttpOnly; SameSite=Lax
 ```
 
 Status 302. Redirects to the return URL `<return>` the login state carried. Its
 host is the space or a subdomain of it, the space being auth's own hostname
-without its leading `auth.` label; run locally the allowed hosts derive from
-auth's own hostname the same way. The cookie carries the attributes described in
-the first-login story.
+without its leading `auth.` label. The cookie carries the attributes described
+in the first-login story.
 
 Preconditions:
 
@@ -490,7 +441,7 @@ Postconditions:
 
 - The user is provisioned or refreshed as in the member stories, a session
   exists, and the user's last-Google-login time is updated.
-- For an HTTPS return URL on a space, the browser sends the new cookie to the
+- For an HTTPS return URL, the browser sends the new cookie to the
   returned path. When the URL belongs to another app routed through `/check`
   as in `S7-on-a-space.md`, that app's request authenticates with the session
   without another sign-in.
@@ -506,7 +457,7 @@ Request:
 
 ```
 GET /login/google/callback?code=<code>&state=<state> HTTP/1.1
-Host: localhost:3001
+Host: auth.sbx.ikigenba.dev
 ```
 
 Response:
@@ -514,7 +465,7 @@ Response:
 ```
 HTTP/1.1 302 Found
 Location: /
-Set-Cookie: ikigenba_session=<opaque>; Path=/; Secure; HttpOnly; SameSite=Lax
+Set-Cookie: ikigenba_session=<opaque>; Domain=sbx.ikigenba.dev; Path=/; Secure; HttpOnly; SameSite=Lax
 ```
 
 Status 302. The return URL's host is not the space nor a subdomain of it, so it
@@ -533,8 +484,8 @@ Postconditions:
 - The user is provisioned or refreshed as in the member stories, a session
   exists, and the user's last-Google-login time is updated.
 - The in-flight login state is consumed. The return URL was not used.
-- On a space, the browser sends the new cookie when following the fallback
-  redirect to `/` over HTTPS, so the user sees the profile.
+- The browser sends the new cookie when following the fallback redirect to `/`
+  over HTTPS, so the user sees the profile.
 
 ## Google returns a callback with an unknown state
 
@@ -545,7 +496,7 @@ Request:
 
 ```
 GET /login/google/callback?code=<code>&state=<state> HTTP/1.1
-Host: localhost:3001
+Host: auth.sbx.ikigenba.dev
 ```
 
 Response:
@@ -577,7 +528,7 @@ Request:
 
 ```
 GET /login/google/callback?error=access_denied&state=<state> HTTP/1.1
-Host: localhost:3001
+Host: auth.sbx.ikigenba.dev
 ```
 
 Response:
@@ -589,7 +540,7 @@ Content-Type: text/html; charset=utf-8
 
 Status 200. The body is an HTML document titled `auth`, with the stylesheet
 link and viewport every page has, drawn as a sign-in card. Its visible text
-is the mark `ikigenba`, the heading `Sign in to localhost`, a warning,
+is the mark `ikigenba`, the heading `Sign in to ikigenba.dev`, a warning,
 `<div class="alert" data-kind="warn" role="status">`, titled
 `Sign-in cancelled` and reading
 `Google didn't grant access, so you weren't signed in. You can try again.`,
@@ -617,7 +568,7 @@ Request:
 
 ```
 GET /login/google/callback?code=<code>&state=<state> HTTP/1.1
-Host: localhost:3001
+Host: auth.sbx.ikigenba.dev
 ```
 
 Response:
@@ -629,7 +580,7 @@ Content-Type: text/html; charset=utf-8
 
 Status 403. The body is an HTML document titled `auth`, with the stylesheet
 link and viewport every page has, drawn as a sign-in card. Its visible text
-is the mark `ikigenba`, the heading `Sign in to localhost`, an error,
+is the mark `ikigenba`, the heading `Sign in to ikigenba.dev`, an error,
 `<div class="alert" data-kind="err" role="alert">`, titled
 `Workspace membership required` and reading
 `ada@example.com isn't a verified account in the michaelgreenly.dev workspace. Sign in with your @michaelgreenly.dev account instead.`
@@ -659,7 +610,7 @@ Request:
 
 ```
 GET /login/google/callback?code=<code>&state=<state> HTTP/1.1
-Host: localhost:3001
+Host: auth.sbx.ikigenba.dev
 ```
 
 Response:
@@ -689,8 +640,8 @@ Postconditions:
 
 With a live session the index is the profile, drawn with the banner:
 who the user is, the tokens they hold, and the form that creates another. A
-`?return=<url>` is ignored because the visitor is already signed in. On a
-space, a browser that has just completed sign-in sends the received cookie
+`?return=<url>` is ignored because the visitor is already signed in. A
+browser that has just completed sign-in sends the received cookie
 automatically on this HTTPS path and sees this profile; the session is not
 limited to the login callback's path.
 
@@ -713,13 +664,13 @@ Request:
 
 ```
 GET / HTTP/1.1
-Host: localhost:3001
+Host: auth.sbx.ikigenba.dev
 Cookie: ikigenba_session=<opaque>
 ```
 
 ```
 GET /?return=<url> HTTP/1.1
-Host: localhost:3001
+Host: auth.sbx.ikigenba.dev
 Cookie: ikigenba_session=<opaque>
 ```
 
@@ -738,7 +689,7 @@ the `Sign out` button in the form that POSTs to `/logout`. The banner holds no
 launcher button, and the page loads no `/_appkit/launcher.js`, since auth has
 no services file here. Inside the page's one
 `<main>` its visible text is the heading `Your account` with the subtitle
-`You're signed in to localhost.`; the `Account` card reading `Email`
+`You're signed in to ikigenba.dev.`; the `Account` card reading `Email`
 `ada@michaelgreenly.dev`, `Workspace` `michaelgreenly.dev`, and
 `Signed in via` `Google`; the `API tokens` card with its explanation and the
 user's tokens (`S5-tokens.md`); and the `Create a token` card, whose form
@@ -770,8 +721,8 @@ Request:
 
 ```
 POST /logout HTTP/1.1
-Host: localhost:3001
-Origin: http://localhost:3001
+Host: auth.sbx.ikigenba.dev
+Origin: https://auth.sbx.ikigenba.dev
 Cookie: ikigenba_session=<opaque>
 ```
 
@@ -780,20 +731,18 @@ Response:
 ```
 HTTP/1.1 302 Found
 Location: /
-Set-Cookie: ikigenba_session=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax
+Set-Cookie: ikigenba_session=; Domain=sbx.ikigenba.dev; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax
 ```
 
 Status 302. Redirects to `/`. The `Set-Cookie` clears `ikigenba_session` (empty
-value, `Max-Age=0`) with the same `Path=/` and domain scope as the login cookie.
-On a space the clearing cookie also carries `Domain=<space>`; run locally it
-has none.
+value, `Max-Age=0`) with the same `Domain=<space>` and `Path=/` as the login
+cookie.
 
 Preconditions:
 
 - auth is serving, with its Google settings.
 - The request carries an `ikigenba_session` cookie naming a live session, and
-  its `Origin` is auth's own origin (locally `http://localhost:3001`, on a space
-  `https://auth.<space>`).
+  its `Origin` is auth's own origin, `https://auth.<space>`.
 
 Postconditions:
 
@@ -806,7 +755,7 @@ Postconditions:
 ## A user signs out from an app on the space
 
 An app on the space offers sign-out in its own banner — dummy's, say, at
-`https://dummy.<space>`, or `http://localhost:3000` run locally — as a form
+`https://dummy.sbx.ikigenba.dev` — as a form
 that POSTs to auth's `/logout`. The app is same-site with auth, so the browser
 sends the `SameSite=Lax` session cookie with the `POST`, and its `Origin` is the
 app's own, which is on this space. One click signs the user out of the space,
@@ -816,8 +765,8 @@ Request:
 
 ```
 POST /logout HTTP/1.1
-Host: localhost:3001
-Origin: http://localhost:3000
+Host: auth.sbx.ikigenba.dev
+Origin: https://dummy.sbx.ikigenba.dev
 Cookie: ikigenba_session=<opaque>
 ```
 
@@ -826,25 +775,23 @@ Response:
 ```
 HTTP/1.1 302 Found
 Location: /
-Set-Cookie: ikigenba_session=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax
+Set-Cookie: ikigenba_session=; Domain=sbx.ikigenba.dev; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax
 ```
 
 Status 302. The response is the same as for a sign-out from auth's own origin:
 `Location: /` is auth's own `/`, so the browser lands on auth's sign-in page,
 not back on the app. The `Set-Cookie` clears `ikigenba_session` exactly as in
-the same-origin story; on a space it also carries `Domain=<space>`, run locally
-it has none. On a space the request is the same with an `Origin` such as
-`https://dummy.<space>`, `https://<space>`, or `https://a.b.<space>`: a
-subdomain at any depth is accepted, because the session cookie reaches it.
+the same-origin story. The request is the same with an `Origin` such as
+`https://sbx.ikigenba.dev` or `https://a.b.sbx.ikigenba.dev`: a subdomain at
+any depth is accepted, because the session cookie reaches it.
 
 Preconditions:
 
 - auth is serving, with its Google settings.
 - The request carries an `ikigenba_session` cookie naming a live session, and
-  its `Origin` is on this space but is not auth's own origin (locally
-  `http://localhost:3000`, or `http://localhost` or `http://localhost:<port>`
-  for any other port; on a space `https://<space>`, or `https://<host>.<space>`
-  for any subdomain at any depth other than `auth`).
+  its `Origin` is on this space but is not auth's own origin:
+  `https://<space>`, or `https://<host>.<space>` for any subdomain at any depth
+  other than `auth`.
 
 Postconditions:
 
@@ -858,15 +805,15 @@ Postconditions:
 
 A cross-site `POST` to `/logout`: its `Origin` is not on this space. The
 `Origin` check is the second line of defense after `SameSite=Lax`, and it
-refuses the request. On a space the same refusal meets an origin that names the
-space's hosts over `http` rather than `https`: `http://<space>` or
+refuses the request. The same refusal meets an origin that names the space's
+hosts over `http` rather than `https`: `http://<space>` or
 `http://<host>.<space>`.
 
 Request:
 
 ```
 POST /logout HTTP/1.1
-Host: localhost:3001
+Host: auth.sbx.ikigenba.dev
 Origin: https://evil.example
 Cookie: ikigenba_session=<opaque>
 ```
@@ -884,9 +831,8 @@ Preconditions:
 
 - auth is serving, with its Google settings.
 - The request carries an `ikigenba_session` cookie naming a live session, and
-  its `Origin` is not on this space (locally, not `http://localhost` or
-  `http://localhost:<port>`; on a space, not `https://<space>` or
-  `https://<host>.<space>` for a subdomain at any depth).
+  its `Origin` is not on this space: not `https://<space>` or
+  `https://<host>.<space>` for a subdomain at any depth.
 
 Postconditions:
 
@@ -901,7 +847,7 @@ Request:
 
 ```
 POST /logout HTTP/1.1
-Host: localhost:3001
+Host: auth.sbx.ikigenba.dev
 Cookie: ikigenba_session=<opaque>
 ```
 
@@ -956,7 +902,7 @@ Request:
 
 ```
 GET / HTTP/1.1
-Host: localhost:3001
+Host: auth.sbx.ikigenba.dev
 Cookie: ikigenba_session=<opaque>
 ```
 
@@ -991,17 +937,17 @@ Postconditions:
 
 - Nothing has changed. The services file is as it was.
 
-## A user on a laptop with no services file sees no launcher
+## A user on a host with no services file sees no launcher
 
-A developer's laptop has no services file, and nothing names one:
-`IKIGENBA_SERVICES` is unset (`S2-serve.md`). The banner is then the banner
-without a launcher, and the page is otherwise the same page a host serves.
+A host may have no services file, and nothing names one: `IKIGENBA_SERVICES`
+is unset (`S2-serve.md`). The banner is then the banner without a launcher,
+and the page is otherwise the same page a host with a services file serves.
 
 Request:
 
 ```
 GET / HTTP/1.1
-Host: localhost:3001
+Host: auth.sbx.ikigenba.dev
 Cookie: ikigenba_session=<opaque>
 ```
 
@@ -1045,7 +991,7 @@ Request:
 
 ```
 GET / HTTP/1.1
-Host: localhost:3001
+Host: auth.sbx.ikigenba.dev
 Cookie: ikigenba_session=<opaque>
 ```
 
@@ -1086,7 +1032,7 @@ Request:
 
 ```
 GET / HTTP/1.1
-Host: localhost:3001
+Host: auth.sbx.ikigenba.dev
 Cookie: ikigenba_session=<opaque>
 ```
 

@@ -28,7 +28,7 @@ manifest never sets either. `IKIGENBA_SERVICES` is the path of the host's
 services file, which lists the platform's services for the launcher in the
 banner of auth's signed-in pages (`S3-sign-in.md`). On a host, opsctl sets it
 in the environment the host gives auth, normally
-`/var/lib/ikigenba/services.json`; on a developer's laptop it is normally
+`/var/lib/ikigenba/services.json`; on a host that has no services file it is
 unset, and auth's pages then carry no launcher. auth reads the variable once,
 when it starts, and never fails to start over it: unset, empty, or naming a
 file that is missing or unreadable, auth starts and serves all the same, and
@@ -112,8 +112,8 @@ Postconditions:
 The database file does not yet exist. auth creates the `state/` directory if
 it is absent, then creates `state/auth.db` and its schema and serves. The
 same start succeeds when `state/` already exists and only the database is
-absent. Neither a fresh deployment nor a developer's first local run needs
-the directory created beforehand. The paths are relative to auth's working
+absent. Neither a fresh deployment nor any other first start needs the
+directory created beforehand. The paths are relative to auth's working
 directory.
 
 Command:
