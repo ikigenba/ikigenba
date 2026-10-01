@@ -100,7 +100,7 @@ Postconditions:
 - `ikigenba-auth.service` is `active`, and auth is serving on the socket
   `ikigenba-auth.socket` passed it: a connection there, and every connection
   queued before auth started, is answered by auth.
-- auth listens on no other socket and no port.
+- auth listens on no other socket.
 - `/opt/auth/state/auth.db` is the database it opened; it existed already.
 - No network call to Google was made; the Google settings were read from the
   environment, not checked against Google.

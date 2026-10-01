@@ -107,7 +107,7 @@ waits for, so an in-process test and the host learn readiness the same way.
 There is no listen factory and no readiness callback in the seam: auth binds
 nothing, so there is no bind to fake, and the datagram is the readiness
 signal. auth opens no listening socket of its own, which is how "auth
-listens on no other socket and no port" is kept.
+listens on no other socket" is kept.
 
 `internal/server` keeps the handlers and gains the listener's life. `*Server`
 is the handler — it implements `http.Handler` — and `server.Serve` is handed a

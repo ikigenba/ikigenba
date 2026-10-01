@@ -5,7 +5,7 @@ the socket systemd passes it (`/run/ikigenba/auth.sock` on a host), behind the
 host's nginx, which also sends it the identity subrequest for every other app.
 On a host it runs as `/opt/auth/bin/auth` with `/opt/auth` as its working
 directory and its environment from `/opt/auth/etc/env`; a developer runs the
-same binary from the checkout under `systemd-socket-activate`. The module path is `github.com/ikigenba/ikigenba/auth`. It requires appkit
+same binary from the checkout. The module path is `github.com/ikigenba/ikigenba/auth`. It requires appkit
 (`github.com/ikigenba/ikigenba/appkit`), which supplies the banner, the
 service launcher, and the shared stylesheet, fonts, licences and launcher
 script under `/_appkit/`. Its version declaration and run seam are
