@@ -65,7 +65,7 @@ engine = "sqlite"
 path = "state/auth.db"
 `
 
-const socketHint = "\n\nrun it under systemd, or locally with 'systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth'\n"
+const socketHint = "\n\nrun it under systemd, with a listening socket passed in\n"
 
 type lockedWriter struct {
 	mu sync.Mutex

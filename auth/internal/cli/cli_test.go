@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -59,7 +60,7 @@ engine = "sqlite"
 path = "state/auth.db"
 `
 
-const wantSocketHint = "\n\nrun it under systemd, or locally with 'systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth'\n"
+const wantSocketHint = "\n\nrun it under systemd, with a listening socket passed in\n"
 
 func TestSurface(t *testing.T) {
 	// R-SITN-PQPU
@@ -161,7 +162,18 @@ func goodEnv() map[string]string {
 func testSource(t *testing.T) string { return filepath.Join(t.TempDir(), "auth.db") }
 
 func TestConfigAndSocketValidation(t *testing.T) {
-	// R-MKD0-BA3G R-MLKW-P1U5 R-MO0P-GLBJ R-MMST-2TKU R-MQGI-84SX R-SZW9-2J3K R-SYOC-ORCV
+	// R-MKD0-BA3G R-MLKW-P1U5 R-MO0P-GLBJ R-MMST-2TKU R-MQGI-84SX R-ERFV-M2PB R-ETVO-DM6P
+	dir, err := os.MkdirTemp("", "auth-validation-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	notifyPath := filepath.Join(dir, "notify.sock")
+	notifications, err := net.ListenUnixgram("unixgram", &net.UnixAddr{Name: notifyPath, Net: "unixgram"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = notifications.Close() }()
 	cases := []struct {
 		name   string
 		mutate func(map[string]string)
@@ -188,6 +200,7 @@ func TestConfigAndSocketValidation(t *testing.T) {
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			env := goodEnv()
+			env["NOTIFY_SOCKET"] = notifyPath
 			tt.mutate(env)
 			p := baseProcess(env, testSource(t), nil)
 			calls := 0
@@ -200,6 +213,7 @@ func TestConfigAndSocketValidation(t *testing.T) {
 			if _, err := os.Stat(p.DBSource); !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("database opened: %v", err)
 			}
+			assertNoNotification(t, notifications)
 		})
 	}
 	// Check precedence even when later inputs are bad.
@@ -773,3 +787,66 @@ type brokenListener struct{ err error }
 func (b *brokenListener) Accept() (net.Conn, error) { return nil, b.err }
 func (b *brokenListener) Close() error              { return nil }
 func (b *brokenListener) Addr() net.Addr            { return &net.TCPAddr{} }
+
+func TestSocketUsageErrorsHaveNoServingSideEffects(t *testing.T) {
+	// R-ERFV-M2PB R-ETVO-DM6P
+	dir, err := os.MkdirTemp("", "auth-notify-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	addr := filepath.Join(dir, "notify.sock")
+	notifications, err := net.ListenUnixgram("unixgram", &net.UnixAddr{Name: addr, Net: "unixgram"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = notifications.Close() }()
+	for _, fds := range []string{"0", "002", strings.Repeat("9", 100)} {
+		for _, drain := range []string{"unset", "", "1", "9999999999999999999999999"} {
+			t.Run(fds+"/"+drain, func(t *testing.T) {
+				env := goodEnv()
+				env["LISTEN_FDS"] = fds
+				env["NOTIFY_SOCKET"] = addr
+				if drain != "unset" {
+					env["DRAIN_SECONDS"] = drain
+				}
+				p := baseProcess(env, testSource(t), nil)
+				p.Inherit = func(uintptr) (net.Listener, error) {
+					t.Fatal("attempted listener inheritance")
+					return nil, errors.New("unexpected inheritance")
+				}
+				p.Unsetenv = func(string) error { t.Fatal("removed environment variable"); return nil }
+				want := "auth: no socket was passed in" + wantSocketHint
+				if fds != "0" {
+					want = "auth: " + fds + " sockets were passed in, expected 1" + wantSocketHint
+				}
+				if code := Run(t.Context(), p); code != 2 || p.Stdout.(*bytes.Buffer).Len() != 0 || p.Stderr.(*countWriter).String() != want {
+					t.Fatalf("code=%d stdout=%q stderr=%q", code, p.Stdout, p.Stderr)
+				}
+				if _, err := os.Stat(p.DBSource); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("database opened: %v", err)
+				}
+				assertNoNotification(t, notifications)
+			})
+		}
+	}
+}
+
+func assertNoNotification(t *testing.T, notifications *net.UnixConn) {
+	t.Helper()
+	// Run has returned synchronously: inspect the datagram queue without waiting.
+	raw, err := notifications.SyscallConn()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receiveErr error
+	if err := raw.Read(func(fd uintptr) bool {
+		_, _, receiveErr = syscall.Recvfrom(int(fd), make([]byte, 32), syscall.MSG_DONTWAIT)
+		return true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !errors.Is(receiveErr, syscall.EAGAIN) {
+		t.Fatalf("notification queue was not empty: %v", receiveErr)
+	}
+}

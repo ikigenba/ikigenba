@@ -595,7 +595,7 @@ func TestPageReadingVocabulary(t *testing.T) {
 
 func assertSignInCard(t *testing.T, body, host, word, target, footer string) string {
 	t.Helper()
-	// R-PXDQ-DCPT R-PYLM-R4GI R-PZTJ-4W77 R-Q11F-INXW R-Q29B-WFOL R-PTQ1-81HQ
+	// R-PXDQ-DCPT R-PYLM-R4GI R-PZTJ-4W77 R-Q11F-INXW R-Q29B-WFOL R-3Q46-Q9HS
 	inside := pageContent(body, pageOne(t, body, "body"))
 	seq := pageSequence(t, inside, "main")
 	pageAttr(t, seq[0], "class", "auth-page")
@@ -794,12 +794,6 @@ func TestSignInPagesFixVisibleText(t *testing.T) {
 			}
 			assertEmptySignInTables(t, st)
 		})
-	}
-	// Apex expected values are independent of the production helper.
-	for host, want := range map[string]string{"auth.sbx.ikigenba.dev": "ikigenba.dev", "localhost:3001": "localhost", "a.b.c:001": "b.c", "a.b:port": "a.b:port", "name": "name", "name:": "name:"} {
-		if apexName(host) != want {
-			t.Errorf("apex %q = %q want %q", host, apexName(host), want)
-		}
 	}
 }
 
@@ -1013,4 +1007,37 @@ func pageASCIILower(value string) string {
 		}
 	}
 	return string(bytes)
+}
+
+func TestPagesShowRequestApex(t *testing.T) {
+	// R-3Q46-Q9HS: rendered apex text follows the request Host.
+	for host, want := range map[string]string{
+		"auth.sbx.ikigenba.dev": "ikigenba.dev", "localhost:3001": "localhost",
+		"a.b.c:001": "b.c", "a.b:port": "a.b:port", "name": "name", "name:": "name:",
+		"auth.A.B:443": "A.B", "auth.a.b.": "b.",
+	} {
+		t.Run(host, func(t *testing.T) {
+			st := openSignInStore(t)
+			s := New(Config{Banner: testPageBanner, Store: st, Now: func() time.Time { return signInNow }})
+			for _, target := range []string{"/", "/login/google/callback?error=access_denied"} {
+				w := serveSignIn(s, http.MethodGet, target, host, nil, "")
+				body := w.Body.String()
+				if got := pageText(pageContent(body, pageOne(t, body, "h1"))); got != "Sign in to "+want {
+					t.Fatalf("%s heading = %q, want %q", target, got, "Sign in to "+want)
+				}
+			}
+			user, err := st.UpsertUserOnLogin("issuer", "subject", "member@green.example", signInNow)
+			if err != nil {
+				t.Fatal(err)
+			}
+			session, err := st.CreateSession(user.ID, signInNow)
+			if err != nil {
+				t.Fatal(err)
+			}
+			w := serveSignIn(s, http.MethodGet, "/", host, &http.Cookie{Name: SessionCookieName, Value: session.ID, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}, "")
+			if !strings.Contains(pageText(w.Body.String()), "You're signed in to "+want+".") {
+				t.Fatalf("profile does not show request apex %q: %s", want, w.Body.String())
+			}
+		})
+	}
 }

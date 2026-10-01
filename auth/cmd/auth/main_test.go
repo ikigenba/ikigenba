@@ -51,7 +51,7 @@ func TestMainWiring(t *testing.T) {
 		{name: "version", args: []string{"--version"}, wantOut: version.Version + "\n"},
 		{name: "manifest", args: []string{"manifest"}, wantOut: wantManifest},
 		{name: "bogus", args: []string{"bogus"}, wantErr: "auth: unknown command 'bogus'\n\nsee 'auth --help' for usage\n", wantCode: 2},
-		{name: "bare", env: googleEnv(), wantErr: "auth: no socket was passed in\n\nrun it under systemd, or locally with 'systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth'\n", wantCode: 2},
+		{name: "bare", env: googleEnv(), wantErr: "auth: no socket was passed in\n\nrun it under systemd, with a listening socket passed in\n", wantCode: 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			out, errOut, code := execChild(t, binary, tc.env, tc.args...)
@@ -261,7 +261,7 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal) {
 	if code != 0 || stdout.Len() != 0 || stderr.Len() != 0 {
 		t.Fatalf("%s code=%d stdout=%q stderr=%q", sig, code, stdout.String(), stderr.String())
 	}
-	// R-NB6S-Q8EQ
+	// R-NI60-D0O6
 	if _, err := os.Stat(socketPath); err != nil {
 		t.Fatalf("socket path removed: %v", err)
 	}
