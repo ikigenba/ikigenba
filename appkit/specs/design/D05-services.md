@@ -1,0 +1,41 @@
+# D05-services
+
+The host's installer, opsctl, publishes a services file listing every service installed and routed on the host, and gives every service its path in the environment variable `IKIGENBA_SERVICES` (normally `/var/lib/ikigenba/services.json`). Package `services` is the one reader of that file in the library: `page` reads it to fill the launcher (D02), the `mcp` server reads it for its default instructions (D07), and the MCP gateway reads it to find the suite's MCP services and the sockets they listen on. Every reader gets the same entries under the same rules, so no two services can disagree about what the file says.
+
+## The format and the reader contract
+
+The file is a published external format that opsctl owns; `services` relies on nothing else about opsctl. It is a JSON object whose member `services` is an array. Each element describes one service with the members `name`, `url`, `description`, and `socket` (strings), `enabled` and `mcp` (booleans), and optionally `icon` (a string, the SVG text of the service's icon). The file's order is the order `Read` returns.
+
+The format has no version and only grows: opsctl may add members to the top-level object or to an entry, but never removes, renames, or changes the type or meaning of the ones above. So the reader ignores every member it does not know, at every level, and is strict about the six members every entry carries: an element without all six, each of the right type and with a non-empty `name`, is not a service this reader understands, and is skipped silently while the rest of the file is still read. `icon` is the one optional member. Absent or not a string, the entry simply has no icon — `HasIcon` says which — and is still returned; the launcher shows only entries with an icon (D02), but the gateway needs the others too.
+
+Member names are matched exactly as written, letter case included: `Name` is not `name`. When one object holds a member name more than once, the last occurrence counts, as for any JSON reader that keeps one value per name.
+
+## Reading
+
+`Read` takes the path as given and reads the file anew on every call, so a rewrite of the file is seen on the next call without a restart; nothing is cached. A relative path resolves against the working directory at the time of the call. A file that cannot be read, or whose content is not the object above, is an error: `Read` returns no list and an error the caller may report or ignore (`page` ignores it, so a broken file never breaks a page). A missing file is told apart with `errors.Is(err, fs.ErrNotExist)`, since a host that has not yet run opsctl simply has none. A well-formed file whose array holds no usable element is not an error: it is an empty, non-nil list.
+
+`Find` looks a service up by name in a list `Read` returned, taking the first entry with that name when the file lists one twice.
+
+`Read` has no other effect: it never panics, writes nothing anywhere, and is safe to call from many goroutines at once.
+
+## REQUIREMENTS
+
+- R-JKK3-SH90: Package `services` MUST export `const Variable = "IKIGENBA_SERVICES"`.
+- R-JLS0-68ZP: Package `services` MUST export `type Entry struct { Name, URL, Description, Socket string; Enabled, MCP bool; Icon string; HasIcon bool }`, with exactly these fields in this order.
+- R-JMZW-K0QE: Package `services` MUST export `type List []Entry`.
+- R-JPFP-BK7S: Package `services` MUST export `func Read(path string) (List, error)`.
+- R-JQNL-PBYH: Package `services` MUST export the method `func (l List) Find(name string) (Entry, bool)`.
+- R-JRVI-33P6: Every `services.Read` call MUST read the file at `path` anew, as given (a relative path resolves against the process working directory at the time of the call), so a change to the file's content, or its appearance or removal, between two calls is reflected in the second call's result.
+- R-JT3E-GVFV: `services.Read` MUST return a nil `List` and a non-nil error when `path` is empty; when `path`, following symbolic links, names nothing or names something other than a regular file (a directory included); or when the file cannot be read.
+- R-JUBA-UN6K: When `path` is not empty and names nothing, the error `services.Read` returns MUST satisfy `errors.Is(err, fs.ErrNotExist)`, where `fs` is the standard library's `io/fs`.
+- R-JVJ7-8EX9: `services.Read` MUST return a nil `List` and a non-nil error when the file's content is not valid UTF-8, begins with a byte order mark, or is not exactly one JSON text (RFC 8259); when that JSON value is not an object; or when the object has no `services` member or that member is not an array.
+- R-JWR3-M6NY: An element of the `services` array MUST be usable exactly when it is a JSON object whose member `name` is a string other than the empty string, whose members `url`, `description`, and `socket` are strings, and whose members `enabled` and `mcp` are each `true` or `false`; an element that is not usable MUST contribute nothing to the `List` `services.Read` returns and MUST NOT prevent the usable elements from contributing.
+- R-JXYZ-ZYEN: When the file is not an error case of R-JT3E-GVFV or R-JVJ7-8EX9, `services.Read` MUST return a nil error and a `List` holding one `Entry` per usable element, in the order the elements appear in the array, duplicates by name included, with `Name`, `URL`, `Description`, and `Socket` the decoded strings of `name`, `url`, `description`, and `socket` unaltered and `Enabled` and `MCP` the values of `enabled` and `mcp`.
+- R-JZ6W-DQ5C: For a usable element whose member `icon` is a string, the `Entry` `services.Read` returns MUST have `Icon` that decoded string unaltered and `HasIcon` true; for a usable element with no `icon` member, or whose `icon` is any JSON value other than a string (`null` included), the `Entry` MUST have `Icon` empty and `HasIcon` false.
+- R-K0ES-RHW1: When the `services` array is empty or has no usable element, `services.Read` MUST return a non-nil `List` of length zero and a nil error.
+- R-K1MP-59MQ: Members that R-JVJ7-8EX9, R-JWR3-M6NY, and R-JZ6W-DQ5C do not name, in the top-level object or in an element, MUST be ignored, so adding any such member of any type to a file does not change what `services.Read` returns for it.
+- R-K2UL-J1DF: `services.Read` MUST match member names exactly, letter case included, so a member whose name differs from `services`, `name`, `url`, `description`, `socket`, `enabled`, `mcp`, or `icon` only in letter case is treated as an unknown member.
+- R-K42H-WT44: When one object, at any level, holds a member name more than once, only the last occurrence of that name MUST count for `services.Read`.
+- R-K5AE-AKUT: `List.Find` MUST return the first `Entry` in the list whose `Name` equals `name` and true, or the zero `Entry` and false when no entry's `Name` equals it, including for a nil `List`.
+- R-9UZH-ILUK: `services.Read` MUST NOT panic, whatever `path` names and whatever the file holds.
+- R-K7Q7-24C7: `services.Read` MUST be safe to call concurrently from multiple goroutines.
