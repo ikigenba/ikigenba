@@ -1,0 +1,5 @@
+app = "mcp"
+description = "Connect AI assistants to your services"
+default = false
+mcp = false
+secrets = []
