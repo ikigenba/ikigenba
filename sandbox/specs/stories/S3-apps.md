@@ -619,7 +619,7 @@ Postconditions:
 - Nothing has changed: no app was built, no file, unit or registry entry was written, nothing was started or restarted. If `wip` was up, it still runs its previous build; if it was not yet known, it still is not.
 - The secrets file was not created or changed.
 
-## A developer brings up the sandbox with a secrets file that cannot be read
+## A developer brings up the sandbox with a secrets file that is not valid TOML
 
 A secrets file that is not valid TOML is refused with only the line where the fault was found, never the parser's own description of it, which can quote the text near the fault, and that text may be a secret. No value from the file is printed.
 
