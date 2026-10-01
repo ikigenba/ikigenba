@@ -210,6 +210,8 @@ func assertSocketActivated(t *testing.T, binary string, sig syscall.Signal) {
 		t.Fatalf("database %s: %v", dbPath, err)
 	}
 	if sessionID != "" {
+		// R-FLRS-9LZN: main leaves Inherit nil; the response comes from
+		// the listening socket supplied as descriptor 3.
 		// R-9ZGQ-O2GR: the cgo-free executable serves the live session from
 		// a working directory containing only state/auth.db.
 		transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {

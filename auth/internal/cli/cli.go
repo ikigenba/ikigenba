@@ -209,9 +209,6 @@ func inherit(p Process) (net.Listener, error) {
 	}
 	ln, err := net.FileListener(file)
 	_ = file.Close()
-	if unix, ok := ln.(*net.UnixListener); ok {
-		unix.SetUnlinkOnClose(false)
-	}
 	return ln, err
 }
 

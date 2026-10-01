@@ -242,7 +242,7 @@ func TestConfigAndSocketValidation(t *testing.T) {
 }
 
 func TestInheritedListenerFailuresAndOpenOrder(t *testing.T) {
-	// R-MU47-DG10 R-MVC3-R7RP R-MWK0-4ZIE R-MXRW-IR93 R-MYZS-WIZS
+	// R-MU47-DG10 R-MWK0-4ZIE R-MXRW-IR93 R-MYZS-WIZS
 	env := goodEnv()
 	source := testSource(t)
 	p := baseProcess(env, source, nil)
@@ -281,6 +281,127 @@ func TestInheritedListenerFailuresAndOpenOrder(t *testing.T) {
 	}
 	if p.Stdout.(*bytes.Buffer).Len() != 0 {
 		t.Fatal("stdout on failure")
+	}
+}
+
+type trackedListener struct {
+	net.Listener
+	closed atomic.Bool
+}
+
+func (ln *trackedListener) Close() error {
+	ln.closed.Store(true)
+	return ln.Listener.Close()
+}
+
+func TestRunTakesInjectedListener(t *testing.T) {
+	// R-FLRS-9LZN R-FO7L-15H1
+	for _, network := range []string{"tcp", "unix"} {
+		for _, drain := range []string{"unset", "", "1"} {
+			t.Run(network+"/"+drain, func(t *testing.T) {
+				dir, err := os.MkdirTemp("", "auth-inherit-")
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = os.RemoveAll(dir) })
+				address := "127.0.0.1:0"
+				if network == "unix" {
+					address = filepath.Join(dir, "serve.sock")
+				}
+				listener, err := (&net.ListenConfig{}).Listen(t.Context(), network, address)
+				if err != nil {
+					t.Fatal(err)
+				}
+				ln := &trackedListener{Listener: listener}
+				t.Cleanup(func() { _ = listener.Close() })
+				readyPath := filepath.Join(dir, "ready.sock")
+				ready, err := net.ListenUnixgram("unixgram", &net.UnixAddr{Name: readyPath, Net: "unixgram"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = ready.Close() })
+				env := goodEnv()
+				env["NOTIFY_SOCKET"] = readyPath
+				if drain != "unset" {
+					env["DRAIN_SECONDS"] = drain
+				}
+				p := baseProcess(env, testSource(t), ln)
+				var descriptors []uintptr
+				p.Inherit = func(fd uintptr) (net.Listener, error) {
+					descriptors = append(descriptors, fd)
+					return ln, nil
+				}
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				done := make(chan int, 1)
+				go func() { done <- Run(ctx, p) }()
+				if err := ready.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+					t.Fatal(err)
+				}
+				if _, _, err := ready.ReadFromUnix(make([]byte, 32)); err != nil {
+					t.Fatal(err)
+				}
+				transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+					return (&net.Dialer{}).DialContext(ctx, network, listener.Addr().String())
+				}}
+				defer transport.CloseIdleConnections()
+				client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
+				req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://auth/unknown", nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				response, err := client.Do(req)
+				if err != nil {
+					t.Fatalf("inherited listener did not answer: %v", err)
+				}
+				_ = response.Body.Close()
+				cancel()
+				<-done
+				if !slices.Equal(descriptors, []uintptr{3}) {
+					t.Fatalf("inherited descriptors = %v, want [3]", descriptors)
+				}
+				if !ln.closed.Load() {
+					t.Fatal("Run returned without closing its listener")
+				}
+			})
+		}
+	}
+}
+
+func TestRunClosesListenerOnLaterFailure(t *testing.T) {
+	// R-FO7L-15H1
+	for _, failure := range []string{"store", "notify", "serve"} {
+		t.Run(failure, func(t *testing.T) {
+			env := goodEnv()
+			source := testSource(t)
+			var listener net.Listener
+			if failure == "serve" {
+				listener = &brokenListener{err: errors.New("accept failed")}
+			} else {
+				var err error
+				listener, err = (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = listener.Close() })
+			}
+			if failure == "store" {
+				obstruction := filepath.Join(t.TempDir(), "parent-file")
+				if err := os.WriteFile(obstruction, []byte("not a directory"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				source = filepath.Join(obstruction, "auth.db")
+			}
+			if failure == "notify" {
+				env["NOTIFY_SOCKET"] = filepath.Join(t.TempDir(), "missing.sock")
+			}
+			ln := &trackedListener{Listener: listener}
+			p := baseProcess(env, source, ln)
+			Run(t.Context(), p)
+			if !ln.closed.Load() {
+				t.Fatal("Run returned without closing its listener")
+			}
+		})
 	}
 }
 
