@@ -114,7 +114,8 @@ func Run(ctx context.Context, p Process) int {
 		}
 	}
 	if err = server.Serve(ctx, ln, handler, drain); err != nil {
-		writeDiagnostic(stderr, "dummy: "+err.Error()+"\n")
+		detail := strings.NewReplacer("\r", " ", "\n", " ").Replace(err.Error())
+		writeDiagnostic(stderr, "dummy: "+detail+"\n")
 		return ExitServerFailed
 	}
 	return ExitSuccess

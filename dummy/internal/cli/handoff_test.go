@@ -207,7 +207,7 @@ func TestRunNotifiesBeforeAcceptAndReportsServeFailure(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = notify.Close() })
 		}
-		ln := &observingListener{err: errors.New("serve failure")}
+		ln := &observingListener{err: errors.New("first\nsecond\rthird")}
 		ln.beforeAccept = func() {
 			if err := notify.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
 				t.Fatal(err)
