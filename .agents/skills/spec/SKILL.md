@@ -41,7 +41,7 @@ The gap is the diff: an id in design but not tests must be **added**; an id in t
 
 ## Tests prove by use
 
-A test proves a requirement by using what it declares: it imports the package, calls the function with the declared signature, constructs the type with the declared fields, runs the command with the declared flag, requests the declared route, and asserts the outcome. A name or shape is verified because using it compiles and behaves as stated. A test never reads the module's source, layout, or `go.mod`, and never parses or reflects over source to check how something is written. A requirement that use cannot reach is not a requirement.
+A test proves a requirement by using what it declares: it imports the package, calls the function with the declared signature, constructs the type with the declared fields, runs the command with the declared flag, requests the declared route, and asserts the outcome. A name or shape is verified because using it compiles and behaves as stated. A test never reads the module's source, layout, or `go.mod`, and never parses or reflects over source to check how something is written. A requirement is provable only if a test the sub-project's `AGENTS.md` permits can tell a compliant implementation from a non-compliant one. A requirement that use cannot reach is not a requirement.
 
 ## The sub-project's AGENTS.md
 

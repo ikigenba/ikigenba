@@ -60,11 +60,9 @@ package owning each exported name still fits. Capture a changed owner as a
 structural requirement, proved by importing the name from its new package.
 Author structural and behavioral requirements under the canonical rules,
 minting ids with `idgen`. Preserve unchanged requirement text byte-for-byte;
-changed text gets a new id. Also re-mint every requirement whose matched tests
-assume behavior the revision replaces, even if its text still holds, and every
-requirement citing a re-minted id, until none remain. Never edit a test and
-never ask the user whether to: a stale test is retired only by re-minting.
-Every requirement must trace to a story outcome
+changed text gets a new id, and so does every requirement citing a re-minted
+id. Tests are not a reason to re-mint: the build rewrites tests the revision
+makes stale. Every requirement must trace to a story outcome
 (for a library, an agreed consumer task) or a public declaration supporting
 one, and must be provable by use.
 
@@ -110,7 +108,16 @@ Verification must establish:
   build-time design decisions, unsupported product behavior, or private
   implementation prescriptions.
 - Consumer tasks use the declared surface and accomplish their story outcomes.
-- No matched test contradicts the revised design.
+- Each new or changed requirement is provable. A verifier sketches a test the
+  sub-project's `AGENTS.md` permits, then tries to construct a non-compliant
+  implementation that passes it. If one exists, the requirement is reworded,
+  or the test rule it needs goes to the user as a decision.
+- Behavioral requirements state observable outcomes at public seams, never how
+  the code produces them.
+- The contract passes the declared gates. In a throwaway worktree, stub the
+  declared public surface, write the consumer tasks as code against it, and
+  run the sub-project's gates, then remove the worktree. A shape the gates
+  reject is redesigned; it is never left for the build.
 - Contracts agree across documents. Assign each shared boundary and story
   spanning documents as bounded integration work; local coverage alone is
   insufficient.

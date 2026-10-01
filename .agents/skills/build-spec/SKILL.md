@@ -26,7 +26,7 @@ Confirm the sub-project's directory holds both `specs/` and the sub-project's `A
 
 Once the sub-project is identified, every prompt a coordinator gives a sub-agent includes the sub-project's absolute directory, this skill, the sub-agent's assigned gap ids, and the completion criteria.
 
-Close the mechanical gap between design ids and tagged test ids. Verify the work performed to close it and pass the gates declared in the sub-project's `AGENTS.md`. The work is the gap ids found at the start of the run, and each sub-agent works only on the gap ids assigned to it. Ids already present in both design and tests are not part of the work: their tests must keep passing, but are never judged, strengthened, or rewritten. A test that carries no requirement id is not protected: when it contradicts the design, rewrite or delete it with the gap work it conflicts with.
+Close the mechanical gap between design ids and tagged test ids. Verify the work performed to close it and pass the gates declared in the sub-project's `AGENTS.md`. The work is the gap ids found at the start of the run, and each sub-agent works only on the gap ids assigned to it. Ids already present in both design and tests are not part of the work, and their tests must keep passing. When gap work breaks such a test or makes it obsolete, rewrite or replace it so its requirement is still proved; never rewrite one the gap work does not touch. A test that carries no requirement id may be rewritten or deleted with the gap work it conflicts with.
 
 Design and the sub-project's `AGENTS.md` are read-only. Source and test changes must close specific gap ids; issue files are the escalation channel defined by `spec`. Never mint ids or run `idgen`. Never alter a contract to make work pass. Do not add aliases, shims, or forwarding layers preserving superseded shapes.
 
@@ -42,7 +42,7 @@ Each implementer reads its assigned requirements and the code and tests they tou
 
 ## Blockers and handoff
 
-A blocker is a contradictory or unsatisfiable requirement, a false dependency fact, unavailable required tooling, or a gate that cannot pass within the contract. Difficulty and size are not blockers; they call for smaller tasks. A sub-agent that hits a blocker reports it to its coordinator with evidence: ids, commands and output, or quoted contradictions. The coordinator has a fresh sub-agent validate the claim; if it does not hold, the work continues. Once the claim is confirmed, the coordinator writes the issue in `specs/issues/<slug>.md` from the two reports, following `spec`'s issue rules; a matched test contradicting the design is resolved by re-minting its requirement in `draft-design`, and the issue says so, never proposing a test edit; this is the one file a coordinator writes itself.
+A blocker is a contradictory or unsatisfiable requirement, a false dependency fact, unavailable required tooling, or a gate that cannot pass within the contract. Difficulty and size are not blockers; they call for smaller tasks. A sub-agent that hits a blocker reports it to its coordinator with evidence: ids, commands and output, or quoted contradictions. The coordinator has a fresh sub-agent validate the claim; if it does not hold, the work continues. Once the claim is confirmed, the coordinator writes the issue in `specs/issues/<slug>.md` from the two reports, following `spec`'s issue rules; this is the one file a coordinator writes itself.
 
 That coordinator then reports the blocker to its own coordinator with the issue, the work completed, and its gap ids still open; each coordinator passes the report upward the same way, and the root reports it to the user. Pause work that depends on resolving the blocker, and let independent tasks finish and verify their results under `fanout`. There is no interactive decision queue for changing read-only contracts during a build. Preserve committed, verified work; a later user-invoked run resumes from the recomputed gap after resolution.
 
@@ -51,7 +51,8 @@ That coordinator then reports the blocker to its own coordinator with the issue,
 Verification must establish:
 
 - Every gap id recorded at the start of the run is resolved: each id to add is tagged in a test, and each id to remove is gone from the tests.
-- Every test added or changed asserts its requirement, no less and no more. A passing test with the id in it is not enough; neither is a test that proves things the requirement does not say.
+- Every id in the design is still tagged in a test that proves it.
+- Every test added or changed, including a rewritten test for a matched id, asserts its requirement, no less and no more. A passing test with the id in it is not enough; neither is a test that proves things the requirement does not say.
 - Every test proves its requirement by use. A test that reads the module's source, layout, or `go.mod`, or parses or reflects over source, closes nothing; the requirement it was written for is filed as an issue.
 - The implementation realizes the requirements behind the gap ids, including replacement of superseded behavior, without changing design or the sub-project's `AGENTS.md`.
 - Every declared gate exits zero, in the declared order, with nothing skipped or suppressed.
