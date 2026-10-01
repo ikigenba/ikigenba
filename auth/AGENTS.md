@@ -298,4 +298,4 @@ and pushed to a space's host by `devctl`, which drives `opsctl install` there.
    service alone; the socket stays up, so requests — `/check` subrequests for
    every other app among them — queue on it across the restart.
 
-`auth --version` then prints `vX.Y.Z`, and `space status` reports it.
+`auth --version` then prints `vX.Y.Z`, and `devctl space status <space>` reports it.
