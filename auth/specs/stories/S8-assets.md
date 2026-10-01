@@ -40,11 +40,12 @@ provider, so no identity gate stands in front of it, and a visitor drawing
 the sign-in page has no session yet: a file under `/_appkit/` needs no
 credential, is answered the same whether or not the request carries a
 session cookie or a token, and no answer sets a cookie. The requests below
-carry neither, and go to auth a developer serves with
-`systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth` (`S2-serve.md`), at
-`http://localhost:3001`; on a space nginx proxies auth's hostname to auth's
-socket instead. A response block shows the status line and the headers the
-story fixes; a header it does not show, `Date` say, is not fixed.
+carry neither, and go to a running auth (`S2-serve.md`), started with its
+Google settings; on a space they reach it through nginx. Each request is
+shown as the HTTP request auth receives, with the headers the story depends
+on; a request that shows no `Host` header carries `Host: localhost:3001`, a
+local one (`S3-sign-in.md`). A response block shows the status line and the
+headers the story fixes; a header it does not show, `Date` say, is not fixed.
 
 ## A browser fetches the stylesheet
 
@@ -56,7 +57,7 @@ browser applies it, with the tag its next visit will quote back.
 Request:
 
 ```
-$ curl -si http://localhost:3001/_appkit/theme.css
+GET /_appkit/theme.css HTTP/1.1
 ```
 
 Response:
@@ -73,7 +74,7 @@ appears once.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001`.
+- auth is serving.
 - The request carries no `ikigenba_session` cookie and no `Authorization`
   header.
 
@@ -91,7 +92,7 @@ browser applying the style asks auth for each font it needs, under the same
 Request:
 
 ```
-$ curl -si http://localhost:3001/_appkit/<font>.woff2
+GET /_appkit/<font>.woff2 HTTP/1.1
 ```
 
 Response:
@@ -108,7 +109,7 @@ appears once.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001`.
+- auth is serving.
 
 Postconditions:
 
@@ -123,7 +124,7 @@ browser drawing the profile asks auth for it as it does for the stylesheet.
 Request:
 
 ```
-$ curl -si http://localhost:3001/_appkit/launcher.js
+GET /_appkit/launcher.js HTTP/1.1
 ```
 
 Response:
@@ -140,7 +141,7 @@ appears once.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001`.
+- auth is serving.
 
 Postconditions:
 
@@ -156,7 +157,7 @@ licence.
 Request:
 
 ```
-$ curl -si http://localhost:3001/_appkit/<licence>
+GET /_appkit/<licence> HTTP/1.1
 ```
 
 Response:
@@ -173,7 +174,7 @@ Status 200. The body is the text of the licence `<licence>` names.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001`.
+- auth is serving.
 
 Postconditions:
 
@@ -194,23 +195,29 @@ beside it is ignored.
 Request:
 
 ```
-$ curl -si -H 'If-None-Match: "<etag>"' http://localhost:3001/_appkit/theme.css
+GET /_appkit/theme.css HTTP/1.1
+If-None-Match: "<etag>"
 ```
 
 ```
-$ curl -si -H 'If-None-Match: W/"<etag>"' http://localhost:3001/_appkit/theme.css
+GET /_appkit/theme.css HTTP/1.1
+If-None-Match: W/"<etag>"
 ```
 
 ```
-$ curl -si -H 'If-None-Match: "other", , "<etag>"' http://localhost:3001/_appkit/theme.css
+GET /_appkit/theme.css HTTP/1.1
+If-None-Match: "other", , "<etag>"
 ```
 
 ```
-$ curl -si -H 'If-None-Match: *' http://localhost:3001/_appkit/theme.css
+GET /_appkit/theme.css HTTP/1.1
+If-None-Match: *
 ```
 
 ```
-$ curl -si -H 'If-None-Match: "<etag>"' -H 'If-Modified-Since: Thu, 01 Jan 1970 00:00:00 GMT' http://localhost:3001/_appkit/theme.css
+GET /_appkit/theme.css HTTP/1.1
+If-None-Match: "<etag>"
+If-Modified-Since: Thu, 01 Jan 1970 00:00:00 GMT
 ```
 
 Response:
@@ -228,7 +235,7 @@ answered the same.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001`.
+- auth is serving.
 - `"<etag>"` is the `ETag` from a 200 for `/_appkit/theme.css` from the same
   auth.
 - `"other"` is not that `ETag`.
@@ -248,11 +255,14 @@ recent the date it names.
 Request:
 
 ```
-$ curl -si -H 'If-None-Match: "<old-etag>"' http://localhost:3001/_appkit/theme.css
+GET /_appkit/theme.css HTTP/1.1
+If-None-Match: "<old-etag>"
 ```
 
 ```
-$ curl -si -H 'If-None-Match: "<old-etag>"' -H 'If-Modified-Since: Fri, 31 Dec 9999 23:59:59 GMT' http://localhost:3001/_appkit/theme.css
+GET /_appkit/theme.css HTTP/1.1
+If-None-Match: "<old-etag>"
+If-Modified-Since: Fri, 31 Dec 9999 23:59:59 GMT
 ```
 
 Response:
@@ -270,7 +280,7 @@ fetches the stylesheet", and `"<etag>"` is the file's current tag, not
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001`.
+- auth is serving.
 - `"<old-etag>"` is a tag that is not the current `ETag` of
   `/_appkit/theme.css`.
 
@@ -287,7 +297,7 @@ for its bytes.
 Request:
 
 ```
-$ curl -sI http://localhost:3001/_appkit/theme.css
+HEAD /_appkit/theme.css HTTP/1.1
 ```
 
 Response:
@@ -305,7 +315,7 @@ this way, with its own `Content-Type`.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001`.
+- auth is serving.
 
 Postconditions:
 
@@ -323,35 +333,35 @@ a missing file's path is a 404 like a `GET`, never a 405.
 Request:
 
 ```
-$ curl -si http://localhost:3001/_appkit/nope.css
+GET /_appkit/nope.css HTTP/1.1
 ```
 
 ```
-$ curl -si http://localhost:3001/_appkit/
+GET /_appkit/ HTTP/1.1
 ```
 
 ```
-$ curl -si http://localhost:3001/_appkit/banner.html
+GET /_appkit/banner.html HTTP/1.1
 ```
 
 ```
-$ curl -si http://localhost:3001/_appkit/theme.css/
+GET /_appkit/theme.css/ HTTP/1.1
 ```
 
 ```
-$ curl -si http://localhost:3001/_appkit/theme.css/x
+GET /_appkit/theme.css/x HTTP/1.1
 ```
 
 ```
-$ curl -si http://localhost:3001/_appkit/THEME.CSS
+GET /_appkit/THEME.CSS HTTP/1.1
 ```
 
 ```
-$ curl -si -X POST http://localhost:3001/_appkit/nope.css
+POST /_appkit/nope.css HTTP/1.1
 ```
 
 ```
-$ curl -si http://localhost:3001/assets/theme.css
+GET /assets/theme.css HTTP/1.1
 ```
 
 Response:
@@ -364,7 +374,7 @@ Status 404. No story fixes the body or any header of this response.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001`.
+- auth is serving.
 
 Postconditions:
 
@@ -379,7 +389,7 @@ only for the seven served paths; any method on a missing file's path is a
 Request:
 
 ```
-$ curl -si -X POST http://localhost:3001/_appkit/theme.css
+POST /_appkit/theme.css HTTP/1.1
 ```
 
 Response:
@@ -395,7 +405,7 @@ refused the same way, on every served file.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001`.
+- auth is serving.
 
 Postconditions:
 

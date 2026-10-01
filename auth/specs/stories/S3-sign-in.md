@@ -2,16 +2,16 @@
 
 The browser sign-in flow: the sign-in page and profile at `/`, the start of a
 Google sign-in at `/login/google`, the callback at `/login/google/callback`,
-and sign-out at `/logout`. Every request here runs against auth a developer
-serves with `systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth` (`S2-serve.md`),
-with no services file unless a story says otherwise, at
-`http://localhost:3001`; on a space nginx proxies auth's hostname to auth's
-socket instead. A request whose `Host` is `localhost:3001` is a local one and
-takes the fixed development forms stated below; every other request is on a
-space. The facts that depend on the space's own
-hostname — the callback `redirect_uri`, the session cookie's `Domain`, and
-which return URLs count as being under the space — are stated in prose, because
-a real space carries them and `S7-on-a-space.md` proves the whole path there.
+and sign-out at `/logout`. The requests go to a running auth (`S2-serve.md`),
+started with its Google settings and no services file unless a story says
+otherwise; on a space they reach it through nginx. Each request is shown as the
+HTTP request auth receives, with the headers the story depends on. A request
+whose `Host` is `localhost:3001` is a local one and takes the fixed development
+forms stated below; every other request is on a space. The facts that depend
+on the space's own hostname — the callback `redirect_uri`, the session
+cookie's `Domain`, and which return URLs count as being under the space — are
+stated in prose, because a real space carries them and `S7-on-a-space.md`
+proves the whole path there.
 
 The session cookie is named `ikigenba_session`; it carries `Path=/`, `Secure`,
 `HttpOnly`, and `SameSite=Lax`, and on a space it also carries `Domain=<space>`
@@ -128,7 +128,8 @@ there.
 Request:
 
 ```
-$ curl -si http://localhost:3001/
+GET / HTTP/1.1
+Host: localhost:3001
 ```
 
 Response:
@@ -150,8 +151,8 @@ and no launcher, and loads no `/_appkit/launcher.js`.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with `GOOGLE_CLIENT_ID`,
-  `GOOGLE_CLIENT_SECRET`, and `WORKSPACE_DOMAIN=michaelgreenly.dev` set.
+- auth is serving, with `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
+  `WORKSPACE_DOMAIN=michaelgreenly.dev` set.
 - The request carries no `ikigenba_session` cookie, or one that names no live
   session.
 
@@ -168,7 +169,8 @@ by hand.
 Request:
 
 ```
-$ curl -si -H 'Host: auth.sbx.ikigenba.dev' http://localhost:3001/
+GET / HTTP/1.1
+Host: auth.sbx.ikigenba.dev
 ```
 
 Response:
@@ -186,7 +188,7 @@ are unchanged.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings and
+- auth is serving, with its Google settings and
   `WORKSPACE_DOMAIN=michaelgreenly.dev`.
 - The request carries no `ikigenba_session` cookie, or one that names no live
   session.
@@ -205,7 +207,8 @@ it does not store it.
 Request:
 
 ```
-$ curl -si -H 'Host: auth.sbx.ikigenba.dev' 'http://localhost:3001/?return=https%3A%2F%2Fdummy.sbx.ikigenba.dev%2Fwidgets'
+GET /?return=https%3A%2F%2Fdummy.sbx.ikigenba.dev%2Fwidgets HTTP/1.1
+Host: auth.sbx.ikigenba.dev
 ```
 
 Response:
@@ -223,14 +226,14 @@ host exactly as the URL writes it, a port included, the link `Continue with Goog
 `/login/google?return=https%3A%2F%2Fdummy.sbx.ikigenba.dev%2Fwidgets` — the
 return URL, URL-encoded — and the card's `<footer>` reading
 `Access is limited to Google accounts in the michaelgreenly.dev workspace.`
-Run locally, a request to `http://localhost:3001/` with
+Run locally, a request for `/` with `Host: localhost:3001` and
 `?return=http%3A%2F%2Flocalhost%3A3000%2Fwidgets` is the same page with the
 heading `Sign in to localhost` and the sentence
 `Sign in to continue to localhost:3000.`
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings and
+- auth is serving, with its Google settings and
   `WORKSPACE_DOMAIN=michaelgreenly.dev`.
 - The request carries no `ikigenba_session` cookie, or one that names no live
   session.
@@ -254,7 +257,8 @@ outside the space`).
 Request:
 
 ```
-$ curl -si -H 'Host: auth.sbx.ikigenba.dev' 'http://localhost:3001/?return=https%3A%2F%2Fevil.example%2F'
+GET /?return=https%3A%2F%2Fevil.example%2F HTTP/1.1
+Host: auth.sbx.ikigenba.dev
 ```
 
 Response:
@@ -276,7 +280,7 @@ gives the same page, its value carried in the link the same way.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings and
+- auth is serving, with its Google settings and
   `WORKSPACE_DOMAIN=michaelgreenly.dev`.
 - The request carries no `ikigenba_session` cookie, or one that names no live
   session.
@@ -295,7 +299,8 @@ callback against a forged request.
 Request:
 
 ```
-$ curl -si http://localhost:3001/login/google
+GET /login/google HTTP/1.1
+Host: localhost:3001
 ```
 
 Response:
@@ -316,7 +321,7 @@ same OAuth client for development.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings.
+- auth is serving, with its Google settings.
 
 Postconditions:
 
@@ -335,7 +340,8 @@ shape.
 Request:
 
 ```
-$ curl -si http://localhost:3001/login/google
+GET /login/google HTTP/1.1
+Host: localhost:3001
 ```
 
 Response:
@@ -353,7 +359,7 @@ unreachable host or Google's failure to answer — and `<id>` is the request's
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings.
+- auth is serving, with its Google settings.
 - Google is unreachable, so auth cannot reach it to start the sign-in.
 
 Postconditions:
@@ -371,7 +377,8 @@ in before, so it is provisioned.
 Request:
 
 ```
-$ curl -si 'http://localhost:3001/login/google/callback?code=<code>&state=<state>'
+GET /login/google/callback?code=<code>&state=<state> HTTP/1.1
+Host: localhost:3001
 ```
 
 Response:
@@ -388,7 +395,7 @@ Status 302. Redirects to `/`. On a space the cookie also carries
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings.
+- auth is serving, with its Google settings.
 - An in-flight login state exists named by `<state>`, and `<code>` is a valid
   Google authorization code for that login.
 - The account is in the `michaelgreenly.dev` Workspace and has never signed in
@@ -414,7 +421,8 @@ made.
 Request:
 
 ```
-$ curl -si 'http://localhost:3001/login/google/callback?code=<code>&state=<state>'
+GET /login/google/callback?code=<code>&state=<state> HTTP/1.1
+Host: localhost:3001
 ```
 
 Response:
@@ -430,7 +438,7 @@ first-login story.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings.
+- auth is serving, with its Google settings.
 - An in-flight login state exists named by `<state>`; the account is a
   `michaelgreenly.dev` member and already has a user row for its
   `(issuer, subject)`.
@@ -453,7 +461,8 @@ it, so a successful sign-in ends at that URL instead of `/`.
 Request:
 
 ```
-$ curl -si 'http://localhost:3001/login/google/callback?code=<code>&state=<state>'
+GET /login/google/callback?code=<code>&state=<state> HTTP/1.1
+Host: localhost:3001
 ```
 
 Response:
@@ -472,7 +481,7 @@ the first-login story.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings.
+- auth is serving, with its Google settings.
 - An in-flight login state exists named by `<state>`, carrying a return URL
   `<return>` whose host is the space or a subdomain of it.
 - The account is a `michaelgreenly.dev` member.
@@ -496,7 +505,8 @@ back to `/`.
 Request:
 
 ```
-$ curl -si 'http://localhost:3001/login/google/callback?code=<code>&state=<state>'
+GET /login/google/callback?code=<code>&state=<state> HTTP/1.1
+Host: localhost:3001
 ```
 
 Response:
@@ -513,7 +523,7 @@ first-login story.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings.
+- auth is serving, with its Google settings.
 - An in-flight login state exists named by `<state>`, carrying a return URL
   `<return>` whose host is neither the space nor a subdomain of it.
 - The account is a `michaelgreenly.dev` member.
@@ -534,7 +544,8 @@ forged — so the request is rejected before any token exchange.
 Request:
 
 ```
-$ curl -si 'http://localhost:3001/login/google/callback?code=<code>&state=<state>'
+GET /login/google/callback?code=<code>&state=<state> HTTP/1.1
+Host: localhost:3001
 ```
 
 Response:
@@ -549,7 +560,7 @@ verified. A callback with no `state` at all is refused the same way.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings.
+- auth is serving, with its Google settings.
 - No in-flight login state matches `<state>`.
 
 Postconditions:
@@ -565,7 +576,8 @@ sign-in was cancelled and offering to start over.
 Request:
 
 ```
-$ curl -si 'http://localhost:3001/login/google/callback?error=access_denied&state=<state>'
+GET /login/google/callback?error=access_denied&state=<state> HTTP/1.1
+Host: localhost:3001
 ```
 
 Response:
@@ -586,7 +598,7 @@ and the link `Continue with Google` whose target is `/login/google`. No
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings.
+- auth is serving, with its Google settings.
 - The callback carries `error=access_denied`. An in-flight login state named by
   `<state>` may exist from the start of the sign-in.
 
@@ -604,7 +616,8 @@ account is provisioned.
 Request:
 
 ```
-$ curl -si 'http://localhost:3001/login/google/callback?code=<code>&state=<state>'
+GET /login/google/callback?code=<code>&state=<state> HTTP/1.1
+Host: localhost:3001
 ```
 
 Response:
@@ -627,7 +640,7 @@ No `Set-Cookie` is sent.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings.
+- auth is serving, with its Google settings.
 - An in-flight login state exists named by `<state>`; the code exchanges
   successfully, but the account's `hd` is not `michaelgreenly.dev` or its email
   is not verified. The ID token's email is `ada@example.com`.
@@ -645,7 +658,8 @@ unreachable, so auth cannot complete the sign-in.
 Request:
 
 ```
-$ curl -si 'http://localhost:3001/login/google/callback?code=<code>&state=<state>'
+GET /login/google/callback?code=<code>&state=<state> HTTP/1.1
+Host: localhost:3001
 ```
 
 Response:
@@ -663,7 +677,7 @@ failed token exchange or the unreachable host — and `<id>` is the request's
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings.
+- auth is serving, with its Google settings.
 - An in-flight login state exists named by `<state>`; the token exchange with
   Google fails or Google is unreachable.
 
@@ -698,11 +712,15 @@ defines, whose form POSTs to `/tokens` with fields `name` and `expires`.
 Request:
 
 ```
-$ curl -si --cookie 'ikigenba_session=<opaque>' http://localhost:3001/
+GET / HTTP/1.1
+Host: localhost:3001
+Cookie: ikigenba_session=<opaque>
 ```
 
 ```
-$ curl -si --cookie 'ikigenba_session=<opaque>' 'http://localhost:3001/?return=<url>'
+GET /?return=<url> HTTP/1.1
+Host: localhost:3001
+Cookie: ikigenba_session=<opaque>
 ```
 
 Response:
@@ -731,7 +749,7 @@ Both forms return the same page; the `?return=<url>` is ignored.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings and
+- auth is serving, with its Google settings and
   `WORKSPACE_DOMAIN=michaelgreenly.dev`, started with `IKIGENBA_SERVICES`
   unset.
 - The request carries an `ikigenba_session` cookie naming a live session for a
@@ -751,7 +769,10 @@ request's `Origin` is auth's own origin.
 Request:
 
 ```
-$ curl -si -X POST -H 'Origin: http://localhost:3001' --cookie 'ikigenba_session=<opaque>' http://localhost:3001/logout
+POST /logout HTTP/1.1
+Host: localhost:3001
+Origin: http://localhost:3001
+Cookie: ikigenba_session=<opaque>
 ```
 
 Response:
@@ -769,7 +790,7 @@ has none.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings.
+- auth is serving, with its Google settings.
 - The request carries an `ikigenba_session` cookie naming a live session, and
   its `Origin` is auth's own origin (locally `http://localhost:3001`, on a space
   `https://auth.<space>`).
@@ -794,7 +815,10 @@ exactly as signing out from auth's own profile does.
 Request:
 
 ```
-$ curl -si -X POST -H 'Origin: http://localhost:3000' --cookie 'ikigenba_session=<opaque>' http://localhost:3001/logout
+POST /logout HTTP/1.1
+Host: localhost:3001
+Origin: http://localhost:3000
+Cookie: ikigenba_session=<opaque>
 ```
 
 Response:
@@ -815,7 +839,7 @@ subdomain at any depth is accepted, because the session cookie reaches it.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings.
+- auth is serving, with its Google settings.
 - The request carries an `ikigenba_session` cookie naming a live session, and
   its `Origin` is on this space but is not auth's own origin (locally
   `http://localhost:3000`, or `http://localhost` or `http://localhost:<port>`
@@ -841,7 +865,10 @@ space's hosts over `http` rather than `https`: `http://<space>` or
 Request:
 
 ```
-$ curl -si -X POST -H 'Origin: https://evil.example' --cookie 'ikigenba_session=<opaque>' http://localhost:3001/logout
+POST /logout HTTP/1.1
+Host: localhost:3001
+Origin: https://evil.example
+Cookie: ikigenba_session=<opaque>
 ```
 
 Response:
@@ -855,7 +882,7 @@ Status 403. The body is one line of plain text. No `Set-Cookie` is sent.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings.
+- auth is serving, with its Google settings.
 - The request carries an `ikigenba_session` cookie naming a live session, and
   its `Origin` is not on this space (locally, not `http://localhost` or
   `http://localhost:<port>`; on a space, not `https://<space>` or
@@ -873,7 +900,9 @@ this space, so it is refused as a cross-site one is.
 Request:
 
 ```
-$ curl -si -X POST --cookie 'ikigenba_session=<opaque>' http://localhost:3001/logout
+POST /logout HTTP/1.1
+Host: localhost:3001
+Cookie: ikigenba_session=<opaque>
 ```
 
 Response:
@@ -887,7 +916,7 @@ Status 403. The body is one line of plain text. No `Set-Cookie` is sent.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings.
+- auth is serving, with its Google settings.
 - The request carries an `ikigenba_session` cookie naming a live session, and
   no `Origin` header.
 
@@ -926,7 +955,9 @@ entry, and the no-match line, arrived with the page.
 Request:
 
 ```
-$ curl -si --cookie 'ikigenba_session=<opaque>' http://localhost:3001/
+GET / HTTP/1.1
+Host: localhost:3001
+Cookie: ikigenba_session=<opaque>
 ```
 
 Response:
@@ -949,9 +980,9 @@ is in the page and hidden. The page loads the script `/_appkit/launcher.js`.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings and
+- auth is serving, with its Google settings and
   `WORKSPACE_DOMAIN=michaelgreenly.dev`, started with
-  `systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -E IKIGENBA_SERVICES=/tmp/services.json -l 127.0.0.1:3001 auth`.
+  `IKIGENBA_SERVICES=/tmp/services.json` in its environment.
 - `/tmp/services.json` holds the file above and is readable by auth.
 - The request carries an `ikigenba_session` cookie naming a live session for a
   provisioned user whose email is `ada@michaelgreenly.dev`.
@@ -969,7 +1000,9 @@ without a launcher, and the page is otherwise the same page a host serves.
 Request:
 
 ```
-$ curl -si --cookie 'ikigenba_session=<opaque>' http://localhost:3001/
+GET / HTTP/1.1
+Host: localhost:3001
+Cookie: ikigenba_session=<opaque>
 ```
 
 Response:
@@ -988,9 +1021,8 @@ and it loads no `/_appkit/launcher.js`.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings and
-  `WORKSPACE_DOMAIN=michaelgreenly.dev`, started with
-  `systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth`, so `IKIGENBA_SERVICES` is
+- auth is serving, with its Google settings and
+  `WORKSPACE_DOMAIN=michaelgreenly.dev`, started with `IKIGENBA_SERVICES`
   unset.
 - The request carries an `ikigenba_session` cookie naming a live session for a
   provisioned user whose email is `ada@michaelgreenly.dev`.
@@ -1012,7 +1044,9 @@ answered the same way.
 Request:
 
 ```
-$ curl -si --cookie 'ikigenba_session=<opaque>' http://localhost:3001/
+GET / HTTP/1.1
+Host: localhost:3001
+Cookie: ikigenba_session=<opaque>
 ```
 
 Response:
@@ -1027,9 +1061,9 @@ with no launcher button, no list of services, and no `/_appkit/launcher.js`.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings and
+- auth is serving, with its Google settings and
   `WORKSPACE_DOMAIN=michaelgreenly.dev`, started with
-  `systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -E IKIGENBA_SERVICES=/tmp/services.json -l 127.0.0.1:3001 auth`.
+  `IKIGENBA_SERVICES=/tmp/services.json` in its environment.
 - `/tmp/services.json` does not exist.
 - The request carries an `ikigenba_session` cookie naming a live session for a
   provisioned user whose email is `ada@michaelgreenly.dev`.
@@ -1051,7 +1085,9 @@ of `A user on a host with services opens the launcher` with `ledger`'s
 Request:
 
 ```
-$ curl -si --cookie 'ikigenba_session=<opaque>' http://localhost:3001/
+GET / HTTP/1.1
+Host: localhost:3001
+Cookie: ikigenba_session=<opaque>
 ```
 
 Response:
@@ -1068,10 +1104,10 @@ as unavailable.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001` with its Google settings and
+- auth is serving, with its Google settings and
   `WORKSPACE_DOMAIN=michaelgreenly.dev`, started with
-  `systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -E IKIGENBA_SERVICES=/tmp/services.json -l 127.0.0.1:3001 auth`
-  while `/tmp/services.json` listed `ledger` as switched off, and it has not
+  `IKIGENBA_SERVICES=/tmp/services.json` in its environment while
+  `/tmp/services.json` listed `ledger` as switched off, and it has not
   been restarted since.
 - `/tmp/services.json` now lists `ledger` with `enabled` `true`.
 - The request carries an `ikigenba_session` cookie naming a live session for a

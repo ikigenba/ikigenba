@@ -2,19 +2,19 @@
 
 auth reached through a space: the file `S6-package.md` describes, deployed with
 `devctl deploy`, installed by `opsctl`, and answered by nginx at `auth.<space>`
-over TLS, which nginx proxies to auth's socket, `/run/ikigenba/auth.sock`
-(`S2-serve.md`). Deployed like any app, auth is also the authenticator: once
-it is installed, the host's nginx routes every other app through auth's
-`/check`, a subrequest to that same socket, before serving it. opsctl refuses
-to disable auth, so the authenticator is never switched off on a space. These stories prove the whole path from checkout to browser
-— auth serving its own sign-in page, and auth deciding another app's requests —
-and nothing about auth that the earlier groups do not already say. devctl and
-opsctl are named only by their published commands. The routing of other apps
-through `/check` is a property of the space, not of auth: it is added by
-opsctl's nginx generation (a separate sub-project) and is named here only by
-its observable effect, the way dummy's `S7-on-a-space.md` names devctl and
-opsctl only by their published commands. `dummy` is the example protected app,
-deployed on the same space through its own `S7-on-a-space.md` chain.
+over TLS, which nginx passes on to auth (`S2-serve.md`). Deployed like any app,
+auth is also the authenticator: once it is installed, the host's nginx routes
+every other app through auth's `/check`, an internal subrequest to auth, before
+serving it. opsctl refuses to disable auth, so the authenticator is never
+switched off on a space. These stories prove the whole path from checkout to
+browser — auth serving its own sign-in page, and auth deciding another app's
+requests — and nothing about auth that the earlier groups do not already say.
+devctl and opsctl are named only by their published commands. The routing of
+other apps through `/check` is a property of the space, not of auth: it is
+added by opsctl's nginx generation (a separate sub-project) and is named here
+only by its observable effect, the way dummy's `S7-on-a-space.md` names devctl
+and opsctl only by their published commands. `dummy` is the example protected
+app, deployed on the same space through its own `S7-on-a-space.md` chain.
 
 ## A visitor reaches auth on a space
 
@@ -206,7 +206,7 @@ Postconditions:
 
 ## A visitor asks a space for the check endpoint
 
-`/check` is meant only for nginx's internal subrequest to auth's socket.
+`/check` is meant only for nginx's internal subrequest to auth.
 auth's own hostname answers a public `/check` with 404 by design. The space's
 own host answers 404 too on this space, but because no app answers at the bare
 space name here — so this path falls to the catch-all like any other — not
@@ -231,7 +231,7 @@ HTTP/2 404
 Status 404. Both forms answer 404, for different reasons: auth's own host holds
 `/check` behind a 404 by design, while the bare space host answers 404 to every
 path because no app answers at that name on this space. Neither reaches the
-internal subrequest nginx makes to auth's socket. The body is not fixed.
+internal subrequest nginx makes to auth. The body is not fixed.
 
 Preconditions:
 
@@ -245,10 +245,10 @@ Preconditions:
   answers a public `/check` with 404, and on any other app's host `/check` is
   not a public endpoint — it is treated like any other path and taken through
   the space's normal auth flow, never the internal subrequest nginx makes to
-  auth's socket. This is a property of the space's nginx (opsctl's
+  auth. This is a property of the space's nginx (opsctl's
   generation, a separate sub-project), named here only by its observable effect;
-  it is not something auth can do alone, because on auth's socket a
-  public `/check` and an nginx subrequest `/check` are indistinguishable.
+  it is not something auth can do alone, because a public `/check` and an
+  nginx subrequest `/check` reach auth as the same request.
 
 Postconditions:
 

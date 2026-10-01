@@ -1,16 +1,17 @@
 # Stories — check
 
-The two endpoints auth serves on its socket for deciding who a request belongs
-to. `GET /check` is the subrequest endpoint nginx calls for every routed app,
-at `http://unix:/run/ikigenba/auth.sock:/check`: nginx forwards the original
-request's `Cookie` and `Authorization` headers with no body and with its own
-`X-Request-Id` for the request, and acts on the status auth returns — 200
-means copy the identity headers onto the upstream request, 401 means redirect
-the browser to sign in, 403 means pass the refusal through. `GET /me` is the
-public "who am I" endpoint an agent or a signed-in user can call directly.
-Every story here is a `curl` request against auth a developer serves with
-`systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth` (`S2-serve.md`), at
-`http://localhost:3001`, standing in for nginx or for the caller.
+The two endpoints auth serves for deciding who a request belongs to.
+`GET /check` is the subrequest endpoint nginx calls for every routed app: nginx
+forwards the original request's `Cookie` and `Authorization` headers with no
+body and with its own `X-Request-Id` for the request, and acts on the status
+auth returns — 200 means copy the identity headers onto the upstream request,
+401 means redirect the browser to sign in, 403 means pass the refusal through.
+`GET /me` is the public "who am I" endpoint an agent or a signed-in user can
+call directly. The requests, standing in for nginx or for the caller, go to a
+running auth (`S2-serve.md`), started with its Google settings; on a space they
+reach it through nginx. Each request is shown as the HTTP request auth
+receives, with the headers the story depends on; a request that shows no `Host`
+header carries `Host: localhost:3001`, a local one (`S3-sign-in.md`).
 
 A credential reaches these endpoints one of two ways: the session cookie
 `ikigenba_session=<session-id>`, or `Authorization: Bearer ikp_<token>`. Both
@@ -24,7 +25,7 @@ token is honored only while its owner has logged in through Google within the
 last 30 days. The last-use time of a session and the last-used time of a token
 are updated in `/check` and nowhere else; `/me` never mutates anything.
 
-`/check` is only meant to be called by nginx as a subrequest to auth's socket; it is not
+`/check` is only meant to be called by nginx as its internal subrequest; it is not
 reachable from the public side of a space, and that unreachability (a request to
 `https://<space>/check` gets 404) is proven in `S7-on-a-space.md`, not here.
 
@@ -37,7 +38,8 @@ request as use of the session.
 Request:
 
 ```
-$ curl -si -H 'Cookie: ikigenba_session=<session-id>' http://localhost:3001/check
+GET /check HTTP/1.1
+Cookie: ikigenba_session=<session-id>
 ```
 
 Response:
@@ -68,7 +70,7 @@ Postconditions:
 Request:
 
 ```
-$ curl -si http://localhost:3001/check
+GET /check HTTP/1.1
 ```
 
 Response:
@@ -97,7 +99,8 @@ though the 18-hour cap has not been reached.
 Request:
 
 ```
-$ curl -si -H 'Cookie: ikigenba_session=<session-id>' http://localhost:3001/check
+GET /check HTTP/1.1
+Cookie: ikigenba_session=<session-id>
 ```
 
 Response:
@@ -128,7 +131,8 @@ was used. Recent use cannot extend it past the cap.
 Request:
 
 ```
-$ curl -si -H 'Cookie: ikigenba_session=<session-id>' http://localhost:3001/check
+GET /check HTTP/1.1
+Cookie: ikigenba_session=<session-id>
 ```
 
 Response:
@@ -157,7 +161,8 @@ A request may carry a personal access token instead of a cookie. auth answers
 Request:
 
 ```
-$ curl -si -H 'Authorization: Bearer ikp_<token>' http://localhost:3001/check
+GET /check HTTP/1.1
+Authorization: Bearer ikp_<token>
 ```
 
 Response:
@@ -194,7 +199,8 @@ identity headers, and no hint of which case applied.
 Request:
 
 ```
-$ curl -si -H 'Authorization: Bearer ikp_<token>' http://localhost:3001/check
+GET /check HTTP/1.1
+Authorization: Bearer ikp_<token>
 ```
 
 Response:
@@ -226,7 +232,8 @@ enabled and unexpired.
 Request:
 
 ```
-$ curl -si -H 'Authorization: Bearer ikp_<token>' http://localhost:3001/check
+GET /check HTTP/1.1
+Authorization: Bearer ikp_<token>
 ```
 
 Response:
@@ -258,7 +265,9 @@ use.
 Request:
 
 ```
-$ curl -si -H 'Cookie: ikigenba_session=<session-id>' -H 'Authorization: Bearer ikp_<token>' http://localhost:3001/check
+GET /check HTTP/1.1
+Cookie: ikigenba_session=<session-id>
+Authorization: Bearer ikp_<token>
 ```
 
 Response:
@@ -295,7 +304,8 @@ without going through a routed app. `/me` reports it and changes nothing.
 Request:
 
 ```
-$ curl -si -H 'Authorization: Bearer ikp_<token>' http://localhost:3001/me
+GET /me HTTP/1.1
+Authorization: Bearer ikp_<token>
 ```
 
 Response:
@@ -327,7 +337,8 @@ same question and gets the same shape of answer.
 Request:
 
 ```
-$ curl -si -H 'Cookie: ikigenba_session=<session-id>' http://localhost:3001/me
+GET /me HTTP/1.1
+Cookie: ikigenba_session=<session-id>
 ```
 
 Response:
@@ -361,11 +372,12 @@ line of plain text saying why, mirroring how the service answers a missing page
 Request:
 
 ```
-$ curl -si http://localhost:3001/me
+GET /me HTTP/1.1
 ```
 
 ```
-$ curl -si -H 'Authorization: Bearer ikp_<token>' http://localhost:3001/me
+GET /me HTTP/1.1
+Authorization: Bearer ikp_<token>
 ```
 
 Response:
@@ -412,7 +424,9 @@ with the same line.
 Request:
 
 ```
-$ curl -si -H 'X-Request-Id: 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59' -H 'Cookie: ikigenba_session=<session-id>' http://localhost:3001/check
+GET /check HTTP/1.1
+X-Request-Id: 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59
+Cookie: ikigenba_session=<session-id>
 ```
 
 Response:
@@ -427,7 +441,7 @@ one line of plain text saying the server failed.
 
 Preconditions:
 
-- auth is serving on `127.0.0.1:3001`.
+- auth is serving.
 - The request carries `X-Request-Id` and a credential.
 - auth's database fails the read the request needs.
 

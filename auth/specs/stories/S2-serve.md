@@ -4,17 +4,15 @@ The bare binary serves, and it serves only on a listening socket it inherits:
 auth never opens one of its own. It takes the socket the way systemd socket
 activation passes it — `LISTEN_PID` names auth's own process, `LISTEN_FDS` is
 `1`, and the socket is file descriptor 3 — and it removes the `LISTEN_*`
-variables from its environment once it has taken it. On a host, opsctl
-publishes `ikigenba-auth.socket`, which holds the Unix socket
-`/run/ikigenba/auth.sock`, beside `ikigenba-auth.service`, which runs
-`/opt/auth/bin/auth` with no arguments as the `ikigenba` user, with
-`/opt/auth` as its working directory and `/opt/auth/etc/env` as its
-environment file; nginx proxies auth's own hostname to
-`http://unix:/run/ikigenba/auth.sock:` and makes its identity subrequest for
-every other app to `http://unix:/run/ikigenba/auth.sock:/check`. The service
-is `Type=notify`: auth tells systemd it is ready, by sending `READY=1` to
-`$NOTIFY_SOCKET`, once it is serving. A developer stands in for the host with
-`systemd-socket-activate`, which passes a socket on the same terms. The actor
+variables from its environment once it has taken it. What kind of socket it
+is, and where it lives, is the host's business: auth serves whatever it is
+passed the same way. On a host, opsctl publishes `ikigenba-auth.socket`
+beside `ikigenba-auth.service`, which runs `/opt/auth/bin/auth` with no
+arguments as the `ikigenba` user, with `/opt/auth` as its working directory
+and `/opt/auth/etc/env` as its environment file; the host's nginx sends auth
+the requests for auth's own hostname and the identity subrequest, `/check`,
+for every other app. The service is `Type=notify`: auth tells systemd it is
+ready, by sending `READY=1` to `$NOTIFY_SOCKET`, once it is serving. The actor
 in these stories is the host, whether that is systemd or a developer at a
 terminal standing in for it.
 
@@ -42,15 +40,9 @@ touched nothing, not even the database. Starting touches no network: the
 Google settings are read and required at startup, but Google itself is reached
 only when a human signs in (`S3-sign-in.md`), so auth serves even while Google
 is unreachable, and `/check` and `/me` keep answering from the local database
-(`S4-check.md`). In the laptop stories below the developer's shell exports
-`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
+(`S4-check.md`). In the stories below that run `auth` directly, its
+environment sets `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
 `WORKSPACE_DOMAIN=michaelgreenly.dev` unless a story says otherwise.
-`systemd-socket-activate` does not hand auth the developer's environment, only
-a few basics such as `PATH` and the variables named with `-E`; a `-E` that
-names a variable without a value passes the shell's own value. So every laptop
-command names the three Google settings,
-`-E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN`, and any
-other variable auth is to see is named with its own `-E`.
 
 A healthy auth prints nothing, so under systemd the journal holds only
 trouble. A diagnostic auth writes about a request names that request by its
@@ -62,24 +54,21 @@ request it answers with a 5xx, any status from 500 through 599 — its own are a
 sign-in (`S3-sign-in.md`) — and nothing for any other answer: a 4xx is the
 caller's to fix, not trouble.
 
-auth serves on the terms every app of the platform serves on. The socket is
-its only way in. Every app runs as the one `ikigenba` user, so any app can
-reach any sibling's socket, and nginx reaches them all; nothing else on the
-host can. The suite is a closed system that only we deploy services into, and
-auth trusts it: `X-Request-Id`, 32 lowercase hexadecimal characters, is set by
-nginx on every request it forwards to auth and on every `/check` subrequest,
-overwriting whatever a client sent, and a sibling that calls auth directly
-copies it from the request it is serving. auth decides identity itself, from
-the session cookie or a token, and calls no sibling.
+auth serves on the terms every app of the platform serves on. The socket it is
+passed is its only way in. Only nginx and the suite's own apps can reach it;
+keeping everything else out is the host's job, not auth's. The suite is a
+closed system that only we deploy services into, and auth trusts it:
+`X-Request-Id`, 32 lowercase hexadecimal characters, is set by nginx on every
+request it forwards to auth and on every `/check` subrequest, overwriting
+whatever a client sent, and a sibling that calls auth directly copies it from
+the request it is serving. auth decides identity itself, from the session
+cookie or a token, and calls no sibling.
 
 ## The host starts auth
 
-The socket keeps out every process that is not part of the suite or nginx,
-which a port on loopback would not: any process on the host can connect to a
-loopback port, and only the `ikigenba` user and nginx can connect to
-`/run/ikigenba/auth.sock`. systemd owns the socket, so it exists, and accepts
-connections into its queue, before auth starts and while it is stopped; auth's
-part is to serve what arrives on it. `systemctl start` returns once auth has
+systemd owns the socket, so it exists, and accepts connections into its
+queue, before auth starts and while it is stopped; auth's part is to serve
+what arrives on it. `systemctl start` returns once auth has
 reported that it is ready.
 
 Command:
@@ -101,69 +90,21 @@ Preconditions:
   `ikigenba-auth.socket` and `ikigenba-auth.service` are published.
 - `/opt/auth/etc/env` sets `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
   `WORKSPACE_DOMAIN`, and `DRAIN_SECONDS`, each to a valid value.
-- `ikigenba-auth.socket` is active, so `/run/ikigenba/auth.sock` exists and
-  accepts connections.
+- `ikigenba-auth.socket` is active, so the socket it holds accepts
+  connections.
 - `/opt/auth/state/auth.db` exists, from an earlier start.
 - `ikigenba-auth.service` is not running.
 
 Postconditions:
 
-- `ikigenba-auth.service` is `active`, and auth is serving on
-  `/run/ikigenba/auth.sock`: a connection there, and every connection queued
-  before auth started, is answered by auth.
+- `ikigenba-auth.service` is `active`, and auth is serving on the socket
+  `ikigenba-auth.socket` passed it: a connection there, and every connection
+  queued before auth started, is answered by auth.
 - auth listens on no other socket and no port.
 - `/opt/auth/state/auth.db` is the database it opened; it existed already.
 - No network call to Google was made; the Google settings were read from the
   environment, not checked against Google.
 - auth has written nothing to the journal.
-- It keeps running until it is signalled.
-
-## A developer serves auth on a laptop
-
-A laptop has no `ikigenba-auth.socket`, so the developer lets
-`systemd-socket-activate` hold a socket and pass it to auth exactly as
-systemd would. A TCP socket on loopback serves a browser and `curl` alike,
-and the later groups' requests go to `http://localhost:3001`, the origin
-whose callback is registered on the OAuth client for development
-(`S3-sign-in.md`). The three lines are `systemd-socket-activate`'s own: it
-announces the socket, and it starts auth only when the first connection
-arrives, which auth then answers. auth adds nothing to them. There is no
-`NOTIFY_SOCKET` here, so auth reports readiness to nobody. The command names
-only the three Google settings, so `IKIGENBA_SERVICES` is unset here and
-auth's signed-in pages carry no launcher; a developer who wants one names a
-services file with `-E IKIGENBA_SERVICES=<path>` (`S3-sign-in.md`).
-
-Command:
-
-```
-$ systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth
-```
-
-Output:
-
-```
-Listening on 127.0.0.1:3001 as 3.
-Communication attempt on fd 3.
-Execing auth (auth)
-```
-
-Does not exit. The lines are on stderr; stdout is empty. The first line
-appears at once, the other two when the first connection arrives.
-
-Preconditions:
-
-- `bin/auth` exists and is on the developer's `PATH` as `auth`.
-- The developer's shell exports `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
-  and `WORKSPACE_DOMAIN=michaelgreenly.dev`.
-- `state/auth.db` exists in the working directory, from an earlier start.
-- Nothing is listening on `127.0.0.1:3001`.
-
-Postconditions:
-
-- auth is serving on `127.0.0.1:3001` and on no other address, and it
-  answered the connection that started it.
-- `state/auth.db` is the database it opened; it existed already.
-- No network call to Google was made.
 - It keeps running until it is signalled.
 
 ## The host starts auth for the first time
@@ -178,37 +119,33 @@ directory.
 Command:
 
 ```
-$ systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth
+$ auth
 ```
 
 Output:
 
 ```
-Listening on 127.0.0.1:3001 as 3.
-Communication attempt on fd 3.
-Execing auth (auth)
 ```
 
-Does not exit. The lines are on stderr; stdout is empty. They are
-`systemd-socket-activate`'s own; auth adds nothing to them.
+Does not exit. Nothing is on stdout or stderr.
 
 Preconditions:
 
-- `bin/auth` exists and is on the developer's `PATH` as `auth`.
-- The developer's shell exports `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
-  and `WORKSPACE_DOMAIN=michaelgreenly.dev`.
-- Nothing is listening on `127.0.0.1:3001`.
+- `bin/auth` exists and is on the `PATH` as `auth`.
+- auth's environment sets `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
+  `WORKSPACE_DOMAIN=michaelgreenly.dev`.
+- `LISTEN_PID` is auth's process id and `LISTEN_FDS` is `1`: one listening
+  socket is passed in, as file descriptor 3.
+- `NOTIFY_SOCKET` is unset, so auth reports readiness to nobody.
 - `state/auth.db` does not exist.
 - Either `state/` is absent and auth can create it in its working directory,
   or `state/` is an existing directory in which auth can create the database.
-- A connection is made to `127.0.0.1:3001`.
 
 Postconditions:
 
 - `state/` exists, created by auth if it was absent.
 - `state/auth.db` now exists, with its schema, created by this start.
-- auth is serving on `127.0.0.1:3001` and on no other address, and it
-  answered the connection that started it.
+- auth is serving on the socket it was passed, and on no other.
 - It keeps running until it is signalled.
 
 ## The host starts auth where its state directory cannot be created
@@ -221,31 +158,26 @@ caller's usage, so it exits 1.
 Command:
 
 ```
-$ systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth
+$ auth
 ```
 
 Output:
 
 ```
-Listening on 127.0.0.1:3001 as 3.
-Communication attempt on fd 3.
-Execing auth (auth)
 auth: cannot open database state/auth.db: <reason>
 ```
 
-Exits 1. The text is on stderr; stdout is empty. The first three lines are
-`systemd-socket-activate`'s own; the last is auth's. `<reason>` is the
-underlying directory-creation failure. The connection that started auth is
-closed unanswered.
+Exits 1. The line is on stderr; stdout is empty. `<reason>` is the
+underlying directory-creation failure.
 
 Preconditions:
 
-- `bin/auth` exists and is on the developer's `PATH` as `auth`.
-- The developer's shell exports `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
-  and `WORKSPACE_DOMAIN=michaelgreenly.dev`.
-- Nothing is listening on `127.0.0.1:3001`.
+- `bin/auth` exists and is on the `PATH` as `auth`.
+- auth's environment sets `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
+  `WORKSPACE_DOMAIN=michaelgreenly.dev`.
+- `LISTEN_PID` is auth's process id and `LISTEN_FDS` is `1`: one listening
+  socket is passed in, as file descriptor 3.
 - `state` is an existing regular file in auth's working directory.
-- A connection is made to `127.0.0.1:3001`.
 
 Postconditions:
 
@@ -265,31 +197,26 @@ it.
 Command:
 
 ```
-$ systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth
+$ auth
 ```
 
 Output:
 
 ```
-Listening on 127.0.0.1:3001 as 3.
-Communication attempt on fd 3.
-Execing auth (auth)
 auth: cannot open database state/auth.db: <reason>
 ```
 
-Exits 1. The text is on stderr; stdout is empty. The first three lines are
-`systemd-socket-activate`'s own; the last is auth's. `<reason>` is the
-underlying open failure. The connection that started auth is closed
-unanswered.
+Exits 1. The line is on stderr; stdout is empty. `<reason>` is the
+underlying open failure.
 
 Preconditions:
 
-- `bin/auth` exists and is on the developer's `PATH` as `auth`.
-- The developer's shell exports `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
-  and `WORKSPACE_DOMAIN=michaelgreenly.dev`.
-- Nothing is listening on `127.0.0.1:3001`.
+- `bin/auth` exists and is on the `PATH` as `auth`.
+- auth's environment sets `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
+  `WORKSPACE_DOMAIN=michaelgreenly.dev`.
+- `LISTEN_PID` is auth's process id and `LISTEN_FDS` is `1`: one listening
+  socket is passed in, as file descriptor 3.
 - `state/auth.db` exists but cannot be opened.
-- A connection is made to `127.0.0.1:3001`.
 
 Postconditions:
 
@@ -297,14 +224,13 @@ Postconditions:
 
 ## The host stops auth
 
-`systemctl stop` and `systemctl restart` send `SIGTERM`; a developer's
-`Ctrl-C` sends `SIGINT`, which auth treats the same way. auth stops taking
-new connections, finishes the requests it has already accepted, and exits.
-It closes its own copy of the socket and nothing more: the socket belongs to
-systemd, which keeps it open, and auth never removes
-`/run/ikigenba/auth.sock`. It waits at most `DRAIN_SECONDS` for requests to
-finish, which on a host is always less than the time the service unit allows
-before systemd kills it.
+`systemctl stop` and `systemctl restart` send `SIGTERM`; a developer's `Ctrl-C`
+sends `SIGINT`, which auth treats the same way. auth stops taking new
+connections, finishes the requests it has already accepted, and exits. It
+closes its own copy of the socket and nothing more: the socket belongs to
+systemd, which keeps it open, and auth never removes it. It waits at most
+`DRAIN_SECONDS` for requests to finish, which on a host is always less than the
+time the service unit allows before systemd kills it.
 
 Command:
 
@@ -321,15 +247,14 @@ auth exits 0. Nothing is on stdout or stderr.
 
 Preconditions:
 
-- auth is serving as process `<pid>`, on the socket systemd or
-  `systemd-socket-activate` passed it.
+- auth is serving as process `<pid>`, on the socket it was passed.
 - `DRAIN_SECONDS` is unset, so the drain deadline is 5 seconds.
 - Every request auth has accepted finishes within 5 seconds of the signal.
 
 Postconditions:
 
 - Every request accepted before the signal received its full response.
-- `/run/ikigenba/auth.sock` still exists, and connections made to it after
+- The socket auth was passed still exists, and connections made to it after
   auth exited wait in the socket's queue for the next auth to answer.
 
 ## The host stops auth while a request outlasts the drain
@@ -360,8 +285,7 @@ empty. `<n>` is the number of requests still running at the deadline. When
 
 Preconditions:
 
-- auth is serving as process `<pid>`, on the socket systemd or
-  `systemd-socket-activate` passed it.
+- auth is serving as process `<pid>`, on the socket it was passed.
 - `DRAIN_SECONDS` is unset, so the drain deadline is 5 seconds.
 - `<n>` of the requests auth has accepted are still running 5 seconds after
   the signal.
@@ -370,7 +294,7 @@ Postconditions:
 
 - Every request that finished within 5 seconds of the signal received its
   full response; the `<n>` that did not were cut off.
-- `/run/ikigenba/auth.sock` still exists, and connections made to it after
+- The socket auth was passed still exists, and connections made to it after
   auth exited wait in the socket's queue for the next auth to answer.
 
 ## The host restarts auth during a deploy
@@ -399,16 +323,16 @@ stdout or stderr.
 
 Preconditions:
 
-- auth is serving on `/run/ikigenba/auth.sock` under
-  `ikigenba-auth.service`.
-- nginx is sending requests to `/run/ikigenba/auth.sock`, for auth's own
-  pages and as `/check` subrequests, throughout the restart.
+- auth is serving under `ikigenba-auth.service`, on the socket
+  `ikigenba-auth.socket` passed it.
+- nginx is sending requests to auth, for auth's own pages and as `/check`
+  subrequests, throughout the restart.
 
 Postconditions:
 
 - Every request nginx sent was answered, by the old auth or the new one;
   none was refused and none was cut off.
-- A new auth process is serving on `/run/ikigenba/auth.sock`, over the same
+- A new auth process is serving on the same socket, over the same
   `state/auth.db`.
 
 ## The host starts auth without a socket
@@ -430,16 +354,16 @@ Output:
 ```
 auth: no socket was passed in
 
-run it under systemd, or locally with 'systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth'
+run it under systemd, with a listening socket passed in
 ```
 
 Exits 2. The text is on stderr; stdout is empty.
 
 Preconditions:
 
-- `bin/auth` exists and is on the developer's `PATH` as `auth`.
-- The developer's shell exports `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
-  and `WORKSPACE_DOMAIN=michaelgreenly.dev`.
+- `bin/auth` exists and is on the `PATH` as `auth`.
+- auth's environment sets `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
+  `WORKSPACE_DOMAIN=michaelgreenly.dev`.
 - `DRAIN_SECONDS` is unset, or a positive whole number.
 - `LISTEN_FDS` is unset in the environment, or `LISTEN_PID` is not auth's
   process id.
@@ -457,33 +381,27 @@ misconfigured, and auth will not guess which one it was meant to serve on.
 Command:
 
 ```
-$ systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 -l 127.0.0.1:3002 auth
+$ auth
 ```
 
 Output:
 
 ```
-Listening on 127.0.0.1:3001 as 3.
-Listening on 127.0.0.1:3002 as 4.
-Communication attempt on fd 3.
-Execing auth (auth)
 auth: 2 sockets were passed in, expected 1
 
-run it under systemd, or locally with 'systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth'
+run it under systemd, with a listening socket passed in
 ```
 
-Exits 2. The text is on stderr; stdout is empty. The first four lines are
-`systemd-socket-activate`'s own; the rest is auth's. The connection that
-started auth is closed unanswered.
+Exits 2. The text is on stderr; stdout is empty.
 
 Preconditions:
 
-- `bin/auth` exists and is on the developer's `PATH` as `auth`.
-- The developer's shell exports `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
-  and `WORKSPACE_DOMAIN=michaelgreenly.dev`.
+- `bin/auth` exists and is on the `PATH` as `auth`.
+- auth's environment sets `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
+  `WORKSPACE_DOMAIN=michaelgreenly.dev`.
 - `DRAIN_SECONDS` is unset, or a positive whole number.
-- Nothing is listening on `127.0.0.1:3001` or `127.0.0.1:3002`.
-- A connection is made to `127.0.0.1:3001`.
+- `LISTEN_PID` is auth's process id and `LISTEN_FDS` is `2`: two listening
+  sockets are passed in, as file descriptors 3 and 4.
 
 Postconditions:
 
@@ -502,29 +420,24 @@ unit's stop timeout is opsctl's to enforce.
 Command:
 
 ```
-$ systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -E DRAIN_SECONDS=abc -l 127.0.0.1:3001 auth
+$ DRAIN_SECONDS=abc auth
 ```
 
 Output:
 
 ```
-Listening on 127.0.0.1:3001 as 3.
-Communication attempt on fd 3.
-Execing auth (auth)
 auth: DRAIN_SECONDS is 'abc', not a positive whole number of seconds
 ```
 
-Exits 2. The text is on stderr; stdout is empty. The first three lines are
-`systemd-socket-activate`'s own; the last is auth's. The connection that
-started auth is closed unanswered.
+Exits 2. The line is on stderr; stdout is empty.
 
 Preconditions:
 
-- `bin/auth` exists and is on the developer's `PATH` as `auth`.
-- The developer's shell exports `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
-  and `WORKSPACE_DOMAIN=michaelgreenly.dev`.
-- Nothing is listening on `127.0.0.1:3001`.
-- A connection is made to `127.0.0.1:3001`.
+- `bin/auth` exists and is on the `PATH` as `auth`.
+- auth's environment sets `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
+  `WORKSPACE_DOMAIN=michaelgreenly.dev`.
+- `LISTEN_PID` is auth's process id and `LISTEN_FDS` is `1`: one listening
+  socket is passed in, as file descriptor 3.
 
 Postconditions:
 
@@ -557,9 +470,8 @@ their own name; when several are missing, the first of `GOOGLE_CLIENT_ID`,
 
 Preconditions:
 
-- `bin/auth` exists and is on the developer's `PATH` as `auth`.
-- `GOOGLE_CLIENT_ID` is unset or empty in the environment; this story's
-  shell does not export it.
+- `bin/auth` exists and is on the `PATH` as `auth`.
+- `GOOGLE_CLIENT_ID` is unset or empty in auth's environment.
 
 Postconditions:
 

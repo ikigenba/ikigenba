@@ -1,17 +1,19 @@
 # Stories — tokens
 
-The token actions a signed-in user drives from their profile. Every request
-here is a curl against auth a developer serves with
-`systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth` (`S2-serve.md`), at
-`http://localhost:3001`, carrying a valid
-`ikigenba_session` cookie, and every state-changing request is a POST that also
-carries an `Origin` header matching the service's own origin (in development
-that is the local origin, here `http://localhost:3001`; on a space it is
-`https://auth.<space>`). A user may hold many tokens. A token's secret has the
-form `ikp_` followed by 52 Crockford base32 characters (`0`-`9` and `A`-`Z`
-without `I`, `L`, `O`, `U`), the encoding of 32 random bytes; it is shown once
-at creation and never again, and only a hash of it is stored. Separately, each
-token carries its own random Crockford identifier used in the action URLs
+The token actions a signed-in user drives from their profile. The requests go
+to a running auth (`S2-serve.md`), started with its Google settings; on a
+space they reach it through nginx. Each request is shown as the HTTP request
+auth receives, with the headers the story depends on; a request that shows no
+`Host` header carries `Host: localhost:3001`, a local one (`S3-sign-in.md`).
+Every request carries a valid `ikigenba_session` cookie, and every
+state-changing request is a POST that also carries an `Origin` header matching
+the service's own origin (in development that is the local origin, here
+`http://localhost:3001`; on a space it is `https://auth.<space>`). A user may
+hold many tokens. A token's secret has the form `ikp_` followed by 52
+Crockford base32 characters (`0`-`9` and `A`-`Z` without `I`, `L`, `O`, `U`),
+the encoding of 32 random bytes; it is shown once at creation and never
+again, and only a hash of it is stored. Separately, each token carries its
+own random Crockford identifier used in the action URLs
 (`POST /tokens/<id>/enable`, `/disable`, `/delete`); this id is not the secret.
 Every action is a POST: acting on a token id that is not the user's own or does
 not exist answers 404, and a POST whose `Origin` is not the service's own origin
@@ -68,11 +70,12 @@ server keeps only its hash.
 Request:
 
 ```
-$ curl -si -X POST http://localhost:3001/tokens \
-    -H 'Cookie: ikigenba_session=<id>' \
-    -H 'Origin: http://localhost:3001' \
-    --data 'name=<name>' \
-    --data 'expires=<never|30d|90d|365d>'
+POST /tokens HTTP/1.1
+Cookie: ikigenba_session=<id>
+Origin: http://localhost:3001
+Content-Type: application/x-www-form-urlencoded
+
+name=<name>&expires=<never|30d|90d|365d>
 ```
 
 Response:
@@ -116,11 +119,12 @@ created and the create form is returned for the user to try again.
 Request:
 
 ```
-$ curl -si -X POST http://localhost:3001/tokens \
-    -H 'Cookie: ikigenba_session=<id>' \
-    -H 'Origin: http://localhost:3001' \
-    --data-urlencode 'name=   ' \
-    --data 'expires=never'
+POST /tokens HTTP/1.1
+Cookie: ikigenba_session=<id>
+Origin: http://localhost:3001
+Content-Type: application/x-www-form-urlencoded
+
+name=%20%20%20&expires=never
 ```
 
 Response:
@@ -151,18 +155,19 @@ Postconditions:
 
 ## A user creates a token with a name longer than 64 characters
 
-64 characters is the limit, so 65 is a rejection. The input's `maxlength`
-stops a browser from typing more, but a caller with `curl` sends what they
-like, so auth checks the length itself. The name below is 65 characters.
+64 characters is the limit, so 65 is a rejection. The input's `maxlength` stops
+a browser from typing more, but a caller that is not a browser sends what it
+likes, so auth checks the length itself. The name below is 65 characters.
 
 Request:
 
 ```
-$ curl -si -X POST http://localhost:3001/tokens \
-    -H 'Cookie: ikigenba_session=<id>' \
-    -H 'Origin: http://localhost:3001' \
-    --data 'name=a-token-name-that-runs-well-past-the-sixty-four-character-limit-x' \
-    --data 'expires=90d'
+POST /tokens HTTP/1.1
+Cookie: ikigenba_session=<id>
+Origin: http://localhost:3001
+Content-Type: application/x-www-form-urlencoded
+
+name=a-token-name-that-runs-well-past-the-sixty-four-character-limit-x&expires=90d
 ```
 
 Response:
@@ -194,19 +199,20 @@ Postconditions:
 ## A caller creates a token with an expiry that is not offered
 
 A person using the browser cannot reach this rejection: the expiry field is a
-select offering `30d`, `90d`, `365d`, and `never`. A caller with `curl` sends
-whatever they like, which is why auth checks the value against the four
-rather than trusting that the form produced it. A missing `expires` is
+select offering `30d`, `90d`, `365d`, and `never`. A caller that is not a
+browser sends whatever it likes, which is why auth checks the value against the
+four rather than trusting that the form produced it. A missing `expires` is
 rejected the same way.
 
 Request:
 
 ```
-$ curl -si -X POST http://localhost:3001/tokens \
-    -H 'Cookie: ikigenba_session=<id>' \
-    -H 'Origin: http://localhost:3001' \
-    --data 'name=<name>' \
-    --data 'expires=1y'
+POST /tokens HTTP/1.1
+Cookie: ikigenba_session=<id>
+Origin: http://localhost:3001
+Content-Type: application/x-www-form-urlencoded
+
+name=<name>&expires=1y
 ```
 
 Response:
@@ -246,11 +252,12 @@ submission at a time.
 Request:
 
 ```
-$ curl -si -X POST http://localhost:3001/tokens \
-    -H 'Cookie: ikigenba_session=<id>' \
-    -H 'Origin: http://localhost:3001' \
-    --data-urlencode 'name=   ' \
-    --data 'expires=1y'
+POST /tokens HTTP/1.1
+Cookie: ikigenba_session=<id>
+Origin: http://localhost:3001
+Content-Type: application/x-www-form-urlencoded
+
+name=%20%20%20&expires=1y
 ```
 
 Response:
@@ -302,8 +309,8 @@ old-backup      2025-10-01 12:00  2026-01-14 03:15:00  2026-10-01 12:00  no
 Request:
 
 ```
-$ curl -si http://localhost:3001/ \
-    -H 'Cookie: ikigenba_session=<id>'
+GET / HTTP/1.1
+Cookie: ikigenba_session=<id>
 ```
 
 Response:
@@ -390,8 +397,8 @@ used-365d         2025-09-28 10:00:00
 Request:
 
 ```
-$ curl -si http://localhost:3001/ \
-    -H 'Cookie: ikigenba_session=<id>'
+GET / HTTP/1.1
+Cookie: ikigenba_session=<id>
 ```
 
 Response:
@@ -435,8 +442,8 @@ is there and what to do next rather than an empty table.
 Request:
 
 ```
-$ curl -si http://localhost:3001/ \
-    -H 'Cookie: ikigenba_session=<id>'
+GET / HTTP/1.1
+Cookie: ikigenba_session=<id>
 ```
 
 Response:
@@ -471,15 +478,15 @@ the check endpoint is S4's story; it is not re-proven here.
 Request:
 
 ```
-$ curl -si -X POST http://localhost:3001/tokens/<id>/disable \
-    -H 'Cookie: ikigenba_session=<id>' \
-    -H 'Origin: http://localhost:3001'
+POST /tokens/<id>/disable HTTP/1.1
+Cookie: ikigenba_session=<id>
+Origin: http://localhost:3001
 ```
 
 ```
-$ curl -si -X POST http://localhost:3001/tokens/<id>/enable \
-    -H 'Cookie: ikigenba_session=<id>' \
-    -H 'Origin: http://localhost:3001'
+POST /tokens/<id>/enable HTTP/1.1
+Cookie: ikigenba_session=<id>
+Origin: http://localhost:3001
 ```
 
 Response (each):
@@ -514,9 +521,9 @@ authenticate.
 Request:
 
 ```
-$ curl -si -X POST http://localhost:3001/tokens/<id>/delete \
-    -H 'Cookie: ikigenba_session=<id>' \
-    -H 'Origin: http://localhost:3001'
+POST /tokens/<id>/delete HTTP/1.1
+Cookie: ikigenba_session=<id>
+Origin: http://localhost:3001
 ```
 
 Response:
@@ -547,9 +554,9 @@ the user's to act on. All three actions behave the same way.
 Request:
 
 ```
-$ curl -si -X POST http://localhost:3001/tokens/<id>/disable \
-    -H 'Cookie: ikigenba_session=<id>' \
-    -H 'Origin: http://localhost:3001'
+POST /tokens/<id>/disable HTTP/1.1
+Cookie: ikigenba_session=<id>
+Origin: http://localhost:3001
 ```
 
 Response:
@@ -582,11 +589,12 @@ outright. This applies to `/tokens` and to every token action URL.
 Request:
 
 ```
-$ curl -si -X POST http://localhost:3001/tokens \
-    -H 'Cookie: ikigenba_session=<id>' \
-    -H 'Origin: https://evil.example' \
-    --data 'name=<name>' \
-    --data 'expires=never'
+POST /tokens HTTP/1.1
+Cookie: ikigenba_session=<id>
+Origin: https://evil.example
+Content-Type: application/x-www-form-urlencoded
+
+name=<name>&expires=never
 ```
 
 Response:
