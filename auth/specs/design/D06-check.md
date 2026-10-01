@@ -1,12 +1,12 @@
 # D06-check
 
-The two identity endpoints auth serves on its socket, `GET /check` and
-`GET /me`, both attached in `internal/server`. `/check` is the subrequest nginx
-issues for every routed app, at `http://unix:/run/ikigenba/auth.sock:/check`:
-nginx forwards the original request's `Cookie` and `Authorization` headers with
-no body and with its own `X-Request-Id` for the request, and acts on the status
-auth returns — 200 means copy the identity headers onto the upstream request,
-401 means redirect the browser to sign in, 403 means pass the refusal through.
+The two identity endpoints auth serves, `GET /check` and `GET /me`, both
+attached in `internal/server`. `/check` is the subrequest nginx issues for
+every routed app, an HTTP request for `/check` like any other: nginx forwards
+the original request's `Cookie` and `Authorization` headers with no body and
+with its own `X-Request-Id` for the request, and acts on the status auth
+returns — 200 means copy the identity headers onto the upstream request, 401
+means redirect the browser to sign in, 403 means pass the refusal through.
 `/me` is the public "who am I" endpoint an agent or a signed-in user calls
 directly.
 

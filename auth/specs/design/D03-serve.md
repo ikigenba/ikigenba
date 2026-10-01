@@ -20,22 +20,19 @@ store's internals (D04), or the manifest and CLI surface (D02).
 
 auth serves on the terms dummy, the platform's reference app, states for every
 app, and they are restated here for auth. auth serves only on a listening
-socket it inherits and never opens one of its own. On a host, opsctl publishes
-`ikigenba-auth.socket`, which holds the Unix stream socket
-`/run/ikigenba/auth.sock` (owner `ikigenba`, group `nginx`, mode `0660`),
-beside `ikigenba-auth.service`, a `Type=notify` service that runs
-`/opt/auth/bin/auth` with no arguments as the `ikigenba` user, with
-`/opt/auth` as its working directory and `/opt/auth/etc/env` as its
-environment file. nginx proxies auth's own hostname to
-`http://unix:/run/ikigenba/auth.sock:` and makes its identity subrequest for
-every other app to `http://unix:/run/ikigenba/auth.sock:/check`. A deploy
-restarts the service alone, so the socket, and the connections queued on it —
-`/check` subrequests for every app auth guards among them — outlive every
-restart. A developer stands in for the host with
-`systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth`,
-which passes a loopback TCP socket on the same terms; a browser reaches it at `http://localhost:3001`, the
-origin whose callback is registered on the OAuth client for development, and a
-request whose `Host` is `localhost:3001` is the local one (D05).
+socket it inherits and never opens one of its own. What kind of socket that
+is, and where it lives, is the host's business: auth serves whatever it is
+passed the same way, and nothing here depends on its kind. On a host, opsctl
+publishes `ikigenba-auth.socket` beside `ikigenba-auth.service`, a
+`Type=notify` service that runs `/opt/auth/bin/auth` with no arguments as the
+`ikigenba` user, with `/opt/auth` as its working directory and
+`/opt/auth/etc/env` as its environment file. The host's nginx sends auth the
+requests for auth's own hostname and the identity subrequest, `/check`, for
+every other app; to auth each is an ordinary HTTP request. A deploy restarts
+the service alone, so the socket, and the connections queued on it — `/check`
+subrequests for every app auth guards among them — outlive every restart.
+Which request is the local one is decided by its `Host` header alone, and is
+D05's.
 
 auth takes the socket the way `sd_listen_fds(3)` documents: `LISTEN_PID` is
 its own process id, `LISTEN_FDS` counts the sockets passed, and the first is
@@ -47,33 +44,27 @@ with `@` being in the abstract namespace; with `NOTIFY_SOCKET` unset it tells
 nobody. On `SIGTERM` or `SIGINT` it stops accepting, lets the requests it
 already accepted finish for at most `DRAIN_SECONDS`, then cuts off whatever is
 left, says how many it cut off, and exits 1. It closes its own copy of the
-socket and never removes the socket's path. `DRAIN_SECONDS` and the service
-unit's `TimeoutStopSec` are space-wide integer-second settings owned by opsctl
-(defaults 5 and 10): opsctl writes `DRAIN_SECONDS` into every app's
-`etc/env`, and no manifest sets either. auth reads `DRAIN_SECONDS` as a
-positive whole number, 5 when it is unset or empty, and sets no upper limit of
-its own. The environment opsctl gives auth also carries `IKIGENBA_SERVICES`,
-the path of the host's services file, normally
-`/var/lib/ikigenba/services.json`. `systemd-socket-activate` hands the program
-it starts only a few basics such as `PATH`, the `LISTEN_*` variables, and the
-variables named with `-E`; its manual page documents that `-E VAR` with no
-`=VALUE` passes the value from its own environment, and a run of it under a
-shell exporting another variable shows that variable absent from the child.
-So the developer's command names the three Google settings with `-E`, and on
-a laptop `IKIGENBA_SERVICES` is normally unset. auth reads it once, at start,
-through `appkit.New` in `main` (`D01-layout-and-run-seam` explains why that
-read happens there and cannot fail), and auth's own code never reads it: unset,
-empty, or naming a file that is missing or unreadable, auth starts, serves,
-and says nothing about it.
+socket and nothing more: it never shuts the socket down or removes it.
+`DRAIN_SECONDS` and the service unit's `TimeoutStopSec` are space-wide
+integer-second settings owned by opsctl (defaults 5 and 10): opsctl writes
+`DRAIN_SECONDS` into every app's `etc/env`, and no manifest sets either. auth
+reads `DRAIN_SECONDS` as a positive whole number, 5 when it is unset or empty,
+and sets no upper limit of its own. The environment opsctl gives auth also
+carries `IKIGENBA_SERVICES`, the path of the host's services file, normally
+`/var/lib/ikigenba/services.json`; off a host it is normally unset. auth reads
+it once, at start, through `appkit.New` in `main` (`D01-layout-and-run-seam`
+explains why that read happens there and cannot fail), and auth's own code
+never reads it: unset, empty, or naming a file that is missing or unreadable,
+auth starts, serves, and says nothing about it.
 
-The socket is auth's only way in, and every app runs as `ikigenba`, so the
-suite and nginx can reach it and nothing else on the host can. The suite is a
-closed system: auth trusts `X-Request-Id` as nginx sets it — on every request
-it forwards to auth and on every `/check` subrequest, overwriting whatever a
-client sent — and trusts a sibling that calls auth directly to have copied it
-from the request it is serving. auth decides identity itself, from the session
-cookie or a token, and calls no sibling. A healthy auth writes nothing;
-server-side trouble gets one line on stderr naming the request by its
+The socket is auth's only way in. Only nginx and the suite's own apps can
+reach it; keeping everything else out is the host's job, not auth's. The suite
+is a closed system: auth trusts `X-Request-Id` as nginx sets it — on every
+request it forwards to auth and on every `/check` subrequest, overwriting
+whatever a client sent — and trusts a sibling that calls auth directly to have
+copied it from the request it is serving. auth decides identity itself, from
+the session cookie or a token, and calls no sibling. A healthy auth writes
+nothing; server-side trouble gets one line on stderr naming the request by its
 `X-Request-Id`, below.
 
 ## Configuration and taking the socket
@@ -105,12 +96,10 @@ test sees that as no store created at `DBSource`, `Inherit` never called, no
 With exactly one socket passed in, `Run` removes the three `LISTEN_*`
 variables through `Unsetenv` and takes descriptor 3 as its listener: through
 `Process.Inherit` when a test supplies one, otherwise with `net.FileListener`
-over the real descriptor, which serves a Unix or a TCP stream socket alike.
-The Go `net` documentation of `UnixListener.SetUnlinkOnClose` states that a
-listener made by `FileListener` does not remove the socket file when it is
-closed, and `FileListener` documents that closing the listener does not affect
-the file it was made from; closing is all auth ever does to the socket, so the
-path systemd created stays, and systemd's own copy of the socket keeps
+over the real descriptor, whatever kind of listening socket it is.
+`FileListener` documents that closing the listener does not affect the file
+it was made from, and closing is all auth ever does to the socket, so the
+socket systemd made stays where it is, and systemd's own copy of it keeps
 queueing connections for the next auth. If the descriptor cannot be made into
 a listener, that is trouble on the host rather than a caller's typo: `auth: `
 and the error, exit 1.
@@ -125,8 +114,7 @@ store creates any missing parent directories, the file, and its schema, then
 serving proceeds; D04 owns that filesystem preparation. When directory
 creation or database opening fails, `auth` writes a diagnostic naming the
 database source and the underlying reason and exits 1 before it serves or
-reports ready; the connection that started it is closed unanswered when the
-process exits.
+reports ready, having accepted nothing on the listener it took.
 
 `Run` then builds the Google client and the server. The client is built
 without contacting Google — discovery is deferred to the first sign-in (D05) —
@@ -259,9 +247,9 @@ a `bytes.Buffer` that the race detector watches.
 - R-MMST-2TKU: `Run` MUST accept a non-empty `DRAIN_SECONDS` value if and only if it consists of one or more ASCII decimal digits, the first of which is not `0`, and no other characters, whatever the magnitude of the integer those digits denote, so that `0`, `-1`, `2.5`, `5s`, `05`, ` 5`, and `abc` are refused and no value is refused for being large.
 - R-MO0P-GLBJ: When `Args` is empty, the three Google settings are set, and `LookupEnv("DRAIN_SECONDS")` returns `true` with a non-empty value `v` that `Run` does not accept, `Run` MUST write exactly `"auth: DRAIN_SECONDS is '" + v + "', not a positive whole number of seconds\n"` to `Stderr` with `v` verbatim, write nothing to `Stdout`, call none of `store.Open`, `Inherit`, or `Unsetenv`, send nothing to a notification socket, and accept no connection on any listener, and return `2`.
 - R-MP8L-UD28: The `drain` `Run` passes to `server.Serve` MUST be `5 * time.Second` when `LookupEnv("DRAIN_SECONDS")` returns `false` or the empty string, and otherwise, for the accepted value denoting the integer `n`, MUST be `n` seconds when `n` seconds is at most the largest `time.Duration` and the largest `time.Duration` when it is not.
-- R-MQGI-84SX: `Run` MUST treat a socket as passed in if and only if `LookupEnv("LISTEN_PID")` returns `true` with a value equal to `strconv.Itoa(p.Pid)` and `LookupEnv("LISTEN_FDS")` returns `true` with a value of one or more ASCII decimal digits and no other characters denoting an integer of at least 1, that integer being the number of sockets passed in.
-- R-SYOC-ORCV: When `Args` is empty, the three Google settings are set, `DRAIN_SECONDS` is unset, empty, or accepted, and no socket is passed in, `Run` MUST write exactly `"auth: no socket was passed in\n\nrun it under systemd, or locally with 'systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth'\n"` to `Stderr`, write nothing to `Stdout`, call none of `store.Open`, `Inherit`, or `Unsetenv`, send nothing to a notification socket, and accept no connection on any listener, and return `2`.
-- R-SZW9-2J3K: When `Args` is empty, the three Google settings are set, `DRAIN_SECONDS` is unset, empty, or accepted, and more than one socket is passed in, `Run` MUST write exactly `"auth: " + v + " sockets were passed in, expected 1\n\nrun it under systemd, or locally with 'systemd-socket-activate -E GOOGLE_CLIENT_ID -E GOOGLE_CLIENT_SECRET -E WORKSPACE_DOMAIN -l 127.0.0.1:3001 auth'\n"` to `Stderr` with `v` the value of `LISTEN_FDS` verbatim, write nothing to `Stdout`, call none of `store.Open`, `Inherit`, or `Unsetenv`, send nothing to a notification socket, and accept no connection on any listener, and return `2`.
+- R-BM04-733N: `Run` MUST treat a socket as passed in if and only if `LookupEnv("LISTEN_PID")` returns `true` with a value equal to `strconv.Itoa(p.Pid)` and `LookupEnv("LISTEN_FDS")` returns `true` with a value of one or more ASCII decimal digits and no other characters denoting an integer of at least 1, that integer being the number of sockets passed in.
+- R-ERFV-M2PB: When `Args` is empty, the three Google settings are set, `DRAIN_SECONDS` is unset, empty, or accepted, and no socket is passed in, `Run` MUST write exactly `"auth: no socket was passed in\n\nrun it under systemd, with a listening socket passed in\n"` to `Stderr`, write nothing to `Stdout`, call none of `store.Open`, `Inherit`, or `Unsetenv`, send nothing to a notification socket, and accept no connection on any listener, and return `2`.
+- R-ETVO-DM6P: When `Args` is empty, the three Google settings are set, `DRAIN_SECONDS` is unset, empty, or accepted, and more than one socket is passed in, `Run` MUST write exactly `"auth: " + v + " sockets were passed in, expected 1\n\nrun it under systemd, with a listening socket passed in\n"` to `Stderr` with `v` the value of `LISTEN_FDS` verbatim, write nothing to `Stdout`, call none of `store.Open`, `Inherit`, or `Unsetenv`, send nothing to a notification socket, and accept no connection on any listener, and return `2`.
 - R-MU47-DG10: When `Args` is empty, the three Google settings are set, `DRAIN_SECONDS` is unset, empty, or accepted, and exactly one socket is passed in, `Run` MUST call `Unsetenv`, when it is not nil, once with each of `LISTEN_PID`, `LISTEN_FDS`, and `LISTEN_FDNAMES` before it returns, and MUST NOT call it with any other key.
 - R-MVC3-R7RP: When `Args` is empty, the three Google settings are set, `DRAIN_SECONDS` is unset, empty, or accepted, and exactly one socket is passed in, `Run` MUST take file descriptor 3, and no other descriptor, as its listener, by calling `Inherit(3)` exactly once when `Inherit` is not nil, and by calling `net.FileListener` on a file for the process's file descriptor 3 when `Inherit` is nil.
 - R-MWK0-4ZIE: When taking file descriptor 3 as a listener fails with an error `err`, `Run` MUST write exactly `"auth: " + err.Error() + "\n"` to `Stderr`, write nothing to `Stdout`, not call `store.Open`, send nothing to a notification socket, and return `1`.
@@ -277,7 +265,7 @@ a `bytes.Buffer` that the race detector watches.
 - R-T2C1-U2KY: A `Run` that calls `server.Serve` MUST write nothing to `Stdout`, and MUST write nothing to `Stderr` other than what the server writes through the writer of R-T145-GAU9 and, when `Serve` returns a non-nil error, the one line R-N8QZ-YOXC states.
 - R-N8QZ-YOXC: When `server.Serve` returns a non-nil error to `Run`, `Run` MUST write to `Stderr` exactly `auth: `, that error's `Error()` text, and a newline, MUST write nothing to `Stdout`, and MUST return `1`.
 - R-T3JY-7UBN: `Run` MUST NOT let two calls to `Stderr.Write` be in progress at the same time, those made through the writer of R-T145-GAU9 included, so that a `Stderr` that is not safe for concurrent use is never written concurrently.
-- R-NB6S-Q8EQ: When `Inherit` is nil and file descriptor 3 is a listening Unix-domain stream socket bound to a filesystem path, `Run` MUST leave that path in place and MUST NOT shut the socket down, so that after `Run` returns the socket still accepts connections into its queue for another process that holds it.
+- R-EV3K-RDXE: When `Inherit` is nil and file descriptor 3 is a listening socket, `Run` MUST NOT shut that socket down or remove it, so that after `Run` returns the socket still exists and still accepts connections into its queue for another process that holds it.
 - R-2AOL-W6YZ: The `*server.Server` returned by `server.New` MUST serve the HTTP routes whose contracts D05, D06, D07, and D08 define.
 - R-UR0L-ZVDJ: The `*Server` returned by `New` MUST mint every random value the `*Server` mints itself (including the PKCE verifier D05 requires of `GET /login/google`) by reading `cfg.Rand`, MUST write every diagnostic its handlers emit (including the token-exchange error D05 requires of `GET /login/google/callback`) to `cfg.Stderr`, and MUST NOT read a global random source or write to a global output stream; given a `Config` whose `Rand` is a deterministic reader and whose `Stderr` is an in-memory buffer, the values minted are a function of the bytes that reader yields and every such diagnostic appears in that buffer.
 - R-CCQE-EHNR: When a store operation the `*Server` calls while handling a request on any route D05, D06, or D07 defines returns an error that does not satisfy `errors.Is(err, store.ErrNotFound)`, the `*Server` MUST answer that request with status `500`, `Content-Type: text/plain; charset=utf-8`, a body that is a single line of plain text, and neither `HeaderUserID` nor `HeaderUserEmail` set, whatever response another requirement states for that request, except that a `GET /login/google` already being answered `502` under R-XXPJ-ZJU1 stays `502` when the `ConsumeLoginState` it makes to discard its login state fails.
