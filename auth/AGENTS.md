@@ -134,7 +134,7 @@ bug.
 **auth binds nothing; a test makes its listener.** auth serves on the listener
 it is passed (D01, D03). A test that needs a listener makes its own: a
 loopback TCP listener on `127.0.0.1:0`, where the kernel chooses the port, or
-a Unix socket in a temporary directory — never a fixed port such as 3001. A
+a Unix socket in a temporary directory — never a fixed port. A
 `cli.Run`-level test of the serve path hands `Run` that listener through
 `Process.Inherit`, sets `LISTEN_PID` to the `Process.Pid` it chose and
 `LISTEN_FDS` to `1` in the environment map it passes, alongside the three
