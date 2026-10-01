@@ -109,8 +109,10 @@ Verification must establish:
   implementation prescriptions.
 - Consumer tasks use the declared surface and accomplish their story outcomes.
 - Each new or changed requirement is provable. A verifier sketches a test the
-  sub-project's `AGENTS.md` permits, then tries to construct a non-compliant
-  implementation that passes it. If one exists, the requirement is reworded,
+  sub-project's `AGENTS.md` permits, then tries to construct a plausible
+  defect that passes it: a wrong value, a missed case, an overflow, never an
+  implementation that special-cases the test's inputs. If one exists, the
+  requirement is reworded,
   or the test rule it needs goes to the user as a decision.
 - Behavioral requirements state observable outcomes at public seams, never how
   the code produces them.
