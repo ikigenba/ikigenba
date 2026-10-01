@@ -32,7 +32,9 @@ against; it is human-authored and read-only to the run.
   `make install`, `make fmt`, `make live`); no gate runs through it
 
 The only third-party module the code may require is
-`github.com/BurntSushi/toml`, for reading app manifests. Adding it still
+`github.com/BurntSushi/toml`, for reading app manifests and the secrets
+file; the D05 tests need it, since their expected diagnostics come from its
+`toml.ParseError`. Adding it still
 awaits the user's approval; until it is given, `go.mod` requires nothing.
 Everything else is the standard library. Once required, the module sits in
 the Go module cache (`go mod download` fetches it once, online), `go.sum` is
@@ -46,7 +48,11 @@ tools above: no systemd user manager, no nginx, no network. Running the built
 - `go` (builds each app from the working tree)
 - a running systemd user manager, reached with `systemctl --user` and
   `journalctl --user`
-- `nginx` on `PATH`, runnable by an ordinary user
+- `nginx`, runnable by an ordinary user, installed where systemd's own
+  executable search path finds a bare name (the standard `bin` and `sbin`
+  directories, `/usr/sbin` among them): the nginx unit's `ExecStart=` names
+  the bare word `nginx`, which the user manager resolves, not the
+  developer's `PATH`
 
 ## Test files
 

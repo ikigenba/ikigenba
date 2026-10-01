@@ -134,7 +134,8 @@ Postconditions:
 - `/home/me/.local/state/ikigenba/sandbox/wip/` exists and holds the built binaries and generated files, with `apps/auth/` and `apps/dummy/` as the apps' working directories.
 - `/home/me/.config/systemd/user/` holds `sandbox-wip-auth.socket`, `sandbox-wip-auth.service`, `sandbox-wip-dummy.socket`, `sandbox-wip-dummy.service` and `sandbox-wip-nginx.service`; none is enabled.
 - Every one of those units is active, so the sandbox is up. nginx listens on `127.0.0.1:7400` and routes each app's host to its socket, as the routing group tells; each app's service runs with the environment and services file the apps group tells.
-- Nothing was written under `/etc`, `/run`, `/opt` or `/var`, and nothing in the worktree changed.
+- Each app's socket is `/run/user/<uid>/sandbox/7400/<app>.sock`, where `<uid>` is the developer's user id, bound by systemd in the developer's own runtime directory and kept out of the data directory because a Unix socket path may hold at most 108 bytes; it is the same whatever `XDG_RUNTIME_DIR` holds.
+- Nothing was written under `/etc`, `/opt` or `/var`, nor under `/run` outside `/run/user/<uid>/`, and nothing in the worktree changed.
 
 ## A developer runs up from deep inside the worktree
 

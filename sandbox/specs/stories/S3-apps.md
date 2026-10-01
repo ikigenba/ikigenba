@@ -237,7 +237,7 @@ Postconditions:
 
 ## An app reads the services file
 
-Every app can find every other app in the sandbox through the file `IKIGENBA_SERVICES` names, written in the platform's published format: one JSON object whose `services` array lists every app of the last `up` in name order, one service to a line. Each service gives its `name`; its `url` in this sandbox; its manifest's `description`, `""` when it has none; its `socket` in this sandbox; `enabled`, always `true`; and `mcp`, `false` when the manifest does not set it. `<socket of auth>` and `<socket of dummy>` are the absolute paths of those apps' sockets under `/home/me/.local/state/ikigenba/sandbox/wip/`.
+Every app can find every other app in the sandbox through the file `IKIGENBA_SERVICES` names, written in the platform's published format: one JSON object whose `services` array lists every app of the last `up` in name order, one service to a line. Each service gives its `name`; its `url` in this sandbox; its manifest's `description`, `""` when it has none; its `socket` in this sandbox; `enabled`, always `true`; and `mcp`, `false` when the manifest does not set it. `<socket of auth>` and `<socket of dummy>` are `/run/user/<uid>/sandbox/7400/auth.sock` and `/run/user/<uid>/sandbox/7400/dummy.sock`, where `<uid>` is the developer's user id: sockets live in the developer's runtime directory keyed by the sandbox's port, not under the sandbox's data, because a Unix socket path may hold at most 108 bytes.
 
 Command:
 
@@ -593,7 +593,7 @@ Postconditions:
 
 ## A developer brings up the sandbox with a secrets file that cannot be read
 
-A secrets file that is not valid TOML is refused with the parser's own reason, which varies with the fault. No value from the file is printed.
+A secrets file that is not valid TOML is refused with only the line where the fault was found, never the parser's own description of it, which can quote the text near the fault, and that text may be a secret. No value from the file is printed.
 
 Command:
 
@@ -601,10 +601,10 @@ Command:
 $ sandbox up
 ```
 
-Output: one line, where `<reason>` is the parser's description of the fault:
+Output:
 
 ```
-sandbox: /home/me/.config/ikigenba/sandbox/secrets.toml: <reason>
+sandbox: /home/me/.config/ikigenba/sandbox/secrets.toml: not valid TOML at line 2
 ```
 
 Exits 2. The line is on stderr; stdout is empty.
@@ -612,7 +612,7 @@ Exits 2. The line is on stderr; stdout is empty.
 Preconditions:
 
 - The current directory is `/home/me/src/ikigenba/wip`.
-- `/home/me/.config/ikigenba/sandbox/secrets.toml` is not valid TOML: its first line reads `[auth`.
+- `/home/me/.config/ikigenba/sandbox/secrets.toml` is not valid TOML: its first line reads `[auth` and its second `GOOGLE_CLIENT_ID = "1234-abc.apps.googleusercontent.com"`.
 - `wip` is up from an earlier `up`, or is not yet known.
 
 Postconditions:
