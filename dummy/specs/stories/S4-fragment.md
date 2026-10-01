@@ -24,7 +24,7 @@ Every request reaching dummy comes through the host's nginx gate, which sets
 that forwards the ones it received (`S2`), so there is no unauthenticated
 case; the identity the fragment requires is `X-User-Id`, and a
 request without it is answered 500, the same rule the panel page follows. The
-curl lines below therefore carry both headers explicitly.
+requests below therefore carry both headers explicitly.
 
 The widgets are an in-memory fixture set, reset at process start, holding
 exactly three widgets in this order: `alpha` count 3 status `active`; `beta`
@@ -64,7 +64,9 @@ the tag the next poll will quote back.
 Request:
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/widgets/table
+GET /widgets/table HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 Response:
@@ -88,7 +90,7 @@ that order. The body is byte for byte the table a `GET
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - No widget has been created since dummy started, so the fixture set holds
   the three widgets it holds at process start.
 
@@ -106,7 +108,9 @@ gets no body.
 Request:
 
 ```
-$ curl -sI -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/widgets/table
+HEAD /widgets/table HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 Response:
@@ -122,7 +126,7 @@ table returns.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - No widget has been created since dummy started.
 
 Postconditions:
@@ -141,7 +145,10 @@ showing in place.
 Request:
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'If-None-Match: "<etag>"' http://127.0.0.1:3000/widgets/table
+GET /widgets/table HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+If-None-Match: "<etag>"
 ```
 
 Response:
@@ -156,7 +163,7 @@ quoted, so the page keeps polling with it.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - `"<etag>"` is the `ETag` from the response the page is currently showing.
 - Nothing has been created since that response, so the table's content is
   unchanged.
@@ -177,7 +184,10 @@ only reads.
 Request:
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'If-None-Match: "<etag>"' http://127.0.0.1:3000/widgets/table
+GET /widgets/table HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+If-None-Match: "<etag>"
 ```
 
 Response:
@@ -197,7 +207,7 @@ the one the request quoted, because the content differs.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - `"<etag>"` is the `ETag` from the response the page is currently showing.
 - A widget named `delta` was created by a POST to `/widgets` after that
   response was sent.
@@ -220,7 +230,7 @@ panel page follows.
 Request:
 
 ```
-$ curl -si http://127.0.0.1:3000/widgets/table
+GET /widgets/table HTTP/1.1
 ```
 
 Response:
@@ -236,7 +246,7 @@ are sent.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The request carries no `X-User-Id` header.
 
 Postconditions:
@@ -256,7 +266,9 @@ fragment endpoint, is plain text rather than a page with the banner.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/widgets/table
+POST /widgets/table HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 Response:
@@ -272,7 +284,7 @@ allowed. `PUT`, `DELETE`, and `PATCH` are refused the same way.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 
 Postconditions:
 

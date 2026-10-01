@@ -18,13 +18,12 @@ one of `active`, `paused`, or `retired`, and the widgets are always in
 creation order, so a widget created through either way in — the form or
 `create_widget` — is last, and shows to the other at once.
 
-The actor is a model working through an MCP client, or the client itself. On
-a developer's laptop the client is played with `curl` against a dummy served
-with `systemd-socket-activate -l 127.0.0.1:3000 dummy` (`S2`), with no
-services file unless a story says otherwise. `/mcp` is behind the same
+The actor is a model working through an MCP client, or the client itself.
+Each request is shown as the HTTP request the client sends to a running dummy
+(`S2`), started with no services file unless a story says otherwise. `/mcp` is behind the same
 identity rule as every other route: the gate sets `X-User-Id` and
 `X-User-Email`, a sibling forwards them (`S2`), and a request without
-`X-User-Id` is answered 500 before anything else is looked at. The curl lines
+`X-User-Id` is answered 500 before anything else is looked at. The requests
 below carry both headers by hand, and only the missing-header story carries
 neither.
 
@@ -89,7 +88,14 @@ reaches outside the platform's own data, so neither is open-world.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/list' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/list
+
+{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -142,7 +148,7 @@ description, are not fixed here. The schemas carry no `$schema` member.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 
 Postconditions:
 
@@ -157,7 +163,15 @@ leave `arguments` out or send `{}`; both are the same call.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: list_widgets' -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_widgets","arguments":{},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: list_widgets
+
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_widgets","arguments":{},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -179,7 +193,7 @@ whose text is exactly that line.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -195,7 +209,15 @@ what it made.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: create_widget' -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"delta","count":7,"status":"active"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: create_widget
+
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"delta","count":7,"status":"active"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -216,7 +238,7 @@ and a `content` array of one text block whose text is exactly that line.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it, so no widget is
   named `delta`.
 
@@ -237,7 +259,15 @@ same way.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: list_widgets' -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"list_widgets","arguments":{},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: list_widgets
+
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"list_widgets","arguments":{},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -258,7 +288,7 @@ and a `content` array of one text block whose text is exactly that line.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - Since the process started, the only change to the widgets is the
   `create_widget` call of `A model creates a widget`.
 
@@ -275,7 +305,9 @@ fragment every 5 seconds (`S4`), and the next fetch carries the new row.
 Request:
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/widgets/table
+GET /widgets/table HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 Response:
@@ -291,7 +323,7 @@ order: `alpha` 3 `active`, `beta` 0 `paused`, `gamma` 12 `retired`, and
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - Since the process started, the only change to the widgets is the
   `create_widget` call of `A model creates a widget`.
 
@@ -310,7 +342,15 @@ exactly.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: create_widget' -d '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"  big delta  ","count":0,"status":"paused"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: create_widget
+
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"  big delta  ","count":0,"status":"paused"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -331,7 +371,7 @@ and a `content` array of one text block whose text is exactly that line.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -348,11 +388,27 @@ the same way.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: create_widget' -d '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"","count":7,"status":"active"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: create_widget
+
+{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"","count":7,"status":"active"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: create_widget' -d '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"   ","count":7,"status":"active"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: create_widget
+
+{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"   ","count":7,"status":"active"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -373,7 +429,7 @@ name: a name is required
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -390,7 +446,15 @@ accepted. The name below is 41 characters.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: create_widget' -d '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"a-widget-name-that-is-far-too-long-to-fit","count":7,"status":"active"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: create_widget
+
+{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"a-widget-name-that-is-far-too-long-to-fit","count":7,"status":"active"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -411,7 +475,7 @@ name: the name is too long; the limit is 40 characters
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -428,7 +492,15 @@ to use, and creating it succeeds as in `A model creates a widget`.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: create_widget' -d '{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"alpha","count":5,"status":"paused"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: create_widget
+
+{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"alpha","count":5,"status":"paused"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -449,7 +521,7 @@ name: that name is already taken
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it, so a widget
   named `alpha` exists.
 
@@ -468,7 +540,15 @@ lower bound, and is refused by dummy's rule.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: create_widget' -d '{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"delta","count":-1,"status":"active"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: create_widget
+
+{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"delta","count":-1,"status":"active"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -489,7 +569,7 @@ count: the count cannot be negative
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -504,7 +584,15 @@ model that got both wrong learns both from one answer.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: create_widget' -d '{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"alpha","count":-4,"status":"retired"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: create_widget
+
+{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"alpha","count":-4,"status":"retired"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -526,7 +614,7 @@ count: the count cannot be negative
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -543,7 +631,15 @@ value must match exactly: `Active` and ` active` are refused too.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: create_widget' -d '{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"delta","count":7,"status":"archived"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: create_widget
+
+{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"delta","count":7,"status":"archived"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -564,7 +660,7 @@ status: must be one of "active", "paused", "retired", got "archived"
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -581,7 +677,15 @@ model did not give as a number.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: create_widget' -d '{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"delta","count":"7","status":"active"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: create_widget
+
+{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"delta","count":"7","status":"active"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -602,7 +706,7 @@ count: expected integer, got string
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -618,7 +722,15 @@ whole number however it is written, so `7.0` is the count 7 and is accepted.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: create_widget' -d '{"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"delta","count":7.5,"status":"active"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: create_widget
+
+{"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"delta","count":7.5,"status":"active"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -639,7 +751,7 @@ count: expected integer, got 7.5
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -655,7 +767,15 @@ can correct it. The number is quoted exactly as it was sent.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: create_widget' -d '{"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"delta","count":1e19,"status":"active"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: create_widget
+
+{"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"delta","count":1e19,"status":"active"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -676,7 +796,7 @@ count: must be between -9223372036854775808 and 9223372036854775807, got 1e19
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -691,7 +811,15 @@ arguments are read; dummy never supplies a default status or count.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: create_widget' -d '{"jsonrpc":"2.0","id":15,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"delta","count":7},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: create_widget
+
+{"jsonrpc":"2.0","id":15,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"delta","count":7},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -712,7 +840,7 @@ status: missing required field
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -728,7 +856,15 @@ must learn that it did not.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: create_widget' -d '{"jsonrpc":"2.0","id":16,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"delta","count":7,"status":"active","colour":"red"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: create_widget
+
+{"jsonrpc":"2.0","id":16,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"delta","count":7,"status":"active","colour":"red"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -749,7 +885,7 @@ colour: unknown field
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -766,7 +902,15 @@ the same way, so any argument sent to it is an unknown field.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: create_widget' -d '{"jsonrpc":"2.0","id":17,"method":"tools/call","params":{"name":"create_widget","arguments":{"colour":"red","count":"7","status":"archived"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: create_widget
+
+{"jsonrpc":"2.0","id":17,"method":"tools/call","params":{"name":"create_widget","arguments":{"colour":"red","count":"7","status":"archived"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -790,7 +934,7 @@ colour: unknown field
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -808,7 +952,15 @@ next answer names the rule offences.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: create_widget' -d '{"jsonrpc":"2.0","id":18,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"alpha","count":-4,"status":"archived"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: create_widget
+
+{"jsonrpc":"2.0","id":18,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"alpha","count":-4,"status":"archived"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -829,7 +981,7 @@ status: must be one of "active", "paused", "retired", got "archived"
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -845,7 +997,15 @@ error: there is no tool to answer it.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: delete_widget' -d '{"jsonrpc":"2.0","id":19,"method":"tools/call","params":{"name":"delete_widget","arguments":{"name":"alpha"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: delete_widget
+
+{"jsonrpc":"2.0","id":19,"method":"tools/call","params":{"name":"delete_widget","arguments":{"name":"alpha"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -860,7 +1020,7 @@ whose `error` has `code` `-32602` and `message` `Unknown tool: delete_widget`.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -880,7 +1040,13 @@ JSON-RPC response, and no tool runs, whatever the body asked for.
 Request:
 
 ```
-$ curl -si -X POST -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: create_widget' -d '{"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"delta","count":7,"status":"active"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: create_widget
+
+{"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"create_widget","arguments":{"name":"delta","count":7,"status":"active"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -895,7 +1061,7 @@ with LF.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The request carries no `X-User-Id` header and no `X-Request-Id` header.
 - The widgets are the fixture set as the process started it.
 
@@ -915,7 +1081,9 @@ carries no banner and no HTML.
 Request:
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/mcp
+GET /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 Response:
@@ -929,7 +1097,7 @@ Status 405. The body is empty.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 
 Postconditions:
 
@@ -958,7 +1126,14 @@ file here, `/tmp/services.json`, lists dummy:
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: server/discover' -d '{"jsonrpc":"2.0","id":21,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: server/discover
+
+{"jsonrpc":"2.0","id":21,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -982,8 +1157,8 @@ exactly these members besides the `resultType`, `_meta`, `ttlMs`, and
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`, started with
-  `systemd-socket-activate -E IKIGENBA_SERVICES=/tmp/services.json -l 127.0.0.1:3000 dummy`.
+- dummy is serving, started with `IKIGENBA_SERVICES=/tmp/services.json` in
+  its environment.
 - `/tmp/services.json` holds the file above and is readable by dummy.
 
 Postconditions:
@@ -1001,7 +1176,14 @@ entry named `dummy`. The tools are offered all the same.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: server/discover' -d '{"jsonrpc":"2.0","id":22,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: server/discover
+
+{"jsonrpc":"2.0","id":22,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:
@@ -1018,9 +1200,7 @@ Status 200. The body is a JSON-RPC response with `id` 22 whose `result` has
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`, started with
-  `systemd-socket-activate -l 127.0.0.1:3000 dummy`, so `IKIGENBA_SERVICES` is
-  unset.
+- dummy is serving, started with `IKIGENBA_SERVICES` unset.
 
 Postconditions:
 
@@ -1040,7 +1220,12 @@ client may list or call tools with or without having sent `initialize`.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"example-client","version":"1.0.0"}}}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"example-client","version":"1.0.0"}}}
 ```
 
 Response:
@@ -1066,8 +1251,8 @@ The response carries no `Mcp-Session-Id` header.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`, started with
-  `systemd-socket-activate -E IKIGENBA_SERVICES=/tmp/services.json -l 127.0.0.1:3000 dummy`.
+- dummy is serving, started with `IKIGENBA_SERVICES=/tmp/services.json` in
+  its environment.
 - `/tmp/services.json` holds the file of `A client asks dummy what it is for`.
 
 Postconditions:
@@ -1088,11 +1273,23 @@ envelope differs: results carry no `resultType`, `_meta`, `ttlMs`, or
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2025-11-25' -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2025-11-25
+
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}
 ```
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -H 'MCP-Protocol-Version: 2025-06-18' -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' http://127.0.0.1:3000/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+MCP-Protocol-Version: 2025-06-18
+
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}
 ```
 
 Response:
@@ -1108,7 +1305,7 @@ tools`, member for member.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 
 Postconditions:
 
@@ -1202,7 +1399,17 @@ gateway's, told in its own stories.
 Request:
 
 ```
-$ curl -si --unix-socket /run/ikigenba/dummy.sock -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'X-Request-Id: 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59' -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: list_widgets' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_widgets","arguments":{},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' http://dummy/mcp
+POST /mcp HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+X-Request-Id: 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: list_widgets
+
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_widgets","arguments":{},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
 ```
 
 Response:

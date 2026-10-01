@@ -27,8 +27,7 @@ developer's laptop it is normally unset, and dummy's pages then carry no
 launcher and its MCP endpoint no instructions. dummy reads the variable once,
 when it starts, and never fails to start over it: unset, empty, or naming a
 file that is missing or unreadable, dummy starts and serves all the same, and
-says nothing about it. A developer stands in for the host with
-`systemd-socket-activate`, which passes a socket on the same terms. A healthy
+says nothing about it. A healthy
 dummy prints nothing, so under systemd the journal holds only trouble. A
 diagnostic dummy writes about a request names that request by its
 `X-Request-Id`, as `dummy: request <id>: <reason>` on stderr, so a line in the
@@ -95,49 +94,6 @@ Postconditions:
 - dummy has written nothing to the journal.
 - It keeps running until it is signalled.
 
-## A developer serves dummy on a laptop
-
-A laptop has no `ikigenba-dummy.socket`, so the developer lets
-`systemd-socket-activate` hold a socket and pass it to dummy exactly as
-systemd would. A TCP socket on loopback serves a browser and `curl` alike, and
-the later groups' requests go to `http://127.0.0.1:3000`. The three lines are
-`systemd-socket-activate`'s own: it announces the socket, and it starts dummy
-only when the first connection arrives, which dummy then answers. dummy adds
-nothing to them. There is no `NOTIFY_SOCKET` here, so dummy reports readiness
-to nobody. `systemd-socket-activate` does not hand dummy the developer's
-environment, only a few basics such as `PATH` and the variables named with
-`-E`, so `IKIGENBA_SERVICES` is unset here and the pages carry no
-launcher; a developer who wants one names a services file with
-`-E IKIGENBA_SERVICES=<path>` (`S3`).
-
-Command:
-
-```
-$ systemd-socket-activate -l 127.0.0.1:3000 dummy
-```
-
-Output:
-
-```
-Listening on 127.0.0.1:3000 as 3.
-Communication attempt on fd 3.
-Execing dummy (dummy)
-```
-
-Does not exit. The lines are on stderr; stdout is empty. The first line
-appears at once, the other two when the first connection arrives.
-
-Preconditions:
-
-- `bin/dummy` exists and is on the developer's `PATH` as `dummy`.
-- Nothing is listening on `127.0.0.1:3000`.
-
-Postconditions:
-
-- dummy is serving on `127.0.0.1:3000` and on no other address, and it
-  answered the connection that started it.
-- It keeps running until it is signalled.
-
 ## The host stops dummy
 
 `systemctl stop` and `systemctl restart` send `SIGTERM`; a developer's
@@ -164,8 +120,7 @@ dummy exits 0. Nothing is on stdout or stderr.
 
 Preconditions:
 
-- dummy is serving as process `<pid>`, on the socket systemd or
-  `systemd-socket-activate` passed it.
+- dummy is serving as process `<pid>`, on the socket it was passed.
 - `DRAIN_SECONDS` is unset, so the drain deadline is 5 seconds.
 - Every request dummy has accepted finishes within 5 seconds of the signal.
 
@@ -202,8 +157,7 @@ empty. `<n>` is the number of requests still running at the deadline. When
 
 Preconditions:
 
-- dummy is serving as process `<pid>`, on the socket systemd or
-  `systemd-socket-activate` passed it.
+- dummy is serving as process `<pid>`, on the socket it was passed.
 - `DRAIN_SECONDS` is unset, so the drain deadline is 5 seconds.
 - `<n>` of the requests dummy has accepted are still running 5 seconds after
   the signal.
@@ -270,7 +224,7 @@ Output:
 ```
 dummy: no socket was passed in
 
-run it under systemd, or locally with 'systemd-socket-activate -l 127.0.0.1:3000 dummy'
+run it under systemd, with a listening socket passed in
 ```
 
 Exits 2. The text is on stderr; stdout is empty.
@@ -294,31 +248,25 @@ misconfigured, and dummy will not guess which one it was meant to serve on.
 Command:
 
 ```
-$ systemd-socket-activate -l 127.0.0.1:3000 -l 127.0.0.1:3001 dummy
+$ dummy
 ```
 
 Output:
 
 ```
-Listening on 127.0.0.1:3000 as 3.
-Listening on 127.0.0.1:3001 as 4.
-Communication attempt on fd 3.
-Execing dummy (dummy)
 dummy: 2 sockets were passed in, expected 1
 
-run it under systemd, or locally with 'systemd-socket-activate -l 127.0.0.1:3000 dummy'
+run it under systemd, with a listening socket passed in
 ```
 
-Exits 2. The text is on stderr; stdout is empty. The first four lines are
-`systemd-socket-activate`'s own; the rest is dummy's. The connection that
-started dummy is closed unanswered.
+Exits 2. The text is on stderr; stdout is empty.
 
 Preconditions:
 
-- `bin/dummy` exists and is on the developer's `PATH` as `dummy`.
-- Nothing is listening on `127.0.0.1:3000` or `127.0.0.1:3001`.
+- `bin/dummy` exists and is on the `PATH` as `dummy`.
+- `LISTEN_PID` is dummy's process id and `LISTEN_FDS` is `2`: two listening
+  sockets are passed in, as file descriptors 3 and 4.
 - `DRAIN_SECONDS` is unset, or a positive whole number.
-- A connection is made to `127.0.0.1:3000`.
 
 Postconditions:
 
@@ -337,27 +285,22 @@ unit's stop timeout is opsctl's to enforce.
 Command:
 
 ```
-$ systemd-socket-activate -E DRAIN_SECONDS=abc -l 127.0.0.1:3000 dummy
+$ DRAIN_SECONDS=abc dummy
 ```
 
 Output:
 
 ```
-Listening on 127.0.0.1:3000 as 3.
-Communication attempt on fd 3.
-Execing dummy (dummy)
 dummy: DRAIN_SECONDS is 'abc', not a positive whole number of seconds
 ```
 
-Exits 2. The text is on stderr; stdout is empty. The first three lines are
-`systemd-socket-activate`'s own; the last is dummy's. The connection that
-started dummy is closed unanswered.
+Exits 2. The text is on stderr; stdout is empty.
 
 Preconditions:
 
-- `bin/dummy` exists and is on the developer's `PATH` as `dummy`.
-- Nothing is listening on `127.0.0.1:3000`.
-- A connection is made to `127.0.0.1:3000`.
+- `bin/dummy` exists and is on the `PATH` as `dummy`.
+- `LISTEN_PID` is dummy's process id and `LISTEN_FDS` is `1`: one listening
+  socket is passed in, as file descriptor 3.
 
 Postconditions:
 

@@ -36,8 +36,9 @@ An nginx gate in front of dummy sets `X-User-Id` and `X-User-Email` on every
 upstream request, and a sibling app forwards the ones it received (`S2`), so
 there is no unauthenticated case and a request without
 `X-User-Id` is answered 500, the same rule the panel page and the fragment
-follow. The curl lines below therefore carry both headers explicitly, and only
-the missing-header story carries neither.
+follow. The requests below therefore carry both headers explicitly, and only
+the missing-header story carries neither. A request that shows no `Host` header carries one with no
+`dummy.` label, so its banner names auth's local origin (`S3`).
 
 A response block shows the status line and the headers the story fixes; a
 header it does not show, `Date` say, is not fixed.
@@ -59,7 +60,12 @@ message across the redirect.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -d 'name=delta' -d 'count=7' -d 'status=active' http://127.0.0.1:3000/widgets
+POST /widgets HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/x-www-form-urlencoded
+
+name=delta&count=7&status=active
 ```
 
 Response:
@@ -73,7 +79,7 @@ Status 303. The body is empty.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it, so no widget is
   named `delta`.
 
@@ -92,7 +98,12 @@ panel they were on rather than with bare text.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -d 'name=' -d 'count=7' -d 'status=active' http://127.0.0.1:3000/widgets
+POST /widgets HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/x-www-form-urlencoded
+
+name=&count=7&status=active
 ```
 
 Response:
@@ -114,7 +125,7 @@ name is required. No error sits beside the count or the status field.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -133,7 +144,12 @@ it. Reading the field cannot decide this; only asking the widgets can.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -d 'name=alpha' -d 'count=5' -d 'status=paused' http://127.0.0.1:3000/widgets
+POST /widgets HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/x-www-form-urlencoded
+
+name=alpha&count=5&status=paused
 ```
 
 Response:
@@ -151,7 +167,7 @@ name field saying that name is already taken.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it, so a widget named
   `alpha` exists.
 
@@ -170,7 +186,12 @@ characters.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -d 'name=a-widget-name-that-is-far-too-long-to-fit' -d 'count=7' -d 'status=active' http://127.0.0.1:3000/widgets
+POST /widgets HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/x-www-form-urlencoded
+
+name=a-widget-name-that-is-far-too-long-to-fit&count=7&status=active
 ```
 
 Response:
@@ -189,7 +210,7 @@ long.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -206,7 +227,12 @@ give.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -d 'name=delta' -d 'count=three' -d 'status=active' http://127.0.0.1:3000/widgets
+POST /widgets HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/x-www-form-urlencoded
+
+name=delta&count=three&status=active
 ```
 
 Response:
@@ -225,7 +251,7 @@ be a whole number.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -243,7 +269,12 @@ their own messages.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -d 'name=delta' -d 'count=-1' -d 'status=active' http://127.0.0.1:3000/widgets
+POST /widgets HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/x-www-form-urlencoded
+
+name=delta&count=-1&status=active
 ```
 
 Response:
@@ -261,7 +292,7 @@ count field saying the count cannot be negative.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -281,7 +312,12 @@ same terms, for the same reason.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -d 'name=delta' -d 'count=7' -d 'status=archived' http://127.0.0.1:3000/widgets
+POST /widgets HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/x-www-form-urlencoded
+
+name=delta&count=7&status=archived
 ```
 
 Response:
@@ -301,7 +337,7 @@ message sits beside the status field saying the status must be one of
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -320,7 +356,12 @@ which field each message is about by where it sits.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -d 'name=' -d 'count=three' -d 'status=archived' http://127.0.0.1:3000/widgets
+POST /widgets HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/x-www-form-urlencoded
+
+name=&count=three&status=archived
 ```
 
 Response:
@@ -340,7 +381,7 @@ saying what is wrong with that field.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -365,7 +406,12 @@ route.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'Content-Type: application/json' -d '{"name":"delta","count":7,"status":"active"}' http://127.0.0.1:3000/widgets
+POST /widgets HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+Content-Type: application/json
+
+{"name":"delta","count":7,"status":"active"}
 ```
 
 Response:
@@ -390,7 +436,7 @@ there being no submitted values to show.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -415,7 +461,10 @@ developer meets this by forgetting the headers, as here.
 Request:
 
 ```
-$ curl -si -X POST -d 'name=delta' -d 'count=7' -d 'status=active' http://127.0.0.1:3000/widgets
+POST /widgets HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+
+name=delta&count=7&status=active
 ```
 
 Response:
@@ -430,7 +479,7 @@ ending in a newline, as on every route (`S3`).
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The request carries no `X-User-Id` header.
 - The widgets are the fixture set as the process started it.
 

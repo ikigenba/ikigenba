@@ -17,9 +17,10 @@ Only nginx and the suite's own apps can reach dummy's socket, so a request
 that arrives without `X-User-Id`, or with it empty, means the gate or a
 sibling is misconfigured — a server fault, not a bad request. On a developer's
 laptop there is no gate, so the headers are passed by hand, and every request
-below that needs identity shows them. The requests go to a dummy the developer
-serves with `systemd-socket-activate -l 127.0.0.1:3000 dummy` (`S2`), with no
-services file unless a story says otherwise.
+below that needs identity shows them. The requests go to a running dummy
+(`S2`), started with no services file unless a story says otherwise. Each is
+shown as the HTTP request dummy receives, with the headers the story depends
+on; a request that shows no `Host` header carries one with no `dummy.` label.
 
 The demo resource is widgets. A widget has a `name`, an integer `count`, and
 a `status` that is one of `active`, `paused`, or `retired`. The widgets are an
@@ -78,7 +79,7 @@ space, `<auth-profile>` is `<scheme>://auth.<space>/`, and `<auth-logout>` is
 the request's `X-Forwarded-Proto` when that header is exactly `http` or
 exactly `https`, and `https` otherwise — `HTTPS`, `https, http`, an empty
 value, or no header at all. A `Host` with no `dummy.` label, as on a
-developer's `127.0.0.1:3000`, has no space in it, and both then name auth's
+developer's laptop, has no space in it, and both then name auth's
 local origin: `<auth-profile>` is `http://localhost:3001/` and `<auth-logout>`
 is `http://localhost:3001/logout`.
 
@@ -173,7 +174,9 @@ and hidden from assistive technology, so the button's accessible text is
 Request:
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/widgets
+GET /widgets HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 Response:
@@ -206,8 +209,7 @@ visible text. The text `Dummy` appears nowhere.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`, started with `IKIGENBA_SERVICES`
-  unset.
+- dummy is serving, started with `IKIGENBA_SERVICES` unset.
 - The widgets are the fixture set as the process started it.
 
 Postconditions:
@@ -222,7 +224,9 @@ host is meant to land, and the root exists only to send them there.
 Request:
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/
+GET / HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 Response:
@@ -236,7 +240,7 @@ Status 303. The body is empty.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 
 Postconditions:
 
@@ -251,7 +255,9 @@ to know dummy is up without paying for the page.
 Request:
 
 ```
-$ curl -sI -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/widgets
+HEAD /widgets HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 Response:
@@ -265,7 +271,7 @@ Status 200. The body is empty.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 
 Postconditions:
 
@@ -280,15 +286,26 @@ of, and sends them to their profile on, whichever space it is serving. A develop
 Request:
 
 ```
-$ curl -si -H 'Host: dummy.sbx.ikigenba.dev:443' -H 'X-Forwarded-Proto: https' -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/widgets
+GET /widgets HTTP/1.1
+Host: dummy.sbx.ikigenba.dev:443
+X-Forwarded-Proto: https
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 ```
-$ curl -si -H 'Host: dummy.sbx.ikigenba.dev' -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/widgets
+GET /widgets HTTP/1.1
+Host: dummy.sbx.ikigenba.dev
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 ```
-$ curl -si -H 'Host: dummy.sbx.ikigenba.dev' -H 'X-Forwarded-Proto: HTTPS' -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/widgets
+GET /widgets HTTP/1.1
+Host: dummy.sbx.ikigenba.dev
+X-Forwarded-Proto: HTTPS
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 Response:
@@ -309,8 +326,7 @@ link is the banner's only link to auth.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`, started with `IKIGENBA_SERVICES`
-  unset.
+- dummy is serving, started with `IKIGENBA_SERVICES` unset.
 
 Postconditions:
 
@@ -330,7 +346,7 @@ as here.
 Request:
 
 ```
-$ curl -si http://127.0.0.1:3000/widgets
+GET /widgets HTTP/1.1
 ```
 
 Response:
@@ -350,7 +366,7 @@ method, so a request with no headers is never a 303, a 404, or a 405.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The request carries no `X-User-Id` header, or one whose value is empty.
 
 Postconditions:
@@ -370,7 +386,8 @@ for such an nginx by sending the id by hand.
 Request:
 
 ```
-$ curl -si -H 'X-Request-Id: 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59' http://127.0.0.1:3000/widgets
+GET /widgets HTTP/1.1
+X-Request-Id: 3f9c2a7be1d04c6a8b5e0f1d2c3b4a59
 ```
 
 Response:
@@ -385,7 +402,7 @@ ending in a newline.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The request carries `X-Request-Id` and no `X-User-Id` header.
 
 Postconditions:
@@ -406,15 +423,21 @@ does not exist like any other.
 Request:
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/nope
+GET /nope HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/assets/theme.css
+GET /assets/theme.css HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/mcp/
+GET /mcp/ HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 Response:
@@ -433,7 +456,7 @@ says the page was not found and carries a link to `/widgets`.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 
 Postconditions:
 
@@ -449,7 +472,9 @@ this page (`S9-mcp.md`).
 Request:
 
 ```
-$ curl -si -X DELETE -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/widgets
+DELETE /widgets HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 Response:
@@ -469,7 +494,7 @@ says the method is not allowed and carries a link to `/widgets`. `PUT` and `PATC
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 
 Postconditions:
 
@@ -508,7 +533,9 @@ entry, and the no-match line, arrived with the page.
 Request:
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/widgets
+GET /widgets HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 Response:
@@ -533,8 +560,8 @@ loads the script `/_appkit/launcher.js`.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`, started with
-  `systemd-socket-activate -E IKIGENBA_SERVICES=/tmp/services.json -l 127.0.0.1:3000 dummy`.
+- dummy is serving, started with `IKIGENBA_SERVICES=/tmp/services.json` in
+  its environment.
 - `/tmp/services.json` holds the file above and is readable by dummy.
 - The widgets are the fixture set as the process started it.
 
@@ -551,7 +578,9 @@ launcher, and the page is otherwise the same page a host serves.
 Request:
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/widgets
+GET /widgets HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 Response:
@@ -569,9 +598,7 @@ no no-match line, and it loads no `/_appkit/launcher.js`.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`, started with
-  `systemd-socket-activate -l 127.0.0.1:3000 dummy`, so `IKIGENBA_SERVICES` is
-  unset.
+- dummy is serving, started with `IKIGENBA_SERVICES` unset.
 
 Postconditions:
 
@@ -590,7 +617,9 @@ carries an icon is answered the same way.
 Request:
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/widgets
+GET /widgets HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 Response:
@@ -605,8 +634,8 @@ launcher button, no list of services, and no `/_appkit/launcher.js`.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`, started with
-  `systemd-socket-activate -E IKIGENBA_SERVICES=/tmp/services.json -l 127.0.0.1:3000 dummy`.
+- dummy is serving, started with `IKIGENBA_SERVICES=/tmp/services.json` in
+  its environment.
 - `/tmp/services.json` does not exist.
 
 Postconditions:
@@ -626,7 +655,9 @@ of `A user on a host with services opens the launcher` with `ledger`'s
 Request:
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/widgets
+GET /widgets HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 Response:
@@ -643,8 +674,8 @@ unavailable.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`, started with
-  `systemd-socket-activate -E IKIGENBA_SERVICES=/tmp/services.json -l 127.0.0.1:3000 dummy`
+- dummy is serving, started with `IKIGENBA_SERVICES=/tmp/services.json` in
+  its environment
   while `/tmp/services.json` listed `ledger` as switched off, and it has not
   been restarted since.
 - `/tmp/services.json` now lists `ledger` with `enabled` `true`.

@@ -40,9 +40,8 @@ The asset routes are routes like any other. Every request reaching dummy
 comes through the host's nginx gate, which sets `X-User-Id` and
 `X-User-Email` on each upstream request, or from a sibling app that forwards
 the ones it received (`S2`), and the identity check runs first here as on
-every route (`S3`). The curl lines below therefore carry both headers
-explicitly, and go to a dummy the developer serves with
-`systemd-socket-activate -l 127.0.0.1:3000 dummy` (`S2`). A response block
+every route (`S3`). The requests below therefore carry both headers
+explicitly, and go to a running dummy (`S2`). A response block
 shows the status line and the headers the story fixes; a header it does not
 show, `Date` say, is not fixed.
 
@@ -56,7 +55,9 @@ quote back.
 Request:
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/_appkit/theme.css
+GET /_appkit/theme.css HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 Response:
@@ -73,7 +74,7 @@ appears once.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 
 Postconditions:
 
@@ -89,7 +90,9 @@ browser applying the style asks dummy for each font it needs, under the same
 Request:
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/_appkit/<font>.woff2
+GET /_appkit/<font>.woff2 HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 Response:
@@ -106,7 +109,7 @@ appears once.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 
 Postconditions:
 
@@ -121,7 +124,9 @@ dummy for it as it does for the stylesheet.
 Request:
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/_appkit/launcher.js
+GET /_appkit/launcher.js HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 Response:
@@ -138,7 +143,7 @@ appears once.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 
 Postconditions:
 
@@ -154,7 +159,9 @@ licence.
 Request:
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/_appkit/<licence>
+GET /_appkit/<licence> HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 Response:
@@ -171,7 +178,7 @@ Status 200. The body is the text of the licence `<licence>` names.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 
 Postconditions:
 
@@ -192,23 +199,39 @@ ignored.
 Request:
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'If-None-Match: "<etag>"' http://127.0.0.1:3000/_appkit/theme.css
+GET /_appkit/theme.css HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+If-None-Match: "<etag>"
 ```
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'If-None-Match: W/"<etag>"' http://127.0.0.1:3000/_appkit/theme.css
+GET /_appkit/theme.css HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+If-None-Match: W/"<etag>"
 ```
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'If-None-Match: "other", , "<etag>"' http://127.0.0.1:3000/_appkit/theme.css
+GET /_appkit/theme.css HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+If-None-Match: "other", , "<etag>"
 ```
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'If-None-Match: *' http://127.0.0.1:3000/_appkit/theme.css
+GET /_appkit/theme.css HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+If-None-Match: *
 ```
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'If-None-Match: "<etag>"' -H 'If-Modified-Since: Thu, 01 Jan 1970 00:00:00 GMT' http://127.0.0.1:3000/_appkit/theme.css
+GET /_appkit/theme.css HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+If-None-Match: "<etag>"
+If-Modified-Since: Thu, 01 Jan 1970 00:00:00 GMT
 ```
 
 Response:
@@ -226,7 +249,7 @@ answered the same.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - `"<etag>"` is the `ETag` from a 200 for `/_appkit/theme.css` from the same
   dummy.
 - `"other"` is not that `ETag`.
@@ -246,11 +269,18 @@ recent the date it names.
 Request:
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'If-None-Match: "<old-etag>"' http://127.0.0.1:3000/_appkit/theme.css
+GET /_appkit/theme.css HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+If-None-Match: "<old-etag>"
 ```
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' -H 'If-None-Match: "<old-etag>"' -H 'If-Modified-Since: Fri, 31 Dec 9999 23:59:59 GMT' http://127.0.0.1:3000/_appkit/theme.css
+GET /_appkit/theme.css HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
+If-None-Match: "<old-etag>"
+If-Modified-Since: Fri, 31 Dec 9999 23:59:59 GMT
 ```
 
 Response:
@@ -268,7 +298,7 @@ not `"<old-etag>"`.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - `"<old-etag>"` is a tag that is not the current `ETag` of
   `/_appkit/theme.css`.
 
@@ -285,7 +315,9 @@ file without paying for its bytes.
 Request:
 
 ```
-$ curl -sI -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/_appkit/theme.css
+HEAD /_appkit/theme.css HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 Response:
@@ -303,7 +335,7 @@ this way, with its own `Content-Type`.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 
 Postconditions:
 
@@ -320,31 +352,45 @@ a missing file's path is a 404 like a `GET`, never a 405.
 Request:
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/_appkit/nope.css
+GET /_appkit/nope.css HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/_appkit/
+GET /_appkit/ HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/_appkit/banner.html
+GET /_appkit/banner.html HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/_appkit/theme.css/
+GET /_appkit/theme.css/ HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/_appkit/theme.css/x
+GET /_appkit/theme.css/x HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 ```
-$ curl -si -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/_appkit/THEME.CSS
+GET /_appkit/THEME.CSS HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/_appkit/nope.css
+POST /_appkit/nope.css HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 Response:
@@ -357,7 +403,7 @@ Status 404. No story fixes the body or any header of this response.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 
 Postconditions:
 
@@ -372,7 +418,9 @@ a 404. `Allow` names the two methods a served file takes.
 Request:
 
 ```
-$ curl -si -X POST -H 'X-User-Id: u_7f3a9c21' -H 'X-User-Email: mg@example.com' http://127.0.0.1:3000/_appkit/theme.css
+POST /_appkit/theme.css HTTP/1.1
+X-User-Id: u_7f3a9c21
+X-User-Email: mg@example.com
 ```
 
 Response:
@@ -388,7 +436,7 @@ and `HEAD` are refused the same way, on every served file.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 
 Postconditions:
 
@@ -405,7 +453,7 @@ dummy looks at the path or the method, on the asset routes as on every other
 Request:
 
 ```
-$ curl -si http://127.0.0.1:3000/_appkit/theme.css
+GET /_appkit/theme.css HTTP/1.1
 ```
 
 Response:
@@ -422,7 +470,7 @@ body.
 
 Preconditions:
 
-- dummy is serving on `127.0.0.1:3000`.
+- dummy is serving.
 - The request carries no `X-User-Id` header.
 
 Postconditions:
