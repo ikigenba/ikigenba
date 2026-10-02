@@ -77,8 +77,9 @@ two constructors are called in `main` and nowhere else, once each, at start.
 That is the read of `IKIGENBA_SERVICES` the serve story describes ("dummy
 reads the variable once, when it starts"): two constructors read it in the
 same instant, and since neither can fail on its account, the variable can
-never stop dummy starting. `mcp.NewServer` panics only on an empty name, and
-dummy's name is the constant `panel.ServiceName`.
+never stop dummy starting. `mcp.NewServer` panics only on an empty name or a
+nil `Telemetry`; dummy's name is the constant `panel.ServiceName`, and its
+`Telemetry` is the writer `main` builds below, never nil.
 
 `main` builds:
 
