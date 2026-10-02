@@ -1,5 +1,5 @@
 /* Ikigenba — the signature style.
-   Copied from design/ikigenba/theme.css at commit c8a2cf9. The design lab's
+   Copied from design/ikigenba/theme.css at commit a465a8c. The design lab's
    Google Fonts import is replaced by the @font-face rules below, which load
    the font files beside this stylesheet: Inter 4.1 (InterVariable.woff2,
    InterVariable-Italic.woff2; opsz 14..32, wght 100..900) and JetBrains Mono
@@ -92,7 +92,10 @@
 /* ------------------------------------------------------------------ base */
 *, *::before, *::after { box-sizing: border-box; }
 
+/* The scrollbar's room is always kept, so a page that scrolls is laid out
+   at the same width as one that doesn't. */
 html {
+  scrollbar-gutter: stable;
   font-family: var(--font);
   font-size: var(--text);
   line-height: 1.5;
