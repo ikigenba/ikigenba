@@ -4,15 +4,16 @@ The serve path: what happens between `cli.Run` being called with no arguments
 and the process being gone, and the run-time skeleton around the HTTP
 handlers. `D01-layout-and-run-seam` declares the names this design behaves
 through: `cli.Process` with its `LookupEnv`, `Pid`, `Unsetenv`, `Inherit`,
-`Now`, `Rand`, `OIDCIssuer`, `DBSource` and `Banner`, `cli.Run`, `server.Serve`,
+`Now`, `Rand`, `OIDCIssuer`, `DBSource`, `Banner` and `Sink`, `cli.Run`, `server.Serve`,
 `server.DrainError`, and `*server.Server` as a handler. `D02-cli` decides that
 an empty `Args` means serve and that nothing else touches the environment.
 This design says how `Run` reads the Google settings, the drain deadline and
 the two optional origins, takes the socket the host passes in, opens the store, builds the server,
-tells systemd it is ready and hands off to `Serve`; how `Serve` treats the
+tells systemd it is ready, records that it started, hands off to `Serve`,
+and records that it is stopping; how `Serve` treats the
 listener it is handed; how the server divides requests between appkit's
-shared files and its own routes; and the one line the server writes for a
-request that is trouble. It does not design any endpoint's HTTP contract
+shared files and its own routes; and the trail auth records, and the little
+it writes to stderr, while it serves. It does not design any endpoint's HTTP contract
 (D05/D06/D07, and D08 for appkit's shared files under `/_appkit/`), the
 store's internals (D04), or the manifest and CLI surface (D02).
 
@@ -76,9 +77,9 @@ is a closed system: auth trusts `X-Request-Id` as nginx sets it — on every
 request it forwards to auth and on every `/check` subrequest, overwriting
 whatever a client sent — and trusts a sibling that calls auth directly to have
 copied it from the request it is serving. auth decides identity itself, from
-the session cookie or a token, and calls no sibling. A healthy auth writes
-nothing; server-side trouble gets one line on stderr naming the request by its
-`X-Request-Id`, below.
+the session cookie or a token, and calls no sibling. Every request auth
+serves is recorded in the trail under that request id, and stderr holds only
+trouble, below.
 
 ## Configuration and taking the socket
 
@@ -161,15 +162,17 @@ struct carries every process dependency the handlers need: the opened store,
 the Google client (its surface is D05's; `google.NewClient` does no I/O and
 cannot fail, so building it has no failure path), the clock, the random
 source from which handlers mint values such as the PKCE verifier, the
-diagnostic stream to which handlers write their lines, the workspace
+telemetry writer through which the server records every event, the workspace
 domain, the public origin and the callback origin (each the variable's value,
 or empty when it is unset, so an empty field means "as on a host"), and, last,
 the banner source `Process.Banner` carries. `Run` never
 calls the banner source itself: only the handlers do, once for each page
 they draw with the banner (D05, D07), so the services file can neither delay
 nor fail a start, and a start that is refused never reads it. The Google credentials are not repeated here; the Google client
-already holds them. The server side names the random source and diagnostic
-stream by their `io` interfaces, never by `cli.Process`. That struct is the whole of what the handlers need;
+already holds them. The server side names the random source by its `io` interface and the
+writer as appkit's `*telemetry.Writer`, never by `cli.Process`; it has no
+diagnostic stream of its own, because nothing it does is trouble that belongs
+on stderr. That struct is the whole of what the handlers need;
 D05/D06/D07/D08 attach observable HTTP behavior to this server, not new
 construction parameters.
 
@@ -182,6 +185,14 @@ otherwise wait out its start timeout — so it is `auth: ` and the error, exit
 1, and `Serve` is never called. A test learns that auth is up the way systemd
 does, by binding a datagram socket, naming it in `NOTIFY_SOCKET`, and waiting
 for `READY=1`.
+
+Once ready, `Run` records `service.started`, with auth's version, as the
+first event of the trail; it is the `Ready` of the one `telemetry.Writer`
+`Run` builds (`D01-layout-and-run-seam`, "The trail"), whose sink is
+`Process.Sink`. A start that is refused, or that fails before `Serve` is
+called — a usage error, a descriptor that is not a listener, a database that
+will not open, a `READY=1` that cannot be sent — records no event at all, and
+hands nothing to the sink.
 
 ## Serving and stopping
 
@@ -211,6 +222,23 @@ unit's stop timeout and is never killed by systemd mid-write; keeping
 `DRAIN_SECONDS` below that timeout is opsctl's to enforce. `Run` never passes
 a drain that is not positive, and `Serve`'s behavior for one is not contract.
 
+The trail closes inside the same drain window. When `Serve` returns nil, every
+request auth accepted has finished and recorded its `request.finished`, so
+`Run` then records `service.stopping`, the last event, with the reason the
+context's cancellation cause gives (`SIGTERM` or `SIGINT` from `main`), and
+waits for the writer to deliver what it holds — but only until `drain` has
+elapsed since the context was done; whatever is still undelivered then goes to
+stderr as undelivered events, and `Run` returns `0` all the same. When `Serve`
+returns a `*DrainError`, the window has already closed: `Run` does not wait to
+deliver `service.stopping`, which goes to stderr after any other event still
+undelivered, and only then writes the `stopped with` line. A cut-off request
+whose handler ends later records its `request.finished` after the writer has
+shut down, so it never reaches the trail; it appears as one more undelivered
+line, if the process is still running to write it. When `Serve` fails while
+the context is not done, `Run` records `service.stopping` with the reason
+`failed`, waits for delivery for at most `drain`, and then writes the failure's
+line and exits 1.
+
 `Serve` is silent in its own right. Go's `net/http` documents at
 `Server.ErrorLog` that, when that field is nil, errors accepting connections
 and unexpected behaviour from handlers are logged through the `log` package's
@@ -226,7 +254,21 @@ could cut a response short inside the drain.
 
 ## Routing
 
-The server divides every request by its path before anything else. A path
+Every request the server receives, whatever its path, first passes through
+appkit's request middleware, `telemetry.Middleware` with the server's writer,
+the outermost layer of auth's handler tree: auth's own pages, `/check`, `/me`,
+the shared files and a path no route defines alike. It records
+`request.started` when the request arrives and `request.finished`, with the
+status auth answered and how long it took, once it has answered, both under
+the request's `X-Request-Id` and the user its `X-User-Id` names; a request
+without an id is given one, 32 lowercase hexadecimal digits minted from the
+writer's random source, which is `Process.Rand`. Every other event auth
+records for the request — a check event (D06), a sign-in event (D05), a token
+event (D07) — comes between the two and carries the same request id. The
+middleware is inside the `*Server`, so a test that drives `server.New`'s
+handler directly sees the same events a test that drives `Run` does.
+
+Inside it, the server divides every request by its path before anything else. A path
 beginning with `/_appkit/`, `page.StaticPrefix`, is handed unchanged to
 the handler `page.Static()` returns, ahead of every route of auth's own:
 that handler compares the whole `URL.Path` itself, so nothing is stripped, and
@@ -238,25 +280,30 @@ own routes. `/assets/` is no longer special: the style files auth used to
 serve there are appkit's now, under `/_appkit/`, and a path under `/assets/`
 is a path no route defines, answered 404 like any other.
 
-## What auth writes
+## What auth records and writes
 
-A healthy run is silent from start to finish: no startup message, no request
-log, nothing on either stream when it stops, so that under systemd the
-journal holds only trouble. The one thing that reaches `Stderr` while auth
-serves is the server's line for a request that is trouble, written through
-the `Config.Stderr` writer `Run` hands the server. A request is trouble when
-auth answers it with a 5xx, any status from 500 through 599. auth's own are a
-500 — its own database failed the read or write the request needs, or auth
-otherwise could not do its part — and a 502, when Google fails a sign-in (D05).
-Each such request gets exactly one line,
-`auth: request <id>: <reason>`, where `<id>` is the request's `X-Request-Id`
-so that a line in the journal can be matched to nginx's log of the same
-request, `-` when the request carries none, and `<reason>` is the underlying
-error. auth does not check the id's shape; it trusts nginx and its siblings.
-Every other answer, 4xx included, writes nothing: a 4xx is the caller's to
-fix, not trouble.
+auth's trail is its record of what it did; its stderr holds only trouble, so
+that under systemd the journal shows nothing else. Trouble is of two kinds.
+One is a condition auth cannot continue from: a start it refuses, a database
+it cannot open, a `READY=1` it cannot send, a `Serve` that fails or a drain
+that cuts requests off; each has its own diagnostic line, stated with its
+case. The other is an event the writer could not deliver — the telemetry
+service is missing from the services file or not accepting, it rejected the
+event, the queue was full, or the drain window closed first — which appkit's
+writer writes as one line, `auth: undelivered event: ` and the event's JSON
+(and, for an event auth formed wrongly, a bug, `auth: malformed event: `).
+Nothing else reaches `Stderr`: no startup message, no request log, nothing
+when auth stops cleanly. Telemetry being unreachable is never a reason to
+stop: auth answers every request the same, and exits as it otherwise would.
 
-A store failure is the same trouble on every route: whatever the route, a
+A request auth answers is not trouble, whatever its status. auth's own 5xx
+are a 500 — its own database failed the read or write the request needs, or
+auth otherwise could not do its part — and a 502, when Google fails a sign-in
+(D05). Each is a handled failure: it writes nothing to stderr, and the
+request's `request.finished` records the status, under the request id that
+ties it to nginx's log of the same request.
+
+A store failure is the same failure on every route: whatever the route, a
 store operation that fails with anything other than `store.ErrNotFound` —
 which each route already answers as its own 400, 401, 403 or 404 — is
 answered 500 with a single plain-text line saying the server failed, and no
@@ -265,13 +312,13 @@ identity headers. So nginx, which treats any `/check` answer other than 200,
 the app.
 
 `Run` makes sure no two writes to `Stderr` are ever in progress at once, the
-server's included — requests are concurrent, a handler cut off by the drain
-may still be running when `Run` reports the overrun, and a test's `Stderr` is
-a `bytes.Buffer` that the race detector watches.
+writer's included — the writer's sender runs beside the requests, an event
+emitted after the drain may be written while `Run` reports the overrun, and a
+test's `Stderr` is a `bytes.Buffer` that the race detector watches.
 
 ## REQUIREMENTS
 
-- R-SMSU-BWZ2: The `internal/server` package MUST export `type Config struct { Store *store.Store; Google *google.Client; Now func() time.Time; Rand io.Reader; Stderr io.Writer; WorkspaceDomain string; PublicURL string; CallbackURL string; Banner func(u page.User) page.Banner }`, with exactly those fields in that order, where `page` is the package `github.com/ikigenba/ikigenba/appkit/page`.
+- R-B3GY-XRZO: The `internal/server` package MUST export `type Config struct { Store *store.Store; Google *google.Client; Now func() time.Time; Rand io.Reader; Telemetry *telemetry.Writer; WorkspaceDomain string; PublicURL string; CallbackURL string; Banner func(u page.User) page.Banner }`, with exactly those fields in that order, where `page` is the package `github.com/ikigenba/ikigenba/appkit/page` and `telemetry` is the package `github.com/ikigenba/ikigenba/appkit/telemetry`, and `Telemetry` is the writer through which the `*Server` records every event.
 - R-KWD9-PBZI: The `internal/server` package MUST export `type Server` and `func New(cfg Config) *Server`.
 - R-SO0Q-POPR: `IKIGENBA_PUBLIC_URL`, auth's own public origin, MUST be an optional environment variable of auth's serve path: `Run` reads it through `LookupEnv` when `Args` is empty, and its being unset never stops `Run` from serving.
 - R-SP8N-3GGG: `IKIGENBA_CALLBACK_URL`, the origin Google returns a browser to, MUST be an optional environment variable of auth's serve path: `Run` reads it through `LookupEnv` when `Args` is empty, and its being unset never stops `Run` from serving.
@@ -301,7 +348,7 @@ a `bytes.Buffer` that the race detector watches.
 - R-MXRW-IR93: `Run` MUST call `store.Open(p.DBSource, p.Rand)` only after it has taken file descriptor 3 as a listener, exactly once, and before it sends anything to a notification socket or calls `server.Serve`.
 - R-NII7-0UUW: When `store.Open` returns without error, `Run` MUST proceed identically whether or not the database source pre-existed, relying on D04's `store.Open` to have created the schema when the source was absent.
 - R-MYZS-WIZS: When `store.Open` returns an error, `Run` MUST write exactly `"auth: cannot open database " + p.DBSource + ": " + err.Error() + "\n"` to `Stderr`, where `err` is that error, write nothing to `Stdout`, send nothing to a notification socket, accept no connection on the listener it took, and return `1`.
-- R-T07Q-JE4P: When `store.Open` succeeds, `Run` MUST construct the Google client via `google.NewClient` with the values of `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `WORKSPACE_DOMAIN`, and `p.OIDCIssuer`, construct the server via `server.New` with a `server.Config` whose `Store` is the opened `*store.Store`, `Google` is that client, `Now` is `p.Now`, `Rand` is `p.Rand`, `Stderr` is a writer `w` each of whose `Write` calls results in exactly one call to `p.Stderr.Write` with the same bytes, `WorkspaceDomain` is the value of `WORKSPACE_DOMAIN`, `PublicURL` is the value of `IKIGENBA_PUBLIC_URL` and the empty string when it is unset, `CallbackURL` is the value of `IKIGENBA_CALLBACK_URL` and the empty string when it is unset, and `Banner` is `p.Banner`, and, unless notifying fails, call `server.Serve` exactly once with `Run`'s own `ctx`, the listener it took, that `*server.Server` as the handler, and the `drain` of R-MP8L-UD28, without contacting the issuer `p.OIDCIssuer` names before a request needs it. This wiring MUST be observable through the served listener: with `p.OIDCIssuer` set to a reachable loopback OIDC issuer, `p.Rand` a deterministic reader, and `p.Now` a fixed clock, a `GET /login/google` served by `Run` MUST return `302` whose `Location` is addressed to that issuer's discovered `authorization_endpoint` and whose `state` and `code_challenge` are derived from `p.Rand`; the sign-in handler's own contract is D05's (R-TTTA-C8HY, R-TB6T-ZBSY), not this requirement's.
+- R-B4OV-BJQD: When `store.Open` succeeds, `Run` MUST construct the Google client via `google.NewClient` with the values of `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `WORKSPACE_DOMAIN`, and `p.OIDCIssuer`, construct the server via `server.New` with a `server.Config` whose `Store` is the opened `*store.Store`, `Google` is that client, `Now` is `p.Now`, `Rand` is `p.Rand`, `Telemetry` is the one `*telemetry.Writer` through which `Run` records every event (R-BEG2-DPNX), `WorkspaceDomain` is the value of `WORKSPACE_DOMAIN`, `PublicURL` is the value of `IKIGENBA_PUBLIC_URL` and the empty string when it is unset, `CallbackURL` is the value of `IKIGENBA_CALLBACK_URL` and the empty string when it is unset, and `Banner` is `p.Banner`, and, unless notifying fails, call `server.Serve` exactly once with `Run`'s own `ctx`, the listener it took, that `*server.Server` as the handler, and the `drain` of R-MP8L-UD28, without contacting the issuer `p.OIDCIssuer` names before a request needs it. This wiring MUST be observable through the served listener: with `p.OIDCIssuer` set to a reachable loopback OIDC issuer, `p.Rand` a deterministic reader, and `p.Now` a fixed clock, a `GET /login/google` served by `Run` MUST return `302` whose `Location` is addressed to that issuer's discovered `authorization_endpoint` and whose `state` and `code_challenge` are derived from `p.Rand`; the sign-in handler's own contract is D05's, not this requirement's.
 - R-GOJY-KK5B: When `Run` serves with `IKIGENBA_CALLBACK_URL` set to an origin value `o` (R-GDKV-4MH2) and `p.OIDCIssuer` set to a reachable loopback OIDC issuer, a `GET /login/google` served by `Run` MUST respond `302` whose `Location` carries a `redirect_uri` query parameter whose decoded value is `o` followed by `/login/google/callback`, whatever `Host` the request carries.
 - R-GPRU-YBW0: When `Run` serves with `IKIGENBA_PUBLIC_URL` set to an origin value `o` (R-GDKV-4MH2), a `POST /logout` served by `Run` whose `Host` is `o` with its scheme and `://` removed, which carries the `SessionCookieName` cookie of a live session and exactly one `Origin` header field whose value is `o`, MUST respond `302`.
 - R-T4RU-LM2C: When no request reaches the handler `Run` passes to `server.Serve`, `Run` MUST return having made no call to `p.Banner`, whatever it returns.
@@ -309,13 +356,23 @@ a `bytes.Buffer` that the race detector watches.
 - R-N3VE-FLYK: When `LookupEnv("NOTIFY_SOCKET")` returns `false` or the empty string, `Run` MUST send no datagram and MUST serve as it otherwise would.
 - R-N53A-TDP9: When sending `READY=1` fails with an error `err`, `Run` MUST write exactly `"auth: " + err.Error() + "\n"` to `Stderr`, write nothing to `Stdout`, accept no connection on the listener it took, not call `server.Serve`, and return `1`.
 - R-N6B7-75FY: A `Run` that calls `server.Serve` and to which `Serve` returns nil MUST return `0`.
-- R-T1FM-X5VE: A `Run` that calls `server.Serve` MUST write nothing to `Stdout`, and MUST write nothing to `Stderr` other than what the server writes through the writer of R-T07Q-JE4P and, when `Serve` returns a non-nil error, the one line R-N8QZ-YOXC states.
+- R-B74O-337R: A `Run` that calls `server.Serve` MUST write nothing to `Stdout`, and MUST write nothing to `Stderr` other than lines each of which begins `auth: undelivered event: ` or `auth: malformed event: ` and holds one event it recorded, and, when `Serve` returns a non-nil error, the one line R-N8QZ-YOXC states.
 - R-N8QZ-YOXC: When `server.Serve` returns a non-nil error to `Run`, `Run` MUST write to `Stderr` exactly `auth: `, that error's `Error()` text, and a newline, MUST write nothing to `Stdout`, and MUST return `1`.
-- R-T2NJ-AXM3: `Run` MUST NOT let two calls to `Stderr.Write` be in progress at the same time, those made through the writer of R-T07Q-JE4P included, so that a `Stderr` that is not safe for concurrent use is never written concurrently.
+- R-BPF5-TNC6: When the handler `Run` passes to `server.Serve` answers a request with a status from `500` through `599`, `Run` MUST write nothing to `Stderr` for that request, and the `request.finished` it records for that request MUST carry that status.
+- R-BEG2-DPNX: When `Run` serves, every event it records MUST be handed to `p.Sink`'s `Deliver`, unless it is written to `Stderr` as an undelivered event, as an `Event` whose `Service` is `auth` and whose `Time` is a value `p.Now` returned while the event was recorded, converted to UTC and truncated to a whole microsecond.
+- R-BFNY-RHEM: When `Run` serves and `p.Sink`'s `Deliver` returns, for every event, an error for which `errors.Is(err, telemetry.ErrRejected)` is true, `Run` MUST write to `Stderr`, for each event it records, exactly one line, in a single call to `Stderr.Write`: `auth: undelivered event: `, the bytes the event's `MarshalJSON` returns, and a newline, those lines coming in the order the events were recorded; and `Run` MUST otherwise answer every request and return exactly as it does when every delivery succeeds.
+- R-BGVV-595B: When `Run` serves with a `p.Rand` that yields only zero bytes, every event `Run` records for a request that carries no `X-Request-Id` header MUST carry the request id `00000000000000000000000000000000`, 32 `0`s.
+- R-BI3R-J0W0: When `Run` calls `server.Serve`, the first event it records MUST be one named `service.started`, with an empty request id, an empty user, and attributes exactly `version`, whose value is the value of `Version` from `internal/version`, recorded only after `Run` has sent the `READY=1` datagram R-N1FL-O2H6 requires, when it requires one, and before `Run` records any event for a request.
+- R-BJBN-WSMP: When `Run` returns without having called `server.Serve` — whatever `Args` holds, and whether it returns after a command, a usage error, a failure to take file descriptor 3, a failure of `store.Open`, or a failure to send `READY=1` — it MUST NOT have called `p.Sink`'s `Deliver`, and MUST NOT have written to `Stderr` any line beginning `auth: undelivered event: ` or `auth: malformed event: `.
+- R-BKJK-AKDE: When `ctx` is done and `server.Serve` returns nil to `Run`, `Run` MUST record an event named `service.stopping`, with an empty request id, an empty user, and attributes exactly `reason`, whose value is the `Error()` text of `context.Cause(ctx)`, after every other event it records, the `request.finished` of every request served included; and `Run` MUST NOT return before every event it recorded has been handed to `p.Sink`'s `Deliver` and that call has returned, or the event has been written to `Stderr` as an undelivered event.
+- R-BLRG-OC43: Once `ctx` is done and `server.Serve` has returned nil, `Run` MUST NOT wait for a `Deliver` call to return, or for an event to be delivered, beyond the moment `drain` (R-MP8L-UD28) has elapsed since `ctx` was done: given a `p.Sink` whose `Deliver` returns only once its context is done, `Run` MUST return `0` once that moment has passed, having written to `Stderr`, in the form R-BFNY-RHEM states, the line of every event it recorded and did not deliver, `service.stopping` included.
+- R-DMI7-LS1V: When `server.Serve` returns a `*server.DrainError` to `Run`, `Run` MUST NOT hand `service.stopping`, or any event recorded after `Serve` returned, to `p.Sink`'s `Deliver`; it MUST write to `Stderr`, in the form R-BFNY-RHEM states and in the order recorded, the line of every event it recorded before `Serve` returned and did not deliver, then the line of `service.stopping`, with its `reason` as R-BKJK-AKDE states, and MUST write the line R-N8QZ-YOXC states after the line of `service.stopping`; where the line of an event recorded after `Serve` returned falls among these lines is not fixed.
+- R-BO79-FVLH: When `server.Serve` returns a non-nil error to `Run` while `ctx` is not done, `Run` MUST record an event named `service.stopping`, with an empty request id, an empty user, and attributes exactly `reason`, whose value is `failed`, after every other event it records, and MUST write the line R-N8QZ-YOXC states only after every event it recorded has been handed to `p.Sink`'s `Deliver` and that call has returned, or the event has been written to `Stderr` as an undelivered event, waiting for delivery no longer than `drain` after `Serve` returned.
+- R-B8CK-GUYG: `Run` MUST NOT let two calls to `Stderr.Write` be in progress at the same time, those that write the lines R-BFNY-RHEM and R-B74O-337R state included, whatever goroutine makes them, so that a `Stderr` that is not safe for concurrent use is never written concurrently.
 - R-NI60-D0O6: When `Inherit` is nil and file descriptor 3 is a listening socket that another process also holds, a connection made, after `Run` returns, to the address that socket was listening on when `Run` took it MUST still be accepted into that socket's queue for the other process.
 - R-2AOL-W6YZ: The `*server.Server` returned by `server.New` MUST serve the HTTP routes whose contracts D05, D06, D07, and D08 define.
-- R-UR0L-ZVDJ: The `*Server` returned by `New` MUST mint every random value the `*Server` mints itself (including the PKCE verifier D05 requires of `GET /login/google`) by reading `cfg.Rand`, MUST write every diagnostic its handlers emit (including the token-exchange error D05 requires of `GET /login/google/callback`) to `cfg.Stderr`, and MUST NOT read a global random source or write to a global output stream; given a `Config` whose `Rand` is a deterministic reader and whose `Stderr` is an in-memory buffer, the values minted are a function of the bytes that reader yields and every such diagnostic appears in that buffer.
-- R-CCQE-EHNR: When a store operation the `*Server` calls while handling a request on any route D05, D06, or D07 defines returns an error that does not satisfy `errors.Is(err, store.ErrNotFound)`, the `*Server` MUST answer that request with status `500`, `Content-Type: text/plain; charset=utf-8`, a body that is a single line of plain text, and neither `HeaderUserID` nor `HeaderUserEmail` set, whatever response another requirement states for that request, except that a `GET /login/google` already being answered `502` under R-XXPJ-ZJU1 stays `502` when the `ConsumeLoginState` it makes to discard its login state fails.
-- R-XV9R-80CN: For every request the `*Server` answers with a status from `500` through `599`, it MUST write exactly `"auth: request " + id + ": " + reason + "\n"` to `cfg.Stderr` in a single call to `cfg.Stderr.Write`, where `id` is the value `r.Header.Get("X-Request-Id")` returns when that value is non-empty and `-` when it is empty, and `reason` is the `Error()` text of the error that caused that status.
-- R-XWHN-LS3C: The `*Server` MUST write nothing to `cfg.Stderr` for a request it answers with a status outside `500` through `599`, and MUST write exactly one line to `cfg.Stderr` for each request it answers with a status from `500` through `599`.
+- R-B5WR-PBH2: The `*Server` returned by `New` MUST mint every random value the `*Server` mints itself (including the PKCE verifier D05 requires of `GET /login/google`) by reading `cfg.Rand`, and MUST NOT read a global random source or write to a global output stream or through the `log` package's default logger; given a `Config` whose `Rand` is a deterministic reader, the values minted are a function of the bytes that reader yields.
+- R-BC09-M66J: For every request the `*Server` returned by `server.New` serves, whatever its method and path — an appkit path, a route D05, D06, or D07 defines, and a path no route defines included — it MUST record through `cfg.Telemetry` exactly one event named `request.started`, before every other event it records for that request, whose attributes are exactly `method`, the request's method, and `path`, its `URL.Path`; and exactly one event named `request.finished`, after every other event it records for that request, whose attributes are exactly `status`, the status code of the response the `*Server` sent, and `duration_us`; both MUST carry as their request id the request's first `X-Request-Id` value when that is present and not empty, and otherwise one id of 32 lowercase hexadecimal digits that the `*Server` minted for that request, and as their user the request's first `X-User-Id` value, empty when absent.
+- R-BD85-ZXX8: Every event other than `request.started` and `request.finished` that the `*Server` records while answering a request MUST carry the request id of that request's `request.started`, and MUST be recorded after that `request.started` and before that request's `request.finished`.
+- R-B9KG-UMP5: When a store operation the `*Server` calls while handling a request on any route D05, D06, or D07 defines returns an error that does not satisfy `errors.Is(err, store.ErrNotFound)`, the `*Server` MUST answer that request with status `500`, `Content-Type: text/plain; charset=utf-8`, a body that is a single line of plain text, and neither `HeaderUserID` nor `HeaderUserEmail` set, whatever response another requirement states for that request, except that a `GET /login/google` already being answered `502` because the endpoints of the issuer `cfg.Google` names could not be discovered (D05) stays `502` when the `ConsumeLoginState` it makes to discard its login state fails.
 - R-TQGG-VYEV: The `*Server` returned by `server.New` MUST answer with status `404`, whatever its method, every request whose `URL.Path` consists of `/assets/` followed by a non-empty name that contains no `/` and is neither `.` nor `..`, `/assets/theme.css` included.

@@ -34,7 +34,10 @@ unless `Args` is empty. The one environment read that happens before `Run` is
 appkit's: `main` builds the banner kit with `page.New`, which captures
 `IKIGENBA_SERVICES`, before it calls `Run` whatever the arguments (D01), and
 that read can neither fail nor change a command's outcome; `Run` never calls
-the banner source for a command (D03).
+the banner source for a command (D03). A command serves nothing, so it records
+no event either: the trail is what auth records while it serves, and `Run`
+hands nothing to `Process.Sink` for a command or a usage error (D03,
+R-BJBN-WSMP).
 
 The program follows the repository's stream and exit conventions: the product
 of a command goes to stdout, a diagnostic goes to stderr with a first line that

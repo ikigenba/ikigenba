@@ -14,17 +14,24 @@ encoding (D04).
 
 ## The one platform dependency
 
-auth depends on `github.com/ikigenba/ikigenba/appkit/page`, the banner kit:
-the `page` package of appkit, the platform's shared library, beside auth's
-Google and SQLite libraries. appkit is a sibling sub-project, so auth reaches
-it only through its published packages, and of them it imports only `page`,
-whose exported surface is `StaticPrefix = "/_appkit/"`, `Static()
-http.Handler`, `Templates() *template.Template`, `New(service, version string)
-*Kit`, `(*Kit).Banner(User) Banner`, and the plain data types `User`,
-`Banner` and `Service`. appkit's other packages are not auth's: auth is the
-identity provider, so no identity gate stands in front of it (D08), and its
-own code never reads the services file, which `page` reads through appkit's
-`services` package. appkit owns
+auth depends on appkit, the platform's shared library, beside auth's Google
+and SQLite libraries, and on three of its packages. The first is
+`github.com/ikigenba/ikigenba/appkit/page`, the banner kit, whose exported
+surface is `StaticPrefix = "/_appkit/"`, `Static() http.Handler`,
+`Templates() *template.Template`, `New(service, version string) *Kit`,
+`(*Kit).Banner(User) Banner`, and the plain data types `User`, `Banner` and
+`Service`. The second is `github.com/ikigenba/ikigenba/appkit/telemetry`, the
+suite's event trail: the `Writer` auth records its events through, the
+`Sink` they are delivered to, the request middleware that records every
+request, and, for tests, the capturing sink. The third is
+`github.com/ikigenba/ikigenba/appkit/identity`, and of it auth uses only the
+`Caller` a context carries (`NewContext`, `FromContext`), so that an event it
+records while answering a request carries that request's id and the user the
+event is about (D05, D06, D07). appkit is a sibling sub-project, so auth
+reaches it only through those published packages. `identity.Require` is not
+auth's: auth is the identity provider, so no identity gate stands in front of
+it (D08), and its own code never reads the services file, which `page` and
+telemetry's socket sink read through appkit's `services` package. appkit owns
 the banner's markup, the launcher's markup and script, the page footer's
 markup, the stylesheet, the fonts and their licences; auth authors none of
 them and carries no copy.
@@ -101,7 +108,8 @@ remove a variable from the environment, the process's own id, the two output
 streams, and a way to turn an inherited file descriptor into a listener. `Run`
 also takes a context, and its return value is the process exit code. `main`
 in `cmd/auth` is thin wiring — it builds the appkit kit, fills the `Process`
-from the real process, cancels the context on `SIGTERM` or `SIGINT`, calls
+from the real process, cancels the context on `SIGTERM` or `SIGINT` with the
+signal's name, `SIGTERM` or `SIGINT`, as the cancellation's cause, calls
 `Run`, and exits with what it returned. A test fills the `Process` with
 buffers, a map, a pid of its choosing, a listener it made itself and a banner
 source of its own, and cancels the context itself; `Run`'s behaviour when it
@@ -115,7 +123,8 @@ clock, mints random ids and secrets, talks to Google, and opens a database; so
 `Process` also carries a clock, a randomness source, the Google OIDC issuer
 location (so a loopback fake stands in for Google offline), and the database
 source (so a temporary or in-memory database stands in for `state/auth.db`),
-and, last, the banner source described above.
+then the banner source described above, and, last, the telemetry sink
+described below.
 
 Socket activation hands the process a listening socket as file descriptor 3,
 and the one thing below the seam that touches a real descriptor is turning
@@ -135,10 +144,10 @@ waits for, so an in-process test and the host learn readiness the same way.
 There is no listen factory and no readiness callback in the seam: auth binds
 nothing, so there is no bind to fake, and the datagram is the readiness
 signal. auth opens no listening socket of its own, which is how "auth
-listens on no other socket" is kept: the seam's `Process` (R-4WVH-WX70)
+listens on no other socket" is kept: the seam's `Process` (R-ASHV-HUBF)
 carries exactly one way to come by a listener, `Inherit`, and nothing that
 binds one, and `Run` takes every input and produces every output through that
-`Process` (R-SRCY-E4WP). No requirement asserts the absence of other sockets in a running
+`Process` (R-ATPR-VM24). No requirement asserts the absence of other sockets in a running
 process, because only the process's `/proc` entries could show it and the
 tests read nothing there.
 
@@ -167,20 +176,49 @@ change in behaviour.
 The version is a value: `internal/version` exports it as a `var` of shape
 `v<semver>`.
 
+## The trail
+
+auth records what it does as a trail of events, through one
+`telemetry.Writer` that `Run` builds once it is about to serve (D03): its
+service is `auth`, its version the `Version` of `internal/version`, the same
+value `--version` prints and the footer shows, its clock `Process.Now`, its
+random source `Process.Rand`, and its diagnostic stream `Process.Stderr`. The
+events go to a `telemetry.Sink`, and the sink is the last thing the seam
+carries, `Process.Sink`. `main` passes the socket sink appkit's
+`telemetry.NewSocketSink` returns, which on every delivery reads the services
+file `IKIGENBA_SERVICES` names, finds the entry named `telemetry`, and posts
+the event to `/ingest` on that entry's socket; that read of the real
+environment happens inside a value `main` made, the way the banner source
+reads the services file, so nothing below `main` reads the environment for
+it. A test passes `&telemetry.Capture{}`, which records every event it is
+handed, and reads it back once `Run` has returned; or a sink of its own that
+rejects or holds events, to see what auth does when telemetry will not take
+them. A nil `Sink` is not contract, so a test that serves supplies one.
+
+The reason auth records when it stops is the name of the signal that stopped
+it. `main` learns the signal and `Run` does not, so the signal crosses the
+seam as the context's cancellation cause: `main` cancels with an error whose
+text is `SIGTERM` or `SIGINT`, and `Run` records the cause's text. A test
+that wants a particular reason cancels with a cause of its own choosing
+(`context.WithCancelCause`); one that cancels plainly gets the text of
+`context.Canceled`. No new name crosses the seam for it.
+
 ## REQUIREMENTS
 
 - R-3FKW-RNJY: The Go module path MUST be `github.com/ikigenba/ikigenba/auth`.
-- R-2B1J-WL7R: When the `auth` executable runs with no command, the three Google settings in its environment, and a listening socket passed as file descriptor 3 by the socket-activation protocol, it MUST open its database at `state/auth.db` relative to its working directory, MUST draw its pages' banner from the services file that `IKIGENBA_SERVICES` names in its environment at start, and on `SIGTERM` or `SIGINT` MUST stop, write nothing to stdout or stderr, and exit `0`.
-- R-1O20-M7FN: When the `auth` executable serves as R-2B1J-WL7R describes, every page it draws with the banner MUST end its `body` element's content, apart from trailing ASCII whitespace, with a `footer` element whose content reads `auth`, a single space, and the value of `Version` from `internal/version`.
+- R-AUXO-9DST: When the `auth` executable runs with no command, the three Google settings in its environment, a listening socket passed as file descriptor 3 by the socket-activation protocol, and `IKIGENBA_SERVICES` naming a services file whose entry named `telemetry` names a Unix socket on which an HTTP server answers every `POST /ingest` with `204`, it MUST open its database at `state/auth.db` relative to its working directory, MUST draw its pages' banner from the services file that `IKIGENBA_SERVICES` names in its environment at start, and on `SIGTERM` or `SIGINT` MUST stop, write nothing to stdout or stderr, and exit `0`.
+- R-AW5K-N5JI: When the `auth` executable serves as R-AUXO-9DST describes, every page it draws with the banner MUST end its `body` element's content, apart from trailing ASCII whitespace, with a `footer` element whose content reads `auth`, a single space, and the value of `Version` from `internal/version`.
 - R-3O47-G1QT: Package `internal/version` MUST own the release version value and export it as `Version`.
-- R-4WVH-WX70: `internal/cli` MUST export `type Process struct { Args []string; LookupEnv func(key string) (string, bool); Unsetenv func(key string) error; Pid int; Stdout io.Writer; Stderr io.Writer; Inherit func(fd uintptr) (net.Listener, error); Now func() time.Time; Rand io.Reader; OIDCIssuer string; DBSource string; Banner func(u page.User) page.Banner }`, with exactly those fields in that order, where `page` is the package `github.com/ikigenba/ikigenba/appkit/page`, `Args` excludes the program name, `Pid` is the id of the process `Run` speaks for, a nil `Unsetenv` means `Run` removes no variable, and `Banner` is the banner source from which every page auth draws with the banner is drawn.
+- R-ASHV-HUBF: `internal/cli` MUST export `type Process struct { Args []string; LookupEnv func(key string) (string, bool); Unsetenv func(key string) error; Pid int; Stdout io.Writer; Stderr io.Writer; Inherit func(fd uintptr) (net.Listener, error); Now func() time.Time; Rand io.Reader; OIDCIssuer string; DBSource string; Banner func(u page.User) page.Banner; Sink telemetry.Sink }`, with exactly those fields in that order, where `page` is the package `github.com/ikigenba/ikigenba/appkit/page` and `telemetry` is the package `github.com/ikigenba/ikigenba/appkit/telemetry`, `Args` excludes the program name, `Pid` is the id of the process `Run` speaks for, a nil `Unsetenv` means `Run` removes no variable, `Banner` is the banner source from which every page auth draws with the banner is drawn, and `Sink` is the sink to which `Run` delivers the events it records.
 - R-LUR4-A3IV: `internal/cli` MUST export `func Run(ctx context.Context, p Process) int`.
 - R-2C9G-ACYG: `internal/version` MUST export `var Version string` whose value is a leading `v` followed by a semantic version.
 - R-3WNI-4FXO: `main` MUST terminate the process with the exact integer that `cli.Run` returns as the process exit status.
 - R-3XVE-I7OD: `cli.Run` MUST return `0` on success, `1` when the server fails, and `2` on a usage error.
-- R-SRCY-E4WP: Given a `Process` whose `Stdout` and `Stderr` are in-memory buffers, `Args` an explicit slice, `LookupEnv` a fake lookup, `Unsetenv` nil or a recorder, `Pid` a value the test chose, `Inherit` a function returning a listener the test made, `Now` a fixed clock, `Rand` a deterministic reader, `OIDCIssuer` a loopback URL, `DBSource` a temporary database, and `Banner` a function the test wrote, `cli.Run` MUST take every input and produce every output through that `Process` — reading arguments only from `Args`, environment only through `LookupEnv`, every time it records or compares against stored state only through `Now`, randomness only through `Rand`, and banner data only through `Banner`, and removing environment variables only through `Unsetenv` — and MUST NOT read the real process arguments, the real process environment, the real process id, or a global random source; the drain deadline of D03 and `net/http`'s own deadlines are measured in real elapsed time and are not read through `Now`.
+- R-ATPR-VM24: Given a `Process` whose `Stdout` and `Stderr` are in-memory buffers, `Args` an explicit slice, `LookupEnv` a fake lookup, `Unsetenv` nil or a recorder, `Pid` a value the test chose, `Inherit` a function returning a listener the test made, `Now` a fixed clock, `Rand` a deterministic reader, `OIDCIssuer` a loopback URL, `DBSource` a temporary database, `Banner` a function the test wrote, and `Sink` a `*telemetry.Capture` or a sink the test wrote, `cli.Run` MUST take every input and produce every output through that `Process` — reading arguments only from `Args`, environment only through `LookupEnv`, every time it records or compares against stored state and every event's time only through `Now`, randomness, the request ids it mints included, only through `Rand`, and banner data only through `Banner`, delivering events only through `Sink`, and removing environment variables only through `Unsetenv` — and MUST NOT read the real process arguments, the real process environment, the real process id, or a global random source; the drain deadline of D03 and `net/http`'s own deadlines are measured in real elapsed time and are not read through `Now`.
 - R-M22I-KPZ1: The `internal/server` package MUST export `func Serve(ctx context.Context, ln net.Listener, h http.Handler, drain time.Duration) error`.
 - R-M3AE-YHPQ: The `internal/server` package MUST export `type DrainError struct { Unfinished int }` and `func (e *DrainError) Error() string`.
 - R-L9FH-DHDY: `*server.Server` MUST implement `http.Handler` through `func (*Server) ServeHTTP(w http.ResponseWriter, r *http.Request)`.
-- R-9ZGQ-O2GR: The `auth` executable built from `./cmd/auth` with `CGO_ENABLED=0`, run as R-2B1J-WL7R describes from a working directory that holds nothing but `state/auth.db`, a database holding a live session (no `etc/` directory, no `share/` directory, and no configuration file), with any services file `IKIGENBA_SERVICES` names kept outside that directory, MUST answer `GET /` carrying that session's `SessionCookieName` cookie with the page R-1O20-M7FN describes.
-- R-A0ON-1U7G: After the `auth` executable built from `./cmd/auth` with `CGO_ENABLED=0` has run as R-2B1J-WL7R describes and exited, from a working directory that held nothing but a `state/` directory, empty or holding a database at `state/auth.db`, with any services file `IKIGENBA_SERVICES` names kept outside that directory, that working directory MUST hold nothing but `state/`, `state/auth.db`, and, in `state/`, only files named `auth.db-journal`, `auth.db-wal`, or `auth.db-shm`.
+- R-AXDH-0XA7: The `auth` executable built from `./cmd/auth` with `CGO_ENABLED=0`, run as R-AUXO-9DST describes from a working directory that holds nothing but `state/auth.db`, a database holding a live session (no `etc/` directory, no `share/` directory, and no configuration file), with any services file `IKIGENBA_SERVICES` names and the socket its `telemetry` entry names kept outside that directory, MUST answer `GET /` carrying that session's `SessionCookieName` cookie with the page R-AW5K-N5JI describes.
+- R-AYLD-EP0W: After the `auth` executable built from `./cmd/auth` with `CGO_ENABLED=0` has run as R-AUXO-9DST describes and exited, from a working directory that held nothing but a `state/` directory, empty or holding a database at `state/auth.db`, with any services file `IKIGENBA_SERVICES` names and the socket its `telemetry` entry names kept outside that directory, that working directory MUST hold nothing but `state/`, `state/auth.db`, and, in `state/`, only files named `auth.db-journal`, `auth.db-wal`, or `auth.db-shm`.
+- R-AZT9-SGRL: When the `auth` executable serves as R-AUXO-9DST describes, the HTTP server on the socket its `telemetry` entry names MUST receive, as the body of a `POST /ingest`, an event whose `event` is `service.started`, whose `service` is `auth`, whose `request_id` and `user` are empty, and whose `attrs` hold exactly `version`, the value of `Version` from `internal/version`, before any other event; and, before the process exits on `SIGTERM` or `SIGINT`, an event whose `event` is `service.stopping`, whose `request_id` and `user` are empty, and whose `attrs` hold exactly `reason`, `SIGTERM` or `SIGINT` respectively, after every other event.
+- R-B116-68IA: When the `auth` executable serves as R-AUXO-9DST describes and, while it serves, its services file is replaced by one whose `telemetry` entry names a second Unix socket on which an HTTP server answers every `POST /ingest` with `204`, the events of a request it receives after the replacement, and its `service.stopping`, MUST be received by the server on the second socket and not by the server on the first, without the process being restarted.

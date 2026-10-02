@@ -14,8 +14,8 @@ login. A **Session** is one browser login: an opaque id (the cookie value), the
 owning user, when it was created, and when it was last used. A **LoginState**
 is one in-flight sign-in: an opaque state value carried through the Google round
 trip, the PKCE verifier, and an optional return URL; it is single-use. A
-**Token** is one personal access token: a random Crockford id used in its
-action URLs (distinct from the secret), the owning user, a name, an optional
+**Token** is one personal access token: an id used in its action URLs and in
+the trail (distinct from the secret), the owning user, a name, an optional
 expiry, an enabled flag, when it was created, when it was last used, and the
 hash of its secret — the plaintext secret is shown once at creation and never
 stored.
@@ -23,10 +23,38 @@ stored.
 Opaque ids and token secrets are Crockford base32. The alphabet is the digits
 `0`–`9` and the letters `A`–`Z` with `I`, `L`, `O`, and `U` removed. An opaque
 id is 16 random bytes encoded to 26 characters; auth uses that shape for user
-ids, session ids, login-state values, and token ids alike. A token secret is
+ids, session ids, and login-state values. A token id is the registered entity
+prefix `tok_` followed by such an opaque id, so a token named in the trail
+reads as a token wherever it appears; `ikp_` is not an id prefix but the
+secret's, and a secret is never recorded. User ids carry no prefix: they flow
+through the whole suite as `X-User-Id` and other services store them, so they
+stay exactly as they are. A token secret is
 the literal prefix `ikp_` followed by the 52-character encoding of 32 random
 bytes; only its SHA-256 hash is persisted, so a secret cannot be recovered from
 the database.
+
+An earlier auth gave each token a bare 26-character id. Opening a database
+that holds such tokens gives each the prefixed id, `tok_` followed by the same
+26 characters, and changes nothing else about it: its secret, name, times, and
+state stay as they were, so the token keeps authenticating, and its bare id
+names no token afterward. The rewrite is idempotent — a token already carrying
+the prefix is left alone, so opening the database again changes nothing — and
+it touches only token ids: user ids, session ids, and login states keep the
+values they had.
+
+How the store lays out its tables is not contract, but the prefix changes no
+part of it: the token storage schema is the one the design before the prefix
+produced, and only the values in the token-id column change. So a database an
+earlier auth wrote has exactly the shape a test builds by hand: it opens a
+database in its own temporary tree, creates a token with `CreateToken`,
+closes the store, and with the SQLite driver strips `tok_` from that token's
+id wherever the database stores it, finding those places through
+`sqlite_master`.
+
+The identity a lookup resolves says which token it came through, when it came
+through one, so the check can name the honored token in the trail (D06). And
+provisioning a user on login reports whether the call created the user, so the
+sign-in flow can record a first sign-in (D05).
 
 Opening the store at `state/auth.db` creates missing parent directories and
 the database with its schema, or opens the existing database. Directory
@@ -55,6 +83,7 @@ may also have no expiry, which never expires.
 ## REQUIREMENTS
 
 - R-41J3-NIWG: `internal/idcodec` MUST export `const Alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"` and `const SecretPrefix = "ikp_"`.
+- R-SVIJ-NUV7: `internal/idcodec` MUST export `TokenIDPrefix` as an untyped string constant whose value is `"tok_"`.
 - R-42R0-1AN5: `internal/idcodec` MUST export `func Encode(b []byte) string`.
 - R-43YW-F2DU: `internal/idcodec` MUST export `func NewID(rand io.Reader) (string, error)`.
 - R-456S-SU4J: `internal/idcodec` MUST export `func NewSecret(rand io.Reader) (string, error)`.
@@ -63,14 +92,14 @@ may also have no expiry, which never expires.
 - R-48UH-Y5CM: `internal/store` MUST export `type Session struct` with exactly the fields `ID string`, `UserID string`, `LoginAt time.Time`, and `LastUsedAt time.Time`.
 - R-4A2E-BX3B: `internal/store` MUST export `type LoginState struct` with exactly the fields `State string`, `Verifier string`, and `ReturnURL string`.
 - R-4CI7-3GKP: `internal/store` MUST export `type Token struct` with exactly the fields `ID string`, `UserID string`, `Name string`, `Hash string`, `Enabled bool`, `CreatedAt time.Time`, `ExpiresAt *time.Time`, and `LastUsedAt *time.Time`.
-- R-4DQ3-H8BE: `internal/store` MUST export `type Identity struct` with exactly the fields `UserID string` and `Email string`.
+- R-SWQG-1MLW: `internal/store` MUST export `type Identity struct` with exactly the fields `UserID string`, `Email string`, and `TokenID string`.
 - R-4EXZ-V023: `internal/store` MUST export `type Expiry string` and the constants `ExpiryNever Expiry = "never"`, `Expiry30d Expiry = "30d"`, `Expiry90d Expiry = "90d"`, and `Expiry365d Expiry = "365d"`.
 - R-J5A1-Z776: `internal/store` MUST export `SessionIdle` as a constant of type `time.Duration` whose value is `15 * time.Minute`, so that it is usable wherever Go requires a constant expression, such as the initializer of a `const` declaration.
 - R-J6HY-CYXV: `internal/store` MUST export `SessionMax` as a constant of type `time.Duration` whose value is `18 * time.Hour`, so that it is usable wherever Go requires a constant expression, such as the initializer of a `const` declaration.
 - R-J7PU-QQOK: `internal/store` MUST export `TokenLoginWindow` as a constant of type `time.Duration` whose value is `30 * 24 * time.Hour`, so that it is usable wherever Go requires a constant expression, such as the initializer of a `const` declaration.
 - R-4HDS-MJJH: `internal/store` MUST export `var ErrNotFound error`, the sentinel every operation returns (wrapped or as-is, matchable with `errors.Is`) when the row it was asked for does not exist or is not the caller's.
 - R-4ILP-0BA6: `internal/store` MUST export `type Store`, `func Open(source string, rand io.Reader) (*Store, error)`, and `func (*Store) Close() error`.
-- R-4JTL-E30V: `internal/store` MUST export `func (*Store) UpsertUserOnLogin(issuer, subject, email string, now time.Time) (User, error)`.
+- R-SZ68-T63A: `internal/store` MUST export `func (*Store) UpsertUserOnLogin(issuer, subject, email string, now time.Time) (User, bool, error)`, whose second result reports whether the call created the user.
 - R-4L1H-RURK: `internal/store` MUST export `func (*Store) CreateSession(userID string, now time.Time) (Session, error)`.
 - R-4M9E-5MI9: `internal/store` MUST export `func (*Store) LookupSessionIdentity(sessionID string, now time.Time) (Identity, error)`.
 - R-4NHA-JE8Y: `internal/store` MUST export `func (*Store) TouchSession(sessionID string, now time.Time) (Identity, error)`.
@@ -93,8 +122,11 @@ may also have no expiry, which never expires.
 - R-587L-1HUR: When `source` names an existing, openable database, `Open` MUST open it and return a usable `*Store` without recreating or discarding its existing rows.
 - R-CHBR-5ROL: When required parent-directory creation, database opening, or schema creation fails, `Open` MUST return a nil `*Store` and a non-nil error whose text includes the underlying failure; when an existing regular file occupies a required directory path, `Open` MUST leave that file unchanged and MUST NOT create a database.
 - R-W4JF-EHDQ: When `source` is an ordinary filesystem path naming an existing database that the process cannot write, `Open` MUST return a nil `*Store` and a non-nil error whose text includes the underlying failure, rather than opening the database read-only.
+- R-9U2L-ZPFQ: When `source` names an existing database that `Open` created and `CreateToken` wrote a token into, and in which that token's `ID` has since had its leading `TokenIDPrefix` removed wherever the database stores it, leaving 26 characters from `Alphabet`, `Open` MUST return a usable `*Store` in which that token's `ID` is `TokenIDPrefix` followed by those same 26 characters, no token's `ID` is the bare 26 characters, and the token's `UserID`, `Name`, `Hash`, `Enabled`, `CreatedAt`, `ExpiresAt`, and `LastUsedAt` are unchanged, so that `LookupTokenIdentity` and `TouchTokenIdentity` honor its secret exactly as before.
+- R-T41U-C922: `Open` MUST leave unchanged every token whose `ID` already begins with `TokenIDPrefix`, so that opening a database again after an `Open` that rewrote ids changes no token, and MUST NOT change the `ID` of any user or session or the `State` of any login state.
 - R-5AND-T1C5: On the first `UpsertUserOnLogin` for an `(issuer, subject)` pair, the store MUST create a `User` with a freshly minted opaque `ID` (via `NewID`), the given `Email`, and `LastGoogleLogin` equal to `now`, and MUST return that `User`.
 - R-5BVA-6T2U: On a later `UpsertUserOnLogin` for an `(issuer, subject)` pair that already has a user, the store MUST keep the existing `ID`, MUST set `Email` to the given value and `LastGoogleLogin` to `now`, MUST NOT create a second row for that pair, and MUST return the updated `User`.
+- R-T0E5-6XTZ: `UpsertUserOnLogin` MUST return `true` as its second result when the call created the user (the case of R-5AND-T1C5) and `false` when the `(issuer, subject)` pair already had a user (the case of R-5BVA-6T2U).
 - R-5D36-KKTJ: `CreateSession` MUST create a `Session` with a freshly minted opaque `ID` (via `NewID`), `UserID` equal to the argument, and `LoginAt` and `LastUsedAt` both equal to `now`, and MUST return it.
 - R-5EB2-YCK8: A session MUST be considered live at time `now` if and only if `now - LastUsedAt <= SessionIdle` and `now - LoginAt <= SessionMax`; exceeding either bound MUST make it not live.
 - R-5GQV-PW1M: `LookupSessionIdentity` MUST return the owning user's `Identity` when the named session is live at `now`, MUST return `ErrNotFound` when the session is unknown or not live, and MUST NOT modify any row in either case.
@@ -102,7 +134,7 @@ may also have no expiry, which never expires.
 - R-5J6O-HFJ0: `DeleteSession` MUST remove the named session so that it no longer resolves; deleting a session that is absent MUST NOT be an error.
 - R-5KEK-V79P: `CreateLoginState` MUST create a `LoginState` with a freshly minted opaque `State` (via `NewID`), the given `Verifier`, and the given `ReturnURL` (which may be empty), and MUST return it.
 - R-5LMH-8Z0E: `ConsumeLoginState` MUST be single-use: for a state that exists it MUST return the stored `LoginState` and remove it so a second call with the same state returns `ErrNotFound`; for a state that is unknown or already consumed it MUST return `ErrNotFound`.
-- R-5MUD-MQR3: `CreateToken` MUST create a `Token` owned by `userID` with a freshly minted `ID` (via `NewID`), the given `Name`, `Enabled` true, `CreatedAt` equal to `now`, `LastUsedAt` nil, and `Hash` equal to `HashSecret` of a freshly minted secret (via `NewSecret`); it MUST return that record together with the plaintext secret as its second result and MUST persist only the hash, never the plaintext.
+- R-T1M1-KPKO: `CreateToken` MUST create a `Token` owned by `userID` whose `ID` is `TokenIDPrefix` followed by a freshly minted opaque id (via `NewID`), with the given `Name`, `Enabled` true, `CreatedAt` equal to `now`, `LastUsedAt` nil, and `Hash` equal to `HashSecret` of a freshly minted secret (via `NewSecret`); it MUST return that record together with the plaintext secret as its second result and MUST persist only the hash, never the plaintext.
 - R-5O2A-0IHS: `CreateToken` MUST set `ExpiresAt` from `expiry`: nil for `ExpiryNever`, `now` plus 30 days for `Expiry30d`, `now` plus 90 days for `Expiry90d`, and `now` plus 365 days for `Expiry365d` (a day being 24 hours).
 - R-5PA6-EA8H: `ListTokens` MUST return exactly the tokens owned by `userID` and no token owned by another user.
 - R-5RPZ-5TPV: `SetTokenEnabled` MUST set `Enabled` to the argument for the token when `tokenID` is owned by `userID`, and MUST return `ErrNotFound` (changing nothing) when the id names a token owned by another user or names no token.
@@ -110,3 +142,4 @@ may also have no expiry, which never expires.
 - R-5U5R-XD79: A token MUST be considered to authenticate at time `now` if and only if it is `Enabled`, it is unexpired (`ExpiresAt` is nil, or `ExpiresAt` is after `now`), and its owner's `LastGoogleLogin` satisfies `now - LastGoogleLogin <= TokenLoginWindow`.
 - R-5VDO-B4XY: `LookupTokenIdentity` MUST return the owner's `Identity` when the token whose plaintext secret is `secret` authenticates at `now`, MUST return `ErrNotFound` in every other case (unknown secret, disabled token, expired token, or owner outside the login window — indistinguishable to the caller), and MUST modify no row in any case.
 - R-5WLK-OWON: `TouchTokenIdentity` MUST, when the token whose plaintext secret is `secret` authenticates at `now`, set that token's `LastUsedAt` to `now` and return the owner's `Identity`; in every other case it MUST return `ErrNotFound` and MUST modify no row.
+- R-SXYC-FECL: Every `Identity` that `LookupTokenIdentity` or `TouchTokenIdentity` returns with a nil error MUST have `TokenID` equal to the `ID` of the token whose plaintext secret is `secret`, and every `Identity` that `LookupSessionIdentity` or `TouchSession` returns with a nil error MUST have an empty `TokenID`.
