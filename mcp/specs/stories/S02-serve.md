@@ -9,7 +9,7 @@ mcp is an app that calls its siblings: calling them is what the gateway is for. 
 mcp records what it does as a trail of events, the platform's telemetry, and sends each event to the telemetry service: the entry named `telemetry` in the services file, at the socket that entry names, as `POST /ingest`, never through nginx. mcp looks that entry up afresh for every event, so a telemetry service installed, moved, or restarted while mcp runs gets mcp's next event without mcp restarting. An event is one record: the time, in UTC to the microsecond; the service, always `mcp`; the event's name; the request id, the `X-Request-Id` of the request the event belongs to; the user, that request's `X-User-Id`, empty when it had none; and its attributes, flat names with string, number, or boolean values. The request id and the user are empty for an event that belongs to no request. Attributes carry what happened and the names of the things it happened to, never what a request or an answer held: no tool arguments, no results, no error text, no query string. Sending the trail never holds up a request: mcp answers as fast, and the same, with the telemetry service down as with it up. mcp records these events and no others; it has no events of its own beyond the ones every app of the platform records:
 
 - `service.started`, once mcp is serving and has told systemd it is ready, with `version`, the version `mcp --version` prints (`S01`);
-- `service.stopping`, when mcp is told to stop and has finished the requests it accepted, with `reason`, the name of the signal that stopped it, `SIGTERM` or `SIGINT`; it is the last event mcp sends;
+- `service.stopping`, when mcp stops, with `reason`: `SIGTERM` or `SIGINT`, the signal that stopped it, recorded once it has finished the requests it accepted, or `failed`, when its socket failed under it (`The host's socket fails while mcp serves`); it is the last event mcp sends;
 - `request.started`, as each request arrives, with `method` and `path`, the request's URL path without its query;
 - `request.finished`, once that request's answer is complete, with `status`, the HTTP status mcp answered with, and `duration_us`, how long mcp took to answer, in whole microseconds;
 - `sibling.called`, for each request mcp makes to a backend, once the backend's status and headers arrive or the request fails (`S08`), with `target`, the service's name, `method`, `path`, `status`, the HTTP status the backend answered with or `0` when no answer came, and `duration_us`;
@@ -154,6 +154,41 @@ Postconditions:
 - Every request that finished within 5 seconds of the signal received its full response; the `<n>` that did not were cut off.
 - The trail holds no `service.stopping` from this mcp, and no `request.finished` for any of the `<n>` requests cut off.
 - `/run/ikigenba/mcp.sock` still exists, and connections made to it after mcp exited wait in the socket's queue for the next mcp to answer.
+
+## The host's socket fails while mcp serves
+
+mcp serves on the one socket it was passed and cannot open another, so a socket whose accepting fails with an error the system reports as permanent, not temporary, is a condition mcp cannot continue from, and serving ends on it: mcp says why on stderr and exits non-zero, and systemd's restart policy decides what happens next. A temporary error, such as running out of file descriptors, is retried, and mcp keeps serving. Once serving has ended, mcp stops as a signal stops it: it accepts nothing more and lets the requests in progress finish within `DRAIN_SECONDS` of the failure, and a request still running at that deadline is cut off, as in `The host stops mcp while a request outlasts the drain`. No `stopped with` line is written, though: the failure line is mcp's only line of its own. Before it exits, mcp records why it stopped, so the trail shows a stop rather than a crash, and it gives the trail at most `DRAIN_SECONDS` from the failure to be delivered; what is still undelivered then goes to stderr. A `SIGTERM` or `SIGINT` that arrives once the socket has failed changes nothing: the reason stays `failed`, the `mcp: <error>` line stays last, and mcp still exits 1. A developer here stands in for systemd, running mcp with one socket passed in.
+
+Command:
+
+```
+$ mcp
+```
+
+Output:
+
+```
+mcp: <error>
+```
+
+mcp exits 1. The lines are on stderr; stdout is empty. `<error>` is the reason the socket refused to accept, as the system reports it. Before that line, stderr holds one `mcp: undelivered event: ` line for each event up to and including `service.stopping` that mcp could not deliver to the telemetry service within 5 seconds of the failure, in the order mcp recorded them, and none when it delivered them all. Any event mcp records after `service.stopping` is written the same way, never sent, before the last line or not at all. The `mcp: <error>` line is always last.
+
+Preconditions:
+
+- `LISTEN_PID` is mcp's process id and `LISTEN_FDS` is `1`: one listening socket is passed in, as file descriptor 3.
+- `DRAIN_SECONDS` is unset, so the deadline is 5 seconds.
+- mcp has started serving and reported that it is ready; then accepting on the socket fails with an error the system reports as permanent, not temporary.
+
+Postconditions:
+
+- mcp accepted nothing after the failure and has exited. Every request in progress at the failure that finished within 5 seconds of it received its full response; any still running then was cut off and has no `request.finished` in the trail.
+- The trail holds, as the last event from this mcp, after its `service.started` and the `request.finished` of every request that finished, with an empty request id and an empty user:
+
+  ```
+  service.stopping reason=failed
+  ```
+
+  unless the telemetry service could not take it within 5 seconds of the failure, in which case it is on stderr as an undelivered event line instead.
 
 ## The host restarts mcp during a deploy
 

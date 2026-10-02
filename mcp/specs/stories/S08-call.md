@@ -39,10 +39,10 @@ Content-Type: application/json
 Status 200. The body is a JSON-RPC response with `id` 1 whose `result` is dummy's answer to `list_widgets` (dummy's `S9`): no `isError` member, a `structuredContent` of
 
 ```
-{"widgets":[{"name":"alpha","count":3,"status":"active"},{"name":"beta","count":0,"status":"paused"},{"name":"gamma","count":12,"status":"retired"}]}
+{"widgets":[{"id":"<alpha-id>","name":"alpha","count":3,"status":"active"},{"id":"<beta-id>","name":"beta","count":0,"status":"paused"},{"id":"<gamma-id>","name":"gamma","count":12,"status":"retired"}]}
 ```
 
-and a `content` array of one text block whose text is exactly that line. Its `_meta` names the gateway, `{"name":"mcp","version":"v<semver>"}`, not dummy.
+and a `content` array of one text block whose text is exactly that line. `<alpha-id>`, `<beta-id>`, and `<gamma-id>` are the ids dummy gave its three widgets when it started, as dummy's `S9` tells: three different values, each `wgt_` and 16 lowercase hexadecimal digits. Its `_meta` names the gateway, `{"name":"mcp","version":"v<semver>"}`, not dummy.
 
 Preconditions:
 

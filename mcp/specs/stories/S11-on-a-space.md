@@ -145,7 +145,7 @@ HTTP/2 200
 content-type: application/json
 ```
 
-Status 200. The body is a JSON-RPC response with `id` 2 whose `result` is dummy's answer to `list_widgets`, relayed: it has no `isError` member, its `structuredContent` is an object whose one member, `widgets`, is an array of every widget dummy holds, oldest first, each with its `name`, `count`, and `status`, and its `content` is one text block holding that same object encoded compactly, as dummy's own stories tell. The result's `io.modelcontextprotocol/serverInfo` is the gateway's, `{"name":"mcp","version":"v<semver>"}`, not dummy's.
+Status 200. The body is a JSON-RPC response with `id` 2 whose `result` is dummy's answer to `list_widgets`, relayed: it has no `isError` member, its `structuredContent` is an object whose one member, `widgets`, is an array of every widget dummy holds, oldest first, each with its `id`, `name`, `count`, and `status`, and its `content` is one text block holding that same object encoded compactly, as dummy's own stories tell. The result's `io.modelcontextprotocol/serverInfo` is the gateway's, `{"name":"mcp","version":"v<semver>"}`, not dummy's.
 
 Preconditions:
 

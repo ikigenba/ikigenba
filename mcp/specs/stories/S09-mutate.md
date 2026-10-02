@@ -33,10 +33,10 @@ Content-Type: application/json
 Status 200. The body is a JSON-RPC response with `id` 1 whose `result` is dummy's answer to `create_widget` (dummy's `S9`): no `isError` member, a `structuredContent` of
 
 ```
-{"name":"delta","count":7,"status":"active"}
+{"id":"<delta-id>","name":"delta","count":7,"status":"active"}
 ```
 
-and a `content` array of one text block whose text is exactly that line. Its `_meta` names the gateway, `{"name":"mcp","version":"v<semver>"}`, not dummy.
+and a `content` array of one text block whose text is exactly that line. `<delta-id>` is the id dummy gave the new widget, as dummy's `S9` tells: `wgt_` and 16 lowercase hexadecimal digits, different from every other widget's. Its `_meta` names the gateway, `{"name":"mcp","version":"v<semver>"}`, not dummy.
 
 Preconditions:
 
