@@ -17,33 +17,61 @@ in these stories is the host, whether that is systemd or a developer at a
 terminal standing in for it.
 
 The environment auth reads is the two Google secrets `GOOGLE_CLIENT_ID` and
-`GOOGLE_CLIENT_SECRET`, `WORKSPACE_DOMAIN`, `DRAIN_SECONDS`, and
-`IKIGENBA_SERVICES`. The first three are required. `DRAIN_SECONDS` is how long
-auth drains when stopped, a positive whole number of seconds, and 5 when it is
-unset or empty. On a host, opsctl owns that value and the service unit's stop
-timeout: both are space-wide settings in opsctl's configuration, opsctl writes
-the drain into every app's `etc/env` and the stop timeout (10 seconds by
-default, always longer than the drain) into every service unit, and an app's
-manifest never sets either. `IKIGENBA_SERVICES` is the path of the host's
-services file, which lists the platform's services for the launcher in the
-banner of auth's signed-in pages (`S3-sign-in.md`). On a host, opsctl sets it
-in the environment the host gives auth, normally
-`/var/lib/ikigenba/services.json`; on a host that has no services file it is
-unset, and auth's pages then carry no launcher. auth reads the variable once,
-when it starts, and never fails to start over it: unset, empty, a path not in
-its plain form (`S3-sign-in.md`), or naming a file that is missing or
-unreadable, auth starts and serves all the same, and says nothing about it.
+`GOOGLE_CLIENT_SECRET`, `WORKSPACE_DOMAIN`, `DRAIN_SECONDS`,
+`IKIGENBA_PUBLIC_URL`, `IKIGENBA_CALLBACK_URL`, and `IKIGENBA_SERVICES`. The
+first three are required. `DRAIN_SECONDS` is how long auth drains when stopped,
+a positive whole number of seconds, and 5 when it is unset or empty. On a host,
+opsctl owns that value and the service unit's stop timeout: both are space-wide
+settings in opsctl's configuration, opsctl writes the drain into every app's
+`etc/env` and the stop timeout (10 seconds by default, always longer than the
+drain) into every service unit, and an app's manifest never sets either.
+`IKIGENBA_SERVICES` is the path of the host's services file, which lists the
+platform's services for the launcher in the banner of auth's signed-in pages
+(`S3-sign-in.md`). On a host, opsctl sets it in the environment the host gives
+auth, normally `/var/lib/ikigenba/services.json`; on a host that has no
+services file it is unset, and auth's pages then carry no launcher. auth reads
+the variable once, when it starts, and never fails to start over it: unset,
+empty, a path not in its plain form (`S3-sign-in.md`), or naming a file that is
+missing or unreadable, auth starts and serves all the same, and says nothing
+about it.
+
+`IKIGENBA_PUBLIC_URL` and `IKIGENBA_CALLBACK_URL` are optional, and each is
+independent of the other. Each is an origin: `http` or `https`, then `://`, a
+host, and optionally `:` and a port of digits, with nothing else — no user
+part, no path (not even a trailing `/`), no query, and no fragment. A host sets
+neither, and with neither set auth's own origin is `https://auth.<space>`, the
+Google `redirect_uri` is `https://auth.<space>/login/google/callback` for the
+space the request's `Host` names, and sign-out accepts origins on the space
+over `https` with no port (`S3-sign-in.md`). A sandbox, the local runner a
+developer runs the platform in, sets both: a sandbox named `wip` on port 7400
+sets `IKIGENBA_PUBLIC_URL=http://auth.wip.localhost:7400` and
+`IKIGENBA_CALLBACK_URL=http://localhost:7400` (`S9-in-a-sandbox.md`). When
+`IKIGENBA_PUBLIC_URL` is set, it is auth's own origin, the one its token
+actions accept (`S5-tokens.md`), and sign-out accepts origins on the space with
+its scheme and port instead of `https` and none (`S3-sign-in.md`). When
+`IKIGENBA_CALLBACK_URL` is set, the Google `redirect_uri` is that value
+followed by `/login/google/callback` —
+`http://localhost:7400/login/google/callback` in that sandbox — the same in the
+redirect that starts a sign-in and in the code exchange that finishes it,
+whatever `Host` the request names. Either way the space is still read from the
+request's `Host`. auth does not read `IKIGENBA_SANDBOX`, which a sandbox also
+sets. Only an unset variable is absent: one present in the environment with an
+empty value is not an origin, and like any other value that is not one it stops
+auth from starting.
+
 auth checks its environment first — `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
-`WORKSPACE_DOMAIN`, then `DRAIN_SECONDS` — then looks for its socket, and only
-then opens its SQLite database at `state/auth.db`, relative to its working
-directory. So a start refused as a usage error has touched nothing, not even
-the database. Starting touches no network: the Google settings are read and
-required at startup, but Google itself is reached
-only when a human signs in (`S3-sign-in.md`), so auth serves even while Google
-is unreachable, and `/check` and `/me` keep answering from the local database
-(`S4-check.md`). In the stories below that run `auth` directly, its
-environment sets `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
-`WORKSPACE_DOMAIN=michaelgreenly.dev` unless a story says otherwise.
+`WORKSPACE_DOMAIN`, then `DRAIN_SECONDS`, then `IKIGENBA_PUBLIC_URL`, then
+`IKIGENBA_CALLBACK_URL` — then looks for its socket, and only then opens its
+SQLite database at `state/auth.db`, relative to its working directory. So a
+start refused as a usage error has touched nothing, not even the database.
+Starting touches no network: the Google settings are read and required at
+startup, but Google itself is reached only when a human signs in
+(`S3-sign-in.md`), so auth serves even while Google is unreachable, and
+`/check` and `/me` keep answering from the local database (`S4-check.md`). In
+the stories below that run `auth` directly, its environment sets
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
+`WORKSPACE_DOMAIN=michaelgreenly.dev`, and leaves `IKIGENBA_PUBLIC_URL` and
+`IKIGENBA_CALLBACK_URL` unset, unless a story says otherwise.
 
 A healthy auth prints nothing, so under systemd the journal holds only
 trouble. A diagnostic auth writes about a request names that request by its
@@ -445,12 +473,95 @@ Postconditions:
 - Nothing has changed. auth opened no database, served nothing, and told
   systemd nothing.
 
+## The host gives auth a public URL that is not an origin
+
+auth reads `IKIGENBA_PUBLIC_URL` before it serves, so a bad value is found at
+start rather than at the first request that needs auth's own origin. A value
+that is not an origin — `http://auth.wip.localhost:7400/` with its trailing
+`/`, a path, a query, a fragment, a user part, a scheme other than `http` or
+`https`, no host, or a port that is not digits — is the caller's mistake, so it
+is a usage error and auth serves nothing. A variable present with an empty
+value is refused the same way, as `IKIGENBA_PUBLIC_URL is '', not an origin`;
+only an unset variable means auth's own origin is `https://auth.<space>`. The
+value is quoted back verbatim. auth checks it after `DRAIN_SECONDS` and before
+`IKIGENBA_CALLBACK_URL`, so it is the one named when both are bad, and before
+it looks for its socket, so it is reported whether or not a socket was passed
+in.
+
+Command:
+
+```
+$ IKIGENBA_PUBLIC_URL=http://auth.wip.localhost:7400/ auth
+```
+
+Output:
+
+```
+auth: IKIGENBA_PUBLIC_URL is 'http://auth.wip.localhost:7400/', not an origin
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- `bin/auth` exists and is on the `PATH` as `auth`.
+- auth's environment sets `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
+  `WORKSPACE_DOMAIN=michaelgreenly.dev`.
+- `DRAIN_SECONDS` is unset, or a positive whole number.
+- `IKIGENBA_PUBLIC_URL` is set to a value that is not an origin.
+
+Postconditions:
+
+- Nothing has changed. auth opened no database, listened on nothing, and told
+  systemd nothing; an absent `state/auth.db` is still absent.
+
+## The host gives auth a callback URL that is not an origin
+
+auth reads `IKIGENBA_CALLBACK_URL` before it serves, so a bad value is found
+at start rather than when someone first signs in. It must be an origin by the
+same rule as `IKIGENBA_PUBLIC_URL`: `http://localhost:7400/`, with its trailing
+`/`, is not one, because auth adds `/login/google/callback` to the origin
+itself. A variable present with an empty value is refused the same way; only
+an unset variable means the callback is read from the request's `Host`. The
+value is quoted back verbatim. auth checks it after `IKIGENBA_PUBLIC_URL` and
+before it looks for its socket, so it is reported whether or not a socket was
+passed in.
+
+Command:
+
+```
+$ IKIGENBA_CALLBACK_URL=http://localhost:7400/ auth
+```
+
+Output:
+
+```
+auth: IKIGENBA_CALLBACK_URL is 'http://localhost:7400/', not an origin
+```
+
+Exits 2. The line is on stderr; stdout is empty.
+
+Preconditions:
+
+- `bin/auth` exists and is on the `PATH` as `auth`.
+- auth's environment sets `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
+  `WORKSPACE_DOMAIN=michaelgreenly.dev`.
+- `DRAIN_SECONDS` is unset, or a positive whole number.
+- `IKIGENBA_PUBLIC_URL` is unset, or an origin.
+- `IKIGENBA_CALLBACK_URL` is set to a value that is not an origin.
+
+Postconditions:
+
+- Nothing has changed. auth opened no database, listened on nothing, and told
+  systemd nothing; an absent `state/auth.db` is still absent.
+
 ## The host starts auth without a Google setting
 
 A required Google setting is not in auth's environment. auth reports the
 missing name and refuses to start. It checks the Google settings before
 anything else, so the name is reported whether or not a socket was passed in
-and whatever `DRAIN_SECONDS` holds.
+and whatever `DRAIN_SECONDS`, `IKIGENBA_PUBLIC_URL`, and
+`IKIGENBA_CALLBACK_URL` hold.
 
 Command:
 

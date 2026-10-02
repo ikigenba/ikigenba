@@ -3,23 +3,26 @@
 The browser sign-in flow: the sign-in page and profile at `/`, the start of a
 Google sign-in at `/login/google`, the callback at `/login/google/callback`,
 and sign-out at `/logout`. The requests go to a running auth (`S2-serve.md`),
-started with its Google settings and no services file unless a story says
-otherwise; they reach it through nginx on a space. Each request is shown as the
-HTTP request auth receives, with the headers the story depends on. Every
-request is on a space: the space is auth's own hostname without its leading
-`auth.` label, and the stories below use the space `sbx.ikigenba.dev`, whose
-auth is `auth.sbx.ikigenba.dev`. The facts that depend on the space's own
+started with its Google settings, no services file, and neither
+`IKIGENBA_PUBLIC_URL` nor `IKIGENBA_CALLBACK_URL` set, as on a host, unless a
+story says otherwise; they reach it through nginx on a space. Each request is
+shown as the HTTP request auth receives, with the headers the story depends on.
+Every request is on a space: the space is auth's own hostname without its
+leading `auth.` label, and the stories below use the space `sbx.ikigenba.dev`,
+whose auth is `auth.sbx.ikigenba.dev`. The facts that depend on the space's own
 hostname — the callback `redirect_uri`, the session cookie's `Domain`, and
 which return URLs count as being under the space — are stated for that space,
-and `S7-on-a-space.md` proves the whole path on a real one.
+and `S7-on-a-space.md` proves the whole path on a real one. In a sandbox, where
+those two variables are set, the same flow differs only where they say
+(`S2-serve.md`), and `S9-in-a-sandbox.md` tells it there.
 
 The session cookie is named `ikigenba_session`; it carries `Domain=<space>`
-(the space host and every subdomain), `Path=/`, `Secure`, `HttpOnly`, and
-`SameSite=Lax`, so the response blocks below show it with
-`Domain=sbx.ikigenba.dev`. Its path covers every path on those hosts,
-including auth's `/`, `/tokens`, and `/logout`, and other apps' paths. A login
-records the user's last-Google-login time, which `S4-check.md` reads when it
-decides a token.
+with any port dropped (the space host and every subdomain), `Path=/`, `Secure`,
+`HttpOnly`, and `SameSite=Lax`, so the response blocks below show it with
+`Domain=sbx.ikigenba.dev`. Its path covers every path on those hosts, including
+auth's `/`, `/tokens`, and `/logout`, and other apps' paths. A login records
+the user's last-Google-login time, which `S4-check.md` reads when it decides a
+token.
 
 Users are keyed by `(issuer, subject)` from the ID token; the email is a copy
 refreshed on every login. The return URL and the CSRF protection are the same
@@ -28,10 +31,13 @@ the Google round trip, that also holds the PKCE verifier and any return URL.
 Every state-changing request is a `POST`; `SameSite=Lax` is the first line of
 cross-site defense and an `Origin` check is the second. For `/logout` that check
 is that the origin is on this space, so any app on the space can sign its user
-out: the accepted origins are exactly the hosts the session cookie reaches,
-over `https` — `https://<space>` and `https://<host>.<space>` for a subdomain
-at any depth (any host ending in `.<space>`), auth's own `https://auth.<space>`
-among them.
+out: the accepted origins are exactly the hosts the session cookie reaches —
+the space's host and any host ending in `.` followed by it, a subdomain at
+any depth, auth's own among them — over one scheme and port. With
+`IKIGENBA_PUBLIC_URL` unset, as on a host, that is `https` with no port:
+`https://<space>` and `https://<host>.<space>`, auth's own
+`https://auth.<space>` among them. With it set, as in a sandbox, it is the
+scheme and port of `IKIGENBA_PUBLIC_URL` (`S2-serve.md`).
 
 A page fixes its visible text and the markup the stylesheet keys on: an
 element or class is quoted where the stylesheet hooks in, the visible text is

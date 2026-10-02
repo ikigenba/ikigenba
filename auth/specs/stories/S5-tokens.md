@@ -1,27 +1,28 @@
 # Stories — tokens
 
 The token actions a signed-in user drives from their profile. The requests go
-to a running auth (`S2-serve.md`), started with its Google settings; they
-reach it through nginx on a space. Each request is shown as the HTTP request
-auth receives, with the headers the story depends on. Every request is on a
-space; a request that shows no `Host` header carries
-`Host: auth.sbx.ikigenba.dev`, on the space `sbx.ikigenba.dev`
-(`S3-sign-in.md`). Every request carries a valid `ikigenba_session` cookie,
-and every state-changing request is a POST that also carries an `Origin`
-header matching the service's own origin, `https://auth.<space>`, here
-`https://auth.sbx.ikigenba.dev`. A user may hold many tokens. A token's
-secret has the form `ikp_` followed by 52 Crockford base32 characters
-(`0`-`9` and `A`-`Z` without `I`, `L`, `O`, `U`), the encoding of 32 random
-bytes; it is shown once at creation and never again, and only a hash of it
-is stored. Separately, each token carries its
-own random Crockford identifier used in the action URLs
-(`POST /tokens/<id>/enable`, `/disable`, `/delete`); this id is not the secret.
-Every action is a POST: acting on a token id that is not the user's own or does
-not exist answers 404, and a POST whose `Origin` is not the service's own origin
-answers 403. Those failures, like every text/plain failure auth answers, are
-one line of plain text with no banner. The whole profile page is S3's story; the
-stories here fix the token table and its empty state, the `Create a token`
-card, and the two pages token creation draws.
+to a running auth (`S2-serve.md`), started with its Google settings and
+`IKIGENBA_PUBLIC_URL` unset, as on a host; they reach it through nginx on a
+space. Each request is shown as the HTTP request auth receives, with the
+headers the story depends on. Every request is on a space; a request that shows
+no `Host` header carries `Host: auth.sbx.ikigenba.dev`, on the space
+`sbx.ikigenba.dev` (`S3-sign-in.md`). Every request carries a valid
+`ikigenba_session` cookie, and every state-changing request is a POST that also
+carries an `Origin` header matching the service's own origin:
+`IKIGENBA_PUBLIC_URL` when it is set, as in a sandbox (`S9-in-a-sandbox.md`),
+and otherwise `https://auth.<space>`, here `https://auth.sbx.ikigenba.dev`. A
+user may hold many tokens. A token's secret has the form `ikp_` followed by 52
+Crockford base32 characters (`0`-`9` and `A`-`Z` without `I`, `L`, `O`, `U`),
+the encoding of 32 random bytes; it is shown once at creation and never again,
+and only a hash of it is stored. Separately, each token carries its own random
+Crockford identifier used in the action URLs (`POST /tokens/<id>/enable`,
+`/disable`, `/delete`); this id is not the secret. Every action is a POST:
+acting on a token id that is not the user's own or does not exist answers 404,
+and a POST whose `Origin` is not the service's own origin answers 403. Those
+failures, like every text/plain failure auth answers, are one line of plain
+text with no banner. The whole profile page is S3's story; the stories here fix
+the token table and its empty state, the `Create a token` card, and the two
+pages token creation draws.
 
 Every HTML page these stories fix is drawn with the banner (S3): its
 `<title>` is `auth`, it links `/_appkit/theme.css` as its stylesheet and
